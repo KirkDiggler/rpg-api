@@ -1,0 +1,475 @@
+syntax = "proto3";
+
+package dnd5e.api.v1alpha1;
+
+option go_package = "github.com/KirkDiggler/rpg-api/api/proto/dnd5e/v1alpha1;dnd5ev1alpha1";
+
+import "dnd5e/api/v1alpha1/enums.proto";
+import "dnd5e/api/v1alpha1/common.proto";
+
+// Service for D&D 5e character creation and management
+// Supports both wizard-style step-by-step creation and free-form editing
+service CharacterService {
+  // Draft lifecycle
+  rpc CreateDraft(CreateDraftRequest) returns (CreateDraftResponse);
+  rpc GetDraft(GetDraftRequest) returns (GetDraftResponse);
+  rpc ListDrafts(ListDraftsRequest) returns (ListDraftsResponse);
+  rpc DeleteDraft(DeleteDraftRequest) returns (DeleteDraftResponse);
+  
+  // Section-based updates (supports skip-around editing)
+  rpc UpdateName(UpdateNameRequest) returns (UpdateNameResponse);
+  rpc UpdateRace(UpdateRaceRequest) returns (UpdateRaceResponse);
+  rpc UpdateClass(UpdateClassRequest) returns (UpdateClassResponse);
+  rpc UpdateBackground(UpdateBackgroundRequest) returns (UpdateBackgroundResponse);
+  rpc UpdateAbilityScores(UpdateAbilityScoresRequest) returns (UpdateAbilityScoresResponse);
+  rpc UpdateSkills(UpdateSkillsRequest) returns (UpdateSkillsResponse);
+  
+  // Validation
+  rpc ValidateDraft(ValidateDraftRequest) returns (ValidateDraftResponse);
+  
+  // Character finalization
+  rpc FinalizeDraft(FinalizeDraftRequest) returns (FinalizeDraftResponse);
+  
+  // Completed character operations
+  rpc GetCharacter(GetCharacterRequest) returns (GetCharacterResponse);
+  rpc ListCharacters(ListCharactersRequest) returns (ListCharactersResponse);
+  rpc DeleteCharacter(DeleteCharacterRequest) returns (DeleteCharacterResponse);
+}
+
+
+// Ability scores for a character
+message AbilityScores {
+  // Strength score (3-18 before racial modifiers)
+  int32 strength = 1;
+  
+  // Dexterity score (3-18 before racial modifiers)
+  int32 dexterity = 2;
+  
+  // Constitution score (3-18 before racial modifiers)
+  int32 constitution = 3;
+  
+  // Intelligence score (3-18 before racial modifiers)
+  int32 intelligence = 4;
+  
+  // Wisdom score (3-18 before racial modifiers)
+  int32 wisdom = 5;
+  
+  // Charisma score (3-18 before racial modifiers)
+  int32 charisma = 6;
+}
+
+
+// A complete D&D 5e character
+message Character {
+  // Unique identifier
+  string id = 1;
+  
+  // Character name
+  string name = 2;
+  
+  // Character level (starts at 1)
+  int32 level = 3;
+  
+  // Experience points
+  int32 experience_points = 4;
+  
+  // Character race
+  Race race = 5;
+  
+  // Character subrace if applicable
+  Subrace subrace = 6;
+  
+  // Character class
+  Class class = 7;
+  
+  // Character background
+  Background background = 8;
+  
+  // Character alignment
+  Alignment alignment = 9;
+  
+  // Final ability scores (with racial modifiers applied)
+  AbilityScores ability_scores = 10;
+  
+  // Ability modifiers (calculated from scores)
+  AbilityModifiers ability_modifiers = 11;
+  
+  // Calculated combat values
+  CombatStats combat_stats = 12;
+  
+  // Proficiencies
+  Proficiencies proficiencies = 13;
+  
+  // Known languages
+  repeated Language languages = 14;
+  
+  // Current hit points
+  int32 current_hit_points = 15;
+  
+  // Temporary hit points
+  int32 temporary_hit_points = 16;
+  
+  // Session association if any
+  string session_id = 17;
+  
+  // Metadata
+  CharacterMetadata metadata = 18;
+}
+
+// Ability modifiers calculated from scores
+message AbilityModifiers {
+  int32 strength = 1;
+  int32 dexterity = 2;
+  int32 constitution = 3;
+  int32 intelligence = 4;
+  int32 wisdom = 5;
+  int32 charisma = 6;
+}
+
+// Combat-related statistics
+message CombatStats {
+  // Maximum hit points
+  int32 hit_point_maximum = 1;
+  
+  // Armor class
+  int32 armor_class = 2;
+  
+  // Initiative modifier
+  int32 initiative = 3;
+  
+  // Base movement speed in feet
+  int32 speed = 4;
+  
+  // Proficiency bonus
+  int32 proficiency_bonus = 5;
+  
+  // Hit dice (e.g., 1d10 for fighter)
+  string hit_dice = 6;
+}
+
+// Character proficiencies
+message Proficiencies {
+  // Skill proficiencies
+  repeated Skill skills = 1;
+  
+  // Saving throw proficiencies
+  repeated Ability saving_throws = 2;
+  
+  // Armor proficiencies (as strings for now)
+  repeated string armor = 3;
+  
+  // Weapon proficiencies (as strings for now)
+  repeated string weapons = 4;
+  
+  // Tool proficiencies (as strings for now)
+  repeated string tools = 5;
+}
+
+// Character metadata
+message CharacterMetadata {
+  // When the character was created
+  int64 created_at = 1;
+  
+  // When the character was last updated
+  int64 updated_at = 2;
+  
+  // Player/user who owns this character
+  string player_id = 3;
+}
+
+// Request to get a character
+message GetCharacterRequest {
+  // The character ID to retrieve
+  string character_id = 1;
+}
+
+// Response containing a character
+message GetCharacterResponse {
+  // The requested character
+  Character character = 1;
+}
+
+// Request to list characters
+message ListCharactersRequest {
+  // Maximum number of characters to return (1-100, default 20)
+  int32 page_size = 1;
+  
+  // Page token from previous response
+  string page_token = 2;
+  
+  // Filter by session ID
+  string session_id = 3;
+  
+  // Filter by player ID
+  string player_id = 4;
+}
+
+// Response containing a list of characters
+message ListCharactersResponse {
+  // The list of characters
+  repeated Character characters = 1;
+  
+  // Token for next page if available
+  string next_page_token = 2;
+  
+  // Total number of characters matching filters
+  int32 total_size = 3;
+}
+
+// Request to update a character
+message UpdateCharacterRequest {
+  // The character to update (ID required)
+  Character character = 1;
+  
+  // Field mask to specify which fields to update
+  // For now, we'll allow updating specific fields
+  repeated string update_mask = 2;
+}
+
+// Response from character update
+message UpdateCharacterResponse {
+  // The updated character
+  Character character = 1;
+}
+
+// Request to delete a character
+message DeleteCharacterRequest {
+  // The character ID to delete
+  string character_id = 1;
+}
+
+// Response from character deletion
+message DeleteCharacterResponse {
+  // Confirmation message
+  string message = 1;
+}
+
+// Character draft with optional fields
+message CharacterDraft {
+  // Unique identifier
+  string id = 1;
+  
+  // Player creating this character
+  string player_id = 2;
+  
+  // Session if part of one
+  string session_id = 3;
+  
+  // All fields are optional during draft
+  string name = 4;
+  Race race = 5;
+  Subrace subrace = 6;
+  Class class = 7;
+  Background background = 8;
+  AbilityScores ability_scores = 9;
+  Alignment alignment = 10;
+  repeated Skill starting_skills = 11;
+  repeated Language additional_languages = 12;
+  
+  // Track what steps are complete
+  CreationProgress progress = 13;
+  
+  // When this draft expires (e.g., 30 days)
+  int64 expires_at = 14;
+  
+  // Metadata
+  DraftMetadata metadata = 15;
+}
+
+// Tracks which parts of character creation are complete
+message CreationProgress {
+  bool has_name = 1;
+  bool has_race = 2;
+  bool has_class = 3;
+  bool has_background = 4;
+  bool has_ability_scores = 5;
+  bool has_skills = 6;
+  bool has_languages = 7;
+  
+  // Overall completion percentage
+  int32 completion_percentage = 8;
+  
+  // What step they're currently on
+  CreationStep current_step = 9;
+}
+
+// Steps in character creation
+enum CreationStep {
+  CREATION_STEP_UNSPECIFIED = 0;
+  CREATION_STEP_NAME = 1;
+  CREATION_STEP_RACE = 2;
+  CREATION_STEP_CLASS = 3;
+  CREATION_STEP_BACKGROUND = 4;
+  CREATION_STEP_ABILITY_SCORES = 5;
+  CREATION_STEP_SKILLS = 6;
+  CREATION_STEP_LANGUAGES = 7;
+  CREATION_STEP_REVIEW = 8;
+}
+
+// Draft metadata
+message DraftMetadata {
+  int64 created_at = 1;
+  int64 updated_at = 2;
+  string discord_channel_id = 3;
+  string discord_message_id = 4;
+}
+
+// Request to create a draft
+message CreateDraftRequest {
+  string player_id = 1;
+  string session_id = 2;  // Optional
+  
+  // Can optionally provide initial data
+  CharacterDraft initial_data = 3;
+}
+
+message CreateDraftResponse {
+  CharacterDraft draft = 1;
+}
+
+// Request to get a draft
+message GetDraftRequest {
+  string draft_id = 1;
+}
+
+message GetDraftResponse {
+  CharacterDraft draft = 1;
+}
+
+// Request to update a draft
+message UpdateDraftRequest {
+  string draft_id = 1;
+  
+  // Only provided fields will be updated
+  CharacterDraft updates = 2;
+  
+  // Which fields to update (field mask pattern)
+  repeated string update_mask = 3;
+}
+
+message UpdateDraftResponse {
+  CharacterDraft draft = 1;
+  
+  // Any validation warnings (not errors)
+  repeated ValidationWarning warnings = 2;
+}
+
+// Section-based update requests
+message UpdateNameRequest {
+  string draft_id = 1;
+  string name = 2;
+}
+
+message UpdateRaceRequest {
+  string draft_id = 1;
+  Race race = 2;
+  Subrace subrace = 3; // Optional, required for some races
+}
+
+message UpdateClassRequest {
+  string draft_id = 1;
+  Class class = 2;
+}
+
+message UpdateBackgroundRequest {
+  string draft_id = 1;
+  Background background = 2;
+}
+
+message UpdateAbilityScoresRequest {
+  string draft_id = 1;
+  AbilityScores ability_scores = 2;
+}
+
+message UpdateSkillsRequest {
+  string draft_id = 1;
+  repeated Skill skills = 2;
+}
+
+// Section-based update responses
+message UpdateNameResponse {
+  CharacterDraft draft = 1;
+  repeated ValidationWarning warnings = 2;
+}
+
+message UpdateRaceResponse {
+  CharacterDraft draft = 1;
+  repeated ValidationWarning warnings = 2;
+}
+
+message UpdateClassResponse {
+  CharacterDraft draft = 1;
+  repeated ValidationWarning warnings = 2;
+}
+
+message UpdateBackgroundResponse {
+  CharacterDraft draft = 1;
+  repeated ValidationWarning warnings = 2;
+}
+
+message UpdateAbilityScoresResponse {
+  CharacterDraft draft = 1;
+  repeated ValidationWarning warnings = 2;
+}
+
+message UpdateSkillsResponse {
+  CharacterDraft draft = 1;
+  repeated ValidationWarning warnings = 2;
+}
+
+enum WarningType {
+  WARNING_TYPE_UNSPECIFIED = 0;
+  WARNING_TYPE_MISSING_REQUIRED = 1;
+  WARNING_TYPE_INVALID_COMBINATION = 2;
+  WARNING_TYPE_SUBOPTIMAL_CHOICE = 3;
+}
+
+// Request to list drafts
+message ListDraftsRequest {
+  string player_id = 1;
+  string session_id = 2;  // Optional filter
+  int32 page_size = 3;
+  string page_token = 4;
+}
+
+message ListDraftsResponse {
+  repeated CharacterDraft drafts = 1;
+  string next_page_token = 2;
+}
+
+// Request to validate draft
+message ValidateDraftRequest {
+  string draft_id = 1;
+}
+
+message ValidateDraftResponse {
+  bool is_complete = 1;
+  bool is_valid = 2;
+  
+  repeated ValidationError errors = 3;
+  repeated ValidationWarning warnings = 4;
+  
+  // What's still needed
+  repeated CreationStep missing_steps = 5;
+}
+
+// Request to finalize draft
+message FinalizeDraftRequest {
+  string draft_id = 1;
+}
+
+message FinalizeDraftResponse {
+  Character character = 1;
+  
+  // Draft is automatically deleted after finalization
+  bool draft_deleted = 2;
+}
+
+// Request to delete draft
+message DeleteDraftRequest {
+  string draft_id = 1;
+}
+
+message DeleteDraftResponse {
+  string message = 1;
+}

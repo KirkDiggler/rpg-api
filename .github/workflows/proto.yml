@@ -1,0 +1,66 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  proto:
+    name: Proto Validation
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.22'
+    
+    - name: Install dependencies
+      run: |
+        go install github.com/bufbuild/buf/cmd/buf@latest
+        go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
+        go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
+        echo "$HOME/go/bin" >> $GITHUB_PATH
+    
+    - name: Lint protos
+      run: make buf-lint
+    
+    - name: Generate proto code
+      run: make buf-generate
+    
+    - name: Check generated code is committed
+      run: |
+        git diff --exit-code
+    
+    - name: Check EOF newlines
+      run: |
+        # Find files missing EOF newline
+        files_without_newline=""
+        while IFS= read -r file; do
+          if [[ -f "$file" ]] && [[ -s "$file" ]] && [[ $(tail -c1 "$file" | wc -l) -eq 0 ]]; then
+            files_without_newline="$files_without_newline$file\n"
+            echo "Missing EOF newline: $file"
+          fi
+        done < <(git ls-files '*.go' '*.proto' '*.md' '*.yml' '*.yaml' '*.json' 'Makefile' '.gitignore')
+        
+        if [[ -n "$files_without_newline" ]]; then
+          echo "Error: Files missing EOF newline"
+          exit 1
+        fi
+  
+  # Placeholder for future jobs
+  # test:
+  #   name: Run Tests
+  #   runs-on: ubuntu-latest
+  #   needs: proto
+  #   steps:
+  #   - uses: actions/checkout@v4
+  #   - name: Set up Go
+  #     uses: actions/setup-go@v5
+  #     with:
+  #       go-version: '1.22'
+  #   - name: Run tests
+  #     run: make test
