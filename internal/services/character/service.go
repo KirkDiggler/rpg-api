@@ -5,7 +5,7 @@ package character
 import (
 	"context"
 
-	"github.com/KirkDiggler/rpg-api/internal/entities"
+	"github.com/KirkDiggler/rpg-api/internal/entities/dnd5e"
 )
 
 // Service defines the interface for character operations
@@ -41,11 +41,11 @@ type Service interface {
 type CreateDraftInput struct {
 	PlayerID    string
 	SessionID   string // Optional
-	InitialData *entities.CharacterDraft
+	InitialData *dnd5e.CharacterDraft
 }
 
 type CreateDraftOutput struct {
-	Draft *entities.CharacterDraft
+	Draft *dnd5e.CharacterDraft
 }
 
 type GetDraftInput struct {
@@ -53,7 +53,7 @@ type GetDraftInput struct {
 }
 
 type GetDraftOutput struct {
-	Draft *entities.CharacterDraft
+	Draft *dnd5e.CharacterDraft
 }
 
 type ListDraftsInput struct {
@@ -64,7 +64,7 @@ type ListDraftsInput struct {
 }
 
 type ListDraftsOutput struct {
-	Drafts        []*entities.CharacterDraft
+	Drafts        []*dnd5e.CharacterDraft
 	NextPageToken string
 }
 
@@ -84,7 +84,7 @@ type UpdateNameInput struct {
 }
 
 type UpdateNameOutput struct {
-	Draft    *entities.CharacterDraft
+	Draft    *dnd5e.CharacterDraft
 	Warnings []ValidationWarning
 }
 
@@ -95,7 +95,7 @@ type UpdateRaceInput struct {
 }
 
 type UpdateRaceOutput struct {
-	Draft    *entities.CharacterDraft
+	Draft    *dnd5e.CharacterDraft
 	Warnings []ValidationWarning
 }
 
@@ -105,7 +105,7 @@ type UpdateClassInput struct {
 }
 
 type UpdateClassOutput struct {
-	Draft    *entities.CharacterDraft
+	Draft    *dnd5e.CharacterDraft
 	Warnings []ValidationWarning
 }
 
@@ -115,17 +115,17 @@ type UpdateBackgroundInput struct {
 }
 
 type UpdateBackgroundOutput struct {
-	Draft    *entities.CharacterDraft
+	Draft    *dnd5e.CharacterDraft
 	Warnings []ValidationWarning
 }
 
 type UpdateAbilityScoresInput struct {
 	DraftID       string
-	AbilityScores entities.AbilityScores
+	AbilityScores dnd5e.AbilityScores
 }
 
 type UpdateAbilityScoresOutput struct {
-	Draft    *entities.CharacterDraft
+	Draft    *dnd5e.CharacterDraft
 	Warnings []ValidationWarning
 }
 
@@ -135,7 +135,7 @@ type UpdateSkillsInput struct {
 }
 
 type UpdateSkillsOutput struct {
-	Draft    *entities.CharacterDraft
+	Draft    *dnd5e.CharacterDraft
 	Warnings []ValidationWarning
 }
 
@@ -172,7 +172,7 @@ type FinalizeDraftInput struct {
 }
 
 type FinalizeDraftOutput struct {
-	Character    *entities.Character
+	Character    *dnd5e.Character
 	DraftDeleted bool
 }
 
@@ -183,7 +183,7 @@ type GetCharacterInput struct {
 }
 
 type GetCharacterOutput struct {
-	Character *entities.Character
+	Character *dnd5e.Character
 }
 
 type ListCharactersInput struct {
@@ -194,7 +194,7 @@ type ListCharactersInput struct {
 }
 
 type ListCharactersOutput struct {
-	Characters    []*entities.Character
+	Characters    []*dnd5e.Character
 	NextPageToken string
 	TotalSize     int32
 }

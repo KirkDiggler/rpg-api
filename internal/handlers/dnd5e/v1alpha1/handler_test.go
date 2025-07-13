@@ -6,13 +6,14 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/KirkDiggler/rpg-api/internal/entities/dnd5e"
+
 	"github.com/stretchr/testify/suite"
 	"go.uber.org/mock/gomock"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api/gen/go/github.com/KirkDiggler/rpg-api/api/proto/dnd5e/v1alpha1"
-	"github.com/KirkDiggler/rpg-api/internal/entities"
 	"github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v1alpha1"
 	"github.com/KirkDiggler/rpg-api/internal/services/character"
 	charactermock "github.com/KirkDiggler/rpg-api/internal/services/character/mock"
@@ -44,10 +45,10 @@ type HandlerTestSuite struct {
 	testCharacterID string
 
 	// Expected entities for reuse
-	expectedDraft           *entities.CharacterDraft
-	expectedCharacter       *entities.Character
-	expectedAbilityScores   *entities.AbilityScores
-	expectedCreationProgress *entities.CreationProgress
+	expectedDraft            *dnd5e.CharacterDraft
+	expectedCharacter        *dnd5e.Character
+	expectedAbilityScores    *dnd5e.AbilityScores
+	expectedCreationProgress *dnd5e.CreationProgress
 }
 
 func (s *HandlerTestSuite) SetupTest() {
@@ -123,7 +124,7 @@ func (s *HandlerTestSuite) SetupTest() {
 	}
 
 	// Initialize expected entities for reuse
-	s.expectedAbilityScores = &entities.AbilityScores{
+	s.expectedAbilityScores = &dnd5e.AbilityScores{
 		Strength:     10,
 		Dexterity:    14,
 		Constitution: 12,
@@ -132,7 +133,7 @@ func (s *HandlerTestSuite) SetupTest() {
 		Charisma:     13,
 	}
 
-	s.expectedCreationProgress = &entities.CreationProgress{
+	s.expectedCreationProgress = &dnd5e.CreationProgress{
 		HasName:              true,
 		HasRace:              true,
 		HasClass:             true,
@@ -141,38 +142,38 @@ func (s *HandlerTestSuite) SetupTest() {
 		HasSkills:            false,
 		HasLanguages:         false,
 		CompletionPercentage: 71,
-		CurrentStep:          entities.CreationStepAbilityScores,
+		CurrentStep:          dnd5e.CreationStepAbilityScores,
 	}
 
-	s.expectedDraft = &entities.CharacterDraft{
+	s.expectedDraft = &dnd5e.CharacterDraft{
 		ID:                  s.testDraftID,
 		PlayerID:            s.testPlayerID,
 		SessionID:           s.testSessionID,
 		Name:                "Gandalf the Grey",
-		RaceID:              entities.RaceHuman,
+		RaceID:              dnd5e.RaceHuman,
 		SubraceID:           "",
-		ClassID:             entities.ClassWizard,
-		BackgroundID:        entities.BackgroundSage,
-		Alignment:           entities.AlignmentLawfulGood,
+		ClassID:             dnd5e.ClassWizard,
+		BackgroundID:        dnd5e.BackgroundSage,
+		Alignment:           dnd5e.AlignmentLawfulGood,
 		AbilityScores:       s.expectedAbilityScores,
-		StartingSkillIDs:    []string{entities.SkillArcana, entities.SkillHistory},
-		AdditionalLanguages: []string{entities.LanguageElvish}, // Common is assumed
+		StartingSkillIDs:    []string{dnd5e.SkillArcana, dnd5e.SkillHistory},
+		AdditionalLanguages: []string{dnd5e.LanguageElvish}, // Common is assumed
 		Progress:            *s.expectedCreationProgress,
 		CreatedAt:           1234567890,
 		UpdatedAt:           1234567890,
 	}
 
-	s.expectedCharacter = &entities.Character{
+	s.expectedCharacter = &dnd5e.Character{
 		ID:               s.testCharacterID,
 		PlayerID:         s.testPlayerID,
 		SessionID:        s.testSessionID,
 		Name:             "Gandalf the White",
 		Level:            20,
-		RaceID:           entities.RaceHuman,
+		RaceID:           dnd5e.RaceHuman,
 		SubraceID:        "",
-		ClassID:          entities.ClassWizard,
-		BackgroundID:     entities.BackgroundSage,
-		Alignment:        entities.AlignmentLawfulGood,
+		ClassID:          dnd5e.ClassWizard,
+		BackgroundID:     dnd5e.BackgroundSage,
+		Alignment:        dnd5e.AlignmentLawfulGood,
 		AbilityScores:    *s.expectedAbilityScores,
 		CurrentHP:        100,
 		TempHP:           0,
@@ -203,23 +204,23 @@ func (s *HandlerTestSuite) TestCreateDraft() {
 		expectedInput := &character.CreateDraftInput{
 			PlayerID:  s.testPlayerID,
 			SessionID: s.testSessionID,
-			InitialData: &entities.CharacterDraft{
+			InitialData: &dnd5e.CharacterDraft{
 				Name: "Gandalf the Grey",
 			},
 		}
 
 		// Use a copy of the expected draft with specific values for this test
-		expectedDraft := &entities.CharacterDraft{
+		expectedDraft := &dnd5e.CharacterDraft{
 			ID:                  s.testDraftID,
 			PlayerID:            s.testPlayerID,
 			SessionID:           s.testSessionID,
 			Name:                "Gandalf the Grey",
-			RaceID:              entities.RaceHuman,
-			ClassID:             entities.ClassWizard,
-			BackgroundID:        entities.BackgroundSage,
+			RaceID:              dnd5e.RaceHuman,
+			ClassID:             dnd5e.ClassWizard,
+			BackgroundID:        dnd5e.BackgroundSage,
 			AbilityScores:       s.expectedAbilityScores,
-			StartingSkillIDs:    []string{entities.SkillArcana, entities.SkillHistory},
-			AdditionalLanguages: []string{entities.LanguageElvish},
+			StartingSkillIDs:    []string{dnd5e.SkillArcana, dnd5e.SkillHistory},
+			AdditionalLanguages: []string{dnd5e.LanguageElvish},
 			Progress:            *s.expectedCreationProgress,
 			CreatedAt:           1234567890,
 			UpdatedAt:           1234567890,
@@ -252,7 +253,7 @@ func (s *HandlerTestSuite) TestCreateDraft() {
 			PlayerId: s.testPlayerID,
 		}
 
-		expectedDraft := &entities.CharacterDraft{
+		expectedDraft := &dnd5e.CharacterDraft{
 			ID:       s.testDraftID,
 			PlayerID: s.testPlayerID,
 		}
@@ -329,7 +330,7 @@ func (s *HandlerTestSuite) TestGetDraft() {
 
 func (s *HandlerTestSuite) TestListDrafts() {
 	s.Run("with valid request", func() {
-		expectedDrafts := []*entities.CharacterDraft{
+		expectedDrafts := []*dnd5e.CharacterDraft{
 			{
 				ID:        "draft-1",
 				PlayerID:  s.testPlayerID,
@@ -381,7 +382,7 @@ func (s *HandlerTestSuite) TestListDrafts() {
 						PageToken: "",
 					}).
 					Return(&character.ListDraftsOutput{
-						Drafts: []*entities.CharacterDraft{},
+						Drafts: []*dnd5e.CharacterDraft{},
 					}, nil)
 
 				resp, err := s.handler.ListDrafts(s.ctx, req)
@@ -397,7 +398,7 @@ func (s *HandlerTestSuite) TestListDrafts() {
 
 func (s *HandlerTestSuite) TestUpdateName() {
 	s.Run("with valid request", func() {
-		expectedDraft := &entities.CharacterDraft{
+		expectedDraft := &dnd5e.CharacterDraft{
 			ID:       s.testDraftID,
 			PlayerID: s.testPlayerID,
 			Name:     "Gandalf the White",
@@ -455,16 +456,16 @@ func (s *HandlerTestSuite) TestUpdateName() {
 
 func (s *HandlerTestSuite) TestUpdateRace() {
 	s.Run("with valid race", func() {
-		expectedDraft := &entities.CharacterDraft{
+		expectedDraft := &dnd5e.CharacterDraft{
 			ID:       s.testDraftID,
 			PlayerID: s.testPlayerID,
-			RaceID:   entities.RaceHuman,
+			RaceID:   dnd5e.RaceHuman,
 		}
 
 		s.mockCharService.EXPECT().
 			UpdateRace(s.ctx, &character.UpdateRaceInput{
 				DraftID:   s.testDraftID,
-				RaceID:    entities.RaceHuman,
+				RaceID:    dnd5e.RaceHuman,
 				SubraceID: "",
 			}).
 			Return(&character.UpdateRaceOutput{
@@ -487,18 +488,18 @@ func (s *HandlerTestSuite) TestUpdateRace() {
 			Subrace: dnd5ev1alpha1.Subrace_SUBRACE_HIGH_ELF,
 		}
 
-		expectedDraft := &entities.CharacterDraft{
+		expectedDraft := &dnd5e.CharacterDraft{
 			ID:        s.testDraftID,
 			PlayerID:  s.testPlayerID,
-			RaceID:    entities.RaceElf,
-			SubraceID: entities.SubraceHighElf,
+			RaceID:    dnd5e.RaceElf,
+			SubraceID: dnd5e.SubraceHighElf,
 		}
 
 		s.mockCharService.EXPECT().
 			UpdateRace(s.ctx, &character.UpdateRaceInput{
 				DraftID:   s.testDraftID,
-				RaceID:    entities.RaceElf,
-				SubraceID: entities.SubraceHighElf,
+				RaceID:    dnd5e.RaceElf,
+				SubraceID: dnd5e.SubraceHighElf,
 			}).
 			Return(&character.UpdateRaceOutput{
 				Draft:    expectedDraft,
@@ -531,15 +532,15 @@ func (s *HandlerTestSuite) TestUpdateRace() {
 
 func (s *HandlerTestSuite) TestUpdateClass() {
 	s.Run("with valid request", func() {
-		expectedDraft := &entities.CharacterDraft{
+		expectedDraft := &dnd5e.CharacterDraft{
 			ID:      s.testDraftID,
-			ClassID: entities.ClassWizard,
+			ClassID: dnd5e.ClassWizard,
 		}
 
 		s.mockCharService.EXPECT().
 			UpdateClass(s.ctx, &character.UpdateClassInput{
 				DraftID: s.testDraftID,
-				ClassID: entities.ClassWizard,
+				ClassID: dnd5e.ClassWizard,
 			}).
 			Return(&character.UpdateClassOutput{
 				Draft:    expectedDraft,
@@ -575,15 +576,15 @@ func (s *HandlerTestSuite) TestUpdateBackground() {
 			Background: dnd5ev1alpha1.Background_BACKGROUND_ACOLYTE,
 		}
 
-		expectedDraft := &entities.CharacterDraft{
+		expectedDraft := &dnd5e.CharacterDraft{
 			ID:           s.testDraftID,
-			BackgroundID: entities.BackgroundAcolyte,
+			BackgroundID: dnd5e.BackgroundAcolyte,
 		}
 
 		s.mockCharService.EXPECT().
 			UpdateBackground(s.ctx, &character.UpdateBackgroundInput{
 				DraftID:      s.testDraftID,
-				BackgroundID: entities.BackgroundAcolyte,
+				BackgroundID: dnd5e.BackgroundAcolyte,
 			}).
 			Return(&character.UpdateBackgroundOutput{
 				Draft:    expectedDraft,
@@ -626,9 +627,9 @@ func (s *HandlerTestSuite) TestUpdateAbilityScores() {
 			},
 		}
 
-		expectedDraft := &entities.CharacterDraft{
+		expectedDraft := &dnd5e.CharacterDraft{
 			ID: s.testDraftID,
-			AbilityScores: &entities.AbilityScores{
+			AbilityScores: &dnd5e.AbilityScores{
 				Strength:     15,
 				Dexterity:    14,
 				Constitution: 13,
@@ -641,7 +642,7 @@ func (s *HandlerTestSuite) TestUpdateAbilityScores() {
 		s.mockCharService.EXPECT().
 			UpdateAbilityScores(s.ctx, &character.UpdateAbilityScoresInput{
 				DraftID: s.testDraftID,
-				AbilityScores: entities.AbilityScores{
+				AbilityScores: dnd5e.AbilityScores{
 					Strength:     15,
 					Dexterity:    14,
 					Constitution: 13,
@@ -687,11 +688,11 @@ func (s *HandlerTestSuite) TestUpdateSkills() {
 			},
 		}
 
-		expectedDraft := &entities.CharacterDraft{
+		expectedDraft := &dnd5e.CharacterDraft{
 			ID: s.testDraftID,
 			StartingSkillIDs: []string{
-				entities.SkillAthletics,
-				entities.SkillPerception,
+				dnd5e.SkillAthletics,
+				dnd5e.SkillPerception,
 			},
 		}
 
@@ -699,8 +700,8 @@ func (s *HandlerTestSuite) TestUpdateSkills() {
 			UpdateSkills(s.ctx, &character.UpdateSkillsInput{
 				DraftID: s.testDraftID,
 				SkillIDs: []string{
-					entities.SkillAthletics,
-					entities.SkillPerception,
+					dnd5e.SkillAthletics,
+					dnd5e.SkillPerception,
 				},
 			}).
 			Return(&character.UpdateSkillsOutput{
@@ -806,7 +807,7 @@ func (s *HandlerTestSuite) TestDeleteDraft() {
 
 func (s *HandlerTestSuite) TestFinalizeDraft() {
 	s.Run("with valid request", func() {
-		expectedCharacter := &entities.Character{
+		expectedCharacter := &dnd5e.Character{
 			ID:       s.testCharacterID,
 			PlayerID: s.testPlayerID,
 			Name:     "Gandalf",
@@ -845,7 +846,7 @@ func (s *HandlerTestSuite) TestFinalizeDraft() {
 
 func (s *HandlerTestSuite) TestGetCharacter() {
 	s.Run("with valid character_id", func() {
-		expectedCharacter := &entities.Character{
+		expectedCharacter := &dnd5e.Character{
 			ID:       s.testCharacterID,
 			PlayerID: s.testPlayerID,
 			Name:     "Gandalf",
@@ -882,7 +883,7 @@ func (s *HandlerTestSuite) TestGetCharacter() {
 
 func (s *HandlerTestSuite) TestListCharacters() {
 	s.Run("with all filters", func() {
-		expectedCharacters := []*entities.Character{
+		expectedCharacters := []*dnd5e.Character{
 			{
 				ID:        "char-1",
 				PlayerID:  s.testPlayerID,
@@ -931,7 +932,7 @@ func (s *HandlerTestSuite) TestListCharacters() {
 				PageToken: "",
 			}).
 			Return(&character.ListCharactersOutput{
-				Characters:    []*entities.Character{},
+				Characters:    []*dnd5e.Character{},
 				NextPageToken: "",
 			}, nil)
 
@@ -955,7 +956,7 @@ func (s *HandlerTestSuite) TestListCharacters() {
 				PageToken: "",
 			}).
 			Return(&character.ListCharactersOutput{
-				Characters:    []*entities.Character{},
+				Characters:    []*dnd5e.Character{},
 				NextPageToken: "",
 			}, nil)
 
