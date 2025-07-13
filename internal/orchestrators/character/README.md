@@ -58,6 +58,33 @@ Implements the `character.Service` interface for D&D 5e character creation and m
 - Handle external API failures gracefully
 - Provide clear error messages for API consumers
 
+## Implementation Details
+
+### Progress Tracking with Bitflags
+
+Character creation progress is tracked using bitflags for efficiency:
+
+```go
+// Progress step bitflags
+const (
+    ProgressStepName          uint8 = 1 << iota // 1
+    ProgressStepRace                             // 2
+    ProgressStepClass                            // 4
+    ProgressStepBackground                       // 8
+    ProgressStepAbilityScores                    // 16
+    ProgressStepSkills                           // 32
+    ProgressStepLanguages                        // 64
+)
+```
+
+The `CreationProgress` struct uses a single `uint8` field to track all completed steps:
+- **Memory efficient**: 1 byte instead of 7 booleans
+- **Fast operations**: Bitwise operations for checking/setting steps
+- **Scalable**: Easy to add more steps up to 8 with uint8
+- **Clean API**: Helper methods like `HasName()` for readability
+
+Progress calculation uses bit counting to determine completion percentage.
+
 ## Testing Strategy
 
 - Mock all dependencies (repos, engine, external client)
