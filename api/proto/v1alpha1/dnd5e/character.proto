@@ -7,21 +7,33 @@ option go_package = "github.com/KirkDiggler/rpg-api/api/proto/v1alpha1/dnd5e;dnd
 import "v1alpha1/dnd5e/enums.proto";
 import "v1alpha1/dnd5e/common.proto";
 
-// Service for managing D&D 5e characters and drafts
-service CharacterService {
-  // Draft operations
+// Service for D&D 5e character creation and management
+// Supports both wizard-style step-by-step creation and free-form editing
+service CharacterAPI {
+  // Draft lifecycle
   rpc CreateDraft(CreateDraftRequest) returns (CreateDraftResponse);
   rpc GetDraft(GetDraftRequest) returns (GetDraftResponse);
-  rpc UpdateDraft(UpdateDraftRequest) returns (UpdateDraftResponse);
   rpc ListDrafts(ListDraftsRequest) returns (ListDraftsResponse);
-  rpc ValidateDraft(ValidateDraftRequest) returns (ValidateDraftResponse);
-  rpc FinalizeDraft(FinalizeDraftRequest) returns (FinalizeDraftResponse);
   rpc DeleteDraft(DeleteDraftRequest) returns (DeleteDraftResponse);
   
-  // Character operations
+  // Section-based updates (supports skip-around editing)
+  rpc UpdateName(UpdateNameRequest) returns (UpdateDraftResponse);
+  rpc UpdateRace(UpdateRaceRequest) returns (UpdateDraftResponse);
+  rpc UpdateClass(UpdateClassRequest) returns (UpdateDraftResponse);
+  rpc UpdateBackground(UpdateBackgroundRequest) returns (UpdateDraftResponse);
+  rpc UpdateAbilityScores(UpdateAbilityScoresRequest) returns (UpdateDraftResponse);
+  rpc UpdateSkills(UpdateSkillsRequest) returns (UpdateDraftResponse);
+  
+  // Validation per section and overall
+  rpc ValidateSection(ValidateSectionRequest) returns (ValidationResponse);
+  rpc ValidateComplete(ValidateCompleteRequest) returns (ValidationResponse);
+  
+  // Character finalization
+  rpc FinalizeCharacter(FinalizeCharacterRequest) returns (FinalizeCharacterResponse);
+  
+  // Completed character operations
   rpc GetCharacter(GetCharacterRequest) returns (GetCharacterResponse);
   rpc ListCharacters(ListCharactersRequest) returns (ListCharactersResponse);
-  rpc UpdateCharacter(UpdateCharacterRequest) returns (UpdateCharacterResponse);
   rpc DeleteCharacter(DeleteCharacterRequest) returns (DeleteCharacterResponse);
 }
 
