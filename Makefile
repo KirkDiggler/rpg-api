@@ -69,12 +69,17 @@ buf-breaking: ## Check for breaking changes in proto files
 .PHONY: run
 run: ## Run the server
 	@echo "==> Running server..."
-	@go run cmd/server/main.go
+	@go run cmd/server/*.go server
+
+.PHONY: dev
+dev: ## Run the server in development mode with hot reload
+	@echo "==> Running server in dev mode..."
+	@go run cmd/server/*.go server --port 50051
 
 .PHONY: build
 build: ## Build the server binary
 	@echo "==> Building server..."
-	@go build -o bin/rpg-api cmd/server/main.go
+	@go build -o bin/rpg-api cmd/server/*.go
 
 .PHONY: clean
 clean: ## Clean build artifacts
