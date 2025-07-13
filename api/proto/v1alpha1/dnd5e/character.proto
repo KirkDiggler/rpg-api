@@ -9,7 +9,7 @@ import "v1alpha1/dnd5e/common.proto";
 
 // Service for D&D 5e character creation and management
 // Supports both wizard-style step-by-step creation and free-form editing
-service CharacterAPI {
+service CharacterService {
   // Draft lifecycle
   rpc CreateDraft(CreateDraftRequest) returns (CreateDraftResponse);
   rpc GetDraft(GetDraftRequest) returns (GetDraftResponse);
@@ -17,19 +17,18 @@ service CharacterAPI {
   rpc DeleteDraft(DeleteDraftRequest) returns (DeleteDraftResponse);
   
   // Section-based updates (supports skip-around editing)
-  rpc UpdateName(UpdateNameRequest) returns (UpdateDraftResponse);
-  rpc UpdateRace(UpdateRaceRequest) returns (UpdateDraftResponse);
-  rpc UpdateClass(UpdateClassRequest) returns (UpdateDraftResponse);
-  rpc UpdateBackground(UpdateBackgroundRequest) returns (UpdateDraftResponse);
-  rpc UpdateAbilityScores(UpdateAbilityScoresRequest) returns (UpdateDraftResponse);
-  rpc UpdateSkills(UpdateSkillsRequest) returns (UpdateDraftResponse);
+  rpc UpdateName(UpdateNameRequest) returns (UpdateNameResponse);
+  rpc UpdateRace(UpdateRaceRequest) returns (UpdateRaceResponse);
+  rpc UpdateClass(UpdateClassRequest) returns (UpdateClassResponse);
+  rpc UpdateBackground(UpdateBackgroundRequest) returns (UpdateBackgroundResponse);
+  rpc UpdateAbilityScores(UpdateAbilityScoresRequest) returns (UpdateAbilityScoresResponse);
+  rpc UpdateSkills(UpdateSkillsRequest) returns (UpdateSkillsResponse);
   
-  // Validation per section and overall
-  rpc ValidateSection(ValidateSectionRequest) returns (ValidationResponse);
-  rpc ValidateComplete(ValidateCompleteRequest) returns (ValidationResponse);
+  // Validation
+  rpc ValidateDraft(ValidateDraftRequest) returns (ValidateDraftResponse);
   
   // Character finalization
-  rpc FinalizeCharacter(FinalizeCharacterRequest) returns (FinalizeCharacterResponse);
+  rpc FinalizeDraft(FinalizeDraftRequest) returns (FinalizeDraftResponse);
   
   // Completed character operations
   rpc GetCharacter(GetCharacterRequest) returns (GetCharacterResponse);
@@ -352,6 +351,69 @@ message UpdateDraftResponse {
   CharacterDraft draft = 1;
   
   // Any validation warnings (not errors)
+  repeated ValidationWarning warnings = 2;
+}
+
+// Section-based update requests
+message UpdateNameRequest {
+  string draft_id = 1;
+  string name = 2;
+}
+
+message UpdateRaceRequest {
+  string draft_id = 1;
+  Race race = 2;
+  Subrace subrace = 3; // Optional, required for some races
+}
+
+message UpdateClassRequest {
+  string draft_id = 1;
+  Class class = 2;
+}
+
+message UpdateBackgroundRequest {
+  string draft_id = 1;
+  Background background = 2;
+}
+
+message UpdateAbilityScoresRequest {
+  string draft_id = 1;
+  AbilityScores ability_scores = 2;
+}
+
+message UpdateSkillsRequest {
+  string draft_id = 1;
+  repeated Skill skills = 2;
+}
+
+// Section-based update responses
+message UpdateNameResponse {
+  CharacterDraft draft = 1;
+  repeated ValidationWarning warnings = 2;
+}
+
+message UpdateRaceResponse {
+  CharacterDraft draft = 1;
+  repeated ValidationWarning warnings = 2;
+}
+
+message UpdateClassResponse {
+  CharacterDraft draft = 1;
+  repeated ValidationWarning warnings = 2;
+}
+
+message UpdateBackgroundResponse {
+  CharacterDraft draft = 1;
+  repeated ValidationWarning warnings = 2;
+}
+
+message UpdateAbilityScoresResponse {
+  CharacterDraft draft = 1;
+  repeated ValidationWarning warnings = 2;
+}
+
+message UpdateSkillsResponse {
+  CharacterDraft draft = 1;
   repeated ValidationWarning warnings = 2;
 }
 
