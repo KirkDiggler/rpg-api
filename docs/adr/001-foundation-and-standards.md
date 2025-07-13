@@ -247,6 +247,57 @@ rpg-api/
 - `internal/repositories`: Storage layer with interface + implementations
 - `internal/engine`: Integrates rpg-toolkit for ALL game mechanics
 
+#### Engine Adapter Layer
+The engine package provides a clean boundary between our simple data models and rpg-toolkit's rich game objects:
+
+```go
+// internal/engine/engine.go
+type Engine interface {
+    // Character operations
+    CreateCharacter(ctx context.Context, input *CreateCharacterInput) (*CreateCharacterOutput, error)
+    
+    // Combat operations
+    RollAttack(ctx context.Context, input *RollAttackInput) (*RollAttackOutput, error)
+    CalculateDamage(ctx context.Context, input *CalculateDamageInput) (*CalculateDamageOutput, error)
+    
+    // Dice operations
+    Roll(ctx context.Context, input *RollInput) (*RollOutput, error)
+    
+    // Rulebook calculations
+    CalculateProficiencyBonus(level int) int
+    CalculateAbilityModifier(score int) int
+}
+
+// internal/engine/adapter.go
+type engineAdapter struct {
+    toolkit *toolkit.Engine
+}
+
+func (e *engineAdapter) RollAttack(ctx context.Context, input *RollAttackInput) (*RollAttackOutput, error) {
+    // Convert our simple entities to toolkit's rich objects
+    character := e.convertToToolkitCharacter(input.Character)
+    weapon := e.convertToToolkitWeapon(input.Weapon)
+    
+    // Use toolkit for calculations
+    result := e.toolkit.Combat.RollAttack(character, weapon, input.Modifiers)
+    
+    // Convert back to our simple output
+    return &RollAttackOutput{
+        Roll:        result.Roll,
+        Modifier:    result.Modifier,
+        Total:       result.Total,
+        CriticalHit: result.IsCritical(),
+    }, nil
+}
+```
+
+**Engine Adapter Benefits:**
+- Stable interface for orchestrators regardless of toolkit changes
+- Centralized conversion logic between data models and game objects
+- Easy to mock for testing orchestrators
+- Could swap game engines without changing business logic
+- Isolates rpg-toolkit API changes from our codebase
+
 ### 6. Operational Standards
 
 #### Observability
