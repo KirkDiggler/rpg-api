@@ -1,171 +1,59 @@
 # Claude AI Development Guidelines
 
-## Core Philosophy
+## Current Focus
+Building rpg-api with outside-in development for AI-driven D&D campaigns.
+- Mission: Procedural campaigns tailored to party skills (see docs/mission.md)
+- Architecture: Fine-grained services + SDK wrapper (see ADR-002)
+
+## Core Rules
 
 **rpg-api stores data. rpg-toolkit handles rules.**
 
-This separation is fundamental. When in doubt:
-- If it's a game mechanic or calculation → rpg-toolkit
-- If it's data storage or API orchestration → rpg-api
+### Proto Patterns
+- Package: `dnd5e.api.v1alpha1` (domain.api.version)
+- Service naming: `CharacterService` (not API suffix)
+- Each RPC has unique Request/Response types
 
-## Project Structure
-
-Our battle-tested structure from production gRPC services:
-
-```
-/cmd/server/              # Cobra commands
-/internal/
-  ├── entities/           # Simple data models (just structs)
-  ├── handlers/
-  │   ├── sessionv1alpha1/  # Proto version naming
-  │   └── dicev1alpha1/
-  ├── orchestrators/      # Business logic by flow
-  │   ├── character_creation/
-  │   └── session_management/
-  ├── repositories/       # Storage (plural naming)
-  │   ├── sessions/
-  │   │   ├── repository.go  # Interface + types
-  │   │   └── redis.go       # Implementation
-  │   └── characters/
-  └── engine/             # rpg-toolkit integration
-```
-
-## Code Patterns
-
-### Always Use Input/Output Types
-
-**This is our #1 principle.** Every function at every layer:
-
+### Code Patterns
+**Always Input/Output types** - Every function at every layer:
 ```go
-// ❌ BAD
-func CreateSession(name string, dmID string, maxPlayers int) (*Session, error)
-
-// ✅ GOOD  
+// ✅ GOOD
 func CreateSession(ctx context.Context, input *CreateSessionInput) (*CreateSessionOutput, error)
 ```
 
-This applies everywhere:
-- Handlers: Request/Response
-- Orchestrators: Input/Output
-- Repositories: Input/Output
-- Even helpers: Input/Output
+**Outside-in development**:
+1. Handler with mocked service
+2. Service with mocked repository  
+3. Repository implementation
 
-### Repository Pattern
+### Testing
+- Uber's gomock (not mockery)
+- Testify suites with SetupTest/SetupSubTest
+- Real Redis when safe (miniredis)
 
-```go
-type Repository interface {
-    Get(ctx context.Context, id string) (*entities.Session, error)
-    Save(ctx context.Context, session *entities.Session) error
-    List(ctx context.Context, input *ListInput) (*ListOutput, error)
-}
-
-type ListInput struct {
-    Limit  int
-    Offset int
-    Filter *FilterOptions
-}
-
-type ListOutput struct {
-    Sessions  []*entities.Session
-    NextToken string
-    Total     int
-}
+### Project Structure
+```
+/internal/
+  /handlers/characterv1alpha1/    # Proto version naming
+  /services/character/            # Business logic
+  /repositories/characters/       # Storage interface
+  /entities/                      # Simple structs (no logic)
 ```
 
-Benefits:
-- No interface changes when adding fields
-- No mock regeneration
-- Future-proof for pagination
+## What We're NOT Doing
+- Human DM features (yet)
+- PostgreSQL preference
+- Generic abstractions
+- Business logic in entities
 
-### Entity Design
-
-Keep entities simple - they're just data:
-
-```go
-// entities/character.go
-type Character struct {
-    ID         string
-    Name       string
-    Level      int
-    RaceID     string
-    ClassID    string
-    BaseStats  Stats  // Just the numbers
-}
-
-// NO business logic on entities
-// This goes in rpg-toolkit:
-// - CalculateProficiencyBonus(level)
-// - CalculateAbilityModifier(score)
-```
-
-### Testing Approach
-
-- **Uber's gomock** (not mockery)
-- **Always use test suites**
-- **Real Redis when safe** (miniredis)
-
-```go
-type OrchestratorTestSuite struct {
-    suite.Suite
-    mockRepo     *mocks.MockRepository
-    mockEngine   *mocks.MockEngine
-    orchestrator *Orchestrator
-}
-
-func (s *OrchestratorTestSuite) SetupTest() {
-    ctrl := gomock.NewController(s.T())
-    s.mockRepo = mocks.NewMockRepository(ctrl)
-    s.mockEngine = mocks.NewMockEngine(ctrl)
-    s.orchestrator = NewOrchestrator(s.mockRepo, s.mockEngine)
-}
-```
-
-### Development Workflow
-
-**Always work in branches:**
+## Workflow
 ```bash
-git checkout -b feat/character-creation
-git checkout -b fix/session-timeout
-git checkout -b docs/api-examples
+git checkout -b feat/thing
+make pre-commit  # Before every commit
+make fix-eof     # Fix newlines
 ```
 
-**Always run pre-commit:**
-```bash
-make pre-commit
-```
-
-### Error Handling
-
-```go
-var (
-    ErrSessionNotFound = errors.New("session not found")
-    ErrPlayerNotInSession = errors.New("player not in session")
-)
-
-// Wrap with context
-return fmt.Errorf("failed to get session %s: %w", id, ErrSessionNotFound)
-```
-
-### API Versioning
-
-External versioning through handlers:
-- `/handlers/sessionv1alpha1/`
-- `/handlers/sessionv1beta1/`
-- `/handlers/sessionv1/`
-
-Internal stays stable while external evolves.
-
-## Storage Philosophy
-
-- **No database preferences** - users choose
-- **Repository pattern** enables flexibility
-- **Start with Redis** - simple, fast
-- **Add adapters as needed**
-
-## Remember
-
-- Explicit > Implicit (always use Input/Output types)
-- Simple > Complex (entities are just data)
-- rpg-api orchestrates, rpg-toolkit calculates
-- Test with real dependencies when safe
-- Document the journey, not just destination
+## Recent Decisions
+- Character creation uses draft pattern
+- Services are fine-grained per domain
+- Type-safe SDK with per-service versioning
