@@ -291,6 +291,20 @@ Install development tools:
 make install-tools
 ```
 
+## Testing & Coverage Philosophy
+
+### Entity Testing Decision
+- **Entities are data structs**: Test them through usage in handler/service tests
+- **Use explicit EXPECT matching**: Return complete entities in mocks for better coverage
+- **Check response thoroughly**: Verify multiple fields to ensure conversions work
+- **Postpone dedicated entity tests**: Until entities have behavior (validation, methods)
+
+### Coverage Focus
+- **Internal code only**: Exclude `/gen/`, `/mock/`, `/cmd/` from coverage metrics
+- **Handler coverage target**: 40-50% is good (mostly translation logic)
+- **Service coverage target**: 80%+ (business logic lives here)
+- **0% new code coverage is OK**: During outside-in development when adding contracts
+
 ## Remember
 
 - Explicit > Implicit (always use Input/Output types)
@@ -299,3 +313,4 @@ make install-tools
 - Test with real dependencies when safe
 - Document the journey, not just destination
 - Tell stories in journey docs, make decisions in ADRs, summarize in READMEs
+- Tests should be thorough and "set and forget"
