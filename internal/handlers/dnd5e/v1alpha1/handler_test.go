@@ -704,7 +704,9 @@ func (s *HandlerTestSuite) TestDeleteDraft() {
 			DeleteDraft(s.ctx, &character.DeleteDraftInput{
 				DraftID: s.testDraftID,
 			}).
-			Return(&character.DeleteDraftOutput{}, nil)
+			Return(&character.DeleteDraftOutput{
+				Message: "Draft deleted successfully",
+			}, nil)
 
 		resp, err := s.handler.DeleteDraft(s.ctx, req)
 

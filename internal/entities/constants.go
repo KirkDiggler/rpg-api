@@ -45,7 +45,7 @@ const (
 // Background constants
 const (
 	BackgroundAcolyte      = "BACKGROUND_ACOLYTE"
-	BackgroundCharatan     = "BACKGROUND_CHARLATAN"
+	BackgroundCharlatan    = "BACKGROUND_CHARLATAN"
 	BackgroundCriminal     = "BACKGROUND_CRIMINAL"
 	BackgroundEntertainer  = "BACKGROUND_ENTERTAINER"
 	BackgroundFolkHero     = "BACKGROUND_FOLK_HERO"

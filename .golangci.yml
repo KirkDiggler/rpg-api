@@ -7,6 +7,7 @@ run:
     - integration
 
 linters:
+  disable-all: false
   disable:
     - typecheck  # Disable typecheck as it has issues with testify suite embedding
   enable:

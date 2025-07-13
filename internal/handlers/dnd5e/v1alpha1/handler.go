@@ -4,11 +4,12 @@ import (
 	"context"
 	"errors"
 
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api/gen/go/github.com/KirkDiggler/rpg-api/api/proto/dnd5e/v1alpha1"
 	"github.com/KirkDiggler/rpg-api/internal/entities"
 	"github.com/KirkDiggler/rpg-api/internal/services/character"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
 
 // HandlerConfig holds dependencies for the handler
@@ -129,13 +130,13 @@ func (h *Handler) DeleteDraft(ctx context.Context, req *dnd5ev1alpha1.DeleteDraf
 		DraftID: req.DraftId,
 	}
 
-	_, err := h.characterService.DeleteDraft(ctx, input)
+	output, err := h.characterService.DeleteDraft(ctx, input)
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
 	return &dnd5ev1alpha1.DeleteDraftResponse{
-		Message: "Draft deleted successfully",
+		Message: output.Message,
 	}, nil
 }
 
@@ -340,7 +341,8 @@ func (h *Handler) FinalizeDraft(ctx context.Context, req *dnd5ev1alpha1.Finalize
 	}
 
 	return &dnd5ev1alpha1.FinalizeDraftResponse{
-		Character: convertCharacterToProto(output.Character),
+		Character:    convertCharacterToProto(output.Character),
+		DraftDeleted: output.DraftDeleted,
 	}, nil
 }
 
@@ -392,6 +394,7 @@ func (h *Handler) ListCharacters(ctx context.Context, req *dnd5ev1alpha1.ListCha
 	return &dnd5ev1alpha1.ListCharactersResponse{
 		Characters:    protoCharacters,
 		NextPageToken: output.NextPageToken,
+		TotalSize:     output.TotalSize,
 	}, nil
 }
 
@@ -677,7 +680,7 @@ func mapProtoBackgroundToConstant(bg dnd5ev1alpha1.Background) string {
 	case dnd5ev1alpha1.Background_BACKGROUND_ACOLYTE:
 		return entities.BackgroundAcolyte
 	case dnd5ev1alpha1.Background_BACKGROUND_CHARLATAN:
-		return entities.BackgroundCharatan
+		return entities.BackgroundCharlatan
 	case dnd5ev1alpha1.Background_BACKGROUND_CRIMINAL:
 		return entities.BackgroundCriminal
 	case dnd5ev1alpha1.Background_BACKGROUND_ENTERTAINER:
@@ -922,7 +925,7 @@ func mapConstantToProtoBackground(constant string) dnd5ev1alpha1.Background {
 	switch constant {
 	case entities.BackgroundAcolyte:
 		return dnd5ev1alpha1.Background_BACKGROUND_ACOLYTE
-	case entities.BackgroundCharatan:
+	case entities.BackgroundCharlatan:
 		return dnd5ev1alpha1.Background_BACKGROUND_CHARLATAN
 	case entities.BackgroundCriminal:
 		return dnd5ev1alpha1.Background_BACKGROUND_CRIMINAL
@@ -1095,7 +1098,6 @@ func convertWarningsToProto(warnings []character.ValidationWarning) []*dnd5ev1al
 	return protoWarnings
 }
 
-
 func convertErrorsToProto(errors []character.ValidationError) []*dnd5ev1alpha1.ValidationError {
 	var protoErrors []*dnd5ev1alpha1.ValidationError
 	for _, e := range errors {
@@ -1107,7 +1109,6 @@ func convertErrorsToProto(errors []character.ValidationError) []*dnd5ev1alpha1.V
 	}
 	return protoErrors
 }
-
 
 func convertCharacterToProto(char *entities.Character) *dnd5ev1alpha1.Character {
 	if char == nil {
