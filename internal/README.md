@@ -11,7 +11,10 @@ Simple domain models - just data structures, no business logic. All game mechani
 gRPC handlers organized by proto version (e.g., `sessionv1alpha1/`). Handlers convert between proto and entity types and delegate to orchestrators.
 
 ### services/
-Business logic organized by domain flow (e.g., `character_creation/`). Services coordinate between repositories, rpg-toolkit, and other services.
+Service interfaces and contracts organized by domain (e.g., `character/`). Define Input/Output types and business logic contracts for orchestrators to implement.
+
+### orchestrators/
+Business logic implementations organized by domain flow (e.g., `character/`). Orchestrators coordinate between repositories, rpg-toolkit, and external services.
 
 ### repositories/
 Storage layer with repository interfaces and implementations. Uses plural naming (e.g., `sessions/`, `characters/`). Always uses Input/Output types for stability.
