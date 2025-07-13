@@ -66,34 +66,45 @@ jobs:
         CHANGED_FILES=$(gh pr view ${{ github.event.pull_request.number }} --json files --jq '.files[].path' | grep '\.go$' | grep -v '_test\.go$' | grep -v '/gen/' | grep -v '/mock/' || true)
         
         if [ -n "$CHANGED_FILES" ]; then
-          # Calculate coverage just for changed files
+          # Calculate coverage just for changed files that are in our test scope
           CHANGED_COVERAGE=0
           TOTAL_STATEMENTS=0
           COVERED_STATEMENTS=0
+          FILES_WITH_COVERAGE=""
           
           while IFS= read -r file; do
             if [ -f "$file" ]; then
               # Get coverage for this specific file
-              FILE_COV=$(go tool cover -func=coverage.out | grep "^$file" || true)
+              FILE_COV=$(go tool cover -func=coverage.out | grep "^$file:" || true)
               if [ -n "$FILE_COV" ]; then
-                # Extract covered and total statements
-                STATEMENTS=$(echo "$FILE_COV" | awk '{print $(NF-1)}' | sed 's/[()]//g')
-                COVERED=$(echo "$STATEMENTS" | cut -d'/' -f1)
-                TOTAL=$(echo "$STATEMENTS" | cut -d'/' -f2)
-                
-                COVERED_STATEMENTS=$((COVERED_STATEMENTS + COVERED))
-                TOTAL_STATEMENTS=$((TOTAL_STATEMENTS + TOTAL))
+                FILES_WITH_COVERAGE="${FILES_WITH_COVERAGE}${file}\n"
+                # Sum up all functions in the file
+                while IFS= read -r line; do
+                  PERCENT=$(echo "$line" | awk '{print $NF}' | sed 's/%//')
+                  if [[ "$PERCENT" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+                    # Get statement count from the line
+                    STMT_INFO=$(echo "$line" | awk '{print $(NF-1)}' | sed 's/[()]//g')
+                    if [[ "$STMT_INFO" =~ ^[0-9]+/[0-9]+$ ]]; then
+                      COVERED=$(echo "$STMT_INFO" | cut -d'/' -f1)
+                      TOTAL=$(echo "$STMT_INFO" | cut -d'/' -f2)
+                      COVERED_STATEMENTS=$((COVERED_STATEMENTS + COVERED))
+                      TOTAL_STATEMENTS=$((TOTAL_STATEMENTS + TOTAL))
+                    fi
+                  fi
+                done <<< "$FILE_COV"
               fi
             fi
           done <<< "$CHANGED_FILES"
           
           if [ $TOTAL_STATEMENTS -gt 0 ]; then
             CHANGED_COVERAGE=$(awk "BEGIN {printf \"%.1f\", ($COVERED_STATEMENTS/$TOTAL_STATEMENTS)*100}")
+          else
+            CHANGED_COVERAGE="N/A (no testable files changed)"
           fi
           
           echo "CHANGED_COVERAGE=$CHANGED_COVERAGE" >> $GITHUB_ENV
           echo "CHANGED_FILES<<EOF" >> $GITHUB_ENV
-          echo "$CHANGED_FILES" >> $GITHUB_ENV
+          echo "$FILES_WITH_COVERAGE" >> $GITHUB_ENV
           echo "EOF" >> $GITHUB_ENV
         else
           echo "CHANGED_COVERAGE=N/A" >> $GITHUB_ENV
