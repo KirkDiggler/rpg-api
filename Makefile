@@ -7,9 +7,17 @@ help: ## Display this help message
 pre-commit: fmt tidy fix-eof buf-lint lint test ## Run all pre-commit checks
 
 .PHONY: fmt
-fmt: ## Format Go code
+fmt: ## Format Go code with gofmt and goimports
 	@echo "==> Formatting code..."
-	@go fmt ./...
+	@if ! command -v goimports &> /dev/null; then \
+		echo "goimports not found. Installing..."; \
+		go install golang.org/x/tools/cmd/goimports@latest; \
+	fi
+	@echo "→ Running gofmt with simplify..."
+	@find . -name "*.go" -not -path "./vendor/*" -not -path "./gen/*" -not -path "./mock/*" -exec gofmt -s -w {} \;
+	@echo "→ Running goimports..."
+	@find . -name "*.go" -not -path "./vendor/*" -not -path "./gen/*" -not -path "./mock/*" -exec goimports -w -local github.com/KirkDiggler {} \;
+	@echo "✅ Formatting complete"
 
 .PHONY: tidy
 tidy: ## Tidy go.mod
@@ -21,7 +29,7 @@ lint: ## Run linter
 	@echo "==> Running linter..."
 	@if ! command -v golangci-lint &> /dev/null; then \
 		echo "golangci-lint not found. Installing..."; \
-		go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest; \
+		go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.61.0; \
 	fi
 	@golangci-lint run
 
@@ -106,13 +114,38 @@ fix-eof: ## Add missing EOF newlines
 	done
 
 .PHONY: deps
-deps: ## Install development dependencies
-	@echo "==> Installing dependencies..."
+deps: install-tools ## Install development dependencies (alias for install-tools)
+
+.PHONY: install-tools
+install-tools: ## Install all development tools
+	@echo "==> Installing development tools..."
 	@go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
 	@go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
-	@go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
-	@go install github.com/golang/mock/mockgen@latest
+	@go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.61.0
+	@go install go.uber.org/mock/mockgen@latest
 	@go install github.com/bufbuild/buf/cmd/buf@latest
+	@go install golang.org/x/tools/cmd/goimports@latest
+	@echo "✅ Tools installed successfully"
+
+.PHONY: install-hooks
+install-hooks: ## Install git hooks for pre-commit checks
+	@echo "==> Installing git hooks..."
+	@mkdir -p .githooks
+	@if [ ! -f .githooks/pre-commit ]; then \
+		echo "Creating pre-commit hook..."; \
+		cp scripts/pre-commit.sh .githooks/pre-commit 2>/dev/null || \
+		echo "#!/bin/bash" > .githooks/pre-commit && \
+		echo "set -e" >> .githooks/pre-commit && \
+		echo "make pre-commit" >> .githooks/pre-commit; \
+		chmod +x .githooks/pre-commit; \
+	fi
+	@git config core.hooksPath .githooks
+	@echo "✅ Git hooks installed"
+
+.PHONY: fix
+fix: fmt tidy fix-eof ## Fix all auto-fixable issues
+	@echo "✅ All auto-fixable issues resolved"
+	@echo "Run 'git add -u' to stage the changes"
 
 .PHONY: generate
 generate: buf-generate mocks ## Generate all code (protos and mocks)

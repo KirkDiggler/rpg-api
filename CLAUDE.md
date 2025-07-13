@@ -259,6 +259,38 @@ This approach ensures:
 - Decisions can be revisited with full historical knowledge
 - READMEs stay readable while preserving important details
 
+## Development Workflow
+
+### Pre-commit Workflow
+**ALWAYS** run before committing:
+```bash
+make pre-commit
+```
+This runs:
+1. `fmt` - Format code with gofmt and goimports  
+2. `tidy` - Clean dependencies with go mod tidy
+3. `fix-eof` - Add missing EOF newlines
+4. `buf-lint` - Lint proto files
+5. `lint` - Run golangci-lint with comprehensive checks
+6. `test` - Run unit tests with coverage
+
+### Linting Setup
+Based on rpg-toolkit's proven configuration:
+- **golangci-lint**: Comprehensive linting with 20+ linters
+- **Git hooks**: Automatic pre-commit checks via `.githooks/pre-commit`
+- **Auto-formatting**: gofmt with simplify + goimports with local prefixes
+- **Proto linting**: buf lint for protocol buffer files
+
+Install git hooks once:
+```bash
+make install-hooks
+```
+
+Install development tools:
+```bash
+make install-tools
+```
+
 ## Remember
 
 - Explicit > Implicit (always use Input/Output types)
