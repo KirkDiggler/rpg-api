@@ -7,6 +7,8 @@ This directory contains the private application code for rpg-api. Code here is n
 ### entities/
 Simple domain models - just data structures, no business logic. All game mechanics and calculations belong in rpg-toolkit.
 
+**⚠️ IMPORTANT**: Entities are anemic by design! No methods like `CalculateAC()` or `TakeDamage()`. See [entities README](./entities/README.md) and [ADR-002](../docs/adr/002-entity-data-models.md).
+
 ### handlers/
 gRPC handlers organized by proto version (e.g., `sessionv1alpha1/`). Handlers convert between proto and entity types and delegate to orchestrators.
 

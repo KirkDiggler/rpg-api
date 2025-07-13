@@ -1,6 +1,8 @@
 package dnd5e
 
 // Character represents a finalized D&D 5e character
+// NOTE: This is a data-only struct. All calculations (AC, proficiency bonus, etc.)
+// are done by the engine (rpg-toolkit), not here. See internal/entities/README.md
 type Character struct {
 	ID               string
 	Name             string
