@@ -1,0 +1,299 @@
+syntax = "proto3";
+
+package v1alpha1.dnd5e;
+
+option go_package = "github.com/KirkDiggler/rpg-api/api/proto/v1alpha1/dnd5e;dnd5ev1alpha1";
+
+import "google/api/annotations.proto";
+import "v1alpha1/dnd5e/enums.proto";
+
+// Service for managing D&D 5e characters
+service CharacterService {
+  // Creates a new D&D 5e character
+  rpc CreateCharacter(CreateCharacterRequest) returns (CreateCharacterResponse) {
+    option (google.api.http) = {
+      post: "/v1alpha1/dnd5e/characters"
+      body: "character"
+    };
+  }
+  
+  // Gets a character by ID
+  rpc GetCharacter(GetCharacterRequest) returns (GetCharacterResponse) {
+    option (google.api.http) = {
+      get: "/v1alpha1/dnd5e/characters/{character_id}"
+    };
+  }
+  
+  // Lists characters with optional filtering
+  rpc ListCharacters(ListCharactersRequest) returns (ListCharactersResponse) {
+    option (google.api.http) = {
+      get: "/v1alpha1/dnd5e/characters"
+    };
+  }
+  
+  // Updates a character
+  rpc UpdateCharacter(UpdateCharacterRequest) returns (UpdateCharacterResponse) {
+    option (google.api.http) = {
+      patch: "/v1alpha1/dnd5e/characters/{character.id}"
+      body: "character"
+    };
+  }
+  
+  // Deletes a character
+  rpc DeleteCharacter(DeleteCharacterRequest) returns (DeleteCharacterResponse) {
+    option (google.api.http) = {
+      delete: "/v1alpha1/dnd5e/characters/{character_id}"
+    };
+  }
+}
+
+// Request to create a new character
+message CreateCharacterRequest {
+  // The character to create
+  CharacterInput character = 1;
+  
+  // Optional session to associate with
+  string session_id = 2;
+}
+
+// Input for character creation
+message CharacterInput {
+  // Character name (required, 1-50 characters)
+  string name = 1;
+  
+  // Character race (required)
+  Race race = 2;
+  
+  // Character class (required)
+  Class class = 3;
+  
+  // Character background (required)
+  Background background = 4;
+  
+  // Ability scores using standard array, point buy, or rolled (required)
+  AbilityScores ability_scores = 5;
+  
+  // Character alignment (optional, defaults to TRUE_NEUTRAL)
+  Alignment alignment = 6;
+  
+  // Subrace if applicable (required for certain races)
+  Subrace subrace = 7;
+  
+  // Starting skill proficiencies based on class and background
+  repeated Skill starting_skills = 8;
+  
+  // Additional languages beyond racial defaults
+  repeated Language additional_languages = 9;
+}
+
+// Ability scores for a character
+message AbilityScores {
+  // Strength score (3-18 before racial modifiers)
+  int32 strength = 1;
+  
+  // Dexterity score (3-18 before racial modifiers)
+  int32 dexterity = 2;
+  
+  // Constitution score (3-18 before racial modifiers)
+  int32 constitution = 3;
+  
+  // Intelligence score (3-18 before racial modifiers)
+  int32 intelligence = 4;
+  
+  // Wisdom score (3-18 before racial modifiers)
+  int32 wisdom = 5;
+  
+  // Charisma score (3-18 before racial modifiers)
+  int32 charisma = 6;
+}
+
+// Response from character creation
+message CreateCharacterResponse {
+  // The created character with calculated values
+  Character character = 1;
+}
+
+// A complete D&D 5e character
+message Character {
+  // Unique identifier
+  string id = 1;
+  
+  // Character name
+  string name = 2;
+  
+  // Character level (starts at 1)
+  int32 level = 3;
+  
+  // Experience points
+  int32 experience_points = 4;
+  
+  // Character race
+  Race race = 5;
+  
+  // Character subrace if applicable
+  Subrace subrace = 6;
+  
+  // Character class
+  Class class = 7;
+  
+  // Character background
+  Background background = 8;
+  
+  // Character alignment
+  Alignment alignment = 9;
+  
+  // Final ability scores (with racial modifiers applied)
+  AbilityScores ability_scores = 10;
+  
+  // Ability modifiers (calculated from scores)
+  AbilityModifiers ability_modifiers = 11;
+  
+  // Calculated combat values
+  CombatStats combat_stats = 12;
+  
+  // Proficiencies
+  Proficiencies proficiencies = 13;
+  
+  // Known languages
+  repeated Language languages = 14;
+  
+  // Current hit points
+  int32 current_hit_points = 15;
+  
+  // Temporary hit points
+  int32 temporary_hit_points = 16;
+  
+  // Session association if any
+  string session_id = 17;
+  
+  // Metadata
+  CharacterMetadata metadata = 18;
+}
+
+// Ability modifiers calculated from scores
+message AbilityModifiers {
+  int32 strength = 1;
+  int32 dexterity = 2;
+  int32 constitution = 3;
+  int32 intelligence = 4;
+  int32 wisdom = 5;
+  int32 charisma = 6;
+}
+
+// Combat-related statistics
+message CombatStats {
+  // Maximum hit points
+  int32 hit_point_maximum = 1;
+  
+  // Armor class
+  int32 armor_class = 2;
+  
+  // Initiative modifier
+  int32 initiative = 3;
+  
+  // Base movement speed in feet
+  int32 speed = 4;
+  
+  // Proficiency bonus
+  int32 proficiency_bonus = 5;
+  
+  // Hit dice (e.g., 1d10 for fighter)
+  string hit_dice = 6;
+}
+
+// Character proficiencies
+message Proficiencies {
+  // Skill proficiencies
+  repeated Skill skills = 1;
+  
+  // Saving throw proficiencies
+  repeated Ability saving_throws = 2;
+  
+  // Armor proficiencies (as strings for now)
+  repeated string armor = 3;
+  
+  // Weapon proficiencies (as strings for now)
+  repeated string weapons = 4;
+  
+  // Tool proficiencies (as strings for now)
+  repeated string tools = 5;
+}
+
+// Character metadata
+message CharacterMetadata {
+  // When the character was created
+  int64 created_at = 1;
+  
+  // When the character was last updated
+  int64 updated_at = 2;
+  
+  // Player/user who owns this character
+  string player_id = 3;
+}
+
+// Request to get a character
+message GetCharacterRequest {
+  // The character ID to retrieve
+  string character_id = 1;
+}
+
+// Response containing a character
+message GetCharacterResponse {
+  // The requested character
+  Character character = 1;
+}
+
+// Request to list characters
+message ListCharactersRequest {
+  // Maximum number of characters to return (1-100, default 20)
+  int32 page_size = 1;
+  
+  // Page token from previous response
+  string page_token = 2;
+  
+  // Filter by session ID
+  string session_id = 3;
+  
+  // Filter by player ID
+  string player_id = 4;
+}
+
+// Response containing a list of characters
+message ListCharactersResponse {
+  // The list of characters
+  repeated Character characters = 1;
+  
+  // Token for next page if available
+  string next_page_token = 2;
+  
+  // Total number of characters matching filters
+  int32 total_size = 3;
+}
+
+// Request to update a character
+message UpdateCharacterRequest {
+  // The character to update (ID required)
+  Character character = 1;
+  
+  // Field mask to specify which fields to update
+  // For now, we'll allow updating specific fields
+  repeated string update_mask = 2;
+}
+
+// Response from character update
+message UpdateCharacterResponse {
+  // The updated character
+  Character character = 1;
+}
+
+// Request to delete a character
+message DeleteCharacterRequest {
+  // The character ID to delete
+  string character_id = 1;
+}
+
+// Response from character deletion
+message DeleteCharacterResponse {
+  // Confirmation message
+  string message = 1;
+}
