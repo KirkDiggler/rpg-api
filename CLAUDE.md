@@ -274,6 +274,13 @@ This runs:
 5. `lint` - Run golangci-lint with comprehensive checks
 6. `test` - Run unit tests with coverage
 
+### 🚨 CRITICAL RULE: NEVER USE --no-verify 🚨
+**NEVER, EVER, EVER use `git commit --no-verify`**
+- CI will fail anyway - same checks run there
+- Fix issues locally - it's faster than fixing in PR
+- If linter seems wrong, fix the config, don't skip the check
+- See IMPORTANT_NEVER_SKIP_PRECOMMIT.md for details
+
 ### Linting Setup
 Based on rpg-toolkit's proven configuration:
 - **golangci-lint**: Comprehensive linting with 20+ linters
