@@ -1,8 +1,6 @@
 module github.com/KirkDiggler/rpg-api
 
-go 1.23.0
-
-toolchain go1.24.1
+go 1.21
 
 require (
 	github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.3.2
