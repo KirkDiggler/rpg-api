@@ -48,14 +48,23 @@ buf-lint: ## Lint proto files with buf
 	fi
 	@buf lint
 
+# Check if proto files have changed
+PROTO_FILES := $(shell find api/proto -name '*.proto' 2>/dev/null)
+GEN_GO_FILES := $(shell find gen/go -name '*.pb.go' 2>/dev/null)
+
+# Only regenerate if protos are newer than generated files
 .PHONY: buf-generate
 buf-generate: ## Generate code from proto files using buf
-	@echo "==> Generating proto code with buf..."
-	@if ! command -v buf &> /dev/null; then \
-		echo "buf not found. Installing..."; \
-		go install github.com/bufbuild/buf/cmd/buf@latest; \
+	@if [ -z "$(GEN_GO_FILES)" ] || [ -n "$$(find api/proto -name '*.proto' -newer gen/go -print -quit 2>/dev/null)" ]; then \
+		echo "==> Generating proto code with buf..."; \
+		if ! command -v buf &> /dev/null; then \
+			echo "buf not found. Installing..."; \
+			go install github.com/bufbuild/buf/cmd/buf@latest; \
+		fi; \
+		buf generate; \
+	else \
+		echo "==> Proto files unchanged, skipping generation"; \
 	fi
-	@buf generate
 
 .PHONY: buf-breaking
 buf-breaking: ## Check for breaking changes in proto files

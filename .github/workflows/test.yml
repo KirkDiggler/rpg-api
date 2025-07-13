@@ -1,0 +1,82 @@
+name: Test and Coverage
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.24'
+    
+    - name: Install dependencies
+      run: |
+        go mod download
+        go install github.com/bufbuild/buf/cmd/buf@latest
+        go install go.uber.org/mock/mockgen@latest
+    
+    - name: Generate code
+      run: |
+        export PATH=$PATH:$(go env GOPATH)/bin
+        make generate
+    
+    - name: Run tests with coverage
+      run: |
+        go test -v -race -coverprofile=coverage.out -covermode=atomic ./...
+        go tool cover -html=coverage.out -o coverage.html
+    
+    - name: Generate coverage badge
+      run: |
+        COVERAGE=$(go tool cover -func=coverage.out | grep total | awk '{print $3}' | sed 's/%//')
+        echo "COVERAGE=$COVERAGE" >> $GITHUB_ENV
+        COLOR="red"
+        if (( $(echo "$COVERAGE >= 80" | bc -l) )); then
+          COLOR="green"
+        elif (( $(echo "$COVERAGE >= 60" | bc -l) )); then
+          COLOR="yellow"
+        fi
+        echo "COVERAGE_COLOR=$COLOR" >> $GITHUB_ENV
+    
+    - name: Upload coverage reports
+      uses: actions/upload-artifact@v4
+      with:
+        name: coverage-report
+        path: |
+          coverage.out
+          coverage.html
+    
+    - name: Comment PR with coverage
+      if: github.event_name == 'pull_request'
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const coverage = process.env.COVERAGE;
+          const color = process.env.COVERAGE_COLOR;
+          const body = `## Test Coverage Report 📊
+          
+          **Coverage:** ![${coverage}%](https://img.shields.io/badge/coverage-${coverage}%25-${color})
+          
+          View the full coverage report in the artifacts section of this workflow run.`;
+          
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: body
+          });
+    
+    - name: Update README badge
+      if: github.ref == 'refs/heads/main'
+      run: |
+        # This would typically update a coverage badge in README
+        # For now, just echo the coverage
+        echo "Coverage: $COVERAGE%"

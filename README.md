@@ -1,5 +1,9 @@
 # rpg-api
 
+[![Test Coverage](https://img.shields.io/badge/coverage-1%25-red)](https://github.com/KirkDiggler/rpg-api/actions)
+[![Go Report Card](https://goreportcard.com/badge/github.com/KirkDiggler/rpg-api)](https://goreportcard.com/report/github.com/KirkDiggler/rpg-api)
+[![Go Version](https://img.shields.io/github/go-mod/go-version/KirkDiggler/rpg-api)](go.mod)
+
 > **Real-time API gateway for tabletop RPG sessions, enabling consistent game experiences across any interface while leveraging rpg-toolkit as the core game engine.**
 
 ## Vision

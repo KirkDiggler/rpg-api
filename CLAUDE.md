@@ -16,19 +16,54 @@ Our battle-tested structure from production gRPC services:
 /cmd/server/              # Cobra commands
 /internal/
   ├── entities/           # Simple data models (just structs)
-  ├── handlers/
-  │   ├── sessionv1alpha1/  # Proto version naming
-  │   └── dicev1alpha1/
-  ├── orchestrators/      # Business logic by flow
+  ├── handlers/           # gRPC handlers (API layer)
+  │   └── dnd5e/
+  │       └── v1alpha1/   # Proto version naming
+  ├── services/           # Service interfaces (business logic contracts)
+  │   └── character/
+  │       ├── service.go  # Interface with Input/Output types
+  │       └── mock/       # Generated mocks for testing
+  ├── orchestrators/      # Service implementations (business logic)
   │   ├── character_creation/
   │   └── session_management/
-  ├── repositories/       # Storage (plural naming)
+  ├── repositories/       # Storage interfaces and implementations
   │   ├── sessions/
   │   │   ├── repository.go  # Interface + types
   │   │   └── redis.go       # Implementation
   │   └── characters/
   └── engine/             # rpg-toolkit integration
 ```
+
+## Development Approach: Outside-In
+
+**Always work from the API inward:**
+
+1. **Start with gRPC handlers** - Just return `codes.Unimplemented`
+   - Validates proto definitions work
+   - Ensures server can start and register services
+   - No business logic or dependencies yet
+
+2. **Define service interfaces** - With Input/Output types
+   - Create the contract for business logic
+   - Generate mocks for testing handlers
+   - Still no implementation
+
+3. **Write handler tests** - Using mocked services
+   - Test request validation
+   - Test response mapping
+   - Test error handling
+
+4. **Implement orchestrators** - The actual business logic
+   - Wire up repositories, engine, external services
+   - Test with mocked dependencies
+
+5. **Implement repositories** - Last, when you know what you need
+
+This approach ensures:
+- API is usable before implementation starts
+- Interfaces are driven by actual needs
+- Easy to refactor without breaking contracts
+- Clear separation of concerns
 
 ## Code Patterns
 
@@ -119,6 +154,33 @@ func (s *OrchestratorTestSuite) SetupTest() {
     s.orchestrator = NewOrchestrator(s.mockRepo, s.mockEngine)
 }
 ```
+
+### Mock Organization
+
+Following rpg-toolkit's pattern for consistency:
+
+- **Location**: Mocks go in a `mock/` subdirectory next to the interface
+- **Package naming**: Use `<parent>mock` (e.g., `charactermock`, `sessionmock`)
+- **File naming**: Use `mock_<interface>.go` (e.g., `mock_service.go`)
+- **Generation**: Place `//go:generate` above the interface definition
+
+```go
+// In service.go:
+//go:generate mockgen -destination=mock/mock_service.go -package=charactermock github.com/KirkDiggler/rpg-api/internal/services/character Service
+
+type Service interface {
+    // ...
+}
+
+// Usage in tests:
+mockService := charactermock.NewMockService(ctrl)
+```
+
+Benefits:
+- Mocks are close to their interfaces
+- Clear package names (`charactermock.NewMock...`)
+- Easy to find and maintain
+- Consistent with rpg-toolkit patterns
 
 ### Development Workflow
 
