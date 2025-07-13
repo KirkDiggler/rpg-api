@@ -4,7 +4,7 @@ help: ## Display this help message
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-20s %s\n", $$1, $$2}'
 
 .PHONY: pre-commit
-pre-commit: fmt tidy buf-lint lint test ## Run all pre-commit checks
+pre-commit: fmt tidy fix-eof buf-lint lint test ## Run all pre-commit checks
 
 .PHONY: fmt
 fmt: ## Format Go code
@@ -69,12 +69,17 @@ buf-breaking: ## Check for breaking changes in proto files
 .PHONY: run
 run: ## Run the server
 	@echo "==> Running server..."
-	@go run cmd/server/main.go
+	@go run cmd/server/*.go server
+
+.PHONY: dev
+dev: ## Run the server in development mode with hot reload
+	@echo "==> Running server in dev mode..."
+	@go run cmd/server/*.go server --port 50051
 
 .PHONY: build
 build: ## Build the server binary
 	@echo "==> Building server..."
-	@go build -o bin/rpg-api cmd/server/main.go
+	@go build -o bin/rpg-api cmd/server/*.go
 
 .PHONY: clean
 clean: ## Clean build artifacts

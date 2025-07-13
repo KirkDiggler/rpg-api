@@ -41,7 +41,7 @@ rpg-api serves as the orchestration layer between game engines and user interfac
 
 ### Prerequisites
 
-- Go 1.21+
+- Go 1.24+ (we use the latest Go version for optimal performance)
 - Redis 7+ (initial storage implementation)
 - protoc 3.x with Go plugins
 - Storage backend of your choice (via repository adapters)
@@ -107,6 +107,14 @@ Each package includes a README explaining its purpose and boundaries.
 4. **Interface Boundaries**: Clean separation between layers
 5. **Test Everything**: High coverage with real dependencies when safe
 6. **Document the Journey**: ADRs, journey docs, and clear READMEs
+
+## Technology Decisions
+
+### Go Version Policy
+
+**We always use the latest Go version** (currently 1.24) for optimal performance in our real-time gRPC services. 
+
+See [Journey: Go Version Policy](docs/journey/003-go-version-policy.md) for the full story behind this decision.
 
 ## Related Projects
 

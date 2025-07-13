@@ -162,6 +162,41 @@ Internal stays stable while external evolves.
 - **Start with Redis** - simple, fast
 - **Add adapters as needed**
 
+## Documentation Philosophy
+
+### Three Types of Documentation
+
+1. **Journey Docs** (`docs/journey/`): Tell the story
+   - Capture exploration, decisions, and trade-offs
+   - Include the "why" - what problems we faced, what we tried
+   - Show the thinking process, not just the outcome
+   - Example: "Why we chose Go 1.24" with performance considerations
+
+2. **ADRs** (`docs/adr/`): Record architectural decisions
+   - Formal decision records with context and consequences
+   - What we chose and why we chose it
+   - Alternatives considered and trade-offs made
+   - Example: "ADR-001: Repository pattern with Input/Output types"
+
+3. **READMEs**: Summarize what's implemented
+   - Concise overview of what exists and how to use it
+   - Avoid lengthy explanations (link to journey docs instead)
+   - Focus on practical usage and current state
+   - Example: "We use the latest Go version" (link to journey for why)
+
+### Documentation Guidelines
+
+- **Journey docs are stories**: Include context, exploration, failed attempts
+- **ADRs are decisions**: Formal structure, clear outcomes
+- **READMEs are summaries**: What exists now, how to use it
+- **Link between them**: READMEs should link to relevant journey docs/ADRs
+- **Avoid assumptions**: Document enough context so readers understand without guessing
+
+This approach ensures:
+- Future developers (human or AI) understand the full context
+- Decisions can be revisited with full historical knowledge
+- READMEs stay readable while preserving important details
+
 ## Remember
 
 - Explicit > Implicit (always use Input/Output types)
@@ -169,3 +204,4 @@ Internal stays stable while external evolves.
 - rpg-api orchestrates, rpg-toolkit calculates
 - Test with real dependencies when safe
 - Document the journey, not just destination
+- Tell stories in journey docs, make decisions in ADRs, summarize in READMEs
