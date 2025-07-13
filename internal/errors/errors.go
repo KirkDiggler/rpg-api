@@ -79,11 +79,18 @@ func Wrap(err error, message string) *Error {
 
 	var existingErr *Error
 	if errors.As(err, &existingErr) {
+		// Make a shallow copy of metadata to avoid shared state
+		meta := make(map[string]interface{})
+		if existingErr.Meta != nil {
+			for k, v := range existingErr.Meta {
+				meta[k] = v
+			}
+		}
 		return &Error{
 			Code:    existingErr.Code,
 			Message: message,
 			Cause:   err,
-			Meta:    existingErr.Meta,
+			Meta:    meta,
 		}
 	}
 

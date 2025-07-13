@@ -87,6 +87,27 @@ func (s *ErrorsTestSuite) TestWrapPreservesCode() {
 	s.Assert().Equal(baseErr, wrapped.Unwrap())
 }
 
+func (s *ErrorsTestSuite) TestWrapDoesNotShareMetadata() {
+	// Create base error with metadata
+	baseErr := errors.NotFound("record not found").
+		WithMeta("original", "value")
+
+	// Wrap the error
+	wrapped := errors.Wrap(baseErr, "wrapped error")
+
+	// Modify the wrapped error's metadata
+	wrapped.WithMeta("wrapped", "data")
+	wrapped.WithMeta("original", "modified")
+
+	// Verify base error's metadata is unchanged
+	s.Assert().Equal("value", baseErr.Meta["original"])
+	s.Assert().Nil(baseErr.Meta["wrapped"])
+
+	// Verify wrapped error has both metadata
+	s.Assert().Equal("modified", wrapped.Meta["original"])
+	s.Assert().Equal("data", wrapped.Meta["wrapped"])
+}
+
 func (s *ErrorsTestSuite) TestWrapWithCode() {
 	baseErr := fmt.Errorf("connection timeout")
 	wrapped := errors.WrapWithCode(baseErr, errors.CodeUnavailable, "service unavailable")
@@ -99,6 +120,26 @@ func (s *ErrorsTestSuite) TestWrapWithCode() {
 func (s *ErrorsTestSuite) TestWrapNil() {
 	s.Assert().Nil(errors.Wrap(nil, "should be nil"))
 	s.Assert().Nil(errors.WrapWithCode(nil, errors.CodeNotFound, "should be nil"))
+	s.Assert().Nil(errors.Wrapf(nil, "should be nil: %s", "test"))
+	s.Assert().Nil(errors.WrapWithCodef(nil, errors.CodeNotFound, "should be nil: %s", "test"))
+}
+
+func (s *ErrorsTestSuite) TestWrapfFormatting() {
+	baseErr := fmt.Errorf("base error")
+	wrapped := errors.Wrapf(baseErr, "failed to process %s with id %d", "character", 123)
+
+	s.Assert().Equal(errors.CodeInternal, wrapped.Code)
+	s.Assert().Equal("failed to process character with id 123", wrapped.Message)
+	s.Assert().Equal(baseErr, wrapped.Unwrap())
+}
+
+func (s *ErrorsTestSuite) TestWrapWithCodefFormatting() {
+	baseErr := fmt.Errorf("timeout")
+	wrapped := errors.WrapWithCodef(baseErr, errors.CodeDeadlineExceeded, "operation %s timed out after %d seconds", "save", 30)
+
+	s.Assert().Equal(errors.CodeDeadlineExceeded, wrapped.Code)
+	s.Assert().Equal("operation save timed out after 30 seconds", wrapped.Message)
+	s.Assert().Equal(baseErr, wrapped.Unwrap())
 }
 
 func (s *ErrorsTestSuite) TestConstructorFunctions() {

@@ -5,8 +5,11 @@ import (
 	"strings"
 )
 
-// ValidationError represents a validation error with multiple fields
+// ValidationError represents a validation error with multiple fields.
+// It collects validation errors for multiple fields and can convert
+// itself to a standard Error with InvalidArgument code.
 type ValidationError struct {
+	// Fields maps field names to their validation error messages
 	Fields map[string][]string `json:"fields"`
 }
 
@@ -56,7 +59,9 @@ func (v *ValidationError) ToError() *Error {
 	return err
 }
 
-// ValidationBuilder provides a fluent interface for building validation errors
+// ValidationBuilder provides a fluent interface for building validation errors.
+// It accumulates field-level validation errors and returns nil if no errors
+// are present, or an InvalidArgument error with detailed field information.
 type ValidationBuilder struct {
 	err *ValidationError
 }
