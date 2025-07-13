@@ -4,47 +4,24 @@ package v1alpha1.dnd5e;
 
 option go_package = "github.com/KirkDiggler/rpg-api/api/proto/v1alpha1/dnd5e;dnd5ev1alpha1";
 
-import "google/api/annotations.proto";
 import "v1alpha1/dnd5e/enums.proto";
 
 // Service for managing D&D 5e characters
 service CharacterService {
   // Creates a new D&D 5e character
-  rpc CreateCharacter(CreateCharacterRequest) returns (CreateCharacterResponse) {
-    option (google.api.http) = {
-      post: "/v1alpha1/dnd5e/characters"
-      body: "character"
-    };
-  }
+  rpc CreateCharacter(CreateCharacterRequest) returns (CreateCharacterResponse);
   
   // Gets a character by ID
-  rpc GetCharacter(GetCharacterRequest) returns (GetCharacterResponse) {
-    option (google.api.http) = {
-      get: "/v1alpha1/dnd5e/characters/{character_id}"
-    };
-  }
+  rpc GetCharacter(GetCharacterRequest) returns (GetCharacterResponse);
   
   // Lists characters with optional filtering
-  rpc ListCharacters(ListCharactersRequest) returns (ListCharactersResponse) {
-    option (google.api.http) = {
-      get: "/v1alpha1/dnd5e/characters"
-    };
-  }
+  rpc ListCharacters(ListCharactersRequest) returns (ListCharactersResponse);
   
   // Updates a character
-  rpc UpdateCharacter(UpdateCharacterRequest) returns (UpdateCharacterResponse) {
-    option (google.api.http) = {
-      patch: "/v1alpha1/dnd5e/characters/{character.id}"
-      body: "character"
-    };
-  }
+  rpc UpdateCharacter(UpdateCharacterRequest) returns (UpdateCharacterResponse);
   
   // Deletes a character
-  rpc DeleteCharacter(DeleteCharacterRequest) returns (DeleteCharacterResponse) {
-    option (google.api.http) = {
-      delete: "/v1alpha1/dnd5e/characters/{character_id}"
-    };
-  }
+  rpc DeleteCharacter(DeleteCharacterRequest) returns (DeleteCharacterResponse);
 }
 
 // Request to create a new character

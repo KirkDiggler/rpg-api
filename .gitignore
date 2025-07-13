@@ -31,9 +31,8 @@ go.work.sum
 # .idea/
 # .vscode/
 
-# Generated proto files
-*.pb.go
-*_grpc.pb.go
+# Generated code
+gen/
 
 # Buf lock file
 buf.lock

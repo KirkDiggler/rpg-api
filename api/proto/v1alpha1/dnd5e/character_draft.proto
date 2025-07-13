@@ -1,0 +1,201 @@
+syntax = "proto3";
+
+package v1alpha1.dnd5e;
+
+option go_package = "github.com/KirkDiggler/rpg-api/api/proto/v1alpha1/dnd5e;dnd5ev1alpha1";
+
+import "v1alpha1/dnd5e/enums.proto";
+import "v1alpha1/dnd5e/character.proto";
+import "v1alpha1/dnd5e/common.proto";
+
+// Service for managing character creation drafts
+service CharacterDraftService {
+  // Creates a new character draft
+  rpc CreateDraft(CreateDraftRequest) returns (CreateDraftResponse);
+  
+  // Gets a draft by ID
+  rpc GetDraft(GetDraftRequest) returns (GetDraftResponse);
+  
+  // Updates a draft with partial data
+  rpc UpdateDraft(UpdateDraftRequest) returns (UpdateDraftResponse);
+  
+  // Lists drafts for a player
+  rpc ListDrafts(ListDraftsRequest) returns (ListDraftsResponse);
+  
+  // Validates current draft state
+  rpc ValidateDraft(ValidateDraftRequest) returns (ValidateDraftResponse);
+  
+  // Finalizes draft into a character
+  rpc FinalizeDraft(FinalizeDraftRequest) returns (FinalizeDraftResponse);
+  
+  // Deletes an abandoned draft
+  rpc DeleteDraft(DeleteDraftRequest) returns (DeleteDraftResponse);
+}
+
+// Character draft with optional fields
+message CharacterDraft {
+  // Unique identifier
+  string id = 1;
+  
+  // Player creating this character
+  string player_id = 2;
+  
+  // Session if part of one
+  string session_id = 3;
+  
+  // All fields are optional during draft
+  string name = 4;
+  Race race = 5;
+  Subrace subrace = 6;
+  Class class = 7;
+  Background background = 8;
+  AbilityScores ability_scores = 9;
+  Alignment alignment = 10;
+  repeated Skill starting_skills = 11;
+  repeated Language additional_languages = 12;
+  
+  // Track what steps are complete
+  CreationProgress progress = 13;
+  
+  // When this draft expires (e.g., 30 days)
+  int64 expires_at = 14;
+  
+  // Metadata
+  DraftMetadata metadata = 15;
+}
+
+// Tracks which parts of character creation are complete
+message CreationProgress {
+  bool has_name = 1;
+  bool has_race = 2;
+  bool has_class = 3;
+  bool has_background = 4;
+  bool has_ability_scores = 5;
+  bool has_skills = 6;
+  bool has_languages = 7;
+  
+  // Overall completion percentage
+  int32 completion_percentage = 8;
+  
+  // What step they're currently on
+  CreationStep current_step = 9;
+}
+
+// Steps in character creation
+enum CreationStep {
+  CREATION_STEP_UNSPECIFIED = 0;
+  CREATION_STEP_NAME = 1;
+  CREATION_STEP_RACE = 2;
+  CREATION_STEP_CLASS = 3;
+  CREATION_STEP_BACKGROUND = 4;
+  CREATION_STEP_ABILITY_SCORES = 5;
+  CREATION_STEP_SKILLS = 6;
+  CREATION_STEP_LANGUAGES = 7;
+  CREATION_STEP_REVIEW = 8;
+}
+
+// Draft metadata
+message DraftMetadata {
+  int64 created_at = 1;
+  int64 updated_at = 2;
+  string discord_channel_id = 3;
+  string discord_message_id = 4;
+}
+
+// Request to create a draft
+message CreateDraftRequest {
+  string player_id = 1;
+  string session_id = 2;  // Optional
+  
+  // Can optionally provide initial data
+  CharacterDraft initial_data = 3;
+}
+
+message CreateDraftResponse {
+  CharacterDraft draft = 1;
+}
+
+// Request to get a draft
+message GetDraftRequest {
+  string draft_id = 1;
+}
+
+message GetDraftResponse {
+  CharacterDraft draft = 1;
+}
+
+// Request to update a draft
+message UpdateDraftRequest {
+  string draft_id = 1;
+  
+  // Only provided fields will be updated
+  CharacterDraft updates = 2;
+  
+  // Which fields to update (field mask pattern)
+  repeated string update_mask = 3;
+}
+
+message UpdateDraftResponse {
+  CharacterDraft draft = 1;
+  
+  // Any validation warnings (not errors)
+  repeated ValidationWarning warnings = 2;
+}
+
+enum WarningType {
+  WARNING_TYPE_UNSPECIFIED = 0;
+  WARNING_TYPE_MISSING_REQUIRED = 1;
+  WARNING_TYPE_INVALID_COMBINATION = 2;
+  WARNING_TYPE_SUBOPTIMAL_CHOICE = 3;
+}
+
+// Request to list drafts
+message ListDraftsRequest {
+  string player_id = 1;
+  string session_id = 2;  // Optional filter
+  int32 page_size = 3;
+  string page_token = 4;
+}
+
+message ListDraftsResponse {
+  repeated CharacterDraft drafts = 1;
+  string next_page_token = 2;
+}
+
+// Request to validate draft
+message ValidateDraftRequest {
+  string draft_id = 1;
+}
+
+message ValidateDraftResponse {
+  bool is_complete = 1;
+  bool is_valid = 2;
+  
+  repeated ValidationError errors = 3;
+  repeated ValidationWarning warnings = 4;
+  
+  // What's still needed
+  repeated CreationStep missing_steps = 5;
+}
+
+
+// Request to finalize draft
+message FinalizeDraftRequest {
+  string draft_id = 1;
+}
+
+message FinalizeDraftResponse {
+  Character character = 1;
+  
+  // Draft is automatically deleted after finalization
+  bool draft_deleted = 2;
+}
+
+// Request to delete draft
+message DeleteDraftRequest {
+  string draft_id = 1;
+}
+
+message DeleteDraftResponse {
+  string message = 1;
+}

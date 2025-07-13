@@ -75,3 +75,16 @@ message Condition {
   // Any additional notes
   string notes = 4;
 }
+
+
+// Validation warning (non-blocking)
+message ValidationWarning {
+  // Field with warning
+  string field = 1;
+  
+  // Warning message
+  string message = 2;
+  
+  // Warning severity/type
+  string type = 3;
+}
