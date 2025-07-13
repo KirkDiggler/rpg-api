@@ -223,10 +223,10 @@ func (s *OrchestratorTestSuite) TestFinalizeDraft() {
 				s.mockCharRepo.EXPECT().
 					Create(s.ctx, gomock.Any()).
 					DoAndReturn(func(ctx context.Context, char *dnd5e.Character) error {
-						s.Assert().Equal("Aragorn", char.Name)
-						s.Assert().Equal(int32(1), char.Level)
-						s.Assert().Equal(int32(12), char.CurrentHP)
-						s.Assert().Equal(dnd5e.ClassRanger, char.ClassID)
+						s.Equal("Aragorn", char.Name)
+						s.Equal(int32(1), char.Level)
+						s.Equal(int32(12), char.CurrentHP)
+						s.Equal(dnd5e.ClassRanger, char.ClassID)
 						return nil
 					})
 

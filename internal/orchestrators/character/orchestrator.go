@@ -79,13 +79,7 @@ func (o *Orchestrator) CreateDraft(ctx context.Context, input *character.CreateD
 		PlayerID:  input.PlayerID,
 		SessionID: input.SessionID,
 		Progress: dnd5e.CreationProgress{
-			HasName:              false,
-			HasRace:              false,
-			HasClass:             false,
-			HasBackground:        false,
-			HasAbilityScores:     false,
-			HasSkills:            false,
-			HasLanguages:         false,
+			StepsCompleted:       0, // No steps completed initially
 			CompletionPercentage: 0,
 			CurrentStep:          dnd5e.CreationStepName,
 		},
@@ -97,25 +91,25 @@ func (o *Orchestrator) CreateDraft(ctx context.Context, input *character.CreateD
 	if input.InitialData != nil {
 		if input.InitialData.Name != "" {
 			draft.Name = input.InitialData.Name
-			draft.Progress.HasName = true
+			draft.Progress.SetStep(dnd5e.ProgressStepName, true)
 			draft.Progress.CurrentStep = dnd5e.CreationStepRace
 		}
 		if input.InitialData.RaceID != "" {
 			draft.RaceID = input.InitialData.RaceID
 			draft.SubraceID = input.InitialData.SubraceID
-			draft.Progress.HasRace = true
+			draft.Progress.SetStep(dnd5e.ProgressStepRace, true)
 		}
 		if input.InitialData.ClassID != "" {
 			draft.ClassID = input.InitialData.ClassID
-			draft.Progress.HasClass = true
+			draft.Progress.SetStep(dnd5e.ProgressStepClass, true)
 		}
 		if input.InitialData.BackgroundID != "" {
 			draft.BackgroundID = input.InitialData.BackgroundID
-			draft.Progress.HasBackground = true
+			draft.Progress.SetStep(dnd5e.ProgressStepBackground, true)
 		}
 		if input.InitialData.AbilityScores != nil {
 			draft.AbilityScores = input.InitialData.AbilityScores
-			draft.Progress.HasAbilityScores = true
+			draft.Progress.SetStep(dnd5e.ProgressStepAbilityScores, true)
 		}
 
 		// Update completion percentage and current step
@@ -225,7 +219,7 @@ func (o *Orchestrator) UpdateName(ctx context.Context, input *character.UpdateNa
 
 	// Update name
 	draft.Name = input.Name
-	draft.Progress.HasName = true
+	draft.Progress.SetStep(dnd5e.ProgressStepName, true)
 	draft.UpdatedAt = time.Now().Unix()
 
 	// Recalculate progress
@@ -292,7 +286,7 @@ func (o *Orchestrator) UpdateRace(ctx context.Context, input *character.UpdateRa
 	// Update race
 	draft.RaceID = input.RaceID
 	draft.SubraceID = input.SubraceID
-	draft.Progress.HasRace = true
+	draft.Progress.SetStep(dnd5e.ProgressStepRace, true)
 	draft.UpdatedAt = time.Now().Unix()
 
 	// TODO: Apply racial ability modifiers when we have ability scores
@@ -366,13 +360,13 @@ func (o *Orchestrator) UpdateClass(ctx context.Context, input *character.UpdateC
 
 	// Update class even if there are warnings (user might fix ability scores later)
 	draft.ClassID = input.ClassID
-	draft.Progress.HasClass = true
+	draft.Progress.SetStep(dnd5e.ProgressStepClass, true)
 	draft.UpdatedAt = time.Now().Unix()
 
 	// Clear skills if class changed (they need to reselect based on new class)
 	if len(draft.StartingSkillIDs) > 0 {
 		draft.StartingSkillIDs = []string{}
-		draft.Progress.HasSkills = false
+		draft.Progress.SetStep(dnd5e.ProgressStepSkills, false)
 	}
 
 	// Recalculate progress
@@ -436,13 +430,13 @@ func (o *Orchestrator) UpdateBackground(ctx context.Context, input *character.Up
 
 	// Update background
 	draft.BackgroundID = input.BackgroundID
-	draft.Progress.HasBackground = true
+	draft.Progress.SetStep(dnd5e.ProgressStepBackground, true)
 	draft.UpdatedAt = time.Now().Unix()
 
 	// Clear skills if background changed (they get skills from background)
 	if len(draft.StartingSkillIDs) > 0 {
 		draft.StartingSkillIDs = []string{}
-		draft.Progress.HasSkills = false
+		draft.Progress.SetStep(dnd5e.ProgressStepSkills, false)
 	}
 
 	// Recalculate progress
@@ -510,7 +504,7 @@ func (o *Orchestrator) UpdateAbilityScores(ctx context.Context, input *character
 
 	// Update ability scores
 	draft.AbilityScores = &input.AbilityScores
-	draft.Progress.HasAbilityScores = true
+	draft.Progress.SetStep(dnd5e.ProgressStepAbilityScores, true)
 	draft.UpdatedAt = time.Now().Unix()
 
 	// If we have a class, revalidate it with new ability scores
@@ -607,7 +601,7 @@ func (o *Orchestrator) UpdateSkills(ctx context.Context, input *character.Update
 
 	// Update skills
 	draft.StartingSkillIDs = input.SkillIDs
-	draft.Progress.HasSkills = len(input.SkillIDs) > 0
+	draft.Progress.SetStep(dnd5e.ProgressStepSkills, len(input.SkillIDs) > 0)
 	draft.UpdatedAt = time.Now().Unix()
 
 	// Recalculate progress
@@ -843,47 +837,36 @@ func (o *Orchestrator) DeleteCharacter(ctx context.Context, input *character.Del
 // calculateProgress determines completion percentage and next step
 func (o *Orchestrator) calculateProgress(draft *dnd5e.CharacterDraft) dnd5e.CreationProgress {
 	progress := draft.Progress
+
+	// Count completed steps using bit manipulation
 	completedSteps := 0
 	totalSteps := 7 // name, race, class, background, ability scores, skills, languages
 
-	if progress.HasName {
-		completedSteps++
-	}
-	if progress.HasRace {
-		completedSteps++
-	}
-	if progress.HasClass {
-		completedSteps++
-	}
-	if progress.HasBackground {
-		completedSteps++
-	}
-	if progress.HasAbilityScores {
-		completedSteps++
-	}
-	if progress.HasSkills {
-		completedSteps++
-	}
-	if progress.HasLanguages {
-		completedSteps++
+	// Count set bits in StepsCompleted
+	steps := progress.StepsCompleted
+	for steps > 0 {
+		if steps&1 == 1 {
+			completedSteps++
+		}
+		steps >>= 1
 	}
 
 	progress.CompletionPercentage = int32((completedSteps * 100) / totalSteps)
 
-	// Determine next step
-	if !progress.HasName {
+	// Determine next step by checking each flag in order
+	if !progress.HasStep(dnd5e.ProgressStepName) {
 		progress.CurrentStep = dnd5e.CreationStepName
-	} else if !progress.HasRace {
+	} else if !progress.HasStep(dnd5e.ProgressStepRace) {
 		progress.CurrentStep = dnd5e.CreationStepRace
-	} else if !progress.HasClass {
+	} else if !progress.HasStep(dnd5e.ProgressStepClass) {
 		progress.CurrentStep = dnd5e.CreationStepClass
-	} else if !progress.HasBackground {
+	} else if !progress.HasStep(dnd5e.ProgressStepBackground) {
 		progress.CurrentStep = dnd5e.CreationStepBackground
-	} else if !progress.HasAbilityScores {
+	} else if !progress.HasStep(dnd5e.ProgressStepAbilityScores) {
 		progress.CurrentStep = dnd5e.CreationStepAbilityScores
-	} else if !progress.HasSkills {
+	} else if !progress.HasStep(dnd5e.ProgressStepSkills) {
 		progress.CurrentStep = dnd5e.CreationStepSkills
-	} else if !progress.HasLanguages {
+	} else if !progress.HasStep(dnd5e.ProgressStepLanguages) {
 		progress.CurrentStep = dnd5e.CreationStepLanguages
 	} else {
 		progress.CurrentStep = dnd5e.CreationStepReview

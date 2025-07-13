@@ -485,15 +485,31 @@ func convertProtoDraftToEntity(proto *dnd5ev1alpha1.CharacterDraft) *dnd5e.Chara
 
 	if proto.Progress != nil {
 		draft.Progress = dnd5e.CreationProgress{
-			HasName:              proto.Progress.HasName,
-			HasRace:              proto.Progress.HasRace,
-			HasClass:             proto.Progress.HasClass,
-			HasBackground:        proto.Progress.HasBackground,
-			HasAbilityScores:     proto.Progress.HasAbilityScores,
-			HasSkills:            proto.Progress.HasSkills,
-			HasLanguages:         proto.Progress.HasLanguages,
+			StepsCompleted:       0,
 			CompletionPercentage: proto.Progress.CompletionPercentage,
 			CurrentStep:          mapProtoCreationStepToConstant(proto.Progress.CurrentStep),
+		}
+		// Convert individual boolean flags to bitflags
+		if proto.Progress.HasName {
+			draft.Progress.SetStep(dnd5e.ProgressStepName, true)
+		}
+		if proto.Progress.HasRace {
+			draft.Progress.SetStep(dnd5e.ProgressStepRace, true)
+		}
+		if proto.Progress.HasClass {
+			draft.Progress.SetStep(dnd5e.ProgressStepClass, true)
+		}
+		if proto.Progress.HasBackground {
+			draft.Progress.SetStep(dnd5e.ProgressStepBackground, true)
+		}
+		if proto.Progress.HasAbilityScores {
+			draft.Progress.SetStep(dnd5e.ProgressStepAbilityScores, true)
+		}
+		if proto.Progress.HasSkills {
+			draft.Progress.SetStep(dnd5e.ProgressStepSkills, true)
+		}
+		if proto.Progress.HasLanguages {
+			draft.Progress.SetStep(dnd5e.ProgressStepLanguages, true)
 		}
 	}
 
@@ -520,13 +536,13 @@ func convertEntityDraftToProto(entity *dnd5e.CharacterDraft) *dnd5ev1alpha1.Char
 		SessionId: entity.SessionID,
 		Name:      entity.Name,
 		Progress: &dnd5ev1alpha1.CreationProgress{
-			HasName:              entity.Progress.HasName,
-			HasRace:              entity.Progress.HasRace,
-			HasClass:             entity.Progress.HasClass,
-			HasBackground:        entity.Progress.HasBackground,
-			HasAbilityScores:     entity.Progress.HasAbilityScores,
-			HasSkills:            entity.Progress.HasSkills,
-			HasLanguages:         entity.Progress.HasLanguages,
+			HasName:              entity.Progress.HasName(),
+			HasRace:              entity.Progress.HasRace(),
+			HasClass:             entity.Progress.HasClass(),
+			HasBackground:        entity.Progress.HasBackground(),
+			HasAbilityScores:     entity.Progress.HasAbilityScores(),
+			HasSkills:            entity.Progress.HasSkills(),
+			HasLanguages:         entity.Progress.HasLanguages(),
 			CompletionPercentage: entity.Progress.CompletionPercentage,
 			CurrentStep:          mapConstantToProtoCreationStep(entity.Progress.CurrentStep),
 		},

@@ -72,9 +72,7 @@ func (s *OrchestratorTestSuite) SetupTest() {
 		RaceID:    dnd5e.RaceHuman,
 		ClassID:   dnd5e.ClassWizard,
 		Progress: dnd5e.CreationProgress{
-			HasName:              true,
-			HasRace:              true,
-			HasClass:             true,
+			StepsCompleted:       dnd5e.ProgressStepName | dnd5e.ProgressStepRace | dnd5e.ProgressStepClass,
 			CompletionPercentage: 42,
 			CurrentStep:          dnd5e.CreationStepAbilityScores,
 		},
@@ -126,7 +124,7 @@ func (s *OrchestratorTestSuite) TestCreateDraft() {
 						return ok &&
 							draft.PlayerID == s.testPlayerID &&
 							draft.SessionID == "" &&
-							!draft.Progress.HasName &&
+							!draft.Progress.HasName() &&
 							draft.Progress.CurrentStep == dnd5e.CreationStepName &&
 							draft.Progress.CompletionPercentage == 0
 					})).
@@ -157,9 +155,9 @@ func (s *OrchestratorTestSuite) TestCreateDraft() {
 							draft.Name == "Frodo" &&
 							draft.RaceID == dnd5e.RaceHalfling &&
 							draft.ClassID == dnd5e.ClassRogue &&
-							draft.Progress.HasName &&
-							draft.Progress.HasRace &&
-							draft.Progress.HasClass &&
+							draft.Progress.HasName() &&
+							draft.Progress.HasRace() &&
+							draft.Progress.HasClass() &&
 							draft.Progress.CompletionPercentage > 0
 					})).
 					Return(nil)

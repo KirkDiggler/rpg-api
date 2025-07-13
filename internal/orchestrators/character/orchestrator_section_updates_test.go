@@ -38,8 +38,8 @@ func (s *OrchestratorTestSuite) TestUpdateName() {
 				s.mockDraftRepo.EXPECT().
 					Update(s.ctx, gomock.Any()).
 					DoAndReturn(func(ctx context.Context, draft *dnd5e.CharacterDraft) error {
-						s.Assert().Equal("Gandalf the White", draft.Name)
-						s.Assert().True(draft.Progress.HasName)
+						s.Equal("Gandalf the White", draft.Name)
+						s.True(draft.Progress.HasName())
 						return nil
 					})
 			},
@@ -270,8 +270,8 @@ func (s *OrchestratorTestSuite) TestUpdateClass() {
 					Update(s.ctx, gomock.Any()).
 					DoAndReturn(func(ctx context.Context, draft *dnd5e.CharacterDraft) error {
 						// Verify skills were cleared
-						s.Assert().Empty(draft.StartingSkillIDs)
-						s.Assert().False(draft.Progress.HasSkills)
+						s.Empty(draft.StartingSkillIDs)
+						s.False(draft.Progress.HasSkills())
 						return nil
 					})
 			},

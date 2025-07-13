@@ -134,13 +134,7 @@ func (s *HandlerTestSuite) SetupTest() {
 	}
 
 	s.expectedCreationProgress = &dnd5e.CreationProgress{
-		HasName:              true,
-		HasRace:              true,
-		HasClass:             true,
-		HasBackground:        true,
-		HasAbilityScores:     true,
-		HasSkills:            false,
-		HasLanguages:         false,
+		StepsCompleted:       dnd5e.ProgressStepName | dnd5e.ProgressStepRace | dnd5e.ProgressStepClass | dnd5e.ProgressStepBackground | dnd5e.ProgressStepAbilityScores,
 		CompletionPercentage: 71,
 		CurrentStep:          dnd5e.CreationStepAbilityScores,
 	}
