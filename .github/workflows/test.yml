@@ -34,7 +34,9 @@ jobs:
     
     - name: Run tests with coverage
       run: |
-        go test -v -race -coverprofile=coverage.out -covermode=atomic ./...
+        # Run tests excluding generated code, mocks, and cmd
+        go test -v -race -coverprofile=coverage.out -covermode=atomic \
+          $(go list ./... | grep -v /gen/ | grep -v /mock | grep -v cmd/server)
         go tool cover -html=coverage.out -o coverage.html
     
     - name: Generate coverage badge
@@ -57,6 +59,49 @@ jobs:
           coverage.out
           coverage.html
     
+    - name: Calculate coverage for changed files
+      if: github.event_name == 'pull_request'
+      run: |
+        # Get list of changed Go files
+        CHANGED_FILES=$(gh pr view ${{ github.event.pull_request.number }} --json files --jq '.files[].path' | grep '\.go$' | grep -v '_test\.go$' | grep -v '/gen/' | grep -v '/mock/' || true)
+        
+        if [ -n "$CHANGED_FILES" ]; then
+          # Calculate coverage just for changed files
+          CHANGED_COVERAGE=0
+          TOTAL_STATEMENTS=0
+          COVERED_STATEMENTS=0
+          
+          while IFS= read -r file; do
+            if [ -f "$file" ]; then
+              # Get coverage for this specific file
+              FILE_COV=$(go tool cover -func=coverage.out | grep "^$file" || true)
+              if [ -n "$FILE_COV" ]; then
+                # Extract covered and total statements
+                STATEMENTS=$(echo "$FILE_COV" | awk '{print $(NF-1)}' | sed 's/[()]//g')
+                COVERED=$(echo "$STATEMENTS" | cut -d'/' -f1)
+                TOTAL=$(echo "$STATEMENTS" | cut -d'/' -f2)
+                
+                COVERED_STATEMENTS=$((COVERED_STATEMENTS + COVERED))
+                TOTAL_STATEMENTS=$((TOTAL_STATEMENTS + TOTAL))
+              fi
+            fi
+          done <<< "$CHANGED_FILES"
+          
+          if [ $TOTAL_STATEMENTS -gt 0 ]; then
+            CHANGED_COVERAGE=$(awk "BEGIN {printf \"%.1f\", ($COVERED_STATEMENTS/$TOTAL_STATEMENTS)*100}")
+          fi
+          
+          echo "CHANGED_COVERAGE=$CHANGED_COVERAGE" >> $GITHUB_ENV
+          echo "CHANGED_FILES<<EOF" >> $GITHUB_ENV
+          echo "$CHANGED_FILES" >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
+        else
+          echo "CHANGED_COVERAGE=N/A" >> $GITHUB_ENV
+          echo "CHANGED_FILES=No Go source files changed" >> $GITHUB_ENV
+        fi
+      env:
+        GH_TOKEN: ${{ github.token }}
+
     - name: Comment PR with coverage
       if: github.event_name == 'pull_request'
       uses: actions/github-script@v7
@@ -64,11 +109,20 @@ jobs:
         script: |
           const coverage = process.env.COVERAGE;
           const color = process.env.COVERAGE_COLOR;
-          const body = `## Test Coverage Report 📊
+          const changedCoverage = process.env.CHANGED_COVERAGE;
+          const changedFiles = process.env.CHANGED_FILES;
           
-          **Coverage:** ![${coverage}%](https://img.shields.io/badge/coverage-${coverage}%25-${color})
+          let body = `## Test Coverage Report 📊
           
-          View the full coverage report in the artifacts section of this workflow run.`;
+          **Overall Coverage:** ![${coverage}%](https://img.shields.io/badge/coverage-${coverage}%25-${color})`;
+          
+          if (changedCoverage !== 'N/A') {
+            const changedColor = parseFloat(changedCoverage) >= 80 ? 'green' : 
+                                parseFloat(changedCoverage) >= 60 ? 'yellow' : 'red';
+            body += `\n**New Code Coverage:** ![${changedCoverage}%](https://img.shields.io/badge/new_code-${changedCoverage}%25-${changedColor})`;
+          }
+          
+          body += `\n\nView the full coverage report in the artifacts section of this workflow run.`;
           
           github.rest.issues.createComment({
             issue_number: context.issue.number,
