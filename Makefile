@@ -90,10 +90,23 @@ deps: ## Install development dependencies
 	@go install github.com/golang/mock/mockgen@latest
 	@go install github.com/bufbuild/buf/cmd/buf@latest
 
+.PHONY: generate
+generate: buf-generate mocks ## Generate all code (protos and mocks)
+
 .PHONY: mocks
 mocks: ## Generate mocks
 	@echo "==> Generating mocks..."
 	@go generate ./...
+
+.PHONY: proto-mocks
+proto-mocks: buf-generate ## Generate mocks for proto clients (for Discord bot)
+	@echo "==> Generating proto client mocks..."
+	@if ! command -v mockgen &> /dev/null; then \
+		echo "mockgen not found. Installing..."; \
+		go install github.com/golang/mock/mockgen@latest; \
+	fi
+	@mkdir -p mocks/proto
+	@mockgen -source=gen/go/github.com/KirkDiggler/rpg-api/api/proto/v1alpha1/dnd5e/character_grpc.pb.go -destination=mocks/proto/character_api_mock.go -package=protomocks
 
 .PHONY: docker-build
 docker-build: ## Build Docker image
