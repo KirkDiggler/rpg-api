@@ -176,8 +176,38 @@ const draft = await client.character.createDraft(input);
    - Automatic retries
    - Error standardization
    - Observability hooks
+   - **Type-safe service version management**
 
-4. Release process:
+4. Service version configuration:
+   ```go
+   // Type-safe service versions
+   client := dnd5e.NewClient(dnd5e.Config{
+       Endpoint: "api.rpg.example.com",
+       ServiceVersions: map[rpgapi.ServiceName]versions.Version{
+           rpgapi.CharacterService:   versions.V1Alpha1,  // stable
+           rpgapi.ProgressionService: versions.V1Alpha1,  // stable  
+           rpgapi.EncounterService:   versions.V1Beta1,   // beta testing!
+           rpgapi.InventoryService:   versions.V1Alpha1,  // stable
+       },
+   })
+   
+   // No magic strings - full type safety
+   type ServiceName string
+   const (
+       CharacterService   ServiceName = "character"
+       ProgressionService ServiceName = "progression"
+       EncounterService   ServiceName = "encounter"
+   )
+   
+   type Version string
+   const (
+       V1Alpha1 Version = "v1alpha1"
+       V1Beta1  Version = "v1beta1"
+       V1       Version = "v1"
+   )
+   ```
+
+5. Release process:
    - Proto changes trigger SDK regeneration
    - SDKs published to package registries
    - Version compatibility matrix maintained
