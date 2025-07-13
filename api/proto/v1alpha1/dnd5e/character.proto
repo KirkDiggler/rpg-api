@@ -8,9 +8,6 @@ import "v1alpha1/dnd5e/enums.proto";
 
 // Service for managing D&D 5e characters
 service CharacterService {
-  // Creates a new D&D 5e character
-  rpc CreateCharacter(CreateCharacterRequest) returns (CreateCharacterResponse);
-  
   // Gets a character by ID
   rpc GetCharacter(GetCharacterRequest) returns (GetCharacterResponse);
   
@@ -24,44 +21,6 @@ service CharacterService {
   rpc DeleteCharacter(DeleteCharacterRequest) returns (DeleteCharacterResponse);
 }
 
-// Request to create a new character
-message CreateCharacterRequest {
-  // The character to create
-  CharacterInput character = 1;
-  
-  // Optional session to associate with
-  string session_id = 2;
-}
-
-// Input for character creation
-message CharacterInput {
-  // Character name (required, 1-50 characters)
-  string name = 1;
-  
-  // Character race (required)
-  Race race = 2;
-  
-  // Character class (required)
-  Class class = 3;
-  
-  // Character background (required)
-  Background background = 4;
-  
-  // Ability scores using standard array, point buy, or rolled (required)
-  AbilityScores ability_scores = 5;
-  
-  // Character alignment (optional, defaults to TRUE_NEUTRAL)
-  Alignment alignment = 6;
-  
-  // Subrace if applicable (required for certain races)
-  Subrace subrace = 7;
-  
-  // Starting skill proficiencies based on class and background
-  repeated Skill starting_skills = 8;
-  
-  // Additional languages beyond racial defaults
-  repeated Language additional_languages = 9;
-}
 
 // Ability scores for a character
 message AbilityScores {
@@ -84,11 +43,6 @@ message AbilityScores {
   int32 charisma = 6;
 }
 
-// Response from character creation
-message CreateCharacterResponse {
-  // The created character with calculated values
-  Character character = 1;
-}
 
 // A complete D&D 5e character
 message Character {
