@@ -81,6 +81,16 @@ clean: ## Clean build artifacts
 	@echo "==> Cleaning..."
 	@rm -rf bin/ coverage.out coverage.html
 
+.PHONY: fix-eof
+fix-eof: ## Add missing EOF newlines
+	@echo "==> Fixing EOF newlines..."
+	@for file in $$(git ls-files '*.go' '*.proto' '*.md' '*.yml' '*.yaml' '*.json' 'Makefile' '.gitignore'); do \
+		if [ -f "$$file" ] && [ -s "$$file" ] && [ $$(tail -c1 "$$file" | wc -l) -eq 0 ]; then \
+			echo "Fixing: $$file"; \
+			echo >> "$$file"; \
+		fi \
+	done
+
 .PHONY: deps
 deps: ## Install development dependencies
 	@echo "==> Installing dependencies..."

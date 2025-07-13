@@ -34,6 +34,22 @@ jobs:
     - name: Check generated code is committed
       run: |
         git diff --exit-code
+    
+    - name: Check EOF newlines
+      run: |
+        # Find files missing EOF newline
+        files_without_newline=""
+        while IFS= read -r file; do
+          if [[ -f "$file" ]] && [[ -s "$file" ]] && [[ $(tail -c1 "$file" | wc -l) -eq 0 ]]; then
+            files_without_newline="$files_without_newline$file\n"
+            echo "Missing EOF newline: $file"
+          fi
+        done < <(git ls-files '*.go' '*.proto' '*.md' '*.yml' '*.yaml' '*.json' 'Makefile' '.gitignore')
+        
+        if [[ -n "$files_without_newline" ]]; then
+          echo "Error: Files missing EOF newline"
+          exit 1
+        fi
   
   # Placeholder for future jobs
   # test:
