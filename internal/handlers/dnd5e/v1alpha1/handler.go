@@ -4,11 +4,12 @@ import (
 	"context"
 	"errors"
 
+	"github.com/KirkDiggler/rpg-api/internal/entities/dnd5e"
+
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api/gen/go/github.com/KirkDiggler/rpg-api/api/proto/dnd5e/v1alpha1"
-	"github.com/KirkDiggler/rpg-api/internal/entities"
 	"github.com/KirkDiggler/rpg-api/internal/services/character"
 )
 
@@ -252,7 +253,7 @@ func (h *Handler) UpdateAbilityScores(ctx context.Context, req *dnd5ev1alpha1.Up
 
 	input := &character.UpdateAbilityScoresInput{
 		DraftID: req.DraftId,
-		AbilityScores: entities.AbilityScores{
+		AbilityScores: dnd5e.AbilityScores{
 			Strength:     req.AbilityScores.Strength,
 			Dexterity:    req.AbilityScores.Dexterity,
 			Constitution: req.AbilityScores.Constitution,
@@ -420,12 +421,12 @@ func (h *Handler) DeleteCharacter(ctx context.Context, req *dnd5ev1alpha1.Delete
 
 // Converter functions
 
-func convertProtoDraftToEntity(proto *dnd5ev1alpha1.CharacterDraft) *entities.CharacterDraft {
+func convertProtoDraftToEntity(proto *dnd5ev1alpha1.CharacterDraft) *dnd5e.CharacterDraft {
 	if proto == nil {
 		return nil
 	}
 
-	draft := &entities.CharacterDraft{
+	draft := &dnd5e.CharacterDraft{
 		ID:        proto.Id,
 		PlayerID:  proto.PlayerId,
 		SessionID: proto.SessionId,
@@ -458,7 +459,7 @@ func convertProtoDraftToEntity(proto *dnd5ev1alpha1.CharacterDraft) *entities.Ch
 	}
 
 	if proto.AbilityScores != nil {
-		draft.AbilityScores = &entities.AbilityScores{
+		draft.AbilityScores = &dnd5e.AbilityScores{
 			Strength:     proto.AbilityScores.Strength,
 			Dexterity:    proto.AbilityScores.Dexterity,
 			Constitution: proto.AbilityScores.Constitution,
@@ -483,7 +484,7 @@ func convertProtoDraftToEntity(proto *dnd5ev1alpha1.CharacterDraft) *entities.Ch
 	}
 
 	if proto.Progress != nil {
-		draft.Progress = entities.CreationProgress{
+		draft.Progress = dnd5e.CreationProgress{
 			HasName:              proto.Progress.HasName,
 			HasRace:              proto.Progress.HasRace,
 			HasClass:             proto.Progress.HasClass,
@@ -508,7 +509,7 @@ func convertProtoDraftToEntity(proto *dnd5ev1alpha1.CharacterDraft) *entities.Ch
 	return draft
 }
 
-func convertEntityDraftToProto(entity *entities.CharacterDraft) *dnd5ev1alpha1.CharacterDraft {
+func convertEntityDraftToProto(entity *dnd5e.CharacterDraft) *dnd5ev1alpha1.CharacterDraft {
 	if entity == nil {
 		return nil
 	}
@@ -597,23 +598,23 @@ func convertEntityDraftToProto(entity *entities.CharacterDraft) *dnd5ev1alpha1.C
 func mapProtoRaceToConstant(race dnd5ev1alpha1.Race) string {
 	switch race {
 	case dnd5ev1alpha1.Race_RACE_HUMAN:
-		return entities.RaceHuman
+		return dnd5e.RaceHuman
 	case dnd5ev1alpha1.Race_RACE_DWARF:
-		return entities.RaceDwarf
+		return dnd5e.RaceDwarf
 	case dnd5ev1alpha1.Race_RACE_ELF:
-		return entities.RaceElf
+		return dnd5e.RaceElf
 	case dnd5ev1alpha1.Race_RACE_HALFLING:
-		return entities.RaceHalfling
+		return dnd5e.RaceHalfling
 	case dnd5ev1alpha1.Race_RACE_DRAGONBORN:
-		return entities.RaceDragonborn
+		return dnd5e.RaceDragonborn
 	case dnd5ev1alpha1.Race_RACE_GNOME:
-		return entities.RaceGnome
+		return dnd5e.RaceGnome
 	case dnd5ev1alpha1.Race_RACE_HALF_ELF:
-		return entities.RaceHalfElf
+		return dnd5e.RaceHalfElf
 	case dnd5ev1alpha1.Race_RACE_HALF_ORC:
-		return entities.RaceHalfOrc
+		return dnd5e.RaceHalfOrc
 	case dnd5ev1alpha1.Race_RACE_TIEFLING:
-		return entities.RaceTiefling
+		return dnd5e.RaceTiefling
 	default:
 		return ""
 	}
@@ -622,23 +623,23 @@ func mapProtoRaceToConstant(race dnd5ev1alpha1.Race) string {
 func mapProtoSubraceToConstant(subrace dnd5ev1alpha1.Subrace) string {
 	switch subrace {
 	case dnd5ev1alpha1.Subrace_SUBRACE_HIGH_ELF:
-		return entities.SubraceHighElf
+		return dnd5e.SubraceHighElf
 	case dnd5ev1alpha1.Subrace_SUBRACE_WOOD_ELF:
-		return entities.SubraceWoodElf
+		return dnd5e.SubraceWoodElf
 	case dnd5ev1alpha1.Subrace_SUBRACE_DARK_ELF:
-		return entities.SubraceDarkElf
+		return dnd5e.SubraceDarkElf
 	case dnd5ev1alpha1.Subrace_SUBRACE_HILL_DWARF:
-		return entities.SubraceHillDwarf
+		return dnd5e.SubraceHillDwarf
 	case dnd5ev1alpha1.Subrace_SUBRACE_MOUNTAIN_DWARF:
-		return entities.SubraceMountainDwarf
+		return dnd5e.SubraceMountainDwarf
 	case dnd5ev1alpha1.Subrace_SUBRACE_LIGHTFOOT_HALFLING:
-		return entities.SubraceLightfootHalfling
+		return dnd5e.SubraceLightfootHalfling
 	case dnd5ev1alpha1.Subrace_SUBRACE_STOUT_HALFLING:
-		return entities.SubraceStoutHalfling
+		return dnd5e.SubraceStoutHalfling
 	case dnd5ev1alpha1.Subrace_SUBRACE_FOREST_GNOME:
-		return entities.SubraceForestGnome
+		return dnd5e.SubraceForestGnome
 	case dnd5ev1alpha1.Subrace_SUBRACE_ROCK_GNOME:
-		return entities.SubraceRockGnome
+		return dnd5e.SubraceRockGnome
 	default:
 		return ""
 	}
@@ -647,29 +648,29 @@ func mapProtoSubraceToConstant(subrace dnd5ev1alpha1.Subrace) string {
 func mapProtoClassToConstant(class dnd5ev1alpha1.Class) string {
 	switch class {
 	case dnd5ev1alpha1.Class_CLASS_BARBARIAN:
-		return entities.ClassBarbarian
+		return dnd5e.ClassBarbarian
 	case dnd5ev1alpha1.Class_CLASS_BARD:
-		return entities.ClassBard
+		return dnd5e.ClassBard
 	case dnd5ev1alpha1.Class_CLASS_CLERIC:
-		return entities.ClassCleric
+		return dnd5e.ClassCleric
 	case dnd5ev1alpha1.Class_CLASS_DRUID:
-		return entities.ClassDruid
+		return dnd5e.ClassDruid
 	case dnd5ev1alpha1.Class_CLASS_FIGHTER:
-		return entities.ClassFighter
+		return dnd5e.ClassFighter
 	case dnd5ev1alpha1.Class_CLASS_MONK:
-		return entities.ClassMonk
+		return dnd5e.ClassMonk
 	case dnd5ev1alpha1.Class_CLASS_PALADIN:
-		return entities.ClassPaladin
+		return dnd5e.ClassPaladin
 	case dnd5ev1alpha1.Class_CLASS_RANGER:
-		return entities.ClassRanger
+		return dnd5e.ClassRanger
 	case dnd5ev1alpha1.Class_CLASS_ROGUE:
-		return entities.ClassRogue
+		return dnd5e.ClassRogue
 	case dnd5ev1alpha1.Class_CLASS_SORCERER:
-		return entities.ClassSorcerer
+		return dnd5e.ClassSorcerer
 	case dnd5ev1alpha1.Class_CLASS_WARLOCK:
-		return entities.ClassWarlock
+		return dnd5e.ClassWarlock
 	case dnd5ev1alpha1.Class_CLASS_WIZARD:
-		return entities.ClassWizard
+		return dnd5e.ClassWizard
 	default:
 		return ""
 	}
@@ -678,31 +679,31 @@ func mapProtoClassToConstant(class dnd5ev1alpha1.Class) string {
 func mapProtoBackgroundToConstant(bg dnd5ev1alpha1.Background) string {
 	switch bg {
 	case dnd5ev1alpha1.Background_BACKGROUND_ACOLYTE:
-		return entities.BackgroundAcolyte
+		return dnd5e.BackgroundAcolyte
 	case dnd5ev1alpha1.Background_BACKGROUND_CHARLATAN:
-		return entities.BackgroundCharlatan
+		return dnd5e.BackgroundCharlatan
 	case dnd5ev1alpha1.Background_BACKGROUND_CRIMINAL:
-		return entities.BackgroundCriminal
+		return dnd5e.BackgroundCriminal
 	case dnd5ev1alpha1.Background_BACKGROUND_ENTERTAINER:
-		return entities.BackgroundEntertainer
+		return dnd5e.BackgroundEntertainer
 	case dnd5ev1alpha1.Background_BACKGROUND_FOLK_HERO:
-		return entities.BackgroundFolkHero
+		return dnd5e.BackgroundFolkHero
 	case dnd5ev1alpha1.Background_BACKGROUND_GUILD_ARTISAN:
-		return entities.BackgroundGuildArtisan
+		return dnd5e.BackgroundGuildArtisan
 	case dnd5ev1alpha1.Background_BACKGROUND_HERMIT:
-		return entities.BackgroundHermit
+		return dnd5e.BackgroundHermit
 	case dnd5ev1alpha1.Background_BACKGROUND_NOBLE:
-		return entities.BackgroundNoble
+		return dnd5e.BackgroundNoble
 	case dnd5ev1alpha1.Background_BACKGROUND_OUTLANDER:
-		return entities.BackgroundOutlander
+		return dnd5e.BackgroundOutlander
 	case dnd5ev1alpha1.Background_BACKGROUND_SAGE:
-		return entities.BackgroundSage
+		return dnd5e.BackgroundSage
 	case dnd5ev1alpha1.Background_BACKGROUND_SAILOR:
-		return entities.BackgroundSailor
+		return dnd5e.BackgroundSailor
 	case dnd5ev1alpha1.Background_BACKGROUND_SOLDIER:
-		return entities.BackgroundSoldier
+		return dnd5e.BackgroundSoldier
 	case dnd5ev1alpha1.Background_BACKGROUND_URCHIN:
-		return entities.BackgroundUrchin
+		return dnd5e.BackgroundUrchin
 	default:
 		return ""
 	}
@@ -711,23 +712,23 @@ func mapProtoBackgroundToConstant(bg dnd5ev1alpha1.Background) string {
 func mapProtoAlignmentToConstant(alignment dnd5ev1alpha1.Alignment) string {
 	switch alignment {
 	case dnd5ev1alpha1.Alignment_ALIGNMENT_LAWFUL_GOOD:
-		return entities.AlignmentLawfulGood
+		return dnd5e.AlignmentLawfulGood
 	case dnd5ev1alpha1.Alignment_ALIGNMENT_NEUTRAL_GOOD:
-		return entities.AlignmentNeutralGood
+		return dnd5e.AlignmentNeutralGood
 	case dnd5ev1alpha1.Alignment_ALIGNMENT_CHAOTIC_GOOD:
-		return entities.AlignmentChaoticGood
+		return dnd5e.AlignmentChaoticGood
 	case dnd5ev1alpha1.Alignment_ALIGNMENT_LAWFUL_NEUTRAL:
-		return entities.AlignmentLawfulNeutral
+		return dnd5e.AlignmentLawfulNeutral
 	case dnd5ev1alpha1.Alignment_ALIGNMENT_TRUE_NEUTRAL:
-		return entities.AlignmentTrueNeutral
+		return dnd5e.AlignmentTrueNeutral
 	case dnd5ev1alpha1.Alignment_ALIGNMENT_CHAOTIC_NEUTRAL:
-		return entities.AlignmentChaoticNeutral
+		return dnd5e.AlignmentChaoticNeutral
 	case dnd5ev1alpha1.Alignment_ALIGNMENT_LAWFUL_EVIL:
-		return entities.AlignmentLawfulEvil
+		return dnd5e.AlignmentLawfulEvil
 	case dnd5ev1alpha1.Alignment_ALIGNMENT_NEUTRAL_EVIL:
-		return entities.AlignmentNeutralEvil
+		return dnd5e.AlignmentNeutralEvil
 	case dnd5ev1alpha1.Alignment_ALIGNMENT_CHAOTIC_EVIL:
-		return entities.AlignmentChaoticEvil
+		return dnd5e.AlignmentChaoticEvil
 	default:
 		return ""
 	}
@@ -736,41 +737,41 @@ func mapProtoAlignmentToConstant(alignment dnd5ev1alpha1.Alignment) string {
 func mapProtoSkillToConstant(skill dnd5ev1alpha1.Skill) string {
 	switch skill {
 	case dnd5ev1alpha1.Skill_SKILL_ACROBATICS:
-		return entities.SkillAcrobatics
+		return dnd5e.SkillAcrobatics
 	case dnd5ev1alpha1.Skill_SKILL_ANIMAL_HANDLING:
-		return entities.SkillAnimalHandling
+		return dnd5e.SkillAnimalHandling
 	case dnd5ev1alpha1.Skill_SKILL_ARCANA:
-		return entities.SkillArcana
+		return dnd5e.SkillArcana
 	case dnd5ev1alpha1.Skill_SKILL_ATHLETICS:
-		return entities.SkillAthletics
+		return dnd5e.SkillAthletics
 	case dnd5ev1alpha1.Skill_SKILL_DECEPTION:
-		return entities.SkillDeception
+		return dnd5e.SkillDeception
 	case dnd5ev1alpha1.Skill_SKILL_HISTORY:
-		return entities.SkillHistory
+		return dnd5e.SkillHistory
 	case dnd5ev1alpha1.Skill_SKILL_INSIGHT:
-		return entities.SkillInsight
+		return dnd5e.SkillInsight
 	case dnd5ev1alpha1.Skill_SKILL_INTIMIDATION:
-		return entities.SkillIntimidation
+		return dnd5e.SkillIntimidation
 	case dnd5ev1alpha1.Skill_SKILL_INVESTIGATION:
-		return entities.SkillInvestigation
+		return dnd5e.SkillInvestigation
 	case dnd5ev1alpha1.Skill_SKILL_MEDICINE:
-		return entities.SkillMedicine
+		return dnd5e.SkillMedicine
 	case dnd5ev1alpha1.Skill_SKILL_NATURE:
-		return entities.SkillNature
+		return dnd5e.SkillNature
 	case dnd5ev1alpha1.Skill_SKILL_PERCEPTION:
-		return entities.SkillPerception
+		return dnd5e.SkillPerception
 	case dnd5ev1alpha1.Skill_SKILL_PERFORMANCE:
-		return entities.SkillPerformance
+		return dnd5e.SkillPerformance
 	case dnd5ev1alpha1.Skill_SKILL_PERSUASION:
-		return entities.SkillPersuasion
+		return dnd5e.SkillPersuasion
 	case dnd5ev1alpha1.Skill_SKILL_RELIGION:
-		return entities.SkillReligion
+		return dnd5e.SkillReligion
 	case dnd5ev1alpha1.Skill_SKILL_SLEIGHT_OF_HAND:
-		return entities.SkillSleightOfHand
+		return dnd5e.SkillSleightOfHand
 	case dnd5ev1alpha1.Skill_SKILL_STEALTH:
-		return entities.SkillStealth
+		return dnd5e.SkillStealth
 	case dnd5ev1alpha1.Skill_SKILL_SURVIVAL:
-		return entities.SkillSurvival
+		return dnd5e.SkillSurvival
 	default:
 		return ""
 	}
@@ -779,37 +780,37 @@ func mapProtoSkillToConstant(skill dnd5ev1alpha1.Skill) string {
 func mapProtoLanguageToConstant(lang dnd5ev1alpha1.Language) string {
 	switch lang {
 	case dnd5ev1alpha1.Language_LANGUAGE_COMMON:
-		return entities.LanguageCommon
+		return dnd5e.LanguageCommon
 	case dnd5ev1alpha1.Language_LANGUAGE_DWARVISH:
-		return entities.LanguageDwarvish
+		return dnd5e.LanguageDwarvish
 	case dnd5ev1alpha1.Language_LANGUAGE_ELVISH:
-		return entities.LanguageElvish
+		return dnd5e.LanguageElvish
 	case dnd5ev1alpha1.Language_LANGUAGE_GIANT:
-		return entities.LanguageGiant
+		return dnd5e.LanguageGiant
 	case dnd5ev1alpha1.Language_LANGUAGE_GNOMISH:
-		return entities.LanguageGnomish
+		return dnd5e.LanguageGnomish
 	case dnd5ev1alpha1.Language_LANGUAGE_GOBLIN:
-		return entities.LanguageGoblin
+		return dnd5e.LanguageGoblin
 	case dnd5ev1alpha1.Language_LANGUAGE_HALFLING:
-		return entities.LanguageHalfling
+		return dnd5e.LanguageHalfling
 	case dnd5ev1alpha1.Language_LANGUAGE_ORC:
-		return entities.LanguageOrc
+		return dnd5e.LanguageOrc
 	case dnd5ev1alpha1.Language_LANGUAGE_ABYSSAL:
-		return entities.LanguageAbyssal
+		return dnd5e.LanguageAbyssal
 	case dnd5ev1alpha1.Language_LANGUAGE_CELESTIAL:
-		return entities.LanguageCelestial
+		return dnd5e.LanguageCelestial
 	case dnd5ev1alpha1.Language_LANGUAGE_DRACONIC:
-		return entities.LanguageDraconic
+		return dnd5e.LanguageDraconic
 	case dnd5ev1alpha1.Language_LANGUAGE_DEEP_SPEECH:
-		return entities.LanguageDeepSpeech
+		return dnd5e.LanguageDeepSpeech
 	case dnd5ev1alpha1.Language_LANGUAGE_INFERNAL:
-		return entities.LanguageInfernal
+		return dnd5e.LanguageInfernal
 	case dnd5ev1alpha1.Language_LANGUAGE_PRIMORDIAL:
-		return entities.LanguagePrimordial
+		return dnd5e.LanguagePrimordial
 	case dnd5ev1alpha1.Language_LANGUAGE_SYLVAN:
-		return entities.LanguageSylvan
+		return dnd5e.LanguageSylvan
 	case dnd5ev1alpha1.Language_LANGUAGE_UNDERCOMMON:
-		return entities.LanguageUndercommon
+		return dnd5e.LanguageUndercommon
 	default:
 		return ""
 	}
@@ -818,21 +819,21 @@ func mapProtoLanguageToConstant(lang dnd5ev1alpha1.Language) string {
 func mapProtoCreationStepToConstant(step dnd5ev1alpha1.CreationStep) string {
 	switch step {
 	case dnd5ev1alpha1.CreationStep_CREATION_STEP_NAME:
-		return entities.CreationStepName
+		return dnd5e.CreationStepName
 	case dnd5ev1alpha1.CreationStep_CREATION_STEP_RACE:
-		return entities.CreationStepRace
+		return dnd5e.CreationStepRace
 	case dnd5ev1alpha1.CreationStep_CREATION_STEP_CLASS:
-		return entities.CreationStepClass
+		return dnd5e.CreationStepClass
 	case dnd5ev1alpha1.CreationStep_CREATION_STEP_BACKGROUND:
-		return entities.CreationStepBackground
+		return dnd5e.CreationStepBackground
 	case dnd5ev1alpha1.CreationStep_CREATION_STEP_ABILITY_SCORES:
-		return entities.CreationStepAbilityScores
+		return dnd5e.CreationStepAbilityScores
 	case dnd5ev1alpha1.CreationStep_CREATION_STEP_SKILLS:
-		return entities.CreationStepSkills
+		return dnd5e.CreationStepSkills
 	case dnd5ev1alpha1.CreationStep_CREATION_STEP_LANGUAGES:
-		return entities.CreationStepLanguages
+		return dnd5e.CreationStepLanguages
 	case dnd5ev1alpha1.CreationStep_CREATION_STEP_REVIEW:
-		return entities.CreationStepReview
+		return dnd5e.CreationStepReview
 	default:
 		return ""
 	}
@@ -842,23 +843,23 @@ func mapProtoCreationStepToConstant(step dnd5ev1alpha1.CreationStep) string {
 
 func mapConstantToProtoRace(constant string) dnd5ev1alpha1.Race {
 	switch constant {
-	case entities.RaceHuman:
+	case dnd5e.RaceHuman:
 		return dnd5ev1alpha1.Race_RACE_HUMAN
-	case entities.RaceDwarf:
+	case dnd5e.RaceDwarf:
 		return dnd5ev1alpha1.Race_RACE_DWARF
-	case entities.RaceElf:
+	case dnd5e.RaceElf:
 		return dnd5ev1alpha1.Race_RACE_ELF
-	case entities.RaceHalfling:
+	case dnd5e.RaceHalfling:
 		return dnd5ev1alpha1.Race_RACE_HALFLING
-	case entities.RaceDragonborn:
+	case dnd5e.RaceDragonborn:
 		return dnd5ev1alpha1.Race_RACE_DRAGONBORN
-	case entities.RaceGnome:
+	case dnd5e.RaceGnome:
 		return dnd5ev1alpha1.Race_RACE_GNOME
-	case entities.RaceHalfElf:
+	case dnd5e.RaceHalfElf:
 		return dnd5ev1alpha1.Race_RACE_HALF_ELF
-	case entities.RaceHalfOrc:
+	case dnd5e.RaceHalfOrc:
 		return dnd5ev1alpha1.Race_RACE_HALF_ORC
-	case entities.RaceTiefling:
+	case dnd5e.RaceTiefling:
 		return dnd5ev1alpha1.Race_RACE_TIEFLING
 	default:
 		return dnd5ev1alpha1.Race_RACE_UNSPECIFIED
@@ -867,23 +868,23 @@ func mapConstantToProtoRace(constant string) dnd5ev1alpha1.Race {
 
 func mapConstantToProtoSubrace(constant string) dnd5ev1alpha1.Subrace {
 	switch constant {
-	case entities.SubraceHighElf:
+	case dnd5e.SubraceHighElf:
 		return dnd5ev1alpha1.Subrace_SUBRACE_HIGH_ELF
-	case entities.SubraceWoodElf:
+	case dnd5e.SubraceWoodElf:
 		return dnd5ev1alpha1.Subrace_SUBRACE_WOOD_ELF
-	case entities.SubraceDarkElf:
+	case dnd5e.SubraceDarkElf:
 		return dnd5ev1alpha1.Subrace_SUBRACE_DARK_ELF
-	case entities.SubraceHillDwarf:
+	case dnd5e.SubraceHillDwarf:
 		return dnd5ev1alpha1.Subrace_SUBRACE_HILL_DWARF
-	case entities.SubraceMountainDwarf:
+	case dnd5e.SubraceMountainDwarf:
 		return dnd5ev1alpha1.Subrace_SUBRACE_MOUNTAIN_DWARF
-	case entities.SubraceLightfootHalfling:
+	case dnd5e.SubraceLightfootHalfling:
 		return dnd5ev1alpha1.Subrace_SUBRACE_LIGHTFOOT_HALFLING
-	case entities.SubraceStoutHalfling:
+	case dnd5e.SubraceStoutHalfling:
 		return dnd5ev1alpha1.Subrace_SUBRACE_STOUT_HALFLING
-	case entities.SubraceForestGnome:
+	case dnd5e.SubraceForestGnome:
 		return dnd5ev1alpha1.Subrace_SUBRACE_FOREST_GNOME
-	case entities.SubraceRockGnome:
+	case dnd5e.SubraceRockGnome:
 		return dnd5ev1alpha1.Subrace_SUBRACE_ROCK_GNOME
 	default:
 		return dnd5ev1alpha1.Subrace_SUBRACE_UNSPECIFIED
@@ -892,29 +893,29 @@ func mapConstantToProtoSubrace(constant string) dnd5ev1alpha1.Subrace {
 
 func mapConstantToProtoClass(constant string) dnd5ev1alpha1.Class {
 	switch constant {
-	case entities.ClassBarbarian:
+	case dnd5e.ClassBarbarian:
 		return dnd5ev1alpha1.Class_CLASS_BARBARIAN
-	case entities.ClassBard:
+	case dnd5e.ClassBard:
 		return dnd5ev1alpha1.Class_CLASS_BARD
-	case entities.ClassCleric:
+	case dnd5e.ClassCleric:
 		return dnd5ev1alpha1.Class_CLASS_CLERIC
-	case entities.ClassDruid:
+	case dnd5e.ClassDruid:
 		return dnd5ev1alpha1.Class_CLASS_DRUID
-	case entities.ClassFighter:
+	case dnd5e.ClassFighter:
 		return dnd5ev1alpha1.Class_CLASS_FIGHTER
-	case entities.ClassMonk:
+	case dnd5e.ClassMonk:
 		return dnd5ev1alpha1.Class_CLASS_MONK
-	case entities.ClassPaladin:
+	case dnd5e.ClassPaladin:
 		return dnd5ev1alpha1.Class_CLASS_PALADIN
-	case entities.ClassRanger:
+	case dnd5e.ClassRanger:
 		return dnd5ev1alpha1.Class_CLASS_RANGER
-	case entities.ClassRogue:
+	case dnd5e.ClassRogue:
 		return dnd5ev1alpha1.Class_CLASS_ROGUE
-	case entities.ClassSorcerer:
+	case dnd5e.ClassSorcerer:
 		return dnd5ev1alpha1.Class_CLASS_SORCERER
-	case entities.ClassWarlock:
+	case dnd5e.ClassWarlock:
 		return dnd5ev1alpha1.Class_CLASS_WARLOCK
-	case entities.ClassWizard:
+	case dnd5e.ClassWizard:
 		return dnd5ev1alpha1.Class_CLASS_WIZARD
 	default:
 		return dnd5ev1alpha1.Class_CLASS_UNSPECIFIED
@@ -923,31 +924,31 @@ func mapConstantToProtoClass(constant string) dnd5ev1alpha1.Class {
 
 func mapConstantToProtoBackground(constant string) dnd5ev1alpha1.Background {
 	switch constant {
-	case entities.BackgroundAcolyte:
+	case dnd5e.BackgroundAcolyte:
 		return dnd5ev1alpha1.Background_BACKGROUND_ACOLYTE
-	case entities.BackgroundCharlatan:
+	case dnd5e.BackgroundCharlatan:
 		return dnd5ev1alpha1.Background_BACKGROUND_CHARLATAN
-	case entities.BackgroundCriminal:
+	case dnd5e.BackgroundCriminal:
 		return dnd5ev1alpha1.Background_BACKGROUND_CRIMINAL
-	case entities.BackgroundEntertainer:
+	case dnd5e.BackgroundEntertainer:
 		return dnd5ev1alpha1.Background_BACKGROUND_ENTERTAINER
-	case entities.BackgroundFolkHero:
+	case dnd5e.BackgroundFolkHero:
 		return dnd5ev1alpha1.Background_BACKGROUND_FOLK_HERO
-	case entities.BackgroundGuildArtisan:
+	case dnd5e.BackgroundGuildArtisan:
 		return dnd5ev1alpha1.Background_BACKGROUND_GUILD_ARTISAN
-	case entities.BackgroundHermit:
+	case dnd5e.BackgroundHermit:
 		return dnd5ev1alpha1.Background_BACKGROUND_HERMIT
-	case entities.BackgroundNoble:
+	case dnd5e.BackgroundNoble:
 		return dnd5ev1alpha1.Background_BACKGROUND_NOBLE
-	case entities.BackgroundOutlander:
+	case dnd5e.BackgroundOutlander:
 		return dnd5ev1alpha1.Background_BACKGROUND_OUTLANDER
-	case entities.BackgroundSage:
+	case dnd5e.BackgroundSage:
 		return dnd5ev1alpha1.Background_BACKGROUND_SAGE
-	case entities.BackgroundSailor:
+	case dnd5e.BackgroundSailor:
 		return dnd5ev1alpha1.Background_BACKGROUND_SAILOR
-	case entities.BackgroundSoldier:
+	case dnd5e.BackgroundSoldier:
 		return dnd5ev1alpha1.Background_BACKGROUND_SOLDIER
-	case entities.BackgroundUrchin:
+	case dnd5e.BackgroundUrchin:
 		return dnd5ev1alpha1.Background_BACKGROUND_URCHIN
 	default:
 		return dnd5ev1alpha1.Background_BACKGROUND_UNSPECIFIED
@@ -956,23 +957,23 @@ func mapConstantToProtoBackground(constant string) dnd5ev1alpha1.Background {
 
 func mapConstantToProtoAlignment(constant string) dnd5ev1alpha1.Alignment {
 	switch constant {
-	case entities.AlignmentLawfulGood:
+	case dnd5e.AlignmentLawfulGood:
 		return dnd5ev1alpha1.Alignment_ALIGNMENT_LAWFUL_GOOD
-	case entities.AlignmentNeutralGood:
+	case dnd5e.AlignmentNeutralGood:
 		return dnd5ev1alpha1.Alignment_ALIGNMENT_NEUTRAL_GOOD
-	case entities.AlignmentChaoticGood:
+	case dnd5e.AlignmentChaoticGood:
 		return dnd5ev1alpha1.Alignment_ALIGNMENT_CHAOTIC_GOOD
-	case entities.AlignmentLawfulNeutral:
+	case dnd5e.AlignmentLawfulNeutral:
 		return dnd5ev1alpha1.Alignment_ALIGNMENT_LAWFUL_NEUTRAL
-	case entities.AlignmentTrueNeutral:
+	case dnd5e.AlignmentTrueNeutral:
 		return dnd5ev1alpha1.Alignment_ALIGNMENT_TRUE_NEUTRAL
-	case entities.AlignmentChaoticNeutral:
+	case dnd5e.AlignmentChaoticNeutral:
 		return dnd5ev1alpha1.Alignment_ALIGNMENT_CHAOTIC_NEUTRAL
-	case entities.AlignmentLawfulEvil:
+	case dnd5e.AlignmentLawfulEvil:
 		return dnd5ev1alpha1.Alignment_ALIGNMENT_LAWFUL_EVIL
-	case entities.AlignmentNeutralEvil:
+	case dnd5e.AlignmentNeutralEvil:
 		return dnd5ev1alpha1.Alignment_ALIGNMENT_NEUTRAL_EVIL
-	case entities.AlignmentChaoticEvil:
+	case dnd5e.AlignmentChaoticEvil:
 		return dnd5ev1alpha1.Alignment_ALIGNMENT_CHAOTIC_EVIL
 	default:
 		return dnd5ev1alpha1.Alignment_ALIGNMENT_UNSPECIFIED
@@ -981,41 +982,41 @@ func mapConstantToProtoAlignment(constant string) dnd5ev1alpha1.Alignment {
 
 func mapConstantToProtoSkill(constant string) dnd5ev1alpha1.Skill {
 	switch constant {
-	case entities.SkillAcrobatics:
+	case dnd5e.SkillAcrobatics:
 		return dnd5ev1alpha1.Skill_SKILL_ACROBATICS
-	case entities.SkillAnimalHandling:
+	case dnd5e.SkillAnimalHandling:
 		return dnd5ev1alpha1.Skill_SKILL_ANIMAL_HANDLING
-	case entities.SkillArcana:
+	case dnd5e.SkillArcana:
 		return dnd5ev1alpha1.Skill_SKILL_ARCANA
-	case entities.SkillAthletics:
+	case dnd5e.SkillAthletics:
 		return dnd5ev1alpha1.Skill_SKILL_ATHLETICS
-	case entities.SkillDeception:
+	case dnd5e.SkillDeception:
 		return dnd5ev1alpha1.Skill_SKILL_DECEPTION
-	case entities.SkillHistory:
+	case dnd5e.SkillHistory:
 		return dnd5ev1alpha1.Skill_SKILL_HISTORY
-	case entities.SkillInsight:
+	case dnd5e.SkillInsight:
 		return dnd5ev1alpha1.Skill_SKILL_INSIGHT
-	case entities.SkillIntimidation:
+	case dnd5e.SkillIntimidation:
 		return dnd5ev1alpha1.Skill_SKILL_INTIMIDATION
-	case entities.SkillInvestigation:
+	case dnd5e.SkillInvestigation:
 		return dnd5ev1alpha1.Skill_SKILL_INVESTIGATION
-	case entities.SkillMedicine:
+	case dnd5e.SkillMedicine:
 		return dnd5ev1alpha1.Skill_SKILL_MEDICINE
-	case entities.SkillNature:
+	case dnd5e.SkillNature:
 		return dnd5ev1alpha1.Skill_SKILL_NATURE
-	case entities.SkillPerception:
+	case dnd5e.SkillPerception:
 		return dnd5ev1alpha1.Skill_SKILL_PERCEPTION
-	case entities.SkillPerformance:
+	case dnd5e.SkillPerformance:
 		return dnd5ev1alpha1.Skill_SKILL_PERFORMANCE
-	case entities.SkillPersuasion:
+	case dnd5e.SkillPersuasion:
 		return dnd5ev1alpha1.Skill_SKILL_PERSUASION
-	case entities.SkillReligion:
+	case dnd5e.SkillReligion:
 		return dnd5ev1alpha1.Skill_SKILL_RELIGION
-	case entities.SkillSleightOfHand:
+	case dnd5e.SkillSleightOfHand:
 		return dnd5ev1alpha1.Skill_SKILL_SLEIGHT_OF_HAND
-	case entities.SkillStealth:
+	case dnd5e.SkillStealth:
 		return dnd5ev1alpha1.Skill_SKILL_STEALTH
-	case entities.SkillSurvival:
+	case dnd5e.SkillSurvival:
 		return dnd5ev1alpha1.Skill_SKILL_SURVIVAL
 	default:
 		return dnd5ev1alpha1.Skill_SKILL_UNSPECIFIED
@@ -1024,37 +1025,37 @@ func mapConstantToProtoSkill(constant string) dnd5ev1alpha1.Skill {
 
 func mapConstantToProtoLanguage(constant string) dnd5ev1alpha1.Language {
 	switch constant {
-	case entities.LanguageCommon:
+	case dnd5e.LanguageCommon:
 		return dnd5ev1alpha1.Language_LANGUAGE_COMMON
-	case entities.LanguageDwarvish:
+	case dnd5e.LanguageDwarvish:
 		return dnd5ev1alpha1.Language_LANGUAGE_DWARVISH
-	case entities.LanguageElvish:
+	case dnd5e.LanguageElvish:
 		return dnd5ev1alpha1.Language_LANGUAGE_ELVISH
-	case entities.LanguageGiant:
+	case dnd5e.LanguageGiant:
 		return dnd5ev1alpha1.Language_LANGUAGE_GIANT
-	case entities.LanguageGnomish:
+	case dnd5e.LanguageGnomish:
 		return dnd5ev1alpha1.Language_LANGUAGE_GNOMISH
-	case entities.LanguageGoblin:
+	case dnd5e.LanguageGoblin:
 		return dnd5ev1alpha1.Language_LANGUAGE_GOBLIN
-	case entities.LanguageHalfling:
+	case dnd5e.LanguageHalfling:
 		return dnd5ev1alpha1.Language_LANGUAGE_HALFLING
-	case entities.LanguageOrc:
+	case dnd5e.LanguageOrc:
 		return dnd5ev1alpha1.Language_LANGUAGE_ORC
-	case entities.LanguageAbyssal:
+	case dnd5e.LanguageAbyssal:
 		return dnd5ev1alpha1.Language_LANGUAGE_ABYSSAL
-	case entities.LanguageCelestial:
+	case dnd5e.LanguageCelestial:
 		return dnd5ev1alpha1.Language_LANGUAGE_CELESTIAL
-	case entities.LanguageDraconic:
+	case dnd5e.LanguageDraconic:
 		return dnd5ev1alpha1.Language_LANGUAGE_DRACONIC
-	case entities.LanguageDeepSpeech:
+	case dnd5e.LanguageDeepSpeech:
 		return dnd5ev1alpha1.Language_LANGUAGE_DEEP_SPEECH
-	case entities.LanguageInfernal:
+	case dnd5e.LanguageInfernal:
 		return dnd5ev1alpha1.Language_LANGUAGE_INFERNAL
-	case entities.LanguagePrimordial:
+	case dnd5e.LanguagePrimordial:
 		return dnd5ev1alpha1.Language_LANGUAGE_PRIMORDIAL
-	case entities.LanguageSylvan:
+	case dnd5e.LanguageSylvan:
 		return dnd5ev1alpha1.Language_LANGUAGE_SYLVAN
-	case entities.LanguageUndercommon:
+	case dnd5e.LanguageUndercommon:
 		return dnd5ev1alpha1.Language_LANGUAGE_UNDERCOMMON
 	default:
 		return dnd5ev1alpha1.Language_LANGUAGE_UNSPECIFIED
@@ -1063,21 +1064,21 @@ func mapConstantToProtoLanguage(constant string) dnd5ev1alpha1.Language {
 
 func mapConstantToProtoCreationStep(constant string) dnd5ev1alpha1.CreationStep {
 	switch constant {
-	case entities.CreationStepName:
+	case dnd5e.CreationStepName:
 		return dnd5ev1alpha1.CreationStep_CREATION_STEP_NAME
-	case entities.CreationStepRace:
+	case dnd5e.CreationStepRace:
 		return dnd5ev1alpha1.CreationStep_CREATION_STEP_RACE
-	case entities.CreationStepClass:
+	case dnd5e.CreationStepClass:
 		return dnd5ev1alpha1.CreationStep_CREATION_STEP_CLASS
-	case entities.CreationStepBackground:
+	case dnd5e.CreationStepBackground:
 		return dnd5ev1alpha1.CreationStep_CREATION_STEP_BACKGROUND
-	case entities.CreationStepAbilityScores:
+	case dnd5e.CreationStepAbilityScores:
 		return dnd5ev1alpha1.CreationStep_CREATION_STEP_ABILITY_SCORES
-	case entities.CreationStepSkills:
+	case dnd5e.CreationStepSkills:
 		return dnd5ev1alpha1.CreationStep_CREATION_STEP_SKILLS
-	case entities.CreationStepLanguages:
+	case dnd5e.CreationStepLanguages:
 		return dnd5ev1alpha1.CreationStep_CREATION_STEP_LANGUAGES
-	case entities.CreationStepReview:
+	case dnd5e.CreationStepReview:
 		return dnd5ev1alpha1.CreationStep_CREATION_STEP_REVIEW
 	default:
 		return dnd5ev1alpha1.CreationStep_CREATION_STEP_UNSPECIFIED
@@ -1110,7 +1111,7 @@ func convertErrorsToProto(errors []character.ValidationError) []*dnd5ev1alpha1.V
 	return protoErrors
 }
 
-func convertCharacterToProto(char *entities.Character) *dnd5ev1alpha1.Character {
+func convertCharacterToProto(char *dnd5e.Character) *dnd5ev1alpha1.Character {
 	if char == nil {
 		return nil
 	}

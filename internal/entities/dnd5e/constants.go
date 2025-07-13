@@ -1,4 +1,4 @@
-package entities
+package dnd5e
 
 // Race constants
 const (

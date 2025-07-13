@@ -1,4 +1,4 @@
-package entities
+package dnd5e
 
 // Character represents a finalized D&D 5e character
 type Character struct {

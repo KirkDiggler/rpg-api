@@ -1,4 +1,4 @@
-# Configuration for golangci-lint v1 (compatible with both v1 and v2)
+version: "2"
 
 run:
   timeout: 5m
@@ -7,9 +7,7 @@ run:
     - integration
 
 linters:
-  disable-all: false
-  disable:
-    - typecheck  # Disable typecheck as it has issues with testify suite embedding
+  default: none
   enable:
     # Default linters (all good to keep)
     - errcheck
@@ -37,7 +35,7 @@ linters:
     - unparam        # Find unused parameters
     - whitespace     # Check unnecessary newlines
 
-linters-settings:
+settings:
   dupl:
     threshold: 100
   
@@ -105,6 +103,11 @@ linters-settings:
       - name: errorf
 
 issues:
+  exclude-dirs:
+    - gen/go
+    - internal/services/character/mock
+    - ".*mock.*"
+    
   exclude-rules:
     # Exclude some linters from test files
     - path: _test\.go
@@ -114,22 +117,6 @@ issues:
         - goconst
         - gosec
         - gocyclo
-        - typecheck  # Test files use testify suite methods that confuse typecheck
-    
-    # Exclude from generated files
-    - path: _gen\.go
-      linters:
-        - all
-    
-    # Exclude from generated proto files
-    - path: gen/go/
-      linters:
-        - all
-    
-    # Exclude from mock files
-    - path: mock/
-      linters:
-        - all
     
     # Allow longer lines in generate directives
     - source: "^//go:generate "
@@ -143,15 +130,3 @@ issues:
   
   max-issues-per-linter: 0
   max-same-issues: 0
-
-formatters:
-  enable:
-    - gofmt
-    - goimports
-
-formatters-settings:
-  gofmt:
-    simplify: true
-  
-  goimports:
-    local-prefixes: github.com/KirkDiggler
