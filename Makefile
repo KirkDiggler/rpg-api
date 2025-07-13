@@ -4,7 +4,7 @@ help: ## Display this help message
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-20s %s\n", $$1, $$2}'
 
 .PHONY: pre-commit
-pre-commit: fmt tidy buf-lint lint test ## Run all pre-commit checks
+pre-commit: fmt tidy fix-eof buf-lint lint test ## Run all pre-commit checks
 
 .PHONY: fmt
 fmt: ## Format Go code

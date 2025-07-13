@@ -114,7 +114,7 @@ Each package includes a README explaining its purpose and boundaries.
 
 **We always use the latest Go version** (currently 1.24) for optimal performance in our real-time gRPC services. 
 
-See [Journey: Go Version Policy](docs/journey/2025-07-13-go-version-policy.md) for the full story behind this decision.
+See [Journey: Go Version Policy](docs/journey/003-go-version-policy.md) for the full story behind this decision.
 
 ## Related Projects
 
