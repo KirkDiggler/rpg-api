@@ -42,6 +42,12 @@ type HandlerTestSuite struct {
 	testSessionID   string
 	testDraftID     string
 	testCharacterID string
+
+	// Expected entities for reuse
+	expectedDraft           *entities.CharacterDraft
+	expectedCharacter       *entities.Character
+	expectedAbilityScores   *entities.AbilityScores
+	expectedCreationProgress *entities.CreationProgress
 }
 
 func (s *HandlerTestSuite) SetupTest() {
@@ -115,6 +121,65 @@ func (s *HandlerTestSuite) SetupTest() {
 	s.validDeleteCharacterReq = &dnd5ev1alpha1.DeleteCharacterRequest{
 		CharacterId: s.testCharacterID,
 	}
+
+	// Initialize expected entities for reuse
+	s.expectedAbilityScores = &entities.AbilityScores{
+		Strength:     10,
+		Dexterity:    14,
+		Constitution: 12,
+		Intelligence: 18,
+		Wisdom:       15,
+		Charisma:     13,
+	}
+
+	s.expectedCreationProgress = &entities.CreationProgress{
+		HasName:              true,
+		HasRace:              true,
+		HasClass:             true,
+		HasBackground:        true,
+		HasAbilityScores:     true,
+		HasSkills:            false,
+		HasLanguages:         false,
+		CompletionPercentage: 71,
+		CurrentStep:          entities.CreationStepAbilityScores,
+	}
+
+	s.expectedDraft = &entities.CharacterDraft{
+		ID:                  s.testDraftID,
+		PlayerID:            s.testPlayerID,
+		SessionID:           s.testSessionID,
+		Name:                "Gandalf the Grey",
+		RaceID:              entities.RaceHuman,
+		SubraceID:           "",
+		ClassID:             entities.ClassWizard,
+		BackgroundID:        entities.BackgroundSage,
+		Alignment:           entities.AlignmentLawfulGood,
+		AbilityScores:       s.expectedAbilityScores,
+		StartingSkillIDs:    []string{entities.SkillArcana, entities.SkillHistory},
+		AdditionalLanguages: []string{entities.LanguageElvish}, // Common is assumed
+		Progress:            *s.expectedCreationProgress,
+		CreatedAt:           1234567890,
+		UpdatedAt:           1234567890,
+	}
+
+	s.expectedCharacter = &entities.Character{
+		ID:               s.testCharacterID,
+		PlayerID:         s.testPlayerID,
+		SessionID:        s.testSessionID,
+		Name:             "Gandalf the White",
+		Level:            20,
+		RaceID:           entities.RaceHuman,
+		SubraceID:        "",
+		ClassID:          entities.ClassWizard,
+		BackgroundID:     entities.BackgroundSage,
+		Alignment:        entities.AlignmentLawfulGood,
+		AbilityScores:    *s.expectedAbilityScores,
+		CurrentHP:        100,
+		TempHP:           0,
+		ExperiencePoints: 355000,
+		CreatedAt:        1234567890,
+		UpdatedAt:        1234567890,
+	}
 }
 
 func (s *HandlerTestSuite) TearDownTest() {
@@ -134,7 +199,7 @@ func (s *HandlerTestSuite) assertUnimplementedError(err error) {
 
 func (s *HandlerTestSuite) TestCreateDraft() {
 	s.Run("with valid request", func() {
-		// Setup expected service call
+		// Setup expected service call with explicit matching
 		expectedInput := &character.CreateDraftInput{
 			PlayerID:  s.testPlayerID,
 			SessionID: s.testSessionID,
@@ -143,27 +208,28 @@ func (s *HandlerTestSuite) TestCreateDraft() {
 			},
 		}
 
+		// Use a copy of the expected draft with specific values for this test
 		expectedDraft := &entities.CharacterDraft{
-			ID:        s.testDraftID,
-			PlayerID:  s.testPlayerID,
-			SessionID: s.testSessionID,
-			Name:      "Gandalf the Grey",
-			RaceID:    entities.RaceHuman,   // Internal uses constants
-			ClassID:   entities.ClassWizard, // Internal uses constants
+			ID:                  s.testDraftID,
+			PlayerID:            s.testPlayerID,
+			SessionID:           s.testSessionID,
+			Name:                "Gandalf the Grey",
+			RaceID:              entities.RaceHuman,
+			ClassID:             entities.ClassWizard,
+			BackgroundID:        entities.BackgroundSage,
+			AbilityScores:       s.expectedAbilityScores,
+			StartingSkillIDs:    []string{entities.SkillArcana, entities.SkillHistory},
+			AdditionalLanguages: []string{entities.LanguageElvish},
+			Progress:            *s.expectedCreationProgress,
+			CreatedAt:           1234567890,
+			UpdatedAt:           1234567890,
 		}
 
 		s.mockCharService.EXPECT().
-			CreateDraft(s.ctx, gomock.Any()).
-			DoAndReturn(func(ctx context.Context, input *character.CreateDraftInput) (*character.CreateDraftOutput, error) {
-				// Verify the input matches what we expect
-				s.Equal(expectedInput.PlayerID, input.PlayerID)
-				s.Equal(expectedInput.SessionID, input.SessionID)
-				s.Equal(expectedInput.InitialData.Name, input.InitialData.Name)
-
-				return &character.CreateDraftOutput{
-					Draft: expectedDraft,
-				}, nil
-			})
+			CreateDraft(s.ctx, expectedInput).
+			Return(&character.CreateDraftOutput{
+				Draft: expectedDraft,
+			}, nil)
 
 		resp, err := s.handler.CreateDraft(s.ctx, s.validCreateDraftReq)
 
@@ -172,6 +238,13 @@ func (s *HandlerTestSuite) TestCreateDraft() {
 		s.NotNil(resp.Draft)
 		s.Equal(s.testDraftID, resp.Draft.Id)
 		s.Equal("Gandalf the Grey", resp.Draft.Name)
+		// Check more fields to ensure entity conversion works
+		s.Equal(dnd5ev1alpha1.Race_RACE_HUMAN, resp.Draft.Race)
+		s.Equal(dnd5ev1alpha1.Class_CLASS_WIZARD, resp.Draft.Class)
+		s.Equal(dnd5ev1alpha1.Background_BACKGROUND_SAGE, resp.Draft.Background)
+		s.Equal(int32(10), resp.Draft.AbilityScores.Strength)
+		s.Equal(int32(18), resp.Draft.AbilityScores.Intelligence)
+		s.Len(resp.Draft.StartingSkills, 2)
 	})
 
 	s.Run("with minimal request", func() {
@@ -230,19 +303,13 @@ func (s *HandlerTestSuite) TestCreateDraft() {
 }
 
 func (s *HandlerTestSuite) TestGetDraft() {
-	expectedDraft := &entities.CharacterDraft{
-		ID:        s.testDraftID,
-		PlayerID:  s.testPlayerID,
-		SessionID: s.testSessionID,
-		Name:      "Test Character",
-	}
-
+	// Use the complete expected draft from suite
 	s.mockCharService.EXPECT().
 		GetDraft(s.ctx, &character.GetDraftInput{
 			DraftID: s.testDraftID,
 		}).
 		Return(&character.GetDraftOutput{
-			Draft: expectedDraft,
+			Draft: s.expectedDraft,
 		}, nil)
 
 	resp, err := s.handler.GetDraft(s.ctx, s.validGetDraftReq)
@@ -251,6 +318,13 @@ func (s *HandlerTestSuite) TestGetDraft() {
 	s.NotNil(resp)
 	s.NotNil(resp.Draft)
 	s.Equal(s.testDraftID, resp.Draft.Id)
+	s.Equal("Gandalf the Grey", resp.Draft.Name)
+	s.Equal(dnd5ev1alpha1.Race_RACE_HUMAN, resp.Draft.Race)
+	s.Equal(dnd5ev1alpha1.Class_CLASS_WIZARD, resp.Draft.Class)
+	s.NotNil(resp.Draft.AbilityScores)
+	s.Equal(int32(18), resp.Draft.AbilityScores.Intelligence)
+	s.NotNil(resp.Draft.Progress)
+	s.Equal(dnd5ev1alpha1.CreationStep_CREATION_STEP_ABILITY_SCORES, resp.Draft.Progress.CurrentStep)
 }
 
 func (s *HandlerTestSuite) TestListDrafts() {
