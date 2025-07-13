@@ -1,11 +1,11 @@
 syntax = "proto3";
 
-package v1alpha1.dnd5e;
+package dnd5e.api.v1alpha1;
 
-option go_package = "github.com/KirkDiggler/rpg-api/api/proto/v1alpha1/dnd5e;dnd5ev1alpha1";
+option go_package = "github.com/KirkDiggler/rpg-api/api/proto/dnd5e/v1alpha1;dnd5ev1alpha1";
 
-import "v1alpha1/dnd5e/enums.proto";
-import "v1alpha1/dnd5e/common.proto";
+import "dnd5e/api/v1alpha1/enums.proto";
+import "dnd5e/api/v1alpha1/common.proto";
 
 // Service for D&D 5e character creation and management
 // Supports both wizard-style step-by-step creation and free-form editing

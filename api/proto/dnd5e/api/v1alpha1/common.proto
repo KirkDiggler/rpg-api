@@ -1,8 +1,8 @@
 syntax = "proto3";
 
-package v1alpha1.dnd5e;
+package dnd5e.api.v1alpha1;
 
-option go_package = "github.com/KirkDiggler/rpg-api/api/proto/v1alpha1/dnd5e;dnd5ev1alpha1";
+option go_package = "github.com/KirkDiggler/rpg-api/api/proto/dnd5e/v1alpha1;dnd5ev1alpha1";
 
 // Common error details for D&D 5e validation
 message ValidationError {
