@@ -126,7 +126,30 @@ Makefile                  # Enhanced with comprehensive linting, formatting, and
 go.mod/go.sum            # New dependencies (testify, gomock, grpc)
 ```
 
+## Important Architecture Discussion
+
+### Rulebook Isolation Question
+During the session, we identified a critical architecture decision:
+- **Current state**: Entities are implicitly D&D 5e specific but in generic packages
+- **Question**: Should entities and repositories be isolated by rulebook?
+- **Recommendation**: Yes - use rulebook-specific entities with hybrid repository approach
+- **Investigation**: Created `docs/investigations/rulebook-isolation-architecture.md`
+- **Action**: This needs to be addressed BEFORE implementing repositories
+
 ## Next Session Tasks
+
+### Priority 0: Rulebook Isolation Investigation (CRITICAL)
+**Goal**: Refactor to rulebook-specific architecture
+
+**Tasks**:
+1. Review investigation document
+2. Make architecture decision
+3. Refactor entities to `internal/entities/dnd5e/`
+4. Create core interfaces
+5. Update all imports
+
+**Estimated Scope**: Small-Medium (1 session)
+**Why First**: This must be done before repositories to avoid rework
 
 ### Priority 1: Orchestrator Implementation (Issue TBD)
 **Goal**: Implement business logic layer
