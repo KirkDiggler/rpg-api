@@ -5,7 +5,7 @@ Proposed
 
 ## Context
 
-We need to decide how to organize our gRPC services. Each service requires a separate client implementation in consumers (like our Discord bot), so the number of services directly impacts client complexity.
+Building on the foundation established in ADR-001, we need to decide how to organize our gRPC services within the architectural framework. Each service requires a separate client implementation in consumers (like our Discord bot), so the number of services directly impacts client complexity.
 
 We've identified these potential service boundaries:
 - Character management (creation, drafts, updates)
@@ -147,16 +147,7 @@ const draft = await client.character.createDraft(input);
 
 ## Implementation Notes
 
-1. Service organization:
-   ```
-   /api/proto/v1alpha1/dnd5e/
-     - character.proto
-     - progression.proto
-     - inventory.proto
-     - session.proto
-     - encounter.proto
-     - rules.proto
-   ```
+1. Service organization follows the structure defined in ADR-001, with individual proto files per service within ruleset packages (e.g., `/api/proto/v1alpha1/dnd5e/character.proto`)
 
 2. SDK structure:
    ```
