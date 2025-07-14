@@ -120,15 +120,18 @@ func (s *OrchestratorTestSuite) TestCreateDraft() {
 				// Use a custom matcher to validate the draft structure
 				s.mockDraftRepo.EXPECT().
 					Create(s.ctx, gomock.Cond(func(x interface{}) bool {
-						draft, ok := x.(*dnd5e.CharacterDraft)
-						return ok &&
-							draft.PlayerID == s.testPlayerID &&
+						input, ok := x.(draftrepo.CreateInput)
+						if !ok || input.Draft == nil {
+							return false
+						}
+						draft := input.Draft
+						return draft.PlayerID == s.testPlayerID &&
 							draft.SessionID == "" &&
 							!draft.Progress.HasName() &&
 							draft.Progress.CurrentStep == dnd5e.CreationStepName &&
 							draft.Progress.CompletionPercentage == 0
 					})).
-					Return(nil)
+					Return(&draftrepo.CreateOutput{}, nil)
 			},
 			wantErr: false,
 			validate: func(output *character.CreateDraftOutput) {

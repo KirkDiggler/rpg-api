@@ -22,3 +22,4 @@ These fields violate the separation of concerns - the core RPG API should not kn
 - Clean separation of concerns
 - API remains client-agnostic
 - Other clients (web, mobile, CLI) won't have Discord-specific fields
+

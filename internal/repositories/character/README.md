@@ -87,3 +87,4 @@ err = repo.Update(ctx, UpdateInput{Character: char})
 3. **Filtering**: Add filters for class, race, level range
 4. **Bulk Operations**: Support creating/updating multiple characters
 5. **Change History**: Track character modifications over time
+
