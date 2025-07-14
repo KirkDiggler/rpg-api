@@ -13,7 +13,6 @@ import (
 	context "context"
 	reflect "reflect"
 
-	dnd5e "github.com/KirkDiggler/rpg-api/internal/entities/dnd5e"
 	characterdraft "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft"
 	gomock "go.uber.org/mock/gomock"
 )
@@ -43,118 +42,76 @@ func (m *MockRepository) EXPECT() *MockRepositoryMockRecorder {
 }
 
 // Create mocks base method.
-func (m *MockRepository) Create(ctx context.Context, draft *dnd5e.CharacterDraft) error {
+func (m *MockRepository) Create(ctx context.Context, input characterdraft.CreateInput) (*characterdraft.CreateOutput, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Create", ctx, draft)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// Create indicates an expected call of Create.
-func (mr *MockRepositoryMockRecorder) Create(ctx, draft any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Create", reflect.TypeOf((*MockRepository)(nil).Create), ctx, draft)
-}
-
-// Delete mocks base method.
-func (m *MockRepository) Delete(ctx context.Context, id string) error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Delete", ctx, id)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// Delete indicates an expected call of Delete.
-func (mr *MockRepositoryMockRecorder) Delete(ctx, id any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Delete", reflect.TypeOf((*MockRepository)(nil).Delete), ctx, id)
-}
-
-// DeleteExpired mocks base method.
-func (m *MockRepository) DeleteExpired(ctx context.Context) (int64, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "DeleteExpired", ctx)
-	ret0, _ := ret[0].(int64)
+	ret := m.ctrl.Call(m, "Create", ctx, input)
+	ret0, _ := ret[0].(*characterdraft.CreateOutput)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
-// DeleteExpired indicates an expected call of DeleteExpired.
-func (mr *MockRepositoryMockRecorder) DeleteExpired(ctx any) *gomock.Call {
+// Create indicates an expected call of Create.
+func (mr *MockRepositoryMockRecorder) Create(ctx, input any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteExpired", reflect.TypeOf((*MockRepository)(nil).DeleteExpired), ctx)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Create", reflect.TypeOf((*MockRepository)(nil).Create), ctx, input)
+}
+
+// Delete mocks base method.
+func (m *MockRepository) Delete(ctx context.Context, input characterdraft.DeleteInput) (*characterdraft.DeleteOutput, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Delete", ctx, input)
+	ret0, _ := ret[0].(*characterdraft.DeleteOutput)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// Delete indicates an expected call of Delete.
+func (mr *MockRepositoryMockRecorder) Delete(ctx, input any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Delete", reflect.TypeOf((*MockRepository)(nil).Delete), ctx, input)
 }
 
 // Get mocks base method.
-func (m *MockRepository) Get(ctx context.Context, id string) (*dnd5e.CharacterDraft, error) {
+func (m *MockRepository) Get(ctx context.Context, input characterdraft.GetInput) (*characterdraft.GetOutput, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Get", ctx, id)
-	ret0, _ := ret[0].(*dnd5e.CharacterDraft)
+	ret := m.ctrl.Call(m, "Get", ctx, input)
+	ret0, _ := ret[0].(*characterdraft.GetOutput)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // Get indicates an expected call of Get.
-func (mr *MockRepositoryMockRecorder) Get(ctx, id any) *gomock.Call {
+func (mr *MockRepositoryMockRecorder) Get(ctx, input any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Get", reflect.TypeOf((*MockRepository)(nil).Get), ctx, id)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Get", reflect.TypeOf((*MockRepository)(nil).Get), ctx, input)
 }
 
 // GetByPlayerID mocks base method.
-func (m *MockRepository) GetByPlayerID(ctx context.Context, playerID string) ([]*dnd5e.CharacterDraft, error) {
+func (m *MockRepository) GetByPlayerID(ctx context.Context, input characterdraft.GetByPlayerIDInput) (*characterdraft.GetByPlayerIDOutput, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetByPlayerID", ctx, playerID)
-	ret0, _ := ret[0].([]*dnd5e.CharacterDraft)
+	ret := m.ctrl.Call(m, "GetByPlayerID", ctx, input)
+	ret0, _ := ret[0].(*characterdraft.GetByPlayerIDOutput)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // GetByPlayerID indicates an expected call of GetByPlayerID.
-func (mr *MockRepositoryMockRecorder) GetByPlayerID(ctx, playerID any) *gomock.Call {
+func (mr *MockRepositoryMockRecorder) GetByPlayerID(ctx, input any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetByPlayerID", reflect.TypeOf((*MockRepository)(nil).GetByPlayerID), ctx, playerID)
-}
-
-// GetBySessionID mocks base method.
-func (m *MockRepository) GetBySessionID(ctx context.Context, sessionID string) ([]*dnd5e.CharacterDraft, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetBySessionID", ctx, sessionID)
-	ret0, _ := ret[0].([]*dnd5e.CharacterDraft)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// GetBySessionID indicates an expected call of GetBySessionID.
-func (mr *MockRepositoryMockRecorder) GetBySessionID(ctx, sessionID any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetBySessionID", reflect.TypeOf((*MockRepository)(nil).GetBySessionID), ctx, sessionID)
-}
-
-// List mocks base method.
-func (m *MockRepository) List(ctx context.Context, opts characterdraft.ListOptions) (*characterdraft.ListResult, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "List", ctx, opts)
-	ret0, _ := ret[0].(*characterdraft.ListResult)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// List indicates an expected call of List.
-func (mr *MockRepositoryMockRecorder) List(ctx, opts any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "List", reflect.TypeOf((*MockRepository)(nil).List), ctx, opts)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetByPlayerID", reflect.TypeOf((*MockRepository)(nil).GetByPlayerID), ctx, input)
 }
 
 // Update mocks base method.
-func (m *MockRepository) Update(ctx context.Context, draft *dnd5e.CharacterDraft) error {
+func (m *MockRepository) Update(ctx context.Context, input characterdraft.UpdateInput) (*characterdraft.UpdateOutput, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Update", ctx, draft)
-	ret0, _ := ret[0].(error)
-	return ret0
+	ret := m.ctrl.Call(m, "Update", ctx, input)
+	ret0, _ := ret[0].(*characterdraft.UpdateOutput)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
 }
 
 // Update indicates an expected call of Update.
-func (mr *MockRepositoryMockRecorder) Update(ctx, draft any) *gomock.Call {
+func (mr *MockRepositoryMockRecorder) Update(ctx, input any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Update", reflect.TypeOf((*MockRepository)(nil).Update), ctx, draft)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Update", reflect.TypeOf((*MockRepository)(nil).Update), ctx, input)
 }

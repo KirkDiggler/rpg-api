@@ -25,12 +25,8 @@ tidy: ## Tidy go.mod
 	@go mod tidy
 
 .PHONY: lint
-lint: ## Run linter
+lint: install-tools ## Run linter
 	@echo "==> Running linter..."
-	@if ! command -v golangci-lint &> /dev/null; then \
-		echo "golangci-lint not found. Installing..."; \
-		go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.61.0; \
-	fi
 	@golangci-lint run
 
 .PHONY: test
@@ -121,7 +117,7 @@ install-tools: ## Install all development tools
 	@echo "==> Installing development tools..."
 	@go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
 	@go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
-	@go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.61.0
+	@curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/HEAD/install.sh | sh -s -- -b $$(go env GOPATH)/bin v2.2.2
 	@go install go.uber.org/mock/mockgen@latest
 	@go install github.com/bufbuild/buf/cmd/buf@latest
 	@go install golang.org/x/tools/cmd/goimports@latest

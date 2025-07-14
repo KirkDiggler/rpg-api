@@ -2,7 +2,6 @@ package character_test
 
 import (
 	"context"
-	"errors"
 	"testing"
 	"time"
 
@@ -10,8 +9,10 @@ import (
 	"go.uber.org/mock/gomock"
 
 	externalmock "github.com/KirkDiggler/rpg-api/internal/clients/external/mock"
+	"github.com/KirkDiggler/rpg-api/internal/engine"
 	enginemock "github.com/KirkDiggler/rpg-api/internal/engine/mock"
 	"github.com/KirkDiggler/rpg-api/internal/entities/dnd5e"
+	"github.com/KirkDiggler/rpg-api/internal/errors"
 	characterorchestrator "github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
 	characterrepomock "github.com/KirkDiggler/rpg-api/internal/repositories/character/mock"
 	draftrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft"
@@ -117,23 +118,36 @@ func (s *OrchestratorTestSuite) TestCreateDraft() {
 				PlayerID: s.testPlayerID,
 			},
 			setupMock: func() {
-				// Use a custom matcher to validate the draft structure
+				// TODO(#30): Inject clock and ID generator into orchestrator to make tests deterministic
+				// Currently using gomock.Any() because CreateDraft generates:
+				// - ID using time.Now().UnixNano()
+				// - Timestamps using time.Now().Unix()
+				// - ExpiresAt using time.Now().Add(24 * time.Hour).Unix()
+				s.mockEngine.EXPECT().
+					ValidateCharacterDraft(s.ctx, gomock.Any()).
+					Return(&engine.ValidateCharacterDraftOutput{
+						IsValid: true,
+					}, nil)
+
 				s.mockDraftRepo.EXPECT().
-					Create(s.ctx, gomock.Cond(func(x interface{}) bool {
-						draft, ok := x.(*dnd5e.CharacterDraft)
-						return ok &&
-							draft.PlayerID == s.testPlayerID &&
-							draft.SessionID == "" &&
-							!draft.Progress.HasName() &&
-							draft.Progress.CurrentStep == dnd5e.CreationStepName &&
-							draft.Progress.CompletionPercentage == 0
-					})).
-					Return(nil)
+					Create(s.ctx, gomock.Any()).
+					DoAndReturn(func(_ context.Context, input draftrepo.CreateInput) (*draftrepo.CreateOutput, error) {
+						// Repository sets ID and timestamps
+						draft := *input.Draft
+						draft.ID = "generated-id"
+						draft.CreatedAt = time.Now().Unix()
+						draft.UpdatedAt = time.Now().Unix()
+						return &draftrepo.CreateOutput{Draft: &draft}, nil
+					})
 			},
 			wantErr: false,
 			validate: func(output *character.CreateDraftOutput) {
 				s.NotNil(output.Draft)
 				s.Equal(s.testPlayerID, output.Draft.PlayerID)
+				s.Equal("", output.Draft.SessionID)
+				s.False(output.Draft.Progress.HasName())
+				s.Equal(dnd5e.CreationStepName, output.Draft.Progress.CurrentStep)
+				s.Equal(int32(0), output.Draft.Progress.CompletionPercentage)
 			},
 		},
 		{
@@ -148,24 +162,34 @@ func (s *OrchestratorTestSuite) TestCreateDraft() {
 				},
 			},
 			setupMock: func() {
+				// TODO(#30): Need clock and ID generator injection for deterministic tests
+				s.mockEngine.EXPECT().
+					ValidateCharacterDraft(s.ctx, gomock.Any()).
+					Return(&engine.ValidateCharacterDraftOutput{
+						IsValid: true,
+					}, nil)
+
 				s.mockDraftRepo.EXPECT().
-					Create(s.ctx, gomock.Cond(func(x interface{}) bool {
-						draft, ok := x.(*dnd5e.CharacterDraft)
-						return ok &&
-							draft.Name == "Frodo" &&
-							draft.RaceID == dnd5e.RaceHalfling &&
-							draft.ClassID == dnd5e.ClassRogue &&
-							draft.Progress.HasName() &&
-							draft.Progress.HasRace() &&
-							draft.Progress.HasClass() &&
-							draft.Progress.CompletionPercentage > 0
-					})).
-					Return(nil)
+					Create(s.ctx, gomock.Any()).
+					DoAndReturn(func(_ context.Context, input draftrepo.CreateInput) (*draftrepo.CreateOutput, error) {
+						// Repository sets ID and timestamps
+						draft := *input.Draft
+						draft.ID = "generated-id"
+						draft.CreatedAt = time.Now().Unix()
+						draft.UpdatedAt = time.Now().Unix()
+						return &draftrepo.CreateOutput{Draft: &draft}, nil
+					})
 			},
 			wantErr: false,
 			validate: func(output *character.CreateDraftOutput) {
 				s.NotNil(output.Draft)
 				s.Equal("Frodo", output.Draft.Name)
+				s.Equal(dnd5e.RaceHalfling, output.Draft.RaceID)
+				s.Equal(dnd5e.ClassRogue, output.Draft.ClassID)
+				s.True(output.Draft.Progress.HasName())
+				s.True(output.Draft.Progress.HasRace())
+				s.True(output.Draft.Progress.HasClass())
+				s.Greater(output.Draft.Progress.CompletionPercentage, int32(0))
 			},
 		},
 		{
@@ -190,9 +214,16 @@ func (s *OrchestratorTestSuite) TestCreateDraft() {
 				PlayerID: s.testPlayerID,
 			},
 			setupMock: func() {
+				// Expect engine validation
+				s.mockEngine.EXPECT().
+					ValidateCharacterDraft(s.ctx, gomock.Any()).
+					Return(&engine.ValidateCharacterDraftOutput{
+						IsValid: true,
+					}, nil)
+
 				s.mockDraftRepo.EXPECT().
 					Create(s.ctx, gomock.Any()).
-					Return(errors.New("database error"))
+					Return(nil, errors.Internal("database error"))
 			},
 			wantErr: true,
 			errMsg:  "failed to create draft",
@@ -235,8 +266,8 @@ func (s *OrchestratorTestSuite) TestGetDraft() {
 			},
 			setupMock: func() {
 				s.mockDraftRepo.EXPECT().
-					Get(s.ctx, s.testDraftID).
-					Return(s.testDraft, nil)
+					Get(s.ctx, draftrepo.GetInput{ID: s.testDraftID}).
+					Return(&draftrepo.GetOutput{Draft: s.testDraft}, nil)
 			},
 			wantErr: false,
 		},
@@ -263,8 +294,8 @@ func (s *OrchestratorTestSuite) TestGetDraft() {
 			},
 			setupMock: func() {
 				s.mockDraftRepo.EXPECT().
-					Get(s.ctx, "nonexistent").
-					Return(nil, errors.New("not found"))
+					Get(s.ctx, draftrepo.GetInput{ID: "nonexistent"}).
+					Return(nil, errors.NotFoundf("draft not found"))
 			},
 			wantErr: true,
 			errMsg:  "failed to get draft",
@@ -299,50 +330,51 @@ func (s *OrchestratorTestSuite) TestListDrafts() {
 		validate  func(*character.ListDraftsOutput)
 	}{
 		{
-			name: "successful list with filters",
-			input: &character.ListDraftsInput{
-				PlayerID:  s.testPlayerID,
-				SessionID: s.testSessionID,
-				PageSize:  10,
-			},
-			setupMock: func() {
-				s.mockDraftRepo.EXPECT().
-					List(s.ctx, draftrepo.ListOptions{
-						PageSize:  10,
-						PageToken: "",
-						PlayerID:  s.testPlayerID,
-						SessionID: s.testSessionID,
-					}).
-					Return(&draftrepo.ListResult{
-						Drafts:        []*dnd5e.CharacterDraft{s.testDraft},
-						NextPageToken: "next-page",
-						TotalSize:     1,
-					}, nil)
-			},
-			wantErr: false,
-			validate: func(output *character.ListDraftsOutput) {
-				s.Len(output.Drafts, 1)
-				s.Equal("next-page", output.NextPageToken)
-			},
-		},
-		{
-			name: "default page size when not specified",
+			name: "successful list - player has draft",
 			input: &character.ListDraftsInput{
 				PlayerID: s.testPlayerID,
 			},
 			setupMock: func() {
 				s.mockDraftRepo.EXPECT().
-					List(s.ctx, draftrepo.ListOptions{
-						PageSize:  20, // Should default to 20
-						PageToken: "",
-						PlayerID:  s.testPlayerID,
-						SessionID: "",
+					GetByPlayerID(s.ctx, draftrepo.GetByPlayerIDInput{
+						PlayerID: s.testPlayerID,
 					}).
-					Return(&draftrepo.ListResult{
-						Drafts: []*dnd5e.CharacterDraft{},
+					Return(&draftrepo.GetByPlayerIDOutput{
+						Draft: s.testDraft,
 					}, nil)
 			},
 			wantErr: false,
+			validate: func(output *character.ListDraftsOutput) {
+				s.Len(output.Drafts, 1)
+				s.Equal(s.testDraft.ID, output.Drafts[0].ID)
+				s.Equal("", output.NextPageToken) // No pagination for single draft
+			},
+		},
+		{
+			name: "successful list - player has no draft",
+			input: &character.ListDraftsInput{
+				PlayerID: s.testPlayerID,
+			},
+			setupMock: func() {
+				s.mockDraftRepo.EXPECT().
+					GetByPlayerID(s.ctx, draftrepo.GetByPlayerIDInput{
+						PlayerID: s.testPlayerID,
+					}).
+					Return(nil, errors.NotFoundf("no draft found"))
+			},
+			wantErr: false,
+			validate: func(output *character.ListDraftsOutput) {
+				s.Empty(output.Drafts)
+				s.Equal("", output.NextPageToken)
+			},
+		},
+		{
+			name: "error - no player ID provided",
+			input: &character.ListDraftsInput{
+				SessionID: s.testSessionID, // Only session ID
+			},
+			setupMock: func() {},
+			wantErr:   true,
 		},
 		{
 			name:      "nil input",
@@ -386,8 +418,8 @@ func (s *OrchestratorTestSuite) TestDeleteDraft() {
 			},
 			setupMock: func() {
 				s.mockDraftRepo.EXPECT().
-					Delete(s.ctx, s.testDraftID).
-					Return(nil)
+					Delete(s.ctx, draftrepo.DeleteInput{ID: s.testDraftID}).
+					Return(&draftrepo.DeleteOutput{}, nil)
 			},
 			wantErr: false,
 		},
@@ -405,7 +437,7 @@ func (s *OrchestratorTestSuite) TestDeleteDraft() {
 			},
 			setupMock: func() {},
 			wantErr:   true,
-			errMsg:    "draft ID is required",
+			errMsg:    "validation failed: draftID: is required",
 		},
 		{
 			name: "repository error",
@@ -414,8 +446,8 @@ func (s *OrchestratorTestSuite) TestDeleteDraft() {
 			},
 			setupMock: func() {
 				s.mockDraftRepo.EXPECT().
-					Delete(s.ctx, s.testDraftID).
-					Return(errors.New("database error"))
+					Delete(s.ctx, draftrepo.DeleteInput{ID: s.testDraftID}).
+					Return(nil, errors.Internal("database error"))
 			},
 			wantErr: true,
 			errMsg:  "failed to delete draft",

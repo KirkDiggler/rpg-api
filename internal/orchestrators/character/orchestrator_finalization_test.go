@@ -8,6 +8,8 @@ import (
 
 	"github.com/KirkDiggler/rpg-api/internal/engine"
 	"github.com/KirkDiggler/rpg-api/internal/entities/dnd5e"
+	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
+	draftrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft"
 	"github.com/KirkDiggler/rpg-api/internal/services/character"
 )
 
@@ -46,8 +48,8 @@ func (s *OrchestratorTestSuite) TestValidateDraft() {
 				}
 
 				s.mockDraftRepo.EXPECT().
-					Get(s.ctx, s.testDraftID).
-					Return(completeDraft, nil)
+					Get(s.ctx, draftrepo.GetInput{ID: s.testDraftID}).
+					Return(&draftrepo.GetOutput{Draft: completeDraft}, nil)
 
 				s.mockEngine.EXPECT().
 					ValidateCharacterDraft(s.ctx, &engine.ValidateCharacterDraftInput{
@@ -77,8 +79,8 @@ func (s *OrchestratorTestSuite) TestValidateDraft() {
 			},
 			setupMock: func() {
 				s.mockDraftRepo.EXPECT().
-					Get(s.ctx, s.testDraftID).
-					Return(s.testDraft, nil)
+					Get(s.ctx, draftrepo.GetInput{ID: s.testDraftID}).
+					Return(&draftrepo.GetOutput{Draft: s.testDraft}, nil)
 
 				s.mockEngine.EXPECT().
 					ValidateCharacterDraft(s.ctx, gomock.Any()).
@@ -114,8 +116,8 @@ func (s *OrchestratorTestSuite) TestValidateDraft() {
 			},
 			setupMock: func() {
 				s.mockDraftRepo.EXPECT().
-					Get(s.ctx, s.testDraftID).
-					Return(s.testDraft, nil)
+					Get(s.ctx, draftrepo.GetInput{ID: s.testDraftID}).
+					Return(&draftrepo.GetOutput{Draft: s.testDraft}, nil)
 
 				s.mockEngine.EXPECT().
 					ValidateCharacterDraft(s.ctx, gomock.Any()).
@@ -195,8 +197,8 @@ func (s *OrchestratorTestSuite) TestFinalizeDraft() {
 			},
 			setupMock: func() {
 				s.mockDraftRepo.EXPECT().
-					Get(s.ctx, s.testDraftID).
-					Return(completeDraft, nil)
+					Get(s.ctx, draftrepo.GetInput{ID: s.testDraftID}).
+					Return(&draftrepo.GetOutput{Draft: completeDraft}, nil)
 
 				// Validate draft
 				s.mockEngine.EXPECT().
@@ -222,18 +224,21 @@ func (s *OrchestratorTestSuite) TestFinalizeDraft() {
 				// Create character
 				s.mockCharRepo.EXPECT().
 					Create(s.ctx, gomock.Any()).
-					DoAndReturn(func(ctx context.Context, char *dnd5e.Character) error {
-						s.Equal("Aragorn", char.Name)
-						s.Equal(int32(1), char.Level)
-						s.Equal(int32(12), char.CurrentHP)
-						s.Equal(dnd5e.ClassRanger, char.ClassID)
-						return nil
+					DoAndReturn(func(_ context.Context, input characterrepo.CreateInput) (*characterrepo.CreateOutput, error) {
+						s.Equal("Aragorn", input.Character.Name)
+						s.Equal(int32(1), input.Character.Level)
+						s.Equal(int32(12), input.Character.CurrentHP)
+						s.Equal(dnd5e.ClassRanger, input.Character.ClassID)
+						// Repository returns the character with ID and timestamps set
+						char := *input.Character
+						char.ID = "generated-char-id"
+						return &characterrepo.CreateOutput{Character: &char}, nil
 					})
 
 				// Delete draft
 				s.mockDraftRepo.EXPECT().
-					Delete(s.ctx, s.testDraftID).
-					Return(nil)
+					Delete(s.ctx, draftrepo.DeleteInput{ID: s.testDraftID}).
+					Return(&draftrepo.DeleteOutput{}, nil)
 			},
 			wantErr: false,
 			validate: func(output *character.FinalizeDraftOutput) {
@@ -250,8 +255,8 @@ func (s *OrchestratorTestSuite) TestFinalizeDraft() {
 			},
 			setupMock: func() {
 				s.mockDraftRepo.EXPECT().
-					Get(s.ctx, s.testDraftID).
-					Return(s.testDraft, nil) // Missing ability scores
+					Get(s.ctx, draftrepo.GetInput{ID: s.testDraftID}).
+					Return(&draftrepo.GetOutput{Draft: s.testDraft}, nil) // Missing ability scores
 
 				s.mockEngine.EXPECT().
 					ValidateCharacterDraft(s.ctx, gomock.Any()).
@@ -270,8 +275,8 @@ func (s *OrchestratorTestSuite) TestFinalizeDraft() {
 			},
 			setupMock: func() {
 				s.mockDraftRepo.EXPECT().
-					Get(s.ctx, s.testDraftID).
-					Return(completeDraft, nil)
+					Get(s.ctx, draftrepo.GetInput{ID: s.testDraftID}).
+					Return(&draftrepo.GetOutput{Draft: completeDraft}, nil)
 
 				s.mockEngine.EXPECT().
 					ValidateCharacterDraft(s.ctx, gomock.Any()).
@@ -293,8 +298,8 @@ func (s *OrchestratorTestSuite) TestFinalizeDraft() {
 			},
 			setupMock: func() {
 				s.mockDraftRepo.EXPECT().
-					Get(s.ctx, s.testDraftID).
-					Return(completeDraft, nil)
+					Get(s.ctx, draftrepo.GetInput{ID: s.testDraftID}).
+					Return(&draftrepo.GetOutput{Draft: completeDraft}, nil)
 
 				s.mockEngine.EXPECT().
 					ValidateCharacterDraft(s.ctx, gomock.Any()).
@@ -311,12 +316,17 @@ func (s *OrchestratorTestSuite) TestFinalizeDraft() {
 
 				s.mockCharRepo.EXPECT().
 					Create(s.ctx, gomock.Any()).
-					Return(nil)
+					DoAndReturn(func(_ context.Context, input characterrepo.CreateInput) (*characterrepo.CreateOutput, error) {
+						// Repository returns the character with ID and timestamps set
+						char := *input.Character
+						char.ID = "generated-char-id"
+						return &characterrepo.CreateOutput{Character: &char}, nil
+					})
 
 				// Draft deletion fails
 				s.mockDraftRepo.EXPECT().
-					Delete(s.ctx, s.testDraftID).
-					Return(errors.New("delete failed"))
+					Delete(s.ctx, draftrepo.DeleteInput{ID: s.testDraftID}).
+					Return(nil, errors.New("delete failed"))
 			},
 			wantErr: false, // Character creation succeeded, so we don't fail
 			validate: func(output *character.FinalizeDraftOutput) {
@@ -363,8 +373,8 @@ func (s *OrchestratorTestSuite) TestGetCharacter() {
 			},
 			setupMock: func() {
 				s.mockCharRepo.EXPECT().
-					Get(s.ctx, s.testCharacterID).
-					Return(s.testCharacter, nil)
+					Get(s.ctx, characterrepo.GetInput{ID: s.testCharacterID}).
+					Return(&characterrepo.GetOutput{Character: s.testCharacter}, nil)
 			},
 			wantErr: false,
 		},
@@ -382,7 +392,7 @@ func (s *OrchestratorTestSuite) TestGetCharacter() {
 			},
 			setupMock: func() {
 				s.mockCharRepo.EXPECT().
-					Get(s.ctx, "nonexistent").
+					Get(s.ctx, characterrepo.GetInput{ID: "nonexistent"}).
 					Return(nil, errors.New("not found"))
 			},
 			wantErr: true,
@@ -422,8 +432,8 @@ func (s *OrchestratorTestSuite) TestDeleteCharacter() {
 			},
 			setupMock: func() {
 				s.mockCharRepo.EXPECT().
-					Delete(s.ctx, s.testCharacterID).
-					Return(nil)
+					Delete(s.ctx, characterrepo.DeleteInput{ID: s.testCharacterID}).
+					Return(&characterrepo.DeleteOutput{}, nil)
 			},
 			wantErr: false,
 		},
@@ -434,8 +444,8 @@ func (s *OrchestratorTestSuite) TestDeleteCharacter() {
 			},
 			setupMock: func() {
 				s.mockCharRepo.EXPECT().
-					Delete(s.ctx, s.testCharacterID).
-					Return(errors.New("database error"))
+					Delete(s.ctx, characterrepo.DeleteInput{ID: s.testCharacterID}).
+					Return(nil, errors.New("database error"))
 			},
 			wantErr: true,
 		},

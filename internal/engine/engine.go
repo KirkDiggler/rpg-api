@@ -1,3 +1,4 @@
+// Package engine wraps the rpg toolkit
 package engine
 
 //go:generate mockgen -destination=mock/mock_engine.go -package=enginemock github.com/KirkDiggler/rpg-api/internal/engine Engine
@@ -12,7 +13,10 @@ import (
 type Engine interface {
 	// Character validation and calculations
 	ValidateCharacterDraft(ctx context.Context, input *ValidateCharacterDraftInput) (*ValidateCharacterDraftOutput, error)
-	CalculateCharacterStats(ctx context.Context, input *CalculateCharacterStatsInput) (*CalculateCharacterStatsOutput, error)
+	CalculateCharacterStats(
+		ctx context.Context,
+		input *CalculateCharacterStatsInput,
+	) (*CalculateCharacterStatsOutput, error)
 
 	// Race and class validation
 	ValidateRaceChoice(ctx context.Context, input *ValidateRaceChoiceInput) (*ValidateRaceChoiceOutput, error)
@@ -26,7 +30,10 @@ type Engine interface {
 	GetAvailableSkills(ctx context.Context, input *GetAvailableSkillsInput) (*GetAvailableSkillsOutput, error)
 
 	// Background validation
-	ValidateBackgroundChoice(ctx context.Context, input *ValidateBackgroundChoiceInput) (*ValidateBackgroundChoiceOutput, error)
+	ValidateBackgroundChoice(
+		ctx context.Context,
+		input *ValidateBackgroundChoiceInput,
+	) (*ValidateBackgroundChoiceOutput, error)
 
 	// Utility methods
 	CalculateProficiencyBonus(level int32) int32

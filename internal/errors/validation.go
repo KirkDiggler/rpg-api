@@ -19,9 +19,11 @@ func (v *ValidationError) Error() string {
 		return "validation failed"
 	}
 
-	var parts []string
+	parts := make([]string, len(v.Fields))
+	i := 0
 	for field, errs := range v.Fields {
-		parts = append(parts, fmt.Sprintf("%s: %s", field, strings.Join(errs, ", ")))
+		parts[i] = fmt.Sprintf("%s: %s", field, strings.Join(errs, ", "))
+		i++
 	}
 	return fmt.Sprintf("validation failed: %s", strings.Join(parts, "; "))
 }
@@ -55,8 +57,7 @@ func (v *ValidationError) ToError() *Error {
 	}
 
 	err := InvalidArgument(v.Error())
-	err.WithMeta("validation_errors", v.Fields)
-	return err
+	return err.WithMeta("validation_errors", v.Fields)
 }
 
 // ValidationBuilder provides a fluent interface for building validation errors.
@@ -113,23 +114,23 @@ func ValidateRequired(field, value string, vb *ValidationBuilder) {
 }
 
 // ValidateMinLength checks if a string meets minimum length
-func ValidateMinLength(field, value string, min int, vb *ValidationBuilder) {
-	if len(value) < min {
-		vb.Fieldf(field, "must be at least %d characters", min)
+func ValidateMinLength(field, value string, minValue int, vb *ValidationBuilder) {
+	if len(value) < minValue {
+		vb.Fieldf(field, "must be at least %d characters", minValue)
 	}
 }
 
 // ValidateMaxLength checks if a string meets maximum length
-func ValidateMaxLength(field, value string, max int, vb *ValidationBuilder) {
-	if len(value) > max {
-		vb.Fieldf(field, "must be no more than %d characters", max)
+func ValidateMaxLength(field, value string, maxValue int, vb *ValidationBuilder) {
+	if len(value) > maxValue {
+		vb.Fieldf(field, "must be no more than %d characters", maxValue)
 	}
 }
 
 // ValidateRange checks if a value is within a range
-func ValidateRange(field string, value, min, max int, vb *ValidationBuilder) {
-	if value < min || value > max {
-		vb.Fieldf(field, "must be between %d and %d", min, max)
+func ValidateRange(field string, value, minValue, maxValue int, vb *ValidationBuilder) {
+	if value < minValue || value > maxValue {
+		vb.Fieldf(field, "must be between %d and %d", minValue, maxValue)
 	}
 }
 

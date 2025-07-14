@@ -41,7 +41,7 @@ func init() {
 	serverCmd.Flags().IntVar(&grpcPort, "port", 50051, "gRPC server port")
 }
 
-func runServer(cmd *cobra.Command, args []string) error {
+func runServer(_ *cobra.Command, _ []string) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -129,7 +129,7 @@ func runServer(cmd *cobra.Command, args []string) error {
 	}
 }
 
-func logFunc(ctx context.Context, level grpc_logging.Level, msg string, fields ...any) {
+func logFunc(_ context.Context, level grpc_logging.Level, msg string, fields ...any) {
 	log.Printf("[%v] %s %v", level, msg, fields)
 }
 
@@ -137,62 +137,107 @@ func logFunc(ctx context.Context, level grpc_logging.Level, msg string, fields .
 // TODO: Remove when real service is implemented
 type stubCharacterService struct{}
 
-func (s *stubCharacterService) CreateDraft(ctx context.Context, input *character.CreateDraftInput) (*character.CreateDraftOutput, error) {
+func (s *stubCharacterService) CreateDraft(
+	_ context.Context,
+	_ *character.CreateDraftInput,
+) (*character.CreateDraftOutput, error) {
 	return nil, status.Error(codes.Unimplemented, "not implemented")
 }
 
-func (s *stubCharacterService) GetDraft(ctx context.Context, input *character.GetDraftInput) (*character.GetDraftOutput, error) {
+func (s *stubCharacterService) GetDraft(
+	_ context.Context,
+	_ *character.GetDraftInput,
+) (*character.GetDraftOutput, error) {
 	return nil, status.Error(codes.Unimplemented, "not implemented")
 }
 
-func (s *stubCharacterService) ListDrafts(ctx context.Context, input *character.ListDraftsInput) (*character.ListDraftsOutput, error) {
+func (s *stubCharacterService) ListDrafts(
+	_ context.Context,
+	_ *character.ListDraftsInput,
+) (*character.ListDraftsOutput, error) {
 	return nil, status.Error(codes.Unimplemented, "not implemented")
 }
 
-func (s *stubCharacterService) DeleteDraft(ctx context.Context, input *character.DeleteDraftInput) (*character.DeleteDraftOutput, error) {
+func (s *stubCharacterService) DeleteDraft(
+	_ context.Context,
+	_ *character.DeleteDraftInput,
+) (*character.DeleteDraftOutput, error) {
 	return nil, status.Error(codes.Unimplemented, "not implemented")
 }
 
-func (s *stubCharacterService) UpdateName(ctx context.Context, input *character.UpdateNameInput) (*character.UpdateNameOutput, error) {
+func (s *stubCharacterService) UpdateName(
+	_ context.Context,
+	_ *character.UpdateNameInput,
+) (*character.UpdateNameOutput, error) {
 	return nil, status.Error(codes.Unimplemented, "not implemented")
 }
 
-func (s *stubCharacterService) UpdateRace(ctx context.Context, input *character.UpdateRaceInput) (*character.UpdateRaceOutput, error) {
+func (s *stubCharacterService) UpdateRace(
+	_ context.Context,
+	_ *character.UpdateRaceInput,
+) (*character.UpdateRaceOutput, error) {
 	return nil, status.Error(codes.Unimplemented, "not implemented")
 }
 
-func (s *stubCharacterService) UpdateClass(ctx context.Context, input *character.UpdateClassInput) (*character.UpdateClassOutput, error) {
+func (s *stubCharacterService) UpdateClass(
+	_ context.Context,
+	_ *character.UpdateClassInput,
+) (*character.UpdateClassOutput, error) {
 	return nil, status.Error(codes.Unimplemented, "not implemented")
 }
 
-func (s *stubCharacterService) UpdateBackground(ctx context.Context, input *character.UpdateBackgroundInput) (*character.UpdateBackgroundOutput, error) {
+func (s *stubCharacterService) UpdateBackground(
+	_ context.Context,
+	_ *character.UpdateBackgroundInput,
+) (*character.UpdateBackgroundOutput, error) {
 	return nil, status.Error(codes.Unimplemented, "not implemented")
 }
 
-func (s *stubCharacterService) UpdateAbilityScores(ctx context.Context, input *character.UpdateAbilityScoresInput) (*character.UpdateAbilityScoresOutput, error) {
+func (s *stubCharacterService) UpdateAbilityScores(
+	_ context.Context,
+	_ *character.UpdateAbilityScoresInput,
+) (*character.UpdateAbilityScoresOutput, error) {
 	return nil, status.Error(codes.Unimplemented, "not implemented")
 }
 
-func (s *stubCharacterService) UpdateSkills(ctx context.Context, input *character.UpdateSkillsInput) (*character.UpdateSkillsOutput, error) {
+func (s *stubCharacterService) UpdateSkills(
+	_ context.Context,
+	_ *character.UpdateSkillsInput,
+) (*character.UpdateSkillsOutput, error) {
 	return nil, status.Error(codes.Unimplemented, "not implemented")
 }
 
-func (s *stubCharacterService) ValidateDraft(ctx context.Context, input *character.ValidateDraftInput) (*character.ValidateDraftOutput, error) {
+func (s *stubCharacterService) ValidateDraft(
+	_ context.Context,
+	_ *character.ValidateDraftInput,
+) (*character.ValidateDraftOutput, error) {
 	return nil, status.Error(codes.Unimplemented, "not implemented")
 }
 
-func (s *stubCharacterService) FinalizeDraft(ctx context.Context, input *character.FinalizeDraftInput) (*character.FinalizeDraftOutput, error) {
+func (s *stubCharacterService) FinalizeDraft(
+	_ context.Context,
+	_ *character.FinalizeDraftInput,
+) (*character.FinalizeDraftOutput, error) {
 	return nil, status.Error(codes.Unimplemented, "not implemented")
 }
 
-func (s *stubCharacterService) GetCharacter(ctx context.Context, input *character.GetCharacterInput) (*character.GetCharacterOutput, error) {
+func (s *stubCharacterService) GetCharacter(
+	_ context.Context,
+	_ *character.GetCharacterInput,
+) (*character.GetCharacterOutput, error) {
 	return nil, status.Error(codes.Unimplemented, "not implemented")
 }
 
-func (s *stubCharacterService) ListCharacters(ctx context.Context, input *character.ListCharactersInput) (*character.ListCharactersOutput, error) {
+func (s *stubCharacterService) ListCharacters(
+	_ context.Context,
+	_ *character.ListCharactersInput,
+) (*character.ListCharactersOutput, error) {
 	return nil, status.Error(codes.Unimplemented, "not implemented")
 }
 
-func (s *stubCharacterService) DeleteCharacter(ctx context.Context, input *character.DeleteCharacterInput) (*character.DeleteCharacterOutput, error) {
+func (s *stubCharacterService) DeleteCharacter(
+	_ context.Context,
+	_ *character.DeleteCharacterInput,
+) (*character.DeleteCharacterOutput, error) {
 	return nil, status.Error(codes.Unimplemented, "not implemented")
 }

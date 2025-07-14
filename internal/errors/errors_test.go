@@ -96,8 +96,10 @@ func (s *ErrorsTestSuite) TestWrapDoesNotShareMetadata() {
 	wrapped := errors.Wrap(baseErr, "wrapped error")
 
 	// Modify the wrapped error's metadata
-	wrapped.WithMeta("wrapped", "data")
-	wrapped.WithMeta("original", "modified")
+	err1 := wrapped.WithMeta("wrapped", "data")
+	s.Require().Equal(wrapped, err1) // WithMeta returns the same error
+	err2 := wrapped.WithMeta("original", "modified")
+	s.Require().Equal(wrapped, err2) // WithMeta returns the same error
 
 	// Verify base error's metadata is unchanged
 	s.Assert().Equal("value", baseErr.Meta["original"])
@@ -135,7 +137,13 @@ func (s *ErrorsTestSuite) TestWrapfFormatting() {
 
 func (s *ErrorsTestSuite) TestWrapWithCodefFormatting() {
 	baseErr := fmt.Errorf("timeout")
-	wrapped := errors.WrapWithCodef(baseErr, errors.CodeDeadlineExceeded, "operation %s timed out after %d seconds", "save", 30)
+	wrapped := errors.WrapWithCodef(
+		baseErr,
+		errors.CodeDeadlineExceeded,
+		"operation %s timed out after %d seconds",
+		"save",
+		30,
+	)
 
 	s.Assert().Equal(errors.CodeDeadlineExceeded, wrapped.Code)
 	s.Assert().Equal("operation save timed out after 30 seconds", wrapped.Message)

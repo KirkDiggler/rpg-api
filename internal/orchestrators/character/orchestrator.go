@@ -1,9 +1,11 @@
+// Package character implements the character orchestrator
 package character
 
 import (
 	"context"
 	"fmt"
-	"time"
+	"log/slog"
+	"strings"
 
 	"github.com/KirkDiggler/rpg-api/internal/clients/external"
 	"github.com/KirkDiggler/rpg-api/internal/engine"
@@ -70,7 +72,10 @@ var _ character.Service = (*Orchestrator)(nil)
 // Draft lifecycle methods
 
 // CreateDraft creates a new character draft
-func (o *Orchestrator) CreateDraft(ctx context.Context, input *character.CreateDraftInput) (*character.CreateDraftOutput, error) {
+func (o *Orchestrator) CreateDraft(
+	ctx context.Context,
+	input *character.CreateDraftInput,
+) (*character.CreateDraftOutput, error) {
 	if input == nil {
 		return nil, errors.InvalidArgument("input is required")
 	}
@@ -90,16 +95,16 @@ func (o *Orchestrator) CreateDraft(ctx context.Context, input *character.CreateD
 			CompletionPercentage: 0,
 			CurrentStep:          dnd5e.CreationStepName,
 		},
-		CreatedAt: time.Now().Unix(),
-		UpdatedAt: time.Now().Unix(),
+		// Repository will set ID, timestamps, and expiration
 	}
 
 	// Apply initial data if provided
+	// Note: We intentionally ignore any ID, timestamps, or repository-managed fields from InitialData
+	// The repository will handle ID generation and find/replace existing drafts for this player
 	if input.InitialData != nil {
 		if input.InitialData.Name != "" {
 			draft.Name = input.InitialData.Name
 			draft.Progress.SetStep(dnd5e.ProgressStepName, true)
-			draft.Progress.CurrentStep = dnd5e.CreationStepRace
 		}
 		if input.InitialData.RaceID != "" {
 			draft.RaceID = input.InitialData.RaceID
@@ -118,24 +123,54 @@ func (o *Orchestrator) CreateDraft(ctx context.Context, input *character.CreateD
 			draft.AbilityScores = input.InitialData.AbilityScores
 			draft.Progress.SetStep(dnd5e.ProgressStepAbilityScores, true)
 		}
+		if len(input.InitialData.StartingSkillIDs) > 0 {
+			draft.StartingSkillIDs = input.InitialData.StartingSkillIDs
+			draft.Progress.SetStep(dnd5e.ProgressStepSkills, true)
+		}
+		if len(input.InitialData.AdditionalLanguages) > 0 {
+			draft.AdditionalLanguages = input.InitialData.AdditionalLanguages
+			draft.Progress.SetStep(dnd5e.ProgressStepLanguages, true)
+		}
+		draft.Alignment = input.InitialData.Alignment
+		draft.DiscordChannelID = input.InitialData.DiscordChannelID
+		draft.DiscordMessageID = input.InitialData.DiscordMessageID
 
-		// Update completion percentage and current step
-		draft.Progress = o.calculateProgress(draft)
+		// Update completion percentage
+		o.updateCompletionPercentage(draft)
 	}
 
-	// Save to repository
-	err := o.characterDraftRepo.Create(ctx, draft)
+	// Validate the draft with the engine
+	validateInput := &engine.ValidateCharacterDraftInput{
+		Draft: draft,
+	}
+	validateOutput, err := o.engine.ValidateCharacterDraft(ctx, validateInput)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to validate draft")
+	}
+	if !validateOutput.IsValid {
+		ve := errors.NewValidationError()
+		for _, e := range validateOutput.Errors {
+			ve.AddFieldError(e.Field, e.Message)
+		}
+		return nil, ve.ToError()
+	}
+
+	// Create the draft in the repository
+	createOutput, err := o.characterDraftRepo.Create(ctx, draftrepo.CreateInput{Draft: draft})
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to create draft")
 	}
 
 	return &character.CreateDraftOutput{
-		Draft: draft,
+		Draft: createOutput.Draft,
 	}, nil
 }
 
 // GetDraft retrieves a character draft by ID
-func (o *Orchestrator) GetDraft(ctx context.Context, input *character.GetDraftInput) (*character.GetDraftOutput, error) {
+func (o *Orchestrator) GetDraft(
+	ctx context.Context,
+	input *character.GetDraftInput,
+) (*character.GetDraftOutput, error) {
 	if input == nil {
 		return nil, errors.InvalidArgument("input is required")
 	}
@@ -146,59 +181,69 @@ func (o *Orchestrator) GetDraft(ctx context.Context, input *character.GetDraftIn
 		return nil, err
 	}
 
-	draft, err := o.characterDraftRepo.Get(ctx, input.DraftID)
+	getOutput, err := o.characterDraftRepo.Get(ctx, draftrepo.GetInput{ID: input.DraftID})
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to get draft").
 			WithMeta("draft_id", input.DraftID)
 	}
 
 	return &character.GetDraftOutput{
-		Draft: draft,
+		Draft: getOutput.Draft,
 	}, nil
 }
 
-// ListDrafts lists character drafts with pagination
-func (o *Orchestrator) ListDrafts(ctx context.Context, input *character.ListDraftsInput) (*character.ListDraftsOutput, error) {
+// ListDrafts lists character drafts with optional filters
+func (o *Orchestrator) ListDrafts(
+	ctx context.Context,
+	input *character.ListDraftsInput,
+) (*character.ListDraftsOutput, error) {
 	if input == nil {
 		return nil, errors.InvalidArgument("input is required")
 	}
 
-	// Build repository options
-	opts := draftrepo.ListOptions{
-		PageSize:  input.PageSize,
-		PageToken: input.PageToken,
-		PlayerID:  input.PlayerID,
-		SessionID: input.SessionID,
+	// With single-draft-per-player pattern, we only support listing by player
+	if input.PlayerID == "" {
+		return nil, errors.InvalidArgument("PlayerID is required")
 	}
 
-	// Default page size if not specified
-	if opts.PageSize <= 0 {
-		opts.PageSize = 20
-	}
-
-	result, err := o.characterDraftRepo.List(ctx, opts)
+	// Get the single draft for this player
+	draftOutput, err := o.characterDraftRepo.GetByPlayerID(ctx, draftrepo.GetByPlayerIDInput{
+		PlayerID: input.PlayerID,
+	})
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to list drafts")
+		if errors.IsNotFound(err) {
+			// No draft found - return empty list
+			return &character.ListDraftsOutput{
+				Drafts:        []*dnd5e.CharacterDraft{},
+				NextPageToken: "",
+			}, nil
+		}
+		return nil, errors.Wrap(err, "failed to get player draft")
 	}
 
+	// Return single draft as a list
 	return &character.ListDraftsOutput{
-		Drafts:        result.Drafts,
-		NextPageToken: result.NextPageToken,
+		Drafts:        []*dnd5e.CharacterDraft{draftOutput.Draft},
+		NextPageToken: "", // No pagination needed for single draft
 	}, nil
 }
 
 // DeleteDraft deletes a character draft
-func (o *Orchestrator) DeleteDraft(ctx context.Context, input *character.DeleteDraftInput) (*character.DeleteDraftOutput, error) {
+func (o *Orchestrator) DeleteDraft(
+	ctx context.Context,
+	input *character.DeleteDraftInput,
+) (*character.DeleteDraftOutput, error) {
 	if input == nil {
 		return nil, errors.InvalidArgument("input is required")
 	}
-	if input.DraftID == "" {
-		return nil, errors.InvalidArgument("draft ID is required")
+
+	vb := errors.NewValidationBuilder()
+	errors.ValidateRequired("draftID", input.DraftID, vb)
+	if err := vb.Build(); err != nil {
+		return nil, err
 	}
 
-	// TODO: Consider checking if draft exists first for better error messages
-
-	err := o.characterDraftRepo.Delete(ctx, input.DraftID)
+	_, err := o.characterDraftRepo.Delete(ctx, draftrepo.DeleteInput{ID: input.DraftID})
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to delete draft")
 	}
@@ -208,424 +253,399 @@ func (o *Orchestrator) DeleteDraft(ctx context.Context, input *character.DeleteD
 	}, nil
 }
 
-// Section update methods
+// Section-based update methods
 
 // UpdateName updates the character's name
-func (o *Orchestrator) UpdateName(ctx context.Context, input *character.UpdateNameInput) (*character.UpdateNameOutput, error) {
+func (o *Orchestrator) UpdateName(
+	ctx context.Context,
+	input *character.UpdateNameInput,
+) (*character.UpdateNameOutput, error) {
 	if input == nil {
 		return nil, errors.InvalidArgument("input is required")
 	}
-	if input.DraftID == "" {
-		return nil, errors.InvalidArgument("draft ID is required")
-	}
-	if input.Name == "" {
-		return nil, errors.InvalidArgument("name is required")
+
+	vb := errors.NewValidationBuilder()
+	errors.ValidateRequired("draftID", input.DraftID, vb)
+	errors.ValidateRequired("name", input.Name, vb)
+	if err := vb.Build(); err != nil {
+		return nil, err
 	}
 
-	// Get existing draft
-	draft, err := o.characterDraftRepo.Get(ctx, input.DraftID)
+	// Get the draft
+	getOutput, err := o.characterDraftRepo.Get(ctx, draftrepo.GetInput{ID: input.DraftID})
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to get draft")
 	}
+	draft := getOutput.Draft
 
-	// Update name
+	// Update the name
 	draft.Name = input.Name
+	// Repository will update timestamp
+
+	// Update progress
 	draft.Progress.SetStep(dnd5e.ProgressStepName, true)
-	draft.UpdatedAt = time.Now().Unix()
+	o.updateCompletionPercentage(draft)
 
-	// Recalculate progress
-	draft.Progress = o.calculateProgress(draft)
-
-	// Save updated draft
-	err = o.characterDraftRepo.Update(ctx, draft)
+	// Save the updated draft
+	updateOutput, err := o.characterDraftRepo.Update(ctx, draftrepo.UpdateInput{Draft: draft})
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to update draft")
 	}
 
-	// No validation warnings for name update
 	return &character.UpdateNameOutput{
-		Draft:    draft,
-		Warnings: []character.ValidationWarning{},
+		Draft: updateOutput.Draft,
 	}, nil
 }
 
 // UpdateRace updates the character's race
-func (o *Orchestrator) UpdateRace(ctx context.Context, input *character.UpdateRaceInput) (*character.UpdateRaceOutput, error) {
+func (o *Orchestrator) UpdateRace(
+	ctx context.Context,
+	input *character.UpdateRaceInput,
+) (*character.UpdateRaceOutput, error) {
 	if input == nil {
 		return nil, errors.InvalidArgument("input is required")
 	}
-	if input.DraftID == "" {
-		return nil, errors.InvalidArgument("draft ID is required")
-	}
-	if input.RaceID == "" {
-		return nil, errors.InvalidArgument("race ID is required")
+
+	vb := errors.NewValidationBuilder()
+	errors.ValidateRequired("draftID", input.DraftID, vb)
+	errors.ValidateRequired("raceID", input.RaceID, vb)
+	if err := vb.Build(); err != nil {
+		return nil, err
 	}
 
-	// Get existing draft
-	draft, err := o.characterDraftRepo.Get(ctx, input.DraftID)
+	// Get the draft
+	getOutput, err := o.characterDraftRepo.Get(ctx, draftrepo.GetInput{ID: input.DraftID})
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to get draft")
 	}
+	draft := getOutput.Draft
 
 	// Validate race choice with engine
-	validateRaceInput := &engine.ValidateRaceChoiceInput{
+	validateInput := &engine.ValidateRaceChoiceInput{
 		RaceID:    input.RaceID,
 		SubraceID: input.SubraceID,
 	}
-
-	validateRaceOutput, err := o.engine.ValidateRaceChoice(ctx, validateRaceInput)
+	validateOutput, err := o.engine.ValidateRaceChoice(ctx, validateInput)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to validate race")
+		return nil, errors.Wrap(err, "failed to validate race choice")
 	}
 
-	if !validateRaceOutput.IsValid {
-		// Convert engine errors to service errors
-		warnings := make([]character.ValidationWarning, 0, len(validateRaceOutput.Errors))
-		for _, err := range validateRaceOutput.Errors {
-			warnings = append(warnings, character.ValidationWarning{
-				Field:   err.Field,
-				Message: err.Message,
-				Type:    err.Code,
-			})
-		}
-		return &character.UpdateRaceOutput{
-			Draft:    draft,
-			Warnings: warnings,
-		}, nil
+	// Convert validation errors to warnings
+	var warnings []character.ValidationWarning
+	if !validateOutput.IsValid {
+		warnings = convertValidationErrorsToWarnings(validateOutput.Errors)
 	}
 
-	// Update race
+	// Update the race
 	draft.RaceID = input.RaceID
 	draft.SubraceID = input.SubraceID
+	// Repository will update timestamp
+
+	// Reset dependent fields when race changes
+	draft.AbilityScores = nil
+	draft.StartingSkillIDs = nil
+	draft.AdditionalLanguages = nil
+
+	// Update progress
 	draft.Progress.SetStep(dnd5e.ProgressStepRace, true)
-	draft.UpdatedAt = time.Now().Unix()
+	// Reset dependent steps
+	draft.Progress.SetStep(dnd5e.ProgressStepAbilityScores, false)
+	draft.Progress.SetStep(dnd5e.ProgressStepSkills, false)
+	draft.Progress.SetStep(dnd5e.ProgressStepLanguages, false)
+	o.updateCompletionPercentage(draft)
 
-	// TODO: Apply racial ability modifiers when we have ability scores
-	// This would involve modifying base scores with validateRaceOutput.AbilityMods
-
-	// Recalculate progress
-	draft.Progress = o.calculateProgress(draft)
-
-	// Save updated draft
-	err = o.characterDraftRepo.Update(ctx, draft)
+	// Save the updated draft
+	updateOutput, err := o.characterDraftRepo.Update(ctx, draftrepo.UpdateInput{Draft: draft})
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to update draft")
 	}
 
 	return &character.UpdateRaceOutput{
-		Draft:    draft,
-		Warnings: []character.ValidationWarning{},
+		Draft:    updateOutput.Draft,
+		Warnings: warnings,
 	}, nil
 }
 
 // UpdateClass updates the character's class
-func (o *Orchestrator) UpdateClass(ctx context.Context, input *character.UpdateClassInput) (*character.UpdateClassOutput, error) {
+func (o *Orchestrator) UpdateClass(
+	ctx context.Context,
+	input *character.UpdateClassInput,
+) (*character.UpdateClassOutput, error) {
 	if input == nil {
 		return nil, errors.InvalidArgument("input is required")
 	}
-	if input.DraftID == "" {
-		return nil, errors.InvalidArgument("draft ID is required")
-	}
-	if input.ClassID == "" {
-		return nil, errors.InvalidArgument("class ID is required")
+
+	vb := errors.NewValidationBuilder()
+	errors.ValidateRequired("draftID", input.DraftID, vb)
+	errors.ValidateRequired("classID", input.ClassID, vb)
+	if err := vb.Build(); err != nil {
+		return nil, err
 	}
 
-	// Get existing draft
-	draft, err := o.characterDraftRepo.Get(ctx, input.DraftID)
+	// Get the draft
+	getOutput, err := o.characterDraftRepo.Get(ctx, draftrepo.GetInput{ID: input.DraftID})
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to get draft")
 	}
+	draft := getOutput.Draft
 
-	// Validate class choice with engine (requires ability scores if set)
-	validateClassInput := &engine.ValidateClassChoiceInput{
+	// Validate class choice with engine
+	validateInput := &engine.ValidateClassChoiceInput{
 		ClassID:       input.ClassID,
 		AbilityScores: draft.AbilityScores,
 	}
-
-	validateClassOutput, err := o.engine.ValidateClassChoice(ctx, validateClassInput)
+	validateOutput, err := o.engine.ValidateClassChoice(ctx, validateInput)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to validate class")
+		return nil, errors.Wrap(err, "failed to validate class choice")
 	}
-
-	warnings := make([]character.ValidationWarning, 0)
 
 	// Convert validation errors to warnings
-	if !validateClassOutput.IsValid {
-		for _, err := range validateClassOutput.Errors {
-			warnings = append(warnings, character.ValidationWarning{
-				Field:   err.Field,
-				Message: err.Message,
-				Type:    err.Code,
-			})
-		}
+	var warnings []character.ValidationWarning
+	if !validateOutput.IsValid {
+		warnings = convertValidationErrorsToWarnings(validateOutput.Errors)
 	}
+	warnings = append(warnings, convertValidationWarnings(validateOutput.Warnings)...)
 
-	// Also include any non-blocking warnings
-	for _, warn := range validateClassOutput.Warnings {
-		warnings = append(warnings, character.ValidationWarning{
-			Field:   warn.Field,
-			Message: warn.Message,
-			Type:    warn.Code,
-		})
-	}
-
-	// Update class even if there are warnings (user might fix ability scores later)
+	// Update the class
 	draft.ClassID = input.ClassID
+	// Repository will update timestamp
+
+	// Reset dependent fields when class changes
+	draft.StartingSkillIDs = nil
+
+	// Update progress
 	draft.Progress.SetStep(dnd5e.ProgressStepClass, true)
-	draft.UpdatedAt = time.Now().Unix()
+	// Reset dependent steps
+	draft.Progress.SetStep(dnd5e.ProgressStepSkills, false)
+	o.updateCompletionPercentage(draft)
 
-	// Clear skills if class changed (they need to reselect based on new class)
-	if len(draft.StartingSkillIDs) > 0 {
-		draft.StartingSkillIDs = []string{}
-		draft.Progress.SetStep(dnd5e.ProgressStepSkills, false)
-	}
-
-	// Recalculate progress
-	draft.Progress = o.calculateProgress(draft)
-
-	// Save updated draft
-	err = o.characterDraftRepo.Update(ctx, draft)
+	// Save the updated draft
+	updateOutput, err := o.characterDraftRepo.Update(ctx, draftrepo.UpdateInput{Draft: draft})
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to update draft")
 	}
 
 	return &character.UpdateClassOutput{
-		Draft:    draft,
+		Draft:    updateOutput.Draft,
 		Warnings: warnings,
 	}, nil
 }
 
 // UpdateBackground updates the character's background
-func (o *Orchestrator) UpdateBackground(ctx context.Context, input *character.UpdateBackgroundInput) (*character.UpdateBackgroundOutput, error) {
+func (o *Orchestrator) UpdateBackground(
+	ctx context.Context,
+	input *character.UpdateBackgroundInput,
+) (*character.UpdateBackgroundOutput, error) {
 	if input == nil {
 		return nil, errors.InvalidArgument("input is required")
 	}
-	if input.DraftID == "" {
-		return nil, errors.InvalidArgument("draft ID is required")
-	}
-	if input.BackgroundID == "" {
-		return nil, errors.InvalidArgument("background ID is required")
+
+	vb := errors.NewValidationBuilder()
+	errors.ValidateRequired("draftID", input.DraftID, vb)
+	errors.ValidateRequired("backgroundID", input.BackgroundID, vb)
+	if err := vb.Build(); err != nil {
+		return nil, err
 	}
 
-	// Get existing draft
-	draft, err := o.characterDraftRepo.Get(ctx, input.DraftID)
+	// Get the draft
+	getOutput, err := o.characterDraftRepo.Get(ctx, draftrepo.GetInput{ID: input.DraftID})
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to get draft")
 	}
+	draft := getOutput.Draft
 
 	// Validate background choice with engine
-	validateBgInput := &engine.ValidateBackgroundChoiceInput{
+	validateInput := &engine.ValidateBackgroundChoiceInput{
 		BackgroundID: input.BackgroundID,
 	}
-
-	validateBgOutput, err := o.engine.ValidateBackgroundChoice(ctx, validateBgInput)
+	validateOutput, err := o.engine.ValidateBackgroundChoice(ctx, validateInput)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to validate background")
+		return nil, errors.Wrap(err, "failed to validate background choice")
+	}
+	if !validateOutput.IsValid {
+		ve := errors.NewValidationError()
+		ve.AddFieldError("background", "invalid background choice")
+		return nil, ve.ToError()
 	}
 
-	if !validateBgOutput.IsValid {
-		// Convert engine errors to service warnings
-		warnings := make([]character.ValidationWarning, 0, len(validateBgOutput.Errors))
-		for _, err := range validateBgOutput.Errors {
-			warnings = append(warnings, character.ValidationWarning{
-				Field:   err.Field,
-				Message: err.Message,
-				Type:    err.Code,
-			})
-		}
-		return &character.UpdateBackgroundOutput{
-			Draft:    draft,
-			Warnings: warnings,
-		}, nil
-	}
-
-	// Update background
+	// Update the background
 	draft.BackgroundID = input.BackgroundID
+	// Repository will update timestamp
+
+	// Reset dependent fields when background changes
+	draft.StartingSkillIDs = nil
+
+	// Update progress
 	draft.Progress.SetStep(dnd5e.ProgressStepBackground, true)
-	draft.UpdatedAt = time.Now().Unix()
+	// Reset dependent steps
+	draft.Progress.SetStep(dnd5e.ProgressStepSkills, false)
+	o.updateCompletionPercentage(draft)
 
-	// Clear skills if background changed (they get skills from background)
-	if len(draft.StartingSkillIDs) > 0 {
-		draft.StartingSkillIDs = []string{}
-		draft.Progress.SetStep(dnd5e.ProgressStepSkills, false)
-	}
-
-	// Recalculate progress
-	draft.Progress = o.calculateProgress(draft)
-
-	// Save updated draft
-	err = o.characterDraftRepo.Update(ctx, draft)
+	// Save the updated draft
+	updateOutput, err := o.characterDraftRepo.Update(ctx, draftrepo.UpdateInput{Draft: draft})
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to update draft")
 	}
 
 	return &character.UpdateBackgroundOutput{
-		Draft:    draft,
-		Warnings: []character.ValidationWarning{},
+		Draft: updateOutput.Draft,
 	}, nil
 }
 
 // UpdateAbilityScores updates the character's ability scores
-func (o *Orchestrator) UpdateAbilityScores(ctx context.Context, input *character.UpdateAbilityScoresInput) (*character.UpdateAbilityScoresOutput, error) {
+func (o *Orchestrator) UpdateAbilityScores(
+	ctx context.Context,
+	input *character.UpdateAbilityScoresInput,
+) (*character.UpdateAbilityScoresOutput, error) {
 	if input == nil {
 		return nil, errors.InvalidArgument("input is required")
 	}
-	if input.DraftID == "" {
-		return nil, errors.InvalidArgument("draft ID is required")
+
+	vb := errors.NewValidationBuilder()
+	errors.ValidateRequired("draftID", input.DraftID, vb)
+	if err := vb.Build(); err != nil {
+		return nil, err
 	}
 
-	// Get existing draft
-	draft, err := o.characterDraftRepo.Get(ctx, input.DraftID)
+	// Get the draft
+	getOutput, err := o.characterDraftRepo.Get(ctx, draftrepo.GetInput{ID: input.DraftID})
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to get draft")
 	}
+	draft := getOutput.Draft
 
 	// Validate ability scores with engine
-	validateScoresInput := &engine.ValidateAbilityScoresInput{
+	validateInput := &engine.ValidateAbilityScoresInput{
 		AbilityScores: &input.AbilityScores,
-		Method:        "manual", // TODO: Support different methods (standard array, point buy)
+		Method:        "standard_array", // TODO: Make this configurable
 	}
-
-	validateScoresOutput, err := o.engine.ValidateAbilityScores(ctx, validateScoresInput)
+	validateOutput, err := o.engine.ValidateAbilityScores(ctx, validateInput)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to validate ability scores")
 	}
-
-	warnings := make([]character.ValidationWarning, 0)
-
-	// Convert validation errors to warnings
-	if !validateScoresOutput.IsValid {
-		for _, err := range validateScoresOutput.Errors {
-			warnings = append(warnings, character.ValidationWarning{
-				Field:   err.Field,
-				Message: err.Message,
-				Type:    err.Code,
-			})
-		}
+	if !validateOutput.IsValid {
+		ve := errors.NewValidationError()
+		ve.AddFieldError("abilityScores", "invalid ability scores")
+		return nil, ve.ToError()
 	}
 
-	// Include any non-blocking warnings
-	for _, warn := range validateScoresOutput.Warnings {
-		warnings = append(warnings, character.ValidationWarning{
-			Field:   warn.Field,
-			Message: warn.Message,
-			Type:    warn.Code,
-		})
-	}
+	// Collect warnings
+	var warnings []character.ValidationWarning
 
-	// Update ability scores
-	draft.AbilityScores = &input.AbilityScores
-	draft.Progress.SetStep(dnd5e.ProgressStepAbilityScores, true)
-	draft.UpdatedAt = time.Now().Unix()
-
-	// If we have a class, revalidate it with new ability scores
+	// Validate class requirements if class is selected
 	if draft.ClassID != "" {
-		validateClassInput := &engine.ValidateClassChoiceInput{
+		classValidateInput := &engine.ValidateClassChoiceInput{
 			ClassID:       draft.ClassID,
-			AbilityScores: draft.AbilityScores,
+			AbilityScores: &input.AbilityScores,
 		}
-
-		validateClassOutput, err := o.engine.ValidateClassChoice(ctx, validateClassInput)
-		if err == nil && !validateClassOutput.IsValid {
-			// Add class-related warnings
-			for _, err := range validateClassOutput.Errors {
+		classValidateOutput, err := o.engine.ValidateClassChoice(ctx, classValidateInput)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to validate class requirements")
+		}
+		if !classValidateOutput.IsValid {
+			// Convert class requirement errors to warnings
+			for _, e := range classValidateOutput.Errors {
 				warnings = append(warnings, character.ValidationWarning{
 					Field:   "class_requirements",
-					Message: err.Message,
-					Type:    err.Code,
+					Message: e.Message,
+					Type:    e.Code,
 				})
 			}
 		}
 	}
 
-	// Recalculate progress
-	draft.Progress = o.calculateProgress(draft)
+	// Update the ability scores
+	draft.AbilityScores = &input.AbilityScores
+	// Repository will update timestamp
 
-	// Save updated draft
-	err = o.characterDraftRepo.Update(ctx, draft)
+	// Update progress
+	draft.Progress.SetStep(dnd5e.ProgressStepAbilityScores, true)
+	o.updateCompletionPercentage(draft)
+
+	// Save the updated draft
+	updateOutput, err := o.characterDraftRepo.Update(ctx, draftrepo.UpdateInput{Draft: draft})
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to update draft")
 	}
 
 	return &character.UpdateAbilityScoresOutput{
-		Draft:    draft,
+		Draft:    updateOutput.Draft,
 		Warnings: warnings,
 	}, nil
 }
 
-// UpdateSkills updates the character's skills
-func (o *Orchestrator) UpdateSkills(ctx context.Context, input *character.UpdateSkillsInput) (*character.UpdateSkillsOutput, error) {
+// UpdateSkills updates the character's starting skills
+func (o *Orchestrator) UpdateSkills(
+	ctx context.Context,
+	input *character.UpdateSkillsInput,
+) (*character.UpdateSkillsOutput, error) {
 	if input == nil {
 		return nil, errors.InvalidArgument("input is required")
 	}
-	if input.DraftID == "" {
-		return nil, errors.InvalidArgument("draft ID is required")
+
+	vb := errors.NewValidationBuilder()
+	errors.ValidateRequired("draftID", input.DraftID, vb)
+	if err := vb.Build(); err != nil {
+		return nil, err
 	}
 
-	// Get existing draft
-	draft, err := o.characterDraftRepo.Get(ctx, input.DraftID)
+	// Get the draft
+	getOutput, err := o.characterDraftRepo.Get(ctx, draftrepo.GetInput{ID: input.DraftID})
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to get draft")
 	}
+	draft := getOutput.Draft
 
-	// Validate we have class and background before selecting skills
+	// Collect warnings
+	var warnings []character.ValidationWarning
+
+	// Check prerequisites
 	if draft.ClassID == "" || draft.BackgroundID == "" {
-		return &character.UpdateSkillsOutput{
-			Draft: draft,
-			Warnings: []character.ValidationWarning{
-				{
-					Field:   "prerequisites",
-					Message: "Must select class and background before choosing skills",
-					Type:    "MISSING_PREREQUISITES",
-				},
-			},
-		}, nil
-	}
-
-	// Validate skill choices with engine
-	validateSkillsInput := &engine.ValidateSkillChoicesInput{
-		ClassID:          draft.ClassID,
-		BackgroundID:     draft.BackgroundID,
-		SelectedSkillIDs: input.SkillIDs,
-	}
-
-	validateSkillsOutput, err := o.engine.ValidateSkillChoices(ctx, validateSkillsInput)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to validate skills")
-	}
-
-	warnings := make([]character.ValidationWarning, 0)
-
-	if !validateSkillsOutput.IsValid {
-		for _, err := range validateSkillsOutput.Errors {
-			warnings = append(warnings, character.ValidationWarning{
-				Field:   err.Field,
-				Message: err.Message,
-				Type:    err.Code,
-			})
+		warnings = append(warnings, character.ValidationWarning{
+			Field:   "prerequisites",
+			Message: "Class and background must be selected before choosing skills",
+			Type:    "MISSING_PREREQUISITES",
+		})
+		// Still allow updating skills, but with warning
+	} else {
+		// Validate skill choices with engine
+		validateInput := &engine.ValidateSkillChoicesInput{
+			ClassID:          draft.ClassID,
+			BackgroundID:     draft.BackgroundID,
+			SelectedSkillIDs: input.SkillIDs,
 		}
-		return &character.UpdateSkillsOutput{
-			Draft:    draft,
-			Warnings: warnings,
-		}, nil
+		validateOutput, err := o.engine.ValidateSkillChoices(ctx, validateInput)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to validate skill choices")
+		}
+		if !validateOutput.IsValid {
+			// Convert validation errors to warnings
+			for _, e := range validateOutput.Errors {
+				warnings = append(warnings, character.ValidationWarning{
+					Field:   e.Field,
+					Message: e.Message,
+					Type:    e.Code,
+				})
+			}
+		}
 	}
 
-	// Update skills
+	// Update the skills
 	draft.StartingSkillIDs = input.SkillIDs
-	draft.Progress.SetStep(dnd5e.ProgressStepSkills, len(input.SkillIDs) > 0)
-	draft.UpdatedAt = time.Now().Unix()
+	// Repository will update timestamp
 
-	// Recalculate progress
-	draft.Progress = o.calculateProgress(draft)
+	// Update progress
+	draft.Progress.SetStep(dnd5e.ProgressStepSkills, true)
+	o.updateCompletionPercentage(draft)
 
-	// Save updated draft
-	err = o.characterDraftRepo.Update(ctx, draft)
+	// Save the updated draft
+	updateOutput, err := o.characterDraftRepo.Update(ctx, draftrepo.UpdateInput{Draft: draft})
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to update draft")
 	}
 
 	return &character.UpdateSkillsOutput{
-		Draft:    draft,
+		Draft:    updateOutput.Draft,
 		Warnings: warnings,
 	}, nil
 }
@@ -633,115 +653,102 @@ func (o *Orchestrator) UpdateSkills(ctx context.Context, input *character.Update
 // Validation methods
 
 // ValidateDraft validates a character draft
-func (o *Orchestrator) ValidateDraft(ctx context.Context, input *character.ValidateDraftInput) (*character.ValidateDraftOutput, error) {
+func (o *Orchestrator) ValidateDraft(
+	ctx context.Context,
+	input *character.ValidateDraftInput,
+) (*character.ValidateDraftOutput, error) {
 	if input == nil {
 		return nil, errors.InvalidArgument("input is required")
 	}
-	if input.DraftID == "" {
-		return nil, errors.InvalidArgument("draft ID is required")
+
+	vb := errors.NewValidationBuilder()
+	errors.ValidateRequired("draftID", input.DraftID, vb)
+	if err := vb.Build(); err != nil {
+		return nil, err
 	}
 
-	// Get existing draft
-	draft, err := o.characterDraftRepo.Get(ctx, input.DraftID)
+	// Get the draft
+	getOutput, err := o.characterDraftRepo.Get(ctx, draftrepo.GetInput{ID: input.DraftID})
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to get draft")
 	}
+	draft := getOutput.Draft
 
-	// Use engine to validate the entire draft
-	validateDraftInput := &engine.ValidateCharacterDraftInput{
+	// Validate with engine
+	validateInput := &engine.ValidateCharacterDraftInput{
 		Draft: draft,
 	}
-
-	validateDraftOutput, err := o.engine.ValidateCharacterDraft(ctx, validateDraftInput)
+	validateOutput, err := o.engine.ValidateCharacterDraft(ctx, validateInput)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to validate draft")
-	}
-
-	// Convert engine validation results to service types
-	errors := make([]character.ValidationError, 0, len(validateDraftOutput.Errors))
-	for _, err := range validateDraftOutput.Errors {
-		errors = append(errors, character.ValidationError{
-			Field:   err.Field,
-			Message: err.Message,
-			Type:    err.Code,
-		})
-	}
-
-	warnings := make([]character.ValidationWarning, 0, len(validateDraftOutput.Warnings))
-	for _, warn := range validateDraftOutput.Warnings {
-		warnings = append(warnings, character.ValidationWarning{
-			Field:   warn.Field,
-			Message: warn.Message,
-			Type:    warn.Code,
-		})
 	}
 
 	return &character.ValidateDraftOutput{
-		IsComplete:   validateDraftOutput.IsComplete,
-		IsValid:      validateDraftOutput.IsValid,
-		Errors:       errors,
-		Warnings:     warnings,
-		MissingSteps: validateDraftOutput.MissingSteps,
+		IsComplete:   validateOutput.IsComplete,
+		IsValid:      validateOutput.IsValid,
+		Errors:       convertValidationErrors(validateOutput.Errors),
+		Warnings:     convertValidationWarnings(validateOutput.Warnings),
+		MissingSteps: validateOutput.MissingSteps,
 	}, nil
 }
 
-// Finalization methods
+// Character finalization
 
-// FinalizeDraft finalizes a draft into a complete character
-func (o *Orchestrator) FinalizeDraft(ctx context.Context, input *character.FinalizeDraftInput) (*character.FinalizeDraftOutput, error) {
+// FinalizeDraft finalizes a character draft into a full character
+func (o *Orchestrator) FinalizeDraft(
+	ctx context.Context,
+	input *character.FinalizeDraftInput,
+) (*character.FinalizeDraftOutput, error) {
 	if input == nil {
 		return nil, errors.InvalidArgument("input is required")
 	}
-	if input.DraftID == "" {
-		return nil, errors.InvalidArgument("draft ID is required")
+
+	vb := errors.NewValidationBuilder()
+	errors.ValidateRequired("draftID", input.DraftID, vb)
+	if err := vb.Build(); err != nil {
+		return nil, err
 	}
 
-	// Get existing draft
-	draft, err := o.characterDraftRepo.Get(ctx, input.DraftID)
+	// Get the draft
+	getOutput, err := o.characterDraftRepo.Get(ctx, draftrepo.GetInput{ID: input.DraftID})
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to get draft")
 	}
+	draft := getOutput.Draft
 
-	// Validate draft is complete and valid
-	validateDraftInput := &engine.ValidateCharacterDraftInput{
+	// Validate the draft is complete
+	validateInput := &engine.ValidateCharacterDraftInput{
 		Draft: draft,
 	}
-
-	validateDraftOutput, err := o.engine.ValidateCharacterDraft(ctx, validateDraftInput)
+	validateOutput, err := o.engine.ValidateCharacterDraft(ctx, validateInput)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to validate draft")
 	}
-
-	if !validateDraftOutput.IsComplete {
-		return nil, errors.FailedPrecondition("cannot finalize incomplete draft").
-			WithMeta("missing_steps", validateDraftOutput.MissingSteps).
-			WithMeta("draft_id", input.DraftID)
+	if !validateOutput.IsComplete {
+		return nil, errors.InvalidArgument("cannot finalize incomplete draft: missing steps: " +
+			strings.Join(validateOutput.MissingSteps, ", "))
 	}
-
-	if !validateDraftOutput.IsValid {
-		errMsgs := make([]string, 0, len(validateDraftOutput.Errors))
-		for _, err := range validateDraftOutput.Errors {
-			errMsgs = append(errMsgs, err.Message)
+	if !validateOutput.IsValid {
+		ve := errors.NewValidationError()
+		for _, e := range validateOutput.Errors {
+			ve.AddFieldError(e.Field, e.Message)
 		}
-		return nil, errors.FailedPrecondition("cannot finalize invalid draft").
-			WithMeta("validation_errors", errMsgs).
-			WithMeta("draft_id", input.DraftID)
+		return nil, errors.Wrap(ve.ToError(), "cannot finalize invalid draft")
 	}
 
-	// Calculate initial character stats
-	calcStatsInput := &engine.CalculateCharacterStatsInput{
+	// Calculate final character stats
+	calculateInput := &engine.CalculateCharacterStatsInput{
 		Draft: draft,
 	}
-
-	calcStatsOutput, err := o.engine.CalculateCharacterStats(ctx, calcStatsInput)
+	calculateOutput, err := o.engine.CalculateCharacterStats(ctx, calculateInput)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to calculate character stats")
 	}
 
-	// Create finalized character
-	finalChar := &dnd5e.Character{
+	// Create the final character
+	char := &dnd5e.Character{
 		Name:             draft.Name,
-		Level:            1, // All characters start at level 1
+		Level:            1, // Starting level
 		ExperiencePoints: 0,
 		RaceID:           draft.RaceID,
 		SubraceID:        draft.SubraceID,
@@ -749,95 +756,115 @@ func (o *Orchestrator) FinalizeDraft(ctx context.Context, input *character.Final
 		BackgroundID:     draft.BackgroundID,
 		Alignment:        draft.Alignment,
 		AbilityScores:    *draft.AbilityScores,
-		CurrentHP:        calcStatsOutput.MaxHP,
+		CurrentHP:        calculateOutput.MaxHP,
 		TempHP:           0,
 		SessionID:        draft.SessionID,
 		PlayerID:         draft.PlayerID,
-		CreatedAt:        time.Now().Unix(),
-		UpdatedAt:        time.Now().Unix(),
+		// Repository will set ID, CreatedAt, and UpdatedAt
 	}
 
-	// Save character to repository
-	err = o.characterRepo.Create(ctx, finalChar)
+	// Create the character in the repository
+	createOutput, err := o.characterRepo.Create(ctx, characterrepo.CreateInput{Character: char})
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create character")
 	}
 
 	// Delete the draft
-	err = o.characterDraftRepo.Delete(ctx, draft.ID)
+	_, err = o.characterDraftRepo.Delete(ctx, draftrepo.DeleteInput{ID: draft.ID})
 	if err != nil {
-		// Log error but don't fail - character was created successfully
-		// TODO: Add logging
+		slog.Error("failed to delete draft", "draft_id", draft.ID, "error", err)
+		// Continue - the character was created successfully
 	}
 
 	return &character.FinalizeDraftOutput{
-		Character:    finalChar,
+		Character:    createOutput.Character,
 		DraftDeleted: err == nil,
 	}, nil
 }
 
-// Character operation methods
+// Completed character operations
 
-// GetCharacter retrieves a finalized character
-func (o *Orchestrator) GetCharacter(ctx context.Context, input *character.GetCharacterInput) (*character.GetCharacterOutput, error) {
+// GetCharacter retrieves a character by ID
+func (o *Orchestrator) GetCharacter(
+	ctx context.Context,
+	input *character.GetCharacterInput,
+) (*character.GetCharacterOutput, error) {
 	if input == nil {
 		return nil, errors.InvalidArgument("input is required")
 	}
-	if input.CharacterID == "" {
-		return nil, errors.InvalidArgument("character ID is required")
+
+	vb := errors.NewValidationBuilder()
+	errors.ValidateRequired("characterID", input.CharacterID, vb)
+	if err := vb.Build(); err != nil {
+		return nil, err
 	}
 
-	char, err := o.characterRepo.Get(ctx, input.CharacterID)
+	getOutput, err := o.characterRepo.Get(ctx, characterrepo.GetInput{ID: input.CharacterID})
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to get character")
 	}
 
 	return &character.GetCharacterOutput{
-		Character: char,
+		Character: getOutput.Character,
 	}, nil
 }
 
-// ListCharacters lists finalized characters with pagination
-func (o *Orchestrator) ListCharacters(ctx context.Context, input *character.ListCharactersInput) (*character.ListCharactersOutput, error) {
+// ListCharacters lists characters with optional filters
+func (o *Orchestrator) ListCharacters(
+	ctx context.Context,
+	input *character.ListCharactersInput,
+) (*character.ListCharactersOutput, error) {
 	if input == nil {
 		return nil, errors.InvalidArgument("input is required")
 	}
 
-	// Build repository options
-	opts := characterrepo.ListOptions{
-		PageSize:  input.PageSize,
-		PageToken: input.PageToken,
-		PlayerID:  input.PlayerID,
-		SessionID: input.SessionID,
+	// Default page size
+	if input.PageSize == 0 {
+		input.PageSize = 20
 	}
 
-	// Default page size if not specified
-	if opts.PageSize <= 0 {
-		opts.PageSize = 20
-	}
-
-	result, err := o.characterRepo.List(ctx, opts)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to list characters")
+	// Use specific list methods based on filters
+	var characters []*dnd5e.Character
+	switch {
+	case input.PlayerID != "":
+		listOutput, err := o.characterRepo.ListByPlayerID(ctx, characterrepo.ListByPlayerIDInput{PlayerID: input.PlayerID})
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to list characters")
+		}
+		characters = listOutput.Characters
+	case input.SessionID != "":
+		listOutput, err := o.characterRepo.ListBySessionID(ctx,
+			characterrepo.ListBySessionIDInput{SessionID: input.SessionID})
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to list characters")
+		}
+		characters = listOutput.Characters
+	default:
+		return nil, errors.InvalidArgument("either PlayerID or SessionID must be provided")
 	}
 
 	return &character.ListCharactersOutput{
-		Characters:    result.Characters,
-		NextPageToken: result.NextPageToken,
-		TotalSize:     result.TotalSize,
+		Characters:    characters,
+		NextPageToken: "", // TODO: implement pagination if needed
 	}, nil
 }
 
-// DeleteCharacter deletes a finalized character
-func (o *Orchestrator) DeleteCharacter(ctx context.Context, input *character.DeleteCharacterInput) (*character.DeleteCharacterOutput, error) {
+// DeleteCharacter deletes a character
+func (o *Orchestrator) DeleteCharacter(
+	ctx context.Context,
+	input *character.DeleteCharacterInput,
+) (*character.DeleteCharacterOutput, error) {
 	if input == nil {
 		return nil, errors.InvalidArgument("input is required")
 	}
-	if input.CharacterID == "" {
-		return nil, errors.InvalidArgument("character ID is required")
+
+	vb := errors.NewValidationBuilder()
+	errors.ValidateRequired("characterID", input.CharacterID, vb)
+	if err := vb.Build(); err != nil {
+		return nil, err
 	}
 
-	err := o.characterRepo.Delete(ctx, input.CharacterID)
+	_, err := o.characterRepo.Delete(ctx, characterrepo.DeleteInput{ID: input.CharacterID})
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to delete character")
 	}
@@ -849,43 +876,73 @@ func (o *Orchestrator) DeleteCharacter(ctx context.Context, input *character.Del
 
 // Helper methods
 
-// calculateProgress determines completion percentage and next step
-func (o *Orchestrator) calculateProgress(draft *dnd5e.CharacterDraft) dnd5e.CreationProgress {
-	progress := draft.Progress
-
-	// Count completed steps using bit manipulation
+// updateCompletionPercentage updates the completion percentage based on completed steps
+func (o *Orchestrator) updateCompletionPercentage(draft *dnd5e.CharacterDraft) {
+	totalSteps := 7 // Name, Race, Class, Background, AbilityScores, Skills, Languages
 	completedSteps := 0
-	totalSteps := 7 // name, race, class, background, ability scores, skills, languages
 
-	// Count set bits in StepsCompleted
-	steps := progress.StepsCompleted
-	for steps > 0 {
-		if steps&1 == 1 {
-			completedSteps++
+	if draft.Progress.HasName() {
+		completedSteps++
+	}
+	if draft.Progress.HasRace() {
+		completedSteps++
+	}
+	if draft.Progress.HasClass() {
+		completedSteps++
+	}
+	if draft.Progress.HasBackground() {
+		completedSteps++
+	}
+	if draft.Progress.HasAbilityScores() {
+		completedSteps++
+	}
+	if draft.Progress.HasSkills() {
+		completedSteps++
+	}
+	if draft.Progress.HasLanguages() {
+		completedSteps++
+	}
+
+	// Safe conversion - totalSteps is always 7 and completedSteps is 0-7
+	// so max value is 700/7 = 100, which fits safely in int32
+	draft.Progress.CompletionPercentage = int32((completedSteps * 100) / totalSteps) //nolint:gosec
+}
+
+// convertValidationErrors converts engine ValidationError to service ValidationError
+func convertValidationErrors(errors []engine.ValidationError) []character.ValidationError {
+	result := make([]character.ValidationError, len(errors))
+	for i, e := range errors {
+		result[i] = character.ValidationError{
+			Field:   e.Field,
+			Message: e.Message,
+			Type:    e.Code,
 		}
-		steps >>= 1
 	}
+	return result
+}
 
-	progress.CompletionPercentage = int32((completedSteps * 100) / totalSteps)
-
-	// Determine next step by checking each flag in order
-	if !progress.HasStep(dnd5e.ProgressStepName) {
-		progress.CurrentStep = dnd5e.CreationStepName
-	} else if !progress.HasStep(dnd5e.ProgressStepRace) {
-		progress.CurrentStep = dnd5e.CreationStepRace
-	} else if !progress.HasStep(dnd5e.ProgressStepClass) {
-		progress.CurrentStep = dnd5e.CreationStepClass
-	} else if !progress.HasStep(dnd5e.ProgressStepBackground) {
-		progress.CurrentStep = dnd5e.CreationStepBackground
-	} else if !progress.HasStep(dnd5e.ProgressStepAbilityScores) {
-		progress.CurrentStep = dnd5e.CreationStepAbilityScores
-	} else if !progress.HasStep(dnd5e.ProgressStepSkills) {
-		progress.CurrentStep = dnd5e.CreationStepSkills
-	} else if !progress.HasStep(dnd5e.ProgressStepLanguages) {
-		progress.CurrentStep = dnd5e.CreationStepLanguages
-	} else {
-		progress.CurrentStep = dnd5e.CreationStepReview
+// convertValidationWarnings converts engine ValidationWarning to service ValidationWarning
+func convertValidationWarnings(warnings []engine.ValidationWarning) []character.ValidationWarning {
+	result := make([]character.ValidationWarning, len(warnings))
+	for i, w := range warnings {
+		result[i] = character.ValidationWarning{
+			Field:   w.Field,
+			Message: w.Message,
+			Type:    w.Code,
+		}
 	}
+	return result
+}
 
-	return progress
+// convertValidationErrorsToWarnings converts engine ValidationError to service ValidationWarning
+func convertValidationErrorsToWarnings(errors []engine.ValidationError) []character.ValidationWarning {
+	result := make([]character.ValidationWarning, len(errors))
+	for i, e := range errors {
+		result[i] = character.ValidationWarning{
+			Field:   e.Field,
+			Message: e.Message,
+			Type:    e.Code,
+		}
+	}
+	return result
 }

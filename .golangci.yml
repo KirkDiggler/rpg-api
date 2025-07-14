@@ -65,7 +65,7 @@ settings:
       - shadow
   
   lll:
-    line-length: 120
+    line-length: 160
     tab-width: 4
   
   misspell:

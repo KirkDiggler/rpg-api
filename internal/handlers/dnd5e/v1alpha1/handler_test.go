@@ -134,7 +134,9 @@ func (s *HandlerTestSuite) SetupTest() {
 	}
 
 	s.expectedCreationProgress = &dnd5e.CreationProgress{
-		StepsCompleted:       dnd5e.ProgressStepName | dnd5e.ProgressStepRace | dnd5e.ProgressStepClass | dnd5e.ProgressStepBackground | dnd5e.ProgressStepAbilityScores,
+		StepsCompleted: dnd5e.ProgressStepName | dnd5e.ProgressStepRace |
+			dnd5e.ProgressStepClass | dnd5e.ProgressStepBackground |
+			dnd5e.ProgressStepAbilityScores,
 		CompletionPercentage: 71,
 		CurrentStep:          dnd5e.CreationStepAbilityScores,
 	}
@@ -179,15 +181,6 @@ func (s *HandlerTestSuite) SetupTest() {
 
 func (s *HandlerTestSuite) TearDownTest() {
 	s.ctrl.Finish()
-}
-
-// Helper to assert unimplemented error
-func (s *HandlerTestSuite) assertUnimplementedError(err error) {
-	s.Require().Error(err)
-	st, ok := status.FromError(err)
-	s.Require().True(ok, "error should be a gRPC status")
-	s.Equal(codes.Unimplemented, st.Code())
-	s.Equal("not implemented", st.Message())
 }
 
 // Draft lifecycle tests
@@ -799,6 +792,7 @@ func (s *HandlerTestSuite) TestDeleteDraft() {
 
 // Finalization tests
 
+//nolint:dupl // Test functions may have similar structure but test different functionality
 func (s *HandlerTestSuite) TestFinalizeDraft() {
 	s.Run("with valid request", func() {
 		expectedCharacter := &dnd5e.Character{
@@ -838,6 +832,7 @@ func (s *HandlerTestSuite) TestFinalizeDraft() {
 
 // Character operation tests
 
+//nolint:dupl // Test functions may have similar structure but test different functionality
 func (s *HandlerTestSuite) TestGetCharacter() {
 	s.Run("with valid character_id", func() {
 		expectedCharacter := &dnd5e.Character{
