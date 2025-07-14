@@ -58,7 +58,7 @@ func NewRedisRepository(cfg *Config) (Repository, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
-	
+
 	return &redisRepository{
 		client: cfg.Client,
 		clock:  cfg.Clock,
@@ -76,22 +76,22 @@ func (r *redisRepository) Create(ctx context.Context, input CreateInput) (*Creat
 
 	// Make a copy to avoid modifying input
 	draft := *input.Draft
-	
+
 	// Repository generates ID if not provided
 	if draft.ID == "" {
 		draft.ID = r.idGen.Generate()
 	}
-	
+
 	// Repository sets timestamps
 	now := r.clock.Now()
 	draft.CreatedAt = now.Unix()
 	draft.UpdatedAt = now.Unix()
-	
+
 	// Set expiration if not provided
 	if draft.ExpiresAt == 0 {
 		draft.ExpiresAt = now.Add(defaultTTL).Unix()
 	}
-	
+
 	// Validate expiration
 	if draft.ExpiresAt > 0 {
 		expiresAt := time.Unix(draft.ExpiresAt, 0)
@@ -227,7 +227,7 @@ func (r *redisRepository) Update(ctx context.Context, input UpdateInput) (*Updat
 
 	// Make a copy to avoid modifying input
 	draft := *input.Draft
-	
+
 	// Repository updates timestamp
 	draft.UpdatedAt = r.clock.Now().Unix()
 
