@@ -1,4 +1,4 @@
-// Package external is th elocation for the dnd5e-api client
+// Package external is the location for the dnd5e-api client
 package external
 
 //go:generate mockgen -destination=mock/mock_client.go -package=externalmock github.com/KirkDiggler/rpg-api/internal/clients/external Client
