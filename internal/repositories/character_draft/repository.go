@@ -10,63 +10,84 @@ import (
 )
 
 // Repository defines the interface for character draft persistence
+// Implements a single-draft-per-player pattern for simplicity
 type Repository interface {
-	// Create creates a new character draft
+	// Create creates or replaces a player's character draft
 	// Returns errors.InvalidArgument for validation failures
-	// Returns errors.AlreadyExists if draft with same ID exists
 	// Returns errors.Internal for storage failures
-	Create(ctx context.Context, draft *dnd5e.CharacterDraft) error
+	Create(ctx context.Context, input CreateInput) (*CreateOutput, error)
 
 	// Get retrieves a character draft by ID
 	// Returns errors.InvalidArgument for empty/invalid IDs
 	// Returns errors.NotFound if draft doesn't exist
 	// Returns errors.Internal for storage failures
-	Get(ctx context.Context, id string) (*dnd5e.CharacterDraft, error)
+	Get(ctx context.Context, input GetInput) (*GetOutput, error)
+
+	// GetByPlayerID retrieves the player's single draft
+	// Returns errors.InvalidArgument for empty/invalid player IDs
+	// Returns errors.NotFound if player has no draft
+	// Returns errors.Internal for storage failures
+	GetByPlayerID(ctx context.Context, input GetByPlayerIDInput) (*GetByPlayerIDOutput, error)
 
 	// Update updates an existing character draft
 	// Returns errors.InvalidArgument for validation failures
 	// Returns errors.NotFound if draft doesn't exist
 	// Returns errors.Internal for storage failures
-	Update(ctx context.Context, draft *dnd5e.CharacterDraft) error
+	Update(ctx context.Context, input UpdateInput) (*UpdateOutput, error)
 
 	// Delete deletes a character draft by ID
 	// Returns errors.InvalidArgument for empty/invalid IDs
 	// Returns errors.NotFound if draft doesn't exist
 	// Returns errors.Internal for storage failures
-	Delete(ctx context.Context, id string) error
-
-	// List lists character drafts with pagination
-	// Returns errors.InvalidArgument for invalid pagination options
-	// Returns errors.Internal for storage failures
-	List(ctx context.Context, opts ListOptions) (*ListResult, error)
-
-	// GetByPlayerID retrieves all drafts for a player
-	// Returns errors.InvalidArgument for empty/invalid player IDs
-	// Returns errors.Internal for storage failures
-	GetByPlayerID(ctx context.Context, playerID string) ([]*dnd5e.CharacterDraft, error)
-
-	// GetBySessionID retrieves all drafts in a session
-	// Returns errors.InvalidArgument for empty/invalid session IDs
-	// Returns errors.Internal for storage failures
-	GetBySessionID(ctx context.Context, sessionID string) ([]*dnd5e.CharacterDraft, error)
-
-	// DeleteExpired deletes all drafts past their expiration time
-	// Returns errors.Internal for storage failures
-	// Returns count of deleted drafts
-	DeleteExpired(ctx context.Context) (int64, error)
+	Delete(ctx context.Context, input DeleteInput) (*DeleteOutput, error)
 }
 
-// ListOptions defines options for listing character drafts
-type ListOptions struct {
-	PageSize  int32
-	PageToken string
-	PlayerID  string // Optional filter
-	SessionID string // Optional filter
+// CreateInput defines the input for creating a character draft
+type CreateInput struct {
+	Draft *dnd5e.CharacterDraft
 }
 
-// ListResult contains the results of a list operation
-type ListResult struct {
-	Drafts        []*dnd5e.CharacterDraft
-	NextPageToken string
-	TotalSize     int32
+// CreateOutput defines the output for creating a character draft
+type CreateOutput struct {
+	// Empty for now, can be extended later
+}
+
+// GetInput defines the input for getting a character draft
+type GetInput struct {
+	ID string
+}
+
+// GetOutput defines the output for getting a character draft
+type GetOutput struct {
+	Draft *dnd5e.CharacterDraft
+}
+
+// GetByPlayerIDInput defines the input for getting a player's draft
+type GetByPlayerIDInput struct {
+	PlayerID string
+}
+
+// GetByPlayerIDOutput defines the output for getting a player's draft
+type GetByPlayerIDOutput struct {
+	Draft *dnd5e.CharacterDraft
+}
+
+// UpdateInput defines the input for updating a character draft
+type UpdateInput struct {
+	Draft *dnd5e.CharacterDraft
+}
+
+// UpdateOutput defines the output for updating a character draft
+type UpdateOutput struct {
+	// Empty for now, can be extended later
+}
+
+// DeleteInput defines the input for deleting a character draft
+type DeleteInput struct {
+	ID string
+}
+
+// DeleteOutput defines the output for deleting a character draft
+type DeleteOutput struct {
+	// Empty for now, can be extended later
 }

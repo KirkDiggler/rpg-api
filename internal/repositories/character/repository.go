@@ -15,53 +15,93 @@ type Repository interface {
 	// Returns errors.InvalidArgument for validation failures
 	// Returns errors.AlreadyExists if character with same ID exists
 	// Returns errors.Internal for storage failures
-	Create(ctx context.Context, character *dnd5e.Character) error
+	Create(ctx context.Context, input CreateInput) (*CreateOutput, error)
 
 	// Get retrieves a character by ID
 	// Returns errors.InvalidArgument for empty/invalid IDs
 	// Returns errors.NotFound if character doesn't exist
 	// Returns errors.Internal for storage failures
-	Get(ctx context.Context, id string) (*dnd5e.Character, error)
+	Get(ctx context.Context, input GetInput) (*GetOutput, error)
 
 	// Update updates an existing character
 	// Returns errors.InvalidArgument for validation failures
 	// Returns errors.NotFound if character doesn't exist
 	// Returns errors.Internal for storage failures
-	Update(ctx context.Context, character *dnd5e.Character) error
+	Update(ctx context.Context, input UpdateInput) (*UpdateOutput, error)
 
 	// Delete deletes a character by ID
 	// Returns errors.InvalidArgument for empty/invalid IDs
 	// Returns errors.NotFound if character doesn't exist
 	// Returns errors.Internal for storage failures
-	Delete(ctx context.Context, id string) error
+	Delete(ctx context.Context, input DeleteInput) (*DeleteOutput, error)
 
-	// List lists characters with pagination
-	// Returns errors.InvalidArgument for invalid pagination options
-	// Returns errors.Internal for storage failures
-	List(ctx context.Context, opts ListOptions) (*ListResult, error)
-
-	// GetByPlayerID retrieves all characters for a player
+	// ListByPlayerID retrieves all characters for a player
 	// Returns errors.InvalidArgument for empty/invalid player IDs
 	// Returns errors.Internal for storage failures
-	GetByPlayerID(ctx context.Context, playerID string) ([]*dnd5e.Character, error)
+	ListByPlayerID(ctx context.Context, input ListByPlayerIDInput) (*ListByPlayerIDOutput, error)
 
-	// GetBySessionID retrieves all characters in a session
+	// ListBySessionID retrieves all characters in a session
 	// Returns errors.InvalidArgument for empty/invalid session IDs
 	// Returns errors.Internal for storage failures
-	GetBySessionID(ctx context.Context, sessionID string) ([]*dnd5e.Character, error)
+	ListBySessionID(ctx context.Context, input ListBySessionIDInput) (*ListBySessionIDOutput, error)
 }
 
-// ListOptions defines options for listing characters
-type ListOptions struct {
-	PageSize  int32
-	PageToken string
-	PlayerID  string // Optional filter
-	SessionID string // Optional filter
+// CreateInput defines the input for creating a character
+type CreateInput struct {
+	Character *dnd5e.Character
 }
 
-// ListResult contains the results of a list operation
-type ListResult struct {
-	Characters    []*dnd5e.Character
-	NextPageToken string
-	TotalSize     int32
+// CreateOutput defines the output for creating a character
+type CreateOutput struct {
+	// Empty for now, can be extended later
+}
+
+// GetInput defines the input for getting a character
+type GetInput struct {
+	ID string
+}
+
+// GetOutput defines the output for getting a character
+type GetOutput struct {
+	Character *dnd5e.Character
+}
+
+// UpdateInput defines the input for updating a character
+type UpdateInput struct {
+	Character *dnd5e.Character
+}
+
+// UpdateOutput defines the output for updating a character
+type UpdateOutput struct {
+	// Empty for now, can be extended later
+}
+
+// DeleteInput defines the input for deleting a character
+type DeleteInput struct {
+	ID string
+}
+
+// DeleteOutput defines the output for deleting a character
+type DeleteOutput struct {
+	// Empty for now, can be extended later
+}
+
+// ListByPlayerIDInput defines the input for listing characters by player
+type ListByPlayerIDInput struct {
+	PlayerID string
+}
+
+// ListByPlayerIDOutput defines the output for listing characters by player
+type ListByPlayerIDOutput struct {
+	Characters []*dnd5e.Character
+}
+
+// ListBySessionIDInput defines the input for listing characters by session
+type ListBySessionIDInput struct {
+	SessionID string
+}
+
+// ListBySessionIDOutput defines the output for listing characters by session
+type ListBySessionIDOutput struct {
+	Characters []*dnd5e.Character
 }

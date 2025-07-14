@@ -2,7 +2,6 @@ package character_test
 
 import (
 	"context"
-	"errors"
 	"testing"
 	"time"
 
@@ -12,6 +11,7 @@ import (
 	externalmock "github.com/KirkDiggler/rpg-api/internal/clients/external/mock"
 	enginemock "github.com/KirkDiggler/rpg-api/internal/engine/mock"
 	"github.com/KirkDiggler/rpg-api/internal/entities/dnd5e"
+	"github.com/KirkDiggler/rpg-api/internal/errors"
 	characterorchestrator "github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
 	characterrepomock "github.com/KirkDiggler/rpg-api/internal/repositories/character/mock"
 	draftrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft"
@@ -192,7 +192,7 @@ func (s *OrchestratorTestSuite) TestCreateDraft() {
 			setupMock: func() {
 				s.mockDraftRepo.EXPECT().
 					Create(s.ctx, gomock.Any()).
-					Return(errors.New("database error"))
+					Return(errors.Internal("database error"))
 			},
 			wantErr: true,
 			errMsg:  "failed to create draft",
@@ -264,7 +264,7 @@ func (s *OrchestratorTestSuite) TestGetDraft() {
 			setupMock: func() {
 				s.mockDraftRepo.EXPECT().
 					Get(s.ctx, "nonexistent").
-					Return(nil, errors.New("not found"))
+					Return(nil, errors.NotFoundf("draft not found"))
 			},
 			wantErr: true,
 			errMsg:  "failed to get draft",
@@ -299,50 +299,51 @@ func (s *OrchestratorTestSuite) TestListDrafts() {
 		validate  func(*character.ListDraftsOutput)
 	}{
 		{
-			name: "successful list with filters",
-			input: &character.ListDraftsInput{
-				PlayerID:  s.testPlayerID,
-				SessionID: s.testSessionID,
-				PageSize:  10,
-			},
-			setupMock: func() {
-				s.mockDraftRepo.EXPECT().
-					List(s.ctx, draftrepo.ListOptions{
-						PageSize:  10,
-						PageToken: "",
-						PlayerID:  s.testPlayerID,
-						SessionID: s.testSessionID,
-					}).
-					Return(&draftrepo.ListResult{
-						Drafts:        []*dnd5e.CharacterDraft{s.testDraft},
-						NextPageToken: "next-page",
-						TotalSize:     1,
-					}, nil)
-			},
-			wantErr: false,
-			validate: func(output *character.ListDraftsOutput) {
-				s.Len(output.Drafts, 1)
-				s.Equal("next-page", output.NextPageToken)
-			},
-		},
-		{
-			name: "default page size when not specified",
+			name: "successful list - player has draft",
 			input: &character.ListDraftsInput{
 				PlayerID: s.testPlayerID,
 			},
 			setupMock: func() {
 				s.mockDraftRepo.EXPECT().
-					List(s.ctx, draftrepo.ListOptions{
-						PageSize:  20, // Should default to 20
-						PageToken: "",
-						PlayerID:  s.testPlayerID,
-						SessionID: "",
+					GetByPlayerID(s.ctx, draftrepo.GetByPlayerIDInput{
+						PlayerID: s.testPlayerID,
 					}).
-					Return(&draftrepo.ListResult{
-						Drafts: []*dnd5e.CharacterDraft{},
+					Return(&draftrepo.GetByPlayerIDOutput{
+						Draft: s.testDraft,
 					}, nil)
 			},
 			wantErr: false,
+			validate: func(output *character.ListDraftsOutput) {
+				s.Len(output.Drafts, 1)
+				s.Equal(s.testDraft.ID, output.Drafts[0].ID)
+				s.Equal("", output.NextPageToken) // No pagination for single draft
+			},
+		},
+		{
+			name: "successful list - player has no draft",
+			input: &character.ListDraftsInput{
+				PlayerID: s.testPlayerID,
+			},
+			setupMock: func() {
+				s.mockDraftRepo.EXPECT().
+					GetByPlayerID(s.ctx, draftrepo.GetByPlayerIDInput{
+						PlayerID: s.testPlayerID,
+					}).
+					Return(nil, errors.NotFoundf("no draft found"))
+			},
+			wantErr: false,
+			validate: func(output *character.ListDraftsOutput) {
+				s.Empty(output.Drafts)
+				s.Equal("", output.NextPageToken)
+			},
+		},
+		{
+			name: "error - no player ID provided",
+			input: &character.ListDraftsInput{
+				SessionID: s.testSessionID, // Only session ID
+			},
+			setupMock: func() {},
+			wantErr:   true,
 		},
 		{
 			name:      "nil input",
@@ -415,7 +416,7 @@ func (s *OrchestratorTestSuite) TestDeleteDraft() {
 			setupMock: func() {
 				s.mockDraftRepo.EXPECT().
 					Delete(s.ctx, s.testDraftID).
-					Return(errors.New("database error"))
+					Return(errors.Internal("database error"))
 			},
 			wantErr: true,
 			errMsg:  "failed to delete draft",
