@@ -105,49 +105,42 @@ func (s *OrchestratorTestSuite) SetupSubTest() {
 
 func (s *OrchestratorTestSuite) TestCreateDraft() {
 	testCases := []struct {
-		name               string
-		input              *character.CreateDraftInput
-		setupMock          func() (capturedCreateInput *draftrepo.CreateInput)
-		wantErr            bool
-		errMsg             string
-		validateOutput     func(*character.CreateDraftOutput)
-		validateCaptured   func(capturedCreateInput *draftrepo.CreateInput)
+		name      string
+		input     *character.CreateDraftInput
+		setupMock func()
+		wantErr   bool
+		errMsg    string
+		validate  func(*character.CreateDraftOutput)
 	}{
 		{
 			name: "successful creation with minimal data",
 			input: &character.CreateDraftInput{
 				PlayerID: s.testPlayerID,
 			},
-			setupMock: func() (capturedCreateInput *draftrepo.CreateInput) {
-				// Expect engine validation
+			setupMock: func() {
+				// TODO: Inject clock and ID generator into orchestrator to make tests deterministic
+				// Currently using gomock.Any() because CreateDraft generates:
+				// - ID using time.Now().UnixNano()
+				// - Timestamps using time.Now().Unix()
+				// - ExpiresAt using time.Now().Add(24 * time.Hour).Unix()
 				s.mockEngine.EXPECT().
 					ValidateCharacterDraft(s.ctx, gomock.Any()).
 					Return(&engine.ValidateCharacterDraftOutput{
 						IsValid: true,
 					}, nil)
 
-				// Expect repository create
 				s.mockDraftRepo.EXPECT().
 					Create(s.ctx, gomock.Any()).
-					Do(func(_ context.Context, input draftrepo.CreateInput) {
-						capturedCreateInput = &input
-					}).
 					Return(&draftrepo.CreateOutput{}, nil)
-				return
 			},
 			wantErr: false,
-			validateOutput: func(output *character.CreateDraftOutput) {
+			validate: func(output *character.CreateDraftOutput) {
 				s.NotNil(output.Draft)
 				s.Equal(s.testPlayerID, output.Draft.PlayerID)
-			},
-			validateCaptured: func(capturedCreateInput *draftrepo.CreateInput) {
-				s.NotNil(capturedCreateInput.Draft)
-				draft := capturedCreateInput.Draft
-				s.Equal(s.testPlayerID, draft.PlayerID)
-				s.Equal("", draft.SessionID)
-				s.False(draft.Progress.HasName())
-				s.Equal(dnd5e.CreationStepName, draft.Progress.CurrentStep)
-				s.Equal(int32(0), draft.Progress.CompletionPercentage)
+				s.Equal("", output.Draft.SessionID)
+				s.False(output.Draft.Progress.HasName())
+				s.Equal(dnd5e.CreationStepName, output.Draft.Progress.CurrentStep)
+				s.Equal(int32(0), output.Draft.Progress.CompletionPercentage)
 			},
 		},
 		{
@@ -161,8 +154,8 @@ func (s *OrchestratorTestSuite) TestCreateDraft() {
 					ClassID: dnd5e.ClassRogue,
 				},
 			},
-			setupMock: func() (capturedCreateInput *draftrepo.CreateInput) {
-				// Expect engine validation
+			setupMock: func() {
+				// Using same TODO as above - need clock and ID generator injection
 				s.mockEngine.EXPECT().
 					ValidateCharacterDraft(s.ctx, gomock.Any()).
 					Return(&engine.ValidateCharacterDraftOutput{
@@ -171,33 +164,24 @@ func (s *OrchestratorTestSuite) TestCreateDraft() {
 
 				s.mockDraftRepo.EXPECT().
 					Create(s.ctx, gomock.Any()).
-					Do(func(_ context.Context, input draftrepo.CreateInput) {
-						capturedCreateInput = &input
-					}).
 					Return(&draftrepo.CreateOutput{}, nil)
-				return
 			},
 			wantErr: false,
-			validateOutput: func(output *character.CreateDraftOutput) {
+			validate: func(output *character.CreateDraftOutput) {
 				s.NotNil(output.Draft)
 				s.Equal("Frodo", output.Draft.Name)
-			},
-			validateCaptured: func(capturedCreateInput *draftrepo.CreateInput) {
-				s.NotNil(capturedCreateInput.Draft)
-				draft := capturedCreateInput.Draft
-				s.Equal("Frodo", draft.Name)
-				s.Equal(dnd5e.RaceHalfling, draft.RaceID)
-				s.Equal(dnd5e.ClassRogue, draft.ClassID)
-				s.True(draft.Progress.HasName())
-				s.True(draft.Progress.HasRace())
-				s.True(draft.Progress.HasClass())
-				s.Greater(draft.Progress.CompletionPercentage, int32(0))
+				s.Equal(dnd5e.RaceHalfling, output.Draft.RaceID)
+				s.Equal(dnd5e.ClassRogue, output.Draft.ClassID)
+				s.True(output.Draft.Progress.HasName())
+				s.True(output.Draft.Progress.HasRace())
+				s.True(output.Draft.Progress.HasClass())
+				s.Greater(output.Draft.Progress.CompletionPercentage, int32(0))
 			},
 		},
 		{
 			name:      "nil input",
 			input:     nil,
-			setupMock: func() *draftrepo.CreateInput { return nil },
+			setupMock: func() {},
 			wantErr:   true,
 			errMsg:    "input is required",
 		},
@@ -206,7 +190,7 @@ func (s *OrchestratorTestSuite) TestCreateDraft() {
 			input: &character.CreateDraftInput{
 				SessionID: s.testSessionID,
 			},
-			setupMock: func() *draftrepo.CreateInput { return nil },
+			setupMock: func() {},
 			wantErr:   true,
 			errMsg:    "validation failed: playerID: is required",
 		},
@@ -215,7 +199,7 @@ func (s *OrchestratorTestSuite) TestCreateDraft() {
 			input: &character.CreateDraftInput{
 				PlayerID: s.testPlayerID,
 			},
-			setupMock: func() *draftrepo.CreateInput {
+			setupMock: func() {
 				// Expect engine validation
 				s.mockEngine.EXPECT().
 					ValidateCharacterDraft(s.ctx, gomock.Any()).
@@ -226,7 +210,6 @@ func (s *OrchestratorTestSuite) TestCreateDraft() {
 				s.mockDraftRepo.EXPECT().
 					Create(s.ctx, gomock.Any()).
 					Return(nil, errors.Internal("database error"))
-				return nil
 			},
 			wantErr: true,
 			errMsg:  "failed to create draft",
@@ -235,7 +218,7 @@ func (s *OrchestratorTestSuite) TestCreateDraft() {
 
 	for _, tc := range testCases {
 		s.Run(tc.name, func() {
-			capturedInput := tc.setupMock()
+			tc.setupMock()
 
 			output, err := s.orchestrator.CreateDraft(s.ctx, tc.input)
 
@@ -246,11 +229,8 @@ func (s *OrchestratorTestSuite) TestCreateDraft() {
 			} else {
 				s.NoError(err)
 				s.NotNil(output)
-				if tc.validateOutput != nil {
-					tc.validateOutput(output)
-				}
-				if tc.validateCaptured != nil && capturedInput != nil {
-					tc.validateCaptured(capturedInput)
+				if tc.validate != nil {
+					tc.validate(output)
 				}
 			}
 		})
