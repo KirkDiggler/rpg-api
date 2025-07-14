@@ -792,6 +792,7 @@ func (s *HandlerTestSuite) TestDeleteDraft() {
 
 // Finalization tests
 
+//nolint:dupl // Test functions may have similar structure but test different functionality
 func (s *HandlerTestSuite) TestFinalizeDraft() {
 	s.Run("with valid request", func() {
 		expectedCharacter := &dnd5e.Character{
@@ -831,6 +832,7 @@ func (s *HandlerTestSuite) TestFinalizeDraft() {
 
 // Character operation tests
 
+//nolint:dupl // Test functions may have similar structure but test different functionality
 func (s *HandlerTestSuite) TestGetCharacter() {
 	s.Run("with valid character_id", func() {
 		expectedCharacter := &dnd5e.Character{

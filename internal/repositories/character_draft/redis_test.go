@@ -17,6 +17,11 @@ import (
 	characterdraft "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft"
 )
 
+const (
+	testDraftPlayerKey = "draft:player:player_456"
+	testDraftKey       = "draft:draft_123"
+)
+
 type RedisRepositoryTestSuite struct {
 	suite.Suite
 	ctrl       *gomock.Controller
@@ -50,8 +55,8 @@ func (s *RedisRepositoryTestSuite) TestCreate() {
 	}
 
 	s.Run("successful create with no existing draft", func() {
-		playerKey := "draft:player:player_456"
-		draftKey := "draft:draft_123"
+		playerKey := testDraftPlayerKey
+		draftKey := testDraftKey
 
 		// Check for existing draft
 		s.mockClient.EXPECT().
@@ -90,7 +95,7 @@ func (s *RedisRepositoryTestSuite) TestCreate() {
 	})
 
 	s.Run("successful create replacing existing draft", func() {
-		playerKey := "draft:player:player_456"
+		playerKey := testDraftPlayerKey
 		oldDraftKey := "draft:old_draft_123"
 		newDraftKey := "draft:draft_123"
 
@@ -188,7 +193,7 @@ func (s *RedisRepositoryTestSuite) TestGet() {
 	}
 
 	s.Run("successful get", func() {
-		draftKey := "draft:draft_123"
+		draftKey := testDraftKey
 		draftData, _ := json.Marshal(testDraft)
 
 		s.mockClient.EXPECT().
@@ -208,7 +213,7 @@ func (s *RedisRepositoryTestSuite) TestGet() {
 	})
 
 	s.Run("error when draft not found", func() {
-		draftKey := "draft:draft_123"
+		draftKey := testDraftKey
 
 		s.mockClient.EXPECT().
 			Get(s.ctx, draftKey).
@@ -242,8 +247,8 @@ func (s *RedisRepositoryTestSuite) TestGetByPlayerID() {
 	}
 
 	s.Run("successful get by player ID", func() {
-		playerKey := "draft:player:player_456"
-		draftKey := "draft:draft_123"
+		playerKey := testDraftPlayerKey
+		draftKey := testDraftKey
 		draftData, _ := json.Marshal(testDraft)
 
 		// Get draft ID from player mapping
@@ -268,7 +273,7 @@ func (s *RedisRepositoryTestSuite) TestGetByPlayerID() {
 	})
 
 	s.Run("error when player has no draft", func() {
-		playerKey := "draft:player:player_456"
+		playerKey := testDraftPlayerKey
 
 		s.mockClient.EXPECT().
 			Get(s.ctx, playerKey).
@@ -285,8 +290,8 @@ func (s *RedisRepositoryTestSuite) TestGetByPlayerID() {
 	})
 
 	s.Run("cleanup stale mapping when draft doesn't exist", func() {
-		playerKey := "draft:player:player_456"
-		draftKey := "draft:draft_123"
+		playerKey := testDraftPlayerKey
+		draftKey := testDraftKey
 
 		// Get draft ID from player mapping
 		s.mockClient.EXPECT().
@@ -332,7 +337,7 @@ func (s *RedisRepositoryTestSuite) TestUpdate() {
 	}
 
 	s.Run("successful update", func() {
-		draftKey := "draft:draft_123"
+		draftKey := testDraftKey
 		draftData, _ := json.Marshal(testDraft)
 
 		// Check existence
@@ -354,7 +359,7 @@ func (s *RedisRepositoryTestSuite) TestUpdate() {
 	})
 
 	s.Run("error when draft doesn't exist", func() {
-		draftKey := "draft:draft_123"
+		draftKey := testDraftKey
 
 		// Check existence
 		s.mockClient.EXPECT().
@@ -399,8 +404,8 @@ func (s *RedisRepositoryTestSuite) TestDelete() {
 	}
 
 	s.Run("successful delete", func() {
-		draftKey := "draft:draft_123"
-		playerKey := "draft:player:player_456"
+		draftKey := testDraftKey
+		playerKey := testDraftPlayerKey
 		draftData, _ := json.Marshal(testDraft)
 
 		// Get draft to find player ID
@@ -437,7 +442,7 @@ func (s *RedisRepositoryTestSuite) TestDelete() {
 	})
 
 	s.Run("error when draft not found", func() {
-		draftKey := "draft:draft_123"
+		draftKey := testDraftKey
 
 		// Get draft returns not found
 		s.mockClient.EXPECT().

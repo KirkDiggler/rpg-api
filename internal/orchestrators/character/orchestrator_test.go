@@ -125,21 +125,19 @@ func (s *OrchestratorTestSuite) TestCreateDraft() {
 						IsValid: true,
 					}, nil)
 
-				// Use a custom matcher to validate the draft structure
+				// Use DoAndReturn to validate and return
 				s.mockDraftRepo.EXPECT().
-					Create(s.ctx, gomock.Cond(func(x interface{}) bool {
-						input, ok := x.(draftrepo.CreateInput)
-						if !ok || input.Draft == nil {
-							return false
-						}
+					Create(s.ctx, gomock.Any()).
+					DoAndReturn(func(_ context.Context, input draftrepo.CreateInput) (*draftrepo.CreateOutput, error) {
+						s.Require().NotNil(input.Draft)
 						draft := input.Draft
-						return draft.PlayerID == s.testPlayerID &&
-							draft.SessionID == "" &&
-							!draft.Progress.HasName() &&
-							draft.Progress.CurrentStep == dnd5e.CreationStepName &&
-							draft.Progress.CompletionPercentage == 0
-					})).
-					Return(&draftrepo.CreateOutput{}, nil)
+						s.Equal(s.testPlayerID, draft.PlayerID)
+						s.Equal("", draft.SessionID)
+						s.False(draft.Progress.HasName())
+						s.Equal(dnd5e.CreationStepName, draft.Progress.CurrentStep)
+						s.Equal(int32(0), draft.Progress.CompletionPercentage)
+						return &draftrepo.CreateOutput{}, nil
+					})
 			},
 			wantErr: false,
 			validate: func(output *character.CreateDraftOutput) {
@@ -167,21 +165,19 @@ func (s *OrchestratorTestSuite) TestCreateDraft() {
 					}, nil)
 
 				s.mockDraftRepo.EXPECT().
-					Create(s.ctx, gomock.Cond(func(x interface{}) bool {
-						input, ok := x.(draftrepo.CreateInput)
-						if !ok || input.Draft == nil {
-							return false
-						}
+					Create(s.ctx, gomock.Any()).
+					DoAndReturn(func(_ context.Context, input draftrepo.CreateInput) (*draftrepo.CreateOutput, error) {
+						s.Require().NotNil(input.Draft)
 						draft := input.Draft
-						return draft.Name == "Frodo" &&
-							draft.RaceID == dnd5e.RaceHalfling &&
-							draft.ClassID == dnd5e.ClassRogue &&
-							draft.Progress.HasName() &&
-							draft.Progress.HasRace() &&
-							draft.Progress.HasClass() &&
-							draft.Progress.CompletionPercentage > 0
-					})).
-					Return(&draftrepo.CreateOutput{}, nil)
+						s.Equal("Frodo", draft.Name)
+						s.Equal(dnd5e.RaceHalfling, draft.RaceID)
+						s.Equal(dnd5e.ClassRogue, draft.ClassID)
+						s.True(draft.Progress.HasName())
+						s.True(draft.Progress.HasRace())
+						s.True(draft.Progress.HasClass())
+						s.Greater(draft.Progress.CompletionPercentage, int32(0))
+						return &draftrepo.CreateOutput{}, nil
+					})
 			},
 			wantErr: false,
 			validate: func(output *character.CreateDraftOutput) {
@@ -434,7 +430,7 @@ func (s *OrchestratorTestSuite) TestDeleteDraft() {
 			},
 			setupMock: func() {},
 			wantErr:   true,
-			errMsg:    "draft ID is required",
+			errMsg:    "validation failed: draftID: is required",
 		},
 		{
 			name: "repository error",

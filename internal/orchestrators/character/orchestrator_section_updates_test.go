@@ -8,6 +8,7 @@ import (
 
 	"github.com/KirkDiggler/rpg-api/internal/engine"
 	"github.com/KirkDiggler/rpg-api/internal/entities/dnd5e"
+	draftrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft"
 	"github.com/KirkDiggler/rpg-api/internal/services/character"
 )
 
@@ -31,16 +32,16 @@ func (s *OrchestratorTestSuite) TestUpdateName() {
 			setupMock: func() {
 				// Get existing draft
 				s.mockDraftRepo.EXPECT().
-					Get(s.ctx, s.testDraftID).
-					Return(s.testDraft, nil)
+					Get(s.ctx, draftrepo.GetInput{ID: s.testDraftID}).
+					Return(&draftrepo.GetOutput{Draft: s.testDraft}, nil)
 
 				// Update draft
 				s.mockDraftRepo.EXPECT().
 					Update(s.ctx, gomock.Any()).
-					DoAndReturn(func(_ context.Context, draft *dnd5e.CharacterDraft) error {
-						s.Equal("Gandalf the White", draft.Name)
-						s.True(draft.Progress.HasName())
-						return nil
+					DoAndReturn(func(_ context.Context, input draftrepo.UpdateInput) (*draftrepo.UpdateOutput, error) {
+						s.Equal("Gandalf the White", input.Draft.Name)
+						s.True(input.Draft.Progress.HasName())
+						return &draftrepo.UpdateOutput{}, nil
 					})
 			},
 			wantErr: false,
@@ -64,7 +65,7 @@ func (s *OrchestratorTestSuite) TestUpdateName() {
 			},
 			setupMock: func() {},
 			wantErr:   true,
-			errMsg:    "name is required",
+			errMsg:    "validation failed: name: is required",
 		},
 		{
 			name: "draft not found",
@@ -74,7 +75,7 @@ func (s *OrchestratorTestSuite) TestUpdateName() {
 			},
 			setupMock: func() {
 				s.mockDraftRepo.EXPECT().
-					Get(s.ctx, "nonexistent").
+					Get(s.ctx, draftrepo.GetInput{ID: "nonexistent"}).
 					Return(nil, errors.New("not found"))
 			},
 			wantErr: true,
@@ -119,8 +120,8 @@ func (s *OrchestratorTestSuite) TestUpdateRace() {
 			},
 			setupMock: func() {
 				s.mockDraftRepo.EXPECT().
-					Get(s.ctx, s.testDraftID).
-					Return(s.testDraft, nil)
+					Get(s.ctx, draftrepo.GetInput{ID: s.testDraftID}).
+					Return(&draftrepo.GetOutput{Draft: s.testDraft}, nil)
 
 				// Engine validates race choice
 				s.mockEngine.EXPECT().
@@ -137,7 +138,7 @@ func (s *OrchestratorTestSuite) TestUpdateRace() {
 
 				s.mockDraftRepo.EXPECT().
 					Update(s.ctx, gomock.Any()).
-					Return(nil)
+					Return(&draftrepo.UpdateOutput{}, nil)
 			},
 			wantErr: false,
 			validate: func(output *character.UpdateRaceOutput) {
@@ -154,8 +155,8 @@ func (s *OrchestratorTestSuite) TestUpdateRace() {
 			},
 			setupMock: func() {
 				s.mockDraftRepo.EXPECT().
-					Get(s.ctx, s.testDraftID).
-					Return(s.testDraft, nil)
+					Get(s.ctx, draftrepo.GetInput{ID: s.testDraftID}).
+					Return(&draftrepo.GetOutput{Draft: s.testDraft}, nil)
 
 				s.mockEngine.EXPECT().
 					ValidateRaceChoice(s.ctx, gomock.Any()).
@@ -169,6 +170,11 @@ func (s *OrchestratorTestSuite) TestUpdateRace() {
 							},
 						},
 					}, nil)
+
+				// Still expect update even with validation errors (converted to warnings)
+				s.mockDraftRepo.EXPECT().
+					Update(s.ctx, gomock.Any()).
+					Return(&draftrepo.UpdateOutput{}, nil)
 			},
 			wantErr: false, // Returns warnings, not error
 			validate: func(output *character.UpdateRaceOutput) {
@@ -184,8 +190,8 @@ func (s *OrchestratorTestSuite) TestUpdateRace() {
 			},
 			setupMock: func() {
 				s.mockDraftRepo.EXPECT().
-					Get(s.ctx, s.testDraftID).
-					Return(s.testDraft, nil)
+					Get(s.ctx, draftrepo.GetInput{ID: s.testDraftID}).
+					Return(&draftrepo.GetOutput{Draft: s.testDraft}, nil)
 
 				s.mockEngine.EXPECT().
 					ValidateRaceChoice(s.ctx, gomock.Any()).
@@ -250,8 +256,8 @@ func (s *OrchestratorTestSuite) TestUpdateClass() {
 			draft: draftWithAbilityScores,
 			setupMock: func() {
 				s.mockDraftRepo.EXPECT().
-					Get(s.ctx, s.testDraftID).
-					Return(draftWithAbilityScores, nil)
+					Get(s.ctx, draftrepo.GetInput{ID: s.testDraftID}).
+					Return(&draftrepo.GetOutput{Draft: draftWithAbilityScores}, nil)
 
 				s.mockEngine.EXPECT().
 					ValidateClassChoice(s.ctx, &engine.ValidateClassChoiceInput{
@@ -268,11 +274,11 @@ func (s *OrchestratorTestSuite) TestUpdateClass() {
 
 				s.mockDraftRepo.EXPECT().
 					Update(s.ctx, gomock.Any()).
-					DoAndReturn(func(_ context.Context, draft *dnd5e.CharacterDraft) error {
+					DoAndReturn(func(_ context.Context, input draftrepo.UpdateInput) (*draftrepo.UpdateOutput, error) {
 						// Verify skills were cleared
-						s.Empty(draft.StartingSkillIDs)
-						s.False(draft.Progress.HasSkills())
-						return nil
+						s.Empty(input.Draft.StartingSkillIDs)
+						s.False(input.Draft.Progress.HasSkills())
+						return &draftrepo.UpdateOutput{}, nil
 					})
 			},
 			wantErr: false,
@@ -290,8 +296,8 @@ func (s *OrchestratorTestSuite) TestUpdateClass() {
 			draft: draftWithAbilityScores,
 			setupMock: func() {
 				s.mockDraftRepo.EXPECT().
-					Get(s.ctx, s.testDraftID).
-					Return(draftWithAbilityScores, nil)
+					Get(s.ctx, draftrepo.GetInput{ID: s.testDraftID}).
+					Return(&draftrepo.GetOutput{Draft: draftWithAbilityScores}, nil)
 
 				s.mockEngine.EXPECT().
 					ValidateClassChoice(s.ctx, gomock.Any()).
@@ -315,7 +321,7 @@ func (s *OrchestratorTestSuite) TestUpdateClass() {
 
 				s.mockDraftRepo.EXPECT().
 					Update(s.ctx, gomock.Any()).
-					Return(nil)
+					Return(&draftrepo.UpdateOutput{}, nil)
 			},
 			wantErr: false,
 			validate: func(output *character.UpdateClassOutput) {
@@ -388,8 +394,8 @@ func (s *OrchestratorTestSuite) TestUpdateAbilityScores() {
 			draft: s.testDraft, // Has ClassID = wizard
 			setupMock: func() {
 				s.mockDraftRepo.EXPECT().
-					Get(s.ctx, s.testDraftID).
-					Return(s.testDraft, nil)
+					Get(s.ctx, draftrepo.GetInput{ID: s.testDraftID}).
+					Return(&draftrepo.GetOutput{Draft: s.testDraft}, nil)
 
 				s.mockEngine.EXPECT().
 					ValidateAbilityScores(s.ctx, gomock.Any()).
@@ -416,7 +422,7 @@ func (s *OrchestratorTestSuite) TestUpdateAbilityScores() {
 
 				s.mockDraftRepo.EXPECT().
 					Update(s.ctx, gomock.Any()).
-					Return(nil)
+					Return(&draftrepo.UpdateOutput{}, nil)
 			},
 			wantErr: false,
 			validate: func(output *character.UpdateAbilityScoresOutput) {
@@ -440,8 +446,8 @@ func (s *OrchestratorTestSuite) TestUpdateAbilityScores() {
 			draft: draftWithClass,
 			setupMock: func() {
 				s.mockDraftRepo.EXPECT().
-					Get(s.ctx, s.testDraftID).
-					Return(draftWithClass, nil)
+					Get(s.ctx, draftrepo.GetInput{ID: s.testDraftID}).
+					Return(&draftrepo.GetOutput{Draft: draftWithClass}, nil)
 
 				s.mockEngine.EXPECT().
 					ValidateAbilityScores(s.ctx, gomock.Any()).
@@ -465,7 +471,7 @@ func (s *OrchestratorTestSuite) TestUpdateAbilityScores() {
 
 				s.mockDraftRepo.EXPECT().
 					Update(s.ctx, gomock.Any()).
-					Return(nil)
+					Return(&draftrepo.UpdateOutput{}, nil)
 			},
 			wantErr: false,
 			validate: func(output *character.UpdateAbilityScoresOutput) {
@@ -525,8 +531,8 @@ func (s *OrchestratorTestSuite) TestUpdateSkills() {
 			draft: completePrereqsDraft,
 			setupMock: func() {
 				s.mockDraftRepo.EXPECT().
-					Get(s.ctx, s.testDraftID).
-					Return(completePrereqsDraft, nil)
+					Get(s.ctx, draftrepo.GetInput{ID: s.testDraftID}).
+					Return(&draftrepo.GetOutput{Draft: completePrereqsDraft}, nil)
 
 				s.mockEngine.EXPECT().
 					ValidateSkillChoices(s.ctx, &engine.ValidateSkillChoicesInput{
@@ -545,7 +551,7 @@ func (s *OrchestratorTestSuite) TestUpdateSkills() {
 
 				s.mockDraftRepo.EXPECT().
 					Update(s.ctx, gomock.Any()).
-					Return(nil)
+					Return(&draftrepo.UpdateOutput{}, nil)
 			},
 			wantErr: false,
 			validate: func(output *character.UpdateSkillsOutput) {
@@ -562,8 +568,13 @@ func (s *OrchestratorTestSuite) TestUpdateSkills() {
 			draft: s.testDraft, // No background set
 			setupMock: func() {
 				s.mockDraftRepo.EXPECT().
-					Get(s.ctx, s.testDraftID).
-					Return(s.testDraft, nil)
+					Get(s.ctx, draftrepo.GetInput{ID: s.testDraftID}).
+					Return(&draftrepo.GetOutput{Draft: s.testDraft}, nil)
+
+				// Still expect update even with missing prerequisites (converted to warnings)
+				s.mockDraftRepo.EXPECT().
+					Update(s.ctx, gomock.Any()).
+					Return(&draftrepo.UpdateOutput{}, nil)
 			},
 			wantErr: false,
 			validate: func(output *character.UpdateSkillsOutput) {
@@ -583,8 +594,8 @@ func (s *OrchestratorTestSuite) TestUpdateSkills() {
 			draft: completePrereqsDraft,
 			setupMock: func() {
 				s.mockDraftRepo.EXPECT().
-					Get(s.ctx, s.testDraftID).
-					Return(completePrereqsDraft, nil)
+					Get(s.ctx, draftrepo.GetInput{ID: s.testDraftID}).
+					Return(&draftrepo.GetOutput{Draft: completePrereqsDraft}, nil)
 
 				s.mockEngine.EXPECT().
 					ValidateSkillChoices(s.ctx, gomock.Any()).
@@ -598,6 +609,11 @@ func (s *OrchestratorTestSuite) TestUpdateSkills() {
 							},
 						},
 					}, nil)
+
+				// Still expect update even with invalid skills (converted to warnings)
+				s.mockDraftRepo.EXPECT().
+					Update(s.ctx, gomock.Any()).
+					Return(&draftrepo.UpdateOutput{}, nil)
 			},
 			wantErr: false,
 			validate: func(output *character.UpdateSkillsOutput) {

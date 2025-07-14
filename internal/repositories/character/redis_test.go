@@ -457,7 +457,8 @@ func (s *RedisRepositoryTestSuite) TestDelete() {
 	})
 }
 
-func (s *RedisRepositoryTestSuite) TestListByPlayerID() {
+// Helper function to create test characters
+func (s *RedisRepositoryTestSuite) createTestCharactersForPlayer() (*dnd5e.Character, *dnd5e.Character) {
 	char1 := &dnd5e.Character{
 		ID:       "char_1",
 		PlayerID: testPlayerID,
@@ -470,36 +471,70 @@ func (s *RedisRepositoryTestSuite) TestListByPlayerID() {
 		Name:     "Hero 2",
 		Level:    3,
 	}
+	return char1, char2
+}
+
+// Helper function to create test characters for session
+func (s *RedisRepositoryTestSuite) createTestCharactersForSession() (*dnd5e.Character, *dnd5e.Character) {
+	char1 := &dnd5e.Character{
+		ID:        "char_1",
+		SessionID: testSessionID,
+		Name:      "Hero 1",
+	}
+	char2 := &dnd5e.Character{
+		ID:        "char_2",
+		SessionID: testSessionID,
+		Name:      "Hero 2",
+	}
+	return char1, char2
+}
+
+// Helper function to test successful list operations
+func (s *RedisRepositoryTestSuite) testSuccessfulList(
+	indexKey string,
+	char1, char2 *dnd5e.Character,
+	listFunc func() ([]*dnd5e.Character, error),
+) {
+	charData1, _ := json.Marshal(char1)
+	charData2, _ := json.Marshal(char2)
+
+	// Get character IDs from index
+	s.mockClient.EXPECT().
+		SMembers(s.ctx, indexKey).
+		Return(redis.NewStringSliceResult([]string{"char_1", "char_2"}, nil))
+
+	// Get first character
+	s.mockClient.EXPECT().
+		Get(s.ctx, "character:char_1").
+		Return(redis.NewStringResult(string(charData1), nil))
+
+	// Get second character
+	s.mockClient.EXPECT().
+		Get(s.ctx, "character:char_2").
+		Return(redis.NewStringResult(string(charData2), nil))
+
+	// Execute
+	characters, err := listFunc()
+
+	// Assert
+	s.NoError(err)
+	s.NotNil(characters)
+	s.Len(characters, 2)
+	s.Equal("char_1", characters[0].ID)
+	s.Equal("char_2", characters[1].ID)
+}
+
+func (s *RedisRepositoryTestSuite) TestListByPlayerID() {
+	char1, char2 := s.createTestCharactersForPlayer()
 
 	s.Run("successful list", func() {
-		playerKey := testPlayerKey
-		charData1, _ := json.Marshal(char1)
-		charData2, _ := json.Marshal(char2)
-
-		// Get character IDs from index
-		s.mockClient.EXPECT().
-			SMembers(s.ctx, playerKey).
-			Return(redis.NewStringSliceResult([]string{"char_1", "char_2"}, nil))
-
-		// Get first character
-		s.mockClient.EXPECT().
-			Get(s.ctx, "character:char_1").
-			Return(redis.NewStringResult(string(charData1), nil))
-
-		// Get second character
-		s.mockClient.EXPECT().
-			Get(s.ctx, "character:char_2").
-			Return(redis.NewStringResult(string(charData2), nil))
-
-		// Execute
-		output, err := s.repo.ListByPlayerID(s.ctx, character.ListByPlayerIDInput{PlayerID: testPlayerID})
-
-		// Assert
-		s.NoError(err)
-		s.NotNil(output)
-		s.Len(output.Characters, 2)
-		s.Equal("char_1", output.Characters[0].ID)
-		s.Equal("char_2", output.Characters[1].ID)
+		s.testSuccessfulList(testPlayerKey, char1, char2, func() ([]*dnd5e.Character, error) {
+			output, err := s.repo.ListByPlayerID(s.ctx, character.ListByPlayerIDInput{PlayerID: testPlayerID})
+			if err != nil {
+				return nil, err
+			}
+			return output.Characters, nil
+		})
 	})
 
 	s.Run("successful list with stale index cleanup", func() {
@@ -564,46 +599,16 @@ func (s *RedisRepositoryTestSuite) TestListByPlayerID() {
 }
 
 func (s *RedisRepositoryTestSuite) TestListBySessionID() {
-	char1 := &dnd5e.Character{
-		ID:        "char_1",
-		SessionID: testSessionID,
-		Name:      "Hero 1",
-	}
-	char2 := &dnd5e.Character{
-		ID:        "char_2",
-		SessionID: testSessionID,
-		Name:      "Hero 2",
-	}
+	char1, char2 := s.createTestCharactersForSession()
 
 	s.Run("successful list", func() {
-		sessionKey := testSessionKey
-		charData1, _ := json.Marshal(char1)
-		charData2, _ := json.Marshal(char2)
-
-		// Get character IDs from index
-		s.mockClient.EXPECT().
-			SMembers(s.ctx, sessionKey).
-			Return(redis.NewStringSliceResult([]string{"char_1", "char_2"}, nil))
-
-		// Get first character
-		s.mockClient.EXPECT().
-			Get(s.ctx, "character:char_1").
-			Return(redis.NewStringResult(string(charData1), nil))
-
-		// Get second character
-		s.mockClient.EXPECT().
-			Get(s.ctx, "character:char_2").
-			Return(redis.NewStringResult(string(charData2), nil))
-
-		// Execute
-		output, err := s.repo.ListBySessionID(s.ctx, character.ListBySessionIDInput{SessionID: testSessionID})
-
-		// Assert
-		s.NoError(err)
-		s.NotNil(output)
-		s.Len(output.Characters, 2)
-		s.Equal("char_1", output.Characters[0].ID)
-		s.Equal("char_2", output.Characters[1].ID)
+		s.testSuccessfulList(testSessionKey, char1, char2, func() ([]*dnd5e.Character, error) {
+			output, err := s.repo.ListBySessionID(s.ctx, character.ListBySessionIDInput{SessionID: testSessionID})
+			if err != nil {
+				return nil, err
+			}
+			return output.Characters, nil
+		})
 	})
 
 	s.Run("error when session ID is empty", func() {

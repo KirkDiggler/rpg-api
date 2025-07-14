@@ -42,7 +42,10 @@ func NewHandler(cfg *HandlerConfig) (*Handler, error) {
 }
 
 // CreateDraft creates a new character draft
-func (h *Handler) CreateDraft(ctx context.Context, req *dnd5ev1alpha1.CreateDraftRequest) (*dnd5ev1alpha1.CreateDraftResponse, error) {
+func (h *Handler) CreateDraft(
+	ctx context.Context,
+	req *dnd5ev1alpha1.CreateDraftRequest,
+) (*dnd5ev1alpha1.CreateDraftResponse, error) {
 	if req.PlayerId == "" {
 		return nil, errors.ToGRPCError(errors.InvalidArgument("player_id is required"))
 	}
@@ -68,7 +71,10 @@ func (h *Handler) CreateDraft(ctx context.Context, req *dnd5ev1alpha1.CreateDraf
 }
 
 // GetDraft retrieves a character draft
-func (h *Handler) GetDraft(ctx context.Context, req *dnd5ev1alpha1.GetDraftRequest) (*dnd5ev1alpha1.GetDraftResponse, error) {
+func (h *Handler) GetDraft(
+	ctx context.Context,
+	req *dnd5ev1alpha1.GetDraftRequest,
+) (*dnd5ev1alpha1.GetDraftResponse, error) {
 	if req.DraftId == "" {
 		return nil, errors.ToGRPCError(errors.InvalidArgument("draft_id is required"))
 	}
