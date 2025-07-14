@@ -2,12 +2,9 @@ package v1alpha1
 
 import (
 	"context"
-	"errors"
 
 	"github.com/KirkDiggler/rpg-api/internal/entities/dnd5e"
-
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
+	"github.com/KirkDiggler/rpg-api/internal/errors"
 
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api/gen/go/github.com/KirkDiggler/rpg-api/api/proto/dnd5e/v1alpha1"
 	"github.com/KirkDiggler/rpg-api/internal/services/character"
@@ -21,7 +18,7 @@ type HandlerConfig struct {
 // Validate ensures all required dependencies are present
 func (c *HandlerConfig) Validate() error {
 	if c.CharacterService == nil {
-		return errors.New("character service is required")
+		return errors.InvalidArgument("character service is required")
 	}
 	return nil
 }
@@ -46,7 +43,7 @@ func NewHandler(cfg *HandlerConfig) (*Handler, error) {
 // CreateDraft creates a new character draft
 func (h *Handler) CreateDraft(ctx context.Context, req *dnd5ev1alpha1.CreateDraftRequest) (*dnd5ev1alpha1.CreateDraftResponse, error) {
 	if req.PlayerId == "" {
-		return nil, status.Error(codes.InvalidArgument, "player_id is required")
+		return nil, errors.ToGRPCError(errors.InvalidArgument("player_id is required"))
 	}
 
 	input := &character.CreateDraftInput{
@@ -61,7 +58,7 @@ func (h *Handler) CreateDraft(ctx context.Context, req *dnd5ev1alpha1.CreateDraf
 
 	output, err := h.characterService.CreateDraft(ctx, input)
 	if err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, errors.ToGRPCError(err)
 	}
 
 	return &dnd5ev1alpha1.CreateDraftResponse{
@@ -72,7 +69,7 @@ func (h *Handler) CreateDraft(ctx context.Context, req *dnd5ev1alpha1.CreateDraf
 // GetDraft retrieves a character draft
 func (h *Handler) GetDraft(ctx context.Context, req *dnd5ev1alpha1.GetDraftRequest) (*dnd5ev1alpha1.GetDraftResponse, error) {
 	if req.DraftId == "" {
-		return nil, status.Error(codes.InvalidArgument, "draft_id is required")
+		return nil, errors.ToGRPCError(errors.InvalidArgument("draft_id is required"))
 	}
 
 	input := &character.GetDraftInput{
@@ -81,8 +78,7 @@ func (h *Handler) GetDraft(ctx context.Context, req *dnd5ev1alpha1.GetDraftReque
 
 	output, err := h.characterService.GetDraft(ctx, input)
 	if err != nil {
-		// TODO: Handle specific errors (NotFound -> codes.NotFound)
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, errors.ToGRPCError(err)
 	}
 
 	return &dnd5ev1alpha1.GetDraftResponse{
@@ -106,7 +102,7 @@ func (h *Handler) ListDrafts(ctx context.Context, req *dnd5ev1alpha1.ListDraftsR
 
 	output, err := h.characterService.ListDrafts(ctx, input)
 	if err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, errors.ToGRPCError(err)
 	}
 
 	// Convert drafts
@@ -124,7 +120,7 @@ func (h *Handler) ListDrafts(ctx context.Context, req *dnd5ev1alpha1.ListDraftsR
 // DeleteDraft deletes a character draft
 func (h *Handler) DeleteDraft(ctx context.Context, req *dnd5ev1alpha1.DeleteDraftRequest) (*dnd5ev1alpha1.DeleteDraftResponse, error) {
 	if req.DraftId == "" {
-		return nil, status.Error(codes.InvalidArgument, "draft_id is required")
+		return nil, errors.ToGRPCError(errors.InvalidArgument("draft_id is required"))
 	}
 
 	input := &character.DeleteDraftInput{
@@ -133,7 +129,7 @@ func (h *Handler) DeleteDraft(ctx context.Context, req *dnd5ev1alpha1.DeleteDraf
 
 	output, err := h.characterService.DeleteDraft(ctx, input)
 	if err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, errors.ToGRPCError(err)
 	}
 
 	return &dnd5ev1alpha1.DeleteDraftResponse{
@@ -144,10 +140,10 @@ func (h *Handler) DeleteDraft(ctx context.Context, req *dnd5ev1alpha1.DeleteDraf
 // UpdateName updates the name of a character draft
 func (h *Handler) UpdateName(ctx context.Context, req *dnd5ev1alpha1.UpdateNameRequest) (*dnd5ev1alpha1.UpdateNameResponse, error) {
 	if req.DraftId == "" {
-		return nil, status.Error(codes.InvalidArgument, "draft_id is required")
+		return nil, errors.ToGRPCError(errors.InvalidArgument("draft_id is required"))
 	}
 	if req.Name == "" {
-		return nil, status.Error(codes.InvalidArgument, "name is required")
+		return nil, errors.ToGRPCError(errors.InvalidArgument("name is required"))
 	}
 
 	input := &character.UpdateNameInput{
@@ -157,7 +153,7 @@ func (h *Handler) UpdateName(ctx context.Context, req *dnd5ev1alpha1.UpdateNameR
 
 	output, err := h.characterService.UpdateName(ctx, input)
 	if err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, errors.ToGRPCError(err)
 	}
 
 	return &dnd5ev1alpha1.UpdateNameResponse{
@@ -169,10 +165,10 @@ func (h *Handler) UpdateName(ctx context.Context, req *dnd5ev1alpha1.UpdateNameR
 // UpdateRace updates the race of a character draft
 func (h *Handler) UpdateRace(ctx context.Context, req *dnd5ev1alpha1.UpdateRaceRequest) (*dnd5ev1alpha1.UpdateRaceResponse, error) {
 	if req.DraftId == "" {
-		return nil, status.Error(codes.InvalidArgument, "draft_id is required")
+		return nil, errors.ToGRPCError(errors.InvalidArgument("draft_id is required"))
 	}
 	if req.Race == dnd5ev1alpha1.Race_RACE_UNSPECIFIED {
-		return nil, status.Error(codes.InvalidArgument, "race is required")
+		return nil, errors.ToGRPCError(errors.InvalidArgument("race is required"))
 	}
 
 	input := &character.UpdateRaceInput{
@@ -183,7 +179,7 @@ func (h *Handler) UpdateRace(ctx context.Context, req *dnd5ev1alpha1.UpdateRaceR
 
 	output, err := h.characterService.UpdateRace(ctx, input)
 	if err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, errors.ToGRPCError(err)
 	}
 
 	return &dnd5ev1alpha1.UpdateRaceResponse{
@@ -195,10 +191,10 @@ func (h *Handler) UpdateRace(ctx context.Context, req *dnd5ev1alpha1.UpdateRaceR
 // UpdateClass updates the class of a character draft
 func (h *Handler) UpdateClass(ctx context.Context, req *dnd5ev1alpha1.UpdateClassRequest) (*dnd5ev1alpha1.UpdateClassResponse, error) {
 	if req.DraftId == "" {
-		return nil, status.Error(codes.InvalidArgument, "draft_id is required")
+		return nil, errors.ToGRPCError(errors.InvalidArgument("draft_id is required"))
 	}
 	if req.Class == dnd5ev1alpha1.Class_CLASS_UNSPECIFIED {
-		return nil, status.Error(codes.InvalidArgument, "class is required")
+		return nil, errors.ToGRPCError(errors.InvalidArgument("class is required"))
 	}
 
 	input := &character.UpdateClassInput{
@@ -208,7 +204,7 @@ func (h *Handler) UpdateClass(ctx context.Context, req *dnd5ev1alpha1.UpdateClas
 
 	output, err := h.characterService.UpdateClass(ctx, input)
 	if err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, errors.ToGRPCError(err)
 	}
 
 	return &dnd5ev1alpha1.UpdateClassResponse{
@@ -220,10 +216,10 @@ func (h *Handler) UpdateClass(ctx context.Context, req *dnd5ev1alpha1.UpdateClas
 // UpdateBackground updates the background of a character draft
 func (h *Handler) UpdateBackground(ctx context.Context, req *dnd5ev1alpha1.UpdateBackgroundRequest) (*dnd5ev1alpha1.UpdateBackgroundResponse, error) {
 	if req.DraftId == "" {
-		return nil, status.Error(codes.InvalidArgument, "draft_id is required")
+		return nil, errors.ToGRPCError(errors.InvalidArgument("draft_id is required"))
 	}
 	if req.Background == dnd5ev1alpha1.Background_BACKGROUND_UNSPECIFIED {
-		return nil, status.Error(codes.InvalidArgument, "background is required")
+		return nil, errors.ToGRPCError(errors.InvalidArgument("background is required"))
 	}
 
 	input := &character.UpdateBackgroundInput{
@@ -233,7 +229,7 @@ func (h *Handler) UpdateBackground(ctx context.Context, req *dnd5ev1alpha1.Updat
 
 	output, err := h.characterService.UpdateBackground(ctx, input)
 	if err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, errors.ToGRPCError(err)
 	}
 
 	return &dnd5ev1alpha1.UpdateBackgroundResponse{
@@ -245,10 +241,10 @@ func (h *Handler) UpdateBackground(ctx context.Context, req *dnd5ev1alpha1.Updat
 // UpdateAbilityScores updates the ability scores of a character draft
 func (h *Handler) UpdateAbilityScores(ctx context.Context, req *dnd5ev1alpha1.UpdateAbilityScoresRequest) (*dnd5ev1alpha1.UpdateAbilityScoresResponse, error) {
 	if req.DraftId == "" {
-		return nil, status.Error(codes.InvalidArgument, "draft_id is required")
+		return nil, errors.ToGRPCError(errors.InvalidArgument("draft_id is required"))
 	}
 	if req.AbilityScores == nil {
-		return nil, status.Error(codes.InvalidArgument, "ability_scores is required")
+		return nil, errors.ToGRPCError(errors.InvalidArgument("ability_scores is required"))
 	}
 
 	input := &character.UpdateAbilityScoresInput{
@@ -265,7 +261,7 @@ func (h *Handler) UpdateAbilityScores(ctx context.Context, req *dnd5ev1alpha1.Up
 
 	output, err := h.characterService.UpdateAbilityScores(ctx, input)
 	if err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, errors.ToGRPCError(err)
 	}
 
 	return &dnd5ev1alpha1.UpdateAbilityScoresResponse{
@@ -277,7 +273,7 @@ func (h *Handler) UpdateAbilityScores(ctx context.Context, req *dnd5ev1alpha1.Up
 // UpdateSkills updates the skills of a character draft
 func (h *Handler) UpdateSkills(ctx context.Context, req *dnd5ev1alpha1.UpdateSkillsRequest) (*dnd5ev1alpha1.UpdateSkillsResponse, error) {
 	if req.DraftId == "" {
-		return nil, status.Error(codes.InvalidArgument, "draft_id is required")
+		return nil, errors.ToGRPCError(errors.InvalidArgument("draft_id is required"))
 	}
 
 	// Convert skills from proto to constants
@@ -295,7 +291,7 @@ func (h *Handler) UpdateSkills(ctx context.Context, req *dnd5ev1alpha1.UpdateSki
 
 	output, err := h.characterService.UpdateSkills(ctx, input)
 	if err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, errors.ToGRPCError(err)
 	}
 
 	return &dnd5ev1alpha1.UpdateSkillsResponse{
@@ -307,7 +303,7 @@ func (h *Handler) UpdateSkills(ctx context.Context, req *dnd5ev1alpha1.UpdateSki
 // ValidateDraft validates a character draft
 func (h *Handler) ValidateDraft(ctx context.Context, req *dnd5ev1alpha1.ValidateDraftRequest) (*dnd5ev1alpha1.ValidateDraftResponse, error) {
 	if req.DraftId == "" {
-		return nil, status.Error(codes.InvalidArgument, "draft_id is required")
+		return nil, errors.ToGRPCError(errors.InvalidArgument("draft_id is required"))
 	}
 
 	input := &character.ValidateDraftInput{
@@ -316,7 +312,7 @@ func (h *Handler) ValidateDraft(ctx context.Context, req *dnd5ev1alpha1.Validate
 
 	output, err := h.characterService.ValidateDraft(ctx, input)
 	if err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, errors.ToGRPCError(err)
 	}
 
 	return &dnd5ev1alpha1.ValidateDraftResponse{
@@ -329,7 +325,7 @@ func (h *Handler) ValidateDraft(ctx context.Context, req *dnd5ev1alpha1.Validate
 // FinalizeDraft finalizes a character draft into a complete character
 func (h *Handler) FinalizeDraft(ctx context.Context, req *dnd5ev1alpha1.FinalizeDraftRequest) (*dnd5ev1alpha1.FinalizeDraftResponse, error) {
 	if req.DraftId == "" {
-		return nil, status.Error(codes.InvalidArgument, "draft_id is required")
+		return nil, errors.ToGRPCError(errors.InvalidArgument("draft_id is required"))
 	}
 
 	input := &character.FinalizeDraftInput{
@@ -338,7 +334,7 @@ func (h *Handler) FinalizeDraft(ctx context.Context, req *dnd5ev1alpha1.Finalize
 
 	output, err := h.characterService.FinalizeDraft(ctx, input)
 	if err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, errors.ToGRPCError(err)
 	}
 
 	return &dnd5ev1alpha1.FinalizeDraftResponse{
@@ -350,7 +346,7 @@ func (h *Handler) FinalizeDraft(ctx context.Context, req *dnd5ev1alpha1.Finalize
 // GetCharacter retrieves a character
 func (h *Handler) GetCharacter(ctx context.Context, req *dnd5ev1alpha1.GetCharacterRequest) (*dnd5ev1alpha1.GetCharacterResponse, error) {
 	if req.CharacterId == "" {
-		return nil, status.Error(codes.InvalidArgument, "character_id is required")
+		return nil, errors.ToGRPCError(errors.InvalidArgument("character_id is required"))
 	}
 
 	input := &character.GetCharacterInput{
@@ -359,7 +355,7 @@ func (h *Handler) GetCharacter(ctx context.Context, req *dnd5ev1alpha1.GetCharac
 
 	output, err := h.characterService.GetCharacter(ctx, input)
 	if err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, errors.ToGRPCError(err)
 	}
 
 	return &dnd5ev1alpha1.GetCharacterResponse{
@@ -383,7 +379,7 @@ func (h *Handler) ListCharacters(ctx context.Context, req *dnd5ev1alpha1.ListCha
 
 	output, err := h.characterService.ListCharacters(ctx, input)
 	if err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, errors.ToGRPCError(err)
 	}
 
 	// Convert characters to proto
@@ -402,7 +398,7 @@ func (h *Handler) ListCharacters(ctx context.Context, req *dnd5ev1alpha1.ListCha
 // DeleteCharacter deletes a character
 func (h *Handler) DeleteCharacter(ctx context.Context, req *dnd5ev1alpha1.DeleteCharacterRequest) (*dnd5ev1alpha1.DeleteCharacterResponse, error) {
 	if req.CharacterId == "" {
-		return nil, status.Error(codes.InvalidArgument, "character_id is required")
+		return nil, errors.ToGRPCError(errors.InvalidArgument("character_id is required"))
 	}
 
 	input := &character.DeleteCharacterInput{
@@ -411,7 +407,7 @@ func (h *Handler) DeleteCharacter(ctx context.Context, req *dnd5ev1alpha1.Delete
 
 	_, err := h.characterService.DeleteCharacter(ctx, input)
 	if err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, errors.ToGRPCError(err)
 	}
 
 	return &dnd5ev1alpha1.DeleteCharacterResponse{

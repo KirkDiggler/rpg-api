@@ -117,6 +117,7 @@ issues:
         - goconst
         - gosec
         - gocyclo
+        - typecheck  # Disable typecheck for test files due to testify suite embedded methods
     
     # Allow longer lines in generate directives
     - source: "^//go:generate "

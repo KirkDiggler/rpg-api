@@ -182,7 +182,7 @@ func (s *OrchestratorTestSuite) TestCreateDraft() {
 			},
 			setupMock: func() {},
 			wantErr:   true,
-			errMsg:    "player ID is required",
+			errMsg:    "validation failed: playerID: is required",
 		},
 		{
 			name: "repository error",
@@ -254,7 +254,7 @@ func (s *OrchestratorTestSuite) TestGetDraft() {
 			},
 			setupMock: func() {},
 			wantErr:   true,
-			errMsg:    "draft ID is required",
+			errMsg:    "validation failed: draftID: is required",
 		},
 		{
 			name: "draft not found",

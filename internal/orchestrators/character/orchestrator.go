@@ -8,6 +8,7 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/clients/external"
 	"github.com/KirkDiggler/rpg-api/internal/engine"
 	"github.com/KirkDiggler/rpg-api/internal/entities/dnd5e"
+	"github.com/KirkDiggler/rpg-api/internal/errors"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	draftrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft"
 	"github.com/KirkDiggler/rpg-api/internal/services/character"
@@ -23,19 +24,22 @@ type Config struct {
 
 // Validate ensures all required dependencies are provided
 func (c *Config) Validate() error {
+	vb := errors.NewValidationBuilder()
+
 	if c.CharacterRepo == nil {
-		return fmt.Errorf("character repository is required")
+		vb.RequiredField("CharacterRepo")
 	}
 	if c.CharacterDraftRepo == nil {
-		return fmt.Errorf("character draft repository is required")
+		vb.RequiredField("CharacterDraftRepo")
 	}
 	if c.Engine == nil {
-		return fmt.Errorf("engine is required")
+		vb.RequiredField("Engine")
 	}
 	if c.ExternalClient == nil {
-		return fmt.Errorf("external client is required")
+		vb.RequiredField("ExternalClient")
 	}
-	return nil
+
+	return vb.Build()
 }
 
 // Orchestrator implements the character.Service interface
@@ -49,7 +53,7 @@ type Orchestrator struct {
 // New creates a new character orchestrator
 func New(cfg *Config) (*Orchestrator, error) {
 	if err := cfg.Validate(); err != nil {
-		return nil, fmt.Errorf("invalid config: %w", err)
+		return nil, errors.Wrap(err, "invalid config")
 	}
 
 	return &Orchestrator{
@@ -68,10 +72,13 @@ var _ character.Service = (*Orchestrator)(nil)
 // CreateDraft creates a new character draft
 func (o *Orchestrator) CreateDraft(ctx context.Context, input *character.CreateDraftInput) (*character.CreateDraftOutput, error) {
 	if input == nil {
-		return nil, fmt.Errorf("input is required")
+		return nil, errors.InvalidArgument("input is required")
 	}
-	if input.PlayerID == "" {
-		return nil, fmt.Errorf("player ID is required")
+
+	vb := errors.NewValidationBuilder()
+	errors.ValidateRequired("playerID", input.PlayerID, vb)
+	if err := vb.Build(); err != nil {
+		return nil, err
 	}
 
 	// Create new draft with basic information
@@ -119,7 +126,7 @@ func (o *Orchestrator) CreateDraft(ctx context.Context, input *character.CreateD
 	// Save to repository
 	err := o.characterDraftRepo.Create(ctx, draft)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create draft: %w", err)
+		return nil, errors.Wrapf(err, "failed to create draft")
 	}
 
 	return &character.CreateDraftOutput{
@@ -130,15 +137,19 @@ func (o *Orchestrator) CreateDraft(ctx context.Context, input *character.CreateD
 // GetDraft retrieves a character draft by ID
 func (o *Orchestrator) GetDraft(ctx context.Context, input *character.GetDraftInput) (*character.GetDraftOutput, error) {
 	if input == nil {
-		return nil, fmt.Errorf("input is required")
+		return nil, errors.InvalidArgument("input is required")
 	}
-	if input.DraftID == "" {
-		return nil, fmt.Errorf("draft ID is required")
+
+	vb := errors.NewValidationBuilder()
+	errors.ValidateRequired("draftID", input.DraftID, vb)
+	if err := vb.Build(); err != nil {
+		return nil, err
 	}
 
 	draft, err := o.characterDraftRepo.Get(ctx, input.DraftID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get draft: %w", err)
+		return nil, errors.Wrapf(err, "failed to get draft").
+			WithMeta("draft_id", input.DraftID)
 	}
 
 	return &character.GetDraftOutput{
@@ -149,7 +160,7 @@ func (o *Orchestrator) GetDraft(ctx context.Context, input *character.GetDraftIn
 // ListDrafts lists character drafts with pagination
 func (o *Orchestrator) ListDrafts(ctx context.Context, input *character.ListDraftsInput) (*character.ListDraftsOutput, error) {
 	if input == nil {
-		return nil, fmt.Errorf("input is required")
+		return nil, errors.InvalidArgument("input is required")
 	}
 
 	// Build repository options
@@ -167,7 +178,7 @@ func (o *Orchestrator) ListDrafts(ctx context.Context, input *character.ListDraf
 
 	result, err := o.characterDraftRepo.List(ctx, opts)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list drafts: %w", err)
+		return nil, errors.Wrap(err, "failed to list drafts")
 	}
 
 	return &character.ListDraftsOutput{
@@ -179,17 +190,17 @@ func (o *Orchestrator) ListDrafts(ctx context.Context, input *character.ListDraf
 // DeleteDraft deletes a character draft
 func (o *Orchestrator) DeleteDraft(ctx context.Context, input *character.DeleteDraftInput) (*character.DeleteDraftOutput, error) {
 	if input == nil {
-		return nil, fmt.Errorf("input is required")
+		return nil, errors.InvalidArgument("input is required")
 	}
 	if input.DraftID == "" {
-		return nil, fmt.Errorf("draft ID is required")
+		return nil, errors.InvalidArgument("draft ID is required")
 	}
 
 	// TODO: Consider checking if draft exists first for better error messages
 
 	err := o.characterDraftRepo.Delete(ctx, input.DraftID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to delete draft: %w", err)
+		return nil, errors.Wrap(err, "failed to delete draft")
 	}
 
 	return &character.DeleteDraftOutput{
@@ -202,19 +213,19 @@ func (o *Orchestrator) DeleteDraft(ctx context.Context, input *character.DeleteD
 // UpdateName updates the character's name
 func (o *Orchestrator) UpdateName(ctx context.Context, input *character.UpdateNameInput) (*character.UpdateNameOutput, error) {
 	if input == nil {
-		return nil, fmt.Errorf("input is required")
+		return nil, errors.InvalidArgument("input is required")
 	}
 	if input.DraftID == "" {
-		return nil, fmt.Errorf("draft ID is required")
+		return nil, errors.InvalidArgument("draft ID is required")
 	}
 	if input.Name == "" {
-		return nil, fmt.Errorf("name is required")
+		return nil, errors.InvalidArgument("name is required")
 	}
 
 	// Get existing draft
 	draft, err := o.characterDraftRepo.Get(ctx, input.DraftID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get draft: %w", err)
+		return nil, errors.Wrap(err, "failed to get draft")
 	}
 
 	// Update name
@@ -228,7 +239,7 @@ func (o *Orchestrator) UpdateName(ctx context.Context, input *character.UpdateNa
 	// Save updated draft
 	err = o.characterDraftRepo.Update(ctx, draft)
 	if err != nil {
-		return nil, fmt.Errorf("failed to update draft: %w", err)
+		return nil, errors.Wrap(err, "failed to update draft")
 	}
 
 	// No validation warnings for name update
@@ -241,19 +252,19 @@ func (o *Orchestrator) UpdateName(ctx context.Context, input *character.UpdateNa
 // UpdateRace updates the character's race
 func (o *Orchestrator) UpdateRace(ctx context.Context, input *character.UpdateRaceInput) (*character.UpdateRaceOutput, error) {
 	if input == nil {
-		return nil, fmt.Errorf("input is required")
+		return nil, errors.InvalidArgument("input is required")
 	}
 	if input.DraftID == "" {
-		return nil, fmt.Errorf("draft ID is required")
+		return nil, errors.InvalidArgument("draft ID is required")
 	}
 	if input.RaceID == "" {
-		return nil, fmt.Errorf("race ID is required")
+		return nil, errors.InvalidArgument("race ID is required")
 	}
 
 	// Get existing draft
 	draft, err := o.characterDraftRepo.Get(ctx, input.DraftID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get draft: %w", err)
+		return nil, errors.Wrap(err, "failed to get draft")
 	}
 
 	// Validate race choice with engine
@@ -264,7 +275,7 @@ func (o *Orchestrator) UpdateRace(ctx context.Context, input *character.UpdateRa
 
 	validateRaceOutput, err := o.engine.ValidateRaceChoice(ctx, validateRaceInput)
 	if err != nil {
-		return nil, fmt.Errorf("failed to validate race: %w", err)
+		return nil, errors.Wrap(err, "failed to validate race")
 	}
 
 	if !validateRaceOutput.IsValid {
@@ -298,7 +309,7 @@ func (o *Orchestrator) UpdateRace(ctx context.Context, input *character.UpdateRa
 	// Save updated draft
 	err = o.characterDraftRepo.Update(ctx, draft)
 	if err != nil {
-		return nil, fmt.Errorf("failed to update draft: %w", err)
+		return nil, errors.Wrap(err, "failed to update draft")
 	}
 
 	return &character.UpdateRaceOutput{
@@ -310,19 +321,19 @@ func (o *Orchestrator) UpdateRace(ctx context.Context, input *character.UpdateRa
 // UpdateClass updates the character's class
 func (o *Orchestrator) UpdateClass(ctx context.Context, input *character.UpdateClassInput) (*character.UpdateClassOutput, error) {
 	if input == nil {
-		return nil, fmt.Errorf("input is required")
+		return nil, errors.InvalidArgument("input is required")
 	}
 	if input.DraftID == "" {
-		return nil, fmt.Errorf("draft ID is required")
+		return nil, errors.InvalidArgument("draft ID is required")
 	}
 	if input.ClassID == "" {
-		return nil, fmt.Errorf("class ID is required")
+		return nil, errors.InvalidArgument("class ID is required")
 	}
 
 	// Get existing draft
 	draft, err := o.characterDraftRepo.Get(ctx, input.DraftID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get draft: %w", err)
+		return nil, errors.Wrap(err, "failed to get draft")
 	}
 
 	// Validate class choice with engine (requires ability scores if set)
@@ -333,7 +344,7 @@ func (o *Orchestrator) UpdateClass(ctx context.Context, input *character.UpdateC
 
 	validateClassOutput, err := o.engine.ValidateClassChoice(ctx, validateClassInput)
 	if err != nil {
-		return nil, fmt.Errorf("failed to validate class: %w", err)
+		return nil, errors.Wrap(err, "failed to validate class")
 	}
 
 	warnings := make([]character.ValidationWarning, 0)
@@ -375,7 +386,7 @@ func (o *Orchestrator) UpdateClass(ctx context.Context, input *character.UpdateC
 	// Save updated draft
 	err = o.characterDraftRepo.Update(ctx, draft)
 	if err != nil {
-		return nil, fmt.Errorf("failed to update draft: %w", err)
+		return nil, errors.Wrap(err, "failed to update draft")
 	}
 
 	return &character.UpdateClassOutput{
@@ -387,19 +398,19 @@ func (o *Orchestrator) UpdateClass(ctx context.Context, input *character.UpdateC
 // UpdateBackground updates the character's background
 func (o *Orchestrator) UpdateBackground(ctx context.Context, input *character.UpdateBackgroundInput) (*character.UpdateBackgroundOutput, error) {
 	if input == nil {
-		return nil, fmt.Errorf("input is required")
+		return nil, errors.InvalidArgument("input is required")
 	}
 	if input.DraftID == "" {
-		return nil, fmt.Errorf("draft ID is required")
+		return nil, errors.InvalidArgument("draft ID is required")
 	}
 	if input.BackgroundID == "" {
-		return nil, fmt.Errorf("background ID is required")
+		return nil, errors.InvalidArgument("background ID is required")
 	}
 
 	// Get existing draft
 	draft, err := o.characterDraftRepo.Get(ctx, input.DraftID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get draft: %w", err)
+		return nil, errors.Wrap(err, "failed to get draft")
 	}
 
 	// Validate background choice with engine
@@ -409,7 +420,7 @@ func (o *Orchestrator) UpdateBackground(ctx context.Context, input *character.Up
 
 	validateBgOutput, err := o.engine.ValidateBackgroundChoice(ctx, validateBgInput)
 	if err != nil {
-		return nil, fmt.Errorf("failed to validate background: %w", err)
+		return nil, errors.Wrap(err, "failed to validate background")
 	}
 
 	if !validateBgOutput.IsValid {
@@ -445,7 +456,7 @@ func (o *Orchestrator) UpdateBackground(ctx context.Context, input *character.Up
 	// Save updated draft
 	err = o.characterDraftRepo.Update(ctx, draft)
 	if err != nil {
-		return nil, fmt.Errorf("failed to update draft: %w", err)
+		return nil, errors.Wrap(err, "failed to update draft")
 	}
 
 	return &character.UpdateBackgroundOutput{
@@ -457,16 +468,16 @@ func (o *Orchestrator) UpdateBackground(ctx context.Context, input *character.Up
 // UpdateAbilityScores updates the character's ability scores
 func (o *Orchestrator) UpdateAbilityScores(ctx context.Context, input *character.UpdateAbilityScoresInput) (*character.UpdateAbilityScoresOutput, error) {
 	if input == nil {
-		return nil, fmt.Errorf("input is required")
+		return nil, errors.InvalidArgument("input is required")
 	}
 	if input.DraftID == "" {
-		return nil, fmt.Errorf("draft ID is required")
+		return nil, errors.InvalidArgument("draft ID is required")
 	}
 
 	// Get existing draft
 	draft, err := o.characterDraftRepo.Get(ctx, input.DraftID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get draft: %w", err)
+		return nil, errors.Wrap(err, "failed to get draft")
 	}
 
 	// Validate ability scores with engine
@@ -477,7 +488,7 @@ func (o *Orchestrator) UpdateAbilityScores(ctx context.Context, input *character
 
 	validateScoresOutput, err := o.engine.ValidateAbilityScores(ctx, validateScoresInput)
 	if err != nil {
-		return nil, fmt.Errorf("failed to validate ability scores: %w", err)
+		return nil, errors.Wrap(err, "failed to validate ability scores")
 	}
 
 	warnings := make([]character.ValidationWarning, 0)
@@ -533,7 +544,7 @@ func (o *Orchestrator) UpdateAbilityScores(ctx context.Context, input *character
 	// Save updated draft
 	err = o.characterDraftRepo.Update(ctx, draft)
 	if err != nil {
-		return nil, fmt.Errorf("failed to update draft: %w", err)
+		return nil, errors.Wrap(err, "failed to update draft")
 	}
 
 	return &character.UpdateAbilityScoresOutput{
@@ -545,16 +556,16 @@ func (o *Orchestrator) UpdateAbilityScores(ctx context.Context, input *character
 // UpdateSkills updates the character's skills
 func (o *Orchestrator) UpdateSkills(ctx context.Context, input *character.UpdateSkillsInput) (*character.UpdateSkillsOutput, error) {
 	if input == nil {
-		return nil, fmt.Errorf("input is required")
+		return nil, errors.InvalidArgument("input is required")
 	}
 	if input.DraftID == "" {
-		return nil, fmt.Errorf("draft ID is required")
+		return nil, errors.InvalidArgument("draft ID is required")
 	}
 
 	// Get existing draft
 	draft, err := o.characterDraftRepo.Get(ctx, input.DraftID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get draft: %w", err)
+		return nil, errors.Wrap(err, "failed to get draft")
 	}
 
 	// Validate we have class and background before selecting skills
@@ -580,7 +591,7 @@ func (o *Orchestrator) UpdateSkills(ctx context.Context, input *character.Update
 
 	validateSkillsOutput, err := o.engine.ValidateSkillChoices(ctx, validateSkillsInput)
 	if err != nil {
-		return nil, fmt.Errorf("failed to validate skills: %w", err)
+		return nil, errors.Wrap(err, "failed to validate skills")
 	}
 
 	warnings := make([]character.ValidationWarning, 0)
@@ -610,7 +621,7 @@ func (o *Orchestrator) UpdateSkills(ctx context.Context, input *character.Update
 	// Save updated draft
 	err = o.characterDraftRepo.Update(ctx, draft)
 	if err != nil {
-		return nil, fmt.Errorf("failed to update draft: %w", err)
+		return nil, errors.Wrap(err, "failed to update draft")
 	}
 
 	return &character.UpdateSkillsOutput{
@@ -624,16 +635,16 @@ func (o *Orchestrator) UpdateSkills(ctx context.Context, input *character.Update
 // ValidateDraft validates a character draft
 func (o *Orchestrator) ValidateDraft(ctx context.Context, input *character.ValidateDraftInput) (*character.ValidateDraftOutput, error) {
 	if input == nil {
-		return nil, fmt.Errorf("input is required")
+		return nil, errors.InvalidArgument("input is required")
 	}
 	if input.DraftID == "" {
-		return nil, fmt.Errorf("draft ID is required")
+		return nil, errors.InvalidArgument("draft ID is required")
 	}
 
 	// Get existing draft
 	draft, err := o.characterDraftRepo.Get(ctx, input.DraftID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get draft: %w", err)
+		return nil, errors.Wrap(err, "failed to get draft")
 	}
 
 	// Use engine to validate the entire draft
@@ -643,7 +654,7 @@ func (o *Orchestrator) ValidateDraft(ctx context.Context, input *character.Valid
 
 	validateDraftOutput, err := o.engine.ValidateCharacterDraft(ctx, validateDraftInput)
 	if err != nil {
-		return nil, fmt.Errorf("failed to validate draft: %w", err)
+		return nil, errors.Wrap(err, "failed to validate draft")
 	}
 
 	// Convert engine validation results to service types
@@ -679,16 +690,16 @@ func (o *Orchestrator) ValidateDraft(ctx context.Context, input *character.Valid
 // FinalizeDraft finalizes a draft into a complete character
 func (o *Orchestrator) FinalizeDraft(ctx context.Context, input *character.FinalizeDraftInput) (*character.FinalizeDraftOutput, error) {
 	if input == nil {
-		return nil, fmt.Errorf("input is required")
+		return nil, errors.InvalidArgument("input is required")
 	}
 	if input.DraftID == "" {
-		return nil, fmt.Errorf("draft ID is required")
+		return nil, errors.InvalidArgument("draft ID is required")
 	}
 
 	// Get existing draft
 	draft, err := o.characterDraftRepo.Get(ctx, input.DraftID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get draft: %w", err)
+		return nil, errors.Wrap(err, "failed to get draft")
 	}
 
 	// Validate draft is complete and valid
@@ -698,11 +709,13 @@ func (o *Orchestrator) FinalizeDraft(ctx context.Context, input *character.Final
 
 	validateDraftOutput, err := o.engine.ValidateCharacterDraft(ctx, validateDraftInput)
 	if err != nil {
-		return nil, fmt.Errorf("failed to validate draft: %w", err)
+		return nil, errors.Wrap(err, "failed to validate draft")
 	}
 
 	if !validateDraftOutput.IsComplete {
-		return nil, fmt.Errorf("cannot finalize incomplete draft, missing steps: %v", validateDraftOutput.MissingSteps)
+		return nil, errors.FailedPrecondition("cannot finalize incomplete draft").
+			WithMeta("missing_steps", validateDraftOutput.MissingSteps).
+			WithMeta("draft_id", input.DraftID)
 	}
 
 	if !validateDraftOutput.IsValid {
@@ -710,7 +723,9 @@ func (o *Orchestrator) FinalizeDraft(ctx context.Context, input *character.Final
 		for _, err := range validateDraftOutput.Errors {
 			errMsgs = append(errMsgs, err.Message)
 		}
-		return nil, fmt.Errorf("cannot finalize invalid draft: %v", errMsgs)
+		return nil, errors.FailedPrecondition("cannot finalize invalid draft").
+			WithMeta("validation_errors", errMsgs).
+			WithMeta("draft_id", input.DraftID)
 	}
 
 	// Calculate initial character stats
@@ -720,7 +735,7 @@ func (o *Orchestrator) FinalizeDraft(ctx context.Context, input *character.Final
 
 	calcStatsOutput, err := o.engine.CalculateCharacterStats(ctx, calcStatsInput)
 	if err != nil {
-		return nil, fmt.Errorf("failed to calculate character stats: %w", err)
+		return nil, errors.Wrap(err, "failed to calculate character stats")
 	}
 
 	// Create finalized character
@@ -745,7 +760,7 @@ func (o *Orchestrator) FinalizeDraft(ctx context.Context, input *character.Final
 	// Save character to repository
 	err = o.characterRepo.Create(ctx, finalChar)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create character: %w", err)
+		return nil, errors.Wrap(err, "failed to create character")
 	}
 
 	// Delete the draft
@@ -766,15 +781,15 @@ func (o *Orchestrator) FinalizeDraft(ctx context.Context, input *character.Final
 // GetCharacter retrieves a finalized character
 func (o *Orchestrator) GetCharacter(ctx context.Context, input *character.GetCharacterInput) (*character.GetCharacterOutput, error) {
 	if input == nil {
-		return nil, fmt.Errorf("input is required")
+		return nil, errors.InvalidArgument("input is required")
 	}
 	if input.CharacterID == "" {
-		return nil, fmt.Errorf("character ID is required")
+		return nil, errors.InvalidArgument("character ID is required")
 	}
 
 	char, err := o.characterRepo.Get(ctx, input.CharacterID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get character: %w", err)
+		return nil, errors.Wrap(err, "failed to get character")
 	}
 
 	return &character.GetCharacterOutput{
@@ -785,7 +800,7 @@ func (o *Orchestrator) GetCharacter(ctx context.Context, input *character.GetCha
 // ListCharacters lists finalized characters with pagination
 func (o *Orchestrator) ListCharacters(ctx context.Context, input *character.ListCharactersInput) (*character.ListCharactersOutput, error) {
 	if input == nil {
-		return nil, fmt.Errorf("input is required")
+		return nil, errors.InvalidArgument("input is required")
 	}
 
 	// Build repository options
@@ -803,7 +818,7 @@ func (o *Orchestrator) ListCharacters(ctx context.Context, input *character.List
 
 	result, err := o.characterRepo.List(ctx, opts)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list characters: %w", err)
+		return nil, errors.Wrap(err, "failed to list characters")
 	}
 
 	return &character.ListCharactersOutput{
@@ -816,15 +831,15 @@ func (o *Orchestrator) ListCharacters(ctx context.Context, input *character.List
 // DeleteCharacter deletes a finalized character
 func (o *Orchestrator) DeleteCharacter(ctx context.Context, input *character.DeleteCharacterInput) (*character.DeleteCharacterOutput, error) {
 	if input == nil {
-		return nil, fmt.Errorf("input is required")
+		return nil, errors.InvalidArgument("input is required")
 	}
 	if input.CharacterID == "" {
-		return nil, fmt.Errorf("character ID is required")
+		return nil, errors.InvalidArgument("character ID is required")
 	}
 
 	err := o.characterRepo.Delete(ctx, input.CharacterID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to delete character: %w", err)
+		return nil, errors.Wrap(err, "failed to delete character")
 	}
 
 	return &character.DeleteCharacterOutput{

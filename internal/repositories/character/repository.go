@@ -11,24 +11,42 @@ import (
 // Repository defines the interface for character persistence
 type Repository interface {
 	// Create creates a new character
+	// Returns errors.InvalidArgument for validation failures
+	// Returns errors.AlreadyExists if character with same ID exists
+	// Returns errors.Internal for storage failures
 	Create(ctx context.Context, character *dnd5e.Character) error
 
 	// Get retrieves a character by ID
+	// Returns errors.InvalidArgument for empty/invalid IDs
+	// Returns errors.NotFound if character doesn't exist
+	// Returns errors.Internal for storage failures
 	Get(ctx context.Context, id string) (*dnd5e.Character, error)
 
 	// Update updates an existing character
+	// Returns errors.InvalidArgument for validation failures
+	// Returns errors.NotFound if character doesn't exist
+	// Returns errors.Internal for storage failures
 	Update(ctx context.Context, character *dnd5e.Character) error
 
 	// Delete deletes a character by ID
+	// Returns errors.InvalidArgument for empty/invalid IDs
+	// Returns errors.NotFound if character doesn't exist
+	// Returns errors.Internal for storage failures
 	Delete(ctx context.Context, id string) error
 
 	// List lists characters with pagination
+	// Returns errors.InvalidArgument for invalid pagination options
+	// Returns errors.Internal for storage failures
 	List(ctx context.Context, opts ListOptions) (*ListResult, error)
 
 	// GetByPlayerID retrieves all characters for a player
+	// Returns errors.InvalidArgument for empty/invalid player IDs
+	// Returns errors.Internal for storage failures
 	GetByPlayerID(ctx context.Context, playerID string) ([]*dnd5e.Character, error)
 
 	// GetBySessionID retrieves all characters in a session
+	// Returns errors.InvalidArgument for empty/invalid session IDs
+	// Returns errors.Internal for storage failures
 	GetBySessionID(ctx context.Context, sessionID string) ([]*dnd5e.Character, error)
 }
 

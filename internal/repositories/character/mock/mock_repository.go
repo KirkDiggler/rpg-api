@@ -13,10 +13,9 @@ import (
 	context "context"
 	reflect "reflect"
 
-	gomock "go.uber.org/mock/gomock"
-
 	dnd5e "github.com/KirkDiggler/rpg-api/internal/entities/dnd5e"
 	character "github.com/KirkDiggler/rpg-api/internal/repositories/character"
+	gomock "go.uber.org/mock/gomock"
 )
 
 // MockRepository is a mock of Repository interface.
