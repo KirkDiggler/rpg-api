@@ -118,7 +118,7 @@ func (s *OrchestratorTestSuite) TestCreateDraft() {
 				PlayerID: s.testPlayerID,
 			},
 			setupMock: func() {
-				// TODO: Inject clock and ID generator into orchestrator to make tests deterministic
+				// TODO(#30): Inject clock and ID generator into orchestrator to make tests deterministic
 				// Currently using gomock.Any() because CreateDraft generates:
 				// - ID using time.Now().UnixNano()
 				// - Timestamps using time.Now().Unix()
@@ -155,7 +155,7 @@ func (s *OrchestratorTestSuite) TestCreateDraft() {
 				},
 			},
 			setupMock: func() {
-				// Using same TODO as above - need clock and ID generator injection
+				// TODO(#30): Need clock and ID generator injection for deterministic tests
 				s.mockEngine.EXPECT().
 					ValidateCharacterDraft(s.ctx, gomock.Any()).
 					Return(&engine.ValidateCharacterDraftOutput{
