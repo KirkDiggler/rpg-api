@@ -21,7 +21,8 @@ type Options struct {
 	ConnMaxIdleTime time.Duration
 	MaxRetries      int
 	UseTLS          bool
-	ReadOnly        bool // For cluster mode routing
+	TLSConfig       *tls.Config // Custom TLS config (optional)
+	ReadOnly        bool        // For cluster mode routing
 }
 
 // NewClient creates a Redis client for a single instance
@@ -47,8 +48,13 @@ func NewClient(endpoint string, opts *Options) (Client, error) {
 	}
 
 	if opts.UseTLS {
-		redisOpts.TLSConfig = &tls.Config{
-			InsecureSkipVerify: true, // #nosec G402 // For self-signed certs #nosec G402
+		if opts.TLSConfig != nil {
+			redisOpts.TLSConfig = opts.TLSConfig
+		} else {
+			// Default TLS config - secure by default
+			redisOpts.TLSConfig = &tls.Config{
+				MinVersion: tls.VersionTLS12,
+			}
 		}
 	}
 
@@ -77,8 +83,13 @@ func NewClusterClient(endpoints []string, opts *Options) (Client, error) {
 	}
 
 	if opts.UseTLS {
-		clusterOpts.TLSConfig = &tls.Config{
-			InsecureSkipVerify: true, // #nosec G402
+		if opts.TLSConfig != nil {
+			clusterOpts.TLSConfig = opts.TLSConfig
+		} else {
+			// Default TLS config - secure by default
+			clusterOpts.TLSConfig = &tls.Config{
+				MinVersion: tls.VersionTLS12,
+			}
 		}
 	}
 
@@ -110,8 +121,13 @@ func NewFailoverClient(masterName string, sentinelAddrs []string, opts *Options)
 	}
 
 	if opts.UseTLS {
-		failoverOpts.TLSConfig = &tls.Config{
-			InsecureSkipVerify: true, // #nosec G402
+		if opts.TLSConfig != nil {
+			failoverOpts.TLSConfig = opts.TLSConfig
+		} else {
+			// Default TLS config - secure by default
+			failoverOpts.TLSConfig = &tls.Config{
+				MinVersion: tls.VersionTLS12,
+			}
 		}
 	}
 
