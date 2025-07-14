@@ -36,6 +36,10 @@ func (c *AdapterConfig) Validate() error {
 
 // NewAdapter creates a new rpg-toolkit engine adapter
 func NewAdapter(cfg *AdapterConfig) (*Adapter, error) {
+	if cfg == nil {
+		return nil, errors.New("config is required")
+	}
+	
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}

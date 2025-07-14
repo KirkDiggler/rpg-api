@@ -21,6 +21,13 @@ func TestAdapterSuite(t *testing.T) {
 }
 
 func TestNewAdapter(t *testing.T) {
+	t.Run("nil config", func(t *testing.T) {
+		adapter, err := NewAdapter(nil)
+		assert.Error(t, err)
+		assert.Nil(t, adapter)
+		assert.Contains(t, err.Error(), "config is required")
+	})
+
 	t.Run("missing event bus", func(t *testing.T) {
 		cfg := &AdapterConfig{
 			DiceRoller: nil, // Will also fail, but test event bus first
