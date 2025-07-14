@@ -105,19 +105,20 @@ func (s *OrchestratorTestSuite) SetupSubTest() {
 
 func (s *OrchestratorTestSuite) TestCreateDraft() {
 	testCases := []struct {
-		name      string
-		input     *character.CreateDraftInput
-		setupMock func()
-		wantErr   bool
-		errMsg    string
-		validate  func(*character.CreateDraftOutput)
+		name               string
+		input              *character.CreateDraftInput
+		setupMock          func() (capturedCreateInput *draftrepo.CreateInput)
+		wantErr            bool
+		errMsg             string
+		validateOutput     func(*character.CreateDraftOutput)
+		validateCaptured   func(capturedCreateInput *draftrepo.CreateInput)
 	}{
 		{
 			name: "successful creation with minimal data",
 			input: &character.CreateDraftInput{
 				PlayerID: s.testPlayerID,
 			},
-			setupMock: func() {
+			setupMock: func() (capturedCreateInput *draftrepo.CreateInput) {
 				// Expect engine validation
 				s.mockEngine.EXPECT().
 					ValidateCharacterDraft(s.ctx, gomock.Any()).
@@ -125,24 +126,28 @@ func (s *OrchestratorTestSuite) TestCreateDraft() {
 						IsValid: true,
 					}, nil)
 
-				// Use DoAndReturn to validate and return
+				// Expect repository create
 				s.mockDraftRepo.EXPECT().
 					Create(s.ctx, gomock.Any()).
-					DoAndReturn(func(_ context.Context, input draftrepo.CreateInput) (*draftrepo.CreateOutput, error) {
-						s.Require().NotNil(input.Draft)
-						draft := input.Draft
-						s.Equal(s.testPlayerID, draft.PlayerID)
-						s.Equal("", draft.SessionID)
-						s.False(draft.Progress.HasName())
-						s.Equal(dnd5e.CreationStepName, draft.Progress.CurrentStep)
-						s.Equal(int32(0), draft.Progress.CompletionPercentage)
-						return &draftrepo.CreateOutput{}, nil
-					})
+					Do(func(_ context.Context, input draftrepo.CreateInput) {
+						capturedCreateInput = &input
+					}).
+					Return(&draftrepo.CreateOutput{}, nil)
+				return
 			},
 			wantErr: false,
-			validate: func(output *character.CreateDraftOutput) {
+			validateOutput: func(output *character.CreateDraftOutput) {
 				s.NotNil(output.Draft)
 				s.Equal(s.testPlayerID, output.Draft.PlayerID)
+			},
+			validateCaptured: func(capturedCreateInput *draftrepo.CreateInput) {
+				s.NotNil(capturedCreateInput.Draft)
+				draft := capturedCreateInput.Draft
+				s.Equal(s.testPlayerID, draft.PlayerID)
+				s.Equal("", draft.SessionID)
+				s.False(draft.Progress.HasName())
+				s.Equal(dnd5e.CreationStepName, draft.Progress.CurrentStep)
+				s.Equal(int32(0), draft.Progress.CompletionPercentage)
 			},
 		},
 		{
@@ -156,7 +161,7 @@ func (s *OrchestratorTestSuite) TestCreateDraft() {
 					ClassID: dnd5e.ClassRogue,
 				},
 			},
-			setupMock: func() {
+			setupMock: func() (capturedCreateInput *draftrepo.CreateInput) {
 				// Expect engine validation
 				s.mockEngine.EXPECT().
 					ValidateCharacterDraft(s.ctx, gomock.Any()).
@@ -166,29 +171,33 @@ func (s *OrchestratorTestSuite) TestCreateDraft() {
 
 				s.mockDraftRepo.EXPECT().
 					Create(s.ctx, gomock.Any()).
-					DoAndReturn(func(_ context.Context, input draftrepo.CreateInput) (*draftrepo.CreateOutput, error) {
-						s.Require().NotNil(input.Draft)
-						draft := input.Draft
-						s.Equal("Frodo", draft.Name)
-						s.Equal(dnd5e.RaceHalfling, draft.RaceID)
-						s.Equal(dnd5e.ClassRogue, draft.ClassID)
-						s.True(draft.Progress.HasName())
-						s.True(draft.Progress.HasRace())
-						s.True(draft.Progress.HasClass())
-						s.Greater(draft.Progress.CompletionPercentage, int32(0))
-						return &draftrepo.CreateOutput{}, nil
-					})
+					Do(func(_ context.Context, input draftrepo.CreateInput) {
+						capturedCreateInput = &input
+					}).
+					Return(&draftrepo.CreateOutput{}, nil)
+				return
 			},
 			wantErr: false,
-			validate: func(output *character.CreateDraftOutput) {
+			validateOutput: func(output *character.CreateDraftOutput) {
 				s.NotNil(output.Draft)
 				s.Equal("Frodo", output.Draft.Name)
+			},
+			validateCaptured: func(capturedCreateInput *draftrepo.CreateInput) {
+				s.NotNil(capturedCreateInput.Draft)
+				draft := capturedCreateInput.Draft
+				s.Equal("Frodo", draft.Name)
+				s.Equal(dnd5e.RaceHalfling, draft.RaceID)
+				s.Equal(dnd5e.ClassRogue, draft.ClassID)
+				s.True(draft.Progress.HasName())
+				s.True(draft.Progress.HasRace())
+				s.True(draft.Progress.HasClass())
+				s.Greater(draft.Progress.CompletionPercentage, int32(0))
 			},
 		},
 		{
 			name:      "nil input",
 			input:     nil,
-			setupMock: func() {},
+			setupMock: func() *draftrepo.CreateInput { return nil },
 			wantErr:   true,
 			errMsg:    "input is required",
 		},
@@ -197,7 +206,7 @@ func (s *OrchestratorTestSuite) TestCreateDraft() {
 			input: &character.CreateDraftInput{
 				SessionID: s.testSessionID,
 			},
-			setupMock: func() {},
+			setupMock: func() *draftrepo.CreateInput { return nil },
 			wantErr:   true,
 			errMsg:    "validation failed: playerID: is required",
 		},
@@ -206,7 +215,7 @@ func (s *OrchestratorTestSuite) TestCreateDraft() {
 			input: &character.CreateDraftInput{
 				PlayerID: s.testPlayerID,
 			},
-			setupMock: func() {
+			setupMock: func() *draftrepo.CreateInput {
 				// Expect engine validation
 				s.mockEngine.EXPECT().
 					ValidateCharacterDraft(s.ctx, gomock.Any()).
@@ -217,6 +226,7 @@ func (s *OrchestratorTestSuite) TestCreateDraft() {
 				s.mockDraftRepo.EXPECT().
 					Create(s.ctx, gomock.Any()).
 					Return(nil, errors.Internal("database error"))
+				return nil
 			},
 			wantErr: true,
 			errMsg:  "failed to create draft",
@@ -225,7 +235,7 @@ func (s *OrchestratorTestSuite) TestCreateDraft() {
 
 	for _, tc := range testCases {
 		s.Run(tc.name, func() {
-			tc.setupMock()
+			capturedInput := tc.setupMock()
 
 			output, err := s.orchestrator.CreateDraft(s.ctx, tc.input)
 
@@ -236,8 +246,11 @@ func (s *OrchestratorTestSuite) TestCreateDraft() {
 			} else {
 				s.NoError(err)
 				s.NotNil(output)
-				if tc.validate != nil {
-					tc.validate(output)
+				if tc.validateOutput != nil {
+					tc.validateOutput(output)
+				}
+				if tc.validateCaptured != nil && capturedInput != nil {
+					tc.validateCaptured(capturedInput)
 				}
 			}
 		})
