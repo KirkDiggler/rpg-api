@@ -3,6 +3,9 @@ module github.com/KirkDiggler/rpg-api
 go 1.24
 
 require (
+	github.com/KirkDiggler/rpg-toolkit/core v0.1.0
+	github.com/KirkDiggler/rpg-toolkit/dice v0.1.0
+	github.com/KirkDiggler/rpg-toolkit/events v0.1.1
 	github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.3.2
 	github.com/redis/go-redis/v9 v9.11.0
 	github.com/spf13/cobra v1.9.1

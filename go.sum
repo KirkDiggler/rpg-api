@@ -1,3 +1,9 @@
+github.com/KirkDiggler/rpg-toolkit/core v0.1.0 h1:BUJ877kikqcQ0aOt2qUhLSUOVtCaCHLOSyw6nd18B7w=
+github.com/KirkDiggler/rpg-toolkit/core v0.1.0/go.mod h1:N7xIvJGjmrHHNjfWQ3O1LlkalzImcMav3O0fNOg+8No=
+github.com/KirkDiggler/rpg-toolkit/dice v0.1.0 h1:/tpfvSeV2NeaerItinsd1cc1I680cq3lkBL3EsV5Wz4=
+github.com/KirkDiggler/rpg-toolkit/dice v0.1.0/go.mod h1:JEWKuYBi+h9f8jFAcE2MI2yVDFV6ldOVx36y5fbc6p4=
+github.com/KirkDiggler/rpg-toolkit/events v0.1.1 h1:6EFI8NsdPwoymE+ZEU0i2hBTCXBV7yXrFQ73RScdewE=
+github.com/KirkDiggler/rpg-toolkit/events v0.1.1/go.mod h1:M+mF5gE04daLz73PX173IOn0CmVoAC6ff10Kx3BBCe8=
 github.com/bsm/ginkgo/v2 v2.12.0 h1:Ny8MWAHyOepLGlLKYmXG4IEkioBysk6GpaRTLC8zwWs=
 github.com/bsm/ginkgo/v2 v2.12.0/go.mod h1:SwYbGRRDovPVboqFv0tPTcG1sN61LM1Z4ARdbAV9g4c=
 github.com/bsm/gomega v1.27.10 h1:yeMWxP2pV2fG3FgAODIY8EiRE3dy0aeFYt4l7wh6yKA=
