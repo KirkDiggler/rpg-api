@@ -55,8 +55,7 @@ func (v *ValidationError) ToError() *Error {
 	}
 
 	err := InvalidArgument(v.Error())
-	err.WithMeta("validation_errors", v.Fields)
-	return err
+	return err.WithMeta("validation_errors", v.Fields)
 }
 
 // ValidationBuilder provides a fluent interface for building validation errors.

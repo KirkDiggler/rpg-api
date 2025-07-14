@@ -181,15 +181,6 @@ func (s *HandlerTestSuite) TearDownTest() {
 	s.ctrl.Finish()
 }
 
-// Helper to assert unimplemented error
-func (s *HandlerTestSuite) assertUnimplementedError(err error) {
-	s.Require().Error(err)
-	st, ok := status.FromError(err)
-	s.Require().True(ok, "error should be a gRPC status")
-	s.Equal(codes.Unimplemented, st.Code())
-	s.Equal("not implemented", st.Message())
-}
-
 // Draft lifecycle tests
 
 func (s *HandlerTestSuite) TestCreateDraft() {

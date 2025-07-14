@@ -866,7 +866,7 @@ func (o *Orchestrator) calculateProgress(draft *dnd5e.CharacterDraft) dnd5e.Crea
 		steps >>= 1
 	}
 
-	progress.CompletionPercentage = int32((completedSteps * 100) / totalSteps)
+	progress.CompletionPercentage = int32((completedSteps * 100) / totalSteps) // #nosec G115
 
 	// Determine next step by checking each flag in order
 	if !progress.HasStep(dnd5e.ProgressStepName) {
