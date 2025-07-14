@@ -72,10 +72,7 @@ var _ character.Service = (*Orchestrator)(nil)
 // Draft lifecycle methods
 
 // CreateDraft creates a new character draft
-func (o *Orchestrator) CreateDraft(
-	ctx context.Context,
-	input *character.CreateDraftInput,
-) (*character.CreateDraftOutput, error) {
+func (o *Orchestrator) CreateDraft(ctx context.Context, input *character.CreateDraftInput) (*character.CreateDraftOutput, error) {
 	if input == nil {
 		return nil, errors.InvalidArgument("input is required")
 	}
@@ -174,10 +171,7 @@ func (o *Orchestrator) GetDraft(
 }
 
 // ListDrafts lists character drafts with optional filters
-func (o *Orchestrator) ListDrafts(
-	ctx context.Context,
-	input *character.ListDraftsInput,
-) (*character.ListDraftsOutput, error) {
+func (o *Orchestrator) ListDrafts(ctx context.Context, input *character.ListDraftsInput) (*character.ListDraftsOutput, error) {
 	if input == nil {
 		return nil, errors.InvalidArgument("input is required")
 	}
@@ -759,10 +753,7 @@ func (o *Orchestrator) GetCharacter(
 }
 
 // ListCharacters lists characters with optional filters
-func (o *Orchestrator) ListCharacters(
-	ctx context.Context,
-	input *character.ListCharactersInput,
-) (*character.ListCharactersOutput, error) {
+func (o *Orchestrator) ListCharacters(ctx context.Context, input *character.ListCharactersInput) (*character.ListCharactersOutput, error) {
 	if input == nil {
 		return nil, errors.InvalidArgument("input is required")
 	}

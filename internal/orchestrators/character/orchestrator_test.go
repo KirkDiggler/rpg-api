@@ -9,6 +9,7 @@ import (
 	"go.uber.org/mock/gomock"
 
 	externalmock "github.com/KirkDiggler/rpg-api/internal/clients/external/mock"
+	"github.com/KirkDiggler/rpg-api/internal/engine"
 	enginemock "github.com/KirkDiggler/rpg-api/internal/engine/mock"
 	"github.com/KirkDiggler/rpg-api/internal/entities/dnd5e"
 	"github.com/KirkDiggler/rpg-api/internal/errors"
@@ -117,6 +118,13 @@ func (s *OrchestratorTestSuite) TestCreateDraft() {
 				PlayerID: s.testPlayerID,
 			},
 			setupMock: func() {
+				// Expect engine validation
+				s.mockEngine.EXPECT().
+					ValidateCharacterDraft(s.ctx, gomock.Any()).
+					Return(&engine.ValidateCharacterDraftOutput{
+						IsValid: true,
+					}, nil)
+
 				// Use a custom matcher to validate the draft structure
 				s.mockDraftRepo.EXPECT().
 					Create(s.ctx, gomock.Cond(func(x interface{}) bool {
@@ -151,11 +159,21 @@ func (s *OrchestratorTestSuite) TestCreateDraft() {
 				},
 			},
 			setupMock: func() {
+				// Expect engine validation
+				s.mockEngine.EXPECT().
+					ValidateCharacterDraft(s.ctx, gomock.Any()).
+					Return(&engine.ValidateCharacterDraftOutput{
+						IsValid: true,
+					}, nil)
+
 				s.mockDraftRepo.EXPECT().
 					Create(s.ctx, gomock.Cond(func(x interface{}) bool {
-						draft, ok := x.(*dnd5e.CharacterDraft)
-						return ok &&
-							draft.Name == "Frodo" &&
+						input, ok := x.(draftrepo.CreateInput)
+						if !ok || input.Draft == nil {
+							return false
+						}
+						draft := input.Draft
+						return draft.Name == "Frodo" &&
 							draft.RaceID == dnd5e.RaceHalfling &&
 							draft.ClassID == dnd5e.ClassRogue &&
 							draft.Progress.HasName() &&
@@ -163,7 +181,7 @@ func (s *OrchestratorTestSuite) TestCreateDraft() {
 							draft.Progress.HasClass() &&
 							draft.Progress.CompletionPercentage > 0
 					})).
-					Return(nil)
+					Return(&draftrepo.CreateOutput{}, nil)
 			},
 			wantErr: false,
 			validate: func(output *character.CreateDraftOutput) {
@@ -193,9 +211,16 @@ func (s *OrchestratorTestSuite) TestCreateDraft() {
 				PlayerID: s.testPlayerID,
 			},
 			setupMock: func() {
+				// Expect engine validation
+				s.mockEngine.EXPECT().
+					ValidateCharacterDraft(s.ctx, gomock.Any()).
+					Return(&engine.ValidateCharacterDraftOutput{
+						IsValid: true,
+					}, nil)
+
 				s.mockDraftRepo.EXPECT().
 					Create(s.ctx, gomock.Any()).
-					Return(errors.Internal("database error"))
+					Return(nil, errors.Internal("database error"))
 			},
 			wantErr: true,
 			errMsg:  "failed to create draft",
@@ -238,8 +263,8 @@ func (s *OrchestratorTestSuite) TestGetDraft() {
 			},
 			setupMock: func() {
 				s.mockDraftRepo.EXPECT().
-					Get(s.ctx, s.testDraftID).
-					Return(s.testDraft, nil)
+					Get(s.ctx, draftrepo.GetInput{ID: s.testDraftID}).
+					Return(&draftrepo.GetOutput{Draft: s.testDraft}, nil)
 			},
 			wantErr: false,
 		},
@@ -266,7 +291,7 @@ func (s *OrchestratorTestSuite) TestGetDraft() {
 			},
 			setupMock: func() {
 				s.mockDraftRepo.EXPECT().
-					Get(s.ctx, "nonexistent").
+					Get(s.ctx, draftrepo.GetInput{ID: "nonexistent"}).
 					Return(nil, errors.NotFoundf("draft not found"))
 			},
 			wantErr: true,
@@ -390,8 +415,8 @@ func (s *OrchestratorTestSuite) TestDeleteDraft() {
 			},
 			setupMock: func() {
 				s.mockDraftRepo.EXPECT().
-					Delete(s.ctx, s.testDraftID).
-					Return(nil)
+					Delete(s.ctx, draftrepo.DeleteInput{ID: s.testDraftID}).
+					Return(&draftrepo.DeleteOutput{}, nil)
 			},
 			wantErr: false,
 		},
@@ -418,8 +443,8 @@ func (s *OrchestratorTestSuite) TestDeleteDraft() {
 			},
 			setupMock: func() {
 				s.mockDraftRepo.EXPECT().
-					Delete(s.ctx, s.testDraftID).
-					Return(errors.Internal("database error"))
+					Delete(s.ctx, draftrepo.DeleteInput{ID: s.testDraftID}).
+					Return(nil, errors.Internal("database error"))
 			},
 			wantErr: true,
 			errMsg:  "failed to delete draft",
