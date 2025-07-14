@@ -3,9 +3,9 @@ package rpgtoolkit
 
 import (
 	"context"
-	"errors"
 
 	"github.com/KirkDiggler/rpg-api/internal/engine"
+	"github.com/KirkDiggler/rpg-api/internal/errors"
 	"github.com/KirkDiggler/rpg-toolkit/core"
 	"github.com/KirkDiggler/rpg-toolkit/dice"
 	"github.com/KirkDiggler/rpg-toolkit/events"
@@ -26,10 +26,10 @@ type AdapterConfig struct {
 // Validate checks that all required dependencies are provided
 func (c *AdapterConfig) Validate() error {
 	if c.EventBus == nil {
-		return errors.New("event bus is required")
+		return errors.InvalidArgument("event bus is required")
 	}
 	if c.DiceRoller == nil {
-		return errors.New("dice roller is required")
+		return errors.InvalidArgument("dice roller is required")
 	}
 	return nil
 }
@@ -37,7 +37,7 @@ func (c *AdapterConfig) Validate() error {
 // NewAdapter creates a new rpg-toolkit engine adapter
 func NewAdapter(cfg *AdapterConfig) (*Adapter, error) {
 	if cfg == nil {
-		return nil, errors.New("config is required")
+		return nil, errors.InvalidArgument("config is required")
 	}
 	
 	if err := cfg.Validate(); err != nil {

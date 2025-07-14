@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/suite"
 
 	"github.com/KirkDiggler/rpg-api/internal/engine"
+	"github.com/KirkDiggler/rpg-api/internal/errors"
 
 	"github.com/KirkDiggler/rpg-toolkit/events"
 )
@@ -25,6 +26,7 @@ func TestNewAdapter(t *testing.T) {
 		adapter, err := NewAdapter(nil)
 		assert.Error(t, err)
 		assert.Nil(t, adapter)
+		assert.True(t, errors.IsInvalidArgument(err))
 		assert.Contains(t, err.Error(), "config is required")
 	})
 
@@ -36,6 +38,7 @@ func TestNewAdapter(t *testing.T) {
 		adapter, err := NewAdapter(cfg)
 		assert.Error(t, err)
 		assert.Nil(t, adapter)
+		assert.True(t, errors.IsInvalidArgument(err))
 		assert.Contains(t, err.Error(), "event bus is required")
 	})
 
@@ -47,6 +50,7 @@ func TestNewAdapter(t *testing.T) {
 		adapter, err := NewAdapter(cfg)
 		assert.Error(t, err)
 		assert.Nil(t, adapter)
+		assert.True(t, errors.IsInvalidArgument(err))
 		assert.Contains(t, err.Error(), "dice roller is required")
 	})
 
