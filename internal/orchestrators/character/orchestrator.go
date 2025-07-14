@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
-	"time"
 
 	"github.com/KirkDiggler/rpg-api/internal/clients/external"
 	"github.com/KirkDiggler/rpg-api/internal/engine"
@@ -96,11 +95,12 @@ func (o *Orchestrator) CreateDraft(
 			CompletionPercentage: 0,
 			CurrentStep:          dnd5e.CreationStepName,
 		},
-		CreatedAt: time.Now().Unix(),
-		UpdatedAt: time.Now().Unix(),
+		// Repository will set ID, timestamps, and expiration
 	}
 
 	// Apply initial data if provided
+	// Note: We intentionally ignore any ID, timestamps, or repository-managed fields from InitialData
+	// The repository will handle ID generation and find/replace existing drafts for this player
 	if input.InitialData != nil {
 		if input.InitialData.Name != "" {
 			draft.Name = input.InitialData.Name
@@ -139,12 +139,6 @@ func (o *Orchestrator) CreateDraft(
 		o.updateCompletionPercentage(draft)
 	}
 
-	// Generate a unique ID
-	draft.ID = fmt.Sprintf("%s_%d", input.PlayerID, time.Now().UnixNano())
-
-	// Set expiration (24 hours from now)
-	draft.ExpiresAt = time.Now().Add(24 * time.Hour).Unix()
-
 	// Validate the draft with the engine
 	validateInput := &engine.ValidateCharacterDraftInput{
 		Draft: draft,
@@ -162,13 +156,13 @@ func (o *Orchestrator) CreateDraft(
 	}
 
 	// Create the draft in the repository
-	_, err = o.characterDraftRepo.Create(ctx, draftrepo.CreateInput{Draft: draft})
+	createOutput, err := o.characterDraftRepo.Create(ctx, draftrepo.CreateInput{Draft: draft})
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to create draft")
 	}
 
 	return &character.CreateDraftOutput{
-		Draft: draft,
+		Draft: createOutput.Draft,
 	}, nil
 }
 
@@ -286,20 +280,20 @@ func (o *Orchestrator) UpdateName(
 
 	// Update the name
 	draft.Name = input.Name
-	draft.UpdatedAt = time.Now().Unix()
+	// Repository will update timestamp
 
 	// Update progress
 	draft.Progress.SetStep(dnd5e.ProgressStepName, true)
 	o.updateCompletionPercentage(draft)
 
 	// Save the updated draft
-	_, err = o.characterDraftRepo.Update(ctx, draftrepo.UpdateInput{Draft: draft})
+	updateOutput, err := o.characterDraftRepo.Update(ctx, draftrepo.UpdateInput{Draft: draft})
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to update draft")
 	}
 
 	return &character.UpdateNameOutput{
-		Draft: draft,
+		Draft: updateOutput.Draft,
 	}, nil
 }
 
@@ -345,7 +339,7 @@ func (o *Orchestrator) UpdateRace(
 	// Update the race
 	draft.RaceID = input.RaceID
 	draft.SubraceID = input.SubraceID
-	draft.UpdatedAt = time.Now().Unix()
+	// Repository will update timestamp
 
 	// Reset dependent fields when race changes
 	draft.AbilityScores = nil
@@ -361,13 +355,13 @@ func (o *Orchestrator) UpdateRace(
 	o.updateCompletionPercentage(draft)
 
 	// Save the updated draft
-	_, err = o.characterDraftRepo.Update(ctx, draftrepo.UpdateInput{Draft: draft})
+	updateOutput, err := o.characterDraftRepo.Update(ctx, draftrepo.UpdateInput{Draft: draft})
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to update draft")
 	}
 
 	return &character.UpdateRaceOutput{
-		Draft:    draft,
+		Draft:    updateOutput.Draft,
 		Warnings: warnings,
 	}, nil
 }
@@ -414,7 +408,7 @@ func (o *Orchestrator) UpdateClass(
 
 	// Update the class
 	draft.ClassID = input.ClassID
-	draft.UpdatedAt = time.Now().Unix()
+	// Repository will update timestamp
 
 	// Reset dependent fields when class changes
 	draft.StartingSkillIDs = nil
@@ -426,13 +420,13 @@ func (o *Orchestrator) UpdateClass(
 	o.updateCompletionPercentage(draft)
 
 	// Save the updated draft
-	_, err = o.characterDraftRepo.Update(ctx, draftrepo.UpdateInput{Draft: draft})
+	updateOutput, err := o.characterDraftRepo.Update(ctx, draftrepo.UpdateInput{Draft: draft})
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to update draft")
 	}
 
 	return &character.UpdateClassOutput{
-		Draft:    draft,
+		Draft:    updateOutput.Draft,
 		Warnings: warnings,
 	}, nil
 }
@@ -476,7 +470,7 @@ func (o *Orchestrator) UpdateBackground(
 
 	// Update the background
 	draft.BackgroundID = input.BackgroundID
-	draft.UpdatedAt = time.Now().Unix()
+	// Repository will update timestamp
 
 	// Reset dependent fields when background changes
 	draft.StartingSkillIDs = nil
@@ -488,13 +482,13 @@ func (o *Orchestrator) UpdateBackground(
 	o.updateCompletionPercentage(draft)
 
 	// Save the updated draft
-	_, err = o.characterDraftRepo.Update(ctx, draftrepo.UpdateInput{Draft: draft})
+	updateOutput, err := o.characterDraftRepo.Update(ctx, draftrepo.UpdateInput{Draft: draft})
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to update draft")
 	}
 
 	return &character.UpdateBackgroundOutput{
-		Draft: draft,
+		Draft: updateOutput.Draft,
 	}, nil
 }
 
@@ -562,20 +556,20 @@ func (o *Orchestrator) UpdateAbilityScores(
 
 	// Update the ability scores
 	draft.AbilityScores = &input.AbilityScores
-	draft.UpdatedAt = time.Now().Unix()
+	// Repository will update timestamp
 
 	// Update progress
 	draft.Progress.SetStep(dnd5e.ProgressStepAbilityScores, true)
 	o.updateCompletionPercentage(draft)
 
 	// Save the updated draft
-	_, err = o.characterDraftRepo.Update(ctx, draftrepo.UpdateInput{Draft: draft})
+	updateOutput, err := o.characterDraftRepo.Update(ctx, draftrepo.UpdateInput{Draft: draft})
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to update draft")
 	}
 
 	return &character.UpdateAbilityScoresOutput{
-		Draft:    draft,
+		Draft:    updateOutput.Draft,
 		Warnings: warnings,
 	}, nil
 }
@@ -638,20 +632,20 @@ func (o *Orchestrator) UpdateSkills(
 
 	// Update the skills
 	draft.StartingSkillIDs = input.SkillIDs
-	draft.UpdatedAt = time.Now().Unix()
+	// Repository will update timestamp
 
 	// Update progress
 	draft.Progress.SetStep(dnd5e.ProgressStepSkills, true)
 	o.updateCompletionPercentage(draft)
 
 	// Save the updated draft
-	_, err = o.characterDraftRepo.Update(ctx, draftrepo.UpdateInput{Draft: draft})
+	updateOutput, err := o.characterDraftRepo.Update(ctx, draftrepo.UpdateInput{Draft: draft})
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to update draft")
 	}
 
 	return &character.UpdateSkillsOutput{
-		Draft:    draft,
+		Draft:    updateOutput.Draft,
 		Warnings: warnings,
 	}, nil
 }
@@ -753,7 +747,6 @@ func (o *Orchestrator) FinalizeDraft(
 
 	// Create the final character
 	char := &dnd5e.Character{
-		ID:               fmt.Sprintf("char_%s_%d", draft.PlayerID, time.Now().UnixNano()),
 		Name:             draft.Name,
 		Level:            1, // Starting level
 		ExperiencePoints: 0,
@@ -767,12 +760,11 @@ func (o *Orchestrator) FinalizeDraft(
 		TempHP:           0,
 		SessionID:        draft.SessionID,
 		PlayerID:         draft.PlayerID,
-		CreatedAt:        time.Now().Unix(),
-		UpdatedAt:        time.Now().Unix(),
+		// Repository will set ID, CreatedAt, and UpdatedAt
 	}
 
 	// Create the character in the repository
-	_, err = o.characterRepo.Create(ctx, characterrepo.CreateInput{Character: char})
+	createOutput, err := o.characterRepo.Create(ctx, characterrepo.CreateInput{Character: char})
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create character")
 	}
@@ -785,7 +777,7 @@ func (o *Orchestrator) FinalizeDraft(
 	}
 
 	return &character.FinalizeDraftOutput{
-		Character:    char,
+		Character:    createOutput.Character,
 		DraftDeleted: err == nil,
 	}, nil
 }

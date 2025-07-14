@@ -41,7 +41,8 @@ func (s *OrchestratorTestSuite) TestUpdateName() {
 					DoAndReturn(func(_ context.Context, input draftrepo.UpdateInput) (*draftrepo.UpdateOutput, error) {
 						s.Equal("Gandalf the White", input.Draft.Name)
 						s.True(input.Draft.Progress.HasName())
-						return &draftrepo.UpdateOutput{}, nil
+						// Repository returns the updated draft
+						return &draftrepo.UpdateOutput{Draft: input.Draft}, nil
 					})
 			},
 			wantErr: false,
@@ -138,7 +139,9 @@ func (s *OrchestratorTestSuite) TestUpdateRace() {
 
 				s.mockDraftRepo.EXPECT().
 					Update(s.ctx, gomock.Any()).
-					Return(&draftrepo.UpdateOutput{}, nil)
+					DoAndReturn(func(_ context.Context, input draftrepo.UpdateInput) (*draftrepo.UpdateOutput, error) {
+						return &draftrepo.UpdateOutput{Draft: input.Draft}, nil
+					})
 			},
 			wantErr: false,
 			validate: func(output *character.UpdateRaceOutput) {
@@ -174,7 +177,9 @@ func (s *OrchestratorTestSuite) TestUpdateRace() {
 				// Still expect update even with validation errors (converted to warnings)
 				s.mockDraftRepo.EXPECT().
 					Update(s.ctx, gomock.Any()).
-					Return(&draftrepo.UpdateOutput{}, nil)
+					DoAndReturn(func(_ context.Context, input draftrepo.UpdateInput) (*draftrepo.UpdateOutput, error) {
+						return &draftrepo.UpdateOutput{Draft: input.Draft}, nil
+					})
 			},
 			wantErr: false, // Returns warnings, not error
 			validate: func(output *character.UpdateRaceOutput) {
@@ -278,7 +283,7 @@ func (s *OrchestratorTestSuite) TestUpdateClass() {
 						// Verify skills were cleared
 						s.Empty(input.Draft.StartingSkillIDs)
 						s.False(input.Draft.Progress.HasSkills())
-						return &draftrepo.UpdateOutput{}, nil
+						return &draftrepo.UpdateOutput{Draft: input.Draft}, nil
 					})
 			},
 			wantErr: false,
@@ -321,7 +326,9 @@ func (s *OrchestratorTestSuite) TestUpdateClass() {
 
 				s.mockDraftRepo.EXPECT().
 					Update(s.ctx, gomock.Any()).
-					Return(&draftrepo.UpdateOutput{}, nil)
+					DoAndReturn(func(_ context.Context, input draftrepo.UpdateInput) (*draftrepo.UpdateOutput, error) {
+						return &draftrepo.UpdateOutput{Draft: input.Draft}, nil
+					})
 			},
 			wantErr: false,
 			validate: func(output *character.UpdateClassOutput) {
@@ -422,7 +429,9 @@ func (s *OrchestratorTestSuite) TestUpdateAbilityScores() {
 
 				s.mockDraftRepo.EXPECT().
 					Update(s.ctx, gomock.Any()).
-					Return(&draftrepo.UpdateOutput{}, nil)
+					DoAndReturn(func(_ context.Context, input draftrepo.UpdateInput) (*draftrepo.UpdateOutput, error) {
+						return &draftrepo.UpdateOutput{Draft: input.Draft}, nil
+					})
 			},
 			wantErr: false,
 			validate: func(output *character.UpdateAbilityScoresOutput) {
@@ -471,7 +480,9 @@ func (s *OrchestratorTestSuite) TestUpdateAbilityScores() {
 
 				s.mockDraftRepo.EXPECT().
 					Update(s.ctx, gomock.Any()).
-					Return(&draftrepo.UpdateOutput{}, nil)
+					DoAndReturn(func(_ context.Context, input draftrepo.UpdateInput) (*draftrepo.UpdateOutput, error) {
+						return &draftrepo.UpdateOutput{Draft: input.Draft}, nil
+					})
 			},
 			wantErr: false,
 			validate: func(output *character.UpdateAbilityScoresOutput) {
@@ -551,7 +562,9 @@ func (s *OrchestratorTestSuite) TestUpdateSkills() {
 
 				s.mockDraftRepo.EXPECT().
 					Update(s.ctx, gomock.Any()).
-					Return(&draftrepo.UpdateOutput{}, nil)
+					DoAndReturn(func(_ context.Context, input draftrepo.UpdateInput) (*draftrepo.UpdateOutput, error) {
+						return &draftrepo.UpdateOutput{Draft: input.Draft}, nil
+					})
 			},
 			wantErr: false,
 			validate: func(output *character.UpdateSkillsOutput) {
@@ -574,7 +587,9 @@ func (s *OrchestratorTestSuite) TestUpdateSkills() {
 				// Still expect update even with missing prerequisites (converted to warnings)
 				s.mockDraftRepo.EXPECT().
 					Update(s.ctx, gomock.Any()).
-					Return(&draftrepo.UpdateOutput{}, nil)
+					DoAndReturn(func(_ context.Context, input draftrepo.UpdateInput) (*draftrepo.UpdateOutput, error) {
+						return &draftrepo.UpdateOutput{Draft: input.Draft}, nil
+					})
 			},
 			wantErr: false,
 			validate: func(output *character.UpdateSkillsOutput) {
@@ -613,7 +628,9 @@ func (s *OrchestratorTestSuite) TestUpdateSkills() {
 				// Still expect update even with invalid skills (converted to warnings)
 				s.mockDraftRepo.EXPECT().
 					Update(s.ctx, gomock.Any()).
-					Return(&draftrepo.UpdateOutput{}, nil)
+					DoAndReturn(func(_ context.Context, input draftrepo.UpdateInput) (*draftrepo.UpdateOutput, error) {
+						return &draftrepo.UpdateOutput{Draft: input.Draft}, nil
+					})
 			},
 			wantErr: false,
 			validate: func(output *character.UpdateSkillsOutput) {

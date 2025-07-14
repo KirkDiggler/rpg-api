@@ -49,6 +49,7 @@ func (r *redisRepository) Create(ctx context.Context, input CreateInput) (*Creat
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to check existence")
 	}
+
 	if exists > 0 {
 		return nil, errors.AlreadyExistsf("character with ID %s already exists", input.Character.ID)
 	}

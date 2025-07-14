@@ -53,7 +53,7 @@ type CreateInput struct {
 
 // CreateOutput defines the output for creating a character
 type CreateOutput struct {
-	// Empty for now, can be extended later
+	Character *dnd5e.Character
 }
 
 // GetInput defines the input for getting a character
@@ -73,7 +73,7 @@ type UpdateInput struct {
 
 // UpdateOutput defines the output for updating a character
 type UpdateOutput struct {
-	// Empty for now, can be extended later
+	Character *dnd5e.Character
 }
 
 // DeleteInput defines the input for deleting a character

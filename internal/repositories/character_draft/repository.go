@@ -49,7 +49,7 @@ type CreateInput struct {
 
 // CreateOutput defines the output for creating a character draft
 type CreateOutput struct {
-	// Empty for now, can be extended later
+	Draft *dnd5e.CharacterDraft
 }
 
 // GetInput defines the input for getting a character draft
@@ -79,7 +79,7 @@ type UpdateInput struct {
 
 // UpdateOutput defines the output for updating a character draft
 type UpdateOutput struct {
-	// Empty for now, can be extended later
+	Draft *dnd5e.CharacterDraft
 }
 
 // DeleteInput defines the input for deleting a character draft

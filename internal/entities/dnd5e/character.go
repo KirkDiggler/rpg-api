@@ -96,7 +96,6 @@ func (p CreationProgress) HasName() bool { return p.HasStep(ProgressStepName) }
 func (p CreationProgress) HasRace() bool { return p.HasStep(ProgressStepRace) }
 
 // HasClass checks if the class step is completed
-// HasClass checks if the class step is completed
 func (p CreationProgress) HasClass() bool { return p.HasStep(ProgressStepClass) }
 
 // HasBackground checks if the background step is completed

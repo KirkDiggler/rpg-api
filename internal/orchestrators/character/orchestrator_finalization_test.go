@@ -229,7 +229,10 @@ func (s *OrchestratorTestSuite) TestFinalizeDraft() {
 						s.Equal(int32(1), input.Character.Level)
 						s.Equal(int32(12), input.Character.CurrentHP)
 						s.Equal(dnd5e.ClassRanger, input.Character.ClassID)
-						return &characterrepo.CreateOutput{}, nil
+						// Repository returns the character with ID and timestamps set
+						char := *input.Character
+						char.ID = "generated-char-id"
+						return &characterrepo.CreateOutput{Character: &char}, nil
 					})
 
 				// Delete draft
@@ -313,7 +316,12 @@ func (s *OrchestratorTestSuite) TestFinalizeDraft() {
 
 				s.mockCharRepo.EXPECT().
 					Create(s.ctx, gomock.Any()).
-					Return(&characterrepo.CreateOutput{}, nil)
+					DoAndReturn(func(_ context.Context, input characterrepo.CreateInput) (*characterrepo.CreateOutput, error) {
+						// Repository returns the character with ID and timestamps set
+						char := *input.Character
+						char.ID = "generated-char-id"
+						return &characterrepo.CreateOutput{Character: &char}, nil
+					})
 
 				// Draft deletion fails
 				s.mockDraftRepo.EXPECT().

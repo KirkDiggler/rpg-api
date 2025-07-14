@@ -131,7 +131,14 @@ func (s *OrchestratorTestSuite) TestCreateDraft() {
 
 				s.mockDraftRepo.EXPECT().
 					Create(s.ctx, gomock.Any()).
-					Return(&draftrepo.CreateOutput{}, nil)
+					DoAndReturn(func(_ context.Context, input draftrepo.CreateInput) (*draftrepo.CreateOutput, error) {
+						// Repository sets ID and timestamps
+						draft := *input.Draft
+						draft.ID = "generated-id"
+						draft.CreatedAt = time.Now().Unix()
+						draft.UpdatedAt = time.Now().Unix()
+						return &draftrepo.CreateOutput{Draft: &draft}, nil
+					})
 			},
 			wantErr: false,
 			validate: func(output *character.CreateDraftOutput) {
@@ -164,7 +171,14 @@ func (s *OrchestratorTestSuite) TestCreateDraft() {
 
 				s.mockDraftRepo.EXPECT().
 					Create(s.ctx, gomock.Any()).
-					Return(&draftrepo.CreateOutput{}, nil)
+					DoAndReturn(func(_ context.Context, input draftrepo.CreateInput) (*draftrepo.CreateOutput, error) {
+						// Repository sets ID and timestamps
+						draft := *input.Draft
+						draft.ID = "generated-id"
+						draft.CreatedAt = time.Now().Unix()
+						draft.UpdatedAt = time.Now().Unix()
+						return &draftrepo.CreateOutput{Draft: &draft}, nil
+					})
 			},
 			wantErr: false,
 			validate: func(output *character.CreateDraftOutput) {

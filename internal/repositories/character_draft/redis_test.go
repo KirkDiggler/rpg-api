@@ -13,6 +13,8 @@ import (
 
 	"github.com/KirkDiggler/rpg-api/internal/entities/dnd5e"
 	"github.com/KirkDiggler/rpg-api/internal/errors"
+	mockclock "github.com/KirkDiggler/rpg-api/internal/pkg/clock/mock"
+	idgenmock "github.com/KirkDiggler/rpg-api/internal/pkg/idgen/mock"
 	redismocks "github.com/KirkDiggler/rpg-api/internal/redis/mocks"
 	characterdraft "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft"
 )
@@ -25,6 +27,8 @@ const (
 type RedisRepositoryTestSuite struct {
 	suite.Suite
 	ctrl       *gomock.Controller
+	mockClock  *mockclock.MockClock
+	mockIDGen  *idgenmock.MockGenerator
 	mockClient *redismocks.MockClient
 	mockPipe   *redismocks.MockPipeliner
 	repo       characterdraft.Repository
@@ -35,7 +39,19 @@ func (s *RedisRepositoryTestSuite) SetupTest() {
 	s.ctrl = gomock.NewController(s.T())
 	s.mockClient = redismocks.NewMockClient(s.ctrl)
 	s.mockPipe = redismocks.NewMockPipeliner(s.ctrl)
-	s.repo = characterdraft.NewRedisRepository(s.mockClient)
+	s.mockClock = mockclock.NewMockClock(s.ctrl)
+	s.mockIDGen = idgenmock.NewMockGenerator(s.ctrl)
+
+	// Create repository with proper config
+	cfg := &characterdraft.Config{
+		Client:      s.mockClient,
+		Clock:       s.mockClock,
+		IDGenerator: s.mockIDGen,
+	}
+	repo, err := characterdraft.NewRedisRepository(cfg)
+	s.Require().NoError(err)
+	s.repo = repo
+
 	s.ctx = context.Background()
 }
 
@@ -44,21 +60,25 @@ func (s *RedisRepositoryTestSuite) TearDownTest() {
 }
 
 func (s *RedisRepositoryTestSuite) TestCreate() {
-	testDraft := &dnd5e.CharacterDraft{
-		ID:        "draft_123",
-		PlayerID:  "player_456",
-		SessionID: "session_789",
-		Name:      "Test Character",
-		CreatedAt: time.Now().Unix(),
-		UpdatedAt: time.Now().Unix(),
-		ExpiresAt: time.Now().Add(24 * time.Hour).Unix(),
-	}
+	now := time.Now().Add(1 * time.Hour) // Use future time to avoid expiration issues
+	generatedID := "generated_draft_123"
 
 	s.Run("successful create with no existing draft", func() {
-		playerKey := testDraftPlayerKey
-		draftKey := testDraftKey
+		inputDraft := &dnd5e.CharacterDraft{
+			PlayerID:  "player_456",
+			SessionID: "session_789",
+			Name:      "Test Character",
+			// No ID - repository will generate it
+		}
 
-		// Check for existing draft
+		playerKey := "draft:player:player_456"
+		draftKey := "draft:generated_draft_123"
+
+		// Repository calls clock and idgen
+		s.mockClock.EXPECT().Now().Return(now).AnyTimes()
+		s.mockIDGen.EXPECT().Generate().Return(generatedID)
+
+		// Check for existing draft (none found)
 		s.mockClient.EXPECT().
 			Get(s.ctx, playerKey).
 			Return(redis.NewStringResult("", redis.Nil))
@@ -68,17 +88,13 @@ func (s *RedisRepositoryTestSuite) TestCreate() {
 			TxPipeline().
 			Return(s.mockPipe)
 
-		// Marshal draft data
-		draftData, _ := json.Marshal(testDraft)
-
-		// Set draft with TTL
+		// Set draft with TTL and player mapping
 		s.mockPipe.EXPECT().
-			Set(s.ctx, draftKey, draftData, gomock.Any()).
+			Set(s.ctx, draftKey, gomock.Any(), gomock.Any()).
 			Return(redis.NewStatusResult("OK", nil))
 
-		// Set player mapping
 		s.mockPipe.EXPECT().
-			Set(s.ctx, playerKey, "draft_123", time.Duration(0)).
+			Set(s.ctx, playerKey, generatedID, time.Duration(0)).
 			Return(redis.NewStatusResult("OK", nil))
 
 		// Execute pipeline
@@ -87,19 +103,36 @@ func (s *RedisRepositoryTestSuite) TestCreate() {
 			Return([]redis.Cmder{}, nil)
 
 		// Execute
-		output, err := s.repo.Create(s.ctx, characterdraft.CreateInput{Draft: testDraft})
+		output, err := s.repo.Create(s.ctx, characterdraft.CreateInput{Draft: inputDraft})
 
 		// Assert
 		s.NoError(err)
 		s.NotNil(output)
+		s.NotNil(output.Draft)
+		s.Equal(generatedID, output.Draft.ID)
+		s.Equal("player_456", output.Draft.PlayerID)
+		s.Equal("Test Character", output.Draft.Name)
+		s.Equal(now.Unix(), output.Draft.CreatedAt)
+		s.Equal(now.Unix(), output.Draft.UpdatedAt)
+		s.Equal(now.Add(24*time.Hour).Unix(), output.Draft.ExpiresAt)
 	})
 
 	s.Run("successful create replacing existing draft", func() {
-		playerKey := testDraftPlayerKey
-		oldDraftKey := "draft:old_draft_123"
-		newDraftKey := "draft:draft_123"
+		inputDraft := &dnd5e.CharacterDraft{
+			PlayerID:  "player_456",
+			SessionID: "session_789",
+			Name:      "New Character",
+		}
 
-		// Check for existing draft
+		playerKey := "draft:player:player_456"
+		oldDraftKey := "draft:old_draft_123"
+		newDraftKey := "draft:generated_draft_123"
+
+		// Repository calls clock and idgen
+		s.mockClock.EXPECT().Now().Return(now).AnyTimes()
+		s.mockIDGen.EXPECT().Generate().Return(generatedID)
+
+		// Check for existing draft (found old one)
 		s.mockClient.EXPECT().
 			Get(s.ctx, playerKey).
 			Return(redis.NewStringResult("old_draft_123", nil))
@@ -114,17 +147,14 @@ func (s *RedisRepositoryTestSuite) TestCreate() {
 			Del(s.ctx, oldDraftKey).
 			Return(redis.NewIntResult(1, nil))
 
-		// Marshal draft data
-		draftData, _ := json.Marshal(testDraft)
-
 		// Set new draft with TTL
 		s.mockPipe.EXPECT().
-			Set(s.ctx, newDraftKey, draftData, gomock.Any()).
+			Set(s.ctx, newDraftKey, gomock.Any(), gomock.Any()).
 			Return(redis.NewStatusResult("OK", nil))
 
 		// Update player mapping
 		s.mockPipe.EXPECT().
-			Set(s.ctx, playerKey, "draft_123", time.Duration(0)).
+			Set(s.ctx, playerKey, generatedID, time.Duration(0)).
 			Return(redis.NewStatusResult("OK", nil))
 
 		// Execute pipeline
@@ -133,11 +163,14 @@ func (s *RedisRepositoryTestSuite) TestCreate() {
 			Return([]redis.Cmder{}, nil)
 
 		// Execute
-		output, err := s.repo.Create(s.ctx, characterdraft.CreateInput{Draft: testDraft})
+		output, err := s.repo.Create(s.ctx, characterdraft.CreateInput{Draft: inputDraft})
 
 		// Assert
 		s.NoError(err)
 		s.NotNil(output)
+		s.NotNil(output.Draft)
+		s.Equal(generatedID, output.Draft.ID)
+		s.Equal("New Character", output.Draft.Name)
 	})
 
 	s.Run("error when draft is nil", func() {
@@ -149,18 +182,8 @@ func (s *RedisRepositoryTestSuite) TestCreate() {
 		s.Contains(err.Error(), "draft cannot be nil")
 	})
 
-	s.Run("error when draft ID is empty", func() {
-		draft := &dnd5e.CharacterDraft{PlayerID: "player_456"}
-		output, err := s.repo.Create(s.ctx, characterdraft.CreateInput{Draft: draft})
-
-		s.Error(err)
-		s.Nil(output)
-		s.True(errors.IsInvalidArgument(err))
-		s.Contains(err.Error(), "draft ID cannot be empty")
-	})
-
 	s.Run("error when player ID is empty", func() {
-		draft := &dnd5e.CharacterDraft{ID: "draft_123"}
+		draft := &dnd5e.CharacterDraft{Name: "Test"}
 		output, err := s.repo.Create(s.ctx, characterdraft.CreateInput{Draft: draft})
 
 		s.Error(err)
@@ -328,17 +351,20 @@ func (s *RedisRepositoryTestSuite) TestGetByPlayerID() {
 }
 
 func (s *RedisRepositoryTestSuite) TestUpdate() {
-	testDraft := &dnd5e.CharacterDraft{
-		ID:        "draft_123",
-		PlayerID:  "player_456",
-		Name:      "Updated Character",
-		UpdatedAt: time.Now().Unix(),
-		ExpiresAt: time.Now().Add(24 * time.Hour).Unix(),
-	}
+	now := time.Now().Add(1 * time.Hour)
 
 	s.Run("successful update", func() {
-		draftKey := testDraftKey
-		draftData, _ := json.Marshal(testDraft)
+		inputDraft := &dnd5e.CharacterDraft{
+			ID:       "draft_123",
+			PlayerID: "player_456",
+			Name:     "Updated Character",
+			// Repository will set UpdatedAt
+		}
+
+		draftKey := "draft:draft_123"
+
+		// Repository calls clock for UpdatedAt
+		s.mockClock.EXPECT().Now().Return(now)
 
 		// Check existence
 		s.mockClient.EXPECT().
@@ -347,19 +373,28 @@ func (s *RedisRepositoryTestSuite) TestUpdate() {
 
 		// Update draft
 		s.mockClient.EXPECT().
-			Set(s.ctx, draftKey, draftData, gomock.Any()).
+			Set(s.ctx, draftKey, gomock.Any(), gomock.Any()).
 			Return(redis.NewStatusResult("OK", nil))
 
 		// Execute
-		output, err := s.repo.Update(s.ctx, characterdraft.UpdateInput{Draft: testDraft})
+		output, err := s.repo.Update(s.ctx, characterdraft.UpdateInput{Draft: inputDraft})
 
 		// Assert
 		s.NoError(err)
 		s.NotNil(output)
+		s.NotNil(output.Draft)
+		s.Equal("draft_123", output.Draft.ID)
+		s.Equal("Updated Character", output.Draft.Name)
+		s.Equal(now.Unix(), output.Draft.UpdatedAt)
 	})
 
 	s.Run("error when draft doesn't exist", func() {
-		draftKey := testDraftKey
+		inputDraft := &dnd5e.CharacterDraft{
+			ID:       "draft_123",
+			PlayerID: "player_456",
+			Name:     "Updated Character",
+		}
+		draftKey := "draft:draft_123"
 
 		// Check existence
 		s.mockClient.EXPECT().
@@ -367,7 +402,7 @@ func (s *RedisRepositoryTestSuite) TestUpdate() {
 			Return(redis.NewIntResult(0, nil))
 
 		// Execute
-		output, err := s.repo.Update(s.ctx, characterdraft.UpdateInput{Draft: testDraft})
+		output, err := s.repo.Update(s.ctx, characterdraft.UpdateInput{Draft: inputDraft})
 
 		// Assert
 		s.Error(err)

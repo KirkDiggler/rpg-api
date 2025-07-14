@@ -9,6 +9,8 @@ import (
 
 	"github.com/KirkDiggler/rpg-api/internal/entities/dnd5e"
 	"github.com/KirkDiggler/rpg-api/internal/errors"
+	"github.com/KirkDiggler/rpg-api/internal/pkg/clock"
+	"github.com/KirkDiggler/rpg-api/internal/pkg/idgen"
 	redisclient "github.com/KirkDiggler/rpg-api/internal/redis"
 )
 
@@ -24,73 +26,124 @@ const (
 	errDraftExpired  = "draft has already expired"
 )
 
+// Config holds the configuration for the Redis repository
+type Config struct {
+	Client      redisclient.Client
+	Clock       clock.Clock
+	IDGenerator idgen.Generator
+}
+
+// Validate ensures all required dependencies are provided
+func (c *Config) Validate() error {
+	if c.Client == nil {
+		return errors.InvalidArgument("redis client is required")
+	}
+	if c.Clock == nil {
+		return errors.InvalidArgument("clock is required")
+	}
+	if c.IDGenerator == nil {
+		return errors.InvalidArgument("ID generator is required")
+	}
+	return nil
+}
+
 type redisRepository struct {
 	client redisclient.Client
+	clock  clock.Clock
+	idGen  idgen.Generator
 }
 
 // NewRedisRepository creates a new Redis-backed character draft repository
-func NewRedisRepository(client redisclient.Client) Repository {
-	return &redisRepository{
-		client: client,
+func NewRedisRepository(cfg *Config) (Repository, error) {
+	if err := cfg.Validate(); err != nil {
+		return nil, err
 	}
+	
+	return &redisRepository{
+		client: cfg.Client,
+		clock:  cfg.Clock,
+		idGen:  cfg.IDGenerator,
+	}, nil
 }
 
 func (r *redisRepository) Create(ctx context.Context, input CreateInput) (*CreateOutput, error) {
 	if input.Draft == nil {
 		return nil, errors.InvalidArgument(errDraftNil)
 	}
-	if input.Draft.ID == "" {
-		return nil, errors.InvalidArgument(errDraftIDEmpty)
-	}
 	if input.Draft.PlayerID == "" {
 		return nil, errors.InvalidArgument(errPlayerIDEmpty)
 	}
 
-	// Check expiration before any Redis operations
-	if input.Draft.ExpiresAt > 0 {
-		expiresAt := time.Unix(input.Draft.ExpiresAt, 0)
+	// Make a copy to avoid modifying input
+	draft := *input.Draft
+	
+	// Repository generates ID if not provided
+	if draft.ID == "" {
+		draft.ID = r.idGen.Generate()
+	}
+	
+	// Repository sets timestamps
+	now := r.clock.Now()
+	draft.CreatedAt = now.Unix()
+	draft.UpdatedAt = now.Unix()
+	
+	// Set expiration if not provided
+	if draft.ExpiresAt == 0 {
+		draft.ExpiresAt = now.Add(defaultTTL).Unix()
+	}
+	
+	// Validate expiration
+	if draft.ExpiresAt > 0 {
+		expiresAt := time.Unix(draft.ExpiresAt, 0)
 		ttl := time.Until(expiresAt)
 		if ttl <= 0 {
 			return nil, errors.InvalidArgument(errDraftExpired)
 		}
 	}
 
+	isNew := true
 	// Check for existing draft for this player
-	playerKey := playerMappingPrefix + input.Draft.PlayerID
+	playerKey := playerMappingPrefix + draft.PlayerID
 	existingDraftID, err := r.client.Get(ctx, playerKey).Result()
-	if err != nil && err != redis.Nil {
-		return nil, errors.Wrapf(err, "failed to check existing draft")
+	if err != nil {
+		if err != redis.Nil {
+			return nil, errors.Wrapf(err, "failed to check existing draft")
+		}
+		// err == redis.Nil means no existing draft, so isNew stays true
+	} else {
+		// Found existing draft, so this is a replacement
+		isNew = false
 	}
 
 	// Start transaction
 	pipe := r.client.TxPipeline()
 
 	// Delete existing draft if any
-	if existingDraftID != "" && err != redis.Nil {
+	if !isNew {
 		oldDraftKey := draftKeyPrefix + existingDraftID
 		pipe.Del(ctx, oldDraftKey)
 	}
 
 	// Marshal new draft
-	data, err := json.Marshal(input.Draft)
+	data, err := json.Marshal(&draft)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to marshal draft")
 	}
 
 	// Calculate TTL
 	ttl := defaultTTL
-	if input.Draft.ExpiresAt > 0 {
-		expiresAt := time.Unix(input.Draft.ExpiresAt, 0)
+	if draft.ExpiresAt > 0 {
+		expiresAt := time.Unix(draft.ExpiresAt, 0)
 		ttl = time.Until(expiresAt)
 		// Already validated above, so ttl should be positive
 	}
 
 	// Set draft data
-	draftKey := draftKeyPrefix + input.Draft.ID
+	draftKey := draftKeyPrefix + draft.ID
 	pipe.Set(ctx, draftKey, data, ttl)
 
 	// Set player mapping (no TTL on this key)
-	pipe.Set(ctx, playerKey, input.Draft.ID, 0)
+	pipe.Set(ctx, playerKey, draft.ID, 0)
 
 	// Execute transaction
 	_, err = pipe.Exec(ctx)
@@ -98,7 +151,7 @@ func (r *redisRepository) Create(ctx context.Context, input CreateInput) (*Creat
 		return nil, errors.Wrapf(err, "failed to create draft")
 	}
 
-	return &CreateOutput{}, nil
+	return &CreateOutput{Draft: &draft}, nil
 }
 
 func (r *redisRepository) Get(ctx context.Context, input GetInput) (*GetOutput, error) {
@@ -172,16 +225,22 @@ func (r *redisRepository) Update(ctx context.Context, input UpdateInput) (*Updat
 		return nil, errors.NotFoundf("draft with ID %s not found", input.Draft.ID)
 	}
 
+	// Make a copy to avoid modifying input
+	draft := *input.Draft
+	
+	// Repository updates timestamp
+	draft.UpdatedAt = r.clock.Now().Unix()
+
 	// Marshal draft
-	data, err := json.Marshal(input.Draft)
+	data, err := json.Marshal(&draft)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to marshal draft")
 	}
 
 	// Calculate TTL
 	ttl := defaultTTL
-	if input.Draft.ExpiresAt > 0 {
-		expiresAt := time.Unix(input.Draft.ExpiresAt, 0)
+	if draft.ExpiresAt > 0 {
+		expiresAt := time.Unix(draft.ExpiresAt, 0)
 		ttl = time.Until(expiresAt)
 		if ttl <= 0 {
 			return nil, errors.InvalidArgument(errDraftExpired)
@@ -193,7 +252,7 @@ func (r *redisRepository) Update(ctx context.Context, input UpdateInput) (*Updat
 		return nil, errors.Wrapf(err, "failed to update draft")
 	}
 
-	return &UpdateOutput{}, nil
+	return &UpdateOutput{Draft: &draft}, nil
 }
 
 func (r *redisRepository) Delete(ctx context.Context, input DeleteInput) (*DeleteOutput, error) {
