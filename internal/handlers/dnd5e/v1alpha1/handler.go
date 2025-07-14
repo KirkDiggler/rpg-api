@@ -1,3 +1,4 @@
+// Package v1alpha1 handles the grpc service interface
 package v1alpha1
 
 import (
@@ -106,9 +107,9 @@ func (h *Handler) ListDrafts(ctx context.Context, req *dnd5ev1alpha1.ListDraftsR
 	}
 
 	// Convert drafts
-	var protoDrafts []*dnd5ev1alpha1.CharacterDraft
-	for _, draft := range output.Drafts {
-		protoDrafts = append(protoDrafts, convertEntityDraftToProto(draft))
+	protoDrafts := make([]*dnd5ev1alpha1.CharacterDraft, len(output.Drafts))
+	for i, draft := range output.Drafts {
+		protoDrafts[i] = convertEntityDraftToProto(draft)
 	}
 
 	return &dnd5ev1alpha1.ListDraftsResponse{
@@ -383,9 +384,9 @@ func (h *Handler) ListCharacters(ctx context.Context, req *dnd5ev1alpha1.ListCha
 	}
 
 	// Convert characters to proto
-	var protoCharacters []*dnd5ev1alpha1.Character
-	for _, char := range output.Characters {
-		protoCharacters = append(protoCharacters, convertCharacterToProto(char))
+	protoCharacters := make([]*dnd5ev1alpha1.Character, len(output.Characters))
+	for i, char := range output.Characters {
+		protoCharacters[i] = convertCharacterToProto(char)
 	}
 
 	return &dnd5ev1alpha1.ListCharactersResponse{
@@ -1100,25 +1101,25 @@ func mapConstantToProtoCreationStep(constant string) dnd5ev1alpha1.CreationStep 
 // Helper converters
 
 func convertWarningsToProto(warnings []character.ValidationWarning) []*dnd5ev1alpha1.ValidationWarning {
-	var protoWarnings []*dnd5ev1alpha1.ValidationWarning
-	for _, w := range warnings {
-		protoWarnings = append(protoWarnings, &dnd5ev1alpha1.ValidationWarning{
+	protoWarnings := make([]*dnd5ev1alpha1.ValidationWarning, len(warnings))
+	for i, w := range warnings {
+		protoWarnings[i] = &dnd5ev1alpha1.ValidationWarning{
 			Field:   w.Field,
 			Message: w.Message,
 			Type:    w.Type,
-		})
+		}
 	}
 	return protoWarnings
 }
 
 func convertErrorsToProto(errors []character.ValidationError) []*dnd5ev1alpha1.ValidationError {
-	var protoErrors []*dnd5ev1alpha1.ValidationError
-	for _, e := range errors {
-		protoErrors = append(protoErrors, &dnd5ev1alpha1.ValidationError{
+	protoErrors := make([]*dnd5ev1alpha1.ValidationError, len(errors))
+	for i, e := range errors {
+		protoErrors[i] = &dnd5ev1alpha1.ValidationError{
 			Field:   e.Field,
 			Message: e.Message,
 			Code:    e.Type,
-		})
+		}
 	}
 	return protoErrors
 }

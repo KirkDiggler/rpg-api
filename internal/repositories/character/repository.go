@@ -1,3 +1,4 @@
+// Package character provides the interface for character persistence
 package character
 
 //go:generate mockgen -destination=mock/mock_repository.go -package=charactermock github.com/KirkDiggler/rpg-api/internal/repositories/character Repository

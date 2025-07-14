@@ -222,7 +222,7 @@ func (s *OrchestratorTestSuite) TestFinalizeDraft() {
 				// Create character
 				s.mockCharRepo.EXPECT().
 					Create(s.ctx, gomock.Any()).
-					DoAndReturn(func(ctx context.Context, char *dnd5e.Character) error {
+					DoAndReturn(func(_ context.Context, char *dnd5e.Character) error {
 						s.Equal("Aragorn", char.Name)
 						s.Equal(int32(1), char.Level)
 						s.Equal(int32(12), char.CurrentHP)

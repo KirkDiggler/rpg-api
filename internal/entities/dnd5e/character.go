@@ -1,3 +1,4 @@
+// Package dnd5e implements the D&D 5e entities
 package dnd5e
 
 // Character represents a finalized D&D 5e character
@@ -87,10 +88,25 @@ func (p *CreationProgress) SetStep(step uint8, completed bool) {
 }
 
 // Convenience methods for backward compatibility
-func (p CreationProgress) HasName() bool          { return p.HasStep(ProgressStepName) }
-func (p CreationProgress) HasRace() bool          { return p.HasStep(ProgressStepRace) }
-func (p CreationProgress) HasClass() bool         { return p.HasStep(ProgressStepClass) }
-func (p CreationProgress) HasBackground() bool    { return p.HasStep(ProgressStepBackground) }
+
+// HasName checks if the name step is completed
+func (p CreationProgress) HasName() bool { return p.HasStep(ProgressStepName) }
+
+// HasRace checks if the race step is completed
+func (p CreationProgress) HasRace() bool { return p.HasStep(ProgressStepRace) }
+
+// HasClass checks if the class step is completed
+// HasClass checks if the class step is completed
+func (p CreationProgress) HasClass() bool { return p.HasStep(ProgressStepClass) }
+
+// HasBackground checks if the background step is completed
+func (p CreationProgress) HasBackground() bool { return p.HasStep(ProgressStepBackground) }
+
+// HasAbilityScores checks if the ability scores step is completed
 func (p CreationProgress) HasAbilityScores() bool { return p.HasStep(ProgressStepAbilityScores) }
-func (p CreationProgress) HasSkills() bool        { return p.HasStep(ProgressStepSkills) }
-func (p CreationProgress) HasLanguages() bool     { return p.HasStep(ProgressStepLanguages) }
+
+// HasSkills checks if the skills step is completed
+func (p CreationProgress) HasSkills() bool { return p.HasStep(ProgressStepSkills) }
+
+// HasLanguages checks if the languages step is completed
+func (p CreationProgress) HasLanguages() bool { return p.HasStep(ProgressStepLanguages) }

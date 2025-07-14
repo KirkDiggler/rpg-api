@@ -1,3 +1,4 @@
+// Package engine wraps the rpg toolkit
 package engine
 
 //go:generate mockgen -destination=mock/mock_engine.go -package=enginemock github.com/KirkDiggler/rpg-api/internal/engine Engine

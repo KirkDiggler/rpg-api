@@ -1,3 +1,4 @@
+// Package characterdraft defines the interface for character draft persistence
 package characterdraft
 
 //go:generate mockgen -destination=mock/mock_repository.go -package=characterdraftmock github.com/KirkDiggler/rpg-api/internal/repositories/character_draft Repository

@@ -37,7 +37,7 @@ func (s *OrchestratorTestSuite) TestUpdateName() {
 				// Update draft
 				s.mockDraftRepo.EXPECT().
 					Update(s.ctx, gomock.Any()).
-					DoAndReturn(func(ctx context.Context, draft *dnd5e.CharacterDraft) error {
+					DoAndReturn(func(_ context.Context, draft *dnd5e.CharacterDraft) error {
 						s.Equal("Gandalf the White", draft.Name)
 						s.True(draft.Progress.HasName())
 						return nil
@@ -268,7 +268,7 @@ func (s *OrchestratorTestSuite) TestUpdateClass() {
 
 				s.mockDraftRepo.EXPECT().
 					Update(s.ctx, gomock.Any()).
-					DoAndReturn(func(ctx context.Context, draft *dnd5e.CharacterDraft) error {
+					DoAndReturn(func(_ context.Context, draft *dnd5e.CharacterDraft) error {
 						// Verify skills were cleared
 						s.Empty(draft.StartingSkillIDs)
 						s.False(draft.Progress.HasSkills())

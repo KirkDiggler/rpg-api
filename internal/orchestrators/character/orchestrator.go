@@ -1,8 +1,10 @@
+// Package character implements the character orchestrator
 package character
 
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/KirkDiggler/rpg-api/internal/clients/external"
@@ -766,8 +768,7 @@ func (o *Orchestrator) FinalizeDraft(ctx context.Context, input *character.Final
 	// Delete the draft
 	err = o.characterDraftRepo.Delete(ctx, draft.ID)
 	if err != nil {
-		// Log error but don't fail - character was created successfully
-		// TODO: Add logging
+		slog.Error("failed to delete draft", "draft_id", draft.ID, "error", err)
 	}
 
 	return &character.FinalizeDraftOutput{
@@ -869,21 +870,22 @@ func (o *Orchestrator) calculateProgress(draft *dnd5e.CharacterDraft) dnd5e.Crea
 	progress.CompletionPercentage = int32((completedSteps * 100) / totalSteps) // #nosec G115
 
 	// Determine next step by checking each flag in order
-	if !progress.HasStep(dnd5e.ProgressStepName) {
+	switch {
+	case !progress.HasStep(dnd5e.ProgressStepName):
 		progress.CurrentStep = dnd5e.CreationStepName
-	} else if !progress.HasStep(dnd5e.ProgressStepRace) {
+	case !progress.HasStep(dnd5e.ProgressStepRace):
 		progress.CurrentStep = dnd5e.CreationStepRace
-	} else if !progress.HasStep(dnd5e.ProgressStepClass) {
+	case !progress.HasStep(dnd5e.ProgressStepClass):
 		progress.CurrentStep = dnd5e.CreationStepClass
-	} else if !progress.HasStep(dnd5e.ProgressStepBackground) {
+	case !progress.HasStep(dnd5e.ProgressStepBackground):
 		progress.CurrentStep = dnd5e.CreationStepBackground
-	} else if !progress.HasStep(dnd5e.ProgressStepAbilityScores) {
+	case !progress.HasStep(dnd5e.ProgressStepAbilityScores):
 		progress.CurrentStep = dnd5e.CreationStepAbilityScores
-	} else if !progress.HasStep(dnd5e.ProgressStepSkills) {
+	case !progress.HasStep(dnd5e.ProgressStepSkills):
 		progress.CurrentStep = dnd5e.CreationStepSkills
-	} else if !progress.HasStep(dnd5e.ProgressStepLanguages) {
+	case !progress.HasStep(dnd5e.ProgressStepLanguages):
 		progress.CurrentStep = dnd5e.CreationStepLanguages
-	} else {
+	default:
 		progress.CurrentStep = dnd5e.CreationStepReview
 	}
 
