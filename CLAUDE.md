@@ -196,6 +196,7 @@ git checkout -b docs/api-examples
 make pre-commit
 ```
 
+
 ### Error Handling
 
 ```go
