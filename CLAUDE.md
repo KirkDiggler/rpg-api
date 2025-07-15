@@ -67,6 +67,34 @@ This approach ensures:
 
 ## Code Patterns
 
+### Avoid Magic Strings
+
+**Extract all string literals to constants.** This prevents typos and makes refactoring easier:
+
+```go
+// ❌ BAD: Magic strings scattered throughout code
+if source == "class" {
+    // ...
+}
+
+// ✅ GOOD: Named constants
+const (
+    skillSourceClass      = "class"
+    skillSourceBackground = "background"
+)
+
+if source == skillSourceClass {
+    // ...
+}
+```
+
+This applies to:
+- Entity types and sources
+- Error codes and messages
+- Configuration keys
+- Status values
+- Any repeated string literal
+
 ### Always Use Input/Output Types
 
 **This is our #1 principle.** Every function at every layer:

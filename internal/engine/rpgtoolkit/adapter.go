@@ -3,6 +3,7 @@ package rpgtoolkit
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/KirkDiggler/rpg-api/internal/clients/external"
 	"github.com/KirkDiggler/rpg-api/internal/engine"
@@ -19,6 +20,12 @@ type Adapter struct {
 	diceRoller     dice.Roller
 	externalClient external.Client
 }
+
+// Skill source constants
+const (
+	skillSourceClass      = "class"
+	skillSourceBackground = "background"
+)
 
 // AdapterConfig contains configuration for creating a new Adapter
 type AdapterConfig struct {
@@ -320,33 +327,263 @@ func (a *Adapter) ValidateAbilityScores(
 
 // ValidateSkillChoices validates skill selections
 func (a *Adapter) ValidateSkillChoices(
-	_ context.Context,
+	ctx context.Context,
 	input *engine.ValidateSkillChoicesInput,
 ) (*engine.ValidateSkillChoicesOutput, error) {
-	// TODO(#37): Implement skill validation using input.SelectedSkillIDs
-	// Need proficiency system integration
-	_ = input // Will be used in future implementation
+	if input == nil {
+		return nil, errors.InvalidArgument("input is required")
+	}
+
+	var validationErrors []engine.ValidationError
+
+	// Validate class ID is provided
+	if input.ClassID == "" {
+		validationErrors = append(validationErrors, engine.ValidationError{
+			Field:   "class_id",
+			Message: "Class ID is required for skill validation",
+			Code:    "REQUIRED",
+		})
+	}
+
+	// If we have validation errors already, return early
+	if len(validationErrors) > 0 {
+		return &engine.ValidateSkillChoicesOutput{
+			IsValid: false,
+			Errors:  validationErrors,
+		}, nil
+	}
+
+	// Fetch class data to get available skills and skill count
+	classData, err := a.externalClient.GetClassData(ctx, input.ClassID)
+	if err != nil {
+		return &engine.ValidateSkillChoicesOutput{
+			IsValid: false,
+			Errors: []engine.ValidationError{
+				{
+					Field:   "class_id",
+					Message: "Invalid class ID or external data unavailable",
+					Code:    "INVALID_CLASS",
+				},
+			},
+		}, nil
+	}
+
+	// Track all available skills and their sources
+	availableSkills := make(map[string]string) // skill -> source
+	requiredSkillCount := classData.SkillsCount
+
+	// Add class skills to available skills
+	for _, skill := range classData.AvailableSkills {
+		availableSkills[skill] = skillSourceClass
+	}
+
+	// If background is provided, fetch its data
+	var backgroundSkills []string
+	if input.BackgroundID != "" {
+		backgroundData, err := a.externalClient.GetBackgroundData(ctx, input.BackgroundID)
+		if err != nil {
+			// Background fetch error is a warning, not a hard failure
+			validationErrors = append(validationErrors, engine.ValidationError{
+				Field:   "background_id",
+				Message: "Invalid background ID or external data unavailable",
+				Code:    "INVALID_BACKGROUND",
+			})
+		} else {
+			// Background skills are automatic proficiencies, not choices
+			backgroundSkills = backgroundData.SkillProficiencies
+		}
+	}
+
+	// Validate selected skills
+	selectedFromClass := int32(0)
+	duplicateCheck := make(map[string]bool)
+
+	for _, skillID := range input.SelectedSkillIDs {
+		// Check for duplicates
+		if duplicateCheck[skillID] {
+			validationErrors = append(validationErrors, engine.ValidationError{
+				Field:   "selected_skills",
+				Message: "Duplicate skill selection: " + skillID,
+				Code:    "DUPLICATE_SKILL",
+			})
+			continue
+		}
+		duplicateCheck[skillID] = true
+
+		// Check if skill is available from class
+		if source, ok := availableSkills[skillID]; ok && source == skillSourceClass {
+			selectedFromClass++
+		} else {
+			// Check if it's a background skill (which would be automatic, not a choice)
+			isBackgroundSkill := false
+			for _, bgSkill := range backgroundSkills {
+				if bgSkill == skillID {
+					isBackgroundSkill = true
+					break
+				}
+			}
+
+			if isBackgroundSkill {
+				validationErrors = append(validationErrors, engine.ValidationError{
+					Field:   "selected_skills",
+					Message: "Skill " + skillID + " is automatically granted by background, not a choice",
+					Code:    "BACKGROUND_SKILL_NOT_CHOICE",
+				})
+			} else {
+				validationErrors = append(validationErrors, engine.ValidationError{
+					Field:   "selected_skills",
+					Message: "Skill " + skillID + " is not available for this class",
+					Code:    "INVALID_SKILL_CHOICE",
+				})
+			}
+		}
+	}
+
+	// Validate skill count
+	if selectedFromClass != requiredSkillCount {
+		validationErrors = append(validationErrors, engine.ValidationError{
+			Field: "selected_skills",
+			Message: fmt.Sprintf("Must select exactly %d skills from class list, selected %d",
+				requiredSkillCount, selectedFromClass),
+			Code: "INCORRECT_SKILL_COUNT",
+		})
+	}
+
+	// Generate warnings for optimization hints
+	var warnings []engine.ValidationWarning
+	if len(backgroundSkills) > 0 && len(validationErrors) == 0 {
+		// Check if any selected skills overlap with background skills
+		for _, selected := range input.SelectedSkillIDs {
+			for _, bgSkill := range backgroundSkills {
+				if selected == bgSkill {
+					warnings = append(warnings, engine.ValidationWarning{
+						Field: "selected_skills",
+						Message: fmt.Sprintf("Skill %s is also provided by background - "+
+							"consider choosing a different skill to maximize proficiencies", selected),
+						Code: "SKILL_OVERLAP",
+					})
+				}
+			}
+		}
+	}
 
 	return &engine.ValidateSkillChoicesOutput{
-		IsValid:  true, // TODO: Validate skill choices
-		Errors:   []engine.ValidationError{},
-		Warnings: []engine.ValidationWarning{},
+		IsValid:  len(validationErrors) == 0,
+		Errors:   validationErrors,
+		Warnings: warnings,
 	}, nil
 }
 
 // GetAvailableSkills returns available skill choices for class and background
 func (a *Adapter) GetAvailableSkills(
-	_ context.Context,
+	ctx context.Context,
 	input *engine.GetAvailableSkillsInput,
 ) (*engine.GetAvailableSkillsOutput, error) {
-	// TODO(#37): Implement skill availability using input.ClassID and input.BackgroundID
-	// Need D&D 5e skill data and class/background integration
-	_ = input // Will be used in future implementation
+	if input == nil {
+		return nil, errors.InvalidArgument("input is required")
+	}
 
-	return &engine.GetAvailableSkillsOutput{
-		ClassSkills:      []engine.SkillChoice{}, // TODO: Return class skills
-		BackgroundSkills: []engine.SkillChoice{}, // TODO: Return background skills
-	}, nil
+	output := &engine.GetAvailableSkillsOutput{
+		ClassSkills:      []engine.SkillChoice{},
+		BackgroundSkills: []engine.SkillChoice{},
+	}
+
+	// Fetch class skills if class ID is provided
+	if input.ClassID != "" {
+		classData, err := a.externalClient.GetClassData(ctx, input.ClassID)
+		if err != nil {
+			// Return empty skills rather than error - let validation handle invalid IDs
+			return output, nil
+		}
+
+		// Convert class available skills to SkillChoice structs
+		for _, skillID := range classData.AvailableSkills {
+			// For now, we'll use the skill ID as the name until we have a proper skill data source
+			// In a real implementation, we'd fetch skill details from a skill data source
+			skillChoice := engine.SkillChoice{
+				SkillID:     skillID,
+				SkillName:   formatSkillName(skillID),
+				Description: fmt.Sprintf("Proficiency in %s", formatSkillName(skillID)),
+				Ability:     getSkillAbility(skillID),
+			}
+			output.ClassSkills = append(output.ClassSkills, skillChoice)
+		}
+	}
+
+	// Fetch background skills if background ID is provided
+	if input.BackgroundID != "" {
+		backgroundData, err := a.externalClient.GetBackgroundData(ctx, input.BackgroundID)
+		if err != nil {
+			// Return what we have rather than error
+			return output, nil
+		}
+
+		// Convert background skill proficiencies to SkillChoice structs
+		for _, skillID := range backgroundData.SkillProficiencies {
+			skillChoice := engine.SkillChoice{
+				SkillID:     skillID,
+				SkillName:   formatSkillName(skillID),
+				Description: fmt.Sprintf("Proficiency in %s (from background)", formatSkillName(skillID)),
+				Ability:     getSkillAbility(skillID),
+			}
+			output.BackgroundSkills = append(output.BackgroundSkills, skillChoice)
+		}
+	}
+
+	return output, nil
+}
+
+// formatSkillName converts a skill ID to a human-readable name
+func formatSkillName(skillID string) string {
+	// This is a simple implementation - in production this would come from skill data
+	// Convert snake_case to Title Case
+	formatted := ""
+	capitalize := true
+	for _, r := range skillID {
+		switch {
+		case r == '_' || r == '-':
+			formatted += " "
+			capitalize = true
+		case capitalize && r >= 'a' && r <= 'z':
+			formatted += string(r - ('a' - 'A'))
+			capitalize = false
+		default:
+			formatted += string(r)
+			capitalize = r == ' '
+		}
+	}
+	return formatted
+}
+
+// getSkillAbility returns the associated ability for a skill
+func getSkillAbility(skillID string) string {
+	// D&D 5e skill to ability mapping
+	// In production, this would come from skill data
+	skillAbilityMap := map[string]string{
+		"athletics":       "strength",
+		"acrobatics":      "dexterity",
+		"sleight_of_hand": "dexterity",
+		"stealth":         "dexterity",
+		"arcana":          "intelligence",
+		"history":         "intelligence",
+		"investigation":   "intelligence",
+		"nature":          "intelligence",
+		"religion":        "intelligence",
+		"animal_handling": "wisdom",
+		"insight":         "wisdom",
+		"medicine":        "wisdom",
+		"perception":      "wisdom",
+		"survival":        "wisdom",
+		"deception":       "charisma",
+		"intimidation":    "charisma",
+		"performance":     "charisma",
+		"persuasion":      "charisma",
+	}
+
+	if ability, ok := skillAbilityMap[skillID]; ok {
+		return ability
+	}
+	return "unknown"
 }
 
 // ValidateBackgroundChoice validates a background selection
