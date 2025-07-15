@@ -93,6 +93,8 @@ type testExternalClient struct {
 	classError      error
 	backgroundData  *external.BackgroundData
 	backgroundError error
+	raceData        *external.RaceData
+	raceError       error
 }
 
 // Minimal implementation to satisfy events.EventBus interface
@@ -134,7 +136,10 @@ func (s *stubExternalClient) ListAvailableBackgrounds(_ context.Context) ([]*ext
 
 // testExternalClient implementations
 func (c *testExternalClient) GetRaceData(_ context.Context, _ string) (*external.RaceData, error) {
-	return nil, errors.NotFound("race not found")
+	if c.raceError != nil {
+		return nil, c.raceError
+	}
+	return c.raceData, nil
 }
 
 func (c *testExternalClient) GetClassData(_ context.Context, _ string) (*external.ClassData, error) {
@@ -173,6 +178,17 @@ func createTestAdapter(t *testing.T) *Adapter {
 		EventBus:       &stubEventBus{},
 		DiceRoller:     &stubDiceRoller{},
 		ExternalClient: &stubExternalClient{},
+	})
+	assert.NoError(t, err)
+	return adapter
+}
+
+// createTestAdapterWithClient creates an adapter with a specific external client for testing
+func createTestAdapterWithClient(t *testing.T, client external.Client) *Adapter {
+	adapter, err := NewAdapter(&AdapterConfig{
+		EventBus:       &stubEventBus{},
+		DiceRoller:     &stubDiceRoller{},
+		ExternalClient: client,
 	})
 	assert.NoError(t, err)
 	return adapter
@@ -1201,6 +1217,369 @@ func TestGetSkillAbility(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.skillID, func(t *testing.T) {
 			result := getSkillAbility(tc.skillID)
+			assert.Equal(t, tc.expected, result)
+		})
+	}
+}
+
+func TestCalculateCharacterStats(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("nil input", func(t *testing.T) {
+		adapter := createTestAdapter(t)
+		result, err := adapter.CalculateCharacterStats(ctx, nil)
+		assert.Error(t, err)
+		assert.Nil(t, result)
+		assert.Contains(t, err.Error(), "draft is required")
+	})
+
+	t.Run("nil draft", func(t *testing.T) {
+		adapter := createTestAdapter(t)
+		result, err := adapter.CalculateCharacterStats(ctx, &engine.CalculateCharacterStatsInput{})
+		assert.Error(t, err)
+		assert.Nil(t, result)
+		assert.Contains(t, err.Error(), "draft is required")
+	})
+
+	t.Run("missing class ID", func(t *testing.T) {
+		adapter := createTestAdapter(t)
+		draft := &dnd5e.CharacterDraft{
+			RaceID: "human",
+			AbilityScores: &dnd5e.AbilityScores{
+				Strength: 15, Dexterity: 14, Constitution: 13,
+				Intelligence: 12, Wisdom: 10, Charisma: 8,
+			},
+		}
+		result, err := adapter.CalculateCharacterStats(ctx, &engine.CalculateCharacterStatsInput{Draft: draft})
+		assert.Error(t, err)
+		assert.Nil(t, result)
+		assert.Contains(t, err.Error(), "class ID is required")
+	})
+
+	t.Run("missing race ID", func(t *testing.T) {
+		adapter := createTestAdapter(t)
+		draft := &dnd5e.CharacterDraft{
+			ClassID: "fighter",
+			AbilityScores: &dnd5e.AbilityScores{
+				Strength: 15, Dexterity: 14, Constitution: 13,
+				Intelligence: 12, Wisdom: 10, Charisma: 8,
+			},
+		}
+		result, err := adapter.CalculateCharacterStats(ctx, &engine.CalculateCharacterStatsInput{Draft: draft})
+		assert.Error(t, err)
+		assert.Nil(t, result)
+		assert.Contains(t, err.Error(), "race ID is required")
+	})
+
+	t.Run("missing ability scores", func(t *testing.T) {
+		adapter := createTestAdapter(t)
+		draft := &dnd5e.CharacterDraft{
+			ClassID: "fighter",
+			RaceID:  "human",
+		}
+		result, err := adapter.CalculateCharacterStats(ctx, &engine.CalculateCharacterStatsInput{Draft: draft})
+		assert.Error(t, err)
+		assert.Nil(t, result)
+		assert.Contains(t, err.Error(), "ability scores are required")
+	})
+
+	t.Run("external client error for class", func(t *testing.T) {
+		mockClient := &testExternalClient{
+			classError: errors.Internal("api error"),
+		}
+		adapter := createTestAdapterWithClient(t, mockClient)
+		draft := &dnd5e.CharacterDraft{
+			ClassID: "fighter",
+			RaceID:  "human",
+			AbilityScores: &dnd5e.AbilityScores{
+				Strength: 15, Dexterity: 14, Constitution: 13,
+				Intelligence: 12, Wisdom: 10, Charisma: 8,
+			},
+		}
+		result, err := adapter.CalculateCharacterStats(ctx, &engine.CalculateCharacterStatsInput{Draft: draft})
+		assert.Error(t, err)
+		assert.Nil(t, result)
+		assert.Contains(t, err.Error(), "failed to get class data")
+	})
+
+	t.Run("invalid class ID", func(t *testing.T) {
+		mockClient := &testExternalClient{
+			classData: nil, // Returning nil indicates invalid ID
+		}
+		adapter := createTestAdapterWithClient(t, mockClient)
+		draft := &dnd5e.CharacterDraft{
+			ClassID: "invalid",
+			RaceID:  "human",
+			AbilityScores: &dnd5e.AbilityScores{
+				Strength: 15, Dexterity: 14, Constitution: 13,
+				Intelligence: 12, Wisdom: 10, Charisma: 8,
+			},
+		}
+		result, err := adapter.CalculateCharacterStats(ctx, &engine.CalculateCharacterStatsInput{Draft: draft})
+		assert.Error(t, err)
+		assert.Nil(t, result)
+		assert.Contains(t, err.Error(), "invalid class ID")
+	})
+
+	t.Run("external client error for race", func(t *testing.T) {
+		mockClient := &testExternalClient{
+			classData: &external.ClassData{
+				ID: "fighter", Name: "Fighter", HitDice: "1d10",
+				SavingThrows: []string{"strength", "constitution"},
+			},
+			raceError: errors.Internal("api error"),
+		}
+		adapter := createTestAdapterWithClient(t, mockClient)
+		draft := &dnd5e.CharacterDraft{
+			ClassID: "fighter",
+			RaceID:  "human",
+			AbilityScores: &dnd5e.AbilityScores{
+				Strength: 15, Dexterity: 14, Constitution: 13,
+				Intelligence: 12, Wisdom: 10, Charisma: 8,
+			},
+		}
+		result, err := adapter.CalculateCharacterStats(ctx, &engine.CalculateCharacterStatsInput{Draft: draft})
+		assert.Error(t, err)
+		assert.Nil(t, result)
+		assert.Contains(t, err.Error(), "failed to get race data")
+	})
+
+	t.Run("invalid race ID", func(t *testing.T) {
+		mockClient := &testExternalClient{
+			classData: &external.ClassData{
+				ID: "fighter", Name: "Fighter", HitDice: "1d10",
+				SavingThrows: []string{"strength", "constitution"},
+			},
+			raceData: nil, // Returning nil indicates invalid ID
+		}
+		adapter := createTestAdapterWithClient(t, mockClient)
+		draft := &dnd5e.CharacterDraft{
+			ClassID: "fighter",
+			RaceID:  "invalid",
+			AbilityScores: &dnd5e.AbilityScores{
+				Strength: 15, Dexterity: 14, Constitution: 13,
+				Intelligence: 12, Wisdom: 10, Charisma: 8,
+			},
+		}
+		result, err := adapter.CalculateCharacterStats(ctx, &engine.CalculateCharacterStatsInput{Draft: draft})
+		assert.Error(t, err)
+		assert.Nil(t, result)
+		assert.Contains(t, err.Error(), "invalid race ID")
+	})
+
+	t.Run("successful fighter calculation", func(t *testing.T) {
+		mockClient := &testExternalClient{
+			classData: &external.ClassData{
+				ID: "fighter", Name: "Fighter", HitDice: "1d10",
+				SavingThrows: []string{"strength", "constitution"},
+			},
+			raceData: &external.RaceData{
+				ID: "human", Name: "Human", Speed: 30,
+			},
+		}
+		adapter := createTestAdapterWithClient(t, mockClient)
+		draft := &dnd5e.CharacterDraft{
+			ClassID: "fighter",
+			RaceID:  "human",
+			AbilityScores: &dnd5e.AbilityScores{
+				Strength: 16, Dexterity: 14, Constitution: 15,
+				Intelligence: 10, Wisdom: 12, Charisma: 8,
+			},
+			StartingSkillIDs: []string{"athletics", "intimidation"},
+		}
+
+		result, err := adapter.CalculateCharacterStats(ctx, &engine.CalculateCharacterStatsInput{Draft: draft})
+		assert.NoError(t, err)
+		assert.NotNil(t, result)
+
+		// Check basic stats
+		assert.Equal(t, int32(12), result.MaxHP)           // 10 (d10) + 2 (CON mod)
+		assert.Equal(t, int32(12), result.ArmorClass)      // 10 + 2 (DEX mod)
+		assert.Equal(t, int32(2), result.Initiative)       // DEX mod
+		assert.Equal(t, int32(30), result.Speed)           // Human speed
+		assert.Equal(t, int32(2), result.ProficiencyBonus) // Level 1
+
+		// Check saving throws
+		assert.Equal(t, int32(5), result.SavingThrows["strength"])     // 3 (STR mod) + 2 (prof)
+		assert.Equal(t, int32(2), result.SavingThrows["dexterity"])    // 2 (DEX mod) + 0
+		assert.Equal(t, int32(4), result.SavingThrows["constitution"]) // 2 (CON mod) + 2 (prof)
+		assert.Equal(t, int32(0), result.SavingThrows["intelligence"]) // 0 (INT mod) + 0
+		assert.Equal(t, int32(1), result.SavingThrows["wisdom"])       // 1 (WIS mod) + 0
+		assert.Equal(t, int32(-1), result.SavingThrows["charisma"])    // -1 (CHA mod) + 0
+
+		// Check skills (just a few examples)
+		assert.Equal(t, int32(5), result.Skills["athletics"])    // 3 (STR) + 2 (prof)
+		assert.Equal(t, int32(2), result.Skills["acrobatics"])   // 2 (DEX) + 0
+		assert.Equal(t, int32(1), result.Skills["intimidation"]) // -1 (CHA) + 2 (prof)
+	})
+
+	t.Run("successful wizard calculation with negative modifiers", func(t *testing.T) {
+		mockClient := &testExternalClient{
+			classData: &external.ClassData{
+				ID: "wizard", Name: "Wizard", HitDice: "1d6",
+				SavingThrows: []string{"intelligence", "wisdom"},
+			},
+			raceData: &external.RaceData{
+				ID: "elf", Name: "Elf", Speed: 30,
+			},
+		}
+		adapter := createTestAdapterWithClient(t, mockClient)
+		draft := &dnd5e.CharacterDraft{
+			ClassID: "wizard",
+			RaceID:  "elf",
+			AbilityScores: &dnd5e.AbilityScores{
+				Strength: 8, Dexterity: 14, Constitution: 12,
+				Intelligence: 16, Wisdom: 13, Charisma: 10,
+			},
+			StartingSkillIDs: []string{"arcana", "investigation"},
+		}
+
+		result, err := adapter.CalculateCharacterStats(ctx, &engine.CalculateCharacterStatsInput{Draft: draft})
+		assert.NoError(t, err)
+		assert.NotNil(t, result)
+
+		// Check basic stats
+		assert.Equal(t, int32(7), result.MaxHP)            // 6 (d6) + 1 (CON mod)
+		assert.Equal(t, int32(12), result.ArmorClass)      // 10 + 2 (DEX mod)
+		assert.Equal(t, int32(2), result.Initiative)       // DEX mod
+		assert.Equal(t, int32(30), result.Speed)           // Elf speed
+		assert.Equal(t, int32(2), result.ProficiencyBonus) // Level 1
+
+		// Check saving throws
+		assert.Equal(t, int32(-1), result.SavingThrows["strength"])    // -1 (STR mod) + 0
+		assert.Equal(t, int32(2), result.SavingThrows["dexterity"])    // 2 (DEX mod) + 0
+		assert.Equal(t, int32(1), result.SavingThrows["constitution"]) // 1 (CON mod) + 0
+		assert.Equal(t, int32(5), result.SavingThrows["intelligence"]) // 3 (INT mod) + 2 (prof)
+		assert.Equal(t, int32(3), result.SavingThrows["wisdom"])       // 1 (WIS mod) + 2 (prof)
+		assert.Equal(t, int32(0), result.SavingThrows["charisma"])     // 0 (CHA mod) + 0
+
+		// Check skills
+		assert.Equal(t, int32(5), result.Skills["arcana"])        // 3 (INT) + 2 (prof)
+		assert.Equal(t, int32(5), result.Skills["investigation"]) // 3 (INT) + 2 (prof)
+		assert.Equal(t, int32(3), result.Skills["history"])       // 3 (INT) + 0
+	})
+
+	t.Run("calculation with background skills", func(t *testing.T) {
+		mockClient := &testExternalClient{
+			classData: &external.ClassData{
+				ID: "rogue", Name: "Rogue", HitDice: "1d8",
+				SavingThrows: []string{"dexterity", "intelligence"},
+			},
+			raceData: &external.RaceData{
+				ID: "halfling", Name: "Halfling", Speed: 25,
+			},
+			backgroundData: &external.BackgroundData{
+				ID: "criminal", Name: "Criminal",
+				SkillProficiencies: []string{"deception", "stealth"},
+			},
+		}
+		adapter := createTestAdapterWithClient(t, mockClient)
+		draft := &dnd5e.CharacterDraft{
+			ClassID:      "rogue",
+			RaceID:       "halfling",
+			BackgroundID: "criminal",
+			AbilityScores: &dnd5e.AbilityScores{
+				Strength: 10, Dexterity: 16, Constitution: 14,
+				Intelligence: 13, Wisdom: 12, Charisma: 8,
+			},
+			StartingSkillIDs: []string{"acrobatics", "perception", "investigation", "sleight_of_hand"},
+		}
+
+		result, err := adapter.CalculateCharacterStats(ctx, &engine.CalculateCharacterStatsInput{Draft: draft})
+		assert.NoError(t, err)
+		assert.NotNil(t, result)
+
+		// Check basic stats
+		assert.Equal(t, int32(10), result.MaxHP)      // 8 (d8) + 2 (CON mod)
+		assert.Equal(t, int32(13), result.ArmorClass) // 10 + 3 (DEX mod)
+		assert.Equal(t, int32(3), result.Initiative)  // DEX mod
+		assert.Equal(t, int32(25), result.Speed)      // Halfling speed
+
+		// Check skills with background proficiencies
+		assert.Equal(t, int32(1), result.Skills["deception"])       // -1 (CHA) + 2 (prof from background)
+		assert.Equal(t, int32(5), result.Skills["stealth"])         // 3 (DEX) + 2 (prof from background)
+		assert.Equal(t, int32(5), result.Skills["acrobatics"])      // 3 (DEX) + 2 (prof from class)
+		assert.Equal(t, int32(3), result.Skills["perception"])      // 1 (WIS) + 2 (prof from class)
+		assert.Equal(t, int32(3), result.Skills["investigation"])   // 1 (INT) + 2 (prof from class)
+		assert.Equal(t, int32(5), result.Skills["sleight_of_hand"]) // 3 (DEX) + 2 (prof from class)
+	})
+
+	t.Run("edge case with very low constitution", func(t *testing.T) {
+		mockClient := &testExternalClient{
+			classData: &external.ClassData{
+				ID: "wizard", Name: "Wizard", HitDice: "1d6",
+				SavingThrows: []string{"intelligence", "wisdom"},
+			},
+			raceData: &external.RaceData{
+				ID: "human", Name: "Human", Speed: 30,
+			},
+		}
+		adapter := createTestAdapterWithClient(t, mockClient)
+		draft := &dnd5e.CharacterDraft{
+			ClassID: "wizard",
+			RaceID:  "human",
+			AbilityScores: &dnd5e.AbilityScores{
+				Strength: 10, Dexterity: 10, Constitution: 3, // Very low CON
+				Intelligence: 16, Wisdom: 13, Charisma: 10,
+			},
+		}
+
+		result, err := adapter.CalculateCharacterStats(ctx, &engine.CalculateCharacterStatsInput{Draft: draft})
+		assert.NoError(t, err)
+		assert.NotNil(t, result)
+
+		// Check HP with negative CON modifier
+		assert.Equal(t, int32(2), result.MaxHP) // 6 (d6) + -4 (CON mod) = 2 (minimum 1 would be enforced in real game)
+	})
+
+	t.Run("invalid hit dice format", func(t *testing.T) {
+		mockClient := &testExternalClient{
+			classData: &external.ClassData{
+				ID: "custom", Name: "Custom", HitDice: "2d8", // Invalid format
+				SavingThrows: []string{"strength"},
+			},
+			raceData: &external.RaceData{
+				ID: "human", Name: "Human", Speed: 30,
+			},
+		}
+		adapter := createTestAdapterWithClient(t, mockClient)
+		draft := &dnd5e.CharacterDraft{
+			ClassID: "custom",
+			RaceID:  "human",
+			AbilityScores: &dnd5e.AbilityScores{
+				Strength: 15, Dexterity: 14, Constitution: 13,
+				Intelligence: 12, Wisdom: 10, Charisma: 8,
+			},
+		}
+
+		result, err := adapter.CalculateCharacterStats(ctx, &engine.CalculateCharacterStatsInput{Draft: draft})
+		assert.NoError(t, err)
+		assert.NotNil(t, result)
+
+		// Should default to d6
+		assert.Equal(t, int32(7), result.MaxHP) // 6 (default d6) + 1 (CON mod)
+	})
+}
+
+func TestExtractMaxHitDie(t *testing.T) {
+	testCases := []struct {
+		hitDice  string
+		expected int32
+	}{
+		{"1d6", 6},
+		{"1d8", 8},
+		{"1d10", 10},
+		{"1d12", 12},
+		{"", 6},        // Invalid format
+		{"d8", 6},      // Invalid format
+		{"2d6", 6},     // Invalid format
+		{"1d20", 6},    // Unknown die
+		{"invalid", 6}, // Invalid format
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.hitDice, func(t *testing.T) {
+			result := extractMaxHitDie(tc.hitDice)
 			assert.Equal(t, tc.expected, result)
 		})
 	}
