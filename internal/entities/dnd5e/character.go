@@ -109,3 +109,102 @@ func (p CreationProgress) HasSkills() bool { return p.HasStep(ProgressStepSkills
 
 // HasLanguages checks if the languages step is completed
 func (p CreationProgress) HasLanguages() bool { return p.HasStep(ProgressStepLanguages) }
+
+// Data loading entities for character creation UI
+
+// RaceInfo contains detailed information about a D&D 5e race
+type RaceInfo struct {
+	ID                   string
+	Name                 string
+	Description          string
+	Speed                int32
+	Size                 string
+	AbilityBonuses       map[string]int32
+	Traits               []RacialTrait
+	Subraces             []SubraceInfo
+	Proficiencies        []string
+	Languages            []string
+	AgeDescription       string
+	AlignmentDescription string
+}
+
+// SubraceInfo contains information about a D&D 5e subrace
+type SubraceInfo struct {
+	ID             string
+	Name           string
+	Description    string
+	AbilityBonuses map[string]int32
+	Traits         []RacialTrait
+}
+
+// RacialTrait contains information about a racial trait
+type RacialTrait struct {
+	Name        string
+	Description string
+	IsChoice    bool
+	Options     []string
+}
+
+// ClassInfo contains detailed information about a D&D 5e class
+type ClassInfo struct {
+	ID                       string
+	Name                     string
+	Description              string
+	HitDie                   string
+	PrimaryAbilities         []string
+	ArmorProficiencies       []string
+	WeaponProficiencies      []string
+	ToolProficiencies        []string
+	SavingThrowProficiencies []string
+	SkillChoicesCount        int32
+	AvailableSkills          []string
+	StartingEquipment        []string
+	EquipmentChoices         []EquipmentChoice
+	Level1Features           []ClassFeature
+	Spellcasting             *SpellcastingInfo
+}
+
+// EquipmentChoice represents a choice in starting equipment
+type EquipmentChoice struct {
+	Description string
+	Options     []string
+	ChooseCount int32
+}
+
+// ClassFeature represents a class feature
+type ClassFeature struct {
+	Name        string
+	Description string
+	Level       int32
+	HasChoices  bool
+	Choices     []string
+}
+
+// SpellcastingInfo contains spellcasting information for a class
+type SpellcastingInfo struct {
+	SpellcastingAbility string
+	RitualCasting       bool
+	SpellcastingFocus   string
+	CantripsKnown       int32
+	SpellsKnown         int32
+	SpellSlotsLevel1    int32
+}
+
+// BackgroundInfo contains detailed information about a D&D 5e background
+type BackgroundInfo struct {
+	ID                  string
+	Name                string
+	Description         string
+	SkillProficiencies  []string
+	ToolProficiencies   []string
+	Languages           []string
+	AdditionalLanguages int32
+	StartingEquipment   []string
+	StartingGold        int32
+	FeatureName         string
+	FeatureDescription  string
+	PersonalityTraits   []string
+	Ideals              []string
+	Bonds               []string
+	Flaws               []string
+}

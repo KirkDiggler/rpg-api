@@ -27,11 +27,28 @@ type redisRepository struct {
 	client redisclient.Client
 }
 
-// NewRedisRepository creates a new Redis-backed character repository
-func NewRedisRepository(client redisclient.Client) Repository {
-	return &redisRepository{
-		client: client,
+type RedisConfig struct {
+	Client redisclient.Client
+}
+
+func (cfg *RedisConfig) Validate() error {
+	if cfg == nil {
+		return errors.InvalidArgument("config cannot be nil")
 	}
+	if cfg.Client == nil {
+		return errors.InvalidArgument("client cannot be nil")
+	}
+	return nil
+}
+
+// NewRedis creates a new Redis-backed character repository
+func NewRedis(cfg *RedisConfig) (Repository, error) {
+	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
+	return &redisRepository{
+		client: cfg.Client,
+	}, nil
 }
 
 func (r *redisRepository) Create(ctx context.Context, input CreateInput) (*CreateOutput, error) {

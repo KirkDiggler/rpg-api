@@ -1,188 +1,84 @@
-// Package engine wraps the rpg toolkit
 package engine
 
-//go:generate mockgen -destination=mock/mock_engine.go -package=enginemock github.com/KirkDiggler/rpg-api/internal/engine Engine
+import "context"
 
-import (
-	"context"
-
-	"github.com/KirkDiggler/rpg-api/internal/entities/dnd5e"
-)
-
-// Engine provides game mechanics and rules calculations
-type Engine interface {
-	// Character validation and calculations
-	ValidateCharacterDraft(ctx context.Context, input *ValidateCharacterDraftInput) (*ValidateCharacterDraftOutput, error)
-	CalculateCharacterStats(
-		ctx context.Context,
-		input *CalculateCharacterStatsInput,
-	) (*CalculateCharacterStatsOutput, error)
-
-	// Race and class validation
-	ValidateRaceChoice(ctx context.Context, input *ValidateRaceChoiceInput) (*ValidateRaceChoiceOutput, error)
-	ValidateClassChoice(ctx context.Context, input *ValidateClassChoiceInput) (*ValidateClassChoiceOutput, error)
-
-	// Ability score validation
-	ValidateAbilityScores(ctx context.Context, input *ValidateAbilityScoresInput) (*ValidateAbilityScoresOutput, error)
-
-	// Skill validation
-	ValidateSkillChoices(ctx context.Context, input *ValidateSkillChoicesInput) (*ValidateSkillChoicesOutput, error)
-	GetAvailableSkills(ctx context.Context, input *GetAvailableSkillsInput) (*GetAvailableSkillsOutput, error)
-
-	// Background validation
-	ValidateBackgroundChoice(
-		ctx context.Context,
-		input *ValidateBackgroundChoiceInput,
-	) (*ValidateBackgroundChoiceOutput, error)
-
-	// Utility methods
-	CalculateProficiencyBonus(level int32) int32
-	CalculateAbilityModifier(score int32) int32
+type engine struct {
 }
 
-// ValidateCharacterDraftInput contains the draft to validate
-type ValidateCharacterDraftInput struct {
-	Draft *dnd5e.CharacterDraft
+type Config struct {
 }
 
-// ValidateCharacterDraftOutput contains validation results
-type ValidateCharacterDraftOutput struct {
-	IsComplete   bool
-	IsValid      bool
-	Errors       []ValidationError
-	Warnings     []ValidationWarning
-	MissingSteps []string
+func (cfg *Config) Validate() error {
+	return nil
 }
 
-// CalculateCharacterStatsInput contains character data for stat calculation
-type CalculateCharacterStatsInput struct {
-	Draft *dnd5e.CharacterDraft
+func New(cfg *Config) (Engine, error) {
+	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
+	return &engine{}, nil
 }
 
-// CalculateCharacterStatsOutput contains calculated character stats
-type CalculateCharacterStatsOutput struct {
-	MaxHP            int32
-	ArmorClass       int32
-	Initiative       int32
-	Speed            int32
-	ProficiencyBonus int32
-	SavingThrows     map[string]int32
-	Skills           map[string]int32
+func (e *engine) CalculateAbilityModifier(score int32) int32 {
+	return -1
 }
 
-// ValidateRaceChoiceInput contains race validation data
-type ValidateRaceChoiceInput struct {
-	RaceID    string
-	SubraceID string
+func (e *engine) CalculateProficiencyBonus(level int32) int32 {
+	return -1
 }
 
-// ValidateRaceChoiceOutput contains race validation results
-type ValidateRaceChoiceOutput struct {
-	IsValid     bool
-	Errors      []ValidationError
-	RaceTraits  []string
-	AbilityMods map[string]int32
+func (e *engine) CalculateCharacterStats(
+	ctx context.Context,
+	input *CalculateCharacterStatsInput,
+) (*CalculateCharacterStatsOutput, error) {
+	return nil, nil
 }
 
-// ValidateClassChoiceInput contains class validation data
-type ValidateClassChoiceInput struct {
-	ClassID       string
-	AbilityScores *dnd5e.AbilityScores
+func (e *engine) ValidateCharacterDraft(
+	ctx context.Context,
+	input *ValidateCharacterDraftInput,
+) (*ValidateCharacterDraftOutput, error) {
+	return nil, nil
 }
 
-// ValidateClassChoiceOutput contains class validation results
-type ValidateClassChoiceOutput struct {
-	IsValid           bool
-	Errors            []ValidationError
-	Warnings          []ValidationWarning
-	HitDice           string
-	PrimaryAbility    string
-	SavingThrows      []string
-	SkillChoicesCount int32
-	AvailableSkills   []string
+func (e *engine) ValidateRaceChoice(
+	ctx context.Context,
+	input *ValidateRaceChoiceInput,
+) (*ValidateRaceChoiceOutput, error) {
+	return nil, nil
 }
 
-// AbilityScoreMethod represents the method used to generate ability scores
-type AbilityScoreMethod string
-
-// Ability score generation methods
-const (
-	AbilityScoreMethodStandardArray AbilityScoreMethod = "standard_array"
-	AbilityScoreMethodPointBuy      AbilityScoreMethod = "point_buy"
-	AbilityScoreMethodManual        AbilityScoreMethod = "manual"
-)
-
-// ValidateAbilityScoresInput contains ability scores to validate
-type ValidateAbilityScoresInput struct {
-	AbilityScores *dnd5e.AbilityScores
-	Method        AbilityScoreMethod
+func (e *engine) ValidateClassChoice(
+	ctx context.Context,
+	input *ValidateClassChoiceInput,
+) (*ValidateClassChoiceOutput, error) {
+	return nil, nil
 }
 
-// ValidateAbilityScoresOutput contains ability score validation results
-type ValidateAbilityScoresOutput struct {
-	IsValid  bool
-	Errors   []ValidationError
-	Warnings []ValidationWarning
+func (e *engine) ValidateAbilityScores(
+	ctx context.Context,
+	input *ValidateAbilityScoresInput,
+) (*ValidateAbilityScoresOutput, error) {
+	return nil, nil
 }
 
-// ValidateSkillChoicesInput contains skill choices to validate
-type ValidateSkillChoicesInput struct {
-	ClassID          string
-	BackgroundID     string
-	SelectedSkillIDs []string
+func (e *engine) ValidateSkillChoices(
+	ctx context.Context,
+	input *ValidateSkillChoicesInput,
+) (*ValidateSkillChoicesOutput, error) {
+	return nil, nil
 }
 
-// ValidateSkillChoicesOutput contains skill validation results
-type ValidateSkillChoicesOutput struct {
-	IsValid  bool
-	Errors   []ValidationError
-	Warnings []ValidationWarning
+func (e *engine) GetAvailableSkills(
+	ctx context.Context,
+	input *GetAvailableSkillsInput,
+) (*GetAvailableSkillsOutput, error) {
+	return nil, nil
 }
 
-// GetAvailableSkillsInput contains data to determine available skills
-type GetAvailableSkillsInput struct {
-	ClassID      string
-	BackgroundID string
-}
-
-// GetAvailableSkillsOutput contains available skill choices
-type GetAvailableSkillsOutput struct {
-	ClassSkills      []SkillChoice
-	BackgroundSkills []SkillChoice
-}
-
-// ValidateBackgroundChoiceInput contains background validation data
-type ValidateBackgroundChoiceInput struct {
-	BackgroundID string
-}
-
-// ValidateBackgroundChoiceOutput contains background validation results
-type ValidateBackgroundChoiceOutput struct {
-	IsValid            bool
-	Errors             []ValidationError
-	SkillProficiencies []string
-	Languages          int32
-	Equipment          []string
-}
-
-// ValidationError represents a validation error
-type ValidationError struct {
-	Field   string
-	Message string
-	Code    string
-}
-
-// ValidationWarning represents a validation warning
-type ValidationWarning struct {
-	Field   string
-	Message string
-	Code    string
-}
-
-// SkillChoice represents an available skill choice
-type SkillChoice struct {
-	SkillID     string
-	SkillName   string
-	Description string
-	Ability     string
+func (e *engine) ValidateBackgroundChoice(
+	ctx context.Context,
+	input *ValidateBackgroundChoiceInput,
+) (*ValidateBackgroundChoiceOutput, error) {
+	return nil, nil
 }

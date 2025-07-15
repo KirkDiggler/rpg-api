@@ -53,8 +53,8 @@ type redisRepository struct {
 	idGen  idgen.Generator
 }
 
-// NewRedisRepository creates a new Redis-backed character draft repository
-func NewRedisRepository(cfg *Config) (Repository, error) {
+// NewRedis creates a new Redis-backed character draft repository
+func NewRedis(cfg *Config) (Repository, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}

@@ -8,8 +8,8 @@ import (
 
 	"github.com/KirkDiggler/rpg-api/internal/engine"
 	"github.com/KirkDiggler/rpg-api/internal/entities/dnd5e"
+	characterorchestrator "github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
 	draftrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft"
-	"github.com/KirkDiggler/rpg-api/internal/services/character"
 )
 
 // Section update tests
@@ -17,15 +17,15 @@ import (
 func (s *OrchestratorTestSuite) TestUpdateName() {
 	testCases := []struct {
 		name      string
-		input     *character.UpdateNameInput
+		input     *characterorchestrator.UpdateNameInput
 		setupMock func()
 		wantErr   bool
 		errMsg    string
-		validate  func(*character.UpdateNameOutput)
+		validate  func(*characterorchestrator.UpdateNameOutput)
 	}{
 		{
 			name: "successful name update",
-			input: &character.UpdateNameInput{
+			input: &characterorchestrator.UpdateNameInput{
 				DraftID: s.testDraftID,
 				Name:    "Gandalf the White",
 			},
@@ -46,7 +46,7 @@ func (s *OrchestratorTestSuite) TestUpdateName() {
 					})
 			},
 			wantErr: false,
-			validate: func(output *character.UpdateNameOutput) {
+			validate: func(output *characterorchestrator.UpdateNameOutput) {
 				s.Equal("Gandalf the White", output.Draft.Name)
 				s.Empty(output.Warnings)
 			},
@@ -60,7 +60,7 @@ func (s *OrchestratorTestSuite) TestUpdateName() {
 		},
 		{
 			name: "empty name",
-			input: &character.UpdateNameInput{
+			input: &characterorchestrator.UpdateNameInput{
 				DraftID: s.testDraftID,
 				Name:    "",
 			},
@@ -70,7 +70,7 @@ func (s *OrchestratorTestSuite) TestUpdateName() {
 		},
 		{
 			name: "draft not found",
-			input: &character.UpdateNameInput{
+			input: &characterorchestrator.UpdateNameInput{
 				DraftID: "nonexistent",
 				Name:    "Test",
 			},
@@ -107,15 +107,15 @@ func (s *OrchestratorTestSuite) TestUpdateName() {
 func (s *OrchestratorTestSuite) TestUpdateRace() {
 	testCases := []struct {
 		name      string
-		input     *character.UpdateRaceInput
+		input     *characterorchestrator.UpdateRaceInput
 		setupMock func()
 		wantErr   bool
 		errMsg    string
-		validate  func(*character.UpdateRaceOutput)
+		validate  func(*characterorchestrator.UpdateRaceOutput)
 	}{
 		{
 			name: "successful race update",
-			input: &character.UpdateRaceInput{
+			input: &characterorchestrator.UpdateRaceInput{
 				DraftID: s.testDraftID,
 				RaceID:  dnd5e.RaceElf,
 			},
@@ -144,14 +144,14 @@ func (s *OrchestratorTestSuite) TestUpdateRace() {
 					})
 			},
 			wantErr: false,
-			validate: func(output *character.UpdateRaceOutput) {
+			validate: func(output *characterorchestrator.UpdateRaceOutput) {
 				s.Equal(dnd5e.RaceElf, output.Draft.RaceID)
 				s.Empty(output.Warnings)
 			},
 		},
 		{
 			name: "invalid race choice",
-			input: &character.UpdateRaceInput{
+			input: &characterorchestrator.UpdateRaceInput{
 				DraftID:   s.testDraftID,
 				RaceID:    "invalid-race",
 				SubraceID: "invalid-subrace",
@@ -182,14 +182,14 @@ func (s *OrchestratorTestSuite) TestUpdateRace() {
 					})
 			},
 			wantErr: false, // Returns warnings, not error
-			validate: func(output *character.UpdateRaceOutput) {
+			validate: func(output *characterorchestrator.UpdateRaceOutput) {
 				s.Len(output.Warnings, 1)
 				s.Equal("Invalid race selection", output.Warnings[0].Message)
 			},
 		},
 		{
 			name: "engine error",
-			input: &character.UpdateRaceInput{
+			input: &characterorchestrator.UpdateRaceInput{
 				DraftID: s.testDraftID,
 				RaceID:  dnd5e.RaceElf,
 			},
@@ -246,15 +246,15 @@ func (s *OrchestratorTestSuite) TestUpdateClass() {
 
 	testCases := []struct {
 		name      string
-		input     *character.UpdateClassInput
+		input     *characterorchestrator.UpdateClassInput
 		draft     *dnd5e.CharacterDraft
 		setupMock func()
 		wantErr   bool
-		validate  func(*character.UpdateClassOutput)
+		validate  func(*characterorchestrator.UpdateClassOutput)
 	}{
 		{
 			name: "successful class update",
-			input: &character.UpdateClassInput{
+			input: &characterorchestrator.UpdateClassInput{
 				DraftID: s.testDraftID,
 				ClassID: dnd5e.ClassWizard,
 			},
@@ -287,14 +287,14 @@ func (s *OrchestratorTestSuite) TestUpdateClass() {
 					})
 			},
 			wantErr: false,
-			validate: func(output *character.UpdateClassOutput) {
+			validate: func(output *characterorchestrator.UpdateClassOutput) {
 				s.Equal(dnd5e.ClassWizard, output.Draft.ClassID)
 				s.Empty(output.Warnings)
 			},
 		},
 		{
 			name: "class with ability score warnings",
-			input: &character.UpdateClassInput{
+			input: &characterorchestrator.UpdateClassInput{
 				DraftID: s.testDraftID,
 				ClassID: dnd5e.ClassBarbarian,
 			},
@@ -331,7 +331,7 @@ func (s *OrchestratorTestSuite) TestUpdateClass() {
 					})
 			},
 			wantErr: false,
-			validate: func(output *character.UpdateClassOutput) {
+			validate: func(output *characterorchestrator.UpdateClassOutput) {
 				s.Len(output.Warnings, 2)
 				// Check both errors converted to warnings and actual warnings
 				foundReq := false
@@ -379,15 +379,15 @@ func (s *OrchestratorTestSuite) TestUpdateAbilityScores() {
 
 	testCases := []struct {
 		name      string
-		input     *character.UpdateAbilityScoresInput
+		input     *characterorchestrator.UpdateAbilityScoresInput
 		draft     *dnd5e.CharacterDraft
 		setupMock func()
 		wantErr   bool
-		validate  func(*character.UpdateAbilityScoresOutput)
+		validate  func(*characterorchestrator.UpdateAbilityScoresOutput)
 	}{
 		{
 			name: "valid ability scores",
-			input: &character.UpdateAbilityScoresInput{
+			input: &characterorchestrator.UpdateAbilityScoresInput{
 				DraftID: s.testDraftID,
 				AbilityScores: dnd5e.AbilityScores{
 					Strength:     15,
@@ -434,14 +434,14 @@ func (s *OrchestratorTestSuite) TestUpdateAbilityScores() {
 					})
 			},
 			wantErr: false,
-			validate: func(output *character.UpdateAbilityScoresOutput) {
+			validate: func(output *characterorchestrator.UpdateAbilityScoresOutput) {
 				s.Equal(int32(15), output.Draft.AbilityScores.Strength)
 				s.Empty(output.Warnings)
 			},
 		},
 		{
 			name: "revalidates class requirements",
-			input: &character.UpdateAbilityScoresInput{
+			input: &characterorchestrator.UpdateAbilityScoresInput{
 				DraftID: s.testDraftID,
 				AbilityScores: dnd5e.AbilityScores{
 					Strength:     10,
@@ -485,7 +485,7 @@ func (s *OrchestratorTestSuite) TestUpdateAbilityScores() {
 					})
 			},
 			wantErr: false,
-			validate: func(output *character.UpdateAbilityScoresOutput) {
+			validate: func(output *characterorchestrator.UpdateAbilityScoresOutput) {
 				s.Len(output.Warnings, 1)
 				s.Equal("class_requirements", output.Warnings[0].Field)
 			},
@@ -522,15 +522,15 @@ func (s *OrchestratorTestSuite) TestUpdateSkills() {
 
 	testCases := []struct {
 		name      string
-		input     *character.UpdateSkillsInput
+		input     *characterorchestrator.UpdateSkillsInput
 		draft     *dnd5e.CharacterDraft
 		setupMock func()
 		wantErr   bool
-		validate  func(*character.UpdateSkillsOutput)
+		validate  func(*characterorchestrator.UpdateSkillsOutput)
 	}{
 		{
 			name: "successful skill selection",
-			input: &character.UpdateSkillsInput{
+			input: &characterorchestrator.UpdateSkillsInput{
 				DraftID: s.testDraftID,
 				SkillIDs: []string{
 					dnd5e.SkillStealth,
@@ -567,14 +567,14 @@ func (s *OrchestratorTestSuite) TestUpdateSkills() {
 					})
 			},
 			wantErr: false,
-			validate: func(output *character.UpdateSkillsOutput) {
+			validate: func(output *characterorchestrator.UpdateSkillsOutput) {
 				s.Len(output.Draft.StartingSkillIDs, 4)
 				s.Empty(output.Warnings)
 			},
 		},
 		{
 			name: "missing prerequisites",
-			input: &character.UpdateSkillsInput{
+			input: &characterorchestrator.UpdateSkillsInput{
 				DraftID:  s.testDraftID,
 				SkillIDs: []string{dnd5e.SkillStealth},
 			},
@@ -592,14 +592,14 @@ func (s *OrchestratorTestSuite) TestUpdateSkills() {
 					})
 			},
 			wantErr: false,
-			validate: func(output *character.UpdateSkillsOutput) {
+			validate: func(output *characterorchestrator.UpdateSkillsOutput) {
 				s.Len(output.Warnings, 1)
 				s.Equal("MISSING_PREREQUISITES", output.Warnings[0].Type)
 			},
 		},
 		{
 			name: "invalid skill choices",
-			input: &character.UpdateSkillsInput{
+			input: &characterorchestrator.UpdateSkillsInput{
 				DraftID: s.testDraftID,
 				SkillIDs: []string{
 					dnd5e.SkillArcana, // Not available to rogues
@@ -633,7 +633,7 @@ func (s *OrchestratorTestSuite) TestUpdateSkills() {
 					})
 			},
 			wantErr: false,
-			validate: func(output *character.UpdateSkillsOutput) {
+			validate: func(output *characterorchestrator.UpdateSkillsOutput) {
 				s.Len(output.Warnings, 1)
 				s.Equal("INVALID_SKILLS", output.Warnings[0].Type)
 			},

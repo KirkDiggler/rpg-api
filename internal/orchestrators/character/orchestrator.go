@@ -1,6 +1,8 @@
 // Package character implements the character orchestrator
 package character
 
+//go:generate mockgen -destination=mock/mock_service.go -package=charactermock github.com/KirkDiggler/rpg-api/internal/orchestrators/character Service
+
 import (
 	"context"
 	"fmt"
@@ -13,8 +15,320 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/errors"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	draftrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft"
-	"github.com/KirkDiggler/rpg-api/internal/services/character"
 )
+
+// Service defines the interface for character operations
+type Service interface {
+	// Draft lifecycle
+	CreateDraft(ctx context.Context, input *CreateDraftInput) (*CreateDraftOutput, error)
+	GetDraft(ctx context.Context, input *GetDraftInput) (*GetDraftOutput, error)
+	ListDrafts(ctx context.Context, input *ListDraftsInput) (*ListDraftsOutput, error)
+	DeleteDraft(ctx context.Context, input *DeleteDraftInput) (*DeleteDraftOutput, error)
+
+	// Section-based updates
+	UpdateName(ctx context.Context, input *UpdateNameInput) (*UpdateNameOutput, error)
+	UpdateRace(ctx context.Context, input *UpdateRaceInput) (*UpdateRaceOutput, error)
+	UpdateClass(ctx context.Context, input *UpdateClassInput) (*UpdateClassOutput, error)
+	UpdateBackground(ctx context.Context, input *UpdateBackgroundInput) (*UpdateBackgroundOutput, error)
+	UpdateAbilityScores(ctx context.Context, input *UpdateAbilityScoresInput) (*UpdateAbilityScoresOutput, error)
+	UpdateSkills(ctx context.Context, input *UpdateSkillsInput) (*UpdateSkillsOutput, error)
+
+	// Validation
+	ValidateDraft(ctx context.Context, input *ValidateDraftInput) (*ValidateDraftOutput, error)
+
+	// Character finalization
+	FinalizeDraft(ctx context.Context, input *FinalizeDraftInput) (*FinalizeDraftOutput, error)
+
+	// Completed character operations
+	GetCharacter(ctx context.Context, input *GetCharacterInput) (*GetCharacterOutput, error)
+	ListCharacters(ctx context.Context, input *ListCharactersInput) (*ListCharactersOutput, error)
+	DeleteCharacter(ctx context.Context, input *DeleteCharacterInput) (*DeleteCharacterOutput, error)
+
+	// Data loading for character creation UI
+	ListRaces(ctx context.Context, input *ListRacesInput) (*ListRacesOutput, error)
+	ListClasses(ctx context.Context, input *ListClassesInput) (*ListClassesOutput, error)
+	ListBackgrounds(ctx context.Context, input *ListBackgroundsInput) (*ListBackgroundsOutput, error)
+	GetRaceDetails(ctx context.Context, input *GetRaceDetailsInput) (*GetRaceDetailsOutput, error)
+	GetClassDetails(ctx context.Context, input *GetClassDetailsInput) (*GetClassDetailsOutput, error)
+	GetBackgroundDetails(ctx context.Context, input *GetBackgroundDetailsInput) (*GetBackgroundDetailsOutput, error)
+}
+
+// Draft lifecycle types
+
+// CreateDraftInput defines the request for creating a draft
+type CreateDraftInput struct {
+	PlayerID    string
+	SessionID   string // Optional
+	InitialData *dnd5e.CharacterDraft
+}
+
+// CreateDraftOutput defines the response for creating a draft
+type CreateDraftOutput struct {
+	Draft *dnd5e.CharacterDraft
+}
+
+// GetDraftInput defines the request for getting a draft
+type GetDraftInput struct {
+	DraftID string
+}
+
+// GetDraftOutput defines the response for getting a draft
+type GetDraftOutput struct {
+	Draft *dnd5e.CharacterDraft
+}
+
+// ListDraftsInput defines the request for listing drafts
+type ListDraftsInput struct {
+	PlayerID  string
+	SessionID string // Optional filter
+	PageSize  int32
+	PageToken string
+}
+
+// ListDraftsOutput defines the response for listing drafts
+type ListDraftsOutput struct {
+	Drafts        []*dnd5e.CharacterDraft
+	NextPageToken string
+}
+
+// DeleteDraftInput defines the request for deleting a draft
+type DeleteDraftInput struct {
+	DraftID string
+}
+
+// DeleteDraftOutput defines the response for deleting a draft
+type DeleteDraftOutput struct {
+	Message string
+}
+
+// Section update types
+
+// UpdateNameInput defines the request for updating a draft's name
+type UpdateNameInput struct {
+	DraftID string
+	Name    string
+}
+
+// UpdateNameOutput defines the response for updating a draft's name
+type UpdateNameOutput struct {
+	Draft    *dnd5e.CharacterDraft
+	Warnings []ValidationWarning
+}
+
+// UpdateRaceInput defines the request for updating a draft's race
+type UpdateRaceInput struct {
+	DraftID   string
+	RaceID    string
+	SubraceID string // Optional
+}
+
+// UpdateRaceOutput defines the response for updating a draft's race
+type UpdateRaceOutput struct {
+	Draft    *dnd5e.CharacterDraft
+	Warnings []ValidationWarning
+}
+
+// UpdateClassInput defines the request for updating a draft's class
+type UpdateClassInput struct {
+	DraftID string
+	ClassID string
+}
+
+// UpdateClassOutput defines the response for updating a draft's class
+type UpdateClassOutput struct {
+	Draft    *dnd5e.CharacterDraft
+	Warnings []ValidationWarning
+}
+
+// UpdateBackgroundInput defines the request for updating a draft's background
+type UpdateBackgroundInput struct {
+	DraftID      string
+	BackgroundID string
+}
+
+// UpdateBackgroundOutput defines the response for updating a draft's background
+type UpdateBackgroundOutput struct {
+	Draft    *dnd5e.CharacterDraft
+	Warnings []ValidationWarning
+}
+
+// UpdateAbilityScoresInput defines the request for updating a draft's ability scores
+type UpdateAbilityScoresInput struct {
+	DraftID       string
+	AbilityScores dnd5e.AbilityScores
+}
+
+// UpdateAbilityScoresOutput defines the response for updating a draft's ability scores
+type UpdateAbilityScoresOutput struct {
+	Draft    *dnd5e.CharacterDraft
+	Warnings []ValidationWarning
+}
+
+// UpdateSkillsInput defines the request for updating a draft's skills
+type UpdateSkillsInput struct {
+	DraftID  string
+	SkillIDs []string
+}
+
+// UpdateSkillsOutput defines the response for updating a draft's skills
+type UpdateSkillsOutput struct {
+	Draft    *dnd5e.CharacterDraft
+	Warnings []ValidationWarning
+}
+
+// Validation types
+
+// ValidateDraftInput defines the request for validating a draft
+type ValidateDraftInput struct {
+	DraftID string
+}
+
+// ValidateDraftOutput defines the response for validating a draft
+type ValidateDraftOutput struct {
+	IsComplete   bool
+	IsValid      bool
+	Errors       []ValidationError
+	Warnings     []ValidationWarning
+	MissingSteps []string
+}
+
+// ValidationError defines a validation error
+type ValidationError struct {
+	Field   string
+	Message string
+	Type    string
+}
+
+// ValidationWarning defines a validation warning
+type ValidationWarning struct {
+	Field   string
+	Message string
+	Type    string
+}
+
+// Finalization types
+
+// FinalizeDraftInput defines the request for finalizing a draft
+type FinalizeDraftInput struct {
+	DraftID string
+}
+
+// FinalizeDraftOutput defines the response for finalizing a draft
+type FinalizeDraftOutput struct {
+	Character    *dnd5e.Character
+	DraftDeleted bool
+}
+
+// Character operation types
+
+// GetCharacterInput defines the request for getting a character
+type GetCharacterInput struct {
+	CharacterID string
+}
+
+// GetCharacterOutput defines the response for getting a character
+type GetCharacterOutput struct {
+	Character *dnd5e.Character
+}
+
+// ListCharactersInput defines the request for listing characters
+type ListCharactersInput struct {
+	PageSize  int32
+	PageToken string
+	SessionID string // Optional filter
+	PlayerID  string // Optional filter
+}
+
+// ListCharactersOutput defines the response for listing characters
+type ListCharactersOutput struct {
+	Characters    []*dnd5e.Character
+	NextPageToken string
+	TotalSize     int32
+}
+
+// DeleteCharacterInput defines the request for deleting a character
+type DeleteCharacterInput struct {
+	CharacterID string
+}
+
+// DeleteCharacterOutput defines the response for deleting a character
+type DeleteCharacterOutput struct {
+	Message string
+}
+
+// Data loading types for character creation UI
+
+// ListRacesInput defines the request for listing races
+type ListRacesInput struct {
+	PageSize        int32
+	PageToken       string
+	IncludeSubraces bool
+}
+
+// ListRacesOutput defines the response for listing races
+type ListRacesOutput struct {
+	Races         []*dnd5e.RaceInfo
+	NextPageToken string
+	TotalSize     int32
+}
+
+// ListClassesInput defines the request for listing classes
+type ListClassesInput struct {
+	PageSize                int32
+	PageToken               string
+	IncludeSpellcastersOnly bool
+	IncludeFeatures         bool
+}
+
+// ListClassesOutput defines the response for listing classes
+type ListClassesOutput struct {
+	Classes       []*dnd5e.ClassInfo
+	NextPageToken string
+	TotalSize     int32
+}
+
+// ListBackgroundsInput defines the request for listing backgrounds
+type ListBackgroundsInput struct {
+	PageSize  int32
+	PageToken string
+}
+
+// ListBackgroundsOutput defines the response for listing backgrounds
+type ListBackgroundsOutput struct {
+	Backgrounds   []*dnd5e.BackgroundInfo
+	NextPageToken string
+	TotalSize     int32
+}
+
+// GetRaceDetailsInput defines the request for getting race details
+type GetRaceDetailsInput struct {
+	RaceID string
+}
+
+// GetRaceDetailsOutput defines the response for getting race details
+type GetRaceDetailsOutput struct {
+	Race *dnd5e.RaceInfo
+}
+
+// GetClassDetailsInput defines the request for getting class details
+type GetClassDetailsInput struct {
+	ClassID string
+}
+
+// GetClassDetailsOutput defines the response for getting class details
+type GetClassDetailsOutput struct {
+	Class *dnd5e.ClassInfo
+}
+
+// GetBackgroundDetailsInput defines the request for getting background details
+type GetBackgroundDetailsInput struct {
+	BackgroundID string
+}
+
+// GetBackgroundDetailsOutput defines the response for getting background details
+type GetBackgroundDetailsOutput struct {
+	Background *dnd5e.BackgroundInfo
+}
 
 // Config holds the dependencies for the character orchestrator
 type Config struct {
@@ -44,7 +358,7 @@ func (c *Config) Validate() error {
 	return vb.Build()
 }
 
-// Orchestrator implements the character.Service interface
+// Orchestrator implements the Service interface
 type Orchestrator struct {
 	characterRepo      characterrepo.Repository
 	characterDraftRepo draftrepo.Repository
@@ -67,15 +381,15 @@ func New(cfg *Config) (*Orchestrator, error) {
 }
 
 // Ensure Orchestrator implements the Service interface
-var _ character.Service = (*Orchestrator)(nil)
+var _ Service = (*Orchestrator)(nil)
 
 // Draft lifecycle methods
 
 // CreateDraft creates a new character draft
 func (o *Orchestrator) CreateDraft(
 	ctx context.Context,
-	input *character.CreateDraftInput,
-) (*character.CreateDraftOutput, error) {
+	input *CreateDraftInput,
+) (*CreateDraftOutput, error) {
 	if input == nil {
 		return nil, errors.InvalidArgument("input is required")
 	}
@@ -161,7 +475,7 @@ func (o *Orchestrator) CreateDraft(
 		return nil, errors.Wrapf(err, "failed to create draft")
 	}
 
-	return &character.CreateDraftOutput{
+	return &CreateDraftOutput{
 		Draft: createOutput.Draft,
 	}, nil
 }
@@ -169,8 +483,8 @@ func (o *Orchestrator) CreateDraft(
 // GetDraft retrieves a character draft by ID
 func (o *Orchestrator) GetDraft(
 	ctx context.Context,
-	input *character.GetDraftInput,
-) (*character.GetDraftOutput, error) {
+	input *GetDraftInput,
+) (*GetDraftOutput, error) {
 	if input == nil {
 		return nil, errors.InvalidArgument("input is required")
 	}
@@ -187,7 +501,7 @@ func (o *Orchestrator) GetDraft(
 			WithMeta("draft_id", input.DraftID)
 	}
 
-	return &character.GetDraftOutput{
+	return &GetDraftOutput{
 		Draft: getOutput.Draft,
 	}, nil
 }
@@ -195,8 +509,8 @@ func (o *Orchestrator) GetDraft(
 // ListDrafts lists character drafts with optional filters
 func (o *Orchestrator) ListDrafts(
 	ctx context.Context,
-	input *character.ListDraftsInput,
-) (*character.ListDraftsOutput, error) {
+	input *ListDraftsInput,
+) (*ListDraftsOutput, error) {
 	if input == nil {
 		return nil, errors.InvalidArgument("input is required")
 	}
@@ -213,7 +527,7 @@ func (o *Orchestrator) ListDrafts(
 	if err != nil {
 		if errors.IsNotFound(err) {
 			// No draft found - return empty list
-			return &character.ListDraftsOutput{
+			return &ListDraftsOutput{
 				Drafts:        []*dnd5e.CharacterDraft{},
 				NextPageToken: "",
 			}, nil
@@ -222,7 +536,7 @@ func (o *Orchestrator) ListDrafts(
 	}
 
 	// Return single draft as a list
-	return &character.ListDraftsOutput{
+	return &ListDraftsOutput{
 		Drafts:        []*dnd5e.CharacterDraft{draftOutput.Draft},
 		NextPageToken: "", // No pagination needed for single draft
 	}, nil
@@ -231,8 +545,8 @@ func (o *Orchestrator) ListDrafts(
 // DeleteDraft deletes a character draft
 func (o *Orchestrator) DeleteDraft(
 	ctx context.Context,
-	input *character.DeleteDraftInput,
-) (*character.DeleteDraftOutput, error) {
+	input *DeleteDraftInput,
+) (*DeleteDraftOutput, error) {
 	if input == nil {
 		return nil, errors.InvalidArgument("input is required")
 	}
@@ -248,7 +562,7 @@ func (o *Orchestrator) DeleteDraft(
 		return nil, errors.Wrap(err, "failed to delete draft")
 	}
 
-	return &character.DeleteDraftOutput{
+	return &DeleteDraftOutput{
 		Message: fmt.Sprintf("Draft %s deleted successfully", input.DraftID),
 	}, nil
 }
@@ -258,8 +572,8 @@ func (o *Orchestrator) DeleteDraft(
 // UpdateName updates the character's name
 func (o *Orchestrator) UpdateName(
 	ctx context.Context,
-	input *character.UpdateNameInput,
-) (*character.UpdateNameOutput, error) {
+	input *UpdateNameInput,
+) (*UpdateNameOutput, error) {
 	if input == nil {
 		return nil, errors.InvalidArgument("input is required")
 	}
@@ -292,7 +606,7 @@ func (o *Orchestrator) UpdateName(
 		return nil, errors.Wrap(err, "failed to update draft")
 	}
 
-	return &character.UpdateNameOutput{
+	return &UpdateNameOutput{
 		Draft: updateOutput.Draft,
 	}, nil
 }
@@ -300,8 +614,8 @@ func (o *Orchestrator) UpdateName(
 // UpdateRace updates the character's race
 func (o *Orchestrator) UpdateRace(
 	ctx context.Context,
-	input *character.UpdateRaceInput,
-) (*character.UpdateRaceOutput, error) {
+	input *UpdateRaceInput,
+) (*UpdateRaceOutput, error) {
 	if input == nil {
 		return nil, errors.InvalidArgument("input is required")
 	}
@@ -331,7 +645,7 @@ func (o *Orchestrator) UpdateRace(
 	}
 
 	// Convert validation errors to warnings
-	var warnings []character.ValidationWarning
+	var warnings []ValidationWarning
 	if !validateOutput.IsValid {
 		warnings = convertValidationErrorsToWarnings(validateOutput.Errors)
 	}
@@ -360,7 +674,7 @@ func (o *Orchestrator) UpdateRace(
 		return nil, errors.Wrap(err, "failed to update draft")
 	}
 
-	return &character.UpdateRaceOutput{
+	return &UpdateRaceOutput{
 		Draft:    updateOutput.Draft,
 		Warnings: warnings,
 	}, nil
@@ -369,8 +683,8 @@ func (o *Orchestrator) UpdateRace(
 // UpdateClass updates the character's class
 func (o *Orchestrator) UpdateClass(
 	ctx context.Context,
-	input *character.UpdateClassInput,
-) (*character.UpdateClassOutput, error) {
+	input *UpdateClassInput,
+) (*UpdateClassOutput, error) {
 	if input == nil {
 		return nil, errors.InvalidArgument("input is required")
 	}
@@ -400,7 +714,7 @@ func (o *Orchestrator) UpdateClass(
 	}
 
 	// Convert validation errors to warnings
-	var warnings []character.ValidationWarning
+	var warnings []ValidationWarning
 	if !validateOutput.IsValid {
 		warnings = convertValidationErrorsToWarnings(validateOutput.Errors)
 	}
@@ -425,7 +739,7 @@ func (o *Orchestrator) UpdateClass(
 		return nil, errors.Wrap(err, "failed to update draft")
 	}
 
-	return &character.UpdateClassOutput{
+	return &UpdateClassOutput{
 		Draft:    updateOutput.Draft,
 		Warnings: warnings,
 	}, nil
@@ -434,8 +748,8 @@ func (o *Orchestrator) UpdateClass(
 // UpdateBackground updates the character's background
 func (o *Orchestrator) UpdateBackground(
 	ctx context.Context,
-	input *character.UpdateBackgroundInput,
-) (*character.UpdateBackgroundOutput, error) {
+	input *UpdateBackgroundInput,
+) (*UpdateBackgroundOutput, error) {
 	if input == nil {
 		return nil, errors.InvalidArgument("input is required")
 	}
@@ -487,7 +801,7 @@ func (o *Orchestrator) UpdateBackground(
 		return nil, errors.Wrap(err, "failed to update draft")
 	}
 
-	return &character.UpdateBackgroundOutput{
+	return &UpdateBackgroundOutput{
 		Draft: updateOutput.Draft,
 	}, nil
 }
@@ -495,8 +809,8 @@ func (o *Orchestrator) UpdateBackground(
 // UpdateAbilityScores updates the character's ability scores
 func (o *Orchestrator) UpdateAbilityScores(
 	ctx context.Context,
-	input *character.UpdateAbilityScoresInput,
-) (*character.UpdateAbilityScoresOutput, error) {
+	input *UpdateAbilityScoresInput,
+) (*UpdateAbilityScoresOutput, error) {
 	if input == nil {
 		return nil, errors.InvalidArgument("input is required")
 	}
@@ -530,7 +844,7 @@ func (o *Orchestrator) UpdateAbilityScores(
 	}
 
 	// Collect warnings
-	var warnings []character.ValidationWarning
+	var warnings []ValidationWarning
 
 	// Validate class requirements if class is selected
 	if draft.ClassID != "" {
@@ -545,7 +859,7 @@ func (o *Orchestrator) UpdateAbilityScores(
 		if !classValidateOutput.IsValid {
 			// Convert class requirement errors to warnings
 			for _, e := range classValidateOutput.Errors {
-				warnings = append(warnings, character.ValidationWarning{
+				warnings = append(warnings, ValidationWarning{
 					Field:   "class_requirements",
 					Message: e.Message,
 					Type:    e.Code,
@@ -568,7 +882,7 @@ func (o *Orchestrator) UpdateAbilityScores(
 		return nil, errors.Wrap(err, "failed to update draft")
 	}
 
-	return &character.UpdateAbilityScoresOutput{
+	return &UpdateAbilityScoresOutput{
 		Draft:    updateOutput.Draft,
 		Warnings: warnings,
 	}, nil
@@ -577,8 +891,8 @@ func (o *Orchestrator) UpdateAbilityScores(
 // UpdateSkills updates the character's starting skills
 func (o *Orchestrator) UpdateSkills(
 	ctx context.Context,
-	input *character.UpdateSkillsInput,
-) (*character.UpdateSkillsOutput, error) {
+	input *UpdateSkillsInput,
+) (*UpdateSkillsOutput, error) {
 	if input == nil {
 		return nil, errors.InvalidArgument("input is required")
 	}
@@ -597,11 +911,11 @@ func (o *Orchestrator) UpdateSkills(
 	draft := getOutput.Draft
 
 	// Collect warnings
-	var warnings []character.ValidationWarning
+	var warnings []ValidationWarning
 
 	// Check prerequisites
 	if draft.ClassID == "" || draft.BackgroundID == "" {
-		warnings = append(warnings, character.ValidationWarning{
+		warnings = append(warnings, ValidationWarning{
 			Field:   "prerequisites",
 			Message: "Class and background must be selected before choosing skills",
 			Type:    "MISSING_PREREQUISITES",
@@ -621,7 +935,7 @@ func (o *Orchestrator) UpdateSkills(
 		if !validateOutput.IsValid {
 			// Convert validation errors to warnings
 			for _, e := range validateOutput.Errors {
-				warnings = append(warnings, character.ValidationWarning{
+				warnings = append(warnings, ValidationWarning{
 					Field:   e.Field,
 					Message: e.Message,
 					Type:    e.Code,
@@ -644,7 +958,7 @@ func (o *Orchestrator) UpdateSkills(
 		return nil, errors.Wrap(err, "failed to update draft")
 	}
 
-	return &character.UpdateSkillsOutput{
+	return &UpdateSkillsOutput{
 		Draft:    updateOutput.Draft,
 		Warnings: warnings,
 	}, nil
@@ -655,8 +969,8 @@ func (o *Orchestrator) UpdateSkills(
 // ValidateDraft validates a character draft
 func (o *Orchestrator) ValidateDraft(
 	ctx context.Context,
-	input *character.ValidateDraftInput,
-) (*character.ValidateDraftOutput, error) {
+	input *ValidateDraftInput,
+) (*ValidateDraftOutput, error) {
 	if input == nil {
 		return nil, errors.InvalidArgument("input is required")
 	}
@@ -683,7 +997,7 @@ func (o *Orchestrator) ValidateDraft(
 		return nil, errors.Wrap(err, "failed to validate draft")
 	}
 
-	return &character.ValidateDraftOutput{
+	return &ValidateDraftOutput{
 		IsComplete:   validateOutput.IsComplete,
 		IsValid:      validateOutput.IsValid,
 		Errors:       convertValidationErrors(validateOutput.Errors),
@@ -697,8 +1011,8 @@ func (o *Orchestrator) ValidateDraft(
 // FinalizeDraft finalizes a character draft into a full character
 func (o *Orchestrator) FinalizeDraft(
 	ctx context.Context,
-	input *character.FinalizeDraftInput,
-) (*character.FinalizeDraftOutput, error) {
+	input *FinalizeDraftInput,
+) (*FinalizeDraftOutput, error) {
 	if input == nil {
 		return nil, errors.InvalidArgument("input is required")
 	}
@@ -776,7 +1090,7 @@ func (o *Orchestrator) FinalizeDraft(
 		// Continue - the character was created successfully
 	}
 
-	return &character.FinalizeDraftOutput{
+	return &FinalizeDraftOutput{
 		Character:    createOutput.Character,
 		DraftDeleted: err == nil,
 	}, nil
@@ -787,8 +1101,8 @@ func (o *Orchestrator) FinalizeDraft(
 // GetCharacter retrieves a character by ID
 func (o *Orchestrator) GetCharacter(
 	ctx context.Context,
-	input *character.GetCharacterInput,
-) (*character.GetCharacterOutput, error) {
+	input *GetCharacterInput,
+) (*GetCharacterOutput, error) {
 	if input == nil {
 		return nil, errors.InvalidArgument("input is required")
 	}
@@ -804,7 +1118,7 @@ func (o *Orchestrator) GetCharacter(
 		return nil, errors.Wrap(err, "failed to get character")
 	}
 
-	return &character.GetCharacterOutput{
+	return &GetCharacterOutput{
 		Character: getOutput.Character,
 	}, nil
 }
@@ -812,8 +1126,8 @@ func (o *Orchestrator) GetCharacter(
 // ListCharacters lists characters with optional filters
 func (o *Orchestrator) ListCharacters(
 	ctx context.Context,
-	input *character.ListCharactersInput,
-) (*character.ListCharactersOutput, error) {
+	input *ListCharactersInput,
+) (*ListCharactersOutput, error) {
 	if input == nil {
 		return nil, errors.InvalidArgument("input is required")
 	}
@@ -843,7 +1157,7 @@ func (o *Orchestrator) ListCharacters(
 		return nil, errors.InvalidArgument("either PlayerID or SessionID must be provided")
 	}
 
-	return &character.ListCharactersOutput{
+	return &ListCharactersOutput{
 		Characters:    characters,
 		NextPageToken: "", // TODO: implement pagination if needed
 	}, nil
@@ -852,8 +1166,8 @@ func (o *Orchestrator) ListCharacters(
 // DeleteCharacter deletes a character
 func (o *Orchestrator) DeleteCharacter(
 	ctx context.Context,
-	input *character.DeleteCharacterInput,
-) (*character.DeleteCharacterOutput, error) {
+	input *DeleteCharacterInput,
+) (*DeleteCharacterOutput, error) {
 	if input == nil {
 		return nil, errors.InvalidArgument("input is required")
 	}
@@ -869,7 +1183,7 @@ func (o *Orchestrator) DeleteCharacter(
 		return nil, errors.Wrap(err, "failed to delete character")
 	}
 
-	return &character.DeleteCharacterOutput{
+	return &DeleteCharacterOutput{
 		Message: fmt.Sprintf("Character %s deleted successfully", input.CharacterID),
 	}, nil
 }
@@ -909,10 +1223,10 @@ func (o *Orchestrator) updateCompletionPercentage(draft *dnd5e.CharacterDraft) {
 }
 
 // convertValidationErrors converts engine ValidationError to service ValidationError
-func convertValidationErrors(errors []engine.ValidationError) []character.ValidationError {
-	result := make([]character.ValidationError, len(errors))
+func convertValidationErrors(errors []engine.ValidationError) []ValidationError {
+	result := make([]ValidationError, len(errors))
 	for i, e := range errors {
-		result[i] = character.ValidationError{
+		result[i] = ValidationError{
 			Field:   e.Field,
 			Message: e.Message,
 			Type:    e.Code,
@@ -922,10 +1236,10 @@ func convertValidationErrors(errors []engine.ValidationError) []character.Valida
 }
 
 // convertValidationWarnings converts engine ValidationWarning to service ValidationWarning
-func convertValidationWarnings(warnings []engine.ValidationWarning) []character.ValidationWarning {
-	result := make([]character.ValidationWarning, len(warnings))
+func convertValidationWarnings(warnings []engine.ValidationWarning) []ValidationWarning {
+	result := make([]ValidationWarning, len(warnings))
 	for i, w := range warnings {
-		result[i] = character.ValidationWarning{
+		result[i] = ValidationWarning{
 			Field:   w.Field,
 			Message: w.Message,
 			Type:    w.Code,
@@ -934,11 +1248,294 @@ func convertValidationWarnings(warnings []engine.ValidationWarning) []character.
 	return result
 }
 
+// Data loading methods for character creation UI
+
+// ListRaces retrieves available races for character creation
+func (o *Orchestrator) ListRaces(
+	ctx context.Context,
+	input *ListRacesInput,
+) (*ListRacesOutput, error) {
+	if input == nil {
+		return nil, errors.InvalidArgument("input is required")
+	}
+
+	// TODO: Implement pagination with PageSize and PageToken
+	// For now, return all races
+	races, err := o.externalClient.ListAvailableRaces(ctx)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to list races from external client")
+	}
+
+	// Convert external race data to entity format
+	entityRaces := make([]*dnd5e.RaceInfo, len(races))
+	for i, race := range races {
+		entityRaces[i] = convertExternalRaceToEntity(race)
+	}
+
+	var totalSize int32
+	if len(entityRaces) > 2147483647 { // Max int32 value
+		totalSize = 2147483647
+	} else {
+		totalSize = int32(len(entityRaces))
+	}
+
+	return &ListRacesOutput{
+		Races:         entityRaces,
+		NextPageToken: "", // TODO: Implement pagination
+		TotalSize:     totalSize,
+	}, nil
+}
+
+// ListClasses retrieves available classes for character creation
+func (o *Orchestrator) ListClasses(
+	ctx context.Context,
+	input *ListClassesInput,
+) (*ListClassesOutput, error) {
+	if input == nil {
+		return nil, errors.InvalidArgument("input is required")
+	}
+
+	// TODO: Implement pagination and filtering
+	classes, err := o.externalClient.ListAvailableClasses(ctx)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to list classes from external client")
+	}
+
+	// Convert external class data to entity format
+	entityClasses := make([]*dnd5e.ClassInfo, len(classes))
+	for i, class := range classes {
+		entityClasses[i] = convertExternalClassToEntity(class)
+	}
+
+	var totalSize int32
+	if len(entityClasses) > 2147483647 { // Max int32 value
+		totalSize = 2147483647
+	} else {
+		totalSize = int32(len(entityClasses))
+	}
+
+	return &ListClassesOutput{
+		Classes:       entityClasses,
+		NextPageToken: "", // TODO: Implement pagination
+		TotalSize:     totalSize,
+	}, nil
+}
+
+// ListBackgrounds retrieves available backgrounds for character creation
+func (o *Orchestrator) ListBackgrounds(
+	ctx context.Context,
+	input *ListBackgroundsInput,
+) (*ListBackgroundsOutput, error) {
+	if input == nil {
+		return nil, errors.InvalidArgument("input is required")
+	}
+
+	// TODO: Implement pagination
+	backgrounds, err := o.externalClient.ListAvailableBackgrounds(ctx)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to list backgrounds from external client")
+	}
+
+	// Convert external background data to entity format
+	entityBackgrounds := make([]*dnd5e.BackgroundInfo, len(backgrounds))
+	for i, background := range backgrounds {
+		entityBackgrounds[i] = convertExternalBackgroundToEntity(background)
+	}
+
+	var totalSize int32
+	if len(entityBackgrounds) > 2147483647 { // Max int32 value
+		totalSize = 2147483647
+	} else {
+		totalSize = int32(len(entityBackgrounds))
+	}
+
+	return &ListBackgroundsOutput{
+		Backgrounds:   entityBackgrounds,
+		NextPageToken: "", // TODO: Implement pagination
+		TotalSize:     totalSize,
+	}, nil
+}
+
+// GetRaceDetails retrieves detailed information about a specific race
+func (o *Orchestrator) GetRaceDetails(
+	ctx context.Context,
+	input *GetRaceDetailsInput,
+) (*GetRaceDetailsOutput, error) {
+	if input == nil {
+		return nil, errors.InvalidArgument("input is required")
+	}
+
+	vb := errors.NewValidationBuilder()
+	errors.ValidateRequired("raceID", input.RaceID, vb)
+	if err := vb.Build(); err != nil {
+		return nil, err
+	}
+
+	race, err := o.externalClient.GetRaceData(ctx, input.RaceID)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to get race details from external client")
+	}
+
+	entityRace := convertExternalRaceToEntity(race)
+
+	return &GetRaceDetailsOutput{
+		Race: entityRace,
+	}, nil
+}
+
+// GetClassDetails retrieves detailed information about a specific class
+func (o *Orchestrator) GetClassDetails(
+	ctx context.Context,
+	input *GetClassDetailsInput,
+) (*GetClassDetailsOutput, error) {
+	if input == nil {
+		return nil, errors.InvalidArgument("input is required")
+	}
+
+	vb := errors.NewValidationBuilder()
+	errors.ValidateRequired("classID", input.ClassID, vb)
+	if err := vb.Build(); err != nil {
+		return nil, err
+	}
+
+	class, err := o.externalClient.GetClassData(ctx, input.ClassID)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to get class details from external client")
+	}
+
+	entityClass := convertExternalClassToEntity(class)
+
+	return &GetClassDetailsOutput{
+		Class: entityClass,
+	}, nil
+}
+
+// GetBackgroundDetails retrieves detailed information about a specific background
+func (o *Orchestrator) GetBackgroundDetails(
+	ctx context.Context,
+	input *GetBackgroundDetailsInput,
+) (*GetBackgroundDetailsOutput, error) {
+	if input == nil {
+		return nil, errors.InvalidArgument("input is required")
+	}
+
+	vb := errors.NewValidationBuilder()
+	errors.ValidateRequired("backgroundID", input.BackgroundID, vb)
+	if err := vb.Build(); err != nil {
+		return nil, err
+	}
+
+	background, err := o.externalClient.GetBackgroundData(ctx, input.BackgroundID)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to get background details from external client")
+	}
+
+	entityBackground := convertExternalBackgroundToEntity(background)
+
+	return &GetBackgroundDetailsOutput{
+		Background: entityBackground,
+	}, nil
+}
+
+// Conversion helpers for external data to entity format
+
+// convertExternalRaceToEntity converts external race data to entity format
+func convertExternalRaceToEntity(race *external.RaceData) *dnd5e.RaceInfo {
+	traits := make([]dnd5e.RacialTrait, len(race.Traits))
+	for i, trait := range race.Traits {
+		traits[i] = dnd5e.RacialTrait{
+			Name:        trait,
+			Description: trait, // TODO: Get actual descriptions
+			IsChoice:    false, // TODO: Determine if this is a choice
+			Options:     nil,   // TODO: Get actual options
+		}
+	}
+
+	subraces := make([]dnd5e.SubraceInfo, len(race.Subraces))
+	for i, subrace := range race.Subraces {
+		subraceTraits := make([]dnd5e.RacialTrait, len(subrace.Traits))
+		for j, trait := range subrace.Traits {
+			subraceTraits[j] = dnd5e.RacialTrait{
+				Name:        trait,
+				Description: trait, // TODO: Get actual descriptions
+				IsChoice:    false, // TODO: Determine if this is a choice
+				Options:     nil,   // TODO: Get actual options
+			}
+		}
+
+		subraces[i] = dnd5e.SubraceInfo{
+			ID:             subrace.ID,
+			Name:           subrace.Name,
+			Description:    subrace.Description,
+			AbilityBonuses: subrace.AbilityBonuses,
+			Traits:         subraceTraits,
+		}
+	}
+
+	return &dnd5e.RaceInfo{
+		ID:                   race.ID,
+		Name:                 race.Name,
+		Description:          race.Description,
+		Speed:                race.Speed,
+		Size:                 race.Size,
+		AbilityBonuses:       race.AbilityBonuses,
+		Traits:               traits,
+		Subraces:             subraces,
+		Proficiencies:        []string{}, // TODO: Get from external data
+		Languages:            []string{}, // TODO: Get from external data
+		AgeDescription:       "",         // TODO: Get from external data
+		AlignmentDescription: "",         // TODO: Get from external data
+	}
+}
+
+// convertExternalClassToEntity converts external class data to entity format
+func convertExternalClassToEntity(class *external.ClassData) *dnd5e.ClassInfo {
+	// TODO: Implement full conversion when external.ClassData is expanded
+	return &dnd5e.ClassInfo{
+		ID:                       class.ID,
+		Name:                     class.Name,
+		Description:              class.Description,
+		HitDie:                   class.HitDice,
+		PrimaryAbilities:         []string{class.PrimaryAbility},
+		ArmorProficiencies:       []string{}, // TODO: Get from external data
+		WeaponProficiencies:      []string{}, // TODO: Get from external data
+		ToolProficiencies:        []string{}, // TODO: Get from external data
+		SavingThrowProficiencies: class.SavingThrows,
+		SkillChoicesCount:        class.SkillsCount,
+		AvailableSkills:          class.AvailableSkills,
+		StartingEquipment:        class.StartingEquipment,
+		EquipmentChoices:         []dnd5e.EquipmentChoice{}, // TODO: Get from external data
+		Level1Features:           []dnd5e.ClassFeature{},    // TODO: Get from external data
+		Spellcasting:             nil,                       // TODO: Get from external data
+	}
+}
+
+// convertExternalBackgroundToEntity converts external background data to entity format
+func convertExternalBackgroundToEntity(background *external.BackgroundData) *dnd5e.BackgroundInfo {
+	return &dnd5e.BackgroundInfo{
+		ID:                  background.ID,
+		Name:                background.Name,
+		Description:         background.Description,
+		SkillProficiencies:  background.SkillProficiencies,
+		ToolProficiencies:   []string{}, // TODO: Get from external data
+		Languages:           []string{}, // TODO: Get from external data
+		AdditionalLanguages: background.Languages,
+		StartingEquipment:   background.Equipment,
+		StartingGold:        0, // TODO: Get from external data
+		FeatureName:         background.Feature,
+		FeatureDescription:  background.Feature, // TODO: Get detailed description
+		PersonalityTraits:   []string{},         // TODO: Get from external data
+		Ideals:              []string{},         // TODO: Get from external data
+		Bonds:               []string{},         // TODO: Get from external data
+		Flaws:               []string{},         // TODO: Get from external data
+	}
+}
+
 // convertValidationErrorsToWarnings converts engine ValidationError to service ValidationWarning
-func convertValidationErrorsToWarnings(errors []engine.ValidationError) []character.ValidationWarning {
-	result := make([]character.ValidationWarning, len(errors))
+func convertValidationErrorsToWarnings(errors []engine.ValidationError) []ValidationWarning {
+	result := make([]ValidationWarning, len(errors))
 	for i, e := range errors {
-		result[i] = character.ValidationWarning{
+		result[i] = ValidationWarning{
 			Field:   e.Field,
 			Message: e.Message,
 			Type:    e.Code,

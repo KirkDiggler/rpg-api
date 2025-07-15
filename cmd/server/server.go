@@ -12,18 +12,21 @@ import (
 
 	"github.com/spf13/cobra"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/health"
 	"google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/reflection"
-	"google.golang.org/grpc/status"
 
 	grpc_logging "github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/logging"
 	grpc_recovery "github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/recovery"
 
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
+	"github.com/KirkDiggler/rpg-api/internal/clients/external"
+	"github.com/KirkDiggler/rpg-api/internal/engine"
 	"github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v1alpha1"
-	"github.com/KirkDiggler/rpg-api/internal/services/character"
+	"github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
+	"github.com/KirkDiggler/rpg-api/internal/redis"
+	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
+	characterdraftrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft"
 )
 
 var (
@@ -70,9 +73,38 @@ func runServer(_ *cobra.Command, _ []string) error {
 		),
 	)
 
+	charRepo, err := characterrepo.NewRedis(&characterrepo.RedisConfig{
+		Client: mustRedisClient(),
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create character repository: %w", err)
+	}
+
+	draftRepo, err := characterdraftrepo.NewRedis(&characterdraftrepo.RedisConfig{
+		Client: mustRedisClient(),
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create character draft repository: %w", err)
+	}
+
+	e, err := engine.New(&engine.Config{})
+	if err != nil {
+		return fmt.Errorf("failed to create engine: %w", err)
+	}
+
+	client, err := external.New(&external.Config{})
+	if err != nil {
+		return fmt.Errorf("failed to create external client: %w", err)
+	}
+
 	// Initialize services (stub for now)
 	// TODO: Replace with real service implementation
-	characterService := &stubCharacterService{}
+	characterService, err := character.New(&character.Config{
+		CharacterRepo:      charRepo,
+		CharacterDraftRepo: draftRepo,
+		Engine:             e,
+		ExternalClient:     client,
+	})
 
 	// Initialize handlers
 	characterHandler, err := v1alpha1.NewHandler(&v1alpha1.HandlerConfig{
@@ -133,111 +165,10 @@ func logFunc(_ context.Context, level grpc_logging.Level, msg string, fields ...
 	log.Printf("[%v] %s %v", level, msg, fields)
 }
 
-// stubCharacterService is a temporary stub implementation
-// TODO: Remove when real service is implemented
-type stubCharacterService struct{}
-
-func (s *stubCharacterService) CreateDraft(
-	_ context.Context,
-	_ *character.CreateDraftInput,
-) (*character.CreateDraftOutput, error) {
-	return nil, status.Error(codes.Unimplemented, "not implemented")
-}
-
-func (s *stubCharacterService) GetDraft(
-	_ context.Context,
-	_ *character.GetDraftInput,
-) (*character.GetDraftOutput, error) {
-	return nil, status.Error(codes.Unimplemented, "not implemented")
-}
-
-func (s *stubCharacterService) ListDrafts(
-	_ context.Context,
-	_ *character.ListDraftsInput,
-) (*character.ListDraftsOutput, error) {
-	return nil, status.Error(codes.Unimplemented, "not implemented")
-}
-
-func (s *stubCharacterService) DeleteDraft(
-	_ context.Context,
-	_ *character.DeleteDraftInput,
-) (*character.DeleteDraftOutput, error) {
-	return nil, status.Error(codes.Unimplemented, "not implemented")
-}
-
-func (s *stubCharacterService) UpdateName(
-	_ context.Context,
-	_ *character.UpdateNameInput,
-) (*character.UpdateNameOutput, error) {
-	return nil, status.Error(codes.Unimplemented, "not implemented")
-}
-
-func (s *stubCharacterService) UpdateRace(
-	_ context.Context,
-	_ *character.UpdateRaceInput,
-) (*character.UpdateRaceOutput, error) {
-	return nil, status.Error(codes.Unimplemented, "not implemented")
-}
-
-func (s *stubCharacterService) UpdateClass(
-	_ context.Context,
-	_ *character.UpdateClassInput,
-) (*character.UpdateClassOutput, error) {
-	return nil, status.Error(codes.Unimplemented, "not implemented")
-}
-
-func (s *stubCharacterService) UpdateBackground(
-	_ context.Context,
-	_ *character.UpdateBackgroundInput,
-) (*character.UpdateBackgroundOutput, error) {
-	return nil, status.Error(codes.Unimplemented, "not implemented")
-}
-
-func (s *stubCharacterService) UpdateAbilityScores(
-	_ context.Context,
-	_ *character.UpdateAbilityScoresInput,
-) (*character.UpdateAbilityScoresOutput, error) {
-	return nil, status.Error(codes.Unimplemented, "not implemented")
-}
-
-func (s *stubCharacterService) UpdateSkills(
-	_ context.Context,
-	_ *character.UpdateSkillsInput,
-) (*character.UpdateSkillsOutput, error) {
-	return nil, status.Error(codes.Unimplemented, "not implemented")
-}
-
-func (s *stubCharacterService) ValidateDraft(
-	_ context.Context,
-	_ *character.ValidateDraftInput,
-) (*character.ValidateDraftOutput, error) {
-	return nil, status.Error(codes.Unimplemented, "not implemented")
-}
-
-func (s *stubCharacterService) FinalizeDraft(
-	_ context.Context,
-	_ *character.FinalizeDraftInput,
-) (*character.FinalizeDraftOutput, error) {
-	return nil, status.Error(codes.Unimplemented, "not implemented")
-}
-
-func (s *stubCharacterService) GetCharacter(
-	_ context.Context,
-	_ *character.GetCharacterInput,
-) (*character.GetCharacterOutput, error) {
-	return nil, status.Error(codes.Unimplemented, "not implemented")
-}
-
-func (s *stubCharacterService) ListCharacters(
-	_ context.Context,
-	_ *character.ListCharactersInput,
-) (*character.ListCharactersOutput, error) {
-	return nil, status.Error(codes.Unimplemented, "not implemented")
-}
-
-func (s *stubCharacterService) DeleteCharacter(
-	_ context.Context,
-	_ *character.DeleteCharacterInput,
-) (*character.DeleteCharacterOutput, error) {
-	return nil, status.Error(codes.Unimplemented, "not implemented")
+func mustRedisClient() redis.Client {
+	client, err := redis.NewClient("redis://localhost:6379")
+	if err != nil {
+		panic(err)
+	}
+	return client
 }
