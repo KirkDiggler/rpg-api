@@ -47,7 +47,6 @@ rpg-api serves as the orchestration layer between game engines and user interfac
 
 - Go 1.24+ (we use the latest Go version for optimal performance)
 - Redis 7+ (initial storage implementation)
-- protoc 3.x with Go plugins
 - Storage backend of your choice (via repository adapters)
 
 ### Development Setup
@@ -84,7 +83,7 @@ This ensures:
 
 ```
 rpg-api/
-├── api/proto/v1alpha1/ # gRPC API definitions
+├── api/                # API-related code (protos moved to rpg-api-protos)
 ├── cmd/server/         # Application entrypoint
 ├── internal/           # Private application code
 │   ├── entities/       # Simple domain models
@@ -101,7 +100,7 @@ Each package includes a README explaining its purpose and boundaries.
 
 - **[Architecture Decision Records](docs/adr/)**: Understand why we built it this way
 - **[Journey Documents](docs/journey/)**: Learn from our exploration and challenges
-- **[API Documentation](docs/api/)**: Generated from protobuf definitions
+- **[API Documentation](https://github.com/KirkDiggler/rpg-api-protos)**: Proto definitions in separate repository
 
 ## Design Principles
 

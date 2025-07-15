@@ -4,7 +4,7 @@ help: ## Display this help message
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-20s %s\n", $$1, $$2}'
 
 .PHONY: pre-commit
-pre-commit: fmt tidy fix-eof buf-lint lint test ## Run all pre-commit checks
+pre-commit: fmt tidy fix-eof lint test ## Run all pre-commit checks
 
 .PHONY: fmt
 fmt: ## Format Go code with gofmt and goimports
@@ -40,44 +40,6 @@ test-coverage: test ## Run tests and display coverage
 	@go tool cover -html=coverage.out -o coverage.html
 	@echo "Coverage report generated: coverage.html"
 
-.PHONY: proto
-proto: buf-generate ## Generate code from proto files (alias for buf-generate)
-
-.PHONY: buf-lint
-buf-lint: ## Lint proto files with buf
-	@echo "==> Linting proto files..."
-	@if ! command -v buf &> /dev/null; then \
-		echo "buf not found. Installing..."; \
-		go install github.com/bufbuild/buf/cmd/buf@latest; \
-	fi
-	@buf lint
-
-# Check if proto files have changed
-PROTO_FILES := $(shell find api/proto -name '*.proto' 2>/dev/null)
-GEN_GO_FILES := $(shell find gen/go -name '*.pb.go' 2>/dev/null)
-
-# Only regenerate if protos are newer than generated files
-.PHONY: buf-generate
-buf-generate: ## Generate code from proto files using buf
-	@if [ -z "$(GEN_GO_FILES)" ] || [ -n "$$(find api/proto -name '*.proto' -newer gen/go -print -quit 2>/dev/null)" ]; then \
-		echo "==> Generating proto code with buf..."; \
-		if ! command -v buf &> /dev/null; then \
-			echo "buf not found. Installing..."; \
-			go install github.com/bufbuild/buf/cmd/buf@latest; \
-		fi; \
-		buf generate; \
-	else \
-		echo "==> Proto files unchanged, skipping generation"; \
-	fi
-
-.PHONY: buf-breaking
-buf-breaking: ## Check for breaking changes in proto files
-	@echo "==> Checking for breaking changes..."
-	@if ! command -v buf &> /dev/null; then \
-		echo "buf not found. Installing..."; \
-		go install github.com/bufbuild/buf/cmd/buf@latest; \
-	fi
-	@buf breaking --against '.git#branch=main'
 
 .PHONY: run
 run: ## Run the server
@@ -102,7 +64,7 @@ clean: ## Clean build artifacts
 .PHONY: fix-eof
 fix-eof: ## Add missing EOF newlines
 	@echo "==> Fixing EOF newlines..."
-	@for file in $$(git ls-files '*.go' '*.proto' '*.md' '*.yml' '*.yaml' '*.json' 'Makefile' '.gitignore'); do \
+	@for file in $$(git ls-files '*.go' '*.md' '*.yml' '*.yaml' '*.json' 'Makefile' '.gitignore'); do \
 		if [ -f "$$file" ] && [ -s "$$file" ] && [ $$(tail -c1 "$$file" | wc -l) -eq 0 ]; then \
 			echo "Fixing: $$file"; \
 			echo >> "$$file"; \
@@ -115,11 +77,8 @@ deps: install-tools ## Install development dependencies (alias for install-tools
 .PHONY: install-tools
 install-tools: ## Install all development tools
 	@echo "==> Installing development tools..."
-	@go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
-	@go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
 	@curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/HEAD/install.sh | sh -s -- -b $$(go env GOPATH)/bin v2.2.2
 	@go install go.uber.org/mock/mockgen@latest
-	@go install github.com/bufbuild/buf/cmd/buf@latest
 	@go install golang.org/x/tools/cmd/goimports@latest
 	@echo "✅ Tools installed successfully"
 
@@ -144,22 +103,13 @@ fix: fmt tidy fix-eof ## Fix all auto-fixable issues
 	@echo "Run 'git add -u' to stage the changes"
 
 .PHONY: generate
-generate: buf-generate mocks ## Generate all code (protos and mocks)
+generate: mocks ## Generate all code (mocks only)
 
 .PHONY: mocks
 mocks: ## Generate mocks
 	@echo "==> Generating mocks..."
 	@go generate ./...
 
-.PHONY: proto-mocks
-proto-mocks: buf-generate ## Generate mocks for proto clients (for Discord bot)
-	@echo "==> Generating proto client mocks..."
-	@if ! command -v mockgen &> /dev/null; then \
-		echo "mockgen not found. Installing..."; \
-		go install github.com/golang/mock/mockgen@latest; \
-	fi
-	@mkdir -p mocks/proto
-	@mockgen -source=gen/go/github.com/KirkDiggler/rpg-api/api/proto/v1alpha1/dnd5e/character_grpc.pb.go -destination=mocks/proto/character_api_mock.go -package=protomocks
 
 .PHONY: docker-build
 docker-build: ## Build Docker image
