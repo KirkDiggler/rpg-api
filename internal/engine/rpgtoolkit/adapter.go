@@ -27,6 +27,16 @@ const (
 	skillSourceBackground = "background"
 )
 
+// Ability constants
+const (
+	abilityStrength     = "strength"
+	abilityDexterity    = "dexterity"
+	abilityConstitution = "constitution"
+	abilityIntelligence = "intelligence"
+	abilityWisdom       = "wisdom"
+	abilityCharisma     = "charisma"
+)
+
 // AdapterConfig contains configuration for creating a new Adapter
 type AdapterConfig struct {
 	EventBus       events.EventBus
@@ -89,6 +99,142 @@ func (a *Adapter) CalculateProficiencyBonus(level int32) int32 {
 	return 2 + ((level - 1) / 4)
 }
 
+// extractMaxHitDie extracts the maximum value from a hit die string (e.g., "1d8" -> 8)
+func extractMaxHitDie(hitDice string) int32 {
+	// Expected format: "1d8", "1d10", etc.
+	// Extract the number after 'd'
+	if len(hitDice) < 3 || hitDice[0] != '1' || hitDice[1] != 'd' {
+		return 6 // Default to d6 if invalid format
+	}
+
+	// Parse the die value
+	switch hitDice[2:] {
+	case "6":
+		return 6
+	case "8":
+		return 8
+	case "10":
+		return 10
+	case "12":
+		return 12
+	default:
+		return 6 // Default to d6
+	}
+}
+
+// calculateSavingThrows calculates all saving throw bonuses
+func (a *Adapter) calculateSavingThrows(
+	abilityScores *dnd5e.AbilityScores,
+	proficientSaves []string,
+	proficiencyBonus int32,
+) map[string]int32 {
+	if abilityScores == nil {
+		return map[string]int32{}
+	}
+
+	// Create a map for proficient saves for quick lookup
+	proficientMap := make(map[string]bool)
+	for _, save := range proficientSaves {
+		proficientMap[save] = true
+	}
+
+	// Calculate all saving throws
+	savingThrows := map[string]int32{
+		abilityStrength:     a.CalculateAbilityModifier(abilityScores.Strength),
+		abilityDexterity:    a.CalculateAbilityModifier(abilityScores.Dexterity),
+		abilityConstitution: a.CalculateAbilityModifier(abilityScores.Constitution),
+		abilityIntelligence: a.CalculateAbilityModifier(abilityScores.Intelligence),
+		abilityWisdom:       a.CalculateAbilityModifier(abilityScores.Wisdom),
+		abilityCharisma:     a.CalculateAbilityModifier(abilityScores.Charisma),
+	}
+
+	// Add proficiency bonus to proficient saves
+	for save := range savingThrows {
+		if proficientMap[save] {
+			savingThrows[save] += proficiencyBonus
+		}
+	}
+
+	return savingThrows
+}
+
+// calculateSkillBonuses calculates all skill bonuses based on proficiencies
+func (a *Adapter) calculateSkillBonuses(
+	ctx context.Context,
+	draft *dnd5e.CharacterDraft,
+	proficiencyBonus int32,
+) map[string]int32 {
+	if draft == nil || draft.AbilityScores == nil {
+		return map[string]int32{}
+	}
+
+	// Get background data to determine background skills
+	var backgroundSkills []string
+	if draft.BackgroundID != "" {
+		backgroundData, err := a.externalClient.GetBackgroundData(ctx, draft.BackgroundID)
+		if err == nil && backgroundData != nil {
+			backgroundSkills = backgroundData.SkillProficiencies
+		}
+	}
+
+	// Create proficiency map from selected skills and background skills
+	proficientSkills := make(map[string]bool)
+	for _, skillID := range draft.StartingSkillIDs {
+		proficientSkills[skillID] = true
+	}
+	// Add background skills (they're automatic proficiencies)
+	for _, skillID := range backgroundSkills {
+		proficientSkills[skillID] = true
+	}
+
+	// Calculate all skill bonuses
+	allSkills := []string{
+		"acrobatics", "animal_handling", "arcana", "athletics",
+		"deception", "history", "insight", "intimidation",
+		"investigation", "medicine", "nature", "perception",
+		"performance", "persuasion", "religion", "sleight_of_hand",
+		"stealth", "survival",
+	}
+
+	skillBonuses := make(map[string]int32)
+	for _, skill := range allSkills {
+		// Get ability for this skill
+		ability := getSkillAbility(skill)
+
+		// Calculate base modifier
+		modifier := a.getAbilityModifier(draft.AbilityScores, ability)
+
+		// Add proficiency if proficient
+		if proficientSkills[skill] {
+			modifier += proficiencyBonus
+		}
+
+		skillBonuses[skill] = modifier
+	}
+
+	return skillBonuses
+}
+
+// getAbilityModifier gets the modifier for a specific ability
+func (a *Adapter) getAbilityModifier(scores *dnd5e.AbilityScores, ability string) int32 {
+	switch ability {
+	case abilityStrength:
+		return a.CalculateAbilityModifier(scores.Strength)
+	case abilityDexterity:
+		return a.CalculateAbilityModifier(scores.Dexterity)
+	case abilityConstitution:
+		return a.CalculateAbilityModifier(scores.Constitution)
+	case abilityIntelligence:
+		return a.CalculateAbilityModifier(scores.Intelligence)
+	case abilityWisdom:
+		return a.CalculateAbilityModifier(scores.Wisdom)
+	case abilityCharisma:
+		return a.CalculateAbilityModifier(scores.Charisma)
+	default:
+		return 0
+	}
+}
+
 // ValidateCharacterDraft validates a character draft for completeness and rule compliance
 func (a *Adapter) ValidateCharacterDraft(
 	_ context.Context,
@@ -109,21 +255,77 @@ func (a *Adapter) ValidateCharacterDraft(
 
 // CalculateCharacterStats calculates derived character statistics
 func (a *Adapter) CalculateCharacterStats(
-	_ context.Context,
+	ctx context.Context,
 	input *engine.CalculateCharacterStatsInput,
 ) (*engine.CalculateCharacterStatsOutput, error) {
-	// TODO(#38): Implement character stat calculations using input.Draft
-	// For now, return placeholder calculations
-	_ = input // Will be used in future implementation
+	if input == nil || input.Draft == nil {
+		return nil, errors.InvalidArgument("draft is required")
+	}
+
+	draft := input.Draft
+
+	// Validate required fields
+	if draft.ClassID == "" {
+		return nil, errors.InvalidArgument("class ID is required for stat calculation")
+	}
+	if draft.RaceID == "" {
+		return nil, errors.InvalidArgument("race ID is required for stat calculation")
+	}
+	if draft.AbilityScores == nil {
+		return nil, errors.InvalidArgument("ability scores are required for stat calculation")
+	}
+
+	// Fetch class data
+	classData, err := a.externalClient.GetClassData(ctx, draft.ClassID)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to get class data")
+	}
+	if classData == nil {
+		return nil, errors.InvalidArgumentf("invalid class ID: %s", draft.ClassID)
+	}
+
+	// Fetch race data
+	raceData, err := a.externalClient.GetRaceData(ctx, draft.RaceID)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to get race data")
+	}
+	if raceData == nil {
+		return nil, errors.InvalidArgumentf("invalid race ID: %s", draft.RaceID)
+	}
+
+	// Calculate ability modifiers
+	conModifier := a.CalculateAbilityModifier(draft.AbilityScores.Constitution)
+	dexModifier := a.CalculateAbilityModifier(draft.AbilityScores.Dexterity)
+
+	// Calculate Max HP (hit die max value + CON modifier at level 1)
+	maxHP := extractMaxHitDie(classData.HitDice) + conModifier
+
+	// Calculate Armor Class (10 + DEX modifier, no armor)
+	armorClass := 10 + dexModifier
+
+	// Calculate Initiative (DEX modifier)
+	initiative := dexModifier
+
+	// Get Speed from race data
+	speed := raceData.Speed
+
+	// Calculate Proficiency Bonus (level 1)
+	proficiencyBonus := a.CalculateProficiencyBonus(1)
+
+	// Calculate Saving Throws
+	savingThrows := a.calculateSavingThrows(draft.AbilityScores, classData.SavingThrows, proficiencyBonus)
+
+	// Calculate Skill Bonuses
+	skills := a.calculateSkillBonuses(ctx, draft, proficiencyBonus)
 
 	return &engine.CalculateCharacterStatsOutput{
-		MaxHP:            10,                             // TODO: Calculate based on class hit die + CON modifier
-		ArmorClass:       10,                             // TODO: Calculate based on armor + DEX modifier
-		Initiative:       0,                              // TODO: Calculate DEX modifier
-		Speed:            30,                             // TODO: Get from race data
-		ProficiencyBonus: a.CalculateProficiencyBonus(1), // TODO: Use actual level
-		SavingThrows:     map[string]int32{},             // TODO: Calculate with proficiencies
-		Skills:           map[string]int32{},             // TODO: Calculate with proficiencies
+		MaxHP:            maxHP,
+		ArmorClass:       armorClass,
+		Initiative:       initiative,
+		Speed:            speed,
+		ProficiencyBonus: proficiencyBonus,
+		SavingThrows:     savingThrows,
+		Skills:           skills,
 	}, nil
 }
 
