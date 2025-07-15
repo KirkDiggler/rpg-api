@@ -103,25 +103,25 @@ func (s *stubDiceRoller) RollN(_, _ int) ([]int, error) { return []int{10}, nil 
 
 // Minimal implementation to satisfy external.Client interface
 func (s *stubExternalClient) GetRaceData(_ context.Context, _ string) (*external.RaceData, error) {
-	return nil, nil
+	return nil, errors.NotFound("race not found")
 }
 func (s *stubExternalClient) GetClassData(_ context.Context, _ string) (*external.ClassData, error) {
-	return nil, nil
+	return nil, errors.NotFound("class not found")
 }
 func (s *stubExternalClient) GetBackgroundData(_ context.Context, _ string) (*external.BackgroundData, error) {
-	return nil, nil
+	return nil, errors.NotFound("background not found")
 }
 func (s *stubExternalClient) GetSpellData(_ context.Context, _ string) (*external.SpellData, error) {
-	return nil, nil
+	return nil, errors.NotFound("spell not found")
 }
 func (s *stubExternalClient) ListAvailableRaces(_ context.Context) ([]*external.RaceData, error) {
-	return nil, nil
+	return []*external.RaceData{}, nil
 }
 func (s *stubExternalClient) ListAvailableClasses(_ context.Context) ([]*external.ClassData, error) {
-	return nil, nil
+	return []*external.ClassData{}, nil
 }
 func (s *stubExternalClient) ListAvailableBackgrounds(_ context.Context) ([]*external.BackgroundData, error) {
-	return nil, nil
+	return []*external.BackgroundData{}, nil
 }
 
 // createTestAdapter creates an adapter with stubs for testing
@@ -160,7 +160,7 @@ func TestValidateRaceChoice(t *testing.T) {
 	})
 
 	t.Run("external client error", func(t *testing.T) {
-		// The stub external client returns nil, nil which simulates "not found"
+		// The stub external client returns an error (following "result or error, never neither" rule)
 		result, err := adapter.ValidateRaceChoice(ctx, &engine.ValidateRaceChoiceInput{
 			RaceID: "invalid-race",
 		})
@@ -204,7 +204,7 @@ func TestValidateClassChoice(t *testing.T) {
 	})
 
 	t.Run("external client error", func(t *testing.T) {
-		// The stub external client returns nil, nil which simulates "not found"
+		// The stub external client returns an error (following "result or error, never neither" rule)
 		result, err := adapter.ValidateClassChoice(ctx, &engine.ValidateClassChoiceInput{
 			ClassID: "invalid-class",
 		})

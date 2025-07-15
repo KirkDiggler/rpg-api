@@ -144,7 +144,7 @@ func (a *Adapter) ValidateRaceChoice(
 
 	// Fetch race data from external source
 	raceData, err := a.externalClient.GetRaceData(ctx, input.RaceID)
-	if err != nil || raceData == nil {
+	if err != nil {
 		return &engine.ValidateRaceChoiceOutput{
 			IsValid: false,
 			Errors: []engine.ValidationError{
@@ -230,7 +230,7 @@ func (a *Adapter) ValidateClassChoice(
 
 	// Fetch class data from external source
 	classData, err := a.externalClient.GetClassData(ctx, input.ClassID)
-	if err != nil || classData == nil {
+	if err != nil {
 		return &engine.ValidateClassChoiceOutput{
 			IsValid: false,
 			Errors: []engine.ValidationError{
