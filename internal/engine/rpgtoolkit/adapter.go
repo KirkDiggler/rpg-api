@@ -5,6 +5,7 @@ import (
 	"context"
 
 	"github.com/KirkDiggler/rpg-api/internal/engine"
+	"github.com/KirkDiggler/rpg-api/internal/entities/dnd5e"
 	"github.com/KirkDiggler/rpg-api/internal/errors"
 	"github.com/KirkDiggler/rpg-toolkit/core"
 	"github.com/KirkDiggler/rpg-toolkit/dice"
@@ -39,7 +40,7 @@ func NewAdapter(cfg *AdapterConfig) (*Adapter, error) {
 	if cfg == nil {
 		return nil, errors.InvalidArgument("config is required")
 	}
-	
+
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
@@ -152,18 +153,46 @@ func (a *Adapter) ValidateClassChoice(
 
 // ValidateAbilityScores validates ability score generation
 func (a *Adapter) ValidateAbilityScores(
-	_ context.Context,
+	ctx context.Context,
 	input *engine.ValidateAbilityScoresInput,
 ) (*engine.ValidateAbilityScoresOutput, error) {
-	// TODO(#35): Implement ability score validation using input.AbilityScores and input.Method
-	// Support standard array, point buy, and manual methods
-	_ = input // Will be used in future implementation
+	if input == nil {
+		return nil, errors.InvalidArgument("input is required")
+	}
 
-	return &engine.ValidateAbilityScoresOutput{
-		IsValid:  true, // TODO: Validate based on method
-		Errors:   []engine.ValidationError{},
-		Warnings: []engine.ValidationWarning{},
-	}, nil
+	if input.AbilityScores == nil {
+		return &engine.ValidateAbilityScoresOutput{
+			IsValid: false,
+			Errors: []engine.ValidationError{
+				{
+					Field:   "ability_scores",
+					Message: "Ability scores are required",
+					Code:    "REQUIRED",
+				},
+			},
+		}, nil
+	}
+
+	// Validate based on generation method
+	switch input.Method {
+	case engine.AbilityScoreMethodStandardArray:
+		return a.validateStandardArray(ctx, input.AbilityScores)
+	case engine.AbilityScoreMethodPointBuy:
+		return a.validatePointBuy(ctx, input.AbilityScores)
+	case engine.AbilityScoreMethodManual:
+		return a.validateManualScores(ctx, input.AbilityScores)
+	default:
+		return &engine.ValidateAbilityScoresOutput{
+			IsValid: false,
+			Errors: []engine.ValidationError{
+				{
+					Field:   "method",
+					Message: "Invalid ability score generation method",
+					Code:    "INVALID_METHOD",
+				},
+			},
+		}, nil
+	}
 }
 
 // ValidateSkillChoices validates skill selections
@@ -220,3 +249,170 @@ var (
 	_ core.Entity = (*CharacterEntity)(nil)
 	_ core.Entity = (*CharacterDraftEntity)(nil)
 )
+
+// validateStandardArray validates ability scores against the D&D 5e standard array
+func (a *Adapter) validateStandardArray(
+	_ context.Context,
+	scores *dnd5e.AbilityScores,
+) (*engine.ValidateAbilityScoresOutput, error) {
+	// Standard array values: 15, 14, 13, 12, 10, 8
+	standardArray := []int32{15, 14, 13, 12, 10, 8}
+
+	// Get all ability scores
+	actualScores := []int32{
+		scores.Strength,
+		scores.Dexterity,
+		scores.Constitution,
+		scores.Intelligence,
+		scores.Wisdom,
+		scores.Charisma,
+	}
+
+	// Sort both arrays for comparison
+	sortedStandard := make([]int32, len(standardArray))
+	copy(sortedStandard, standardArray)
+	sortInt32Slice(sortedStandard)
+
+	sortedActual := make([]int32, len(actualScores))
+	copy(sortedActual, actualScores)
+	sortInt32Slice(sortedActual)
+
+	// Compare sorted arrays
+	for i := range sortedStandard {
+		if sortedStandard[i] != sortedActual[i] {
+			return &engine.ValidateAbilityScoresOutput{
+				IsValid: false,
+				Errors: []engine.ValidationError{
+					{
+						Field:   "ability_scores",
+						Message: "Ability scores must match the standard array: 15, 14, 13, 12, 10, 8",
+						Code:    "INVALID_STANDARD_ARRAY",
+					},
+				},
+			}, nil
+		}
+	}
+
+	return &engine.ValidateAbilityScoresOutput{
+		IsValid: true,
+	}, nil
+}
+
+// validatePointBuy validates ability scores against D&D 5e point buy rules
+func (a *Adapter) validatePointBuy(
+	_ context.Context,
+	scores *dnd5e.AbilityScores,
+) (*engine.ValidateAbilityScoresOutput, error) {
+	// Point buy: 27 points to spend, scores must be between 8-15
+	// Cost: 8=0, 9=1, 10=2, 11=3, 12=4, 13=5, 14=7, 15=9
+	pointCosts := map[int32]int32{
+		8:  0,
+		9:  1,
+		10: 2,
+		11: 3,
+		12: 4,
+		13: 5,
+		14: 7,
+		15: 9,
+	}
+
+	allScores := []int32{
+		scores.Strength,
+		scores.Dexterity,
+		scores.Constitution,
+		scores.Intelligence,
+		scores.Wisdom,
+		scores.Charisma,
+	}
+
+	totalCost := int32(0)
+	errors := []engine.ValidationError{}
+
+	// Validate each score and calculate total cost
+	abilityNames := []string{"strength", "dexterity", "constitution", "intelligence", "wisdom", "charisma"}
+	for i, score := range allScores {
+		if score < 8 || score > 15 {
+			errors = append(errors, engine.ValidationError{
+				Field:   abilityNames[i],
+				Message: "Point buy scores must be between 8 and 15",
+				Code:    "INVALID_POINT_BUY_RANGE",
+			})
+			continue
+		}
+
+		cost, ok := pointCosts[score]
+		if !ok {
+			// Should not happen due to range check above
+			continue
+		}
+		totalCost += cost
+	}
+
+	// Check total points spent
+	if totalCost > 27 {
+		errors = append(errors, engine.ValidationError{
+			Field:   "ability_scores",
+			Message: "Point buy total exceeds 27 points",
+			Code:    "POINT_BUY_EXCEEDED",
+		})
+	}
+
+	// Add warning if points are unspent
+	warnings := []engine.ValidationWarning{}
+	if totalCost < 27 && len(errors) == 0 {
+		warnings = append(warnings, engine.ValidationWarning{
+			Field:   "ability_scores",
+			Message: "You have unspent point buy points",
+			Code:    "UNSPENT_POINTS",
+		})
+	}
+
+	return &engine.ValidateAbilityScoresOutput{
+		IsValid:  len(errors) == 0,
+		Errors:   errors,
+		Warnings: warnings,
+	}, nil
+}
+
+// validateManualScores validates manually entered ability scores
+func (a *Adapter) validateManualScores(
+	_ context.Context,
+	scores *dnd5e.AbilityScores,
+) (*engine.ValidateAbilityScoresOutput, error) {
+	// Manual scores: must be between 3-18
+	errors := []engine.ValidationError{}
+
+	// Check each ability score
+	validateScore := func(score int32, abilityName string) {
+		if score < 3 || score > 18 {
+			errors = append(errors, engine.ValidationError{
+				Field:   abilityName,
+				Message: "Ability scores must be between 3 and 18",
+				Code:    "INVALID_ABILITY_SCORE_RANGE",
+			})
+		}
+	}
+
+	validateScore(scores.Strength, "strength")
+	validateScore(scores.Dexterity, "dexterity")
+	validateScore(scores.Constitution, "constitution")
+	validateScore(scores.Intelligence, "intelligence")
+	validateScore(scores.Wisdom, "wisdom")
+	validateScore(scores.Charisma, "charisma")
+
+	return &engine.ValidateAbilityScoresOutput{
+		IsValid: len(errors) == 0,
+		Errors:  errors,
+	}, nil
+}
+
+// sortInt32Slice sorts a slice of int32 values in ascending order
+func sortInt32Slice(slice []int32) {
+	for i := 0; i < len(slice); i++ {
+		for j := i + 1; j < len(slice); j++ {
+			if slice[i] > slice[j] {
+				slice[i], slice[j] = slice[j], slice[i]
+			}
+		}
+	}
+}

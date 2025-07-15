@@ -102,10 +102,20 @@ type ValidateClassChoiceOutput struct {
 	AvailableSkills   []string
 }
 
+// AbilityScoreMethod represents the method used to generate ability scores
+type AbilityScoreMethod string
+
+// Ability score generation methods
+const (
+	AbilityScoreMethodStandardArray AbilityScoreMethod = "standard_array"
+	AbilityScoreMethodPointBuy      AbilityScoreMethod = "point_buy"
+	AbilityScoreMethodManual        AbilityScoreMethod = "manual"
+)
+
 // ValidateAbilityScoresInput contains ability scores to validate
 type ValidateAbilityScoresInput struct {
 	AbilityScores *dnd5e.AbilityScores
-	Method        string // "standard_array", "point_buy", "manual"
+	Method        AbilityScoreMethod
 }
 
 // ValidateAbilityScoresOutput contains ability score validation results
