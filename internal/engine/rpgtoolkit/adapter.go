@@ -21,6 +21,12 @@ type Adapter struct {
 	externalClient external.Client
 }
 
+// Skill source constants
+const (
+	skillSourceClass      = "class"
+	skillSourceBackground = "background"
+)
+
 // AdapterConfig contains configuration for creating a new Adapter
 type AdapterConfig struct {
 	EventBus       events.EventBus
@@ -368,7 +374,7 @@ func (a *Adapter) ValidateSkillChoices(
 
 	// Add class skills to available skills
 	for _, skill := range classData.AvailableSkills {
-		availableSkills[skill] = "class"
+		availableSkills[skill] = skillSourceClass
 	}
 
 	// If background is provided, fetch its data
@@ -405,7 +411,7 @@ func (a *Adapter) ValidateSkillChoices(
 		duplicateCheck[skillID] = true
 
 		// Check if skill is available from class
-		if source, ok := availableSkills[skillID]; ok && source == "class" {
+		if source, ok := availableSkills[skillID]; ok && source == skillSourceClass {
 			selectedFromClass++
 		} else {
 			// Check if it's a background skill (which would be automatic, not a choice)

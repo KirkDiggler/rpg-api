@@ -89,8 +89,6 @@ type stubExternalClient struct{}
 
 // testExternalClient is a more configurable stub for specific test scenarios
 type testExternalClient struct {
-	raceData        *external.RaceData
-	raceError       error
 	classData       *external.ClassData
 	classError      error
 	backgroundData  *external.BackgroundData
@@ -136,10 +134,7 @@ func (s *stubExternalClient) ListAvailableBackgrounds(_ context.Context) ([]*ext
 
 // testExternalClient implementations
 func (c *testExternalClient) GetRaceData(_ context.Context, _ string) (*external.RaceData, error) {
-	if c.raceError != nil {
-		return nil, c.raceError
-	}
-	return c.raceData, nil
+	return nil, errors.NotFound("race not found")
 }
 
 func (c *testExternalClient) GetClassData(_ context.Context, _ string) (*external.ClassData, error) {
