@@ -13,7 +13,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api/gen/go/github.com/KirkDiggler/rpg-api/api/proto/dnd5e/v1alpha1"
+	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
 	"github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v1alpha1"
 	"github.com/KirkDiggler/rpg-api/internal/services/character"
 	charactermock "github.com/KirkDiggler/rpg-api/internal/services/character/mock"
