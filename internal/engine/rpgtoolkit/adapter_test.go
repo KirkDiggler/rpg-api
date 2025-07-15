@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
 
+	"github.com/KirkDiggler/rpg-api/internal/clients/external"
 	"github.com/KirkDiggler/rpg-api/internal/engine"
 	"github.com/KirkDiggler/rpg-api/internal/entities/dnd5e"
 	"github.com/KirkDiggler/rpg-api/internal/errors"
@@ -55,10 +56,24 @@ func TestNewAdapter(t *testing.T) {
 		assert.Contains(t, err.Error(), "dice roller is required")
 	})
 
-	t.Run("valid config", func(t *testing.T) {
+	t.Run("missing external client", func(t *testing.T) {
 		cfg := &AdapterConfig{
 			EventBus:   &stubEventBus{},
 			DiceRoller: &stubDiceRoller{},
+		}
+
+		adapter, err := NewAdapter(cfg)
+		assert.Error(t, err)
+		assert.Nil(t, adapter)
+		assert.True(t, errors.IsInvalidArgument(err))
+		assert.Contains(t, err.Error(), "external client is required")
+	})
+
+	t.Run("valid config", func(t *testing.T) {
+		cfg := &AdapterConfig{
+			EventBus:       &stubEventBus{},
+			DiceRoller:     &stubDiceRoller{},
+			ExternalClient: &stubExternalClient{},
 		}
 
 		adapter, err := NewAdapter(cfg)
@@ -70,6 +85,7 @@ func TestNewAdapter(t *testing.T) {
 // Simple stubs for testing validation logic
 type stubEventBus struct{}
 type stubDiceRoller struct{}
+type stubExternalClient struct{}
 
 // Minimal implementation to satisfy events.EventBus interface
 func (s *stubEventBus) Publish(_ context.Context, _ events.Event) error { return nil }
@@ -85,13 +101,129 @@ func (s *stubEventBus) ClearAll()                  {}
 func (s *stubDiceRoller) Roll(_ int) (int, error)       { return 10, nil }
 func (s *stubDiceRoller) RollN(_, _ int) ([]int, error) { return []int{10}, nil }
 
-func TestCalculateAbilityModifier(t *testing.T) {
-	// Create adapter with stubs for testing utility methods
+// Minimal implementation to satisfy external.Client interface
+func (s *stubExternalClient) GetRaceData(_ context.Context, _ string) (*external.RaceData, error) {
+	return nil, errors.NotFound("race not found")
+}
+func (s *stubExternalClient) GetClassData(_ context.Context, _ string) (*external.ClassData, error) {
+	return nil, errors.NotFound("class not found")
+}
+func (s *stubExternalClient) GetBackgroundData(_ context.Context, _ string) (*external.BackgroundData, error) {
+	return nil, errors.NotFound("background not found")
+}
+func (s *stubExternalClient) GetSpellData(_ context.Context, _ string) (*external.SpellData, error) {
+	return nil, errors.NotFound("spell not found")
+}
+func (s *stubExternalClient) ListAvailableRaces(_ context.Context) ([]*external.RaceData, error) {
+	return []*external.RaceData{}, nil
+}
+func (s *stubExternalClient) ListAvailableClasses(_ context.Context) ([]*external.ClassData, error) {
+	return []*external.ClassData{}, nil
+}
+func (s *stubExternalClient) ListAvailableBackgrounds(_ context.Context) ([]*external.BackgroundData, error) {
+	return []*external.BackgroundData{}, nil
+}
+
+// createTestAdapter creates an adapter with stubs for testing
+func createTestAdapter(t *testing.T) *Adapter {
 	adapter, err := NewAdapter(&AdapterConfig{
-		EventBus:   &stubEventBus{},
-		DiceRoller: &stubDiceRoller{},
+		EventBus:       &stubEventBus{},
+		DiceRoller:     &stubDiceRoller{},
+		ExternalClient: &stubExternalClient{},
 	})
 	assert.NoError(t, err)
+	return adapter
+}
+
+//nolint:dupl // Race and class validation tests have similar structure by design
+func TestValidateRaceChoice(t *testing.T) {
+	adapter := createTestAdapter(t)
+	ctx := context.Background()
+
+	t.Run("nil input", func(t *testing.T) {
+		result, err := adapter.ValidateRaceChoice(ctx, nil)
+		assert.Error(t, err)
+		assert.True(t, errors.IsInvalidArgument(err))
+		assert.Nil(t, result)
+	})
+
+	t.Run("empty race ID", func(t *testing.T) {
+		result, err := adapter.ValidateRaceChoice(ctx, &engine.ValidateRaceChoiceInput{
+			RaceID: "",
+		})
+		assert.NoError(t, err)
+		assert.NotNil(t, result)
+		assert.False(t, result.IsValid)
+		assert.Len(t, result.Errors, 1)
+		assert.Equal(t, "race_id", result.Errors[0].Field)
+		assert.Equal(t, "REQUIRED", result.Errors[0].Code)
+	})
+
+	t.Run("external client error", func(t *testing.T) {
+		// The stub external client returns an error (following "result or error, never neither" rule)
+		result, err := adapter.ValidateRaceChoice(ctx, &engine.ValidateRaceChoiceInput{
+			RaceID: "invalid-race",
+		})
+		assert.NoError(t, err)
+		assert.NotNil(t, result)
+		assert.False(t, result.IsValid)
+		assert.Len(t, result.Errors, 1)
+		assert.Equal(t, "race_id", result.Errors[0].Field)
+		assert.Equal(t, "INVALID_RACE", result.Errors[0].Code)
+	})
+
+	// Note: When we implement comprehensive tests with mocks, we'll test:
+	// - Valid race without subrace (e.g., Human)
+	// - Valid race with valid subrace (e.g., High Elf)
+	// - Valid race with invalid subrace
+	// - Proper trait and ability bonus aggregation
+}
+
+//nolint:dupl // Race and class validation tests have similar structure by design
+func TestValidateClassChoice(t *testing.T) {
+	adapter := createTestAdapter(t)
+	ctx := context.Background()
+
+	t.Run("nil input", func(t *testing.T) {
+		result, err := adapter.ValidateClassChoice(ctx, nil)
+		assert.Error(t, err)
+		assert.True(t, errors.IsInvalidArgument(err))
+		assert.Nil(t, result)
+	})
+
+	t.Run("empty class ID", func(t *testing.T) {
+		result, err := adapter.ValidateClassChoice(ctx, &engine.ValidateClassChoiceInput{
+			ClassID: "",
+		})
+		assert.NoError(t, err)
+		assert.NotNil(t, result)
+		assert.False(t, result.IsValid)
+		assert.Len(t, result.Errors, 1)
+		assert.Equal(t, "class_id", result.Errors[0].Field)
+		assert.Equal(t, "REQUIRED", result.Errors[0].Code)
+	})
+
+	t.Run("external client error", func(t *testing.T) {
+		// The stub external client returns an error (following "result or error, never neither" rule)
+		result, err := adapter.ValidateClassChoice(ctx, &engine.ValidateClassChoiceInput{
+			ClassID: "invalid-class",
+		})
+		assert.NoError(t, err)
+		assert.NotNil(t, result)
+		assert.False(t, result.IsValid)
+		assert.Len(t, result.Errors, 1)
+		assert.Equal(t, "class_id", result.Errors[0].Field)
+		assert.Equal(t, "INVALID_CLASS", result.Errors[0].Code)
+	})
+
+	// Note: When we implement comprehensive tests with mocks, we'll test:
+	// - Valid class (e.g., Fighter)
+	// - Class with ability score prerequisites for multiclassing
+	// - Proper hit dice, saving throws, and skill data return
+}
+
+func TestCalculateAbilityModifier(t *testing.T) {
+	adapter := createTestAdapter(t)
 
 	testCases := []struct {
 		name     string
@@ -117,12 +249,7 @@ func TestCalculateAbilityModifier(t *testing.T) {
 }
 
 func TestCalculateProficiencyBonus(t *testing.T) {
-	// Create adapter with stubs for testing utility methods
-	adapter, err := NewAdapter(&AdapterConfig{
-		EventBus:   &stubEventBus{},
-		DiceRoller: &stubDiceRoller{},
-	})
-	assert.NoError(t, err)
+	adapter := createTestAdapter(t)
 
 	testCases := []struct {
 		name     string
@@ -152,23 +279,14 @@ func TestCalculateProficiencyBonus(t *testing.T) {
 
 // Test interface compliance
 func TestAdapterImplementsEngine(t *testing.T) {
-	adapter, err := NewAdapter(&AdapterConfig{
-		EventBus:   &stubEventBus{},
-		DiceRoller: &stubDiceRoller{},
-	})
-	assert.NoError(t, err)
+	adapter := createTestAdapter(t)
 
 	// Verify adapter implements engine.Engine interface
 	var _ engine.Engine = adapter
 }
 
 func TestValidateAbilityScores(t *testing.T) {
-	// Create adapter with stubs for testing
-	adapter, err := NewAdapter(&AdapterConfig{
-		EventBus:   &stubEventBus{},
-		DiceRoller: &stubDiceRoller{},
-	})
-	assert.NoError(t, err)
+	adapter := createTestAdapter(t)
 
 	ctx := context.Background()
 
@@ -206,12 +324,7 @@ func TestValidateAbilityScores(t *testing.T) {
 }
 
 func TestValidateStandardArray(t *testing.T) {
-	// Create adapter with stubs for testing
-	adapter, err := NewAdapter(&AdapterConfig{
-		EventBus:   &stubEventBus{},
-		DiceRoller: &stubDiceRoller{},
-	})
-	assert.NoError(t, err)
+	adapter := createTestAdapter(t)
 
 	ctx := context.Background()
 
@@ -274,12 +387,7 @@ func TestValidateStandardArray(t *testing.T) {
 }
 
 func TestValidatePointBuy(t *testing.T) {
-	// Create adapter with stubs for testing
-	adapter, err := NewAdapter(&AdapterConfig{
-		EventBus:   &stubEventBus{},
-		DiceRoller: &stubDiceRoller{},
-	})
-	assert.NoError(t, err)
+	adapter := createTestAdapter(t)
 
 	ctx := context.Background()
 
@@ -422,12 +530,7 @@ func TestValidatePointBuy(t *testing.T) {
 }
 
 func TestValidateManualScores(t *testing.T) {
-	// Create adapter with stubs for testing
-	adapter, err := NewAdapter(&AdapterConfig{
-		EventBus:   &stubEventBus{},
-		DiceRoller: &stubDiceRoller{},
-	})
-	assert.NoError(t, err)
+	adapter := createTestAdapter(t)
 
 	ctx := context.Background()
 
