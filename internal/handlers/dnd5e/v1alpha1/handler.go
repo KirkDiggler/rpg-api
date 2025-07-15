@@ -1202,3 +1202,69 @@ func convertCharacterToProto(char *dnd5e.Character) *dnd5ev1alpha1.Character {
 		},
 	}
 }
+
+// ListRaces returns a list of available races for character creation
+func (h *Handler) ListRaces(
+	_ context.Context,
+	_ *dnd5ev1alpha1.ListRacesRequest,
+) (*dnd5ev1alpha1.ListRacesResponse, error) {
+	// TODO: Implement race listing using external client
+	return nil, errors.ToGRPCError(errors.Unimplemented("ListRaces not yet implemented"))
+}
+
+// ListClasses returns a list of available classes for character creation
+func (h *Handler) ListClasses(
+	_ context.Context,
+	_ *dnd5ev1alpha1.ListClassesRequest,
+) (*dnd5ev1alpha1.ListClassesResponse, error) {
+	// TODO: Implement class listing using external client
+	return nil, errors.ToGRPCError(errors.Unimplemented("ListClasses not yet implemented"))
+}
+
+// ListBackgrounds returns a list of available backgrounds for character creation
+func (h *Handler) ListBackgrounds(
+	_ context.Context,
+	_ *dnd5ev1alpha1.ListBackgroundsRequest,
+) (*dnd5ev1alpha1.ListBackgroundsResponse, error) {
+	// TODO: Implement background listing using external client
+	return nil, errors.ToGRPCError(errors.Unimplemented("ListBackgrounds not yet implemented"))
+}
+
+// GetRaceDetails returns detailed information about a specific race
+func (h *Handler) GetRaceDetails(
+	_ context.Context,
+	req *dnd5ev1alpha1.GetRaceDetailsRequest,
+) (*dnd5ev1alpha1.GetRaceDetailsResponse, error) {
+	if req.RaceId == "" {
+		return nil, errors.ToGRPCError(errors.InvalidArgument("race_id is required"))
+	}
+
+	// TODO: Implement race details using external client
+	return nil, errors.ToGRPCError(errors.Unimplemented("GetRaceDetails not yet implemented"))
+}
+
+// GetClassDetails returns detailed information about a specific class
+func (h *Handler) GetClassDetails(
+	_ context.Context,
+	req *dnd5ev1alpha1.GetClassDetailsRequest,
+) (*dnd5ev1alpha1.GetClassDetailsResponse, error) {
+	if req.ClassId == "" {
+		return nil, errors.ToGRPCError(errors.InvalidArgument("class_id is required"))
+	}
+
+	// TODO: Implement class details using external client
+	return nil, errors.ToGRPCError(errors.Unimplemented("GetClassDetails not yet implemented"))
+}
+
+// GetBackgroundDetails returns detailed information about a specific background
+func (h *Handler) GetBackgroundDetails(
+	_ context.Context,
+	req *dnd5ev1alpha1.GetBackgroundDetailsRequest,
+) (*dnd5ev1alpha1.GetBackgroundDetailsResponse, error) {
+	if req.BackgroundId == "" {
+		return nil, errors.ToGRPCError(errors.InvalidArgument("background_id is required"))
+	}
+
+	// TODO: Implement background details using external client
+	return nil, errors.ToGRPCError(errors.Unimplemented("GetBackgroundDetails not yet implemented"))
+}
