@@ -4,6 +4,7 @@ package rpgtoolkit
 import (
 	"context"
 
+	"github.com/KirkDiggler/rpg-api/internal/clients/external"
 	"github.com/KirkDiggler/rpg-api/internal/engine"
 	"github.com/KirkDiggler/rpg-api/internal/entities/dnd5e"
 	"github.com/KirkDiggler/rpg-api/internal/errors"
@@ -14,14 +15,16 @@ import (
 
 // Adapter implements the engine.Engine interface using rpg-toolkit
 type Adapter struct {
-	eventBus   events.EventBus
-	diceRoller dice.Roller
+	eventBus       events.EventBus
+	diceRoller     dice.Roller
+	externalClient external.Client
 }
 
 // AdapterConfig contains configuration for creating a new Adapter
 type AdapterConfig struct {
-	EventBus   events.EventBus
-	DiceRoller dice.Roller
+	EventBus       events.EventBus
+	DiceRoller     dice.Roller
+	ExternalClient external.Client
 }
 
 // Validate checks that all required dependencies are provided
@@ -31,6 +34,9 @@ func (c *AdapterConfig) Validate() error {
 	}
 	if c.DiceRoller == nil {
 		return errors.InvalidArgument("dice roller is required")
+	}
+	if c.ExternalClient == nil {
+		return errors.InvalidArgument("external client is required")
 	}
 	return nil
 }
@@ -46,8 +52,9 @@ func NewAdapter(cfg *AdapterConfig) (*Adapter, error) {
 	}
 
 	return &Adapter{
-		eventBus:   cfg.EventBus,
-		diceRoller: cfg.DiceRoller,
+		eventBus:       cfg.EventBus,
+		diceRoller:     cfg.DiceRoller,
+		externalClient: cfg.ExternalClient,
 	}, nil
 }
 
@@ -115,39 +122,155 @@ func (a *Adapter) CalculateCharacterStats(
 
 // ValidateRaceChoice validates a race selection
 func (a *Adapter) ValidateRaceChoice(
-	_ context.Context,
+	ctx context.Context,
 	input *engine.ValidateRaceChoiceInput,
 ) (*engine.ValidateRaceChoiceOutput, error) {
-	// TODO(#36): Implement race validation using input.RaceID and input.SubraceID
-	// Need D&D 5e race data in rpg-toolkit
-	_ = input // Will be used in future implementation
+	if input == nil {
+		return nil, errors.InvalidArgument("input is required")
+	}
+
+	if input.RaceID == "" {
+		return &engine.ValidateRaceChoiceOutput{
+			IsValid: false,
+			Errors: []engine.ValidationError{
+				{
+					Field:   "race_id",
+					Message: "Race ID is required",
+					Code:    "REQUIRED",
+				},
+			},
+		}, nil
+	}
+
+	// Fetch race data from external source
+	raceData, err := a.externalClient.GetRaceData(ctx, input.RaceID)
+	if err != nil || raceData == nil {
+		return &engine.ValidateRaceChoiceOutput{
+			IsValid: false,
+			Errors: []engine.ValidationError{
+				{
+					Field:   "race_id",
+					Message: "Invalid race ID or external data unavailable",
+					Code:    "INVALID_RACE",
+				},
+			},
+		}, nil
+	}
+
+	// Start with race traits and ability modifiers
+	traits := make([]string, len(raceData.Traits))
+	copy(traits, raceData.Traits)
+
+	abilityMods := make(map[string]int32)
+	for ability, bonus := range raceData.AbilityBonuses {
+		abilityMods[ability] = bonus
+	}
+
+	// If subrace is specified, validate it and add subrace bonuses
+	if input.SubraceID != "" {
+		subraceFound := false
+		for _, subrace := range raceData.Subraces {
+			if subrace.ID == input.SubraceID {
+				subraceFound = true
+
+				// Add subrace traits
+				traits = append(traits, subrace.Traits...)
+
+				// Add subrace ability bonuses
+				for ability, bonus := range subrace.AbilityBonuses {
+					abilityMods[ability] += bonus
+				}
+				break
+			}
+		}
+
+		if !subraceFound {
+			return &engine.ValidateRaceChoiceOutput{
+				IsValid: false,
+				Errors: []engine.ValidationError{
+					{
+						Field:   "subrace_id",
+						Message: "Invalid subrace for selected race",
+						Code:    "INVALID_SUBRACE",
+					},
+				},
+			}, nil
+		}
+	}
 
 	return &engine.ValidateRaceChoiceOutput{
-		IsValid:     true, // TODO: Real validation
+		IsValid:     true,
 		Errors:      []engine.ValidationError{},
-		RaceTraits:  []string{},         // TODO: Return actual race traits
-		AbilityMods: map[string]int32{}, // TODO: Return ability score modifiers
+		RaceTraits:  traits,
+		AbilityMods: abilityMods,
 	}, nil
 }
 
 // ValidateClassChoice validates a class selection
 func (a *Adapter) ValidateClassChoice(
-	_ context.Context,
+	ctx context.Context,
 	input *engine.ValidateClassChoiceInput,
 ) (*engine.ValidateClassChoiceOutput, error) {
-	// TODO(#36): Implement class validation using input.ClassID and input.AbilityScores
-	// Need D&D 5e class data in rpg-toolkit
-	_ = input // Will be used in future implementation
+	if input == nil {
+		return nil, errors.InvalidArgument("input is required")
+	}
+
+	if input.ClassID == "" {
+		return &engine.ValidateClassChoiceOutput{
+			IsValid: false,
+			Errors: []engine.ValidationError{
+				{
+					Field:   "class_id",
+					Message: "Class ID is required",
+					Code:    "REQUIRED",
+				},
+			},
+		}, nil
+	}
+
+	// Fetch class data from external source
+	classData, err := a.externalClient.GetClassData(ctx, input.ClassID)
+	if err != nil || classData == nil {
+		return &engine.ValidateClassChoiceOutput{
+			IsValid: false,
+			Errors: []engine.ValidationError{
+				{
+					Field:   "class_id",
+					Message: "Invalid class ID or external data unavailable",
+					Code:    "INVALID_CLASS",
+				},
+			},
+		}, nil
+	}
+
+	var validationErrors []engine.ValidationError
+	var warnings []engine.ValidationWarning
+
+	// TODO(#36): Add specific multiclassing prerequisite validation
+	// For now, we'll assume single-class character creation without prerequisites
+	// Multiclassing prerequisites will be added when that feature is implemented
+	//
+	// Example logic for when multiclassing is implemented:
+	// if input.AbilityScores != nil && classData.PrimaryAbility != "" {
+	//     score := getAbilityScore(input.AbilityScores, classData.PrimaryAbility)
+	//     if score < 13 { // Standard multiclassing requirement
+	//         validationErrors = append(validationErrors, engine.ValidationError{
+	//             Field:   "ability_scores",
+	//             Message: fmt.Sprintf("Class requires %s 13+ for multiclassing", classData.PrimaryAbility),
+	//             Code:    "INSUFFICIENT_ABILITY_SCORE",
+	//         })
+	//     }
+	// }
 
 	return &engine.ValidateClassChoiceOutput{
-		IsValid:           true, // TODO: Real validation with ability score prerequisites
-		Errors:            []engine.ValidationError{},
-		Warnings:          []engine.ValidationWarning{},
-		HitDice:           "1d8",      // TODO: Get from class data
-		PrimaryAbility:    "strength", // TODO: Get from class data
-		SavingThrows:      []string{}, // TODO: Get from class data
-		SkillChoicesCount: 2,          // TODO: Get from class data
-		AvailableSkills:   []string{}, // TODO: Get from class data
+		IsValid:           len(validationErrors) == 0,
+		Errors:            validationErrors,
+		Warnings:          warnings,
+		HitDice:           classData.HitDice,
+		PrimaryAbility:    classData.PrimaryAbility,
+		SavingThrows:      classData.SavingThrows,
+		SkillChoicesCount: classData.SkillsCount,
+		AvailableSkills:   classData.AvailableSkills,
 	}, nil
 }
 
