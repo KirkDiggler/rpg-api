@@ -48,7 +48,7 @@ func (s *RedisRepositoryTestSuite) SetupTest() {
 		Clock:       s.mockClock,
 		IDGenerator: s.mockIDGen,
 	}
-	repo, err := characterdraft.NewRedisRepository(cfg)
+	repo, err := characterdraft.NewRedis(cfg)
 	s.Require().NoError(err)
 	s.repo = repo
 

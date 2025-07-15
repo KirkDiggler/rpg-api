@@ -8,9 +8,9 @@ import (
 
 	"github.com/KirkDiggler/rpg-api/internal/engine"
 	"github.com/KirkDiggler/rpg-api/internal/entities/dnd5e"
+	characterorchestrator "github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	draftrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft"
-	"github.com/KirkDiggler/rpg-api/internal/services/character"
 )
 
 // Validation and finalization tests
@@ -18,14 +18,14 @@ import (
 func (s *OrchestratorTestSuite) TestValidateDraft() {
 	testCases := []struct {
 		name      string
-		input     *character.ValidateDraftInput
+		input     *characterorchestrator.ValidateDraftInput
 		setupMock func()
 		wantErr   bool
-		validate  func(*character.ValidateDraftOutput)
+		validate  func(*characterorchestrator.ValidateDraftOutput)
 	}{
 		{
 			name: "complete and valid draft",
-			input: &character.ValidateDraftInput{
+			input: &characterorchestrator.ValidateDraftInput{
 				DraftID: s.testDraftID,
 			},
 			setupMock: func() {
@@ -64,7 +64,7 @@ func (s *OrchestratorTestSuite) TestValidateDraft() {
 					}, nil)
 			},
 			wantErr: false,
-			validate: func(output *character.ValidateDraftOutput) {
+			validate: func(output *characterorchestrator.ValidateDraftOutput) {
 				s.True(output.IsComplete)
 				s.True(output.IsValid)
 				s.Empty(output.Errors)
@@ -74,7 +74,7 @@ func (s *OrchestratorTestSuite) TestValidateDraft() {
 		},
 		{
 			name: "incomplete draft",
-			input: &character.ValidateDraftInput{
+			input: &characterorchestrator.ValidateDraftInput{
 				DraftID: s.testDraftID,
 			},
 			setupMock: func() {
@@ -102,7 +102,7 @@ func (s *OrchestratorTestSuite) TestValidateDraft() {
 					}, nil)
 			},
 			wantErr: false,
-			validate: func(output *character.ValidateDraftOutput) {
+			validate: func(output *characterorchestrator.ValidateDraftOutput) {
 				s.False(output.IsComplete)
 				s.False(output.IsValid)
 				s.Len(output.Errors, 1)
@@ -111,7 +111,7 @@ func (s *OrchestratorTestSuite) TestValidateDraft() {
 		},
 		{
 			name: "validation with warnings",
-			input: &character.ValidateDraftInput{
+			input: &characterorchestrator.ValidateDraftInput{
 				DraftID: s.testDraftID,
 			},
 			setupMock: func() {
@@ -134,7 +134,7 @@ func (s *OrchestratorTestSuite) TestValidateDraft() {
 					}, nil)
 			},
 			wantErr: false,
-			validate: func(output *character.ValidateDraftOutput) {
+			validate: func(output *characterorchestrator.ValidateDraftOutput) {
 				s.True(output.IsComplete)
 				s.True(output.IsValid)
 				s.Len(output.Warnings, 1)
@@ -184,15 +184,15 @@ func (s *OrchestratorTestSuite) TestFinalizeDraft() {
 
 	testCases := []struct {
 		name      string
-		input     *character.FinalizeDraftInput
+		input     *characterorchestrator.FinalizeDraftInput
 		setupMock func()
 		wantErr   bool
 		errMsg    string
-		validate  func(*character.FinalizeDraftOutput)
+		validate  func(*characterorchestrator.FinalizeDraftOutput)
 	}{
 		{
 			name: "successful finalization",
-			input: &character.FinalizeDraftInput{
+			input: &characterorchestrator.FinalizeDraftInput{
 				DraftID: s.testDraftID,
 			},
 			setupMock: func() {
@@ -241,7 +241,7 @@ func (s *OrchestratorTestSuite) TestFinalizeDraft() {
 					Return(&draftrepo.DeleteOutput{}, nil)
 			},
 			wantErr: false,
-			validate: func(output *character.FinalizeDraftOutput) {
+			validate: func(output *characterorchestrator.FinalizeDraftOutput) {
 				s.NotNil(output.Character)
 				s.True(output.DraftDeleted)
 				s.Equal("Aragorn", output.Character.Name)
@@ -250,7 +250,7 @@ func (s *OrchestratorTestSuite) TestFinalizeDraft() {
 		},
 		{
 			name: "incomplete draft",
-			input: &character.FinalizeDraftInput{
+			input: &characterorchestrator.FinalizeDraftInput{
 				DraftID: s.testDraftID,
 			},
 			setupMock: func() {
@@ -270,7 +270,7 @@ func (s *OrchestratorTestSuite) TestFinalizeDraft() {
 		},
 		{
 			name: "invalid draft",
-			input: &character.FinalizeDraftInput{
+			input: &characterorchestrator.FinalizeDraftInput{
 				DraftID: s.testDraftID,
 			},
 			setupMock: func() {
@@ -293,7 +293,7 @@ func (s *OrchestratorTestSuite) TestFinalizeDraft() {
 		},
 		{
 			name: "draft deletion fails",
-			input: &character.FinalizeDraftInput{
+			input: &characterorchestrator.FinalizeDraftInput{
 				DraftID: s.testDraftID,
 			},
 			setupMock: func() {
@@ -329,7 +329,7 @@ func (s *OrchestratorTestSuite) TestFinalizeDraft() {
 					Return(nil, errors.New("delete failed"))
 			},
 			wantErr: false, // Character creation succeeded, so we don't fail
-			validate: func(output *character.FinalizeDraftOutput) {
+			validate: func(output *characterorchestrator.FinalizeDraftOutput) {
 				s.NotNil(output.Character)
 				s.False(output.DraftDeleted) // Draft not deleted
 			},
@@ -361,14 +361,14 @@ func (s *OrchestratorTestSuite) TestFinalizeDraft() {
 func (s *OrchestratorTestSuite) TestGetCharacter() {
 	testCases := []struct {
 		name      string
-		input     *character.GetCharacterInput
+		input     *characterorchestrator.GetCharacterInput
 		setupMock func()
 		wantErr   bool
 		errMsg    string
 	}{
 		{
 			name: "successful retrieval",
-			input: &character.GetCharacterInput{
+			input: &characterorchestrator.GetCharacterInput{
 				CharacterID: s.testCharacterID,
 			},
 			setupMock: func() {
@@ -387,7 +387,7 @@ func (s *OrchestratorTestSuite) TestGetCharacter() {
 		},
 		{
 			name: "character not found",
-			input: &character.GetCharacterInput{
+			input: &characterorchestrator.GetCharacterInput{
 				CharacterID: "nonexistent",
 			},
 			setupMock: func() {
@@ -421,13 +421,13 @@ func (s *OrchestratorTestSuite) TestGetCharacter() {
 func (s *OrchestratorTestSuite) TestDeleteCharacter() {
 	testCases := []struct {
 		name      string
-		input     *character.DeleteCharacterInput
+		input     *characterorchestrator.DeleteCharacterInput
 		setupMock func()
 		wantErr   bool
 	}{
 		{
 			name: "successful deletion",
-			input: &character.DeleteCharacterInput{
+			input: &characterorchestrator.DeleteCharacterInput{
 				CharacterID: s.testCharacterID,
 			},
 			setupMock: func() {
@@ -439,7 +439,7 @@ func (s *OrchestratorTestSuite) TestDeleteCharacter() {
 		},
 		{
 			name: "repository error",
-			input: &character.DeleteCharacterInput{
+			input: &characterorchestrator.DeleteCharacterInput{
 				CharacterID: s.testCharacterID,
 			},
 			setupMock: func() {

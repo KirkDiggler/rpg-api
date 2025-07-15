@@ -17,7 +17,6 @@ import (
 	characterrepomock "github.com/KirkDiggler/rpg-api/internal/repositories/character/mock"
 	draftrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft"
 	draftrepomock "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft/mock"
-	"github.com/KirkDiggler/rpg-api/internal/services/character"
 )
 
 type OrchestratorTestSuite struct {
@@ -106,15 +105,15 @@ func (s *OrchestratorTestSuite) SetupSubTest() {
 func (s *OrchestratorTestSuite) TestCreateDraft() {
 	testCases := []struct {
 		name      string
-		input     *character.CreateDraftInput
+		input     *characterorchestrator.CreateDraftInput
 		setupMock func()
 		wantErr   bool
 		errMsg    string
-		validate  func(*character.CreateDraftOutput)
+		validate  func(*characterorchestrator.CreateDraftOutput)
 	}{
 		{
 			name: "successful creation with minimal data",
-			input: &character.CreateDraftInput{
+			input: &characterorchestrator.CreateDraftInput{
 				PlayerID: s.testPlayerID,
 			},
 			setupMock: func() {
@@ -141,7 +140,7 @@ func (s *OrchestratorTestSuite) TestCreateDraft() {
 					})
 			},
 			wantErr: false,
-			validate: func(output *character.CreateDraftOutput) {
+			validate: func(output *characterorchestrator.CreateDraftOutput) {
 				s.NotNil(output.Draft)
 				s.Equal(s.testPlayerID, output.Draft.PlayerID)
 				s.Equal("", output.Draft.SessionID)
@@ -152,7 +151,7 @@ func (s *OrchestratorTestSuite) TestCreateDraft() {
 		},
 		{
 			name: "successful creation with initial data",
-			input: &character.CreateDraftInput{
+			input: &characterorchestrator.CreateDraftInput{
 				PlayerID:  s.testPlayerID,
 				SessionID: s.testSessionID,
 				InitialData: &dnd5e.CharacterDraft{
@@ -181,7 +180,7 @@ func (s *OrchestratorTestSuite) TestCreateDraft() {
 					})
 			},
 			wantErr: false,
-			validate: func(output *character.CreateDraftOutput) {
+			validate: func(output *characterorchestrator.CreateDraftOutput) {
 				s.NotNil(output.Draft)
 				s.Equal("Frodo", output.Draft.Name)
 				s.Equal(dnd5e.RaceHalfling, output.Draft.RaceID)
@@ -201,7 +200,7 @@ func (s *OrchestratorTestSuite) TestCreateDraft() {
 		},
 		{
 			name: "missing player ID",
-			input: &character.CreateDraftInput{
+			input: &characterorchestrator.CreateDraftInput{
 				SessionID: s.testSessionID,
 			},
 			setupMock: func() {},
@@ -210,7 +209,7 @@ func (s *OrchestratorTestSuite) TestCreateDraft() {
 		},
 		{
 			name: "repository error",
-			input: &character.CreateDraftInput{
+			input: &characterorchestrator.CreateDraftInput{
 				PlayerID: s.testPlayerID,
 			},
 			setupMock: func() {
@@ -254,14 +253,14 @@ func (s *OrchestratorTestSuite) TestCreateDraft() {
 func (s *OrchestratorTestSuite) TestGetDraft() {
 	testCases := []struct {
 		name      string
-		input     *character.GetDraftInput
+		input     *characterorchestrator.GetDraftInput
 		setupMock func()
 		wantErr   bool
 		errMsg    string
 	}{
 		{
 			name: "successful retrieval",
-			input: &character.GetDraftInput{
+			input: &characterorchestrator.GetDraftInput{
 				DraftID: s.testDraftID,
 			},
 			setupMock: func() {
@@ -280,7 +279,7 @@ func (s *OrchestratorTestSuite) TestGetDraft() {
 		},
 		{
 			name: "missing draft ID",
-			input: &character.GetDraftInput{
+			input: &characterorchestrator.GetDraftInput{
 				DraftID: "",
 			},
 			setupMock: func() {},
@@ -289,7 +288,7 @@ func (s *OrchestratorTestSuite) TestGetDraft() {
 		},
 		{
 			name: "draft not found",
-			input: &character.GetDraftInput{
+			input: &characterorchestrator.GetDraftInput{
 				DraftID: "nonexistent",
 			},
 			setupMock: func() {
@@ -324,14 +323,14 @@ func (s *OrchestratorTestSuite) TestGetDraft() {
 func (s *OrchestratorTestSuite) TestListDrafts() {
 	testCases := []struct {
 		name      string
-		input     *character.ListDraftsInput
+		input     *characterorchestrator.ListDraftsInput
 		setupMock func()
 		wantErr   bool
-		validate  func(*character.ListDraftsOutput)
+		validate  func(*characterorchestrator.ListDraftsOutput)
 	}{
 		{
 			name: "successful list - player has draft",
-			input: &character.ListDraftsInput{
+			input: &characterorchestrator.ListDraftsInput{
 				PlayerID: s.testPlayerID,
 			},
 			setupMock: func() {
@@ -344,7 +343,7 @@ func (s *OrchestratorTestSuite) TestListDrafts() {
 					}, nil)
 			},
 			wantErr: false,
-			validate: func(output *character.ListDraftsOutput) {
+			validate: func(output *characterorchestrator.ListDraftsOutput) {
 				s.Len(output.Drafts, 1)
 				s.Equal(s.testDraft.ID, output.Drafts[0].ID)
 				s.Equal("", output.NextPageToken) // No pagination for single draft
@@ -352,7 +351,7 @@ func (s *OrchestratorTestSuite) TestListDrafts() {
 		},
 		{
 			name: "successful list - player has no draft",
-			input: &character.ListDraftsInput{
+			input: &characterorchestrator.ListDraftsInput{
 				PlayerID: s.testPlayerID,
 			},
 			setupMock: func() {
@@ -363,14 +362,14 @@ func (s *OrchestratorTestSuite) TestListDrafts() {
 					Return(nil, errors.NotFoundf("no draft found"))
 			},
 			wantErr: false,
-			validate: func(output *character.ListDraftsOutput) {
+			validate: func(output *characterorchestrator.ListDraftsOutput) {
 				s.Empty(output.Drafts)
 				s.Equal("", output.NextPageToken)
 			},
 		},
 		{
 			name: "error - no player ID provided",
-			input: &character.ListDraftsInput{
+			input: &characterorchestrator.ListDraftsInput{
 				SessionID: s.testSessionID, // Only session ID
 			},
 			setupMock: func() {},
@@ -406,14 +405,14 @@ func (s *OrchestratorTestSuite) TestListDrafts() {
 func (s *OrchestratorTestSuite) TestDeleteDraft() {
 	testCases := []struct {
 		name      string
-		input     *character.DeleteDraftInput
+		input     *characterorchestrator.DeleteDraftInput
 		setupMock func()
 		wantErr   bool
 		errMsg    string
 	}{
 		{
 			name: "successful deletion",
-			input: &character.DeleteDraftInput{
+			input: &characterorchestrator.DeleteDraftInput{
 				DraftID: s.testDraftID,
 			},
 			setupMock: func() {
@@ -432,7 +431,7 @@ func (s *OrchestratorTestSuite) TestDeleteDraft() {
 		},
 		{
 			name: "missing draft ID",
-			input: &character.DeleteDraftInput{
+			input: &characterorchestrator.DeleteDraftInput{
 				DraftID: "",
 			},
 			setupMock: func() {},
@@ -441,7 +440,7 @@ func (s *OrchestratorTestSuite) TestDeleteDraft() {
 		},
 		{
 			name: "repository error",
-			input: &character.DeleteDraftInput{
+			input: &characterorchestrator.DeleteDraftInput{
 				DraftID: s.testDraftID,
 			},
 			setupMock: func() {

@@ -15,8 +15,8 @@ import (
 
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
 	"github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v1alpha1"
-	"github.com/KirkDiggler/rpg-api/internal/services/character"
-	charactermock "github.com/KirkDiggler/rpg-api/internal/services/character/mock"
+	"github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
+	charactermock "github.com/KirkDiggler/rpg-api/internal/orchestrators/character/mock"
 )
 
 type HandlerTestSuite struct {

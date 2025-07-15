@@ -5,6 +5,8 @@ package external
 
 import (
 	"context"
+
+	"github.com/KirkDiggler/rpg-api/internal/errors"
 )
 
 // Client defines the interface for external API interactions
@@ -21,70 +23,60 @@ type Client interface {
 	// GetSpellData fetches spell information from external source
 	GetSpellData(ctx context.Context, spellID string) (*SpellData, error)
 
-	// ListAvailableRaces returns all available races
+	// ListAvailableRaces returns all available races with full details
+	// Implementation should handle reference->details conversion internally
 	ListAvailableRaces(ctx context.Context) ([]*RaceData, error)
 
-	// ListAvailableClasses returns all available classes
+	// ListAvailableClasses returns all available classes with full details
+	// Implementation should handle reference->details conversion internally
 	ListAvailableClasses(ctx context.Context) ([]*ClassData, error)
 
-	// ListAvailableBackgrounds returns all available backgrounds
+	// ListAvailableBackgrounds returns all available backgrounds with full details
+	// Implementation should handle reference->details conversion internally
 	ListAvailableBackgrounds(ctx context.Context) ([]*BackgroundData, error)
 }
 
-// RaceData represents race information from external source
-type RaceData struct {
-	ID             string
-	Name           string
-	Description    string
-	Size           string
-	Speed          int32
-	AbilityBonuses map[string]int32
-	Traits         []string
-	Subraces       []SubraceData
+type client struct {
 }
 
-// SubraceData represents subrace information
-type SubraceData struct {
-	ID             string
-	Name           string
-	Description    string
-	AbilityBonuses map[string]int32
-	Traits         []string
+type Config struct {
 }
 
-// ClassData represents class information from external source
-type ClassData struct {
-	ID                string
-	Name              string
-	Description       string
-	HitDice           string
-	PrimaryAbility    string
-	SavingThrows      []string
-	SkillsCount       int32
-	AvailableSkills   []string
-	StartingEquipment []string
+func (cfg *Config) Validate() error {
+	return nil
 }
 
-// BackgroundData represents background information from external source
-type BackgroundData struct {
-	ID                 string
-	Name               string
-	Description        string
-	SkillProficiencies []string
-	Languages          int32
-	Equipment          []string
-	Feature            string
+func New(cfg *Config) (Client, error) {
+	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
+	return &client{}, nil
 }
 
-// SpellData represents spell information from external source
-type SpellData struct {
-	ID          string
-	Name        string
-	Level       int32
-	School      string
-	CastingTime string
-	Range       string
-	Components  []string
-	Duration    string
-	Description string
+func (c *client) GetRaceData(ctx context.Context, raceID string) (*RaceData, error) {
+	return nil, errors.Unimplemented("not implemented")
+}
+
+func (c *client) GetClassData(ctx context.Context, classID string) (*ClassData, error) {
+	return nil, errors.Unimplemented("not implemented")
+}
+
+func (c *client) GetBackgroundData(ctx context.Context, backgroundID string) (*BackgroundData, error) {
+	return nil, errors.Unimplemented("not implemented")
+}
+
+func (c *client) GetSpellData(ctx context.Context, spellID string) (*SpellData, error) {
+	return nil, errors.Unimplemented("not implemented")
+}
+
+func (c *client) ListAvailableRaces(ctx context.Context) ([]*RaceData, error) {
+	return nil, errors.Unimplemented("not implemented")
+}
+
+func (c *client) ListAvailableClasses(ctx context.Context) ([]*ClassData, error) {
+	return nil, errors.Unimplemented("not implemented")
+}
+
+func (c *client) ListAvailableBackgrounds(ctx context.Context) ([]*BackgroundData, error) {
+	return nil, errors.Unimplemented("not implemented")
 }

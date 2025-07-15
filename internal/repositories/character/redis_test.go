@@ -38,7 +38,11 @@ func (s *RedisRepositoryTestSuite) SetupTest() {
 	s.ctrl = gomock.NewController(s.T())
 	s.mockClient = redismocks.NewMockClient(s.ctrl)
 	s.mockPipe = redismocks.NewMockPipeliner(s.ctrl)
-	s.repo = character.NewRedisRepository(s.mockClient)
+	repo, err := character.NewRedis(&character.RedisConfig{
+		Client: s.mockClient,
+	})
+	s.Require().NoError(err)
+	s.repo = repo
 	s.ctx = context.Background()
 }
 
