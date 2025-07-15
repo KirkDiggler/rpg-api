@@ -87,6 +87,16 @@ type stubEventBus struct{}
 type stubDiceRoller struct{}
 type stubExternalClient struct{}
 
+// testExternalClient is a more configurable stub for specific test scenarios
+type testExternalClient struct {
+	raceData        *external.RaceData
+	raceError       error
+	classData       *external.ClassData
+	classError      error
+	backgroundData  *external.BackgroundData
+	backgroundError error
+}
+
 // Minimal implementation to satisfy events.EventBus interface
 func (s *stubEventBus) Publish(_ context.Context, _ events.Event) error { return nil }
 func (s *stubEventBus) Subscribe(_ string, _ events.Handler) string     { return "sub-id" }
@@ -121,6 +131,44 @@ func (s *stubExternalClient) ListAvailableClasses(_ context.Context) ([]*externa
 	return []*external.ClassData{}, nil
 }
 func (s *stubExternalClient) ListAvailableBackgrounds(_ context.Context) ([]*external.BackgroundData, error) {
+	return []*external.BackgroundData{}, nil
+}
+
+// testExternalClient implementations
+func (c *testExternalClient) GetRaceData(_ context.Context, _ string) (*external.RaceData, error) {
+	if c.raceError != nil {
+		return nil, c.raceError
+	}
+	return c.raceData, nil
+}
+
+func (c *testExternalClient) GetClassData(_ context.Context, _ string) (*external.ClassData, error) {
+	if c.classError != nil {
+		return nil, c.classError
+	}
+	return c.classData, nil
+}
+
+func (c *testExternalClient) GetBackgroundData(_ context.Context, _ string) (*external.BackgroundData, error) {
+	if c.backgroundError != nil {
+		return nil, c.backgroundError
+	}
+	return c.backgroundData, nil
+}
+
+func (c *testExternalClient) GetSpellData(_ context.Context, _ string) (*external.SpellData, error) {
+	return nil, errors.NotFound("spell not found")
+}
+
+func (c *testExternalClient) ListAvailableRaces(_ context.Context) ([]*external.RaceData, error) {
+	return []*external.RaceData{}, nil
+}
+
+func (c *testExternalClient) ListAvailableClasses(_ context.Context) ([]*external.ClassData, error) {
+	return []*external.ClassData{}, nil
+}
+
+func (c *testExternalClient) ListAvailableBackgrounds(_ context.Context) ([]*external.BackgroundData, error) {
 	return []*external.BackgroundData{}, nil
 }
 
@@ -646,4 +694,519 @@ func TestValidateManualScores(t *testing.T) {
 		assert.False(t, result.IsValid)
 		assert.Len(t, result.Errors, 4)
 	})
+}
+
+func TestValidateSkillChoices(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("nil input", func(t *testing.T) {
+		adapter := createTestAdapter(t)
+		result, err := adapter.ValidateSkillChoices(ctx, nil)
+		assert.Error(t, err)
+		assert.True(t, errors.IsInvalidArgument(err))
+		assert.Nil(t, result)
+	})
+
+	t.Run("empty class ID", func(t *testing.T) {
+		adapter := createTestAdapter(t)
+		result, err := adapter.ValidateSkillChoices(ctx, &engine.ValidateSkillChoicesInput{
+			ClassID: "",
+		})
+		assert.NoError(t, err)
+		assert.NotNil(t, result)
+		assert.False(t, result.IsValid)
+		assert.Len(t, result.Errors, 1)
+		assert.Equal(t, "class_id", result.Errors[0].Field)
+		assert.Equal(t, "REQUIRED", result.Errors[0].Code)
+	})
+
+	t.Run("invalid class ID", func(t *testing.T) {
+		testClient := &testExternalClient{
+			classError: errors.NotFound("class not found"),
+		}
+		adapter, err := NewAdapter(&AdapterConfig{
+			EventBus:       &stubEventBus{},
+			DiceRoller:     &stubDiceRoller{},
+			ExternalClient: testClient,
+		})
+		assert.NoError(t, err)
+
+		result, err := adapter.ValidateSkillChoices(ctx, &engine.ValidateSkillChoicesInput{
+			ClassID: "invalid-class",
+		})
+		assert.NoError(t, err)
+		assert.NotNil(t, result)
+		assert.False(t, result.IsValid)
+		assert.Len(t, result.Errors, 1)
+		assert.Equal(t, "class_id", result.Errors[0].Field)
+		assert.Equal(t, "INVALID_CLASS", result.Errors[0].Code)
+	})
+
+	t.Run("valid skill selection", func(t *testing.T) {
+		testClient := &testExternalClient{
+			classData: &external.ClassData{
+				ID:              "fighter",
+				Name:            "Fighter",
+				SkillsCount:     2,
+				AvailableSkills: []string{"athletics", "intimidation", "survival", "perception"},
+			},
+		}
+		adapter, err := NewAdapter(&AdapterConfig{
+			EventBus:       &stubEventBus{},
+			DiceRoller:     &stubDiceRoller{},
+			ExternalClient: testClient,
+		})
+		assert.NoError(t, err)
+
+		result, err := adapter.ValidateSkillChoices(ctx, &engine.ValidateSkillChoicesInput{
+			ClassID:          "fighter",
+			SelectedSkillIDs: []string{"athletics", "intimidation"},
+		})
+		assert.NoError(t, err)
+		assert.NotNil(t, result)
+		assert.True(t, result.IsValid)
+		assert.Empty(t, result.Errors)
+		assert.Empty(t, result.Warnings)
+	})
+
+	t.Run("too few skills selected", func(t *testing.T) {
+		testClient := &testExternalClient{
+			classData: &external.ClassData{
+				ID:              "fighter",
+				Name:            "Fighter",
+				SkillsCount:     2,
+				AvailableSkills: []string{"athletics", "intimidation", "survival", "perception"},
+			},
+		}
+		adapter, err := NewAdapter(&AdapterConfig{
+			EventBus:       &stubEventBus{},
+			DiceRoller:     &stubDiceRoller{},
+			ExternalClient: testClient,
+		})
+		assert.NoError(t, err)
+
+		result, err := adapter.ValidateSkillChoices(ctx, &engine.ValidateSkillChoicesInput{
+			ClassID:          "fighter",
+			SelectedSkillIDs: []string{"athletics"},
+		})
+		assert.NoError(t, err)
+		assert.NotNil(t, result)
+		assert.False(t, result.IsValid)
+		assert.Len(t, result.Errors, 1)
+		assert.Equal(t, "selected_skills", result.Errors[0].Field)
+		assert.Equal(t, "INCORRECT_SKILL_COUNT", result.Errors[0].Code)
+		assert.Contains(t, result.Errors[0].Message, "Must select exactly 2 skills")
+	})
+
+	t.Run("too many skills selected", func(t *testing.T) {
+		testClient := &testExternalClient{
+			classData: &external.ClassData{
+				ID:              "fighter",
+				Name:            "Fighter",
+				SkillsCount:     2,
+				AvailableSkills: []string{"athletics", "intimidation", "survival", "perception"},
+			},
+		}
+		adapter, err := NewAdapter(&AdapterConfig{
+			EventBus:       &stubEventBus{},
+			DiceRoller:     &stubDiceRoller{},
+			ExternalClient: testClient,
+		})
+		assert.NoError(t, err)
+
+		result, err := adapter.ValidateSkillChoices(ctx, &engine.ValidateSkillChoicesInput{
+			ClassID:          "fighter",
+			SelectedSkillIDs: []string{"athletics", "intimidation", "survival"},
+		})
+		assert.NoError(t, err)
+		assert.NotNil(t, result)
+		assert.False(t, result.IsValid)
+		assert.Len(t, result.Errors, 1)
+		assert.Equal(t, "selected_skills", result.Errors[0].Field)
+		assert.Equal(t, "INCORRECT_SKILL_COUNT", result.Errors[0].Code)
+	})
+
+	//nolint:dupl // Similar test structure is intentional for different validation scenarios
+	t.Run("duplicate skill selection", func(t *testing.T) {
+		testClient := &testExternalClient{
+			classData: &external.ClassData{
+				ID:              "fighter",
+				Name:            "Fighter",
+				SkillsCount:     2,
+				AvailableSkills: []string{"athletics", "intimidation", "survival", "perception"},
+			},
+		}
+		adapter, err := NewAdapter(&AdapterConfig{
+			EventBus:       &stubEventBus{},
+			DiceRoller:     &stubDiceRoller{},
+			ExternalClient: testClient,
+		})
+		assert.NoError(t, err)
+
+		result, err := adapter.ValidateSkillChoices(ctx, &engine.ValidateSkillChoicesInput{
+			ClassID:          "fighter",
+			SelectedSkillIDs: []string{"athletics", "athletics"},
+		})
+		assert.NoError(t, err)
+		assert.NotNil(t, result)
+		assert.False(t, result.IsValid)
+		assert.Len(t, result.Errors, 2) // duplicate error + incorrect count
+		duplicateFound := false
+		for _, err := range result.Errors {
+			if err.Code == "DUPLICATE_SKILL" {
+				duplicateFound = true
+				assert.Equal(t, "selected_skills", err.Field)
+				assert.Contains(t, err.Message, "Duplicate skill selection")
+			}
+		}
+		assert.True(t, duplicateFound, "Expected to find DUPLICATE_SKILL error")
+	})
+
+	//nolint:dupl // Similar test structure is intentional for different validation scenarios
+	t.Run("invalid skill for class", func(t *testing.T) {
+		testClient := &testExternalClient{
+			classData: &external.ClassData{
+				ID:              "fighter",
+				Name:            "Fighter",
+				SkillsCount:     2,
+				AvailableSkills: []string{"athletics", "intimidation", "survival", "perception"},
+			},
+		}
+		adapter, err := NewAdapter(&AdapterConfig{
+			EventBus:       &stubEventBus{},
+			DiceRoller:     &stubDiceRoller{},
+			ExternalClient: testClient,
+		})
+		assert.NoError(t, err)
+
+		result, err := adapter.ValidateSkillChoices(ctx, &engine.ValidateSkillChoicesInput{
+			ClassID:          "fighter",
+			SelectedSkillIDs: []string{"athletics", "arcana"}, // arcana not available for fighter
+		})
+		assert.NoError(t, err)
+		assert.NotNil(t, result)
+		assert.False(t, result.IsValid)
+		assert.Len(t, result.Errors, 2) // invalid skill + incorrect count
+		invalidFound := false
+		for _, err := range result.Errors {
+			if err.Code == "INVALID_SKILL_CHOICE" {
+				invalidFound = true
+				assert.Equal(t, "selected_skills", err.Field)
+				assert.Contains(t, err.Message, "arcana")
+			}
+		}
+		assert.True(t, invalidFound, "Expected to find INVALID_SKILL_CHOICE error")
+	})
+
+	t.Run("skill overlap warning with background", func(t *testing.T) {
+		testClient := &testExternalClient{
+			classData: &external.ClassData{
+				ID:              "fighter",
+				Name:            "Fighter",
+				SkillsCount:     2,
+				AvailableSkills: []string{"athletics", "intimidation", "survival", "perception"},
+			},
+			backgroundData: &external.BackgroundData{
+				ID:                 "soldier",
+				Name:               "Soldier",
+				SkillProficiencies: []string{"athletics", "intimidation"},
+			},
+		}
+		adapter, err := NewAdapter(&AdapterConfig{
+			EventBus:       &stubEventBus{},
+			DiceRoller:     &stubDiceRoller{},
+			ExternalClient: testClient,
+		})
+		assert.NoError(t, err)
+
+		result, err := adapter.ValidateSkillChoices(ctx, &engine.ValidateSkillChoicesInput{
+			ClassID:          "fighter",
+			BackgroundID:     "soldier",
+			SelectedSkillIDs: []string{"athletics", "survival"}, // athletics overlaps with background
+		})
+		assert.NoError(t, err)
+		assert.NotNil(t, result)
+		assert.True(t, result.IsValid)
+		assert.Empty(t, result.Errors)
+		assert.Len(t, result.Warnings, 1)
+		assert.Equal(t, "selected_skills", result.Warnings[0].Field)
+		assert.Equal(t, "SKILL_OVERLAP", result.Warnings[0].Code)
+		assert.Contains(t, result.Warnings[0].Message, "athletics")
+		assert.Contains(t, result.Warnings[0].Message, "maximize proficiencies")
+	})
+
+	t.Run("selecting background skill as class choice", func(t *testing.T) {
+		testClient := &testExternalClient{
+			classData: &external.ClassData{
+				ID:              "fighter",
+				Name:            "Fighter",
+				SkillsCount:     2,
+				AvailableSkills: []string{"athletics", "survival", "perception"},
+			},
+			backgroundData: &external.BackgroundData{
+				ID:                 "soldier",
+				Name:               "Soldier",
+				SkillProficiencies: []string{"intimidation"},
+			},
+		}
+		adapter, err := NewAdapter(&AdapterConfig{
+			EventBus:       &stubEventBus{},
+			DiceRoller:     &stubDiceRoller{},
+			ExternalClient: testClient,
+		})
+		assert.NoError(t, err)
+
+		result, err := adapter.ValidateSkillChoices(ctx, &engine.ValidateSkillChoicesInput{
+			ClassID:          "fighter",
+			BackgroundID:     "soldier",
+			SelectedSkillIDs: []string{"athletics", "intimidation"}, // intimidation is from background
+		})
+		assert.NoError(t, err)
+		assert.NotNil(t, result)
+		assert.False(t, result.IsValid)
+		backgroundSkillFound := false
+		for _, err := range result.Errors {
+			if err.Code == "BACKGROUND_SKILL_NOT_CHOICE" {
+				backgroundSkillFound = true
+				assert.Equal(t, "selected_skills", err.Field)
+				assert.Contains(t, err.Message, "intimidation")
+				assert.Contains(t, err.Message, "automatically granted by background")
+			}
+		}
+		assert.True(t, backgroundSkillFound, "Expected to find BACKGROUND_SKILL_NOT_CHOICE error")
+	})
+
+	t.Run("invalid background ID", func(t *testing.T) {
+		testClient := &testExternalClient{
+			classData: &external.ClassData{
+				ID:              "fighter",
+				Name:            "Fighter",
+				SkillsCount:     2,
+				AvailableSkills: []string{"athletics", "intimidation", "survival", "perception"},
+			},
+			backgroundError: errors.NotFound("background not found"),
+		}
+		adapter, err := NewAdapter(&AdapterConfig{
+			EventBus:       &stubEventBus{},
+			DiceRoller:     &stubDiceRoller{},
+			ExternalClient: testClient,
+		})
+		assert.NoError(t, err)
+
+		result, err := adapter.ValidateSkillChoices(ctx, &engine.ValidateSkillChoicesInput{
+			ClassID:          "fighter",
+			BackgroundID:     "invalid-background",
+			SelectedSkillIDs: []string{"athletics", "intimidation"},
+		})
+		assert.NoError(t, err)
+		assert.NotNil(t, result)
+		assert.False(t, result.IsValid)
+		assert.Len(t, result.Errors, 1)
+		assert.Equal(t, "background_id", result.Errors[0].Field)
+		assert.Equal(t, "INVALID_BACKGROUND", result.Errors[0].Code)
+	})
+}
+
+func TestGetAvailableSkills(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("nil input", func(t *testing.T) {
+		adapter := createTestAdapter(t)
+		result, err := adapter.GetAvailableSkills(ctx, nil)
+		assert.Error(t, err)
+		assert.True(t, errors.IsInvalidArgument(err))
+		assert.Nil(t, result)
+	})
+
+	t.Run("empty input returns empty skills", func(t *testing.T) {
+		adapter := createTestAdapter(t)
+		result, err := adapter.GetAvailableSkills(ctx, &engine.GetAvailableSkillsInput{})
+		assert.NoError(t, err)
+		assert.NotNil(t, result)
+		assert.Empty(t, result.ClassSkills)
+		assert.Empty(t, result.BackgroundSkills)
+	})
+
+	t.Run("class skills only", func(t *testing.T) {
+		testClient := &testExternalClient{
+			classData: &external.ClassData{
+				ID:              "fighter",
+				Name:            "Fighter",
+				SkillsCount:     2,
+				AvailableSkills: []string{"athletics", "intimidation", "survival"},
+			},
+		}
+		adapter, err := NewAdapter(&AdapterConfig{
+			EventBus:       &stubEventBus{},
+			DiceRoller:     &stubDiceRoller{},
+			ExternalClient: testClient,
+		})
+		assert.NoError(t, err)
+
+		result, err := adapter.GetAvailableSkills(ctx, &engine.GetAvailableSkillsInput{
+			ClassID: "fighter",
+		})
+		assert.NoError(t, err)
+		assert.NotNil(t, result)
+		assert.Len(t, result.ClassSkills, 3)
+		assert.Empty(t, result.BackgroundSkills)
+
+		// Check first skill details
+		assert.Equal(t, "athletics", result.ClassSkills[0].SkillID)
+		assert.Equal(t, "Athletics", result.ClassSkills[0].SkillName)
+		assert.Equal(t, "strength", result.ClassSkills[0].Ability)
+		assert.Contains(t, result.ClassSkills[0].Description, "Athletics")
+	})
+
+	t.Run("background skills only", func(t *testing.T) {
+		testClient := &testExternalClient{
+			backgroundData: &external.BackgroundData{
+				ID:                 "soldier",
+				Name:               "Soldier",
+				SkillProficiencies: []string{"athletics", "intimidation"},
+			},
+		}
+		adapter, err := NewAdapter(&AdapterConfig{
+			EventBus:       &stubEventBus{},
+			DiceRoller:     &stubDiceRoller{},
+			ExternalClient: testClient,
+		})
+		assert.NoError(t, err)
+
+		result, err := adapter.GetAvailableSkills(ctx, &engine.GetAvailableSkillsInput{
+			BackgroundID: "soldier",
+		})
+		assert.NoError(t, err)
+		assert.NotNil(t, result)
+		assert.Empty(t, result.ClassSkills)
+		assert.Len(t, result.BackgroundSkills, 2)
+
+		// Check background skill details
+		assert.Equal(t, "athletics", result.BackgroundSkills[0].SkillID)
+		assert.Equal(t, "Athletics", result.BackgroundSkills[0].SkillName)
+		assert.Contains(t, result.BackgroundSkills[0].Description, "from background")
+	})
+
+	t.Run("both class and background skills", func(t *testing.T) {
+		testClient := &testExternalClient{
+			classData: &external.ClassData{
+				ID:              "fighter",
+				Name:            "Fighter",
+				SkillsCount:     2,
+				AvailableSkills: []string{"athletics", "survival"},
+			},
+			backgroundData: &external.BackgroundData{
+				ID:                 "soldier",
+				Name:               "Soldier",
+				SkillProficiencies: []string{"intimidation"},
+			},
+		}
+		adapter, err := NewAdapter(&AdapterConfig{
+			EventBus:       &stubEventBus{},
+			DiceRoller:     &stubDiceRoller{},
+			ExternalClient: testClient,
+		})
+		assert.NoError(t, err)
+
+		result, err := adapter.GetAvailableSkills(ctx, &engine.GetAvailableSkillsInput{
+			ClassID:      "fighter",
+			BackgroundID: "soldier",
+		})
+		assert.NoError(t, err)
+		assert.NotNil(t, result)
+		assert.Len(t, result.ClassSkills, 2)
+		assert.Len(t, result.BackgroundSkills, 1)
+	})
+
+	t.Run("invalid class ID returns empty skills", func(t *testing.T) {
+		testClient := &testExternalClient{
+			classError: errors.NotFound("class not found"),
+		}
+		adapter, err := NewAdapter(&AdapterConfig{
+			EventBus:       &stubEventBus{},
+			DiceRoller:     &stubDiceRoller{},
+			ExternalClient: testClient,
+		})
+		assert.NoError(t, err)
+
+		result, err := adapter.GetAvailableSkills(ctx, &engine.GetAvailableSkillsInput{
+			ClassID: "invalid-class",
+		})
+		assert.NoError(t, err)
+		assert.NotNil(t, result)
+		assert.Empty(t, result.ClassSkills)
+		assert.Empty(t, result.BackgroundSkills)
+	})
+
+	t.Run("invalid background ID returns partial results", func(t *testing.T) {
+		testClient := &testExternalClient{
+			classData: &external.ClassData{
+				ID:              "fighter",
+				Name:            "Fighter",
+				SkillsCount:     2,
+				AvailableSkills: []string{"athletics"},
+			},
+			backgroundError: errors.NotFound("background not found"),
+		}
+		adapter, err := NewAdapter(&AdapterConfig{
+			EventBus:       &stubEventBus{},
+			DiceRoller:     &stubDiceRoller{},
+			ExternalClient: testClient,
+		})
+		assert.NoError(t, err)
+
+		result, err := adapter.GetAvailableSkills(ctx, &engine.GetAvailableSkillsInput{
+			ClassID:      "fighter",
+			BackgroundID: "invalid-background",
+		})
+		assert.NoError(t, err)
+		assert.NotNil(t, result)
+		assert.Len(t, result.ClassSkills, 1)
+		assert.Empty(t, result.BackgroundSkills)
+	})
+}
+
+func TestFormatSkillName(t *testing.T) {
+	testCases := []struct {
+		input    string
+		expected string
+	}{
+		{"athletics", "Athletics"},
+		{"sleight_of_hand", "Sleight Of Hand"},
+		{"animal_handling", "Animal Handling"},
+		{"arcana", "Arcana"},
+		{"investigation", "Investigation"},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.input, func(t *testing.T) {
+			result := formatSkillName(tc.input)
+			assert.Equal(t, tc.expected, result)
+		})
+	}
+}
+
+func TestGetSkillAbility(t *testing.T) {
+	testCases := []struct {
+		skillID  string
+		expected string
+	}{
+		{"athletics", "strength"},
+		{"acrobatics", "dexterity"},
+		{"sleight_of_hand", "dexterity"},
+		{"arcana", "intelligence"},
+		{"history", "intelligence"},
+		{"animal_handling", "wisdom"},
+		{"perception", "wisdom"},
+		{"deception", "charisma"},
+		{"persuasion", "charisma"},
+		{"unknown_skill", "unknown"},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.skillID, func(t *testing.T) {
+			result := getSkillAbility(tc.skillID)
+			assert.Equal(t, tc.expected, result)
+		})
+	}
 }
