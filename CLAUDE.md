@@ -271,9 +271,8 @@ This runs:
 1. `fmt` - Format code with gofmt and goimports  
 2. `tidy` - Clean dependencies with go mod tidy
 3. `fix-eof` - Add missing EOF newlines
-4. `buf-lint` - Lint proto files
-5. `lint` - Run golangci-lint with comprehensive checks
-6. `test` - Run unit tests with coverage
+4. `lint` - Run golangci-lint with comprehensive checks
+5. `test` - Run unit tests with coverage
 
 ### 🚨 CRITICAL RULE: NEVER USE --no-verify 🚨
 **NEVER, EVER, EVER use `git commit --no-verify`**
@@ -287,7 +286,6 @@ Based on rpg-toolkit's proven configuration:
 - **golangci-lint**: Comprehensive linting with 20+ linters
 - **Git hooks**: Automatic pre-commit checks via `.githooks/pre-commit`
 - **Auto-formatting**: gofmt with simplify + goimports with local prefixes
-- **Proto linting**: buf lint for protocol buffer files
 
 Install git hooks once:
 ```bash

@@ -24,7 +24,6 @@ jobs:
     - name: Install dependencies
       run: |
         go mod download
-        go install github.com/bufbuild/buf/cmd/buf@latest
         go install go.uber.org/mock/mockgen@latest
     
     - name: Generate code

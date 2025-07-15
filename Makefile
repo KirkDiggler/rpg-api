@@ -64,7 +64,7 @@ clean: ## Clean build artifacts
 .PHONY: fix-eof
 fix-eof: ## Add missing EOF newlines
 	@echo "==> Fixing EOF newlines..."
-	@for file in $$(git ls-files '*.go' '*.proto' '*.md' '*.yml' '*.yaml' '*.json' 'Makefile' '.gitignore'); do \
+	@for file in $$(git ls-files '*.go' '*.md' '*.yml' '*.yaml' '*.json' 'Makefile' '.gitignore'); do \
 		if [ -f "$$file" ] && [ -s "$$file" ] && [ $$(tail -c1 "$$file" | wc -l) -eq 0 ]; then \
 			echo "Fixing: $$file"; \
 			echo >> "$$file"; \
@@ -103,22 +103,13 @@ fix: fmt tidy fix-eof ## Fix all auto-fixable issues
 	@echo "Run 'git add -u' to stage the changes"
 
 .PHONY: generate
-generate: buf-generate mocks ## Generate all code (protos and mocks)
+generate: mocks ## Generate all code (mocks only)
 
 .PHONY: mocks
 mocks: ## Generate mocks
 	@echo "==> Generating mocks..."
 	@go generate ./...
 
-.PHONY: proto-mocks
-proto-mocks: buf-generate ## Generate mocks for proto clients (for Discord bot)
-	@echo "==> Generating proto client mocks..."
-	@if ! command -v mockgen &> /dev/null; then \
-		echo "mockgen not found. Installing..."; \
-		go install github.com/golang/mock/mockgen@latest; \
-	fi
-	@mkdir -p mocks/proto
-	@mockgen -source=gen/go/github.com/KirkDiggler/rpg-api/api/proto/v1alpha1/dnd5e/character_grpc.pb.go -destination=mocks/proto/character_api_mock.go -package=protomocks
 
 .PHONY: docker-build
 docker-build: ## Build Docker image

@@ -16,9 +16,8 @@ This command already includes:
 1. `fmt` - Format code with gofmt and goimports
 2. `tidy` - Clean dependencies with go mod tidy  
 3. `fix-eof` - Add missing EOF newlines ← THIS FIXES OUR PROBLEM!
-4. `buf-lint` - Lint proto files
-5. `lint` - Run golangci-lint
-6. `test` - Run unit tests
+4. `lint` - Run golangci-lint
+5. `test` - Run unit tests
 
 ## Set Up Git Hooks (One Time)
 
@@ -48,7 +47,6 @@ git commit -m "your message"
 
 The `make fix-eof` command automatically adds newlines to:
 - `*.go` files
-- `*.proto` files  
 - `*.md` files
 - `*.yml` and `*.yaml` files
 - `*.json` files
