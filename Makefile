@@ -30,9 +30,24 @@ lint: install-tools ## Run linter
 	@golangci-lint run
 
 .PHONY: test
-test: ## Run tests
-	@echo "==> Running tests..."
-	@go test -v -race -coverprofile=coverage.out ./...
+test: test-unit ## Run all tests (alias for test-unit by default)
+
+.PHONY: test-unit
+test-unit: ## Run unit tests only
+	@echo "==> Running unit tests..."
+	@go test -v -short -race -coverprofile=coverage.out ./...
+
+.PHONY: test-integration
+test-integration: ## Run integration tests (requires Redis)
+	@echo "==> Running integration tests..."
+	@echo "→ Ensuring Redis is available..."
+	@docker run -d --name test-redis -p 6379:6379 redis:alpine || true
+	@sleep 2
+	@go test -v -race -tags=integration ./...
+	@docker stop test-redis && docker rm test-redis || true
+
+.PHONY: test-all
+test-all: test-unit test-integration ## Run all tests including integration
 
 .PHONY: test-coverage
 test-coverage: test ## Run tests and display coverage

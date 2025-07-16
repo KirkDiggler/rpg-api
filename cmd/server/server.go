@@ -106,14 +106,16 @@ func runServer(_ *cobra.Command, _ []string) error {
 		return fmt.Errorf("failed to create external client: %w", err)
 	}
 
-	// Initialize services (stub for now)
-	// TODO: Replace with real service implementation
+	// Initialize services
 	characterService, err := character.New(&character.Config{
 		CharacterRepo:      charRepo,
 		CharacterDraftRepo: draftRepo,
 		Engine:             e,
 		ExternalClient:     client,
 	})
+	if err != nil {
+		return fmt.Errorf("failed to create character service: %w", err)
+	}
 
 	// Initialize handlers
 	characterHandler, err := v1alpha1.NewHandler(&v1alpha1.HandlerConfig{
