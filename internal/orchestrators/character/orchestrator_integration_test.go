@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/suite"
 
 	"github.com/KirkDiggler/rpg-api/internal/clients/external"
-	"github.com/KirkDiggler/rpg-api/internal/engine"
+	"github.com/KirkDiggler/rpg-api/internal/engine/rpgtoolkit"
 	"github.com/KirkDiggler/rpg-api/internal/entities/dnd5e"
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
 	"github.com/KirkDiggler/rpg-api/internal/pkg/clock"
@@ -19,6 +19,8 @@ import (
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	characterdraftrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft"
 	"github.com/KirkDiggler/rpg-api/internal/testutils"
+	"github.com/KirkDiggler/rpg-toolkit/dice"
+	"github.com/KirkDiggler/rpg-toolkit/events"
 )
 
 // OrchestratorIntegrationTestSuite tests the orchestrator with real Redis
@@ -61,15 +63,23 @@ func (s *OrchestratorIntegrationTestSuite) SetupTest() {
 	s.Require().NoError(err)
 	s.characterDraftRepo = draftRepo
 
-	// Create engine (using stub implementation)
-	e, err := engine.New(&engine.Config{})
-	s.Require().NoError(err)
-
 	// Create external client - using real API for integration tests
 	client, err := external.New(&external.Config{
 		BaseURL:     "https://www.dnd5eapi.co/api/2014/",
 		CacheTTL:    24 * time.Hour,
 		HTTPTimeout: 30 * time.Second,
+	})
+	s.Require().NoError(err)
+
+	// Create rpg-toolkit components
+	eventBus := events.NewBus()
+	diceRoller := dice.DefaultRoller
+
+	// Create engine using rpg-toolkit adapter
+	e, err := rpgtoolkit.NewAdapter(&rpgtoolkit.AdapterConfig{
+		EventBus:       eventBus,
+		DiceRoller:     diceRoller,
+		ExternalClient: client,
 	})
 	s.Require().NoError(err)
 
