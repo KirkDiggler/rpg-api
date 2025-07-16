@@ -982,7 +982,7 @@ func (o *Orchestrator) ListRaces(
 		return nil, errors.InvalidArgument("input is required")
 	}
 
-	slog.Info("Fetching races from external API", 
+	slog.Info("Fetching races from external API",
 		"includeSubraces", input.IncludeSubraces,
 		"pageSize", input.PageSize)
 
@@ -992,7 +992,7 @@ func (o *Orchestrator) ListRaces(
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to list races from external client")
 	}
-	
+
 	slog.Info("Successfully fetched races", "count", len(races))
 
 	// Convert external race data to entity format

@@ -13,6 +13,7 @@ import (
 
 	"github.com/fadedpez/dnd5e-api/clients/dnd5e"
 	"github.com/fadedpez/dnd5e-api/entities"
+
 	"github.com/KirkDiggler/rpg-api/internal/errors"
 )
 
@@ -74,12 +75,12 @@ func New(cfg *Config) (Client, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
-	
+
 	// Create HTTP client with timeout
 	httpClient := &http.Client{
 		Timeout: cfg.HTTPTimeout,
 	}
-	
+
 	// Create the base D&D 5e API client
 	baseClient, err := dnd5e.NewDND5eAPI(&dnd5e.DND5eAPIConfig{
 		Client:  httpClient,
@@ -88,10 +89,10 @@ func New(cfg *Config) (Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to create D&D 5e API client: %w", err)
 	}
-	
+
 	// Wrap with caching for better performance
 	cachedClient := dnd5e.NewCachedClient(baseClient, cfg.CacheTTL)
-	
+
 	return &client{
 		dnd5eClient: cachedClient,
 	}, nil
@@ -121,18 +122,18 @@ func (c *client) ListAvailableRaces(ctx context.Context) ([]*RaceData, error) {
 		return nil, fmt.Errorf("failed to list races from D&D 5e API: %w", err)
 	}
 	slog.Info("Got race references", "count", len(refs))
-	
+
 	// Step 2: Concurrently load full details for each race
 	slog.Info("Loading full details for each race concurrently")
 	races := make([]*RaceData, len(refs))
 	errChan := make(chan error, len(refs))
 	var wg sync.WaitGroup
-	
+
 	for i, ref := range refs {
 		wg.Add(1)
 		go func(idx int, key string, name string) {
 			defer wg.Done()
-			
+
 			// Get full race details (cached after first call)
 			race, err := c.dnd5eClient.GetRace(key)
 			if err != nil {
@@ -140,23 +141,23 @@ func (c *client) ListAvailableRaces(ctx context.Context) ([]*RaceData, error) {
 				errChan <- fmt.Errorf("failed to get race %s: %w", key, err)
 				return
 			}
-			
+
 			// Convert to our internal format
 			races[idx] = convertRaceToRaceData(race)
 			slog.Debug("Loaded race details", "race", name)
 		}(i, ref.Key, ref.Name)
 	}
-	
+
 	wg.Wait()
 	close(errChan)
-	
+
 	// Check for any errors
 	for err := range errChan {
 		if err != nil {
 			return nil, err
 		}
 	}
-	
+
 	return races, nil
 }
 
@@ -166,39 +167,39 @@ func (c *client) ListAvailableClasses(ctx context.Context) ([]*ClassData, error)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list classes: %w", err)
 	}
-	
+
 	// Step 2: Concurrently load full details for each class
 	classes := make([]*ClassData, len(refs))
 	errChan := make(chan error, len(refs))
 	var wg sync.WaitGroup
-	
+
 	for i, ref := range refs {
 		wg.Add(1)
 		go func(idx int, key string) {
 			defer wg.Done()
-			
+
 			// Get full class details (cached after first call)
 			class, err := c.dnd5eClient.GetClass(key)
 			if err != nil {
 				errChan <- fmt.Errorf("failed to get class %s: %w", key, err)
 				return
 			}
-			
+
 			// Convert to our internal format
 			classes[idx] = convertClassToClassData(class)
 		}(i, ref.Key)
 	}
-	
+
 	wg.Wait()
 	close(errChan)
-	
+
 	// Check for any errors
 	for err := range errChan {
 		if err != nil {
 			return nil, err
 		}
 	}
-	
+
 	return classes, nil
 }
 
@@ -212,7 +213,7 @@ func convertRaceToRaceData(race *entities.Race) *RaceData {
 	if race == nil {
 		return nil
 	}
-	
+
 	// Convert ability bonuses to map
 	abilityBonuses := make(map[string]int32)
 	for _, bonus := range race.AbilityBonuses {
@@ -220,13 +221,13 @@ func convertRaceToRaceData(race *entities.Race) *RaceData {
 			abilityBonuses[bonus.AbilityScore.Key] = int32(bonus.Bonus)
 		}
 	}
-	
+
 	// Convert traits to string slice
 	traits := make([]string, len(race.Traits))
 	for i, trait := range race.Traits {
 		traits[i] = trait.Name
 	}
-	
+
 	// Convert subraces
 	subraces := make([]SubraceData, len(race.SubRaces))
 	for i, subrace := range race.SubRaces {
@@ -236,7 +237,7 @@ func convertRaceToRaceData(race *entities.Race) *RaceData {
 			// Note: Would need to fetch full subrace details for complete data
 		}
 	}
-	
+
 	return &RaceData{
 		ID:             race.Key,
 		Name:           race.Name,
@@ -253,13 +254,13 @@ func convertClassToClassData(class *entities.Class) *ClassData {
 	if class == nil {
 		return nil
 	}
-	
+
 	// Convert saving throws to string slice
 	savingThrows := make([]string, len(class.SavingThrows))
 	for i, st := range class.SavingThrows {
 		savingThrows[i] = st.Name
 	}
-	
+
 	// Extract available skills from proficiency choices
 	var availableSkills []string
 	var skillsCount int32
@@ -275,7 +276,7 @@ func convertClassToClassData(class *entities.Class) *ClassData {
 			}
 		}
 	}
-	
+
 	// Convert starting equipment to string slice
 	startingEquipment := make([]string, len(class.StartingEquipment))
 	for i, eq := range class.StartingEquipment {
@@ -283,7 +284,7 @@ func convertClassToClassData(class *entities.Class) *ClassData {
 			startingEquipment[i] = fmt.Sprintf("%dx %s", eq.Quantity, eq.Equipment.Name)
 		}
 	}
-	
+
 	return &ClassData{
 		ID:                class.Key,
 		Name:              class.Name,
