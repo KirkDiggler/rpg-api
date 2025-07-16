@@ -22,7 +22,7 @@ import (
 
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/clients/dnd5e/api/v1alpha1"
 	"github.com/KirkDiggler/rpg-api/internal/clients/external"
-	"github.com/KirkDiggler/rpg-api/internal/engine"
+	"github.com/KirkDiggler/rpg-api/internal/engine/rpgtoolkit"
 	"github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v1alpha1"
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
 	"github.com/KirkDiggler/rpg-api/internal/pkg/clock"
@@ -30,6 +30,8 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/redis"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	characterdraftrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft"
+	"github.com/KirkDiggler/rpg-toolkit/dice"
+	"github.com/KirkDiggler/rpg-toolkit/events"
 )
 
 var (
@@ -92,11 +94,6 @@ func runServer(_ *cobra.Command, _ []string) error {
 		return fmt.Errorf("failed to create character draft repository: %w", err)
 	}
 
-	e, err := engine.New(&engine.Config{})
-	if err != nil {
-		return fmt.Errorf("failed to create engine: %w", err)
-	}
-
 	client, err := external.New(&external.Config{
 		BaseURL:     "https://www.dnd5eapi.co/api/2014/",
 		CacheTTL:    24 * time.Hour,
@@ -104,6 +101,20 @@ func runServer(_ *cobra.Command, _ []string) error {
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create external client: %w", err)
+	}
+
+	// Create rpg-toolkit components
+	eventBus := events.NewBus()
+	diceRoller := dice.DefaultRoller
+
+	// Create the engine using rpg-toolkit adapter
+	e, err := rpgtoolkit.NewAdapter(&rpgtoolkit.AdapterConfig{
+		EventBus:       eventBus,
+		DiceRoller:     diceRoller,
+		ExternalClient: client,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create engine: %w", err)
 	}
 
 	// Initialize services

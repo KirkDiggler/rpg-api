@@ -237,19 +237,135 @@ func (a *Adapter) getAbilityModifier(scores *dnd5e.AbilityScores, ability string
 
 // ValidateCharacterDraft validates a character draft for completeness and rule compliance
 func (a *Adapter) ValidateCharacterDraft(
-	_ context.Context,
+	ctx context.Context,
 	input *engine.ValidateCharacterDraftInput,
 ) (*engine.ValidateCharacterDraftOutput, error) {
-	// TODO(#39): Implement comprehensive character draft validation using input.Draft
-	// For now, return placeholder validation
-	_ = input // Will be used in future implementation
+	if input == nil || input.Draft == nil {
+		return &engine.ValidateCharacterDraftOutput{
+			IsValid:      false,
+			IsComplete:   false,
+			Errors:       []engine.ValidationError{{Field: "draft", Message: "Draft is required", Code: "REQUIRED"}},
+			Warnings:     []engine.ValidationWarning{},
+			MissingSteps: []string{},
+		}, nil
+	}
+
+	draft := input.Draft
+	var errors []engine.ValidationError
+	var warnings []engine.ValidationWarning
+	var missingSteps []string
+
+	// Check required fields for completeness
+	if draft.Name == "" {
+		missingSteps = append(missingSteps, "name")
+	}
+
+	if draft.RaceID == "" {
+		missingSteps = append(missingSteps, "race")
+	}
+
+	if draft.ClassID == "" {
+		missingSteps = append(missingSteps, "class")
+	}
+
+	if draft.AbilityScores == nil {
+		missingSteps = append(missingSteps, "ability_scores")
+	}
+
+	// Validate individual components if present
+	if draft.RaceID != "" {
+		raceValidation, err := a.ValidateRaceChoice(ctx, &engine.ValidateRaceChoiceInput{
+			RaceID:    draft.RaceID,
+			SubraceID: draft.SubraceID,
+		})
+		if err != nil {
+			errors = append(errors, engine.ValidationError{
+				Field:   "race",
+				Message: "Failed to validate race choice: " + err.Error(),
+				Code:    "VALIDATION_ERROR",
+			})
+		} else if !raceValidation.IsValid {
+			errors = append(errors, raceValidation.Errors...)
+		}
+	}
+
+	if draft.ClassID != "" {
+		classValidation, err := a.ValidateClassChoice(ctx, &engine.ValidateClassChoiceInput{
+			ClassID:       draft.ClassID,
+			AbilityScores: draft.AbilityScores,
+		})
+		if err != nil {
+			errors = append(errors, engine.ValidationError{
+				Field:   "class",
+				Message: "Failed to validate class choice: " + err.Error(),
+				Code:    "VALIDATION_ERROR",
+			})
+		} else if !classValidation.IsValid {
+			errors = append(errors, classValidation.Errors...)
+		}
+	}
+
+	if draft.AbilityScores != nil {
+		// For draft validation, assume standard array method if not specified
+		abilityValidation, err := a.ValidateAbilityScores(ctx, &engine.ValidateAbilityScoresInput{
+			AbilityScores: draft.AbilityScores,
+			Method:        engine.AbilityScoreMethodStandardArray,
+		})
+		if err != nil {
+			errors = append(errors, engine.ValidationError{
+				Field:   "ability_scores",
+				Message: "Failed to validate ability scores: " + err.Error(),
+				Code:    "VALIDATION_ERROR",
+			})
+		} else if !abilityValidation.IsValid {
+			errors = append(errors, abilityValidation.Errors...)
+		}
+	}
+
+	if draft.ClassID != "" && len(draft.StartingSkillIDs) > 0 {
+		skillValidation, err := a.ValidateSkillChoices(ctx, &engine.ValidateSkillChoicesInput{
+			ClassID:          draft.ClassID,
+			BackgroundID:     draft.BackgroundID,
+			SelectedSkillIDs: draft.StartingSkillIDs,
+		})
+		if err != nil {
+			errors = append(errors, engine.ValidationError{
+				Field:   "skills",
+				Message: "Failed to validate skill choices: " + err.Error(),
+				Code:    "VALIDATION_ERROR",
+			})
+		} else if !skillValidation.IsValid {
+			errors = append(errors, skillValidation.Errors...)
+		}
+	}
+
+	if draft.BackgroundID != "" {
+		backgroundValidation, err := a.ValidateBackgroundChoice(ctx, &engine.ValidateBackgroundChoiceInput{
+			BackgroundID: draft.BackgroundID,
+		})
+		if err != nil {
+			errors = append(errors, engine.ValidationError{
+				Field:   "background",
+				Message: "Failed to validate background choice: " + err.Error(),
+				Code:    "VALIDATION_ERROR",
+			})
+		} else if !backgroundValidation.IsValid {
+			errors = append(errors, backgroundValidation.Errors...)
+		}
+	}
+
+	// Check if draft is complete
+	isComplete := len(missingSteps) == 0
+
+	// Draft is valid if there are no errors
+	isValid := len(errors) == 0
 
 	return &engine.ValidateCharacterDraftOutput{
-		IsComplete:   false, // TODO: Check draft completeness
-		IsValid:      true,  // TODO: Validate all rules
-		Errors:       []engine.ValidationError{},
-		Warnings:     []engine.ValidationWarning{},
-		MissingSteps: []string{}, // TODO: Return missing creation steps
+		IsComplete:   isComplete,
+		IsValid:      isValid,
+		Errors:       errors,
+		Warnings:     warnings,
+		MissingSteps: missingSteps,
 	}, nil
 }
 
@@ -790,19 +906,76 @@ func getSkillAbility(skillID string) string {
 
 // ValidateBackgroundChoice validates a background selection
 func (a *Adapter) ValidateBackgroundChoice(
-	_ context.Context,
+	ctx context.Context,
 	input *engine.ValidateBackgroundChoiceInput,
 ) (*engine.ValidateBackgroundChoiceOutput, error) {
-	// TODO(#36): Implement background validation using input.BackgroundID
-	// Need D&D 5e background data in rpg-toolkit
-	_ = input // Will be used in future implementation
+	if input == nil {
+		return &engine.ValidateBackgroundChoiceOutput{
+			IsValid: false,
+			Errors: []engine.ValidationError{
+				{
+					Field:   "input",
+					Message: "Input is required",
+					Code:    "REQUIRED",
+				},
+			},
+		}, nil
+	}
+
+	if input.BackgroundID == "" {
+		return &engine.ValidateBackgroundChoiceOutput{
+			IsValid: false,
+			Errors: []engine.ValidationError{
+				{
+					Field:   "background_id",
+					Message: "Background ID is required",
+					Code:    "REQUIRED",
+				},
+			},
+		}, nil
+	}
+
+	// Fetch background data from external source
+	backgroundData, err := a.externalClient.GetBackgroundData(ctx, input.BackgroundID)
+	if err != nil {
+		return &engine.ValidateBackgroundChoiceOutput{
+			IsValid: false,
+			Errors: []engine.ValidationError{
+				{
+					Field:   "background_id",
+					Message: "Invalid background ID or external data unavailable",
+					Code:    "INVALID_BACKGROUND",
+				},
+			},
+		}, nil
+	}
+
+	if backgroundData == nil {
+		return &engine.ValidateBackgroundChoiceOutput{
+			IsValid: false,
+			Errors: []engine.ValidationError{
+				{
+					Field:   "background_id",
+					Message: "Background not found",
+					Code:    "NOT_FOUND",
+				},
+			},
+		}, nil
+	}
+
+	// Convert background data to output format
+	skillProficiencies := make([]string, len(backgroundData.SkillProficiencies))
+	copy(skillProficiencies, backgroundData.SkillProficiencies)
+
+	equipment := make([]string, len(backgroundData.Equipment))
+	copy(equipment, backgroundData.Equipment)
 
 	return &engine.ValidateBackgroundChoiceOutput{
-		IsValid:            true, // TODO: Real validation
+		IsValid:            true,
 		Errors:             []engine.ValidationError{},
-		SkillProficiencies: []string{}, // TODO: Return background skills
-		Languages:          0,          // TODO: Return language choices
-		Equipment:          []string{}, // TODO: Return starting equipment
+		SkillProficiencies: skillProficiencies,
+		Languages:          backgroundData.Languages,
+		Equipment:          equipment,
 	}, nil
 }
 
