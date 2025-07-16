@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
+	"github.com/KirkDiggler/rpg-api/cmd/server/client"
 )
 
 var rootCmd = &cobra.Command{
@@ -23,4 +24,5 @@ func main() {
 
 func init() {
 	rootCmd.AddCommand(serverCmd)
+	rootCmd.AddCommand(client.ClientCmd)
 }
