@@ -3,6 +3,7 @@ package testutils
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/alicebob/miniredis/v2"
@@ -46,9 +47,9 @@ func CreateTestRedisClientWithContext(t *testing.T, setupFunc func(mr *miniredis
 	return client, cleanup
 }
 
-// FlushTestRedis clears all data from the test Redis instance
+// FlushTestRedis is currently unimplemented and should not be used.
+// Tests should create fresh clients for each test until the flush logic is implemented.
 func FlushTestRedis(ctx context.Context, client redis.Client) error {
 	// TODO(#47): Implement flush when Redis client supports it
-	// For now, tests should create fresh clients for each test
-	return nil
+	return errors.New("FlushTestRedis is unimplemented: create fresh clients for each test instead")
 }

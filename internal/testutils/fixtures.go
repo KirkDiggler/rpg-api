@@ -4,6 +4,14 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/entities/dnd5e"
 )
 
+// Draft progress stages for testing
+const (
+	StageNameComplete       = "name_complete"
+	StageRaceComplete       = "race_complete"
+	StageClassComplete      = "class_complete"
+	StageNearlyComplete     = "nearly_complete"
+)
+
 // CreateTestCharacterDraft creates a test character draft with sensible defaults
 func CreateTestCharacterDraft(playerID string) *dnd5e.CharacterDraft {
 	return &dnd5e.CharacterDraft{
@@ -26,12 +34,12 @@ func CreateTestCharacterDraftWithProgress(playerID string, stage string) *dnd5e.
 	draft := CreateTestCharacterDraft(playerID)
 
 	switch stage {
-	case "name_complete":
+	case StageNameComplete:
 		draft.Name = "Thorin Oakenshield"
 		draft.Progress.SetStep(dnd5e.ProgressStepName, true)
 		draft.Progress.CompletionPercentage = 14 // 1/7 steps
 
-	case "race_complete":
+	case StageRaceComplete:
 		draft.Name = "Thorin Oakenshield"
 		draft.RaceID = dnd5e.RaceDwarf
 		draft.SubraceID = dnd5e.SubraceMountainDwarf
@@ -39,7 +47,7 @@ func CreateTestCharacterDraftWithProgress(playerID string, stage string) *dnd5e.
 		draft.Progress.SetStep(dnd5e.ProgressStepRace, true)
 		draft.Progress.CompletionPercentage = 28 // 2/7 steps
 
-	case "class_complete":
+	case StageClassComplete:
 		draft.Name = "Thorin Oakenshield"
 		draft.RaceID = dnd5e.RaceDwarf
 		draft.SubraceID = dnd5e.SubraceMountainDwarf
@@ -49,7 +57,7 @@ func CreateTestCharacterDraftWithProgress(playerID string, stage string) *dnd5e.
 		draft.Progress.SetStep(dnd5e.ProgressStepClass, true)
 		draft.Progress.CompletionPercentage = 42 // 3/7 steps
 
-	case "nearly_complete":
+	case StageNearlyComplete:
 		draft.Name = "Thorin Oakenshield"
 		draft.RaceID = dnd5e.RaceDwarf
 		draft.SubraceID = dnd5e.SubraceMountainDwarf

@@ -65,7 +65,9 @@ func (s *OrchestratorIntegrationTestSuite) SetupTest() {
 	e, err := engine.New(&engine.Config{})
 	s.Require().NoError(err)
 
-	// Create external client (would mock in real integration test)
+	// Create external client
+	// TODO(#48): Mock external API calls in integration tests for reliability
+	// For now, using real API endpoint which may cause flakiness
 	client, err := external.New(&external.Config{
 		BaseURL:     "https://www.dnd5eapi.co/api/2014/",
 		CacheTTL:    24 * time.Hour,
