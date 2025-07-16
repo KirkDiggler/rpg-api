@@ -37,3 +37,4 @@ go.work.sum
 
 # Generated code
 gen/
+scripts/test-grpc-web.html
