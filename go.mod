@@ -7,6 +7,7 @@ require (
 	github.com/KirkDiggler/rpg-toolkit/core v0.1.0
 	github.com/KirkDiggler/rpg-toolkit/dice v0.1.0
 	github.com/KirkDiggler/rpg-toolkit/events v0.1.1
+	github.com/alicebob/miniredis/v2 v2.35.0
 	github.com/fadedpez/dnd5e-api v0.0.0-20250713061616-46c0b6bf2b5b
 	github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.3.2
 	github.com/redis/go-redis/v9 v9.11.0
@@ -24,6 +25,7 @@ require (
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/spf13/pflag v1.0.6 // indirect
 	github.com/stretchr/objx v0.5.2 // indirect
+	github.com/yuin/gopher-lua v1.1.1 // indirect
 	golang.org/x/net v0.42.0 // indirect
 	golang.org/x/sys v0.34.0 // indirect
 	golang.org/x/text v0.27.0 // indirect

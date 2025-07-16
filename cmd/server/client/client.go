@@ -1,3 +1,4 @@
+// Package client provides test commands for the RPG API gRPC service
 package client
 
 import (
@@ -36,6 +37,12 @@ func init() {
 	ClientCmd.AddCommand(listBackgroundsCmd)
 	ClientCmd.AddCommand(getRaceCmd)
 	ClientCmd.AddCommand(getClassCmd)
+
+	// Draft commands
+	ClientCmd.AddCommand(createDraftCmd)
+	ClientCmd.AddCommand(getDraftCmd)
+	ClientCmd.AddCommand(updateNameCmd)
+	ClientCmd.AddCommand(updateRaceCmd)
 }
 
 // createConnection creates a gRPC connection to the server
