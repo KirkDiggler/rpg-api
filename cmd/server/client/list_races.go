@@ -7,7 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
+	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/clients/dnd5e/api/v1alpha1"
 )
 
 var (
@@ -51,14 +51,14 @@ func runListRaces(cmd *cobra.Command, args []string) error {
 
 	for _, race := range resp.Races {
 		fmt.Printf("🎭 %s (ID: %s)\n", race.Name, race.Id)
-		
+
 		if race.Description != "" {
 			fmt.Printf("   Description: %s\n", race.Description)
 		}
-		
+
 		fmt.Printf("   Speed: %d ft\n", race.Speed)
 		fmt.Printf("   Size: %s\n", race.Size)
-		
+
 		if len(race.AbilityBonuses) > 0 {
 			fmt.Printf("   Ability Bonuses:\n")
 			for ability, bonus := range race.AbilityBonuses {
@@ -69,14 +69,14 @@ func runListRaces(cmd *cobra.Command, args []string) error {
 				}
 			}
 		}
-		
+
 		if len(race.Traits) > 0 {
 			fmt.Printf("   Traits:\n")
 			for _, trait := range race.Traits {
 				fmt.Printf("     - %s\n", trait.Name)
 			}
 		}
-		
+
 		if len(race.Subraces) > 0 {
 			fmt.Printf("   Subraces:\n")
 			for _, subrace := range race.Subraces {
@@ -100,7 +100,7 @@ func runListRaces(cmd *cobra.Command, args []string) error {
 				fmt.Println()
 			}
 		}
-		
+
 		fmt.Println() // Empty line between races
 	}
 

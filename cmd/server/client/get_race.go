@@ -7,7 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
+	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/clients/dnd5e/api/v1alpha1"
 )
 
 var getRaceCmd = &cobra.Command{
@@ -43,23 +43,23 @@ func runGetRace(cmd *cobra.Command, args []string) error {
 
 	race := resp.Race
 	fmt.Printf("🎭 %s (ID: %s)\n", race.Name, race.Id)
-	
+
 	if race.Description != "" {
 		fmt.Printf("\nDescription:\n%s\n", race.Description)
 	}
-	
+
 	fmt.Printf("\nBasic Info:\n")
 	fmt.Printf("  Speed: %d ft\n", race.Speed)
 	fmt.Printf("  Size: %s\n", race.Size)
-	
+
 	if race.AgeDescription != "" {
 		fmt.Printf("\nAge: %s\n", race.AgeDescription)
 	}
-	
+
 	if race.AlignmentDescription != "" {
 		fmt.Printf("\nAlignment: %s\n", race.AlignmentDescription)
 	}
-	
+
 	if len(race.AbilityBonuses) > 0 {
 		fmt.Printf("\nAbility Score Increases:\n")
 		for ability, bonus := range race.AbilityBonuses {
@@ -70,21 +70,21 @@ func runGetRace(cmd *cobra.Command, args []string) error {
 			}
 		}
 	}
-	
+
 	if len(race.Proficiencies) > 0 {
 		fmt.Printf("\nProficiencies:\n")
 		for _, prof := range race.Proficiencies {
 			fmt.Printf("  - %s\n", prof)
 		}
 	}
-	
+
 	if len(race.Languages) > 0 {
 		fmt.Printf("\nLanguages:\n")
 		for _, lang := range race.Languages {
 			fmt.Printf("  - %s\n", lang)
 		}
 	}
-	
+
 	if len(race.Traits) > 0 {
 		fmt.Printf("\nRacial Traits:\n")
 		for _, trait := range race.Traits {
@@ -95,7 +95,7 @@ func runGetRace(cmd *cobra.Command, args []string) error {
 			fmt.Println()
 		}
 	}
-	
+
 	if len(race.Subraces) > 0 {
 		fmt.Printf("\nSubraces:\n")
 		for _, subrace := range race.Subraces {

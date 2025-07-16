@@ -8,11 +8,11 @@ import (
 
 	"github.com/spf13/cobra"
 
-	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
+	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/clients/dnd5e/api/v1alpha1"
 )
 
 var (
-	includeFeatures bool
+	includeFeatures  bool
 	spellcastersOnly bool
 )
 
@@ -55,33 +55,33 @@ func runListClasses(cmd *cobra.Command, args []string) error {
 
 	for _, class := range resp.Classes {
 		fmt.Printf("⚔️  %s (ID: %s)\n", class.Name, class.Id)
-		
+
 		if class.Description != "" {
 			fmt.Printf("   Description: %s\n", class.Description)
 		}
-		
+
 		fmt.Printf("   Hit Die: %s\n", class.HitDie)
-		
+
 		if len(class.PrimaryAbilities) > 0 {
 			fmt.Printf("   Primary Abilities: %s\n", strings.Join(class.PrimaryAbilities, ", "))
 		}
-		
+
 		if len(class.SavingThrowProficiencies) > 0 {
 			fmt.Printf("   Saving Throws: %s\n", strings.Join(class.SavingThrowProficiencies, ", "))
 		}
-		
+
 		if len(class.ArmorProficiencies) > 0 {
 			fmt.Printf("   Armor Proficiencies: %s\n", strings.Join(class.ArmorProficiencies, ", "))
 		}
-		
+
 		if len(class.WeaponProficiencies) > 0 {
 			fmt.Printf("   Weapon Proficiencies: %s\n", strings.Join(class.WeaponProficiencies, ", "))
 		}
-		
+
 		if class.SkillChoicesCount > 0 && len(class.AvailableSkills) > 0 {
 			fmt.Printf("   Skills: Choose %d from %s\n", class.SkillChoicesCount, strings.Join(class.AvailableSkills, ", "))
 		}
-		
+
 		if class.Spellcasting != nil {
 			fmt.Printf("   🔮 Spellcasting:\n")
 			fmt.Printf("     - Ability: %s\n", class.Spellcasting.SpellcastingAbility)
@@ -101,7 +101,7 @@ func runListClasses(cmd *cobra.Command, args []string) error {
 				fmt.Printf("     - Focus: %s\n", class.Spellcasting.SpellcastingFocus)
 			}
 		}
-		
+
 		if includeFeatures && len(class.Level_1Features) > 0 {
 			fmt.Printf("   Level 1 Features:\n")
 			for _, feature := range class.Level_1Features {
@@ -112,7 +112,7 @@ func runListClasses(cmd *cobra.Command, args []string) error {
 				fmt.Println()
 			}
 		}
-		
+
 		fmt.Println() // Empty line between classes
 	}
 

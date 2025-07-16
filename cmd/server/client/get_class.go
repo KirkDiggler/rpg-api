@@ -8,7 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
+	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/clients/dnd5e/api/v1alpha1"
 )
 
 var getClassCmd = &cobra.Command{
@@ -44,18 +44,18 @@ func runGetClass(cmd *cobra.Command, args []string) error {
 
 	class := resp.Class
 	fmt.Printf("⚔️  %s (ID: %s)\n", class.Name, class.Id)
-	
+
 	if class.Description != "" {
 		fmt.Printf("\nDescription:\n%s\n", class.Description)
 	}
-	
+
 	fmt.Printf("\nBasic Info:\n")
 	fmt.Printf("  Hit Die: %s\n", class.HitDie)
-	
+
 	if len(class.PrimaryAbilities) > 0 {
 		fmt.Printf("  Primary Abilities: %s\n", strings.Join(class.PrimaryAbilities, ", "))
 	}
-	
+
 	fmt.Printf("\nProficiencies:\n")
 	if len(class.ArmorProficiencies) > 0 {
 		fmt.Printf("  Armor: %s\n", strings.Join(class.ArmorProficiencies, ", "))
@@ -69,21 +69,21 @@ func runGetClass(cmd *cobra.Command, args []string) error {
 	if len(class.SavingThrowProficiencies) > 0 {
 		fmt.Printf("  Saving Throws: %s\n", strings.Join(class.SavingThrowProficiencies, ", "))
 	}
-	
+
 	if class.SkillChoicesCount > 0 && len(class.AvailableSkills) > 0 {
 		fmt.Printf("\nSkills: Choose %d from:\n", class.SkillChoicesCount)
 		for _, skill := range class.AvailableSkills {
 			fmt.Printf("  - %s\n", skill)
 		}
 	}
-	
+
 	if len(class.StartingEquipment) > 0 {
 		fmt.Printf("\nStarting Equipment:\n")
 		for _, item := range class.StartingEquipment {
 			fmt.Printf("  - %s\n", item)
 		}
 	}
-	
+
 	if len(class.EquipmentChoices) > 0 {
 		fmt.Printf("\nEquipment Choices:\n")
 		for _, choice := range class.EquipmentChoices {
@@ -95,7 +95,7 @@ func runGetClass(cmd *cobra.Command, args []string) error {
 			}
 		}
 	}
-	
+
 	if class.Spellcasting != nil {
 		fmt.Printf("\n🔮 Spellcasting:\n")
 		fmt.Printf("  Spellcasting Ability: %s\n", class.Spellcasting.SpellcastingAbility)
@@ -115,7 +115,7 @@ func runGetClass(cmd *cobra.Command, args []string) error {
 			fmt.Printf("  1st Level Spell Slots: %d\n", class.Spellcasting.SpellSlotsLevel_1)
 		}
 	}
-	
+
 	if len(class.Level_1Features) > 0 {
 		fmt.Printf("\nLevel 1 Features:\n")
 		for _, feature := range class.Level_1Features {

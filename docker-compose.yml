@@ -1,0 +1,13 @@
+version: '3.8'
+
+services:
+  # Just Envoy proxy for gRPC-Web
+  envoy:
+    image: envoyproxy/envoy:v1.31-latest
+    ports:
+      - "8080:8080"       # HTTP port for TypeScript clients
+      - "9901:9901"       # Envoy admin interface (optional)
+    volumes:
+      - ./envoy/envoy.yaml:/etc/envoy/envoy.yaml:ro
+    network_mode: "host"  # Allows Envoy to connect to localhost:50051
+    command: /usr/local/bin/envoy -c /etc/envoy/envoy.yaml -l info

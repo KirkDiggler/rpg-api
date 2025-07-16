@@ -20,7 +20,7 @@ import (
 	grpc_logging "github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/logging"
 	grpc_recovery "github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/recovery"
 
-	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
+	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/clients/dnd5e/api/v1alpha1"
 	"github.com/KirkDiggler/rpg-api/internal/clients/external"
 	"github.com/KirkDiggler/rpg-api/internal/engine"
 	"github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v1alpha1"
@@ -174,14 +174,14 @@ func logFunc(ctx context.Context, level grpc_logging.Level, msg string, fields .
 	// Extract useful information from fields
 	var method, code, errorMsg string
 	var timeMs float64
-	
+
 	// Parse fields (they come in pairs: key, value)
 	for i := 0; i < len(fields)-1; i += 2 {
 		key, ok := fields[i].(string)
 		if !ok {
 			continue
 		}
-		
+
 		switch key {
 		case "grpc.method":
 			method, _ = fields[i+1].(string)
@@ -201,7 +201,7 @@ func logFunc(ctx context.Context, level grpc_logging.Level, msg string, fields .
 			timeMs, _ = fields[i+1].(float64)
 		}
 	}
-	
+
 	// Format based on message type
 	switch msg {
 	case "started call":
