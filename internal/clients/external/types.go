@@ -2,14 +2,21 @@ package external
 
 // RaceData represents race information from external source
 type RaceData struct {
-	ID             string
-	Name           string
-	Description    string
-	Size           string
-	Speed          int32
-	AbilityBonuses map[string]int32
-	Traits         []string
-	Subraces       []SubraceData
+	ID                   string
+	Name                 string
+	Description          string
+	Size                 string
+	SizeDescription      string
+	Speed                int32
+	AbilityBonuses       map[string]int32
+	Traits               []TraitData
+	Subraces             []SubraceData
+	Languages            []string
+	LanguageOptions      *ChoiceData
+	Proficiencies        []string
+	ProficiencyOptions   []*ChoiceData
+	AgeDescription       string
+	AlignmentDescription string
 }
 
 // SubraceData represents subrace information
@@ -18,20 +25,29 @@ type SubraceData struct {
 	Name           string
 	Description    string
 	AbilityBonuses map[string]int32
-	Traits         []string
+	Traits         []TraitData
+	Languages      []string
+	Proficiencies  []string
 }
 
 // ClassData represents class information from external source
 type ClassData struct {
-	ID                string
-	Name              string
-	Description       string
-	HitDice           string
-	PrimaryAbility    string
-	SavingThrows      []string
-	SkillsCount       int32
-	AvailableSkills   []string
-	StartingEquipment []string
+	ID                       string
+	Name                     string
+	Description              string
+	HitDice                  string
+	PrimaryAbilities         []string
+	SavingThrows             []string
+	SkillsCount              int32
+	AvailableSkills          []string
+	StartingEquipment        []string
+	StartingEquipmentOptions []*EquipmentChoiceData
+	ArmorProficiencies       []string
+	WeaponProficiencies      []string
+	ToolProficiencies        []string
+	ProficiencyChoices       []*ChoiceData
+	LevelOneFeatures         []*FeatureData
+	Spellcasting             *SpellcastingData
 }
 
 // BackgroundData represents background information from external source
@@ -56,4 +72,46 @@ type SpellData struct {
 	Components  []string
 	Duration    string
 	Description string
+}
+
+// TraitData represents a racial trait
+type TraitData struct {
+	Name        string
+	Description string
+	IsChoice    bool
+	Options     []string
+}
+
+// ChoiceData represents a choice for proficiencies, languages, etc
+type ChoiceData struct {
+	Type    string   // e.g., "language", "skill", "tool_proficiency"
+	Choose  int      // How many to choose
+	Options []string // Available options
+	From    string   // Optional filter/category
+}
+
+// EquipmentChoiceData represents a choice for starting equipment
+type EquipmentChoiceData struct {
+	Description string
+	Options     []string
+	ChooseCount int
+}
+
+// FeatureData represents a class feature
+type FeatureData struct {
+	Name        string
+	Description string
+	Level       int
+	HasChoices  bool
+	Choices     []string
+}
+
+// SpellcastingData represents spellcasting information
+type SpellcastingData struct {
+	SpellcastingAbility string
+	RitualCasting       bool
+	SpellcastingFocus   string
+	CantripsKnown       int
+	SpellsKnown         int
+	SpellSlotsLevel1    int
 }

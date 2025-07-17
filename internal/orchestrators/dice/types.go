@@ -3,7 +3,7 @@ package dice
 import (
 	"time"
 
-	"github.com/KirkDiggler/rpg-api/internal/repositories/dice_session"
+	dicesession "github.com/KirkDiggler/rpg-api/internal/repositories/dice_session"
 )
 
 // RollDiceInput defines the request for rolling dice
@@ -17,8 +17,8 @@ type RollDiceInput struct {
 
 // RollDiceOutput defines the response for rolling dice
 type RollDiceOutput struct {
-	Roll    *dice_session.DiceRoll
-	Session *dice_session.DiceSession
+	Roll    *dicesession.DiceRoll
+	Session *dicesession.DiceSession
 }
 
 // GetRollSessionInput defines the request for getting a roll session
@@ -29,7 +29,7 @@ type GetRollSessionInput struct {
 
 // GetRollSessionOutput defines the response for getting a roll session
 type GetRollSessionOutput struct {
-	Session *dice_session.DiceSession
+	Session *dicesession.DiceSession
 }
 
 // ClearRollSessionInput defines the request for clearing a roll session
@@ -51,6 +51,6 @@ type RollAbilityScoresInput struct {
 
 // RollAbilityScoresOutput defines the response for rolling ability scores
 type RollAbilityScoresOutput struct {
-	Rolls   []*dice_session.DiceRoll
-	Session *dice_session.DiceSession
+	Rolls   []*dicesession.DiceRoll
+	Session *dicesession.DiceSession
 }

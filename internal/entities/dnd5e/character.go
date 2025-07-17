@@ -119,6 +119,7 @@ type RaceInfo struct {
 	Description          string
 	Speed                int32
 	Size                 string
+	SizeDescription      string
 	AbilityBonuses       map[string]int32
 	Traits               []RacialTrait
 	Subraces             []SubraceInfo
@@ -126,6 +127,8 @@ type RaceInfo struct {
 	Languages            []string
 	AgeDescription       string
 	AlignmentDescription string
+	LanguageOptions      *Choice
+	ProficiencyOptions   []Choice
 }
 
 // SubraceInfo contains information about a D&D 5e subrace
@@ -135,6 +138,8 @@ type SubraceInfo struct {
 	Description    string
 	AbilityBonuses map[string]int32
 	Traits         []RacialTrait
+	Languages      []string
+	Proficiencies  []string
 }
 
 // RacialTrait contains information about a racial trait
@@ -143,6 +148,14 @@ type RacialTrait struct {
 	Description string
 	IsChoice    bool
 	Options     []string
+}
+
+// Choice represents a generic choice for proficiencies, languages, etc
+type Choice struct {
+	Type    string   // e.g., "language", "skill", "tool_proficiency"
+	Choose  int32    // How many to choose
+	Options []string // Available options
+	From    string   // Optional filter/category
 }
 
 // ClassInfo contains detailed information about a D&D 5e class
@@ -162,6 +175,7 @@ type ClassInfo struct {
 	EquipmentChoices         []EquipmentChoice
 	Level1Features           []ClassFeature
 	Spellcasting             *SpellcastingInfo
+	ProficiencyChoices       []Choice
 }
 
 // EquipmentChoice represents a choice in starting equipment

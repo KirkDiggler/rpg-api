@@ -9,7 +9,8 @@ import (
 	apiv1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/clients/api/v1alpha1"
 )
 
-var rollDiceCmd = &cobra.Command{
+// rollDiceCmd is currently unused but kept for future implementation
+var rollDiceCmd = &cobra.Command{ // nolint:unused
 	Use:   "roll-dice [notation] [entity-id] [context]",
 	Short: "Roll dice using dice notation",
 	Long: `Roll dice and see individual results. Examples:
@@ -21,7 +22,7 @@ var rollDiceCmd = &cobra.Command{
 	RunE: rollDice,
 }
 
-func rollDice(cmd *cobra.Command, args []string) error {
+func rollDice(_ *cobra.Command, args []string) error { // nolint:unused
 	notation := args[0]
 	entityID := args[1]
 	rollContext := args[2]

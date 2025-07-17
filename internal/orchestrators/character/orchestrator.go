@@ -1015,6 +1015,7 @@ func (o *Orchestrator) ListRaces(
 	if len(entityRaces) > 2147483647 { // Max int32 value
 		totalSize = 2147483647
 	} else {
+		// nolint:gosec // List size won't overflow int32
 		totalSize = int32(len(entityRaces))
 	}
 
@@ -1050,6 +1051,7 @@ func (o *Orchestrator) ListClasses(
 	if len(entityClasses) > 2147483647 { // Max int32 value
 		totalSize = 2147483647
 	} else {
+		// nolint:gosec // List size won't overflow int32
 		totalSize = int32(len(entityClasses))
 	}
 
@@ -1085,6 +1087,7 @@ func (o *Orchestrator) ListBackgrounds(
 	if len(entityBackgrounds) > 2147483647 { // Max int32 value
 		totalSize = 2147483647
 	} else {
+		// nolint:gosec // List size won't overflow int32
 		totalSize = int32(len(entityBackgrounds))
 	}
 
@@ -1183,10 +1186,10 @@ func convertExternalRaceToEntity(race *external.RaceData) *dnd5e.RaceInfo {
 	traits := make([]dnd5e.RacialTrait, len(race.Traits))
 	for i, trait := range race.Traits {
 		traits[i] = dnd5e.RacialTrait{
-			Name:        trait,
-			Description: trait, // TODO: Get actual descriptions
-			IsChoice:    false, // TODO: Determine if this is a choice
-			Options:     nil,   // TODO: Get actual options
+			Name:        trait.Name,
+			Description: trait.Description,
+			IsChoice:    trait.IsChoice,
+			Options:     trait.Options,
 		}
 	}
 
@@ -1195,10 +1198,10 @@ func convertExternalRaceToEntity(race *external.RaceData) *dnd5e.RaceInfo {
 		subraceTraits := make([]dnd5e.RacialTrait, len(subrace.Traits))
 		for j, trait := range subrace.Traits {
 			subraceTraits[j] = dnd5e.RacialTrait{
-				Name:        trait,
-				Description: trait, // TODO: Get actual descriptions
-				IsChoice:    false, // TODO: Determine if this is a choice
-				Options:     nil,   // TODO: Get actual options
+				Name:        trait.Name,
+				Description: trait.Description,
+				IsChoice:    trait.IsChoice,
+				Options:     trait.Options,
 			}
 		}
 
@@ -1208,6 +1211,34 @@ func convertExternalRaceToEntity(race *external.RaceData) *dnd5e.RaceInfo {
 			Description:    subrace.Description,
 			AbilityBonuses: subrace.AbilityBonuses,
 			Traits:         subraceTraits,
+			Languages:      subrace.Languages,
+			Proficiencies:  subrace.Proficiencies,
+		}
+	}
+
+	// Convert language options
+	var languageOptions *dnd5e.Choice
+	if race.LanguageOptions != nil {
+		languageOptions = &dnd5e.Choice{
+			Type: race.LanguageOptions.Type,
+			// nolint:gosec // safe conversion
+			Choose:  int32(race.LanguageOptions.Choose),
+			Options: race.LanguageOptions.Options,
+			From:    race.LanguageOptions.From,
+		}
+	}
+
+	// Convert proficiency options
+	proficiencyOptions := make([]dnd5e.Choice, len(race.ProficiencyOptions))
+	for i, opt := range race.ProficiencyOptions {
+		if opt != nil {
+			proficiencyOptions[i] = dnd5e.Choice{
+				Type: opt.Type,
+				// nolint:gosec // safe conversion
+				Choose:  int32(opt.Choose),
+				Options: opt.Options,
+				From:    opt.From,
+			}
 		}
 	}
 
@@ -1217,35 +1248,94 @@ func convertExternalRaceToEntity(race *external.RaceData) *dnd5e.RaceInfo {
 		Description:          race.Description,
 		Speed:                race.Speed,
 		Size:                 race.Size,
+		SizeDescription:      race.SizeDescription,
 		AbilityBonuses:       race.AbilityBonuses,
 		Traits:               traits,
 		Subraces:             subraces,
-		Proficiencies:        []string{}, // TODO: Get from external data
-		Languages:            []string{}, // TODO: Get from external data
-		AgeDescription:       "",         // TODO: Get from external data
-		AlignmentDescription: "",         // TODO: Get from external data
+		Proficiencies:        race.Proficiencies,
+		Languages:            race.Languages,
+		AgeDescription:       race.AgeDescription,
+		AlignmentDescription: race.AlignmentDescription,
+		LanguageOptions:      languageOptions,
+		ProficiencyOptions:   proficiencyOptions,
 	}
 }
 
 // convertExternalClassToEntity converts external class data to entity format
 func convertExternalClassToEntity(class *external.ClassData) *dnd5e.ClassInfo {
-	// TODO: Implement full conversion when external.ClassData is expanded
+	// Convert equipment choices
+	equipmentChoices := make([]dnd5e.EquipmentChoice, len(class.StartingEquipmentOptions))
+	for i, choice := range class.StartingEquipmentOptions {
+		if choice != nil {
+			equipmentChoices[i] = dnd5e.EquipmentChoice{
+				Description: choice.Description,
+				Options:     choice.Options,
+				// nolint:gosec // safe conversion
+				ChooseCount: int32(choice.ChooseCount),
+			}
+		}
+	}
+
+	// Convert level 1 features
+	features := make([]dnd5e.ClassFeature, len(class.LevelOneFeatures))
+	for i, feature := range class.LevelOneFeatures {
+		if feature != nil {
+			features[i] = dnd5e.ClassFeature{
+				Name:        feature.Name,
+				Description: feature.Description,
+				// nolint:gosec // safe conversion
+				Level:      int32(feature.Level),
+				HasChoices: feature.HasChoices,
+				Choices:    feature.Choices,
+			}
+		}
+	}
+
+	// Convert spellcasting info
+	var spellcasting *dnd5e.SpellcastingInfo
+	if class.Spellcasting != nil {
+		spellcasting = &dnd5e.SpellcastingInfo{
+			SpellcastingAbility: class.Spellcasting.SpellcastingAbility,
+			RitualCasting:       class.Spellcasting.RitualCasting,
+			SpellcastingFocus:   class.Spellcasting.SpellcastingFocus,
+			// nolint:gosec // safe conversion
+			CantripsKnown:    int32(class.Spellcasting.CantripsKnown),
+			SpellsKnown:      int32(class.Spellcasting.SpellsKnown),      // nolint:gosec
+			SpellSlotsLevel1: int32(class.Spellcasting.SpellSlotsLevel1), // nolint:gosec
+		}
+	}
+
+	// Convert proficiency choices
+	proficiencyChoices := make([]dnd5e.Choice, len(class.ProficiencyChoices))
+	for i, choice := range class.ProficiencyChoices {
+		if choice != nil {
+			proficiencyChoices[i] = dnd5e.Choice{
+				Type: choice.Type,
+				// nolint:gosec // safe conversion
+				Choose:  int32(choice.Choose),
+				Options: choice.Options,
+				From:    choice.From,
+			}
+		}
+	}
+
 	return &dnd5e.ClassInfo{
 		ID:                       class.ID,
 		Name:                     class.Name,
 		Description:              class.Description,
 		HitDie:                   class.HitDice,
-		PrimaryAbilities:         []string{class.PrimaryAbility},
-		ArmorProficiencies:       []string{}, // TODO: Get from external data
-		WeaponProficiencies:      []string{}, // TODO: Get from external data
-		ToolProficiencies:        []string{}, // TODO: Get from external data
+		PrimaryAbilities:         class.PrimaryAbilities,
+		ArmorProficiencies:       class.ArmorProficiencies,
+		WeaponProficiencies:      class.WeaponProficiencies,
+		ToolProficiencies:        class.ToolProficiencies,
 		SavingThrowProficiencies: class.SavingThrows,
 		SkillChoicesCount:        class.SkillsCount,
 		AvailableSkills:          class.AvailableSkills,
 		StartingEquipment:        class.StartingEquipment,
-		EquipmentChoices:         []dnd5e.EquipmentChoice{}, // TODO: Get from external data
-		Level1Features:           []dnd5e.ClassFeature{},    // TODO: Get from external data
-		Spellcasting:             nil,                       // TODO: Get from external data
+		EquipmentChoices:         equipmentChoices,
+		Level1Features:           features,
+		Spellcasting:             spellcasting,
+		ProficiencyChoices:       proficiencyChoices,
 	}
 }
 

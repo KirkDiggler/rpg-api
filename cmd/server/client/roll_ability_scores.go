@@ -9,7 +9,8 @@ import (
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/clients/dnd5e/api/v1alpha1"
 )
 
-var rollAbilityScoresCmd = &cobra.Command{
+// rollAbilityScoresCmd is currently unused but kept for future implementation
+var rollAbilityScoresCmd = &cobra.Command{ // nolint:unused
 	Use:   "roll-ability-scores [draft-id]",
 	Short: "Roll ability scores for character creation",
 	Long: `Roll 6 sets of ability scores using 4d6 drop lowest for D&D character creation.
@@ -19,7 +20,7 @@ var rollAbilityScoresCmd = &cobra.Command{
 	RunE: rollAbilityScores,
 }
 
-func rollAbilityScores(cmd *cobra.Command, args []string) error {
+func rollAbilityScores(_ *cobra.Command, args []string) error { // nolint:unused
 	draftID := args[0]
 
 	client, cleanup, err := createCharacterClient()

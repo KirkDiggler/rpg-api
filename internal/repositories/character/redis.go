@@ -27,10 +27,12 @@ type redisRepository struct {
 	client redisclient.Client
 }
 
+// RedisConfig contains configuration for the Redis character repository.
 type RedisConfig struct {
 	Client redisclient.Client
 }
 
+// Validate validates the RedisConfig.
 func (cfg *RedisConfig) Validate() error {
 	if cfg == nil {
 		return errors.InvalidArgument("config cannot be nil")

@@ -38,11 +38,11 @@ func init() {
 	updateRaceCmd.Flags().StringVar(&updateRaceDraftID, "draft-id", "", "Draft ID (required)")
 	updateRaceCmd.Flags().StringVar(&raceName, "race", "", "Race name (required, e.g., RACE_HUMAN)")
 	updateRaceCmd.Flags().StringVar(&subraceName, "subrace", "", "Subrace name (optional, e.g., SUBRACE_HIGH_ELF)")
-	updateRaceCmd.MarkFlagRequired("draft-id")
-	updateRaceCmd.MarkFlagRequired("race")
+	_ = updateRaceCmd.MarkFlagRequired("draft-id") // nolint:errcheck // safe to ignore in init
+	_ = updateRaceCmd.MarkFlagRequired("race")     // nolint:errcheck // safe to ignore in init
 }
 
-func runUpdateRace(cmd *cobra.Command, args []string) error {
+func runUpdateRace(_ *cobra.Command, _ []string) error {
 	client, cleanup, err := createCharacterClient()
 	if err != nil {
 		return err

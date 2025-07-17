@@ -69,7 +69,7 @@ func (h *DiceHandler) RollDice(
 	}
 
 	// Convert all session rolls to proto format
-	var rolls []*apiv1alpha1.DiceRoll
+	rolls := make([]*apiv1alpha1.DiceRoll, 0, len(diceOutput.Session.Rolls))
 	for _, sessionRoll := range diceOutput.Session.Rolls {
 		rolls = append(rolls, &apiv1alpha1.DiceRoll{
 			RollId:      sessionRoll.RollID,
@@ -113,7 +113,7 @@ func (h *DiceHandler) GetRollSession(
 	}
 
 	// Convert session rolls to proto format
-	var rolls []*apiv1alpha1.DiceRoll
+	rolls := make([]*apiv1alpha1.DiceRoll, 0, len(diceOutput.Session.Rolls))
 	for _, sessionRoll := range diceOutput.Session.Rolls {
 		rolls = append(rolls, &apiv1alpha1.DiceRoll{
 			RollId:      sessionRoll.RollID,

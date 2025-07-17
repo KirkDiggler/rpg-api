@@ -19,7 +19,7 @@ var getClassCmd = &cobra.Command{
 	RunE:  runGetClass,
 }
 
-func runGetClass(cmd *cobra.Command, args []string) error {
+func runGetClass(_ *cobra.Command, args []string) error {
 	classID := args[0]
 
 	client, cleanup, err := createCharacterClient()
@@ -43,19 +43,35 @@ func runGetClass(cmd *cobra.Command, args []string) error {
 	}
 
 	class := resp.Class
+	printClassHeader(class)
+	printClassBasicInfo(class)
+	printClassProficiencies(class)
+	printClassSkills(class)
+	printClassEquipment(class)
+	printClassFeatures(class)
+	printClassSpellcasting(class)
+
+	return nil
+}
+
+func printClassHeader(class *dnd5ev1alpha1.ClassInfo) {
 	fmt.Printf("⚔️  %s (ID: %s)\n", class.Name, class.Id)
 
 	if class.Description != "" {
 		fmt.Printf("\nDescription:\n%s\n", class.Description)
 	}
+}
 
+func printClassBasicInfo(class *dnd5ev1alpha1.ClassInfo) {
 	fmt.Printf("\nBasic Info:\n")
 	fmt.Printf("  Hit Die: %s\n", class.HitDie)
 
 	if len(class.PrimaryAbilities) > 0 {
 		fmt.Printf("  Primary Abilities: %s\n", strings.Join(class.PrimaryAbilities, ", "))
 	}
+}
 
+func printClassProficiencies(class *dnd5ev1alpha1.ClassInfo) {
 	fmt.Printf("\nProficiencies:\n")
 	if len(class.ArmorProficiencies) > 0 {
 		fmt.Printf("  Armor: %s\n", strings.Join(class.ArmorProficiencies, ", "))
@@ -69,14 +85,18 @@ func runGetClass(cmd *cobra.Command, args []string) error {
 	if len(class.SavingThrowProficiencies) > 0 {
 		fmt.Printf("  Saving Throws: %s\n", strings.Join(class.SavingThrowProficiencies, ", "))
 	}
+}
 
+func printClassSkills(class *dnd5ev1alpha1.ClassInfo) {
 	if class.SkillChoicesCount > 0 && len(class.AvailableSkills) > 0 {
 		fmt.Printf("\nSkills: Choose %d from:\n", class.SkillChoicesCount)
 		for _, skill := range class.AvailableSkills {
 			fmt.Printf("  - %s\n", skill)
 		}
 	}
+}
 
+func printClassEquipment(class *dnd5ev1alpha1.ClassInfo) {
 	if len(class.StartingEquipment) > 0 {
 		fmt.Printf("\nStarting Equipment:\n")
 		for _, item := range class.StartingEquipment {
@@ -95,27 +115,9 @@ func runGetClass(cmd *cobra.Command, args []string) error {
 			}
 		}
 	}
+}
 
-	if class.Spellcasting != nil {
-		fmt.Printf("\n🔮 Spellcasting:\n")
-		fmt.Printf("  Spellcasting Ability: %s\n", class.Spellcasting.SpellcastingAbility)
-		if class.Spellcasting.SpellcastingFocus != "" {
-			fmt.Printf("  Spellcasting Focus: %s\n", class.Spellcasting.SpellcastingFocus)
-		}
-		if class.Spellcasting.RitualCasting {
-			fmt.Printf("  Ritual Casting: Yes\n")
-		}
-		if class.Spellcasting.CantripsKnown > 0 {
-			fmt.Printf("  Cantrips Known at 1st Level: %d\n", class.Spellcasting.CantripsKnown)
-		}
-		if class.Spellcasting.SpellsKnown > 0 {
-			fmt.Printf("  Spells Known at 1st Level: %d\n", class.Spellcasting.SpellsKnown)
-		}
-		if class.Spellcasting.SpellSlotsLevel_1 > 0 {
-			fmt.Printf("  1st Level Spell Slots: %d\n", class.Spellcasting.SpellSlotsLevel_1)
-		}
-	}
-
+func printClassFeatures(class *dnd5ev1alpha1.ClassInfo) {
 	if len(class.Level_1Features) > 0 {
 		fmt.Printf("\nLevel 1 Features:\n")
 		for _, feature := range class.Level_1Features {
@@ -136,6 +138,26 @@ func runGetClass(cmd *cobra.Command, args []string) error {
 			}
 		}
 	}
+}
 
-	return nil
+func printClassSpellcasting(class *dnd5ev1alpha1.ClassInfo) {
+	if class.Spellcasting != nil {
+		fmt.Printf("\n🔮 Spellcasting:\n")
+		fmt.Printf("  Spellcasting Ability: %s\n", class.Spellcasting.SpellcastingAbility)
+		if class.Spellcasting.SpellcastingFocus != "" {
+			fmt.Printf("  Spellcasting Focus: %s\n", class.Spellcasting.SpellcastingFocus)
+		}
+		if class.Spellcasting.RitualCasting {
+			fmt.Printf("  Ritual Casting: Yes\n")
+		}
+		if class.Spellcasting.CantripsKnown > 0 {
+			fmt.Printf("  Cantrips Known at 1st Level: %d\n", class.Spellcasting.CantripsKnown)
+		}
+		if class.Spellcasting.SpellsKnown > 0 {
+			fmt.Printf("  Spells Known at 1st Level: %d\n", class.Spellcasting.SpellsKnown)
+		}
+		if class.Spellcasting.SpellSlotsLevel_1 > 0 {
+			fmt.Printf("  1st Level Spell Slots: %d\n", class.Spellcasting.SpellSlotsLevel_1)
+		}
+	}
 }

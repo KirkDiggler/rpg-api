@@ -215,7 +215,7 @@ func runServer(_ *cobra.Command, _ []string) error {
 	}
 }
 
-func logFunc(ctx context.Context, level grpc_logging.Level, msg string, fields ...any) {
+func logFunc(_ context.Context, level grpc_logging.Level, msg string, fields ...any) {
 	// Extract useful information from fields
 	var method, code, errorMsg string
 	var timeMs float64

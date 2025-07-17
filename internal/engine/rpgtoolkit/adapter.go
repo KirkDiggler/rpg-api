@@ -4,6 +4,7 @@ package rpgtoolkit
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/KirkDiggler/rpg-api/internal/clients/external"
 	"github.com/KirkDiggler/rpg-api/internal/engine"
@@ -484,7 +485,9 @@ func (a *Adapter) ValidateRaceChoice(
 
 	// Start with race traits and ability modifiers
 	traits := make([]string, len(raceData.Traits))
-	copy(traits, raceData.Traits)
+	for i, trait := range raceData.Traits {
+		traits[i] = trait.Name
+	}
 
 	abilityMods := make(map[string]int32)
 	for ability, bonus := range raceData.AbilityBonuses {
@@ -499,7 +502,9 @@ func (a *Adapter) ValidateRaceChoice(
 				subraceFound = true
 
 				// Add subrace traits
-				traits = append(traits, subrace.Traits...)
+				for _, trait := range subrace.Traits {
+					traits = append(traits, trait.Name)
+				}
 
 				// Add subrace ability bonuses
 				for ability, bonus := range subrace.AbilityBonuses {
@@ -592,7 +597,7 @@ func (a *Adapter) ValidateClassChoice(
 		Errors:            validationErrors,
 		Warnings:          warnings,
 		HitDice:           classData.HitDice,
-		PrimaryAbility:    classData.PrimaryAbility,
+		PrimaryAbility:    strings.Join(classData.PrimaryAbilities, ", "),
 		SavingThrows:      classData.SavingThrows,
 		SkillChoicesCount: classData.SkillsCount,
 		AvailableSkills:   classData.AvailableSkills,

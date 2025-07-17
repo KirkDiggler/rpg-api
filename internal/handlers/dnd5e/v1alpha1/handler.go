@@ -1447,12 +1447,20 @@ func convertEntityRaceToProto(race *dnd5e.RaceInfo) *dnd5ev1alpha1.RaceInfo {
 			}
 		}
 
+		// Convert subrace languages
+		subraceLanguages := make([]dnd5ev1alpha1.Language, len(subrace.Languages))
+		for k, lang := range subrace.Languages {
+			subraceLanguages[k] = mapStringToProtoLanguage(lang)
+		}
+
 		protoSubraces[i] = &dnd5ev1alpha1.SubraceInfo{
 			Id:             subrace.ID,
 			Name:           subrace.Name,
 			Description:    subrace.Description,
 			AbilityBonuses: subrace.AbilityBonuses,
 			Traits:         subraceTraits,
+			Languages:      subraceLanguages,
+			Proficiencies:  subrace.Proficiencies,
 		}
 	}
 
@@ -1462,12 +1470,35 @@ func convertEntityRaceToProto(race *dnd5e.RaceInfo) *dnd5ev1alpha1.RaceInfo {
 		protoLanguages[i] = mapStringToProtoLanguage(lang)
 	}
 
+	// Convert language options
+	var protoLanguageOptions *dnd5ev1alpha1.Choice
+	if race.LanguageOptions != nil {
+		protoLanguageOptions = &dnd5ev1alpha1.Choice{
+			Type:    race.LanguageOptions.Type,
+			Choose:  race.LanguageOptions.Choose,
+			Options: race.LanguageOptions.Options,
+			From:    race.LanguageOptions.From,
+		}
+	}
+
+	// Convert proficiency options
+	protoProficiencyOptions := make([]*dnd5ev1alpha1.Choice, len(race.ProficiencyOptions))
+	for i, opt := range race.ProficiencyOptions {
+		protoProficiencyOptions[i] = &dnd5ev1alpha1.Choice{
+			Type:    opt.Type,
+			Choose:  opt.Choose,
+			Options: opt.Options,
+			From:    opt.From,
+		}
+	}
+
 	return &dnd5ev1alpha1.RaceInfo{
 		Id:                   race.ID,
 		Name:                 race.Name,
 		Description:          race.Description,
 		Speed:                race.Speed,
 		Size:                 mapStringToProtoSize(race.Size),
+		SizeDescription:      race.SizeDescription,
 		AbilityBonuses:       race.AbilityBonuses,
 		Traits:               protoTraits,
 		Subraces:             protoSubraces,
@@ -1475,6 +1506,8 @@ func convertEntityRaceToProto(race *dnd5e.RaceInfo) *dnd5ev1alpha1.RaceInfo {
 		Languages:            protoLanguages,
 		AgeDescription:       race.AgeDescription,
 		AlignmentDescription: race.AlignmentDescription,
+		LanguageOptions:      protoLanguageOptions,
+		ProficiencyOptions:   protoProficiencyOptions,
 	}
 }
 
@@ -1519,6 +1552,17 @@ func convertEntityClassToProto(class *dnd5e.ClassInfo) *dnd5ev1alpha1.ClassInfo 
 		}
 	}
 
+	// Convert proficiency choices
+	protoProficiencyChoices := make([]*dnd5ev1alpha1.Choice, len(class.ProficiencyChoices))
+	for i, choice := range class.ProficiencyChoices {
+		protoProficiencyChoices[i] = &dnd5ev1alpha1.Choice{
+			Type:    choice.Type,
+			Choose:  choice.Choose,
+			Options: choice.Options,
+			From:    choice.From,
+		}
+	}
+
 	return &dnd5ev1alpha1.ClassInfo{
 		Id:                       class.ID,
 		Name:                     class.Name,
@@ -1535,6 +1579,7 @@ func convertEntityClassToProto(class *dnd5e.ClassInfo) *dnd5ev1alpha1.ClassInfo 
 		EquipmentChoices:         protoEquipmentChoices,
 		Level_1Features:          protoLevel1Features,
 		Spellcasting:             protoSpellcasting,
+		ProficiencyChoices:       protoProficiencyChoices,
 	}
 }
 

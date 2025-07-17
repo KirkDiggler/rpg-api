@@ -25,10 +25,10 @@ var createDraftCmd = &cobra.Command{
 func init() {
 	createDraftCmd.Flags().StringVar(&playerID, "player-id", "", "Player ID (required)")
 	createDraftCmd.Flags().StringVar(&sessionID, "session-id", "", "Session ID (optional)")
-	createDraftCmd.MarkFlagRequired("player-id")
+	_ = createDraftCmd.MarkFlagRequired("player-id") // nolint:errcheck // safe to ignore in init
 }
 
-func runCreateDraft(cmd *cobra.Command, args []string) error {
+func runCreateDraft(_ *cobra.Command, _ []string) error {
 	client, cleanup, err := createCharacterClient()
 	if err != nil {
 		return err
@@ -70,7 +70,8 @@ func runCreateDraft(cmd *cobra.Command, args []string) error {
 	fmt.Printf("  - Current Step: %s\n", draft.Progress.CurrentStep)
 
 	fmt.Printf("\n💡 Next steps:\n")
-	fmt.Printf("1. Set character name: rpg-api client update-name --draft-id %s --name \"Your Character Name\"\n", draft.Id)
+	fmt.Printf("1. Set character name: rpg-api client update-name --draft-id %s --name \"Your Character Name\"\n",
+		draft.Id)
 	fmt.Printf("2. Choose race: rpg-api client update-race --draft-id %s --race RACE_HUMAN\n", draft.Id)
 	fmt.Printf("3. Choose class: rpg-api client update-class --draft-id %s --class CLASS_FIGHTER\n", draft.Id)
 	fmt.Printf("4. Continue with background, abilities, skills...\n")

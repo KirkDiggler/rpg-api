@@ -16,23 +16,26 @@ import (
 
 	"github.com/KirkDiggler/rpg-api/internal/errors"
 	"github.com/KirkDiggler/rpg-api/internal/pkg/idgen"
-	"github.com/KirkDiggler/rpg-api/internal/repositories/dice_session"
+	dicesession "github.com/KirkDiggler/rpg-api/internal/repositories/dice_session"
 )
 
 const (
-	// Default context for ability score rolling
+	// ContextAbilityScores is the default context for ability score rolling
 	ContextAbilityScores = "ability_scores"
 
-	// Default TTL for dice sessions
+	// DefaultSessionTTL is the default TTL for dice sessions
 	DefaultSessionTTL = 15 * time.Minute
 
-	// Dice rolling methods
+	// MethodStandard is the standard dice rolling method (4d6 drop lowest)
 	MethodStandard = "4d6_drop_lowest"
-	MethodClassic  = "3d6"
-	MethodHeroic   = "4d6_reroll_1s"
+	// MethodClassic is the classic dice rolling method (3d6)
+	MethodClassic = "3d6"
+	// MethodHeroic is the heroic dice rolling method (4d6 reroll 1s)
+	MethodHeroic = "4d6_reroll_1s"
+	// MethodPointBuy is the point buy method for ability scores
 	MethodPointBuy = "point_buy"
 
-	// Standard ability score dice notation
+	// AbilityScoreNotation is the standard ability score dice notation
 	AbilityScoreNotation = "4d6"
 )
 
@@ -54,7 +57,7 @@ type Service interface {
 
 // Config holds the dependencies for the dice orchestrator
 type Config struct {
-	DiceSessionRepo dice_session.Repository
+	DiceSessionRepo dicesession.Repository
 	IDGenerator     idgen.Generator
 }
 
@@ -73,7 +76,7 @@ func (c *Config) Validate() error {
 }
 
 type orchestrator struct {
-	diceSessionRepo dice_session.Repository
+	diceSessionRepo dicesession.Repository
 	idGen           idgen.Generator
 }
 
@@ -138,6 +141,7 @@ func (o *orchestrator) rollDiceWithToolkit(count, size int, dropLowest int) ([]i
 		diceStrings := strings.Split(diceStr, ",")
 		for _, ds := range diceStrings {
 			if d, err := strconv.Atoi(strings.TrimSpace(ds)); err == nil {
+				// nolint:gosec // dice values are always small
 				individualDice = append(individualDice, int32(d))
 			}
 		}
@@ -175,6 +179,7 @@ func (o *orchestrator) rollDiceWithToolkit(count, size int, dropLowest int) ([]i
 		return kept, dropped, newTotal, nil
 	}
 
+	// nolint:gosec // total is always small for dice
 	return individualDice, dropped, int32(total), nil
 }
 
@@ -203,7 +208,7 @@ func (o *orchestrator) RollDice(ctx context.Context, input *RollDiceInput) (*Rol
 	}
 
 	// Create the dice roll
-	roll := &dice_session.DiceRoll{
+	roll := &dicesession.DiceRoll{
 		RollID:      o.idGen.Generate(),
 		Notation:    input.Notation,
 		Dice:        individualDice,
@@ -215,12 +220,12 @@ func (o *orchestrator) RollDice(ctx context.Context, input *RollDiceInput) (*Rol
 	}
 
 	// Try to get existing session first
-	getOutput, err := o.diceSessionRepo.Get(ctx, dice_session.GetInput{
+	getOutput, err := o.diceSessionRepo.Get(ctx, dicesession.GetInput{
 		EntityID: input.EntityID,
 		Context:  input.Context,
 	})
 
-	var session *dice_session.DiceSession
+	var session *dicesession.DiceSession
 	if err != nil {
 		if !errors.IsNotFound(err) {
 			return nil, errors.Wrap(err, "failed to check for existing session")
@@ -232,10 +237,10 @@ func (o *orchestrator) RollDice(ctx context.Context, input *RollDiceInput) (*Rol
 			ttl = DefaultSessionTTL
 		}
 
-		createOutput, err := o.diceSessionRepo.Create(ctx, dice_session.CreateInput{
+		createOutput, err := o.diceSessionRepo.Create(ctx, dicesession.CreateInput{
 			EntityID: input.EntityID,
 			Context:  input.Context,
-			Rolls:    []dice_session.DiceRoll{*roll},
+			Rolls:    []dicesession.DiceRoll{*roll},
 			TTL:      ttl,
 		})
 		if err != nil {
@@ -276,7 +281,7 @@ func (o *orchestrator) GetRollSession(ctx context.Context, input *GetRollSession
 		return nil, errors.InvalidArgument("context is required")
 	}
 
-	getOutput, err := o.diceSessionRepo.Get(ctx, dice_session.GetInput{
+	getOutput, err := o.diceSessionRepo.Get(ctx, dicesession.GetInput{
 		EntityID: input.EntityID,
 		Context:  input.Context,
 	})
@@ -290,7 +295,8 @@ func (o *orchestrator) GetRollSession(ctx context.Context, input *GetRollSession
 }
 
 // ClearRollSession removes a dice roll session
-func (o *orchestrator) ClearRollSession(ctx context.Context, input *ClearRollSessionInput) (*ClearRollSessionOutput, error) {
+func (o *orchestrator) ClearRollSession(ctx context.Context, input *ClearRollSessionInput) (
+	*ClearRollSessionOutput, error) {
 	if input.EntityID == "" {
 		return nil, errors.InvalidArgument("entity ID is required")
 	}
@@ -298,7 +304,7 @@ func (o *orchestrator) ClearRollSession(ctx context.Context, input *ClearRollSes
 		return nil, errors.InvalidArgument("context is required")
 	}
 
-	deleteOutput, err := o.diceSessionRepo.Delete(ctx, dice_session.DeleteInput{
+	deleteOutput, err := o.diceSessionRepo.Delete(ctx, dicesession.DeleteInput{
 		EntityID: input.EntityID,
 		Context:  input.Context,
 	})
@@ -318,7 +324,8 @@ func (o *orchestrator) ClearRollSession(ctx context.Context, input *ClearRollSes
 }
 
 // RollAbilityScores handles specialized ability score rolling for D&D character creation
-func (o *orchestrator) RollAbilityScores(ctx context.Context, input *RollAbilityScoresInput) (*RollAbilityScoresOutput, error) {
+func (o *orchestrator) RollAbilityScores(ctx context.Context, input *RollAbilityScoresInput) (
+	*RollAbilityScoresOutput, error) {
 	if input.EntityID == "" {
 		return nil, errors.InvalidArgument("entity ID is required")
 	}
@@ -354,7 +361,7 @@ func (o *orchestrator) RollAbilityScores(ctx context.Context, input *RollAbility
 	}
 
 	// Roll 6 sets of ability scores
-	var rolls []*dice_session.DiceRoll
+	var rolls []*dicesession.DiceRoll
 	for i := 0; i < 6; i++ {
 		// Roll the dice using rpg-toolkit
 		individualDice, droppedDice, total, err := o.rollDiceWithToolkit(count, size, dropLowestCount)
@@ -362,7 +369,7 @@ func (o *orchestrator) RollAbilityScores(ctx context.Context, input *RollAbility
 			return nil, errors.Wrapf(err, "failed to roll ability score %d", i+1)
 		}
 
-		roll := &dice_session.DiceRoll{
+		roll := &dicesession.DiceRoll{
 			RollID:      o.idGen.Generate(),
 			Notation:    notation,
 			Dice:        individualDice,
@@ -377,13 +384,13 @@ func (o *orchestrator) RollAbilityScores(ctx context.Context, input *RollAbility
 	}
 
 	// Convert to slice of values for the repository
-	rollValues := make([]dice_session.DiceRoll, len(rolls))
+	rollValues := make([]dicesession.DiceRoll, len(rolls))
 	for i, roll := range rolls {
 		rollValues[i] = *roll
 	}
 
 	// Store in session with ability scores context
-	createOutput, err := o.diceSessionRepo.Create(ctx, dice_session.CreateInput{
+	createOutput, err := o.diceSessionRepo.Create(ctx, dicesession.CreateInput{
 		EntityID: input.EntityID,
 		Context:  ContextAbilityScores,
 		Rolls:    rollValues,

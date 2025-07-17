@@ -18,7 +18,7 @@ var getRaceCmd = &cobra.Command{
 	RunE:  runGetRace,
 }
 
-func runGetRace(cmd *cobra.Command, args []string) error {
+func runGetRace(_ *cobra.Command, args []string) error {
 	raceID := args[0]
 
 	client, cleanup, err := createCharacterClient()
