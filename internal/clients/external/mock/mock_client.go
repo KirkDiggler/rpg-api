@@ -13,9 +13,8 @@ import (
 	context "context"
 	reflect "reflect"
 
-	gomock "go.uber.org/mock/gomock"
-
 	external "github.com/KirkDiggler/rpg-api/internal/clients/external"
+	gomock "go.uber.org/mock/gomock"
 )
 
 // MockClient is a mock of Client interface.
@@ -145,4 +144,19 @@ func (m *MockClient) ListAvailableRaces(ctx context.Context) ([]*external.RaceDa
 func (mr *MockClientMockRecorder) ListAvailableRaces(ctx any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListAvailableRaces", reflect.TypeOf((*MockClient)(nil).ListAvailableRaces), ctx)
+}
+
+// ListAvailableSpells mocks base method.
+func (m *MockClient) ListAvailableSpells(ctx context.Context, input *external.ListSpellsInput) ([]*external.SpellData, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListAvailableSpells", ctx, input)
+	ret0, _ := ret[0].([]*external.SpellData)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListAvailableSpells indicates an expected call of ListAvailableSpells.
+func (mr *MockClientMockRecorder) ListAvailableSpells(ctx, input any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListAvailableSpells", reflect.TypeOf((*MockClient)(nil).ListAvailableSpells), ctx, input)
 }

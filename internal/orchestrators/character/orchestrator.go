@@ -49,6 +49,7 @@ type Service interface {
 	ListRaces(ctx context.Context, input *ListRacesInput) (*ListRacesOutput, error)
 	ListClasses(ctx context.Context, input *ListClassesInput) (*ListClassesOutput, error)
 	ListBackgrounds(ctx context.Context, input *ListBackgroundsInput) (*ListBackgroundsOutput, error)
+	ListSpells(ctx context.Context, input *ListSpellsInput) (*ListSpellsOutput, error)
 	GetRaceDetails(ctx context.Context, input *GetRaceDetailsInput) (*GetRaceDetailsOutput, error)
 	GetClassDetails(ctx context.Context, input *GetClassDetailsInput) (*GetClassDetailsOutput, error)
 	GetBackgroundDetails(ctx context.Context, input *GetBackgroundDetailsInput) (*GetBackgroundDetailsOutput, error)
@@ -1098,6 +1099,69 @@ func (o *Orchestrator) ListBackgrounds(
 	}, nil
 }
 
+// ListSpells retrieves available spells for character creation
+func (o *Orchestrator) ListSpells(
+	ctx context.Context,
+	input *ListSpellsInput,
+) (*ListSpellsOutput, error) {
+	if input == nil {
+		return nil, errors.InvalidArgument("input is required")
+	}
+
+	slog.Info("Fetching spells from external API",
+		"level", input.Level,
+		"school", input.School,
+		"classID", input.ClassID,
+		"searchTerm", input.SearchTerm,
+		"pageSize", input.PageSize)
+
+	// Convert orchestrator input to external client input
+	externalInput := &external.ListSpellsInput{
+		Level:   input.Level,
+		ClassID: input.ClassID,
+	}
+
+	// TODO: Implement pagination with PageSize and PageToken
+	// For now, return all spells matching the criteria
+	spells, err := o.externalClient.ListAvailableSpells(ctx, externalInput)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to list spells from external client")
+	}
+
+	slog.Info("Successfully fetched spells", "count", len(spells))
+
+	// Convert external spell data to entity format
+	entitySpells := make([]*dnd5e.SpellInfo, 0, len(spells))
+	for _, spell := range spells {
+		entitySpell := convertExternalSpellToEntity(spell)
+		
+		// Apply additional filters that the external client doesn't support
+		if input.School != "" && entitySpell.School != input.School {
+			continue
+		}
+		if input.SearchTerm != "" && !strings.Contains(strings.ToLower(entitySpell.Name), strings.ToLower(input.SearchTerm)) &&
+			!strings.Contains(strings.ToLower(entitySpell.Description), strings.ToLower(input.SearchTerm)) {
+			continue
+		}
+		
+		entitySpells = append(entitySpells, entitySpell)
+	}
+
+	var totalSize int32
+	if len(entitySpells) > 2147483647 { // Max int32 value
+		totalSize = 2147483647
+	} else {
+		// nolint:gosec // List size won't overflow int32
+		totalSize = int32(len(entitySpells))
+	}
+
+	return &ListSpellsOutput{
+		Spells:        entitySpells,
+		NextPageToken: "", // TODO: Implement pagination
+		TotalSize:     totalSize,
+	}, nil
+}
+
 // GetRaceDetails retrieves detailed information about a specific race
 func (o *Orchestrator) GetRaceDetails(
 	ctx context.Context,
@@ -1357,6 +1421,26 @@ func convertExternalBackgroundToEntity(background *external.BackgroundData) *dnd
 		Ideals:              []string{},         // TODO: Get from external data
 		Bonds:               []string{},         // TODO: Get from external data
 		Flaws:               []string{},         // TODO: Get from external data
+	}
+}
+
+// convertExternalSpellToEntity converts external spell data to entity format
+func convertExternalSpellToEntity(spell *external.SpellData) *dnd5e.SpellInfo {
+	// Extract available classes from description or use empty slice
+	// TODO: Parse classes from spell data when available
+	classes := []string{}
+	
+	return &dnd5e.SpellInfo{
+		ID:          spell.ID,
+		Name:        spell.Name,
+		Level:       spell.Level,
+		School:      spell.School,
+		CastingTime: spell.CastingTime,
+		Range:       spell.Range,
+		Components:  spell.Components,
+		Duration:    spell.Duration,
+		Description: spell.Description,
+		Classes:     classes,
 	}
 }
 

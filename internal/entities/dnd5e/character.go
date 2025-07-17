@@ -222,3 +222,17 @@ type BackgroundInfo struct {
 	Bonds               []string
 	Flaws               []string
 }
+
+// SpellInfo contains information about a D&D 5e spell
+type SpellInfo struct {
+	ID          string
+	Name        string
+	Level       int32
+	School      string
+	CastingTime string
+	Range       string
+	Components  []string
+	Duration    string
+	Description string
+	Classes     []string
+}

@@ -249,6 +249,23 @@ type ListBackgroundsOutput struct {
 	TotalSize     int32
 }
 
+// ListSpellsInput defines the request for listing spells
+type ListSpellsInput struct {
+	PageSize   int32
+	PageToken  string
+	Level      *int32   // Optional filter by spell level (0-9)
+	School     string   // Optional filter by school
+	ClassID    string   // Optional filter by class
+	SearchTerm string   // Optional search term for name/description
+}
+
+// ListSpellsOutput defines the response for listing spells
+type ListSpellsOutput struct {
+	Spells        []*dnd5e.SpellInfo
+	NextPageToken string
+	TotalSize     int32
+}
+
 // GetRaceDetailsInput defines the request for getting race details
 type GetRaceDetailsInput struct {
 	RaceID string

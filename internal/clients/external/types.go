@@ -74,6 +74,12 @@ type SpellData struct {
 	Description string
 }
 
+// ListSpellsInput represents input for listing spells
+type ListSpellsInput struct {
+	Level   *int32 // Optional filter by spell level (0-9)
+	ClassID string // Optional filter by class ID
+}
+
 // TraitData represents a racial trait
 type TraitData struct {
 	Name        string
