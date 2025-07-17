@@ -124,7 +124,7 @@ func (c *client) GetSpellData(_ context.Context, spellID string) (*SpellData, er
 	// the actual V/S/M components, so we'll build a descriptive components array
 	components := []string{}
 
-	// Add spell properties as components for now
+	// Add spell properties to the components array
 	if spell.Ritual {
 		components = append(components, "Ritual")
 	}
@@ -132,9 +132,9 @@ func (c *client) GetSpellData(_ context.Context, spellID string) (*SpellData, er
 		components = append(components, "Concentration")
 	}
 
-	// If no special components, indicate this is a basic spell
+	// If no special components, provide a more accurate placeholder
 	if len(components) == 0 {
-		components = append(components, "Standard")
+		components = append(components, "See official sources for components")
 	}
 
 	// Build a comprehensive description using available data
@@ -531,17 +531,7 @@ func buildSpellDescription(spell *entities.Spell) string {
 	var parts []string
 
 	// Add basic spell info
-	levelStr := "Cantrip"
-	if spell.SpellLevel > 0 {
-		levelStr = fmt.Sprintf("Level %d", spell.SpellLevel)
-	}
-
-	schoolName := "Unknown School"
-	if spell.SpellSchool != nil {
-		schoolName = spell.SpellSchool.Name
-	}
-
-	parts = append(parts, fmt.Sprintf("%s %s spell", levelStr, schoolName))
+	parts = append(parts, buildSpellHeader(spell))
 
 	// Add casting info
 	if spell.CastingTime != "" {
@@ -572,9 +562,10 @@ func buildSpellDescription(spell *entities.Spell) string {
 			parts = append(parts, fmt.Sprintf("Damage Type: %s", spell.SpellDamage.SpellDamageType.Name))
 		}
 		if spell.SpellDamage.SpellDamageAtSlotLevel != nil {
-			// Add first level damage as an example
-			if spell.SpellDamage.SpellDamageAtSlotLevel.FirstLevel != "" {
-				parts = append(parts, fmt.Sprintf("Damage: %s", spell.SpellDamage.SpellDamageAtSlotLevel.FirstLevel))
+			// Add damage information for the spell's base level
+			baseDamage := getBaseDamageForSpellLevel(spell.SpellLevel, spell.SpellDamage.SpellDamageAtSlotLevel)
+			if baseDamage != "" {
+				parts = append(parts, fmt.Sprintf("Base Damage: %s", baseDamage))
 			}
 		}
 	}
@@ -593,7 +584,9 @@ func buildSpellDescription(spell *entities.Spell) string {
 
 	// Add area of effect if available
 	if spell.AreaOfEffect != nil {
-		parts = append(parts, fmt.Sprintf("Area: %s (%d ft)", spell.AreaOfEffect.Type, spell.AreaOfEffect.Size))
+		// Default to feet as the unit since D&D 5e API typically uses feet
+		unit := "ft"
+		parts = append(parts, fmt.Sprintf("Area: %s (%d %s)", spell.AreaOfEffect.Type, spell.AreaOfEffect.Size, unit))
 	}
 
 	// Add available classes
@@ -613,4 +606,45 @@ func buildSpellDescription(spell *entities.Spell) string {
 	parts = append(parts, "Note: Full spell description available in official D&D 5e sources")
 
 	return strings.Join(parts, ". ")
+}
+
+// getBaseDamageForSpellLevel returns the base damage for a spell at its minimum casting level
+func getBaseDamageForSpellLevel(level int, damageAtSlotLevel *entities.SpellDamageAtSlotLevel) string {
+	switch level {
+	case 0, 1:
+		return damageAtSlotLevel.FirstLevel
+	case 2:
+		return damageAtSlotLevel.SecondLevel
+	case 3:
+		return damageAtSlotLevel.ThirdLevel
+	case 4:
+		return damageAtSlotLevel.FourthLevel
+	case 5:
+		return damageAtSlotLevel.FifthLevel
+	case 6:
+		return damageAtSlotLevel.SixthLevel
+	case 7:
+		return damageAtSlotLevel.SeventhLevel
+	case 8:
+		return damageAtSlotLevel.EighthLevel
+	case 9:
+		return damageAtSlotLevel.NinthLevel
+	default:
+		return ""
+	}
+}
+
+// buildSpellHeader creates the basic spell information header
+func buildSpellHeader(spell *entities.Spell) string {
+	levelStr := "Cantrip"
+	if spell.SpellLevel > 0 {
+		levelStr = fmt.Sprintf("Level %d", spell.SpellLevel)
+	}
+	
+	schoolName := "Unknown School"
+	if spell.SpellSchool != nil {
+		schoolName = spell.SpellSchool.Name
+	}
+
+	return fmt.Sprintf("%s %s spell", levelStr, schoolName)
 }
