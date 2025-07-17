@@ -189,8 +189,20 @@ func (c *client) ListAvailableClasses(_ context.Context) ([]*ClassData, error) {
 				return
 			}
 
-			// Convert to our internal format
-			classes[idx] = convertClassToClassData(class)
+			// Get level 1 data for features (cached after first call)
+			level1, err := c.dnd5eClient.GetClassLevel(key, 1)
+			if err != nil {
+				errChan <- fmt.Errorf("failed to get class level 1 for %s: %w", key, err)
+				return
+			}
+
+			// Convert to our internal format with level 1 features
+			classData, err := c.convertClassWithFeatures(class, level1)
+			if err != nil {
+				errChan <- fmt.Errorf("failed to convert class %s: %w", key, err)
+				return
+			}
+			classes[idx] = classData
 		}(i, ref.Key)
 	}
 
@@ -381,6 +393,37 @@ func convertClassToClassData(class *entities.Class) *ClassData {
 		ProficiencyChoices:       proficiencyChoices,
 		// TODO(#45): LevelOneFeatures and Spellcasting require additional API calls
 	}
+}
+
+func (c *client) convertClassWithFeatures(class *entities.Class, level1 *entities.Level) (*ClassData, error) {
+	if class == nil {
+		return nil, errors.InvalidArgument("class is required")
+	}
+
+	// Start with the basic class data
+	classData := convertClassToClassData(class)
+
+	// Add level 1 features if level1 data is available
+	if level1 != nil && len(level1.Features) > 0 {
+		features := make([]*FeatureData, 0, len(level1.Features))
+
+		// We could fetch full feature details here, but for now just use the reference data
+		for _, featureRef := range level1.Features {
+			if featureRef != nil {
+				features = append(features, &FeatureData{
+					Name:        featureRef.Name,
+					Description: "", // TODO(#45): Fetch full feature details with GetFeature
+					Level:       1,
+					HasChoices:  false,
+					Choices:     nil,
+				})
+			}
+		}
+
+		classData.LevelOneFeatures = features
+	}
+
+	return classData, nil
 }
 
 // Helper function to convert ChoiceOption to ChoiceData

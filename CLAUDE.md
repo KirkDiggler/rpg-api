@@ -227,6 +227,26 @@ make pre-commit
 
 ### Error Handling
 
+**NEVER return (nil, nil) - Always return a valid object or an error**
+
+```go
+// ❌ BAD - Never do this
+if input == nil {
+    return nil, nil
+}
+
+// ✅ GOOD - Return error for invalid input
+if input == nil {
+    return nil, errors.New("input is required")
+}
+
+// ✅ GOOD - Return empty/default object if that's the valid behavior
+if items == nil {
+    return &ListOutput{Items: []*Item{}, Total: 0}, nil
+}
+```
+
+Define errors at package level:
 ```go
 var (
     ErrSessionNotFound = errors.New("session not found")
