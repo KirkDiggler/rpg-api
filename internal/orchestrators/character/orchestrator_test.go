@@ -14,6 +14,7 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/entities/dnd5e"
 	"github.com/KirkDiggler/rpg-api/internal/errors"
 	characterorchestrator "github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
+	dicemock "github.com/KirkDiggler/rpg-api/internal/orchestrators/dice/mock"
 	characterrepomock "github.com/KirkDiggler/rpg-api/internal/repositories/character/mock"
 	draftrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft"
 	draftrepomock "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft/mock"
@@ -26,6 +27,7 @@ type OrchestratorTestSuite struct {
 	mockDraftRepo      *draftrepomock.MockRepository
 	mockEngine         *enginemock.MockEngine
 	mockExternalClient *externalmock.MockClient
+	mockDiceService    *dicemock.MockService
 	orchestrator       *characterorchestrator.Orchestrator
 	ctx                context.Context
 
@@ -44,12 +46,14 @@ func (s *OrchestratorTestSuite) SetupTest() {
 	s.mockDraftRepo = draftrepomock.NewMockRepository(s.ctrl)
 	s.mockEngine = enginemock.NewMockEngine(s.ctrl)
 	s.mockExternalClient = externalmock.NewMockClient(s.ctrl)
+	s.mockDiceService = dicemock.NewMockService(s.ctrl)
 
 	cfg := &characterorchestrator.Config{
 		CharacterRepo:      s.mockCharRepo,
 		CharacterDraftRepo: s.mockDraftRepo,
 		Engine:             s.mockEngine,
 		ExternalClient:     s.mockExternalClient,
+		DiceService:        s.mockDiceService,
 	}
 
 	orchestrator, err := characterorchestrator.New(cfg)

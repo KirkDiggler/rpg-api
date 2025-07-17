@@ -13,6 +13,7 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/engine"
 	"github.com/KirkDiggler/rpg-api/internal/entities/dnd5e"
 	"github.com/KirkDiggler/rpg-api/internal/errors"
+	"github.com/KirkDiggler/rpg-api/internal/orchestrators/dice"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	draftrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft"
 )
@@ -51,6 +52,9 @@ type Service interface {
 	GetRaceDetails(ctx context.Context, input *GetRaceDetailsInput) (*GetRaceDetailsOutput, error)
 	GetClassDetails(ctx context.Context, input *GetClassDetailsInput) (*GetClassDetailsOutput, error)
 	GetBackgroundDetails(ctx context.Context, input *GetBackgroundDetailsInput) (*GetBackgroundDetailsOutput, error)
+
+	// Dice rolling for ability scores
+	RollAbilityScores(ctx context.Context, input *RollAbilityScoresInput) (*RollAbilityScoresOutput, error)
 }
 
 // Config holds the dependencies for the character orchestrator
@@ -59,6 +63,7 @@ type Config struct {
 	CharacterDraftRepo draftrepo.Repository
 	Engine             engine.Engine
 	ExternalClient     external.Client
+	DiceService        dice.Service
 }
 
 // Validate ensures all required dependencies are provided
@@ -77,6 +82,9 @@ func (c *Config) Validate() error {
 	if c.ExternalClient == nil {
 		vb.RequiredField("ExternalClient")
 	}
+	if c.DiceService == nil {
+		vb.RequiredField("DiceService")
+	}
 
 	return vb.Build()
 }
@@ -87,6 +95,7 @@ type Orchestrator struct {
 	characterDraftRepo draftrepo.Repository
 	engine             engine.Engine
 	externalClient     external.Client
+	diceService        dice.Service
 }
 
 // New creates a new character orchestrator
@@ -100,6 +109,7 @@ func New(cfg *Config) (*Orchestrator, error) {
 		characterDraftRepo: cfg.CharacterDraftRepo,
 		engine:             cfg.Engine,
 		externalClient:     cfg.ExternalClient,
+		diceService:        cfg.DiceService,
 	}, nil
 }
 
@@ -1271,4 +1281,62 @@ func convertValidationErrorsToWarnings(errors []engine.ValidationError) []Valida
 		}
 	}
 	return result
+}
+
+// RollAbilityScores rolls ability scores for character creation using the dice service
+func (o *Orchestrator) RollAbilityScores(
+	ctx context.Context,
+	input *RollAbilityScoresInput,
+) (*RollAbilityScoresOutput, error) {
+	if input == nil {
+		return nil, errors.InvalidArgument("input is required")
+	}
+
+	vb := errors.NewValidationBuilder()
+	errors.ValidateRequired("draftID", input.DraftID, vb)
+	if err := vb.Build(); err != nil {
+		return nil, err
+	}
+
+	// Get the draft to validate it exists
+	_, err := o.characterDraftRepo.Get(ctx, draftrepo.GetInput{ID: input.DraftID})
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to get draft")
+	}
+
+	// Use default method if not specified
+	method := input.Method
+	if method == "" {
+		method = dice.MethodStandard
+	}
+
+	// Roll ability scores using dice service
+	diceInput := &dice.RollAbilityScoresInput{
+		EntityID: input.DraftID,
+		Method:   method,
+	}
+	diceOutput, err := o.diceService.RollAbilityScores(ctx, diceInput)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to roll ability scores")
+	}
+
+	// Convert dice rolls to character service format
+	rolls := make([]*AbilityScoreRoll, len(diceOutput.Rolls))
+	for i, roll := range diceOutput.Rolls {
+		rolls[i] = &AbilityScoreRoll{
+			ID:          roll.RollID,
+			Value:       roll.Total,
+			Description: roll.Description,
+			RolledAt:    diceOutput.Session.CreatedAt.Unix(),
+			Dice:        roll.Dice,
+			Dropped:     roll.Dropped,
+			Notation:    roll.Notation,
+		}
+	}
+
+	return &RollAbilityScoresOutput{
+		Rolls:     rolls,
+		SessionID: diceOutput.Session.EntityID + ":" + diceOutput.Session.Context,
+		ExpiresAt: diceOutput.Session.ExpiresAt.Unix(),
+	}, nil
 }

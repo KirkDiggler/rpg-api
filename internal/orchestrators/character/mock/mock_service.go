@@ -252,6 +252,21 @@ func (mr *MockServiceMockRecorder) ListRaces(ctx, input any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListRaces", reflect.TypeOf((*MockService)(nil).ListRaces), ctx, input)
 }
 
+// RollAbilityScores mocks base method.
+func (m *MockService) RollAbilityScores(ctx context.Context, input *character.RollAbilityScoresInput) (*character.RollAbilityScoresOutput, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RollAbilityScores", ctx, input)
+	ret0, _ := ret[0].(*character.RollAbilityScoresOutput)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// RollAbilityScores indicates an expected call of RollAbilityScores.
+func (mr *MockServiceMockRecorder) RollAbilityScores(ctx, input any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RollAbilityScores", reflect.TypeOf((*MockService)(nil).RollAbilityScores), ctx, input)
+}
+
 // UpdateAbilityScores mocks base method.
 func (m *MockService) UpdateAbilityScores(ctx context.Context, input *character.UpdateAbilityScoresInput) (*character.UpdateAbilityScoresOutput, error) {
 	m.ctrl.T.Helper()

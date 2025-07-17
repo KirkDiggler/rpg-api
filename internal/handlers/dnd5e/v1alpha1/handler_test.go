@@ -604,13 +604,15 @@ func (s *HandlerTestSuite) TestUpdateAbilityScores() {
 	s.Run("with valid ability scores", func() {
 		req := &dnd5ev1alpha1.UpdateAbilityScoresRequest{
 			DraftId: s.testDraftID,
-			AbilityScores: &dnd5ev1alpha1.AbilityScores{
-				Strength:     15,
-				Dexterity:    14,
-				Constitution: 13,
-				Intelligence: 12,
-				Wisdom:       10,
-				Charisma:     8,
+			ScoresInput: &dnd5ev1alpha1.UpdateAbilityScoresRequest_AbilityScores{
+				AbilityScores: &dnd5ev1alpha1.AbilityScores{
+					Strength:     15,
+					Dexterity:    14,
+					Constitution: 13,
+					Intelligence: 12,
+					Wisdom:       10,
+					Charisma:     8,
+				},
 			},
 		}
 
