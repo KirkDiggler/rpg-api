@@ -253,10 +253,10 @@ type ListBackgroundsOutput struct {
 type ListSpellsInput struct {
 	PageSize   int32
 	PageToken  string
-	Level      *int32   // Optional filter by spell level (0-9)
-	School     string   // Optional filter by school
-	ClassID    string   // Optional filter by class
-	SearchTerm string   // Optional search term for name/description
+	Level      *int32 // Optional filter by spell level (0-9)
+	School     string // Optional filter by school
+	ClassID    string // Optional filter by class
+	SearchTerm string // Optional search term for name/description
 }
 
 // ListSpellsOutput defines the response for listing spells

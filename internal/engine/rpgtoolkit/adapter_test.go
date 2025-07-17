@@ -133,7 +133,9 @@ func (s *stubExternalClient) ListAvailableClasses(_ context.Context) ([]*externa
 func (s *stubExternalClient) ListAvailableBackgrounds(_ context.Context) ([]*external.BackgroundData, error) {
 	return []*external.BackgroundData{}, nil
 }
-func (s *stubExternalClient) ListAvailableSpells(_ context.Context, _ *external.ListSpellsInput) ([]*external.SpellData, error) {
+func (s *stubExternalClient) ListAvailableSpells(
+	_ context.Context, _ *external.ListSpellsInput,
+) ([]*external.SpellData, error) {
 	return []*external.SpellData{}, nil
 }
 
@@ -174,7 +176,9 @@ func (c *testExternalClient) ListAvailableClasses(_ context.Context) ([]*externa
 func (c *testExternalClient) ListAvailableBackgrounds(_ context.Context) ([]*external.BackgroundData, error) {
 	return []*external.BackgroundData{}, nil
 }
-func (c *testExternalClient) ListAvailableSpells(_ context.Context, _ *external.ListSpellsInput) ([]*external.SpellData, error) {
+func (c *testExternalClient) ListAvailableSpells(
+	_ context.Context, _ *external.ListSpellsInput,
+) ([]*external.SpellData, error) {
 	return []*external.SpellData{}, nil
 }
 

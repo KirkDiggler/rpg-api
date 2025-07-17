@@ -18,6 +18,18 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/errors"
 )
 
+// D&D 5e class name mappings for spell filtering
+var dnd5eClassNames = map[string]string{
+	"bard":     "bard",
+	"cleric":   "cleric",
+	"druid":    "druid",
+	"paladin":  "paladin",
+	"ranger":   "ranger",
+	"sorcerer": "sorcerer",
+	"warlock":  "warlock",
+	"wizard":   "wizard",
+}
+
 // Client defines the interface for external API interactions
 type Client interface {
 	// GetRaceData fetches race information from external source
@@ -277,31 +289,21 @@ func (c *client) ListAvailableSpells(_ context.Context, input *ListSpellsInput) 
 	var dnd5eInput *dnd5e.ListSpellsInput
 	if input != nil {
 		dnd5eInput = &dnd5e.ListSpellsInput{}
-		
+
 		// Convert level filter
 		if input.Level != nil {
 			level := int(*input.Level)
 			dnd5eInput.Level = &level
 		}
-		
-		// Convert class filter - need to map class ID to class name
+
+		// Convert class filter using the package-level mapping
 		if input.ClassID != "" {
-			classNames := map[string]string{
-				"bard":       "bard",
-				"cleric":     "cleric",
-				"druid":      "druid",
-				"paladin":    "paladin",
-				"ranger":     "ranger",
-				"sorcerer":   "sorcerer",
-				"warlock":    "warlock",
-				"wizard":     "wizard",
-			}
-			if className, exists := classNames[input.ClassID]; exists {
+			if className, exists := dnd5eClassNames[input.ClassID]; exists {
 				dnd5eInput.Class = className
 			}
 		}
 	}
-	
+
 	// Step 1: Get spell references from D&D 5e API
 	slog.Info("Calling D&D 5e API to list spells")
 	refs, err := c.dnd5eClient.ListSpells(dnd5eInput)
@@ -336,7 +338,7 @@ func (c *client) ListAvailableSpells(_ context.Context, input *ListSpellsInput) 
 				errChan <- fmt.Errorf("failed to convert spell %s: %w", key, err)
 				return
 			}
-			
+
 			spells[idx] = spellData
 			slog.Debug("Loaded spell details", "spell", name)
 		}(i, ref.Key, ref.Name)
@@ -736,7 +738,7 @@ func buildSpellHeader(spell *entities.Spell) string {
 	if spell.SpellLevel > 0 {
 		levelStr = fmt.Sprintf("Level %d", spell.SpellLevel)
 	}
-	
+
 	schoolName := "Unknown School"
 	if spell.SpellSchool != nil {
 		schoolName = spell.SpellSchool.Name
