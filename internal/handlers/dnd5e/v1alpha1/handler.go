@@ -271,20 +271,34 @@ func (h *Handler) UpdateAbilityScores(
 	if req.DraftId == "" {
 		return nil, errors.ToGRPCError(errors.InvalidArgument("draft_id is required"))
 	}
-	if req.AbilityScores == nil {
-		return nil, errors.ToGRPCError(errors.InvalidArgument("ability_scores is required"))
+	// Handle the oneof field for ability scores
+	var abilityScores *dnd5e.AbilityScores
+	switch scores := req.ScoresInput.(type) {
+	case *dnd5ev1alpha1.UpdateAbilityScoresRequest_AbilityScores:
+		if scores.AbilityScores != nil {
+			abilityScores = &dnd5e.AbilityScores{
+				Strength:     scores.AbilityScores.Strength,
+				Dexterity:    scores.AbilityScores.Dexterity,
+				Constitution: scores.AbilityScores.Constitution,
+				Intelligence: scores.AbilityScores.Intelligence,
+				Wisdom:       scores.AbilityScores.Wisdom,
+				Charisma:     scores.AbilityScores.Charisma,
+			}
+		}
+	case *dnd5ev1alpha1.UpdateAbilityScoresRequest_RollAssignments:
+		// TODO: Handle roll assignments - this would require looking up rolls from dice service
+		return nil, errors.ToGRPCError(errors.Unimplemented("roll assignments not yet implemented"))
+	default:
+		return nil, errors.ToGRPCError(errors.InvalidArgument("ability scores or roll assignments required"))
+	}
+
+	if abilityScores == nil {
+		return nil, errors.ToGRPCError(errors.InvalidArgument("ability scores required"))
 	}
 
 	input := &character.UpdateAbilityScoresInput{
-		DraftID: req.DraftId,
-		AbilityScores: dnd5e.AbilityScores{
-			Strength:     req.AbilityScores.Strength,
-			Dexterity:    req.AbilityScores.Dexterity,
-			Constitution: req.AbilityScores.Constitution,
-			Intelligence: req.AbilityScores.Intelligence,
-			Wisdom:       req.AbilityScores.Wisdom,
-			Charisma:     req.AbilityScores.Charisma,
-		},
+		DraftID:       req.DraftId,
+		AbilityScores: *abilityScores,
 	}
 
 	output, err := h.characterService.UpdateAbilityScores(ctx, input)
@@ -458,6 +472,48 @@ func (h *Handler) DeleteCharacter(
 
 	return &dnd5ev1alpha1.DeleteCharacterResponse{
 		Message: "Character deleted successfully",
+	}, nil
+}
+
+// RollAbilityScores rolls ability scores for character creation
+func (h *Handler) RollAbilityScores(
+	ctx context.Context,
+	req *dnd5ev1alpha1.RollAbilityScoresRequest,
+) (*dnd5ev1alpha1.RollAbilityScoresResponse, error) {
+	if req.DraftId == "" {
+		return nil, errors.ToGRPCError(errors.InvalidArgument("draft_id is required"))
+	}
+
+	input := &character.RollAbilityScoresInput{
+		DraftID: req.DraftId,
+		Method:  "", // Method field doesn't exist in proto, use default
+	}
+
+	output, err := h.characterService.RollAbilityScores(ctx, input)
+	if err != nil {
+		return nil, errors.ToGRPCError(err)
+	}
+
+	// Convert rolls to proto format
+	protoRolls := make([]*dnd5ev1alpha1.AbilityScoreRoll, len(output.Rolls))
+	for i, roll := range output.Rolls {
+		// Get the lowest dropped die value (proto expects single int32, not array)
+		var droppedValue int32
+		if len(roll.Dropped) > 0 {
+			droppedValue = roll.Dropped[0] // First (and usually only) dropped die
+		}
+		protoRolls[i] = &dnd5ev1alpha1.AbilityScoreRoll{
+			RollId:   roll.ID,
+			Total:    roll.Value,
+			Dice:     roll.Dice,
+			Dropped:  droppedValue,
+			Notation: roll.Notation,
+		}
+	}
+
+	return &dnd5ev1alpha1.RollAbilityScoresResponse{
+		Rolls:     protoRolls,
+		ExpiresAt: output.ExpiresAt,
 	}, nil
 }
 

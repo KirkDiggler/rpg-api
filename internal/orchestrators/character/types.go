@@ -278,3 +278,29 @@ type GetBackgroundDetailsInput struct {
 type GetBackgroundDetailsOutput struct {
 	Background *dnd5e.BackgroundInfo
 }
+
+// Dice rolling types
+
+// RollAbilityScoresInput defines the request for rolling ability scores for character creation
+type RollAbilityScoresInput struct {
+	DraftID string
+	Method  string // "4d6_drop_lowest", "3d6", "point_buy", etc.
+}
+
+// RollAbilityScoresOutput defines the response for rolling ability scores
+type RollAbilityScoresOutput struct {
+	Rolls     []*AbilityScoreRoll
+	SessionID string
+	ExpiresAt int64
+}
+
+// AbilityScoreRoll represents a single ability score roll with ID and value
+type AbilityScoreRoll struct {
+	ID          string
+	Value       int32
+	Description string
+	RolledAt    int64
+	Dice        []int32
+	Dropped     []int32
+	Notation    string
+}

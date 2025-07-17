@@ -20,16 +20,20 @@ import (
 	grpc_logging "github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/logging"
 	grpc_recovery "github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/recovery"
 
+	apiv1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/clients/api/v1alpha1"
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/clients/dnd5e/api/v1alpha1"
 	"github.com/KirkDiggler/rpg-api/internal/clients/external"
 	"github.com/KirkDiggler/rpg-api/internal/engine/rpgtoolkit"
+	apiv1alpha1handler "github.com/KirkDiggler/rpg-api/internal/handlers/api/v1alpha1"
 	"github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v1alpha1"
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
+	diceorc "github.com/KirkDiggler/rpg-api/internal/orchestrators/dice"
 	"github.com/KirkDiggler/rpg-api/internal/pkg/clock"
 	"github.com/KirkDiggler/rpg-api/internal/pkg/idgen"
 	"github.com/KirkDiggler/rpg-api/internal/redis"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	characterdraftrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft"
+	dicesessionrepo "github.com/KirkDiggler/rpg-api/internal/repositories/dice_session"
 	"github.com/KirkDiggler/rpg-toolkit/dice"
 	"github.com/KirkDiggler/rpg-toolkit/events"
 )
@@ -117,12 +121,31 @@ func runServer(_ *cobra.Command, _ []string) error {
 		return fmt.Errorf("failed to create engine: %w", err)
 	}
 
+	// Create dice session repository
+	diceSessionRepo, err := dicesessionrepo.NewRedisRepository(&dicesessionrepo.Config{
+		Client: mustRedisClient(),
+		Clock:  clock.New(),
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create dice session repository: %w", err)
+	}
+
+	// Create dice service
+	diceService, err := diceorc.NewOrchestrator(&diceorc.Config{
+		DiceSessionRepo: diceSessionRepo,
+		IDGenerator:     idgen.NewPrefixed("roll-"),
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create dice service: %w", err)
+	}
+
 	// Initialize services
 	characterService, err := character.New(&character.Config{
 		CharacterRepo:      charRepo,
 		CharacterDraftRepo: draftRepo,
 		Engine:             e,
 		ExternalClient:     client,
+		DiceService:        diceService,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create character service: %w", err)
@@ -136,8 +159,16 @@ func runServer(_ *cobra.Command, _ []string) error {
 		return fmt.Errorf("failed to create character handler: %w", err)
 	}
 
+	diceHandler, err := apiv1alpha1handler.NewDiceHandler(&apiv1alpha1handler.DiceHandlerConfig{
+		DiceService: diceService,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create dice handler: %w", err)
+	}
+
 	// Register services
 	dnd5ev1alpha1.RegisterCharacterServiceServer(srv, characterHandler)
+	apiv1alpha1.RegisterDiceServiceServer(srv, diceHandler)
 
 	// Register health service
 	healthServer := health.NewServer()
@@ -145,6 +176,7 @@ func runServer(_ *cobra.Command, _ []string) error {
 
 	healthServer.SetServingStatus("", grpc_health_v1.HealthCheckResponse_SERVING)
 	healthServer.SetServingStatus("dnd5e.api.v1alpha1.CharacterService", grpc_health_v1.HealthCheckResponse_SERVING)
+	healthServer.SetServingStatus("api.v1alpha1.DiceService", grpc_health_v1.HealthCheckResponse_SERVING)
 
 	reflection.Register(srv)
 

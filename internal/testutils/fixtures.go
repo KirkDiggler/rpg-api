@@ -6,10 +6,10 @@ import (
 
 // Draft progress stages for testing
 const (
-	StageNameComplete       = "name_complete"
-	StageRaceComplete       = "race_complete"
-	StageClassComplete      = "class_complete"
-	StageNearlyComplete     = "nearly_complete"
+	StageNameComplete   = "name_complete"
+	StageRaceComplete   = "race_complete"
+	StageClassComplete  = "class_complete"
+	StageNearlyComplete = "nearly_complete"
 )
 
 // CreateTestCharacterDraft creates a test character draft with sensible defaults
