@@ -22,10 +22,10 @@ var getDraftCmd = &cobra.Command{
 
 func init() {
 	getDraftCmd.Flags().StringVar(&draftID, "draft-id", "", "Draft ID (required)")
-	getDraftCmd.MarkFlagRequired("draft-id")
+	_ = getDraftCmd.MarkFlagRequired("draft-id") // nolint:errcheck // safe to ignore in init
 }
 
-func runGetDraft(cmd *cobra.Command, args []string) error {
+func runGetDraft(_ *cobra.Command, _ []string) error {
 	client, cleanup, err := createCharacterClient()
 	if err != nil {
 		return err

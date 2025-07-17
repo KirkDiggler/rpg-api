@@ -5,13 +5,16 @@ import "context"
 type engine struct {
 }
 
+// Config contains configuration options for the engine.
 type Config struct {
 }
 
+// Validate validates the engine configuration.
 func (cfg *Config) Validate() error {
 	return nil
 }
 
+// New creates a new engine instance with the given configuration.
 func New(cfg *Config) (Engine, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err
@@ -35,8 +38,8 @@ func (e *engine) CalculateProficiencyBonus(level int32) int32 {
 }
 
 func (e *engine) CalculateCharacterStats(
-	ctx context.Context,
-	input *CalculateCharacterStatsInput,
+	_ context.Context,
+	_ *CalculateCharacterStatsInput,
 ) (*CalculateCharacterStatsOutput, error) {
 	// TODO(#46): Implement proper stat calculation
 	// For now, return basic level 1 stats
@@ -52,8 +55,8 @@ func (e *engine) CalculateCharacterStats(
 }
 
 func (e *engine) ValidateCharacterDraft(
-	ctx context.Context,
-	input *ValidateCharacterDraftInput,
+	_ context.Context,
+	_ *ValidateCharacterDraftInput,
 ) (*ValidateCharacterDraftOutput, error) {
 	// TODO(#46): Implement proper validation logic
 	// For now, return a stub that allows draft creation to work
@@ -67,8 +70,8 @@ func (e *engine) ValidateCharacterDraft(
 }
 
 func (e *engine) ValidateRaceChoice(
-	ctx context.Context,
-	input *ValidateRaceChoiceInput,
+	_ context.Context,
+	_ *ValidateRaceChoiceInput,
 ) (*ValidateRaceChoiceOutput, error) {
 	// TODO(#46): Implement proper race validation
 	return &ValidateRaceChoiceOutput{
@@ -80,8 +83,8 @@ func (e *engine) ValidateRaceChoice(
 }
 
 func (e *engine) ValidateClassChoice(
-	ctx context.Context,
-	input *ValidateClassChoiceInput,
+	_ context.Context,
+	_ *ValidateClassChoiceInput,
 ) (*ValidateClassChoiceOutput, error) {
 	// TODO(#46): Implement proper class validation
 	return &ValidateClassChoiceOutput{
@@ -92,8 +95,8 @@ func (e *engine) ValidateClassChoice(
 }
 
 func (e *engine) ValidateAbilityScores(
-	ctx context.Context,
-	input *ValidateAbilityScoresInput,
+	_ context.Context,
+	_ *ValidateAbilityScoresInput,
 ) (*ValidateAbilityScoresOutput, error) {
 	// TODO(#46): Implement proper ability score validation
 	return &ValidateAbilityScoresOutput{
@@ -104,8 +107,8 @@ func (e *engine) ValidateAbilityScores(
 }
 
 func (e *engine) ValidateSkillChoices(
-	ctx context.Context,
-	input *ValidateSkillChoicesInput,
+	_ context.Context,
+	_ *ValidateSkillChoicesInput,
 ) (*ValidateSkillChoicesOutput, error) {
 	// TODO(#46): Implement proper skill validation
 	return &ValidateSkillChoicesOutput{
@@ -116,8 +119,8 @@ func (e *engine) ValidateSkillChoices(
 }
 
 func (e *engine) GetAvailableSkills(
-	ctx context.Context,
-	input *GetAvailableSkillsInput,
+	_ context.Context,
+	_ *GetAvailableSkillsInput,
 ) (*GetAvailableSkillsOutput, error) {
 	// TODO(#46): Implement proper skill retrieval
 	return &GetAvailableSkillsOutput{
@@ -127,8 +130,8 @@ func (e *engine) GetAvailableSkills(
 }
 
 func (e *engine) ValidateBackgroundChoice(
-	ctx context.Context,
-	input *ValidateBackgroundChoiceInput,
+	_ context.Context,
+	_ *ValidateBackgroundChoiceInput,
 ) (*ValidateBackgroundChoiceOutput, error) {
 	// TODO(#46): Implement proper background validation
 	return &ValidateBackgroundChoiceOutput{

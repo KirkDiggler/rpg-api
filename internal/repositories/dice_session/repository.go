@@ -1,12 +1,12 @@
-// Package dice_session provides repository interface and types for dice roll sessions
-package dice_session
+// Package dicesession provides repository interface and types for dice roll sessions
+package dicesession
 
 import (
 	"context"
 	"time"
 )
 
-//go:generate mockgen -destination=mock/mock_repository.go -package=dice_sessionmock github.com/KirkDiggler/rpg-api/internal/repositories/dice_session Repository
+//go:generate mockgen -destination=mock/mock_repository.go -package=dicesessionmock github.com/KirkDiggler/rpg-api/internal/repositories/dice_session Repository
 
 // DiceSession represents a collection of dice rolls grouped by entity and context
 type DiceSession struct {

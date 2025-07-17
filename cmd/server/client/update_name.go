@@ -24,11 +24,11 @@ var updateNameCmd = &cobra.Command{
 func init() {
 	updateNameCmd.Flags().StringVar(&updateNameDraftID, "draft-id", "", "Draft ID (required)")
 	updateNameCmd.Flags().StringVar(&characterName, "name", "", "Character name (required)")
-	updateNameCmd.MarkFlagRequired("draft-id")
-	updateNameCmd.MarkFlagRequired("name")
+	_ = updateNameCmd.MarkFlagRequired("draft-id") // nolint:errcheck // safe to ignore in init
+	_ = updateNameCmd.MarkFlagRequired("name")     // nolint:errcheck // safe to ignore in init
 }
 
-func runUpdateName(cmd *cobra.Command, args []string) error {
+func runUpdateName(_ *cobra.Command, _ []string) error {
 	client, cleanup, err := createCharacterClient()
 	if err != nil {
 		return err

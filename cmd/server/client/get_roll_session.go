@@ -10,18 +10,20 @@ import (
 	apiv1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/clients/api/v1alpha1"
 )
 
-var getRollSessionCmd = &cobra.Command{
-	Use:   "get-roll-session [entity-id] [context]",
-	Short: "Get existing dice roll session",
-	Long: `Retrieve all dice rolls for a specific entity and context. Examples:
-  
-  get-roll-session char-123 ability-scores
-  get-roll-session char-456 combat`,
-	Args: cobra.ExactArgs(2),
-	RunE: getRollSession,
-}
+// getRollSessionCmd is currently unused but kept for future implementation
+// var getRollSessionCmd = &cobra.Command{
+// 	Use:   "get-roll-session [entity-id] [context]",
+// 	Short: "Get existing dice roll session",
+// 	Long: `Retrieve all dice rolls for a specific entity and context. Examples:
+//
+//   get-roll-session char-123 ability-scores
+//   get-roll-session char-456 combat`,
+// 	Args: cobra.ExactArgs(2),
+// 	RunE: getRollSession,
+// }
 
-func getRollSession(cmd *cobra.Command, args []string) error {
+// getRollSession is currently unused but kept for future implementation
+func getRollSession(_ *cobra.Command, args []string) error { // nolint:unused
 	entityID := args[0]
 	rollContext := args[1]
 
@@ -74,14 +76,14 @@ func getRollSession(cmd *cobra.Command, args []string) error {
 }
 
 // createDiceClient creates a dice service client
-func createDiceClient() (apiv1alpha1.DiceServiceClient, func(), error) {
+func createDiceClient() (apiv1alpha1.DiceServiceClient, func(), error) { // nolint:unused
 	conn, err := createConnection()
 	if err != nil {
 		return nil, nil, err
 	}
 
 	cleanup := func() {
-		conn.Close()
+		_ = conn.Close() // nolint:errcheck // safe to ignore in cleanup
 	}
 
 	client := apiv1alpha1.NewDiceServiceClient(conn)

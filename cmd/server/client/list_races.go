@@ -25,7 +25,7 @@ func init() {
 	listRacesCmd.Flags().BoolVar(&includeSubraces, "include-subraces", true, "Include subraces in the list")
 }
 
-func runListRaces(cmd *cobra.Command, args []string) error {
+func runListRaces(_ *cobra.Command, _ []string) error {
 	client, cleanup, err := createCharacterClient()
 	if err != nil {
 		return err

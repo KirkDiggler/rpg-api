@@ -18,7 +18,7 @@ var listBackgroundsCmd = &cobra.Command{
 	RunE:  runListBackgrounds,
 }
 
-func runListBackgrounds(cmd *cobra.Command, args []string) error {
+func runListBackgrounds(_ *cobra.Command, _ []string) error {
 	client, cleanup, err := createCharacterClient()
 	if err != nil {
 		return err

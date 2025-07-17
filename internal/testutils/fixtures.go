@@ -10,6 +10,9 @@ const (
 	StageRaceComplete   = "race_complete"
 	StageClassComplete  = "class_complete"
 	StageNearlyComplete = "nearly_complete"
+
+	// TestCharacterName is the default character name for test fixtures
+	TestCharacterName = "Thorin Oakenshield"
 )
 
 // CreateTestCharacterDraft creates a test character draft with sensible defaults
@@ -35,12 +38,12 @@ func CreateTestCharacterDraftWithProgress(playerID string, stage string) *dnd5e.
 
 	switch stage {
 	case StageNameComplete:
-		draft.Name = "Thorin Oakenshield"
+		draft.Name = TestCharacterName
 		draft.Progress.SetStep(dnd5e.ProgressStepName, true)
 		draft.Progress.CompletionPercentage = 14 // 1/7 steps
 
 	case StageRaceComplete:
-		draft.Name = "Thorin Oakenshield"
+		draft.Name = TestCharacterName
 		draft.RaceID = dnd5e.RaceDwarf
 		draft.SubraceID = dnd5e.SubraceMountainDwarf
 		draft.Progress.SetStep(dnd5e.ProgressStepName, true)
@@ -48,7 +51,7 @@ func CreateTestCharacterDraftWithProgress(playerID string, stage string) *dnd5e.
 		draft.Progress.CompletionPercentage = 28 // 2/7 steps
 
 	case StageClassComplete:
-		draft.Name = "Thorin Oakenshield"
+		draft.Name = TestCharacterName
 		draft.RaceID = dnd5e.RaceDwarf
 		draft.SubraceID = dnd5e.SubraceMountainDwarf
 		draft.ClassID = dnd5e.ClassFighter
@@ -58,7 +61,7 @@ func CreateTestCharacterDraftWithProgress(playerID string, stage string) *dnd5e.
 		draft.Progress.CompletionPercentage = 42 // 3/7 steps
 
 	case StageNearlyComplete:
-		draft.Name = "Thorin Oakenshield"
+		draft.Name = TestCharacterName
 		draft.RaceID = dnd5e.RaceDwarf
 		draft.SubraceID = dnd5e.SubraceMountainDwarf
 		draft.ClassID = dnd5e.ClassFighter

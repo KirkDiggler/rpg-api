@@ -49,7 +49,7 @@ func CreateTestRedisClientWithContext(t *testing.T, setupFunc func(mr *miniredis
 
 // FlushTestRedis is currently unimplemented and should not be used.
 // Tests should create fresh clients for each test until the flush logic is implemented.
-func FlushTestRedis(ctx context.Context, client redis.Client) error {
+func FlushTestRedis(_ context.Context, _ redis.Client) error {
 	// TODO(#47): Implement flush when Redis client supports it
 	return errors.New("FlushTestRedis is unimplemented: create fresh clients for each test instead")
 }

@@ -28,7 +28,7 @@ func init() {
 	listClassesCmd.Flags().BoolVar(&spellcastersOnly, "spellcasters-only", false, "Only show spellcasting classes")
 }
 
-func runListClasses(cmd *cobra.Command, args []string) error {
+func runListClasses(_ *cobra.Command, _ []string) error {
 	client, cleanup, err := createCharacterClient()
 	if err != nil {
 		return err

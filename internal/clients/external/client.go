@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -48,6 +49,7 @@ type client struct {
 	dnd5eClient dnd5e.Interface
 }
 
+// Config contains configuration options for the external client.
 type Config struct {
 	// BaseURL for the D&D 5e API (optional, defaults to https://www.dnd5eapi.co)
 	BaseURL string
@@ -57,6 +59,7 @@ type Config struct {
 	CacheTTL time.Duration
 }
 
+// Validate validates the Config and sets defaults if not provided.
 func (cfg *Config) Validate() error {
 	// Set defaults if not provided
 	if cfg.BaseURL == "" {
@@ -71,6 +74,7 @@ func (cfg *Config) Validate() error {
 	return nil
 }
 
+// New creates a new external client with the given configuration.
 func New(cfg *Config) (Client, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err
@@ -98,23 +102,23 @@ func New(cfg *Config) (Client, error) {
 	}, nil
 }
 
-func (c *client) GetRaceData(ctx context.Context, raceID string) (*RaceData, error) {
+func (c *client) GetRaceData(_ context.Context, _ string) (*RaceData, error) {
 	return nil, errors.Unimplemented("not implemented")
 }
 
-func (c *client) GetClassData(ctx context.Context, classID string) (*ClassData, error) {
+func (c *client) GetClassData(_ context.Context, _ string) (*ClassData, error) {
 	return nil, errors.Unimplemented("not implemented")
 }
 
-func (c *client) GetBackgroundData(ctx context.Context, backgroundID string) (*BackgroundData, error) {
+func (c *client) GetBackgroundData(_ context.Context, _ string) (*BackgroundData, error) {
 	return nil, errors.Unimplemented("not implemented")
 }
 
-func (c *client) GetSpellData(ctx context.Context, spellID string) (*SpellData, error) {
+func (c *client) GetSpellData(_ context.Context, _ string) (*SpellData, error) {
 	return nil, errors.Unimplemented("not implemented")
 }
 
-func (c *client) ListAvailableRaces(ctx context.Context) ([]*RaceData, error) {
+func (c *client) ListAvailableRaces(_ context.Context) ([]*RaceData, error) {
 	// Step 1: Get reference items (just key/name)
 	slog.Info("Calling D&D 5e API to list races")
 	refs, err := c.dnd5eClient.ListRaces()
@@ -161,7 +165,7 @@ func (c *client) ListAvailableRaces(ctx context.Context) ([]*RaceData, error) {
 	return races, nil
 }
 
-func (c *client) ListAvailableClasses(ctx context.Context) ([]*ClassData, error) {
+func (c *client) ListAvailableClasses(_ context.Context) ([]*ClassData, error) {
 	// Step 1: Get reference items (just key/name)
 	refs, err := c.dnd5eClient.ListClasses()
 	if err != nil {
@@ -203,7 +207,7 @@ func (c *client) ListAvailableClasses(ctx context.Context) ([]*ClassData, error)
 	return classes, nil
 }
 
-func (c *client) ListAvailableBackgrounds(ctx context.Context) ([]*BackgroundData, error) {
+func (c *client) ListAvailableBackgrounds(_ context.Context) ([]*BackgroundData, error) {
 	return nil, errors.Unimplemented("not implemented")
 }
 
@@ -218,14 +222,44 @@ func convertRaceToRaceData(race *entities.Race) *RaceData {
 	abilityBonuses := make(map[string]int32)
 	for _, bonus := range race.AbilityBonuses {
 		if bonus.AbilityScore != nil {
+			// nolint:gosec // D&D ability bonuses are always small values
 			abilityBonuses[bonus.AbilityScore.Key] = int32(bonus.Bonus)
 		}
 	}
 
-	// Convert traits to string slice
-	traits := make([]string, len(race.Traits))
+	// Convert traits to TraitData
+	traits := make([]TraitData, len(race.Traits))
 	for i, trait := range race.Traits {
-		traits[i] = trait.Name
+		traits[i] = TraitData{
+			Name: trait.Name,
+			// TODO(#45): Fetch full trait details for description
+		}
+	}
+
+	// Convert languages
+	languages := make([]string, len(race.Languages))
+	for i, lang := range race.Languages {
+		languages[i] = lang.Name
+	}
+
+	// Convert starting proficiencies
+	proficiencies := make([]string, len(race.StartingProficiencies))
+	for i, prof := range race.StartingProficiencies {
+		proficiencies[i] = prof.Name
+	}
+
+	// Convert language options
+	var languageOptions *ChoiceData
+	if race.LanguageOptions != nil {
+		languageOptions = convertChoiceOption(race.LanguageOptions, "language")
+	}
+
+	// Convert proficiency options
+	var proficiencyOptions []*ChoiceData
+	if race.StartingProficiencyOptions != nil {
+		proficiencyOptions = []*ChoiceData{
+			convertChoiceOption(race.StartingProficiencyOptions, "proficiency"),
+		}
 	}
 
 	// Convert subraces
@@ -234,25 +268,37 @@ func convertRaceToRaceData(race *entities.Race) *RaceData {
 		subraces[i] = SubraceData{
 			ID:   subrace.Key,
 			Name: subrace.Name,
-			// Note: Would need to fetch full subrace details for complete data
+			// TODO(#45): Fetch full subrace details for complete data
 		}
 	}
 
 	return &RaceData{
-		ID:             race.Key,
-		Name:           race.Name,
-		Speed:          int32(race.Speed),
-		AbilityBonuses: abilityBonuses,
-		Traits:         traits,
-		Subraces:       subraces,
-		// Size and Description would need to come from additional API calls or be hardcoded
-		Size: "Medium", // Default, actual size would need to be fetched
+		ID:                 race.Key,
+		Name:               race.Name,
+		Size:               race.Size,
+		SizeDescription:    race.SizeDescription,
+		Speed:              int32(race.Speed), // nolint:gosec // safe conversion
+		AbilityBonuses:     abilityBonuses,
+		Traits:             traits,
+		Subraces:           subraces,
+		Languages:          languages,
+		LanguageOptions:    languageOptions,
+		Proficiencies:      proficiencies,
+		ProficiencyOptions: proficiencyOptions,
+		// TODO(#45): These fields need additional API calls or data sources
+		// Description, AgeDescription, AlignmentDescription
 	}
 }
 
 func convertClassToClassData(class *entities.Class) *ClassData {
 	if class == nil {
 		return nil
+	}
+
+	// Convert primary abilities
+	primaryAbilities := make([]string, len(class.PrimaryAbilities))
+	for i, ability := range class.PrimaryAbilities {
+		primaryAbilities[i] = ability.Name
 	}
 
 	// Convert saving throws to string slice
@@ -264,17 +310,42 @@ func convertClassToClassData(class *entities.Class) *ClassData {
 	// Extract available skills from proficiency choices
 	var availableSkills []string
 	var skillsCount int32
+	var proficiencyChoices []*ChoiceData
+
 	for _, choice := range class.ProficiencyChoices {
-		if choice != nil && choice.ChoiceType == "skills" {
-			skillsCount = int32(choice.ChoiceCount)
-			if choice.OptionList != nil {
-				for _, option := range choice.OptionList.Options {
-					if refOpt, ok := option.(*entities.ReferenceOption); ok && refOpt.Reference != nil {
-						availableSkills = append(availableSkills, refOpt.Reference.Name)
+		if choice != nil {
+			if choice.ChoiceType == "skills" {
+				// nolint:gosec // D&D skill counts are always small values
+				skillsCount = int32(choice.ChoiceCount)
+				if choice.OptionList != nil {
+					for _, option := range choice.OptionList.Options {
+						if refOpt, ok := option.(*entities.ReferenceOption); ok && refOpt.Reference != nil {
+							availableSkills = append(availableSkills, refOpt.Reference.Name)
+						}
 					}
 				}
 			}
+			// Convert all proficiency choices
+			proficiencyChoices = append(proficiencyChoices, convertChoiceOption(choice, choice.ChoiceType))
 		}
+	}
+
+	// Convert armor proficiencies
+	armorProficiencies := make([]string, len(class.ArmorProficiencies))
+	for i, armor := range class.ArmorProficiencies {
+		armorProficiencies[i] = armor.Name
+	}
+
+	// Convert weapon proficiencies
+	weaponProficiencies := make([]string, len(class.WeaponProficiencies))
+	for i, weapon := range class.WeaponProficiencies {
+		weaponProficiencies[i] = weapon.Name
+	}
+
+	// Convert tool proficiencies
+	toolProficiencies := make([]string, len(class.ToolProficiencies))
+	for i, tool := range class.ToolProficiencies {
+		toolProficiencies[i] = tool.Name
 	}
 
 	// Convert starting equipment to string slice
@@ -285,14 +356,89 @@ func convertClassToClassData(class *entities.Class) *ClassData {
 		}
 	}
 
+	// Convert equipment options
+	var equipmentOptions []*EquipmentChoiceData
+	for _, option := range class.StartingEquipmentOptions {
+		if option != nil {
+			equipmentOptions = append(equipmentOptions, convertEquipmentChoice(option))
+		}
+	}
+
 	return &ClassData{
-		ID:                class.Key,
-		Name:              class.Name,
-		HitDice:           fmt.Sprintf("1d%d", class.HitDie),
-		SavingThrows:      savingThrows,
-		SkillsCount:       skillsCount,
-		AvailableSkills:   availableSkills,
-		StartingEquipment: startingEquipment,
-		// PrimaryAbility and Description would need additional data
+		ID:                       class.Key,
+		Name:                     class.Name,
+		Description:              class.Description,
+		HitDice:                  fmt.Sprintf("1d%d", class.HitDie),
+		PrimaryAbilities:         primaryAbilities,
+		SavingThrows:             savingThrows,
+		SkillsCount:              skillsCount,
+		AvailableSkills:          availableSkills,
+		StartingEquipment:        startingEquipment,
+		StartingEquipmentOptions: equipmentOptions,
+		ArmorProficiencies:       armorProficiencies,
+		WeaponProficiencies:      weaponProficiencies,
+		ToolProficiencies:        toolProficiencies,
+		ProficiencyChoices:       proficiencyChoices,
+		// TODO(#45): LevelOneFeatures and Spellcasting require additional API calls
+	}
+}
+
+// Helper function to convert ChoiceOption to ChoiceData
+func convertChoiceOption(choice *entities.ChoiceOption, choiceType string) *ChoiceData {
+	if choice == nil {
+		return nil
+	}
+
+	var options []string
+	if choice.OptionList != nil {
+		for _, option := range choice.OptionList.Options {
+			if refOpt, ok := option.(*entities.ReferenceOption); ok && refOpt.Reference != nil {
+				options = append(options, refOpt.Reference.Name)
+			}
+		}
+	}
+
+	return &ChoiceData{
+		Type:    choiceType,
+		Choose:  choice.ChoiceCount,
+		Options: options,
+		From:    choice.Description,
+	}
+}
+
+// Helper function to convert equipment choice
+func convertEquipmentChoice(choice *entities.ChoiceOption) *EquipmentChoiceData {
+	if choice == nil {
+		return nil
+	}
+
+	var options []string
+	if choice.OptionList != nil {
+		for _, option := range choice.OptionList.Options {
+			// Equipment choices might have different option types
+			switch opt := option.(type) {
+			case *entities.ReferenceOption:
+				if opt.Reference != nil {
+					options = append(options, opt.Reference.Name)
+				}
+			case *entities.MultipleOption:
+				// Handle multiple equipment options
+				var multiDesc []string
+				for _, item := range opt.Items {
+					if refOpt, ok := item.(*entities.ReferenceOption); ok && refOpt.Reference != nil {
+						multiDesc = append(multiDesc, refOpt.Reference.Name)
+					}
+				}
+				if len(multiDesc) > 0 {
+					options = append(options, strings.Join(multiDesc, " and "))
+				}
+			}
+		}
+	}
+
+	return &EquipmentChoiceData{
+		Description: choice.Description,
+		Options:     options,
+		ChooseCount: choice.ChoiceCount,
 	}
 }

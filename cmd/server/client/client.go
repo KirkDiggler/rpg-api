@@ -2,7 +2,6 @@
 package client
 
 import (
-	"context"
 	"fmt"
 	"time"
 
@@ -47,12 +46,8 @@ func init() {
 
 // createConnection creates a gRPC connection to the server
 func createConnection() (*grpc.ClientConn, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-
-	conn, err := grpc.DialContext(ctx, serverAddr,
+	conn, err := grpc.NewClient(serverAddr,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithBlock(),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to server: %w", err)
@@ -69,7 +64,7 @@ func createCharacterClient() (dnd5ev1alpha1.CharacterServiceClient, func(), erro
 	}
 
 	cleanup := func() {
-		conn.Close()
+		_ = conn.Close() // nolint:errcheck // safe to ignore in cleanup
 	}
 
 	client := dnd5ev1alpha1.NewCharacterServiceClient(conn)

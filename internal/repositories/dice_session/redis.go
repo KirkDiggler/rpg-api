@@ -1,4 +1,4 @@
-package dice_session
+package dicesession
 
 import (
 	"context"
@@ -153,13 +153,11 @@ func (r *redisRepository) Delete(ctx context.Context, input DeleteInput) (*Delet
 	key := r.buildKey(input.EntityID, input.Context)
 
 	// Get the session first to count rolls
-	getOutput, err := r.Get(ctx, GetInput{
-		EntityID: input.EntityID,
-		Context:  input.Context,
-	})
+	getOutput, err := r.Get(ctx, GetInput(input))
 
 	var rollsDeleted int32
 	if err == nil && getOutput.Session != nil {
+		// nolint:gosec // roll count is always small
 		rollsDeleted = int32(len(getOutput.Session.Rolls))
 	}
 
