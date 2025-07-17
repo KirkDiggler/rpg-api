@@ -18,6 +18,18 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/errors"
 )
 
+// D&D 5e class name mappings for spell filtering
+var dnd5eClassNames = map[string]string{
+	"bard":     "bard",
+	"cleric":   "cleric",
+	"druid":    "druid",
+	"paladin":  "paladin",
+	"ranger":   "ranger",
+	"sorcerer": "sorcerer",
+	"warlock":  "warlock",
+	"wizard":   "wizard",
+}
+
 // Client defines the interface for external API interactions
 type Client interface {
 	// GetRaceData fetches race information from external source
@@ -43,6 +55,10 @@ type Client interface {
 	// ListAvailableBackgrounds returns all available backgrounds with full details
 	// Implementation should handle reference->details conversion internally
 	ListAvailableBackgrounds(ctx context.Context) ([]*BackgroundData, error)
+
+	// ListAvailableSpells returns all available spells with full details
+	// Implementation should handle reference->details conversion internally
+	ListAvailableSpells(ctx context.Context, input *ListSpellsInput) ([]*SpellData, error)
 }
 
 type client struct {
@@ -118,6 +134,15 @@ func (c *client) GetSpellData(_ context.Context, spellID string) (*SpellData, er
 	spell, err := c.dnd5eClient.GetSpell(spellID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get spell %s: %w", spellID, err)
+	}
+
+	return c.convertSpellToSpellData(spell)
+}
+
+// convertSpellToSpellData converts a dnd5e-api spell entity to our internal SpellData format
+func (c *client) convertSpellToSpellData(spell *entities.Spell) (*SpellData, error) {
+	if spell == nil {
+		return nil, fmt.Errorf("spell is nil")
 	}
 
 	// Build components array - currently the dnd5e-api library doesn't expose
@@ -257,6 +282,79 @@ func (c *client) ListAvailableClasses(_ context.Context) ([]*ClassData, error) {
 
 func (c *client) ListAvailableBackgrounds(_ context.Context) ([]*BackgroundData, error) {
 	return nil, errors.Unimplemented("not implemented")
+}
+
+func (c *client) ListAvailableSpells(_ context.Context, input *ListSpellsInput) ([]*SpellData, error) {
+	// Convert our input to the dnd5e-api client input format
+	var dnd5eInput *dnd5e.ListSpellsInput
+	if input != nil {
+		dnd5eInput = &dnd5e.ListSpellsInput{}
+
+		// Convert level filter
+		if input.Level != nil {
+			level := int(*input.Level)
+			dnd5eInput.Level = &level
+		}
+
+		// Convert class filter using the package-level mapping
+		if input.ClassID != "" {
+			if className, exists := dnd5eClassNames[input.ClassID]; exists {
+				dnd5eInput.Class = className
+			}
+		}
+	}
+
+	// Step 1: Get spell references from D&D 5e API
+	slog.Info("Calling D&D 5e API to list spells")
+	refs, err := c.dnd5eClient.ListSpells(dnd5eInput)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list spells from D&D 5e API: %w", err)
+	}
+	slog.Info("Got spell references", "count", len(refs))
+
+	// Step 2: Concurrently load full details for each spell
+	slog.Info("Loading full details for each spell concurrently")
+	spells := make([]*SpellData, len(refs))
+	errChan := make(chan error, len(refs))
+	var wg sync.WaitGroup
+
+	for i, ref := range refs {
+		wg.Add(1)
+		go func(idx int, key string, name string) {
+			defer wg.Done()
+
+			// Get full spell details (cached after first call)
+			spell, err := c.dnd5eClient.GetSpell(key)
+			if err != nil {
+				slog.Error("Failed to get spell details", "spell", key, "error", err)
+				errChan <- fmt.Errorf("failed to get spell %s: %w", key, err)
+				return
+			}
+
+			// Convert to our internal format using existing GetSpellData logic
+			spellData, err := c.convertSpellToSpellData(spell)
+			if err != nil {
+				slog.Error("Failed to convert spell data", "spell", key, "error", err)
+				errChan <- fmt.Errorf("failed to convert spell %s: %w", key, err)
+				return
+			}
+
+			spells[idx] = spellData
+			slog.Debug("Loaded spell details", "spell", name)
+		}(i, ref.Key, ref.Name)
+	}
+
+	wg.Wait()
+	close(errChan)
+
+	// Check for any errors
+	for err := range errChan {
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return spells, nil
 }
 
 // Conversion functions
@@ -640,7 +738,7 @@ func buildSpellHeader(spell *entities.Spell) string {
 	if spell.SpellLevel > 0 {
 		levelStr = fmt.Sprintf("Level %d", spell.SpellLevel)
 	}
-	
+
 	schoolName := "Unknown School"
 	if spell.SpellSchool != nil {
 		schoolName = spell.SpellSchool.Name

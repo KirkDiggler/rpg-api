@@ -7,6 +7,8 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"math"
+	"strconv"
 	"strings"
 
 	"github.com/KirkDiggler/rpg-api/internal/clients/external"
@@ -49,6 +51,7 @@ type Service interface {
 	ListRaces(ctx context.Context, input *ListRacesInput) (*ListRacesOutput, error)
 	ListClasses(ctx context.Context, input *ListClassesInput) (*ListClassesOutput, error)
 	ListBackgrounds(ctx context.Context, input *ListBackgroundsInput) (*ListBackgroundsOutput, error)
+	ListSpells(ctx context.Context, input *ListSpellsInput) (*ListSpellsOutput, error)
 	GetRaceDetails(ctx context.Context, input *GetRaceDetailsInput) (*GetRaceDetailsOutput, error)
 	GetClassDetails(ctx context.Context, input *GetClassDetailsInput) (*GetClassDetailsOutput, error)
 	GetBackgroundDetails(ctx context.Context, input *GetBackgroundDetailsInput) (*GetBackgroundDetailsOutput, error)
@@ -564,7 +567,7 @@ func (o *Orchestrator) UpdateAbilityScores(
 	// Validate ability scores with engine
 	validateInput := &engine.ValidateAbilityScoresInput{
 		AbilityScores: &input.AbilityScores,
-		Method:        "standard_array", // TODO: Make this configurable
+		Method:        "standard_array", // TODO(#82): Make ability score method configurable
 	}
 	validateOutput, err := o.engine.ValidateAbilityScores(ctx, validateInput)
 	if err != nil {
@@ -892,7 +895,7 @@ func (o *Orchestrator) ListCharacters(
 
 	return &ListCharactersOutput{
 		Characters:    characters,
-		NextPageToken: "", // TODO: implement pagination if needed
+		NextPageToken: "", // TODO(#82): Implement pagination for ListCharacters
 	}, nil
 }
 
@@ -996,7 +999,7 @@ func (o *Orchestrator) ListRaces(
 		"includeSubraces", input.IncludeSubraces,
 		"pageSize", input.PageSize)
 
-	// TODO: Implement pagination with PageSize and PageToken
+	// TODO(#82): Implement pagination with PageSize and PageToken for ListRaces
 	// For now, return all races
 	races, err := o.externalClient.ListAvailableRaces(ctx)
 	if err != nil {
@@ -1021,7 +1024,7 @@ func (o *Orchestrator) ListRaces(
 
 	return &ListRacesOutput{
 		Races:         entityRaces,
-		NextPageToken: "", // TODO: Implement pagination
+		NextPageToken: "", // TODO(#82): Implement pagination for ListRaces
 		TotalSize:     totalSize,
 	}, nil
 }
@@ -1035,7 +1038,7 @@ func (o *Orchestrator) ListClasses(
 		return nil, errors.InvalidArgument("input is required")
 	}
 
-	// TODO: Implement pagination and filtering
+	// TODO(#82): Implement pagination and filtering for ListBackgrounds
 	classes, err := o.externalClient.ListAvailableClasses(ctx)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to list classes from external client")
@@ -1057,7 +1060,7 @@ func (o *Orchestrator) ListClasses(
 
 	return &ListClassesOutput{
 		Classes:       entityClasses,
-		NextPageToken: "", // TODO: Implement pagination
+		NextPageToken: "", // TODO(#82): Implement pagination for ListClasses
 		TotalSize:     totalSize,
 	}, nil
 }
@@ -1071,7 +1074,7 @@ func (o *Orchestrator) ListBackgrounds(
 		return nil, errors.InvalidArgument("input is required")
 	}
 
-	// TODO: Implement pagination
+	// TODO(#82): Implement pagination for GetAvailableChoices
 	backgrounds, err := o.externalClient.ListAvailableBackgrounds(ctx)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to list backgrounds from external client")
@@ -1093,7 +1096,93 @@ func (o *Orchestrator) ListBackgrounds(
 
 	return &ListBackgroundsOutput{
 		Backgrounds:   entityBackgrounds,
-		NextPageToken: "", // TODO: Implement pagination
+		NextPageToken: "", // TODO(#82): Implement pagination for ListBackgrounds
+		TotalSize:     totalSize,
+	}, nil
+}
+
+// ListSpells retrieves available spells for character creation
+func (o *Orchestrator) ListSpells(
+	ctx context.Context,
+	input *ListSpellsInput,
+) (*ListSpellsOutput, error) {
+	if input == nil {
+		return nil, errors.InvalidArgument("input is required")
+	}
+
+	slog.Info("Fetching spells from external API",
+		"level", input.Level,
+		"school", input.School,
+		"classID", input.ClassID,
+		"searchTerm", input.SearchTerm,
+		"pageSize", input.PageSize)
+
+	// Convert orchestrator input to external client input
+	externalInput := &external.ListSpellsInput{
+		Level:   input.Level,
+		ClassID: input.ClassID,
+	}
+
+	// TODO(#82): Implement pagination with PageSize and PageToken
+	spells, err := o.externalClient.ListAvailableSpells(ctx, externalInput)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to list spells from external client")
+	}
+
+	slog.Info("Successfully fetched spells", "count", len(spells))
+
+	// Convert external spell data to entity format and apply additional filters
+	entitySpells := make([]*dnd5e.SpellInfo, 0, len(spells))
+	for _, spell := range spells {
+		entitySpell := convertExternalSpellToEntity(spell)
+
+		// Apply additional filters that the external client doesn't support
+		if input.School != "" && entitySpell.School != input.School {
+			continue
+		}
+		if input.SearchTerm != "" &&
+			!strings.Contains(strings.ToLower(entitySpell.Name), strings.ToLower(input.SearchTerm)) &&
+			!strings.Contains(strings.ToLower(entitySpell.Description), strings.ToLower(input.SearchTerm)) {
+			continue
+		}
+
+		entitySpells = append(entitySpells, entitySpell)
+	}
+
+	// Apply client-side pagination
+	startIndex := 0
+	if input.PageToken != "" {
+		var err error
+		startIndex, err = strconv.Atoi(input.PageToken)
+		if err != nil || startIndex < 0 || startIndex >= len(entitySpells) {
+			return nil, errors.InvalidArgument("invalid PageToken")
+		}
+	}
+
+	endIndex := startIndex + int(input.PageSize)
+	if endIndex > len(entitySpells) {
+		endIndex = len(entitySpells)
+	}
+
+	nextPageToken := ""
+	if endIndex < len(entitySpells) {
+		nextPageToken = strconv.Itoa(endIndex)
+	}
+
+	// Apply pagination to results
+	paginatedSpells := entitySpells[startIndex:endIndex]
+
+	var totalSize int32
+	if len(entitySpells) > math.MaxInt32 {
+		totalSize = math.MaxInt32
+	} else {
+		// nolint:gosec // List size won't overflow int32
+		totalSize = int32(len(entitySpells))
+	}
+
+	return &ListSpellsOutput{
+		Spells:        paginatedSpells,
+		NextPageToken: nextPageToken,
 		TotalSize:     totalSize,
 	}, nil
 }
@@ -1346,18 +1435,72 @@ func convertExternalBackgroundToEntity(background *external.BackgroundData) *dnd
 		Name:                background.Name,
 		Description:         background.Description,
 		SkillProficiencies:  background.SkillProficiencies,
-		ToolProficiencies:   []string{}, // TODO: Get from external data
-		Languages:           []string{}, // TODO: Get from external data
+		ToolProficiencies:   []string{}, // TODO(#82): Get tool proficiencies from external data
+		Languages:           []string{}, // TODO(#82): Get languages from external data
 		AdditionalLanguages: background.Languages,
 		StartingEquipment:   background.Equipment,
-		StartingGold:        0, // TODO: Get from external data
+		StartingGold:        0, // TODO(#82): Get starting gold from external data
 		FeatureName:         background.Feature,
-		FeatureDescription:  background.Feature, // TODO: Get detailed description
-		PersonalityTraits:   []string{},         // TODO: Get from external data
-		Ideals:              []string{},         // TODO: Get from external data
-		Bonds:               []string{},         // TODO: Get from external data
-		Flaws:               []string{},         // TODO: Get from external data
+		FeatureDescription:  background.Feature, // TODO(#82): Get detailed feature description
+		PersonalityTraits:   []string{},         // TODO(#82): Get personality traits from external data
+		Ideals:              []string{},         // TODO(#82): Get ideals from external data
+		Bonds:               []string{},         // TODO(#82): Get bonds from external data
+		Flaws:               []string{},         // TODO(#82): Get flaws from external data
 	}
+}
+
+// convertExternalSpellToEntity converts external spell data to entity format
+func convertExternalSpellToEntity(spell *external.SpellData) *dnd5e.SpellInfo {
+	// Parse classes from spell description if available
+	classes := parseClassesFromSpellDescription(spell.Description)
+
+	return &dnd5e.SpellInfo{
+		ID:          spell.ID,
+		Name:        spell.Name,
+		Level:       spell.Level,
+		School:      spell.School,
+		CastingTime: spell.CastingTime,
+		Range:       spell.Range,
+		Components:  spell.Components,
+		Duration:    spell.Duration,
+		Description: spell.Description,
+		Classes:     classes,
+	}
+}
+
+// parseClassesFromSpellDescription extracts class names from spell description
+func parseClassesFromSpellDescription(description string) []string {
+	// Look for "Classes: <class1>, <class2>..." pattern in description
+	classesPattern := "Classes: "
+	classesIndex := strings.Index(description, classesPattern)
+	if classesIndex == -1 {
+		return []string{}
+	}
+
+	// Extract the classes substring
+	start := classesIndex + len(classesPattern)
+	end := strings.Index(description[start:], ".")
+	if end == -1 {
+		// Classes might be at the end without a period
+		end = len(description) - start
+	}
+
+	classesStr := strings.TrimSpace(description[start : start+end])
+	if classesStr == "" {
+		return []string{}
+	}
+
+	// Split by comma and clean up
+	parts := strings.Split(classesStr, ",")
+	classes := make([]string, 0, len(parts))
+	for _, part := range parts {
+		class := strings.TrimSpace(part)
+		if class != "" {
+			classes = append(classes, class)
+		}
+	}
+
+	return classes
 }
 
 // convertValidationErrorsToWarnings converts engine ValidationError to service ValidationWarning
