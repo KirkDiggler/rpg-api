@@ -1,5 +1,5 @@
 # Build stage
-FROM golang:1.23-alpine AS builder
+FROM golang:1.24-alpine AS builder
 
 WORKDIR /app
 
@@ -14,21 +14,29 @@ RUN go mod download
 COPY . .
 
 # Build the application
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o server ./cmd/server
+RUN CGO_ENABLED=0 GOOS=linux go build -installsuffix cgo -o server ./cmd/server
 
 # Final stage
-FROM alpine:latest
-
-WORKDIR /root/
+FROM alpine:3.20
 
 # Install ca-certificates for HTTPS requests
 RUN apk --no-cache add ca-certificates
 
-# Copy the binary from builder stage
+# Create a non-root user and group
+RUN adduser -D -g '' appuser
+
+# Set the working directory
+WORKDIR /home/appuser
+
+# Copy the binary from builder stage and adjust ownership
 COPY --from=builder /app/server .
+RUN chown appuser:appuser /home/appuser/server
+
+# Switch to the non-root user
+USER appuser
 
 # Expose the gRPC port
 EXPOSE 50051
 
 # Run the server
-CMD ["./server"]
+CMD ["./server", "server"]
