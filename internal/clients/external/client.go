@@ -114,8 +114,44 @@ func (c *client) GetBackgroundData(_ context.Context, _ string) (*BackgroundData
 	return nil, errors.Unimplemented("not implemented")
 }
 
-func (c *client) GetSpellData(_ context.Context, _ string) (*SpellData, error) {
-	return nil, errors.Unimplemented("not implemented")
+func (c *client) GetSpellData(_ context.Context, spellID string) (*SpellData, error) {
+	spell, err := c.dnd5eClient.GetSpell(spellID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get spell %s: %w", spellID, err)
+	}
+
+	// Build components array - currently the dnd5e-api library doesn't expose
+	// the actual V/S/M components, so we'll build a descriptive components array
+	components := []string{}
+
+	// Add spell properties as components for now
+	if spell.Ritual {
+		components = append(components, "Ritual")
+	}
+	if spell.Concentration {
+		components = append(components, "Concentration")
+	}
+
+	// If no special components, indicate this is a basic spell
+	if len(components) == 0 {
+		components = append(components, "Standard")
+	}
+
+	// Build a comprehensive description using available data
+	description := buildSpellDescription(spell)
+
+	// Convert to our internal format
+	return &SpellData{
+		ID:          spell.Key,
+		Name:        spell.Name,
+		Level:       int32(spell.SpellLevel), // nolint:gosec // D&D spell levels are always 0-9
+		School:      spell.SpellSchool.Name,
+		CastingTime: spell.CastingTime,
+		Range:       spell.Range,
+		Components:  components,
+		Duration:    spell.Duration,
+		Description: description,
+	}, nil
 }
 
 func (c *client) ListAvailableRaces(_ context.Context) ([]*RaceData, error) {
@@ -484,4 +520,97 @@ func convertEquipmentChoice(choice *entities.ChoiceOption) *EquipmentChoiceData 
 		Options:     options,
 		ChooseCount: choice.ChoiceCount,
 	}
+}
+
+// buildSpellDescription creates a comprehensive description using available spell data
+func buildSpellDescription(spell *entities.Spell) string {
+	if spell == nil {
+		return "Spell details not available"
+	}
+
+	var parts []string
+
+	// Add basic spell info
+	levelStr := "Cantrip"
+	if spell.SpellLevel > 0 {
+		levelStr = fmt.Sprintf("Level %d", spell.SpellLevel)
+	}
+
+	schoolName := "Unknown School"
+	if spell.SpellSchool != nil {
+		schoolName = spell.SpellSchool.Name
+	}
+
+	parts = append(parts, fmt.Sprintf("%s %s spell", levelStr, schoolName))
+
+	// Add casting info
+	if spell.CastingTime != "" {
+		parts = append(parts, fmt.Sprintf("Casting Time: %s", spell.CastingTime))
+	}
+	if spell.Range != "" {
+		parts = append(parts, fmt.Sprintf("Range: %s", spell.Range))
+	}
+	if spell.Duration != "" {
+		parts = append(parts, fmt.Sprintf("Duration: %s", spell.Duration))
+	}
+
+	// Add special properties
+	var properties []string
+	if spell.Ritual {
+		properties = append(properties, "Ritual")
+	}
+	if spell.Concentration {
+		properties = append(properties, "Concentration")
+	}
+	if len(properties) > 0 {
+		parts = append(parts, fmt.Sprintf("Properties: %s", strings.Join(properties, ", ")))
+	}
+
+	// Add damage information if available
+	if spell.SpellDamage != nil {
+		if spell.SpellDamage.SpellDamageType != nil {
+			parts = append(parts, fmt.Sprintf("Damage Type: %s", spell.SpellDamage.SpellDamageType.Name))
+		}
+		if spell.SpellDamage.SpellDamageAtSlotLevel != nil {
+			// Add first level damage as an example
+			if spell.SpellDamage.SpellDamageAtSlotLevel.FirstLevel != "" {
+				parts = append(parts, fmt.Sprintf("Damage: %s", spell.SpellDamage.SpellDamageAtSlotLevel.FirstLevel))
+			}
+		}
+	}
+
+	// Add DC information if available
+	if spell.DC != nil {
+		dcInfo := "Saving Throw"
+		if spell.DC.DCType != nil {
+			dcInfo = fmt.Sprintf("%s Save", spell.DC.DCType.Name)
+		}
+		if spell.DC.DCSuccess != "" {
+			dcInfo += fmt.Sprintf(" (%s)", spell.DC.DCSuccess)
+		}
+		parts = append(parts, dcInfo)
+	}
+
+	// Add area of effect if available
+	if spell.AreaOfEffect != nil {
+		parts = append(parts, fmt.Sprintf("Area: %s (%d ft)", spell.AreaOfEffect.Type, spell.AreaOfEffect.Size))
+	}
+
+	// Add available classes
+	if len(spell.SpellClasses) > 0 {
+		var classNames []string
+		for _, class := range spell.SpellClasses {
+			if class != nil {
+				classNames = append(classNames, class.Name)
+			}
+		}
+		if len(classNames) > 0 {
+			parts = append(parts, fmt.Sprintf("Classes: %s", strings.Join(classNames, ", ")))
+		}
+	}
+
+	// Note about full description
+	parts = append(parts, "Note: Full spell description available in official D&D 5e sources")
+
+	return strings.Join(parts, ". ")
 }
