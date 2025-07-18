@@ -75,7 +75,8 @@ jobs:
 
     - name: Trigger deployment
       if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-      uses: benc-uk/workflow-dispatch@v1
+      continue-on-error: true
+      uses: benc-uk/workflow-dispatch@e2e5e9a103e331dad343f381a29e654aea3cf8fc # v1.2.4
       with:
         workflow: deploy.yml
         repo: KirkDiggler/rpg-deployment
