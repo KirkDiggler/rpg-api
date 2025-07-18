@@ -35,5 +35,3 @@ require (
 )
 
 replace github.com/fadedpez/dnd5e-api => ../dnd5e-api
-
-replace github.com/KirkDiggler/rpg-api-protos/gen/go => ../rpg-api-protos/gen/go

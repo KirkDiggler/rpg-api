@@ -1019,7 +1019,7 @@ func convertSpellcastingData(classSpellcasting *entities.ClassSpellcasting, leve
 
 	// Get level 1 spell slot info if available
 	if level1 != nil && level1.SpellCasting != nil {
-		spellcastingData.CantripsKnown = int32(level1.SpellCasting.CantripsKnown)     // nolint:gosec // D&D values are always 0-9
+		spellcastingData.CantripsKnown = int32(level1.SpellCasting.CantripsKnown)     // nolint:gosec // Cantrips known can exceed 9 at higher character levels
 		spellcastingData.SpellsKnown = int32(level1.SpellCasting.SpellsKnown)         // nolint:gosec // D&D values are always 0-20
 		spellcastingData.SpellSlotsLevel1 = int32(level1.SpellCasting.SpellSlotsLevel1) // nolint:gosec // D&D values are always 0-9
 	}

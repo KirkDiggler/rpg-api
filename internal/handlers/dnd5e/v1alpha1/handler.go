@@ -3,6 +3,7 @@ package v1alpha1
 
 import (
 	"context"
+	"strconv"
 	"strings"
 
 	"github.com/KirkDiggler/rpg-api/internal/entities/dnd5e"
@@ -1802,23 +1803,57 @@ func convertEquipmentToProto(equipment *dnd5e.EquipmentInfo) *dnd5ev1alpha1.Equi
 		Description: equipment.Description,
 	}
 
-	// Convert cost - for now, parse the string format
+	// Convert cost - parse the string format
 	if equipment.Cost != "" {
-		// TODO: Parse cost string like "2 gp" into structured format
-		// For now, store as string in a basic Cost message
-		protoEquipment.Cost = &dnd5ev1alpha1.Cost{
-			Quantity: 1,    // Default, should be parsed from string
-			Unit:     "gp", // Default, should be parsed from string
+		// Parse cost string like "2 gp" into structured format
+		parts := strings.Fields(equipment.Cost)
+		if len(parts) == 2 {
+			quantity, err := strconv.Atoi(parts[0])
+			if err == nil {
+				protoEquipment.Cost = &dnd5ev1alpha1.Cost{
+					Quantity: int32(quantity),
+					Unit:     parts[1],
+				}
+			} else {
+				// Log error and default to safe values
+				protoEquipment.Cost = &dnd5ev1alpha1.Cost{
+					Quantity: 1,
+					Unit:     "gp",
+				}
+			}
+		} else {
+			// Default to safe values if format is invalid
+			protoEquipment.Cost = &dnd5ev1alpha1.Cost{
+				Quantity: 1,
+				Unit:     "gp",
+			}
 		}
 	}
 
-	// Convert weight - for now, parse the string format
+	// Convert weight - parse the string format
 	if equipment.Weight != "" {
-		// TODO: Parse weight string like "2 lbs" into structured format
-		// For now, store as string in a basic Weight message
-		protoEquipment.Weight = &dnd5ev1alpha1.Weight{
-			Quantity: 1,     // Default, should be parsed from string
-			Unit:     "lbs", // Default, should be parsed from string
+		// Parse weight string like "2 lbs" into structured format
+		parts := strings.Fields(equipment.Weight)
+		if len(parts) == 2 {
+			quantity, err := strconv.Atoi(parts[0])
+			if err == nil {
+				protoEquipment.Weight = &dnd5ev1alpha1.Weight{
+					Quantity: int32(quantity),
+					Unit:     parts[1],
+				}
+			} else {
+				// Log error and default to safe values
+				protoEquipment.Weight = &dnd5ev1alpha1.Weight{
+					Quantity: 1,
+					Unit:     "lbs",
+				}
+			}
+		} else {
+			// Default to safe values if format is invalid
+			protoEquipment.Weight = &dnd5ev1alpha1.Weight{
+				Quantity: 1,
+				Unit:     "lbs",
+			}
 		}
 	}
 

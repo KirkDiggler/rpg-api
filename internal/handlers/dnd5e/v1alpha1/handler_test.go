@@ -1056,10 +1056,10 @@ func (s *HandlerTestSuite) TestListEquipmentByType() {
 		s.Equal("A simple melee weapon", equipment.Description)
 		s.NotNil(equipment.Cost)
 		s.Equal("gp", equipment.Cost.Unit)
-		s.Equal(int32(1), equipment.Cost.Quantity) // Default value from handler
+		s.Equal(int32(2), equipment.Cost.Quantity) // Parsed from "2 gp"
 		s.NotNil(equipment.Weight)
-		s.Equal("lbs", equipment.Weight.Unit)
-		s.Equal(int32(1), equipment.Weight.Quantity) // Default value from handler
+		s.Equal("lb", equipment.Weight.Unit)
+		s.Equal(int32(1), equipment.Weight.Quantity) // Parsed from "1 lb"
 	})
 
 	s.Run("with different equipment types", func() {
