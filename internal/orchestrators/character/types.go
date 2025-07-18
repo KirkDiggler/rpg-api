@@ -266,6 +266,32 @@ type ListSpellsOutput struct {
 	TotalSize     int32
 }
 
+// UpdateChoicesInput defines the request for updating character choices
+type UpdateChoicesInput struct {
+	DraftID    string
+	Selections []*dnd5e.ChoiceSelection
+}
+
+// UpdateChoicesOutput defines the response for updating character choices
+type UpdateChoicesOutput struct {
+	Draft *dnd5e.CharacterDraft
+}
+
+// ListChoiceOptionsInput defines the request for listing available choice options
+type ListChoiceOptionsInput struct {
+	DraftID    string            // Required: Which draft to get choices for
+	ChoiceType *dnd5e.ChoiceType // Optional: Filter by choice type
+	PageSize   int32             // Optional: Page size for pagination
+	PageToken  string            // Optional: Page token for pagination
+}
+
+// ListChoiceOptionsOutput defines the response for listing choice options
+type ListChoiceOptionsOutput struct {
+	Categories    []*dnd5e.ChoiceCategory
+	NextPageToken string
+	TotalSize     int32
+}
+
 // GetRaceDetailsInput defines the request for getting race details
 type GetRaceDetailsInput struct {
 	RaceID string

@@ -207,6 +207,21 @@ func (mr *MockServiceMockRecorder) ListCharacters(ctx, input any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListCharacters", reflect.TypeOf((*MockService)(nil).ListCharacters), ctx, input)
 }
 
+// ListChoiceOptions mocks base method.
+func (m *MockService) ListChoiceOptions(ctx context.Context, input *character.ListChoiceOptionsInput) (*character.ListChoiceOptionsOutput, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListChoiceOptions", ctx, input)
+	ret0, _ := ret[0].(*character.ListChoiceOptionsOutput)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListChoiceOptions indicates an expected call of ListChoiceOptions.
+func (mr *MockServiceMockRecorder) ListChoiceOptions(ctx, input any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListChoiceOptions", reflect.TypeOf((*MockService)(nil).ListChoiceOptions), ctx, input)
+}
+
 // ListClasses mocks base method.
 func (m *MockService) ListClasses(ctx context.Context, input *character.ListClassesInput) (*character.ListClassesOutput, error) {
 	m.ctrl.T.Helper()
@@ -310,6 +325,21 @@ func (m *MockService) UpdateBackground(ctx context.Context, input *character.Upd
 func (mr *MockServiceMockRecorder) UpdateBackground(ctx, input any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateBackground", reflect.TypeOf((*MockService)(nil).UpdateBackground), ctx, input)
+}
+
+// UpdateChoices mocks base method.
+func (m *MockService) UpdateChoices(ctx context.Context, input *character.UpdateChoicesInput) (*character.UpdateChoicesOutput, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UpdateChoices", ctx, input)
+	ret0, _ := ret[0].(*character.UpdateChoicesOutput)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// UpdateChoices indicates an expected call of UpdateChoices.
+func (mr *MockServiceMockRecorder) UpdateChoices(ctx, input any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateChoices", reflect.TypeOf((*MockService)(nil).UpdateChoices), ctx, input)
 }
 
 // UpdateClass mocks base method.

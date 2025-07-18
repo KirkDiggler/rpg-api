@@ -37,6 +37,7 @@ type CharacterDraft struct {
 	Alignment           string
 	StartingSkillIDs    []string
 	AdditionalLanguages []string
+	Choices             *CharacterChoices // Class-specific choices (fighting styles, cantrips, spells)
 	Progress            CreationProgress
 	ExpiresAt           int64
 	CreatedAt           int64
@@ -71,6 +72,7 @@ const (
 	ProgressStepAbilityScores                   // 16
 	ProgressStepSkills                          // 32
 	ProgressStepLanguages                       // 64
+	ProgressStepChoices                         // 128 (fighting styles, cantrips, spells)
 )
 
 // HasStep checks if a specific step is completed
@@ -106,6 +108,9 @@ func (p CreationProgress) HasAbilityScores() bool { return p.HasStep(ProgressSte
 
 // HasSkills checks if the skills step is completed
 func (p CreationProgress) HasSkills() bool { return p.HasStep(ProgressStepSkills) }
+
+// HasChoices checks if the choices step is completed
+func (p CreationProgress) HasChoices() bool { return p.HasStep(ProgressStepChoices) }
 
 // HasLanguages checks if the languages step is completed
 func (p CreationProgress) HasLanguages() bool { return p.HasStep(ProgressStepLanguages) }

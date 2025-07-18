@@ -35,6 +35,7 @@ type Service interface {
 	UpdateBackground(ctx context.Context, input *UpdateBackgroundInput) (*UpdateBackgroundOutput, error)
 	UpdateAbilityScores(ctx context.Context, input *UpdateAbilityScoresInput) (*UpdateAbilityScoresOutput, error)
 	UpdateSkills(ctx context.Context, input *UpdateSkillsInput) (*UpdateSkillsOutput, error)
+	UpdateChoices(ctx context.Context, input *UpdateChoicesInput) (*UpdateChoicesOutput, error)
 
 	// Validation
 	ValidateDraft(ctx context.Context, input *ValidateDraftInput) (*ValidateDraftOutput, error)
@@ -55,6 +56,7 @@ type Service interface {
 	GetRaceDetails(ctx context.Context, input *GetRaceDetailsInput) (*GetRaceDetailsOutput, error)
 	GetClassDetails(ctx context.Context, input *GetClassDetailsInput) (*GetClassDetailsOutput, error)
 	GetBackgroundDetails(ctx context.Context, input *GetBackgroundDetailsInput) (*GetBackgroundDetailsOutput, error)
+	ListChoiceOptions(ctx context.Context, input *ListChoiceOptionsInput) (*ListChoiceOptionsOutput, error)
 
 	// Dice rolling for ability scores
 	RollAbilityScores(ctx context.Context, input *RollAbilityScoresInput) (*RollAbilityScoresOutput, error)
@@ -928,7 +930,7 @@ func (o *Orchestrator) DeleteCharacter(
 
 // updateCompletionPercentage updates the completion percentage based on completed steps
 func (o *Orchestrator) updateCompletionPercentage(draft *dnd5e.CharacterDraft) {
-	totalSteps := 7 // Name, Race, Class, Background, AbilityScores, Skills, Languages
+	totalSteps := 8 // Name, Race, Class, Background, AbilityScores, Skills, Languages, Choices
 	completedSteps := 0
 
 	if draft.Progress.HasName() {
@@ -952,9 +954,12 @@ func (o *Orchestrator) updateCompletionPercentage(draft *dnd5e.CharacterDraft) {
 	if draft.Progress.HasLanguages() {
 		completedSteps++
 	}
+	if draft.Progress.HasChoices() {
+		completedSteps++
+	}
 
-	// Safe conversion - totalSteps is always 7 and completedSteps is 0-7
-	// so max value is 700/7 = 100, which fits safely in int32
+	// Safe conversion - totalSteps is always 8 and completedSteps is 0-8
+	// so max value is 800/8 = 100, which fits safely in int32
 	draft.Progress.CompletionPercentage = int32((completedSteps * 100) / totalSteps) //nolint:gosec
 }
 
@@ -1514,6 +1519,618 @@ func convertValidationErrorsToWarnings(errors []engine.ValidationError) []Valida
 		}
 	}
 	return result
+}
+
+// UpdateChoices updates the choices for a character draft
+func (o *Orchestrator) UpdateChoices(
+	ctx context.Context,
+	input *UpdateChoicesInput,
+) (*UpdateChoicesOutput, error) {
+	if input == nil {
+		return nil, errors.InvalidArgument("input is required")
+	}
+
+	if input.DraftID == "" {
+		return nil, errors.InvalidArgument("draft ID is required")
+	}
+
+	slog.Info("Updating character choices", "draft_id", input.DraftID, "selections", len(input.Selections))
+
+	// Get the existing draft
+	getDraftInput := &GetDraftInput{DraftID: input.DraftID}
+	getDraftOutput, err := o.GetDraft(ctx, getDraftInput)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to get draft")
+	}
+
+	draft := getDraftOutput.Draft
+
+	// Validate that the draft has the required information for choices
+	if draft.ClassID == "" {
+		return nil, errors.InvalidArgument("class must be selected before making choices")
+	}
+
+	// Initialize choices if not present
+	if draft.Choices == nil {
+		draft.Choices = &dnd5e.CharacterChoices{}
+	}
+
+	// Validate and apply selections
+	validationResult, err := o.validateChoiceSelections(ctx, draft, input.Selections)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to validate choice selections")
+	}
+
+	if !validationResult.IsValid {
+		// Convert validation errors to a readable error
+		errorMessages := make([]string, len(validationResult.Errors))
+		for i, validationErr := range validationResult.Errors {
+			errorMessages[i] = validationErr.Message
+		}
+		return nil, errors.InvalidArgumentf("invalid choice selections: %v", errorMessages)
+	}
+
+	// Apply the validated selections to the draft
+	err = o.applyChoiceSelections(draft, input.Selections)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to apply choice selections")
+	}
+
+	// Update progress if all required choices are complete
+	if o.areAllChoicesComplete(ctx, draft) {
+		draft.Progress.SetStep(dnd5e.ProgressStepChoices, true)
+		draft.Progress.CurrentStep = "finalize" // Move to final step
+		slog.Info("All choices completed", "draft_id", draft.ID)
+	}
+
+	// Calculate completion percentage
+	o.updateCompletionPercentage(draft)
+
+	// Save the updated draft
+	updateOutput, err := o.characterDraftRepo.Update(ctx, draftrepo.UpdateInput{Draft: draft})
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to update draft")
+	}
+
+	draft = updateOutput.Draft
+
+	slog.Info("Successfully updated character choices", "draft_id", draft.ID)
+
+	return &UpdateChoicesOutput{
+		Draft: draft,
+	}, nil
+}
+
+// ListChoiceOptions retrieves available choice options for a character draft
+func (o *Orchestrator) ListChoiceOptions(
+	ctx context.Context,
+	input *ListChoiceOptionsInput,
+) (*ListChoiceOptionsOutput, error) {
+	if input == nil {
+		return nil, errors.InvalidArgument("input is required")
+	}
+
+	if input.DraftID == "" {
+		return nil, errors.InvalidArgument("draft ID is required")
+	}
+
+	slog.Info("Listing choice options", "draft_id", input.DraftID, "choice_type", input.ChoiceType)
+
+	// Get the draft to understand what choices are available
+	getDraftInput := &GetDraftInput{DraftID: input.DraftID}
+	getDraftOutput, err := o.GetDraft(ctx, getDraftInput)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to get draft")
+	}
+
+	draft := getDraftOutput.Draft
+
+	// Validate that the draft has required information
+	if draft.ClassID == "" {
+		return nil, errors.InvalidArgument("class must be selected before viewing choice options")
+	}
+
+	// Get available choice categories based on the draft's class
+	categories, err := o.getAvailableChoiceCategories(ctx, draft, input.ChoiceType)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to get available choice categories")
+	}
+
+	// TODO(#82): Implement pagination for choice options
+	var totalSize int32
+	if len(categories) > math.MaxInt32 {
+		totalSize = math.MaxInt32
+	} else {
+		// nolint:gosec // Choice categories list size won't overflow int32
+		totalSize = int32(len(categories))
+	}
+
+	return &ListChoiceOptionsOutput{
+		Categories:    categories,
+		NextPageToken: "", // TODO(#82): Implement pagination for choice options
+		TotalSize:     totalSize,
+	}, nil
+}
+
+// validateChoiceSelections validates that the selections are valid for the draft
+func (o *Orchestrator) validateChoiceSelections(
+	ctx context.Context,
+	draft *dnd5e.CharacterDraft,
+	selections []*dnd5e.ChoiceSelection,
+) (*dnd5e.ChoiceValidationResult, error) {
+	result := &dnd5e.ChoiceValidationResult{
+		IsValid:  true,
+		Errors:   []dnd5e.ChoiceValidationError{},
+		Warnings: []dnd5e.ChoiceValidationWarning{},
+	}
+
+	// Get available choice categories to validate against
+	availableCategories, err := o.getAvailableChoiceCategories(ctx, draft, nil)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to get available choice categories")
+	}
+
+	// Create a map for quick category lookup
+	categoryMap := make(map[string]*dnd5e.ChoiceCategory)
+	for _, category := range availableCategories {
+		categoryMap[category.ID] = category
+	}
+
+	// Validate each selection
+	for _, selection := range selections {
+		category, exists := categoryMap[selection.CategoryID]
+		if !exists {
+			result.IsValid = false
+			result.Errors = append(result.Errors, dnd5e.ChoiceValidationError{
+				CategoryID: selection.CategoryID,
+				Message:    fmt.Sprintf("unknown choice category: %s", selection.CategoryID),
+				Code:       "unknown_category",
+			})
+			continue
+		}
+
+		// Validate selection count with bounds checking to prevent DoS attacks
+		optionCount := len(selection.OptionIDs)
+
+		// Protect against malicious input with a practical limit
+		if optionCount > dnd5e.MaxChoiceOptionsLimit {
+			result.IsValid = false
+			result.Errors = append(result.Errors, dnd5e.ChoiceValidationError{
+				CategoryID: selection.CategoryID,
+				Message:    fmt.Sprintf("too many options selected (maximum allowed: %d)", dnd5e.MaxChoiceOptionsLimit),
+				Code:       "excessive_options",
+			})
+			continue
+		}
+
+		optionCount32 := int32(optionCount)
+
+		if optionCount32 < category.MinChoices {
+			result.IsValid = false
+			result.Errors = append(result.Errors, dnd5e.ChoiceValidationError{
+				CategoryID: selection.CategoryID,
+				Message:    fmt.Sprintf("must select at least %d options", category.MinChoices),
+				Code:       "insufficient_choices",
+			})
+		}
+
+		if optionCount32 > category.MaxChoices {
+			result.IsValid = false
+			result.Errors = append(result.Errors, dnd5e.ChoiceValidationError{
+				CategoryID: selection.CategoryID,
+				Message:    fmt.Sprintf("cannot select more than %d options", category.MaxChoices),
+				Code:       "too_many_choices",
+			})
+		}
+
+		// Validate each option exists and is valid
+		optionMap := make(map[string]*dnd5e.ChoiceOption)
+		for _, option := range category.Options {
+			optionMap[option.ID] = option
+		}
+
+		for _, optionID := range selection.OptionIDs {
+			option, optionExists := optionMap[optionID]
+			if !optionExists {
+				result.IsValid = false
+				result.Errors = append(result.Errors, dnd5e.ChoiceValidationError{
+					CategoryID: selection.CategoryID,
+					OptionID:   optionID,
+					Message:    fmt.Sprintf("unknown option: %s", optionID),
+					Code:       "unknown_option",
+				})
+				continue
+			}
+
+			// Check prerequisites
+			for _, prerequisite := range option.Prerequisites {
+				if !o.hasPrerequisite(draft, prerequisite) {
+					result.Warnings = append(result.Warnings, dnd5e.ChoiceValidationWarning{
+						CategoryID: selection.CategoryID,
+						OptionID:   optionID,
+						Message:    fmt.Sprintf("missing prerequisite: %s", prerequisite),
+						Code:       "missing_prerequisite",
+					})
+				}
+			}
+
+			// Check conflicts
+			for _, conflict := range option.Conflicts {
+				if o.hasConflictingChoice(draft, conflict) {
+					result.IsValid = false
+					result.Errors = append(result.Errors, dnd5e.ChoiceValidationError{
+						CategoryID: selection.CategoryID,
+						OptionID:   optionID,
+						Message:    fmt.Sprintf("conflicts with existing choice: %s", conflict),
+						Code:       "conflicting_choice",
+					})
+				}
+			}
+		}
+	}
+
+	return result, nil
+}
+
+// applyChoiceSelections applies validated selections to the draft
+func (o *Orchestrator) applyChoiceSelections(draft *dnd5e.CharacterDraft, selections []*dnd5e.ChoiceSelection) error {
+	for _, selection := range selections {
+		switch selection.CategoryID {
+		case dnd5e.CategoryIDFighterFightingStyle:
+			draft.Choices.FightingStyles = selection.OptionIDs
+		case dnd5e.CategoryIDWizardCantrips:
+			draft.Choices.Cantrips = selection.OptionIDs
+		case dnd5e.CategoryIDWizardSpells:
+			draft.Choices.Spells = selection.OptionIDs
+		case dnd5e.CategoryIDClericCantrips:
+			draft.Choices.Cantrips = selection.OptionIDs
+		case dnd5e.CategoryIDSorcererCantrips:
+			draft.Choices.Cantrips = selection.OptionIDs
+		case dnd5e.CategoryIDSorcererSpells:
+			draft.Choices.Spells = selection.OptionIDs
+		case dnd5e.CategoryIDAdditionalLanguages:
+			draft.Choices.Languages = selection.OptionIDs
+		case dnd5e.CategoryIDToolProficiencies:
+			draft.Choices.Tools = selection.OptionIDs
+		case dnd5e.CategoryIDEquipmentChoices:
+			draft.Choices.Equipment = selection.OptionIDs
+		default:
+			return errors.InvalidArgumentf("unknown choice category: %s", selection.CategoryID)
+		}
+	}
+	return nil
+}
+
+// getAvailableChoiceCategories returns the choice categories available for a draft
+//nolint:unparam // error return kept for future extensibility when class/race details are used
+func (o *Orchestrator) getAvailableChoiceCategories(
+	ctx context.Context,
+	draft *dnd5e.CharacterDraft,
+	filterType *dnd5e.ChoiceType,
+) ([]*dnd5e.ChoiceCategory, error) {
+	var categories []*dnd5e.ChoiceCategory
+
+	// Helper function to check if choice type should be included
+	shouldIncludeChoiceType := func(choiceType dnd5e.ChoiceType) bool {
+		return filterType == nil || *filterType == choiceType
+	}
+
+	// Add class-specific choices based on class ID
+	switch draft.ClassID {
+	case "fighter":
+		if shouldIncludeChoiceType(dnd5e.ChoiceTypeFightingStyle) {
+			categories = append(categories, o.createFighterFightingStyleChoices())
+		}
+	case "wizard":
+		if shouldIncludeChoiceType(dnd5e.ChoiceTypeCantrips) {
+			categories = append(categories, o.createWizardCantripChoices(ctx))
+		}
+		if shouldIncludeChoiceType(dnd5e.ChoiceTypeSpells) {
+			categories = append(categories, o.createWizardSpellChoices(ctx))
+		}
+	case "cleric":
+		if shouldIncludeChoiceType(dnd5e.ChoiceTypeCantrips) {
+			categories = append(categories, o.createClericCantripChoices(ctx))
+		}
+	case "sorcerer":
+		if shouldIncludeChoiceType(dnd5e.ChoiceTypeCantrips) {
+			categories = append(categories, o.createSorcererCantripChoices(ctx))
+		}
+		if shouldIncludeChoiceType(dnd5e.ChoiceTypeSpells) {
+			categories = append(categories, o.createSorcererSpellChoices(ctx))
+		}
+	}
+
+	// Add universal choices (like additional languages, tools)
+	// TODO(#82): Add universal language choices based on race/background
+	// if shouldIncludeChoiceType(dnd5e.ChoiceTypeLanguages) && draft.RaceID != "" {
+	//     languageChoices := o.createLanguageChoices(ctx, draft)
+	//     if languageChoices != nil {
+	//         categories = append(categories, languageChoices)
+	//     }
+	// }
+
+	// TODO(#82): Add equipment choices based on class starting equipment options
+	// Future implementation:
+	// if shouldIncludeChoiceType(dnd5e.ChoiceTypeEquipment) {
+	//     classDetails, err := o.GetClassDetails(ctx, &GetClassDetailsInput{ClassID: draft.ClassID})
+	//     if err == nil && classDetails.Class.EquipmentChoices != nil {
+	//         equipmentChoices := o.createEquipmentChoices(ctx, classDetails.Class.EquipmentChoices)
+	//         if equipmentChoices != nil {
+	//             categories = append(categories, equipmentChoices)
+	//         }
+	//     }
+	// }
+
+	return categories, nil
+}
+
+// areAllChoicesComplete checks if all required choices have been made
+func (o *Orchestrator) areAllChoicesComplete(_ context.Context, draft *dnd5e.CharacterDraft) bool {
+	if draft.Choices == nil {
+		return false
+	}
+
+	// Check class-specific required choices
+	switch draft.ClassID {
+	case "fighter":
+		// Fighter must choose 1 fighting style
+		return len(draft.Choices.FightingStyles) == 1
+	case "wizard":
+		// Wizard must choose 3 cantrips and 6 level 1 spells
+		return len(draft.Choices.Cantrips) == 3 && len(draft.Choices.Spells) == 6
+	case "cleric":
+		// Cleric must choose 3 cantrips
+		return len(draft.Choices.Cantrips) == 3
+	case "sorcerer":
+		// Sorcerer must choose 4 cantrips and 2 level 1 spells
+		return len(draft.Choices.Cantrips) == 4 && len(draft.Choices.Spells) == 2
+	default:
+		// Other classes may not have required choices
+		return true
+	}
+}
+
+// hasPrerequisite checks if a draft meets a prerequisite
+func (o *Orchestrator) hasPrerequisite(draft *dnd5e.CharacterDraft, prerequisite string) bool {
+	// For now, assume all prerequisites are met
+	// TODO(#82): Implement actual prerequisite checking based on:
+	// - Ability scores
+	// - Race features
+	// - Class features
+	// - Previously made choices
+	_ = draft
+	_ = prerequisite
+	return true
+}
+
+// hasConflictingChoice checks if a draft has a conflicting choice
+func (o *Orchestrator) hasConflictingChoice(draft *dnd5e.CharacterDraft, conflict string) bool {
+	if draft.Choices == nil {
+		return false
+	}
+
+	// Check if the conflict ID exists in any of the current choices
+	for _, fightingStyle := range draft.Choices.FightingStyles {
+		if fightingStyle == conflict {
+			return true
+		}
+	}
+	for _, cantrip := range draft.Choices.Cantrips {
+		if cantrip == conflict {
+			return true
+		}
+	}
+	for _, spell := range draft.Choices.Spells {
+		if spell == conflict {
+			return true
+		}
+	}
+	// TODO(#82): Check other choice types as they're added
+
+	return false
+}
+
+// spellChoiceCategoryConfig holds configuration for creating spell choice categories
+type spellChoiceCategoryConfig struct {
+	classID     string
+	level       int32
+	id          string
+	choiceType  dnd5e.ChoiceType
+	name        string
+	description string
+	minChoices  int32
+	maxChoices  int32
+}
+
+// createSpellChoiceCategory creates a spell choice category with the given configuration
+func (o *Orchestrator) createSpellChoiceCategory(
+	ctx context.Context, config spellChoiceCategoryConfig,
+) *dnd5e.ChoiceCategory {
+	// Get spells from the spell list
+	spells, err := o.getSpellsByLevelAndClass(ctx, config.level, config.classID)
+	if err != nil {
+		slog.Error("Failed to get spells", "class", config.classID, "level", config.level, "error", err)
+		// Return empty category on error
+		return &dnd5e.ChoiceCategory{
+			ID:          config.id,
+			Type:        config.choiceType,
+			Name:        config.name,
+			Description: config.description,
+			Required:    true,
+			MinChoices:  config.minChoices,
+			MaxChoices:  config.maxChoices,
+			Options:     []*dnd5e.ChoiceOption{},
+		}
+	}
+
+	// Convert spells to choice options
+	options := make([]*dnd5e.ChoiceOption, len(spells))
+	for i, spell := range spells {
+		options[i] = &dnd5e.ChoiceOption{
+			ID:          spell.ID,
+			Name:        spell.Name,
+			Description: spell.Description,
+			Level:       spell.Level,
+			School:      spell.School,
+			Source:      config.classID,
+		}
+	}
+
+	return &dnd5e.ChoiceCategory{
+		ID:          config.id,
+		Type:        config.choiceType,
+		Name:        config.name,
+		Description: config.description,
+		Required:    true,
+		MinChoices:  config.minChoices,
+		MaxChoices:  config.maxChoices,
+		Options:     options,
+	}
+}
+
+// createFighterFightingStyleChoices creates the fighting style choice category for fighters
+func (o *Orchestrator) createFighterFightingStyleChoices() *dnd5e.ChoiceCategory {
+	return &dnd5e.ChoiceCategory{
+		ID:          dnd5e.CategoryIDFighterFightingStyle,
+		Type:        dnd5e.ChoiceTypeFightingStyle,
+		Name:        "Fighting Style",
+		Description: "Choose a fighting style that represents your specialty in combat.",
+		Required:    true,
+		MinChoices:  1,
+		MaxChoices:  1,
+		Options: []*dnd5e.ChoiceOption{
+			{
+				ID:          "archery",
+				Name:        "Archery",
+				Description: "You gain a +2 bonus to attack rolls you make with ranged weapons.",
+				Source:      "fighter",
+			},
+			{
+				ID:          "defense",
+				Name:        "Defense",
+				Description: "While you are wearing armor, you gain a +1 bonus to AC.",
+				Source:      "fighter",
+			},
+			{
+				ID:   "dueling",
+				Name: "Dueling",
+				Description: "When you are wielding a melee weapon in one hand and no other weapons, " +
+					"you gain a +2 bonus to damage rolls with that weapon.",
+				Source: "fighter",
+			},
+			{
+				ID:   "great_weapon_fighting",
+				Name: "Great Weapon Fighting",
+				Description: "When you roll a 1 or 2 on a damage die for an attack you make with a melee weapon " +
+					"that you are wielding with two hands, you can reroll the die and must use the new roll.",
+				Source: "fighter",
+			},
+			{
+				ID:   "protection",
+				Name: "Protection",
+				Description: "When a creature you can see attacks a target other than you that is within 5 feet of you, " +
+					"you can use your reaction to impose disadvantage on the attack roll. You must be wielding a shield.",
+				Prerequisites: []string{"shield_proficiency"},
+				Source:        "fighter",
+			},
+			{
+				ID:   "two_weapon_fighting",
+				Name: "Two-Weapon Fighting",
+				Description: "When you engage in two-weapon fighting, " +
+					"you can add your ability modifier to the damage of the second attack.",
+				Source: "fighter",
+			},
+		},
+	}
+}
+
+// createWizardCantripChoices creates the cantrip choice category for wizards
+func (o *Orchestrator) createWizardCantripChoices(ctx context.Context) *dnd5e.ChoiceCategory {
+	return o.createSpellChoiceCategory(ctx, spellChoiceCategoryConfig{
+		classID:     "wizard",
+		level:       0,
+		id:          dnd5e.CategoryIDWizardCantrips,
+		choiceType:  dnd5e.ChoiceTypeCantrips,
+		name:        "Wizard Cantrips",
+		description: "Choose 3 cantrips from the wizard spell list.",
+		minChoices:  3,
+		maxChoices:  3,
+	})
+}
+
+// createWizardSpellChoices creates the spell choice category for wizards
+func (o *Orchestrator) createWizardSpellChoices(ctx context.Context) *dnd5e.ChoiceCategory {
+	return o.createSpellChoiceCategory(ctx, spellChoiceCategoryConfig{
+		classID:     "wizard",
+		level:       1,
+		id:          dnd5e.CategoryIDWizardSpells,
+		choiceType:  dnd5e.ChoiceTypeSpells,
+		name:        "1st Level Wizard Spells",
+		description: "Choose 6 first-level spells from the wizard spell list.",
+		minChoices:  6,
+		maxChoices:  6,
+	})
+}
+
+// createClericCantripChoices creates the cantrip choice category for clerics
+func (o *Orchestrator) createClericCantripChoices(ctx context.Context) *dnd5e.ChoiceCategory {
+	return o.createSpellChoiceCategory(ctx, spellChoiceCategoryConfig{
+		classID:     "cleric",
+		level:       0,
+		id:          dnd5e.CategoryIDClericCantrips,
+		choiceType:  dnd5e.ChoiceTypeCantrips,
+		name:        "Cleric Cantrips",
+		description: "Choose 3 cantrips from the cleric spell list.",
+		minChoices:  3,
+		maxChoices:  3,
+	})
+}
+
+// createSorcererCantripChoices creates the cantrip choice category for sorcerers
+func (o *Orchestrator) createSorcererCantripChoices(ctx context.Context) *dnd5e.ChoiceCategory {
+	return o.createSpellChoiceCategory(ctx, spellChoiceCategoryConfig{
+		classID:     "sorcerer",
+		level:       0,
+		id:          dnd5e.CategoryIDSorcererCantrips,
+		choiceType:  dnd5e.ChoiceTypeCantrips,
+		name:        "Sorcerer Cantrips",
+		description: "Choose 4 cantrips from the sorcerer spell list.",
+		minChoices:  4,
+		maxChoices:  4,
+	})
+}
+
+// createSorcererSpellChoices creates the spell choice category for sorcerers
+func (o *Orchestrator) createSorcererSpellChoices(ctx context.Context) *dnd5e.ChoiceCategory {
+	return o.createSpellChoiceCategory(ctx, spellChoiceCategoryConfig{
+		classID:     "sorcerer",
+		level:       1,
+		id:          dnd5e.CategoryIDSorcererSpells,
+		choiceType:  dnd5e.ChoiceTypeSpells,
+		name:        "1st Level Sorcerer Spells",
+		description: "Choose 2 first-level spells from the sorcerer spell list.",
+		minChoices:  2,
+		maxChoices:  2,
+	})
+}
+
+// getSpellsByLevelAndClass gets spells filtered by level and class
+func (o *Orchestrator) getSpellsByLevelAndClass(
+	ctx context.Context, level int32, classID string,
+) ([]*dnd5e.SpellInfo, error) {
+	input := &ListSpellsInput{
+		Level:    &level,
+		ClassID:  classID,
+		PageSize: dnd5e.DefaultSpellPageSize,
+	}
+
+	output, err := o.ListSpells(ctx, input)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to list spells")
+	}
+
+	return output.Spells, nil
 }
 
 // RollAbilityScores rolls ability scores for character creation using the dice service
