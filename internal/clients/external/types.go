@@ -121,3 +121,42 @@ type SpellcastingData struct {
 	SpellsKnown         int
 	SpellSlotsLevel1    int
 }
+
+// EquipmentData represents equipment information from external source
+type EquipmentData struct {
+	ID               string
+	Name             string
+	Description      string
+	EquipmentType    string  // "weapon", "armor", "gear", etc.
+	Category         string  // "simple-weapons", "martial-weapons", etc.
+	Cost             *CostData
+	Weight           float32
+	// Weapon-specific fields
+	WeaponCategory   string     // "Simple", "Martial"
+	WeaponRange      string     // "Melee", "Ranged"
+	Damage           *DamageData
+	Properties       []string
+	// Armor-specific fields
+	ArmorCategory    string     // "Light", "Medium", "Heavy"
+	ArmorClass       *ArmorClassData
+	StrengthMinimum  int
+	StealthDisadvantage bool
+}
+
+// CostData represents equipment cost
+type CostData struct {
+	Quantity int
+	Unit     string
+}
+
+// DamageData represents weapon damage
+type DamageData struct {
+	DamageDice string
+	DamageType string
+}
+
+// ArmorClassData represents armor class information
+type ArmorClassData struct {
+	Base     int
+	DexBonus bool
+}
