@@ -1,9 +1,9 @@
 module github.com/KirkDiggler/rpg-api
 
-go 1.24
+go 1.24.1
 
 require (
-	github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20250717090912-8e6f397b9ea7
+	github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20250718171010-cb907854c45a
 	github.com/KirkDiggler/rpg-toolkit/core v0.1.0
 	github.com/KirkDiggler/rpg-toolkit/dice v0.1.0
 	github.com/KirkDiggler/rpg-toolkit/events v0.1.1
@@ -33,3 +33,7 @@ require (
 	google.golang.org/protobuf v1.36.6 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
+
+replace github.com/fadedpez/dnd5e-api => ../dnd5e-api
+
+replace github.com/KirkDiggler/rpg-api-protos/gen/go => ../rpg-api-protos/gen/go

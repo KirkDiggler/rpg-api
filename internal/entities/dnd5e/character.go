@@ -178,7 +178,7 @@ type ClassInfo struct {
 	AvailableSkills          []string
 	StartingEquipment        []string
 	EquipmentChoices         []EquipmentChoice
-	Level1Features           []ClassFeature
+	Level1Features           []FeatureInfo
 	Spellcasting             *SpellcastingInfo
 	ProficiencyChoices       []Choice
 }
@@ -190,13 +190,34 @@ type EquipmentChoice struct {
 	ChooseCount int32
 }
 
-// ClassFeature represents a class feature
+// ClassFeature represents a class feature (deprecated - use FeatureInfo instead)
 type ClassFeature struct {
 	Name        string
 	Description string
 	Level       int32
 	HasChoices  bool
 	Choices     []string
+}
+
+// FeatureInfo represents detailed information about a class feature, racial trait, or other feature
+type FeatureInfo struct {
+	ID             string
+	Name           string
+	Description    string
+	Level          int32
+	ClassName      string
+	HasChoices     bool
+	Choices        []Choice
+	SpellSelection *SpellSelectionInfo
+}
+
+// SpellSelectionInfo contains programmatic spell selection requirements
+type SpellSelectionInfo struct {
+	SpellsToSelect   int32
+	SpellLevels      []int32
+	SpellLists       []string
+	SelectionType    string
+	RequiresReplace  bool
 }
 
 // SpellcastingInfo contains spellcasting information for a class
@@ -240,4 +261,16 @@ type SpellInfo struct {
 	Duration    string
 	Description string
 	Classes     []string
+}
+
+// EquipmentInfo contains information about D&D 5e equipment
+type EquipmentInfo struct {
+	ID          string
+	Name        string
+	Type        string // "weapon", "armor", "gear", etc.
+	Category    string // "simple-weapon", "martial-weapon", "light-armor", etc.
+	Cost        string // "2 gp", "50 gp", etc.
+	Weight      string // "1 lb", "2 lbs", etc.
+	Description string
+	Properties  []string // For weapons: "light", "finesse", etc.
 }

@@ -266,6 +266,51 @@ type ListSpellsOutput struct {
 	TotalSize     int32
 }
 
+// ListEquipmentInput defines the request for listing equipment
+type ListEquipmentInput struct {
+	PageSize      int32
+	PageToken     string
+	EquipmentType string // Optional filter by type ("simple-weapon", "martial-weapon", etc.)
+	Category      string // Optional filter by category
+	SearchTerm    string // Optional search term for name/description
+}
+
+// ListEquipmentOutput defines the response for listing equipment
+type ListEquipmentOutput struct {
+	Equipment     []*dnd5e.EquipmentInfo
+	NextPageToken string
+	TotalSize     int32
+}
+
+// ListSpellsByLevelInput defines the request for listing spells by level
+type ListSpellsByLevelInput struct {
+	Level     int32  // Required: spell level (0-9, 0 = cantrips)
+	ClassID   string // Optional: filter by class
+	PageSize  int32
+	PageToken string
+}
+
+// ListSpellsByLevelOutput defines the response for listing spells by level
+type ListSpellsByLevelOutput struct {
+	Spells        []*dnd5e.SpellInfo
+	NextPageToken string
+	TotalSize     int32
+}
+
+// ListEquipmentByTypeInput defines the request for listing equipment by type
+type ListEquipmentByTypeInput struct {
+	EquipmentType string // Required: equipment type ("simple-weapon", "martial-weapon", etc.)
+	PageSize      int32
+	PageToken     string
+}
+
+// ListEquipmentByTypeOutput defines the response for listing equipment by type
+type ListEquipmentByTypeOutput struct {
+	Equipment     []*dnd5e.EquipmentInfo
+	NextPageToken string
+	TotalSize     int32
+}
+
 // UpdateChoicesInput defines the request for updating character choices
 type UpdateChoicesInput struct {
 	DraftID    string

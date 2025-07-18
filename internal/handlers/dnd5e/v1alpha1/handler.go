@@ -3,6 +3,7 @@ package v1alpha1
 
 import (
 	"context"
+	"strings"
 
 	"github.com/KirkDiggler/rpg-api/internal/entities/dnd5e"
 	"github.com/KirkDiggler/rpg-api/internal/errors"
@@ -1528,15 +1529,9 @@ func convertEntityClassToProto(class *dnd5e.ClassInfo) *dnd5ev1alpha1.ClassInfo 
 	}
 
 	// Convert level 1 features
-	protoLevel1Features := make([]*dnd5ev1alpha1.ClassFeature, len(class.Level1Features))
+	protoLevel1Features := make([]*dnd5ev1alpha1.FeatureInfo, len(class.Level1Features))
 	for i, feature := range class.Level1Features {
-		protoLevel1Features[i] = &dnd5ev1alpha1.ClassFeature{
-			Name:        feature.Name,
-			Description: feature.Description,
-			Level:       feature.Level,
-			HasChoices:  feature.HasChoices,
-			Choices:     feature.Choices,
-		}
+		protoLevel1Features[i] = convertFeatureInfoToProto(&feature)
 	}
 
 	// Convert spellcasting info
@@ -1671,5 +1666,252 @@ func mapStringToProtoSize(size string) dnd5ev1alpha1.Size {
 		return dnd5ev1alpha1.Size_SIZE_GARGANTUAN
 	default:
 		return dnd5ev1alpha1.Size_SIZE_UNSPECIFIED
+	}
+}
+
+// ListEquipmentByType returns equipment filtered by type
+func (h *Handler) ListEquipmentByType(
+	ctx context.Context,
+	req *dnd5ev1alpha1.ListEquipmentByTypeRequest,
+) (*dnd5ev1alpha1.ListEquipmentByTypeResponse, error) {
+	if req.EquipmentType == dnd5ev1alpha1.EquipmentType_EQUIPMENT_TYPE_UNSPECIFIED {
+		return nil, errors.ToGRPCError(errors.InvalidArgument("equipment_type is required"))
+	}
+
+	input := &character.ListEquipmentByTypeInput{
+		EquipmentType: mapProtoEquipmentTypeToString(req.EquipmentType),
+		PageSize:      req.PageSize,
+		PageToken:     req.PageToken,
+	}
+
+	// Default page size if not specified
+	if input.PageSize == 0 {
+		input.PageSize = 20
+	}
+
+	output, err := h.characterService.ListEquipmentByType(ctx, input)
+	if err != nil {
+		return nil, errors.ToGRPCError(err)
+	}
+
+	// Convert equipment to proto format
+	protoEquipment := make([]*dnd5ev1alpha1.Equipment, len(output.Equipment))
+	for i, equipment := range output.Equipment {
+		protoEquipment[i] = convertEquipmentToProto(equipment)
+	}
+
+	return &dnd5ev1alpha1.ListEquipmentByTypeResponse{
+		Equipment:     protoEquipment,
+		NextPageToken: output.NextPageToken,
+		TotalSize:     output.TotalSize,
+	}, nil
+}
+
+// ListSpellsByLevel returns spells filtered by level
+func (h *Handler) ListSpellsByLevel(
+	ctx context.Context,
+	req *dnd5ev1alpha1.ListSpellsByLevelRequest,
+) (*dnd5ev1alpha1.ListSpellsByLevelResponse, error) {
+	// Validate spell level
+	if req.Level < 0 || req.Level > 9 {
+		return nil, errors.ToGRPCError(errors.InvalidArgument("level must be between 0 and 9"))
+	}
+
+	input := &character.ListSpellsByLevelInput{
+		Level:     req.Level,
+		PageSize:  req.PageSize,
+		PageToken: req.PageToken,
+	}
+
+	// Convert class filter if provided
+	if req.Class != dnd5ev1alpha1.Class_CLASS_UNSPECIFIED {
+		input.ClassID = mapProtoClassToConstant(req.Class)
+	}
+
+	// Default page size if not specified
+	if input.PageSize == 0 {
+		input.PageSize = 20
+	}
+
+	output, err := h.characterService.ListSpellsByLevel(ctx, input)
+	if err != nil {
+		return nil, errors.ToGRPCError(err)
+	}
+
+	// Convert spells to proto format
+	protoSpells := make([]*dnd5ev1alpha1.Spell, len(output.Spells))
+	for i, spell := range output.Spells {
+		protoSpells[i] = convertSpellToProto(spell)
+	}
+
+	return &dnd5ev1alpha1.ListSpellsByLevelResponse{
+		Spells:        protoSpells,
+		NextPageToken: output.NextPageToken,
+		TotalSize:     output.TotalSize,
+	}, nil
+}
+
+// Conversion functions for equipment and spells
+
+// mapProtoEquipmentTypeToString converts proto equipment type to string
+func mapProtoEquipmentTypeToString(equipmentType dnd5ev1alpha1.EquipmentType) string {
+	switch equipmentType {
+	case dnd5ev1alpha1.EquipmentType_EQUIPMENT_TYPE_SIMPLE_MELEE_WEAPON:
+		return "simple-melee-weapons"
+	case dnd5ev1alpha1.EquipmentType_EQUIPMENT_TYPE_SIMPLE_RANGED_WEAPON:
+		return "simple-ranged-weapons"
+	case dnd5ev1alpha1.EquipmentType_EQUIPMENT_TYPE_MARTIAL_MELEE_WEAPON:
+		return "martial-melee-weapons"
+	case dnd5ev1alpha1.EquipmentType_EQUIPMENT_TYPE_MARTIAL_RANGED_WEAPON:
+		return "martial-ranged-weapons"
+	case dnd5ev1alpha1.EquipmentType_EQUIPMENT_TYPE_LIGHT_ARMOR:
+		return "light-armor"
+	case dnd5ev1alpha1.EquipmentType_EQUIPMENT_TYPE_MEDIUM_ARMOR:
+		return "medium-armor"
+	case dnd5ev1alpha1.EquipmentType_EQUIPMENT_TYPE_HEAVY_ARMOR:
+		return "heavy-armor"
+	case dnd5ev1alpha1.EquipmentType_EQUIPMENT_TYPE_SHIELD:
+		return "shields"
+	case dnd5ev1alpha1.EquipmentType_EQUIPMENT_TYPE_ADVENTURING_GEAR:
+		return "adventuring-gear"
+	case dnd5ev1alpha1.EquipmentType_EQUIPMENT_TYPE_TOOLS:
+		return "tools"
+	case dnd5ev1alpha1.EquipmentType_EQUIPMENT_TYPE_ARTISAN_TOOLS:
+		return "artisan-tools"
+	case dnd5ev1alpha1.EquipmentType_EQUIPMENT_TYPE_GAMING_SET:
+		return "gaming-sets"
+	case dnd5ev1alpha1.EquipmentType_EQUIPMENT_TYPE_MUSICAL_INSTRUMENT:
+		return "musical-instruments"
+	case dnd5ev1alpha1.EquipmentType_EQUIPMENT_TYPE_VEHICLE:
+		return "vehicles"
+	default:
+		return ""
+	}
+}
+
+// convertEquipmentToProto converts entity equipment to proto format
+func convertEquipmentToProto(equipment *dnd5e.EquipmentInfo) *dnd5ev1alpha1.Equipment {
+	if equipment == nil {
+		return nil
+	}
+
+	protoEquipment := &dnd5ev1alpha1.Equipment{
+		Id:          equipment.ID,
+		Name:        equipment.Name,
+		Category:    equipment.Category,
+		Description: equipment.Description,
+	}
+
+	// Convert cost - for now, parse the string format
+	if equipment.Cost != "" {
+		// TODO: Parse cost string like "2 gp" into structured format
+		// For now, store as string in a basic Cost message
+		protoEquipment.Cost = &dnd5ev1alpha1.Cost{
+			Quantity: 1,    // Default, should be parsed from string
+			Unit:     "gp", // Default, should be parsed from string
+		}
+	}
+
+	// Convert weight - for now, parse the string format
+	if equipment.Weight != "" {
+		// TODO: Parse weight string like "2 lbs" into structured format
+		// For now, store as string in a basic Weight message
+		protoEquipment.Weight = &dnd5ev1alpha1.Weight{
+			Quantity: 1,     // Default, should be parsed from string
+			Unit:     "lbs", // Default, should be parsed from string
+		}
+	}
+
+	// TODO: Add equipment type-specific data (weapon, armor, gear)
+	// This would require checking equipment.Type and converting accordingly
+
+	return protoEquipment
+}
+
+// convertSpellToProto converts entity spell to proto format
+func convertSpellToProto(spell *dnd5e.SpellInfo) *dnd5ev1alpha1.Spell {
+	if spell == nil {
+		return nil
+	}
+
+	protoSpell := &dnd5ev1alpha1.Spell{
+		Id:          spell.ID,
+		Name:        spell.Name,
+		Level:       spell.Level,
+		School:      spell.School,
+		CastingTime: spell.CastingTime,
+		Range:       spell.Range,
+		Duration:    spell.Duration,
+		Description: spell.Description,
+		Components:  strings.Join(spell.Components, ", "),
+	}
+
+	// Convert classes
+	protoClasses := make([]string, len(spell.Classes))
+	for i, class := range spell.Classes {
+		protoClasses[i] = class
+	}
+	protoSpell.Classes = protoClasses
+
+	// TODO: Add spell damage and area of effect conversion
+	// This would require more detailed spell data from the dnd5e-api
+
+	return protoSpell
+}
+
+// convertFeatureInfoToProto converts entity FeatureInfo to proto FeatureInfo
+func convertFeatureInfoToProto(feature *dnd5e.FeatureInfo) *dnd5ev1alpha1.FeatureInfo {
+	if feature == nil {
+		return nil
+	}
+
+	protoFeature := &dnd5ev1alpha1.FeatureInfo{
+		Id:          feature.ID,
+		Name:        feature.Name,
+		Description: feature.Description,
+		Level:       feature.Level,
+		ClassName:   feature.ClassName,
+		HasChoices:  feature.HasChoices,
+	}
+
+	// Convert choices
+	if len(feature.Choices) > 0 {
+		protoChoices := make([]*dnd5ev1alpha1.Choice, len(feature.Choices))
+		for i, choice := range feature.Choices {
+			protoChoices[i] = &dnd5ev1alpha1.Choice{
+				Type:    choice.Type,
+				Choose:  choice.Choose,
+				Options: choice.Options,
+				From:    choice.From,
+			}
+		}
+		protoFeature.Choices = protoChoices
+	}
+
+	// Convert spell selection info
+	if feature.SpellSelection != nil {
+		protoFeature.SpellSelection = &dnd5ev1alpha1.SpellSelectionInfo{
+			SpellsToSelect:   feature.SpellSelection.SpellsToSelect,
+			SpellLevels:      feature.SpellSelection.SpellLevels,
+			SpellLists:       feature.SpellSelection.SpellLists,
+			SelectionType:    convertSpellSelectionTypeToProto(feature.SpellSelection.SelectionType),
+			RequiresReplace:  feature.SpellSelection.RequiresReplace,
+		}
+	}
+
+	return protoFeature
+}
+
+// convertSpellSelectionTypeToProto converts string to proto enum
+func convertSpellSelectionTypeToProto(selectionType string) dnd5ev1alpha1.SpellSelectionType {
+	switch selectionType {
+	case "spellbook":
+		return dnd5ev1alpha1.SpellSelectionType_SPELL_SELECTION_TYPE_SPELLBOOK
+	case "known":
+		return dnd5ev1alpha1.SpellSelectionType_SPELL_SELECTION_TYPE_KNOWN
+	case "prepared":
+		return dnd5ev1alpha1.SpellSelectionType_SPELL_SELECTION_TYPE_PREPARED
+	default:
+		return dnd5ev1alpha1.SpellSelectionType_SPELL_SELECTION_TYPE_UNSPECIFIED
 	}
 }
