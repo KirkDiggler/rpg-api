@@ -139,6 +139,18 @@ func (s *stubExternalClient) ListAvailableSpells(
 	return []*external.SpellData{}, nil
 }
 
+func (s *stubExternalClient) ListAvailableEquipment(_ context.Context) ([]*external.EquipmentData, error) {
+	return []*external.EquipmentData{}, nil
+}
+
+func (s *stubExternalClient) ListEquipmentByCategory(_ context.Context, _ string) ([]*external.EquipmentData, error) {
+	return []*external.EquipmentData{}, nil
+}
+
+func (s *stubExternalClient) GetEquipmentData(_ context.Context, _ string) (*external.EquipmentData, error) {
+	return nil, errors.NotFound("equipment not found")
+}
+
 // testExternalClient implementations
 func (c *testExternalClient) GetRaceData(_ context.Context, _ string) (*external.RaceData, error) {
 	if c.raceError != nil {
@@ -180,6 +192,18 @@ func (c *testExternalClient) ListAvailableSpells(
 	_ context.Context, _ *external.ListSpellsInput,
 ) ([]*external.SpellData, error) {
 	return []*external.SpellData{}, nil
+}
+
+func (c *testExternalClient) ListAvailableEquipment(_ context.Context) ([]*external.EquipmentData, error) {
+	return []*external.EquipmentData{}, nil
+}
+
+func (c *testExternalClient) ListEquipmentByCategory(_ context.Context, _ string) ([]*external.EquipmentData, error) {
+	return []*external.EquipmentData{}, nil
+}
+
+func (c *testExternalClient) GetEquipmentData(_ context.Context, _ string) (*external.EquipmentData, error) {
+	return nil, errors.NotFound("equipment not found")
 }
 
 // createTestAdapter creates an adapter with stubs for testing

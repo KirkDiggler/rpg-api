@@ -806,101 +806,29 @@ func buildSpellHeader(spell *entities.Spell) string {
 	return fmt.Sprintf("%s %s spell", levelStr, schoolName)
 }
 
-func (c *client) ListAvailableEquipment(ctx context.Context) ([]*EquipmentData, error) {
-	// Step 1: Get reference items (just key/name)
-	slog.Info("Calling D&D 5e API to list equipment")
+func (c *client) ListAvailableEquipment(_ context.Context) ([]*EquipmentData, error) {
+	// Get reference items from D&D 5e API
 	refs, err := c.dnd5eClient.ListEquipment()
 	if err != nil {
 		return nil, fmt.Errorf("failed to list equipment from D&D 5e API: %w", err)
 	}
-	slog.Info("Got equipment references", "count", len(refs))
 
-	// Step 2: Concurrently load full details for each equipment item
-	slog.Info("Loading full details for each equipment item concurrently")
-	equipment := make([]*EquipmentData, len(refs))
-	errChan := make(chan error, len(refs))
-	var wg sync.WaitGroup
-
-	for i, ref := range refs {
-		wg.Add(1)
-		go func(idx int, key string, name string) {
-			defer wg.Done()
-
-			// Get full equipment details (cached after first call)
-			equipmentItem, err := c.dnd5eClient.GetEquipment(key)
-			if err != nil {
-				slog.Error("Failed to get equipment details", "equipment", key, "error", err)
-				errChan <- fmt.Errorf("failed to get equipment %s: %w", key, err)
-				return
-			}
-
-			// Convert to our internal format
-			equipment[idx] = convertEquipmentToEquipmentData(equipmentItem)
-			slog.Debug("Loaded equipment details", "equipment", name)
-		}(i, ref.Key, ref.Name)
-	}
-
-	wg.Wait()
-	close(errChan)
-
-	// Check for any errors
-	for err := range errChan {
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	return equipment, nil
+	// Load full details for all equipment items
+	return c.loadEquipmentDetails(refs)
 }
 
-func (c *client) ListEquipmentByCategory(ctx context.Context, category string) ([]*EquipmentData, error) {
+func (c *client) ListEquipmentByCategory(_ context.Context, category string) ([]*EquipmentData, error) {
 	// Get equipment category from D&D 5e API
-	slog.Info("Calling D&D 5e API to get equipment category", "category", category)
 	equipmentCategory, err := c.dnd5eClient.GetEquipmentCategory(category)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get equipment category %s from D&D 5e API: %w", category, err)
 	}
 
-	slog.Info("Got equipment category", "category", category, "count", len(equipmentCategory.Equipment))
-
-	// Concurrently load full details for each equipment item
-	equipment := make([]*EquipmentData, len(equipmentCategory.Equipment))
-	errChan := make(chan error, len(equipmentCategory.Equipment))
-	var wg sync.WaitGroup
-
-	for i, ref := range equipmentCategory.Equipment {
-		wg.Add(1)
-		go func(idx int, key string, name string) {
-			defer wg.Done()
-
-			// Get full equipment details
-			equipmentItem, err := c.dnd5eClient.GetEquipment(key)
-			if err != nil {
-				slog.Error("Failed to get equipment details", "equipment", key, "error", err)
-				errChan <- fmt.Errorf("failed to get equipment %s: %w", key, err)
-				return
-			}
-
-			// Convert to our internal format
-			equipment[idx] = convertEquipmentToEquipmentData(equipmentItem)
-			slog.Debug("Loaded equipment details", "equipment", name)
-		}(i, ref.Key, ref.Name)
-	}
-
-	wg.Wait()
-	close(errChan)
-
-	// Check for any errors
-	for err := range errChan {
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	return equipment, nil
+	// Load full details for all equipment items in category
+	return c.loadEquipmentDetails(equipmentCategory.Equipment)
 }
 
-func (c *client) GetEquipmentData(ctx context.Context, equipmentID string) (*EquipmentData, error) {
+func (c *client) GetEquipmentData(_ context.Context, equipmentID string) (*EquipmentData, error) {
 	// Get equipment details from D&D 5e API
 	slog.Info("Calling D&D 5e API to get equipment", "equipment", equipmentID)
 	equipmentItem, err := c.dnd5eClient.GetEquipment(equipmentID)
@@ -919,13 +847,7 @@ func convertEquipmentToEquipmentData(equipment dnd5e.EquipmentInterface) *Equipm
 	}
 
 	equipmentData := &EquipmentData{
-		ID:            "",
-		Name:          "",
-		Description:   "",
 		EquipmentType: equipment.GetType(),
-		Category:      "",
-		Cost:          nil,
-		Weight:        0,
 	}
 
 	switch eq := equipment.(type) {
@@ -1000,4 +922,43 @@ func convertEquipmentToEquipmentData(equipment dnd5e.EquipmentInterface) *Equipm
 	}
 
 	return equipmentData
+}
+
+// loadEquipmentDetails loads full equipment details for a list of reference items concurrently
+func (c *client) loadEquipmentDetails(refs []*entities.ReferenceItem) ([]*EquipmentData, error) {
+	slog.Info("Loading full details for equipment items concurrently", "count", len(refs))
+	equipment := make([]*EquipmentData, len(refs))
+	errChan := make(chan error, len(refs))
+	var wg sync.WaitGroup
+
+	for i, ref := range refs {
+		wg.Add(1)
+		go func(idx int, key string, name string) {
+			defer wg.Done()
+
+			// Get full equipment details (cached after first call)
+			equipmentItem, err := c.dnd5eClient.GetEquipment(key)
+			if err != nil {
+				slog.Error("Failed to get equipment details", "equipment", key, "error", err)
+				errChan <- fmt.Errorf("failed to get equipment %s: %w", key, err)
+				return
+			}
+
+			// Convert to our internal format
+			equipment[idx] = convertEquipmentToEquipmentData(equipmentItem)
+			slog.Debug("Loaded equipment details", "equipment", name)
+		}(i, ref.Key, ref.Name)
+	}
+
+	wg.Wait()
+	close(errChan)
+
+	// Check for any errors
+	for err := range errChan {
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return equipment, nil
 }

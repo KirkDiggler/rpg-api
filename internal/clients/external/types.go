@@ -124,22 +124,22 @@ type SpellcastingData struct {
 
 // EquipmentData represents equipment information from external source
 type EquipmentData struct {
-	ID               string
-	Name             string
-	Description      string
-	EquipmentType    string  // "weapon", "armor", "gear", etc.
-	Category         string  // "simple-weapons", "martial-weapons", etc.
-	Cost             *CostData
-	Weight           float32
+	ID            string
+	Name          string
+	Description   string
+	EquipmentType string // "weapon", "armor", "gear", etc.
+	Category      string // "simple-weapons", "martial-weapons", etc.
+	Cost          *CostData
+	Weight        float32
 	// Weapon-specific fields
-	WeaponCategory   string     // "Simple", "Martial"
-	WeaponRange      string     // "Melee", "Ranged"
-	Damage           *DamageData
-	Properties       []string
+	WeaponCategory string // "Simple", "Martial"
+	WeaponRange    string // "Melee", "Ranged"
+	Damage         *DamageData
+	Properties     []string
 	// Armor-specific fields
-	ArmorCategory    string     // "Light", "Medium", "Heavy"
-	ArmorClass       *ArmorClassData
-	StrengthMinimum  int
+	ArmorCategory       string // "Light", "Medium", "Heavy"
+	ArmorClass          *ArmorClassData
+	StrengthMinimum     int
 	StealthDisadvantage bool
 }
 
