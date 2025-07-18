@@ -589,9 +589,9 @@ func (c *client) convertClassWithFeatures(class *entities.Class, level1 *entitie
 		classData.LevelOneFeatures = features
 	}
 
-	// Add spellcasting information if available (check both class and level data)
-	if class.Spellcasting != nil || (level1 != nil && level1.SpellCasting != nil) {
-		classData.Spellcasting = convertSpellcastingData(class.Spellcasting, level1)
+	// Add spellcasting information if available (from level data)
+	if level1 != nil && level1.SpellCasting != nil {
+		classData.Spellcasting = convertSpellcastingData(nil, level1)
 	}
 
 	return classData, nil
@@ -971,58 +971,25 @@ func (c *client) loadEquipmentDetails(refs []*entities.ReferenceItem) ([]*Equipm
 	return equipment, nil
 }
 
-// convertSpellcastingData converts class spellcasting info and level data to our internal format
-func convertSpellcastingData(classSpellcasting *entities.ClassSpellcasting, level1 *entities.Level) *SpellcastingData {
-	// If we have neither class-level nor level-based spellcasting data, return nil
-	if classSpellcasting == nil && (level1 == nil || level1.SpellCasting == nil) {
+// convertSpellcastingData converts level spellcasting data to our internal format
+func convertSpellcastingData(unused interface{}, level1 *entities.Level) *SpellcastingData {
+	// If we have no level-based spellcasting data, return nil
+	if level1 == nil || level1.SpellCasting == nil {
 		return nil
 	}
 
 	spellcastingData := &SpellcastingData{}
 
-	// Extract spellcasting ability if class-level data is available
-	if classSpellcasting != nil && classSpellcasting.SpellcastingAbility != nil {
-		spellcastingData.SpellcastingAbility = classSpellcasting.SpellcastingAbility.Key
-	}
+	// SpellCasting entity only has numeric data - no ability or info
+	// For now, leave spellcasting ability and focus empty
+	spellcastingData.SpellcastingAbility = "" 
+	spellcastingData.RitualCasting = false
+	spellcastingData.SpellcastingFocus = ""
 
-	// Parse the info sections to extract ritual casting and spellcasting focus if available
-	if classSpellcasting != nil {
-		for _, info := range classSpellcasting.Info {
-			if info == nil {
-				continue
-			}
-
-			// Check for ritual casting info
-			if strings.Contains(info.Name, "Ritual") {
-				spellcastingData.RitualCasting = true
-			}
-
-			// Extract spellcasting focus info
-			if strings.Contains(info.Name, "Spellcasting Focus") || strings.Contains(info.Name, "Spellcasting focus") {
-				// Try to extract the focus type from the description
-				for _, desc := range info.Desc {
-					desc = strings.ToLower(desc)
-					switch {
-					case strings.Contains(desc, "arcane focus"):
-						spellcastingData.SpellcastingFocus = "arcane focus"
-					case strings.Contains(desc, "holy symbol"):
-						spellcastingData.SpellcastingFocus = "holy symbol"
-					case strings.Contains(desc, "druidic focus"):
-						spellcastingData.SpellcastingFocus = "druidic focus"
-					case strings.Contains(desc, "component pouch"):
-						spellcastingData.SpellcastingFocus = "component pouch"
-					}
-				}
-			}
-		}
-	}
-
-	// Get level 1 spell slot info if available
-	if level1 != nil && level1.SpellCasting != nil {
-		spellcastingData.CantripsKnown = int32(level1.SpellCasting.CantripsKnown)     // nolint:gosec // Cantrips known can exceed 9 at higher character levels
-		spellcastingData.SpellsKnown = int32(level1.SpellCasting.SpellsKnown)         // nolint:gosec // D&D values are always 0-20
-		spellcastingData.SpellSlotsLevel1 = int32(level1.SpellCasting.SpellSlotsLevel1) // nolint:gosec // D&D values are always 0-9
-	}
+	// Get level 1 spell slot info from available data
+	spellcastingData.CantripsKnown = int32(level1.SpellCasting.CantripsKnown)     // nolint:gosec // Cantrips known can exceed 9 at higher character levels
+	spellcastingData.SpellsKnown = int32(level1.SpellCasting.SpellsKnown)         // nolint:gosec // D&D values are always 0-20
+	spellcastingData.SpellSlotsLevel1 = int32(level1.SpellCasting.SpellSlotsLevel1) // nolint:gosec // D&D values are always 0-9
 
 	return spellcastingData
 }
