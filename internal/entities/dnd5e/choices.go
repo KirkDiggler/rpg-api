@@ -20,6 +20,36 @@ const (
 	ChoiceTypeEquipment ChoiceType = "equipment"
 )
 
+// Choice category ID constants to prevent magic strings
+const (
+	// CategoryIDFighterFightingStyle is the category ID for fighter fighting styles
+	CategoryIDFighterFightingStyle = "fighter_fighting_style"
+	// CategoryIDWizardCantrips is the category ID for wizard cantrips
+	CategoryIDWizardCantrips = "wizard_cantrips"
+	// CategoryIDWizardSpells is the category ID for wizard spells
+	CategoryIDWizardSpells = "wizard_spells"
+	// CategoryIDClericCantrips is the category ID for cleric cantrips
+	CategoryIDClericCantrips = "cleric_cantrips"
+	// CategoryIDSorcererCantrips is the category ID for sorcerer cantrips
+	CategoryIDSorcererCantrips = "sorcerer_cantrips"
+	// CategoryIDSorcererSpells is the category ID for sorcerer spells
+	CategoryIDSorcererSpells = "sorcerer_spells"
+	// CategoryIDAdditionalLanguages is the category ID for additional languages
+	CategoryIDAdditionalLanguages = "additional_languages"
+	// CategoryIDToolProficiencies is the category ID for tool proficiencies
+	CategoryIDToolProficiencies = "tool_proficiencies"
+	// CategoryIDEquipmentChoices is the category ID for equipment choices
+	CategoryIDEquipmentChoices = "equipment_choices"
+)
+
+// Validation constants
+const (
+	// MaxChoiceOptionsLimit is the maximum number of options that can be selected to prevent DoS attacks
+	MaxChoiceOptionsLimit = 1000
+	// DefaultSpellPageSize is the default page size when fetching spells for choices
+	DefaultSpellPageSize = 100
+)
+
 // ChoiceCategory represents a grouping of related choices
 type ChoiceCategory struct {
 	ID          string

@@ -1689,16 +1689,16 @@ func (o *Orchestrator) validateChoiceSelections(
 			continue
 		}
 
-		// Validate selection count with bounds checking to prevent overflow attacks
+		// Validate selection count with bounds checking to prevent DoS attacks
 		optionCount := len(selection.OptionIDs)
 
-		// Protect against malicious input that could cause integer overflow
-		if optionCount > math.MaxInt32 {
+		// Protect against malicious input with a practical limit
+		if optionCount > dnd5e.MaxChoiceOptionsLimit {
 			result.IsValid = false
 			result.Errors = append(result.Errors, dnd5e.ChoiceValidationError{
 				CategoryID: selection.CategoryID,
-				Message:    "too many options selected (potential overflow attack)",
-				Code:       "overflow_protection",
+				Message:    fmt.Sprintf("too many options selected (maximum allowed: %d)", dnd5e.MaxChoiceOptionsLimit),
+				Code:       "excessive_options",
 			})
 			continue
 		}
@@ -1776,17 +1776,23 @@ func (o *Orchestrator) validateChoiceSelections(
 func (o *Orchestrator) applyChoiceSelections(draft *dnd5e.CharacterDraft, selections []*dnd5e.ChoiceSelection) error {
 	for _, selection := range selections {
 		switch selection.CategoryID {
-		case "fighter_fighting_style":
+		case dnd5e.CategoryIDFighterFightingStyle:
 			draft.Choices.FightingStyles = selection.OptionIDs
-		case "wizard_cantrips":
+		case dnd5e.CategoryIDWizardCantrips:
 			draft.Choices.Cantrips = selection.OptionIDs
-		case "wizard_spells":
+		case dnd5e.CategoryIDWizardSpells:
 			draft.Choices.Spells = selection.OptionIDs
-		case "additional_languages":
+		case dnd5e.CategoryIDClericCantrips:
+			draft.Choices.Cantrips = selection.OptionIDs
+		case dnd5e.CategoryIDSorcererCantrips:
+			draft.Choices.Cantrips = selection.OptionIDs
+		case dnd5e.CategoryIDSorcererSpells:
+			draft.Choices.Spells = selection.OptionIDs
+		case dnd5e.CategoryIDAdditionalLanguages:
 			draft.Choices.Languages = selection.OptionIDs
-		case "tool_proficiencies":
+		case dnd5e.CategoryIDToolProficiencies:
 			draft.Choices.Tools = selection.OptionIDs
-		case "equipment_choices":
+		case dnd5e.CategoryIDEquipmentChoices:
 			draft.Choices.Equipment = selection.OptionIDs
 		default:
 			return errors.InvalidArgumentf("unknown choice category: %s", selection.CategoryID)
@@ -1796,6 +1802,7 @@ func (o *Orchestrator) applyChoiceSelections(draft *dnd5e.CharacterDraft, select
 }
 
 // getAvailableChoiceCategories returns the choice categories available for a draft
+//nolint:unparam // error return kept for future extensibility when class/race details are used
 func (o *Orchestrator) getAvailableChoiceCategories(
 	ctx context.Context,
 	draft *dnd5e.CharacterDraft,
@@ -1803,43 +1810,40 @@ func (o *Orchestrator) getAvailableChoiceCategories(
 ) ([]*dnd5e.ChoiceCategory, error) {
 	var categories []*dnd5e.ChoiceCategory
 
-	// Get class details to determine available choices
-	classDetails, err := o.GetClassDetails(ctx, &GetClassDetailsInput{ClassID: draft.ClassID})
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to get class details")
+	// Helper function to check if choice type should be included
+	shouldIncludeChoiceType := func(choiceType dnd5e.ChoiceType) bool {
+		return filterType == nil || *filterType == choiceType
 	}
-
-	class := classDetails.Class
 
 	// Add class-specific choices based on class ID
 	switch draft.ClassID {
 	case "fighter":
-		if filterType == nil || *filterType == dnd5e.ChoiceTypeFightingStyle {
+		if shouldIncludeChoiceType(dnd5e.ChoiceTypeFightingStyle) {
 			categories = append(categories, o.createFighterFightingStyleChoices())
 		}
 	case "wizard":
-		if filterType == nil || *filterType == dnd5e.ChoiceTypeCantrips {
+		if shouldIncludeChoiceType(dnd5e.ChoiceTypeCantrips) {
 			categories = append(categories, o.createWizardCantripChoices(ctx))
 		}
-		if filterType == nil || *filterType == dnd5e.ChoiceTypeSpells {
+		if shouldIncludeChoiceType(dnd5e.ChoiceTypeSpells) {
 			categories = append(categories, o.createWizardSpellChoices(ctx))
 		}
 	case "cleric":
-		if filterType == nil || *filterType == dnd5e.ChoiceTypeCantrips {
+		if shouldIncludeChoiceType(dnd5e.ChoiceTypeCantrips) {
 			categories = append(categories, o.createClericCantripChoices(ctx))
 		}
 	case "sorcerer":
-		if filterType == nil || *filterType == dnd5e.ChoiceTypeCantrips {
+		if shouldIncludeChoiceType(dnd5e.ChoiceTypeCantrips) {
 			categories = append(categories, o.createSorcererCantripChoices(ctx))
 		}
-		if filterType == nil || *filterType == dnd5e.ChoiceTypeSpells {
+		if shouldIncludeChoiceType(dnd5e.ChoiceTypeSpells) {
 			categories = append(categories, o.createSorcererSpellChoices(ctx))
 		}
 	}
 
 	// Add universal choices (like additional languages, tools)
 	// TODO(#82): Add universal language choices based on race/background
-	// if (filterType == nil || *filterType == dnd5e.ChoiceTypeLanguages) && draft.RaceID != "" {
+	// if shouldIncludeChoiceType(dnd5e.ChoiceTypeLanguages) && draft.RaceID != "" {
 	//     languageChoices := o.createLanguageChoices(ctx, draft)
 	//     if languageChoices != nil {
 	//         categories = append(categories, languageChoices)
@@ -1847,10 +1851,16 @@ func (o *Orchestrator) getAvailableChoiceCategories(
 	// }
 
 	// TODO(#82): Add equipment choices based on class starting equipment options
-	if filterType == nil || *filterType == dnd5e.ChoiceTypeEquipment {
-		// Add equipment choices from class.StartingEquipmentOptions
-		_ = class // Prevent unused variable warning for now
-	}
+	// Future implementation:
+	// if shouldIncludeChoiceType(dnd5e.ChoiceTypeEquipment) {
+	//     classDetails, err := o.GetClassDetails(ctx, &GetClassDetailsInput{ClassID: draft.ClassID})
+	//     if err == nil && classDetails.Class.EquipmentChoices != nil {
+	//         equipmentChoices := o.createEquipmentChoices(ctx, classDetails.Class.EquipmentChoices)
+	//         if equipmentChoices != nil {
+	//             categories = append(categories, equipmentChoices)
+	//         }
+	//     }
+	// }
 
 	return categories, nil
 }
@@ -1982,7 +1992,7 @@ func (o *Orchestrator) createSpellChoiceCategory(
 // createFighterFightingStyleChoices creates the fighting style choice category for fighters
 func (o *Orchestrator) createFighterFightingStyleChoices() *dnd5e.ChoiceCategory {
 	return &dnd5e.ChoiceCategory{
-		ID:          "fighter_fighting_style",
+		ID:          dnd5e.CategoryIDFighterFightingStyle,
 		Type:        dnd5e.ChoiceTypeFightingStyle,
 		Name:        "Fighting Style",
 		Description: "Choose a fighting style that represents your specialty in combat.",
@@ -2040,7 +2050,7 @@ func (o *Orchestrator) createWizardCantripChoices(ctx context.Context) *dnd5e.Ch
 	return o.createSpellChoiceCategory(ctx, spellChoiceCategoryConfig{
 		classID:     "wizard",
 		level:       0,
-		id:          "wizard_cantrips",
+		id:          dnd5e.CategoryIDWizardCantrips,
 		choiceType:  dnd5e.ChoiceTypeCantrips,
 		name:        "Wizard Cantrips",
 		description: "Choose 3 cantrips from the wizard spell list.",
@@ -2054,7 +2064,7 @@ func (o *Orchestrator) createWizardSpellChoices(ctx context.Context) *dnd5e.Choi
 	return o.createSpellChoiceCategory(ctx, spellChoiceCategoryConfig{
 		classID:     "wizard",
 		level:       1,
-		id:          "wizard_spells",
+		id:          dnd5e.CategoryIDWizardSpells,
 		choiceType:  dnd5e.ChoiceTypeSpells,
 		name:        "1st Level Wizard Spells",
 		description: "Choose 6 first-level spells from the wizard spell list.",
@@ -2068,7 +2078,7 @@ func (o *Orchestrator) createClericCantripChoices(ctx context.Context) *dnd5e.Ch
 	return o.createSpellChoiceCategory(ctx, spellChoiceCategoryConfig{
 		classID:     "cleric",
 		level:       0,
-		id:          "cleric_cantrips",
+		id:          dnd5e.CategoryIDClericCantrips,
 		choiceType:  dnd5e.ChoiceTypeCantrips,
 		name:        "Cleric Cantrips",
 		description: "Choose 3 cantrips from the cleric spell list.",
@@ -2082,7 +2092,7 @@ func (o *Orchestrator) createSorcererCantripChoices(ctx context.Context) *dnd5e.
 	return o.createSpellChoiceCategory(ctx, spellChoiceCategoryConfig{
 		classID:     "sorcerer",
 		level:       0,
-		id:          "sorcerer_cantrips",
+		id:          dnd5e.CategoryIDSorcererCantrips,
 		choiceType:  dnd5e.ChoiceTypeCantrips,
 		name:        "Sorcerer Cantrips",
 		description: "Choose 4 cantrips from the sorcerer spell list.",
@@ -2096,7 +2106,7 @@ func (o *Orchestrator) createSorcererSpellChoices(ctx context.Context) *dnd5e.Ch
 	return o.createSpellChoiceCategory(ctx, spellChoiceCategoryConfig{
 		classID:     "sorcerer",
 		level:       1,
-		id:          "sorcerer_spells",
+		id:          dnd5e.CategoryIDSorcererSpells,
 		choiceType:  dnd5e.ChoiceTypeSpells,
 		name:        "1st Level Sorcerer Spells",
 		description: "Choose 2 first-level spells from the sorcerer spell list.",
@@ -2112,7 +2122,7 @@ func (o *Orchestrator) getSpellsByLevelAndClass(
 	input := &ListSpellsInput{
 		Level:    &level,
 		ClassID:  classID,
-		PageSize: 100, // Get a reasonable number of spells
+		PageSize: dnd5e.DefaultSpellPageSize,
 	}
 
 	output, err := o.ListSpells(ctx, input)
