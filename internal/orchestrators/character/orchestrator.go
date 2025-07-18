@@ -1802,6 +1802,7 @@ func (o *Orchestrator) applyChoiceSelections(draft *dnd5e.CharacterDraft, select
 }
 
 // getAvailableChoiceCategories returns the choice categories available for a draft
+//
 //nolint:unparam // error return kept for future extensibility when class/race details are used
 func (o *Orchestrator) getAvailableChoiceCategories(
 	ctx context.Context,

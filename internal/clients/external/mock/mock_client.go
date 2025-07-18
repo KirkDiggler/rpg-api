@@ -72,6 +72,21 @@ func (mr *MockClientMockRecorder) GetClassData(ctx, classID any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetClassData", reflect.TypeOf((*MockClient)(nil).GetClassData), ctx, classID)
 }
 
+// GetEquipmentData mocks base method.
+func (m *MockClient) GetEquipmentData(ctx context.Context, equipmentID string) (*external.EquipmentData, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetEquipmentData", ctx, equipmentID)
+	ret0, _ := ret[0].(*external.EquipmentData)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetEquipmentData indicates an expected call of GetEquipmentData.
+func (mr *MockClientMockRecorder) GetEquipmentData(ctx, equipmentID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetEquipmentData", reflect.TypeOf((*MockClient)(nil).GetEquipmentData), ctx, equipmentID)
+}
+
 // GetRaceData mocks base method.
 func (m *MockClient) GetRaceData(ctx context.Context, raceID string) (*external.RaceData, error) {
 	m.ctrl.T.Helper()
@@ -132,6 +147,21 @@ func (mr *MockClientMockRecorder) ListAvailableClasses(ctx any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListAvailableClasses", reflect.TypeOf((*MockClient)(nil).ListAvailableClasses), ctx)
 }
 
+// ListAvailableEquipment mocks base method.
+func (m *MockClient) ListAvailableEquipment(ctx context.Context) ([]*external.EquipmentData, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListAvailableEquipment", ctx)
+	ret0, _ := ret[0].([]*external.EquipmentData)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListAvailableEquipment indicates an expected call of ListAvailableEquipment.
+func (mr *MockClientMockRecorder) ListAvailableEquipment(ctx any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListAvailableEquipment", reflect.TypeOf((*MockClient)(nil).ListAvailableEquipment), ctx)
+}
+
 // ListAvailableRaces mocks base method.
 func (m *MockClient) ListAvailableRaces(ctx context.Context) ([]*external.RaceData, error) {
 	m.ctrl.T.Helper()
@@ -160,4 +190,19 @@ func (m *MockClient) ListAvailableSpells(ctx context.Context, input *external.Li
 func (mr *MockClientMockRecorder) ListAvailableSpells(ctx, input any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListAvailableSpells", reflect.TypeOf((*MockClient)(nil).ListAvailableSpells), ctx, input)
+}
+
+// ListEquipmentByCategory mocks base method.
+func (m *MockClient) ListEquipmentByCategory(ctx context.Context, category string) ([]*external.EquipmentData, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListEquipmentByCategory", ctx, category)
+	ret0, _ := ret[0].([]*external.EquipmentData)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListEquipmentByCategory indicates an expected call of ListEquipmentByCategory.
+func (mr *MockClientMockRecorder) ListEquipmentByCategory(ctx, category any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListEquipmentByCategory", reflect.TypeOf((*MockClient)(nil).ListEquipmentByCategory), ctx, category)
 }

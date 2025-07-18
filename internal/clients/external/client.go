@@ -59,6 +59,17 @@ type Client interface {
 	// ListAvailableSpells returns all available spells with full details
 	// Implementation should handle reference->details conversion internally
 	ListAvailableSpells(ctx context.Context, input *ListSpellsInput) ([]*SpellData, error)
+
+	// ListAvailableEquipment returns all available equipment with full details
+	// Implementation should handle reference->details conversion internally
+	ListAvailableEquipment(ctx context.Context) ([]*EquipmentData, error)
+
+	// ListEquipmentByCategory returns equipment filtered by category
+	// Categories include: "simple-weapons", "martial-weapons", "light-armor", etc.
+	ListEquipmentByCategory(ctx context.Context, category string) ([]*EquipmentData, error)
+
+	// GetEquipmentData fetches equipment information from external source
+	GetEquipmentData(ctx context.Context, equipmentID string) (*EquipmentData, error)
 }
 
 type client struct {
@@ -67,7 +78,7 @@ type client struct {
 
 // Config contains configuration options for the external client.
 type Config struct {
-	// BaseURL for the D&D 5e API (optional, defaults to https://www.dnd5eapi.co)
+	// BaseURL for the D&D 5e API (optional, defaults to https://www.dnd5eapi.co/api/2014/)
 	BaseURL string
 	// HTTPTimeout for API requests (optional, defaults to 30 seconds)
 	HTTPTimeout time.Duration
@@ -79,7 +90,7 @@ type Config struct {
 func (cfg *Config) Validate() error {
 	// Set defaults if not provided
 	if cfg.BaseURL == "" {
-		cfg.BaseURL = "https://www.dnd5eapi.co"
+		cfg.BaseURL = "https://www.dnd5eapi.co/api/2014/"
 	}
 	if cfg.HTTPTimeout == 0 {
 		cfg.HTTPTimeout = 30 * time.Second
@@ -122,8 +133,26 @@ func (c *client) GetRaceData(_ context.Context, _ string) (*RaceData, error) {
 	return nil, errors.Unimplemented("not implemented")
 }
 
-func (c *client) GetClassData(_ context.Context, _ string) (*ClassData, error) {
-	return nil, errors.Unimplemented("not implemented")
+func (c *client) GetClassData(_ context.Context, classID string) (*ClassData, error) {
+	// Get full class details
+	class, err := c.dnd5eClient.GetClass(classID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get class %s: %w", classID, err)
+	}
+
+	// Get level 1 data for features
+	level1, err := c.dnd5eClient.GetClassLevel(classID, 1)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get class level 1 for %s: %w", classID, err)
+	}
+
+	// Convert to our internal format with level 1 features
+	classData, err := c.convertClassWithFeatures(class, level1)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert class %s: %w", classID, err)
+	}
+
+	return classData, nil
 }
 
 func (c *client) GetBackgroundData(_ context.Context, _ string) (*BackgroundData, error) {
@@ -598,16 +627,46 @@ func convertEquipmentChoice(choice *entities.ChoiceOption) *EquipmentChoiceData 
 				if opt.Reference != nil {
 					options = append(options, opt.Reference.Name)
 				}
+			case *entities.CountedReferenceOption:
+				if opt.Reference != nil {
+					// Include count in the description
+					if opt.Count > 1 {
+						options = append(options, fmt.Sprintf("%dx %s", opt.Count, opt.Reference.Name))
+					} else {
+						options = append(options, opt.Reference.Name)
+					}
+				}
 			case *entities.MultipleOption:
 				// Handle multiple equipment options
 				var multiDesc []string
 				for _, item := range opt.Items {
-					if refOpt, ok := item.(*entities.ReferenceOption); ok && refOpt.Reference != nil {
-						multiDesc = append(multiDesc, refOpt.Reference.Name)
+					switch itemOpt := item.(type) {
+					case *entities.ReferenceOption:
+						if itemOpt.Reference != nil {
+							multiDesc = append(multiDesc, itemOpt.Reference.Name)
+						}
+					case *entities.CountedReferenceOption:
+						if itemOpt.Reference != nil {
+							if itemOpt.Count > 1 {
+								multiDesc = append(multiDesc, fmt.Sprintf("%dx %s", itemOpt.Count, itemOpt.Reference.Name))
+							} else {
+								multiDesc = append(multiDesc, itemOpt.Reference.Name)
+							}
+						}
+					case *entities.ChoiceOption:
+						// Handle nested choice options (like "a martial weapon")
+						if itemOpt.Description != "" {
+							multiDesc = append(multiDesc, itemOpt.Description)
+						}
 					}
 				}
 				if len(multiDesc) > 0 {
 					options = append(options, strings.Join(multiDesc, " and "))
+				}
+			case *entities.ChoiceOption:
+				// Handle top-level choice options (like "two martial weapons")
+				if opt.Description != "" {
+					options = append(options, opt.Description)
 				}
 			}
 		}
@@ -745,4 +804,161 @@ func buildSpellHeader(spell *entities.Spell) string {
 	}
 
 	return fmt.Sprintf("%s %s spell", levelStr, schoolName)
+}
+
+func (c *client) ListAvailableEquipment(_ context.Context) ([]*EquipmentData, error) {
+	// Get reference items from D&D 5e API
+	refs, err := c.dnd5eClient.ListEquipment()
+	if err != nil {
+		return nil, fmt.Errorf("failed to list equipment from D&D 5e API: %w", err)
+	}
+
+	// Load full details for all equipment items
+	return c.loadEquipmentDetails(refs)
+}
+
+func (c *client) ListEquipmentByCategory(_ context.Context, category string) ([]*EquipmentData, error) {
+	// Get equipment category from D&D 5e API
+	equipmentCategory, err := c.dnd5eClient.GetEquipmentCategory(category)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get equipment category %s from D&D 5e API: %w", category, err)
+	}
+
+	// Load full details for all equipment items in category
+	return c.loadEquipmentDetails(equipmentCategory.Equipment)
+}
+
+func (c *client) GetEquipmentData(_ context.Context, equipmentID string) (*EquipmentData, error) {
+	// Get equipment details from D&D 5e API
+	slog.Info("Calling D&D 5e API to get equipment", "equipment", equipmentID)
+	equipmentItem, err := c.dnd5eClient.GetEquipment(equipmentID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get equipment %s from D&D 5e API: %w", equipmentID, err)
+	}
+
+	// Convert to our internal format
+	return convertEquipmentToEquipmentData(equipmentItem), nil
+}
+
+// convertEquipmentToEquipmentData converts dnd5e-api equipment to our internal format
+func convertEquipmentToEquipmentData(equipment dnd5e.EquipmentInterface) *EquipmentData {
+	if equipment == nil {
+		return nil
+	}
+
+	equipmentData := &EquipmentData{
+		EquipmentType: equipment.GetType(),
+	}
+
+	switch eq := equipment.(type) {
+	case *entities.Weapon:
+		equipmentData.ID = eq.Key
+		equipmentData.Name = eq.Name
+		equipmentData.WeaponCategory = eq.WeaponCategory
+		equipmentData.WeaponRange = eq.WeaponRange
+		equipmentData.Weight = eq.Weight
+		if eq.EquipmentCategory != nil {
+			equipmentData.Category = eq.EquipmentCategory.Key
+		}
+		if eq.Cost != nil {
+			equipmentData.Cost = &CostData{
+				Quantity: eq.Cost.Quantity,
+				Unit:     eq.Cost.Unit,
+			}
+		}
+		if eq.Damage != nil {
+			equipmentData.Damage = &DamageData{
+				DamageDice: eq.Damage.DamageDice,
+				DamageType: "",
+			}
+			if eq.Damage.DamageType != nil {
+				equipmentData.Damage.DamageType = eq.Damage.DamageType.Name
+			}
+		}
+		// Convert properties
+		if eq.Properties != nil {
+			equipmentData.Properties = make([]string, len(eq.Properties))
+			for i, prop := range eq.Properties {
+				equipmentData.Properties[i] = prop.Name
+			}
+		}
+
+	case *entities.Armor:
+		equipmentData.ID = eq.Key
+		equipmentData.Name = eq.Name
+		equipmentData.ArmorCategory = eq.ArmorCategory
+		equipmentData.Weight = eq.Weight
+		equipmentData.StrengthMinimum = eq.StrMinimum
+		equipmentData.StealthDisadvantage = eq.StealthDisadvantage
+		if eq.EquipmentCategory != nil {
+			equipmentData.Category = eq.EquipmentCategory.Key
+		}
+		if eq.Cost != nil {
+			equipmentData.Cost = &CostData{
+				Quantity: eq.Cost.Quantity,
+				Unit:     eq.Cost.Unit,
+			}
+		}
+		if eq.ArmorClass != nil {
+			equipmentData.ArmorClass = &ArmorClassData{
+				Base:     eq.ArmorClass.Base,
+				DexBonus: eq.ArmorClass.DexBonus,
+			}
+		}
+
+	case *entities.Equipment:
+		equipmentData.ID = eq.Key
+		equipmentData.Name = eq.Name
+		equipmentData.Weight = eq.Weight
+		if eq.EquipmentCategory != nil {
+			equipmentData.Category = eq.EquipmentCategory.Key
+		}
+		if eq.Cost != nil {
+			equipmentData.Cost = &CostData{
+				Quantity: eq.Cost.Quantity,
+				Unit:     eq.Cost.Unit,
+			}
+		}
+	}
+
+	return equipmentData
+}
+
+// loadEquipmentDetails loads full equipment details for a list of reference items concurrently
+func (c *client) loadEquipmentDetails(refs []*entities.ReferenceItem) ([]*EquipmentData, error) {
+	slog.Info("Loading full details for equipment items concurrently", "count", len(refs))
+	equipment := make([]*EquipmentData, len(refs))
+	errChan := make(chan error, len(refs))
+	var wg sync.WaitGroup
+
+	for i, ref := range refs {
+		wg.Add(1)
+		go func(idx int, key string, name string) {
+			defer wg.Done()
+
+			// Get full equipment details (cached after first call)
+			equipmentItem, err := c.dnd5eClient.GetEquipment(key)
+			if err != nil {
+				slog.Error("Failed to get equipment details", "equipment", key, "error", err)
+				errChan <- fmt.Errorf("failed to get equipment %s: %w", key, err)
+				return
+			}
+
+			// Convert to our internal format
+			equipment[idx] = convertEquipmentToEquipmentData(equipmentItem)
+			slog.Debug("Loaded equipment details", "equipment", name)
+		}(i, ref.Key, ref.Name)
+	}
+
+	wg.Wait()
+	close(errChan)
+
+	// Check for any errors
+	for err := range errChan {
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return equipment, nil
 }
