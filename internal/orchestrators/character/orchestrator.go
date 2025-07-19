@@ -6,6 +6,7 @@ package character
 import (
 	"context"
 	"fmt"
+	"log"
 	"log/slog"
 	"math"
 	"strconv"
@@ -874,6 +875,9 @@ func (o *Orchestrator) ListCharacters(
 		return nil, errors.InvalidArgument("input is required")
 	}
 
+	log.Printf("ListCharacters called with PlayerID=%s, SessionID=%s, PageSize=%d, PageToken=%s",
+		input.PlayerID, input.SessionID, input.PageSize, input.PageToken)
+
 	// Default page size
 	if input.PageSize == 0 {
 		input.PageSize = 20
@@ -883,19 +887,26 @@ func (o *Orchestrator) ListCharacters(
 	var characters []*dnd5e.Character
 	switch {
 	case input.PlayerID != "":
+		log.Printf("Listing characters by PlayerID: %s", input.PlayerID)
 		listOutput, err := o.characterRepo.ListByPlayerID(ctx, characterrepo.ListByPlayerIDInput{PlayerID: input.PlayerID})
 		if err != nil {
+			log.Printf("Failed to list characters by PlayerID %s: %v", input.PlayerID, err)
 			return nil, errors.Wrap(err, "failed to list characters")
 		}
 		characters = listOutput.Characters
+		log.Printf("Found %d characters for PlayerID %s", len(characters), input.PlayerID)
 	case input.SessionID != "":
+		log.Printf("Listing characters by SessionID: %s", input.SessionID)
 		listOutput, err := o.characterRepo.ListBySessionID(ctx,
 			characterrepo.ListBySessionIDInput{SessionID: input.SessionID})
 		if err != nil {
+			log.Printf("Failed to list characters by SessionID %s: %v", input.SessionID, err)
 			return nil, errors.Wrap(err, "failed to list characters")
 		}
 		characters = listOutput.Characters
+		log.Printf("Found %d characters for SessionID %s", len(characters), input.SessionID)
 	default:
+		log.Printf("ListCharacters called without PlayerID or SessionID")
 		return nil, errors.InvalidArgument("either PlayerID or SessionID must be provided")
 	}
 
