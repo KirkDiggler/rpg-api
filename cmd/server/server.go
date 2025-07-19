@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"log/slog"
 	"net"
 	"os"
 	"os/signal"
@@ -103,6 +104,8 @@ func runServer(_ *cobra.Command, _ []string) error {
 	if dndAPIURL == "" {
 		dndAPIURL = "https://www.dnd5eapi.co/api/2014/"
 	}
+
+	slog.Info("Using D&D API URL", "url", dndAPIURL)
 
 	client, err := external.New(&external.Config{
 		BaseURL:     dndAPIURL,

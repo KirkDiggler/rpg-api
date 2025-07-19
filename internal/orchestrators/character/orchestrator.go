@@ -1392,9 +1392,9 @@ func convertExternalClassToEntity(class *external.ClassData) *dnd5e.ClassInfo {
 			RitualCasting:       class.Spellcasting.RitualCasting,
 			SpellcastingFocus:   class.Spellcasting.SpellcastingFocus,
 			// nolint:gosec // safe conversion
-			CantripsKnown:    int32(class.Spellcasting.CantripsKnown),
-			SpellsKnown:      int32(class.Spellcasting.SpellsKnown),      // nolint:gosec
-			SpellSlotsLevel1: int32(class.Spellcasting.SpellSlotsLevel1), // nolint:gosec
+			CantripsKnown:    class.Spellcasting.CantripsKnown,
+			SpellsKnown:      class.Spellcasting.SpellsKnown,
+			SpellSlotsLevel1: class.Spellcasting.SpellSlotsLevel1,
 		}
 	}
 
@@ -1494,7 +1494,7 @@ func convertExternalFeatureToEntity(feature *external.FeatureData) *dnd5e.Featur
 			if choice != nil {
 				entityChoices[i] = dnd5e.Choice{
 					Type:    choice.Type,
-					Choose:  int32(choice.Choose),
+					Choose:  int32(choice.Choose), // nolint:gosec
 					Options: choice.Options,
 					From:    choice.From,
 				}
@@ -1506,11 +1506,11 @@ func convertExternalFeatureToEntity(feature *external.FeatureData) *dnd5e.Featur
 	// Convert spell selection info
 	if feature.SpellSelection != nil {
 		entityFeature.SpellSelection = &dnd5e.SpellSelectionInfo{
-			SpellsToSelect:   feature.SpellSelection.SpellsToSelect,
-			SpellLevels:      feature.SpellSelection.SpellLevels,
-			SpellLists:       feature.SpellSelection.SpellLists,
-			SelectionType:    feature.SpellSelection.SelectionType,
-			RequiresReplace:  feature.SpellSelection.RequiresReplace,
+			SpellsToSelect:  feature.SpellSelection.SpellsToSelect,
+			SpellLevels:     feature.SpellSelection.SpellLevels,
+			SpellLists:      feature.SpellSelection.SpellLists,
+			SelectionType:   feature.SpellSelection.SelectionType,
+			RequiresReplace: feature.SpellSelection.RequiresReplace,
 		}
 	}
 
@@ -1862,22 +1862,22 @@ func (o *Orchestrator) getAvailableChoiceCategories(
 
 	// Add class-specific choices based on class ID
 	switch draft.ClassID {
-	case "fighter":
+	case dnd5e.ClassIDFighter:
 		if shouldIncludeChoiceType(dnd5e.ChoiceTypeFightingStyle) {
 			categories = append(categories, o.createFighterFightingStyleChoices())
 		}
-	case "wizard":
+	case dnd5e.ClassIDWizard:
 		if shouldIncludeChoiceType(dnd5e.ChoiceTypeCantrips) {
 			categories = append(categories, o.createWizardCantripChoices(ctx))
 		}
 		if shouldIncludeChoiceType(dnd5e.ChoiceTypeSpells) {
 			categories = append(categories, o.createWizardSpellChoices(ctx))
 		}
-	case "cleric":
+	case dnd5e.ClassIDCleric:
 		if shouldIncludeChoiceType(dnd5e.ChoiceTypeCantrips) {
 			categories = append(categories, o.createClericCantripChoices(ctx))
 		}
-	case "sorcerer":
+	case dnd5e.ClassIDSorcerer:
 		if shouldIncludeChoiceType(dnd5e.ChoiceTypeCantrips) {
 			categories = append(categories, o.createSorcererCantripChoices(ctx))
 		}
@@ -2278,7 +2278,7 @@ func (o *Orchestrator) ListEquipmentByType(
 		pageSize = 20 // Default page size
 	}
 
-	totalSize := int32(len(equipmentList))
+	totalSize := int32(len(equipmentList)) // nolint:gosec
 	startIndex := int32(0)
 	nextPageToken := ""
 
@@ -2365,7 +2365,7 @@ func (o *Orchestrator) ListSpellsByLevel(
 		pageSize = 20 // Default page size
 	}
 
-	totalSize := int32(len(spellList))
+	totalSize := int32(len(spellList)) // nolint:gosec
 	startIndex := int32(0)
 	nextPageToken := ""
 

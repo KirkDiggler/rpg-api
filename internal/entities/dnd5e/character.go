@@ -213,11 +213,11 @@ type FeatureInfo struct {
 
 // SpellSelectionInfo contains programmatic spell selection requirements
 type SpellSelectionInfo struct {
-	SpellsToSelect   int32
-	SpellLevels      []int32
-	SpellLists       []string
-	SelectionType    string
-	RequiresReplace  bool
+	SpellsToSelect  int32
+	SpellLevels     []int32
+	SpellLists      []string
+	SelectionType   string
+	RequiresReplace bool
 }
 
 // SpellcastingInfo contains spellcasting information for a class

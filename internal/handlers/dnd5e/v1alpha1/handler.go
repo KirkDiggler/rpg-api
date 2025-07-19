@@ -1811,7 +1811,7 @@ func convertEquipmentToProto(equipment *dnd5e.EquipmentInfo) *dnd5ev1alpha1.Equi
 			quantity, err := strconv.Atoi(parts[0])
 			if err == nil {
 				protoEquipment.Cost = &dnd5ev1alpha1.Cost{
-					Quantity: int32(quantity),
+					Quantity: int32(quantity), // nolint:gosec
 					Unit:     parts[1],
 				}
 			} else {
@@ -1838,7 +1838,7 @@ func convertEquipmentToProto(equipment *dnd5e.EquipmentInfo) *dnd5ev1alpha1.Equi
 			quantity, err := strconv.Atoi(parts[0])
 			if err == nil {
 				protoEquipment.Weight = &dnd5ev1alpha1.Weight{
-					Quantity: int32(quantity),
+					Quantity: int32(quantity), // nolint:gosec
 					Unit:     parts[1],
 				}
 			} else {
@@ -1883,9 +1883,7 @@ func convertSpellToProto(spell *dnd5e.SpellInfo) *dnd5ev1alpha1.Spell {
 
 	// Convert classes
 	protoClasses := make([]string, len(spell.Classes))
-	for i, class := range spell.Classes {
-		protoClasses[i] = class
-	}
+	copy(protoClasses, spell.Classes)
 	protoSpell.Classes = protoClasses
 
 	// TODO: Add spell damage and area of effect conversion
@@ -1926,11 +1924,11 @@ func convertFeatureInfoToProto(feature *dnd5e.FeatureInfo) *dnd5ev1alpha1.Featur
 	// Convert spell selection info
 	if feature.SpellSelection != nil {
 		protoFeature.SpellSelection = &dnd5ev1alpha1.SpellSelectionInfo{
-			SpellsToSelect:   feature.SpellSelection.SpellsToSelect,
-			SpellLevels:      feature.SpellSelection.SpellLevels,
-			SpellLists:       feature.SpellSelection.SpellLists,
-			SelectionType:    convertSpellSelectionTypeToProto(feature.SpellSelection.SelectionType),
-			RequiresReplace:  feature.SpellSelection.RequiresReplace,
+			SpellsToSelect:  feature.SpellSelection.SpellsToSelect,
+			SpellLevels:     feature.SpellSelection.SpellLevels,
+			SpellLists:      feature.SpellSelection.SpellLists,
+			SelectionType:   convertSpellSelectionTypeToProto(feature.SpellSelection.SelectionType),
+			RequiresReplace: feature.SpellSelection.RequiresReplace,
 		}
 	}
 
