@@ -98,8 +98,14 @@ func runServer(_ *cobra.Command, _ []string) error {
 		return fmt.Errorf("failed to create character draft repository: %w", err)
 	}
 
+	// Get D&D API URL from environment or use default
+	dndAPIURL := os.Getenv("DND5E_API_URL")
+	if dndAPIURL == "" {
+		dndAPIURL = "https://www.dnd5eapi.co/api/2014/"
+	}
+
 	client, err := external.New(&external.Config{
-		BaseURL:     "https://www.dnd5eapi.co/api/2014/",
+		BaseURL:     dndAPIURL,
 		CacheTTL:    24 * time.Hour,
 		HTTPTimeout: 30 * time.Second,
 	})
