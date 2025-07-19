@@ -27,16 +27,18 @@ type HandlerTestSuite struct {
 	ctx             context.Context
 
 	// Test data - valid requests we can use across tests
-	validCreateDraftReq     *dnd5ev1alpha1.CreateDraftRequest
-	validGetDraftReq        *dnd5ev1alpha1.GetDraftRequest
-	validListDraftsReq      *dnd5ev1alpha1.ListDraftsRequest
-	validUpdateNameReq      *dnd5ev1alpha1.UpdateNameRequest
-	validUpdateRaceReq      *dnd5ev1alpha1.UpdateRaceRequest
-	validUpdateClassReq     *dnd5ev1alpha1.UpdateClassRequest
-	validFinalizeDraftReq   *dnd5ev1alpha1.FinalizeDraftRequest
-	validGetCharacterReq    *dnd5ev1alpha1.GetCharacterRequest
-	validListCharactersReq  *dnd5ev1alpha1.ListCharactersRequest
-	validDeleteCharacterReq *dnd5ev1alpha1.DeleteCharacterRequest
+	validCreateDraftReq         *dnd5ev1alpha1.CreateDraftRequest
+	validGetDraftReq            *dnd5ev1alpha1.GetDraftRequest
+	validListDraftsReq          *dnd5ev1alpha1.ListDraftsRequest
+	validUpdateNameReq          *dnd5ev1alpha1.UpdateNameRequest
+	validUpdateRaceReq          *dnd5ev1alpha1.UpdateRaceRequest
+	validUpdateClassReq         *dnd5ev1alpha1.UpdateClassRequest
+	validFinalizeDraftReq       *dnd5ev1alpha1.FinalizeDraftRequest
+	validGetCharacterReq        *dnd5ev1alpha1.GetCharacterRequest
+	validListCharactersReq      *dnd5ev1alpha1.ListCharactersRequest
+	validDeleteCharacterReq     *dnd5ev1alpha1.DeleteCharacterRequest
+	validListEquipmentByTypeReq *dnd5ev1alpha1.ListEquipmentByTypeRequest
+	validListSpellsByLevelReq   *dnd5ev1alpha1.ListSpellsByLevelRequest
 
 	// Common test IDs
 	testPlayerID    string
@@ -121,6 +123,19 @@ func (s *HandlerTestSuite) SetupTest() {
 
 	s.validDeleteCharacterReq = &dnd5ev1alpha1.DeleteCharacterRequest{
 		CharacterId: s.testCharacterID,
+	}
+
+	s.validListEquipmentByTypeReq = &dnd5ev1alpha1.ListEquipmentByTypeRequest{
+		EquipmentType: dnd5ev1alpha1.EquipmentType_EQUIPMENT_TYPE_SIMPLE_MELEE_WEAPON,
+		PageSize:      20,
+		PageToken:     "",
+	}
+
+	s.validListSpellsByLevelReq = &dnd5ev1alpha1.ListSpellsByLevelRequest{
+		Level:     0, // cantrips
+		Class:     dnd5ev1alpha1.Class_CLASS_WIZARD,
+		PageSize:  20,
+		PageToken: "",
 	}
 
 	// Initialize expected entities for reuse
@@ -983,6 +998,354 @@ func (s *HandlerTestSuite) TestDeleteCharacter() {
 		st, ok := status.FromError(err)
 		s.True(ok)
 		s.Equal(codes.InvalidArgument, st.Code())
+	})
+}
+
+// Equipment and spell listing tests
+
+func (s *HandlerTestSuite) TestListEquipmentByType() {
+	s.Run("with valid equipment type", func() {
+		expectedEquipment := []*dnd5e.EquipmentInfo{
+			{
+				ID:          "dagger",
+				Name:        "Dagger",
+				Type:        "weapon",
+				Category:    "simple-melee-weapon",
+				Cost:        "2 gp",
+				Weight:      "1 lb",
+				Description: "A simple melee weapon",
+				Properties:  []string{"finesse", "light", "thrown"},
+			},
+			{
+				ID:          "club",
+				Name:        "Club",
+				Type:        "weapon",
+				Category:    "simple-melee-weapon",
+				Cost:        "1 sp",
+				Weight:      "2 lbs",
+				Description: "A simple melee weapon",
+				Properties:  []string{"light"},
+			},
+		}
+
+		s.mockCharService.EXPECT().
+			ListEquipmentByType(s.ctx, &character.ListEquipmentByTypeInput{
+				EquipmentType: "simple-melee-weapons",
+				PageSize:      20,
+				PageToken:     "",
+			}).
+			Return(&character.ListEquipmentByTypeOutput{
+				Equipment:     expectedEquipment,
+				NextPageToken: "next-token",
+				TotalSize:     2,
+			}, nil)
+
+		resp, err := s.handler.ListEquipmentByType(s.ctx, s.validListEquipmentByTypeReq)
+
+		s.NoError(err)
+		s.NotNil(resp)
+		s.Len(resp.Equipment, 2)
+		s.Equal("next-token", resp.NextPageToken)
+		s.Equal(int32(2), resp.TotalSize)
+
+		// Check first equipment item conversion
+		equipment := resp.Equipment[0]
+		s.Equal("dagger", equipment.Id)
+		s.Equal("Dagger", equipment.Name)
+		s.Equal("simple-melee-weapon", equipment.Category)
+		s.Equal("A simple melee weapon", equipment.Description)
+		s.NotNil(equipment.Cost)
+		s.Equal("gp", equipment.Cost.Unit)
+		s.Equal(int32(2), equipment.Cost.Quantity) // Parsed from "2 gp"
+		s.NotNil(equipment.Weight)
+		s.Equal("lb", equipment.Weight.Unit)
+		s.Equal(int32(1), equipment.Weight.Quantity) // Parsed from "1 lb"
+	})
+
+	s.Run("with different equipment types", func() {
+		testCases := []struct {
+			name          string
+			equipmentType dnd5ev1alpha1.EquipmentType
+			expectedType  string
+		}{
+			{
+				name:          "simple_melee_weapon",
+				equipmentType: dnd5ev1alpha1.EquipmentType_EQUIPMENT_TYPE_SIMPLE_MELEE_WEAPON,
+				expectedType:  "simple-melee-weapons",
+			},
+			{
+				name:          "martial_melee_weapon",
+				equipmentType: dnd5ev1alpha1.EquipmentType_EQUIPMENT_TYPE_MARTIAL_MELEE_WEAPON,
+				expectedType:  "martial-melee-weapons",
+			},
+			{
+				name:          "simple_ranged_weapon",
+				equipmentType: dnd5ev1alpha1.EquipmentType_EQUIPMENT_TYPE_SIMPLE_RANGED_WEAPON,
+				expectedType:  "simple-ranged-weapons",
+			},
+			{
+				name:          "martial_ranged_weapon",
+				equipmentType: dnd5ev1alpha1.EquipmentType_EQUIPMENT_TYPE_MARTIAL_RANGED_WEAPON,
+				expectedType:  "martial-ranged-weapons",
+			},
+			{
+				name:          "light_armor",
+				equipmentType: dnd5ev1alpha1.EquipmentType_EQUIPMENT_TYPE_LIGHT_ARMOR,
+				expectedType:  "light-armor",
+			},
+			{
+				name:          "medium_armor",
+				equipmentType: dnd5ev1alpha1.EquipmentType_EQUIPMENT_TYPE_MEDIUM_ARMOR,
+				expectedType:  "medium-armor",
+			},
+			{
+				name:          "heavy_armor",
+				equipmentType: dnd5ev1alpha1.EquipmentType_EQUIPMENT_TYPE_HEAVY_ARMOR,
+				expectedType:  "heavy-armor",
+			},
+			{
+				name:          "shield",
+				equipmentType: dnd5ev1alpha1.EquipmentType_EQUIPMENT_TYPE_SHIELD,
+				expectedType:  "shields",
+			},
+			{
+				name:          "adventuring_gear",
+				equipmentType: dnd5ev1alpha1.EquipmentType_EQUIPMENT_TYPE_ADVENTURING_GEAR,
+				expectedType:  "adventuring-gear",
+			},
+		}
+
+		for _, tc := range testCases {
+			s.Run(tc.name, func() {
+				req := &dnd5ev1alpha1.ListEquipmentByTypeRequest{
+					EquipmentType: tc.equipmentType,
+					PageSize:      10,
+					PageToken:     "",
+				}
+
+				s.mockCharService.EXPECT().
+					ListEquipmentByType(s.ctx, &character.ListEquipmentByTypeInput{
+						EquipmentType: tc.expectedType,
+						PageSize:      10,
+						PageToken:     "",
+					}).
+					Return(&character.ListEquipmentByTypeOutput{
+						Equipment:     []*dnd5e.EquipmentInfo{},
+						NextPageToken: "",
+						TotalSize:     0,
+					}, nil)
+
+				resp, err := s.handler.ListEquipmentByType(s.ctx, req)
+
+				s.NoError(err)
+				s.NotNil(resp)
+				s.Empty(resp.Equipment)
+			})
+		}
+	})
+
+	s.Run("with missing equipment type", func() {
+		req := &dnd5ev1alpha1.ListEquipmentByTypeRequest{
+			EquipmentType: dnd5ev1alpha1.EquipmentType_EQUIPMENT_TYPE_UNSPECIFIED,
+			PageSize:      20,
+		}
+
+		resp, err := s.handler.ListEquipmentByType(s.ctx, req)
+
+		s.Error(err)
+		s.Nil(resp)
+		st, ok := status.FromError(err)
+		s.True(ok)
+		s.Equal(codes.InvalidArgument, st.Code())
+		s.Contains(st.Message(), "equipment_type is required")
+	})
+
+	s.Run("when service returns error", func() {
+		s.mockCharService.EXPECT().
+			ListEquipmentByType(s.ctx, gomock.Any()).
+			Return(nil, errors.New("database error"))
+
+		resp, err := s.handler.ListEquipmentByType(s.ctx, s.validListEquipmentByTypeReq)
+
+		s.Error(err)
+		s.Nil(resp)
+		st, ok := status.FromError(err)
+		s.True(ok)
+		s.Equal(codes.Internal, st.Code())
+		s.Contains(st.Message(), "database error")
+	})
+}
+
+func (s *HandlerTestSuite) TestListSpellsByLevel() {
+	s.Run("with valid spell level", func() {
+		expectedSpells := []*dnd5e.SpellInfo{
+			{
+				ID:          "fire-bolt",
+				Name:        "Fire Bolt",
+				Level:       0,
+				School:      "Evocation",
+				CastingTime: "1 action",
+				Range:       "120 feet",
+				Components:  []string{"V", "S"},
+				Duration:    "Instantaneous",
+				Description: "A flaming bolt of energy",
+				Classes:     []string{"sorcerer", "wizard"},
+			},
+			{
+				ID:          "prestidigitation",
+				Name:        "Prestidigitation",
+				Level:       0,
+				School:      "Transmutation",
+				CastingTime: "1 action",
+				Range:       "10 feet",
+				Components:  []string{"V", "S"},
+				Duration:    "Up to 1 hour",
+				Description: "Minor magical effects",
+				Classes:     []string{"bard", "sorcerer", "warlock", "wizard"},
+			},
+		}
+
+		s.mockCharService.EXPECT().
+			ListSpellsByLevel(s.ctx, &character.ListSpellsByLevelInput{
+				Level:     0,
+				ClassID:   "CLASS_WIZARD",
+				PageSize:  20,
+				PageToken: "",
+			}).
+			Return(&character.ListSpellsByLevelOutput{
+				Spells:        expectedSpells,
+				NextPageToken: "next-token",
+				TotalSize:     2,
+			}, nil)
+
+		resp, err := s.handler.ListSpellsByLevel(s.ctx, s.validListSpellsByLevelReq)
+
+		s.NoError(err)
+		s.NotNil(resp)
+		s.Len(resp.Spells, 2)
+		s.Equal("next-token", resp.NextPageToken)
+		s.Equal(int32(2), resp.TotalSize)
+
+		// Check first spell conversion
+		spell := resp.Spells[0]
+		s.Equal("fire-bolt", spell.Id)
+		s.Equal("Fire Bolt", spell.Name)
+		s.Equal(int32(0), spell.Level)
+		s.Equal("Evocation", spell.School)
+		s.Equal("1 action", spell.CastingTime)
+		s.Equal("120 feet", spell.Range)
+		s.Equal("V, S", spell.Components) // Components are joined as string in proto
+		s.Equal("Instantaneous", spell.Duration)
+		s.Equal("A flaming bolt of energy", spell.Description)
+		s.Equal([]string{"sorcerer", "wizard"}, spell.Classes)
+	})
+
+	s.Run("with different spell levels", func() {
+		testCases := []int32{0, 1, 2, 3, 4, 5, 6, 7, 8, 9}
+
+		for _, level := range testCases {
+			s.Run(fmt.Sprintf("level_%d", level), func() {
+				req := &dnd5ev1alpha1.ListSpellsByLevelRequest{
+					Level:     level,
+					Class:     dnd5ev1alpha1.Class_CLASS_WIZARD,
+					PageSize:  10,
+					PageToken: "",
+				}
+
+				s.mockCharService.EXPECT().
+					ListSpellsByLevel(s.ctx, &character.ListSpellsByLevelInput{
+						Level:     level,
+						ClassID:   "CLASS_WIZARD",
+						PageSize:  10,
+						PageToken: "",
+					}).
+					Return(&character.ListSpellsByLevelOutput{
+						Spells:        []*dnd5e.SpellInfo{},
+						NextPageToken: "",
+						TotalSize:     0,
+					}, nil)
+
+				resp, err := s.handler.ListSpellsByLevel(s.ctx, req)
+
+				s.NoError(err)
+				s.NotNil(resp)
+				s.Empty(resp.Spells)
+			})
+		}
+	})
+
+	s.Run("without class filter", func() {
+		req := &dnd5ev1alpha1.ListSpellsByLevelRequest{
+			Level:     1,
+			PageSize:  20,
+			PageToken: "",
+		}
+
+		s.mockCharService.EXPECT().
+			ListSpellsByLevel(s.ctx, &character.ListSpellsByLevelInput{
+				Level:     1,
+				ClassID:   "",
+				PageSize:  20,
+				PageToken: "",
+			}).
+			Return(&character.ListSpellsByLevelOutput{
+				Spells:        []*dnd5e.SpellInfo{},
+				NextPageToken: "",
+				TotalSize:     0,
+			}, nil)
+
+		resp, err := s.handler.ListSpellsByLevel(s.ctx, req)
+
+		s.NoError(err)
+		s.NotNil(resp)
+		s.Empty(resp.Spells)
+	})
+
+	s.Run("with invalid spell level", func() {
+		req := &dnd5ev1alpha1.ListSpellsByLevelRequest{
+			Level:    -1,
+			PageSize: 20,
+		}
+
+		resp, err := s.handler.ListSpellsByLevel(s.ctx, req)
+
+		s.Error(err)
+		s.Nil(resp)
+		st, ok := status.FromError(err)
+		s.True(ok)
+		s.Equal(codes.InvalidArgument, st.Code())
+		s.Contains(st.Message(), "level must be between 0 and 9")
+	})
+
+	s.Run("with spell level too high", func() {
+		req := &dnd5ev1alpha1.ListSpellsByLevelRequest{
+			Level:    10,
+			PageSize: 20,
+		}
+
+		resp, err := s.handler.ListSpellsByLevel(s.ctx, req)
+
+		s.Error(err)
+		s.Nil(resp)
+		st, ok := status.FromError(err)
+		s.True(ok)
+		s.Equal(codes.InvalidArgument, st.Code())
+		s.Contains(st.Message(), "level must be between 0 and 9")
+	})
+
+	s.Run("when service returns error", func() {
+		s.mockCharService.EXPECT().
+			ListSpellsByLevel(s.ctx, gomock.Any()).
+			Return(nil, errors.New("database error"))
+
+		resp, err := s.handler.ListSpellsByLevel(s.ctx, s.validListSpellsByLevelReq)
+
+		s.Error(err)
+		s.Nil(resp)
+		st, ok := status.FromError(err)
+		s.True(ok)
+		s.Equal(codes.Internal, st.Code())
+		s.Contains(st.Message(), "database error")
 	})
 }
 

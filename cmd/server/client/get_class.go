@@ -134,7 +134,21 @@ func printClassFeatures(class *dnd5ev1alpha1.ClassInfo) {
 				}
 			}
 			if feature.HasChoices && len(feature.Choices) > 0 {
-				fmt.Printf("    Choices: %s\n", strings.Join(feature.Choices, ", "))
+				fmt.Printf("    Choices:\n")
+				for _, choice := range feature.Choices {
+					fmt.Printf("      Type: %s, Choose: %d, From: %s\n", choice.Type, choice.Choose, choice.From)
+					if len(choice.Options) > 0 {
+						fmt.Printf("      Options: %s\n", strings.Join(choice.Options, ", "))
+					}
+				}
+			}
+			if feature.SpellSelection != nil {
+				fmt.Printf("    Spell Selection:\n")
+				fmt.Printf("      Spells to select: %d\n", feature.SpellSelection.SpellsToSelect)
+				fmt.Printf("      Spell levels: %v\n", feature.SpellSelection.SpellLevels)
+				fmt.Printf("      Spell lists: %v\n", feature.SpellSelection.SpellLists)
+				fmt.Printf("      Selection type: %s\n", feature.SpellSelection.SelectionType)
+				fmt.Printf("      Requires replace: %v\n", feature.SpellSelection.RequiresReplace)
 			}
 		}
 	}

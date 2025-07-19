@@ -58,6 +58,10 @@ type Service interface {
 	GetBackgroundDetails(ctx context.Context, input *GetBackgroundDetailsInput) (*GetBackgroundDetailsOutput, error)
 	ListChoiceOptions(ctx context.Context, input *ListChoiceOptionsInput) (*ListChoiceOptionsOutput, error)
 
+	// Equipment and spell filtering for character creation choices
+	ListEquipmentByType(ctx context.Context, input *ListEquipmentByTypeInput) (*ListEquipmentByTypeOutput, error)
+	ListSpellsByLevel(ctx context.Context, input *ListSpellsByLevelInput) (*ListSpellsByLevelOutput, error)
+
 	// Dice rolling for ability scores
 	RollAbilityScores(ctx context.Context, input *RollAbilityScoresInput) (*RollAbilityScoresOutput, error)
 }
@@ -1371,17 +1375,12 @@ func convertExternalClassToEntity(class *external.ClassData) *dnd5e.ClassInfo {
 	}
 
 	// Convert level 1 features
-	features := make([]dnd5e.ClassFeature, len(class.LevelOneFeatures))
+	features := make([]dnd5e.FeatureInfo, len(class.LevelOneFeatures))
 	for i, feature := range class.LevelOneFeatures {
 		if feature != nil {
-			features[i] = dnd5e.ClassFeature{
-				Name:        feature.Name,
-				Description: feature.Description,
-				// nolint:gosec // safe conversion
-				Level:      int32(feature.Level),
-				HasChoices: feature.HasChoices,
-				Choices:    feature.Choices,
-			}
+			// Convert external FeatureData to entity FeatureInfo
+			convertedFeature := convertExternalFeatureToEntity(feature)
+			features[i] = *convertedFeature
 		}
 	}
 
@@ -1471,6 +1470,51 @@ func convertExternalSpellToEntity(spell *external.SpellData) *dnd5e.SpellInfo {
 		Description: spell.Description,
 		Classes:     classes,
 	}
+}
+
+// convertExternalFeatureToEntity converts external feature data to entity format
+func convertExternalFeatureToEntity(feature *external.FeatureData) *dnd5e.FeatureInfo {
+	if feature == nil {
+		return nil
+	}
+
+	entityFeature := &dnd5e.FeatureInfo{
+		ID:          feature.ID,
+		Name:        feature.Name,
+		Description: feature.Description,
+		Level:       feature.Level,
+		ClassName:   feature.ClassName,
+		HasChoices:  feature.HasChoices,
+	}
+
+	// Convert choices
+	if len(feature.Choices) > 0 {
+		entityChoices := make([]dnd5e.Choice, len(feature.Choices))
+		for i, choice := range feature.Choices {
+			if choice != nil {
+				entityChoices[i] = dnd5e.Choice{
+					Type:    choice.Type,
+					Choose:  int32(choice.Choose),
+					Options: choice.Options,
+					From:    choice.From,
+				}
+			}
+		}
+		entityFeature.Choices = entityChoices
+	}
+
+	// Convert spell selection info
+	if feature.SpellSelection != nil {
+		entityFeature.SpellSelection = &dnd5e.SpellSelectionInfo{
+			SpellsToSelect:   feature.SpellSelection.SpellsToSelect,
+			SpellLevels:      feature.SpellSelection.SpellLevels,
+			SpellLists:       feature.SpellSelection.SpellLists,
+			SelectionType:    feature.SpellSelection.SelectionType,
+			RequiresReplace:  feature.SpellSelection.RequiresReplace,
+		}
+	}
+
+	return entityFeature
 }
 
 // parseClassesFromSpellDescription extracts class names from spell description
@@ -2190,4 +2234,258 @@ func (o *Orchestrator) RollAbilityScores(
 		SessionID: diceOutput.Session.EntityID + ":" + diceOutput.Session.Context,
 		ExpiresAt: diceOutput.Session.ExpiresAt.Unix(),
 	}, nil
+}
+
+// ListEquipmentByType returns equipment filtered by type
+func (o *Orchestrator) ListEquipmentByType(
+	ctx context.Context,
+	input *ListEquipmentByTypeInput,
+) (*ListEquipmentByTypeOutput, error) {
+	// Validate input
+	if input == nil {
+		return nil, errors.InvalidArgument("input is required")
+	}
+	if input.EquipmentType == "" {
+		return nil, errors.InvalidArgument("equipment type is required")
+	}
+
+	// Log the request for observability
+	slog.InfoContext(ctx, "Listing equipment by type",
+		slog.String("equipment_type", input.EquipmentType),
+		slog.Int("page_size", int(input.PageSize)),
+	)
+
+	// Fetch equipment from external client
+	equipmentData, err := o.externalClient.ListEquipmentByCategory(ctx, input.EquipmentType)
+	if err != nil {
+		slog.ErrorContext(ctx, "Failed to list equipment by category",
+			slog.String("equipment_type", input.EquipmentType),
+			slog.String("error", err.Error()),
+		)
+		return nil, errors.Internal("failed to fetch equipment data")
+	}
+
+	// Convert external data to internal entities
+	equipmentList := make([]*dnd5e.EquipmentInfo, 0, len(equipmentData))
+	for _, equipment := range equipmentData {
+		equipmentInfo := convertEquipmentDataToEntity(equipment)
+		equipmentList = append(equipmentList, equipmentInfo)
+	}
+
+	// Apply pagination (simple in-memory pagination for now)
+	pageSize := input.PageSize
+	if pageSize == 0 {
+		pageSize = 20 // Default page size
+	}
+
+	totalSize := int32(len(equipmentList))
+	startIndex := int32(0)
+	nextPageToken := ""
+
+	// Parse page token if provided
+	if input.PageToken != "" {
+		if parsed, err := strconv.ParseInt(input.PageToken, 10, 32); err == nil {
+			startIndex = int32(parsed)
+		}
+	}
+
+	// Calculate end index and next page token
+	endIndex := startIndex + pageSize
+	if endIndex > totalSize {
+		endIndex = totalSize
+	}
+	if endIndex < totalSize {
+		nextPageToken = strconv.FormatInt(int64(endIndex), 10)
+	}
+
+	// Get the page slice
+	var pagedEquipment []*dnd5e.EquipmentInfo
+	if startIndex < totalSize {
+		pagedEquipment = equipmentList[startIndex:endIndex]
+	}
+
+	return &ListEquipmentByTypeOutput{
+		Equipment:     pagedEquipment,
+		NextPageToken: nextPageToken,
+		TotalSize:     totalSize,
+	}, nil
+}
+
+// ListSpellsByLevel returns spells filtered by level
+func (o *Orchestrator) ListSpellsByLevel(
+	ctx context.Context,
+	input *ListSpellsByLevelInput,
+) (*ListSpellsByLevelOutput, error) {
+	// Validate input
+	if input == nil {
+		return nil, errors.InvalidArgument("input is required")
+	}
+	if input.Level < 0 || input.Level > 9 {
+		return nil, errors.InvalidArgument("spell level must be between 0 and 9")
+	}
+
+	// Log the request for observability
+	slog.InfoContext(ctx, "Listing spells by level",
+		slog.Int("level", int(input.Level)),
+		slog.String("class_id", input.ClassID),
+		slog.Int("page_size", int(input.PageSize)),
+	)
+
+	// Prepare external client input
+	externalInput := &external.ListSpellsInput{
+		Level: &input.Level,
+	}
+
+	// Convert internal class ID to external format if provided
+	if input.ClassID != "" {
+		externalInput.ClassID = convertClassIDToExternalFormat(input.ClassID)
+	}
+
+	// Fetch spells from external client
+	spellData, err := o.externalClient.ListAvailableSpells(ctx, externalInput)
+	if err != nil {
+		slog.ErrorContext(ctx, "Failed to list spells",
+			slog.Int("level", int(input.Level)),
+			slog.String("class_id", input.ClassID),
+			slog.String("error", err.Error()),
+		)
+		return nil, errors.Internal("failed to fetch spell data")
+	}
+
+	// Convert external data to internal entities
+	spellList := make([]*dnd5e.SpellInfo, 0, len(spellData))
+	for _, spell := range spellData {
+		spellInfo := convertSpellDataToEntity(spell)
+		spellList = append(spellList, spellInfo)
+	}
+
+	// Apply pagination (simple in-memory pagination for now)
+	pageSize := input.PageSize
+	if pageSize == 0 {
+		pageSize = 20 // Default page size
+	}
+
+	totalSize := int32(len(spellList))
+	startIndex := int32(0)
+	nextPageToken := ""
+
+	// Parse page token if provided
+	if input.PageToken != "" {
+		if parsed, err := strconv.ParseInt(input.PageToken, 10, 32); err == nil {
+			startIndex = int32(parsed)
+		}
+	}
+
+	// Calculate end index and next page token
+	endIndex := startIndex + pageSize
+	if endIndex > totalSize {
+		endIndex = totalSize
+	}
+	if endIndex < totalSize {
+		nextPageToken = strconv.FormatInt(int64(endIndex), 10)
+	}
+
+	// Get the page slice
+	var pagedSpells []*dnd5e.SpellInfo
+	if startIndex < totalSize {
+		pagedSpells = spellList[startIndex:endIndex]
+	}
+
+	return &ListSpellsByLevelOutput{
+		Spells:        pagedSpells,
+		NextPageToken: nextPageToken,
+		TotalSize:     totalSize,
+	}, nil
+}
+
+// Conversion functions for external data to internal entities
+
+// convertEquipmentDataToEntity converts external EquipmentData to internal EquipmentInfo
+func convertEquipmentDataToEntity(equipment *external.EquipmentData) *dnd5e.EquipmentInfo {
+	if equipment == nil {
+		return nil
+	}
+
+	equipmentInfo := &dnd5e.EquipmentInfo{
+		ID:          equipment.ID,
+		Name:        equipment.Name,
+		Type:        equipment.EquipmentType,
+		Category:    equipment.Category,
+		Description: equipment.Description,
+		Properties:  equipment.Properties,
+	}
+
+	// Convert cost
+	if equipment.Cost != nil {
+		equipmentInfo.Cost = fmt.Sprintf("%d %s", equipment.Cost.Quantity, equipment.Cost.Unit)
+	}
+
+	// Convert weight
+	if equipment.Weight > 0 {
+		if equipment.Weight == float32(int(equipment.Weight)) {
+			equipmentInfo.Weight = fmt.Sprintf("%d lbs", int(equipment.Weight))
+		} else {
+			equipmentInfo.Weight = fmt.Sprintf("%.1f lbs", equipment.Weight)
+		}
+	}
+
+	return equipmentInfo
+}
+
+// convertSpellDataToEntity converts external SpellData to internal SpellInfo
+func convertSpellDataToEntity(spell *external.SpellData) *dnd5e.SpellInfo {
+	if spell == nil {
+		return nil
+	}
+
+	return &dnd5e.SpellInfo{
+		ID:          spell.ID,
+		Name:        spell.Name,
+		Level:       spell.Level,
+		School:      spell.School,
+		CastingTime: spell.CastingTime,
+		Range:       spell.Range,
+		Components:  spell.Components,
+		Duration:    spell.Duration,
+		Description: spell.Description,
+		Classes:     []string{}, // TODO: Add class filtering in external client
+	}
+}
+
+// convertClassIDToExternalFormat converts internal class ID to external format
+func convertClassIDToExternalFormat(classID string) string {
+	// Convert from internal format (e.g., "CLASS_WIZARD") to external format (e.g., "wizard")
+	// First, try to find a direct mapping
+	switch classID {
+	case dnd5e.ClassBarbarian:
+		return "barbarian"
+	case dnd5e.ClassBard:
+		return "bard"
+	case dnd5e.ClassCleric:
+		return "cleric"
+	case dnd5e.ClassDruid:
+		return "druid"
+	case dnd5e.ClassFighter:
+		return "fighter"
+	case dnd5e.ClassMonk:
+		return "monk"
+	case dnd5e.ClassPaladin:
+		return "paladin"
+	case dnd5e.ClassRanger:
+		return "ranger"
+	case dnd5e.ClassRogue:
+		return "rogue"
+	case dnd5e.ClassSorcerer:
+		return "sorcerer"
+	case dnd5e.ClassWarlock:
+		return "warlock"
+	case dnd5e.ClassWizard:
+		return "wizard"
+	default:
+		// If no direct mapping, try to convert from CLASS_X format to lowercase
+		if strings.HasPrefix(classID, "CLASS_") {
+			return strings.ToLower(strings.TrimPrefix(classID, "CLASS_"))
+		}
+		return strings.ToLower(classID)
+	}
 }

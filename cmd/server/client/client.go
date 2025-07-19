@@ -37,6 +37,10 @@ func init() {
 	ClientCmd.AddCommand(getRaceCmd)
 	ClientCmd.AddCommand(getClassCmd)
 
+	// Equipment and spell commands
+	ClientCmd.AddCommand(listEquipmentCmd)
+	ClientCmd.AddCommand(listSpellsCmd)
+
 	// Draft commands
 	ClientCmd.AddCommand(createDraftCmd)
 	ClientCmd.AddCommand(getDraftCmd)

@@ -70,6 +70,9 @@ type Client interface {
 
 	// GetEquipmentData fetches equipment information from external source
 	GetEquipmentData(ctx context.Context, equipmentID string) (*EquipmentData, error)
+
+	// GetFeatureData fetches feature information from external source
+	GetFeatureData(ctx context.Context, featureID string) (*FeatureData, error)
 }
 
 type client struct {
@@ -554,7 +557,7 @@ func convertClassToClassData(class *entities.Class) *ClassData {
 		WeaponProficiencies:      weaponProficiencies,
 		ToolProficiencies:        toolProficiencies,
 		ProficiencyChoices:       proficiencyChoices,
-		// TODO(#45): LevelOneFeatures and Spellcasting require additional API calls
+		// TODO(#45): LevelOneFeatures require additional API calls with GetFeature
 	}
 }
 
@@ -584,6 +587,11 @@ func (c *client) convertClassWithFeatures(class *entities.Class, level1 *entitie
 		}
 
 		classData.LevelOneFeatures = features
+	}
+
+	// Add spellcasting information if available (from level data)
+	if level1 != nil && level1.SpellCasting != nil {
+		classData.Spellcasting = convertSpellcastingData(nil, level1)
 	}
 
 	return classData, nil
@@ -961,4 +969,287 @@ func (c *client) loadEquipmentDetails(refs []*entities.ReferenceItem) ([]*Equipm
 	}
 
 	return equipment, nil
+}
+
+// convertSpellcastingData converts level spellcasting data to our internal format
+func convertSpellcastingData(unused interface{}, level1 *entities.Level) *SpellcastingData {
+	// If we have no level-based spellcasting data, return nil
+	if level1 == nil || level1.SpellCasting == nil {
+		return nil
+	}
+
+	spellcastingData := &SpellcastingData{}
+
+	// SpellCasting entity only has numeric data - no ability or info
+	// For now, leave spellcasting ability and focus empty
+	spellcastingData.SpellcastingAbility = "" 
+	spellcastingData.RitualCasting = false
+	spellcastingData.SpellcastingFocus = ""
+
+	// Get level 1 spell slot info from available data
+	spellcastingData.CantripsKnown = int32(level1.SpellCasting.CantripsKnown)     // nolint:gosec // Cantrips known can exceed 9 at higher character levels
+	spellcastingData.SpellsKnown = int32(level1.SpellCasting.SpellsKnown)         // nolint:gosec // D&D values are always 0-20
+	spellcastingData.SpellSlotsLevel1 = int32(level1.SpellCasting.SpellSlotsLevel1) // nolint:gosec // D&D values are always 0-9
+
+	return spellcastingData
+}
+
+func (c *client) GetFeatureData(_ context.Context, featureID string) (*FeatureData, error) {
+	// Get feature details from D&D 5e API
+	slog.Info("Calling D&D 5e API to get feature", "feature", featureID)
+	feature, err := c.dnd5eClient.GetFeature(featureID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get feature %s from D&D 5e API: %w", featureID, err)
+	}
+
+	// Convert to our internal format with enhanced descriptions
+	return convertFeatureToFeatureData(feature), nil
+}
+
+// convertFeatureToFeatureData converts dnd5e-api feature to our internal format with enhanced descriptions
+func convertFeatureToFeatureData(feature *entities.Feature) *FeatureData {
+	if feature == nil {
+		return nil
+	}
+
+	featureData := &FeatureData{
+		ID:         feature.Key,
+		Name:       feature.Name,
+		Level:      int32(feature.Level), // nolint:gosec // D&D levels are always 1-20
+		HasChoices: feature.FeatureSpecific != nil && feature.FeatureSpecific.SubFeatureOptions != nil,
+	}
+
+	if feature.Class != nil {
+		featureData.ClassName = feature.Class.Name
+	}
+
+	// Add enhanced descriptions based on known D&D 5e rules
+	featureData.Description = buildFeatureDescription(feature)
+
+	// Add programmatic spell selection data
+	featureData.SpellSelection = buildSpellSelectionData(feature)
+
+	// Convert choices if available
+	if feature.FeatureSpecific != nil && feature.FeatureSpecific.SubFeatureOptions != nil {
+		featureData.Choices = []*ChoiceData{
+			convertChoiceOption(feature.FeatureSpecific.SubFeatureOptions, "feature"),
+		}
+	}
+
+	return featureData
+}
+
+// buildFeatureDescription creates enhanced descriptions for important features
+func buildFeatureDescription(feature *entities.Feature) string {
+	switch feature.Key {
+	case "spellcasting-wizard":
+		return buildWizardSpellcastingDescription()
+	case "spellcasting-bard":
+		return buildBardSpellcastingDescription()
+	case "spellcasting-sorcerer":
+		return buildSorcererSpellcastingDescription()
+	case "spellcasting-warlock":
+		return buildWarlockSpellcastingDescription()
+	case "spellcasting-cleric":
+		return buildClericSpellcastingDescription()
+	case "spellcasting-druid":
+		return buildDruidSpellcastingDescription()
+	case "spellcasting-paladin":
+		return buildPaladinSpellcastingDescription()
+	case "spellcasting-ranger":
+		return buildRangerSpellcastingDescription()
+	default:
+		return fmt.Sprintf("A %s class feature gained at level %d.", feature.Class.Name, feature.Level)
+	}
+}
+
+// buildWizardSpellcastingDescription provides the crucial wizard spellbook information
+func buildWizardSpellcastingDescription() string {
+	return `As a 1st-level wizard, you have a spellbook containing six 1st-level wizard spells of your choice. Your spellbook is the repository of the wizard spells you know, except your cantrips.
+
+**Spellbook Selection:**
+- Choose 6 first-level wizard spells for your spellbook
+- All spells must be from the wizard spell list
+- All spells must be 1st level (you cannot choose cantrips for your spellbook)
+
+**Learning New Spells:**
+Each time you gain a wizard level, you can add two wizard spells of your choice to your spellbook. Each of these spells must be of a level for which you have spell slots.
+
+**Preparing Spells:**
+You prepare a number of wizard spells equal to your Intelligence modifier + your wizard level (minimum of one spell). The spells must be of a level for which you have spell slots.`
+}
+
+// buildBardSpellcastingDescription provides bard spellcasting information
+func buildBardSpellcastingDescription() string {
+	return `You have learned to untangle and reshape the fabric of reality in harmony with your wishes and music. Your spells are part of your vast repertoire.
+
+**Spells Known:**
+You know two cantrips of your choice from the bard spell list. You learn additional bard cantrips of your choice at higher levels.
+
+You know four 1st-level spells of your choice from the bard spell list. You learn additional bard spells of your choice at higher levels.
+
+**Spellcasting Ability:**
+Charisma is your spellcasting ability for your bard spells. You use your Charisma whenever a spell refers to your spellcasting ability.`
+}
+
+// buildSorcererSpellcastingDescription provides sorcerer spellcasting information
+func buildSorcererSpellcastingDescription() string {
+	return `An event in your past, or in the life of a parent or ancestor, left an indelible mark on you, infusing you with arcane magic.
+
+**Cantrips:**
+You know four cantrips of your choice from the sorcerer spell list. You learn additional sorcerer cantrips of your choice at higher levels.
+
+**Spells Known:**
+You know two 1st-level spells of your choice from the sorcerer spell list. You learn additional sorcerer spells of your choice at higher levels.
+
+**Spellcasting Ability:**
+Charisma is your spellcasting ability for your sorcerer spells.`
+}
+
+// buildWarlockSpellcastingDescription provides warlock spellcasting information
+func buildWarlockSpellcastingDescription() string {
+	return `Your arcane research and the magic bestowed on you by your patron have given you facility with spells.
+
+**Cantrips:**
+You know two cantrips of your choice from the warlock spell list. You learn additional warlock cantrips of your choice at higher levels.
+
+**Spell Slots:**
+You have two 1st-level spell slots. You regain all expended spell slots when you finish a short or long rest.
+
+**Spells Known:**
+You know two 1st-level spells of your choice from the warlock spell list. You learn additional warlock spells of your choice at higher levels.
+
+**Spellcasting Ability:**
+Charisma is your spellcasting ability for your warlock spells.`
+}
+
+// buildClericSpellcastingDescription provides cleric spellcasting information
+func buildClericSpellcastingDescription() string {
+	return `As a conduit for divine power, you can cast cleric spells.
+
+**Cantrips:**
+You know three cantrips of your choice from the cleric spell list. You learn additional cleric cantrips of your choice at higher levels.
+
+**Preparing Spells:**
+You prepare a number of cleric spells equal to your Wisdom modifier + your cleric level (minimum of one spell). The spells must be of a level for which you have spell slots.
+
+**Spellcasting Ability:**
+Wisdom is your spellcasting ability for your cleric spells. You use your Wisdom whenever a spell refers to your spellcasting ability.
+
+**Ritual Casting:**
+You can cast a cleric spell as a ritual if that spell has the ritual tag and you have the spell prepared.`
+}
+
+// buildDruidSpellcastingDescription provides druid spellcasting information
+func buildDruidSpellcastingDescription() string {
+	return `Drawing on the divine essence of nature itself, you can cast spells to shape that essence to your will.
+
+**Cantrips:**
+You know two cantrips of your choice from the druid spell list. You learn additional druid cantrips of your choice at higher levels.
+
+**Preparing Spells:**
+You prepare a number of druid spells equal to your Wisdom modifier + your druid level (minimum of one spell). The spells must be of a level for which you have spell slots.
+
+**Spellcasting Ability:**
+Wisdom is your spellcasting ability for your druid spells. You use your Wisdom whenever a spell refers to your spellcasting ability.
+
+**Ritual Casting:**
+You can cast a druid spell as a ritual if that spell has the ritual tag and you have the spell prepared.`
+}
+
+// buildPaladinSpellcastingDescription provides paladin spellcasting information
+func buildPaladinSpellcastingDescription() string {
+	return `By 2nd level, you have learned to draw on divine magic through meditation and prayer to cast spells as a cleric does.
+
+**Preparing Spells:**
+You prepare a number of paladin spells equal to your Charisma modifier + half your paladin level, rounded down (minimum of one spell). The spells must be of a level for which you have spell slots.
+
+**Spellcasting Ability:**
+Charisma is your spellcasting ability for your paladin spells. You use your Charisma whenever a spell refers to your spellcasting ability.
+
+**Spellcasting Focus:**
+You can use a holy symbol as a spellcasting focus for your paladin spells.`
+}
+
+// buildRangerSpellcastingDescription provides ranger spellcasting information
+func buildRangerSpellcastingDescription() string {
+	return `By the time you reach 2nd level, you have learned to use the magical essence of nature to cast spells, much as a druid does.
+
+**Spells Known:**
+You know two 1st-level spells of your choice from the ranger spell list. You learn additional ranger spells of your choice at higher levels.
+
+**Spellcasting Ability:**
+Wisdom is your spellcasting ability for your ranger spells. You use your Wisdom whenever a spell refers to your spellcasting ability.`
+}
+
+// buildSpellSelectionData creates programmatic spell selection requirements
+func buildSpellSelectionData(feature *entities.Feature) *SpellSelectionData {
+	switch feature.Key {
+	case "spellcasting-wizard":
+		return &SpellSelectionData{
+			SpellsToSelect:  6,
+			SpellLevels:     []int32{1},
+			SpellLists:      []string{"wizard"},
+			SelectionType:   "spellbook",
+			RequiresReplace: false,
+		}
+	case "spellcasting-bard":
+		return &SpellSelectionData{
+			SpellsToSelect:  4,
+			SpellLevels:     []int32{1},
+			SpellLists:      []string{"bard"},
+			SelectionType:   "known",
+			RequiresReplace: true,
+		}
+	case "spellcasting-sorcerer":
+		return &SpellSelectionData{
+			SpellsToSelect:  2,
+			SpellLevels:     []int32{1},
+			SpellLists:      []string{"sorcerer"},
+			SelectionType:   "known",
+			RequiresReplace: true,
+		}
+	case "spellcasting-warlock":
+		return &SpellSelectionData{
+			SpellsToSelect:  2,
+			SpellLevels:     []int32{1},
+			SpellLists:      []string{"warlock"},
+			SelectionType:   "known",
+			RequiresReplace: true,
+		}
+	case "spellcasting-cleric":
+		return &SpellSelectionData{
+			SpellsToSelect:  -1, // Special case: WIS modifier + level
+			SpellLevels:     []int32{1},
+			SpellLists:      []string{"cleric"},
+			SelectionType:   "prepared",
+			RequiresReplace: true,
+		}
+	case "spellcasting-druid":
+		return &SpellSelectionData{
+			SpellsToSelect:  -1, // Special case: WIS modifier + level
+			SpellLevels:     []int32{1},
+			SpellLists:      []string{"druid"},
+			SelectionType:   "prepared",
+			RequiresReplace: true,
+		}
+	case "spellcasting-paladin":
+		return &SpellSelectionData{
+			SpellsToSelect:  -1, // Special case: CHA modifier + half level
+			SpellLevels:     []int32{1},
+			SpellLists:      []string{"paladin"},
+			SelectionType:   "prepared",
+			RequiresReplace: true,
+		}
+	case "spellcasting-ranger":
+		return &SpellSelectionData{
+			SpellsToSelect:  2,
+			SpellLevels:     []int32{1},
+			SpellLists:      []string{"ranger"},
+			SelectionType:   "known",
+			RequiresReplace: true,
+		}
+	default:
+		return nil
+	}
 }

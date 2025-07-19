@@ -306,14 +306,14 @@ func TestGetEquipmentData(t *testing.T) {
 func TestConvertEquipmentToEquipmentData(t *testing.T) {
 	t.Run("convert weapon equipment", func(t *testing.T) {
 		weapon := &entities.Weapon{
-			Key:            "longsword",
-			Name:           "Longsword",
-			WeaponCategory: "Martial",
-			WeaponRange:    "Melee",
-			Weight:         3.0,
-			Cost:           &entities.Cost{Quantity: 15, Unit: "gp"},
-			Damage:         &entities.Damage{DamageDice: "1d8", DamageType: &entities.ReferenceItem{Name: "Slashing"}},
-			Properties:     []*entities.ReferenceItem{{Name: "Versatile"}},
+			Key:               "longsword",
+			Name:              "Longsword",
+			WeaponCategory:    "Martial",
+			WeaponRange:       "Melee",
+			Weight:            3.0,
+			Cost:              &entities.Cost{Quantity: 15, Unit: "gp"},
+			Damage:            &entities.Damage{DamageDice: "1d8", DamageType: &entities.ReferenceItem{Name: "Slashing"}},
+			Properties:        []*entities.ReferenceItem{{Name: "Versatile"}},
 			EquipmentCategory: &entities.ReferenceItem{Key: "martial-weapons"},
 		}
 

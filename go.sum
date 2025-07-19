@@ -1,5 +1,5 @@
-github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20250717090912-8e6f397b9ea7 h1:xWrQJAnoADMSPdbu/7AG5rF8nsGoz+PagVezVh/VU+Y=
-github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20250717090912-8e6f397b9ea7/go.mod h1:N+b719XdYHl7kMxzkntEpKLBYoOgszGBAmxb5P/JMSo=
+github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20250718195803-cea4a85c7ca3 h1:Y5uDwyv5vLAUthsPo/SVjJjmwb6um75dTILIx8o4SXs=
+github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20250718195803-cea4a85c7ca3/go.mod h1:G8RdY+ShWutHyEiptYXXXNqnODebu3McJ78nq6OnxCk=
 github.com/KirkDiggler/rpg-toolkit/core v0.1.0 h1:BUJ877kikqcQ0aOt2qUhLSUOVtCaCHLOSyw6nd18B7w=
 github.com/KirkDiggler/rpg-toolkit/core v0.1.0/go.mod h1:N7xIvJGjmrHHNjfWQ3O1LlkalzImcMav3O0fNOg+8No=
 github.com/KirkDiggler/rpg-toolkit/dice v0.1.0 h1:/tpfvSeV2NeaerItinsd1cc1I680cq3lkBL3EsV5Wz4=
@@ -19,8 +19,8 @@ github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f h1:lO4WD4F/rVNCu3HqELle0jiPLLBs70cWOduZpkS1E78=
 github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f/go.mod h1:cuUVRXasLTGF7a8hSLbxyZXjz+1KgoB3wDUb6vlszIc=
-github.com/fadedpez/dnd5e-api v0.0.0-20250716182823-74dbc6391226 h1:ukzKYJQCYtY7tvdP3oE+COUt1+3QjdPESv/e5q//jws=
-github.com/fadedpez/dnd5e-api v0.0.0-20250716182823-74dbc6391226/go.mod h1:7OpXfFTO5ZwD03Rh3MfR0sFIi6U1qJx71rkuGz9IPqw=
+github.com/fadedpez/dnd5e-api v0.0.0-20250718061244-10d9388d279a h1:E+08ywq3MUGx4oh1EdMwWPITGRT+cyl6pweQ4ciN6R8=
+github.com/fadedpez/dnd5e-api v0.0.0-20250718061244-10d9388d279a/go.mod h1:7OpXfFTO5ZwD03Rh3MfR0sFIi6U1qJx71rkuGz9IPqw=
 github.com/go-logr/logr v1.4.3 h1:CjnDlHq8ikf6E492q6eKboGOC0T8CDaOvkHCIg8idEI=
 github.com/go-logr/logr v1.4.3/go.mod h1:9T104GzyrTigFIr8wt5mBrctHMim0Nb2HLGrmQ40KvY=
 github.com/go-logr/stdr v1.2.2 h1:hSWxHoqTgW2S2qGc0LTAI563KZ5YKYRhT3MFKZMbjag=

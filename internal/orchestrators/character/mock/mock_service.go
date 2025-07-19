@@ -252,6 +252,21 @@ func (mr *MockServiceMockRecorder) ListDrafts(ctx, input any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListDrafts", reflect.TypeOf((*MockService)(nil).ListDrafts), ctx, input)
 }
 
+// ListEquipmentByType mocks base method.
+func (m *MockService) ListEquipmentByType(ctx context.Context, input *character.ListEquipmentByTypeInput) (*character.ListEquipmentByTypeOutput, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListEquipmentByType", ctx, input)
+	ret0, _ := ret[0].(*character.ListEquipmentByTypeOutput)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListEquipmentByType indicates an expected call of ListEquipmentByType.
+func (mr *MockServiceMockRecorder) ListEquipmentByType(ctx, input any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListEquipmentByType", reflect.TypeOf((*MockService)(nil).ListEquipmentByType), ctx, input)
+}
+
 // ListRaces mocks base method.
 func (m *MockService) ListRaces(ctx context.Context, input *character.ListRacesInput) (*character.ListRacesOutput, error) {
 	m.ctrl.T.Helper()
@@ -280,6 +295,21 @@ func (m *MockService) ListSpells(ctx context.Context, input *character.ListSpell
 func (mr *MockServiceMockRecorder) ListSpells(ctx, input any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListSpells", reflect.TypeOf((*MockService)(nil).ListSpells), ctx, input)
+}
+
+// ListSpellsByLevel mocks base method.
+func (m *MockService) ListSpellsByLevel(ctx context.Context, input *character.ListSpellsByLevelInput) (*character.ListSpellsByLevelOutput, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListSpellsByLevel", ctx, input)
+	ret0, _ := ret[0].(*character.ListSpellsByLevelOutput)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListSpellsByLevel indicates an expected call of ListSpellsByLevel.
+func (mr *MockServiceMockRecorder) ListSpellsByLevel(ctx, input any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListSpellsByLevel", reflect.TypeOf((*MockService)(nil).ListSpellsByLevel), ctx, input)
 }
 
 // RollAbilityScores mocks base method.

@@ -103,23 +103,16 @@ type EquipmentChoiceData struct {
 	ChooseCount int
 }
 
-// FeatureData represents a class feature
-type FeatureData struct {
-	Name        string
-	Description string
-	Level       int
-	HasChoices  bool
-	Choices     []string
-}
+// Removed duplicate FeatureData - using the richer version below
 
 // SpellcastingData represents spellcasting information
 type SpellcastingData struct {
 	SpellcastingAbility string
 	RitualCasting       bool
 	SpellcastingFocus   string
-	CantripsKnown       int
-	SpellsKnown         int
-	SpellSlotsLevel1    int
+	CantripsKnown       int32
+	SpellsKnown         int32
+	SpellSlotsLevel1    int32
 }
 
 // EquipmentData represents equipment information from external source
@@ -141,6 +134,27 @@ type EquipmentData struct {
 	ArmorClass          *ArmorClassData
 	StrengthMinimum     int
 	StealthDisadvantage bool
+}
+
+// FeatureData represents feature information from external source
+type FeatureData struct {
+	ID               string
+	Name             string
+	Description      string
+	Level            int32
+	ClassName        string
+	HasChoices       bool
+	Choices          []*ChoiceData
+	SpellSelection   *SpellSelectionData
+}
+
+// SpellSelectionData represents programmatic spell selection requirements
+type SpellSelectionData struct {
+	SpellsToSelect   int32    // Number of spells to select
+	SpellLevels      []int32  // Allowed spell levels (0 for cantrips)
+	SpellLists       []string // Allowed spell lists (e.g., "wizard", "cleric")
+	SelectionType    string   // "spellbook", "known", "prepared"
+	RequiresReplace  bool     // Whether spells can be replaced on level up
 }
 
 // CostData represents equipment cost

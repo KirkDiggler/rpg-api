@@ -33,6 +33,26 @@ These commands allow you to test the RPG API by making real gRPC requests to the
 ./server client list-backgrounds
 ```
 
+**List equipment by type:**
+```bash
+./server client list-equipment --type=simple-melee-weapons
+./server client list-equipment --type=martial-melee-weapons
+./server client list-equipment --type=light-armor
+./server client list-equipment --type=heavy-armor
+./server client list-equipment --type=shields
+./server client list-equipment --type=adventuring-gear
+./server client list-equipment --type=simple-melee-weapons --page-size=10
+```
+
+**List spells by level:**
+```bash
+./server client list-spells --level=0                    # Cantrips
+./server client list-spells --level=1                    # 1st level spells
+./server client list-spells --level=3 --class=wizard     # 3rd level wizard spells
+./server client list-spells --level=9 --class=sorcerer   # 9th level sorcerer spells
+./server client list-spells --level=2 --page-size=5      # 2nd level spells, 5 per page
+```
+
 ### Get Commands
 
 **Get specific race details:**
@@ -108,6 +128,52 @@ Skills: Choose 2 from:
   1st Level Spell Slots: 2
 ```
 
+### List Equipment
+```
+⚔️  Dagger (ID: dagger)
+   Category: simple-melee-weapons
+   Cost: 2 gp
+   Weight: 1 lbs
+   🗡️  Weapon Properties:
+     - Category: Simple
+     - Range: Melee
+     - Damage: 1d4 piercing
+     - Properties: finesse, light, thrown
+
+⚔️  Shortsword (ID: shortsword)
+   Category: martial-melee-weapons
+   Cost: 10 gp
+   Weight: 2 lbs
+   🗡️  Weapon Properties:
+     - Category: Martial
+     - Range: Melee
+     - Damage: 1d6 piercing
+     - Properties: finesse, light
+```
+
+### List Spells
+```
+✨ Fire Bolt (ID: fire-bolt)
+   Level: 0 (cantrip)
+   School: Evocation
+   Casting Time: 1 action
+   Range: 120 feet
+   Components: V, S
+   Duration: Instantaneous
+   Classes: sorcerer, wizard
+   Description: You hurl a mote of fire at a creature or object within range...
+
+✨ Magic Missile (ID: magic-missile)
+   Level: 1
+   School: Evocation
+   Casting Time: 1 action
+   Range: 120 feet
+   Components: V, S
+   Duration: Instantaneous
+   Classes: sorcerer, wizard
+   Description: You create three glowing darts of magical force...
+```
+
 ## Testing the External Client
 
 These commands are perfect for testing that the external client integration is working correctly:
@@ -132,4 +198,16 @@ These commands are perfect for testing that the external client integration is w
    ```bash
    ./server client get-race tiefling
    ./server client get-class paladin
+   ```
+
+5. **Test equipment and spell filtering:**
+   ```bash
+   ./server client list-equipment --type=simple-melee-weapons
+   ./server client list-spells --level=0 --class=wizard
+   ```
+
+6. **Test pagination:**
+   ```bash
+   ./server client list-equipment --type=adventuring-gear --page-size=5
+   ./server client list-spells --level=1 --page-size=3
    ```
