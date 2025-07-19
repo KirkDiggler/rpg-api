@@ -3,6 +3,7 @@ package v1alpha1
 
 import (
 	"context"
+	"log/slog"
 	"strconv"
 	"strings"
 
@@ -424,6 +425,12 @@ func (h *Handler) ListCharacters(
 	ctx context.Context,
 	req *dnd5ev1alpha1.ListCharactersRequest,
 ) (*dnd5ev1alpha1.ListCharactersResponse, error) {
+	slog.InfoContext(ctx, "ListCharacters handler called",
+		"player_id", req.PlayerId,
+		"session_id", req.SessionId,
+		"page_size", req.PageSize,
+		"page_token", req.PageToken)
+
 	input := &character.ListCharactersInput{
 		PlayerID:  req.PlayerId,
 		SessionID: req.SessionId,
@@ -436,10 +443,25 @@ func (h *Handler) ListCharacters(
 		input.PageSize = 20
 	}
 
+	if h.characterService == nil {
+		slog.ErrorContext(ctx, "Character service is nil")
+		return nil, errors.ToGRPCError(errors.Internal("character service not initialized"))
+	}
+
+	slog.InfoContext(ctx, "Calling character service ListCharacters",
+		"input", input)
+
 	output, err := h.characterService.ListCharacters(ctx, input)
 	if err != nil {
+		slog.ErrorContext(ctx, "ListCharacters failed",
+			"error", err,
+			"player_id", req.PlayerId,
+			"session_id", req.SessionId)
 		return nil, errors.ToGRPCError(err)
 	}
+
+	slog.InfoContext(ctx, "ListCharacters succeeded",
+		"character_count", len(output.Characters))
 
 	// Convert characters to proto
 	protoCharacters := make([]*dnd5ev1alpha1.Character, len(output.Characters))
