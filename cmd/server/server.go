@@ -273,9 +273,28 @@ func logFunc(_ context.Context, level grpc_logging.Level, msg string, fields ...
 }
 
 func mustRedisClient() redis.Client {
-	client, err := redis.NewClient("localhost:6379", nil)
+	redisAddr := os.Getenv("REDIS_ADDR")
+	if redisAddr == "" {
+		redisAddr = "localhost:6379"
+	}
+
+	slog.Info("connecting to Redis", "address", redisAddr)
+
+	client, err := redis.NewClient(redisAddr, nil)
 	if err != nil {
+		slog.Error("failed to create Redis client", "error", err.Error())
 		panic(err)
 	}
+
+	// Test the connection
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := client.Ping(ctx).Err(); err != nil {
+		slog.Error("failed to connect to Redis", "address", redisAddr, "error", err.Error())
+		panic(fmt.Errorf("failed to connect to Redis at %s: %w", redisAddr, err))
+	}
+
+	slog.Info("successfully connected to Redis", "address", redisAddr)
 	return client
 }

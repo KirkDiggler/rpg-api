@@ -3,6 +3,7 @@ package v1alpha1
 
 import (
 	"context"
+	"log/slog"
 	"strconv"
 	"strings"
 
@@ -424,6 +425,12 @@ func (h *Handler) ListCharacters(
 	ctx context.Context,
 	req *dnd5ev1alpha1.ListCharactersRequest,
 ) (*dnd5ev1alpha1.ListCharactersResponse, error) {
+	slog.InfoContext(ctx, "ListCharacters request received",
+		"player_id", req.PlayerId,
+		"session_id", req.SessionId,
+		"page_size", req.PageSize,
+		"page_token", req.PageToken)
+
 	input := &character.ListCharactersInput{
 		PlayerID:  req.PlayerId,
 		SessionID: req.SessionId,
@@ -438,6 +445,10 @@ func (h *Handler) ListCharacters(
 
 	output, err := h.characterService.ListCharacters(ctx, input)
 	if err != nil {
+		slog.ErrorContext(ctx, "ListCharacters failed",
+			"player_id", req.PlayerId,
+			"session_id", req.SessionId,
+			"error", err.Error())
 		return nil, errors.ToGRPCError(err)
 	}
 

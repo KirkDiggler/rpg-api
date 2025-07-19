@@ -883,18 +883,38 @@ func (o *Orchestrator) ListCharacters(
 	var characters []*dnd5e.Character
 	switch {
 	case input.PlayerID != "":
+		slog.InfoContext(ctx, "listing characters by player",
+			"player_id", input.PlayerID,
+			"page_size", input.PageSize,
+			"page_token", input.PageToken)
 		listOutput, err := o.characterRepo.ListByPlayerID(ctx, characterrepo.ListByPlayerIDInput{PlayerID: input.PlayerID})
 		if err != nil {
-			return nil, errors.Wrap(err, "failed to list characters")
+			slog.ErrorContext(ctx, "failed to list characters by player",
+				"player_id", input.PlayerID,
+				"error", err.Error())
+			return nil, errors.Wrapf(err, "failed to list characters for player %s", input.PlayerID)
 		}
 		characters = listOutput.Characters
+		slog.InfoContext(ctx, "successfully listed characters by player",
+			"player_id", input.PlayerID,
+			"count", len(characters))
 	case input.SessionID != "":
+		slog.InfoContext(ctx, "listing characters by session",
+			"session_id", input.SessionID,
+			"page_size", input.PageSize,
+			"page_token", input.PageToken)
 		listOutput, err := o.characterRepo.ListBySessionID(ctx,
 			characterrepo.ListBySessionIDInput{SessionID: input.SessionID})
 		if err != nil {
-			return nil, errors.Wrap(err, "failed to list characters")
+			slog.ErrorContext(ctx, "failed to list characters by session",
+				"session_id", input.SessionID,
+				"error", err.Error())
+			return nil, errors.Wrapf(err, "failed to list characters for session %s", input.SessionID)
 		}
 		characters = listOutput.Characters
+		slog.InfoContext(ctx, "successfully listed characters by session",
+			"session_id", input.SessionID,
+			"count", len(characters))
 	default:
 		return nil, errors.InvalidArgument("either PlayerID or SessionID must be provided")
 	}
