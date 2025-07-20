@@ -6,6 +6,7 @@ package character
 import (
 	"context"
 	"fmt"
+	"log"
 	"log/slog"
 	"math"
 	"strconv"
@@ -874,6 +875,9 @@ func (o *Orchestrator) ListCharacters(
 		return nil, errors.InvalidArgument("input is required")
 	}
 
+	log.Printf("ListCharacters called with PlayerID=%s, SessionID=%s, PageSize=%d, PageToken=%s",
+		input.PlayerID, input.SessionID, input.PageSize, input.PageToken)
+
 	// Default page size
 	if input.PageSize == 0 {
 		input.PageSize = 20
@@ -916,6 +920,7 @@ func (o *Orchestrator) ListCharacters(
 			"session_id", input.SessionID,
 			"count", len(characters))
 	default:
+		log.Printf("ListCharacters called without PlayerID or SessionID")
 		return nil, errors.InvalidArgument("either PlayerID or SessionID must be provided")
 	}
 
@@ -1412,9 +1417,9 @@ func convertExternalClassToEntity(class *external.ClassData) *dnd5e.ClassInfo {
 			RitualCasting:       class.Spellcasting.RitualCasting,
 			SpellcastingFocus:   class.Spellcasting.SpellcastingFocus,
 			// nolint:gosec // safe conversion
-			CantripsKnown:    class.Spellcasting.CantripsKnown,
-			SpellsKnown:      class.Spellcasting.SpellsKnown,
-			SpellSlotsLevel1: class.Spellcasting.SpellSlotsLevel1,
+			CantripsKnown:    int32(class.Spellcasting.CantripsKnown),
+			SpellsKnown:      int32(class.Spellcasting.SpellsKnown),
+			SpellSlotsLevel1: int32(class.Spellcasting.SpellSlotsLevel1),
 		}
 	}
 
