@@ -87,6 +87,21 @@ func (mr *MockClientMockRecorder) GetEquipmentData(ctx, equipmentID any) *gomock
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetEquipmentData", reflect.TypeOf((*MockClient)(nil).GetEquipmentData), ctx, equipmentID)
 }
 
+// GetFeatureData mocks base method.
+func (m *MockClient) GetFeatureData(ctx context.Context, featureID string) (*external.FeatureData, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetFeatureData", ctx, featureID)
+	ret0, _ := ret[0].(*external.FeatureData)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetFeatureData indicates an expected call of GetFeatureData.
+func (mr *MockClientMockRecorder) GetFeatureData(ctx, featureID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetFeatureData", reflect.TypeOf((*MockClient)(nil).GetFeatureData), ctx, featureID)
+}
+
 // GetRaceData mocks base method.
 func (m *MockClient) GetRaceData(ctx context.Context, raceID string) (*external.RaceData, error) {
 	m.ctrl.T.Helper()

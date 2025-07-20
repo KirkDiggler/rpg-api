@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"log/slog"
 	"net"
 	"os"
 	"os/signal"
@@ -103,6 +104,8 @@ func runServer(_ *cobra.Command, _ []string) error {
 	if dndAPIURL == "" {
 		dndAPIURL = "https://www.dnd5eapi.co/api/2014/"
 	}
+
+	slog.Info("Using D&D API URL", "url", dndAPIURL)
 
 	client, err := external.New(&external.Config{
 		BaseURL:     dndAPIURL,
@@ -274,22 +277,24 @@ func mustRedisClient() redis.Client {
 	if redisAddr == "" {
 		redisAddr = "localhost:6379"
 	}
-	
-	log.Printf("Connecting to Redis at %s", redisAddr)
-	
+
+	slog.Info("connecting to Redis", "address", redisAddr)
+
 	client, err := redis.NewClient(redisAddr, nil)
 	if err != nil {
-		panic(fmt.Errorf("failed to create Redis client: %w", err))
+		slog.Error("failed to create Redis client", "error", err.Error())
+		panic(err)
 	}
-	
-	// Test connection
+
+	// Test the connection
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	
+
 	if err := client.Ping(ctx).Err(); err != nil {
+		slog.Error("failed to connect to Redis", "address", redisAddr, "error", err.Error())
 		panic(fmt.Errorf("failed to connect to Redis at %s: %w", redisAddr, err))
 	}
-	
-	log.Printf("Successfully connected to Redis at %s", redisAddr)
+
+	slog.Info("successfully connected to Redis", "address", redisAddr)
 	return client
 }

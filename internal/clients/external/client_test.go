@@ -238,7 +238,8 @@ func TestListEquipmentByCategory(t *testing.T) {
 		mockClient := new(mockDND5eClient)
 		client := &client{dnd5eClient: mockClient}
 
-		mockClient.On("GetEquipmentCategory", "invalid-category").Return((*entities.EquipmentCategory)(nil), errors.New("category not found"))
+		mockClient.On("GetEquipmentCategory", "invalid-category").Return(
+			(*entities.EquipmentCategory)(nil), errors.New("category not found"))
 
 		result, err := client.ListEquipmentByCategory(context.Background(), "invalid-category")
 
@@ -291,7 +292,8 @@ func TestGetEquipmentData(t *testing.T) {
 		mockClient := new(mockDND5eClient)
 		client := &client{dnd5eClient: mockClient}
 
-		mockClient.On("GetEquipment", "invalid-equipment").Return((*entities.Equipment)(nil), errors.New("equipment not found"))
+		mockClient.On("GetEquipment", "invalid-equipment").Return(
+			(*entities.Equipment)(nil), errors.New("equipment not found"))
 
 		result, err := client.GetEquipmentData(context.Background(), "invalid-equipment")
 

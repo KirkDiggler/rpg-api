@@ -184,4 +184,3 @@ func runListSpells(_ *cobra.Command, _ []string) error {
 
 	return nil
 }
-

@@ -138,23 +138,23 @@ type EquipmentData struct {
 
 // FeatureData represents feature information from external source
 type FeatureData struct {
-	ID               string
-	Name             string
-	Description      string
-	Level            int32
-	ClassName        string
-	HasChoices       bool
-	Choices          []*ChoiceData
-	SpellSelection   *SpellSelectionData
+	ID             string
+	Name           string
+	Description    string
+	Level          int32
+	ClassName      string
+	HasChoices     bool
+	Choices        []*ChoiceData
+	SpellSelection *SpellSelectionData
 }
 
 // SpellSelectionData represents programmatic spell selection requirements
 type SpellSelectionData struct {
-	SpellsToSelect   int32    // Number of spells to select
-	SpellLevels      []int32  // Allowed spell levels (0 for cantrips)
-	SpellLists       []string // Allowed spell lists (e.g., "wizard", "cleric")
-	SelectionType    string   // "spellbook", "known", "prepared"
-	RequiresReplace  bool     // Whether spells can be replaced on level up
+	SpellsToSelect  int32    // Number of spells to select
+	SpellLevels     []int32  // Allowed spell levels (0 for cantrips)
+	SpellLists      []string // Allowed spell lists (e.g., "wizard", "cleric")
+	SelectionType   string   // "spellbook", "known", "prepared"
+	RequiresReplace bool     // Whether spells can be replaced on level up
 }
 
 // CostData represents equipment cost

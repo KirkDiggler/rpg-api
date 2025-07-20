@@ -887,24 +887,38 @@ func (o *Orchestrator) ListCharacters(
 	var characters []*dnd5e.Character
 	switch {
 	case input.PlayerID != "":
-		log.Printf("Listing characters by PlayerID: %s", input.PlayerID)
+		slog.InfoContext(ctx, "listing characters by player",
+			"player_id", input.PlayerID,
+			"page_size", input.PageSize,
+			"page_token", input.PageToken)
 		listOutput, err := o.characterRepo.ListByPlayerID(ctx, characterrepo.ListByPlayerIDInput{PlayerID: input.PlayerID})
 		if err != nil {
-			log.Printf("Failed to list characters by PlayerID %s: %v", input.PlayerID, err)
-			return nil, errors.Wrap(err, "failed to list characters")
+			slog.ErrorContext(ctx, "failed to list characters by player",
+				"player_id", input.PlayerID,
+				"error", err.Error())
+			return nil, errors.Wrapf(err, "failed to list characters for player %s", input.PlayerID)
 		}
 		characters = listOutput.Characters
-		log.Printf("Found %d characters for PlayerID %s", len(characters), input.PlayerID)
+		slog.InfoContext(ctx, "successfully listed characters by player",
+			"player_id", input.PlayerID,
+			"count", len(characters))
 	case input.SessionID != "":
-		log.Printf("Listing characters by SessionID: %s", input.SessionID)
+		slog.InfoContext(ctx, "listing characters by session",
+			"session_id", input.SessionID,
+			"page_size", input.PageSize,
+			"page_token", input.PageToken)
 		listOutput, err := o.characterRepo.ListBySessionID(ctx,
 			characterrepo.ListBySessionIDInput{SessionID: input.SessionID})
 		if err != nil {
-			log.Printf("Failed to list characters by SessionID %s: %v", input.SessionID, err)
-			return nil, errors.Wrap(err, "failed to list characters")
+			slog.ErrorContext(ctx, "failed to list characters by session",
+				"session_id", input.SessionID,
+				"error", err.Error())
+			return nil, errors.Wrapf(err, "failed to list characters for session %s", input.SessionID)
 		}
 		characters = listOutput.Characters
-		log.Printf("Found %d characters for SessionID %s", len(characters), input.SessionID)
+		slog.InfoContext(ctx, "successfully listed characters by session",
+			"session_id", input.SessionID,
+			"count", len(characters))
 	default:
 		log.Printf("ListCharacters called without PlayerID or SessionID")
 		return nil, errors.InvalidArgument("either PlayerID or SessionID must be provided")
@@ -1404,8 +1418,8 @@ func convertExternalClassToEntity(class *external.ClassData) *dnd5e.ClassInfo {
 			SpellcastingFocus:   class.Spellcasting.SpellcastingFocus,
 			// nolint:gosec // safe conversion
 			CantripsKnown:    int32(class.Spellcasting.CantripsKnown),
-			SpellsKnown:      int32(class.Spellcasting.SpellsKnown),      // nolint:gosec
-			SpellSlotsLevel1: int32(class.Spellcasting.SpellSlotsLevel1), // nolint:gosec
+			SpellsKnown:      int32(class.Spellcasting.SpellsKnown),
+			SpellSlotsLevel1: int32(class.Spellcasting.SpellSlotsLevel1),
 		}
 	}
 
@@ -1505,7 +1519,7 @@ func convertExternalFeatureToEntity(feature *external.FeatureData) *dnd5e.Featur
 			if choice != nil {
 				entityChoices[i] = dnd5e.Choice{
 					Type:    choice.Type,
-					Choose:  int32(choice.Choose),
+					Choose:  int32(choice.Choose), // nolint:gosec
 					Options: choice.Options,
 					From:    choice.From,
 				}
@@ -1517,11 +1531,11 @@ func convertExternalFeatureToEntity(feature *external.FeatureData) *dnd5e.Featur
 	// Convert spell selection info
 	if feature.SpellSelection != nil {
 		entityFeature.SpellSelection = &dnd5e.SpellSelectionInfo{
-			SpellsToSelect:   feature.SpellSelection.SpellsToSelect,
-			SpellLevels:      feature.SpellSelection.SpellLevels,
-			SpellLists:       feature.SpellSelection.SpellLists,
-			SelectionType:    feature.SpellSelection.SelectionType,
-			RequiresReplace:  feature.SpellSelection.RequiresReplace,
+			SpellsToSelect:  feature.SpellSelection.SpellsToSelect,
+			SpellLevels:     feature.SpellSelection.SpellLevels,
+			SpellLists:      feature.SpellSelection.SpellLists,
+			SelectionType:   feature.SpellSelection.SelectionType,
+			RequiresReplace: feature.SpellSelection.RequiresReplace,
 		}
 	}
 
@@ -1873,22 +1887,22 @@ func (o *Orchestrator) getAvailableChoiceCategories(
 
 	// Add class-specific choices based on class ID
 	switch draft.ClassID {
-	case "fighter":
+	case dnd5e.ClassIDFighter:
 		if shouldIncludeChoiceType(dnd5e.ChoiceTypeFightingStyle) {
 			categories = append(categories, o.createFighterFightingStyleChoices())
 		}
-	case "wizard":
+	case dnd5e.ClassIDWizard:
 		if shouldIncludeChoiceType(dnd5e.ChoiceTypeCantrips) {
 			categories = append(categories, o.createWizardCantripChoices(ctx))
 		}
 		if shouldIncludeChoiceType(dnd5e.ChoiceTypeSpells) {
 			categories = append(categories, o.createWizardSpellChoices(ctx))
 		}
-	case "cleric":
+	case dnd5e.ClassIDCleric:
 		if shouldIncludeChoiceType(dnd5e.ChoiceTypeCantrips) {
 			categories = append(categories, o.createClericCantripChoices(ctx))
 		}
-	case "sorcerer":
+	case dnd5e.ClassIDSorcerer:
 		if shouldIncludeChoiceType(dnd5e.ChoiceTypeCantrips) {
 			categories = append(categories, o.createSorcererCantripChoices(ctx))
 		}
@@ -2289,7 +2303,7 @@ func (o *Orchestrator) ListEquipmentByType(
 		pageSize = 20 // Default page size
 	}
 
-	totalSize := int32(len(equipmentList))
+	totalSize := int32(len(equipmentList)) // nolint:gosec
 	startIndex := int32(0)
 	nextPageToken := ""
 
@@ -2376,7 +2390,7 @@ func (o *Orchestrator) ListSpellsByLevel(
 		pageSize = 20 // Default page size
 	}
 
-	totalSize := int32(len(spellList))
+	totalSize := int32(len(spellList)) // nolint:gosec
 	startIndex := int32(0)
 	nextPageToken := ""
 

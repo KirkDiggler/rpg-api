@@ -20,6 +20,18 @@ const (
 	ChoiceTypeEquipment ChoiceType = "equipment"
 )
 
+// Class ID constants to prevent magic strings
+const (
+	// ClassIDFighter is the class ID for fighter
+	ClassIDFighter = "fighter"
+	// ClassIDWizard is the class ID for wizard
+	ClassIDWizard = "wizard"
+	// ClassIDCleric is the class ID for cleric
+	ClassIDCleric = "cleric"
+	// ClassIDSorcerer is the class ID for sorcerer
+	ClassIDSorcerer = "sorcerer"
+)
+
 // Choice category ID constants to prevent magic strings
 const (
 	// CategoryIDFighterFightingStyle is the category ID for fighter fighting styles

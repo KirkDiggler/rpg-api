@@ -35,7 +35,7 @@ var listEquipmentCmd = &cobra.Command{
 func init() {
 	listEquipmentCmd.Flags().StringVar(&equipmentType, "type", "", "Equipment type to filter by (required)")
 	listEquipmentCmd.Flags().Int32Var(&pageSize, "page-size", 20, "Number of items per page")
-	listEquipmentCmd.MarkFlagRequired("type")
+	_ = listEquipmentCmd.MarkFlagRequired("type")
 }
 
 func runListEquipment(_ *cobra.Command, _ []string) error {
@@ -161,4 +161,3 @@ func runListEquipment(_ *cobra.Command, _ []string) error {
 
 	return nil
 }
-
