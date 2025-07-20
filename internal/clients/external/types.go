@@ -1,5 +1,7 @@
 package external
 
+import internalDnd5e "github.com/KirkDiggler/rpg-api/internal/entities/dnd5e"
+
 // RaceData represents race information from external source
 type RaceData struct {
 	ID                   string
@@ -17,6 +19,7 @@ type RaceData struct {
 	ProficiencyOptions   []*ChoiceData
 	AgeDescription       string
 	AlignmentDescription string
+	Choices              []internalDnd5e.Choice // Rich choice structures parsed from proficiency choices
 }
 
 // SubraceData represents subrace information
@@ -48,6 +51,7 @@ type ClassData struct {
 	ProficiencyChoices       []*ChoiceData
 	LevelOneFeatures         []*FeatureData
 	Spellcasting             *SpellcastingData
+	Choices                  []internalDnd5e.Choice // Rich choice structures parsed from equipment and proficiency choices
 }
 
 // BackgroundData represents background information from external source

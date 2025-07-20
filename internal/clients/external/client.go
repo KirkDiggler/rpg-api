@@ -15,6 +15,7 @@ import (
 	"github.com/fadedpez/dnd5e-api/clients/dnd5e"
 	"github.com/fadedpez/dnd5e-api/entities"
 
+	internalDnd5e "github.com/KirkDiggler/rpg-api/internal/entities/dnd5e"
 	"github.com/KirkDiggler/rpg-api/internal/errors"
 )
 
@@ -440,6 +441,12 @@ func convertRaceToRaceData(race *entities.Race) *RaceData {
 		}
 	}
 
+	// Parse proficiency choices to rich format
+	parsedChoices := parseProficiencyChoices(proficiencyOptions, race.Key)
+	if languageOptions != nil {
+		parsedChoices = append(parsedChoices, parseProficiencyChoices([]*ChoiceData{languageOptions}, race.Key)...)
+	}
+
 	// Convert subraces
 	subraces := make([]SubraceData, len(race.SubRaces))
 	for i, subrace := range race.SubRaces {
@@ -463,6 +470,7 @@ func convertRaceToRaceData(race *entities.Race) *RaceData {
 		LanguageOptions:    languageOptions,
 		Proficiencies:      proficiencies,
 		ProficiencyOptions: proficiencyOptions,
+		Choices:            parsedChoices,
 		// TODO(#45): These fields need additional API calls or data sources
 		// Description, AgeDescription, AlignmentDescription
 	}
@@ -534,12 +542,37 @@ func convertClassToClassData(class *entities.Class) *ClassData {
 		}
 	}
 
-	// Convert equipment options
+	// Keep equipment options for backward compatibility
+	// (deprecated fields still populated)
 	var equipmentOptions []*EquipmentChoiceData
 	for _, option := range class.StartingEquipmentOptions {
 		if option != nil {
 			equipmentOptions = append(equipmentOptions, convertEquipmentChoice(option))
 		}
+	}
+
+	// Parse choices into rich format
+	parsedChoices := parseEquipmentChoices(equipmentOptions, class.Key)
+	parsedChoices = append(parsedChoices, parseProficiencyChoices(proficiencyChoices, class.Key)...)
+
+	// Add skill choice if applicable
+	if skillsCount > 0 && len(availableSkills) > 0 {
+		skillOptions := make([]internalDnd5e.ChoiceOption, len(availableSkills))
+		for i, skill := range availableSkills {
+			skillOptions[i] = &internalDnd5e.ItemReference{
+				ItemID: strings.ToLower(strings.ReplaceAll(skill, " ", "-")),
+				Name:   skill,
+			}
+		}
+		parsedChoices = append(parsedChoices, internalDnd5e.Choice{
+			ID:          fmt.Sprintf("%s_skills", class.Key),
+			Description: fmt.Sprintf("Choose %d skills", skillsCount),
+			Type:        internalDnd5e.ChoiceTypeSkill,
+			ChooseCount: skillsCount,
+			OptionSet: &internalDnd5e.ExplicitOptions{
+				Options: skillOptions,
+			},
+		})
 	}
 
 	return &ClassData{
@@ -557,6 +590,7 @@ func convertClassToClassData(class *entities.Class) *ClassData {
 		WeaponProficiencies:      weaponProficiencies,
 		ToolProficiencies:        toolProficiencies,
 		ProficiencyChoices:       proficiencyChoices,
+		Choices:                  parsedChoices,
 	}
 }
 

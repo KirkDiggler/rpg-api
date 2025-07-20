@@ -37,7 +37,7 @@ type CharacterDraft struct {
 	Alignment           string
 	StartingSkillIDs    []string
 	AdditionalLanguages []string
-	Choices             *CharacterChoices // Class-specific choices (fighting styles, cantrips, spells)
+	ChoiceSelections    []ChoiceSelection // All player choices for this character
 	Progress            CreationProgress
 	ExpiresAt           int64
 	CreatedAt           int64
@@ -132,8 +132,9 @@ type RaceInfo struct {
 	Languages            []string
 	AgeDescription       string
 	AlignmentDescription string
-	LanguageOptions      *Choice
-	ProficiencyOptions   []Choice
+	LanguageOptions      *Choice  // Deprecated: will be moved to Choices
+	ProficiencyOptions   []Choice // Deprecated: will be moved to Choices
+	Choices              []Choice // All choices unified here
 }
 
 // SubraceInfo contains information about a D&D 5e subrace
@@ -155,12 +156,187 @@ type RacialTrait struct {
 	Options     []string
 }
 
-// Choice represents a generic choice for proficiencies, languages, etc
+// Choice represents a choice for proficiencies, languages, equipment, etc
 type Choice struct {
-	Type    string   // e.g., "language", "skill", "tool_proficiency"
-	Choose  int32    // How many to choose
-	Options []string // Available options
-	From    string   // Optional filter/category
+	ID          string
+	Description string
+	Type        ChoiceType
+	ChooseCount int32
+	OptionSet   ChoiceOptionSet
+}
+
+// ChoiceType represents the type of choice
+type ChoiceType string
+
+const (
+	ChoiceTypeEquipment         ChoiceType = "equipment"
+	ChoiceTypeSkill             ChoiceType = "skill"
+	ChoiceTypeTool              ChoiceType = "tool"
+	ChoiceTypeLanguage          ChoiceType = "language"
+	ChoiceTypeWeaponProficiency ChoiceType = "weapon_proficiency"
+	ChoiceTypeArmorProficiency  ChoiceType = "armor_proficiency"
+	ChoiceTypeSpell             ChoiceType = "spell"
+	ChoiceTypeFeat              ChoiceType = "feat"
+	ChoiceTypeFightingStyle     ChoiceType = "fighting_style"
+	ChoiceTypeCantrips          ChoiceType = "cantrips"
+	ChoiceTypeSpells            ChoiceType = "spells"
+)
+
+// Choice category ID constants to prevent magic strings
+const (
+	// CategoryIDFighterFightingStyle is the category ID for fighter fighting styles
+	CategoryIDFighterFightingStyle = "fighter_fighting_style"
+	// CategoryIDWizardCantrips is the category ID for wizard cantrips
+	CategoryIDWizardCantrips = "wizard_cantrips"
+	// CategoryIDWizardSpells is the category ID for wizard spells
+	CategoryIDWizardSpells = "wizard_spells"
+	// CategoryIDClericCantrips is the category ID for cleric cantrips
+	CategoryIDClericCantrips = "cleric_cantrips"
+	// CategoryIDSorcererCantrips is the category ID for sorcerer cantrips
+	CategoryIDSorcererCantrips = "sorcerer_cantrips"
+	// CategoryIDSorcererSpells is the category ID for sorcerer spells
+	CategoryIDSorcererSpells = "sorcerer_spells"
+	// CategoryIDAdditionalLanguages is the category ID for additional languages
+	CategoryIDAdditionalLanguages = "additional_languages"
+	// CategoryIDToolProficiencies is the category ID for tool proficiencies
+	CategoryIDToolProficiencies = "tool_proficiencies"
+	// CategoryIDEquipmentChoices is the category ID for equipment choices
+	CategoryIDEquipmentChoices = "equipment_choices"
+)
+
+// Validation constants
+const (
+	// MaxChoiceOptionsLimit is the maximum number of options that can be selected to prevent DoS attacks
+	MaxChoiceOptionsLimit = 1000
+	// DefaultSpellPageSize is the default page size when fetching spells for choices
+	DefaultSpellPageSize = 100
+)
+
+// Class ID constants to prevent magic strings
+const (
+	// ClassIDFighter is the class ID for fighter
+	ClassIDFighter = "fighter"
+	// ClassIDWizard is the class ID for wizard
+	ClassIDWizard = "wizard"
+	// ClassIDCleric is the class ID for cleric
+	ClassIDCleric = "cleric"
+	// ClassIDSorcerer is the class ID for sorcerer
+	ClassIDSorcerer = "sorcerer"
+)
+
+// ChoiceOptionSet represents the options for a choice
+type ChoiceOptionSet interface {
+	isChoiceOptionSet()
+}
+
+// ExplicitOptions represents a specific list of options to choose from
+type ExplicitOptions struct {
+	Options []ChoiceOption
+}
+
+func (ExplicitOptions) isChoiceOptionSet() {}
+
+// CategoryReference represents a reference to a category of items
+type CategoryReference struct {
+	CategoryID string
+	ExcludeIDs []string
+}
+
+func (CategoryReference) isChoiceOptionSet() {}
+
+// ChoiceOption represents a single option within a choice
+type ChoiceOption interface {
+	isChoiceOption()
+}
+
+// ItemReference represents a reference to a single item
+type ItemReference struct {
+	ItemID string
+	Name   string
+}
+
+func (ItemReference) isChoiceOption() {}
+
+// CountedItemReference represents an item with a quantity
+type CountedItemReference struct {
+	ItemID   string
+	Name     string
+	Quantity int32
+}
+
+func (CountedItemReference) isChoiceOption() {}
+
+// ItemBundle represents multiple items as one option
+type ItemBundle struct {
+	Items []CountedItemReference
+}
+
+func (ItemBundle) isChoiceOption() {}
+
+// NestedChoice represents a choice that contains another choice
+type NestedChoice struct {
+	Choice *Choice
+}
+
+func (NestedChoice) isChoiceOption() {}
+
+// ChoiceSelection represents a selection made by the player for a specific choice
+type ChoiceSelection struct {
+	ChoiceID    string   // ID of the choice this selection is for
+	CategoryID  string   // Category ID for choice validation (same as ChoiceID in most cases)
+	SelectedIDs []string // IDs of the selected options
+	OptionIDs   []string // Alias for SelectedIDs (used by orchestrator)
+}
+
+// ChoiceCategory represents a grouping of related choices
+type ChoiceCategory struct {
+	ID          string
+	Type        ChoiceType
+	Name        string
+	Description string
+	Required    bool
+	MinChoices  int32
+	MaxChoices  int32
+	Options     []*CategoryOption // Options for this category
+}
+
+// CategoryOption represents a single option within a choice category
+type CategoryOption struct {
+	ID            string
+	Name          string
+	Description   string
+	Prerequisites []string // IDs of other choices that must be selected first
+	Conflicts     []string // IDs of other choices that cannot be selected together
+	Level         int32    // For spells/cantrips, the level requirement
+	School        string   // For spells, the school of magic
+	Source        string   // Where this choice comes from (class, race, background, etc.)
+}
+
+// ChoiceValidationResult represents the result of validating choice selections
+type ChoiceValidationResult struct {
+	IsValid  bool
+	Errors   []ChoiceValidationError
+	Warnings []ChoiceValidationWarning
+}
+
+// ChoiceValidationError represents a validation error for a choice selection
+type ChoiceValidationError struct {
+	ChoiceID   string
+	CategoryID string // Category ID for the choice
+	OptionID   string // Option ID for the specific option
+	Message    string
+	Type       string
+	Code       string // Error code
+}
+
+// ChoiceValidationWarning represents a validation warning for a choice selection
+type ChoiceValidationWarning struct {
+	ChoiceID   string
+	CategoryID string // Category ID for the choice
+	OptionID   string // Option ID for the specific option
+	Message    string
+	Type       string
+	Code       string // Warning code
 }
 
 // ClassInfo contains detailed information about a D&D 5e class
@@ -177,10 +353,11 @@ type ClassInfo struct {
 	SkillChoicesCount        int32
 	AvailableSkills          []string
 	StartingEquipment        []string
-	EquipmentChoices         []EquipmentChoice
+	EquipmentChoices         []EquipmentChoice // Deprecated: will be moved to Choices
 	Level1Features           []FeatureInfo
 	Spellcasting             *SpellcastingInfo
-	ProficiencyChoices       []Choice
+	ProficiencyChoices       []Choice // Deprecated: will be moved to Choices
+	Choices                  []Choice // All choices unified here
 }
 
 // EquipmentChoice represents a choice in starting equipment
