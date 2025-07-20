@@ -3,6 +3,7 @@ package v1alpha1
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"strconv"
 	"strings"
@@ -1494,26 +1495,20 @@ func convertEntityRaceToProto(race *dnd5e.RaceInfo) *dnd5ev1alpha1.RaceInfo {
 		protoLanguages[i] = mapStringToProtoLanguage(lang)
 	}
 
+	// Build all choices list
+	var choices []*dnd5ev1alpha1.Choice
+	choiceCounter := 0
+
 	// Convert language options
-	var protoLanguageOptions *dnd5ev1alpha1.Choice
 	if race.LanguageOptions != nil {
-		protoLanguageOptions = &dnd5ev1alpha1.Choice{
-			Type:    race.LanguageOptions.Type,
-			Choose:  race.LanguageOptions.Choose,
-			Options: race.LanguageOptions.Options,
-			From:    race.LanguageOptions.From,
-		}
+		choiceCounter++
+		choices = append(choices, convertEntityChoiceToProto(race.LanguageOptions, fmt.Sprintf("race_%s_language_%d", race.ID, choiceCounter)))
 	}
 
 	// Convert proficiency options
-	protoProficiencyOptions := make([]*dnd5ev1alpha1.Choice, len(race.ProficiencyOptions))
-	for i, opt := range race.ProficiencyOptions {
-		protoProficiencyOptions[i] = &dnd5ev1alpha1.Choice{
-			Type:    opt.Type,
-			Choose:  opt.Choose,
-			Options: opt.Options,
-			From:    opt.From,
-		}
+	for i := range race.ProficiencyOptions {
+		choiceCounter++
+		choices = append(choices, convertEntityChoiceToProto(&race.ProficiencyOptions[i], fmt.Sprintf("race_%s_proficiency_%d", race.ID, i+1)))
 	}
 
 	return &dnd5ev1alpha1.RaceInfo{
@@ -1530,8 +1525,7 @@ func convertEntityRaceToProto(race *dnd5e.RaceInfo) *dnd5ev1alpha1.RaceInfo {
 		Languages:            protoLanguages,
 		AgeDescription:       race.AgeDescription,
 		AlignmentDescription: race.AlignmentDescription,
-		LanguageOptions:      protoLanguageOptions,
-		ProficiencyOptions:   protoProficiencyOptions,
+		Choices:              choices,
 	}
 }
 
@@ -1541,14 +1535,14 @@ func convertEntityClassToProto(class *dnd5e.ClassInfo) *dnd5ev1alpha1.ClassInfo 
 		return nil
 	}
 
+	// Build all choices list
+	var choices []*dnd5ev1alpha1.Choice
+	choiceCounter := 0
+
 	// Convert equipment choices
-	protoEquipmentChoices := make([]*dnd5ev1alpha1.EquipmentChoice, len(class.EquipmentChoices))
-	for i, choice := range class.EquipmentChoices {
-		protoEquipmentChoices[i] = &dnd5ev1alpha1.EquipmentChoice{
-			Description: choice.Description,
-			Options:     choice.Options,
-			ChooseCount: choice.ChooseCount,
-		}
+	for i := range class.EquipmentChoices {
+		choiceCounter++
+		choices = append(choices, convertEntityEquipmentChoiceToProto(&class.EquipmentChoices[i], fmt.Sprintf("class_%s_equipment_%d", class.ID, i+1)))
 	}
 
 	// Convert level 1 features
@@ -1571,14 +1565,38 @@ func convertEntityClassToProto(class *dnd5e.ClassInfo) *dnd5ev1alpha1.ClassInfo 
 	}
 
 	// Convert proficiency choices
-	protoProficiencyChoices := make([]*dnd5ev1alpha1.Choice, len(class.ProficiencyChoices))
-	for i, choice := range class.ProficiencyChoices {
-		protoProficiencyChoices[i] = &dnd5ev1alpha1.Choice{
-			Type:    choice.Type,
-			Choose:  choice.Choose,
-			Options: choice.Options,
-			From:    choice.From,
+	for i := range class.ProficiencyChoices {
+		choiceCounter++
+		choices = append(choices, convertEntityChoiceToProto(&class.ProficiencyChoices[i], fmt.Sprintf("class_%s_proficiency_%d", class.ID, i+1)))
+	}
+
+	// Add skill choice if applicable
+	if class.SkillChoicesCount > 0 && len(class.AvailableSkills) > 0 {
+		choiceCounter++
+		skillChoice := &dnd5ev1alpha1.Choice{
+			Id:          fmt.Sprintf("class_%s_skills", class.ID),
+			Description: fmt.Sprintf("Choose %d skills", class.SkillChoicesCount),
+			ChooseCount: class.SkillChoicesCount,
+			ChoiceType:  dnd5ev1alpha1.ChoiceType_CHOICE_TYPE_SKILL,
 		}
+		// Convert available skills to choice options
+		options := make([]*dnd5ev1alpha1.ChoiceOption, len(class.AvailableSkills))
+		for j, skill := range class.AvailableSkills {
+			options[j] = &dnd5ev1alpha1.ChoiceOption{
+				OptionType: &dnd5ev1alpha1.ChoiceOption_Item{
+					Item: &dnd5ev1alpha1.ItemReference{
+						ItemId: strings.ToLower(strings.ReplaceAll(skill, " ", "-")),
+						Name:   skill,
+					},
+				},
+			}
+		}
+		skillChoice.OptionSet = &dnd5ev1alpha1.Choice_ExplicitOptions{
+			ExplicitOptions: &dnd5ev1alpha1.ExplicitOptions{
+				Options: options,
+			},
+		}
+		choices = append(choices, skillChoice)
 	}
 
 	return &dnd5ev1alpha1.ClassInfo{
@@ -1594,10 +1612,9 @@ func convertEntityClassToProto(class *dnd5e.ClassInfo) *dnd5ev1alpha1.ClassInfo 
 		SkillChoicesCount:        class.SkillChoicesCount,
 		AvailableSkills:          class.AvailableSkills,
 		StartingEquipment:        class.StartingEquipment,
-		EquipmentChoices:         protoEquipmentChoices,
 		Level_1Features:          protoLevel1Features,
 		Spellcasting:             protoSpellcasting,
-		ProficiencyChoices:       protoProficiencyChoices,
+		Choices:                  choices,
 	}
 }
 
@@ -1934,13 +1951,8 @@ func convertFeatureInfoToProto(feature *dnd5e.FeatureInfo) *dnd5ev1alpha1.Featur
 	// Convert choices
 	if len(feature.Choices) > 0 {
 		protoChoices := make([]*dnd5ev1alpha1.Choice, len(feature.Choices))
-		for i, choice := range feature.Choices {
-			protoChoices[i] = &dnd5ev1alpha1.Choice{
-				Type:    choice.Type,
-				Choose:  choice.Choose,
-				Options: choice.Options,
-				From:    choice.From,
-			}
+		for i := range feature.Choices {
+			protoChoices[i] = convertEntityChoiceToProto(&feature.Choices[i], fmt.Sprintf("feature_%s_%d", feature.ID, i+1))
 		}
 		protoFeature.Choices = protoChoices
 	}

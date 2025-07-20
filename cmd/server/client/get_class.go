@@ -104,14 +104,23 @@ func printClassEquipment(class *dnd5ev1alpha1.ClassInfo) {
 		}
 	}
 
-	if len(class.EquipmentChoices) > 0 {
-		fmt.Printf("\nEquipment Choices:\n")
-		for _, choice := range class.EquipmentChoices {
+	// Equipment choices are now part of the general choices array
+	hasEquipmentChoices := false
+	for _, choice := range class.Choices {
+		if choice.ChoiceType == dnd5ev1alpha1.ChoiceType_CHOICE_TYPE_EQUIPMENT {
+			if !hasEquipmentChoices {
+				fmt.Printf("\nEquipment Choices:\n")
+				hasEquipmentChoices = true
+			}
 			fmt.Printf("  • %s\n", choice.Description)
-			if len(choice.Options) > 0 {
-				for _, opt := range choice.Options {
-					fmt.Printf("    - %s\n", opt)
+			// Print options based on the option set type
+			switch optSet := choice.OptionSet.(type) {
+			case *dnd5ev1alpha1.Choice_ExplicitOptions:
+				for _, opt := range optSet.ExplicitOptions.Options {
+					printChoiceOption(opt, "    ")
 				}
+			case *dnd5ev1alpha1.Choice_CategoryReference:
+				fmt.Printf("    - Choose from: %s\n", optSet.CategoryReference.CategoryId)
 			}
 		}
 	}
@@ -136,9 +145,15 @@ func printClassFeatures(class *dnd5ev1alpha1.ClassInfo) {
 			if feature.HasChoices && len(feature.Choices) > 0 {
 				fmt.Printf("    Choices:\n")
 				for _, choice := range feature.Choices {
-					fmt.Printf("      Type: %s, Choose: %d, From: %s\n", choice.Type, choice.Choose, choice.From)
-					if len(choice.Options) > 0 {
-						fmt.Printf("      Options: %s\n", strings.Join(choice.Options, ", "))
+					fmt.Printf("      %s (Choose %d)\n", choice.Description, choice.ChooseCount)
+					// Print options based on the option set type
+					switch optSet := choice.OptionSet.(type) {
+					case *dnd5ev1alpha1.Choice_ExplicitOptions:
+						for _, opt := range optSet.ExplicitOptions.Options {
+							printChoiceOption(opt, "        ")
+						}
+					case *dnd5ev1alpha1.Choice_CategoryReference:
+						fmt.Printf("        Choose from: %s\n", optSet.CategoryReference.CategoryId)
 					}
 				}
 			}
@@ -173,5 +188,22 @@ func printClassSpellcasting(class *dnd5ev1alpha1.ClassInfo) {
 		if class.Spellcasting.SpellSlotsLevel_1 > 0 {
 			fmt.Printf("  1st Level Spell Slots: %d\n", class.Spellcasting.SpellSlotsLevel_1)
 		}
+	}
+}
+
+// printChoiceOption prints a choice option with proper formatting
+func printChoiceOption(opt *dnd5ev1alpha1.ChoiceOption, indent string) {
+	switch optType := opt.OptionType.(type) {
+	case *dnd5ev1alpha1.ChoiceOption_Item:
+		fmt.Printf("%s- %s\n", indent, optType.Item.Name)
+	case *dnd5ev1alpha1.ChoiceOption_CountedItem:
+		fmt.Printf("%s- %d %s\n", indent, optType.CountedItem.Quantity, optType.CountedItem.Name)
+	case *dnd5ev1alpha1.ChoiceOption_Bundle:
+		fmt.Printf("%s- Bundle:\n", indent)
+		for _, item := range optType.Bundle.Items {
+			fmt.Printf("%s  - %d %s\n", indent, item.Quantity, item.Name)
+		}
+	case *dnd5ev1alpha1.ChoiceOption_NestedChoice:
+		fmt.Printf("%s- %s\n", indent, optType.NestedChoice.Choice.Description)
 	}
 }
