@@ -247,6 +247,64 @@ func (s *ChoiceConverterTestSuite) TestParseEquipmentOption() {
 				s.Equal(int32(20), counted.CountedItem.Quantity)
 			},
 		},
+		{
+			name:  "nested choice with specific items",
+			input: "(a) a mace or (b) a warhammer",
+			validate: func(opt *dnd5ev1alpha1.ChoiceOption) {
+				s.Require().NotNil(opt)
+				s.IsType(&dnd5ev1alpha1.ChoiceOption_NestedChoice{}, opt.OptionType)
+				nested := opt.OptionType.(*dnd5ev1alpha1.ChoiceOption_NestedChoice)
+				s.Require().NotNil(nested.NestedChoice.Choice)
+				s.Equal("(a) a mace or (b) a warhammer", nested.NestedChoice.Choice.Description)
+				s.Equal(int32(1), nested.NestedChoice.Choice.ChooseCount)
+				
+				// Check the nested options
+				s.IsType(&dnd5ev1alpha1.Choice_ExplicitOptions{}, nested.NestedChoice.Choice.OptionSet)
+				explicitOpts := nested.NestedChoice.Choice.OptionSet.(*dnd5ev1alpha1.Choice_ExplicitOptions)
+				s.Len(explicitOpts.ExplicitOptions.Options, 2)
+				
+				// First option should be "a mace"
+				opt1 := explicitOpts.ExplicitOptions.Options[0]
+				s.IsType(&dnd5ev1alpha1.ChoiceOption_Item{}, opt1.OptionType)
+				item1 := opt1.OptionType.(*dnd5ev1alpha1.ChoiceOption_Item)
+				s.Equal("a mace", item1.Item.Name)
+				
+				// Second option should be "a warhammer"
+				opt2 := explicitOpts.ExplicitOptions.Options[1]
+				s.IsType(&dnd5ev1alpha1.ChoiceOption_Item{}, opt2.OptionType)
+				item2 := opt2.OptionType.(*dnd5ev1alpha1.ChoiceOption_Item)
+				s.Equal("a warhammer", item2.Item.Name)
+			},
+		},
+		{
+			name:  "nested choice with category reference",
+			input: "(a) a shortsword or (b) any simple weapon",
+			validate: func(opt *dnd5ev1alpha1.ChoiceOption) {
+				s.Require().NotNil(opt)
+				s.IsType(&dnd5ev1alpha1.ChoiceOption_NestedChoice{}, opt.OptionType)
+				nested := opt.OptionType.(*dnd5ev1alpha1.ChoiceOption_NestedChoice)
+				s.Require().NotNil(nested.NestedChoice.Choice)
+				
+				// Check the nested options
+				s.IsType(&dnd5ev1alpha1.Choice_ExplicitOptions{}, nested.NestedChoice.Choice.OptionSet)
+				explicitOpts := nested.NestedChoice.Choice.OptionSet.(*dnd5ev1alpha1.Choice_ExplicitOptions)
+				s.Len(explicitOpts.ExplicitOptions.Options, 2)
+				
+				// First option should be "a shortsword"
+				opt1 := explicitOpts.ExplicitOptions.Options[0]
+				s.IsType(&dnd5ev1alpha1.ChoiceOption_Item{}, opt1.OptionType)
+				item1 := opt1.OptionType.(*dnd5ev1alpha1.ChoiceOption_Item)
+				s.Equal("a shortsword", item1.Item.Name)
+				s.Equal("a-shortsword", item1.Item.ItemId)
+				
+				// Second option should be "any simple weapon" with category ID
+				opt2 := explicitOpts.ExplicitOptions.Options[1]
+				s.IsType(&dnd5ev1alpha1.ChoiceOption_Item{}, opt2.OptionType)
+				item2 := opt2.OptionType.(*dnd5ev1alpha1.ChoiceOption_Item)
+				s.Equal("any simple weapon", item2.Item.Name)
+				s.Equal("simple-weapons", item2.Item.ItemId) // Should be the category ID
+			},
+		},
 	}
 
 	for _, tc := range tests {

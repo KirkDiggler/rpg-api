@@ -1497,17 +1497,14 @@ func convertEntityRaceToProto(race *dnd5e.RaceInfo) *dnd5ev1alpha1.RaceInfo {
 
 	// Build all choices list
 	var choices []*dnd5ev1alpha1.Choice
-	choiceCounter := 0
 
 	// Convert language options
 	if race.LanguageOptions != nil {
-		choiceCounter++
-		choices = append(choices, convertEntityChoiceToProto(race.LanguageOptions, fmt.Sprintf("race_%s_language_%d", race.ID, choiceCounter)))
+		choices = append(choices, convertEntityChoiceToProto(race.LanguageOptions, fmt.Sprintf("race_%s_language_1", race.ID)))
 	}
 
 	// Convert proficiency options
 	for i := range race.ProficiencyOptions {
-		choiceCounter++
 		choices = append(choices, convertEntityChoiceToProto(&race.ProficiencyOptions[i], fmt.Sprintf("race_%s_proficiency_%d", race.ID, i+1)))
 	}
 

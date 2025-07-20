@@ -2,6 +2,7 @@ package v1alpha1
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/clients/dnd5e/api/v1alpha1"
@@ -279,7 +280,8 @@ func parseEquipmentOption(optionStr string) *dnd5ev1alpha1.ChoiceOption {
 	if len(parts) > 1 {
 		// Try to parse first part as number
 		var quantity int32 = 1
-		if n, err := fmt.Sscanf(parts[0], "%d", &quantity); err == nil && n == 1 {
+		if q, err := strconv.Atoi(parts[0]); err == nil {
+			quantity = int32(q)
 			// This has a quantity
 			itemName := strings.Join(parts[1:], " ")
 			return &dnd5ev1alpha1.ChoiceOption{
@@ -296,8 +298,7 @@ func parseEquipmentOption(optionStr string) *dnd5ev1alpha1.ChoiceOption {
 
 	// Check for nested choices (e.g., "a shortsword or any simple weapon")
 	if strings.Contains(strings.ToLower(optionStr), " or ") {
-		// This is a nested choice - for now, treat as single item
-		// TODO(#91): Implement proper nested choice handling
+		return parseNestedEquipmentChoice(optionStr)
 	}
 
 	// Default: single item reference
@@ -312,6 +313,71 @@ func parseEquipmentOption(optionStr string) *dnd5ev1alpha1.ChoiceOption {
 			Item: &dnd5ev1alpha1.ItemReference{
 				ItemId: strings.ToLower(strings.ReplaceAll(cleanOption, " ", "-")),
 				Name:   cleanOption,
+			},
+		},
+	}
+}
+
+// parseNestedEquipmentChoice handles options like "(a) a shortsword or (b) any simple weapon"
+func parseNestedEquipmentChoice(optionStr string) *dnd5ev1alpha1.ChoiceOption {
+	// Split by " or " to get individual options
+	parts := strings.Split(optionStr, " or ")
+	if len(parts) < 2 {
+		// Not a valid nested choice, treat as single item
+		return parseEquipmentOption(optionStr)
+	}
+
+	// Create a nested choice
+	nestedChoice := &dnd5ev1alpha1.Choice{
+		Id:          "nested_choice",
+		Description: optionStr,
+		ChooseCount: 1,
+		ChoiceType:  dnd5ev1alpha1.ChoiceType_CHOICE_TYPE_EQUIPMENT,
+	}
+
+	// Parse each option
+	options := make([]*dnd5ev1alpha1.ChoiceOption, 0, len(parts))
+	for _, part := range parts {
+		// Clean up the option (remove (a), (b) prefixes)
+		cleanPart := strings.TrimSpace(part)
+		if len(cleanPart) > 3 && cleanPart[0] == '(' && cleanPart[2] == ')' {
+			cleanPart = strings.TrimSpace(cleanPart[3:])
+		}
+		
+		// Check if this is a category reference (e.g., "any simple weapon")
+		if equipmentType := detectEquipmentType(cleanPart); equipmentType != dnd5ev1alpha1.EquipmentType_EQUIPMENT_TYPE_UNSPECIFIED {
+			// This option is a category reference
+			options = append(options, &dnd5ev1alpha1.ChoiceOption{
+				OptionType: &dnd5ev1alpha1.ChoiceOption_Item{
+					Item: &dnd5ev1alpha1.ItemReference{
+						ItemId: equipmentTypeToCategoryID(equipmentType),
+						Name:   cleanPart,
+					},
+				},
+			})
+		} else {
+			// Regular item
+			options = append(options, &dnd5ev1alpha1.ChoiceOption{
+				OptionType: &dnd5ev1alpha1.ChoiceOption_Item{
+					Item: &dnd5ev1alpha1.ItemReference{
+						ItemId: strings.ToLower(strings.ReplaceAll(cleanPart, " ", "-")),
+						Name:   cleanPart,
+					},
+				},
+			})
+		}
+	}
+
+	nestedChoice.OptionSet = &dnd5ev1alpha1.Choice_ExplicitOptions{
+		ExplicitOptions: &dnd5ev1alpha1.ExplicitOptions{
+			Options: options,
+		},
+	}
+
+	return &dnd5ev1alpha1.ChoiceOption{
+		OptionType: &dnd5ev1alpha1.ChoiceOption_NestedChoice{
+			NestedChoice: &dnd5ev1alpha1.NestedChoice{
+				Choice: nestedChoice,
 			},
 		},
 	}
