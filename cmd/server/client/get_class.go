@@ -215,30 +215,6 @@ func printClassSpellcasting(class *dnd5ev1alpha1.ClassInfo) {
 }
 
 // printChoiceOption prints a choice option with proper formatting
-// isCategoryID checks if an item ID is a category reference
-func isCategoryID(itemID string) bool {
-	categoryIDs := []string{
-		"martial-weapons",
-		"simple-weapons",
-		"shields",
-		"light-armor",
-		"medium-armor",
-		"heavy-armor",
-		"artisan-tools",
-		"gaming-sets",
-		"musical-instruments",
-		"packs",
-		"holy-symbols",
-	}
-
-	for _, cat := range categoryIDs {
-		if itemID == cat {
-			return true
-		}
-	}
-	return false
-}
-
 func printChoiceOption(opt *dnd5ev1alpha1.ChoiceOption, indent string) {
 	switch optType := opt.OptionType.(type) {
 	case *dnd5ev1alpha1.ChoiceOption_Item:

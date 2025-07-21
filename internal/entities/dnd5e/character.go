@@ -171,6 +171,7 @@ type ChoiceType string
 const (
 	// ChoiceTypeEquipment represents equipment choices
 	ChoiceTypeEquipment         ChoiceType = "equipment"
+	// ChoiceTypeSkill represents skill proficiency choices
 	ChoiceTypeSkill             ChoiceType = "skill"
 	ChoiceTypeTool              ChoiceType = "tool"
 	ChoiceTypeLanguage          ChoiceType = "language"

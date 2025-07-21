@@ -1,3 +1,4 @@
+// Package v1alpha1 provides rich choice converter for future direct entity-to-proto conversion
 package v1alpha1
 
 import (
@@ -7,6 +8,10 @@ import (
 
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/clients/dnd5e/api/v1alpha1"
 )
+
+// NOTE: The functions in this file are currently unused but are kept for future use
+// when we move to direct entity-to-proto conversion without the intermediate entity layer.
+// nolint:unused
 
 // convertRichChoiceToProto converts entities.ChoiceOption directly to proto Choice
 // This bypasses the intermediate internal entity conversion for better performance
@@ -104,7 +109,7 @@ func convertRichOptionToProto(option entities.Option, index int) *dnd5ev1alpha1.
 		// Handle nested choices - create category reference based on description
 		categoryID := extractCategoryFromDescription(opt.Description)
 		if categoryID == "" {
-			categoryID = "equipment" // Fallback
+			categoryID = choiceTypeEquipment // Fallback
 		}
 
 		nestedChoiceID := fmt.Sprintf("nested_%s_%d", categoryID, index)
@@ -157,7 +162,7 @@ func convertItemToCountedReference(item entities.Option) *dnd5ev1alpha1.CountedI
 		// For choice items in bundles, create a reference to the category
 		categoryID := extractCategoryFromDescription(itemOpt.Description)
 		if categoryID == "" {
-			categoryID = "equipment"
+			categoryID = choiceTypeEquipment
 		}
 		return &dnd5ev1alpha1.CountedItemReference{
 			ItemId:   categoryID,
@@ -192,11 +197,11 @@ func convertEntityToBundleItem(item entities.Option, index int) *dnd5ev1alpha1.B
 		// Create a nested choice for this item
 		categoryID := extractCategoryFromDescription(itemOpt.Description)
 		if categoryID == "" {
-			categoryID = "equipment"
+			categoryID = choiceTypeEquipment
 		}
-		
+
 		nestedChoiceID := fmt.Sprintf("bundle_nested_%s_%d", categoryID, index)
-		
+
 		return &dnd5ev1alpha1.BundleItem{
 			ItemType: &dnd5ev1alpha1.BundleItem_ChoiceItem{
 				ChoiceItem: &dnd5ev1alpha1.NestedChoice{
