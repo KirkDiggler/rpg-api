@@ -7,8 +7,13 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+	"google.golang.org/protobuf/encoding/protojson"
 
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/clients/dnd5e/api/v1alpha1"
+)
+
+var (
+	jsonOutput bool
 )
 
 var getClassCmd = &cobra.Command{
@@ -17,6 +22,10 @@ var getClassCmd = &cobra.Command{
 	Long:  `Get detailed information about a specific D&D 5e class by its ID.`,
 	Args:  cobra.ExactArgs(1),
 	RunE:  runGetClass,
+}
+
+func init() {
+	getClassCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 }
 
 func runGetClass(_ *cobra.Command, args []string) error {
@@ -40,6 +49,20 @@ func runGetClass(_ *cobra.Command, args []string) error {
 	resp, err := client.GetClassDetails(ctx, req)
 	if err != nil {
 		return fmt.Errorf("failed to get class details: %w", err)
+	}
+
+	if jsonOutput {
+		// Output as JSON
+		marshaler := protojson.MarshalOptions{
+			Indent:          "  ",
+			EmitUnpopulated: false,
+		}
+		jsonBytes, err := marshaler.Marshal(resp)
+		if err != nil {
+			return fmt.Errorf("failed to marshal response to JSON: %w", err)
+		}
+		fmt.Println(string(jsonBytes))
+		return nil
 	}
 
 	class := resp.Class
@@ -104,14 +127,23 @@ func printClassEquipment(class *dnd5ev1alpha1.ClassInfo) {
 		}
 	}
 
-	if len(class.EquipmentChoices) > 0 {
-		fmt.Printf("\nEquipment Choices:\n")
-		for _, choice := range class.EquipmentChoices {
+	// Equipment choices are now part of the general choices array
+	hasEquipmentChoices := false
+	for _, choice := range class.Choices {
+		if choice.ChoiceType == dnd5ev1alpha1.ChoiceType_CHOICE_TYPE_EQUIPMENT {
+			if !hasEquipmentChoices {
+				fmt.Printf("\nEquipment Choices:\n")
+				hasEquipmentChoices = true
+			}
 			fmt.Printf("  • %s\n", choice.Description)
-			if len(choice.Options) > 0 {
-				for _, opt := range choice.Options {
-					fmt.Printf("    - %s\n", opt)
+			// Print options based on the option set type
+			switch optSet := choice.OptionSet.(type) {
+			case *dnd5ev1alpha1.Choice_ExplicitOptions:
+				for _, opt := range optSet.ExplicitOptions.Options {
+					printChoiceOption(opt, "    ")
 				}
+			case *dnd5ev1alpha1.Choice_CategoryReference:
+				fmt.Printf("    - Choose from: %s\n", optSet.CategoryReference.CategoryId)
 			}
 		}
 	}
@@ -136,9 +168,15 @@ func printClassFeatures(class *dnd5ev1alpha1.ClassInfo) {
 			if feature.HasChoices && len(feature.Choices) > 0 {
 				fmt.Printf("    Choices:\n")
 				for _, choice := range feature.Choices {
-					fmt.Printf("      Type: %s, Choose: %d, From: %s\n", choice.Type, choice.Choose, choice.From)
-					if len(choice.Options) > 0 {
-						fmt.Printf("      Options: %s\n", strings.Join(choice.Options, ", "))
+					fmt.Printf("      %s (Choose %d)\n", choice.Description, choice.ChooseCount)
+					// Print options based on the option set type
+					switch optSet := choice.OptionSet.(type) {
+					case *dnd5ev1alpha1.Choice_ExplicitOptions:
+						for _, opt := range optSet.ExplicitOptions.Options {
+							printChoiceOption(opt, "        ")
+						}
+					case *dnd5ev1alpha1.Choice_CategoryReference:
+						fmt.Printf("        Choose from: %s\n", optSet.CategoryReference.CategoryId)
 					}
 				}
 			}
@@ -172,6 +210,60 @@ func printClassSpellcasting(class *dnd5ev1alpha1.ClassInfo) {
 		}
 		if class.Spellcasting.SpellSlotsLevel_1 > 0 {
 			fmt.Printf("  1st Level Spell Slots: %d\n", class.Spellcasting.SpellSlotsLevel_1)
+		}
+	}
+}
+
+// printChoiceOption prints a choice option with proper formatting
+// isCategoryID checks if an item ID is a category reference
+func isCategoryID(itemID string) bool {
+	categoryIDs := []string{
+		"martial-weapons",
+		"simple-weapons",
+		"shields",
+		"light-armor",
+		"medium-armor",
+		"heavy-armor",
+		"artisan-tools",
+		"gaming-sets",
+		"musical-instruments",
+		"packs",
+		"holy-symbols",
+	}
+
+	for _, cat := range categoryIDs {
+		if itemID == cat {
+			return true
+		}
+	}
+	return false
+}
+
+func printChoiceOption(opt *dnd5ev1alpha1.ChoiceOption, indent string) {
+	switch optType := opt.OptionType.(type) {
+	case *dnd5ev1alpha1.ChoiceOption_Item:
+		fmt.Printf("%s- %s\n", indent, optType.Item.Name)
+	case *dnd5ev1alpha1.ChoiceOption_CountedItem:
+		fmt.Printf("%s- %d %s\n", indent, optType.CountedItem.Quantity, optType.CountedItem.Name)
+	case *dnd5ev1alpha1.ChoiceOption_Bundle:
+		fmt.Printf("%s- Bundle:\n", indent)
+		for _, item := range optType.Bundle.Items {
+			// Check if this is a category reference
+			if isCategoryID(item.ItemId) {
+				fmt.Printf("%s  - Choose %d from: %s\n", indent, item.Quantity, item.ItemId)
+			} else {
+				fmt.Printf("%s  - %d %s\n", indent, item.Quantity, item.Name)
+			}
+		}
+	case *dnd5ev1alpha1.ChoiceOption_NestedChoice:
+		nestedChoice := optType.NestedChoice.Choice
+		fmt.Printf("%s- %s (Choose %d)\n", indent, nestedChoice.Description, nestedChoice.ChooseCount)
+		// Show what the nested choice references
+		switch optSet := nestedChoice.OptionSet.(type) {
+		case *dnd5ev1alpha1.Choice_CategoryReference:
+			fmt.Printf("%s  Choose from: %s\n", indent, optSet.CategoryReference.CategoryId)
+		case *dnd5ev1alpha1.Choice_ExplicitOptions:
+			// Could show the explicit options if needed
 		}
 	}
 }

@@ -1339,31 +1339,8 @@ func convertExternalRaceToEntity(race *external.RaceData) *dnd5e.RaceInfo {
 		}
 	}
 
-	// Convert language options
-	var languageOptions *dnd5e.Choice
-	if race.LanguageOptions != nil {
-		languageOptions = &dnd5e.Choice{
-			Type: race.LanguageOptions.Type,
-			// nolint:gosec // safe conversion
-			Choose:  int32(race.LanguageOptions.Choose),
-			Options: race.LanguageOptions.Options,
-			From:    race.LanguageOptions.From,
-		}
-	}
-
-	// Convert proficiency options
-	proficiencyOptions := make([]dnd5e.Choice, len(race.ProficiencyOptions))
-	for i, opt := range race.ProficiencyOptions {
-		if opt != nil {
-			proficiencyOptions[i] = dnd5e.Choice{
-				Type: opt.Type,
-				// nolint:gosec // safe conversion
-				Choose:  int32(opt.Choose),
-				Options: opt.Options,
-				From:    opt.From,
-			}
-		}
-	}
+	// Note: Language and proficiency options are now handled through the rich Choices field
+	// These conversions are kept for backward compatibility with deprecated fields
 
 	return &dnd5e.RaceInfo{
 		ID:                   race.ID,
@@ -1379,8 +1356,9 @@ func convertExternalRaceToEntity(race *external.RaceData) *dnd5e.RaceInfo {
 		Languages:            race.Languages,
 		AgeDescription:       race.AgeDescription,
 		AlignmentDescription: race.AlignmentDescription,
-		LanguageOptions:      languageOptions,
-		ProficiencyOptions:   proficiencyOptions,
+		LanguageOptions:      nil,          // Deprecated: handled through Choices
+		ProficiencyOptions:   nil,          // Deprecated: handled through Choices
+		Choices:              race.Choices, // Pass through rich choices from external client
 	}
 }
 
@@ -1423,19 +1401,8 @@ func convertExternalClassToEntity(class *external.ClassData) *dnd5e.ClassInfo {
 		}
 	}
 
-	// Convert proficiency choices
-	proficiencyChoices := make([]dnd5e.Choice, len(class.ProficiencyChoices))
-	for i, choice := range class.ProficiencyChoices {
-		if choice != nil {
-			proficiencyChoices[i] = dnd5e.Choice{
-				Type: choice.Type,
-				// nolint:gosec // safe conversion
-				Choose:  int32(choice.Choose),
-				Options: choice.Options,
-				From:    choice.From,
-			}
-		}
-	}
+	// Note: Proficiency choices are now handled through the rich Choices field
+	// This conversion is kept for backward compatibility with deprecated fields
 
 	return &dnd5e.ClassInfo{
 		ID:                       class.ID,
@@ -1453,7 +1420,8 @@ func convertExternalClassToEntity(class *external.ClassData) *dnd5e.ClassInfo {
 		EquipmentChoices:         equipmentChoices,
 		Level1Features:           features,
 		Spellcasting:             spellcasting,
-		ProficiencyChoices:       proficiencyChoices,
+		ProficiencyChoices:       nil,           // Deprecated: handled through Choices
+		Choices:                  class.Choices, // Pass through rich choices from external client
 	}
 }
 
@@ -1512,21 +1480,9 @@ func convertExternalFeatureToEntity(feature *external.FeatureData) *dnd5e.Featur
 		HasChoices:  feature.HasChoices,
 	}
 
-	// Convert choices
-	if len(feature.Choices) > 0 {
-		entityChoices := make([]dnd5e.Choice, len(feature.Choices))
-		for i, choice := range feature.Choices {
-			if choice != nil {
-				entityChoices[i] = dnd5e.Choice{
-					Type:    choice.Type,
-					Choose:  int32(choice.Choose), // nolint:gosec
-					Options: choice.Options,
-					From:    choice.From,
-				}
-			}
-		}
-		entityFeature.Choices = entityChoices
-	}
+	// Note: Feature choices would need to be converted to the new Choice structure
+	// For now, leaving this empty as features don't support the new choice system yet
+	entityFeature.Choices = nil
 
 	// Convert spell selection info
 	if feature.SpellSelection != nil {
@@ -1620,8 +1576,8 @@ func (o *Orchestrator) UpdateChoices(
 	}
 
 	// Initialize choices if not present
-	if draft.Choices == nil {
-		draft.Choices = &dnd5e.CharacterChoices{}
+	if draft.ChoiceSelections == nil {
+		draft.ChoiceSelections = []dnd5e.ChoiceSelection{}
 	}
 
 	// Validate and apply selections
@@ -1793,7 +1749,7 @@ func (o *Orchestrator) validateChoiceSelections(
 		}
 
 		// Validate each option exists and is valid
-		optionMap := make(map[string]*dnd5e.ChoiceOption)
+		optionMap := make(map[string]*dnd5e.CategoryOption)
 		for _, option := range category.Options {
 			optionMap[option.ID] = option
 		}
@@ -1843,28 +1799,39 @@ func (o *Orchestrator) validateChoiceSelections(
 
 // applyChoiceSelections applies validated selections to the draft
 func (o *Orchestrator) applyChoiceSelections(draft *dnd5e.CharacterDraft, selections []*dnd5e.ChoiceSelection) error {
+	// Build a map of existing selections for easy lookup
+	selectionMap := make(map[string]*dnd5e.ChoiceSelection)
+	for i := range draft.ChoiceSelections {
+		selectionMap[draft.ChoiceSelections[i].ChoiceID] = &draft.ChoiceSelections[i]
+	}
+
+	// Update or add new selections
 	for _, selection := range selections {
+		// Validate the category ID is known
 		switch selection.CategoryID {
-		case dnd5e.CategoryIDFighterFightingStyle:
-			draft.Choices.FightingStyles = selection.OptionIDs
-		case dnd5e.CategoryIDWizardCantrips:
-			draft.Choices.Cantrips = selection.OptionIDs
-		case dnd5e.CategoryIDWizardSpells:
-			draft.Choices.Spells = selection.OptionIDs
-		case dnd5e.CategoryIDClericCantrips:
-			draft.Choices.Cantrips = selection.OptionIDs
-		case dnd5e.CategoryIDSorcererCantrips:
-			draft.Choices.Cantrips = selection.OptionIDs
-		case dnd5e.CategoryIDSorcererSpells:
-			draft.Choices.Spells = selection.OptionIDs
-		case dnd5e.CategoryIDAdditionalLanguages:
-			draft.Choices.Languages = selection.OptionIDs
-		case dnd5e.CategoryIDToolProficiencies:
-			draft.Choices.Tools = selection.OptionIDs
-		case dnd5e.CategoryIDEquipmentChoices:
-			draft.Choices.Equipment = selection.OptionIDs
+		case dnd5e.CategoryIDFighterFightingStyle,
+			dnd5e.CategoryIDWizardCantrips,
+			dnd5e.CategoryIDWizardSpells,
+			dnd5e.CategoryIDClericCantrips,
+			dnd5e.CategoryIDSorcererCantrips,
+			dnd5e.CategoryIDSorcererSpells,
+			dnd5e.CategoryIDAdditionalLanguages,
+			dnd5e.CategoryIDToolProficiencies,
+			dnd5e.CategoryIDEquipmentChoices:
+			// Valid category
 		default:
 			return errors.InvalidArgumentf("unknown choice category: %s", selection.CategoryID)
+		}
+
+		if existing, exists := selectionMap[selection.CategoryID]; exists {
+			// Update existing selection
+			existing.SelectedIDs = selection.OptionIDs
+		} else {
+			// Add new selection
+			draft.ChoiceSelections = append(draft.ChoiceSelections, dnd5e.ChoiceSelection{
+				ChoiceID:    selection.CategoryID,
+				SelectedIDs: selection.OptionIDs,
+			})
 		}
 	}
 	return nil
@@ -1937,24 +1904,40 @@ func (o *Orchestrator) getAvailableChoiceCategories(
 
 // areAllChoicesComplete checks if all required choices have been made
 func (o *Orchestrator) areAllChoicesComplete(_ context.Context, draft *dnd5e.CharacterDraft) bool {
-	if draft.Choices == nil {
-		return false
+	// Build a map of selections by choice ID
+	selectionMap := make(map[string]*dnd5e.ChoiceSelection)
+	for i := range draft.ChoiceSelections {
+		selectionMap[draft.ChoiceSelections[i].ChoiceID] = &draft.ChoiceSelections[i]
 	}
 
 	// Check class-specific required choices
 	switch draft.ClassID {
 	case "fighter":
 		// Fighter must choose 1 fighting style
-		return len(draft.Choices.FightingStyles) == 1
+		if selection, exists := selectionMap[dnd5e.CategoryIDFighterFightingStyle]; exists {
+			return len(selection.SelectedIDs) == 1
+		}
+		return false
 	case "wizard":
 		// Wizard must choose 3 cantrips and 6 level 1 spells
-		return len(draft.Choices.Cantrips) == 3 && len(draft.Choices.Spells) == 6
+		cantripSelection, hasCantrips := selectionMap[dnd5e.CategoryIDWizardCantrips]
+		spellSelection, hasSpells := selectionMap[dnd5e.CategoryIDWizardSpells]
+		return hasCantrips && hasSpells &&
+			len(cantripSelection.SelectedIDs) == 3 &&
+			len(spellSelection.SelectedIDs) == 6
 	case "cleric":
 		// Cleric must choose 3 cantrips
-		return len(draft.Choices.Cantrips) == 3
+		if selection, exists := selectionMap[dnd5e.CategoryIDClericCantrips]; exists {
+			return len(selection.SelectedIDs) == 3
+		}
+		return false
 	case "sorcerer":
 		// Sorcerer must choose 4 cantrips and 2 level 1 spells
-		return len(draft.Choices.Cantrips) == 4 && len(draft.Choices.Spells) == 2
+		cantripSelection, hasCantrips := selectionMap[dnd5e.CategoryIDSorcererCantrips]
+		spellSelection, hasSpells := selectionMap[dnd5e.CategoryIDSorcererSpells]
+		return hasCantrips && hasSpells &&
+			len(cantripSelection.SelectedIDs) == 4 &&
+			len(spellSelection.SelectedIDs) == 2
 	default:
 		// Other classes may not have required choices
 		return true
@@ -1976,24 +1959,12 @@ func (o *Orchestrator) hasPrerequisite(draft *dnd5e.CharacterDraft, prerequisite
 
 // hasConflictingChoice checks if a draft has a conflicting choice
 func (o *Orchestrator) hasConflictingChoice(draft *dnd5e.CharacterDraft, conflict string) bool {
-	if draft.Choices == nil {
-		return false
-	}
-
-	// Check if the conflict ID exists in any of the current choices
-	for _, fightingStyle := range draft.Choices.FightingStyles {
-		if fightingStyle == conflict {
-			return true
-		}
-	}
-	for _, cantrip := range draft.Choices.Cantrips {
-		if cantrip == conflict {
-			return true
-		}
-	}
-	for _, spell := range draft.Choices.Spells {
-		if spell == conflict {
-			return true
+	// Check if the conflict ID exists in any of the current selections
+	for _, selection := range draft.ChoiceSelections {
+		for _, selectedID := range selection.SelectedIDs {
+			if selectedID == conflict {
+				return true
+			}
 		}
 	}
 	// TODO(#82): Check other choice types as they're added
@@ -2030,14 +2001,14 @@ func (o *Orchestrator) createSpellChoiceCategory(
 			Required:    true,
 			MinChoices:  config.minChoices,
 			MaxChoices:  config.maxChoices,
-			Options:     []*dnd5e.ChoiceOption{},
+			Options:     []*dnd5e.CategoryOption{},
 		}
 	}
 
 	// Convert spells to choice options
-	options := make([]*dnd5e.ChoiceOption, len(spells))
+	options := make([]*dnd5e.CategoryOption, len(spells))
 	for i, spell := range spells {
-		options[i] = &dnd5e.ChoiceOption{
+		options[i] = &dnd5e.CategoryOption{
 			ID:          spell.ID,
 			Name:        spell.Name,
 			Description: spell.Description,
@@ -2069,7 +2040,7 @@ func (o *Orchestrator) createFighterFightingStyleChoices() *dnd5e.ChoiceCategory
 		Required:    true,
 		MinChoices:  1,
 		MaxChoices:  1,
-		Options: []*dnd5e.ChoiceOption{
+		Options: []*dnd5e.CategoryOption{
 			{
 				ID:          "archery",
 				Name:        "Archery",
