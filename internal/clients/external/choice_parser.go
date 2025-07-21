@@ -29,14 +29,14 @@ func parseProficiencyChoices(choices []*ChoiceData, baseID string) []dnd5e.Choic
 		// Check if this references a category
 		if choice.From != "" && len(choice.Options) == 0 {
 			parsed.OptionSet = &dnd5e.CategoryReference{
-				CategoryID: strings.ToLower(strings.ReplaceAll(choice.From, " ", "-")),
+				CategoryID: generateSlug(choice.From),
 			}
 		} else {
 			// Explicit options
 			options := make([]dnd5e.ChoiceOption, 0, len(choice.Options))
 			for _, opt := range choice.Options {
 				options = append(options, &dnd5e.ItemReference{
-					ItemID: strings.ToLower(strings.ReplaceAll(opt, " ", "-")),
+					ItemID: generateSlug(opt),
 					Name:   opt,
 				})
 			}
@@ -55,7 +55,8 @@ func parseProficiencyChoices(choices []*ChoiceData, baseID string) []dnd5e.Choic
 // mapExternalChoiceType maps external choice type strings to entity choice types
 func mapExternalChoiceType(externalType string) dnd5e.ChoiceType {
 	switch strings.ToLower(externalType) {
-	case "skill", "skills":
+	case "skill", "skills", "proficiencies":
+		// "proficiencies" is used by D&D API for skill choices
 		return dnd5e.ChoiceTypeSkill
 	case "tool", "tools", "tool_proficiency":
 		return dnd5e.ChoiceTypeTool
@@ -65,6 +66,10 @@ func mapExternalChoiceType(externalType string) dnd5e.ChoiceType {
 		return dnd5e.ChoiceTypeWeaponProficiency
 	case "armor", "armor_proficiency":
 		return dnd5e.ChoiceTypeArmorProficiency
+	case "spell", "spells":
+		return dnd5e.ChoiceTypeSpell
+	case "feat", "feats", "feature", "features":
+		return dnd5e.ChoiceTypeFeat
 	default:
 		return dnd5e.ChoiceTypeEquipment
 	}

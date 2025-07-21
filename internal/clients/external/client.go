@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -18,6 +19,29 @@ import (
 	internalDnd5e "github.com/KirkDiggler/rpg-api/internal/entities/dnd5e"
 	"github.com/KirkDiggler/rpg-api/internal/errors"
 )
+
+// slugPattern matches characters that should be replaced in slugs
+var slugPattern = regexp.MustCompile(`[^a-z0-9-]+`)
+
+// generateSlug creates a URL-safe slug from a string
+func generateSlug(s string) string {
+	// Convert to lowercase
+	slug := strings.ToLower(s)
+	
+	// Replace spaces with hyphens
+	slug = strings.ReplaceAll(slug, " ", "-")
+	
+	// Replace any non-alphanumeric characters (except hyphens) with hyphens
+	slug = slugPattern.ReplaceAllString(slug, "-")
+	
+	// Remove leading/trailing hyphens
+	slug = strings.Trim(slug, "-")
+	
+	// Collapse multiple hyphens into one
+	slug = regexp.MustCompile(`-+`).ReplaceAllString(slug, "-")
+	
+	return slug
+}
 
 // D&D 5e class name mappings for spell filtering
 var dnd5eClassNames = map[string]string{
@@ -560,7 +584,7 @@ func convertClassToClassData(class *entities.Class) *ClassData {
 		skillOptions := make([]internalDnd5e.ChoiceOption, len(availableSkills))
 		for i, skill := range availableSkills {
 			skillOptions[i] = &internalDnd5e.ItemReference{
-				ItemID: strings.ToLower(strings.ReplaceAll(skill, " ", "-")),
+				ItemID: generateSlug(skill),
 				Name:   skill,
 			}
 		}
@@ -652,6 +676,42 @@ func (c *client) convertClassWithFeatures(class *entities.Class, level1 *entitie
 		}
 
 		classData.LevelOneFeatures = features
+		
+		// Extract feature choices and add to class choices
+		for _, feature := range features {
+			if feature != nil && len(feature.Choices) > 0 {
+				slog.Debug("Found feature with choices", "feature", feature.Name, "choiceCount", len(feature.Choices))
+				// Convert feature choices to dnd5e.Choice format
+				for _, choiceData := range feature.Choices {
+					if choiceData != nil {
+						// Parse the choice data to create a proper dnd5e.Choice
+						// Use :: as delimiter to avoid collisions with underscores in IDs
+						featureChoice := internalDnd5e.Choice{
+							ID:          fmt.Sprintf("%s::%s", feature.ID, choiceData.Type),
+							Description: fmt.Sprintf("%s: Choose %d %s", feature.Name, choiceData.Choose, choiceData.Type),
+							Type:        mapExternalChoiceType(choiceData.Type),
+							ChooseCount: int32(choiceData.Choose),
+						}
+						
+						// Convert options
+						if len(choiceData.Options) > 0 {
+							options := make([]internalDnd5e.ChoiceOption, 0, len(choiceData.Options))
+							for _, opt := range choiceData.Options {
+								options = append(options, &internalDnd5e.ItemReference{
+									ItemID: generateSlug(opt),
+									Name:   opt,
+								})
+							}
+							featureChoice.OptionSet = &internalDnd5e.ExplicitOptions{
+								Options: options,
+							}
+						}
+						
+						classData.Choices = append(classData.Choices, featureChoice)
+					}
+				}
+			}
+		}
 	}
 
 	// Add spellcasting information if available (from level data)
