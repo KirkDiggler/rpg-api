@@ -1,4 +1,4 @@
-// +build integration
+//go:build integration
 
 package client
 
@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -41,7 +42,11 @@ func TestFighterChoicesIntegration(t *testing.T) {
 	}
 
 	// Connect to our gRPC server
-	conn, err := grpc.Dial("localhost:50051", grpc.WithTransportCredentials(insecure.NewCredentials()))
+	grpcServerAddress := os.Getenv("GRPC_SERVER_ADDRESS")
+	if grpcServerAddress == "" {
+		grpcServerAddress = "localhost:50051"
+	}
+	conn, err := grpc.Dial(grpcServerAddress, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	require.NoError(t, err)
 	defer conn.Close()
 
@@ -55,7 +60,11 @@ func TestFighterChoicesIntegration(t *testing.T) {
 	require.NotNil(t, resp.Class)
 
 	// Get fighter data from D&D API
-	dndResp, err := http.Get("http://localhost:3002/api/2014/classes/fighter")
+	baseURL := os.Getenv("DND_API_BASE_URL")
+	if baseURL == "" {
+		baseURL = "http://localhost:3002"
+	}
+	dndResp, err := http.Get(fmt.Sprintf("%s/api/2014/classes/fighter", baseURL))
 	require.NoError(t, err)
 	defer dndResp.Body.Close()
 
@@ -136,7 +145,11 @@ func TestClassChoiceTypes(t *testing.T) {
 	}
 
 	// Connect to our gRPC server
-	conn, err := grpc.Dial("localhost:50051", grpc.WithTransportCredentials(insecure.NewCredentials()))
+	grpcServerAddress := os.Getenv("GRPC_SERVER_ADDRESS")
+	if grpcServerAddress == "" {
+		grpcServerAddress = "localhost:50051"
+	}
+	conn, err := grpc.Dial(grpcServerAddress, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	require.NoError(t, err)
 	defer conn.Close()
 
