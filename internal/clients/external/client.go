@@ -157,8 +157,15 @@ func New(cfg *Config) (Client, error) {
 	}, nil
 }
 
-func (c *client) GetRaceData(_ context.Context, _ string) (*RaceData, error) {
-	return nil, errors.Unimplemented("not implemented")
+func (c *client) GetRaceData(_ context.Context, raceID string) (*RaceData, error) {
+	// Get full race details
+	race, err := c.dnd5eClient.GetRace(raceID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get race %s: %w", raceID, err)
+	}
+
+	// Convert to our internal format
+	return convertRaceToRaceData(race), nil
 }
 
 func (c *client) GetClassData(_ context.Context, classID string) (*ClassData, error) {
@@ -460,8 +467,21 @@ func convertRaceToRaceData(race *entities.Race) *RaceData {
 	// Convert proficiency options
 	var proficiencyOptions []*ChoiceData
 	if race.StartingProficiencyOptions != nil {
+		// Determine the specific proficiency type from the description
+		profType := "proficiency"
+		desc := strings.ToLower(race.StartingProficiencyOptions.Description)
+		if strings.Contains(desc, "tool") || strings.Contains(desc, "supplies") {
+			profType = "tool"
+		} else if strings.Contains(desc, "skill") {
+			profType = "skill"
+		} else if strings.Contains(desc, "weapon") {
+			profType = "weapon"
+		} else if strings.Contains(desc, "armor") {
+			profType = "armor"
+		}
+		
 		proficiencyOptions = []*ChoiceData{
-			convertChoiceOption(race.StartingProficiencyOptions, "proficiency"),
+			convertChoiceOption(race.StartingProficiencyOptions, profType),
 		}
 	}
 
