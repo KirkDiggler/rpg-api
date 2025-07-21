@@ -6,8 +6,13 @@ import (
 	"log"
 
 	"github.com/spf13/cobra"
+	"google.golang.org/protobuf/encoding/protojson"
 
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/clients/dnd5e/api/v1alpha1"
+)
+
+var (
+	raceJsonOutput bool
 )
 
 var getRaceCmd = &cobra.Command{
@@ -16,6 +21,10 @@ var getRaceCmd = &cobra.Command{
 	Long:  `Get detailed information about a specific D&D 5e race by its ID.`,
 	Args:  cobra.ExactArgs(1),
 	RunE:  runGetRace,
+}
+
+func init() {
+	getRaceCmd.Flags().BoolVar(&raceJsonOutput, "json", false, "Output as JSON")
 }
 
 func runGetRace(_ *cobra.Command, args []string) error {
@@ -39,6 +48,21 @@ func runGetRace(_ *cobra.Command, args []string) error {
 	resp, err := client.GetRaceDetails(ctx, req)
 	if err != nil {
 		return fmt.Errorf("failed to get race details: %w", err)
+	}
+
+	if raceJsonOutput {
+		// Import the protojson package at the top of the file
+		// "google.golang.org/protobuf/encoding/protojson"
+		marshaler := protojson.MarshalOptions{
+			Indent:          "  ",
+			EmitUnpopulated: false,
+		}
+		jsonBytes, err := marshaler.Marshal(resp)
+		if err != nil {
+			return fmt.Errorf("failed to marshal response to JSON: %w", err)
+		}
+		fmt.Println(string(jsonBytes))
+		return nil
 	}
 
 	race := resp.Race

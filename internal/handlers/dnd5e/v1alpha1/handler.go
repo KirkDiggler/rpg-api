@@ -1601,7 +1601,8 @@ func convertEntityBackgroundToProto(background *dnd5e.BackgroundInfo) *dnd5ev1al
 
 // mapStringToProtoLanguage converts string to proto language enum
 func mapStringToProtoLanguage(lang string) dnd5ev1alpha1.Language {
-	switch lang {
+	// Convert to lowercase for case-insensitive matching
+	switch strings.ToLower(lang) {
 	case "common":
 		return dnd5ev1alpha1.Language_LANGUAGE_COMMON
 	case "dwarvish":
