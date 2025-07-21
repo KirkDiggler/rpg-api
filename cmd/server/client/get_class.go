@@ -7,8 +7,13 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+	"google.golang.org/protobuf/encoding/protojson"
 
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/clients/dnd5e/api/v1alpha1"
+)
+
+var (
+	jsonOutput bool
 )
 
 var getClassCmd = &cobra.Command{
@@ -17,6 +22,10 @@ var getClassCmd = &cobra.Command{
 	Long:  `Get detailed information about a specific D&D 5e class by its ID.`,
 	Args:  cobra.ExactArgs(1),
 	RunE:  runGetClass,
+}
+
+func init() {
+	getClassCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 }
 
 func runGetClass(_ *cobra.Command, args []string) error {
@@ -40,6 +49,20 @@ func runGetClass(_ *cobra.Command, args []string) error {
 	resp, err := client.GetClassDetails(ctx, req)
 	if err != nil {
 		return fmt.Errorf("failed to get class details: %w", err)
+	}
+
+	if jsonOutput {
+		// Output as JSON
+		marshaler := protojson.MarshalOptions{
+			Indent:          "  ",
+			EmitUnpopulated: false,
+		}
+		jsonBytes, err := marshaler.Marshal(resp)
+		if err != nil {
+			return fmt.Errorf("failed to marshal response to JSON: %w", err)
+		}
+		fmt.Println(string(jsonBytes))
+		return nil
 	}
 
 	class := resp.Class
@@ -192,6 +215,30 @@ func printClassSpellcasting(class *dnd5ev1alpha1.ClassInfo) {
 }
 
 // printChoiceOption prints a choice option with proper formatting
+// isCategoryID checks if an item ID is a category reference
+func isCategoryID(itemID string) bool {
+	categoryIDs := []string{
+		"martial-weapons",
+		"simple-weapons",
+		"shields",
+		"light-armor",
+		"medium-armor",
+		"heavy-armor",
+		"artisan-tools",
+		"gaming-sets",
+		"musical-instruments",
+		"packs",
+		"holy-symbols",
+	}
+
+	for _, cat := range categoryIDs {
+		if itemID == cat {
+			return true
+		}
+	}
+	return false
+}
+
 func printChoiceOption(opt *dnd5ev1alpha1.ChoiceOption, indent string) {
 	switch optType := opt.OptionType.(type) {
 	case *dnd5ev1alpha1.ChoiceOption_Item:
@@ -201,9 +248,22 @@ func printChoiceOption(opt *dnd5ev1alpha1.ChoiceOption, indent string) {
 	case *dnd5ev1alpha1.ChoiceOption_Bundle:
 		fmt.Printf("%s- Bundle:\n", indent)
 		for _, item := range optType.Bundle.Items {
-			fmt.Printf("%s  - %d %s\n", indent, item.Quantity, item.Name)
+			// Check if this is a category reference
+			if isCategoryID(item.ItemId) {
+				fmt.Printf("%s  - Choose %d from: %s\n", indent, item.Quantity, item.ItemId)
+			} else {
+				fmt.Printf("%s  - %d %s\n", indent, item.Quantity, item.Name)
+			}
 		}
 	case *dnd5ev1alpha1.ChoiceOption_NestedChoice:
-		fmt.Printf("%s- %s\n", indent, optType.NestedChoice.Choice.Description)
+		nestedChoice := optType.NestedChoice.Choice
+		fmt.Printf("%s- %s (Choose %d)\n", indent, nestedChoice.Description, nestedChoice.ChooseCount)
+		// Show what the nested choice references
+		switch optSet := nestedChoice.OptionSet.(type) {
+		case *dnd5ev1alpha1.Choice_CategoryReference:
+			fmt.Printf("%s  Choose from: %s\n", indent, optSet.CategoryReference.CategoryId)
+		case *dnd5ev1alpha1.Choice_ExplicitOptions:
+			// Could show the explicit options if needed
+		}
 	}
 }

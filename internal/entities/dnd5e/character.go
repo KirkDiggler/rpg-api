@@ -169,6 +169,7 @@ type Choice struct {
 type ChoiceType string
 
 const (
+	// ChoiceTypeEquipment represents equipment choices
 	ChoiceTypeEquipment         ChoiceType = "equipment"
 	ChoiceTypeSkill             ChoiceType = "skill"
 	ChoiceTypeTool              ChoiceType = "tool"

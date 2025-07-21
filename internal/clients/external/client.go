@@ -551,8 +551,8 @@ func convertClassToClassData(class *entities.Class) *ClassData {
 		}
 	}
 
-	// Parse choices into rich format
-	parsedChoices := parseEquipmentChoices(equipmentOptions, class.Key)
+	// Parse choices directly from rich entity structure
+	parsedChoices := parseEquipmentChoicesFromEntities(class.StartingEquipmentOptions, class.Key)
 	parsedChoices = append(parsedChoices, parseProficiencyChoices(proficiencyChoices, class.Key)...)
 
 	// Add skill choice if applicable
