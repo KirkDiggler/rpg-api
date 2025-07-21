@@ -652,6 +652,41 @@ func (c *client) convertClassWithFeatures(class *entities.Class, level1 *entitie
 		}
 
 		classData.LevelOneFeatures = features
+		
+		// Extract feature choices and add to class choices
+		for _, feature := range features {
+			if feature != nil && len(feature.Choices) > 0 {
+				slog.Debug("Found feature with choices", "feature", feature.Name, "choiceCount", len(feature.Choices))
+				// Convert feature choices to dnd5e.Choice format
+				for _, choiceData := range feature.Choices {
+					if choiceData != nil {
+						// Parse the choice data to create a proper dnd5e.Choice
+						featureChoice := internalDnd5e.Choice{
+							ID:          fmt.Sprintf("%s_%s", feature.ID, choiceData.Type),
+							Description: fmt.Sprintf("%s: Choose %d %s", feature.Name, choiceData.Choose, choiceData.Type),
+							Type:        mapExternalChoiceType(choiceData.Type),
+							ChooseCount: int32(choiceData.Choose),
+						}
+						
+						// Convert options
+						if len(choiceData.Options) > 0 {
+							options := make([]internalDnd5e.ChoiceOption, 0, len(choiceData.Options))
+							for _, opt := range choiceData.Options {
+								options = append(options, &internalDnd5e.ItemReference{
+									ItemID: strings.ToLower(strings.ReplaceAll(opt, " ", "-")),
+									Name:   opt,
+								})
+							}
+							featureChoice.OptionSet = &internalDnd5e.ExplicitOptions{
+								Options: options,
+							}
+						}
+						
+						classData.Choices = append(classData.Choices, featureChoice)
+					}
+				}
+			}
+		}
 	}
 
 	// Add spellcasting information if available (from level data)

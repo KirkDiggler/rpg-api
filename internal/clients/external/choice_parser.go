@@ -55,7 +55,8 @@ func parseProficiencyChoices(choices []*ChoiceData, baseID string) []dnd5e.Choic
 // mapExternalChoiceType maps external choice type strings to entity choice types
 func mapExternalChoiceType(externalType string) dnd5e.ChoiceType {
 	switch strings.ToLower(externalType) {
-	case "skill", "skills":
+	case "skill", "skills", "proficiencies":
+		// "proficiencies" is used by D&D API for skill choices
 		return dnd5e.ChoiceTypeSkill
 	case "tool", "tools", "tool_proficiency":
 		return dnd5e.ChoiceTypeTool
@@ -65,6 +66,10 @@ func mapExternalChoiceType(externalType string) dnd5e.ChoiceType {
 		return dnd5e.ChoiceTypeWeaponProficiency
 	case "armor", "armor_proficiency":
 		return dnd5e.ChoiceTypeArmorProficiency
+	case "spell", "spells":
+		return dnd5e.ChoiceTypeSpell
+	case "feat", "feats", "feature", "features":
+		return dnd5e.ChoiceTypeFeat
 	default:
 		return dnd5e.ChoiceTypeEquipment
 	}
