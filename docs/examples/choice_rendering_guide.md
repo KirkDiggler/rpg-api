@@ -109,9 +109,24 @@ The rpg-api returns choices in a standardized format that supports various D&D 5
             "case": "bundle",
             "value": {
               "items": [
-                {"itemId": "leather-armor", "name": "Leather Armor", "quantity": 1},
-                {"itemId": "longbow", "name": "Longbow", "quantity": 1},
-                {"itemId": "arrow", "name": "Arrow", "quantity": 20}
+                {
+                  "itemType": {
+                    "case": "concreteItem",
+                    "value": {"itemId": "leather-armor", "name": "Leather Armor", "quantity": 1}
+                  }
+                },
+                {
+                  "itemType": {
+                    "case": "concreteItem",
+                    "value": {"itemId": "longbow", "name": "Longbow", "quantity": 1}
+                  }
+                },
+                {
+                  "itemType": {
+                    "case": "concreteItem",
+                    "value": {"itemId": "arrow", "name": "Arrow", "quantity": 20}
+                  }
+                }
               ]
             }
           }
@@ -133,6 +148,7 @@ The rpg-api returns choices in a standardized format that supports various D&D 5
 - For bundles, show all items as a grouped list
 - Clearly indicate quantities (especially for consumables like arrows)
 - Consider showing total weight/value for bundles
+- **Handle nested choices in bundles**: Items can be either concrete items or nested choices (see Bundle with Nested Choices section below)
 
 ### 4. Category Reference Choices
 
@@ -295,6 +311,77 @@ try {
   setErrorMessage("Unable to load available options. Please try again.");
 }
 ```
+
+## Bundle with Nested Choices
+
+Bundles can now contain both concrete items and nested choices, providing a consistent representation:
+
+**Example Bundle with Nested Choice:**
+```json
+{
+  "optionType": {
+    "case": "bundle",
+    "value": {
+      "items": [
+        {
+          "itemType": {
+            "case": "concreteItem",
+            "value": {
+              "itemId": "shield",
+              "name": "Shield",
+              "quantity": 1
+            }
+          }
+        },
+        {
+          "itemType": {
+            "case": "choiceItem",
+            "value": {
+              "choice": {
+                "id": "martial_weapon_choice",
+                "description": "a martial weapon",
+                "chooseCount": 1,
+                "choiceType": "CHOICE_TYPE_EQUIPMENT",
+                "optionSet": {
+                  "case": "categoryReference",
+                  "value": {
+                    "categoryId": "martial-weapons"
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}
+```
+
+**UI Handling:**
+```typescript
+function renderBundleItems(items: BundleItem[]) {
+  return items.map(item => {
+    switch (item.itemType.case) {
+      case "concreteItem":
+        return <ItemDisplay item={item.itemType.value} />;
+      
+      case "choiceItem":
+        // Render the nested choice like any other choice
+        return <ChoiceRenderer choice={item.itemType.value.choice} />;
+      
+      default:
+        return null;
+    }
+  });
+}
+```
+
+**Benefits of New Structure:**
+- Consistent representation: All choices use the same structure
+- No URI scheme parsing needed
+- Type-safe handling with switch statements
+- Nested choices in bundles work exactly like standalone choices
 
 ## Best Practices
 

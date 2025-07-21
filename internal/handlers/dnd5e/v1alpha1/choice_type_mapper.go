@@ -9,14 +9,14 @@ import (
 
 // Choice type constants to prevent magic strings
 const (
-	choiceTypeSkill            = "skill"
-	choiceTypeTool             = "tool"
-	choiceTypeLanguage         = "language"
+	choiceTypeSkill             = "skill"
+	choiceTypeTool              = "tool"
+	choiceTypeLanguage          = "language"
 	choiceTypeWeaponProficiency = "weapon_proficiency"
 	choiceTypeArmorProficiency  = "armor_proficiency"
-	choiceTypeSpell            = "spell"
-	choiceTypeFeat             = "feat"
-	choiceTypeEquipment        = "equipment"
+	choiceTypeSpell             = "spell"
+	choiceTypeFeat              = "feat"
+	choiceTypeEquipment         = "equipment"
 )
 
 // ChoiceTypeMapper provides centralized mapping between different choice type representations

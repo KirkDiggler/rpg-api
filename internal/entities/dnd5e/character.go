@@ -269,10 +269,34 @@ func (CountedItemReference) isChoiceOption() {}
 
 // ItemBundle represents multiple items as one option
 type ItemBundle struct {
-	Items []CountedItemReference
+	Items []BundleItem
 }
 
 func (ItemBundle) isChoiceOption() {}
+
+// BundleItem represents a single item in a bundle, which can be concrete or a choice
+type BundleItem struct {
+	ItemType BundleItemType
+}
+
+// BundleItemType is the interface for bundle item types
+type BundleItemType interface {
+	isBundleItemType()
+}
+
+// BundleItemConcreteItem represents a concrete item in a bundle
+type BundleItemConcreteItem struct {
+	ConcreteItem *CountedItemReference
+}
+
+func (BundleItemConcreteItem) isBundleItemType() {}
+
+// BundleItemChoiceItem represents a choice within a bundle
+type BundleItemChoiceItem struct {
+	ChoiceItem *NestedChoice
+}
+
+func (BundleItemChoiceItem) isBundleItemType() {}
 
 // NestedChoice represents a choice that contains another choice
 type NestedChoice struct {

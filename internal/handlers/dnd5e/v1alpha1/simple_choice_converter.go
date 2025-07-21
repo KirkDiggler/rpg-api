@@ -84,13 +84,9 @@ func convertChoiceOptionToProto(option dnd5e.ChoiceOption) *dnd5ev1alpha1.Choice
 			},
 		}
 	case *dnd5e.ItemBundle:
-		items := make([]*dnd5ev1alpha1.CountedItemReference, len(opt.Items))
-		for i, item := range opt.Items {
-			items[i] = &dnd5ev1alpha1.CountedItemReference{
-				ItemId:   item.ItemID,
-				Name:     item.Name,
-				Quantity: item.Quantity,
-			}
+		items := make([]*dnd5ev1alpha1.BundleItem, len(opt.Items))
+		for i, bundleItem := range opt.Items {
+			items[i] = convertBundleItemToProto(bundleItem)
 		}
 		return &dnd5ev1alpha1.ChoiceOption{
 			OptionType: &dnd5ev1alpha1.ChoiceOption_Bundle{
@@ -129,4 +125,33 @@ func convertChoiceOptionToProto(option dnd5e.ChoiceOption) *dnd5ev1alpha1.Choice
 // extractSpecificCategory extracts specific equipment categories from choice descriptions
 func extractSpecificCategory(description string) string {
 	return GetEquipmentCategoryFromDescription(description)
+}
+
+// convertBundleItemToProto converts entity bundle item to proto bundle item
+func convertBundleItemToProto(item dnd5e.BundleItem) *dnd5ev1alpha1.BundleItem {
+	switch itemType := item.ItemType.(type) {
+	case *dnd5e.BundleItemConcreteItem:
+		if itemType.ConcreteItem != nil {
+			return &dnd5ev1alpha1.BundleItem{
+				ItemType: &dnd5ev1alpha1.BundleItem_ConcreteItem{
+					ConcreteItem: &dnd5ev1alpha1.CountedItemReference{
+						ItemId:   itemType.ConcreteItem.ItemID,
+						Name:     itemType.ConcreteItem.Name,
+						Quantity: itemType.ConcreteItem.Quantity,
+					},
+				},
+			}
+		}
+	case *dnd5e.BundleItemChoiceItem:
+		if itemType.ChoiceItem != nil && itemType.ChoiceItem.Choice != nil {
+			return &dnd5ev1alpha1.BundleItem{
+				ItemType: &dnd5ev1alpha1.BundleItem_ChoiceItem{
+					ChoiceItem: &dnd5ev1alpha1.NestedChoice{
+						Choice: convertChoiceToProto(itemType.ChoiceItem.Choice),
+					},
+				},
+			}
+		}
+	}
+	return nil
 }

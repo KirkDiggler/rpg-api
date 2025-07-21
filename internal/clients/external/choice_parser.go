@@ -231,29 +231,48 @@ func convertEntityOption(option entities.Option) dnd5e.ChoiceOption {
 
 	case *entities.MultipleOption:
 		// Handle bundle of items like "a martial weapon and a shield"
-		items := make([]dnd5e.CountedItemReference, 0, len(opt.Items))
+		items := make([]dnd5e.BundleItem, 0, len(opt.Items))
 		for _, item := range opt.Items {
 			switch itemOpt := item.(type) {
 			case *entities.CountedReferenceOption:
 				if itemOpt.Reference != nil {
-					items = append(items, dnd5e.CountedItemReference{
-						ItemID:   itemOpt.Reference.Key,
-						Name:     itemOpt.Reference.Name,
-						Quantity: int32(itemOpt.Count),
+					items = append(items, dnd5e.BundleItem{
+						ItemType: &dnd5e.BundleItemConcreteItem{
+							ConcreteItem: &dnd5e.CountedItemReference{
+								ItemID:   itemOpt.Reference.Key,
+								Name:     itemOpt.Reference.Name,
+								Quantity: int32(itemOpt.Count),
+							},
+						},
 					})
 				}
 			case *entities.ChoiceOption:
 				// This is a nested choice (like "a martial weapon")
-				// Extract the category from the option list
 				categoryID := extractCategoryFromChoice(itemOpt)
 				if categoryID == "" {
 					categoryID = "martial-weapons" // Default fallback
 				}
-				// For bundles, we create a reference to the category rather than a nested choice
-				items = append(items, dnd5e.CountedItemReference{
-					ItemID:   categoryID,
-					Name:     itemOpt.Description,
-					Quantity: int32(itemOpt.ChoiceCount),
+
+				// Generate a proper nested choice ID
+				nestedID := generateNestedChoiceID(itemOpt.Description, categoryID)
+
+				// Create a proper nested choice
+				nestedChoice := &dnd5e.Choice{
+					ID:          nestedID,
+					Description: itemOpt.Description,
+					Type:        dnd5e.ChoiceTypeEquipment,
+					ChooseCount: int32(itemOpt.ChoiceCount),
+					OptionSet: &dnd5e.CategoryReference{
+						CategoryID: categoryID,
+					},
+				}
+
+				items = append(items, dnd5e.BundleItem{
+					ItemType: &dnd5e.BundleItemChoiceItem{
+						ChoiceItem: &dnd5e.NestedChoice{
+							Choice: nestedChoice,
+						},
+					},
 				})
 			}
 		}

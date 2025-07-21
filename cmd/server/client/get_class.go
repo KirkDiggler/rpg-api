@@ -247,12 +247,14 @@ func printChoiceOption(opt *dnd5ev1alpha1.ChoiceOption, indent string) {
 		fmt.Printf("%s- %d %s\n", indent, optType.CountedItem.Quantity, optType.CountedItem.Name)
 	case *dnd5ev1alpha1.ChoiceOption_Bundle:
 		fmt.Printf("%s- Bundle:\n", indent)
-		for _, item := range optType.Bundle.Items {
-			// Check if this is a category reference
-			if isCategoryID(item.ItemId) {
-				fmt.Printf("%s  - Choose %d from: %s\n", indent, item.Quantity, item.ItemId)
-			} else {
+		for _, bundleItem := range optType.Bundle.Items {
+			switch itemType := bundleItem.ItemType.(type) {
+			case *dnd5ev1alpha1.BundleItem_ConcreteItem:
+				item := itemType.ConcreteItem
 				fmt.Printf("%s  - %d %s\n", indent, item.Quantity, item.Name)
+			case *dnd5ev1alpha1.BundleItem_ChoiceItem:
+				nestedChoice := itemType.ChoiceItem.Choice
+				fmt.Printf("%s  - Choose %d from: %s\n", indent, nestedChoice.ChooseCount, nestedChoice.Description)
 			}
 		}
 	case *dnd5ev1alpha1.ChoiceOption_NestedChoice:

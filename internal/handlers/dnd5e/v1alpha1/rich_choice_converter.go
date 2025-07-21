@@ -86,10 +86,10 @@ func convertRichOptionToProto(option entities.Option, index int) *dnd5ev1alpha1.
 
 	case *entities.MultipleOption:
 		// Convert bundle of items
-		items := make([]*dnd5ev1alpha1.CountedItemReference, 0, len(opt.Items))
-		for _, item := range opt.Items {
-			if countedRef := convertItemToCountedReference(item); countedRef != nil {
-				items = append(items, countedRef)
+		items := make([]*dnd5ev1alpha1.BundleItem, 0, len(opt.Items))
+		for i, item := range opt.Items {
+			if bundleItem := convertEntityToBundleItem(item, i); bundleItem != nil {
+				items = append(items, bundleItem)
 			}
 		}
 		return &dnd5ev1alpha1.ChoiceOption{
@@ -171,6 +171,51 @@ func convertItemToCountedReference(item entities.Option) *dnd5ev1alpha1.CountedI
 // extractCategoryFromDescription extracts equipment category from choice description
 func extractCategoryFromDescription(description string) string {
 	return GetEquipmentCategoryFromDescription(description)
+}
+
+// convertEntityToBundleItem converts an entity option to a bundle item
+func convertEntityToBundleItem(item entities.Option, index int) *dnd5ev1alpha1.BundleItem {
+	switch itemOpt := item.(type) {
+	case *entities.CountedReferenceOption:
+		if itemOpt.Reference != nil {
+			return &dnd5ev1alpha1.BundleItem{
+				ItemType: &dnd5ev1alpha1.BundleItem_ConcreteItem{
+					ConcreteItem: &dnd5ev1alpha1.CountedItemReference{
+						ItemId:   itemOpt.Reference.Key,
+						Name:     itemOpt.Reference.Name,
+						Quantity: int32(itemOpt.Count),
+					},
+				},
+			}
+		}
+	case *entities.ChoiceOption:
+		// Create a nested choice for this item
+		categoryID := extractCategoryFromDescription(itemOpt.Description)
+		if categoryID == "" {
+			categoryID = "equipment"
+		}
+		
+		nestedChoiceID := fmt.Sprintf("bundle_nested_%s_%d", categoryID, index)
+		
+		return &dnd5ev1alpha1.BundleItem{
+			ItemType: &dnd5ev1alpha1.BundleItem_ChoiceItem{
+				ChoiceItem: &dnd5ev1alpha1.NestedChoice{
+					Choice: &dnd5ev1alpha1.Choice{
+						Id:          nestedChoiceID,
+						Description: itemOpt.Description,
+						ChooseCount: int32(itemOpt.ChoiceCount),
+						ChoiceType:  dnd5ev1alpha1.ChoiceType_CHOICE_TYPE_EQUIPMENT,
+						OptionSet: &dnd5ev1alpha1.Choice_CategoryReference{
+							CategoryReference: &dnd5ev1alpha1.CategoryReference{
+								CategoryId: categoryID,
+							},
+						},
+					},
+				},
+			},
+		}
+	}
+	return nil
 }
 
 // mapExternalChoiceTypeToProto maps string choice types to proto enums
