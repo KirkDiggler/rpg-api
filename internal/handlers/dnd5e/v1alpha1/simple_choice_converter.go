@@ -38,26 +38,7 @@ func convertChoiceToProto(choice *dnd5e.Choice) *dnd5ev1alpha1.Choice {
 
 // convertChoiceTypeToProto maps entity choice type to proto choice type
 func convertChoiceTypeToProto(choiceType dnd5e.ChoiceType) dnd5ev1alpha1.ChoiceType {
-	switch choiceType {
-	case dnd5e.ChoiceTypeEquipment:
-		return dnd5ev1alpha1.ChoiceType_CHOICE_TYPE_EQUIPMENT
-	case dnd5e.ChoiceTypeSkill:
-		return dnd5ev1alpha1.ChoiceType_CHOICE_TYPE_SKILL
-	case dnd5e.ChoiceTypeTool:
-		return dnd5ev1alpha1.ChoiceType_CHOICE_TYPE_TOOL
-	case dnd5e.ChoiceTypeLanguage:
-		return dnd5ev1alpha1.ChoiceType_CHOICE_TYPE_LANGUAGE
-	case dnd5e.ChoiceTypeWeaponProficiency:
-		return dnd5ev1alpha1.ChoiceType_CHOICE_TYPE_WEAPON_PROFICIENCY
-	case dnd5e.ChoiceTypeArmorProficiency:
-		return dnd5ev1alpha1.ChoiceType_CHOICE_TYPE_ARMOR_PROFICIENCY
-	case dnd5e.ChoiceTypeSpell:
-		return dnd5ev1alpha1.ChoiceType_CHOICE_TYPE_SPELL
-	case dnd5e.ChoiceTypeFeat:
-		return dnd5ev1alpha1.ChoiceType_CHOICE_TYPE_FEAT
-	default:
-		return dnd5ev1alpha1.ChoiceType_CHOICE_TYPE_UNSPECIFIED
-	}
+	return ConvertEntityChoiceTypeToProto(choiceType)
 }
 
 // convertExplicitOptionsToProto converts entity explicit options to proto
@@ -119,14 +100,33 @@ func convertChoiceOptionToProto(option dnd5e.ChoiceOption) *dnd5ev1alpha1.Choice
 			},
 		}
 	case *dnd5e.NestedChoice:
+		// Optimize nested choice category references
+		protoNestedChoice := convertChoiceToProto(opt.Choice)
+		if protoNestedChoice != nil {
+			// Ensure proper category ID for nested choices based on description
+			if catRef, ok := protoNestedChoice.OptionSet.(*dnd5ev1alpha1.Choice_CategoryReference); ok {
+				if catRef.CategoryReference.CategoryId == EquipmentCategoryEquipment {
+					// Try to extract a more specific category from the description
+					if specificCategory := extractSpecificCategory(protoNestedChoice.Description); specificCategory != "" {
+						catRef.CategoryReference.CategoryId = specificCategory
+					}
+				}
+			}
+		}
+
 		return &dnd5ev1alpha1.ChoiceOption{
 			OptionType: &dnd5ev1alpha1.ChoiceOption_NestedChoice{
 				NestedChoice: &dnd5ev1alpha1.NestedChoice{
-					Choice: convertChoiceToProto(opt.Choice),
+					Choice: protoNestedChoice,
 				},
 			},
 		}
 	default:
 		return nil
 	}
+}
+
+// extractSpecificCategory extracts specific equipment categories from choice descriptions
+func extractSpecificCategory(description string) string {
+	return GetEquipmentCategoryFromDescription(description)
 }
