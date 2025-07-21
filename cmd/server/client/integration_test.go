@@ -20,11 +20,11 @@ import (
 
 // D&D API response structures
 type DnDAPIClass struct {
-	Index                     string                   `json:"index"`
-	Name                      string                   `json:"name"`
-	HitDie                    int                      `json:"hit_die"`
-	ProficiencyChoices        []DnDAPIProficiencyChoice `json:"proficiency_choices"`
-	StartingEquipmentOptions  []interface{}            `json:"starting_equipment_options"`
+	Index                    string                    `json:"index"`
+	Name                     string                    `json:"name"`
+	HitDie                   int                       `json:"hit_die"`
+	ProficiencyChoices       []DnDAPIProficiencyChoice `json:"proficiency_choices"`
+	StartingEquipmentOptions []interface{}             `json:"starting_equipment_options"`
 }
 
 type DnDAPIProficiencyChoice struct {
@@ -134,10 +134,10 @@ func TestClassChoiceTypes(t *testing.T) {
 	}
 
 	testCases := []struct {
-		classID          string
-		expectedSkill    int
-		expectedEquip    int
-		expectedFeature  int
+		classID         string
+		expectedSkill   int
+		expectedEquip   int
+		expectedFeature int
 	}{
 		{"fighter", 1, 4, 1},
 		{"wizard", 1, 3, 0},
@@ -168,11 +168,11 @@ func TestClassChoiceTypes(t *testing.T) {
 				choiceTypeCounts[choice.ChoiceType.String()]++
 			}
 
-			assert.Equal(t, tc.expectedSkill, choiceTypeCounts["CHOICE_TYPE_SKILL"], 
+			assert.Equal(t, tc.expectedSkill, choiceTypeCounts["CHOICE_TYPE_SKILL"],
 				"%s should have %d skill choice(s)", tc.classID, tc.expectedSkill)
-			assert.Equal(t, tc.expectedEquip, choiceTypeCounts["CHOICE_TYPE_EQUIPMENT"], 
+			assert.Equal(t, tc.expectedEquip, choiceTypeCounts["CHOICE_TYPE_EQUIPMENT"],
 				"%s should have %d equipment choice(s)", tc.classID, tc.expectedEquip)
-			assert.Equal(t, tc.expectedFeature, choiceTypeCounts["CHOICE_TYPE_FEAT"], 
+			assert.Equal(t, tc.expectedFeature, choiceTypeCounts["CHOICE_TYPE_FEAT"],
 				"%s should have %d feature choice(s)", tc.classID, tc.expectedFeature)
 		})
 	}

@@ -27,19 +27,19 @@ var slugPattern = regexp.MustCompile(`[^a-z0-9-]+`)
 func generateSlug(s string) string {
 	// Convert to lowercase
 	slug := strings.ToLower(s)
-	
+
 	// Replace spaces with hyphens
 	slug = strings.ReplaceAll(slug, " ", "-")
-	
+
 	// Replace any non-alphanumeric characters (except hyphens) with hyphens
 	slug = slugPattern.ReplaceAllString(slug, "-")
-	
+
 	// Remove leading/trailing hyphens
 	slug = strings.Trim(slug, "-")
-	
+
 	// Collapse multiple hyphens into one
 	slug = regexp.MustCompile(`-+`).ReplaceAllString(slug, "-")
-	
+
 	return slug
 }
 
@@ -479,7 +479,7 @@ func convertRaceToRaceData(race *entities.Race) *RaceData {
 		} else if strings.Contains(desc, "armor") {
 			profType = "armor"
 		}
-		
+
 		proficiencyOptions = []*ChoiceData{
 			convertChoiceOption(race.StartingProficiencyOptions, profType),
 		}
@@ -696,7 +696,7 @@ func (c *client) convertClassWithFeatures(class *entities.Class, level1 *entitie
 		}
 
 		classData.LevelOneFeatures = features
-		
+
 		// Extract feature choices and add to class choices
 		for _, feature := range features {
 			if feature != nil && len(feature.Choices) > 0 {
@@ -712,7 +712,7 @@ func (c *client) convertClassWithFeatures(class *entities.Class, level1 *entitie
 							Type:        mapExternalChoiceType(choiceData.Type),
 							ChooseCount: int32(choiceData.Choose),
 						}
-						
+
 						// Convert options
 						if len(choiceData.Options) > 0 {
 							options := make([]internalDnd5e.ChoiceOption, 0, len(choiceData.Options))
@@ -726,7 +726,7 @@ func (c *client) convertClassWithFeatures(class *entities.Class, level1 *entitie
 								Options: options,
 							}
 						}
-						
+
 						classData.Choices = append(classData.Choices, featureChoice)
 					}
 				}
