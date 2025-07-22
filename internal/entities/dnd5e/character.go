@@ -188,8 +188,11 @@ const (
 	ChoiceTypeSpell             ChoiceType = "spell"
 	// ChoiceTypeFeat represents feat/feature choices
 	ChoiceTypeFeat              ChoiceType = "feat"
+	// ChoiceTypeFightingStyle represents fighting style choices
 	ChoiceTypeFightingStyle     ChoiceType = "fighting_style"
+	// ChoiceTypeCantrips represents cantrip spell choices
 	ChoiceTypeCantrips          ChoiceType = "cantrips"
+	// ChoiceTypeSpells represents spell list choices
 	ChoiceTypeSpells            ChoiceType = "spells"
 )
 

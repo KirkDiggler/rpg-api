@@ -183,19 +183,20 @@ func (b *CharacterDraftBuilder) updateProgress() {
 	b.draft.Progress.CompletionPercentage = int32(completedCount * 100 / 8)
 
 	// Update current step based on what's not completed
-	if !b.draft.Progress.HasName() {
+	switch {
+	case !b.draft.Progress.HasName():
 		b.draft.Progress.CurrentStep = dnd5e.CreationStepName
-	} else if !b.draft.Progress.HasRace() {
+	case !b.draft.Progress.HasRace():
 		b.draft.Progress.CurrentStep = dnd5e.CreationStepRace
-	} else if !b.draft.Progress.HasClass() {
+	case !b.draft.Progress.HasClass():
 		b.draft.Progress.CurrentStep = dnd5e.CreationStepClass
-	} else if !b.draft.Progress.HasBackground() {
+	case !b.draft.Progress.HasBackground():
 		b.draft.Progress.CurrentStep = dnd5e.CreationStepBackground
-	} else if !b.draft.Progress.HasAbilityScores() {
+	case !b.draft.Progress.HasAbilityScores():
 		b.draft.Progress.CurrentStep = dnd5e.CreationStepAbilityScores
-	} else if !b.draft.Progress.HasSkills() {
+	case !b.draft.Progress.HasSkills():
 		b.draft.Progress.CurrentStep = dnd5e.CreationStepSkills
-	} else {
+	default:
 		b.draft.Progress.CurrentStep = dnd5e.CreationStepReview
 	}
 }
