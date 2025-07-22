@@ -55,14 +55,20 @@ func ExpectDraftHydration(ctx context.Context, mockClient *externalmock.MockClie
 }
 
 // ExpectDraftGet sets up a mock expectation for getting a draft from repository
-func ExpectDraftGet(ctx context.Context, mockRepo *draftrepomock.MockRepository, draftID string, draft *dnd5e.CharacterDraftData, err error) {
+func ExpectDraftGet(
+	ctx context.Context, mockRepo *draftrepomock.MockRepository,
+	draftID string, draft *dnd5e.CharacterDraftData, err error,
+) {
 	mockRepo.EXPECT().
 		Get(ctx, draftrepo.GetInput{ID: draftID}).
 		Return(&draftrepo.GetOutput{Draft: draft}, err)
 }
 
 // ExpectDraftGetByPlayerID sets up a mock expectation for getting a draft by player ID
-func ExpectDraftGetByPlayerID(ctx context.Context, mockRepo *draftrepomock.MockRepository, playerID string, draft *dnd5e.CharacterDraftData, err error) {
+func ExpectDraftGetByPlayerID(
+	ctx context.Context, mockRepo *draftrepomock.MockRepository,
+	playerID string, draft *dnd5e.CharacterDraftData, err error,
+) {
 	mockRepo.EXPECT().
 		GetByPlayerID(ctx, draftrepo.GetByPlayerIDInput{PlayerID: playerID}).
 		Return(&draftrepo.GetByPlayerIDOutput{Draft: draft}, err)

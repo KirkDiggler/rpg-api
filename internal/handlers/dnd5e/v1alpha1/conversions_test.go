@@ -74,7 +74,7 @@ func (s *ConversionsTestSuite) TestCreateDraftDataFlow() {
 		// Mock the service to verify it receives correctly converted data
 		s.mockCharService.EXPECT().
 			CreateDraft(s.ctx, gomock.Any()).
-			DoAndReturn(func(ctx context.Context, input *character.CreateDraftInput) (*character.CreateDraftOutput, error) {
+			DoAndReturn(func(_ context.Context, input *character.CreateDraftInput) (*character.CreateDraftOutput, error) {
 				// Verify the conversions happened correctly
 				s.Equal("player-123", input.PlayerID)
 				s.Equal("session-456", input.SessionID)
@@ -191,7 +191,7 @@ func (s *ConversionsTestSuite) TestCreateDraftDataFlow() {
 
 		s.mockCharService.EXPECT().
 			CreateDraft(s.ctx, gomock.Any()).
-			DoAndReturn(func(ctx context.Context, input *character.CreateDraftInput) (*character.CreateDraftOutput, error) {
+			DoAndReturn(func(_ context.Context, input *character.CreateDraftInput) (*character.CreateDraftOutput, error) {
 				// Verify ability score choices are converted correctly
 				s.Len(input.InitialData.ChoiceSelections, 1)
 				choice := input.InitialData.ChoiceSelections[0]
@@ -237,7 +237,7 @@ func (s *ConversionsTestSuite) TestCreateDraftDataFlow() {
 
 		s.mockCharService.EXPECT().
 			CreateDraft(s.ctx, gomock.Any()).
-			DoAndReturn(func(ctx context.Context, input *character.CreateDraftInput) (*character.CreateDraftOutput, error) {
+			DoAndReturn(func(_ context.Context, input *character.CreateDraftInput) (*character.CreateDraftOutput, error) {
 				// Verify unspecified enums convert to empty strings
 				s.Empty(input.InitialData.RaceID)
 				s.Empty(input.InitialData.ClassID)

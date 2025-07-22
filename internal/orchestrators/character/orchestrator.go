@@ -253,11 +253,7 @@ func (o *Orchestrator) GetDraft(
 	// Hydrate the draft with info objects
 	hydratedDraft, err := o.hydrateDraft(ctx, draft)
 	if err != nil {
-		// Log error but don't fail the get operation
-		// TODO(#46): Add proper logging
-		return &GetDraftOutput{
-			Draft: draft,
-		}, nil
+		return nil, err
 	}
 
 	return &GetDraftOutput{
@@ -300,12 +296,7 @@ func (o *Orchestrator) ListDrafts(
 	// Hydrate the draft with info objects
 	hydratedDraft, err := o.hydrateDraft(ctx, draft)
 	if err != nil {
-		// Log error but return the draft anyway
-		// TODO(#46): Add proper logging
-		return &ListDraftsOutput{
-			Drafts:        []*dnd5e.CharacterDraft{draft},
-			NextPageToken: "", // No pagination needed for single draft
-		}, nil
+		return nil, err
 	}
 
 	// Return single draft as a list
@@ -485,12 +476,7 @@ func (o *Orchestrator) UpdateRace(
 	updatedDraft := updateOutput.Draft.ToCharacterDraft()
 	hydratedDraft, err := o.hydrateDraft(ctx, updatedDraft)
 	if err != nil {
-		// Log error but don't fail the update
-		// The draft was successfully saved, just couldn't populate the info
-		return &UpdateRaceOutput{
-			Draft:    updatedDraft,
-			Warnings: warnings,
-		}, nil
+		return nil, err
 	}
 
 	slog.Info("UpdateRace returning hydrated draft",
@@ -603,12 +589,7 @@ func (o *Orchestrator) UpdateClass(
 	updatedDraft := updateOutput.Draft.ToCharacterDraft()
 	hydratedDraft, err := o.hydrateDraft(ctx, updatedDraft)
 	if err != nil {
-		// Log error but don't fail the update
-		// The draft was successfully saved, just couldn't populate the info
-		return &UpdateClassOutput{
-			Draft:    updatedDraft,
-			Warnings: warnings,
-		}, nil
+		return nil, err
 	}
 
 	return &UpdateClassOutput{
@@ -702,11 +683,7 @@ func (o *Orchestrator) UpdateBackground(
 	updatedDraft := updateOutput.Draft.ToCharacterDraft()
 	hydratedDraft, err := o.hydrateDraft(ctx, updatedDraft)
 	if err != nil {
-		// Log error but don't fail the update
-		// The draft was successfully saved, just couldn't populate the info
-		return &UpdateBackgroundOutput{
-			Draft: updatedDraft,
-		}, nil
+		return nil, err
 	}
 
 	return &UpdateBackgroundOutput{
@@ -2704,24 +2681,22 @@ func (o *Orchestrator) hydrateDraft(ctx context.Context, draft *dnd5e.CharacterD
 	if draft.RaceID != "" {
 		raceData, err := o.externalClient.GetRaceData(ctx, draft.RaceID)
 		if err != nil {
-			// Log error but continue - we don't want to fail the whole hydration for one missing piece
-			// TODO(#46): Add proper logging
-		} else {
-			hydratedDraft.Race = convertExternalRaceToEntity(raceData)
+			return nil, fmt.Errorf("failed to get race data for %s: %w", draft.RaceID, err)
+		}
+		hydratedDraft.Race = convertExternalRaceToEntity(raceData)
 
-			// If subrace is set, find it in the race data
-			if draft.SubraceID != "" && raceData != nil {
-				for _, subrace := range raceData.Subraces {
-					if subrace.ID == draft.SubraceID {
-						hydratedDraft.Subrace = &dnd5e.SubraceInfo{
-							ID:             subrace.ID,
-							Name:           subrace.Name,
-							Description:    subrace.Description,
-							AbilityBonuses: subrace.AbilityBonuses,
-							Traits:         convertExternalTraitsToEntity(subrace.Traits),
-						}
-						break
+		// If subrace is set, find it in the race data
+		if draft.SubraceID != "" && raceData != nil {
+			for _, subrace := range raceData.Subraces {
+				if subrace.ID == draft.SubraceID {
+					hydratedDraft.Subrace = &dnd5e.SubraceInfo{
+						ID:             subrace.ID,
+						Name:           subrace.Name,
+						Description:    subrace.Description,
+						AbilityBonuses: subrace.AbilityBonuses,
+						Traits:         convertExternalTraitsToEntity(subrace.Traits),
 					}
+					break
 				}
 			}
 		}
@@ -2731,22 +2706,18 @@ func (o *Orchestrator) hydrateDraft(ctx context.Context, draft *dnd5e.CharacterD
 	if draft.ClassID != "" {
 		classData, err := o.externalClient.GetClassData(ctx, draft.ClassID)
 		if err != nil {
-			// Log error but continue
-			// TODO(#46): Add proper logging
-		} else {
-			hydratedDraft.Class = convertExternalClassToEntity(classData)
+			return nil, fmt.Errorf("failed to get class data for %s: %w", draft.ClassID, err)
 		}
+		hydratedDraft.Class = convertExternalClassToEntity(classData)
 	}
 
 	// Fetch background info if background is set
 	if draft.BackgroundID != "" {
 		backgroundData, err := o.externalClient.GetBackgroundData(ctx, draft.BackgroundID)
 		if err != nil {
-			// Log error but continue
-			// TODO(#46): Add proper logging
-		} else {
-			hydratedDraft.Background = convertExternalBackgroundToEntity(backgroundData)
+			return nil, fmt.Errorf("failed to get background data for %s: %w", draft.BackgroundID, err)
 		}
+		hydratedDraft.Background = convertExternalBackgroundToEntity(backgroundData)
 	}
 
 	return &hydratedDraft, nil

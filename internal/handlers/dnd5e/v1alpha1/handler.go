@@ -966,45 +966,6 @@ func mapProtoSkillToConstant(skill dnd5ev1alpha1.Skill) string {
 	}
 }
 
-func mapProtoLanguageToConstant(lang dnd5ev1alpha1.Language) string {
-	switch lang {
-	case dnd5ev1alpha1.Language_LANGUAGE_COMMON:
-		return dnd5e.LanguageCommon
-	case dnd5ev1alpha1.Language_LANGUAGE_DWARVISH:
-		return dnd5e.LanguageDwarvish
-	case dnd5ev1alpha1.Language_LANGUAGE_ELVISH:
-		return dnd5e.LanguageElvish
-	case dnd5ev1alpha1.Language_LANGUAGE_GIANT:
-		return dnd5e.LanguageGiant
-	case dnd5ev1alpha1.Language_LANGUAGE_GNOMISH:
-		return dnd5e.LanguageGnomish
-	case dnd5ev1alpha1.Language_LANGUAGE_GOBLIN:
-		return dnd5e.LanguageGoblin
-	case dnd5ev1alpha1.Language_LANGUAGE_HALFLING:
-		return dnd5e.LanguageHalfling
-	case dnd5ev1alpha1.Language_LANGUAGE_ORC:
-		return dnd5e.LanguageOrc
-	case dnd5ev1alpha1.Language_LANGUAGE_ABYSSAL:
-		return dnd5e.LanguageAbyssal
-	case dnd5ev1alpha1.Language_LANGUAGE_CELESTIAL:
-		return dnd5e.LanguageCelestial
-	case dnd5ev1alpha1.Language_LANGUAGE_DRACONIC:
-		return dnd5e.LanguageDraconic
-	case dnd5ev1alpha1.Language_LANGUAGE_DEEP_SPEECH:
-		return dnd5e.LanguageDeepSpeech
-	case dnd5ev1alpha1.Language_LANGUAGE_INFERNAL:
-		return dnd5e.LanguageInfernal
-	case dnd5ev1alpha1.Language_LANGUAGE_PRIMORDIAL:
-		return dnd5e.LanguagePrimordial
-	case dnd5ev1alpha1.Language_LANGUAGE_SYLVAN:
-		return dnd5e.LanguageSylvan
-	case dnd5ev1alpha1.Language_LANGUAGE_UNDERCOMMON:
-		return dnd5e.LanguageUndercommon
-	default:
-		return ""
-	}
-}
-
 func mapProtoCreationStepToConstant(step dnd5ev1alpha1.CreationStep) string {
 	switch step {
 	case dnd5ev1alpha1.CreationStep_CREATION_STEP_NAME:
@@ -1166,49 +1127,6 @@ func mapConstantToProtoAlignment(constant string) dnd5ev1alpha1.Alignment {
 		return dnd5ev1alpha1.Alignment_ALIGNMENT_CHAOTIC_EVIL
 	default:
 		return dnd5ev1alpha1.Alignment_ALIGNMENT_UNSPECIFIED
-	}
-}
-
-func mapConstantToProtoSkill(constant string) dnd5ev1alpha1.Skill {
-	switch constant {
-	case dnd5e.SkillAcrobatics:
-		return dnd5ev1alpha1.Skill_SKILL_ACROBATICS
-	case dnd5e.SkillAnimalHandling:
-		return dnd5ev1alpha1.Skill_SKILL_ANIMAL_HANDLING
-	case dnd5e.SkillArcana:
-		return dnd5ev1alpha1.Skill_SKILL_ARCANA
-	case dnd5e.SkillAthletics:
-		return dnd5ev1alpha1.Skill_SKILL_ATHLETICS
-	case dnd5e.SkillDeception:
-		return dnd5ev1alpha1.Skill_SKILL_DECEPTION
-	case dnd5e.SkillHistory:
-		return dnd5ev1alpha1.Skill_SKILL_HISTORY
-	case dnd5e.SkillInsight:
-		return dnd5ev1alpha1.Skill_SKILL_INSIGHT
-	case dnd5e.SkillIntimidation:
-		return dnd5ev1alpha1.Skill_SKILL_INTIMIDATION
-	case dnd5e.SkillInvestigation:
-		return dnd5ev1alpha1.Skill_SKILL_INVESTIGATION
-	case dnd5e.SkillMedicine:
-		return dnd5ev1alpha1.Skill_SKILL_MEDICINE
-	case dnd5e.SkillNature:
-		return dnd5ev1alpha1.Skill_SKILL_NATURE
-	case dnd5e.SkillPerception:
-		return dnd5ev1alpha1.Skill_SKILL_PERCEPTION
-	case dnd5e.SkillPerformance:
-		return dnd5ev1alpha1.Skill_SKILL_PERFORMANCE
-	case dnd5e.SkillPersuasion:
-		return dnd5ev1alpha1.Skill_SKILL_PERSUASION
-	case dnd5e.SkillReligion:
-		return dnd5ev1alpha1.Skill_SKILL_RELIGION
-	case dnd5e.SkillSleightOfHand:
-		return dnd5ev1alpha1.Skill_SKILL_SLEIGHT_OF_HAND
-	case dnd5e.SkillStealth:
-		return dnd5ev1alpha1.Skill_SKILL_STEALTH
-	case dnd5e.SkillSurvival:
-		return dnd5ev1alpha1.Skill_SKILL_SURVIVAL
-	default:
-		return dnd5ev1alpha1.Skill_SKILL_UNSPECIFIED
 	}
 }
 

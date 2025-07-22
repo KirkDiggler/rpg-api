@@ -176,11 +176,17 @@ const (
 	ChoiceTypeEquipment ChoiceType = "equipment"
 	// ChoiceTypeSkill represents skill proficiency choices
 	ChoiceTypeSkill             ChoiceType = "skill"
+	// ChoiceTypeTool represents tool proficiency choices
 	ChoiceTypeTool              ChoiceType = "tool"
+	// ChoiceTypeLanguage represents language choices
 	ChoiceTypeLanguage          ChoiceType = "language"
+	// ChoiceTypeWeaponProficiency represents weapon proficiency choices
 	ChoiceTypeWeaponProficiency ChoiceType = "weapon_proficiency"
+	// ChoiceTypeArmorProficiency represents armor proficiency choices
 	ChoiceTypeArmorProficiency  ChoiceType = "armor_proficiency"
+	// ChoiceTypeSpell represents spell choices
 	ChoiceTypeSpell             ChoiceType = "spell"
+	// ChoiceTypeFeat represents feat/feature choices
 	ChoiceTypeFeat              ChoiceType = "feat"
 	ChoiceTypeFightingStyle     ChoiceType = "fighting_style"
 	ChoiceTypeCantrips          ChoiceType = "cantrips"
@@ -505,4 +511,5 @@ type EquipmentInfo struct {
 	Properties  []string // For weapons: "light", "finesse", etc.
 }
 
-// TODO(#46): Separate CharacterDraft into data and presentation models. Add ToData() method to convert for repository storage
+// TODO(#46): Separate CharacterDraft into data and presentation models.
+// Add ToData() method to convert for repository storage

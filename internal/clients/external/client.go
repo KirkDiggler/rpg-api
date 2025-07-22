@@ -763,7 +763,7 @@ func (c *client) convertClassWithFeatures(class *entities.Class, level1 *entitie
 							ID:          fmt.Sprintf("%s::%s", feature.ID, choiceData.Type),
 							Description: fmt.Sprintf("%s: Choose %d %s", feature.Name, choiceData.Choose, choiceData.Type),
 							Type:        mapExternalChoiceType(choiceData.Type),
-							ChooseCount: int32(choiceData.Choose),
+							ChooseCount: safeIntToInt32(choiceData.Choose),
 						}
 
 						// Convert options

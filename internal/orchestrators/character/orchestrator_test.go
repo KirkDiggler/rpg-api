@@ -549,7 +549,7 @@ func (s *OrchestratorTestSuite) TestUpdateBackgroundWithChoices() {
 
 				s.mockDraftRepo.EXPECT().
 					Update(s.ctx, gomock.Any()).
-					DoAndReturn(func(ctx context.Context, input draftrepo.UpdateInput) (*draftrepo.UpdateOutput, error) {
+					DoAndReturn(func(_ context.Context, input draftrepo.UpdateInput) (*draftrepo.UpdateOutput, error) {
 						// Verify choices were added
 						s.Equal("soldier", input.Draft.BackgroundID)
 						foundBackgroundChoice := false

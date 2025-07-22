@@ -12,7 +12,7 @@ import (
 )
 
 var (
-	raceJsonOutput bool
+	raceJSONOutput bool
 )
 
 var getRaceCmd = &cobra.Command{
@@ -24,7 +24,7 @@ var getRaceCmd = &cobra.Command{
 }
 
 func init() {
-	getRaceCmd.Flags().BoolVar(&raceJsonOutput, "json", false, "Output as JSON")
+	getRaceCmd.Flags().BoolVar(&raceJSONOutput, "json", false, "Output as JSON")
 }
 
 func runGetRace(_ *cobra.Command, args []string) error {
@@ -50,7 +50,7 @@ func runGetRace(_ *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to get race details: %w", err)
 	}
 
-	if raceJsonOutput {
+	if raceJSONOutput {
 		// Import the protojson package at the top of the file
 		// "google.golang.org/protobuf/encoding/protojson"
 		marshaler := protojson.MarshalOptions{

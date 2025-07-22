@@ -119,7 +119,9 @@ func (b *CharacterDraftBuilder) WithAlignment(alignment string) *CharacterDraftB
 }
 
 // WithProgress sets specific progress values
-func (b *CharacterDraftBuilder) WithProgress(stepsCompleted uint8, percentage int32, currentStep string) *CharacterDraftBuilder {
+func (b *CharacterDraftBuilder) WithProgress(
+	stepsCompleted uint8, percentage int32, currentStep string,
+) *CharacterDraftBuilder {
 	b.draft.Progress = dnd5e.CreationProgress{
 		StepsCompleted:       stepsCompleted,
 		CompletionPercentage: percentage,
@@ -177,6 +179,7 @@ func (b *CharacterDraftBuilder) updateProgress() {
 			completedCount++
 		}
 	}
+	// #nosec G115 - completedCount is bounded by 8, so no overflow is possible
 	b.draft.Progress.CompletionPercentage = int32(completedCount * 100 / 8)
 
 	// Update current step based on what's not completed

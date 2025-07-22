@@ -2,12 +2,24 @@ package external
 
 import (
 	"fmt"
+	"math"
 	"strings"
 
 	"github.com/fadedpez/dnd5e-api/entities"
 
 	"github.com/KirkDiggler/rpg-api/internal/entities/dnd5e"
 )
+
+// safeIntToInt32 safely converts int to int32, clamping to max/min int32 values
+func safeIntToInt32(n int) int32 {
+	if n > math.MaxInt32 {
+		return math.MaxInt32
+	}
+	if n < math.MinInt32 {
+		return math.MinInt32
+	}
+	return int32(n)
+}
 
 // parseProficiencyChoices converts external choice data to rich entity choices
 func parseProficiencyChoices(choices []*ChoiceData, baseID string) []dnd5e.Choice {
@@ -23,7 +35,7 @@ func parseProficiencyChoices(choices []*ChoiceData, baseID string) []dnd5e.Choic
 			ID:          fmt.Sprintf("%s_%s_%d", baseID, choice.Type, i+1),
 			Description: fmt.Sprintf("Choose %d %s", choice.Choose, choice.Type),
 			Type:        choiceType,
-			ChooseCount: int32(choice.Choose),
+			ChooseCount: safeIntToInt32(choice.Choose),
 		}
 
 		// Check if this references a category
@@ -174,7 +186,7 @@ func parseEquipmentChoicesFromEntities(choices []*entities.ChoiceOption, classID
 			ID:          fmt.Sprintf("%s_equipment_%d", classID, i+1),
 			Description: choice.Description,
 			Type:        dnd5e.ChoiceTypeEquipment,
-			ChooseCount: int32(choice.ChoiceCount),
+			ChooseCount: safeIntToInt32(choice.ChoiceCount),
 		}
 
 		// Convert the rich option list
@@ -225,7 +237,7 @@ func convertEntityOption(option entities.Option) dnd5e.ChoiceOption {
 			return &dnd5e.CountedItemReference{
 				ItemID:   opt.Reference.Key,
 				Name:     opt.Reference.Name,
-				Quantity: int32(opt.Count),
+				Quantity: safeIntToInt32(opt.Count),
 			}
 		}
 
@@ -241,7 +253,7 @@ func convertEntityOption(option entities.Option) dnd5e.ChoiceOption {
 							ConcreteItem: &dnd5e.CountedItemReference{
 								ItemID:   itemOpt.Reference.Key,
 								Name:     itemOpt.Reference.Name,
-								Quantity: int32(itemOpt.Count),
+								Quantity: safeIntToInt32(itemOpt.Count),
 							},
 						},
 					})
@@ -261,7 +273,7 @@ func convertEntityOption(option entities.Option) dnd5e.ChoiceOption {
 					ID:          nestedID,
 					Description: itemOpt.Description,
 					Type:        dnd5e.ChoiceTypeEquipment,
-					ChooseCount: int32(itemOpt.ChoiceCount),
+					ChooseCount: safeIntToInt32(itemOpt.ChoiceCount),
 					OptionSet: &dnd5e.CategoryReference{
 						CategoryID: categoryID,
 					},
@@ -295,7 +307,7 @@ func convertEntityOption(option entities.Option) dnd5e.ChoiceOption {
 			ID:          nestedID,
 			Description: opt.Description,
 			Type:        dnd5e.ChoiceTypeEquipment,
-			ChooseCount: int32(opt.ChoiceCount),
+			ChooseCount: safeIntToInt32(opt.ChoiceCount),
 			OptionSet: &dnd5e.CategoryReference{
 				CategoryID: categoryID,
 			},

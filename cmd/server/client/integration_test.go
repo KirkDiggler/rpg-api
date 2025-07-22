@@ -68,7 +68,8 @@ func TestFighterChoicesIntegration(t *testing.T) {
 	if baseURL == "" {
 		baseURL = "http://localhost:3002"
 	}
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, fmt.Sprintf("%s/api/2014/classes/fighter", baseURL), nil)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet,
+		fmt.Sprintf("%s/api/2014/classes/fighter", baseURL), nil)
 	require.NoError(t, err)
 	dndResp, err := http.DefaultClient.Do(req)
 	require.NoError(t, err)
