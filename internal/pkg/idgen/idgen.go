@@ -30,7 +30,12 @@ func NewPrefixed(prefix string) *PrefixedGenerator {
 func (g *PrefixedGenerator) Generate() string {
 	timestamp := time.Now().UnixNano()
 	randomBytes := make([]byte, 4)
-	_, _ = rand.Read(randomBytes)
+	_, err := rand.Read(randomBytes)
+	if err != nil {
+		// crypto/rand.Read should never fail on a properly configured system
+		// If it does, it indicates a catastrophic system failure
+		panic(fmt.Sprintf("crypto/rand.Read failed: %v", err))
+	}
 	random := hex.EncodeToString(randomBytes)
 
 	return fmt.Sprintf("%s_%d_%s", g.prefix, timestamp, random)
@@ -43,7 +48,12 @@ type SimpleGenerator struct{}
 func (g *SimpleGenerator) Generate() string {
 	timestamp := time.Now().UnixNano()
 	randomBytes := make([]byte, 8)
-	_, _ = rand.Read(randomBytes)
+	_, err := rand.Read(randomBytes)
+	if err != nil {
+		// crypto/rand.Read should never fail on a properly configured system
+		// If it does, it indicates a catastrophic system failure
+		panic(fmt.Sprintf("crypto/rand.Read failed: %v", err))
+	}
 	random := hex.EncodeToString(randomBytes)
 
 	return fmt.Sprintf("%d_%s", timestamp, random)

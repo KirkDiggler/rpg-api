@@ -143,8 +143,8 @@ func (o *Orchestrator) CreateDraft(
 		return nil, err
 	}
 
-	// Create new draft with basic information
-	draft := &dnd5e.CharacterDraft{
+	// Create new draft data with basic information
+	draftData := &dnd5e.CharacterDraftData{
 		PlayerID:  input.PlayerID,
 		SessionID: input.SessionID,
 		Progress: dnd5e.CreationProgress{
@@ -160,43 +160,40 @@ func (o *Orchestrator) CreateDraft(
 	// The repository will handle ID generation and find/replace existing drafts for this player
 	if input.InitialData != nil {
 		if input.InitialData.Name != "" {
-			draft.Name = input.InitialData.Name
-			draft.Progress.SetStep(dnd5e.ProgressStepName, true)
+			draftData.Name = input.InitialData.Name
+			draftData.Progress.SetStep(dnd5e.ProgressStepName, true)
 		}
 		if input.InitialData.RaceID != "" {
-			draft.RaceID = input.InitialData.RaceID
-			draft.SubraceID = input.InitialData.SubraceID
-			draft.Progress.SetStep(dnd5e.ProgressStepRace, true)
+			draftData.RaceID = input.InitialData.RaceID
+			draftData.SubraceID = input.InitialData.SubraceID
+			draftData.Progress.SetStep(dnd5e.ProgressStepRace, true)
 		}
 		if input.InitialData.ClassID != "" {
-			draft.ClassID = input.InitialData.ClassID
-			draft.Progress.SetStep(dnd5e.ProgressStepClass, true)
+			draftData.ClassID = input.InitialData.ClassID
+			draftData.Progress.SetStep(dnd5e.ProgressStepClass, true)
 		}
 		if input.InitialData.BackgroundID != "" {
-			draft.BackgroundID = input.InitialData.BackgroundID
-			draft.Progress.SetStep(dnd5e.ProgressStepBackground, true)
+			draftData.BackgroundID = input.InitialData.BackgroundID
+			draftData.Progress.SetStep(dnd5e.ProgressStepBackground, true)
 		}
 		if input.InitialData.AbilityScores != nil {
-			draft.AbilityScores = input.InitialData.AbilityScores
-			draft.Progress.SetStep(dnd5e.ProgressStepAbilityScores, true)
+			draftData.AbilityScores = input.InitialData.AbilityScores
+			draftData.Progress.SetStep(dnd5e.ProgressStepAbilityScores, true)
 		}
-		if len(input.InitialData.StartingSkillIDs) > 0 {
-			draft.StartingSkillIDs = input.InitialData.StartingSkillIDs
-			draft.Progress.SetStep(dnd5e.ProgressStepSkills, true)
-		}
-		if len(input.InitialData.AdditionalLanguages) > 0 {
-			draft.AdditionalLanguages = input.InitialData.AdditionalLanguages
-			draft.Progress.SetStep(dnd5e.ProgressStepLanguages, true)
-		}
-		draft.Alignment = input.InitialData.Alignment
-		draft.DiscordChannelID = input.InitialData.DiscordChannelID
-		draft.DiscordMessageID = input.InitialData.DiscordMessageID
+		// Skills and languages are now handled through ChoiceSelections
+		// TODO(#46): Convert InitialData skills/languages to ChoiceSelections
+		draftData.Alignment = input.InitialData.Alignment
 
-		// Update completion percentage
+		// Convert to CharacterDraft for validation and percentage update
+		draft := draftData.ToCharacterDraft()
 		o.updateCompletionPercentage(draft)
+		// Copy updated progress back to draftData
+		draftData.Progress = draft.Progress
 	}
 
 	// Validate the draft with the engine
+	// Convert to CharacterDraft for validation
+	draft := draftData.ToCharacterDraft()
 	validateInput := &engine.ValidateCharacterDraftInput{
 		Draft: draft,
 	}
@@ -212,14 +209,19 @@ func (o *Orchestrator) CreateDraft(
 		return nil, ve.ToError()
 	}
 
-	// Create the draft in the repository
-	createOutput, err := o.characterDraftRepo.Create(ctx, draftrepo.CreateInput{Draft: draft})
+	// Create the draft data in the repository
+	createOutput, err := o.characterDraftRepo.Create(ctx, draftrepo.CreateInput{Draft: draftData})
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to create draft")
 	}
 
+	// Convert the created draft data to CharacterDraft
+	createdDraft := createOutput.Draft.ToCharacterDraft()
+
+	// No need to hydrate on create since we don't have race/class/background yet
+	// Just return the created draft
 	return &CreateDraftOutput{
-		Draft: createOutput.Draft,
+		Draft: createdDraft,
 	}, nil
 }
 
@@ -244,8 +246,22 @@ func (o *Orchestrator) GetDraft(
 			WithMeta("draft_id", input.DraftID)
 	}
 
+	// Convert CharacterDraftData to CharacterDraft
+	// Convert to CharacterDraft for manipulation
+	draft := getOutput.Draft.ToCharacterDraft()
+
+	// Hydrate the draft with info objects
+	hydratedDraft, err := o.hydrateDraft(ctx, draft)
+	if err != nil {
+		// Log error but don't fail the get operation
+		// TODO(#46): Add proper logging
+		return &GetDraftOutput{
+			Draft: draft,
+		}, nil
+	}
+
 	return &GetDraftOutput{
-		Draft: getOutput.Draft,
+		Draft: hydratedDraft,
 	}, nil
 }
 
@@ -278,9 +294,23 @@ func (o *Orchestrator) ListDrafts(
 		return nil, errors.Wrap(err, "failed to get player draft")
 	}
 
+	// Convert CharacterDraftData to CharacterDraft
+	draft := draftOutput.Draft.ToCharacterDraft()
+
+	// Hydrate the draft with info objects
+	hydratedDraft, err := o.hydrateDraft(ctx, draft)
+	if err != nil {
+		// Log error but return the draft anyway
+		// TODO(#46): Add proper logging
+		return &ListDraftsOutput{
+			Drafts:        []*dnd5e.CharacterDraft{draft},
+			NextPageToken: "", // No pagination needed for single draft
+		}, nil
+	}
+
 	// Return single draft as a list
 	return &ListDraftsOutput{
-		Drafts:        []*dnd5e.CharacterDraft{draftOutput.Draft},
+		Drafts:        []*dnd5e.CharacterDraft{hydratedDraft},
 		NextPageToken: "", // No pagination needed for single draft
 	}, nil
 }
@@ -333,7 +363,10 @@ func (o *Orchestrator) UpdateName(
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to get draft")
 	}
-	draft := getOutput.Draft
+
+	// Convert to CharacterDraft for manipulation
+	// Convert to CharacterDraft for manipulation
+	draft := getOutput.Draft.ToCharacterDraft()
 
 	// Update the name
 	draft.Name = input.Name
@@ -343,14 +376,20 @@ func (o *Orchestrator) UpdateName(
 	draft.Progress.SetStep(dnd5e.ProgressStepName, true)
 	o.updateCompletionPercentage(draft)
 
+	// Convert back to CharacterDraftData for repository update
+	draftData := dnd5e.FromCharacterDraft(draft)
+
 	// Save the updated draft
-	updateOutput, err := o.characterDraftRepo.Update(ctx, draftrepo.UpdateInput{Draft: draft})
+	updateOutput, err := o.characterDraftRepo.Update(ctx, draftrepo.UpdateInput{Draft: draftData})
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to update draft")
 	}
 
+	// Convert result to CharacterDraft for return
+	updatedDraft := updateOutput.Draft.ToCharacterDraft()
+
 	return &UpdateNameOutput{
-		Draft: updateOutput.Draft,
+		Draft: updatedDraft,
 	}, nil
 }
 
@@ -375,7 +414,10 @@ func (o *Orchestrator) UpdateRace(
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to get draft")
 	}
-	draft := getOutput.Draft
+
+	// Convert to CharacterDraft for manipulation
+	// Convert to CharacterDraft for manipulation
+	draft := getOutput.Draft.ToCharacterDraft()
 
 	// Validate race choice with engine
 	validateInput := &engine.ValidateRaceChoiceInput{
@@ -400,8 +442,27 @@ func (o *Orchestrator) UpdateRace(
 
 	// Reset dependent fields when race changes
 	draft.AbilityScores = nil
-	draft.StartingSkillIDs = nil
-	draft.AdditionalLanguages = nil
+
+	// Handle race choices
+	if len(input.Choices) > 0 {
+		// Remove any existing race/subrace choices
+		var filteredChoices []dnd5e.ChoiceSelection
+		for _, choice := range draft.ChoiceSelections {
+			if choice.Source != dnd5e.ChoiceSourceRace && choice.Source != dnd5e.ChoiceSourceSubrace {
+				filteredChoices = append(filteredChoices, choice)
+			}
+		}
+
+		// Add new race choices
+		for _, choice := range input.Choices {
+			// Validate the choice matches the race source
+			if choice.Source == dnd5e.ChoiceSourceRace || choice.Source == dnd5e.ChoiceSourceSubrace {
+				filteredChoices = append(filteredChoices, choice)
+			}
+		}
+
+		draft.ChoiceSelections = filteredChoices
+	}
 
 	// Update progress
 	draft.Progress.SetStep(dnd5e.ProgressStepRace, true)
@@ -411,14 +472,43 @@ func (o *Orchestrator) UpdateRace(
 	draft.Progress.SetStep(dnd5e.ProgressStepLanguages, false)
 	o.updateCompletionPercentage(draft)
 
+	// Convert back to CharacterDraftData for repository update
+	draftData := dnd5e.FromCharacterDraft(draft)
+
 	// Save the updated draft
-	updateOutput, err := o.characterDraftRepo.Update(ctx, draftrepo.UpdateInput{Draft: draft})
+	updateOutput, err := o.characterDraftRepo.Update(ctx, draftrepo.UpdateInput{Draft: draftData})
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to update draft")
 	}
 
+	// Convert result to CharacterDraft and hydrate with race info
+	updatedDraft := updateOutput.Draft.ToCharacterDraft()
+	hydratedDraft, err := o.hydrateDraft(ctx, updatedDraft)
+	if err != nil {
+		// Log error but don't fail the update
+		// The draft was successfully saved, just couldn't populate the info
+		return &UpdateRaceOutput{
+			Draft:    updatedDraft,
+			Warnings: warnings,
+		}, nil
+	}
+
+	slog.Info("UpdateRace returning hydrated draft",
+		"draft_id", hydratedDraft.ID,
+		"race_id", hydratedDraft.RaceID,
+		"race_info_nil", hydratedDraft.Race == nil,
+		"race_name", func() string {
+			if hydratedDraft.Race != nil {
+				return hydratedDraft.Race.Name
+			}
+			return "nil"
+		}(),
+		"choice_count", len(hydratedDraft.ChoiceSelections),
+		"choices", hydratedDraft.ChoiceSelections,
+	)
+	
 	return &UpdateRaceOutput{
-		Draft:    updateOutput.Draft,
+		Draft:    hydratedDraft,
 		Warnings: warnings,
 	}, nil
 }
@@ -444,7 +534,10 @@ func (o *Orchestrator) UpdateClass(
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to get draft")
 	}
-	draft := getOutput.Draft
+
+	// Convert to CharacterDraft for manipulation
+	// Convert to CharacterDraft for manipulation
+	draft := getOutput.Draft.ToCharacterDraft()
 
 	// Validate class choice with engine
 	validateInput := &engine.ValidateClassChoiceInput{
@@ -467,8 +560,29 @@ func (o *Orchestrator) UpdateClass(
 	draft.ClassID = input.ClassID
 	// Repository will update timestamp
 
-	// Reset dependent fields when class changes
-	draft.StartingSkillIDs = nil
+	// Class changes don't reset any fields currently
+	// Skills are handled through choices
+
+	// Handle class choices
+	if len(input.Choices) > 0 {
+		// Remove any existing class choices
+		var filteredChoices []dnd5e.ChoiceSelection
+		for _, choice := range draft.ChoiceSelections {
+			if choice.Source != dnd5e.ChoiceSourceClass {
+				filteredChoices = append(filteredChoices, choice)
+			}
+		}
+
+		// Add new class choices
+		for _, choice := range input.Choices {
+			// Validate the choice matches the class source
+			if choice.Source == dnd5e.ChoiceSourceClass {
+				filteredChoices = append(filteredChoices, choice)
+			}
+		}
+
+		draft.ChoiceSelections = filteredChoices
+	}
 
 	// Update progress
 	draft.Progress.SetStep(dnd5e.ProgressStepClass, true)
@@ -476,14 +590,29 @@ func (o *Orchestrator) UpdateClass(
 	draft.Progress.SetStep(dnd5e.ProgressStepSkills, false)
 	o.updateCompletionPercentage(draft)
 
+	// Convert back to CharacterDraftData for repository update
+	draftData := dnd5e.FromCharacterDraft(draft)
+
 	// Save the updated draft
-	updateOutput, err := o.characterDraftRepo.Update(ctx, draftrepo.UpdateInput{Draft: draft})
+	updateOutput, err := o.characterDraftRepo.Update(ctx, draftrepo.UpdateInput{Draft: draftData})
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to update draft")
 	}
 
+	// Convert result to CharacterDraft and hydrate with class info
+	updatedDraft := updateOutput.Draft.ToCharacterDraft()
+	hydratedDraft, err := o.hydrateDraft(ctx, updatedDraft)
+	if err != nil {
+		// Log error but don't fail the update
+		// The draft was successfully saved, just couldn't populate the info
+		return &UpdateClassOutput{
+			Draft:    updatedDraft,
+			Warnings: warnings,
+		}, nil
+	}
+
 	return &UpdateClassOutput{
-		Draft:    updateOutput.Draft,
+		Draft:    hydratedDraft,
 		Warnings: warnings,
 	}, nil
 }
@@ -509,7 +638,8 @@ func (o *Orchestrator) UpdateBackground(
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to get draft")
 	}
-	draft := getOutput.Draft
+	// Convert to CharacterDraft for manipulation
+	draft := getOutput.Draft.ToCharacterDraft()
 
 	// Validate background choice with engine
 	validateInput := &engine.ValidateBackgroundChoiceInput{
@@ -529,8 +659,29 @@ func (o *Orchestrator) UpdateBackground(
 	draft.BackgroundID = input.BackgroundID
 	// Repository will update timestamp
 
-	// Reset dependent fields when background changes
-	draft.StartingSkillIDs = nil
+	// Background changes don't reset any fields currently
+	// Skills are handled through choices
+
+	// Handle background choices
+	if len(input.Choices) > 0 {
+		// Remove any existing background choices
+		var filteredChoices []dnd5e.ChoiceSelection
+		for _, choice := range draft.ChoiceSelections {
+			if choice.Source != dnd5e.ChoiceSourceBackground {
+				filteredChoices = append(filteredChoices, choice)
+			}
+		}
+
+		// Add new background choices
+		for _, choice := range input.Choices {
+			// Validate the choice matches the background source
+			if choice.Source == dnd5e.ChoiceSourceBackground {
+				filteredChoices = append(filteredChoices, choice)
+			}
+		}
+
+		draft.ChoiceSelections = filteredChoices
+	}
 
 	// Update progress
 	draft.Progress.SetStep(dnd5e.ProgressStepBackground, true)
@@ -538,14 +689,28 @@ func (o *Orchestrator) UpdateBackground(
 	draft.Progress.SetStep(dnd5e.ProgressStepSkills, false)
 	o.updateCompletionPercentage(draft)
 
+	// Convert back to CharacterDraftData for repository update
+	draftData := dnd5e.FromCharacterDraft(draft)
+
 	// Save the updated draft
-	updateOutput, err := o.characterDraftRepo.Update(ctx, draftrepo.UpdateInput{Draft: draft})
+	updateOutput, err := o.characterDraftRepo.Update(ctx, draftrepo.UpdateInput{Draft: draftData})
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to update draft")
 	}
 
+	// Convert result to CharacterDraft and hydrate with background info
+	updatedDraft := updateOutput.Draft.ToCharacterDraft()
+	hydratedDraft, err := o.hydrateDraft(ctx, updatedDraft)
+	if err != nil {
+		// Log error but don't fail the update
+		// The draft was successfully saved, just couldn't populate the info
+		return &UpdateBackgroundOutput{
+			Draft: updatedDraft,
+		}, nil
+	}
+
 	return &UpdateBackgroundOutput{
-		Draft: updateOutput.Draft,
+		Draft: hydratedDraft,
 	}, nil
 }
 
@@ -569,7 +734,8 @@ func (o *Orchestrator) UpdateAbilityScores(
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to get draft")
 	}
-	draft := getOutput.Draft
+	// Convert to CharacterDraft for manipulation
+	draft := getOutput.Draft.ToCharacterDraft()
 
 	// Validate ability scores with engine
 	validateInput := &engine.ValidateAbilityScoresInput{
@@ -619,14 +785,20 @@ func (o *Orchestrator) UpdateAbilityScores(
 	draft.Progress.SetStep(dnd5e.ProgressStepAbilityScores, true)
 	o.updateCompletionPercentage(draft)
 
+	// Convert back to CharacterDraftData for repository update
+	draftData := dnd5e.FromCharacterDraft(draft)
+
 	// Save the updated draft
-	updateOutput, err := o.characterDraftRepo.Update(ctx, draftrepo.UpdateInput{Draft: draft})
+	updateOutput, err := o.characterDraftRepo.Update(ctx, draftrepo.UpdateInput{Draft: draftData})
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to update draft")
 	}
 
+	// Convert result to CharacterDraft for return
+	updatedDraft := updateOutput.Draft.ToCharacterDraft()
+
 	return &UpdateAbilityScoresOutput{
-		Draft:    updateOutput.Draft,
+		Draft:    updatedDraft,
 		Warnings: warnings,
 	}, nil
 }
@@ -651,7 +823,8 @@ func (o *Orchestrator) UpdateSkills(
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to get draft")
 	}
-	draft := getOutput.Draft
+	// Convert to CharacterDraft for manipulation
+	draft := getOutput.Draft.ToCharacterDraft()
 
 	// Collect warnings
 	var warnings []ValidationWarning
@@ -687,22 +860,29 @@ func (o *Orchestrator) UpdateSkills(
 		}
 	}
 
-	// Update the skills
-	draft.StartingSkillIDs = input.SkillIDs
+	// Update skills through choices
+	// TODO(#46): Convert skill selection to use ChoiceSelections
+	// For now, we'll need to store skills as choices
 	// Repository will update timestamp
 
 	// Update progress
 	draft.Progress.SetStep(dnd5e.ProgressStepSkills, true)
 	o.updateCompletionPercentage(draft)
 
+	// Convert back to CharacterDraftData for repository update
+	draftData := dnd5e.FromCharacterDraft(draft)
+
 	// Save the updated draft
-	updateOutput, err := o.characterDraftRepo.Update(ctx, draftrepo.UpdateInput{Draft: draft})
+	updateOutput, err := o.characterDraftRepo.Update(ctx, draftrepo.UpdateInput{Draft: draftData})
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to update draft")
 	}
 
+	// Convert result to CharacterDraft for return
+	updatedDraft := updateOutput.Draft.ToCharacterDraft()
+
 	return &UpdateSkillsOutput{
-		Draft:    updateOutput.Draft,
+		Draft:    updatedDraft,
 		Warnings: warnings,
 	}, nil
 }
@@ -729,7 +909,8 @@ func (o *Orchestrator) ValidateDraft(
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to get draft")
 	}
-	draft := getOutput.Draft
+	// Convert to CharacterDraft for manipulation
+	draft := getOutput.Draft.ToCharacterDraft()
 
 	// Validate with engine
 	validateInput := &engine.ValidateCharacterDraftInput{
@@ -771,7 +952,8 @@ func (o *Orchestrator) FinalizeDraft(
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to get draft")
 	}
-	draft := getOutput.Draft
+	// Convert to CharacterDraft for manipulation
+	draft := getOutput.Draft.ToCharacterDraft()
 
 	// Validate the draft is complete
 	validateInput := &engine.ValidateCharacterDraftInput{
@@ -1434,7 +1616,7 @@ func convertExternalBackgroundToEntity(background *external.BackgroundData) *dnd
 		SkillProficiencies:  background.SkillProficiencies,
 		ToolProficiencies:   []string{}, // TODO(#82): Get tool proficiencies from external data
 		Languages:           []string{}, // TODO(#82): Get languages from external data
-		AdditionalLanguages: background.Languages,
+		AdditionalLanguages: 0,          // TODO(#82): Get additional language count from external data
 		StartingEquipment:   background.Equipment,
 		StartingGold:        0, // TODO(#82): Get starting gold from external data
 		FeatureName:         background.Feature,
@@ -1611,18 +1793,22 @@ func (o *Orchestrator) UpdateChoices(
 	// Calculate completion percentage
 	o.updateCompletionPercentage(draft)
 
+	// Convert back to CharacterDraftData for repository update
+	draftData := dnd5e.FromCharacterDraft(draft)
+
 	// Save the updated draft
-	updateOutput, err := o.characterDraftRepo.Update(ctx, draftrepo.UpdateInput{Draft: draft})
+	updateOutput, err := o.characterDraftRepo.Update(ctx, draftrepo.UpdateInput{Draft: draftData})
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to update draft")
 	}
 
-	draft = updateOutput.Draft
+	// Convert result to CharacterDraft for return
+	updatedDraft := updateOutput.Draft.ToCharacterDraft()
 
-	slog.Info("Successfully updated character choices", "draft_id", draft.ID)
+	slog.Info("Successfully updated character choices", "draft_id", updatedDraft.ID)
 
 	return &UpdateChoicesOutput{
-		Draft: draft,
+		Draft: updatedDraft,
 	}, nil
 }
 
@@ -1703,25 +1889,25 @@ func (o *Orchestrator) validateChoiceSelections(
 
 	// Validate each selection
 	for _, selection := range selections {
-		category, exists := categoryMap[selection.CategoryID]
+		category, exists := categoryMap[selection.ChoiceID]
 		if !exists {
 			result.IsValid = false
 			result.Errors = append(result.Errors, dnd5e.ChoiceValidationError{
-				CategoryID: selection.CategoryID,
-				Message:    fmt.Sprintf("unknown choice category: %s", selection.CategoryID),
+				CategoryID: selection.ChoiceID,
+				Message:    fmt.Sprintf("unknown choice category: %s", selection.ChoiceID),
 				Code:       "unknown_category",
 			})
 			continue
 		}
 
 		// Validate selection count with bounds checking to prevent DoS attacks
-		optionCount := len(selection.OptionIDs)
+		optionCount := len(selection.SelectedKeys)
 
 		// Protect against malicious input with a practical limit
 		if optionCount > dnd5e.MaxChoiceOptionsLimit {
 			result.IsValid = false
 			result.Errors = append(result.Errors, dnd5e.ChoiceValidationError{
-				CategoryID: selection.CategoryID,
+				CategoryID: selection.ChoiceID,
 				Message:    fmt.Sprintf("too many options selected (maximum allowed: %d)", dnd5e.MaxChoiceOptionsLimit),
 				Code:       "excessive_options",
 			})
@@ -1733,7 +1919,7 @@ func (o *Orchestrator) validateChoiceSelections(
 		if optionCount32 < category.MinChoices {
 			result.IsValid = false
 			result.Errors = append(result.Errors, dnd5e.ChoiceValidationError{
-				CategoryID: selection.CategoryID,
+				CategoryID: selection.ChoiceID,
 				Message:    fmt.Sprintf("must select at least %d options", category.MinChoices),
 				Code:       "insufficient_choices",
 			})
@@ -1742,7 +1928,7 @@ func (o *Orchestrator) validateChoiceSelections(
 		if optionCount32 > category.MaxChoices {
 			result.IsValid = false
 			result.Errors = append(result.Errors, dnd5e.ChoiceValidationError{
-				CategoryID: selection.CategoryID,
+				CategoryID: selection.ChoiceID,
 				Message:    fmt.Sprintf("cannot select more than %d options", category.MaxChoices),
 				Code:       "too_many_choices",
 			})
@@ -1754,12 +1940,12 @@ func (o *Orchestrator) validateChoiceSelections(
 			optionMap[option.ID] = option
 		}
 
-		for _, optionID := range selection.OptionIDs {
+		for _, optionID := range selection.SelectedKeys {
 			option, optionExists := optionMap[optionID]
 			if !optionExists {
 				result.IsValid = false
 				result.Errors = append(result.Errors, dnd5e.ChoiceValidationError{
-					CategoryID: selection.CategoryID,
+					CategoryID: selection.ChoiceID,
 					OptionID:   optionID,
 					Message:    fmt.Sprintf("unknown option: %s", optionID),
 					Code:       "unknown_option",
@@ -1771,7 +1957,7 @@ func (o *Orchestrator) validateChoiceSelections(
 			for _, prerequisite := range option.Prerequisites {
 				if !o.hasPrerequisite(draft, prerequisite) {
 					result.Warnings = append(result.Warnings, dnd5e.ChoiceValidationWarning{
-						CategoryID: selection.CategoryID,
+						CategoryID: selection.ChoiceID,
 						OptionID:   optionID,
 						Message:    fmt.Sprintf("missing prerequisite: %s", prerequisite),
 						Code:       "missing_prerequisite",
@@ -1784,7 +1970,7 @@ func (o *Orchestrator) validateChoiceSelections(
 				if o.hasConflictingChoice(draft, conflict) {
 					result.IsValid = false
 					result.Errors = append(result.Errors, dnd5e.ChoiceValidationError{
-						CategoryID: selection.CategoryID,
+						CategoryID: selection.ChoiceID,
 						OptionID:   optionID,
 						Message:    fmt.Sprintf("conflicts with existing choice: %s", conflict),
 						Code:       "conflicting_choice",
@@ -1808,7 +1994,7 @@ func (o *Orchestrator) applyChoiceSelections(draft *dnd5e.CharacterDraft, select
 	// Update or add new selections
 	for _, selection := range selections {
 		// Validate the category ID is known
-		switch selection.CategoryID {
+		switch selection.ChoiceID {
 		case dnd5e.CategoryIDFighterFightingStyle,
 			dnd5e.CategoryIDWizardCantrips,
 			dnd5e.CategoryIDWizardSpells,
@@ -1820,17 +2006,17 @@ func (o *Orchestrator) applyChoiceSelections(draft *dnd5e.CharacterDraft, select
 			dnd5e.CategoryIDEquipmentChoices:
 			// Valid category
 		default:
-			return errors.InvalidArgumentf("unknown choice category: %s", selection.CategoryID)
+			return errors.InvalidArgumentf("unknown choice category: %s", selection.ChoiceID)
 		}
 
-		if existing, exists := selectionMap[selection.CategoryID]; exists {
+		if existing, exists := selectionMap[selection.ChoiceID]; exists {
 			// Update existing selection
-			existing.SelectedIDs = selection.OptionIDs
+			existing.SelectedKeys = selection.SelectedKeys
 		} else {
 			// Add new selection
 			draft.ChoiceSelections = append(draft.ChoiceSelections, dnd5e.ChoiceSelection{
-				ChoiceID:    selection.CategoryID,
-				SelectedIDs: selection.OptionIDs,
+				ChoiceID:     selection.ChoiceID,
+				SelectedKeys: selection.SelectedKeys,
 			})
 		}
 	}
@@ -1915,7 +2101,7 @@ func (o *Orchestrator) areAllChoicesComplete(_ context.Context, draft *dnd5e.Cha
 	case "fighter":
 		// Fighter must choose 1 fighting style
 		if selection, exists := selectionMap[dnd5e.CategoryIDFighterFightingStyle]; exists {
-			return len(selection.SelectedIDs) == 1
+			return len(selection.SelectedKeys) == 1
 		}
 		return false
 	case "wizard":
@@ -1923,12 +2109,12 @@ func (o *Orchestrator) areAllChoicesComplete(_ context.Context, draft *dnd5e.Cha
 		cantripSelection, hasCantrips := selectionMap[dnd5e.CategoryIDWizardCantrips]
 		spellSelection, hasSpells := selectionMap[dnd5e.CategoryIDWizardSpells]
 		return hasCantrips && hasSpells &&
-			len(cantripSelection.SelectedIDs) == 3 &&
-			len(spellSelection.SelectedIDs) == 6
+			len(cantripSelection.SelectedKeys) == 3 &&
+			len(spellSelection.SelectedKeys) == 6
 	case "cleric":
 		// Cleric must choose 3 cantrips
 		if selection, exists := selectionMap[dnd5e.CategoryIDClericCantrips]; exists {
-			return len(selection.SelectedIDs) == 3
+			return len(selection.SelectedKeys) == 3
 		}
 		return false
 	case "sorcerer":
@@ -1936,8 +2122,8 @@ func (o *Orchestrator) areAllChoicesComplete(_ context.Context, draft *dnd5e.Cha
 		cantripSelection, hasCantrips := selectionMap[dnd5e.CategoryIDSorcererCantrips]
 		spellSelection, hasSpells := selectionMap[dnd5e.CategoryIDSorcererSpells]
 		return hasCantrips && hasSpells &&
-			len(cantripSelection.SelectedIDs) == 4 &&
-			len(spellSelection.SelectedIDs) == 2
+			len(cantripSelection.SelectedKeys) == 4 &&
+			len(spellSelection.SelectedKeys) == 2
 	default:
 		// Other classes may not have required choices
 		return true
@@ -1961,7 +2147,7 @@ func (o *Orchestrator) hasPrerequisite(draft *dnd5e.CharacterDraft, prerequisite
 func (o *Orchestrator) hasConflictingChoice(draft *dnd5e.CharacterDraft, conflict string) bool {
 	// Check if the conflict ID exists in any of the current selections
 	for _, selection := range draft.ChoiceSelections {
-		for _, selectedID := range selection.SelectedIDs {
+		for _, selectedID := range selection.SelectedKeys {
 			if selectedID == conflict {
 				return true
 			}
@@ -2484,4 +2670,85 @@ func convertClassIDToExternalFormat(classID string) string {
 		}
 		return strings.ToLower(classID)
 	}
+}
+
+// convertExternalTraitsToEntity converts external trait data to entity format
+func convertExternalTraitsToEntity(traits []external.TraitData) []dnd5e.RacialTrait {
+	if traits == nil {
+		return nil
+	}
+
+	entityTraits := make([]dnd5e.RacialTrait, len(traits))
+	for i, trait := range traits {
+		entityTraits[i] = dnd5e.RacialTrait{
+			Name:        trait.Name,
+			Description: trait.Description,
+			IsChoice:    trait.IsChoice,
+			Options:     trait.Options,
+		}
+	}
+	return entityTraits
+}
+
+// hydrateDraft populates the draft with full Info objects for race, class, and background
+func (o *Orchestrator) hydrateDraft(ctx context.Context, draft *dnd5e.CharacterDraft) (*dnd5e.CharacterDraft, error) {
+	// Create a copy of the draft to avoid modifying the original
+	hydratedDraft := *draft
+	
+	// Ensure Info fields are nil to start (in case draft already had them)
+	hydratedDraft.Race = nil
+	hydratedDraft.Subrace = nil
+	hydratedDraft.Class = nil
+	hydratedDraft.Background = nil
+
+	// Fetch race info if race is set
+	if draft.RaceID != "" {
+		raceData, err := o.externalClient.GetRaceData(ctx, draft.RaceID)
+		if err != nil {
+			// Log error but continue - we don't want to fail the whole hydration for one missing piece
+			// TODO(#46): Add proper logging
+		} else {
+			hydratedDraft.Race = convertExternalRaceToEntity(raceData)
+
+			// If subrace is set, find it in the race data
+			if draft.SubraceID != "" && raceData != nil {
+				for _, subrace := range raceData.Subraces {
+					if subrace.ID == draft.SubraceID {
+						hydratedDraft.Subrace = &dnd5e.SubraceInfo{
+							ID:             subrace.ID,
+							Name:           subrace.Name,
+							Description:    subrace.Description,
+							AbilityBonuses: subrace.AbilityBonuses,
+							Traits:         convertExternalTraitsToEntity(subrace.Traits),
+						}
+						break
+					}
+				}
+			}
+		}
+	}
+
+	// Fetch class info if class is set
+	if draft.ClassID != "" {
+		classData, err := o.externalClient.GetClassData(ctx, draft.ClassID)
+		if err != nil {
+			// Log error but continue
+			// TODO(#46): Add proper logging
+		} else {
+			hydratedDraft.Class = convertExternalClassToEntity(classData)
+		}
+	}
+
+	// Fetch background info if background is set
+	if draft.BackgroundID != "" {
+		backgroundData, err := o.externalClient.GetBackgroundData(ctx, draft.BackgroundID)
+		if err != nil {
+			// Log error but continue
+			// TODO(#46): Add proper logging
+		} else {
+			hydratedDraft.Background = convertExternalBackgroundToEntity(backgroundData)
+		}
+	}
+
+	return &hydratedDraft, nil
 }

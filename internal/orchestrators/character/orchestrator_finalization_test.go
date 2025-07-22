@@ -44,12 +44,12 @@ func (s *OrchestratorTestSuite) TestValidateDraft() {
 						Wisdom:       12,
 						Charisma:     8,
 					},
-					StartingSkillIDs: []string{dnd5e.SkillAthletics, dnd5e.SkillIntimidation},
+					// Skills are now handled through ChoiceSelections
 				}
 
 				s.mockDraftRepo.EXPECT().
 					Get(s.ctx, draftrepo.GetInput{ID: s.testDraftID}).
-					Return(&draftrepo.GetOutput{Draft: completeDraft}, nil)
+					Return(&draftrepo.GetOutput{Draft: dnd5e.FromCharacterDraft(completeDraft)}, nil)
 
 				s.mockEngine.EXPECT().
 					ValidateCharacterDraft(s.ctx, &engine.ValidateCharacterDraftInput{
@@ -80,7 +80,7 @@ func (s *OrchestratorTestSuite) TestValidateDraft() {
 			setupMock: func() {
 				s.mockDraftRepo.EXPECT().
 					Get(s.ctx, draftrepo.GetInput{ID: s.testDraftID}).
-					Return(&draftrepo.GetOutput{Draft: s.testDraft}, nil)
+					Return(&draftrepo.GetOutput{Draft: dnd5e.FromCharacterDraft(s.testDraft)}, nil)
 
 				s.mockEngine.EXPECT().
 					ValidateCharacterDraft(s.ctx, gomock.Any()).
@@ -117,7 +117,7 @@ func (s *OrchestratorTestSuite) TestValidateDraft() {
 			setupMock: func() {
 				s.mockDraftRepo.EXPECT().
 					Get(s.ctx, draftrepo.GetInput{ID: s.testDraftID}).
-					Return(&draftrepo.GetOutput{Draft: s.testDraft}, nil)
+					Return(&draftrepo.GetOutput{Draft: dnd5e.FromCharacterDraft(s.testDraft)}, nil)
 
 				s.mockEngine.EXPECT().
 					ValidateCharacterDraft(s.ctx, gomock.Any()).
@@ -179,7 +179,7 @@ func (s *OrchestratorTestSuite) TestFinalizeDraft() {
 			Wisdom:       13,
 			Charisma:     12,
 		},
-		StartingSkillIDs: []string{dnd5e.SkillSurvival, dnd5e.SkillAnimalHandling},
+		// Skills are now handled through ChoiceSelections
 	}
 
 	testCases := []struct {
@@ -198,7 +198,7 @@ func (s *OrchestratorTestSuite) TestFinalizeDraft() {
 			setupMock: func() {
 				s.mockDraftRepo.EXPECT().
 					Get(s.ctx, draftrepo.GetInput{ID: s.testDraftID}).
-					Return(&draftrepo.GetOutput{Draft: completeDraft}, nil)
+					Return(&draftrepo.GetOutput{Draft: dnd5e.FromCharacterDraft(completeDraft)}, nil)
 
 				// Validate draft
 				s.mockEngine.EXPECT().
@@ -256,7 +256,7 @@ func (s *OrchestratorTestSuite) TestFinalizeDraft() {
 			setupMock: func() {
 				s.mockDraftRepo.EXPECT().
 					Get(s.ctx, draftrepo.GetInput{ID: s.testDraftID}).
-					Return(&draftrepo.GetOutput{Draft: s.testDraft}, nil) // Missing ability scores
+					Return(&draftrepo.GetOutput{Draft: dnd5e.FromCharacterDraft(s.testDraft)}, nil) // Missing ability scores
 
 				s.mockEngine.EXPECT().
 					ValidateCharacterDraft(s.ctx, gomock.Any()).
@@ -276,7 +276,7 @@ func (s *OrchestratorTestSuite) TestFinalizeDraft() {
 			setupMock: func() {
 				s.mockDraftRepo.EXPECT().
 					Get(s.ctx, draftrepo.GetInput{ID: s.testDraftID}).
-					Return(&draftrepo.GetOutput{Draft: completeDraft}, nil)
+					Return(&draftrepo.GetOutput{Draft: dnd5e.FromCharacterDraft(completeDraft)}, nil)
 
 				s.mockEngine.EXPECT().
 					ValidateCharacterDraft(s.ctx, gomock.Any()).
@@ -299,7 +299,7 @@ func (s *OrchestratorTestSuite) TestFinalizeDraft() {
 			setupMock: func() {
 				s.mockDraftRepo.EXPECT().
 					Get(s.ctx, draftrepo.GetInput{ID: s.testDraftID}).
-					Return(&draftrepo.GetOutput{Draft: completeDraft}, nil)
+					Return(&draftrepo.GetOutput{Draft: dnd5e.FromCharacterDraft(completeDraft)}, nil)
 
 				s.mockEngine.EXPECT().
 					ValidateCharacterDraft(s.ctx, gomock.Any()).

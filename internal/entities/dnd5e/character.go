@@ -23,27 +23,30 @@ type Character struct {
 	UpdatedAt        int64
 }
 
-// CharacterDraft represents a character in creation
+// CharacterDraft represents a character in creation with hydrated info
+// This is the full entity returned by the orchestrator with all info objects populated
 type CharacterDraft struct {
-	ID                  string
-	PlayerID            string
-	SessionID           string
-	Name                string
-	RaceID              string
-	SubraceID           string
-	ClassID             string
-	BackgroundID        string
-	AbilityScores       *AbilityScores
-	Alignment           string
-	StartingSkillIDs    []string
-	AdditionalLanguages []string
-	ChoiceSelections    []ChoiceSelection // All player choices for this character
-	Progress            CreationProgress
-	ExpiresAt           int64
-	CreatedAt           int64
-	UpdatedAt           int64
-	DiscordChannelID    string
-	DiscordMessageID    string
+	ID               string
+	PlayerID         string
+	SessionID        string
+	Name             string
+	RaceID           string
+	SubraceID        string
+	ClassID          string
+	BackgroundID     string
+	AbilityScores    *AbilityScores
+	Alignment        string
+	ChoiceSelections []ChoiceSelection // All player choices for this character
+	Progress         CreationProgress
+	ExpiresAt        int64
+	CreatedAt        int64
+	UpdatedAt        int64
+
+	// Populated by orchestrator when returning draft data
+	Race       *RaceInfo       `json:"-"` // Full race info when loaded
+	Subrace    *SubraceInfo    `json:"-"` // Full subrace info when loaded
+	Class      *ClassInfo      `json:"-"` // Full class info when loaded
+	Background *BackgroundInfo `json:"-"` // Full background info when loaded
 }
 
 // AbilityScores holds the six core ability scores
@@ -170,7 +173,7 @@ type ChoiceType string
 
 const (
 	// ChoiceTypeEquipment represents equipment choices
-	ChoiceTypeEquipment         ChoiceType = "equipment"
+	ChoiceTypeEquipment ChoiceType = "equipment"
 	// ChoiceTypeSkill represents skill proficiency choices
 	ChoiceTypeSkill             ChoiceType = "skill"
 	ChoiceTypeTool              ChoiceType = "tool"
@@ -183,6 +186,28 @@ const (
 	ChoiceTypeCantrips          ChoiceType = "cantrips"
 	ChoiceTypeSpells            ChoiceType = "spells"
 )
+
+// ChoiceSource represents where a choice came from
+type ChoiceSource string
+
+const (
+	// ChoiceSourceRace represents choices from race
+	ChoiceSourceRace ChoiceSource = "race"
+	// ChoiceSourceClass represents choices from class
+	ChoiceSourceClass ChoiceSource = "class"
+	// ChoiceSourceBackground represents choices from background
+	ChoiceSourceBackground ChoiceSource = "background"
+	// ChoiceSourceSubrace represents choices from subrace
+	ChoiceSourceSubrace ChoiceSource = "subrace"
+	// ChoiceSourceFeature represents choices from class features
+	ChoiceSourceFeature ChoiceSource = "feature"
+)
+
+// AbilityScoreChoice represents an ability score bonus selection
+type AbilityScoreChoice struct {
+	Ability string // Ability constant (AbilityStrength, etc.)
+	Bonus   int32  // Bonus amount
+}
 
 // Choice category ID constants to prevent magic strings
 const (
@@ -307,11 +332,13 @@ type NestedChoice struct {
 func (NestedChoice) isChoiceOption() {}
 
 // ChoiceSelection represents a selection made by the player for a specific choice
+// ChoiceSelection tracks a choice made during character creation
 type ChoiceSelection struct {
-	ChoiceID    string   // ID of the choice this selection is for
-	CategoryID  string   // Category ID for choice validation (same as ChoiceID in most cases)
-	SelectedIDs []string // IDs of the selected options
-	OptionIDs   []string // Alias for SelectedIDs (used by orchestrator)
+	ChoiceID            string               // ID from Choice in RaceInfo/ClassInfo
+	ChoiceType          ChoiceType           // What kind of choice this is
+	Source              ChoiceSource         // Where this choice came from
+	SelectedKeys        []string             // What was selected
+	AbilityScoreChoices []AbilityScoreChoice // For ability score choices
 }
 
 // ChoiceCategory represents a grouping of related choices
@@ -477,3 +504,5 @@ type EquipmentInfo struct {
 	Description string
 	Properties  []string // For weapons: "light", "finesse", etc.
 }
+
+// TODO(#46): Separate CharacterDraft into data and presentation models. Add ToData() method to convert for repository storage

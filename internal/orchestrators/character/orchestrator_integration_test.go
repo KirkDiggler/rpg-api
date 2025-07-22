@@ -174,7 +174,7 @@ func (s *OrchestratorIntegrationTestSuite) TestCompleteCharacterCreationFlow() {
 		SkillIDs: []string{dnd5e.SkillSurvival, dnd5e.SkillNature},
 	})
 	s.Require().NoError(err)
-	s.Assert().Len(skillsOutput.Draft.StartingSkillIDs, 2)
+	// Skills are now handled through ChoiceSelections
 	s.Assert().True(skillsOutput.Draft.Progress.HasSkills())
 
 	// Step 8: Validate the draft is ready

@@ -1427,7 +1427,7 @@ func TestCalculateCharacterStats(t *testing.T) {
 				Strength: 16, Dexterity: 14, Constitution: 15,
 				Intelligence: 10, Wisdom: 12, Charisma: 8,
 			},
-			StartingSkillIDs: []string{"athletics", "intimidation"},
+			// Skills are now handled through ChoiceSelections
 		}
 
 		result, err := adapter.CalculateCharacterStats(ctx, &engine.CalculateCharacterStatsInput{Draft: draft})
@@ -1473,7 +1473,7 @@ func TestCalculateCharacterStats(t *testing.T) {
 				Strength: 8, Dexterity: 14, Constitution: 12,
 				Intelligence: 16, Wisdom: 13, Charisma: 10,
 			},
-			StartingSkillIDs: []string{"arcana", "investigation"},
+			// Skills are now handled through ChoiceSelections
 		}
 
 		result, err := adapter.CalculateCharacterStats(ctx, &engine.CalculateCharacterStatsInput{Draft: draft})
@@ -1524,7 +1524,7 @@ func TestCalculateCharacterStats(t *testing.T) {
 				Strength: 10, Dexterity: 16, Constitution: 14,
 				Intelligence: 13, Wisdom: 12, Charisma: 8,
 			},
-			StartingSkillIDs: []string{"acrobatics", "perception", "investigation", "sleight_of_hand"},
+			// Skills are now handled through ChoiceSelections
 		}
 
 		result, err := adapter.CalculateCharacterStats(ctx, &engine.CalculateCharacterStatsInput{Draft: draft})

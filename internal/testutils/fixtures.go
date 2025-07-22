@@ -74,7 +74,7 @@ func CreateTestCharacterDraftWithProgress(playerID string, stage string) *dnd5e.
 			Wisdom:       12,
 			Charisma:     10,
 		}
-		draft.StartingSkillIDs = []string{dnd5e.SkillAthletics, dnd5e.SkillIntimidation}
+		// Skills are now handled through ChoiceSelections
 		draft.Progress.SetStep(dnd5e.ProgressStepName, true)
 		draft.Progress.SetStep(dnd5e.ProgressStepRace, true)
 		draft.Progress.SetStep(dnd5e.ProgressStepClass, true)

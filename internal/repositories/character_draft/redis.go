@@ -170,7 +170,7 @@ func (r *redisRepository) Get(ctx context.Context, input GetInput) (*GetOutput, 
 
 	data := []byte(result)
 
-	var draft dnd5e.CharacterDraft
+	var draft dnd5e.CharacterDraftData
 	if err := json.Unmarshal(data, &draft); err != nil {
 		return nil, errors.Wrapf(err, "failed to unmarshal draft")
 	}

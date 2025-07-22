@@ -54,17 +54,17 @@ func runGetDraft(_ *cobra.Command, _ []string) error {
 	if draft.Name != "" {
 		fmt.Printf("Name: %s\n", draft.Name)
 	}
-	if draft.Race != dnd5ev1alpha1.Race_RACE_UNSPECIFIED {
-		fmt.Printf("Race: %s\n", draft.Race)
-		if draft.Subrace != dnd5ev1alpha1.Subrace_SUBRACE_UNSPECIFIED {
-			fmt.Printf("Subrace: %s\n", draft.Subrace)
+	if draft.Race != nil {
+		fmt.Printf("Race: %s\n", draft.Race.Name)
+		if draft.Subrace != nil {
+			fmt.Printf("Subrace: %s\n", draft.Subrace.Name)
 		}
 	}
-	if draft.Class != dnd5ev1alpha1.Class_CLASS_UNSPECIFIED {
-		fmt.Printf("Class: %s\n", draft.Class)
+	if draft.Class != nil {
+		fmt.Printf("Class: %s\n", draft.Class.Name)
 	}
-	if draft.Background != dnd5ev1alpha1.Background_BACKGROUND_UNSPECIFIED {
-		fmt.Printf("Background: %s\n", draft.Background)
+	if draft.Background != nil {
+		fmt.Printf("Background: %s\n", draft.Background.Name)
 	}
 	if draft.Alignment != dnd5ev1alpha1.Alignment_ALIGNMENT_UNSPECIFIED {
 		fmt.Printf("Alignment: %s\n", draft.Alignment)
@@ -80,17 +80,14 @@ func runGetDraft(_ *cobra.Command, _ []string) error {
 		fmt.Printf("  - Charisma: %d\n", draft.AbilityScores.Charisma)
 	}
 
-	if len(draft.StartingSkills) > 0 {
-		fmt.Printf("\nStarting Skills:\n")
-		for _, skill := range draft.StartingSkills {
-			fmt.Printf("  - %s\n", skill)
-		}
-	}
-
-	if len(draft.AdditionalLanguages) > 0 {
-		fmt.Printf("\nAdditional Languages:\n")
-		for _, lang := range draft.AdditionalLanguages {
-			fmt.Printf("  - %s\n", lang)
+	if len(draft.Choices) > 0 {
+		fmt.Printf("\nChoices:\n")
+		for _, choice := range draft.Choices {
+			fmt.Printf("  - %s (%s from %s): %v\n",
+				choice.ChoiceId,
+				choice.ChoiceType,
+				choice.Source,
+				choice.SelectedKeys)
 		}
 	}
 

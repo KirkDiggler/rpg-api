@@ -180,9 +180,7 @@ func (a *Adapter) calculateSkillBonuses(
 
 	// Create proficiency map from selected skills and background skills
 	proficientSkills := make(map[string]bool)
-	for _, skillID := range draft.StartingSkillIDs {
-		proficientSkills[skillID] = true
-	}
+	// TODO(#46): Extract skill selections from draft.ChoiceSelections
 	// Add background skills (they're automatic proficiencies)
 	for _, skillID := range backgroundSkills {
 		proficientSkills[skillID] = true
@@ -323,22 +321,8 @@ func (a *Adapter) ValidateCharacterDraft(
 		}
 	}
 
-	if draft.ClassID != "" && len(draft.StartingSkillIDs) > 0 {
-		skillValidation, err := a.ValidateSkillChoices(ctx, &engine.ValidateSkillChoicesInput{
-			ClassID:          draft.ClassID,
-			BackgroundID:     draft.BackgroundID,
-			SelectedSkillIDs: draft.StartingSkillIDs,
-		})
-		if err != nil {
-			errors = append(errors, engine.ValidationError{
-				Field:   "skills",
-				Message: "Failed to validate skill choices: " + err.Error(),
-				Code:    "VALIDATION_ERROR",
-			})
-		} else if !skillValidation.IsValid {
-			errors = append(errors, skillValidation.Errors...)
-		}
-	}
+	// TODO(#46): Extract skill selections from draft.ChoiceSelections for validation
+	// For now, skip skill validation until we convert to ChoiceSelections
 
 	if draft.BackgroundID != "" {
 		backgroundValidation, err := a.ValidateBackgroundChoice(ctx, &engine.ValidateBackgroundChoiceInput{
