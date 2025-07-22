@@ -29,7 +29,7 @@ func NewCharacterDraftDataBuilder() *CharacterDraftDataBuilder {
 	}
 }
 
-// FromDraft creates a builder from an existing CharacterDraft
+// NewCharacterDraftDataBuilderFromDraft creates a builder from an existing CharacterDraft
 func NewCharacterDraftDataBuilderFromDraft(draft *dnd5e.CharacterDraft) *CharacterDraftDataBuilder {
 	return &CharacterDraftDataBuilder{
 		data: dnd5e.FromCharacterDraft(draft),

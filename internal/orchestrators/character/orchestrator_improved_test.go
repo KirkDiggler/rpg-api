@@ -18,11 +18,11 @@ import (
 func (s *OrchestratorTestSuite) TestUpdateNameImproved() {
 	// Base draft is created fresh in SetupSubTest
 	// We only modify what's needed for each test case
-	
+
 	testCases := []struct {
 		name      string
-		inputName string       // Only the variation we care about
-		draftMod  func(*dnd5e.CharacterDraft) // Optional draft modifications
+		inputName string                                // Only the variation we care about
+		draftMod  func(*dnd5e.CharacterDraft)           // Optional draft modifications
 		setupMock func(draft *dnd5e.CharacterDraftData) // Pass expected data to mock setup
 		wantErr   bool
 		errMsg    string
@@ -33,7 +33,7 @@ func (s *OrchestratorTestSuite) TestUpdateNameImproved() {
 			setupMock: func(draftData *dnd5e.CharacterDraftData) {
 				// Use helper to set up common expectations
 				mocks.ExpectDraftGet(s.ctx, s.mockDraftRepo, s.testDraftID, draftData, nil)
-				
+
 				// Expect update with validation on what changed
 				s.mockDraftRepo.EXPECT().
 					Update(s.ctx, gomock.Any()).
@@ -74,7 +74,7 @@ func (s *OrchestratorTestSuite) TestUpdateNameImproved() {
 			},
 			setupMock: func(draftData *dnd5e.CharacterDraftData) {
 				mocks.ExpectDraftGet(s.ctx, s.mockDraftRepo, s.testDraftID, draftData, nil)
-				
+
 				s.mockDraftRepo.EXPECT().
 					Update(s.ctx, gomock.Any()).
 					DoAndReturn(func(_ context.Context, input draftrepo.UpdateInput) (*draftrepo.UpdateOutput, error) {
@@ -90,7 +90,7 @@ func (s *OrchestratorTestSuite) TestUpdateNameImproved() {
 		s.Run(tc.name, func() {
 			// Start with base draft from SetupSubTest
 			draft := s.testDraft
-			
+
 			// Apply any test-specific modifications
 			if tc.draftMod != nil {
 				// Create a copy to avoid modifying the suite's test data
@@ -98,21 +98,21 @@ func (s *OrchestratorTestSuite) TestUpdateNameImproved() {
 				tc.draftMod(&draftCopy)
 				draft = &draftCopy
 			}
-			
+
 			// Convert to data for repository
 			draftData := dnd5e.FromCharacterDraft(draft)
-			
+
 			// Set up mocks with the expected data
 			tc.setupMock(draftData)
-			
+
 			// Execute the test
 			input := &characterorchestrator.UpdateNameInput{
 				DraftID: s.testDraftID,
 				Name:    tc.inputName,
 			}
-			
+
 			output, err := s.orchestrator.UpdateName(s.ctx, input)
-			
+
 			// Verify results
 			if tc.wantErr {
 				s.Error(err)
@@ -215,7 +215,7 @@ func (s *OrchestratorTestSuite) TestCreateDraftImproved() {
 	for _, tc := range testCases {
 		s.Run(tc.name, func() {
 			input := tc.buildInput()
-			
+
 			// Set up engine validation mock
 			s.mockEngine.EXPECT().
 				ValidateCharacterDraft(s.ctx, gomock.Any()).
@@ -223,15 +223,15 @@ func (s *OrchestratorTestSuite) TestCreateDraftImproved() {
 					IsValid: tc.engineValid,
 					Errors:  tc.engineErrors,
 				}, nil)
-			
+
 			// Set up repository mock if validation passes
 			if tc.engineValid {
 				mocks.ExpectDraftCreate(s.ctx, s.mockDraftRepo)
 			}
-			
+
 			// Execute
 			output, err := s.orchestrator.CreateDraft(s.ctx, input)
-			
+
 			// Verify
 			if tc.wantErr {
 				s.Error(err)

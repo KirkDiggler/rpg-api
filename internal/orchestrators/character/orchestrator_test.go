@@ -566,7 +566,7 @@ func (s *OrchestratorTestSuite) TestUpdateBackgroundWithChoices() {
 
 				// Expect hydration of existing race and class too
 				mocks.ExpectDraftHydration(s.ctx, s.mockExternalClient, s.testDraft)
-				
+
 				s.mockExternalClient.EXPECT().
 					GetBackgroundData(s.ctx, "soldier").
 					Return(&external.BackgroundData{

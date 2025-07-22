@@ -1,3 +1,4 @@
+// Package mocks provides mock expectation helpers for common testing patterns
 package mocks
 
 import (

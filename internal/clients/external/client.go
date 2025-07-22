@@ -184,7 +184,7 @@ func New(cfg *Config) (Client, error) {
 func (c *client) GetRaceData(_ context.Context, raceID string) (*RaceData, error) {
 	// Convert our internal ID format to API format
 	apiID := toAPIFormat(raceID)
-	
+
 	// Get full race details
 	race, err := c.dnd5eClient.GetRace(apiID)
 	if err != nil {
@@ -201,7 +201,7 @@ func (c *client) GetRaceData(_ context.Context, raceID string) (*RaceData, error
 func (c *client) GetClassData(_ context.Context, classID string) (*ClassData, error) {
 	// Convert our internal ID format to API format
 	apiID := toAPIFormat(classID)
-	
+
 	// Get full class details
 	class, err := c.dnd5eClient.GetClass(apiID)
 	if err != nil {
@@ -219,7 +219,7 @@ func (c *client) GetClassData(_ context.Context, classID string) (*ClassData, er
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert class %s: %w", classID, err)
 	}
-	
+
 	// Ensure the ID matches our internal format
 	classData.ID = classID
 	return classData, nil
@@ -232,7 +232,7 @@ func (c *client) GetBackgroundData(_ context.Context, _ string) (*BackgroundData
 func (c *client) GetSpellData(_ context.Context, spellID string) (*SpellData, error) {
 	// Convert our internal ID format to API format
 	apiID := toAPIFormat(spellID)
-	
+
 	spell, err := c.dnd5eClient.GetSpell(apiID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get spell %s (api: %s): %w", spellID, apiID, err)
@@ -242,7 +242,7 @@ func (c *client) GetSpellData(_ context.Context, spellID string) (*SpellData, er
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// Ensure the ID matches our internal format
 	spellData.ID = spellID
 	return spellData, nil
@@ -522,13 +522,14 @@ func convertRaceToRaceData(race *entities.Race) *RaceData {
 		// Determine the specific proficiency type from the description
 		profType := "proficiency"
 		desc := strings.ToLower(race.StartingProficiencyOptions.Description)
-		if strings.Contains(desc, "tool") || strings.Contains(desc, "supplies") {
+		switch {
+		case strings.Contains(desc, "tool") || strings.Contains(desc, "supplies"):
 			profType = "tool"
-		} else if strings.Contains(desc, "skill") {
+		case strings.Contains(desc, "skill"):
 			profType = "skill"
-		} else if strings.Contains(desc, "weapon") {
+		case strings.Contains(desc, "weapon"):
 			profType = "weapon"
-		} else if strings.Contains(desc, "armor") {
+		case strings.Contains(desc, "armor"):
 			profType = "armor"
 		}
 
@@ -1036,7 +1037,7 @@ func (c *client) ListEquipmentByCategory(_ context.Context, category string) ([]
 func (c *client) GetEquipmentData(_ context.Context, equipmentID string) (*EquipmentData, error) {
 	// Convert our internal ID format to API format
 	apiID := toAPIFormat(equipmentID)
-	
+
 	// Get equipment details from D&D 5e API
 	slog.Info("Calling D&D 5e API to get equipment", "equipment", equipmentID, "api", apiID)
 	equipmentItem, err := c.dnd5eClient.GetEquipment(apiID)
@@ -1206,7 +1207,7 @@ func convertSpellcastingData(_ interface{}, level1 *entities.Level) *Spellcastin
 func (c *client) GetFeatureData(_ context.Context, featureID string) (*FeatureData, error) {
 	// Convert our internal ID format to API format
 	apiID := toAPIFormat(featureID)
-	
+
 	// Get feature details from D&D 5e API
 	slog.Info("Calling D&D 5e API to get feature", "feature", featureID, "api", apiID)
 	feature, err := c.dnd5eClient.GetFeature(apiID)

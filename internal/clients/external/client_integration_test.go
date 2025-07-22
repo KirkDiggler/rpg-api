@@ -52,7 +52,7 @@ func TestGetRaceData_Integration(t *testing.T) {
 			raceData, err := client.GetRaceData(ctx, tc.raceID)
 			require.NoError(t, err)
 			require.NotNil(t, raceData)
-			
+
 			// Verify the ID is preserved in our format
 			assert.Equal(t, tc.raceID, raceData.ID)
 			// Verify we got the right race
@@ -75,21 +75,21 @@ func TestGetClassData_Integration(t *testing.T) {
 	ctx := context.Background()
 
 	testCases := []struct {
-		name      string
-		classID   string
-		wantName  string
+		name        string
+		classID     string
+		wantName    string
 		wantHitDice string
 	}{
 		{
-			name:      "wizard",
-			classID:   dnd5e.ClassWizard,
-			wantName:  "Wizard",
+			name:        "wizard",
+			classID:     dnd5e.ClassWizard,
+			wantName:    "Wizard",
 			wantHitDice: "1d6",
 		},
 		{
-			name:      "fighter",
-			classID:   dnd5e.ClassFighter,
-			wantName:  "Fighter",
+			name:        "fighter",
+			classID:     dnd5e.ClassFighter,
+			wantName:    "Fighter",
 			wantHitDice: "1d10",
 		},
 	}
@@ -99,7 +99,7 @@ func TestGetClassData_Integration(t *testing.T) {
 			classData, err := client.GetClassData(ctx, tc.classID)
 			require.NoError(t, err)
 			require.NotNil(t, classData)
-			
+
 			// Verify the ID is preserved in our format
 			assert.Equal(t, tc.classID, classData.ID)
 			// Verify we got the right class

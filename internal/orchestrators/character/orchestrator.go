@@ -506,7 +506,7 @@ func (o *Orchestrator) UpdateRace(
 		"choice_count", len(hydratedDraft.ChoiceSelections),
 		"choices", hydratedDraft.ChoiceSelections,
 	)
-	
+
 	return &UpdateRaceOutput{
 		Draft:    hydratedDraft,
 		Warnings: warnings,
@@ -1576,10 +1576,9 @@ func convertExternalClassToEntity(class *external.ClassData) *dnd5e.ClassInfo {
 			SpellcastingAbility: class.Spellcasting.SpellcastingAbility,
 			RitualCasting:       class.Spellcasting.RitualCasting,
 			SpellcastingFocus:   class.Spellcasting.SpellcastingFocus,
-			// nolint:gosec // safe conversion
-			CantripsKnown:    int32(class.Spellcasting.CantripsKnown),
-			SpellsKnown:      int32(class.Spellcasting.SpellsKnown),
-			SpellSlotsLevel1: int32(class.Spellcasting.SpellSlotsLevel1),
+			CantripsKnown:       class.Spellcasting.CantripsKnown,
+			SpellsKnown:         class.Spellcasting.SpellsKnown,
+			SpellSlotsLevel1:    class.Spellcasting.SpellSlotsLevel1,
 		}
 	}
 
@@ -2694,7 +2693,7 @@ func convertExternalTraitsToEntity(traits []external.TraitData) []dnd5e.RacialTr
 func (o *Orchestrator) hydrateDraft(ctx context.Context, draft *dnd5e.CharacterDraft) (*dnd5e.CharacterDraft, error) {
 	// Create a copy of the draft to avoid modifying the original
 	hydratedDraft := *draft
-	
+
 	// Ensure Info fields are nil to start (in case draft already had them)
 	hydratedDraft.Race = nil
 	hydratedDraft.Subrace = nil

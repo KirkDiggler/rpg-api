@@ -1,3 +1,4 @@
+// Package builders provides test data builders for creating test fixtures
 package builders
 
 import (
@@ -17,7 +18,7 @@ func NewCharacterDraftBuilder() *CharacterDraftBuilder {
 	return &CharacterDraftBuilder{
 		draft: &dnd5e.CharacterDraft{
 			ID:        "draft-test-123",
-			PlayerID:  "player-test-123", 
+			PlayerID:  "player-test-123",
 			CreatedAt: now,
 			UpdatedAt: now,
 			Progress: dnd5e.CreationProgress{
@@ -91,12 +92,12 @@ func (b *CharacterDraftBuilder) WithBackground(backgroundID string) *CharacterDr
 }
 
 // WithAbilityScores sets the ability scores and marks the ability scores step as complete
-func (b *CharacterDraftBuilder) WithAbilityScores(str, dex, con, int, wis, cha int32) *CharacterDraftBuilder {
+func (b *CharacterDraftBuilder) WithAbilityScores(str, dex, con, intel, wis, cha int32) *CharacterDraftBuilder {
 	b.draft.AbilityScores = &dnd5e.AbilityScores{
 		Strength:     str,
 		Dexterity:    dex,
 		Constitution: con,
-		Intelligence: int,
+		Intelligence: intel,
 		Wisdom:       wis,
 		Charisma:     cha,
 	}
@@ -177,7 +178,7 @@ func (b *CharacterDraftBuilder) updateProgress() {
 		}
 	}
 	b.draft.Progress.CompletionPercentage = int32(completedCount * 100 / 8)
-	
+
 	// Update current step based on what's not completed
 	if !b.draft.Progress.HasName() {
 		b.draft.Progress.CurrentStep = dnd5e.CreationStepName

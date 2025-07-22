@@ -17,16 +17,16 @@ import (
 // ConversionsTestSuite tests that data flows correctly through the handler conversions
 type ConversionsTestSuite struct {
 	suite.Suite
-	ctrl             *gomock.Controller
-	mockCharService  *charactermock.MockService
-	handler          *v1alpha1.Handler
-	ctx              context.Context
+	ctrl            *gomock.Controller
+	mockCharService *charactermock.MockService
+	handler         *v1alpha1.Handler
+	ctx             context.Context
 }
 
 func (s *ConversionsTestSuite) SetupTest() {
 	s.ctrl = gomock.NewController(s.T())
 	s.mockCharService = charactermock.NewMockService(s.ctrl)
-	
+
 	handler, err := v1alpha1.NewHandler(&v1alpha1.HandlerConfig{
 		CharacterService: s.mockCharService,
 	})
@@ -84,29 +84,29 @@ func (s *ConversionsTestSuite) TestCreateDraftDataFlow() {
 				s.Equal(dnd5e.ClassRanger, input.InitialData.ClassID)
 				s.Equal(dnd5e.BackgroundOutlander, input.InitialData.BackgroundID)
 				s.Equal(dnd5e.AlignmentChaoticGood, input.InitialData.Alignment)
-				
+
 				// Verify ability scores
 				s.NotNil(input.InitialData.AbilityScores)
 				s.Equal(int32(15), input.InitialData.AbilityScores.Strength)
 				s.Equal(int32(16), input.InitialData.AbilityScores.Dexterity)
-				
+
 				// Verify choices
 				s.Len(input.InitialData.ChoiceSelections, 1)
 				s.Equal("variant-feat", input.InitialData.ChoiceSelections[0].ChoiceID)
 				s.Equal(dnd5e.ChoiceTypeFeat, input.InitialData.ChoiceSelections[0].ChoiceType)
-				
+
 				// Return a draft that tests the reverse conversion
 				return &character.CreateDraftOutput{
 					Draft: &dnd5e.CharacterDraft{
-						ID:           "draft-789",
-						PlayerID:     input.PlayerID,
-						SessionID:    input.SessionID,
-						Name:         input.InitialData.Name,
-						RaceID:       input.InitialData.RaceID,
-						ClassID:      input.InitialData.ClassID,
-						BackgroundID: input.InitialData.BackgroundID,
-						Alignment:    input.InitialData.Alignment,
-						AbilityScores: input.InitialData.AbilityScores,
+						ID:               "draft-789",
+						PlayerID:         input.PlayerID,
+						SessionID:        input.SessionID,
+						Name:             input.InitialData.Name,
+						RaceID:           input.InitialData.RaceID,
+						ClassID:          input.InitialData.ClassID,
+						BackgroundID:     input.InitialData.BackgroundID,
+						Alignment:        input.InitialData.Alignment,
+						AbilityScores:    input.InitialData.AbilityScores,
 						ChoiceSelections: input.InitialData.ChoiceSelections,
 						Progress: dnd5e.CreationProgress{
 							StepsCompleted:       31, // Name(1) + Race(2) + Class(4) + Background(8) + AbilityScores(16) = 31
@@ -124,27 +124,27 @@ func (s *ConversionsTestSuite) TestCreateDraftDataFlow() {
 		s.NoError(err)
 		s.NotNil(resp)
 		s.NotNil(resp.Draft)
-		
+
 		// Verify the response has all fields properly converted back to proto
 		s.Equal("draft-789", resp.Draft.Id)
 		s.Equal("player-123", resp.Draft.PlayerId)
 		s.Equal("session-456", resp.Draft.SessionId)
 		s.Equal("Aragorn", resp.Draft.Name)
-		
+
 		// Verify enums are converted back correctly
 		s.Equal(dnd5ev1alpha1.Alignment_ALIGNMENT_CHAOTIC_GOOD, resp.Draft.Alignment)
-		
+
 		// Verify ability scores
 		s.NotNil(resp.Draft.AbilityScores)
 		s.Equal(int32(15), resp.Draft.AbilityScores.Strength)
 		s.Equal(int32(16), resp.Draft.AbilityScores.Dexterity)
-		
+
 		// Verify choices are converted back
 		s.Len(resp.Draft.Choices, 1)
 		s.Equal("variant-feat", resp.Draft.Choices[0].ChoiceId)
 		s.Equal(dnd5ev1alpha1.ChoiceType_CHOICE_TYPE_FEAT, resp.Draft.Choices[0].ChoiceType)
 		s.Equal(dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_RACE, resp.Draft.Choices[0].Source)
-		
+
 		// Verify progress
 		s.NotNil(resp.Draft.Progress)
 		s.True(resp.Draft.Progress.HasName)
@@ -154,7 +154,7 @@ func (s *ConversionsTestSuite) TestCreateDraftDataFlow() {
 		s.True(resp.Draft.Progress.HasAbilityScores)
 		s.Equal(int32(71), resp.Draft.Progress.CompletionPercentage)
 		s.Equal(dnd5ev1alpha1.CreationStep_CREATION_STEP_SKILLS, resp.Draft.Progress.CurrentStep)
-		
+
 		// Verify metadata
 		s.NotNil(resp.Draft.Metadata)
 		s.Equal(int64(1234567800), resp.Draft.Metadata.CreatedAt)
@@ -200,7 +200,7 @@ func (s *ConversionsTestSuite) TestCreateDraftDataFlow() {
 				s.Equal(int32(1), choice.AbilityScoreChoices[0].Bonus)
 				s.Equal(dnd5e.AbilityWisdom, choice.AbilityScoreChoices[1].Ability)
 				s.Equal(int32(1), choice.AbilityScoreChoices[1].Bonus)
-				
+
 				// Return the draft with the same choices to test conversion back
 				return &character.CreateDraftOutput{
 					Draft: &dnd5e.CharacterDraft{
@@ -213,7 +213,7 @@ func (s *ConversionsTestSuite) TestCreateDraftDataFlow() {
 
 		resp, err := s.handler.CreateDraft(s.ctx, request)
 		s.NoError(err)
-		
+
 		// Verify ability score choices are converted back to proto correctly
 		s.Len(resp.Draft.Choices, 1)
 		s.Len(resp.Draft.Choices[0].AbilityScoreChoices, 2)
@@ -243,7 +243,7 @@ func (s *ConversionsTestSuite) TestCreateDraftDataFlow() {
 				s.Empty(input.InitialData.ClassID)
 				s.Empty(input.InitialData.BackgroundID)
 				s.Empty(input.InitialData.Alignment)
-				
+
 				return &character.CreateDraftOutput{
 					Draft: &dnd5e.CharacterDraft{
 						ID:   "draft-test",
@@ -255,7 +255,7 @@ func (s *ConversionsTestSuite) TestCreateDraftDataFlow() {
 
 		resp, err := s.handler.CreateDraft(s.ctx, request)
 		s.NoError(err)
-		
+
 		// Verify empty strings convert back to UNSPECIFIED enums
 		s.Equal(dnd5ev1alpha1.Race_RACE_UNSPECIFIED, resp.Draft.Race)
 		s.Equal(dnd5ev1alpha1.Class_CLASS_UNSPECIFIED, resp.Draft.Class)
@@ -330,7 +330,7 @@ func (s *ConversionsTestSuite) TestDraftHydration() {
 		resp, err := s.handler.GetDraft(s.ctx, request)
 		s.NoError(err)
 		s.NotNil(resp.Draft)
-		
+
 		// Verify Race info is included in response
 		s.NotNil(resp.Draft.Race)
 		s.Equal("elf", resp.Draft.Race.Id)
@@ -342,20 +342,20 @@ func (s *ConversionsTestSuite) TestDraftHydration() {
 		s.Equal(int32(2), resp.Draft.Race.AbilityBonuses["dexterity"])
 		s.Len(resp.Draft.Race.Traits, 1)
 		s.Equal("Darkvision", resp.Draft.Race.Traits[0].Name)
-		
+
 		// Verify Subrace info
 		s.NotNil(resp.Draft.Subrace)
 		s.Equal("Wood Elf", resp.Draft.Subrace.Name)
 		s.Len(resp.Draft.Subrace.AbilityBonuses, 1)
 		s.Equal(int32(1), resp.Draft.Subrace.AbilityBonuses["wisdom"])
-		
+
 		// Verify Class info
 		s.NotNil(resp.Draft.Class)
 		s.Equal("Ranger", resp.Draft.Class.Name)
 		s.Equal("1d10", resp.Draft.Class.HitDie)
 		s.Equal([]string{"Dexterity", "Wisdom"}, resp.Draft.Class.PrimaryAbilities)
 		s.Equal(int32(3), resp.Draft.Class.SkillChoicesCount)
-		
+
 		// Verify Background info
 		s.NotNil(resp.Draft.Background)
 		s.Equal("Outlander", resp.Draft.Background.Name)
@@ -386,12 +386,12 @@ func (s *ConversionsTestSuite) TestDraftHydration() {
 		resp, err := s.handler.GetDraft(s.ctx, request)
 		s.NoError(err)
 		s.NotNil(resp.Draft)
-		
+
 		// Verify info objects are nil when not hydrated
 		s.Nil(resp.Draft.Race)
 		s.Nil(resp.Draft.Class)
 		s.Nil(resp.Draft.Background)
-		
+
 		// But the basic data should still be there
 		s.Equal("draft-456", resp.Draft.Id)
 		s.Equal("Gimli", resp.Draft.Name)
@@ -529,7 +529,7 @@ func (s *ConversionsTestSuite) TestProgressTracking() {
 				resp, err := s.handler.GetDraft(s.ctx, request)
 				s.NoError(err)
 				s.NotNil(resp.Draft.Progress)
-				
+
 				// Verify progress tracking
 				s.Equal(tc.expected.hasName, resp.Draft.Progress.HasName)
 				s.Equal(tc.expected.hasRace, resp.Draft.Progress.HasRace)
@@ -575,13 +575,13 @@ func (s *ConversionsTestSuite) TestValidationWarnings() {
 
 		resp, err := s.handler.UpdateName(s.ctx, request)
 		s.NoError(err)
-		
+
 		// Verify warnings are converted
 		s.Len(resp.Warnings, 2)
 		s.Equal("suboptimal_choice", resp.Warnings[0].Type)
 		s.Equal("name", resp.Warnings[0].Field)
 		s.Equal("Character name is very short", resp.Warnings[0].Message)
-		
+
 		s.Equal("missing_required", resp.Warnings[1].Type)
 		s.Equal("race", resp.Warnings[1].Field)
 		s.Equal("Race is required to continue", resp.Warnings[1].Message)

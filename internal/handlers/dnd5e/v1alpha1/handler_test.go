@@ -157,20 +157,20 @@ func (s *HandlerTestSuite) SetupTest() {
 	}
 
 	s.expectedDraft = &dnd5e.CharacterDraft{
-		ID:                  s.testDraftID,
-		PlayerID:            s.testPlayerID,
-		SessionID:           s.testSessionID,
-		Name:                "Gandalf the Grey",
-		RaceID:              dnd5e.RaceHuman,
-		SubraceID:           "",
-		ClassID:             dnd5e.ClassWizard,
-		BackgroundID:        dnd5e.BackgroundSage,
-		Alignment:           dnd5e.AlignmentLawfulGood,
+		ID:            s.testDraftID,
+		PlayerID:      s.testPlayerID,
+		SessionID:     s.testSessionID,
+		Name:          "Gandalf the Grey",
+		RaceID:        dnd5e.RaceHuman,
+		SubraceID:     "",
+		ClassID:       dnd5e.ClassWizard,
+		BackgroundID:  dnd5e.BackgroundSage,
+		Alignment:     dnd5e.AlignmentLawfulGood,
 		AbilityScores: s.expectedAbilityScores,
 		// Skills and languages are now handled through ChoiceSelections
-		Progress: *s.expectedCreationProgress,
-		CreatedAt:           1234567890,
-		UpdatedAt:           1234567890,
+		Progress:  *s.expectedCreationProgress,
+		CreatedAt: 1234567890,
+		UpdatedAt: 1234567890,
 		// Include populated Info objects as orchestrator would provide them
 		Race: &dnd5e.RaceInfo{
 			ID:   dnd5e.RaceHuman,
@@ -225,18 +225,18 @@ func (s *HandlerTestSuite) TestCreateDraft() {
 
 		// Use a copy of the expected draft with specific values for this test
 		expectedDraft := &dnd5e.CharacterDraft{
-			ID:                  s.testDraftID,
-			PlayerID:            s.testPlayerID,
-			SessionID:           s.testSessionID,
-			Name:                "Gandalf the Grey",
-			RaceID:              dnd5e.RaceHuman,
-			ClassID:             dnd5e.ClassWizard,
-			BackgroundID:        dnd5e.BackgroundSage,
+			ID:            s.testDraftID,
+			PlayerID:      s.testPlayerID,
+			SessionID:     s.testSessionID,
+			Name:          "Gandalf the Grey",
+			RaceID:        dnd5e.RaceHuman,
+			ClassID:       dnd5e.ClassWizard,
+			BackgroundID:  dnd5e.BackgroundSage,
 			AbilityScores: s.expectedAbilityScores,
 			// Skills and languages are now handled through ChoiceSelections
-			Progress: *s.expectedCreationProgress,
-			CreatedAt:           1234567890,
-			UpdatedAt:           1234567890,
+			Progress:  *s.expectedCreationProgress,
+			CreatedAt: 1234567890,
+			UpdatedAt: 1234567890,
 			// Include populated Info objects as orchestrator would provide them
 			Race: &dnd5e.RaceInfo{
 				ID:   dnd5e.RaceHuman,

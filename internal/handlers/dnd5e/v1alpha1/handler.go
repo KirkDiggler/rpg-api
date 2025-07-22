@@ -249,27 +249,7 @@ func (h *Handler) UpdateClass(
 	}
 
 	// Convert class choices from proto
-	var choices []dnd5e.ChoiceSelection
-	for _, protoChoice := range req.ClassChoices {
-		if protoChoice != nil {
-			choice := dnd5e.ChoiceSelection{
-				ChoiceID:     protoChoice.ChoiceId,
-				ChoiceType:   mapProtoChoiceTypeToConstant(protoChoice.ChoiceType),
-				Source:       mapProtoChoiceSourceToConstant(protoChoice.Source),
-				SelectedKeys: protoChoice.SelectedKeys,
-			}
-
-			// Convert ability score choices if present
-			for _, protoASChoice := range protoChoice.AbilityScoreChoices {
-				choice.AbilityScoreChoices = append(choice.AbilityScoreChoices, dnd5e.AbilityScoreChoice{
-					Ability: mapProtoAbilityToConstant(protoASChoice.Ability),
-					Bonus:   protoASChoice.Bonus,
-				})
-			}
-
-			choices = append(choices, choice)
-		}
-	}
+	choices := convertProtoChoicesToEntity(req.ClassChoices)
 
 	input := &character.UpdateClassInput{
 		DraftID: req.DraftId,
@@ -301,27 +281,7 @@ func (h *Handler) UpdateBackground(
 	}
 
 	// Convert background choices from proto
-	var choices []dnd5e.ChoiceSelection
-	for _, protoChoice := range req.BackgroundChoices {
-		if protoChoice != nil {
-			choice := dnd5e.ChoiceSelection{
-				ChoiceID:     protoChoice.ChoiceId,
-				ChoiceType:   mapProtoChoiceTypeToConstant(protoChoice.ChoiceType),
-				Source:       mapProtoChoiceSourceToConstant(protoChoice.Source),
-				SelectedKeys: protoChoice.SelectedKeys,
-			}
-
-			// Convert ability score choices if present
-			for _, protoASChoice := range protoChoice.AbilityScoreChoices {
-				choice.AbilityScoreChoices = append(choice.AbilityScoreChoices, dnd5e.AbilityScoreChoice{
-					Ability: mapProtoAbilityToConstant(protoASChoice.Ability),
-					Bonus:   protoASChoice.Bonus,
-				})
-			}
-
-			choices = append(choices, choice)
-		}
-	}
+	choices := convertProtoChoicesToEntity(req.BackgroundChoices)
 
 	input := &character.UpdateBackgroundInput{
 		DraftID:      req.DraftId,
@@ -1586,7 +1546,7 @@ func convertEntityRaceToProto(race *dnd5e.RaceInfo) *dnd5ev1alpha1.RaceInfo {
 	}
 
 	// Convert all choices
-	var choices []*dnd5ev1alpha1.Choice
+	choices := make([]*dnd5ev1alpha1.Choice, 0, len(race.Choices))
 	for i := range race.Choices {
 		choices = append(choices, convertChoiceToProto(&race.Choices[i]))
 	}
@@ -1616,7 +1576,7 @@ func convertEntityClassToProto(class *dnd5e.ClassInfo) *dnd5ev1alpha1.ClassInfo 
 	}
 
 	// Convert all choices
-	var choices []*dnd5ev1alpha1.Choice
+	choices := make([]*dnd5ev1alpha1.Choice, 0, len(class.Choices))
 	for i := range class.Choices {
 		choices = append(choices, convertChoiceToProto(&class.Choices[i]))
 	}
@@ -1963,11 +1923,8 @@ func convertSpellToProto(spell *dnd5e.SpellInfo) *dnd5ev1alpha1.Spell {
 	}
 
 	// Convert classes
-	protoClasses := make([]string, len(spell.Classes))
-	for i, class := range spell.Classes {
-		protoClasses[i] = class
-	}
-	protoSpell.Classes = protoClasses
+	protoSpell.Classes = make([]string, len(spell.Classes))
+	copy(protoSpell.Classes, spell.Classes)
 
 	// TODO: Add spell damage and area of effect conversion
 	// This would require more detailed spell data from the dnd5e-api
@@ -2146,6 +2103,32 @@ func mapConstantToProtoAbility(constant string) dnd5ev1alpha1.Ability {
 	default:
 		return dnd5ev1alpha1.Ability_ABILITY_UNSPECIFIED
 	}
+}
+
+// convertProtoChoicesToEntity converts proto choice selections to entity format
+func convertProtoChoicesToEntity(protoChoices []*dnd5ev1alpha1.ChoiceSelection) []dnd5e.ChoiceSelection {
+	var choices []dnd5e.ChoiceSelection
+	for _, protoChoice := range protoChoices {
+		if protoChoice != nil {
+			choice := dnd5e.ChoiceSelection{
+				ChoiceID:     protoChoice.ChoiceId,
+				ChoiceType:   mapProtoChoiceTypeToConstant(protoChoice.ChoiceType),
+				Source:       mapProtoChoiceSourceToConstant(protoChoice.Source),
+				SelectedKeys: protoChoice.SelectedKeys,
+			}
+
+			// Convert ability score choices if present
+			for _, protoASChoice := range protoChoice.AbilityScoreChoices {
+				choice.AbilityScoreChoices = append(choice.AbilityScoreChoices, dnd5e.AbilityScoreChoice{
+					Ability: mapProtoAbilityToConstant(protoASChoice.Ability),
+					Bonus:   protoASChoice.Bonus,
+				})
+			}
+
+			choices = append(choices, choice)
+		}
+	}
+	return choices
 }
 
 // convertRaceInfoToProto converts entity RaceInfo to proto RaceInfo
