@@ -497,6 +497,7 @@ func (s *HandlerTestSuite) TestUpdateRace_Basic() {
 				DraftID:   s.testDraftID,
 				RaceID:    dnd5e.RaceHuman,
 				SubraceID: "",
+				Choices:   []dnd5e.ChoiceSelection{},
 			}).
 			Return(&character.UpdateRaceOutput{
 				Draft:    expectedDraft,
@@ -530,6 +531,7 @@ func (s *HandlerTestSuite) TestUpdateRace_Basic() {
 				DraftID:   s.testDraftID,
 				RaceID:    dnd5e.RaceElf,
 				SubraceID: dnd5e.SubraceHighElf,
+				Choices:   []dnd5e.ChoiceSelection{},
 			}).
 			Return(&character.UpdateRaceOutput{
 				Draft:    expectedDraft,
@@ -808,6 +810,7 @@ func (s *HandlerTestSuite) TestUpdateClass_Basic() {
 			UpdateClass(s.ctx, &character.UpdateClassInput{
 				DraftID: s.testDraftID,
 				ClassID: dnd5e.ClassWizard,
+				Choices: []dnd5e.ChoiceSelection{},
 			}).
 			Return(&character.UpdateClassOutput{
 				Draft:    expectedDraft,
@@ -978,6 +981,7 @@ func (s *HandlerTestSuite) TestUpdateBackground_Basic() {
 			UpdateBackground(s.ctx, &character.UpdateBackgroundInput{
 				DraftID:      s.testDraftID,
 				BackgroundID: dnd5e.BackgroundAcolyte,
+				Choices:      []dnd5e.ChoiceSelection{},
 			}).
 			Return(&character.UpdateBackgroundOutput{
 				Draft:    expectedDraft,

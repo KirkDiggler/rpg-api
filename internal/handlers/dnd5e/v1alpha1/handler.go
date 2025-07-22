@@ -194,7 +194,7 @@ func (h *Handler) UpdateRace(
 	}
 
 	// Convert race choices from proto
-	var choices []dnd5e.ChoiceSelection
+	choices := make([]dnd5e.ChoiceSelection, 0, len(req.RaceChoices))
 	for _, protoChoice := range req.RaceChoices {
 		if protoChoice != nil {
 			choice := dnd5e.ChoiceSelection{
@@ -2025,7 +2025,7 @@ func mapConstantToProtoAbility(constant string) dnd5ev1alpha1.Ability {
 
 // convertProtoChoicesToEntity converts proto choice selections to entity format
 func convertProtoChoicesToEntity(protoChoices []*dnd5ev1alpha1.ChoiceSelection) []dnd5e.ChoiceSelection {
-	var choices []dnd5e.ChoiceSelection
+	choices := make([]dnd5e.ChoiceSelection, 0, len(protoChoices))
 	for _, protoChoice := range protoChoices {
 		if protoChoice != nil {
 			choice := dnd5e.ChoiceSelection{

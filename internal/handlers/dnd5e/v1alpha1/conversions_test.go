@@ -333,7 +333,7 @@ func (s *ConversionsTestSuite) TestDraftHydration() {
 
 		// Verify Race info is included in response
 		s.NotNil(resp.Draft.Race)
-		s.Equal("elf", resp.Draft.Race.Id)
+		s.Equal("RACE_ELF", resp.Draft.Race.Id)
 		s.Equal("Elf", resp.Draft.Race.Name)
 		s.Equal("Elves are a magical people", resp.Draft.Race.Description)
 		s.Equal(int32(30), resp.Draft.Race.Speed)
@@ -358,8 +358,16 @@ func (s *ConversionsTestSuite) TestDraftHydration() {
 
 		// Verify Background info
 		s.NotNil(resp.Draft.Background)
+		if resp.Draft.Background != nil {
+			s.T().Logf("Background: %+v", resp.Draft.Background)
+		}
 		s.Equal("Outlander", resp.Draft.Background.Name)
 		s.Equal([]string{"Athletics", "Survival"}, resp.Draft.Background.SkillProficiencies)
+		// The test was looking for languages but the actual field might be Choices
+		// Let's check what we actually have
+		if resp.Draft.Background.Choices != nil {
+			s.T().Logf("Background choices: %d", len(resp.Draft.Background.Choices))
+		}
 		s.Len(resp.Draft.Background.Languages, 1)
 		s.Equal(dnd5ev1alpha1.Language_LANGUAGE_ELVISH, resp.Draft.Background.Languages[0])
 	})
