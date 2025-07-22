@@ -175,25 +175,25 @@ const (
 	// ChoiceTypeEquipment represents equipment choices
 	ChoiceTypeEquipment ChoiceType = "equipment"
 	// ChoiceTypeSkill represents skill proficiency choices
-	ChoiceTypeSkill             ChoiceType = "skill"
+	ChoiceTypeSkill ChoiceType = "skill"
 	// ChoiceTypeTool represents tool proficiency choices
-	ChoiceTypeTool              ChoiceType = "tool"
+	ChoiceTypeTool ChoiceType = "tool"
 	// ChoiceTypeLanguage represents language choices
-	ChoiceTypeLanguage          ChoiceType = "language"
+	ChoiceTypeLanguage ChoiceType = "language"
 	// ChoiceTypeWeaponProficiency represents weapon proficiency choices
 	ChoiceTypeWeaponProficiency ChoiceType = "weapon_proficiency"
 	// ChoiceTypeArmorProficiency represents armor proficiency choices
-	ChoiceTypeArmorProficiency  ChoiceType = "armor_proficiency"
+	ChoiceTypeArmorProficiency ChoiceType = "armor_proficiency"
 	// ChoiceTypeSpell represents spell choices
-	ChoiceTypeSpell             ChoiceType = "spell"
+	ChoiceTypeSpell ChoiceType = "spell"
 	// ChoiceTypeFeat represents feat/feature choices
-	ChoiceTypeFeat              ChoiceType = "feat"
+	ChoiceTypeFeat ChoiceType = "feat"
 	// ChoiceTypeFightingStyle represents fighting style choices
-	ChoiceTypeFightingStyle     ChoiceType = "fighting_style"
+	ChoiceTypeFightingStyle ChoiceType = "fighting_style"
 	// ChoiceTypeCantrips represents cantrip spell choices
-	ChoiceTypeCantrips          ChoiceType = "cantrips"
+	ChoiceTypeCantrips ChoiceType = "cantrips"
 	// ChoiceTypeSpells represents spell list choices
-	ChoiceTypeSpells            ChoiceType = "spells"
+	ChoiceTypeSpells ChoiceType = "spells"
 )
 
 // ChoiceSource represents where a choice came from
