@@ -215,11 +215,11 @@ func convertExternalBackgroundToEntity(bg *external.BackgroundData) *dnd5e.Backg
 		Name:                bg.Name,
 		Description:         bg.Description,
 		SkillProficiencies:  bg.SkillProficiencies,
-		Languages:           []string{}, // TODO: Convert from language count
+		Languages:           []string{}, // TODO(#115): Convert from language count
 		AdditionalLanguages: bg.Languages,
 		StartingEquipment:   bg.Equipment,
 		FeatureName:         bg.Feature,
-		FeatureDescription:  "", // Not available in external data
+		FeatureDescription:  "", // TODO(#116): Not available in external data
 	}
 }
 
@@ -283,12 +283,12 @@ func convertChoiceDataToChoices(choices []*external.ChoiceData) []dnd5e.Choice {
 		return nil
 	}
 
-	result := make([]dnd5e.Choice, 0, len(choices))
+	result := make([]dnd5e.Choice, 0)
 	for _, choice := range choices {
 		if choice == nil {
 			continue
 		}
-		// TODO: Map external choice data to internal choice format
+		// TODO(#117): Map external choice data to internal choice format
 		// This would require more complex logic to determine choice type
 	}
 	return result
