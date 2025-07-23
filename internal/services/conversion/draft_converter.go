@@ -1,3 +1,5 @@
+// Package conversion provides centralized conversion logic between
+// storage models (CharacterDraftData) and domain models (CharacterDraft).
 package conversion
 
 import (
@@ -257,7 +259,6 @@ func convertExternalSubracesToInfo(subraces []external.SubraceData) []dnd5e.Subr
 	}
 	return result
 }
-
 
 func convertExternalFeaturesToInfo(features []*external.FeatureData) []dnd5e.FeatureInfo {
 	if features == nil {

@@ -16,10 +16,10 @@ import (
 
 type DraftConverterTestSuite struct {
 	suite.Suite
-	ctrl           *gomock.Controller
-	mockExternal   *externalmock.MockClient
-	converter      conversion.DraftConverter
-	ctx            context.Context
+	ctrl         *gomock.Controller
+	mockExternal *externalmock.MockClient
+	converter    conversion.DraftConverter
+	ctx          context.Context
 }
 
 func (s *DraftConverterTestSuite) SetupTest() {
@@ -241,7 +241,7 @@ func (s *DraftConverterTestSuite) TestHydrateDraft() {
 			AbilityBonuses: map[string]int32{
 				"dexterity": 2,
 			},
-			Traits: []*external.TraitData{
+			Traits: []external.TraitData{
 				{
 					Name:        "Darkvision",
 					Description: "60 feet",
@@ -289,7 +289,7 @@ func (s *DraftConverterTestSuite) TestHydrateDraft() {
 		s.NotNil(result.Class)
 		s.Equal(dnd5e.ClassFighter, result.Class.ID)
 		s.Equal("Fighter", result.Class.Name)
-		s.Equal("1d10", result.Class.HitDice)
+		s.Equal("1d10", result.Class.HitDie)
 	})
 
 	s.Run("returns error on race fetch failure", func() {
@@ -321,7 +321,7 @@ func (s *DraftConverterTestSuite) TestHydrateDraft() {
 		raceData := &external.RaceData{
 			ID:   dnd5e.RaceElf,
 			Name: "Elf",
-			Subraces: []*external.SubraceData{
+			Subraces: []external.SubraceData{
 				{
 					ID:          dnd5e.SubraceWoodElf,
 					Name:        "Wood Elf",
