@@ -715,9 +715,11 @@ func (o *Orchestrator) UpdateAbilityScores(
 	draft := getOutput.Draft.ToCharacterDraft()
 
 	// Validate ability scores with engine
+	// TODO(#82): Make ability score method configurable
+	// For now, default to manual to accept any scores 3-18
 	validateInput := &engine.ValidateAbilityScoresInput{
 		AbilityScores: &input.AbilityScores,
-		Method:        "standard_array", // TODO(#82): Make ability score method configurable
+		Method:        engine.AbilityScoreMethodManual,
 	}
 	validateOutput, err := o.engine.ValidateAbilityScores(ctx, validateInput)
 	if err != nil {
