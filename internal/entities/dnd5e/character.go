@@ -21,6 +21,28 @@ type Character struct {
 	PlayerID         string
 	CreatedAt        int64
 	UpdatedAt        int64
+
+	// Proficiencies compiled from race/class/background/choices
+	SkillProficiencies  []string
+	ArmorProficiencies  []string
+	WeaponProficiencies []string
+	ToolProficiencies   []string
+	SavingThrows        []string
+
+	// Languages compiled from race/background/choices
+	Languages []string
+
+	// Equipment compiled from class/background/choices
+	Equipment []CharacterEquipment
+}
+
+// CharacterEquipment represents a piece of equipment owned by a character
+type CharacterEquipment struct {
+	ItemID   string
+	Name     string
+	Quantity int32
+	Type     string // weapon, armor, gear, etc
+	Equipped bool   // whether the item is currently equipped
 }
 
 // CharacterDraft represents a character in creation with hydrated info

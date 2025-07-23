@@ -978,6 +978,50 @@ func (o *Orchestrator) FinalizeDraft(
 		return nil, errors.Wrap(err, "failed to hydrate draft for finalization")
 	}
 
+	// Compile choices into proficiencies, languages, and equipment
+	compiledData, err := o.compileChoices(ctx, draft, hydratedDraft)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to compile character choices")
+	}
+
+	// Apply ability score improvements from choices
+	for ability, bonus := range compiledData.AbilityScoreImprovements {
+		switch ability {
+		case "strength":
+			char.AbilityScores.Strength += bonus
+		case "dexterity":
+			char.AbilityScores.Dexterity += bonus
+		case "constitution":
+			char.AbilityScores.Constitution += bonus
+		case "intelligence":
+			char.AbilityScores.Intelligence += bonus
+		case "wisdom":
+			char.AbilityScores.Wisdom += bonus
+		case "charisma":
+			char.AbilityScores.Charisma += bonus
+		}
+	}
+
+	// Apply compiled proficiencies and equipment
+	char.SkillProficiencies = compiledData.SkillProficiencies
+	char.ArmorProficiencies = compiledData.ArmorProficiencies
+	char.WeaponProficiencies = compiledData.WeaponProficiencies
+	char.ToolProficiencies = compiledData.ToolProficiencies
+	char.SavingThrows = compiledData.SavingThrows
+	char.Languages = compiledData.Languages
+
+	// Convert equipment items to character equipment
+	char.Equipment = make([]dnd5e.CharacterEquipment, len(compiledData.Equipment))
+	for i, item := range compiledData.Equipment {
+		char.Equipment[i] = dnd5e.CharacterEquipment{
+			ItemID:   item.ItemID,
+			Name:     item.Name,
+			Quantity: item.Quantity,
+			Type:     item.Type,
+			Equipped: false, // Not equipped by default
+		}
+	}
+
 	// Calculate final character stats using the character and hydrated info
 	calculateInput := &engine.CalculateCharacterStatsInput{
 		Character:  char,
@@ -2730,6 +2774,8 @@ func (o *Orchestrator) hydrateDraft(ctx context.Context, draft *dnd5e.CharacterD
 						Description:    subrace.Description,
 						AbilityBonuses: subrace.AbilityBonuses,
 						Traits:         convertExternalTraitsToEntity(subrace.Traits),
+						Languages:      subrace.Languages,
+						Proficiencies:  subrace.Proficiencies,
 					}
 					break
 				}

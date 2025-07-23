@@ -1223,6 +1223,63 @@ func convertCharacterToProto(char *dnd5e.Character) *dnd5ev1alpha1.Character {
 		return nil
 	}
 
+	// Convert skill proficiencies to proto enums
+	skillProfs := make([]dnd5ev1alpha1.Skill, 0, len(char.SkillProficiencies))
+	for _, skill := range char.SkillProficiencies {
+		if protoSkill := mapConstantToProtoSkill(skill); protoSkill != dnd5ev1alpha1.Skill_SKILL_UNSPECIFIED {
+			skillProfs = append(skillProfs, protoSkill)
+		}
+	}
+
+	// Convert saving throw proficiencies to proto enums
+	// Saving throws may come as lowercase strings from external data, so normalize them
+	savingThrows := make([]dnd5ev1alpha1.Ability, 0, len(char.SavingThrows))
+	for _, ability := range char.SavingThrows {
+		// Normalize the ability string to match our constants
+		normalizedAbility := normalizeAbilityString(ability)
+		protoAbility := mapConstantToProtoAbility(normalizedAbility)
+		if protoAbility != dnd5ev1alpha1.Ability_ABILITY_UNSPECIFIED {
+			savingThrows = append(savingThrows, protoAbility)
+		}
+	}
+
+	// Convert languages to proto enums
+	languages := make([]dnd5ev1alpha1.Language, 0, len(char.Languages))
+	for _, lang := range char.Languages {
+		if protoLang := mapConstantToProtoLanguage(lang); protoLang != dnd5ev1alpha1.Language_LANGUAGE_UNSPECIFIED {
+			languages = append(languages, protoLang)
+		}
+	}
+
+	// Calculate ability modifiers
+	abilityModifiers := &dnd5ev1alpha1.AbilityModifiers{
+		Strength:     calculateAbilityModifier(char.AbilityScores.Strength),
+		Dexterity:    calculateAbilityModifier(char.AbilityScores.Dexterity),
+		Constitution: calculateAbilityModifier(char.AbilityScores.Constitution),
+		Intelligence: calculateAbilityModifier(char.AbilityScores.Intelligence),
+		Wisdom:       calculateAbilityModifier(char.AbilityScores.Wisdom),
+		Charisma:     calculateAbilityModifier(char.AbilityScores.Charisma),
+	}
+
+	// TODO(#46): Get combat stats from engine calculation instead of hardcoding
+	combatStats := &dnd5ev1alpha1.CombatStats{
+		HitPointMaximum:  char.CurrentHP, // Using current HP as max for now
+		ArmorClass:       10,             // Base AC, should be calculated
+		Initiative:       abilityModifiers.Dexterity,
+		Speed:            30,    // Default speed, should come from race
+		ProficiencyBonus: 2,     // Level 1 proficiency bonus
+		HitDice:          "1d8", // Should come from class
+	}
+
+	// Build proficiencies
+	proficiencies := &dnd5ev1alpha1.Proficiencies{
+		Skills:       skillProfs,
+		SavingThrows: savingThrows,
+		Armor:        char.ArmorProficiencies,
+		Weapons:      char.WeaponProficiencies,
+		Tools:        char.ToolProficiencies,
+	}
+
 	return &dnd5ev1alpha1.Character{
 		Id:               char.ID,
 		Name:             char.Name,
@@ -1241,6 +1298,10 @@ func convertCharacterToProto(char *dnd5e.Character) *dnd5ev1alpha1.Character {
 			Wisdom:       char.AbilityScores.Wisdom,
 			Charisma:     char.AbilityScores.Charisma,
 		},
+		AbilityModifiers:   abilityModifiers,
+		CombatStats:        combatStats,
+		Proficiencies:      proficiencies,
+		Languages:          languages,
 		CurrentHitPoints:   char.CurrentHP,
 		TemporaryHitPoints: char.TempHP,
 		SessionId:          char.SessionID,
@@ -1250,6 +1311,43 @@ func convertCharacterToProto(char *dnd5e.Character) *dnd5ev1alpha1.Character {
 			PlayerId:  char.PlayerID,
 		},
 	}
+}
+
+// calculateAbilityModifier calculates the modifier for an ability score
+// In D&D 5e, modifiers round down (toward negative infinity)
+func calculateAbilityModifier(score int32) int32 {
+	if score >= 10 {
+		return (score - 10) / 2
+	}
+	// For scores below 10, we need to handle negative rounding properly
+	// D&D rounds down, so 9 is -1, 8 is -1, 7 is -2, etc.
+	return -((10 - score + 1) / 2)
+}
+
+// normalizeAbilityString converts ability strings to match our constants
+// External data may use lowercase strings like "strength" instead of our constants
+func normalizeAbilityString(ability string) string {
+	switch strings.ToLower(ability) {
+	case "strength":
+		return dnd5e.AbilityStrength
+	case "dexterity":
+		return dnd5e.AbilityDexterity
+	case "constitution":
+		return dnd5e.AbilityConstitution
+	case "intelligence":
+		return dnd5e.AbilityIntelligence
+	case "wisdom":
+		return dnd5e.AbilityWisdom
+	case "charisma":
+		return dnd5e.AbilityCharisma
+	default:
+		return ability // Return as-is if not recognized
+	}
+}
+
+// TestConvertCharacterToProto is a test helper to expose convertCharacterToProto for testing
+func TestConvertCharacterToProto(char *dnd5e.Character) *dnd5ev1alpha1.Character {
+	return convertCharacterToProto(char)
 }
 
 // ListRaces returns a list of available races for character creation
@@ -2004,6 +2102,49 @@ func mapProtoAbilityToConstant(protoAbility dnd5ev1alpha1.Ability) string {
 }
 
 // mapConstantToProtoAbility converts entity constant to proto Ability
+func mapConstantToProtoSkill(constant string) dnd5ev1alpha1.Skill {
+	switch constant {
+	case dnd5e.SkillAcrobatics:
+		return dnd5ev1alpha1.Skill_SKILL_ACROBATICS
+	case dnd5e.SkillAnimalHandling:
+		return dnd5ev1alpha1.Skill_SKILL_ANIMAL_HANDLING
+	case dnd5e.SkillArcana:
+		return dnd5ev1alpha1.Skill_SKILL_ARCANA
+	case dnd5e.SkillAthletics:
+		return dnd5ev1alpha1.Skill_SKILL_ATHLETICS
+	case dnd5e.SkillDeception:
+		return dnd5ev1alpha1.Skill_SKILL_DECEPTION
+	case dnd5e.SkillHistory:
+		return dnd5ev1alpha1.Skill_SKILL_HISTORY
+	case dnd5e.SkillInsight:
+		return dnd5ev1alpha1.Skill_SKILL_INSIGHT
+	case dnd5e.SkillIntimidation:
+		return dnd5ev1alpha1.Skill_SKILL_INTIMIDATION
+	case dnd5e.SkillInvestigation:
+		return dnd5ev1alpha1.Skill_SKILL_INVESTIGATION
+	case dnd5e.SkillMedicine:
+		return dnd5ev1alpha1.Skill_SKILL_MEDICINE
+	case dnd5e.SkillNature:
+		return dnd5ev1alpha1.Skill_SKILL_NATURE
+	case dnd5e.SkillPerception:
+		return dnd5ev1alpha1.Skill_SKILL_PERCEPTION
+	case dnd5e.SkillPerformance:
+		return dnd5ev1alpha1.Skill_SKILL_PERFORMANCE
+	case dnd5e.SkillPersuasion:
+		return dnd5ev1alpha1.Skill_SKILL_PERSUASION
+	case dnd5e.SkillReligion:
+		return dnd5ev1alpha1.Skill_SKILL_RELIGION
+	case dnd5e.SkillSleightOfHand:
+		return dnd5ev1alpha1.Skill_SKILL_SLEIGHT_OF_HAND
+	case dnd5e.SkillStealth:
+		return dnd5ev1alpha1.Skill_SKILL_STEALTH
+	case dnd5e.SkillSurvival:
+		return dnd5ev1alpha1.Skill_SKILL_SURVIVAL
+	default:
+		return dnd5ev1alpha1.Skill_SKILL_UNSPECIFIED
+	}
+}
+
 func mapConstantToProtoAbility(constant string) dnd5ev1alpha1.Ability {
 	switch constant {
 	case dnd5e.AbilityStrength:

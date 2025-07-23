@@ -181,6 +181,20 @@ func (s *OrchestratorTestSuite) TestFinalizeDraft() {
 			Charisma:     12,
 		},
 		// Skills are now handled through ChoiceSelections
+		ChoiceSelections: []dnd5e.ChoiceSelection{
+			{
+				ChoiceID:     "ranger-skills",
+				ChoiceType:   dnd5e.ChoiceTypeSkill,
+				Source:       dnd5e.ChoiceSourceClass,
+				SelectedKeys: []string{dnd5e.SkillSurvival, dnd5e.SkillPerception, dnd5e.SkillAnimalHandling},
+			},
+			{
+				ChoiceID:     "outlander-language",
+				ChoiceType:   dnd5e.ChoiceTypeLanguage,
+				Source:       dnd5e.ChoiceSourceBackground,
+				SelectedKeys: []string{dnd5e.LanguageElvish},
+			},
+		},
 	}
 
 	testCases := []struct {
@@ -216,6 +230,15 @@ func (s *OrchestratorTestSuite) TestFinalizeDraft() {
 						ID:    dnd5e.RaceHuman,
 						Name:  "Human",
 						Speed: 30,
+						AbilityBonuses: map[string]int32{
+							"strength":     1,
+							"dexterity":    1,
+							"constitution": 1,
+							"intelligence": 1,
+							"wisdom":       1,
+							"charisma":     1,
+						},
+						Languages: []string{dnd5e.LanguageCommon},
 					}, nil)
 
 				s.mockExternalClient.EXPECT().
@@ -251,7 +274,7 @@ func (s *OrchestratorTestSuite) TestFinalizeDraft() {
 						ID:                 dnd5e.BackgroundOutlander,
 						Name:               "Outlander",
 						Description:        "You grew up in the wilds",
-						SkillProficiencies: []string{"athletics", "survival"},
+						SkillProficiencies: []string{dnd5e.SkillAthletics, dnd5e.SkillSurvival},
 						Languages:          1,
 						Equipment:          []string{"staff", "hunting trap", "traveler's clothes", "belt pouch"},
 						Feature:            "Wanderer",
@@ -272,6 +295,34 @@ func (s *OrchestratorTestSuite) TestFinalizeDraft() {
 						s.NotNil(input.Race)
 						s.NotNil(input.Class)
 						s.NotNil(input.Background)
+
+						// Verify choices were compiled
+						// Human gets +1 to all abilities
+						s.Equal(int32(17), input.Character.AbilityScores.Strength)     // 16 + 1
+						s.Equal(int32(15), input.Character.AbilityScores.Dexterity)    // 14 + 1
+						s.Equal(int32(16), input.Character.AbilityScores.Constitution) // 15 + 1
+						s.Equal(int32(11), input.Character.AbilityScores.Intelligence) // 10 + 1
+						s.Equal(int32(14), input.Character.AbilityScores.Wisdom)       // 13 + 1
+						s.Equal(int32(13), input.Character.AbilityScores.Charisma)     // 12 + 1
+
+						// Verify skill proficiencies include both background and choices
+						s.Contains(input.Character.SkillProficiencies, dnd5e.SkillAthletics)      // From background
+						s.Contains(input.Character.SkillProficiencies, dnd5e.SkillSurvival)       // From background + choice
+						s.Contains(input.Character.SkillProficiencies, dnd5e.SkillPerception)     // From choice
+						s.Contains(input.Character.SkillProficiencies, dnd5e.SkillAnimalHandling) // From choice
+
+						// Verify languages
+						s.Contains(input.Character.Languages, dnd5e.LanguageCommon) // From human
+						s.Contains(input.Character.Languages, dnd5e.LanguageElvish) // From choice
+
+						// Verify class proficiencies
+						s.Contains(input.Character.ArmorProficiencies, "light armor")
+						s.Contains(input.Character.ArmorProficiencies, "medium armor")
+						s.Contains(input.Character.ArmorProficiencies, "shields")
+						s.Contains(input.Character.WeaponProficiencies, "simple weapons")
+						s.Contains(input.Character.WeaponProficiencies, "martial weapons")
+						s.Contains(input.Character.SavingThrows, "strength")
+						s.Contains(input.Character.SavingThrows, "dexterity")
 
 						return &engine.CalculateCharacterStatsOutput{
 							MaxHP:            12, // 10 + CON mod
