@@ -14,233 +14,216 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/testutils/mocks"
 )
 
-// TestUpdateNameImproved demonstrates the lean test pattern with minimal data variations
-func (s *OrchestratorTestSuite) TestUpdateNameImproved() {
+// UpdateName Tests - Each test function uses SetupSubTest for clean mocks and test data
+
+func (s *OrchestratorTestSuite) TestUpdateName_SuccessfulUpdate() {
 	// Base draft is created fresh in SetupSubTest
-	// We only modify what's needed for each test case
+	draftData := dnd5e.FromCharacterDraft(s.testDraft)
 
-	testCases := []struct {
-		name      string
-		inputName string                                // Only the variation we care about
-		draftMod  func(*dnd5e.CharacterDraft)           // Optional draft modifications
-		setupMock func(draft *dnd5e.CharacterDraftData) // Pass expected data to mock setup
-		wantErr   bool
-		errMsg    string
-	}{
-		{
-			name:      "successful name update",
-			inputName: "Aragorn",
-			setupMock: func(draftData *dnd5e.CharacterDraftData) {
-				// Use helper to set up common expectations
-				mocks.ExpectDraftGet(s.ctx, s.mockDraftRepo, s.testDraftID, draftData, nil)
-
-				// Expect update with validation on what changed
-				s.mockDraftRepo.EXPECT().
-					Update(s.ctx, gomock.Any()).
-					DoAndReturn(func(_ context.Context, input draftrepo.UpdateInput) (*draftrepo.UpdateOutput, error) {
-						// Only verify what should have changed
-						s.Equal("Aragorn", input.Draft.Name)
-						s.True(input.Draft.Progress.HasName())
-						return &draftrepo.UpdateOutput{Draft: input.Draft}, nil
-					})
-			},
-		},
-		{
-			name:      "empty name",
-			inputName: "",
-			setupMock: func(draftData *dnd5e.CharacterDraftData) {
-				mocks.ExpectDraftGet(s.ctx, s.mockDraftRepo, s.testDraftID, draftData, nil)
-				// No update expected - should fail validation
-			},
-			wantErr: true,
-			errMsg:  "name: is required",
-		},
-		{
-			name:      "draft not found",
-			inputName: "Legolas",
-			setupMock: func(_ *dnd5e.CharacterDraftData) {
-				mocks.ExpectDraftGet(s.ctx, s.mockDraftRepo, s.testDraftID, nil, errors.NotFound("draft not found"))
-			},
-			wantErr: true,
-			errMsg:  "draft not found",
-		},
-		{
-			name:      "name already set - updating",
-			inputName: "Gimli",
-			draftMod: func(d *dnd5e.CharacterDraft) {
-				// Modify the base draft to have an existing name
-				d.Name = "OldName"
-				d.Progress.SetStep(dnd5e.ProgressStepName, true)
-			},
-			setupMock: func(draftData *dnd5e.CharacterDraftData) {
-				mocks.ExpectDraftGet(s.ctx, s.mockDraftRepo, s.testDraftID, draftData, nil)
-
-				s.mockDraftRepo.EXPECT().
-					Update(s.ctx, gomock.Any()).
-					DoAndReturn(func(_ context.Context, input draftrepo.UpdateInput) (*draftrepo.UpdateOutput, error) {
-						s.Equal("Gimli", input.Draft.Name)
-						s.True(input.Draft.Progress.HasName())
-						return &draftrepo.UpdateOutput{Draft: input.Draft}, nil
-					})
-			},
-		},
-	}
-
-	for _, tc := range testCases {
-		s.Run(tc.name, func() {
-			// Start with base draft from SetupSubTest
-			draft := s.testDraft
-
-			// Apply any test-specific modifications
-			if tc.draftMod != nil {
-				// Create a copy to avoid modifying the suite's test data
-				draftCopy := *draft
-				tc.draftMod(&draftCopy)
-				draft = &draftCopy
-			}
-
-			// Convert to data for repository
-			draftData := dnd5e.FromCharacterDraft(draft)
-
-			// Set up mocks with the expected data
-			tc.setupMock(draftData)
-
-			// Execute the test
-			input := &characterorchestrator.UpdateNameInput{
-				DraftID: s.testDraftID,
-				Name:    tc.inputName,
-			}
-
-			output, err := s.orchestrator.UpdateName(s.ctx, input)
-
-			// Verify results
-			if tc.wantErr {
-				s.Error(err)
-				s.Contains(err.Error(), tc.errMsg)
-			} else {
-				s.NoError(err)
-				s.NotNil(output)
-				s.Equal(tc.inputName, output.Draft.Name)
-			}
+	// Set up mocks
+	mocks.ExpectDraftGet(s.ctx, s.mockDraftRepo, s.testDraftID, draftData, nil)
+	s.mockDraftRepo.EXPECT().
+		Update(s.ctx, gomock.Any()).
+		DoAndReturn(func(_ context.Context, input draftrepo.UpdateInput) (*draftrepo.UpdateOutput, error) {
+			s.Equal("Aragorn", input.Draft.Name)
+			s.True(input.Draft.Progress.HasName())
+			return &draftrepo.UpdateOutput{Draft: input.Draft}, nil
 		})
+
+	// Execute
+	input := &characterorchestrator.UpdateNameInput{
+		DraftID: s.testDraftID,
+		Name:    "Aragorn",
 	}
+	output, err := s.orchestrator.UpdateName(s.ctx, input)
+
+	// Verify
+	s.NoError(err)
+	s.NotNil(output)
+	s.Equal("Aragorn", output.Draft.Name)
 }
 
-// TestCreateDraftImproved shows how to use builders for cleaner test data setup
-func (s *OrchestratorTestSuite) TestCreateDraftImproved() {
-	testCases := []struct {
-		name         string
-		buildInput   func() *characterorchestrator.CreateDraftInput
-		engineValid  bool
-		engineErrors []engine.ValidationError
-		wantErr      bool
-		errMsg       string
-		validate     func(*characterorchestrator.CreateDraftOutput)
-	}{
-		{
-			name: "minimal draft",
-			buildInput: func() *characterorchestrator.CreateDraftInput {
-				return &characterorchestrator.CreateDraftInput{
-					PlayerID: s.testPlayerID,
-				}
-			},
-			engineValid: true,
-			validate: func(output *characterorchestrator.CreateDraftOutput) {
-				s.Equal(s.testPlayerID, output.Draft.PlayerID)
-				s.Empty(output.Draft.Name)
-				s.Equal(int32(0), output.Draft.Progress.CompletionPercentage)
-			},
-		},
-		{
-			name: "draft with initial name",
-			buildInput: func() *characterorchestrator.CreateDraftInput {
-				return &characterorchestrator.CreateDraftInput{
-					PlayerID: s.testPlayerID,
-					InitialData: builders.NewCharacterDraftBuilder().
-						WithName("Bilbo").
-						Build(),
-				}
-			},
-			engineValid: true,
-			validate: func(output *characterorchestrator.CreateDraftOutput) {
-				s.Equal("Bilbo", output.Draft.Name)
-				s.True(output.Draft.Progress.HasName())
-				s.Greater(output.Draft.Progress.CompletionPercentage, int32(0))
-			},
-		},
-		{
-			name: "draft with race and class",
-			buildInput: func() *characterorchestrator.CreateDraftInput {
-				return &characterorchestrator.CreateDraftInput{
-					PlayerID:  s.testPlayerID,
-					SessionID: s.testSessionID,
-					InitialData: builders.NewCharacterDraftBuilder().
-						WithName("Thorin").
-						WithRace(dnd5e.RaceDwarf, dnd5e.SubraceMountainDwarf).
-						WithClass(dnd5e.ClassFighter).
-						Build(),
-				}
-			},
-			engineValid: true,
-			validate: func(output *characterorchestrator.CreateDraftOutput) {
-				s.Equal("Thorin", output.Draft.Name)
-				s.Equal(dnd5e.RaceDwarf, output.Draft.RaceID)
-				s.Equal(dnd5e.SubraceMountainDwarf, output.Draft.SubraceID)
-				s.Equal(dnd5e.ClassFighter, output.Draft.ClassID)
-				s.True(output.Draft.Progress.HasName())
-				s.True(output.Draft.Progress.HasRace())
-				s.True(output.Draft.Progress.HasClass())
-			},
-		},
-		{
-			name: "invalid draft - engine validation fails",
-			buildInput: func() *characterorchestrator.CreateDraftInput {
-				return &characterorchestrator.CreateDraftInput{
-					PlayerID: s.testPlayerID,
-					InitialData: builders.NewCharacterDraftBuilder().
-						WithClass(dnd5e.ClassWizard).
-						WithAbilityScores(8, 8, 8, 8, 8, 8). // Too low for wizard
-						Build(),
-				}
-			},
-			engineValid: false,
-			engineErrors: []engine.ValidationError{
+func (s *OrchestratorTestSuite) TestUpdateName_EmptyName() {
+	// No repository mocks needed - validation fails before any repository calls
+
+	// Execute
+	input := &characterorchestrator.UpdateNameInput{
+		DraftID: s.testDraftID,
+		Name:    "",
+	}
+	output, err := s.orchestrator.UpdateName(s.ctx, input)
+
+	// Verify
+	s.Error(err)
+	s.Nil(output)
+	s.Contains(err.Error(), "name: is required")
+}
+
+func (s *OrchestratorTestSuite) TestUpdateName_DraftNotFound() {
+	// Set up mocks - return not found error
+	mocks.ExpectDraftGet(s.ctx, s.mockDraftRepo, s.testDraftID, nil, errors.NotFound("draft not found"))
+
+	// Execute
+	input := &characterorchestrator.UpdateNameInput{
+		DraftID: s.testDraftID,
+		Name:    "Legolas",
+	}
+	output, err := s.orchestrator.UpdateName(s.ctx, input)
+
+	// Verify
+	s.Error(err)
+	s.Nil(output)
+	s.Contains(err.Error(), "draft not found")
+}
+
+func (s *OrchestratorTestSuite) TestUpdateName_NameAlreadySet() {
+	// Modify the base draft to have an existing name
+	draftCopy := *s.testDraft
+	draftCopy.Name = "OldName"
+	draftCopy.Progress.SetStep(dnd5e.ProgressStepName, true)
+	draftData := dnd5e.FromCharacterDraft(&draftCopy)
+
+	// Set up mocks
+	mocks.ExpectDraftGet(s.ctx, s.mockDraftRepo, s.testDraftID, draftData, nil)
+	s.mockDraftRepo.EXPECT().
+		Update(s.ctx, gomock.Any()).
+		DoAndReturn(func(_ context.Context, input draftrepo.UpdateInput) (*draftrepo.UpdateOutput, error) {
+			s.Equal("Gimli", input.Draft.Name)
+			s.True(input.Draft.Progress.HasName())
+			return &draftrepo.UpdateOutput{Draft: input.Draft}, nil
+		})
+
+	// Execute
+	input := &characterorchestrator.UpdateNameInput{
+		DraftID: s.testDraftID,
+		Name:    "Gimli",
+	}
+	output, err := s.orchestrator.UpdateName(s.ctx, input)
+
+	// Verify
+	s.NoError(err)
+	s.NotNil(output)
+	s.Equal("Gimli", output.Draft.Name)
+}
+
+// CreateDraft Tests - Each test function uses SetupSubTest for clean mocks and test data
+
+func (s *OrchestratorTestSuite) TestCreateDraft_Minimal() {
+	// Set up engine validation mock
+	s.mockEngine.EXPECT().
+		ValidateCharacterDraft(s.ctx, gomock.Any()).
+		Return(&engine.ValidateCharacterDraftOutput{
+			IsValid: true,
+			Errors:  nil,
+		}, nil)
+
+	// Set up repository mock
+	mocks.ExpectDraftCreate(s.ctx, s.mockDraftRepo)
+
+	// Execute
+	input := &characterorchestrator.CreateDraftInput{
+		PlayerID: s.testPlayerID,
+	}
+	output, err := s.orchestrator.CreateDraft(s.ctx, input)
+
+	// Verify
+	s.NoError(err)
+	s.NotNil(output)
+	s.Equal(s.testPlayerID, output.Draft.PlayerID)
+	s.Empty(output.Draft.Name)
+	s.Equal(int32(0), output.Draft.Progress.CompletionPercentage)
+}
+
+func (s *OrchestratorTestSuite) TestCreateDraft_WithInitialName() {
+	// Set up engine validation mock
+	s.mockEngine.EXPECT().
+		ValidateCharacterDraft(s.ctx, gomock.Any()).
+		Return(&engine.ValidateCharacterDraftOutput{
+			IsValid: true,
+			Errors:  nil,
+		}, nil)
+
+	// Set up repository mock
+	mocks.ExpectDraftCreate(s.ctx, s.mockDraftRepo)
+
+	// Execute
+	input := &characterorchestrator.CreateDraftInput{
+		PlayerID: s.testPlayerID,
+		InitialData: builders.NewCharacterDraftBuilder().
+			WithName("Bilbo").
+			Build(),
+	}
+	output, err := s.orchestrator.CreateDraft(s.ctx, input)
+
+	// Verify
+	s.NoError(err)
+	s.NotNil(output)
+	s.Equal("Bilbo", output.Draft.Name)
+	s.True(output.Draft.Progress.HasName())
+	s.Greater(output.Draft.Progress.CompletionPercentage, int32(0))
+}
+
+func (s *OrchestratorTestSuite) TestCreateDraft_WithRaceAndClass() {
+	// Set up engine validation mock
+	s.mockEngine.EXPECT().
+		ValidateCharacterDraft(s.ctx, gomock.Any()).
+		Return(&engine.ValidateCharacterDraftOutput{
+			IsValid: true,
+			Errors:  nil,
+		}, nil)
+
+	// Set up repository mock
+	mocks.ExpectDraftCreate(s.ctx, s.mockDraftRepo)
+
+	// Execute
+	input := &characterorchestrator.CreateDraftInput{
+		PlayerID:  s.testPlayerID,
+		SessionID: s.testSessionID,
+		InitialData: builders.NewCharacterDraftBuilder().
+			WithName("Thorin").
+			WithRace(dnd5e.RaceDwarf, dnd5e.SubraceMountainDwarf).
+			WithClass(dnd5e.ClassFighter).
+			Build(),
+	}
+	output, err := s.orchestrator.CreateDraft(s.ctx, input)
+
+	// Verify
+	s.NoError(err)
+	s.NotNil(output)
+	s.Equal("Thorin", output.Draft.Name)
+	s.Equal(dnd5e.RaceDwarf, output.Draft.RaceID)
+	s.Equal(dnd5e.SubraceMountainDwarf, output.Draft.SubraceID)
+	s.Equal(dnd5e.ClassFighter, output.Draft.ClassID)
+	s.True(output.Draft.Progress.HasName())
+	s.True(output.Draft.Progress.HasRace())
+	s.True(output.Draft.Progress.HasClass())
+}
+
+func (s *OrchestratorTestSuite) TestCreateDraft_InvalidEngineValidation() {
+	// Set up engine validation mock to return validation errors
+	s.mockEngine.EXPECT().
+		ValidateCharacterDraft(s.ctx, gomock.Any()).
+		Return(&engine.ValidateCharacterDraftOutput{
+			IsValid: false,
+			Errors: []engine.ValidationError{
 				{Field: "intelligence", Message: "Wizards require 13+ Intelligence"},
 			},
-			wantErr: true,
-			errMsg:  "Wizards require 13+ Intelligence",
-		},
+		}, nil)
+
+	// No repository mock expected since validation fails
+
+	// Execute
+	input := &characterorchestrator.CreateDraftInput{
+		PlayerID: s.testPlayerID,
+		InitialData: builders.NewCharacterDraftBuilder().
+			WithClass(dnd5e.ClassWizard).
+			WithAbilityScores(8, 8, 8, 8, 8, 8). // Too low for wizard
+			Build(),
 	}
+	output, err := s.orchestrator.CreateDraft(s.ctx, input)
 
-	for _, tc := range testCases {
-		s.Run(tc.name, func() {
-			input := tc.buildInput()
-
-			// Set up engine validation mock
-			s.mockEngine.EXPECT().
-				ValidateCharacterDraft(s.ctx, gomock.Any()).
-				Return(&engine.ValidateCharacterDraftOutput{
-					IsValid: tc.engineValid,
-					Errors:  tc.engineErrors,
-				}, nil)
-
-			// Set up repository mock if validation passes
-			if tc.engineValid {
-				mocks.ExpectDraftCreate(s.ctx, s.mockDraftRepo)
-			}
-
-			// Execute
-			output, err := s.orchestrator.CreateDraft(s.ctx, input)
-
-			// Verify
-			if tc.wantErr {
-				s.Error(err)
-				s.Contains(err.Error(), tc.errMsg)
-			} else {
-				s.NoError(err)
-				s.NotNil(output)
-				tc.validate(output)
-			}
-		})
-	}
+	// Verify
+	s.Error(err)
+	s.Nil(output)
+	s.Contains(err.Error(), "Wizards require 13+ Intelligence")
 }

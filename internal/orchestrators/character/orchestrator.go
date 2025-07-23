@@ -952,16 +952,7 @@ func (o *Orchestrator) FinalizeDraft(
 		return nil, errors.Wrap(ve.ToError(), "cannot finalize invalid draft")
 	}
 
-	// Calculate final character stats
-	calculateInput := &engine.CalculateCharacterStatsInput{
-		Draft: draft,
-	}
-	calculateOutput, err := o.engine.CalculateCharacterStats(ctx, calculateInput)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to calculate character stats")
-	}
-
-	// Create the final character
+	// Create the character with basic data first
 	char := &dnd5e.Character{
 		Name:             draft.Name,
 		Level:            1, // Starting level
@@ -972,11 +963,53 @@ func (o *Orchestrator) FinalizeDraft(
 		BackgroundID:     draft.BackgroundID,
 		Alignment:        draft.Alignment,
 		AbilityScores:    *draft.AbilityScores,
-		CurrentHP:        calculateOutput.MaxHP,
+		CurrentHP:        1, // Temporary, will be calculated
 		TempHP:           0,
 		SessionID:        draft.SessionID,
 		PlayerID:         draft.PlayerID,
 		// Repository will set ID, CreatedAt, and UpdatedAt
+	}
+
+	// Hydrate the draft to get race/class/background info
+	hydratedDraft, err := o.hydrateDraft(ctx, draft)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to hydrate draft for finalization")
+	}
+
+	// Calculate final character stats using the character and hydrated info
+	calculateInput := &engine.CalculateCharacterStatsInput{
+		Character:  char,
+		Race:       hydratedDraft.Race,
+		Subrace:    hydratedDraft.Subrace,
+		Class:      hydratedDraft.Class,
+		Background: hydratedDraft.Background,
+	}
+	calculateOutput, err := o.engine.CalculateCharacterStats(ctx, calculateInput)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to calculate character stats")
+	}
+
+	// Update the character with calculated HP
+	char.CurrentHP = calculateOutput.MaxHP
+
+	// Validate the final character against D&D rules
+	validateCharInput := &engine.ValidateCharacterInput{
+		Character:  char,
+		Race:       hydratedDraft.Race,
+		Subrace:    hydratedDraft.Subrace,
+		Class:      hydratedDraft.Class,
+		Background: hydratedDraft.Background,
+	}
+	validateCharOutput, err := o.engine.ValidateCharacter(ctx, validateCharInput)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to validate character")
+	}
+	if !validateCharOutput.IsValid {
+		ve := errors.NewValidationError()
+		for _, e := range validateCharOutput.Errors {
+			ve.AddFieldError(e.Field, e.Message)
+		}
+		return nil, errors.Wrap(ve.ToError(), "character validation failed")
 	}
 
 	// Create the character in the repository

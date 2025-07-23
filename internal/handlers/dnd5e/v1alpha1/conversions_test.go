@@ -256,10 +256,11 @@ func (s *ConversionsTestSuite) TestCreateDraftDataFlow() {
 		resp, err := s.handler.CreateDraft(s.ctx, request)
 		s.NoError(err)
 
-		// Verify empty strings convert back to UNSPECIFIED enums
-		s.Equal(dnd5ev1alpha1.Race_RACE_UNSPECIFIED, resp.Draft.Race)
-		s.Equal(dnd5ev1alpha1.Class_CLASS_UNSPECIFIED, resp.Draft.Class)
-		s.Equal(dnd5ev1alpha1.Background_BACKGROUND_UNSPECIFIED, resp.Draft.Background)
+		// Verify empty strings convert back to nil info objects
+		s.Nil(resp.Draft.Race)
+		s.Nil(resp.Draft.Class)
+		s.Nil(resp.Draft.Background)
+		// Alignment is still a direct field, not an info object
 		s.Equal(dnd5ev1alpha1.Alignment_ALIGNMENT_UNSPECIFIED, resp.Draft.Alignment)
 	})
 }
@@ -322,7 +323,7 @@ func (s *ConversionsTestSuite) TestDraftHydration() {
 						Name:               "Outlander",
 						Description:        "You grew up in the wilds",
 						SkillProficiencies: []string{"Athletics", "Survival"},
-						Languages:          []string{"elvish"},
+						Languages:          []string{dnd5e.LanguageElvish},
 					},
 				},
 			}, nil)
@@ -363,11 +364,6 @@ func (s *ConversionsTestSuite) TestDraftHydration() {
 		}
 		s.Equal("Outlander", resp.Draft.Background.Name)
 		s.Equal([]string{"Athletics", "Survival"}, resp.Draft.Background.SkillProficiencies)
-		// The test was looking for languages but the actual field might be Choices
-		// Let's check what we actually have
-		if resp.Draft.Background.Choices != nil {
-			s.T().Logf("Background choices: %d", len(resp.Draft.Background.Choices))
-		}
 		s.Len(resp.Draft.Background.Languages, 1)
 		s.Equal(dnd5ev1alpha1.Language_LANGUAGE_ELVISH, resp.Draft.Background.Languages[0])
 	})
@@ -427,6 +423,11 @@ func (s *ConversionsTestSuite) TestProgressTracking() {
 				name: "empty draft",
 				draft: &dnd5e.CharacterDraft{
 					ID: "draft-empty",
+					Progress: dnd5e.CreationProgress{
+						StepsCompleted:       0,
+						CompletionPercentage: 0,
+						CurrentStep:          dnd5e.CreationStepName,
+					},
 				},
 				expected: struct {
 					hasName          bool

@@ -79,6 +79,115 @@ func NewAdapter(cfg *AdapterConfig) (*Adapter, error) {
 // Verify that Adapter implements engine.Engine interface
 var _ engine.Engine = (*Adapter)(nil)
 
+// ValidateCharacter validates a complete character against D&D 5e rules
+func (a *Adapter) ValidateCharacter(
+	_ context.Context,
+	input *engine.ValidateCharacterInput,
+) (*engine.ValidateCharacterOutput, error) {
+	if input == nil || input.Character == nil {
+		return &engine.ValidateCharacterOutput{
+			IsValid: false,
+			Errors: []engine.ValidationError{
+				{Field: "character", Message: "Character is required", Code: "REQUIRED"},
+			},
+			Warnings: []engine.ValidationWarning{},
+		}, nil
+	}
+
+	character := input.Character
+	var errors []engine.ValidationError
+	var warnings []engine.ValidationWarning
+
+	// Validate ability scores
+	if character.AbilityScores.Strength == 0 || character.AbilityScores.Dexterity == 0 ||
+		character.AbilityScores.Constitution == 0 || character.AbilityScores.Intelligence == 0 ||
+		character.AbilityScores.Wisdom == 0 || character.AbilityScores.Charisma == 0 {
+		errors = append(errors, engine.ValidationError{
+			Field:   "ability_scores",
+			Message: "All ability scores must be set",
+			Code:    "MISSING_ABILITY_SCORES",
+		})
+	}
+
+	// Validate ability score ranges (3-20 for finalized characters, considering racial bonuses)
+	validateAbilityScore := func(score int32, name string) {
+		if score < 3 || score > 20 {
+			errors = append(errors, engine.ValidationError{
+				Field:   name,
+				Message: fmt.Sprintf("Ability score must be between 3 and 20, got %d", score),
+				Code:    "INVALID_ABILITY_SCORE_RANGE",
+			})
+		}
+	}
+
+	validateAbilityScore(character.AbilityScores.Strength, "strength")
+	validateAbilityScore(character.AbilityScores.Dexterity, "dexterity")
+	validateAbilityScore(character.AbilityScores.Constitution, "constitution")
+	validateAbilityScore(character.AbilityScores.Intelligence, "intelligence")
+	validateAbilityScore(character.AbilityScores.Wisdom, "wisdom")
+	validateAbilityScore(character.AbilityScores.Charisma, "charisma")
+
+	// Class-specific validation
+	if input.Class != nil {
+		// Check for suboptimal ability scores based on primary abilities
+		for _, primaryAbility := range input.Class.PrimaryAbilities {
+			var score int32
+			switch strings.ToLower(primaryAbility) {
+			case "strength":
+				score = character.AbilityScores.Strength
+			case "dexterity":
+				score = character.AbilityScores.Dexterity
+			case "constitution":
+				score = character.AbilityScores.Constitution
+			case "intelligence":
+				score = character.AbilityScores.Intelligence
+			case "wisdom":
+				score = character.AbilityScores.Wisdom
+			case "charisma":
+				score = character.AbilityScores.Charisma
+			}
+
+			if score < 15 {
+				warnings = append(warnings, engine.ValidationWarning{
+					Field:   "ability_scores",
+					Message: fmt.Sprintf("%s with %s below 15 is suboptimal", input.Class.Name, primaryAbility),
+					Code:    "SUBOPTIMAL_PRIMARY_ABILITY",
+				})
+			}
+		}
+	}
+
+	// Validate level
+	if character.Level < 1 || character.Level > 20 {
+		errors = append(errors, engine.ValidationError{
+			Field:   "level",
+			Message: "Character level must be between 1 and 20",
+			Code:    "INVALID_LEVEL",
+		})
+	}
+
+	// Validate hit points
+	if character.CurrentHP < 0 {
+		errors = append(errors, engine.ValidationError{
+			Field:   "current_hp",
+			Message: "Current hit points cannot be negative",
+			Code:    "INVALID_CURRENT_HP",
+		})
+	}
+
+	// Note: We can't validate CurrentHP against MaxHP because Character entity
+	// doesn't store MaxHP - it's calculated by the engine when needed
+
+	// Character is valid if there are no errors
+	isValid := len(errors) == 0
+
+	return &engine.ValidateCharacterOutput{
+		IsValid:  isValid,
+		Errors:   errors,
+		Warnings: warnings,
+	}, nil
+}
+
 // CalculateAbilityModifier calculates the D&D 5e ability modifier for a given score
 func (a *Adapter) CalculateAbilityModifier(score int32) int32 {
 	// D&D 5e formula: floor((score - 10) / 2)
@@ -160,6 +269,8 @@ func (a *Adapter) calculateSavingThrows(
 }
 
 // calculateSkillBonuses calculates all skill bonuses based on proficiencies
+//
+//nolint:unused // May be used when draft calculation is needed
 func (a *Adapter) calculateSkillBonuses(
 	ctx context.Context,
 	draft *dnd5e.CharacterDraft,
@@ -171,7 +282,11 @@ func (a *Adapter) calculateSkillBonuses(
 
 	// Get background data to determine background skills
 	var backgroundSkills []string
-	if draft.BackgroundID != "" {
+	if draft.Background != nil {
+		// Use hydrated background data if available
+		backgroundSkills = draft.Background.SkillProficiencies
+	} else if draft.BackgroundID != "" {
+		// Fallback to fetching if not hydrated
 		backgroundData, err := a.externalClient.GetBackgroundData(ctx, draft.BackgroundID)
 		if err == nil && backgroundData != nil {
 			backgroundSkills = backgroundData.SkillProficiencies
@@ -214,6 +329,59 @@ func (a *Adapter) calculateSkillBonuses(
 	return skillBonuses
 }
 
+// calculateSkillBonusesForCharacter calculates all skill bonuses for a finalized character
+func (a *Adapter) calculateSkillBonusesForCharacter(
+	_ context.Context,
+	character *dnd5e.Character,
+	input *engine.CalculateCharacterStatsInput,
+	proficiencyBonus int32,
+) map[string]int32 {
+	// Create proficiency map from selected skills and background skills
+	proficientSkills := make(map[string]bool)
+
+	// Add background skills (they're automatic proficiencies)
+	if input.Background != nil {
+		for _, skillID := range input.Background.SkillProficiencies {
+			proficientSkills[skillID] = true
+		}
+	}
+
+	// TODO(#46): Extract skill selections from character's finalized choices
+	// For now, we'll use a placeholder that assumes athletics and intimidation for fighters
+	// This should be replaced with actual skill proficiencies stored on the character
+	if character.ClassID == dnd5e.ClassFighter {
+		proficientSkills["athletics"] = true
+		proficientSkills["intimidation"] = true
+	}
+
+	// Calculate all skill bonuses
+	allSkills := []string{
+		"acrobatics", "animal_handling", "arcana", "athletics",
+		"deception", "history", "insight", "intimidation",
+		"investigation", "medicine", "nature", "perception",
+		"performance", "persuasion", "religion", "sleight_of_hand",
+		"stealth", "survival",
+	}
+
+	skillBonuses := make(map[string]int32)
+	for _, skill := range allSkills {
+		// Get ability for this skill
+		ability := getSkillAbility(skill)
+
+		// Calculate base modifier
+		modifier := a.getAbilityModifier(&character.AbilityScores, ability)
+
+		// Add proficiency if proficient
+		if proficientSkills[skill] {
+			modifier += proficiencyBonus
+		}
+
+		skillBonuses[skill] = modifier
+	}
+
+	return skillBonuses
+}
+
 // getAbilityModifier gets the modifier for a specific ability
 func (a *Adapter) getAbilityModifier(scores *dnd5e.AbilityScores, ability string) int32 {
 	switch ability {
@@ -234,7 +402,7 @@ func (a *Adapter) getAbilityModifier(scores *dnd5e.AbilityScores, ability string
 	}
 }
 
-// ValidateCharacterDraft validates a character draft for completeness and rule compliance
+// ValidateCharacterDraft validates draft choices are appropriate for selected race/class/background
 func (a *Adapter) ValidateCharacterDraft(
 	ctx context.Context,
 	input *engine.ValidateCharacterDraftInput,
@@ -252,91 +420,18 @@ func (a *Adapter) ValidateCharacterDraft(
 	draft := input.Draft
 	var errors []engine.ValidationError
 	var warnings []engine.ValidationWarning
-	var missingSteps []string
 
-	// Check required fields for completeness
-	if draft.Name == "" {
-		missingSteps = append(missingSteps, "name")
-	}
+	// Check completeness and get missing steps
+	missingSteps := a.checkDraftCompleteness(draft)
 
-	if draft.RaceID == "" {
-		missingSteps = append(missingSteps, "race")
-	}
+	// Validate selected IDs exist
+	idErrors := a.validateDraftIDs(ctx, draft)
+	errors = append(errors, idErrors...)
 
-	if draft.ClassID == "" {
-		missingSteps = append(missingSteps, "class")
-	}
-
-	if draft.AbilityScores == nil {
-		missingSteps = append(missingSteps, "ability_scores")
-	}
-
-	// Validate individual components if present
-	if draft.RaceID != "" {
-		raceValidation, err := a.ValidateRaceChoice(ctx, &engine.ValidateRaceChoiceInput{
-			RaceID:    draft.RaceID,
-			SubraceID: draft.SubraceID,
-		})
-		if err != nil {
-			errors = append(errors, engine.ValidationError{
-				Field:   "race",
-				Message: "Failed to validate race choice: " + err.Error(),
-				Code:    "VALIDATION_ERROR",
-			})
-		} else if !raceValidation.IsValid {
-			errors = append(errors, raceValidation.Errors...)
-		}
-	}
-
-	if draft.ClassID != "" {
-		classValidation, err := a.ValidateClassChoice(ctx, &engine.ValidateClassChoiceInput{
-			ClassID:       draft.ClassID,
-			AbilityScores: draft.AbilityScores,
-		})
-		if err != nil {
-			errors = append(errors, engine.ValidationError{
-				Field:   "class",
-				Message: "Failed to validate class choice: " + err.Error(),
-				Code:    "VALIDATION_ERROR",
-			})
-		} else if !classValidation.IsValid {
-			errors = append(errors, classValidation.Errors...)
-		}
-	}
-
-	if draft.AbilityScores != nil {
-		// For draft validation, assume standard array method if not specified
-		abilityValidation, err := a.ValidateAbilityScores(ctx, &engine.ValidateAbilityScoresInput{
-			AbilityScores: draft.AbilityScores,
-			Method:        engine.AbilityScoreMethodStandardArray,
-		})
-		if err != nil {
-			errors = append(errors, engine.ValidationError{
-				Field:   "ability_scores",
-				Message: "Failed to validate ability scores: " + err.Error(),
-				Code:    "VALIDATION_ERROR",
-			})
-		} else if !abilityValidation.IsValid {
-			errors = append(errors, abilityValidation.Errors...)
-		}
-	}
-
-	// TODO(#46): Extract skill selections from draft.ChoiceSelections for validation
-	// For now, skip skill validation until we convert to ChoiceSelections
-
-	if draft.BackgroundID != "" {
-		backgroundValidation, err := a.ValidateBackgroundChoice(ctx, &engine.ValidateBackgroundChoiceInput{
-			BackgroundID: draft.BackgroundID,
-		})
-		if err != nil {
-			errors = append(errors, engine.ValidationError{
-				Field:   "background",
-				Message: "Failed to validate background choice: " + err.Error(),
-				Code:    "VALIDATION_ERROR",
-			})
-		} else if !backgroundValidation.IsValid {
-			errors = append(errors, backgroundValidation.Errors...)
-		}
+	// Validate choices are appropriate for selected race/class/background
+	if len(draft.ChoiceSelections) > 0 {
+		choiceErrors := a.validateDraftChoices(ctx, draft)
+		errors = append(errors, choiceErrors...)
 	}
 
 	// Check if draft is complete
@@ -354,52 +449,241 @@ func (a *Adapter) ValidateCharacterDraft(
 	}, nil
 }
 
+// checkDraftCompleteness checks which required fields are missing from the draft
+func (a *Adapter) checkDraftCompleteness(draft *dnd5e.CharacterDraft) []string {
+	var missingSteps []string
+
+	if draft.Name == "" {
+		missingSteps = append(missingSteps, "name")
+	}
+
+	if draft.RaceID == "" {
+		missingSteps = append(missingSteps, "race")
+	}
+
+	if draft.ClassID == "" {
+		missingSteps = append(missingSteps, "class")
+	}
+
+	if draft.AbilityScores == nil {
+		missingSteps = append(missingSteps, "ability_scores")
+	}
+
+	if draft.BackgroundID == "" {
+		missingSteps = append(missingSteps, "background")
+	}
+
+	// TODO(#46): Check if skills have been selected from draft.ChoiceSelections
+	// For now, assume skills are missing until we implement choice extraction
+	missingSteps = append(missingSteps, "skills")
+
+	return missingSteps
+}
+
+// validateDraftIDs validates that the selected race, class, and background IDs exist
+func (a *Adapter) validateDraftIDs(ctx context.Context, draft *dnd5e.CharacterDraft) []engine.ValidationError {
+	var errors []engine.ValidationError
+
+	// Validate race ID
+	if draft.RaceID != "" {
+		_, err := a.externalClient.GetRaceData(ctx, draft.RaceID)
+		if err != nil {
+			errors = append(errors, engine.ValidationError{
+				Field:   "race_id",
+				Message: "Invalid race ID: " + draft.RaceID,
+				Code:    "INVALID_RACE_ID",
+			})
+		}
+
+		// If subrace is specified, validate it exists for this race
+		if draft.SubraceID != "" {
+			if err := a.validateSubraceForRace(ctx, draft.RaceID, draft.SubraceID); err != nil {
+				errors = append(errors, engine.ValidationError{
+					Field:   "subrace_id",
+					Message: "Invalid subrace for selected race",
+					Code:    "INVALID_SUBRACE_FOR_RACE",
+				})
+			}
+		}
+	}
+
+	// Validate class ID
+	if draft.ClassID != "" {
+		_, err := a.externalClient.GetClassData(ctx, draft.ClassID)
+		if err != nil {
+			errors = append(errors, engine.ValidationError{
+				Field:   "class_id",
+				Message: "Invalid class ID: " + draft.ClassID,
+				Code:    "INVALID_CLASS_ID",
+			})
+		}
+	}
+
+	// Validate background ID
+	if draft.BackgroundID != "" {
+		_, err := a.externalClient.GetBackgroundData(ctx, draft.BackgroundID)
+		if err != nil {
+			errors = append(errors, engine.ValidationError{
+				Field:   "background_id",
+				Message: "Invalid background ID: " + draft.BackgroundID,
+				Code:    "INVALID_BACKGROUND_ID",
+			})
+		}
+	}
+
+	return errors
+}
+
+// validateSubraceForRace checks if a subrace is valid for the given race
+func (a *Adapter) validateSubraceForRace(ctx context.Context, raceID, subraceID string) error {
+	raceData, err := a.externalClient.GetRaceData(ctx, raceID)
+	if err != nil {
+		return err
+	}
+
+	for _, subrace := range raceData.Subraces {
+		if subrace.ID == subraceID {
+			return nil
+		}
+	}
+
+	return errors.InvalidArgument("subrace not found for race")
+}
+
+// validateDraftChoices validates that choices are appropriate for the selected race/class/background
+func (a *Adapter) validateDraftChoices(ctx context.Context, draft *dnd5e.CharacterDraft) []engine.ValidationError {
+	var errors []engine.ValidationError
+
+	// Group choices by source
+	choicesBySource := make(map[string][]dnd5e.ChoiceSelection)
+	for _, choice := range draft.ChoiceSelections {
+		choicesBySource[string(choice.Source)] = append(choicesBySource[string(choice.Source)], choice)
+	}
+
+	// Validate race choices
+	if draft.RaceID != "" && len(choicesBySource[string(dnd5e.ChoiceSourceRace)]) > 0 {
+		raceErrors := a.validateRaceChoices(ctx, draft.RaceID, choicesBySource[string(dnd5e.ChoiceSourceRace)])
+		errors = append(errors, raceErrors...)
+	}
+
+	// Validate class choices
+	if draft.ClassID != "" && len(choicesBySource[string(dnd5e.ChoiceSourceClass)]) > 0 {
+		classErrors := a.validateClassChoices(ctx, draft.ClassID, choicesBySource[string(dnd5e.ChoiceSourceClass)])
+		errors = append(errors, classErrors...)
+	}
+
+	// Background choices validation would go here if backgrounds had choices
+	// Currently backgrounds only provide automatic proficiencies
+
+	return errors
+}
+
+// validateRaceChoices validates that race choices are valid for the given race
+func (a *Adapter) validateRaceChoices(
+	ctx context.Context,
+	raceID string,
+	choices []dnd5e.ChoiceSelection,
+) []engine.ValidationError {
+	var errors []engine.ValidationError
+
+	raceData, err := a.externalClient.GetRaceData(ctx, raceID)
+	if err != nil || raceData == nil {
+		return errors
+	}
+
+	// Check each race choice is valid for this race
+	for _, choice := range choices {
+		validChoice := false
+		for _, raceChoice := range raceData.Choices {
+			if raceChoice.ID == choice.ChoiceID {
+				validChoice = true
+				break
+			}
+		}
+		if !validChoice {
+			errors = append(errors, engine.ValidationError{
+				Field:   "choices",
+				Message: fmt.Sprintf("Choice '%s' is not valid for race '%s'", choice.ChoiceID, raceID),
+				Code:    "INVALID_RACE_CHOICE",
+			})
+		}
+	}
+
+	return errors
+}
+
+// validateClassChoices validates that class choices are valid for the given class
+func (a *Adapter) validateClassChoices(
+	ctx context.Context,
+	classID string,
+	choices []dnd5e.ChoiceSelection,
+) []engine.ValidationError {
+	var errors []engine.ValidationError
+
+	classData, err := a.externalClient.GetClassData(ctx, classID)
+	if err != nil || classData == nil {
+		return errors
+	}
+
+	// Check each class choice is valid for this class
+	for _, choice := range choices {
+		validChoice := false
+		for _, classChoice := range classData.Choices {
+			if classChoice.ID == choice.ChoiceID {
+				validChoice = true
+				break
+			}
+		}
+		if !validChoice {
+			errors = append(errors, engine.ValidationError{
+				Field:   "choices",
+				Message: fmt.Sprintf("Choice '%s' is not valid for class '%s'", choice.ChoiceID, classID),
+				Code:    "INVALID_CLASS_CHOICE",
+			})
+		}
+	}
+
+	return errors
+}
+
 // CalculateCharacterStats calculates derived character statistics
 func (a *Adapter) CalculateCharacterStats(
 	ctx context.Context,
 	input *engine.CalculateCharacterStatsInput,
 ) (*engine.CalculateCharacterStatsOutput, error) {
-	if input == nil || input.Draft == nil {
-		return nil, errors.InvalidArgument("draft is required")
+	if input == nil || input.Character == nil {
+		return nil, errors.InvalidArgument("character is required")
 	}
 
-	draft := input.Draft
+	character := input.Character
 
 	// Validate required fields
-	if draft.ClassID == "" {
+	if character.ClassID == "" {
 		return nil, errors.InvalidArgument("class ID is required for stat calculation")
 	}
-	if draft.RaceID == "" {
+	if character.RaceID == "" {
 		return nil, errors.InvalidArgument("race ID is required for stat calculation")
 	}
-	if draft.AbilityScores == nil {
-		return nil, errors.InvalidArgument("ability scores are required for stat calculation")
-	}
 
-	// Fetch class data
-	classData, err := a.externalClient.GetClassData(ctx, draft.ClassID)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to get class data")
+	// Validate required hydrated data
+	if input.Class == nil {
+		return nil, errors.InvalidArgument("class info is required for stat calculation")
 	}
-	if classData == nil {
-		return nil, errors.InvalidArgumentf("invalid class ID: %s", draft.ClassID)
-	}
-
-	// Fetch race data
-	raceData, err := a.externalClient.GetRaceData(ctx, draft.RaceID)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to get race data")
-	}
-	if raceData == nil {
-		return nil, errors.InvalidArgumentf("invalid race ID: %s", draft.RaceID)
+	if input.Race == nil {
+		return nil, errors.InvalidArgument("race info is required for stat calculation")
 	}
 
 	// Calculate ability modifiers
-	conModifier := a.CalculateAbilityModifier(draft.AbilityScores.Constitution)
-	dexModifier := a.CalculateAbilityModifier(draft.AbilityScores.Dexterity)
+	conModifier := a.CalculateAbilityModifier(character.AbilityScores.Constitution)
+	dexModifier := a.CalculateAbilityModifier(character.AbilityScores.Dexterity)
 
-	// Calculate Max HP (hit die max value + CON modifier at level 1)
-	maxHP := extractMaxHitDie(classData.HitDice) + conModifier
+	// Calculate Max HP (hit die max value + CON modifier at character level)
+	maxHP := extractMaxHitDie(input.Class.HitDie) + conModifier
+	if character.Level > 1 {
+		// Additional HP for levels beyond 1st
+		// TODO(#46): Implement proper HP calculation for higher levels
+		maxHP += (character.Level - 1) * (extractMaxHitDie(input.Class.HitDie)/2 + 1 + conModifier)
+	}
 
 	// Calculate Armor Class (10 + DEX modifier, no armor)
 	armorClass := 10 + dexModifier
@@ -407,23 +691,23 @@ func (a *Adapter) CalculateCharacterStats(
 	// Calculate Initiative (DEX modifier)
 	initiative := dexModifier
 
-	// Get Speed from race data
-	speed := raceData.Speed
-
-	// Calculate Proficiency Bonus (level 1)
-	proficiencyBonus := a.CalculateProficiencyBonus(1)
+	// Calculate Proficiency Bonus based on character level
+	proficiencyBonus := a.CalculateProficiencyBonus(character.Level)
 
 	// Calculate Saving Throws
-	savingThrows := a.calculateSavingThrows(draft.AbilityScores, classData.SavingThrows, proficiencyBonus)
+	savingThrows := a.calculateSavingThrows(
+		&character.AbilityScores,
+		input.Class.SavingThrowProficiencies,
+		proficiencyBonus)
 
 	// Calculate Skill Bonuses
-	skills := a.calculateSkillBonuses(ctx, draft, proficiencyBonus)
+	skills := a.calculateSkillBonusesForCharacter(ctx, character, input, proficiencyBonus)
 
 	return &engine.CalculateCharacterStatsOutput{
 		MaxHP:            maxHP,
 		ArmorClass:       armorClass,
 		Initiative:       initiative,
-		Speed:            speed,
+		Speed:            input.Race.Speed,
 		ProficiencyBonus: proficiencyBonus,
 		SavingThrows:     savingThrows,
 		Skills:           skills,

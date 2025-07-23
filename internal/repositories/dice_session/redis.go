@@ -156,6 +156,7 @@ func (r *redisRepository) Delete(ctx context.Context, input DeleteInput) (*Delet
 	getOutput, err := r.Get(ctx, GetInput(input))
 
 	var rollsDeleted int32
+
 	if err == nil && getOutput.Session != nil {
 		// nolint:gosec // roll count is always small
 		rollsDeleted = int32(len(getOutput.Session.Rolls))
