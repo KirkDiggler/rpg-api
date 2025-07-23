@@ -33,6 +33,16 @@ type Engine interface {
 		input *ValidateBackgroundChoiceInput,
 	) (*ValidateBackgroundChoiceOutput, error)
 
+	// Room generation methods
+	GenerateRoom(ctx context.Context, input *GenerateRoomInput) (*GenerateRoomOutput, error)
+	GetRoomDetails(ctx context.Context, input *GetRoomDetailsInput) (*GetRoomDetailsOutput, error)
+	
+	// Essential spatial queries
+	QueryLineOfSight(ctx context.Context, input *QueryLineOfSightInput) (*QueryLineOfSightOutput, error)
+	ValidateMovement(ctx context.Context, input *ValidateMovementInput) (*ValidateMovementOutput, error)
+	ValidateEntityPlacement(ctx context.Context, input *ValidateEntityPlacementInput) (*ValidateEntityPlacementOutput, error)
+	QueryEntitiesInRange(ctx context.Context, input *QueryEntitiesInRangeInput) (*QueryEntitiesInRangeOutput, error)
+
 	// Utility methods
 	CalculateProficiencyBonus(level int32) int32
 	CalculateAbilityModifier(score int32) int32

@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/KirkDiggler/rpg-api/internal/clients/external"
 	"github.com/KirkDiggler/rpg-api/internal/engine"
@@ -13,13 +14,17 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/core"
 	"github.com/KirkDiggler/rpg-toolkit/dice"
 	"github.com/KirkDiggler/rpg-toolkit/events"
+	"github.com/KirkDiggler/rpg-toolkit/tools/environments"
+	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
 )
 
 // Adapter implements the engine.Engine interface using rpg-toolkit
 type Adapter struct {
-	eventBus       events.EventBus
-	diceRoller     dice.Roller
-	externalClient external.Client
+	eventBus         events.EventBus
+	diceRoller       dice.Roller
+	externalClient   external.Client
+	roomBuilder      environments.RoomBuilder
+	spatialEngine    spatial.Engine
 }
 
 // Skill source constants
@@ -43,6 +48,8 @@ type AdapterConfig struct {
 	EventBus       events.EventBus
 	DiceRoller     dice.Roller
 	ExternalClient external.Client
+	RoomBuilder    environments.RoomBuilder
+	SpatialEngine  spatial.Engine
 }
 
 // Validate checks that all required dependencies are provided
@@ -55,6 +62,12 @@ func (c *AdapterConfig) Validate() error {
 	}
 	if c.ExternalClient == nil {
 		return errors.InvalidArgument("external client is required")
+	}
+	if c.RoomBuilder == nil {
+		return errors.InvalidArgument("room builder is required")
+	}
+	if c.SpatialEngine == nil {
+		return errors.InvalidArgument("spatial engine is required")
 	}
 	return nil
 }
@@ -73,6 +86,8 @@ func NewAdapter(cfg *AdapterConfig) (*Adapter, error) {
 		eventBus:       cfg.EventBus,
 		diceRoller:     cfg.DiceRoller,
 		externalClient: cfg.ExternalClient,
+		roomBuilder:    cfg.RoomBuilder,
+		spatialEngine:  cfg.SpatialEngine,
 	}, nil
 }
 
@@ -1155,4 +1170,347 @@ func sortInt32Slice(slice []int32) {
 			}
 		}
 	}
+}
+
+// =============================================================================
+// Room Generation Methods
+// =============================================================================
+
+// GenerateRoom creates a new room using the environments toolkit
+func (a *Adapter) GenerateRoom(
+	ctx context.Context,
+	input *engine.GenerateRoomInput,
+) (*engine.GenerateRoomOutput, error) {
+	if input == nil {
+		return nil, errors.InvalidArgument("input is required")
+	}
+
+	startTime := time.Now()
+	
+	// Convert engine config to environments config
+	envConfig := environments.RoomConfig{
+		Width:       int(input.Config.Width),
+		Height:      int(input.Config.Height),
+		Theme:       input.Config.Theme,
+		WallDensity: input.Config.WallDensity,
+		Pattern:     input.Config.Pattern,
+		GridType:    input.Config.GridType,
+		GridSize:    input.Config.GridSize,
+	}
+
+	// Generate room using environments toolkit
+	roomResult, err := a.roomBuilder.GenerateRoom(ctx, &environments.GenerateRoomInput{
+		Config: envConfig,
+		Seed:   input.Seed,
+	})
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to generate room")
+	}
+
+	// Convert toolkit room to engine types
+	roomData := &engine.RoomData{
+		ID:       roomResult.Room.ID,
+		EntityID: roomResult.Room.OwnerID, // Following entity ownership pattern
+		Config:   input.Config,
+		Dimensions: engine.Dimensions{
+			Width:  float64(roomResult.Room.Width),
+			Height: float64(roomResult.Room.Height),
+		},
+		GridInfo: engine.GridInformation{
+			Type: roomResult.Room.GridType,
+			Size: roomResult.Room.GridSize,
+		},
+		Properties: roomResult.Room.Properties,
+		CreatedAt:  time.Now(),
+		ExpiresAt:  time.Now().Add(24 * time.Hour), // Default 24h TTL
+	}
+
+	// Override TTL if specified
+	if input.TTL != nil {
+		roomData.ExpiresAt = time.Now().Add(time.Duration(*input.TTL) * time.Second)
+	}
+
+	// Convert entities
+	entities := make([]engine.EntityData, len(roomResult.Entities))
+	for i, entity := range roomResult.Entities {
+		entities[i] = engine.EntityData{
+			ID:   entity.ID,
+			Type: entity.Type,
+			Position: engine.Position{
+				X: entity.Position.X,
+				Y: entity.Position.Y,
+				Z: entity.Position.Z,
+			},
+			Properties: entity.Properties,
+			Tags:       entity.Tags,
+			State: engine.EntityState{
+				BlocksMovement:    entity.BlocksMovement,
+				BlocksLineOfSight: entity.BlocksLineOfSight,
+				Destroyed:         false,
+			},
+		}
+	}
+
+	// Generate metadata
+	metadata := engine.GenerationMetadata{
+		GenerationTime: time.Since(startTime),
+		SeedUsed:       roomResult.SeedUsed,
+		Attempts:       1, // Simple implementation for now
+		Version:        "1.0.0",
+	}
+
+	// Handle session ID
+	sessionID := input.SessionID
+	if sessionID == "" {
+		sessionID = "default"
+	}
+
+	return &engine.GenerateRoomOutput{
+		Room:      roomData,
+		Entities:  entities,
+		Metadata:  metadata,
+		SessionID: sessionID,
+		ExpiresAt: roomData.ExpiresAt,
+	}, nil
+}
+
+// GetRoomDetails retrieves room details by ID
+func (a *Adapter) GetRoomDetails(
+	ctx context.Context,
+	input *engine.GetRoomDetailsInput,
+) (*engine.GetRoomDetailsOutput, error) {
+	if input == nil {
+		return nil, errors.InvalidArgument("input is required")
+	}
+
+	if input.RoomID == "" {
+		return nil, errors.InvalidArgument("room ID is required")
+	}
+
+	// For now, return a not implemented error since we don't have persistence yet
+	// This will be implemented in Phase 3 with repository layer
+	return nil, errors.Unimplemented("room persistence not yet implemented - coming in Phase 3")
+}
+
+// =============================================================================
+// Spatial Query Methods
+// =============================================================================
+
+// QueryLineOfSight checks line of sight between two positions
+func (a *Adapter) QueryLineOfSight(
+	ctx context.Context,
+	input *engine.QueryLineOfSightInput,
+) (*engine.QueryLineOfSightOutput, error) {
+	if input == nil {
+		return nil, errors.InvalidArgument("input is required")
+	}
+
+	if input.RoomID == "" {
+		return nil, errors.InvalidArgument("room ID is required")
+	}
+
+	// Convert to spatial toolkit types
+	spatialInput := &spatial.LineOfSightInput{
+		FromPosition: spatial.Position{X: input.FromX, Y: input.FromY},
+		ToPosition:   spatial.Position{X: input.ToX, Y: input.ToY},
+		EntitySize:   input.EntitySize,
+		IgnoreTypes:  input.IgnoreTypes,
+	}
+
+	// Query spatial engine
+	result, err := a.spatialEngine.QueryLineOfSight(ctx, spatialInput)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to query line of sight")
+	}
+
+	// Convert result
+	output := &engine.QueryLineOfSightOutput{
+		HasLineOfSight: result.HasLineOfSight,
+		Distance:       result.Distance,
+		PathPositions:  make([]engine.Position, len(result.PathPositions)),
+	}
+
+	// Convert path positions
+	for i, pos := range result.PathPositions {
+		output.PathPositions[i] = engine.Position{X: pos.X, Y: pos.Y, Z: pos.Z}
+	}
+
+	// Handle blocking information
+	if result.BlockingEntity != nil {
+		output.BlockingEntityID = &result.BlockingEntity.ID
+		output.BlockingPosition = &engine.Position{
+			X: result.BlockingEntity.Position.X,
+			Y: result.BlockingEntity.Position.Y,
+			Z: result.BlockingEntity.Position.Z,
+		}
+	}
+
+	return output, nil
+}
+
+// ValidateMovement checks if movement between positions is valid
+func (a *Adapter) ValidateMovement(
+	ctx context.Context,
+	input *engine.ValidateMovementInput,
+) (*engine.ValidateMovementOutput, error) {
+	if input == nil {
+		return nil, errors.InvalidArgument("input is required")
+	}
+
+	if input.RoomID == "" {
+		return nil, errors.InvalidArgument("room ID is required")
+	}
+
+	// Convert to spatial toolkit types
+	spatialInput := &spatial.MovementValidationInput{
+		EntityID:     input.EntityID,
+		FromPosition: spatial.Position{X: input.FromX, Y: input.FromY},
+		ToPosition:   spatial.Position{X: input.ToX, Y: input.ToY},
+		EntitySize:   input.EntitySize,
+		MaxDistance:  input.MaxDistance,
+	}
+
+	// Query spatial engine
+	result, err := a.spatialEngine.ValidateMovement(ctx, spatialInput)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to validate movement")
+	}
+
+	// Convert result
+	output := &engine.ValidateMovementOutput{
+		IsValid:        result.IsValid,
+		MovementCost:   result.MovementCost,
+		ActualDistance: result.ActualDistance,
+	}
+
+	// Handle blocking information
+	if result.BlockingEntity != nil {
+		output.BlockedBy = &result.BlockingEntity.ID
+		output.BlockingPosition = &engine.Position{
+			X: result.BlockingEntity.Position.X,
+			Y: result.BlockingEntity.Position.Y,
+			Z: result.BlockingEntity.Position.Z,
+		}
+	}
+
+	return output, nil
+}
+
+// ValidateEntityPlacement checks if entity can be placed at position
+func (a *Adapter) ValidateEntityPlacement(
+	ctx context.Context,
+	input *engine.ValidateEntityPlacementInput,
+) (*engine.ValidateEntityPlacementOutput, error) {
+	if input == nil {
+		return nil, errors.InvalidArgument("input is required")
+	}
+
+	if input.RoomID == "" {
+		return nil, errors.InvalidArgument("room ID is required")
+	}
+
+	// Convert to spatial toolkit types
+	spatialInput := &spatial.EntityPlacementInput{
+		EntityID:   input.EntityID,
+		EntityType: input.EntityType,
+		Position:   spatial.Position{X: input.Position.X, Y: input.Position.Y, Z: input.Position.Z},
+		Size:       input.Size,
+		Properties: input.Properties,
+		Tags:       input.Tags,
+	}
+
+	// Query spatial engine
+	result, err := a.spatialEngine.ValidateEntityPlacement(ctx, spatialInput)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to validate entity placement")
+	}
+
+	// Convert result
+	output := &engine.ValidateEntityPlacementOutput{
+		CanPlace:       result.CanPlace,
+		ConflictingIDs: result.ConflictingIDs,
+	}
+
+	// Convert suggested positions
+	output.SuggestedPositions = make([]engine.Position, len(result.SuggestedPositions))
+	for i, pos := range result.SuggestedPositions {
+		output.SuggestedPositions[i] = engine.Position{X: pos.X, Y: pos.Y, Z: pos.Z}
+	}
+
+	// Convert placement issues
+	output.PlacementIssues = make([]engine.PlacementIssue, len(result.PlacementIssues))
+	for i, issue := range result.PlacementIssues {
+		output.PlacementIssues[i] = engine.PlacementIssue{
+			Type:        issue.Type,
+			Description: issue.Description,
+			Position:    engine.Position{X: issue.Position.X, Y: issue.Position.Y, Z: issue.Position.Z},
+			Severity:    issue.Severity,
+		}
+	}
+
+	return output, nil
+}
+
+// QueryEntitiesInRange finds entities within range of a position
+func (a *Adapter) QueryEntitiesInRange(
+	ctx context.Context,
+	input *engine.QueryEntitiesInRangeInput,
+) (*engine.QueryEntitiesInRangeOutput, error) {
+	if input == nil {
+		return nil, errors.InvalidArgument("input is required")
+	}
+
+	if input.RoomID == "" {
+		return nil, errors.InvalidArgument("room ID is required")
+	}
+
+	// Convert to spatial toolkit types
+	spatialInput := &spatial.RangeQueryInput{
+		CenterPosition:  spatial.Position{X: input.CenterX, Y: input.CenterY},
+		Range:           input.Range,
+		EntityTypes:     input.EntityTypes,
+		Tags:            input.Tags,
+		ExcludeEntityID: input.ExcludeEntityID,
+	}
+
+	// Query spatial engine
+	result, err := a.spatialEngine.QueryEntitiesInRange(ctx, spatialInput)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to query entities in range")
+	}
+
+	// Convert result
+	output := &engine.QueryEntitiesInRangeOutput{
+		TotalFound:  int32(len(result.Entities)),
+		QueryCenter: engine.Position{X: input.CenterX, Y: input.CenterY},
+		QueryRange:  input.Range,
+	}
+
+	// Convert entities
+	output.Entities = make([]engine.EntityResult, len(result.Entities))
+	for i, entity := range result.Entities {
+		output.Entities[i] = engine.EntityResult{
+			Entity: engine.EntityData{
+				ID:   entity.Entity.ID,
+				Type: entity.Entity.Type,
+				Position: engine.Position{
+					X: entity.Entity.Position.X,
+					Y: entity.Entity.Position.Y,
+					Z: entity.Entity.Position.Z,
+				},
+				Properties: entity.Entity.Properties,
+				Tags:       entity.Entity.Tags,
+				State: engine.EntityState{
+					BlocksMovement:    entity.Entity.BlocksMovement,
+					BlocksLineOfSight: entity.Entity.BlocksLineOfSight,
+					Destroyed:         false,
+				},
+			},
+			Distance:    entity.Distance,
+			Direction:   entity.Direction,
+			RelativePos: entity.RelativePosition,
+		}
+	}
+
+	return output, nil
 }

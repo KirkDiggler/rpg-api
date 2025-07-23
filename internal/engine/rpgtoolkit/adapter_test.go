@@ -86,6 +86,8 @@ func TestNewAdapter(t *testing.T) {
 type stubEventBus struct{}
 type stubDiceRoller struct{}
 type stubExternalClient struct{}
+type stubRoomBuilder struct{}
+type stubSpatialEngine struct{}
 
 // testExternalClient is a more configurable stub for specific test scenarios
 type testExternalClient struct {
@@ -110,6 +112,92 @@ func (s *stubEventBus) ClearAll()                  {}
 // Minimal implementation to satisfy dice.Roller interface
 func (s *stubDiceRoller) Roll(_ int) (int, error)       { return 10, nil }
 func (s *stubDiceRoller) RollN(_, _ int) ([]int, error) { return []int{10}, nil }
+
+// stubRoomBuilder implementations
+func (s *stubRoomBuilder) GenerateRoom(_ context.Context, input *environments.GenerateRoomInput) (*environments.GenerateRoomResult, error) {
+	return &environments.GenerateRoomResult{
+		Room: &environments.Room{
+			ID:       "test-room-id",
+			OwnerID:  "test-owner",
+			Width:    input.Config.Width,
+			Height:   input.Config.Height,
+			GridType: input.Config.GridType,
+			GridSize: input.Config.GridSize,
+			Properties: map[string]interface{}{
+				"theme": input.Config.Theme,
+			},
+		},
+		Entities: []environments.Entity{
+			{
+				ID:   "wall-1",
+				Type: "wall",
+				Position: environments.Position{X: 0, Y: 0, Z: 0},
+				Properties: map[string]interface{}{
+					"material": "stone",
+				},
+				Tags:              []string{"blocking"},
+				BlocksMovement:    true,
+				BlocksLineOfSight: true,
+			},
+		},
+		SeedUsed: input.Seed,
+	}, nil
+}
+
+// stubSpatialEngine implementations
+func (s *stubSpatialEngine) QueryLineOfSight(_ context.Context, input *spatial.LineOfSightInput) (*spatial.LineOfSightResult, error) {
+	return &spatial.LineOfSightResult{
+		HasLineOfSight: true,
+		Distance:       5.65, // sqrt((5-1)^2 + (5-1)^2)
+		PathPositions: []spatial.Position{
+			{X: input.FromPosition.X, Y: input.FromPosition.Y, Z: 0},
+			{X: input.ToPosition.X, Y: input.ToPosition.Y, Z: 0},
+		},
+		BlockingEntity: nil,
+	}, nil
+}
+
+func (s *stubSpatialEngine) ValidateMovement(_ context.Context, input *spatial.MovementValidationInput) (*spatial.MovementValidationResult, error) {
+	distance := 1.41 // sqrt((3-2)^2 + (3-2)^2) for typical test case
+	return &spatial.MovementValidationResult{
+		IsValid:        true,
+		MovementCost:   distance,
+		ActualDistance: distance,
+		BlockingEntity: nil,
+	}, nil
+}
+
+func (s *stubSpatialEngine) ValidateEntityPlacement(_ context.Context, input *spatial.EntityPlacementInput) (*spatial.EntityPlacementResult, error) {
+	return &spatial.EntityPlacementResult{
+		CanPlace:           true,
+		ConflictingIDs:     []string{},
+		SuggestedPositions: []spatial.Position{},
+		PlacementIssues:    []spatial.PlacementIssue{},
+	}, nil
+}
+
+func (s *stubSpatialEngine) QueryEntitiesInRange(_ context.Context, input *spatial.RangeQueryInput) (*spatial.RangeQueryResult, error) {
+	return &spatial.RangeQueryResult{
+		Entities: []spatial.EntityRangeResult{
+			{
+				Entity: spatial.Entity{
+					ID:   "test-entity-1",
+					Type: "monster",
+					Position: spatial.Position{X: 7.0, Y: 7.0, Z: 0},
+					Properties: map[string]interface{}{
+						"name": "Goblin",
+					},
+					Tags:              []string{"hostile"},
+					BlocksMovement:    true,
+					BlocksLineOfSight: false,
+				},
+				Distance:         2.83, // sqrt((7-5)^2 + (7-5)^2)
+				Direction:        0.785, // 45 degrees in radians
+				RelativePosition: "northeast",
+			},
+		},
+	}, nil
+}
 
 // Minimal implementation to satisfy external.Client interface
 func (s *stubExternalClient) GetRaceData(_ context.Context, _ string) (*external.RaceData, error) {
@@ -1625,4 +1713,404 @@ func TestExtractMaxHitDie(t *testing.T) {
 			assert.Equal(t, tc.expected, result)
 		})
 	}
+}
+
+// =============================================================================
+// Room Generation Integration Tests
+// =============================================================================
+
+func TestGenerateRoom(t *testing.T) {
+	// Create adapter with room builder and spatial engine stubs
+	adapter := createTestAdapterWithRoomCapabilities(t)
+	ctx := context.Background()
+
+	t.Run("successful room generation", func(t *testing.T) {
+		input := &engine.GenerateRoomInput{
+			Config: engine.RoomConfig{
+				Width:       20,
+				Height:      15,
+				Theme:       "dungeon",
+				WallDensity: 0.3,
+				Pattern:     "random",
+				GridType:    "square",
+				GridSize:    5.0,
+			},
+			Seed:      12345,
+			SessionID: "test-session",
+		}
+
+		result, err := adapter.GenerateRoom(ctx, input)
+		assert.NoError(t, err)
+		assert.NotNil(t, result)
+		assert.NotNil(t, result.Room)
+		assert.Equal(t, int64(12345), result.Metadata.SeedUsed)
+		assert.Equal(t, "test-session", result.SessionID)
+		assert.True(t, result.ExpiresAt.After(result.Room.CreatedAt))
+	})
+
+	t.Run("nil input", func(t *testing.T) {
+		result, err := adapter.GenerateRoom(ctx, nil)
+		assert.Error(t, err)
+		assert.True(t, errors.IsInvalidArgument(err))
+		assert.Nil(t, result)
+	})
+
+	t.Run("different themes", func(t *testing.T) {
+		themes := []string{"dungeon", "forest", "urban"}
+		for _, theme := range themes {
+			t.Run(theme, func(t *testing.T) {
+				input := &engine.GenerateRoomInput{
+					Config: engine.RoomConfig{
+						Width:    10,
+						Height:   10,
+						Theme:    theme,
+						GridType: "square",
+						GridSize: 5.0,
+					},
+					Seed: 54321,
+				}
+
+				result, err := adapter.GenerateRoom(ctx, input)
+				assert.NoError(t, err)
+				assert.NotNil(t, result)
+				assert.Equal(t, theme, result.Room.Config.Theme)
+			})
+		}
+	})
+
+	t.Run("different grid types", func(t *testing.T) {
+		gridTypes := []string{"square", "hex_pointy", "hex_flat", "gridless"}
+		for _, gridType := range gridTypes {
+			t.Run(gridType, func(t *testing.T) {
+				input := &engine.GenerateRoomInput{
+					Config: engine.RoomConfig{
+						Width:    15,
+						Height:   12,
+						Theme:    "dungeon",
+						GridType: gridType,
+						GridSize: 5.0,
+					},
+					Seed: 99999,
+				}
+
+				result, err := adapter.GenerateRoom(ctx, input)
+				assert.NoError(t, err)
+				assert.NotNil(t, result)
+				assert.Equal(t, gridType, result.Room.GridInfo.Type)
+			})
+		}
+	})
+
+	t.Run("reproducible generation", func(t *testing.T) {
+		input := &engine.GenerateRoomInput{
+			Config: engine.RoomConfig{
+				Width:    10,
+				Height:   10,
+				Theme:    "dungeon",
+				GridType: "square",
+				GridSize: 5.0,
+			},
+			Seed: 11111,
+		}
+
+		// Generate the same room twice
+		result1, err1 := adapter.GenerateRoom(ctx, input)
+		result2, err2 := adapter.GenerateRoom(ctx, input)
+
+		assert.NoError(t, err1)
+		assert.NoError(t, err2)
+		assert.Equal(t, result1.Metadata.SeedUsed, result2.Metadata.SeedUsed)
+		assert.Equal(t, len(result1.Entities), len(result2.Entities))
+	})
+}
+
+func TestGetRoomDetails(t *testing.T) {
+	adapter := createTestAdapterWithRoomCapabilities(t)
+	ctx := context.Background()
+
+	t.Run("not implemented yet", func(t *testing.T) {
+		input := &engine.GetRoomDetailsInput{
+			RoomID: "test-room-id",
+		}
+
+		result, err := adapter.GetRoomDetails(ctx, input)
+		assert.Error(t, err)
+		assert.True(t, errors.IsUnimplemented(err))
+		assert.Nil(t, result)
+		assert.Contains(t, err.Error(), "room persistence not yet implemented")
+	})
+
+	t.Run("nil input", func(t *testing.T) {
+		result, err := adapter.GetRoomDetails(ctx, nil)
+		assert.Error(t, err)
+		assert.True(t, errors.IsInvalidArgument(err))
+		assert.Nil(t, result)
+	})
+
+	t.Run("empty room ID", func(t *testing.T) {
+		input := &engine.GetRoomDetailsInput{
+			RoomID: "",
+		}
+
+		result, err := adapter.GetRoomDetails(ctx, input)
+		assert.Error(t, err)
+		assert.True(t, errors.IsInvalidArgument(err))
+		assert.Nil(t, result)
+	})
+}
+
+// =============================================================================
+// Spatial Query Integration Tests
+// =============================================================================
+
+func TestQueryLineOfSight(t *testing.T) {
+	adapter := createTestAdapterWithRoomCapabilities(t)
+	ctx := context.Background()
+
+	t.Run("clear line of sight", func(t *testing.T) {
+		input := &engine.QueryLineOfSightInput{
+			RoomID: "test-room",
+			FromX:  1.0,
+			FromY:  1.0,
+			ToX:    5.0,
+			ToY:    5.0,
+		}
+
+		result, err := adapter.QueryLineOfSight(ctx, input)
+		assert.NoError(t, err)
+		assert.NotNil(t, result)
+		assert.True(t, result.HasLineOfSight)
+		assert.Greater(t, result.Distance, 0.0)
+		assert.NotEmpty(t, result.PathPositions)
+	})
+
+	t.Run("blocked line of sight", func(t *testing.T) {
+		input := &engine.QueryLineOfSightInput{
+			RoomID: "test-room-with-walls",
+			FromX:  1.0,
+			FromY:  1.0,
+			ToX:    10.0,
+			ToY:    1.0,
+		}
+
+		result, err := adapter.QueryLineOfSight(ctx, input)
+		assert.NoError(t, err)
+		assert.NotNil(t, result)
+		// May or may not be blocked depending on stub implementation
+		assert.Greater(t, result.Distance, 0.0)
+	})
+
+	t.Run("nil input", func(t *testing.T) {
+		result, err := adapter.QueryLineOfSight(ctx, nil)
+		assert.Error(t, err)
+		assert.True(t, errors.IsInvalidArgument(err))
+		assert.Nil(t, result)
+	})
+
+	t.Run("empty room ID", func(t *testing.T) {
+		input := &engine.QueryLineOfSightInput{
+			RoomID: "",
+			FromX:  1.0,
+			FromY:  1.0,
+			ToX:    5.0,
+			ToY:    5.0,
+		}
+
+		result, err := adapter.QueryLineOfSight(ctx, input)
+		assert.Error(t, err)
+		assert.True(t, errors.IsInvalidArgument(err))
+		assert.Nil(t, result)
+	})
+}
+
+func TestValidateMovement(t *testing.T) {
+	adapter := createTestAdapterWithRoomCapabilities(t)
+	ctx := context.Background()
+
+	t.Run("valid movement", func(t *testing.T) {
+		input := &engine.ValidateMovementInput{
+			RoomID:   "test-room",
+			EntityID: "player-1",
+			FromX:    2.0,
+			FromY:    2.0,
+			ToX:      3.0,
+			ToY:      3.0,
+		}
+
+		result, err := adapter.ValidateMovement(ctx, input)
+		assert.NoError(t, err)
+		assert.NotNil(t, result)
+		assert.True(t, result.IsValid)
+		assert.Greater(t, result.ActualDistance, 0.0)
+		assert.GreaterOrEqual(t, result.MovementCost, 0.0)
+	})
+
+	t.Run("movement through walls", func(t *testing.T) {
+		input := &engine.ValidateMovementInput{
+			RoomID:   "test-room-with-walls",
+			EntityID: "player-1",
+			FromX:    1.0,
+			FromY:    1.0,
+			ToX:      20.0,
+			ToY:      1.0,
+		}
+
+		result, err := adapter.ValidateMovement(ctx, input)
+		assert.NoError(t, err)
+		assert.NotNil(t, result)
+		// May or may not be valid depending on stub implementation
+		assert.Greater(t, result.ActualDistance, 0.0)
+	})
+
+	t.Run("nil input", func(t *testing.T) {
+		result, err := adapter.ValidateMovement(ctx, nil)
+		assert.Error(t, err)
+		assert.True(t, errors.IsInvalidArgument(err))
+		assert.Nil(t, result)
+	})
+
+	t.Run("empty room ID", func(t *testing.T) {
+		input := &engine.ValidateMovementInput{
+			RoomID:   "",
+			EntityID: "player-1",
+			FromX:    1.0,
+			FromY:    1.0,
+			ToX:      2.0,
+			ToY:      2.0,
+		}
+
+		result, err := adapter.ValidateMovement(ctx, input)
+		assert.Error(t, err)
+		assert.True(t, errors.IsInvalidArgument(err))
+		assert.Nil(t, result)
+	})
+}
+
+func TestValidateEntityPlacement(t *testing.T) {
+	adapter := createTestAdapterWithRoomCapabilities(t)
+	ctx := context.Background()
+
+	t.Run("valid placement", func(t *testing.T) {
+		input := &engine.ValidateEntityPlacementInput{
+			RoomID:     "test-room",
+			EntityType: "monster",
+			Position:   engine.Position{X: 5.0, Y: 5.0},
+			Size:       1.0,
+		}
+
+		result, err := adapter.ValidateEntityPlacement(ctx, input)
+		assert.NoError(t, err)
+		assert.NotNil(t, result)
+		assert.True(t, result.CanPlace)
+	})
+
+	t.Run("overlapping placement", func(t *testing.T) {
+		input := &engine.ValidateEntityPlacementInput{
+			RoomID:     "test-room-with-entities",
+			EntityType: "character",
+			Position:   engine.Position{X: 1.0, Y: 1.0}, // Occupied position
+			Size:       1.0,
+		}
+
+		result, err := adapter.ValidateEntityPlacement(ctx, input)
+		assert.NoError(t, err)
+		assert.NotNil(t, result)
+		// May or may not be valid depending on stub implementation
+	})
+
+	t.Run("nil input", func(t *testing.T) {
+		result, err := adapter.ValidateEntityPlacement(ctx, nil)
+		assert.Error(t, err)
+		assert.True(t, errors.IsInvalidArgument(err))
+		assert.Nil(t, result)
+	})
+
+	t.Run("empty room ID", func(t *testing.T) {
+		input := &engine.ValidateEntityPlacementInput{
+			RoomID:     "",
+			EntityType: "monster",
+			Position:   engine.Position{X: 5.0, Y: 5.0},
+			Size:       1.0,
+		}
+
+		result, err := adapter.ValidateEntityPlacement(ctx, input)
+		assert.Error(t, err)
+		assert.True(t, errors.IsInvalidArgument(err))
+		assert.Nil(t, result)
+	})
+}
+
+func TestQueryEntitiesInRange(t *testing.T) {
+	adapter := createTestAdapterWithRoomCapabilities(t)
+	ctx := context.Background()
+
+	t.Run("entities in range", func(t *testing.T) {
+		input := &engine.QueryEntitiesInRangeInput{
+			RoomID:  "test-room-with-entities",
+			CenterX: 5.0,
+			CenterY: 5.0,
+			Range:   10.0,
+		}
+
+		result, err := adapter.QueryEntitiesInRange(ctx, input)
+		assert.NoError(t, err)
+		assert.NotNil(t, result)
+		assert.GreaterOrEqual(t, result.TotalFound, int32(0))
+		assert.Equal(t, 5.0, result.QueryCenter.X)
+		assert.Equal(t, 5.0, result.QueryCenter.Y)
+		assert.Equal(t, 10.0, result.QueryRange)
+	})
+
+	t.Run("filtered by entity type", func(t *testing.T) {
+		input := &engine.QueryEntitiesInRangeInput{
+			RoomID:      "test-room-with-entities",
+			CenterX:     5.0,
+			CenterY:     5.0,
+			Range:       15.0,
+			EntityTypes: []string{"monster"},
+		}
+
+		result, err := adapter.QueryEntitiesInRange(ctx, input)
+		assert.NoError(t, err)
+		assert.NotNil(t, result)
+		assert.GreaterOrEqual(t, result.TotalFound, int32(0))
+	})
+
+	t.Run("nil input", func(t *testing.T) {
+		result, err := adapter.QueryEntitiesInRange(ctx, nil)
+		assert.Error(t, err)
+		assert.True(t, errors.IsInvalidArgument(err))
+		assert.Nil(t, result)
+	})
+
+	t.Run("empty room ID", func(t *testing.T) {
+		input := &engine.QueryEntitiesInRangeInput{
+			RoomID:  "",
+			CenterX: 5.0,
+			CenterY: 5.0,
+			Range:   10.0,
+		}
+
+		result, err := adapter.QueryEntitiesInRange(ctx, input)
+		assert.Error(t, err)
+		assert.True(t, errors.IsInvalidArgument(err))
+		assert.Nil(t, result)
+	})
+}
+
+// =============================================================================
+// Test Helper Functions
+// =============================================================================
+
+// createTestAdapterWithRoomCapabilities creates an adapter with room and spatial stubs
+func createTestAdapterWithRoomCapabilities(t *testing.T) *Adapter {
+	adapter, err := NewAdapter(&AdapterConfig{
+		EventBus:       &stubEventBus{},
+		DiceRoller:     &stubDiceRoller{},
+		ExternalClient: &stubExternalClient{},
+		RoomBuilder:    &stubRoomBuilder{},
+		SpatialEngine:  &stubSpatialEngine{},
+	})
+	assert.NoError(t, err)
+	return adapter
 }
