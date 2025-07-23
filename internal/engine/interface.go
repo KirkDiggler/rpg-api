@@ -11,6 +11,7 @@ import (
 type Engine interface {
 	// Character validation and calculations
 	ValidateCharacterDraft(ctx context.Context, input *ValidateCharacterDraftInput) (*ValidateCharacterDraftOutput, error)
+	ValidateCharacter(ctx context.Context, input *ValidateCharacterInput) (*ValidateCharacterOutput, error)
 	CalculateCharacterStats(
 		ctx context.Context,
 		input *CalculateCharacterStatsInput,

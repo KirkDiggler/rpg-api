@@ -1,8 +1,11 @@
+//go:build future
+
 // Package v1alpha1 provides rich choice converter for future direct entity-to-proto conversion
 package v1alpha1
 
 import (
 	"fmt"
+	"math"
 
 	"github.com/fadedpez/dnd5e-api/entities"
 
@@ -12,6 +15,17 @@ import (
 // NOTE: The functions in this file are currently unused but are kept for future use
 // when we move to direct entity-to-proto conversion without the intermediate entity layer.
 // nolint:unused
+
+// safeIntToInt32 safely converts int to int32, clamping to max/min int32 values
+func safeIntToInt32(n int) int32 {
+	if n > math.MaxInt32 {
+		return math.MaxInt32
+	}
+	if n < math.MinInt32 {
+		return math.MinInt32
+	}
+	return int32(n)
+}
 
 // convertRichChoiceToProto converts entities.ChoiceOption directly to proto Choice
 // This bypasses the intermediate internal entity conversion for better performance
@@ -24,7 +38,7 @@ func convertRichChoiceToProto(choice *entities.ChoiceOption, baseID string, inde
 	protoChoice := &dnd5ev1alpha1.Choice{
 		Id:          choiceID,
 		Description: choice.Description,
-		ChooseCount: int32(choice.ChoiceCount),
+		ChooseCount: safeIntToInt32(choice.ChoiceCount),
 		ChoiceType:  mapExternalChoiceTypeToProto(choice.ChoiceType),
 	}
 
@@ -83,7 +97,7 @@ func convertRichOptionToProto(option entities.Option, index int) *dnd5ev1alpha1.
 					CountedItem: &dnd5ev1alpha1.CountedItemReference{
 						ItemId:   opt.Reference.Key,
 						Name:     opt.Reference.Name,
-						Quantity: int32(opt.Count),
+						Quantity: safeIntToInt32(opt.Count),
 					},
 				},
 			}
@@ -117,7 +131,7 @@ func convertRichOptionToProto(option entities.Option, index int) *dnd5ev1alpha1.
 		nestedChoice := &dnd5ev1alpha1.Choice{
 			Id:          nestedChoiceID,
 			Description: opt.Description,
-			ChooseCount: int32(opt.ChoiceCount),
+			ChooseCount: safeIntToInt32(opt.ChoiceCount),
 			ChoiceType:  dnd5ev1alpha1.ChoiceType_CHOICE_TYPE_EQUIPMENT,
 			OptionSet: &dnd5ev1alpha1.Choice_CategoryReference{
 				CategoryReference: &dnd5ev1alpha1.CategoryReference{
@@ -155,7 +169,7 @@ func convertItemToCountedReference(item entities.Option) *dnd5ev1alpha1.CountedI
 			return &dnd5ev1alpha1.CountedItemReference{
 				ItemId:   itemOpt.Reference.Key,
 				Name:     itemOpt.Reference.Name,
-				Quantity: int32(itemOpt.Count),
+				Quantity: safeIntToInt32(itemOpt.Count),
 			}
 		}
 	case *entities.ChoiceOption:
@@ -167,7 +181,7 @@ func convertItemToCountedReference(item entities.Option) *dnd5ev1alpha1.CountedI
 		return &dnd5ev1alpha1.CountedItemReference{
 			ItemId:   categoryID,
 			Name:     itemOpt.Description,
-			Quantity: int32(itemOpt.ChoiceCount),
+			Quantity: safeIntToInt32(itemOpt.ChoiceCount),
 		}
 	}
 	return nil
@@ -188,7 +202,7 @@ func convertEntityToBundleItem(item entities.Option, index int) *dnd5ev1alpha1.B
 					ConcreteItem: &dnd5ev1alpha1.CountedItemReference{
 						ItemId:   itemOpt.Reference.Key,
 						Name:     itemOpt.Reference.Name,
-						Quantity: int32(itemOpt.Count),
+						Quantity: safeIntToInt32(itemOpt.Count),
 					},
 				},
 			}
@@ -208,7 +222,7 @@ func convertEntityToBundleItem(item entities.Option, index int) *dnd5ev1alpha1.B
 					Choice: &dnd5ev1alpha1.Choice{
 						Id:          nestedChoiceID,
 						Description: itemOpt.Description,
-						ChooseCount: int32(itemOpt.ChoiceCount),
+						ChooseCount: safeIntToInt32(itemOpt.ChoiceCount),
 						ChoiceType:  dnd5ev1alpha1.ChoiceType_CHOICE_TYPE_EQUIPMENT,
 						OptionSet: &dnd5ev1alpha1.Choice_CategoryReference{
 							CategoryReference: &dnd5ev1alpha1.CategoryReference{

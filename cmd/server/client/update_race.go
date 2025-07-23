@@ -81,9 +81,11 @@ func runUpdateRace(_ *cobra.Command, _ []string) error {
 	draft := resp.Draft
 	fmt.Printf("✅ Character race updated successfully!\n\n")
 	fmt.Printf("Draft ID: %s\n", draft.Id)
-	fmt.Printf("Race: %s\n", draft.Race)
-	if draft.Subrace != dnd5ev1alpha1.Subrace_SUBRACE_UNSPECIFIED {
-		fmt.Printf("Subrace: %s\n", draft.Subrace)
+	if draft.Race != nil {
+		fmt.Printf("Race: %s\n", draft.Race.Name)
+	}
+	if draft.Subrace != nil {
+		fmt.Printf("Subrace: %s\n", draft.Subrace.Name)
 	}
 	fmt.Printf("Completion: %d%%\n", draft.Progress.CompletionPercentage)
 

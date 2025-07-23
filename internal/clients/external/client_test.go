@@ -162,11 +162,11 @@ func TestListAvailableEquipment(t *testing.T) {
 
 		assert.NoError(t, err)
 		assert.Len(t, result, 2)
-		assert.Equal(t, "longsword", result[0].ID)
+		assert.Equal(t, "EQUIPMENT_LONGSWORD", result[0].ID)
 		assert.Equal(t, "Longsword", result[0].Name)
 		assert.Equal(t, "weapon", result[0].EquipmentType)
 		assert.Equal(t, "Martial", result[0].WeaponCategory)
-		assert.Equal(t, "shield", result[1].ID)
+		assert.Equal(t, "EQUIPMENT_SHIELD", result[1].ID)
 		assert.Equal(t, "Shield", result[1].Name)
 		assert.Equal(t, "equipment", result[1].EquipmentType)
 
@@ -226,9 +226,9 @@ func TestListEquipmentByCategory(t *testing.T) {
 
 		assert.NoError(t, err)
 		assert.Len(t, result, 2)
-		assert.Equal(t, "longsword", result[0].ID)
+		assert.Equal(t, "EQUIPMENT_LONGSWORD", result[0].ID)
 		assert.Equal(t, "Longsword", result[0].Name)
-		assert.Equal(t, "battleaxe", result[1].ID)
+		assert.Equal(t, "EQUIPMENT_BATTLEAXE", result[1].ID)
 		assert.Equal(t, "Battleaxe", result[1].Name)
 
 		mockClient.AssertExpectations(t)

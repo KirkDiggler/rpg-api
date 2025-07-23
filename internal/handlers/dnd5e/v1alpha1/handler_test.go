@@ -75,7 +75,7 @@ func (s *HandlerTestSuite) SetupTest() {
 	s.validCreateDraftReq = &dnd5ev1alpha1.CreateDraftRequest{
 		PlayerId:  s.testPlayerID,
 		SessionId: s.testSessionID,
-		InitialData: &dnd5ev1alpha1.CharacterDraft{
+		InitialData: &dnd5ev1alpha1.CharacterDraftData{
 			Name: "Gandalf the Grey",
 		},
 	}
@@ -157,21 +157,33 @@ func (s *HandlerTestSuite) SetupTest() {
 	}
 
 	s.expectedDraft = &dnd5e.CharacterDraft{
-		ID:                  s.testDraftID,
-		PlayerID:            s.testPlayerID,
-		SessionID:           s.testSessionID,
-		Name:                "Gandalf the Grey",
-		RaceID:              dnd5e.RaceHuman,
-		SubraceID:           "",
-		ClassID:             dnd5e.ClassWizard,
-		BackgroundID:        dnd5e.BackgroundSage,
-		Alignment:           dnd5e.AlignmentLawfulGood,
-		AbilityScores:       s.expectedAbilityScores,
-		StartingSkillIDs:    []string{dnd5e.SkillArcana, dnd5e.SkillHistory},
-		AdditionalLanguages: []string{dnd5e.LanguageElvish}, // Common is assumed
-		Progress:            *s.expectedCreationProgress,
-		CreatedAt:           1234567890,
-		UpdatedAt:           1234567890,
+		ID:            s.testDraftID,
+		PlayerID:      s.testPlayerID,
+		SessionID:     s.testSessionID,
+		Name:          "Gandalf the Grey",
+		RaceID:        dnd5e.RaceHuman,
+		SubraceID:     "",
+		ClassID:       dnd5e.ClassWizard,
+		BackgroundID:  dnd5e.BackgroundSage,
+		Alignment:     dnd5e.AlignmentLawfulGood,
+		AbilityScores: s.expectedAbilityScores,
+		// Skills and languages are now handled through ChoiceSelections
+		Progress:  *s.expectedCreationProgress,
+		CreatedAt: 1234567890,
+		UpdatedAt: 1234567890,
+		// Include populated Info objects as orchestrator would provide them
+		Race: &dnd5e.RaceInfo{
+			ID:   dnd5e.RaceHuman,
+			Name: "Human",
+		},
+		Class: &dnd5e.ClassInfo{
+			ID:   dnd5e.ClassWizard,
+			Name: "Wizard",
+		},
+		Background: &dnd5e.BackgroundInfo{
+			ID:   dnd5e.BackgroundSage,
+			Name: "Sage",
+		},
 	}
 
 	s.expectedCharacter = &dnd5e.Character{
@@ -213,19 +225,31 @@ func (s *HandlerTestSuite) TestCreateDraft() {
 
 		// Use a copy of the expected draft with specific values for this test
 		expectedDraft := &dnd5e.CharacterDraft{
-			ID:                  s.testDraftID,
-			PlayerID:            s.testPlayerID,
-			SessionID:           s.testSessionID,
-			Name:                "Gandalf the Grey",
-			RaceID:              dnd5e.RaceHuman,
-			ClassID:             dnd5e.ClassWizard,
-			BackgroundID:        dnd5e.BackgroundSage,
-			AbilityScores:       s.expectedAbilityScores,
-			StartingSkillIDs:    []string{dnd5e.SkillArcana, dnd5e.SkillHistory},
-			AdditionalLanguages: []string{dnd5e.LanguageElvish},
-			Progress:            *s.expectedCreationProgress,
-			CreatedAt:           1234567890,
-			UpdatedAt:           1234567890,
+			ID:            s.testDraftID,
+			PlayerID:      s.testPlayerID,
+			SessionID:     s.testSessionID,
+			Name:          "Gandalf the Grey",
+			RaceID:        dnd5e.RaceHuman,
+			ClassID:       dnd5e.ClassWizard,
+			BackgroundID:  dnd5e.BackgroundSage,
+			AbilityScores: s.expectedAbilityScores,
+			// Skills and languages are now handled through ChoiceSelections
+			Progress:  *s.expectedCreationProgress,
+			CreatedAt: 1234567890,
+			UpdatedAt: 1234567890,
+			// Include populated Info objects as orchestrator would provide them
+			Race: &dnd5e.RaceInfo{
+				ID:   dnd5e.RaceHuman,
+				Name: "Human",
+			},
+			Class: &dnd5e.ClassInfo{
+				ID:   dnd5e.ClassWizard,
+				Name: "Wizard",
+			},
+			Background: &dnd5e.BackgroundInfo{
+				ID:   dnd5e.BackgroundSage,
+				Name: "Sage",
+			},
 		}
 
 		s.mockCharService.EXPECT().
@@ -242,12 +266,14 @@ func (s *HandlerTestSuite) TestCreateDraft() {
 		s.Equal(s.testDraftID, resp.Draft.Id)
 		s.Equal("Gandalf the Grey", resp.Draft.Name)
 		// Check more fields to ensure entity conversion works
-		s.Equal(dnd5ev1alpha1.Race_RACE_HUMAN, resp.Draft.Race)
-		s.Equal(dnd5ev1alpha1.Class_CLASS_WIZARD, resp.Draft.Class)
-		s.Equal(dnd5ev1alpha1.Background_BACKGROUND_SAGE, resp.Draft.Background)
+		s.NotNil(resp.Draft.Race)
+		s.Equal("Human", resp.Draft.Race.Name)
+		s.NotNil(resp.Draft.Class)
+		s.Equal("Wizard", resp.Draft.Class.Name)
+		s.NotNil(resp.Draft.Background)
+		s.Equal("Sage", resp.Draft.Background.Name)
 		s.Equal(int32(10), resp.Draft.AbilityScores.Strength)
 		s.Equal(int32(18), resp.Draft.AbilityScores.Intelligence)
-		s.Len(resp.Draft.StartingSkills, 2)
 	})
 
 	s.Run("with minimal request", func() {
@@ -322,8 +348,10 @@ func (s *HandlerTestSuite) TestGetDraft() {
 	s.NotNil(resp.Draft)
 	s.Equal(s.testDraftID, resp.Draft.Id)
 	s.Equal("Gandalf the Grey", resp.Draft.Name)
-	s.Equal(dnd5ev1alpha1.Race_RACE_HUMAN, resp.Draft.Race)
-	s.Equal(dnd5ev1alpha1.Class_CLASS_WIZARD, resp.Draft.Class)
+	s.NotNil(resp.Draft.Race)
+	s.Equal("Human", resp.Draft.Race.Name)
+	s.NotNil(resp.Draft.Class)
+	s.Equal("Wizard", resp.Draft.Class.Name)
 	s.NotNil(resp.Draft.AbilityScores)
 	s.Equal(int32(18), resp.Draft.AbilityScores.Intelligence)
 	s.NotNil(resp.Draft.Progress)
@@ -456,7 +484,7 @@ func (s *HandlerTestSuite) TestUpdateName() {
 	})
 }
 
-func (s *HandlerTestSuite) TestUpdateRace() {
+func (s *HandlerTestSuite) TestUpdateRace_Basic() {
 	s.Run("with valid race", func() {
 		expectedDraft := &dnd5e.CharacterDraft{
 			ID:       s.testDraftID,
@@ -469,6 +497,7 @@ func (s *HandlerTestSuite) TestUpdateRace() {
 				DraftID:   s.testDraftID,
 				RaceID:    dnd5e.RaceHuman,
 				SubraceID: "",
+				Choices:   []dnd5e.ChoiceSelection{},
 			}).
 			Return(&character.UpdateRaceOutput{
 				Draft:    expectedDraft,
@@ -502,6 +531,7 @@ func (s *HandlerTestSuite) TestUpdateRace() {
 				DraftID:   s.testDraftID,
 				RaceID:    dnd5e.RaceElf,
 				SubraceID: dnd5e.SubraceHighElf,
+				Choices:   []dnd5e.ChoiceSelection{},
 			}).
 			Return(&character.UpdateRaceOutput{
 				Draft:    expectedDraft,
@@ -532,7 +562,244 @@ func (s *HandlerTestSuite) TestUpdateRace() {
 	})
 }
 
-func (s *HandlerTestSuite) TestUpdateClass() {
+func (s *HandlerTestSuite) TestUpdateRace_WithChoices() {
+	s.Run("with race choices", func() {
+		req := &dnd5ev1alpha1.UpdateRaceRequest{
+			DraftId: s.testDraftID,
+			Race:    dnd5ev1alpha1.Race_RACE_HALF_ELF,
+			RaceChoices: []*dnd5ev1alpha1.ChoiceSelection{
+				{
+					ChoiceId:     "half-elf-ability-score-increase",
+					ChoiceType:   dnd5ev1alpha1.ChoiceType_CHOICE_TYPE_SKILL,
+					Source:       dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_RACE,
+					SelectedKeys: []string{"deception", "insight"},
+				},
+				{
+					ChoiceId:     "half-elf-languages",
+					ChoiceType:   dnd5ev1alpha1.ChoiceType_CHOICE_TYPE_LANGUAGE,
+					Source:       dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_RACE,
+					SelectedKeys: []string{"elvish", "dwarvish"},
+				},
+			},
+		}
+
+		expectedDraft := &dnd5e.CharacterDraft{
+			ID:       s.testDraftID,
+			PlayerID: s.testPlayerID,
+			RaceID:   dnd5e.RaceHalfElf,
+			Race: &dnd5e.RaceInfo{
+				ID:   dnd5e.RaceHalfElf,
+				Name: "Half-Elf",
+			},
+		}
+
+		s.mockCharService.EXPECT().
+			UpdateRace(s.ctx, &character.UpdateRaceInput{
+				DraftID:   s.testDraftID,
+				RaceID:    dnd5e.RaceHalfElf,
+				SubraceID: "",
+				Choices: []dnd5e.ChoiceSelection{
+					{
+						ChoiceID:     "half-elf-ability-score-increase",
+						ChoiceType:   dnd5e.ChoiceTypeSkill,
+						Source:       dnd5e.ChoiceSourceRace,
+						SelectedKeys: []string{"deception", "insight"},
+					},
+					{
+						ChoiceID:     "half-elf-languages",
+						ChoiceType:   dnd5e.ChoiceTypeLanguage,
+						Source:       dnd5e.ChoiceSourceRace,
+						SelectedKeys: []string{"elvish", "dwarvish"},
+					},
+				},
+			}).
+			Return(&character.UpdateRaceOutput{
+				Draft:    expectedDraft,
+				Warnings: []character.ValidationWarning{},
+			}, nil).
+			Times(1)
+
+		resp, err := s.handler.UpdateRace(s.ctx, req)
+
+		s.NoError(err)
+		s.NotNil(resp)
+		s.NotNil(resp.Draft)
+		s.Equal(s.testDraftID, resp.Draft.Id)
+	})
+
+	s.Run("with ability score choices", func() {
+		req := &dnd5ev1alpha1.UpdateRaceRequest{
+			DraftId: s.testDraftID,
+			Race:    dnd5ev1alpha1.Race_RACE_HUMAN,
+			RaceChoices: []*dnd5ev1alpha1.ChoiceSelection{
+				{
+					ChoiceId:   "variant-human-ability-scores",
+					ChoiceType: dnd5ev1alpha1.ChoiceType_CHOICE_TYPE_SKILL,
+					Source:     dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_RACE,
+					AbilityScoreChoices: []*dnd5ev1alpha1.AbilityScoreChoice{
+						{
+							Ability: dnd5ev1alpha1.Ability_ABILITY_STRENGTH,
+							Bonus:   1,
+						},
+						{
+							Ability: dnd5ev1alpha1.Ability_ABILITY_CONSTITUTION,
+							Bonus:   1,
+						},
+					},
+				},
+			},
+		}
+
+		expectedDraft := &dnd5e.CharacterDraft{
+			ID:       s.testDraftID,
+			PlayerID: s.testPlayerID,
+			RaceID:   dnd5e.RaceHuman,
+			Race: &dnd5e.RaceInfo{
+				ID:   dnd5e.RaceHuman,
+				Name: "Human",
+			},
+		}
+
+		s.mockCharService.EXPECT().
+			UpdateRace(s.ctx, &character.UpdateRaceInput{
+				DraftID:   s.testDraftID,
+				RaceID:    dnd5e.RaceHuman,
+				SubraceID: "",
+				Choices: []dnd5e.ChoiceSelection{
+					{
+						ChoiceID:   "variant-human-ability-scores",
+						ChoiceType: dnd5e.ChoiceTypeSkill,
+						Source:     dnd5e.ChoiceSourceRace,
+						AbilityScoreChoices: []dnd5e.AbilityScoreChoice{
+							{
+								Ability: dnd5e.AbilityStrength,
+								Bonus:   1,
+							},
+							{
+								Ability: dnd5e.AbilityConstitution,
+								Bonus:   1,
+							},
+						},
+					},
+				},
+			}).
+			Return(&character.UpdateRaceOutput{
+				Draft:    expectedDraft,
+				Warnings: []character.ValidationWarning{},
+			}, nil)
+
+		resp, err := s.handler.UpdateRace(s.ctx, req)
+
+		s.NoError(err)
+		s.NotNil(resp)
+		s.NotNil(resp.Draft)
+		s.Equal(s.testDraftID, resp.Draft.Id)
+	})
+
+	s.Run("with nil choice in array", func() {
+		req := &dnd5ev1alpha1.UpdateRaceRequest{
+			DraftId: s.testDraftID,
+			Race:    dnd5ev1alpha1.Race_RACE_HUMAN,
+			RaceChoices: []*dnd5ev1alpha1.ChoiceSelection{
+				{
+					ChoiceId:     "human-skill",
+					ChoiceType:   dnd5ev1alpha1.ChoiceType_CHOICE_TYPE_SKILL,
+					Source:       dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_RACE,
+					SelectedKeys: []string{"athletics"},
+				},
+				nil, // This should be filtered out
+				{
+					ChoiceId:     "human-language",
+					ChoiceType:   dnd5ev1alpha1.ChoiceType_CHOICE_TYPE_LANGUAGE,
+					Source:       dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_RACE,
+					SelectedKeys: []string{"orcish"},
+				},
+			},
+		}
+
+		expectedDraft := &dnd5e.CharacterDraft{
+			ID:       s.testDraftID,
+			PlayerID: s.testPlayerID,
+			RaceID:   dnd5e.RaceHuman,
+			Race: &dnd5e.RaceInfo{
+				ID:   dnd5e.RaceHuman,
+				Name: "Human",
+			},
+		}
+
+		// Expect that nil choices are filtered out
+		s.mockCharService.EXPECT().
+			UpdateRace(s.ctx, &character.UpdateRaceInput{
+				DraftID:   s.testDraftID,
+				RaceID:    dnd5e.RaceHuman,
+				SubraceID: "",
+				Choices: []dnd5e.ChoiceSelection{
+					{
+						ChoiceID:     "human-skill",
+						ChoiceType:   dnd5e.ChoiceTypeSkill,
+						Source:       dnd5e.ChoiceSourceRace,
+						SelectedKeys: []string{"athletics"},
+					},
+					{
+						ChoiceID:     "human-language",
+						ChoiceType:   dnd5e.ChoiceTypeLanguage,
+						Source:       dnd5e.ChoiceSourceRace,
+						SelectedKeys: []string{"orcish"},
+					},
+				},
+			}).
+			Return(&character.UpdateRaceOutput{
+				Draft:    expectedDraft,
+				Warnings: []character.ValidationWarning{},
+			}, nil)
+
+		resp, err := s.handler.UpdateRace(s.ctx, req)
+
+		s.NoError(err)
+		s.NotNil(resp)
+		s.NotNil(resp.Draft)
+		s.Equal(s.testDraftID, resp.Draft.Id)
+	})
+
+	s.Run("with empty choices array", func() {
+		req := &dnd5ev1alpha1.UpdateRaceRequest{
+			DraftId:     s.testDraftID,
+			Race:        dnd5ev1alpha1.Race_RACE_DWARF,
+			RaceChoices: []*dnd5ev1alpha1.ChoiceSelection{},
+		}
+
+		expectedDraft := &dnd5e.CharacterDraft{
+			ID:       s.testDraftID,
+			PlayerID: s.testPlayerID,
+			RaceID:   dnd5e.RaceDwarf,
+			Race: &dnd5e.RaceInfo{
+				ID:   dnd5e.RaceDwarf,
+				Name: "Dwarf",
+			},
+		}
+
+		s.mockCharService.EXPECT().
+			UpdateRace(s.ctx, &character.UpdateRaceInput{
+				DraftID:   s.testDraftID,
+				RaceID:    dnd5e.RaceDwarf,
+				SubraceID: "",
+				Choices:   []dnd5e.ChoiceSelection{},
+			}).
+			Return(&character.UpdateRaceOutput{
+				Draft:    expectedDraft,
+				Warnings: []character.ValidationWarning{},
+			}, nil)
+
+		resp, err := s.handler.UpdateRace(s.ctx, req)
+
+		s.NoError(err)
+		s.NotNil(resp)
+		s.NotNil(resp.Draft)
+		s.Equal(s.testDraftID, resp.Draft.Id)
+	})
+}
+
+func (s *HandlerTestSuite) TestUpdateClass_Basic() {
 	s.Run("with valid request", func() {
 		expectedDraft := &dnd5e.CharacterDraft{
 			ID:      s.testDraftID,
@@ -543,6 +810,7 @@ func (s *HandlerTestSuite) TestUpdateClass() {
 			UpdateClass(s.ctx, &character.UpdateClassInput{
 				DraftID: s.testDraftID,
 				ClassID: dnd5e.ClassWizard,
+				Choices: []dnd5e.ChoiceSelection{},
 			}).
 			Return(&character.UpdateClassOutput{
 				Draft:    expectedDraft,
@@ -571,7 +839,133 @@ func (s *HandlerTestSuite) TestUpdateClass() {
 	})
 }
 
-func (s *HandlerTestSuite) TestUpdateBackground() {
+func (s *HandlerTestSuite) TestUpdateClass_WithChoices() {
+	s.Run("with class choices", func() {
+		req := &dnd5ev1alpha1.UpdateClassRequest{
+			DraftId: s.testDraftID,
+			Class:   dnd5ev1alpha1.Class_CLASS_FIGHTER,
+			ClassChoices: []*dnd5ev1alpha1.ChoiceSelection{
+				{
+					ChoiceId:     "fighter-fighting-style",
+					ChoiceType:   dnd5ev1alpha1.ChoiceType_CHOICE_TYPE_FEAT,
+					Source:       dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_CLASS,
+					SelectedKeys: []string{"defense"},
+				},
+				{
+					ChoiceId:     "fighter-starting-equipment",
+					ChoiceType:   dnd5ev1alpha1.ChoiceType_CHOICE_TYPE_EQUIPMENT,
+					Source:       dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_CLASS,
+					SelectedKeys: []string{"chain-mail", "longsword", "shield"},
+				},
+			},
+		}
+
+		expectedDraft := &dnd5e.CharacterDraft{
+			ID:      s.testDraftID,
+			ClassID: dnd5e.ClassFighter,
+			Class: &dnd5e.ClassInfo{
+				ID:   dnd5e.ClassFighter,
+				Name: "Fighter",
+			},
+		}
+
+		s.mockCharService.EXPECT().
+			UpdateClass(s.ctx, &character.UpdateClassInput{
+				DraftID: s.testDraftID,
+				ClassID: dnd5e.ClassFighter,
+				Choices: []dnd5e.ChoiceSelection{
+					{
+						ChoiceID:     "fighter-fighting-style",
+						ChoiceType:   dnd5e.ChoiceTypeFeat,
+						Source:       dnd5e.ChoiceSourceClass,
+						SelectedKeys: []string{"defense"},
+					},
+					{
+						ChoiceID:     "fighter-starting-equipment",
+						ChoiceType:   dnd5e.ChoiceTypeEquipment,
+						Source:       dnd5e.ChoiceSourceClass,
+						SelectedKeys: []string{"chain-mail", "longsword", "shield"},
+					},
+				},
+			}).
+			Return(&character.UpdateClassOutput{
+				Draft:    expectedDraft,
+				Warnings: []character.ValidationWarning{},
+			}, nil)
+
+		resp, err := s.handler.UpdateClass(s.ctx, req)
+
+		s.NoError(err)
+		s.NotNil(resp)
+		s.NotNil(resp.Draft)
+		s.Equal(s.testDraftID, resp.Draft.Id)
+		s.NotNil(resp.Draft.Class)
+		s.Equal("Fighter", resp.Draft.Class.Name)
+	})
+
+	s.Run("with spellcasting class choices", func() {
+		req := &dnd5ev1alpha1.UpdateClassRequest{
+			DraftId: s.testDraftID,
+			Class:   dnd5ev1alpha1.Class_CLASS_WIZARD,
+			ClassChoices: []*dnd5ev1alpha1.ChoiceSelection{
+				{
+					ChoiceId:     "wizard-cantrips",
+					ChoiceType:   dnd5ev1alpha1.ChoiceType_CHOICE_TYPE_SPELL,
+					Source:       dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_CLASS,
+					SelectedKeys: []string{"fire-bolt", "mage-hand", "prestidigitation"},
+				},
+				{
+					ChoiceId:     "wizard-1st-level-spells",
+					ChoiceType:   dnd5ev1alpha1.ChoiceType_CHOICE_TYPE_SPELL,
+					Source:       dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_CLASS,
+					SelectedKeys: []string{"magic-missile", "shield", "identify", "detect-magic", "sleep", "charm-person"},
+				},
+			},
+		}
+
+		expectedDraft := &dnd5e.CharacterDraft{
+			ID:      s.testDraftID,
+			ClassID: dnd5e.ClassWizard,
+			Class: &dnd5e.ClassInfo{
+				ID:   dnd5e.ClassWizard,
+				Name: "Wizard",
+			},
+		}
+
+		s.mockCharService.EXPECT().
+			UpdateClass(s.ctx, &character.UpdateClassInput{
+				DraftID: s.testDraftID,
+				ClassID: dnd5e.ClassWizard,
+				Choices: []dnd5e.ChoiceSelection{
+					{
+						ChoiceID:     "wizard-cantrips",
+						ChoiceType:   dnd5e.ChoiceTypeSpell,
+						Source:       dnd5e.ChoiceSourceClass,
+						SelectedKeys: []string{"fire-bolt", "mage-hand", "prestidigitation"},
+					},
+					{
+						ChoiceID:     "wizard-1st-level-spells",
+						ChoiceType:   dnd5e.ChoiceTypeSpell,
+						Source:       dnd5e.ChoiceSourceClass,
+						SelectedKeys: []string{"magic-missile", "shield", "identify", "detect-magic", "sleep", "charm-person"},
+					},
+				},
+			}).
+			Return(&character.UpdateClassOutput{
+				Draft:    expectedDraft,
+				Warnings: []character.ValidationWarning{},
+			}, nil)
+
+		resp, err := s.handler.UpdateClass(s.ctx, req)
+
+		s.NoError(err)
+		s.NotNil(resp)
+		s.NotNil(resp.Draft)
+		s.Equal(s.testDraftID, resp.Draft.Id)
+	})
+}
+
+func (s *HandlerTestSuite) TestUpdateBackground_Basic() {
 	s.Run("with valid background", func() {
 		req := &dnd5ev1alpha1.UpdateBackgroundRequest{
 			DraftId:    s.testDraftID,
@@ -587,6 +981,7 @@ func (s *HandlerTestSuite) TestUpdateBackground() {
 			UpdateBackground(s.ctx, &character.UpdateBackgroundInput{
 				DraftID:      s.testDraftID,
 				BackgroundID: dnd5e.BackgroundAcolyte,
+				Choices:      []dnd5e.ChoiceSelection{},
 			}).
 			Return(&character.UpdateBackgroundOutput{
 				Draft:    expectedDraft,
@@ -612,6 +1007,120 @@ func (s *HandlerTestSuite) TestUpdateBackground() {
 		st, ok := status.FromError(err)
 		s.True(ok)
 		s.Equal(codes.InvalidArgument, st.Code())
+	})
+}
+
+func (s *HandlerTestSuite) TestUpdateBackground_WithChoices() {
+	s.Run("with background choices", func() {
+		req := &dnd5ev1alpha1.UpdateBackgroundRequest{
+			DraftId:    s.testDraftID,
+			Background: dnd5ev1alpha1.Background_BACKGROUND_FOLK_HERO,
+			BackgroundChoices: []*dnd5ev1alpha1.ChoiceSelection{
+				{
+					ChoiceId:     "folk-hero-tool-proficiency",
+					ChoiceType:   dnd5ev1alpha1.ChoiceType_CHOICE_TYPE_TOOL,
+					Source:       dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_BACKGROUND,
+					SelectedKeys: []string{"carpenters-tools"},
+				},
+				{
+					ChoiceId:     "folk-hero-language",
+					ChoiceType:   dnd5ev1alpha1.ChoiceType_CHOICE_TYPE_LANGUAGE,
+					Source:       dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_BACKGROUND,
+					SelectedKeys: []string{"dwarvish"},
+				},
+			},
+		}
+
+		expectedDraft := &dnd5e.CharacterDraft{
+			ID:           s.testDraftID,
+			BackgroundID: dnd5e.BackgroundFolkHero,
+			Background: &dnd5e.BackgroundInfo{
+				ID:   dnd5e.BackgroundFolkHero,
+				Name: "Folk Hero",
+			},
+		}
+
+		s.mockCharService.EXPECT().
+			UpdateBackground(s.ctx, &character.UpdateBackgroundInput{
+				DraftID:      s.testDraftID,
+				BackgroundID: dnd5e.BackgroundFolkHero,
+				Choices: []dnd5e.ChoiceSelection{
+					{
+						ChoiceID:     "folk-hero-tool-proficiency",
+						ChoiceType:   dnd5e.ChoiceTypeTool,
+						Source:       dnd5e.ChoiceSourceBackground,
+						SelectedKeys: []string{"carpenters-tools"},
+					},
+					{
+						ChoiceID:     "folk-hero-language",
+						ChoiceType:   dnd5e.ChoiceTypeLanguage,
+						Source:       dnd5e.ChoiceSourceBackground,
+						SelectedKeys: []string{"dwarvish"},
+					},
+				},
+			}).
+			Return(&character.UpdateBackgroundOutput{
+				Draft:    expectedDraft,
+				Warnings: []character.ValidationWarning{},
+			}, nil)
+
+		resp, err := s.handler.UpdateBackground(s.ctx, req)
+
+		s.NoError(err)
+		s.NotNil(resp)
+		s.NotNil(resp.Draft)
+		s.Equal(s.testDraftID, resp.Draft.Id)
+		s.NotNil(resp.Draft.Background)
+		s.Equal("Folk Hero", resp.Draft.Background.Name)
+	})
+
+	s.Run("with multiple language choices", func() {
+		req := &dnd5ev1alpha1.UpdateBackgroundRequest{
+			DraftId:    s.testDraftID,
+			Background: dnd5ev1alpha1.Background_BACKGROUND_SAGE,
+			BackgroundChoices: []*dnd5ev1alpha1.ChoiceSelection{
+				{
+					ChoiceId:     "sage-languages",
+					ChoiceType:   dnd5ev1alpha1.ChoiceType_CHOICE_TYPE_LANGUAGE,
+					Source:       dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_BACKGROUND,
+					SelectedKeys: []string{"draconic", "celestial"},
+				},
+			},
+		}
+
+		expectedDraft := &dnd5e.CharacterDraft{
+			ID:           s.testDraftID,
+			BackgroundID: dnd5e.BackgroundSage,
+			Background: &dnd5e.BackgroundInfo{
+				ID:   dnd5e.BackgroundSage,
+				Name: "Sage",
+			},
+		}
+
+		s.mockCharService.EXPECT().
+			UpdateBackground(s.ctx, &character.UpdateBackgroundInput{
+				DraftID:      s.testDraftID,
+				BackgroundID: dnd5e.BackgroundSage,
+				Choices: []dnd5e.ChoiceSelection{
+					{
+						ChoiceID:     "sage-languages",
+						ChoiceType:   dnd5e.ChoiceTypeLanguage,
+						Source:       dnd5e.ChoiceSourceBackground,
+						SelectedKeys: []string{"draconic", "celestial"},
+					},
+				},
+			}).
+			Return(&character.UpdateBackgroundOutput{
+				Draft:    expectedDraft,
+				Warnings: []character.ValidationWarning{},
+			}, nil)
+
+		resp, err := s.handler.UpdateBackground(s.ctx, req)
+
+		s.NoError(err)
+		s.NotNil(resp)
+		s.NotNil(resp.Draft)
+		s.Equal(s.testDraftID, resp.Draft.Id)
 	})
 }
 
@@ -694,10 +1203,7 @@ func (s *HandlerTestSuite) TestUpdateSkills() {
 
 		expectedDraft := &dnd5e.CharacterDraft{
 			ID: s.testDraftID,
-			StartingSkillIDs: []string{
-				dnd5e.SkillAthletics,
-				dnd5e.SkillPerception,
-			},
+			// Skills are now handled through ChoiceSelections
 		}
 
 		s.mockCharService.EXPECT().

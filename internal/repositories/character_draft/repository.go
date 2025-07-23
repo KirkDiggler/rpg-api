@@ -44,12 +44,12 @@ type Repository interface {
 
 // CreateInput defines the input for creating a character draft
 type CreateInput struct {
-	Draft *dnd5e.CharacterDraft
+	Draft *dnd5e.CharacterDraftData
 }
 
 // CreateOutput defines the output for creating a character draft
 type CreateOutput struct {
-	Draft *dnd5e.CharacterDraft
+	Draft *dnd5e.CharacterDraftData
 }
 
 // GetInput defines the input for getting a character draft
@@ -59,7 +59,7 @@ type GetInput struct {
 
 // GetOutput defines the output for getting a character draft
 type GetOutput struct {
-	Draft *dnd5e.CharacterDraft
+	Draft *dnd5e.CharacterDraftData
 }
 
 // GetByPlayerIDInput defines the input for getting a player's draft
@@ -69,17 +69,17 @@ type GetByPlayerIDInput struct {
 
 // GetByPlayerIDOutput defines the output for getting a player's draft
 type GetByPlayerIDOutput struct {
-	Draft *dnd5e.CharacterDraft
+	Draft *dnd5e.CharacterDraftData
 }
 
 // UpdateInput defines the input for updating a character draft
 type UpdateInput struct {
-	Draft *dnd5e.CharacterDraft
+	Draft *dnd5e.CharacterDraftData
 }
 
 // UpdateOutput defines the output for updating a character draft
 type UpdateOutput struct {
-	Draft *dnd5e.CharacterDraft
+	Draft *dnd5e.CharacterDraftData
 }
 
 // DeleteInput defines the input for deleting a character draft

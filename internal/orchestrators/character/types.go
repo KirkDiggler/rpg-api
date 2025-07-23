@@ -68,7 +68,8 @@ type UpdateNameOutput struct {
 type UpdateRaceInput struct {
 	DraftID   string
 	RaceID    string
-	SubraceID string // Optional
+	SubraceID string                  // Optional
+	Choices   []dnd5e.ChoiceSelection // Race-specific choices
 }
 
 // UpdateRaceOutput defines the response for updating a draft's race
@@ -81,6 +82,7 @@ type UpdateRaceOutput struct {
 type UpdateClassInput struct {
 	DraftID string
 	ClassID string
+	Choices []dnd5e.ChoiceSelection // Class-specific choices
 }
 
 // UpdateClassOutput defines the response for updating a draft's class
@@ -93,6 +95,7 @@ type UpdateClassOutput struct {
 type UpdateBackgroundInput struct {
 	DraftID      string
 	BackgroundID string
+	Choices      []dnd5e.ChoiceSelection // Background-specific choices
 }
 
 // UpdateBackgroundOutput defines the response for updating a draft's background

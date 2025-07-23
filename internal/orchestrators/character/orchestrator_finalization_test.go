@@ -6,6 +6,7 @@ import (
 
 	"go.uber.org/mock/gomock"
 
+	"github.com/KirkDiggler/rpg-api/internal/clients/external"
 	"github.com/KirkDiggler/rpg-api/internal/engine"
 	"github.com/KirkDiggler/rpg-api/internal/entities/dnd5e"
 	characterorchestrator "github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
@@ -44,12 +45,12 @@ func (s *OrchestratorTestSuite) TestValidateDraft() {
 						Wisdom:       12,
 						Charisma:     8,
 					},
-					StartingSkillIDs: []string{dnd5e.SkillAthletics, dnd5e.SkillIntimidation},
+					// Skills are now handled through ChoiceSelections
 				}
 
 				s.mockDraftRepo.EXPECT().
 					Get(s.ctx, draftrepo.GetInput{ID: s.testDraftID}).
-					Return(&draftrepo.GetOutput{Draft: completeDraft}, nil)
+					Return(&draftrepo.GetOutput{Draft: dnd5e.FromCharacterDraft(completeDraft)}, nil)
 
 				s.mockEngine.EXPECT().
 					ValidateCharacterDraft(s.ctx, &engine.ValidateCharacterDraftInput{
@@ -80,7 +81,7 @@ func (s *OrchestratorTestSuite) TestValidateDraft() {
 			setupMock: func() {
 				s.mockDraftRepo.EXPECT().
 					Get(s.ctx, draftrepo.GetInput{ID: s.testDraftID}).
-					Return(&draftrepo.GetOutput{Draft: s.testDraft}, nil)
+					Return(&draftrepo.GetOutput{Draft: dnd5e.FromCharacterDraft(s.testDraft)}, nil)
 
 				s.mockEngine.EXPECT().
 					ValidateCharacterDraft(s.ctx, gomock.Any()).
@@ -117,7 +118,7 @@ func (s *OrchestratorTestSuite) TestValidateDraft() {
 			setupMock: func() {
 				s.mockDraftRepo.EXPECT().
 					Get(s.ctx, draftrepo.GetInput{ID: s.testDraftID}).
-					Return(&draftrepo.GetOutput{Draft: s.testDraft}, nil)
+					Return(&draftrepo.GetOutput{Draft: dnd5e.FromCharacterDraft(s.testDraft)}, nil)
 
 				s.mockEngine.EXPECT().
 					ValidateCharacterDraft(s.ctx, gomock.Any()).
@@ -179,7 +180,7 @@ func (s *OrchestratorTestSuite) TestFinalizeDraft() {
 			Wisdom:       13,
 			Charisma:     12,
 		},
-		StartingSkillIDs: []string{dnd5e.SkillSurvival, dnd5e.SkillAnimalHandling},
+		// Skills are now handled through ChoiceSelections
 	}
 
 	testCases := []struct {
@@ -198,7 +199,7 @@ func (s *OrchestratorTestSuite) TestFinalizeDraft() {
 			setupMock: func() {
 				s.mockDraftRepo.EXPECT().
 					Get(s.ctx, draftrepo.GetInput{ID: s.testDraftID}).
-					Return(&draftrepo.GetOutput{Draft: completeDraft}, nil)
+					Return(&draftrepo.GetOutput{Draft: dnd5e.FromCharacterDraft(completeDraft)}, nil)
 
 				// Validate draft
 				s.mockEngine.EXPECT().
@@ -208,18 +209,99 @@ func (s *OrchestratorTestSuite) TestFinalizeDraft() {
 						IsValid:    true,
 					}, nil)
 
+				// Mock external client calls for hydrateDraft
+				s.mockExternalClient.EXPECT().
+					GetRaceData(s.ctx, dnd5e.RaceHuman).
+					Return(&external.RaceData{
+						ID:    dnd5e.RaceHuman,
+						Name:  "Human",
+						Speed: 30,
+					}, nil)
+
+				s.mockExternalClient.EXPECT().
+					GetClassData(s.ctx, dnd5e.ClassRanger).
+					Return(&external.ClassData{
+						ID:               dnd5e.ClassRanger,
+						Name:             "Ranger",
+						HitDice:          "1d10",
+						SavingThrows:     []string{"strength", "dexterity"},
+						PrimaryAbilities: []string{"dexterity", "wisdom"},
+						SkillsCount:      3,
+						AvailableSkills: []string{
+							"animal_handling", "athletics", "insight", "investigation",
+							"nature", "perception", "stealth", "survival",
+						},
+						ArmorProficiencies:  []string{"light armor", "medium armor", "shields"},
+						WeaponProficiencies: []string{"simple weapons", "martial weapons"},
+						ToolProficiencies:   []string{},
+						StartingEquipment: []string{
+							"scale mail", "two shortswords", "simple melee weapon",
+							"explorer's pack", "longbow and quiver of 20 arrows",
+						},
+						StartingEquipmentOptions: []*external.EquipmentChoiceData{},
+						ProficiencyChoices:       []*external.ChoiceData{},
+						LevelOneFeatures:         []*external.FeatureData{},
+						Spellcasting:             nil,
+						Choices:                  []dnd5e.Choice{},
+					}, nil)
+
+				s.mockExternalClient.EXPECT().
+					GetBackgroundData(s.ctx, dnd5e.BackgroundOutlander).
+					Return(&external.BackgroundData{
+						ID:                 dnd5e.BackgroundOutlander,
+						Name:               "Outlander",
+						Description:        "You grew up in the wilds",
+						SkillProficiencies: []string{"athletics", "survival"},
+						Languages:          1,
+						Equipment:          []string{"staff", "hunting trap", "traveler's clothes", "belt pouch"},
+						Feature:            "Wanderer",
+					}, nil)
+
 				// Calculate stats
 				s.mockEngine.EXPECT().
-					CalculateCharacterStats(s.ctx, &engine.CalculateCharacterStatsInput{
-						Draft: completeDraft,
-					}).
-					Return(&engine.CalculateCharacterStatsOutput{
-						MaxHP:            12, // 10 + CON mod
-						ArmorClass:       11, // 10 + DEX mod
-						Initiative:       2,
-						Speed:            30,
-						ProficiencyBonus: 2,
-					}, nil)
+					CalculateCharacterStats(s.ctx, gomock.Any()).
+					DoAndReturn(func(
+						_ context.Context,
+						input *engine.CalculateCharacterStatsInput,
+					) (*engine.CalculateCharacterStatsOutput, error) {
+						// Verify the input has the character and hydrated info
+						s.NotNil(input.Character)
+						s.Equal(completeDraft.Name, input.Character.Name)
+						s.Equal(completeDraft.ClassID, input.Character.ClassID)
+						s.Equal(completeDraft.RaceID, input.Character.RaceID)
+						s.NotNil(input.Race)
+						s.NotNil(input.Class)
+						s.NotNil(input.Background)
+
+						return &engine.CalculateCharacterStatsOutput{
+							MaxHP:            12, // 10 + CON mod
+							ArmorClass:       11, // 10 + DEX mod
+							Initiative:       2,
+							Speed:            30,
+							ProficiencyBonus: 2,
+						}, nil
+					})
+
+				// Validate character
+				s.mockEngine.EXPECT().
+					ValidateCharacter(s.ctx, gomock.Any()).
+					DoAndReturn(func(
+						_ context.Context,
+						input *engine.ValidateCharacterInput,
+					) (*engine.ValidateCharacterOutput, error) {
+						// Verify the input has the character and hydrated info
+						s.NotNil(input.Character)
+						s.Equal(int32(12), input.Character.CurrentHP)
+						s.NotNil(input.Race)
+						s.NotNil(input.Class)
+						s.NotNil(input.Background)
+
+						return &engine.ValidateCharacterOutput{
+							IsValid:  true,
+							Errors:   []engine.ValidationError{},
+							Warnings: []engine.ValidationWarning{},
+						}, nil
+					})
 
 				// Create character
 				s.mockCharRepo.EXPECT().
@@ -256,7 +338,7 @@ func (s *OrchestratorTestSuite) TestFinalizeDraft() {
 			setupMock: func() {
 				s.mockDraftRepo.EXPECT().
 					Get(s.ctx, draftrepo.GetInput{ID: s.testDraftID}).
-					Return(&draftrepo.GetOutput{Draft: s.testDraft}, nil) // Missing ability scores
+					Return(&draftrepo.GetOutput{Draft: dnd5e.FromCharacterDraft(s.testDraft)}, nil) // Missing ability scores
 
 				s.mockEngine.EXPECT().
 					ValidateCharacterDraft(s.ctx, gomock.Any()).
@@ -276,7 +358,7 @@ func (s *OrchestratorTestSuite) TestFinalizeDraft() {
 			setupMock: func() {
 				s.mockDraftRepo.EXPECT().
 					Get(s.ctx, draftrepo.GetInput{ID: s.testDraftID}).
-					Return(&draftrepo.GetOutput{Draft: completeDraft}, nil)
+					Return(&draftrepo.GetOutput{Draft: dnd5e.FromCharacterDraft(completeDraft)}, nil)
 
 				s.mockEngine.EXPECT().
 					ValidateCharacterDraft(s.ctx, gomock.Any()).
@@ -299,7 +381,7 @@ func (s *OrchestratorTestSuite) TestFinalizeDraft() {
 			setupMock: func() {
 				s.mockDraftRepo.EXPECT().
 					Get(s.ctx, draftrepo.GetInput{ID: s.testDraftID}).
-					Return(&draftrepo.GetOutput{Draft: completeDraft}, nil)
+					Return(&draftrepo.GetOutput{Draft: dnd5e.FromCharacterDraft(completeDraft)}, nil)
 
 				s.mockEngine.EXPECT().
 					ValidateCharacterDraft(s.ctx, gomock.Any()).
@@ -308,10 +390,44 @@ func (s *OrchestratorTestSuite) TestFinalizeDraft() {
 						IsValid:    true,
 					}, nil)
 
+				// Mock external client calls for hydrateDraft
+				s.mockExternalClient.EXPECT().
+					GetRaceData(s.ctx, gomock.Any()).
+					Return(&external.RaceData{
+						ID:    dnd5e.RaceHuman,
+						Name:  "Human",
+						Speed: 30,
+					}, nil)
+
+				s.mockExternalClient.EXPECT().
+					GetClassData(s.ctx, gomock.Any()).
+					Return(&external.ClassData{
+						ID:           dnd5e.ClassRanger,
+						Name:         "Ranger",
+						HitDice:      "1d10",
+						SavingThrows: []string{"strength", "dexterity"},
+					}, nil)
+
+				s.mockExternalClient.EXPECT().
+					GetBackgroundData(s.ctx, gomock.Any()).
+					Return(&external.BackgroundData{
+						ID:                 dnd5e.BackgroundOutlander,
+						Name:               "Outlander",
+						SkillProficiencies: []string{"athletics", "survival"},
+					}, nil)
+
 				s.mockEngine.EXPECT().
 					CalculateCharacterStats(s.ctx, gomock.Any()).
 					Return(&engine.CalculateCharacterStatsOutput{
 						MaxHP: 12,
+					}, nil)
+
+				s.mockEngine.EXPECT().
+					ValidateCharacter(s.ctx, gomock.Any()).
+					Return(&engine.ValidateCharacterOutput{
+						IsValid:  true,
+						Errors:   []engine.ValidationError{},
+						Warnings: []engine.ValidationWarning{},
 					}, nil)
 
 				s.mockCharRepo.EXPECT().

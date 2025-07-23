@@ -64,7 +64,7 @@ func (s *RedisRepositoryTestSuite) TestCreate() {
 	generatedID := "generated_draft_123"
 
 	s.Run("successful create with no existing draft", func() {
-		inputDraft := &dnd5e.CharacterDraft{
+		inputDraft := &dnd5e.CharacterDraftData{
 			PlayerID:  "player_456",
 			SessionID: "session_789",
 			Name:      "Test Character",
@@ -118,7 +118,7 @@ func (s *RedisRepositoryTestSuite) TestCreate() {
 	})
 
 	s.Run("successful create replacing existing draft", func() {
-		inputDraft := &dnd5e.CharacterDraft{
+		inputDraft := &dnd5e.CharacterDraftData{
 			PlayerID:  "player_456",
 			SessionID: "session_789",
 			Name:      "New Character",
@@ -183,7 +183,7 @@ func (s *RedisRepositoryTestSuite) TestCreate() {
 	})
 
 	s.Run("error when player ID is empty", func() {
-		draft := &dnd5e.CharacterDraft{Name: "Test"}
+		draft := &dnd5e.CharacterDraftData{Name: "Test"}
 		output, err := s.repo.Create(s.ctx, characterdraft.CreateInput{Draft: draft})
 
 		s.Error(err)
@@ -193,7 +193,7 @@ func (s *RedisRepositoryTestSuite) TestCreate() {
 	})
 
 	s.Run("error when draft has already expired", func() {
-		expiredDraft := &dnd5e.CharacterDraft{
+		expiredDraft := &dnd5e.CharacterDraftData{
 			ID:        "draft_123",
 			PlayerID:  "player_456",
 			ExpiresAt: time.Now().Add(-1 * time.Hour).Unix(), // Expired
@@ -209,7 +209,7 @@ func (s *RedisRepositoryTestSuite) TestCreate() {
 }
 
 func (s *RedisRepositoryTestSuite) TestGet() {
-	testDraft := &dnd5e.CharacterDraft{
+	testDraft := &dnd5e.CharacterDraftData{
 		ID:       "draft_123",
 		PlayerID: "player_456",
 		Name:     "Test Character",
@@ -263,7 +263,7 @@ func (s *RedisRepositoryTestSuite) TestGet() {
 }
 
 func (s *RedisRepositoryTestSuite) TestGetByPlayerID() {
-	testDraft := &dnd5e.CharacterDraft{
+	testDraft := &dnd5e.CharacterDraftData{
 		ID:       "draft_123",
 		PlayerID: "player_456",
 		Name:     "Test Character",
@@ -354,7 +354,7 @@ func (s *RedisRepositoryTestSuite) TestUpdate() {
 	now := time.Now().Add(1 * time.Hour)
 
 	s.Run("successful update", func() {
-		inputDraft := &dnd5e.CharacterDraft{
+		inputDraft := &dnd5e.CharacterDraftData{
 			ID:       "draft_123",
 			PlayerID: "player_456",
 			Name:     "Updated Character",
@@ -389,7 +389,7 @@ func (s *RedisRepositoryTestSuite) TestUpdate() {
 	})
 
 	s.Run("error when draft doesn't exist", func() {
-		inputDraft := &dnd5e.CharacterDraft{
+		inputDraft := &dnd5e.CharacterDraftData{
 			ID:       "draft_123",
 			PlayerID: "player_456",
 			Name:     "Updated Character",
@@ -421,7 +421,7 @@ func (s *RedisRepositoryTestSuite) TestUpdate() {
 	})
 
 	s.Run("error when draft ID is empty", func() {
-		draft := &dnd5e.CharacterDraft{PlayerID: "player_456"}
+		draft := &dnd5e.CharacterDraftData{PlayerID: "player_456"}
 		output, err := s.repo.Update(s.ctx, characterdraft.UpdateInput{Draft: draft})
 
 		s.Error(err)
@@ -432,7 +432,7 @@ func (s *RedisRepositoryTestSuite) TestUpdate() {
 }
 
 func (s *RedisRepositoryTestSuite) TestDelete() {
-	testDraft := &dnd5e.CharacterDraft{
+	testDraft := &dnd5e.CharacterDraftData{
 		ID:       "draft_123",
 		PlayerID: "player_456",
 		Name:     "Test Character",

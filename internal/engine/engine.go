@@ -69,6 +69,19 @@ func (e *engine) ValidateCharacterDraft(
 	}, nil
 }
 
+func (e *engine) ValidateCharacter(
+	_ context.Context,
+	_ *ValidateCharacterInput,
+) (*ValidateCharacterOutput, error) {
+	// TODO(#46): Implement proper character validation
+	// For now, return a stub that allows character finalization to work
+	return &ValidateCharacterOutput{
+		IsValid:  true,
+		Errors:   []ValidationError{},
+		Warnings: []ValidationWarning{},
+	}, nil
+}
+
 func (e *engine) ValidateRaceChoice(
 	_ context.Context,
 	_ *ValidateRaceChoiceInput,

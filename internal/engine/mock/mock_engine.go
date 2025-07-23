@@ -130,6 +130,21 @@ func (mr *MockEngineMockRecorder) ValidateBackgroundChoice(ctx, input any) *gomo
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ValidateBackgroundChoice", reflect.TypeOf((*MockEngine)(nil).ValidateBackgroundChoice), ctx, input)
 }
 
+// ValidateCharacter mocks base method.
+func (m *MockEngine) ValidateCharacter(ctx context.Context, input *engine.ValidateCharacterInput) (*engine.ValidateCharacterOutput, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ValidateCharacter", ctx, input)
+	ret0, _ := ret[0].(*engine.ValidateCharacterOutput)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ValidateCharacter indicates an expected call of ValidateCharacter.
+func (mr *MockEngineMockRecorder) ValidateCharacter(ctx, input any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ValidateCharacter", reflect.TypeOf((*MockEngine)(nil).ValidateCharacter), ctx, input)
+}
+
 // ValidateCharacterDraft mocks base method.
 func (m *MockEngine) ValidateCharacterDraft(ctx context.Context, input *engine.ValidateCharacterDraftInput) (*engine.ValidateCharacterDraftOutput, error) {
 	m.ctrl.T.Helper()

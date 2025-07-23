@@ -6,6 +6,7 @@ import (
 
 	"go.uber.org/mock/gomock"
 
+	external "github.com/KirkDiggler/rpg-api/internal/clients/external"
 	"github.com/KirkDiggler/rpg-api/internal/engine"
 	"github.com/KirkDiggler/rpg-api/internal/entities/dnd5e"
 	characterorchestrator "github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
@@ -33,7 +34,7 @@ func (s *OrchestratorTestSuite) TestUpdateName() {
 				// Get existing draft
 				s.mockDraftRepo.EXPECT().
 					Get(s.ctx, draftrepo.GetInput{ID: s.testDraftID}).
-					Return(&draftrepo.GetOutput{Draft: s.testDraft}, nil)
+					Return(&draftrepo.GetOutput{Draft: dnd5e.FromCharacterDraft(s.testDraft)}, nil)
 
 				// Update draft
 				s.mockDraftRepo.EXPECT().
@@ -122,7 +123,7 @@ func (s *OrchestratorTestSuite) TestUpdateRace() {
 			setupMock: func() {
 				s.mockDraftRepo.EXPECT().
 					Get(s.ctx, draftrepo.GetInput{ID: s.testDraftID}).
-					Return(&draftrepo.GetOutput{Draft: s.testDraft}, nil)
+					Return(&draftrepo.GetOutput{Draft: dnd5e.FromCharacterDraft(s.testDraft)}, nil)
 
 				// Engine validates race choice
 				s.mockEngine.EXPECT().
@@ -142,6 +143,22 @@ func (s *OrchestratorTestSuite) TestUpdateRace() {
 					DoAndReturn(func(_ context.Context, input draftrepo.UpdateInput) (*draftrepo.UpdateOutput, error) {
 						return &draftrepo.UpdateOutput{Draft: input.Draft}, nil
 					})
+
+				// Expect hydration call for the new race
+				s.mockExternalClient.EXPECT().
+					GetRaceData(s.ctx, dnd5e.RaceElf).
+					Return(&external.RaceData{
+						ID:   dnd5e.RaceElf,
+						Name: "Elf",
+					}, nil)
+
+				// Also expect class hydration since draft has classID
+				s.mockExternalClient.EXPECT().
+					GetClassData(s.ctx, dnd5e.ClassWizard).
+					Return(&external.ClassData{
+						ID:   dnd5e.ClassWizard,
+						Name: "Wizard",
+					}, nil)
 			},
 			wantErr: false,
 			validate: func(output *characterorchestrator.UpdateRaceOutput) {
@@ -159,7 +176,7 @@ func (s *OrchestratorTestSuite) TestUpdateRace() {
 			setupMock: func() {
 				s.mockDraftRepo.EXPECT().
 					Get(s.ctx, draftrepo.GetInput{ID: s.testDraftID}).
-					Return(&draftrepo.GetOutput{Draft: s.testDraft}, nil)
+					Return(&draftrepo.GetOutput{Draft: dnd5e.FromCharacterDraft(s.testDraft)}, nil)
 
 				s.mockEngine.EXPECT().
 					ValidateRaceChoice(s.ctx, gomock.Any()).
@@ -180,6 +197,22 @@ func (s *OrchestratorTestSuite) TestUpdateRace() {
 					DoAndReturn(func(_ context.Context, input draftrepo.UpdateInput) (*draftrepo.UpdateOutput, error) {
 						return &draftrepo.UpdateOutput{Draft: input.Draft}, nil
 					})
+
+				// Expect hydration for the invalid race
+				s.mockExternalClient.EXPECT().
+					GetRaceData(s.ctx, "invalid-race").
+					Return(&external.RaceData{
+						ID:   "invalid-race",
+						Name: "Invalid Race",
+					}, nil)
+
+				// Still expect class hydration for existing class
+				s.mockExternalClient.EXPECT().
+					GetClassData(s.ctx, dnd5e.ClassWizard).
+					Return(&external.ClassData{
+						ID:   dnd5e.ClassWizard,
+						Name: "Wizard",
+					}, nil)
 			},
 			wantErr: false, // Returns warnings, not error
 			validate: func(output *characterorchestrator.UpdateRaceOutput) {
@@ -196,7 +229,7 @@ func (s *OrchestratorTestSuite) TestUpdateRace() {
 			setupMock: func() {
 				s.mockDraftRepo.EXPECT().
 					Get(s.ctx, draftrepo.GetInput{ID: s.testDraftID}).
-					Return(&draftrepo.GetOutput{Draft: s.testDraft}, nil)
+					Return(&draftrepo.GetOutput{Draft: dnd5e.FromCharacterDraft(s.testDraft)}, nil)
 
 				s.mockEngine.EXPECT().
 					ValidateRaceChoice(s.ctx, gomock.Any()).
@@ -233,6 +266,7 @@ func (s *OrchestratorTestSuite) TestUpdateClass() {
 		PlayerID:  s.testPlayerID,
 		SessionID: s.testSessionID,
 		Name:      "Test Character",
+		RaceID:    dnd5e.RaceHuman,
 		AbilityScores: &dnd5e.AbilityScores{
 			Strength:     8,
 			Dexterity:    14,
@@ -241,7 +275,7 @@ func (s *OrchestratorTestSuite) TestUpdateClass() {
 			Wisdom:       13,
 			Charisma:     10,
 		},
-		StartingSkillIDs: []string{dnd5e.SkillArcana}, // Has existing skills
+		// Skills are now handled through ChoiceSelections
 	}
 
 	testCases := []struct {
@@ -262,7 +296,7 @@ func (s *OrchestratorTestSuite) TestUpdateClass() {
 			setupMock: func() {
 				s.mockDraftRepo.EXPECT().
 					Get(s.ctx, draftrepo.GetInput{ID: s.testDraftID}).
-					Return(&draftrepo.GetOutput{Draft: draftWithAbilityScores}, nil)
+					Return(&draftrepo.GetOutput{Draft: dnd5e.FromCharacterDraft(draftWithAbilityScores)}, nil)
 
 				s.mockEngine.EXPECT().
 					ValidateClassChoice(s.ctx, &engine.ValidateClassChoiceInput{
@@ -280,11 +314,25 @@ func (s *OrchestratorTestSuite) TestUpdateClass() {
 				s.mockDraftRepo.EXPECT().
 					Update(s.ctx, gomock.Any()).
 					DoAndReturn(func(_ context.Context, input draftrepo.UpdateInput) (*draftrepo.UpdateOutput, error) {
-						// Verify skills were cleared
-						s.Empty(input.Draft.StartingSkillIDs)
+						// Skills are now handled through choices
 						s.False(input.Draft.Progress.HasSkills())
 						return &draftrepo.UpdateOutput{Draft: input.Draft}, nil
 					})
+
+				// Expect hydration
+				s.mockExternalClient.EXPECT().
+					GetRaceData(s.ctx, dnd5e.RaceHuman).
+					Return(&external.RaceData{
+						ID:   dnd5e.RaceHuman,
+						Name: "Human",
+					}, nil)
+
+				s.mockExternalClient.EXPECT().
+					GetClassData(s.ctx, dnd5e.ClassWizard).
+					Return(&external.ClassData{
+						ID:   dnd5e.ClassWizard,
+						Name: "Wizard",
+					}, nil)
 			},
 			wantErr: false,
 			validate: func(output *characterorchestrator.UpdateClassOutput) {
@@ -302,7 +350,7 @@ func (s *OrchestratorTestSuite) TestUpdateClass() {
 			setupMock: func() {
 				s.mockDraftRepo.EXPECT().
 					Get(s.ctx, draftrepo.GetInput{ID: s.testDraftID}).
-					Return(&draftrepo.GetOutput{Draft: draftWithAbilityScores}, nil)
+					Return(&draftrepo.GetOutput{Draft: dnd5e.FromCharacterDraft(draftWithAbilityScores)}, nil)
 
 				s.mockEngine.EXPECT().
 					ValidateClassChoice(s.ctx, gomock.Any()).
@@ -329,6 +377,21 @@ func (s *OrchestratorTestSuite) TestUpdateClass() {
 					DoAndReturn(func(_ context.Context, input draftrepo.UpdateInput) (*draftrepo.UpdateOutput, error) {
 						return &draftrepo.UpdateOutput{Draft: input.Draft}, nil
 					})
+
+				// Expect hydration for existing race and new class
+				s.mockExternalClient.EXPECT().
+					GetRaceData(s.ctx, dnd5e.RaceHuman).
+					Return(&external.RaceData{
+						ID:   dnd5e.RaceHuman,
+						Name: "Human",
+					}, nil)
+
+				s.mockExternalClient.EXPECT().
+					GetClassData(s.ctx, dnd5e.ClassBarbarian).
+					Return(&external.ClassData{
+						ID:   dnd5e.ClassBarbarian,
+						Name: "Barbarian",
+					}, nil)
 			},
 			wantErr: false,
 			validate: func(output *characterorchestrator.UpdateClassOutput) {
@@ -402,7 +465,7 @@ func (s *OrchestratorTestSuite) TestUpdateAbilityScores() {
 			setupMock: func() {
 				s.mockDraftRepo.EXPECT().
 					Get(s.ctx, draftrepo.GetInput{ID: s.testDraftID}).
-					Return(&draftrepo.GetOutput{Draft: s.testDraft}, nil)
+					Return(&draftrepo.GetOutput{Draft: dnd5e.FromCharacterDraft(s.testDraft)}, nil)
 
 				s.mockEngine.EXPECT().
 					ValidateAbilityScores(s.ctx, gomock.Any()).
@@ -456,7 +519,7 @@ func (s *OrchestratorTestSuite) TestUpdateAbilityScores() {
 			setupMock: func() {
 				s.mockDraftRepo.EXPECT().
 					Get(s.ctx, draftrepo.GetInput{ID: s.testDraftID}).
-					Return(&draftrepo.GetOutput{Draft: draftWithClass}, nil)
+					Return(&draftrepo.GetOutput{Draft: dnd5e.FromCharacterDraft(draftWithClass)}, nil)
 
 				s.mockEngine.EXPECT().
 					ValidateAbilityScores(s.ctx, gomock.Any()).
@@ -543,7 +606,7 @@ func (s *OrchestratorTestSuite) TestUpdateSkills() {
 			setupMock: func() {
 				s.mockDraftRepo.EXPECT().
 					Get(s.ctx, draftrepo.GetInput{ID: s.testDraftID}).
-					Return(&draftrepo.GetOutput{Draft: completePrereqsDraft}, nil)
+					Return(&draftrepo.GetOutput{Draft: dnd5e.FromCharacterDraft(completePrereqsDraft)}, nil)
 
 				s.mockEngine.EXPECT().
 					ValidateSkillChoices(s.ctx, &engine.ValidateSkillChoicesInput{
@@ -568,7 +631,7 @@ func (s *OrchestratorTestSuite) TestUpdateSkills() {
 			},
 			wantErr: false,
 			validate: func(output *characterorchestrator.UpdateSkillsOutput) {
-				s.Len(output.Draft.StartingSkillIDs, 4)
+				// Skills are now stored in ChoiceSelections
 				s.Empty(output.Warnings)
 			},
 		},
@@ -582,7 +645,7 @@ func (s *OrchestratorTestSuite) TestUpdateSkills() {
 			setupMock: func() {
 				s.mockDraftRepo.EXPECT().
 					Get(s.ctx, draftrepo.GetInput{ID: s.testDraftID}).
-					Return(&draftrepo.GetOutput{Draft: s.testDraft}, nil)
+					Return(&draftrepo.GetOutput{Draft: dnd5e.FromCharacterDraft(s.testDraft)}, nil)
 
 				// Still expect update even with missing prerequisites (converted to warnings)
 				s.mockDraftRepo.EXPECT().
@@ -610,7 +673,7 @@ func (s *OrchestratorTestSuite) TestUpdateSkills() {
 			setupMock: func() {
 				s.mockDraftRepo.EXPECT().
 					Get(s.ctx, draftrepo.GetInput{ID: s.testDraftID}).
-					Return(&draftrepo.GetOutput{Draft: completePrereqsDraft}, nil)
+					Return(&draftrepo.GetOutput{Draft: dnd5e.FromCharacterDraft(completePrereqsDraft)}, nil)
 
 				s.mockEngine.EXPECT().
 					ValidateSkillChoices(s.ctx, gomock.Any()).

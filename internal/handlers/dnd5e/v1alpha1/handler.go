@@ -60,7 +60,7 @@ func (h *Handler) CreateDraft(
 
 	// Convert initial data if provided
 	if req.InitialData != nil {
-		input.InitialData = convertProtoDraftToEntity(req.InitialData)
+		input.InitialData = convertProtoDraftDataToEntity(req.InitialData)
 	}
 
 	output, err := h.characterService.CreateDraft(ctx, input)
@@ -193,10 +193,36 @@ func (h *Handler) UpdateRace(
 		return nil, errors.ToGRPCError(errors.InvalidArgument("race is required"))
 	}
 
+	// Convert race choices from proto
+	choices := make([]dnd5e.ChoiceSelection, 0, len(req.RaceChoices))
+	for _, protoChoice := range req.RaceChoices {
+		if protoChoice != nil {
+			choice := dnd5e.ChoiceSelection{
+				ChoiceID:     protoChoice.ChoiceId,
+				ChoiceType:   mapProtoChoiceTypeToConstant(protoChoice.ChoiceType),
+				Source:       mapProtoChoiceSourceToConstant(protoChoice.Source),
+				SelectedKeys: protoChoice.SelectedKeys,
+			}
+
+			// Convert ability score choices
+			for _, abilityChoice := range protoChoice.AbilityScoreChoices {
+				if abilityChoice != nil {
+					choice.AbilityScoreChoices = append(choice.AbilityScoreChoices, dnd5e.AbilityScoreChoice{
+						Ability: mapProtoAbilityToConstant(abilityChoice.Ability),
+						Bonus:   abilityChoice.Bonus,
+					})
+				}
+			}
+
+			choices = append(choices, choice)
+		}
+	}
+
 	input := &character.UpdateRaceInput{
 		DraftID:   req.DraftId,
 		RaceID:    mapProtoRaceToConstant(req.Race),
 		SubraceID: mapProtoSubraceToConstant(req.Subrace),
+		Choices:   choices,
 	}
 
 	output, err := h.characterService.UpdateRace(ctx, input)
@@ -222,9 +248,13 @@ func (h *Handler) UpdateClass(
 		return nil, errors.ToGRPCError(errors.InvalidArgument("class is required"))
 	}
 
+	// Convert class choices from proto
+	choices := convertProtoChoicesToEntity(req.ClassChoices)
+
 	input := &character.UpdateClassInput{
 		DraftID: req.DraftId,
 		ClassID: mapProtoClassToConstant(req.Class),
+		Choices: choices,
 	}
 
 	output, err := h.characterService.UpdateClass(ctx, input)
@@ -250,9 +280,13 @@ func (h *Handler) UpdateBackground(
 		return nil, errors.ToGRPCError(errors.InvalidArgument("background is required"))
 	}
 
+	// Convert background choices from proto
+	choices := convertProtoChoicesToEntity(req.BackgroundChoices)
+
 	input := &character.UpdateBackgroundInput{
 		DraftID:      req.DraftId,
 		BackgroundID: mapProtoBackgroundToConstant(req.Background),
+		Choices:      choices,
 	}
 
 	output, err := h.characterService.UpdateBackground(ctx, input)
@@ -325,7 +359,7 @@ func (h *Handler) UpdateSkills(
 	}
 
 	// Convert skills from proto to constants
-	var skillIDs []string
+	skillIDs := make([]string, 0, len(req.Skills))
 	for _, skill := range req.Skills {
 		if skillID := mapProtoSkillToConstant(skill); skillID != "" {
 			skillIDs = append(skillIDs, skillID)
@@ -543,7 +577,8 @@ func (h *Handler) RollAbilityScores(
 
 // Converter functions
 
-func convertProtoDraftToEntity(proto *dnd5ev1alpha1.CharacterDraft) *dnd5e.CharacterDraft {
+// convertProtoDraftDataToEntity converts CharacterDraftData (input proto) to entity
+func convertProtoDraftDataToEntity(proto *dnd5ev1alpha1.CharacterDraftData) *dnd5e.CharacterDraft {
 	if proto == nil {
 		return nil
 	}
@@ -591,17 +626,27 @@ func convertProtoDraftToEntity(proto *dnd5ev1alpha1.CharacterDraft) *dnd5e.Chara
 		}
 	}
 
-	// Convert skills
-	for _, skill := range proto.StartingSkills {
-		if skillID := mapProtoSkillToConstant(skill); skillID != "" {
-			draft.StartingSkillIDs = append(draft.StartingSkillIDs, skillID)
-		}
-	}
+	// Convert choices
+	for _, protoChoice := range proto.Choices {
+		if protoChoice != nil {
+			choice := dnd5e.ChoiceSelection{
+				ChoiceID:     protoChoice.ChoiceId,
+				ChoiceType:   mapProtoChoiceTypeToConstant(protoChoice.ChoiceType),
+				Source:       mapProtoChoiceSourceToConstant(protoChoice.Source),
+				SelectedKeys: protoChoice.SelectedKeys,
+			}
 
-	// Convert languages
-	for _, lang := range proto.AdditionalLanguages {
-		if langID := mapProtoLanguageToConstant(lang); langID != "" {
-			draft.AdditionalLanguages = append(draft.AdditionalLanguages, langID)
+			// Convert ability score choices
+			for _, abilityChoice := range protoChoice.AbilityScoreChoices {
+				if abilityChoice != nil {
+					choice.AbilityScoreChoices = append(choice.AbilityScoreChoices, dnd5e.AbilityScoreChoice{
+						Ability: mapProtoAbilityToConstant(abilityChoice.Ability),
+						Bonus:   abilityChoice.Bonus,
+					})
+				}
+			}
+
+			draft.ChoiceSelections = append(draft.ChoiceSelections, choice)
 		}
 	}
 
@@ -638,8 +683,7 @@ func convertProtoDraftToEntity(proto *dnd5ev1alpha1.CharacterDraft) *dnd5e.Chara
 	if proto.Metadata != nil {
 		draft.CreatedAt = proto.Metadata.CreatedAt
 		draft.UpdatedAt = proto.Metadata.UpdatedAt
-		draft.DiscordChannelID = proto.Metadata.DiscordChannelId
-		draft.DiscordMessageID = proto.Metadata.DiscordMessageId
+		// Discord fields are not needed in the API service
 	}
 
 	draft.ExpiresAt = proto.ExpiresAt
@@ -672,29 +716,27 @@ func convertEntityDraftToProto(entity *dnd5e.CharacterDraft) *dnd5ev1alpha1.Char
 		Metadata: &dnd5ev1alpha1.DraftMetadata{
 			CreatedAt:        entity.CreatedAt,
 			UpdatedAt:        entity.UpdatedAt,
-			DiscordChannelId: entity.DiscordChannelID,
-			DiscordMessageId: entity.DiscordMessageID,
+			DiscordChannelId: "", // Discord fields are not used in the API service
+			DiscordMessageId: "", // Discord fields are not used in the API service
 		},
 	}
 
-	// Convert race
-	if entity.RaceID != "" {
-		proto.Race = mapConstantToProtoRace(entity.RaceID)
+	// Convert race info if populated by orchestrator
+	if entity.Race != nil {
+		proto.Race = convertRaceInfoToProto(entity.Race)
+	}
+	if entity.Subrace != nil {
+		proto.Subrace = convertSubraceInfoToProto(entity.Subrace)
 	}
 
-	// Convert subrace
-	if entity.SubraceID != "" {
-		proto.Subrace = mapConstantToProtoSubrace(entity.SubraceID)
+	// Convert class info if populated by orchestrator
+	if entity.Class != nil {
+		proto.Class = convertClassInfoToProto(entity.Class)
 	}
 
-	// Convert class
-	if entity.ClassID != "" {
-		proto.Class = mapConstantToProtoClass(entity.ClassID)
-	}
-
-	// Convert background
-	if entity.BackgroundID != "" {
-		proto.Background = mapConstantToProtoBackground(entity.BackgroundID)
+	// Convert background info if populated by orchestrator
+	if entity.Background != nil {
+		proto.Background = convertBackgroundInfoToProto(entity.Background)
 	}
 
 	// Convert alignment
@@ -714,18 +756,27 @@ func convertEntityDraftToProto(entity *dnd5e.CharacterDraft) *dnd5ev1alpha1.Char
 		}
 	}
 
-	// Convert skills
-	for _, skillID := range entity.StartingSkillIDs {
-		if skill := mapConstantToProtoSkill(skillID); skill != dnd5ev1alpha1.Skill_SKILL_UNSPECIFIED {
-			proto.StartingSkills = append(proto.StartingSkills, skill)
-		}
-	}
+	// Note: StartingSkills and AdditionalLanguages are no longer in the response proto
+	// All skills and languages are now tracked through the choices system
 
-	// Convert languages
-	for _, langID := range entity.AdditionalLanguages {
-		if lang := mapConstantToProtoLanguage(langID); lang != dnd5ev1alpha1.Language_LANGUAGE_UNSPECIFIED {
-			proto.AdditionalLanguages = append(proto.AdditionalLanguages, lang)
+	// Convert choices
+	for _, entityChoice := range entity.ChoiceSelections {
+		protoChoice := &dnd5ev1alpha1.ChoiceSelection{
+			ChoiceId:     entityChoice.ChoiceID,
+			ChoiceType:   mapConstantToProtoChoiceType(entityChoice.ChoiceType),
+			Source:       mapConstantToProtoChoiceSource(entityChoice.Source),
+			SelectedKeys: entityChoice.SelectedKeys,
 		}
+
+		// Convert ability score choices
+		for _, abilityChoice := range entityChoice.AbilityScoreChoices {
+			protoChoice.AbilityScoreChoices = append(protoChoice.AbilityScoreChoices, &dnd5ev1alpha1.AbilityScoreChoice{
+				Ability: mapConstantToProtoAbility(abilityChoice.Ability),
+				Bonus:   abilityChoice.Bonus,
+			})
+		}
+
+		proto.Choices = append(proto.Choices, protoChoice)
 	}
 
 	return proto
@@ -915,45 +966,6 @@ func mapProtoSkillToConstant(skill dnd5ev1alpha1.Skill) string {
 	}
 }
 
-func mapProtoLanguageToConstant(lang dnd5ev1alpha1.Language) string {
-	switch lang {
-	case dnd5ev1alpha1.Language_LANGUAGE_COMMON:
-		return dnd5e.LanguageCommon
-	case dnd5ev1alpha1.Language_LANGUAGE_DWARVISH:
-		return dnd5e.LanguageDwarvish
-	case dnd5ev1alpha1.Language_LANGUAGE_ELVISH:
-		return dnd5e.LanguageElvish
-	case dnd5ev1alpha1.Language_LANGUAGE_GIANT:
-		return dnd5e.LanguageGiant
-	case dnd5ev1alpha1.Language_LANGUAGE_GNOMISH:
-		return dnd5e.LanguageGnomish
-	case dnd5ev1alpha1.Language_LANGUAGE_GOBLIN:
-		return dnd5e.LanguageGoblin
-	case dnd5ev1alpha1.Language_LANGUAGE_HALFLING:
-		return dnd5e.LanguageHalfling
-	case dnd5ev1alpha1.Language_LANGUAGE_ORC:
-		return dnd5e.LanguageOrc
-	case dnd5ev1alpha1.Language_LANGUAGE_ABYSSAL:
-		return dnd5e.LanguageAbyssal
-	case dnd5ev1alpha1.Language_LANGUAGE_CELESTIAL:
-		return dnd5e.LanguageCelestial
-	case dnd5ev1alpha1.Language_LANGUAGE_DRACONIC:
-		return dnd5e.LanguageDraconic
-	case dnd5ev1alpha1.Language_LANGUAGE_DEEP_SPEECH:
-		return dnd5e.LanguageDeepSpeech
-	case dnd5ev1alpha1.Language_LANGUAGE_INFERNAL:
-		return dnd5e.LanguageInfernal
-	case dnd5ev1alpha1.Language_LANGUAGE_PRIMORDIAL:
-		return dnd5e.LanguagePrimordial
-	case dnd5ev1alpha1.Language_LANGUAGE_SYLVAN:
-		return dnd5e.LanguageSylvan
-	case dnd5ev1alpha1.Language_LANGUAGE_UNDERCOMMON:
-		return dnd5e.LanguageUndercommon
-	default:
-		return ""
-	}
-}
-
 func mapProtoCreationStepToConstant(step dnd5ev1alpha1.CreationStep) string {
 	switch step {
 	case dnd5ev1alpha1.CreationStep_CREATION_STEP_NAME:
@@ -1115,49 +1127,6 @@ func mapConstantToProtoAlignment(constant string) dnd5ev1alpha1.Alignment {
 		return dnd5ev1alpha1.Alignment_ALIGNMENT_CHAOTIC_EVIL
 	default:
 		return dnd5ev1alpha1.Alignment_ALIGNMENT_UNSPECIFIED
-	}
-}
-
-func mapConstantToProtoSkill(constant string) dnd5ev1alpha1.Skill {
-	switch constant {
-	case dnd5e.SkillAcrobatics:
-		return dnd5ev1alpha1.Skill_SKILL_ACROBATICS
-	case dnd5e.SkillAnimalHandling:
-		return dnd5ev1alpha1.Skill_SKILL_ANIMAL_HANDLING
-	case dnd5e.SkillArcana:
-		return dnd5ev1alpha1.Skill_SKILL_ARCANA
-	case dnd5e.SkillAthletics:
-		return dnd5ev1alpha1.Skill_SKILL_ATHLETICS
-	case dnd5e.SkillDeception:
-		return dnd5ev1alpha1.Skill_SKILL_DECEPTION
-	case dnd5e.SkillHistory:
-		return dnd5ev1alpha1.Skill_SKILL_HISTORY
-	case dnd5e.SkillInsight:
-		return dnd5ev1alpha1.Skill_SKILL_INSIGHT
-	case dnd5e.SkillIntimidation:
-		return dnd5ev1alpha1.Skill_SKILL_INTIMIDATION
-	case dnd5e.SkillInvestigation:
-		return dnd5ev1alpha1.Skill_SKILL_INVESTIGATION
-	case dnd5e.SkillMedicine:
-		return dnd5ev1alpha1.Skill_SKILL_MEDICINE
-	case dnd5e.SkillNature:
-		return dnd5ev1alpha1.Skill_SKILL_NATURE
-	case dnd5e.SkillPerception:
-		return dnd5ev1alpha1.Skill_SKILL_PERCEPTION
-	case dnd5e.SkillPerformance:
-		return dnd5ev1alpha1.Skill_SKILL_PERFORMANCE
-	case dnd5e.SkillPersuasion:
-		return dnd5ev1alpha1.Skill_SKILL_PERSUASION
-	case dnd5e.SkillReligion:
-		return dnd5ev1alpha1.Skill_SKILL_RELIGION
-	case dnd5e.SkillSleightOfHand:
-		return dnd5ev1alpha1.Skill_SKILL_SLEIGHT_OF_HAND
-	case dnd5e.SkillStealth:
-		return dnd5ev1alpha1.Skill_SKILL_STEALTH
-	case dnd5e.SkillSurvival:
-		return dnd5ev1alpha1.Skill_SKILL_SURVIVAL
-	default:
-		return dnd5ev1alpha1.Skill_SKILL_UNSPECIFIED
 	}
 }
 
@@ -1495,7 +1464,7 @@ func convertEntityRaceToProto(race *dnd5e.RaceInfo) *dnd5ev1alpha1.RaceInfo {
 	}
 
 	// Convert all choices
-	var choices []*dnd5ev1alpha1.Choice
+	choices := make([]*dnd5ev1alpha1.Choice, 0, len(race.Choices))
 	for i := range race.Choices {
 		choices = append(choices, convertChoiceToProto(&race.Choices[i]))
 	}
@@ -1525,7 +1494,7 @@ func convertEntityClassToProto(class *dnd5e.ClassInfo) *dnd5ev1alpha1.ClassInfo 
 	}
 
 	// Convert all choices
-	var choices []*dnd5ev1alpha1.Choice
+	choices := make([]*dnd5ev1alpha1.Choice, 0, len(class.Choices))
 	for i := range class.Choices {
 		choices = append(choices, convertChoiceToProto(&class.Choices[i]))
 	}
@@ -1872,11 +1841,8 @@ func convertSpellToProto(spell *dnd5e.SpellInfo) *dnd5ev1alpha1.Spell {
 	}
 
 	// Convert classes
-	protoClasses := make([]string, len(spell.Classes))
-	for i, class := range spell.Classes {
-		protoClasses[i] = class
-	}
-	protoSpell.Classes = protoClasses
+	protoSpell.Classes = make([]string, len(spell.Classes))
+	copy(protoSpell.Classes, spell.Classes)
 
 	// TODO: Add spell damage and area of effect conversion
 	// This would require more detailed spell data from the dnd5e-api
@@ -1933,5 +1899,373 @@ func convertSpellSelectionTypeToProto(selectionType string) dnd5ev1alpha1.SpellS
 		return dnd5ev1alpha1.SpellSelectionType_SPELL_SELECTION_TYPE_PREPARED
 	default:
 		return dnd5ev1alpha1.SpellSelectionType_SPELL_SELECTION_TYPE_UNSPECIFIED
+	}
+}
+
+// Choice mapping functions
+
+// mapProtoChoiceTypeToConstant converts proto ChoiceType to entity constant
+func mapProtoChoiceTypeToConstant(protoType dnd5ev1alpha1.ChoiceType) dnd5e.ChoiceType {
+	switch protoType {
+	case dnd5ev1alpha1.ChoiceType_CHOICE_TYPE_EQUIPMENT:
+		return dnd5e.ChoiceTypeEquipment
+	case dnd5ev1alpha1.ChoiceType_CHOICE_TYPE_SKILL:
+		return dnd5e.ChoiceTypeSkill
+	case dnd5ev1alpha1.ChoiceType_CHOICE_TYPE_TOOL:
+		return dnd5e.ChoiceTypeTool
+	case dnd5ev1alpha1.ChoiceType_CHOICE_TYPE_LANGUAGE:
+		return dnd5e.ChoiceTypeLanguage
+	case dnd5ev1alpha1.ChoiceType_CHOICE_TYPE_SPELL:
+		return dnd5e.ChoiceTypeSpell
+	case dnd5ev1alpha1.ChoiceType_CHOICE_TYPE_FEAT:
+		return dnd5e.ChoiceTypeFeat
+	// Note: Fighting style, cantrips, and spells are handled as spell types
+	// These will map to CHOICE_TYPE_SPELL for now
+	default:
+		return dnd5e.ChoiceTypeEquipment // Default
+	}
+}
+
+// mapConstantToProtoChoiceType converts entity constant to proto ChoiceType
+func mapConstantToProtoChoiceType(constant dnd5e.ChoiceType) dnd5ev1alpha1.ChoiceType {
+	switch constant {
+	case dnd5e.ChoiceTypeEquipment:
+		return dnd5ev1alpha1.ChoiceType_CHOICE_TYPE_EQUIPMENT
+	case dnd5e.ChoiceTypeSkill:
+		return dnd5ev1alpha1.ChoiceType_CHOICE_TYPE_SKILL
+	case dnd5e.ChoiceTypeTool:
+		return dnd5ev1alpha1.ChoiceType_CHOICE_TYPE_TOOL
+	case dnd5e.ChoiceTypeLanguage:
+		return dnd5ev1alpha1.ChoiceType_CHOICE_TYPE_LANGUAGE
+	case dnd5e.ChoiceTypeSpell:
+		return dnd5ev1alpha1.ChoiceType_CHOICE_TYPE_SPELL
+	case dnd5e.ChoiceTypeFeat:
+		return dnd5ev1alpha1.ChoiceType_CHOICE_TYPE_FEAT
+	case dnd5e.ChoiceTypeFightingStyle, dnd5e.ChoiceTypeCantrips, dnd5e.ChoiceTypeSpells:
+		return dnd5ev1alpha1.ChoiceType_CHOICE_TYPE_SPELL
+	default:
+		return dnd5ev1alpha1.ChoiceType_CHOICE_TYPE_UNSPECIFIED
+	}
+}
+
+// mapProtoChoiceSourceToConstant converts proto ChoiceSource to entity constant
+func mapProtoChoiceSourceToConstant(protoSource dnd5ev1alpha1.ChoiceSource) dnd5e.ChoiceSource {
+	switch protoSource {
+	case dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_RACE:
+		return dnd5e.ChoiceSourceRace
+	case dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_CLASS:
+		return dnd5e.ChoiceSourceClass
+	case dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_BACKGROUND:
+		return dnd5e.ChoiceSourceBackground
+	case dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_SUBRACE:
+		return dnd5e.ChoiceSourceSubrace
+	// Note: CHOICE_SOURCE_FEATURE is not in the proto, mapping features to CLASS
+	default:
+		return dnd5e.ChoiceSourceRace // Default
+	}
+}
+
+// mapConstantToProtoChoiceSource converts entity constant to proto ChoiceSource
+func mapConstantToProtoChoiceSource(constant dnd5e.ChoiceSource) dnd5ev1alpha1.ChoiceSource {
+	switch constant {
+	case dnd5e.ChoiceSourceRace:
+		return dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_RACE
+	case dnd5e.ChoiceSourceClass:
+		return dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_CLASS
+	case dnd5e.ChoiceSourceBackground:
+		return dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_BACKGROUND
+	case dnd5e.ChoiceSourceSubrace:
+		return dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_SUBRACE
+	case dnd5e.ChoiceSourceFeature:
+		return dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_CLASS
+	default:
+		return dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_UNSPECIFIED
+	}
+}
+
+// mapProtoAbilityToConstant converts proto Ability to entity constant
+func mapProtoAbilityToConstant(protoAbility dnd5ev1alpha1.Ability) string {
+	switch protoAbility {
+	case dnd5ev1alpha1.Ability_ABILITY_STRENGTH:
+		return dnd5e.AbilityStrength
+	case dnd5ev1alpha1.Ability_ABILITY_DEXTERITY:
+		return dnd5e.AbilityDexterity
+	case dnd5ev1alpha1.Ability_ABILITY_CONSTITUTION:
+		return dnd5e.AbilityConstitution
+	case dnd5ev1alpha1.Ability_ABILITY_INTELLIGENCE:
+		return dnd5e.AbilityIntelligence
+	case dnd5ev1alpha1.Ability_ABILITY_WISDOM:
+		return dnd5e.AbilityWisdom
+	case dnd5ev1alpha1.Ability_ABILITY_CHARISMA:
+		return dnd5e.AbilityCharisma
+	default:
+		return dnd5e.AbilityStrength // Default
+	}
+}
+
+// mapConstantToProtoAbility converts entity constant to proto Ability
+func mapConstantToProtoAbility(constant string) dnd5ev1alpha1.Ability {
+	switch constant {
+	case dnd5e.AbilityStrength:
+		return dnd5ev1alpha1.Ability_ABILITY_STRENGTH
+	case dnd5e.AbilityDexterity:
+		return dnd5ev1alpha1.Ability_ABILITY_DEXTERITY
+	case dnd5e.AbilityConstitution:
+		return dnd5ev1alpha1.Ability_ABILITY_CONSTITUTION
+	case dnd5e.AbilityIntelligence:
+		return dnd5ev1alpha1.Ability_ABILITY_INTELLIGENCE
+	case dnd5e.AbilityWisdom:
+		return dnd5ev1alpha1.Ability_ABILITY_WISDOM
+	case dnd5e.AbilityCharisma:
+		return dnd5ev1alpha1.Ability_ABILITY_CHARISMA
+	default:
+		return dnd5ev1alpha1.Ability_ABILITY_UNSPECIFIED
+	}
+}
+
+// convertProtoChoicesToEntity converts proto choice selections to entity format
+func convertProtoChoicesToEntity(protoChoices []*dnd5ev1alpha1.ChoiceSelection) []dnd5e.ChoiceSelection {
+	choices := make([]dnd5e.ChoiceSelection, 0, len(protoChoices))
+	for _, protoChoice := range protoChoices {
+		if protoChoice != nil {
+			choice := dnd5e.ChoiceSelection{
+				ChoiceID:     protoChoice.ChoiceId,
+				ChoiceType:   mapProtoChoiceTypeToConstant(protoChoice.ChoiceType),
+				Source:       mapProtoChoiceSourceToConstant(protoChoice.Source),
+				SelectedKeys: protoChoice.SelectedKeys,
+			}
+
+			// Convert ability score choices if present
+			for _, protoASChoice := range protoChoice.AbilityScoreChoices {
+				choice.AbilityScoreChoices = append(choice.AbilityScoreChoices, dnd5e.AbilityScoreChoice{
+					Ability: mapProtoAbilityToConstant(protoASChoice.Ability),
+					Bonus:   protoASChoice.Bonus,
+				})
+			}
+
+			choices = append(choices, choice)
+		}
+	}
+	return choices
+}
+
+// convertRaceInfoToProto converts entity RaceInfo to proto RaceInfo
+func convertRaceInfoToProto(race *dnd5e.RaceInfo) *dnd5ev1alpha1.RaceInfo {
+	if race == nil {
+		return nil
+	}
+
+	protoRace := &dnd5ev1alpha1.RaceInfo{
+		Id:                   race.ID,
+		Name:                 race.Name,
+		Description:          race.Description,
+		Speed:                race.Speed,
+		Size:                 mapSizeToProto(race.Size),
+		SizeDescription:      race.SizeDescription,
+		AgeDescription:       race.AgeDescription,
+		AlignmentDescription: race.AlignmentDescription,
+	}
+
+	// Convert ability bonuses
+	if len(race.AbilityBonuses) > 0 {
+		protoRace.AbilityBonuses = make(map[string]int32)
+		for k, v := range race.AbilityBonuses {
+			protoRace.AbilityBonuses[k] = v
+		}
+	}
+
+	// Convert traits
+	if len(race.Traits) > 0 {
+		protoRace.Traits = make([]*dnd5ev1alpha1.RacialTrait, len(race.Traits))
+		for i, trait := range race.Traits {
+			protoRace.Traits[i] = &dnd5ev1alpha1.RacialTrait{
+				Name:        trait.Name,
+				Description: trait.Description,
+				IsChoice:    trait.IsChoice,
+				Options:     trait.Options,
+			}
+		}
+	}
+
+	// Convert languages
+	if len(race.Languages) > 0 {
+		protoRace.Languages = make([]dnd5ev1alpha1.Language, len(race.Languages))
+		for i, lang := range race.Languages {
+			protoRace.Languages[i] = mapConstantToProtoLanguage(lang)
+		}
+	}
+
+	// Convert proficiencies
+	protoRace.Proficiencies = race.Proficiencies
+
+	// Convert choices
+	if len(race.Choices) > 0 {
+		protoRace.Choices = make([]*dnd5ev1alpha1.Choice, len(race.Choices))
+		for i := range race.Choices {
+			protoRace.Choices[i] = convertChoiceToProto(&race.Choices[i])
+		}
+	}
+
+	// Convert subraces
+	if len(race.Subraces) > 0 {
+		protoRace.Subraces = make([]*dnd5ev1alpha1.SubraceInfo, len(race.Subraces))
+		for i := range race.Subraces {
+			protoRace.Subraces[i] = convertSubraceInfoToProto(&race.Subraces[i])
+		}
+	}
+
+	return protoRace
+}
+
+// convertSubraceInfoToProto converts entity SubraceInfo to proto SubraceInfo
+func convertSubraceInfoToProto(subrace *dnd5e.SubraceInfo) *dnd5ev1alpha1.SubraceInfo {
+	if subrace == nil {
+		return nil
+	}
+
+	protoSubrace := &dnd5ev1alpha1.SubraceInfo{
+		Id:          subrace.ID,
+		Name:        subrace.Name,
+		Description: subrace.Description,
+	}
+
+	// Convert ability bonuses
+	if len(subrace.AbilityBonuses) > 0 {
+		protoSubrace.AbilityBonuses = make(map[string]int32)
+		for k, v := range subrace.AbilityBonuses {
+			protoSubrace.AbilityBonuses[k] = v
+		}
+	}
+
+	// Convert traits
+	if len(subrace.Traits) > 0 {
+		protoSubrace.Traits = make([]*dnd5ev1alpha1.RacialTrait, len(subrace.Traits))
+		for i, trait := range subrace.Traits {
+			protoSubrace.Traits[i] = &dnd5ev1alpha1.RacialTrait{
+				Name:        trait.Name,
+				Description: trait.Description,
+				IsChoice:    trait.IsChoice,
+				Options:     trait.Options,
+			}
+		}
+	}
+
+	// Convert languages
+	if len(subrace.Languages) > 0 {
+		protoSubrace.Languages = make([]dnd5ev1alpha1.Language, len(subrace.Languages))
+		for i, lang := range subrace.Languages {
+			protoSubrace.Languages[i] = mapConstantToProtoLanguage(lang)
+		}
+	}
+
+	// Convert proficiencies
+	protoSubrace.Proficiencies = subrace.Proficiencies
+
+	return protoSubrace
+}
+
+// convertClassInfoToProto converts entity ClassInfo to proto ClassInfo
+func convertClassInfoToProto(class *dnd5e.ClassInfo) *dnd5ev1alpha1.ClassInfo {
+	if class == nil {
+		return nil
+	}
+
+	protoClass := &dnd5ev1alpha1.ClassInfo{
+		Id:                       class.ID,
+		Name:                     class.Name,
+		Description:              class.Description,
+		HitDie:                   class.HitDie,
+		PrimaryAbilities:         class.PrimaryAbilities,
+		ArmorProficiencies:       class.ArmorProficiencies,
+		WeaponProficiencies:      class.WeaponProficiencies,
+		ToolProficiencies:        class.ToolProficiencies,
+		SavingThrowProficiencies: class.SavingThrowProficiencies,
+		SkillChoicesCount:        class.SkillChoicesCount,
+		AvailableSkills:          class.AvailableSkills,
+		StartingEquipment:        class.StartingEquipment,
+	}
+
+	// Convert level 1 features
+	if len(class.Level1Features) > 0 {
+		protoClass.Level_1Features = make([]*dnd5ev1alpha1.FeatureInfo, len(class.Level1Features))
+		for i := range class.Level1Features {
+			protoClass.Level_1Features[i] = convertFeatureInfoToProto(&class.Level1Features[i])
+		}
+	}
+
+	// Convert spellcasting info
+	if class.Spellcasting != nil {
+		protoClass.Spellcasting = &dnd5ev1alpha1.SpellcastingInfo{
+			SpellcastingAbility: class.Spellcasting.SpellcastingAbility,
+			RitualCasting:       class.Spellcasting.RitualCasting,
+			SpellcastingFocus:   class.Spellcasting.SpellcastingFocus,
+			CantripsKnown:       class.Spellcasting.CantripsKnown,
+			SpellsKnown:         class.Spellcasting.SpellsKnown,
+			SpellSlotsLevel_1:   class.Spellcasting.SpellSlotsLevel1,
+		}
+	}
+
+	// Convert choices
+	if len(class.Choices) > 0 {
+		protoClass.Choices = make([]*dnd5ev1alpha1.Choice, len(class.Choices))
+		for i := range class.Choices {
+			protoClass.Choices[i] = convertChoiceToProto(&class.Choices[i])
+		}
+	}
+
+	return protoClass
+}
+
+// convertBackgroundInfoToProto converts entity BackgroundInfo to proto BackgroundInfo
+func convertBackgroundInfoToProto(background *dnd5e.BackgroundInfo) *dnd5ev1alpha1.BackgroundInfo {
+	if background == nil {
+		return nil
+	}
+
+	protoBackground := &dnd5ev1alpha1.BackgroundInfo{
+		Id:                  background.ID,
+		Name:                background.Name,
+		Description:         background.Description,
+		SkillProficiencies:  background.SkillProficiencies,
+		ToolProficiencies:   background.ToolProficiencies,
+		AdditionalLanguages: background.AdditionalLanguages,
+		StartingEquipment:   background.StartingEquipment,
+		StartingGold:        background.StartingGold,
+		FeatureName:         background.FeatureName,
+		FeatureDescription:  background.FeatureDescription,
+		PersonalityTraits:   background.PersonalityTraits,
+		Ideals:              background.Ideals,
+		Bonds:               background.Bonds,
+		Flaws:               background.Flaws,
+	}
+
+	// Convert languages
+	if len(background.Languages) > 0 {
+		protoBackground.Languages = make([]dnd5ev1alpha1.Language, len(background.Languages))
+		for i, lang := range background.Languages {
+			protoBackground.Languages[i] = mapConstantToProtoLanguage(lang)
+		}
+	}
+
+	return protoBackground
+}
+
+// mapSizeToProto converts entity size string to proto Size
+func mapSizeToProto(size string) dnd5ev1alpha1.Size {
+	switch size {
+	case "tiny":
+		return dnd5ev1alpha1.Size_SIZE_TINY
+	case "small":
+		return dnd5ev1alpha1.Size_SIZE_SMALL
+	case "medium":
+		return dnd5ev1alpha1.Size_SIZE_MEDIUM
+	case "large":
+		return dnd5ev1alpha1.Size_SIZE_LARGE
+	case "huge":
+		return dnd5ev1alpha1.Size_SIZE_HUGE
+	case "gargantuan":
+		return dnd5ev1alpha1.Size_SIZE_GARGANTUAN
+	default:
+		return dnd5ev1alpha1.Size_SIZE_UNSPECIFIED
 	}
 }

@@ -38,6 +38,38 @@ func init() {
 	listSpellsCmd.Flags().Int32Var(&pageSize, "page-size", 20, "Number of items per page")
 }
 
+// mapClassFilterToEnum maps a class name string to the proto enum
+func mapClassFilterToEnum(classFilter string) (dnd5ev1alpha1.Class, error) {
+	switch strings.ToLower(classFilter) {
+	case "barbarian":
+		return dnd5ev1alpha1.Class_CLASS_BARBARIAN, nil
+	case "bard":
+		return dnd5ev1alpha1.Class_CLASS_BARD, nil
+	case "cleric":
+		return dnd5ev1alpha1.Class_CLASS_CLERIC, nil
+	case "druid":
+		return dnd5ev1alpha1.Class_CLASS_DRUID, nil
+	case "fighter":
+		return dnd5ev1alpha1.Class_CLASS_FIGHTER, nil
+	case "monk":
+		return dnd5ev1alpha1.Class_CLASS_MONK, nil
+	case "paladin":
+		return dnd5ev1alpha1.Class_CLASS_PALADIN, nil
+	case "ranger":
+		return dnd5ev1alpha1.Class_CLASS_RANGER, nil
+	case "rogue":
+		return dnd5ev1alpha1.Class_CLASS_ROGUE, nil
+	case "sorcerer":
+		return dnd5ev1alpha1.Class_CLASS_SORCERER, nil
+	case "warlock":
+		return dnd5ev1alpha1.Class_CLASS_WARLOCK, nil
+	case "wizard":
+		return dnd5ev1alpha1.Class_CLASS_WIZARD, nil
+	default:
+		return dnd5ev1alpha1.Class_CLASS_UNSPECIFIED, fmt.Errorf("unknown class: %s", classFilter)
+	}
+}
+
 func runListSpells(_ *cobra.Command, _ []string) error {
 	client, cleanup, err := createCharacterClient()
 	if err != nil {
@@ -71,34 +103,9 @@ func runListSpells(_ *cobra.Command, _ []string) error {
 
 	// Map class filter to enum if provided
 	if classFilter != "" {
-		var classEnum dnd5ev1alpha1.Class
-		switch strings.ToLower(classFilter) {
-		case "barbarian":
-			classEnum = dnd5ev1alpha1.Class_CLASS_BARBARIAN
-		case "bard":
-			classEnum = dnd5ev1alpha1.Class_CLASS_BARD
-		case "cleric":
-			classEnum = dnd5ev1alpha1.Class_CLASS_CLERIC
-		case "druid":
-			classEnum = dnd5ev1alpha1.Class_CLASS_DRUID
-		case "fighter":
-			classEnum = dnd5ev1alpha1.Class_CLASS_FIGHTER
-		case "monk":
-			classEnum = dnd5ev1alpha1.Class_CLASS_MONK
-		case "paladin":
-			classEnum = dnd5ev1alpha1.Class_CLASS_PALADIN
-		case "ranger":
-			classEnum = dnd5ev1alpha1.Class_CLASS_RANGER
-		case "rogue":
-			classEnum = dnd5ev1alpha1.Class_CLASS_ROGUE
-		case "sorcerer":
-			classEnum = dnd5ev1alpha1.Class_CLASS_SORCERER
-		case "warlock":
-			classEnum = dnd5ev1alpha1.Class_CLASS_WARLOCK
-		case "wizard":
-			classEnum = dnd5ev1alpha1.Class_CLASS_WIZARD
-		default:
-			return fmt.Errorf("unknown class: %s", classFilter)
+		classEnum, err := mapClassFilterToEnum(classFilter)
+		if err != nil {
+			return err
 		}
 		req.Class = classEnum
 	}

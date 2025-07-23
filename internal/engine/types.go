@@ -18,7 +18,12 @@ type ValidateCharacterDraftOutput struct {
 
 // CalculateCharacterStatsInput contains character data for stat calculation
 type CalculateCharacterStatsInput struct {
-	Draft *dnd5e.CharacterDraft
+	Character *dnd5e.Character
+	// Include hydrated data that would be needed for calculations
+	Race       *dnd5e.RaceInfo
+	Subrace    *dnd5e.SubraceInfo
+	Class      *dnd5e.ClassInfo
+	Background *dnd5e.BackgroundInfo
 }
 
 // CalculateCharacterStatsOutput contains calculated character stats
@@ -30,6 +35,23 @@ type CalculateCharacterStatsOutput struct {
 	ProficiencyBonus int32
 	SavingThrows     map[string]int32
 	Skills           map[string]int32
+}
+
+// ValidateCharacterInput contains complete character data for validation
+type ValidateCharacterInput struct {
+	Character *dnd5e.Character
+	// Include hydrated data needed for validation
+	Race       *dnd5e.RaceInfo
+	Subrace    *dnd5e.SubraceInfo
+	Class      *dnd5e.ClassInfo
+	Background *dnd5e.BackgroundInfo
+}
+
+// ValidateCharacterOutput contains character validation results
+type ValidateCharacterOutput struct {
+	IsValid  bool
+	Errors   []ValidationError
+	Warnings []ValidationWarning
 }
 
 // ValidateRaceChoiceInput contains race validation data

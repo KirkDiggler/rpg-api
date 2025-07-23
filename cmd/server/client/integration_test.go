@@ -46,9 +46,13 @@ func TestFighterChoicesIntegration(t *testing.T) {
 	if grpcServerAddress == "" {
 		grpcServerAddress = "localhost:50051"
 	}
-	conn, err := grpc.Dial(grpcServerAddress, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.NewClient(grpcServerAddress, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	require.NoError(t, err)
-	defer conn.Close()
+	defer func() {
+		if err := conn.Close(); err != nil {
+			t.Logf("Failed to close connection: %v", err)
+		}
+	}()
 
 	client := dnd5ev1alpha1.NewCharacterServiceClient(conn)
 
@@ -64,9 +68,16 @@ func TestFighterChoicesIntegration(t *testing.T) {
 	if baseURL == "" {
 		baseURL = "http://localhost:3002"
 	}
-	dndResp, err := http.Get(fmt.Sprintf("%s/api/2014/classes/fighter", baseURL))
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet,
+		fmt.Sprintf("%s/api/2014/classes/fighter", baseURL), nil)
 	require.NoError(t, err)
-	defer dndResp.Body.Close()
+	dndResp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	defer func() {
+		if err := dndResp.Body.Close(); err != nil {
+			t.Logf("Failed to close response body: %v", err)
+		}
+	}()
 
 	var dndClass DnDAPIClass
 	err = json.NewDecoder(dndResp.Body).Decode(&dndClass)
@@ -149,9 +160,13 @@ func TestClassChoiceTypes(t *testing.T) {
 	if grpcServerAddress == "" {
 		grpcServerAddress = "localhost:50051"
 	}
-	conn, err := grpc.Dial(grpcServerAddress, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.NewClient(grpcServerAddress, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	require.NoError(t, err)
-	defer conn.Close()
+	defer func() {
+		if err := conn.Close(); err != nil {
+			t.Logf("Failed to close connection: %v", err)
+		}
+	}()
 
 	client := dnd5ev1alpha1.NewCharacterServiceClient(conn)
 
