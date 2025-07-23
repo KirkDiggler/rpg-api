@@ -43,6 +43,11 @@ type CharacterDraft struct {
 	UpdatedAt        int64
 
 	// Populated by orchestrator when returning draft data
+	// These fields are excluded from JSON serialization (json:"-") because:
+	// 1. They contain redundant data already represented by the ID fields
+	// 2. They're only populated for API responses, not storage
+	// 3. Including them would significantly increase payload size
+	// 4. The handler layer converts these to proper proto messages for responses
 	Race       *RaceInfo       `json:"-"` // Full race info when loaded
 	Subrace    *SubraceInfo    `json:"-"` // Full subrace info when loaded
 	Class      *ClassInfo      `json:"-"` // Full class info when loaded

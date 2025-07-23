@@ -359,7 +359,7 @@ func (h *Handler) UpdateSkills(
 	}
 
 	// Convert skills from proto to constants
-	var skillIDs []string
+	skillIDs := make([]string, 0, len(req.Skills))
 	for _, skill := range req.Skills {
 		if skillID := mapProtoSkillToConstant(skill); skillID != "" {
 			skillIDs = append(skillIDs, skillID)
