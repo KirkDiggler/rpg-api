@@ -141,13 +141,19 @@ func (s *OrchestratorTestSuite) TestCreateDraft_WithInitialData() {
 
 // Test UpdateName
 func (s *OrchestratorTestSuite) TestUpdateName_Success() {
-	// Test data for this case
-	s.testDraft.Name = "OldName"
-	s.testDraft.Choices[shared.ChoiceName] = "OldName"
-	draftData := s.testDraft
+	// Initialize test data for this case
+	draftData := &character.DraftData{
+		ID:            "draft-123",
+		PlayerID:      "player-789",
+		Name:          "OldName",
+		Choices:       map[shared.ChoiceCategory]any{shared.ChoiceName: "OldName"},
+		ProgressFlags: character.ProgressName,
+		CreatedAt:     time.Now(),
+		UpdatedAt:     time.Now(),
+	}
 
 	s.mockDraftRepo.EXPECT().
-		Get(s.ctx, draftrepo.GetInput{ID: s.testDraftID}).
+		Get(s.ctx, draftrepo.GetInput{ID: "draft-123"}).
 		Return(&draftrepo.GetOutput{Draft: draftData}, nil)
 
 	s.mockDraftRepo.EXPECT().
@@ -159,7 +165,7 @@ func (s *OrchestratorTestSuite) TestUpdateName_Success() {
 		})
 
 	input := &characterorchestrator.UpdateNameInput{
-		DraftID: s.testDraftID,
+		DraftID: "draft-123",
 		Name:    "NewName",
 	}
 	output, err := s.orchestrator.UpdateName(s.ctx, input)
@@ -171,8 +177,16 @@ func (s *OrchestratorTestSuite) TestUpdateName_Success() {
 
 // Test UpdateRace with choices
 func (s *OrchestratorTestSuite) TestUpdateRace_WithChoices() {
-	// Use clean test data from SetupSubTest
-	draftData := s.testDraft
+	// Initialize test data
+	draftData := &character.DraftData{
+		ID:            "draft-123",
+		PlayerID:      "player-789",
+		Name:          "Test Character",
+		Choices:       make(map[shared.ChoiceCategory]any),
+		ProgressFlags: 0,
+		CreatedAt:     time.Now(),
+		UpdatedAt:     time.Now(),
+	}
 
 	s.mockDraftRepo.EXPECT().
 		Get(s.ctx, gomock.Any()).
@@ -201,7 +215,7 @@ func (s *OrchestratorTestSuite) TestUpdateRace_WithChoices() {
 		})
 
 	input := &characterorchestrator.UpdateRaceInput{
-		DraftID: s.testDraftID,
+		DraftID: "draft-123",
 		RaceID:  "dwarf",
 		Choices: []dnd5e.ChoiceSelection{
 			{
@@ -228,8 +242,16 @@ func (s *OrchestratorTestSuite) TestUpdateRace_WithChoices() {
 
 // Test UpdateAbilityScores
 func (s *OrchestratorTestSuite) TestUpdateAbilityScores_Success() {
-	// Use clean test data from SetupSubTest
-	draftData := s.testDraft
+	// Initialize test data
+	draftData := &character.DraftData{
+		ID:            "draft-123",
+		PlayerID:      "player-789",
+		Name:          "Test Character",
+		Choices:       make(map[shared.ChoiceCategory]any),
+		ProgressFlags: 0,
+		CreatedAt:     time.Now(),
+		UpdatedAt:     time.Now(),
+	}
 
 	s.mockDraftRepo.EXPECT().
 		Get(s.ctx, gomock.Any()).
@@ -251,7 +273,7 @@ func (s *OrchestratorTestSuite) TestUpdateAbilityScores_Success() {
 		})
 
 	input := &characterorchestrator.UpdateAbilityScoresInput{
-		DraftID: s.testDraftID,
+		DraftID: "draft-123",
 		AbilityScores: dnd5e.AbilityScores{
 			Strength:     15,
 			Dexterity:    14,
@@ -276,27 +298,33 @@ func (s *OrchestratorTestSuite) TestUpdateAbilityScores_Success() {
 
 // Test GetDraft
 func (s *OrchestratorTestSuite) TestGetDraft_Success() {
-	// Setup test data with specific values for this test
-	s.testDraft.Name = "TestCharacter"
-	s.testDraft.Choices[shared.ChoiceName] = "TestCharacter"
-	s.testDraft.Choices[shared.ChoiceRace] = character.RaceChoice{
+	// Initialize test data with specific values for this test
+	draftData := &character.DraftData{
+		ID:       "draft-123",
+		PlayerID: "player-789",
+		Name:     "TestCharacter",
+		Choices:  make(map[shared.ChoiceCategory]any),
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	draftData.Choices[shared.ChoiceName] = "TestCharacter"
+	draftData.Choices[shared.ChoiceRace] = character.RaceChoice{
 		RaceID:    "human",
 		SubraceID: "",
 	}
-	s.testDraft.Choices[shared.ChoiceClass] = "fighter"
-	s.testDraft.Choices[shared.ChoiceAbilityScores] = shared.AbilityScores{
+	draftData.Choices[shared.ChoiceClass] = "fighter"
+	draftData.Choices[shared.ChoiceAbilityScores] = shared.AbilityScores{
 		Strength:     16,
 		Dexterity:    14,
 		Constitution: 15,
 		Intelligence: 10,
 		Wisdom:       12,
 		Charisma:     8,
-		}
-	s.testDraft.ProgressFlags = character.ProgressName | character.ProgressRace | character.ProgressClass | character.ProgressAbilityScores
-	draftData := s.testDraft
+	}
+	draftData.ProgressFlags = character.ProgressName | character.ProgressRace | character.ProgressClass | character.ProgressAbilityScores
 
 	s.mockDraftRepo.EXPECT().
-		Get(s.ctx, draftrepo.GetInput{ID: s.testDraftID}).
+		Get(s.ctx, draftrepo.GetInput{ID: "draft-123"}).
 		Return(&draftrepo.GetOutput{Draft: draftData}, nil)
 
 	// Mock external client calls for hydration
@@ -309,14 +337,14 @@ func (s *OrchestratorTestSuite) TestGetDraft_Success() {
 		Return(nil, nil).AnyTimes()
 
 	input := &characterorchestrator.GetDraftInput{
-		DraftID: s.testDraftID,
+		DraftID: "draft-123",
 	}
 	output, err := s.orchestrator.GetDraft(s.ctx, input)
 
 	s.NoError(err)
 	s.NotNil(output)
 	s.NotNil(output.Draft)
-	s.Equal(s.testDraftID, output.Draft.ID)
+	s.Equal("draft-123", output.Draft.ID)
 	s.Equal("TestCharacter", output.Draft.Name)
 	s.Equal("human", output.Draft.RaceID)
 	s.Equal("fighter", output.Draft.ClassID)
@@ -338,7 +366,7 @@ func (s *OrchestratorTestSuite) TestCreateDraft_ValidationError() {
 
 func (s *OrchestratorTestSuite) TestUpdateName_EmptyName() {
 	input := &characterorchestrator.UpdateNameInput{
-		DraftID: s.testDraftID,
+		DraftID: "draft-123",
 		Name:    "", // Empty name
 	}
 	output, err := s.orchestrator.UpdateName(s.ctx, input)
