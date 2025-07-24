@@ -17,7 +17,6 @@ import (
 	redismocks "github.com/KirkDiggler/rpg-api/internal/redis/mocks"
 	characterdraft "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft"
 	"github.com/KirkDiggler/rpg-api/internal/testutils/builders"
-	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 )
 
 const (
@@ -43,14 +42,12 @@ func (s *RedisRepositoryTestSuite) SetupTest() {
 	s.mockClock = mockclock.NewMockClock(s.ctrl)
 	s.mockIDGen = idgenmock.NewMockGenerator(s.ctrl)
 
-	// Create repository with proper config
-	cfg := &characterdraft.Config{
+	// Create repository through the interface factory
+	repo, err := characterdraft.NewRedis(&characterdraft.Config{
 		Client:      s.mockClient,
 		Clock:       s.mockClock,
 		IDGenerator: s.mockIDGen,
-	}
-
-	repo, err := characterdraft.NewRedisRepository(cfg)
+	})
 	s.Require().NoError(err)
 	s.repo = repo
 
@@ -68,13 +65,20 @@ func (s *RedisRepositoryTestSuite) TestCreate() {
 
 	s.Run("successful create with no existing draft", func() {
 		inputDraft := builders.NewToolkitDraftDataBuilder().
+			WithID(""). // Clear the default ID so it gets generated
 			WithPlayerID("player_456").
 			WithName("Test Character").
 			Build()
 
 		// Setup expectations
-		s.mockClock.EXPECT().Now().Return(now).Times(2)
+		s.mockClock.EXPECT().Now().Return(now) // Called once for timestamps
 		s.mockIDGen.EXPECT().Generate().Return(generatedID)
+
+		// Check for existing draft (none exists)
+		getCmd := redis.NewStringResult("", redis.Nil)
+		s.mockClient.EXPECT().
+			Get(s.ctx, testDraftPlayerKey).
+			Return(getCmd)
 
 		// Expect pipeline operations
 		s.mockClient.EXPECT().TxPipeline().Return(s.mockPipe)
@@ -88,19 +92,21 @@ func (s *RedisRepositoryTestSuite) TestCreate() {
 		draftData, err := json.Marshal(&expectedDraft)
 		s.Require().NoError(err)
 
+		setCmd := redis.NewStatusCmd(s.ctx)
 		s.mockPipe.EXPECT().
 			Set(s.ctx, testDraftKey, draftData, 24*time.Hour).
-			Return(nil)
+			Return(setCmd)
 
-		// Expect player mapping
+		// Expect player mapping (no TTL for player mapping)
+		playerSetCmd := redis.NewStatusCmd(s.ctx)
 		s.mockPipe.EXPECT().
-			Set(s.ctx, testDraftPlayerKey, generatedID, 24*time.Hour).
-			Return(nil)
+			Set(s.ctx, testDraftPlayerKey, generatedID, time.Duration(0)).
+			Return(playerSetCmd)
 
 		// Execute pipeline
 		s.mockPipe.EXPECT().
 			Exec(s.ctx).
-			Return([]redis.Cmder{}, nil)
+			Return([]redis.Cmder{setCmd, playerSetCmd}, nil)
 
 		// Execute
 		output, err := s.repo.Create(s.ctx, characterdraft.CreateInput{Draft: inputDraft})
@@ -118,29 +124,29 @@ func (s *RedisRepositoryTestSuite) TestCreate() {
 
 	s.Run("successful create replacing existing draft", func() {
 		inputDraft := builders.NewToolkitDraftDataBuilder().
+			WithID(""). // Clear the default ID so it gets generated
 			WithPlayerID("player_456").
 			WithName("New Character").
 			Build()
 
 		// Setup expectations
-		s.mockClock.EXPECT().Now().Return(now).Times(2)
+		s.mockClock.EXPECT().Now().Return(now) // Called once for timestamps
 		s.mockIDGen.EXPECT().Generate().Return(generatedID)
 
 		// Get existing draft ID from player mapping
+		getCmd := redis.NewStringResult("old_draft_123", nil)
 		s.mockClient.EXPECT().
 			Get(s.ctx, testDraftPlayerKey).
-			Return(&redismocks.MockStringCmd{
-				ValFunc: func() string { return "old_draft_123" },
-				ErrFunc: func() error { return nil },
-			})
+			Return(getCmd)
 
 		// Begin transaction
 		s.mockClient.EXPECT().TxPipeline().Return(s.mockPipe)
 
 		// Delete old draft
+		delCmd := redis.NewIntCmd(s.ctx)
 		s.mockPipe.EXPECT().
 			Del(s.ctx, "draft:old_draft_123").
-			Return(nil)
+			Return(delCmd)
 
 		// Create new draft
 		expectedDraft := *inputDraft
@@ -151,19 +157,21 @@ func (s *RedisRepositoryTestSuite) TestCreate() {
 		draftData, err := json.Marshal(&expectedDraft)
 		s.Require().NoError(err)
 
+		setCmd := redis.NewStatusCmd(s.ctx)
 		s.mockPipe.EXPECT().
 			Set(s.ctx, testDraftKey, draftData, 24*time.Hour).
-			Return(nil)
+			Return(setCmd)
 
-		// Update player mapping
+		// Update player mapping (no TTL for player mapping)
+		playerSetCmd := redis.NewStatusCmd(s.ctx)
 		s.mockPipe.EXPECT().
-			Set(s.ctx, testDraftPlayerKey, generatedID, 24*time.Hour).
-			Return(nil)
+			Set(s.ctx, testDraftPlayerKey, generatedID, time.Duration(0)).
+			Return(playerSetCmd)
 
 		// Execute pipeline
 		s.mockPipe.EXPECT().
 			Exec(s.ctx).
-			Return([]redis.Cmder{}, nil)
+			Return([]redis.Cmder{delCmd, setCmd, playerSetCmd}, nil)
 
 		// Execute
 		output, err := s.repo.Create(s.ctx, characterdraft.CreateInput{Draft: inputDraft})
@@ -190,12 +198,10 @@ func (s *RedisRepositoryTestSuite) TestGet() {
 		draftData, err := json.Marshal(draft)
 		s.Require().NoError(err)
 
+		getCmd := redis.NewStringResult(string(draftData), nil)
 		s.mockClient.EXPECT().
 			Get(s.ctx, testDraftKey).
-			Return(&redismocks.MockStringCmd{
-				ValFunc: func() string { return string(draftData) },
-				ErrFunc: func() error { return nil },
-			})
+			Return(getCmd)
 
 		// Execute
 		output, err := s.repo.Get(s.ctx, characterdraft.GetInput{ID: "draft_123"})
@@ -209,12 +215,10 @@ func (s *RedisRepositoryTestSuite) TestGet() {
 	})
 
 	s.Run("draft not found", func() {
+		getCmd := redis.NewStringResult("", redis.Nil)
 		s.mockClient.EXPECT().
 			Get(s.ctx, testDraftKey).
-			Return(&redismocks.MockStringCmd{
-				ValFunc: func() string { return "" },
-				ErrFunc: func() error { return redis.Nil },
-			})
+			Return(getCmd)
 
 		// Execute
 		output, err := s.repo.Get(s.ctx, characterdraft.GetInput{ID: "draft_123"})
@@ -232,12 +236,10 @@ func (s *RedisRepositoryTestSuite) TestGetByPlayerID() {
 
 	s.Run("successful get by player ID", func() {
 		// Get draft ID from player mapping
+		playerGetCmd := redis.NewStringResult("draft_123", nil)
 		s.mockClient.EXPECT().
 			Get(s.ctx, testDraftPlayerKey).
-			Return(&redismocks.MockStringCmd{
-				ValFunc: func() string { return "draft_123" },
-				ErrFunc: func() error { return nil },
-			})
+			Return(playerGetCmd)
 
 		// Get actual draft
 		draft := builders.NewToolkitDraftDataBuilder().
@@ -250,12 +252,10 @@ func (s *RedisRepositoryTestSuite) TestGetByPlayerID() {
 		draftData, err := json.Marshal(draft)
 		s.Require().NoError(err)
 
+		draftGetCmd := redis.NewStringResult(string(draftData), nil)
 		s.mockClient.EXPECT().
 			Get(s.ctx, testDraftKey).
-			Return(&redismocks.MockStringCmd{
-				ValFunc: func() string { return string(draftData) },
-				ErrFunc: func() error { return nil },
-			})
+			Return(draftGetCmd)
 
 		// Execute
 		output, err := s.repo.GetByPlayerID(s.ctx, characterdraft.GetByPlayerIDInput{PlayerID: "player_456"})
@@ -268,12 +268,10 @@ func (s *RedisRepositoryTestSuite) TestGetByPlayerID() {
 	})
 
 	s.Run("no draft for player", func() {
+		getCmd := redis.NewStringResult("", redis.Nil)
 		s.mockClient.EXPECT().
 			Get(s.ctx, testDraftPlayerKey).
-			Return(&redismocks.MockStringCmd{
-				ValFunc: func() string { return "" },
-				ErrFunc: func() error { return redis.Nil },
-			})
+			Return(getCmd)
 
 		// Execute
 		output, err := s.repo.GetByPlayerID(s.ctx, characterdraft.GetByPlayerIDInput{PlayerID: "player_456"})
@@ -286,25 +284,22 @@ func (s *RedisRepositoryTestSuite) TestGetByPlayerID() {
 
 	s.Run("draft exists but is deleted - cleanup mapping", func() {
 		// Get draft ID from player mapping
+		playerGetCmd := redis.NewStringResult("draft_123", nil)
 		s.mockClient.EXPECT().
 			Get(s.ctx, testDraftPlayerKey).
-			Return(&redismocks.MockStringCmd{
-				ValFunc: func() string { return "draft_123" },
-				ErrFunc: func() error { return nil },
-			})
+			Return(playerGetCmd)
 
 		// Draft doesn't exist
+		draftGetCmd := redis.NewStringResult("", redis.Nil)
 		s.mockClient.EXPECT().
 			Get(s.ctx, testDraftKey).
-			Return(&redismocks.MockStringCmd{
-				ValFunc: func() string { return "" },
-				ErrFunc: func() error { return redis.Nil },
-			})
+			Return(draftGetCmd)
 
 		// Cleanup mapping
+		delCmd := redis.NewIntResult(1, nil)
 		s.mockClient.EXPECT().
 			Del(s.ctx, testDraftPlayerKey).
-			Return(nil)
+			Return(delCmd)
 
 		// Execute
 		output, err := s.repo.GetByPlayerID(s.ctx, characterdraft.GetByPlayerIDInput{PlayerID: "player_456"})
@@ -328,12 +323,10 @@ func (s *RedisRepositoryTestSuite) TestUpdate() {
 			Build()
 
 		// Check if exists
+		existsCmd := redis.NewIntResult(1, nil)
 		s.mockClient.EXPECT().
 			Exists(s.ctx, testDraftKey).
-			Return(&redismocks.MockIntCmd{
-				ValFunc: func() int64 { return 1 },
-				ErrFunc: func() error { return nil },
-			})
+			Return(existsCmd)
 
 		// Update timestamp
 		s.mockClock.EXPECT().Now().Return(now)
@@ -345,9 +338,10 @@ func (s *RedisRepositoryTestSuite) TestUpdate() {
 		draftData, err := json.Marshal(&expectedDraft)
 		s.Require().NoError(err)
 
+		setCmd := redis.NewStatusResult("OK", nil)
 		s.mockClient.EXPECT().
 			Set(s.ctx, testDraftKey, draftData, 24*time.Hour).
-			Return(nil)
+			Return(setCmd)
 
 		// Execute
 		output, err := s.repo.Update(s.ctx, characterdraft.UpdateInput{Draft: inputDraft})
@@ -367,12 +361,10 @@ func (s *RedisRepositoryTestSuite) TestUpdate() {
 			Build()
 
 		// Check if exists - not found
+		existsCmd := redis.NewIntResult(0, nil)
 		s.mockClient.EXPECT().
 			Exists(s.ctx, testDraftKey).
-			Return(&redismocks.MockIntCmd{
-				ValFunc: func() int64 { return 0 },
-				ErrFunc: func() error { return nil },
-			})
+			Return(existsCmd)
 
 		// Execute
 		output, err := s.repo.Update(s.ctx, characterdraft.UpdateInput{Draft: inputDraft})
@@ -399,30 +391,30 @@ func (s *RedisRepositoryTestSuite) TestDelete() {
 		draftData, err := json.Marshal(draft)
 		s.Require().NoError(err)
 
+		getCmd := redis.NewStringResult(string(draftData), nil)
 		s.mockClient.EXPECT().
 			Get(s.ctx, testDraftKey).
-			Return(&redismocks.MockStringCmd{
-				ValFunc: func() string { return string(draftData) },
-				ErrFunc: func() error { return nil },
-			})
+			Return(getCmd)
 
 		// Setup pipeline for deletion
 		s.mockClient.EXPECT().TxPipeline().Return(s.mockPipe)
 
 		// Delete draft
+		delDraftCmd := redis.NewIntCmd(s.ctx)
 		s.mockPipe.EXPECT().
 			Del(s.ctx, testDraftKey).
-			Return(nil)
+			Return(delDraftCmd)
 
 		// Delete player mapping
+		delPlayerCmd := redis.NewIntCmd(s.ctx)
 		s.mockPipe.EXPECT().
 			Del(s.ctx, testDraftPlayerKey).
-			Return(nil)
+			Return(delPlayerCmd)
 
 		// Execute pipeline
 		s.mockPipe.EXPECT().
 			Exec(s.ctx).
-			Return([]redis.Cmder{}, nil)
+			Return([]redis.Cmder{delDraftCmd, delPlayerCmd}, nil)
 
 		// Execute
 		output, err := s.repo.Delete(s.ctx, characterdraft.DeleteInput{ID: "draft_123"})
@@ -433,12 +425,10 @@ func (s *RedisRepositoryTestSuite) TestDelete() {
 	})
 
 	s.Run("error when draft doesn't exist", func() {
+		getCmd := redis.NewStringResult("", redis.Nil)
 		s.mockClient.EXPECT().
 			Get(s.ctx, testDraftKey).
-			Return(&redismocks.MockStringCmd{
-				ValFunc: func() string { return "" },
-				ErrFunc: func() error { return redis.Nil },
-			})
+			Return(getCmd)
 
 		// Execute
 		output, err := s.repo.Delete(s.ctx, characterdraft.DeleteInput{ID: "draft_123"})
