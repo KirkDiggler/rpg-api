@@ -170,6 +170,20 @@ func (o *Orchestrator) CreateDraft(
 			}
 		}
 
+		// Set race if provided
+		if input.InitialData.RaceID != "" {
+			if err := builder.SetRaceData(race.Data{ID: input.InitialData.RaceID}, input.InitialData.SubraceID); err != nil {
+				return nil, errors.Wrap(err, "failed to set race")
+			}
+		}
+
+		// Set class if provided
+		if input.InitialData.ClassID != "" {
+			if err := builder.SetClassData(class.Data{ID: input.InitialData.ClassID}); err != nil {
+				return nil, errors.Wrap(err, "failed to set class")
+			}
+		}
+
 		// Set ability scores if provided
 		if input.InitialData.AbilityScores != nil {
 			// Convert to toolkit format
@@ -420,13 +434,25 @@ func (o *Orchestrator) UpdateRace(
 		return nil, errors.Wrap(err, "failed to set race data")
 	}
 
-	// Handle race choices if provided
-	if len(input.Choices) > 0 {
-		// TODO: Apply race choices to builder when toolkit supports it
-	}
-
 	// Get updated draft data
 	updatedData := builder.ToData()
+
+	// Handle race choices if provided
+	if len(input.Choices) > 0 {
+		slog.InfoContext(ctx, "Applying race choices",
+			"draft_id", input.DraftID,
+			"num_choices", len(input.Choices))
+		
+		// For now, store race choices in the draft's choice map
+		// These will need to be properly integrated when toolkit supports race choices
+		for _, choice := range input.Choices {
+			choiceKey := shared.ChoiceCategory(fmt.Sprintf("race_%s", choice.ChoiceID))
+			updatedData.Choices[choiceKey] = choice.SelectedKeys
+			slog.InfoContext(ctx, "Stored race choice",
+				"choice_id", choice.ChoiceID,
+				"selected", choice.SelectedKeys)
+		}
+	}
 
 	// Save the updated draft
 	updateOutput, err := o.characterDraftRepo.Update(ctx, draftrepo.UpdateInput{
@@ -505,13 +531,25 @@ func (o *Orchestrator) UpdateClass(
 		return nil, errors.Wrap(err, "failed to set class data")
 	}
 
-	// Handle class choices if provided
-	if len(input.Choices) > 0 {
-		// TODO: Apply class choices to builder when toolkit supports it
-	}
-
 	// Get updated draft data
 	updatedData := builder.ToData()
+
+	// Handle class choices if provided
+	if len(input.Choices) > 0 {
+		slog.InfoContext(ctx, "Applying class choices",
+			"draft_id", input.DraftID,
+			"num_choices", len(input.Choices))
+		
+		// For now, store class choices in the draft's choice map
+		// These will need to be properly integrated when toolkit supports class choices
+		for _, choice := range input.Choices {
+			choiceKey := shared.ChoiceCategory(fmt.Sprintf("class_%s", choice.ChoiceID))
+			updatedData.Choices[choiceKey] = choice.SelectedKeys
+			slog.InfoContext(ctx, "Stored class choice",
+				"choice_id", choice.ChoiceID,
+				"selected", choice.SelectedKeys)
+		}
+	}
 
 	// Save the updated draft
 	updateOutput, err := o.characterDraftRepo.Update(ctx, draftrepo.UpdateInput{
@@ -659,20 +697,31 @@ func (o *Orchestrator) UpdateAbilityScores(
 	}
 
 	// Set ability scores in builder
+	slog.InfoContext(ctx, "Setting ability scores",
+		"draft_id", input.DraftID,
+		"scores", scores)
 	if err := builder.SetAbilityScores(scores); err != nil {
 		return nil, errors.Wrap(err, "failed to set ability scores")
 	}
 
 	// Get updated draft data
 	updatedData := builder.ToData()
+	slog.InfoContext(ctx, "Draft data after setting ability scores",
+		"draft_id", updatedData.ID,
+		"has_ability_scores", updatedData.Choices[shared.ChoiceAbilityScores] != nil)
 
 	// Save the updated draft
+	slog.InfoContext(ctx, "Saving updated draft to repository",
+		"draft_id", updatedData.ID,
+		"player_id", updatedData.PlayerID)
 	updateOutput, err := o.characterDraftRepo.Update(ctx, draftrepo.UpdateInput{
 		Draft: &updatedData,
 	})
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to update draft")
 	}
+	slog.InfoContext(ctx, "Draft saved successfully",
+		"draft_id", updateOutput.Draft.ID)
 
 	// Convert result to CharacterDraft
 	updatedDraft, err := o.convertDraftDataToCharacterDraft(ctx, updateOutput.Draft)
@@ -1360,6 +1409,10 @@ func (o *Orchestrator) GetBackgroundDetails(
 
 // convertExternalRaceToEntity converts external race data to entity format
 func convertExternalRaceToEntity(race *external.RaceData) *dnd5e.RaceInfo {
+	if race == nil {
+		return nil
+	}
+	
 	traits := make([]dnd5e.RacialTrait, len(race.Traits))
 	for i, trait := range race.Traits {
 		traits[i] = dnd5e.RacialTrait{
@@ -1418,6 +1471,10 @@ func convertExternalRaceToEntity(race *external.RaceData) *dnd5e.RaceInfo {
 
 // convertExternalClassToEntity converts external class data to entity format
 func convertExternalClassToEntity(class *external.ClassData) *dnd5e.ClassInfo {
+	if class == nil {
+		return nil
+	}
+	
 	// Convert equipment choices
 	equipmentChoices := make([]dnd5e.EquipmentChoice, len(class.StartingEquipmentOptions))
 	for i, choice := range class.StartingEquipmentOptions {
@@ -2662,35 +2719,53 @@ func (o *Orchestrator) convertDraftDataToCharacterDraft(ctx context.Context, dat
 		}
 
 		// Ability Scores
-		if scores, ok := choices[shared.ChoiceAbilityScores].(shared.AbilityScores); ok {
-			draft.AbilityScores = &dnd5e.AbilityScores{
-				Strength:     int32(scores.Strength),
-				Dexterity:    int32(scores.Dexterity),
-				Constitution: int32(scores.Constitution),
-				Intelligence: int32(scores.Intelligence),
-				Wisdom:       int32(scores.Wisdom),
-				Charisma:     int32(scores.Charisma),
-			}
-		} else if scoresMap, ok := choices[shared.ChoiceAbilityScores].(map[string]interface{}); ok {
-			// Handle case where it's unmarshaled as a map
-			draft.AbilityScores = &dnd5e.AbilityScores{}
-			if str, ok := scoresMap["strength"].(float64); ok {
-				draft.AbilityScores.Strength = int32(str)
-			}
-			if dex, ok := scoresMap["dexterity"].(float64); ok {
-				draft.AbilityScores.Dexterity = int32(dex)
-			}
-			if con, ok := scoresMap["constitution"].(float64); ok {
-				draft.AbilityScores.Constitution = int32(con)
-			}
-			if intel, ok := scoresMap["intelligence"].(float64); ok {
-				draft.AbilityScores.Intelligence = int32(intel)
-			}
-			if wis, ok := scoresMap["wisdom"].(float64); ok {
-				draft.AbilityScores.Wisdom = int32(wis)
-			}
-			if cha, ok := scoresMap["charisma"].(float64); ok {
-				draft.AbilityScores.Charisma = int32(cha)
+		if scoresData := choices[shared.ChoiceAbilityScores]; scoresData != nil {
+			slog.InfoContext(ctx, "Extracting ability scores from choices",
+				"type", fmt.Sprintf("%T", scoresData),
+				"value", fmt.Sprintf("%+v", scoresData))
+			
+			if scores, ok := scoresData.(shared.AbilityScores); ok {
+				draft.AbilityScores = &dnd5e.AbilityScores{
+					Strength:     int32(scores.Strength),
+					Dexterity:    int32(scores.Dexterity),
+					Constitution: int32(scores.Constitution),
+					Intelligence: int32(scores.Intelligence),
+					Wisdom:       int32(scores.Wisdom),
+					Charisma:     int32(scores.Charisma),
+				}
+			} else if scoresMap, ok := scoresData.(map[string]interface{}); ok {
+				// Handle case where it's unmarshaled as a map
+				draft.AbilityScores = &dnd5e.AbilityScores{}
+				if str, ok := scoresMap["strength"].(float64); ok {
+					draft.AbilityScores.Strength = int32(str)
+				} else if str, ok := scoresMap["Strength"].(float64); ok {
+					draft.AbilityScores.Strength = int32(str)
+				}
+				if dex, ok := scoresMap["dexterity"].(float64); ok {
+					draft.AbilityScores.Dexterity = int32(dex)
+				} else if dex, ok := scoresMap["Dexterity"].(float64); ok {
+					draft.AbilityScores.Dexterity = int32(dex)
+				}
+				if con, ok := scoresMap["constitution"].(float64); ok {
+					draft.AbilityScores.Constitution = int32(con)
+				} else if con, ok := scoresMap["Constitution"].(float64); ok {
+					draft.AbilityScores.Constitution = int32(con)
+				}
+				if intel, ok := scoresMap["intelligence"].(float64); ok {
+					draft.AbilityScores.Intelligence = int32(intel)
+				} else if intel, ok := scoresMap["Intelligence"].(float64); ok {
+					draft.AbilityScores.Intelligence = int32(intel)
+				}
+				if wis, ok := scoresMap["wisdom"].(float64); ok {
+					draft.AbilityScores.Wisdom = int32(wis)
+				} else if wis, ok := scoresMap["Wisdom"].(float64); ok {
+					draft.AbilityScores.Wisdom = int32(wis)
+				}
+				if cha, ok := scoresMap["charisma"].(float64); ok {
+					draft.AbilityScores.Charisma = int32(cha)
+				} else if cha, ok := scoresMap["Charisma"].(float64); ok {
+					draft.AbilityScores.Charisma = int32(cha)
+				}
 			}
 		}
 
@@ -2716,6 +2791,65 @@ func (o *Orchestrator) convertDraftDataToCharacterDraft(ctx context.Context, dat
 					Source:       dnd5e.ChoiceSourceClass,
 					SelectedKeys: skills,
 				})
+			}
+		}
+
+		// Extract race and class choices from the choices map
+		for key, value := range choices {
+			keyStr := string(key)
+			
+			// Extract race choices
+			if strings.HasPrefix(keyStr, "race_") {
+				choiceID := strings.TrimPrefix(keyStr, "race_")
+				if selectedKeys, ok := value.([]string); ok {
+					draft.ChoiceSelections = append(draft.ChoiceSelections, dnd5e.ChoiceSelection{
+						ChoiceID:     choiceID,
+						Source:       dnd5e.ChoiceSourceRace,
+						SelectedKeys: selectedKeys,
+					})
+				} else if selectedArr, ok := value.([]interface{}); ok {
+					// Handle case where it's unmarshaled as []interface{}
+					var keys []string
+					for _, k := range selectedArr {
+						if key, ok := k.(string); ok {
+							keys = append(keys, key)
+						}
+					}
+					if len(keys) > 0 {
+						draft.ChoiceSelections = append(draft.ChoiceSelections, dnd5e.ChoiceSelection{
+							ChoiceID:     choiceID,
+							Source:       dnd5e.ChoiceSourceRace,
+							SelectedKeys: keys,
+						})
+					}
+				}
+			}
+			
+			// Extract class choices
+			if strings.HasPrefix(keyStr, "class_") {
+				choiceID := strings.TrimPrefix(keyStr, "class_")
+				if selectedKeys, ok := value.([]string); ok {
+					draft.ChoiceSelections = append(draft.ChoiceSelections, dnd5e.ChoiceSelection{
+						ChoiceID:     choiceID,
+						Source:       dnd5e.ChoiceSourceClass,
+						SelectedKeys: selectedKeys,
+					})
+				} else if selectedArr, ok := value.([]interface{}); ok {
+					// Handle case where it's unmarshaled as []interface{}
+					var keys []string
+					for _, k := range selectedArr {
+						if key, ok := k.(string); ok {
+							keys = append(keys, key)
+						}
+					}
+					if len(keys) > 0 {
+						draft.ChoiceSelections = append(draft.ChoiceSelections, dnd5e.ChoiceSelection{
+							ChoiceID:     choiceID,
+							Source:       dnd5e.ChoiceSourceClass,
+							SelectedKeys: keys,
+						})
+					}
+				}
 			}
 		}
 	}
