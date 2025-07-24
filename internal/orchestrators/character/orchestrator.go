@@ -11,13 +11,13 @@ import (
 	"math"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/KirkDiggler/rpg-api/internal/clients/external"
 	"github.com/KirkDiggler/rpg-api/internal/engine"
 	"github.com/KirkDiggler/rpg-api/internal/entities/dnd5e"
 	"github.com/KirkDiggler/rpg-api/internal/errors"
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/dice"
+	"github.com/KirkDiggler/rpg-api/internal/pkg/idgen"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	draftrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
@@ -79,6 +79,7 @@ type Config struct {
 	Engine             engine.Engine
 	ExternalClient     external.Client
 	DiceService        dice.Service
+	IDGenerator        idgen.Generator
 }
 
 // Validate ensures all required dependencies are provided
@@ -100,6 +101,9 @@ func (c *Config) Validate() error {
 	if c.DiceService == nil {
 		vb.RequiredField("DiceService")
 	}
+	if c.IDGenerator == nil {
+		vb.RequiredField("IDGenerator")
+	}
 
 	return vb.Build()
 }
@@ -111,6 +115,7 @@ type Orchestrator struct {
 	engine             engine.Engine
 	externalClient     external.Client
 	diceService        dice.Service
+	idGenerator        idgen.Generator
 }
 
 // New creates a new character orchestrator
@@ -125,6 +130,7 @@ func New(cfg *Config) (*Orchestrator, error) {
 		engine:             cfg.Engine,
 		externalClient:     cfg.ExternalClient,
 		diceService:        cfg.DiceService,
+		idGenerator:        cfg.IDGenerator,
 	}, nil
 }
 
@@ -148,10 +154,9 @@ func (o *Orchestrator) CreateDraft(
 		return nil, err
 	}
 
-	// Generate draft ID
-	// TODO(#127): Use proper UUID generator or idgen package instead of timestamp
-	draftID := fmt.Sprintf("draft-%d", time.Now().UnixNano())
-	
+	// Generate draft ID using UUID generator
+	draftID := o.idGenerator.Generate()
+
 	// Create new builder
 	builder, err := character.NewCharacterBuilder(draftID)
 	if err != nil {
@@ -443,7 +448,7 @@ func (o *Orchestrator) UpdateRace(
 		slog.InfoContext(ctx, "Applying race choices",
 			"draft_id", input.DraftID,
 			"num_choices", len(input.Choices))
-		
+
 		// For now, store race choices in the draft's choice map
 		// These will need to be properly integrated when toolkit supports race choices
 		for _, choice := range input.Choices {
@@ -540,7 +545,7 @@ func (o *Orchestrator) UpdateClass(
 		slog.InfoContext(ctx, "Applying class choices",
 			"draft_id", input.DraftID,
 			"num_choices", len(input.Choices))
-		
+
 		// For now, store class choices in the draft's choice map
 		// These will need to be properly integrated when toolkit supports class choices
 		for _, choice := range input.Choices {
@@ -627,10 +632,8 @@ func (o *Orchestrator) UpdateBackground(
 		return nil, errors.Wrap(err, "failed to set background data")
 	}
 
-	// Handle background choices if provided
-	if len(input.Choices) > 0 {
-		// TODO: Apply background choices to builder when toolkit supports it
-	}
+	// TODO(#128): Apply background choices to builder when toolkit supports it
+	// Currently, the toolkit builder doesn't have methods for background-specific choices
 
 	// Get updated draft data
 	updatedData := builder.ToData()
@@ -828,9 +831,9 @@ func (o *Orchestrator) ValidateDraft(
 
 	// Validate using toolkit
 	validationErrors := builder.Validate()
-	
+
 	// Convert validation errors
-	var errors []ValidationError
+	errors := make([]ValidationError, 0, len(validationErrors))
 	for _, ve := range validationErrors {
 		errors = append(errors, ValidationError{
 			Field:   ve.Field,
@@ -1059,67 +1062,34 @@ func (o *Orchestrator) DeleteCharacter(
 	}, nil
 }
 
-// Helper methods
+// Helper functions
 
-// updateCompletionPercentage updates the completion percentage based on completed steps
-func (o *Orchestrator) updateCompletionPercentage(draft *dnd5e.CharacterDraft) {
-	totalSteps := 8 // Name, Race, Class, Background, AbilityScores, Skills, Languages, Choices
-	completedSteps := 0
-
-	if draft.Progress.HasName() {
-		completedSteps++
+// isValidChoiceCategory validates if a choice category is recognized
+func isValidChoiceCategory(category shared.ChoiceCategory) bool {
+	// Check predefined categories
+	switch category {
+	case shared.ChoiceName,
+		shared.ChoiceRace,
+		shared.ChoiceSubrace,
+		shared.ChoiceClass,
+		shared.ChoiceBackground,
+		shared.ChoiceAbilityScores,
+		shared.ChoiceSkills,
+		shared.ChoiceLanguages,
+		shared.ChoiceEquipment,
+		shared.ChoiceSpells:
+		return true
 	}
-	if draft.Progress.HasRace() {
-		completedSteps++
+	
+	// Check dynamic categories with known prefixes
+	categoryStr := string(category)
+	if strings.HasPrefix(categoryStr, "race_") ||
+		strings.HasPrefix(categoryStr, "class_") ||
+		strings.HasPrefix(categoryStr, "background_") {
+		return true
 	}
-	if draft.Progress.HasClass() {
-		completedSteps++
-	}
-	if draft.Progress.HasBackground() {
-		completedSteps++
-	}
-	if draft.Progress.HasAbilityScores() {
-		completedSteps++
-	}
-	if draft.Progress.HasSkills() {
-		completedSteps++
-	}
-	if draft.Progress.HasLanguages() {
-		completedSteps++
-	}
-	if draft.Progress.HasChoices() {
-		completedSteps++
-	}
-
-	// Safe conversion - totalSteps is always 8 and completedSteps is 0-8
-	// so max value is 800/8 = 100, which fits safely in int32
-	draft.Progress.CompletionPercentage = int32((completedSteps * 100) / totalSteps) //nolint:gosec
-}
-
-// convertValidationErrors converts engine ValidationError to service ValidationError
-func convertValidationErrors(errors []engine.ValidationError) []ValidationError {
-	result := make([]ValidationError, len(errors))
-	for i, e := range errors {
-		result[i] = ValidationError{
-			Field:   e.Field,
-			Message: e.Message,
-			Type:    e.Code,
-		}
-	}
-	return result
-}
-
-// convertValidationWarnings converts engine ValidationWarning to service ValidationWarning
-func convertValidationWarnings(warnings []engine.ValidationWarning) []ValidationWarning {
-	result := make([]ValidationWarning, len(warnings))
-	for i, w := range warnings {
-		result[i] = ValidationWarning{
-			Field:   w.Field,
-			Message: w.Message,
-			Type:    w.Code,
-		}
-	}
-	return result
+	
+	return false
 }
 
 // Data loading methods for character creation UI
@@ -1413,7 +1383,7 @@ func convertExternalRaceToEntity(race *external.RaceData) *dnd5e.RaceInfo {
 	if race == nil {
 		return nil
 	}
-	
+
 	traits := make([]dnd5e.RacialTrait, len(race.Traits))
 	for i, trait := range race.Traits {
 		traits[i] = dnd5e.RacialTrait{
@@ -1475,7 +1445,7 @@ func convertExternalClassToEntity(class *external.ClassData) *dnd5e.ClassInfo {
 	if class == nil {
 		return nil
 	}
-	
+
 	// Convert equipment choices
 	equipmentChoices := make([]dnd5e.EquipmentChoice, len(class.StartingEquipmentOptions))
 	for i, choice := range class.StartingEquipmentOptions {
@@ -1645,21 +1615,8 @@ func parseClassesFromSpellDescription(description string) []string {
 }
 
 // convertValidationErrorsToWarnings converts engine ValidationError to service ValidationWarning
-func convertValidationErrorsToWarnings(errors []engine.ValidationError) []ValidationWarning {
-	result := make([]ValidationWarning, len(errors))
-	for i, e := range errors {
-		result[i] = ValidationWarning{
-			Field:   e.Field,
-			Message: e.Message,
-			Type:    e.Code,
-		}
-	}
-	return result
-}
 
 // UpdateChoices updates the choices for a character draft
-// TODO(#126): This method needs to be updated to work with toolkit DraftData
-// For now, it remains using the old CharacterDraftData approach
 func (o *Orchestrator) UpdateChoices(
 	ctx context.Context,
 	input *UpdateChoicesInput,
@@ -1668,69 +1625,94 @@ func (o *Orchestrator) UpdateChoices(
 		return nil, errors.InvalidArgument("input is required")
 	}
 
-	if input.DraftID == "" {
-		return nil, errors.InvalidArgument("draft ID is required")
+	vb := errors.NewValidationBuilder()
+	errors.ValidateRequired("draftID", input.DraftID, vb)
+	if err := vb.Build(); err != nil {
+		return nil, err
 	}
 
-	slog.Info("Updating character choices", "draft_id", input.DraftID, "selections", len(input.Selections))
+	slog.InfoContext(ctx, "Updating character choices",
+		"draft_id", input.DraftID,
+		"selections", len(input.Selections))
 
-	// Get the existing draft
-	getDraftInput := &GetDraftInput{DraftID: input.DraftID}
-	getDraftOutput, err := o.GetDraft(ctx, getDraftInput)
+	// Get the draft from repository
+	getOutput, err := o.characterDraftRepo.Get(ctx, draftrepo.GetInput{ID: input.DraftID})
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to get draft")
 	}
 
-	draft := getDraftOutput.Draft
-
-	// Validate that the draft has the required information for choices
-	if draft.ClassID == "" {
-		return nil, errors.InvalidArgument("class must be selected before making choices")
-	}
-
-	// Initialize choices if not present
-	if draft.ChoiceSelections == nil {
-		draft.ChoiceSelections = []dnd5e.ChoiceSelection{}
-	}
-
-	// Validate and apply selections
-	validationResult, err := o.validateChoiceSelections(ctx, draft, input.Selections)
+	// Load into builder
+	builder, err := character.LoadDraft(*getOutput.Draft)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to validate choice selections")
+		return nil, errors.Wrap(err, "failed to load draft into builder")
 	}
 
-	if !validationResult.IsValid {
-		// Convert validation errors to a readable error
-		errorMessages := make([]string, len(validationResult.Errors))
-		for i, validationErr := range validationResult.Errors {
-			errorMessages[i] = validationErr.Message
+	// Apply choices to the builder
+	// The toolkit uses a map[shared.ChoiceCategory]any for choices
+	draftData := builder.ToData()
+	if draftData.Choices == nil {
+		draftData.Choices = make(map[shared.ChoiceCategory]any)
+	}
+
+	// Convert and apply each selection
+	for _, selection := range input.Selections {
+		if selection == nil {
+			continue
 		}
-		return nil, errors.InvalidArgumentf("invalid choice selections: %v", errorMessages)
+
+		// Validate and convert the choice ID to a ChoiceCategory
+		category := shared.ChoiceCategory(selection.ChoiceID)
+		
+		// Validate the category is recognized
+		// The toolkit uses both predefined categories and dynamic ones with prefixes
+		if !isValidChoiceCategory(category) {
+			slog.WarnContext(ctx, "Skipping unrecognized choice category",
+				"choice_id", selection.ChoiceID,
+				"draft_id", draftData.ID)
+			continue
+		}
+		
+		// Store the selection based on its type
+		// Different choice types may have different data structures
+		switch {
+		case len(selection.SelectedKeys) > 0:
+			// Most choices use string arrays for selected options
+			draftData.Choices[category] = selection.SelectedKeys
+			
+		case len(selection.AbilityScoreChoices) > 0:
+			// Ability score choices have their own structure
+			if category == shared.ChoiceAbilityScores {
+				draftData.Choices[category] = selection.AbilityScoreChoices
+			} else {
+				slog.WarnContext(ctx, "AbilityScoreChoices provided for non-ability score category",
+					"category", category)
+			}
+			
+		default:
+			slog.WarnContext(ctx, "No valid selection data provided",
+				"choice_id", selection.ChoiceID)
+		}
 	}
 
-	// Apply the validated selections to the draft
-	err = o.applyChoiceSelections(draft, input.Selections)
+	// Save the updated draft to repository
+	updateOutput, err := o.characterDraftRepo.Update(ctx, draftrepo.UpdateInput{
+		Draft: &draftData,
+	})
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to apply choice selections")
+		return nil, errors.Wrap(err, "failed to update draft in repository")
 	}
 
-	// Update progress if all required choices are complete
-	if o.areAllChoicesComplete(ctx, draft) {
-		draft.Progress.SetStep(dnd5e.ProgressStepChoices, true)
-		draft.Progress.CurrentStep = "finalize" // Move to final step
-		slog.Info("All choices completed", "draft_id", draft.ID)
+	// Convert the updated draft data back to CharacterDraft for API response
+	updatedDraft, err := o.convertDraftDataToCharacterDraft(ctx, updateOutput.Draft)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to convert draft data")
 	}
 
-	// Calculate completion percentage
-	o.updateCompletionPercentage(draft)
-
-	// TODO(#126): This method needs to be fully converted to use toolkit DraftData
-	// For now, return the draft as-is since we can't convert back
-	
-	slog.Info("Successfully updated character choices", "draft_id", draft.ID)
+	slog.InfoContext(ctx, "Successfully updated character choices",
+		"draft_id", updatedDraft.ID)
 
 	return &UpdateChoicesOutput{
-		Draft: draft,
+		Draft: updatedDraft,
 	}, nil
 }
 
@@ -1786,164 +1768,8 @@ func (o *Orchestrator) ListChoiceOptions(
 }
 
 // validateChoiceSelections validates that the selections are valid for the draft
-func (o *Orchestrator) validateChoiceSelections(
-	ctx context.Context,
-	draft *dnd5e.CharacterDraft,
-	selections []*dnd5e.ChoiceSelection,
-) (*dnd5e.ChoiceValidationResult, error) {
-	result := &dnd5e.ChoiceValidationResult{
-		IsValid:  true,
-		Errors:   []dnd5e.ChoiceValidationError{},
-		Warnings: []dnd5e.ChoiceValidationWarning{},
-	}
-
-	// Get available choice categories to validate against
-	availableCategories, err := o.getAvailableChoiceCategories(ctx, draft, nil)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to get available choice categories")
-	}
-
-	// Create a map for quick category lookup
-	categoryMap := make(map[string]*dnd5e.ChoiceCategory)
-	for _, category := range availableCategories {
-		categoryMap[category.ID] = category
-	}
-
-	// Validate each selection
-	for _, selection := range selections {
-		category, exists := categoryMap[selection.ChoiceID]
-		if !exists {
-			result.IsValid = false
-			result.Errors = append(result.Errors, dnd5e.ChoiceValidationError{
-				CategoryID: selection.ChoiceID,
-				Message:    fmt.Sprintf("unknown choice category: %s", selection.ChoiceID),
-				Code:       "unknown_category",
-			})
-			continue
-		}
-
-		// Validate selection count with bounds checking to prevent DoS attacks
-		optionCount := len(selection.SelectedKeys)
-
-		// Protect against malicious input with a practical limit
-		if optionCount > dnd5e.MaxChoiceOptionsLimit {
-			result.IsValid = false
-			result.Errors = append(result.Errors, dnd5e.ChoiceValidationError{
-				CategoryID: selection.ChoiceID,
-				Message:    fmt.Sprintf("too many options selected (maximum allowed: %d)", dnd5e.MaxChoiceOptionsLimit),
-				Code:       "excessive_options",
-			})
-			continue
-		}
-
-		optionCount32 := int32(optionCount)
-
-		if optionCount32 < category.MinChoices {
-			result.IsValid = false
-			result.Errors = append(result.Errors, dnd5e.ChoiceValidationError{
-				CategoryID: selection.ChoiceID,
-				Message:    fmt.Sprintf("must select at least %d options", category.MinChoices),
-				Code:       "insufficient_choices",
-			})
-		}
-
-		if optionCount32 > category.MaxChoices {
-			result.IsValid = false
-			result.Errors = append(result.Errors, dnd5e.ChoiceValidationError{
-				CategoryID: selection.ChoiceID,
-				Message:    fmt.Sprintf("cannot select more than %d options", category.MaxChoices),
-				Code:       "too_many_choices",
-			})
-		}
-
-		// Validate each option exists and is valid
-		optionMap := make(map[string]*dnd5e.CategoryOption)
-		for _, option := range category.Options {
-			optionMap[option.ID] = option
-		}
-
-		for _, optionID := range selection.SelectedKeys {
-			option, optionExists := optionMap[optionID]
-			if !optionExists {
-				result.IsValid = false
-				result.Errors = append(result.Errors, dnd5e.ChoiceValidationError{
-					CategoryID: selection.ChoiceID,
-					OptionID:   optionID,
-					Message:    fmt.Sprintf("unknown option: %s", optionID),
-					Code:       "unknown_option",
-				})
-				continue
-			}
-
-			// Check prerequisites
-			for _, prerequisite := range option.Prerequisites {
-				if !o.hasPrerequisite(draft, prerequisite) {
-					result.Warnings = append(result.Warnings, dnd5e.ChoiceValidationWarning{
-						CategoryID: selection.ChoiceID,
-						OptionID:   optionID,
-						Message:    fmt.Sprintf("missing prerequisite: %s", prerequisite),
-						Code:       "missing_prerequisite",
-					})
-				}
-			}
-
-			// Check conflicts
-			for _, conflict := range option.Conflicts {
-				if o.hasConflictingChoice(draft, conflict) {
-					result.IsValid = false
-					result.Errors = append(result.Errors, dnd5e.ChoiceValidationError{
-						CategoryID: selection.ChoiceID,
-						OptionID:   optionID,
-						Message:    fmt.Sprintf("conflicts with existing choice: %s", conflict),
-						Code:       "conflicting_choice",
-					})
-				}
-			}
-		}
-	}
-
-	return result, nil
-}
 
 // applyChoiceSelections applies validated selections to the draft
-func (o *Orchestrator) applyChoiceSelections(draft *dnd5e.CharacterDraft, selections []*dnd5e.ChoiceSelection) error {
-	// Build a map of existing selections for easy lookup
-	selectionMap := make(map[string]*dnd5e.ChoiceSelection)
-	for i := range draft.ChoiceSelections {
-		selectionMap[draft.ChoiceSelections[i].ChoiceID] = &draft.ChoiceSelections[i]
-	}
-
-	// Update or add new selections
-	for _, selection := range selections {
-		// Validate the category ID is known
-		switch selection.ChoiceID {
-		case dnd5e.CategoryIDFighterFightingStyle,
-			dnd5e.CategoryIDWizardCantrips,
-			dnd5e.CategoryIDWizardSpells,
-			dnd5e.CategoryIDClericCantrips,
-			dnd5e.CategoryIDSorcererCantrips,
-			dnd5e.CategoryIDSorcererSpells,
-			dnd5e.CategoryIDAdditionalLanguages,
-			dnd5e.CategoryIDToolProficiencies,
-			dnd5e.CategoryIDEquipmentChoices:
-			// Valid category
-		default:
-			return errors.InvalidArgumentf("unknown choice category: %s", selection.ChoiceID)
-		}
-
-		if existing, exists := selectionMap[selection.ChoiceID]; exists {
-			// Update existing selection
-			existing.SelectedKeys = selection.SelectedKeys
-		} else {
-			// Add new selection
-			draft.ChoiceSelections = append(draft.ChoiceSelections, dnd5e.ChoiceSelection{
-				ChoiceID:     selection.ChoiceID,
-				SelectedKeys: selection.SelectedKeys,
-			})
-		}
-	}
-	return nil
-}
 
 // getAvailableChoiceCategories returns the choice categories available for a draft
 //
@@ -2011,74 +1837,10 @@ func (o *Orchestrator) getAvailableChoiceCategories(
 }
 
 // areAllChoicesComplete checks if all required choices have been made
-func (o *Orchestrator) areAllChoicesComplete(_ context.Context, draft *dnd5e.CharacterDraft) bool {
-	// Build a map of selections by choice ID
-	selectionMap := make(map[string]*dnd5e.ChoiceSelection)
-	for i := range draft.ChoiceSelections {
-		selectionMap[draft.ChoiceSelections[i].ChoiceID] = &draft.ChoiceSelections[i]
-	}
-
-	// Check class-specific required choices
-	switch draft.ClassID {
-	case "fighter":
-		// Fighter must choose 1 fighting style
-		if selection, exists := selectionMap[dnd5e.CategoryIDFighterFightingStyle]; exists {
-			return len(selection.SelectedKeys) == 1
-		}
-		return false
-	case "wizard":
-		// Wizard must choose 3 cantrips and 6 level 1 spells
-		cantripSelection, hasCantrips := selectionMap[dnd5e.CategoryIDWizardCantrips]
-		spellSelection, hasSpells := selectionMap[dnd5e.CategoryIDWizardSpells]
-		return hasCantrips && hasSpells &&
-			len(cantripSelection.SelectedKeys) == 3 &&
-			len(spellSelection.SelectedKeys) == 6
-	case "cleric":
-		// Cleric must choose 3 cantrips
-		if selection, exists := selectionMap[dnd5e.CategoryIDClericCantrips]; exists {
-			return len(selection.SelectedKeys) == 3
-		}
-		return false
-	case "sorcerer":
-		// Sorcerer must choose 4 cantrips and 2 level 1 spells
-		cantripSelection, hasCantrips := selectionMap[dnd5e.CategoryIDSorcererCantrips]
-		spellSelection, hasSpells := selectionMap[dnd5e.CategoryIDSorcererSpells]
-		return hasCantrips && hasSpells &&
-			len(cantripSelection.SelectedKeys) == 4 &&
-			len(spellSelection.SelectedKeys) == 2
-	default:
-		// Other classes may not have required choices
-		return true
-	}
-}
 
 // hasPrerequisite checks if a draft meets a prerequisite
-func (o *Orchestrator) hasPrerequisite(draft *dnd5e.CharacterDraft, prerequisite string) bool {
-	// For now, assume all prerequisites are met
-	// TODO(#82): Implement actual prerequisite checking based on:
-	// - Ability scores
-	// - Race features
-	// - Class features
-	// - Previously made choices
-	_ = draft
-	_ = prerequisite
-	return true
-}
 
 // hasConflictingChoice checks if a draft has a conflicting choice
-func (o *Orchestrator) hasConflictingChoice(draft *dnd5e.CharacterDraft, conflict string) bool {
-	// Check if the conflict ID exists in any of the current selections
-	for _, selection := range draft.ChoiceSelections {
-		for _, selectedID := range selection.SelectedKeys {
-			if selectedID == conflict {
-				return true
-			}
-		}
-	}
-	// TODO(#82): Check other choice types as they're added
-
-	return false
-}
 
 // spellChoiceCategoryConfig holds configuration for creating spell choice categories
 type spellChoiceCategoryConfig struct {
@@ -2724,7 +2486,7 @@ func (o *Orchestrator) convertDraftDataToCharacterDraft(ctx context.Context, dat
 			slog.InfoContext(ctx, "Extracting ability scores from choices",
 				"type", fmt.Sprintf("%T", scoresData),
 				"value", fmt.Sprintf("%+v", scoresData))
-			
+
 			if scores, ok := scoresData.(shared.AbilityScores); ok {
 				draft.AbilityScores = &dnd5e.AbilityScores{
 					Strength:     int32(scores.Strength),
@@ -2798,7 +2560,7 @@ func (o *Orchestrator) convertDraftDataToCharacterDraft(ctx context.Context, dat
 		// Extract race and class choices from the choices map
 		for key, value := range choices {
 			keyStr := string(key)
-			
+
 			// Extract race choices
 			if strings.HasPrefix(keyStr, "race_") {
 				choiceID := strings.TrimPrefix(keyStr, "race_")
@@ -2825,7 +2587,7 @@ func (o *Orchestrator) convertDraftDataToCharacterDraft(ctx context.Context, dat
 					}
 				}
 			}
-			
+
 			// Extract class choices
 			if strings.HasPrefix(keyStr, "class_") {
 				choiceID := strings.TrimPrefix(keyStr, "class_")

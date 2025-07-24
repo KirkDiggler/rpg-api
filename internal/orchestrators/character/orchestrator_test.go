@@ -15,6 +15,7 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/errors"
 	characterorchestrator "github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
 	dicemock "github.com/KirkDiggler/rpg-api/internal/orchestrators/dice/mock"
+	idgenmock "github.com/KirkDiggler/rpg-api/internal/pkg/idgen/mock"
 	characterrepomock "github.com/KirkDiggler/rpg-api/internal/repositories/character/mock"
 	draftrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft"
 	draftrepomock "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft/mock"
@@ -30,6 +31,7 @@ type OrchestratorTestSuite struct {
 	mockEngine         *enginemock.MockEngine
 	mockExternalClient *externalmock.MockClient
 	mockDiceService    *dicemock.MockService
+	mockIDGenerator    *idgenmock.MockGenerator
 	orchestrator       *characterorchestrator.Orchestrator
 	ctx                context.Context
 }
@@ -41,6 +43,7 @@ func (s *OrchestratorTestSuite) SetupTest() {
 	s.mockEngine = enginemock.NewMockEngine(s.ctrl)
 	s.mockExternalClient = externalmock.NewMockClient(s.ctrl)
 	s.mockDiceService = dicemock.NewMockService(s.ctrl)
+	s.mockIDGenerator = idgenmock.NewMockGenerator(s.ctrl)
 
 	cfg := &characterorchestrator.Config{
 		CharacterRepo:      s.mockCharRepo,
@@ -48,6 +51,7 @@ func (s *OrchestratorTestSuite) SetupTest() {
 		Engine:             s.mockEngine,
 		ExternalClient:     s.mockExternalClient,
 		DiceService:        s.mockDiceService,
+		IDGenerator:        s.mockIDGenerator,
 	}
 
 	orchestrator, err := characterorchestrator.New(cfg)
@@ -63,12 +67,18 @@ func (s *OrchestratorTestSuite) TearDownTest() {
 
 // Test CreateDraft
 func (s *OrchestratorTestSuite) TestCreateDraft_Success() {
+	draftID := "draft_123e4567-e89b-12d3-a456-426614174000"
+	s.mockIDGenerator.EXPECT().
+		Generate().
+		Return(draftID)
+
 	s.mockDraftRepo.EXPECT().
 		Create(s.ctx, gomock.Any()).
 		DoAndReturn(func(_ context.Context, input draftrepo.CreateInput) (*draftrepo.CreateOutput, error) {
-			// Repository sets ID and timestamps
+			// Verify the generated ID was used
+			s.Equal(draftID, input.Draft.ID)
+			// Repository sets timestamps
 			draft := *input.Draft
-			draft.ID = "generated-id"
 			draft.CreatedAt = time.Now()
 			draft.UpdatedAt = time.Now()
 			return &draftrepo.CreateOutput{Draft: &draft}, nil
@@ -82,11 +92,16 @@ func (s *OrchestratorTestSuite) TestCreateDraft_Success() {
 	s.NoError(err)
 	s.NotNil(output)
 	s.NotNil(output.Draft)
+	s.Equal(draftID, output.Draft.ID)
 	s.Equal("player-789", output.Draft.PlayerID)
 	s.Equal(int32(0), output.Draft.Progress.CompletionPercentage)
 }
 
 func (s *OrchestratorTestSuite) TestCreateDraft_WithInitialData() {
+	draftID := "draft_98765432-e89b-12d3-a456-426614174000"
+	s.mockIDGenerator.EXPECT().
+		Generate().
+		Return(draftID)
 
 	s.mockDraftRepo.EXPECT().
 		Create(s.ctx, gomock.Any()).
@@ -95,14 +110,14 @@ func (s *OrchestratorTestSuite) TestCreateDraft_WithInitialData() {
 			s.Equal("Frodo", input.Draft.Name)
 			s.Equal(shared.ChoiceCategory("name"), shared.ChoiceName)
 			s.NotNil(input.Draft.Choices[shared.ChoiceName])
-			
+
 			// Verify race and class were set
 			raceChoice := input.Draft.Choices[shared.ChoiceRace].(character.RaceChoice)
 			s.Equal(dnd5e.RaceHalfling, raceChoice.RaceID)
-			
+
 			classChoice := input.Draft.Choices[shared.ChoiceClass].(string)
 			s.Equal(dnd5e.ClassRogue, classChoice)
-			
+
 			// Repository sets ID and timestamps
 			draft := *input.Draft
 			draft.ID = "generated-id"
@@ -115,7 +130,7 @@ func (s *OrchestratorTestSuite) TestCreateDraft_WithInitialData() {
 	s.mockExternalClient.EXPECT().
 		GetRaceData(s.ctx, dnd5e.RaceHalfling).
 		Return(nil, nil).AnyTimes()
-		
+
 	s.mockExternalClient.EXPECT().
 		GetClassData(s.ctx, dnd5e.ClassRogue).
 		Return(nil, nil).AnyTimes()
@@ -206,11 +221,11 @@ func (s *OrchestratorTestSuite) TestUpdateRace_WithChoices() {
 			// Verify race was set
 			raceChoice := input.Draft.Choices[shared.ChoiceRace].(character.RaceChoice)
 			s.Equal("dwarf", raceChoice.RaceID)
-			
+
 			// Verify race choices were stored
 			toolChoice := input.Draft.Choices[shared.ChoiceCategory("race_dwarf_tool_1")]
 			s.Equal([]string{"brewers-supplies"}, toolChoice)
-			
+
 			return &draftrepo.UpdateOutput{Draft: input.Draft}, nil
 		})
 
@@ -268,7 +283,7 @@ func (s *OrchestratorTestSuite) TestUpdateAbilityScores_Success() {
 			s.Equal(12, scores.Intelligence)
 			s.Equal(10, scores.Wisdom)
 			s.Equal(8, scores.Charisma)
-			
+
 			return &draftrepo.UpdateOutput{Draft: input.Draft}, nil
 		})
 
@@ -300,10 +315,10 @@ func (s *OrchestratorTestSuite) TestUpdateAbilityScores_Success() {
 func (s *OrchestratorTestSuite) TestGetDraft_Success() {
 	// Initialize test data with specific values for this test
 	draftData := &character.DraftData{
-		ID:       "draft-123",
-		PlayerID: "player-789",
-		Name:     "TestCharacter",
-		Choices:  make(map[shared.ChoiceCategory]any),
+		ID:        "draft-123",
+		PlayerID:  "player-789",
+		Name:      "TestCharacter",
+		Choices:   make(map[shared.ChoiceCategory]any),
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}
@@ -331,7 +346,7 @@ func (s *OrchestratorTestSuite) TestGetDraft_Success() {
 	s.mockExternalClient.EXPECT().
 		GetRaceData(s.ctx, "human").
 		Return(nil, nil).AnyTimes()
-		
+
 	s.mockExternalClient.EXPECT().
 		GetClassData(s.ctx, "fighter").
 		Return(nil, nil).AnyTimes()
