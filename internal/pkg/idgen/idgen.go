@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"sync/atomic"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 //go:generate mockgen -destination=mock/mock.go -package=idgenmock github.com/KirkDiggler/rpg-api/internal/pkg/idgen Generator
@@ -77,4 +79,23 @@ func (g *SequentialGenerator) Generate() string {
 		return fmt.Sprintf("%s_%d", g.prefix, n)
 	}
 	return fmt.Sprintf("%d", n)
+}
+
+// UUIDGenerator generates UUIDs with optional prefix
+type UUIDGenerator struct {
+	prefix string
+}
+
+// NewUUID creates a new UUID generator with optional prefix
+func NewUUID(prefix string) *UUIDGenerator {
+	return &UUIDGenerator{prefix: prefix}
+}
+
+// Generate creates a new UUID-based ID
+func (g *UUIDGenerator) Generate() string {
+	id := uuid.New().String()
+	if g.prefix != "" {
+		return fmt.Sprintf("%s_%s", g.prefix, id)
+	}
+	return id
 }

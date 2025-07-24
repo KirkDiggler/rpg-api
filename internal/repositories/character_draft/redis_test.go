@@ -34,7 +34,7 @@ type RedisRepositoryTestSuite struct {
 	mockPipe   *redismocks.MockPipeliner
 	repo       characterdraft.Repository
 	ctx        context.Context
-	
+
 	// Test data - reset in SetupSubTest
 	testDraft *character.DraftData
 	testTime  time.Time
@@ -62,7 +62,7 @@ func (s *RedisRepositoryTestSuite) SetupTest() {
 // SetupSubTest runs before each s.Run() - reset test data to clean state
 func (s *RedisRepositoryTestSuite) SetupSubTest() {
 	s.testTime = time.Now()
-	
+
 	// Create fresh draft data that tests can modify
 	s.testDraft = &character.DraftData{
 		ID:            "draft_123",

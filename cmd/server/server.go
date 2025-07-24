@@ -155,6 +155,7 @@ func runServer(_ *cobra.Command, _ []string) error {
 		Engine:             e,
 		ExternalClient:     client,
 		DiceService:        diceService,
+		IDGenerator:        idgen.NewUUID("draft"),
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create character service: %w", err)
