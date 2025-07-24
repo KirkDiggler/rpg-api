@@ -6,7 +6,7 @@ package characterdraft
 import (
 	"context"
 
-	"github.com/KirkDiggler/rpg-api/internal/entities/dnd5e"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 )
 
 // Repository defines the interface for character draft persistence
@@ -44,12 +44,12 @@ type Repository interface {
 
 // CreateInput defines the input for creating a character draft
 type CreateInput struct {
-	Draft *dnd5e.CharacterDraftData
+	Draft *character.DraftData
 }
 
 // CreateOutput defines the output for creating a character draft
 type CreateOutput struct {
-	Draft *dnd5e.CharacterDraftData
+	Draft *character.DraftData
 }
 
 // GetInput defines the input for getting a character draft
@@ -59,7 +59,7 @@ type GetInput struct {
 
 // GetOutput defines the output for getting a character draft
 type GetOutput struct {
-	Draft *dnd5e.CharacterDraftData
+	Draft *character.DraftData
 }
 
 // GetByPlayerIDInput defines the input for getting a player's draft
@@ -69,17 +69,17 @@ type GetByPlayerIDInput struct {
 
 // GetByPlayerIDOutput defines the output for getting a player's draft
 type GetByPlayerIDOutput struct {
-	Draft *dnd5e.CharacterDraftData
+	Draft *character.DraftData
 }
 
 // UpdateInput defines the input for updating a character draft
 type UpdateInput struct {
-	Draft *dnd5e.CharacterDraftData
+	Draft *character.DraftData
 }
 
 // UpdateOutput defines the output for updating a character draft
 type UpdateOutput struct {
-	Draft *dnd5e.CharacterDraftData
+	Draft *character.DraftData
 }
 
 // DeleteInput defines the input for deleting a character draft
