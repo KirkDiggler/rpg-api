@@ -16,7 +16,8 @@ import (
 	idgenmock "github.com/KirkDiggler/rpg-api/internal/pkg/idgen/mock"
 	redismocks "github.com/KirkDiggler/rpg-api/internal/redis/mocks"
 	characterdraft "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft"
-	"github.com/KirkDiggler/rpg-api/internal/testutils/builders"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
 )
 
 const (
@@ -33,6 +34,10 @@ type RedisRepositoryTestSuite struct {
 	mockPipe   *redismocks.MockPipeliner
 	repo       characterdraft.Repository
 	ctx        context.Context
+	
+	// Test data - reset in SetupSubTest
+	testDraft *character.DraftData
+	testTime  time.Time
 }
 
 func (s *RedisRepositoryTestSuite) SetupTest() {
@@ -54,6 +59,22 @@ func (s *RedisRepositoryTestSuite) SetupTest() {
 	s.ctx = context.Background()
 }
 
+// SetupSubTest runs before each s.Run() - reset test data to clean state
+func (s *RedisRepositoryTestSuite) SetupSubTest() {
+	s.testTime = time.Now()
+	
+	// Create fresh draft data that tests can modify
+	s.testDraft = &character.DraftData{
+		ID:            "draft_123",
+		PlayerID:      "player_456",
+		Name:          "Test Character",
+		Choices:       make(map[shared.ChoiceCategory]any),
+		ProgressFlags: 0,
+		CreatedAt:     s.testTime,
+		UpdatedAt:     s.testTime,
+	}
+}
+
 func (s *RedisRepositoryTestSuite) TearDownTest() {
 	s.ctrl.Finish()
 }
@@ -64,11 +85,9 @@ func (s *RedisRepositoryTestSuite) TestCreate() {
 	generatedID := "draft_123"
 
 	s.Run("successful create with no existing draft", func() {
-		inputDraft := builders.NewToolkitDraftDataBuilder().
-			WithID(""). // Clear the default ID so it gets generated
-			WithPlayerID("player_456").
-			WithName("Test Character").
-			Build()
+		// Test wants ID to be generated, so clear it
+		s.testDraft.ID = ""
+		inputDraft := s.testDraft
 
 		// Setup expectations
 		s.mockClock.EXPECT().Now().Return(now) // Called once for timestamps
@@ -123,11 +142,11 @@ func (s *RedisRepositoryTestSuite) TestCreate() {
 	})
 
 	s.Run("successful create replacing existing draft", func() {
-		inputDraft := builders.NewToolkitDraftDataBuilder().
-			WithID(""). // Clear the default ID so it gets generated
-			WithPlayerID("player_456").
-			WithName("New Character").
-			Build()
+		// Test wants ID to be generated, so clear it
+		s.testDraft.ID = ""
+		s.testDraft.Name = "New Character"
+		s.testDraft.Choices[shared.ChoiceName] = "New Character"
+		inputDraft := s.testDraft
 
 		// Setup expectations
 		s.mockClock.EXPECT().Now().Return(now) // Called once for timestamps
@@ -185,15 +204,10 @@ func (s *RedisRepositoryTestSuite) TestCreate() {
 
 // Test Get method
 func (s *RedisRepositoryTestSuite) TestGet() {
-	now := time.Now()
 
 	s.Run("successful get", func() {
-		draft := builders.NewToolkitDraftDataBuilder().
-			WithID("draft_123").
-			WithPlayerID("player_456").
-			WithName("Test Character").
-			WithTimestamps(now, now).
-			Build()
+		// Use the test draft data
+		draft := s.testDraft
 
 		draftData, err := json.Marshal(draft)
 		s.Require().NoError(err)
@@ -232,7 +246,6 @@ func (s *RedisRepositoryTestSuite) TestGet() {
 
 // Test GetByPlayerID method
 func (s *RedisRepositoryTestSuite) TestGetByPlayerID() {
-	now := time.Now()
 
 	s.Run("successful get by player ID", func() {
 		// Get draft ID from player mapping
@@ -241,13 +254,8 @@ func (s *RedisRepositoryTestSuite) TestGetByPlayerID() {
 			Get(s.ctx, testDraftPlayerKey).
 			Return(playerGetCmd)
 
-		// Get actual draft
-		draft := builders.NewToolkitDraftDataBuilder().
-			WithID("draft_123").
-			WithPlayerID("player_456").
-			WithName("Test Character").
-			WithTimestamps(now, now).
-			Build()
+		// Use the test draft data
+		draft := s.testDraft
 
 		draftData, err := json.Marshal(draft)
 		s.Require().NoError(err)
@@ -316,11 +324,10 @@ func (s *RedisRepositoryTestSuite) TestUpdate() {
 	now := time.Now()
 
 	s.Run("successful update", func() {
-		inputDraft := builders.NewToolkitDraftDataBuilder().
-			WithID("draft_123").
-			WithPlayerID("player_456").
-			WithName("Updated Character").
-			Build()
+		// Update test draft for this case
+		s.testDraft.Name = "Updated Character"
+		s.testDraft.Choices[shared.ChoiceName] = "Updated Character"
+		inputDraft := s.testDraft
 
 		// Check if exists
 		existsCmd := redis.NewIntResult(1, nil)
@@ -354,11 +361,10 @@ func (s *RedisRepositoryTestSuite) TestUpdate() {
 	})
 
 	s.Run("error when draft doesn't exist", func() {
-		inputDraft := builders.NewToolkitDraftDataBuilder().
-			WithID("draft_123").
-			WithPlayerID("player_456").
-			WithName("Updated Character").
-			Build()
+		// Update test draft for this case
+		s.testDraft.Name = "Updated Character"
+		s.testDraft.Choices[shared.ChoiceName] = "Updated Character"
+		inputDraft := s.testDraft
 
 		// Check if exists - not found
 		existsCmd := redis.NewIntResult(0, nil)
@@ -378,15 +384,10 @@ func (s *RedisRepositoryTestSuite) TestUpdate() {
 
 // Test Delete method
 func (s *RedisRepositoryTestSuite) TestDelete() {
-	now := time.Now()
 
 	s.Run("successful delete", func() {
-		// Get draft to find player ID
-		draft := builders.NewToolkitDraftDataBuilder().
-			WithID("draft_123").
-			WithPlayerID("player_456").
-			WithTimestamps(now, now).
-			Build()
+		// Use the test draft data
+		draft := s.testDraft
 
 		draftData, err := json.Marshal(draft)
 		s.Require().NoError(err)

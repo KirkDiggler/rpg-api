@@ -18,7 +18,6 @@ import (
 	characterrepomock "github.com/KirkDiggler/rpg-api/internal/repositories/character/mock"
 	draftrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft"
 	draftrepomock "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft/mock"
-	"github.com/KirkDiggler/rpg-api/internal/testutils/builders"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
 )
@@ -33,11 +32,6 @@ type OrchestratorTestSuite struct {
 	mockDiceService    *dicemock.MockService
 	orchestrator       *characterorchestrator.Orchestrator
 	ctx                context.Context
-
-	// Test data
-	testDraftID   string
-	testPlayerID  string
-	testSessionID string
 }
 
 func (s *OrchestratorTestSuite) SetupTest() {
@@ -61,11 +55,6 @@ func (s *OrchestratorTestSuite) SetupTest() {
 	s.orchestrator = orchestrator
 
 	s.ctx = context.Background()
-
-	// Initialize base test IDs that won't change
-	s.testDraftID = "draft-123"
-	s.testPlayerID = "player-789"
-	s.testSessionID = "session-012"
 }
 
 func (s *OrchestratorTestSuite) TearDownTest() {
@@ -86,14 +75,14 @@ func (s *OrchestratorTestSuite) TestCreateDraft_Success() {
 		})
 
 	input := &characterorchestrator.CreateDraftInput{
-		PlayerID: s.testPlayerID,
+		PlayerID: "player-789",
 	}
 	output, err := s.orchestrator.CreateDraft(s.ctx, input)
 
 	s.NoError(err)
 	s.NotNil(output)
 	s.NotNil(output.Draft)
-	s.Equal(s.testPlayerID, output.Draft.PlayerID)
+	s.Equal("player-789", output.Draft.PlayerID)
 	s.Equal(int32(0), output.Draft.Progress.CompletionPercentage)
 }
 
@@ -132,8 +121,8 @@ func (s *OrchestratorTestSuite) TestCreateDraft_WithInitialData() {
 		Return(nil, nil).AnyTimes()
 
 	input := &characterorchestrator.CreateDraftInput{
-		PlayerID:  s.testPlayerID,
-		SessionID: s.testSessionID,
+		PlayerID:  "player-789",
+		SessionID: "session-012",
 		InitialData: &dnd5e.CharacterDraft{
 			Name:    "Frodo",
 			RaceID:  dnd5e.RaceHalfling,
@@ -152,12 +141,10 @@ func (s *OrchestratorTestSuite) TestCreateDraft_WithInitialData() {
 
 // Test UpdateName
 func (s *OrchestratorTestSuite) TestUpdateName_Success() {
-	// Create toolkit draft data
-	draftData := builders.NewToolkitDraftDataBuilder().
-		WithID(s.testDraftID).
-		WithPlayerID(s.testPlayerID).
-		WithName("OldName").
-		Build()
+	// Test data for this case
+	s.testDraft.Name = "OldName"
+	s.testDraft.Choices[shared.ChoiceName] = "OldName"
+	draftData := s.testDraft
 
 	s.mockDraftRepo.EXPECT().
 		Get(s.ctx, draftrepo.GetInput{ID: s.testDraftID}).
@@ -184,10 +171,8 @@ func (s *OrchestratorTestSuite) TestUpdateName_Success() {
 
 // Test UpdateRace with choices
 func (s *OrchestratorTestSuite) TestUpdateRace_WithChoices() {
-	draftData := builders.NewToolkitDraftDataBuilder().
-		WithID(s.testDraftID).
-		WithPlayerID(s.testPlayerID).
-		Build()
+	// Use clean test data from SetupSubTest
+	draftData := s.testDraft
 
 	s.mockDraftRepo.EXPECT().
 		Get(s.ctx, gomock.Any()).
@@ -243,10 +228,8 @@ func (s *OrchestratorTestSuite) TestUpdateRace_WithChoices() {
 
 // Test UpdateAbilityScores
 func (s *OrchestratorTestSuite) TestUpdateAbilityScores_Success() {
-	draftData := builders.NewToolkitDraftDataBuilder().
-		WithID(s.testDraftID).
-		WithPlayerID(s.testPlayerID).
-		Build()
+	// Use clean test data from SetupSubTest
+	draftData := s.testDraft
 
 	s.mockDraftRepo.EXPECT().
 		Get(s.ctx, gomock.Any()).
@@ -293,21 +276,24 @@ func (s *OrchestratorTestSuite) TestUpdateAbilityScores_Success() {
 
 // Test GetDraft
 func (s *OrchestratorTestSuite) TestGetDraft_Success() {
-	draftData := builders.NewToolkitDraftDataBuilder().
-		WithID(s.testDraftID).
-		WithPlayerID(s.testPlayerID).
-		WithName("TestCharacter").
-		WithRace("human", "").
-		WithClass("fighter").
-		WithAbilityScores(shared.AbilityScores{
-			Strength:     16,
-			Dexterity:    14,
-			Constitution: 15,
-			Intelligence: 10,
-			Wisdom:       12,
-			Charisma:     8,
-		}).
-		Build()
+	// Setup test data with specific values for this test
+	s.testDraft.Name = "TestCharacter"
+	s.testDraft.Choices[shared.ChoiceName] = "TestCharacter"
+	s.testDraft.Choices[shared.ChoiceRace] = character.RaceChoice{
+		RaceID:    "human",
+		SubraceID: "",
+	}
+	s.testDraft.Choices[shared.ChoiceClass] = "fighter"
+	s.testDraft.Choices[shared.ChoiceAbilityScores] = shared.AbilityScores{
+		Strength:     16,
+		Dexterity:    14,
+		Constitution: 15,
+		Intelligence: 10,
+		Wisdom:       12,
+		Charisma:     8,
+		}
+	s.testDraft.ProgressFlags = character.ProgressName | character.ProgressRace | character.ProgressClass | character.ProgressAbilityScores
+	draftData := s.testDraft
 
 	s.mockDraftRepo.EXPECT().
 		Get(s.ctx, draftrepo.GetInput{ID: s.testDraftID}).
