@@ -19,6 +19,7 @@ require (
 )
 
 require (
+	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.0.0-20250724181253-97a9a6fb8127 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect

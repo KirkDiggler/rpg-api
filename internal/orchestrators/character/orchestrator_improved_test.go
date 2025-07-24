@@ -17,8 +17,12 @@ import (
 // UpdateName Tests - Each test function uses SetupSubTest for clean mocks and test data
 
 func (s *OrchestratorTestSuite) TestUpdateName_SuccessfulUpdate() {
-	// Base draft is created fresh in SetupSubTest
-	draftData := dnd5e.FromCharacterDraft(s.testDraft)
+	// Create toolkit draft data for testing
+	draftData := builders.NewToolkitDraftDataBuilder().
+		WithID(s.testDraftID).
+		WithPlayerID(s.testPlayerID).
+		WithName("Gandalf").
+		Build()
 
 	// Set up mocks
 	mocks.ExpectDraftGet(s.ctx, s.mockDraftRepo, s.testDraftID, draftData, nil)
@@ -26,7 +30,6 @@ func (s *OrchestratorTestSuite) TestUpdateName_SuccessfulUpdate() {
 		Update(s.ctx, gomock.Any()).
 		DoAndReturn(func(_ context.Context, input draftrepo.UpdateInput) (*draftrepo.UpdateOutput, error) {
 			s.Equal("Aragorn", input.Draft.Name)
-			s.True(input.Draft.Progress.HasName())
 			return &draftrepo.UpdateOutput{Draft: input.Draft}, nil
 		})
 
@@ -77,11 +80,12 @@ func (s *OrchestratorTestSuite) TestUpdateName_DraftNotFound() {
 }
 
 func (s *OrchestratorTestSuite) TestUpdateName_NameAlreadySet() {
-	// Modify the base draft to have an existing name
-	draftCopy := *s.testDraft
-	draftCopy.Name = "OldName"
-	draftCopy.Progress.SetStep(dnd5e.ProgressStepName, true)
-	draftData := dnd5e.FromCharacterDraft(&draftCopy)
+	// Create draft with existing name
+	draftData := builders.NewToolkitDraftDataBuilder().
+		WithID(s.testDraftID).
+		WithPlayerID(s.testPlayerID).
+		WithName("OldName").
+		Build()
 
 	// Set up mocks
 	mocks.ExpectDraftGet(s.ctx, s.mockDraftRepo, s.testDraftID, draftData, nil)
@@ -89,7 +93,6 @@ func (s *OrchestratorTestSuite) TestUpdateName_NameAlreadySet() {
 		Update(s.ctx, gomock.Any()).
 		DoAndReturn(func(_ context.Context, input draftrepo.UpdateInput) (*draftrepo.UpdateOutput, error) {
 			s.Equal("Gimli", input.Draft.Name)
-			s.True(input.Draft.Progress.HasName())
 			return &draftrepo.UpdateOutput{Draft: input.Draft}, nil
 		})
 
@@ -109,15 +112,7 @@ func (s *OrchestratorTestSuite) TestUpdateName_NameAlreadySet() {
 // CreateDraft Tests - Each test function uses SetupSubTest for clean mocks and test data
 
 func (s *OrchestratorTestSuite) TestCreateDraft_Minimal() {
-	// Set up engine validation mock
-	s.mockEngine.EXPECT().
-		ValidateCharacterDraft(s.ctx, gomock.Any()).
-		Return(&engine.ValidateCharacterDraftOutput{
-			IsValid: true,
-			Errors:  nil,
-		}, nil)
-
-	// Set up repository mock
+	// Set up repository mock - no engine validation needed anymore
 	mocks.ExpectDraftCreate(s.ctx, s.mockDraftRepo)
 
 	// Execute
@@ -135,13 +130,6 @@ func (s *OrchestratorTestSuite) TestCreateDraft_Minimal() {
 }
 
 func (s *OrchestratorTestSuite) TestCreateDraft_WithInitialName() {
-	// Set up engine validation mock
-	s.mockEngine.EXPECT().
-		ValidateCharacterDraft(s.ctx, gomock.Any()).
-		Return(&engine.ValidateCharacterDraftOutput{
-			IsValid: true,
-			Errors:  nil,
-		}, nil)
 
 	// Set up repository mock
 	mocks.ExpectDraftCreate(s.ctx, s.mockDraftRepo)

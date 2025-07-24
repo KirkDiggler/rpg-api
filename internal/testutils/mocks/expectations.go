@@ -12,6 +12,7 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/entities/dnd5e"
 	draftrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft"
 	draftrepomock "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft/mock"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 )
 
 // ExpectDraftHydration sets up mock expectations for hydrating a draft with external data
@@ -57,7 +58,7 @@ func ExpectDraftHydration(ctx context.Context, mockClient *externalmock.MockClie
 // ExpectDraftGet sets up a mock expectation for getting a draft from repository
 func ExpectDraftGet(
 	ctx context.Context, mockRepo *draftrepomock.MockRepository,
-	draftID string, draft *dnd5e.CharacterDraftData, err error,
+	draftID string, draft *character.DraftData, err error,
 ) {
 	mockRepo.EXPECT().
 		Get(ctx, draftrepo.GetInput{ID: draftID}).
@@ -67,7 +68,7 @@ func ExpectDraftGet(
 // ExpectDraftGetByPlayerID sets up a mock expectation for getting a draft by player ID
 func ExpectDraftGetByPlayerID(
 	ctx context.Context, mockRepo *draftrepomock.MockRepository,
-	playerID string, draft *dnd5e.CharacterDraftData, err error,
+	playerID string, draft *character.DraftData, err error,
 ) {
 	mockRepo.EXPECT().
 		GetByPlayerID(ctx, draftrepo.GetByPlayerIDInput{PlayerID: playerID}).
@@ -83,11 +84,11 @@ func ExpectDraftCreate(ctx context.Context, mockRepo *draftrepomock.MockReposito
 			if input.Draft.ID == "" {
 				input.Draft.ID = "generated-draft-id"
 			}
-			now := clock.Now().Unix()
-			if input.Draft.CreatedAt == 0 {
+			now := clock.Now()
+			if input.Draft.CreatedAt.IsZero() {
 				input.Draft.CreatedAt = now
 			}
-			if input.Draft.UpdatedAt == 0 {
+			if input.Draft.UpdatedAt.IsZero() {
 				input.Draft.UpdatedAt = now
 			}
 			return &draftrepo.CreateOutput{Draft: input.Draft}, nil
@@ -100,7 +101,7 @@ func ExpectDraftUpdate(ctx context.Context, mockRepo *draftrepomock.MockReposito
 		Update(ctx, gomock.Any()).
 		DoAndReturn(func(_ context.Context, input draftrepo.UpdateInput) (*draftrepo.UpdateOutput, error) {
 			// Simulate repository behavior - it would update timestamp
-			input.Draft.UpdatedAt = clock.Now().Unix()
+			input.Draft.UpdatedAt = clock.Now()
 			return &draftrepo.UpdateOutput{Draft: input.Draft}, nil
 		})
 }

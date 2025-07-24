@@ -7,11 +7,11 @@ import (
 
 	redis "github.com/redis/go-redis/v9"
 
-	"github.com/KirkDiggler/rpg-api/internal/entities/dnd5e"
 	"github.com/KirkDiggler/rpg-api/internal/errors"
 	"github.com/KirkDiggler/rpg-api/internal/pkg/clock"
 	"github.com/KirkDiggler/rpg-api/internal/pkg/idgen"
 	redisclient "github.com/KirkDiggler/rpg-api/internal/redis"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 )
 
 const (
@@ -84,22 +84,8 @@ func (r *redisRepository) Create(ctx context.Context, input CreateInput) (*Creat
 
 	// Repository sets timestamps
 	now := r.clock.Now()
-	draft.CreatedAt = now.Unix()
-	draft.UpdatedAt = now.Unix()
-
-	// Set expiration if not provided
-	if draft.ExpiresAt == 0 {
-		draft.ExpiresAt = now.Add(defaultTTL).Unix()
-	}
-
-	// Validate expiration
-	if draft.ExpiresAt > 0 {
-		expiresAt := time.Unix(draft.ExpiresAt, 0)
-		ttl := time.Until(expiresAt)
-		if ttl <= 0 {
-			return nil, errors.InvalidArgument(errDraftExpired)
-		}
-	}
+	draft.CreatedAt = now
+	draft.UpdatedAt = now
 
 	isNew := true
 	// Check for existing draft for this player
@@ -130,17 +116,9 @@ func (r *redisRepository) Create(ctx context.Context, input CreateInput) (*Creat
 		return nil, errors.Wrapf(err, "failed to marshal draft")
 	}
 
-	// Calculate TTL
-	ttl := defaultTTL
-	if draft.ExpiresAt > 0 {
-		expiresAt := time.Unix(draft.ExpiresAt, 0)
-		ttl = time.Until(expiresAt)
-		// Already validated above, so ttl should be positive
-	}
-
 	// Set draft data
 	draftKey := draftKeyPrefix + draft.ID
-	pipe.Set(ctx, draftKey, data, ttl)
+	pipe.Set(ctx, draftKey, data, defaultTTL)
 
 	// Set player mapping (no TTL on this key)
 	pipe.Set(ctx, playerKey, draft.ID, 0)
@@ -170,7 +148,7 @@ func (r *redisRepository) Get(ctx context.Context, input GetInput) (*GetOutput, 
 
 	data := []byte(result)
 
-	var draft dnd5e.CharacterDraftData
+	var draft character.DraftData
 	if err := json.Unmarshal(data, &draft); err != nil {
 		return nil, errors.Wrapf(err, "failed to unmarshal draft")
 	}
@@ -229,7 +207,7 @@ func (r *redisRepository) Update(ctx context.Context, input UpdateInput) (*Updat
 	draft := *input.Draft
 
 	// Repository updates timestamp
-	draft.UpdatedAt = r.clock.Now().Unix()
+	draft.UpdatedAt = r.clock.Now()
 
 	// Marshal draft
 	data, err := json.Marshal(&draft)
@@ -237,18 +215,8 @@ func (r *redisRepository) Update(ctx context.Context, input UpdateInput) (*Updat
 		return nil, errors.Wrapf(err, "failed to marshal draft")
 	}
 
-	// Calculate TTL
-	ttl := defaultTTL
-	if draft.ExpiresAt > 0 {
-		expiresAt := time.Unix(draft.ExpiresAt, 0)
-		ttl = time.Until(expiresAt)
-		if ttl <= 0 {
-			return nil, errors.InvalidArgument(errDraftExpired)
-		}
-	}
-
 	// Update with TTL
-	if err := r.client.Set(ctx, key, data, ttl).Err(); err != nil {
+	if err := r.client.Set(ctx, key, data, defaultTTL).Err(); err != nil {
 		return nil, errors.Wrapf(err, "failed to update draft")
 	}
 
