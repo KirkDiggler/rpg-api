@@ -149,6 +149,7 @@ func (o *Orchestrator) CreateDraft(
 	}
 
 	// Generate draft ID
+	// TODO(#127): Use proper UUID generator or idgen package instead of timestamp
 	draftID := fmt.Sprintf("draft-%d", time.Now().UnixNano())
 	
 	// Create new builder
@@ -1657,7 +1658,7 @@ func convertValidationErrorsToWarnings(errors []engine.ValidationError) []Valida
 }
 
 // UpdateChoices updates the choices for a character draft
-// TODO: This method needs to be updated to work with toolkit DraftData
+// TODO(#126): This method needs to be updated to work with toolkit DraftData
 // For now, it remains using the old CharacterDraftData approach
 func (o *Orchestrator) UpdateChoices(
 	ctx context.Context,
@@ -1723,7 +1724,7 @@ func (o *Orchestrator) UpdateChoices(
 	// Calculate completion percentage
 	o.updateCompletionPercentage(draft)
 
-	// TODO: This method needs to be fully converted to use toolkit DraftData
+	// TODO(#126): This method needs to be fully converted to use toolkit DraftData
 	// For now, return the draft as-is since we can't convert back
 	
 	slog.Info("Successfully updated character choices", "draft_id", draft.ID)
