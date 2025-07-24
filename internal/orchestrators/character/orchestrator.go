@@ -1062,13 +1062,35 @@ func (o *Orchestrator) DeleteCharacter(
 	}, nil
 }
 
-// Helper methods
+// Helper functions
 
-// updateCompletionPercentage updates the completion percentage based on completed steps
-
-// convertValidationErrors converts engine ValidationError to service ValidationError
-
-// convertValidationWarnings converts engine ValidationWarning to service ValidationWarning
+// isValidChoiceCategory validates if a choice category is recognized
+func isValidChoiceCategory(category shared.ChoiceCategory) bool {
+	// Check predefined categories
+	switch category {
+	case shared.ChoiceName,
+		shared.ChoiceRace,
+		shared.ChoiceSubrace,
+		shared.ChoiceClass,
+		shared.ChoiceBackground,
+		shared.ChoiceAbilityScores,
+		shared.ChoiceSkills,
+		shared.ChoiceLanguages,
+		shared.ChoiceEquipment,
+		shared.ChoiceSpells:
+		return true
+	}
+	
+	// Check dynamic categories with known prefixes
+	categoryStr := string(category)
+	if strings.HasPrefix(categoryStr, "race_") ||
+		strings.HasPrefix(categoryStr, "class_") ||
+		strings.HasPrefix(categoryStr, "background_") {
+		return true
+	}
+	
+	return false
+}
 
 // Data loading methods for character creation UI
 
@@ -1638,18 +1660,37 @@ func (o *Orchestrator) UpdateChoices(
 			continue
 		}
 
-		// Convert the choice ID to a ChoiceCategory
-		// The choice ID might need to be mapped to the appropriate category
+		// Validate and convert the choice ID to a ChoiceCategory
 		category := shared.ChoiceCategory(selection.ChoiceID)
-
+		
+		// Validate the category is recognized
+		// The toolkit uses both predefined categories and dynamic ones with prefixes
+		if !isValidChoiceCategory(category) {
+			slog.WarnContext(ctx, "Skipping unrecognized choice category",
+				"choice_id", selection.ChoiceID,
+				"draft_id", draftData.ID)
+			continue
+		}
+		
 		// Store the selection based on its type
-		// For now, we'll store the selected keys directly
-		// The toolkit may expect different formats for different choice types
-		if len(selection.SelectedKeys) > 0 {
+		// Different choice types may have different data structures
+		switch {
+		case len(selection.SelectedKeys) > 0:
+			// Most choices use string arrays for selected options
 			draftData.Choices[category] = selection.SelectedKeys
-		} else if len(selection.AbilityScoreChoices) > 0 {
-			// Handle ability score choices separately
-			draftData.Choices[category] = selection.AbilityScoreChoices
+			
+		case len(selection.AbilityScoreChoices) > 0:
+			// Ability score choices have their own structure
+			if category == shared.ChoiceAbilityScores {
+				draftData.Choices[category] = selection.AbilityScoreChoices
+			} else {
+				slog.WarnContext(ctx, "AbilityScoreChoices provided for non-ability score category",
+					"category", category)
+			}
+			
+		default:
+			slog.WarnContext(ctx, "No valid selection data provided",
+				"choice_id", selection.ChoiceID)
 		}
 	}
 
