@@ -8,6 +8,7 @@ import (
 	redis "github.com/redis/go-redis/v9"
 
 	"github.com/KirkDiggler/rpg-api/internal/errors"
+	"github.com/KirkDiggler/rpg-api/internal/pkg/clock"
 	redisclient "github.com/KirkDiggler/rpg-api/internal/redis"
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 )
@@ -26,11 +27,13 @@ const (
 
 type redisRepository struct {
 	client redisclient.Client
+	clock  clock.Clock
 }
 
 // RedisConfig contains configuration for the Redis character repository.
 type RedisConfig struct {
 	Client redisclient.Client
+	Clock  clock.Clock
 }
 
 // Validate validates the RedisConfig.
@@ -49,8 +52,16 @@ func NewRedis(cfg *RedisConfig) (Repository, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
+
+	// Use real clock if none provided
+	c := cfg.Clock
+	if c == nil {
+		c = clock.New()
+	}
+
 	return &redisRepository{
 		client: cfg.Client,
+		clock:  c,
 	}, nil
 }
 

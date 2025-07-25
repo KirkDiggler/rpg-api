@@ -195,7 +195,8 @@ func (s *IntegrationTestSuite) TestConcurrentAccess() {
 
 // Helper to create test character data
 func (s *IntegrationTestSuite) createTestCharacterData(id, playerID, name string) *toolkitchar.Data {
-	now := time.Now()
+	// Use fixed time for consistent tests
+	testTime := time.Date(2025, 1, 15, 10, 30, 0, 0, time.UTC)
 	return &toolkitchar.Data{
 		ID:           id,
 		PlayerID:     playerID,
@@ -229,12 +230,11 @@ func (s *IntegrationTestSuite) createTestCharacterData(id, playerID, name string
 			Weapons: []string{"simple", "martial"},
 			Tools:   []string{"herbalism kit"},
 		},
-		CreatedAt: now,
-		UpdatedAt: now,
+		CreatedAt: testTime,
+		UpdatedAt: testTime,
 	}
 }
 
 func TestIntegrationTestSuite(t *testing.T) {
 	suite.Run(t, new(IntegrationTestSuite))
 }
-

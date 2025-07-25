@@ -10,10 +10,18 @@ import (
 	"github.com/stretchr/testify/suite"
 	"go.uber.org/mock/gomock"
 
+	mockclock "github.com/KirkDiggler/rpg-api/internal/pkg/clock/mock"
 	redismocks "github.com/KirkDiggler/rpg-api/internal/redis/mocks"
 	"github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
+)
+
+const (
+	testCharID   = testCharID
+	testPlayerID = testPlayerID
+	testCharKey  = "character:char_test123"
+	testPlayerKey = "character:player:player_123"
 )
 
 type RedisToolkitTestSuite struct {
@@ -21,6 +29,8 @@ type RedisToolkitTestSuite struct {
 	ctrl       *gomock.Controller
 	mockClient *redismocks.MockClient
 	mockPipe   *redismocks.MockPipeliner
+	mockClock  *mockclock.MockClock
+	testTime   time.Time
 	repo       character.Repository
 	ctx        context.Context
 }
@@ -29,10 +39,16 @@ func (s *RedisToolkitTestSuite) SetupTest() {
 	s.ctrl = gomock.NewController(s.T())
 	s.mockClient = redismocks.NewMockClient(s.ctrl)
 	s.mockPipe = redismocks.NewMockPipeliner(s.ctrl)
+	s.mockClock = mockclock.NewMockClock(s.ctrl)
 	s.ctx = context.Background()
+
+	// Use a fixed time for all tests
+	s.testTime = time.Date(2025, 1, 15, 10, 30, 0, 0, time.UTC)
+	s.mockClock.EXPECT().Now().Return(s.testTime).AnyTimes()
 
 	repo, err := character.NewRedis(&character.RedisConfig{
 		Client: s.mockClient,
+		Clock:  s.mockClock,
 	})
 	s.Require().NoError(err)
 	s.repo = repo
@@ -56,21 +72,24 @@ func (s *RedisToolkitTestSuite) TestCreate() {
 				CharacterData: s.createTestCharacterData(),
 			},
 			setupMock: func() {
-				charKey := "character:char_test123"
-				playerKey := "character:player:player_123"
+				charKey := testCharKey
+				playerKey := testPlayerKey
 
 				// Check existence
 				s.mockClient.EXPECT().
 					Exists(s.ctx, charKey).
 					Return(redis.NewIntResult(0, nil))
 
+				// Marshal character data
+				data, _ := json.Marshal(s.createTestCharacterData())
+
 				// Transaction
 				s.mockClient.EXPECT().TxPipeline().Return(s.mockPipe)
 				s.mockPipe.EXPECT().
-					Set(s.ctx, charKey, gomock.Any(), time.Duration(0)).
+					Set(s.ctx, charKey, data, time.Duration(0)).
 					Return(redis.NewStatusResult("", nil))
 				s.mockPipe.EXPECT().
-					SAdd(s.ctx, playerKey, "char_test123").
+					SAdd(s.ctx, playerKey, testCharID).
 					Return(redis.NewIntResult(1, nil))
 				s.mockPipe.EXPECT().
 					Exec(s.ctx).
@@ -102,7 +121,7 @@ func (s *RedisToolkitTestSuite) TestCreate() {
 				CharacterData: s.createTestCharacterData(),
 			},
 			setupMock: func() {
-				charKey := "character:char_test123"
+				charKey := testCharKey
 				s.mockClient.EXPECT().
 					Exists(s.ctx, charKey).
 					Return(redis.NewIntResult(1, nil))
@@ -142,10 +161,10 @@ func (s *RedisToolkitTestSuite) TestGet() {
 		{
 			name: "success retrieving character",
 			input: character.GetInput{
-				ID: "char_test123",
+				ID: testCharID,
 			},
 			setupMock: func() {
-				charKey := "character:char_test123"
+				charKey := testCharKey
 				charData := s.createTestCharacterData()
 				data, _ := json.Marshal(charData)
 
@@ -194,7 +213,7 @@ func (s *RedisToolkitTestSuite) TestGet() {
 				s.NoError(err)
 				s.NotNil(output)
 				s.NotNil(output.CharacterData)
-				s.Equal("char_test123", output.CharacterData.ID)
+				s.Equal(testCharID, output.CharacterData.ID)
 				s.Equal("Test Character", output.CharacterData.Name)
 			}
 		})
@@ -215,7 +234,7 @@ func (s *RedisToolkitTestSuite) TestUpdate() {
 				CharacterData: s.createTestCharacterData(),
 			},
 			setupMock: func() {
-				charKey := "character:char_test123"
+				charKey := testCharKey
 				charData := s.createTestCharacterData()
 				data, _ := json.Marshal(charData)
 
@@ -227,7 +246,7 @@ func (s *RedisToolkitTestSuite) TestUpdate() {
 				// Update transaction
 				s.mockClient.EXPECT().TxPipeline().Return(s.mockPipe)
 				s.mockPipe.EXPECT().
-					Set(s.ctx, charKey, gomock.Any(), time.Duration(0)).
+					Set(s.ctx, charKey, data, time.Duration(0)).
 					Return(redis.NewStatusResult("", nil))
 				s.mockPipe.EXPECT().
 					Exec(s.ctx).
@@ -245,7 +264,7 @@ func (s *RedisToolkitTestSuite) TestUpdate() {
 				}(),
 			},
 			setupMock: func() {
-				charKey := "character:char_test123"
+				charKey := testCharKey
 				oldPlayerKey := "character:player:player_123"
 				newPlayerKey := "character:player:player_new"
 
@@ -257,15 +276,19 @@ func (s *RedisToolkitTestSuite) TestUpdate() {
 					Return(redis.NewStringResult(string(existingJSON), nil))
 
 				// Update with new player ID
+				updatedData := s.createTestCharacterData()
+				updatedData.PlayerID = "player_new"
+				updatedJSON, _ := json.Marshal(updatedData)
+
 				s.mockClient.EXPECT().TxPipeline().Return(s.mockPipe)
 				s.mockPipe.EXPECT().
-					Set(s.ctx, charKey, gomock.Any(), time.Duration(0)).
+					Set(s.ctx, charKey, updatedJSON, time.Duration(0)).
 					Return(redis.NewStatusResult("", nil))
 				s.mockPipe.EXPECT().
-					SRem(s.ctx, oldPlayerKey, "char_test123").
+					SRem(s.ctx, oldPlayerKey, testCharID).
 					Return(redis.NewIntResult(1, nil))
 				s.mockPipe.EXPECT().
-					SAdd(s.ctx, newPlayerKey, "char_test123").
+					SAdd(s.ctx, newPlayerKey, testCharID).
 					Return(redis.NewIntResult(1, nil))
 				s.mockPipe.EXPECT().
 					Exec(s.ctx).
@@ -305,11 +328,11 @@ func (s *RedisToolkitTestSuite) TestDelete() {
 		{
 			name: "success deleting character",
 			input: character.DeleteInput{
-				ID: "char_test123",
+				ID: testCharID,
 			},
 			setupMock: func() {
-				charKey := "character:char_test123"
-				playerKey := "character:player:player_123"
+				charKey := testCharKey
+				playerKey := testPlayerKey
 				charData := s.createTestCharacterData()
 				data, _ := json.Marshal(charData)
 
@@ -324,7 +347,7 @@ func (s *RedisToolkitTestSuite) TestDelete() {
 					Del(s.ctx, charKey).
 					Return(redis.NewIntResult(1, nil))
 				s.mockPipe.EXPECT().
-					SRem(s.ctx, playerKey, "char_test123").
+					SRem(s.ctx, playerKey, testCharID).
 					Return(redis.NewIntResult(1, nil))
 				s.mockPipe.EXPECT().
 					Exec(s.ctx).
@@ -373,21 +396,21 @@ func (s *RedisToolkitTestSuite) TestListByPlayerID() {
 		{
 			name: "success listing characters by player",
 			input: character.ListByPlayerIDInput{
-				PlayerID: "player_123",
+				PlayerID: testPlayerID,
 			},
 			setupMock: func() {
-				playerKey := "character:player:player_123"
+				playerKey := testPlayerKey
 				char1Key := "character:char_test123"
 				char2Key := "character:char_test456"
 
 				// Get character IDs from index
 				s.mockClient.EXPECT().
 					SMembers(s.ctx, playerKey).
-					Return(redis.NewStringSliceResult([]string{"char_test123", "char_test456"}, nil))
+					Return(redis.NewStringSliceResult([]string{testCharID, "char_test456"}, nil))
 
 				// Get first character
 				char1 := s.createTestCharacterData()
-				char1.ID = "char_test123"
+				char1.ID = testCharID
 				data1, _ := json.Marshal(char1)
 				s.mockClient.EXPECT().
 					Get(s.ctx, char1Key).
@@ -408,17 +431,17 @@ func (s *RedisToolkitTestSuite) TestListByPlayerID() {
 		{
 			name: "success with missing character cleaned up",
 			input: character.ListByPlayerIDInput{
-				PlayerID: "player_123",
+				PlayerID: testPlayerID,
 			},
 			setupMock: func() {
-				playerKey := "character:player:player_123"
+				playerKey := testPlayerKey
 				char1Key := "character:char_test123"
 				char2Key := "character:char_missing"
 
 				// Get character IDs from index
 				s.mockClient.EXPECT().
 					SMembers(s.ctx, playerKey).
-					Return(redis.NewStringSliceResult([]string{"char_test123", "char_missing"}, nil))
+					Return(redis.NewStringSliceResult([]string{testCharID, "char_missing"}, nil))
 
 				// Get first character - exists
 				char1 := s.createTestCharacterData()
@@ -472,7 +495,6 @@ func (s *RedisToolkitTestSuite) TestListByPlayerID() {
 
 // Helper method to create test character data
 func (s *RedisToolkitTestSuite) createTestCharacterData() *toolkitchar.Data {
-	now := time.Now()
 	return &toolkitchar.Data{
 		ID:           "char_test123",
 		PlayerID:     "player_123",
@@ -506,12 +528,11 @@ func (s *RedisToolkitTestSuite) createTestCharacterData() *toolkitchar.Data {
 			Weapons: []string{"simple", "martial"},
 			Tools:   []string{},
 		},
-		CreatedAt: now,
-		UpdatedAt: now,
+		CreatedAt: s.testTime,
+		UpdatedAt: s.testTime,
 	}
 }
 
 func TestRedisToolkitTestSuite(t *testing.T) {
 	suite.Run(t, new(RedisToolkitTestSuite))
 }
-
