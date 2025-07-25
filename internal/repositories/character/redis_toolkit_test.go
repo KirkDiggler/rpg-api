@@ -18,8 +18,8 @@ import (
 )
 
 const (
-	testCharID   = testCharID
-	testPlayerID = testPlayerID
+	testCharID   = "char_test123"
+	testPlayerID = "player_123"
 	testCharKey  = "character:char_test123"
 	testPlayerKey = "character:player:player_123"
 )
@@ -496,8 +496,8 @@ func (s *RedisToolkitTestSuite) TestListByPlayerID() {
 // Helper method to create test character data
 func (s *RedisToolkitTestSuite) createTestCharacterData() *toolkitchar.Data {
 	return &toolkitchar.Data{
-		ID:           "char_test123",
-		PlayerID:     "player_123",
+		ID:           testCharID,
+		PlayerID:     testPlayerID,
 		Name:         "Test Character",
 		Level:        1,
 		Experience:   0,
