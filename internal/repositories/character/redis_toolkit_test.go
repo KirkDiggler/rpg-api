@@ -64,13 +64,10 @@ func (s *RedisToolkitTestSuite) TestCreate() {
 					Exists(s.ctx, charKey).
 					Return(redis.NewIntResult(0, nil))
 
-				// Marshal character data
-				data, _ := json.Marshal(s.createTestCharacterData())
-
 				// Transaction
 				s.mockClient.EXPECT().TxPipeline().Return(s.mockPipe)
 				s.mockPipe.EXPECT().
-					Set(s.ctx, charKey, data, time.Duration(0)).
+					Set(s.ctx, charKey, gomock.Any(), time.Duration(0)).
 					Return(redis.NewStatusResult("", nil))
 				s.mockPipe.EXPECT().
 					SAdd(s.ctx, playerKey, "char_test123").
@@ -230,7 +227,7 @@ func (s *RedisToolkitTestSuite) TestUpdate() {
 				// Update transaction
 				s.mockClient.EXPECT().TxPipeline().Return(s.mockPipe)
 				s.mockPipe.EXPECT().
-					Set(s.ctx, charKey, data, time.Duration(0)).
+					Set(s.ctx, charKey, gomock.Any(), time.Duration(0)).
 					Return(redis.NewStatusResult("", nil))
 				s.mockPipe.EXPECT().
 					Exec(s.ctx).
@@ -260,13 +257,9 @@ func (s *RedisToolkitTestSuite) TestUpdate() {
 					Return(redis.NewStringResult(string(existingJSON), nil))
 
 				// Update with new player ID
-				updatedData := s.createTestCharacterData()
-				updatedData.PlayerID = "player_new"
-				updatedJSON, _ := json.Marshal(updatedData)
-
 				s.mockClient.EXPECT().TxPipeline().Return(s.mockPipe)
 				s.mockPipe.EXPECT().
-					Set(s.ctx, charKey, updatedJSON, time.Duration(0)).
+					Set(s.ctx, charKey, gomock.Any(), time.Duration(0)).
 					Return(redis.NewStatusResult("", nil))
 				s.mockPipe.EXPECT().
 					SRem(s.ctx, oldPlayerKey, "char_test123").

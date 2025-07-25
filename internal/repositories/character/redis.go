@@ -13,10 +13,9 @@ import (
 )
 
 const (
-	characterKeyPrefix     = "character:"
-	characterDataKeyPrefix = "character:data:"
-	playerIndexPrefix      = "character:player:"
-	sessionIndexPrefix     = "character:session:"
+	characterKeyPrefix = "character:"
+	playerIndexPrefix  = "character:player:"
+	sessionIndexPrefix = "character:session:"
 
 	// Error messages
 	errCharacterNil     = "character cannot be nil"

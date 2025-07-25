@@ -903,9 +903,11 @@ func (o *Orchestrator) FinalizeDraft(
 	}
 
 	// Delete the draft
+	draftDeleted := true
 	deleteInput := draftrepo.DeleteInput{ID: input.DraftID}
 	if _, err := o.characterDraftRepo.Delete(ctx, deleteInput); err != nil {
 		// Log but don't fail - character was created successfully
+		draftDeleted = false
 		slog.Warn("Failed to delete draft after finalization",
 			"draft_id", input.DraftID,
 			"error", err)
@@ -946,7 +948,7 @@ func (o *Orchestrator) FinalizeDraft(
 
 	return &FinalizeDraftOutput{
 		Character:    apiChar,
-		DraftDeleted: true,
+		DraftDeleted: draftDeleted,
 	}, nil
 }
 
