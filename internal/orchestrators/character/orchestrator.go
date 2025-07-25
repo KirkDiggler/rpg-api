@@ -891,42 +891,12 @@ func (o *Orchestrator) FinalizeDraft(
 	// Get the character data from toolkit
 	charData := toolkitChar.ToData()
 
-	// Convert to API character format
-	// TODO: This is a temporary mapping until we fully integrate toolkit
-	char := &dnd5e.Character{
-		Level:            int32(charData.Level),
-		ExperiencePoints: 0, // Starting character
-		Name:             charData.Name,
-		RaceID:           charData.RaceID,
-		SubraceID:        "", // TODO: Get from builder when supported
-		ClassID:          charData.ClassID,
-		BackgroundID:     charData.BackgroundID,
-		Alignment:        "", // Not in toolkit yet
-		AbilityScores: dnd5e.AbilityScores{
-			Strength:     int32(charData.AbilityScores.Strength),
-			Dexterity:    int32(charData.AbilityScores.Dexterity),
-			Constitution: int32(charData.AbilityScores.Constitution),
-			Intelligence: int32(charData.AbilityScores.Intelligence),
-			Wisdom:       int32(charData.AbilityScores.Wisdom),
-			Charisma:     int32(charData.AbilityScores.Charisma),
-		},
-		CurrentHP: int32(charData.HitPoints),
-		TempHP:    0,
-		SessionID: "", // Will be set from draft
-		PlayerID:  getOutput.Draft.PlayerID,
-	}
+	// Generate character ID with proper prefix
+	charData.ID = o.idGenerator.Generate()
 
-	// Convert draft data to get session ID
-	draft, err := o.convertDraftDataToCharacterDraft(ctx, getOutput.Draft)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to convert draft data")
-	}
-	char.SessionID = draft.SessionID
-	char.Alignment = draft.Alignment
-
-	// Create the character in repository
-	createCharOutput, err := o.characterRepo.Create(ctx, characterrepo.CreateInput{
-		Character: char,
+	// Store the character data directly
+	_, err = o.characterRepo.Create(ctx, characterrepo.CreateInput{
+		CharacterData: &charData,
 	})
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create character")
@@ -941,8 +911,42 @@ func (o *Orchestrator) FinalizeDraft(
 			"error", err)
 	}
 
+	// For now, we still need to return the API entity format
+	// This is the only place we maintain backward compatibility - at the API boundary
+	draft, err := o.convertDraftDataToCharacterDraft(ctx, getOutput.Draft)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to convert draft data")
+	}
+
+	apiChar := &dnd5e.Character{
+		ID:               charData.ID,
+		Level:            int32(charData.Level),
+		ExperiencePoints: int32(charData.Experience),
+		Name:             charData.Name,
+		RaceID:           charData.RaceID,
+		SubraceID:        charData.SubraceID,
+		ClassID:          charData.ClassID,
+		BackgroundID:     charData.BackgroundID,
+		Alignment:        draft.Alignment,
+		AbilityScores: dnd5e.AbilityScores{
+			Strength:     int32(charData.AbilityScores.Strength),
+			Dexterity:    int32(charData.AbilityScores.Dexterity),
+			Constitution: int32(charData.AbilityScores.Constitution),
+			Intelligence: int32(charData.AbilityScores.Intelligence),
+			Wisdom:       int32(charData.AbilityScores.Wisdom),
+			Charisma:     int32(charData.AbilityScores.Charisma),
+		},
+		CurrentHP: int32(charData.HitPoints),
+		TempHP:    0,
+		SessionID: draft.SessionID,
+		PlayerID:  charData.PlayerID,
+		CreatedAt: charData.CreatedAt.Unix(),
+		UpdatedAt: charData.UpdatedAt.Unix(),
+	}
+
 	return &FinalizeDraftOutput{
-		Character: createCharOutput.Character,
+		Character:    apiChar,
+		DraftDeleted: true,
 	}, nil
 }
 
@@ -968,8 +972,37 @@ func (o *Orchestrator) GetCharacter(
 		return nil, errors.Wrap(err, "failed to get character")
 	}
 
+	// Convert character.Data to API entity
+	// TODO: This conversion will be removed when handlers work directly with toolkit data
+	// Note: Session ID and alignment are not stored in character.Data, would need separate tracking
+	apiChar := &dnd5e.Character{
+		ID:               getOutput.CharacterData.ID,
+		Level:            int32(getOutput.CharacterData.Level),
+		ExperiencePoints: int32(getOutput.CharacterData.Experience),
+		Name:             getOutput.CharacterData.Name,
+		RaceID:           getOutput.CharacterData.RaceID,
+		SubraceID:        getOutput.CharacterData.SubraceID,
+		ClassID:          getOutput.CharacterData.ClassID,
+		BackgroundID:     getOutput.CharacterData.BackgroundID,
+		Alignment:        "", // TODO: Store separately or add to toolkit
+		AbilityScores: dnd5e.AbilityScores{
+			Strength:     int32(getOutput.CharacterData.AbilityScores.Strength),
+			Dexterity:    int32(getOutput.CharacterData.AbilityScores.Dexterity),
+			Constitution: int32(getOutput.CharacterData.AbilityScores.Constitution),
+			Intelligence: int32(getOutput.CharacterData.AbilityScores.Intelligence),
+			Wisdom:       int32(getOutput.CharacterData.AbilityScores.Wisdom),
+			Charisma:     int32(getOutput.CharacterData.AbilityScores.Charisma),
+		},
+		CurrentHP: int32(getOutput.CharacterData.HitPoints),
+		TempHP:    0,
+		SessionID: "", // TODO: Store separately or add to toolkit
+		PlayerID:  getOutput.CharacterData.PlayerID,
+		CreatedAt: getOutput.CharacterData.CreatedAt.Unix(),
+		UpdatedAt: getOutput.CharacterData.UpdatedAt.Unix(),
+	}
+
 	return &GetCharacterOutput{
-		Character: getOutput.Character,
+		Character: apiChar,
 	}, nil
 }
 
@@ -991,7 +1024,7 @@ func (o *Orchestrator) ListCharacters(
 	}
 
 	// Use specific list methods based on filters
-	var characters []*dnd5e.Character
+	var characterDataList []*character.Data
 	switch {
 	case input.PlayerID != "":
 		slog.InfoContext(ctx, "listing characters by player",
@@ -1005,10 +1038,10 @@ func (o *Orchestrator) ListCharacters(
 				"error", err.Error())
 			return nil, errors.Wrapf(err, "failed to list characters for player %s", input.PlayerID)
 		}
-		characters = listOutput.Characters
+		characterDataList = listOutput.Characters
 		slog.InfoContext(ctx, "successfully listed characters by player",
 			"player_id", input.PlayerID,
-			"count", len(characters))
+			"count", len(characterDataList))
 	case input.SessionID != "":
 		slog.InfoContext(ctx, "listing characters by session",
 			"session_id", input.SessionID,
@@ -1022,13 +1055,44 @@ func (o *Orchestrator) ListCharacters(
 				"error", err.Error())
 			return nil, errors.Wrapf(err, "failed to list characters for session %s", input.SessionID)
 		}
-		characters = listOutput.Characters
+		characterDataList = listOutput.Characters
 		slog.InfoContext(ctx, "successfully listed characters by session",
 			"session_id", input.SessionID,
-			"count", len(characters))
+			"count", len(characterDataList))
 	default:
 		log.Printf("ListCharacters called without PlayerID or SessionID")
 		return nil, errors.InvalidArgument("either PlayerID or SessionID must be provided")
+	}
+
+	// Convert character.Data list to API entities
+	// TODO: This conversion will be removed when handlers work directly with toolkit data
+	characters := make([]*dnd5e.Character, len(characterDataList))
+	for i, charData := range characterDataList {
+		characters[i] = &dnd5e.Character{
+			ID:               charData.ID,
+			Level:            int32(charData.Level),
+			ExperiencePoints: int32(charData.Experience),
+			Name:             charData.Name,
+			RaceID:           charData.RaceID,
+			SubraceID:        charData.SubraceID,
+			ClassID:          charData.ClassID,
+			BackgroundID:     charData.BackgroundID,
+			Alignment:        "", // TODO: Store separately or add to toolkit
+			AbilityScores: dnd5e.AbilityScores{
+				Strength:     int32(charData.AbilityScores.Strength),
+				Dexterity:    int32(charData.AbilityScores.Dexterity),
+				Constitution: int32(charData.AbilityScores.Constitution),
+				Intelligence: int32(charData.AbilityScores.Intelligence),
+				Wisdom:       int32(charData.AbilityScores.Wisdom),
+				Charisma:     int32(charData.AbilityScores.Charisma),
+			},
+			CurrentHP: int32(charData.HitPoints),
+			TempHP:    0,
+			SessionID: "", // TODO: Store separately or add to toolkit
+			PlayerID:  charData.PlayerID,
+			CreatedAt: charData.CreatedAt.Unix(),
+			UpdatedAt: charData.UpdatedAt.Unix(),
+		}
 	}
 
 	return &ListCharactersOutput{
@@ -1080,7 +1144,7 @@ func isValidChoiceCategory(category shared.ChoiceCategory) bool {
 		shared.ChoiceSpells:
 		return true
 	}
-	
+
 	// Check dynamic categories with known prefixes
 	categoryStr := string(category)
 	if strings.HasPrefix(categoryStr, "race_") ||
@@ -1088,7 +1152,7 @@ func isValidChoiceCategory(category shared.ChoiceCategory) bool {
 		strings.HasPrefix(categoryStr, "background_") {
 		return true
 	}
-	
+
 	return false
 }
 
@@ -1662,7 +1726,7 @@ func (o *Orchestrator) UpdateChoices(
 
 		// Validate and convert the choice ID to a ChoiceCategory
 		category := shared.ChoiceCategory(selection.ChoiceID)
-		
+
 		// Validate the category is recognized
 		// The toolkit uses both predefined categories and dynamic ones with prefixes
 		if !isValidChoiceCategory(category) {
@@ -1671,14 +1735,14 @@ func (o *Orchestrator) UpdateChoices(
 				"draft_id", draftData.ID)
 			continue
 		}
-		
+
 		// Store the selection based on its type
 		// Different choice types may have different data structures
 		switch {
 		case len(selection.SelectedKeys) > 0:
 			// Most choices use string arrays for selected options
 			draftData.Choices[category] = selection.SelectedKeys
-			
+
 		case len(selection.AbilityScoreChoices) > 0:
 			// Ability score choices have their own structure
 			if category == shared.ChoiceAbilityScores {
@@ -1687,7 +1751,7 @@ func (o *Orchestrator) UpdateChoices(
 				slog.WarnContext(ctx, "AbilityScoreChoices provided for non-ability score category",
 					"category", category)
 			}
-			
+
 		default:
 			slog.WarnContext(ctx, "No valid selection data provided",
 				"choice_id", selection.ChoiceID)

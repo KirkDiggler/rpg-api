@@ -6,7 +6,7 @@ package character
 import (
 	"context"
 
-	"github.com/KirkDiggler/rpg-api/internal/entities/dnd5e"
+	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 )
 
 // Repository defines the interface for character persistence
@@ -48,12 +48,12 @@ type Repository interface {
 
 // CreateInput defines the input for creating a character
 type CreateInput struct {
-	Character *dnd5e.Character
+	CharacterData *toolkitchar.Data
 }
 
 // CreateOutput defines the output for creating a character
 type CreateOutput struct {
-	Character *dnd5e.Character
+	CharacterData *toolkitchar.Data
 }
 
 // GetInput defines the input for getting a character
@@ -63,17 +63,17 @@ type GetInput struct {
 
 // GetOutput defines the output for getting a character
 type GetOutput struct {
-	Character *dnd5e.Character
+	CharacterData *toolkitchar.Data
 }
 
 // UpdateInput defines the input for updating a character
 type UpdateInput struct {
-	Character *dnd5e.Character
+	CharacterData *toolkitchar.Data
 }
 
 // UpdateOutput defines the output for updating a character
 type UpdateOutput struct {
-	Character *dnd5e.Character
+	CharacterData *toolkitchar.Data
 }
 
 // DeleteInput defines the input for deleting a character
@@ -93,7 +93,7 @@ type ListByPlayerIDInput struct {
 
 // ListByPlayerIDOutput defines the output for listing characters by player
 type ListByPlayerIDOutput struct {
-	Characters []*dnd5e.Character
+	Characters []*toolkitchar.Data
 }
 
 // ListBySessionIDInput defines the input for listing characters by session
@@ -103,5 +103,5 @@ type ListBySessionIDInput struct {
 
 // ListBySessionIDOutput defines the output for listing characters by session
 type ListBySessionIDOutput struct {
-	Characters []*dnd5e.Character
+	Characters []*toolkitchar.Data
 }
