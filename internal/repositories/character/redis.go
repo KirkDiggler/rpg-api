@@ -7,9 +7,10 @@ import (
 
 	redis "github.com/redis/go-redis/v9"
 
-	"github.com/KirkDiggler/rpg-api/internal/entities/dnd5e"
 	"github.com/KirkDiggler/rpg-api/internal/errors"
+	"github.com/KirkDiggler/rpg-api/internal/pkg/clock"
 	redisclient "github.com/KirkDiggler/rpg-api/internal/redis"
+	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 )
 
 const (
@@ -26,11 +27,13 @@ const (
 
 type redisRepository struct {
 	client redisclient.Client
+	clock  clock.Clock
 }
 
 // RedisConfig contains configuration for the Redis character repository.
 type RedisConfig struct {
 	Client redisclient.Client
+	Clock  clock.Clock
 }
 
 // Validate validates the RedisConfig.
@@ -49,20 +52,28 @@ func NewRedis(cfg *RedisConfig) (Repository, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
+
+	// Use real clock if none provided
+	c := cfg.Clock
+	if c == nil {
+		c = clock.New()
+	}
+
 	return &redisRepository{
 		client: cfg.Client,
+		clock:  c,
 	}, nil
 }
 
 func (r *redisRepository) Create(ctx context.Context, input CreateInput) (*CreateOutput, error) {
-	if input.Character == nil {
+	if input.CharacterData == nil {
 		return nil, errors.InvalidArgument(errCharacterNil)
 	}
-	if input.Character.ID == "" {
+	if input.CharacterData.ID == "" {
 		return nil, errors.InvalidArgument(errCharacterIDEmpty)
 	}
 
-	key := characterKeyPrefix + input.Character.ID
+	key := characterKeyPrefix + input.CharacterData.ID
 
 	// Check if already exists
 	exists, err := r.client.Exists(ctx, key).Result()
@@ -71,13 +82,13 @@ func (r *redisRepository) Create(ctx context.Context, input CreateInput) (*Creat
 	}
 
 	if exists > 0 {
-		return nil, errors.AlreadyExistsf("character with ID %s already exists", input.Character.ID)
+		return nil, errors.AlreadyExistsf("character with ID %s already exists", input.CharacterData.ID)
 	}
 
-	// Marshal character
-	data, err := json.Marshal(input.Character)
+	// Marshal character data
+	data, err := json.Marshal(input.CharacterData)
 	if err != nil {
-		return nil, errors.Wrapf(err, "failed to marshal character")
+		return nil, errors.Wrapf(err, "failed to marshal character data")
 	}
 
 	// Start transaction
@@ -87,16 +98,12 @@ func (r *redisRepository) Create(ctx context.Context, input CreateInput) (*Creat
 	pipe.Set(ctx, key, data, 0) // No TTL for characters
 
 	// Add to player index
-	if input.Character.PlayerID != "" {
-		playerKey := playerIndexPrefix + input.Character.PlayerID
-		pipe.SAdd(ctx, playerKey, input.Character.ID)
+	if input.CharacterData.PlayerID != "" {
+		playerKey := playerIndexPrefix + input.CharacterData.PlayerID
+		pipe.SAdd(ctx, playerKey, input.CharacterData.ID)
 	}
 
-	// Add to session index
-	if input.Character.SessionID != "" {
-		sessionKey := sessionIndexPrefix + input.Character.SessionID
-		pipe.SAdd(ctx, sessionKey, input.Character.ID)
-	}
+	// Note: character.Data doesn't have SessionID directly, that would need to be handled at orchestrator level
 
 	// Execute transaction
 	_, err = pipe.Exec(ctx)
@@ -104,7 +111,7 @@ func (r *redisRepository) Create(ctx context.Context, input CreateInput) (*Creat
 		return nil, errors.Wrapf(err, "failed to create character")
 	}
 
-	return &CreateOutput{}, nil
+	return &CreateOutput{CharacterData: input.CharacterData}, nil
 }
 
 func (r *redisRepository) Get(ctx context.Context, input GetInput) (*GetOutput, error) {
@@ -121,35 +128,35 @@ func (r *redisRepository) Get(ctx context.Context, input GetInput) (*GetOutput, 
 		return nil, errors.Wrapf(err, "failed to get character")
 	}
 
-	var character dnd5e.Character
-	if err := json.Unmarshal([]byte(result), &character); err != nil {
-		return nil, errors.Wrapf(err, "failed to unmarshal character")
+	var charData toolkitchar.Data
+	if err := json.Unmarshal([]byte(result), &charData); err != nil {
+		return nil, errors.Wrapf(err, "failed to unmarshal character data")
 	}
 
-	return &GetOutput{Character: &character}, nil
+	return &GetOutput{CharacterData: &charData}, nil
 }
 
 func (r *redisRepository) Update(ctx context.Context, input UpdateInput) (*UpdateOutput, error) {
-	if input.Character == nil {
+	if input.CharacterData == nil {
 		return nil, errors.InvalidArgument(errCharacterNil)
 	}
-	if input.Character.ID == "" {
+	if input.CharacterData.ID == "" {
 		return nil, errors.InvalidArgument(errCharacterIDEmpty)
 	}
 
-	key := characterKeyPrefix + input.Character.ID
+	key := characterKeyPrefix + input.CharacterData.ID
 
 	// Get existing character to check indexes
-	existingOutput, err := r.Get(ctx, GetInput{ID: input.Character.ID})
+	existingOutput, err := r.Get(ctx, GetInput{ID: input.CharacterData.ID})
 	if err != nil {
 		return nil, err
 	}
-	existing := existingOutput.Character
+	existing := existingOutput.CharacterData
 
-	// Marshal updated character
-	data, err := json.Marshal(input.Character)
+	// Marshal updated character data
+	data, err := json.Marshal(input.CharacterData)
 	if err != nil {
-		return nil, errors.Wrapf(err, "failed to marshal character")
+		return nil, errors.Wrapf(err, "failed to marshal character data")
 	}
 
 	// Start transaction
@@ -159,28 +166,19 @@ func (r *redisRepository) Update(ctx context.Context, input UpdateInput) (*Updat
 	pipe.Set(ctx, key, data, 0)
 
 	// Update player index if changed
-	if existing.PlayerID != input.Character.PlayerID {
+	if existing.PlayerID != input.CharacterData.PlayerID {
 		if existing.PlayerID != "" {
 			oldPlayerKey := playerIndexPrefix + existing.PlayerID
-			pipe.SRem(ctx, oldPlayerKey, input.Character.ID)
+			pipe.SRem(ctx, oldPlayerKey, input.CharacterData.ID)
 		}
-		if input.Character.PlayerID != "" {
-			newPlayerKey := playerIndexPrefix + input.Character.PlayerID
-			pipe.SAdd(ctx, newPlayerKey, input.Character.ID)
+		if input.CharacterData.PlayerID != "" {
+			newPlayerKey := playerIndexPrefix + input.CharacterData.PlayerID
+			pipe.SAdd(ctx, newPlayerKey, input.CharacterData.ID)
 		}
 	}
 
-	// Update session index if changed
-	if existing.SessionID != input.Character.SessionID {
-		if existing.SessionID != "" {
-			oldSessionKey := sessionIndexPrefix + existing.SessionID
-			pipe.SRem(ctx, oldSessionKey, input.Character.ID)
-		}
-		if input.Character.SessionID != "" {
-			newSessionKey := sessionIndexPrefix + input.Character.SessionID
-			pipe.SAdd(ctx, newSessionKey, input.Character.ID)
-		}
-	}
+	// Note: Session management would need to be handled at orchestrator level
+	// since character.Data doesn't include SessionID
 
 	// Execute transaction
 	_, err = pipe.Exec(ctx)
@@ -188,7 +186,7 @@ func (r *redisRepository) Update(ctx context.Context, input UpdateInput) (*Updat
 		return nil, errors.Wrapf(err, "failed to update character")
 	}
 
-	return &UpdateOutput{}, nil
+	return &UpdateOutput{CharacterData: input.CharacterData}, nil
 }
 
 func (r *redisRepository) Delete(ctx context.Context, input DeleteInput) (*DeleteOutput, error) {
@@ -201,7 +199,7 @@ func (r *redisRepository) Delete(ctx context.Context, input DeleteInput) (*Delet
 	if err != nil {
 		return nil, err
 	}
-	character := getOutput.Character
+	charData := getOutput.CharacterData
 
 	// Start transaction
 	pipe := r.client.TxPipeline()
@@ -211,16 +209,12 @@ func (r *redisRepository) Delete(ctx context.Context, input DeleteInput) (*Delet
 	pipe.Del(ctx, key)
 
 	// Remove from player index
-	if character.PlayerID != "" {
-		playerKey := playerIndexPrefix + character.PlayerID
+	if charData.PlayerID != "" {
+		playerKey := playerIndexPrefix + charData.PlayerID
 		pipe.SRem(ctx, playerKey, input.ID)
 	}
 
-	// Remove from session index
-	if character.SessionID != "" {
-		sessionKey := sessionIndexPrefix + character.SessionID
-		pipe.SRem(ctx, sessionKey, input.ID)
-	}
+	// Note: Session index cleanup would need to be handled at orchestrator level
 
 	// Execute transaction
 	_, err = pipe.Exec(ctx)
@@ -290,7 +284,7 @@ func (r *redisRepository) ListBySessionID(
 }
 
 // listByIndex is a helper function to list characters by any index
-func (r *redisRepository) listByIndex(ctx context.Context, indexKey string) ([]*dnd5e.Character, error) {
+func (r *redisRepository) listByIndex(ctx context.Context, indexKey string) ([]*toolkitchar.Data, error) {
 	// Get character IDs from index
 	slog.DebugContext(ctx, "fetching character IDs from index",
 		"index_key", indexKey)
@@ -309,7 +303,7 @@ func (r *redisRepository) listByIndex(ctx context.Context, indexKey string) ([]*
 		"character_ids", characterIDs)
 
 	// Get all characters
-	characters := make([]*dnd5e.Character, 0, len(characterIDs))
+	characters := make([]*toolkitchar.Data, 0, len(characterIDs))
 	for _, id := range characterIDs {
 		slog.DebugContext(ctx, "fetching character from Redis",
 			"character_id", id)
@@ -329,7 +323,7 @@ func (r *redisRepository) listByIndex(ctx context.Context, indexKey string) ([]*
 				"error", err.Error())
 			return nil, errors.Wrapf(err, "failed to get character %s", id)
 		}
-		characters = append(characters, getOutput.Character)
+		characters = append(characters, getOutput.CharacterData)
 	}
 
 	slog.DebugContext(ctx, "successfully retrieved all characters from index",

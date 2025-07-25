@@ -92,3 +92,80 @@ Progress calculation uses bit counting to determine completion percentage.
 - Test complex workflows end-to-end
 - Test error scenarios and edge cases
 - Verify proper delegation to dependencies
+
+## Architecture Pattern: Data vs Rich Objects
+
+### Overview
+The character orchestrator follows a clear separation between data transfer and game logic:
+
+- **API Layer**: Works with data objects only (`character.Data`)
+- **Orchestrator Layer**: Converts between data and rich toolkit objects as needed
+- **Repository Layer**: Stores and retrieves data objects only
+
+### Current Implementation (Character Creation)
+
+For character creation and listing, we only need data objects:
+
+```go
+// API returns data
+GetCharacter() -> character.Data
+ListCharacters() -> []character.Data
+FinalizeDraft() -> character.Data
+```
+
+### Future Game Actions Pattern
+
+When implementing game actions (Attack, Cast Spell, etc.), the orchestrator will:
+
+1. **Load Rich Objects**
+   ```go
+   character := o.loadCharacter(ctx, characterID)  // character.Data -> toolkit Character
+   room := o.loadRoom(ctx, roomID)                  // Load spatial room
+   monsters := o.loadMonsters(ctx, roomIDs)         // Load monster objects
+   ```
+
+2. **Execute Game Logic**
+   ```go
+   result := character.Attack(target)
+   room.UpdatePositions(...)
+   character.AddCondition(...)
+   ```
+
+3. **Persist Changes**
+   ```go
+   o.characterRepo.Update(ctx, character.ToData())
+   o.monsterRepo.Update(ctx, monster.ToData())
+   ```
+
+### Helper Methods
+
+The orchestrator provides internal helpers for data/object conversion:
+
+- `loadFullCharacter(ctx, data)` - Converts character.Data to rich Character object
+  - Fetches race, class, background data from external client
+  - Calls `character.LoadCharacterFromData()`
+  
+- Future: `loadRoom()`, `loadMonster()`, etc.
+
+### Repository Contract
+
+Repositories work ONLY with data objects:
+- Store `character.Data` (not `dnd5e.Character` entity)
+- No knowledge of rich objects or game rules
+- Simple JSON marshaling for persistence
+
+### Session Management Note
+
+The toolkit's `character.Data` doesn't include SessionID. This is managed at the orchestrator level through additional metadata or a separate session tracking system.
+
+## Current Scope
+
+This PR focuses on:
+- Converting draft to character using toolkit's `ToCharacter()`
+- Storing character data using toolkit's `character.Data` struct
+- Loading character lists as data objects
+
+Future work (separate issues):
+- Implement game action methods (Attack, Cast, etc.)
+- Add room/monster loading helpers
+- Session management integration
