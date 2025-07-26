@@ -82,6 +82,16 @@ const (
 	AbilityCharisma     = "ABILITY_CHARISMA"
 )
 
+// Ability score map keys for JSON serialization
+const (
+	AbilityKeyStrength     = "Strength"
+	AbilityKeyDexterity    = "Dexterity"
+	AbilityKeyConstitution = "Constitution"
+	AbilityKeyIntelligence = "Intelligence"
+	AbilityKeyWisdom       = "Wisdom"
+	AbilityKeyCharisma     = "Charisma"
+)
+
 // Skill constants
 const (
 	SkillAcrobatics     = "SKILL_ACROBATICS"

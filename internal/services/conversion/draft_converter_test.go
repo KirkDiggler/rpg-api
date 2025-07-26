@@ -272,7 +272,8 @@ func (s *DraftConverterTestSuite) TestHydrateDraft() {
 			ID:               dnd5e.ClassFighter,
 			Name:             "Fighter",
 			Description:      "Masters of combat",
-			HitDice:          "1d10",
+			HitDice:          10,
+			HitPointsAt1st:   10,
 			PrimaryAbilities: []string{"Strength", "Dexterity"},
 			SavingThrows:     []string{"Strength", "Constitution"},
 			SkillsCount:      2,
@@ -334,9 +335,10 @@ func (s *DraftConverterTestSuite) TestHydrateDraft() {
 		}
 
 		classData := &external.ClassData{
-			ID:      dnd5e.ClassRanger,
-			Name:    "Ranger",
-			HitDice: "1d10",
+			ID:             dnd5e.ClassRanger,
+			Name:           "Ranger",
+			HitDice:        10,
+			HitPointsAt1st: 10,
 		}
 
 		backgroundData := &external.BackgroundData{

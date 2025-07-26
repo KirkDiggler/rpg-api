@@ -294,13 +294,29 @@ func (o *Orchestrator) ListDrafts(
 	// Convert DraftData to CharacterDraft
 	draft, err := o.convertDraftDataToCharacterDraft(ctx, draftOutput.Draft)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to convert draft data")
+		// Log the error but offer to delete the corrupt draft
+		slog.ErrorContext(ctx, "Failed to convert draft data - draft may be corrupt",
+			"error", err.Error(),
+			"draft_id", draftOutput.Draft.ID,
+			"player_id", input.PlayerID)
+
+		// For now, we'll return an empty list and suggest deletion
+		// In the future, we might want to auto-delete or return partial data
+		return &ListDraftsOutput{
+			Drafts:        []*dnd5e.CharacterDraft{},
+			NextPageToken: "",
+			// TODO: Add a field to indicate corrupt drafts that need cleanup
+		}, nil
 	}
 
 	// Hydrate the draft with info objects
 	hydratedDraft, err := o.hydrateDraft(ctx, draft)
 	if err != nil {
-		return nil, err
+		// If hydration fails, return the non-hydrated draft
+		slog.WarnContext(ctx, "Failed to hydrate draft, returning partial data",
+			"error", err.Error(),
+			"draft_id", draft.ID)
+		hydratedDraft = draft
 	}
 
 	// Return single draft as a list
@@ -876,23 +892,141 @@ func (o *Orchestrator) FinalizeDraft(
 		return nil, errors.Wrap(err, "failed to get draft")
 	}
 
-	// Load into builder
-	builder, err := character.LoadDraft(*getOutput.Draft)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to load draft into builder")
+	// Load the draft data
+	draftData := *getOutput.Draft
+
+	// Extract IDs from choices
+	var raceID, subraceID, classID, backgroundID string
+	var abilityScores shared.AbilityScores
+
+	// Extract race choice
+	if raceChoice, ok := draftData.Choices[shared.ChoiceRace].(map[string]interface{}); ok {
+		// Handle map format from JSON deserialization
+		if id, exists := raceChoice["race_id"].(string); exists {
+			raceID = id
+		}
+		if sid, exists := raceChoice["subrace_id"].(string); exists {
+			subraceID = sid
+		}
+	} else if raceChoice, ok := draftData.Choices[shared.ChoiceRace].(character.RaceChoice); ok {
+		raceID = raceChoice.RaceID
+		subraceID = raceChoice.SubraceID
+	} else if id, ok := draftData.Choices[shared.ChoiceRace].(string); ok {
+		raceID = id
 	}
 
-	// Build the final character
-	toolkitChar, err := builder.Build()
+	// Extract class ID
+	classID, _ = draftData.Choices[shared.ChoiceClass].(string)
+
+	// Extract background ID or use default
+	backgroundID, hasBackground := draftData.Choices[shared.ChoiceBackground].(string)
+	if !hasBackground || backgroundID == "" {
+		backgroundID = dnd5e.BackgroundAcolyte
+	}
+
+	// Extract ability scores
+	if scores, ok := draftData.Choices[shared.ChoiceAbilityScores].(map[string]interface{}); ok {
+		// Helper function to safely get int value from interface{}
+		getIntValue := func(m map[string]interface{}, key string) int {
+			if val, ok := m[key]; ok && val != nil {
+				switch v := val.(type) {
+				case float64:
+					return int(v)
+				case int:
+					return v
+				case int32:
+					return int(v)
+				case int64:
+					return int(v)
+				}
+			}
+			return 0
+		}
+
+		// Handle map format from JSON using proper constants
+		abilityScores = shared.AbilityScores{
+			Strength:     getIntValue(scores, dnd5e.AbilityKeyStrength),
+			Dexterity:    getIntValue(scores, dnd5e.AbilityKeyDexterity),
+			Constitution: getIntValue(scores, dnd5e.AbilityKeyConstitution),
+			Intelligence: getIntValue(scores, dnd5e.AbilityKeyIntelligence),
+			Wisdom:       getIntValue(scores, dnd5e.AbilityKeyWisdom),
+			Charisma:     getIntValue(scores, dnd5e.AbilityKeyCharisma),
+		}
+	} else if scores, ok := draftData.Choices[shared.ChoiceAbilityScores].(shared.AbilityScores); ok {
+		abilityScores = scores
+	}
+
+	// Fetch race data
+	var toolkitRaceData *race.Data
+	if raceID != "" {
+		apiRaceData, err := o.externalClient.GetRaceData(ctx, raceID)
+		if err != nil {
+			return nil, errors.Wrapf(err, "failed to get race data for %s", raceID)
+		}
+		toolkitRaceData = &race.Data{
+			ID:   apiRaceData.ID,
+			Name: apiRaceData.Name,
+			// TODO: Map more fields when available
+		}
+	}
+
+	// Fetch class data
+	var toolkitClassData *class.Data
+	if classID != "" {
+		apiClassData, err := o.externalClient.GetClassData(ctx, classID)
+		if err != nil {
+			return nil, errors.Wrapf(err, "failed to get class data for %s", classID)
+		}
+		toolkitClassData = &class.Data{
+			ID:   apiClassData.ID,
+			Name: apiClassData.Name,
+			// TODO: Map HitDice and other fields when available
+			// HitDice is a string in API but int in toolkit
+		}
+	}
+
+	// Create background data
+	toolkitBackgroundData := &shared.Background{
+		ID:   backgroundID,
+		Name: backgroundID, // TODO: Fetch proper name from API
+	}
+
+	// Convert choices to map[string]any
+	choices := make(map[string]any)
+	for k, v := range draftData.Choices {
+		choices[string(k)] = v
+	}
+
+	// Use CreationData to create the character
+	creationData := character.CreationData{
+		ID:             o.idGenerator.Generate(),
+		PlayerID:       draftData.PlayerID,
+		Name:           draftData.Name,
+		RaceData:       toolkitRaceData,
+		SubraceID:      subraceID,
+		ClassData:      toolkitClassData,
+		BackgroundData: toolkitBackgroundData,
+		AbilityScores:  abilityScores,
+		Choices:        choices,
+	}
+
+	// Create the character
+	toolkitChar, err := character.NewFromCreationData(creationData)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to build character from draft")
+		slog.ErrorContext(ctx, "Failed to create character from creation data",
+			"error", err.Error(),
+			"raceID", raceID,
+			"classID", classID,
+			"backgroundID", backgroundID,
+			"hasRaceData", toolkitRaceData != nil,
+			"hasClassData", toolkitClassData != nil,
+			"hasBackgroundData", toolkitBackgroundData != nil,
+		)
+		return nil, errors.Wrap(err, "failed to create character from draft")
 	}
 
 	// Get the character data from toolkit
 	charData := toolkitChar.ToData()
-
-	// Generate character ID with proper prefix
-	charData.ID = o.idGenerator.Generate()
 
 	// Store the character data directly
 	_, err = o.characterRepo.Create(ctx, characterrepo.CreateInput{
@@ -939,6 +1073,7 @@ func (o *Orchestrator) FinalizeDraft(
 			Charisma:     int32(charData.AbilityScores.Charisma),
 		},
 		CurrentHP: int32(charData.HitPoints),
+		MaxHP:     int32(charData.MaxHitPoints),
 		TempHP:    0,
 		SessionID: draft.SessionID,
 		PlayerID:  charData.PlayerID,
@@ -996,6 +1131,7 @@ func (o *Orchestrator) GetCharacter(
 			Charisma:     int32(getOutput.CharacterData.AbilityScores.Charisma),
 		},
 		CurrentHP: int32(getOutput.CharacterData.HitPoints),
+		MaxHP:     int32(getOutput.CharacterData.MaxHitPoints),
 		TempHP:    0,
 		SessionID: "", // TODO: Store separately or add to toolkit
 		PlayerID:  getOutput.CharacterData.PlayerID,
@@ -1089,6 +1225,7 @@ func (o *Orchestrator) ListCharacters(
 				Charisma:     int32(charData.AbilityScores.Charisma),
 			},
 			CurrentHP: int32(charData.HitPoints),
+			MaxHP:     int32(charData.MaxHitPoints),
 			TempHP:    0,
 			SessionID: "", // TODO: Store separately or add to toolkit
 			PlayerID:  charData.PlayerID,
@@ -1555,7 +1692,7 @@ func convertExternalClassToEntity(class *external.ClassData) *dnd5e.ClassInfo {
 		ID:                       class.ID,
 		Name:                     class.Name,
 		Description:              class.Description,
-		HitDie:                   class.HitDice,
+		HitDie:                   fmt.Sprintf("1d%d", class.HitDice),
 		PrimaryAbilities:         class.PrimaryAbilities,
 		ArmorProficiencies:       class.ArmorProficiencies,
 		WeaponProficiencies:      class.WeaponProficiencies,
@@ -2499,6 +2636,16 @@ func (o *Orchestrator) hydrateDraft(ctx context.Context, draft *dnd5e.CharacterD
 
 // convertDraftDataToCharacterDraft converts toolkit DraftData to API CharacterDraft
 func (o *Orchestrator) convertDraftDataToCharacterDraft(ctx context.Context, data *character.DraftData) (*dnd5e.CharacterDraft, error) {
+	// Add panic recovery to catch any conversion errors
+	defer func() {
+		if r := recover(); r != nil {
+			slog.ErrorContext(ctx, "Panic in convertDraftDataToCharacterDraft",
+				"panic", r,
+				"draft_id", data.ID,
+				"choices", fmt.Sprintf("%+v", data.Choices))
+		}
+	}()
+
 	// Load the builder to get progress information
 	builder, err := character.LoadDraft(*data)
 	if err != nil {
@@ -2565,36 +2712,32 @@ func (o *Orchestrator) convertDraftDataToCharacterDraft(ctx context.Context, dat
 			} else if scoresMap, ok := scoresData.(map[string]interface{}); ok {
 				// Handle case where it's unmarshaled as a map
 				draft.AbilityScores = &dnd5e.AbilityScores{}
-				if str, ok := scoresMap["strength"].(float64); ok {
-					draft.AbilityScores.Strength = int32(str)
-				} else if str, ok := scoresMap["Strength"].(float64); ok {
-					draft.AbilityScores.Strength = int32(str)
+
+				// Helper function to get int value from interface{}
+				getIntValue := func(m map[string]interface{}, keys ...string) int32 {
+					for _, key := range keys {
+						if val, ok := m[key]; ok {
+							switch v := val.(type) {
+							case float64:
+								return int32(v)
+							case int:
+								return int32(v)
+							case int32:
+								return v
+							case int64:
+								return int32(v)
+							}
+						}
+					}
+					return 0
 				}
-				if dex, ok := scoresMap["dexterity"].(float64); ok {
-					draft.AbilityScores.Dexterity = int32(dex)
-				} else if dex, ok := scoresMap["Dexterity"].(float64); ok {
-					draft.AbilityScores.Dexterity = int32(dex)
-				}
-				if con, ok := scoresMap["constitution"].(float64); ok {
-					draft.AbilityScores.Constitution = int32(con)
-				} else if con, ok := scoresMap["Constitution"].(float64); ok {
-					draft.AbilityScores.Constitution = int32(con)
-				}
-				if intel, ok := scoresMap["intelligence"].(float64); ok {
-					draft.AbilityScores.Intelligence = int32(intel)
-				} else if intel, ok := scoresMap["Intelligence"].(float64); ok {
-					draft.AbilityScores.Intelligence = int32(intel)
-				}
-				if wis, ok := scoresMap["wisdom"].(float64); ok {
-					draft.AbilityScores.Wisdom = int32(wis)
-				} else if wis, ok := scoresMap["Wisdom"].(float64); ok {
-					draft.AbilityScores.Wisdom = int32(wis)
-				}
-				if cha, ok := scoresMap["charisma"].(float64); ok {
-					draft.AbilityScores.Charisma = int32(cha)
-				} else if cha, ok := scoresMap["Charisma"].(float64); ok {
-					draft.AbilityScores.Charisma = int32(cha)
-				}
+
+				draft.AbilityScores.Strength = getIntValue(scoresMap, dnd5e.AbilityKeyStrength)
+				draft.AbilityScores.Dexterity = getIntValue(scoresMap, dnd5e.AbilityKeyDexterity)
+				draft.AbilityScores.Constitution = getIntValue(scoresMap, dnd5e.AbilityKeyConstitution)
+				draft.AbilityScores.Intelligence = getIntValue(scoresMap, dnd5e.AbilityKeyIntelligence)
+				draft.AbilityScores.Wisdom = getIntValue(scoresMap, dnd5e.AbilityKeyWisdom)
+				draft.AbilityScores.Charisma = getIntValue(scoresMap, dnd5e.AbilityKeyCharisma)
 			}
 		}
 

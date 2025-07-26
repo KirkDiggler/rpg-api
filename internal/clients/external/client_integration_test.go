@@ -78,19 +78,19 @@ func TestGetClassData_Integration(t *testing.T) {
 		name        string
 		classID     string
 		wantName    string
-		wantHitDice string
+		wantHitDice int32
 	}{
 		{
 			name:        "wizard",
 			classID:     dnd5e.ClassWizard,
 			wantName:    "Wizard",
-			wantHitDice: "1d6",
+			wantHitDice: 6,
 		},
 		{
 			name:        "fighter",
 			classID:     dnd5e.ClassFighter,
 			wantName:    "Fighter",
-			wantHitDice: "1d10",
+			wantHitDice: 10,
 		},
 	}
 
@@ -105,6 +105,7 @@ func TestGetClassData_Integration(t *testing.T) {
 			// Verify we got the right class
 			assert.Equal(t, tc.wantName, classData.Name)
 			assert.Equal(t, tc.wantHitDice, classData.HitDice)
+			assert.Equal(t, tc.wantHitDice, classData.HitPointsAt1st)
 		})
 	}
 }

@@ -672,11 +672,15 @@ func convertClassToClassData(class *entities.Class) *ClassData {
 		})
 	}
 
+	// nolint:gosec // D&D hit dice are always small values
+	hitDie := int32(class.HitDie)
+
 	return &ClassData{
 		ID:                       class.Key,
 		Name:                     class.Name,
 		Description:              class.Description,
-		HitDice:                  fmt.Sprintf("1d%d", class.HitDie),
+		HitDice:                  hitDie,
+		HitPointsAt1st:           hitDie, // In D&D 5e, level 1 HP is max hit die + CON modifier
 		PrimaryAbilities:         primaryAbilities,
 		SavingThrows:             savingThrows,
 		SkillsCount:              skillsCount,

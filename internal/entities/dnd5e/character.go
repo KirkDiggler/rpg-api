@@ -16,6 +16,7 @@ type Character struct {
 	Alignment        string
 	AbilityScores    AbilityScores
 	CurrentHP        int32
+	MaxHP            int32
 	TempHP           int32
 	SessionID        string
 	PlayerID         string

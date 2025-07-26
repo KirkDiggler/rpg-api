@@ -191,7 +191,7 @@ func convertExternalClassToEntity(class *external.ClassData) *dnd5e.ClassInfo {
 		ID:                       class.ID,
 		Name:                     class.Name,
 		Description:              class.Description,
-		HitDie:                   class.HitDice,
+		HitDie:                   fmt.Sprintf("1d%d", class.HitDice),
 		PrimaryAbilities:         class.PrimaryAbilities,
 		ArmorProficiencies:       class.ArmorProficiencies,
 		WeaponProficiencies:      class.WeaponProficiencies,
