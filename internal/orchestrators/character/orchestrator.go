@@ -294,13 +294,29 @@ func (o *Orchestrator) ListDrafts(
 	// Convert DraftData to CharacterDraft
 	draft, err := o.convertDraftDataToCharacterDraft(ctx, draftOutput.Draft)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to convert draft data")
+		// Log the error but offer to delete the corrupt draft
+		slog.ErrorContext(ctx, "Failed to convert draft data - draft may be corrupt",
+			"error", err.Error(),
+			"draft_id", draftOutput.Draft.ID,
+			"player_id", input.PlayerID)
+		
+		// For now, we'll return an empty list and suggest deletion
+		// In the future, we might want to auto-delete or return partial data
+		return &ListDraftsOutput{
+			Drafts:        []*dnd5e.CharacterDraft{},
+			NextPageToken: "",
+			// TODO: Add a field to indicate corrupt drafts that need cleanup
+		}, nil
 	}
 
 	// Hydrate the draft with info objects
 	hydratedDraft, err := o.hydrateDraft(ctx, draft)
 	if err != nil {
-		return nil, err
+		// If hydration fails, return the non-hydrated draft
+		slog.WarnContext(ctx, "Failed to hydrate draft, returning partial data",
+			"error", err.Error(),
+			"draft_id", draft.ID)
+		hydratedDraft = draft
 	}
 
 	// Return single draft as a list
@@ -2696,12 +2712,12 @@ func (o *Orchestrator) convertDraftDataToCharacterDraft(ctx context.Context, dat
 					return 0
 				}
 				
-				draft.AbilityScores.Strength = getIntValue(scoresMap, "strength", "Strength")
-				draft.AbilityScores.Dexterity = getIntValue(scoresMap, "dexterity", "Dexterity")
-				draft.AbilityScores.Constitution = getIntValue(scoresMap, "constitution", "Constitution")
-				draft.AbilityScores.Intelligence = getIntValue(scoresMap, "intelligence", "Intelligence")
-				draft.AbilityScores.Wisdom = getIntValue(scoresMap, "wisdom", "Wisdom")
-				draft.AbilityScores.Charisma = getIntValue(scoresMap, "charisma", "Charisma")
+				draft.AbilityScores.Strength = getIntValue(scoresMap, dnd5e.AbilityKeyStrength)
+				draft.AbilityScores.Dexterity = getIntValue(scoresMap, dnd5e.AbilityKeyDexterity)
+				draft.AbilityScores.Constitution = getIntValue(scoresMap, dnd5e.AbilityKeyConstitution)
+				draft.AbilityScores.Intelligence = getIntValue(scoresMap, dnd5e.AbilityKeyIntelligence)
+				draft.AbilityScores.Wisdom = getIntValue(scoresMap, dnd5e.AbilityKeyWisdom)
+				draft.AbilityScores.Charisma = getIntValue(scoresMap, dnd5e.AbilityKeyCharisma)
 			}
 		}
 
