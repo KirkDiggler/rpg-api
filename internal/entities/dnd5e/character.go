@@ -96,13 +96,25 @@ func (c *Character) SetEquippedItem(slot string, item *InventoryItem) {
 }
 
 // FindInventoryItem finds an item in the character's inventory by item ID
-func (c *Character) FindInventoryItem(itemID string) *InventoryItem {
+// Returns a copy of the item and whether it was found
+func (c *Character) FindInventoryItem(itemID string) (InventoryItem, bool) {
 	for i := range c.Inventory {
 		if c.Inventory[i].ItemID == itemID {
-			return &c.Inventory[i]
+			return c.Inventory[i], true
 		}
 	}
-	return nil
+	return InventoryItem{}, false
+}
+
+// FindInventoryItemIndex finds an item in the character's inventory by item ID
+// Returns the index and whether it was found
+func (c *Character) FindInventoryItemIndex(itemID string) (int, bool) {
+	for i := range c.Inventory {
+		if c.Inventory[i].ItemID == itemID {
+			return i, true
+		}
+	}
+	return -1, false
 }
 
 // RemoveInventoryItem removes an item from inventory by item ID
@@ -124,7 +136,9 @@ func (c *Character) RemoveInventoryItem(itemID string) (*InventoryItem, bool) {
 func (c *Character) AddInventoryItem(item InventoryItem) {
 	// Check if item already exists and is stackable
 	for i := range c.Inventory {
-		if c.Inventory[i].ItemID == item.ItemID && item.Quantity > 1 {
+		if c.Inventory[i].ItemID == item.ItemID && 
+			c.Inventory[i].Equipment != nil && 
+			c.Inventory[i].Equipment.Stackable {
 			c.Inventory[i].Quantity += item.Quantity
 			return
 		}
@@ -704,6 +718,7 @@ type EquipmentData struct {
 	Category    string // "simple-weapon", "martial-weapon", "light-armor", etc.
 	Weight      int32  // Weight in tenths of pounds (for 0.1 lb precision)
 	Properties  []string
+	Stackable   bool   // Whether this item can stack (e.g., arrows, potions)
 	
 	// Type-specific data
 	WeaponData *WeaponData
