@@ -2600,6 +2600,16 @@ func (o *Orchestrator) hydrateDraft(ctx context.Context, draft *dnd5e.CharacterD
 
 // convertDraftDataToCharacterDraft converts toolkit DraftData to API CharacterDraft
 func (o *Orchestrator) convertDraftDataToCharacterDraft(ctx context.Context, data *character.DraftData) (*dnd5e.CharacterDraft, error) {
+	// Add panic recovery to catch any conversion errors
+	defer func() {
+		if r := recover(); r != nil {
+			slog.ErrorContext(ctx, "Panic in convertDraftDataToCharacterDraft",
+				"panic", r,
+				"draft_id", data.ID,
+				"choices", fmt.Sprintf("%+v", data.Choices))
+		}
+	}()
+	
 	// Load the builder to get progress information
 	builder, err := character.LoadDraft(*data)
 	if err != nil {
@@ -2666,36 +2676,32 @@ func (o *Orchestrator) convertDraftDataToCharacterDraft(ctx context.Context, dat
 			} else if scoresMap, ok := scoresData.(map[string]interface{}); ok {
 				// Handle case where it's unmarshaled as a map
 				draft.AbilityScores = &dnd5e.AbilityScores{}
-				if str, ok := scoresMap["strength"].(float64); ok {
-					draft.AbilityScores.Strength = int32(str)
-				} else if str, ok := scoresMap["Strength"].(float64); ok {
-					draft.AbilityScores.Strength = int32(str)
+				
+				// Helper function to get int value from interface{}
+				getIntValue := func(m map[string]interface{}, keys ...string) int32 {
+					for _, key := range keys {
+						if val, ok := m[key]; ok {
+							switch v := val.(type) {
+							case float64:
+								return int32(v)
+							case int:
+								return int32(v)
+							case int32:
+								return v
+							case int64:
+								return int32(v)
+							}
+						}
+					}
+					return 0
 				}
-				if dex, ok := scoresMap["dexterity"].(float64); ok {
-					draft.AbilityScores.Dexterity = int32(dex)
-				} else if dex, ok := scoresMap["Dexterity"].(float64); ok {
-					draft.AbilityScores.Dexterity = int32(dex)
-				}
-				if con, ok := scoresMap["constitution"].(float64); ok {
-					draft.AbilityScores.Constitution = int32(con)
-				} else if con, ok := scoresMap["Constitution"].(float64); ok {
-					draft.AbilityScores.Constitution = int32(con)
-				}
-				if intel, ok := scoresMap["intelligence"].(float64); ok {
-					draft.AbilityScores.Intelligence = int32(intel)
-				} else if intel, ok := scoresMap["Intelligence"].(float64); ok {
-					draft.AbilityScores.Intelligence = int32(intel)
-				}
-				if wis, ok := scoresMap["wisdom"].(float64); ok {
-					draft.AbilityScores.Wisdom = int32(wis)
-				} else if wis, ok := scoresMap["Wisdom"].(float64); ok {
-					draft.AbilityScores.Wisdom = int32(wis)
-				}
-				if cha, ok := scoresMap["charisma"].(float64); ok {
-					draft.AbilityScores.Charisma = int32(cha)
-				} else if cha, ok := scoresMap["Charisma"].(float64); ok {
-					draft.AbilityScores.Charisma = int32(cha)
-				}
+				
+				draft.AbilityScores.Strength = getIntValue(scoresMap, "strength", "Strength")
+				draft.AbilityScores.Dexterity = getIntValue(scoresMap, "dexterity", "Dexterity")
+				draft.AbilityScores.Constitution = getIntValue(scoresMap, "constitution", "Constitution")
+				draft.AbilityScores.Intelligence = getIntValue(scoresMap, "intelligence", "Intelligence")
+				draft.AbilityScores.Wisdom = getIntValue(scoresMap, "wisdom", "Wisdom")
+				draft.AbilityScores.Charisma = getIntValue(scoresMap, "charisma", "Charisma")
 			}
 		}
 
