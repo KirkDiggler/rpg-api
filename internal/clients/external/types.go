@@ -38,7 +38,8 @@ type ClassData struct {
 	ID                       string
 	Name                     string
 	Description              string
-	HitDice                  string
+	HitDice                  int32 // Hit die size (e.g., 10 for d10)
+	HitPointsAt1st           int32 // HP at level 1 (same as HitDice for D&D 5e)
 	PrimaryAbilities         []string
 	SavingThrows             []string
 	SkillsCount              int32

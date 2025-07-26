@@ -299,7 +299,7 @@ func (o *Orchestrator) ListDrafts(
 			"error", err.Error(),
 			"draft_id", draftOutput.Draft.ID,
 			"player_id", input.PlayerID)
-		
+
 		// For now, we'll return an empty list and suggest deletion
 		// In the future, we might want to auto-delete or return partial data
 		return &ListDraftsOutput{
@@ -894,11 +894,11 @@ func (o *Orchestrator) FinalizeDraft(
 
 	// Load the draft data
 	draftData := *getOutput.Draft
-	
+
 	// Extract IDs from choices
 	var raceID, subraceID, classID, backgroundID string
 	var abilityScores shared.AbilityScores
-	
+
 	// Extract race choice
 	if raceChoice, ok := draftData.Choices[shared.ChoiceRace].(map[string]interface{}); ok {
 		// Handle map format from JSON deserialization
@@ -914,16 +914,16 @@ func (o *Orchestrator) FinalizeDraft(
 	} else if id, ok := draftData.Choices[shared.ChoiceRace].(string); ok {
 		raceID = id
 	}
-	
+
 	// Extract class ID
 	classID, _ = draftData.Choices[shared.ChoiceClass].(string)
-	
+
 	// Extract background ID or use default
 	backgroundID, hasBackground := draftData.Choices[shared.ChoiceBackground].(string)
 	if !hasBackground || backgroundID == "" {
 		backgroundID = dnd5e.BackgroundAcolyte
 	}
-	
+
 	// Extract ability scores
 	if scores, ok := draftData.Choices[shared.ChoiceAbilityScores].(map[string]interface{}); ok {
 		// Helper function to safely get int value from interface{}
@@ -942,7 +942,7 @@ func (o *Orchestrator) FinalizeDraft(
 			}
 			return 0
 		}
-		
+
 		// Handle map format from JSON using proper constants
 		abilityScores = shared.AbilityScores{
 			Strength:     getIntValue(scores, dnd5e.AbilityKeyStrength),
@@ -955,7 +955,7 @@ func (o *Orchestrator) FinalizeDraft(
 	} else if scores, ok := draftData.Choices[shared.ChoiceAbilityScores].(shared.AbilityScores); ok {
 		abilityScores = scores
 	}
-	
+
 	// Fetch race data
 	var toolkitRaceData *race.Data
 	if raceID != "" {
@@ -969,7 +969,7 @@ func (o *Orchestrator) FinalizeDraft(
 			// TODO: Map more fields when available
 		}
 	}
-	
+
 	// Fetch class data
 	var toolkitClassData *class.Data
 	if classID != "" {
@@ -978,25 +978,25 @@ func (o *Orchestrator) FinalizeDraft(
 			return nil, errors.Wrapf(err, "failed to get class data for %s", classID)
 		}
 		toolkitClassData = &class.Data{
-			ID:        apiClassData.ID,
-			Name:      apiClassData.Name,
+			ID:   apiClassData.ID,
+			Name: apiClassData.Name,
 			// TODO: Map HitDice and other fields when available
 			// HitDice is a string in API but int in toolkit
 		}
 	}
-	
+
 	// Create background data
 	toolkitBackgroundData := &shared.Background{
 		ID:   backgroundID,
 		Name: backgroundID, // TODO: Fetch proper name from API
 	}
-	
+
 	// Convert choices to map[string]any
 	choices := make(map[string]any)
 	for k, v := range draftData.Choices {
 		choices[string(k)] = v
 	}
-	
+
 	// Use CreationData to create the character
 	creationData := character.CreationData{
 		ID:             o.idGenerator.Generate(),
@@ -1009,7 +1009,7 @@ func (o *Orchestrator) FinalizeDraft(
 		AbilityScores:  abilityScores,
 		Choices:        choices,
 	}
-	
+
 	// Create the character
 	toolkitChar, err := character.NewFromCreationData(creationData)
 	if err != nil {
@@ -1073,6 +1073,7 @@ func (o *Orchestrator) FinalizeDraft(
 			Charisma:     int32(charData.AbilityScores.Charisma),
 		},
 		CurrentHP: int32(charData.HitPoints),
+		MaxHP:     int32(charData.MaxHitPoints),
 		TempHP:    0,
 		SessionID: draft.SessionID,
 		PlayerID:  charData.PlayerID,
@@ -1130,6 +1131,7 @@ func (o *Orchestrator) GetCharacter(
 			Charisma:     int32(getOutput.CharacterData.AbilityScores.Charisma),
 		},
 		CurrentHP: int32(getOutput.CharacterData.HitPoints),
+		MaxHP:     int32(getOutput.CharacterData.MaxHitPoints),
 		TempHP:    0,
 		SessionID: "", // TODO: Store separately or add to toolkit
 		PlayerID:  getOutput.CharacterData.PlayerID,
@@ -1223,6 +1225,7 @@ func (o *Orchestrator) ListCharacters(
 				Charisma:     int32(charData.AbilityScores.Charisma),
 			},
 			CurrentHP: int32(charData.HitPoints),
+			MaxHP:     int32(charData.MaxHitPoints),
 			TempHP:    0,
 			SessionID: "", // TODO: Store separately or add to toolkit
 			PlayerID:  charData.PlayerID,
@@ -1689,7 +1692,7 @@ func convertExternalClassToEntity(class *external.ClassData) *dnd5e.ClassInfo {
 		ID:                       class.ID,
 		Name:                     class.Name,
 		Description:              class.Description,
-		HitDie:                   class.HitDice,
+		HitDie:                   fmt.Sprintf("1d%d", class.HitDice),
 		PrimaryAbilities:         class.PrimaryAbilities,
 		ArmorProficiencies:       class.ArmorProficiencies,
 		WeaponProficiencies:      class.WeaponProficiencies,
@@ -2642,7 +2645,7 @@ func (o *Orchestrator) convertDraftDataToCharacterDraft(ctx context.Context, dat
 				"choices", fmt.Sprintf("%+v", data.Choices))
 		}
 	}()
-	
+
 	// Load the builder to get progress information
 	builder, err := character.LoadDraft(*data)
 	if err != nil {
@@ -2709,7 +2712,7 @@ func (o *Orchestrator) convertDraftDataToCharacterDraft(ctx context.Context, dat
 			} else if scoresMap, ok := scoresData.(map[string]interface{}); ok {
 				// Handle case where it's unmarshaled as a map
 				draft.AbilityScores = &dnd5e.AbilityScores{}
-				
+
 				// Helper function to get int value from interface{}
 				getIntValue := func(m map[string]interface{}, keys ...string) int32 {
 					for _, key := range keys {
@@ -2728,7 +2731,7 @@ func (o *Orchestrator) convertDraftDataToCharacterDraft(ctx context.Context, dat
 					}
 					return 0
 				}
-				
+
 				draft.AbilityScores.Strength = getIntValue(scoresMap, dnd5e.AbilityKeyStrength)
 				draft.AbilityScores.Dexterity = getIntValue(scoresMap, dnd5e.AbilityKeyDexterity)
 				draft.AbilityScores.Constitution = getIntValue(scoresMap, dnd5e.AbilityKeyConstitution)

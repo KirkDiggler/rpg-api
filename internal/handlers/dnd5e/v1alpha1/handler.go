@@ -1241,6 +1241,22 @@ func convertCharacterToProto(char *dnd5e.Character) *dnd5ev1alpha1.Character {
 			Wisdom:       char.AbilityScores.Wisdom,
 			Charisma:     char.AbilityScores.Charisma,
 		},
+		AbilityModifiers: &dnd5ev1alpha1.AbilityModifiers{
+			Strength:     (char.AbilityScores.Strength - 10) / 2,
+			Dexterity:    (char.AbilityScores.Dexterity - 10) / 2,
+			Constitution: (char.AbilityScores.Constitution - 10) / 2,
+			Intelligence: (char.AbilityScores.Intelligence - 10) / 2,
+			Wisdom:       (char.AbilityScores.Wisdom - 10) / 2,
+			Charisma:     (char.AbilityScores.Charisma - 10) / 2,
+		},
+		CombatStats: &dnd5ev1alpha1.CombatStats{
+			HitPointMaximum:  char.MaxHP,
+			ArmorClass:       10 + ((char.AbilityScores.Dexterity - 10) / 2), // Base AC, equipment will modify
+			Initiative:       (char.AbilityScores.Dexterity - 10) / 2,
+			Speed:            30, // Default, should come from race
+			ProficiencyBonus: 2 + ((char.Level - 1) / 4),
+			HitDice:          "", // TODO: Need to get from class data
+		},
 		CurrentHitPoints:   char.CurrentHP,
 		TemporaryHitPoints: char.TempHP,
 		SessionId:          char.SessionID,

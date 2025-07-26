@@ -864,7 +864,7 @@ func (a *Adapter) ValidateClassChoice(
 		IsValid:           len(validationErrors) == 0,
 		Errors:            validationErrors,
 		Warnings:          warnings,
-		HitDice:           classData.HitDice,
+		HitDice:           fmt.Sprintf("1d%d", classData.HitDice),
 		PrimaryAbility:    strings.Join(classData.PrimaryAbilities, ", "),
 		SavingThrows:      classData.SavingThrows,
 		SkillChoicesCount: classData.SkillsCount,
