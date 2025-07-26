@@ -926,14 +926,31 @@ func (o *Orchestrator) FinalizeDraft(
 	
 	// Extract ability scores
 	if scores, ok := draftData.Choices[shared.ChoiceAbilityScores].(map[string]interface{}); ok {
-		// Handle map format from JSON
+		// Helper function to safely get int value from interface{}
+		getIntValue := func(m map[string]interface{}, key string) int {
+			if val, ok := m[key]; ok && val != nil {
+				switch v := val.(type) {
+				case float64:
+					return int(v)
+				case int:
+					return v
+				case int32:
+					return int(v)
+				case int64:
+					return int(v)
+				}
+			}
+			return 0
+		}
+		
+		// Handle map format from JSON using proper constants
 		abilityScores = shared.AbilityScores{
-			Strength:     int(scores["strength"].(float64)),
-			Dexterity:    int(scores["dexterity"].(float64)),
-			Constitution: int(scores["constitution"].(float64)),
-			Intelligence: int(scores["intelligence"].(float64)),
-			Wisdom:       int(scores["wisdom"].(float64)),
-			Charisma:     int(scores["charisma"].(float64)),
+			Strength:     getIntValue(scores, dnd5e.AbilityKeyStrength),
+			Dexterity:    getIntValue(scores, dnd5e.AbilityKeyDexterity),
+			Constitution: getIntValue(scores, dnd5e.AbilityKeyConstitution),
+			Intelligence: getIntValue(scores, dnd5e.AbilityKeyIntelligence),
+			Wisdom:       getIntValue(scores, dnd5e.AbilityKeyWisdom),
+			Charisma:     getIntValue(scores, dnd5e.AbilityKeyCharisma),
 		}
 	} else if scores, ok := draftData.Choices[shared.ChoiceAbilityScores].(shared.AbilityScores); ok {
 		abilityScores = scores
