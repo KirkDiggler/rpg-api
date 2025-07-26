@@ -9,7 +9,7 @@ import (
 
 	"github.com/fadedpez/dnd5e-api/entities"
 
-	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/clients/dnd5e/api/v1alpha1"
+	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
 )
 
 // NOTE: The functions in this file are currently unused but are kept for future use

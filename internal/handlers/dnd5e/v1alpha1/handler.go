@@ -10,7 +10,7 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/entities/dnd5e"
 	"github.com/KirkDiggler/rpg-api/internal/errors"
 
-	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/clients/dnd5e/api/v1alpha1"
+	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
 )
 
@@ -1265,6 +1265,9 @@ func convertCharacterToProto(char *dnd5e.Character) *dnd5ev1alpha1.Character {
 			UpdatedAt: char.UpdatedAt,
 			PlayerId:  char.PlayerID,
 		},
+		EquipmentSlots: mapEquipmentSlotsToProto(char.EquipmentSlots),
+		Inventory:      mapInventoryItemsToProto(char.Inventory),
+		Encumbrance:    mapEncumbranceToProto(char.Encumbrance),
 	}
 }
 
@@ -2266,6 +2269,199 @@ func convertBackgroundInfoToProto(background *dnd5e.BackgroundInfo) *dnd5ev1alph
 	return protoBackground
 }
 
+// mapEquipmentSlotFromProto converts proto EquipmentSlot to entity slot string
+func mapEquipmentSlotFromProto(slot dnd5ev1alpha1.EquipmentSlot) string {
+	switch slot {
+	case dnd5ev1alpha1.EquipmentSlot_EQUIPMENT_SLOT_MAIN_HAND:
+		return dnd5e.EquipmentSlotMainHand
+	case dnd5ev1alpha1.EquipmentSlot_EQUIPMENT_SLOT_OFF_HAND:
+		return dnd5e.EquipmentSlotOffHand
+	case dnd5ev1alpha1.EquipmentSlot_EQUIPMENT_SLOT_ARMOR:
+		return dnd5e.EquipmentSlotArmor
+	case dnd5ev1alpha1.EquipmentSlot_EQUIPMENT_SLOT_HELMET:
+		return dnd5e.EquipmentSlotHelmet
+	case dnd5ev1alpha1.EquipmentSlot_EQUIPMENT_SLOT_BOOTS:
+		return dnd5e.EquipmentSlotBoots
+	case dnd5ev1alpha1.EquipmentSlot_EQUIPMENT_SLOT_GLOVES:
+		return dnd5e.EquipmentSlotGloves
+	case dnd5ev1alpha1.EquipmentSlot_EQUIPMENT_SLOT_CLOAK:
+		return dnd5e.EquipmentSlotCloak
+	case dnd5ev1alpha1.EquipmentSlot_EQUIPMENT_SLOT_AMULET:
+		return dnd5e.EquipmentSlotAmulet
+	case dnd5ev1alpha1.EquipmentSlot_EQUIPMENT_SLOT_RING_1:
+		return dnd5e.EquipmentSlotRing1
+	case dnd5ev1alpha1.EquipmentSlot_EQUIPMENT_SLOT_RING_2:
+		return dnd5e.EquipmentSlotRing2
+	case dnd5ev1alpha1.EquipmentSlot_EQUIPMENT_SLOT_BELT:
+		return dnd5e.EquipmentSlotBelt
+	default:
+		return ""
+	}
+}
+
+// mapEquipmentSlotsToProto converts entity equipment slots to proto
+func mapEquipmentSlotsToProto(slots *dnd5e.EquipmentSlots) *dnd5ev1alpha1.EquipmentSlots {
+	if slots == nil {
+		return nil
+	}
+
+	protoSlots := &dnd5ev1alpha1.EquipmentSlots{}
+
+	if slots.MainHand != nil {
+		protoSlots.MainHand = mapInventoryItemToProto(slots.MainHand)
+	}
+	if slots.OffHand != nil {
+		protoSlots.OffHand = mapInventoryItemToProto(slots.OffHand)
+	}
+	if slots.Armor != nil {
+		protoSlots.Armor = mapInventoryItemToProto(slots.Armor)
+	}
+	if slots.Helmet != nil {
+		protoSlots.Helmet = mapInventoryItemToProto(slots.Helmet)
+	}
+	if slots.Boots != nil {
+		protoSlots.Boots = mapInventoryItemToProto(slots.Boots)
+	}
+	if slots.Gloves != nil {
+		protoSlots.Gloves = mapInventoryItemToProto(slots.Gloves)
+	}
+	if slots.Cloak != nil {
+		protoSlots.Cloak = mapInventoryItemToProto(slots.Cloak)
+	}
+	if slots.Amulet != nil {
+		protoSlots.Amulet = mapInventoryItemToProto(slots.Amulet)
+	}
+	if slots.Ring1 != nil {
+		protoSlots.Ring_1 = mapInventoryItemToProto(slots.Ring1)
+	}
+	if slots.Ring2 != nil {
+		protoSlots.Ring_2 = mapInventoryItemToProto(slots.Ring2)
+	}
+	if slots.Belt != nil {
+		protoSlots.Belt = mapInventoryItemToProto(slots.Belt)
+	}
+
+	return protoSlots
+}
+
+// mapInventoryItemToProto converts entity inventory item to proto
+func mapInventoryItemToProto(item *dnd5e.InventoryItem) *dnd5ev1alpha1.InventoryItem {
+	if item == nil {
+		return nil
+	}
+
+	protoItem := &dnd5ev1alpha1.InventoryItem{
+		ItemId:     item.ItemID,
+		Quantity:   item.Quantity,
+		IsAttuned:  item.IsAttuned,
+		CustomName: item.CustomName,
+	}
+
+	if item.Equipment != nil {
+		protoItem.Equipment = mapEquipmentDataToProto(item.Equipment)
+	}
+
+	return protoItem
+}
+
+// mapInventoryItemsToProto converts entity inventory items to proto
+func mapInventoryItemsToProto(items []dnd5e.InventoryItem) []*dnd5ev1alpha1.InventoryItem {
+	if len(items) == 0 {
+		return nil
+	}
+
+	protoItems := make([]*dnd5ev1alpha1.InventoryItem, 0, len(items))
+	for i := range items {
+		protoItems = append(protoItems, mapInventoryItemToProto(&items[i]))
+	}
+	return protoItems
+}
+
+// mapEquipmentDataToProto converts entity equipment data to proto
+func mapEquipmentDataToProto(data *dnd5e.EquipmentData) *dnd5ev1alpha1.Equipment {
+	if data == nil {
+		return nil
+	}
+
+	equipment := &dnd5ev1alpha1.Equipment{
+		Id:          data.ID,
+		Name:        data.Name,
+		Category:    data.Category,
+		Description: "", // Not stored in entity
+		Weight: &dnd5ev1alpha1.Weight{
+			Quantity: data.Weight,
+			Unit:     "lb", // Always stored as tenths of pounds
+		},
+		Cost: &dnd5ev1alpha1.Cost{}, // Not stored in entity
+	}
+
+	// Map type-specific data
+	if data.WeaponData != nil {
+		equipment.EquipmentData = &dnd5ev1alpha1.Equipment_WeaponData{
+			WeaponData: &dnd5ev1alpha1.WeaponData{
+				WeaponCategory: data.WeaponData.WeaponCategory,
+				DamageDice:     data.WeaponData.DamageDice,
+				DamageType:     data.WeaponData.DamageType,
+				Properties:     data.WeaponData.Properties,
+				Range:          data.WeaponData.Range,
+				NormalRange:    data.WeaponData.NormalRange,
+				LongRange:      data.WeaponData.LongRange,
+			},
+		}
+	} else if data.ArmorData != nil {
+		equipment.EquipmentData = &dnd5ev1alpha1.Equipment_ArmorData{
+			ArmorData: &dnd5ev1alpha1.ArmorData{
+				ArmorCategory:       data.ArmorData.ArmorCategory,
+				BaseAc:              data.ArmorData.BaseAC,
+				DexBonus:            data.ArmorData.DexBonus,
+				HasDexLimit:         data.ArmorData.HasDexLimit,
+				MaxDexBonus:         data.ArmorData.MaxDexBonus,
+				StrMinimum:          data.ArmorData.StrMinimum,
+				StealthDisadvantage: data.ArmorData.StealthDisadvantage,
+			},
+		}
+	} else if data.GearData != nil {
+		equipment.EquipmentData = &dnd5ev1alpha1.Equipment_GearData{
+			GearData: &dnd5ev1alpha1.GearData{
+				GearCategory: data.GearData.GearCategory,
+				Properties:   data.GearData.Properties,
+			},
+		}
+	}
+
+	return equipment
+}
+
+// mapEncumbranceToProto converts entity encumbrance to proto
+func mapEncumbranceToProto(enc *dnd5e.EncumbranceInfo) *dnd5ev1alpha1.EncumbranceInfo {
+	if enc == nil {
+		return nil
+	}
+
+	return &dnd5ev1alpha1.EncumbranceInfo{
+		CurrentWeight:    enc.CurrentWeight,
+		CarryingCapacity: enc.CarryingCapacity,
+		MaxCapacity:      enc.MaxCapacity,
+		Level:            mapEncumbranceLevelToProto(enc.Level),
+	}
+}
+
+// mapEncumbranceLevelToProto converts entity encumbrance level to proto
+func mapEncumbranceLevelToProto(level dnd5e.EncumbranceLevel) dnd5ev1alpha1.EncumbranceLevel {
+	switch level {
+	case dnd5e.EncumbranceLevelUnencumbered:
+		return dnd5ev1alpha1.EncumbranceLevel_ENCUMBRANCE_LEVEL_UNENCUMBERED
+	case dnd5e.EncumbranceLevelEncumbered:
+		return dnd5ev1alpha1.EncumbranceLevel_ENCUMBRANCE_LEVEL_ENCUMBERED
+	case dnd5e.EncumbranceLevelHeavilyEncumbered:
+		return dnd5ev1alpha1.EncumbranceLevel_ENCUMBRANCE_LEVEL_HEAVILY_ENCUMBERED
+	case dnd5e.EncumbranceLevelImmobilized:
+		return dnd5ev1alpha1.EncumbranceLevel_ENCUMBRANCE_LEVEL_IMMOBILIZED
+	default:
+		return dnd5ev1alpha1.EncumbranceLevel_ENCUMBRANCE_LEVEL_UNSPECIFIED
+	}
+}
+
 // mapSizeToProto converts entity size string to proto Size
 func mapSizeToProto(size string) dnd5ev1alpha1.Size {
 	switch size {
@@ -2284,4 +2480,183 @@ func mapSizeToProto(size string) dnd5ev1alpha1.Size {
 	default:
 		return dnd5ev1alpha1.Size_SIZE_UNSPECIFIED
 	}
+}
+
+// GetCharacterInventory retrieves a character's equipment and inventory
+func (h *Handler) GetCharacterInventory(
+	ctx context.Context,
+	req *dnd5ev1alpha1.GetCharacterInventoryRequest,
+) (*dnd5ev1alpha1.GetCharacterInventoryResponse, error) {
+	if req.CharacterId == "" {
+		return nil, errors.InvalidArgument("character_id is required")
+	}
+
+	input := &character.GetInventoryInput{
+		CharacterID: req.CharacterId,
+	}
+
+	output, err := h.characterService.GetInventory(ctx, input)
+	if err != nil {
+		return nil, err
+	}
+
+	return &dnd5ev1alpha1.GetCharacterInventoryResponse{
+		EquipmentSlots:      mapEquipmentSlotsToProto(output.EquipmentSlots),
+		Inventory:           mapInventoryItemsToProto(output.Inventory),
+		Encumbrance:         mapEncumbranceToProto(output.Encumbrance),
+		AttunementSlotsUsed: output.AttunementSlotsUsed,
+		AttunementSlotsMax:  output.AttunementSlotsMax,
+	}, nil
+}
+
+// EquipItem equips an item from inventory to a specific slot
+func (h *Handler) EquipItem(
+	ctx context.Context,
+	req *dnd5ev1alpha1.EquipItemRequest,
+) (*dnd5ev1alpha1.EquipItemResponse, error) {
+	if req.CharacterId == "" {
+		return nil, errors.InvalidArgument("character_id is required")
+	}
+	if req.ItemId == "" {
+		return nil, errors.InvalidArgument("item_id is required")
+	}
+	if req.Slot == dnd5ev1alpha1.EquipmentSlot_EQUIPMENT_SLOT_UNSPECIFIED {
+		return nil, errors.InvalidArgument("slot is required")
+	}
+
+	input := &character.EquipItemInput{
+		CharacterID: req.CharacterId,
+		ItemID:      req.ItemId,
+		Slot:        mapEquipmentSlotFromProto(req.Slot),
+	}
+
+	output, err := h.characterService.EquipItem(ctx, input)
+	if err != nil {
+		return nil, err
+	}
+
+	response := &dnd5ev1alpha1.EquipItemResponse{
+		Character: convertCharacterToProto(output.Character),
+	}
+
+	if output.PreviouslyEquippedItem != nil {
+		response.PreviouslyEquippedItem = mapInventoryItemToProto(output.PreviouslyEquippedItem)
+	}
+
+	return response, nil
+}
+
+// UnequipItem unequips an item from a specific slot
+func (h *Handler) UnequipItem(
+	ctx context.Context,
+	req *dnd5ev1alpha1.UnequipItemRequest,
+) (*dnd5ev1alpha1.UnequipItemResponse, error) {
+	if req.CharacterId == "" {
+		return nil, errors.InvalidArgument("character_id is required")
+	}
+	if req.Slot == dnd5ev1alpha1.EquipmentSlot_EQUIPMENT_SLOT_UNSPECIFIED {
+		return nil, errors.InvalidArgument("slot is required")
+	}
+
+	input := &character.UnequipItemInput{
+		CharacterID: req.CharacterId,
+		Slot:        mapEquipmentSlotFromProto(req.Slot),
+	}
+
+	output, err := h.characterService.UnequipItem(ctx, input)
+	if err != nil {
+		return nil, err
+	}
+
+	return &dnd5ev1alpha1.UnequipItemResponse{
+		Character: convertCharacterToProto(output.Character),
+	}, nil
+}
+
+// AddToInventory adds items to a character's inventory
+func (h *Handler) AddToInventory(
+	ctx context.Context,
+	req *dnd5ev1alpha1.AddToInventoryRequest,
+) (*dnd5ev1alpha1.AddToInventoryResponse, error) {
+	if req.CharacterId == "" {
+		return nil, errors.InvalidArgument("character_id is required")
+	}
+	if len(req.Items) == 0 {
+		return nil, errors.InvalidArgument("at least one item is required")
+	}
+
+	additions := make([]character.InventoryAddition, 0, len(req.Items))
+	for _, item := range req.Items {
+		if item.ItemId == "" {
+			return nil, errors.InvalidArgument("item_id is required for all items")
+		}
+		if item.Quantity < 1 {
+			return nil, errors.InvalidArgument("quantity must be at least 1")
+		}
+		additions = append(additions, character.InventoryAddition{
+			Item: &dnd5e.InventoryItem{
+				ItemID:   item.ItemId,
+				Quantity: item.Quantity,
+			},
+			Source: "api", // Added via API
+		})
+	}
+
+	input := &character.AddToInventoryInput{
+		CharacterID: req.CharacterId,
+		Items:       additions,
+	}
+
+	output, err := h.characterService.AddToInventory(ctx, input)
+	if err != nil {
+		return nil, err
+	}
+
+	return &dnd5ev1alpha1.AddToInventoryResponse{
+		Character: convertCharacterToProto(output.Character),
+		Errors:    output.Errors,
+	}, nil
+}
+
+// RemoveFromInventory removes items from a character's inventory
+func (h *Handler) RemoveFromInventory(
+	ctx context.Context,
+	req *dnd5ev1alpha1.RemoveFromInventoryRequest,
+) (*dnd5ev1alpha1.RemoveFromInventoryResponse, error) {
+	if req.CharacterId == "" {
+		return nil, errors.InvalidArgument("character_id is required")
+	}
+	if req.ItemId == "" {
+		return nil, errors.InvalidArgument("item_id is required")
+	}
+
+	input := &character.RemoveFromInventoryInput{
+		CharacterID: req.CharacterId,
+		ItemID:      req.ItemId,
+	}
+
+	// Handle the oneof removal_amount
+	switch removal := req.RemovalAmount.(type) {
+	case *dnd5ev1alpha1.RemoveFromInventoryRequest_Quantity:
+		if removal.Quantity < 1 {
+			return nil, errors.InvalidArgument("quantity must be at least 1")
+		}
+		input.Quantity = removal.Quantity
+		input.RemoveAll = false
+	case *dnd5ev1alpha1.RemoveFromInventoryRequest_RemoveAll:
+		input.RemoveAll = removal.RemoveAll
+		input.Quantity = 0
+	default:
+		return nil, errors.InvalidArgument("either quantity or remove_all must be specified")
+	}
+
+	output, err := h.characterService.RemoveFromInventory(ctx, input)
+	if err != nil {
+		return nil, err
+	}
+
+	return &dnd5ev1alpha1.RemoveFromInventoryResponse{
+		Character:       convertCharacterToProto(output.Character),
+		QuantityRemoved: output.QuantityRemoved,
+	}, nil
 }

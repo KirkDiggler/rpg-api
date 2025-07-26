@@ -22,7 +22,7 @@ type Character struct {
 	PlayerID         string
 	CreatedAt        int64
 	UpdatedAt        int64
-	
+
 	// Equipment and inventory
 	EquipmentSlots *EquipmentSlots  // Equipped items by slot
 	Inventory      []InventoryItem  // Unequipped items
@@ -34,7 +34,7 @@ func (c *Character) GetEquippedItem(slot string) *InventoryItem {
 	if c.EquipmentSlots == nil {
 		return nil
 	}
-	
+
 	switch slot {
 	case EquipmentSlotMainHand:
 		return c.EquipmentSlots.MainHand
@@ -68,7 +68,7 @@ func (c *Character) SetEquippedItem(slot string, item *InventoryItem) {
 	if c.EquipmentSlots == nil {
 		c.EquipmentSlots = &EquipmentSlots{}
 	}
-	
+
 	switch slot {
 	case EquipmentSlotMainHand:
 		c.EquipmentSlots.MainHand = item
@@ -136,8 +136,8 @@ func (c *Character) RemoveInventoryItem(itemID string) (*InventoryItem, bool) {
 func (c *Character) AddInventoryItem(item InventoryItem) {
 	// Check if item already exists and is stackable
 	for i := range c.Inventory {
-		if c.Inventory[i].ItemID == item.ItemID && 
-			c.Inventory[i].Equipment != nil && 
+		if c.Inventory[i].ItemID == item.ItemID &&
+			c.Inventory[i].Equipment != nil &&
 			c.Inventory[i].Equipment.Stackable {
 			c.Inventory[i].Quantity += item.Quantity
 			return
@@ -150,7 +150,7 @@ func (c *Character) AddInventoryItem(item InventoryItem) {
 // CountAttunedItems returns the number of items currently attuned
 func (c *Character) CountAttunedItems() int {
 	count := 0
-	
+
 	// Check equipped items
 	if c.EquipmentSlots != nil {
 		slots := []*InventoryItem{
@@ -166,21 +166,21 @@ func (c *Character) CountAttunedItems() int {
 			c.EquipmentSlots.Ring2,
 			c.EquipmentSlots.Belt,
 		}
-		
+
 		for _, item := range slots {
 			if item != nil && item.IsAttuned {
 				count++
 			}
 		}
 	}
-	
+
 	// Check inventory items (in case some attuned items are unequipped)
 	for _, item := range c.Inventory {
 		if item.IsAttuned {
 			count++
 		}
 	}
-	
+
 	return count
 }
 
@@ -685,14 +685,14 @@ type EquipmentSlots struct {
 	// Combat equipment
 	MainHand *InventoryItem
 	OffHand  *InventoryItem
-	
+
 	// Armor slots
-	Armor   *InventoryItem
-	Helmet  *InventoryItem
-	Boots   *InventoryItem
-	Gloves  *InventoryItem
-	Cloak   *InventoryItem
-	
+	Armor  *InventoryItem
+	Helmet *InventoryItem
+	Boots  *InventoryItem
+	Gloves *InventoryItem
+	Cloak  *InventoryItem
+
 	// Accessory slots
 	Amulet *InventoryItem
 	Ring1  *InventoryItem
@@ -712,14 +712,14 @@ type InventoryItem struct {
 // EquipmentData contains the essential equipment information
 // This is a simplified version of the full Equipment proto for storage
 type EquipmentData struct {
-	ID          string
-	Name        string
-	Type        string // "weapon", "armor", "gear", etc.
-	Category    string // "simple-weapon", "martial-weapon", "light-armor", etc.
-	Weight      int32  // Weight in tenths of pounds (for 0.1 lb precision)
-	Properties  []string
-	Stackable   bool   // Whether this item can stack (e.g., arrows, potions)
-	
+	ID         string
+	Name       string
+	Type       string // "weapon", "armor", "gear", etc.
+	Category   string // "simple-weapon", "martial-weapon", "light-armor", etc.
+	Weight     int32  // Weight in tenths of pounds (for 0.1 lb precision)
+	Properties []string
+	Stackable  bool // Whether this item can stack (e.g., arrows, potions)
+
 	// Type-specific data
 	WeaponData *WeaponData
 	ArmorData  *ArmorData
@@ -742,7 +742,7 @@ type ArmorData struct {
 	ArmorCategory       string // "light", "medium", "heavy", "shield"
 	BaseAC              int32
 	DexBonus            bool
-	HasDexLimit         bool // Indicates if MaxDexBonus is applicable
+	HasDexLimit         bool  // Indicates if MaxDexBonus is applicable
 	MaxDexBonus         int32 // Maximum Dexterity bonus to AC
 	StrMinimum          int32
 	StealthDisadvantage bool
@@ -750,16 +750,16 @@ type ArmorData struct {
 
 // GearData contains general gear information
 type GearData struct {
-	GearCategory string   // "adventuring-gear", "tools", etc.
+	GearCategory string // "adventuring-gear", "tools", etc.
 	Properties   []string
 }
 
 // EncumbranceInfo tracks weight and carrying capacity
 type EncumbranceInfo struct {
-	CurrentWeight     int32            // Total weight carried (in tenths of pounds)
-	CarryingCapacity  int32            // Max weight before encumbered (in tenths of pounds)
-	MaxCapacity       int32            // Max weight before immobilized (in tenths of pounds)
-	Level             EncumbranceLevel // Current encumbrance level
+	CurrentWeight    int32            // Total weight carried (in tenths of pounds)
+	CarryingCapacity int32            // Max weight before encumbered (in tenths of pounds)
+	MaxCapacity      int32            // Max weight before immobilized (in tenths of pounds)
+	Level            EncumbranceLevel // Current encumbrance level
 }
 
 // EncumbranceLevel represents different levels of encumbrance

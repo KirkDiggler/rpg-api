@@ -70,6 +70,13 @@ type Service interface {
 
 	// Dice rolling for ability scores
 	RollAbilityScores(ctx context.Context, input *RollAbilityScoresInput) (*RollAbilityScoresOutput, error)
+
+	// Equipment management
+	GetInventory(ctx context.Context, input *GetInventoryInput) (*GetInventoryOutput, error)
+	EquipItem(ctx context.Context, input *EquipItemInput) (*EquipItemOutput, error)
+	UnequipItem(ctx context.Context, input *UnequipItemInput) (*UnequipItemOutput, error)
+	AddToInventory(ctx context.Context, input *AddToInventoryInput) (*AddToInventoryOutput, error)
+	RemoveFromInventory(ctx context.Context, input *RemoveFromInventoryInput) (*RemoveFromInventoryOutput, error)
 }
 
 // Config holds the dependencies for the character orchestrator
@@ -2832,4 +2839,34 @@ func (o *Orchestrator) convertDraftDataToCharacterDraft(ctx context.Context, dat
 	}
 
 	return draft, nil
+}
+
+// GetInventory retrieves a character's equipment and inventory
+func (o *Orchestrator) GetInventory(ctx context.Context, input *GetInventoryInput) (*GetInventoryOutput, error) {
+	// TODO: Implement equipment management
+	return nil, errors.Unimplemented("GetInventory not implemented")
+}
+
+// EquipItem equips an item from inventory to a specific slot
+func (o *Orchestrator) EquipItem(ctx context.Context, input *EquipItemInput) (*EquipItemOutput, error) {
+	// TODO: Implement equipment management
+	return nil, errors.Unimplemented("EquipItem not implemented")
+}
+
+// UnequipItem unequips an item from a specific slot
+func (o *Orchestrator) UnequipItem(ctx context.Context, input *UnequipItemInput) (*UnequipItemOutput, error) {
+	// TODO: Implement equipment management
+	return nil, errors.Unimplemented("UnequipItem not implemented")
+}
+
+// AddToInventory adds an item to the character's inventory
+func (o *Orchestrator) AddToInventory(ctx context.Context, input *AddToInventoryInput) (*AddToInventoryOutput, error) {
+	// TODO: Implement equipment management
+	return nil, errors.Unimplemented("AddToInventory not implemented")
+}
+
+// RemoveFromInventory removes an item from the character's inventory
+func (o *Orchestrator) RemoveFromInventory(ctx context.Context, input *RemoveFromInventoryInput) (*RemoveFromInventoryOutput, error) {
+	// TODO: Implement equipment management
+	return nil, errors.Unimplemented("RemoveFromInventory not implemented")
 }
