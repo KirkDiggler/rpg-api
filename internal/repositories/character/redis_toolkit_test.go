@@ -18,9 +18,9 @@ import (
 )
 
 const (
-	testCharID   = "char_test123"
-	testPlayerID = "player_123"
-	testCharKey  = "character:char_test123"
+	testCharID    = "char_test123"
+	testPlayerID  = "player_123"
+	testCharKey   = "character:char_test123"
 	testPlayerKey = "character:player:player_123"
 )
 

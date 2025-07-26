@@ -876,23 +876,124 @@ func (o *Orchestrator) FinalizeDraft(
 		return nil, errors.Wrap(err, "failed to get draft")
 	}
 
-	// Load into builder
-	builder, err := character.LoadDraft(*getOutput.Draft)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to load draft into builder")
+	// Load the draft data
+	draftData := *getOutput.Draft
+	
+	// Extract IDs from choices
+	var raceID, subraceID, classID, backgroundID string
+	var abilityScores shared.AbilityScores
+	
+	// Extract race choice
+	if raceChoice, ok := draftData.Choices[shared.ChoiceRace].(map[string]interface{}); ok {
+		// Handle map format from JSON deserialization
+		if id, exists := raceChoice["race_id"].(string); exists {
+			raceID = id
+		}
+		if sid, exists := raceChoice["subrace_id"].(string); exists {
+			subraceID = sid
+		}
+	} else if raceChoice, ok := draftData.Choices[shared.ChoiceRace].(character.RaceChoice); ok {
+		raceID = raceChoice.RaceID
+		subraceID = raceChoice.SubraceID
+	} else if id, ok := draftData.Choices[shared.ChoiceRace].(string); ok {
+		raceID = id
 	}
-
-	// Build the final character
-	toolkitChar, err := builder.Build()
+	
+	// Extract class ID
+	classID, _ = draftData.Choices[shared.ChoiceClass].(string)
+	
+	// Extract background ID or use default
+	backgroundID, hasBackground := draftData.Choices[shared.ChoiceBackground].(string)
+	if !hasBackground || backgroundID == "" {
+		backgroundID = dnd5e.BackgroundAcolyte
+	}
+	
+	// Extract ability scores
+	if scores, ok := draftData.Choices[shared.ChoiceAbilityScores].(map[string]interface{}); ok {
+		// Handle map format from JSON
+		abilityScores = shared.AbilityScores{
+			Strength:     int(scores["strength"].(float64)),
+			Dexterity:    int(scores["dexterity"].(float64)),
+			Constitution: int(scores["constitution"].(float64)),
+			Intelligence: int(scores["intelligence"].(float64)),
+			Wisdom:       int(scores["wisdom"].(float64)),
+			Charisma:     int(scores["charisma"].(float64)),
+		}
+	} else if scores, ok := draftData.Choices[shared.ChoiceAbilityScores].(shared.AbilityScores); ok {
+		abilityScores = scores
+	}
+	
+	// Fetch race data
+	var toolkitRaceData *race.Data
+	if raceID != "" {
+		apiRaceData, err := o.externalClient.GetRaceData(ctx, raceID)
+		if err != nil {
+			return nil, errors.Wrapf(err, "failed to get race data for %s", raceID)
+		}
+		toolkitRaceData = &race.Data{
+			ID:   apiRaceData.ID,
+			Name: apiRaceData.Name,
+			// TODO: Map more fields when available
+		}
+	}
+	
+	// Fetch class data
+	var toolkitClassData *class.Data
+	if classID != "" {
+		apiClassData, err := o.externalClient.GetClassData(ctx, classID)
+		if err != nil {
+			return nil, errors.Wrapf(err, "failed to get class data for %s", classID)
+		}
+		toolkitClassData = &class.Data{
+			ID:        apiClassData.ID,
+			Name:      apiClassData.Name,
+			// TODO: Map HitDice and other fields when available
+			// HitDice is a string in API but int in toolkit
+		}
+	}
+	
+	// Create background data
+	toolkitBackgroundData := &shared.Background{
+		ID:   backgroundID,
+		Name: backgroundID, // TODO: Fetch proper name from API
+	}
+	
+	// Convert choices to map[string]any
+	choices := make(map[string]any)
+	for k, v := range draftData.Choices {
+		choices[string(k)] = v
+	}
+	
+	// Use CreationData to create the character
+	creationData := character.CreationData{
+		ID:             o.idGenerator.Generate(),
+		PlayerID:       draftData.PlayerID,
+		Name:           draftData.Name,
+		RaceData:       toolkitRaceData,
+		SubraceID:      subraceID,
+		ClassData:      toolkitClassData,
+		BackgroundData: toolkitBackgroundData,
+		AbilityScores:  abilityScores,
+		Choices:        choices,
+	}
+	
+	// Create the character
+	toolkitChar, err := character.NewFromCreationData(creationData)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to build character from draft")
+		slog.ErrorContext(ctx, "Failed to create character from creation data",
+			"error", err.Error(),
+			"raceID", raceID,
+			"classID", classID,
+			"backgroundID", backgroundID,
+			"hasRaceData", toolkitRaceData != nil,
+			"hasClassData", toolkitClassData != nil,
+			"hasBackgroundData", toolkitBackgroundData != nil,
+		)
+		return nil, errors.Wrap(err, "failed to create character from draft")
 	}
 
 	// Get the character data from toolkit
 	charData := toolkitChar.ToData()
-
-	// Generate character ID with proper prefix
-	charData.ID = o.idGenerator.Generate()
 
 	// Store the character data directly
 	_, err = o.characterRepo.Create(ctx, characterrepo.CreateInput{
