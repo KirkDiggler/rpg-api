@@ -750,8 +750,10 @@ type ArmorData struct {
 
 // GearData contains general gear information
 type GearData struct {
-	GearCategory string // "adventuring-gear", "tools", etc.
-	Properties   []string
+	GearCategory       string // "adventuring-gear", "tools", etc.
+	Properties         []string
+	CostInCopper       int32 // Cost in copper pieces (100 cp = 1 gp)
+	RequiresAttunement bool  // Whether this item requires attunement
 }
 
 // EncumbranceInfo tracks weight and carrying capacity

@@ -40,11 +40,19 @@ type HandlerTestSuite struct {
 	validListEquipmentByTypeReq *dnd5ev1alpha1.ListEquipmentByTypeRequest
 	validListSpellsByLevelReq   *dnd5ev1alpha1.ListSpellsByLevelRequest
 
+	// Equipment management requests
+	validGetInventoryReq        *dnd5ev1alpha1.GetCharacterInventoryRequest
+	validEquipItemReq           *dnd5ev1alpha1.EquipItemRequest
+	validUnequipItemReq         *dnd5ev1alpha1.UnequipItemRequest
+	validAddToInventoryReq      *dnd5ev1alpha1.AddToInventoryRequest
+	validRemoveFromInventoryReq *dnd5ev1alpha1.RemoveFromInventoryRequest
+
 	// Common test IDs
 	testPlayerID    string
 	testSessionID   string
 	testDraftID     string
 	testCharacterID string
+	testItemID      string
 
 	// Expected entities for reuse
 	expectedDraft            *dnd5e.CharacterDraft
@@ -70,6 +78,7 @@ func (s *HandlerTestSuite) SetupTest() {
 	s.testSessionID = "session-456"
 	s.testDraftID = "draft-789"
 	s.testCharacterID = "char-101"
+	s.testItemID = "item-longsword"
 
 	// Initialize valid requests - these can be modified in specific tests
 	s.validCreateDraftReq = &dnd5ev1alpha1.CreateDraftRequest{
@@ -136,6 +145,40 @@ func (s *HandlerTestSuite) SetupTest() {
 		Class:     dnd5ev1alpha1.Class_CLASS_WIZARD,
 		PageSize:  20,
 		PageToken: "",
+	}
+
+	// Initialize equipment management requests
+	s.validGetInventoryReq = &dnd5ev1alpha1.GetCharacterInventoryRequest{
+		CharacterId: s.testCharacterID,
+	}
+
+	s.validEquipItemReq = &dnd5ev1alpha1.EquipItemRequest{
+		CharacterId: s.testCharacterID,
+		ItemId:      s.testItemID,
+		Slot:        dnd5ev1alpha1.EquipmentSlot_EQUIPMENT_SLOT_MAIN_HAND,
+	}
+
+	s.validUnequipItemReq = &dnd5ev1alpha1.UnequipItemRequest{
+		CharacterId: s.testCharacterID,
+		Slot:        dnd5ev1alpha1.EquipmentSlot_EQUIPMENT_SLOT_MAIN_HAND,
+	}
+
+	s.validAddToInventoryReq = &dnd5ev1alpha1.AddToInventoryRequest{
+		CharacterId: s.testCharacterID,
+		Items: []*dnd5ev1alpha1.InventoryAddition{
+			{
+				ItemId:   s.testItemID,
+				Quantity: 1,
+			},
+		},
+	}
+
+	s.validRemoveFromInventoryReq = &dnd5ev1alpha1.RemoveFromInventoryRequest{
+		CharacterId: s.testCharacterID,
+		ItemId:      s.testItemID,
+		RemovalAmount: &dnd5ev1alpha1.RemoveFromInventoryRequest_Quantity{
+			Quantity: 1,
+		},
 	}
 
 	// Initialize expected entities for reuse
@@ -1852,6 +1895,285 @@ func (s *HandlerTestSuite) TestListSpellsByLevel() {
 		s.True(ok)
 		s.Equal(codes.Internal, st.Code())
 		s.Contains(st.Message(), "database error")
+	})
+}
+
+// Equipment management tests
+
+func (s *HandlerTestSuite) TestGetCharacterInventory() {
+	s.Run("with valid character_id", func() {
+		expectedEquipment := &dnd5e.EquipmentSlots{
+			MainHand: &dnd5e.InventoryItem{
+				ItemID:   s.testItemID,
+				Quantity: 1,
+				Equipment: &dnd5e.EquipmentData{
+					ID:   s.testItemID,
+					Name: "Longsword",
+					Type: "weapon",
+				},
+			},
+		}
+		expectedInventory := []dnd5e.InventoryItem{
+			{
+				ItemID:   "item-potion",
+				Quantity: 3,
+				Equipment: &dnd5e.EquipmentData{
+					ID:        "item-potion",
+					Name:      "Healing Potion",
+					Type:      "potion",
+					Stackable: true,
+				},
+			},
+		}
+		expectedEncumbrance := &dnd5e.EncumbranceInfo{
+			CurrentWeight:    150,
+			CarryingCapacity: 300,
+			MaxCapacity:      600,
+			Level:            dnd5e.EncumbranceLevelUnencumbered,
+		}
+
+		s.mockCharService.EXPECT().
+			GetInventory(s.ctx, &character.GetInventoryInput{
+				CharacterID: s.testCharacterID,
+			}).
+			Return(&character.GetInventoryOutput{
+				EquipmentSlots:      expectedEquipment,
+				Inventory:           expectedInventory,
+				Encumbrance:         expectedEncumbrance,
+				AttunementSlotsUsed: 1,
+				AttunementSlotsMax:  3,
+			}, nil)
+
+		resp, err := s.handler.GetCharacterInventory(s.ctx, s.validGetInventoryReq)
+
+		s.NoError(err)
+		s.NotNil(resp)
+		s.NotNil(resp.EquipmentSlots)
+		s.NotNil(resp.EquipmentSlots.MainHand)
+		s.Equal(s.testItemID, resp.EquipmentSlots.MainHand.ItemId)
+		s.Len(resp.Inventory, 1)
+		s.Equal("item-potion", resp.Inventory[0].ItemId)
+		s.Equal(int32(3), resp.Inventory[0].Quantity)
+		s.NotNil(resp.Encumbrance)
+		s.Equal(int32(1), resp.AttunementSlotsUsed)
+		s.Equal(int32(3), resp.AttunementSlotsMax)
+	})
+
+	s.Run("with missing character_id", func() {
+		req := &dnd5ev1alpha1.GetCharacterInventoryRequest{}
+
+		resp, err := s.handler.GetCharacterInventory(s.ctx, req)
+
+		s.Error(err)
+		s.Nil(resp)
+		st, ok := status.FromError(err)
+		s.True(ok)
+		s.Equal(codes.InvalidArgument, st.Code())
+	})
+}
+
+func (s *HandlerTestSuite) TestEquipItem() {
+	s.Run("successful equip", func() {
+		expectedCharacter := &dnd5e.Character{
+			ID:       s.testCharacterID,
+			Name:     "Test Character",
+			PlayerID: s.testPlayerID,
+			EquipmentSlots: &dnd5e.EquipmentSlots{
+				MainHand: &dnd5e.InventoryItem{
+					ItemID:   s.testItemID,
+					Quantity: 1,
+				},
+			},
+		}
+
+		s.mockCharService.EXPECT().
+			EquipItem(s.ctx, &character.EquipItemInput{
+				CharacterID: s.testCharacterID,
+				ItemID:      s.testItemID,
+				Slot:        "main_hand",
+			}).
+			Return(&character.EquipItemOutput{
+				Success:   true,
+				Character: expectedCharacter,
+			}, nil)
+
+		resp, err := s.handler.EquipItem(s.ctx, s.validEquipItemReq)
+
+		s.NoError(err)
+		s.NotNil(resp)
+		s.NotNil(resp.Character)
+		s.NotNil(resp.Character.EquipmentSlots)
+		s.NotNil(resp.Character.EquipmentSlots.MainHand)
+	})
+
+	s.Run("with missing character_id", func() {
+		req := &dnd5ev1alpha1.EquipItemRequest{
+			ItemId: s.testItemID,
+			Slot:   dnd5ev1alpha1.EquipmentSlot_EQUIPMENT_SLOT_MAIN_HAND,
+		}
+
+		resp, err := s.handler.EquipItem(s.ctx, req)
+
+		s.Error(err)
+		s.Nil(resp)
+		st, ok := status.FromError(err)
+		s.True(ok)
+		s.Equal(codes.InvalidArgument, st.Code())
+	})
+}
+
+func (s *HandlerTestSuite) TestUnequipItem() {
+	s.Run("successful unequip", func() {
+		expectedCharacter := &dnd5e.Character{
+			ID:             s.testCharacterID,
+			Name:           "Test Character",
+			PlayerID:       s.testPlayerID,
+			EquipmentSlots: &dnd5e.EquipmentSlots{
+				// MainHand is now empty
+			},
+		}
+
+		s.mockCharService.EXPECT().
+			UnequipItem(s.ctx, &character.UnequipItemInput{
+				CharacterID: s.testCharacterID,
+				Slot:        "main_hand",
+			}).
+			Return(&character.UnequipItemOutput{
+				Success:   true,
+				Character: expectedCharacter,
+			}, nil)
+
+		resp, err := s.handler.UnequipItem(s.ctx, s.validUnequipItemReq)
+
+		s.NoError(err)
+		s.NotNil(resp)
+		s.NotNil(resp.Character)
+	})
+
+	s.Run("with missing character_id", func() {
+		req := &dnd5ev1alpha1.UnequipItemRequest{
+			Slot: dnd5ev1alpha1.EquipmentSlot_EQUIPMENT_SLOT_MAIN_HAND,
+		}
+
+		resp, err := s.handler.UnequipItem(s.ctx, req)
+
+		s.Error(err)
+		s.Nil(resp)
+		st, ok := status.FromError(err)
+		s.True(ok)
+		s.Equal(codes.InvalidArgument, st.Code())
+	})
+}
+
+func (s *HandlerTestSuite) TestAddToInventory() {
+	s.Run("successful add single item", func() {
+		expectedCharacter := &dnd5e.Character{
+			ID:       s.testCharacterID,
+			Name:     "Test Character",
+			PlayerID: s.testPlayerID,
+			Inventory: []dnd5e.InventoryItem{
+				{
+					ItemID:   s.testItemID,
+					Quantity: 1,
+				},
+			},
+		}
+
+		s.mockCharService.EXPECT().
+			AddToInventory(s.ctx, &character.AddToInventoryInput{
+				CharacterID: s.testCharacterID,
+				Items: []character.InventoryAddition{
+					{
+						Item: &dnd5e.InventoryItem{
+							ItemID:   s.testItemID,
+							Quantity: 1,
+						},
+						Source: "api",
+					},
+				},
+			}).
+			Return(&character.AddToInventoryOutput{
+				Success:   true,
+				Character: expectedCharacter,
+				Errors:    []string{},
+			}, nil)
+
+		resp, err := s.handler.AddToInventory(s.ctx, s.validAddToInventoryReq)
+
+		s.NoError(err)
+		s.NotNil(resp)
+		s.NotNil(resp.Character)
+		s.Len(resp.Character.Inventory, 1)
+		s.Empty(resp.Errors)
+	})
+
+	s.Run("with missing character_id", func() {
+		req := &dnd5ev1alpha1.AddToInventoryRequest{
+			Items: []*dnd5ev1alpha1.InventoryAddition{
+				{ItemId: s.testItemID, Quantity: 1},
+			},
+		}
+
+		resp, err := s.handler.AddToInventory(s.ctx, req)
+
+		s.Error(err)
+		s.Nil(resp)
+		st, ok := status.FromError(err)
+		s.True(ok)
+		s.Equal(codes.InvalidArgument, st.Code())
+	})
+}
+
+func (s *HandlerTestSuite) TestRemoveFromInventory() {
+	s.Run("successful remove with quantity", func() {
+		expectedCharacter := &dnd5e.Character{
+			ID:       s.testCharacterID,
+			Name:     "Test Character",
+			PlayerID: s.testPlayerID,
+			Inventory: []dnd5e.InventoryItem{
+				{
+					ItemID:   s.testItemID,
+					Quantity: 4, // Had 5, removed 1
+				},
+			},
+		}
+
+		s.mockCharService.EXPECT().
+			RemoveFromInventory(s.ctx, &character.RemoveFromInventoryInput{
+				CharacterID: s.testCharacterID,
+				ItemID:      s.testItemID,
+				Quantity:    1,
+				RemoveAll:   false,
+			}).
+			Return(&character.RemoveFromInventoryOutput{
+				Success:         true,
+				Character:       expectedCharacter,
+				QuantityRemoved: 1,
+			}, nil)
+
+		resp, err := s.handler.RemoveFromInventory(s.ctx, s.validRemoveFromInventoryReq)
+
+		s.NoError(err)
+		s.NotNil(resp)
+		s.NotNil(resp.Character)
+		s.Equal(int32(1), resp.QuantityRemoved)
+	})
+
+	s.Run("with missing character_id", func() {
+		req := &dnd5ev1alpha1.RemoveFromInventoryRequest{
+			ItemId: s.testItemID,
+			RemovalAmount: &dnd5ev1alpha1.RemoveFromInventoryRequest_Quantity{
+				Quantity: 1,
+			},
+		}
+
+		resp, err := s.handler.RemoveFromInventory(s.ctx, req)
+
+		s.Error(err)
+		s.Nil(resp)
+		st, ok := status.FromError(err)
+		s.True(ok)
+		s.Equal(codes.InvalidArgument, st.Code())
 	})
 }
 

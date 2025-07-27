@@ -2488,7 +2488,7 @@ func (h *Handler) GetCharacterInventory(
 	req *dnd5ev1alpha1.GetCharacterInventoryRequest,
 ) (*dnd5ev1alpha1.GetCharacterInventoryResponse, error) {
 	if req.CharacterId == "" {
-		return nil, errors.InvalidArgument("character_id is required")
+		return nil, errors.ToGRPCError(errors.InvalidArgument("character_id is required"))
 	}
 
 	input := &character.GetInventoryInput{
@@ -2497,7 +2497,7 @@ func (h *Handler) GetCharacterInventory(
 
 	output, err := h.characterService.GetInventory(ctx, input)
 	if err != nil {
-		return nil, err
+		return nil, errors.ToGRPCError(err)
 	}
 
 	return &dnd5ev1alpha1.GetCharacterInventoryResponse{
@@ -2515,13 +2515,13 @@ func (h *Handler) EquipItem(
 	req *dnd5ev1alpha1.EquipItemRequest,
 ) (*dnd5ev1alpha1.EquipItemResponse, error) {
 	if req.CharacterId == "" {
-		return nil, errors.InvalidArgument("character_id is required")
+		return nil, errors.ToGRPCError(errors.InvalidArgument("character_id is required"))
 	}
 	if req.ItemId == "" {
-		return nil, errors.InvalidArgument("item_id is required")
+		return nil, errors.ToGRPCError(errors.InvalidArgument("item_id is required"))
 	}
 	if req.Slot == dnd5ev1alpha1.EquipmentSlot_EQUIPMENT_SLOT_UNSPECIFIED {
-		return nil, errors.InvalidArgument("slot is required")
+		return nil, errors.ToGRPCError(errors.InvalidArgument("slot is required"))
 	}
 
 	input := &character.EquipItemInput{
@@ -2532,7 +2532,7 @@ func (h *Handler) EquipItem(
 
 	output, err := h.characterService.EquipItem(ctx, input)
 	if err != nil {
-		return nil, err
+		return nil, errors.ToGRPCError(err)
 	}
 
 	response := &dnd5ev1alpha1.EquipItemResponse{
@@ -2552,10 +2552,10 @@ func (h *Handler) UnequipItem(
 	req *dnd5ev1alpha1.UnequipItemRequest,
 ) (*dnd5ev1alpha1.UnequipItemResponse, error) {
 	if req.CharacterId == "" {
-		return nil, errors.InvalidArgument("character_id is required")
+		return nil, errors.ToGRPCError(errors.InvalidArgument("character_id is required"))
 	}
 	if req.Slot == dnd5ev1alpha1.EquipmentSlot_EQUIPMENT_SLOT_UNSPECIFIED {
-		return nil, errors.InvalidArgument("slot is required")
+		return nil, errors.ToGRPCError(errors.InvalidArgument("slot is required"))
 	}
 
 	input := &character.UnequipItemInput{
@@ -2565,7 +2565,7 @@ func (h *Handler) UnequipItem(
 
 	output, err := h.characterService.UnequipItem(ctx, input)
 	if err != nil {
-		return nil, err
+		return nil, errors.ToGRPCError(err)
 	}
 
 	return &dnd5ev1alpha1.UnequipItemResponse{
@@ -2579,19 +2579,19 @@ func (h *Handler) AddToInventory(
 	req *dnd5ev1alpha1.AddToInventoryRequest,
 ) (*dnd5ev1alpha1.AddToInventoryResponse, error) {
 	if req.CharacterId == "" {
-		return nil, errors.InvalidArgument("character_id is required")
+		return nil, errors.ToGRPCError(errors.InvalidArgument("character_id is required"))
 	}
 	if len(req.Items) == 0 {
-		return nil, errors.InvalidArgument("at least one item is required")
+		return nil, errors.ToGRPCError(errors.InvalidArgument("at least one item is required"))
 	}
 
 	additions := make([]character.InventoryAddition, 0, len(req.Items))
 	for _, item := range req.Items {
 		if item.ItemId == "" {
-			return nil, errors.InvalidArgument("item_id is required for all items")
+			return nil, errors.ToGRPCError(errors.InvalidArgument("item_id is required for all items"))
 		}
 		if item.Quantity < 1 {
-			return nil, errors.InvalidArgument("quantity must be at least 1")
+			return nil, errors.ToGRPCError(errors.InvalidArgument("quantity must be at least 1"))
 		}
 		additions = append(additions, character.InventoryAddition{
 			Item: &dnd5e.InventoryItem{
@@ -2609,7 +2609,7 @@ func (h *Handler) AddToInventory(
 
 	output, err := h.characterService.AddToInventory(ctx, input)
 	if err != nil {
-		return nil, err
+		return nil, errors.ToGRPCError(err)
 	}
 
 	return &dnd5ev1alpha1.AddToInventoryResponse{
@@ -2624,10 +2624,10 @@ func (h *Handler) RemoveFromInventory(
 	req *dnd5ev1alpha1.RemoveFromInventoryRequest,
 ) (*dnd5ev1alpha1.RemoveFromInventoryResponse, error) {
 	if req.CharacterId == "" {
-		return nil, errors.InvalidArgument("character_id is required")
+		return nil, errors.ToGRPCError(errors.InvalidArgument("character_id is required"))
 	}
 	if req.ItemId == "" {
-		return nil, errors.InvalidArgument("item_id is required")
+		return nil, errors.ToGRPCError(errors.InvalidArgument("item_id is required"))
 	}
 
 	input := &character.RemoveFromInventoryInput{
@@ -2639,7 +2639,7 @@ func (h *Handler) RemoveFromInventory(
 	switch removal := req.RemovalAmount.(type) {
 	case *dnd5ev1alpha1.RemoveFromInventoryRequest_Quantity:
 		if removal.Quantity < 1 {
-			return nil, errors.InvalidArgument("quantity must be at least 1")
+			return nil, errors.ToGRPCError(errors.InvalidArgument("quantity must be at least 1"))
 		}
 		input.Quantity = removal.Quantity
 		input.RemoveAll = false
@@ -2647,12 +2647,12 @@ func (h *Handler) RemoveFromInventory(
 		input.RemoveAll = removal.RemoveAll
 		input.Quantity = 0
 	default:
-		return nil, errors.InvalidArgument("either quantity or remove_all must be specified")
+		return nil, errors.ToGRPCError(errors.InvalidArgument("either quantity or remove_all must be specified"))
 	}
 
 	output, err := h.characterService.RemoveFromInventory(ctx, input)
 	if err != nil {
-		return nil, err
+		return nil, errors.ToGRPCError(err)
 	}
 
 	return &dnd5ev1alpha1.RemoveFromInventoryResponse{
