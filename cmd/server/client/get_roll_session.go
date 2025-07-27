@@ -7,7 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	apiv1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/clients/api/v1alpha1"
+	apiv1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/api/v1alpha1"
 )
 
 // getRollSessionCmd is currently unused but kept for future implementation

@@ -3,10 +3,11 @@ module github.com/KirkDiggler/rpg-api
 go 1.24.1
 
 require (
-	github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20250722012926-55f3934a9073
+	github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20250726205324-8ce526c38cea
 	github.com/KirkDiggler/rpg-toolkit/core v0.1.0
 	github.com/KirkDiggler/rpg-toolkit/dice v0.1.0
 	github.com/KirkDiggler/rpg-toolkit/events v0.1.1
+	github.com/KirkDiggler/rpg-toolkit/items v0.0.0-20250727132234-b7e176bacb0e
 	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.0.0-20250724235015-cd6de63346a5
 	github.com/alicebob/miniredis/v2 v2.35.0
 	github.com/fadedpez/dnd5e-api v0.0.0-20250718061244-10d9388d279a
@@ -16,7 +17,7 @@ require (
 	github.com/spf13/cobra v1.9.1
 	github.com/stretchr/testify v1.10.0
 	go.uber.org/mock v0.5.2
-	google.golang.org/grpc v1.74.0
+	google.golang.org/grpc v1.74.2
 	google.golang.org/protobuf v1.36.6
 )
 

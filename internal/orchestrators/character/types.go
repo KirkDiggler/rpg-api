@@ -395,3 +395,79 @@ type AbilityScoreRoll struct {
 	Dropped     []int32
 	Notation    string
 }
+
+// Equipment management types
+
+// InventoryAddition represents an item to add to inventory
+type InventoryAddition struct {
+	Item   *dnd5e.InventoryItem
+	Source string // Where the item came from (quest, purchase, etc.)
+}
+
+// GetInventoryInput defines the request for getting character inventory
+type GetInventoryInput struct {
+	CharacterID string
+}
+
+// GetInventoryOutput defines the response for getting character inventory
+type GetInventoryOutput struct {
+	EquipmentSlots      *dnd5e.EquipmentSlots
+	Inventory           []dnd5e.InventoryItem
+	Encumbrance         *dnd5e.EncumbranceInfo
+	AttunementSlotsUsed int32
+	AttunementSlotsMax  int32
+}
+
+// EquipItemInput defines the request for equipping an item
+type EquipItemInput struct {
+	CharacterID string
+	ItemID      string
+	Slot        string
+}
+
+// EquipItemOutput defines the response for equipping an item
+type EquipItemOutput struct {
+	Success                bool
+	Character              *dnd5e.Character
+	PreviouslyEquippedItem *dnd5e.InventoryItem
+}
+
+// UnequipItemInput defines the request for unequipping an item
+type UnequipItemInput struct {
+	CharacterID string
+	Slot        string
+}
+
+// UnequipItemOutput defines the response for unequipping an item
+type UnequipItemOutput struct {
+	Success   bool
+	Character *dnd5e.Character
+}
+
+// AddToInventoryInput defines the request for adding item to inventory
+type AddToInventoryInput struct {
+	CharacterID string
+	Items       []InventoryAddition
+}
+
+// AddToInventoryOutput defines the response for adding item to inventory
+type AddToInventoryOutput struct {
+	Success   bool
+	Character *dnd5e.Character
+	Errors    []string
+}
+
+// RemoveFromInventoryInput defines the request for removing item from inventory
+type RemoveFromInventoryInput struct {
+	CharacterID string
+	ItemID      string
+	Quantity    int32
+	RemoveAll   bool
+}
+
+// RemoveFromInventoryOutput defines the response for removing item from inventory
+type RemoveFromInventoryOutput struct {
+	Success         bool
+	Character       *dnd5e.Character
+	QuantityRemoved int32
+}

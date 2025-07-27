@@ -70,6 +70,13 @@ type Service interface {
 
 	// Dice rolling for ability scores
 	RollAbilityScores(ctx context.Context, input *RollAbilityScoresInput) (*RollAbilityScoresOutput, error)
+
+	// Equipment management
+	GetInventory(ctx context.Context, input *GetInventoryInput) (*GetInventoryOutput, error)
+	EquipItem(ctx context.Context, input *EquipItemInput) (*EquipItemOutput, error)
+	UnequipItem(ctx context.Context, input *UnequipItemInput) (*UnequipItemOutput, error)
+	AddToInventory(ctx context.Context, input *AddToInventoryInput) (*AddToInventoryOutput, error)
+	RemoveFromInventory(ctx context.Context, input *RemoveFromInventoryInput) (*RemoveFromInventoryOutput, error)
 }
 
 // Config holds the dependencies for the character orchestrator
@@ -2832,4 +2839,98 @@ func (o *Orchestrator) convertDraftDataToCharacterDraft(ctx context.Context, dat
 	}
 
 	return draft, nil
+}
+
+// GetInventory retrieves a character's equipment and inventory
+func (o *Orchestrator) GetInventory(_ context.Context, input *GetInventoryInput) (*GetInventoryOutput, error) {
+	if input == nil {
+		return nil, errors.InvalidArgument("input is required")
+	}
+	if input.CharacterID == "" {
+		return nil, errors.InvalidArgument("character ID is required")
+	}
+
+	// For now, return empty inventory since equipment is not yet stored in character data
+	// TODO(#134): Implement equipment storage in character repository
+	return &GetInventoryOutput{
+		EquipmentSlots:      &dnd5e.EquipmentSlots{},
+		Inventory:           []dnd5e.InventoryItem{},
+		Encumbrance:         &dnd5e.EncumbranceInfo{},
+		AttunementSlotsUsed: 0,
+		AttunementSlotsMax:  3, // D&D 5e default
+	}, nil
+}
+
+// EquipItem equips an item from inventory to a specific slot
+func (o *Orchestrator) EquipItem(_ context.Context, input *EquipItemInput) (*EquipItemOutput, error) {
+	if input == nil {
+		return nil, errors.InvalidArgument("input is required")
+	}
+	if input.CharacterID == "" {
+		return nil, errors.InvalidArgument("character ID is required")
+	}
+	if input.ItemID == "" {
+		return nil, errors.InvalidArgument("item ID is required")
+	}
+	if input.Slot == "" {
+		return nil, errors.InvalidArgument("slot is required")
+	}
+
+	// TODO(#134): Implement equipment storage in character repository
+	// For now, return an error since we can't modify equipment
+	return nil, errors.Unimplemented("equipment management not yet implemented")
+}
+
+// UnequipItem unequips an item from a specific slot
+func (o *Orchestrator) UnequipItem(_ context.Context, input *UnequipItemInput) (*UnequipItemOutput, error) {
+	if input == nil {
+		return nil, errors.InvalidArgument("input is required")
+	}
+	if input.CharacterID == "" {
+		return nil, errors.InvalidArgument("character ID is required")
+	}
+	if input.Slot == "" {
+		return nil, errors.InvalidArgument("slot is required")
+	}
+
+	// TODO(#134): Implement equipment storage in character repository
+	// For now, return an error since we can't modify equipment
+	return nil, errors.Unimplemented("equipment management not yet implemented")
+}
+
+// AddToInventory adds an item to the character's inventory
+func (o *Orchestrator) AddToInventory(_ context.Context, input *AddToInventoryInput) (*AddToInventoryOutput, error) {
+	if input == nil {
+		return nil, errors.InvalidArgument("input is required")
+	}
+	if input.CharacterID == "" {
+		return nil, errors.InvalidArgument("character ID is required")
+	}
+	if len(input.Items) == 0 {
+		return nil, errors.InvalidArgument("at least one item is required")
+	}
+
+	// TODO(#134): Implement equipment storage in character repository
+	// For now, return an error since we can't modify equipment
+	return nil, errors.Unimplemented("equipment management not yet implemented")
+}
+
+// RemoveFromInventory removes an item from the character's inventory
+func (o *Orchestrator) RemoveFromInventory(
+	_ context.Context,
+	input *RemoveFromInventoryInput,
+) (*RemoveFromInventoryOutput, error) {
+	if input == nil {
+		return nil, errors.InvalidArgument("input is required")
+	}
+	if input.CharacterID == "" {
+		return nil, errors.InvalidArgument("character ID is required")
+	}
+	if input.ItemID == "" {
+		return nil, errors.InvalidArgument("item ID is required")
+	}
+
+	// TODO(#134): Implement equipment storage in character repository
+	// For now, return an error since we can't modify equipment
+	return nil, errors.Unimplemented("equipment management not yet implemented")
 }

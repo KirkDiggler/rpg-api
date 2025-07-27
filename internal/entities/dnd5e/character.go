@@ -22,6 +22,166 @@ type Character struct {
 	PlayerID         string
 	CreatedAt        int64
 	UpdatedAt        int64
+
+	// Equipment and inventory
+	EquipmentSlots *EquipmentSlots  // Equipped items by slot
+	Inventory      []InventoryItem  // Unequipped items
+	Encumbrance    *EncumbranceInfo // Weight and carrying capacity
+}
+
+// GetEquippedItem returns the item in the specified equipment slot
+func (c *Character) GetEquippedItem(slot string) *InventoryItem {
+	if c.EquipmentSlots == nil {
+		return nil
+	}
+
+	switch slot {
+	case EquipmentSlotMainHand:
+		return c.EquipmentSlots.MainHand
+	case EquipmentSlotOffHand:
+		return c.EquipmentSlots.OffHand
+	case EquipmentSlotArmor:
+		return c.EquipmentSlots.Armor
+	case EquipmentSlotHelmet:
+		return c.EquipmentSlots.Helmet
+	case EquipmentSlotBoots:
+		return c.EquipmentSlots.Boots
+	case EquipmentSlotGloves:
+		return c.EquipmentSlots.Gloves
+	case EquipmentSlotCloak:
+		return c.EquipmentSlots.Cloak
+	case EquipmentSlotAmulet:
+		return c.EquipmentSlots.Amulet
+	case EquipmentSlotRing1:
+		return c.EquipmentSlots.Ring1
+	case EquipmentSlotRing2:
+		return c.EquipmentSlots.Ring2
+	case EquipmentSlotBelt:
+		return c.EquipmentSlots.Belt
+	default:
+		return nil
+	}
+}
+
+// SetEquippedItem sets the item in the specified equipment slot
+func (c *Character) SetEquippedItem(slot string, item *InventoryItem) {
+	if c.EquipmentSlots == nil {
+		c.EquipmentSlots = &EquipmentSlots{}
+	}
+
+	switch slot {
+	case EquipmentSlotMainHand:
+		c.EquipmentSlots.MainHand = item
+	case EquipmentSlotOffHand:
+		c.EquipmentSlots.OffHand = item
+	case EquipmentSlotArmor:
+		c.EquipmentSlots.Armor = item
+	case EquipmentSlotHelmet:
+		c.EquipmentSlots.Helmet = item
+	case EquipmentSlotBoots:
+		c.EquipmentSlots.Boots = item
+	case EquipmentSlotGloves:
+		c.EquipmentSlots.Gloves = item
+	case EquipmentSlotCloak:
+		c.EquipmentSlots.Cloak = item
+	case EquipmentSlotAmulet:
+		c.EquipmentSlots.Amulet = item
+	case EquipmentSlotRing1:
+		c.EquipmentSlots.Ring1 = item
+	case EquipmentSlotRing2:
+		c.EquipmentSlots.Ring2 = item
+	case EquipmentSlotBelt:
+		c.EquipmentSlots.Belt = item
+	}
+}
+
+// FindInventoryItem finds an item in the character's inventory by item ID
+// Returns a copy of the item and whether it was found
+func (c *Character) FindInventoryItem(itemID string) (InventoryItem, bool) {
+	for i := range c.Inventory {
+		if c.Inventory[i].ItemID == itemID {
+			return c.Inventory[i], true
+		}
+	}
+	return InventoryItem{}, false
+}
+
+// FindInventoryItemIndex finds an item in the character's inventory by item ID
+// Returns the index and whether it was found
+func (c *Character) FindInventoryItemIndex(itemID string) (int, bool) {
+	for i := range c.Inventory {
+		if c.Inventory[i].ItemID == itemID {
+			return i, true
+		}
+	}
+	return -1, false
+}
+
+// RemoveInventoryItem removes an item from inventory by item ID
+// Returns the removed item and whether it was found
+func (c *Character) RemoveInventoryItem(itemID string) (*InventoryItem, bool) {
+	for i := range c.Inventory {
+		if c.Inventory[i].ItemID == itemID {
+			item := c.Inventory[i]
+			// Remove from slice
+			c.Inventory = append(c.Inventory[:i], c.Inventory[i+1:]...)
+			return &item, true
+		}
+	}
+	return nil, false
+}
+
+// AddInventoryItem adds an item to the character's inventory
+// If the item is stackable and already exists, it increases the quantity
+func (c *Character) AddInventoryItem(item InventoryItem) {
+	// Check if item already exists and is stackable
+	for i := range c.Inventory {
+		if c.Inventory[i].ItemID == item.ItemID &&
+			c.Inventory[i].Equipment != nil &&
+			c.Inventory[i].Equipment.Stackable {
+			c.Inventory[i].Quantity += item.Quantity
+			return
+		}
+	}
+	// Add as new item
+	c.Inventory = append(c.Inventory, item)
+}
+
+// CountAttunedItems returns the number of items currently attuned
+func (c *Character) CountAttunedItems() int {
+	count := 0
+
+	// Check equipped items
+	if c.EquipmentSlots != nil {
+		slots := []*InventoryItem{
+			c.EquipmentSlots.MainHand,
+			c.EquipmentSlots.OffHand,
+			c.EquipmentSlots.Armor,
+			c.EquipmentSlots.Helmet,
+			c.EquipmentSlots.Boots,
+			c.EquipmentSlots.Gloves,
+			c.EquipmentSlots.Cloak,
+			c.EquipmentSlots.Amulet,
+			c.EquipmentSlots.Ring1,
+			c.EquipmentSlots.Ring2,
+			c.EquipmentSlots.Belt,
+		}
+
+		for _, item := range slots {
+			if item != nil && item.IsAttuned {
+				count++
+			}
+		}
+	}
+
+	// Check inventory items (in case some attuned items are unequipped)
+	for _, item := range c.Inventory {
+		if item.IsAttuned {
+			count++
+		}
+	}
+
+	return count
 }
 
 // CharacterDraft represents a character in creation with hydrated info
@@ -519,6 +679,130 @@ type EquipmentInfo struct {
 	Description string
 	Properties  []string // For weapons: "light", "finesse", etc.
 }
+
+// EquipmentSlots represents the equipment slots for a character
+type EquipmentSlots struct {
+	// Combat equipment
+	MainHand *InventoryItem
+	OffHand  *InventoryItem
+
+	// Armor slots
+	Armor  *InventoryItem
+	Helmet *InventoryItem
+	Boots  *InventoryItem
+	Gloves *InventoryItem
+	Cloak  *InventoryItem
+
+	// Accessory slots
+	Amulet *InventoryItem
+	Ring1  *InventoryItem
+	Ring2  *InventoryItem
+	Belt   *InventoryItem
+}
+
+// InventoryItem represents an item in inventory (equipped or not)
+type InventoryItem struct {
+	ItemID     string         // Reference to equipment ID
+	Quantity   int32          // For stackable items
+	IsAttuned  bool           // For magic items requiring attunement
+	CustomName string         // Optional custom name (e.g., "My Lucky Sword")
+	Equipment  *EquipmentData // Denormalized equipment data for quick access
+}
+
+// EquipmentData contains the essential equipment information
+// This is a simplified version of the full Equipment proto for storage
+type EquipmentData struct {
+	ID         string
+	Name       string
+	Type       string // "weapon", "armor", "gear", etc.
+	Category   string // "simple-weapon", "martial-weapon", "light-armor", etc.
+	Weight     int32  // Weight in tenths of pounds (for 0.1 lb precision)
+	Properties []string
+	Stackable  bool // Whether this item can stack (e.g., arrows, potions)
+
+	// Type-specific data
+	WeaponData *WeaponData
+	ArmorData  *ArmorData
+	GearData   *GearData
+}
+
+// WeaponData contains weapon-specific information
+type WeaponData struct {
+	WeaponCategory string   // "simple", "martial"
+	DamageDice     string   // "1d6", "1d8", etc.
+	DamageType     string   // "slashing", "piercing", etc.
+	Properties     []string // "light", "finesse", etc.
+	Range          string   // "melee", "ranged"
+	NormalRange    int32    // Range in feet for ranged weapons
+	LongRange      int32    // Long range in feet for ranged weapons
+}
+
+// ArmorData contains armor-specific information
+type ArmorData struct {
+	ArmorCategory       string // "light", "medium", "heavy", "shield"
+	BaseAC              int32
+	DexBonus            bool
+	HasDexLimit         bool  // Indicates if MaxDexBonus is applicable
+	MaxDexBonus         int32 // Maximum Dexterity bonus to AC
+	StrMinimum          int32
+	StealthDisadvantage bool
+}
+
+// GearData contains general gear information
+type GearData struct {
+	GearCategory       string // "adventuring-gear", "tools", etc.
+	Properties         []string
+	CostInCopper       int32 // Cost in copper pieces (100 cp = 1 gp)
+	RequiresAttunement bool  // Whether this item requires attunement
+}
+
+// EncumbranceInfo tracks weight and carrying capacity
+type EncumbranceInfo struct {
+	CurrentWeight    int32            // Total weight carried (in tenths of pounds)
+	CarryingCapacity int32            // Max weight before encumbered (in tenths of pounds)
+	MaxCapacity      int32            // Max weight before immobilized (in tenths of pounds)
+	Level            EncumbranceLevel // Current encumbrance level
+}
+
+// EncumbranceLevel represents different levels of encumbrance
+type EncumbranceLevel string
+
+const (
+	// EncumbranceLevelUnencumbered means under carrying capacity
+	EncumbranceLevelUnencumbered EncumbranceLevel = "unencumbered"
+	// EncumbranceLevelEncumbered means speed reduced by 10 feet
+	EncumbranceLevelEncumbered EncumbranceLevel = "encumbered"
+	// EncumbranceLevelHeavilyEncumbered means speed reduced by 20 feet, disadvantage on ability checks
+	EncumbranceLevelHeavilyEncumbered EncumbranceLevel = "heavily_encumbered"
+	// EncumbranceLevelImmobilized means cannot move
+	EncumbranceLevelImmobilized EncumbranceLevel = "immobilized"
+)
+
+// Equipment slot type constants
+const (
+	// EquipmentSlotMainHand is the main hand slot
+	EquipmentSlotMainHand = "main_hand"
+	// EquipmentSlotOffHand is the off hand slot
+	EquipmentSlotOffHand = "off_hand"
+	// EquipmentSlotArmor is the armor slot
+	EquipmentSlotArmor = "armor"
+	// EquipmentSlotHelmet is the helmet slot
+	EquipmentSlotHelmet = "helmet"
+	// EquipmentSlotBoots is the boots slot
+	EquipmentSlotBoots = "boots"
+	// EquipmentSlotGloves is the gloves slot
+	EquipmentSlotGloves = "gloves"
+	// EquipmentSlotCloak is the cloak slot
+	EquipmentSlotCloak = "cloak"
+	// EquipmentSlotAmulet is the amulet slot
+	EquipmentSlotAmulet = "amulet"
+	// EquipmentSlotRing1 is the first ring slot
+	EquipmentSlotRing1 = "ring_1"
+	// EquipmentSlotRing2 is the second ring slot
+	EquipmentSlotRing2 = "ring_2"
+	// EquipmentSlotBelt is the belt slot
+	EquipmentSlotBelt = "belt"
+)
 
 // TODO(#46): Separate CharacterDraft into data and presentation models.
 // Add ToData() method to convert for repository storage
