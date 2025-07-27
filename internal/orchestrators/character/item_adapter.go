@@ -69,8 +69,12 @@ func (a *ItemAdapter) GetValue() int {
 	if a.equipmentData == nil {
 		return 0
 	}
-	// For now, return 0 as Cost is a string ("2 gp", etc.) and needs parsing
-	// TODO(#45): Parse cost string to extract numeric value
+	// If we have gear data with cost in copper, convert to gold
+	if a.equipmentData.GearData != nil && a.equipmentData.GearData.CostInCopper > 0 {
+		// Convert copper to gold (100 cp = 1 gp)
+		return int(a.equipmentData.GearData.CostInCopper / 100)
+	}
+	// Return 0 if no cost data is available
 	return 0
 }
 
@@ -159,8 +163,20 @@ func (a *ItemAdapter) IsAttunable() bool {
 	if a.equipmentData == nil {
 		return false
 	}
-	// TODO(#45): Add RequiresAttunement field to EquipmentData
-	// For now, return false as the field doesn't exist
+	// Check if gear data indicates attunement requirement
+	if a.equipmentData.GearData != nil {
+		return a.equipmentData.GearData.RequiresAttunement
+	}
+	// For weapons and armor, check if they have magical properties
+	// that might require attunement (this is a simplified check)
+	if a.equipmentData.WeaponData != nil || a.equipmentData.ArmorData != nil {
+		// Check if any property suggests magic item requiring attunement
+		for _, prop := range a.equipmentData.Properties {
+			if prop == "requires-attunement" || prop == "magic" {
+				return true
+			}
+		}
+	}
 	return false
 }
 

@@ -2389,10 +2389,10 @@ func mapEquipmentDataToProto(data *dnd5e.EquipmentData) *dnd5ev1alpha1.Equipment
 		Category:    data.Category,
 		Description: "", // Not stored in entity
 		Weight: &dnd5ev1alpha1.Weight{
-			Quantity: data.Weight,
-			Unit:     "lb", // Always stored as tenths of pounds
+			Quantity: float32(data.Weight) / 10.0, // Convert from tenths of pounds to pounds
+			Unit:     "lb",
 		},
-		Cost: &dnd5ev1alpha1.Cost{}, // Not stored in entity
+		Cost: nil, // Cost data is not stored in the entity
 	}
 
 	// Map type-specific data
