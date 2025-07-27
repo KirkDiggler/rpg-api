@@ -132,7 +132,7 @@ func (a *ItemAdapter) GetValidSlots() []string {
 
 	if a.equipmentData.ArmorData != nil {
 		// Armor goes in armor slot, shields in off hand
-		if a.equipmentData.ArmorData.ArmorCategory == "shield" {
+		if a.equipmentData.ArmorData.ArmorCategory == dnd5e.ArmorCategoryShield {
 			return []string{dnd5e.EquipmentSlotOffHand}
 		}
 		return []string{dnd5e.EquipmentSlotArmor}
@@ -172,7 +172,7 @@ func (a *ItemAdapter) IsAttunable() bool {
 	if a.equipmentData.WeaponData != nil || a.equipmentData.ArmorData != nil {
 		// Check if any property suggests magic item requiring attunement
 		for _, prop := range a.equipmentData.Properties {
-			if prop == "requires-attunement" || prop == "magic" {
+			if prop == dnd5e.WeaponPropertyRequiresAttunement || prop == dnd5e.WeaponPropertyMagic {
 				return true
 			}
 		}
@@ -235,10 +235,10 @@ func (a *ItemAdapter) GetWeaponProficiency() string {
 	}
 	// Map weapon categories to proficiency types
 	switch a.equipmentData.WeaponData.WeaponCategory {
-	case "simple":
-		return "simple_weapons"
-	case "martial":
-		return "martial_weapons"
+	case dnd5e.WeaponCategorySimple:
+		return dnd5e.ProficiencySimpleWeapons
+	case dnd5e.WeaponCategoryMartial:
+		return dnd5e.ProficiencyMartialWeapons
 	default:
 		// Specific weapon proficiency
 		return a.GetID()
@@ -252,7 +252,7 @@ func (a *ItemAdapter) IsTwoHanded() bool {
 	}
 	// Check if "two-handed" is in the properties
 	for _, prop := range a.equipmentData.WeaponData.Properties {
-		if prop == "two-handed" {
+		if prop == dnd5e.WeaponPropertyTwoHanded {
 			return true
 		}
 	}
@@ -266,7 +266,7 @@ func (a *ItemAdapter) IsVersatile() bool {
 	}
 	// Check if "versatile" is in the properties
 	for _, prop := range a.equipmentData.WeaponData.Properties {
-		if prop == "versatile" {
+		if prop == dnd5e.WeaponPropertyVersatile {
 			return true
 		}
 	}
@@ -280,7 +280,7 @@ func (a *ItemAdapter) IsFinesse() bool {
 	}
 	// Check if "finesse" is in the properties
 	for _, prop := range a.equipmentData.WeaponData.Properties {
-		if prop == "finesse" {
+		if prop == dnd5e.WeaponPropertyFinesse {
 			return true
 		}
 	}
@@ -334,14 +334,14 @@ func (a *ItemAdapter) GetArmorProficiency() string {
 	}
 	// Map armor types to proficiency types
 	switch a.equipmentData.ArmorData.ArmorCategory {
-	case "light":
-		return "light_armor"
-	case "medium":
-		return "medium_armor"
-	case "heavy":
-		return "heavy_armor"
-	case "shield":
-		return "shields"
+	case dnd5e.ArmorCategoryLight:
+		return dnd5e.ProficiencyLightArmor
+	case dnd5e.ArmorCategoryMedium:
+		return dnd5e.ProficiencyMediumArmor
+	case dnd5e.ArmorCategoryHeavy:
+		return dnd5e.ProficiencyHeavyArmor
+	case dnd5e.ArmorCategoryShield:
+		return dnd5e.ProficiencyShields
 	default:
 		return a.equipmentData.ArmorData.ArmorCategory
 	}
