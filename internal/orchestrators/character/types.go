@@ -1,6 +1,10 @@
 package character
 
-import "github.com/KirkDiggler/rpg-api/internal/entities/dnd5e"
+import (
+	"github.com/KirkDiggler/rpg-api/internal/entities/dnd5e"
+	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
+)
 
 // Draft lifecycle types
 
@@ -8,12 +12,12 @@ import "github.com/KirkDiggler/rpg-api/internal/entities/dnd5e"
 type CreateDraftInput struct {
 	PlayerID    string
 	SessionID   string // Optional
-	InitialData *dnd5e.CharacterDraft
+	InitialData *toolkitchar.DraftData
 }
 
 // CreateDraftOutput defines the response for creating a draft
 type CreateDraftOutput struct {
-	Draft *dnd5e.CharacterDraft
+	Draft *toolkitchar.Draft
 }
 
 // GetDraftInput defines the request for getting a draft
@@ -23,7 +27,7 @@ type GetDraftInput struct {
 
 // GetDraftOutput defines the response for getting a draft
 type GetDraftOutput struct {
-	Draft *dnd5e.CharacterDraft
+	Draft *toolkitchar.Draft
 }
 
 // ListDraftsInput defines the request for listing drafts
@@ -36,7 +40,7 @@ type ListDraftsInput struct {
 
 // ListDraftsOutput defines the response for listing drafts
 type ListDraftsOutput struct {
-	Drafts        []*dnd5e.CharacterDraft
+	Drafts        []*toolkitchar.Draft
 	NextPageToken string
 }
 
@@ -60,7 +64,7 @@ type UpdateNameInput struct {
 
 // UpdateNameOutput defines the response for updating a draft's name
 type UpdateNameOutput struct {
-	Draft    *dnd5e.CharacterDraft
+	Draft    *toolkitchar.Draft
 	Warnings []ValidationWarning
 }
 
@@ -68,13 +72,13 @@ type UpdateNameOutput struct {
 type UpdateRaceInput struct {
 	DraftID   string
 	RaceID    string
-	SubraceID string                  // Optional
-	Choices   []dnd5e.ChoiceSelection // Race-specific choices
+	SubraceID string   // Optional
+	Choices   []string // Race-specific choices (e.g., skill IDs, language IDs)
 }
 
 // UpdateRaceOutput defines the response for updating a draft's race
 type UpdateRaceOutput struct {
-	Draft    *dnd5e.CharacterDraft
+	Draft    *toolkitchar.Draft
 	Warnings []ValidationWarning
 }
 
@@ -82,12 +86,12 @@ type UpdateRaceOutput struct {
 type UpdateClassInput struct {
 	DraftID string
 	ClassID string
-	Choices []dnd5e.ChoiceSelection // Class-specific choices
+	Choices []string // Class-specific choices (e.g., skill IDs, fighting style)
 }
 
 // UpdateClassOutput defines the response for updating a draft's class
 type UpdateClassOutput struct {
-	Draft    *dnd5e.CharacterDraft
+	Draft    *toolkitchar.Draft
 	Warnings []ValidationWarning
 }
 
@@ -95,24 +99,24 @@ type UpdateClassOutput struct {
 type UpdateBackgroundInput struct {
 	DraftID      string
 	BackgroundID string
-	Choices      []dnd5e.ChoiceSelection // Background-specific choices
+	Choices      []string // Background-specific choices (e.g., languages, tools)
 }
 
 // UpdateBackgroundOutput defines the response for updating a draft's background
 type UpdateBackgroundOutput struct {
-	Draft    *dnd5e.CharacterDraft
+	Draft    *toolkitchar.Draft
 	Warnings []ValidationWarning
 }
 
 // UpdateAbilityScoresInput defines the request for updating a draft's ability scores
 type UpdateAbilityScoresInput struct {
 	DraftID       string
-	AbilityScores dnd5e.AbilityScores
+	AbilityScores shared.AbilityScores
 }
 
 // UpdateAbilityScoresOutput defines the response for updating a draft's ability scores
 type UpdateAbilityScoresOutput struct {
-	Draft    *dnd5e.CharacterDraft
+	Draft    *toolkitchar.Draft
 	Warnings []ValidationWarning
 }
 
@@ -124,7 +128,7 @@ type UpdateSkillsInput struct {
 
 // UpdateSkillsOutput defines the response for updating a draft's skills
 type UpdateSkillsOutput struct {
-	Draft    *dnd5e.CharacterDraft
+	Draft    *toolkitchar.Draft
 	Warnings []ValidationWarning
 }
 
@@ -167,8 +171,8 @@ type FinalizeDraftInput struct {
 
 // FinalizeDraftOutput defines the response for finalizing a draft
 type FinalizeDraftOutput struct {
-	Character    *dnd5e.Character
-	DraftDeleted bool
+	CharacterData *toolkitchar.Data
+	DraftDeleted  bool
 }
 
 // Character operation types
@@ -180,7 +184,7 @@ type GetCharacterInput struct {
 
 // GetCharacterOutput defines the response for getting a character
 type GetCharacterOutput struct {
-	Character *dnd5e.Character
+	Character *toolkitchar.Character
 }
 
 // ListCharactersInput defines the request for listing characters
@@ -193,7 +197,7 @@ type ListCharactersInput struct {
 
 // ListCharactersOutput defines the response for listing characters
 type ListCharactersOutput struct {
-	Characters    []*dnd5e.Character
+	Characters    []*toolkitchar.Character
 	NextPageToken string
 	TotalSize     int32
 }
@@ -317,12 +321,13 @@ type ListEquipmentByTypeOutput struct {
 // UpdateChoicesInput defines the request for updating character choices
 type UpdateChoicesInput struct {
 	DraftID    string
-	Selections []*dnd5e.ChoiceSelection
+	ChoiceType string   // Type of choice (e.g., "fighting_style", "cantrips", "spells")
+	Selections []string // Selected item IDs
 }
 
 // UpdateChoicesOutput defines the response for updating character choices
 type UpdateChoicesOutput struct {
-	Draft *dnd5e.CharacterDraft
+	Draft *toolkitchar.Draft
 }
 
 // ListChoiceOptionsInput defines the request for listing available choice options

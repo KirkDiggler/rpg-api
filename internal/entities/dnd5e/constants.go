@@ -1,5 +1,7 @@
 package dnd5e
 
+import "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/constants"
+
 // Race constants
 const (
 	RaceHuman      = "RACE_HUMAN"
@@ -72,14 +74,14 @@ const (
 	AlignmentChaoticEvil    = "ALIGNMENT_CHAOTIC_EVIL"
 )
 
-// Ability constants
+// Ability constants - use toolkit constants directly
 const (
-	AbilityStrength     = "ABILITY_STRENGTH"
-	AbilityDexterity    = "ABILITY_DEXTERITY"
-	AbilityConstitution = "ABILITY_CONSTITUTION"
-	AbilityIntelligence = "ABILITY_INTELLIGENCE"
-	AbilityWisdom       = "ABILITY_WISDOM"
-	AbilityCharisma     = "ABILITY_CHARISMA"
+	AbilityStrength     = string(constants.STR) // "str"
+	AbilityDexterity    = string(constants.DEX) // "dex"
+	AbilityConstitution = string(constants.CON) // "con"
+	AbilityIntelligence = string(constants.INT) // "int"
+	AbilityWisdom       = string(constants.WIS) // "wis"
+	AbilityCharisma     = string(constants.CHA) // "cha"
 )
 
 // Ability score map keys for JSON serialization
@@ -92,46 +94,46 @@ const (
 	AbilityKeyCharisma     = "Charisma"
 )
 
-// Skill constants
+// Skill constants - use toolkit constants directly
 const (
-	SkillAcrobatics     = "SKILL_ACROBATICS"
-	SkillAnimalHandling = "SKILL_ANIMAL_HANDLING"
-	SkillArcana         = "SKILL_ARCANA"
-	SkillAthletics      = "SKILL_ATHLETICS"
-	SkillDeception      = "SKILL_DECEPTION"
-	SkillHistory        = "SKILL_HISTORY"
-	SkillInsight        = "SKILL_INSIGHT"
-	SkillIntimidation   = "SKILL_INTIMIDATION"
-	SkillInvestigation  = "SKILL_INVESTIGATION"
-	SkillMedicine       = "SKILL_MEDICINE"
-	SkillNature         = "SKILL_NATURE"
-	SkillPerception     = "SKILL_PERCEPTION"
-	SkillPerformance    = "SKILL_PERFORMANCE"
-	SkillPersuasion     = "SKILL_PERSUASION"
-	SkillReligion       = "SKILL_RELIGION"
-	SkillSleightOfHand  = "SKILL_SLEIGHT_OF_HAND"
-	SkillStealth        = "SKILL_STEALTH"
-	SkillSurvival       = "SKILL_SURVIVAL"
+	SkillAcrobatics     = string(constants.SkillAcrobatics)     // "acrobatics"
+	SkillAnimalHandling = string(constants.SkillAnimalHandling) // "animal-handling"
+	SkillArcana         = string(constants.SkillArcana)         // "arcana"
+	SkillAthletics      = string(constants.SkillAthletics)      // "athletics"
+	SkillDeception      = string(constants.SkillDeception)      // "deception"
+	SkillHistory        = string(constants.SkillHistory)        // "history"
+	SkillInsight        = string(constants.SkillInsight)        // "insight"
+	SkillIntimidation   = string(constants.SkillIntimidation)   // "intimidation"
+	SkillInvestigation  = string(constants.SkillInvestigation)  // "investigation"
+	SkillMedicine       = string(constants.SkillMedicine)       // "medicine"
+	SkillNature         = string(constants.SkillNature)         // "nature"
+	SkillPerception     = string(constants.SkillPerception)     // "perception"
+	SkillPerformance    = string(constants.SkillPerformance)    // "performance"
+	SkillPersuasion     = string(constants.SkillPersuasion)     // "persuasion"
+	SkillReligion       = string(constants.SkillReligion)       // "religion"
+	SkillSleightOfHand  = string(constants.SkillSleightOfHand)  // "sleight-of-hand"
+	SkillStealth        = string(constants.SkillStealth)        // "stealth"
+	SkillSurvival       = string(constants.SkillSurvival)       // "survival"
 )
 
-// Language constants
+// Language constants - use toolkit constants directly
 const (
-	LanguageCommon      = "LANGUAGE_COMMON"
-	LanguageDwarvish    = "LANGUAGE_DWARVISH"
-	LanguageElvish      = "LANGUAGE_ELVISH"
-	LanguageGiant       = "LANGUAGE_GIANT"
-	LanguageGnomish     = "LANGUAGE_GNOMISH"
-	LanguageGoblin      = "LANGUAGE_GOBLIN"
-	LanguageHalfling    = "LANGUAGE_HALFLING"
-	LanguageOrc         = "LANGUAGE_ORC"
-	LanguageAbyssal     = "LANGUAGE_ABYSSAL"
-	LanguageCelestial   = "LANGUAGE_CELESTIAL"
-	LanguageDraconic    = "LANGUAGE_DRACONIC"
-	LanguageDeepSpeech  = "LANGUAGE_DEEP_SPEECH"
-	LanguageInfernal    = "LANGUAGE_INFERNAL"
-	LanguagePrimordial  = "LANGUAGE_PRIMORDIAL"
-	LanguageSylvan      = "LANGUAGE_SYLVAN"
-	LanguageUndercommon = "LANGUAGE_UNDERCOMMON"
+	LanguageCommon      = string(constants.LanguageCommon)      // "common"
+	LanguageDwarvish    = string(constants.LanguageDwarvish)    // "dwarvish"
+	LanguageElvish      = string(constants.LanguageElvish)      // "elvish"
+	LanguageGiant       = string(constants.LanguageGiant)       // "giant"
+	LanguageGnomish     = string(constants.LanguageGnomish)     // "gnomish"
+	LanguageGoblin      = string(constants.LanguageGoblin)      // "goblin"
+	LanguageHalfling    = string(constants.LanguageHalfling)    // "halfling"
+	LanguageOrc         = string(constants.LanguageOrc)         // "orc"
+	LanguageAbyssal     = string(constants.LanguageAbyssal)     // "abyssal"
+	LanguageCelestial   = string(constants.LanguageCelestial)   // "celestial"
+	LanguageDraconic    = string(constants.LanguageDraconic)    // "draconic"
+	LanguageDeepSpeech  = string(constants.LanguageDeepSpeech)  // "deep speech"
+	LanguageInfernal    = string(constants.LanguageInfernal)    // "infernal"
+	LanguagePrimordial  = string(constants.LanguagePrimordial)  // "primordial"
+	LanguageSylvan      = string(constants.LanguageSylvan)      // "sylvan"
+	LanguageUndercommon = string(constants.LanguageUndercommon) // "undercommon"
 )
 
 // Creation step constants

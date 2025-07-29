@@ -147,11 +147,18 @@ func (r *redisRepository) Update(ctx context.Context, input UpdateInput) (*Updat
 	key := characterKeyPrefix + input.CharacterData.ID
 
 	// Get existing character to check indexes
-	existingOutput, err := r.Get(ctx, GetInput{ID: input.CharacterData.ID})
+	result, err := r.client.Get(ctx, key).Result()
 	if err != nil {
-		return nil, err
+		if err == redis.Nil {
+			return nil, errors.NotFoundf("character with ID %s not found", input.CharacterData.ID)
+		}
+		return nil, errors.Wrapf(err, "failed to get character")
 	}
-	existing := existingOutput.CharacterData
+
+	var existing toolkitchar.Data
+	if err := json.Unmarshal([]byte(result), &existing); err != nil {
+		return nil, errors.Wrapf(err, "failed to unmarshal existing character data")
+	}
 
 	// Marshal updated character data
 	data, err := json.Marshal(input.CharacterData)

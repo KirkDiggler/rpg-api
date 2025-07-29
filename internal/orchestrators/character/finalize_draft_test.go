@@ -16,6 +16,7 @@ import (
 	draftrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft"
 	draftrepomock "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft/mock"
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/constants"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
 )
 
@@ -179,12 +180,12 @@ func (s *FinalizeDraftTestSuite) createTestDraftData() *toolkitchar.DraftData {
 			shared.ChoiceClass:      "fighter",
 			shared.ChoiceBackground: "soldier",
 			shared.ChoiceAbilityScores: shared.AbilityScores{
-				Strength:     16,
-				Dexterity:    14,
-				Constitution: 15,
-				Intelligence: 10,
-				Wisdom:       12,
-				Charisma:     8,
+				constants.STR: 16,
+				constants.DEX: 14,
+				constants.CON: 15,
+				constants.INT: 10,
+				constants.WIS: 12,
+				constants.CHA: 8,
 			},
 			shared.ChoiceSkills: []string{"athletics", "intimidation"},
 		},
@@ -212,12 +213,12 @@ func (s *FinalizeDraftTestSuite) createTestCharacterData() *toolkitchar.Data {
 		ClassID:      "fighter",
 		BackgroundID: "soldier",
 		AbilityScores: shared.AbilityScores{
-			Strength:     16,
-			Dexterity:    14,
-			Constitution: 15,
-			Intelligence: 10,
-			Wisdom:       12,
-			Charisma:     8,
+			constants.STR: 16,
+			constants.DEX: 14,
+			constants.CON: 15,
+			constants.INT: 10,
+			constants.WIS: 12,
+			constants.CHA: 8,
 		},
 		HitPoints:    12,
 		MaxHitPoints: 12,

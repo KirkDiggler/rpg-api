@@ -35,6 +35,7 @@ import (
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	characterdraftrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft"
 	dicesessionrepo "github.com/KirkDiggler/rpg-api/internal/repositories/dice_session"
+	equipmentrepo "github.com/KirkDiggler/rpg-api/internal/repositories/equipment"
 	"github.com/KirkDiggler/rpg-toolkit/dice"
 	"github.com/KirkDiggler/rpg-toolkit/events"
 )
@@ -99,6 +100,13 @@ func runServer(_ *cobra.Command, _ []string) error {
 		return fmt.Errorf("failed to create character draft repository: %w", err)
 	}
 
+	equipmentRepo, err := equipmentrepo.NewRedis(&equipmentrepo.RedisConfig{
+		Client: mustRedisClient(),
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create equipment repository: %w", err)
+	}
+
 	// Get D&D API URL from environment or use default
 	dndAPIURL := os.Getenv("DND5E_API_URL")
 	if dndAPIURL == "" {
@@ -152,6 +160,7 @@ func runServer(_ *cobra.Command, _ []string) error {
 	characterService, err := character.New(&character.Config{
 		CharacterRepo:      charRepo,
 		CharacterDraftRepo: draftRepo,
+		EquipmentRepo:      equipmentRepo,
 		Engine:             e,
 		ExternalClient:     client,
 		DiceService:        diceService,

@@ -13,8 +13,9 @@ import (
 	context "context"
 	reflect "reflect"
 
-	character "github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
 	gomock "go.uber.org/mock/gomock"
+
+	character "github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
 )
 
 // MockService is a mock of Service interface.

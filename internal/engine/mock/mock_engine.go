@@ -13,8 +13,9 @@ import (
 	context "context"
 	reflect "reflect"
 
-	engine "github.com/KirkDiggler/rpg-api/internal/engine"
 	gomock "go.uber.org/mock/gomock"
+
+	engine "github.com/KirkDiggler/rpg-api/internal/engine"
 )
 
 // MockEngine is a mock of Engine interface.

@@ -15,6 +15,7 @@ import (
 	redisclient "github.com/KirkDiggler/rpg-api/internal/redis"
 	"github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/constants"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
 )
 
@@ -75,7 +76,7 @@ func (s *IntegrationTestSuite) TestFullCharacterLifecycle() {
 	s.Require().NoError(err)
 	s.NotNil(getOut)
 	s.Equal("Aragorn", getOut.CharacterData.Name)
-	s.Equal(16, getOut.CharacterData.AbilityScores.Strength)
+	s.Equal(16, getOut.CharacterData.AbilityScores[constants.STR])
 
 	// Test Update - level up
 	charData.Level = 2
@@ -207,12 +208,12 @@ func (s *IntegrationTestSuite) createTestCharacterData(id, playerID, name string
 		ClassID:      "ranger",
 		BackgroundID: "outlander",
 		AbilityScores: shared.AbilityScores{
-			Strength:     16,
-			Dexterity:    14,
-			Constitution: 13,
-			Intelligence: 12,
-			Wisdom:       15,
-			Charisma:     10,
+			constants.STR: 16,
+			constants.DEX: 14,
+			constants.CON: 13,
+			constants.INT: 12,
+			constants.WIS: 15,
+			constants.CHA: 10,
 		},
 		HitPoints:    11,
 		MaxHitPoints: 11,

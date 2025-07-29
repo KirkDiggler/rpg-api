@@ -19,7 +19,9 @@ import (
 	characterrepomock "github.com/KirkDiggler/rpg-api/internal/repositories/character/mock"
 	draftrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft"
 	draftrepomock "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft/mock"
+	equipmentrepomock "github.com/KirkDiggler/rpg-api/internal/repositories/equipment/mock"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/constants"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
 )
 
@@ -28,6 +30,7 @@ type OrchestratorTestSuite struct {
 	ctrl               *gomock.Controller
 	mockCharRepo       *characterrepomock.MockRepository
 	mockDraftRepo      *draftrepomock.MockRepository
+	mockEquipmentRepo  *equipmentrepomock.MockRepository
 	mockEngine         *enginemock.MockEngine
 	mockExternalClient *externalmock.MockClient
 	mockDiceService    *dicemock.MockService
@@ -40,6 +43,7 @@ func (s *OrchestratorTestSuite) SetupTest() {
 	s.ctrl = gomock.NewController(s.T())
 	s.mockCharRepo = characterrepomock.NewMockRepository(s.ctrl)
 	s.mockDraftRepo = draftrepomock.NewMockRepository(s.ctrl)
+	s.mockEquipmentRepo = equipmentrepomock.NewMockRepository(s.ctrl)
 	s.mockEngine = enginemock.NewMockEngine(s.ctrl)
 	s.mockExternalClient = externalmock.NewMockClient(s.ctrl)
 	s.mockDiceService = dicemock.NewMockService(s.ctrl)
@@ -48,6 +52,7 @@ func (s *OrchestratorTestSuite) SetupTest() {
 	cfg := &characterorchestrator.Config{
 		CharacterRepo:      s.mockCharRepo,
 		CharacterDraftRepo: s.mockDraftRepo,
+		EquipmentRepo:      s.mockEquipmentRepo,
 		Engine:             s.mockEngine,
 		ExternalClient:     s.mockExternalClient,
 		DiceService:        s.mockDiceService,
@@ -222,9 +227,20 @@ func (s *OrchestratorTestSuite) TestUpdateRace_WithChoices() {
 			raceChoice := input.Draft.Choices[shared.ChoiceRace].(character.RaceChoice)
 			s.Equal("dwarf", raceChoice.RaceID)
 
-			// Verify race choices were stored
-			toolChoice := input.Draft.Choices[shared.ChoiceCategory("race_dwarf_tool_1")]
-			s.Equal([]string{"brewers-supplies"}, toolChoice)
+			// Verify race choices were stored with standard category
+			proficiencyChoices := input.Draft.Choices[shared.ChoiceCategory("proficiencies")]
+			s.NotNil(proficiencyChoices, "Proficiency choices should be stored")
+
+			// Should be a slice of ChoiceData
+			if choiceDataList, ok := proficiencyChoices.([]character.ChoiceData); ok {
+				s.Len(choiceDataList, 1, "Should have one proficiency choice")
+				choice := choiceDataList[0]
+				s.Equal("proficiencies", choice.Category)
+				s.Equal("race", choice.Source)
+				s.Equal([]string{"brewers-supplies"}, choice.Selection)
+			} else {
+				s.Fail("Proficiency choices should be []character.ChoiceData")
+			}
 
 			return &draftrepo.UpdateOutput{Draft: input.Draft}, nil
 		})
@@ -235,6 +251,7 @@ func (s *OrchestratorTestSuite) TestUpdateRace_WithChoices() {
 		Choices: []dnd5e.ChoiceSelection{
 			{
 				ChoiceID:     "dwarf_tool_1",
+				ChoiceType:   dnd5e.ChoiceTypeTool,
 				SelectedKeys: []string{"brewers-supplies"},
 			},
 		},
@@ -244,12 +261,13 @@ func (s *OrchestratorTestSuite) TestUpdateRace_WithChoices() {
 	s.NoError(err)
 	s.NotNil(output)
 	s.Equal("dwarf", output.Draft.RaceID)
-	// Verify choices are returned
+	// Verify choices are returned with new format
 	found := false
 	for _, choice := range output.Draft.ChoiceSelections {
-		if choice.ChoiceID == "dwarf_tool_1" && choice.Source == dnd5e.ChoiceSourceRace {
+		if choice.ChoiceID == "proficiencies_race" && choice.Source == dnd5e.ChoiceSourceRace {
 			found = true
 			s.Equal([]string{"brewers-supplies"}, choice.SelectedKeys)
+			s.Equal(dnd5e.ChoiceTypeTool, choice.ChoiceType)
 		}
 	}
 	s.True(found, "Race choice should be returned in ChoiceSelections")
@@ -277,12 +295,12 @@ func (s *OrchestratorTestSuite) TestUpdateAbilityScores_Success() {
 		DoAndReturn(func(_ context.Context, input draftrepo.UpdateInput) (*draftrepo.UpdateOutput, error) {
 			// Verify ability scores were set
 			scores := input.Draft.Choices[shared.ChoiceAbilityScores].(shared.AbilityScores)
-			s.Equal(15, scores.Strength)
-			s.Equal(14, scores.Dexterity)
-			s.Equal(13, scores.Constitution)
-			s.Equal(12, scores.Intelligence)
-			s.Equal(10, scores.Wisdom)
-			s.Equal(8, scores.Charisma)
+			s.Equal(15, scores[constants.STR])
+			s.Equal(14, scores[constants.DEX])
+			s.Equal(13, scores[constants.CON])
+			s.Equal(12, scores[constants.INT])
+			s.Equal(10, scores[constants.WIS])
+			s.Equal(8, scores[constants.CHA])
 
 			return &draftrepo.UpdateOutput{Draft: input.Draft}, nil
 		})
@@ -329,12 +347,12 @@ func (s *OrchestratorTestSuite) TestGetDraft_Success() {
 	}
 	draftData.Choices[shared.ChoiceClass] = "fighter"
 	draftData.Choices[shared.ChoiceAbilityScores] = shared.AbilityScores{
-		Strength:     16,
-		Dexterity:    14,
-		Constitution: 15,
-		Intelligence: 10,
-		Wisdom:       12,
-		Charisma:     8,
+		constants.STR: 16,
+		constants.DEX: 14,
+		constants.CON: 15,
+		constants.INT: 10,
+		constants.WIS: 12,
+		constants.CHA: 8,
 	}
 	draftData.ProgressFlags = character.ProgressName | character.ProgressRace | character.ProgressClass | character.ProgressAbilityScores
 

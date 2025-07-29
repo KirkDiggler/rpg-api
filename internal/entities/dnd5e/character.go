@@ -23,6 +23,12 @@ type Character struct {
 	CreatedAt        int64
 	UpdatedAt        int64
 
+	// Proficiencies and capabilities
+	Skills        map[string]int32 // skill name -> proficiency level (0=none, 1=proficient, 2=expertise)
+	SavingThrows  map[string]int32 // ability name -> proficiency level
+	Languages     []string         // List of known languages
+	Proficiencies *Proficiencies   // Weapon, armor, tool proficiencies
+
 	// Equipment and inventory
 	EquipmentSlots *EquipmentSlots  // Equipped items by slot
 	Inventory      []InventoryItem  // Unequipped items
@@ -803,6 +809,13 @@ const (
 	// EquipmentSlotBelt is the belt slot
 	EquipmentSlotBelt = "belt"
 )
+
+// Proficiencies represents character proficiencies for weapons, armor, and tools
+type Proficiencies struct {
+	Weapons []string // List of weapon proficiencies
+	Armor   []string // List of armor proficiencies
+	Tools   []string // List of tool proficiencies
+}
 
 // TODO(#46): Separate CharacterDraft into data and presentation models.
 // Add ToData() method to convert for repository storage

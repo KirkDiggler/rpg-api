@@ -3,6 +3,7 @@ package v1alpha1
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"strconv"
 	"strings"
@@ -12,6 +13,8 @@ import (
 
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
+	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/constants"
 )
 
 // HandlerConfig holds dependencies for the handler
@@ -450,7 +453,7 @@ func (h *Handler) GetCharacter(
 	}
 
 	return &dnd5ev1alpha1.GetCharacterResponse{
-		Character: convertCharacterToProto(output.Character),
+		Character: convertCharacterDataToProto(output.CharacterData),
 	}, nil
 }
 
@@ -966,6 +969,49 @@ func mapProtoSkillToConstant(skill dnd5ev1alpha1.Skill) string {
 	}
 }
 
+func mapStringToProtoSkill(skill string) dnd5ev1alpha1.Skill {
+	switch skill {
+	case dnd5e.SkillAcrobatics:
+		return dnd5ev1alpha1.Skill_SKILL_ACROBATICS
+	case dnd5e.SkillAnimalHandling:
+		return dnd5ev1alpha1.Skill_SKILL_ANIMAL_HANDLING
+	case dnd5e.SkillArcana:
+		return dnd5ev1alpha1.Skill_SKILL_ARCANA
+	case dnd5e.SkillAthletics:
+		return dnd5ev1alpha1.Skill_SKILL_ATHLETICS
+	case dnd5e.SkillDeception:
+		return dnd5ev1alpha1.Skill_SKILL_DECEPTION
+	case dnd5e.SkillHistory:
+		return dnd5ev1alpha1.Skill_SKILL_HISTORY
+	case dnd5e.SkillInsight:
+		return dnd5ev1alpha1.Skill_SKILL_INSIGHT
+	case dnd5e.SkillIntimidation:
+		return dnd5ev1alpha1.Skill_SKILL_INTIMIDATION
+	case dnd5e.SkillInvestigation:
+		return dnd5ev1alpha1.Skill_SKILL_INVESTIGATION
+	case dnd5e.SkillMedicine:
+		return dnd5ev1alpha1.Skill_SKILL_MEDICINE
+	case dnd5e.SkillNature:
+		return dnd5ev1alpha1.Skill_SKILL_NATURE
+	case dnd5e.SkillPerception:
+		return dnd5ev1alpha1.Skill_SKILL_PERCEPTION
+	case dnd5e.SkillPerformance:
+		return dnd5ev1alpha1.Skill_SKILL_PERFORMANCE
+	case dnd5e.SkillPersuasion:
+		return dnd5ev1alpha1.Skill_SKILL_PERSUASION
+	case dnd5e.SkillReligion:
+		return dnd5ev1alpha1.Skill_SKILL_RELIGION
+	case dnd5e.SkillSleightOfHand:
+		return dnd5ev1alpha1.Skill_SKILL_SLEIGHT_OF_HAND
+	case dnd5e.SkillStealth:
+		return dnd5ev1alpha1.Skill_SKILL_STEALTH
+	case dnd5e.SkillSurvival:
+		return dnd5ev1alpha1.Skill_SKILL_SURVIVAL
+	default:
+		return dnd5ev1alpha1.Skill_SKILL_UNSPECIFIED
+	}
+}
+
 func mapProtoCreationStepToConstant(step dnd5ev1alpha1.CreationStep) string {
 	switch step {
 	case dnd5ev1alpha1.CreationStep_CREATION_STEP_NAME:
@@ -1218,9 +1264,319 @@ func convertErrorsToProto(errors []character.ValidationError) []*dnd5ev1alpha1.V
 	return protoErrors
 }
 
+// getHitDiceForClass returns the hit dice string for a given class
+func getHitDiceForClass(classID string, level int32) string {
+	// Map class IDs to their hit dice
+	hitDieMap := map[string]string{
+		"barbarian": "d12",
+		"fighter":   "d10",
+		"paladin":   "d10",
+		"ranger":    "d10",
+		"bard":      "d8",
+		"cleric":    "d8",
+		"druid":     "d8",
+		"monk":      "d8",
+		"rogue":     "d8",
+		"warlock":   "d8",
+		"sorcerer":  "d6",
+		"wizard":    "d6",
+	}
+
+	die, ok := hitDieMap[classID]
+	if !ok {
+		die = "d8" // Default to d8 if unknown
+	}
+
+	return fmt.Sprintf("%d%s", level, die)
+}
+
+// calculateAbilityModifier calculates the D&D 5e ability modifier
+func calculateAbilityModifier(score int32) int32 {
+	return (score - 10) / 2
+}
+
+// calculateProficiencyBonus calculates the proficiency bonus for a given level
+func calculateProficiencyBonus(level int32) int32 {
+	return 2 + ((level - 1) / 4)
+}
+
+// mapStringToProtoAbility converts ability string to proto enum
+func mapStringToProtoAbility(ability string) dnd5ev1alpha1.Ability {
+	switch ability {
+	case "str", "strength":
+		return dnd5ev1alpha1.Ability_ABILITY_STRENGTH
+	case "dex", "dexterity":
+		return dnd5ev1alpha1.Ability_ABILITY_DEXTERITY
+	case "con", "constitution":
+		return dnd5ev1alpha1.Ability_ABILITY_CONSTITUTION
+	case "int", "intelligence":
+		return dnd5ev1alpha1.Ability_ABILITY_INTELLIGENCE
+	case "wis", "wisdom":
+		return dnd5ev1alpha1.Ability_ABILITY_WISDOM
+	case "cha", "charisma":
+		return dnd5ev1alpha1.Ability_ABILITY_CHARISMA
+	default:
+		return dnd5ev1alpha1.Ability_ABILITY_UNSPECIFIED
+	}
+}
+
+// mapStringToProtoRace converts race string to proto enum
+func mapStringToProtoRace(raceID string) dnd5ev1alpha1.Race {
+	switch raceID {
+	case "human":
+		return dnd5ev1alpha1.Race_RACE_HUMAN
+	case "dwarf":
+		return dnd5ev1alpha1.Race_RACE_DWARF
+	case "elf":
+		return dnd5ev1alpha1.Race_RACE_ELF
+	case "halfling":
+		return dnd5ev1alpha1.Race_RACE_HALFLING
+	case "dragonborn":
+		return dnd5ev1alpha1.Race_RACE_DRAGONBORN
+	case "gnome":
+		return dnd5ev1alpha1.Race_RACE_GNOME
+	case "half-elf":
+		return dnd5ev1alpha1.Race_RACE_HALF_ELF
+	case "half-orc":
+		return dnd5ev1alpha1.Race_RACE_HALF_ORC
+	case "tiefling":
+		return dnd5ev1alpha1.Race_RACE_TIEFLING
+	default:
+		return dnd5ev1alpha1.Race_RACE_UNSPECIFIED
+	}
+}
+
+// mapStringToProtoSubrace converts subrace string to proto enum
+func mapStringToProtoSubrace(subraceID string) dnd5ev1alpha1.Subrace {
+	// Most characters won't have a subrace
+	if subraceID == "" {
+		return dnd5ev1alpha1.Subrace_SUBRACE_UNSPECIFIED
+	}
+	
+	switch subraceID {
+	case "high-elf":
+		return dnd5ev1alpha1.Subrace_SUBRACE_HIGH_ELF
+	case "wood-elf":
+		return dnd5ev1alpha1.Subrace_SUBRACE_WOOD_ELF
+	case "dark-elf":
+		return dnd5ev1alpha1.Subrace_SUBRACE_DARK_ELF
+	case "hill-dwarf":
+		return dnd5ev1alpha1.Subrace_SUBRACE_HILL_DWARF
+	case "mountain-dwarf":
+		return dnd5ev1alpha1.Subrace_SUBRACE_MOUNTAIN_DWARF
+	case "lightfoot-halfling":
+		return dnd5ev1alpha1.Subrace_SUBRACE_LIGHTFOOT_HALFLING
+	case "stout-halfling":
+		return dnd5ev1alpha1.Subrace_SUBRACE_STOUT_HALFLING
+	case "forest-gnome":
+		return dnd5ev1alpha1.Subrace_SUBRACE_FOREST_GNOME
+	case "rock-gnome":
+		return dnd5ev1alpha1.Subrace_SUBRACE_ROCK_GNOME
+	default:
+		return dnd5ev1alpha1.Subrace_SUBRACE_UNSPECIFIED
+	}
+}
+
+// mapStringToProtoClass converts class string to proto enum
+func mapStringToProtoClass(classID string) dnd5ev1alpha1.Class {
+	switch classID {
+	case "barbarian":
+		return dnd5ev1alpha1.Class_CLASS_BARBARIAN
+	case "bard":
+		return dnd5ev1alpha1.Class_CLASS_BARD
+	case "cleric":
+		return dnd5ev1alpha1.Class_CLASS_CLERIC
+	case "druid":
+		return dnd5ev1alpha1.Class_CLASS_DRUID
+	case "fighter":
+		return dnd5ev1alpha1.Class_CLASS_FIGHTER
+	case "monk":
+		return dnd5ev1alpha1.Class_CLASS_MONK
+	case "paladin":
+		return dnd5ev1alpha1.Class_CLASS_PALADIN
+	case "ranger":
+		return dnd5ev1alpha1.Class_CLASS_RANGER
+	case "rogue":
+		return dnd5ev1alpha1.Class_CLASS_ROGUE
+	case "sorcerer":
+		return dnd5ev1alpha1.Class_CLASS_SORCERER
+	case "warlock":
+		return dnd5ev1alpha1.Class_CLASS_WARLOCK
+	case "wizard":
+		return dnd5ev1alpha1.Class_CLASS_WIZARD
+	default:
+		return dnd5ev1alpha1.Class_CLASS_UNSPECIFIED
+	}
+}
+
+// mapStringToProtoBackground converts background string to proto enum
+func mapStringToProtoBackground(backgroundID string) dnd5ev1alpha1.Background {
+	switch backgroundID {
+	case "acolyte":
+		return dnd5ev1alpha1.Background_BACKGROUND_ACOLYTE
+	case "charlatan":
+		return dnd5ev1alpha1.Background_BACKGROUND_CHARLATAN
+	case "criminal":
+		return dnd5ev1alpha1.Background_BACKGROUND_CRIMINAL
+	case "entertainer":
+		return dnd5ev1alpha1.Background_BACKGROUND_ENTERTAINER
+	case "folk-hero":
+		return dnd5ev1alpha1.Background_BACKGROUND_FOLK_HERO
+	case "guild-artisan":
+		return dnd5ev1alpha1.Background_BACKGROUND_GUILD_ARTISAN
+	case "hermit":
+		return dnd5ev1alpha1.Background_BACKGROUND_HERMIT
+	case "noble":
+		return dnd5ev1alpha1.Background_BACKGROUND_NOBLE
+	case "outlander":
+		return dnd5ev1alpha1.Background_BACKGROUND_OUTLANDER
+	case "sage":
+		return dnd5ev1alpha1.Background_BACKGROUND_SAGE
+	case "sailor":
+		return dnd5ev1alpha1.Background_BACKGROUND_SAILOR
+	case "soldier":
+		return dnd5ev1alpha1.Background_BACKGROUND_SOLDIER
+	case "urchin":
+		return dnd5ev1alpha1.Background_BACKGROUND_URCHIN
+	default:
+		return dnd5ev1alpha1.Background_BACKGROUND_UNSPECIFIED
+	}
+}
+
+// convertCharacterDataToProto converts toolkit character.Data directly to proto
+func convertCharacterDataToProto(charData *toolkitchar.Data) *dnd5ev1alpha1.Character {
+	if charData == nil {
+		return nil
+	}
+
+	// Convert ability scores
+	abilityScores := &dnd5ev1alpha1.AbilityScores{
+		Strength:     int32(charData.AbilityScores[constants.STR]),
+		Dexterity:    int32(charData.AbilityScores[constants.DEX]),
+		Constitution: int32(charData.AbilityScores[constants.CON]),
+		Intelligence: int32(charData.AbilityScores[constants.INT]),
+		Wisdom:       int32(charData.AbilityScores[constants.WIS]),
+		Charisma:     int32(charData.AbilityScores[constants.CHA]),
+	}
+
+	// Calculate ability modifiers
+	abilityModifiers := &dnd5ev1alpha1.AbilityModifiers{
+		Strength:     calculateAbilityModifier(abilityScores.Strength),
+		Dexterity:    calculateAbilityModifier(abilityScores.Dexterity),
+		Constitution: calculateAbilityModifier(abilityScores.Constitution),
+		Intelligence: calculateAbilityModifier(abilityScores.Intelligence),
+		Wisdom:       calculateAbilityModifier(abilityScores.Wisdom),
+		Charisma:     calculateAbilityModifier(abilityScores.Charisma),
+	}
+
+	// Convert languages from strings to proto enums
+	var languages []dnd5ev1alpha1.Language
+	for _, lang := range charData.Languages {
+		languages = append(languages, mapStringToProtoLanguage(lang))
+	}
+
+	// Convert proficiencies
+	proficiencies := &dnd5ev1alpha1.Proficiencies{
+		Armor:   charData.Proficiencies.Armor,
+		Weapons: charData.Proficiencies.Weapons,
+		Tools:   charData.Proficiencies.Tools,
+	}
+
+	// Convert skills - only include proficient skills
+	for skill, level := range charData.Skills {
+		if level > 0 { // Only include proficient skills
+			proficiencies.Skills = append(proficiencies.Skills, mapStringToProtoSkill(skill))
+		}
+	}
+
+	// Convert saving throws from map to array of ability enums
+	var savingThrows []dnd5ev1alpha1.Ability
+	for ability, level := range charData.SavingThrows {
+		if level > 0 { // Only include proficient saves
+			savingThrows = append(savingThrows, mapStringToProtoAbility(ability))
+		}
+	}
+	proficiencies.SavingThrows = savingThrows
+
+	// Calculate combat stats
+	combatStats := &dnd5ev1alpha1.CombatStats{
+		HitPointMaximum:  int32(charData.MaxHitPoints),
+		ArmorClass:       11 + abilityModifiers.Dexterity, // Base AC + Dex mod (simplified)
+		Initiative:       abilityModifiers.Dexterity,
+		Speed:            30, // Default human speed, should come from race data
+		ProficiencyBonus: calculateProficiencyBonus(int32(charData.Level)),
+		HitDice:          getHitDiceForClass(charData.ClassID, int32(charData.Level)),
+	}
+
+	return &dnd5ev1alpha1.Character{
+		Id:                   charData.ID,
+		Name:                 charData.Name,
+		Level:                int32(charData.Level),
+		ExperiencePoints:     int32(charData.Experience),
+		Race:                 mapStringToProtoRace(charData.RaceID),
+		Subrace:              mapStringToProtoSubrace(charData.SubraceID),
+		Class:                mapStringToProtoClass(charData.ClassID),
+		Background:           mapStringToProtoBackground(charData.BackgroundID),
+		Alignment:            dnd5ev1alpha1.Alignment_ALIGNMENT_UNSPECIFIED, // TODO: Add to toolkit
+		Languages:            languages,
+		AbilityScores:        abilityScores,
+		AbilityModifiers:     abilityModifiers,
+		CurrentHitPoints:     int32(charData.HitPoints),
+		TemporaryHitPoints:   0, // TODO: Add to toolkit if needed
+		SessionId:            "", // TODO: Add session tracking
+		Inventory:            nil, // TODO: Handle equipment separately
+		CombatStats:          combatStats,
+		Proficiencies:        proficiencies,
+		Metadata: &dnd5ev1alpha1.CharacterMetadata{
+			CreatedAt: charData.CreatedAt.Unix(),
+			UpdatedAt: charData.UpdatedAt.Unix(),
+			PlayerId:  charData.PlayerID,
+		},
+	}
+}
+
 func convertCharacterToProto(char *dnd5e.Character) *dnd5ev1alpha1.Character {
 	if char == nil {
 		return nil
+	}
+
+	// Map proficiencies
+	var proficiencies *dnd5ev1alpha1.Proficiencies
+	if char.Skills != nil || char.SavingThrows != nil || char.Proficiencies != nil {
+		proficiencies = &dnd5ev1alpha1.Proficiencies{}
+
+		// Map skills - only include proficient skills
+		if char.Skills != nil {
+			for skill, level := range char.Skills {
+				if level > 0 { // Only include proficient skills
+					proficiencies.Skills = append(proficiencies.Skills, mapStringToProtoSkill(skill))
+				}
+			}
+		}
+
+		// Map saving throws - only include proficient saves
+		if char.SavingThrows != nil {
+			for save, level := range char.SavingThrows {
+				if level > 0 { // Only include proficient saves
+					proficiencies.SavingThrows = append(proficiencies.SavingThrows, mapConstantToProtoAbility(save))
+				}
+			}
+		}
+
+		// Map weapon, armor, and tool proficiencies
+		if char.Proficiencies != nil {
+			proficiencies.Weapons = char.Proficiencies.Weapons
+			proficiencies.Armor = char.Proficiencies.Armor
+			proficiencies.Tools = char.Proficiencies.Tools
+		}
+	}
+
+	// Map languages
+	var languages []dnd5ev1alpha1.Language
+	if char.Languages != nil {
+		for _, lang := range char.Languages {
+			languages = append(languages, mapConstantToProtoLanguage(lang))
+		}
 	}
 
 	return &dnd5ev1alpha1.Character{
@@ -1255,7 +1611,7 @@ func convertCharacterToProto(char *dnd5e.Character) *dnd5ev1alpha1.Character {
 			Initiative:       (char.AbilityScores.Dexterity - 10) / 2,
 			Speed:            30, // Default, should come from race
 			ProficiencyBonus: 2 + ((char.Level - 1) / 4),
-			HitDice:          "", // TODO: Need to get from class data
+			HitDice:          getHitDiceForClass(char.ClassID, char.Level),
 		},
 		CurrentHitPoints:   char.CurrentHP,
 		TemporaryHitPoints: char.TempHP,
@@ -1265,6 +1621,8 @@ func convertCharacterToProto(char *dnd5e.Character) *dnd5ev1alpha1.Character {
 			UpdatedAt: char.UpdatedAt,
 			PlayerId:  char.PlayerID,
 		},
+		Proficiencies:  proficiencies,
+		Languages:      languages,
 		EquipmentSlots: mapEquipmentSlotsToProto(char.EquipmentSlots),
 		Inventory:      mapInventoryItemsToProto(char.Inventory),
 		Encumbrance:    mapEncumbranceToProto(char.Encumbrance),
