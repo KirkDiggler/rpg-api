@@ -93,16 +93,16 @@ func (s *FinalizeDraftTestSuite) TestFinalizeDraft_Disabled() {
 			validate: func(output *character.FinalizeDraftOutput, err error) {
 				s.NoError(err)
 				s.NotNil(output)
-				s.NotNil(output.Character)
+				s.NotNil(output.CharacterData)
 				s.True(output.DraftDeleted)
 
 				// Validate converted character
-				s.Equal("Test Hero", output.Character.Name)
-				s.Equal(int32(1), output.Character.Level)
-				s.Equal("human", output.Character.RaceID)
-				s.Equal("fighter", output.Character.ClassID)
-				s.Equal("soldier", output.Character.BackgroundID)
-				s.Equal(int32(16), output.Character.AbilityScores.Strength)
+				s.Equal("Test Hero", output.CharacterData.Name)
+				s.Equal(int32(1), output.CharacterData.Level)
+				s.Equal("human", output.CharacterData.RaceID)
+				s.Equal("fighter", output.CharacterData.ClassID)
+				s.Equal("soldier", output.CharacterData.BackgroundID)
+				s.Equal(int32(16), output.CharacterData.AbilityScores[constants.STR])
 			},
 		},
 		{
@@ -151,7 +151,7 @@ func (s *FinalizeDraftTestSuite) TestFinalizeDraft_Disabled() {
 				// Should succeed despite draft deletion failure
 				s.NoError(err)
 				s.NotNil(output)
-				s.NotNil(output.Character)
+				s.NotNil(output.CharacterData)
 			},
 		},
 	}
@@ -172,23 +172,22 @@ func (s *FinalizeDraftTestSuite) createTestDraftData() *toolkitchar.DraftData {
 		ID:       "draft_123",
 		PlayerID: "player_123",
 		Name:     "Test Hero",
-		Choices: map[shared.ChoiceCategory]any{
-			shared.ChoiceName: "Test Hero",
-			shared.ChoiceRace: toolkitchar.RaceChoice{
-				RaceID: "human",
-			},
-			shared.ChoiceClass:      "fighter",
-			shared.ChoiceBackground: "soldier",
-			shared.ChoiceAbilityScores: shared.AbilityScores{
-				constants.STR: 16,
-				constants.DEX: 14,
-				constants.CON: 15,
-				constants.INT: 10,
-				constants.WIS: 12,
-				constants.CHA: 8,
-			},
-			shared.ChoiceSkills: []string{"athletics", "intimidation"},
+		RaceChoice: toolkitchar.RaceChoice{
+			RaceID: "human",
 		},
+		ClassChoice: toolkitchar.ClassChoice{
+			ClassID: "fighter",
+		},
+		BackgroundChoice: constants.BackgroundSoldier,
+		AbilityScoreChoice: shared.AbilityScores{
+			constants.STR: 16,
+			constants.DEX: 14,
+			constants.CON: 15,
+			constants.INT: 10,
+			constants.WIS: 12,
+			constants.CHA: 8,
+		},
+		SkillChoices: []constants.Skill{constants.SkillAthletics, constants.SkillIntimidation},
 		ProgressFlags: toolkitchar.ProgressName |
 			toolkitchar.ProgressRace |
 			toolkitchar.ProgressClass |
@@ -209,9 +208,9 @@ func (s *FinalizeDraftTestSuite) createTestCharacterData() *toolkitchar.Data {
 		Name:         "Test Hero",
 		Level:        1,
 		Experience:   0,
-		RaceID:       "human",
-		ClassID:      "fighter",
-		BackgroundID: "soldier",
+		RaceID:       constants.RaceHuman,
+		ClassID:      constants.ClassFighter,
+		BackgroundID: constants.BackgroundSoldier,
 		AbilityScores: shared.AbilityScores{
 			constants.STR: 16,
 			constants.DEX: 14,

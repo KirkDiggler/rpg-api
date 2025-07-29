@@ -194,14 +194,14 @@ func (o *Orchestrator) CreateDraft(
 
 		// Set race if provided
 		if input.InitialData.RaceChoice.RaceID != "" {
-			if err := builder.SetRaceData(race.Data{ID: input.InitialData.RaceChoice.RaceID}, input.InitialData.RaceChoice.SubraceID); err != nil {
+			if err := builder.SetRaceData(race.Data{ID: input.InitialData.RaceChoice.RaceID}, string(input.InitialData.RaceChoice.SubraceID)); err != nil {
 				return nil, errors.Wrap(err, "failed to set race")
 			}
 		}
 
 		// Set class if provided
-		if input.InitialData.ClassChoice != "" {
-			if err := builder.SetClassData(class.Data{ID: input.InitialData.ClassChoice}); err != nil {
+		if input.InitialData.ClassChoice.ClassID != "" {
+			if err := builder.SetClassData(class.Data{ID: input.InitialData.ClassChoice.ClassID}, input.InitialData.ClassChoice.SubclassID); err != nil {
 				return nil, errors.Wrap(err, "failed to set class")
 			}
 		}
@@ -445,7 +445,7 @@ func (o *Orchestrator) UpdateRace(
 	// For now, we'll use the API race data to set basic info
 	// TODO: Convert full race data when toolkit supports it
 	toolkitRaceData := race.Data{
-		ID:   raceData.ID,
+		ID:   constants.Race(raceData.ID),
 		Name: raceData.Name,
 		// Add other fields as needed
 	}
@@ -522,13 +522,13 @@ func (o *Orchestrator) UpdateClass(
 	// For now, we'll use the API class data to set basic info
 	// TODO: Convert full class data when toolkit supports it
 	toolkitClassData := class.Data{
-		ID:   classData.ID,
+		ID:   constants.Class(classData.ID),
 		Name: classData.Name,
 		// Add other fields as needed
 	}
 
 	// Set class data in builder
-	if err := builder.SetClassData(toolkitClassData); err != nil {
+	if err := builder.SetClassData(toolkitClassData, ""); err != nil { // TODO: Handle subclass when implemented
 		return nil, errors.Wrap(err, "failed to set class data")
 	}
 
@@ -597,7 +597,7 @@ func (o *Orchestrator) UpdateBackground(
 
 	// Convert to toolkit background data format
 	toolkitBgData := shared.Background{
-		ID:   bgData.ID,
+		ID:   constants.Background(bgData.ID),
 		Name: bgData.Name,
 		// Add other fields as needed
 	}
@@ -845,11 +845,11 @@ func (o *Orchestrator) FinalizeDraft(
 	var abilityScores shared.AbilityScores
 
 	// Extract choices from typed fields
-	raceID = draftData.RaceChoice.RaceID
-	subraceID = draftData.RaceChoice.SubraceID
-	classID = draftData.ClassChoice
-	backgroundID = draftData.BackgroundChoice
-	
+	raceID = string(draftData.RaceChoice.RaceID)
+	subraceID = string(draftData.RaceChoice.SubraceID)
+	classID = string(draftData.ClassChoice.ClassID)
+	backgroundID = string(draftData.BackgroundChoice)
+
 	// Use default background if not set
 	if backgroundID == "" {
 		backgroundID = dnd5e.BackgroundAcolyte
@@ -859,8 +859,7 @@ func (o *Orchestrator) FinalizeDraft(
 	abilityScores = draftData.AbilityScoreChoice
 	slog.InfoContext(ctx, "Extracting ability scores from draft",
 		"ability_scores", fmt.Sprintf("%+v", abilityScores))
-	
-	
+
 	// Validate ability scores are at least 3 (D&D 5e minimum)
 	for ability, score := range abilityScores {
 		if score < 3 {
@@ -876,7 +875,7 @@ func (o *Orchestrator) FinalizeDraft(
 			return nil, errors.Wrapf(err, "failed to get race data for %s", raceID)
 		}
 		toolkitRaceData = &race.Data{
-			ID:        apiRaceData.ID,
+			ID:        constants.Race(apiRaceData.ID),
 			Name:      apiRaceData.Name,
 			Speed:     int(apiRaceData.Speed),
 			Size:      apiRaceData.Size,
@@ -884,7 +883,7 @@ func (o *Orchestrator) FinalizeDraft(
 			// Map ability score increases
 			AbilityScoreIncreases: make(map[constants.Ability]int),
 		}
-		
+
 		// Convert languages using typed constants
 		for i, lang := range apiRaceData.Languages {
 			toolkitRaceData.Languages[i] = constants.Language(lang)
@@ -910,7 +909,7 @@ func (o *Orchestrator) FinalizeDraft(
 			return nil, errors.Wrapf(err, "failed to get class data for %s", classID)
 		}
 		toolkitClassData = &class.Data{
-			ID:                    apiClassData.ID,
+			ID:                    constants.Class(apiClassData.ID),
 			Name:                  apiClassData.Name,
 			HitDice:               int(apiClassData.HitDice),
 			ArmorProficiencies:    apiClassData.ArmorProficiencies,
@@ -920,12 +919,12 @@ func (o *Orchestrator) FinalizeDraft(
 			SkillOptions:          make([]constants.Skill, len(apiClassData.AvailableSkills)),
 			SkillProficiencyCount: int(apiClassData.SkillsCount),
 		}
-		
+
 		// Convert saving throws to typed constants
 		for i, st := range apiClassData.SavingThrows {
 			toolkitClassData.SavingThrows[i] = constants.Ability(st)
 		}
-		
+
 		// Convert skill options to typed constants
 		for i, skill := range apiClassData.AvailableSkills {
 			toolkitClassData.SkillOptions[i] = constants.Skill(skill)
@@ -939,13 +938,13 @@ func (o *Orchestrator) FinalizeDraft(
 		bgData, err := o.externalClient.GetBackgroundData(ctx, backgroundID)
 		if err == nil && bgData != nil {
 			toolkitBackgroundData = &shared.Background{
-				ID:                 bgData.ID,
+				ID:                 constants.Background(bgData.ID),
 				Name:               bgData.Name,
 				Description:        bgData.Description,
 				SkillProficiencies: make([]constants.Skill, len(bgData.SkillProficiencies)),
 				// TODO: Map languages and tool proficiencies when API provides them
 			}
-			
+
 			// Convert skill proficiencies to typed constants
 			for i, skill := range bgData.SkillProficiencies {
 				toolkitBackgroundData.SkillProficiencies[i] = constants.Skill(skill)
@@ -953,7 +952,7 @@ func (o *Orchestrator) FinalizeDraft(
 		} else {
 			// Fallback to minimal data
 			toolkitBackgroundData = &shared.Background{
-				ID:   backgroundID,
+				ID:   constants.Background(backgroundID),
 				Name: backgroundID,
 			}
 		}
@@ -961,27 +960,27 @@ func (o *Orchestrator) FinalizeDraft(
 
 	// Build choices map from typed fields for toolkit
 	choices := make(map[string]any)
-	
+
 	// Add skill choices
 	if len(draftData.SkillChoices) > 0 {
 		choices["skills"] = draftData.SkillChoices
 	}
-	
-	// Add language choices  
+
+	// Add language choices
 	if len(draftData.LanguageChoices) > 0 {
 		choices["languages"] = draftData.LanguageChoices
 	}
-	
+
 	// Add equipment choices
 	if len(draftData.EquipmentChoices) > 0 {
 		choices["equipment"] = draftData.EquipmentChoices
 	}
-	
+
 	// Add fighting style if present
 	if draftData.FightingStyleChoice != "" {
 		choices["fighting_style"] = draftData.FightingStyleChoice
 	}
-	
+
 	// Add spell/cantrip choices if present
 	if len(draftData.SpellChoices) > 0 {
 		choices["spells"] = draftData.SpellChoices
@@ -1064,10 +1063,10 @@ func (o *Orchestrator) FinalizeDraft(
 		ID:           charData.ID,
 		Name:         charData.Name,
 		Level:        int32(charData.Level),
-		RaceID:       charData.RaceID,
-		SubraceID:    charData.SubraceID,
-		ClassID:      charData.ClassID,
-		BackgroundID: charData.BackgroundID,
+		RaceID:       string(charData.RaceID),
+		SubraceID:    string(charData.SubraceID),
+		ClassID:      string(charData.ClassID),
+		BackgroundID: string(charData.BackgroundID),
 		AbilityScores: dnd5e.AbilityScores{
 			Strength:     int32(charData.AbilityScores[constants.STR]),
 			Dexterity:    int32(charData.AbilityScores[constants.DEX]),
@@ -1077,7 +1076,7 @@ func (o *Orchestrator) FinalizeDraft(
 			Charisma:     int32(charData.AbilityScores[constants.CHA]),
 		},
 	}
-	
+
 	slog.InfoContext(ctx, "Entity character for stats calculation",
 		"ability_scores", fmt.Sprintf("%+v", entityChar.AbilityScores))
 
@@ -1155,51 +1154,51 @@ func (o *Orchestrator) GetCharacter(
 	// Note: This requires external data (race, class, background) which we don't have here
 	// For now, we'll need to fetch that data
 	charData := getOutput.CharacterData
-	
+
 	// Fetch required data for loading character
 	// TODO: This is inefficient - consider caching or storing denormalized data
-	raceData, err := o.externalClient.GetRaceData(ctx, charData.RaceID)
+	raceData, err := o.externalClient.GetRaceData(ctx, string(charData.RaceID))
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to get race data")
 	}
-	
-	classData, err := o.externalClient.GetClassData(ctx, charData.ClassID)
+
+	classData, err := o.externalClient.GetClassData(ctx, string(charData.ClassID))
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to get class data")
 	}
-	
-	backgroundData, err := o.externalClient.GetBackgroundData(ctx, charData.BackgroundID)
+
+	backgroundData, err := o.externalClient.GetBackgroundData(ctx, string(charData.BackgroundID))
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to get background data")
 	}
-	
+
 	// Convert external data to toolkit format inline
 	toolkitRaceData := &race.Data{
-		ID:    raceData.ID,
-		Name:  raceData.Name,
-		Speed: int(raceData.Speed),
-		Size:  raceData.Size,
-		Languages: make([]constants.Language, len(raceData.Languages)),
+		ID:                    constants.Race(raceData.ID),
+		Name:                  raceData.Name,
+		Speed:                 int(raceData.Speed),
+		Size:                  raceData.Size,
+		Languages:             make([]constants.Language, len(raceData.Languages)),
 		AbilityScoreIncreases: make(map[constants.Ability]int),
 	}
-	
+
 	// Convert languages
 	for i, lang := range raceData.Languages {
 		toolkitRaceData.Languages[i] = constants.Language(lang)
 	}
-	
+
 	// Convert ability bonuses
 	for ability, bonus := range raceData.AbilityBonuses {
 		toolkitRaceData.AbilityScoreIncreases[constants.Ability(ability)] = int(bonus)
 	}
-	
+
 	// Map weapon proficiencies if available
 	if len(raceData.Proficiencies) > 0 {
 		toolkitRaceData.WeaponProficiencies = raceData.Proficiencies
 	}
-	
+
 	toolkitClassData := &class.Data{
-		ID:                    classData.ID,
+		ID:                    constants.Class(classData.ID),
 		Name:                  classData.Name,
 		HitDice:               int(classData.HitDice),
 		ArmorProficiencies:    classData.ArmorProficiencies,
@@ -1209,29 +1208,29 @@ func (o *Orchestrator) GetCharacter(
 		SkillOptions:          make([]constants.Skill, len(classData.AvailableSkills)),
 		SkillProficiencyCount: int(classData.SkillsCount),
 	}
-	
+
 	// Convert saving throws
 	for i, st := range classData.SavingThrows {
 		toolkitClassData.SavingThrows[i] = constants.Ability(st)
 	}
-	
+
 	// Convert skill options
 	for i, skill := range classData.AvailableSkills {
 		toolkitClassData.SkillOptions[i] = constants.Skill(skill)
 	}
-	
+
 	toolkitBackgroundData := &shared.Background{
-		ID:                 backgroundData.ID,
+		ID:                 constants.Background(backgroundData.ID),
 		Name:               backgroundData.Name,
 		Description:        backgroundData.Description,
 		SkillProficiencies: make([]constants.Skill, len(backgroundData.SkillProficiencies)),
 	}
-	
+
 	// Convert skill proficiencies
 	for i, skill := range backgroundData.SkillProficiencies {
 		toolkitBackgroundData.SkillProficiencies[i] = constants.Skill(skill)
 	}
-	
+
 	// Load character with external data
 	char, err := character.LoadCharacterFromData(*charData, toolkitRaceData, toolkitClassData, toolkitBackgroundData)
 	if err != nil {
@@ -1305,7 +1304,7 @@ func (o *Orchestrator) ListCharacters(
 	// Note: This requires fetching external data for each character, which is inefficient
 	// TODO: Consider returning just the Data and letting the handler decide what to load
 	characters := make([]*character.Character, 0, len(characterDataList))
-	
+
 	for _, charData := range characterDataList {
 		// Skip characters we can't load (missing data, etc.)
 		// In a real implementation, we might want to batch fetch the external data
@@ -1940,13 +1939,13 @@ func (o *Orchestrator) UpdateChoices(
 		if err := builder.SelectSkills(input.Selections); err != nil {
 			return nil, errors.Wrap(err, "failed to set skills")
 		}
-		
+
 	case "languages":
 		// Use the builder's SelectLanguages method
 		if err := builder.SelectLanguages(input.Selections); err != nil {
 			return nil, errors.Wrap(err, "failed to set languages")
 		}
-		
+
 	case "fighting_style":
 		if len(input.Selections) > 0 {
 			// Use the builder's SelectFightingStyle method
@@ -1954,29 +1953,29 @@ func (o *Orchestrator) UpdateChoices(
 				return nil, errors.Wrap(err, "failed to set fighting style")
 			}
 		}
-		
+
 	case "cantrips":
 		// Use the builder's SelectCantrips method
 		if err := builder.SelectCantrips(input.Selections); err != nil {
 			return nil, errors.Wrap(err, "failed to set cantrips")
 		}
-		
+
 	case "spells":
 		// Use the builder's SelectSpells method
 		if err := builder.SelectSpells(input.Selections); err != nil {
 			return nil, errors.Wrap(err, "failed to set spells")
 		}
-		
+
 	case "equipment":
 		// Use the builder's SelectEquipment method
 		if err := builder.SelectEquipment(input.Selections); err != nil {
 			return nil, errors.Wrap(err, "failed to set equipment")
 		}
-		
+
 	default:
 		return nil, errors.InvalidArgumentf("unknown choice type: %s", input.ChoiceType)
 	}
-	
+
 	// Get the updated draft data
 	draftData := builder.ToData()
 
@@ -2028,12 +2027,12 @@ func (o *Orchestrator) ListChoiceOptions(
 	draft := getDraftOutput.Draft
 
 	// Validate that the draft has required information
-	if draft.ClassChoice == "" {
+	if draft.ClassChoice.ClassID == "" {
 		return nil, errors.InvalidArgument("class must be selected before viewing choice options")
 	}
 
 	// Get available choice categories based on the draft's class
-	categories, err := o.getAvailableChoiceCategories(ctx, draft.ClassChoice, input.ChoiceType)
+	categories, err := o.getAvailableChoiceCategories(ctx, string(draft.ClassChoice.ClassID), input.ChoiceType)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to get available choice categories")
 	}
@@ -2754,14 +2753,14 @@ func (o *Orchestrator) convertDraftDataToCharacterDraft(ctx context.Context, dat
 
 	// Extract data from explicit typed fields
 	// Race
-	draft.RaceID = data.RaceChoice.RaceID
-	draft.SubraceID = data.RaceChoice.SubraceID
+	draft.RaceID = string(data.RaceChoice.RaceID)
+	draft.SubraceID = string(data.RaceChoice.SubraceID)
 
 	// Class
-	draft.ClassID = data.ClassChoice
+	draft.ClassID = string(data.ClassChoice.ClassID)
 
 	// Background
-	draft.BackgroundID = data.BackgroundChoice
+	draft.BackgroundID = string(data.BackgroundChoice)
 
 	// Ability Scores
 	scores := data.AbilityScoreChoice
@@ -2774,28 +2773,27 @@ func (o *Orchestrator) convertDraftDataToCharacterDraft(ctx context.Context, dat
 		Charisma:     int32(scores[constants.CHA]),
 	}
 
-
 	// Extract choices from typed fields
 	draft.ChoiceSelections = []dnd5e.ChoiceSelection{}
-	
+
 	// Skills
 	if len(data.SkillChoices) > 0 {
 		draft.ChoiceSelections = append(draft.ChoiceSelections, dnd5e.ChoiceSelection{
 			ChoiceID:     "skill_proficiencies",
 			Source:       dnd5e.ChoiceSourceClass,
-			SelectedKeys: data.SkillChoices,
+			SelectedKeys: convertSkillsToStrings(data.SkillChoices),
 		})
 	}
-	
+
 	// Languages
 	if len(data.LanguageChoices) > 0 {
 		draft.ChoiceSelections = append(draft.ChoiceSelections, dnd5e.ChoiceSelection{
 			ChoiceID:     "language_choices",
 			Source:       dnd5e.ChoiceSourceRace,
-			SelectedKeys: data.LanguageChoices,
+			SelectedKeys: convertLanguagesToStrings(data.LanguageChoices),
 		})
 	}
-	
+
 	// Fighting Style
 	if data.FightingStyleChoice != "" {
 		draft.ChoiceSelections = append(draft.ChoiceSelections, dnd5e.ChoiceSelection{
@@ -2804,7 +2802,7 @@ func (o *Orchestrator) convertDraftDataToCharacterDraft(ctx context.Context, dat
 			SelectedKeys: []string{data.FightingStyleChoice},
 		})
 	}
-	
+
 	// Spells
 	if len(data.SpellChoices) > 0 {
 		draft.ChoiceSelections = append(draft.ChoiceSelections, dnd5e.ChoiceSelection{
@@ -2813,7 +2811,7 @@ func (o *Orchestrator) convertDraftDataToCharacterDraft(ctx context.Context, dat
 			SelectedKeys: data.SpellChoices,
 		})
 	}
-	
+
 	// Cantrips
 	if len(data.CantripChoices) > 0 {
 		draft.ChoiceSelections = append(draft.ChoiceSelections, dnd5e.ChoiceSelection{
@@ -2822,7 +2820,7 @@ func (o *Orchestrator) convertDraftDataToCharacterDraft(ctx context.Context, dat
 			SelectedKeys: data.CantripChoices,
 		})
 	}
-	
+
 	// Equipment
 	if len(data.EquipmentChoices) > 0 {
 		draft.ChoiceSelections = append(draft.ChoiceSelections, dnd5e.ChoiceSelection{
@@ -3566,4 +3564,22 @@ func mapStandardCategoryToChoiceType(category string) dnd5e.ChoiceType {
 	default:
 		return dnd5e.ChoiceType(category)
 	}
+}
+
+// convertSkillsToStrings converts typed skills to strings
+func convertSkillsToStrings(skills []constants.Skill) []string {
+	result := make([]string, len(skills))
+	for i, skill := range skills {
+		result[i] = string(skill)
+	}
+	return result
+}
+
+// convertLanguagesToStrings converts typed languages to strings
+func convertLanguagesToStrings(languages []constants.Language) []string {
+	result := make([]string, len(languages))
+	for i, lang := range languages {
+		result[i] = string(lang)
+	}
+	return result
 }

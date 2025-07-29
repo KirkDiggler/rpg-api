@@ -76,7 +76,7 @@ func mapProtoChoiceTypeToString(protoType dnd5ev1alpha1.ChoiceType) string {
 
 // hasProgressFlag checks if a draft has a specific progress flag set
 func hasProgressFlag(draft *toolkitchar.Draft, flag uint32) bool {
-	// We need to access the private flags field through reflection or 
+	// We need to access the private flags field through reflection or
 	// use a different approach. For now, check if related fields are set.
 	switch flag {
 	case toolkitchar.ProgressName:
@@ -84,7 +84,7 @@ func hasProgressFlag(draft *toolkitchar.Draft, flag uint32) bool {
 	case toolkitchar.ProgressRace:
 		return draft.RaceChoice.RaceID != ""
 	case toolkitchar.ProgressClass:
-		return draft.ClassChoice != ""
+		return draft.ClassChoice.ClassID != ""
 	case toolkitchar.ProgressBackground:
 		return draft.BackgroundChoice != ""
 	case toolkitchar.ProgressAbilityScores:
@@ -102,7 +102,7 @@ func hasProgressFlag(draft *toolkitchar.Draft, flag uint32) bool {
 func calculateCompletionPercentage(draft *toolkitchar.Draft) float32 {
 	totalSteps := float32(7) // name, race, class, background, abilities, skills, languages
 	completedSteps := float32(0)
-	
+
 	if hasProgressFlag(draft, toolkitchar.ProgressName) {
 		completedSteps++
 	}
@@ -124,7 +124,7 @@ func calculateCompletionPercentage(draft *toolkitchar.Draft) float32 {
 	if hasProgressFlag(draft, toolkitchar.ProgressLanguages) {
 		completedSteps++
 	}
-	
+
 	return completedSteps / totalSteps
 }
 
@@ -516,13 +516,13 @@ func (h *Handler) GetCharacter(
 		CharacterID: req.CharacterId,
 	}
 
-	_, err := h.characterService.GetCharacter(ctx, input)
+	output, err := h.characterService.GetCharacter(ctx, input)
 	if err != nil {
 		return nil, errors.ToGRPCError(err)
 	}
 
 	return &dnd5ev1alpha1.GetCharacterResponse{
-		Character: nil, // TODO: implement convertToolkitCharacterToProto
+		Character: convertToolkitCharacterToProto(output.Character),
 	}, nil
 }
 
@@ -571,8 +571,8 @@ func (h *Handler) ListCharacters(
 
 	// Convert characters to proto
 	protoCharacters := make([]*dnd5ev1alpha1.Character, len(output.Characters))
-	for i, _ := range output.Characters {
-		protoCharacters[i] = nil // TODO: implement character conversion
+	for i, char := range output.Characters {
+		protoCharacters[i] = convertToolkitCharacterToProto(char)
 	}
 
 	return &dnd5ev1alpha1.ListCharactersResponse{
@@ -690,7 +690,7 @@ func convertProtoDraftDataToToolkit(proto *dnd5ev1alpha1.CharacterDraftData) *to
 	for _, protoChoice := range proto.Choices {
 		if protoChoice != nil {
 			choiceType := mapProtoChoiceTypeToString(protoChoice.ChoiceType)
-			
+
 			switch choiceType {
 			case "skills":
 				draft.SkillChoices = protoChoice.SelectedKeys
@@ -779,26 +779,26 @@ func convertToolkitDraftToProto(draft *toolkitchar.Draft) *dnd5ev1alpha1.Charact
 		},
 	}
 
-	// Convert race choice - TODO: fix proto field types
+	// Convert race choice - TODO: Need to load full race data, not just ID
 	if draft.RaceChoice.RaceID != "" {
-		// proto.Race = mapConstantToProtoRace(draft.RaceChoice.RaceID) // TODO: type mismatch
-		proto.Race = nil // Temporary
+		// proto.Race = loadRaceInfoFromID(draft.RaceChoice.RaceID) // TODO: Implement race data loading
+		proto.Race = nil // Temporary - need full race data loader
 	}
 	if draft.RaceChoice.SubraceID != "" {
-		// proto.Subrace = mapConstantToProtoSubrace(draft.RaceChoice.SubraceID) // TODO: type mismatch
-		proto.Subrace = nil // Temporary
+		// proto.Subrace = loadSubraceInfoFromID(draft.RaceChoice.SubraceID) // TODO: Implement subrace data loading
+		proto.Subrace = nil // Temporary - need full subrace data loader
 	}
 
-	// Convert class choice - TODO: fix proto field types
+	// Convert class choice - TODO: Need to load full class data, not just ID
 	if draft.ClassChoice != "" {
-		// proto.Class = mapConstantToProtoClass(draft.ClassChoice) // TODO: type mismatch
-		proto.Class = nil // Temporary
+		// proto.Class = loadClassInfoFromID(draft.ClassChoice) // TODO: Implement class data loading
+		proto.Class = nil // Temporary - need full class data loader
 	}
 
-	// Convert background choice - TODO: fix proto field types
+	// Convert background choice - TODO: Need to load full background data, not just ID
 	if draft.BackgroundChoice != "" {
-		// proto.Background = mapConstantToProtoBackground(draft.BackgroundChoice) // TODO: type mismatch
-		proto.Background = nil // Temporary
+		// proto.Background = loadBackgroundInfoFromID(draft.BackgroundChoice) // TODO: Implement background data loading
+		proto.Background = nil // Temporary - need full background data loader
 	}
 
 	// Convert ability scores
@@ -835,7 +835,7 @@ func convertToolkitDraftToProto(draft *toolkitchar.Draft) *dnd5ev1alpha1.Charact
 	if draft.FightingStyleChoice != "" {
 		proto.Choices = append(proto.Choices, &dnd5ev1alpha1.ChoiceSelection{
 			ChoiceId:     "fighting_style",
-			ChoiceType:   dnd5ev1alpha1.ChoiceType_CHOICE_TYPE_SPELL, // TODO: Add FIGHTING_STYLE to proto
+			ChoiceType:   dnd5ev1alpha1.ChoiceType_CHOICE_TYPE_SPELL, // TODO: Add CHOICE_TYPE_FIGHTING_STYLE to rpg-api-protos
 			Source:       dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_CLASS,
 			SelectedKeys: []string{draft.FightingStyleChoice},
 		})
@@ -853,7 +853,7 @@ func convertToolkitDraftToProto(draft *toolkitchar.Draft) *dnd5ev1alpha1.Charact
 	if len(draft.CantripChoices) > 0 {
 		proto.Choices = append(proto.Choices, &dnd5ev1alpha1.ChoiceSelection{
 			ChoiceId:     "cantrips",
-			ChoiceType:   dnd5ev1alpha1.ChoiceType_CHOICE_TYPE_SPELL, // TODO: Add CANTRIP to proto
+			ChoiceType:   dnd5ev1alpha1.ChoiceType_CHOICE_TYPE_SPELL, // TODO: Add CHOICE_TYPE_CANTRIP to rpg-api-protos
 			Source:       dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_CLASS,
 			SelectedKeys: draft.CantripChoices,
 		})
@@ -1429,7 +1429,7 @@ func mapStringToProtoSubrace(subraceID string) dnd5ev1alpha1.Subrace {
 	if subraceID == "" {
 		return dnd5ev1alpha1.Subrace_SUBRACE_UNSPECIFIED
 	}
-	
+
 	switch subraceID {
 	case "high-elf":
 		return dnd5ev1alpha1.Subrace_SUBRACE_HIGH_ELF
@@ -1520,6 +1520,45 @@ func mapStringToProtoBackground(backgroundID string) dnd5ev1alpha1.Background {
 	}
 }
 
+// convertEquipmentIDsToProtoInventory converts toolkit equipment IDs to basic proto inventory
+func convertEquipmentIDsToProtoInventory(equipmentIDs []string) []*dnd5ev1alpha1.InventoryItem {
+	if len(equipmentIDs) == 0 {
+		return nil
+	}
+
+	inventory := make([]*dnd5ev1alpha1.InventoryItem, len(equipmentIDs))
+	for i, equipmentID := range equipmentIDs {
+		inventory[i] = &dnd5ev1alpha1.InventoryItem{
+			ItemId:     equipmentID, // Use equipment ID as item ID
+			Quantity:   1,           // Default quantity
+			IsAttuned:  false,       // Default not attuned
+			CustomName: "",          // No custom name
+			Equipment: &dnd5ev1alpha1.Equipment{
+				Id:          equipmentID,
+				Name:        equipmentID, // TODO: Load actual equipment name from external service
+				Category:    "",          // TODO: Load category from external service
+				Description: "",          // TODO: Load description from external service
+				Cost:        nil,         // TODO: Load cost from external service
+				Weight:      nil,         // TODO: Load weight from external service
+			},
+		}
+	}
+	return inventory
+}
+
+// convertToolkitCharacterToProto converts toolkit character.Character to proto
+func convertToolkitCharacterToProto(char *toolkitchar.Character) *dnd5ev1alpha1.Character {
+	if char == nil {
+		return nil
+	}
+
+	// Convert character to its persistent data representation first
+	charData := char.ToData()
+
+	// Use existing function to convert data to proto
+	return convertCharacterDataToProto(&charData)
+}
+
 // convertCharacterDataToProto converts toolkit character.Data directly to proto
 func convertCharacterDataToProto(charData *toolkitchar.Data) *dnd5ev1alpha1.Character {
 	if charData == nil {
@@ -1586,24 +1625,24 @@ func convertCharacterDataToProto(charData *toolkitchar.Data) *dnd5ev1alpha1.Char
 	}
 
 	return &dnd5ev1alpha1.Character{
-		Id:                   charData.ID,
-		Name:                 charData.Name,
-		Level:                int32(charData.Level),
-		ExperiencePoints:     int32(charData.Experience),
-		Race:                 mapStringToProtoRace(charData.RaceID),
-		Subrace:              mapStringToProtoSubrace(charData.SubraceID),
-		Class:                mapStringToProtoClass(charData.ClassID),
-		Background:           mapStringToProtoBackground(charData.BackgroundID),
-		Alignment:            dnd5ev1alpha1.Alignment_ALIGNMENT_UNSPECIFIED, // TODO: Add to toolkit
-		Languages:            languages,
-		AbilityScores:        abilityScores,
-		AbilityModifiers:     abilityModifiers,
-		CurrentHitPoints:     int32(charData.HitPoints),
-		TemporaryHitPoints:   0, // TODO: Add to toolkit if needed
-		SessionId:            "", // TODO: Add session tracking
-		Inventory:            nil, // TODO: Handle equipment separately
-		CombatStats:          combatStats,
-		Proficiencies:        proficiencies,
+		Id:                 charData.ID,
+		Name:               charData.Name,
+		Level:              int32(charData.Level),
+		ExperiencePoints:   int32(charData.Experience),
+		Race:               mapStringToProtoRace(charData.RaceID),
+		Subrace:            mapStringToProtoSubrace(charData.SubraceID),
+		Class:              mapStringToProtoClass(charData.ClassID),
+		Background:         mapStringToProtoBackground(charData.BackgroundID),
+		Alignment:          dnd5ev1alpha1.Alignment_ALIGNMENT_UNSPECIFIED, // TODO: Add to toolkit
+		Languages:          languages,
+		AbilityScores:      abilityScores,
+		AbilityModifiers:   abilityModifiers,
+		CurrentHitPoints:   int32(charData.HitPoints),
+		TemporaryHitPoints: 0,  // TODO: Add to toolkit if needed
+		SessionId:          "", // TODO: Add session tracking
+		Inventory:          convertEquipmentIDsToProtoInventory(charData.Equipment),
+		CombatStats:        combatStats,
+		Proficiencies:      proficiencies,
 		Metadata: &dnd5ev1alpha1.CharacterMetadata{
 			CreatedAt: charData.CreatedAt.Unix(),
 			UpdatedAt: charData.UpdatedAt.Unix(),
