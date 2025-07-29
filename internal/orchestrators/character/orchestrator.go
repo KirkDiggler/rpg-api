@@ -880,14 +880,19 @@ func (o *Orchestrator) FinalizeDraft(
 			Name:      apiRaceData.Name,
 			Speed:     int(apiRaceData.Speed),
 			Size:      apiRaceData.Size,
-			Languages: apiRaceData.Languages,
+			Languages: make([]constants.Language, len(apiRaceData.Languages)),
 			// Map ability score increases
-			AbilityScoreIncreases: make(map[string]int),
+			AbilityScoreIncreases: make(map[constants.Ability]int),
+		}
+		
+		// Convert languages using typed constants
+		for i, lang := range apiRaceData.Languages {
+			toolkitRaceData.Languages[i] = constants.Language(lang)
 		}
 
 		// Convert ability bonuses from int32 to int
 		for ability, bonus := range apiRaceData.AbilityBonuses {
-			toolkitRaceData.AbilityScoreIncreases[ability] = int(bonus)
+			toolkitRaceData.AbilityScoreIncreases[constants.Ability(ability)] = int(bonus)
 		}
 
 		// Map proficiencies if available
@@ -911,9 +916,19 @@ func (o *Orchestrator) FinalizeDraft(
 			ArmorProficiencies:    apiClassData.ArmorProficiencies,
 			WeaponProficiencies:   apiClassData.WeaponProficiencies,
 			ToolProficiencies:     apiClassData.ToolProficiencies,
-			SavingThrows:          apiClassData.SavingThrows,
-			SkillOptions:          apiClassData.AvailableSkills,
+			SavingThrows:          make([]constants.Ability, len(apiClassData.SavingThrows)),
+			SkillOptions:          make([]constants.Skill, len(apiClassData.AvailableSkills)),
 			SkillProficiencyCount: int(apiClassData.SkillsCount),
+		}
+		
+		// Convert saving throws to typed constants
+		for i, st := range apiClassData.SavingThrows {
+			toolkitClassData.SavingThrows[i] = constants.Ability(st)
+		}
+		
+		// Convert skill options to typed constants
+		for i, skill := range apiClassData.AvailableSkills {
+			toolkitClassData.SkillOptions[i] = constants.Skill(skill)
 		}
 	}
 
@@ -927,8 +942,13 @@ func (o *Orchestrator) FinalizeDraft(
 				ID:                 bgData.ID,
 				Name:               bgData.Name,
 				Description:        bgData.Description,
-				SkillProficiencies: bgData.SkillProficiencies,
+				SkillProficiencies: make([]constants.Skill, len(bgData.SkillProficiencies)),
 				// TODO: Map languages and tool proficiencies when API provides them
+			}
+			
+			// Convert skill proficiencies to typed constants
+			for i, skill := range bgData.SkillProficiencies {
+				toolkitBackgroundData.SkillProficiencies[i] = constants.Skill(skill)
 			}
 		} else {
 			// Fallback to minimal data
@@ -1153,10 +1173,64 @@ func (o *Orchestrator) GetCharacter(
 		return nil, errors.Wrap(err, "failed to get background data")
 	}
 	
-	// Convert external data to toolkit format
-	toolkitRaceData := convertExternalRaceToToolkit(raceData)
-	toolkitClassData := convertExternalClassToToolkit(classData)
-	toolkitBackgroundData := convertExternalBackgroundToToolkit(backgroundData)
+	// Convert external data to toolkit format inline
+	toolkitRaceData := &race.Data{
+		ID:    raceData.ID,
+		Name:  raceData.Name,
+		Speed: int(raceData.Speed),
+		Size:  raceData.Size,
+		Languages: make([]constants.Language, len(raceData.Languages)),
+		AbilityScoreIncreases: make(map[constants.Ability]int),
+	}
+	
+	// Convert languages
+	for i, lang := range raceData.Languages {
+		toolkitRaceData.Languages[i] = constants.Language(lang)
+	}
+	
+	// Convert ability bonuses
+	for ability, bonus := range raceData.AbilityBonuses {
+		toolkitRaceData.AbilityScoreIncreases[constants.Ability(ability)] = int(bonus)
+	}
+	
+	// Map weapon proficiencies if available
+	if len(raceData.Proficiencies) > 0 {
+		toolkitRaceData.WeaponProficiencies = raceData.Proficiencies
+	}
+	
+	toolkitClassData := &class.Data{
+		ID:                    classData.ID,
+		Name:                  classData.Name,
+		HitDice:               int(classData.HitDice),
+		ArmorProficiencies:    classData.ArmorProficiencies,
+		WeaponProficiencies:   classData.WeaponProficiencies,
+		ToolProficiencies:     classData.ToolProficiencies,
+		SavingThrows:          make([]constants.Ability, len(classData.SavingThrows)),
+		SkillOptions:          make([]constants.Skill, len(classData.AvailableSkills)),
+		SkillProficiencyCount: int(classData.SkillsCount),
+	}
+	
+	// Convert saving throws
+	for i, st := range classData.SavingThrows {
+		toolkitClassData.SavingThrows[i] = constants.Ability(st)
+	}
+	
+	// Convert skill options
+	for i, skill := range classData.AvailableSkills {
+		toolkitClassData.SkillOptions[i] = constants.Skill(skill)
+	}
+	
+	toolkitBackgroundData := &shared.Background{
+		ID:                 backgroundData.ID,
+		Name:               backgroundData.Name,
+		Description:        backgroundData.Description,
+		SkillProficiencies: make([]constants.Skill, len(backgroundData.SkillProficiencies)),
+	}
+	
+	// Convert skill proficiencies
+	for i, skill := range backgroundData.SkillProficiencies {
+		toolkitBackgroundData.SkillProficiencies[i] = constants.Skill(skill)
+	}
 	
 	// Load character with external data
 	char, err := character.LoadCharacterFromData(*charData, toolkitRaceData, toolkitClassData, toolkitBackgroundData)
@@ -3491,133 +3565,5 @@ func mapStandardCategoryToChoiceType(category string) dnd5e.ChoiceType {
 		return dnd5e.ChoiceTypeTool // Default to tool for proficiencies
 	default:
 		return dnd5e.ChoiceType(category)
-	}
-}
-
-// Conversion functions from external API data to rpg-toolkit types
-
-// convertExternalRaceToToolkit converts external race data to toolkit race data
-func convertExternalRaceToToolkit(raceData *external.RaceData) *race.Data {
-	if raceData == nil {
-		return nil
-	}
-	
-	// Convert ability score increases
-	asi := make(map[string]int)
-	for ability, value := range raceData.AbilityBonuses {
-		asi[ability] = int(value)
-	}
-	
-	// Convert traits
-	traits := make([]race.TraitData, len(raceData.Traits))
-	for i, t := range raceData.Traits {
-		traits[i] = race.TraitData{
-			ID:          fmt.Sprintf("%s_%d", raceData.ID, i), // Generate an ID
-			Name:        t.Name,
-			Description: t.Description,
-		}
-	}
-	
-	// Convert subraces
-	subraces := make([]race.SubraceData, len(raceData.Subraces))
-	for i, sr := range raceData.Subraces {
-		subAsi := make(map[string]int)
-		for ability, value := range sr.AbilityBonuses {
-			subAsi[ability] = int(value)
-		}
-		
-		subTraits := make([]race.TraitData, len(sr.Traits))
-		for j, t := range sr.Traits {
-			subTraits[j] = race.TraitData{
-				ID:          fmt.Sprintf("%s_%s_%d", raceData.ID, sr.ID, j), // Generate an ID
-				Name:        t.Name,
-				Description: t.Description,
-			}
-		}
-		
-		subraces[i] = race.SubraceData{
-			ID:                   sr.ID,
-			Name:                 sr.Name,
-			Description:          sr.Description,
-			AbilityScoreIncreases: subAsi,
-			Traits:               subTraits,
-		}
-	}
-	
-	return &race.Data{
-		ID:                   raceData.ID,
-		Name:                 raceData.Name,
-		Description:          raceData.Description,
-		Speed:                int(raceData.Speed),
-		Size:                 raceData.Size,
-		AbilityScoreIncreases: asi,
-		Traits:               traits,
-		Subraces:             subraces,
-		Languages:            raceData.Languages,
-		SkillProficiencies:   []string{}, // TODO: Extract from raceData.Proficiencies
-		WeaponProficiencies:  []string{}, // TODO: Extract from raceData.Proficiencies
-		ToolProficiencies:    []string{}, // TODO: Extract from raceData.Proficiencies
-	}
-}
-
-// convertExternalClassToToolkit converts external class data to toolkit class data
-func convertExternalClassToToolkit(classData *external.ClassData) *class.Data {
-	if classData == nil {
-		return nil
-	}
-	
-	// Convert features by level
-	features := make(map[int][]class.FeatureData)
-	if classData.LevelOneFeatures != nil {
-		features[1] = make([]class.FeatureData, len(classData.LevelOneFeatures))
-		for i, f := range classData.LevelOneFeatures {
-			features[1][i] = class.FeatureData{
-				ID:          f.ID,
-				Name:        f.Name,
-				Level:       1,
-				Description: f.Description,
-			}
-		}
-	}
-	
-	// Convert starting equipment
-	equipment := make([]class.EquipmentData, 0) // Simplified for now
-	// TODO: Convert classData.StartingEquipment to proper format
-	
-	return &class.Data{
-		ID:                  classData.ID,
-		Name:                classData.Name,
-		Description:         classData.Description,
-		HitDice:             int(classData.HitDice),
-		SavingThrows:        classData.SavingThrows,
-		ArmorProficiencies:  []string{}, // TODO: Extract from classData.Proficiencies
-		WeaponProficiencies: []string{}, // TODO: Extract from classData.Proficiencies
-		ToolProficiencies:   []string{}, // TODO: Extract from classData.Proficiencies
-		SkillProficiencyCount: 2, // TODO: Extract from classData
-		SkillOptions:        []string{}, // TODO: Extract from classData.ProficiencyChoices
-		StartingEquipment:   equipment,
-		Features:            features,
-	}
-}
-
-// convertExternalBackgroundToToolkit converts external background data to toolkit background data
-func convertExternalBackgroundToToolkit(background *external.BackgroundData) *shared.Background {
-	if background == nil {
-		return nil
-	}
-	
-	return &shared.Background{
-		ID:                 background.ID,
-		Name:               background.Name,
-		Description:        background.Description,
-		SkillProficiencies: background.SkillProficiencies,
-		ToolProficiencies:  []string{}, // TODO: Extract from background.Proficiencies
-		Languages:          []string{}, // External API provides language count, not specific languages
-		Equipment:          background.Equipment,
-		Feature: shared.FeatureData{
-			ID:          background.ID + "_feature",
-			Name:        background.Feature,
-			Description: background.Description,
-		},
 	}
 }
