@@ -4,6 +4,7 @@ package v1alpha1
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -779,7 +780,23 @@ func convertRaceDataToProtoInfo(raceData *race.Data, uiData *external.RaceUIData
 		info.Languages = append(info.Languages, convertLanguageToProto(lang))
 	}
 
-	// TODO: Convert choices when we have the Choice type defined
+	// Convert choices
+	info.Choices = make([]*dnd5ev1alpha1.Choice, 0)
+	
+	// Add language choice if present
+	if raceData.LanguageChoice != nil {
+		info.Choices = append(info.Choices, convertRaceChoiceToProto(raceData.LanguageChoice))
+	}
+	
+	// Add skill choice if present  
+	if raceData.SkillChoice != nil {
+		info.Choices = append(info.Choices, convertRaceChoiceToProto(raceData.SkillChoice))
+	}
+	
+	// Add tool choice if present
+	if raceData.ToolChoice != nil {
+		info.Choices = append(info.Choices, convertRaceChoiceToProto(raceData.ToolChoice))
+	}
 
 	return info
 }
@@ -931,6 +948,68 @@ func convertAbilityToProto(ability constants.Ability) dnd5ev1alpha1.Ability {
 	default:
 		return dnd5ev1alpha1.Ability_ABILITY_STRENGTH
 	}
+}
+
+// convertRaceChoiceToProto converts toolkit race.ChoiceData to proto Choice
+func convertRaceChoiceToProto(choice *race.ChoiceData) *dnd5ev1alpha1.Choice {
+	if choice == nil {
+		return nil
+	}
+	
+	protoChoice := &dnd5ev1alpha1.Choice{
+		Id:          choice.ID,
+		Description: choice.Description,
+		ChooseCount: int32(choice.Choose),
+	}
+	
+	// Convert choice type to category
+	switch choice.Type {
+	case "language":
+		protoChoice.ChoiceType = dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_LANGUAGES
+	case "skill":
+		protoChoice.ChoiceType = dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_SKILLS
+	case "tool":
+		protoChoice.ChoiceType = dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_TOOLS
+	case "proficiency":
+		// Default to skill proficiency, but could be weapon/armor/tool based on context
+		protoChoice.ChoiceType = dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_SKILLS
+	default:
+		protoChoice.ChoiceType = dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_UNSPECIFIED
+	}
+	
+	// Build explicit options from the From field
+	if len(choice.From) > 0 {
+		options := make([]*dnd5ev1alpha1.ChoiceOption, 0, len(choice.From))
+		for _, opt := range choice.From {
+			options = append(options, &dnd5ev1alpha1.ChoiceOption{
+				OptionType: &dnd5ev1alpha1.ChoiceOption_Item{
+					Item: &dnd5ev1alpha1.ItemReference{
+						ItemId: opt,
+						Name:   formatOptionName(opt), // Convert key to display name
+					},
+				},
+			})
+		}
+		protoChoice.OptionSet = &dnd5ev1alpha1.Choice_ExplicitOptions{
+			ExplicitOptions: &dnd5ev1alpha1.ExplicitOptions{
+				Options: options,
+			},
+		}
+	}
+	
+	return protoChoice
+}
+
+// formatOptionName converts an option key to a display name
+func formatOptionName(key string) string {
+	// Convert snake_case or kebab-case to Title Case
+	words := strings.FieldsFunc(key, func(r rune) bool {
+		return r == '_' || r == '-'
+	})
+	for i, word := range words {
+		words[i] = strings.Title(word)
+	}
+	return strings.Join(words, " ")
 }
 
 // convertSkillToProto converts toolkit Skill to proto Skill
