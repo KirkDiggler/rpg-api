@@ -49,16 +49,21 @@ func TestGetRaceData_Integration(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			raceData, err := client.GetRaceData(ctx, tc.raceID)
+			output, err := client.GetRaceData(ctx, tc.raceID)
 			require.NoError(t, err)
-			require.NotNil(t, raceData)
+			require.NotNil(t, output)
+			require.NotNil(t, output.RaceData)
+			require.NotNil(t, output.UIData)
 
 			// Verify the ID is preserved in our format
-			assert.Equal(t, tc.raceID, raceData.ID)
+			assert.Equal(t, constants.Race(tc.raceID), output.RaceData.ID)
 			// Verify we got the right race
-			assert.Equal(t, tc.wantName, raceData.Name)
+			assert.Equal(t, tc.wantName, output.RaceData.Name)
 			// Verify we have some data
-			assert.NotEmpty(t, raceData.AbilityBonuses)
+			assert.NotEmpty(t, output.RaceData.AbilityScoreIncreases)
+			// Verify UI data is present
+			assert.NotNil(t, output.UIData)
+			assert.NotEmpty(t, output.UIData.SizeDescription)
 		})
 	}
 }
