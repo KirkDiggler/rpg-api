@@ -10,6 +10,7 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/pkg/idgen"
 	"github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	characterdraft "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft"
+	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 )
 
 // Config holds dependencies for the orchestrator
@@ -68,7 +69,36 @@ func New(cfg *Config) (*Orchestrator, error) {
 // All methods return unimplemented for now
 
 func (o *Orchestrator) CreateDraft(ctx context.Context, input *CreateDraftInput) (*CreateDraftOutput, error) {
-	return nil, errors.Unimplemented("not implemented")
+	// Validate input
+	if input.PlayerID == "" {
+		return nil, errors.InvalidArgument("player ID is required")
+	}
+
+	// Create new draft with minimal data
+	draft := &toolkitchar.DraftData{
+		ID:       o.idGen.Generate(),
+		PlayerID: input.PlayerID,
+	}
+
+	// If initial data provided, merge it
+	if input.InitialData != nil {
+		if input.InitialData.Name != "" {
+			draft.Name = input.InitialData.Name
+		}
+		// Add other fields as we implement them
+	}
+
+	// Save to repository
+	createOutput, err := o.draftRepo.Create(ctx, characterdraft.CreateInput{
+		Draft: draft,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create draft: %w", err)
+	}
+
+	return &CreateDraftOutput{
+		Draft: createOutput.Draft,
+	}, nil
 }
 
 func (o *Orchestrator) GetDraft(ctx context.Context, input *GetDraftInput) (*GetDraftOutput, error) {

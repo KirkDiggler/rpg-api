@@ -10,6 +10,8 @@ import (
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
 	"github.com/KirkDiggler/rpg-api/internal/errors"
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
+	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
 )
 
 // HandlerConfig holds dependencies for the handler
@@ -47,7 +49,37 @@ func (h *Handler) CreateDraft(
 	ctx context.Context,
 	req *dnd5ev1alpha1.CreateDraftRequest,
 ) (*dnd5ev1alpha1.CreateDraftResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "not implemented")
+	// Validate request
+	if req.GetPlayerId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "player_id is required")
+	}
+
+	// Create input for orchestrator
+	input := &character.CreateDraftInput{
+		PlayerID:  req.GetPlayerId(),
+		SessionID: req.GetSessionId(),
+	}
+
+	// If initial data provided, convert it
+	if req.GetInitialData() != nil {
+		input.InitialData = &toolkitchar.DraftData{
+			Name: req.GetInitialData().GetName(),
+			// TODO: Convert other fields as we implement them
+		}
+	}
+
+	// Call orchestrator
+	output, err := h.characterService.CreateDraft(ctx, input)
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	// Convert toolkit DraftData to proto CharacterDraft
+	protoDraft := convertDraftDataToProto(output.Draft)
+
+	return &dnd5ev1alpha1.CreateDraftResponse{
+		Draft: protoDraft,
+	}, nil
 }
 
 // GetDraft retrieves a character draft
@@ -73,13 +105,7 @@ func (h *Handler) GetDraft(
 	}
 
 	// Convert toolkit DraftData to proto CharacterDraft
-	// For now, return minimal response to get started
-	protoDraft := &dnd5ev1alpha1.CharacterDraft{
-		Id:       output.Draft.ID,
-		PlayerId: output.Draft.PlayerID,
-		Name:     output.Draft.Name,
-		// TODO: Convert other fields as we implement them
-	}
+	protoDraft := convertDraftDataToProto(output.Draft)
 
 	return &dnd5ev1alpha1.GetDraftResponse{
 		Draft: protoDraft,
@@ -316,4 +342,83 @@ func (h *Handler) RemoveFromInventory(
 	req *dnd5ev1alpha1.RemoveFromInventoryRequest,
 ) (*dnd5ev1alpha1.RemoveFromInventoryResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "not implemented")
+}
+
+// convertDraftDataToProto converts toolkit DraftData to proto CharacterDraft
+func convertDraftDataToProto(draft *toolkitchar.DraftData) *dnd5ev1alpha1.CharacterDraft {
+	if draft == nil {
+		return nil
+	}
+
+	protoDraft := &dnd5ev1alpha1.CharacterDraft{
+		Id:       draft.ID,
+		PlayerId: draft.PlayerID,
+		Name:     draft.Name,
+	}
+
+	// Convert timestamps
+	if !draft.CreatedAt.IsZero() {
+		protoDraft.CreatedAt = draft.CreatedAt.Unix()
+	}
+	if !draft.UpdatedAt.IsZero() {
+		protoDraft.UpdatedAt = draft.UpdatedAt.Unix()
+	}
+
+	// Convert progress - calculate completion based on progress flags
+	progress := &dnd5ev1alpha1.CreationProgress{
+		HasName:           draft.Name != "",
+		HasRace:           draft.RaceChoice.RaceID != "",
+		HasClass:          draft.ClassChoice.ClassID != "",
+		HasBackground:     draft.BackgroundChoice != "",
+		HasAbilityScores:  hasAbilityScores(draft.AbilityScoreChoice),
+		// TODO: Add skill and language tracking when we implement those
+	}
+	
+	// Calculate completion percentage
+	completedSteps := 0
+	totalSteps := 5 // name, race, class, background, ability scores
+	
+	if progress.HasName {
+		completedSteps++
+	}
+	if progress.HasRace {
+		completedSteps++
+	}
+	if progress.HasClass {
+		completedSteps++
+	}
+	if progress.HasBackground {
+		completedSteps++
+	}
+	if progress.HasAbilityScores {
+		completedSteps++
+	}
+	
+	progress.CompletionPercentage = int32((completedSteps * 100) / totalSteps)
+	protoDraft.Progress = progress
+
+	// Convert choices - simplified for now
+	// TODO: Implement full choice conversion when we handle updates
+	protoDraft.Choices = make([]*dnd5ev1alpha1.ChoiceData, 0)
+
+	// TODO: Convert race, class, background, and ability scores when we implement those updates
+
+	return protoDraft
+}
+
+// hasAbilityScores checks if ability scores have been set
+func hasAbilityScores(scores shared.AbilityScores) bool {
+	// Check if all ability scores are set (map should have 6 entries with values > 0)
+	if len(scores) != 6 {
+		return false
+	}
+	
+	// Check each ability score is greater than 0
+	for _, score := range scores {
+		if score <= 0 {
+			return false
+		}
+	}
+	
+	return true
 }

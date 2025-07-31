@@ -28,6 +28,11 @@ type OrchestratorTestSuite struct {
 	mockIDGenerator    *idgenmock.MockGenerator
 	orchestrator       *character.Orchestrator
 	ctx                context.Context
+	
+	// Test data
+	testDraftData    *toolkitchar.DraftData
+	testDraftID      string
+	testPlayerID     string
 }
 
 func (s *OrchestratorTestSuite) SetupTest() {
@@ -48,6 +53,24 @@ func (s *OrchestratorTestSuite) SetupTest() {
 	})
 	s.Require().NoError(err)
 	s.orchestrator = orchestrator
+	
+	// Initialize test data
+	s.setupTestData()
+}
+
+func (s *OrchestratorTestSuite) SetupSubTest() {
+	// Reset test data to clean state for each subtest
+	s.setupTestData()
+}
+
+func (s *OrchestratorTestSuite) setupTestData() {
+	s.testDraftID = "draft-123"
+	s.testPlayerID = "player-456"
+	s.testDraftData = &toolkitchar.DraftData{
+		ID:       s.testDraftID,
+		PlayerID: s.testPlayerID,
+		Name:     "Aragorn",
+	}
 }
 
 func (s *OrchestratorTestSuite) TearDownTest() {
@@ -55,32 +78,25 @@ func (s *OrchestratorTestSuite) TearDownTest() {
 }
 
 func (s *OrchestratorTestSuite) TestGetDraft_Success() {
-	draftID := "draft-123"
-	draftData := &toolkitchar.DraftData{
-		ID:       draftID,
-		PlayerID: "player-456",
-		Name:     "Aragorn",
-	}
-
 	// Mock repository call
 	s.mockDraftRepo.EXPECT().
 		Get(s.ctx, draftrepo.GetInput{
-			ID: draftID,
+			ID: s.testDraftID,
 		}).
 		Return(&draftrepo.GetOutput{
-			Draft: draftData,
+			Draft: s.testDraftData,
 		}, nil)
 
 	// Call orchestrator
 	output, err := s.orchestrator.GetDraft(s.ctx, &character.GetDraftInput{
-		DraftID: draftID,
+		DraftID: s.testDraftID,
 	})
 
 	// Assert response
 	s.NoError(err)
 	s.NotNil(output)
 	s.NotNil(output.Draft)
-	s.Equal(draftData, output.Draft)
+	s.Equal(s.testDraftData, output.Draft)
 }
 
 func (s *OrchestratorTestSuite) TestGetDraft_EmptyID() {
@@ -115,6 +131,120 @@ func (s *OrchestratorTestSuite) TestGetDraft_NotFound() {
 	s.Error(err)
 	s.Nil(output)
 	s.Contains(err.Error(), "failed to get draft")
+}
+
+func (s *OrchestratorTestSuite) TestCreateDraft_Success() {
+	// Generate test ID
+	generatedID := "draft-generated-123"
+	s.mockIDGenerator.EXPECT().
+		Generate().
+		Return(generatedID)
+
+	// Mock repository call
+	s.mockDraftRepo.EXPECT().
+		Create(s.ctx, draftrepo.CreateInput{
+			Draft: &toolkitchar.DraftData{
+				ID:       generatedID,
+				PlayerID: s.testPlayerID,
+			},
+		}).
+		Return(&draftrepo.CreateOutput{
+			Draft: &toolkitchar.DraftData{
+				ID:       generatedID,
+				PlayerID: s.testPlayerID,
+				Name:     "",
+			},
+		}, nil)
+
+	// Call orchestrator
+	output, err := s.orchestrator.CreateDraft(s.ctx, &character.CreateDraftInput{
+		PlayerID: s.testPlayerID,
+	})
+
+	// Assert response
+	s.NoError(err)
+	s.NotNil(output)
+	s.NotNil(output.Draft)
+	s.Equal(generatedID, output.Draft.ID)
+	s.Equal(s.testPlayerID, output.Draft.PlayerID)
+}
+
+func (s *OrchestratorTestSuite) TestCreateDraft_WithInitialData() {
+	generatedID := "draft-generated-456"
+	initialName := "Legolas"
+	
+	s.mockIDGenerator.EXPECT().
+		Generate().
+		Return(generatedID)
+
+	// Mock repository call with initial data
+	s.mockDraftRepo.EXPECT().
+		Create(s.ctx, draftrepo.CreateInput{
+			Draft: &toolkitchar.DraftData{
+				ID:       generatedID,
+				PlayerID: s.testPlayerID,
+				Name:     initialName,
+			},
+		}).
+		Return(&draftrepo.CreateOutput{
+			Draft: &toolkitchar.DraftData{
+				ID:       generatedID,
+				PlayerID: s.testPlayerID,
+				Name:     initialName,
+			},
+		}, nil)
+
+	// Call orchestrator with initial data
+	output, err := s.orchestrator.CreateDraft(s.ctx, &character.CreateDraftInput{
+		PlayerID: s.testPlayerID,
+		InitialData: &toolkitchar.DraftData{
+			Name: initialName,
+		},
+	})
+
+	// Assert response
+	s.NoError(err)
+	s.NotNil(output)
+	s.NotNil(output.Draft)
+	s.Equal(generatedID, output.Draft.ID)
+	s.Equal(s.testPlayerID, output.Draft.PlayerID)
+	s.Equal(initialName, output.Draft.Name)
+}
+
+func (s *OrchestratorTestSuite) TestCreateDraft_EmptyPlayerID() {
+	// Call orchestrator with empty player ID
+	output, err := s.orchestrator.CreateDraft(s.ctx, &character.CreateDraftInput{
+		PlayerID: "",
+	})
+
+	// Assert error
+	s.Error(err)
+	s.Nil(output)
+	s.True(errors.IsInvalidArgument(err))
+	s.Contains(err.Error(), "player ID is required")
+}
+
+func (s *OrchestratorTestSuite) TestCreateDraft_RepositoryError() {
+	generatedID := "draft-generated-789"
+	
+	s.mockIDGenerator.EXPECT().
+		Generate().
+		Return(generatedID)
+
+	// Mock repository error
+	s.mockDraftRepo.EXPECT().
+		Create(s.ctx, gomock.Any()).
+		Return(nil, errors.Internal("database error"))
+
+	// Call orchestrator
+	output, err := s.orchestrator.CreateDraft(s.ctx, &character.CreateDraftInput{
+		PlayerID: s.testPlayerID,
+	})
+
+	// Assert error
+	s.Error(err)
+	s.Nil(output)
+	s.Contains(err.Error(), "failed to create draft")
 }
 
 func TestOrchestratorSuite(t *testing.T) {
