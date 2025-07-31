@@ -749,14 +749,28 @@ func convertProtoRaceChoicesToToolkit(protoChoices []*dnd5ev1alpha1.ChoiceSelect
 
 	toolkitChoices := make([]toolkitchar.ChoiceData, 0, len(protoChoices))
 	for _, pc := range protoChoices {
+		// Try to infer choice type from choice ID if not specified
+		choiceType := pc.GetChoiceType()
+		if choiceType == dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_UNSPECIFIED {
+			// Infer from choice ID
+			switch pc.GetChoiceId() {
+			case "language_choice":
+				choiceType = dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_LANGUAGES
+			case "skill_choice":
+				choiceType = dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_SKILLS
+			case "tool_choice":
+				choiceType = dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_TOOLS
+			}
+		}
+		
 		choice := toolkitchar.ChoiceData{
 			ChoiceID: pc.GetChoiceId(),
-			Category: convertProtoCategoryToToolkit(pc.GetChoiceType()),
+			Category: convertProtoCategoryToToolkit(choiceType),
 			Source:   convertProtoSourceToToolkit(pc.GetSource()),
 		}
 
 		// Convert based on choice type
-		switch pc.GetChoiceType() {
+		switch choiceType {
 		case dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_SKILLS:
 			// Convert selected keys to skill constants
 			skills := make([]constants.Skill, 0, len(pc.GetSelectedKeys()))

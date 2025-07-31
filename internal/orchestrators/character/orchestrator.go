@@ -218,15 +218,16 @@ func (o *Orchestrator) UpdateRace(ctx context.Context, input *UpdateRaceInput) (
 		SubraceID: constants.Subrace(input.SubraceID),
 	}
 
-	// Update choices if provided
-	if len(input.Choices) > 0 {
-		// Filter out existing race choices and add new ones
-		var nonRaceChoices []toolkitchar.ChoiceData
-		for _, choice := range draft.Choices {
-			if choice.Source != shared.SourceRace {
-				nonRaceChoices = append(nonRaceChoices, choice)
-			}
+	// Always clear existing race choices when updating race
+	var nonRaceChoices []toolkitchar.ChoiceData
+	for _, choice := range draft.Choices {
+		if choice.Source != shared.SourceRace {
+			nonRaceChoices = append(nonRaceChoices, choice)
 		}
+	}
+	
+	// Add new race choices if provided
+	if len(input.Choices) > 0 {
 		// Ensure all new choices have the race source set
 		for i := range input.Choices {
 			if input.Choices[i].Source == "" {
@@ -234,6 +235,9 @@ func (o *Orchestrator) UpdateRace(ctx context.Context, input *UpdateRaceInput) (
 			}
 		}
 		draft.Choices = append(nonRaceChoices, input.Choices...)
+	} else {
+		// No choices provided, just keep non-race choices
+		draft.Choices = nonRaceChoices
 	}
 
 	// Save the updated draft
