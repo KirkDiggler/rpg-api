@@ -281,11 +281,86 @@ func (o *Orchestrator) DeleteCharacter(ctx context.Context, input *DeleteCharact
 }
 
 func (o *Orchestrator) ListRaces(ctx context.Context, input *ListRacesInput) (*ListRacesOutput, error) {
-	return nil, errors.Unimplemented("not implemented")
+	// For now, we'll return all races from a hardcoded list
+	// In a real implementation, this might come from a database or be cached
+	
+	allRaces := []constants.Race{
+		constants.RaceDragonborn,
+		constants.RaceDwarf,
+		constants.RaceElf,
+		constants.RaceGnome,
+		constants.RaceHalfElf,
+		constants.RaceHalfling,
+		constants.RaceHalfOrc,
+		constants.RaceHuman,
+		constants.RaceTiefling,
+	}
+	
+	// Get race data for each race
+	races := make([]RaceListItem, 0, len(allRaces))
+	for _, raceID := range allRaces {
+		raceDataOutput, err := o.externalClient.GetRaceData(ctx, string(raceID))
+		if err != nil {
+			// Skip races that fail to load
+			continue
+		}
+		
+		races = append(races, RaceListItem{
+			RaceData: raceDataOutput.RaceData,
+			UIData:   raceDataOutput.UIData,
+		})
+	}
+	
+	// Simple pagination - for now just return all races
+	// TODO: Implement proper pagination when needed
+	return &ListRacesOutput{
+		Races:         races,
+		NextPageToken: "",
+		TotalSize:     len(races),
+	}, nil
 }
 
 func (o *Orchestrator) ListClasses(ctx context.Context, input *ListClassesInput) (*ListClassesOutput, error) {
-	return nil, errors.Unimplemented("not implemented")
+	// For now, we'll return all classes from a hardcoded list
+	// In a real implementation, this might come from a database or be cached
+	
+	allClasses := []constants.Class{
+		constants.ClassBarbarian,
+		constants.ClassBard,
+		constants.ClassCleric,
+		constants.ClassDruid,
+		constants.ClassFighter,
+		constants.ClassMonk,
+		constants.ClassPaladin,
+		constants.ClassRanger,
+		constants.ClassRogue,
+		constants.ClassSorcerer,
+		constants.ClassWarlock,
+		constants.ClassWizard,
+	}
+	
+	// Get class data for each class
+	classes := make([]ClassListItem, 0, len(allClasses))
+	for _, classID := range allClasses {
+		classDataOutput, err := o.externalClient.GetClassData(ctx, string(classID))
+		if err != nil {
+			// Skip classes that fail to load
+			continue
+		}
+		
+		classes = append(classes, ClassListItem{
+			ClassData: classDataOutput.ClassData,
+			UIData:    classDataOutput.UIData,
+		})
+	}
+	
+	// Simple pagination - for now just return all classes
+	// TODO: Implement proper pagination when needed
+	return &ListClassesOutput{
+		Classes:       classes,
+		NextPageToken: "",
+		TotalSize:     len(classes),
+	}, nil
 }
 
 func (o *Orchestrator) ListBackgrounds(ctx context.Context, input *ListBackgroundsInput) (*ListBackgroundsOutput, error) {

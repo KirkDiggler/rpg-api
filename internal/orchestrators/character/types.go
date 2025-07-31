@@ -282,9 +282,15 @@ type ListRacesInput struct {
 
 // ListRacesOutput defines the response for listing races
 type ListRacesOutput struct {
-	Races         []*RaceSummary
+	Races         []RaceListItem
 	NextPageToken string
-	TotalSize     int32
+	TotalSize     int
+}
+
+// RaceListItem contains race data for list responses
+type RaceListItem struct {
+	RaceData *race.Data
+	UIData   *external.RaceUIData
 }
 
 // RaceSummary contains basic race info for listing
@@ -306,9 +312,15 @@ type ListClassesInput struct {
 
 // ListClassesOutput defines the response for listing classes
 type ListClassesOutput struct {
-	Classes       []*ClassSummary
+	Classes       []ClassListItem
 	NextPageToken string
-	TotalSize     int32
+	TotalSize     int
+}
+
+// ClassListItem contains class data for list responses
+type ClassListItem struct {
+	ClassData *class.Data
+	UIData    *external.ClassUIData
 }
 
 // ClassSummary contains basic class info for listing

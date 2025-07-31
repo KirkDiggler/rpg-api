@@ -3,15 +3,19 @@ package v1alpha1
 
 import (
 	"context"
+	"fmt"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
+	"github.com/KirkDiggler/rpg-api/internal/clients/external"
 	"github.com/KirkDiggler/rpg-api/internal/errors"
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/class"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/constants"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/race"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
 )
 
@@ -196,7 +200,7 @@ func (h *Handler) UpdateRace(
 	// Convert proto Race enum to string ID
 	raceID := convertProtoRaceToString(req.GetRace())
 	subraceID := convertProtoSubraceToString(req.GetSubrace())
-	
+
 	// Call orchestrator
 	output, err := h.characterService.UpdateRace(ctx, &character.UpdateRaceInput{
 		DraftID:   req.GetDraftId(),
@@ -299,7 +303,7 @@ func (h *Handler) ListCharacters(
 	ctx context.Context,
 	req *dnd5ev1alpha1.ListCharactersRequest,
 ) (*dnd5ev1alpha1.ListCharactersResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "not implemented")
+	return &dnd5ev1alpha1.ListCharactersResponse{}, nil
 }
 
 // DeleteCharacter deletes a character
@@ -315,7 +319,26 @@ func (h *Handler) ListRaces(
 	ctx context.Context,
 	req *dnd5ev1alpha1.ListRacesRequest,
 ) (*dnd5ev1alpha1.ListRacesResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "not implemented")
+	// Call orchestrator
+	output, err := h.characterService.ListRaces(ctx, &character.ListRacesInput{
+		PageSize:  req.GetPageSize(),
+		PageToken: req.GetPageToken(),
+	})
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	// Convert to proto RaceInfo
+	protoRaces := make([]*dnd5ev1alpha1.RaceInfo, len(output.Races))
+	for i, race := range output.Races {
+		protoRaces[i] = convertRaceDataToProtoInfo(race.RaceData, race.UIData)
+	}
+
+	return &dnd5ev1alpha1.ListRacesResponse{
+		Races:         protoRaces,
+		NextPageToken: output.NextPageToken,
+		TotalSize:     int32(output.TotalSize),
+	}, nil
 }
 
 // ListClasses lists available classes
@@ -323,7 +346,26 @@ func (h *Handler) ListClasses(
 	ctx context.Context,
 	req *dnd5ev1alpha1.ListClassesRequest,
 ) (*dnd5ev1alpha1.ListClassesResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "not implemented")
+	// Call orchestrator
+	output, err := h.characterService.ListClasses(ctx, &character.ListClassesInput{
+		PageSize:  req.GetPageSize(),
+		PageToken: req.GetPageToken(),
+	})
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	// Convert to proto ClassInfo
+	protoClasses := make([]*dnd5ev1alpha1.ClassInfo, len(output.Classes))
+	for i, class := range output.Classes {
+		protoClasses[i] = convertClassDataToProtoInfo(class.ClassData, class.UIData)
+	}
+
+	return &dnd5ev1alpha1.ListClassesResponse{
+		Classes:       protoClasses,
+		NextPageToken: output.NextPageToken,
+		TotalSize:     int32(output.TotalSize),
+	}, nil
 }
 
 // ListBackgrounds lists available backgrounds
@@ -452,18 +494,18 @@ func convertDraftDataToProto(draft *toolkitchar.DraftData) *dnd5ev1alpha1.Charac
 
 	// Convert progress - calculate completion based on progress flags
 	progress := &dnd5ev1alpha1.CreationProgress{
-		HasName:           draft.Name != "",
-		HasRace:           draft.RaceChoice.RaceID != "",
-		HasClass:          draft.ClassChoice.ClassID != "",
-		HasBackground:     draft.BackgroundChoice != "",
-		HasAbilityScores:  hasAbilityScores(draft.AbilityScoreChoice),
+		HasName:          draft.Name != "",
+		HasRace:          draft.RaceChoice.RaceID != "",
+		HasClass:         draft.ClassChoice.ClassID != "",
+		HasBackground:    draft.BackgroundChoice != "",
+		HasAbilityScores: hasAbilityScores(draft.AbilityScoreChoice),
 		// TODO: Add skill and language tracking when we implement those
 	}
-	
+
 	// Calculate completion percentage
 	completedSteps := 0
 	totalSteps := 5 // name, race, class, background, ability scores
-	
+
 	if progress.HasName {
 		completedSteps++
 	}
@@ -479,7 +521,7 @@ func convertDraftDataToProto(draft *toolkitchar.DraftData) *dnd5ev1alpha1.Charac
 	if progress.HasAbilityScores {
 		completedSteps++
 	}
-	
+
 	progress.CompletionPercentage = int32((completedSteps * 100) / totalSteps)
 	protoDraft.Progress = progress
 
@@ -498,14 +540,14 @@ func hasAbilityScores(scores shared.AbilityScores) bool {
 	if len(scores) != 6 {
 		return false
 	}
-	
+
 	// Check each ability score is greater than 0
 	for _, score := range scores {
 		if score <= 0 {
 			return false
 		}
 	}
-	
+
 	return true
 }
 
@@ -576,7 +618,7 @@ func convertProtoRaceChoicesToToolkit(protoChoices []*dnd5ev1alpha1.ChoiceSelect
 			Category: convertProtoCategoryToToolkit(pc.GetChoiceType()),
 			Source:   convertProtoSourceToToolkit(pc.GetSource()),
 		}
-		
+
 		// Convert based on choice type
 		switch pc.GetChoiceType() {
 		case dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_SKILLS:
@@ -608,7 +650,7 @@ func convertProtoRaceChoicesToToolkit(protoChoices []*dnd5ev1alpha1.ChoiceSelect
 			// For other types, store selected keys as equipment
 			choice.EquipmentSelection = pc.GetSelectedKeys()
 		}
-		
+
 		toolkitChoices = append(toolkitChoices, choice)
 	}
 	return toolkitChoices
@@ -676,5 +718,262 @@ func convertProtoSourceToToolkit(source dnd5ev1alpha1.ChoiceSource) shared.Choic
 	default:
 		// For other sources, default to player choice
 		return shared.SourcePlayer
+	}
+}
+
+// convertRaceDataToProtoInfo converts toolkit race data to proto RaceInfo
+func convertRaceDataToProtoInfo(raceData *race.Data, uiData *external.RaceUIData) *dnd5ev1alpha1.RaceInfo {
+	if raceData == nil {
+		return nil
+	}
+
+	info := &dnd5ev1alpha1.RaceInfo{
+		Id:          string(raceData.ID),
+		Name:        raceData.Name,
+		Speed:       int32(raceData.Speed),
+		Size:        convertSizeStringToProto(raceData.Size),
+		Description: raceData.Description,
+	}
+	
+	if uiData != nil {
+		// Use UI data for additional descriptions
+		info.AgeDescription = uiData.AgeDescription
+		info.AlignmentDescription = uiData.AlignmentDescription
+		info.SizeDescription = uiData.SizeDescription
+	}
+
+	// Convert ability bonuses
+	if len(raceData.AbilityScoreIncreases) > 0 {
+		info.AbilityBonuses = make(map[string]int32)
+		for ability, bonus := range raceData.AbilityScoreIncreases {
+			info.AbilityBonuses[string(ability)] = int32(bonus)
+		}
+	}
+
+	// Convert traits
+	info.Traits = make([]*dnd5ev1alpha1.RacialTrait, 0, len(raceData.Traits))
+	for _, trait := range raceData.Traits {
+		info.Traits = append(info.Traits, &dnd5ev1alpha1.RacialTrait{
+			Name:        trait.Name,
+			Description: trait.Description,
+		})
+	}
+
+	// TODO: Convert subraces when we have the data structure
+
+	// Convert proficiencies
+	info.Proficiencies = make([]string, 0)
+	for _, prof := range raceData.SkillProficiencies {
+		info.Proficiencies = append(info.Proficiencies, string(prof))
+	}
+	for _, prof := range raceData.WeaponProficiencies {
+		info.Proficiencies = append(info.Proficiencies, prof)
+	}
+	for _, prof := range raceData.ToolProficiencies {
+		info.Proficiencies = append(info.Proficiencies, prof)
+	}
+
+	// Convert languages
+	info.Languages = make([]dnd5ev1alpha1.Language, 0, len(raceData.Languages))
+	for _, lang := range raceData.Languages {
+		info.Languages = append(info.Languages, convertLanguageToProto(lang))
+	}
+
+	// TODO: Convert choices when we have the Choice type defined
+
+	return info
+}
+
+// convertSizeStringToProto converts toolkit size string to proto Size
+func convertSizeStringToProto(size string) dnd5ev1alpha1.Size {
+	switch size {
+	case "Tiny":
+		return dnd5ev1alpha1.Size_SIZE_TINY
+	case "Small":
+		return dnd5ev1alpha1.Size_SIZE_SMALL
+	case "Medium":
+		return dnd5ev1alpha1.Size_SIZE_MEDIUM
+	case "Large":
+		return dnd5ev1alpha1.Size_SIZE_LARGE
+	case "Huge":
+		return dnd5ev1alpha1.Size_SIZE_HUGE
+	case "Gargantuan":
+		return dnd5ev1alpha1.Size_SIZE_GARGANTUAN
+	default:
+		return dnd5ev1alpha1.Size_SIZE_MEDIUM
+	}
+}
+
+// convertSubraceToProtoInfo converts toolkit subrace to proto SubraceInfo
+func convertSubraceToProtoInfo(subrace interface{}) *dnd5ev1alpha1.SubraceInfo {
+	// TODO: Implement when we have subrace data structure
+	return nil
+}
+
+// convertSizeToProto converts toolkit Size to proto Size
+func convertSizeToProto(size constants.Size) dnd5ev1alpha1.Size {
+	switch size {
+	case constants.SizeTiny:
+		return dnd5ev1alpha1.Size_SIZE_TINY
+	case constants.SizeSmall:
+		return dnd5ev1alpha1.Size_SIZE_SMALL
+	case constants.SizeMedium:
+		return dnd5ev1alpha1.Size_SIZE_MEDIUM
+	case constants.SizeLarge:
+		return dnd5ev1alpha1.Size_SIZE_LARGE
+	case constants.SizeHuge:
+		return dnd5ev1alpha1.Size_SIZE_HUGE
+	case constants.SizeGargantuan:
+		return dnd5ev1alpha1.Size_SIZE_GARGANTUAN
+	default:
+		return dnd5ev1alpha1.Size_SIZE_MEDIUM
+	}
+}
+
+// convertLanguageToProto converts toolkit Language to proto Language
+func convertLanguageToProto(lang constants.Language) dnd5ev1alpha1.Language {
+	// Map toolkit language constants to proto enums
+	// This is a simplified mapping - you may need to expand based on available languages
+	switch lang {
+	case constants.LanguageCommon:
+		return dnd5ev1alpha1.Language_LANGUAGE_COMMON
+	case constants.LanguageDwarvish:
+		return dnd5ev1alpha1.Language_LANGUAGE_DWARVISH
+	case constants.LanguageElvish:
+		return dnd5ev1alpha1.Language_LANGUAGE_ELVISH
+	case constants.LanguageGiant:
+		return dnd5ev1alpha1.Language_LANGUAGE_GIANT
+	case constants.LanguageGnomish:
+		return dnd5ev1alpha1.Language_LANGUAGE_GNOMISH
+	case constants.LanguageGoblin:
+		return dnd5ev1alpha1.Language_LANGUAGE_GOBLIN
+	case constants.LanguageHalfling:
+		return dnd5ev1alpha1.Language_LANGUAGE_HALFLING
+	case constants.LanguageOrc:
+		return dnd5ev1alpha1.Language_LANGUAGE_ORC
+	case constants.LanguageDraconic:
+		return dnd5ev1alpha1.Language_LANGUAGE_DRACONIC
+	case constants.LanguageInfernal:
+		return dnd5ev1alpha1.Language_LANGUAGE_INFERNAL
+	default:
+		return dnd5ev1alpha1.Language_LANGUAGE_COMMON
+	}
+}
+
+// convertClassDataToProtoInfo converts toolkit class data to proto ClassInfo
+func convertClassDataToProtoInfo(classData *class.Data, uiData *external.ClassUIData) *dnd5ev1alpha1.ClassInfo {
+	if classData == nil {
+		return nil
+	}
+
+	info := &dnd5ev1alpha1.ClassInfo{
+		Id:          string(classData.ID),
+		Name:        classData.Name,
+		Description: classData.Description,
+		HitDie:      fmt.Sprintf("1d%d", classData.HitDice),
+	}
+	
+	if uiData != nil {
+		info.Description = uiData.Description
+	}
+
+	// Convert primary abilities - TODO: This field doesn't exist in toolkit, using saving throws for now
+	info.PrimaryAbilities = make([]string, 0, len(classData.SavingThrows))
+	for _, ability := range classData.SavingThrows {
+		info.PrimaryAbilities = append(info.PrimaryAbilities, string(ability))
+	}
+
+	// Convert saving throw proficiencies
+	info.SavingThrowProficiencies = make([]string, 0, len(classData.SavingThrows))
+	for _, ability := range classData.SavingThrows {
+		info.SavingThrowProficiencies = append(info.SavingThrowProficiencies, string(ability))
+	}
+
+	// Convert skill proficiencies
+	info.SkillChoicesCount = int32(classData.SkillProficiencyCount)
+	info.AvailableSkills = make([]string, 0, len(classData.SkillOptions))
+	for _, skill := range classData.SkillOptions {
+		info.AvailableSkills = append(info.AvailableSkills, string(skill))
+	}
+
+	// Convert weapon proficiencies
+	info.WeaponProficiencies = make([]string, 0, len(classData.WeaponProficiencies))
+	for _, prof := range classData.WeaponProficiencies {
+		info.WeaponProficiencies = append(info.WeaponProficiencies, string(prof))
+	}
+
+	// Convert armor proficiencies
+	info.ArmorProficiencies = make([]string, 0, len(classData.ArmorProficiencies))
+	for _, prof := range classData.ArmorProficiencies {
+		info.ArmorProficiencies = append(info.ArmorProficiencies, string(prof))
+	}
+
+	// TODO: Convert starting equipment and choices
+
+	return info
+}
+
+// convertAbilityToProto converts toolkit Ability to proto Ability
+func convertAbilityToProto(ability constants.Ability) dnd5ev1alpha1.Ability {
+	switch ability {
+	case constants.STR:
+		return dnd5ev1alpha1.Ability_ABILITY_STRENGTH
+	case constants.DEX:
+		return dnd5ev1alpha1.Ability_ABILITY_DEXTERITY
+	case constants.CON:
+		return dnd5ev1alpha1.Ability_ABILITY_CONSTITUTION
+	case constants.INT:
+		return dnd5ev1alpha1.Ability_ABILITY_INTELLIGENCE
+	case constants.WIS:
+		return dnd5ev1alpha1.Ability_ABILITY_WISDOM
+	case constants.CHA:
+		return dnd5ev1alpha1.Ability_ABILITY_CHARISMA
+	default:
+		return dnd5ev1alpha1.Ability_ABILITY_STRENGTH
+	}
+}
+
+// convertSkillToProto converts toolkit Skill to proto Skill
+func convertSkillToProto(skill constants.Skill) dnd5ev1alpha1.Skill {
+	// This is a simplified mapping - you'll need to expand based on all skills
+	switch skill {
+	case constants.SkillAcrobatics:
+		return dnd5ev1alpha1.Skill_SKILL_ACROBATICS
+	case constants.SkillAnimalHandling:
+		return dnd5ev1alpha1.Skill_SKILL_ANIMAL_HANDLING
+	case constants.SkillArcana:
+		return dnd5ev1alpha1.Skill_SKILL_ARCANA
+	case constants.SkillAthletics:
+		return dnd5ev1alpha1.Skill_SKILL_ATHLETICS
+	case constants.SkillDeception:
+		return dnd5ev1alpha1.Skill_SKILL_DECEPTION
+	case constants.SkillHistory:
+		return dnd5ev1alpha1.Skill_SKILL_HISTORY
+	case constants.SkillInsight:
+		return dnd5ev1alpha1.Skill_SKILL_INSIGHT
+	case constants.SkillIntimidation:
+		return dnd5ev1alpha1.Skill_SKILL_INTIMIDATION
+	case constants.SkillInvestigation:
+		return dnd5ev1alpha1.Skill_SKILL_INVESTIGATION
+	case constants.SkillMedicine:
+		return dnd5ev1alpha1.Skill_SKILL_MEDICINE
+	case constants.SkillNature:
+		return dnd5ev1alpha1.Skill_SKILL_NATURE
+	case constants.SkillPerception:
+		return dnd5ev1alpha1.Skill_SKILL_PERCEPTION
+	case constants.SkillPerformance:
+		return dnd5ev1alpha1.Skill_SKILL_PERFORMANCE
+	case constants.SkillPersuasion:
+		return dnd5ev1alpha1.Skill_SKILL_PERSUASION
+	case constants.SkillReligion:
+		return dnd5ev1alpha1.Skill_SKILL_RELIGION
+	case constants.SkillSleightOfHand:
+		return dnd5ev1alpha1.Skill_SKILL_SLEIGHT_OF_HAND
+	case constants.SkillStealth:
+		return dnd5ev1alpha1.Skill_SKILL_STEALTH
+	case constants.SkillSurvival:
+		return dnd5ev1alpha1.Skill_SKILL_SURVIVAL
+	default:
+		return dnd5ev1alpha1.Skill_SKILL_ATHLETICS
 	}
 }
