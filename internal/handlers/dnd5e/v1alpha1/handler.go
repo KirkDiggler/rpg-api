@@ -529,7 +529,8 @@ func convertDraftDataToProto(draft *toolkitchar.DraftData) *dnd5ev1alpha1.Charac
 	// Convert choices
 	protoDraft.Choices = convertToolkitChoicesToProto(draft.Choices)
 
-	// TODO: Convert race, class, background, and ability scores when we implement those updates
+	// TODO: Convert race, class, background, and ability scores when we have proper info objects
+	// For now, we rely on the choices being properly converted above
 
 	return protoDraft
 }
@@ -669,6 +670,7 @@ func convertToolkitSourceToProto(source shared.ChoiceSource) dnd5ev1alpha1.Choic
 		return dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_UNSPECIFIED
 	}
 }
+
 
 // hasAbilityScores checks if ability scores have been set
 func hasAbilityScores(scores shared.AbilityScores) bool {
