@@ -13,6 +13,7 @@ import (
 	draftrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft"
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/constants"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
 )
 
 // Config holds dependencies for the orchestrator
@@ -222,8 +223,14 @@ func (o *Orchestrator) UpdateRace(ctx context.Context, input *UpdateRaceInput) (
 		// Filter out existing race choices and add new ones
 		var nonRaceChoices []toolkitchar.ChoiceData
 		for _, choice := range draft.Choices {
-			if choice.Source != "race" {
+			if choice.Source != shared.SourceRace {
 				nonRaceChoices = append(nonRaceChoices, choice)
+			}
+		}
+		// Ensure all new choices have the race source set
+		for i := range input.Choices {
+			if input.Choices[i].Source == "" {
+				input.Choices[i].Source = shared.SourceRace
 			}
 		}
 		draft.Choices = append(nonRaceChoices, input.Choices...)

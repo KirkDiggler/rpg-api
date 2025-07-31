@@ -526,13 +526,148 @@ func convertDraftDataToProto(draft *toolkitchar.DraftData) *dnd5ev1alpha1.Charac
 	progress.CompletionPercentage = int32((completedSteps * 100) / totalSteps)
 	protoDraft.Progress = progress
 
-	// Convert choices - simplified for now
-	// TODO: Implement full choice conversion when we handle updates
-	protoDraft.Choices = make([]*dnd5ev1alpha1.ChoiceData, 0)
+	// Convert choices
+	protoDraft.Choices = convertToolkitChoicesToProto(draft.Choices)
 
 	// TODO: Convert race, class, background, and ability scores when we implement those updates
 
 	return protoDraft
+}
+
+// convertToolkitChoicesToProto converts toolkit ChoiceData to proto ChoiceData
+func convertToolkitChoicesToProto(choices []toolkitchar.ChoiceData) []*dnd5ev1alpha1.ChoiceData {
+	if len(choices) == 0 {
+		return nil
+	}
+	
+	protoChoices := make([]*dnd5ev1alpha1.ChoiceData, 0, len(choices))
+	for _, choice := range choices {
+		protoChoice := &dnd5ev1alpha1.ChoiceData{
+			Category: convertToolkitCategoryToProto(choice.Category),
+			Source:   convertToolkitSourceToProto(choice.Source),
+			ChoiceId: choice.ChoiceID,
+		}
+		
+		// Convert selection based on category
+		switch choice.Category {
+		case shared.ChoiceSkills:
+			if len(choice.SkillSelection) > 0 {
+				skills := make([]dnd5ev1alpha1.Skill, 0, len(choice.SkillSelection))
+				for _, s := range choice.SkillSelection {
+					skills = append(skills, convertSkillToProto(s))
+				}
+				protoChoice.Selection = &dnd5ev1alpha1.ChoiceData_Skills{
+					Skills: &dnd5ev1alpha1.SkillList{
+						Skills: skills,
+					},
+				}
+			}
+		case shared.ChoiceLanguages:
+			if len(choice.LanguageSelection) > 0 {
+				languages := make([]dnd5ev1alpha1.Language, 0, len(choice.LanguageSelection))
+				for _, l := range choice.LanguageSelection {
+					languages = append(languages, convertLanguageToProto(l))
+				}
+				protoChoice.Selection = &dnd5ev1alpha1.ChoiceData_Languages{
+					Languages: &dnd5ev1alpha1.LanguageList{
+						Languages: languages,
+					},
+				}
+			}
+		case shared.ChoiceAbilityScores:
+			if choice.AbilityScoreSelection != nil && len(*choice.AbilityScoreSelection) > 0 {
+				// Convert toolkit AbilityScores map to proto AbilityScores struct
+				protoScores := &dnd5ev1alpha1.AbilityScores{}
+				for ability, value := range *choice.AbilityScoreSelection {
+					switch ability {
+					case constants.STR:
+						protoScores.Strength = int32(value)
+					case constants.DEX:
+						protoScores.Dexterity = int32(value)
+					case constants.CON:
+						protoScores.Constitution = int32(value)
+					case constants.INT:
+						protoScores.Intelligence = int32(value)
+					case constants.WIS:
+						protoScores.Wisdom = int32(value)
+					case constants.CHA:
+						protoScores.Charisma = int32(value)
+					}
+				}
+				protoChoice.Selection = &dnd5ev1alpha1.ChoiceData_AbilityScores{
+					AbilityScores: protoScores,
+				}
+			}
+		case shared.ChoiceFightingStyle:
+			if choice.FightingStyleSelection != nil && *choice.FightingStyleSelection != "" {
+				protoChoice.Selection = &dnd5ev1alpha1.ChoiceData_FightingStyle{
+					FightingStyle: string(*choice.FightingStyleSelection),
+				}
+			}
+		case shared.ChoiceEquipment:
+			if len(choice.EquipmentSelection) > 0 {
+				protoChoice.Selection = &dnd5ev1alpha1.ChoiceData_Equipment{
+					Equipment: &dnd5ev1alpha1.EquipmentList{
+						Items: choice.EquipmentSelection,
+					},
+				}
+			}
+		default:
+			// For other types, no selection data
+		}
+		
+		protoChoices = append(protoChoices, protoChoice)
+	}
+	
+	return protoChoices
+}
+
+// convertToolkitCategoryToProto converts toolkit ChoiceCategory to proto
+func convertToolkitCategoryToProto(category shared.ChoiceCategory) dnd5ev1alpha1.ChoiceCategory {
+	switch category {
+	case shared.ChoiceEquipment:
+		return dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_EQUIPMENT
+	case shared.ChoiceSkills:
+		return dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_SKILLS
+	// ChoiceTools doesn't exist in shared constants, map tool choices differently
+	case shared.ChoiceLanguages:
+		return dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_LANGUAGES
+	case shared.ChoiceSpells:
+		return dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_SPELLS
+	// ChoiceFeats doesn't exist in shared constants
+	case shared.ChoiceAbilityScores:
+		return dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_ABILITY_SCORES
+	case shared.ChoiceName:
+		return dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_NAME
+	case shared.ChoiceFightingStyle:
+		return dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_FIGHTING_STYLE
+	case shared.ChoiceRace:
+		return dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_RACE
+	case shared.ChoiceClass:
+		return dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_CLASS
+	case shared.ChoiceBackground:
+		return dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_BACKGROUND
+	case shared.ChoiceCantrips:
+		return dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_CANTRIPS
+	default:
+		return dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_UNSPECIFIED
+	}
+}
+
+// convertToolkitSourceToProto converts toolkit ChoiceSource to proto
+func convertToolkitSourceToProto(source shared.ChoiceSource) dnd5ev1alpha1.ChoiceSource {
+	switch source {
+	case shared.SourceRace:
+		return dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_RACE
+	case shared.SourceClass:
+		return dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_CLASS
+	case shared.SourceBackground:
+		return dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_BACKGROUND
+	case shared.SourcePlayer:
+		return dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_PLAYER
+	default:
+		return dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_UNSPECIFIED
+	}
 }
 
 // hasAbilityScores checks if ability scores have been set
