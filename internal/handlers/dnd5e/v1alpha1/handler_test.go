@@ -342,6 +342,138 @@ func (s *HandlerTestSuite) TestCreateDraft_OrchestratorError() {
 	s.Equal(codes.Internal, st.Code())
 }
 
+func (s *HandlerTestSuite) TestListDrafts_Success() {
+	playerID := "player-123"
+	draft1 := &toolkitchar.DraftData{
+		ID:       "draft-1",
+		PlayerID: playerID,
+		Name:     "Gandalf",
+	}
+
+	// Mock orchestrator response
+	s.mockCharService.EXPECT().
+		ListDrafts(s.ctx, &character.ListDraftsInput{
+			PlayerID: playerID,
+		}).
+		Return(&character.ListDraftsOutput{
+			Drafts:        []*toolkitchar.DraftData{draft1},
+			NextPageToken: "",
+		}, nil)
+
+	// Call handler
+	resp, err := s.handler.ListDrafts(s.ctx, &dnd5ev1alpha1.ListDraftsRequest{
+		PlayerId: playerID,
+	})
+
+	// Assert response
+	s.NoError(err)
+	s.NotNil(resp)
+	s.Len(resp.Drafts, 1)
+	s.Equal("draft-1", resp.Drafts[0].Id)
+	s.Equal("Gandalf", resp.Drafts[0].Name)
+	s.Empty(resp.NextPageToken)
+}
+
+func (s *HandlerTestSuite) TestListDrafts_EmptyList() {
+	playerID := "player-456"
+
+	// Mock orchestrator response with empty list
+	s.mockCharService.EXPECT().
+		ListDrafts(s.ctx, &character.ListDraftsInput{
+			PlayerID: playerID,
+		}).
+		Return(&character.ListDraftsOutput{
+			Drafts:        []*toolkitchar.DraftData{},
+			NextPageToken: "",
+		}, nil)
+
+	// Call handler
+	resp, err := s.handler.ListDrafts(s.ctx, &dnd5ev1alpha1.ListDraftsRequest{
+		PlayerId: playerID,
+	})
+
+	// Assert response
+	s.NoError(err)
+	s.NotNil(resp)
+	s.Empty(resp.Drafts)
+	s.Empty(resp.NextPageToken)
+}
+
+func (s *HandlerTestSuite) TestUpdateName_Success() {
+	draftID := "draft-123"
+	newName := "Gimli"
+	updatedDraft := &toolkitchar.DraftData{
+		ID:   draftID,
+		Name: newName,
+	}
+
+	// Mock orchestrator response
+	s.mockCharService.EXPECT().
+		UpdateName(s.ctx, &character.UpdateNameInput{
+			DraftID: draftID,
+			Name:    newName,
+		}).
+		Return(&character.UpdateNameOutput{
+			Draft:    updatedDraft,
+			Warnings: []character.ValidationWarning{},
+		}, nil)
+
+	// Call handler
+	resp, err := s.handler.UpdateName(s.ctx, &dnd5ev1alpha1.UpdateNameRequest{
+		DraftId: draftID,
+		Name:    newName,
+	})
+
+	// Assert response
+	s.NoError(err)
+	s.NotNil(resp)
+	s.NotNil(resp.Draft)
+	s.Equal(draftID, resp.Draft.Id)
+	s.Equal(newName, resp.Draft.Name)
+	s.Empty(resp.Warnings)
+}
+
+func (s *HandlerTestSuite) TestUpdateName_WithWarnings() {
+	draftID := "draft-456"
+	newName := "X"
+	updatedDraft := &toolkitchar.DraftData{
+		ID:   draftID,
+		Name: newName,
+	}
+
+	// Mock orchestrator response with warnings
+	s.mockCharService.EXPECT().
+		UpdateName(s.ctx, &character.UpdateNameInput{
+			DraftID: draftID,
+			Name:    newName,
+		}).
+		Return(&character.UpdateNameOutput{
+			Draft: updatedDraft,
+			Warnings: []character.ValidationWarning{
+				{
+					Field:   "name",
+					Message: "Name is very short",
+					Type:    "warning",
+				},
+			},
+		}, nil)
+
+	// Call handler
+	resp, err := s.handler.UpdateName(s.ctx, &dnd5ev1alpha1.UpdateNameRequest{
+		DraftId: draftID,
+		Name:    newName,
+	})
+
+	// Assert response
+	s.NoError(err)
+	s.NotNil(resp)
+	s.NotNil(resp.Draft)
+	s.Equal(newName, resp.Draft.Name)
+	s.Len(resp.Warnings, 1)
+	s.Equal("name", resp.Warnings[0].Field)
+	s.Equal("Name is very short", resp.Warnings[0].Message)
+}
+
 func TestHandlerSuite(t *testing.T) {
 	suite.Run(t, new(HandlerTestSuite))
 }

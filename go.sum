@@ -23,6 +23,8 @@ github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f h1:lO4WD4F/r
 github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f/go.mod h1:cuUVRXasLTGF7a8hSLbxyZXjz+1KgoB3wDUb6vlszIc=
 github.com/fadedpez/dnd5e-api v0.0.0-20250718061244-10d9388d279a h1:E+08ywq3MUGx4oh1EdMwWPITGRT+cyl6pweQ4ciN6R8=
 github.com/fadedpez/dnd5e-api v0.0.0-20250718061244-10d9388d279a/go.mod h1:7OpXfFTO5ZwD03Rh3MfR0sFIi6U1qJx71rkuGz9IPqw=
+github.com/fadedpez/dnd5e-api v0.0.0-20250718210231-523223e548d1 h1:hcfCC9W1v3CtjZWBAIbmjYRuVchvppxwcafJ0hSaKSs=
+github.com/fadedpez/dnd5e-api v0.0.0-20250718210231-523223e548d1/go.mod h1:7OpXfFTO5ZwD03Rh3MfR0sFIi6U1qJx71rkuGz9IPqw=
 github.com/go-logr/logr v1.4.3 h1:CjnDlHq8ikf6E492q6eKboGOC0T8CDaOvkHCIg8idEI=
 github.com/go-logr/logr v1.4.3/go.mod h1:9T104GzyrTigFIr8wt5mBrctHMim0Nb2HLGrmQ40KvY=
 github.com/go-logr/stdr v1.2.2 h1:hSWxHoqTgW2S2qGc0LTAI563KZ5YKYRhT3MFKZMbjag=

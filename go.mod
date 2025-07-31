@@ -7,7 +7,7 @@ require (
 	github.com/KirkDiggler/rpg-toolkit/dice v0.1.0
 	github.com/KirkDiggler/rpg-toolkit/events v0.1.1
 	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.0.0-20250730170410-c99ed1fdb923
-	github.com/fadedpez/dnd5e-api v0.0.0-20250718061244-10d9388d279a
+	github.com/fadedpez/dnd5e-api v0.0.0-20250718210231-523223e548d1
 	github.com/google/uuid v1.6.0
 	github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.3.2
 	github.com/redis/go-redis/v9 v9.11.0

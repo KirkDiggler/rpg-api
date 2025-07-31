@@ -3,20 +3,21 @@ package character
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/KirkDiggler/rpg-api/internal/clients/external"
 	"github.com/KirkDiggler/rpg-api/internal/errors"
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/dice"
 	"github.com/KirkDiggler/rpg-api/internal/pkg/idgen"
 	"github.com/KirkDiggler/rpg-api/internal/repositories/character"
-	characterdraft "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft"
+	draftrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft"
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 )
 
 // Config holds dependencies for the orchestrator
 type Config struct {
 	CharacterRepo      character.Repository
-	CharacterDraftRepo characterdraft.Repository
+	CharacterDraftRepo draftrepo.Repository
 	ExternalClient     external.Client
 	DiceService        dice.Service
 	IDGenerator        idgen.Generator
@@ -45,7 +46,7 @@ func (c *Config) Validate() error {
 // Orchestrator implements the character service
 type Orchestrator struct {
 	charRepo      character.Repository
-	draftRepo     characterdraft.Repository
+	draftRepo     draftrepo.Repository
 	externalClient external.Client
 	diceService   dice.Service
 	idGen         idgen.Generator
@@ -89,7 +90,7 @@ func (o *Orchestrator) CreateDraft(ctx context.Context, input *CreateDraftInput)
 	}
 
 	// Save to repository
-	createOutput, err := o.draftRepo.Create(ctx, characterdraft.CreateInput{
+	createOutput, err := o.draftRepo.Create(ctx, draftrepo.CreateInput{
 		Draft: draft,
 	})
 	if err != nil {
@@ -108,7 +109,7 @@ func (o *Orchestrator) GetDraft(ctx context.Context, input *GetDraftInput) (*Get
 	}
 
 	// Get draft from repository
-	getDraftOutput, err := o.draftRepo.Get(ctx, characterdraft.GetInput{
+	getDraftOutput, err := o.draftRepo.Get(ctx, draftrepo.GetInput{
 		ID: input.DraftID,
 	})
 	if err != nil {
@@ -123,7 +124,32 @@ func (o *Orchestrator) GetDraft(ctx context.Context, input *GetDraftInput) (*Get
 }
 
 func (o *Orchestrator) ListDrafts(ctx context.Context, input *ListDraftsInput) (*ListDraftsOutput, error) {
-	return nil, errors.Unimplemented("not implemented")
+	// Validate input
+	if input.PlayerID == "" {
+		return nil, errors.InvalidArgument("player ID is required")
+	}
+
+	// Get the player's single draft
+	getDraftOutput, err := o.draftRepo.GetByPlayerID(ctx, draftrepo.GetByPlayerIDInput{
+		PlayerID: input.PlayerID,
+	})
+	if err != nil {
+		if errors.IsNotFound(err) {
+			// No draft found - return empty list
+			return &ListDraftsOutput{
+				Drafts:        []*toolkitchar.DraftData{},
+				NextPageToken: "",
+			}, nil
+		}
+		return nil, errors.Wrapf(err, "failed to get draft for player %s", input.PlayerID)
+	}
+
+	// Return the single draft as a list
+	// Note: We ignore SessionID filter since we only have one draft per player
+	return &ListDraftsOutput{
+		Drafts:        []*toolkitchar.DraftData{getDraftOutput.Draft},
+		NextPageToken: "", // No pagination needed for single draft
+	}, nil
 }
 
 func (o *Orchestrator) DeleteDraft(ctx context.Context, input *DeleteDraftInput) (*DeleteDraftOutput, error) {
@@ -131,7 +157,39 @@ func (o *Orchestrator) DeleteDraft(ctx context.Context, input *DeleteDraftInput)
 }
 
 func (o *Orchestrator) UpdateName(ctx context.Context, input *UpdateNameInput) (*UpdateNameOutput, error) {
-	return nil, errors.Unimplemented("not implemented")
+	// Validate input
+	if input.DraftID == "" {
+		return nil, errors.InvalidArgument("draft ID is required")
+	}
+	if strings.TrimSpace(input.Name) == "" {
+		return nil, errors.InvalidArgument("name is required")
+	}
+
+	// Get the existing draft
+	getDraftOutput, err := o.draftRepo.Get(ctx, draftrepo.GetInput{
+		ID: input.DraftID,
+	})
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to get draft %s", input.DraftID)
+	}
+
+	// Update the name
+	draft := getDraftOutput.Draft
+	draft.Name = strings.TrimSpace(input.Name)
+
+	// Save the updated draft
+	updateOutput, err := o.draftRepo.Update(ctx, draftrepo.UpdateInput{
+		Draft: draft,
+	})
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to update draft %s", input.DraftID)
+	}
+
+	// Return updated draft with any warnings
+	return &UpdateNameOutput{
+		Draft:    updateOutput.Draft,
+		Warnings: []ValidationWarning{}, // No warnings for name update
+	}, nil
 }
 
 func (o *Orchestrator) UpdateRace(ctx context.Context, input *UpdateRaceInput) (*UpdateRaceOutput, error) {
@@ -196,11 +254,37 @@ func (o *Orchestrator) ListChoiceOptions(ctx context.Context, input *ListChoiceO
 }
 
 func (o *Orchestrator) GetRaceDetails(ctx context.Context, input *GetRaceDetailsInput) (*GetRaceDetailsOutput, error) {
-	return nil, errors.Unimplemented("not implemented")
+	if input.RaceID == "" {
+		return nil, errors.InvalidArgument("race ID is required")
+	}
+
+	// Get race data from external client
+	raceDataOutput, err := o.externalClient.GetRaceData(ctx, input.RaceID)
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to get race data for %s", input.RaceID)
+	}
+
+	return &GetRaceDetailsOutput{
+		RaceData: raceDataOutput.RaceData,
+		UIData:   raceDataOutput.UIData,
+	}, nil
 }
 
 func (o *Orchestrator) GetClassDetails(ctx context.Context, input *GetClassDetailsInput) (*GetClassDetailsOutput, error) {
-	return nil, errors.Unimplemented("not implemented")
+	if input.ClassID == "" {
+		return nil, errors.InvalidArgument("class ID is required")
+	}
+
+	// Get class data from external client
+	classDataOutput, err := o.externalClient.GetClassData(ctx, input.ClassID)
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to get class data for %s", input.ClassID)
+	}
+
+	return &GetClassDetailsOutput{
+		ClassData: classDataOutput.ClassData,
+		UIData:    classDataOutput.UIData,
+	}, nil
 }
 
 func (o *Orchestrator) GetBackgroundDetails(ctx context.Context, input *GetBackgroundDetailsInput) (*GetBackgroundDetailsOutput, error) {

@@ -57,10 +57,10 @@ func (mr *MockClientMockRecorder) GetBackgroundData(ctx, backgroundID any) *gomo
 }
 
 // GetClassData mocks base method.
-func (m *MockClient) GetClassData(ctx context.Context, classID string) (*external.ClassData, error) {
+func (m *MockClient) GetClassData(ctx context.Context, classID string) (*external.ClassDataOutput, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetClassData", ctx, classID)
-	ret0, _ := ret[0].(*external.ClassData)
+	ret0, _ := ret[0].(*external.ClassDataOutput)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }

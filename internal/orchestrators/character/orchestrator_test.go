@@ -7,15 +7,19 @@ import (
 	"github.com/stretchr/testify/suite"
 	"go.uber.org/mock/gomock"
 
+	"github.com/KirkDiggler/rpg-api/internal/clients/external"
+	externalmock "github.com/KirkDiggler/rpg-api/internal/clients/external/mock"
 	"github.com/KirkDiggler/rpg-api/internal/errors"
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
-	externalmock "github.com/KirkDiggler/rpg-api/internal/clients/external/mock"
 	dicemock "github.com/KirkDiggler/rpg-api/internal/orchestrators/dice/mock"
 	idgenmock "github.com/KirkDiggler/rpg-api/internal/pkg/idgen/mock"
 	characterrepomock "github.com/KirkDiggler/rpg-api/internal/repositories/character/mock"
 	draftrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft"
 	draftrepomock "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft/mock"
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/class"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/constants"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/race"
 )
 
 type OrchestratorTestSuite struct {
@@ -23,7 +27,7 @@ type OrchestratorTestSuite struct {
 	ctrl               *gomock.Controller
 	mockCharRepo       *characterrepomock.MockRepository
 	mockDraftRepo      *draftrepomock.MockRepository
-	mockExternalClient *externalmock.MockClient
+	mockExternal       *externalmock.MockClient
 	mockDiceService    *dicemock.MockService
 	mockIDGenerator    *idgenmock.MockGenerator
 	orchestrator       *character.Orchestrator
@@ -39,7 +43,7 @@ func (s *OrchestratorTestSuite) SetupTest() {
 	s.ctrl = gomock.NewController(s.T())
 	s.mockCharRepo = characterrepomock.NewMockRepository(s.ctrl)
 	s.mockDraftRepo = draftrepomock.NewMockRepository(s.ctrl)
-	s.mockExternalClient = externalmock.NewMockClient(s.ctrl)
+	s.mockExternal = externalmock.NewMockClient(s.ctrl)
 	s.mockDiceService = dicemock.NewMockService(s.ctrl)
 	s.mockIDGenerator = idgenmock.NewMockGenerator(s.ctrl)
 	s.ctx = context.Background()
@@ -47,7 +51,7 @@ func (s *OrchestratorTestSuite) SetupTest() {
 	orchestrator, err := character.New(&character.Config{
 		CharacterRepo:      s.mockCharRepo,
 		CharacterDraftRepo: s.mockDraftRepo,
-		ExternalClient:     s.mockExternalClient,
+		ExternalClient:     s.mockExternal,
 		DiceService:        s.mockDiceService,
 		IDGenerator:        s.mockIDGenerator,
 	})
@@ -245,6 +249,251 @@ func (s *OrchestratorTestSuite) TestCreateDraft_RepositoryError() {
 	s.Error(err)
 	s.Nil(output)
 	s.Contains(err.Error(), "failed to create draft")
+}
+
+func (s *OrchestratorTestSuite) TestGetRaceDetails_Success() {
+	ctx := context.Background()
+	input := &character.GetRaceDetailsInput{
+		RaceID: "RACE_DRAGONBORN",
+	}
+
+	expectedRaceData := &race.Data{
+		ID:   constants.Race("RACE_DRAGONBORN"),
+		Name: "Dragonborn",
+	}
+	expectedUIData := &external.RaceUIData{
+		SizeDescription: "Dragonborn are taller and heavier than humans",
+	}
+
+	s.mockExternal.EXPECT().
+		GetRaceData(ctx, "RACE_DRAGONBORN").
+		Return(&external.RaceDataOutput{
+			RaceData: expectedRaceData,
+			UIData:   expectedUIData,
+		}, nil)
+
+	output, err := s.orchestrator.GetRaceDetails(ctx, input)
+
+	s.Require().NoError(err)
+	s.Assert().Equal(expectedRaceData, output.RaceData)
+	s.Assert().Equal(expectedUIData, output.UIData)
+}
+
+func (s *OrchestratorTestSuite) TestGetRaceDetails_EmptyID() {
+	ctx := context.Background()
+	input := &character.GetRaceDetailsInput{
+		RaceID: "",
+	}
+
+	output, err := s.orchestrator.GetRaceDetails(ctx, input)
+
+	s.Require().Error(err)
+	s.Assert().Nil(output)
+	s.Assert().True(errors.IsInvalidArgument(err))
+}
+
+func (s *OrchestratorTestSuite) TestGetClassDetails_Success() {
+	ctx := context.Background()
+	input := &character.GetClassDetailsInput{
+		ClassID: "CLASS_WIZARD",
+	}
+
+	expectedClassData := &class.Data{
+		ID:      constants.Class("CLASS_WIZARD"),
+		Name:    "Wizard",
+		HitDice: 6,
+	}
+	expectedUIData := &external.ClassUIData{
+		Description: "Wizards are supreme magic-users",
+	}
+
+	s.mockExternal.EXPECT().
+		GetClassData(ctx, "CLASS_WIZARD").
+		Return(&external.ClassDataOutput{
+			ClassData: expectedClassData,
+			UIData:    expectedUIData,
+		}, nil)
+
+	output, err := s.orchestrator.GetClassDetails(ctx, input)
+
+	s.Require().NoError(err)
+	s.Assert().Equal(expectedClassData, output.ClassData)
+	s.Assert().Equal(expectedUIData, output.UIData)
+}
+
+func (s *OrchestratorTestSuite) TestGetClassDetails_EmptyID() {
+	ctx := context.Background()
+	input := &character.GetClassDetailsInput{
+		ClassID: "",
+	}
+
+	output, err := s.orchestrator.GetClassDetails(ctx, input)
+
+	s.Require().Error(err)
+	s.Assert().Nil(output)
+	s.Assert().True(errors.IsInvalidArgument(err))
+}
+
+func (s *OrchestratorTestSuite) TestListDrafts_Success() {
+	ctx := context.Background()
+	input := &character.ListDraftsInput{
+		PlayerID: s.testPlayerID,
+	}
+
+	// Mock repository call
+	s.mockDraftRepo.EXPECT().
+		GetByPlayerID(ctx, draftrepo.GetByPlayerIDInput{
+			PlayerID: s.testPlayerID,
+		}).
+		Return(&draftrepo.GetByPlayerIDOutput{
+			Draft: s.testDraftData,
+		}, nil)
+
+	// Call orchestrator
+	output, err := s.orchestrator.ListDrafts(ctx, input)
+
+	// Assert response
+	s.Require().NoError(err)
+	s.Require().NotNil(output)
+	s.Assert().Len(output.Drafts, 1)
+	s.Assert().Equal(s.testDraftData, output.Drafts[0])
+	s.Assert().Empty(output.NextPageToken)
+}
+
+func (s *OrchestratorTestSuite) TestListDrafts_EmptyPlayerID() {
+	ctx := context.Background()
+	input := &character.ListDraftsInput{
+		PlayerID: "",
+	}
+
+	// Call orchestrator
+	output, err := s.orchestrator.ListDrafts(ctx, input)
+
+	// Assert error
+	s.Require().Error(err)
+	s.Assert().Nil(output)
+	s.Assert().True(errors.IsInvalidArgument(err))
+	s.Assert().Contains(err.Error(), "player ID is required")
+}
+
+func (s *OrchestratorTestSuite) TestListDrafts_NoDraft() {
+	ctx := context.Background()
+	input := &character.ListDraftsInput{
+		PlayerID: s.testPlayerID,
+	}
+
+	// Mock repository call - no draft found
+	s.mockDraftRepo.EXPECT().
+		GetByPlayerID(ctx, draftrepo.GetByPlayerIDInput{
+			PlayerID: s.testPlayerID,
+		}).
+		Return(nil, errors.NotFound("no draft found"))
+
+	// Call orchestrator
+	output, err := s.orchestrator.ListDrafts(ctx, input)
+
+	// Assert response - empty list but no error
+	s.Require().NoError(err)
+	s.Require().NotNil(output)
+	s.Assert().Empty(output.Drafts)
+	s.Assert().Empty(output.NextPageToken)
+}
+
+func (s *OrchestratorTestSuite) TestUpdateName_Success() {
+	ctx := context.Background()
+	newName := "Gimli"
+	input := &character.UpdateNameInput{
+		DraftID: s.testDraftID,
+		Name:    newName,
+	}
+
+	// Create a copy of test data with updated name
+	updatedDraft := *s.testDraftData
+	updatedDraft.Name = newName
+
+	// Mock get call
+	s.mockDraftRepo.EXPECT().
+		Get(ctx, draftrepo.GetInput{
+			ID: s.testDraftID,
+		}).
+		Return(&draftrepo.GetOutput{
+			Draft: s.testDraftData,
+		}, nil)
+
+	// Mock update call
+	s.mockDraftRepo.EXPECT().
+		Update(ctx, draftrepo.UpdateInput{
+			Draft: &updatedDraft,
+		}).
+		Return(&draftrepo.UpdateOutput{
+			Draft: &updatedDraft,
+		}, nil)
+
+	// Call orchestrator
+	output, err := s.orchestrator.UpdateName(ctx, input)
+
+	// Assert response
+	s.Require().NoError(err)
+	s.Require().NotNil(output)
+	s.Assert().Equal(newName, output.Draft.Name)
+	s.Assert().Empty(output.Warnings)
+}
+
+func (s *OrchestratorTestSuite) TestUpdateName_EmptyDraftID() {
+	ctx := context.Background()
+	input := &character.UpdateNameInput{
+		DraftID: "",
+		Name:    "Gimli",
+	}
+
+	// Call orchestrator
+	output, err := s.orchestrator.UpdateName(ctx, input)
+
+	// Assert error
+	s.Require().Error(err)
+	s.Assert().Nil(output)
+	s.Assert().True(errors.IsInvalidArgument(err))
+	s.Assert().Contains(err.Error(), "draft ID is required")
+}
+
+func (s *OrchestratorTestSuite) TestUpdateName_EmptyName() {
+	ctx := context.Background()
+	input := &character.UpdateNameInput{
+		DraftID: s.testDraftID,
+		Name:    "   ",  // Whitespace only
+	}
+
+	// Call orchestrator
+	output, err := s.orchestrator.UpdateName(ctx, input)
+
+	// Assert error
+	s.Require().Error(err)
+	s.Assert().Nil(output)
+	s.Assert().True(errors.IsInvalidArgument(err))
+	s.Assert().Contains(err.Error(), "name is required")
+}
+
+func (s *OrchestratorTestSuite) TestUpdateName_DraftNotFound() {
+	ctx := context.Background()
+	input := &character.UpdateNameInput{
+		DraftID: s.testDraftID,
+		Name:    "Gimli",
+	}
+
+	// Mock get call - draft not found
+	s.mockDraftRepo.EXPECT().
+		Get(ctx, draftrepo.GetInput{
+			ID: s.testDraftID,
+		}).
+		Return(nil, errors.NotFound("draft not found"))
+
+	// Call orchestrator
+	output, err := s.orchestrator.UpdateName(ctx, input)
+
+	// Assert error
+	s.Require().Error(err)
+	s.Assert().Nil(output)
+	s.Assert().Contains(err.Error(), "failed to get draft")
 }
 
 func TestOrchestratorSuite(t *testing.T) {

@@ -83,7 +83,7 @@ func TestGetClassData_Integration(t *testing.T) {
 		name        string
 		classID     string
 		wantName    string
-		wantHitDice int32
+		wantHitDice int
 	}{
 		{
 			name:        "wizard",
@@ -101,16 +101,21 @@ func TestGetClassData_Integration(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			classData, err := client.GetClassData(ctx, tc.classID)
+			output, err := client.GetClassData(ctx, tc.classID)
 			require.NoError(t, err)
-			require.NotNil(t, classData)
+			require.NotNil(t, output)
+			require.NotNil(t, output.ClassData)
+			require.NotNil(t, output.UIData)
 
 			// Verify the ID is preserved in our format
-			assert.Equal(t, tc.classID, classData.ID)
+			assert.Equal(t, constants.Class(tc.classID), output.ClassData.ID)
 			// Verify we got the right class
-			assert.Equal(t, tc.wantName, classData.Name)
-			assert.Equal(t, tc.wantHitDice, classData.HitDice)
-			assert.Equal(t, tc.wantHitDice, classData.HitPointsAt1st)
+			assert.Equal(t, tc.wantName, output.ClassData.Name)
+			assert.Equal(t, tc.wantHitDice, output.ClassData.HitDice)
+			// Verify we have some data
+			assert.NotEmpty(t, output.ClassData.SavingThrows)
+			// Verify UI data is present
+			assert.NotNil(t, output.UIData)
 		})
 	}
 }

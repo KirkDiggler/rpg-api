@@ -61,7 +61,7 @@ type Client interface {
 	GetRaceData(ctx context.Context, raceID string) (*RaceDataOutput, error)
 
 	// GetClassData fetches class information from external source
-	GetClassData(ctx context.Context, classID string) (*ClassData, error)
+	GetClassData(ctx context.Context, classID string) (*ClassDataOutput, error)
 
 	// GetBackgroundData fetches background information from external source
 	GetBackgroundData(ctx context.Context, backgroundID string) (*BackgroundData, error)
@@ -192,7 +192,7 @@ func (c *client) GetRaceData(_ context.Context, raceID string) (*RaceDataOutput,
 	}
 
 	// Convert to both toolkit format and extract UI data
-	toolkitData, uiData := convertRaceToHybrid(apiRace, raceID)
+	toolkitData, uiData := convertRaceToHybrid(apiRace)
 	
 	return &RaceDataOutput{
 		RaceData: toolkitData,
@@ -200,31 +200,23 @@ func (c *client) GetRaceData(_ context.Context, raceID string) (*RaceDataOutput,
 	}, nil
 }
 
-func (c *client) GetClassData(_ context.Context, classID string) (*ClassData, error) {
+func (c *client) GetClassData(_ context.Context, classID string) (*ClassDataOutput, error) {
 	// Convert our internal ID format to API format
 	apiID := toAPIFormat(classID)
 
 	// Get full class details
-	class, err := c.dnd5eClient.GetClass(apiID)
+	apiClass, err := c.dnd5eClient.GetClass(apiID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get class %s (api: %s): %w", classID, apiID, err)
 	}
 
-	// Get level 1 data for features
-	level1, err := c.dnd5eClient.GetClassLevel(apiID, 1)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get class level 1 for %s (api: %s): %w", classID, apiID, err)
-	}
-
-	// Convert to our internal format with level 1 features
-	classData, err := c.convertClassWithFeatures(class, level1)
-	if err != nil {
-		return nil, fmt.Errorf("failed to convert class %s: %w", classID, err)
-	}
-
-	// Ensure the ID matches our internal format
-	classData.ID = classID
-	return classData, nil
+	// Convert to both toolkit format and extract UI data
+	toolkitData, uiData := convertClassToHybrid(apiClass)
+	
+	return &ClassDataOutput{
+		ClassData: toolkitData,
+		UIData:    uiData,
+	}, nil
 }
 
 func (c *client) GetBackgroundData(_ context.Context, _ string) (*BackgroundData, error) {

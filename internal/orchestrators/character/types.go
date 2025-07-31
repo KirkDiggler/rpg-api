@@ -3,8 +3,10 @@ package character
 import (
 	"context"
 
+	"github.com/KirkDiggler/rpg-api/internal/clients/external"
 	"github.com/KirkDiggler/rpg-api/internal/entities/dnd5e"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/class"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/race"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
 )
@@ -304,9 +306,17 @@ type ListClassesInput struct {
 
 // ListClassesOutput defines the response for listing classes
 type ListClassesOutput struct {
-	Classes       []*dnd5e.ClassData
+	Classes       []*ClassSummary
 	NextPageToken string
 	TotalSize     int32
+}
+
+// ClassSummary contains basic class info for listing
+type ClassSummary struct {
+	ID          string
+	Name        string
+	Description string
+	HitDice     int
 }
 
 // ListBackgroundsInput defines the request for listing backgrounds
@@ -420,15 +430,9 @@ type GetRaceDetailsOutput struct {
 	// Core mechanics data from toolkit
 	RaceData *race.Data
 	// UI/presentation data
-	UIData *RaceUIData
+	UIData *external.RaceUIData
 }
 
-// RaceUIData contains presentation/flavor text for UI
-type RaceUIData struct {
-	SizeDescription      string
-	AgeDescription       string
-	AlignmentDescription string
-}
 
 // GetClassDetailsInput defines the request for getting class details
 type GetClassDetailsInput struct {
@@ -437,8 +441,12 @@ type GetClassDetailsInput struct {
 
 // GetClassDetailsOutput defines the response for getting class details
 type GetClassDetailsOutput struct {
-	Class *dnd5e.ClassData
+	// Core mechanics data from toolkit
+	ClassData *class.Data
+	// UI/presentation data
+	UIData *external.ClassUIData
 }
+
 
 // GetBackgroundDetailsInput defines the request for getting background details
 type GetBackgroundDetailsInput struct {

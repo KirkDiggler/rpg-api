@@ -1,6 +1,8 @@
 package external
 
 import (
+	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/fadedpez/dnd5e-api/entities"
@@ -9,14 +11,26 @@ import (
 )
 
 // convertRaceToHybrid converts API race data to both toolkit format and UI data
-func convertRaceToHybrid(apiRace *entities.Race, raceID string) (*race.Data, *RaceUIData) {
+func convertRaceToHybrid(apiRace *entities.Race) (*race.Data, *RaceUIData) {
 	if apiRace == nil {
 		return nil, nil
 	}
 
+	// Convert API key to toolkit constant, validating it exists
+	raceID, err := convertKeyToRaceID(apiRace.Key)
+	if err != nil {
+		// Log warning but continue with the raw key
+		// This allows us to handle new races from the API that we don't have constants for yet
+		slog.Warn("Unknown race key from API, using raw key", 
+			"key", apiRace.Key, 
+			"name", apiRace.Name,
+			"error", err)
+		raceID = constants.Race(apiRace.Key)
+	}
+
 	// Convert to toolkit format
 	toolkitData := &race.Data{
-		ID:          constants.Race(raceID),
+		ID:          raceID,
 		Name:        apiRace.Name,
 		Description: "", // API doesn't provide a general description
 		Size:        apiRace.Size,
@@ -256,4 +270,26 @@ func isToolProficiency(name string) bool {
 		strings.Contains(lower, "supplies") ||
 		strings.Contains(lower, "kit") ||
 		strings.Contains(lower, "instruments")
+}
+
+// convertKeyToRaceID validates and converts an API key to a toolkit race constant
+func convertKeyToRaceID(key string) (constants.Race, error) {
+	// Map of known API keys to toolkit constants
+	knownRaces := map[string]constants.Race{
+		"dragonborn": constants.RaceDragonborn,
+		"dwarf":      constants.RaceDwarf,
+		"elf":        constants.RaceElf,
+		"gnome":      constants.RaceGnome,
+		"half-elf":   constants.RaceHalfElf,
+		"halfling":   constants.RaceHalfling,
+		"half-orc":   constants.RaceHalfOrc,
+		"human":      constants.RaceHuman,
+		"tiefling":   constants.RaceTiefling,
+	}
+
+	if raceID, ok := knownRaces[key]; ok {
+		return raceID, nil
+	}
+
+	return "", fmt.Errorf("unknown race key: %s", key)
 }

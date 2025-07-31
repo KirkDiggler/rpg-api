@@ -117,7 +117,30 @@ func (h *Handler) ListDrafts(
 	ctx context.Context,
 	req *dnd5ev1alpha1.ListDraftsRequest,
 ) (*dnd5ev1alpha1.ListDraftsResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "not implemented")
+	// Call orchestrator
+	output, err := h.characterService.ListDrafts(ctx, &character.ListDraftsInput{
+		PlayerID:  req.PlayerId,
+		SessionID: req.SessionId,
+		PageSize:  req.PageSize,
+		PageToken: req.PageToken,
+	})
+	if err != nil {
+		if errors.IsInvalidArgument(err) {
+			return nil, status.Error(codes.InvalidArgument, err.Error())
+		}
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	// Convert drafts to proto
+	protoDrafts := make([]*dnd5ev1alpha1.CharacterDraft, len(output.Drafts))
+	for i, draft := range output.Drafts {
+		protoDrafts[i] = convertDraftDataToProto(draft)
+	}
+
+	return &dnd5ev1alpha1.ListDraftsResponse{
+		Drafts:        protoDrafts,
+		NextPageToken: output.NextPageToken,
+	}, nil
 }
 
 // DeleteDraft deletes a character draft
@@ -133,7 +156,35 @@ func (h *Handler) UpdateName(
 	ctx context.Context,
 	req *dnd5ev1alpha1.UpdateNameRequest,
 ) (*dnd5ev1alpha1.UpdateNameResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "not implemented")
+	// Call orchestrator
+	output, err := h.characterService.UpdateName(ctx, &character.UpdateNameInput{
+		DraftID: req.DraftId,
+		Name:    req.Name,
+	})
+	if err != nil {
+		if errors.IsInvalidArgument(err) {
+			return nil, status.Error(codes.InvalidArgument, err.Error())
+		}
+		if errors.IsNotFound(err) {
+			return nil, status.Error(codes.NotFound, err.Error())
+		}
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	// Convert warnings
+	protoWarnings := make([]*dnd5ev1alpha1.ValidationWarning, len(output.Warnings))
+	for i, warning := range output.Warnings {
+		protoWarnings[i] = &dnd5ev1alpha1.ValidationWarning{
+			Field:   warning.Field,
+			Message: warning.Message,
+			Type:    warning.Type,
+		}
+	}
+
+	return &dnd5ev1alpha1.UpdateNameResponse{
+		Draft:    convertDraftDataToProto(output.Draft),
+		Warnings: protoWarnings,
+	}, nil
 }
 
 // UpdateRace updates the race of a character draft
