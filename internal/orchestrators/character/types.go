@@ -5,6 +5,7 @@ import (
 
 	"github.com/KirkDiggler/rpg-api/internal/entities/dnd5e"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/race"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
 )
 
@@ -279,9 +280,18 @@ type ListRacesInput struct {
 
 // ListRacesOutput defines the response for listing races
 type ListRacesOutput struct {
-	Races         []*dnd5e.RaceData
+	Races         []*RaceSummary
 	NextPageToken string
 	TotalSize     int32
+}
+
+// RaceSummary contains basic race info for listing
+type RaceSummary struct {
+	ID          string
+	Name        string
+	Description string
+	Size        string
+	Speed       int
 }
 
 // ListClassesInput defines the request for listing classes
@@ -407,7 +417,17 @@ type GetRaceDetailsInput struct {
 
 // GetRaceDetailsOutput defines the response for getting race details
 type GetRaceDetailsOutput struct {
-	Race *dnd5e.RaceData
+	// Core mechanics data from toolkit
+	RaceData *race.Data
+	// UI/presentation data
+	UIData *RaceUIData
+}
+
+// RaceUIData contains presentation/flavor text for UI
+type RaceUIData struct {
+	SizeDescription      string
+	AgeDescription       string
+	AlignmentDescription string
 }
 
 // GetClassDetailsInput defines the request for getting class details

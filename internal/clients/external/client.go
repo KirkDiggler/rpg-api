@@ -58,7 +58,7 @@ var dnd5eClassNames = map[string]string{
 // Client defines the interface for external API interactions
 type Client interface {
 	// GetRaceData fetches race information from external source
-	GetRaceData(ctx context.Context, raceID string) (*RaceData, error)
+	GetRaceData(ctx context.Context, raceID string) (*RaceDataOutput, error)
 
 	// GetClassData fetches class information from external source
 	GetClassData(ctx context.Context, classID string) (*ClassData, error)
@@ -181,21 +181,23 @@ func New(cfg *Config) (Client, error) {
 	}, nil
 }
 
-func (c *client) GetRaceData(_ context.Context, raceID string) (*RaceData, error) {
+func (c *client) GetRaceData(_ context.Context, raceID string) (*RaceDataOutput, error) {
 	// Convert our internal ID format to API format
 	apiID := toAPIFormat(raceID)
 
-	// Get full race details
-	race, err := c.dnd5eClient.GetRace(apiID)
+	// Get full race details from API
+	apiRace, err := c.dnd5eClient.GetRace(apiID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get race %s (api: %s): %w", raceID, apiID, err)
 	}
 
-	// Convert to our internal format
-	raceData := convertRaceToRaceData(race)
-	// Ensure the ID matches our internal format
-	raceData.ID = raceID
-	return raceData, nil
+	// Convert to both toolkit format and extract UI data
+	toolkitData, uiData := convertRaceToHybrid(apiRace, raceID)
+	
+	return &RaceDataOutput{
+		RaceData: toolkitData,
+		UIData:   uiData,
+	}, nil
 }
 
 func (c *client) GetClassData(_ context.Context, classID string) (*ClassData, error) {
