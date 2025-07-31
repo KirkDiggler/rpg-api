@@ -55,7 +55,35 @@ func (h *Handler) GetDraft(
 	ctx context.Context,
 	req *dnd5ev1alpha1.GetDraftRequest,
 ) (*dnd5ev1alpha1.GetDraftResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "not implemented")
+	// Validate request
+	if req.GetDraftId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "draft_id is required")
+	}
+
+	// Call orchestrator
+	output, err := h.characterService.GetDraft(ctx, &character.GetDraftInput{
+		DraftID: req.GetDraftId(),
+	})
+	if err != nil {
+		// Convert orchestrator errors to gRPC errors
+		if errors.IsNotFound(err) {
+			return nil, status.Error(codes.NotFound, "draft not found")
+		}
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	// Convert toolkit DraftData to proto CharacterDraft
+	// For now, return minimal response to get started
+	protoDraft := &dnd5ev1alpha1.CharacterDraft{
+		Id:       output.Draft.ID,
+		PlayerId: output.Draft.PlayerID,
+		Name:     output.Draft.Name,
+		// TODO: Convert other fields as we implement them
+	}
+
+	return &dnd5ev1alpha1.GetDraftResponse{
+		Draft: protoDraft,
+	}, nil
 }
 
 // ListDrafts lists character drafts

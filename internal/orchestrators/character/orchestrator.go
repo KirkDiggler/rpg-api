@@ -2,6 +2,7 @@ package character
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/KirkDiggler/rpg-api/internal/clients/external"
 	"github.com/KirkDiggler/rpg-api/internal/errors"
@@ -71,7 +72,24 @@ func (o *Orchestrator) CreateDraft(ctx context.Context, input *CreateDraftInput)
 }
 
 func (o *Orchestrator) GetDraft(ctx context.Context, input *GetDraftInput) (*GetDraftOutput, error) {
-	return nil, errors.Unimplemented("not implemented")
+	// Validate input
+	if input.DraftID == "" {
+		return nil, errors.InvalidArgument("draft ID is required")
+	}
+
+	// Get draft from repository
+	getDraftOutput, err := o.draftRepo.Get(ctx, characterdraft.GetInput{
+		ID: input.DraftID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get draft: %w", err)
+	}
+
+	// Return the draft data directly
+	// The repository returns toolkit DraftData which is what we want
+	return &GetDraftOutput{
+		Draft: getDraftOutput.Draft,
+	}, nil
 }
 
 func (o *Orchestrator) ListDrafts(ctx context.Context, input *ListDraftsInput) (*ListDraftsOutput, error) {
