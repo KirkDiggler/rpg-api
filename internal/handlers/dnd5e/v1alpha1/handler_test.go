@@ -15,6 +15,7 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
 	charactermock "github.com/KirkDiggler/rpg-api/internal/orchestrators/character/mock"
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
 )
 
 type HandlerTestSuite struct {
@@ -472,6 +473,140 @@ func (s *HandlerTestSuite) TestUpdateName_WithWarnings() {
 	s.Len(resp.Warnings, 1)
 	s.Equal("name", resp.Warnings[0].Field)
 	s.Equal("Name is very short", resp.Warnings[0].Message)
+}
+
+func (s *HandlerTestSuite) TestUpdateRace_Success() {
+	draftID := "draft-123"
+	raceID := "RACE_DWARF"
+	subraceID := "SUBRACE_MOUNTAIN_DWARF"
+	updatedDraft := &toolkitchar.DraftData{
+		ID:   draftID,
+		Name: "Gimli",
+		RaceChoice: toolkitchar.RaceChoice{
+			RaceID:    "RACE_DWARF",
+			SubraceID: "SUBRACE_MOUNTAIN_DWARF",
+		},
+	}
+
+	// Mock orchestrator response
+	s.mockCharService.EXPECT().
+		UpdateRace(s.ctx, &character.UpdateRaceInput{
+			DraftID:   draftID,
+			RaceID:    raceID,
+			SubraceID: subraceID,
+			Choices:   nil,
+		}).
+		Return(&character.UpdateRaceOutput{
+			Draft:    updatedDraft,
+			Warnings: []character.ValidationWarning{},
+		}, nil)
+
+	// Call handler
+	resp, err := s.handler.UpdateRace(s.ctx, &dnd5ev1alpha1.UpdateRaceRequest{
+		DraftId:   draftID,
+		Race:      dnd5ev1alpha1.Race_RACE_DWARF,
+		Subrace:   dnd5ev1alpha1.Subrace_SUBRACE_MOUNTAIN_DWARF,
+	})
+
+	// Assert response
+	s.NoError(err)
+	s.NotNil(resp)
+	s.NotNil(resp.Draft)
+	s.Equal(draftID, resp.Draft.Id)
+	s.Empty(resp.Warnings)
+}
+
+func (s *HandlerTestSuite) TestUpdateRace_WithChoices() {
+	draftID := "draft-456"
+	raceID := "RACE_HALF_ELF"
+	updatedDraft := &toolkitchar.DraftData{
+		ID:   draftID,
+		Name: "Elrond",
+		RaceChoice: toolkitchar.RaceChoice{
+			RaceID: "RACE_HALF_ELF",
+		},
+		Choices: []toolkitchar.ChoiceData{
+			{
+				ChoiceID: "ability-increase-1",
+				Category: shared.ChoiceAbilityScores,
+				Source:   shared.SourceRace,
+				AbilityScoreSelection: &shared.AbilityScores{
+					"intelligence": 1,
+				},
+			},
+		},
+	}
+
+	// Mock orchestrator response
+	s.mockCharService.EXPECT().
+		UpdateRace(s.ctx, &character.UpdateRaceInput{
+			DraftID: draftID,
+			RaceID:  raceID,
+			Choices: []toolkitchar.ChoiceData{
+				{
+					ChoiceID: "ability-increase-1",
+					Category: shared.ChoiceAbilityScores,
+					Source:   shared.SourceRace,
+					AbilityScoreSelection: &shared.AbilityScores{
+						"intelligence": 1,
+					},
+				},
+			},
+		}).
+		Return(&character.UpdateRaceOutput{
+			Draft:    updatedDraft,
+			Warnings: []character.ValidationWarning{},
+		}, nil)
+
+	// Call handler with choices
+	resp, err := s.handler.UpdateRace(s.ctx, &dnd5ev1alpha1.UpdateRaceRequest{
+		DraftId: draftID,
+		Race:    dnd5ev1alpha1.Race_RACE_HALF_ELF,
+		RaceChoices: []*dnd5ev1alpha1.ChoiceSelection{
+			{
+				ChoiceId:   "ability-increase-1",
+				ChoiceType: dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_ABILITY_SCORES,
+				Source:     dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_RACE,
+				AbilityScoreChoices: []*dnd5ev1alpha1.AbilityScoreChoice{
+					{
+						Ability: dnd5ev1alpha1.Ability_ABILITY_INTELLIGENCE,
+						Bonus:   1,
+					},
+				},
+			},
+		},
+	})
+
+	// Assert response
+	s.NoError(err)
+	s.NotNil(resp)
+	s.NotNil(resp.Draft)
+	s.Equal(draftID, resp.Draft.Id)
+}
+
+func (s *HandlerTestSuite) TestUpdateRace_InvalidArgument() {
+	// Mock orchestrator response
+	s.mockCharService.EXPECT().
+		UpdateRace(s.ctx, &character.UpdateRaceInput{
+			DraftID: "",
+			RaceID:  "RACE_HUMAN",
+			Choices: nil,
+		}).
+		Return(nil, errors.InvalidArgument("draft ID is required"))
+
+	// Call handler with empty draft ID
+	resp, err := s.handler.UpdateRace(s.ctx, &dnd5ev1alpha1.UpdateRaceRequest{
+		DraftId: "",
+		Race:    dnd5ev1alpha1.Race_RACE_HUMAN,
+	})
+
+	// Assert error
+	s.Error(err)
+	s.Nil(resp)
+	
+	st, ok := status.FromError(err)
+	s.True(ok)
+	s.Equal(codes.InvalidArgument, st.Code())
 }
 
 func TestHandlerSuite(t *testing.T) {

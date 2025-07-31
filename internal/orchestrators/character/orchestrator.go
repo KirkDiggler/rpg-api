@@ -12,6 +12,7 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	draftrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft"
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/constants"
 )
 
 // Config holds dependencies for the orchestrator
@@ -193,7 +194,54 @@ func (o *Orchestrator) UpdateName(ctx context.Context, input *UpdateNameInput) (
 }
 
 func (o *Orchestrator) UpdateRace(ctx context.Context, input *UpdateRaceInput) (*UpdateRaceOutput, error) {
-	return nil, errors.Unimplemented("not implemented")
+	// Validate input
+	if input.DraftID == "" {
+		return nil, errors.InvalidArgument("draft ID is required")
+	}
+	if input.RaceID == "" {
+		return nil, errors.InvalidArgument("race ID is required")
+	}
+
+	// Get the existing draft
+	getDraftOutput, err := o.draftRepo.Get(ctx, draftrepo.GetInput{
+		ID: input.DraftID,
+	})
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to get draft %s", input.DraftID)
+	}
+
+	// Update the race choice
+	draft := getDraftOutput.Draft
+	draft.RaceChoice = toolkitchar.RaceChoice{
+		RaceID:    constants.Race(input.RaceID),
+		SubraceID: constants.Subrace(input.SubraceID),
+	}
+
+	// Update choices if provided
+	if len(input.Choices) > 0 {
+		// Filter out existing race choices and add new ones
+		var nonRaceChoices []toolkitchar.ChoiceData
+		for _, choice := range draft.Choices {
+			if choice.Source != "race" {
+				nonRaceChoices = append(nonRaceChoices, choice)
+			}
+		}
+		draft.Choices = append(nonRaceChoices, input.Choices...)
+	}
+
+	// Save the updated draft
+	updateOutput, err := o.draftRepo.Update(ctx, draftrepo.UpdateInput{
+		Draft: draft,
+	})
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to update draft %s", input.DraftID)
+	}
+
+	// Return updated draft with any warnings
+	return &UpdateRaceOutput{
+		Draft:    updateOutput.Draft,
+		Warnings: []ValidationWarning{}, // TODO: Add validation for race/subrace compatibility
+	}, nil
 }
 
 func (o *Orchestrator) UpdateClass(ctx context.Context, input *UpdateClassInput) (*UpdateClassOutput, error) {

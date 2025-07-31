@@ -11,6 +11,7 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/errors"
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/constants"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
 )
 
@@ -192,7 +193,41 @@ func (h *Handler) UpdateRace(
 	ctx context.Context,
 	req *dnd5ev1alpha1.UpdateRaceRequest,
 ) (*dnd5ev1alpha1.UpdateRaceResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "not implemented")
+	// Convert proto Race enum to string ID
+	raceID := convertProtoRaceToString(req.GetRace())
+	subraceID := convertProtoSubraceToString(req.GetSubrace())
+	
+	// Call orchestrator
+	output, err := h.characterService.UpdateRace(ctx, &character.UpdateRaceInput{
+		DraftID:   req.GetDraftId(),
+		RaceID:    raceID,
+		SubraceID: subraceID,
+		Choices:   convertProtoRaceChoicesToToolkit(req.GetRaceChoices()),
+	})
+	if err != nil {
+		if errors.IsInvalidArgument(err) {
+			return nil, status.Error(codes.InvalidArgument, err.Error())
+		}
+		if errors.IsNotFound(err) {
+			return nil, status.Error(codes.NotFound, err.Error())
+		}
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	// Convert warnings
+	protoWarnings := make([]*dnd5ev1alpha1.ValidationWarning, len(output.Warnings))
+	for i, warning := range output.Warnings {
+		protoWarnings[i] = &dnd5ev1alpha1.ValidationWarning{
+			Field:   warning.Field,
+			Message: warning.Message,
+			Type:    warning.Type,
+		}
+	}
+
+	return &dnd5ev1alpha1.UpdateRaceResponse{
+		Draft:    convertDraftDataToProto(output.Draft),
+		Warnings: protoWarnings,
+	}, nil
 }
 
 // UpdateClass updates the class of a character draft
@@ -472,4 +507,174 @@ func hasAbilityScores(scores shared.AbilityScores) bool {
 	}
 	
 	return true
+}
+
+// convertProtoRaceToString converts proto Race enum to toolkit Race ID string
+func convertProtoRaceToString(race dnd5ev1alpha1.Race) string {
+	// Map proto enum to toolkit constants
+	switch race {
+	case dnd5ev1alpha1.Race_RACE_DRAGONBORN:
+		return "RACE_DRAGONBORN"
+	case dnd5ev1alpha1.Race_RACE_DWARF:
+		return "RACE_DWARF"
+	case dnd5ev1alpha1.Race_RACE_ELF:
+		return "RACE_ELF"
+	case dnd5ev1alpha1.Race_RACE_GNOME:
+		return "RACE_GNOME"
+	case dnd5ev1alpha1.Race_RACE_HALF_ELF:
+		return "RACE_HALF_ELF"
+	case dnd5ev1alpha1.Race_RACE_HALFLING:
+		return "RACE_HALFLING"
+	case dnd5ev1alpha1.Race_RACE_HALF_ORC:
+		return "RACE_HALF_ORC"
+	case dnd5ev1alpha1.Race_RACE_HUMAN:
+		return "RACE_HUMAN"
+	case dnd5ev1alpha1.Race_RACE_TIEFLING:
+		return "RACE_TIEFLING"
+	default:
+		return ""
+	}
+}
+
+// convertProtoSubraceToString converts proto Subrace enum to toolkit Subrace ID string
+func convertProtoSubraceToString(subrace dnd5ev1alpha1.Subrace) string {
+	// Map proto enum to toolkit constants
+	switch subrace {
+	case dnd5ev1alpha1.Subrace_SUBRACE_HILL_DWARF:
+		return "SUBRACE_HILL_DWARF"
+	case dnd5ev1alpha1.Subrace_SUBRACE_MOUNTAIN_DWARF:
+		return "SUBRACE_MOUNTAIN_DWARF"
+	case dnd5ev1alpha1.Subrace_SUBRACE_HIGH_ELF:
+		return "SUBRACE_HIGH_ELF"
+	case dnd5ev1alpha1.Subrace_SUBRACE_WOOD_ELF:
+		return "SUBRACE_WOOD_ELF"
+	case dnd5ev1alpha1.Subrace_SUBRACE_DARK_ELF:
+		return "SUBRACE_DARK_ELF"
+	case dnd5ev1alpha1.Subrace_SUBRACE_FOREST_GNOME:
+		return "SUBRACE_FOREST_GNOME"
+	case dnd5ev1alpha1.Subrace_SUBRACE_ROCK_GNOME:
+		return "SUBRACE_ROCK_GNOME"
+	case dnd5ev1alpha1.Subrace_SUBRACE_LIGHTFOOT_HALFLING:
+		return "SUBRACE_LIGHTFOOT_HALFLING"
+	case dnd5ev1alpha1.Subrace_SUBRACE_STOUT_HALFLING:
+		return "SUBRACE_STOUT_HALFLING"
+	default:
+		return ""
+	}
+}
+
+// convertProtoRaceChoicesToToolkit converts proto ChoiceSelection to toolkit ChoiceData
+func convertProtoRaceChoicesToToolkit(protoChoices []*dnd5ev1alpha1.ChoiceSelection) []toolkitchar.ChoiceData {
+	if len(protoChoices) == 0 {
+		return nil
+	}
+
+	toolkitChoices := make([]toolkitchar.ChoiceData, 0, len(protoChoices))
+	for _, pc := range protoChoices {
+		choice := toolkitchar.ChoiceData{
+			ChoiceID: pc.GetChoiceId(),
+			Category: convertProtoCategoryToToolkit(pc.GetChoiceType()),
+			Source:   convertProtoSourceToToolkit(pc.GetSource()),
+		}
+		
+		// Convert based on choice type
+		switch pc.GetChoiceType() {
+		case dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_SKILLS:
+			// Convert selected keys to skill constants
+			skills := make([]constants.Skill, 0, len(pc.GetSelectedKeys()))
+			for _, sk := range pc.GetSelectedKeys() {
+				skills = append(skills, constants.Skill(sk))
+			}
+			choice.SkillSelection = skills
+		case dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_LANGUAGES:
+			// Convert selected keys to language constants
+			languages := make([]constants.Language, 0, len(pc.GetSelectedKeys()))
+			for _, lk := range pc.GetSelectedKeys() {
+				languages = append(languages, constants.Language(lk))
+			}
+			choice.LanguageSelection = languages
+		case dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_ABILITY_SCORES:
+			// Handle ability score choices if present
+			if len(pc.GetAbilityScoreChoices()) > 0 {
+				scores := make(shared.AbilityScores)
+				for _, asc := range pc.GetAbilityScoreChoices() {
+					// Convert proto ability to toolkit ability
+					ability := convertProtoAbilityToString(asc.GetAbility())
+					scores[constants.Ability(ability)] = int(asc.GetBonus())
+				}
+				choice.AbilityScoreSelection = &scores
+			}
+		default:
+			// For other types, store selected keys as equipment
+			choice.EquipmentSelection = pc.GetSelectedKeys()
+		}
+		
+		toolkitChoices = append(toolkitChoices, choice)
+	}
+	return toolkitChoices
+}
+
+// convertProtoAbilityToString converts proto Ability enum to string
+func convertProtoAbilityToString(ability dnd5ev1alpha1.Ability) string {
+	switch ability {
+	case dnd5ev1alpha1.Ability_ABILITY_STRENGTH:
+		return "strength"
+	case dnd5ev1alpha1.Ability_ABILITY_DEXTERITY:
+		return "dexterity"
+	case dnd5ev1alpha1.Ability_ABILITY_CONSTITUTION:
+		return "constitution"
+	case dnd5ev1alpha1.Ability_ABILITY_INTELLIGENCE:
+		return "intelligence"
+	case dnd5ev1alpha1.Ability_ABILITY_WISDOM:
+		return "wisdom"
+	case dnd5ev1alpha1.Ability_ABILITY_CHARISMA:
+		return "charisma"
+	default:
+		return ""
+	}
+}
+
+// convertProtoCategoryToToolkit converts proto ChoiceCategory to toolkit string
+func convertProtoCategoryToToolkit(category dnd5ev1alpha1.ChoiceCategory) shared.ChoiceCategory {
+	switch category {
+	case dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_NAME:
+		return shared.ChoiceName
+	case dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_SKILLS:
+		return shared.ChoiceSkills
+	case dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_LANGUAGES:
+		return shared.ChoiceLanguages
+	case dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_ABILITY_SCORES:
+		return shared.ChoiceAbilityScores
+	case dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_FIGHTING_STYLE:
+		return shared.ChoiceFightingStyle
+	case dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_EQUIPMENT:
+		return shared.ChoiceEquipment
+	case dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_RACE:
+		return shared.ChoiceRace
+	case dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_CLASS:
+		return shared.ChoiceClass
+	case dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_BACKGROUND:
+		return shared.ChoiceBackground
+	case dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_SPELLS:
+		return shared.ChoiceSpells
+	case dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_CANTRIPS:
+		return shared.ChoiceCantrips
+	default:
+		return ""
+	}
+}
+
+// convertProtoSourceToToolkit converts proto ChoiceSource to toolkit string
+func convertProtoSourceToToolkit(source dnd5ev1alpha1.ChoiceSource) shared.ChoiceSource {
+	switch source {
+	case dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_RACE:
+		return shared.SourceRace
+	case dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_CLASS:
+		return shared.SourceClass
+	case dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_BACKGROUND:
+		return shared.SourceBackground
+	default:
+		// For other sources, default to player choice
+		return shared.SourcePlayer
+	}
 }
