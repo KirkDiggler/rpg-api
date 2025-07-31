@@ -24,7 +24,6 @@ import (
 	apiv1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/api/v1alpha1"
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
 	"github.com/KirkDiggler/rpg-api/internal/clients/external"
-	"github.com/KirkDiggler/rpg-api/internal/engine/rpgtoolkit"
 	apiv1alpha1handler "github.com/KirkDiggler/rpg-api/internal/handlers/api/v1alpha1"
 	"github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v1alpha1"
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
@@ -35,8 +34,6 @@ import (
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	characterdraftrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft"
 	dicesessionrepo "github.com/KirkDiggler/rpg-api/internal/repositories/dice_session"
-	"github.com/KirkDiggler/rpg-toolkit/dice"
-	"github.com/KirkDiggler/rpg-toolkit/events"
 )
 
 var (
@@ -116,20 +113,6 @@ func runServer(_ *cobra.Command, _ []string) error {
 		return fmt.Errorf("failed to create external client: %w", err)
 	}
 
-	// Create rpg-toolkit components
-	eventBus := events.NewBus()
-	diceRoller := dice.DefaultRoller
-
-	// Create the engine using rpg-toolkit adapter
-	e, err := rpgtoolkit.NewAdapter(&rpgtoolkit.AdapterConfig{
-		EventBus:       eventBus,
-		DiceRoller:     diceRoller,
-		ExternalClient: client,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to create engine: %w", err)
-	}
-
 	// Create dice session repository
 	diceSessionRepo, err := dicesessionrepo.NewRedisRepository(&dicesessionrepo.Config{
 		Client: mustRedisClient(),
@@ -152,7 +135,6 @@ func runServer(_ *cobra.Command, _ []string) error {
 	characterService, err := character.New(&character.Config{
 		CharacterRepo:      charRepo,
 		CharacterDraftRepo: draftRepo,
-		Engine:             e,
 		ExternalClient:     client,
 		DiceService:        diceService,
 		IDGenerator:        idgen.NewUUID("draft"),

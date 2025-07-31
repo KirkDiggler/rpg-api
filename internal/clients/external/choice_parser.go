@@ -7,7 +7,7 @@ import (
 
 	"github.com/fadedpez/dnd5e-api/entities"
 
-	"github.com/KirkDiggler/rpg-api/internal/entities/dnd5e"
+	"github.com/KirkDiggler/rpg-api/internal/types/choices"
 )
 
 // safeIntToInt32 safely converts int to int32, clamping to max/min int32 values
@@ -22,16 +22,16 @@ func safeIntToInt32(n int) int32 {
 }
 
 // parseProficiencyChoices converts external choice data to rich entity choices
-func parseProficiencyChoices(choices []*ChoiceData, baseID string) []dnd5e.Choice {
-	result := make([]dnd5e.Choice, 0, len(choices))
+func parseProficiencyChoices(choiceData []*ChoiceData, baseID string) []choices.Choice {
+	result := make([]choices.Choice, 0, len(choiceData))
 
-	for i, choice := range choices {
+	for i, choice := range choiceData {
 		if choice == nil {
 			continue
 		}
 
 		choiceType := mapExternalChoiceType(choice.Type)
-		parsed := dnd5e.Choice{
+		parsed := choices.Choice{
 			ID:          fmt.Sprintf("%s_%s_%d", baseID, choice.Type, i+1),
 			Description: fmt.Sprintf("Choose %d %s", choice.Choose, choice.Type),
 			Type:        choiceType,
@@ -40,19 +40,19 @@ func parseProficiencyChoices(choices []*ChoiceData, baseID string) []dnd5e.Choic
 
 		// Check if this references a category
 		if choice.From != "" && len(choice.Options) == 0 {
-			parsed.OptionSet = &dnd5e.CategoryReference{
+			parsed.OptionSet = &choices.CategoryReference{
 				CategoryID: generateSlug(choice.From),
 			}
 		} else {
 			// Explicit options
-			options := make([]dnd5e.ChoiceOption, 0, len(choice.Options))
+			options := make([]choices.ChoiceOption, 0, len(choice.Options))
 			for _, opt := range choice.Options {
-				options = append(options, &dnd5e.ItemReference{
+				options = append(options, &choices.ItemReference{
 					ItemID: generateSlug(opt),
 					Name:   opt,
 				})
 			}
-			parsed.OptionSet = &dnd5e.ExplicitOptions{
+			parsed.OptionSet = &choices.ExplicitOptions{
 				Options: options,
 			}
 		}
@@ -65,28 +65,28 @@ func parseProficiencyChoices(choices []*ChoiceData, baseID string) []dnd5e.Choic
 
 // mapExternalChoiceType maps external choice type strings to entity choice types
 // Using centralized choice type mapper for consistency
-func mapExternalChoiceType(externalType string) dnd5e.ChoiceType {
+func mapExternalChoiceType(externalType string) choices.ChoiceType {
 	// Import the centralized mapper (we'll need to add the import)
 	// For now, using the logic directly until we can import across packages
 	normalized := strings.ToLower(strings.TrimSpace(externalType))
 
 	switch normalized {
 	case "skill", "skills", "proficiencies", "skill_proficiency":
-		return dnd5e.ChoiceTypeSkill
+		return choices.ChoiceTypeSkill
 	case "tool", "tools", "tool_proficiency", "tool_proficiencies":
-		return dnd5e.ChoiceTypeTool
+		return choices.ChoiceTypeTool
 	case "language", "languages", "language_choice":
-		return dnd5e.ChoiceTypeLanguage
+		return choices.ChoiceTypeLanguage
 	case "weapon", "weapons", "weapon_proficiency", "weapon_proficiencies":
-		return dnd5e.ChoiceTypeWeaponProficiency
+		return choices.ChoiceTypeWeaponProficiency
 	case "armor", "armors", "armor_proficiency", "armor_proficiencies":
-		return dnd5e.ChoiceTypeArmorProficiency
+		return choices.ChoiceTypeArmorProficiency
 	case "spell", "spells", "spell_choice":
-		return dnd5e.ChoiceTypeSpell
+		return choices.ChoiceTypeSpell
 	case "feat", "feats", "feature", "features", "feat_choice":
-		return dnd5e.ChoiceTypeFeat
+		return choices.ChoiceTypeFeat
 	default:
-		return dnd5e.ChoiceTypeEquipment
+		return choices.ChoiceTypeEquipment
 	}
 }
 
@@ -174,18 +174,18 @@ func generateNestedChoiceID(description string, categoryID string) string {
 }
 
 // parseEquipmentChoicesFromEntities converts rich entity equipment choices directly to Choice structures
-func parseEquipmentChoicesFromEntities(choices []*entities.ChoiceOption, classID string) []dnd5e.Choice {
-	result := make([]dnd5e.Choice, 0, len(choices))
+func parseEquipmentChoicesFromEntities(choiceOptions []*entities.ChoiceOption, classID string) []choices.Choice {
+	result := make([]choices.Choice, 0, len(choiceOptions))
 
-	for i, choice := range choices {
+	for i, choice := range choiceOptions {
 		if choice == nil {
 			continue
 		}
 
-		parsed := dnd5e.Choice{
+		parsed := choices.Choice{
 			ID:          fmt.Sprintf("%s_equipment_%d", classID, i+1),
 			Description: choice.Description,
-			Type:        dnd5e.ChoiceTypeEquipment,
+			Type:        choices.ChoiceTypeEquipment,
 			ChooseCount: safeIntToInt32(choice.ChoiceCount),
 		}
 
@@ -194,8 +194,8 @@ func parseEquipmentChoicesFromEntities(choices []*entities.ChoiceOption, classID
 			parsed.OptionSet = convertEntityOptionList(choice.OptionList)
 		} else {
 			// Fallback to empty explicit options
-			parsed.OptionSet = &dnd5e.ExplicitOptions{
-				Options: []dnd5e.ChoiceOption{},
+			parsed.OptionSet = &choices.ExplicitOptions{
+				Options: []choices.ChoiceOption{},
 			}
 		}
 
@@ -206,8 +206,8 @@ func parseEquipmentChoicesFromEntities(choices []*entities.ChoiceOption, classID
 }
 
 // convertEntityOptionList converts entity OptionList to dnd5e ChoiceOptionSet
-func convertEntityOptionList(optionList *entities.OptionList) dnd5e.ChoiceOptionSet {
-	options := make([]dnd5e.ChoiceOption, 0, len(optionList.Options))
+func convertEntityOptionList(optionList *entities.OptionList) choices.ChoiceOptionSet {
+	options := make([]choices.ChoiceOption, 0, len(optionList.Options))
 
 	for _, option := range optionList.Options {
 		convertedOption := convertEntityOption(option)
@@ -216,17 +216,17 @@ func convertEntityOptionList(optionList *entities.OptionList) dnd5e.ChoiceOption
 		}
 	}
 
-	return &dnd5e.ExplicitOptions{
+	return &choices.ExplicitOptions{
 		Options: options,
 	}
 }
 
 // convertEntityOption converts a single entity option to dnd5e ChoiceOption
-func convertEntityOption(option entities.Option) dnd5e.ChoiceOption {
+func convertEntityOption(option entities.Option) choices.ChoiceOption {
 	switch opt := option.(type) {
 	case *entities.ReferenceOption:
 		if opt.Reference != nil {
-			return &dnd5e.ItemReference{
+			return &choices.ItemReference{
 				ItemID: opt.Reference.Key,
 				Name:   opt.Reference.Name,
 			}
@@ -234,7 +234,7 @@ func convertEntityOption(option entities.Option) dnd5e.ChoiceOption {
 
 	case *entities.CountedReferenceOption:
 		if opt.Reference != nil {
-			return &dnd5e.CountedItemReference{
+			return &choices.CountedItemReference{
 				ItemID:   opt.Reference.Key,
 				Name:     opt.Reference.Name,
 				Quantity: safeIntToInt32(opt.Count),
@@ -243,14 +243,14 @@ func convertEntityOption(option entities.Option) dnd5e.ChoiceOption {
 
 	case *entities.MultipleOption:
 		// Handle bundle of items like "a martial weapon and a shield"
-		items := make([]dnd5e.BundleItem, 0, len(opt.Items))
+		items := make([]choices.BundleItem, 0, len(opt.Items))
 		for _, item := range opt.Items {
 			switch itemOpt := item.(type) {
 			case *entities.CountedReferenceOption:
 				if itemOpt.Reference != nil {
-					items = append(items, dnd5e.BundleItem{
-						ItemType: &dnd5e.BundleItemConcreteItem{
-							ConcreteItem: &dnd5e.CountedItemReference{
+					items = append(items, choices.BundleItem{
+						ItemType: &choices.BundleItemConcreteItem{
+							ConcreteItem: &choices.CountedItemReference{
 								ItemID:   itemOpt.Reference.Key,
 								Name:     itemOpt.Reference.Name,
 								Quantity: safeIntToInt32(itemOpt.Count),
@@ -269,26 +269,26 @@ func convertEntityOption(option entities.Option) dnd5e.ChoiceOption {
 				nestedID := generateNestedChoiceID(itemOpt.Description, categoryID)
 
 				// Create a proper nested choice
-				nestedChoice := &dnd5e.Choice{
+				nestedChoice := &choices.Choice{
 					ID:          nestedID,
 					Description: itemOpt.Description,
-					Type:        dnd5e.ChoiceTypeEquipment,
+					Type:        choices.ChoiceTypeEquipment,
 					ChooseCount: safeIntToInt32(itemOpt.ChoiceCount),
-					OptionSet: &dnd5e.CategoryReference{
+					OptionSet: &choices.CategoryReference{
 						CategoryID: categoryID,
 					},
 				}
 
-				items = append(items, dnd5e.BundleItem{
-					ItemType: &dnd5e.BundleItemChoiceItem{
-						ChoiceItem: &dnd5e.NestedChoice{
+				items = append(items, choices.BundleItem{
+					ItemType: &choices.BundleItemChoiceItem{
+						ChoiceItem: &choices.NestedChoice{
 							Choice: nestedChoice,
 						},
 					},
 				})
 			}
 		}
-		return &dnd5e.ItemBundle{
+		return &choices.ItemBundle{
 			Items: items,
 		}
 
@@ -303,16 +303,16 @@ func convertEntityOption(option entities.Option) dnd5e.ChoiceOption {
 		// Generate a proper nested choice ID based on description and category
 		nestedID := generateNestedChoiceID(opt.Description, categoryID)
 
-		nestedChoice := &dnd5e.Choice{
+		nestedChoice := &choices.Choice{
 			ID:          nestedID,
 			Description: opt.Description,
-			Type:        dnd5e.ChoiceTypeEquipment,
+			Type:        choices.ChoiceTypeEquipment,
 			ChooseCount: safeIntToInt32(opt.ChoiceCount),
-			OptionSet: &dnd5e.CategoryReference{
+			OptionSet: &choices.CategoryReference{
 				CategoryID: categoryID,
 			},
 		}
-		return &dnd5e.NestedChoice{
+		return &choices.NestedChoice{
 			Choice: nestedChoice,
 		}
 	}

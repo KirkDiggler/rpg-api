@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/KirkDiggler/rpg-api/internal/clients/external"
-	"github.com/KirkDiggler/rpg-api/internal/entities/dnd5e"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/constants"
 )
 
 func TestGetRaceData_Integration(t *testing.T) {
@@ -32,17 +32,17 @@ func TestGetRaceData_Integration(t *testing.T) {
 	}{
 		{
 			name:     "dragonborn",
-			raceID:   dnd5e.RaceDragonborn,
+			raceID:   string(constants.RaceDragonborn),
 			wantName: "Dragonborn",
 		},
 		{
 			name:     "half-elf",
-			raceID:   dnd5e.RaceHalfElf,
+			raceID:   string(constants.RaceHalfElf),
 			wantName: "Half-Elf",
 		},
 		{
 			name:     "human",
-			raceID:   dnd5e.RaceHuman,
+			raceID:   string(constants.RaceHuman),
 			wantName: "Human",
 		},
 	}
@@ -82,13 +82,13 @@ func TestGetClassData_Integration(t *testing.T) {
 	}{
 		{
 			name:        "wizard",
-			classID:     dnd5e.ClassWizard,
+			classID:     string(constants.ClassWizard),
 			wantName:    "Wizard",
 			wantHitDice: 6,
 		},
 		{
 			name:        "fighter",
-			classID:     dnd5e.ClassFighter,
+			classID:     string(constants.ClassFighter),
 			wantName:    "Fighter",
 			wantHitDice: 10,
 		},

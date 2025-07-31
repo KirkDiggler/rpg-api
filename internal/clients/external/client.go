@@ -16,8 +16,8 @@ import (
 	"github.com/fadedpez/dnd5e-api/clients/dnd5e"
 	"github.com/fadedpez/dnd5e-api/entities"
 
-	internalDnd5e "github.com/KirkDiggler/rpg-api/internal/entities/dnd5e"
 	"github.com/KirkDiggler/rpg-api/internal/errors"
+	"github.com/KirkDiggler/rpg-api/internal/types/choices"
 )
 
 // slugPattern matches characters that should be replaced in slugs
@@ -654,19 +654,19 @@ func convertClassToClassData(class *entities.Class) *ClassData {
 
 	// Add skill choice if applicable
 	if skillsCount > 0 && len(availableSkills) > 0 {
-		skillOptions := make([]internalDnd5e.ChoiceOption, len(availableSkills))
+		skillOptions := make([]choices.ChoiceOption, len(availableSkills))
 		for i, skill := range availableSkills {
-			skillOptions[i] = &internalDnd5e.ItemReference{
+			skillOptions[i] = &choices.ItemReference{
 				ItemID: generateSlug(skill),
 				Name:   skill,
 			}
 		}
-		parsedChoices = append(parsedChoices, internalDnd5e.Choice{
+		parsedChoices = append(parsedChoices, choices.Choice{
 			ID:          fmt.Sprintf("%s_skills", class.Key),
 			Description: fmt.Sprintf("Choose %d skills", skillsCount),
-			Type:        internalDnd5e.ChoiceTypeSkill,
+			Type:        choices.ChoiceTypeSkill,
 			ChooseCount: skillsCount,
-			OptionSet: &internalDnd5e.ExplicitOptions{
+			OptionSet: &choices.ExplicitOptions{
 				Options: skillOptions,
 			},
 		})
@@ -763,7 +763,7 @@ func (c *client) convertClassWithFeatures(class *entities.Class, level1 *entitie
 					if choiceData != nil {
 						// Parse the choice data to create a proper dnd5e.Choice
 						// Use :: as delimiter to avoid collisions with underscores in IDs
-						featureChoice := internalDnd5e.Choice{
+						featureChoice := choices.Choice{
 							ID:          fmt.Sprintf("%s::%s", feature.ID, choiceData.Type),
 							Description: fmt.Sprintf("%s: Choose %d %s", feature.Name, choiceData.Choose, choiceData.Type),
 							Type:        mapExternalChoiceType(choiceData.Type),
@@ -772,14 +772,14 @@ func (c *client) convertClassWithFeatures(class *entities.Class, level1 *entitie
 
 						// Convert options
 						if len(choiceData.Options) > 0 {
-							options := make([]internalDnd5e.ChoiceOption, 0, len(choiceData.Options))
+							options := make([]choices.ChoiceOption, 0, len(choiceData.Options))
 							for _, opt := range choiceData.Options {
-								options = append(options, &internalDnd5e.ItemReference{
+								options = append(options, &choices.ItemReference{
 									ItemID: generateSlug(opt),
 									Name:   opt,
 								})
 							}
-							featureChoice.OptionSet = &internalDnd5e.ExplicitOptions{
+							featureChoice.OptionSet = &choices.ExplicitOptions{
 								Options: options,
 							}
 						}

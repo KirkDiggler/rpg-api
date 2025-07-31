@@ -3,13 +3,10 @@ module github.com/KirkDiggler/rpg-api
 go 1.24.1
 
 require (
-	github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20250726205324-8ce526c38cea
-	github.com/KirkDiggler/rpg-toolkit/core v0.1.0
+	github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20250730175616-977ac81f04be
 	github.com/KirkDiggler/rpg-toolkit/dice v0.1.0
 	github.com/KirkDiggler/rpg-toolkit/events v0.1.1
-	github.com/KirkDiggler/rpg-toolkit/items v0.0.0-20250727132234-b7e176bacb0e
-	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.0.0-20250724235015-cd6de63346a5
-	github.com/alicebob/miniredis/v2 v2.35.0
+	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.0.0-20250730170410-c99ed1fdb923
 	github.com/fadedpez/dnd5e-api v0.0.0-20250718061244-10d9388d279a
 	github.com/google/uuid v1.6.0
 	github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.3.2
@@ -22,6 +19,8 @@ require (
 )
 
 require (
+	github.com/KirkDiggler/rpg-toolkit/core v0.1.0 // indirect
+	github.com/KirkDiggler/rpg-toolkit/game v0.1.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
@@ -29,7 +28,6 @@ require (
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/spf13/pflag v1.0.6 // indirect
 	github.com/stretchr/objx v0.5.2 // indirect
-	github.com/yuin/gopher-lua v1.1.1 // indirect
 	golang.org/x/net v0.42.0 // indirect
 	golang.org/x/sys v0.34.0 // indirect
 	golang.org/x/text v0.27.0 // indirect
