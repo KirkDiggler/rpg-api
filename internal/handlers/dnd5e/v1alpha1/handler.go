@@ -318,7 +318,72 @@ func (h *Handler) UpdateAbilityScores(
 	ctx context.Context,
 	req *dnd5ev1alpha1.UpdateAbilityScoresRequest,
 ) (*dnd5ev1alpha1.UpdateAbilityScoresResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "not implemented")
+	// Validate request
+	if req.DraftId == "" {
+		return nil, status.Error(codes.InvalidArgument, "draft_id is required")
+	}
+
+	// Check which type of input we have
+	switch scores := req.ScoresInput.(type) {
+	case *dnd5ev1alpha1.UpdateAbilityScoresRequest_AbilityScores:
+		// Manual ability score assignment
+		// TODO: Implement manual score assignment
+		return nil, status.Error(codes.Unimplemented, "manual ability score assignment not yet implemented")
+
+	case *dnd5ev1alpha1.UpdateAbilityScoresRequest_RollAssignments:
+		// Roll-based assignment
+		assignments := scores.RollAssignments
+		
+		// Validate all roll IDs are provided
+		if assignments.StrengthRollId == "" ||
+			assignments.DexterityRollId == "" ||
+			assignments.ConstitutionRollId == "" ||
+			assignments.IntelligenceRollId == "" ||
+			assignments.WisdomRollId == "" ||
+			assignments.CharismaRollId == "" {
+			return nil, status.Error(codes.InvalidArgument, "all ability score roll IDs must be provided")
+		}
+
+		// Call orchestrator to update ability scores with roll assignments
+		output, err := h.characterService.UpdateAbilityScores(ctx, &character.UpdateAbilityScoresInput{
+			DraftID: req.DraftId,
+			RollAssignments: &character.RollAssignments{
+				StrengthRollID:     assignments.StrengthRollId,
+				DexterityRollID:    assignments.DexterityRollId,
+				ConstitutionRollID: assignments.ConstitutionRollId,
+				IntelligenceRollID: assignments.IntelligenceRollId,
+				WisdomRollID:       assignments.WisdomRollId,
+				CharismaRollID:     assignments.CharismaRollId,
+			},
+		})
+		if err != nil {
+			if errors.IsNotFound(err) {
+				return nil, status.Error(codes.NotFound, err.Error())
+			}
+			if errors.IsInvalidArgument(err) {
+				return nil, status.Error(codes.InvalidArgument, err.Error())
+			}
+			return nil, status.Error(codes.Internal, err.Error())
+		}
+
+		// Convert warnings
+		protoWarnings := make([]*dnd5ev1alpha1.ValidationWarning, len(output.Warnings))
+		for i, warning := range output.Warnings {
+			protoWarnings[i] = &dnd5ev1alpha1.ValidationWarning{
+				Field:   warning.Field,
+				Message: warning.Message,
+				Type:    warning.Type,
+			}
+		}
+
+		return &dnd5ev1alpha1.UpdateAbilityScoresResponse{
+			Draft:    convertDraftDataToProto(output.Draft),
+			Warnings: protoWarnings,
+		}, nil
+
+	default:
+		return nil, status.Error(codes.InvalidArgument, "scores_input must be provided")
+	}
 }
 
 // UpdateSkills updates the skills of a character draft
