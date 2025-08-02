@@ -3,408 +3,996 @@ package character_test
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/suite"
 	"go.uber.org/mock/gomock"
 
 	"github.com/KirkDiggler/rpg-api/internal/clients/external"
 	externalmock "github.com/KirkDiggler/rpg-api/internal/clients/external/mock"
-	enginemock "github.com/KirkDiggler/rpg-api/internal/engine/mock"
-	"github.com/KirkDiggler/rpg-api/internal/entities/dnd5e"
 	"github.com/KirkDiggler/rpg-api/internal/errors"
-	characterorchestrator "github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
+	"github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
 	dicemock "github.com/KirkDiggler/rpg-api/internal/orchestrators/dice/mock"
 	idgenmock "github.com/KirkDiggler/rpg-api/internal/pkg/idgen/mock"
 	characterrepomock "github.com/KirkDiggler/rpg-api/internal/repositories/character/mock"
 	draftrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft"
 	draftrepomock "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft/mock"
-	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
+	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/class"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/constants"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/race"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
 )
 
 type OrchestratorTestSuite struct {
 	suite.Suite
-	ctrl               *gomock.Controller
-	mockCharRepo       *characterrepomock.MockRepository
-	mockDraftRepo      *draftrepomock.MockRepository
-	mockEngine         *enginemock.MockEngine
-	mockExternalClient *externalmock.MockClient
-	mockDiceService    *dicemock.MockService
-	mockIDGenerator    *idgenmock.MockGenerator
-	orchestrator       *characterorchestrator.Orchestrator
-	ctx                context.Context
+	ctrl            *gomock.Controller
+	mockCharRepo    *characterrepomock.MockRepository
+	mockDraftRepo   *draftrepomock.MockRepository
+	mockExternal    *externalmock.MockClient
+	mockDiceService *dicemock.MockService
+	mockIDGenerator *idgenmock.MockGenerator
+	orchestrator    *character.Orchestrator
+	ctx             context.Context
+
+	// Test data
+	testDraftData *toolkitchar.DraftData
+	testDraftID   string
+	testPlayerID  string
 }
 
 func (s *OrchestratorTestSuite) SetupTest() {
 	s.ctrl = gomock.NewController(s.T())
 	s.mockCharRepo = characterrepomock.NewMockRepository(s.ctrl)
 	s.mockDraftRepo = draftrepomock.NewMockRepository(s.ctrl)
-	s.mockEngine = enginemock.NewMockEngine(s.ctrl)
-	s.mockExternalClient = externalmock.NewMockClient(s.ctrl)
+	s.mockExternal = externalmock.NewMockClient(s.ctrl)
 	s.mockDiceService = dicemock.NewMockService(s.ctrl)
 	s.mockIDGenerator = idgenmock.NewMockGenerator(s.ctrl)
+	s.ctx = context.Background()
 
-	cfg := &characterorchestrator.Config{
+	orchestrator, err := character.New(&character.Config{
 		CharacterRepo:      s.mockCharRepo,
 		CharacterDraftRepo: s.mockDraftRepo,
-		Engine:             s.mockEngine,
-		ExternalClient:     s.mockExternalClient,
+		ExternalClient:     s.mockExternal,
 		DiceService:        s.mockDiceService,
 		IDGenerator:        s.mockIDGenerator,
-	}
-
-	orchestrator, err := characterorchestrator.New(cfg)
+	})
 	s.Require().NoError(err)
 	s.orchestrator = orchestrator
 
-	s.ctx = context.Background()
+	// Initialize test data
+	s.setupTestData()
+}
+
+func (s *OrchestratorTestSuite) SetupSubTest() {
+	// Reset test data to clean state for each subtest
+	s.setupTestData()
+}
+
+func (s *OrchestratorTestSuite) setupTestData() {
+	s.testDraftID = "draft-123"
+	s.testPlayerID = "player-456"
+	s.testDraftData = &toolkitchar.DraftData{
+		ID:       s.testDraftID,
+		PlayerID: s.testPlayerID,
+		Name:     "Aragorn",
+	}
 }
 
 func (s *OrchestratorTestSuite) TearDownTest() {
 	s.ctrl.Finish()
 }
 
-// Test CreateDraft
-func (s *OrchestratorTestSuite) TestCreateDraft_Success() {
-	draftID := "draft_123e4567-e89b-12d3-a456-426614174000"
-	s.mockIDGenerator.EXPECT().
-		Generate().
-		Return(draftID)
-
+func (s *OrchestratorTestSuite) TestGetDraft_Success() {
+	// Mock repository call
 	s.mockDraftRepo.EXPECT().
-		Create(s.ctx, gomock.Any()).
-		DoAndReturn(func(_ context.Context, input draftrepo.CreateInput) (*draftrepo.CreateOutput, error) {
-			// Verify the generated ID was used
-			s.Equal(draftID, input.Draft.ID)
-			// Repository sets timestamps
-			draft := *input.Draft
-			draft.CreatedAt = time.Now()
-			draft.UpdatedAt = time.Now()
-			return &draftrepo.CreateOutput{Draft: &draft}, nil
-		})
+		Get(s.ctx, draftrepo.GetInput{
+			ID: s.testDraftID,
+		}).
+		Return(&draftrepo.GetOutput{
+			Draft: s.testDraftData,
+		}, nil)
 
-	input := &characterorchestrator.CreateDraftInput{
-		PlayerID: "player-789",
-	}
-	output, err := s.orchestrator.CreateDraft(s.ctx, input)
+	// Call orchestrator
+	output, err := s.orchestrator.GetDraft(s.ctx, &character.GetDraftInput{
+		DraftID: s.testDraftID,
+	})
 
+	// Assert response
 	s.NoError(err)
 	s.NotNil(output)
 	s.NotNil(output.Draft)
-	s.Equal(draftID, output.Draft.ID)
-	s.Equal("player-789", output.Draft.PlayerID)
-	s.Equal(int32(0), output.Draft.Progress.CompletionPercentage)
+	s.Equal(s.testDraftData, output.Draft)
+}
+
+func (s *OrchestratorTestSuite) TestGetDraft_EmptyID() {
+	// Call orchestrator with empty ID
+	output, err := s.orchestrator.GetDraft(s.ctx, &character.GetDraftInput{
+		DraftID: "",
+	})
+
+	// Assert error
+	s.Error(err)
+	s.Nil(output)
+	s.True(errors.IsInvalidArgument(err))
+	s.Contains(err.Error(), "draft ID is required")
+}
+
+func (s *OrchestratorTestSuite) TestGetDraft_NotFound() {
+	draftID := "draft-notfound"
+
+	// Mock repository call
+	s.mockDraftRepo.EXPECT().
+		Get(s.ctx, draftrepo.GetInput{
+			ID: draftID,
+		}).
+		Return(nil, errors.NotFound("draft not found"))
+
+	// Call orchestrator
+	output, err := s.orchestrator.GetDraft(s.ctx, &character.GetDraftInput{
+		DraftID: draftID,
+	})
+
+	// Assert error
+	s.Error(err)
+	s.Nil(output)
+	s.Contains(err.Error(), "failed to get draft")
+}
+
+func (s *OrchestratorTestSuite) TestCreateDraft_Success() {
+	// Generate test ID
+	generatedID := "draft-generated-123"
+	s.mockIDGenerator.EXPECT().
+		Generate().
+		Return(generatedID)
+
+	// Mock repository call
+	s.mockDraftRepo.EXPECT().
+		Create(s.ctx, draftrepo.CreateInput{
+			Draft: &toolkitchar.DraftData{
+				ID:       generatedID,
+				PlayerID: s.testPlayerID,
+			},
+		}).
+		Return(&draftrepo.CreateOutput{
+			Draft: &toolkitchar.DraftData{
+				ID:       generatedID,
+				PlayerID: s.testPlayerID,
+				Name:     "",
+			},
+		}, nil)
+
+	// Call orchestrator
+	output, err := s.orchestrator.CreateDraft(s.ctx, &character.CreateDraftInput{
+		PlayerID: s.testPlayerID,
+	})
+
+	// Assert response
+	s.NoError(err)
+	s.NotNil(output)
+	s.NotNil(output.Draft)
+	s.Equal(generatedID, output.Draft.ID)
+	s.Equal(s.testPlayerID, output.Draft.PlayerID)
 }
 
 func (s *OrchestratorTestSuite) TestCreateDraft_WithInitialData() {
-	draftID := "draft_98765432-e89b-12d3-a456-426614174000"
+	generatedID := "draft-generated-456"
+	initialName := "Legolas"
+
 	s.mockIDGenerator.EXPECT().
 		Generate().
-		Return(draftID)
+		Return(generatedID)
 
+	// Mock repository call with initial data
 	s.mockDraftRepo.EXPECT().
-		Create(s.ctx, gomock.Any()).
-		DoAndReturn(func(_ context.Context, input draftrepo.CreateInput) (*draftrepo.CreateOutput, error) {
-			// Verify initial data was applied
-			s.Equal("Frodo", input.Draft.Name)
-			s.Equal(shared.ChoiceCategory("name"), shared.ChoiceName)
-			s.NotNil(input.Draft.Choices[shared.ChoiceName])
-
-			// Verify race and class were set
-			raceChoice := input.Draft.Choices[shared.ChoiceRace].(character.RaceChoice)
-			s.Equal(dnd5e.RaceHalfling, raceChoice.RaceID)
-
-			classChoice := input.Draft.Choices[shared.ChoiceClass].(string)
-			s.Equal(dnd5e.ClassRogue, classChoice)
-
-			// Repository sets ID and timestamps
-			draft := *input.Draft
-			draft.ID = "generated-id"
-			draft.CreatedAt = time.Now()
-			draft.UpdatedAt = time.Now()
-			return &draftrepo.CreateOutput{Draft: &draft}, nil
-		})
-
-	// Mock external client calls for hydration
-	s.mockExternalClient.EXPECT().
-		GetRaceData(s.ctx, dnd5e.RaceHalfling).
-		Return(nil, nil).AnyTimes()
-
-	s.mockExternalClient.EXPECT().
-		GetClassData(s.ctx, dnd5e.ClassRogue).
-		Return(nil, nil).AnyTimes()
-
-	input := &characterorchestrator.CreateDraftInput{
-		PlayerID:  "player-789",
-		SessionID: "session-012",
-		InitialData: &dnd5e.CharacterDraft{
-			Name:    "Frodo",
-			RaceID:  dnd5e.RaceHalfling,
-			ClassID: dnd5e.ClassRogue,
-		},
-	}
-	output, err := s.orchestrator.CreateDraft(s.ctx, input)
-
-	s.NoError(err)
-	s.NotNil(output)
-	s.Equal("Frodo", output.Draft.Name)
-	s.Equal(dnd5e.RaceHalfling, output.Draft.RaceID)
-	s.Equal(dnd5e.ClassRogue, output.Draft.ClassID)
-	s.Greater(output.Draft.Progress.CompletionPercentage, int32(0))
-}
-
-// Test UpdateName
-func (s *OrchestratorTestSuite) TestUpdateName_Success() {
-	// Initialize test data for this case
-	draftData := &character.DraftData{
-		ID:            "draft-123",
-		PlayerID:      "player-789",
-		Name:          "OldName",
-		Choices:       map[shared.ChoiceCategory]any{shared.ChoiceName: "OldName"},
-		ProgressFlags: character.ProgressName,
-		CreatedAt:     time.Now(),
-		UpdatedAt:     time.Now(),
-	}
-
-	s.mockDraftRepo.EXPECT().
-		Get(s.ctx, draftrepo.GetInput{ID: "draft-123"}).
-		Return(&draftrepo.GetOutput{Draft: draftData}, nil)
-
-	s.mockDraftRepo.EXPECT().
-		Update(s.ctx, gomock.Any()).
-		DoAndReturn(func(_ context.Context, input draftrepo.UpdateInput) (*draftrepo.UpdateOutput, error) {
-			s.Equal("NewName", input.Draft.Name)
-			s.Equal("NewName", input.Draft.Choices[shared.ChoiceName])
-			return &draftrepo.UpdateOutput{Draft: input.Draft}, nil
-		})
-
-	input := &characterorchestrator.UpdateNameInput{
-		DraftID: "draft-123",
-		Name:    "NewName",
-	}
-	output, err := s.orchestrator.UpdateName(s.ctx, input)
-
-	s.NoError(err)
-	s.NotNil(output)
-	s.Equal("NewName", output.Draft.Name)
-}
-
-// Test UpdateRace with choices
-func (s *OrchestratorTestSuite) TestUpdateRace_WithChoices() {
-	// Initialize test data
-	draftData := &character.DraftData{
-		ID:            "draft-123",
-		PlayerID:      "player-789",
-		Name:          "Test Character",
-		Choices:       make(map[shared.ChoiceCategory]any),
-		ProgressFlags: 0,
-		CreatedAt:     time.Now(),
-		UpdatedAt:     time.Now(),
-	}
-
-	s.mockDraftRepo.EXPECT().
-		Get(s.ctx, gomock.Any()).
-		Return(&draftrepo.GetOutput{Draft: draftData}, nil)
-
-	// Mock external validation - UpdateRace fetches race data multiple times
-	s.mockExternalClient.EXPECT().
-		GetRaceData(s.ctx, "dwarf").
-		Return(&external.RaceData{
-			ID:   "dwarf",
-			Name: "Dwarf",
-		}, nil).AnyTimes()
-
-	s.mockDraftRepo.EXPECT().
-		Update(s.ctx, gomock.Any()).
-		DoAndReturn(func(_ context.Context, input draftrepo.UpdateInput) (*draftrepo.UpdateOutput, error) {
-			// Verify race was set
-			raceChoice := input.Draft.Choices[shared.ChoiceRace].(character.RaceChoice)
-			s.Equal("dwarf", raceChoice.RaceID)
-
-			// Verify race choices were stored
-			toolChoice := input.Draft.Choices[shared.ChoiceCategory("race_dwarf_tool_1")]
-			s.Equal([]string{"brewers-supplies"}, toolChoice)
-
-			return &draftrepo.UpdateOutput{Draft: input.Draft}, nil
-		})
-
-	input := &characterorchestrator.UpdateRaceInput{
-		DraftID: "draft-123",
-		RaceID:  "dwarf",
-		Choices: []dnd5e.ChoiceSelection{
-			{
-				ChoiceID:     "dwarf_tool_1",
-				SelectedKeys: []string{"brewers-supplies"},
+		Create(s.ctx, draftrepo.CreateInput{
+			Draft: &toolkitchar.DraftData{
+				ID:       generatedID,
+				PlayerID: s.testPlayerID,
+				Name:     initialName,
 			},
+		}).
+		Return(&draftrepo.CreateOutput{
+			Draft: &toolkitchar.DraftData{
+				ID:       generatedID,
+				PlayerID: s.testPlayerID,
+				Name:     initialName,
+			},
+		}, nil)
+
+	// Call orchestrator with initial data
+	output, err := s.orchestrator.CreateDraft(s.ctx, &character.CreateDraftInput{
+		PlayerID: s.testPlayerID,
+		InitialData: &toolkitchar.DraftData{
+			Name: initialName,
 		},
-	}
-	output, err := s.orchestrator.UpdateRace(s.ctx, input)
+	})
 
-	s.NoError(err)
-	s.NotNil(output)
-	s.Equal("dwarf", output.Draft.RaceID)
-	// Verify choices are returned
-	found := false
-	for _, choice := range output.Draft.ChoiceSelections {
-		if choice.ChoiceID == "dwarf_tool_1" && choice.Source == dnd5e.ChoiceSourceRace {
-			found = true
-			s.Equal([]string{"brewers-supplies"}, choice.SelectedKeys)
-		}
-	}
-	s.True(found, "Race choice should be returned in ChoiceSelections")
-}
-
-// Test UpdateAbilityScores
-func (s *OrchestratorTestSuite) TestUpdateAbilityScores_Success() {
-	// Initialize test data
-	draftData := &character.DraftData{
-		ID:            "draft-123",
-		PlayerID:      "player-789",
-		Name:          "Test Character",
-		Choices:       make(map[shared.ChoiceCategory]any),
-		ProgressFlags: 0,
-		CreatedAt:     time.Now(),
-		UpdatedAt:     time.Now(),
-	}
-
-	s.mockDraftRepo.EXPECT().
-		Get(s.ctx, gomock.Any()).
-		Return(&draftrepo.GetOutput{Draft: draftData}, nil)
-
-	s.mockDraftRepo.EXPECT().
-		Update(s.ctx, gomock.Any()).
-		DoAndReturn(func(_ context.Context, input draftrepo.UpdateInput) (*draftrepo.UpdateOutput, error) {
-			// Verify ability scores were set
-			scores := input.Draft.Choices[shared.ChoiceAbilityScores].(shared.AbilityScores)
-			s.Equal(15, scores.Strength)
-			s.Equal(14, scores.Dexterity)
-			s.Equal(13, scores.Constitution)
-			s.Equal(12, scores.Intelligence)
-			s.Equal(10, scores.Wisdom)
-			s.Equal(8, scores.Charisma)
-
-			return &draftrepo.UpdateOutput{Draft: input.Draft}, nil
-		})
-
-	input := &characterorchestrator.UpdateAbilityScoresInput{
-		DraftID: "draft-123",
-		AbilityScores: dnd5e.AbilityScores{
-			Strength:     15,
-			Dexterity:    14,
-			Constitution: 13,
-			Intelligence: 12,
-			Wisdom:       10,
-			Charisma:     8,
-		},
-	}
-	output, err := s.orchestrator.UpdateAbilityScores(s.ctx, input)
-
-	s.NoError(err)
-	s.NotNil(output)
-	s.NotNil(output.Draft.AbilityScores)
-	s.Equal(int32(15), output.Draft.AbilityScores.Strength)
-	s.Equal(int32(14), output.Draft.AbilityScores.Dexterity)
-	s.Equal(int32(13), output.Draft.AbilityScores.Constitution)
-	s.Equal(int32(12), output.Draft.AbilityScores.Intelligence)
-	s.Equal(int32(10), output.Draft.AbilityScores.Wisdom)
-	s.Equal(int32(8), output.Draft.AbilityScores.Charisma)
-}
-
-// Test GetDraft
-func (s *OrchestratorTestSuite) TestGetDraft_Success() {
-	// Initialize test data with specific values for this test
-	draftData := &character.DraftData{
-		ID:        "draft-123",
-		PlayerID:  "player-789",
-		Name:      "TestCharacter",
-		Choices:   make(map[shared.ChoiceCategory]any),
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
-	}
-	draftData.Choices[shared.ChoiceName] = "TestCharacter"
-	draftData.Choices[shared.ChoiceRace] = character.RaceChoice{
-		RaceID:    "human",
-		SubraceID: "",
-	}
-	draftData.Choices[shared.ChoiceClass] = "fighter"
-	draftData.Choices[shared.ChoiceAbilityScores] = shared.AbilityScores{
-		Strength:     16,
-		Dexterity:    14,
-		Constitution: 15,
-		Intelligence: 10,
-		Wisdom:       12,
-		Charisma:     8,
-	}
-	draftData.ProgressFlags = character.ProgressName | character.ProgressRace | character.ProgressClass | character.ProgressAbilityScores
-
-	s.mockDraftRepo.EXPECT().
-		Get(s.ctx, draftrepo.GetInput{ID: "draft-123"}).
-		Return(&draftrepo.GetOutput{Draft: draftData}, nil)
-
-	// Mock external client calls for hydration
-	s.mockExternalClient.EXPECT().
-		GetRaceData(s.ctx, "human").
-		Return(nil, nil).AnyTimes()
-
-	s.mockExternalClient.EXPECT().
-		GetClassData(s.ctx, "fighter").
-		Return(nil, nil).AnyTimes()
-
-	input := &characterorchestrator.GetDraftInput{
-		DraftID: "draft-123",
-	}
-	output, err := s.orchestrator.GetDraft(s.ctx, input)
-
+	// Assert response
 	s.NoError(err)
 	s.NotNil(output)
 	s.NotNil(output.Draft)
-	s.Equal("draft-123", output.Draft.ID)
-	s.Equal("TestCharacter", output.Draft.Name)
-	s.Equal("human", output.Draft.RaceID)
-	s.Equal("fighter", output.Draft.ClassID)
-	s.NotNil(output.Draft.AbilityScores)
-	s.Equal(int32(16), output.Draft.AbilityScores.Strength)
+	s.Equal(generatedID, output.Draft.ID)
+	s.Equal(s.testPlayerID, output.Draft.PlayerID)
+	s.Equal(initialName, output.Draft.Name)
 }
 
-// Test validation errors
-func (s *OrchestratorTestSuite) TestCreateDraft_ValidationError() {
-	input := &characterorchestrator.CreateDraftInput{
-		PlayerID: "", // Missing required field
-	}
-	output, err := s.orchestrator.CreateDraft(s.ctx, input)
+func (s *OrchestratorTestSuite) TestCreateDraft_EmptyPlayerID() {
+	// Call orchestrator with empty player ID
+	output, err := s.orchestrator.CreateDraft(s.ctx, &character.CreateDraftInput{
+		PlayerID: "",
+	})
 
+	// Assert error
 	s.Error(err)
 	s.Nil(output)
-	s.Contains(err.Error(), "playerID: is required")
+	s.True(errors.IsInvalidArgument(err))
+	s.Contains(err.Error(), "player ID is required")
+}
+
+func (s *OrchestratorTestSuite) TestCreateDraft_RepositoryError() {
+	generatedID := "draft-generated-789"
+
+	s.mockIDGenerator.EXPECT().
+		Generate().
+		Return(generatedID)
+
+	// Mock repository error
+	s.mockDraftRepo.EXPECT().
+		Create(s.ctx, gomock.Any()).
+		Return(nil, errors.Internal("database error"))
+
+	// Call orchestrator
+	output, err := s.orchestrator.CreateDraft(s.ctx, &character.CreateDraftInput{
+		PlayerID: s.testPlayerID,
+	})
+
+	// Assert error
+	s.Error(err)
+	s.Nil(output)
+	s.Contains(err.Error(), "failed to create draft")
+}
+
+func (s *OrchestratorTestSuite) TestGetRaceDetails_Success() {
+	ctx := context.Background()
+	input := &character.GetRaceDetailsInput{
+		RaceID: "RACE_DRAGONBORN",
+	}
+
+	expectedRaceData := &race.Data{
+		ID:   constants.Race("RACE_DRAGONBORN"),
+		Name: "Dragonborn",
+	}
+	expectedUIData := &external.RaceUIData{
+		SizeDescription: "Dragonborn are taller and heavier than humans",
+	}
+
+	s.mockExternal.EXPECT().
+		GetRaceData(ctx, "RACE_DRAGONBORN").
+		Return(&external.RaceDataOutput{
+			RaceData: expectedRaceData,
+			UIData:   expectedUIData,
+		}, nil)
+
+	output, err := s.orchestrator.GetRaceDetails(ctx, input)
+
+	s.Require().NoError(err)
+	s.Assert().Equal(expectedRaceData, output.RaceData)
+	s.Assert().Equal(expectedUIData, output.UIData)
+}
+
+func (s *OrchestratorTestSuite) TestGetRaceDetails_EmptyID() {
+	ctx := context.Background()
+	input := &character.GetRaceDetailsInput{
+		RaceID: "",
+	}
+
+	output, err := s.orchestrator.GetRaceDetails(ctx, input)
+
+	s.Require().Error(err)
+	s.Assert().Nil(output)
+	s.Assert().True(errors.IsInvalidArgument(err))
+}
+
+func (s *OrchestratorTestSuite) TestGetClassDetails_Success() {
+	ctx := context.Background()
+	input := &character.GetClassDetailsInput{
+		ClassID: "CLASS_WIZARD",
+	}
+
+	expectedClassData := &class.Data{
+		ID:      constants.Class("CLASS_WIZARD"),
+		Name:    "Wizard",
+		HitDice: 6,
+	}
+	expectedUIData := &external.ClassUIData{
+		Description: "Wizards are supreme magic-users",
+	}
+
+	s.mockExternal.EXPECT().
+		GetClassData(ctx, "CLASS_WIZARD").
+		Return(&external.ClassDataOutput{
+			ClassData: expectedClassData,
+			UIData:    expectedUIData,
+		}, nil)
+
+	output, err := s.orchestrator.GetClassDetails(ctx, input)
+
+	s.Require().NoError(err)
+	s.Assert().Equal(expectedClassData, output.ClassData)
+	s.Assert().Equal(expectedUIData, output.UIData)
+}
+
+func (s *OrchestratorTestSuite) TestGetClassDetails_EmptyID() {
+	ctx := context.Background()
+	input := &character.GetClassDetailsInput{
+		ClassID: "",
+	}
+
+	output, err := s.orchestrator.GetClassDetails(ctx, input)
+
+	s.Require().Error(err)
+	s.Assert().Nil(output)
+	s.Assert().True(errors.IsInvalidArgument(err))
+}
+
+func (s *OrchestratorTestSuite) TestListDrafts_Success() {
+	ctx := context.Background()
+	input := &character.ListDraftsInput{
+		PlayerID: s.testPlayerID,
+	}
+
+	// Mock repository call
+	s.mockDraftRepo.EXPECT().
+		GetByPlayerID(ctx, draftrepo.GetByPlayerIDInput{
+			PlayerID: s.testPlayerID,
+		}).
+		Return(&draftrepo.GetByPlayerIDOutput{
+			Draft: s.testDraftData,
+		}, nil)
+
+	// Call orchestrator
+	output, err := s.orchestrator.ListDrafts(ctx, input)
+
+	// Assert response
+	s.Require().NoError(err)
+	s.Require().NotNil(output)
+	s.Assert().Len(output.Drafts, 1)
+	s.Assert().Equal(s.testDraftData, output.Drafts[0])
+	s.Assert().Empty(output.NextPageToken)
+}
+
+func (s *OrchestratorTestSuite) TestListDrafts_EmptyPlayerID() {
+	ctx := context.Background()
+	input := &character.ListDraftsInput{
+		PlayerID: "",
+	}
+
+	// Call orchestrator
+	output, err := s.orchestrator.ListDrafts(ctx, input)
+
+	// Assert error
+	s.Require().Error(err)
+	s.Assert().Nil(output)
+	s.Assert().True(errors.IsInvalidArgument(err))
+	s.Assert().Contains(err.Error(), "player ID is required")
+}
+
+func (s *OrchestratorTestSuite) TestListDrafts_NoDraft() {
+	ctx := context.Background()
+	input := &character.ListDraftsInput{
+		PlayerID: s.testPlayerID,
+	}
+
+	// Mock repository call - no draft found
+	s.mockDraftRepo.EXPECT().
+		GetByPlayerID(ctx, draftrepo.GetByPlayerIDInput{
+			PlayerID: s.testPlayerID,
+		}).
+		Return(nil, errors.NotFound("no draft found"))
+
+	// Call orchestrator
+	output, err := s.orchestrator.ListDrafts(ctx, input)
+
+	// Assert response - empty list but no error
+	s.Require().NoError(err)
+	s.Require().NotNil(output)
+	s.Assert().Empty(output.Drafts)
+	s.Assert().Empty(output.NextPageToken)
+}
+
+func (s *OrchestratorTestSuite) TestUpdateName_Success() {
+	ctx := context.Background()
+	newName := "Gimli"
+	input := &character.UpdateNameInput{
+		DraftID: s.testDraftID,
+		Name:    newName,
+	}
+
+	// Create a copy of test data with updated name
+	updatedDraft := *s.testDraftData
+	updatedDraft.Name = newName
+
+	// Mock get call
+	s.mockDraftRepo.EXPECT().
+		Get(ctx, draftrepo.GetInput{
+			ID: s.testDraftID,
+		}).
+		Return(&draftrepo.GetOutput{
+			Draft: s.testDraftData,
+		}, nil)
+
+	// Mock update call
+	s.mockDraftRepo.EXPECT().
+		Update(ctx, draftrepo.UpdateInput{
+			Draft: &updatedDraft,
+		}).
+		Return(&draftrepo.UpdateOutput{
+			Draft: &updatedDraft,
+		}, nil)
+
+	// Call orchestrator
+	output, err := s.orchestrator.UpdateName(ctx, input)
+
+	// Assert response
+	s.Require().NoError(err)
+	s.Require().NotNil(output)
+	s.Assert().Equal(newName, output.Draft.Name)
+	s.Assert().Empty(output.Warnings)
+}
+
+func (s *OrchestratorTestSuite) TestUpdateName_EmptyDraftID() {
+	ctx := context.Background()
+	input := &character.UpdateNameInput{
+		DraftID: "",
+		Name:    "Gimli",
+	}
+
+	// Call orchestrator
+	output, err := s.orchestrator.UpdateName(ctx, input)
+
+	// Assert error
+	s.Require().Error(err)
+	s.Assert().Nil(output)
+	s.Assert().True(errors.IsInvalidArgument(err))
+	s.Assert().Contains(err.Error(), "draft ID is required")
 }
 
 func (s *OrchestratorTestSuite) TestUpdateName_EmptyName() {
-	input := &characterorchestrator.UpdateNameInput{
-		DraftID: "draft-123",
-		Name:    "", // Empty name
+	ctx := context.Background()
+	input := &character.UpdateNameInput{
+		DraftID: s.testDraftID,
+		Name:    "   ", // Whitespace only
 	}
-	output, err := s.orchestrator.UpdateName(s.ctx, input)
 
-	s.Error(err)
-	s.Nil(output)
-	s.Contains(err.Error(), "name: is required")
+	// Call orchestrator
+	output, err := s.orchestrator.UpdateName(ctx, input)
+
+	// Assert error
+	s.Require().Error(err)
+	s.Assert().Nil(output)
+	s.Assert().True(errors.IsInvalidArgument(err))
+	s.Assert().Contains(err.Error(), "name is required")
 }
 
-// Test repository errors
-func (s *OrchestratorTestSuite) TestGetDraft_NotFound() {
+func (s *OrchestratorTestSuite) TestUpdateName_DraftNotFound() {
+	ctx := context.Background()
+	input := &character.UpdateNameInput{
+		DraftID: s.testDraftID,
+		Name:    "Gimli",
+	}
+
+	// Mock get call - draft not found
 	s.mockDraftRepo.EXPECT().
-		Get(s.ctx, gomock.Any()).
+		Get(ctx, draftrepo.GetInput{
+			ID: s.testDraftID,
+		}).
 		Return(nil, errors.NotFound("draft not found"))
 
-	input := &characterorchestrator.GetDraftInput{
-		DraftID: "nonexistent",
-	}
-	output, err := s.orchestrator.GetDraft(s.ctx, input)
+	// Call orchestrator
+	output, err := s.orchestrator.UpdateName(ctx, input)
 
-	s.Error(err)
-	s.Nil(output)
-	s.True(errors.IsNotFound(err))
+	// Assert error
+	s.Require().Error(err)
+	s.Assert().Nil(output)
+	s.Assert().Contains(err.Error(), "failed to get draft")
+}
+
+func (s *OrchestratorTestSuite) TestUpdateRace_Success() {
+	ctx := context.Background()
+	newRaceID := constants.RaceElf
+	newSubraceID := constants.SubraceHighElf
+	input := &character.UpdateRaceInput{
+		DraftID:   s.testDraftID,
+		RaceID:    newRaceID,
+		SubraceID: newSubraceID,
+	}
+
+	// Create a copy of test data with updated race
+	updatedDraft := *s.testDraftData
+	updatedDraft.RaceChoice = toolkitchar.RaceChoice{
+		RaceID:    newRaceID,
+		SubraceID: newSubraceID,
+	}
+
+	// Mock get call
+	s.mockDraftRepo.EXPECT().
+		Get(ctx, draftrepo.GetInput{
+			ID: s.testDraftID,
+		}).
+		Return(&draftrepo.GetOutput{
+			Draft: s.testDraftData,
+		}, nil)
+
+	// Mock update call
+	s.mockDraftRepo.EXPECT().
+		Update(ctx, draftrepo.UpdateInput{
+			Draft: &updatedDraft,
+		}).
+		Return(&draftrepo.UpdateOutput{
+			Draft: &updatedDraft,
+		}, nil)
+
+	// Call orchestrator
+	output, err := s.orchestrator.UpdateRace(ctx, input)
+
+	// Assert response
+	s.Require().NoError(err)
+	s.Require().NotNil(output)
+	s.Assert().Equal(newRaceID, output.Draft.RaceChoice.RaceID)
+	s.Assert().Equal(newSubraceID, output.Draft.RaceChoice.SubraceID)
+	s.Assert().Empty(output.Warnings)
+}
+
+func (s *OrchestratorTestSuite) TestUpdateRace_WithChoices() {
+	ctx := context.Background()
+	newRaceID := constants.RaceHalfElf
+	choices := []toolkitchar.ChoiceData{
+		{
+			ChoiceID:       "ability-increase",
+			Category:       shared.ChoiceAbilityScores,
+			Source:         shared.SourceRace,
+			SkillSelection: []constants.Skill{constants.SkillPersuasion},
+		},
+	}
+	input := &character.UpdateRaceInput{
+		DraftID: s.testDraftID,
+		RaceID:  newRaceID,
+		Choices: choices,
+	}
+
+	// Create a copy of test data with existing non-race choices
+	existingDraft := *s.testDraftData
+	existingDraft.Choices = []toolkitchar.ChoiceData{
+		{
+			ChoiceID: "skill-choice",
+			Category: shared.ChoiceSkills,
+			Source:   shared.SourceBackground,
+		},
+	}
+
+	// Create expected updated draft
+	updatedDraft := existingDraft
+	updatedDraft.RaceChoice = toolkitchar.RaceChoice{
+		RaceID: constants.Race(newRaceID),
+	}
+	updatedDraft.Choices = append([]toolkitchar.ChoiceData{{
+		ChoiceID: "skill-choice",
+		Category: shared.ChoiceSkills,
+		Source:   shared.SourceBackground,
+	}}, choices...)
+
+	// Mock get call
+	s.mockDraftRepo.EXPECT().
+		Get(ctx, draftrepo.GetInput{
+			ID: s.testDraftID,
+		}).
+		Return(&draftrepo.GetOutput{
+			Draft: &existingDraft,
+		}, nil)
+
+	// Mock update call
+	s.mockDraftRepo.EXPECT().
+		Update(ctx, draftrepo.UpdateInput{
+			Draft: &updatedDraft,
+		}).
+		Return(&draftrepo.UpdateOutput{
+			Draft: &updatedDraft,
+		}, nil)
+
+	// Call orchestrator
+	output, err := s.orchestrator.UpdateRace(ctx, input)
+
+	// Assert response
+	s.Require().NoError(err)
+	s.Require().NotNil(output)
+	s.Assert().Equal(newRaceID, output.Draft.RaceChoice.RaceID)
+	s.Assert().Len(output.Draft.Choices, 2)
+	s.Assert().Equal(shared.SourceRace, output.Draft.Choices[1].Source)
+}
+
+func (s *OrchestratorTestSuite) TestUpdateRace_EmptyDraftID() {
+	ctx := context.Background()
+	input := &character.UpdateRaceInput{
+		DraftID: "",
+		RaceID:  "RACE_HUMAN",
+	}
+
+	// Call orchestrator
+	output, err := s.orchestrator.UpdateRace(ctx, input)
+
+	// Assert error
+	s.Require().Error(err)
+	s.Assert().Nil(output)
+	s.Assert().True(errors.IsInvalidArgument(err))
+	s.Assert().Contains(err.Error(), "draft ID is required")
+}
+
+func (s *OrchestratorTestSuite) TestUpdateRace_EmptyRaceID() {
+	ctx := context.Background()
+	input := &character.UpdateRaceInput{
+		DraftID: s.testDraftID,
+		RaceID:  "",
+	}
+
+	// Call orchestrator
+	output, err := s.orchestrator.UpdateRace(ctx, input)
+
+	// Assert error
+	s.Require().Error(err)
+	s.Assert().Nil(output)
+	s.Assert().True(errors.IsInvalidArgument(err))
+	s.Assert().Contains(err.Error(), "race ID is required")
+}
+
+func (s *OrchestratorTestSuite) TestUpdateRace_DraftNotFound() {
+	ctx := context.Background()
+	input := &character.UpdateRaceInput{
+		DraftID: s.testDraftID,
+		RaceID:  "RACE_TIEFLING",
+	}
+
+	// Mock get call - draft not found
+	s.mockDraftRepo.EXPECT().
+		Get(ctx, draftrepo.GetInput{
+			ID: s.testDraftID,
+		}).
+		Return(nil, errors.NotFound("draft not found"))
+
+	// Call orchestrator
+	output, err := s.orchestrator.UpdateRace(ctx, input)
+
+	// Assert error
+	s.Require().Error(err)
+	s.Assert().Nil(output)
+	s.Assert().Contains(err.Error(), "failed to get draft")
+}
+
+func (s *OrchestratorTestSuite) TestUpdateClass_Success() {
+	ctx := context.Background()
+	newClassID := constants.ClassWizard
+	input := &character.UpdateClassInput{
+		DraftID: s.testDraftID,
+		ClassID: newClassID,
+	}
+
+	// Create a copy of test data with updated class
+	updatedDraft := *s.testDraftData
+	updatedDraft.ClassChoice = toolkitchar.ClassChoice{
+		ClassID: newClassID,
+	}
+
+	// Mock get call
+	s.mockDraftRepo.EXPECT().
+		Get(ctx, draftrepo.GetInput{
+			ID: s.testDraftID,
+		}).
+		Return(&draftrepo.GetOutput{
+			Draft: s.testDraftData,
+		}, nil)
+
+	// Mock update call
+	s.mockDraftRepo.EXPECT().
+		Update(ctx, draftrepo.UpdateInput{
+			Draft: &updatedDraft,
+		}).
+		Return(&draftrepo.UpdateOutput{
+			Draft: &updatedDraft,
+		}, nil)
+
+	// Call orchestrator
+	output, err := s.orchestrator.UpdateClass(ctx, input)
+
+	// Assert response
+	s.Require().NoError(err)
+	s.Require().NotNil(output)
+	s.Assert().Equal(newClassID, output.Draft.ClassChoice.ClassID)
+	s.Assert().Empty(output.Warnings)
+}
+
+func (s *OrchestratorTestSuite) TestUpdateClass_WithChoices() {
+	ctx := context.Background()
+	newClassID := constants.ClassFighter
+	choices := []toolkitchar.ChoiceData{
+		{
+			ChoiceID:           "fighting-style",
+			Category:           shared.ChoiceFightingStyle,
+			Source:             shared.SourceClass,
+			EquipmentSelection: []string{"Defense"},
+		},
+	}
+	input := &character.UpdateClassInput{
+		DraftID: s.testDraftID,
+		ClassID: newClassID,
+		Choices: choices,
+	}
+
+	// Create a copy of test data with existing non-class choices
+	existingDraft := *s.testDraftData
+	existingDraft.Choices = []toolkitchar.ChoiceData{
+		{
+			ChoiceID: "skill-choice",
+			Category: shared.ChoiceSkills,
+			Source:   shared.SourceBackground,
+		},
+	}
+
+	// Create expected updated draft
+	updatedDraft := existingDraft
+	updatedDraft.ClassChoice = toolkitchar.ClassChoice{
+		ClassID: constants.Class(newClassID),
+	}
+	updatedDraft.Choices = append([]toolkitchar.ChoiceData{{
+		ChoiceID: "skill-choice",
+		Category: shared.ChoiceSkills,
+		Source:   shared.SourceBackground,
+	}}, choices...)
+
+	// Mock get call
+	s.mockDraftRepo.EXPECT().
+		Get(ctx, draftrepo.GetInput{
+			ID: s.testDraftID,
+		}).
+		Return(&draftrepo.GetOutput{
+			Draft: &existingDraft,
+		}, nil)
+
+	// Mock update call
+	s.mockDraftRepo.EXPECT().
+		Update(ctx, draftrepo.UpdateInput{
+			Draft: &updatedDraft,
+		}).
+		Return(&draftrepo.UpdateOutput{
+			Draft: &updatedDraft,
+		}, nil)
+
+	// Call orchestrator
+	output, err := s.orchestrator.UpdateClass(ctx, input)
+
+	// Assert response
+	s.Require().NoError(err)
+	s.Require().NotNil(output)
+	s.Assert().Equal(newClassID, output.Draft.ClassChoice.ClassID)
+	s.Assert().Len(output.Draft.Choices, 2)
+	s.Assert().Equal(shared.SourceClass, output.Draft.Choices[1].Source)
+}
+
+func (s *OrchestratorTestSuite) TestUpdateClass_EmptyDraftID() {
+	ctx := context.Background()
+	input := &character.UpdateClassInput{
+		DraftID: "",
+		ClassID: "CLASS_BARBARIAN",
+	}
+
+	// Call orchestrator
+	output, err := s.orchestrator.UpdateClass(ctx, input)
+
+	// Assert error
+	s.Require().Error(err)
+	s.Assert().Nil(output)
+	s.Assert().True(errors.IsInvalidArgument(err))
+	s.Assert().Contains(err.Error(), "draft ID is required")
+}
+
+func (s *OrchestratorTestSuite) TestUpdateClass_EmptyClassID() {
+	ctx := context.Background()
+	input := &character.UpdateClassInput{
+		DraftID: s.testDraftID,
+		ClassID: "",
+	}
+
+	// Call orchestrator
+	output, err := s.orchestrator.UpdateClass(ctx, input)
+
+	// Assert error
+	s.Require().Error(err)
+	s.Assert().Nil(output)
+	s.Assert().True(errors.IsInvalidArgument(err))
+	s.Assert().Contains(err.Error(), "class ID is required")
+}
+
+func (s *OrchestratorTestSuite) TestUpdateClass_DraftNotFound() {
+	ctx := context.Background()
+	input := &character.UpdateClassInput{
+		DraftID: s.testDraftID,
+		ClassID: "CLASS_ROGUE",
+	}
+
+	// Mock get call - draft not found
+	s.mockDraftRepo.EXPECT().
+		Get(ctx, draftrepo.GetInput{
+			ID: s.testDraftID,
+		}).
+		Return(nil, errors.NotFound("draft not found"))
+
+	// Call orchestrator
+	output, err := s.orchestrator.UpdateClass(ctx, input)
+
+	// Assert error
+	s.Require().Error(err)
+	s.Assert().Nil(output)
+	s.Assert().Contains(err.Error(), "failed to get draft")
+}
+
+func (s *OrchestratorTestSuite) TestUpdateBackground_Success() {
+	ctx := context.Background()
+	newBackgroundID := "BACKGROUND_SAGE"
+	input := &character.UpdateBackgroundInput{
+		DraftID:      s.testDraftID,
+		BackgroundID: newBackgroundID,
+	}
+
+	// Create a copy of test data with updated background
+	updatedDraft := *s.testDraftData
+	updatedDraft.BackgroundChoice = constants.Background(newBackgroundID)
+
+	// Mock get call
+	s.mockDraftRepo.EXPECT().
+		Get(ctx, draftrepo.GetInput{
+			ID: s.testDraftID,
+		}).
+		Return(&draftrepo.GetOutput{
+			Draft: s.testDraftData,
+		}, nil)
+
+	// Mock update call
+	s.mockDraftRepo.EXPECT().
+		Update(ctx, draftrepo.UpdateInput{
+			Draft: &updatedDraft,
+		}).
+		Return(&draftrepo.UpdateOutput{
+			Draft: &updatedDraft,
+		}, nil)
+
+	// Call orchestrator
+	output, err := s.orchestrator.UpdateBackground(ctx, input)
+
+	// Assert response
+	s.Require().NoError(err)
+	s.Require().NotNil(output)
+	s.Assert().Equal(newBackgroundID, string(output.Draft.BackgroundChoice))
+	s.Assert().Empty(output.Warnings)
+}
+
+func (s *OrchestratorTestSuite) TestUpdateBackground_WithChoices() {
+	ctx := context.Background()
+	newBackgroundID := "BACKGROUND_CRIMINAL"
+	choices := []toolkitchar.ChoiceData{
+		{
+			ChoiceID:           "tool-choice",
+			Category:           shared.ChoiceEquipment,
+			Source:             shared.SourceBackground,
+			EquipmentSelection: []string{"thieves-tools"},
+		},
+	}
+	input := &character.UpdateBackgroundInput{
+		DraftID:      s.testDraftID,
+		BackgroundID: newBackgroundID,
+		Choices:      choices,
+	}
+
+	// Create a copy of test data with existing non-background choices
+	existingDraft := *s.testDraftData
+	existingDraft.Choices = []toolkitchar.ChoiceData{
+		{
+			ChoiceID: "skill-choice",
+			Category: shared.ChoiceSkills,
+			Source:   shared.SourceClass,
+		},
+	}
+
+	// Create expected updated draft
+	updatedDraft := existingDraft
+	updatedDraft.BackgroundChoice = constants.Background(newBackgroundID)
+	updatedDraft.Choices = append([]toolkitchar.ChoiceData{{
+		ChoiceID: "skill-choice",
+		Category: shared.ChoiceSkills,
+		Source:   shared.SourceClass,
+	}}, choices...)
+
+	// Mock get call
+	s.mockDraftRepo.EXPECT().
+		Get(ctx, draftrepo.GetInput{
+			ID: s.testDraftID,
+		}).
+		Return(&draftrepo.GetOutput{
+			Draft: &existingDraft,
+		}, nil)
+
+	// Mock update call
+	s.mockDraftRepo.EXPECT().
+		Update(ctx, draftrepo.UpdateInput{
+			Draft: &updatedDraft,
+		}).
+		Return(&draftrepo.UpdateOutput{
+			Draft: &updatedDraft,
+		}, nil)
+
+	// Call orchestrator
+	output, err := s.orchestrator.UpdateBackground(ctx, input)
+
+	// Assert response
+	s.Require().NoError(err)
+	s.Require().NotNil(output)
+	s.Assert().Equal(newBackgroundID, string(output.Draft.BackgroundChoice))
+	s.Assert().Len(output.Draft.Choices, 2)
+	s.Assert().Equal(shared.SourceBackground, output.Draft.Choices[1].Source)
+}
+
+func (s *OrchestratorTestSuite) TestUpdateBackground_EmptyDraftID() {
+	ctx := context.Background()
+	input := &character.UpdateBackgroundInput{
+		DraftID:      "",
+		BackgroundID: "BACKGROUND_NOBLE",
+	}
+
+	// Call orchestrator
+	output, err := s.orchestrator.UpdateBackground(ctx, input)
+
+	// Assert error
+	s.Require().Error(err)
+	s.Assert().Nil(output)
+	s.Assert().True(errors.IsInvalidArgument(err))
+	s.Assert().Contains(err.Error(), "draft ID is required")
+}
+
+func (s *OrchestratorTestSuite) TestUpdateBackground_EmptyBackgroundID() {
+	ctx := context.Background()
+	input := &character.UpdateBackgroundInput{
+		DraftID:      s.testDraftID,
+		BackgroundID: "",
+	}
+
+	// Call orchestrator
+	output, err := s.orchestrator.UpdateBackground(ctx, input)
+
+	// Assert error
+	s.Require().Error(err)
+	s.Assert().Nil(output)
+	s.Assert().True(errors.IsInvalidArgument(err))
+	s.Assert().Contains(err.Error(), "background ID is required")
+}
+
+func (s *OrchestratorTestSuite) TestUpdateBackground_DraftNotFound() {
+	ctx := context.Background()
+	input := &character.UpdateBackgroundInput{
+		DraftID:      s.testDraftID,
+		BackgroundID: "BACKGROUND_SOLDIER",
+	}
+
+	// Mock get call - draft not found
+	s.mockDraftRepo.EXPECT().
+		Get(ctx, draftrepo.GetInput{
+			ID: s.testDraftID,
+		}).
+		Return(nil, errors.NotFound("draft not found"))
+
+	// Call orchestrator
+	output, err := s.orchestrator.UpdateBackground(ctx, input)
+
+	// Assert error
+	s.Require().Error(err)
+	s.Assert().Nil(output)
+	s.Assert().Contains(err.Error(), "failed to get draft")
 }
 
 func TestOrchestratorSuite(t *testing.T) {

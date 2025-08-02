@@ -13,8 +13,9 @@ import (
 	context "context"
 	reflect "reflect"
 
-	external "github.com/KirkDiggler/rpg-api/internal/clients/external"
 	gomock "go.uber.org/mock/gomock"
+
+	external "github.com/KirkDiggler/rpg-api/internal/clients/external"
 )
 
 // MockClient is a mock of Client interface.
@@ -57,10 +58,10 @@ func (mr *MockClientMockRecorder) GetBackgroundData(ctx, backgroundID any) *gomo
 }
 
 // GetClassData mocks base method.
-func (m *MockClient) GetClassData(ctx context.Context, classID string) (*external.ClassData, error) {
+func (m *MockClient) GetClassData(ctx context.Context, classID string) (*external.ClassDataOutput, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetClassData", ctx, classID)
-	ret0, _ := ret[0].(*external.ClassData)
+	ret0, _ := ret[0].(*external.ClassDataOutput)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -102,10 +103,10 @@ func (mr *MockClientMockRecorder) GetFeatureData(ctx, featureID any) *gomock.Cal
 }
 
 // GetRaceData mocks base method.
-func (m *MockClient) GetRaceData(ctx context.Context, raceID string) (*external.RaceData, error) {
+func (m *MockClient) GetRaceData(ctx context.Context, raceID string) (*external.RaceDataOutput, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetRaceData", ctx, raceID)
-	ret0, _ := ret[0].(*external.RaceData)
+	ret0, _ := ret[0].(*external.RaceDataOutput)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }

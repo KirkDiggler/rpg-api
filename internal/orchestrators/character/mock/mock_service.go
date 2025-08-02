@@ -161,6 +161,21 @@ func (mr *MockServiceMockRecorder) GetCharacter(ctx, input any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetCharacter", reflect.TypeOf((*MockService)(nil).GetCharacter), ctx, input)
 }
 
+// GetCharacterInventory mocks base method.
+func (m *MockService) GetCharacterInventory(ctx context.Context, input *character.GetCharacterInventoryInput) (*character.GetCharacterInventoryOutput, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetCharacterInventory", ctx, input)
+	ret0, _ := ret[0].(*character.GetCharacterInventoryOutput)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetCharacterInventory indicates an expected call of GetCharacterInventory.
+func (mr *MockServiceMockRecorder) GetCharacterInventory(ctx, input any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetCharacterInventory", reflect.TypeOf((*MockService)(nil).GetCharacterInventory), ctx, input)
+}
+
 // GetClassDetails mocks base method.
 func (m *MockService) GetClassDetails(ctx context.Context, input *character.GetClassDetailsInput) (*character.GetClassDetailsOutput, error) {
 	m.ctrl.T.Helper()
@@ -191,19 +206,34 @@ func (mr *MockServiceMockRecorder) GetDraft(ctx, input any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetDraft", reflect.TypeOf((*MockService)(nil).GetDraft), ctx, input)
 }
 
-// GetInventory mocks base method.
-func (m *MockService) GetInventory(ctx context.Context, input *character.GetInventoryInput) (*character.GetInventoryOutput, error) {
+// GetDraftPreview mocks base method.
+func (m *MockService) GetDraftPreview(ctx context.Context, input *character.GetDraftPreviewInput) (*character.GetDraftPreviewOutput, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetInventory", ctx, input)
-	ret0, _ := ret[0].(*character.GetInventoryOutput)
+	ret := m.ctrl.Call(m, "GetDraftPreview", ctx, input)
+	ret0, _ := ret[0].(*character.GetDraftPreviewOutput)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
-// GetInventory indicates an expected call of GetInventory.
-func (mr *MockServiceMockRecorder) GetInventory(ctx, input any) *gomock.Call {
+// GetDraftPreview indicates an expected call of GetDraftPreview.
+func (mr *MockServiceMockRecorder) GetDraftPreview(ctx, input any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetInventory", reflect.TypeOf((*MockService)(nil).GetInventory), ctx, input)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetDraftPreview", reflect.TypeOf((*MockService)(nil).GetDraftPreview), ctx, input)
+}
+
+// GetFeature mocks base method.
+func (m *MockService) GetFeature(ctx context.Context, input *character.GetFeatureInput) (*character.GetFeatureOutput, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetFeature", ctx, input)
+	ret0, _ := ret[0].(*character.GetFeatureOutput)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetFeature indicates an expected call of GetFeature.
+func (mr *MockServiceMockRecorder) GetFeature(ctx, input any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetFeature", reflect.TypeOf((*MockService)(nil).GetFeature), ctx, input)
 }
 
 // GetRaceDetails mocks base method.
@@ -324,21 +354,6 @@ func (m *MockService) ListRaces(ctx context.Context, input *character.ListRacesI
 func (mr *MockServiceMockRecorder) ListRaces(ctx, input any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListRaces", reflect.TypeOf((*MockService)(nil).ListRaces), ctx, input)
-}
-
-// ListSpells mocks base method.
-func (m *MockService) ListSpells(ctx context.Context, input *character.ListSpellsInput) (*character.ListSpellsOutput, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ListSpells", ctx, input)
-	ret0, _ := ret[0].(*character.ListSpellsOutput)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// ListSpells indicates an expected call of ListSpells.
-func (mr *MockServiceMockRecorder) ListSpells(ctx, input any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListSpells", reflect.TypeOf((*MockService)(nil).ListSpells), ctx, input)
 }
 
 // ListSpellsByLevel mocks base method.

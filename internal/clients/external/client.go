@@ -16,8 +16,8 @@ import (
 	"github.com/fadedpez/dnd5e-api/clients/dnd5e"
 	"github.com/fadedpez/dnd5e-api/entities"
 
-	internalDnd5e "github.com/KirkDiggler/rpg-api/internal/entities/dnd5e"
 	"github.com/KirkDiggler/rpg-api/internal/errors"
+	"github.com/KirkDiggler/rpg-api/internal/types/choices"
 )
 
 // slugPattern matches characters that should be replaced in slugs
@@ -58,10 +58,10 @@ var dnd5eClassNames = map[string]string{
 // Client defines the interface for external API interactions
 type Client interface {
 	// GetRaceData fetches race information from external source
-	GetRaceData(ctx context.Context, raceID string) (*RaceData, error)
+	GetRaceData(ctx context.Context, raceID string) (*RaceDataOutput, error)
 
 	// GetClassData fetches class information from external source
-	GetClassData(ctx context.Context, classID string) (*ClassData, error)
+	GetClassData(ctx context.Context, classID string) (*ClassDataOutput, error)
 
 	// GetBackgroundData fetches background information from external source
 	GetBackgroundData(ctx context.Context, backgroundID string) (*BackgroundData, error)
@@ -181,48 +181,42 @@ func New(cfg *Config) (Client, error) {
 	}, nil
 }
 
-func (c *client) GetRaceData(_ context.Context, raceID string) (*RaceData, error) {
+func (c *client) GetRaceData(_ context.Context, raceID string) (*RaceDataOutput, error) {
 	// Convert our internal ID format to API format
 	apiID := toAPIFormat(raceID)
 
-	// Get full race details
-	race, err := c.dnd5eClient.GetRace(apiID)
+	// Get full race details from API
+	apiRace, err := c.dnd5eClient.GetRace(apiID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get race %s (api: %s): %w", raceID, apiID, err)
 	}
 
-	// Convert to our internal format
-	raceData := convertRaceToRaceData(race)
-	// Ensure the ID matches our internal format
-	raceData.ID = raceID
-	return raceData, nil
+	// Convert to both toolkit format and extract UI data
+	toolkitData, uiData := convertRaceToHybrid(apiRace)
+
+	return &RaceDataOutput{
+		RaceData: toolkitData,
+		UIData:   uiData,
+	}, nil
 }
 
-func (c *client) GetClassData(_ context.Context, classID string) (*ClassData, error) {
+func (c *client) GetClassData(_ context.Context, classID string) (*ClassDataOutput, error) {
 	// Convert our internal ID format to API format
 	apiID := toAPIFormat(classID)
 
 	// Get full class details
-	class, err := c.dnd5eClient.GetClass(apiID)
+	apiClass, err := c.dnd5eClient.GetClass(apiID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get class %s (api: %s): %w", classID, apiID, err)
 	}
 
-	// Get level 1 data for features
-	level1, err := c.dnd5eClient.GetClassLevel(apiID, 1)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get class level 1 for %s (api: %s): %w", classID, apiID, err)
-	}
+	// Convert to both toolkit format and extract UI data
+	toolkitData, uiData := convertClassToHybrid(apiClass)
 
-	// Convert to our internal format with level 1 features
-	classData, err := c.convertClassWithFeatures(class, level1)
-	if err != nil {
-		return nil, fmt.Errorf("failed to convert class %s: %w", classID, err)
-	}
-
-	// Ensure the ID matches our internal format
-	classData.ID = classID
-	return classData, nil
+	return &ClassDataOutput{
+		ClassData: toolkitData,
+		UIData:    uiData,
+	}, nil
 }
 
 func (c *client) GetBackgroundData(_ context.Context, _ string) (*BackgroundData, error) {
@@ -654,19 +648,19 @@ func convertClassToClassData(class *entities.Class) *ClassData {
 
 	// Add skill choice if applicable
 	if skillsCount > 0 && len(availableSkills) > 0 {
-		skillOptions := make([]internalDnd5e.ChoiceOption, len(availableSkills))
+		skillOptions := make([]choices.ChoiceOption, len(availableSkills))
 		for i, skill := range availableSkills {
-			skillOptions[i] = &internalDnd5e.ItemReference{
+			skillOptions[i] = &choices.ItemReference{
 				ItemID: generateSlug(skill),
 				Name:   skill,
 			}
 		}
-		parsedChoices = append(parsedChoices, internalDnd5e.Choice{
+		parsedChoices = append(parsedChoices, choices.Choice{
 			ID:          fmt.Sprintf("%s_skills", class.Key),
 			Description: fmt.Sprintf("Choose %d skills", skillsCount),
-			Type:        internalDnd5e.ChoiceTypeSkill,
+			Type:        choices.ChoiceTypeSkill,
 			ChooseCount: skillsCount,
-			OptionSet: &internalDnd5e.ExplicitOptions{
+			OptionSet: &choices.ExplicitOptions{
 				Options: skillOptions,
 			},
 		})
@@ -763,7 +757,7 @@ func (c *client) convertClassWithFeatures(class *entities.Class, level1 *entitie
 					if choiceData != nil {
 						// Parse the choice data to create a proper dnd5e.Choice
 						// Use :: as delimiter to avoid collisions with underscores in IDs
-						featureChoice := internalDnd5e.Choice{
+						featureChoice := choices.Choice{
 							ID:          fmt.Sprintf("%s::%s", feature.ID, choiceData.Type),
 							Description: fmt.Sprintf("%s: Choose %d %s", feature.Name, choiceData.Choose, choiceData.Type),
 							Type:        mapExternalChoiceType(choiceData.Type),
@@ -772,14 +766,14 @@ func (c *client) convertClassWithFeatures(class *entities.Class, level1 *entitie
 
 						// Convert options
 						if len(choiceData.Options) > 0 {
-							options := make([]internalDnd5e.ChoiceOption, 0, len(choiceData.Options))
+							options := make([]choices.ChoiceOption, 0, len(choiceData.Options))
 							for _, opt := range choiceData.Options {
-								options = append(options, &internalDnd5e.ItemReference{
+								options = append(options, &choices.ItemReference{
 									ItemID: generateSlug(opt),
 									Name:   opt,
 								})
 							}
-							featureChoice.OptionSet = &internalDnd5e.ExplicitOptions{
+							featureChoice.OptionSet = &choices.ExplicitOptions{
 								Options: options,
 							}
 						}

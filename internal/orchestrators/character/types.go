@@ -1,6 +1,71 @@
 package character
 
-import "github.com/KirkDiggler/rpg-api/internal/entities/dnd5e"
+import (
+	"context"
+	"time"
+
+	"github.com/KirkDiggler/rpg-api/internal/clients/external"
+	"github.com/KirkDiggler/rpg-api/internal/entities/dnd5e"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/class"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/constants"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/race"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
+)
+
+//go:generate mockgen -destination=mock/mock_service.go -package=charactermock github.com/KirkDiggler/rpg-api/internal/orchestrators/character Service
+
+// Service defines the character orchestrator interface
+type Service interface {
+	// Draft lifecycle
+	CreateDraft(ctx context.Context, input *CreateDraftInput) (*CreateDraftOutput, error)
+	GetDraft(ctx context.Context, input *GetDraftInput) (*GetDraftOutput, error)
+	ListDrafts(ctx context.Context, input *ListDraftsInput) (*ListDraftsOutput, error)
+	DeleteDraft(ctx context.Context, input *DeleteDraftInput) (*DeleteDraftOutput, error)
+
+	// Draft updates
+	UpdateName(ctx context.Context, input *UpdateNameInput) (*UpdateNameOutput, error)
+	UpdateRace(ctx context.Context, input *UpdateRaceInput) (*UpdateRaceOutput, error)
+	UpdateClass(ctx context.Context, input *UpdateClassInput) (*UpdateClassOutput, error)
+	UpdateBackground(ctx context.Context, input *UpdateBackgroundInput) (*UpdateBackgroundOutput, error)
+	UpdateAbilityScores(ctx context.Context, input *UpdateAbilityScoresInput) (*UpdateAbilityScoresOutput, error)
+	UpdateSkills(ctx context.Context, input *UpdateSkillsInput) (*UpdateSkillsOutput, error)
+	UpdateChoices(ctx context.Context, input *UpdateChoicesInput) (*UpdateChoicesOutput, error)
+
+	// Validation and finalization
+	ValidateDraft(ctx context.Context, input *ValidateDraftInput) (*ValidateDraftOutput, error)
+	FinalizeDraft(ctx context.Context, input *FinalizeDraftInput) (*FinalizeDraftOutput, error)
+
+	// Character operations
+	GetCharacter(ctx context.Context, input *GetCharacterInput) (*GetCharacterOutput, error)
+	ListCharacters(ctx context.Context, input *ListCharactersInput) (*ListCharactersOutput, error)
+	DeleteCharacter(ctx context.Context, input *DeleteCharacterInput) (*DeleteCharacterOutput, error)
+
+	// Data loading for UI
+	ListRaces(ctx context.Context, input *ListRacesInput) (*ListRacesOutput, error)
+	ListClasses(ctx context.Context, input *ListClassesInput) (*ListClassesOutput, error)
+	ListBackgrounds(ctx context.Context, input *ListBackgroundsInput) (*ListBackgroundsOutput, error)
+	GetRaceDetails(ctx context.Context, input *GetRaceDetailsInput) (*GetRaceDetailsOutput, error)
+	GetClassDetails(ctx context.Context, input *GetClassDetailsInput) (*GetClassDetailsOutput, error)
+	GetBackgroundDetails(ctx context.Context, input *GetBackgroundDetailsInput) (*GetBackgroundDetailsOutput, error)
+	ListChoiceOptions(ctx context.Context, input *ListChoiceOptionsInput) (*ListChoiceOptionsOutput, error)
+
+	// Additional operations
+	RollAbilityScores(ctx context.Context, input *RollAbilityScoresInput) (*RollAbilityScoresOutput, error)
+
+	// Additional operations
+	GetDraftPreview(ctx context.Context, input *GetDraftPreviewInput) (*GetDraftPreviewOutput, error)
+	GetFeature(ctx context.Context, input *GetFeatureInput) (*GetFeatureOutput, error)
+	ListSpellsByLevel(ctx context.Context, input *ListSpellsByLevelInput) (*ListSpellsByLevelOutput, error)
+	ListEquipmentByType(ctx context.Context, input *ListEquipmentByTypeInput) (*ListEquipmentByTypeOutput, error)
+
+	// Inventory management
+	GetCharacterInventory(ctx context.Context, input *GetCharacterInventoryInput) (*GetCharacterInventoryOutput, error)
+	EquipItem(ctx context.Context, input *EquipItemInput) (*EquipItemOutput, error)
+	UnequipItem(ctx context.Context, input *UnequipItemInput) (*UnequipItemOutput, error)
+	AddToInventory(ctx context.Context, input *AddToInventoryInput) (*AddToInventoryOutput, error)
+	RemoveFromInventory(ctx context.Context, input *RemoveFromInventoryInput) (*RemoveFromInventoryOutput, error)
+}
 
 // Draft lifecycle types
 
@@ -8,12 +73,12 @@ import "github.com/KirkDiggler/rpg-api/internal/entities/dnd5e"
 type CreateDraftInput struct {
 	PlayerID    string
 	SessionID   string // Optional
-	InitialData *dnd5e.CharacterDraft
+	InitialData *character.DraftData
 }
 
 // CreateDraftOutput defines the response for creating a draft
 type CreateDraftOutput struct {
-	Draft *dnd5e.CharacterDraft
+	Draft *character.DraftData
 }
 
 // GetDraftInput defines the request for getting a draft
@@ -23,7 +88,7 @@ type GetDraftInput struct {
 
 // GetDraftOutput defines the response for getting a draft
 type GetDraftOutput struct {
-	Draft *dnd5e.CharacterDraft
+	Draft *character.DraftData
 }
 
 // ListDraftsInput defines the request for listing drafts
@@ -36,7 +101,7 @@ type ListDraftsInput struct {
 
 // ListDraftsOutput defines the response for listing drafts
 type ListDraftsOutput struct {
-	Drafts        []*dnd5e.CharacterDraft
+	Drafts        []*character.DraftData
 	NextPageToken string
 }
 
@@ -60,34 +125,34 @@ type UpdateNameInput struct {
 
 // UpdateNameOutput defines the response for updating a draft's name
 type UpdateNameOutput struct {
-	Draft    *dnd5e.CharacterDraft
+	Draft    *character.DraftData
 	Warnings []ValidationWarning
 }
 
 // UpdateRaceInput defines the request for updating a draft's race
 type UpdateRaceInput struct {
 	DraftID   string
-	RaceID    string
-	SubraceID string                  // Optional
-	Choices   []dnd5e.ChoiceSelection // Race-specific choices
+	RaceID    constants.Race
+	SubraceID constants.Subrace      // Optional
+	Choices   []character.ChoiceData // Race-specific choices
 }
 
 // UpdateRaceOutput defines the response for updating a draft's race
 type UpdateRaceOutput struct {
-	Draft    *dnd5e.CharacterDraft
+	Draft    *character.DraftData
 	Warnings []ValidationWarning
 }
 
 // UpdateClassInput defines the request for updating a draft's class
 type UpdateClassInput struct {
 	DraftID string
-	ClassID string
-	Choices []dnd5e.ChoiceSelection // Class-specific choices
+	ClassID constants.Class
+	Choices []character.ChoiceData // Class-specific choices
 }
 
 // UpdateClassOutput defines the response for updating a draft's class
 type UpdateClassOutput struct {
-	Draft    *dnd5e.CharacterDraft
+	Draft    *character.DraftData
 	Warnings []ValidationWarning
 }
 
@@ -95,24 +160,24 @@ type UpdateClassOutput struct {
 type UpdateBackgroundInput struct {
 	DraftID      string
 	BackgroundID string
-	Choices      []dnd5e.ChoiceSelection // Background-specific choices
+	Choices      []character.ChoiceData // Background-specific choices
 }
 
 // UpdateBackgroundOutput defines the response for updating a draft's background
 type UpdateBackgroundOutput struct {
-	Draft    *dnd5e.CharacterDraft
+	Draft    *character.DraftData
 	Warnings []ValidationWarning
 }
 
 // UpdateAbilityScoresInput defines the request for updating a draft's ability scores
 type UpdateAbilityScoresInput struct {
 	DraftID       string
-	AbilityScores dnd5e.AbilityScores
+	AbilityScores shared.AbilityScores
 }
 
 // UpdateAbilityScoresOutput defines the response for updating a draft's ability scores
 type UpdateAbilityScoresOutput struct {
-	Draft    *dnd5e.CharacterDraft
+	Draft    *character.DraftData
 	Warnings []ValidationWarning
 }
 
@@ -124,7 +189,7 @@ type UpdateSkillsInput struct {
 
 // UpdateSkillsOutput defines the response for updating a draft's skills
 type UpdateSkillsOutput struct {
-	Draft    *dnd5e.CharacterDraft
+	Draft    *character.DraftData
 	Warnings []ValidationWarning
 }
 
@@ -167,7 +232,7 @@ type FinalizeDraftInput struct {
 
 // FinalizeDraftOutput defines the response for finalizing a draft
 type FinalizeDraftOutput struct {
-	Character    *dnd5e.Character
+	Character    *character.Data
 	DraftDeleted bool
 }
 
@@ -180,7 +245,7 @@ type GetCharacterInput struct {
 
 // GetCharacterOutput defines the response for getting a character
 type GetCharacterOutput struct {
-	Character *dnd5e.Character
+	Character *character.Data
 }
 
 // ListCharactersInput defines the request for listing characters
@@ -193,7 +258,7 @@ type ListCharactersInput struct {
 
 // ListCharactersOutput defines the response for listing characters
 type ListCharactersOutput struct {
-	Characters    []*dnd5e.Character
+	Characters    []*character.Data
 	NextPageToken string
 	TotalSize     int32
 }
@@ -219,9 +284,24 @@ type ListRacesInput struct {
 
 // ListRacesOutput defines the response for listing races
 type ListRacesOutput struct {
-	Races         []*dnd5e.RaceInfo
+	Races         []RaceListItem
 	NextPageToken string
-	TotalSize     int32
+	TotalSize     int
+}
+
+// RaceListItem contains race data for list responses
+type RaceListItem struct {
+	RaceData *race.Data
+	UIData   *external.RaceUIData
+}
+
+// RaceSummary contains basic race info for listing
+type RaceSummary struct {
+	ID          string
+	Name        string
+	Description string
+	Size        string
+	Speed       int
 }
 
 // ListClassesInput defines the request for listing classes
@@ -234,9 +314,23 @@ type ListClassesInput struct {
 
 // ListClassesOutput defines the response for listing classes
 type ListClassesOutput struct {
-	Classes       []*dnd5e.ClassInfo
+	Classes       []ClassListItem
 	NextPageToken string
-	TotalSize     int32
+	TotalSize     int
+}
+
+// ClassListItem contains class data for list responses
+type ClassListItem struct {
+	ClassData *class.Data
+	UIData    *external.ClassUIData
+}
+
+// ClassSummary contains basic class info for listing
+type ClassSummary struct {
+	ID          string
+	Name        string
+	Description string
+	HitDice     int
 }
 
 // ListBackgroundsInput defines the request for listing backgrounds
@@ -247,7 +341,7 @@ type ListBackgroundsInput struct {
 
 // ListBackgroundsOutput defines the response for listing backgrounds
 type ListBackgroundsOutput struct {
-	Backgrounds   []*dnd5e.BackgroundInfo
+	Backgrounds   []*dnd5e.BackgroundData
 	NextPageToken string
 	TotalSize     int32
 }
@@ -264,7 +358,7 @@ type ListSpellsInput struct {
 
 // ListSpellsOutput defines the response for listing spells
 type ListSpellsOutput struct {
-	Spells        []*dnd5e.SpellInfo
+	Spells        []*dnd5e.SpellData
 	NextPageToken string
 	TotalSize     int32
 }
@@ -280,7 +374,7 @@ type ListEquipmentInput struct {
 
 // ListEquipmentOutput defines the response for listing equipment
 type ListEquipmentOutput struct {
-	Equipment     []*dnd5e.EquipmentInfo
+	Equipment     []*dnd5e.EquipmentAPIData
 	NextPageToken string
 	TotalSize     int32
 }
@@ -295,7 +389,7 @@ type ListSpellsByLevelInput struct {
 
 // ListSpellsByLevelOutput defines the response for listing spells by level
 type ListSpellsByLevelOutput struct {
-	Spells        []*dnd5e.SpellInfo
+	Spells        []*dnd5e.SpellData
 	NextPageToken string
 	TotalSize     int32
 }
@@ -309,7 +403,7 @@ type ListEquipmentByTypeInput struct {
 
 // ListEquipmentByTypeOutput defines the response for listing equipment by type
 type ListEquipmentByTypeOutput struct {
-	Equipment     []*dnd5e.EquipmentInfo
+	Equipment     []*dnd5e.EquipmentAPIData
 	NextPageToken string
 	TotalSize     int32
 }
@@ -317,25 +411,25 @@ type ListEquipmentByTypeOutput struct {
 // UpdateChoicesInput defines the request for updating character choices
 type UpdateChoicesInput struct {
 	DraftID    string
-	Selections []*dnd5e.ChoiceSelection
+	Selections []character.ChoiceData
 }
 
 // UpdateChoicesOutput defines the response for updating character choices
 type UpdateChoicesOutput struct {
-	Draft *dnd5e.CharacterDraft
+	Draft *character.DraftData
 }
 
 // ListChoiceOptionsInput defines the request for listing available choice options
 type ListChoiceOptionsInput struct {
-	DraftID    string            // Required: Which draft to get choices for
-	ChoiceType *dnd5e.ChoiceType // Optional: Filter by choice type
-	PageSize   int32             // Optional: Page size for pagination
-	PageToken  string            // Optional: Page token for pagination
+	DraftID    string                 // Required: Which draft to get choices for
+	ChoiceType *shared.ChoiceCategory // Optional: Filter by choice type
+	PageSize   int32                  // Optional: Page size for pagination
+	PageToken  string                 // Optional: Page token for pagination
 }
 
 // ListChoiceOptionsOutput defines the response for listing choice options
 type ListChoiceOptionsOutput struct {
-	Categories    []*dnd5e.ChoiceCategory
+	Categories    []*ChoiceCategory
 	NextPageToken string
 	TotalSize     int32
 }
@@ -347,7 +441,10 @@ type GetRaceDetailsInput struct {
 
 // GetRaceDetailsOutput defines the response for getting race details
 type GetRaceDetailsOutput struct {
-	Race *dnd5e.RaceInfo
+	// Core mechanics data from toolkit
+	RaceData *race.Data
+	// UI/presentation data
+	UIData *external.RaceUIData
 }
 
 // GetClassDetailsInput defines the request for getting class details
@@ -357,7 +454,10 @@ type GetClassDetailsInput struct {
 
 // GetClassDetailsOutput defines the response for getting class details
 type GetClassDetailsOutput struct {
-	Class *dnd5e.ClassInfo
+	// Core mechanics data from toolkit
+	ClassData *class.Data
+	// UI/presentation data
+	UIData *external.ClassUIData
 }
 
 // GetBackgroundDetailsInput defines the request for getting background details
@@ -367,7 +467,7 @@ type GetBackgroundDetailsInput struct {
 
 // GetBackgroundDetailsOutput defines the response for getting background details
 type GetBackgroundDetailsOutput struct {
-	Background *dnd5e.BackgroundInfo
+	Background *dnd5e.BackgroundData
 }
 
 // Dice rolling types
@@ -382,18 +482,16 @@ type RollAbilityScoresInput struct {
 type RollAbilityScoresOutput struct {
 	Rolls     []*AbilityScoreRoll
 	SessionID string
-	ExpiresAt int64
+	ExpiresAt time.Time
 }
 
 // AbilityScoreRoll represents a single ability score roll with ID and value
 type AbilityScoreRoll struct {
-	ID          string
-	Value       int32
+	RollID      string
+	Total       int32
 	Description string
-	RolledAt    int64
 	Dice        []int32
 	Dropped     []int32
-	Notation    string
 }
 
 // Equipment management types
@@ -404,13 +502,35 @@ type InventoryAddition struct {
 	Source string // Where the item came from (quest, purchase, etc.)
 }
 
-// GetInventoryInput defines the request for getting character inventory
-type GetInventoryInput struct {
+// GetDraftPreviewInput defines the request for getting draft preview
+type GetDraftPreviewInput struct {
+	DraftID string
+}
+
+// GetDraftPreviewOutput defines the response for getting draft preview
+type GetDraftPreviewOutput struct {
+	Character *character.Data
+}
+
+// GetFeatureInput defines the request for getting feature details
+type GetFeatureInput struct {
+	FeatureID string
+	ClassID   string
+	Level     int32
+}
+
+// GetFeatureOutput defines the response for getting feature details
+type GetFeatureOutput struct {
+	Feature *dnd5e.FeatureData
+}
+
+// GetCharacterInventoryInput defines the request for getting character inventory
+type GetCharacterInventoryInput struct {
 	CharacterID string
 }
 
-// GetInventoryOutput defines the response for getting character inventory
-type GetInventoryOutput struct {
+// GetCharacterInventoryOutput defines the response for getting character inventory
+type GetCharacterInventoryOutput struct {
 	EquipmentSlots      *dnd5e.EquipmentSlots
 	Inventory           []dnd5e.InventoryItem
 	Encumbrance         *dnd5e.EncumbranceInfo
@@ -428,7 +548,7 @@ type EquipItemInput struct {
 // EquipItemOutput defines the response for equipping an item
 type EquipItemOutput struct {
 	Success                bool
-	Character              *dnd5e.Character
+	Character              *character.Data
 	PreviouslyEquippedItem *dnd5e.InventoryItem
 }
 
@@ -441,7 +561,7 @@ type UnequipItemInput struct {
 // UnequipItemOutput defines the response for unequipping an item
 type UnequipItemOutput struct {
 	Success   bool
-	Character *dnd5e.Character
+	Character *character.Data
 }
 
 // AddToInventoryInput defines the request for adding item to inventory
@@ -453,7 +573,7 @@ type AddToInventoryInput struct {
 // AddToInventoryOutput defines the response for adding item to inventory
 type AddToInventoryOutput struct {
 	Success   bool
-	Character *dnd5e.Character
+	Character *character.Data
 	Errors    []string
 }
 
@@ -468,6 +588,33 @@ type RemoveFromInventoryInput struct {
 // RemoveFromInventoryOutput defines the response for removing item from inventory
 type RemoveFromInventoryOutput struct {
 	Success         bool
-	Character       *dnd5e.Character
+	Character       *character.Data
 	QuantityRemoved int32
+}
+
+// ChoiceCategory represents a category of choices for character creation
+type ChoiceCategory struct {
+	ID          string
+	Name        string
+	Description string
+	Choices     []Choice
+}
+
+// Choice represents a single choice within a category
+type Choice struct {
+	ID          string
+	Label       string
+	Description string
+	Type        string
+	Options     []ChoiceOption
+	MinChoices  int32
+	MaxChoices  int32
+}
+
+// ChoiceOption represents an option within a choice
+type ChoiceOption struct {
+	ID          string
+	Label       string
+	Description string
+	Value       interface{}
 }
