@@ -18,6 +18,7 @@ import (
 
 	"github.com/KirkDiggler/rpg-api/internal/errors"
 	"github.com/KirkDiggler/rpg-api/internal/types/choices"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/class"
 )
 
 // slugPattern matches characters that should be replaced in slugs
@@ -200,7 +201,7 @@ func (c *client) GetRaceData(_ context.Context, raceID string) (*RaceDataOutput,
 	}, nil
 }
 
-func (c *client) GetClassData(_ context.Context, classID string) (*ClassDataOutput, error) {
+func (c *client) GetClassData(ctx context.Context, classID string) (*ClassDataOutput, error) {
 	// Convert our internal ID format to API format
 	apiID := toAPIFormat(classID)
 
@@ -212,6 +213,72 @@ func (c *client) GetClassData(_ context.Context, classID string) (*ClassDataOutp
 
 	// Convert to both toolkit format and extract UI data
 	toolkitData, uiData := c.convertClassToHybrid(apiClass)
+
+	// Fetch level 1 features to populate features map
+	level1, err := c.dnd5eClient.GetClassLevel(apiID, 1)
+	if err != nil {
+		// Log error but continue without features
+		slog.Warn("Failed to fetch level 1 features", "class", classID, "error", err)
+	} else if level1 != nil && len(level1.Features) > 0 {
+		// Fetch full feature details
+		features := make([]class.FeatureData, 0, len(level1.Features))
+		for _, featureRef := range level1.Features {
+			if featureRef != nil {
+				// Fetch the full feature data
+				feature, err := c.dnd5eClient.GetFeature(featureRef.Key)
+				if err != nil {
+					slog.Error("Failed to fetch feature details", "feature", featureRef.Key, "error", err)
+					continue
+				}
+
+				// Convert to toolkit FeatureData
+				featureData := class.FeatureData{
+					ID:          feature.Key,
+					Name:        feature.Name,
+					Level:       1,
+					Description: "", // API doesn't provide description
+				}
+
+				// Check if feature has choices (like fighting style)
+				if feature.FeatureSpecific != nil && feature.FeatureSpecific.SubFeatureOptions != nil {
+					choice := feature.FeatureSpecific.SubFeatureOptions
+					if choice.OptionList != nil {
+						// Extract options
+						options := make([]string, 0)
+						for _, option := range choice.OptionList.Options {
+							if refOpt, ok := option.(*entities.ReferenceOption); ok && refOpt.Reference != nil {
+								options = append(options, refOpt.Reference.Name)
+							}
+						}
+
+						// Determine the choice type based on feature name
+						choiceType := "feature"
+						description := fmt.Sprintf("Choose %d from the following options", choice.ChoiceCount)
+						if feature.Name == "Fighting Style" {
+							choiceType = "fighting_style"
+							description = "Choose a fighting style"
+						}
+
+						featureData.Choice = &class.ChoiceData{
+							ID:          fmt.Sprintf("%s_choice", feature.Key),
+							Type:        choiceType,
+							Choose:      choice.ChoiceCount,
+							From:        options,
+							Description: description,
+						}
+					}
+				}
+
+				features = append(features, featureData)
+			}
+		}
+
+		// Add features to level 1
+		if toolkitData.Features == nil {
+			toolkitData.Features = make(map[int][]class.FeatureData)
+		}
+		toolkitData.Features[1] = features
+	}
 
 	return &ClassDataOutput{
 		ClassData: toolkitData,
