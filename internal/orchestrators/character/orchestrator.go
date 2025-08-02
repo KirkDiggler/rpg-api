@@ -214,8 +214,8 @@ func (o *Orchestrator) UpdateRace(ctx context.Context, input *UpdateRaceInput) (
 	// Update the race choice
 	draft := getDraftOutput.Draft
 	draft.RaceChoice = toolkitchar.RaceChoice{
-		RaceID:    constants.Race(input.RaceID),
-		SubraceID: constants.Subrace(input.SubraceID),
+		RaceID:    input.RaceID,
+		SubraceID: input.SubraceID,
 	}
 
 	// Always clear existing race choices when updating race
@@ -275,7 +275,7 @@ func (o *Orchestrator) UpdateClass(ctx context.Context, input *UpdateClassInput)
 	// Update the class choice
 	draft := getDraftOutput.Draft
 	draft.ClassChoice = toolkitchar.ClassChoice{
-		ClassID: constants.Class(input.ClassID),
+		ClassID: input.ClassID,
 	}
 
 	// Always clear existing class choices when updating class

@@ -8,6 +8,7 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/entities/dnd5e"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/class"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/constants"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/race"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
 )
@@ -131,8 +132,8 @@ type UpdateNameOutput struct {
 // UpdateRaceInput defines the request for updating a draft's race
 type UpdateRaceInput struct {
 	DraftID   string
-	RaceID    string
-	SubraceID string                 // Optional
+	RaceID    constants.Race
+	SubraceID constants.Subrace      // Optional
 	Choices   []character.ChoiceData // Race-specific choices
 }
 
@@ -145,7 +146,7 @@ type UpdateRaceOutput struct {
 // UpdateClassInput defines the request for updating a draft's class
 type UpdateClassInput struct {
 	DraftID string
-	ClassID string
+	ClassID constants.Class
 	Choices []character.ChoiceData // Class-specific choices
 }
 

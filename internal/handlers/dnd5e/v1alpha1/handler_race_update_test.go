@@ -10,6 +10,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
+	"github.com/KirkDiggler/rpg-api/internal/errors"
 	"github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v1alpha1"
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
 	charactermock "github.com/KirkDiggler/rpg-api/internal/orchestrators/character/mock"
@@ -61,15 +62,15 @@ func (s *HandlerRaceUpdateTestSuite) TestUpdateRace_Success_ReturnsIDInDraft() {
 		Name:     "Test Character",
 		RaceChoice: toolkitchar.RaceChoice{
 			RaceID:    constants.RaceElf,
-			SubraceID: "SUBRACE_HIGH_ELF",
+			SubraceID: constants.SubraceHighElf,
 		},
 	}
 
 	s.mockCharService.EXPECT().
 		UpdateRace(ctx, &character.UpdateRaceInput{
 			DraftID:   draftID,
-			RaceID:    "RACE_ELF",
-			SubraceID: "SUBRACE_HIGH_ELF",
+			RaceID:    constants.RaceElf,
+			SubraceID: constants.SubraceHighElf,
 			Choices:   nil,
 		}).
 		Return(&character.UpdateRaceOutput{
@@ -156,6 +157,11 @@ func (s *HandlerRaceUpdateTestSuite) TestUpdateRace_MissingDraftID_ReturnsError(
 		Race:    dnd5ev1alpha1.Race_RACE_HUMAN,
 	}
 
+	// Mock the orchestrator to return an error for missing draft ID
+	s.mockCharService.EXPECT().
+		UpdateRace(ctx, gomock.Any()).
+		Return(nil, errors.InvalidArgument("draft ID is required"))
+
 	// WHEN updating race without draft ID
 	resp, err := s.handler.UpdateRace(ctx, req)
 
@@ -179,7 +185,7 @@ func (s *HandlerRaceUpdateTestSuite) TestUpdateRace_DraftNotFound_ReturnsNotFoun
 
 	s.mockCharService.EXPECT().
 		UpdateRace(ctx, gomock.Any()).
-		Return(nil, status.Error(codes.NotFound, "draft not found"))
+		Return(nil, errors.NotFound("draft not found"))
 
 	// WHEN updating a non-existent draft
 	resp, err := s.handler.UpdateRace(ctx, req)

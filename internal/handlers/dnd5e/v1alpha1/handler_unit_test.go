@@ -43,15 +43,15 @@ func TestUpdateRace_PreservesID(t *testing.T) {
 		UpdatedAt: time.Now(),
 		RaceChoice: toolkitchar.RaceChoice{
 			RaceID:    constants.RaceElf,
-			SubraceID: "SUBRACE_HIGH_ELF",
+			SubraceID: constants.SubraceHighElf,
 		},
 	}
 
 	mockCharService.EXPECT().
 		UpdateRace(ctx, &character.UpdateRaceInput{
 			DraftID:   draftID,
-			RaceID:    "RACE_ELF",
-			SubraceID: "SUBRACE_HIGH_ELF",
+			RaceID:    constants.RaceElf,
+			SubraceID: constants.SubraceHighElf,
 			Choices:   nil,
 		}).
 		Return(&character.UpdateRaceOutput{

@@ -15,6 +15,7 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
 	charactermock "github.com/KirkDiggler/rpg-api/internal/orchestrators/character/mock"
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/constants"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
 )
 
@@ -477,14 +478,14 @@ func (s *HandlerTestSuite) TestUpdateName_WithWarnings() {
 
 func (s *HandlerTestSuite) TestUpdateRace_Success() {
 	draftID := "draft-123"
-	raceID := "RACE_DWARF"
-	subraceID := "SUBRACE_MOUNTAIN_DWARF"
+	raceID := constants.RaceDwarf
+	subraceID := constants.SubraceMountainDwarf
 	updatedDraft := &toolkitchar.DraftData{
 		ID:   draftID,
 		Name: "Gimli",
 		RaceChoice: toolkitchar.RaceChoice{
-			RaceID:    "RACE_DWARF",
-			SubraceID: "SUBRACE_MOUNTAIN_DWARF",
+			RaceID:    constants.RaceDwarf,
+			SubraceID: constants.SubraceMountainDwarf,
 		},
 	}
 
@@ -518,12 +519,12 @@ func (s *HandlerTestSuite) TestUpdateRace_Success() {
 
 func (s *HandlerTestSuite) TestUpdateRace_WithChoices() {
 	draftID := "draft-456"
-	raceID := "RACE_HALF_ELF"
+	raceID := constants.RaceHalfElf
 	updatedDraft := &toolkitchar.DraftData{
 		ID:   draftID,
 		Name: "Elrond",
 		RaceChoice: toolkitchar.RaceChoice{
-			RaceID: "RACE_HALF_ELF",
+			RaceID: constants.RaceHalfElf,
 		},
 		Choices: []toolkitchar.ChoiceData{
 			{
@@ -589,7 +590,7 @@ func (s *HandlerTestSuite) TestUpdateRace_InvalidArgument() {
 	s.mockCharService.EXPECT().
 		UpdateRace(s.ctx, &character.UpdateRaceInput{
 			DraftID: "",
-			RaceID:  "RACE_HUMAN",
+			RaceID:  constants.RaceHuman,
 			Choices: nil,
 		}).
 		Return(nil, errors.InvalidArgument("draft ID is required"))

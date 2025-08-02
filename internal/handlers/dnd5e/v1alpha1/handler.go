@@ -198,9 +198,9 @@ func (h *Handler) UpdateRace(
 	ctx context.Context,
 	req *dnd5ev1alpha1.UpdateRaceRequest,
 ) (*dnd5ev1alpha1.UpdateRaceResponse, error) {
-	// Convert proto Race enum to string ID
-	raceID := convertProtoRaceToString(req.GetRace())
-	subraceID := convertProtoSubraceToString(req.GetSubrace())
+	// Convert proto Race enum to toolkit constant
+	raceID := convertProtoRaceToToolkit(req.GetRace())
+	subraceID := convertProtoSubraceToToolkit(req.GetSubrace())
 
 	// Call orchestrator
 	output, err := h.characterService.UpdateRace(ctx, &character.UpdateRaceInput{
@@ -240,8 +240,8 @@ func (h *Handler) UpdateClass(
 	ctx context.Context,
 	req *dnd5ev1alpha1.UpdateClassRequest,
 ) (*dnd5ev1alpha1.UpdateClassResponse, error) {
-	// Convert proto class to toolkit class ID
-	classID := convertProtoClassToToolkitID(req.Class)
+	// Convert proto class to toolkit class constant
+	classID := convertProtoClassToToolkit(req.Class)
 	if classID == "" {
 		return nil, status.Error(codes.InvalidArgument, "invalid class")
 	}
@@ -876,33 +876,33 @@ func convertToolkitClassToProtoEnum(classID constants.Class) dnd5ev1alpha1.Class
 	}
 }
 
-// convertProtoClassToToolkitID converts proto Class enum to toolkit class ID string
-func convertProtoClassToToolkitID(class dnd5ev1alpha1.Class) string {
+// convertProtoClassToToolkit converts proto Class enum to toolkit class constant
+func convertProtoClassToToolkit(class dnd5ev1alpha1.Class) constants.Class {
 	switch class {
 	case dnd5ev1alpha1.Class_CLASS_BARBARIAN:
-		return string(constants.ClassBarbarian)
+		return constants.ClassBarbarian
 	case dnd5ev1alpha1.Class_CLASS_BARD:
-		return string(constants.ClassBard)
+		return constants.ClassBard
 	case dnd5ev1alpha1.Class_CLASS_CLERIC:
-		return string(constants.ClassCleric)
+		return constants.ClassCleric
 	case dnd5ev1alpha1.Class_CLASS_DRUID:
-		return string(constants.ClassDruid)
+		return constants.ClassDruid
 	case dnd5ev1alpha1.Class_CLASS_FIGHTER:
-		return string(constants.ClassFighter)
+		return constants.ClassFighter
 	case dnd5ev1alpha1.Class_CLASS_MONK:
-		return string(constants.ClassMonk)
+		return constants.ClassMonk
 	case dnd5ev1alpha1.Class_CLASS_PALADIN:
-		return string(constants.ClassPaladin)
+		return constants.ClassPaladin
 	case dnd5ev1alpha1.Class_CLASS_RANGER:
-		return string(constants.ClassRanger)
+		return constants.ClassRanger
 	case dnd5ev1alpha1.Class_CLASS_ROGUE:
-		return string(constants.ClassRogue)
+		return constants.ClassRogue
 	case dnd5ev1alpha1.Class_CLASS_SORCERER:
-		return string(constants.ClassSorcerer)
+		return constants.ClassSorcerer
 	case dnd5ev1alpha1.Class_CLASS_WARLOCK:
-		return string(constants.ClassWarlock)
+		return constants.ClassWarlock
 	case dnd5ev1alpha1.Class_CLASS_WIZARD:
-		return string(constants.ClassWizard)
+		return constants.ClassWizard
 	default:
 		return ""
 	}
@@ -1017,55 +1017,55 @@ func hasAbilityScores(scores shared.AbilityScores) bool {
 	return true
 }
 
-// convertProtoRaceToString converts proto Race enum to toolkit Race ID string
-func convertProtoRaceToString(race dnd5ev1alpha1.Race) string {
-	// Map proto enum to toolkit constants - explicit mapping, no string assumptions
+// convertProtoRaceToToolkit converts proto Race enum to toolkit Race constant
+func convertProtoRaceToToolkit(race dnd5ev1alpha1.Race) constants.Race {
+	// Map proto enum to toolkit constants - direct mapping, no strings
 	switch race {
 	case dnd5ev1alpha1.Race_RACE_DRAGONBORN:
-		return string(constants.RaceDragonborn)
+		return constants.RaceDragonborn
 	case dnd5ev1alpha1.Race_RACE_DWARF:
-		return string(constants.RaceDwarf)
+		return constants.RaceDwarf
 	case dnd5ev1alpha1.Race_RACE_ELF:
-		return string(constants.RaceElf)
+		return constants.RaceElf
 	case dnd5ev1alpha1.Race_RACE_GNOME:
-		return string(constants.RaceGnome)
+		return constants.RaceGnome
 	case dnd5ev1alpha1.Race_RACE_HALF_ELF:
-		return string(constants.RaceHalfElf)
+		return constants.RaceHalfElf
 	case dnd5ev1alpha1.Race_RACE_HALFLING:
-		return string(constants.RaceHalfling)
+		return constants.RaceHalfling
 	case dnd5ev1alpha1.Race_RACE_HALF_ORC:
-		return string(constants.RaceHalfOrc)
+		return constants.RaceHalfOrc
 	case dnd5ev1alpha1.Race_RACE_HUMAN:
-		return string(constants.RaceHuman)
+		return constants.RaceHuman
 	case dnd5ev1alpha1.Race_RACE_TIEFLING:
-		return string(constants.RaceTiefling)
+		return constants.RaceTiefling
 	default:
 		return ""
 	}
 }
 
-// convertProtoSubraceToString converts proto Subrace enum to toolkit Subrace ID string
-func convertProtoSubraceToString(subrace dnd5ev1alpha1.Subrace) string {
-	// Map proto enum to toolkit constants - explicit mapping, no string assumptions
+// convertProtoSubraceToToolkit converts proto Subrace enum to toolkit Subrace constant
+func convertProtoSubraceToToolkit(subrace dnd5ev1alpha1.Subrace) constants.Subrace {
+	// Map proto enum to toolkit constants - direct mapping, no strings
 	switch subrace {
 	case dnd5ev1alpha1.Subrace_SUBRACE_HILL_DWARF:
-		return string(constants.SubraceHillDwarf)
+		return constants.SubraceHillDwarf
 	case dnd5ev1alpha1.Subrace_SUBRACE_MOUNTAIN_DWARF:
-		return string(constants.SubraceMountainDwarf)
+		return constants.SubraceMountainDwarf
 	case dnd5ev1alpha1.Subrace_SUBRACE_HIGH_ELF:
-		return string(constants.SubraceHighElf)
+		return constants.SubraceHighElf
 	case dnd5ev1alpha1.Subrace_SUBRACE_WOOD_ELF:
-		return string(constants.SubraceWoodElf)
+		return constants.SubraceWoodElf
 	case dnd5ev1alpha1.Subrace_SUBRACE_DARK_ELF:
-		return string(constants.SubraceDarkElf)
+		return constants.SubraceDarkElf
 	case dnd5ev1alpha1.Subrace_SUBRACE_FOREST_GNOME:
-		return string(constants.SubraceForestGnome)
+		return constants.SubraceForestGnome
 	case dnd5ev1alpha1.Subrace_SUBRACE_ROCK_GNOME:
-		return string(constants.SubraceRockGnome)
+		return constants.SubraceRockGnome
 	case dnd5ev1alpha1.Subrace_SUBRACE_LIGHTFOOT_HALFLING:
-		return string(constants.SubraceLightfootHalfling)
+		return constants.SubraceLightfootHalfling
 	case dnd5ev1alpha1.Subrace_SUBRACE_STOUT_HALFLING:
-		return string(constants.SubraceStoutHalfling)
+		return constants.SubraceStoutHalfling
 	default:
 		return ""
 	}
