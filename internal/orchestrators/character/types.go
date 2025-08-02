@@ -169,10 +169,21 @@ type UpdateBackgroundOutput struct {
 	Warnings []ValidationWarning
 }
 
+// RollAssignments maps ability scores to dice roll IDs
+type RollAssignments struct {
+	StrengthRollID     string
+	DexterityRollID    string
+	ConstitutionRollID string
+	IntelligenceRollID string
+	WisdomRollID       string
+	CharismaRollID     string
+}
+
 // UpdateAbilityScoresInput defines the request for updating a draft's ability scores
 type UpdateAbilityScoresInput struct {
-	DraftID       string
-	AbilityScores shared.AbilityScores
+	DraftID         string
+	AbilityScores   *shared.AbilityScores // Manual assignment
+	RollAssignments *RollAssignments      // Roll-based assignment
 }
 
 // UpdateAbilityScoresOutput defines the response for updating a draft's ability scores

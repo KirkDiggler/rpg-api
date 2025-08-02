@@ -3,6 +3,7 @@ package character
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/KirkDiggler/rpg-api/internal/clients/external"
@@ -374,7 +375,112 @@ func (o *Orchestrator) UpdateBackground(ctx context.Context, input *UpdateBackgr
 }
 
 func (o *Orchestrator) UpdateAbilityScores(ctx context.Context, input *UpdateAbilityScoresInput) (*UpdateAbilityScoresOutput, error) {
-	return nil, errors.Unimplemented("not implemented")
+	// Validate input
+	if input.DraftID == "" {
+		return nil, errors.InvalidArgument("draft ID is required")
+	}
+
+	// Must have either manual scores or roll assignments
+	if input.AbilityScores == nil && input.RollAssignments == nil {
+		return nil, errors.InvalidArgument("either ability scores or roll assignments must be provided")
+	}
+
+	// Get the existing draft
+	getDraftOutput, err := o.draftRepo.Get(ctx, draftrepo.GetInput{
+		ID: input.DraftID,
+	})
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to get draft %s", input.DraftID)
+	}
+
+	draft := getDraftOutput.Draft
+
+	// Handle roll-based assignment
+	if input.RollAssignments != nil {
+		// Get the player ID from the draft
+		playerID := draft.PlayerID
+		
+		// Context for dice rolls should include the draft ID
+		rollContext := fmt.Sprintf("character_draft_%s_abilities", input.DraftID)
+		
+		// Get the dice session for this player and context
+		sessionOutput, err := o.diceService.GetRollSession(ctx, &dice.GetRollSessionInput{
+			EntityID: playerID,
+			Context:  rollContext,
+		})
+		if err != nil {
+			return nil, errors.Wrapf(err, "failed to get dice session for player %s", playerID)
+		}
+
+		// Create a map of roll IDs to totals
+		rollTotals := make(map[string]int32)
+		for _, roll := range sessionOutput.Session.Rolls {
+			rollTotals[roll.RollID] = roll.Total
+		}
+
+		// Validate all roll IDs exist and belong to this session
+		rollIDs := []struct {
+			ability string
+			rollID  string
+		}{
+			{"strength", input.RollAssignments.StrengthRollID},
+			{"dexterity", input.RollAssignments.DexterityRollID},
+			{"constitution", input.RollAssignments.ConstitutionRollID},
+			{"intelligence", input.RollAssignments.IntelligenceRollID},
+			{"wisdom", input.RollAssignments.WisdomRollID},
+			{"charisma", input.RollAssignments.CharismaRollID},
+		}
+
+		// Check all rolls exist
+		for _, r := range rollIDs {
+			if _, exists := rollTotals[r.rollID]; !exists {
+				return nil, errors.InvalidArgumentf("roll ID %s for %s not found in session", r.rollID, r.ability)
+			}
+		}
+
+		// Create ability scores from rolls
+		abilityScores := shared.AbilityScores{
+			constants.STR: int(rollTotals[input.RollAssignments.StrengthRollID]),
+			constants.DEX: int(rollTotals[input.RollAssignments.DexterityRollID]),
+			constants.CON: int(rollTotals[input.RollAssignments.ConstitutionRollID]),
+			constants.INT: int(rollTotals[input.RollAssignments.IntelligenceRollID]),
+			constants.WIS: int(rollTotals[input.RollAssignments.WisdomRollID]),
+			constants.CHA: int(rollTotals[input.RollAssignments.CharismaRollID]),
+		}
+
+		// Update the draft with the ability scores
+		draft.AbilityScoreChoice = abilityScores
+		
+		// Clear the dice session after using the rolls
+		_, err = o.diceService.ClearRollSession(ctx, &dice.ClearRollSessionInput{
+			EntityID: playerID,
+			Context:  rollContext,
+		})
+		if err != nil {
+			// Log warning but don't fail the operation
+			slog.Warn("Failed to clear dice session after ability score assignment",
+				"player_id", playerID,
+				"context", rollContext,
+				"error", err)
+		}
+	} else if input.AbilityScores != nil {
+		// Manual assignment
+		draft.AbilityScoreChoice = *input.AbilityScores
+	}
+
+	// Save the updated draft
+	updateOutput, err := o.draftRepo.Update(ctx, draftrepo.UpdateInput{
+		Draft: draft,
+	})
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to update draft %s", input.DraftID)
+	}
+
+	// Return updated draft with any warnings
+	return &UpdateAbilityScoresOutput{
+		Draft:    updateOutput.Draft,
+		Warnings: []ValidationWarning{}, // TODO: Add validation for ability score ranges
+	}, nil
 }
 
 func (o *Orchestrator) UpdateSkills(ctx context.Context, input *UpdateSkillsInput) (*UpdateSkillsOutput, error) {
