@@ -10,6 +10,8 @@ github.com/KirkDiggler/rpg-toolkit/game v0.1.0 h1:jXYlCqkqK0LCHquu+1vgTEbedhgQbs
 github.com/KirkDiggler/rpg-toolkit/game v0.1.0/go.mod h1:6k+SKiGEAjeI4JRaQtVKOcsUsp3O/sDDee4GH9rl+WM=
 github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.0.0-20250802160050-33b041c5aded h1:m2IXP7jpKYA/UpBwO1/opHdy1Y2jTOn+1iJCFDN29kA=
 github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.0.0-20250802160050-33b041c5aded/go.mod h1:2TO2H990YlJVmpsu3xcP2uMJeuj17Wkf4oznqZmL13s=
+github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.0.0-20250802162535-220b16f914df h1:9qjsfmXlzyZ5qCIfpvk7PfsjfjlLOdkOd19sfeNnAHI=
+github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.0.0-20250802162535-220b16f914df/go.mod h1:2TO2H990YlJVmpsu3xcP2uMJeuj17Wkf4oznqZmL13s=
 github.com/bsm/ginkgo/v2 v2.12.0 h1:Ny8MWAHyOepLGlLKYmXG4IEkioBysk6GpaRTLC8zwWs=
 github.com/bsm/ginkgo/v2 v2.12.0/go.mod h1:SwYbGRRDovPVboqFv0tPTcG1sN61LM1Z4ARdbAV9g4c=
 github.com/bsm/gomega v1.27.10 h1:yeMWxP2pV2fG3FgAODIY8EiRE3dy0aeFYt4l7wh6yKA=

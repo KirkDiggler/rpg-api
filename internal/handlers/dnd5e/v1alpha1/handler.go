@@ -1447,41 +1447,82 @@ func convertClassDataToProtoInfo(classData *class.Data, uiData *external.ClassUI
 	for i, equipChoice := range classData.EquipmentChoices {
 		options := make([]*dnd5ev1alpha1.ChoiceOption, 0, len(equipChoice.Options))
 		for _, opt := range equipChoice.Options {
-			// Create option based on type
-			if len(opt.Items) == 1 && opt.Items[0].Quantity == 1 {
-				// Single item
-				options = append(options, &dnd5ev1alpha1.ChoiceOption{
-					OptionType: &dnd5ev1alpha1.ChoiceOption_Item{
-						Item: &dnd5ev1alpha1.ItemReference{
-							ItemId: opt.Items[0].ItemID,
-							Name:   opt.Items[0].ItemID, // Use ItemID as name for now
-						},
-					},
-				})
-			} else if len(opt.Items) == 1 {
-				// Counted item
-				options = append(options, &dnd5ev1alpha1.ChoiceOption{
-					OptionType: &dnd5ev1alpha1.ChoiceOption_CountedItem{
-						CountedItem: &dnd5ev1alpha1.CountedItemReference{
-							ItemId:   opt.Items[0].ItemID,
-							Name:     opt.Items[0].ItemID, // Use ItemID as name for now
-							Quantity: int32(opt.Items[0].Quantity),
-						},
-					},
-				})
-			} else {
-				// Bundle of items
-				bundleItems := make([]*dnd5ev1alpha1.BundleItem, 0, len(opt.Items))
-				for _, item := range opt.Items {
-					bundleItems = append(bundleItems, &dnd5ev1alpha1.BundleItem{
-						ItemType: &dnd5ev1alpha1.BundleItem_ConcreteItem{
-							ConcreteItem: &dnd5ev1alpha1.CountedItemReference{
-								ItemId:   item.ItemID,
-								Name:     item.ItemID, // Use ItemID as name for now
-								Quantity: int32(item.Quantity),
+			// Create option based on type and structure
+			if len(opt.Items) == 1 && opt.Items[0].ConcreteItem != nil {
+				// Single concrete item
+				concreteItem := opt.Items[0].ConcreteItem
+				if concreteItem.Quantity == 1 {
+					// Single item reference
+					options = append(options, &dnd5ev1alpha1.ChoiceOption{
+						OptionType: &dnd5ev1alpha1.ChoiceOption_Item{
+							Item: &dnd5ev1alpha1.ItemReference{
+								ItemId: concreteItem.ItemID,
+								Name:   concreteItem.ItemID, // Use ItemID as name for now
 							},
 						},
 					})
+				} else {
+					// Counted item
+					options = append(options, &dnd5ev1alpha1.ChoiceOption{
+						OptionType: &dnd5ev1alpha1.ChoiceOption_CountedItem{
+							CountedItem: &dnd5ev1alpha1.CountedItemReference{
+								ItemId:   concreteItem.ItemID,
+								Name:     concreteItem.ItemID, // Use ItemID as name for now
+								Quantity: int32(concreteItem.Quantity),
+							},
+						},
+					})
+				}
+			} else {
+				// Bundle of items - convert each bundle item
+				bundleItems := make([]*dnd5ev1alpha1.BundleItem, 0, len(opt.Items))
+				for _, bundleItem := range opt.Items {
+					if bundleItem.ConcreteItem != nil {
+						// Concrete item in bundle
+						bundleItems = append(bundleItems, &dnd5ev1alpha1.BundleItem{
+							ItemType: &dnd5ev1alpha1.BundleItem_ConcreteItem{
+								ConcreteItem: &dnd5ev1alpha1.CountedItemReference{
+									ItemId:   bundleItem.ConcreteItem.ItemID,
+									Name:     bundleItem.ConcreteItem.ItemID, // Use ItemID as name for now
+									Quantity: int32(bundleItem.ConcreteItem.Quantity),
+								},
+							},
+						})
+					} else if bundleItem.NestedChoice != nil {
+						// Nested choice in bundle - create a new Choice
+						nestedOptions := make([]*dnd5ev1alpha1.ChoiceOption, 0, len(bundleItem.NestedChoice.Options))
+						for _, nestedOpt := range bundleItem.NestedChoice.Options {
+							// Each nested option should have exactly one concrete item
+							if len(nestedOpt.Items) > 0 && nestedOpt.Items[0].ConcreteItem != nil {
+								nestedOptions = append(nestedOptions, &dnd5ev1alpha1.ChoiceOption{
+									OptionType: &dnd5ev1alpha1.ChoiceOption_Item{
+										Item: &dnd5ev1alpha1.ItemReference{
+											ItemId: nestedOpt.Items[0].ConcreteItem.ItemID,
+											Name:   nestedOpt.Items[0].ConcreteItem.ItemID,
+										},
+									},
+								})
+							}
+						}
+						
+						bundleItems = append(bundleItems, &dnd5ev1alpha1.BundleItem{
+							ItemType: &dnd5ev1alpha1.BundleItem_ChoiceItem{
+								ChoiceItem: &dnd5ev1alpha1.NestedChoice{
+									Choice: &dnd5ev1alpha1.Choice{
+										Id:          bundleItem.NestedChoice.ID,
+										Description: bundleItem.NestedChoice.Description,
+										ChooseCount: int32(bundleItem.NestedChoice.Choose),
+										ChoiceType:  dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_EQUIPMENT,
+										OptionSet: &dnd5ev1alpha1.Choice_ExplicitOptions{
+											ExplicitOptions: &dnd5ev1alpha1.ExplicitOptions{
+												Options: nestedOptions,
+											},
+										},
+									},
+								},
+							},
+						})
+					}
 				}
 				options = append(options, &dnd5ev1alpha1.ChoiceOption{
 					OptionType: &dnd5ev1alpha1.ChoiceOption_Bundle{

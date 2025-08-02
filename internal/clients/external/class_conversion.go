@@ -122,8 +122,13 @@ func (c *client) convertClassToHybrid(apiClass *entities.Class) (*class.Data, *C
 					if opt.Reference != nil {
 						choiceData.Options = append(choiceData.Options, class.EquipmentOption{
 							ID: generateSlug(opt.Reference.Name),
-							Items: []class.EquipmentData{
-								{ItemID: opt.Reference.Key, Quantity: opt.Count},
+							Items: []class.EquipmentBundleItem{
+								{
+									ConcreteItem: &class.EquipmentData{
+										ItemID:   opt.Reference.Key,
+										Quantity: opt.Count,
+									},
+								},
 							},
 						})
 					}
@@ -132,8 +137,13 @@ func (c *client) convertClassToHybrid(apiClass *entities.Class) (*class.Data, *C
 					if opt.Reference != nil {
 						choiceData.Options = append(choiceData.Options, class.EquipmentOption{
 							ID: generateSlug(opt.Reference.Name),
-							Items: []class.EquipmentData{
-								{ItemID: opt.Reference.Key, Quantity: 1},
+							Items: []class.EquipmentBundleItem{
+								{
+									ConcreteItem: &class.EquipmentData{
+										ItemID:   opt.Reference.Key,
+										Quantity: 1,
+									},
+								},
 							},
 						})
 					}
@@ -155,46 +165,67 @@ func (c *client) convertClassToHybrid(apiClass *entities.Class) (*class.Data, *C
 							// Fall back to placeholder
 							choiceData.Options = append(choiceData.Options, class.EquipmentOption{
 								ID: generateSlug(opt.Description),
-								Items: []class.EquipmentData{
+								Items: []class.EquipmentBundleItem{
 									{
-										ItemID:   fmt.Sprintf("choice-%s", generateSlug(opt.Description)),
-										Quantity: opt.ChoiceCount,
+										ConcreteItem: &class.EquipmentData{
+											ItemID:   fmt.Sprintf("choice-%s", generateSlug(opt.Description)),
+											Quantity: opt.ChoiceCount,
+										},
 									},
 								},
 							})
 						} else {
-							// Create options for each item in the category
-							items := make([]class.EquipmentData, 0, len(equipmentCategory.Equipment))
+							// For top-level choices like "two martial weapons", create a single nested choice option
+							// This allows the user to select multiple items from the category
+							nestedOptions := make([]class.EquipmentOption, 0, len(equipmentCategory.Equipment))
 							for _, eq := range equipmentCategory.Equipment {
 								if eq != nil {
-									items = append(items, class.EquipmentData{
-										ItemID:   eq.Key,
-										Quantity: 1,
+									nestedOptions = append(nestedOptions, class.EquipmentOption{
+										ID: eq.Key,
+										Items: []class.EquipmentBundleItem{
+											{
+												ConcreteItem: &class.EquipmentData{
+													ItemID:   eq.Key,
+													Quantity: 1,
+												},
+											},
+										},
 									})
 								}
 							}
-
-							// Add as a single option with all items from the category
+							
+							// Create a single option that contains a nested choice
 							choiceData.Options = append(choiceData.Options, class.EquipmentOption{
-								ID:    fmt.Sprintf("%s-category", categoryID),
-								Items: items,
+								ID: fmt.Sprintf("choose-%d-%s", opt.ChoiceCount, categoryID),
+								Items: []class.EquipmentBundleItem{
+									{
+										NestedChoice: &class.EquipmentChoiceData{
+											ID:          fmt.Sprintf("choose-%s", categoryID),
+											Description: opt.Description,
+											Choose:      opt.ChoiceCount,
+											Options:     nestedOptions,
+										},
+									},
+								},
 							})
 						}
 					} else {
 						// Not an equipment category - use placeholder
 						choiceData.Options = append(choiceData.Options, class.EquipmentOption{
 							ID: generateSlug(opt.Description),
-							Items: []class.EquipmentData{
+							Items: []class.EquipmentBundleItem{
 								{
-									ItemID:   fmt.Sprintf("choice-%s", generateSlug(opt.Description)),
-									Quantity: opt.ChoiceCount,
+									ConcreteItem: &class.EquipmentData{
+										ItemID:   fmt.Sprintf("choice-%s", generateSlug(opt.Description)),
+										Quantity: opt.ChoiceCount,
+									},
 								},
 							},
 						})
 					}
 				case *entities.MultipleOption:
 					// Multiple items together (bundles)
-					var items []class.EquipmentData
+					var bundleItems []class.EquipmentBundleItem
 
 					// Process each item in the bundle
 					for _, item := range opt.Items {
@@ -202,16 +233,18 @@ func (c *client) convertClassToHybrid(apiClass *entities.Class) (*class.Data, *C
 						case *entities.CountedReferenceOption:
 							// Concrete item (like shield)
 							if bundleItem.Reference != nil {
-								items = append(items, class.EquipmentData{
-									ItemID:   bundleItem.Reference.Key,
-									Quantity: bundleItem.Count,
+								bundleItems = append(bundleItems, class.EquipmentBundleItem{
+									ConcreteItem: &class.EquipmentData{
+										ItemID:   bundleItem.Reference.Key,
+										Quantity: bundleItem.Count,
+									},
 								})
 							}
 						case *entities.ChoiceOption:
 							// Nested choice in bundle (like "choose a martial weapon")
 							categoryID := detectEquipmentCategory(bundleItem.Description)
 							if categoryID != "" {
-								// Fetch and expand the equipment category
+								// Fetch the equipment category to get all options
 								equipmentCategory, err := c.dnd5eClient.GetEquipmentCategory(categoryID)
 								if err != nil {
 									slog.Warn("Failed to fetch equipment category in bundle",
@@ -219,36 +252,57 @@ func (c *client) convertClassToHybrid(apiClass *entities.Class) (*class.Data, *C
 										"description", bundleItem.Description,
 										"error", err)
 									// Fall back to placeholder
-									items = append(items, class.EquipmentData{
-										ItemID:   fmt.Sprintf("category-%s-error", categoryID),
-										Quantity: bundleItem.ChoiceCount,
+									bundleItems = append(bundleItems, class.EquipmentBundleItem{
+										ConcreteItem: &class.EquipmentData{
+											ItemID:   fmt.Sprintf("category-%s-error", categoryID),
+											Quantity: bundleItem.ChoiceCount,
+										},
 									})
 								} else {
-									// Add all items from the category to the bundle
-									// Note: This duplicates items if the same category appears multiple times
+									// Create a nested choice with all items from the category
+									nestedOptions := make([]class.EquipmentOption, 0, len(equipmentCategory.Equipment))
 									for _, eq := range equipmentCategory.Equipment {
 										if eq != nil {
-											items = append(items, class.EquipmentData{
-												ItemID:   eq.Key,
-												Quantity: 1, // Each weapon is quantity 1, user chooses bundleItem.ChoiceCount of them
+											nestedOptions = append(nestedOptions, class.EquipmentOption{
+												ID: eq.Key,
+												Items: []class.EquipmentBundleItem{
+													{
+														ConcreteItem: &class.EquipmentData{
+															ItemID:   eq.Key,
+															Quantity: 1,
+														},
+													},
+												},
 											})
 										}
 									}
+									
+									// Add as a nested choice
+									bundleItems = append(bundleItems, class.EquipmentBundleItem{
+										NestedChoice: &class.EquipmentChoiceData{
+											ID:          fmt.Sprintf("choose-%s", categoryID),
+											Description: bundleItem.Description,
+											Choose:      bundleItem.ChoiceCount,
+											Options:     nestedOptions,
+										},
+									})
 								}
 							} else {
 								// Not a category - add placeholder
-								items = append(items, class.EquipmentData{
-									ItemID:   fmt.Sprintf("choice-%s", generateSlug(bundleItem.Description)),
-									Quantity: bundleItem.ChoiceCount,
+								bundleItems = append(bundleItems, class.EquipmentBundleItem{
+									ConcreteItem: &class.EquipmentData{
+										ItemID:   fmt.Sprintf("choice-%s", generateSlug(bundleItem.Description)),
+										Quantity: bundleItem.ChoiceCount,
+									},
 								})
 							}
 						}
 					}
 
-					if len(items) > 0 {
+					if len(bundleItems) > 0 {
 						choiceData.Options = append(choiceData.Options, class.EquipmentOption{
 							ID:    fmt.Sprintf("bundle-%d", optionIndex),
-							Items: items,
+							Items: bundleItems,
 						})
 					}
 				}

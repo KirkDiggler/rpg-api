@@ -5,7 +5,7 @@ go 1.24.1
 require (
 	github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20250731190717-4f44aa99c641
 	github.com/KirkDiggler/rpg-toolkit/dice v0.1.0
-	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.0.0-20250802160050-33b041c5aded
+	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.0.0-20250802162535-220b16f914df
 	github.com/fadedpez/dnd5e-api v0.0.0-20250718210231-523223e548d1
 	github.com/google/uuid v1.6.0
 	github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.3.2
