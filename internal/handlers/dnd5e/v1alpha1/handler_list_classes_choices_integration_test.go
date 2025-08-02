@@ -124,6 +124,14 @@ func (s *HandlerListClassesChoicesIntegrationTestSuite) TestListClasses_VerifyCh
 	for i, choice := range fighterClass.Choices {
 		s.T().Logf("Choice %d: ID=%s, Type=%s, Description=%s", 
 			i, choice.Id, choice.ChoiceType.String(), choice.Description)
+		
+		// Log the option set type
+		switch optSet := choice.OptionSet.(type) {
+		case *dnd5ev1alpha1.Choice_ExplicitOptions:
+			s.T().Logf("  - Has ExplicitOptions with %d options", len(optSet.ExplicitOptions.Options))
+		case *dnd5ev1alpha1.Choice_CategoryReference:
+			s.T().Logf("  - Has CategoryReference: %s", optSet.CategoryReference.CategoryId)
+		}
 	}
 
 	// VERIFY: Skill choices have valid skill IDs
@@ -134,12 +142,18 @@ func (s *HandlerListClassesChoicesIntegrationTestSuite) TestListClasses_VerifyCh
 
 	// VERIFY: Category selections show proper equipment category
 	s.verifyCategorySelections(fighterClass)
+	
+	// VERIFY: Fighter's 2nd choice should be martial weapons category
+	s.verifyFighterMartialWeaponChoice(fighterClass)
 
 	// VERIFY: Bundles combine items and category references properly
 	s.verifyBundleChoices(fighterClass)
 }
 
 func (s *HandlerListClassesChoicesIntegrationTestSuite) verifySkillChoices(class *dnd5ev1alpha1.ClassInfo) {
+	// Fighter gets to choose 2 skills from their class skill list
+	// This is a D&D 5e rule - all classes get skill proficiencies
+	
 	// Find skill choices
 	var skillChoice *dnd5ev1alpha1.Choice
 	for _, choice := range class.Choices {
@@ -149,15 +163,12 @@ func (s *HandlerListClassesChoicesIntegrationTestSuite) verifySkillChoices(class
 		}
 	}
 
-	// Not all classes have skill choices - some get skills from background
-	if skillChoice == nil {
-		s.T().Logf("Class %s does not have skill choices (may get skills from background)", class.Name)
-		return
-	}
-
+	// Fighter MUST have skill choices - this is a core D&D 5e rule
+	s.Require().NotNil(skillChoice, "Fighter must have skill choices from class")
+	
 	s.NotEmpty(skillChoice.Id, "Skill choice should have an ID")
 	s.NotEmpty(skillChoice.Description)
-	s.Greater(skillChoice.ChooseCount, int32(0), "Should require at least one skill choice")
+	s.Equal(int32(2), skillChoice.ChooseCount, "Fighter should choose 2 skills")
 
 	// Verify skill options have valid IDs
 	explicitOptions, ok := skillChoice.OptionSet.(*dnd5ev1alpha1.Choice_ExplicitOptions)
@@ -165,6 +176,20 @@ func (s *HandlerListClassesChoicesIntegrationTestSuite) verifySkillChoices(class
 	s.Require().NotNil(explicitOptions.ExplicitOptions, "Should have explicit options")
 	s.Require().NotEmpty(explicitOptions.ExplicitOptions.Options, "Should have skill options")
 
+	// Fighter's skill list from D&D 5e PHB
+	expectedFighterSkills := []string{
+		"skill_acrobatics",
+		"skill_animal-handling",
+		"skill_athletics", 
+		"skill_history",
+		"skill_insight",
+		"skill_intimidation",
+		"skill_perception",
+		"skill_survival",
+	}
+	
+	// Collect actual skills offered
+	actualSkills := make([]string, 0)
 	for _, option := range explicitOptions.ExplicitOptions.Options {
 		// Skill options should be items
 		itemOption, ok := option.OptionType.(*dnd5ev1alpha1.ChoiceOption_Item)
@@ -173,9 +198,13 @@ func (s *HandlerListClassesChoicesIntegrationTestSuite) verifySkillChoices(class
 		s.NotEmpty(itemOption.Item.ItemId, "Skill option should have an item ID")
 		s.NotEmpty(itemOption.Item.Name, "Skill option should have a name")
 		
-		// Verify the ID is a valid skill constant
-		// Skills should be constants like constants.SkillAcrobatics
-		s.Contains(itemOption.Item.ItemId, "skill_", "Skill ID should contain 'skill_'")
+		actualSkills = append(actualSkills, itemOption.Item.ItemId)
+	}
+	
+	// Verify we have the correct fighter skills
+	s.Equal(len(expectedFighterSkills), len(actualSkills), "Fighter should have correct number of skill options")
+	for _, expectedSkill := range expectedFighterSkills {
+		s.Contains(actualSkills, expectedSkill, "Fighter should have %s as an option", expectedSkill)
 	}
 }
 
@@ -263,15 +292,13 @@ func (s *HandlerListClassesChoicesIntegrationTestSuite) verifyBundleChoices(clas
 				// Debug: log bundle contents
 				s.T().Logf("Bundle found with %d items", len(bundleOption.Bundle.Items))
 				
-				// Bundle might be empty in current implementation
-				if len(bundleOption.Bundle.Items) == 0 {
-					s.T().Log("Bundle has no items (might not be implemented yet)")
-				} else {
-					// Verify bundle items
-					for _, item := range bundleOption.Bundle.Items {
-						s.NotNil(item, "Bundle item should not be nil")
-						// Bundle items can be concrete items or choices themselves
-					}
+				// Bundles MUST have items - this is a requirement
+				s.NotEmpty(bundleOption.Bundle.Items, "Bundle should have items")
+				
+				// Verify bundle items
+				for _, item := range bundleOption.Bundle.Items {
+					s.NotNil(item, "Bundle item should not be nil")
+					// Bundle items can be concrete items or choices themselves
 				}
 			}
 		}
@@ -326,6 +353,56 @@ func (s *HandlerListClassesChoicesIntegrationTestSuite) TestListClasses_Multiple
 			case *dnd5ev1alpha1.Choice_CategoryReference:
 				s.NotNil(optSet.CategoryReference, "Category reference should not be nil")
 				s.NotEmpty(optSet.CategoryReference.CategoryId, "Category should have ID")
+			}
+		}
+	}
+}
+
+func (s *HandlerListClassesChoicesIntegrationTestSuite) verifyFighterMartialWeaponChoice(class *dnd5ev1alpha1.ClassInfo) {
+	// Fighter's 2nd equipment choice should be:
+	// "(a) a martial weapon and a shield or (b) two martial weapons"
+	// Both options involve choosing from martial weapons category
+	
+	s.Require().Greater(len(class.Choices), 1, "Fighter should have at least 2 choices")
+	
+	secondChoice := class.Choices[1]
+	s.Equal("fighter_equipment_2", secondChoice.Id)
+	s.Equal(dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_EQUIPMENT, secondChoice.ChoiceType)
+	
+	// This choice should have 2 options: 
+	// Option 1: martial weapon + shield (bundle)
+	// Option 2: two martial weapons (bundle)
+	
+	explicitOptions, ok := secondChoice.OptionSet.(*dnd5ev1alpha1.Choice_ExplicitOptions)
+	s.Require().True(ok, "Second choice should have explicit options")
+	s.Require().NotNil(explicitOptions.ExplicitOptions)
+	s.Require().Equal(2, len(explicitOptions.ExplicitOptions.Options), "Should have 2 options")
+	
+	// Both options should be bundles
+	for i, option := range explicitOptions.ExplicitOptions.Options {
+		bundleOption, ok := option.OptionType.(*dnd5ev1alpha1.ChoiceOption_Bundle)
+		s.Require().True(ok, "Option %d should be a bundle", i)
+		s.Require().NotNil(bundleOption.Bundle)
+		s.Require().NotEmpty(bundleOption.Bundle.Items, "Bundle should have items")
+		
+		// Check bundle items for martial weapon references
+		for _, bundleItem := range bundleOption.Bundle.Items {
+			// Bundle items can be concrete items OR choice references
+			switch itemType := bundleItem.ItemType.(type) {
+			case *dnd5ev1alpha1.BundleItem_ChoiceItem:
+				// This should be a martial weapons category reference
+				s.NotNil(itemType.ChoiceItem, "Choice item in bundle should not be nil")
+				s.NotNil(itemType.ChoiceItem.Choice, "Nested choice should not be nil")
+				
+				// The choice within the bundle should reference martial weapons category
+				if categoryRef, ok := itemType.ChoiceItem.Choice.OptionSet.(*dnd5ev1alpha1.Choice_CategoryReference); ok {
+					s.Equal("martial-weapons", categoryRef.CategoryReference.CategoryId, 
+						"Bundle should reference martial-weapons category")
+				}
+			case *dnd5ev1alpha1.BundleItem_ConcreteItem:
+				// Could be shield or other concrete item
+				s.NotNil(itemType.ConcreteItem, "Concrete item should not be nil")
+				s.NotEmpty(itemType.ConcreteItem.ItemId, "Item should have an ID")
 			}
 		}
 	}
