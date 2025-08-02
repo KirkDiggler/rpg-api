@@ -140,25 +140,57 @@ func (c *client) convertClassToHybrid(apiClass *entities.Class) (*class.Data, *C
 					// Handle nested equipment choices (like "choose a martial weapon")
 					// ChoiceOption represents another level of choice
 					// These are typically "choose X from equipment category Y"
-
-					// When the API returns a ChoiceOption, it means there's another choice
-					// to be made from within that option (like choosing from a category)
-					// For now, we'll create a single option with placeholder items
-					// TODO(#158): Properly resolve equipment categories
-					choiceData.Options = append(choiceData.Options, class.EquipmentOption{
-						ID: generateSlug(opt.Description),
-						Items: []class.EquipmentData{
-							{
-								ItemID:   fmt.Sprintf("choice-%s", generateSlug(opt.Description)),
-								Quantity: opt.ChoiceCount,
+					
+					// Try to detect equipment category from description
+					categoryID := detectEquipmentCategory(opt.Description)
+					if categoryID != "" {
+						// Fetch the equipment category
+						equipmentCategory, err := c.dnd5eClient.GetEquipmentCategory(categoryID)
+						if err != nil {
+							slog.Warn("Failed to fetch equipment category",
+								"category", categoryID,
+								"description", opt.Description,
+								"error", err)
+							// Fall back to placeholder
+							choiceData.Options = append(choiceData.Options, class.EquipmentOption{
+								ID: generateSlug(opt.Description),
+								Items: []class.EquipmentData{
+									{
+										ItemID:   fmt.Sprintf("choice-%s", generateSlug(opt.Description)),
+										Quantity: opt.ChoiceCount,
+									},
+								},
+							})
+						} else {
+							// Create options for each item in the category
+							items := make([]class.EquipmentData, 0, len(equipmentCategory.Equipment))
+							for _, eq := range equipmentCategory.Equipment {
+								if eq != nil {
+									items = append(items, class.EquipmentData{
+										ItemID:   eq.Key,
+										Quantity: 1,
+									})
+								}
+							}
+							
+							// Add as a single option with all items from the category
+							choiceData.Options = append(choiceData.Options, class.EquipmentOption{
+								ID:    fmt.Sprintf("%s-category", categoryID),
+								Items: items,
+							})
+						}
+					} else {
+						// Not an equipment category - use placeholder
+						choiceData.Options = append(choiceData.Options, class.EquipmentOption{
+							ID: generateSlug(opt.Description),
+							Items: []class.EquipmentData{
+								{
+									ItemID:   fmt.Sprintf("choice-%s", generateSlug(opt.Description)),
+									Quantity: opt.ChoiceCount,
+								},
 							},
-						},
-					})
-
-					// TODO(#158): The API returns nested ChoiceOption for equipment categories
-					// We need a way to detect and expand these categories
-					// The JSON structure has a nested "choice" field that isn't directly
-					// accessible in the Go struct
+						})
+					}
 				case *entities.MultipleOption:
 					// Multiple items together (bundles)
 					var items []class.EquipmentData
@@ -176,12 +208,21 @@ func (c *client) convertClassToHybrid(apiClass *entities.Class) (*class.Data, *C
 							}
 						case *entities.ChoiceOption:
 							// Nested choice in bundle (like "choose a martial weapon")
-							// For now, add a placeholder item
-							// TODO(#158): Properly resolve equipment categories
-							items = append(items, class.EquipmentData{
-								ItemID:   fmt.Sprintf("choice-%s", generateSlug(bundleItem.Description)),
-								Quantity: bundleItem.ChoiceCount,
-							})
+							categoryID := detectEquipmentCategory(bundleItem.Description)
+							if categoryID != "" {
+								// This is an equipment category choice
+								// For bundles, we'll add a placeholder that indicates it's a category choice
+								items = append(items, class.EquipmentData{
+									ItemID:   fmt.Sprintf("category-%s-choice", categoryID),
+									Quantity: bundleItem.ChoiceCount,
+								})
+							} else {
+								// Not a category - add placeholder
+								items = append(items, class.EquipmentData{
+									ItemID:   fmt.Sprintf("choice-%s", generateSlug(bundleItem.Description)),
+									Quantity: bundleItem.ChoiceCount,
+								})
+							}
 						}
 					}
 
@@ -251,4 +292,37 @@ func convertKeyToClassID(key string) (constants.Class, error) {
 	}
 
 	return "", fmt.Errorf("unknown class key: %s", key)
+}
+
+// detectEquipmentCategory tries to detect equipment category from description
+func detectEquipmentCategory(description string) string {
+	desc := strings.ToLower(description)
+	
+	// Map common descriptions to category IDs
+	categoryMap := map[string]string{
+		"martial weapon":     "martial-weapons",
+		"simple weapon":      "simple-weapons",
+		"artisan's tools":    "artisans-tools",
+		"musical instrument": "musical-instruments",
+		"holy symbol":        "holy-symbols",
+		"druidic focus":      "druidic-foci",
+		"arcane focus":       "arcane-foci",
+	}
+	
+	// Check for exact matches or contains
+	for key, categoryID := range categoryMap {
+		if strings.Contains(desc, key) {
+			return categoryID
+		}
+	}
+	
+	// Check for plurals
+	if strings.Contains(desc, "martial weapons") {
+		return "martial-weapons"
+	}
+	if strings.Contains(desc, "simple weapons") {
+		return "simple-weapons"
+	}
+	
+	return ""
 }
