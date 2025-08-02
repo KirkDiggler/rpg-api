@@ -164,7 +164,7 @@ func (s *HandlerListClassesTestSuite) TestListClasses_WithChoices() {
 	s.Equal("Fighter", fighter.Name)
 
 	// Verify choices are populated
-	s.Require().Len(fighter.Choices, 3, "Should have 3 choices: 1 skill choice and 2 equipment choices")
+	s.Require().Len(fighter.Choices, 4, "Should have 4 choices: 1 skill choice, 2 equipment choices, and 1 fighting style")
 
 	// Check skill choice
 	skillChoice := fighter.Choices[0]

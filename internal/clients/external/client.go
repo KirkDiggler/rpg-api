@@ -236,7 +236,7 @@ func (c *client) GetClassData(ctx context.Context, classID string) (*ClassDataOu
 					ID:          feature.Key,
 					Name:        feature.Name,
 					Level:       1,
-					Description: "", // API doesn't provide description
+					Description: "A class feature gained at level 1", // API doesn't provide detailed description
 				}
 
 				// Check if feature has choices (like fighting style)
