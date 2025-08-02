@@ -23,13 +23,13 @@ import (
 
 type OrchestratorRollAbilityScoresTestSuite struct {
 	suite.Suite
-	ctrl            *gomock.Controller
-	mockDraft       *draftrepomock.MockRepository
-	mockDice        *dicemock.MockService
-	mockChar        *charactermock.MockRepository
-	mockExternal    *externalmock.MockClient
-	mockIDGen       *idgenmock.MockGenerator
-	orchestrator    character.Service
+	ctrl         *gomock.Controller
+	mockDraft    *draftrepomock.MockRepository
+	mockDice     *dicemock.MockService
+	mockChar     *charactermock.MockRepository
+	mockExternal *externalmock.MockClient
+	mockIDGen    *idgenmock.MockGenerator
+	orchestrator character.Service
 }
 
 func TestOrchestratorRollAbilityScoresTestSuite(t *testing.T) {
@@ -229,7 +229,7 @@ func (s *OrchestratorRollAbilityScoresTestSuite) TestRollAbilityScores_CustomMet
 	s.Require().NoError(err)
 	s.Require().NotNil(output)
 	s.Require().Len(output.Rolls, 6)
-	
+
 	// Verify no dropped dice for 3d6 method
 	for _, roll := range output.Rolls {
 		s.Empty(roll.Dropped)

@@ -12,7 +12,7 @@ import (
 )
 
 // convertClassToHybrid converts API class data to both toolkit format and UI data
-func convertClassToHybrid(apiClass *entities.Class) (*class.Data, *ClassUIData) {
+func (c *client) convertClassToHybrid(apiClass *entities.Class) (*class.Data, *ClassUIData) {
 	if apiClass == nil {
 		return nil, nil
 	}
@@ -66,9 +66,20 @@ func convertClassToHybrid(apiClass *entities.Class) (*class.Data, *ClassUIData) 
 
 	// Extract skill options from proficiency choices
 	for _, choice := range apiClass.ProficiencyChoices {
-		if choice != nil && choice.ChoiceType == "skills" {
-			toolkitData.SkillProficiencyCount = choice.ChoiceCount
-			if choice.OptionList != nil {
+		if choice != nil && choice.ChoiceType == "proficiencies" {
+			// Check if this is a skill proficiency choice by looking at the options
+			isSkillChoice := false
+			if choice.OptionList != nil && len(choice.OptionList.Options) > 0 {
+				// Check the first option to see if it's a skill
+				if refOpt, ok := choice.OptionList.Options[0].(*entities.ReferenceOption); ok && refOpt.Reference != nil {
+					if strings.HasPrefix(refOpt.Reference.Name, "Skill: ") {
+						isSkillChoice = true
+					}
+				}
+			}
+
+			if isSkillChoice {
+				toolkitData.SkillProficiencyCount = choice.ChoiceCount
 				for _, option := range choice.OptionList.Options {
 					if refOpt, ok := option.(*entities.ReferenceOption); ok && refOpt.Reference != nil {
 						skillName := strings.TrimPrefix(refOpt.Reference.Name, "Skill: ")
@@ -77,8 +88,8 @@ func convertClassToHybrid(apiClass *entities.Class) (*class.Data, *ClassUIData) 
 						}
 					}
 				}
+				break // Found the skill choice
 			}
-			break // Found the skill choice
 		}
 	}
 
@@ -95,8 +106,9 @@ func convertClassToHybrid(apiClass *entities.Class) (*class.Data, *ClassUIData) 
 	toolkitData.EquipmentChoices = make([]class.EquipmentChoiceData, len(apiClass.StartingEquipmentOptions))
 	for i, choice := range apiClass.StartingEquipmentOptions {
 		choiceData := class.EquipmentChoiceData{
-			ID:     generateSlug(choice.Description),
-			Choose: choice.ChoiceCount,
+			ID:          generateSlug(choice.Description),
+			Description: choice.Description,
+			Choose:      choice.ChoiceCount,
 		}
 
 		// Extract options
@@ -110,8 +122,13 @@ func convertClassToHybrid(apiClass *entities.Class) (*class.Data, *ClassUIData) 
 					if opt.Reference != nil {
 						choiceData.Options = append(choiceData.Options, class.EquipmentOption{
 							ID: generateSlug(opt.Reference.Name),
-							Items: []class.EquipmentData{
-								{ItemID: opt.Reference.Key, Quantity: opt.Count},
+							Items: []class.EquipmentBundleItem{
+								{
+									ConcreteItem: &class.EquipmentData{
+										ItemID:   opt.Reference.Key,
+										Quantity: opt.Count,
+									},
+								},
 							},
 						})
 					}
@@ -120,33 +137,172 @@ func convertClassToHybrid(apiClass *entities.Class) (*class.Data, *ClassUIData) 
 					if opt.Reference != nil {
 						choiceData.Options = append(choiceData.Options, class.EquipmentOption{
 							ID: generateSlug(opt.Reference.Name),
-							Items: []class.EquipmentData{
-								{ItemID: opt.Reference.Key, Quantity: 1},
+							Items: []class.EquipmentBundleItem{
+								{
+									ConcreteItem: &class.EquipmentData{
+										ItemID:   opt.Reference.Key,
+										Quantity: 1,
+									},
+								},
 							},
 						})
 					}
 				case *entities.ChoiceOption:
-					// Nested choices - for now just create a placeholder
-					// TODO: Handle nested equipment choices properly
-					choiceData.Options = append(choiceData.Options, class.EquipmentOption{
-						ID:    generateSlug(opt.Description),
-						Items: []class.EquipmentData{}, // Would need to parse nested options
-					})
-				case *entities.MultipleOption:
-					// Multiple items together
-					var items []class.EquipmentData
-					for _, item := range opt.Items {
-						if ref, ok := item.(*entities.CountedReferenceOption); ok && ref.Reference != nil {
-							items = append(items, class.EquipmentData{
-								ItemID:   ref.Reference.Key,
-								Quantity: ref.Count,
+					// Handle nested equipment choices (like "choose a martial weapon")
+					// ChoiceOption represents another level of choice
+					// These are typically "choose X from equipment category Y"
+
+					// Try to detect equipment category from description
+					categoryID := detectEquipmentCategory(opt.Description)
+					if categoryID != "" {
+						// Fetch the equipment category
+						equipmentCategory, err := c.dnd5eClient.GetEquipmentCategory(categoryID)
+						if err != nil {
+							slog.Warn("Failed to fetch equipment category",
+								"category", categoryID,
+								"description", opt.Description,
+								"error", err)
+							// Fall back to placeholder
+							choiceData.Options = append(choiceData.Options, class.EquipmentOption{
+								ID: generateSlug(opt.Description),
+								Items: []class.EquipmentBundleItem{
+									{
+										ConcreteItem: &class.EquipmentData{
+											ItemID:   fmt.Sprintf("choice-%s", generateSlug(opt.Description)),
+											Quantity: opt.ChoiceCount,
+										},
+									},
+								},
+							})
+						} else {
+							// For top-level choices like "two martial weapons", create a single nested choice option
+							// This allows the user to select multiple items from the category
+							nestedOptions := make([]class.EquipmentOption, 0, len(equipmentCategory.Equipment))
+							for _, eq := range equipmentCategory.Equipment {
+								if eq != nil {
+									nestedOptions = append(nestedOptions, class.EquipmentOption{
+										ID: eq.Key,
+										Items: []class.EquipmentBundleItem{
+											{
+												ConcreteItem: &class.EquipmentData{
+													ItemID:   eq.Key,
+													Quantity: 1,
+												},
+											},
+										},
+									})
+								}
+							}
+							
+							// Create a single option that contains a nested choice
+							choiceData.Options = append(choiceData.Options, class.EquipmentOption{
+								ID: fmt.Sprintf("choose-%d-%s", opt.ChoiceCount, categoryID),
+								Items: []class.EquipmentBundleItem{
+									{
+										NestedChoice: &class.EquipmentChoiceData{
+											ID:          fmt.Sprintf("choose-%s", categoryID),
+											Description: opt.Description,
+											Choose:      opt.ChoiceCount,
+											Options:     nestedOptions,
+										},
+									},
+								},
 							})
 						}
-					}
-					if len(items) > 0 {
+					} else {
+						// Not an equipment category - use placeholder
 						choiceData.Options = append(choiceData.Options, class.EquipmentOption{
-							ID:    fmt.Sprintf("option-%d", optionIndex),
-							Items: items,
+							ID: generateSlug(opt.Description),
+							Items: []class.EquipmentBundleItem{
+								{
+									ConcreteItem: &class.EquipmentData{
+										ItemID:   fmt.Sprintf("choice-%s", generateSlug(opt.Description)),
+										Quantity: opt.ChoiceCount,
+									},
+								},
+							},
+						})
+					}
+				case *entities.MultipleOption:
+					// Multiple items together (bundles)
+					var bundleItems []class.EquipmentBundleItem
+
+					// Process each item in the bundle
+					for _, item := range opt.Items {
+						switch bundleItem := item.(type) {
+						case *entities.CountedReferenceOption:
+							// Concrete item (like shield)
+							if bundleItem.Reference != nil {
+								bundleItems = append(bundleItems, class.EquipmentBundleItem{
+									ConcreteItem: &class.EquipmentData{
+										ItemID:   bundleItem.Reference.Key,
+										Quantity: bundleItem.Count,
+									},
+								})
+							}
+						case *entities.ChoiceOption:
+							// Nested choice in bundle (like "choose a martial weapon")
+							categoryID := detectEquipmentCategory(bundleItem.Description)
+							if categoryID != "" {
+								// Fetch the equipment category to get all options
+								equipmentCategory, err := c.dnd5eClient.GetEquipmentCategory(categoryID)
+								if err != nil {
+									slog.Warn("Failed to fetch equipment category in bundle",
+										"category", categoryID,
+										"description", bundleItem.Description,
+										"error", err)
+									// Fall back to placeholder
+									bundleItems = append(bundleItems, class.EquipmentBundleItem{
+										ConcreteItem: &class.EquipmentData{
+											ItemID:   fmt.Sprintf("category-%s-error", categoryID),
+											Quantity: bundleItem.ChoiceCount,
+										},
+									})
+								} else {
+									// Create a nested choice with all items from the category
+									nestedOptions := make([]class.EquipmentOption, 0, len(equipmentCategory.Equipment))
+									for _, eq := range equipmentCategory.Equipment {
+										if eq != nil {
+											nestedOptions = append(nestedOptions, class.EquipmentOption{
+												ID: eq.Key,
+												Items: []class.EquipmentBundleItem{
+													{
+														ConcreteItem: &class.EquipmentData{
+															ItemID:   eq.Key,
+															Quantity: 1,
+														},
+													},
+												},
+											})
+										}
+									}
+									
+									// Add as a nested choice
+									bundleItems = append(bundleItems, class.EquipmentBundleItem{
+										NestedChoice: &class.EquipmentChoiceData{
+											ID:          fmt.Sprintf("choose-%s", categoryID),
+											Description: bundleItem.Description,
+											Choose:      bundleItem.ChoiceCount,
+											Options:     nestedOptions,
+										},
+									})
+								}
+							} else {
+								// Not a category - add placeholder
+								bundleItems = append(bundleItems, class.EquipmentBundleItem{
+									ConcreteItem: &class.EquipmentData{
+										ItemID:   fmt.Sprintf("choice-%s", generateSlug(bundleItem.Description)),
+										Quantity: bundleItem.ChoiceCount,
+									},
+								})
+							}
+						}
+					}
+
+					if len(bundleItems) > 0 {
+						choiceData.Options = append(choiceData.Options, class.EquipmentOption{
+							ID:    fmt.Sprintf("bundle-%d", optionIndex),
+							Items: bundleItems,
 						})
 					}
 				}
@@ -209,4 +365,42 @@ func convertKeyToClassID(key string) (constants.Class, error) {
 	}
 
 	return "", fmt.Errorf("unknown class key: %s", key)
+}
+
+const (
+	categoryMartialWeapons = "martial-weapons"
+	categorySimpleWeapons  = "simple-weapons"
+)
+
+// detectEquipmentCategory tries to detect equipment category from description
+func detectEquipmentCategory(description string) string {
+	desc := strings.ToLower(description)
+
+	// Map common descriptions to category IDs
+	categoryMap := map[string]string{
+		"martial weapon":     categoryMartialWeapons,
+		"simple weapon":      categorySimpleWeapons,
+		"artisan's tools":    "artisans-tools",
+		"musical instrument": "musical-instruments",
+		"holy symbol":        "holy-symbols",
+		"druidic focus":      "druidic-foci",
+		"arcane focus":       "arcane-foci",
+	}
+
+	// Check for exact matches or contains
+	for key, categoryID := range categoryMap {
+		if strings.Contains(desc, key) {
+			return categoryID
+		}
+	}
+
+	// Check for plurals
+	if strings.Contains(desc, "martial weapons") {
+		return categoryMartialWeapons
+	}
+	if strings.Contains(desc, "simple weapons") {
+		return categorySimpleWeapons
+	}
+
+	return ""
 }

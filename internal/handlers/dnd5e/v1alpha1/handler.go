@@ -503,7 +503,7 @@ func (h *Handler) RollAbilityScores(
 		if len(roll.Dropped) > 0 {
 			dropped = roll.Dropped[0] // Take the first dropped die
 		}
-		
+
 		protoRoll := &dnd5ev1alpha1.AbilityScoreRoll{
 			RollId:   roll.RollID,
 			Dice:     roll.Dice,
@@ -1423,7 +1423,7 @@ func convertClassDataToProtoInfo(classData *class.Data, uiData *external.ClassUI
 			skillOptions = append(skillOptions, &dnd5ev1alpha1.ChoiceOption{
 				OptionType: &dnd5ev1alpha1.ChoiceOption_Item{
 					Item: &dnd5ev1alpha1.ItemReference{
-						ItemId: string(skill),
+						ItemId: fmt.Sprintf("skill_%s", skill),
 						Name:   string(skill),
 					},
 				},
@@ -1444,67 +1444,8 @@ func convertClassDataToProtoInfo(classData *class.Data, uiData *external.ClassUI
 	}
 
 	// Add equipment choices
-	for i, equipChoice := range classData.EquipmentChoices {
-		options := make([]*dnd5ev1alpha1.ChoiceOption, 0, len(equipChoice.Options))
-		for _, opt := range equipChoice.Options {
-			// Create option based on type
-			if len(opt.Items) == 1 && opt.Items[0].Quantity == 1 {
-				// Single item
-				options = append(options, &dnd5ev1alpha1.ChoiceOption{
-					OptionType: &dnd5ev1alpha1.ChoiceOption_Item{
-						Item: &dnd5ev1alpha1.ItemReference{
-							ItemId: opt.Items[0].ItemID,
-							Name:   opt.Items[0].ItemID, // Use ItemID as name for now
-						},
-					},
-				})
-			} else if len(opt.Items) == 1 {
-				// Counted item
-				options = append(options, &dnd5ev1alpha1.ChoiceOption{
-					OptionType: &dnd5ev1alpha1.ChoiceOption_CountedItem{
-						CountedItem: &dnd5ev1alpha1.CountedItemReference{
-							ItemId:   opt.Items[0].ItemID,
-							Name:     opt.Items[0].ItemID, // Use ItemID as name for now
-							Quantity: int32(opt.Items[0].Quantity),
-						},
-					},
-				})
-			} else {
-				// Bundle of items
-				bundleItems := make([]*dnd5ev1alpha1.BundleItem, 0, len(opt.Items))
-				for _, item := range opt.Items {
-					bundleItems = append(bundleItems, &dnd5ev1alpha1.BundleItem{
-						ItemType: &dnd5ev1alpha1.BundleItem_ConcreteItem{
-							ConcreteItem: &dnd5ev1alpha1.CountedItemReference{
-								ItemId:   item.ItemID,
-								Name:     item.ItemID, // Use ItemID as name for now
-								Quantity: int32(item.Quantity),
-							},
-						},
-					})
-				}
-				options = append(options, &dnd5ev1alpha1.ChoiceOption{
-					OptionType: &dnd5ev1alpha1.ChoiceOption_Bundle{
-						Bundle: &dnd5ev1alpha1.ItemBundle{
-							Items: bundleItems,
-						},
-					},
-				})
-			}
-		}
-
-		info.Choices = append(info.Choices, &dnd5ev1alpha1.Choice{
-			Id:          fmt.Sprintf("%s_equipment_%d", classData.ID, i+1),
-			Description: fmt.Sprintf("Starting equipment choice %d", i+1),
-			ChooseCount: int32(equipChoice.Choose),
-			ChoiceType:  dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_EQUIPMENT,
-			OptionSet: &dnd5ev1alpha1.Choice_ExplicitOptions{
-				ExplicitOptions: &dnd5ev1alpha1.ExplicitOptions{
-					Options: options,
-				},
-			},
-		})
-	}
+	equipmentChoices := convertEquipmentChoices(classData)
+	info.Choices = append(info.Choices, equipmentChoices...)
 
 	return info
 }

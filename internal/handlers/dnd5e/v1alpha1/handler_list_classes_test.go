@@ -63,46 +63,78 @@ func (s *HandlerListClassesTestSuite) TestListClasses_WithChoices() {
 		},
 		EquipmentChoices: []class.EquipmentChoiceData{
 			{
-				ID:     "fighter_primary_weapon",
-				Choose: 1,
+				ID:          "fighter_primary_weapon",
+				Description: "(a) chain mail or (b) leather armor, longbow, and 20 arrows",
+				Choose:      1,
 				Options: []class.EquipmentOption{
 					{
 						ID: "option_martial_weapon_shield",
-						Items: []class.EquipmentData{
-							{ItemID: "any-martial-weapon", Quantity: 1},
-							{ItemID: "shield", Quantity: 1},
+						Items: []class.EquipmentBundleItem{
+							{
+								ConcreteItem: &class.EquipmentData{
+									ItemID:   "any-martial-weapon",
+									Quantity: 1,
+								},
+							},
+							{
+								ConcreteItem: &class.EquipmentData{
+									ItemID:   "shield",
+									Quantity: 1,
+								},
+							},
 						},
 					},
 					{
 						ID: "option_two_martial_weapons",
-						Items: []class.EquipmentData{
-							{ItemID: "any-martial-weapon", Quantity: 2},
+						Items: []class.EquipmentBundleItem{
+							{
+								ConcreteItem: &class.EquipmentData{
+									ItemID:   "any-martial-weapon",
+									Quantity: 2,
+								},
+							},
 						},
 					},
 				},
 			},
 			{
-				ID:     "fighter_ranged_weapon",
-				Choose: 1,
+				ID:          "fighter_ranged_weapon",
+				Description: "(a) a light crossbow and 20 bolts or (b) two handaxes",
+				Choose:      1,
 				Options: []class.EquipmentOption{
 					{
 						ID: "option_light_crossbow",
-						Items: []class.EquipmentData{
-							{ItemID: "light-crossbow", Quantity: 1},
-							{ItemID: "crossbow-bolt", Quantity: 20},
+						Items: []class.EquipmentBundleItem{
+							{
+								ConcreteItem: &class.EquipmentData{
+									ItemID:   "light-crossbow",
+									Quantity: 1,
+								},
+							},
+							{
+								ConcreteItem: &class.EquipmentData{
+									ItemID:   "crossbow-bolt",
+									Quantity: 20,
+								},
+							},
 						},
 					},
 					{
 						ID: "option_handaxe",
-						Items: []class.EquipmentData{
-							{ItemID: "handaxe", Quantity: 2},
+						Items: []class.EquipmentBundleItem{
+							{
+								ConcreteItem: &class.EquipmentData{
+									ItemID:   "handaxe",
+									Quantity: 2,
+								},
+							},
 						},
 					},
 				},
 			},
 		},
-		SavingThrows: []constants.Ability{constants.STR, constants.CON},
-		ArmorProficiencies: []string{"light", "medium", "heavy", "shields"},
+		SavingThrows:        []constants.Ability{constants.STR, constants.CON},
+		ArmorProficiencies:  []string{"light", "medium", "heavy", "shields"},
 		WeaponProficiencies: []string{"simple", "martial"},
 	}
 
@@ -130,7 +162,7 @@ func (s *HandlerListClassesTestSuite) TestListClasses_WithChoices() {
 	fighter := resp.Classes[0]
 	s.Equal("fighter", fighter.Id)
 	s.Equal("Fighter", fighter.Name)
-	
+
 	// Verify choices are populated
 	s.Require().Len(fighter.Choices, 3, "Should have 3 choices: 1 skill choice and 2 equipment choices")
 
@@ -140,35 +172,35 @@ func (s *HandlerListClassesTestSuite) TestListClasses_WithChoices() {
 	s.Equal("Choose 2 skills", skillChoice.Description)
 	s.Equal(int32(2), skillChoice.ChooseCount)
 	s.Equal(dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_SKILLS, skillChoice.ChoiceType)
-	
+
 	// Verify skill options
 	explicitOpts := skillChoice.GetExplicitOptions()
 	s.Require().NotNil(explicitOpts)
 	s.Len(explicitOpts.Options, 8, "Fighter should have 8 skill options")
-	
+
 	// Check first skill option
 	firstSkill := explicitOpts.Options[0].GetItem()
 	s.Require().NotNil(firstSkill)
-	s.Equal("acrobatics", firstSkill.ItemId)
+	s.Equal("skill_acrobatics", firstSkill.ItemId)
 	s.Equal("acrobatics", firstSkill.Name)
 
 	// Check first equipment choice
 	equipChoice1 := fighter.Choices[1]
 	s.Equal("fighter_equipment_1", equipChoice1.Id)
-	s.Equal("Starting equipment choice 1", equipChoice1.Description)
+	s.Equal("(a) chain mail or (b) leather armor, longbow, and 20 arrows", equipChoice1.Description)
 	s.Equal(int32(1), equipChoice1.ChooseCount)
 	s.Equal(dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_EQUIPMENT, equipChoice1.ChoiceType)
-	
+
 	// Verify equipment options
 	equipOpts1 := equipChoice1.GetExplicitOptions()
 	s.Require().NotNil(equipOpts1)
 	s.Len(equipOpts1.Options, 2, "Should have 2 equipment options")
-	
+
 	// Check bundle option (martial weapon + shield)
 	bundleOpt := equipOpts1.Options[0].GetBundle()
 	s.Require().NotNil(bundleOpt)
 	s.Len(bundleOpt.Items, 2, "Bundle should have 2 items")
-	
+
 	// Check first item in bundle
 	firstBundleItem := bundleOpt.Items[0].GetConcreteItem()
 	s.Require().NotNil(firstBundleItem)
