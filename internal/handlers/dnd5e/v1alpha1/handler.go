@@ -503,7 +503,7 @@ func (h *Handler) RollAbilityScores(
 		if len(roll.Dropped) > 0 {
 			dropped = roll.Dropped[0] // Take the first dropped die
 		}
-		
+
 		protoRoll := &dnd5ev1alpha1.AbilityScoreRoll{
 			RollId:   roll.RollID,
 			Dice:     roll.Dice,
@@ -1423,7 +1423,7 @@ func convertClassDataToProtoInfo(classData *class.Data, uiData *external.ClassUI
 			skillOptions = append(skillOptions, &dnd5ev1alpha1.ChoiceOption{
 				OptionType: &dnd5ev1alpha1.ChoiceOption_Item{
 					Item: &dnd5ev1alpha1.ItemReference{
-						ItemId: string(skill),
+						ItemId: fmt.Sprintf("skill_%s", skill),
 						Name:   string(skill),
 					},
 				},

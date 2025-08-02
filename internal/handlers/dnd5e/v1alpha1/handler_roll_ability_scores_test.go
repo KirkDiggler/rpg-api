@@ -210,7 +210,7 @@ func (s *HandlerRollAbilityScoresTestSuite) TestRollAbilityScores_EmptyDropped()
 
 	s.Require().NoError(err)
 	s.Require().NotNil(resp)
-	
+
 	// Check that dropped is 0 when no dice were dropped
 	firstRoll := resp.Rolls[0]
 	s.Equal(int32(0), firstRoll.Dropped)

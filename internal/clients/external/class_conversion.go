@@ -12,7 +12,7 @@ import (
 )
 
 // convertClassToHybrid converts API class data to both toolkit format and UI data
-func convertClassToHybrid(apiClass *entities.Class) (*class.Data, *ClassUIData) {
+func (c *client) convertClassToHybrid(apiClass *entities.Class) (*class.Data, *ClassUIData) {
 	if apiClass == nil {
 		return nil, nil
 	}
@@ -66,9 +66,20 @@ func convertClassToHybrid(apiClass *entities.Class) (*class.Data, *ClassUIData) 
 
 	// Extract skill options from proficiency choices
 	for _, choice := range apiClass.ProficiencyChoices {
-		if choice != nil && choice.ChoiceType == "skills" {
-			toolkitData.SkillProficiencyCount = choice.ChoiceCount
-			if choice.OptionList != nil {
+		if choice != nil && choice.ChoiceType == "proficiencies" {
+			// Check if this is a skill proficiency choice by looking at the options
+			isSkillChoice := false
+			if choice.OptionList != nil && len(choice.OptionList.Options) > 0 {
+				// Check the first option to see if it's a skill
+				if refOpt, ok := choice.OptionList.Options[0].(*entities.ReferenceOption); ok && refOpt.Reference != nil {
+					if strings.HasPrefix(refOpt.Reference.Name, "Skill: ") {
+						isSkillChoice = true
+					}
+				}
+			}
+
+			if isSkillChoice {
+				toolkitData.SkillProficiencyCount = choice.ChoiceCount
 				for _, option := range choice.OptionList.Options {
 					if refOpt, ok := option.(*entities.ReferenceOption); ok && refOpt.Reference != nil {
 						skillName := strings.TrimPrefix(refOpt.Reference.Name, "Skill: ")
@@ -77,8 +88,8 @@ func convertClassToHybrid(apiClass *entities.Class) (*class.Data, *ClassUIData) 
 						}
 					}
 				}
+				break // Found the skill choice
 			}
-			break // Found the skill choice
 		}
 	}
 
@@ -126,26 +137,57 @@ func convertClassToHybrid(apiClass *entities.Class) (*class.Data, *ClassUIData) 
 						})
 					}
 				case *entities.ChoiceOption:
-					// Nested choices - for now just create a placeholder
-					// TODO: Handle nested equipment choices properly
+					// Handle nested equipment choices (like "choose a martial weapon")
+					// ChoiceOption represents another level of choice
+					// These are typically "choose X from equipment category Y"
+
+					// When the API returns a ChoiceOption, it means there's another choice
+					// to be made from within that option (like choosing from a category)
+					// For now, we'll create a single option with placeholder items
+					// TODO(#158): Properly resolve equipment categories
 					choiceData.Options = append(choiceData.Options, class.EquipmentOption{
-						ID:    generateSlug(opt.Description),
-						Items: []class.EquipmentData{}, // Would need to parse nested options
+						ID: generateSlug(opt.Description),
+						Items: []class.EquipmentData{
+							{
+								ItemID:   fmt.Sprintf("choice-%s", generateSlug(opt.Description)),
+								Quantity: opt.ChoiceCount,
+							},
+						},
 					})
+
+					// TODO(#158): The API returns nested ChoiceOption for equipment categories
+					// We need a way to detect and expand these categories
+					// The JSON structure has a nested "choice" field that isn't directly
+					// accessible in the Go struct
 				case *entities.MultipleOption:
-					// Multiple items together
+					// Multiple items together (bundles)
 					var items []class.EquipmentData
+
+					// Process each item in the bundle
 					for _, item := range opt.Items {
-						if ref, ok := item.(*entities.CountedReferenceOption); ok && ref.Reference != nil {
+						switch bundleItem := item.(type) {
+						case *entities.CountedReferenceOption:
+							// Concrete item (like shield)
+							if bundleItem.Reference != nil {
+								items = append(items, class.EquipmentData{
+									ItemID:   bundleItem.Reference.Key,
+									Quantity: bundleItem.Count,
+								})
+							}
+						case *entities.ChoiceOption:
+							// Nested choice in bundle (like "choose a martial weapon")
+							// For now, add a placeholder item
+							// TODO(#158): Properly resolve equipment categories
 							items = append(items, class.EquipmentData{
-								ItemID:   ref.Reference.Key,
-								Quantity: ref.Count,
+								ItemID:   fmt.Sprintf("choice-%s", generateSlug(bundleItem.Description)),
+								Quantity: bundleItem.ChoiceCount,
 							})
 						}
 					}
+
 					if len(items) > 0 {
 						choiceData.Options = append(choiceData.Options, class.EquipmentOption{
-							ID:    fmt.Sprintf("option-%d", optionIndex),
+							ID:    fmt.Sprintf("bundle-%d", optionIndex),
 							Items: items,
 						})
 					}

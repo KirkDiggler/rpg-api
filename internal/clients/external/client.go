@@ -211,7 +211,7 @@ func (c *client) GetClassData(_ context.Context, classID string) (*ClassDataOutp
 	}
 
 	// Convert to both toolkit format and extract UI data
-	toolkitData, uiData := convertClassToHybrid(apiClass)
+	toolkitData, uiData := c.convertClassToHybrid(apiClass)
 
 	return &ClassDataOutput{
 		ClassData: toolkitData,

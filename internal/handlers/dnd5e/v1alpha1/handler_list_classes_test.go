@@ -101,8 +101,8 @@ func (s *HandlerListClassesTestSuite) TestListClasses_WithChoices() {
 				},
 			},
 		},
-		SavingThrows: []constants.Ability{constants.STR, constants.CON},
-		ArmorProficiencies: []string{"light", "medium", "heavy", "shields"},
+		SavingThrows:        []constants.Ability{constants.STR, constants.CON},
+		ArmorProficiencies:  []string{"light", "medium", "heavy", "shields"},
 		WeaponProficiencies: []string{"simple", "martial"},
 	}
 
@@ -130,7 +130,7 @@ func (s *HandlerListClassesTestSuite) TestListClasses_WithChoices() {
 	fighter := resp.Classes[0]
 	s.Equal("fighter", fighter.Id)
 	s.Equal("Fighter", fighter.Name)
-	
+
 	// Verify choices are populated
 	s.Require().Len(fighter.Choices, 3, "Should have 3 choices: 1 skill choice and 2 equipment choices")
 
@@ -140,12 +140,12 @@ func (s *HandlerListClassesTestSuite) TestListClasses_WithChoices() {
 	s.Equal("Choose 2 skills", skillChoice.Description)
 	s.Equal(int32(2), skillChoice.ChooseCount)
 	s.Equal(dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_SKILLS, skillChoice.ChoiceType)
-	
+
 	// Verify skill options
 	explicitOpts := skillChoice.GetExplicitOptions()
 	s.Require().NotNil(explicitOpts)
 	s.Len(explicitOpts.Options, 8, "Fighter should have 8 skill options")
-	
+
 	// Check first skill option
 	firstSkill := explicitOpts.Options[0].GetItem()
 	s.Require().NotNil(firstSkill)
@@ -158,17 +158,17 @@ func (s *HandlerListClassesTestSuite) TestListClasses_WithChoices() {
 	s.Equal("Starting equipment choice 1", equipChoice1.Description)
 	s.Equal(int32(1), equipChoice1.ChooseCount)
 	s.Equal(dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_EQUIPMENT, equipChoice1.ChoiceType)
-	
+
 	// Verify equipment options
 	equipOpts1 := equipChoice1.GetExplicitOptions()
 	s.Require().NotNil(equipOpts1)
 	s.Len(equipOpts1.Options, 2, "Should have 2 equipment options")
-	
+
 	// Check bundle option (martial weapon + shield)
 	bundleOpt := equipOpts1.Options[0].GetBundle()
 	s.Require().NotNil(bundleOpt)
 	s.Len(bundleOpt.Items, 2, "Bundle should have 2 items")
-	
+
 	// Check first item in bundle
 	firstBundleItem := bundleOpt.Items[0].GetConcreteItem()
 	s.Require().NotNil(firstBundleItem)
