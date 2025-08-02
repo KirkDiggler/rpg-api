@@ -210,12 +210,30 @@ func (c *client) convertClassToHybrid(apiClass *entities.Class) (*class.Data, *C
 							// Nested choice in bundle (like "choose a martial weapon")
 							categoryID := detectEquipmentCategory(bundleItem.Description)
 							if categoryID != "" {
-								// This is an equipment category choice
-								// For bundles, we'll add a placeholder that indicates it's a category choice
-								items = append(items, class.EquipmentData{
-									ItemID:   fmt.Sprintf("category-%s-choice", categoryID),
-									Quantity: bundleItem.ChoiceCount,
-								})
+								// Fetch and expand the equipment category
+								equipmentCategory, err := c.dnd5eClient.GetEquipmentCategory(categoryID)
+								if err != nil {
+									slog.Warn("Failed to fetch equipment category in bundle",
+										"category", categoryID,
+										"description", bundleItem.Description,
+										"error", err)
+									// Fall back to placeholder
+									items = append(items, class.EquipmentData{
+										ItemID:   fmt.Sprintf("category-%s-error", categoryID),
+										Quantity: bundleItem.ChoiceCount,
+									})
+								} else {
+									// Add all items from the category to the bundle
+									// Note: This duplicates items if the same category appears multiple times
+									for _, eq := range equipmentCategory.Equipment {
+										if eq != nil {
+											items = append(items, class.EquipmentData{
+												ItemID:   eq.Key,
+												Quantity: 1, // Each weapon is quantity 1, user chooses bundleItem.ChoiceCount of them
+											})
+										}
+									}
+								}
 							} else {
 								// Not a category - add placeholder
 								items = append(items, class.EquipmentData{
