@@ -3,9 +3,10 @@ package external
 import (
 	"testing"
 
-	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/constants"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/constants"
 )
 
 func TestConvertKeyToClassID(t *testing.T) {
@@ -50,7 +51,7 @@ func TestConvertKeyToClassID(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			classID, err := convertKeyToClassID(tc.key)
-			
+
 			if tc.wantErr {
 				require.Error(t, err)
 				assert.Contains(t, err.Error(), "unknown class key")
@@ -104,7 +105,7 @@ func TestConvertKeyToRaceID(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			raceID, err := convertKeyToRaceID(tc.key)
-			
+
 			if tc.wantErr {
 				require.Error(t, err)
 				assert.Contains(t, err.Error(), "unknown race key")

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/fadedpez/dnd5e-api/entities"
+
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/class"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/constants"
 )
@@ -21,8 +22,8 @@ func convertClassToHybrid(apiClass *entities.Class) (*class.Data, *ClassUIData) 
 	if err != nil {
 		// Log warning but continue with the raw key
 		// This allows us to handle new classes from the API that we don't have constants for yet
-		slog.Warn("Unknown class key from API, using raw key", 
-			"key", apiClass.Key, 
+		slog.Warn("Unknown class key from API, using raw key",
+			"key", apiClass.Key,
 			"name", apiClass.Name,
 			"error", err)
 		classID = constants.Class(apiClass.Key)
@@ -97,7 +98,7 @@ func convertClassToHybrid(apiClass *entities.Class) (*class.Data, *ClassUIData) 
 			ID:     generateSlug(choice.Description),
 			Choose: choice.ChoiceCount,
 		}
-		
+
 		// Extract options
 		if choice.OptionList != nil {
 			optionIndex := 0
@@ -152,7 +153,7 @@ func convertClassToHybrid(apiClass *entities.Class) (*class.Data, *ClassUIData) 
 				optionIndex++
 			}
 		}
-		
+
 		toolkitData.EquipmentChoices[i] = choiceData
 	}
 

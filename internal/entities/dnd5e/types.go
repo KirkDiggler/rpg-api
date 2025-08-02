@@ -189,16 +189,16 @@ type InventoryItem struct {
 
 // EquipmentSlots represents equipped items
 type EquipmentSlots struct {
-	MainHand    *InventoryItem
-	OffHand     *InventoryItem
-	Armor       *InventoryItem
-	Helm        *InventoryItem
-	Gloves      *InventoryItem
-	Boots       *InventoryItem
-	Ring1       *InventoryItem
-	Ring2       *InventoryItem
-	Cloak       *InventoryItem
-	Amulet      *InventoryItem
+	MainHand *InventoryItem
+	OffHand  *InventoryItem
+	Armor    *InventoryItem
+	Helm     *InventoryItem
+	Gloves   *InventoryItem
+	Boots    *InventoryItem
+	Ring1    *InventoryItem
+	Ring2    *InventoryItem
+	Cloak    *InventoryItem
+	Amulet   *InventoryItem
 }
 
 // EncumbranceInfo represents character encumbrance
@@ -210,4 +210,3 @@ type EncumbranceInfo struct {
 	Encumbered        bool
 	HeavilyEncumbered bool
 }
-

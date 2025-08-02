@@ -240,7 +240,38 @@ func (h *Handler) UpdateClass(
 	ctx context.Context,
 	req *dnd5ev1alpha1.UpdateClassRequest,
 ) (*dnd5ev1alpha1.UpdateClassResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "not implemented")
+	// Convert proto class to toolkit class ID
+	classID := convertProtoClassToToolkitID(req.Class)
+	if classID == "" {
+		return nil, status.Error(codes.InvalidArgument, "invalid class")
+	}
+
+	// Convert proto choices to toolkit choices
+	var choices []toolkitchar.ChoiceData
+	for _, protoChoice := range req.ClassChoices {
+		choices = append(choices, convertProtoChoiceSelectionToToolkit(protoChoice))
+	}
+
+	// Call orchestrator
+	output, err := h.characterService.UpdateClass(ctx, &character.UpdateClassInput{
+		DraftID: req.DraftId,
+		ClassID: classID,
+		Choices: choices,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert response
+	protoDraft := convertDraftDataToProto(output.Draft)
+
+	// Convert warnings - no conversion needed for now
+	var warnings []*dnd5ev1alpha1.ValidationWarning
+
+	return &dnd5ev1alpha1.UpdateClassResponse{
+		Draft:    protoDraft,
+		Warnings: warnings,
+	}, nil
 }
 
 // UpdateBackground updates the background of a character draft
@@ -248,7 +279,38 @@ func (h *Handler) UpdateBackground(
 	ctx context.Context,
 	req *dnd5ev1alpha1.UpdateBackgroundRequest,
 ) (*dnd5ev1alpha1.UpdateBackgroundResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "not implemented")
+	// Convert proto background to toolkit background ID
+	backgroundID := convertProtoBackgroundToToolkitID(req.Background)
+	if backgroundID == "" {
+		return nil, status.Error(codes.InvalidArgument, "invalid background")
+	}
+
+	// Convert proto choices to toolkit choices
+	var choices []toolkitchar.ChoiceData
+	for _, protoChoice := range req.BackgroundChoices {
+		choices = append(choices, convertProtoChoiceSelectionToToolkit(protoChoice))
+	}
+
+	// Call orchestrator
+	output, err := h.characterService.UpdateBackground(ctx, &character.UpdateBackgroundInput{
+		DraftID:      req.DraftId,
+		BackgroundID: backgroundID,
+		Choices:      choices,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert response
+	protoDraft := convertDraftDataToProto(output.Draft)
+
+	// Convert warnings - no conversion needed for now
+	var warnings []*dnd5ev1alpha1.ValidationWarning
+
+	return &dnd5ev1alpha1.UpdateBackgroundResponse{
+		Draft:    protoDraft,
+		Warnings: warnings,
+	}, nil
 }
 
 // UpdateAbilityScores updates the ability scores of a character draft
@@ -414,7 +476,48 @@ func (h *Handler) RollAbilityScores(
 	ctx context.Context,
 	req *dnd5ev1alpha1.RollAbilityScoresRequest,
 ) (*dnd5ev1alpha1.RollAbilityScoresResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "not implemented")
+	// Validate input
+	if req.DraftId == "" {
+		return nil, status.Error(codes.InvalidArgument, "draft_id is required")
+	}
+
+	// Call the character service to roll ability scores
+	output, err := h.characterService.RollAbilityScores(ctx, &character.RollAbilityScoresInput{
+		DraftID: req.DraftId,
+	})
+	if err != nil {
+		// Check for specific error types
+		if errors.IsNotFound(err) {
+			return nil, status.Error(codes.NotFound, err.Error())
+		}
+		if errors.IsInvalidArgument(err) {
+			return nil, status.Error(codes.InvalidArgument, err.Error())
+		}
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	// Convert rolls to proto format
+	protoRolls := make([]*dnd5ev1alpha1.AbilityScoreRoll, 0, len(output.Rolls))
+	for _, roll := range output.Rolls {
+		var dropped int32
+		if len(roll.Dropped) > 0 {
+			dropped = roll.Dropped[0] // Take the first dropped die
+		}
+		
+		protoRoll := &dnd5ev1alpha1.AbilityScoreRoll{
+			RollId:   roll.RollID,
+			Dice:     roll.Dice,
+			Total:    roll.Total,
+			Dropped:  dropped,
+			Notation: roll.Description,
+		}
+		protoRolls = append(protoRolls, protoRoll)
+	}
+
+	return &dnd5ev1alpha1.RollAbilityScoresResponse{
+		Rolls:     protoRolls,
+		ExpiresAt: output.ExpiresAt.Unix(),
+	}, nil
 }
 
 // ListEquipmentByType lists equipment by type
@@ -529,8 +632,26 @@ func convertDraftDataToProto(draft *toolkitchar.DraftData) *dnd5ev1alpha1.Charac
 	// Convert choices
 	protoDraft.Choices = convertToolkitChoicesToProto(draft.Choices)
 
-	// TODO: Convert race, class, background, and ability scores when we have proper info objects
-	// For now, we rely on the choices being properly converted above
+	// Populate enum fields with the actual stored values
+	if draft.RaceChoice.RaceID != "" {
+		protoDraft.RaceId = convertToolkitRaceToProtoEnum(draft.RaceChoice.RaceID)
+		if draft.RaceChoice.SubraceID != "" {
+			protoDraft.SubraceId = convertToolkitSubraceToProtoEnum(draft.RaceChoice.SubraceID)
+		}
+	}
+
+	if draft.ClassChoice.ClassID != "" {
+		protoDraft.ClassId = convertToolkitClassToProtoEnum(draft.ClassChoice.ClassID)
+	}
+
+	if draft.BackgroundChoice != "" {
+		protoDraft.BackgroundId = convertToolkitBackgroundToProtoEnum(draft.BackgroundChoice)
+	}
+
+	// Convert ability scores if present
+	if len(draft.AbilityScoreChoice) > 0 {
+		protoDraft.AbilityScores = convertToolkitAbilityScoresToProto(draft.AbilityScoreChoice)
+	}
 
 	return protoDraft
 }
@@ -540,7 +661,7 @@ func convertToolkitChoicesToProto(choices []toolkitchar.ChoiceData) []*dnd5ev1al
 	if len(choices) == 0 {
 		return nil
 	}
-	
+
 	protoChoices := make([]*dnd5ev1alpha1.ChoiceData, 0, len(choices))
 	for _, choice := range choices {
 		protoChoice := &dnd5ev1alpha1.ChoiceData{
@@ -548,7 +669,7 @@ func convertToolkitChoicesToProto(choices []toolkitchar.ChoiceData) []*dnd5ev1al
 			Source:   convertToolkitSourceToProto(choice.Source),
 			ChoiceId: choice.ChoiceID,
 		}
-		
+
 		// Convert selection based on category
 		switch choice.Category {
 		case shared.ChoiceSkills:
@@ -616,10 +737,10 @@ func convertToolkitChoicesToProto(choices []toolkitchar.ChoiceData) []*dnd5ev1al
 		default:
 			// For other types, no selection data
 		}
-		
+
 		protoChoices = append(protoChoices, protoChoice)
 	}
-	
+
 	return protoChoices
 }
 
@@ -671,6 +792,213 @@ func convertToolkitSourceToProto(source shared.ChoiceSource) dnd5ev1alpha1.Choic
 	}
 }
 
+// convertToolkitRaceToProtoEnum converts toolkit Race constant to proto Race enum
+func convertToolkitRaceToProtoEnum(raceID constants.Race) dnd5ev1alpha1.Race {
+	switch raceID {
+	case constants.RaceDragonborn:
+		return dnd5ev1alpha1.Race_RACE_DRAGONBORN
+	case constants.RaceDwarf:
+		return dnd5ev1alpha1.Race_RACE_DWARF
+	case constants.RaceElf:
+		return dnd5ev1alpha1.Race_RACE_ELF
+	case constants.RaceGnome:
+		return dnd5ev1alpha1.Race_RACE_GNOME
+	case constants.RaceHalfElf:
+		return dnd5ev1alpha1.Race_RACE_HALF_ELF
+	case constants.RaceHalfling:
+		return dnd5ev1alpha1.Race_RACE_HALFLING
+	case constants.RaceHalfOrc:
+		return dnd5ev1alpha1.Race_RACE_HALF_ORC
+	case constants.RaceHuman:
+		return dnd5ev1alpha1.Race_RACE_HUMAN
+	case constants.RaceTiefling:
+		return dnd5ev1alpha1.Race_RACE_TIEFLING
+	default:
+		return dnd5ev1alpha1.Race_RACE_UNSPECIFIED
+	}
+}
+
+// convertToolkitSubraceToProtoEnum converts toolkit Subrace constant to proto Subrace enum
+func convertToolkitSubraceToProtoEnum(subraceID constants.Subrace) dnd5ev1alpha1.Subrace {
+	switch subraceID {
+	case constants.SubraceMountainDwarf:
+		return dnd5ev1alpha1.Subrace_SUBRACE_MOUNTAIN_DWARF
+	case constants.SubraceHillDwarf:
+		return dnd5ev1alpha1.Subrace_SUBRACE_HILL_DWARF
+	case constants.SubraceHighElf:
+		return dnd5ev1alpha1.Subrace_SUBRACE_HIGH_ELF
+	case constants.SubraceWoodElf:
+		return dnd5ev1alpha1.Subrace_SUBRACE_WOOD_ELF
+	case constants.SubraceDarkElf:
+		return dnd5ev1alpha1.Subrace_SUBRACE_DARK_ELF
+	case constants.SubraceLightfootHalfling:
+		return dnd5ev1alpha1.Subrace_SUBRACE_LIGHTFOOT_HALFLING
+	case constants.SubraceStoutHalfling:
+		return dnd5ev1alpha1.Subrace_SUBRACE_STOUT_HALFLING
+	case constants.SubraceForestGnome:
+		return dnd5ev1alpha1.Subrace_SUBRACE_FOREST_GNOME
+	case constants.SubraceRockGnome:
+		return dnd5ev1alpha1.Subrace_SUBRACE_ROCK_GNOME
+	default:
+		return dnd5ev1alpha1.Subrace_SUBRACE_UNSPECIFIED
+	}
+}
+
+// convertToolkitClassToProtoEnum converts toolkit Class constant to proto Class enum
+func convertToolkitClassToProtoEnum(classID constants.Class) dnd5ev1alpha1.Class {
+	switch classID {
+	case constants.ClassBarbarian:
+		return dnd5ev1alpha1.Class_CLASS_BARBARIAN
+	case constants.ClassBard:
+		return dnd5ev1alpha1.Class_CLASS_BARD
+	case constants.ClassCleric:
+		return dnd5ev1alpha1.Class_CLASS_CLERIC
+	case constants.ClassDruid:
+		return dnd5ev1alpha1.Class_CLASS_DRUID
+	case constants.ClassFighter:
+		return dnd5ev1alpha1.Class_CLASS_FIGHTER
+	case constants.ClassMonk:
+		return dnd5ev1alpha1.Class_CLASS_MONK
+	case constants.ClassPaladin:
+		return dnd5ev1alpha1.Class_CLASS_PALADIN
+	case constants.ClassRanger:
+		return dnd5ev1alpha1.Class_CLASS_RANGER
+	case constants.ClassRogue:
+		return dnd5ev1alpha1.Class_CLASS_ROGUE
+	case constants.ClassSorcerer:
+		return dnd5ev1alpha1.Class_CLASS_SORCERER
+	case constants.ClassWarlock:
+		return dnd5ev1alpha1.Class_CLASS_WARLOCK
+	case constants.ClassWizard:
+		return dnd5ev1alpha1.Class_CLASS_WIZARD
+	default:
+		return dnd5ev1alpha1.Class_CLASS_UNSPECIFIED
+	}
+}
+
+// convertProtoClassToToolkitID converts proto Class enum to toolkit class ID string
+func convertProtoClassToToolkitID(class dnd5ev1alpha1.Class) string {
+	switch class {
+	case dnd5ev1alpha1.Class_CLASS_BARBARIAN:
+		return string(constants.ClassBarbarian)
+	case dnd5ev1alpha1.Class_CLASS_BARD:
+		return string(constants.ClassBard)
+	case dnd5ev1alpha1.Class_CLASS_CLERIC:
+		return string(constants.ClassCleric)
+	case dnd5ev1alpha1.Class_CLASS_DRUID:
+		return string(constants.ClassDruid)
+	case dnd5ev1alpha1.Class_CLASS_FIGHTER:
+		return string(constants.ClassFighter)
+	case dnd5ev1alpha1.Class_CLASS_MONK:
+		return string(constants.ClassMonk)
+	case dnd5ev1alpha1.Class_CLASS_PALADIN:
+		return string(constants.ClassPaladin)
+	case dnd5ev1alpha1.Class_CLASS_RANGER:
+		return string(constants.ClassRanger)
+	case dnd5ev1alpha1.Class_CLASS_ROGUE:
+		return string(constants.ClassRogue)
+	case dnd5ev1alpha1.Class_CLASS_SORCERER:
+		return string(constants.ClassSorcerer)
+	case dnd5ev1alpha1.Class_CLASS_WARLOCK:
+		return string(constants.ClassWarlock)
+	case dnd5ev1alpha1.Class_CLASS_WIZARD:
+		return string(constants.ClassWizard)
+	default:
+		return ""
+	}
+}
+
+// convertProtoBackgroundToToolkitID converts proto Background enum to toolkit background ID string
+func convertProtoBackgroundToToolkitID(background dnd5ev1alpha1.Background) string {
+	switch background {
+	case dnd5ev1alpha1.Background_BACKGROUND_ACOLYTE:
+		return string(constants.BackgroundAcolyte)
+	case dnd5ev1alpha1.Background_BACKGROUND_CHARLATAN:
+		return string(constants.BackgroundCharlatan)
+	case dnd5ev1alpha1.Background_BACKGROUND_CRIMINAL:
+		return string(constants.BackgroundCriminal)
+	case dnd5ev1alpha1.Background_BACKGROUND_ENTERTAINER:
+		return string(constants.BackgroundEntertainer)
+	case dnd5ev1alpha1.Background_BACKGROUND_FOLK_HERO:
+		return string(constants.BackgroundFolkHero)
+	case dnd5ev1alpha1.Background_BACKGROUND_GUILD_ARTISAN:
+		return string(constants.BackgroundGuildArtisan)
+	case dnd5ev1alpha1.Background_BACKGROUND_HERMIT:
+		return string(constants.BackgroundHermit)
+	case dnd5ev1alpha1.Background_BACKGROUND_NOBLE:
+		return string(constants.BackgroundNoble)
+	case dnd5ev1alpha1.Background_BACKGROUND_OUTLANDER:
+		return string(constants.BackgroundOutlander)
+	case dnd5ev1alpha1.Background_BACKGROUND_SAGE:
+		return string(constants.BackgroundSage)
+	case dnd5ev1alpha1.Background_BACKGROUND_SAILOR:
+		return string(constants.BackgroundSailor)
+	case dnd5ev1alpha1.Background_BACKGROUND_SOLDIER:
+		return string(constants.BackgroundSoldier)
+	case dnd5ev1alpha1.Background_BACKGROUND_URCHIN:
+		return string(constants.BackgroundUrchin)
+	default:
+		return ""
+	}
+}
+
+// convertToolkitBackgroundToProtoEnum converts toolkit Background constant to proto Background enum
+func convertToolkitBackgroundToProtoEnum(backgroundID constants.Background) dnd5ev1alpha1.Background {
+	switch backgroundID {
+	case constants.BackgroundAcolyte:
+		return dnd5ev1alpha1.Background_BACKGROUND_ACOLYTE
+	case constants.BackgroundCharlatan:
+		return dnd5ev1alpha1.Background_BACKGROUND_CHARLATAN
+	case constants.BackgroundCriminal:
+		return dnd5ev1alpha1.Background_BACKGROUND_CRIMINAL
+	case constants.BackgroundEntertainer:
+		return dnd5ev1alpha1.Background_BACKGROUND_ENTERTAINER
+	case constants.BackgroundFolkHero:
+		return dnd5ev1alpha1.Background_BACKGROUND_FOLK_HERO
+	case constants.BackgroundGuildArtisan:
+		return dnd5ev1alpha1.Background_BACKGROUND_GUILD_ARTISAN
+	case constants.BackgroundHermit:
+		return dnd5ev1alpha1.Background_BACKGROUND_HERMIT
+	case constants.BackgroundNoble:
+		return dnd5ev1alpha1.Background_BACKGROUND_NOBLE
+	case constants.BackgroundOutlander:
+		return dnd5ev1alpha1.Background_BACKGROUND_OUTLANDER
+	case constants.BackgroundSage:
+		return dnd5ev1alpha1.Background_BACKGROUND_SAGE
+	case constants.BackgroundSailor:
+		return dnd5ev1alpha1.Background_BACKGROUND_SAILOR
+	case constants.BackgroundSoldier:
+		return dnd5ev1alpha1.Background_BACKGROUND_SOLDIER
+	case constants.BackgroundUrchin:
+		return dnd5ev1alpha1.Background_BACKGROUND_URCHIN
+	default:
+		return dnd5ev1alpha1.Background_BACKGROUND_UNSPECIFIED
+	}
+}
+
+// convertToolkitAbilityScoresToProto converts toolkit AbilityScores to proto AbilityScores
+func convertToolkitAbilityScoresToProto(scores shared.AbilityScores) *dnd5ev1alpha1.AbilityScores {
+	protoScores := &dnd5ev1alpha1.AbilityScores{}
+
+	for ability, value := range scores {
+		switch ability {
+		case constants.STR:
+			protoScores.Strength = int32(value)
+		case constants.DEX:
+			protoScores.Dexterity = int32(value)
+		case constants.CON:
+			protoScores.Constitution = int32(value)
+		case constants.INT:
+			protoScores.Intelligence = int32(value)
+		case constants.WIS:
+			protoScores.Wisdom = int32(value)
+		case constants.CHA:
+			protoScores.Charisma = int32(value)
+		}
+	}
+
+	return protoScores
+}
 
 // hasAbilityScores checks if ability scores have been set
 func hasAbilityScores(scores shared.AbilityScores) bool {
@@ -691,26 +1019,26 @@ func hasAbilityScores(scores shared.AbilityScores) bool {
 
 // convertProtoRaceToString converts proto Race enum to toolkit Race ID string
 func convertProtoRaceToString(race dnd5ev1alpha1.Race) string {
-	// Map proto enum to toolkit constants
+	// Map proto enum to toolkit constants - explicit mapping, no string assumptions
 	switch race {
 	case dnd5ev1alpha1.Race_RACE_DRAGONBORN:
-		return "RACE_DRAGONBORN"
+		return string(constants.RaceDragonborn)
 	case dnd5ev1alpha1.Race_RACE_DWARF:
-		return "RACE_DWARF"
+		return string(constants.RaceDwarf)
 	case dnd5ev1alpha1.Race_RACE_ELF:
-		return "RACE_ELF"
+		return string(constants.RaceElf)
 	case dnd5ev1alpha1.Race_RACE_GNOME:
-		return "RACE_GNOME"
+		return string(constants.RaceGnome)
 	case dnd5ev1alpha1.Race_RACE_HALF_ELF:
-		return "RACE_HALF_ELF"
+		return string(constants.RaceHalfElf)
 	case dnd5ev1alpha1.Race_RACE_HALFLING:
-		return "RACE_HALFLING"
+		return string(constants.RaceHalfling)
 	case dnd5ev1alpha1.Race_RACE_HALF_ORC:
-		return "RACE_HALF_ORC"
+		return string(constants.RaceHalfOrc)
 	case dnd5ev1alpha1.Race_RACE_HUMAN:
-		return "RACE_HUMAN"
+		return string(constants.RaceHuman)
 	case dnd5ev1alpha1.Race_RACE_TIEFLING:
-		return "RACE_TIEFLING"
+		return string(constants.RaceTiefling)
 	default:
 		return ""
 	}
@@ -718,29 +1046,90 @@ func convertProtoRaceToString(race dnd5ev1alpha1.Race) string {
 
 // convertProtoSubraceToString converts proto Subrace enum to toolkit Subrace ID string
 func convertProtoSubraceToString(subrace dnd5ev1alpha1.Subrace) string {
-	// Map proto enum to toolkit constants
+	// Map proto enum to toolkit constants - explicit mapping, no string assumptions
 	switch subrace {
 	case dnd5ev1alpha1.Subrace_SUBRACE_HILL_DWARF:
-		return "SUBRACE_HILL_DWARF"
+		return string(constants.SubraceHillDwarf)
 	case dnd5ev1alpha1.Subrace_SUBRACE_MOUNTAIN_DWARF:
-		return "SUBRACE_MOUNTAIN_DWARF"
+		return string(constants.SubraceMountainDwarf)
 	case dnd5ev1alpha1.Subrace_SUBRACE_HIGH_ELF:
-		return "SUBRACE_HIGH_ELF"
+		return string(constants.SubraceHighElf)
 	case dnd5ev1alpha1.Subrace_SUBRACE_WOOD_ELF:
-		return "SUBRACE_WOOD_ELF"
+		return string(constants.SubraceWoodElf)
 	case dnd5ev1alpha1.Subrace_SUBRACE_DARK_ELF:
-		return "SUBRACE_DARK_ELF"
+		return string(constants.SubraceDarkElf)
 	case dnd5ev1alpha1.Subrace_SUBRACE_FOREST_GNOME:
-		return "SUBRACE_FOREST_GNOME"
+		return string(constants.SubraceForestGnome)
 	case dnd5ev1alpha1.Subrace_SUBRACE_ROCK_GNOME:
-		return "SUBRACE_ROCK_GNOME"
+		return string(constants.SubraceRockGnome)
 	case dnd5ev1alpha1.Subrace_SUBRACE_LIGHTFOOT_HALFLING:
-		return "SUBRACE_LIGHTFOOT_HALFLING"
+		return string(constants.SubraceLightfootHalfling)
 	case dnd5ev1alpha1.Subrace_SUBRACE_STOUT_HALFLING:
-		return "SUBRACE_STOUT_HALFLING"
+		return string(constants.SubraceStoutHalfling)
 	default:
 		return ""
 	}
+}
+
+// convertProtoChoiceSelectionToToolkit converts a single proto ChoiceSelection to toolkit ChoiceData
+func convertProtoChoiceSelectionToToolkit(pc *dnd5ev1alpha1.ChoiceSelection) toolkitchar.ChoiceData {
+	if pc == nil {
+		return toolkitchar.ChoiceData{}
+	}
+
+	// Try to infer choice type from choice ID if not specified
+	choiceType := pc.GetChoiceType()
+	if choiceType == dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_UNSPECIFIED {
+		// Infer from choice ID
+		switch pc.GetChoiceId() {
+		case "language_choice":
+			choiceType = dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_LANGUAGES
+		case "skill_choice":
+			choiceType = dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_SKILLS
+		case "tool_choice":
+			choiceType = dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_TOOLS
+		}
+	}
+
+	choice := toolkitchar.ChoiceData{
+		ChoiceID: pc.GetChoiceId(),
+		Category: convertProtoCategoryToToolkit(choiceType),
+		Source:   convertProtoSourceToToolkit(pc.GetSource()),
+	}
+
+	// Convert based on choice type
+	switch choiceType {
+	case dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_SKILLS:
+		// Convert selected keys to skill constants
+		skills := make([]constants.Skill, 0, len(pc.GetSelectedKeys()))
+		for _, sk := range pc.GetSelectedKeys() {
+			skills = append(skills, constants.Skill(sk))
+		}
+		choice.SkillSelection = skills
+	case dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_LANGUAGES:
+		// Convert selected keys to language constants
+		languages := make([]constants.Language, 0, len(pc.GetSelectedKeys()))
+		for _, lk := range pc.GetSelectedKeys() {
+			languages = append(languages, constants.Language(lk))
+		}
+		choice.LanguageSelection = languages
+	case dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_ABILITY_SCORES:
+		// Handle ability score choices if present
+		if len(pc.GetAbilityScoreChoices()) > 0 {
+			scores := make(shared.AbilityScores)
+			for _, asc := range pc.GetAbilityScoreChoices() {
+				// Convert proto ability to toolkit ability
+				ability := convertProtoAbilityToString(asc.GetAbility())
+				scores[constants.Ability(ability)] = int(asc.GetBonus())
+			}
+			choice.AbilityScoreSelection = &scores
+		}
+	default:
+		// For other types, store selected keys as equipment
+		choice.EquipmentSelection = pc.GetSelectedKeys()
+	}
+
+	return choice
 }
 
 // convertProtoRaceChoicesToToolkit converts proto ChoiceSelection to toolkit ChoiceData
@@ -751,59 +1140,7 @@ func convertProtoRaceChoicesToToolkit(protoChoices []*dnd5ev1alpha1.ChoiceSelect
 
 	toolkitChoices := make([]toolkitchar.ChoiceData, 0, len(protoChoices))
 	for _, pc := range protoChoices {
-		// Try to infer choice type from choice ID if not specified
-		choiceType := pc.GetChoiceType()
-		if choiceType == dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_UNSPECIFIED {
-			// Infer from choice ID
-			switch pc.GetChoiceId() {
-			case "language_choice":
-				choiceType = dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_LANGUAGES
-			case "skill_choice":
-				choiceType = dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_SKILLS
-			case "tool_choice":
-				choiceType = dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_TOOLS
-			}
-		}
-		
-		choice := toolkitchar.ChoiceData{
-			ChoiceID: pc.GetChoiceId(),
-			Category: convertProtoCategoryToToolkit(choiceType),
-			Source:   convertProtoSourceToToolkit(pc.GetSource()),
-		}
-
-		// Convert based on choice type
-		switch choiceType {
-		case dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_SKILLS:
-			// Convert selected keys to skill constants
-			skills := make([]constants.Skill, 0, len(pc.GetSelectedKeys()))
-			for _, sk := range pc.GetSelectedKeys() {
-				skills = append(skills, constants.Skill(sk))
-			}
-			choice.SkillSelection = skills
-		case dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_LANGUAGES:
-			// Convert selected keys to language constants
-			languages := make([]constants.Language, 0, len(pc.GetSelectedKeys()))
-			for _, lk := range pc.GetSelectedKeys() {
-				languages = append(languages, constants.Language(lk))
-			}
-			choice.LanguageSelection = languages
-		case dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_ABILITY_SCORES:
-			// Handle ability score choices if present
-			if len(pc.GetAbilityScoreChoices()) > 0 {
-				scores := make(shared.AbilityScores)
-				for _, asc := range pc.GetAbilityScoreChoices() {
-					// Convert proto ability to toolkit ability
-					ability := convertProtoAbilityToString(asc.GetAbility())
-					scores[constants.Ability(ability)] = int(asc.GetBonus())
-				}
-				choice.AbilityScoreSelection = &scores
-			}
-		default:
-			// For other types, store selected keys as equipment
-			choice.EquipmentSelection = pc.GetSelectedKeys()
-		}
-
-		toolkitChoices = append(toolkitChoices, choice)
+		toolkitChoices = append(toolkitChoices, convertProtoChoiceSelectionToToolkit(pc))
 	}
 	return toolkitChoices
 }
@@ -886,7 +1223,7 @@ func convertRaceDataToProtoInfo(raceData *race.Data, uiData *external.RaceUIData
 		Size:        convertSizeStringToProto(raceData.Size),
 		Description: raceData.Description,
 	}
-	
+
 	if uiData != nil {
 		// Use UI data for additional descriptions
 		info.AgeDescription = uiData.AgeDescription
@@ -933,17 +1270,17 @@ func convertRaceDataToProtoInfo(raceData *race.Data, uiData *external.RaceUIData
 
 	// Convert choices
 	info.Choices = make([]*dnd5ev1alpha1.Choice, 0)
-	
+
 	// Add language choice if present
 	if raceData.LanguageChoice != nil {
 		info.Choices = append(info.Choices, convertRaceChoiceToProto(raceData.LanguageChoice))
 	}
-	
-	// Add skill choice if present  
+
+	// Add skill choice if present
 	if raceData.SkillChoice != nil {
 		info.Choices = append(info.Choices, convertRaceChoiceToProto(raceData.SkillChoice))
 	}
-	
+
 	// Add tool choice if present
 	if raceData.ToolChoice != nil {
 		info.Choices = append(info.Choices, convertRaceChoiceToProto(raceData.ToolChoice))
@@ -1040,7 +1377,7 @@ func convertClassDataToProtoInfo(classData *class.Data, uiData *external.ClassUI
 		Description: classData.Description,
 		HitDie:      fmt.Sprintf("1d%d", classData.HitDice),
 	}
-	
+
 	if uiData != nil {
 		info.Description = uiData.Description
 	}
@@ -1106,13 +1443,13 @@ func convertRaceChoiceToProto(choice *race.ChoiceData) *dnd5ev1alpha1.Choice {
 	if choice == nil {
 		return nil
 	}
-	
+
 	protoChoice := &dnd5ev1alpha1.Choice{
 		Id:          choice.ID,
 		Description: choice.Description,
 		ChooseCount: int32(choice.Choose),
 	}
-	
+
 	// Convert choice type to category
 	switch choice.Type {
 	case "language":
@@ -1127,7 +1464,7 @@ func convertRaceChoiceToProto(choice *race.ChoiceData) *dnd5ev1alpha1.Choice {
 	default:
 		protoChoice.ChoiceType = dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_UNSPECIFIED
 	}
-	
+
 	// Build explicit options from the From field
 	if len(choice.From) > 0 {
 		options := make([]*dnd5ev1alpha1.ChoiceOption, 0, len(choice.From))
@@ -1147,7 +1484,7 @@ func convertRaceChoiceToProto(choice *race.ChoiceData) *dnd5ev1alpha1.Choice {
 			},
 		}
 	}
-	
+
 	return protoChoice
 }
 

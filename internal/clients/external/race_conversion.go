@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/fadedpez/dnd5e-api/entities"
+
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/constants"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/race"
 )
@@ -21,8 +22,8 @@ func convertRaceToHybrid(apiRace *entities.Race) (*race.Data, *RaceUIData) {
 	if err != nil {
 		// Log warning but continue with the raw key
 		// This allows us to handle new races from the API that we don't have constants for yet
-		slog.Warn("Unknown race key from API, using raw key", 
-			"key", apiRace.Key, 
+		slog.Warn("Unknown race key from API, using raw key",
+			"key", apiRace.Key,
 			"name", apiRace.Name,
 			"error", err)
 		raceID = constants.Race(apiRace.Key)

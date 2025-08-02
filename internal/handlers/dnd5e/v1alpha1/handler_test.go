@@ -20,15 +20,15 @@ import (
 
 type HandlerTestSuite struct {
 	suite.Suite
-	ctrl             *gomock.Controller
-	mockCharService  *charactermock.MockService
-	handler          *v1alpha1.Handler
-	ctx              context.Context
-	
+	ctrl            *gomock.Controller
+	mockCharService *charactermock.MockService
+	handler         *v1alpha1.Handler
+	ctx             context.Context
+
 	// Test data
-	testDraftData    *toolkitchar.DraftData
-	testDraftID      string
-	testPlayerID     string
+	testDraftData *toolkitchar.DraftData
+	testDraftID   string
+	testPlayerID  string
 }
 
 func (s *HandlerTestSuite) SetupTest() {
@@ -41,7 +41,7 @@ func (s *HandlerTestSuite) SetupTest() {
 	})
 	s.Require().NoError(err)
 	s.handler = handler
-	
+
 	// Initialize test data
 	s.setupTestData()
 }
@@ -98,7 +98,7 @@ func (s *HandlerTestSuite) TestGetDraft_EmptyDraftID() {
 	// Assert error
 	s.Error(err)
 	s.Nil(resp)
-	
+
 	st, ok := status.FromError(err)
 	s.True(ok)
 	s.Equal(codes.InvalidArgument, st.Code())
@@ -107,7 +107,7 @@ func (s *HandlerTestSuite) TestGetDraft_EmptyDraftID() {
 
 func (s *HandlerTestSuite) TestGetDraft_NotFound() {
 	draftID := "draft-notfound"
-	
+
 	// Mock orchestrator response
 	s.mockCharService.EXPECT().
 		GetDraft(s.ctx, &character.GetDraftInput{
@@ -123,7 +123,7 @@ func (s *HandlerTestSuite) TestGetDraft_NotFound() {
 	// Assert error
 	s.Error(err)
 	s.Nil(resp)
-	
+
 	st, ok := status.FromError(err)
 	s.True(ok)
 	s.Equal(codes.NotFound, st.Code())
@@ -175,18 +175,18 @@ func (s *HandlerTestSuite) TestGetDraft_MultipleScenarios() {
 	for _, tc := range testCases {
 		s.Run(tc.name, func() {
 			// SetupSubTest() is called automatically here, resetting test data
-			
+
 			// Modify test data for this specific scenario
 			tc.modifyData()
-			
+
 			// Setup mock expectations
 			tc.setupMock()
-			
+
 			// Call handler
 			resp, err := s.handler.GetDraft(s.ctx, &dnd5ev1alpha1.GetDraftRequest{
 				DraftId: s.testDraftID,
 			})
-			
+
 			// Assert
 			if tc.expectError {
 				s.Error(err)
@@ -206,7 +206,7 @@ func (s *HandlerTestSuite) TestGetDraft_MultipleScenarios() {
 func (s *HandlerTestSuite) TestCreateDraft_Success() {
 	playerID := "player-123"
 	draftID := "draft-456"
-	
+
 	// Mock orchestrator response
 	s.mockCharService.EXPECT().
 		CreateDraft(s.ctx, &character.CreateDraftInput{
@@ -238,7 +238,7 @@ func (s *HandlerTestSuite) TestCreateDraft_WithInitialData() {
 	playerID := "player-789"
 	draftID := "draft-012"
 	draftName := "Gimli"
-	
+
 	// Mock orchestrator response with initial data
 	s.mockCharService.EXPECT().
 		CreateDraft(s.ctx, &character.CreateDraftInput{
@@ -276,7 +276,7 @@ func (s *HandlerTestSuite) TestCreateDraft_WithSessionID() {
 	playerID := "player-345"
 	sessionID := "session-678"
 	draftID := "draft-901"
-	
+
 	// Mock orchestrator response with session ID
 	s.mockCharService.EXPECT().
 		CreateDraft(s.ctx, &character.CreateDraftInput{
@@ -312,7 +312,7 @@ func (s *HandlerTestSuite) TestCreateDraft_EmptyPlayerID() {
 	// Assert error
 	s.Error(err)
 	s.Nil(resp)
-	
+
 	st, ok := status.FromError(err)
 	s.True(ok)
 	s.Equal(codes.InvalidArgument, st.Code())
@@ -321,7 +321,7 @@ func (s *HandlerTestSuite) TestCreateDraft_EmptyPlayerID() {
 
 func (s *HandlerTestSuite) TestCreateDraft_OrchestratorError() {
 	playerID := "player-error"
-	
+
 	// Mock orchestrator error
 	s.mockCharService.EXPECT().
 		CreateDraft(s.ctx, &character.CreateDraftInput{
@@ -337,7 +337,7 @@ func (s *HandlerTestSuite) TestCreateDraft_OrchestratorError() {
 	// Assert error
 	s.Error(err)
 	s.Nil(resp)
-	
+
 	st, ok := status.FromError(err)
 	s.True(ok)
 	s.Equal(codes.Internal, st.Code())
@@ -503,9 +503,9 @@ func (s *HandlerTestSuite) TestUpdateRace_Success() {
 
 	// Call handler
 	resp, err := s.handler.UpdateRace(s.ctx, &dnd5ev1alpha1.UpdateRaceRequest{
-		DraftId:   draftID,
-		Race:      dnd5ev1alpha1.Race_RACE_DWARF,
-		Subrace:   dnd5ev1alpha1.Subrace_SUBRACE_MOUNTAIN_DWARF,
+		DraftId: draftID,
+		Race:    dnd5ev1alpha1.Race_RACE_DWARF,
+		Subrace: dnd5ev1alpha1.Subrace_SUBRACE_MOUNTAIN_DWARF,
 	})
 
 	// Assert response
@@ -603,7 +603,7 @@ func (s *HandlerTestSuite) TestUpdateRace_InvalidArgument() {
 	// Assert error
 	s.Error(err)
 	s.Nil(resp)
-	
+
 	st, ok := status.FromError(err)
 	s.True(ok)
 	s.Equal(codes.InvalidArgument, st.Code())

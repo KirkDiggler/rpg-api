@@ -2,6 +2,7 @@ package character
 
 import (
 	"context"
+	"time"
 
 	"github.com/KirkDiggler/rpg-api/internal/clients/external"
 	"github.com/KirkDiggler/rpg-api/internal/entities/dnd5e"
@@ -50,13 +51,13 @@ type Service interface {
 
 	// Additional operations
 	RollAbilityScores(ctx context.Context, input *RollAbilityScoresInput) (*RollAbilityScoresOutput, error)
-	
+
 	// Additional operations
 	GetDraftPreview(ctx context.Context, input *GetDraftPreviewInput) (*GetDraftPreviewOutput, error)
 	GetFeature(ctx context.Context, input *GetFeatureInput) (*GetFeatureOutput, error)
 	ListSpellsByLevel(ctx context.Context, input *ListSpellsByLevelInput) (*ListSpellsByLevelOutput, error)
 	ListEquipmentByType(ctx context.Context, input *ListEquipmentByTypeInput) (*ListEquipmentByTypeOutput, error)
-	
+
 	// Inventory management
 	GetCharacterInventory(ctx context.Context, input *GetCharacterInventoryInput) (*GetCharacterInventoryOutput, error)
 	EquipItem(ctx context.Context, input *EquipItemInput) (*EquipItemOutput, error)
@@ -131,7 +132,7 @@ type UpdateNameOutput struct {
 type UpdateRaceInput struct {
 	DraftID   string
 	RaceID    string
-	SubraceID string                  // Optional
+	SubraceID string                 // Optional
 	Choices   []character.ChoiceData // Race-specific choices
 }
 
@@ -419,10 +420,10 @@ type UpdateChoicesOutput struct {
 
 // ListChoiceOptionsInput defines the request for listing available choice options
 type ListChoiceOptionsInput struct {
-	DraftID    string            // Required: Which draft to get choices for
+	DraftID    string                 // Required: Which draft to get choices for
 	ChoiceType *shared.ChoiceCategory // Optional: Filter by choice type
-	PageSize   int32             // Optional: Page size for pagination
-	PageToken  string            // Optional: Page token for pagination
+	PageSize   int32                  // Optional: Page size for pagination
+	PageToken  string                 // Optional: Page token for pagination
 }
 
 // ListChoiceOptionsOutput defines the response for listing choice options
@@ -445,7 +446,6 @@ type GetRaceDetailsOutput struct {
 	UIData *external.RaceUIData
 }
 
-
 // GetClassDetailsInput defines the request for getting class details
 type GetClassDetailsInput struct {
 	ClassID string
@@ -458,7 +458,6 @@ type GetClassDetailsOutput struct {
 	// UI/presentation data
 	UIData *external.ClassUIData
 }
-
 
 // GetBackgroundDetailsInput defines the request for getting background details
 type GetBackgroundDetailsInput struct {
@@ -482,18 +481,16 @@ type RollAbilityScoresInput struct {
 type RollAbilityScoresOutput struct {
 	Rolls     []*AbilityScoreRoll
 	SessionID string
-	ExpiresAt int64
+	ExpiresAt time.Time
 }
 
 // AbilityScoreRoll represents a single ability score roll with ID and value
 type AbilityScoreRoll struct {
-	ID          string
-	Value       int32
+	RollID      string
+	Total       int32
 	Description string
-	RolledAt    int64
 	Dice        []int32
 	Dropped     []int32
-	Notation    string
 }
 
 // Equipment management types

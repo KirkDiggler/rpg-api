@@ -193,7 +193,7 @@ func (c *client) GetRaceData(_ context.Context, raceID string) (*RaceDataOutput,
 
 	// Convert to both toolkit format and extract UI data
 	toolkitData, uiData := convertRaceToHybrid(apiRace)
-	
+
 	return &RaceDataOutput{
 		RaceData: toolkitData,
 		UIData:   uiData,
@@ -212,7 +212,7 @@ func (c *client) GetClassData(_ context.Context, classID string) (*ClassDataOutp
 
 	// Convert to both toolkit format and extract UI data
 	toolkitData, uiData := convertClassToHybrid(apiClass)
-	
+
 	return &ClassDataOutput{
 		ClassData: toolkitData,
 		UIData:    uiData,

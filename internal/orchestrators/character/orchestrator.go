@@ -47,11 +47,11 @@ func (c *Config) Validate() error {
 
 // Orchestrator implements the character service
 type Orchestrator struct {
-	charRepo      character.Repository
-	draftRepo     draftrepo.Repository
+	charRepo       character.Repository
+	draftRepo      draftrepo.Repository
 	externalClient external.Client
-	diceService   dice.Service
-	idGen         idgen.Generator
+	diceService    dice.Service
+	idGen          idgen.Generator
 }
 
 // New creates a new character orchestrator
@@ -61,11 +61,11 @@ func New(cfg *Config) (*Orchestrator, error) {
 	}
 
 	return &Orchestrator{
-		charRepo:      cfg.CharacterRepo,
-		draftRepo:     cfg.CharacterDraftRepo,
+		charRepo:       cfg.CharacterRepo,
+		draftRepo:      cfg.CharacterDraftRepo,
 		externalClient: cfg.ExternalClient,
-		diceService:   cfg.DiceService,
-		idGen:         cfg.IDGenerator,
+		diceService:    cfg.DiceService,
+		idGen:          cfg.IDGenerator,
 	}, nil
 }
 
@@ -225,7 +225,7 @@ func (o *Orchestrator) UpdateRace(ctx context.Context, input *UpdateRaceInput) (
 			nonRaceChoices = append(nonRaceChoices, choice)
 		}
 	}
-	
+
 	// Add new race choices if provided
 	if len(input.Choices) > 0 {
 		// Ensure all new choices have the race source set
@@ -256,11 +256,121 @@ func (o *Orchestrator) UpdateRace(ctx context.Context, input *UpdateRaceInput) (
 }
 
 func (o *Orchestrator) UpdateClass(ctx context.Context, input *UpdateClassInput) (*UpdateClassOutput, error) {
-	return nil, errors.Unimplemented("not implemented")
+	// Validate input
+	if input.DraftID == "" {
+		return nil, errors.InvalidArgument("draft ID is required")
+	}
+	if input.ClassID == "" {
+		return nil, errors.InvalidArgument("class ID is required")
+	}
+
+	// Get the existing draft
+	getDraftOutput, err := o.draftRepo.Get(ctx, draftrepo.GetInput{
+		ID: input.DraftID,
+	})
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to get draft %s", input.DraftID)
+	}
+
+	// Update the class choice
+	draft := getDraftOutput.Draft
+	draft.ClassChoice = toolkitchar.ClassChoice{
+		ClassID: constants.Class(input.ClassID),
+	}
+
+	// Always clear existing class choices when updating class
+	var nonClassChoices []toolkitchar.ChoiceData
+	for _, choice := range draft.Choices {
+		if choice.Source != shared.SourceClass {
+			nonClassChoices = append(nonClassChoices, choice)
+		}
+	}
+
+	// Add new class choices if provided
+	if len(input.Choices) > 0 {
+		// Ensure all new choices have the class source set
+		for i := range input.Choices {
+			if input.Choices[i].Source == "" {
+				input.Choices[i].Source = shared.SourceClass
+			}
+		}
+		draft.Choices = append(nonClassChoices, input.Choices...)
+	} else {
+		// No choices provided, just keep non-class choices
+		draft.Choices = nonClassChoices
+	}
+
+	// Save the updated draft
+	updateOutput, err := o.draftRepo.Update(ctx, draftrepo.UpdateInput{
+		Draft: draft,
+	})
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to update draft %s", input.DraftID)
+	}
+
+	// Return updated draft with any warnings
+	return &UpdateClassOutput{
+		Draft:    updateOutput.Draft,
+		Warnings: []ValidationWarning{}, // TODO: Add validation for class requirements
+	}, nil
 }
 
 func (o *Orchestrator) UpdateBackground(ctx context.Context, input *UpdateBackgroundInput) (*UpdateBackgroundOutput, error) {
-	return nil, errors.Unimplemented("not implemented")
+	// Validate input
+	if input.DraftID == "" {
+		return nil, errors.InvalidArgument("draft ID is required")
+	}
+	if input.BackgroundID == "" {
+		return nil, errors.InvalidArgument("background ID is required")
+	}
+
+	// Get the existing draft
+	getDraftOutput, err := o.draftRepo.Get(ctx, draftrepo.GetInput{
+		ID: input.DraftID,
+	})
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to get draft %s", input.DraftID)
+	}
+
+	// Update the background choice
+	draft := getDraftOutput.Draft
+	draft.BackgroundChoice = constants.Background(input.BackgroundID)
+
+	// Always clear existing background choices when updating background
+	var nonBackgroundChoices []toolkitchar.ChoiceData
+	for _, choice := range draft.Choices {
+		if choice.Source != shared.SourceBackground {
+			nonBackgroundChoices = append(nonBackgroundChoices, choice)
+		}
+	}
+
+	// Add new background choices if provided
+	if len(input.Choices) > 0 {
+		// Ensure all new choices have the background source set
+		for i := range input.Choices {
+			if input.Choices[i].Source == "" {
+				input.Choices[i].Source = shared.SourceBackground
+			}
+		}
+		draft.Choices = append(nonBackgroundChoices, input.Choices...)
+	} else {
+		// No choices provided, just keep non-background choices
+		draft.Choices = nonBackgroundChoices
+	}
+
+	// Save the updated draft
+	updateOutput, err := o.draftRepo.Update(ctx, draftrepo.UpdateInput{
+		Draft: draft,
+	})
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to update draft %s", input.DraftID)
+	}
+
+	// Return updated draft with any warnings
+	return &UpdateBackgroundOutput{
+		Draft:    updateOutput.Draft,
+		Warnings: []ValidationWarning{}, // TODO: Add validation for background requirements
+	}, nil
 }
 
 func (o *Orchestrator) UpdateAbilityScores(ctx context.Context, input *UpdateAbilityScoresInput) (*UpdateAbilityScoresOutput, error) {
@@ -294,7 +404,7 @@ func (o *Orchestrator) DeleteCharacter(ctx context.Context, input *DeleteCharact
 func (o *Orchestrator) ListRaces(ctx context.Context, input *ListRacesInput) (*ListRacesOutput, error) {
 	// For now, we'll return all races from a hardcoded list
 	// In a real implementation, this might come from a database or be cached
-	
+
 	allRaces := []constants.Race{
 		constants.RaceDragonborn,
 		constants.RaceDwarf,
@@ -306,7 +416,7 @@ func (o *Orchestrator) ListRaces(ctx context.Context, input *ListRacesInput) (*L
 		constants.RaceHuman,
 		constants.RaceTiefling,
 	}
-	
+
 	// Get race data for each race
 	races := make([]RaceListItem, 0, len(allRaces))
 	for _, raceID := range allRaces {
@@ -315,13 +425,13 @@ func (o *Orchestrator) ListRaces(ctx context.Context, input *ListRacesInput) (*L
 			// Skip races that fail to load
 			continue
 		}
-		
+
 		races = append(races, RaceListItem{
 			RaceData: raceDataOutput.RaceData,
 			UIData:   raceDataOutput.UIData,
 		})
 	}
-	
+
 	// Simple pagination - for now just return all races
 	// TODO: Implement proper pagination when needed
 	return &ListRacesOutput{
@@ -334,7 +444,7 @@ func (o *Orchestrator) ListRaces(ctx context.Context, input *ListRacesInput) (*L
 func (o *Orchestrator) ListClasses(ctx context.Context, input *ListClassesInput) (*ListClassesOutput, error) {
 	// For now, we'll return all classes from a hardcoded list
 	// In a real implementation, this might come from a database or be cached
-	
+
 	allClasses := []constants.Class{
 		constants.ClassBarbarian,
 		constants.ClassBard,
@@ -349,7 +459,7 @@ func (o *Orchestrator) ListClasses(ctx context.Context, input *ListClassesInput)
 		constants.ClassWarlock,
 		constants.ClassWizard,
 	}
-	
+
 	// Get class data for each class
 	classes := make([]ClassListItem, 0, len(allClasses))
 	for _, classID := range allClasses {
@@ -358,13 +468,13 @@ func (o *Orchestrator) ListClasses(ctx context.Context, input *ListClassesInput)
 			// Skip classes that fail to load
 			continue
 		}
-		
+
 		classes = append(classes, ClassListItem{
 			ClassData: classDataOutput.ClassData,
 			UIData:    classDataOutput.UIData,
 		})
 	}
-	
+
 	// Simple pagination - for now just return all classes
 	// TODO: Implement proper pagination when needed
 	return &ListClassesOutput{
@@ -377,7 +487,6 @@ func (o *Orchestrator) ListClasses(ctx context.Context, input *ListClassesInput)
 func (o *Orchestrator) ListBackgrounds(ctx context.Context, input *ListBackgroundsInput) (*ListBackgroundsOutput, error) {
 	return nil, errors.Unimplemented("not implemented")
 }
-
 
 func (o *Orchestrator) UpdateChoices(ctx context.Context, input *UpdateChoicesInput) (*UpdateChoicesOutput, error) {
 	return nil, errors.Unimplemented("not implemented")
@@ -426,7 +535,60 @@ func (o *Orchestrator) GetBackgroundDetails(ctx context.Context, input *GetBackg
 }
 
 func (o *Orchestrator) RollAbilityScores(ctx context.Context, input *RollAbilityScoresInput) (*RollAbilityScoresOutput, error) {
-	return nil, errors.Unimplemented("not implemented")
+	// Validate input
+	if input.DraftID == "" {
+		return nil, errors.InvalidArgument("draft ID is required")
+	}
+
+	// Default to standard method if not specified
+	method := input.Method
+	if method == "" {
+		method = dice.MethodStandard
+	}
+
+	// Get the draft to ensure it exists
+	_, err := o.draftRepo.Get(ctx, draftrepo.GetInput{
+		ID: input.DraftID,
+	})
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to get draft %s", input.DraftID)
+	}
+
+	// Create entity ID for dice session
+	entityID := "char_draft_" + input.DraftID
+
+	// Roll ability scores using dice service
+	rollOutput, err := o.diceService.RollAbilityScores(ctx, &dice.RollAbilityScoresInput{
+		EntityID: entityID,
+		Method:   method,
+	})
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to roll ability scores")
+	}
+
+	// Convert dice rolls to our format
+	rolls := make([]*AbilityScoreRoll, 0, len(rollOutput.Rolls))
+	for _, roll := range rollOutput.Rolls {
+		rolls = append(rolls, &AbilityScoreRoll{
+			RollID:      roll.RollID,
+			Total:       roll.Total,
+			Description: roll.Description,
+			Dice:        roll.Dice,
+			Dropped:     roll.Dropped,
+		})
+	}
+
+	// For now, we just return the rolls
+	// The user will need to assign them to abilities later
+	// This could be done with an UpdateAbilityScores call
+	// We're not updating the draft here because the user needs to decide
+	// which roll goes to which ability score
+
+	return &RollAbilityScoresOutput{
+		Rolls:     rolls,
+		SessionID: entityID, // Return the entity ID as session ID
+		ExpiresAt: rollOutput.Session.ExpiresAt,
+	}, nil
 }
 
 func (o *Orchestrator) GetDraftPreview(ctx context.Context, input *GetDraftPreviewInput) (*GetDraftPreviewOutput, error) {

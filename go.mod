@@ -3,9 +3,8 @@ module github.com/KirkDiggler/rpg-api
 go 1.24.1
 
 require (
-	github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20250730175616-977ac81f04be
+	github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20250731190717-4f44aa99c641
 	github.com/KirkDiggler/rpg-toolkit/dice v0.1.0
-	github.com/KirkDiggler/rpg-toolkit/events v0.1.1
 	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.0.0-20250730170410-c99ed1fdb923
 	github.com/fadedpez/dnd5e-api v0.0.0-20250718210231-523223e548d1
 	github.com/google/uuid v1.6.0
@@ -15,11 +14,11 @@ require (
 	github.com/stretchr/testify v1.10.0
 	go.uber.org/mock v0.5.2
 	google.golang.org/grpc v1.74.2
-	google.golang.org/protobuf v1.36.6
 )
 
 require (
 	github.com/KirkDiggler/rpg-toolkit/core v0.1.0 // indirect
+	github.com/KirkDiggler/rpg-toolkit/events v0.1.1 // indirect
 	github.com/KirkDiggler/rpg-toolkit/game v0.1.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
@@ -32,5 +31,6 @@ require (
 	golang.org/x/sys v0.34.0 // indirect
 	golang.org/x/text v0.27.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20250528174236-200df99c418a // indirect
+	google.golang.org/protobuf v1.36.6 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
