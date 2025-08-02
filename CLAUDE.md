@@ -368,3 +368,7 @@ make install-tools
 - Document the journey, not just destination
 - Tell stories in journey docs, make decisions in ADRs, summarize in READMEs
 - Tests should be thorough and "set and forget"
+- **ALWAYS question data structures** - No guarantees we did it correctly
+- **Trust your instincts** - If something feels wrong, it probably is
+- **Verify assumptions** - Check actual API responses and data flows
+- **Don't blindly follow existing patterns** - They might be wrong

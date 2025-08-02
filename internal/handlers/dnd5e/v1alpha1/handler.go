@@ -1447,6 +1447,44 @@ func convertClassDataToProtoInfo(classData *class.Data, uiData *external.ClassUI
 	equipmentChoices := convertEquipmentChoices(classData)
 	info.Choices = append(info.Choices, equipmentChoices...)
 
+	// Add feature choices (like fighting style)
+	if features, ok := classData.Features[1]; ok {
+		for _, feature := range features {
+			if feature.Choice != nil {
+				// Convert feature choice options
+				featureOptions := make([]*dnd5ev1alpha1.ChoiceOption, 0, len(feature.Choice.From))
+				for _, optionName := range feature.Choice.From {
+					featureOptions = append(featureOptions, &dnd5ev1alpha1.ChoiceOption{
+						OptionType: &dnd5ev1alpha1.ChoiceOption_Item{
+							Item: &dnd5ev1alpha1.ItemReference{
+								ItemId: fmt.Sprintf("feature_%s", strings.ToLower(strings.ReplaceAll(optionName, " ", "_"))),
+								Name:   optionName,
+							},
+						},
+					})
+				}
+
+				// Determine choice category based on feature type
+				choiceCategory := dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_UNSPECIFIED
+				if feature.Choice.Type == "fighting_style" {
+					choiceCategory = dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_FIGHTING_STYLE
+				}
+
+				info.Choices = append(info.Choices, &dnd5ev1alpha1.Choice{
+					Id:          fmt.Sprintf("%s_feature_%s", classData.ID, feature.Choice.ID),
+					Description: feature.Choice.Description,
+					ChooseCount: int32(feature.Choice.Choose),
+					ChoiceType:  choiceCategory,
+					OptionSet: &dnd5ev1alpha1.Choice_ExplicitOptions{
+						ExplicitOptions: &dnd5ev1alpha1.ExplicitOptions{
+							Options: featureOptions,
+						},
+					},
+				})
+			}
+		}
+	}
+
 	return info
 }
 

@@ -136,6 +136,23 @@ func (s *HandlerListClassesTestSuite) TestListClasses_WithChoices() {
 		SavingThrows:        []constants.Ability{constants.STR, constants.CON},
 		ArmorProficiencies:  []string{"light", "medium", "heavy", "shields"},
 		WeaponProficiencies: []string{"simple", "martial"},
+		Features: map[int][]class.FeatureData{
+			1: {
+				{
+					ID:          "fighter-fighting-style",
+					Name:        "Fighting Style",
+					Level:       1,
+					Description: "You adopt a particular style of fighting as your specialty",
+					Choice: &class.ChoiceData{
+						ID:          "fighting-style-choice",
+						Type:        "fighting_style",
+						Choose:      1,
+						From:        []string{"Archery", "Defense", "Dueling", "Great Weapon Fighting", "Protection", "Two-Weapon Fighting"},
+						Description: "Choose a fighting style",
+					},
+				},
+			},
+		},
 	}
 
 	s.mockCharService.EXPECT().
@@ -164,7 +181,7 @@ func (s *HandlerListClassesTestSuite) TestListClasses_WithChoices() {
 	s.Equal("Fighter", fighter.Name)
 
 	// Verify choices are populated
-	s.Require().Len(fighter.Choices, 3, "Should have 3 choices: 1 skill choice and 2 equipment choices")
+	s.Require().Len(fighter.Choices, 4, "Should have 4 choices: 1 skill choice, 2 equipment choices, and 1 fighting style")
 
 	// Check skill choice
 	skillChoice := fighter.Choices[0]
