@@ -1495,7 +1495,7 @@ func convertClassDataToProtoInfo(classData *class.Data, uiData *external.ClassUI
 
 		info.Choices = append(info.Choices, &dnd5ev1alpha1.Choice{
 			Id:          fmt.Sprintf("%s_equipment_%d", classData.ID, i+1),
-			Description: fmt.Sprintf("Starting equipment choice %d", i+1),
+			Description: equipChoice.Description,
 			ChooseCount: int32(equipChoice.Choose),
 			ChoiceType:  dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_EQUIPMENT,
 			OptionSet: &dnd5ev1alpha1.Choice_ExplicitOptions{

@@ -106,8 +106,9 @@ func (c *client) convertClassToHybrid(apiClass *entities.Class) (*class.Data, *C
 	toolkitData.EquipmentChoices = make([]class.EquipmentChoiceData, len(apiClass.StartingEquipmentOptions))
 	for i, choice := range apiClass.StartingEquipmentOptions {
 		choiceData := class.EquipmentChoiceData{
-			ID:     generateSlug(choice.Description),
-			Choose: choice.ChoiceCount,
+			ID:          generateSlug(choice.Description),
+			Description: choice.Description,
+			Choose:      choice.ChoiceCount,
 		}
 
 		// Extract options
@@ -140,7 +141,7 @@ func (c *client) convertClassToHybrid(apiClass *entities.Class) (*class.Data, *C
 					// Handle nested equipment choices (like "choose a martial weapon")
 					// ChoiceOption represents another level of choice
 					// These are typically "choose X from equipment category Y"
-					
+
 					// Try to detect equipment category from description
 					categoryID := detectEquipmentCategory(opt.Description)
 					if categoryID != "" {
@@ -172,7 +173,7 @@ func (c *client) convertClassToHybrid(apiClass *entities.Class) (*class.Data, *C
 									})
 								}
 							}
-							
+
 							// Add as a single option with all items from the category
 							choiceData.Options = append(choiceData.Options, class.EquipmentOption{
 								ID:    fmt.Sprintf("%s-category", categoryID),
@@ -312,35 +313,40 @@ func convertKeyToClassID(key string) (constants.Class, error) {
 	return "", fmt.Errorf("unknown class key: %s", key)
 }
 
+const (
+	categoryMartialWeapons = "martial-weapons"
+	categorySimpleWeapons  = "simple-weapons"
+)
+
 // detectEquipmentCategory tries to detect equipment category from description
 func detectEquipmentCategory(description string) string {
 	desc := strings.ToLower(description)
-	
+
 	// Map common descriptions to category IDs
 	categoryMap := map[string]string{
-		"martial weapon":     "martial-weapons",
-		"simple weapon":      "simple-weapons",
+		"martial weapon":     categoryMartialWeapons,
+		"simple weapon":      categorySimpleWeapons,
 		"artisan's tools":    "artisans-tools",
 		"musical instrument": "musical-instruments",
 		"holy symbol":        "holy-symbols",
 		"druidic focus":      "druidic-foci",
 		"arcane focus":       "arcane-foci",
 	}
-	
+
 	// Check for exact matches or contains
 	for key, categoryID := range categoryMap {
 		if strings.Contains(desc, key) {
 			return categoryID
 		}
 	}
-	
+
 	// Check for plurals
 	if strings.Contains(desc, "martial weapons") {
-		return "martial-weapons"
+		return categoryMartialWeapons
 	}
 	if strings.Contains(desc, "simple weapons") {
-		return "simple-weapons"
+		return categorySimpleWeapons
 	}
-	
+
 	return ""
 }

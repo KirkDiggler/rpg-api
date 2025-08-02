@@ -63,8 +63,9 @@ func (s *HandlerListClassesTestSuite) TestListClasses_WithChoices() {
 		},
 		EquipmentChoices: []class.EquipmentChoiceData{
 			{
-				ID:     "fighter_primary_weapon",
-				Choose: 1,
+				ID:          "fighter_primary_weapon",
+				Description: "(a) chain mail or (b) leather armor, longbow, and 20 arrows",
+				Choose:      1,
 				Options: []class.EquipmentOption{
 					{
 						ID: "option_martial_weapon_shield",
@@ -82,8 +83,9 @@ func (s *HandlerListClassesTestSuite) TestListClasses_WithChoices() {
 				},
 			},
 			{
-				ID:     "fighter_ranged_weapon",
-				Choose: 1,
+				ID:          "fighter_ranged_weapon",
+				Description: "(a) a light crossbow and 20 bolts or (b) two handaxes",
+				Choose:      1,
 				Options: []class.EquipmentOption{
 					{
 						ID: "option_light_crossbow",
@@ -149,13 +151,13 @@ func (s *HandlerListClassesTestSuite) TestListClasses_WithChoices() {
 	// Check first skill option
 	firstSkill := explicitOpts.Options[0].GetItem()
 	s.Require().NotNil(firstSkill)
-	s.Equal("acrobatics", firstSkill.ItemId)
+	s.Equal("skill_acrobatics", firstSkill.ItemId)
 	s.Equal("acrobatics", firstSkill.Name)
 
 	// Check first equipment choice
 	equipChoice1 := fighter.Choices[1]
 	s.Equal("fighter_equipment_1", equipChoice1.Id)
-	s.Equal("Starting equipment choice 1", equipChoice1.Description)
+	s.Equal("(a) chain mail or (b) leather armor, longbow, and 20 arrows", equipChoice1.Description)
 	s.Equal(int32(1), equipChoice1.ChooseCount)
 	s.Equal(dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_EQUIPMENT, equipChoice1.ChoiceType)
 
