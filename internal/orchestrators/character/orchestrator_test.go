@@ -499,8 +499,8 @@ func (s *OrchestratorTestSuite) TestUpdateName_DraftNotFound() {
 
 func (s *OrchestratorTestSuite) TestUpdateRace_Success() {
 	ctx := context.Background()
-	newRaceID := "RACE_ELF"
-	newSubraceID := "SUBRACE_HIGH_ELF"
+	newRaceID := constants.RaceElf
+	newSubraceID := constants.SubraceHighElf
 	input := &character.UpdateRaceInput{
 		DraftID:   s.testDraftID,
 		RaceID:    newRaceID,
@@ -510,8 +510,8 @@ func (s *OrchestratorTestSuite) TestUpdateRace_Success() {
 	// Create a copy of test data with updated race
 	updatedDraft := *s.testDraftData
 	updatedDraft.RaceChoice = toolkitchar.RaceChoice{
-		RaceID:    constants.Race(newRaceID),
-		SubraceID: constants.Subrace(newSubraceID),
+		RaceID:    newRaceID,
+		SubraceID: newSubraceID,
 	}
 
 	// Mock get call
@@ -538,14 +538,14 @@ func (s *OrchestratorTestSuite) TestUpdateRace_Success() {
 	// Assert response
 	s.Require().NoError(err)
 	s.Require().NotNil(output)
-	s.Assert().Equal(newRaceID, string(output.Draft.RaceChoice.RaceID))
-	s.Assert().Equal(newSubraceID, string(output.Draft.RaceChoice.SubraceID))
+	s.Assert().Equal(newRaceID, output.Draft.RaceChoice.RaceID)
+	s.Assert().Equal(newSubraceID, output.Draft.RaceChoice.SubraceID)
 	s.Assert().Empty(output.Warnings)
 }
 
 func (s *OrchestratorTestSuite) TestUpdateRace_WithChoices() {
 	ctx := context.Background()
-	newRaceID := "RACE_HALF_ELF"
+	newRaceID := constants.RaceHalfElf
 	choices := []toolkitchar.ChoiceData{
 		{
 			ChoiceID:       "ability-increase",
@@ -605,7 +605,7 @@ func (s *OrchestratorTestSuite) TestUpdateRace_WithChoices() {
 	// Assert response
 	s.Require().NoError(err)
 	s.Require().NotNil(output)
-	s.Assert().Equal(newRaceID, string(output.Draft.RaceChoice.RaceID))
+	s.Assert().Equal(newRaceID, output.Draft.RaceChoice.RaceID)
 	s.Assert().Len(output.Draft.Choices, 2)
 	s.Assert().Equal(shared.SourceRace, output.Draft.Choices[1].Source)
 }
@@ -669,7 +669,7 @@ func (s *OrchestratorTestSuite) TestUpdateRace_DraftNotFound() {
 
 func (s *OrchestratorTestSuite) TestUpdateClass_Success() {
 	ctx := context.Background()
-	newClassID := "CLASS_WIZARD"
+	newClassID := constants.ClassWizard
 	input := &character.UpdateClassInput{
 		DraftID: s.testDraftID,
 		ClassID: newClassID,
@@ -678,7 +678,7 @@ func (s *OrchestratorTestSuite) TestUpdateClass_Success() {
 	// Create a copy of test data with updated class
 	updatedDraft := *s.testDraftData
 	updatedDraft.ClassChoice = toolkitchar.ClassChoice{
-		ClassID: constants.Class(newClassID),
+		ClassID: newClassID,
 	}
 
 	// Mock get call
@@ -705,13 +705,13 @@ func (s *OrchestratorTestSuite) TestUpdateClass_Success() {
 	// Assert response
 	s.Require().NoError(err)
 	s.Require().NotNil(output)
-	s.Assert().Equal(newClassID, string(output.Draft.ClassChoice.ClassID))
+	s.Assert().Equal(newClassID, output.Draft.ClassChoice.ClassID)
 	s.Assert().Empty(output.Warnings)
 }
 
 func (s *OrchestratorTestSuite) TestUpdateClass_WithChoices() {
 	ctx := context.Background()
-	newClassID := "CLASS_FIGHTER"
+	newClassID := constants.ClassFighter
 	choices := []toolkitchar.ChoiceData{
 		{
 			ChoiceID:           "fighting-style",
@@ -771,7 +771,7 @@ func (s *OrchestratorTestSuite) TestUpdateClass_WithChoices() {
 	// Assert response
 	s.Require().NoError(err)
 	s.Require().NotNil(output)
-	s.Assert().Equal(newClassID, string(output.Draft.ClassChoice.ClassID))
+	s.Assert().Equal(newClassID, output.Draft.ClassChoice.ClassID)
 	s.Assert().Len(output.Draft.Choices, 2)
 	s.Assert().Equal(shared.SourceClass, output.Draft.Choices[1].Source)
 }
