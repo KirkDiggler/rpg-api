@@ -1,10 +1,10 @@
 //go:build integration
-// +build integration
 
 package v1alpha1_test
 
 import (
 	"context"
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/suite"
@@ -19,6 +19,12 @@ import (
 	characterrepomock "github.com/KirkDiggler/rpg-api/internal/repositories/character/mock"
 	draftrepomock "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft/mock"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/constants"
+)
+
+const (
+	// Test constants to avoid magic values
+	skillPrefix            = "skill_"
+	expectedMinimumClasses = 5
 )
 
 // HandlerListClassesChoicesIntegrationTestSuite tests the ListClasses RPC
@@ -45,9 +51,13 @@ func (s *HandlerListClassesChoicesIntegrationTestSuite) SetupSuite() {
 	s.ctx = context.Background()
 	s.ctrl = gomock.NewController(s.T())
 
-	// Create external client pointing to local D&D API - REAL CLIENT for integration
+	// Create external client pointing to D&D API - REAL CLIENT for integration
+	baseURL := os.Getenv("DND5E_API_BASE_URL")
+	if baseURL == "" {
+		baseURL = "http://localhost:3002/api/2014/"
+	}
 	externalClient, err := external.New(&external.Config{
-		BaseURL: "http://localhost:3002/api/2014/",
+		BaseURL: baseURL,
 	})
 	s.Require().NoError(err)
 	s.externalClient = externalClient
@@ -322,7 +332,7 @@ func (s *HandlerListClassesChoicesIntegrationTestSuite) TestListClasses_Multiple
 	// THEN we should get multiple classes with choices
 	s.Require().NoError(err)
 	s.Require().NotNil(resp)
-	s.Require().Greater(len(resp.Classes), 5, "Should return multiple classes")
+	s.Require().Greater(len(resp.Classes), expectedMinimumClasses, "Should return multiple classes")
 
 	// Verify each class has the expected structure
 	for _, class := range resp.Classes {
