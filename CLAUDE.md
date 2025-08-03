@@ -1,4 +1,6 @@
-# Claude AI Development Guidelines
+# Claude AI Development Guidelines - rpg-api
+
+**Note**: General development guidelines are in `/home/kirk/personal/CLAUDE.md`. This file contains rpg-api specific instructions.
 
 ## Core Philosophy
 
