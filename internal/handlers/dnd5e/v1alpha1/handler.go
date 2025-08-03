@@ -391,7 +391,53 @@ func (h *Handler) UpdateSkills(
 	ctx context.Context,
 	req *dnd5ev1alpha1.UpdateSkillsRequest,
 ) (*dnd5ev1alpha1.UpdateSkillsResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "not implemented")
+	// Validate request
+	if req.DraftId == "" {
+		return nil, status.Error(codes.InvalidArgument, "draft_id is required")
+	}
+	if len(req.Skills) == 0 {
+		return nil, status.Error(codes.InvalidArgument, "at least one skill must be selected")
+	}
+
+	// Convert proto skills to skill IDs
+	skillIDs := make([]string, len(req.Skills))
+	for i, protoSkill := range req.Skills {
+		skillID := convertProtoSkillToID(protoSkill)
+		if skillID == "" {
+			return nil, status.Errorf(codes.InvalidArgument, "invalid skill: %v", protoSkill)
+		}
+		skillIDs[i] = skillID
+	}
+
+	// Call orchestrator
+	output, err := h.characterService.UpdateSkills(ctx, &character.UpdateSkillsInput{
+		DraftID:  req.DraftId,
+		SkillIDs: skillIDs,
+	})
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return nil, status.Error(codes.NotFound, err.Error())
+		}
+		if errors.IsInvalidArgument(err) {
+			return nil, status.Error(codes.InvalidArgument, err.Error())
+		}
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	// Convert warnings
+	protoWarnings := make([]*dnd5ev1alpha1.ValidationWarning, len(output.Warnings))
+	for i, warning := range output.Warnings {
+		protoWarnings[i] = &dnd5ev1alpha1.ValidationWarning{
+			Field:   warning.Field,
+			Message: warning.Message,
+			Type:    warning.Type,
+		}
+	}
+
+	return &dnd5ev1alpha1.UpdateSkillsResponse{
+		Draft:    convertDraftDataToProto(output.Draft),
+		Warnings: protoWarnings,
+	}, nil
 }
 
 // ValidateDraft validates a character draft
@@ -1693,5 +1739,49 @@ func convertSkillToProto(skill constants.Skill) dnd5ev1alpha1.Skill {
 		return dnd5ev1alpha1.Skill_SKILL_SURVIVAL
 	default:
 		return dnd5ev1alpha1.Skill_SKILL_ATHLETICS
+	}
+}
+
+// convertProtoSkillToID converts proto Skill to toolkit skill ID string
+func convertProtoSkillToID(skill dnd5ev1alpha1.Skill) string {
+	switch skill {
+	case dnd5ev1alpha1.Skill_SKILL_ACROBATICS:
+		return string(constants.SkillAcrobatics)
+	case dnd5ev1alpha1.Skill_SKILL_ANIMAL_HANDLING:
+		return string(constants.SkillAnimalHandling)
+	case dnd5ev1alpha1.Skill_SKILL_ARCANA:
+		return string(constants.SkillArcana)
+	case dnd5ev1alpha1.Skill_SKILL_ATHLETICS:
+		return string(constants.SkillAthletics)
+	case dnd5ev1alpha1.Skill_SKILL_DECEPTION:
+		return string(constants.SkillDeception)
+	case dnd5ev1alpha1.Skill_SKILL_HISTORY:
+		return string(constants.SkillHistory)
+	case dnd5ev1alpha1.Skill_SKILL_INSIGHT:
+		return string(constants.SkillInsight)
+	case dnd5ev1alpha1.Skill_SKILL_INTIMIDATION:
+		return string(constants.SkillIntimidation)
+	case dnd5ev1alpha1.Skill_SKILL_INVESTIGATION:
+		return string(constants.SkillInvestigation)
+	case dnd5ev1alpha1.Skill_SKILL_MEDICINE:
+		return string(constants.SkillMedicine)
+	case dnd5ev1alpha1.Skill_SKILL_NATURE:
+		return string(constants.SkillNature)
+	case dnd5ev1alpha1.Skill_SKILL_PERCEPTION:
+		return string(constants.SkillPerception)
+	case dnd5ev1alpha1.Skill_SKILL_PERFORMANCE:
+		return string(constants.SkillPerformance)
+	case dnd5ev1alpha1.Skill_SKILL_PERSUASION:
+		return string(constants.SkillPersuasion)
+	case dnd5ev1alpha1.Skill_SKILL_RELIGION:
+		return string(constants.SkillReligion)
+	case dnd5ev1alpha1.Skill_SKILL_SLEIGHT_OF_HAND:
+		return string(constants.SkillSleightOfHand)
+	case dnd5ev1alpha1.Skill_SKILL_STEALTH:
+		return string(constants.SkillStealth)
+	case dnd5ev1alpha1.Skill_SKILL_SURVIVAL:
+		return string(constants.SkillSurvival)
+	default:
+		return ""
 	}
 }

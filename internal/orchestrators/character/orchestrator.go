@@ -552,7 +552,63 @@ func (o *Orchestrator) UpdateAbilityScores(ctx context.Context, input *UpdateAbi
 }
 
 func (o *Orchestrator) UpdateSkills(ctx context.Context, input *UpdateSkillsInput) (*UpdateSkillsOutput, error) {
-	return nil, errors.Unimplemented("not implemented")
+	if input == nil {
+		return nil, errors.InvalidArgument("input is required")
+	}
+	if input.DraftID == "" {
+		return nil, errors.InvalidArgument("draft ID is required")
+	}
+	if len(input.SkillIDs) == 0 {
+		return nil, errors.InvalidArgument("at least one skill must be selected")
+	}
+
+	// Get the draft
+	getDraftOutput, err := o.draftRepo.Get(ctx, draftrepo.GetInput{
+		ID: input.DraftID,
+	})
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to get draft")
+	}
+
+	draft := getDraftOutput.Draft
+
+	// Convert skill IDs to constants.Skill
+	skills := make([]constants.Skill, len(input.SkillIDs))
+	for i, skillID := range input.SkillIDs {
+		skills[i] = constants.Skill(skillID)
+	}
+
+	// Remove existing skill choices from same source (class or background)
+	var nonSkillChoices []toolkitchar.ChoiceData
+	for _, choice := range draft.Choices {
+		if choice.Category != shared.ChoiceSkills {
+			nonSkillChoices = append(nonSkillChoices, choice)
+		}
+	}
+
+	// Add the new skill selection
+	// TODO: Determine source (class vs background) based on available choices
+	skillChoice := toolkitchar.ChoiceData{
+		Category:       shared.ChoiceSkills,
+		Source:         shared.SourceClass, // Default to class for now
+		ChoiceID:       "class_skills",
+		SkillSelection: skills,
+	}
+
+	draft.Choices = append(nonSkillChoices, skillChoice)
+
+	// Update the draft
+	updateOutput, err := o.draftRepo.Update(ctx, draftrepo.UpdateInput{
+		Draft: draft,
+	})
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to update draft")
+	}
+
+	return &UpdateSkillsOutput{
+		Draft:    updateOutput.Draft,
+		Warnings: []ValidationWarning{},
+	}, nil
 }
 
 func (o *Orchestrator) ValidateDraft(ctx context.Context, input *ValidateDraftInput) (*ValidateDraftOutput, error) {
