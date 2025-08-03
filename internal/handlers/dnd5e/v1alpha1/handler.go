@@ -1791,7 +1791,7 @@ func convertCharacterDataToProto(char *toolkitchar.Data) *dnd5ev1alpha1.Characte
 		protoChar.Languages = append(protoChar.Languages, convertLanguageToProto(constants.Language(lang)))
 	}
 
-	// TODO: Convert other fields as needed
+	// TODO(#168): Convert other fields as needed
 	// - Conditions
 	// - Effects
 	// - SpellSlots

@@ -578,7 +578,7 @@ func (o *Orchestrator) FinalizeDraft(ctx context.Context, input *FinalizeDraftIn
 	draft := getDraftOutput.Draft
 
 	// Validate draft is complete
-	// TODO: This should call ValidateDraft when implemented
+	// TODO(#166): This should call ValidateDraft when implemented
 	if draft.Name == "" {
 		return nil, errors.InvalidArgument("draft is incomplete: name is required")
 	}
@@ -608,7 +608,7 @@ func (o *Orchestrator) FinalizeDraft(ctx context.Context, input *FinalizeDraftIn
 	}
 
 	// Get background data
-	// TODO: GetBackgroundData is not implemented in external client yet
+	// TODO(#167): GetBackgroundData is not implemented in external client yet
 	// For now, we'll proceed without background data
 	// backgroundDataOutput, err := o.externalClient.GetBackgroundData(ctx, string(draft.BackgroundChoice))
 	// if err != nil {
@@ -619,7 +619,7 @@ func (o *Orchestrator) FinalizeDraft(ctx context.Context, input *FinalizeDraftIn
 	conMod := (draft.AbilityScoreChoice[constants.CON] - 10) / 2
 	maxHP := classDataOutput.ClassData.HitDice + conMod
 	if maxHP < 1 {
-		maxHP = 1 // Minimum 1 HP
+		maxHP = 1 // TODO(#169): Extract minimum HP constant
 	}
 
 	// Convert draft to character data
