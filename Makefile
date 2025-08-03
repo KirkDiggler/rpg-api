@@ -6,6 +6,13 @@ help: ## Display this help message
 .PHONY: pre-commit
 pre-commit: fmt tidy fix-eof lint test ## Run all pre-commit checks
 
+.PHONY: ci-check
+ci-check: ## Run comprehensive CI checks (detects common failures)
+	@./scripts/ci-checks.sh
+
+.PHONY: ci-fix
+ci-fix: install-tools generate fmt tidy fix-eof ## Fix common CI issues automatically
+
 .PHONY: fmt
 fmt: ## Format Go code with gofmt and goimports
 	@echo "==> Formatting code..."
@@ -36,6 +43,13 @@ test: test-unit ## Run all tests (alias for test-unit by default)
 test-unit: ## Run unit tests only
 	@echo "==> Running unit tests..."
 	@go test -v -short -race -coverprofile=coverage.out ./...
+
+.PHONY: test-ci
+test-ci: ## Run tests exactly as CI does
+	@echo "==> Running tests with CI configuration..."
+	@go test -v -race -coverprofile=coverage.out -covermode=atomic \
+		$$(go list ./... | grep -v /gen/ | grep -v /mock | grep -v cmd/server)
+	@echo "✅ CI tests passed"
 
 .PHONY: test-integration
 test-integration: ## Run integration tests (requires Redis)

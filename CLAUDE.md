@@ -359,6 +359,53 @@ make install-tools
 - **Service coverage target**: 80%+ (business logic lives here)
 - **0% new code coverage is OK**: During outside-in development when adding contracts
 
+## CI/CD Patterns & Common Failures
+
+### Pre-Flight CI Checks
+**ALWAYS run `make ci-check` before pushing** to detect CI failures locally:
+
+```bash
+make ci-check  # Comprehensive CI failure detection
+make ci-fix    # Automatically fix common issues
+```
+
+### Common CI Failures We've Learned From
+
+1. **Missing EOF newlines**
+   - CI fails if files don't end with newline
+   - Check with: `tail -c1 file | wc -l` (should be 1)
+   - Fix with: `echo >> file`
+
+2. **Mock regeneration needed**
+   - CI runs `go generate` and fails if mocks change
+   - Always run `go generate ./...` after interface changes
+   - Check with: `go generate ./... && git diff`
+
+3. **Import ordering**
+   - goimports must separate stdlib, external, and local imports
+   - Fix with: `goimports -w -local github.com/KirkDiggler`
+
+4. **Test exclusions in CI**
+   - CI excludes `/gen/`, `/mock/`, `cmd/server` from coverage
+   - Use: `go test $(go list ./... | grep -v /gen/ | grep -v /mock | grep -v cmd/server)`
+
+5. **Race detection**
+   - CI uses `-race` flag which local tests might skip
+   - Always test with: `go test -race ./...`
+
+6. **TODO comments**
+   - Must have issue numbers: `// TODO(#123): Fix this`
+   - Never just `// TODO: Fix this`
+
+7. **Linter strictness**
+   - goconst: Repeated strings (3+ occurrences) → constants
+   - unused parameters: Name them `_` if unused
+   - revive: All public APIs need comments
+
+### CI Check Script
+We maintain `scripts/ci-checks.sh` that catches these issues before push.
+Update it when we discover new CI failure patterns.
+
 ## Remember
 
 - Explicit > Implicit (always use Input/Output types)
@@ -372,3 +419,4 @@ make install-tools
 - **Trust your instincts** - If something feels wrong, it probably is
 - **Verify assumptions** - Check actual API responses and data flows
 - **Don't blindly follow existing patterns** - They might be wrong
+- **Run CI checks locally** - Don't let CI be the first to find issues
