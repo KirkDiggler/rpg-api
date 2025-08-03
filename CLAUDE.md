@@ -310,6 +310,61 @@ This approach ensures:
 
 ## Development Workflow
 
+### Feature Release Workflow
+
+**Every feature follows this workflow to ensure quality and catch CI issues early:**
+
+1. **Always start from latest main**
+   ```bash
+   gcm                          # git checkout main
+   gl                           # git pull
+   ```
+
+2. **Create feature branch**
+   ```bash
+   git checkout -b feat/spell-selection
+   ```
+
+3. **Develop the feature**
+   - Write tests first (TDD) or alongside code
+   - Follow existing patterns in the codebase
+   - Keep commits focused and atomic
+
+4. **Run tests locally**
+   ```bash
+   go test ./...                # Run all tests
+   go test ./internal/orchestrators/character -v  # Run specific package tests
+   ```
+
+5. **Run CI checks locally BEFORE pushing**
+   ```bash
+   make ci-check               # Detect CI failures before push
+   make ci-fix                 # Auto-fix what can be fixed
+   ```
+
+6. **When CI fails, learn from it**
+   - Add the failure pattern to `scripts/ci-checks.sh`
+   - Document why it failed in comments
+   - Next time, the local check will catch it
+   - Eventually we'll catch all common CI failures locally
+
+7. **Create PR**
+   ```bash
+   git push origin feat/spell-selection
+   gh pr create
+   ```
+
+8. **Address review feedback**
+   - Check inline comments: `gh api repos/KirkDiggler/rpg-api/pulls/<number>/comments`
+   - Fix issues and push updates
+   - Thank reviewers for catching issues
+
+9. **Merge when approved**
+   - Let the PR author or reviewer merge
+   - Delete branch after merge
+
+**Key principle**: Every CI failure is a learning opportunity. Add detection for it locally so it never happens again.
+
 ### Pre-commit Workflow
 **ALWAYS** run before committing:
 ```bash

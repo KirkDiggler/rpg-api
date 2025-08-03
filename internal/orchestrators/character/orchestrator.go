@@ -336,7 +336,7 @@ func (o *Orchestrator) UpdateClass(ctx context.Context, input *UpdateClassInput)
 		cantripChoice := toolkitchar.ChoiceData{
 			Category: shared.ChoiceCantrips,
 			Source:   shared.SourceClass,
-			ChoiceID: fmt.Sprintf("%s_cantrips", string(input.ClassID)),
+			ChoiceID: string(input.ClassID) + "_cantrips",
 		}
 		nonClassChoices = append(nonClassChoices, cantripChoice)
 
