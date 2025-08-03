@@ -799,6 +799,22 @@ func convertToolkitChoicesToProto(choices []toolkitchar.ChoiceData) []*dnd5ev1al
 					},
 				}
 			}
+		case shared.ChoiceSpells:
+			if len(choice.SpellSelection) > 0 {
+				protoChoice.Selection = &dnd5ev1alpha1.ChoiceData_Spells{
+					Spells: &dnd5ev1alpha1.SpellList{
+						Spells: choice.SpellSelection,
+					},
+				}
+			}
+		case shared.ChoiceCantrips:
+			if len(choice.CantripSelection) > 0 {
+				protoChoice.Selection = &dnd5ev1alpha1.ChoiceData_Cantrips{
+					Cantrips: &dnd5ev1alpha1.CantripList{
+						Cantrips: choice.CantripSelection,
+					},
+				}
+			}
 		default:
 			// For other types, no selection data
 		}

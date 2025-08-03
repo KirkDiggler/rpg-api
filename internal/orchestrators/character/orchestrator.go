@@ -287,6 +287,74 @@ func (o *Orchestrator) UpdateClass(ctx context.Context, input *UpdateClassInput)
 		}
 	}
 
+	// Check if this is a spellcasting class and add spell/cantrip choices
+	switch input.ClassID {
+	case constants.ClassWizard:
+		// Wizards get 3 cantrips and 6 first-level spells at level 1
+		cantripChoice := toolkitchar.ChoiceData{
+			Category: shared.ChoiceCantrips,
+			Source:   shared.SourceClass,
+			ChoiceID: "wizard_cantrips",
+		}
+		spellChoice := toolkitchar.ChoiceData{
+			Category: shared.ChoiceSpells,
+			Source:   shared.SourceClass,
+			ChoiceID: "wizard_spells",
+		}
+		nonClassChoices = append(nonClassChoices, cantripChoice, spellChoice)
+		
+	case constants.ClassSorcerer:
+		// Sorcerers get 4 cantrips and 2 first-level spells at level 1
+		cantripChoice := toolkitchar.ChoiceData{
+			Category: shared.ChoiceCantrips,
+			Source:   shared.SourceClass,
+			ChoiceID: "sorcerer_cantrips",
+		}
+		spellChoice := toolkitchar.ChoiceData{
+			Category: shared.ChoiceSpells,
+			Source:   shared.SourceClass,
+			ChoiceID: "sorcerer_spells",
+		}
+		nonClassChoices = append(nonClassChoices, cantripChoice, spellChoice)
+		
+	case constants.ClassBard:
+		// Bards get 2 cantrips and 4 first-level spells at level 1
+		cantripChoice := toolkitchar.ChoiceData{
+			Category: shared.ChoiceCantrips,
+			Source:   shared.SourceClass,
+			ChoiceID: "bard_cantrips",
+		}
+		spellChoice := toolkitchar.ChoiceData{
+			Category: shared.ChoiceSpells,
+			Source:   shared.SourceClass,
+			ChoiceID: "bard_spells",
+		}
+		nonClassChoices = append(nonClassChoices, cantripChoice, spellChoice)
+		
+	case constants.ClassCleric, constants.ClassDruid:
+		// Clerics and Druids get cantrips but prepare spells (no spell choice needed at level 1)
+		cantripChoice := toolkitchar.ChoiceData{
+			Category: shared.ChoiceCantrips,
+			Source:   shared.SourceClass,
+			ChoiceID: fmt.Sprintf("%s_cantrips", string(input.ClassID)),
+		}
+		nonClassChoices = append(nonClassChoices, cantripChoice)
+		
+	case constants.ClassWarlock:
+		// Warlocks get 2 cantrips and 2 first-level spells at level 1
+		cantripChoice := toolkitchar.ChoiceData{
+			Category: shared.ChoiceCantrips,
+			Source:   shared.SourceClass,
+			ChoiceID: "warlock_cantrips",
+		}
+		spellChoice := toolkitchar.ChoiceData{
+			Category: shared.ChoiceSpells,
+			Source:   shared.SourceClass,
+			ChoiceID: "warlock_spells",
+		}
+		nonClassChoices = append(nonClassChoices, cantripChoice, spellChoice)
+	}
+
 	// Add new class choices if provided
 	if len(input.Choices) > 0 {
 		// Ensure all new choices have the class source set
