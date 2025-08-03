@@ -415,7 +415,33 @@ func (h *Handler) FinalizeDraft(
 	ctx context.Context,
 	req *dnd5ev1alpha1.FinalizeDraftRequest,
 ) (*dnd5ev1alpha1.FinalizeDraftResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "not implemented")
+	// Validate request
+	if req.GetDraftId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "draft_id is required")
+	}
+
+	// Call orchestrator to finalize the draft
+	output, err := h.characterService.FinalizeDraft(ctx, &character.FinalizeDraftInput{
+		DraftID: req.GetDraftId(),
+	})
+	if err != nil {
+		// Convert errors to gRPC status
+		if errors.IsInvalidArgument(err) {
+			return nil, status.Error(codes.InvalidArgument, err.Error())
+		}
+		if errors.IsNotFound(err) {
+			return nil, status.Error(codes.NotFound, err.Error())
+		}
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	// Convert character to proto
+	protoCharacter := convertCharacterDataToProto(output.Character)
+
+	return &dnd5ev1alpha1.FinalizeDraftResponse{
+		Character:    protoCharacter,
+		DraftDeleted: output.DraftDeleted,
+	}, nil
 }
 
 // GetCharacter retrieves a character
@@ -1695,3 +1721,83 @@ func convertSkillToProto(skill constants.Skill) dnd5ev1alpha1.Skill {
 		return dnd5ev1alpha1.Skill_SKILL_ATHLETICS
 	}
 }
+
+// convertCharacterDataToProto converts toolkit character.Data to proto Character
+func convertCharacterDataToProto(char *toolkitchar.Data) *dnd5ev1alpha1.Character {
+	if char == nil {
+		return nil
+	}
+
+	protoChar := &dnd5ev1alpha1.Character{
+		Id:                   char.ID,
+		Name:                 char.Name,
+		Level:                int32(char.Level),
+		ExperiencePoints:     int32(char.Experience),
+		
+		// Race and class info
+		Race:       convertToolkitRaceToProtoEnum(char.RaceID),
+		Subrace:    convertToolkitSubraceToProtoEnum(char.SubraceID),
+		Class:      convertToolkitClassToProtoEnum(char.ClassID),
+		Background: convertToolkitBackgroundToProtoEnum(char.BackgroundID),
+		
+		// Hit points
+		CurrentHitPoints: int32(char.HitPoints),
+		
+		// Ability scores
+		AbilityScores: convertToolkitAbilityScoresToProto(char.AbilityScores),
+		
+		// Metadata
+		Metadata: &dnd5ev1alpha1.CharacterMetadata{
+			PlayerId:  char.PlayerID,
+			CreatedAt: char.CreatedAt.Unix(),
+			UpdatedAt: char.UpdatedAt.Unix(),
+		},
+		
+		// Combat stats
+		CombatStats: &dnd5ev1alpha1.CombatStats{
+			HitPointMaximum: int32(char.MaxHitPoints),
+			Speed:           int32(char.Speed),
+			// TODO: Calculate other combat stats
+		},
+	}
+
+	// Convert proficiencies
+	protoChar.Proficiencies = &dnd5ev1alpha1.Proficiencies{
+		Skills:       make([]dnd5ev1alpha1.Skill, 0),
+		SavingThrows: make([]dnd5ev1alpha1.Ability, 0),
+		Armor:        char.Proficiencies.Armor,
+		Weapons:      char.Proficiencies.Weapons,
+		Tools:        char.Proficiencies.Tools,
+	}
+
+	// Add skill proficiencies
+	for skill, profLevel := range char.Skills {
+		if profLevel > 0 {
+			protoChar.Proficiencies.Skills = append(protoChar.Proficiencies.Skills, convertSkillToProto(skill))
+		}
+	}
+
+	// Add saving throw proficiencies
+	for ability, profLevel := range char.SavingThrows {
+		if profLevel > 0 {
+			protoChar.Proficiencies.SavingThrows = append(protoChar.Proficiencies.SavingThrows, convertAbilityToProto(ability))
+		}
+	}
+
+	// Convert languages
+	protoChar.Languages = make([]dnd5ev1alpha1.Language, 0, len(char.Languages))
+	for _, lang := range char.Languages {
+		// Convert string language to constant first
+		protoChar.Languages = append(protoChar.Languages, convertLanguageToProto(constants.Language(lang)))
+	}
+
+	// TODO: Convert other fields as needed
+	// - Conditions
+	// - Effects
+	// - SpellSlots
+	// - ClassResources
+	// - DeathSaves
+
+	return protoChar
+}
+
