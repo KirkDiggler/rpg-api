@@ -470,13 +470,11 @@ func (o *Orchestrator) UpdateAbilityScores(ctx context.Context, input *UpdateAbi
 		// Get the player ID from the draft
 		playerID := draft.PlayerID
 
-		// Context for dice rolls should include the draft ID
-		rollContext := fmt.Sprintf("character_draft_%s_abilities", input.DraftID)
-
-		// Get the dice session for this player and context
+		// Get the dice session for this player
+		// The dice service uses "ability_scores" as the context for ability score rolls
 		sessionOutput, err := o.diceService.GetRollSession(ctx, &dice.GetRollSessionInput{
 			EntityID: playerID,
-			Context:  rollContext,
+			Context:  "ability_scores",
 		})
 		if err != nil {
 			return nil, errors.Wrapf(err, "failed to get dice session for player %s", playerID)
@@ -524,13 +522,13 @@ func (o *Orchestrator) UpdateAbilityScores(ctx context.Context, input *UpdateAbi
 		// Clear the dice session after using the rolls
 		_, err = o.diceService.ClearRollSession(ctx, &dice.ClearRollSessionInput{
 			EntityID: playerID,
-			Context:  rollContext,
+			Context:  "ability_scores",
 		})
 		if err != nil {
 			// Log warning but don't fail the operation
 			slog.Warn("Failed to clear dice session after ability score assignment",
 				"player_id", playerID,
-				"context", rollContext,
+				"context", "ability_scores",
 				"error", err)
 		}
 	} else if input.AbilityScores != nil {
@@ -902,20 +900,20 @@ func (o *Orchestrator) RollAbilityScores(ctx context.Context, input *RollAbility
 		method = dice.MethodStandard
 	}
 
-	// Get the draft to ensure it exists
-	_, err := o.draftRepo.Get(ctx, draftrepo.GetInput{
+	// Get the draft to ensure it exists and get player ID
+	getDraftOutput, err := o.draftRepo.Get(ctx, draftrepo.GetInput{
 		ID: input.DraftID,
 	})
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to get draft %s", input.DraftID)
 	}
 
-	// Create entity ID for dice session
-	entityID := "char_draft_" + input.DraftID
+	// Use player ID as entity ID (this must match what UpdateAbilityScores expects)
+	playerID := getDraftOutput.Draft.PlayerID
 
 	// Roll ability scores using dice service
 	rollOutput, err := o.diceService.RollAbilityScores(ctx, &dice.RollAbilityScoresInput{
-		EntityID: entityID,
+		EntityID: playerID,
 		Method:   method,
 	})
 	if err != nil {
@@ -942,7 +940,7 @@ func (o *Orchestrator) RollAbilityScores(ctx context.Context, input *RollAbility
 
 	return &RollAbilityScoresOutput{
 		Rolls:     rolls,
-		SessionID: entityID, // Return the entity ID as session ID
+		SessionID: playerID, // The session is identified by playerID + context
 		ExpiresAt: rollOutput.Session.ExpiresAt,
 	}, nil
 }
