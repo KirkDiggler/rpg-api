@@ -7,12 +7,12 @@ import (
 	"github.com/stretchr/testify/suite"
 	"go.uber.org/mock/gomock"
 
-	"github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
 	extmock "github.com/KirkDiggler/rpg-api/internal/clients/external/mock"
-	charmock "github.com/KirkDiggler/rpg-api/internal/repositories/character/mock"
-	draftmock "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft/mock"
+	"github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
 	dicemock "github.com/KirkDiggler/rpg-api/internal/orchestrators/dice/mock"
+	charmock "github.com/KirkDiggler/rpg-api/internal/repositories/character/mock"
 	draftrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft"
+	draftmock "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft/mock"
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/constants"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
@@ -20,13 +20,13 @@ import (
 
 type SpellSelectionOrchestratorTestSuite struct {
 	suite.Suite
-	ctrl           *gomock.Controller
-	orchestrator   *character.Orchestrator
-	mockCharRepo   *charmock.MockRepository
-	mockDraftRepo  *draftmock.MockRepository
-	mockExtClient  *extmock.MockClient
+	ctrl            *gomock.Controller
+	orchestrator    *character.Orchestrator
+	mockCharRepo    *charmock.MockRepository
+	mockDraftRepo   *draftmock.MockRepository
+	mockExtClient   *extmock.MockClient
 	mockDiceService *dicemock.MockService
-	ctx            context.Context
+	ctx             context.Context
 }
 
 func (s *SpellSelectionOrchestratorTestSuite) SetupTest() {
@@ -106,7 +106,7 @@ func (s *SpellSelectionOrchestratorTestSuite) TestUpdateClass_WizardAddsSpellAnd
 
 	// Verify choices were added
 	s.Require().NotNil(savedDraft, "Draft should have been saved")
-	
+
 	// Should have 3 choices: 1 race choice + 2 class choices (cantrips + spells)
 	s.Require().Len(savedDraft.Choices, 3, "Should have race choice plus wizard spell choices")
 
@@ -195,7 +195,7 @@ func (s *SpellSelectionOrchestratorTestSuite) TestUpdateClass_ChangingClassClear
 	// Verify old wizard choices were removed
 	s.Require().NotNil(savedDraft)
 	s.Require().Len(savedDraft.Choices, 1, "Should only have race choice left")
-	
+
 	// Only race choice should remain
 	choice := savedDraft.Choices[0]
 	s.Equal(shared.SourceRace, choice.Source)
@@ -243,7 +243,7 @@ func (s *SpellSelectionOrchestratorTestSuite) TestUpdateClass_ClericOnlyGetsCant
 	// Verify only cantrip choice was added (clerics prepare spells)
 	s.Require().NotNil(savedDraft)
 	s.Require().Len(savedDraft.Choices, 1, "Cleric should only have cantrip choice")
-	
+
 	choice := savedDraft.Choices[0]
 	s.Equal(shared.SourceClass, choice.Source)
 	s.Equal(shared.ChoiceCantrips, choice.Category)

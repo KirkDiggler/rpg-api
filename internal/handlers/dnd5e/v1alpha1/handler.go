@@ -333,7 +333,7 @@ func (h *Handler) UpdateAbilityScores(
 	case *dnd5ev1alpha1.UpdateAbilityScoresRequest_RollAssignments:
 		// Roll-based assignment
 		assignments := scores.RollAssignments
-		
+
 		// Validate all roll IDs are provided
 		if assignments.StrengthRollId == "" ||
 			assignments.DexterityRollId == "" ||

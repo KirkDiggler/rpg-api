@@ -193,7 +193,7 @@ func (c *client) convertClassToHybrid(apiClass *entities.Class) (*class.Data, *C
 									})
 								}
 							}
-							
+
 							// Create a single option that contains a nested choice
 							choiceData.Options = append(choiceData.Options, class.EquipmentOption{
 								ID: fmt.Sprintf("choose-%d-%s", opt.ChoiceCount, categoryID),
@@ -276,7 +276,7 @@ func (c *client) convertClassToHybrid(apiClass *entities.Class) (*class.Data, *C
 											})
 										}
 									}
-									
+
 									// Add as a nested choice
 									bundleItems = append(bundleItems, class.EquipmentBundleItem{
 										NestedChoice: &class.EquipmentChoiceData{

@@ -10,7 +10,7 @@ import (
 // convertEquipmentChoices converts toolkit equipment choices to proto choices
 func convertEquipmentChoices(classData *class.Data) []*dnd5ev1alpha1.Choice {
 	var choices []*dnd5ev1alpha1.Choice
-	
+
 	for i, equipChoice := range classData.EquipmentChoices {
 		protoChoice := &dnd5ev1alpha1.Choice{
 			Id:          fmt.Sprintf("%s_equipment_%d", classData.ID, i+1),
@@ -18,7 +18,7 @@ func convertEquipmentChoices(classData *class.Data) []*dnd5ev1alpha1.Choice {
 			ChooseCount: int32(equipChoice.Choose),
 			ChoiceType:  dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_EQUIPMENT,
 		}
-		
+
 		// Convert options
 		options := make([]*dnd5ev1alpha1.ChoiceOption, 0, len(equipChoice.Options))
 		for _, opt := range equipChoice.Options {
@@ -27,16 +27,16 @@ func convertEquipmentChoices(classData *class.Data) []*dnd5ev1alpha1.Choice {
 				options = append(options, protoOption)
 			}
 		}
-		
+
 		protoChoice.OptionSet = &dnd5ev1alpha1.Choice_ExplicitOptions{
 			ExplicitOptions: &dnd5ev1alpha1.ExplicitOptions{
 				Options: options,
 			},
 		}
-		
+
 		choices = append(choices, protoChoice)
 	}
-	
+
 	return choices
 }
 
@@ -46,7 +46,7 @@ func convertEquipmentOption(opt class.EquipmentOption) *dnd5ev1alpha1.ChoiceOpti
 	if len(opt.Items) == 1 && opt.Items[0].ConcreteItem != nil {
 		return convertSingleItem(opt.Items[0].ConcreteItem)
 	}
-	
+
 	// Handle bundles
 	return convertBundle(opt.Items)
 }
@@ -63,7 +63,7 @@ func convertSingleItem(item *class.EquipmentData) *dnd5ev1alpha1.ChoiceOption {
 			},
 		}
 	}
-	
+
 	return &dnd5ev1alpha1.ChoiceOption{
 		OptionType: &dnd5ev1alpha1.ChoiceOption_CountedItem{
 			CountedItem: &dnd5ev1alpha1.CountedItemReference{
@@ -78,14 +78,14 @@ func convertSingleItem(item *class.EquipmentData) *dnd5ev1alpha1.ChoiceOption {
 // convertBundle converts a bundle of items to a choice option
 func convertBundle(items []class.EquipmentBundleItem) *dnd5ev1alpha1.ChoiceOption {
 	bundleItems := make([]*dnd5ev1alpha1.BundleItem, 0, len(items))
-	
+
 	for _, item := range items {
 		bundleItem := convertBundleItem(item)
 		if bundleItem != nil {
 			bundleItems = append(bundleItems, bundleItem)
 		}
 	}
-	
+
 	return &dnd5ev1alpha1.ChoiceOption{
 		OptionType: &dnd5ev1alpha1.ChoiceOption_Bundle{
 			Bundle: &dnd5ev1alpha1.ItemBundle{
@@ -109,7 +109,7 @@ func convertBundleItem(item class.EquipmentBundleItem) *dnd5ev1alpha1.BundleItem
 			},
 		}
 	}
-	
+
 	// Handle nested choices
 	if item.NestedChoice != nil {
 		return &dnd5ev1alpha1.BundleItem{
@@ -120,7 +120,7 @@ func convertBundleItem(item class.EquipmentBundleItem) *dnd5ev1alpha1.BundleItem
 			},
 		}
 	}
-	
+
 	return nil
 }
 
@@ -132,7 +132,7 @@ func convertNestedChoice(choice *class.EquipmentChoiceData) *dnd5ev1alpha1.Choic
 		ChooseCount: int32(choice.Choose),
 		ChoiceType:  dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_EQUIPMENT,
 	}
-	
+
 	// Convert nested options
 	options := make([]*dnd5ev1alpha1.ChoiceOption, 0, len(choice.Options))
 	for _, opt := range choice.Options {
@@ -148,12 +148,12 @@ func convertNestedChoice(choice *class.EquipmentChoiceData) *dnd5ev1alpha1.Choic
 			})
 		}
 	}
-	
+
 	protoChoice.OptionSet = &dnd5ev1alpha1.Choice_ExplicitOptions{
 		ExplicitOptions: &dnd5ev1alpha1.ExplicitOptions{
 			Options: options,
 		},
 	}
-	
+
 	return protoChoice
 }

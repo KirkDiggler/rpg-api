@@ -302,7 +302,7 @@ func (o *Orchestrator) UpdateClass(ctx context.Context, input *UpdateClassInput)
 			ChoiceID: "wizard_spells",
 		}
 		nonClassChoices = append(nonClassChoices, cantripChoice, spellChoice)
-		
+
 	case constants.ClassSorcerer:
 		// Sorcerers get 4 cantrips and 2 first-level spells at level 1
 		cantripChoice := toolkitchar.ChoiceData{
@@ -316,7 +316,7 @@ func (o *Orchestrator) UpdateClass(ctx context.Context, input *UpdateClassInput)
 			ChoiceID: "sorcerer_spells",
 		}
 		nonClassChoices = append(nonClassChoices, cantripChoice, spellChoice)
-		
+
 	case constants.ClassBard:
 		// Bards get 2 cantrips and 4 first-level spells at level 1
 		cantripChoice := toolkitchar.ChoiceData{
@@ -330,7 +330,7 @@ func (o *Orchestrator) UpdateClass(ctx context.Context, input *UpdateClassInput)
 			ChoiceID: "bard_spells",
 		}
 		nonClassChoices = append(nonClassChoices, cantripChoice, spellChoice)
-		
+
 	case constants.ClassCleric, constants.ClassDruid:
 		// Clerics and Druids get cantrips but prepare spells (no spell choice needed at level 1)
 		cantripChoice := toolkitchar.ChoiceData{
@@ -339,7 +339,7 @@ func (o *Orchestrator) UpdateClass(ctx context.Context, input *UpdateClassInput)
 			ChoiceID: fmt.Sprintf("%s_cantrips", string(input.ClassID)),
 		}
 		nonClassChoices = append(nonClassChoices, cantripChoice)
-		
+
 	case constants.ClassWarlock:
 		// Warlocks get 2 cantrips and 2 first-level spells at level 1
 		cantripChoice := toolkitchar.ChoiceData{
@@ -467,10 +467,10 @@ func (o *Orchestrator) UpdateAbilityScores(ctx context.Context, input *UpdateAbi
 	if input.RollAssignments != nil {
 		// Get the player ID from the draft
 		playerID := draft.PlayerID
-		
+
 		// Context for dice rolls should include the draft ID
 		rollContext := fmt.Sprintf("character_draft_%s_abilities", input.DraftID)
-		
+
 		// Get the dice session for this player and context
 		sessionOutput, err := o.diceService.GetRollSession(ctx, &dice.GetRollSessionInput{
 			EntityID: playerID,
@@ -518,7 +518,7 @@ func (o *Orchestrator) UpdateAbilityScores(ctx context.Context, input *UpdateAbi
 
 		// Update the draft with the ability scores
 		draft.AbilityScoreChoice = abilityScores
-		
+
 		// Clear the dice session after using the rolls
 		_, err = o.diceService.ClearRollSession(ctx, &dice.ClearRollSessionInput{
 			EntityID: playerID,
