@@ -20,9 +20,9 @@ import (
 
 type DiceHandlerTestSuite struct {
 	suite.Suite
-	ctrl        *gomock.Controller
-	mockDice    *dicemock.MockService
-	handler     *v1alpha1.DiceHandler
+	ctrl     *gomock.Controller
+	mockDice *dicemock.MockService
+	handler  *v1alpha1.DiceHandler
 }
 
 func TestDiceHandlerTestSuite(t *testing.T) {
@@ -107,9 +107,9 @@ func (s *DiceHandlerTestSuite) TestRollDice_ValidationErrors() {
 	ctx := context.Background()
 
 	testCases := []struct {
-		name     string
-		req      *apiv1alpha1.RollDiceRequest
-		errMsg   string
+		name   string
+		req    *apiv1alpha1.RollDiceRequest
+		errMsg string
 	}{
 		{
 			name: "missing entity_id",

@@ -675,10 +675,23 @@ func (s *OrchestratorTestSuite) TestUpdateClass_Success() {
 		ClassID: newClassID,
 	}
 
-	// Create a copy of test data with updated class
+	// Create a copy of test data with updated class and spell choices
 	updatedDraft := *s.testDraftData
 	updatedDraft.ClassChoice = toolkitchar.ClassChoice{
 		ClassID: newClassID,
+	}
+	// Wizard class now adds spell choices
+	updatedDraft.Choices = []toolkitchar.ChoiceData{
+		{
+			Category: shared.ChoiceCantrips,
+			Source:   shared.SourceClass,
+			ChoiceID: "wizard_cantrips",
+		},
+		{
+			Category: shared.ChoiceSpells,
+			Source:   shared.SourceClass,
+			ChoiceID: "wizard_spells",
+		},
 	}
 
 	// Mock get call
@@ -690,14 +703,16 @@ func (s *OrchestratorTestSuite) TestUpdateClass_Success() {
 			Draft: s.testDraftData,
 		}, nil)
 
-	// Mock update call
+	// Mock update call - use DoAndReturn to verify the draft has spell choices
 	s.mockDraftRepo.EXPECT().
-		Update(ctx, draftrepo.UpdateInput{
-			Draft: &updatedDraft,
-		}).
-		Return(&draftrepo.UpdateOutput{
-			Draft: &updatedDraft,
-		}, nil)
+		Update(ctx, gomock.Any()).
+		DoAndReturn(func(ctx context.Context, input draftrepo.UpdateInput) (*draftrepo.UpdateOutput, error) {
+			// Verify the draft has the expected spell choices
+			s.Require().Len(input.Draft.Choices, 2, "Wizard should have 2 spell choices")
+			return &draftrepo.UpdateOutput{
+				Draft: input.Draft,
+			}, nil
+		})
 
 	// Call orchestrator
 	output, err := s.orchestrator.UpdateClass(ctx, input)
@@ -706,6 +721,7 @@ func (s *OrchestratorTestSuite) TestUpdateClass_Success() {
 	s.Require().NoError(err)
 	s.Require().NotNil(output)
 	s.Assert().Equal(newClassID, output.Draft.ClassChoice.ClassID)
+	s.Assert().Len(output.Draft.Choices, 2)
 	s.Assert().Empty(output.Warnings)
 }
 

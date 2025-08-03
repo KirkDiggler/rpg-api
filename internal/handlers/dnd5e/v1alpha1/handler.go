@@ -333,7 +333,7 @@ func (h *Handler) UpdateAbilityScores(
 	case *dnd5ev1alpha1.UpdateAbilityScoresRequest_RollAssignments:
 		// Roll-based assignment
 		assignments := scores.RollAssignments
-		
+
 		// Validate all roll IDs are provided
 		if assignments.StrengthRollId == "" ||
 			assignments.DexterityRollId == "" ||
@@ -796,6 +796,22 @@ func convertToolkitChoicesToProto(choices []toolkitchar.ChoiceData) []*dnd5ev1al
 				protoChoice.Selection = &dnd5ev1alpha1.ChoiceData_Equipment{
 					Equipment: &dnd5ev1alpha1.EquipmentList{
 						Items: choice.EquipmentSelection,
+					},
+				}
+			}
+		case shared.ChoiceSpells:
+			if len(choice.SpellSelection) > 0 {
+				protoChoice.Selection = &dnd5ev1alpha1.ChoiceData_Spells{
+					Spells: &dnd5ev1alpha1.SpellList{
+						Spells: choice.SpellSelection,
+					},
+				}
+			}
+		case shared.ChoiceCantrips:
+			if len(choice.CantripSelection) > 0 {
+				protoChoice.Selection = &dnd5ev1alpha1.ChoiceData_Cantrips{
+					Cantrips: &dnd5ev1alpha1.CantripList{
+						Cantrips: choice.CantripSelection,
 					},
 				}
 			}

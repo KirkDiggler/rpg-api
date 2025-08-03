@@ -1,4 +1,6 @@
-# Claude AI Development Guidelines
+# Claude AI Development Guidelines - rpg-api
+
+**Note**: General development guidelines are in `/home/kirk/personal/CLAUDE.md`. This file contains rpg-api specific instructions.
 
 ## Core Philosophy
 
@@ -310,6 +312,61 @@ This approach ensures:
 
 ## Development Workflow
 
+### Feature Release Workflow
+
+**Every feature follows this workflow to ensure quality and catch CI issues early:**
+
+1. **Always start from latest main**
+   ```bash
+   gcm                          # git checkout main
+   gl                           # git pull
+   ```
+
+2. **Create feature branch**
+   ```bash
+   git checkout -b feat/spell-selection
+   ```
+
+3. **Develop the feature**
+   - Write tests first (TDD) or alongside code
+   - Follow existing patterns in the codebase
+   - Keep commits focused and atomic
+
+4. **Run tests locally**
+   ```bash
+   go test ./...                # Run all tests
+   go test ./internal/orchestrators/character -v  # Run specific package tests
+   ```
+
+5. **Run CI checks locally BEFORE pushing**
+   ```bash
+   make ci-check               # Detect CI failures before push
+   make ci-fix                 # Auto-fix what can be fixed
+   ```
+
+6. **When CI fails, learn from it**
+   - Add the failure pattern to `scripts/ci-checks.sh`
+   - Document why it failed in comments
+   - Next time, the local check will catch it
+   - Eventually we'll catch all common CI failures locally
+
+7. **Create PR**
+   ```bash
+   git push origin feat/spell-selection
+   gh pr create
+   ```
+
+8. **Address review feedback**
+   - Check inline comments: `gh api repos/KirkDiggler/rpg-api/pulls/<number>/comments`
+   - Fix issues and push updates
+   - Thank reviewers for catching issues
+
+9. **Merge when approved**
+   - Let the PR author or reviewer merge
+   - Delete branch after merge
+
+**Key principle**: Every CI failure is a learning opportunity. Add detection for it locally so it never happens again.
+
 ### Pre-commit Workflow
 **ALWAYS** run before committing:
 ```bash
@@ -359,6 +416,37 @@ make install-tools
 - **Service coverage target**: 80%+ (business logic lives here)
 - **0% new code coverage is OK**: During outside-in development when adding contracts
 
+## CI/CD Patterns & Common Failures
+
+### Pre-Flight CI Checks
+**ALWAYS run `make ci-check` before pushing** to detect CI failures locally:
+
+```bash
+make ci-check  # Comprehensive CI failure detection
+make ci-fix    # Automatically fix common issues
+```
+
+### Staying Current with Standards
+
+We follow **industry-standard Go practices** rather than maintaining custom rules:
+- Use `golangci-lint` with recommended linters enabled
+- Follow Go's official style guide and effective Go principles
+- Let tooling enforce standards, not manual rules
+
+The key is: **If CI fails locally with `make ci-check`, fix it before pushing.**
+
+Common patterns that cause CI failures:
+- Generated code out of sync → run `make generate`
+- Formatting issues → run `make fmt`
+- Linting issues → run `make lint` and fix what it reports
+- Test failures → ensure tests pass with race detection enabled
+
+Don't memorize specific rules - let the tools tell you what needs fixing.
+
+### CI Check Script
+We maintain `scripts/ci-checks.sh` that catches these issues before push.
+Update it when we discover new CI failure patterns.
+
 ## Remember
 
 - Explicit > Implicit (always use Input/Output types)
@@ -372,3 +460,4 @@ make install-tools
 - **Trust your instincts** - If something feels wrong, it probably is
 - **Verify assumptions** - Check actual API responses and data flows
 - **Don't blindly follow existing patterns** - They might be wrong
+- **Run CI checks locally** - Don't let CI be the first to find issues
