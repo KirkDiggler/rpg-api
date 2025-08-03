@@ -369,38 +369,22 @@ make ci-check  # Comprehensive CI failure detection
 make ci-fix    # Automatically fix common issues
 ```
 
-### Common CI Failures We've Learned From
+### Staying Current with Standards
 
-1. **Missing EOF newlines**
-   - CI fails if files don't end with newline
-   - Check with: `tail -c1 file | wc -l` (should be 1)
-   - Fix with: `echo >> file`
+We follow **industry-standard Go practices** rather than maintaining custom rules:
+- Use `golangci-lint` with recommended linters enabled
+- Follow Go's official style guide and effective Go principles
+- Let tooling enforce standards, not manual rules
 
-2. **Mock regeneration needed**
-   - CI runs `go generate` and fails if mocks change
-   - Always run `go generate ./...` after interface changes
-   - Check with: `go generate ./... && git diff`
+The key is: **If CI fails locally with `make ci-check`, fix it before pushing.**
 
-3. **Import ordering**
-   - goimports must separate stdlib, external, and local imports
-   - Fix with: `goimports -w -local github.com/KirkDiggler`
+Common patterns that cause CI failures:
+- Generated code out of sync → run `make generate`
+- Formatting issues → run `make fmt`
+- Linting issues → run `make lint` and fix what it reports
+- Test failures → ensure tests pass with race detection enabled
 
-4. **Test exclusions in CI**
-   - CI excludes `/gen/`, `/mock/`, `cmd/server` from coverage
-   - Use: `go test $(go list ./... | grep -v /gen/ | grep -v /mock | grep -v cmd/server)`
-
-5. **Race detection**
-   - CI uses `-race` flag which local tests might skip
-   - Always test with: `go test -race ./...`
-
-6. **TODO comments**
-   - Must have issue numbers: `// TODO(#123): Fix this`
-   - Never just `// TODO: Fix this`
-
-7. **Linter strictness**
-   - goconst: Repeated strings (3+ occurrences) → constants
-   - unused parameters: Name them `_` if unused
-   - revive: All public APIs need comments
+Don't memorize specific rules - let the tools tell you what needs fixing.
 
 ### CI Check Script
 We maintain `scripts/ci-checks.sh` that catches these issues before push.

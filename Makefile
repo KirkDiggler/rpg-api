@@ -106,7 +106,7 @@ deps: install-tools ## Install development dependencies (alias for install-tools
 .PHONY: install-tools
 install-tools: ## Install all development tools
 	@echo "==> Installing development tools..."
-	@curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/HEAD/install.sh | sh -s -- -b $$(go env GOPATH)/bin v2.2.2
+	@curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/HEAD/install.sh | sh -s -- -b $$(go env GOPATH)/bin latest
 	@go install go.uber.org/mock/mockgen@latest
 	@go install golang.org/x/tools/cmd/goimports@latest
 	@echo "✅ Tools installed successfully"

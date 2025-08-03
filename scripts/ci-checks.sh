@@ -109,24 +109,7 @@ else
     echo -e "${GREEN}✅ All tests passed${NC}"
 fi
 
-# 8. Check for common issues
-echo -e "\n🔎 Checking for common issues..."
-
-# Check for fmt.Println in non-test files
-FMT_PRINTLN=$(grep -r "fmt\.Println" --include="*.go" . | grep -v "_test.go" | grep -v "/mock/" | grep -v "/gen/" || true)
-if [ -n "$FMT_PRINTLN" ]; then
-    echo -e "${RED}Found fmt.Println in non-test files:${NC}"
-    echo "$FMT_PRINTLN"
-    record_failure "fmt.Println found in non-test files"
-fi
-
-# Check for TODO without issue number
-TODO_WITHOUT_ISSUE=$(grep -r "TODO[^(]" --include="*.go" . | grep -v "/mock/" | grep -v "/gen/" || true)
-if [ -n "$TODO_WITHOUT_ISSUE" ]; then
-    echo -e "${RED}Found TODO without issue number:${NC}"
-    echo "$TODO_WITHOUT_ISSUE"
-    record_failure "TODO comments without issue numbers"
-fi
+# 8. Additional checks can be added here as we discover new patterns
 
 # Summary
 echo -e "\n📊 Summary:"
