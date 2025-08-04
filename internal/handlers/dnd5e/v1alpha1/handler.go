@@ -1311,6 +1311,9 @@ func convertProtoSourceToToolkit(source dnd5ev1alpha1.ChoiceSource) shared.Choic
 // convertProtoSkillToToolkit converts proto Skill enum to toolkit Skill constant
 func convertProtoSkillToToolkit(skill dnd5ev1alpha1.Skill) constants.Skill {
 	switch skill {
+	case dnd5ev1alpha1.Skill_SKILL_UNSPECIFIED:
+		// Return empty string for unspecified skill
+		return ""
 	case dnd5ev1alpha1.Skill_SKILL_ACROBATICS:
 		return constants.SkillAcrobatics
 	case dnd5ev1alpha1.Skill_SKILL_ANIMAL_HANDLING:
@@ -1348,13 +1351,17 @@ func convertProtoSkillToToolkit(skill dnd5ev1alpha1.Skill) constants.Skill {
 	case dnd5ev1alpha1.Skill_SKILL_SURVIVAL:
 		return constants.SkillSurvival
 	default:
-		return constants.SkillAthletics // Default fallback
+		// Return empty string for unknown skills to avoid hiding bugs
+		return ""
 	}
 }
 
 // convertProtoLanguageToToolkit converts proto Language enum to toolkit Language constant
 func convertProtoLanguageToToolkit(lang dnd5ev1alpha1.Language) constants.Language {
 	switch lang {
+	case dnd5ev1alpha1.Language_LANGUAGE_UNSPECIFIED:
+		// Return empty string for unspecified language
+		return ""
 	case dnd5ev1alpha1.Language_LANGUAGE_COMMON:
 		return constants.LanguageCommon
 	case dnd5ev1alpha1.Language_LANGUAGE_DWARVISH:
@@ -1376,7 +1383,8 @@ func convertProtoLanguageToToolkit(lang dnd5ev1alpha1.Language) constants.Langua
 	case dnd5ev1alpha1.Language_LANGUAGE_INFERNAL:
 		return constants.LanguageInfernal
 	default:
-		return constants.LanguageCommon // Default fallback
+		// Return empty string for unknown languages to avoid hiding bugs
+		return ""
 	}
 }
 
@@ -1781,6 +1789,6 @@ func convertSkillToProto(skill constants.Skill) dnd5ev1alpha1.Skill {
 	case constants.SkillSurvival:
 		return dnd5ev1alpha1.Skill_SKILL_SURVIVAL
 	default:
-		return dnd5ev1alpha1.Skill_SKILL_ATHLETICS
+		return dnd5ev1alpha1.Skill_SKILL_UNSPECIFIED
 	}
 }
