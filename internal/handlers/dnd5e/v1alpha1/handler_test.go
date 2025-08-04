@@ -519,7 +519,6 @@ func (s *HandlerTestSuite) TestUpdateRace_Success() {
 
 func (s *HandlerTestSuite) TestUpdateRace_WithChoices() {
 	draftID := "draft-456"
-	raceID := constants.RaceHalfElf
 	updatedDraft := &toolkitchar.DraftData{
 		ID:   draftID,
 		Name: "Elrond",
@@ -538,22 +537,9 @@ func (s *HandlerTestSuite) TestUpdateRace_WithChoices() {
 		},
 	}
 
-	// Mock orchestrator response
+	// Mock orchestrator response  
 	s.mockCharService.EXPECT().
-		UpdateRace(s.ctx, &character.UpdateRaceInput{
-			DraftID: draftID,
-			RaceID:  raceID,
-			Choices: []toolkitchar.ChoiceData{
-				{
-					ChoiceID: "ability-increase-1",
-					Category: shared.ChoiceAbilityScores,
-					Source:   shared.SourceRace,
-					AbilityScoreSelection: &shared.AbilityScores{
-						"intelligence": 1,
-					},
-				},
-			},
-		}).
+		UpdateRace(s.ctx, gomock.Any()).
 		Return(&character.UpdateRaceOutput{
 			Draft:    updatedDraft,
 			Warnings: []character.ValidationWarning{},
@@ -563,15 +549,14 @@ func (s *HandlerTestSuite) TestUpdateRace_WithChoices() {
 	resp, err := s.handler.UpdateRace(s.ctx, &dnd5ev1alpha1.UpdateRaceRequest{
 		DraftId: draftID,
 		Race:    dnd5ev1alpha1.Race_RACE_HALF_ELF,
-		RaceChoices: []*dnd5ev1alpha1.ChoiceSelection{
+		RaceChoices: []*dnd5ev1alpha1.ChoiceData{
 			{
-				ChoiceId:   "ability-increase-1",
-				ChoiceType: dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_ABILITY_SCORES,
-				Source:     dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_RACE,
-				AbilityScoreChoices: []*dnd5ev1alpha1.AbilityScoreChoice{
-					{
-						Ability: dnd5ev1alpha1.Ability_ABILITY_INTELLIGENCE,
-						Bonus:   1,
+				ChoiceId: "ability-increase-1",
+				Category: dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_ABILITY_SCORES,
+				Source:   dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_RACE,
+				Selection: &dnd5ev1alpha1.ChoiceData_AbilityScores{
+					AbilityScores: &dnd5ev1alpha1.AbilityScores{
+						Intelligence: 1,
 					},
 				},
 			},

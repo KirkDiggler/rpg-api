@@ -67,12 +67,16 @@ func TestUpdateRace_DragonbornRaceEnum(t *testing.T) {
 	req := &dnd5ev1alpha1.UpdateRaceRequest{
 		DraftId: draftID,
 		Race:    dnd5ev1alpha1.Race_RACE_DRAGONBORN, // This is enum value 1
-		RaceChoices: []*dnd5ev1alpha1.ChoiceSelection{
+		RaceChoices: []*dnd5ev1alpha1.ChoiceData{
 			{
-				ChoiceId:     "language_choice",
-				ChoiceType:   dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_UNSPECIFIED,
-				Source:       dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_RACE,
-				SelectedKeys: []string{"goblin"},
+				ChoiceId: "language_choice",
+				Category: dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_LANGUAGES,
+				Source:   dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_RACE,
+				Selection: &dnd5ev1alpha1.ChoiceData_Languages{
+					Languages: &dnd5ev1alpha1.LanguageList{
+						Languages: []dnd5ev1alpha1.Language{dnd5ev1alpha1.Language_LANGUAGE_GOBLIN},
+					},
+				},
 			},
 		},
 	}

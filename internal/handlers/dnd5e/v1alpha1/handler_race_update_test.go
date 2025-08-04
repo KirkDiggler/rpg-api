@@ -102,12 +102,19 @@ func (s *HandlerRaceUpdateTestSuite) TestUpdateRace_WithChoices_Success() {
 	req := &dnd5ev1alpha1.UpdateRaceRequest{
 		DraftId: draftID,
 		Race:    dnd5ev1alpha1.Race_RACE_HALF_ELF,
-		RaceChoices: []*dnd5ev1alpha1.ChoiceSelection{
+		RaceChoices: []*dnd5ev1alpha1.ChoiceData{
 			{
-				ChoiceId:     "skill_choice",
-				SelectedKeys: []string{"skill_perception", "skill_investigation"},
-				ChoiceType:   dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_SKILLS,
-				Source:       dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_RACE,
+				ChoiceId: "skill_choice",
+				Category: dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_SKILLS,
+				Source:   dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_RACE,
+				Selection: &dnd5ev1alpha1.ChoiceData_Skills{
+					Skills: &dnd5ev1alpha1.SkillList{
+						Skills: []dnd5ev1alpha1.Skill{
+							dnd5ev1alpha1.Skill_SKILL_PERCEPTION,
+							dnd5ev1alpha1.Skill_SKILL_INVESTIGATION,
+						},
+					},
+				},
 			},
 		},
 	}
