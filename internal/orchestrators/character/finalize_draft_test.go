@@ -13,8 +13,8 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
 	dicemock "github.com/KirkDiggler/rpg-api/internal/orchestrators/dice/mock"
 	idgenmock "github.com/KirkDiggler/rpg-api/internal/pkg/idgen/mock"
-	charmock "github.com/KirkDiggler/rpg-api/internal/repositories/character/mock"
 	charrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
+	charmock "github.com/KirkDiggler/rpg-api/internal/repositories/character/mock"
 	draftrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft"
 	draftmock "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft/mock"
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
@@ -65,10 +65,10 @@ func (s *FinalizeDraftOrchestratorTestSuite) TearDownTest() {
 func (s *FinalizeDraftOrchestratorTestSuite) TestFinalizeDraft_Success() {
 	// Arrange
 	draftID := "draft_123"
-	
+
 	// Mock ID generation
 	s.mockIDGen.EXPECT().Generate().Return("char-123")
-	
+
 	completeDraft := &toolkitchar.DraftData{
 		ID:       draftID,
 		PlayerID: "player_123",
@@ -148,27 +148,27 @@ func (s *FinalizeDraftOrchestratorTestSuite) TestFinalizeDraft_Success() {
 			s.Equal(constants.ClassFighter, input.CharacterData.ClassID)
 			s.Equal(constants.BackgroundSoldier, input.CharacterData.BackgroundID)
 			s.Equal(1, input.CharacterData.Level)
-			
+
 			// Hit points: 10 (max d10) + 2 (CON mod) = 12
 			s.Equal(12, input.CharacterData.HitPoints)
 			s.Equal(12, input.CharacterData.MaxHitPoints)
-			
+
 			// Speed from race
 			s.Equal(30, input.CharacterData.Speed)
 			s.Equal("Medium", input.CharacterData.Size)
-			
+
 			// Saving throws
 			s.Equal(shared.Proficient, input.CharacterData.SavingThrows[constants.STR])
 			s.Equal(shared.Proficient, input.CharacterData.SavingThrows[constants.CON])
-			
+
 			// Skills
 			s.Equal(shared.Proficient, input.CharacterData.Skills[constants.SkillAthletics])
 			s.Equal(shared.Proficient, input.CharacterData.Skills[constants.SkillIntimidation])
-			
+
 			// Languages
 			s.Contains(input.CharacterData.Languages, string(constants.LanguageCommon))
 			s.Contains(input.CharacterData.Languages, string(constants.LanguageElvish))
-			
+
 			return &charrepo.CreateOutput{CharacterData: input.CharacterData}, nil
 		})
 
@@ -330,10 +330,10 @@ func (s *FinalizeDraftOrchestratorTestSuite) TestFinalizeDraft_DraftNotFound() {
 func (s *FinalizeDraftOrchestratorTestSuite) TestFinalizeDraft_DraftDeleteFails() {
 	// Arrange
 	draftID := "draft_123"
-	
+
 	// Mock ID generation
 	s.mockIDGen.EXPECT().Generate().Return("char-123")
-	
+
 	completeDraft := &toolkitchar.DraftData{
 		ID:       draftID,
 		PlayerID: "player_123",

@@ -8,16 +8,16 @@ import (
 	"github.com/stretchr/testify/suite"
 	"go.uber.org/mock/gomock"
 
+	extmock "github.com/KirkDiggler/rpg-api/internal/clients/external/mock"
 	"github.com/KirkDiggler/rpg-api/internal/errors"
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/dice"
 	dicemock "github.com/KirkDiggler/rpg-api/internal/orchestrators/dice/mock"
+	idgenmock "github.com/KirkDiggler/rpg-api/internal/pkg/idgen/mock"
 	charmock "github.com/KirkDiggler/rpg-api/internal/repositories/character/mock"
 	draftrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft"
 	draftmock "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft/mock"
 	dicesession "github.com/KirkDiggler/rpg-api/internal/repositories/dice_session"
-	extmock "github.com/KirkDiggler/rpg-api/internal/clients/external/mock"
-	idgenmock "github.com/KirkDiggler/rpg-api/internal/pkg/idgen/mock"
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/constants"
 )
@@ -60,13 +60,13 @@ func (s *AbilityScoresDebugTestSuite) TearDownTest() {
 
 func (s *AbilityScoresDebugTestSuite) TestDebugEntityIDAndContext() {
 	ctx := context.Background()
-	
+
 	// Test data matching what the web app is using
 	draftID := "draft_2e56d910-44b1-480c-ba61-e5aa06894832"
 	playerID := "test-player"
-	
+
 	s.T().Logf("Testing with draftID: %s, playerID: %s", draftID, playerID)
-	
+
 	// Create test draft
 	testDraft := &toolkitchar.DraftData{
 		ID:       draftID,
@@ -83,7 +83,7 @@ func (s *AbilityScoresDebugTestSuite) TestDebugEntityIDAndContext() {
 
 	// Step 1: Test RollAbilityScores
 	s.T().Log("=== Testing RollAbilityScores ===")
-	
+
 	// Mock getting the draft
 	s.mockDraftRepo.EXPECT().
 		Get(ctx, draftrepo.GetInput{ID: draftID}).
@@ -92,7 +92,7 @@ func (s *AbilityScoresDebugTestSuite) TestDebugEntityIDAndContext() {
 	// Create expected dice session
 	expiresAt := time.Now().Add(15 * time.Minute)
 	expectedSession := &dicesession.DiceSession{
-		EntityID:  playerID, // Should use player ID
+		EntityID:  playerID,         // Should use player ID
 		Context:   "ability_scores", // Should use fixed context
 		ExpiresAt: expiresAt,
 		Rolls: []dicesession.DiceRoll{
@@ -112,13 +112,13 @@ func (s *AbilityScoresDebugTestSuite) TestDebugEntityIDAndContext() {
 			s.T().Logf("RollAbilityScores called with EntityID: %s, Method: %s", input.EntityID, input.Method)
 			s.Equal(playerID, input.EntityID, "EntityID should be player ID")
 			s.Equal(dice.MethodStandard, input.Method)
-			
+
 			rolls := make([]*dicesession.DiceRoll, len(expectedSession.Rolls))
 			for i := range expectedSession.Rolls {
 				roll := expectedSession.Rolls[i]
 				rolls[i] = &roll
 			}
-			
+
 			return &dice.RollAbilityScoresOutput{
 				Rolls:   rolls,
 				Session: expectedSession,
@@ -131,10 +131,10 @@ func (s *AbilityScoresDebugTestSuite) TestDebugEntityIDAndContext() {
 	})
 	s.Require().NoError(err)
 	s.Equal(playerID, rollOutput.SessionID)
-	
+
 	// Step 2: Test UpdateAbilityScores
 	s.T().Log("=== Testing UpdateAbilityScores ===")
-	
+
 	// Mock getting the draft again
 	s.mockDraftRepo.EXPECT().
 		Get(ctx, draftrepo.GetInput{ID: draftID}).
@@ -147,7 +147,7 @@ func (s *AbilityScoresDebugTestSuite) TestDebugEntityIDAndContext() {
 			s.T().Logf("GetRollSession called with EntityID: %s, Context: %s", input.EntityID, input.Context)
 			s.Equal(playerID, input.EntityID, "EntityID should be player ID")
 			s.Equal("ability_scores", input.Context, "Context should be 'ability_scores'")
-			
+
 			return &dice.GetRollSessionOutput{
 				Session: expectedSession,
 			}, nil
@@ -182,7 +182,7 @@ func (s *AbilityScoresDebugTestSuite) TestDebugEntityIDAndContext() {
 	})
 
 	s.Require().NoError(err)
-	
+
 	s.T().Log("=== Summary ===")
 	s.T().Logf("Both methods correctly use:")
 	s.T().Logf("- EntityID: %s (player ID)", playerID)
@@ -193,7 +193,7 @@ func (s *AbilityScoresDebugTestSuite) TestSessionNotFoundScenario() {
 	ctx := context.Background()
 	draftID := "draft_test"
 	playerID := "test-player"
-	
+
 	testDraft := &toolkitchar.DraftData{
 		ID:       draftID,
 		PlayerID: playerID,
@@ -229,7 +229,7 @@ func (s *AbilityScoresDebugTestSuite) TestSessionNotFoundScenario() {
 	s.Require().Error(err)
 	s.Contains(err.Error(), "failed to get dice session for player test-player")
 	s.Contains(err.Error(), "dice session not found")
-	
+
 	s.T().Log("Error matches what user is seeing in the logs")
 }
 

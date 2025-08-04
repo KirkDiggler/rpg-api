@@ -1729,30 +1729,30 @@ func convertCharacterDataToProto(char *toolkitchar.Data) *dnd5ev1alpha1.Characte
 	}
 
 	protoChar := &dnd5ev1alpha1.Character{
-		Id:                   char.ID,
-		Name:                 char.Name,
-		Level:                int32(char.Level),
-		ExperiencePoints:     int32(char.Experience),
-		
+		Id:               char.ID,
+		Name:             char.Name,
+		Level:            int32(char.Level),
+		ExperiencePoints: int32(char.Experience),
+
 		// Race and class info
 		Race:       convertToolkitRaceToProtoEnum(char.RaceID),
 		Subrace:    convertToolkitSubraceToProtoEnum(char.SubraceID),
 		Class:      convertToolkitClassToProtoEnum(char.ClassID),
 		Background: convertToolkitBackgroundToProtoEnum(char.BackgroundID),
-		
+
 		// Hit points
 		CurrentHitPoints: int32(char.HitPoints),
-		
+
 		// Ability scores
 		AbilityScores: convertToolkitAbilityScoresToProto(char.AbilityScores),
-		
+
 		// Metadata
 		Metadata: &dnd5ev1alpha1.CharacterMetadata{
 			PlayerId:  char.PlayerID,
 			CreatedAt: char.CreatedAt.Unix(),
 			UpdatedAt: char.UpdatedAt.Unix(),
 		},
-		
+
 		// Combat stats
 		CombatStats: &dnd5ev1alpha1.CombatStats{
 			HitPointMaximum: int32(char.MaxHitPoints),
@@ -1800,4 +1800,3 @@ func convertCharacterDataToProto(char *toolkitchar.Data) *dnd5ev1alpha1.Characte
 
 	return protoChar
 }
-

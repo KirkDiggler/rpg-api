@@ -56,12 +56,12 @@ func (s *HandlerFinalizeDraftTestSuite) TestFinalizeDraft_Success() {
 		PlayerID: "player-456",
 		Name:     "Test Character",
 		Level:    1,
-		
+
 		// Race and class info
 		RaceID:       constants.RaceHuman,
 		ClassID:      constants.ClassFighter,
 		BackgroundID: constants.BackgroundSoldier,
-		
+
 		// Ability scores
 		AbilityScores: shared.AbilityScores{
 			constants.STR: 16,
@@ -71,36 +71,36 @@ func (s *HandlerFinalizeDraftTestSuite) TestFinalizeDraft_Success() {
 			constants.WIS: 12,
 			constants.CHA: 8,
 		},
-		
+
 		// Hit points
 		HitPoints:    12,
 		MaxHitPoints: 12,
-		
+
 		// Speed and size
 		Speed: 30,
 		Size:  "Medium",
-		
+
 		// Skills
 		Skills: map[constants.Skill]shared.ProficiencyLevel{
-			constants.SkillAthletics:     shared.Proficient,
+			constants.SkillAthletics:    shared.Proficient,
 			constants.SkillIntimidation: shared.Proficient,
 		},
-		
+
 		// Saving throws
 		SavingThrows: map[constants.Ability]shared.ProficiencyLevel{
 			constants.STR: shared.Proficient,
 			constants.CON: shared.Proficient,
 		},
-		
+
 		// Languages
 		Languages: []string{string(constants.LanguageCommon), string(constants.LanguageElvish)},
-		
+
 		// Proficiencies
 		Proficiencies: shared.Proficiencies{
 			Weapons: []string{"simple", "martial"},
 			Armor:   []string{"light", "medium", "heavy", "shields"},
 		},
-		
+
 		// Equipment
 		Equipment: []string{"longsword", "shield", "chain-mail"},
 	}
@@ -128,16 +128,16 @@ func (s *HandlerFinalizeDraftTestSuite) TestFinalizeDraft_Success() {
 	s.Equal("Test Character", resp.Character.Name)
 	s.Equal(int32(1), resp.Character.Level)
 	s.True(resp.DraftDeleted)
-	
+
 	// Verify metadata
 	s.Require().NotNil(resp.Character.Metadata)
 	s.Equal("player-456", resp.Character.Metadata.PlayerId)
-	
+
 	// Verify race and class
 	s.Equal(dnd5ev1alpha1.Race_RACE_HUMAN, resp.Character.Race)
 	s.Equal(dnd5ev1alpha1.Class_CLASS_FIGHTER, resp.Character.Class)
 	s.Equal(dnd5ev1alpha1.Background_BACKGROUND_SOLDIER, resp.Character.Background)
-	
+
 	// Verify ability scores
 	s.NotNil(resp.Character.AbilityScores)
 	s.Equal(int32(16), resp.Character.AbilityScores.Strength)
@@ -146,19 +146,19 @@ func (s *HandlerFinalizeDraftTestSuite) TestFinalizeDraft_Success() {
 	s.Equal(int32(10), resp.Character.AbilityScores.Intelligence)
 	s.Equal(int32(12), resp.Character.AbilityScores.Wisdom)
 	s.Equal(int32(8), resp.Character.AbilityScores.Charisma)
-	
+
 	// Verify combat stats
 	s.Require().NotNil(resp.Character.CombatStats)
 	s.Equal(int32(12), resp.Character.CombatStats.HitPointMaximum)
 	s.Equal(int32(12), resp.Character.CurrentHitPoints)
-	
+
 	// Verify proficiencies
 	s.NotNil(resp.Character.Proficiencies)
 	s.Len(resp.Character.Proficiencies.Skills, 2)
 	s.Len(resp.Character.Proficiencies.SavingThrows, 2)
 	s.Len(resp.Character.Proficiencies.Weapons, 2)
 	s.Len(resp.Character.Proficiencies.Armor, 4)
-	
+
 	// Verify languages
 	s.Len(resp.Character.Languages, 2)
 }
