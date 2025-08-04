@@ -469,6 +469,11 @@ func (o *Orchestrator) UpdateAbilityScores(ctx context.Context, input *UpdateAbi
 	if input.RollAssignments != nil {
 		// Get the player ID from the draft
 		playerID := draft.PlayerID
+		
+		slog.Info("Looking for dice session for ability score assignment",
+			"draft_id", input.DraftID,
+			"player_id", playerID,
+			"context", "ability_scores")
 
 		// Get the dice session for this player
 		// The dice service uses "ability_scores" as the context for ability score rolls
@@ -477,8 +482,18 @@ func (o *Orchestrator) UpdateAbilityScores(ctx context.Context, input *UpdateAbi
 			Context:  "ability_scores",
 		})
 		if err != nil {
+			slog.Error("Failed to get dice session",
+				"draft_id", input.DraftID,
+				"player_id", playerID,
+				"context", "ability_scores",
+				"error", err)
 			return nil, errors.Wrapf(err, "failed to get dice session for player %s", playerID)
 		}
+		
+		slog.Info("Found dice session",
+			"draft_id", input.DraftID,
+			"player_id", playerID,
+			"rolls_count", len(sessionOutput.Session.Rolls))
 
 		// Create a map of roll IDs to totals
 		rollTotals := make(map[string]int32)
@@ -910,6 +925,11 @@ func (o *Orchestrator) RollAbilityScores(ctx context.Context, input *RollAbility
 
 	// Use player ID as entity ID (this must match what UpdateAbilityScores expects)
 	playerID := getDraftOutput.Draft.PlayerID
+	
+	slog.Info("Rolling ability scores",
+		"draft_id", input.DraftID,
+		"player_id", playerID,
+		"method", method)
 
 	// Roll ability scores using dice service
 	rollOutput, err := o.diceService.RollAbilityScores(ctx, &dice.RollAbilityScoresInput{
@@ -919,6 +939,13 @@ func (o *Orchestrator) RollAbilityScores(ctx context.Context, input *RollAbility
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to roll ability scores")
 	}
+	
+	slog.Info("Ability scores rolled successfully",
+		"draft_id", input.DraftID,
+		"player_id", playerID,
+		"session_entity_id", rollOutput.Session.EntityID,
+		"session_context", rollOutput.Session.Context,
+		"rolls_count", len(rollOutput.Rolls))
 
 	// Convert dice rolls to our format
 	rolls := make([]*AbilityScoreRoll, 0, len(rollOutput.Rolls))
