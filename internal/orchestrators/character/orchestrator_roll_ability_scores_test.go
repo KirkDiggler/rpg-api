@@ -62,12 +62,12 @@ func (s *OrchestratorRollAbilityScoresTestSuite) TearDownTest() {
 func (s *OrchestratorRollAbilityScoresTestSuite) TestRollAbilityScores_Success() {
 	ctx := context.Background()
 	draftID := "draft-123"
-	entityID := "char_draft_" + draftID
+	playerID := "player-456"
 
 	// Mock draft exists
 	mockDraft := &toolkitchar.DraftData{
 		ID:       draftID,
-		PlayerID: "player-456",
+		PlayerID: playerID,
 		Name:     "Test Character",
 	}
 	s.mockDraft.EXPECT().
@@ -77,7 +77,7 @@ func (s *OrchestratorRollAbilityScoresTestSuite) TestRollAbilityScores_Success()
 	// Mock dice rolling
 	expiresAt := time.Now().Add(15 * time.Minute)
 	mockSession := &dicesession.DiceSession{
-		EntityID:  entityID,
+		EntityID:  playerID,
 		Context:   "ability_scores",
 		ExpiresAt: expiresAt,
 	}
@@ -129,7 +129,7 @@ func (s *OrchestratorRollAbilityScoresTestSuite) TestRollAbilityScores_Success()
 
 	s.mockDice.EXPECT().
 		RollAbilityScores(ctx, &dice.RollAbilityScoresInput{
-			EntityID: entityID,
+			EntityID: playerID,
 			Method:   dice.MethodStandard,
 		}).
 		Return(&dice.RollAbilityScoresOutput{
@@ -146,7 +146,7 @@ func (s *OrchestratorRollAbilityScoresTestSuite) TestRollAbilityScores_Success()
 	s.Require().NoError(err)
 	s.Require().NotNil(output)
 	s.Require().Len(output.Rolls, 6)
-	s.Equal(entityID, output.SessionID)
+	s.Equal(playerID, output.SessionID)
 	s.Equal(expiresAt, output.ExpiresAt)
 
 	// Check first roll
@@ -190,11 +190,12 @@ func (s *OrchestratorRollAbilityScoresTestSuite) TestRollAbilityScores_DraftNotF
 func (s *OrchestratorRollAbilityScoresTestSuite) TestRollAbilityScores_CustomMethod() {
 	ctx := context.Background()
 	draftID := "draft-789"
-	entityID := "char_draft_" + draftID
+	playerID := "player-789"
 
 	// Mock draft exists
 	mockDraft := &toolkitchar.DraftData{
-		ID: draftID,
+		ID:       draftID,
+		PlayerID: playerID,
 	}
 	s.mockDraft.EXPECT().
 		Get(ctx, draftrepo.GetInput{ID: draftID}).
@@ -203,7 +204,7 @@ func (s *OrchestratorRollAbilityScoresTestSuite) TestRollAbilityScores_CustomMet
 	// Mock dice rolling with custom method
 	s.mockDice.EXPECT().
 		RollAbilityScores(ctx, &dice.RollAbilityScoresInput{
-			EntityID: entityID,
+			EntityID: playerID,
 			Method:   dice.MethodClassic, // 3d6 method
 		}).
 		Return(&dice.RollAbilityScoresOutput{
@@ -239,17 +240,17 @@ func (s *OrchestratorRollAbilityScoresTestSuite) TestRollAbilityScores_CustomMet
 func (s *OrchestratorRollAbilityScoresTestSuite) TestRollAbilityScores_DiceServiceError() {
 	ctx := context.Background()
 	draftID := "draft-error"
-	entityID := "char_draft_" + draftID
+	playerID := "player-error"
 
 	// Mock draft exists
 	s.mockDraft.EXPECT().
 		Get(ctx, draftrepo.GetInput{ID: draftID}).
-		Return(&draftrepo.GetOutput{Draft: &toolkitchar.DraftData{ID: draftID}}, nil)
+		Return(&draftrepo.GetOutput{Draft: &toolkitchar.DraftData{ID: draftID, PlayerID: playerID}}, nil)
 
 	// Mock dice service error
 	s.mockDice.EXPECT().
 		RollAbilityScores(ctx, &dice.RollAbilityScoresInput{
-			EntityID: entityID,
+			EntityID: playerID,
 			Method:   dice.MethodStandard,
 		}).
 		Return(nil, errors.Internal("dice service error"))
