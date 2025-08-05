@@ -207,7 +207,7 @@ func (h *Handler) UpdateRace(
 		DraftID:   req.GetDraftId(),
 		RaceID:    raceID,
 		SubraceID: subraceID,
-		Choices:   convertProtoRaceChoicesToToolkit(req.GetRaceChoices()),
+		Choices:   convertProtoChoiceDataListToToolkit(req.GetRaceChoices()),
 	})
 	if err != nil {
 		if errors.IsInvalidArgument(err) {
@@ -249,7 +249,7 @@ func (h *Handler) UpdateClass(
 	// Convert proto choices to toolkit choices
 	var choices []toolkitchar.ChoiceData
 	for _, protoChoice := range req.ClassChoices {
-		choices = append(choices, convertProtoChoiceSelectionToToolkit(protoChoice))
+		choices = append(choices, convertProtoChoiceDataToToolkit(protoChoice))
 	}
 
 	// Call orchestrator
@@ -288,7 +288,7 @@ func (h *Handler) UpdateBackground(
 	// Convert proto choices to toolkit choices
 	var choices []toolkitchar.ChoiceData
 	for _, protoChoice := range req.BackgroundChoices {
-		choices = append(choices, convertProtoChoiceSelectionToToolkit(protoChoice))
+		choices = append(choices, convertProtoChoiceDataToToolkit(protoChoice))
 	}
 
 	// Call orchestrator
@@ -1152,76 +1152,93 @@ func convertProtoSubraceToToolkit(subrace dnd5ev1alpha1.Subrace) constants.Subra
 	}
 }
 
-// convertProtoChoiceSelectionToToolkit converts a single proto ChoiceSelection to toolkit ChoiceData
-func convertProtoChoiceSelectionToToolkit(pc *dnd5ev1alpha1.ChoiceSelection) toolkitchar.ChoiceData {
+// convertProtoChoiceDataToToolkit converts a single proto ChoiceData to toolkit ChoiceData
+func convertProtoChoiceDataToToolkit(pc *dnd5ev1alpha1.ChoiceData) toolkitchar.ChoiceData {
 	if pc == nil {
 		return toolkitchar.ChoiceData{}
 	}
 
-	// Try to infer choice type from choice ID if not specified
-	choiceType := pc.GetChoiceType()
-	if choiceType == dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_UNSPECIFIED {
-		// Infer from choice ID
-		switch pc.GetChoiceId() {
-		case "language_choice":
-			choiceType = dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_LANGUAGES
-		case "skill_choice":
-			choiceType = dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_SKILLS
-		case "tool_choice":
-			choiceType = dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_TOOLS
-		}
-	}
-
 	choice := toolkitchar.ChoiceData{
 		ChoiceID: pc.GetChoiceId(),
-		Category: convertProtoCategoryToToolkit(choiceType),
+		Category: convertProtoCategoryToToolkit(pc.GetCategory()),
 		Source:   convertProtoSourceToToolkit(pc.GetSource()),
 	}
 
-	// Convert based on choice type
-	switch choiceType {
-	case dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_SKILLS:
-		// Convert selected keys to skill constants
-		skills := make([]constants.Skill, 0, len(pc.GetSelectedKeys()))
-		for _, sk := range pc.GetSelectedKeys() {
-			skills = append(skills, constants.Skill(sk))
+	// Convert selection based on oneof pattern
+	switch selection := pc.GetSelection().(type) {
+	case *dnd5ev1alpha1.ChoiceData_Name:
+		// Name selection (not used for choices, but included for completeness)
+		choice.NameSelection = &selection.Name
+	case *dnd5ev1alpha1.ChoiceData_Skills:
+		// Convert skill list to skill constants
+		skills := make([]constants.Skill, 0, len(selection.Skills.GetSkills()))
+		for _, skill := range selection.Skills.GetSkills() {
+			skills = append(skills, convertProtoSkillToToolkit(skill))
 		}
 		choice.SkillSelection = skills
-	case dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_LANGUAGES:
-		// Convert selected keys to language constants
-		languages := make([]constants.Language, 0, len(pc.GetSelectedKeys()))
-		for _, lk := range pc.GetSelectedKeys() {
-			languages = append(languages, constants.Language(lk))
+	case *dnd5ev1alpha1.ChoiceData_Languages:
+		// Convert language list to language constants
+		languages := make([]constants.Language, 0, len(selection.Languages.GetLanguages()))
+		for _, lang := range selection.Languages.GetLanguages() {
+			languages = append(languages, convertProtoLanguageToToolkit(lang))
 		}
 		choice.LanguageSelection = languages
-	case dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_ABILITY_SCORES:
-		// Handle ability score choices if present
-		if len(pc.GetAbilityScoreChoices()) > 0 {
-			scores := make(shared.AbilityScores)
-			for _, asc := range pc.GetAbilityScoreChoices() {
-				// Convert proto ability to toolkit ability
-				ability := convertProtoAbilityToString(asc.GetAbility())
-				scores[constants.Ability(ability)] = int(asc.GetBonus())
-			}
-			choice.AbilityScoreSelection = &scores
+	case *dnd5ev1alpha1.ChoiceData_AbilityScores:
+		// Convert ability scores to toolkit format
+		scores := make(shared.AbilityScores)
+		if selection.AbilityScores.GetStrength() > 0 {
+			scores[constants.STR] = int(selection.AbilityScores.GetStrength())
 		}
+		if selection.AbilityScores.GetDexterity() > 0 {
+			scores[constants.DEX] = int(selection.AbilityScores.GetDexterity())
+		}
+		if selection.AbilityScores.GetConstitution() > 0 {
+			scores[constants.CON] = int(selection.AbilityScores.GetConstitution())
+		}
+		if selection.AbilityScores.GetIntelligence() > 0 {
+			scores[constants.INT] = int(selection.AbilityScores.GetIntelligence())
+		}
+		if selection.AbilityScores.GetWisdom() > 0 {
+			scores[constants.WIS] = int(selection.AbilityScores.GetWisdom())
+		}
+		if selection.AbilityScores.GetCharisma() > 0 {
+			scores[constants.CHA] = int(selection.AbilityScores.GetCharisma())
+		}
+		choice.AbilityScoreSelection = &scores
+	case *dnd5ev1alpha1.ChoiceData_FightingStyle:
+		// Convert fighting style selection
+		choice.FightingStyleSelection = &selection.FightingStyle
+	case *dnd5ev1alpha1.ChoiceData_Equipment:
+		// Convert equipment list
+		choice.EquipmentSelection = selection.Equipment.GetItems()
+	case *dnd5ev1alpha1.ChoiceData_Spells:
+		// Convert spell list
+		choice.SpellSelection = selection.Spells.GetSpells()
+	case *dnd5ev1alpha1.ChoiceData_Cantrips:
+		// Convert cantrip list
+		choice.CantripSelection = selection.Cantrips.GetCantrips()
+	case *dnd5ev1alpha1.ChoiceData_Race:
+		// Handle race choice (not typically used in current choice system)
+	case *dnd5ev1alpha1.ChoiceData_Class:
+		// Handle class choice (not typically used in current choice system)
+	case *dnd5ev1alpha1.ChoiceData_Background:
+		// Handle background choice (not typically used in current choice system)
 	default:
-		// For other types, store selected keys as equipment
-		choice.EquipmentSelection = pc.GetSelectedKeys()
+		// No selection data
 	}
 
 	return choice
 }
 
-// convertProtoRaceChoicesToToolkit converts proto ChoiceSelection to toolkit ChoiceData
-func convertProtoRaceChoicesToToolkit(protoChoices []*dnd5ev1alpha1.ChoiceSelection) []toolkitchar.ChoiceData {
+// convertProtoChoiceDataListToToolkit converts a list of proto ChoiceData to toolkit ChoiceData
+func convertProtoChoiceDataListToToolkit(protoChoices []*dnd5ev1alpha1.ChoiceData) []toolkitchar.ChoiceData {
 	if len(protoChoices) == 0 {
 		return nil
 	}
 
 	toolkitChoices := make([]toolkitchar.ChoiceData, 0, len(protoChoices))
 	for _, pc := range protoChoices {
-		toolkitChoices = append(toolkitChoices, convertProtoChoiceSelectionToToolkit(pc))
+		toolkitChoices = append(toolkitChoices, convertProtoChoiceDataToToolkit(pc))
 	}
 	return toolkitChoices
 }
@@ -1288,6 +1305,86 @@ func convertProtoSourceToToolkit(source dnd5ev1alpha1.ChoiceSource) shared.Choic
 	default:
 		// For other sources, default to player choice
 		return shared.SourcePlayer
+	}
+}
+
+// convertProtoSkillToToolkit converts proto Skill enum to toolkit Skill constant
+func convertProtoSkillToToolkit(skill dnd5ev1alpha1.Skill) constants.Skill {
+	switch skill {
+	case dnd5ev1alpha1.Skill_SKILL_UNSPECIFIED:
+		// Return empty string for unspecified skill
+		return ""
+	case dnd5ev1alpha1.Skill_SKILL_ACROBATICS:
+		return constants.SkillAcrobatics
+	case dnd5ev1alpha1.Skill_SKILL_ANIMAL_HANDLING:
+		return constants.SkillAnimalHandling
+	case dnd5ev1alpha1.Skill_SKILL_ARCANA:
+		return constants.SkillArcana
+	case dnd5ev1alpha1.Skill_SKILL_ATHLETICS:
+		return constants.SkillAthletics
+	case dnd5ev1alpha1.Skill_SKILL_DECEPTION:
+		return constants.SkillDeception
+	case dnd5ev1alpha1.Skill_SKILL_HISTORY:
+		return constants.SkillHistory
+	case dnd5ev1alpha1.Skill_SKILL_INSIGHT:
+		return constants.SkillInsight
+	case dnd5ev1alpha1.Skill_SKILL_INTIMIDATION:
+		return constants.SkillIntimidation
+	case dnd5ev1alpha1.Skill_SKILL_INVESTIGATION:
+		return constants.SkillInvestigation
+	case dnd5ev1alpha1.Skill_SKILL_MEDICINE:
+		return constants.SkillMedicine
+	case dnd5ev1alpha1.Skill_SKILL_NATURE:
+		return constants.SkillNature
+	case dnd5ev1alpha1.Skill_SKILL_PERCEPTION:
+		return constants.SkillPerception
+	case dnd5ev1alpha1.Skill_SKILL_PERFORMANCE:
+		return constants.SkillPerformance
+	case dnd5ev1alpha1.Skill_SKILL_PERSUASION:
+		return constants.SkillPersuasion
+	case dnd5ev1alpha1.Skill_SKILL_RELIGION:
+		return constants.SkillReligion
+	case dnd5ev1alpha1.Skill_SKILL_SLEIGHT_OF_HAND:
+		return constants.SkillSleightOfHand
+	case dnd5ev1alpha1.Skill_SKILL_STEALTH:
+		return constants.SkillStealth
+	case dnd5ev1alpha1.Skill_SKILL_SURVIVAL:
+		return constants.SkillSurvival
+	default:
+		// Return empty string for unknown skills to avoid hiding bugs
+		return ""
+	}
+}
+
+// convertProtoLanguageToToolkit converts proto Language enum to toolkit Language constant
+func convertProtoLanguageToToolkit(lang dnd5ev1alpha1.Language) constants.Language {
+	switch lang {
+	case dnd5ev1alpha1.Language_LANGUAGE_UNSPECIFIED:
+		// Return empty string for unspecified language
+		return ""
+	case dnd5ev1alpha1.Language_LANGUAGE_COMMON:
+		return constants.LanguageCommon
+	case dnd5ev1alpha1.Language_LANGUAGE_DWARVISH:
+		return constants.LanguageDwarvish
+	case dnd5ev1alpha1.Language_LANGUAGE_ELVISH:
+		return constants.LanguageElvish
+	case dnd5ev1alpha1.Language_LANGUAGE_GIANT:
+		return constants.LanguageGiant
+	case dnd5ev1alpha1.Language_LANGUAGE_GNOMISH:
+		return constants.LanguageGnomish
+	case dnd5ev1alpha1.Language_LANGUAGE_GOBLIN:
+		return constants.LanguageGoblin
+	case dnd5ev1alpha1.Language_LANGUAGE_HALFLING:
+		return constants.LanguageHalfling
+	case dnd5ev1alpha1.Language_LANGUAGE_ORC:
+		return constants.LanguageOrc
+	case dnd5ev1alpha1.Language_LANGUAGE_DRACONIC:
+		return constants.LanguageDraconic
+	case dnd5ev1alpha1.Language_LANGUAGE_INFERNAL:
+		return constants.LanguageInfernal
+	default:
+		// Return empty string for unknown languages to avoid hiding bugs
+		return ""
 	}
 }
 
@@ -1692,6 +1789,6 @@ func convertSkillToProto(skill constants.Skill) dnd5ev1alpha1.Skill {
 	case constants.SkillSurvival:
 		return dnd5ev1alpha1.Skill_SKILL_SURVIVAL
 	default:
-		return dnd5ev1alpha1.Skill_SKILL_ATHLETICS
+		return dnd5ev1alpha1.Skill_SKILL_UNSPECIFIED
 	}
 }
