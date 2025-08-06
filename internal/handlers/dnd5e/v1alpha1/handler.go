@@ -482,7 +482,26 @@ func (h *Handler) ListCharacters(
 	ctx context.Context,
 	req *dnd5ev1alpha1.ListCharactersRequest,
 ) (*dnd5ev1alpha1.ListCharactersResponse, error) {
-	return &dnd5ev1alpha1.ListCharactersResponse{}, nil
+	// Call orchestrator to list characters
+	output, err := h.characterService.ListCharacters(ctx, &character.ListCharactersInput{
+		PlayerID: req.PlayerId,
+	})
+	if err != nil {
+		if errors.IsInvalidArgument(err) {
+			return nil, status.Error(codes.InvalidArgument, err.Error())
+		}
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	// Convert characters to proto
+	protoCharacters := make([]*dnd5ev1alpha1.Character, 0, len(output.Characters))
+	for _, char := range output.Characters {
+		protoCharacters = append(protoCharacters, convertCharacterDataToProto(char))
+	}
+
+	return &dnd5ev1alpha1.ListCharactersResponse{
+		Characters: protoCharacters,
+	}, nil
 }
 
 // DeleteCharacter deletes a character
