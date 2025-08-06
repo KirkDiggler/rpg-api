@@ -405,8 +405,12 @@ func (s *FinalizeGapsTestSuite) TestGaps_ClassFeatures() {
 			// TODO: Check that Defense fighting style effect is applied
 			// (requires tracking active features/effects)
 
-			// TODO: Check for Second Wind resource
-			// s.Contains(input.CharacterData.ClassResources, "second_wind")
+			// Check for Second Wind resource
+			s.NotNil(input.CharacterData.ClassResources, "Should have class resources")
+			if input.CharacterData.ClassResources != nil {
+				_, hasSecondWind := input.CharacterData.ClassResources["second_wind"]
+				s.True(hasSecondWind, "Fighter should have Second Wind resource")
+			}
 
 			return &charrepo.CreateOutput{CharacterData: input.CharacterData}, nil
 		})
