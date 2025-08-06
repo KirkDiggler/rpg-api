@@ -759,7 +759,25 @@ func (o *Orchestrator) FinalizeDraft(ctx context.Context, input *FinalizeDraftIn
 }
 
 func (o *Orchestrator) GetCharacter(ctx context.Context, input *GetCharacterInput) (*GetCharacterOutput, error) {
-	return nil, errors.Unimplemented("not implemented")
+	// Validate input
+	if input.CharacterID == "" {
+		return nil, errors.InvalidArgument("character ID is required")
+	}
+	
+	// Get character from repository
+	getOutput, err := o.charRepo.Get(ctx, character.GetInput{
+		ID: input.CharacterID,
+	})
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return nil, errors.NotFoundf("character %s not found", input.CharacterID)
+		}
+		return nil, errors.Wrapf(err, "failed to get character %s", input.CharacterID)
+	}
+	
+	return &GetCharacterOutput{
+		Character: getOutput.CharacterData,
+	}, nil
 }
 
 func (o *Orchestrator) ListCharacters(ctx context.Context, input *ListCharactersInput) (*ListCharactersOutput, error) {

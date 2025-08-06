@@ -449,7 +449,32 @@ func (h *Handler) GetCharacter(
 	ctx context.Context,
 	req *dnd5ev1alpha1.GetCharacterRequest,
 ) (*dnd5ev1alpha1.GetCharacterResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "not implemented")
+	// Validate request
+	if req.CharacterId == "" {
+		return nil, status.Error(codes.InvalidArgument, "character_id is required")
+	}
+	
+	// Call orchestrator to get the character
+	output, err := h.characterService.GetCharacter(ctx, &character.GetCharacterInput{
+		CharacterID: req.CharacterId,
+	})
+	if err != nil {
+		// Convert errors to gRPC status
+		if errors.IsNotFound(err) {
+			return nil, status.Error(codes.NotFound, err.Error())
+		}
+		if errors.IsInvalidArgument(err) {
+			return nil, status.Error(codes.InvalidArgument, err.Error())
+		}
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	
+	// Convert character to proto
+	protoCharacter := convertCharacterDataToProto(output.Character)
+	
+	return &dnd5ev1alpha1.GetCharacterResponse{
+		Character: protoCharacter,
+	}, nil
 }
 
 // ListCharacters lists characters
