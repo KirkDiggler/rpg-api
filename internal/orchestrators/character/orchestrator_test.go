@@ -26,15 +26,15 @@ import (
 
 type OrchestratorTestSuite struct {
 	suite.Suite
-	ctrl            *gomock.Controller
-	mockCharRepo    *characterrepomock.MockRepository
-	mockDraftRepo   *draftrepomock.MockRepository
-	mockExternal    *externalmock.MockClient
-	mockDiceService *dicemock.MockService
+	ctrl                 *gomock.Controller
+	mockCharRepo         *characterrepomock.MockRepository
+	mockDraftRepo        *draftrepomock.MockRepository
+	mockExternal         *externalmock.MockClient
+	mockDiceService      *dicemock.MockService
 	mockIDGenerator      *idgenmock.MockGenerator
 	mockDraftIDGenerator *idgenmock.MockGenerator
 	orchestrator         *character.Orchestrator
-	ctx             context.Context
+	ctx                  context.Context
 
 	// Test data
 	testDraftData *toolkitchar.DraftData

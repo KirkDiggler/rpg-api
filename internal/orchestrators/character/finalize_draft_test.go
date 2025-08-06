@@ -32,9 +32,9 @@ type FinalizeDraftOrchestratorTestSuite struct {
 	mockDraftRepo   *draftmock.MockRepository
 	mockExtClient   *extmock.MockClient
 	mockDiceService *dicemock.MockService
-	mockIDGen         *idgenmock.MockGenerator
-	mockDraftIDGen    *idgenmock.MockGenerator
-	ctx               context.Context
+	mockIDGen       *idgenmock.MockGenerator
+	mockDraftIDGen  *idgenmock.MockGenerator
+	ctx             context.Context
 }
 
 func (s *FinalizeDraftOrchestratorTestSuite) SetupTest() {
@@ -289,14 +289,14 @@ func (s *FinalizeDraftOrchestratorTestSuite) TestFinalizeDraft_SuccessWithoutBac
 			s.Equal("char-no-bg-123", input.CharacterData.ID)
 			s.Equal("player_123", input.CharacterData.PlayerID)
 			s.Equal("Test Fighter No BG", input.CharacterData.Name)
-			
+
 			// Verify HP calculation still works
 			s.Equal(12, input.CharacterData.MaxHitPoints) // 10 (hit dice) + 2 (CON mod)
-			
+
 			// Skills should still be set from choices
 			s.Equal(shared.Proficient, input.CharacterData.Skills[constants.SkillAthletics])
 			s.Equal(shared.Proficient, input.CharacterData.Skills[constants.SkillIntimidation])
-			
+
 			return &charrepo.CreateOutput{CharacterData: input.CharacterData}, nil
 		})
 
@@ -710,12 +710,12 @@ func (s *FinalizeDraftOrchestratorTestSuite) TestFinalizeDraft_HillDwarfWithHPBo
 		GetRaceData(gomock.Any(), string(constants.RaceDwarf)).
 		Return(&external.RaceDataOutput{
 			RaceData: &race.Data{
-				ID:                 constants.RaceDwarf,
-				Name:               "Dwarf",
-				Speed:              25,
-				Size:               "Medium",
-				Languages:          []constants.Language{constants.LanguageCommon, constants.LanguageDwarvish},
-				ToolProficiencies:  []string{"Smith's tools", "Brewer's supplies"},
+				ID:                  constants.RaceDwarf,
+				Name:                "Dwarf",
+				Speed:               25,
+				Size:                "Medium",
+				Languages:           []constants.Language{constants.LanguageCommon, constants.LanguageDwarvish},
+				ToolProficiencies:   []string{"Smith's tools", "Brewer's supplies"},
 				WeaponProficiencies: []string{"Battleaxe", "Handaxe", "Light hammer", "Warhammer"},
 				Traits: []race.TraitData{
 					{ID: "darkvision", Name: "Darkvision"},
@@ -730,12 +730,12 @@ func (s *FinalizeDraftOrchestratorTestSuite) TestFinalizeDraft_HillDwarfWithHPBo
 		GetClassData(gomock.Any(), string(constants.ClassCleric)).
 		Return(&external.ClassDataOutput{
 			ClassData: &class.Data{
-				ID:                 constants.ClassCleric,
-				Name:               "Cleric",
-				HitDice:            8,
-				SavingThrows:       []constants.Ability{constants.WIS, constants.CHA},
+				ID:                  constants.ClassCleric,
+				Name:                "Cleric",
+				HitDice:             8,
+				SavingThrows:        []constants.Ability{constants.WIS, constants.CHA},
 				WeaponProficiencies: []string{"simple"},
-				ArmorProficiencies: []string{"light", "medium", "shields"},
+				ArmorProficiencies:  []string{"light", "medium", "shields"},
 			},
 		}, nil)
 
@@ -1297,7 +1297,6 @@ func (s *FinalizeDraftOrchestratorTestSuite) TestFinalizeDraft_WarlockPactMagic(
 	s.Require().NotNil(output)
 	s.True(output.DraftDeleted)
 }
-
 
 func TestFinalizeDraftOrchestratorTestSuite(t *testing.T) {
 	suite.Run(t, new(FinalizeDraftOrchestratorTestSuite))

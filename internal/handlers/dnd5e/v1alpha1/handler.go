@@ -436,7 +436,7 @@ func (h *Handler) FinalizeDraft(
 	}
 
 	// Convert character to proto
-	protoCharacter := convertCharacterDataToProto(output.Character)
+	protoCharacter := ConvertCharacterDataToProto(output.Character)
 
 	return &dnd5ev1alpha1.FinalizeDraftResponse{
 		Character:    protoCharacter,
@@ -470,7 +470,7 @@ func (h *Handler) GetCharacter(
 	}
 
 	// Convert character to proto
-	protoCharacter := convertCharacterDataToProto(output.Character)
+	protoCharacter := ConvertCharacterDataToProto(output.Character)
 
 	return &dnd5ev1alpha1.GetCharacterResponse{
 		Character: protoCharacter,
@@ -496,7 +496,7 @@ func (h *Handler) ListCharacters(
 	// Convert characters to proto
 	protoCharacters := make([]*dnd5ev1alpha1.Character, 0, len(output.Characters))
 	for _, char := range output.Characters {
-		protoCharacters = append(protoCharacters, convertCharacterDataToProto(char))
+		protoCharacters = append(protoCharacters, ConvertCharacterDataToProto(char))
 	}
 
 	return &dnd5ev1alpha1.ListCharactersResponse{
@@ -1863,8 +1863,8 @@ func convertSkillToProto(skill constants.Skill) dnd5ev1alpha1.Skill {
 	}
 }
 
-// convertCharacterDataToProto converts toolkit character.Data to proto Character
-func convertCharacterDataToProto(char *toolkitchar.Data) *dnd5ev1alpha1.Character {
+// ConvertCharacterDataToProto converts toolkit character.Data to proto Character
+func ConvertCharacterDataToProto(char *toolkitchar.Data) *dnd5ev1alpha1.Character {
 	if char == nil {
 		return nil
 	}
@@ -1930,6 +1930,16 @@ func convertCharacterDataToProto(char *toolkitchar.Data) *dnd5ev1alpha1.Characte
 	for _, lang := range char.Languages {
 		// Convert string language to constant first
 		protoChar.Languages = append(protoChar.Languages, convertLanguageToProto(constants.Language(lang)))
+	}
+
+	// Convert equipment to inventory
+	protoChar.Inventory = make([]*dnd5ev1alpha1.InventoryItem, 0, len(char.Equipment))
+	for _, equipmentID := range char.Equipment {
+		protoChar.Inventory = append(protoChar.Inventory, &dnd5ev1alpha1.InventoryItem{
+			ItemId:   equipmentID,
+			Quantity: 1, // Default quantity for now
+			// Equipment data would be populated if we had it
+		})
 	}
 
 	// TODO(#168): Convert other fields as needed
