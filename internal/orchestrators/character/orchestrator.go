@@ -642,9 +642,10 @@ func (o *Orchestrator) FinalizeDraft(ctx context.Context, input *FinalizeDraftIn
 	if draft.ClassChoice.ClassID == "" {
 		return nil, errors.InvalidArgument("draft is incomplete: class is required")
 	}
-	if draft.BackgroundChoice == "" {
-		return nil, errors.InvalidArgument("draft is incomplete: background is required")
-	}
+	// Background is optional for now (UI not ready)
+	// if draft.BackgroundChoice == "" {
+	// 	return nil, errors.InvalidArgument("draft is incomplete: background is required")
+	// }
 	if len(draft.AbilityScoreChoice) == 0 {
 		return nil, errors.InvalidArgument("draft is incomplete: ability scores are required")
 	}
@@ -661,10 +662,13 @@ func (o *Orchestrator) FinalizeDraft(ctx context.Context, input *FinalizeDraftIn
 		return nil, errors.Wrapf(err, "failed to get class data for %s", draft.ClassChoice.ClassID)
 	}
 
-	// Get background data
-	backgroundDataOutput, err := o.externalClient.GetBackgroundData(ctx, string(draft.BackgroundChoice))
-	if err != nil {
-		return nil, errors.Wrapf(err, "failed to get background data for %s", draft.BackgroundChoice)
+	// Get background data (optional for now)
+	var backgroundDataOutput *external.BackgroundData
+	if draft.BackgroundChoice != "" {
+		backgroundDataOutput, err = o.externalClient.GetBackgroundData(ctx, string(draft.BackgroundChoice))
+		if err != nil {
+			return nil, errors.Wrapf(err, "failed to get background data for %s", draft.BackgroundChoice)
+		}
 	}
 
 	// Calculate hit points
