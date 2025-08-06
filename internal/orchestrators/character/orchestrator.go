@@ -74,24 +74,24 @@ func New(cfg *Config) (*Orchestrator, error) {
 
 // skillNameToConstant maps skill names from external API to skill constants
 var skillNameToConstant = map[string]constants.Skill{
-	"acrobatics":     constants.SkillAcrobatics,
+	"acrobatics":      constants.SkillAcrobatics,
 	"animal-handling": constants.SkillAnimalHandling,
-	"arcana":         constants.SkillArcana,
-	"athletics":      constants.SkillAthletics,
-	"deception":      constants.SkillDeception,
-	"history":        constants.SkillHistory,
-	"insight":        constants.SkillInsight,
-	"intimidation":   constants.SkillIntimidation,
-	"investigation":  constants.SkillInvestigation,
-	"medicine":       constants.SkillMedicine,
-	"nature":         constants.SkillNature,
-	"perception":     constants.SkillPerception,
-	"performance":    constants.SkillPerformance,
-	"persuasion":     constants.SkillPersuasion,
-	"religion":       constants.SkillReligion,
+	"arcana":          constants.SkillArcana,
+	"athletics":       constants.SkillAthletics,
+	"deception":       constants.SkillDeception,
+	"history":         constants.SkillHistory,
+	"insight":         constants.SkillInsight,
+	"intimidation":    constants.SkillIntimidation,
+	"investigation":   constants.SkillInvestigation,
+	"medicine":        constants.SkillMedicine,
+	"nature":          constants.SkillNature,
+	"perception":      constants.SkillPerception,
+	"performance":     constants.SkillPerformance,
+	"persuasion":      constants.SkillPersuasion,
+	"religion":        constants.SkillReligion,
 	"sleight-of-hand": constants.SkillSleightOfHand,
-	"stealth":        constants.SkillStealth,
-	"survival":       constants.SkillSurvival,
+	"stealth":         constants.SkillStealth,
+	"survival":        constants.SkillSurvival,
 }
 
 // mapSkillNameToConstant converts a skill name to a skill constant
@@ -769,6 +769,63 @@ func (o *Orchestrator) FinalizeDraft(ctx context.Context, input *FinalizeDraftIn
 		}
 	}
 
+	// Initialize class resources based on class (level 1 only)
+	switch classDataOutput.ClassData.ID {
+	case constants.ClassFighter:
+		characterData.ClassResources["second_wind"] = toolkitchar.ResourceData{
+			Name:    "Second Wind",
+			Max:     1,
+			Current: 1,
+			Resets:  "short_rest",
+		}
+	case constants.ClassBarbarian:
+		characterData.ClassResources["rage"] = toolkitchar.ResourceData{
+			Name:    "Rage",
+			Max:     2, // 2 rages at level 1
+			Current: 2,
+			Resets:  "long_rest",
+		}
+	case constants.ClassPaladin:
+		characterData.ClassResources["lay_on_hands"] = toolkitchar.ResourceData{
+			Name:    "Lay on Hands",
+			Max:     5, // 5 HP pool at level 1
+			Current: 5,
+			Resets:  "long_rest",
+		}
+	case constants.ClassBard:
+		// Bardic Inspiration uses = CHA modifier (minimum 1)
+		uses := (draft.AbilityScoreChoice[constants.CHA] - 10) / 2
+		if uses < 1 {
+			uses = 1
+		}
+		characterData.ClassResources["bardic_inspiration"] = toolkitchar.ResourceData{
+			Name:    "Bardic Inspiration",
+			Max:     uses,
+			Current: uses,
+			Resets:  "long_rest", // Changes to short_rest at level 5
+		}
+		// Monk gets Ki at level 2, not level 1
+		// Ranger has no resources at level 1
+	}
+
+	// Initialize spell slots for spellcasters (level 1 only)
+	switch classDataOutput.ClassData.ID {
+	case constants.ClassWizard, constants.ClassSorcerer, constants.ClassCleric,
+		constants.ClassDruid, constants.ClassBard:
+		// Full casters get 2 first-level slots at level 1
+		characterData.SpellSlots[1] = toolkitchar.SlotInfo{
+			Max:  2,
+			Used: 0,
+		}
+	case constants.ClassWarlock:
+		// Warlock gets 1 first-level slot (Pact Magic)
+		characterData.SpellSlots[1] = toolkitchar.SlotInfo{
+			Max:  1,
+			Used: 0,
+		}
+		// Rangers and Paladins don't get spell slots until level 2
+	}
+
 	// Save the character
 	createCharOutput, err := o.charRepo.Create(ctx, character.CreateInput{
 		CharacterData: characterData,
@@ -804,7 +861,7 @@ func (o *Orchestrator) GetCharacter(ctx context.Context, input *GetCharacterInpu
 	if input.CharacterID == "" {
 		return nil, errors.InvalidArgument("character ID is required")
 	}
-	
+
 	// Get character from repository
 	getOutput, err := o.charRepo.Get(ctx, character.GetInput{
 		ID: input.CharacterID,
@@ -815,7 +872,7 @@ func (o *Orchestrator) GetCharacter(ctx context.Context, input *GetCharacterInpu
 		}
 		return nil, errors.Wrapf(err, "failed to get character %s", input.CharacterID)
 	}
-	
+
 	return &GetCharacterOutput{
 		Character: getOutput.CharacterData,
 	}, nil
