@@ -734,7 +734,7 @@ func (o *Orchestrator) FinalizeDraft(ctx context.Context, input *FinalizeDraftIn
 		characterData.SavingThrows[ability] = shared.Proficient
 	}
 
-	// Process skills from choices
+	// Process skills from choices (both class and background)
 	for _, choice := range draft.Choices {
 		if choice.Category == shared.ChoiceSkills {
 			for _, skill := range choice.SkillSelection {
@@ -743,7 +743,7 @@ func (o *Orchestrator) FinalizeDraft(ctx context.Context, input *FinalizeDraftIn
 		}
 	}
 
-	// Process languages from race and choices
+	// Process languages from race and choices (from all sources)
 	for _, lang := range raceDataOutput.RaceData.Languages {
 		characterData.Languages = append(characterData.Languages, string(lang))
 	}
@@ -766,11 +766,14 @@ func (o *Orchestrator) FinalizeDraft(ctx context.Context, input *FinalizeDraftIn
 	// TODO: Add tool proficiencies when they are available in BackgroundData
 	// Current BackgroundData structure doesn't include tool proficiencies
 
-	// Add skill proficiencies from background
+	// Add skill proficiencies from background (these are the default skills if no choices were made)
 	if backgroundDataOutput != nil {
 		for _, skill := range backgroundDataOutput.SkillProficiencies {
 			if skillConst, ok := mapSkillNameToConstant(skill); ok {
-				characterData.Skills[skillConst] = shared.Proficient
+				// Only add if not already proficient (choices take precedence)
+				if characterData.Skills[skillConst] == 0 {
+					characterData.Skills[skillConst] = shared.Proficient
+				}
 			} else {
 				slog.Warn("Unknown skill in background skill proficiencies", "skill", skill)
 			}

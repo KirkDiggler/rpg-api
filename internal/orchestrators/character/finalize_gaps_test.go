@@ -158,20 +158,25 @@ func (s *FinalizeGapsTestSuite) TestGaps_BackgroundData() {
 			// Verify background skills are included
 			s.T().Log("Skills in character:", input.CharacterData.Skills)
 
-			// TODO: These assertions will fail until background skills are processed
-			// s.Equal(shared.Proficient, input.CharacterData.Skills[constants.SkillArcana],
-			//	"Should have Arcana from Sage background")
-			// s.Equal(shared.Proficient, input.CharacterData.Skills[constants.SkillHistory],
-			//	"Should have History from Sage background")
+			// These should now work since we process all skill choices
+			s.Equal(shared.Proficient, input.CharacterData.Skills[constants.SkillArcana],
+				"Should have Arcana from Sage background")
+			s.Equal(shared.Proficient, input.CharacterData.Skills[constants.SkillHistory],
+				"Should have History from Sage background")
 
 			// Verify background languages are included
 			s.T().Log("Languages in character:", input.CharacterData.Languages)
+			
+			// Verify equipment from background
+			s.T().Log("Equipment in character:", input.CharacterData.Equipment)
+			s.Contains(input.CharacterData.Equipment, "Bottle of black ink", "Should have ink from Sage background")
+			s.Contains(input.CharacterData.Equipment, "Quill", "Should have quill from Sage background")
 
-			// TODO: These will fail until background languages are processed
-			// s.Contains(input.CharacterData.Languages, "Elvish",
-			//	"Should have Elvish from background choice")
-			// s.Contains(input.CharacterData.Languages, "Draconic",
-			//	"Should have Draconic from background choice")
+			// These should now work since we process all language choices
+			s.Contains(input.CharacterData.Languages, "elvish",
+				"Should have Elvish from background choice")
+			s.Contains(input.CharacterData.Languages, "draconic",
+				"Should have Draconic from background choice")
 
 			return &charrepo.CreateOutput{CharacterData: input.CharacterData}, nil
 		})
@@ -241,13 +246,13 @@ func (s *FinalizeGapsTestSuite) TestGaps_RacialTraits() {
 		GetRaceData(gomock.Any(), string(constants.RaceElf)).
 		Return(&external.RaceDataOutput{
 			RaceData: &race.Data{
-				ID:        constants.RaceElf,
-				Speed:     30,
-				Size:      "Medium",
-				Languages: []constants.Language{constants.LanguageCommon, constants.LanguageElvish},
-				// TODO: RaceData should include:
-				// Traits: []string{"Darkvision", "Keen Senses", "Fey Ancestry", "Trance"},
-				// SkillProficiencies: []constants.Skill{constants.SkillPerception},
+				ID:                 constants.RaceElf,
+				Speed:              30,
+				Size:               "Medium",
+				Languages:          []constants.Language{constants.LanguageCommon, constants.LanguageElvish},
+				SkillProficiencies: []constants.Skill{constants.SkillPerception},
+				// TODO: Traits field exists but character.Data doesn't have a place to store them yet
+				// Traits: []race.TraitData{{Name: "Darkvision"}, {Name: "Keen Senses"}, {Name: "Fey Ancestry"}, {Name: "Trance"}},
 			},
 		}, nil)
 
@@ -277,17 +282,17 @@ func (s *FinalizeGapsTestSuite) TestGaps_RacialTraits() {
 		DoAndReturn(func(ctx context.Context, input charrepo.CreateInput) (*charrepo.CreateOutput, error) {
 			s.T().Log("Checking racial traits in finalized character")
 
-			// TODO: These assertions will fail until racial traits are processed
-			// s.Equal(shared.Proficient, input.CharacterData.Skills[constants.SkillPerception],
-			//	"Elf should have Perception proficiency from Keen Senses")
+			// Racial skill proficiencies should work now
+			s.Equal(shared.Proficient, input.CharacterData.Skills[constants.SkillPerception],
+				"Elf should have Perception proficiency from Keen Senses")
 
 			// TODO: Check for Darkvision trait
 			// TODO: Check for Fey Ancestry trait
 			// TODO: Check for Trance trait
 
 			// High Elf extra language
-			// s.Contains(input.CharacterData.Languages, "Draconic",
-			//	"High Elf should have extra language choice")
+			s.Contains(input.CharacterData.Languages, "draconic",
+				"High Elf should have extra language choice")
 
 			return &charrepo.CreateOutput{CharacterData: input.CharacterData}, nil
 		})
