@@ -44,6 +44,7 @@ func (s *SpellSelectionOrchestratorTestSuite) SetupTest() {
 		ExternalClient:     s.mockExtClient,
 		DiceService:        s.mockDiceService,
 		IDGenerator:        &mockIDGenerator{},
+		DraftIDGenerator:   &mockIDGenerator{},
 	}
 	orch, err := character.New(cfg)
 	s.Require().NoError(err)

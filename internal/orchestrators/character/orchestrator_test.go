@@ -145,7 +145,7 @@ func (s *OrchestratorTestSuite) TestGetDraft_NotFound() {
 func (s *OrchestratorTestSuite) TestCreateDraft_Success() {
 	// Generate test ID
 	generatedID := "draft-generated-123"
-	s.mockIDGenerator.EXPECT().
+	s.mockDraftIDGenerator.EXPECT().
 		Generate().
 		Return(generatedID)
 
@@ -182,7 +182,7 @@ func (s *OrchestratorTestSuite) TestCreateDraft_WithInitialData() {
 	generatedID := "draft-generated-456"
 	initialName := "Legolas"
 
-	s.mockIDGenerator.EXPECT().
+	s.mockDraftIDGenerator.EXPECT().
 		Generate().
 		Return(generatedID)
 
@@ -236,7 +236,7 @@ func (s *OrchestratorTestSuite) TestCreateDraft_EmptyPlayerID() {
 func (s *OrchestratorTestSuite) TestCreateDraft_RepositoryError() {
 	generatedID := "draft-generated-789"
 
-	s.mockIDGenerator.EXPECT().
+	s.mockDraftIDGenerator.EXPECT().
 		Generate().
 		Return(generatedID)
 
