@@ -537,7 +537,7 @@ func (s *HandlerTestSuite) TestUpdateRace_WithChoices() {
 		},
 	}
 
-	// Mock orchestrator response  
+	// Mock orchestrator response
 	s.mockCharService.EXPECT().
 		UpdateRace(s.ctx, gomock.Any()).
 		Return(&character.UpdateRaceOutput{

@@ -286,8 +286,20 @@ func (c *client) GetClassData(ctx context.Context, classID string) (*ClassDataOu
 	}, nil
 }
 
-func (c *client) GetBackgroundData(_ context.Context, _ string) (*BackgroundData, error) {
-	return nil, errors.Unimplemented("not implemented")
+func (c *client) GetBackgroundData(_ context.Context, backgroundID string) (*BackgroundData, error) {
+	// Convert our internal ID format to API format
+	apiID := toAPIFormat(backgroundID)
+
+	// Get full background details from API
+	apiBackground, err := c.dnd5eClient.GetBackground(apiID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get background %s (api: %s): %w", backgroundID, apiID, err)
+	}
+
+	// Convert to our internal format
+	backgroundData := convertBackgroundToBackgroundData(apiBackground)
+
+	return backgroundData, nil
 }
 
 func (c *client) GetSpellData(_ context.Context, spellID string) (*SpellData, error) {
@@ -456,7 +468,53 @@ func (c *client) ListAvailableClasses(_ context.Context) ([]*ClassData, error) {
 }
 
 func (c *client) ListAvailableBackgrounds(_ context.Context) ([]*BackgroundData, error) {
-	return nil, errors.Unimplemented("not implemented")
+	// Step 1: Get reference items (just key/name)
+	slog.Info("Calling D&D 5e API to list backgrounds")
+	refs, err := c.dnd5eClient.ListBackgrounds()
+	if err != nil {
+		return nil, fmt.Errorf("failed to list backgrounds from D&D 5e API: %w", err)
+	}
+	slog.Info("Got background references", "count", len(refs))
+
+	// Step 2: Concurrently load full details for each background
+	slog.Info("Loading full details for each background concurrently")
+	backgrounds := make([]*BackgroundData, len(refs))
+	errChan := make(chan error, len(refs))
+	var wg sync.WaitGroup
+
+	for i, ref := range refs {
+		wg.Add(1)
+		go func(idx int, key string, name string) {
+			defer wg.Done()
+
+			// Get full background details (cached after first call)
+			background, err := c.dnd5eClient.GetBackground(key)
+			if err != nil {
+				slog.Error("Failed to get background details", "background", key, "error", err)
+				errChan <- fmt.Errorf("failed to get background %s: %w", key, err)
+				return
+			}
+
+			// Convert to our internal format
+			backgroundData := convertBackgroundToBackgroundData(background)
+			// Ensure ID is in our internal format
+			backgroundData.ID = fromAPIFormat(key, "BACKGROUND")
+			backgrounds[idx] = backgroundData
+			slog.Debug("Loaded background details", "background", name, "id", backgroundData.ID)
+		}(i, ref.Key, ref.Name)
+	}
+
+	wg.Wait()
+	close(errChan)
+
+	// Check for any errors
+	for err := range errChan {
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return backgrounds, nil
 }
 
 func (c *client) ListAvailableSpells(_ context.Context, input *ListSpellsInput) ([]*SpellData, error) {
@@ -1494,6 +1552,58 @@ You know two 1st-level spells of your choice from the ranger spell list. You lea
 **Spellcasting Ability:**
 Wisdom is your spellcasting ability for your ranger spells. You use your Wisdom ` +
 		`whenever a spell refers to your spellcasting ability.`
+}
+
+// convertBackgroundToBackgroundData converts dnd5e-api background to our internal format
+func convertBackgroundToBackgroundData(background *entities.Background) *BackgroundData {
+	if background == nil {
+		return nil
+	}
+
+	// Convert skill proficiencies to string slice
+	skillProficiencies := make([]string, len(background.SkillProficiencies))
+	for i, skill := range background.SkillProficiencies {
+		skillProficiencies[i] = skill.Name
+	}
+
+	// Get feature name and description
+	featureName := ""
+	featureDescription := ""
+	if background.Feature != nil {
+		featureName = background.Feature.Name
+		featureDescription = background.Feature.Description
+	}
+
+	// Convert starting equipment to string slice
+	equipment := make([]string, len(background.StartingEquipment))
+	for i, eq := range background.StartingEquipment {
+		if eq != nil && eq.Equipment != nil {
+			if eq.Quantity > 1 {
+				equipment[i] = fmt.Sprintf("%dx %s", eq.Quantity, eq.Equipment.Name)
+			} else {
+				equipment[i] = eq.Equipment.Name
+			}
+		}
+	}
+
+	// Handle language options - for now, just set to 0 if no language options, 1 if there are
+	languageCount := int32(0)
+	if background.LanguageOptions != nil && background.LanguageOptions.ChoiceCount > 0 {
+		languageCount = int32(background.LanguageOptions.ChoiceCount)
+	}
+
+	// Build comprehensive feature description
+	feature := fmt.Sprintf("%s: %s", featureName, featureDescription)
+
+	return &BackgroundData{
+		ID:                 background.Key,
+		Name:               background.Name,
+		Description:        fmt.Sprintf("The %s background provides specific skills and features for characters with this background.", background.Name),
+		SkillProficiencies: skillProficiencies,
+		Languages:          languageCount,
+		Equipment:          equipment,
+		Feature:            feature,
+	}
 }
 
 // buildSpellSelectionData creates programmatic spell selection requirements

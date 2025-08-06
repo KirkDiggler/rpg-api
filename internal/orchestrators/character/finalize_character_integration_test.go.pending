@@ -1,0 +1,753 @@
+package character_test
+
+import (
+	"context"
+	"testing"
+
+	"github.com/stretchr/testify/suite"
+
+	"github.com/KirkDiggler/rpg-api/internal/clients/external"
+	"github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
+	"github.com/KirkDiggler/rpg-api/internal/orchestrators/dice"
+	"github.com/KirkDiggler/rpg-api/internal/pkg/idgen"
+	charrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
+	draftrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft"
+	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/constants"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
+)
+
+// FinalizeCharacterIntegrationTestSuite tests the complete character finalization process
+// with real implementations to verify all data is properly populated
+type FinalizeCharacterIntegrationTestSuite struct {
+	suite.Suite
+	orchestrator *character.Orchestrator
+	charRepo     charrepo.Repository
+	draftRepo    draftrepo.Repository
+	externalClient external.Client
+	ctx          context.Context
+}
+
+func (s *FinalizeCharacterIntegrationTestSuite) SetupTest() {
+	s.ctx = context.Background()
+	
+	// Use in-memory repositories for integration testing
+	s.charRepo = charrepo.NewInMemory()
+	s.draftRepo = draftrepo.NewInMemory()
+	
+	// Use real external client (will make actual API calls)
+	s.externalClient = external.NewClient()
+	
+	// Create orchestrator with real dependencies
+	cfg := &character.Config{
+		CharacterRepo:      s.charRepo,
+		CharacterDraftRepo: s.draftRepo,
+		ExternalClient:     s.externalClient,
+		DiceService:        dice.NewService(),
+		IDGenerator:        idgen.NewNanoID(),
+		DraftIDGenerator:   idgen.NewNanoID(),
+	}
+	
+	orch, err := character.New(cfg)
+	s.Require().NoError(err)
+	s.orchestrator = orch
+}
+
+// TestFinalize_HumanFighter tests finalization of a Human Fighter
+// This combination should have:
+// - Languages: Common + 1 choice
+// - Skills: 2 from Fighter list
+// - Equipment: from Fighter starting equipment choices
+// - Proficiencies: All armor, shields, simple/martial weapons
+// - Fighting Style: at level 1
+func (s *FinalizeCharacterIntegrationTestSuite) TestFinalize_HumanFighter() {
+	// Create a complete draft
+	draft := &toolkitchar.DraftData{
+		ID:       "test-draft-human-fighter",
+		PlayerID: "player-123",
+		Name:     "Thorgrim Ironforge",
+		RaceChoice: toolkitchar.RaceChoice{
+			RaceID: constants.RaceHuman,
+		},
+		ClassChoice: toolkitchar.ClassChoice{
+			ClassID: constants.ClassFighter,
+		},
+		BackgroundChoice: constants.BackgroundSoldier,
+		AbilityScoreChoice: shared.AbilityScores{
+			constants.STR: 16,
+			constants.DEX: 14,
+			constants.CON: 15,
+			constants.INT: 10,
+			constants.WIS: 13,
+			constants.CHA: 8,
+		},
+		Choices: []toolkitchar.ChoiceData{
+			{
+				Category: shared.ChoiceSkills,
+				Source:   shared.SourceClass,
+				ChoiceID: "fighter_skills",
+				SkillSelection: []constants.Skill{
+					constants.SkillAthletics,
+					constants.SkillIntimidation,
+				},
+			},
+			{
+				Category: shared.ChoiceLanguages,
+				Source:   shared.SourceRace,
+				ChoiceID: "human_language",
+				LanguageSelection: []constants.Language{
+					constants.LanguageDwarvish,
+				},
+			},
+			{
+				Category: shared.ChoiceFightingStyle,
+				Source:   shared.SourceClass,
+				ChoiceID: "fighter_fighting_style",
+				FightingStyleSelection: strPtr("Defense"),
+			},
+			{
+				Category: shared.ChoiceEquipment,
+				Source:   shared.SourceClass,
+				ChoiceID: "fighter_equipment_1",
+				EquipmentSelection: []string{
+					"chain-mail",
+					"longsword",
+					"shield",
+				},
+			},
+			{
+				Category: shared.ChoiceEquipment,
+				Source:   shared.SourceClass,  
+				ChoiceID: "fighter_equipment_2",
+				EquipmentSelection: []string{
+					"handaxe",
+					"handaxe",
+				},
+			},
+			{
+				Category: shared.ChoiceEquipment,
+				Source:   shared.SourceBackground,
+				ChoiceID: "soldier_equipment",
+				EquipmentSelection: []string{
+					"insignia-of-rank",
+					"trophy",
+					"deck-of-cards",
+					"common-clothes",
+					"pouch",
+				},
+			},
+		},
+	}
+	
+	// Save the draft
+	_, err := s.draftRepo.Create(s.ctx, draftrepo.CreateInput{
+		Draft: draft,
+	})
+	s.Require().NoError(err)
+	
+	// Finalize the draft
+	result, err := s.orchestrator.FinalizeDraft(s.ctx, &character.FinalizeDraftInput{
+		DraftID: draft.ID,
+	})
+	s.Require().NoError(err)
+	s.Require().NotNil(result)
+	s.Require().NotNil(result.Character)
+	
+	// Verify the character data
+	char := result.Character
+	
+	// Basic info
+	s.Equal("Thorgrim Ironforge", char.Name)
+	s.Equal("player-123", char.PlayerID)
+	s.Equal(1, char.Level)
+	s.Equal(constants.RaceHuman, char.RaceID)
+	s.Equal(constants.ClassFighter, char.ClassID)
+	s.Equal(constants.BackgroundSoldier, char.BackgroundID)
+	
+	// Ability scores
+	s.Equal(16, char.AbilityScores[constants.STR])
+	s.Equal(14, char.AbilityScores[constants.DEX])
+	s.Equal(15, char.AbilityScores[constants.CON])
+	s.Equal(10, char.AbilityScores[constants.INT])
+	s.Equal(13, char.AbilityScores[constants.WIS])
+	s.Equal(8, char.AbilityScores[constants.CHA])
+	
+	// Hit points (10 base + 2 CON modifier)
+	s.Equal(12, char.MaxHitPoints)
+	s.Equal(12, char.HitPoints)
+	
+	// Speed and size from Human
+	s.Equal(30, char.Speed)
+	s.Equal("Medium", char.Size)
+	
+	// Languages - Human gets Common + 1 choice
+	s.Require().Contains(char.Languages, "Common", "Human should have Common language")
+	s.Require().Contains(char.Languages, "Dwarvish", "Human should have chosen Dwarvish")
+	
+	// TODO: Background languages (Soldier gets 1 additional)
+	// s.Len(char.Languages, 3, "Should have Common + Dwarvish + 1 from background")
+	
+	// Skills - 2 from Fighter
+	s.Require().Len(char.Skills, 2, "Fighter should have 2 skill proficiencies")
+	s.Equal(shared.Proficient, char.Skills[constants.SkillAthletics])
+	s.Equal(shared.Proficient, char.Skills[constants.SkillIntimidation])
+	
+	// TODO: Background skills (Soldier gives Athletics, Intimidation)
+	// These might be duplicates or add expertise
+	
+	// Saving throws - Fighter gets STR and CON
+	s.Require().Len(char.SavingThrows, 2)
+	s.Equal(shared.Proficient, char.SavingThrows[constants.STR])
+	s.Equal(shared.Proficient, char.SavingThrows[constants.CON])
+	
+	// Weapon proficiencies
+	s.Require().NotNil(char.Proficiencies.Weapons)
+	s.Contains(char.Proficiencies.Weapons, "simple")
+	s.Contains(char.Proficiencies.Weapons, "martial")
+	
+	// Armor proficiencies  
+	s.Require().NotNil(char.Proficiencies.Armor)
+	s.Contains(char.Proficiencies.Armor, "light")
+	s.Contains(char.Proficiencies.Armor, "medium")
+	s.Contains(char.Proficiencies.Armor, "heavy")
+	s.Contains(char.Proficiencies.Armor, "shields")
+	
+	// Equipment
+	s.Require().NotEmpty(char.Equipment, "Fighter should have starting equipment")
+	expectedEquipment := []string{
+		"chain-mail", "longsword", "shield",
+		"handaxe", "handaxe",
+		"insignia-of-rank", "trophy", "deck-of-cards", 
+		"common-clothes", "pouch",
+	}
+	for _, item := range expectedEquipment {
+		s.Contains(char.Equipment, item, "Should have %s in equipment", item)
+	}
+	
+	// Fighting style
+	foundFightingStyle := false
+	for _, choice := range char.Choices {
+		if choice.Category == shared.ChoiceFightingStyle {
+			s.NotNil(choice.FightingStyleSelection)
+			s.Equal("Defense", *choice.FightingStyleSelection)
+			foundFightingStyle = true
+		}
+	}
+	s.True(foundFightingStyle, "Fighter should have fighting style choice recorded")
+	
+	// TODO: Verify fighting style effect is applied (AC bonus for Defense)
+}
+
+// TestFinalize_ElfWizard tests finalization of an Elf Wizard
+// This combination should have:
+// - Languages: Common, Elvish
+// - Skills: 2 from Wizard list
+// - Darkvision: 60 feet
+// - Keen Senses: Perception proficiency
+// - Cantrips: from Wizard and racial
+// - Spellbook: starting spells
+// - Equipment: from Wizard starting equipment
+func (s *FinalizeCharacterIntegrationTestSuite) TestFinalize_ElfWizard() {
+	// Create a complete draft
+	draft := &toolkitchar.DraftData{
+		ID:       "test-draft-elf-wizard",
+		PlayerID: "player-456",
+		Name:     "Aelar Moonwhisper",
+		RaceChoice: toolkitchar.RaceChoice{
+			RaceID:    constants.RaceElf,
+			SubraceID: constants.SubraceHighElf,
+		},
+		ClassChoice: toolkitchar.ClassChoice{
+			ClassID: constants.ClassWizard,
+		},
+		BackgroundChoice: constants.BackgroundSage,
+		AbilityScoreChoice: shared.AbilityScores{
+			constants.STR: 8,
+			constants.DEX: 14,  // +2 from Elf
+			constants.CON: 13,
+			constants.INT: 16,  // +1 from High Elf
+			constants.WIS: 12,
+			constants.CHA: 10,
+		},
+		Choices: []toolkitchar.ChoiceData{
+			{
+				Category: shared.ChoiceSkills,
+				Source:   shared.SourceClass,
+				ChoiceID: "wizard_skills",
+				SkillSelection: []constants.Skill{
+					constants.SkillArcana,
+					constants.SkillInvestigation,
+				},
+			},
+			{
+				Category: shared.ChoiceCantrips,
+				Source:   shared.SourceRace,
+				ChoiceID: "high_elf_cantrip",
+				CantripSelection: []string{"minor-illusion"},
+			},
+			{
+				Category: shared.ChoiceCantrips,
+				Source:   shared.SourceClass,
+				ChoiceID: "wizard_cantrips",
+				CantripSelection: []string{
+					"fire-bolt",
+					"mage-hand",
+					"prestidigitation",
+				},
+			},
+			{
+				Category: shared.ChoiceSpells,
+				Source:   shared.SourceClass,
+				ChoiceID: "wizard_spellbook",
+				SpellSelection: []string{
+					"burning-hands",
+					"charm-person",
+					"detect-magic",
+					"mage-armor",
+					"magic-missile",
+					"shield",
+				},
+			},
+			{
+				Category: shared.ChoiceEquipment,
+				Source:   shared.SourceClass,
+				ChoiceID: "wizard_equipment",
+				EquipmentSelection: []string{
+					"quarterstaff",
+					"component-pouch",
+					"scholars-pack",
+					"spellbook",
+				},
+			},
+		},
+	}
+	
+	// Save the draft
+	_, err := s.draftRepo.Create(s.ctx, draftrepo.CreateInput{
+		Draft: draft,
+	})
+	s.Require().NoError(err)
+	
+	// Finalize the draft
+	result, err := s.orchestrator.FinalizeDraft(s.ctx, &character.FinalizeDraftInput{
+		DraftID: draft.ID,
+	})
+	s.Require().NoError(err)
+	s.Require().NotNil(result)
+	s.Require().NotNil(result.Character)
+	
+	// Verify the character data
+	char := result.Character
+	
+	// Basic info
+	s.Equal("Aelar Moonwhisper", char.Name)
+	s.Equal(constants.RaceElf, char.RaceID)
+	s.Equal(constants.SubraceHighElf, char.SubraceID)
+	s.Equal(constants.ClassWizard, char.ClassID)
+	
+	// Hit points (6 base + 1 CON modifier)
+	s.Equal(7, char.MaxHitPoints)
+	s.Equal(7, char.HitPoints)
+	
+	// Speed from Elf
+	s.Equal(30, char.Speed)
+	
+	// Languages - Elf gets Common and Elvish
+	s.Require().Contains(char.Languages, "Common", "Elf should have Common language")
+	s.Require().Contains(char.Languages, "Elvish", "Elf should have Elvish language")
+	
+	// TODO: High Elf gets extra language choice
+	// TODO: Sage background gives 2 languages
+	
+	// Skills - 2 from Wizard + Perception from Elf
+	s.Require().GreaterOrEqual(len(char.Skills), 2)
+	s.Equal(shared.Proficient, char.Skills[constants.SkillArcana])
+	s.Equal(shared.Proficient, char.Skills[constants.SkillInvestigation])
+	
+	// TODO: Keen Senses gives Perception proficiency
+	// s.Equal(shared.Proficient, char.Skills[constants.SkillPerception], "Elf should have Perception from Keen Senses")
+	
+	// TODO: Sage gives Arcana and History
+	// s.Equal(shared.Proficient, char.Skills[constants.SkillHistory])
+	
+	// Saving throws - Wizard gets INT and WIS
+	s.Require().Len(char.SavingThrows, 2)
+	s.Equal(shared.Proficient, char.SavingThrows[constants.INT])
+	s.Equal(shared.Proficient, char.SavingThrows[constants.WIS])
+	
+	// Weapon proficiencies - Wizard has limited
+	// TODO: Verify wizard weapon proficiencies
+	
+	// Equipment
+	s.Require().NotEmpty(char.Equipment)
+	s.Contains(char.Equipment, "quarterstaff")
+	s.Contains(char.Equipment, "component-pouch")
+	s.Contains(char.Equipment, "scholars-pack")
+	s.Contains(char.Equipment, "spellbook")
+	
+	// Cantrips and spells
+	foundCantrips := false
+	foundSpells := false
+	for _, choice := range char.Choices {
+		if choice.Category == shared.ChoiceCantrips {
+			foundCantrips = true
+			// Should have racial + class cantrips
+		}
+		if choice.Category == shared.ChoiceSpells {
+			foundSpells = true
+			s.Len(choice.SpellSelection, 6, "Wizard should have 6 1st level spells in spellbook")
+		}
+	}
+	s.True(foundCantrips, "Should have cantrip choices")
+	s.True(foundSpells, "Should have spell choices")
+	
+	// TODO: Verify spell slots are initialized
+	// TODO: Verify Darkvision trait
+	// TODO: Verify Fey Ancestry trait
+	// TODO: Verify Trance trait
+}
+
+// TestFinalize_DwarfCleric tests finalization of a Dwarf Cleric
+// This combination should have:
+// - Languages: Common, Dwarvish
+// - Darkvision: 60 feet
+// - Dwarven Resilience: advantage on poison saves
+// - Stonecunning: History checks on stonework
+// - Tool proficiency: from dwarf
+// - Domain features
+func (s *FinalizeCharacterIntegrationTestSuite) TestFinalize_DwarfCleric() {
+	// Create a complete draft
+	draft := &toolkitchar.DraftData{
+		ID:       "test-draft-dwarf-cleric",
+		PlayerID: "player-789",
+		Name:     "Thorin Stonebeard",
+		RaceChoice: toolkitchar.RaceChoice{
+			RaceID:    constants.RaceDwarf,
+			SubraceID: constants.SubraceHillDwarf,
+		},
+		ClassChoice: toolkitchar.ClassChoice{
+			ClassID: constants.ClassCleric,
+			// TODO: Add domain choice when supported
+		},
+		BackgroundChoice: constants.BackgroundAcolyte,
+		AbilityScoreChoice: shared.AbilityScores{
+			constants.STR: 14,
+			constants.DEX: 10,
+			constants.CON: 16,  // +2 from Dwarf, +1 from Hill Dwarf
+			constants.INT: 10,
+			constants.WIS: 16,
+			constants.CHA: 8,
+		},
+		Choices: []toolkitchar.ChoiceData{
+			{
+				Category: shared.ChoiceSkills,
+				Source:   shared.SourceClass,
+				ChoiceID: "cleric_skills",
+				SkillSelection: []constants.Skill{
+					constants.SkillMedicine,
+					constants.SkillReligion,
+				},
+			},
+			{
+				Category: shared.ChoiceCantrips,
+				Source:   shared.SourceClass,
+				ChoiceID: "cleric_cantrips",
+				CantripSelection: []string{
+					"guidance",
+					"sacred-flame",
+					"spare-the-dying",
+				},
+			},
+			{
+				Category: shared.ChoiceEquipment,
+				Source:   shared.SourceClass,
+				ChoiceID: "cleric_equipment",
+				EquipmentSelection: []string{
+					"scale-mail",
+					"mace",
+					"shield",
+					"holy-symbol",
+					"priests-pack",
+				},
+			},
+		},
+	}
+	
+	// Save the draft
+	_, err := s.draftRepo.Create(s.ctx, draftrepo.CreateInput{
+		Draft: draft,
+	})
+	s.Require().NoError(err)
+	
+	// Finalize the draft
+	result, err := s.orchestrator.FinalizeDraft(s.ctx, &character.FinalizeDraftInput{
+		DraftID: draft.ID,
+	})
+	s.Require().NoError(err)
+	s.Require().NotNil(result)
+	s.Require().NotNil(result.Character)
+	
+	// Verify the character data
+	char := result.Character
+	
+	// Basic info
+	s.Equal("Thorin Stonebeard", char.Name)
+	s.Equal(constants.RaceDwarf, char.RaceID)
+	s.Equal(constants.SubraceHillDwarf, char.SubraceID)
+	s.Equal(constants.ClassCleric, char.ClassID)
+	
+	// Hit points (8 base + 3 CON modifier + 1 from Hill Dwarf)
+	// TODO: Verify Hill Dwarf HP bonus is applied
+	expectedHP := 8 + 3  // Base calculation
+	s.GreaterOrEqual(char.MaxHitPoints, expectedHP)
+	
+	// Speed from Dwarf (25, not reduced by heavy armor)
+	s.Equal(25, char.Speed)
+	
+	// Languages
+	s.Contains(char.Languages, "Common")
+	s.Contains(char.Languages, "Dwarvish")
+	
+	// TODO: Acolyte gives 2 additional languages
+	
+	// Skills
+	s.Equal(shared.Proficient, char.Skills[constants.SkillMedicine])
+	s.Equal(shared.Proficient, char.Skills[constants.SkillReligion])
+	
+	// TODO: Acolyte gives Insight and Religion
+	
+	// Saving throws - Cleric gets WIS and CHA
+	s.Equal(shared.Proficient, char.SavingThrows[constants.WIS])
+	s.Equal(shared.Proficient, char.SavingThrows[constants.CHA])
+	
+	// Armor proficiencies
+	s.Contains(char.Proficiencies.Armor, "light")
+	s.Contains(char.Proficiencies.Armor, "medium")
+	s.Contains(char.Proficiencies.Armor, "shields")
+	
+	// TODO: Tool proficiencies from Dwarf (smith's tools, brewer's supplies, or mason's tools)
+	// TODO: Verify Darkvision trait
+	// TODO: Verify Dwarven Resilience trait
+	// TODO: Verify Stonecunning trait
+	// TODO: Verify Domain features when implemented
+}
+
+// TestFinalize_HalflingRogue tests finalization of a Halfling Rogue
+// This combination should have:
+// - Languages: Common, Halfling
+// - Lucky: reroll 1s
+// - Brave: advantage against frightened
+// - Nimble: move through larger creatures
+// - Expertise: double proficiency on some skills
+// - Sneak Attack
+// - Thieves' Cant
+func (s *FinalizeCharacterIntegrationTestSuite) TestFinalize_HalflingRogue() {
+	// Create a complete draft
+	draft := &toolkitchar.DraftData{
+		ID:       "test-draft-halfling-rogue",
+		PlayerID: "player-101",
+		Name:     "Pippin Lightfoot",
+		RaceChoice: toolkitchar.RaceChoice{
+			RaceID:    constants.RaceHalfling,
+			SubraceID: constants.SubraceLightfootHalfling,
+		},
+		ClassChoice: toolkitchar.ClassChoice{
+			ClassID: constants.ClassRogue,
+		},
+		BackgroundChoice: constants.BackgroundCriminal,
+		AbilityScoreChoice: shared.AbilityScores{
+			constants.STR: 8,
+			constants.DEX: 17,  // +2 from Halfling
+			constants.CON: 14,
+			constants.INT: 13,
+			constants.WIS: 12,
+			constants.CHA: 15,  // +1 from Lightfoot
+		},
+		Choices: []toolkitchar.ChoiceData{
+			{
+				Category: shared.ChoiceSkills,
+				Source:   shared.SourceClass,
+				ChoiceID: "rogue_skills",
+				SkillSelection: []constants.Skill{
+					constants.SkillAcrobatics,
+					constants.SkillDeception,
+					constants.SkillSleightOfHand,
+					constants.SkillStealth,
+				},
+			},
+			{
+				Category: shared.ChoiceSkills,
+				Source:   shared.SourceClass,
+				ChoiceID: "rogue_expertise",
+				SkillSelection: []constants.Skill{
+					constants.SkillStealth,
+					constants.SkillSleightOfHand,
+				},
+			},
+			{
+				Category: shared.ChoiceEquipment,
+				Source:   shared.SourceClass,
+				ChoiceID: "rogue_equipment",
+				EquipmentSelection: []string{
+					"rapier",
+					"shortbow",
+					"quiver",
+					"arrow",
+					"leather-armor",
+					"dagger",
+					"dagger",
+					"thieves-tools",
+					"dungeoneers-pack",
+				},
+			},
+			{
+				Category: shared.ChoiceLanguages,
+				Source:   shared.SourceClass,
+				ChoiceID: "rogue_thieves_cant",
+				LanguageSelection: []constants.Language{
+					constants.LanguageThievesCant,
+				},
+			},
+		},
+	}
+	
+	// Save the draft
+	_, err := s.draftRepo.Create(s.ctx, draftrepo.CreateInput{
+		Draft: draft,
+	})
+	s.Require().NoError(err)
+	
+	// Finalize the draft
+	result, err := s.orchestrator.FinalizeDraft(s.ctx, &character.FinalizeDraftInput{
+		DraftID: draft.ID,
+	})
+	s.Require().NoError(err)
+	s.Require().NotNil(result)
+	s.Require().NotNil(result.Character)
+	
+	// Verify the character data
+	char := result.Character
+	
+	// Basic info
+	s.Equal("Pippin Lightfoot", char.Name)
+	s.Equal(constants.RaceHalfling, char.RaceID)
+	s.Equal(constants.SubraceLightfootHalfling, char.SubraceID)
+	s.Equal(constants.ClassRogue, char.ClassID)
+	
+	// Hit points (8 base + 2 CON modifier)
+	s.Equal(10, char.MaxHitPoints)
+	
+	// Speed from Halfling
+	s.Equal(25, char.Speed)
+	s.Equal("Small", char.Size)
+	
+	// Languages
+	s.Contains(char.Languages, "Common")
+	s.Contains(char.Languages, "Halfling")
+	
+	// TODO: Verify Thieves' Cant is included
+	// s.Contains(char.Languages, "ThievesCant")
+	
+	// Skills - 4 from Rogue
+	s.GreaterOrEqual(len(char.Skills), 4)
+	s.Equal(shared.Proficient, char.Skills[constants.SkillAcrobatics])
+	s.Equal(shared.Proficient, char.Skills[constants.SkillDeception])
+	s.Equal(shared.Proficient, char.Skills[constants.SkillSleightOfHand])
+	s.Equal(shared.Proficient, char.Skills[constants.SkillStealth])
+	
+	// TODO: Expertise should give double proficiency
+	// Need to check if we track expertise separately or as a different proficiency level
+	
+	// TODO: Criminal gives Deception and Stealth
+	
+	// Saving throws - Rogue gets DEX and INT
+	s.Equal(shared.Proficient, char.SavingThrows[constants.DEX])
+	s.Equal(shared.Proficient, char.SavingThrows[constants.INT])
+	
+	// Weapon proficiencies
+	s.Contains(char.Proficiencies.Weapons, "simple")
+	// TODO: Rogue specific weapons (hand crossbow, longsword, rapier, shortsword)
+	
+	// Armor proficiencies
+	s.Contains(char.Proficiencies.Armor, "light")
+	
+	// TODO: Tool proficiencies (thieves' tools)
+	// TODO: Verify Lucky trait
+	// TODO: Verify Brave trait
+	// TODO: Verify Halfling Nimbleness
+	// TODO: Verify Naturally Stealthy (Lightfoot)
+	// TODO: Verify Sneak Attack feature
+}
+
+// TestFinalize_MissingChoices tests that finalization handles missing optional choices gracefully
+func (s *FinalizeCharacterIntegrationTestSuite) TestFinalize_MissingChoices() {
+	// Create a minimal draft with only required fields
+	draft := &toolkitchar.DraftData{
+		ID:       "test-draft-minimal",
+		PlayerID: "player-minimal",
+		Name:     "Minimal Character",
+		RaceChoice: toolkitchar.RaceChoice{
+			RaceID: constants.RaceHuman,
+		},
+		ClassChoice: toolkitchar.ClassChoice{
+			ClassID: constants.ClassFighter,
+		},
+		BackgroundChoice: constants.BackgroundSoldier,
+		AbilityScoreChoice: shared.AbilityScores{
+			constants.STR: 15,
+			constants.DEX: 14,
+			constants.CON: 13,
+			constants.INT: 12,
+			constants.WIS: 11,
+			constants.CHA: 10,
+		},
+		Choices: []toolkitchar.ChoiceData{}, // No choices made
+	}
+	
+	// Save the draft
+	_, err := s.draftRepo.Create(s.ctx, draftrepo.CreateInput{
+		Draft: draft,
+	})
+	s.Require().NoError(err)
+	
+	// Finalize the draft
+	result, err := s.orchestrator.FinalizeDraft(s.ctx, &character.FinalizeDraftInput{
+		DraftID: draft.ID,
+	})
+	s.Require().NoError(err)
+	s.Require().NotNil(result)
+	s.Require().NotNil(result.Character)
+	
+	// Verify basic character data is still populated
+	char := result.Character
+	s.Equal("Minimal Character", char.Name)
+	s.Equal(constants.RaceHuman, char.RaceID)
+	s.Equal(constants.ClassFighter, char.ClassID)
+	
+	// Should have default values for collections
+	s.NotNil(char.Skills)
+	s.NotNil(char.Languages)
+	s.NotNil(char.Equipment)
+	s.NotNil(char.Proficiencies)
+	
+	// Should still have class-based proficiencies
+	s.Equal(shared.Proficient, char.SavingThrows[constants.STR])
+	s.Equal(shared.Proficient, char.SavingThrows[constants.CON])
+	
+	// Should have racial languages at minimum
+	s.Contains(char.Languages, "Common")
+}
+
+func TestFinalizeCharacterIntegrationTestSuite(t *testing.T) {
+	// Skip if not running integration tests
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+	
+	suite.Run(t, new(FinalizeCharacterIntegrationTestSuite))
+}
+
+// Helper function to create string pointer
+func strPtr(s string) *string {
+	return &s
+}

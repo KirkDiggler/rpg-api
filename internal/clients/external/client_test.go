@@ -392,3 +392,226 @@ func TestConvertEquipmentToEquipmentData(t *testing.T) {
 		assert.Nil(t, result)
 	})
 }
+
+func TestGetBackgroundData(t *testing.T) {
+	t.Run("successful background retrieval", func(t *testing.T) {
+		mockClient := new(mockDND5eClient)
+		client := &client{dnd5eClient: mockClient}
+
+		// Mock background data
+		background := &entities.Background{
+			Key:  "criminal",
+			Name: "Criminal",
+			SkillProficiencies: []*entities.ReferenceItem{
+				{Key: "deception", Name: "Deception"},
+				{Key: "stealth", Name: "Stealth"},
+			},
+			Feature: &entities.BackgroundFeature{
+				Name:        "Criminal Contact",
+				Description: "You have a reliable and trustworthy contact who acts as your liaison to a network of other criminals.",
+			},
+			StartingEquipment: []*entities.StartingEquipment{
+				{
+					Quantity:  1,
+					Equipment: &entities.ReferenceItem{Key: "crowbar", Name: "Crowbar"},
+				},
+			},
+		}
+
+		mockClient.On("GetBackground", "criminal").Return(background, nil)
+
+		result, err := client.GetBackgroundData(context.Background(), "BACKGROUND_CRIMINAL")
+
+		assert.NoError(t, err)
+		assert.NotNil(t, result)
+		assert.Equal(t, "criminal", result.ID)
+		assert.Equal(t, "Criminal", result.Name)
+		assert.Contains(t, result.Description, "Criminal background")
+		assert.Equal(t, []string{"Deception", "Stealth"}, result.SkillProficiencies)
+		assert.Equal(t, int32(0), result.Languages) // No language options in this background
+		assert.Equal(t, []string{"Crowbar"}, result.Equipment)
+		assert.Equal(t, "Criminal Contact: You have a reliable and trustworthy contact who acts as your liaison to a network of other criminals.", result.Feature)
+
+		mockClient.AssertExpectations(t)
+	})
+
+	t.Run("API error", func(t *testing.T) {
+		mockClient := new(mockDND5eClient)
+		client := &client{dnd5eClient: mockClient}
+
+		mockClient.On("GetBackground", "invalid").Return((*entities.Background)(nil), errors.New("background not found"))
+
+		result, err := client.GetBackgroundData(context.Background(), "BACKGROUND_INVALID")
+
+		assert.Error(t, err)
+		assert.Nil(t, result)
+		assert.Contains(t, err.Error(), "failed to get background")
+
+		mockClient.AssertExpectations(t)
+	})
+}
+
+func TestListAvailableBackgrounds(t *testing.T) {
+	t.Run("successful background listing", func(t *testing.T) {
+		mockClient := new(mockDND5eClient)
+		client := &client{dnd5eClient: mockClient}
+
+		// Mock reference items
+		refs := []*entities.ReferenceItem{
+			{Key: "criminal", Name: "Criminal"},
+			{Key: "sage", Name: "Sage"},
+		}
+
+		// Mock background details
+		criminal := &entities.Background{
+			Key:  "criminal",
+			Name: "Criminal",
+			SkillProficiencies: []*entities.ReferenceItem{
+				{Key: "deception", Name: "Deception"},
+				{Key: "stealth", Name: "Stealth"},
+			},
+			Feature: &entities.BackgroundFeature{
+				Name:        "Criminal Contact",
+				Description: "You have a reliable contact.",
+			},
+		}
+
+		sage := &entities.Background{
+			Key:  "sage",
+			Name: "Sage",
+			SkillProficiencies: []*entities.ReferenceItem{
+				{Key: "arcana", Name: "Arcana"},
+				{Key: "history", Name: "History"},
+			},
+			Feature: &entities.BackgroundFeature{
+				Name:        "Researcher",
+				Description: "You can recall information.",
+			},
+			LanguageOptions: &entities.ChoiceOption{
+				ChoiceCount: 2,
+			},
+		}
+
+		mockClient.On("ListBackgrounds").Return(refs, nil)
+		mockClient.On("GetBackground", "criminal").Return(criminal, nil)
+		mockClient.On("GetBackground", "sage").Return(sage, nil)
+
+		result, err := client.ListAvailableBackgrounds(context.Background())
+
+		assert.NoError(t, err)
+		assert.NotNil(t, result)
+		assert.Len(t, result, 2)
+
+		// Check criminal background
+		criminalResult := result[0]
+		assert.Equal(t, "BACKGROUND_CRIMINAL", criminalResult.ID)
+		assert.Equal(t, "Criminal", criminalResult.Name)
+		assert.Equal(t, []string{"Deception", "Stealth"}, criminalResult.SkillProficiencies)
+		assert.Equal(t, int32(0), criminalResult.Languages)
+
+		// Check sage background
+		sageResult := result[1]
+		assert.Equal(t, "BACKGROUND_SAGE", sageResult.ID)
+		assert.Equal(t, "Sage", sageResult.Name)
+		assert.Equal(t, []string{"Arcana", "History"}, sageResult.SkillProficiencies)
+		assert.Equal(t, int32(2), sageResult.Languages) // Has language options
+
+		mockClient.AssertExpectations(t)
+	})
+
+	t.Run("API error on list", func(t *testing.T) {
+		mockClient := new(mockDND5eClient)
+		client := &client{dnd5eClient: mockClient}
+
+		mockClient.On("ListBackgrounds").Return(([]*entities.ReferenceItem)(nil), errors.New("API error"))
+
+		result, err := client.ListAvailableBackgrounds(context.Background())
+
+		assert.Error(t, err)
+		assert.Nil(t, result)
+		assert.Contains(t, err.Error(), "failed to list backgrounds")
+
+		mockClient.AssertExpectations(t)
+	})
+
+	t.Run("API error on individual background", func(t *testing.T) {
+		mockClient := new(mockDND5eClient)
+		client := &client{dnd5eClient: mockClient}
+
+		refs := []*entities.ReferenceItem{
+			{Key: "criminal", Name: "Criminal"},
+		}
+
+		mockClient.On("ListBackgrounds").Return(refs, nil)
+		mockClient.On("GetBackground", "criminal").Return((*entities.Background)(nil), errors.New("background not found"))
+
+		result, err := client.ListAvailableBackgrounds(context.Background())
+
+		assert.Error(t, err)
+		assert.Nil(t, result)
+		assert.Contains(t, err.Error(), "failed to get background criminal")
+
+		mockClient.AssertExpectations(t)
+	})
+}
+
+func TestConvertBackgroundToBackgroundData(t *testing.T) {
+	t.Run("convert complete background", func(t *testing.T) {
+		background := &entities.Background{
+			Key:  "soldier",
+			Name: "Soldier",
+			SkillProficiencies: []*entities.ReferenceItem{
+				{Key: "athletics", Name: "Athletics"},
+				{Key: "intimidation", Name: "Intimidation"},
+			},
+			Feature: &entities.BackgroundFeature{
+				Name:        "Military Rank",
+				Description: "You have military authority.",
+			},
+			StartingEquipment: []*entities.StartingEquipment{
+				{
+					Quantity:  1,
+					Equipment: &entities.ReferenceItem{Key: "uniform", Name: "Uniform"},
+				},
+				{
+					Quantity:  2,
+					Equipment: &entities.ReferenceItem{Key: "javelin", Name: "Javelin"},
+				},
+			},
+			LanguageOptions: &entities.ChoiceOption{
+				ChoiceCount: 1,
+			},
+		}
+
+		result := convertBackgroundToBackgroundData(background)
+
+		assert.NotNil(t, result)
+		assert.Equal(t, "soldier", result.ID)
+		assert.Equal(t, "Soldier", result.Name)
+		assert.Contains(t, result.Description, "Soldier background")
+		assert.Equal(t, []string{"Athletics", "Intimidation"}, result.SkillProficiencies)
+		assert.Equal(t, int32(1), result.Languages)
+		assert.Equal(t, []string{"Uniform", "2x Javelin"}, result.Equipment)
+		assert.Equal(t, "Military Rank: You have military authority.", result.Feature)
+	})
+
+	t.Run("convert background with no feature", func(t *testing.T) {
+		background := &entities.Background{
+			Key:                "test",
+			Name:               "Test",
+			SkillProficiencies: []*entities.ReferenceItem{},
+		}
+
+		result := convertBackgroundToBackgroundData(background)
+
+		assert.NotNil(t, result)
+		assert.Equal(t, "test", result.ID)
+		assert.Equal(t, "Test", result.Name)
+		assert.Equal(t, ": ", result.Feature) // Empty feature name and description
+	})
+
+	t.Run("convert nil background", func(t *testing.T) {
+		result := convertBackgroundToBackgroundData(nil)
+		assert.Nil(t, result)
+	})
+}

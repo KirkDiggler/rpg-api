@@ -136,6 +136,17 @@ func (s *FinalizeDraftOrchestratorTestSuite) TestFinalizeDraft_Success() {
 			},
 		}, nil)
 
+	// Mock background data
+	s.mockExtClient.EXPECT().
+		GetBackgroundData(gomock.Any(), string(constants.BackgroundSoldier)).
+		Return(&external.BackgroundData{
+			ID:                 "soldier",
+			Name:               "Soldier",
+			SkillProficiencies: []string{"Athletics", "Intimidation"},
+			Equipment:          []string{"Uniform", "Javelin"},
+			Feature:            "Military Rank: You have military authority.",
+		}, nil)
+
 	// Mock character creation
 	s.mockCharRepo.EXPECT().
 		Create(gomock.Any(), gomock.Any()).
@@ -161,13 +172,17 @@ func (s *FinalizeDraftOrchestratorTestSuite) TestFinalizeDraft_Success() {
 			s.Equal(shared.Proficient, input.CharacterData.SavingThrows[constants.STR])
 			s.Equal(shared.Proficient, input.CharacterData.SavingThrows[constants.CON])
 
-			// Skills
-			s.Equal(shared.Proficient, input.CharacterData.Skills[constants.SkillAthletics])
-			s.Equal(shared.Proficient, input.CharacterData.Skills[constants.SkillIntimidation])
+			// Skills (both background and class-derived)
+			s.Equal(shared.Proficient, input.CharacterData.Skills[constants.SkillAthletics])    // From background
+			s.Equal(shared.Proficient, input.CharacterData.Skills[constants.SkillIntimidation]) // From background
 
 			// Languages
 			s.Contains(input.CharacterData.Languages, string(constants.LanguageCommon))
 			s.Contains(input.CharacterData.Languages, string(constants.LanguageElvish))
+
+			// Equipment (from background)
+			s.Contains(input.CharacterData.Equipment, "Uniform")
+			s.Contains(input.CharacterData.Equipment, "Javelin")
 
 			return &charrepo.CreateOutput{CharacterData: input.CharacterData}, nil
 		})
@@ -382,6 +397,17 @@ func (s *FinalizeDraftOrchestratorTestSuite) TestFinalizeDraft_DraftDeleteFails(
 				HitDice:      10,
 				SavingThrows: []constants.Ability{constants.STR, constants.CON},
 			},
+		}, nil)
+
+	// Mock background data
+	s.mockExtClient.EXPECT().
+		GetBackgroundData(gomock.Any(), string(constants.BackgroundSoldier)).
+		Return(&external.BackgroundData{
+			ID:                 "soldier",
+			Name:               "Soldier",
+			SkillProficiencies: []string{"Athletics", "Intimidation"},
+			Equipment:          []string{"Uniform", "Javelin"},
+			Feature:            "Military Rank: You have military authority.",
 		}, nil)
 
 	// Mock character creation

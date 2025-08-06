@@ -621,12 +621,10 @@ func (o *Orchestrator) FinalizeDraft(ctx context.Context, input *FinalizeDraftIn
 	}
 
 	// Get background data
-	// TODO(#167): GetBackgroundData is not implemented in external client yet
-	// For now, we'll proceed without background data
-	// backgroundDataOutput, err := o.externalClient.GetBackgroundData(ctx, string(draft.BackgroundChoice))
-	// if err != nil {
-	// 	return nil, errors.Wrapf(err, "failed to get background data for %s", draft.BackgroundChoice)
-	// }
+	backgroundDataOutput, err := o.externalClient.GetBackgroundData(ctx, string(draft.BackgroundChoice))
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to get background data for %s", draft.BackgroundChoice)
+	}
 
 	// Calculate hit points
 	conMod := (draft.AbilityScoreChoice[constants.CON] - 10) / 2
@@ -714,12 +712,45 @@ func (o *Orchestrator) FinalizeDraft(ctx context.Context, input *FinalizeDraftIn
 	characterData.Proficiencies.Armor = classDataOutput.ClassData.ArmorProficiencies
 
 	// Tool proficiencies from background
-	// TODO: Add tool proficiencies when GetBackgroundData is implemented
-	// if backgroundDataOutput.BackgroundData != nil {
-	// 	for _, tool := range backgroundDataOutput.BackgroundData.ToolProficiencies {
-	// 		characterData.Proficiencies.Tools = append(characterData.Proficiencies.Tools, string(tool))
-	// 	}
-	// }
+	// TODO: Add tool proficiencies when they are available in BackgroundData
+	// Current BackgroundData structure doesn't include tool proficiencies
+
+	// Add skill proficiencies from background
+	if backgroundDataOutput != nil {
+		for _, skill := range backgroundDataOutput.SkillProficiencies {
+			// Convert skill name to skill constant - this is a simplified mapping
+			// In practice, we'd need a more robust skill name to constant conversion
+			skillName := strings.ToLower(strings.ReplaceAll(skill, " ", "-"))
+			switch skillName {
+			case "athletics":
+				characterData.Skills[constants.SkillAthletics] = shared.Proficient
+			case "intimidation":
+				characterData.Skills[constants.SkillIntimidation] = shared.Proficient
+			case "deception":
+				characterData.Skills[constants.SkillDeception] = shared.Proficient
+			case "stealth":
+				characterData.Skills[constants.SkillStealth] = shared.Proficient
+			case "animal-handling":
+				characterData.Skills[constants.SkillAnimalHandling] = shared.Proficient
+			case "survival":
+				characterData.Skills[constants.SkillSurvival] = shared.Proficient
+			case "arcana":
+				characterData.Skills[constants.SkillArcana] = shared.Proficient
+			case "history":
+				characterData.Skills[constants.SkillHistory] = shared.Proficient
+			case "persuasion":
+				characterData.Skills[constants.SkillPersuasion] = shared.Proficient
+			case "sleight-of-hand":
+				characterData.Skills[constants.SkillSleightOfHand] = shared.Proficient
+				// Add other skills as needed
+			}
+		}
+	}
+
+	// Add equipment from background
+	if backgroundDataOutput != nil {
+		characterData.Equipment = append(characterData.Equipment, backgroundDataOutput.Equipment...)
+	}
 
 	// Process equipment from choices
 	for _, choice := range draft.Choices {
