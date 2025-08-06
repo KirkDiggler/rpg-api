@@ -43,6 +43,7 @@ func (s *OrchestratorRollAbilityScoresTestSuite) SetupTest() {
 	s.mockChar = charactermock.NewMockRepository(s.ctrl)
 	s.mockExternal = externalmock.NewMockClient(s.ctrl)
 	s.mockIDGen = idgenmock.NewMockGenerator(s.ctrl)
+	mockDraftIDGen := idgenmock.NewMockGenerator(s.ctrl)
 
 	orchestrator, err := character.New(&character.Config{
 		CharacterDraftRepo: s.mockDraft,
@@ -50,6 +51,7 @@ func (s *OrchestratorRollAbilityScoresTestSuite) SetupTest() {
 		CharacterRepo:      s.mockChar,
 		ExternalClient:     s.mockExternal,
 		IDGenerator:        s.mockIDGen,
+		DraftIDGenerator:   mockDraftIDGen,
 	})
 	s.Require().NoError(err)
 	s.orchestrator = orchestrator

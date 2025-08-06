@@ -32,8 +32,9 @@ type FinalizeDraftOrchestratorTestSuite struct {
 	mockDraftRepo   *draftmock.MockRepository
 	mockExtClient   *extmock.MockClient
 	mockDiceService *dicemock.MockService
-	mockIDGen       *idgenmock.MockGenerator
-	ctx             context.Context
+	mockIDGen         *idgenmock.MockGenerator
+	mockDraftIDGen    *idgenmock.MockGenerator
+	ctx               context.Context
 }
 
 func (s *FinalizeDraftOrchestratorTestSuite) SetupTest() {
@@ -43,6 +44,7 @@ func (s *FinalizeDraftOrchestratorTestSuite) SetupTest() {
 	s.mockExtClient = extmock.NewMockClient(s.ctrl)
 	s.mockDiceService = dicemock.NewMockService(s.ctrl)
 	s.mockIDGen = idgenmock.NewMockGenerator(s.ctrl)
+	s.mockDraftIDGen = idgenmock.NewMockGenerator(s.ctrl)
 	s.ctx = context.Background()
 
 	// Create orchestrator
@@ -52,6 +54,7 @@ func (s *FinalizeDraftOrchestratorTestSuite) SetupTest() {
 		ExternalClient:     s.mockExtClient,
 		DiceService:        s.mockDiceService,
 		IDGenerator:        s.mockIDGen,
+		DraftIDGenerator:   s.mockDraftIDGen,
 	}
 	orch, err := character.New(cfg)
 	s.Require().NoError(err)

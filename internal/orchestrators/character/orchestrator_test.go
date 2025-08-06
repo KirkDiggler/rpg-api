@@ -31,8 +31,9 @@ type OrchestratorTestSuite struct {
 	mockDraftRepo   *draftrepomock.MockRepository
 	mockExternal    *externalmock.MockClient
 	mockDiceService *dicemock.MockService
-	mockIDGenerator *idgenmock.MockGenerator
-	orchestrator    *character.Orchestrator
+	mockIDGenerator      *idgenmock.MockGenerator
+	mockDraftIDGenerator *idgenmock.MockGenerator
+	orchestrator         *character.Orchestrator
 	ctx             context.Context
 
 	// Test data
@@ -48,6 +49,7 @@ func (s *OrchestratorTestSuite) SetupTest() {
 	s.mockExternal = externalmock.NewMockClient(s.ctrl)
 	s.mockDiceService = dicemock.NewMockService(s.ctrl)
 	s.mockIDGenerator = idgenmock.NewMockGenerator(s.ctrl)
+	s.mockDraftIDGenerator = idgenmock.NewMockGenerator(s.ctrl)
 	s.ctx = context.Background()
 
 	orchestrator, err := character.New(&character.Config{
@@ -56,6 +58,7 @@ func (s *OrchestratorTestSuite) SetupTest() {
 		ExternalClient:     s.mockExternal,
 		DiceService:        s.mockDiceService,
 		IDGenerator:        s.mockIDGenerator,
+		DraftIDGenerator:   s.mockDraftIDGenerator,
 	})
 	s.Require().NoError(err)
 	s.orchestrator = orchestrator
@@ -142,7 +145,7 @@ func (s *OrchestratorTestSuite) TestGetDraft_NotFound() {
 func (s *OrchestratorTestSuite) TestCreateDraft_Success() {
 	// Generate test ID
 	generatedID := "draft-generated-123"
-	s.mockIDGenerator.EXPECT().
+	s.mockDraftIDGenerator.EXPECT().
 		Generate().
 		Return(generatedID)
 
@@ -179,7 +182,7 @@ func (s *OrchestratorTestSuite) TestCreateDraft_WithInitialData() {
 	generatedID := "draft-generated-456"
 	initialName := "Legolas"
 
-	s.mockIDGenerator.EXPECT().
+	s.mockDraftIDGenerator.EXPECT().
 		Generate().
 		Return(generatedID)
 
@@ -233,7 +236,7 @@ func (s *OrchestratorTestSuite) TestCreateDraft_EmptyPlayerID() {
 func (s *OrchestratorTestSuite) TestCreateDraft_RepositoryError() {
 	generatedID := "draft-generated-789"
 
-	s.mockIDGenerator.EXPECT().
+	s.mockDraftIDGenerator.EXPECT().
 		Generate().
 		Return(generatedID)
 

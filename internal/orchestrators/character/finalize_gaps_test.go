@@ -43,6 +43,7 @@ func (s *FinalizeGapsTestSuite) SetupTest() {
 	s.mockExtClient = extmock.NewMockClient(s.ctrl)
 	s.mockDiceService = dicemock.NewMockService(s.ctrl)
 	s.mockIDGen = idgenmock.NewMockGenerator(s.ctrl)
+	mockDraftIDGen := idgenmock.NewMockGenerator(s.ctrl)
 	s.ctx = context.Background()
 
 	cfg := &character.Config{
@@ -51,6 +52,7 @@ func (s *FinalizeGapsTestSuite) SetupTest() {
 		ExternalClient:     s.mockExtClient,
 		DiceService:        s.mockDiceService,
 		IDGenerator:        s.mockIDGen,
+		DraftIDGenerator:   mockDraftIDGen,
 	}
 	orch, err := character.New(cfg)
 	s.Require().NoError(err)

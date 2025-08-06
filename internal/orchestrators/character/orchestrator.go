@@ -26,6 +26,7 @@ type Config struct {
 	ExternalClient     external.Client
 	DiceService        dice.Service
 	IDGenerator        idgen.Generator
+	DraftIDGenerator   idgen.Generator
 }
 
 // Validate ensures all required dependencies are present
@@ -45,6 +46,9 @@ func (c *Config) Validate() error {
 	if c.IDGenerator == nil {
 		return errors.InvalidArgument("ID generator is required")
 	}
+	if c.DraftIDGenerator == nil {
+		return errors.InvalidArgument("draft ID generator is required")
+	}
 	return nil
 }
 
@@ -55,6 +59,7 @@ type Orchestrator struct {
 	externalClient external.Client
 	diceService    dice.Service
 	idGen          idgen.Generator
+	draftIDGen     idgen.Generator
 }
 
 // New creates a new character orchestrator
@@ -69,6 +74,7 @@ func New(cfg *Config) (*Orchestrator, error) {
 		externalClient: cfg.ExternalClient,
 		diceService:    cfg.DiceService,
 		idGen:          cfg.IDGenerator,
+		draftIDGen:     cfg.DraftIDGenerator,
 	}, nil
 }
 
@@ -123,7 +129,7 @@ func (o *Orchestrator) CreateDraft(ctx context.Context, input *CreateDraftInput)
 
 	// Create new draft with minimal data
 	draft := &toolkitchar.DraftData{
-		ID:       o.idGen.Generate(),
+		ID:       o.draftIDGen.Generate(),
 		PlayerID: input.PlayerID,
 	}
 
@@ -929,7 +935,17 @@ func (o *Orchestrator) GetCharacter(ctx context.Context, input *GetCharacterInpu
 }
 
 func (o *Orchestrator) ListCharacters(ctx context.Context, input *ListCharactersInput) (*ListCharactersOutput, error) {
-	return nil, errors.Unimplemented("not implemented")
+	// List characters from repository by player ID
+	listOutput, err := o.charRepo.ListByPlayerID(ctx, character.ListByPlayerIDInput{
+		PlayerID: input.PlayerID,
+	})
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to list characters")
+	}
+
+	return &ListCharactersOutput{
+		Characters: listOutput.Characters,
+	}, nil
 }
 
 func (o *Orchestrator) DeleteCharacter(ctx context.Context, input *DeleteCharacterInput) (*DeleteCharacterOutput, error) {

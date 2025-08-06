@@ -73,8 +73,9 @@ func (s *HandlerListClassesChoicesIntegrationTestSuite) SetupSuite() {
 	// Create mocked dice service (not used by ListClasses)
 	mockDiceService := dicemock.NewMockService(s.ctrl)
 
-	// Create mocked ID generator (not used by ListClasses)
+	// Create mocked ID generators (not used by ListClasses)
 	mockIDGenerator := idgenmock.NewMockGenerator(s.ctrl)
+	mockDraftIDGenerator := idgenmock.NewMockGenerator(s.ctrl)
 
 	// Create character orchestrator with REAL external client and mocked repos
 	characterOrch, err := character.New(&character.Config{
@@ -83,6 +84,7 @@ func (s *HandlerListClassesChoicesIntegrationTestSuite) SetupSuite() {
 		ExternalClient:     s.externalClient, // REAL external client
 		DiceService:        mockDiceService,
 		IDGenerator:        mockIDGenerator,
+		DraftIDGenerator:   mockDraftIDGenerator,
 	})
 	s.Require().NoError(err)
 	s.characterOrch = characterOrch

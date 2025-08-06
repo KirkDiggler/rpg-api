@@ -42,12 +42,14 @@ func (s *AbilityScoresDebugTestSuite) SetupTest() {
 	s.mockIDGen = idgenmock.NewMockGenerator(s.ctrl)
 
 	// Create orchestrator
+	mockDraftIDGen := idgenmock.NewMockGenerator(s.ctrl)
 	cfg := &character.Config{
 		CharacterRepo:      s.mockCharRepo,
 		CharacterDraftRepo: s.mockDraftRepo,
 		ExternalClient:     s.mockExtClient,
 		DiceService:        s.mockDiceService,
 		IDGenerator:        s.mockIDGen,
+		DraftIDGenerator:   mockDraftIDGen,
 	}
 	orchestrator, err := character.New(cfg)
 	s.Require().NoError(err)
