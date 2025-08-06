@@ -176,6 +176,9 @@ func (o *orchestrator) rollDiceWithToolkit(count, size int, dropLowest int) ([]i
 			newTotal += d
 		}
 
+		// Return the kept dice, dropped dice, and new total
+		// Note: We return only the kept dice as the "dice" for display
+		// The dropped dice are tracked separately
 		return kept, dropped, newTotal, nil
 	}
 
@@ -201,8 +204,14 @@ func (o *orchestrator) RollDice(ctx context.Context, input *RollDiceInput) (*Rol
 		return nil, err
 	}
 
+	// Determine if we should drop lowest (for ability scores)
+	dropLowest := 0
+	if input.Context == ContextAbilityScores && input.Notation == "4d6" {
+		dropLowest = 1 // Drop the lowest die for ability scores
+	}
+
 	// Roll the dice using rpg-toolkit
-	individualDice, dropped, total, err := o.rollDiceWithToolkit(count, size, 0)
+	individualDice, dropped, total, err := o.rollDiceWithToolkit(count, size, dropLowest)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to roll dice")
 	}
