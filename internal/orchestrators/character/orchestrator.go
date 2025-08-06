@@ -791,6 +791,7 @@ func (o *Orchestrator) FinalizeDraft(ctx context.Context, input *FinalizeDraftIn
 	for _, trait := range raceDataOutput.RaceData.Traits {
 		slog.Debug("Character has racial trait", "trait", trait.Name)
 		// TODO: Add Traits []string to character.Data to store these
+		// This is tracked in a GitHub issue for adding racial traits field to character data
 		// When Traits field is added: characterData.Traits = append(characterData.Traits, trait.Name)
 	}
 
