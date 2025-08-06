@@ -207,6 +207,116 @@ func (s *FinalizeDraftOrchestratorTestSuite) TestFinalizeDraft_Success() {
 	s.True(output.DraftDeleted)
 }
 
+func (s *FinalizeDraftOrchestratorTestSuite) TestFinalizeDraft_SuccessWithoutBackground() {
+	// Test that finalization works without a background (optional)
+	draftID := "draft_no_bg_123"
+
+	// Mock ID generation
+	s.mockIDGen.EXPECT().Generate().Return("char-no-bg-123")
+
+	// Mock draft data WITHOUT background
+	draft := &toolkitchar.DraftData{
+		ID:       draftID,
+		PlayerID: "player_123",
+		Name:     "Test Fighter No BG",
+		RaceChoice: toolkitchar.RaceChoice{
+			RaceID: constants.RaceHuman,
+		},
+		ClassChoice: toolkitchar.ClassChoice{
+			ClassID: constants.ClassFighter,
+		},
+		// NO BackgroundChoice - it's optional now
+		AbilityScoreChoice: shared.AbilityScores{
+			constants.STR: 16,
+			constants.DEX: 12,
+			constants.CON: 14,
+			constants.INT: 10,
+			constants.WIS: 13,
+			constants.CHA: 8,
+		},
+		Choices: []toolkitchar.ChoiceData{
+			{
+				Category:       shared.ChoiceSkills,
+				Source:         shared.SourceClass,
+				ChoiceID:       "fighter_skills",
+				SkillSelection: []constants.Skill{constants.SkillAthletics, constants.SkillIntimidation},
+			},
+		},
+	}
+
+	// Mock the Get call
+	s.mockDraftRepo.EXPECT().
+		Get(gomock.Any(), draftrepo.GetInput{ID: draftID}).
+		Return(&draftrepo.GetOutput{Draft: draft}, nil)
+
+	// Mock race data
+	s.mockExtClient.EXPECT().
+		GetRaceData(gomock.Any(), string(constants.RaceHuman)).
+		Return(&external.RaceDataOutput{
+			RaceData: &race.Data{
+				ID:        constants.RaceHuman,
+				Name:      "Human",
+				Speed:     30,
+				Size:      "Medium",
+				Languages: []constants.Language{constants.LanguageCommon, constants.LanguageElvish},
+			},
+		}, nil)
+
+	// Mock class data
+	s.mockExtClient.EXPECT().
+		GetClassData(gomock.Any(), string(constants.ClassFighter)).
+		Return(&external.ClassDataOutput{
+			ClassData: &class.Data{
+				ID:                  constants.ClassFighter,
+				Name:                "Fighter",
+				HitDice:             10,
+				SavingThrows:        []constants.Ability{constants.STR, constants.CON},
+				WeaponProficiencies: []string{"simple", "martial"},
+				ArmorProficiencies:  []string{"light", "medium", "heavy", "shields"},
+			},
+		}, nil)
+
+	// NO GetBackgroundData call since background is not provided
+
+	// Mock character creation
+	s.mockCharRepo.EXPECT().
+		Create(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(ctx context.Context, input charrepo.CreateInput) (*charrepo.CreateOutput, error) {
+			// Verify character is created without background data
+			s.Equal("char-no-bg-123", input.CharacterData.ID)
+			s.Equal("player_123", input.CharacterData.PlayerID)
+			s.Equal("Test Fighter No BG", input.CharacterData.Name)
+			
+			// Verify HP calculation still works
+			s.Equal(12, input.CharacterData.MaxHitPoints) // 10 (hit dice) + 2 (CON mod)
+			
+			// Skills should still be set from choices
+			s.Equal(shared.Proficient, input.CharacterData.Skills[constants.SkillAthletics])
+			s.Equal(shared.Proficient, input.CharacterData.Skills[constants.SkillIntimidation])
+			
+			return &charrepo.CreateOutput{CharacterData: input.CharacterData}, nil
+		})
+
+	// Mock draft deletion
+	s.mockDraftRepo.EXPECT().
+		Delete(gomock.Any(), draftrepo.DeleteInput{ID: draftID}).
+		Return(&draftrepo.DeleteOutput{}, nil)
+
+	// Act
+	input := &character.FinalizeDraftInput{
+		DraftID: draftID,
+	}
+	output, err := s.orchestrator.FinalizeDraft(s.ctx, input)
+
+	// Assert
+	s.Require().NoError(err)
+	s.Require().NotNil(output)
+	s.Require().NotNil(output.Character)
+	s.Equal("char-no-bg-123", output.Character.ID)
+	s.Equal("Test Fighter No BG", output.Character.Name)
+	s.True(output.DraftDeleted)
+}
+
 func (s *FinalizeDraftOrchestratorTestSuite) TestFinalizeDraft_IncompleteDraft() {
 	testCases := []struct {
 		name          string
@@ -263,24 +373,25 @@ func (s *FinalizeDraftOrchestratorTestSuite) TestFinalizeDraft_IncompleteDraft()
 			},
 			expectedError: "draft is incomplete: class is required",
 		},
-		{
-			name: "Missing background",
-			draft: &toolkitchar.DraftData{
-				ID:       "draft_123",
-				PlayerID: "player_123",
-				Name:     "Test Character",
-				RaceChoice: toolkitchar.RaceChoice{
-					RaceID: constants.RaceHuman,
-				},
-				ClassChoice: toolkitchar.ClassChoice{
-					ClassID: constants.ClassFighter,
-				},
-				AbilityScoreChoice: shared.AbilityScores{
-					constants.STR: 16,
-				},
-			},
-			expectedError: "draft is incomplete: background is required",
-		},
+		// Background is now optional - commenting out this test
+		// {
+		// 	name: "Missing background",
+		// 	draft: &toolkitchar.DraftData{
+		// 		ID:       "draft_123",
+		// 		PlayerID: "player_123",
+		// 		Name:     "Test Character",
+		// 		RaceChoice: toolkitchar.RaceChoice{
+		// 			RaceID: constants.RaceHuman,
+		// 		},
+		// 		ClassChoice: toolkitchar.ClassChoice{
+		// 			ClassID: constants.ClassFighter,
+		// 		},
+		// 		AbilityScoreChoice: shared.AbilityScores{
+		// 			constants.STR: 16,
+		// 		},
+		// 	},
+		// 	expectedError: "draft is incomplete: background is required",
+		// },
 		{
 			name: "Missing ability scores",
 			draft: &toolkitchar.DraftData{
