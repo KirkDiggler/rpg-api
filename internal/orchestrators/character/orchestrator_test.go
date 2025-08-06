@@ -1015,7 +1015,7 @@ func (s *OrchestratorTestSuite) TestUpdateBackground_DraftNotFound() {
 func (s *OrchestratorTestSuite) TestGetCharacter_Success() {
 	ctx := context.Background()
 	characterID := "char-123"
-	
+
 	mockCharacter := &toolkitchar.Data{
 		ID:       characterID,
 		PlayerID: s.testPlayerID,
@@ -1024,18 +1024,18 @@ func (s *OrchestratorTestSuite) TestGetCharacter_Success() {
 		RaceID:   constants.RaceHuman,
 		ClassID:  constants.ClassFighter,
 	}
-	
+
 	// Mock the Get call
 	s.mockCharRepo.EXPECT().
 		Get(ctx, characterrepo.GetInput{ID: characterID}).
 		Return(&characterrepo.GetOutput{CharacterData: mockCharacter}, nil)
-	
+
 	// Call orchestrator
 	input := &character.GetCharacterInput{
 		CharacterID: characterID,
 	}
 	output, err := s.orchestrator.GetCharacter(ctx, input)
-	
+
 	// Assert success
 	s.Require().NoError(err)
 	s.Require().NotNil(output)
@@ -1046,13 +1046,13 @@ func (s *OrchestratorTestSuite) TestGetCharacter_Success() {
 
 func (s *OrchestratorTestSuite) TestGetCharacter_EmptyID() {
 	ctx := context.Background()
-	
+
 	// Call orchestrator with empty ID
 	input := &character.GetCharacterInput{
 		CharacterID: "",
 	}
 	output, err := s.orchestrator.GetCharacter(ctx, input)
-	
+
 	// Assert error
 	s.Require().Error(err)
 	s.Assert().Nil(output)
@@ -1063,18 +1063,18 @@ func (s *OrchestratorTestSuite) TestGetCharacter_EmptyID() {
 func (s *OrchestratorTestSuite) TestGetCharacter_NotFound() {
 	ctx := context.Background()
 	characterID := "char-not-found"
-	
+
 	// Mock the Get call to return not found
 	s.mockCharRepo.EXPECT().
 		Get(ctx, characterrepo.GetInput{ID: characterID}).
 		Return(nil, errors.NotFound("character not found"))
-	
+
 	// Call orchestrator
 	input := &character.GetCharacterInput{
 		CharacterID: characterID,
 	}
 	output, err := s.orchestrator.GetCharacter(ctx, input)
-	
+
 	// Assert error
 	s.Require().Error(err)
 	s.Assert().Nil(output)
@@ -1085,18 +1085,18 @@ func (s *OrchestratorTestSuite) TestGetCharacter_NotFound() {
 func (s *OrchestratorTestSuite) TestGetCharacter_RepositoryError() {
 	ctx := context.Background()
 	characterID := "char-123"
-	
+
 	// Mock the Get call to return internal error
 	s.mockCharRepo.EXPECT().
 		Get(ctx, characterrepo.GetInput{ID: characterID}).
 		Return(nil, errors.Internal("database error"))
-	
+
 	// Call orchestrator
 	input := &character.GetCharacterInput{
 		CharacterID: characterID,
 	}
 	output, err := s.orchestrator.GetCharacter(ctx, input)
-	
+
 	// Assert error
 	s.Require().Error(err)
 	s.Assert().Nil(output)

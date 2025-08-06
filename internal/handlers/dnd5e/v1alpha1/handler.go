@@ -453,7 +453,7 @@ func (h *Handler) GetCharacter(
 	if req.CharacterId == "" {
 		return nil, status.Error(codes.InvalidArgument, "character_id is required")
 	}
-	
+
 	// Call orchestrator to get the character
 	output, err := h.characterService.GetCharacter(ctx, &character.GetCharacterInput{
 		CharacterID: req.CharacterId,
@@ -468,10 +468,10 @@ func (h *Handler) GetCharacter(
 		}
 		return nil, status.Error(codes.Internal, err.Error())
 	}
-	
+
 	// Convert character to proto
 	protoCharacter := convertCharacterDataToProto(output.Character)
-	
+
 	return &dnd5ev1alpha1.GetCharacterResponse{
 		Character: protoCharacter,
 	}, nil

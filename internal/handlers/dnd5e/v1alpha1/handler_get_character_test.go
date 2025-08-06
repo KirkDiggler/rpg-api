@@ -49,15 +49,15 @@ func (s *HandlerGetCharacterTestSuite) TearDownTest() {
 
 func (s *HandlerGetCharacterTestSuite) TestGetCharacter_Success() {
 	characterID := "char-123"
-	
+
 	// Mock character data
 	mockCharacter := &toolkitchar.Data{
-		ID:       characterID,
-		PlayerID: "player-123",
-		Name:     "Aragorn",
-		Level:    5,
-		RaceID:   constants.RaceHuman,
-		ClassID:  constants.ClassRanger,
+		ID:           characterID,
+		PlayerID:     "player-123",
+		Name:         "Aragorn",
+		Level:        5,
+		RaceID:       constants.RaceHuman,
+		ClassID:      constants.ClassRanger,
 		HitPoints:    45,
 		MaxHitPoints: 50,
 		AbilityScores: shared.AbilityScores{
@@ -75,7 +75,7 @@ func (s *HandlerGetCharacterTestSuite) TestGetCharacter_Success() {
 			string(constants.LanguageElvish),
 		},
 	}
-	
+
 	// Mock service call
 	s.mockService.EXPECT().
 		GetCharacter(s.ctx, &character.GetCharacterInput{
@@ -84,15 +84,15 @@ func (s *HandlerGetCharacterTestSuite) TestGetCharacter_Success() {
 		Return(&character.GetCharacterOutput{
 			Character: mockCharacter,
 		}, nil)
-	
+
 	// Create request
 	req := &dnd5ev1alpha1.GetCharacterRequest{
 		CharacterId: characterID,
 	}
-	
+
 	// Call handler
 	resp, err := s.handler.GetCharacter(s.ctx, req)
-	
+
 	// Assert success
 	s.Require().NoError(err)
 	s.Require().NotNil(resp)
@@ -103,7 +103,7 @@ func (s *HandlerGetCharacterTestSuite) TestGetCharacter_Success() {
 	s.Equal(dnd5ev1alpha1.Race_RACE_HUMAN, resp.Character.Race)
 	s.Equal(dnd5ev1alpha1.Class_CLASS_RANGER, resp.Character.Class)
 	s.Equal(int32(45), resp.Character.CurrentHitPoints)
-	
+
 	// Check ability scores
 	s.Equal(int32(16), resp.Character.AbilityScores.Strength)
 	s.Equal(int32(18), resp.Character.AbilityScores.Dexterity)
@@ -111,11 +111,11 @@ func (s *HandlerGetCharacterTestSuite) TestGetCharacter_Success() {
 	s.Equal(int32(10), resp.Character.AbilityScores.Intelligence)
 	s.Equal(int32(15), resp.Character.AbilityScores.Wisdom)
 	s.Equal(int32(12), resp.Character.AbilityScores.Charisma)
-	
+
 	// Check combat stats
 	s.Equal(int32(50), resp.Character.CombatStats.HitPointMaximum)
 	s.Equal(int32(30), resp.Character.CombatStats.Speed)
-	
+
 	// Check languages
 	s.Contains(resp.Character.Languages, dnd5ev1alpha1.Language_LANGUAGE_COMMON)
 	s.Contains(resp.Character.Languages, dnd5ev1alpha1.Language_LANGUAGE_ELVISH)
@@ -126,14 +126,14 @@ func (s *HandlerGetCharacterTestSuite) TestGetCharacter_MissingCharacterID() {
 	req := &dnd5ev1alpha1.GetCharacterRequest{
 		CharacterId: "",
 	}
-	
+
 	// Call handler
 	resp, err := s.handler.GetCharacter(s.ctx, req)
-	
+
 	// Assert error
 	s.Require().Error(err)
 	s.Nil(resp)
-	
+
 	// Check gRPC status
 	st, ok := status.FromError(err)
 	s.Require().True(ok)
@@ -143,26 +143,26 @@ func (s *HandlerGetCharacterTestSuite) TestGetCharacter_MissingCharacterID() {
 
 func (s *HandlerGetCharacterTestSuite) TestGetCharacter_NotFound() {
 	characterID := "char-not-found"
-	
+
 	// Mock service call to return not found
 	s.mockService.EXPECT().
 		GetCharacter(s.ctx, &character.GetCharacterInput{
 			CharacterID: characterID,
 		}).
 		Return(nil, errors.NotFoundf("character %s not found", characterID))
-	
+
 	// Create request
 	req := &dnd5ev1alpha1.GetCharacterRequest{
 		CharacterId: characterID,
 	}
-	
+
 	// Call handler
 	resp, err := s.handler.GetCharacter(s.ctx, req)
-	
+
 	// Assert error
 	s.Require().Error(err)
 	s.Nil(resp)
-	
+
 	// Check gRPC status
 	st, ok := status.FromError(err)
 	s.Require().True(ok)
@@ -172,26 +172,26 @@ func (s *HandlerGetCharacterTestSuite) TestGetCharacter_NotFound() {
 
 func (s *HandlerGetCharacterTestSuite) TestGetCharacter_InternalError() {
 	characterID := "char-123"
-	
+
 	// Mock service call to return internal error
 	s.mockService.EXPECT().
 		GetCharacter(s.ctx, &character.GetCharacterInput{
 			CharacterID: characterID,
 		}).
 		Return(nil, errors.Internal("database connection failed"))
-	
+
 	// Create request
 	req := &dnd5ev1alpha1.GetCharacterRequest{
 		CharacterId: characterID,
 	}
-	
+
 	// Call handler
 	resp, err := s.handler.GetCharacter(s.ctx, req)
-	
+
 	// Assert error
 	s.Require().Error(err)
 	s.Nil(resp)
-	
+
 	// Check gRPC status
 	st, ok := status.FromError(err)
 	s.Require().True(ok)
