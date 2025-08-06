@@ -953,7 +953,25 @@ func (o *Orchestrator) ListCharacters(ctx context.Context, input *ListCharacters
 }
 
 func (o *Orchestrator) DeleteCharacter(ctx context.Context, input *DeleteCharacterInput) (*DeleteCharacterOutput, error) {
-	return nil, errors.Unimplemented("not implemented")
+	// Validate input
+	if input.CharacterID == "" {
+		return nil, errors.InvalidArgument("character ID is required")
+	}
+
+	// Delete character from repository
+	_, err := o.charRepo.Delete(ctx, character.DeleteInput{
+		ID: input.CharacterID,
+	})
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return nil, errors.NotFoundf("character %s not found", input.CharacterID)
+		}
+		return nil, errors.Wrapf(err, "failed to delete character %s", input.CharacterID)
+	}
+
+	return &DeleteCharacterOutput{
+		Message: fmt.Sprintf("Character %s deleted successfully", input.CharacterID),
+	}, nil
 }
 
 func (o *Orchestrator) ListRaces(ctx context.Context, input *ListRacesInput) (*ListRacesOutput, error) {
