@@ -770,6 +770,8 @@ func (o *Orchestrator) FinalizeDraft(ctx context.Context, input *FinalizeDraftIn
 	}
 
 	// Initialize class resources based on class (level 1 only)
+	// Note: Monk gets Ki at level 2, not level 1
+	// Note: Ranger has no resources at level 1
 	switch classDataOutput.ClassData.ID {
 	case constants.ClassFighter:
 		characterData.ClassResources["second_wind"] = toolkitchar.ResourceData{
@@ -804,11 +806,10 @@ func (o *Orchestrator) FinalizeDraft(ctx context.Context, input *FinalizeDraftIn
 			Current: uses,
 			Resets:  "long_rest", // Changes to short_rest at level 5
 		}
-		// Monk gets Ki at level 2, not level 1
-		// Ranger has no resources at level 1
 	}
 
 	// Initialize spell slots for spellcasters (level 1 only)
+	// Note: Rangers and Paladins don't get spell slots until level 2
 	switch classDataOutput.ClassData.ID {
 	case constants.ClassWizard, constants.ClassSorcerer, constants.ClassCleric,
 		constants.ClassDruid, constants.ClassBard:
@@ -823,7 +824,6 @@ func (o *Orchestrator) FinalizeDraft(ctx context.Context, input *FinalizeDraftIn
 			Max:  1,
 			Used: 0,
 		}
-		// Rangers and Paladins don't get spell slots until level 2
 	}
 
 	// Save the character
