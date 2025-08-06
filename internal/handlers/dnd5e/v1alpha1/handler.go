@@ -509,7 +509,29 @@ func (h *Handler) DeleteCharacter(
 	ctx context.Context,
 	req *dnd5ev1alpha1.DeleteCharacterRequest,
 ) (*dnd5ev1alpha1.DeleteCharacterResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "not implemented")
+	// Validate request
+	if req.CharacterId == "" {
+		return nil, status.Error(codes.InvalidArgument, "character_id is required")
+	}
+
+	// Call orchestrator to delete the character
+	output, err := h.characterService.DeleteCharacter(ctx, &character.DeleteCharacterInput{
+		CharacterID: req.CharacterId,
+	})
+	if err != nil {
+		// Convert errors to gRPC status
+		if errors.IsNotFound(err) {
+			return nil, status.Error(codes.NotFound, err.Error())
+		}
+		if errors.IsInvalidArgument(err) {
+			return nil, status.Error(codes.InvalidArgument, err.Error())
+		}
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	return &dnd5ev1alpha1.DeleteCharacterResponse{
+		Message: output.Message,
+	}, nil
 }
 
 // ListRaces lists available races
