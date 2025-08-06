@@ -72,6 +72,37 @@ func New(cfg *Config) (*Orchestrator, error) {
 	}, nil
 }
 
+// skillNameToConstant maps skill names from external API to skill constants
+var skillNameToConstant = map[string]constants.Skill{
+	"acrobatics":     constants.SkillAcrobatics,
+	"animal-handling": constants.SkillAnimalHandling,
+	"arcana":         constants.SkillArcana,
+	"athletics":      constants.SkillAthletics,
+	"deception":      constants.SkillDeception,
+	"history":        constants.SkillHistory,
+	"insight":        constants.SkillInsight,
+	"intimidation":   constants.SkillIntimidation,
+	"investigation":  constants.SkillInvestigation,
+	"medicine":       constants.SkillMedicine,
+	"nature":         constants.SkillNature,
+	"perception":     constants.SkillPerception,
+	"performance":    constants.SkillPerformance,
+	"persuasion":     constants.SkillPersuasion,
+	"religion":       constants.SkillReligion,
+	"sleight-of-hand": constants.SkillSleightOfHand,
+	"stealth":        constants.SkillStealth,
+	"survival":       constants.SkillSurvival,
+}
+
+// mapSkillNameToConstant converts a skill name to a skill constant
+// Returns the constant and true if found, empty constant and false otherwise
+func mapSkillNameToConstant(skillName string) (constants.Skill, bool) {
+	// Normalize skill name: lowercase and replace spaces with hyphens
+	normalizedName := strings.ToLower(strings.ReplaceAll(skillName, " ", "-"))
+	skillConst, exists := skillNameToConstant[normalizedName]
+	return skillConst, exists
+}
+
 // All methods return unimplemented for now
 
 func (o *Orchestrator) CreateDraft(ctx context.Context, input *CreateDraftInput) (*CreateDraftOutput, error) {
@@ -621,12 +652,10 @@ func (o *Orchestrator) FinalizeDraft(ctx context.Context, input *FinalizeDraftIn
 	}
 
 	// Get background data
-	// TODO(#167): GetBackgroundData is not implemented in external client yet
-	// For now, we'll proceed without background data
-	// backgroundDataOutput, err := o.externalClient.GetBackgroundData(ctx, string(draft.BackgroundChoice))
-	// if err != nil {
-	// 	return nil, errors.Wrapf(err, "failed to get background data for %s", draft.BackgroundChoice)
-	// }
+	backgroundDataOutput, err := o.externalClient.GetBackgroundData(ctx, string(draft.BackgroundChoice))
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to get background data for %s", draft.BackgroundChoice)
+	}
 
 	// Calculate hit points
 	conMod := (draft.AbilityScoreChoice[constants.CON] - 10) / 2
@@ -714,12 +743,24 @@ func (o *Orchestrator) FinalizeDraft(ctx context.Context, input *FinalizeDraftIn
 	characterData.Proficiencies.Armor = classDataOutput.ClassData.ArmorProficiencies
 
 	// Tool proficiencies from background
-	// TODO: Add tool proficiencies when GetBackgroundData is implemented
-	// if backgroundDataOutput.BackgroundData != nil {
-	// 	for _, tool := range backgroundDataOutput.BackgroundData.ToolProficiencies {
-	// 		characterData.Proficiencies.Tools = append(characterData.Proficiencies.Tools, string(tool))
-	// 	}
-	// }
+	// TODO: Add tool proficiencies when they are available in BackgroundData
+	// Current BackgroundData structure doesn't include tool proficiencies
+
+	// Add skill proficiencies from background
+	if backgroundDataOutput != nil {
+		for _, skill := range backgroundDataOutput.SkillProficiencies {
+			if skillConst, ok := mapSkillNameToConstant(skill); ok {
+				characterData.Skills[skillConst] = shared.Proficient
+			} else {
+				slog.Warn("Unknown skill in background skill proficiencies", "skill", skill)
+			}
+		}
+	}
+
+	// Add equipment from background
+	if backgroundDataOutput != nil {
+		characterData.Equipment = append(characterData.Equipment, backgroundDataOutput.Equipment...)
+	}
 
 	// Process equipment from choices
 	for _, choice := range draft.Choices {
