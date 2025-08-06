@@ -103,6 +103,16 @@ func mapSkillNameToConstant(skillName string) (constants.Skill, bool) {
 	return skillConst, exists
 }
 
+// contains checks if a string slice contains a specific string
+func contains(slice []string, item string) bool {
+	for _, s := range slice {
+		if s == item {
+			return true
+		}
+	}
+	return false
+}
+
 // All methods return unimplemented for now
 
 func (o *Orchestrator) CreateDraft(ctx context.Context, input *CreateDraftInput) (*CreateDraftOutput, error) {
@@ -769,6 +779,42 @@ func (o *Orchestrator) FinalizeDraft(ctx context.Context, input *FinalizeDraftIn
 		}
 	}
 
+	// Process racial skill proficiencies
+	for _, skill := range raceDataOutput.RaceData.SkillProficiencies {
+		// Check if not already proficient (from class or background)
+		if characterData.Skills[skill] == 0 {
+			characterData.Skills[skill] = shared.Proficient
+		}
+	}
+
+	// Store racial traits for display/reference
+	for _, trait := range raceDataOutput.RaceData.Traits {
+		slog.Debug("Character has racial trait", "trait", trait.Name)
+		// TODO: Add Traits []string to character.Data to store these
+		// When Traits field is added: characterData.Traits = append(characterData.Traits, trait.Name)
+	}
+
+	// Add racial weapon proficiencies
+	for _, weapon := range raceDataOutput.RaceData.WeaponProficiencies {
+		if !contains(characterData.Proficiencies.Weapons, weapon) {
+			characterData.Proficiencies.Weapons = append(characterData.Proficiencies.Weapons, weapon)
+		}
+	}
+
+	// Add racial tool proficiencies
+	for _, tool := range raceDataOutput.RaceData.ToolProficiencies {
+		if !contains(characterData.Proficiencies.Tools, tool) {
+			characterData.Proficiencies.Tools = append(characterData.Proficiencies.Tools, tool)
+		}
+	}
+
+	// Handle subrace bonuses
+	if draft.RaceChoice.SubraceID == constants.SubraceHillDwarf {
+		// Hill Dwarf gets +1 HP per level
+		characterData.MaxHitPoints += characterData.Level
+		characterData.HitPoints += characterData.Level
+	}
+
 	// Initialize class resources based on class (level 1 only)
 	// Note: Monk gets Ki at level 2, not level 1
 	// Note: Ranger has no resources at level 1
@@ -825,7 +871,6 @@ func (o *Orchestrator) FinalizeDraft(ctx context.Context, input *FinalizeDraftIn
 			Used: 0,
 		}
 	}
-
 	// Save the character
 	createCharOutput, err := o.charRepo.Create(ctx, character.CreateInput{
 		CharacterData: characterData,
