@@ -607,7 +607,7 @@ func TestConvertBackgroundToBackgroundData(t *testing.T) {
 		assert.NotNil(t, result)
 		assert.Equal(t, "test", result.ID)
 		assert.Equal(t, "Test", result.Name)
-		assert.Equal(t, ": ", result.Feature) // Empty feature name and description
+		assert.Equal(t, "", result.Feature) // Empty feature name and description should result in empty string
 	})
 
 	t.Run("convert nil background", func(t *testing.T) {

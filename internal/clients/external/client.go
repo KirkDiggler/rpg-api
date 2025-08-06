@@ -1593,7 +1593,16 @@ func convertBackgroundToBackgroundData(background *entities.Background) *Backgro
 	}
 
 	// Build comprehensive feature description
-	feature := fmt.Sprintf("%s: %s", featureName, featureDescription)
+	var feature string
+	if featureName != "" && featureDescription != "" {
+		feature = fmt.Sprintf("%s: %s", featureName, featureDescription)
+	} else if featureName != "" {
+		feature = featureName
+	} else if featureDescription != "" {
+		feature = featureDescription
+	} else {
+		feature = ""
+	}
 
 	return &BackgroundData{
 		ID:                 background.Key,

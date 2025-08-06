@@ -72,6 +72,37 @@ func New(cfg *Config) (*Orchestrator, error) {
 	}, nil
 }
 
+// skillNameToConstant maps skill names from external API to skill constants
+var skillNameToConstant = map[string]constants.Skill{
+	"acrobatics":     constants.SkillAcrobatics,
+	"animal-handling": constants.SkillAnimalHandling,
+	"arcana":         constants.SkillArcana,
+	"athletics":      constants.SkillAthletics,
+	"deception":      constants.SkillDeception,
+	"history":        constants.SkillHistory,
+	"insight":        constants.SkillInsight,
+	"intimidation":   constants.SkillIntimidation,
+	"investigation":  constants.SkillInvestigation,
+	"medicine":       constants.SkillMedicine,
+	"nature":         constants.SkillNature,
+	"perception":     constants.SkillPerception,
+	"performance":    constants.SkillPerformance,
+	"persuasion":     constants.SkillPersuasion,
+	"religion":       constants.SkillReligion,
+	"sleight-of-hand": constants.SkillSleightOfHand,
+	"stealth":        constants.SkillStealth,
+	"survival":       constants.SkillSurvival,
+}
+
+// mapSkillNameToConstant converts a skill name to a skill constant
+// Returns the constant and true if found, empty constant and false otherwise
+func mapSkillNameToConstant(skillName string) (constants.Skill, bool) {
+	// Normalize skill name: lowercase and replace spaces with hyphens
+	normalizedName := strings.ToLower(strings.ReplaceAll(skillName, " ", "-"))
+	skillConst, exists := skillNameToConstant[normalizedName]
+	return skillConst, exists
+}
+
 // All methods return unimplemented for now
 
 func (o *Orchestrator) CreateDraft(ctx context.Context, input *CreateDraftInput) (*CreateDraftOutput, error) {
@@ -718,31 +749,10 @@ func (o *Orchestrator) FinalizeDraft(ctx context.Context, input *FinalizeDraftIn
 	// Add skill proficiencies from background
 	if backgroundDataOutput != nil {
 		for _, skill := range backgroundDataOutput.SkillProficiencies {
-			// Convert skill name to skill constant - this is a simplified mapping
-			// In practice, we'd need a more robust skill name to constant conversion
-			skillName := strings.ToLower(strings.ReplaceAll(skill, " ", "-"))
-			switch skillName {
-			case "athletics":
-				characterData.Skills[constants.SkillAthletics] = shared.Proficient
-			case "intimidation":
-				characterData.Skills[constants.SkillIntimidation] = shared.Proficient
-			case "deception":
-				characterData.Skills[constants.SkillDeception] = shared.Proficient
-			case "stealth":
-				characterData.Skills[constants.SkillStealth] = shared.Proficient
-			case "animal-handling":
-				characterData.Skills[constants.SkillAnimalHandling] = shared.Proficient
-			case "survival":
-				characterData.Skills[constants.SkillSurvival] = shared.Proficient
-			case "arcana":
-				characterData.Skills[constants.SkillArcana] = shared.Proficient
-			case "history":
-				characterData.Skills[constants.SkillHistory] = shared.Proficient
-			case "persuasion":
-				characterData.Skills[constants.SkillPersuasion] = shared.Proficient
-			case "sleight-of-hand":
-				characterData.Skills[constants.SkillSleightOfHand] = shared.Proficient
-				// Add other skills as needed
+			if skillConst, ok := mapSkillNameToConstant(skill); ok {
+				characterData.Skills[skillConst] = shared.Proficient
+			} else {
+				slog.Warn("Unknown skill in background skill proficiencies", "skill", skill)
 			}
 		}
 	}
