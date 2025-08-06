@@ -782,10 +782,14 @@ func (o *Orchestrator) FinalizeDraft(ctx context.Context, input *FinalizeDraftIn
 		characterData.Equipment = append(characterData.Equipment, backgroundDataOutput.Equipment...)
 	}
 
-	// Process equipment from choices
+	// Process equipment from choices, unpacking any bundle references
 	for _, choice := range draft.Choices {
 		if choice.Category == shared.ChoiceEquipment {
-			characterData.Equipment = append(characterData.Equipment, choice.EquipmentSelection...)
+			for _, item := range choice.EquipmentSelection {
+				// Unpack bundle references (e.g., "bundle_1:0:greatclub" -> "greatclub")
+				actualItem := unpackBundleItem(item)
+				characterData.Equipment = append(characterData.Equipment, actualItem)
+			}
 		}
 	}
 
@@ -1188,4 +1192,22 @@ func (o *Orchestrator) AddToInventory(ctx context.Context, input *AddToInventory
 
 func (o *Orchestrator) RemoveFromInventory(ctx context.Context, input *RemoveFromInventoryInput) (*RemoveFromInventoryOutput, error) {
 	return nil, errors.Unimplemented("not implemented")
+}
+
+// unpackBundleItem extracts the actual item ID from a bundle reference
+// Bundle references come from the Discord bot in format "bundle_X:Y:item_id"
+// where X is the bundle number, Y is the index, and item_id is the actual item
+// For example: "bundle_1:0:greatclub" -> "greatclub"
+func unpackBundleItem(bundleRef string) string {
+	// Check if this is a bundle reference
+	if strings.HasPrefix(bundleRef, "bundle_") {
+		// Split by colon to get parts
+		parts := strings.Split(bundleRef, ":")
+		if len(parts) == 3 {
+			// Return the actual item ID (last part)
+			return parts[2]
+		}
+	}
+	// Not a bundle reference, return as-is
+	return bundleRef
 }
