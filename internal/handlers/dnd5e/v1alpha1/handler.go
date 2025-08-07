@@ -1605,6 +1605,56 @@ func convertSizeToProto(size constants.Size) dnd5ev1alpha1.Size {
 	}
 }
 
+// convertResourceTypeToProto converts toolkit resource type string to proto enum
+func convertResourceTypeToProto(resourceType string) dnd5ev1alpha1.ClassResourceType {
+	switch resourceType {
+	case "rage", "rage_uses":
+		return dnd5ev1alpha1.ClassResourceType_CLASS_RESOURCE_TYPE_RAGE
+	case "bardic_inspiration":
+		return dnd5ev1alpha1.ClassResourceType_CLASS_RESOURCE_TYPE_BARDIC_INSPIRATION
+	case "channel_divinity":
+		return dnd5ev1alpha1.ClassResourceType_CLASS_RESOURCE_TYPE_CHANNEL_DIVINITY
+	case "wild_shape":
+		return dnd5ev1alpha1.ClassResourceType_CLASS_RESOURCE_TYPE_WILD_SHAPE
+	case "second_wind":
+		return dnd5ev1alpha1.ClassResourceType_CLASS_RESOURCE_TYPE_SECOND_WIND
+	case "action_surge":
+		return dnd5ev1alpha1.ClassResourceType_CLASS_RESOURCE_TYPE_ACTION_SURGE
+	case "ki_points", "ki":
+		return dnd5ev1alpha1.ClassResourceType_CLASS_RESOURCE_TYPE_KI_POINTS
+	case "divine_sense":
+		return dnd5ev1alpha1.ClassResourceType_CLASS_RESOURCE_TYPE_DIVINE_SENSE
+	case "lay_on_hands":
+		return dnd5ev1alpha1.ClassResourceType_CLASS_RESOURCE_TYPE_LAY_ON_HANDS
+	case "sorcery_points":
+		return dnd5ev1alpha1.ClassResourceType_CLASS_RESOURCE_TYPE_SORCERY_POINTS
+	case "arcane_recovery":
+		return dnd5ev1alpha1.ClassResourceType_CLASS_RESOURCE_TYPE_ARCANE_RECOVERY
+	case "indomitable":
+		return dnd5ev1alpha1.ClassResourceType_CLASS_RESOURCE_TYPE_INDOMITABLE
+	case "superiority_dice":
+		return dnd5ev1alpha1.ClassResourceType_CLASS_RESOURCE_TYPE_SUPERIORITY_DICE
+	default:
+		return dnd5ev1alpha1.ClassResourceType_CLASS_RESOURCE_TYPE_UNSPECIFIED
+	}
+}
+
+// convertRechargeTypeToProto converts toolkit recharge type to proto enum
+func convertRechargeTypeToProto(rechargeOn string) dnd5ev1alpha1.RechargeType {
+	switch rechargeOn {
+	case "short_rest", "short rest":
+		return dnd5ev1alpha1.RechargeType_RECHARGE_TYPE_SHORT_REST
+	case "long_rest", "long rest":
+		return dnd5ev1alpha1.RechargeType_RECHARGE_TYPE_LONG_REST
+	case "dawn":
+		return dnd5ev1alpha1.RechargeType_RECHARGE_TYPE_DAWN
+	case "none", "":
+		return dnd5ev1alpha1.RechargeType_RECHARGE_TYPE_NONE
+	default:
+		return dnd5ev1alpha1.RechargeType_RECHARGE_TYPE_UNSPECIFIED
+	}
+}
+
 // convertLanguageToProto converts toolkit Language to proto Language
 func convertLanguageToProto(lang constants.Language) dnd5ev1alpha1.Language {
 	// Map toolkit language constants to proto enums
@@ -1964,11 +2014,74 @@ func ConvertCharacterDataToProto(char *toolkitchar.Data) *dnd5ev1alpha1.Characte
 		})
 	}
 
+	// Extract fighting styles from choices
+	fightingStyles := make([]string, 0)
+	for _, choice := range char.Choices {
+		if choice.Category == shared.ChoiceFightingStyle && choice.FightingStyleSelection != nil {
+			fightingStyles = append(fightingStyles, *choice.FightingStyleSelection)
+		}
+	}
+	protoChar.FightingStyles = fightingStyles
+
+	// Convert class resources
+	if char.ClassResources != nil {
+		protoChar.ClassResources = make([]*dnd5ev1alpha1.ClassResource, 0, len(char.ClassResources))
+		for resourceType, resource := range char.ClassResources {
+			protoResource := &dnd5ev1alpha1.ClassResource{
+				Type:     convertResourceTypeToProto(resourceType),
+				Name:     resource.Name,
+				Current:  int32(resource.Current),
+				Maximum:  int32(resource.Max),
+				Recharge: dnd5ev1alpha1.RechargeType_RECHARGE_TYPE_UNSPECIFIED, // TODO: Get from toolkit when available
+			}
+			protoChar.ClassResources = append(protoChar.ClassResources, protoResource)
+		}
+	}
+
+	// Convert spell slots - toolkit uses map[int]SlotInfo
+	if char.SpellSlots != nil && len(char.SpellSlots) > 0 {
+		protoSlots := &dnd5ev1alpha1.SpellSlots{}
+		
+		// Map spell level to slot count
+		for level, slotInfo := range char.SpellSlots {
+			slotCount := int32(slotInfo.Max)
+			switch level {
+			case 1:
+				protoSlots.Level_1 = slotCount
+			case 2:
+				protoSlots.Level_2 = slotCount
+			case 3:
+				protoSlots.Level_3 = slotCount
+			case 4:
+				protoSlots.Level_4 = slotCount
+			case 5:
+				protoSlots.Level_5 = slotCount
+			case 6:
+				protoSlots.Level_6 = slotCount
+			case 7:
+				protoSlots.Level_7 = slotCount
+			case 8:
+				protoSlots.Level_8 = slotCount
+			case 9:
+				protoSlots.Level_9 = slotCount
+			}
+		}
+		
+		protoChar.SpellSlots = protoSlots
+	}
+
+	// TODO: Convert features when available in toolkit
+	// protoChar.Features = convertClassFeatures(char.Features)
+	
+	// TODO: Convert racial traits when available in toolkit
+	// protoChar.RacialTraits = convertRacialTraits(char.RacialTraits)
+	
+	// TODO: Convert background feature when available in toolkit
+	// protoChar.BackgroundFeature = convertBackgroundFeature(char.BackgroundFeature)
+
 	// TODO(#168): Convert other fields as needed
 	// - Conditions
 	// - Effects
-	// - SpellSlots
-	// - ClassResources
 	// - DeathSaves
 
 	return protoChar
