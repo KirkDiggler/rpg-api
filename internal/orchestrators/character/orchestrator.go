@@ -771,7 +771,7 @@ func (o *Orchestrator) FinalizeDraft(ctx context.Context, input *FinalizeDraftIn
 		for _, skill := range backgroundDataOutput.SkillProficiencies {
 			if skillConst, ok := mapSkillNameToConstant(skill); ok {
 				// Only add if not already proficient (choices take precedence)
-				if characterData.Skills[skillConst] == 0 {
+				if characterData.Skills[skillConst] == shared.NotProficient {
 					characterData.Skills[skillConst] = shared.Proficient
 				}
 			} else {
@@ -799,7 +799,7 @@ func (o *Orchestrator) FinalizeDraft(ctx context.Context, input *FinalizeDraftIn
 	// Process racial skill proficiencies
 	for _, skill := range raceDataOutput.RaceData.SkillProficiencies {
 		// Check if not already proficient (from class or background)
-		if characterData.Skills[skill] == 0 {
+		if characterData.Skills[skill] == shared.NotProficient {
 			characterData.Skills[skill] = shared.Proficient
 		}
 	}
