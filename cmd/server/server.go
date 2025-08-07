@@ -28,6 +28,7 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v1alpha1"
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
 	diceorc "github.com/KirkDiggler/rpg-api/internal/orchestrators/dice"
+	"github.com/KirkDiggler/rpg-api/internal/orchestrators/encounter"
 	"github.com/KirkDiggler/rpg-api/internal/pkg/clock"
 	"github.com/KirkDiggler/rpg-api/internal/pkg/idgen"
 	"github.com/KirkDiggler/rpg-api/internal/redis"
@@ -131,6 +132,14 @@ func runServer(_ *cobra.Command, _ []string) error {
 		return fmt.Errorf("failed to create dice service: %w", err)
 	}
 
+	// Create encounter service
+	encounterService, err := encounter.NewOrchestrator(&encounter.Config{
+		IDGenerator: idgen.NewPrefixed("enc-"),
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create encounter service: %w", err)
+	}
+
 	// Initialize services
 	characterService, err := character.New(&character.Config{
 		CharacterRepo:      charRepo,
@@ -159,8 +168,16 @@ func runServer(_ *cobra.Command, _ []string) error {
 		return fmt.Errorf("failed to create dice handler: %w", err)
 	}
 
+	encounterHandler, err := v1alpha1.NewEncounterHandler(&v1alpha1.EncounterHandlerConfig{
+		EncounterService: encounterService,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create encounter handler: %w", err)
+	}
+
 	// Register services
 	dnd5ev1alpha1.RegisterCharacterServiceServer(srv, characterHandler)
+	dnd5ev1alpha1.RegisterEncounterServiceServer(srv, encounterHandler)
 	apiv1alpha1.RegisterDiceServiceServer(srv, diceHandler)
 
 	// Register health service
@@ -169,6 +186,7 @@ func runServer(_ *cobra.Command, _ []string) error {
 
 	healthServer.SetServingStatus("", grpc_health_v1.HealthCheckResponse_SERVING)
 	healthServer.SetServingStatus("dnd5e.api.v1alpha1.CharacterService", grpc_health_v1.HealthCheckResponse_SERVING)
+	healthServer.SetServingStatus("dnd5e.api.v1alpha1.EncounterService", grpc_health_v1.HealthCheckResponse_SERVING)
 	healthServer.SetServingStatus("api.v1alpha1.DiceService", grpc_health_v1.HealthCheckResponse_SERVING)
 
 	reflection.Register(srv)

@@ -747,7 +747,7 @@ func (o *Orchestrator) FinalizeDraft(ctx context.Context, input *FinalizeDraftIn
 	for _, lang := range raceDataOutput.RaceData.Languages {
 		characterData.Languages = append(characterData.Languages, string(lang))
 	}
-	
+
 	for _, choice := range draft.Choices {
 		if choice.Category == shared.ChoiceLanguages {
 			for _, lang := range choice.LanguageSelection {
