@@ -77,13 +77,13 @@ func convertRoomDataToProto(roomData *spatial.RoomData) *dnd5ev1alpha1.Room {
 	case "square":
 		gridType = apiv1alpha1.GridType_GRID_TYPE_SQUARE
 	case "hex":
-		// Default to pointy-top (D&D 5e standard)
-		// Our orchestrator creates pointy-top hex grids
+		// Our orchestrator always creates pointy-top hex grids (D&D 5e standard)
 		gridType = apiv1alpha1.GridType_GRID_TYPE_HEX_POINTY
 	case "gridless":
 		gridType = apiv1alpha1.GridType_GRID_TYPE_GRIDLESS
 	default:
-		gridType = apiv1alpha1.GridType_GRID_TYPE_SQUARE // Default fallback
+		// Default fallback for unknown grid types
+		gridType = apiv1alpha1.GridType_GRID_TYPE_SQUARE
 	}
 
 	// Convert entities to proto format

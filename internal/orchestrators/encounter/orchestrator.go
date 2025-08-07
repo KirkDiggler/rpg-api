@@ -64,7 +64,7 @@ func NewOrchestrator(cfg *Config) (Service, error) {
 }
 
 // DungeonStart creates a simple dungeon encounter for testing
-func (o *orchestrator) DungeonStart(_ context.Context, input *DungeonStartInput) (*DungeonStartOutput, error) {
+func (o *orchestrator) DungeonStart(ctx context.Context, input *DungeonStartInput) (*DungeonStartOutput, error) {
 	if input == nil {
 		return nil, errors.InvalidArgument("input is required")
 	}
