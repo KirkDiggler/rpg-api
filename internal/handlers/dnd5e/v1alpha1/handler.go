@@ -2041,7 +2041,7 @@ func ConvertCharacterDataToProto(char *toolkitchar.Data) *dnd5ev1alpha1.Characte
 	// Convert spell slots - toolkit uses map[int]SlotInfo
 	if char.SpellSlots != nil && len(char.SpellSlots) > 0 {
 		protoSlots := &dnd5ev1alpha1.SpellSlots{}
-		
+
 		// Map spell level to slot count
 		for level, slotInfo := range char.SpellSlots {
 			slotCount := int32(slotInfo.Max)
@@ -2066,16 +2066,16 @@ func ConvertCharacterDataToProto(char *toolkitchar.Data) *dnd5ev1alpha1.Characte
 				protoSlots.Level_9 = slotCount
 			}
 		}
-		
+
 		protoChar.SpellSlots = protoSlots
 	}
 
 	// TODO: Convert features when available in toolkit
 	// protoChar.Features = convertClassFeatures(char.Features)
-	
+
 	// TODO: Convert racial traits when available in toolkit
 	// protoChar.RacialTraits = convertRacialTraits(char.RacialTraits)
-	
+
 	// TODO: Convert background feature when available in toolkit
 	// protoChar.BackgroundFeature = convertBackgroundFeature(char.BackgroundFeature)
 

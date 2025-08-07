@@ -53,7 +53,7 @@ func TestOrchestrator_RollDice_AbilityScores(t *testing.T) {
 				require.Equal(t, "player-123", input.EntityID)
 				require.Equal(t, ContextAbilityScores, input.Context)
 				require.Len(t, input.Rolls, 1)
-				
+
 				roll := input.Rolls[0]
 				// Should have 3 kept dice (4d6 drop lowest)
 				assert.Len(t, roll.Dice, 3, "Should have 3 kept dice")
@@ -82,7 +82,7 @@ func TestOrchestrator_RollDice_AbilityScores(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, output)
 		require.NotNil(t, output.Roll)
-		
+
 		// Verify the roll has the expected properties
 		assert.Equal(t, "4d6", output.Roll.Notation)
 		assert.Len(t, output.Roll.Dice, 3, "Should have 3 kept dice")
@@ -115,7 +115,7 @@ func TestOrchestrator_RollDice_AbilityScores(t *testing.T) {
 				require.Equal(t, "player-123", input.EntityID)
 				require.Equal(t, "damage_rolls", input.Context)
 				require.Len(t, input.Rolls, 1)
-				
+
 				roll := input.Rolls[0]
 				// Should have 4 dice (no dropping)
 				assert.Len(t, roll.Dice, 4, "Should have all 4 dice")
@@ -138,7 +138,7 @@ func TestOrchestrator_RollDice_AbilityScores(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, output)
 		require.NotNil(t, output.Roll)
-		
+
 		// Verify the roll has the expected properties
 		assert.Equal(t, "4d6", output.Roll.Notation)
 		assert.Len(t, output.Roll.Dice, 4, "Should have all 4 dice")

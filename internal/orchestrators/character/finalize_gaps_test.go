@@ -166,7 +166,7 @@ func (s *FinalizeGapsTestSuite) TestGaps_BackgroundData() {
 
 			// Verify background languages are included
 			s.T().Log("Languages in character:", input.CharacterData.Languages)
-			
+
 			// Verify equipment from background
 			s.T().Log("Equipment in character:", input.CharacterData.Equipment)
 			s.Contains(input.CharacterData.Equipment, "Bottle of black ink", "Should have ink from Sage background")
