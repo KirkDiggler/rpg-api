@@ -406,15 +406,6 @@ func (o *Orchestrator) UpdateClass(ctx context.Context, input *UpdateClassInput)
 
 	// Add new class choices if provided
 	if len(input.Choices) > 0 {
-		// Debug: Log incoming choices
-		fmt.Printf("DEBUG UpdateClass: Received %d choices for class %s\n", len(input.Choices), input.ClassID)
-		for _, choice := range input.Choices {
-			fmt.Printf("  Choice: ID=%s, Category=%s, Source=%s\n", choice.ChoiceID, choice.Category, choice.Source)
-			if choice.Category == shared.ChoiceSkills {
-				fmt.Printf("    Skills: %v\n", choice.SkillSelection)
-			}
-		}
-		
 		// Ensure all new choices have the class source set
 		for i := range input.Choices {
 			if input.Choices[i].Source == "" {
@@ -424,7 +415,6 @@ func (o *Orchestrator) UpdateClass(ctx context.Context, input *UpdateClassInput)
 		draft.Choices = append(nonClassChoices, input.Choices...)
 	} else {
 		// No choices provided, just keep non-class choices
-		fmt.Println("DEBUG UpdateClass: No class choices provided")
 		draft.Choices = nonClassChoices
 	}
 
@@ -745,32 +735,26 @@ func (o *Orchestrator) FinalizeDraft(ctx context.Context, input *FinalizeDraftIn
 	}
 
 	// Process skills from choices (both class and background)
-	fmt.Printf("DEBUG FinalizeDraft: Processing %d draft choices for skills\n", len(draft.Choices))
 	for _, choice := range draft.Choices {
 		if choice.Category == shared.ChoiceSkills {
-			fmt.Printf("  Found skill choice: ID=%s, Skills=%v\n", choice.ChoiceID, choice.SkillSelection)
 			for _, skill := range choice.SkillSelection {
 				characterData.Skills[skill] = shared.Proficient
 			}
 		}
 	}
-	fmt.Printf("DEBUG FinalizeDraft: Total skills after processing: %d\n", len(characterData.Skills))
 
 	// Process languages from race and choices (from all sources)
 	for _, lang := range raceDataOutput.RaceData.Languages {
 		characterData.Languages = append(characterData.Languages, string(lang))
 	}
-	fmt.Printf("DEBUG FinalizeDraft: Languages after race: %d\n", len(characterData.Languages))
 	
 	for _, choice := range draft.Choices {
 		if choice.Category == shared.ChoiceLanguages {
-			fmt.Printf("  Found language choice: ID=%s, Languages=%v\n", choice.ChoiceID, choice.LanguageSelection)
 			for _, lang := range choice.LanguageSelection {
 				characterData.Languages = append(characterData.Languages, string(lang))
 			}
 		}
 	}
-	fmt.Printf("DEBUG FinalizeDraft: Total languages after processing: %d\n", len(characterData.Languages))
 
 	// Process proficiencies
 	// Weapon proficiencies from class
