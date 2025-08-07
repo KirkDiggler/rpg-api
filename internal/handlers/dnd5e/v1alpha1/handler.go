@@ -248,8 +248,12 @@ func (h *Handler) UpdateClass(
 
 	// Convert proto choices to toolkit choices
 	var choices []toolkitchar.ChoiceData
+	fmt.Printf("DEBUG Handler UpdateClass: Received %d proto choices\n", len(req.ClassChoices))
 	for _, protoChoice := range req.ClassChoices {
-		choices = append(choices, convertProtoChoiceDataToToolkit(protoChoice))
+		converted := convertProtoChoiceDataToToolkit(protoChoice)
+		fmt.Printf("  Converted choice: ID=%s, Category=%s, Skills=%v\n", 
+			converted.ChoiceID, converted.Category, converted.SkillSelection)
+		choices = append(choices, converted)
 	}
 
 	// Call orchestrator
