@@ -972,12 +972,12 @@ func (s *FinalizeDraftOrchestratorTestSuite) TestFinalizeDraft_BarbarianClassRes
 		Create(gomock.Any(), gomock.Any()).
 		DoAndReturn(func(ctx context.Context, input charrepo.CreateInput) (*charrepo.CreateOutput, error) {
 			// Verify class resources (Barbarian should get Rage)
-			s.Contains(input.CharacterData.ClassResources, "rage")
-			resource := input.CharacterData.ClassResources["rage"]
+			s.Contains(input.CharacterData.ClassResources, shared.ClassResourceRage)
+			resource := input.CharacterData.ClassResources[shared.ClassResourceRage]
 			s.Equal("Rage", resource.Name)
 			s.Equal(2, resource.Max) // 2 rages at level 1
 			s.Equal(2, resource.Current)
-			s.Equal("long_rest", resource.Resets)
+			s.Equal(shared.LongRest, resource.Resets)
 
 			// Spell slots (Barbarian should not have any)
 			s.Empty(input.CharacterData.SpellSlots)
@@ -1168,12 +1168,12 @@ func (s *FinalizeDraftOrchestratorTestSuite) TestFinalizeDraft_BardCharismaBased
 		Create(gomock.Any(), gomock.Any()).
 		DoAndReturn(func(ctx context.Context, input charrepo.CreateInput) (*charrepo.CreateOutput, error) {
 			// Class resources (Bard should get Bardic Inspiration)
-			s.Contains(input.CharacterData.ClassResources, "bardic_inspiration")
-			resource := input.CharacterData.ClassResources["bardic_inspiration"]
+			s.Contains(input.CharacterData.ClassResources, shared.ClassResourceBardicInspiration)
+			resource := input.CharacterData.ClassResources[shared.ClassResourceBardicInspiration]
 			s.Equal("Bardic Inspiration", resource.Name)
 			s.Equal(3, resource.Max) // CHA modifier (16 = +3)
 			s.Equal(3, resource.Current)
-			s.Equal("long_rest", resource.Resets)
+			s.Equal(shared.LongRest, resource.Resets)
 
 			// Spell slots (Bard should get 2 first-level slots)
 			s.Contains(input.CharacterData.SpellSlots, 1)

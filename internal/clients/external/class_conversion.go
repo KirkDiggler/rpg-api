@@ -122,12 +122,10 @@ func (c *client) convertClassToHybrid(apiClass *entities.Class) (*class.Data, *C
 					if opt.Reference != nil {
 						choiceData.Options = append(choiceData.Options, class.EquipmentOption{
 							ID: generateSlug(opt.Reference.Name),
-							Items: []class.EquipmentBundleItem{
+							Items: []class.EquipmentData{
 								{
-									ConcreteItem: &class.EquipmentData{
-										ItemID:   opt.Reference.Key,
-										Quantity: opt.Count,
-									},
+									ItemID:   opt.Reference.Key,
+									Quantity: opt.Count,
 								},
 							},
 						})
@@ -137,25 +135,20 @@ func (c *client) convertClassToHybrid(apiClass *entities.Class) (*class.Data, *C
 					if opt.Reference != nil {
 						choiceData.Options = append(choiceData.Options, class.EquipmentOption{
 							ID: generateSlug(opt.Reference.Name),
-							Items: []class.EquipmentBundleItem{
+							Items: []class.EquipmentData{
 								{
-									ConcreteItem: &class.EquipmentData{
-										ItemID:   opt.Reference.Key,
-										Quantity: 1,
-									},
+									ItemID:   opt.Reference.Key,
+									Quantity: 1,
 								},
 							},
 						})
 					}
 				case *entities.ChoiceOption:
 					// Handle nested equipment choices (like "choose a martial weapon")
-					// ChoiceOption represents another level of choice
-					// These are typically "choose X from equipment category Y"
-
-					// Try to detect equipment category from description
+					// The external client should expand these into individual options
 					categoryID := detectEquipmentCategory(opt.Description)
 					if categoryID != "" {
-						// Fetch the equipment category
+						// Fetch the equipment category and expand all options
 						equipmentCategory, err := c.dnd5eClient.GetEquipmentCategory(categoryID)
 						if err != nil {
 							slog.Warn("Failed to fetch equipment category",
@@ -164,68 +157,45 @@ func (c *client) convertClassToHybrid(apiClass *entities.Class) (*class.Data, *C
 								"error", err)
 							// Fall back to placeholder
 							choiceData.Options = append(choiceData.Options, class.EquipmentOption{
-								ID: generateSlug(opt.Description),
-								Items: []class.EquipmentBundleItem{
+								ID: fmt.Sprintf("choose-%s", categoryID),
+								Items: []class.EquipmentData{
 									{
-										ConcreteItem: &class.EquipmentData{
-											ItemID:   fmt.Sprintf("choice-%s", generateSlug(opt.Description)),
-											Quantity: opt.ChoiceCount,
-										},
+										ItemID:   fmt.Sprintf("choose-%s", categoryID),
+										Quantity: opt.ChoiceCount,
 									},
 								},
 							})
 						} else {
-							// For top-level choices like "two martial weapons", create a single nested choice option
-							// This allows the user to select multiple items from the category
-							nestedOptions := make([]class.EquipmentOption, 0, len(equipmentCategory.Equipment))
+							// Expand each item in the category as a separate option
 							for _, eq := range equipmentCategory.Equipment {
 								if eq != nil {
-									nestedOptions = append(nestedOptions, class.EquipmentOption{
+									choiceData.Options = append(choiceData.Options, class.EquipmentOption{
 										ID: eq.Key,
-										Items: []class.EquipmentBundleItem{
+										Items: []class.EquipmentData{
 											{
-												ConcreteItem: &class.EquipmentData{
-													ItemID:   eq.Key,
-													Quantity: 1,
-												},
+												ItemID:   eq.Key,
+												Quantity: 1,
 											},
 										},
 									})
 								}
 							}
-
-							// Create a single option that contains a nested choice
-							choiceData.Options = append(choiceData.Options, class.EquipmentOption{
-								ID: fmt.Sprintf("choose-%d-%s", opt.ChoiceCount, categoryID),
-								Items: []class.EquipmentBundleItem{
-									{
-										NestedChoice: &class.EquipmentChoiceData{
-											ID:          fmt.Sprintf("choose-%s", categoryID),
-											Description: opt.Description,
-											Choose:      opt.ChoiceCount,
-											Options:     nestedOptions,
-										},
-									},
-								},
-							})
 						}
 					} else {
 						// Not an equipment category - use placeholder
 						choiceData.Options = append(choiceData.Options, class.EquipmentOption{
 							ID: generateSlug(opt.Description),
-							Items: []class.EquipmentBundleItem{
+							Items: []class.EquipmentData{
 								{
-									ConcreteItem: &class.EquipmentData{
-										ItemID:   fmt.Sprintf("choice-%s", generateSlug(opt.Description)),
-										Quantity: opt.ChoiceCount,
-									},
+									ItemID:   fmt.Sprintf("choice-%s", generateSlug(opt.Description)),
+									Quantity: opt.ChoiceCount,
 								},
 							},
 						})
 					}
 				case *entities.MultipleOption:
 					// Multiple items together (bundles)
-					var bundleItems []class.EquipmentBundleItem
+					var bundleItems []class.EquipmentData
 
 					// Process each item in the bundle
 					for _, item := range opt.Items {
@@ -233,67 +203,26 @@ func (c *client) convertClassToHybrid(apiClass *entities.Class) (*class.Data, *C
 						case *entities.CountedReferenceOption:
 							// Concrete item (like shield)
 							if bundleItem.Reference != nil {
-								bundleItems = append(bundleItems, class.EquipmentBundleItem{
-									ConcreteItem: &class.EquipmentData{
-										ItemID:   bundleItem.Reference.Key,
-										Quantity: bundleItem.Count,
-									},
+								bundleItems = append(bundleItems, class.EquipmentData{
+									ItemID:   bundleItem.Reference.Key,
+									Quantity: bundleItem.Count,
 								})
 							}
 						case *entities.ChoiceOption:
 							// Nested choice in bundle (like "choose a martial weapon")
+							// For bundles with choices, we use a placeholder
 							categoryID := detectEquipmentCategory(bundleItem.Description)
 							if categoryID != "" {
-								// Fetch the equipment category to get all options
-								equipmentCategory, err := c.dnd5eClient.GetEquipmentCategory(categoryID)
-								if err != nil {
-									slog.Warn("Failed to fetch equipment category in bundle",
-										"category", categoryID,
-										"description", bundleItem.Description,
-										"error", err)
-									// Fall back to placeholder
-									bundleItems = append(bundleItems, class.EquipmentBundleItem{
-										ConcreteItem: &class.EquipmentData{
-											ItemID:   fmt.Sprintf("category-%s-error", categoryID),
-											Quantity: bundleItem.ChoiceCount,
-										},
-									})
-								} else {
-									// Create a nested choice with all items from the category
-									nestedOptions := make([]class.EquipmentOption, 0, len(equipmentCategory.Equipment))
-									for _, eq := range equipmentCategory.Equipment {
-										if eq != nil {
-											nestedOptions = append(nestedOptions, class.EquipmentOption{
-												ID: eq.Key,
-												Items: []class.EquipmentBundleItem{
-													{
-														ConcreteItem: &class.EquipmentData{
-															ItemID:   eq.Key,
-															Quantity: 1,
-														},
-													},
-												},
-											})
-										}
-									}
-
-									// Add as a nested choice
-									bundleItems = append(bundleItems, class.EquipmentBundleItem{
-										NestedChoice: &class.EquipmentChoiceData{
-											ID:          fmt.Sprintf("choose-%s", categoryID),
-											Description: bundleItem.Description,
-											Choose:      bundleItem.ChoiceCount,
-											Options:     nestedOptions,
-										},
-									})
-								}
+								// Use placeholder for equipment category choice in bundle
+								bundleItems = append(bundleItems, class.EquipmentData{
+									ItemID:   fmt.Sprintf("choose-%s", categoryID),
+									Quantity: bundleItem.ChoiceCount,
+								})
 							} else {
 								// Not a category - add placeholder
-								bundleItems = append(bundleItems, class.EquipmentBundleItem{
-									ConcreteItem: &class.EquipmentData{
-										ItemID:   fmt.Sprintf("choice-%s", generateSlug(bundleItem.Description)),
-										Quantity: bundleItem.ChoiceCount,
-									},
+								bundleItems = append(bundleItems, class.EquipmentData{
+									ItemID:   fmt.Sprintf("choice-%s", generateSlug(bundleItem.Description)),
+									Quantity: bundleItem.ChoiceCount,
 								})
 							}
 						}

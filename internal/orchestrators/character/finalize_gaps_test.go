@@ -413,7 +413,7 @@ func (s *FinalizeGapsTestSuite) TestGaps_ClassFeatures() {
 			// Check for Second Wind resource
 			s.NotNil(input.CharacterData.ClassResources, "Should have class resources")
 			if input.CharacterData.ClassResources != nil {
-				_, hasSecondWind := input.CharacterData.ClassResources["second_wind"]
+				_, hasSecondWind := input.CharacterData.ClassResources[shared.ClassResourceSecondWind]
 				s.True(hasSecondWind, "Fighter should have Second Wind resource")
 			}
 
