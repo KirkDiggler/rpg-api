@@ -712,7 +712,7 @@ func (o *Orchestrator) FinalizeDraft(ctx context.Context, input *FinalizeDraftIn
 		Skills:         make(map[constants.Skill]shared.ProficiencyLevel),
 		SavingThrows:   make(map[constants.Ability]shared.ProficiencyLevel),
 		SpellSlots:     make(map[int]toolkitchar.SlotInfo),
-		ClassResources: make(map[string]toolkitchar.ResourceData),
+		ClassResources: make(map[shared.ClassResourceType]toolkitchar.ResourceData),
 
 		// Initialize empty slices
 		Languages:     []string{},
@@ -839,21 +839,21 @@ func (o *Orchestrator) FinalizeDraft(ctx context.Context, input *FinalizeDraftIn
 	// Note: Ranger has no resources at level 1
 	switch classDataOutput.ClassData.ID {
 	case constants.ClassFighter:
-		characterData.ClassResources["second_wind"] = toolkitchar.ResourceData{
+		characterData.ClassResources[shared.ClassResourceSecondWind] = toolkitchar.ResourceData{
 			Name:    "Second Wind",
 			Max:     1,
 			Current: 1,
 			Resets:  "short_rest",
 		}
 	case constants.ClassBarbarian:
-		characterData.ClassResources["rage"] = toolkitchar.ResourceData{
+		characterData.ClassResources[shared.ClassResourceRage] = toolkitchar.ResourceData{
 			Name:    "Rage",
 			Max:     2, // 2 rages at level 1
 			Current: 2,
 			Resets:  "long_rest",
 		}
 	case constants.ClassPaladin:
-		characterData.ClassResources["lay_on_hands"] = toolkitchar.ResourceData{
+		characterData.ClassResources[shared.ClassResourceLayOnHands] = toolkitchar.ResourceData{
 			Name:    "Lay on Hands",
 			Max:     5, // 5 HP pool at level 1
 			Current: 5,
@@ -865,7 +865,7 @@ func (o *Orchestrator) FinalizeDraft(ctx context.Context, input *FinalizeDraftIn
 		if uses < 1 {
 			uses = 1
 		}
-		characterData.ClassResources["bardic_inspiration"] = toolkitchar.ResourceData{
+		characterData.ClassResources[shared.ClassResourceBardicInspiration] = toolkitchar.ResourceData{
 			Name:    "Bardic Inspiration",
 			Max:     uses,
 			Current: uses,

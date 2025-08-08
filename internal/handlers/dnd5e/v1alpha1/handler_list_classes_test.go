@@ -69,29 +69,23 @@ func (s *HandlerListClassesTestSuite) TestListClasses_WithChoices() {
 				Options: []class.EquipmentOption{
 					{
 						ID: "option_martial_weapon_shield",
-						Items: []class.EquipmentBundleItem{
+						Items: []class.EquipmentData{
 							{
-								ConcreteItem: &class.EquipmentData{
-									ItemID:   "any-martial-weapon",
-									Quantity: 1,
-								},
+								ItemID:   "any-martial-weapon",
+								Quantity: 1,
 							},
 							{
-								ConcreteItem: &class.EquipmentData{
-									ItemID:   "shield",
-									Quantity: 1,
-								},
+								ItemID:   "shield",
+								Quantity: 1,
 							},
 						},
 					},
 					{
 						ID: "option_two_martial_weapons",
-						Items: []class.EquipmentBundleItem{
+						Items: []class.EquipmentData{
 							{
-								ConcreteItem: &class.EquipmentData{
-									ItemID:   "any-martial-weapon",
-									Quantity: 2,
-								},
+								ItemID:   "any-martial-weapon",
+								Quantity: 2,
 							},
 						},
 					},
@@ -104,29 +98,23 @@ func (s *HandlerListClassesTestSuite) TestListClasses_WithChoices() {
 				Options: []class.EquipmentOption{
 					{
 						ID: "option_light_crossbow",
-						Items: []class.EquipmentBundleItem{
+						Items: []class.EquipmentData{
 							{
-								ConcreteItem: &class.EquipmentData{
-									ItemID:   "light-crossbow",
-									Quantity: 1,
-								},
+								ItemID:   "light-crossbow",
+								Quantity: 1,
 							},
 							{
-								ConcreteItem: &class.EquipmentData{
-									ItemID:   "crossbow-bolt",
-									Quantity: 20,
-								},
+								ItemID:   "crossbow-bolt",
+								Quantity: 20,
 							},
 						},
 					},
 					{
 						ID: "option_handaxe",
-						Items: []class.EquipmentBundleItem{
+						Items: []class.EquipmentData{
 							{
-								ConcreteItem: &class.EquipmentData{
-									ItemID:   "handaxe",
-									Quantity: 2,
-								},
+								ItemID:   "handaxe",
+								Quantity: 2,
 							},
 						},
 					},

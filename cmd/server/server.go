@@ -100,7 +100,7 @@ func runServer(_ *cobra.Command, _ []string) error {
 	// Get D&D API URL from environment or use default
 	dndAPIURL := os.Getenv("DND5E_API_URL")
 	if dndAPIURL == "" {
-		dndAPIURL = "https://www.dnd5eapi.co/api/2014/"
+		dndAPIURL = "http://localhost:3002/api/2014/"
 	}
 
 	slog.Info("Using D&D API URL", "url", dndAPIURL)

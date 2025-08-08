@@ -1606,33 +1606,33 @@ func convertSizeToProto(size constants.Size) dnd5ev1alpha1.Size {
 }
 
 // convertResourceTypeToProto converts toolkit resource type string to proto enum
-func convertResourceTypeToProto(resourceType string) dnd5ev1alpha1.ClassResourceType {
+func convertResourceTypeToProto(resourceType shared.ClassResourceType) dnd5ev1alpha1.ClassResourceType {
 	switch resourceType {
-	case "rage", "rage_uses":
+	case shared.ClassResourceRage:
 		return dnd5ev1alpha1.ClassResourceType_CLASS_RESOURCE_TYPE_RAGE
-	case "bardic_inspiration":
+	case shared.ClassResourceBardicInspiration:
 		return dnd5ev1alpha1.ClassResourceType_CLASS_RESOURCE_TYPE_BARDIC_INSPIRATION
-	case "channel_divinity":
+	case shared.ClassResourceChannelDivinity:
 		return dnd5ev1alpha1.ClassResourceType_CLASS_RESOURCE_TYPE_CHANNEL_DIVINITY
-	case "wild_shape":
+	case shared.ClassResourceWildShape:
 		return dnd5ev1alpha1.ClassResourceType_CLASS_RESOURCE_TYPE_WILD_SHAPE
-	case "second_wind":
+	case shared.ClassResourceSecondWind:
 		return dnd5ev1alpha1.ClassResourceType_CLASS_RESOURCE_TYPE_SECOND_WIND
-	case "action_surge":
+	case shared.ClassResourceActionSurge:
 		return dnd5ev1alpha1.ClassResourceType_CLASS_RESOURCE_TYPE_ACTION_SURGE
-	case "ki_points", "ki":
+	case shared.ClassResourceKiPoints:
 		return dnd5ev1alpha1.ClassResourceType_CLASS_RESOURCE_TYPE_KI_POINTS
-	case "divine_sense":
+	case shared.ClassResourceDivineSense:
 		return dnd5ev1alpha1.ClassResourceType_CLASS_RESOURCE_TYPE_DIVINE_SENSE
-	case "lay_on_hands":
+	case shared.ClassResourceLayOnHands:
 		return dnd5ev1alpha1.ClassResourceType_CLASS_RESOURCE_TYPE_LAY_ON_HANDS
-	case "sorcery_points":
+	case shared.ClassResourceSorceryPoints:
 		return dnd5ev1alpha1.ClassResourceType_CLASS_RESOURCE_TYPE_SORCERY_POINTS
-	case "arcane_recovery":
+	case shared.ClassResourceArcaneRecovery:
 		return dnd5ev1alpha1.ClassResourceType_CLASS_RESOURCE_TYPE_ARCANE_RECOVERY
-	case "indomitable":
+	case shared.ClassResourceIndomitable:
 		return dnd5ev1alpha1.ClassResourceType_CLASS_RESOURCE_TYPE_INDOMITABLE
-	case "superiority_dice":
+	case shared.ClassResourceSuperiorityDice:
 		return dnd5ev1alpha1.ClassResourceType_CLASS_RESOURCE_TYPE_SUPERIORITY_DICE
 	default:
 		return dnd5ev1alpha1.ClassResourceType_CLASS_RESOURCE_TYPE_UNSPECIFIED
@@ -1640,15 +1640,15 @@ func convertResourceTypeToProto(resourceType string) dnd5ev1alpha1.ClassResource
 }
 
 // convertRechargeTypeToProto converts toolkit recharge type to proto enum
-func convertRechargeTypeToProto(rechargeOn string) dnd5ev1alpha1.RechargeType {
+func convertRechargeTypeToProto(rechargeOn shared.ResetType) dnd5ev1alpha1.RechargeType {
 	switch rechargeOn {
-	case "short_rest", "short rest":
+	case shared.ShortRest:
 		return dnd5ev1alpha1.RechargeType_RECHARGE_TYPE_SHORT_REST
-	case "long_rest", "long rest":
+	case shared.LongRest:
 		return dnd5ev1alpha1.RechargeType_RECHARGE_TYPE_LONG_REST
-	case "dawn":
+	case shared.Dawn:
 		return dnd5ev1alpha1.RechargeType_RECHARGE_TYPE_DAWN
-	case "none", "":
+	case shared.None:
 		return dnd5ev1alpha1.RechargeType_RECHARGE_TYPE_NONE
 	default:
 		return dnd5ev1alpha1.RechargeType_RECHARGE_TYPE_UNSPECIFIED
