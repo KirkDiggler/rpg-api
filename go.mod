@@ -4,6 +4,7 @@ go 1.24.1
 
 require (
 	github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20250806225204-96e6eb6ae5ea
+	github.com/KirkDiggler/rpg-toolkit/core v0.1.0
 	github.com/KirkDiggler/rpg-toolkit/dice v0.1.1-0.20250807211656-0f8ebffb7bf0
 	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.0.0-20250808170234-99951419a515
 	github.com/KirkDiggler/rpg-toolkit/tools/spatial v0.0.0-20250806233332-5f6ef70ac259
@@ -18,7 +19,6 @@ require (
 )
 
 require (
-	github.com/KirkDiggler/rpg-toolkit/core v0.1.0 // indirect
 	github.com/KirkDiggler/rpg-toolkit/events v0.1.1 // indirect
 	github.com/KirkDiggler/rpg-toolkit/game v0.1.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect

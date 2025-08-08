@@ -55,3 +55,33 @@ func (mr *MockServiceMockRecorder) DungeonStart(ctx, input any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DungeonStart", reflect.TypeOf((*MockService)(nil).DungeonStart), ctx, input)
 }
+
+// GetTurnOrder mocks base method.
+func (m *MockService) GetTurnOrder(ctx context.Context, input *encounter.GetTurnOrderInput) (*encounter.GetTurnOrderOutput, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetTurnOrder", ctx, input)
+	ret0, _ := ret[0].(*encounter.GetTurnOrderOutput)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetTurnOrder indicates an expected call of GetTurnOrder.
+func (mr *MockServiceMockRecorder) GetTurnOrder(ctx, input any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetTurnOrder", reflect.TypeOf((*MockService)(nil).GetTurnOrder), ctx, input)
+}
+
+// NextTurn mocks base method.
+func (m *MockService) NextTurn(ctx context.Context, input *encounter.NextTurnInput) (*encounter.NextTurnOutput, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "NextTurn", ctx, input)
+	ret0, _ := ret[0].(*encounter.NextTurnOutput)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// NextTurn indicates an expected call of NextTurn.
+func (mr *MockServiceMockRecorder) NextTurn(ctx, input any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "NextTurn", reflect.TypeOf((*MockService)(nil).NextTurn), ctx, input)
+}
