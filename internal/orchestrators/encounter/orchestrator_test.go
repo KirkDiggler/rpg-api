@@ -8,6 +8,7 @@ import (
 
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/encounter"
 	"github.com/KirkDiggler/rpg-api/internal/pkg/idgen"
+	"github.com/KirkDiggler/rpg-api/internal/repositories/encounters"
 )
 
 type OrchestratorTestSuite struct {
@@ -21,6 +22,7 @@ func (s *OrchestratorTestSuite) SetupTest() {
 
 	cfg := &encounter.Config{
 		IDGenerator: s.idGen,
+		Repository:  encounters.NewInMemory(),
 	}
 
 	var err error

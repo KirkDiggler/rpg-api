@@ -6,10 +6,10 @@ package encounter
 import (
 	"context"
 	"log/slog"
-	"sync"
 
 	"github.com/KirkDiggler/rpg-api/internal/errors"
 	"github.com/KirkDiggler/rpg-api/internal/pkg/idgen"
+	"github.com/KirkDiggler/rpg-api/internal/repositories/encounters"
 	"github.com/KirkDiggler/rpg-toolkit/core"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/initiative"
 	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
@@ -30,6 +30,7 @@ type Service interface {
 // Config holds the dependencies for the encounter orchestrator
 type Config struct {
 	IDGenerator idgen.Generator
+	Repository  encounters.Repository
 }
 
 // Validate ensures all required dependencies are provided
@@ -40,21 +41,16 @@ func (c *Config) Validate() error {
 		vb.RequiredField("IDGenerator")
 	}
 
+	if c.Repository == nil {
+		vb.RequiredField("Repository")
+	}
+
 	return vb.Build()
 }
 
 type orchestrator struct {
 	idGen idgen.Generator
-
-	// In-memory storage for demo - would be in repository in production
-	mu         sync.RWMutex
-	encounters map[string]*encounterState
-}
-
-// encounterState holds the state of an active encounter
-type encounterState struct {
-	room    *spatial.BasicRoom
-	tracker *initiative.Tracker
+	repo  encounters.Repository
 }
 
 // simpleEntity implements core.Entity for demo purposes
@@ -78,8 +74,8 @@ func NewOrchestrator(cfg *Config) (Service, error) {
 	}
 
 	return &orchestrator{
-		idGen:      cfg.IDGenerator,
-		encounters: make(map[string]*encounterState),
+		idGen: cfg.IDGenerator,
+		repo:  cfg.Repository,
 	}, nil
 }
 
@@ -170,14 +166,6 @@ func (o *orchestrator) DungeonStart(ctx context.Context, input *DungeonStartInpu
 	order := initiative.RollForOrder(entities, nil) // nil uses default dice roller
 	tracker := initiative.New(order)
 
-	// Store encounter state (in-memory for demo)
-	o.mu.Lock()
-	o.encounters[encounterID] = &encounterState{
-		room:    room,
-		tracker: tracker,
-	}
-	o.mu.Unlock()
-
 	// Get current turn
 	current := tracker.Current()
 	currentTurn := ""
@@ -188,6 +176,16 @@ func (o *orchestrator) DungeonStart(ctx context.Context, input *DungeonStartInpu
 	// Convert to response data
 	roomData := room.ToData()
 	trackerData := tracker.ToData()
+
+	// Save encounter to repository
+	_, err := o.repo.Save(ctx, &encounters.SaveInput{
+		EncounterID:    encounterID,
+		RoomData:       &roomData,
+		InitiativeData: &trackerData,
+	})
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to save encounter")
+	}
 
 	return &DungeonStartOutput{
 		EncounterID:    encounterID,
@@ -203,31 +201,43 @@ func (o *orchestrator) NextTurn(ctx context.Context, input *NextTurnInput) (*Nex
 		return nil, errors.InvalidArgument("input is required")
 	}
 
-	// Get encounter state
-	o.mu.RLock()
-	state, exists := o.encounters[input.EncounterID]
-	o.mu.RUnlock()
-
-	if !exists {
-		return nil, errors.NotFound("encounter not found")
+	// Get encounter from repository
+	getOutput, err := o.repo.Get(ctx, &encounters.GetInput{
+		EncounterID: input.EncounterID,
+	})
+	if err != nil {
+		return nil, err
 	}
 
+	// Recreate tracker from stored data
+	tracker := initiative.LoadFromData(*getOutput.Data.InitiativeData)
+
 	// Advance turn
-	next := state.tracker.Next()
+	next := tracker.Next()
 	currentTurn := ""
 	if next != nil {
 		currentTurn = next.GetID()
 	}
 
+	// Update stored initiative data
+	updatedData := tracker.ToData()
+	_, err = o.repo.Update(ctx, &encounters.UpdateInput{
+		EncounterID:    input.EncounterID,
+		InitiativeData: &updatedData,
+	})
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to update encounter")
+	}
+
 	slog.Info("Advanced turn",
 		"encounter_id", input.EncounterID,
 		"current_turn", currentTurn,
-		"round", state.tracker.Round(),
+		"round", tracker.Round(),
 	)
 
 	return &NextTurnOutput{
 		CurrentTurn: currentTurn,
-		Round:       state.tracker.Round(),
+		Round:       tracker.Round(),
 	}, nil
 }
 
@@ -237,26 +247,24 @@ func (o *orchestrator) GetTurnOrder(ctx context.Context, input *GetTurnOrderInpu
 		return nil, errors.InvalidArgument("input is required")
 	}
 
-	// Get encounter state
-	o.mu.RLock()
-	state, exists := o.encounters[input.EncounterID]
-	o.mu.RUnlock()
-
-	if !exists {
-		return nil, errors.NotFound("encounter not found")
+	// Get encounter from repository
+	getOutput, err := o.repo.Get(ctx, &encounters.GetInput{
+		EncounterID: input.EncounterID,
+	})
+	if err != nil {
+		return nil, err
 	}
 
-	// Get current state
-	current := state.tracker.Current()
+	// Recreate tracker to get current turn
+	tracker := initiative.LoadFromData(*getOutput.Data.InitiativeData)
+	current := tracker.Current()
 	currentTurn := ""
 	if current != nil {
 		currentTurn = current.GetID()
 	}
 
-	trackerData := state.tracker.ToData()
-
 	return &GetTurnOrderOutput{
-		InitiativeData: &trackerData,
+		InitiativeData: getOutput.Data.InitiativeData,
 		CurrentTurn:    currentTurn,
 	}, nil
 }
