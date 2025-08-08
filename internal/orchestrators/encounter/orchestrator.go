@@ -156,11 +156,11 @@ func (o *orchestrator) DungeonStart(ctx context.Context, input *DungeonStartInpu
 			id:         characterID,
 			entityType: "character",
 		}
-		entities[charEntity] = 0 // TODO: Get actual DEX modifier from character service
+		entities[charEntity] = 0 // TODO(#206): Get actual DEX modifier from character service
 	}
 
 	// Add the monster
-	entities[monsterEntity] = 2 // Give monster a +2 DEX modifier for demo
+	entities[monsterEntity] = 2 // TODO(#206): Make monster DEX modifier configurable
 
 	// Roll initiative and create tracker
 	order := initiative.RollForOrder(entities, nil) // nil uses default dice roller
