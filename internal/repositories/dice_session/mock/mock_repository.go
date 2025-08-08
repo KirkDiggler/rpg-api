@@ -13,8 +13,9 @@ import (
 	context "context"
 	reflect "reflect"
 
-	dicesession "github.com/KirkDiggler/rpg-api/internal/repositories/dice_session"
 	gomock "go.uber.org/mock/gomock"
+
+	dicesession "github.com/KirkDiggler/rpg-api/internal/repositories/dice_session"
 )
 
 // MockRepository is a mock of Repository interface.

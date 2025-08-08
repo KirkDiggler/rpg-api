@@ -13,13 +13,13 @@ import (
 type Repository interface {
 	// Save stores an encounter
 	Save(ctx context.Context, input *SaveInput) (*SaveOutput, error)
-	
+
 	// Get retrieves an encounter by ID
 	Get(ctx context.Context, input *GetInput) (*GetOutput, error)
-	
+
 	// Update modifies an existing encounter
 	Update(ctx context.Context, input *UpdateInput) (*UpdateOutput, error)
-	
+
 	// Delete removes an encounter
 	Delete(ctx context.Context, input *DeleteInput) (*DeleteOutput, error)
 }

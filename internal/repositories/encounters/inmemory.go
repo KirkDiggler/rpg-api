@@ -25,20 +25,20 @@ func (r *InMemoryRepository) Save(ctx context.Context, input *SaveInput) (*SaveO
 	if input == nil {
 		return nil, errors.InvalidArgument("input is required")
 	}
-	
+
 	if input.EncounterID == "" {
 		return nil, errors.InvalidArgument("encounter ID is required")
 	}
-	
+
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	
+
 	r.store[input.EncounterID] = &EncounterData{
 		ID:             input.EncounterID,
 		RoomData:       input.RoomData,
 		InitiativeData: input.InitiativeData,
 	}
-	
+
 	return &SaveOutput{Success: true}, nil
 }
 
@@ -47,19 +47,19 @@ func (r *InMemoryRepository) Get(ctx context.Context, input *GetInput) (*GetOutp
 	if input == nil {
 		return nil, errors.InvalidArgument("input is required")
 	}
-	
+
 	if input.EncounterID == "" {
 		return nil, errors.InvalidArgument("encounter ID is required")
 	}
-	
+
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	
+
 	data, exists := r.store[input.EncounterID]
 	if !exists {
 		return nil, errors.NotFound("encounter not found")
 	}
-	
+
 	// Return a copy to prevent external modification
 	return &GetOutput{
 		Data: &EncounterData{
@@ -75,24 +75,24 @@ func (r *InMemoryRepository) Update(ctx context.Context, input *UpdateInput) (*U
 	if input == nil {
 		return nil, errors.InvalidArgument("input is required")
 	}
-	
+
 	if input.EncounterID == "" {
 		return nil, errors.InvalidArgument("encounter ID is required")
 	}
-	
+
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	
+
 	data, exists := r.store[input.EncounterID]
 	if !exists {
 		return nil, errors.NotFound("encounter not found")
 	}
-	
+
 	// Update only what's provided
 	if input.InitiativeData != nil {
 		data.InitiativeData = input.InitiativeData
 	}
-	
+
 	return &UpdateOutput{Success: true}, nil
 }
 
@@ -101,19 +101,19 @@ func (r *InMemoryRepository) Delete(ctx context.Context, input *DeleteInput) (*D
 	if input == nil {
 		return nil, errors.InvalidArgument("input is required")
 	}
-	
+
 	if input.EncounterID == "" {
 		return nil, errors.InvalidArgument("encounter ID is required")
 	}
-	
+
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	
+
 	if _, exists := r.store[input.EncounterID]; !exists {
 		return nil, errors.NotFound("encounter not found")
 	}
-	
+
 	delete(r.store, input.EncounterID)
-	
+
 	return &DeleteOutput{Success: true}, nil
 }
