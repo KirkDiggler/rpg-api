@@ -195,9 +195,43 @@ func (h *EncounterHandler) EndTurn(
 	ctx context.Context,
 	req *dnd5ev1alpha1.EndTurnRequest,
 ) (*dnd5ev1alpha1.EndTurnResponse, error) {
-	// For now, return unimplemented
-	// Turn management will be implemented after movement
-	return nil, status.Error(codes.Unimplemented, "EndTurn not yet implemented")
+	// Validate request
+	if req.GetEncounterId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "encounter_id is required")
+	}
+
+	// Call orchestrator to advance turn
+	nextTurnInput := &encounter.NextTurnInput{
+		EncounterID: req.GetEncounterId(),
+	}
+
+	nextTurnOutput, err := h.encounterService.NextTurn(ctx, nextTurnInput)
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	// Get updated turn order to return full state
+	turnOrderInput := &encounter.GetTurnOrderInput{
+		EncounterID: req.GetEncounterId(),
+	}
+
+	turnOrderOutput, err := h.encounterService.GetTurnOrder(ctx, turnOrderInput)
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	// Convert to proto CombatState
+	protoCombatState := convertInitiativeDataToProto(
+		req.GetEncounterId(),
+		turnOrderOutput.InitiativeData,
+		nextTurnOutput.CurrentTurn,
+	)
+
+	// For now, we don't return room data in EndTurn
+	// In the future, we might include it if entities moved
+	return &dnd5ev1alpha1.EndTurnResponse{
+		CombatState: protoCombatState,
+	}, nil
 }
 
 // Attack performs an attack action
