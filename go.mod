@@ -3,7 +3,7 @@ module github.com/KirkDiggler/rpg-api
 go 1.24.1
 
 require (
-	github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20250806225204-96e6eb6ae5ea
+	github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20250809033201-90369c75f89e
 	github.com/KirkDiggler/rpg-toolkit/core v0.1.0
 	github.com/KirkDiggler/rpg-toolkit/dice v0.1.1-0.20250807211656-0f8ebffb7bf0
 	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.0.0-20250808170234-99951419a515
@@ -32,6 +32,6 @@ require (
 	golang.org/x/sys v0.34.0 // indirect
 	golang.org/x/text v0.27.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20250528174236-200df99c418a // indirect
-	google.golang.org/protobuf v1.36.6 // indirect
+	google.golang.org/protobuf v1.36.7 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
