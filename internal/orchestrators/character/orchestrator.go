@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/KirkDiggler/rpg-api/internal/clients/external"
+	"github.com/KirkDiggler/rpg-api/internal/entities/dnd5e"
 	"github.com/KirkDiggler/rpg-api/internal/errors"
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/dice"
 	"github.com/KirkDiggler/rpg-api/internal/pkg/idgen"
@@ -1197,15 +1198,96 @@ func (o *Orchestrator) ListEquipmentByType(ctx context.Context, input *ListEquip
 }
 
 func (o *Orchestrator) GetCharacterInventory(ctx context.Context, input *GetCharacterInventoryInput) (*GetCharacterInventoryOutput, error) {
-	return nil, errors.Unimplemented("not implemented")
+	if input == nil || input.CharacterID == "" {
+		return nil, errors.InvalidArgument("character ID is required")
+	}
+
+	// Get character data
+	charResp, err := o.charRepo.Get(ctx, character.GetInput{
+		ID: input.CharacterID,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	// For now, return basic equipment info from character data
+	// Equipment is stored as a simple []string in character.Data
+	equipmentSlots := &dnd5e.EquipmentSlots{}
+	inventory := []dnd5e.InventoryItem{}
+	
+	// Convert equipment list to inventory items
+	for _, itemName := range charResp.CharacterData.Equipment {
+		inventory = append(inventory, dnd5e.InventoryItem{
+			ID:       itemName,
+			Name:     itemName,
+			Quantity: 1,
+		})
+	}
+
+	return &GetCharacterInventoryOutput{
+		EquipmentSlots: equipmentSlots,
+		Inventory:      inventory,
+		Encumbrance:    &dnd5e.EncumbranceInfo{},
+	}, nil
 }
 
 func (o *Orchestrator) EquipItem(ctx context.Context, input *EquipItemInput) (*EquipItemOutput, error) {
-	return nil, errors.Unimplemented("not implemented")
+	if input == nil || input.CharacterID == "" || input.ItemID == "" {
+		return nil, errors.InvalidArgument("character ID and item ID are required")
+	}
+
+	// Get character data
+	charResp, err := o.charRepo.Get(ctx, character.GetInput{
+		ID: input.CharacterID,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	// For minimal implementation: just mark item as equipped
+	// We're not actually removing from inventory or changing slots yet
+	// This is enough to demonstrate equipment for combat demo
+	
+	// Check if item exists in character's equipment list
+	hasItem := false
+	for _, item := range charResp.CharacterData.Equipment {
+		if item == input.ItemID {
+			hasItem = true
+			break
+		}
+	}
+	
+	if !hasItem {
+		return nil, errors.NotFound("item not found in character inventory")
+	}
+
+	// For now, just return success without actually tracking equipped state
+	// This is minimal for demo purposes
+	return &EquipItemOutput{
+		Success:   true,
+		Character: charResp.CharacterData,
+	}, nil
 }
 
 func (o *Orchestrator) UnequipItem(ctx context.Context, input *UnequipItemInput) (*UnequipItemOutput, error) {
-	return nil, errors.Unimplemented("not implemented")
+	if input == nil || input.CharacterID == "" || input.Slot == "" {
+		return nil, errors.InvalidArgument("character ID and slot are required")
+	}
+
+	// Get character data
+	charResp, err := o.charRepo.Get(ctx, character.GetInput{
+		ID: input.CharacterID,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	// For minimal implementation: just return success
+	// We're not actually tracking equipped state yet
+	return &UnequipItemOutput{
+		Success:   true,
+		Character: charResp.CharacterData,
+	}, nil
 }
 
 func (o *Orchestrator) AddToInventory(ctx context.Context, input *AddToInventoryInput) (*AddToInventoryOutput, error) {

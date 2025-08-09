@@ -698,7 +698,45 @@ func (h *Handler) GetCharacterInventory(
 	ctx context.Context,
 	req *dnd5ev1alpha1.GetCharacterInventoryRequest,
 ) (*dnd5ev1alpha1.GetCharacterInventoryResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "not implemented")
+	if req == nil || req.CharacterId == "" {
+		return nil, status.Error(codes.InvalidArgument, "character_id is required")
+	}
+
+	// Call orchestrator to get inventory
+	result, err := h.characterService.GetCharacterInventory(ctx, &character.GetCharacterInventoryInput{
+		CharacterID: req.CharacterId,
+	})
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return nil, status.Error(codes.NotFound, "character not found")
+		}
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	// Convert to proto response
+	response := &dnd5ev1alpha1.GetCharacterInventoryResponse{
+		EquipmentSlots: &dnd5ev1alpha1.EquipmentSlots{},
+		Inventory:      make([]*dnd5ev1alpha1.InventoryItem, 0),
+		Encumbrance: &dnd5ev1alpha1.EncumbranceInfo{
+			CurrentWeight:    0,
+			CarryingCapacity: 150, // Default for STR 10
+			MaxCapacity:      300,
+			Level:            dnd5ev1alpha1.EncumbranceLevel_ENCUMBRANCE_LEVEL_UNENCUMBERED,
+		},
+		AttunementSlotsUsed: result.AttunementSlotsUsed,
+		AttunementSlotsMax:  3, // D&D 5e standard
+	}
+
+	// Convert inventory items
+	for _, item := range result.Inventory {
+		response.Inventory = append(response.Inventory, &dnd5ev1alpha1.InventoryItem{
+			ItemId:     item.ID,
+			Quantity:   item.Quantity,
+			CustomName: item.Name,
+		})
+	}
+
+	return response, nil
 }
 
 // EquipItem equips an item
@@ -706,7 +744,46 @@ func (h *Handler) EquipItem(
 	ctx context.Context,
 	req *dnd5ev1alpha1.EquipItemRequest,
 ) (*dnd5ev1alpha1.EquipItemResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "not implemented")
+	if req == nil || req.CharacterId == "" {
+		return nil, status.Error(codes.InvalidArgument, "character_id is required")
+	}
+	if req.ItemId == "" {
+		return nil, status.Error(codes.InvalidArgument, "item_id is required")
+	}
+
+	// Call orchestrator to equip item
+	result, err := h.characterService.EquipItem(ctx, &character.EquipItemInput{
+		CharacterID: req.CharacterId,
+		ItemID:      req.ItemId,
+		Slot:        req.Slot.String(),
+	})
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return nil, status.Error(codes.NotFound, err.Error())
+		}
+		if errors.IsInvalidArgument(err) {
+			return nil, status.Error(codes.InvalidArgument, err.Error())
+		}
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	// For minimal implementation, just return success
+	// TODO: Implement proper character to proto conversion with equipment
+	response := &dnd5ev1alpha1.EquipItemResponse{
+		// Character field left nil for now - frontend can refetch if needed
+	}
+
+	// Add previously equipped item if any
+	if result.PreviouslyEquippedItem != nil {
+		response.PreviouslyEquippedItem = &dnd5ev1alpha1.InventoryItem{
+			ItemId:     result.PreviouslyEquippedItem.ID,
+			Quantity:   result.PreviouslyEquippedItem.Quantity,
+			IsAttuned:  result.PreviouslyEquippedItem.Equipped,
+			CustomName: result.PreviouslyEquippedItem.Name,
+		}
+	}
+
+	return response, nil
 }
 
 // UnequipItem unequips an item
@@ -714,7 +791,33 @@ func (h *Handler) UnequipItem(
 	ctx context.Context,
 	req *dnd5ev1alpha1.UnequipItemRequest,
 ) (*dnd5ev1alpha1.UnequipItemResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "not implemented")
+	if req == nil || req.CharacterId == "" {
+		return nil, status.Error(codes.InvalidArgument, "character_id is required")
+	}
+	if req.Slot == dnd5ev1alpha1.EquipmentSlot_EQUIPMENT_SLOT_UNSPECIFIED {
+		return nil, status.Error(codes.InvalidArgument, "slot is required")
+	}
+
+	// Call orchestrator to unequip item
+	_, err := h.characterService.UnequipItem(ctx, &character.UnequipItemInput{
+		CharacterID: req.CharacterId,
+		Slot:        req.Slot.String(),
+	})
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return nil, status.Error(codes.NotFound, "character not found")
+		}
+		if errors.IsInvalidArgument(err) {
+			return nil, status.Error(codes.InvalidArgument, err.Error())
+		}
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	// For minimal implementation, just return success
+	// TODO: Implement proper character to proto conversion with equipment
+	return &dnd5ev1alpha1.UnequipItemResponse{
+		// Character field left nil for now - frontend can refetch if needed
+	}, nil
 }
 
 // AddToInventory adds items to inventory
