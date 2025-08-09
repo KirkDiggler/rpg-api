@@ -9,6 +9,9 @@ import (
 
 	"github.com/KirkDiggler/rpg-api/internal/errors"
 	"github.com/KirkDiggler/rpg-api/internal/pkg/idgen"
+	"github.com/KirkDiggler/rpg-api/internal/repositories/encounters"
+	"github.com/KirkDiggler/rpg-toolkit/core"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/initiative"
 	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
 )
 
@@ -16,11 +19,18 @@ import (
 type Service interface {
 	// DungeonStart creates a simple dungeon encounter for testing
 	DungeonStart(ctx context.Context, input *DungeonStartInput) (*DungeonStartOutput, error)
+
+	// NextTurn advances to the next turn in the encounter
+	NextTurn(ctx context.Context, input *NextTurnInput) (*NextTurnOutput, error)
+
+	// GetTurnOrder returns the current turn order
+	GetTurnOrder(ctx context.Context, input *GetTurnOrderInput) (*GetTurnOrderOutput, error)
 }
 
 // Config holds the dependencies for the encounter orchestrator
 type Config struct {
 	IDGenerator idgen.Generator
+	Repository  encounters.Repository
 }
 
 // Validate ensures all required dependencies are provided
@@ -31,11 +41,16 @@ func (c *Config) Validate() error {
 		vb.RequiredField("IDGenerator")
 	}
 
+	if c.Repository == nil {
+		vb.RequiredField("Repository")
+	}
+
 	return vb.Build()
 }
 
 type orchestrator struct {
 	idGen idgen.Generator
+	repo  encounters.Repository
 }
 
 // simpleEntity implements core.Entity for demo purposes
@@ -60,6 +75,7 @@ func NewOrchestrator(cfg *Config) (Service, error) {
 
 	return &orchestrator{
 		idGen: cfg.IDGenerator,
+		repo:  cfg.Repository,
 	}, nil
 }
 
@@ -131,11 +147,124 @@ func (o *orchestrator) DungeonStart(ctx context.Context, input *DungeonStartInpu
 		)
 	}
 
-	// Convert to RoomData for the response
+	// Create initiative order - characters and monsters
+	entities := make(map[core.Entity]int)
+
+	// Add characters with default DEX modifier (for demo, using 0)
+	for _, characterID := range input.CharacterIDs {
+		charEntity := &simpleEntity{
+			id:         characterID,
+			entityType: "character",
+		}
+		entities[charEntity] = 0 // TODO(#206): Get actual DEX modifier from character service
+	}
+
+	// Add the monster
+	entities[monsterEntity] = 2 // TODO(#206): Make monster DEX modifier configurable
+
+	// Roll initiative and create tracker
+	order := initiative.RollForOrder(entities, nil) // nil uses default dice roller
+	tracker := initiative.New(order)
+
+	// Get current turn
+	current := tracker.Current()
+	currentTurn := ""
+	if current != nil {
+		currentTurn = current.GetID()
+	}
+
+	// Convert to response data
 	roomData := room.ToData()
+	trackerData := tracker.ToData()
+
+	// Save encounter to repository
+	_, err := o.repo.Save(ctx, &encounters.SaveInput{
+		EncounterID:    encounterID,
+		RoomData:       &roomData,
+		InitiativeData: &trackerData,
+	})
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to save encounter")
+	}
 
 	return &DungeonStartOutput{
-		EncounterID: encounterID,
-		RoomData:    &roomData,
+		EncounterID:    encounterID,
+		RoomData:       &roomData,
+		InitiativeData: &trackerData,
+		CurrentTurn:    currentTurn,
+	}, nil
+}
+
+// NextTurn advances to the next turn in the encounter
+func (o *orchestrator) NextTurn(ctx context.Context, input *NextTurnInput) (*NextTurnOutput, error) {
+	if input == nil {
+		return nil, errors.InvalidArgument("input is required")
+	}
+
+	// Get encounter from repository
+	getOutput, err := o.repo.Get(ctx, &encounters.GetInput{
+		EncounterID: input.EncounterID,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	// Recreate tracker from stored data
+	tracker := initiative.LoadFromData(*getOutput.Data.InitiativeData)
+
+	// Advance turn
+	next := tracker.Next()
+	currentTurn := ""
+	if next != nil {
+		currentTurn = next.GetID()
+	}
+
+	// Update stored initiative data
+	updatedData := tracker.ToData()
+	_, err = o.repo.Update(ctx, &encounters.UpdateInput{
+		EncounterID:    input.EncounterID,
+		InitiativeData: &updatedData,
+	})
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to update encounter")
+	}
+
+	slog.Info("Advanced turn",
+		"encounter_id", input.EncounterID,
+		"current_turn", currentTurn,
+		"round", tracker.Round(),
+	)
+
+	return &NextTurnOutput{
+		CurrentTurn: currentTurn,
+		Round:       tracker.Round(),
+	}, nil
+}
+
+// GetTurnOrder returns the current turn order
+func (o *orchestrator) GetTurnOrder(ctx context.Context, input *GetTurnOrderInput) (*GetTurnOrderOutput, error) {
+	if input == nil {
+		return nil, errors.InvalidArgument("input is required")
+	}
+
+	// Get encounter from repository
+	getOutput, err := o.repo.Get(ctx, &encounters.GetInput{
+		EncounterID: input.EncounterID,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	// Recreate tracker to get current turn
+	tracker := initiative.LoadFromData(*getOutput.Data.InitiativeData)
+	current := tracker.Current()
+	currentTurn := ""
+	if current != nil {
+		currentTurn = current.GetID()
+	}
+
+	return &GetTurnOrderOutput{
+		InitiativeData: getOutput.Data.InitiativeData,
+		CurrentTurn:    currentTurn,
 	}, nil
 }
