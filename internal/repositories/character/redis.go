@@ -352,7 +352,7 @@ func (r *redisRepository) GetEquipmentSlots(ctx context.Context, input GetEquipm
 		return nil, errors.Wrapf(err, "failed to get equipment slots")
 	}
 
-	slog.InfoContext(ctx, "Retrieved equipment slots from Redis",
+	slog.DebugContext(ctx, "Retrieved equipment slots from Redis",
 		"key", key,
 		"result", result,
 		"armor", result["armor"])

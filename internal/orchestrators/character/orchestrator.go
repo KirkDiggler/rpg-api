@@ -1219,7 +1219,7 @@ func (o *Orchestrator) GetCharacterInventory(ctx context.Context, input *GetChar
 		return nil, errors.Wrap(err, "failed to get equipment slots")
 	}
 
-	slog.InfoContext(ctx, "Retrieved equipment slots",
+	slog.DebugContext(ctx, "Retrieved equipment slots",
 		"character_id", input.CharacterID,
 		"armor", slotsResp.EquipmentSlots.Armor,
 		"main_hand", slotsResp.EquipmentSlots.MainHand)
@@ -1271,7 +1271,7 @@ func (o *Orchestrator) GetCharacterInventory(ctx context.Context, input *GetChar
 	inventory := []dnd5e.InventoryItem{}
 	for _, itemName := range charResp.CharacterData.Equipment {
 		isEquipped := equippedItems[itemName]
-		slog.InfoContext(ctx, "Processing inventory item",
+		slog.DebugContext(ctx, "Processing inventory item",
 			"item_name", itemName,
 			"is_equipped", isEquipped)
 
