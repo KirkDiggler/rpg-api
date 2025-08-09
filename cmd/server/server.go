@@ -35,6 +35,7 @@ import (
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	characterdraftrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft"
 	dicesessionrepo "github.com/KirkDiggler/rpg-api/internal/repositories/dice_session"
+	encountersrepo "github.com/KirkDiggler/rpg-api/internal/repositories/encounters"
 )
 
 var (
@@ -132,9 +133,13 @@ func runServer(_ *cobra.Command, _ []string) error {
 		return fmt.Errorf("failed to create dice service: %w", err)
 	}
 
+	// Create encounter repository (in-memory for now)
+	encounterRepo := encountersrepo.NewInMemory()
+
 	// Create encounter service
 	encounterService, err := encounter.NewOrchestrator(&encounter.Config{
 		IDGenerator: idgen.NewPrefixed("enc-"),
+		Repository:  encounterRepo,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create encounter service: %w", err)
