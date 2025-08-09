@@ -125,18 +125,18 @@ type ListBySessionIDOutput struct {
 
 // EquipmentSlots represents the equipment slots for a character
 type EquipmentSlots struct {
-	MainHand    string `json:"main_hand,omitempty"`
-	OffHand     string `json:"off_hand,omitempty"`
-	Armor       string `json:"armor,omitempty"`
-	Shield      string `json:"shield,omitempty"`
-	Ring1       string `json:"ring1,omitempty"`
-	Ring2       string `json:"ring2,omitempty"`
-	Amulet      string `json:"amulet,omitempty"`
-	Boots       string `json:"boots,omitempty"`
-	Gloves      string `json:"gloves,omitempty"`
-	Helmet      string `json:"helmet,omitempty"`
-	Belt        string `json:"belt,omitempty"`
-	Cloak       string `json:"cloak,omitempty"`
+	MainHand string `json:"main_hand,omitempty"`
+	OffHand  string `json:"off_hand,omitempty"`
+	Armor    string `json:"armor,omitempty"`
+	Shield   string `json:"shield,omitempty"`
+	Ring1    string `json:"ring1,omitempty"`
+	Ring2    string `json:"ring2,omitempty"`
+	Amulet   string `json:"amulet,omitempty"`
+	Boots    string `json:"boots,omitempty"`
+	Gloves   string `json:"gloves,omitempty"`
+	Helmet   string `json:"helmet,omitempty"`
+	Belt     string `json:"belt,omitempty"`
+	Cloak    string `json:"cloak,omitempty"`
 }
 
 // GetEquipmentSlotsInput defines the input for getting equipment slots

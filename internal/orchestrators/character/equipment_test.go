@@ -7,19 +7,28 @@ import (
 	"github.com/stretchr/testify/suite"
 	"go.uber.org/mock/gomock"
 
+	externalmock "github.com/KirkDiggler/rpg-api/internal/clients/external/mock"
 	"github.com/KirkDiggler/rpg-api/internal/errors"
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
+	dicemock "github.com/KirkDiggler/rpg-api/internal/orchestrators/dice/mock"
+	idgenmock "github.com/KirkDiggler/rpg-api/internal/pkg/idgen/mock"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	characterrepomock "github.com/KirkDiggler/rpg-api/internal/repositories/character/mock"
+	draftrepomock "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft/mock"
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 )
 
 type EquipmentTestSuite struct {
 	suite.Suite
-	ctrl         *gomock.Controller
-	mockCharRepo *characterrepomock.MockRepository
-	orchestrator *character.Orchestrator
-	ctx          context.Context
+	ctrl            *gomock.Controller
+	mockCharRepo    *characterrepomock.MockRepository
+	mockDraftRepo   *draftrepomock.MockRepository
+	mockExternal    *externalmock.MockClient
+	mockDiceService *dicemock.MockService
+	mockIDGenerator *idgenmock.MockGenerator
+	mockDraftIDGen  *idgenmock.MockGenerator
+	orchestrator    *character.Orchestrator
+	ctx             context.Context
 
 	// Test data
 	testCharacterID string
@@ -30,9 +39,22 @@ type EquipmentTestSuite struct {
 func (s *EquipmentTestSuite) SetupTest() {
 	s.ctrl = gomock.NewController(s.T())
 	s.mockCharRepo = characterrepomock.NewMockRepository(s.ctrl)
-	s.orchestrator, _ = character.New(&character.Config{
-		CharacterRepo: s.mockCharRepo,
+	s.mockDraftRepo = draftrepomock.NewMockRepository(s.ctrl)
+	s.mockExternal = externalmock.NewMockClient(s.ctrl)
+	s.mockDiceService = dicemock.NewMockService(s.ctrl)
+	s.mockIDGenerator = idgenmock.NewMockGenerator(s.ctrl)
+	s.mockDraftIDGen = idgenmock.NewMockGenerator(s.ctrl)
+
+	var err error
+	s.orchestrator, err = character.New(&character.Config{
+		CharacterRepo:      s.mockCharRepo,
+		CharacterDraftRepo: s.mockDraftRepo,
+		ExternalClient:     s.mockExternal,
+		DiceService:        s.mockDiceService,
+		IDGenerator:        s.mockIDGenerator,
+		DraftIDGenerator:   s.mockDraftIDGen,
 	})
+	s.Require().NoError(err)
 	s.ctx = context.Background()
 
 	// Test data setup
@@ -137,7 +159,7 @@ func (s *EquipmentTestSuite) TestEquipItem_ItemNotInInventory() {
 	s.Error(err)
 	s.Nil(result)
 	s.True(errors.IsNotFound(err))
-	s.Contains(err.Error(), "item not found in character inventory")
+	s.Contains(err.Error(), "not found in character inventory")
 }
 
 func (s *EquipmentTestSuite) TestEquipItem_InvalidInput() {
@@ -245,7 +267,7 @@ func (s *EquipmentTestSuite) TestGetCharacterInventory_Success() {
 	// Verify inventory contains only unequipped items
 	expectedInventoryItems := []string{"leather-armor"} // Only unequipped items should be in inventory
 	s.Len(result.Inventory, len(expectedInventoryItems))
-	
+
 	for _, expectedItem := range expectedInventoryItems {
 		found := false
 		for _, inventoryItem := range result.Inventory {
@@ -292,7 +314,7 @@ func (s *EquipmentTestSuite) TestGetCharacterInventory_NoEquippedItems() {
 
 	// All items should be in inventory since nothing is equipped
 	s.Len(result.Inventory, len(s.testCharData.Equipment))
-	
+
 	// Verify all items are marked as unequipped
 	for _, inventoryItem := range result.Inventory {
 		s.False(inventoryItem.Equipped, "Item %s should not be equipped", inventoryItem.ID)

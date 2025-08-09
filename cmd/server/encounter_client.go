@@ -5,10 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 
-	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
 	"github.com/spf13/cobra"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+
+	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
 )
 
 var encounterCmd = &cobra.Command{
@@ -42,8 +43,8 @@ var dungeonStartCmd = &cobra.Command{
 		data, _ := json.MarshalIndent(map[string]interface{}{
 			"encounterId": resp.GetEncounterId(),
 			"room": map[string]interface{}{
-				"width":  resp.GetRoom().GetWidth(),
-				"height": resp.GetRoom().GetHeight(),
+				"width":    resp.GetRoom().GetWidth(),
+				"height":   resp.GetRoom().GetHeight(),
 				"entities": len(resp.GetRoom().GetEntities()),
 			},
 			"combatState": map[string]interface{}{
@@ -94,9 +95,9 @@ var endTurnCmd = &cobra.Command{
 			if i == int(resp.GetCombatState().GetActiveIndex()) {
 				active = " <- ACTIVE"
 			}
-			fmt.Printf("  %d. %s (Initiative: %d)%s\n", 
-				i+1, 
-				entry.GetEntityId(), 
+			fmt.Printf("  %d. %s (Initiative: %d)%s\n",
+				i+1,
+				entry.GetEntityId(),
 				entry.GetInitiative(),
 				active,
 			)
@@ -145,7 +146,7 @@ var testFlowCmd = &cobra.Command{
 				return fmt.Errorf("failed to end turn %d: %w", i+1, err)
 			}
 
-			fmt.Printf("Turn %d ended -> New Turn: %s (Round %d)\n", 
+			fmt.Printf("Turn %d ended -> New Turn: %s (Round %d)\n",
 				i+1,
 				endResp.GetCombatState().GetCurrentTurn().GetEntityId(),
 				endResp.GetCombatState().GetRound(),

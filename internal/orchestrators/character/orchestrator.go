@@ -8,6 +8,7 @@ import (
 
 	"github.com/KirkDiggler/rpg-api/internal/clients/external"
 	"github.com/KirkDiggler/rpg-api/internal/entities/dnd5e"
+	"github.com/KirkDiggler/rpg-api/internal/entities/equipment"
 	"github.com/KirkDiggler/rpg-api/internal/errors"
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/dice"
 	"github.com/KirkDiggler/rpg-api/internal/pkg/idgen"
@@ -1265,20 +1266,24 @@ func (o *Orchestrator) GetCharacterInventory(ctx context.Context, input *GetChar
 		equippedItems[slotsResp.EquipmentSlots.Cloak] = true
 	}
 
-	// Convert equipment list to inventory items, marking equipped status
+	// Convert equipment list to inventory items, but only include unequipped items
+	// Equipped items should not appear in inventory - they're shown in equipment slots
 	inventory := []dnd5e.InventoryItem{}
 	for _, itemName := range charResp.CharacterData.Equipment {
 		isEquipped := equippedItems[itemName]
 		slog.InfoContext(ctx, "Processing inventory item",
 			"item_name", itemName,
 			"is_equipped", isEquipped)
-		
-		inventory = append(inventory, dnd5e.InventoryItem{
-			ID:       itemName,
-			Name:     itemName,
-			Quantity: 1,
-			Equipped: isEquipped,
-		})
+
+		// Only add to inventory if the item is NOT equipped
+		if !isEquipped {
+			inventory = append(inventory, dnd5e.InventoryItem{
+				ID:       itemName,
+				Name:     itemName,
+				Quantity: 1,
+				Equipped: false, // All inventory items are unequipped by definition
+			})
+		}
 	}
 
 	return &GetCharacterInventoryOutput{
@@ -1289,8 +1294,24 @@ func (o *Orchestrator) GetCharacterInventory(ctx context.Context, input *GetChar
 }
 
 func (o *Orchestrator) EquipItem(ctx context.Context, input *EquipItemInput) (*EquipItemOutput, error) {
-	if input == nil || input.CharacterID == "" || input.ItemID == "" {
-		return nil, errors.InvalidArgument("character ID and item ID are required")
+	// Validate input
+	if input == nil {
+		return nil, errors.InvalidArgument("input is required")
+	}
+	if input.CharacterID == "" {
+		return nil, errors.InvalidArgument("character ID is required")
+	}
+	if input.ItemID == "" {
+		return nil, errors.InvalidArgument("item ID is required")
+	}
+	if input.Slot == "" {
+		return nil, errors.InvalidArgument("equipment slot is required")
+	}
+
+	// Convert and validate proto slot name to domain type
+	slot, valid := equipment.EquipmentSlotFromProtoString(input.Slot)
+	if !valid {
+		return nil, errors.InvalidArgumentf("invalid equipment slot: %s", input.Slot)
 	}
 
 	// Get character data
@@ -1309,21 +1330,20 @@ func (o *Orchestrator) EquipItem(ctx context.Context, input *EquipItemInput) (*E
 			break
 		}
 	}
-	
+
 	if !hasItem {
-		return nil, errors.NotFound("item not found in character inventory")
+		return nil, errors.NotFoundf("item %s not found in character inventory", input.ItemID)
 	}
 
-	// Convert slot name to repository format
-	slotName := equipmentSlotToString(input.Slot)
-	if slotName == "" {
-		return nil, errors.InvalidArgument("invalid equipment slot")
-	}
+	// Additional validation could be added here:
+	// - Check if item can be equipped to this slot (requires equipment database)
+	// - Check if character has prerequisites for this item
+	// - Check if item conflicts with other equipped items
 
 	// Set the equipment slot - this will return any previously equipped item
 	setSlotResult, err := o.charRepo.SetEquipmentSlot(ctx, character.SetEquipmentSlotInput{
 		CharacterID: input.CharacterID,
-		Slot:        slotName,
+		Slot:        slot.String(),
 		ItemID:      input.ItemID,
 	})
 	if err != nil {
@@ -1347,36 +1367,6 @@ func (o *Orchestrator) EquipItem(ctx context.Context, input *EquipItemInput) (*E
 	}
 
 	return output, nil
-}
-
-// equipmentSlotToString converts an equipment slot enum string to repository format
-func equipmentSlotToString(slot string) string {
-	switch slot {
-	case "EQUIPMENT_SLOT_MAIN_HAND":
-		return "main_hand"
-	case "EQUIPMENT_SLOT_OFF_HAND":
-		return "off_hand"
-	case "EQUIPMENT_SLOT_ARMOR":
-		return "armor"
-	case "EQUIPMENT_SLOT_HELMET":
-		return "helmet"
-	case "EQUIPMENT_SLOT_BOOTS":
-		return "boots"
-	case "EQUIPMENT_SLOT_GLOVES":
-		return "gloves"
-	case "EQUIPMENT_SLOT_CLOAK":
-		return "cloak"
-	case "EQUIPMENT_SLOT_AMULET":
-		return "amulet"
-	case "EQUIPMENT_SLOT_RING_1":
-		return "ring1"
-	case "EQUIPMENT_SLOT_RING_2":
-		return "ring2"
-	case "EQUIPMENT_SLOT_BELT":
-		return "belt"
-	default:
-		return ""
-	}
 }
 
 // convertToProtoDnd5eEquipmentSlots converts repository equipment slots to dnd5e format
@@ -1468,8 +1458,21 @@ func convertToProtoDnd5eEquipmentSlots(repoSlots *character.EquipmentSlots) *dnd
 }
 
 func (o *Orchestrator) UnequipItem(ctx context.Context, input *UnequipItemInput) (*UnequipItemOutput, error) {
-	if input == nil || input.CharacterID == "" || input.Slot == "" {
-		return nil, errors.InvalidArgument("character ID and slot are required")
+	// Validate input
+	if input == nil {
+		return nil, errors.InvalidArgument("input is required")
+	}
+	if input.CharacterID == "" {
+		return nil, errors.InvalidArgument("character ID is required")
+	}
+	if input.Slot == "" {
+		return nil, errors.InvalidArgument("equipment slot is required")
+	}
+
+	// Convert and validate proto slot name to domain type
+	slot, valid := equipment.EquipmentSlotFromProtoString(input.Slot)
+	if !valid {
+		return nil, errors.InvalidArgumentf("invalid equipment slot: %s", input.Slot)
 	}
 
 	// Get character data
@@ -1480,16 +1483,10 @@ func (o *Orchestrator) UnequipItem(ctx context.Context, input *UnequipItemInput)
 		return nil, err
 	}
 
-	// Convert slot name to repository format
-	slotName := equipmentSlotToString(input.Slot)
-	if slotName == "" {
-		return nil, errors.InvalidArgument("invalid equipment slot")
-	}
-
 	// Clear the equipment slot
 	_, err = o.charRepo.ClearEquipmentSlot(ctx, character.ClearEquipmentSlotInput{
 		CharacterID: input.CharacterID,
-		Slot:        slotName,
+		Slot:        slot.String(),
 	})
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to clear equipment slot")

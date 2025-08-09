@@ -14,10 +14,10 @@ import (
 )
 
 const (
-	characterKeyPrefix     = "character:"
-	playerIndexPrefix      = "character:player:"
-	sessionIndexPrefix     = "character:session:"
-	equipmentSlotsPrefix   = "character:equipment:"
+	characterKeyPrefix   = "character:"
+	playerIndexPrefix    = "character:player:"
+	sessionIndexPrefix   = "character:session:"
+	equipmentSlotsPrefix = "character:equipment:"
 
 	// Error messages
 	errCharacterNil     = "character cannot be nil"
@@ -351,7 +351,7 @@ func (r *redisRepository) GetEquipmentSlots(ctx context.Context, input GetEquipm
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to get equipment slots")
 	}
-	
+
 	slog.InfoContext(ctx, "Retrieved equipment slots from Redis",
 		"key", key,
 		"result", result,
