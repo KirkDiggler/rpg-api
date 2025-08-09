@@ -1210,17 +1210,74 @@ func (o *Orchestrator) GetCharacterInventory(ctx context.Context, input *GetChar
 		return nil, err
 	}
 
-	// For now, return basic equipment info from character data
-	// Equipment is stored as a simple []string in character.Data
-	equipmentSlots := &dnd5e.EquipmentSlots{}
+	// Get equipment slots
+	slotsResp, err := o.charRepo.GetEquipmentSlots(ctx, character.GetEquipmentSlotsInput{
+		CharacterID: input.CharacterID,
+	})
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to get equipment slots")
+	}
+
+	slog.InfoContext(ctx, "Retrieved equipment slots",
+		"character_id", input.CharacterID,
+		"armor", slotsResp.EquipmentSlots.Armor,
+		"main_hand", slotsResp.EquipmentSlots.MainHand)
+
+	// Convert repository equipment slots to dnd5e format
+	equipmentSlots := convertToProtoDnd5eEquipmentSlots(slotsResp.EquipmentSlots)
+
+	// Track which items are equipped
+	equippedItems := make(map[string]bool)
+	if slotsResp.EquipmentSlots.MainHand != "" {
+		equippedItems[slotsResp.EquipmentSlots.MainHand] = true
+	}
+	if slotsResp.EquipmentSlots.OffHand != "" {
+		equippedItems[slotsResp.EquipmentSlots.OffHand] = true
+	}
+	if slotsResp.EquipmentSlots.Armor != "" {
+		equippedItems[slotsResp.EquipmentSlots.Armor] = true
+	}
+	if slotsResp.EquipmentSlots.Shield != "" {
+		equippedItems[slotsResp.EquipmentSlots.Shield] = true
+	}
+	if slotsResp.EquipmentSlots.Ring1 != "" {
+		equippedItems[slotsResp.EquipmentSlots.Ring1] = true
+	}
+	if slotsResp.EquipmentSlots.Ring2 != "" {
+		equippedItems[slotsResp.EquipmentSlots.Ring2] = true
+	}
+	if slotsResp.EquipmentSlots.Amulet != "" {
+		equippedItems[slotsResp.EquipmentSlots.Amulet] = true
+	}
+	if slotsResp.EquipmentSlots.Boots != "" {
+		equippedItems[slotsResp.EquipmentSlots.Boots] = true
+	}
+	if slotsResp.EquipmentSlots.Gloves != "" {
+		equippedItems[slotsResp.EquipmentSlots.Gloves] = true
+	}
+	if slotsResp.EquipmentSlots.Helmet != "" {
+		equippedItems[slotsResp.EquipmentSlots.Helmet] = true
+	}
+	if slotsResp.EquipmentSlots.Belt != "" {
+		equippedItems[slotsResp.EquipmentSlots.Belt] = true
+	}
+	if slotsResp.EquipmentSlots.Cloak != "" {
+		equippedItems[slotsResp.EquipmentSlots.Cloak] = true
+	}
+
+	// Convert equipment list to inventory items, marking equipped status
 	inventory := []dnd5e.InventoryItem{}
-	
-	// Convert equipment list to inventory items
 	for _, itemName := range charResp.CharacterData.Equipment {
+		isEquipped := equippedItems[itemName]
+		slog.InfoContext(ctx, "Processing inventory item",
+			"item_name", itemName,
+			"is_equipped", isEquipped)
+		
 		inventory = append(inventory, dnd5e.InventoryItem{
 			ID:       itemName,
 			Name:     itemName,
 			Quantity: 1,
+			Equipped: isEquipped,
 		})
 	}
 
@@ -1244,10 +1301,6 @@ func (o *Orchestrator) EquipItem(ctx context.Context, input *EquipItemInput) (*E
 		return nil, err
 	}
 
-	// For minimal implementation: just mark item as equipped
-	// We're not actually removing from inventory or changing slots yet
-	// This is enough to demonstrate equipment for combat demo
-	
 	// Check if item exists in character's equipment list
 	hasItem := false
 	for _, item := range charResp.CharacterData.Equipment {
@@ -1261,12 +1314,157 @@ func (o *Orchestrator) EquipItem(ctx context.Context, input *EquipItemInput) (*E
 		return nil, errors.NotFound("item not found in character inventory")
 	}
 
-	// For now, just return success without actually tracking equipped state
-	// This is minimal for demo purposes
-	return &EquipItemOutput{
+	// Convert slot name to repository format
+	slotName := equipmentSlotToString(input.Slot)
+	if slotName == "" {
+		return nil, errors.InvalidArgument("invalid equipment slot")
+	}
+
+	// Set the equipment slot - this will return any previously equipped item
+	setSlotResult, err := o.charRepo.SetEquipmentSlot(ctx, character.SetEquipmentSlotInput{
+		CharacterID: input.CharacterID,
+		Slot:        slotName,
+		ItemID:      input.ItemID,
+	})
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to set equipment slot")
+	}
+
+	// Prepare output
+	output := &EquipItemOutput{
 		Success:   true,
 		Character: charResp.CharacterData,
-	}, nil
+	}
+
+	// If there was a previously equipped item, return it
+	if setSlotResult.PreviousItemID != "" {
+		output.PreviouslyEquippedItem = &dnd5e.InventoryItem{
+			ID:       setSlotResult.PreviousItemID,
+			Name:     setSlotResult.PreviousItemID, // Using ID as name for now
+			Quantity: 1,
+			Equipped: false,
+		}
+	}
+
+	return output, nil
+}
+
+// equipmentSlotToString converts an equipment slot enum string to repository format
+func equipmentSlotToString(slot string) string {
+	switch slot {
+	case "EQUIPMENT_SLOT_MAIN_HAND":
+		return "main_hand"
+	case "EQUIPMENT_SLOT_OFF_HAND":
+		return "off_hand"
+	case "EQUIPMENT_SLOT_ARMOR":
+		return "armor"
+	case "EQUIPMENT_SLOT_HELMET":
+		return "helmet"
+	case "EQUIPMENT_SLOT_BOOTS":
+		return "boots"
+	case "EQUIPMENT_SLOT_GLOVES":
+		return "gloves"
+	case "EQUIPMENT_SLOT_CLOAK":
+		return "cloak"
+	case "EQUIPMENT_SLOT_AMULET":
+		return "amulet"
+	case "EQUIPMENT_SLOT_RING_1":
+		return "ring1"
+	case "EQUIPMENT_SLOT_RING_2":
+		return "ring2"
+	case "EQUIPMENT_SLOT_BELT":
+		return "belt"
+	default:
+		return ""
+	}
+}
+
+// convertToProtoDnd5eEquipmentSlots converts repository equipment slots to dnd5e format
+func convertToProtoDnd5eEquipmentSlots(repoSlots *character.EquipmentSlots) *dnd5e.EquipmentSlots {
+	equipmentSlots := &dnd5e.EquipmentSlots{}
+
+	if repoSlots.MainHand != "" {
+		equipmentSlots.MainHand = &dnd5e.InventoryItem{
+			ID:       repoSlots.MainHand,
+			Name:     repoSlots.MainHand,
+			Quantity: 1,
+			Equipped: true,
+		}
+	}
+	if repoSlots.OffHand != "" {
+		equipmentSlots.OffHand = &dnd5e.InventoryItem{
+			ID:       repoSlots.OffHand,
+			Name:     repoSlots.OffHand,
+			Quantity: 1,
+			Equipped: true,
+		}
+	}
+	if repoSlots.Armor != "" {
+		equipmentSlots.Armor = &dnd5e.InventoryItem{
+			ID:       repoSlots.Armor,
+			Name:     repoSlots.Armor,
+			Quantity: 1,
+			Equipped: true,
+		}
+	}
+	if repoSlots.Helmet != "" {
+		equipmentSlots.Helm = &dnd5e.InventoryItem{
+			ID:       repoSlots.Helmet,
+			Name:     repoSlots.Helmet,
+			Quantity: 1,
+			Equipped: true,
+		}
+	}
+	if repoSlots.Gloves != "" {
+		equipmentSlots.Gloves = &dnd5e.InventoryItem{
+			ID:       repoSlots.Gloves,
+			Name:     repoSlots.Gloves,
+			Quantity: 1,
+			Equipped: true,
+		}
+	}
+	if repoSlots.Boots != "" {
+		equipmentSlots.Boots = &dnd5e.InventoryItem{
+			ID:       repoSlots.Boots,
+			Name:     repoSlots.Boots,
+			Quantity: 1,
+			Equipped: true,
+		}
+	}
+	if repoSlots.Ring1 != "" {
+		equipmentSlots.Ring1 = &dnd5e.InventoryItem{
+			ID:       repoSlots.Ring1,
+			Name:     repoSlots.Ring1,
+			Quantity: 1,
+			Equipped: true,
+		}
+	}
+	if repoSlots.Ring2 != "" {
+		equipmentSlots.Ring2 = &dnd5e.InventoryItem{
+			ID:       repoSlots.Ring2,
+			Name:     repoSlots.Ring2,
+			Quantity: 1,
+			Equipped: true,
+		}
+	}
+	if repoSlots.Cloak != "" {
+		equipmentSlots.Cloak = &dnd5e.InventoryItem{
+			ID:       repoSlots.Cloak,
+			Name:     repoSlots.Cloak,
+			Quantity: 1,
+			Equipped: true,
+		}
+	}
+	if repoSlots.Amulet != "" {
+		equipmentSlots.Amulet = &dnd5e.InventoryItem{
+			ID:       repoSlots.Amulet,
+			Name:     repoSlots.Amulet,
+			Quantity: 1,
+			Equipped: true,
+		}
+	}
+
+	return equipmentSlots
 }
 
 func (o *Orchestrator) UnequipItem(ctx context.Context, input *UnequipItemInput) (*UnequipItemOutput, error) {
@@ -1282,8 +1480,21 @@ func (o *Orchestrator) UnequipItem(ctx context.Context, input *UnequipItemInput)
 		return nil, err
 	}
 
-	// For minimal implementation: just return success
-	// We're not actually tracking equipped state yet
+	// Convert slot name to repository format
+	slotName := equipmentSlotToString(input.Slot)
+	if slotName == "" {
+		return nil, errors.InvalidArgument("invalid equipment slot")
+	}
+
+	// Clear the equipment slot
+	_, err = o.charRepo.ClearEquipmentSlot(ctx, character.ClearEquipmentSlotInput{
+		CharacterID: input.CharacterID,
+		Slot:        slotName,
+	})
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to clear equipment slot")
+	}
+
 	return &UnequipItemOutput{
 		Success:   true,
 		Character: charResp.CharacterData,

@@ -44,6 +44,23 @@ type Repository interface {
 	// Returns errors.InvalidArgument for empty/invalid session IDs
 	// Returns errors.Internal for storage failures
 	ListBySessionID(ctx context.Context, input ListBySessionIDInput) (*ListBySessionIDOutput, error)
+
+	// GetEquipmentSlots retrieves equipment slot assignments for a character
+	// Returns errors.InvalidArgument for empty/invalid character IDs
+	// Returns errors.NotFound if character doesn't exist
+	// Returns errors.Internal for storage failures
+	GetEquipmentSlots(ctx context.Context, input GetEquipmentSlotsInput) (*GetEquipmentSlotsOutput, error)
+
+	// SetEquipmentSlot sets an item to a specific equipment slot
+	// Returns errors.InvalidArgument for validation failures
+	// Returns errors.NotFound if character doesn't exist
+	// Returns errors.Internal for storage failures
+	SetEquipmentSlot(ctx context.Context, input SetEquipmentSlotInput) (*SetEquipmentSlotOutput, error)
+
+	// ClearEquipmentSlot clears a specific equipment slot
+	// Returns errors.InvalidArgument for empty/invalid parameters
+	// Returns errors.Internal for storage failures
+	ClearEquipmentSlot(ctx context.Context, input ClearEquipmentSlotInput) (*ClearEquipmentSlotOutput, error)
 }
 
 // CreateInput defines the input for creating a character
@@ -104,4 +121,53 @@ type ListBySessionIDInput struct {
 // ListBySessionIDOutput defines the output for listing characters by session
 type ListBySessionIDOutput struct {
 	Characters []*toolkitchar.Data
+}
+
+// EquipmentSlots represents the equipment slots for a character
+type EquipmentSlots struct {
+	MainHand    string `json:"main_hand,omitempty"`
+	OffHand     string `json:"off_hand,omitempty"`
+	Armor       string `json:"armor,omitempty"`
+	Shield      string `json:"shield,omitempty"`
+	Ring1       string `json:"ring1,omitempty"`
+	Ring2       string `json:"ring2,omitempty"`
+	Amulet      string `json:"amulet,omitempty"`
+	Boots       string `json:"boots,omitempty"`
+	Gloves      string `json:"gloves,omitempty"`
+	Helmet      string `json:"helmet,omitempty"`
+	Belt        string `json:"belt,omitempty"`
+	Cloak       string `json:"cloak,omitempty"`
+}
+
+// GetEquipmentSlotsInput defines the input for getting equipment slots
+type GetEquipmentSlotsInput struct {
+	CharacterID string
+}
+
+// GetEquipmentSlotsOutput defines the output for getting equipment slots
+type GetEquipmentSlotsOutput struct {
+	EquipmentSlots *EquipmentSlots
+}
+
+// SetEquipmentSlotInput defines the input for setting an equipment slot
+type SetEquipmentSlotInput struct {
+	CharacterID string
+	Slot        string
+	ItemID      string
+}
+
+// SetEquipmentSlotOutput defines the output for setting an equipment slot
+type SetEquipmentSlotOutput struct {
+	PreviousItemID string // Item that was previously in the slot, if any
+}
+
+// ClearEquipmentSlotInput defines the input for clearing an equipment slot
+type ClearEquipmentSlotInput struct {
+	CharacterID string
+	Slot        string
+}
+
+// ClearEquipmentSlotOutput defines the output for clearing an equipment slot
+type ClearEquipmentSlotOutput struct {
+	ClearedItemID string // Item that was cleared from the slot, if any
 }

@@ -13,9 +13,8 @@ import (
 	context "context"
 	reflect "reflect"
 
-	gomock "go.uber.org/mock/gomock"
-
 	character "github.com/KirkDiggler/rpg-api/internal/repositories/character"
+	gomock "go.uber.org/mock/gomock"
 )
 
 // MockRepository is a mock of Repository interface.
@@ -40,6 +39,21 @@ func NewMockRepository(ctrl *gomock.Controller) *MockRepository {
 // EXPECT returns an object that allows the caller to indicate expected use.
 func (m *MockRepository) EXPECT() *MockRepositoryMockRecorder {
 	return m.recorder
+}
+
+// ClearEquipmentSlot mocks base method.
+func (m *MockRepository) ClearEquipmentSlot(ctx context.Context, input character.ClearEquipmentSlotInput) (*character.ClearEquipmentSlotOutput, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ClearEquipmentSlot", ctx, input)
+	ret0, _ := ret[0].(*character.ClearEquipmentSlotOutput)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ClearEquipmentSlot indicates an expected call of ClearEquipmentSlot.
+func (mr *MockRepositoryMockRecorder) ClearEquipmentSlot(ctx, input any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ClearEquipmentSlot", reflect.TypeOf((*MockRepository)(nil).ClearEquipmentSlot), ctx, input)
 }
 
 // Create mocks base method.
@@ -87,6 +101,21 @@ func (mr *MockRepositoryMockRecorder) Get(ctx, input any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Get", reflect.TypeOf((*MockRepository)(nil).Get), ctx, input)
 }
 
+// GetEquipmentSlots mocks base method.
+func (m *MockRepository) GetEquipmentSlots(ctx context.Context, input character.GetEquipmentSlotsInput) (*character.GetEquipmentSlotsOutput, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetEquipmentSlots", ctx, input)
+	ret0, _ := ret[0].(*character.GetEquipmentSlotsOutput)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetEquipmentSlots indicates an expected call of GetEquipmentSlots.
+func (mr *MockRepositoryMockRecorder) GetEquipmentSlots(ctx, input any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetEquipmentSlots", reflect.TypeOf((*MockRepository)(nil).GetEquipmentSlots), ctx, input)
+}
+
 // ListByPlayerID mocks base method.
 func (m *MockRepository) ListByPlayerID(ctx context.Context, input character.ListByPlayerIDInput) (*character.ListByPlayerIDOutput, error) {
 	m.ctrl.T.Helper()
@@ -115,6 +144,21 @@ func (m *MockRepository) ListBySessionID(ctx context.Context, input character.Li
 func (mr *MockRepositoryMockRecorder) ListBySessionID(ctx, input any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListBySessionID", reflect.TypeOf((*MockRepository)(nil).ListBySessionID), ctx, input)
+}
+
+// SetEquipmentSlot mocks base method.
+func (m *MockRepository) SetEquipmentSlot(ctx context.Context, input character.SetEquipmentSlotInput) (*character.SetEquipmentSlotOutput, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SetEquipmentSlot", ctx, input)
+	ret0, _ := ret[0].(*character.SetEquipmentSlotOutput)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// SetEquipmentSlot indicates an expected call of SetEquipmentSlot.
+func (mr *MockRepositoryMockRecorder) SetEquipmentSlot(ctx, input any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetEquipmentSlot", reflect.TypeOf((*MockRepository)(nil).SetEquipmentSlot), ctx, input)
 }
 
 // Update mocks base method.

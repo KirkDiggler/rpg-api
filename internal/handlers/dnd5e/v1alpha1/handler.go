@@ -11,6 +11,7 @@ import (
 
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
 	"github.com/KirkDiggler/rpg-api/internal/clients/external"
+	"github.com/KirkDiggler/rpg-api/internal/entities/dnd5e"
 	"github.com/KirkDiggler/rpg-api/internal/errors"
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
@@ -715,7 +716,7 @@ func (h *Handler) GetCharacterInventory(
 
 	// Convert to proto response
 	response := &dnd5ev1alpha1.GetCharacterInventoryResponse{
-		EquipmentSlots: &dnd5ev1alpha1.EquipmentSlots{},
+		EquipmentSlots: convertEquipmentSlotsToProto(result.EquipmentSlots),
 		Inventory:      make([]*dnd5ev1alpha1.InventoryItem, 0),
 		Encumbrance: &dnd5ev1alpha1.EncumbranceInfo{
 			CurrentWeight:    0,
@@ -727,16 +728,112 @@ func (h *Handler) GetCharacterInventory(
 		AttunementSlotsMax:  3, // D&D 5e standard
 	}
 
-	// Convert inventory items
+	// Convert inventory items, separating equipped from unequipped
 	for _, item := range result.Inventory {
-		response.Inventory = append(response.Inventory, &dnd5ev1alpha1.InventoryItem{
-			ItemId:     item.ID,
-			Quantity:   item.Quantity,
-			CustomName: item.Name,
-		})
+		// If item is equipped, it should be in equipment slots and NOT in inventory
+		if !item.Equipped {
+			response.Inventory = append(response.Inventory, &dnd5ev1alpha1.InventoryItem{
+				ItemId:     item.ID,
+				Quantity:   item.Quantity,
+				CustomName: item.Name,
+			})
+		}
 	}
 
 	return response, nil
+}
+
+// convertEquipmentSlotsToProto converts dnd5e equipment slots to proto format
+func convertEquipmentSlotsToProto(equipmentSlots *dnd5e.EquipmentSlots) *dnd5ev1alpha1.EquipmentSlots {
+	if equipmentSlots == nil {
+		return &dnd5ev1alpha1.EquipmentSlots{}
+	}
+
+	protoSlots := &dnd5ev1alpha1.EquipmentSlots{}
+
+	if equipmentSlots.MainHand != nil {
+		protoSlots.MainHand = &dnd5ev1alpha1.InventoryItem{
+			ItemId:     equipmentSlots.MainHand.ID,
+			Quantity:   equipmentSlots.MainHand.Quantity,
+			CustomName: equipmentSlots.MainHand.Name,
+		}
+	}
+
+	if equipmentSlots.OffHand != nil {
+		protoSlots.OffHand = &dnd5ev1alpha1.InventoryItem{
+			ItemId:     equipmentSlots.OffHand.ID,
+			Quantity:   equipmentSlots.OffHand.Quantity,
+			CustomName: equipmentSlots.OffHand.Name,
+		}
+	}
+
+	if equipmentSlots.Armor != nil {
+		protoSlots.Armor = &dnd5ev1alpha1.InventoryItem{
+			ItemId:     equipmentSlots.Armor.ID,
+			Quantity:   equipmentSlots.Armor.Quantity,
+			CustomName: equipmentSlots.Armor.Name,
+		}
+	}
+
+	// TODO: Fix proto field names for Helm
+	// if equipmentSlots.Helm != nil {
+	// 	protoSlots.Helm = &dnd5ev1alpha1.InventoryItem{
+	// 		ItemId:     equipmentSlots.Helm.ID,
+	// 		Quantity:   equipmentSlots.Helm.Quantity,
+	// 		CustomName: equipmentSlots.Helm.Name,
+	// 	}
+	// }
+
+	if equipmentSlots.Gloves != nil {
+		protoSlots.Gloves = &dnd5ev1alpha1.InventoryItem{
+			ItemId:     equipmentSlots.Gloves.ID,
+			Quantity:   equipmentSlots.Gloves.Quantity,
+			CustomName: equipmentSlots.Gloves.Name,
+		}
+	}
+
+	if equipmentSlots.Boots != nil {
+		protoSlots.Boots = &dnd5ev1alpha1.InventoryItem{
+			ItemId:     equipmentSlots.Boots.ID,
+			Quantity:   equipmentSlots.Boots.Quantity,
+			CustomName: equipmentSlots.Boots.Name,
+		}
+	}
+
+	// TODO: Fix proto field names for Ring1 and Ring2
+	// if equipmentSlots.Ring1 != nil {
+	// 	protoSlots.Ring1 = &dnd5ev1alpha1.InventoryItem{
+	// 		ItemId:     equipmentSlots.Ring1.ID,
+	// 		Quantity:   equipmentSlots.Ring1.Quantity,
+	// 		CustomName: equipmentSlots.Ring1.Name,
+	// 	}
+	// }
+
+	// if equipmentSlots.Ring2 != nil {
+	// 	protoSlots.Ring2 = &dnd5ev1alpha1.InventoryItem{
+	// 		ItemId:     equipmentSlots.Ring2.ID,
+	// 		Quantity:   equipmentSlots.Ring2.Quantity,
+	// 		CustomName: equipmentSlots.Ring2.Name,
+	// 	}
+	// }
+
+	if equipmentSlots.Cloak != nil {
+		protoSlots.Cloak = &dnd5ev1alpha1.InventoryItem{
+			ItemId:     equipmentSlots.Cloak.ID,
+			Quantity:   equipmentSlots.Cloak.Quantity,
+			CustomName: equipmentSlots.Cloak.Name,
+		}
+	}
+
+	if equipmentSlots.Amulet != nil {
+		protoSlots.Amulet = &dnd5ev1alpha1.InventoryItem{
+			ItemId:     equipmentSlots.Amulet.ID,
+			Quantity:   equipmentSlots.Amulet.Quantity,
+			CustomName: equipmentSlots.Amulet.Name,
+		}
+	}
+
+	return protoSlots
 }
 
 // EquipItem equips an item
