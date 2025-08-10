@@ -5,24 +5,35 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/suite"
+	"go.uber.org/mock/gomock"
 
+	"github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
+	charactermock "github.com/KirkDiggler/rpg-api/internal/orchestrators/character/mock"
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/encounter"
 	"github.com/KirkDiggler/rpg-api/internal/pkg/idgen"
 	"github.com/KirkDiggler/rpg-api/internal/repositories/encounters"
+	chardata "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/constants"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
 )
 
 type OrchestratorTestSuite struct {
 	suite.Suite
-	orchestrator encounter.Service
-	idGen        idgen.Generator
+	orchestrator    encounter.Service
+	idGen           idgen.Generator
+	mockCharService *charactermock.MockService
+	mockCtrl        *gomock.Controller
 }
 
 func (s *OrchestratorTestSuite) SetupTest() {
 	s.idGen = idgen.NewSequential("test")
+	s.mockCtrl = gomock.NewController(s.T())
+	s.mockCharService = charactermock.NewMockService(s.mockCtrl)
 
 	cfg := &encounter.Config{
-		IDGenerator: s.idGen,
-		Repository:  encounters.NewInMemory(),
+		IDGenerator:      s.idGen,
+		Repository:       encounters.NewInMemory(),
+		CharacterService: s.mockCharService,
 	}
 
 	var err error
@@ -30,11 +41,44 @@ func (s *OrchestratorTestSuite) SetupTest() {
 	s.Require().NoError(err)
 }
 
+func (s *OrchestratorTestSuite) TearDownTest() {
+	s.mockCtrl.Finish()
+}
+
 func (s *OrchestratorTestSuite) TestDungeonStart_WithInitiative() {
 	// Arrange
 	input := &encounter.DungeonStartInput{
 		CharacterIDs: []string{"fighter-123", "wizard-456", "rogue-789"},
 	}
+
+	// Mock character service to return characters with different DEX scores
+	fighterChar := &chardata.Data{
+		ID:            "fighter-123",
+		Name:          "Fighter",
+		AbilityScores: shared.AbilityScores{constants.DEX: 14}, // +2 modifier
+	}
+	wizardChar := &chardata.Data{
+		ID:            "wizard-456",
+		Name:          "Wizard",
+		AbilityScores: shared.AbilityScores{constants.DEX: 10}, // +0 modifier
+	}
+	rogueChar := &chardata.Data{
+		ID:            "rogue-789",
+		Name:          "Rogue",
+		AbilityScores: shared.AbilityScores{constants.DEX: 18}, // +4 modifier
+	}
+
+	s.mockCharService.EXPECT().GetCharacter(gomock.Any(), &character.GetCharacterInput{
+		CharacterID: "fighter-123",
+	}).Return(&character.GetCharacterOutput{Character: fighterChar}, nil)
+
+	s.mockCharService.EXPECT().GetCharacter(gomock.Any(), &character.GetCharacterInput{
+		CharacterID: "wizard-456",
+	}).Return(&character.GetCharacterOutput{Character: wizardChar}, nil)
+
+	s.mockCharService.EXPECT().GetCharacter(gomock.Any(), &character.GetCharacterInput{
+		CharacterID: "rogue-789",
+	}).Return(&character.GetCharacterOutput{Character: rogueChar}, nil)
 
 	// Act
 	output, err := s.orchestrator.DungeonStart(context.Background(), input)
@@ -63,10 +107,43 @@ func (s *OrchestratorTestSuite) TestDungeonStart_WithInitiative() {
 
 	// Should start at round 1
 	s.Equal(1, output.InitiativeData.Round)
-	s.Equal(0, output.InitiativeData.Current, "Should start at index 0")
+
+	// Current index should match the current turn entity
+	// (might not be 0 if monster went first and was auto-skipped)
+	currentEntity := ""
+	for i, entity := range output.InitiativeData.Order {
+		if entity.ID == output.CurrentTurn {
+			s.Equal(i, output.InitiativeData.Current, "Current index should match current turn entity")
+			currentEntity = entity.Type
+			break
+		}
+	}
+
+	// Current turn should always be a character (not a monster)
+	s.Equal("character", currentEntity, "Current turn should be a character after auto-advancing")
 }
 
 func (s *OrchestratorTestSuite) TestNextTurn() {
+	// Setup character mocks
+	fighterChar := &chardata.Data{
+		ID:            "fighter-123",
+		Name:          "Fighter",
+		AbilityScores: shared.AbilityScores{constants.DEX: 14},
+	}
+	wizardChar := &chardata.Data{
+		ID:            "wizard-456",
+		Name:          "Wizard",
+		AbilityScores: shared.AbilityScores{constants.DEX: 10},
+	}
+
+	s.mockCharService.EXPECT().GetCharacter(gomock.Any(), &character.GetCharacterInput{
+		CharacterID: "fighter-123",
+	}).Return(&character.GetCharacterOutput{Character: fighterChar}, nil)
+
+	s.mockCharService.EXPECT().GetCharacter(gomock.Any(), &character.GetCharacterInput{
+		CharacterID: "wizard-456",
+	}).Return(&character.GetCharacterOutput{Character: wizardChar}, nil)
+
 	// First create an encounter
 	startInput := &encounter.DungeonStartInput{
 		CharacterIDs: []string{"fighter-123", "wizard-456"},
@@ -102,6 +179,17 @@ func (s *OrchestratorTestSuite) TestNextTurn() {
 }
 
 func (s *OrchestratorTestSuite) TestGetTurnOrder() {
+	// Setup character mock
+	fighterChar := &chardata.Data{
+		ID:            "fighter-123",
+		Name:          "Fighter",
+		AbilityScores: shared.AbilityScores{constants.DEX: 14},
+	}
+
+	s.mockCharService.EXPECT().GetCharacter(gomock.Any(), &character.GetCharacterInput{
+		CharacterID: "fighter-123",
+	}).Return(&character.GetCharacterOutput{Character: fighterChar}, nil)
+
 	// Create an encounter
 	startInput := &encounter.DungeonStartInput{
 		CharacterIDs: []string{"fighter-123"},
@@ -147,6 +235,37 @@ func (s *OrchestratorTestSuite) TestGetTurnOrder_EncounterNotFound() {
 	s.Error(err)
 	s.Nil(output)
 	s.Contains(err.Error(), "not found")
+}
+
+func (s *OrchestratorTestSuite) TestDungeonStart_CharacterServiceError() {
+	// Setup - character service returns error for one character
+	fighterChar := &chardata.Data{
+		ID:            "fighter-123",
+		Name:          "Fighter",
+		AbilityScores: shared.AbilityScores{constants.DEX: 14},
+	}
+
+	s.mockCharService.EXPECT().GetCharacter(gomock.Any(), &character.GetCharacterInput{
+		CharacterID: "fighter-123",
+	}).Return(&character.GetCharacterOutput{Character: fighterChar}, nil)
+
+	// This character fails to load
+	s.mockCharService.EXPECT().GetCharacter(gomock.Any(), &character.GetCharacterInput{
+		CharacterID: "wizard-456",
+	}).Return(nil, context.DeadlineExceeded)
+
+	// Arrange
+	input := &encounter.DungeonStartInput{
+		CharacterIDs: []string{"fighter-123", "wizard-456"},
+	}
+
+	// Act
+	output, err := s.orchestrator.DungeonStart(context.Background(), input)
+
+	// Assert - should still succeed but use default DEX modifier for wizard
+	s.Require().NoError(err)
+	s.Require().NotNil(output)
+	s.Len(output.InitiativeData.Order, 3, "Should have 2 characters + 1 monster even if one character failed to load")
 }
 
 func TestOrchestratorSuite(t *testing.T) {

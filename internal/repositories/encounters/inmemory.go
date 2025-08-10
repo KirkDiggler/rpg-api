@@ -34,9 +34,10 @@ func (r *InMemoryRepository) Save(ctx context.Context, input *SaveInput) (*SaveO
 	defer r.mu.Unlock()
 
 	r.store[input.EncounterID] = &EncounterData{
-		ID:             input.EncounterID,
-		RoomData:       input.RoomData,
-		InitiativeData: input.InitiativeData,
+		ID:              input.EncounterID,
+		RoomData:        input.RoomData,
+		InitiativeData:  input.InitiativeData,
+		InitiativeRolls: input.InitiativeRolls,
 	}
 
 	return &SaveOutput{Success: true}, nil
@@ -63,9 +64,10 @@ func (r *InMemoryRepository) Get(ctx context.Context, input *GetInput) (*GetOutp
 	// Return a copy to prevent external modification
 	return &GetOutput{
 		Data: &EncounterData{
-			ID:             data.ID,
-			RoomData:       data.RoomData,
-			InitiativeData: data.InitiativeData,
+			ID:              data.ID,
+			RoomData:        data.RoomData,
+			InitiativeData:  data.InitiativeData,
+			InitiativeRolls: data.InitiativeRolls,
 		},
 	}, nil
 }
@@ -91,6 +93,9 @@ func (r *InMemoryRepository) Update(ctx context.Context, input *UpdateInput) (*U
 	// Update only what's provided
 	if input.InitiativeData != nil {
 		data.InitiativeData = input.InitiativeData
+	}
+	if input.RoomData != nil {
+		data.RoomData = input.RoomData
 	}
 
 	return &UpdateOutput{Success: true}, nil

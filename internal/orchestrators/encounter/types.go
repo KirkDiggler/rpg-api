@@ -7,15 +7,18 @@ import (
 
 // DungeonStartInput defines the request for starting a dungeon encounter
 type DungeonStartInput struct {
-	CharacterIDs []string
+	CharacterIDs       []string
+	MonsterDexModifier *int          // Optional DEX modifier for the demo monster
+	RoomTemplate       *RoomTemplate // Optional room template (defaults to random)
 }
 
 // DungeonStartOutput defines the response for starting a dungeon encounter
 type DungeonStartOutput struct {
-	EncounterID    string
-	RoomData       *spatial.RoomData
-	InitiativeData *initiative.TrackerData // Turn order for the encounter
-	CurrentTurn    string                  // ID of whose turn it is
+	EncounterID     string
+	RoomData        *spatial.RoomData
+	InitiativeData  *initiative.TrackerData // Turn order for the encounter
+	InitiativeRolls []initiative.Roll       // Details of what was rolled
+	CurrentTurn     string                  // ID of whose turn it is
 }
 
 // Note: All spatial types (Position, EntityPlacement, RoomData) are now provided
@@ -39,6 +42,24 @@ type GetTurnOrderInput struct {
 
 // GetTurnOrderOutput defines the response for getting current turn order
 type GetTurnOrderOutput struct {
-	InitiativeData *initiative.TrackerData
-	CurrentTurn    string // ID of whose turn it is
+	InitiativeData  *initiative.TrackerData
+	InitiativeRolls []initiative.Roll // Details of what was rolled
+	CurrentTurn     string            // ID of whose turn it is
+}
+
+// MoveCharacterInput defines the request for moving a character
+type MoveCharacterInput struct {
+	EncounterID    string
+	EntityID       string
+	TargetPosition spatial.Position
+}
+
+// MoveCharacterOutput defines the response for moving a character
+type MoveCharacterOutput struct {
+	Success      bool
+	MovementUsed int              // How much movement was used
+	MovementLeft int              // How much movement remains
+	NewPosition  spatial.Position
+	CurrentRound int
+	RoomData     *spatial.RoomData // Updated room state after movement
 }
