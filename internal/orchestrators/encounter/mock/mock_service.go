@@ -72,6 +72,21 @@ func (mr *MockServiceMockRecorder) GetTurnOrder(ctx, input any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetTurnOrder", reflect.TypeOf((*MockService)(nil).GetTurnOrder), ctx, input)
 }
 
+// MoveCharacter mocks base method.
+func (m *MockService) MoveCharacter(ctx context.Context, input *encounter.MoveCharacterInput) (*encounter.MoveCharacterOutput, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "MoveCharacter", ctx, input)
+	ret0, _ := ret[0].(*encounter.MoveCharacterOutput)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// MoveCharacter indicates an expected call of MoveCharacter.
+func (mr *MockServiceMockRecorder) MoveCharacter(ctx, input any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "MoveCharacter", reflect.TypeOf((*MockService)(nil).MoveCharacter), ctx, input)
+}
+
 // NextTurn mocks base method.
 func (m *MockService) NextTurn(ctx context.Context, input *encounter.NextTurnInput) (*encounter.NextTurnOutput, error) {
 	m.ctrl.T.Helper()

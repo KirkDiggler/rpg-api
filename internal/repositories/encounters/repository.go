@@ -26,16 +26,18 @@ type Repository interface {
 
 // EncounterData represents the persistent state of an encounter
 type EncounterData struct {
-	ID             string
-	RoomData       *spatial.RoomData
-	InitiativeData *initiative.TrackerData
+	ID              string
+	RoomData        *spatial.RoomData
+	InitiativeData  *initiative.TrackerData
+	InitiativeRolls []initiative.Roll // Store what was rolled for each entity
 }
 
 // SaveInput defines the request for saving an encounter
 type SaveInput struct {
-	EncounterID    string
-	RoomData       *spatial.RoomData
-	InitiativeData *initiative.TrackerData
+	EncounterID     string
+	RoomData        *spatial.RoomData
+	InitiativeData  *initiative.TrackerData
+	InitiativeRolls []initiative.Roll
 }
 
 // SaveOutput defines the response for saving an encounter
@@ -56,7 +58,8 @@ type GetOutput struct {
 // UpdateInput defines the request for updating an encounter
 type UpdateInput struct {
 	EncounterID    string
-	InitiativeData *initiative.TrackerData // Usually what changes during encounter
+	InitiativeData *initiative.TrackerData // Turn order changes
+	RoomData       *spatial.RoomData       // Position changes
 }
 
 // UpdateOutput defines the response for updating an encounter

@@ -6,7 +6,7 @@ require (
 	github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20250809033201-90369c75f89e
 	github.com/KirkDiggler/rpg-toolkit/core v0.1.0
 	github.com/KirkDiggler/rpg-toolkit/dice v0.1.1-0.20250807211656-0f8ebffb7bf0
-	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.0.0-20250808170234-99951419a515
+	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.0.0-20250810201515-7c1859f6891a
 	github.com/KirkDiggler/rpg-toolkit/tools/spatial v0.0.0-20250806233332-5f6ef70ac259
 	github.com/fadedpez/dnd5e-api v0.0.0-20250718210231-523223e548d1
 	github.com/google/uuid v1.6.0
@@ -21,7 +21,6 @@ require (
 require (
 	github.com/KirkDiggler/rpg-toolkit/events v0.1.1 // indirect
 	github.com/KirkDiggler/rpg-toolkit/game v0.1.0 // indirect
-	github.com/alicebob/miniredis/v2 v2.35.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
@@ -29,7 +28,6 @@ require (
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/spf13/pflag v1.0.6 // indirect
 	github.com/stretchr/objx v0.5.2 // indirect
-	github.com/yuin/gopher-lua v1.1.1 // indirect
 	golang.org/x/net v0.42.0 // indirect
 	golang.org/x/sys v0.34.0 // indirect
 	golang.org/x/text v0.27.0 // indirect

@@ -2,6 +2,7 @@ package v1alpha1
 
 import (
 	"context"
+	"log/slog"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -67,6 +68,7 @@ func (h *EncounterHandler) DungeonStart(
 	protoCombatState := convertInitiativeDataToProto(
 		output.EncounterID,
 		output.InitiativeData,
+		output.InitiativeRolls,
 		output.CurrentTurn,
 	)
 
@@ -126,23 +128,39 @@ func convertRoomDataToProto(roomData *spatial.RoomData) *dnd5ev1alpha1.Room {
 func convertInitiativeDataToProto(
 	encounterID string,
 	initiativeData *initiative.TrackerData,
+	initiativeRolls []initiative.Roll,
 	currentTurn string,
 ) *dnd5ev1alpha1.CombatState {
 	if initiativeData == nil {
 		return nil
 	}
 
-	// Convert turn order
+	// Create a map from entity ID to roll data for quick lookup
+	rollsByID := make(map[string]initiative.Roll)
+	for _, roll := range initiativeRolls {
+		rollsByID[roll.Entity.GetID()] = roll
+	}
+
+	// Convert turn order with actual initiative values
 	var turnOrder []*dnd5ev1alpha1.InitiativeEntry
 	for _, entity := range initiativeData.Order {
-		turnOrder = append(turnOrder, &dnd5ev1alpha1.InitiativeEntry{
+		entry := &dnd5ev1alpha1.InitiativeEntry{
 			EntityId:   entity.ID,
 			EntityType: entity.Type,
-			// TODO: Get actual initiative values and modifiers from combat data
-			Initiative: 10, // Placeholder
-			Modifier:   0,  // Placeholder
 			HasActed:   false,
-		})
+		}
+
+		// Set actual initiative values if we have them
+		if roll, ok := rollsByID[entity.ID]; ok {
+			entry.Initiative = int32(roll.Total)
+			entry.Modifier = int32(roll.Modifier)
+		} else {
+			// Fallback values if we don't have roll data
+			entry.Initiative = 10
+			entry.Modifier = 0
+		}
+
+		turnOrder = append(turnOrder, entry)
 	}
 
 	// Create current turn state
@@ -185,9 +203,66 @@ func (h *EncounterHandler) MoveCharacter(
 	ctx context.Context,
 	req *dnd5ev1alpha1.MoveCharacterRequest,
 ) (*dnd5ev1alpha1.MoveCharacterResponse, error) {
-	// For now, return unimplemented
-	// Movement will be implemented after basic display works
-	return nil, status.Error(codes.Unimplemented, "MoveCharacter not yet implemented")
+	// Validate request
+	if req.GetEncounterId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "encounter_id is required")
+	}
+	if req.GetEntityId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "entity_id is required")
+	}
+	if req.GetTargetPosition() == nil {
+		return nil, status.Error(codes.InvalidArgument, "target_position is required")
+	}
+
+	// Call orchestrator
+	moveInput := &encounter.MoveCharacterInput{
+		EncounterID: req.GetEncounterId(),
+		EntityID:    req.GetEntityId(),
+		TargetPosition: spatial.Position{
+			X: req.GetTargetPosition().GetX(),
+			Y: req.GetTargetPosition().GetY(),
+		},
+	}
+
+	moveOutput, err := h.encounterService.MoveCharacter(ctx, moveInput)
+	if err != nil {
+		// Convert specific errors to appropriate gRPC codes
+		if errors.IsInvalidArgument(err) {
+			return nil, status.Error(codes.InvalidArgument, err.Error())
+		}
+		if errors.IsNotFound(err) {
+			return nil, status.Error(codes.NotFound, err.Error())
+		}
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	// Convert updated room data to proto
+	var updatedRoom *dnd5ev1alpha1.Room
+	if moveOutput.RoomData != nil {
+		updatedRoom = convertRoomDataToProto(moveOutput.RoomData)
+		slog.Info("Converted room data to proto",
+			"room_id", updatedRoom.GetId(),
+			"entities_count", len(updatedRoom.GetEntities()),
+		)
+	} else {
+		slog.Warn("No room data in move output")
+	}
+
+	// Return response with movement details and updated room
+	resp := &dnd5ev1alpha1.MoveCharacterResponse{
+		Success:           moveOutput.Success,
+		MovementRemaining: int32(moveOutput.MovementLeft),
+		UpdatedRoom:       updatedRoom,
+		// CombatState could be populated here if needed for turn state updates
+	}
+	
+	slog.Info("Returning MoveCharacterResponse",
+		"success", resp.Success,
+		"movement_remaining", resp.MovementRemaining,
+		"has_updated_room", resp.UpdatedRoom != nil,
+	)
+	
+	return resp, nil
 }
 
 // EndTurn advances to the next turn
@@ -224,6 +299,7 @@ func (h *EncounterHandler) EndTurn(
 	protoCombatState := convertInitiativeDataToProto(
 		req.GetEncounterId(),
 		turnOrderOutput.InitiativeData,
+		turnOrderOutput.InitiativeRolls,
 		nextTurnOutput.CurrentTurn,
 	)
 
