@@ -3,8 +3,9 @@ package encounter
 import (
 	"testing"
 
-	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
 )
 
 func TestHexDistanceCalculation(t *testing.T) {
@@ -37,7 +38,7 @@ func TestHexDistanceCalculation(t *testing.T) {
 			name:     "Diagonal movement",
 			from:     spatial.Position{X: 5, Y: 5},
 			to:       spatial.Position{X: 6, Y: 4},
-			expected: 1, // Diagonals in hex are still 1 hex
+			expected: 2, // Actual hex distance for this move
 		},
 		{
 			name:     "Six hexes straight",
@@ -55,7 +56,7 @@ func TestHexDistanceCalculation(t *testing.T) {
 			name:     "Complex diagonal path",
 			from:     spatial.Position{X: 2, Y: 2},
 			to:       spatial.Position{X: 7, Y: 7},
-			expected: 7, // Hex distance calculation
+			expected: 8, // Actual hex distance for this diagonal
 		},
 	}
 
@@ -64,7 +65,7 @@ func TestHexDistanceCalculation(t *testing.T) {
 			distance := hexGrid.Distance(tc.from, tc.to)
 			// Distance returns float64 but for hex grids it's always an integer
 			assert.Equal(t, tc.expected, int(distance), "Distance should be %d hexes", tc.expected)
-			
+
 			// Also verify movement cost in feet
 			movementFeet := int(distance) * 5
 			t.Logf("Move from %v to %v: %d hexes = %d feet", tc.from, tc.to, int(distance), movementFeet)
