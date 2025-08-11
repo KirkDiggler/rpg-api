@@ -52,7 +52,7 @@ func (h *EncounterHandler) DungeonStart(
 ) (*dnd5ev1alpha1.DungeonStartResponse, error) {
 	// Create input for orchestrator
 	input := &encounter.DungeonStartInput{
-		CharacterIDs: req.GetCharacterIds(),
+		CharacterIDs: req.CharacterIds,
 	}
 
 	// Call orchestrator
@@ -204,23 +204,23 @@ func (h *EncounterHandler) MoveCharacter(
 	req *dnd5ev1alpha1.MoveCharacterRequest,
 ) (*dnd5ev1alpha1.MoveCharacterResponse, error) {
 	// Validate request
-	if req.GetEncounterId() == "" {
+	if req.EncounterId == "" {
 		return nil, status.Error(codes.InvalidArgument, "encounter_id is required")
 	}
-	if req.GetEntityId() == "" {
+	if req.EntityId == "" {
 		return nil, status.Error(codes.InvalidArgument, "entity_id is required")
 	}
-	if req.GetTargetPosition() == nil {
+	if req.TargetPosition == nil {
 		return nil, status.Error(codes.InvalidArgument, "target_position is required")
 	}
 
 	// Call orchestrator
 	moveInput := &encounter.MoveCharacterInput{
-		EncounterID: req.GetEncounterId(),
-		EntityID:    req.GetEntityId(),
+		EncounterID: req.EncounterId,
+		EntityID:    req.EntityId,
 		TargetPosition: spatial.Position{
-			X: req.GetTargetPosition().GetX(),
-			Y: req.GetTargetPosition().GetY(),
+			X: req.TargetPosition.X,
+			Y: req.TargetPosition.Y,
 		},
 	}
 
@@ -271,13 +271,13 @@ func (h *EncounterHandler) EndTurn(
 	req *dnd5ev1alpha1.EndTurnRequest,
 ) (*dnd5ev1alpha1.EndTurnResponse, error) {
 	// Validate request
-	if req.GetEncounterId() == "" {
+	if req.EncounterId == "" {
 		return nil, status.Error(codes.InvalidArgument, "encounter_id is required")
 	}
 
 	// Call orchestrator to advance turn
 	nextTurnInput := &encounter.NextTurnInput{
-		EncounterID: req.GetEncounterId(),
+		EncounterID: req.EncounterId,
 	}
 
 	nextTurnOutput, err := h.encounterService.NextTurn(ctx, nextTurnInput)
@@ -287,7 +287,7 @@ func (h *EncounterHandler) EndTurn(
 
 	// Get updated turn order to return full state
 	turnOrderInput := &encounter.GetTurnOrderInput{
-		EncounterID: req.GetEncounterId(),
+		EncounterID: req.EncounterId,
 	}
 
 	turnOrderOutput, err := h.encounterService.GetTurnOrder(ctx, turnOrderInput)
@@ -297,7 +297,7 @@ func (h *EncounterHandler) EndTurn(
 
 	// Convert to proto CombatState
 	protoCombatState := convertInitiativeDataToProto(
-		req.GetEncounterId(),
+		req.EncounterId,
 		turnOrderOutput.InitiativeData,
 		turnOrderOutput.InitiativeRolls,
 		nextTurnOutput.CurrentTurn,
@@ -316,22 +316,22 @@ func (h *EncounterHandler) Attack(
 	req *dnd5ev1alpha1.AttackRequest,
 ) (*dnd5ev1alpha1.AttackResponse, error) {
 	// Validate request
-	if req.GetEncounterId() == "" {
+	if req.EncounterId == "" {
 		return nil, status.Error(codes.InvalidArgument, "encounter_id is required")
 	}
-	if req.GetAttackerId() == "" {
+	if req.AttackerId == "" {
 		return nil, status.Error(codes.InvalidArgument, "attacker_id is required")
 	}
-	if req.GetTargetId() == "" {
+	if req.TargetId == "" {
 		return nil, status.Error(codes.InvalidArgument, "target_id is required")
 	}
 
 	// Call orchestrator (attack type defaults to melee in orchestrator)
 	attackInput := &encounter.AttackInput{
-		EncounterID: req.GetEncounterId(),
-		AttackerID:  req.GetAttackerId(),
-		TargetID:    req.GetTargetId(),
-		WeaponID:    req.GetWeaponId(),
+		EncounterID: req.EncounterId,
+		AttackerID:  req.AttackerId,
+		TargetID:    req.TargetId,
+		WeaponID:    req.WeaponId,
 		AttackType:  "melee", // Default for now, proto doesn't have attack type yet
 	}
 
@@ -376,8 +376,8 @@ func (h *EncounterHandler) Attack(
 	}
 
 	slog.Info("Attack processed",
-		"attacker", req.GetAttackerId(),
-		"target", req.GetTargetId(),
+		"attacker", req.AttackerId,
+		"target", req.TargetId,
 		"hit", attackOutput.Hit,
 		"damage", attackOutput.Damage,
 		"target_hp", attackOutput.TargetNewHP,
