@@ -12,6 +12,7 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
 	"github.com/KirkDiggler/rpg-api/internal/pkg/idgen"
 	"github.com/KirkDiggler/rpg-api/internal/repositories/encounters"
+	"github.com/KirkDiggler/rpg-api/internal/toolkit/combat"
 	"github.com/KirkDiggler/rpg-toolkit/core"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/constants"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/initiative"
@@ -31,6 +32,9 @@ type Service interface {
 
 	// MoveCharacter moves a character to a new position
 	MoveCharacter(ctx context.Context, input *MoveCharacterInput) (*MoveCharacterOutput, error)
+
+	// Attack performs an attack from one entity to another
+	Attack(ctx context.Context, input *AttackInput) (*AttackOutput, error)
 }
 
 // Config holds the dependencies for the encounter orchestrator
@@ -63,6 +67,7 @@ type orchestrator struct {
 	idGen            idgen.Generator
 	repo             encounters.Repository
 	characterService character.Service
+	combatResolver   *combat.CombatResolver
 }
 
 // simpleEntity implements core.Entity for demo purposes
@@ -89,6 +94,7 @@ func NewOrchestrator(cfg *Config) (Service, error) {
 		idGen:            cfg.IDGenerator,
 		repo:             cfg.Repository,
 		characterService: cfg.CharacterService,
+		combatResolver:   combat.NewCombatResolver(),
 	}, nil
 }
 
@@ -527,5 +533,149 @@ func (o *orchestrator) MoveCharacter(ctx context.Context, input *MoveCharacterIn
 		NewPosition:  input.TargetPosition,
 		CurrentRound: tracker.Round(),
 		RoomData:     &updatedRoomData,
+	}, nil
+}
+
+// Attack performs an attack from one entity to another
+func (o *orchestrator) Attack(ctx context.Context, input *AttackInput) (*AttackOutput, error) {
+	// Validate input
+	if input.EncounterID == "" {
+		return nil, errors.InvalidArgument("encounter ID is required")
+	}
+	if input.AttackerID == "" {
+		return nil, errors.InvalidArgument("attacker ID is required")
+	}
+	if input.TargetID == "" {
+		return nil, errors.InvalidArgument("target ID is required")
+	}
+
+	// Get the encounter
+	getInput := &encounters.GetInput{
+		EncounterID: input.EncounterID,
+	}
+	getOutput, err := o.repo.Get(ctx, getInput)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to get encounter")
+	}
+	if getOutput == nil || getOutput.Data == nil {
+		return nil, errors.NotFound("encounter not found")
+	}
+
+	// Reconstruct the initiative tracker from stored data
+	if getOutput.Data.InitiativeData == nil {
+		return nil, errors.Internal("encounter has no initiative data")
+	}
+
+	tracker := initiative.LoadFromData(*getOutput.Data.InitiativeData)
+
+	// Check it's the attacker's turn
+	currentEntity := tracker.Current()
+	if currentEntity == nil || currentEntity.GetID() != input.AttackerID {
+		return nil, errors.InvalidArgument("it's not the attacker's turn")
+	}
+
+	// Create entities for the event system
+	attacker := &simpleEntity{id: input.AttackerID, entityType: "character"}
+	defender := &simpleEntity{id: input.TargetID, entityType: "character"}
+
+	// For demo, set up some basic combat stats
+	// In a real implementation, these would come from character data
+	attackBonus := 5        // Proficiency + STR/DEX modifier
+	targetAC := 15          // Target's armor class
+	weaponDamage := "1d8+3" // Longsword damage
+	damageType := "slashing"
+
+	// Special handling for the monster
+	if input.AttackerID == "monster-001" {
+		attackBonus = 3
+		weaponDamage = "1d6+1"
+		damageType = "piercing"
+		attacker.entityType = "monster"
+	}
+	if input.TargetID == "monster-001" {
+		targetAC = 13
+		defender.entityType = "monster"
+	}
+
+	// Set up conditions for demo
+	// Example: The first character has Bless
+	if input.AttackerID == "char_001" {
+		bless := combat.NewBlessCondition(input.AttackerID)
+		o.combatResolver.RegisterCondition(bless)
+	}
+
+	// Resolve the attack through the event system
+	result, err := o.combatResolver.ResolveAttack(
+		ctx,
+		attacker,
+		defender,
+		attackBonus,
+		targetAC,
+		weaponDamage,
+		damageType,
+	)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to resolve attack")
+	}
+
+	// Convert modifiers to output format
+	var modifiers []ModifierInfo
+	for _, mod := range result.Modifiers {
+		info := ModifierInfo{
+			Source:      mod.Source(),
+			Type:        mod.Type(),
+			Description: "Modifier applied",
+		}
+
+		// Convert value to string
+		if val := mod.Value(); val != nil {
+			info.Value = fmt.Sprintf("%v", val)
+		}
+
+		// Get better description if available
+		if details := mod.SourceDetails(); details != nil {
+			info.Description = details.Description
+		}
+
+		modifiers = append(modifiers, info)
+	}
+
+	// For demo purposes, track simple HP
+	// In real implementation, this would update character state
+	attackerHP := 30
+	targetHP := 30
+
+	if result.Hit {
+		targetHP = targetHP - result.TotalDamage
+		if targetHP < 0 {
+			targetHP = 0
+		}
+	}
+
+	slog.InfoContext(ctx, "Attack resolved",
+		"attacker", input.AttackerID,
+		"target", input.TargetID,
+		"hit", result.Hit,
+		"critical", result.Critical,
+		"damage", result.TotalDamage,
+		"modifiers", len(modifiers),
+	)
+
+	return &AttackOutput{
+		Success:      true,
+		Hit:          result.Hit,
+		Critical:     result.Critical,
+		AttackRoll:   result.AttackRoll,
+		AttackBonus:  result.AttackBonus,
+		TotalAttack:  result.TotalAttack,
+		TargetAC:     result.TargetAC,
+		DamageRoll:   result.DamageRoll,
+		DamageBonus:  result.DamageBonus,
+		TotalDamage:  result.TotalDamage,
+		DamageType:   result.DamageType,
+		Modifiers:    modifiers,
+		CurrentRound: tracker.Round(),
+		AttackerHP:   attackerHP,
+		TargetHP:     targetHP,
 	}, nil
 }

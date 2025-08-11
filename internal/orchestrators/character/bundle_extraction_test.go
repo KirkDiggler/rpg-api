@@ -4,21 +4,22 @@ import (
 	"context"
 	"testing"
 
-	charrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
-	draftrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft"
+	"github.com/stretchr/testify/suite"
+	"go.uber.org/mock/gomock"
+
 	"github.com/KirkDiggler/rpg-api/internal/clients/external"
 	externalMock "github.com/KirkDiggler/rpg-api/internal/clients/external/mock"
-	charMock "github.com/KirkDiggler/rpg-api/internal/repositories/character/mock"
-	draftMock "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft/mock"
 	diceMock "github.com/KirkDiggler/rpg-api/internal/orchestrators/dice/mock"
 	idgenMock "github.com/KirkDiggler/rpg-api/internal/pkg/idgen/mock"
+	charrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
+	charMock "github.com/KirkDiggler/rpg-api/internal/repositories/character/mock"
+	draftrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft"
+	draftMock "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft/mock"
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/class"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/constants"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/race"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
-	"github.com/stretchr/testify/suite"
-	"go.uber.org/mock/gomock"
 )
 
 type BundleExtractionTestSuite struct {
@@ -68,7 +69,7 @@ func (s *BundleExtractionTestSuite) TestFinalizeDraft_ExtractsFighterMartialWeap
 	// Arrange
 	draftID := "draft_123"
 	characterID := "char_456"
-	
+
 	// Create a draft with fighter class and martial weapon + shield bundle selection
 	draft := &toolkitchar.DraftData{
 		ID:       draftID,
@@ -128,14 +129,14 @@ func (s *BundleExtractionTestSuite) TestFinalizeDraft_ExtractsFighterMartialWeap
 
 	// Expected character data after bundle extraction
 	expectedCharacter := &toolkitchar.Data{
-		ID:             characterID,
-		PlayerID:       draft.PlayerID,
-		Name:           draft.Name,
-		RaceID:         draft.RaceChoice.RaceID,
-		ClassID:        draft.ClassChoice.ClassID,
-		BackgroundID:   draft.BackgroundChoice,
-		Level:          1,
-		AbilityScores:  draft.AbilityScoreChoice,
+		ID:            characterID,
+		PlayerID:      draft.PlayerID,
+		Name:          draft.Name,
+		RaceID:        draft.RaceChoice.RaceID,
+		ClassID:       draft.ClassChoice.ClassID,
+		BackgroundID:  draft.BackgroundChoice,
+		Level:         1,
+		AbilityScores: draft.AbilityScoreChoice,
 		Equipment: []string{
 			"longsword",      // Extracted from bundle_1:0:longsword
 			"shield",         // Extracted from bundle_1:1:shield
@@ -152,17 +153,17 @@ func (s *BundleExtractionTestSuite) TestFinalizeDraft_ExtractsFighterMartialWeap
 			// Verify that the equipment was properly extracted from bundles
 			s.Require().NotNil(input.CharacterData)
 			s.Require().Len(input.CharacterData.Equipment, 3, "Should have 3 equipment items")
-			
+
 			// Check that bundle references were unpacked
 			s.Assert().Contains(input.CharacterData.Equipment, "longsword", "Should have longsword extracted from bundle")
 			s.Assert().Contains(input.CharacterData.Equipment, "shield", "Should have shield extracted from bundle")
 			s.Assert().Contains(input.CharacterData.Equipment, "explorers-pack", "Should have explorer's pack")
-			
+
 			// Make sure no bundle references remain
 			for _, item := range input.CharacterData.Equipment {
 				s.Assert().NotContains(item, "bundle_", "Should not have any bundle references in final equipment")
 			}
-			
+
 			return &charrepo.CreateOutput{
 				CharacterData: expectedCharacter,
 			}, nil
@@ -183,7 +184,7 @@ func (s *BundleExtractionTestSuite) TestFinalizeDraft_ExtractsFighterMartialWeap
 	s.Require().NotNil(result)
 	s.Assert().Equal(characterID, result.Character.ID)
 	s.Assert().True(result.DraftDeleted)
-	
+
 	// Verify the equipment in the result
 	s.Assert().Len(result.Character.Equipment, 3)
 	s.Assert().Contains(result.Character.Equipment, "longsword")
@@ -201,7 +202,7 @@ func (s *BundleExtractionTestSuite) setupExternalMocks(raceID constants.Race, cl
 			},
 		}, nil)
 
-	// Mock class data retrieval  
+	// Mock class data retrieval
 	s.mockExternalClient.EXPECT().
 		GetClassData(s.ctx, string(classID)).
 		Return(&external.ClassDataOutput{
@@ -224,7 +225,7 @@ func (s *BundleExtractionTestSuite) TestFinalizeDraft_HandlesMultipleBundles() {
 	// Arrange
 	draftID := "draft_multi"
 	characterID := "char_multi"
-	
+
 	draft := &toolkitchar.DraftData{
 		ID:       draftID,
 		PlayerID: "player_multi",
@@ -283,24 +284,24 @@ func (s *BundleExtractionTestSuite) TestFinalizeDraft_HandlesMultipleBundles() {
 		DoAndReturn(func(ctx context.Context, input charrepo.CreateInput) (*charrepo.CreateOutput, error) {
 			// Verify all bundle items were extracted
 			s.Require().Len(input.CharacterData.Equipment, 7, "Should have 7 equipment items from 3 bundles")
-			
+
 			expectedItems := []string{
-				"battleaxe", "shield",      // Bundle 1
-				"handaxe", "handaxe",       // Bundle 2 (two handaxes)
+				"battleaxe", "shield", // Bundle 1
+				"handaxe", "handaxe", // Bundle 2 (two handaxes)
 				"crowbar", "hammer", "pitons", // Bundle 3
 			}
-			
+
 			for _, expectedItem := range expectedItems {
-				s.Assert().Contains(input.CharacterData.Equipment, expectedItem, 
+				s.Assert().Contains(input.CharacterData.Equipment, expectedItem,
 					"Should have %s extracted from bundle", expectedItem)
 			}
-			
+
 			// Ensure no bundle references remain
 			for _, item := range input.CharacterData.Equipment {
-				s.Assert().NotContains(item, "bundle_", 
+				s.Assert().NotContains(item, "bundle_",
 					"Item %s should not contain bundle reference", item)
 			}
-			
+
 			return &charrepo.CreateOutput{
 				CharacterData: &toolkitchar.Data{
 					ID:           characterID,
@@ -333,7 +334,7 @@ func (s *BundleExtractionTestSuite) TestFinalizeDraft_MixedBundlesAndRegularItem
 	// Arrange
 	draftID := "draft_mixed"
 	characterID := "char_mixed"
-	
+
 	draft := &toolkitchar.DraftData{
 		ID:       draftID,
 		PlayerID: "player_mixed",
@@ -358,14 +359,14 @@ func (s *BundleExtractionTestSuite) TestFinalizeDraft_MixedBundlesAndRegularItem
 				Category: shared.ChoiceEquipment,
 				Source:   "class",
 				EquipmentSelection: []string{
-					"leather-armor",           // Regular item
-					"bundle_1:0:shortsword",   // Bundle item
-					"bundle_1:1:shield",       // Bundle item
-					"longbow",                 // Regular item
-					"bundle_2:0:arrow",        // Bundle with multiple arrows
+					"leather-armor",         // Regular item
+					"bundle_1:0:shortsword", // Bundle item
+					"bundle_1:1:shield",     // Bundle item
+					"longbow",               // Regular item
+					"bundle_2:0:arrow",      // Bundle with multiple arrows
 					"bundle_2:1:arrow",
 					"bundle_2:2:arrow",
-					"backpack",                // Regular item
+					"backpack", // Regular item
 				},
 			},
 		},
@@ -390,16 +391,16 @@ func (s *BundleExtractionTestSuite) TestFinalizeDraft_MixedBundlesAndRegularItem
 		DoAndReturn(func(ctx context.Context, input charrepo.CreateInput) (*charrepo.CreateOutput, error) {
 			// Should have 8 items total: 3 regular + 5 from bundles
 			s.Require().Len(input.CharacterData.Equipment, 8)
-			
+
 			// Check regular items are unchanged
 			s.Assert().Contains(input.CharacterData.Equipment, "leather-armor")
 			s.Assert().Contains(input.CharacterData.Equipment, "longbow")
 			s.Assert().Contains(input.CharacterData.Equipment, "backpack")
-			
+
 			// Check bundle items are extracted
 			s.Assert().Contains(input.CharacterData.Equipment, "shortsword")
 			s.Assert().Contains(input.CharacterData.Equipment, "shield")
-			
+
 			// Count arrows (should be 3)
 			arrowCount := 0
 			for _, item := range input.CharacterData.Equipment {
@@ -408,7 +409,7 @@ func (s *BundleExtractionTestSuite) TestFinalizeDraft_MixedBundlesAndRegularItem
 				}
 			}
 			s.Assert().Equal(3, arrowCount, "Should have 3 arrows from bundle_2")
-			
+
 			return &charrepo.CreateOutput{
 				CharacterData: &toolkitchar.Data{
 					ID:           characterID,

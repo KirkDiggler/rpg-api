@@ -255,13 +255,13 @@ func (h *EncounterHandler) MoveCharacter(
 		UpdatedRoom:       updatedRoom,
 		// CombatState could be populated here if needed for turn state updates
 	}
-	
+
 	slog.Info("Returning MoveCharacterResponse",
 		"success", resp.Success,
 		"movement_remaining", resp.MovementRemaining,
 		"has_updated_room", resp.UpdatedRoom != nil,
 	)
-	
+
 	return resp, nil
 }
 
@@ -315,7 +315,61 @@ func (h *EncounterHandler) Attack(
 	ctx context.Context,
 	req *dnd5ev1alpha1.AttackRequest,
 ) (*dnd5ev1alpha1.AttackResponse, error) {
-	// For now, return unimplemented
-	// Combat will be implemented last
-	return nil, status.Error(codes.Unimplemented, "Attack not yet implemented")
+	// Create input for orchestrator
+	input := &encounter.AttackInput{
+		EncounterID: req.GetEncounterId(),
+		AttackerID:  req.GetAttackerId(),
+		TargetID:    req.GetTargetId(),
+		AttackType:  "melee", // Default to melee for now
+	}
+
+	// Optional weapon ID
+	if req.WeaponId != "" {
+		input.WeaponID = req.GetWeaponId()
+	}
+
+	// Call orchestrator
+	output, err := h.encounterService.Attack(ctx, input)
+	if err != nil {
+		// Handle specific error types
+		if errors.IsInvalidArgument(err) {
+			return nil, status.Error(codes.InvalidArgument, err.Error())
+		}
+		if errors.IsNotFound(err) {
+			return nil, status.Error(codes.NotFound, err.Error())
+		}
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	// Build the attack result
+	attackResult := &dnd5ev1alpha1.AttackResult{
+		Hit:         output.Hit,
+		AttackRoll:  int32(output.AttackRoll),
+		AttackTotal: int32(output.TotalAttack),
+		TargetAc:    int32(output.TargetAC),
+		Critical:    output.Critical,
+	}
+
+	// Only include damage info if the attack hit
+	if output.Hit {
+		attackResult.Damage = int32(output.TotalDamage)
+		attackResult.DamageType = output.DamageType
+	}
+
+	// Build combat state
+	combatState := &dnd5ev1alpha1.CombatState{
+		EncounterId:   input.EncounterID,
+		Round:         int32(output.CurrentRound),
+		CombatStarted: true,
+		// We could add more state here like turn order, conditions, etc.
+	}
+
+	// Build the response
+	response := &dnd5ev1alpha1.AttackResponse{
+		Success:     output.Success,
+		Result:      attackResult,
+		CombatState: combatState,
+	}
+
+	return response, nil
 }
