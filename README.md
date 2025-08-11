@@ -119,6 +119,41 @@ Each package includes a README explaining its purpose and boundaries.
 
 See [Journey: Go Version Policy](docs/journey/003-go-version-policy.md) for the full story behind this decision.
 
+## Demo Room Features
+
+The rpg-api includes a complete demo room system for testing combat mechanics:
+
+### Phase 1: Initiative & Turn Order ✅
+- Load actual character data with stats and modifiers
+- Roll initiative using D20 + DEX modifier
+- Maintain turn order throughout combat
+- Auto-skip monster turns for smooth gameplay
+
+### Phase 2: Movement System ✅
+- Hex grid positioning (D&D 5e standard, each hex = 5 feet)
+- Movement validation (30 feet per turn)
+- Obstacle collision detection
+- Room templates with varied layouts (arena, maze, pillars, etc.)
+
+### Phase 3: Attack System ✅
+- Turn-based attack validation
+- Range checking (melee: 5ft, ranged: 150ft, spell: 120ft)
+- D20 attack rolls vs AC
+- Damage calculation with appropriate dice
+- HP tracking and death handling
+- Entity removal on defeat
+
+### Combat Flow
+```
+1. DungeonStart → Creates room, rolls initiative, sets turn order
+2. MoveCharacter → Validates movement on your turn within speed limit
+3. Attack → Roll to hit, calculate damage, update HP
+4. EndTurn → Advances to next player (auto-skips monsters)
+```
+
+### Internal Toolkit
+We've created an `internal/toolkit/combat` package for rapid prototyping of combat mechanics before moving them to rpg-toolkit. This allows us to iterate quickly on the API while discovering the right abstractions.
+
 ## Related Projects
 
 - [rpg-toolkit](https://github.com/yourusername/rpg-toolkit): Core game engine

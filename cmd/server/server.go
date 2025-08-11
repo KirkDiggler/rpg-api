@@ -133,19 +133,7 @@ func runServer(_ *cobra.Command, _ []string) error {
 		return fmt.Errorf("failed to create dice service: %w", err)
 	}
 
-	// Create encounter repository (in-memory for now)
-	encounterRepo := encountersrepo.NewInMemory()
-
-	// Create encounter service
-	encounterService, err := encounter.NewOrchestrator(&encounter.Config{
-		IDGenerator: idgen.NewPrefixed("enc-"),
-		Repository:  encounterRepo,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to create encounter service: %w", err)
-	}
-
-	// Initialize services
+	// Initialize character service first (needed by encounter service)
 	characterService, err := character.New(&character.Config{
 		CharacterRepo:      charRepo,
 		CharacterDraftRepo: draftRepo,
@@ -156,6 +144,19 @@ func runServer(_ *cobra.Command, _ []string) error {
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create character service: %w", err)
+	}
+
+	// Create encounter repository (in-memory for now)
+	encounterRepo := encountersrepo.NewInMemory()
+
+	// Create encounter service (now with character service dependency)
+	encounterService, err := encounter.NewOrchestrator(&encounter.Config{
+		IDGenerator:      idgen.NewPrefixed("enc-"),
+		Repository:       encounterRepo,
+		CharacterService: characterService,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create encounter service: %w", err)
 	}
 
 	// Initialize handlers
