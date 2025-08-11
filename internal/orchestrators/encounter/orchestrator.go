@@ -31,6 +31,9 @@ type Service interface {
 
 	// MoveCharacter moves a character to a new position
 	MoveCharacter(ctx context.Context, input *MoveCharacterInput) (*MoveCharacterOutput, error)
+
+	// Attack performs an attack action
+	Attack(ctx context.Context, input *AttackInput) (*AttackOutput, error)
 }
 
 // Config holds the dependencies for the encounter orchestrator

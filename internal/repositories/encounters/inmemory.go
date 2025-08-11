@@ -38,6 +38,7 @@ func (r *InMemoryRepository) Save(ctx context.Context, input *SaveInput) (*SaveO
 		RoomData:        input.RoomData,
 		InitiativeData:  input.InitiativeData,
 		InitiativeRolls: input.InitiativeRolls,
+		EntityHP:        input.EntityHP,
 	}
 
 	return &SaveOutput{Success: true}, nil
@@ -68,6 +69,7 @@ func (r *InMemoryRepository) Get(ctx context.Context, input *GetInput) (*GetOutp
 			RoomData:        data.RoomData,
 			InitiativeData:  data.InitiativeData,
 			InitiativeRolls: data.InitiativeRolls,
+			EntityHP:        data.EntityHP,
 		},
 	}, nil
 }
@@ -96,6 +98,9 @@ func (r *InMemoryRepository) Update(ctx context.Context, input *UpdateInput) (*U
 	}
 	if input.RoomData != nil {
 		data.RoomData = input.RoomData
+	}
+	if input.EntityHP != nil {
+		data.EntityHP = input.EntityHP
 	}
 
 	return &UpdateOutput{Success: true}, nil

@@ -255,13 +255,13 @@ func (h *EncounterHandler) MoveCharacter(
 		UpdatedRoom:       updatedRoom,
 		// CombatState could be populated here if needed for turn state updates
 	}
-	
+
 	slog.Info("Returning MoveCharacterResponse",
 		"success", resp.Success,
 		"movement_remaining", resp.MovementRemaining,
 		"has_updated_room", resp.UpdatedRoom != nil,
 	)
-	
+
 	return resp, nil
 }
 
@@ -315,7 +315,73 @@ func (h *EncounterHandler) Attack(
 	ctx context.Context,
 	req *dnd5ev1alpha1.AttackRequest,
 ) (*dnd5ev1alpha1.AttackResponse, error) {
-	// For now, return unimplemented
-	// Combat will be implemented last
-	return nil, status.Error(codes.Unimplemented, "Attack not yet implemented")
+	// Validate request
+	if req.GetEncounterId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "encounter_id is required")
+	}
+	if req.GetAttackerId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "attacker_id is required")
+	}
+	if req.GetTargetId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "target_id is required")
+	}
+
+	// Call orchestrator (attack type defaults to melee in orchestrator)
+	attackInput := &encounter.AttackInput{
+		EncounterID: req.GetEncounterId(),
+		AttackerID:  req.GetAttackerId(),
+		TargetID:    req.GetTargetId(),
+		WeaponID:    req.GetWeaponId(),
+		AttackType:  "melee", // Default for now, proto doesn't have attack type yet
+	}
+
+	attackOutput, err := h.encounterService.Attack(ctx, attackInput)
+	if err != nil {
+		// Convert specific errors to appropriate gRPC codes
+		if errors.IsInvalidArgument(err) {
+			return &dnd5ev1alpha1.AttackResponse{
+				Success: false,
+				Error:   err.Error(),
+			}, nil
+		}
+		if errors.IsNotFound(err) {
+			return &dnd5ev1alpha1.AttackResponse{
+				Success: false,
+				Error:   err.Error(),
+			}, nil
+		}
+		return &dnd5ev1alpha1.AttackResponse{
+			Success: false,
+			Error:   err.Error(),
+		}, nil
+	}
+
+	// Create the response
+	resp := &dnd5ev1alpha1.AttackResponse{
+		Success: true,
+		Result: &dnd5ev1alpha1.AttackResult{
+			Hit:         attackOutput.Hit,
+			AttackRoll:  int32(attackOutput.AttackRoll),
+			AttackTotal: int32(attackOutput.AttackTotal),
+			TargetAc:    int32(attackOutput.TargetAC),
+			Damage:      int32(attackOutput.Damage),
+			DamageType:  attackOutput.DamageType,
+			Critical:    attackOutput.Critical,
+		},
+	}
+
+	// Include updated room if target died
+	if attackOutput.RoomData != nil {
+		resp.UpdatedRoom = convertRoomDataToProto(attackOutput.RoomData)
+	}
+
+	slog.Info("Attack processed",
+		"attacker", req.GetAttackerId(),
+		"target", req.GetTargetId(),
+		"hit", attackOutput.Hit,
+		"damage", attackOutput.Damage,
+		"target_hp", attackOutput.TargetNewHP,
+	)
+
+	return resp, nil
 }

@@ -30,6 +30,14 @@ type EncounterData struct {
 	RoomData        *spatial.RoomData
 	InitiativeData  *initiative.TrackerData
 	InitiativeRolls []initiative.Roll // Store what was rolled for each entity
+	EntityHP        map[string]*EntityHealth // Track HP for all entities
+}
+
+// EntityHealth tracks health for an entity
+type EntityHealth struct {
+	CurrentHP int
+	MaxHP     int
+	TempHP    int // Temporary hit points
 }
 
 // SaveInput defines the request for saving an encounter
@@ -38,6 +46,7 @@ type SaveInput struct {
 	RoomData        *spatial.RoomData
 	InitiativeData  *initiative.TrackerData
 	InitiativeRolls []initiative.Roll
+	EntityHP        map[string]*EntityHealth
 }
 
 // SaveOutput defines the response for saving an encounter
@@ -58,8 +67,9 @@ type GetOutput struct {
 // UpdateInput defines the request for updating an encounter
 type UpdateInput struct {
 	EncounterID    string
-	InitiativeData *initiative.TrackerData // Turn order changes
-	RoomData       *spatial.RoomData       // Position changes
+	InitiativeData *initiative.TrackerData           // Turn order changes
+	RoomData       *spatial.RoomData                 // Position changes
+	EntityHP       map[string]*EntityHealth          // HP changes
 }
 
 // UpdateOutput defines the response for updating an encounter

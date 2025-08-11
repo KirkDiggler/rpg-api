@@ -57,9 +57,34 @@ type MoveCharacterInput struct {
 // MoveCharacterOutput defines the response for moving a character
 type MoveCharacterOutput struct {
 	Success      bool
-	MovementUsed int              // How much movement was used
-	MovementLeft int              // How much movement remains
+	MovementUsed int // How much movement was used
+	MovementLeft int // How much movement remains
 	NewPosition  spatial.Position
 	CurrentRound int
 	RoomData     *spatial.RoomData // Updated room state after movement
+}
+
+// AttackInput defines the request for making an attack
+type AttackInput struct {
+	EncounterID string
+	AttackerID  string
+	TargetID    string
+	WeaponID    string // Optional, uses default weapon if empty
+	AttackType  string // "melee", "ranged", "spell"
+}
+
+// AttackOutput defines the response for an attack
+type AttackOutput struct {
+	Success       bool
+	Hit           bool
+	Critical      bool
+	Damage        int
+	DamageType    string
+	AttackRoll    int // The d20 roll
+	AttackTotal   int // Roll + modifiers
+	TargetAC      int
+	TargetNewHP   int // Target's HP after damage
+	TargetMaxHP   int
+	Description   string // Narrative description
+	RoomData      *spatial.RoomData // Updated room if target dies
 }
