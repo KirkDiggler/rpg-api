@@ -66,11 +66,14 @@ type MoveCharacterOutput struct {
 
 // AttackInput defines the request for making an attack
 type AttackInput struct {
-	EncounterID string
-	AttackerID  string
-	TargetID    string
-	WeaponID    string // Optional, uses default weapon if empty
-	AttackType  string // "melee", "ranged", "spell"
+	EncounterID  string
+	AttackerID   string
+	TargetID     string
+	WeaponID     string // Optional, uses default weapon if empty
+	AttackType   string // "melee", "ranged", "spell"
+	// TODO: Add these fields to improve entity detection
+	// AttackerType string // "character", "monster", etc.
+	// TargetType   string // "character", "monster", etc.
 }
 
 // AttackOutput defines the response for an attack

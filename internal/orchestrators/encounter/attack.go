@@ -171,8 +171,13 @@ func (o *orchestrator) Attack(ctx context.Context, input *AttackInput) (*AttackO
 
 // getCombatStats retrieves or creates combat stats for an entity
 func (o *orchestrator) getCombatStats(ctx context.Context, entityID string, entityHP map[string]*encounters.EntityHealth) (*combat.CombatStats, error) {
-	// Try to get character data if it looks like a character ID
-	if len(entityID) > 4 && entityID[:4] != "mon_" { // Simple check, improve as needed
+	// First, check if we can find the entity in the encounter to determine its type
+	// This is more reliable than string prefix checks
+	// TODO: Pass entity type from caller or store in encounter data
+	
+	// Try to get character data first (characters have UUIDs or specific IDs)
+	// If this fails, we'll fall back to monster stats
+	if entityID != "" {
 		charOutput, err := o.characterService.GetCharacter(ctx, &character.GetCharacterInput{
 			CharacterID: entityID,
 		})
@@ -209,9 +214,12 @@ func (o *orchestrator) getCombatStats(ctx context.Context, entityID string, enti
 			
 			return stats, nil
 		}
+		// If we get here, the GetCharacter call failed
+		// This could mean it's a monster or the character doesn't exist
 	}
 
 	// Default monster stats for prototype
+	// TODO: Fetch actual monster stats from a monster service
 	stats := &combat.CombatStats{
 		Level:            1,
 		ProficiencyBonus: 2,

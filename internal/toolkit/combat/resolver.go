@@ -114,43 +114,57 @@ func (r *Resolver) calculateDamage(input *AttackInput, critical bool) (int, stri
 	// For prototype, use simple damage calculation
 	// TODO: Integrate with actual weapon/spell data
 	
-	baseDamage := 0
+	diceDamage := 0
+	staticDamage := 0
 	damageType := "slashing" // Default
 	
 	switch input.AttackType {
 	case AttackTypeMelee:
 		// 1d8 + STR for a longsword
-		baseDamage = r.rollDice(1, 8)
-		baseDamage += input.AttackerStats.GetAbilityModifier(constants.STR)
-		baseDamage += input.AttackerStats.MeleeDamageBonus
+		// On critical: roll damage dice twice, add modifier once
+		if critical {
+			diceDamage = r.rollDice(2, 8) // Double the dice
+		} else {
+			diceDamage = r.rollDice(1, 8)
+		}
+		staticDamage = input.AttackerStats.GetAbilityModifier(constants.STR)
+		staticDamage += input.AttackerStats.MeleeDamageBonus
 		damageType = "slashing"
 		
 	case AttackTypeRanged:
 		// 1d8 + DEX for a longbow
-		baseDamage = r.rollDice(1, 8)
-		baseDamage += input.AttackerStats.GetAbilityModifier(constants.DEX)
-		baseDamage += input.AttackerStats.RangedDamageBonus
+		// On critical: roll damage dice twice, add modifier once
+		if critical {
+			diceDamage = r.rollDice(2, 8) // Double the dice
+		} else {
+			diceDamage = r.rollDice(1, 8)
+		}
+		staticDamage = input.AttackerStats.GetAbilityModifier(constants.DEX)
+		staticDamage += input.AttackerStats.RangedDamageBonus
 		damageType = "piercing"
 		
 	case AttackTypeSpell:
-		// 1d10 for fire bolt
-		baseDamage = r.rollDice(1, 10)
+		// 1d10 for fire bolt (cantrip)
+		// Cantrips don't add ability modifiers to damage in 5e
+		// On critical: roll damage dice twice
+		if critical {
+			diceDamage = r.rollDice(2, 10) // Double the dice
+		} else {
+			diceDamage = r.rollDice(1, 10)
+		}
+		// Spell damage typically doesn't add ability modifiers for cantrips
+		staticDamage = 0
 		damageType = "fire"
 	}
 	
-	// Double dice on critical
-	if critical {
-		// For simplicity, just double the damage
-		// Proper implementation would re-roll dice
-		baseDamage *= 2
+	totalDamage := diceDamage + staticDamage
+	
+	// Minimum 1 damage if hit (optional rule, not standard 5e)
+	if totalDamage < 1 {
+		totalDamage = 1
 	}
 	
-	// Minimum 1 damage if hit
-	if baseDamage < 1 {
-		baseDamage = 1
-	}
-	
-	return baseDamage, damageType
+	return totalDamage, damageType
 }
 
 // createAttackDescription generates a narrative description
@@ -185,39 +199,108 @@ func (r *Resolver) rollDice(count, size int) int {
 }
 
 // ParseDiceString parses a dice string like "2d6+3" and rolls it
-func (r *Resolver) ParseDiceString(diceStr string) int {
+// Returns the total rolled value, or 0 if the string is invalid
+func (r *Resolver) ParseDiceString(diceStr string) (int, error) {
 	// Simple parser for dice notation
-	// Format: XdY+Z where X is count, Y is die size, Z is modifier
+	// Format: XdY+Z or XdY-Z where X is count, Y is die size, Z is modifier
 	
-	parts := strings.Split(diceStr, "+")
+	if diceStr == "" {
+		return 0, fmt.Errorf("empty dice string")
+	}
+	
+	// Handle both + and - modifiers
+	var parts []string
+	var isNegative []bool
+	
+	if strings.Contains(diceStr, "-") {
+		// Split on minus, keeping track of which parts are negative
+		tempParts := strings.Split(diceStr, "-")
+		for i, part := range tempParts {
+			if i == 0 {
+				parts = append(parts, part)
+				isNegative = append(isNegative, false)
+			} else {
+				parts = append(parts, part)
+				isNegative = append(isNegative, true)
+			}
+		}
+	} else {
+		parts = strings.Split(diceStr, "+")
+		for range parts {
+			isNegative = append(isNegative, false)
+		}
+	}
+	
 	total := 0
 	
-	for _, part := range parts {
+	for i, part := range parts {
 		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
 		
 		if strings.Contains(part, "d") {
 			// Dice roll
 			diceParts := strings.Split(part, "d")
 			if len(diceParts) != 2 {
-				continue
+				return 0, fmt.Errorf("invalid dice format: %s", part)
 			}
 			
-			count, _ := strconv.Atoi(diceParts[0])
-			size, _ := strconv.Atoi(diceParts[1])
+			var count int
+			var err error
 			
-			if count == 0 {
+			if diceParts[0] == "" {
 				count = 1 // "d6" means "1d6"
+			} else {
+				count, err = strconv.Atoi(diceParts[0])
+				if err != nil {
+					return 0, fmt.Errorf("invalid dice count: %s", diceParts[0])
+				}
 			}
 			
-			total += r.rollDice(count, size)
+			size, err := strconv.Atoi(diceParts[1])
+			if err != nil {
+				return 0, fmt.Errorf("invalid dice size: %s", diceParts[1])
+			}
+			
+			if count <= 0 || size <= 0 {
+				return 0, fmt.Errorf("dice count and size must be positive")
+			}
+			
+			rollResult := r.rollDice(count, size)
+			if isNegative[i] {
+				total -= rollResult
+			} else {
+				total += rollResult
+			}
 		} else {
 			// Static modifier
-			mod, _ := strconv.Atoi(part)
-			total += mod
+			mod, err := strconv.Atoi(part)
+			if err != nil {
+				return 0, fmt.Errorf("invalid modifier: %s", part)
+			}
+			
+			if isNegative[i] {
+				total -= mod
+			} else {
+				total += mod
+			}
 		}
 	}
 	
-	return total
+	return total, nil
+}
+
+// RollDiceString is a convenience wrapper that returns just the result
+// For cases where error handling isn't critical (like prototypes)
+func (r *Resolver) RollDiceString(diceStr string) int {
+	result, err := r.ParseDiceString(diceStr)
+	if err != nil {
+		// Log error and return 0
+		// In production, this should probably panic or handle differently
+		return 0
+	}
+	return result
 }
 
 // CalculateRange calculates the range between two positions in feet
