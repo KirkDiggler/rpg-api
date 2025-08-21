@@ -14,8 +14,11 @@ import (
 	v1alpha1 "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v1alpha1"
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
 	charactermock "github.com/KirkDiggler/rpg-api/internal/orchestrators/character/mock"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/abilities"
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
-	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/constants"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/classes"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/languages"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/races"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
 )
 
@@ -56,23 +59,23 @@ func (s *HandlerGetCharacterTestSuite) TestGetCharacter_Success() {
 		PlayerID:     "player-123",
 		Name:         "Aragorn",
 		Level:        5,
-		RaceID:       constants.RaceHuman,
-		ClassID:      constants.ClassRanger,
+		RaceID:       races.Human,
+		ClassID:      classes.Ranger,
 		HitPoints:    45,
 		MaxHitPoints: 50,
 		AbilityScores: shared.AbilityScores{
-			constants.STR: 16,
-			constants.DEX: 18,
-			constants.CON: 14,
-			constants.INT: 10,
-			constants.WIS: 15,
-			constants.CHA: 12,
+			abilities.STR: 16,
+			abilities.DEX: 18,
+			abilities.CON: 14,
+			abilities.INT: 10,
+			abilities.WIS: 15,
+			abilities.CHA: 12,
 		},
 		Speed: 30,
 		Size:  "Medium",
 		Languages: []string{
-			string(constants.LanguageCommon),
-			string(constants.LanguageElvish),
+			string(languages.Common),
+			string(languages.Elvish),
 		},
 	}
 

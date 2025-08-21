@@ -6,10 +6,12 @@ import (
 
 	"github.com/KirkDiggler/rpg-api/internal/clients/external"
 	"github.com/KirkDiggler/rpg-api/internal/entities/dnd5e"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/backgrounds"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/class"
-	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/constants"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/classes"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/race"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/races"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
 )
 
@@ -132,8 +134,8 @@ type UpdateNameOutput struct {
 // UpdateRaceInput defines the request for updating a draft's race
 type UpdateRaceInput struct {
 	DraftID   string
-	RaceID    constants.Race
-	SubraceID constants.Subrace      // Optional
+	RaceID    races.Race
+	SubraceID races.Race             // Optional
 	Choices   []character.ChoiceData // Race-specific choices
 }
 
@@ -146,7 +148,7 @@ type UpdateRaceOutput struct {
 // UpdateClassInput defines the request for updating a draft's class
 type UpdateClassInput struct {
 	DraftID string
-	ClassID constants.Class
+	ClassID classes.Class
 	Choices []character.ChoiceData // Class-specific choices
 }
 
@@ -159,7 +161,7 @@ type UpdateClassOutput struct {
 // UpdateBackgroundInput defines the request for updating a draft's background
 type UpdateBackgroundInput struct {
 	DraftID      string
-	BackgroundID string
+	BackgroundID backgrounds.Background
 	Choices      []character.ChoiceData // Background-specific choices
 }
 

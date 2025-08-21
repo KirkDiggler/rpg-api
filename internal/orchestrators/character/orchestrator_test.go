@@ -17,11 +17,14 @@ import (
 	characterrepomock "github.com/KirkDiggler/rpg-api/internal/repositories/character/mock"
 	draftrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft"
 	draftrepomock "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft/mock"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/backgrounds"
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/class"
-	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/constants"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/classes"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/race"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/races"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/skills"
 )
 
 type OrchestratorTestSuite struct {
@@ -263,7 +266,7 @@ func (s *OrchestratorTestSuite) TestGetRaceDetails_Success() {
 	}
 
 	expectedRaceData := &race.Data{
-		ID:   constants.Race("RACE_DRAGONBORN"),
+		ID:   races.Race("RACE_DRAGONBORN"),
 		Name: "Dragonborn",
 	}
 	expectedUIData := &external.RaceUIData{
@@ -304,7 +307,7 @@ func (s *OrchestratorTestSuite) TestGetClassDetails_Success() {
 	}
 
 	expectedClassData := &class.Data{
-		ID:      constants.Class("CLASS_WIZARD"),
+		ID:      classes.Class("CLASS_WIZARD"),
 		Name:    "Wizard",
 		HitDice: 6,
 	}
@@ -503,8 +506,8 @@ func (s *OrchestratorTestSuite) TestUpdateName_DraftNotFound() {
 
 func (s *OrchestratorTestSuite) TestUpdateRace_Success() {
 	ctx := context.Background()
-	newRaceID := constants.RaceElf
-	newSubraceID := constants.SubraceHighElf
+	newRaceID := races.Elf
+	newSubraceID := races.HighElf
 	input := &character.UpdateRaceInput{
 		DraftID:   s.testDraftID,
 		RaceID:    newRaceID,
@@ -549,13 +552,13 @@ func (s *OrchestratorTestSuite) TestUpdateRace_Success() {
 
 func (s *OrchestratorTestSuite) TestUpdateRace_WithChoices() {
 	ctx := context.Background()
-	newRaceID := constants.RaceHalfElf
+	newRaceID := races.HalfElf
 	choices := []toolkitchar.ChoiceData{
 		{
 			ChoiceID:       "ability-increase",
 			Category:       shared.ChoiceAbilityScores,
 			Source:         shared.SourceRace,
-			SkillSelection: []constants.Skill{constants.SkillPersuasion},
+			SkillSelection: []skills.Skill{skills.Persuasion},
 		},
 	}
 	input := &character.UpdateRaceInput{
@@ -577,7 +580,7 @@ func (s *OrchestratorTestSuite) TestUpdateRace_WithChoices() {
 	// Create expected updated draft
 	updatedDraft := existingDraft
 	updatedDraft.RaceChoice = toolkitchar.RaceChoice{
-		RaceID: constants.Race(newRaceID),
+		RaceID: races.Race(newRaceID),
 	}
 	updatedDraft.Choices = append([]toolkitchar.ChoiceData{{
 		ChoiceID: "skill-choice",
@@ -673,7 +676,7 @@ func (s *OrchestratorTestSuite) TestUpdateRace_DraftNotFound() {
 
 func (s *OrchestratorTestSuite) TestUpdateClass_Success() {
 	ctx := context.Background()
-	newClassID := constants.ClassWizard
+	newClassID := classes.Wizard
 	input := &character.UpdateClassInput{
 		DraftID: s.testDraftID,
 		ClassID: newClassID,
@@ -731,7 +734,7 @@ func (s *OrchestratorTestSuite) TestUpdateClass_Success() {
 
 func (s *OrchestratorTestSuite) TestUpdateClass_WithChoices() {
 	ctx := context.Background()
-	newClassID := constants.ClassFighter
+	newClassID := classes.Fighter
 	choices := []toolkitchar.ChoiceData{
 		{
 			ChoiceID:           "fighting-style",
@@ -759,7 +762,7 @@ func (s *OrchestratorTestSuite) TestUpdateClass_WithChoices() {
 	// Create expected updated draft
 	updatedDraft := existingDraft
 	updatedDraft.ClassChoice = toolkitchar.ClassChoice{
-		ClassID: constants.Class(newClassID),
+		ClassID: classes.Class(newClassID),
 	}
 	updatedDraft.Choices = append([]toolkitchar.ChoiceData{{
 		ChoiceID: "skill-choice",
@@ -855,7 +858,7 @@ func (s *OrchestratorTestSuite) TestUpdateClass_DraftNotFound() {
 
 func (s *OrchestratorTestSuite) TestUpdateBackground_Success() {
 	ctx := context.Background()
-	newBackgroundID := "BACKGROUND_SAGE"
+	newBackgroundID := backgrounds.Sage
 	input := &character.UpdateBackgroundInput{
 		DraftID:      s.testDraftID,
 		BackgroundID: newBackgroundID,
@@ -863,7 +866,7 @@ func (s *OrchestratorTestSuite) TestUpdateBackground_Success() {
 
 	// Create a copy of test data with updated background
 	updatedDraft := *s.testDraftData
-	updatedDraft.BackgroundChoice = constants.Background(newBackgroundID)
+	updatedDraft.BackgroundChoice = newBackgroundID
 
 	// Mock get call
 	s.mockDraftRepo.EXPECT().
@@ -889,13 +892,13 @@ func (s *OrchestratorTestSuite) TestUpdateBackground_Success() {
 	// Assert response
 	s.Require().NoError(err)
 	s.Require().NotNil(output)
-	s.Assert().Equal(newBackgroundID, string(output.Draft.BackgroundChoice))
+	s.Assert().Equal(newBackgroundID, output.Draft.BackgroundChoice)
 	s.Assert().Empty(output.Warnings)
 }
 
 func (s *OrchestratorTestSuite) TestUpdateBackground_WithChoices() {
 	ctx := context.Background()
-	newBackgroundID := "BACKGROUND_CRIMINAL"
+	newBackgroundID := backgrounds.Criminal
 	choices := []toolkitchar.ChoiceData{
 		{
 			ChoiceID:           "tool-choice",
@@ -922,7 +925,7 @@ func (s *OrchestratorTestSuite) TestUpdateBackground_WithChoices() {
 
 	// Create expected updated draft
 	updatedDraft := existingDraft
-	updatedDraft.BackgroundChoice = constants.Background(newBackgroundID)
+	updatedDraft.BackgroundChoice = newBackgroundID
 	updatedDraft.Choices = append([]toolkitchar.ChoiceData{{
 		ChoiceID: "skill-choice",
 		Category: shared.ChoiceSkills,
@@ -953,7 +956,7 @@ func (s *OrchestratorTestSuite) TestUpdateBackground_WithChoices() {
 	// Assert response
 	s.Require().NoError(err)
 	s.Require().NotNil(output)
-	s.Assert().Equal(newBackgroundID, string(output.Draft.BackgroundChoice))
+	s.Assert().Equal(newBackgroundID, output.Draft.BackgroundChoice)
 	s.Assert().Len(output.Draft.Choices, 2)
 	s.Assert().Equal(shared.SourceBackground, output.Draft.Choices[1].Source)
 }
@@ -1024,8 +1027,8 @@ func (s *OrchestratorTestSuite) TestGetCharacter_Success() {
 		PlayerID: s.testPlayerID,
 		Name:     "Test Fighter",
 		Level:    1,
-		RaceID:   constants.RaceHuman,
-		ClassID:  constants.ClassFighter,
+		RaceID:   races.Human,
+		ClassID:  classes.Fighter,
 	}
 
 	// Mock the Get call

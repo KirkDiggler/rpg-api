@@ -12,7 +12,7 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
 	charactermock "github.com/KirkDiggler/rpg-api/internal/orchestrators/character/mock"
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
-	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/constants"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/classes"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
 )
 
@@ -53,7 +53,7 @@ func (s *SpellSelectionTestSuite) TestUpdateClass_WizardAddsSpellChoices() {
 		PlayerID: playerID,
 		Name:     "Test Wizard",
 		ClassChoice: toolkitchar.ClassChoice{
-			ClassID: constants.ClassWizard,
+			ClassID: classes.Wizard,
 		},
 		Choices: []toolkitchar.ChoiceData{
 			{
@@ -75,7 +75,7 @@ func (s *SpellSelectionTestSuite) TestUpdateClass_WizardAddsSpellChoices() {
 		DoAndReturn(func(ctx context.Context, input *character.UpdateClassInput) (*character.UpdateClassOutput, error) {
 			// Verify the input
 			s.Equal(draftID, input.DraftID)
-			s.Equal(constants.ClassWizard, input.ClassID)
+			s.Equal(classes.Wizard, input.ClassID)
 
 			return &character.UpdateClassOutput{
 				Draft:    updatedDraft,
@@ -128,7 +128,7 @@ func (s *SpellSelectionTestSuite) TestUpdateClass_SorcererAddsSpellChoices() {
 		PlayerID: playerID,
 		Name:     "Test Sorcerer",
 		ClassChoice: toolkitchar.ClassChoice{
-			ClassID: constants.ClassSorcerer,
+			ClassID: classes.Sorcerer,
 		},
 		Choices: []toolkitchar.ChoiceData{
 			{
@@ -178,7 +178,7 @@ func (s *SpellSelectionTestSuite) TestUpdateClass_ClericOnlyAddsCantrips() {
 		PlayerID: playerID,
 		Name:     "Test Cleric",
 		ClassChoice: toolkitchar.ClassChoice{
-			ClassID: constants.ClassCleric,
+			ClassID: classes.Cleric,
 		},
 		Choices: []toolkitchar.ChoiceData{
 			{
@@ -228,7 +228,7 @@ func (s *SpellSelectionTestSuite) TestUpdateClass_FighterNoSpellChoices() {
 		PlayerID: playerID,
 		Name:     "Test Fighter",
 		ClassChoice: toolkitchar.ClassChoice{
-			ClassID: constants.ClassFighter,
+			ClassID: classes.Fighter,
 		},
 		Choices: []toolkitchar.ChoiceData{}, // No spell choices
 	}

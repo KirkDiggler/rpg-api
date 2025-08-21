@@ -14,7 +14,8 @@ import (
 	draftrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft"
 	draftmock "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft/mock"
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
-	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/constants"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/classes"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/races"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
 )
 
@@ -63,7 +64,7 @@ func (s *SpellSelectionOrchestratorTestSuite) TestUpdateClass_WizardAddsSpellAnd
 		PlayerID: "player_123",
 		Name:     "Gandalf",
 		RaceChoice: toolkitchar.RaceChoice{
-			RaceID: constants.RaceHuman,
+			RaceID: races.Human,
 		},
 		Choices: []toolkitchar.ChoiceData{
 			// Existing race choice
@@ -92,7 +93,7 @@ func (s *SpellSelectionOrchestratorTestSuite) TestUpdateClass_WizardAddsSpellAnd
 	// Act
 	input := &character.UpdateClassInput{
 		DraftID: draftID,
-		ClassID: constants.ClassWizard,
+		ClassID: classes.Wizard,
 		Choices: nil, // No additional choices from handler
 	}
 	output, err := s.orchestrator.UpdateClass(s.ctx, input)
@@ -103,7 +104,7 @@ func (s *SpellSelectionOrchestratorTestSuite) TestUpdateClass_WizardAddsSpellAnd
 	s.Require().NotNil(output.Draft)
 
 	// Verify the class was set
-	s.Equal(constants.ClassWizard, output.Draft.ClassChoice.ClassID)
+	s.Equal(classes.Wizard, output.Draft.ClassChoice.ClassID)
 
 	// Verify choices were added
 	s.Require().NotNil(savedDraft, "Draft should have been saved")
@@ -143,7 +144,7 @@ func (s *SpellSelectionOrchestratorTestSuite) TestUpdateClass_ChangingClassClear
 		PlayerID: "player_456",
 		Name:     "Multiclass Test",
 		ClassChoice: toolkitchar.ClassChoice{
-			ClassID: constants.ClassWizard,
+			ClassID: classes.Wizard,
 		},
 		Choices: []toolkitchar.ChoiceData{
 			// Existing wizard choices
@@ -183,7 +184,7 @@ func (s *SpellSelectionOrchestratorTestSuite) TestUpdateClass_ChangingClassClear
 	// Act - Change to Fighter (no spell choices)
 	input := &character.UpdateClassInput{
 		DraftID: draftID,
-		ClassID: constants.ClassFighter,
+		ClassID: classes.Fighter,
 		Choices: nil,
 	}
 	output, err := s.orchestrator.UpdateClass(s.ctx, input)
@@ -191,7 +192,7 @@ func (s *SpellSelectionOrchestratorTestSuite) TestUpdateClass_ChangingClassClear
 	// Assert
 	s.Require().NoError(err)
 	s.Require().NotNil(output)
-	s.Equal(constants.ClassFighter, output.Draft.ClassChoice.ClassID)
+	s.Equal(classes.Fighter, output.Draft.ClassChoice.ClassID)
 
 	// Verify old wizard choices were removed
 	s.Require().NotNil(savedDraft)
@@ -231,7 +232,7 @@ func (s *SpellSelectionOrchestratorTestSuite) TestUpdateClass_ClericOnlyGetsCant
 	// Act
 	input := &character.UpdateClassInput{
 		DraftID: draftID,
-		ClassID: constants.ClassCleric,
+		ClassID: classes.Cleric,
 		Choices: nil,
 	}
 	output, err := s.orchestrator.UpdateClass(s.ctx, input)
@@ -239,7 +240,7 @@ func (s *SpellSelectionOrchestratorTestSuite) TestUpdateClass_ClericOnlyGetsCant
 	// Assert
 	s.Require().NoError(err)
 	s.Require().NotNil(output)
-	s.Equal(constants.ClassCleric, output.Draft.ClassChoice.ClassID)
+	s.Equal(classes.Cleric, output.Draft.ClassChoice.ClassID)
 
 	// Verify only cantrip choice was added (clerics prepare spells)
 	s.Require().NotNil(savedDraft)

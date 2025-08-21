@@ -11,7 +11,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/KirkDiggler/rpg-api/internal/clients/external"
-	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/constants"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/classes"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/races"
 )
 
 func TestGetRaceData_Integration(t *testing.T) {
@@ -32,17 +33,17 @@ func TestGetRaceData_Integration(t *testing.T) {
 	}{
 		{
 			name:     "dragonborn",
-			raceID:   string(constants.RaceDragonborn),
+			raceID:   string(races.Dragonborn),
 			wantName: "Dragonborn",
 		},
 		{
 			name:     "half-elf",
-			raceID:   string(constants.RaceHalfElf),
+			raceID:   string(races.HalfElf),
 			wantName: "Half-Elf",
 		},
 		{
 			name:     "human",
-			raceID:   string(constants.RaceHuman),
+			raceID:   string(races.Human),
 			wantName: "Human",
 		},
 	}
@@ -56,7 +57,7 @@ func TestGetRaceData_Integration(t *testing.T) {
 			require.NotNil(t, output.UIData)
 
 			// Verify the ID is preserved in our format
-			assert.Equal(t, constants.Race(tc.raceID), output.RaceData.ID)
+			assert.Equal(t, races.Race(tc.raceID), output.RaceData.ID)
 			// Verify we got the right race
 			assert.Equal(t, tc.wantName, output.RaceData.Name)
 			// Verify we have some data
@@ -87,13 +88,13 @@ func TestGetClassData_Integration(t *testing.T) {
 	}{
 		{
 			name:        "wizard",
-			classID:     string(constants.ClassWizard),
+			classID:     string(classes.Wizard),
 			wantName:    "Wizard",
 			wantHitDice: 6,
 		},
 		{
 			name:        "fighter",
-			classID:     string(constants.ClassFighter),
+			classID:     string(classes.Fighter),
 			wantName:    "Fighter",
 			wantHitDice: 10,
 		},
@@ -108,7 +109,7 @@ func TestGetClassData_Integration(t *testing.T) {
 			require.NotNil(t, output.UIData)
 
 			// Verify the ID is preserved in our format
-			assert.Equal(t, constants.Class(tc.classID), output.ClassData.ID)
+			assert.Equal(t, classes.Class(tc.classID), output.ClassData.ID)
 			// Verify we got the right class
 			assert.Equal(t, tc.wantName, output.ClassData.Name)
 			assert.Equal(t, tc.wantHitDice, output.ClassData.HitDice)

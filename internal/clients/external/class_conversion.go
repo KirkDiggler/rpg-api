@@ -7,8 +7,9 @@ import (
 
 	"github.com/fadedpez/dnd5e-api/entities"
 
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/abilities"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/class"
-	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/constants"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/classes"
 )
 
 // convertClassToHybrid converts API class data to both toolkit format and UI data
@@ -26,7 +27,7 @@ func (c *client) convertClassToHybrid(apiClass *entities.Class) (*class.Data, *C
 			"key", apiClass.Key,
 			"name", apiClass.Name,
 			"error", err)
-		classID = constants.Class(apiClass.Key)
+		classID = classes.Class(apiClass.Key)
 	}
 
 	// Convert to toolkit format
@@ -39,7 +40,7 @@ func (c *client) convertClassToHybrid(apiClass *entities.Class) (*class.Data, *C
 	}
 
 	// Convert saving throws
-	toolkitData.SavingThrows = make([]constants.Ability, 0, len(apiClass.SavingThrows))
+	toolkitData.SavingThrows = make([]abilities.Ability, 0, len(apiClass.SavingThrows))
 	for _, st := range apiClass.SavingThrows {
 		if ability := convertToAbilityConstant(st.Key); ability != "" {
 			toolkitData.SavingThrows = append(toolkitData.SavingThrows, ability)
@@ -272,24 +273,9 @@ func (c *client) convertClassToHybrid(apiClass *entities.Class) (*class.Data, *C
 }
 
 // convertKeyToClassID validates and converts an API key to a toolkit class constant
-func convertKeyToClassID(key string) (constants.Class, error) {
-	// Map of known API keys to toolkit constants
-	knownClasses := map[string]constants.Class{
-		"barbarian": constants.ClassBarbarian,
-		"bard":      constants.ClassBard,
-		"cleric":    constants.ClassCleric,
-		"druid":     constants.ClassDruid,
-		"fighter":   constants.ClassFighter,
-		"monk":      constants.ClassMonk,
-		"paladin":   constants.ClassPaladin,
-		"ranger":    constants.ClassRanger,
-		"rogue":     constants.ClassRogue,
-		"sorcerer":  constants.ClassSorcerer,
-		"warlock":   constants.ClassWarlock,
-		"wizard":    constants.ClassWizard,
-	}
-
-	if classID, ok := knownClasses[key]; ok {
+func convertKeyToClassID(key string) (classes.Class, error) {
+	// Use the toolkit's All map to validate classes
+	if classID, ok := classes.All[key]; ok {
 		return classID, nil
 	}
 

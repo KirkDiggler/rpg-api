@@ -17,11 +17,16 @@ import (
 	charmock "github.com/KirkDiggler/rpg-api/internal/repositories/character/mock"
 	draftrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft"
 	draftmock "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft/mock"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/abilities"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/backgrounds"
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/class"
-	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/constants"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/classes"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/languages"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/race"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/races"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/skills"
 )
 
 type FinalizeDraftOrchestratorTestSuite struct {
@@ -77,32 +82,32 @@ func (s *FinalizeDraftOrchestratorTestSuite) TestFinalizeDraft_Success() {
 		PlayerID: "player_123",
 		Name:     "Test Fighter",
 		RaceChoice: toolkitchar.RaceChoice{
-			RaceID: constants.RaceHuman,
+			RaceID: races.Human,
 		},
 		ClassChoice: toolkitchar.ClassChoice{
-			ClassID: constants.ClassFighter,
+			ClassID: classes.Fighter,
 		},
-		BackgroundChoice: constants.BackgroundSoldier,
+		BackgroundChoice: backgrounds.Soldier,
 		AbilityScoreChoice: shared.AbilityScores{
-			constants.STR: 16,
-			constants.DEX: 14,
-			constants.CON: 15,
-			constants.INT: 10,
-			constants.WIS: 12,
-			constants.CHA: 8,
+			abilities.STR: 16,
+			abilities.DEX: 14,
+			abilities.CON: 15,
+			abilities.INT: 10,
+			abilities.WIS: 12,
+			abilities.CHA: 8,
 		},
 		Choices: []toolkitchar.ChoiceData{
 			{
 				Category:       shared.ChoiceSkills,
 				Source:         shared.SourceClass,
 				ChoiceID:       "fighter_skills",
-				SkillSelection: []constants.Skill{constants.SkillAthletics, constants.SkillIntimidation},
+				SkillSelection: []skills.Skill{skills.Athletics, skills.Intimidation},
 			},
 			{
 				Category:          shared.ChoiceLanguages,
 				Source:            shared.SourceRace,
 				ChoiceID:          "human_languages",
-				LanguageSelection: []constants.Language{constants.LanguageElvish},
+				LanguageSelection: []languages.Language{languages.Elvish},
 			},
 		},
 	}
@@ -114,26 +119,26 @@ func (s *FinalizeDraftOrchestratorTestSuite) TestFinalizeDraft_Success() {
 
 	// Mock race data
 	s.mockExtClient.EXPECT().
-		GetRaceData(gomock.Any(), string(constants.RaceHuman)).
+		GetRaceData(gomock.Any(), string(races.Human)).
 		Return(&external.RaceDataOutput{
 			RaceData: &race.Data{
-				ID:        constants.RaceHuman,
+				ID:        races.Human,
 				Name:      "Human",
 				Speed:     30,
 				Size:      "Medium",
-				Languages: []constants.Language{constants.LanguageCommon},
+				Languages: []languages.Language{languages.Common},
 			},
 		}, nil)
 
 	// Mock class data
 	s.mockExtClient.EXPECT().
-		GetClassData(gomock.Any(), string(constants.ClassFighter)).
+		GetClassData(gomock.Any(), string(classes.Fighter)).
 		Return(&external.ClassDataOutput{
 			ClassData: &class.Data{
-				ID:                  constants.ClassFighter,
+				ID:                  classes.Fighter,
 				Name:                "Fighter",
 				HitDice:             10,
-				SavingThrows:        []constants.Ability{constants.STR, constants.CON},
+				SavingThrows:        []abilities.Ability{abilities.STR, abilities.CON},
 				WeaponProficiencies: []string{"simple", "martial"},
 				ArmorProficiencies:  []string{"light", "medium", "heavy", "shields"},
 			},
@@ -141,7 +146,7 @@ func (s *FinalizeDraftOrchestratorTestSuite) TestFinalizeDraft_Success() {
 
 	// Mock background data
 	s.mockExtClient.EXPECT().
-		GetBackgroundData(gomock.Any(), string(constants.BackgroundSoldier)).
+		GetBackgroundData(gomock.Any(), string(backgrounds.Soldier)).
 		Return(&external.BackgroundData{
 			ID:                 "soldier",
 			Name:               "Soldier",
@@ -158,9 +163,9 @@ func (s *FinalizeDraftOrchestratorTestSuite) TestFinalizeDraft_Success() {
 			s.Equal("char-123", input.CharacterData.ID)
 			s.Equal("player_123", input.CharacterData.PlayerID)
 			s.Equal("Test Fighter", input.CharacterData.Name)
-			s.Equal(constants.RaceHuman, input.CharacterData.RaceID)
-			s.Equal(constants.ClassFighter, input.CharacterData.ClassID)
-			s.Equal(constants.BackgroundSoldier, input.CharacterData.BackgroundID)
+			s.Equal(races.Human, input.CharacterData.RaceID)
+			s.Equal(classes.Fighter, input.CharacterData.ClassID)
+			s.Equal(backgrounds.Soldier, input.CharacterData.BackgroundID)
 			s.Equal(1, input.CharacterData.Level)
 
 			// Hit points: 10 (max d10) + 2 (CON mod) = 12
@@ -172,16 +177,16 @@ func (s *FinalizeDraftOrchestratorTestSuite) TestFinalizeDraft_Success() {
 			s.Equal("Medium", input.CharacterData.Size)
 
 			// Saving throws
-			s.Equal(shared.Proficient, input.CharacterData.SavingThrows[constants.STR])
-			s.Equal(shared.Proficient, input.CharacterData.SavingThrows[constants.CON])
+			s.Equal(shared.Proficient, input.CharacterData.SavingThrows[abilities.STR])
+			s.Equal(shared.Proficient, input.CharacterData.SavingThrows[abilities.CON])
 
 			// Skills (both background and class-derived)
-			s.Equal(shared.Proficient, input.CharacterData.Skills[constants.SkillAthletics])    // From background
-			s.Equal(shared.Proficient, input.CharacterData.Skills[constants.SkillIntimidation]) // From background
+			s.Equal(shared.Proficient, input.CharacterData.Skills[skills.Athletics])    // From background
+			s.Equal(shared.Proficient, input.CharacterData.Skills[skills.Intimidation]) // From background
 
 			// Languages
-			s.Contains(input.CharacterData.Languages, string(constants.LanguageCommon))
-			s.Contains(input.CharacterData.Languages, string(constants.LanguageElvish))
+			s.Contains(input.CharacterData.Languages, string(languages.Common))
+			s.Contains(input.CharacterData.Languages, string(languages.Elvish))
 
 			// Equipment (from background)
 			s.Contains(input.CharacterData.Equipment, "Uniform")
@@ -223,26 +228,26 @@ func (s *FinalizeDraftOrchestratorTestSuite) TestFinalizeDraft_SuccessWithoutBac
 		PlayerID: "player_123",
 		Name:     "Test Fighter No BG",
 		RaceChoice: toolkitchar.RaceChoice{
-			RaceID: constants.RaceHuman,
+			RaceID: races.Human,
 		},
 		ClassChoice: toolkitchar.ClassChoice{
-			ClassID: constants.ClassFighter,
+			ClassID: classes.Fighter,
 		},
 		// NO BackgroundChoice - it's optional now
 		AbilityScoreChoice: shared.AbilityScores{
-			constants.STR: 16,
-			constants.DEX: 12,
-			constants.CON: 14,
-			constants.INT: 10,
-			constants.WIS: 13,
-			constants.CHA: 8,
+			abilities.STR: 16,
+			abilities.DEX: 12,
+			abilities.CON: 14,
+			abilities.INT: 10,
+			abilities.WIS: 13,
+			abilities.CHA: 8,
 		},
 		Choices: []toolkitchar.ChoiceData{
 			{
 				Category:       shared.ChoiceSkills,
 				Source:         shared.SourceClass,
 				ChoiceID:       "fighter_skills",
-				SkillSelection: []constants.Skill{constants.SkillAthletics, constants.SkillIntimidation},
+				SkillSelection: []skills.Skill{skills.Athletics, skills.Intimidation},
 			},
 		},
 	}
@@ -254,26 +259,26 @@ func (s *FinalizeDraftOrchestratorTestSuite) TestFinalizeDraft_SuccessWithoutBac
 
 	// Mock race data
 	s.mockExtClient.EXPECT().
-		GetRaceData(gomock.Any(), string(constants.RaceHuman)).
+		GetRaceData(gomock.Any(), string(races.Human)).
 		Return(&external.RaceDataOutput{
 			RaceData: &race.Data{
-				ID:        constants.RaceHuman,
+				ID:        races.Human,
 				Name:      "Human",
 				Speed:     30,
 				Size:      "Medium",
-				Languages: []constants.Language{constants.LanguageCommon, constants.LanguageElvish},
+				Languages: []languages.Language{languages.Common, languages.Elvish},
 			},
 		}, nil)
 
 	// Mock class data
 	s.mockExtClient.EXPECT().
-		GetClassData(gomock.Any(), string(constants.ClassFighter)).
+		GetClassData(gomock.Any(), string(classes.Fighter)).
 		Return(&external.ClassDataOutput{
 			ClassData: &class.Data{
-				ID:                  constants.ClassFighter,
+				ID:                  classes.Fighter,
 				Name:                "Fighter",
 				HitDice:             10,
-				SavingThrows:        []constants.Ability{constants.STR, constants.CON},
+				SavingThrows:        []abilities.Ability{abilities.STR, abilities.CON},
 				WeaponProficiencies: []string{"simple", "martial"},
 				ArmorProficiencies:  []string{"light", "medium", "heavy", "shields"},
 			},
@@ -294,8 +299,8 @@ func (s *FinalizeDraftOrchestratorTestSuite) TestFinalizeDraft_SuccessWithoutBac
 			s.Equal(12, input.CharacterData.MaxHitPoints) // 10 (hit dice) + 2 (CON mod)
 
 			// Skills should still be set from choices
-			s.Equal(shared.Proficient, input.CharacterData.Skills[constants.SkillAthletics])
-			s.Equal(shared.Proficient, input.CharacterData.Skills[constants.SkillIntimidation])
+			s.Equal(shared.Proficient, input.CharacterData.Skills[skills.Athletics])
+			s.Equal(shared.Proficient, input.CharacterData.Skills[skills.Intimidation])
 
 			return &charrepo.CreateOutput{CharacterData: input.CharacterData}, nil
 		})
@@ -332,14 +337,14 @@ func (s *FinalizeDraftOrchestratorTestSuite) TestFinalizeDraft_IncompleteDraft()
 				ID:       "draft_123",
 				PlayerID: "player_123",
 				RaceChoice: toolkitchar.RaceChoice{
-					RaceID: constants.RaceHuman,
+					RaceID: races.Human,
 				},
 				ClassChoice: toolkitchar.ClassChoice{
-					ClassID: constants.ClassFighter,
+					ClassID: classes.Fighter,
 				},
-				BackgroundChoice: constants.BackgroundSoldier,
+				BackgroundChoice: backgrounds.Soldier,
 				AbilityScoreChoice: shared.AbilityScores{
-					constants.STR: 16,
+					abilities.STR: 16,
 				},
 			},
 			expectedError: "draft is incomplete: name is required",
@@ -350,12 +355,12 @@ func (s *FinalizeDraftOrchestratorTestSuite) TestFinalizeDraft_IncompleteDraft()
 				ID:               "draft_123",
 				PlayerID:         "player_123",
 				Name:             "Test Character",
-				BackgroundChoice: constants.BackgroundSoldier,
+				BackgroundChoice: backgrounds.Soldier,
 				ClassChoice: toolkitchar.ClassChoice{
-					ClassID: constants.ClassFighter,
+					ClassID: classes.Fighter,
 				},
 				AbilityScoreChoice: shared.AbilityScores{
-					constants.STR: 16,
+					abilities.STR: 16,
 				},
 			},
 			expectedError: "draft is incomplete: race is required",
@@ -367,11 +372,11 @@ func (s *FinalizeDraftOrchestratorTestSuite) TestFinalizeDraft_IncompleteDraft()
 				PlayerID: "player_123",
 				Name:     "Test Character",
 				RaceChoice: toolkitchar.RaceChoice{
-					RaceID: constants.RaceHuman,
+					RaceID: races.Human,
 				},
-				BackgroundChoice: constants.BackgroundSoldier,
+				BackgroundChoice: backgrounds.Soldier,
 				AbilityScoreChoice: shared.AbilityScores{
-					constants.STR: 16,
+					abilities.STR: 16,
 				},
 			},
 			expectedError: "draft is incomplete: class is required",
@@ -384,13 +389,13 @@ func (s *FinalizeDraftOrchestratorTestSuite) TestFinalizeDraft_IncompleteDraft()
 		// 		PlayerID: "player_123",
 		// 		Name:     "Test Character",
 		// 		RaceChoice: toolkitchar.RaceChoice{
-		// 			RaceID: constants.RaceHuman,
+		// 			RaceID: races.Human,
 		// 		},
 		// 		ClassChoice: toolkitchar.ClassChoice{
-		// 			ClassID: constants.ClassFighter,
+		// 			ClassID: classes.Fighter,
 		// 		},
 		// 		AbilityScoreChoice: shared.AbilityScores{
-		// 			constants.STR: 16,
+		// 			abilities.STR: 16,
 		// 		},
 		// 	},
 		// 	expectedError: "draft is incomplete: background is required",
@@ -402,12 +407,12 @@ func (s *FinalizeDraftOrchestratorTestSuite) TestFinalizeDraft_IncompleteDraft()
 				PlayerID: "player_123",
 				Name:     "Test Character",
 				RaceChoice: toolkitchar.RaceChoice{
-					RaceID: constants.RaceHuman,
+					RaceID: races.Human,
 				},
 				ClassChoice: toolkitchar.ClassChoice{
-					ClassID: constants.ClassFighter,
+					ClassID: classes.Fighter,
 				},
-				BackgroundChoice: constants.BackgroundSoldier,
+				BackgroundChoice: backgrounds.Soldier,
 			},
 			expectedError: "draft is incomplete: ability scores are required",
 		},
@@ -468,19 +473,19 @@ func (s *FinalizeDraftOrchestratorTestSuite) TestFinalizeDraft_DraftDeleteFails(
 		PlayerID: "player_123",
 		Name:     "Test Fighter",
 		RaceChoice: toolkitchar.RaceChoice{
-			RaceID: constants.RaceHuman,
+			RaceID: races.Human,
 		},
 		ClassChoice: toolkitchar.ClassChoice{
-			ClassID: constants.ClassFighter,
+			ClassID: classes.Fighter,
 		},
-		BackgroundChoice: constants.BackgroundSoldier,
+		BackgroundChoice: backgrounds.Soldier,
 		AbilityScoreChoice: shared.AbilityScores{
-			constants.STR: 16,
-			constants.DEX: 14,
-			constants.CON: 15,
-			constants.INT: 10,
-			constants.WIS: 12,
-			constants.CHA: 8,
+			abilities.STR: 16,
+			abilities.DEX: 14,
+			abilities.CON: 15,
+			abilities.INT: 10,
+			abilities.WIS: 12,
+			abilities.CHA: 8,
 		},
 	}
 
@@ -491,10 +496,10 @@ func (s *FinalizeDraftOrchestratorTestSuite) TestFinalizeDraft_DraftDeleteFails(
 
 	// Mock race data
 	s.mockExtClient.EXPECT().
-		GetRaceData(gomock.Any(), string(constants.RaceHuman)).
+		GetRaceData(gomock.Any(), string(races.Human)).
 		Return(&external.RaceDataOutput{
 			RaceData: &race.Data{
-				ID:    constants.RaceHuman,
+				ID:    races.Human,
 				Name:  "Human",
 				Speed: 30,
 				Size:  "Medium",
@@ -503,19 +508,19 @@ func (s *FinalizeDraftOrchestratorTestSuite) TestFinalizeDraft_DraftDeleteFails(
 
 	// Mock class data
 	s.mockExtClient.EXPECT().
-		GetClassData(gomock.Any(), string(constants.ClassFighter)).
+		GetClassData(gomock.Any(), string(classes.Fighter)).
 		Return(&external.ClassDataOutput{
 			ClassData: &class.Data{
-				ID:           constants.ClassFighter,
+				ID:           classes.Fighter,
 				Name:         "Fighter",
 				HitDice:      10,
-				SavingThrows: []constants.Ability{constants.STR, constants.CON},
+				SavingThrows: []abilities.Ability{abilities.STR, abilities.CON},
 			},
 		}, nil)
 
 	// Mock background data
 	s.mockExtClient.EXPECT().
-		GetBackgroundData(gomock.Any(), string(constants.BackgroundSoldier)).
+		GetBackgroundData(gomock.Any(), string(backgrounds.Soldier)).
 		Return(&external.BackgroundData{
 			ID:                 "soldier",
 			Name:               "Soldier",
@@ -565,19 +570,19 @@ func (s *FinalizeDraftOrchestratorTestSuite) TestFinalizeDraft_ElfWithRacialTrai
 		PlayerID: "player_123",
 		Name:     "Test Elf Ranger",
 		RaceChoice: toolkitchar.RaceChoice{
-			RaceID: constants.RaceElf,
+			RaceID: races.Elf,
 		},
 		ClassChoice: toolkitchar.ClassChoice{
-			ClassID: constants.ClassRanger,
+			ClassID: classes.Ranger,
 		},
-		BackgroundChoice: constants.BackgroundOutlander,
+		BackgroundChoice: backgrounds.Outlander,
 		AbilityScoreChoice: shared.AbilityScores{
-			constants.STR: 14,
-			constants.DEX: 16,
-			constants.CON: 14,
-			constants.INT: 12,
-			constants.WIS: 15,
-			constants.CHA: 10,
+			abilities.STR: 14,
+			abilities.DEX: 16,
+			abilities.CON: 14,
+			abilities.INT: 12,
+			abilities.WIS: 15,
+			abilities.CHA: 10,
 		},
 	}
 
@@ -588,15 +593,15 @@ func (s *FinalizeDraftOrchestratorTestSuite) TestFinalizeDraft_ElfWithRacialTrai
 
 	// Mock race data with racial skill proficiencies and traits
 	s.mockExtClient.EXPECT().
-		GetRaceData(gomock.Any(), string(constants.RaceElf)).
+		GetRaceData(gomock.Any(), string(races.Elf)).
 		Return(&external.RaceDataOutput{
 			RaceData: &race.Data{
-				ID:                  constants.RaceElf,
+				ID:                  races.Elf,
 				Name:                "Elf",
 				Speed:               30,
 				Size:                "Medium",
-				Languages:           []constants.Language{constants.LanguageCommon, constants.LanguageElvish},
-				SkillProficiencies:  []constants.Skill{constants.SkillPerception},
+				Languages:           []languages.Language{languages.Common, languages.Elvish},
+				SkillProficiencies:  []skills.Skill{skills.Perception},
 				WeaponProficiencies: []string{"Longsword", "Shortbow"},
 				Traits: []race.TraitData{
 					{ID: "darkvision", Name: "Darkvision"},
@@ -609,13 +614,13 @@ func (s *FinalizeDraftOrchestratorTestSuite) TestFinalizeDraft_ElfWithRacialTrai
 
 	// Mock class data
 	s.mockExtClient.EXPECT().
-		GetClassData(gomock.Any(), string(constants.ClassRanger)).
+		GetClassData(gomock.Any(), string(classes.Ranger)).
 		Return(&external.ClassDataOutput{
 			ClassData: &class.Data{
-				ID:                  constants.ClassRanger,
+				ID:                  classes.Ranger,
 				Name:                "Ranger",
 				HitDice:             10,
-				SavingThrows:        []constants.Ability{constants.STR, constants.DEX},
+				SavingThrows:        []abilities.Ability{abilities.STR, abilities.DEX},
 				WeaponProficiencies: []string{"simple", "martial"},
 				ArmorProficiencies:  []string{"light", "medium", "shields"},
 			},
@@ -623,7 +628,7 @@ func (s *FinalizeDraftOrchestratorTestSuite) TestFinalizeDraft_ElfWithRacialTrai
 
 	// Mock background data
 	s.mockExtClient.EXPECT().
-		GetBackgroundData(gomock.Any(), string(constants.BackgroundOutlander)).
+		GetBackgroundData(gomock.Any(), string(backgrounds.Outlander)).
 		Return(&external.BackgroundData{
 			ID:                 "outlander",
 			Name:               "Outlander",
@@ -636,9 +641,9 @@ func (s *FinalizeDraftOrchestratorTestSuite) TestFinalizeDraft_ElfWithRacialTrai
 		Create(gomock.Any(), gomock.Any()).
 		DoAndReturn(func(ctx context.Context, input charrepo.CreateInput) (*charrepo.CreateOutput, error) {
 			// Verify racial skill proficiencies are applied
-			s.Equal(shared.Proficient, input.CharacterData.Skills[constants.SkillPerception]) // From race
-			s.Equal(shared.Proficient, input.CharacterData.Skills[constants.SkillAthletics])  // From background
-			s.Equal(shared.Proficient, input.CharacterData.Skills[constants.SkillSurvival])   // From background
+			s.Equal(shared.Proficient, input.CharacterData.Skills[skills.Perception]) // From race
+			s.Equal(shared.Proficient, input.CharacterData.Skills[skills.Athletics])  // From background
+			s.Equal(shared.Proficient, input.CharacterData.Skills[skills.Survival])   // From background
 
 			// Verify racial weapon proficiencies are added
 			s.Contains(input.CharacterData.Proficiencies.Weapons, "Longsword")
@@ -647,8 +652,8 @@ func (s *FinalizeDraftOrchestratorTestSuite) TestFinalizeDraft_ElfWithRacialTrai
 			s.Contains(input.CharacterData.Proficiencies.Weapons, "martial") // From class
 
 			// Verify languages from race
-			s.Contains(input.CharacterData.Languages, string(constants.LanguageCommon))
-			s.Contains(input.CharacterData.Languages, string(constants.LanguageElvish))
+			s.Contains(input.CharacterData.Languages, string(languages.Common))
+			s.Contains(input.CharacterData.Languages, string(languages.Elvish))
 
 			return &charrepo.CreateOutput{CharacterData: input.CharacterData}, nil
 		})
@@ -683,20 +688,20 @@ func (s *FinalizeDraftOrchestratorTestSuite) TestFinalizeDraft_HillDwarfWithHPBo
 		PlayerID: "player_123",
 		Name:     "Test Hill Dwarf Cleric",
 		RaceChoice: toolkitchar.RaceChoice{
-			RaceID:    constants.RaceDwarf,
-			SubraceID: constants.SubraceHillDwarf,
+			RaceID:    races.Dwarf,
+			SubraceID: races.HillDwarf,
 		},
 		ClassChoice: toolkitchar.ClassChoice{
-			ClassID: constants.ClassCleric,
+			ClassID: classes.Cleric,
 		},
-		BackgroundChoice: constants.BackgroundAcolyte,
+		BackgroundChoice: backgrounds.Acolyte,
 		AbilityScoreChoice: shared.AbilityScores{
-			constants.STR: 12,
-			constants.DEX: 10,
-			constants.CON: 16,
-			constants.INT: 13,
-			constants.WIS: 15,
-			constants.CHA: 14,
+			abilities.STR: 12,
+			abilities.DEX: 10,
+			abilities.CON: 16,
+			abilities.INT: 13,
+			abilities.WIS: 15,
+			abilities.CHA: 14,
 		},
 	}
 
@@ -707,14 +712,14 @@ func (s *FinalizeDraftOrchestratorTestSuite) TestFinalizeDraft_HillDwarfWithHPBo
 
 	// Mock race data with tool proficiencies
 	s.mockExtClient.EXPECT().
-		GetRaceData(gomock.Any(), string(constants.RaceDwarf)).
+		GetRaceData(gomock.Any(), string(races.Dwarf)).
 		Return(&external.RaceDataOutput{
 			RaceData: &race.Data{
-				ID:                  constants.RaceDwarf,
+				ID:                  races.Dwarf,
 				Name:                "Dwarf",
 				Speed:               25,
 				Size:                "Medium",
-				Languages:           []constants.Language{constants.LanguageCommon, constants.LanguageDwarvish},
+				Languages:           []languages.Language{languages.Common, languages.Dwarvish},
 				ToolProficiencies:   []string{"Smith's tools", "Brewer's supplies"},
 				WeaponProficiencies: []string{"Battleaxe", "Handaxe", "Light hammer", "Warhammer"},
 				Traits: []race.TraitData{
@@ -727,13 +732,13 @@ func (s *FinalizeDraftOrchestratorTestSuite) TestFinalizeDraft_HillDwarfWithHPBo
 
 	// Mock class data
 	s.mockExtClient.EXPECT().
-		GetClassData(gomock.Any(), string(constants.ClassCleric)).
+		GetClassData(gomock.Any(), string(classes.Cleric)).
 		Return(&external.ClassDataOutput{
 			ClassData: &class.Data{
-				ID:                  constants.ClassCleric,
+				ID:                  classes.Cleric,
 				Name:                "Cleric",
 				HitDice:             8,
-				SavingThrows:        []constants.Ability{constants.WIS, constants.CHA},
+				SavingThrows:        []abilities.Ability{abilities.WIS, abilities.CHA},
 				WeaponProficiencies: []string{"simple"},
 				ArmorProficiencies:  []string{"light", "medium", "shields"},
 			},
@@ -741,7 +746,7 @@ func (s *FinalizeDraftOrchestratorTestSuite) TestFinalizeDraft_HillDwarfWithHPBo
 
 	// Mock background data
 	s.mockExtClient.EXPECT().
-		GetBackgroundData(gomock.Any(), string(constants.BackgroundAcolyte)).
+		GetBackgroundData(gomock.Any(), string(backgrounds.Acolyte)).
 		Return(&external.BackgroundData{
 			ID:                 "acolyte",
 			Name:               "Acolyte",
@@ -802,26 +807,26 @@ func (s *FinalizeDraftOrchestratorTestSuite) TestFinalizeDraft_RacialSkillConfli
 		PlayerID: "player_123",
 		Name:     "Test Elf Athlete",
 		RaceChoice: toolkitchar.RaceChoice{
-			RaceID: constants.RaceElf,
+			RaceID: races.Elf,
 		},
 		ClassChoice: toolkitchar.ClassChoice{
-			ClassID: constants.ClassFighter,
+			ClassID: classes.Fighter,
 		},
-		BackgroundChoice: constants.BackgroundSoldier,
+		BackgroundChoice: backgrounds.Soldier,
 		AbilityScoreChoice: shared.AbilityScores{
-			constants.STR: 16,
-			constants.DEX: 14,
-			constants.CON: 15,
-			constants.INT: 10,
-			constants.WIS: 12,
-			constants.CHA: 8,
+			abilities.STR: 16,
+			abilities.DEX: 14,
+			abilities.CON: 15,
+			abilities.INT: 10,
+			abilities.WIS: 12,
+			abilities.CHA: 8,
 		},
 		Choices: []toolkitchar.ChoiceData{
 			{
 				Category:       shared.ChoiceSkills,
 				Source:         shared.SourceClass,
 				ChoiceID:       "fighter_skills",
-				SkillSelection: []constants.Skill{constants.SkillPerception}, // Conflicts with racial Perception
+				SkillSelection: []skills.Skill{skills.Perception}, // Conflicts with racial Perception
 			},
 		},
 	}
@@ -833,33 +838,33 @@ func (s *FinalizeDraftOrchestratorTestSuite) TestFinalizeDraft_RacialSkillConfli
 
 	// Mock race data - Elf gets Perception
 	s.mockExtClient.EXPECT().
-		GetRaceData(gomock.Any(), string(constants.RaceElf)).
+		GetRaceData(gomock.Any(), string(races.Elf)).
 		Return(&external.RaceDataOutput{
 			RaceData: &race.Data{
-				ID:                 constants.RaceElf,
+				ID:                 races.Elf,
 				Name:               "Elf",
 				Speed:              30,
 				Size:               "Medium",
-				Languages:          []constants.Language{constants.LanguageCommon, constants.LanguageElvish},
-				SkillProficiencies: []constants.Skill{constants.SkillPerception},
+				Languages:          []languages.Language{languages.Common, languages.Elvish},
+				SkillProficiencies: []skills.Skill{skills.Perception},
 			},
 		}, nil)
 
 	// Mock class data
 	s.mockExtClient.EXPECT().
-		GetClassData(gomock.Any(), string(constants.ClassFighter)).
+		GetClassData(gomock.Any(), string(classes.Fighter)).
 		Return(&external.ClassDataOutput{
 			ClassData: &class.Data{
-				ID:           constants.ClassFighter,
+				ID:           classes.Fighter,
 				Name:         "Fighter",
 				HitDice:      10,
-				SavingThrows: []constants.Ability{constants.STR, constants.CON},
+				SavingThrows: []abilities.Ability{abilities.STR, abilities.CON},
 			},
 		}, nil)
 
 	// Mock background data
 	s.mockExtClient.EXPECT().
-		GetBackgroundData(gomock.Any(), string(constants.BackgroundSoldier)).
+		GetBackgroundData(gomock.Any(), string(backgrounds.Soldier)).
 		Return(&external.BackgroundData{
 			ID:                 "soldier",
 			Name:               "Soldier",
@@ -872,12 +877,12 @@ func (s *FinalizeDraftOrchestratorTestSuite) TestFinalizeDraft_RacialSkillConfli
 		Create(gomock.Any(), gomock.Any()).
 		DoAndReturn(func(ctx context.Context, input charrepo.CreateInput) (*charrepo.CreateOutput, error) {
 			// Verify Perception is still proficient (should not be duplicated)
-			s.Equal(shared.Proficient, input.CharacterData.Skills[constants.SkillPerception])
+			s.Equal(shared.Proficient, input.CharacterData.Skills[skills.Perception])
 
 			// Count how many times Perception appears - should only be once
 			perceptionCount := 0
 			for skill, level := range input.CharacterData.Skills {
-				if skill == constants.SkillPerception && level == shared.Proficient {
+				if skill == skills.Perception && level == shared.Proficient {
 					perceptionCount++
 				}
 			}
@@ -915,16 +920,16 @@ func (s *FinalizeDraftOrchestratorTestSuite) TestFinalizeDraft_BarbarianClassRes
 		PlayerID: "player_123",
 		Name:     "Test Barbarian",
 		RaceChoice: toolkitchar.RaceChoice{
-			RaceID: constants.RaceHuman,
+			RaceID: races.Human,
 		},
 		ClassChoice: toolkitchar.ClassChoice{
-			ClassID: constants.ClassBarbarian,
+			ClassID: classes.Barbarian,
 		},
-		BackgroundChoice: constants.BackgroundSoldier,
+		BackgroundChoice: backgrounds.Soldier,
 		AbilityScoreChoice: shared.AbilityScores{
-			constants.STR: 16,
-			constants.CON: 14,
-			constants.CHA: 10,
+			abilities.STR: 16,
+			abilities.CON: 14,
+			abilities.CHA: 10,
 		},
 	}
 
@@ -935,32 +940,32 @@ func (s *FinalizeDraftOrchestratorTestSuite) TestFinalizeDraft_BarbarianClassRes
 
 	// Mock race data
 	s.mockExtClient.EXPECT().
-		GetRaceData(gomock.Any(), string(constants.RaceHuman)).
+		GetRaceData(gomock.Any(), string(races.Human)).
 		Return(&external.RaceDataOutput{
 			RaceData: &race.Data{
-				ID:        constants.RaceHuman,
+				ID:        races.Human,
 				Name:      "Human",
 				Speed:     30,
 				Size:      "Medium",
-				Languages: []constants.Language{constants.LanguageCommon},
+				Languages: []languages.Language{languages.Common},
 			},
 		}, nil)
 
 	// Mock class data
 	s.mockExtClient.EXPECT().
-		GetClassData(gomock.Any(), string(constants.ClassBarbarian)).
+		GetClassData(gomock.Any(), string(classes.Barbarian)).
 		Return(&external.ClassDataOutput{
 			ClassData: &class.Data{
-				ID:           constants.ClassBarbarian,
+				ID:           classes.Barbarian,
 				Name:         "Barbarian",
 				HitDice:      12,
-				SavingThrows: []constants.Ability{constants.STR, constants.CON},
+				SavingThrows: []abilities.Ability{abilities.STR, abilities.CON},
 			},
 		}, nil)
 
 	// Mock background data
 	s.mockExtClient.EXPECT().
-		GetBackgroundData(gomock.Any(), string(constants.BackgroundSoldier)).
+		GetBackgroundData(gomock.Any(), string(backgrounds.Soldier)).
 		Return(&external.BackgroundData{
 			ID:                 "soldier",
 			Name:               "Soldier",
@@ -1014,16 +1019,16 @@ func (s *FinalizeDraftOrchestratorTestSuite) TestFinalizeDraft_WizardSpellSlots(
 		PlayerID: "player_123",
 		Name:     "Test Wizard",
 		RaceChoice: toolkitchar.RaceChoice{
-			RaceID: constants.RaceHuman,
+			RaceID: races.Human,
 		},
 		ClassChoice: toolkitchar.ClassChoice{
-			ClassID: constants.ClassWizard,
+			ClassID: classes.Wizard,
 		},
-		BackgroundChoice: constants.BackgroundSoldier,
+		BackgroundChoice: backgrounds.Soldier,
 		AbilityScoreChoice: shared.AbilityScores{
-			constants.STR: 10,
-			constants.CON: 14,
-			constants.INT: 16,
+			abilities.STR: 10,
+			abilities.CON: 14,
+			abilities.INT: 16,
 		},
 	}
 
@@ -1034,32 +1039,32 @@ func (s *FinalizeDraftOrchestratorTestSuite) TestFinalizeDraft_WizardSpellSlots(
 
 	// Mock race data
 	s.mockExtClient.EXPECT().
-		GetRaceData(gomock.Any(), string(constants.RaceHuman)).
+		GetRaceData(gomock.Any(), string(races.Human)).
 		Return(&external.RaceDataOutput{
 			RaceData: &race.Data{
-				ID:        constants.RaceHuman,
+				ID:        races.Human,
 				Name:      "Human",
 				Speed:     30,
 				Size:      "Medium",
-				Languages: []constants.Language{constants.LanguageCommon},
+				Languages: []languages.Language{languages.Common},
 			},
 		}, nil)
 
 	// Mock class data
 	s.mockExtClient.EXPECT().
-		GetClassData(gomock.Any(), string(constants.ClassWizard)).
+		GetClassData(gomock.Any(), string(classes.Wizard)).
 		Return(&external.ClassDataOutput{
 			ClassData: &class.Data{
-				ID:           constants.ClassWizard,
+				ID:           classes.Wizard,
 				Name:         "Wizard",
 				HitDice:      6,
-				SavingThrows: []constants.Ability{constants.INT, constants.WIS},
+				SavingThrows: []abilities.Ability{abilities.INT, abilities.WIS},
 			},
 		}, nil)
 
 	// Mock background data
 	s.mockExtClient.EXPECT().
-		GetBackgroundData(gomock.Any(), string(constants.BackgroundSoldier)).
+		GetBackgroundData(gomock.Any(), string(backgrounds.Soldier)).
 		Return(&external.BackgroundData{
 			ID:                 "soldier",
 			Name:               "Soldier",
@@ -1111,16 +1116,16 @@ func (s *FinalizeDraftOrchestratorTestSuite) TestFinalizeDraft_BardCharismaBased
 		PlayerID: "player_123",
 		Name:     "Test Bard",
 		RaceChoice: toolkitchar.RaceChoice{
-			RaceID: constants.RaceHuman,
+			RaceID: races.Human,
 		},
 		ClassChoice: toolkitchar.ClassChoice{
-			ClassID: constants.ClassBard,
+			ClassID: classes.Bard,
 		},
-		BackgroundChoice: constants.BackgroundSoldier,
+		BackgroundChoice: backgrounds.Soldier,
 		AbilityScoreChoice: shared.AbilityScores{
-			constants.STR: 10,
-			constants.CON: 14,
-			constants.CHA: 16, // +3 modifier = 3 uses
+			abilities.STR: 10,
+			abilities.CON: 14,
+			abilities.CHA: 16, // +3 modifier = 3 uses
 		},
 	}
 
@@ -1131,32 +1136,32 @@ func (s *FinalizeDraftOrchestratorTestSuite) TestFinalizeDraft_BardCharismaBased
 
 	// Mock race data
 	s.mockExtClient.EXPECT().
-		GetRaceData(gomock.Any(), string(constants.RaceHuman)).
+		GetRaceData(gomock.Any(), string(races.Human)).
 		Return(&external.RaceDataOutput{
 			RaceData: &race.Data{
-				ID:        constants.RaceHuman,
+				ID:        races.Human,
 				Name:      "Human",
 				Speed:     30,
 				Size:      "Medium",
-				Languages: []constants.Language{constants.LanguageCommon},
+				Languages: []languages.Language{languages.Common},
 			},
 		}, nil)
 
 	// Mock class data
 	s.mockExtClient.EXPECT().
-		GetClassData(gomock.Any(), string(constants.ClassBard)).
+		GetClassData(gomock.Any(), string(classes.Bard)).
 		Return(&external.ClassDataOutput{
 			ClassData: &class.Data{
-				ID:           constants.ClassBard,
+				ID:           classes.Bard,
 				Name:         "Bard",
 				HitDice:      8,
-				SavingThrows: []constants.Ability{constants.DEX, constants.CHA},
+				SavingThrows: []abilities.Ability{abilities.DEX, abilities.CHA},
 			},
 		}, nil)
 
 	// Mock background data
 	s.mockExtClient.EXPECT().
-		GetBackgroundData(gomock.Any(), string(constants.BackgroundSoldier)).
+		GetBackgroundData(gomock.Any(), string(backgrounds.Soldier)).
 		Return(&external.BackgroundData{
 			ID:                 "soldier",
 			Name:               "Soldier",
@@ -1213,16 +1218,16 @@ func (s *FinalizeDraftOrchestratorTestSuite) TestFinalizeDraft_WarlockPactMagic(
 		PlayerID: "player_123",
 		Name:     "Test Warlock",
 		RaceChoice: toolkitchar.RaceChoice{
-			RaceID: constants.RaceHuman,
+			RaceID: races.Human,
 		},
 		ClassChoice: toolkitchar.ClassChoice{
-			ClassID: constants.ClassWarlock,
+			ClassID: classes.Warlock,
 		},
-		BackgroundChoice: constants.BackgroundSoldier,
+		BackgroundChoice: backgrounds.Soldier,
 		AbilityScoreChoice: shared.AbilityScores{
-			constants.STR: 10,
-			constants.CON: 14,
-			constants.CHA: 16,
+			abilities.STR: 10,
+			abilities.CON: 14,
+			abilities.CHA: 16,
 		},
 	}
 
@@ -1233,32 +1238,32 @@ func (s *FinalizeDraftOrchestratorTestSuite) TestFinalizeDraft_WarlockPactMagic(
 
 	// Mock race data
 	s.mockExtClient.EXPECT().
-		GetRaceData(gomock.Any(), string(constants.RaceHuman)).
+		GetRaceData(gomock.Any(), string(races.Human)).
 		Return(&external.RaceDataOutput{
 			RaceData: &race.Data{
-				ID:        constants.RaceHuman,
+				ID:        races.Human,
 				Name:      "Human",
 				Speed:     30,
 				Size:      "Medium",
-				Languages: []constants.Language{constants.LanguageCommon},
+				Languages: []languages.Language{languages.Common},
 			},
 		}, nil)
 
 	// Mock class data
 	s.mockExtClient.EXPECT().
-		GetClassData(gomock.Any(), string(constants.ClassWarlock)).
+		GetClassData(gomock.Any(), string(classes.Warlock)).
 		Return(&external.ClassDataOutput{
 			ClassData: &class.Data{
-				ID:           constants.ClassWarlock,
+				ID:           classes.Warlock,
 				Name:         "Warlock",
 				HitDice:      8,
-				SavingThrows: []constants.Ability{constants.WIS, constants.CHA},
+				SavingThrows: []abilities.Ability{abilities.WIS, abilities.CHA},
 			},
 		}, nil)
 
 	// Mock background data
 	s.mockExtClient.EXPECT().
-		GetBackgroundData(gomock.Any(), string(constants.BackgroundSoldier)).
+		GetBackgroundData(gomock.Any(), string(backgrounds.Soldier)).
 		Return(&external.BackgroundData{
 			ID:                 "soldier",
 			Name:               "Soldier",

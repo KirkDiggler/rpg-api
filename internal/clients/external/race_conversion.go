@@ -7,8 +7,11 @@ import (
 
 	"github.com/fadedpez/dnd5e-api/entities"
 
-	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/constants"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/abilities"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/languages"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/race"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/races"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/skills"
 )
 
 // convertRaceToHybrid converts API race data to both toolkit format and UI data
@@ -26,7 +29,7 @@ func convertRaceToHybrid(apiRace *entities.Race) (*race.Data, *RaceUIData) {
 			"key", apiRace.Key,
 			"name", apiRace.Name,
 			"error", err)
-		raceID = constants.Race(apiRace.Key)
+		raceID = races.Race(apiRace.Key)
 	}
 
 	// Convert to toolkit format
@@ -39,7 +42,7 @@ func convertRaceToHybrid(apiRace *entities.Race) (*race.Data, *RaceUIData) {
 	}
 
 	// Convert ability score increases
-	toolkitData.AbilityScoreIncreases = make(map[constants.Ability]int)
+	toolkitData.AbilityScoreIncreases = make(map[abilities.Ability]int)
 	for _, bonus := range apiRace.AbilityBonuses {
 		if bonus.AbilityScore != nil {
 			// Convert ability name to constant
@@ -61,7 +64,7 @@ func convertRaceToHybrid(apiRace *entities.Race) (*race.Data, *RaceUIData) {
 	}
 
 	// Convert languages
-	toolkitData.Languages = make([]constants.Language, 0, len(apiRace.Languages))
+	toolkitData.Languages = make([]languages.Language, 0, len(apiRace.Languages))
 	for _, lang := range apiRace.Languages {
 		if langConst := convertToLanguageConstant(lang.Key); langConst != "" {
 			toolkitData.Languages = append(toolkitData.Languages, langConst)
@@ -146,7 +149,7 @@ func convertRaceToHybrid(apiRace *entities.Race) (*race.Data, *RaceUIData) {
 	for i, subrace := range apiRace.SubRaces {
 		subraceID := fromAPIFormat(subrace.Key, "SUBRACE")
 		toolkitData.Subraces[i] = race.SubraceData{
-			ID:          constants.Subrace(subraceID),
+			ID:          races.Subrace(subraceID),
 			Name:        subrace.Name,
 			Description: "", // Would need to fetch full subrace details
 		}
@@ -163,90 +166,90 @@ func convertRaceToHybrid(apiRace *entities.Race) (*race.Data, *RaceUIData) {
 }
 
 // Helper functions to convert to constants
-func convertToAbilityConstant(key string) constants.Ability {
+func convertToAbilityConstant(key string) abilities.Ability {
 	switch strings.ToLower(key) {
 	case "str":
-		return constants.STR
+		return abilities.STR
 	case "dex":
-		return constants.DEX
+		return abilities.DEX
 	case "con":
-		return constants.CON
+		return abilities.CON
 	case "int":
-		return constants.INT
+		return abilities.INT
 	case "wis":
-		return constants.WIS
+		return abilities.WIS
 	case "cha":
-		return constants.CHA
+		return abilities.CHA
 	default:
 		return ""
 	}
 }
 
-func convertToLanguageConstant(key string) constants.Language {
+func convertToLanguageConstant(key string) languages.Language {
 	// Map API language keys to constants
 	switch strings.ToLower(key) {
 	case "common":
-		return constants.LanguageCommon
+		return languages.Common
 	case "dwarvish":
-		return constants.LanguageDwarvish
+		return languages.Dwarvish
 	case "elvish":
-		return constants.LanguageElvish
+		return languages.Elvish
 	case "giant":
-		return constants.LanguageGiant
+		return languages.Giant
 	case "gnomish":
-		return constants.LanguageGnomish
+		return languages.Gnomish
 	case "goblin":
-		return constants.LanguageGoblin
+		return languages.Goblin
 	case "halfling":
-		return constants.LanguageHalfling
+		return languages.Halfling
 	case "orc":
-		return constants.LanguageOrc
+		return languages.Orc
 	// Add more mappings as needed
 	default:
 		return ""
 	}
 }
 
-func convertToSkillConstant(name string) constants.Skill {
+func convertToSkillConstant(name string) skills.Skill {
 	// Map skill names to constants
 	skillName := strings.ToLower(strings.TrimSpace(name))
 	switch skillName {
 	case "acrobatics":
-		return constants.SkillAcrobatics
+		return skills.Acrobatics
 	case "animal handling":
-		return constants.SkillAnimalHandling
+		return skills.AnimalHandling
 	case "arcana":
-		return constants.SkillArcana
+		return skills.Arcana
 	case "athletics":
-		return constants.SkillAthletics
+		return skills.Athletics
 	case "deception":
-		return constants.SkillDeception
+		return skills.Deception
 	case "history":
-		return constants.SkillHistory
+		return skills.History
 	case "insight":
-		return constants.SkillInsight
+		return skills.Insight
 	case "intimidation":
-		return constants.SkillIntimidation
+		return skills.Intimidation
 	case "investigation":
-		return constants.SkillInvestigation
+		return skills.Investigation
 	case "medicine":
-		return constants.SkillMedicine
+		return skills.Medicine
 	case "nature":
-		return constants.SkillNature
+		return skills.Nature
 	case "perception":
-		return constants.SkillPerception
+		return skills.Perception
 	case "performance":
-		return constants.SkillPerformance
+		return skills.Performance
 	case "persuasion":
-		return constants.SkillPersuasion
+		return skills.Persuasion
 	case "religion":
-		return constants.SkillReligion
+		return skills.Religion
 	case "sleight of hand":
-		return constants.SkillSleightOfHand
+		return skills.SleightOfHand
 	case "stealth":
-		return constants.SkillStealth
+		return skills.Stealth
 	case "survival":
-		return constants.SkillSurvival
+		return skills.Survival
 	default:
 		return ""
 	}
@@ -274,21 +277,9 @@ func isToolProficiency(name string) bool {
 }
 
 // convertKeyToRaceID validates and converts an API key to a toolkit race constant
-func convertKeyToRaceID(key string) (constants.Race, error) {
-	// Map of known API keys to toolkit constants
-	knownRaces := map[string]constants.Race{
-		"dragonborn": constants.RaceDragonborn,
-		"dwarf":      constants.RaceDwarf,
-		"elf":        constants.RaceElf,
-		"gnome":      constants.RaceGnome,
-		"half-elf":   constants.RaceHalfElf,
-		"halfling":   constants.RaceHalfling,
-		"half-orc":   constants.RaceHalfOrc,
-		"human":      constants.RaceHuman,
-		"tiefling":   constants.RaceTiefling,
-	}
-
-	if raceID, ok := knownRaces[key]; ok {
+func convertKeyToRaceID(key string) (races.Race, error) {
+	// Use the toolkit's All map to validate races
+	if raceID, ok := races.All[key]; ok {
 		return raceID, nil
 	}
 

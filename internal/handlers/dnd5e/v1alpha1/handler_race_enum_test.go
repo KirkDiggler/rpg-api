@@ -14,7 +14,8 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
 	charactermock "github.com/KirkDiggler/rpg-api/internal/orchestrators/character/mock"
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
-	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/constants"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/languages"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/races"
 )
 
 func TestUpdateRace_DragonbornRaceEnum(t *testing.T) {
@@ -43,7 +44,7 @@ func TestUpdateRace_DragonbornRaceEnum(t *testing.T) {
 		CreatedAt: time.Unix(1754072213, 0),
 		UpdatedAt: time.Unix(1754072221, 0),
 		RaceChoice: toolkitchar.RaceChoice{
-			RaceID:    constants.RaceDragonborn, // Use the actual constant "dragonborn"
+			RaceID:    races.Dragonborn, // Use the actual constant "dragonborn"
 			SubraceID: "",
 		},
 		Choices: []toolkitchar.ChoiceData{
@@ -51,7 +52,7 @@ func TestUpdateRace_DragonbornRaceEnum(t *testing.T) {
 				Category:          "languages",
 				Source:            "race",
 				ChoiceID:          "language_choice",
-				LanguageSelection: []constants.Language{"goblin"},
+				LanguageSelection: []languages.Language{"goblin"},
 			},
 		},
 	}
@@ -101,18 +102,18 @@ func TestRaceConversion_AllRaces(t *testing.T) {
 	// Test that all race conversions work properly
 	testCases := []struct {
 		name          string
-		toolkitRaceID constants.Race
+		toolkitRaceID races.Race
 		expectedEnum  dnd5ev1alpha1.Race
 	}{
-		{"Dragonborn", constants.RaceDragonborn, dnd5ev1alpha1.Race_RACE_DRAGONBORN},
-		{"Dwarf", constants.RaceDwarf, dnd5ev1alpha1.Race_RACE_DWARF},
-		{"Elf", constants.RaceElf, dnd5ev1alpha1.Race_RACE_ELF},
-		{"Gnome", constants.RaceGnome, dnd5ev1alpha1.Race_RACE_GNOME},
-		{"Half-Elf", constants.RaceHalfElf, dnd5ev1alpha1.Race_RACE_HALF_ELF},
-		{"Halfling", constants.RaceHalfling, dnd5ev1alpha1.Race_RACE_HALFLING},
-		{"Half-Orc", constants.RaceHalfOrc, dnd5ev1alpha1.Race_RACE_HALF_ORC},
-		{"Human", constants.RaceHuman, dnd5ev1alpha1.Race_RACE_HUMAN},
-		{"Tiefling", constants.RaceTiefling, dnd5ev1alpha1.Race_RACE_TIEFLING},
+		{"Dragonborn", races.Dragonborn, dnd5ev1alpha1.Race_RACE_DRAGONBORN},
+		{"Dwarf", races.Dwarf, dnd5ev1alpha1.Race_RACE_DWARF},
+		{"Elf", races.Elf, dnd5ev1alpha1.Race_RACE_ELF},
+		{"Gnome", races.Gnome, dnd5ev1alpha1.Race_RACE_GNOME},
+		{"Half-Elf", races.HalfElf, dnd5ev1alpha1.Race_RACE_HALF_ELF},
+		{"Halfling", races.Halfling, dnd5ev1alpha1.Race_RACE_HALFLING},
+		{"Half-Orc", races.HalfOrc, dnd5ev1alpha1.Race_RACE_HALF_ORC},
+		{"Human", races.Human, dnd5ev1alpha1.Race_RACE_HUMAN},
+		{"Tiefling", races.Tiefling, dnd5ev1alpha1.Race_RACE_TIEFLING},
 	}
 
 	for _, tc := range testCases {

@@ -19,6 +19,8 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/errors"
 	"github.com/KirkDiggler/rpg-api/internal/types/choices"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/class"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/classes"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/races"
 )
 
 // slugPattern matches characters that should be replaced in slugs
@@ -45,16 +47,19 @@ func generateSlug(s string) string {
 }
 
 // D&D 5e class name mappings for spell filtering
-var dnd5eClassNames = map[string]string{
-	"bard":     "bard",
-	"cleric":   "cleric",
-	"druid":    "druid",
-	"paladin":  "paladin",
-	"ranger":   "ranger",
-	"sorcerer": "sorcerer",
-	"warlock":  "warlock",
-	"wizard":   "wizard",
-}
+// Built from classes.All to ensure we only use supported classes
+var dnd5eClassNames = func() map[string]string {
+	result := make(map[string]string)
+	for key, class := range classes.All {
+		// Only include spell-casting classes
+		switch class {
+		case classes.Bard, classes.Cleric, classes.Druid, classes.Paladin,
+			classes.Ranger, classes.Sorcerer, classes.Warlock, classes.Wizard:
+			result[key] = string(class)
+		}
+	}
+	return result
+}()
 
 // Client defines the interface for external API interactions
 type Client interface {
@@ -372,7 +377,7 @@ func (c *client) ListAvailableRaces(_ context.Context) ([]*RaceData, error) {
 
 	// Step 2: Concurrently load full details for each race
 	slog.Info("Loading full details for each race concurrently")
-	races := make([]*RaceData, len(refs))
+	allRaces := make([]*RaceData, len(refs))
 	errChan := make(chan error, len(refs))
 	var wg sync.WaitGroup
 
@@ -393,7 +398,7 @@ func (c *client) ListAvailableRaces(_ context.Context) ([]*RaceData, error) {
 			raceData := convertRaceToRaceData(race)
 			// Ensure ID is in our internal format
 			raceData.ID = fromAPIFormat(key, "RACE")
-			races[idx] = raceData
+			allRaces[idx] = raceData
 			slog.Debug("Loaded race details", "race", name, "id", raceData.ID)
 		}(i, ref.Key, ref.Name)
 	}
@@ -408,7 +413,23 @@ func (c *client) ListAvailableRaces(_ context.Context) ([]*RaceData, error) {
 		}
 	}
 
-	return races, nil
+	// Step 3: Filter to only include races that our toolkit supports
+	filteredRaces := make([]*RaceData, 0)
+	for _, race := range allRaces {
+		if race == nil {
+			continue
+		}
+		// Check if this race ID is in our toolkit's supported races
+		if _, ok := races.All[race.ID]; ok {
+			filteredRaces = append(filteredRaces, race)
+			slog.Debug("Including supported race", "race", race.Name, "id", race.ID)
+		} else {
+			slog.Debug("Filtering out unsupported race", "race", race.Name, "id", race.ID)
+		}
+	}
+
+	slog.Info("Filtered races to toolkit-supported only", "original", len(allRaces), "filtered", len(filteredRaces))
+	return filteredRaces, nil
 }
 
 func (c *client) ListAvailableClasses(_ context.Context) ([]*ClassData, error) {
@@ -419,7 +440,7 @@ func (c *client) ListAvailableClasses(_ context.Context) ([]*ClassData, error) {
 	}
 
 	// Step 2: Concurrently load full details for each class
-	classes := make([]*ClassData, len(refs))
+	allClasses := make([]*ClassData, len(refs))
 	errChan := make(chan error, len(refs))
 	var wg sync.WaitGroup
 
@@ -450,7 +471,7 @@ func (c *client) ListAvailableClasses(_ context.Context) ([]*ClassData, error) {
 			}
 			// Ensure ID is in our internal format
 			classData.ID = fromAPIFormat(key, "CLASS")
-			classes[idx] = classData
+			allClasses[idx] = classData
 		}(i, ref.Key)
 	}
 
@@ -464,7 +485,23 @@ func (c *client) ListAvailableClasses(_ context.Context) ([]*ClassData, error) {
 		}
 	}
 
-	return classes, nil
+	// Step 3: Filter to only include classes that our toolkit supports
+	filteredClasses := make([]*ClassData, 0)
+	for _, class := range allClasses {
+		if class == nil {
+			continue
+		}
+		// Check if this class ID is in our toolkit's supported classes
+		if _, ok := classes.All[class.ID]; ok {
+			filteredClasses = append(filteredClasses, class)
+			slog.Debug("Including supported class", "class", class.Name, "id", class.ID)
+		} else {
+			slog.Debug("Filtering out unsupported class", "class", class.Name, "id", class.ID)
+		}
+	}
+
+	slog.Info("Filtered classes to toolkit-supported only", "original", len(allClasses), "filtered", len(filteredClasses))
+	return filteredClasses, nil
 }
 
 func (c *client) ListAvailableBackgrounds(_ context.Context) ([]*BackgroundData, error) {

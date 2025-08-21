@@ -6,32 +6,33 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/constants"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/classes"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/races"
 )
 
 func TestConvertKeyToClassID(t *testing.T) {
 	testCases := []struct {
 		name      string
 		key       string
-		wantClass constants.Class
+		wantClass classes.Class
 		wantErr   bool
 	}{
 		{
 			name:      "valid wizard key",
 			key:       "wizard",
-			wantClass: constants.ClassWizard,
+			wantClass: classes.Wizard,
 			wantErr:   false,
 		},
 		{
 			name:      "valid fighter key",
 			key:       "fighter",
-			wantClass: constants.ClassFighter,
+			wantClass: classes.Fighter,
 			wantErr:   false,
 		},
 		{
 			name:      "valid barbarian key",
 			key:       "barbarian",
-			wantClass: constants.ClassBarbarian,
+			wantClass: classes.Barbarian,
 			wantErr:   false,
 		},
 		{
@@ -67,25 +68,25 @@ func TestConvertKeyToRaceID(t *testing.T) {
 	testCases := []struct {
 		name     string
 		key      string
-		wantRace constants.Race
+		wantRace races.Race
 		wantErr  bool
 	}{
 		{
 			name:     "valid human key",
 			key:      "human",
-			wantRace: constants.RaceHuman,
+			wantRace: races.Human,
 			wantErr:  false,
 		},
 		{
 			name:     "valid dragonborn key",
 			key:      "dragonborn",
-			wantRace: constants.RaceDragonborn,
+			wantRace: races.Dragonborn,
 			wantErr:  false,
 		},
 		{
 			name:     "valid half-elf key",
 			key:      "half-elf",
-			wantRace: constants.RaceHalfElf,
+			wantRace: races.HalfElf,
 			wantErr:  false,
 		},
 		{

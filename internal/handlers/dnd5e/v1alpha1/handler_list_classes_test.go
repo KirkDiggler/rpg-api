@@ -11,8 +11,10 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v1alpha1"
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
 	charactermock "github.com/KirkDiggler/rpg-api/internal/orchestrators/character/mock"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/abilities"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/class"
-	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/constants"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/classes"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/skills"
 )
 
 type HandlerListClassesTestSuite struct {
@@ -46,20 +48,20 @@ func (s *HandlerListClassesTestSuite) TestListClasses_WithChoices() {
 
 	// Mock fighter class with skill and equipment choices
 	mockFighter := &class.Data{
-		ID:                    constants.ClassFighter,
+		ID:                    classes.Fighter,
 		Name:                  "Fighter",
 		Description:           "A master of martial combat",
 		HitDice:               10,
 		SkillProficiencyCount: 2,
-		SkillOptions: []constants.Skill{
-			constants.SkillAcrobatics,
-			constants.SkillAnimalHandling,
-			constants.SkillAthletics,
-			constants.SkillHistory,
-			constants.SkillInsight,
-			constants.SkillIntimidation,
-			constants.SkillPerception,
-			constants.SkillSurvival,
+		SkillOptions: []skills.Skill{
+			skills.Acrobatics,
+			skills.AnimalHandling,
+			skills.Athletics,
+			skills.History,
+			skills.Insight,
+			skills.Intimidation,
+			skills.Perception,
+			skills.Survival,
 		},
 		EquipmentChoices: []class.EquipmentChoiceData{
 			{
@@ -121,7 +123,7 @@ func (s *HandlerListClassesTestSuite) TestListClasses_WithChoices() {
 				},
 			},
 		},
-		SavingThrows:        []constants.Ability{constants.STR, constants.CON},
+		SavingThrows:        []abilities.Ability{abilities.STR, abilities.CON},
 		ArmorProficiencies:  []string{"light", "medium", "heavy", "shields"},
 		WeaponProficiencies: []string{"simple", "martial"},
 		Features: map[int][]class.FeatureData{

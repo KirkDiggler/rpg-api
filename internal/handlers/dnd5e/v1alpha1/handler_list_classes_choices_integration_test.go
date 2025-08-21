@@ -18,7 +18,7 @@ import (
 	idgenmock "github.com/KirkDiggler/rpg-api/internal/pkg/idgen/mock"
 	characterrepomock "github.com/KirkDiggler/rpg-api/internal/repositories/character/mock"
 	draftrepomock "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft/mock"
-	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/constants"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/classes"
 )
 
 const (
@@ -120,7 +120,7 @@ func (s *HandlerListClassesChoicesIntegrationTestSuite) TestListClasses_VerifyCh
 	// Find fighter class for detailed choice verification
 	var fighterClass *dnd5ev1alpha1.ClassInfo
 	for _, class := range resp.Classes {
-		if class.Id == string(constants.ClassFighter) {
+		if class.Id == string(classes.Fighter) {
 			fighterClass = class
 			break
 		}

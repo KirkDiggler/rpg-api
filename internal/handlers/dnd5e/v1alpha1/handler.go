@@ -14,11 +14,16 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/entities/dnd5e"
 	"github.com/KirkDiggler/rpg-api/internal/errors"
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/abilities"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/backgrounds"
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/class"
-	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/constants"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/classes"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/languages"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/race"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/races"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/skills"
 )
 
 // HandlerConfig holds dependencies for the handler
@@ -280,8 +285,8 @@ func (h *Handler) UpdateBackground(
 	ctx context.Context,
 	req *dnd5ev1alpha1.UpdateBackgroundRequest,
 ) (*dnd5ev1alpha1.UpdateBackgroundResponse, error) {
-	// Convert proto background to toolkit background ID
-	backgroundID := convertProtoBackgroundToToolkitID(req.Background)
+	// Convert proto background to toolkit background type
+	backgroundID := convertProtoBackgroundToToolkit(req.Background)
 	if backgroundID == "" {
 		return nil, status.Error(codes.InvalidArgument, "invalid background")
 	}
@@ -1059,17 +1064,17 @@ func convertToolkitChoicesToProto(choices []toolkitchar.ChoiceData) []*dnd5ev1al
 				protoScores := &dnd5ev1alpha1.AbilityScores{}
 				for ability, value := range *choice.AbilityScoreSelection {
 					switch ability {
-					case constants.STR:
+					case abilities.STR:
 						protoScores.Strength = int32(value)
-					case constants.DEX:
+					case abilities.DEX:
 						protoScores.Dexterity = int32(value)
-					case constants.CON:
+					case abilities.CON:
 						protoScores.Constitution = int32(value)
-					case constants.INT:
+					case abilities.INT:
 						protoScores.Intelligence = int32(value)
-					case constants.WIS:
+					case abilities.WIS:
 						protoScores.Wisdom = int32(value)
-					case constants.CHA:
+					case abilities.CHA:
 						protoScores.Charisma = int32(value)
 					}
 				}
@@ -1166,25 +1171,25 @@ func convertToolkitSourceToProto(source shared.ChoiceSource) dnd5ev1alpha1.Choic
 }
 
 // convertToolkitRaceToProtoEnum converts toolkit Race constant to proto Race enum
-func convertToolkitRaceToProtoEnum(raceID constants.Race) dnd5ev1alpha1.Race {
+func convertToolkitRaceToProtoEnum(raceID races.Race) dnd5ev1alpha1.Race {
 	switch raceID {
-	case constants.RaceDragonborn:
+	case races.Dragonborn:
 		return dnd5ev1alpha1.Race_RACE_DRAGONBORN
-	case constants.RaceDwarf:
+	case races.Dwarf:
 		return dnd5ev1alpha1.Race_RACE_DWARF
-	case constants.RaceElf:
+	case races.Elf:
 		return dnd5ev1alpha1.Race_RACE_ELF
-	case constants.RaceGnome:
+	case races.Gnome:
 		return dnd5ev1alpha1.Race_RACE_GNOME
-	case constants.RaceHalfElf:
+	case races.HalfElf:
 		return dnd5ev1alpha1.Race_RACE_HALF_ELF
-	case constants.RaceHalfling:
+	case races.Halfling:
 		return dnd5ev1alpha1.Race_RACE_HALFLING
-	case constants.RaceHalfOrc:
+	case races.HalfOrc:
 		return dnd5ev1alpha1.Race_RACE_HALF_ORC
-	case constants.RaceHuman:
+	case races.Human:
 		return dnd5ev1alpha1.Race_RACE_HUMAN
-	case constants.RaceTiefling:
+	case races.Tiefling:
 		return dnd5ev1alpha1.Race_RACE_TIEFLING
 	default:
 		return dnd5ev1alpha1.Race_RACE_UNSPECIFIED
@@ -1192,25 +1197,25 @@ func convertToolkitRaceToProtoEnum(raceID constants.Race) dnd5ev1alpha1.Race {
 }
 
 // convertToolkitSubraceToProtoEnum converts toolkit Subrace constant to proto Subrace enum
-func convertToolkitSubraceToProtoEnum(subraceID constants.Subrace) dnd5ev1alpha1.Subrace {
+func convertToolkitSubraceToProtoEnum(subraceID races.Race) dnd5ev1alpha1.Subrace {
 	switch subraceID {
-	case constants.SubraceMountainDwarf:
+	case races.MountainDwarf:
 		return dnd5ev1alpha1.Subrace_SUBRACE_MOUNTAIN_DWARF
-	case constants.SubraceHillDwarf:
+	case races.HillDwarf:
 		return dnd5ev1alpha1.Subrace_SUBRACE_HILL_DWARF
-	case constants.SubraceHighElf:
+	case races.HighElf:
 		return dnd5ev1alpha1.Subrace_SUBRACE_HIGH_ELF
-	case constants.SubraceWoodElf:
+	case races.WoodElf:
 		return dnd5ev1alpha1.Subrace_SUBRACE_WOOD_ELF
-	case constants.SubraceDarkElf:
+	case races.DarkElf:
 		return dnd5ev1alpha1.Subrace_SUBRACE_DARK_ELF
-	case constants.SubraceLightfootHalfling:
+	case races.LightfootHalfling:
 		return dnd5ev1alpha1.Subrace_SUBRACE_LIGHTFOOT_HALFLING
-	case constants.SubraceStoutHalfling:
+	case races.StoutHalfling:
 		return dnd5ev1alpha1.Subrace_SUBRACE_STOUT_HALFLING
-	case constants.SubraceForestGnome:
+	case races.ForestGnome:
 		return dnd5ev1alpha1.Subrace_SUBRACE_FOREST_GNOME
-	case constants.SubraceRockGnome:
+	case races.RockGnome:
 		return dnd5ev1alpha1.Subrace_SUBRACE_ROCK_GNOME
 	default:
 		return dnd5ev1alpha1.Subrace_SUBRACE_UNSPECIFIED
@@ -1218,31 +1223,31 @@ func convertToolkitSubraceToProtoEnum(subraceID constants.Subrace) dnd5ev1alpha1
 }
 
 // convertToolkitClassToProtoEnum converts toolkit Class constant to proto Class enum
-func convertToolkitClassToProtoEnum(classID constants.Class) dnd5ev1alpha1.Class {
+func convertToolkitClassToProtoEnum(classID classes.Class) dnd5ev1alpha1.Class {
 	switch classID {
-	case constants.ClassBarbarian:
+	case classes.Barbarian:
 		return dnd5ev1alpha1.Class_CLASS_BARBARIAN
-	case constants.ClassBard:
+	case classes.Bard:
 		return dnd5ev1alpha1.Class_CLASS_BARD
-	case constants.ClassCleric:
+	case classes.Cleric:
 		return dnd5ev1alpha1.Class_CLASS_CLERIC
-	case constants.ClassDruid:
+	case classes.Druid:
 		return dnd5ev1alpha1.Class_CLASS_DRUID
-	case constants.ClassFighter:
+	case classes.Fighter:
 		return dnd5ev1alpha1.Class_CLASS_FIGHTER
-	case constants.ClassMonk:
+	case classes.Monk:
 		return dnd5ev1alpha1.Class_CLASS_MONK
-	case constants.ClassPaladin:
+	case classes.Paladin:
 		return dnd5ev1alpha1.Class_CLASS_PALADIN
-	case constants.ClassRanger:
+	case classes.Ranger:
 		return dnd5ev1alpha1.Class_CLASS_RANGER
-	case constants.ClassRogue:
+	case classes.Rogue:
 		return dnd5ev1alpha1.Class_CLASS_ROGUE
-	case constants.ClassSorcerer:
+	case classes.Sorcerer:
 		return dnd5ev1alpha1.Class_CLASS_SORCERER
-	case constants.ClassWarlock:
+	case classes.Warlock:
 		return dnd5ev1alpha1.Class_CLASS_WARLOCK
-	case constants.ClassWizard:
+	case classes.Wizard:
 		return dnd5ev1alpha1.Class_CLASS_WIZARD
 	default:
 		return dnd5ev1alpha1.Class_CLASS_UNSPECIFIED
@@ -1250,99 +1255,99 @@ func convertToolkitClassToProtoEnum(classID constants.Class) dnd5ev1alpha1.Class
 }
 
 // convertProtoClassToToolkit converts proto Class enum to toolkit class constant
-func convertProtoClassToToolkit(class dnd5ev1alpha1.Class) constants.Class {
+func convertProtoClassToToolkit(class dnd5ev1alpha1.Class) classes.Class {
 	switch class {
 	case dnd5ev1alpha1.Class_CLASS_BARBARIAN:
-		return constants.ClassBarbarian
+		return classes.Barbarian
 	case dnd5ev1alpha1.Class_CLASS_BARD:
-		return constants.ClassBard
+		return classes.Bard
 	case dnd5ev1alpha1.Class_CLASS_CLERIC:
-		return constants.ClassCleric
+		return classes.Cleric
 	case dnd5ev1alpha1.Class_CLASS_DRUID:
-		return constants.ClassDruid
+		return classes.Druid
 	case dnd5ev1alpha1.Class_CLASS_FIGHTER:
-		return constants.ClassFighter
+		return classes.Fighter
 	case dnd5ev1alpha1.Class_CLASS_MONK:
-		return constants.ClassMonk
+		return classes.Monk
 	case dnd5ev1alpha1.Class_CLASS_PALADIN:
-		return constants.ClassPaladin
+		return classes.Paladin
 	case dnd5ev1alpha1.Class_CLASS_RANGER:
-		return constants.ClassRanger
+		return classes.Ranger
 	case dnd5ev1alpha1.Class_CLASS_ROGUE:
-		return constants.ClassRogue
+		return classes.Rogue
 	case dnd5ev1alpha1.Class_CLASS_SORCERER:
-		return constants.ClassSorcerer
+		return classes.Sorcerer
 	case dnd5ev1alpha1.Class_CLASS_WARLOCK:
-		return constants.ClassWarlock
+		return classes.Warlock
 	case dnd5ev1alpha1.Class_CLASS_WIZARD:
-		return constants.ClassWizard
+		return classes.Wizard
 	default:
 		return ""
 	}
 }
 
-// convertProtoBackgroundToToolkitID converts proto Background enum to toolkit background ID string
-func convertProtoBackgroundToToolkitID(background dnd5ev1alpha1.Background) string {
+// convertProtoBackgroundToToolkit converts proto Background enum to toolkit background type
+func convertProtoBackgroundToToolkit(background dnd5ev1alpha1.Background) backgrounds.Background {
 	switch background {
 	case dnd5ev1alpha1.Background_BACKGROUND_ACOLYTE:
-		return string(constants.BackgroundAcolyte)
+		return backgrounds.Acolyte
 	case dnd5ev1alpha1.Background_BACKGROUND_CHARLATAN:
-		return string(constants.BackgroundCharlatan)
+		return backgrounds.Charlatan
 	case dnd5ev1alpha1.Background_BACKGROUND_CRIMINAL:
-		return string(constants.BackgroundCriminal)
+		return backgrounds.Criminal
 	case dnd5ev1alpha1.Background_BACKGROUND_ENTERTAINER:
-		return string(constants.BackgroundEntertainer)
+		return backgrounds.Entertainer
 	case dnd5ev1alpha1.Background_BACKGROUND_FOLK_HERO:
-		return string(constants.BackgroundFolkHero)
+		return backgrounds.FolkHero
 	case dnd5ev1alpha1.Background_BACKGROUND_GUILD_ARTISAN:
-		return string(constants.BackgroundGuildArtisan)
+		return backgrounds.GuildArtisan
 	case dnd5ev1alpha1.Background_BACKGROUND_HERMIT:
-		return string(constants.BackgroundHermit)
+		return backgrounds.Hermit
 	case dnd5ev1alpha1.Background_BACKGROUND_NOBLE:
-		return string(constants.BackgroundNoble)
+		return backgrounds.Noble
 	case dnd5ev1alpha1.Background_BACKGROUND_OUTLANDER:
-		return string(constants.BackgroundOutlander)
+		return backgrounds.Outlander
 	case dnd5ev1alpha1.Background_BACKGROUND_SAGE:
-		return string(constants.BackgroundSage)
+		return backgrounds.Sage
 	case dnd5ev1alpha1.Background_BACKGROUND_SAILOR:
-		return string(constants.BackgroundSailor)
+		return backgrounds.Sailor
 	case dnd5ev1alpha1.Background_BACKGROUND_SOLDIER:
-		return string(constants.BackgroundSoldier)
+		return backgrounds.Soldier
 	case dnd5ev1alpha1.Background_BACKGROUND_URCHIN:
-		return string(constants.BackgroundUrchin)
+		return backgrounds.Urchin
 	default:
 		return ""
 	}
 }
 
 // convertToolkitBackgroundToProtoEnum converts toolkit Background constant to proto Background enum
-func convertToolkitBackgroundToProtoEnum(backgroundID constants.Background) dnd5ev1alpha1.Background {
+func convertToolkitBackgroundToProtoEnum(backgroundID backgrounds.Background) dnd5ev1alpha1.Background {
 	switch backgroundID {
-	case constants.BackgroundAcolyte:
+	case backgrounds.Acolyte:
 		return dnd5ev1alpha1.Background_BACKGROUND_ACOLYTE
-	case constants.BackgroundCharlatan:
+	case backgrounds.Charlatan:
 		return dnd5ev1alpha1.Background_BACKGROUND_CHARLATAN
-	case constants.BackgroundCriminal:
+	case backgrounds.Criminal:
 		return dnd5ev1alpha1.Background_BACKGROUND_CRIMINAL
-	case constants.BackgroundEntertainer:
+	case backgrounds.Entertainer:
 		return dnd5ev1alpha1.Background_BACKGROUND_ENTERTAINER
-	case constants.BackgroundFolkHero:
+	case backgrounds.FolkHero:
 		return dnd5ev1alpha1.Background_BACKGROUND_FOLK_HERO
-	case constants.BackgroundGuildArtisan:
+	case backgrounds.GuildArtisan:
 		return dnd5ev1alpha1.Background_BACKGROUND_GUILD_ARTISAN
-	case constants.BackgroundHermit:
+	case backgrounds.Hermit:
 		return dnd5ev1alpha1.Background_BACKGROUND_HERMIT
-	case constants.BackgroundNoble:
+	case backgrounds.Noble:
 		return dnd5ev1alpha1.Background_BACKGROUND_NOBLE
-	case constants.BackgroundOutlander:
+	case backgrounds.Outlander:
 		return dnd5ev1alpha1.Background_BACKGROUND_OUTLANDER
-	case constants.BackgroundSage:
+	case backgrounds.Sage:
 		return dnd5ev1alpha1.Background_BACKGROUND_SAGE
-	case constants.BackgroundSailor:
+	case backgrounds.Sailor:
 		return dnd5ev1alpha1.Background_BACKGROUND_SAILOR
-	case constants.BackgroundSoldier:
+	case backgrounds.Soldier:
 		return dnd5ev1alpha1.Background_BACKGROUND_SOLDIER
-	case constants.BackgroundUrchin:
+	case backgrounds.Urchin:
 		return dnd5ev1alpha1.Background_BACKGROUND_URCHIN
 	default:
 		return dnd5ev1alpha1.Background_BACKGROUND_UNSPECIFIED
@@ -1355,17 +1360,17 @@ func convertToolkitAbilityScoresToProto(scores shared.AbilityScores) *dnd5ev1alp
 
 	for ability, value := range scores {
 		switch ability {
-		case constants.STR:
+		case abilities.STR:
 			protoScores.Strength = int32(value)
-		case constants.DEX:
+		case abilities.DEX:
 			protoScores.Dexterity = int32(value)
-		case constants.CON:
+		case abilities.CON:
 			protoScores.Constitution = int32(value)
-		case constants.INT:
+		case abilities.INT:
 			protoScores.Intelligence = int32(value)
-		case constants.WIS:
+		case abilities.WIS:
 			protoScores.Wisdom = int32(value)
-		case constants.CHA:
+		case abilities.CHA:
 			protoScores.Charisma = int32(value)
 		}
 	}
@@ -1391,54 +1396,54 @@ func hasAbilityScores(scores shared.AbilityScores) bool {
 }
 
 // convertProtoRaceToToolkit converts proto Race enum to toolkit Race constant
-func convertProtoRaceToToolkit(race dnd5ev1alpha1.Race) constants.Race {
+func convertProtoRaceToToolkit(race dnd5ev1alpha1.Race) races.Race {
 	// Map proto enum to toolkit constants - direct mapping, no strings
 	switch race {
 	case dnd5ev1alpha1.Race_RACE_DRAGONBORN:
-		return constants.RaceDragonborn
+		return races.Dragonborn
 	case dnd5ev1alpha1.Race_RACE_DWARF:
-		return constants.RaceDwarf
+		return races.Dwarf
 	case dnd5ev1alpha1.Race_RACE_ELF:
-		return constants.RaceElf
+		return races.Elf
 	case dnd5ev1alpha1.Race_RACE_GNOME:
-		return constants.RaceGnome
+		return races.Gnome
 	case dnd5ev1alpha1.Race_RACE_HALF_ELF:
-		return constants.RaceHalfElf
+		return races.HalfElf
 	case dnd5ev1alpha1.Race_RACE_HALFLING:
-		return constants.RaceHalfling
+		return races.Halfling
 	case dnd5ev1alpha1.Race_RACE_HALF_ORC:
-		return constants.RaceHalfOrc
+		return races.HalfOrc
 	case dnd5ev1alpha1.Race_RACE_HUMAN:
-		return constants.RaceHuman
+		return races.Human
 	case dnd5ev1alpha1.Race_RACE_TIEFLING:
-		return constants.RaceTiefling
+		return races.Tiefling
 	default:
 		return ""
 	}
 }
 
 // convertProtoSubraceToToolkit converts proto Subrace enum to toolkit Subrace constant
-func convertProtoSubraceToToolkit(subrace dnd5ev1alpha1.Subrace) constants.Subrace {
+func convertProtoSubraceToToolkit(subrace dnd5ev1alpha1.Subrace) races.Race {
 	// Map proto enum to toolkit constants - direct mapping, no strings
 	switch subrace {
 	case dnd5ev1alpha1.Subrace_SUBRACE_HILL_DWARF:
-		return constants.SubraceHillDwarf
+		return races.HillDwarf
 	case dnd5ev1alpha1.Subrace_SUBRACE_MOUNTAIN_DWARF:
-		return constants.SubraceMountainDwarf
+		return races.MountainDwarf
 	case dnd5ev1alpha1.Subrace_SUBRACE_HIGH_ELF:
-		return constants.SubraceHighElf
+		return races.HighElf
 	case dnd5ev1alpha1.Subrace_SUBRACE_WOOD_ELF:
-		return constants.SubraceWoodElf
+		return races.WoodElf
 	case dnd5ev1alpha1.Subrace_SUBRACE_DARK_ELF:
-		return constants.SubraceDarkElf
+		return races.DarkElf
 	case dnd5ev1alpha1.Subrace_SUBRACE_FOREST_GNOME:
-		return constants.SubraceForestGnome
+		return races.ForestGnome
 	case dnd5ev1alpha1.Subrace_SUBRACE_ROCK_GNOME:
-		return constants.SubraceRockGnome
+		return races.RockGnome
 	case dnd5ev1alpha1.Subrace_SUBRACE_LIGHTFOOT_HALFLING:
-		return constants.SubraceLightfootHalfling
+		return races.LightfootHalfling
 	case dnd5ev1alpha1.Subrace_SUBRACE_STOUT_HALFLING:
-		return constants.SubraceStoutHalfling
+		return races.StoutHalfling
 	default:
 		return ""
 	}
@@ -1463,14 +1468,14 @@ func convertProtoChoiceDataToToolkit(pc *dnd5ev1alpha1.ChoiceData) toolkitchar.C
 		choice.NameSelection = &selection.Name
 	case *dnd5ev1alpha1.ChoiceData_Skills:
 		// Convert skill list to skill constants
-		skills := make([]constants.Skill, 0, len(selection.Skills.GetSkills()))
+		skills := make([]skills.Skill, 0, len(selection.Skills.GetSkills()))
 		for _, skill := range selection.Skills.GetSkills() {
 			skills = append(skills, convertProtoSkillToToolkit(skill))
 		}
 		choice.SkillSelection = skills
 	case *dnd5ev1alpha1.ChoiceData_Languages:
 		// Convert language list to language constants
-		languages := make([]constants.Language, 0, len(selection.Languages.GetLanguages()))
+		languages := make([]languages.Language, 0, len(selection.Languages.GetLanguages()))
 		for _, lang := range selection.Languages.GetLanguages() {
 			languages = append(languages, convertProtoLanguageToToolkit(lang))
 		}
@@ -1479,22 +1484,22 @@ func convertProtoChoiceDataToToolkit(pc *dnd5ev1alpha1.ChoiceData) toolkitchar.C
 		// Convert ability scores to toolkit format
 		scores := make(shared.AbilityScores)
 		if selection.AbilityScores.GetStrength() > 0 {
-			scores[constants.STR] = int(selection.AbilityScores.GetStrength())
+			scores[abilities.STR] = int(selection.AbilityScores.GetStrength())
 		}
 		if selection.AbilityScores.GetDexterity() > 0 {
-			scores[constants.DEX] = int(selection.AbilityScores.GetDexterity())
+			scores[abilities.DEX] = int(selection.AbilityScores.GetDexterity())
 		}
 		if selection.AbilityScores.GetConstitution() > 0 {
-			scores[constants.CON] = int(selection.AbilityScores.GetConstitution())
+			scores[abilities.CON] = int(selection.AbilityScores.GetConstitution())
 		}
 		if selection.AbilityScores.GetIntelligence() > 0 {
-			scores[constants.INT] = int(selection.AbilityScores.GetIntelligence())
+			scores[abilities.INT] = int(selection.AbilityScores.GetIntelligence())
 		}
 		if selection.AbilityScores.GetWisdom() > 0 {
-			scores[constants.WIS] = int(selection.AbilityScores.GetWisdom())
+			scores[abilities.WIS] = int(selection.AbilityScores.GetWisdom())
 		}
 		if selection.AbilityScores.GetCharisma() > 0 {
-			scores[constants.CHA] = int(selection.AbilityScores.GetCharisma())
+			scores[abilities.CHA] = int(selection.AbilityScores.GetCharisma())
 		}
 		choice.AbilityScoreSelection = &scores
 	case *dnd5ev1alpha1.ChoiceData_FightingStyle:
@@ -1601,47 +1606,47 @@ func convertProtoSourceToToolkit(source dnd5ev1alpha1.ChoiceSource) shared.Choic
 }
 
 // convertProtoSkillToToolkit converts proto Skill enum to toolkit Skill constant
-func convertProtoSkillToToolkit(skill dnd5ev1alpha1.Skill) constants.Skill {
+func convertProtoSkillToToolkit(skill dnd5ev1alpha1.Skill) skills.Skill {
 	switch skill {
 	case dnd5ev1alpha1.Skill_SKILL_UNSPECIFIED:
 		// Return empty string for unspecified skill
 		return ""
 	case dnd5ev1alpha1.Skill_SKILL_ACROBATICS:
-		return constants.SkillAcrobatics
+		return skills.Acrobatics
 	case dnd5ev1alpha1.Skill_SKILL_ANIMAL_HANDLING:
-		return constants.SkillAnimalHandling
+		return skills.AnimalHandling
 	case dnd5ev1alpha1.Skill_SKILL_ARCANA:
-		return constants.SkillArcana
+		return skills.Arcana
 	case dnd5ev1alpha1.Skill_SKILL_ATHLETICS:
-		return constants.SkillAthletics
+		return skills.Athletics
 	case dnd5ev1alpha1.Skill_SKILL_DECEPTION:
-		return constants.SkillDeception
+		return skills.Deception
 	case dnd5ev1alpha1.Skill_SKILL_HISTORY:
-		return constants.SkillHistory
+		return skills.History
 	case dnd5ev1alpha1.Skill_SKILL_INSIGHT:
-		return constants.SkillInsight
+		return skills.Insight
 	case dnd5ev1alpha1.Skill_SKILL_INTIMIDATION:
-		return constants.SkillIntimidation
+		return skills.Intimidation
 	case dnd5ev1alpha1.Skill_SKILL_INVESTIGATION:
-		return constants.SkillInvestigation
+		return skills.Investigation
 	case dnd5ev1alpha1.Skill_SKILL_MEDICINE:
-		return constants.SkillMedicine
+		return skills.Medicine
 	case dnd5ev1alpha1.Skill_SKILL_NATURE:
-		return constants.SkillNature
+		return skills.Nature
 	case dnd5ev1alpha1.Skill_SKILL_PERCEPTION:
-		return constants.SkillPerception
+		return skills.Perception
 	case dnd5ev1alpha1.Skill_SKILL_PERFORMANCE:
-		return constants.SkillPerformance
+		return skills.Performance
 	case dnd5ev1alpha1.Skill_SKILL_PERSUASION:
-		return constants.SkillPersuasion
+		return skills.Persuasion
 	case dnd5ev1alpha1.Skill_SKILL_RELIGION:
-		return constants.SkillReligion
+		return skills.Religion
 	case dnd5ev1alpha1.Skill_SKILL_SLEIGHT_OF_HAND:
-		return constants.SkillSleightOfHand
+		return skills.SleightOfHand
 	case dnd5ev1alpha1.Skill_SKILL_STEALTH:
-		return constants.SkillStealth
+		return skills.Stealth
 	case dnd5ev1alpha1.Skill_SKILL_SURVIVAL:
-		return constants.SkillSurvival
+		return skills.Survival
 	default:
 		// Return empty string for unknown skills to avoid hiding bugs
 		return ""
@@ -1649,31 +1654,31 @@ func convertProtoSkillToToolkit(skill dnd5ev1alpha1.Skill) constants.Skill {
 }
 
 // convertProtoLanguageToToolkit converts proto Language enum to toolkit Language constant
-func convertProtoLanguageToToolkit(lang dnd5ev1alpha1.Language) constants.Language {
+func convertProtoLanguageToToolkit(lang dnd5ev1alpha1.Language) languages.Language {
 	switch lang {
 	case dnd5ev1alpha1.Language_LANGUAGE_UNSPECIFIED:
 		// Return empty string for unspecified language
 		return ""
 	case dnd5ev1alpha1.Language_LANGUAGE_COMMON:
-		return constants.LanguageCommon
+		return languages.Common
 	case dnd5ev1alpha1.Language_LANGUAGE_DWARVISH:
-		return constants.LanguageDwarvish
+		return languages.Dwarvish
 	case dnd5ev1alpha1.Language_LANGUAGE_ELVISH:
-		return constants.LanguageElvish
+		return languages.Elvish
 	case dnd5ev1alpha1.Language_LANGUAGE_GIANT:
-		return constants.LanguageGiant
+		return languages.Giant
 	case dnd5ev1alpha1.Language_LANGUAGE_GNOMISH:
-		return constants.LanguageGnomish
+		return languages.Gnomish
 	case dnd5ev1alpha1.Language_LANGUAGE_GOBLIN:
-		return constants.LanguageGoblin
+		return languages.Goblin
 	case dnd5ev1alpha1.Language_LANGUAGE_HALFLING:
-		return constants.LanguageHalfling
+		return languages.Halfling
 	case dnd5ev1alpha1.Language_LANGUAGE_ORC:
-		return constants.LanguageOrc
+		return languages.Orc
 	case dnd5ev1alpha1.Language_LANGUAGE_DRACONIC:
-		return constants.LanguageDraconic
+		return languages.Draconic
 	case dnd5ev1alpha1.Language_LANGUAGE_INFERNAL:
-		return constants.LanguageInfernal
+		return languages.Infernal
 	default:
 		// Return empty string for unknown languages to avoid hiding bugs
 		return ""
@@ -1786,19 +1791,19 @@ func convertSubraceToProtoInfo(subrace interface{}) *dnd5ev1alpha1.SubraceInfo {
 }
 
 // convertSizeToProto converts toolkit Size to proto Size
-func convertSizeToProto(size constants.Size) dnd5ev1alpha1.Size {
+func convertSizeToProto(size shared.Size) dnd5ev1alpha1.Size {
 	switch size {
-	case constants.SizeTiny:
+	case shared.SizeTiny:
 		return dnd5ev1alpha1.Size_SIZE_TINY
-	case constants.SizeSmall:
+	case shared.SizeSmall:
 		return dnd5ev1alpha1.Size_SIZE_SMALL
-	case constants.SizeMedium:
+	case shared.SizeMedium:
 		return dnd5ev1alpha1.Size_SIZE_MEDIUM
-	case constants.SizeLarge:
+	case shared.SizeLarge:
 		return dnd5ev1alpha1.Size_SIZE_LARGE
-	case constants.SizeHuge:
+	case shared.SizeHuge:
 		return dnd5ev1alpha1.Size_SIZE_HUGE
-	case constants.SizeGargantuan:
+	case shared.SizeGargantuan:
 		return dnd5ev1alpha1.Size_SIZE_GARGANTUAN
 	default:
 		return dnd5ev1alpha1.Size_SIZE_MEDIUM
@@ -1856,29 +1861,29 @@ func convertRechargeTypeToProto(rechargeOn shared.ResetType) dnd5ev1alpha1.Recha
 }
 
 // convertLanguageToProto converts toolkit Language to proto Language
-func convertLanguageToProto(lang constants.Language) dnd5ev1alpha1.Language {
+func convertLanguageToProto(lang languages.Language) dnd5ev1alpha1.Language {
 	// Map toolkit language constants to proto enums
 	// This is a simplified mapping - you may need to expand based on available languages
 	switch lang {
-	case constants.LanguageCommon:
+	case languages.Common:
 		return dnd5ev1alpha1.Language_LANGUAGE_COMMON
-	case constants.LanguageDwarvish:
+	case languages.Dwarvish:
 		return dnd5ev1alpha1.Language_LANGUAGE_DWARVISH
-	case constants.LanguageElvish:
+	case languages.Elvish:
 		return dnd5ev1alpha1.Language_LANGUAGE_ELVISH
-	case constants.LanguageGiant:
+	case languages.Giant:
 		return dnd5ev1alpha1.Language_LANGUAGE_GIANT
-	case constants.LanguageGnomish:
+	case languages.Gnomish:
 		return dnd5ev1alpha1.Language_LANGUAGE_GNOMISH
-	case constants.LanguageGoblin:
+	case languages.Goblin:
 		return dnd5ev1alpha1.Language_LANGUAGE_GOBLIN
-	case constants.LanguageHalfling:
+	case languages.Halfling:
 		return dnd5ev1alpha1.Language_LANGUAGE_HALFLING
-	case constants.LanguageOrc:
+	case languages.Orc:
 		return dnd5ev1alpha1.Language_LANGUAGE_ORC
-	case constants.LanguageDraconic:
+	case languages.Draconic:
 		return dnd5ev1alpha1.Language_LANGUAGE_DRACONIC
-	case constants.LanguageInfernal:
+	case languages.Infernal:
 		return dnd5ev1alpha1.Language_LANGUAGE_INFERNAL
 	default:
 		return dnd5ev1alpha1.Language_LANGUAGE_COMMON
@@ -2009,19 +2014,19 @@ func convertClassDataToProtoInfo(classData *class.Data, uiData *external.ClassUI
 }
 
 // convertAbilityToProto converts toolkit Ability to proto Ability
-func convertAbilityToProto(ability constants.Ability) dnd5ev1alpha1.Ability {
+func convertAbilityToProto(ability abilities.Ability) dnd5ev1alpha1.Ability {
 	switch ability {
-	case constants.STR:
+	case abilities.STR:
 		return dnd5ev1alpha1.Ability_ABILITY_STRENGTH
-	case constants.DEX:
+	case abilities.DEX:
 		return dnd5ev1alpha1.Ability_ABILITY_DEXTERITY
-	case constants.CON:
+	case abilities.CON:
 		return dnd5ev1alpha1.Ability_ABILITY_CONSTITUTION
-	case constants.INT:
+	case abilities.INT:
 		return dnd5ev1alpha1.Ability_ABILITY_INTELLIGENCE
-	case constants.WIS:
+	case abilities.WIS:
 		return dnd5ev1alpha1.Ability_ABILITY_WISDOM
-	case constants.CHA:
+	case abilities.CHA:
 		return dnd5ev1alpha1.Ability_ABILITY_CHARISMA
 	default:
 		return dnd5ev1alpha1.Ability_ABILITY_STRENGTH
@@ -2091,44 +2096,44 @@ func formatOptionName(key string) string {
 }
 
 // convertSkillToProto converts toolkit Skill to proto Skill
-func convertSkillToProto(skill constants.Skill) dnd5ev1alpha1.Skill {
+func convertSkillToProto(skill skills.Skill) dnd5ev1alpha1.Skill {
 	// This is a simplified mapping - you'll need to expand based on all skills
 	switch skill {
-	case constants.SkillAcrobatics:
+	case skills.Acrobatics:
 		return dnd5ev1alpha1.Skill_SKILL_ACROBATICS
-	case constants.SkillAnimalHandling:
+	case skills.AnimalHandling:
 		return dnd5ev1alpha1.Skill_SKILL_ANIMAL_HANDLING
-	case constants.SkillArcana:
+	case skills.Arcana:
 		return dnd5ev1alpha1.Skill_SKILL_ARCANA
-	case constants.SkillAthletics:
+	case skills.Athletics:
 		return dnd5ev1alpha1.Skill_SKILL_ATHLETICS
-	case constants.SkillDeception:
+	case skills.Deception:
 		return dnd5ev1alpha1.Skill_SKILL_DECEPTION
-	case constants.SkillHistory:
+	case skills.History:
 		return dnd5ev1alpha1.Skill_SKILL_HISTORY
-	case constants.SkillInsight:
+	case skills.Insight:
 		return dnd5ev1alpha1.Skill_SKILL_INSIGHT
-	case constants.SkillIntimidation:
+	case skills.Intimidation:
 		return dnd5ev1alpha1.Skill_SKILL_INTIMIDATION
-	case constants.SkillInvestigation:
+	case skills.Investigation:
 		return dnd5ev1alpha1.Skill_SKILL_INVESTIGATION
-	case constants.SkillMedicine:
+	case skills.Medicine:
 		return dnd5ev1alpha1.Skill_SKILL_MEDICINE
-	case constants.SkillNature:
+	case skills.Nature:
 		return dnd5ev1alpha1.Skill_SKILL_NATURE
-	case constants.SkillPerception:
+	case skills.Perception:
 		return dnd5ev1alpha1.Skill_SKILL_PERCEPTION
-	case constants.SkillPerformance:
+	case skills.Performance:
 		return dnd5ev1alpha1.Skill_SKILL_PERFORMANCE
-	case constants.SkillPersuasion:
+	case skills.Persuasion:
 		return dnd5ev1alpha1.Skill_SKILL_PERSUASION
-	case constants.SkillReligion:
+	case skills.Religion:
 		return dnd5ev1alpha1.Skill_SKILL_RELIGION
-	case constants.SkillSleightOfHand:
+	case skills.SleightOfHand:
 		return dnd5ev1alpha1.Skill_SKILL_SLEIGHT_OF_HAND
-	case constants.SkillStealth:
+	case skills.Stealth:
 		return dnd5ev1alpha1.Skill_SKILL_STEALTH
-	case constants.SkillSurvival:
+	case skills.Survival:
 		return dnd5ev1alpha1.Skill_SKILL_SURVIVAL
 	default:
 		return dnd5ev1alpha1.Skill_SKILL_UNSPECIFIED
@@ -2201,7 +2206,7 @@ func ConvertCharacterDataToProto(char *toolkitchar.Data) *dnd5ev1alpha1.Characte
 	protoChar.Languages = make([]dnd5ev1alpha1.Language, 0, len(char.Languages))
 	for _, lang := range char.Languages {
 		// Convert string language to constant first
-		protoChar.Languages = append(protoChar.Languages, convertLanguageToProto(constants.Language(lang)))
+		protoChar.Languages = append(protoChar.Languages, convertLanguageToProto(languages.Language(lang)))
 	}
 
 	// Convert equipment to inventory

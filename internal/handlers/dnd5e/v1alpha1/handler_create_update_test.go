@@ -14,7 +14,7 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
 	charactermock "github.com/KirkDiggler/rpg-api/internal/orchestrators/character/mock"
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
-	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/constants"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/races"
 )
 
 func TestCreateThenUpdateRace_PreservesID(t *testing.T) {
@@ -75,16 +75,16 @@ func TestCreateThenUpdateRace_PreservesID(t *testing.T) {
 		CreatedAt: createdDraft.CreatedAt,
 		UpdatedAt: time.Now(),
 		RaceChoice: toolkitchar.RaceChoice{
-			RaceID:    constants.RaceDwarf,
-			SubraceID: constants.SubraceHillDwarf,
+			RaceID:    races.Dwarf,
+			SubraceID: races.HillDwarf,
 		},
 	}
 
 	mockCharService.EXPECT().
 		UpdateRace(ctx, &character.UpdateRaceInput{
 			DraftID:   draftID,
-			RaceID:    constants.RaceDwarf,
-			SubraceID: constants.SubraceHillDwarf,
+			RaceID:    races.Dwarf,
+			SubraceID: races.HillDwarf,
 			Choices:   nil,
 		}).
 		Return(&character.UpdateRaceOutput{

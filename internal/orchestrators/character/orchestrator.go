@@ -2,6 +2,7 @@ package character
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -14,11 +15,13 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/pkg/idgen"
 	"github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	draftrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/abilities"
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
-	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/conditions"
-	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/constants"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/classes"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/effects"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/races"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/skills"
 )
 
 // Config holds dependencies for the orchestrator
@@ -81,30 +84,30 @@ func New(cfg *Config) (*Orchestrator, error) {
 }
 
 // skillNameToConstant maps skill names from external API to skill constants
-var skillNameToConstant = map[string]constants.Skill{
-	"acrobatics":      constants.SkillAcrobatics,
-	"animal-handling": constants.SkillAnimalHandling,
-	"arcana":          constants.SkillArcana,
-	"athletics":       constants.SkillAthletics,
-	"deception":       constants.SkillDeception,
-	"history":         constants.SkillHistory,
-	"insight":         constants.SkillInsight,
-	"intimidation":    constants.SkillIntimidation,
-	"investigation":   constants.SkillInvestigation,
-	"medicine":        constants.SkillMedicine,
-	"nature":          constants.SkillNature,
-	"perception":      constants.SkillPerception,
-	"performance":     constants.SkillPerformance,
-	"persuasion":      constants.SkillPersuasion,
-	"religion":        constants.SkillReligion,
-	"sleight-of-hand": constants.SkillSleightOfHand,
-	"stealth":         constants.SkillStealth,
-	"survival":        constants.SkillSurvival,
+var skillNameToConstant = map[string]skills.Skill{
+	"acrobatics":      skills.Acrobatics,
+	"animal-handling": skills.AnimalHandling,
+	"arcana":          skills.Arcana,
+	"athletics":       skills.Athletics,
+	"deception":       skills.Deception,
+	"history":         skills.History,
+	"insight":         skills.Insight,
+	"intimidation":    skills.Intimidation,
+	"investigation":   skills.Investigation,
+	"medicine":        skills.Medicine,
+	"nature":          skills.Nature,
+	"perception":      skills.Perception,
+	"performance":     skills.Performance,
+	"persuasion":      skills.Persuasion,
+	"religion":        skills.Religion,
+	"sleight-of-hand": skills.SleightOfHand,
+	"stealth":         skills.Stealth,
+	"survival":        skills.Survival,
 }
 
 // mapSkillNameToConstant converts a skill name to a skill constant
 // Returns the constant and true if found, empty constant and false otherwise
-func mapSkillNameToConstant(skillName string) (constants.Skill, bool) {
+func mapSkillNameToConstant(skillName string) (skills.Skill, bool) {
 	// Normalize skill name: lowercase and replace spaces with hyphens
 	normalizedName := strings.ToLower(strings.ReplaceAll(skillName, " ", "-"))
 	skillConst, exists := skillNameToConstant[normalizedName]
@@ -340,7 +343,7 @@ func (o *Orchestrator) UpdateClass(ctx context.Context, input *UpdateClassInput)
 
 	// Check if this is a spellcasting class and add spell/cantrip choices
 	switch input.ClassID {
-	case constants.ClassWizard:
+	case classes.Wizard:
 		// Wizards get 3 cantrips and 6 first-level spells at level 1
 		cantripChoice := toolkitchar.ChoiceData{
 			Category: shared.ChoiceCantrips,
@@ -354,7 +357,7 @@ func (o *Orchestrator) UpdateClass(ctx context.Context, input *UpdateClassInput)
 		}
 		nonClassChoices = append(nonClassChoices, cantripChoice, spellChoice)
 
-	case constants.ClassSorcerer:
+	case classes.Sorcerer:
 		// Sorcerers get 4 cantrips and 2 first-level spells at level 1
 		cantripChoice := toolkitchar.ChoiceData{
 			Category: shared.ChoiceCantrips,
@@ -368,7 +371,7 @@ func (o *Orchestrator) UpdateClass(ctx context.Context, input *UpdateClassInput)
 		}
 		nonClassChoices = append(nonClassChoices, cantripChoice, spellChoice)
 
-	case constants.ClassBard:
+	case classes.Bard:
 		// Bards get 2 cantrips and 4 first-level spells at level 1
 		cantripChoice := toolkitchar.ChoiceData{
 			Category: shared.ChoiceCantrips,
@@ -382,7 +385,7 @@ func (o *Orchestrator) UpdateClass(ctx context.Context, input *UpdateClassInput)
 		}
 		nonClassChoices = append(nonClassChoices, cantripChoice, spellChoice)
 
-	case constants.ClassCleric, constants.ClassDruid:
+	case classes.Cleric, classes.Druid:
 		// Clerics and Druids get cantrips but prepare spells (no spell choice needed at level 1)
 		cantripChoice := toolkitchar.ChoiceData{
 			Category: shared.ChoiceCantrips,
@@ -391,7 +394,7 @@ func (o *Orchestrator) UpdateClass(ctx context.Context, input *UpdateClassInput)
 		}
 		nonClassChoices = append(nonClassChoices, cantripChoice)
 
-	case constants.ClassWarlock:
+	case classes.Warlock:
 		// Warlocks get 2 cantrips and 2 first-level spells at level 1
 		cantripChoice := toolkitchar.ChoiceData{
 			Category: shared.ChoiceCantrips,
@@ -454,7 +457,7 @@ func (o *Orchestrator) UpdateBackground(ctx context.Context, input *UpdateBackgr
 
 	// Update the background choice
 	draft := getDraftOutput.Draft
-	draft.BackgroundChoice = constants.Background(input.BackgroundID)
+	draft.BackgroundChoice = input.BackgroundID
 
 	// Always clear existing background choices when updating background
 	var nonBackgroundChoices []toolkitchar.ChoiceData
@@ -572,12 +575,12 @@ func (o *Orchestrator) UpdateAbilityScores(ctx context.Context, input *UpdateAbi
 
 		// Create ability scores from rolls
 		abilityScores := shared.AbilityScores{
-			constants.STR: int(rollTotals[input.RollAssignments.StrengthRollID]),
-			constants.DEX: int(rollTotals[input.RollAssignments.DexterityRollID]),
-			constants.CON: int(rollTotals[input.RollAssignments.ConstitutionRollID]),
-			constants.INT: int(rollTotals[input.RollAssignments.IntelligenceRollID]),
-			constants.WIS: int(rollTotals[input.RollAssignments.WisdomRollID]),
-			constants.CHA: int(rollTotals[input.RollAssignments.CharismaRollID]),
+			abilities.STR: int(rollTotals[input.RollAssignments.StrengthRollID]),
+			abilities.DEX: int(rollTotals[input.RollAssignments.DexterityRollID]),
+			abilities.CON: int(rollTotals[input.RollAssignments.ConstitutionRollID]),
+			abilities.INT: int(rollTotals[input.RollAssignments.IntelligenceRollID]),
+			abilities.WIS: int(rollTotals[input.RollAssignments.WisdomRollID]),
+			abilities.CHA: int(rollTotals[input.RollAssignments.CharismaRollID]),
 		}
 
 		// Update the draft with the ability scores
@@ -680,7 +683,7 @@ func (o *Orchestrator) FinalizeDraft(ctx context.Context, input *FinalizeDraftIn
 	}
 
 	// Calculate hit points
-	conMod := (draft.AbilityScoreChoice[constants.CON] - 10) / 2
+	conMod := (draft.AbilityScoreChoice[abilities.CON] - 10) / 2
 	maxHP := classDataOutput.ClassData.HitDice + conMod
 	if maxHP < 1 {
 		maxHP = 1 // TODO(#169): Extract minimum HP constant
@@ -711,16 +714,16 @@ func (o *Orchestrator) FinalizeDraft(ctx context.Context, input *FinalizeDraftIn
 		Size:  raceDataOutput.RaceData.Size,
 
 		// Initialize empty maps
-		Skills:         make(map[constants.Skill]shared.ProficiencyLevel),
-		SavingThrows:   make(map[constants.Ability]shared.ProficiencyLevel),
+		Skills:         make(map[skills.Skill]shared.ProficiencyLevel),
+		SavingThrows:   make(map[abilities.Ability]shared.ProficiencyLevel),
 		SpellSlots:     make(map[int]toolkitchar.SlotInfo),
 		ClassResources: make(map[shared.ClassResourceType]toolkitchar.ResourceData),
 
 		// Initialize empty slices
 		Languages:     []string{},
 		Equipment:     []string{},
-		Conditions:    []conditions.Condition{}, // New character has no conditions
-		Effects:       []effects.Effect{},       // New character has no effects
+		Conditions:    []json.RawMessage{}, // New character has no conditions
+		Effects:       []effects.Effect{},  // New character has no effects
 		Proficiencies: shared.Proficiencies{},
 
 		// Transfer choices from draft
@@ -830,7 +833,7 @@ func (o *Orchestrator) FinalizeDraft(ctx context.Context, input *FinalizeDraftIn
 	}
 
 	// Handle subrace bonuses
-	if draft.RaceChoice.SubraceID == constants.SubraceHillDwarf {
+	if draft.RaceChoice.SubraceID == races.HillDwarf {
 		// Hill Dwarf gets +1 HP per level
 		characterData.MaxHitPoints += characterData.Level
 		characterData.HitPoints += characterData.Level
@@ -840,30 +843,30 @@ func (o *Orchestrator) FinalizeDraft(ctx context.Context, input *FinalizeDraftIn
 	// Note: Monk gets Ki at level 2, not level 1
 	// Note: Ranger has no resources at level 1
 	switch classDataOutput.ClassData.ID {
-	case constants.ClassFighter:
+	case "fighter": // Using string literal temporarily
 		characterData.ClassResources[shared.ClassResourceSecondWind] = toolkitchar.ResourceData{
 			Name:    "Second Wind",
 			Max:     1,
 			Current: 1,
 			Resets:  "short_rest",
 		}
-	case constants.ClassBarbarian:
+	case "barbarian": // Using string literal temporarily
 		characterData.ClassResources[shared.ClassResourceRage] = toolkitchar.ResourceData{
 			Name:    "Rage",
 			Max:     2, // 2 rages at level 1
 			Current: 2,
 			Resets:  "long_rest",
 		}
-	case constants.ClassPaladin:
+	case "paladin": // Using string literal temporarily
 		characterData.ClassResources[shared.ClassResourceLayOnHands] = toolkitchar.ResourceData{
 			Name:    "Lay on Hands",
 			Max:     5, // 5 HP pool at level 1
 			Current: 5,
 			Resets:  "long_rest",
 		}
-	case constants.ClassBard:
+	case "bard": // Using string literal temporarily
 		// Bardic Inspiration uses = CHA modifier (minimum 1)
-		uses := (draft.AbilityScoreChoice[constants.CHA] - 10) / 2
+		uses := (draft.AbilityScoreChoice[abilities.CHA] - 10) / 2
 		if uses < 1 {
 			uses = 1
 		}
@@ -878,14 +881,14 @@ func (o *Orchestrator) FinalizeDraft(ctx context.Context, input *FinalizeDraftIn
 	// Initialize spell slots for spellcasters (level 1 only)
 	// Note: Rangers and Paladins don't get spell slots until level 2
 	switch classDataOutput.ClassData.ID {
-	case constants.ClassWizard, constants.ClassSorcerer, constants.ClassCleric,
-		constants.ClassDruid, constants.ClassBard:
+	case "wizard", "sorcerer", "cleric", // Using string literals temporarily
+		"druid", "bard": // Using string literals temporarily
 		// Full casters get 2 first-level slots at level 1
 		characterData.SpellSlots[1] = toolkitchar.SlotInfo{
 			Max:  2,
 			Used: 0,
 		}
-	case constants.ClassWarlock:
+	case "warlock": // Using string literal temporarily
 		// Warlock gets 1 first-level slot (Pact Magic)
 		characterData.SpellSlots[1] = toolkitchar.SlotInfo{
 			Max:  1,
@@ -984,17 +987,7 @@ func (o *Orchestrator) ListRaces(ctx context.Context, input *ListRacesInput) (*L
 	// For now, we'll return all races from a hardcoded list
 	// In a real implementation, this might come from a database or be cached
 
-	allRaces := []constants.Race{
-		constants.RaceDragonborn,
-		constants.RaceDwarf,
-		constants.RaceElf,
-		constants.RaceGnome,
-		constants.RaceHalfElf,
-		constants.RaceHalfling,
-		constants.RaceHalfOrc,
-		constants.RaceHuman,
-		constants.RaceTiefling,
-	}
+	allRaces := races.All
 
 	// Get race data for each race
 	races := make([]RaceListItem, 0, len(allRaces))
@@ -1024,19 +1017,19 @@ func (o *Orchestrator) ListClasses(ctx context.Context, input *ListClassesInput)
 	// For now, we'll return all classes from a hardcoded list
 	// In a real implementation, this might come from a database or be cached
 
-	allClasses := []constants.Class{
-		constants.ClassBarbarian,
-		constants.ClassBard,
-		constants.ClassCleric,
-		constants.ClassDruid,
-		constants.ClassFighter,
-		constants.ClassMonk,
-		constants.ClassPaladin,
-		constants.ClassRanger,
-		constants.ClassRogue,
-		constants.ClassSorcerer,
-		constants.ClassWarlock,
-		constants.ClassWizard,
+	allClasses := []string{ // Using string literals temporarily
+		"barbarian",
+		"bard",
+		"cleric",
+		"druid",
+		"fighter",
+		"monk",
+		"paladin",
+		"ranger",
+		"rogue",
+		"sorcerer",
+		"warlock",
+		"wizard",
 	}
 
 	// Get class data for each class
