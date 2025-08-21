@@ -14,8 +14,8 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v1alpha1"
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
 	charactermock "github.com/KirkDiggler/rpg-api/internal/orchestrators/character/mock"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/abilities"
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
-	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/constants"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
 )
 
@@ -55,12 +55,12 @@ func (s *HandlerUpdateAbilityScoresTestSuite) TestUpdateAbilityScores_WithRollAs
 		PlayerID: "player-456",
 		Name:     "Test Character",
 		AbilityScoreChoice: shared.AbilityScores{
-			constants.STR: 16,
-			constants.DEX: 14,
-			constants.CON: 13,
-			constants.INT: 12,
-			constants.WIS: 15,
-			constants.CHA: 10,
+			abilities.STR: 16,
+			abilities.DEX: 14,
+			abilities.CON: 13,
+			abilities.INT: 12,
+			abilities.WIS: 15,
+			abilities.CHA: 10,
 		},
 	}
 

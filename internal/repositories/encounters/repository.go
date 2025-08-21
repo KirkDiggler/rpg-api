@@ -6,7 +6,7 @@ import (
 	"context"
 
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/initiative"
-	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
+	// "github.com/KirkDiggler/rpg-toolkit/tools/spatial" // Temporarily disabled
 )
 
 // Repository defines the storage interface for encounters
@@ -27,7 +27,7 @@ type Repository interface {
 // EncounterData represents the persistent state of an encounter
 type EncounterData struct {
 	ID              string
-	RoomData        *spatial.RoomData
+	RoomData        interface{} // Temporarily using interface{} until spatial is fixed
 	InitiativeData  *initiative.TrackerData
 	InitiativeRolls []initiative.Roll // Store what was rolled for each entity
 }
@@ -35,7 +35,7 @@ type EncounterData struct {
 // SaveInput defines the request for saving an encounter
 type SaveInput struct {
 	EncounterID     string
-	RoomData        *spatial.RoomData
+	RoomData        interface{} // Temporarily using interface{} until spatial is fixed
 	InitiativeData  *initiative.TrackerData
 	InitiativeRolls []initiative.Roll
 }
@@ -59,7 +59,7 @@ type GetOutput struct {
 type UpdateInput struct {
 	EncounterID    string
 	InitiativeData *initiative.TrackerData // Turn order changes
-	RoomData       *spatial.RoomData       // Position changes
+	RoomData       interface{}             // Position changes - temporarily using interface{}
 }
 
 // UpdateOutput defines the response for updating an encounter

@@ -15,7 +15,8 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
 	charactermock "github.com/KirkDiggler/rpg-api/internal/orchestrators/character/mock"
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
-	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/constants"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/races"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/skills"
 )
 
 type HandlerRaceUpdateTestSuite struct {
@@ -61,16 +62,16 @@ func (s *HandlerRaceUpdateTestSuite) TestUpdateRace_Success_ReturnsIDInDraft() {
 		PlayerID: "player-123",
 		Name:     "Test Character",
 		RaceChoice: toolkitchar.RaceChoice{
-			RaceID:    constants.RaceElf,
-			SubraceID: constants.SubraceHighElf,
+			RaceID:    races.Elf,
+			SubraceID: races.HighElf,
 		},
 	}
 
 	s.mockCharService.EXPECT().
 		UpdateRace(ctx, &character.UpdateRaceInput{
 			DraftID:   draftID,
-			RaceID:    constants.RaceElf,
-			SubraceID: constants.SubraceHighElf,
+			RaceID:    races.Elf,
+			SubraceID: races.HighElf,
 			Choices:   nil,
 		}).
 		Return(&character.UpdateRaceOutput{
@@ -125,12 +126,12 @@ func (s *HandlerRaceUpdateTestSuite) TestUpdateRace_WithChoices_Success() {
 		PlayerID: "player-456",
 		Name:     "Half-Elf Character",
 		RaceChoice: toolkitchar.RaceChoice{
-			RaceID: constants.RaceHalfElf,
+			RaceID: races.HalfElf,
 		},
 		Choices: []toolkitchar.ChoiceData{
 			{
 				ChoiceID:       "skill_choice",
-				SkillSelection: []constants.Skill{constants.SkillPerception, constants.SkillInvestigation},
+				SkillSelection: []skills.Skill{skills.Perception, skills.Investigation},
 			},
 		},
 	}

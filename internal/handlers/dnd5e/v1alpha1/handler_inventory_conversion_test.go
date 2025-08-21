@@ -7,8 +7,10 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v1alpha1"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/abilities"
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
-	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/constants"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/classes"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/races"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
 )
 
@@ -19,8 +21,8 @@ func TestConvertCharacterDataToProto_PopulatesInventory(t *testing.T) {
 		PlayerID: "player-1",
 		Name:     "Test Character",
 		Level:    1,
-		RaceID:   constants.RaceHuman,
-		ClassID:  constants.ClassFighter,
+		RaceID:   races.Human,
+		ClassID:  classes.Fighter,
 		Equipment: []string{
 			"longsword",
 			"chain-mail",
@@ -30,12 +32,12 @@ func TestConvertCharacterDataToProto_PopulatesInventory(t *testing.T) {
 			"handaxe", // Second handaxe
 		},
 		AbilityScores: shared.AbilityScores{
-			constants.STR: 15,
-			constants.DEX: 14,
-			constants.CON: 13,
-			constants.INT: 12,
-			constants.WIS: 11,
-			constants.CHA: 10,
+			abilities.STR: 15,
+			abilities.DEX: 14,
+			abilities.CON: 13,
+			abilities.INT: 12,
+			abilities.WIS: 11,
+			abilities.CHA: 10,
 		},
 		MaxHitPoints: 12,
 		HitPoints:    12,
@@ -79,16 +81,16 @@ func TestConvertCharacterDataToProto_EmptyInventory(t *testing.T) {
 		PlayerID:  "player-2",
 		Name:      "No Equipment Character",
 		Level:     1,
-		RaceID:    constants.RaceElf,
-		ClassID:   constants.ClassWizard,
+		RaceID:    races.Elf,
+		ClassID:   classes.Wizard,
 		Equipment: []string{}, // Empty equipment
 		AbilityScores: shared.AbilityScores{
-			constants.STR: 8,
-			constants.DEX: 14,
-			constants.CON: 12,
-			constants.INT: 16,
-			constants.WIS: 13,
-			constants.CHA: 10,
+			abilities.STR: 8,
+			abilities.DEX: 14,
+			abilities.CON: 12,
+			abilities.INT: 16,
+			abilities.WIS: 13,
+			abilities.CHA: 10,
 		},
 		MaxHitPoints: 6,
 		HitPoints:    6,

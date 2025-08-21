@@ -18,8 +18,11 @@ import (
 	draftrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft"
 	draftmock "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft/mock"
 	dicesession "github.com/KirkDiggler/rpg-api/internal/repositories/dice_session"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/abilities"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/backgrounds"
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
-	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/constants"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/classes"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/races"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
 )
 
@@ -72,12 +75,12 @@ func (s *AbilityScoresIntegrationTestSuite) TestRollAndAssignAbilityScores_FullF
 		PlayerID: playerID,
 		Name:     "Test Character",
 		RaceChoice: toolkitchar.RaceChoice{
-			RaceID: constants.RaceHuman,
+			RaceID: races.Human,
 		},
 		ClassChoice: toolkitchar.ClassChoice{
-			ClassID: constants.ClassFighter,
+			ClassID: classes.Fighter,
 		},
-		BackgroundChoice: constants.BackgroundSoldier,
+		BackgroundChoice: backgrounds.Soldier,
 	}
 
 	// Step 1: Roll ability scores
@@ -190,24 +193,24 @@ func (s *AbilityScoresIntegrationTestSuite) TestRollAndAssignAbilityScores_FullF
 	// Mock updating the draft with ability scores
 	updatedDraft := *testDraft // Copy the draft
 	updatedDraft.AbilityScoreChoice = shared.AbilityScores{
-		constants.STR: 16,
-		constants.DEX: 14,
-		constants.CON: 15,
-		constants.INT: 12,
-		constants.WIS: 13,
-		constants.CHA: 10,
+		abilities.STR: 16,
+		abilities.DEX: 14,
+		abilities.CON: 15,
+		abilities.INT: 12,
+		abilities.WIS: 13,
+		abilities.CHA: 10,
 	}
 
 	s.mockDraftRepo.EXPECT().
 		Update(ctx, gomock.Any()).
 		DoAndReturn(func(ctx context.Context, input draftrepo.UpdateInput) (*draftrepo.UpdateOutput, error) {
 			// Verify the ability scores were set correctly
-			s.Equal(16, input.Draft.AbilityScoreChoice[constants.STR])
-			s.Equal(14, input.Draft.AbilityScoreChoice[constants.DEX])
-			s.Equal(15, input.Draft.AbilityScoreChoice[constants.CON])
-			s.Equal(12, input.Draft.AbilityScoreChoice[constants.INT])
-			s.Equal(13, input.Draft.AbilityScoreChoice[constants.WIS])
-			s.Equal(10, input.Draft.AbilityScoreChoice[constants.CHA])
+			s.Equal(16, input.Draft.AbilityScoreChoice[abilities.STR])
+			s.Equal(14, input.Draft.AbilityScoreChoice[abilities.DEX])
+			s.Equal(15, input.Draft.AbilityScoreChoice[abilities.CON])
+			s.Equal(12, input.Draft.AbilityScoreChoice[abilities.INT])
+			s.Equal(13, input.Draft.AbilityScoreChoice[abilities.WIS])
+			s.Equal(10, input.Draft.AbilityScoreChoice[abilities.CHA])
 			return &draftrepo.UpdateOutput{Draft: &updatedDraft}, nil
 		})
 
@@ -227,12 +230,12 @@ func (s *AbilityScoresIntegrationTestSuite) TestRollAndAssignAbilityScores_FullF
 	s.Require().NoError(err)
 	s.Require().NotNil(updateOutput)
 	s.Require().NotNil(updateOutput.Draft)
-	s.Equal(16, updateOutput.Draft.AbilityScoreChoice[constants.STR])
-	s.Equal(14, updateOutput.Draft.AbilityScoreChoice[constants.DEX])
-	s.Equal(15, updateOutput.Draft.AbilityScoreChoice[constants.CON])
-	s.Equal(12, updateOutput.Draft.AbilityScoreChoice[constants.INT])
-	s.Equal(13, updateOutput.Draft.AbilityScoreChoice[constants.WIS])
-	s.Equal(10, updateOutput.Draft.AbilityScoreChoice[constants.CHA])
+	s.Equal(16, updateOutput.Draft.AbilityScoreChoice[abilities.STR])
+	s.Equal(14, updateOutput.Draft.AbilityScoreChoice[abilities.DEX])
+	s.Equal(15, updateOutput.Draft.AbilityScoreChoice[abilities.CON])
+	s.Equal(12, updateOutput.Draft.AbilityScoreChoice[abilities.INT])
+	s.Equal(13, updateOutput.Draft.AbilityScoreChoice[abilities.WIS])
+	s.Equal(10, updateOutput.Draft.AbilityScoreChoice[abilities.CHA])
 }
 
 func (s *AbilityScoresIntegrationTestSuite) TestUpdateAbilityScores_SessionNotFound() {

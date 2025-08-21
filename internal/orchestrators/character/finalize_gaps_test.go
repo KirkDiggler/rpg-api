@@ -16,11 +16,16 @@ import (
 	charmock "github.com/KirkDiggler/rpg-api/internal/repositories/character/mock"
 	draftrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft"
 	draftmock "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft/mock"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/abilities"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/backgrounds"
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/class"
-	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/constants"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/classes"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/languages"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/race"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/races"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/skills"
 )
 
 // FinalizeGapsTestSuite identifies gaps in character finalization
@@ -78,37 +83,37 @@ func (s *FinalizeGapsTestSuite) TestGaps_BackgroundData() {
 		PlayerID: "player-bg",
 		Name:     "Background Test",
 		RaceChoice: toolkitchar.RaceChoice{
-			RaceID: constants.RaceHuman,
+			RaceID: races.Human,
 		},
 		ClassChoice: toolkitchar.ClassChoice{
-			ClassID: constants.ClassFighter,
+			ClassID: classes.Fighter,
 		},
-		BackgroundChoice: constants.BackgroundSage, // Sage gives Arcana, History + 2 languages
+		BackgroundChoice: backgrounds.Sage, // Sage gives Arcana, History + 2 languages
 		AbilityScoreChoice: shared.AbilityScores{
-			constants.STR: 15,
-			constants.DEX: 14,
-			constants.CON: 13,
-			constants.INT: 12,
-			constants.WIS: 11,
-			constants.CHA: 10,
+			abilities.STR: 15,
+			abilities.DEX: 14,
+			abilities.CON: 13,
+			abilities.INT: 12,
+			abilities.WIS: 11,
+			abilities.CHA: 10,
 		},
 		Choices: []toolkitchar.ChoiceData{
 			{
 				Category: shared.ChoiceSkills,
 				Source:   shared.SourceBackground,
 				ChoiceID: "sage_skills",
-				SkillSelection: []constants.Skill{
-					constants.SkillArcana,
-					constants.SkillHistory,
+				SkillSelection: []skills.Skill{
+					skills.Arcana,
+					skills.History,
 				},
 			},
 			{
 				Category: shared.ChoiceLanguages,
 				Source:   shared.SourceBackground,
 				ChoiceID: "sage_languages",
-				LanguageSelection: []constants.Language{
-					constants.LanguageElvish,
-					constants.LanguageDraconic,
+				LanguageSelection: []languages.Language{
+					languages.Elvish,
+					languages.Draconic,
 				},
 			},
 		},
@@ -119,30 +124,30 @@ func (s *FinalizeGapsTestSuite) TestGaps_BackgroundData() {
 		Return(&draftrepo.GetOutput{Draft: draft}, nil)
 
 	s.mockExtClient.EXPECT().
-		GetRaceData(gomock.Any(), string(constants.RaceHuman)).
+		GetRaceData(gomock.Any(), string(races.Human)).
 		Return(&external.RaceDataOutput{
 			RaceData: &race.Data{
-				ID:        constants.RaceHuman,
+				ID:        races.Human,
 				Speed:     30,
 				Size:      "Medium",
-				Languages: []constants.Language{constants.LanguageCommon},
+				Languages: []languages.Language{languages.Common},
 			},
 		}, nil)
 
 	s.mockExtClient.EXPECT().
-		GetClassData(gomock.Any(), string(constants.ClassFighter)).
+		GetClassData(gomock.Any(), string(classes.Fighter)).
 		Return(&external.ClassDataOutput{
 			ClassData: &class.Data{
-				ID:                  constants.ClassFighter,
+				ID:                  classes.Fighter,
 				HitDice:             10,
-				SavingThrows:        []constants.Ability{constants.STR, constants.CON},
+				SavingThrows:        []abilities.Ability{abilities.STR, abilities.CON},
 				WeaponProficiencies: []string{"simple", "martial"},
 				ArmorProficiencies:  []string{"light", "medium", "heavy", "shields"},
 			},
 		}, nil)
 
 	s.mockExtClient.EXPECT().
-		GetBackgroundData(gomock.Any(), string(constants.BackgroundSage)).
+		GetBackgroundData(gomock.Any(), string(backgrounds.Sage)).
 		Return(&external.BackgroundData{
 			ID:                 "sage",
 			Name:               "Sage",
@@ -159,9 +164,9 @@ func (s *FinalizeGapsTestSuite) TestGaps_BackgroundData() {
 			s.T().Log("Skills in character:", input.CharacterData.Skills)
 
 			// These should now work since we process all skill choices
-			s.Equal(shared.Proficient, input.CharacterData.Skills[constants.SkillArcana],
+			s.Equal(shared.Proficient, input.CharacterData.Skills[skills.Arcana],
 				"Should have Arcana from Sage background")
-			s.Equal(shared.Proficient, input.CharacterData.Skills[constants.SkillHistory],
+			s.Equal(shared.Proficient, input.CharacterData.Skills[skills.History],
 				"Should have History from Sage background")
 
 			// Verify background languages are included
@@ -207,20 +212,20 @@ func (s *FinalizeGapsTestSuite) TestGaps_RacialTraits() {
 		PlayerID: "player-racial",
 		Name:     "Racial Traits Test",
 		RaceChoice: toolkitchar.RaceChoice{
-			RaceID:    constants.RaceElf,
-			SubraceID: constants.SubraceHighElf,
+			RaceID:    races.Elf,
+			SubraceID: races.HighElf,
 		},
 		ClassChoice: toolkitchar.ClassChoice{
-			ClassID: constants.ClassWizard,
+			ClassID: classes.Wizard,
 		},
-		BackgroundChoice: constants.BackgroundSage,
+		BackgroundChoice: backgrounds.Sage,
 		AbilityScoreChoice: shared.AbilityScores{
-			constants.STR: 8,
-			constants.DEX: 16, // Base 14 + 2 from Elf
-			constants.CON: 13,
-			constants.INT: 16, // Base 15 + 1 from High Elf
-			constants.WIS: 12,
-			constants.CHA: 10,
+			abilities.STR: 8,
+			abilities.DEX: 16, // Base 14 + 2 from Elf
+			abilities.CON: 13,
+			abilities.INT: 16, // Base 15 + 1 from High Elf
+			abilities.WIS: 12,
+			abilities.CHA: 10,
 		},
 		Choices: []toolkitchar.ChoiceData{
 			{
@@ -233,7 +238,7 @@ func (s *FinalizeGapsTestSuite) TestGaps_RacialTraits() {
 				Category:          shared.ChoiceLanguages,
 				Source:            shared.SourceRace,
 				ChoiceID:          "high_elf_language",
-				LanguageSelection: []constants.Language{constants.LanguageDraconic},
+				LanguageSelection: []languages.Language{languages.Draconic},
 			},
 		},
 	}
@@ -243,31 +248,31 @@ func (s *FinalizeGapsTestSuite) TestGaps_RacialTraits() {
 		Return(&draftrepo.GetOutput{Draft: draft}, nil)
 
 	s.mockExtClient.EXPECT().
-		GetRaceData(gomock.Any(), string(constants.RaceElf)).
+		GetRaceData(gomock.Any(), string(races.Elf)).
 		Return(&external.RaceDataOutput{
 			RaceData: &race.Data{
-				ID:                 constants.RaceElf,
+				ID:                 races.Elf,
 				Speed:              30,
 				Size:               "Medium",
-				Languages:          []constants.Language{constants.LanguageCommon, constants.LanguageElvish},
-				SkillProficiencies: []constants.Skill{constants.SkillPerception},
+				Languages:          []languages.Language{languages.Common, languages.Elvish},
+				SkillProficiencies: []skills.Skill{skills.Perception},
 				// TODO: Traits field exists but character.Data doesn't have a place to store them yet
 				// Traits: []race.TraitData{{Name: "Darkvision"}, {Name: "Keen Senses"}, {Name: "Fey Ancestry"}, {Name: "Trance"}},
 			},
 		}, nil)
 
 	s.mockExtClient.EXPECT().
-		GetClassData(gomock.Any(), string(constants.ClassWizard)).
+		GetClassData(gomock.Any(), string(classes.Wizard)).
 		Return(&external.ClassDataOutput{
 			ClassData: &class.Data{
-				ID:           constants.ClassWizard,
+				ID:           classes.Wizard,
 				HitDice:      6,
-				SavingThrows: []constants.Ability{constants.INT, constants.WIS},
+				SavingThrows: []abilities.Ability{abilities.INT, abilities.WIS},
 			},
 		}, nil)
 
 	s.mockExtClient.EXPECT().
-		GetBackgroundData(gomock.Any(), string(constants.BackgroundSage)).
+		GetBackgroundData(gomock.Any(), string(backgrounds.Sage)).
 		Return(&external.BackgroundData{
 			ID:                 "sage",
 			Name:               "Sage",
@@ -283,7 +288,7 @@ func (s *FinalizeGapsTestSuite) TestGaps_RacialTraits() {
 			s.T().Log("Checking racial traits in finalized character")
 
 			// Racial skill proficiencies should work now
-			s.Equal(shared.Proficient, input.CharacterData.Skills[constants.SkillPerception],
+			s.Equal(shared.Proficient, input.CharacterData.Skills[skills.Perception],
 				"Elf should have Perception proficiency from Keen Senses")
 
 			// TODO: Check for Darkvision trait
@@ -325,19 +330,19 @@ func (s *FinalizeGapsTestSuite) TestGaps_ClassFeatures() {
 		PlayerID: "player-features",
 		Name:     "Class Features Test",
 		RaceChoice: toolkitchar.RaceChoice{
-			RaceID: constants.RaceHuman,
+			RaceID: races.Human,
 		},
 		ClassChoice: toolkitchar.ClassChoice{
-			ClassID: constants.ClassFighter,
+			ClassID: classes.Fighter,
 		},
-		BackgroundChoice: constants.BackgroundSoldier,
+		BackgroundChoice: backgrounds.Soldier,
 		AbilityScoreChoice: shared.AbilityScores{
-			constants.STR: 16,
-			constants.DEX: 14,
-			constants.CON: 15,
-			constants.INT: 10,
-			constants.WIS: 12,
-			constants.CHA: 8,
+			abilities.STR: 16,
+			abilities.DEX: 14,
+			abilities.CON: 15,
+			abilities.INT: 10,
+			abilities.WIS: 12,
+			abilities.CHA: 8,
 		},
 		Choices: []toolkitchar.ChoiceData{
 			{
@@ -357,20 +362,20 @@ func (s *FinalizeGapsTestSuite) TestGaps_ClassFeatures() {
 		GetRaceData(gomock.Any(), gomock.Any()).
 		Return(&external.RaceDataOutput{
 			RaceData: &race.Data{
-				ID:        constants.RaceHuman,
+				ID:        races.Human,
 				Speed:     30,
 				Size:      "Medium",
-				Languages: []constants.Language{constants.LanguageCommon},
+				Languages: []languages.Language{languages.Common},
 			},
 		}, nil)
 
 	s.mockExtClient.EXPECT().
-		GetClassData(gomock.Any(), string(constants.ClassFighter)).
+		GetClassData(gomock.Any(), string(classes.Fighter)).
 		Return(&external.ClassDataOutput{
 			ClassData: &class.Data{
-				ID:                  constants.ClassFighter,
+				ID:                  classes.Fighter,
 				HitDice:             10,
-				SavingThrows:        []constants.Ability{constants.STR, constants.CON},
+				SavingThrows:        []abilities.Ability{abilities.STR, abilities.CON},
 				WeaponProficiencies: []string{"simple", "martial"},
 				ArmorProficiencies:  []string{"light", "medium", "heavy", "shields"},
 				// TODO: ClassData should include:
@@ -382,7 +387,7 @@ func (s *FinalizeGapsTestSuite) TestGaps_ClassFeatures() {
 		}, nil)
 
 	s.mockExtClient.EXPECT().
-		GetBackgroundData(gomock.Any(), string(constants.BackgroundSoldier)).
+		GetBackgroundData(gomock.Any(), string(backgrounds.Soldier)).
 		Return(&external.BackgroundData{
 			ID:                 "soldier",
 			Name:               "Soldier",
@@ -440,20 +445,20 @@ func (s *FinalizeGapsTestSuite) TestGaps_ToolProficiencies() {
 		PlayerID: "player-tools",
 		Name:     "Tool Proficiency Test",
 		RaceChoice: toolkitchar.RaceChoice{
-			RaceID:    constants.RaceDwarf, // Dwarves get tool proficiencies
-			SubraceID: constants.SubraceHillDwarf,
+			RaceID:    races.Dwarf, // Dwarves get tool proficiencies
+			SubraceID: races.HillDwarf,
 		},
 		ClassChoice: toolkitchar.ClassChoice{
-			ClassID: constants.ClassFighter,
+			ClassID: classes.Fighter,
 		},
-		BackgroundChoice: constants.BackgroundGuildArtisan, // Gives artisan's tools
+		BackgroundChoice: backgrounds.GuildArtisan, // Gives artisan's tools
 		AbilityScoreChoice: shared.AbilityScores{
-			constants.STR: 15,
-			constants.DEX: 13,
-			constants.CON: 17, // Base 15 + 2 from Dwarf
-			constants.INT: 10,
-			constants.WIS: 12,
-			constants.CHA: 8,
+			abilities.STR: 15,
+			abilities.DEX: 13,
+			abilities.CON: 17, // Base 15 + 2 from Dwarf
+			abilities.INT: 10,
+			abilities.WIS: 12,
+			abilities.CHA: 8,
 		},
 		Choices: []toolkitchar.ChoiceData{
 			{
@@ -473,13 +478,13 @@ func (s *FinalizeGapsTestSuite) TestGaps_ToolProficiencies() {
 		Return(&draftrepo.GetOutput{Draft: draft}, nil)
 
 	s.mockExtClient.EXPECT().
-		GetRaceData(gomock.Any(), string(constants.RaceDwarf)).
+		GetRaceData(gomock.Any(), string(races.Dwarf)).
 		Return(&external.RaceDataOutput{
 			RaceData: &race.Data{
-				ID:        constants.RaceDwarf,
+				ID:        races.Dwarf,
 				Speed:     25,
 				Size:      "Medium",
-				Languages: []constants.Language{constants.LanguageCommon, constants.LanguageDwarvish},
+				Languages: []languages.Language{languages.Common, languages.Dwarvish},
 				// TODO: RaceData should include:
 				// ToolProficiencyChoice: []string{"smith's tools", "brewer's supplies", "mason's tools"},
 			},
@@ -489,16 +494,16 @@ func (s *FinalizeGapsTestSuite) TestGaps_ToolProficiencies() {
 		GetClassData(gomock.Any(), gomock.Any()).
 		Return(&external.ClassDataOutput{
 			ClassData: &class.Data{
-				ID:                  constants.ClassFighter,
+				ID:                  classes.Fighter,
 				HitDice:             10,
-				SavingThrows:        []constants.Ability{constants.STR, constants.CON},
+				SavingThrows:        []abilities.Ability{abilities.STR, abilities.CON},
 				WeaponProficiencies: []string{"simple", "martial"},
 				ArmorProficiencies:  []string{"light", "medium", "heavy", "shields"},
 			},
 		}, nil)
 
 	s.mockExtClient.EXPECT().
-		GetBackgroundData(gomock.Any(), string(constants.BackgroundGuildArtisan)).
+		GetBackgroundData(gomock.Any(), string(backgrounds.GuildArtisan)).
 		Return(&external.BackgroundData{
 			ID:                 "guild-artisan",
 			Name:               "Guild Artisan",

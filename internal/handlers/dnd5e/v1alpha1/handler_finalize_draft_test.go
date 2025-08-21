@@ -14,9 +14,14 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v1alpha1"
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
 	charactermock "github.com/KirkDiggler/rpg-api/internal/orchestrators/character/mock"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/abilities"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/backgrounds"
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
-	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/constants"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/classes"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/languages"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/races"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/skills"
 )
 
 type HandlerFinalizeDraftTestSuite struct {
@@ -58,18 +63,18 @@ func (s *HandlerFinalizeDraftTestSuite) TestFinalizeDraft_Success() {
 		Level:    1,
 
 		// Race and class info
-		RaceID:       constants.RaceHuman,
-		ClassID:      constants.ClassFighter,
-		BackgroundID: constants.BackgroundSoldier,
+		RaceID:       races.Human,
+		ClassID:      classes.Fighter,
+		BackgroundID: backgrounds.Soldier,
 
 		// Ability scores
 		AbilityScores: shared.AbilityScores{
-			constants.STR: 16,
-			constants.DEX: 14,
-			constants.CON: 15,
-			constants.INT: 10,
-			constants.WIS: 12,
-			constants.CHA: 8,
+			abilities.STR: 16,
+			abilities.DEX: 14,
+			abilities.CON: 15,
+			abilities.INT: 10,
+			abilities.WIS: 12,
+			abilities.CHA: 8,
 		},
 
 		// Hit points
@@ -81,19 +86,19 @@ func (s *HandlerFinalizeDraftTestSuite) TestFinalizeDraft_Success() {
 		Size:  "Medium",
 
 		// Skills
-		Skills: map[constants.Skill]shared.ProficiencyLevel{
-			constants.SkillAthletics:    shared.Proficient,
-			constants.SkillIntimidation: shared.Proficient,
+		Skills: map[skills.Skill]shared.ProficiencyLevel{
+			skills.Athletics:    shared.Proficient,
+			skills.Intimidation: shared.Proficient,
 		},
 
 		// Saving throws
-		SavingThrows: map[constants.Ability]shared.ProficiencyLevel{
-			constants.STR: shared.Proficient,
-			constants.CON: shared.Proficient,
+		SavingThrows: map[abilities.Ability]shared.ProficiencyLevel{
+			abilities.STR: shared.Proficient,
+			abilities.CON: shared.Proficient,
 		},
 
 		// Languages
-		Languages: []string{string(constants.LanguageCommon), string(constants.LanguageElvish)},
+		Languages: []string{string(languages.Common), string(languages.Elvish)},
 
 		// Proficiencies
 		Proficiencies: shared.Proficiencies{
@@ -235,8 +240,8 @@ func (s *HandlerFinalizeDraftTestSuite) TestFinalizeDraft_DraftDeleteFailed() {
 		PlayerID: "player-456",
 		Name:     "Test Character",
 		Level:    1,
-		RaceID:   constants.RaceHuman,
-		ClassID:  constants.ClassFighter,
+		RaceID:   races.Human,
+		ClassID:  classes.Fighter,
 	}
 
 	s.mockCharService.EXPECT().

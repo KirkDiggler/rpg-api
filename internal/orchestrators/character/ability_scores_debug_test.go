@@ -18,8 +18,10 @@ import (
 	draftrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft"
 	draftmock "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft/mock"
 	dicesession "github.com/KirkDiggler/rpg-api/internal/repositories/dice_session"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/backgrounds"
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
-	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/constants"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/classes"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/races"
 )
 
 type AbilityScoresDebugTestSuite struct {
@@ -75,12 +77,12 @@ func (s *AbilityScoresDebugTestSuite) TestDebugEntityIDAndContext() {
 		PlayerID: playerID,
 		Name:     "Test Character",
 		RaceChoice: toolkitchar.RaceChoice{
-			RaceID: constants.RaceHuman,
+			RaceID: races.Human,
 		},
 		ClassChoice: toolkitchar.ClassChoice{
-			ClassID: constants.ClassFighter,
+			ClassID: classes.Fighter,
 		},
-		BackgroundChoice: constants.BackgroundSoldier,
+		BackgroundChoice: backgrounds.Soldier,
 	}
 
 	// Step 1: Test RollAbilityScores
