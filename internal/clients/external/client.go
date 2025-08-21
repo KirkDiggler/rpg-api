@@ -207,6 +207,12 @@ func (c *client) GetRaceData(_ context.Context, raceID string) (*RaceDataOutput,
 }
 
 func (c *client) GetClassData(ctx context.Context, classID string) (*ClassDataOutput, error) {
+	// Check if this is Fighter - use toolkit implementation
+	if classID == string(classes.Fighter) || classID == "fighter" {
+		return c.getFighterFromToolkit()
+	}
+
+	// Otherwise fall back to API
 	// Convert our internal ID format to API format
 	apiID := toAPIFormat(classID)
 
