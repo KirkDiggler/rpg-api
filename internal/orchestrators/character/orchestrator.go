@@ -17,6 +17,7 @@ import (
 	draftrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/abilities"
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/classes"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/effects"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/races"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
@@ -342,7 +343,7 @@ func (o *Orchestrator) UpdateClass(ctx context.Context, input *UpdateClassInput)
 
 	// Check if this is a spellcasting class and add spell/cantrip choices
 	switch input.ClassID {
-	case "wizard": // Using string literal temporarily
+	case classes.Wizard:
 		// Wizards get 3 cantrips and 6 first-level spells at level 1
 		cantripChoice := toolkitchar.ChoiceData{
 			Category: shared.ChoiceCantrips,
@@ -356,7 +357,7 @@ func (o *Orchestrator) UpdateClass(ctx context.Context, input *UpdateClassInput)
 		}
 		nonClassChoices = append(nonClassChoices, cantripChoice, spellChoice)
 
-	case "sorcerer": // Using string literal temporarily
+	case classes.Sorcerer:
 		// Sorcerers get 4 cantrips and 2 first-level spells at level 1
 		cantripChoice := toolkitchar.ChoiceData{
 			Category: shared.ChoiceCantrips,
@@ -370,7 +371,7 @@ func (o *Orchestrator) UpdateClass(ctx context.Context, input *UpdateClassInput)
 		}
 		nonClassChoices = append(nonClassChoices, cantripChoice, spellChoice)
 
-	case "bard": // Using string literal temporarily
+	case classes.Bard:
 		// Bards get 2 cantrips and 4 first-level spells at level 1
 		cantripChoice := toolkitchar.ChoiceData{
 			Category: shared.ChoiceCantrips,
@@ -384,7 +385,7 @@ func (o *Orchestrator) UpdateClass(ctx context.Context, input *UpdateClassInput)
 		}
 		nonClassChoices = append(nonClassChoices, cantripChoice, spellChoice)
 
-	case "cleric", "druid": // Using string literals temporarily
+	case classes.Cleric, classes.Druid:
 		// Clerics and Druids get cantrips but prepare spells (no spell choice needed at level 1)
 		cantripChoice := toolkitchar.ChoiceData{
 			Category: shared.ChoiceCantrips,
@@ -393,7 +394,7 @@ func (o *Orchestrator) UpdateClass(ctx context.Context, input *UpdateClassInput)
 		}
 		nonClassChoices = append(nonClassChoices, cantripChoice)
 
-	case "warlock": // Using string literal temporarily
+	case classes.Warlock:
 		// Warlocks get 2 cantrips and 2 first-level spells at level 1
 		cantripChoice := toolkitchar.ChoiceData{
 			Category: shared.ChoiceCantrips,
@@ -986,17 +987,7 @@ func (o *Orchestrator) ListRaces(ctx context.Context, input *ListRacesInput) (*L
 	// For now, we'll return all races from a hardcoded list
 	// In a real implementation, this might come from a database or be cached
 
-	allRaces := []string{ // Using string literals temporarily
-		"dragonborn",
-		"dwarf",
-		"elf",
-		"gnome",
-		"half-elf",
-		"halfling",
-		"half-orc",
-		"human",
-		"tiefling",
-	}
+	allRaces := races.All
 
 	// Get race data for each race
 	races := make([]RaceListItem, 0, len(allRaces))

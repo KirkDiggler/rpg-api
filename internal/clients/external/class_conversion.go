@@ -274,23 +274,8 @@ func (c *client) convertClassToHybrid(apiClass *entities.Class) (*class.Data, *C
 
 // convertKeyToClassID validates and converts an API key to a toolkit class constant
 func convertKeyToClassID(key string) (classes.Class, error) {
-	// Map of known API keys to toolkit constants
-	knownClasses := map[string]classes.Class{
-		"barbarian": classes.Barbarian,
-		"bard":      classes.Bard,
-		"cleric":    classes.Cleric,
-		"druid":     classes.Druid,
-		"fighter":   classes.Fighter,
-		"monk":      classes.Monk,
-		"paladin":   classes.Paladin,
-		"ranger":    classes.Ranger,
-		"rogue":     classes.Rogue,
-		"sorcerer":  classes.Sorcerer,
-		"warlock":   classes.Warlock,
-		"wizard":    classes.Wizard,
-	}
-
-	if classID, ok := knownClasses[key]; ok {
+	// Use the toolkit's All map to validate classes
+	if classID, ok := classes.All[key]; ok {
 		return classID, nil
 	}
 

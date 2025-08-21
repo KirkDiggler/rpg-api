@@ -278,20 +278,8 @@ func isToolProficiency(name string) bool {
 
 // convertKeyToRaceID validates and converts an API key to a toolkit race constant
 func convertKeyToRaceID(key string) (races.Race, error) {
-	// Map of known API keys to toolkit constants
-	knownRaces := map[string]races.Race{
-		"dragonborn": races.Dragonborn,
-		"dwarf":      races.Dwarf,
-		"elf":        races.Elf,
-		"gnome":      races.Gnome,
-		"half-elf":   races.HalfElf,
-		"halfling":   races.Halfling,
-		"half-orc":   races.HalfOrc,
-		"human":      races.Human,
-		"tiefling":   races.Tiefling,
-	}
-
-	if raceID, ok := knownRaces[key]; ok {
+	// Use the toolkit's All map to validate races
+	if raceID, ok := races.All[key]; ok {
 		return raceID, nil
 	}
 
