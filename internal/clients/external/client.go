@@ -419,8 +419,8 @@ func (c *client) ListAvailableRaces(_ context.Context) ([]*RaceData, error) {
 		if race == nil {
 			continue
 		}
-		// Check if this race ID is in our toolkit's supported races
-		if _, ok := races.All[race.ID]; ok {
+		// Check if this race ID is in our toolkit's supported races (including subraces)
+		if _, ok := races.AllIncludingSubraces[race.ID]; ok {
 			filteredRaces = append(filteredRaces, race)
 			slog.Debug("Including supported race", "race", race.Name, "id", race.ID)
 		} else {

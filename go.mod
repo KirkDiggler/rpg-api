@@ -6,7 +6,7 @@ require (
 	github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20250809033201-90369c75f89e
 	github.com/KirkDiggler/rpg-toolkit/core v0.9.1
 	github.com/KirkDiggler/rpg-toolkit/dice v0.1.1-0.20250807211656-0f8ebffb7bf0
-	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.4.1
+	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.4.2-0.20250821160009-e9999f9bfe46
 	github.com/KirkDiggler/rpg-toolkit/tools/spatial v0.1.0
 	github.com/fadedpez/dnd5e-api v0.0.0-20250718210231-523223e548d1
 	github.com/google/uuid v1.6.0

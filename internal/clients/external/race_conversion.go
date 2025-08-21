@@ -278,8 +278,8 @@ func isToolProficiency(name string) bool {
 
 // convertKeyToRaceID validates and converts an API key to a toolkit race constant
 func convertKeyToRaceID(key string) (races.Race, error) {
-	// Use the toolkit's All map to validate races
-	if raceID, ok := races.All[key]; ok {
+	// Use the toolkit's AllIncludingSubraces map to validate races and subraces
+	if raceID, ok := races.AllIncludingSubraces[key]; ok {
 		return raceID, nil
 	}
 
