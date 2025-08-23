@@ -455,7 +455,7 @@ func (o *Orchestrator) validateClassRequirements(ctx context.Context, draft *too
 	// Call toolkit validation
 	validationErrors, err := validation.ValidateClassChoices(draft.ClassChoice.ClassID, draft.Choices)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to validate class choices")
+		return nil, errors.Wrapf(err, "failed to validate class choices for class %s", draft.ClassChoice.ClassID)
 	}
 	
 	// Convert toolkit validation errors to our warnings
