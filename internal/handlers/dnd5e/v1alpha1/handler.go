@@ -271,8 +271,14 @@ func (h *Handler) UpdateClass(
 	// Convert response
 	protoDraft := convertDraftDataToProto(output.Draft)
 
-	// Convert warnings - no conversion needed for now
+	// Convert warnings
 	var warnings []*dnd5ev1alpha1.ValidationWarning
+	for _, w := range output.Warnings {
+		warnings = append(warnings, &dnd5ev1alpha1.ValidationWarning{
+			Field:   w.Field,
+			Message: w.Message,
+		})
+	}
 
 	return &dnd5ev1alpha1.UpdateClassResponse{
 		Draft:    protoDraft,
@@ -1847,13 +1853,13 @@ func convertResourceTypeToProto(resourceType shared.ClassResourceType) dnd5ev1al
 // convertRechargeTypeToProto converts toolkit recharge type to proto enum
 func convertRechargeTypeToProto(rechargeOn shared.ResetType) dnd5ev1alpha1.RechargeType {
 	switch rechargeOn {
-	case shared.ShortRest:
+	case shared.ResetTypeShortRest:
 		return dnd5ev1alpha1.RechargeType_RECHARGE_TYPE_SHORT_REST
-	case shared.LongRest:
+	case shared.ResetTypeLongRest:
 		return dnd5ev1alpha1.RechargeType_RECHARGE_TYPE_LONG_REST
-	case shared.Dawn:
+	case shared.ResetTypeDawn:
 		return dnd5ev1alpha1.RechargeType_RECHARGE_TYPE_DAWN
-	case shared.None:
+	case shared.ResetTypeNone:
 		return dnd5ev1alpha1.RechargeType_RECHARGE_TYPE_NONE
 	default:
 		return dnd5ev1alpha1.RechargeType_RECHARGE_TYPE_UNSPECIFIED
