@@ -79,6 +79,7 @@ func init() {
 
 	encounterCmd.AddCommand(dungeonStartCmd)
 	rootCmd.AddCommand(encounterCmd)
+	rootCmd.AddCommand(characterCmd)
 }
 
 func main() {
