@@ -982,7 +982,7 @@ func (s *FinalizeDraftOrchestratorTestSuite) TestFinalizeDraft_BarbarianClassRes
 			s.Equal("Rage", resource.Name)
 			s.Equal(2, resource.Max) // 2 rages at level 1
 			s.Equal(2, resource.Current)
-			s.Equal(shared.LongRest, resource.Resets)
+			s.Equal(shared.ResetTypeLongRest, resource.Resets)
 
 			// Spell slots (Barbarian should not have any)
 			s.Empty(input.CharacterData.SpellSlots)
@@ -1178,7 +1178,7 @@ func (s *FinalizeDraftOrchestratorTestSuite) TestFinalizeDraft_BardCharismaBased
 			s.Equal("Bardic Inspiration", resource.Name)
 			s.Equal(3, resource.Max) // CHA modifier (16 = +3)
 			s.Equal(3, resource.Current)
-			s.Equal(shared.LongRest, resource.Resets)
+			s.Equal(shared.ResetTypeLongRest, resource.Resets)
 
 			// Spell slots (Bard should get 2 first-level slots)
 			s.Contains(input.CharacterData.SpellSlots, 1)

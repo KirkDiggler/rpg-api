@@ -22,6 +22,7 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/races"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/skills"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/validation"
 )
 
 // Config holds dependencies for the orchestrator
@@ -431,11 +432,42 @@ func (o *Orchestrator) UpdateClass(ctx context.Context, input *UpdateClassInput)
 		return nil, errors.Wrapf(err, "failed to update draft %s", input.DraftID)
 	}
 
+	// Validate class requirements
+	warnings, validationErr := o.validateClassRequirements(ctx, updateOutput.Draft)
+	if validationErr != nil {
+		// Still save the draft, but return validation errors as warnings
+		warnings = append(warnings, ValidationWarning{
+			Field:   "class_validation",
+			Message: validationErr.Error(),
+		})
+	}
+
 	// Return updated draft with any warnings
 	return &UpdateClassOutput{
 		Draft:    updateOutput.Draft,
-		Warnings: []ValidationWarning{}, // TODO: Add validation for class requirements
+		Warnings: warnings,
 	}, nil
+}
+
+// validateClassRequirements validates that all required choices for a class are present
+// This delegates to the toolkit which knows the D&D 5e rules
+func (o *Orchestrator) validateClassRequirements(ctx context.Context, draft *toolkitchar.DraftData) ([]ValidationWarning, error) {
+	// Call toolkit validation
+	validationErrors, err := validation.ValidateClassChoices(draft.ClassChoice.ClassID, draft.Choices)
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to validate class choices for class %s", draft.ClassChoice.ClassID)
+	}
+	
+	// Convert toolkit validation errors to our warnings
+	var warnings []ValidationWarning
+	for _, ve := range validationErrors {
+		warnings = append(warnings, ValidationWarning{
+			Field:   ve.Field,
+			Message: ve.Message,
+		})
+	}
+	
+	return warnings, nil
 }
 
 func (o *Orchestrator) UpdateBackground(ctx context.Context, input *UpdateBackgroundInput) (*UpdateBackgroundOutput, error) {
