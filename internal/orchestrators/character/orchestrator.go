@@ -390,13 +390,13 @@ func (o *Orchestrator) UpdateClass(ctx context.Context, input *UpdateClassInput)
 func (o *Orchestrator) validateClassRequirements(ctx context.Context, draft *toolkitchar.DraftData) ([]ValidationWarning, error) {
 	// Convert our ChoiceData to the submission format expected by the new system
 	submissions := convertChoicesDataToSubmissions(draft.Choices)
-	
+
 	// Call new choices validation
 	result := choices.ValidateClassChoices(draft.ClassChoice.ClassID, 1, submissions)
-	
+
 	// Convert validation result to our warnings
 	var warnings []ValidationWarning
-	
+
 	// Add errors as warnings (they're informational for now)
 	for _, ve := range result.Errors {
 		warnings = append(warnings, ValidationWarning{
@@ -404,28 +404,28 @@ func (o *Orchestrator) validateClassRequirements(ctx context.Context, draft *too
 			Message: ve.Message,
 		})
 	}
-	
-	// Add warnings 
+
+	// Add warnings
 	for _, vw := range result.Warnings {
 		warnings = append(warnings, ValidationWarning{
 			Field:   vw.Field,
 			Message: vw.Message,
 		})
 	}
-	
+
 	return warnings, nil
 }
 
 // convertChoicesDataToSubmissions converts our internal ChoiceData format to the new Submissions format
 func convertChoicesDataToSubmissions(choiceData []toolkitchar.ChoiceData) choices.Submissions {
 	submissions := make(choices.Submissions)
-	
+
 	for _, choice := range choiceData {
 		// Only process class choices for class validation
 		if choice.Source != shared.SourceClass {
 			continue
 		}
-		
+
 		switch choice.Category {
 		case shared.ChoiceSkills:
 			var skillStrings []string
@@ -435,27 +435,27 @@ func convertChoicesDataToSubmissions(choiceData []toolkitchar.ChoiceData) choice
 			if len(skillStrings) > 0 {
 				submissions["skills"] = skillStrings
 			}
-			
+
 		case shared.ChoiceFightingStyle:
 			if choice.FightingStyleSelection != nil && *choice.FightingStyleSelection != "" {
 				submissions["fighting_style"] = []string{*choice.FightingStyleSelection}
 			}
-			
+
 		case shared.ChoiceCantrips:
 			if len(choice.CantripSelection) > 0 {
 				submissions["cantrips"] = choice.CantripSelection
 			}
-			
+
 		case shared.ChoiceSpells:
 			if len(choice.SpellSelection) > 0 {
 				submissions["spells"] = choice.SpellSelection
 			}
-			
+
 		case shared.ChoiceExpertise:
 			if len(choice.ExpertiseSelection) > 0 {
 				submissions["expertise"] = choice.ExpertiseSelection
 			}
-			
+
 		case shared.ChoiceEquipment:
 			if len(choice.EquipmentSelection) > 0 {
 				// For equipment, we use the choice ID as the key
@@ -463,7 +463,7 @@ func convertChoicesDataToSubmissions(choiceData []toolkitchar.ChoiceData) choice
 			}
 		}
 	}
-	
+
 	return submissions
 }
 
@@ -473,9 +473,9 @@ func convertRequirementsToChoiceData(reqs *choices.Requirements) []toolkitchar.C
 	if reqs == nil {
 		return nil
 	}
-	
+
 	var choiceData []toolkitchar.ChoiceData
-	
+
 	// Skills choice
 	if reqs.Skills != nil {
 		choiceData = append(choiceData, toolkitchar.ChoiceData{
@@ -484,7 +484,7 @@ func convertRequirementsToChoiceData(reqs *choices.Requirements) []toolkitchar.C
 			ChoiceID: "class_skills",
 		})
 	}
-	
+
 	// Fighting style choice
 	if reqs.FightingStyle != nil {
 		choiceData = append(choiceData, toolkitchar.ChoiceData{
@@ -493,7 +493,7 @@ func convertRequirementsToChoiceData(reqs *choices.Requirements) []toolkitchar.C
 			ChoiceID: "fighting_style",
 		})
 	}
-	
+
 	// Cantrips choice
 	if reqs.Cantrips != nil {
 		choiceData = append(choiceData, toolkitchar.ChoiceData{
@@ -502,7 +502,7 @@ func convertRequirementsToChoiceData(reqs *choices.Requirements) []toolkitchar.C
 			ChoiceID: "class_cantrips",
 		})
 	}
-	
+
 	// Spells choice
 	if reqs.Spells != nil {
 		choiceData = append(choiceData, toolkitchar.ChoiceData{
@@ -511,7 +511,7 @@ func convertRequirementsToChoiceData(reqs *choices.Requirements) []toolkitchar.C
 			ChoiceID: "class_spells",
 		})
 	}
-	
+
 	// Expertise choice
 	if reqs.Expertise != nil {
 		choiceData = append(choiceData, toolkitchar.ChoiceData{
@@ -520,7 +520,7 @@ func convertRequirementsToChoiceData(reqs *choices.Requirements) []toolkitchar.C
 			ChoiceID: "expertise",
 		})
 	}
-	
+
 	// Equipment choices
 	for i := range reqs.Equipment {
 		choiceData = append(choiceData, toolkitchar.ChoiceData{
@@ -529,7 +529,7 @@ func convertRequirementsToChoiceData(reqs *choices.Requirements) []toolkitchar.C
 			ChoiceID: fmt.Sprintf("equipment_%d", i+1),
 		})
 	}
-	
+
 	// Language choices
 	if reqs.Languages != nil {
 		choiceData = append(choiceData, toolkitchar.ChoiceData{
@@ -538,7 +538,7 @@ func convertRequirementsToChoiceData(reqs *choices.Requirements) []toolkitchar.C
 			ChoiceID: "class_languages",
 		})
 	}
-	
+
 	// Tool choices
 	if reqs.Tools != nil {
 		choiceData = append(choiceData, toolkitchar.ChoiceData{
@@ -547,7 +547,7 @@ func convertRequirementsToChoiceData(reqs *choices.Requirements) []toolkitchar.C
 			ChoiceID: "class_tools",
 		})
 	}
-	
+
 	// Instrument choices
 	if reqs.Instruments != nil {
 		choiceData = append(choiceData, toolkitchar.ChoiceData{
@@ -556,7 +556,7 @@ func convertRequirementsToChoiceData(reqs *choices.Requirements) []toolkitchar.C
 			ChoiceID: "class_instruments",
 		})
 	}
-	
+
 	return choiceData
 }
 

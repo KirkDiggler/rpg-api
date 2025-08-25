@@ -1736,12 +1736,8 @@ func convertRaceDataToProtoInfo(raceData *race.Data, uiData *external.RaceUIData
 	for _, prof := range raceData.SkillProficiencies {
 		info.Proficiencies = append(info.Proficiencies, string(prof))
 	}
-	for _, prof := range raceData.WeaponProficiencies {
-		info.Proficiencies = append(info.Proficiencies, prof)
-	}
-	for _, prof := range raceData.ToolProficiencies {
-		info.Proficiencies = append(info.Proficiencies, prof)
-	}
+	info.Proficiencies = append(info.Proficiencies, raceData.WeaponProficiencies...)
+	info.Proficiencies = append(info.Proficiencies, raceData.ToolProficiencies...)
 
 	// Convert languages
 	info.Languages = make([]dnd5ev1alpha1.Language, 0, len(raceData.Languages))

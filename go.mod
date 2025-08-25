@@ -16,6 +16,8 @@ require (
 	google.golang.org/grpc v1.74.2
 )
 
+replace github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e => ../rpg-toolkit/rulebooks/dnd5e
+
 require (
 	github.com/KirkDiggler/rpg-toolkit/core v0.9.1 // indirect
 	github.com/KirkDiggler/rpg-toolkit/events v0.6.0 // indirect
