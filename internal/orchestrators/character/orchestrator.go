@@ -344,20 +344,43 @@ func (o *Orchestrator) UpdateClass(ctx context.Context, input *UpdateClassInput)
 	// Get class requirements from the new choices system and create choice templates
 	classRequirements := choices.GetClassRequirements(input.ClassID, 1)
 	classChoices := convertRequirementsToChoiceData(classRequirements)
-	nonClassChoices = append(nonClassChoices, classChoices...)
-
-	// Add new class choices if provided
+	
+	// If user provided choices, merge them with the templates
 	if len(input.Choices) > 0 {
-		// Ensure all new choices have the class source set
-		for i := range input.Choices {
-			if input.Choices[i].Source == "" {
-				input.Choices[i].Source = shared.SourceClass
+		// Create a map to track which choices have been provided
+		providedChoices := make(map[string]toolkitchar.ChoiceData)
+		for _, choice := range input.Choices {
+			if choice.Source == "" {
+				choice.Source = shared.SourceClass
+			}
+			// Key by category + choice ID for uniqueness
+			key := string(choice.Category) + ":" + choice.ChoiceID
+			providedChoices[key] = choice
+		}
+		
+		// Merge templates with user choices
+		mergedClassChoices := []toolkitchar.ChoiceData{}
+		for _, templateChoice := range classChoices {
+			key := string(templateChoice.Category) + ":" + templateChoice.ChoiceID
+			if userChoice, exists := providedChoices[key]; exists {
+				// Use the user-provided choice (has actual selections)
+				mergedClassChoices = append(mergedClassChoices, userChoice)
+				delete(providedChoices, key)
+			} else {
+				// Use the template choice
+				mergedClassChoices = append(mergedClassChoices, templateChoice)
 			}
 		}
-		draft.Choices = append(nonClassChoices, input.Choices...)
+		
+		// Add any remaining user choices that weren't in templates
+		for _, choice := range providedChoices {
+			mergedClassChoices = append(mergedClassChoices, choice)
+		}
+		
+		draft.Choices = append(nonClassChoices, mergedClassChoices...)
 	} else {
-		// No choices provided, just keep non-class choices
-		draft.Choices = nonClassChoices
+		// No choices provided, just use templates
+		draft.Choices = append(nonClassChoices, classChoices...)
 	}
 
 	// Save the updated draft

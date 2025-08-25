@@ -714,8 +714,31 @@ func (s *OrchestratorTestSuite) TestUpdateClass_Success() {
 	s.mockDraftRepo.EXPECT().
 		Update(ctx, gomock.Any()).
 		DoAndReturn(func(ctx context.Context, input draftrepo.UpdateInput) (*draftrepo.UpdateOutput, error) {
-			// Verify the draft has the expected spell choices
-			s.Require().Len(input.Draft.Choices, 2, "Wizard should have 2 spell choices")
+			// Verify the draft has the expected wizard choices
+			// New system adds skills, cantrips, spells, and equipment choices
+			hasCantrips := false
+			hasSpells := false
+			hasSkills := false
+			equipmentCount := 0
+			
+			for _, choice := range input.Draft.Choices {
+				switch choice.Category {
+				case shared.ChoiceCantrips:
+					hasCantrips = true
+				case shared.ChoiceSpells:
+					hasSpells = true
+				case shared.ChoiceSkills:
+					hasSkills = true
+				case shared.ChoiceEquipment:
+					equipmentCount++
+				}
+			}
+			
+			s.Require().True(hasCantrips, "Wizard should have cantrip choice")
+			s.Require().True(hasSpells, "Wizard should have spell choice")
+			s.Require().True(hasSkills, "Wizard should have skill choice")
+			s.Require().Greater(equipmentCount, 0, "Wizard should have equipment choices")
+			
 			return &draftrepo.UpdateOutput{
 				Draft: input.Draft,
 			}, nil
@@ -728,8 +751,10 @@ func (s *OrchestratorTestSuite) TestUpdateClass_Success() {
 	s.Require().NoError(err)
 	s.Require().NotNil(output)
 	s.Assert().Equal(newClassID, output.Draft.ClassChoice.ClassID)
-	s.Assert().Len(output.Draft.Choices, 2)
-	s.Assert().Empty(output.Warnings)
+	// New system adds more than 2 choices (skills, equipment, etc.)
+	s.Assert().Greater(len(output.Draft.Choices), 2)
+	// Validation now runs and returns warnings for missing choices
+	s.Assert().NotEmpty(output.Warnings, "Should have validation warnings for missing choices")
 }
 
 func (s *OrchestratorTestSuite) TestUpdateClass_WithChoices() {
@@ -737,10 +762,10 @@ func (s *OrchestratorTestSuite) TestUpdateClass_WithChoices() {
 	newClassID := classes.Fighter
 	choices := []toolkitchar.ChoiceData{
 		{
-			ChoiceID:           "fighting-style",
+			ChoiceID:           "fighting_style",
 			Category:           shared.ChoiceFightingStyle,
 			Source:             shared.SourceClass,
-			EquipmentSelection: []string{"Defense"},
+			FightingStyleSelection: &[]string{"Defense"}[0],
 		},
 	}
 	input := &character.UpdateClassInput{
@@ -759,17 +784,6 @@ func (s *OrchestratorTestSuite) TestUpdateClass_WithChoices() {
 		},
 	}
 
-	// Create expected updated draft
-	updatedDraft := existingDraft
-	updatedDraft.ClassChoice = toolkitchar.ClassChoice{
-		ClassID: classes.Class(newClassID),
-	}
-	updatedDraft.Choices = append([]toolkitchar.ChoiceData{{
-		ChoiceID: "skill-choice",
-		Category: shared.ChoiceSkills,
-		Source:   shared.SourceBackground,
-	}}, choices...)
-
 	// Mock get call
 	s.mockDraftRepo.EXPECT().
 		Get(ctx, draftrepo.GetInput{
@@ -779,14 +793,43 @@ func (s *OrchestratorTestSuite) TestUpdateClass_WithChoices() {
 			Draft: &existingDraft,
 		}, nil)
 
-	// Mock update call
+	// Mock update call - use DoAndReturn to verify instead of exact match
 	s.mockDraftRepo.EXPECT().
-		Update(ctx, draftrepo.UpdateInput{
-			Draft: &updatedDraft,
-		}).
-		Return(&draftrepo.UpdateOutput{
-			Draft: &updatedDraft,
-		}, nil)
+		Update(ctx, gomock.Any()).
+		DoAndReturn(func(ctx context.Context, input draftrepo.UpdateInput) (*draftrepo.UpdateOutput, error) {
+			// Verify background choice is preserved
+			hasBackgroundChoice := false
+			hasFightingStyle := false
+			hasSkillChoice := false
+			equipmentCount := 0
+			
+			for _, choice := range input.Draft.Choices {
+				if choice.Source == shared.SourceBackground && choice.ChoiceID == "skill-choice" {
+					hasBackgroundChoice = true
+				}
+				if choice.Category == shared.ChoiceFightingStyle {
+					hasFightingStyle = true
+					// Verify the fighting style was preserved from input
+					s.Assert().NotNil(choice.FightingStyleSelection)
+					s.Assert().Equal("Defense", *choice.FightingStyleSelection)
+				}
+				if choice.Source == shared.SourceClass && choice.Category == shared.ChoiceSkills {
+					hasSkillChoice = true
+				}
+				if choice.Category == shared.ChoiceEquipment {
+					equipmentCount++
+				}
+			}
+			
+			s.Require().True(hasBackgroundChoice, "Background choice should be preserved")
+			s.Require().True(hasFightingStyle, "Fighter should have fighting style choice")
+			s.Require().True(hasSkillChoice, "Fighter should have skill choice")
+			s.Require().Greater(equipmentCount, 0, "Fighter should have equipment choices")
+			
+			return &draftrepo.UpdateOutput{
+				Draft: input.Draft,
+			}, nil
+		})
 
 	// Call orchestrator
 	output, err := s.orchestrator.UpdateClass(ctx, input)
@@ -795,8 +838,21 @@ func (s *OrchestratorTestSuite) TestUpdateClass_WithChoices() {
 	s.Require().NoError(err)
 	s.Require().NotNil(output)
 	s.Assert().Equal(newClassID, output.Draft.ClassChoice.ClassID)
-	s.Assert().Len(output.Draft.Choices, 2)
-	s.Assert().Equal(shared.SourceClass, output.Draft.Choices[1].Source)
+	// New system adds more choices automatically
+	s.Assert().Greater(len(output.Draft.Choices), 2)
+	// Verify we have both background and class choices
+	hasBackgroundChoice := false
+	hasClassChoice := false
+	for _, choice := range output.Draft.Choices {
+		if choice.Source == shared.SourceBackground {
+			hasBackgroundChoice = true
+		}
+		if choice.Source == shared.SourceClass {
+			hasClassChoice = true
+		}
+	}
+	s.Assert().True(hasBackgroundChoice, "Should have background choice")
+	s.Assert().True(hasClassChoice, "Should have class choices")
 }
 
 func (s *OrchestratorTestSuite) TestUpdateClass_EmptyDraftID() {
