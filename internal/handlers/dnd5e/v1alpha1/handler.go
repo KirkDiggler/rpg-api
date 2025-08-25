@@ -272,7 +272,7 @@ func (h *Handler) UpdateClass(
 	protoDraft := convertDraftDataToProto(output.Draft)
 
 	// Convert warnings
-	var warnings []*dnd5ev1alpha1.ValidationWarning
+	warnings := make([]*dnd5ev1alpha1.ValidationWarning, 0, len(output.Warnings))
 	for _, w := range output.Warnings {
 		warnings = append(warnings, &dnd5ev1alpha1.ValidationWarning{
 			Field:   w.Field,

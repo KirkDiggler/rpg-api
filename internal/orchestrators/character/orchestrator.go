@@ -17,12 +17,11 @@ import (
 	draftrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/abilities"
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
-	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/classes"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character/choices"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/effects"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/races"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/skills"
-	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/validation"
 )
 
 // Config holds dependencies for the orchestrator
@@ -342,73 +341,10 @@ func (o *Orchestrator) UpdateClass(ctx context.Context, input *UpdateClassInput)
 		}
 	}
 
-	// Check if this is a spellcasting class and add spell/cantrip choices
-	switch input.ClassID {
-	case classes.Wizard:
-		// Wizards get 3 cantrips and 6 first-level spells at level 1
-		cantripChoice := toolkitchar.ChoiceData{
-			Category: shared.ChoiceCantrips,
-			Source:   shared.SourceClass,
-			ChoiceID: "wizard_cantrips",
-		}
-		spellChoice := toolkitchar.ChoiceData{
-			Category: shared.ChoiceSpells,
-			Source:   shared.SourceClass,
-			ChoiceID: "wizard_spells",
-		}
-		nonClassChoices = append(nonClassChoices, cantripChoice, spellChoice)
-
-	case classes.Sorcerer:
-		// Sorcerers get 4 cantrips and 2 first-level spells at level 1
-		cantripChoice := toolkitchar.ChoiceData{
-			Category: shared.ChoiceCantrips,
-			Source:   shared.SourceClass,
-			ChoiceID: "sorcerer_cantrips",
-		}
-		spellChoice := toolkitchar.ChoiceData{
-			Category: shared.ChoiceSpells,
-			Source:   shared.SourceClass,
-			ChoiceID: "sorcerer_spells",
-		}
-		nonClassChoices = append(nonClassChoices, cantripChoice, spellChoice)
-
-	case classes.Bard:
-		// Bards get 2 cantrips and 4 first-level spells at level 1
-		cantripChoice := toolkitchar.ChoiceData{
-			Category: shared.ChoiceCantrips,
-			Source:   shared.SourceClass,
-			ChoiceID: "bard_cantrips",
-		}
-		spellChoice := toolkitchar.ChoiceData{
-			Category: shared.ChoiceSpells,
-			Source:   shared.SourceClass,
-			ChoiceID: "bard_spells",
-		}
-		nonClassChoices = append(nonClassChoices, cantripChoice, spellChoice)
-
-	case classes.Cleric, classes.Druid:
-		// Clerics and Druids get cantrips but prepare spells (no spell choice needed at level 1)
-		cantripChoice := toolkitchar.ChoiceData{
-			Category: shared.ChoiceCantrips,
-			Source:   shared.SourceClass,
-			ChoiceID: string(input.ClassID) + "_cantrips",
-		}
-		nonClassChoices = append(nonClassChoices, cantripChoice)
-
-	case classes.Warlock:
-		// Warlocks get 2 cantrips and 2 first-level spells at level 1
-		cantripChoice := toolkitchar.ChoiceData{
-			Category: shared.ChoiceCantrips,
-			Source:   shared.SourceClass,
-			ChoiceID: "warlock_cantrips",
-		}
-		spellChoice := toolkitchar.ChoiceData{
-			Category: shared.ChoiceSpells,
-			Source:   shared.SourceClass,
-			ChoiceID: "warlock_spells",
-		}
-		nonClassChoices = append(nonClassChoices, cantripChoice, spellChoice)
-	}
+	// Get class requirements from the new choices system and create choice templates
+	classRequirements := choices.GetClassRequirements(input.ClassID, 1)
+	classChoices := convertRequirementsToChoiceData(classRequirements)
+	nonClassChoices = append(nonClassChoices, classChoices...)
 
 	// Add new class choices if provided
 	if len(input.Choices) > 0 {
@@ -450,24 +386,178 @@ func (o *Orchestrator) UpdateClass(ctx context.Context, input *UpdateClassInput)
 }
 
 // validateClassRequirements validates that all required choices for a class are present
-// This delegates to the toolkit which knows the D&D 5e rules
+// This delegates to the new toolkit choices system which knows the D&D 5e rules
 func (o *Orchestrator) validateClassRequirements(ctx context.Context, draft *toolkitchar.DraftData) ([]ValidationWarning, error) {
-	// Call toolkit validation
-	validationErrors, err := validation.ValidateClassChoices(draft.ClassChoice.ClassID, draft.Choices)
-	if err != nil {
-		return nil, errors.Wrapf(err, "failed to validate class choices for class %s", draft.ClassChoice.ClassID)
-	}
+	// Convert our ChoiceData to the submission format expected by the new system
+	submissions := convertChoicesDataToSubmissions(draft.Choices)
 	
-	// Convert toolkit validation errors to our warnings
+	// Call new choices validation
+	result := choices.ValidateClassChoices(draft.ClassChoice.ClassID, 1, submissions)
+	
+	// Convert validation result to our warnings
 	var warnings []ValidationWarning
-	for _, ve := range validationErrors {
+	
+	// Add errors as warnings (they're informational for now)
+	for _, ve := range result.Errors {
 		warnings = append(warnings, ValidationWarning{
 			Field:   ve.Field,
 			Message: ve.Message,
 		})
 	}
 	
+	// Add warnings 
+	for _, vw := range result.Warnings {
+		warnings = append(warnings, ValidationWarning{
+			Field:   vw.Field,
+			Message: vw.Message,
+		})
+	}
+	
 	return warnings, nil
+}
+
+// convertChoicesDataToSubmissions converts our internal ChoiceData format to the new Submissions format
+func convertChoicesDataToSubmissions(choiceData []toolkitchar.ChoiceData) choices.Submissions {
+	submissions := make(choices.Submissions)
+	
+	for _, choice := range choiceData {
+		// Only process class choices for class validation
+		if choice.Source != shared.SourceClass {
+			continue
+		}
+		
+		switch choice.Category {
+		case shared.ChoiceSkills:
+			var skillStrings []string
+			for _, skill := range choice.SkillSelection {
+				skillStrings = append(skillStrings, string(skill))
+			}
+			if len(skillStrings) > 0 {
+				submissions["skills"] = skillStrings
+			}
+			
+		case shared.ChoiceFightingStyle:
+			if choice.FightingStyleSelection != nil && *choice.FightingStyleSelection != "" {
+				submissions["fighting_style"] = []string{*choice.FightingStyleSelection}
+			}
+			
+		case shared.ChoiceCantrips:
+			if len(choice.CantripSelection) > 0 {
+				submissions["cantrips"] = choice.CantripSelection
+			}
+			
+		case shared.ChoiceSpells:
+			if len(choice.SpellSelection) > 0 {
+				submissions["spells"] = choice.SpellSelection
+			}
+			
+		case shared.ChoiceExpertise:
+			if len(choice.ExpertiseSelection) > 0 {
+				submissions["expertise"] = choice.ExpertiseSelection
+			}
+			
+		case shared.ChoiceEquipment:
+			if len(choice.EquipmentSelection) > 0 {
+				// For equipment, we use the choice ID as the key
+				submissions[choice.ChoiceID] = choice.EquipmentSelection
+			}
+		}
+	}
+	
+	return submissions
+}
+
+// convertRequirementsToChoiceData converts the new Requirements format to our internal ChoiceData format
+// This creates empty choice templates that the player will fill out
+func convertRequirementsToChoiceData(reqs *choices.Requirements) []toolkitchar.ChoiceData {
+	if reqs == nil {
+		return nil
+	}
+	
+	var choiceData []toolkitchar.ChoiceData
+	
+	// Skills choice
+	if reqs.Skills != nil {
+		choiceData = append(choiceData, toolkitchar.ChoiceData{
+			Category: shared.ChoiceSkills,
+			Source:   shared.SourceClass,
+			ChoiceID: "class_skills",
+		})
+	}
+	
+	// Fighting style choice
+	if reqs.FightingStyle != nil {
+		choiceData = append(choiceData, toolkitchar.ChoiceData{
+			Category: shared.ChoiceFightingStyle,
+			Source:   shared.SourceClass,
+			ChoiceID: "fighting_style",
+		})
+	}
+	
+	// Cantrips choice
+	if reqs.Cantrips != nil {
+		choiceData = append(choiceData, toolkitchar.ChoiceData{
+			Category: shared.ChoiceCantrips,
+			Source:   shared.SourceClass,
+			ChoiceID: "class_cantrips",
+		})
+	}
+	
+	// Spells choice
+	if reqs.Spells != nil {
+		choiceData = append(choiceData, toolkitchar.ChoiceData{
+			Category: shared.ChoiceSpells,
+			Source:   shared.SourceClass,
+			ChoiceID: "class_spells",
+		})
+	}
+	
+	// Expertise choice
+	if reqs.Expertise != nil {
+		choiceData = append(choiceData, toolkitchar.ChoiceData{
+			Category: shared.ChoiceExpertise,
+			Source:   shared.SourceClass,
+			ChoiceID: "expertise",
+		})
+	}
+	
+	// Equipment choices
+	for i := range reqs.Equipment {
+		choiceData = append(choiceData, toolkitchar.ChoiceData{
+			Category: shared.ChoiceEquipment,
+			Source:   shared.SourceClass,
+			ChoiceID: fmt.Sprintf("equipment_%d", i+1),
+		})
+	}
+	
+	// Language choices
+	if reqs.Languages != nil {
+		choiceData = append(choiceData, toolkitchar.ChoiceData{
+			Category: shared.ChoiceLanguages,
+			Source:   shared.SourceClass,
+			ChoiceID: "class_languages",
+		})
+	}
+	
+	// Tool choices
+	if reqs.Tools != nil {
+		choiceData = append(choiceData, toolkitchar.ChoiceData{
+			Category: shared.ChoiceToolProficiency,
+			Source:   shared.SourceClass,
+			ChoiceID: "class_tools",
+		})
+	}
+	
+	// Instrument choices
+	if reqs.Instruments != nil {
+		choiceData = append(choiceData, toolkitchar.ChoiceData{
+			Category: shared.ChoiceToolProficiency, // Instruments are a type of tool proficiency
+			Source:   shared.SourceClass,
+			ChoiceID: "class_instruments",
+		})
+	}
+	
+	return choiceData
 }
 
 func (o *Orchestrator) UpdateBackground(ctx context.Context, input *UpdateBackgroundInput) (*UpdateBackgroundOutput, error) {
