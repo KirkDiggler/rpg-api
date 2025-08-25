@@ -5,7 +5,7 @@ go 1.24.1
 require (
 	github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20250809033201-90369c75f89e
 	github.com/KirkDiggler/rpg-toolkit/dice v0.1.1-0.20250807211656-0f8ebffb7bf0
-	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.5.0
+	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.14.0
 	github.com/fadedpez/dnd5e-api v0.0.0-20250718210231-523223e548d1
 	github.com/google/uuid v1.6.0
 	github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.3.2
@@ -30,7 +30,7 @@ require (
 	github.com/stretchr/objx v0.5.2 // indirect
 	golang.org/x/net v0.42.0 // indirect
 	golang.org/x/sys v0.34.0 // indirect
-	golang.org/x/text v0.27.0 // indirect
+	golang.org/x/text v0.28.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20250528174236-200df99c418a // indirect
 	google.golang.org/protobuf v1.36.7 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
