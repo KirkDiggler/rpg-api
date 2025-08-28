@@ -118,6 +118,11 @@ func (h *Handler) GetDraft(
 
 	// Convert toolkit DraftData to proto CharacterDraft
 	protoDraft := convertDraftDataToProto(output.Draft)
+	
+	// Add validation to the draft if present
+	if output.Validation != nil {
+		protoDraft.Validation = output.Validation
+	}
 
 	return &dnd5ev1alpha1.GetDraftResponse{
 		Draft: protoDraft,
@@ -1118,6 +1123,31 @@ func convertToolkitChoicesToProto(choices []toolkitchar.ChoiceData) []*dnd5ev1al
 					},
 				}
 			}
+		case shared.ChoiceExpertise:
+			if len(choice.ExpertiseSelection) > 0 {
+				// Expertise selections are skill names
+				protoChoice.Selection = &dnd5ev1alpha1.ChoiceData_Expertise{
+					Expertise: &dnd5ev1alpha1.ExpertiseList{
+						Skills: choice.ExpertiseSelection,
+					},
+				}
+			}
+		case shared.ChoiceTraits:
+			if len(choice.TraitSelection) > 0 {
+				protoChoice.Selection = &dnd5ev1alpha1.ChoiceData_Traits{
+					Traits: &dnd5ev1alpha1.TraitList{
+						Traits: choice.TraitSelection,
+					},
+				}
+			}
+		case shared.ChoiceToolProficiency:
+			if len(choice.ToolProficiencySelection) > 0 {
+				protoChoice.Selection = &dnd5ev1alpha1.ChoiceData_ToolProficiencies{
+					ToolProficiencies: &dnd5ev1alpha1.ToolProficiencyList{
+						Tools: choice.ToolProficiencySelection,
+					},
+				}
+			}
 		default:
 			// For other types, no selection data
 		}
@@ -1155,6 +1185,14 @@ func convertToolkitCategoryToProto(category shared.ChoiceCategory) dnd5ev1alpha1
 		return dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_BACKGROUND
 	case shared.ChoiceCantrips:
 		return dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_CANTRIPS
+	case shared.ChoiceExpertise:
+		return dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_EXPERTISE
+	case shared.ChoiceSubrace:
+		return dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_SUBRACE
+	case shared.ChoiceTraits:
+		return dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_TRAITS
+	case shared.ChoiceToolProficiency:
+		return dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_TOOLS
 	default:
 		return dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_UNSPECIFIED
 	}
@@ -1520,6 +1558,15 @@ func convertProtoChoiceDataToToolkit(pc *dnd5ev1alpha1.ChoiceData) toolkitchar.C
 	case *dnd5ev1alpha1.ChoiceData_Cantrips:
 		// Convert cantrip list
 		choice.CantripSelection = selection.Cantrips.GetCantrips()
+	case *dnd5ev1alpha1.ChoiceData_Expertise:
+		// Convert expertise list (skill names for double proficiency)
+		choice.ExpertiseSelection = selection.Expertise.GetSkills()
+	case *dnd5ev1alpha1.ChoiceData_Traits:
+		// Convert trait list
+		choice.TraitSelection = selection.Traits.GetTraits()
+	case *dnd5ev1alpha1.ChoiceData_ToolProficiencies:
+		// Convert tool proficiency list
+		choice.ToolProficiencySelection = selection.ToolProficiencies.GetTools()
 	case *dnd5ev1alpha1.ChoiceData_Race:
 		// Handle race choice (not typically used in current choice system)
 	case *dnd5ev1alpha1.ChoiceData_Class:
@@ -1591,6 +1638,14 @@ func convertProtoCategoryToToolkit(category dnd5ev1alpha1.ChoiceCategory) shared
 		return shared.ChoiceSpells
 	case dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_CANTRIPS:
 		return shared.ChoiceCantrips
+	case dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_EXPERTISE:
+		return shared.ChoiceExpertise
+	case dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_SUBRACE:
+		return shared.ChoiceSubrace
+	case dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_TRAITS:
+		return shared.ChoiceTraits
+	case dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_TOOLS:
+		return shared.ChoiceToolProficiency
 	default:
 		return ""
 	}

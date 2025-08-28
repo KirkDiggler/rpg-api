@@ -131,6 +131,67 @@ func (s *HandlerTestSuite) TestGetDraft_NotFound() {
 	s.Contains(st.Message(), "draft not found")
 }
 
+func (s *HandlerTestSuite) TestGetDraft_WithValidation() {
+	// Create validation result
+	validation := &dnd5ev1alpha1.ValidationResult{
+		IsValid: false,
+		Issues: []*dnd5ev1alpha1.ValidationResult_Issue{
+			{
+				Severity: dnd5ev1alpha1.ValidationResult_SEVERITY_ERROR,
+				Field:    dnd5ev1alpha1.ValidationField_VALIDATION_FIELD_SKILLS,
+				Source:   dnd5ev1alpha1.ValidationSource_VALIDATION_SOURCE_CLASS,
+				Message:  "Fighter requires 2 skill selections, got 0",
+			},
+			{
+				Severity: dnd5ev1alpha1.ValidationResult_SEVERITY_INCOMPLETE,
+				Field:    dnd5ev1alpha1.ValidationField_VALIDATION_FIELD_BACKGROUND,
+				Source:   dnd5ev1alpha1.ValidationSource_VALIDATION_SOURCE_BACKGROUND,
+				Message:  "Background not selected",
+			},
+		},
+	}
+
+	// Mock orchestrator response with validation
+	s.mockCharService.EXPECT().
+		GetDraft(s.ctx, &character.GetDraftInput{
+			DraftID: s.testDraftID,
+		}).
+		Return(&character.GetDraftOutput{
+			Draft:      s.testDraftData,
+			Validation: validation,
+		}, nil)
+
+	// Call handler
+	resp, err := s.handler.GetDraft(s.ctx, &dnd5ev1alpha1.GetDraftRequest{
+		DraftId: s.testDraftID,
+	})
+
+	// Assert response
+	s.NoError(err)
+	s.NotNil(resp)
+	s.NotNil(resp.Draft)
+	s.Equal(s.testDraftID, resp.Draft.Id)
+	
+	// Assert validation is included
+	s.NotNil(resp.Draft.Validation)
+	s.False(resp.Draft.Validation.IsValid)
+	s.Len(resp.Draft.Validation.Issues, 2)
+	
+	// Check first issue
+	issue1 := resp.Draft.Validation.Issues[0]
+	s.Equal(dnd5ev1alpha1.ValidationResult_SEVERITY_ERROR, issue1.Severity)
+	s.Equal(dnd5ev1alpha1.ValidationField_VALIDATION_FIELD_SKILLS, issue1.Field)
+	s.Equal(dnd5ev1alpha1.ValidationSource_VALIDATION_SOURCE_CLASS, issue1.Source)
+	s.Contains(issue1.Message, "Fighter requires 2 skill selections")
+	
+	// Check second issue
+	issue2 := resp.Draft.Validation.Issues[1]
+	s.Equal(dnd5ev1alpha1.ValidationResult_SEVERITY_INCOMPLETE, issue2.Severity)
+	s.Equal(dnd5ev1alpha1.ValidationField_VALIDATION_FIELD_BACKGROUND, issue2.Field)
+	s.Equal(dnd5ev1alpha1.ValidationSource_VALIDATION_SOURCE_BACKGROUND, issue2.Source)
+	s.Contains(issue2.Message, "Background not selected")
+}
+
 func (s *HandlerTestSuite) TestGetDraft_MultipleScenarios() {
 	testCases := []struct {
 		name         string

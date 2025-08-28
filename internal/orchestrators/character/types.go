@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
 	"github.com/KirkDiggler/rpg-api/internal/clients/external"
 	"github.com/KirkDiggler/rpg-api/internal/entities/dnd5e"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/backgrounds"
@@ -90,7 +91,8 @@ type GetDraftInput struct {
 
 // GetDraftOutput defines the response for getting a draft
 type GetDraftOutput struct {
-	Draft *character.DraftData
+	Draft      *character.DraftData
+	Validation *pb.ValidationResult // Validation results for the draft
 }
 
 // ListDraftsInput defines the request for listing drafts

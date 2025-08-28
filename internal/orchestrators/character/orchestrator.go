@@ -173,10 +173,13 @@ func (o *Orchestrator) GetDraft(ctx context.Context, input *GetDraftInput) (*Get
 		return nil, fmt.Errorf("failed to get draft: %w", err)
 	}
 
-	// Return the draft data directly
-	// The repository returns toolkit DraftData which is what we want
+	// Validate the draft
+	validation := o.validateDraft(ctx, getDraftOutput.Draft)
+	
+	// Return the draft data with validation
 	return &GetDraftOutput{
-		Draft: getDraftOutput.Draft,
+		Draft:      getDraftOutput.Draft,
+		Validation: validation,
 	}, nil
 }
 
@@ -412,83 +415,60 @@ func (o *Orchestrator) UpdateClass(ctx context.Context, input *UpdateClassInput)
 // This delegates to the new toolkit choices system which knows the D&D 5e rules
 func (o *Orchestrator) validateClassRequirements(ctx context.Context, draft *toolkitchar.DraftData) ([]ValidationWarning, error) {
 	// Convert our ChoiceData to the submission format expected by the new system
-	submissions := convertChoicesDataToSubmissions(draft.Choices)
+	// Create typed submissions from draft choices
+	submissions := choices.NewTypedSubmissions()
+	for _, choice := range draft.Choices {
+		// Map to validation submission
+		source := mapChoiceSourceToValidationSource(choice.Source)
+		field := mapChoiceCategoryToValidationField(choice.Category)
+		
+		var values []string
+		if choice.SkillSelection != nil {
+			values = make([]string, len(choice.SkillSelection))
+			for i, skill := range choice.SkillSelection {
+				values[i] = string(skill)
+			}
+		} else if choice.LanguageSelection != nil {
+			values = make([]string, len(choice.LanguageSelection))
+			for i, lang := range choice.LanguageSelection {
+				values[i] = string(lang)
+			}
+		} else if choice.EquipmentSelection != nil {
+			values = choice.EquipmentSelection
+		} else if choice.FightingStyleSelection != nil {
+			values = []string{*choice.FightingStyleSelection}
+		}
+		
+		if len(values) > 0 {
+			submissions.AddChoice(choices.ChoiceSubmission{
+				Source:   source,
+				Field:    field,
+				ChoiceID: choice.ChoiceID,
+				Values:   values,
+			})
+		}
+	}
 
+	// Create validation context
+	context := choices.NewValidationContext()
+	
 	// Call new choices validation
-	result := choices.ValidateClassChoices(draft.ClassChoice.ClassID, 1, submissions)
+	result := choices.ValidateClassChoices(draft.ClassChoice.ClassID, 1, submissions, context)
 
 	// Convert validation result to our warnings
 	var warnings []ValidationWarning
 
-	// Add errors as warnings (they're informational for now)
-	for _, ve := range result.Errors {
+	// Add all issues from the ValidationResult
+	for _, issue := range result.AllIssues {
 		warnings = append(warnings, ValidationWarning{
-			Field:   ve.Field,
-			Message: ve.Message,
-		})
-	}
-
-	// Add warnings
-	for _, vw := range result.Warnings {
-		warnings = append(warnings, ValidationWarning{
-			Field:   vw.Field,
-			Message: vw.Message,
+			Field:   string(issue.Field),
+			Message: issue.Message,
 		})
 	}
 
 	return warnings, nil
 }
 
-// convertChoicesDataToSubmissions converts our internal ChoiceData format to the new Submissions format
-func convertChoicesDataToSubmissions(choiceData []toolkitchar.ChoiceData) choices.Submissions {
-	submissions := make(choices.Submissions)
-
-	for _, choice := range choiceData {
-		// Only process class choices for class validation
-		if choice.Source != shared.SourceClass {
-			continue
-		}
-
-		switch choice.Category {
-		case shared.ChoiceSkills:
-			var skillStrings []string
-			for _, skill := range choice.SkillSelection {
-				skillStrings = append(skillStrings, string(skill))
-			}
-			if len(skillStrings) > 0 {
-				submissions["skills"] = skillStrings
-			}
-
-		case shared.ChoiceFightingStyle:
-			if choice.FightingStyleSelection != nil && *choice.FightingStyleSelection != "" {
-				submissions["fighting_style"] = []string{*choice.FightingStyleSelection}
-			}
-
-		case shared.ChoiceCantrips:
-			if len(choice.CantripSelection) > 0 {
-				submissions["cantrips"] = choice.CantripSelection
-			}
-
-		case shared.ChoiceSpells:
-			if len(choice.SpellSelection) > 0 {
-				submissions["spells"] = choice.SpellSelection
-			}
-
-		case shared.ChoiceExpertise:
-			if len(choice.ExpertiseSelection) > 0 {
-				submissions["expertise"] = choice.ExpertiseSelection
-			}
-
-		case shared.ChoiceEquipment:
-			if len(choice.EquipmentSelection) > 0 {
-				// For equipment, we use the choice ID as the key
-				submissions[choice.ChoiceID] = choice.EquipmentSelection
-			}
-		}
-	}
-
-	return submissions
-}
 
 // convertRequirementsToChoiceData converts the new Requirements format to our internal ChoiceData format
 // This creates empty choice templates that the player will fill out
