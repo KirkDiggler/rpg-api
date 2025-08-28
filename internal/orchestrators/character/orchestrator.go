@@ -175,7 +175,7 @@ func (o *Orchestrator) GetDraft(ctx context.Context, input *GetDraftInput) (*Get
 
 	// Validate the draft
 	validation := o.validateDraft(ctx, getDraftOutput.Draft)
-	
+
 	// Return the draft data with validation
 	return &GetDraftOutput{
 		Draft:      getDraftOutput.Draft,
@@ -346,8 +346,8 @@ func (o *Orchestrator) UpdateClass(ctx context.Context, input *UpdateClassInput)
 
 	// Get class requirements from the new choices system and create choice templates
 	classRequirements := choices.GetClassRequirements(input.ClassID, 1)
-	classChoices := convertRequirementsToChoiceData(classRequirements)
-	
+	classChoices := convertRequirementsToChoiceData(string(input.ClassID), classRequirements)
+
 	// If user provided choices, merge them with the templates
 	if len(input.Choices) > 0 {
 		// Create a map to track which choices have been provided
@@ -360,7 +360,7 @@ func (o *Orchestrator) UpdateClass(ctx context.Context, input *UpdateClassInput)
 			key := string(choice.Category) + ":" + choice.ChoiceID
 			providedChoices[key] = choice
 		}
-		
+
 		// Merge templates with user choices
 		mergedClassChoices := []toolkitchar.ChoiceData{}
 		for _, templateChoice := range classChoices {
@@ -374,12 +374,12 @@ func (o *Orchestrator) UpdateClass(ctx context.Context, input *UpdateClassInput)
 				mergedClassChoices = append(mergedClassChoices, templateChoice)
 			}
 		}
-		
+
 		// Add any remaining user choices that weren't in templates
 		for _, choice := range providedChoices {
 			mergedClassChoices = append(mergedClassChoices, choice)
 		}
-		
+
 		draft.Choices = append(nonClassChoices, mergedClassChoices...)
 	} else {
 		// No choices provided, just use templates
@@ -421,7 +421,7 @@ func (o *Orchestrator) validateClassRequirements(ctx context.Context, draft *too
 		// Map to validation submission
 		source := mapChoiceSourceToValidationSource(choice.Source)
 		field := mapChoiceCategoryToValidationField(choice.Category)
-		
+
 		var values []string
 		if choice.SkillSelection != nil {
 			values = make([]string, len(choice.SkillSelection))
@@ -438,7 +438,7 @@ func (o *Orchestrator) validateClassRequirements(ctx context.Context, draft *too
 		} else if choice.FightingStyleSelection != nil {
 			values = []string{*choice.FightingStyleSelection}
 		}
-		
+
 		if len(values) > 0 {
 			submissions.AddChoice(choices.ChoiceSubmission{
 				Source:   source,
@@ -451,7 +451,7 @@ func (o *Orchestrator) validateClassRequirements(ctx context.Context, draft *too
 
 	// Create validation context
 	context := choices.NewValidationContext()
-	
+
 	// Call new choices validation
 	result := choices.ValidateClassChoices(draft.ClassChoice.ClassID, 1, submissions, context)
 
@@ -469,10 +469,9 @@ func (o *Orchestrator) validateClassRequirements(ctx context.Context, draft *too
 	return warnings, nil
 }
 
-
 // convertRequirementsToChoiceData converts the new Requirements format to our internal ChoiceData format
 // This creates empty choice templates that the player will fill out
-func convertRequirementsToChoiceData(reqs *choices.Requirements) []toolkitchar.ChoiceData {
+func convertRequirementsToChoiceData(classID string, reqs *choices.Requirements) []toolkitchar.ChoiceData {
 	if reqs == nil {
 		return nil
 	}
@@ -524,12 +523,12 @@ func convertRequirementsToChoiceData(reqs *choices.Requirements) []toolkitchar.C
 		})
 	}
 
-	// Equipment choices
+	// Equipment choices - use format that matches ListClasses: {class}_equipment_{n}
 	for i := range reqs.Equipment {
 		choiceData = append(choiceData, toolkitchar.ChoiceData{
 			Category: shared.ChoiceEquipment,
 			Source:   shared.SourceClass,
-			ChoiceID: fmt.Sprintf("equipment_%d", i+1),
+			ChoiceID: fmt.Sprintf("%s_equipment_%d", classID, i+1),
 		})
 	}
 

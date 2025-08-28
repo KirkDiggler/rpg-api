@@ -2,7 +2,10 @@ package character
 
 import (
 	"context"
-	
+	"fmt"
+	"strconv"
+	"strings"
+
 	pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/backgrounds"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
@@ -23,13 +26,26 @@ func (o *Orchestrator) validateDraft(ctx context.Context, draft *character.Draft
 
 	// Create typed submissions from draft choices
 	submissions := choices.NewTypedSubmissions()
-	
+
 	// Add choices from draft
 	for _, choice := range draft.Choices {
 		// Map source and field from choice metadata
 		source := mapChoiceSourceToValidationSource(choice.Source)
 		field := mapChoiceCategoryToValidationField(choice.Category)
-		
+
+		// For equipment choices, map to the field format the validator expects
+		// e.g., "rogue_equipment_1" -> "equipment_choice_0"
+		if choice.Category == shared.ChoiceEquipment && strings.Contains(choice.ChoiceID, "_equipment_") {
+			// Extract the number from "{class}_equipment_{n}"
+			parts := strings.Split(choice.ChoiceID, "_equipment_")
+			if len(parts) == 2 {
+				if num, err := strconv.Atoi(parts[1]); err == nil {
+					// Convert 1-based to 0-based and use expected field format
+					field = choices.Field(fmt.Sprintf("equipment_choice_%d", num-1))
+				}
+			}
+		}
+
 		// Extract values based on choice type
 		var values []string
 		if choice.SkillSelection != nil {
@@ -47,7 +63,7 @@ func (o *Orchestrator) validateDraft(ctx context.Context, draft *character.Draft
 		} else if choice.FightingStyleSelection != nil {
 			values = []string{*choice.FightingStyleSelection}
 		}
-		
+
 		if len(values) > 0 {
 			submissions.AddChoice(choices.ChoiceSubmission{
 				Source:   source,
@@ -66,7 +82,7 @@ func (o *Orchestrator) validateDraft(ctx context.Context, draft *character.Draft
 	// Create validation context
 	context := choices.NewValidationContext()
 	// TODO: Populate context with automatic grants from race/class/background
-	
+
 	// Validate based on draft selections
 	var result *choices.ValidationResult
 	if draft.ClassChoice.ClassID != "" && draft.RaceChoice.RaceID != "" {
@@ -215,7 +231,7 @@ func (o *Orchestrator) attachValidationToDraft(ctx context.Context, draft *pb.Ch
 			Source:   mapProtoChoiceSourceToShared(choice.Source),
 			ChoiceID: choice.ChoiceId,
 		}
-		
+
 		// Convert proto selections to toolkit types using proper converters
 		switch s := choice.Selection.(type) {
 		case *pb.ChoiceData_Skills:
@@ -249,7 +265,7 @@ func (o *Orchestrator) attachValidationToDraft(ctx context.Context, draft *pb.Ch
 				choiceData.CantripSelection = s.Cantrips.Cantrips
 			}
 		}
-		
+
 		draftData.Choices = append(draftData.Choices, choiceData)
 	}
 

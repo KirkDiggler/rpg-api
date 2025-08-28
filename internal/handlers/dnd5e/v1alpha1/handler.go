@@ -118,7 +118,7 @@ func (h *Handler) GetDraft(
 
 	// Convert toolkit DraftData to proto CharacterDraft
 	protoDraft := convertDraftDataToProto(output.Draft)
-	
+
 	// Add validation to the draft if present
 	if output.Validation != nil {
 		protoDraft.Validation = output.Validation

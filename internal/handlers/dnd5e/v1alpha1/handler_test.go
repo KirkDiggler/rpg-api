@@ -171,19 +171,19 @@ func (s *HandlerTestSuite) TestGetDraft_WithValidation() {
 	s.NotNil(resp)
 	s.NotNil(resp.Draft)
 	s.Equal(s.testDraftID, resp.Draft.Id)
-	
+
 	// Assert validation is included
 	s.NotNil(resp.Draft.Validation)
 	s.False(resp.Draft.Validation.IsValid)
 	s.Len(resp.Draft.Validation.Issues, 2)
-	
+
 	// Check first issue
 	issue1 := resp.Draft.Validation.Issues[0]
 	s.Equal(dnd5ev1alpha1.ValidationResult_SEVERITY_ERROR, issue1.Severity)
 	s.Equal(dnd5ev1alpha1.ValidationField_VALIDATION_FIELD_SKILLS, issue1.Field)
 	s.Equal(dnd5ev1alpha1.ValidationSource_VALIDATION_SOURCE_CLASS, issue1.Source)
 	s.Contains(issue1.Message, "Fighter requires 2 skill selections")
-	
+
 	// Check second issue
 	issue2 := resp.Draft.Validation.Issues[1]
 	s.Equal(dnd5ev1alpha1.ValidationResult_SEVERITY_INCOMPLETE, issue2.Severity)

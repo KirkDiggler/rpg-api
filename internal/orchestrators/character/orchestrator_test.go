@@ -720,7 +720,7 @@ func (s *OrchestratorTestSuite) TestUpdateClass_Success() {
 			hasSpells := false
 			hasSkills := false
 			equipmentCount := 0
-			
+
 			for _, choice := range input.Draft.Choices {
 				switch choice.Category {
 				case shared.ChoiceCantrips:
@@ -733,12 +733,12 @@ func (s *OrchestratorTestSuite) TestUpdateClass_Success() {
 					equipmentCount++
 				}
 			}
-			
+
 			s.Require().True(hasCantrips, "Wizard should have cantrip choice")
 			s.Require().True(hasSpells, "Wizard should have spell choice")
 			s.Require().True(hasSkills, "Wizard should have skill choice")
 			s.Require().Greater(equipmentCount, 0, "Wizard should have equipment choices")
-			
+
 			return &draftrepo.UpdateOutput{
 				Draft: input.Draft,
 			}, nil
@@ -762,9 +762,9 @@ func (s *OrchestratorTestSuite) TestUpdateClass_WithChoices() {
 	newClassID := classes.Fighter
 	choices := []toolkitchar.ChoiceData{
 		{
-			ChoiceID:           "fighting_style",
-			Category:           shared.ChoiceFightingStyle,
-			Source:             shared.SourceClass,
+			ChoiceID:               "fighting_style",
+			Category:               shared.ChoiceFightingStyle,
+			Source:                 shared.SourceClass,
 			FightingStyleSelection: &[]string{"Defense"}[0],
 		},
 	}
@@ -802,7 +802,7 @@ func (s *OrchestratorTestSuite) TestUpdateClass_WithChoices() {
 			hasFightingStyle := false
 			hasSkillChoice := false
 			equipmentCount := 0
-			
+
 			for _, choice := range input.Draft.Choices {
 				if choice.Source == shared.SourceBackground && choice.ChoiceID == "skill-choice" {
 					hasBackgroundChoice = true
@@ -820,12 +820,12 @@ func (s *OrchestratorTestSuite) TestUpdateClass_WithChoices() {
 					equipmentCount++
 				}
 			}
-			
+
 			s.Require().True(hasBackgroundChoice, "Background choice should be preserved")
 			s.Require().True(hasFightingStyle, "Fighter should have fighting style choice")
 			s.Require().True(hasSkillChoice, "Fighter should have skill choice")
 			s.Require().Greater(equipmentCount, 0, "Fighter should have equipment choices")
-			
+
 			return &draftrepo.UpdateOutput{
 				Draft: input.Draft,
 			}, nil

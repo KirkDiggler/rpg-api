@@ -115,7 +115,7 @@ This is useful for testing class validation logic during development.`,
 					fmt.Printf("Race: %s\n", race)
 				}
 				fmt.Printf("Class: %s\n", class)
-				
+
 				if len(updateResp.Warnings) > 0 {
 					fmt.Printf("\n⚠️  Validation Warnings (%d):\n", len(updateResp.Warnings))
 					for _, warning := range updateResp.Warnings {
@@ -263,7 +263,7 @@ var inspectDraftCmd = &cobra.Command{
 			fmt.Printf("=== Draft: %s ===\n", draftID)
 			fmt.Printf("Race: %s\n", getDraftResp.Draft.RaceId)
 			fmt.Printf("Class: %s\n", getDraftResp.Draft.ClassId)
-			
+
 			if len(getDraftResp.Draft.Choices) > 0 {
 				fmt.Printf("\n📋 Choices (%d):\n", len(getDraftResp.Draft.Choices))
 				for _, choice := range getDraftResp.Draft.Choices {

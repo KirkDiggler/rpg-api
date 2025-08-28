@@ -2,7 +2,7 @@ package character
 
 import (
 	"fmt"
-	
+
 	pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character/choices"
 )
@@ -18,7 +18,7 @@ func convertToolkitValidationToProto(result *choices.ValidationResult) *pb.Valid
 
 	// Convert issues - the toolkit ValidationResult has AllIssues array
 	issues := make([]*pb.ValidationResult_Issue, 0, len(result.AllIssues))
-	
+
 	for _, issue := range result.AllIssues {
 		// Map severity
 		var severity pb.ValidationResult_Severity
@@ -32,7 +32,7 @@ func convertToolkitValidationToProto(result *choices.ValidationResult) *pb.Valid
 		default:
 			severity = pb.ValidationResult_SEVERITY_UNSPECIFIED
 		}
-		
+
 		// Extract details as string array
 		var details []string
 		if issue.Details != nil {
@@ -40,7 +40,7 @@ func convertToolkitValidationToProto(result *choices.ValidationResult) *pb.Valid
 				details = append(details, string(key)+": "+fmt.Sprintf("%v", value))
 			}
 		}
-		
+
 		issues = append(issues, &pb.ValidationResult_Issue{
 			Severity:     severity,
 			Source:       mapSourceToProto(issue.Source),
