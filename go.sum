@@ -12,6 +12,14 @@ github.com/KirkDiggler/rpg-toolkit/rpgerr v0.1.1 h1:MtAEpVskb0lfb+oXO8xGrSQsDoHZ
 github.com/KirkDiggler/rpg-toolkit/rpgerr v0.1.1/go.mod h1:wsyJmmf1X0iLFGy5Iyy5sUoZhXZQvuYVsKdXfc4b/T4=
 github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.14.0 h1:J12xrU/tMNJe5q7b3QtJ+STYTmxgoNZ7+bSUaRRSMFk=
 github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.14.0/go.mod h1:DgcFq4qrxL3C+ttYeQMKKa6A2u+WY3uYGFbF55W5iVs=
+github.com/KirkDiggler/rpg-toolkit/tools/environments v0.1.1 h1:7YCiIuaqGXq4W/fg+tH5DhhVcf2dXRf5AjgX2k6rylE=
+github.com/KirkDiggler/rpg-toolkit/tools/environments v0.1.1/go.mod h1:/l3zqAe8hnPJTfi4CznmcUF9ZzKt7L+7HP5AiAEXdzw=
+github.com/KirkDiggler/rpg-toolkit/tools/selectables v0.0.0-20250719072111-13639d895a46 h1:Q2bqYq46OaDpcjC3W6gPHTXi+RfbaRaI+Wb/sTcArBo=
+github.com/KirkDiggler/rpg-toolkit/tools/selectables v0.0.0-20250719072111-13639d895a46/go.mod h1:YdpEvp1+7LGdHkorQEqcnz64HkQlnwcV4lhRMou7KpQ=
+github.com/KirkDiggler/rpg-toolkit/tools/spatial v0.0.0-20250719072111-13639d895a46 h1:Ue9SFqXlbGqO01pl49fcBWhrWw/BhpKxQwQZys4Djbs=
+github.com/KirkDiggler/rpg-toolkit/tools/spatial v0.0.0-20250719072111-13639d895a46/go.mod h1:u4p50G8SKY8z1ODSIUevQUCLSLqiRUmiewge/5Q1gLw=
+github.com/KirkDiggler/rpg-toolkit/tools/spawn v0.1.1 h1:rZwFDhhpW7GGzaGcX5lKRMBq03JkSzTdxftRhlkzVP0=
+github.com/KirkDiggler/rpg-toolkit/tools/spawn v0.1.1/go.mod h1:ERJ4Ylv2K6ySoOMK2zGMgcLBurYGxfP644eeI+i12AM=
 github.com/bsm/ginkgo/v2 v2.12.0 h1:Ny8MWAHyOepLGlLKYmXG4IEkioBysk6GpaRTLC8zwWs=
 github.com/bsm/ginkgo/v2 v2.12.0/go.mod h1:SwYbGRRDovPVboqFv0tPTcG1sN61LM1Z4ARdbAV9g4c=
 github.com/bsm/gomega v1.27.10 h1:yeMWxP2pV2fG3FgAODIY8EiRE3dy0aeFYt4l7wh6yKA=

@@ -21,6 +21,10 @@ require (
 	github.com/KirkDiggler/rpg-toolkit/events v0.6.0 // indirect
 	github.com/KirkDiggler/rpg-toolkit/game v0.1.0 // indirect
 	github.com/KirkDiggler/rpg-toolkit/rpgerr v0.1.1 // indirect
+	github.com/KirkDiggler/rpg-toolkit/tools/environments v0.1.1 // indirect
+	github.com/KirkDiggler/rpg-toolkit/tools/selectables v0.0.0-20250719072111-13639d895a46 // indirect
+	github.com/KirkDiggler/rpg-toolkit/tools/spatial v0.0.0-20250719072111-13639d895a46 // indirect
+	github.com/KirkDiggler/rpg-toolkit/tools/spawn v0.1.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
