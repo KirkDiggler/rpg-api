@@ -187,6 +187,106 @@ func parseRace(race string) dnd5ev1alpha1.Race {
 	}
 }
 
+// Add a command to create and inspect a draft with all choices
+var inspectDraftCmd = &cobra.Command{
+	Use:   "inspect-draft",
+	Short: "Create a draft and show all choices and validation",
+	Long:  `Creates a character draft with specified race/class and displays all generated choices and validation details.`,
+	RunE: func(_ *cobra.Command, _ []string) error {
+		// Create gRPC connection
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		defer cancel()
+
+		conn, err := grpc.NewClient(serverAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+		if err != nil {
+			return fmt.Errorf("failed to connect: %w", err)
+		}
+		defer func() {
+			if err := conn.Close(); err != nil {
+				log.Printf("Failed to close connection: %v", err)
+			}
+		}()
+
+		// Create client
+		client := dnd5ev1alpha1.NewCharacterServiceClient(conn)
+
+		// 1. Create draft
+		createResp, err := client.CreateDraft(ctx, &dnd5ev1alpha1.CreateDraftRequest{
+			PlayerId: playerID,
+		})
+		if err != nil {
+			return fmt.Errorf("failed to create draft: %w", err)
+		}
+		draftID := createResp.Draft.Id
+
+		// 2. Set race
+		if race != "" {
+			raceEnum := parseRace(race)
+			_, err = client.UpdateRace(ctx, &dnd5ev1alpha1.UpdateRaceRequest{
+				DraftId: draftID,
+				Race:    raceEnum,
+			})
+			if err != nil {
+				return fmt.Errorf("failed to set race: %w", err)
+			}
+		}
+
+		// 3. Set class
+		if class != "" {
+			classEnum := parseClass(class)
+			_, err = client.UpdateClass(ctx, &dnd5ev1alpha1.UpdateClassRequest{
+				DraftId:      draftID,
+				Class:        classEnum,
+				ClassChoices: []*dnd5ev1alpha1.ChoiceData{},
+			})
+			if err != nil {
+				return fmt.Errorf("failed to set class: %w", err)
+			}
+		}
+
+		// 4. Get the full draft with choices and validation
+		getDraftResp, err := client.GetDraft(ctx, &dnd5ev1alpha1.GetDraftRequest{
+			DraftId: draftID,
+		})
+		if err != nil {
+			return fmt.Errorf("failed to get draft: %w", err)
+		}
+
+		// Output based on format
+		if format == "json" {
+			output, err := json.MarshalIndent(getDraftResp, "", "  ")
+			if err != nil {
+				return fmt.Errorf("failed to marshal JSON: %w", err)
+			}
+			fmt.Println(string(output))
+		} else {
+			fmt.Printf("=== Draft: %s ===\n", draftID)
+			fmt.Printf("Race: %s\n", getDraftResp.Draft.RaceId)
+			fmt.Printf("Class: %s\n", getDraftResp.Draft.ClassId)
+			
+			if len(getDraftResp.Draft.Choices) > 0 {
+				fmt.Printf("\n📋 Choices (%d):\n", len(getDraftResp.Draft.Choices))
+				for _, choice := range getDraftResp.Draft.Choices {
+					fmt.Printf("  • [%s] %s from %s\n", choice.Category, choice.ChoiceId, choice.Source)
+				}
+			}
+
+			if getDraftResp.Draft.Validation != nil {
+				if len(getDraftResp.Draft.Validation.Issues) > 0 {
+					fmt.Printf("\n⚠️  Validation Issues (%d):\n", len(getDraftResp.Draft.Validation.Issues))
+					for _, issue := range getDraftResp.Draft.Validation.Issues {
+						fmt.Printf("  • [%s:%s] %s - %s\n", issue.Severity, issue.Field, issue.Message, issue.Source)
+					}
+				} else {
+					fmt.Printf("\n✅ No validation issues\n")
+				}
+			}
+		}
+
+		return nil
+	},
+}
+
 func init() {
 	validateCmd.Flags().StringVar(&playerID, "player-id", "test-player", "Player ID for the draft")
 	validateCmd.Flags().StringVar(&class, "class", "fighter", "Character class (fighter, wizard, etc.)")
@@ -194,5 +294,11 @@ func init() {
 	validateCmd.Flags().StringVar(&format, "format", "text", "Output format (text or json)")
 	validateCmd.Flags().BoolVar(&verbose, "verbose", false, "Show detailed progress")
 
+	inspectDraftCmd.Flags().StringVar(&playerID, "player-id", "test-player", "Player ID for the draft")
+	inspectDraftCmd.Flags().StringVar(&class, "class", "rogue", "Character class (fighter, wizard, rogue, etc.)")
+	inspectDraftCmd.Flags().StringVar(&race, "race", "human", "Character race (human, elf, dragonborn, etc.)")
+	inspectDraftCmd.Flags().StringVar(&format, "format", "text", "Output format (text or json)")
+
 	characterCmd.AddCommand(validateCmd)
+	characterCmd.AddCommand(inspectDraftCmd)
 }
