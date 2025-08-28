@@ -1129,21 +1129,21 @@ func (o *Orchestrator) DeleteCharacter(ctx context.Context, input *DeleteCharact
 }
 
 func (o *Orchestrator) ListRaces(ctx context.Context, input *ListRacesInput) (*ListRacesOutput, error) {
-	// For now, we'll return all races from a hardcoded list
-	// In a real implementation, this might come from a database or be cached
-
+	// For now, continue using external client for complete race data
+	// TODO: Migrate to pure toolkit approach when toolkit has all display data
 	allRaces := races.All
 
 	// Get race data for each race
-	races := make([]RaceListItem, 0, len(allRaces))
+	raceList := make([]RaceListItem, 0, len(allRaces))
 	for _, raceID := range allRaces {
+		// Use external client for now since it has complete data
 		raceDataOutput, err := o.externalClient.GetRaceData(ctx, string(raceID))
 		if err != nil {
 			// Skip races that fail to load
 			continue
 		}
 
-		races = append(races, RaceListItem{
+		raceList = append(raceList, RaceListItem{
 			RaceData: raceDataOutput.RaceData,
 			UIData:   raceDataOutput.UIData,
 		})
@@ -1152,9 +1152,9 @@ func (o *Orchestrator) ListRaces(ctx context.Context, input *ListRacesInput) (*L
 	// Simple pagination - for now just return all races
 	// TODO: Implement proper pagination when needed
 	return &ListRacesOutput{
-		Races:         races,
+		Races:         raceList,
 		NextPageToken: "",
-		TotalSize:     len(races),
+		TotalSize:     len(raceList),
 	}, nil
 }
 
