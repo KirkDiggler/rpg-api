@@ -4,7 +4,8 @@ import (
 	"time"
 
 	roomcommon "github.com/KirkDiggler/rpg-api-protos/gen/go/api/v1alpha1"
-	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
+	// TODO: Re-enable spatial integration once API is stable
+	// "github.com/KirkDiggler/rpg-toolkit/tools/spatial"
 )
 
 // Room represents the persistent state of a room for tactical gameplay
@@ -18,7 +19,8 @@ type Room struct {
 	GenerationSeed int64               `json:"generation_seed"`
 	CreatedAt      time.Time           `json:"created_at"`
 	UpdatedAt      time.Time           `json:"updated_at"`
-	SpatialRoom    spatial.Room        `json:"-"`               // Toolkit room for queries - not serialized
+	// TODO: Re-enable spatial integration once API is stable
+	// SpatialRoom    spatial.Room        `json:"-"`               // Toolkit room for queries - not serialized
 	SerializedRoom []byte              `json:"serialized_room"` // JSON serialization for persistence
 }
 
@@ -40,8 +42,10 @@ type RoomHistory struct {
 	LifespanSeconds int64               `json:"lifespan_seconds"`
 }
 
+// TODO: Re-enable spatial integration once API is stable
 // BasicEntity represents a simple entity for spatial room integration
 // Purpose: Minimal entity implementation for rpg-toolkit spatial compatibility
+/*
 type BasicEntity struct {
 	ID   string
 	Type string
@@ -72,3 +76,4 @@ func (e *BasicEntity) BlocksMovement() bool {
 func (e *BasicEntity) BlocksLoS() bool {
 	return e.Type == "wall"
 }
+*/

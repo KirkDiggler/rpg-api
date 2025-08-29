@@ -18,8 +18,12 @@ github.com/KirkDiggler/rpg-toolkit/tools/environments v0.1.1 h1:7YCiIuaqGXq4W/fg
 github.com/KirkDiggler/rpg-toolkit/tools/environments v0.1.1/go.mod h1:/l3zqAe8hnPJTfi4CznmcUF9ZzKt7L+7HP5AiAEXdzw=
 github.com/KirkDiggler/rpg-toolkit/tools/selectables v0.0.0-20250719072111-13639d895a46 h1:Q2bqYq46OaDpcjC3W6gPHTXi+RfbaRaI+Wb/sTcArBo=
 github.com/KirkDiggler/rpg-toolkit/tools/selectables v0.0.0-20250719072111-13639d895a46/go.mod h1:YdpEvp1+7LGdHkorQEqcnz64HkQlnwcV4lhRMou7KpQ=
+github.com/KirkDiggler/rpg-toolkit/tools/selectables v0.1.1 h1:LBFyrdf/gBYtcXuHuTlL10c83QdVanvo0rarT5ATk/8=
+github.com/KirkDiggler/rpg-toolkit/tools/selectables v0.1.1/go.mod h1:vFLg4BtV9QVkrVdeuUNeHs6cLlejT219gr6T0XsLNKA=
 github.com/KirkDiggler/rpg-toolkit/tools/spatial v0.0.0-20250719072111-13639d895a46 h1:Ue9SFqXlbGqO01pl49fcBWhrWw/BhpKxQwQZys4Djbs=
 github.com/KirkDiggler/rpg-toolkit/tools/spatial v0.0.0-20250719072111-13639d895a46/go.mod h1:u4p50G8SKY8z1ODSIUevQUCLSLqiRUmiewge/5Q1gLw=
+github.com/KirkDiggler/rpg-toolkit/tools/spatial v0.1.1 h1:CWKr7NurYH0JtREkN5NO+9s4Q0VQv/uXUA8L/2JKJkI=
+github.com/KirkDiggler/rpg-toolkit/tools/spatial v0.1.1/go.mod h1:6DSb4xhITAy0wstKWoS3BeEYywWLt+138bxRCfH0kzY=
 github.com/KirkDiggler/rpg-toolkit/tools/spawn v0.1.1 h1:rZwFDhhpW7GGzaGcX5lKRMBq03JkSzTdxftRhlkzVP0=
 github.com/KirkDiggler/rpg-toolkit/tools/spawn v0.1.1/go.mod h1:ERJ4Ylv2K6ySoOMK2zGMgcLBurYGxfP644eeI+i12AM=
 github.com/bsm/ginkgo/v2 v2.12.0 h1:Ny8MWAHyOepLGlLKYmXG4IEkioBysk6GpaRTLC8zwWs=
