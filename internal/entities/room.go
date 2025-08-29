@@ -4,8 +4,7 @@ import (
 	"time"
 
 	roomcommon "github.com/KirkDiggler/rpg-api-protos/gen/go/api/v1alpha1"
-	// TODO: Re-enable spatial integration once API is stable
-	// "github.com/KirkDiggler/rpg-toolkit/tools/spatial"
+	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
 )
 
 // Room represents the persistent state of a room for tactical gameplay
@@ -19,8 +18,7 @@ type Room struct {
 	GenerationSeed int64               `json:"generation_seed"`
 	CreatedAt      time.Time           `json:"created_at"`
 	UpdatedAt      time.Time           `json:"updated_at"`
-	// TODO: Re-enable spatial integration once API is stable
-	// SpatialRoom    spatial.Room        `json:"-"`               // Toolkit room for queries - not serialized
+	SpatialRoom    spatial.Room        `json:"-"`               // Toolkit room for queries - not serialized
 	SerializedRoom []byte              `json:"serialized_room"` // JSON serialization for persistence
 }
 
@@ -42,14 +40,12 @@ type RoomHistory struct {
 	LifespanSeconds int64               `json:"lifespan_seconds"`
 }
 
-// TODO: Re-enable spatial integration once API is stable
 // BasicEntity represents a simple entity for spatial room integration
 // Purpose: Minimal entity implementation for rpg-toolkit spatial compatibility
-/*
 type BasicEntity struct {
 	ID   string
 	Type string
-	Size spatial.EntitySize
+	Size int
 }
 
 // GetID returns the entity's unique identifier
@@ -63,7 +59,7 @@ func (e *BasicEntity) GetType() string {
 }
 
 // GetSize returns the entity's size for movement validation
-func (e *BasicEntity) GetSize() spatial.EntitySize {
+func (e *BasicEntity) GetSize() int {
 	return e.Size
 }
 
@@ -72,8 +68,7 @@ func (e *BasicEntity) BlocksMovement() bool {
 	return e.Type == "wall"
 }
 
-// BlocksLoS returns whether this entity blocks line of sight
-func (e *BasicEntity) BlocksLoS() bool {
+// BlocksLineOfSight returns whether this entity blocks line of sight
+func (e *BasicEntity) BlocksLineOfSight() bool {
 	return e.Type == "wall"
 }
-*/
