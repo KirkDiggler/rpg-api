@@ -62,7 +62,7 @@ func (o *Orchestrator) validateClassRequirements(ctx context.Context, draft *too
 		// If a subclass is selected, get the combined requirements
 		reqs = choices.GetSubclassRequirements(draft.ClassChoice.SubclassID)
 	} else {
-		// Otherwise just get the base class requirements  
+		// Otherwise just get the base class requirements
 		reqs = choices.GetClassRequirements(draft.ClassChoice.ClassID)
 	}
 

@@ -11,13 +11,13 @@ import (
 	"google.golang.org/grpc/status"
 
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
-	orchestrator "github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
-	charactermock "github.com/KirkDiggler/rpg-api/internal/orchestrators/character/mock"
-	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	external "github.com/KirkDiggler/rpg-api/internal/clients/external"
 	"github.com/KirkDiggler/rpg-api/internal/errors"
+	orchestrator "github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
+	charactermock "github.com/KirkDiggler/rpg-api/internal/orchestrators/character/mock"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/abilities"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/backgrounds"
+	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character/choices"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/classes"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/languages"
@@ -413,7 +413,7 @@ func (s *HandlerTestSuite) TestListClasses_Success() {
 		Classes: []*toolkitchar.StartingClass{
 			{
 				// Fighter - simple martial class, no subclass at level 1
-				ID:    classes.Fighter,
+				ID: classes.Fighter,
 				Grants: &classes.AutomaticGrants{
 					HitDice:      10,
 					SavingThrows: []abilities.Ability{abilities.STR, abilities.CON},
@@ -437,7 +437,7 @@ func (s *HandlerTestSuite) TestListClasses_Success() {
 			},
 			{
 				// Cleric - has level 1 subclasses
-				ID:    classes.Cleric,
+				ID: classes.Cleric,
 				Grants: &classes.AutomaticGrants{
 					HitDice:      8,
 					SavingThrows: []abilities.Ability{abilities.WIS, abilities.CHA},
@@ -470,7 +470,7 @@ func (s *HandlerTestSuite) TestListClasses_Success() {
 			},
 			{
 				// Rogue - unique features, specific weapon list
-				ID:    classes.Rogue,
+				ID: classes.Rogue,
 				Grants: &classes.AutomaticGrants{
 					HitDice:      8,
 					SavingThrows: []abilities.Ability{abilities.DEX, abilities.INT},
@@ -603,7 +603,7 @@ func (s *HandlerTestSuite) TestListClasses_WithPagination() {
 	mockOutput := &orchestrator.ListClassesOutput{
 		Classes: []*toolkitchar.StartingClass{
 			{
-				ID:    classes.Wizard,
+				ID: classes.Wizard,
 				Grants: &classes.AutomaticGrants{
 					HitDice: 6,
 				},
@@ -898,9 +898,9 @@ func (s *HandlerTestSuite) TestUpdateBackground_Success() {
 		BackgroundID: backgrounds.Acolyte,
 		Choices: []toolkitchar.ChoiceData{
 			{
-				ChoiceID:  "acolyte_languages",
-				Category:  shared.ChoiceLanguages,
-				Source:    shared.SourceBackground,
+				ChoiceID: "acolyte_languages",
+				Category: shared.ChoiceLanguages,
+				Source:   shared.SourceBackground,
 				LanguageSelection: []languages.Language{
 					languages.Elvish,
 					languages.Dwarvish,

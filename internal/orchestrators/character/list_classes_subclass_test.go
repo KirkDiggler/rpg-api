@@ -34,10 +34,10 @@ func (s *ListClassesSubclassTestSuite) TearDownTest() {
 
 func (s *ListClassesSubclassTestSuite) TestListClasses_ClericHasSubclasses() {
 	ctx := context.Background()
-	
+
 	output, err := s.orchestrator.ListClasses(ctx, &character.ListClassesInput{})
 	s.Require().NoError(err)
-	
+
 	// Find the Cleric class
 	var cleric *toolkitchar.StartingClass
 	for _, class := range output.Classes {
@@ -46,26 +46,26 @@ func (s *ListClassesSubclassTestSuite) TestListClasses_ClericHasSubclasses() {
 			break
 		}
 	}
-	
+
 	s.Require().NotNil(cleric, "Should have Cleric class")
 	s.Require().NotEmpty(cleric.Subclass, "Cleric should have subclasses")
 	s.GreaterOrEqual(len(cleric.Subclass), 6, "Cleric should have at least 6 domains")
-	
+
 	// Verify each subclass has proper data
 	subclassMap := make(map[classes.Subclass]bool)
 	for _, subclass := range cleric.Subclass {
 		s.T().Logf("Found subclass: %s at level %d", subclass.ID, subclass.Level)
-		
+
 		// All Cleric subclasses are at level 1
 		s.Equal(1, subclass.Level, "Cleric domains should be at level 1")
-		
+
 		// Each subclass should have grants (what it adds to base class)
 		s.NotNil(subclass.Grants, "Subclass should have grants")
-		
+
 		// Track which subclasses we found
 		subclassMap[subclass.ID] = true
 	}
-	
+
 	// Verify specific domains exist
 	s.True(subclassMap[classes.LifeDomain], "Should have Life Domain")
 	s.True(subclassMap[classes.LightDomain], "Should have Light Domain")
@@ -77,10 +77,10 @@ func (s *ListClassesSubclassTestSuite) TestListClasses_ClericHasSubclasses() {
 
 func (s *ListClassesSubclassTestSuite) TestListClasses_ClassesWithoutSubclasses() {
 	ctx := context.Background()
-	
+
 	output, err := s.orchestrator.ListClasses(ctx, &character.ListClassesInput{})
 	s.Require().NoError(err)
-	
+
 	// Classes that shouldn't have subclasses at level 1
 	noSubclassClasses := []classes.Class{
 		classes.Fighter,
@@ -93,7 +93,7 @@ func (s *ListClassesSubclassTestSuite) TestListClasses_ClassesWithoutSubclasses(
 		classes.Paladin,
 		classes.Ranger,
 	}
-	
+
 	for _, expectedClass := range noSubclassClasses {
 		var found bool
 		for _, class := range output.Classes {
@@ -109,10 +109,10 @@ func (s *ListClassesSubclassTestSuite) TestListClasses_ClassesWithoutSubclasses(
 
 func (s *ListClassesSubclassTestSuite) TestListClasses_SubclassGrants() {
 	ctx := context.Background()
-	
+
 	output, err := s.orchestrator.ListClasses(ctx, &character.ListClassesInput{})
 	s.Require().NoError(err)
-	
+
 	// Find Cleric
 	var cleric *toolkitchar.StartingClass
 	for _, class := range output.Classes {
@@ -121,24 +121,24 @@ func (s *ListClassesSubclassTestSuite) TestListClasses_SubclassGrants() {
 			break
 		}
 	}
-	
+
 	s.Require().NotNil(cleric, "Should have Cleric class")
-	
+
 	// Check specific domain grants
 	for _, subclass := range cleric.Subclass {
 		switch subclass.ID {
 		case classes.LifeDomain:
 			// Life Domain should grant heavy armor proficiency
-			s.Contains(subclass.Grants.ArmorProficiencies, proficiencies.ArmorHeavy, 
+			s.Contains(subclass.Grants.ArmorProficiencies, proficiencies.ArmorHeavy,
 				"Life Domain should grant heavy armor proficiency")
-			
+
 		case classes.KnowledgeDomain:
 			// Knowledge Domain has unique requirements (extra languages)
 			if subclass.Requirements != nil && subclass.Requirements.Languages != nil {
-				s.Equal(2, subclass.Requirements.Languages.Count, 
+				s.Equal(2, subclass.Requirements.Languages.Count,
 					"Knowledge Domain should grant 2 language choices")
 			}
-			
+
 		case classes.NatureDomain:
 			// Nature Domain might have unique cantrip requirement
 			if subclass.Requirements != nil && subclass.Requirements.Cantrips != nil {

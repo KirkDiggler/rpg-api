@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	character2 "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v1alpha1/character"
 	"log"
 	"log/slog"
 	"net"
@@ -11,6 +10,8 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+
+	character2 "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v1alpha1/character"
 
 	"github.com/spf13/cobra"
 	"google.golang.org/grpc"

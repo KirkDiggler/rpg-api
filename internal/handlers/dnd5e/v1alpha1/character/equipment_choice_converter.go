@@ -103,7 +103,7 @@ func convertBundleItem(item class.EquipmentData) *dnd5ev1alpha1.BundleItem {
 	if itemData, err := items.GetByID(item.ItemID); err == nil {
 		itemName = itemData.GetName()
 	}
-	
+
 	// All items are now concrete items in the simplified structure
 	return &dnd5ev1alpha1.BundleItem{
 		ItemType: &dnd5ev1alpha1.BundleItem_ConcreteItem{

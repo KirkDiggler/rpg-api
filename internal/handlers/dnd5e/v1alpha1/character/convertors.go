@@ -1721,7 +1721,7 @@ func convertRaceChoiceToProto(choice *race.ChoiceData) *dnd5ev1alpha1.Choice {
 			if item, err := items.GetByID(opt); err == nil {
 				itemName = item.GetName()
 			}
-			
+
 			options = append(options, &dnd5ev1alpha1.ChoiceOption{
 				OptionType: &dnd5ev1alpha1.ChoiceOption_Item{
 					Item: &dnd5ev1alpha1.ItemReference{
@@ -1740,7 +1740,6 @@ func convertRaceChoiceToProto(choice *race.ChoiceData) *dnd5ev1alpha1.Choice {
 
 	return protoChoice
 }
-
 
 // convertSkillToProto converts toolkit Skill to proto Skill
 func convertSkillToProto(skill skills.Skill) dnd5ev1alpha1.Skill {

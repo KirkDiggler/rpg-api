@@ -151,7 +151,7 @@ type UpdateRaceOutput struct {
 type UpdateClassInput struct {
 	DraftID    string
 	ClassID    classes.Class
-	SubclassID classes.Subclass      // Optional subclass
+	SubclassID classes.Subclass       // Optional subclass
 	Choices    []character.ChoiceData // Class-specific choices
 }
 
