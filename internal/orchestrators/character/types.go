@@ -4,11 +4,11 @@ import (
 	"context"
 	"time"
 
-	pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
 	"github.com/KirkDiggler/rpg-api/internal/clients/external"
 	"github.com/KirkDiggler/rpg-api/internal/entities/dnd5e"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/backgrounds"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character/choices"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/class"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/classes"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/race"
@@ -92,7 +92,7 @@ type GetDraftInput struct {
 // GetDraftOutput defines the response for getting a draft
 type GetDraftOutput struct {
 	Draft      *character.DraftData
-	Validation *pb.ValidationResult // Validation results for the draft
+	Validation *choices.ValidationResult // Validation results for the draft
 }
 
 // ListDraftsInput defines the request for listing drafts
@@ -149,9 +149,10 @@ type UpdateRaceOutput struct {
 
 // UpdateClassInput defines the request for updating a draft's class
 type UpdateClassInput struct {
-	DraftID string
-	ClassID classes.Class
-	Choices []character.ChoiceData // Class-specific choices
+	DraftID    string
+	ClassID    classes.Class
+	SubclassID classes.Subclass      // Optional subclass
+	Choices    []character.ChoiceData // Class-specific choices
 }
 
 // UpdateClassOutput defines the response for updating a draft's class
@@ -329,15 +330,9 @@ type ListClassesInput struct {
 
 // ListClassesOutput defines the response for listing classes
 type ListClassesOutput struct {
-	Classes       []ClassListItem
+	Classes       []*character.StartingClass
 	NextPageToken string
 	TotalSize     int
-}
-
-// ClassListItem contains class data for list responses
-type ClassListItem struct {
-	ClassData *class.Data
-	UIData    *external.ClassUIData
 }
 
 // ClassSummary contains basic class info for listing

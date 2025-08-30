@@ -11,9 +11,11 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v1alpha1"
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
 	charactermock "github.com/KirkDiggler/rpg-api/internal/orchestrators/character/mock"
-	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/abilities"
-	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/class"
+	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character/choices"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/classes"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/abilities"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/proficiencies"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/skills"
 )
 
@@ -46,101 +48,91 @@ func (s *HandlerListClassesTestSuite) TearDownTest() {
 func (s *HandlerListClassesTestSuite) TestListClasses_WithChoices() {
 	ctx := context.Background()
 
-	// Mock fighter class with skill and equipment choices
-	mockFighter := &class.Data{
-		ID:                    classes.Fighter,
-		Name:                  "Fighter",
-		Description:           "A master of martial combat",
-		HitDice:               10,
-		SkillProficiencyCount: 2,
-		SkillOptions: []skills.Skill{
-			skills.Acrobatics,
-			skills.AnimalHandling,
-			skills.Athletics,
-			skills.History,
-			skills.Insight,
-			skills.Intimidation,
-			skills.Perception,
-			skills.Survival,
+	// Create a mock fighter StartingClass with requirements
+	mockFighter := &toolkitchar.StartingClass{
+		ID:          "fighter",
+		Name:        "Fighter",
+		Description: "A master of martial combat",
+		Group:       classes.Fighter,
+		Grants: &classes.AutomaticGrants{
+			HitDice:             10,
+			SavingThrows:        []abilities.Ability{abilities.STR, abilities.CON},
+			ArmorProficiencies:  []proficiencies.Armor{proficiencies.ArmorLight, proficiencies.ArmorMedium, proficiencies.ArmorHeavy, proficiencies.ArmorShields},
+			WeaponProficiencies: []proficiencies.Weapon{proficiencies.WeaponSimple, proficiencies.WeaponMartial},
 		},
-		EquipmentChoices: []class.EquipmentChoiceData{
-			{
-				ID:          "fighter_primary_weapon",
-				Description: "(a) chain mail or (b) leather armor, longbow, and 20 arrows",
-				Choose:      1,
-				Options: []class.EquipmentOption{
-					{
-						ID: "option_martial_weapon_shield",
-						Items: []class.EquipmentData{
-							{
-								ItemID:   "any-martial-weapon",
-								Quantity: 1,
-							},
-							{
-								ItemID:   "shield",
-								Quantity: 1,
-							},
-						},
-					},
-					{
-						ID: "option_two_martial_weapons",
-						Items: []class.EquipmentData{
-							{
-								ItemID:   "any-martial-weapon",
-								Quantity: 2,
-							},
-						},
-					},
+		Requirements: &choices.Requirements{
+			Skills: &choices.SkillRequirement{
+				Count: 2,
+				Label: "Choose 2 skills",
+				Options: []skills.Skill{
+					skills.Acrobatics,
+					skills.AnimalHandling,
+					skills.Athletics,
+					skills.History,
+					skills.Insight,
+					skills.Intimidation,
+					skills.Perception,
+					skills.Survival,
 				},
 			},
-			{
-				ID:          "fighter_ranged_weapon",
-				Description: "(a) a light crossbow and 20 bolts or (b) two handaxes",
-				Choose:      1,
-				Options: []class.EquipmentOption{
-					{
-						ID: "option_light_crossbow",
-						Items: []class.EquipmentData{
-							{
-								ItemID:   "light-crossbow",
-								Quantity: 1,
-							},
-							{
-								ItemID:   "crossbow-bolt",
-								Quantity: 20,
-							},
-						},
-					},
-					{
-						ID: "option_handaxe",
-						Items: []class.EquipmentData{
-							{
-								ItemID:   "handaxe",
-								Quantity: 2,
-							},
-						},
-					},
-				},
-			},
-		},
-		SavingThrows:        []abilities.Ability{abilities.STR, abilities.CON},
-		ArmorProficiencies:  []string{"light", "medium", "heavy", "shields"},
-		WeaponProficiencies: []string{"simple", "martial"},
-		Features: map[int][]class.FeatureData{
-			1: {
+			Equipment: []*choices.EquipmentRequirement{
 				{
-					ID:          "fighter-fighting-style",
-					Name:        "Fighting Style",
-					Level:       1,
-					Description: "You adopt a particular style of fighting as your specialty",
-					Choice: &class.ChoiceData{
-						ID:          "fighting-style-choice",
-						Type:        "fighting_style",
-						Choose:      1,
-						From:        []string{"Archery", "Defense", "Dueling", "Great Weapon Fighting", "Protection", "Two-Weapon Fighting"},
-						Description: "Choose a fighting style",
+					Choose: 1,
+					Label:  "(a) chain mail or (b) leather armor, longbow, and 20 arrows",
+					Options: []choices.EquipmentOption{
+						{
+							Label: "chain mail",
+							Items: []choices.ItemSpec{
+								{Type: "armor", ID: "chain-mail", Quantity: 1},
+							},
+						},
+						{
+							Label: "leather armor and ranged",
+							Items: []choices.ItemSpec{
+								{Type: "armor", ID: "leather", Quantity: 1},
+								{Type: "weapon", ID: "longbow", Quantity: 1},
+								{Type: "ammunition", ID: "arrow", Quantity: 20},
+							},
+						},
 					},
 				},
+			},
+		},
+	}
+
+	// Create mock Life Domain cleric with additional choices
+	mockLifeDomain := &toolkitchar.StartingClass{
+		ID:          "life-domain",
+		Name:        "Life Domain",
+		Description: "The Life domain focuses on healing",
+		Group:       classes.Cleric,
+		Grants: &classes.AutomaticGrants{
+			HitDice:             8,
+			SavingThrows:        []abilities.Ability{abilities.WIS, abilities.CHA},
+			ArmorProficiencies:  []proficiencies.Armor{proficiencies.ArmorLight, proficiencies.ArmorMedium, proficiencies.ArmorShields},
+			WeaponProficiencies: []proficiencies.Weapon{proficiencies.WeaponSimple},
+		},
+		Requirements: &choices.Requirements{
+			Skills: &choices.SkillRequirement{
+				Count: 2,
+				Label: "Choose 2 skills from Cleric list",
+				Options: []skills.Skill{
+					skills.History,
+					skills.Insight,
+					skills.Medicine,
+					skills.Persuasion,
+					skills.Religion,
+				},
+			},
+			Cantrips: &choices.SpellRequirement{
+				Count: 3,
+				Level: 0,
+				Label: "Choose 3 Cleric cantrips",
+			},
+			Spells: &choices.SpellRequirement{
+				Count: 2,
+				Level: 1,
+				Label: "Choose 2 1st-level Cleric spells",
 			},
 		},
 	}
@@ -148,13 +140,11 @@ func (s *HandlerListClassesTestSuite) TestListClasses_WithChoices() {
 	s.mockCharService.EXPECT().
 		ListClasses(ctx, &character.ListClassesInput{}).
 		Return(&character.ListClassesOutput{
-			Classes: []character.ClassListItem{
-				{
-					ClassData: mockFighter,
-					UIData:    nil,
-				},
+			Classes: []*toolkitchar.StartingClass{
+				mockFighter,
+				mockLifeDomain,
 			},
-			TotalSize: 1,
+			TotalSize: 2,
 		}, nil)
 
 	// Call the handler
@@ -164,53 +154,59 @@ func (s *HandlerListClassesTestSuite) TestListClasses_WithChoices() {
 	// Verify response
 	s.Require().NoError(err)
 	s.Require().NotNil(resp)
-	s.Require().Len(resp.Classes, 1)
+	s.Require().Len(resp.Classes, 2)
 
+	// Check Fighter
 	fighter := resp.Classes[0]
 	s.Equal("fighter", fighter.Id)
 	s.Equal("Fighter", fighter.Name)
-
-	// Verify choices are populated
-	s.Require().Len(fighter.Choices, 4, "Should have 4 choices: 1 skill choice, 2 equipment choices, and 1 fighting style")
-
+	s.Equal(dnd5ev1alpha1.Class_CLASS_FIGHTER, fighter.Group)
+	
+	// Verify fighter choices are populated
+	s.Require().Len(fighter.Choices, 2, "Fighter should have 2 choices: skills and equipment")
+	
 	// Check skill choice
 	skillChoice := fighter.Choices[0]
-	s.Equal("fighter_skills", skillChoice.Id)
-	s.Equal("Choose 2 skills", skillChoice.Description)
+	s.Equal("class-skills", skillChoice.Id)
 	s.Equal(int32(2), skillChoice.ChooseCount)
 	s.Equal(dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_SKILLS, skillChoice.ChoiceType)
+	
+	// Check Life Domain
+	lifeDomain := resp.Classes[1]
+	s.Equal("life-domain", lifeDomain.Id)
+	s.Equal("Life Domain", lifeDomain.Name)
+	s.Equal(dnd5ev1alpha1.Class_CLASS_CLERIC, lifeDomain.Group, "Life Domain should have Cleric as group")
+	
+	// Verify Life Domain choices are populated
+	s.Require().GreaterOrEqual(len(lifeDomain.Choices), 3, "Life Domain should have at least 3 choices: skills, cantrips, and spells")
+	
+	// Find cantrips choice
+	var hasCantrips bool
+	for _, choice := range lifeDomain.Choices {
+		if choice.ChoiceType == dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_CANTRIPS {
+			hasCantrips = true
+			s.Equal(int32(3), choice.ChooseCount, "Should choose 3 cantrips")
+			break
+		}
+	}
+	s.True(hasCantrips, "Life Domain should have cantrips choice")
+}
 
-	// Verify skill options
-	explicitOpts := skillChoice.GetExplicitOptions()
-	s.Require().NotNil(explicitOpts)
-	s.Len(explicitOpts.Options, 8, "Fighter should have 8 skill options")
+func (s *HandlerListClassesTestSuite) TestListClasses_Empty() {
+	ctx := context.Background()
 
-	// Check first skill option
-	firstSkill := explicitOpts.Options[0].GetItem()
-	s.Require().NotNil(firstSkill)
-	s.Equal("skill_acrobatics", firstSkill.ItemId)
-	s.Equal("acrobatics", firstSkill.Name)
+	s.mockCharService.EXPECT().
+		ListClasses(ctx, &character.ListClassesInput{}).
+		Return(&character.ListClassesOutput{
+			Classes:   []*toolkitchar.StartingClass{},
+			TotalSize: 0,
+		}, nil)
 
-	// Check first equipment choice
-	equipChoice1 := fighter.Choices[1]
-	s.Equal("fighter_equipment_1", equipChoice1.Id)
-	s.Equal("(a) chain mail or (b) leather armor, longbow, and 20 arrows", equipChoice1.Description)
-	s.Equal(int32(1), equipChoice1.ChooseCount)
-	s.Equal(dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_EQUIPMENT, equipChoice1.ChoiceType)
+	req := &dnd5ev1alpha1.ListClassesRequest{}
+	resp, err := s.handler.ListClasses(ctx, req)
 
-	// Verify equipment options
-	equipOpts1 := equipChoice1.GetExplicitOptions()
-	s.Require().NotNil(equipOpts1)
-	s.Len(equipOpts1.Options, 2, "Should have 2 equipment options")
-
-	// Check bundle option (martial weapon + shield)
-	bundleOpt := equipOpts1.Options[0].GetBundle()
-	s.Require().NotNil(bundleOpt)
-	s.Len(bundleOpt.Items, 2, "Bundle should have 2 items")
-
-	// Check first item in bundle
-	firstBundleItem := bundleOpt.Items[0].GetConcreteItem()
-	s.Require().NotNil(firstBundleItem)
-	s.Equal("any-martial-weapon", firstBundleItem.ItemId)
-	s.Equal(int32(1), firstBundleItem.Quantity)
+	s.Require().NoError(err)
+	s.Require().NotNil(resp)
+	s.Require().Empty(resp.Classes)
+	s.Equal(int32(0), resp.TotalSize)
 }

@@ -15,6 +15,7 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
 	charactermock "github.com/KirkDiggler/rpg-api/internal/orchestrators/character/mock"
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character/choices"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/races"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
 )
@@ -132,24 +133,20 @@ func (s *HandlerTestSuite) TestGetDraft_NotFound() {
 }
 
 func (s *HandlerTestSuite) TestGetDraft_WithValidation() {
-	// Create validation result
-	validation := &dnd5ev1alpha1.ValidationResult{
-		IsValid: false,
-		Issues: []*dnd5ev1alpha1.ValidationResult_Issue{
-			{
-				Severity: dnd5ev1alpha1.ValidationResult_SEVERITY_ERROR,
-				Field:    dnd5ev1alpha1.ValidationField_VALIDATION_FIELD_SKILLS,
-				Source:   dnd5ev1alpha1.ValidationSource_VALIDATION_SOURCE_CLASS,
-				Message:  "Fighter requires 2 skill selections, got 0",
-			},
-			{
-				Severity: dnd5ev1alpha1.ValidationResult_SEVERITY_INCOMPLETE,
-				Field:    dnd5ev1alpha1.ValidationField_VALIDATION_FIELD_BACKGROUND,
-				Source:   dnd5ev1alpha1.ValidationSource_VALIDATION_SOURCE_BACKGROUND,
-				Message:  "Background not selected",
-			},
-		},
-	}
+	// Create toolkit validation result
+	validation := choices.NewValidationResult()
+	validation.AddIssue(choices.ValidationIssue{
+		Severity: choices.SeverityError,
+		Field:    choices.FieldSkills,
+		Source:   choices.SourceClass,
+		Message:  "Fighter requires 2 skill selections, got 0",
+	})
+	validation.AddIssue(choices.ValidationIssue{
+		Severity: choices.SeverityIncomplete,
+		Field:    choices.FieldBackground,
+		Source:   choices.SourceBackground,
+		Message:  "Background not selected",
+	})
 
 	// Mock orchestrator response with validation
 	s.mockCharService.EXPECT().

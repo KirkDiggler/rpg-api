@@ -17,6 +17,7 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/abilities"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/backgrounds"
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character/choices"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/class"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/classes"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/languages"
@@ -121,7 +122,7 @@ func (h *Handler) GetDraft(
 
 	// Add validation to the draft if present
 	if output.Validation != nil {
-		protoDraft.Validation = output.Validation
+		protoDraft.Validation = convertToolkitValidationToProto(output.Validation)
 	}
 
 	return &dnd5ev1alpha1.GetDraftResponse{
@@ -257,6 +258,12 @@ func (h *Handler) UpdateClass(
 		return nil, status.Error(codes.InvalidArgument, "invalid class")
 	}
 
+	// Convert proto subclass to toolkit subclass constant if provided
+	var subclassID classes.Subclass
+	if req.Subclass != dnd5ev1alpha1.Subclass_SUBCLASS_UNSPECIFIED {
+		subclassID = convertProtoSubclassToToolkit(req.Subclass)
+	}
+
 	// Convert proto choices to toolkit choices
 	var choices []toolkitchar.ChoiceData
 	for _, protoChoice := range req.ClassChoices {
@@ -265,9 +272,10 @@ func (h *Handler) UpdateClass(
 
 	// Call orchestrator
 	output, err := h.characterService.UpdateClass(ctx, &character.UpdateClassInput{
-		DraftID: req.DraftId,
-		ClassID: classID,
-		Choices: choices,
+		DraftID:    req.DraftId,
+		ClassID:    classID,
+		SubclassID: subclassID,
+		Choices:    choices,
 	})
 	if err != nil {
 		return nil, err
@@ -595,7 +603,7 @@ func (h *Handler) ListClasses(
 	// Convert to proto ClassInfo
 	protoClasses := make([]*dnd5ev1alpha1.ClassInfo, len(output.Classes))
 	for i, class := range output.Classes {
-		protoClasses[i] = convertClassDataToProtoInfo(class.ClassData, class.UIData)
+		protoClasses[i] = convertStartingClassToProtoInfo(class)
 	}
 
 	return &dnd5ev1alpha1.ListClassesResponse{
@@ -1015,6 +1023,9 @@ func convertDraftDataToProto(draft *toolkitchar.DraftData) *dnd5ev1alpha1.Charac
 
 	if draft.ClassChoice.ClassID != "" {
 		protoDraft.ClassId = convertToolkitClassToProtoEnum(draft.ClassChoice.ClassID)
+		// Note: Subclass info should be included in the ClassInfo object returned by ListClasses
+		// The CharacterDraft proto message doesn't have a direct Subclass field
+		// The SubclassID is stored in draft.ClassChoice.SubclassID for later use
 	}
 
 	if draft.BackgroundChoice != "" {
@@ -1361,6 +1372,76 @@ func convertProtoBackgroundToToolkit(background dnd5ev1alpha1.Background) backgr
 		return backgrounds.Urchin
 	default:
 		return ""
+	}
+}
+
+// convertProtoSubclassToToolkit converts proto Subclass enum to toolkit subclass constant
+func convertProtoSubclassToToolkit(subclass dnd5ev1alpha1.Subclass) classes.Subclass {
+	switch subclass {
+	// Cleric domains
+	case dnd5ev1alpha1.Subclass_SUBCLASS_LIFE_DOMAIN:
+		return classes.LifeDomain
+	case dnd5ev1alpha1.Subclass_SUBCLASS_KNOWLEDGE_DOMAIN:
+		return classes.KnowledgeDomain
+	case dnd5ev1alpha1.Subclass_SUBCLASS_LIGHT_DOMAIN:
+		return classes.LightDomain
+	case dnd5ev1alpha1.Subclass_SUBCLASS_NATURE_DOMAIN:
+		return classes.NatureDomain
+	case dnd5ev1alpha1.Subclass_SUBCLASS_TEMPEST_DOMAIN:
+		return classes.TempestDomain
+	case dnd5ev1alpha1.Subclass_SUBCLASS_TRICKERY_DOMAIN:
+		return classes.TrickeryDomain
+	case dnd5ev1alpha1.Subclass_SUBCLASS_WAR_DOMAIN:
+		return classes.WarDomain
+	// Sorcerer origins
+	case dnd5ev1alpha1.Subclass_SUBCLASS_DRACONIC_BLOODLINE:
+		return classes.DraconicBloodline
+	case dnd5ev1alpha1.Subclass_SUBCLASS_WILD_MAGIC:
+		return classes.WildMagic
+	// Warlock patrons
+	case dnd5ev1alpha1.Subclass_SUBCLASS_ARCHFEY:
+		return classes.Archfey
+	case dnd5ev1alpha1.Subclass_SUBCLASS_FIEND:
+		return classes.Fiend
+	case dnd5ev1alpha1.Subclass_SUBCLASS_GREAT_OLD_ONE:
+		return classes.GreatOldOne
+	default:
+		return ""
+	}
+}
+
+// convertToolkitSubclassToProtoEnum converts toolkit Subclass constant to proto Subclass enum
+func convertToolkitSubclassToProtoEnum(subclassID classes.Subclass) dnd5ev1alpha1.Subclass {
+	switch subclassID {
+	// Cleric domains
+	case classes.LifeDomain:
+		return dnd5ev1alpha1.Subclass_SUBCLASS_LIFE_DOMAIN
+	case classes.KnowledgeDomain:
+		return dnd5ev1alpha1.Subclass_SUBCLASS_KNOWLEDGE_DOMAIN
+	case classes.LightDomain:
+		return dnd5ev1alpha1.Subclass_SUBCLASS_LIGHT_DOMAIN
+	case classes.NatureDomain:
+		return dnd5ev1alpha1.Subclass_SUBCLASS_NATURE_DOMAIN
+	case classes.TempestDomain:
+		return dnd5ev1alpha1.Subclass_SUBCLASS_TEMPEST_DOMAIN
+	case classes.TrickeryDomain:
+		return dnd5ev1alpha1.Subclass_SUBCLASS_TRICKERY_DOMAIN
+	case classes.WarDomain:
+		return dnd5ev1alpha1.Subclass_SUBCLASS_WAR_DOMAIN
+	// Sorcerer origins
+	case classes.DraconicBloodline:
+		return dnd5ev1alpha1.Subclass_SUBCLASS_DRACONIC_BLOODLINE
+	case classes.WildMagic:
+		return dnd5ev1alpha1.Subclass_SUBCLASS_WILD_MAGIC
+	// Warlock patrons
+	case classes.Archfey:
+		return dnd5ev1alpha1.Subclass_SUBCLASS_ARCHFEY
+	case classes.Fiend:
+		return dnd5ev1alpha1.Subclass_SUBCLASS_FIEND
+	case classes.GreatOldOne:
+		return dnd5ev1alpha1.Subclass_SUBCLASS_GREAT_OLD_ONE
+	default:
+		return dnd5ev1alpha1.Subclass_SUBCLASS_UNSPECIFIED
 	}
 }
 
@@ -1945,6 +2026,353 @@ func convertLanguageToProto(lang languages.Language) dnd5ev1alpha1.Language {
 	default:
 		return dnd5ev1alpha1.Language_LANGUAGE_COMMON
 	}
+}
+
+// convertRequirementsToProtoChoices converts toolkit Requirements to proto Choice messages
+func convertRequirementsToProtoChoices(reqs *choices.Requirements) []*dnd5ev1alpha1.Choice {
+	if reqs == nil {
+		return nil
+	}
+
+	var choices []*dnd5ev1alpha1.Choice
+
+	// Convert skill requirements
+	if reqs.Skills != nil && reqs.Skills.Count > 0 {
+		skillChoice := &dnd5ev1alpha1.Choice{
+			Id:          "class-skills",
+			Description: reqs.Skills.Label,
+			ChooseCount: int32(reqs.Skills.Count),
+			ChoiceType:  dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_SKILLS,
+		}
+
+		// If specific options are provided, use them
+		if len(reqs.Skills.Options) > 0 {
+			options := make([]*dnd5ev1alpha1.ChoiceOption, 0, len(reqs.Skills.Options))
+			for _, skill := range reqs.Skills.Options {
+				options = append(options, &dnd5ev1alpha1.ChoiceOption{
+					OptionType: &dnd5ev1alpha1.ChoiceOption_Item{
+						Item: &dnd5ev1alpha1.ItemReference{
+							ItemId: string(skill),
+							Name:   string(skill),
+						},
+					},
+				})
+			}
+			skillChoice.OptionSet = &dnd5ev1alpha1.Choice_ExplicitOptions{
+				ExplicitOptions: &dnd5ev1alpha1.ExplicitOptions{
+					Options: options,
+				},
+			}
+		} else {
+			// Reference all skills category
+			skillChoice.OptionSet = &dnd5ev1alpha1.Choice_CategoryReference{
+				CategoryReference: &dnd5ev1alpha1.CategoryReference{
+					CategoryId: "skills",
+				},
+			}
+		}
+		choices = append(choices, skillChoice)
+	}
+
+	// Convert cantrip requirements
+	if reqs.Cantrips != nil && reqs.Cantrips.Count > 0 {
+		cantripChoice := &dnd5ev1alpha1.Choice{
+			Id:          "class-cantrips",
+			Description: reqs.Cantrips.Label,
+			ChooseCount: int32(reqs.Cantrips.Count),
+			ChoiceType:  dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_CANTRIPS,
+		}
+
+		// For now, default to all cantrips (TODO: extract spell list from label if needed)
+		cantripChoice.OptionSet = &dnd5ev1alpha1.Choice_CategoryReference{
+			CategoryReference: &dnd5ev1alpha1.CategoryReference{
+				CategoryId: "cantrips",
+			},
+		}
+		choices = append(choices, cantripChoice)
+	}
+
+	// Convert spell requirements (1st level spells)
+	if reqs.Spells != nil && reqs.Spells.Count > 0 {
+		spellChoice := &dnd5ev1alpha1.Choice{
+			Id:          "class-spells",
+			Description: reqs.Spells.Label,
+			ChooseCount: int32(reqs.Spells.Count),
+			ChoiceType:  dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_SPELLS,
+		}
+
+		// Default to level 1 spells (TODO: extract spell list from label if needed)
+		spellChoice.OptionSet = &dnd5ev1alpha1.Choice_CategoryReference{
+			CategoryReference: &dnd5ev1alpha1.CategoryReference{
+				CategoryId: fmt.Sprintf("spells-%d", reqs.Spells.Level),
+			},
+		}
+		choices = append(choices, spellChoice)
+	}
+
+	// Convert language requirements
+	if reqs.Languages != nil && reqs.Languages.Count > 0 {
+		langChoice := &dnd5ev1alpha1.Choice{
+			Id:          "class-languages",
+			Description: reqs.Languages.Label,
+			ChooseCount: int32(reqs.Languages.Count),
+			ChoiceType:  dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_LANGUAGES,
+		}
+
+		// Reference languages category
+		langChoice.OptionSet = &dnd5ev1alpha1.Choice_CategoryReference{
+			CategoryReference: &dnd5ev1alpha1.CategoryReference{
+				CategoryId: "languages",
+			},
+		}
+		choices = append(choices, langChoice)
+	}
+
+	// Convert tool requirements
+	if reqs.Tools != nil && reqs.Tools.Count > 0 {
+		toolChoice := &dnd5ev1alpha1.Choice{
+			Id:          "class-tools",
+			Description: reqs.Tools.Label,
+			ChooseCount: int32(reqs.Tools.Count),
+			ChoiceType:  dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_TOOLS,
+		}
+
+		// If specific options are provided
+		if len(reqs.Tools.Options) > 0 {
+			options := make([]*dnd5ev1alpha1.ChoiceOption, 0, len(reqs.Tools.Options))
+			for _, tool := range reqs.Tools.Options {
+				options = append(options, &dnd5ev1alpha1.ChoiceOption{
+					OptionType: &dnd5ev1alpha1.ChoiceOption_Item{
+						Item: &dnd5ev1alpha1.ItemReference{
+							ItemId: string(tool),
+							Name:   string(tool),
+						},
+					},
+				})
+			}
+			toolChoice.OptionSet = &dnd5ev1alpha1.Choice_ExplicitOptions{
+				ExplicitOptions: &dnd5ev1alpha1.ExplicitOptions{
+					Options: options,
+				},
+			}
+		} else {
+			// Reference tools category
+			toolChoice.OptionSet = &dnd5ev1alpha1.Choice_CategoryReference{
+				CategoryReference: &dnd5ev1alpha1.CategoryReference{
+					CategoryId: "tools",
+				},
+			}
+		}
+		choices = append(choices, toolChoice)
+	}
+
+	// Convert equipment requirements
+	for i, eqReq := range reqs.Equipment {
+		if eqReq == nil {
+			continue
+		}
+
+		eqChoice := &dnd5ev1alpha1.Choice{
+			Id:          fmt.Sprintf("class-equipment-%d", i+1),
+			Description: eqReq.Label,
+			ChooseCount: 1, // Equipment choices are typically "choose 1 option"
+			ChoiceType:  dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_EQUIPMENT,
+		}
+
+		// Convert equipment options
+		options := make([]*dnd5ev1alpha1.ChoiceOption, 0, len(eqReq.Options))
+		for _, opt := range eqReq.Options {
+			// Each option can be a single item or a bundle
+			if len(opt.Items) == 1 && opt.Items[0].Quantity == 1 {
+				// Single item
+				options = append(options, &dnd5ev1alpha1.ChoiceOption{
+					OptionType: &dnd5ev1alpha1.ChoiceOption_Item{
+						Item: &dnd5ev1alpha1.ItemReference{
+							ItemId: opt.Items[0].ID,
+							Name:   opt.Items[0].ID, // TODO: Get proper name
+						},
+					},
+				})
+			} else if len(opt.Items) == 1 {
+				// Single item with quantity
+				options = append(options, &dnd5ev1alpha1.ChoiceOption{
+					OptionType: &dnd5ev1alpha1.ChoiceOption_CountedItem{
+						CountedItem: &dnd5ev1alpha1.CountedItemReference{
+							ItemId:   opt.Items[0].ID,
+							Name:     opt.Items[0].ID, // TODO: Get proper name
+							Quantity: int32(opt.Items[0].Quantity),
+						},
+					},
+				})
+			} else {
+				// Bundle of items
+				bundle := &dnd5ev1alpha1.ItemBundle{
+					Items: make([]*dnd5ev1alpha1.BundleItem, 0, len(opt.Items)),
+				}
+				for _, item := range opt.Items {
+					bundle.Items = append(bundle.Items, &dnd5ev1alpha1.BundleItem{
+						ItemType: &dnd5ev1alpha1.BundleItem_ConcreteItem{
+							ConcreteItem: &dnd5ev1alpha1.CountedItemReference{
+								ItemId:   item.ID,
+								Name:     item.ID, // TODO: Get proper name
+								Quantity: int32(item.Quantity),
+							},
+						},
+					})
+				}
+				options = append(options, &dnd5ev1alpha1.ChoiceOption{
+					OptionType: &dnd5ev1alpha1.ChoiceOption_Bundle{
+						Bundle: bundle,
+					},
+				})
+			}
+		}
+
+		eqChoice.OptionSet = &dnd5ev1alpha1.Choice_ExplicitOptions{
+			ExplicitOptions: &dnd5ev1alpha1.ExplicitOptions{
+				Options: options,
+			},
+		}
+		choices = append(choices, eqChoice)
+	}
+
+	// Convert expertise requirements (for Rogue, etc.)
+	if reqs.Expertise != nil && reqs.Expertise.Count > 0 {
+		expertiseChoice := &dnd5ev1alpha1.Choice{
+			Id:          "class-expertise",
+			Description: reqs.Expertise.Label,
+			ChooseCount: int32(reqs.Expertise.Count),
+			ChoiceType:  dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_EXPERTISE,
+		}
+
+		// Expertise is typically choosing from skills you already have proficiency in
+		// or specific tools like thieves' tools
+		// For now, reference a category that would be populated with valid options
+		expertiseChoice.OptionSet = &dnd5ev1alpha1.Choice_CategoryReference{
+			CategoryReference: &dnd5ev1alpha1.CategoryReference{
+				CategoryId: "expertise-options", // UI would populate with skills the character has
+			},
+		}
+		choices = append(choices, expertiseChoice)
+	}
+
+	return choices
+}
+
+// convertStartingClassToProtoInfo converts toolkit StartingClass to proto ClassInfo
+func convertStartingClassToProtoInfo(sc *toolkitchar.StartingClass) *dnd5ev1alpha1.ClassInfo {
+	if sc == nil {
+		return nil
+	}
+
+	info := &dnd5ev1alpha1.ClassInfo{
+		Id:          string(sc.ID),
+		Name:        sc.ID.String(),      // Will be replaced with proper name from classes package
+		Description: sc.ID.Description(), // Will be populated from classes package
+	}
+
+	// Extract data from grants if available
+	if sc.Grants != nil {
+		info.HitDie = fmt.Sprintf("1d%d", sc.Grants.HitDice)
+
+		// Convert saving throw proficiencies
+		info.SavingThrowProficiencies = make([]string, 0, len(sc.Grants.SavingThrows))
+		for _, ability := range sc.Grants.SavingThrows {
+			info.SavingThrowProficiencies = append(info.SavingThrowProficiencies, string(ability))
+		}
+
+		// Also use saving throws as primary abilities for now
+		info.PrimaryAbilities = info.SavingThrowProficiencies
+
+		// Convert weapon proficiencies
+		info.WeaponProficiencies = make([]string, 0, len(sc.Grants.WeaponProficiencies))
+		for _, prof := range sc.Grants.WeaponProficiencies {
+			info.WeaponProficiencies = append(info.WeaponProficiencies, string(prof))
+		}
+
+		// Convert armor proficiencies
+		info.ArmorProficiencies = make([]string, 0, len(sc.Grants.ArmorProficiencies))
+		for _, prof := range sc.Grants.ArmorProficiencies {
+			info.ArmorProficiencies = append(info.ArmorProficiencies, string(prof))
+		}
+	}
+
+	// Extract skill choices from requirements
+	if sc.Requirements != nil && sc.Requirements.Skills != nil {
+		info.SkillChoicesCount = int32(sc.Requirements.Skills.Count)
+		if sc.Requirements.Skills.Options != nil {
+			info.AvailableSkills = make([]string, 0, len(sc.Requirements.Skills.Options))
+			for _, skill := range sc.Requirements.Skills.Options {
+				info.AvailableSkills = append(info.AvailableSkills, string(skill))
+			}
+		}
+	}
+
+	// Convert requirements to choices for the proto
+	info.Choices = convertRequirementsToProtoChoices(sc.Requirements)
+
+	// Convert subclasses if present
+	if len(sc.Subclass) > 0 {
+		info.SubclassType = string(sc.ID) // Base class type (e.g., "cleric")
+		info.Subclasses = make([]*dnd5ev1alpha1.SubclassInfo, 0, len(sc.Subclass))
+		for _, subclass := range sc.Subclass {
+			info.Subclasses = append(info.Subclasses, convertSubclassToProtoInfo(subclass))
+		}
+	}
+
+	// Set the group field to help with UI grouping
+	// For classes with subclasses at level 1, ID is the subclass and Group is the base class
+	// For other classes, ID and Group are the same
+	if len(sc.Subclass) > 0 {
+		// This is a base class with subclasses
+		info.Group = convertToolkitClassToProtoEnum(sc.ID)
+	} else {
+		// This might be a regular class or it could be a flattened subclass entry
+		// For now, we'll set group to the ID - this will be improved when SubclassInfo is available
+		info.Group = convertToolkitClassToProtoEnum(sc.ID)
+	}
+
+	return info
+}
+
+// convertSubclassToProtoInfo converts a SubclassOption to proto SubclassInfo
+func convertSubclassToProtoInfo(sc *toolkitchar.SubclassOption) *dnd5ev1alpha1.SubclassInfo {
+	if sc == nil {
+		return nil
+	}
+
+	info := &dnd5ev1alpha1.SubclassInfo{
+		Id:          string(sc.ID),
+		Name:        string(sc.ID), // Will be replaced with proper name from classes package
+		Description: "",            // Will be populated from classes package
+		Level:       int32(sc.Level),
+	}
+
+	// Extract additional proficiencies this subclass grants
+	if sc.Grants != nil {
+		// Convert armor proficiencies
+		info.ArmorProficiencies = make([]string, 0, len(sc.Grants.ArmorProficiencies))
+		for _, prof := range sc.Grants.ArmorProficiencies {
+			info.ArmorProficiencies = append(info.ArmorProficiencies, string(prof))
+		}
+
+		// Convert weapon proficiencies
+		info.WeaponProficiencies = make([]string, 0, len(sc.Grants.WeaponProficiencies))
+		for _, prof := range sc.Grants.WeaponProficiencies {
+			info.WeaponProficiencies = append(info.WeaponProficiencies, string(prof))
+		}
+
+		// Convert tool proficiencies
+		info.ToolProficiencies = make([]string, 0, len(sc.Grants.ToolProficiencies))
+		for _, prof := range sc.Grants.ToolProficiencies {
+			info.ToolProficiencies = append(info.ToolProficiencies, string(prof))
+		}
+	}
+
+	// Convert additional requirements to choices
+	info.AdditionalChoices = convertRequirementsToProtoChoices(sc.Requirements)
+
+	return info
 }
 
 // convertClassDataToProtoInfo converts toolkit class data to proto ClassInfo
