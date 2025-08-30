@@ -2265,10 +2265,14 @@ func convertStartingClassToProtoInfo(sc *toolkitchar.StartingClass) *dnd5ev1alph
 		return nil
 	}
 
+	// TODO: Uncomment when proto v0.1.40 is available with Class field
+	// classEnum := convertToolkitClassToProtoEnum(sc.ID)
+
 	info := &dnd5ev1alpha1.ClassInfo{
 		Id:          string(sc.ID),
 		Name:        sc.ID.String(),      // Will be replaced with proper name from classes package
 		Description: sc.ID.Description(), // Will be populated from classes package
+		// Class:       classEnum,           // TODO: Add when proto v0.1.40 is available
 	}
 
 	// Extract data from grants if available
@@ -2341,11 +2345,15 @@ func convertSubclassToProtoInfo(sc *toolkitchar.SubclassOption) *dnd5ev1alpha1.S
 		return nil
 	}
 
+	// TODO: Uncomment when proto v0.1.40 is available with Subclass field
+	// subclassEnum := convertToolkitSubclassToProtoEnum(sc.ID)
+	
 	info := &dnd5ev1alpha1.SubclassInfo{
-		Id:          string(sc.ID),
+		Id:          string(sc.ID), // TODO: Remove when proto v0.1.40 deprecates this
 		Name:        string(sc.ID), // Will be replaced with proper name from classes package
 		Description: "",            // Will be populated from classes package
 		Level:       int32(sc.Level),
+		// Subclass:    subclassEnum,  // TODO: Add when proto v0.1.40 is available
 	}
 
 	// Extract additional proficiencies this subclass grants
