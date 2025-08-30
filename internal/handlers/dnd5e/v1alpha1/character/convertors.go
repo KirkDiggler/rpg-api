@@ -13,12 +13,19 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character/choices"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/class"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/classes"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/items"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/languages"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/race"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/races"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/skills"
 )
+
+// formatDice formats a die value into standard dice notation (e.g., "1d8", "1d10")
+// This isolates dice formatting logic for potential future migration to toolkit
+func formatDice(die int) string {
+	return fmt.Sprintf("1d%d", die)
+}
 
 // convertEquipmentSlotsToProto converts dnd5e equipment slots to proto format
 func convertEquipmentSlotsToProto(equipmentSlots *dnd5e.EquipmentSlots) *dnd5ev1alpha1.EquipmentSlots {
@@ -1021,7 +1028,16 @@ func convertRaceDataToProtoInfo(raceData *race.Data, uiData *external.RaceUIData
 		})
 	}
 
-	// TODO: Convert subraces when we have the data structure
+	// Convert subraces
+	if len(raceData.Subraces) > 0 {
+		info.Subraces = make([]*dnd5ev1alpha1.SubraceInfo, 0, len(raceData.Subraces))
+		for _, subrace := range raceData.Subraces {
+			info.Subraces = append(info.Subraces, &dnd5ev1alpha1.SubraceInfo{
+				Id:   string(subrace.ID),
+				Name: subrace.Name,
+			})
+		}
+	}
 
 	// Convert proficiencies
 	info.Proficiencies = make([]string, 0)
@@ -1426,14 +1442,14 @@ func convertStartingClassToProtoInfo(sc *toolkitchar.StartingClass) *dnd5ev1alph
 
 	info := &dnd5ev1alpha1.ClassInfo{
 		Id:          string(sc.ID),
-		Name:        sc.ID.String(),      // Will be replaced with proper name from classes package
-		Description: sc.ID.Description(), // Will be populated from classes package
-		Class:       classEnum,           // New enum field for consistency with SubclassInfo
+		Name:        sc.ID.Name(),
+		Description: sc.ID.Description(),
+		Class:       classEnum,
 	}
 
 	// Extract data from grants if available
 	if sc.Grants != nil {
-		info.HitDie = fmt.Sprintf("1d%d", sc.Grants.HitDice)
+		info.HitDie = formatDice(sc.Grants.HitDice)
 
 		// Convert saving throw proficiencies
 		info.SavingThrowProficiencies = make([]string, 0, len(sc.Grants.SavingThrows))
@@ -1480,18 +1496,6 @@ func convertStartingClassToProtoInfo(sc *toolkitchar.StartingClass) *dnd5ev1alph
 		}
 	}
 
-	// Set the group field to help with UI grouping
-	// For classes with subclasses at level 1, ID is the subclass and Group is the base class
-	// For other classes, ID and Group are the same
-	if len(sc.Subclass) > 0 {
-		// This is a base class with subclasses
-		info.Group = convertToolkitClassToProtoEnum(sc.ID)
-	} else {
-		// This might be a regular class or it could be a flattened subclass entry
-		// For now, we'll set group to the ID - this will be improved when SubclassInfo is available
-		info.Group = convertToolkitClassToProtoEnum(sc.ID)
-	}
-
 	return info
 }
 
@@ -1505,8 +1509,8 @@ func convertSubclassToProtoInfo(sc *toolkitchar.SubclassOption) *dnd5ev1alpha1.S
 
 	info := &dnd5ev1alpha1.SubclassInfo{
 		Id:          string(sc.ID), // Deprecated field
-		Name:        string(sc.ID), // Will be replaced with proper name from classes package
-		Description: "",            // Will be populated from classes package
+		Name:        sc.ID.Name(),
+		Description: sc.ID.Description(),
 		Level:       int32(sc.Level),
 		Subclass:    subclassEnum,
 	}
@@ -1548,7 +1552,7 @@ func convertClassDataToProtoInfo(classData *class.Data, uiData *external.ClassUI
 		Id:          string(classData.ID),
 		Name:        classData.Name,
 		Description: classData.Description,
-		HitDie:      fmt.Sprintf("1d%d", classData.HitDice),
+		HitDie:      formatDice(classData.HitDice),
 	}
 
 	if uiData != nil {
@@ -1712,11 +1716,17 @@ func convertRaceChoiceToProto(choice *race.ChoiceData) *dnd5ev1alpha1.Choice {
 	if len(choice.From) > 0 {
 		options := make([]*dnd5ev1alpha1.ChoiceOption, 0, len(choice.From))
 		for _, opt := range choice.From {
+			// Get item name from toolkit
+			itemName := opt // Default to ID if lookup fails
+			if item, err := items.GetByID(opt); err == nil {
+				itemName = item.GetName()
+			}
+			
 			options = append(options, &dnd5ev1alpha1.ChoiceOption{
 				OptionType: &dnd5ev1alpha1.ChoiceOption_Item{
 					Item: &dnd5ev1alpha1.ItemReference{
 						ItemId: opt,
-						Name:   formatOptionName(opt), // Convert key to display name
+						Name:   itemName,
 					},
 				},
 			})
@@ -1731,17 +1741,6 @@ func convertRaceChoiceToProto(choice *race.ChoiceData) *dnd5ev1alpha1.Choice {
 	return protoChoice
 }
 
-// formatOptionName converts an option key to a display name
-func formatOptionName(key string) string {
-	// Convert snake_case or kebab-case to Title Case
-	words := strings.FieldsFunc(key, func(r rune) bool {
-		return r == '_' || r == '-'
-	})
-	for i, word := range words {
-		words[i] = strings.Title(word)
-	}
-	return strings.Join(words, " ")
-}
 
 // convertSkillToProto converts toolkit Skill to proto Skill
 func convertSkillToProto(skill skills.Skill) dnd5ev1alpha1.Skill {
