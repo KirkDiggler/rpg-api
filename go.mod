@@ -3,9 +3,10 @@ module github.com/KirkDiggler/rpg-api
 go 1.24.1
 
 require (
-	github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20250828052505-4489311da04f
+	github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20250830005918-eeb8f1bffd01
 	github.com/KirkDiggler/rpg-toolkit/dice v0.1.1-0.20250807211656-0f8ebffb7bf0
-	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.14.0
+	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.17.0
+	github.com/KirkDiggler/rpg-toolkit/tools/spatial v0.1.1
 	github.com/fadedpez/dnd5e-api v0.0.0-20250718210231-523223e548d1
 	github.com/google/uuid v1.6.0
 	github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.3.2
@@ -17,14 +18,10 @@ require (
 )
 
 require (
-	github.com/KirkDiggler/rpg-toolkit/core v0.9.1 // indirect
-	github.com/KirkDiggler/rpg-toolkit/events v0.6.0 // indirect
+	github.com/KirkDiggler/rpg-toolkit/core v0.9.2 // indirect
+	github.com/KirkDiggler/rpg-toolkit/events v0.6.1 // indirect
 	github.com/KirkDiggler/rpg-toolkit/game v0.1.0 // indirect
-	github.com/KirkDiggler/rpg-toolkit/rpgerr v0.1.1 // indirect
-	github.com/KirkDiggler/rpg-toolkit/tools/environments v0.1.1 // indirect
-	github.com/KirkDiggler/rpg-toolkit/tools/selectables v0.1.1 // indirect
-	github.com/KirkDiggler/rpg-toolkit/tools/spatial v0.1.1 // indirect
-	github.com/KirkDiggler/rpg-toolkit/tools/spawn v0.1.1 // indirect
+	github.com/KirkDiggler/rpg-toolkit/rpgerr v0.1.2 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect

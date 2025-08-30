@@ -4,6 +4,9 @@ import (
 	"context"
 	"testing"
 
+	"github.com/stretchr/testify/suite"
+	"go.uber.org/mock/gomock"
+
 	"github.com/KirkDiggler/rpg-api/internal/clients/external"
 	externalMock "github.com/KirkDiggler/rpg-api/internal/clients/external/mock"
 	diceMock "github.com/KirkDiggler/rpg-api/internal/orchestrators/dice/mock"
@@ -20,8 +23,6 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/race"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/races"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
-	"github.com/stretchr/testify/suite"
-	"go.uber.org/mock/gomock"
 )
 
 type BundleExtractionTestSuite struct {

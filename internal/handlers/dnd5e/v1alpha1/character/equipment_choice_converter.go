@@ -1,10 +1,11 @@
-package v1alpha1
+package character
 
 import (
 	"fmt"
 
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/class"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/items"
 )
 
 // convertEquipmentChoices converts toolkit equipment choices to proto choices
@@ -97,12 +98,18 @@ func convertBundle(items []class.EquipmentData) *dnd5ev1alpha1.ChoiceOption {
 
 // convertBundleItem converts a single bundle item to proto
 func convertBundleItem(item class.EquipmentData) *dnd5ev1alpha1.BundleItem {
+	// Get item name from toolkit
+	itemName := item.ItemID // Default to ID if lookup fails
+	if itemData, err := items.GetByID(item.ItemID); err == nil {
+		itemName = itemData.GetName()
+	}
+
 	// All items are now concrete items in the simplified structure
 	return &dnd5ev1alpha1.BundleItem{
 		ItemType: &dnd5ev1alpha1.BundleItem_ConcreteItem{
 			ConcreteItem: &dnd5ev1alpha1.CountedItemReference{
 				ItemId:   item.ItemID,
-				Name:     item.ItemID, // TODO: Get actual item name
+				Name:     itemName,
 				Quantity: int32(item.Quantity),
 			},
 		},

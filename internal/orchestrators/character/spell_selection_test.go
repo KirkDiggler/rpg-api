@@ -206,17 +206,17 @@ func (s *SpellSelectionOrchestratorTestSuite) TestUpdateClass_ChangingClassClear
 
 	// Verify old wizard choices were removed but new Fighter choices added
 	s.Require().NotNil(savedDraft)
-	
+
 	// Fighter should have race choice + fighter class choices (skills, fighting style, equipment)
 	hasRaceChoice := false
 	hasFightingStyle := false
 	hasSkillChoice := false
 	equipmentCount := 0
-	
+
 	// Should not have wizard-specific choices anymore
 	hasWizardCantrips := false
 	hasWizardSpells := false
-	
+
 	for _, choice := range savedDraft.Choices {
 		switch {
 		case choice.Source == shared.SourceRace && choice.Category == shared.ChoiceSkills:
@@ -234,7 +234,7 @@ func (s *SpellSelectionOrchestratorTestSuite) TestUpdateClass_ChangingClassClear
 			hasWizardSpells = true
 		}
 	}
-	
+
 	s.True(hasRaceChoice, "Race choice should be preserved")
 	s.True(hasFightingStyle, "Fighter should have fighting style choice")
 	s.True(hasSkillChoice, "Fighter should have skill choice")
@@ -282,13 +282,13 @@ func (s *SpellSelectionOrchestratorTestSuite) TestUpdateClass_ClericOnlyGetsCant
 
 	// Verify Cleric choices were added
 	s.Require().NotNil(savedDraft)
-	
+
 	// Cleric should have cantrips (prepared casters don't choose spells at creation)
 	// Plus skills and equipment choices from the new system
 	hasCantripChoice := false
 	hasSkillChoice := false
 	equipmentCount := 0
-	
+
 	for _, choice := range savedDraft.Choices {
 		switch {
 		case choice.Source == shared.SourceClass && choice.Category == shared.ChoiceCantrips:
@@ -303,7 +303,7 @@ func (s *SpellSelectionOrchestratorTestSuite) TestUpdateClass_ClericOnlyGetsCant
 			// This is a difference from the old hardcoded logic
 		}
 	}
-	
+
 	s.True(hasCantripChoice, "Cleric should have cantrip choice")
 	s.True(hasSkillChoice, "Cleric should have skill choice")
 	s.Greater(equipmentCount, 0, "Cleric should have equipment choices")
