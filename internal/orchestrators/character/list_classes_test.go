@@ -41,8 +41,8 @@ func (s *ListClassesTestSuite) TestListClasses_ReturnsAllClasses() {
 	s.Require().NoError(err)
 	s.Require().NotNil(output)
 	
-	// Should have a reasonable number of classes (base + subclasses)
-	s.Greater(len(output.Classes), 10, "Should have at least 10 classes including subclasses")
+	// Should have 12 base classes (Fighter, Barbarian, Bard, Cleric, Druid, Monk, Paladin, Ranger, Rogue, Sorcerer, Warlock, Wizard)
+	s.Equal(12, len(output.Classes), "Should have exactly 12 base classes")
 	
 	// Verify we have some expected classes
 	classMap := make(map[string]bool)
@@ -55,12 +55,35 @@ func (s *ListClassesTestSuite) TestListClasses_ReturnsAllClasses() {
 	s.True(classMap["rogue"], "Should have Rogue")
 	s.True(classMap["wizard"], "Should have Wizard")
 	
-	// Check that Cleric base class is NOT present (only subclasses)
-	s.False(classMap["cleric"], "Should NOT have base Cleric (only subclasses)")
+	// Check classes that have level 1 subclasses
+	s.True(classMap["cleric"], "Should have Cleric")
+	s.True(classMap["sorcerer"], "Should have Sorcerer")
+	s.True(classMap["warlock"], "Should have Warlock")
 	
-	// Check some Cleric subclasses
-	s.True(classMap["life-domain"], "Should have Life Domain")
-	s.True(classMap["light-domain"], "Should have Light Domain")
+	// Verify Cleric has subclasses nested within it
+	var cleric *toolkitchar.StartingClass
+	for _, class := range output.Classes {
+		if class.ID == classes.Cleric {
+			cleric = class
+			break
+		}
+	}
+	s.Require().NotNil(cleric, "Cleric should be in the list")
+	s.Greater(len(cleric.Subclass), 0, "Cleric should have subclasses")
+	
+	// Check that specific subclasses exist within Cleric
+	hasLifeDomain := false
+	hasLightDomain := false
+	for _, subclass := range cleric.Subclass {
+		if subclass.ID == classes.LifeDomain {
+			hasLifeDomain = true
+		}
+		if subclass.ID == classes.LightDomain {
+			hasLightDomain = true
+		}
+	}
+	s.True(hasLifeDomain, "Cleric should have Life Domain subclass")
+	s.True(hasLightDomain, "Cleric should have Light Domain subclass")
 }
 
 func (s *ListClassesTestSuite) TestListClasses_RogueHasExpertise() {
@@ -135,33 +158,43 @@ func (s *ListClassesTestSuite) TestListClasses_FighterHasEquipmentChoices() {
 	}
 }
 
-func (s *ListClassesTestSuite) TestListClasses_ClericSubclassesHaveCantrips() {
+func (s *ListClassesTestSuite) TestListClasses_ClericHasCantripsButNoSpells() {
 	ctx := context.Background()
 	
 	output, err := s.orchestrator.ListClasses(ctx, &character.ListClassesInput{})
 	s.Require().NoError(err)
 	
-	// Find Life Domain
-	var lifeDomain *toolkitchar.StartingClass
+	// Find Cleric
+	var cleric *toolkitchar.StartingClass
 	for _, class := range output.Classes {
-		if class.ID == "life-domain" {
-			lifeDomain = class
+		if class.ID == classes.Cleric {
+			cleric = class
 			break
 		}
 	}
 	
-	s.Require().NotNil(lifeDomain, "Life Domain should exist")
-	s.Require().NotNil(lifeDomain.Requirements, "Life Domain should have requirements")
+	s.Require().NotNil(cleric, "Cleric should exist")
+	s.Require().NotNil(cleric.Requirements, "Cleric should have requirements")
 	
 	// Check for cantrips
-	s.Require().NotNil(lifeDomain.Requirements.Cantrips, "Life Domain should have cantrip requirements")
-	s.Equal(3, lifeDomain.Requirements.Cantrips.Count, "Clerics choose 3 cantrips at level 1")
-	s.Equal(0, lifeDomain.Requirements.Cantrips.Level, "Cantrips are level 0")
+	s.Require().NotNil(cleric.Requirements.Cantrips, "Cleric should have cantrip requirements")
+	s.Equal(3, cleric.Requirements.Cantrips.Count, "Clerics choose 3 cantrips at level 1")
+	s.Equal(0, cleric.Requirements.Cantrips.Level, "Cantrips are level 0")
 	
-	// Check for 1st level spells
-	s.Require().NotNil(lifeDomain.Requirements.Spells, "Life Domain should have spell requirements")
-	s.Greater(lifeDomain.Requirements.Spells.Count, 0, "Clerics should prepare spells")
-	s.Equal(1, lifeDomain.Requirements.Spells.Level, "Should be 1st level spells")
+	// Clerics PREPARE spells, they don't LEARN them during character creation
+	s.Nil(cleric.Requirements.Spells, "Cleric should NOT have spell learning requirements (they prepare spells)")
+	
+	// Verify Life Domain exists as a subclass
+	hasLifeDomain := false
+	for _, subclass := range cleric.Subclass {
+		if subclass.ID == classes.LifeDomain {
+			hasLifeDomain = true
+			// Life Domain grants heavy armor proficiency
+			s.Require().NotNil(subclass.Grants, "Life Domain should have grants")
+			break
+		}
+	}
+	s.True(hasLifeDomain, "Cleric should have Life Domain as a subclass")
 }
 
 func (s *ListClassesTestSuite) TestListClasses_WizardHasSpellbook() {
@@ -173,7 +206,7 @@ func (s *ListClassesTestSuite) TestListClasses_WizardHasSpellbook() {
 	// Find Wizard
 	var wizard *toolkitchar.StartingClass
 	for _, class := range output.Classes {
-		if class.ID == "wizard" {
+		if class.ID == classes.Wizard {
 			wizard = class
 			break
 		}
@@ -200,7 +233,7 @@ func (s *ListClassesTestSuite) TestListClasses_BarbarianHasMinimalChoices() {
 	// Find Barbarian
 	var barbarian *toolkitchar.StartingClass
 	for _, class := range output.Classes {
-		if class.ID == "barbarian" {
+		if class.ID == classes.Barbarian {
 			barbarian = class
 			break
 		}
@@ -218,35 +251,46 @@ func (s *ListClassesTestSuite) TestListClasses_BarbarianHasMinimalChoices() {
 	s.Nil(barbarian.Requirements.Spells, "Barbarian should not have spells")
 }
 
-func (s *ListClassesTestSuite) TestListClasses_SubclassGrouping() {
+func (s *ListClassesTestSuite) TestListClasses_SubclassStructure() {
 	ctx := context.Background()
 	
 	output, err := s.orchestrator.ListClasses(ctx, &character.ListClassesInput{})
 	s.Require().NoError(err)
 	
-	// Count classes by group
-	groupCounts := make(map[classes.Class]int)
+	// Find specific classes to check their subclass structure
+	var cleric, sorcerer, warlock, fighter *toolkitchar.StartingClass
 	for _, class := range output.Classes {
-		groupCounts[class.Group]++
+		switch class.ID {
+		case classes.Cleric:
+			cleric = class
+		case classes.Sorcerer:
+			sorcerer = class
+		case classes.Warlock:
+			warlock = class
+		case classes.Fighter:
+			fighter = class
+		}
 	}
 	
-	// Cleric should have multiple entries (subclasses)
-	s.Greater(groupCounts[classes.Cleric], 1, "Cleric should have multiple subclasses")
+	// Cleric should have subclasses (domains at level 1)
+	s.Require().NotNil(cleric, "Cleric should be in the list")
+	s.Greater(len(cleric.Subclass), 0, "Cleric should have subclasses")
+	s.T().Logf("Cleric has %d subclasses", len(cleric.Subclass))
 	
-	// Sorcerer should have multiple entries
-	s.Greater(groupCounts[classes.Sorcerer], 1, "Sorcerer should have multiple subclasses")
+	// Sorcerer should have subclasses (origins at level 1)
+	s.Require().NotNil(sorcerer, "Sorcerer should be in the list")
+	s.Greater(len(sorcerer.Subclass), 0, "Sorcerer should have subclasses")
+	s.T().Logf("Sorcerer has %d subclasses", len(sorcerer.Subclass))
 	
-	// Warlock should have multiple entries  
-	s.Greater(groupCounts[classes.Warlock], 1, "Warlock should have multiple subclasses")
+	// Warlock should have subclasses (patrons at level 1)
+	s.Require().NotNil(warlock, "Warlock should be in the list")
+	s.Greater(len(warlock.Subclass), 0, "Warlock should have subclasses")
+	s.T().Logf("Warlock has %d subclasses", len(warlock.Subclass))
 	
-	// Fighter should have only 1 entry (no level 1 subclass)
-	s.Equal(1, groupCounts[classes.Fighter], "Fighter should have exactly 1 entry")
-	
-	// Log the counts for debugging
-	s.T().Logf("Class group counts:")
-	for group, count := range groupCounts {
-		s.T().Logf("  %s: %d", group, count)
-	}
+	// Fighter should NOT have subclasses (gets them at level 3)
+	s.Require().NotNil(fighter, "Fighter should be in the list")
+	s.Empty(fighter.Subclass, "Fighter should not have level 1 subclasses")
+	s.T().Logf("Fighter has %d subclasses", len(fighter.Subclass))
 }
 
 func (s *ListClassesTestSuite) TestListClasses_AllClassesHaveRequiredFields() {
