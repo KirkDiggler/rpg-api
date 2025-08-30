@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	character2 "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v1alpha1/character"
 	"log"
 	"log/slog"
 	"net"
@@ -25,7 +26,6 @@ import (
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
 	"github.com/KirkDiggler/rpg-api/internal/clients/external"
 	apiv1alpha1handler "github.com/KirkDiggler/rpg-api/internal/handlers/api/v1alpha1"
-	"github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v1alpha1"
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
 	diceorc "github.com/KirkDiggler/rpg-api/internal/orchestrators/dice"
 	"github.com/KirkDiggler/rpg-api/internal/pkg/clock"
@@ -160,7 +160,7 @@ func runServer(_ *cobra.Command, _ []string) error {
 	}
 
 	// Initialize handlers
-	characterHandler, err := v1alpha1.NewHandler(&v1alpha1.HandlerConfig{
+	characterHandler, err := character2.NewHandler(&character2.HandlerConfig{
 		CharacterService: characterService,
 	})
 	if err != nil {

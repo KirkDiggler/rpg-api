@@ -5,7 +5,7 @@ go 1.24.1
 replace github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e => /home/kirk/personal/rpg-toolkit/rulebooks/dnd5e
 
 require (
-	github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20250829220932-ac20f6194141
+	github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20250830005918-eeb8f1bffd01
 	github.com/KirkDiggler/rpg-toolkit/dice v0.1.1-0.20250807211656-0f8ebffb7bf0
 	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.16.0
 	github.com/fadedpez/dnd5e-api v0.0.0-20250718210231-523223e548d1

@@ -4,6 +4,8 @@ github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20250829201803-36279e42e865 
 github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20250829201803-36279e42e865/go.mod h1:1XdPA9w0Wb5wioXbqsb4o4oPWy3QF0a12DYIfOt/Eww=
 github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20250829220932-ac20f6194141 h1:I1l1JW/CVklz7FBUo/EEGHCbbKkVogc1yv/CRH7r/DQ=
 github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20250829220932-ac20f6194141/go.mod h1:1XdPA9w0Wb5wioXbqsb4o4oPWy3QF0a12DYIfOt/Eww=
+github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20250830005918-eeb8f1bffd01 h1:4gdjU4nZy8pbNw0QFflkI2CnGYqM+mpVRLQwp2OWfgs=
+github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20250830005918-eeb8f1bffd01/go.mod h1:1XdPA9w0Wb5wioXbqsb4o4oPWy3QF0a12DYIfOt/Eww=
 github.com/KirkDiggler/rpg-toolkit/core v0.9.2 h1:UpH0aq/VLbqbV8sW0Q+dvZOMmSG+TKZjdizVD26ursc=
 github.com/KirkDiggler/rpg-toolkit/core v0.9.2/go.mod h1:XFQXYViPZUTYu/a8jdRadI3rGnKk4r7tRtPm++vSUV0=
 github.com/KirkDiggler/rpg-toolkit/dice v0.1.1-0.20250807211656-0f8ebffb7bf0 h1:j9ljVJXFnIl9dUs+nNjc08iPuH9wgw5LgrBb2GgyhR4=
