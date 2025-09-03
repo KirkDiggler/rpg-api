@@ -2,6 +2,8 @@ module github.com/KirkDiggler/rpg-api
 
 go 1.24.1
 
+replace github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e => ../rpg-toolkit/rulebooks/dnd5e
+
 require (
 	github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20250830005918-eeb8f1bffd01
 	github.com/KirkDiggler/rpg-toolkit/dice v0.1.1-0.20250807211656-0f8ebffb7bf0

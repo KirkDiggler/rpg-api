@@ -8,9 +8,11 @@ import (
 	"go.uber.org/mock/gomock"
 	"github.com/stretchr/testify/suite"
 	
+	"github.com/KirkDiggler/rpg-api/internal/orchestrators/dice"
 	dicemock "github.com/KirkDiggler/rpg-api/internal/orchestrators/dice/mock"
 	idgenmock "github.com/KirkDiggler/rpg-api/internal/pkg/idgen/mock"
 	draftmock "github.com/KirkDiggler/rpg-api/internal/repositories/draft/mock"
+	dicesession "github.com/KirkDiggler/rpg-api/internal/repositories/dice_session"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/abilities"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/backgrounds"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
@@ -299,14 +301,6 @@ func (s *OrchestratorTestSuite) TestNew_InvalidConfig() {
 			name: "missing draft repo",
 			config: &Config{
 				DiceService:      s.mockDiceService,
-				IDGenerator:      s.mockIDGen,
-				DraftIDGenerator: s.mockDraftIDGen,
-			},
-		},
-		{
-			name: "missing dice service",
-			config: &Config{
-				DraftRepo:        s.mockDraftRepo,
 				IDGenerator:      s.mockIDGen,
 				DraftIDGenerator: s.mockDraftIDGen,
 			},
@@ -1151,6 +1145,159 @@ func (s *OrchestratorTestSuite) TestFighterWithCompleteEquipment() {
 	
 	// Should have recorded all 5 equipment choices
 	s.Assert().Equal(5, foundEquipmentChoices, "Should have 5 equipment choices (armor, primary weapon, secondary weapon, pack, martial weapon)")
+}
+
+// TestGetRequirements tests getting requirements for character creation
+func (s *OrchestratorTestSuite) TestGetRequirements_Success() {
+	tests := []struct {
+		name     string
+		input    *GetRequirementsInput
+		wantReqs bool
+	}{
+		{
+			name: "fighter requirements",
+			input: &GetRequirementsInput{
+				Class: classes.Fighter,
+				Level: 1,
+			},
+			wantReqs: true,
+		},
+		{
+			name: "wizard requirements",
+			input: &GetRequirementsInput{
+				Class: classes.Wizard,
+				Level: 1,
+			},
+			wantReqs: true,
+		},
+		{
+			name: "human race requirements",
+			input: &GetRequirementsInput{
+				Race: races.Human,
+			},
+			wantReqs: true,
+		},
+		{
+			name: "fighter and human combined",
+			input: &GetRequirementsInput{
+				Class: classes.Fighter,
+				Race:  races.Human,
+				Level: 1,
+			},
+			wantReqs: true,
+		},
+		{
+			name: "empty requirements",
+			input: &GetRequirementsInput{},
+			wantReqs: false,
+		},
+	}
+
+	for _, tt := range tests {
+		s.Run(tt.name, func() {
+			result, err := s.orchestrator.GetRequirements(context.Background(), tt.input)
+			s.NoError(err)
+			s.NotNil(result)
+			s.NotNil(result.Requirements)
+			
+			if tt.wantReqs {
+				// Check that we got some requirements
+				hasReqs := result.Requirements.Skills != nil ||
+					result.Requirements.Languages != nil ||
+					result.Requirements.Equipment != nil ||
+					result.Requirements.Expertise != nil ||
+					result.Requirements.FightingStyle != nil
+				s.True(hasReqs, "expected to have some requirements")
+			}
+		})
+	}
+}
+
+func (s *OrchestratorTestSuite) TestGetRequirements_Errors() {
+	result, err := s.orchestrator.GetRequirements(context.Background(), nil)
+	s.Error(err)
+	s.Nil(result)
+	s.Contains(err.Error(), "input is required")
+}
+
+// TestListRaces tests listing available races
+func (s *OrchestratorTestSuite) TestListRaces() {
+	result, err := s.orchestrator.ListRaces(context.Background(), &ListRacesInput{})
+	s.NoError(err)
+	s.NotNil(result)
+	s.NotNil(result.Races)
+	// Currently returns empty array - will be populated when implemented
+	s.Equal(0, len(result.Races))
+}
+
+// TestListClasses tests listing available classes
+func (s *OrchestratorTestSuite) TestListClasses() {
+	result, err := s.orchestrator.ListClasses(context.Background(), &ListClassesInput{})
+	s.NoError(err)
+	s.NotNil(result)
+	s.NotNil(result.Classes)
+	// Currently returns empty array - will be populated when implemented
+	s.Equal(0, len(result.Classes))
+}
+
+// TestRollAbilityScores tests rolling ability scores
+func (s *OrchestratorTestSuite) TestRollAbilityScores() {
+	// Mock dice service expectations
+	s.mockDiceService.EXPECT().
+		RollAbilityScores(gomock.Any(), gomock.Any()).
+		Return(&dice.RollAbilityScoresOutput{
+			Rolls: []*dicesession.DiceRoll{
+				{RollID: "roll-1", Total: 16, Dice: []int32{6, 5, 5, 3}, Dropped: []int32{3}},
+				{RollID: "roll-2", Total: 14, Dice: []int32{5, 5, 4, 2}, Dropped: []int32{2}},
+				{RollID: "roll-3", Total: 13, Dice: []int32{4, 4, 5, 1}, Dropped: []int32{1}},
+				{RollID: "roll-4", Total: 12, Dice: []int32{4, 4, 4, 3}, Dropped: []int32{3}},
+				{RollID: "roll-5", Total: 11, Dice: []int32{4, 4, 3, 2}, Dropped: []int32{2}},
+				{RollID: "roll-6", Total: 9, Dice: []int32{3, 3, 3, 2}, Dropped: []int32{2}},
+			},
+			Session: &dicesession.DiceSession{
+				EntityID: "draft-123",
+				Context:  "ability_scores",
+			},
+		}, nil)
+
+	result, err := s.orchestrator.RollAbilityScores(context.Background(), &RollAbilityScoresInput{
+		DraftID: "draft-123",
+		Method:  "standard",
+	})
+	
+	s.NoError(err)
+	s.NotNil(result)
+	s.Equal(6, len(result.Rolls))
+	s.Equal("draft-123:ability_scores", result.SessionID)
+	
+	// Verify first roll details
+	s.Equal(16, result.Rolls[0].Total)
+	s.Equal([]int{6, 5, 5, 3}, result.Rolls[0].Dice)
+	s.Equal([]int{3}, result.Rolls[0].Dropped)
+}
+
+// TestRollAbilityScores_DefaultValues tests default behavior
+func (s *OrchestratorTestSuite) TestRollAbilityScores_DefaultValues() {
+	// Create orchestrator without dice service to test fallback
+	orchestratorWithoutDice, err := New(&Config{
+		DraftRepo:        s.mockDraftRepo,
+		DiceService:      nil, // No dice service - test fallback
+		IDGenerator:      s.mockIDGen,
+		DraftIDGenerator: s.mockDraftIDGen,
+	})
+	s.Require().NoError(err)
+	
+	result, err := orchestratorWithoutDice.RollAbilityScores(context.Background(), &RollAbilityScoresInput{})
+	
+	s.NoError(err)
+	s.NotNil(result)
+	s.Equal(6, len(result.Rolls))
+	
+	// Standard array values
+	expectedTotals := []int{15, 14, 13, 12, 10, 8}
+	for i, expected := range expectedTotals {
+		s.Equal(expected, result.Rolls[i].Total)
+	}
 }
 
 // Run the test suite
