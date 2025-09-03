@@ -306,6 +306,14 @@ func (s *OrchestratorTestSuite) TestNew_InvalidConfig() {
 			},
 		},
 		{
+			name: "missing dice service",
+			config: &Config{
+				DraftRepo:        s.mockDraftRepo,
+				IDGenerator:      s.mockIDGen,
+				DraftIDGenerator: s.mockDraftIDGen,
+			},
+		},
+		{
 			name: "missing ID generator",
 			config: &Config{
 				DraftRepo:        s.mockDraftRepo,
@@ -1276,29 +1284,6 @@ func (s *OrchestratorTestSuite) TestRollAbilityScores() {
 	s.Equal([]int{3}, result.Rolls[0].Dropped)
 }
 
-// TestRollAbilityScores_DefaultValues tests default behavior
-func (s *OrchestratorTestSuite) TestRollAbilityScores_DefaultValues() {
-	// Create orchestrator without dice service to test fallback
-	orchestratorWithoutDice, err := New(&Config{
-		DraftRepo:        s.mockDraftRepo,
-		DiceService:      nil, // No dice service - test fallback
-		IDGenerator:      s.mockIDGen,
-		DraftIDGenerator: s.mockDraftIDGen,
-	})
-	s.Require().NoError(err)
-	
-	result, err := orchestratorWithoutDice.RollAbilityScores(context.Background(), &RollAbilityScoresInput{})
-	
-	s.NoError(err)
-	s.NotNil(result)
-	s.Equal(6, len(result.Rolls))
-	
-	// Standard array values
-	expectedTotals := []int{15, 14, 13, 12, 10, 8}
-	for i, expected := range expectedTotals {
-		s.Equal(expected, result.Rolls[i].Total)
-	}
-}
 
 // Run the test suite
 func TestOrchestratorSuite(t *testing.T) {

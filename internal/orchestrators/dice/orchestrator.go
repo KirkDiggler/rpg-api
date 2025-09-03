@@ -117,34 +117,17 @@ func (o *orchestrator) parseDiceNotation(notation string) (count, size int, err 
 }
 
 // rollDiceWithToolkit uses rpg-toolkit to roll dice and returns individual results
-func (o *orchestrator) rollDiceWithToolkit(count, size int, dropLowest int) ([]int32, []int32, int32, error) {
-	// Use rpg-toolkit to create the dice roll
-	roll, err := dice.NewRoll(count, size)
+func (o *orchestrator) rollDiceWithToolkit(ctx context.Context, count, size int, dropLowest int) ([]int32, []int32, int32, error) {
+	// Use the default roller to roll dice
+	rolls, err := dice.DefaultRoller.RollN(ctx, count, size)
 	if err != nil {
-		return nil, nil, 0, errors.Wrapf(err, "failed to create dice roll")
+		return nil, nil, 0, errors.Wrapf(err, "failed to roll dice")
 	}
 
-	// Get the total and description
-	total := roll.GetValue()
-	description := roll.GetDescription()
-
-	// Parse individual dice values from the description
-	// Description format: "+2d6[3,4]=7"
-	var individualDice []int32
-
-	// Extract dice values from description using regex
-	// This is a bit hacky but rpg-toolkit doesn't expose individual dice values directly
-	start := strings.Index(description, "[")
-	end := strings.Index(description, "]")
-	if start >= 0 && end > start {
-		diceStr := description[start+1 : end]
-		diceStrings := strings.Split(diceStr, ",")
-		for _, ds := range diceStrings {
-			if d, err := strconv.Atoi(strings.TrimSpace(ds)); err == nil {
-				// nolint:gosec // dice values are always small
-				individualDice = append(individualDice, int32(d))
-			}
-		}
+	// Convert to int32
+	individualDice := make([]int32, len(rolls))
+	for i, r := range rolls {
+		individualDice[i] = int32(r)
 	}
 
 	// Handle drop lowest logic if needed
@@ -182,8 +165,13 @@ func (o *orchestrator) rollDiceWithToolkit(count, size int, dropLowest int) ([]i
 		return kept, dropped, newTotal, nil
 	}
 
-	// nolint:gosec // total is always small for dice
-	return individualDice, dropped, int32(total), nil
+	// Calculate total without dropping
+	total := int32(0)
+	for _, d := range individualDice {
+		total += d
+	}
+
+	return individualDice, dropped, total, nil
 }
 
 // RollDice rolls dice using the specified notation and stores the result in a session
@@ -211,7 +199,7 @@ func (o *orchestrator) RollDice(ctx context.Context, input *RollDiceInput) (*Rol
 	}
 
 	// Roll the dice using rpg-toolkit
-	individualDice, dropped, total, err := o.rollDiceWithToolkit(count, size, dropLowest)
+	individualDice, dropped, total, err := o.rollDiceWithToolkit(ctx, count, size, dropLowest)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to roll dice")
 	}
@@ -373,7 +361,7 @@ func (o *orchestrator) RollAbilityScores(ctx context.Context, input *RollAbility
 	var rolls []*dicesession.DiceRoll
 	for i := 0; i < 6; i++ {
 		// Roll the dice using rpg-toolkit
-		individualDice, droppedDice, total, err := o.rollDiceWithToolkit(count, size, dropLowestCount)
+		individualDice, droppedDice, total, err := o.rollDiceWithToolkit(ctx, count, size, dropLowestCount)
 		if err != nil {
 			return nil, errors.Wrapf(err, "failed to roll ability score %d", i+1)
 		}

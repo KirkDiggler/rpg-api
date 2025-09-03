@@ -26,7 +26,9 @@ func (c *Config) Validate() error {
 	if c.DraftRepo == nil {
 		return errors.InvalidArgument("draft repository is required")
 	}
-	// DiceService is optional - we have fallback behavior
+	if c.DiceService == nil {
+		return errors.InvalidArgument("dice service is required")
+	}
 	if c.IDGenerator == nil {
 		return errors.InvalidArgument("ID generator is required")
 	}
@@ -513,58 +515,43 @@ func (o *Orchestrator) RollAbilityScores(ctx context.Context, input *RollAbility
 		input = &RollAbilityScoresInput{}
 	}
 	
-	// If we have a dice service, use it
-	if o.diceService != nil {
-		diceResult, err := o.diceService.RollAbilityScores(ctx, &dice.RollAbilityScoresInput{
-			EntityID: input.DraftID, // Use draft ID as entity ID
-			Method:   input.Method,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("failed to roll ability scores: %w", err)
-		}
-		
-		// Convert dice service result to our output format
-		rolls := make([]AbilityScoreRoll, len(diceResult.Rolls))
-		for i, roll := range diceResult.Rolls {
-			// Convert int32 to int for our API
-			dice := make([]int, len(roll.Dice))
-			for j, d := range roll.Dice {
-				dice[j] = int(d)
-			}
-			dropped := make([]int, len(roll.Dropped))
-			for j, d := range roll.Dropped {
-				dropped[j] = int(d)
-			}
-			
-			rolls[i] = AbilityScoreRoll{
-				RollID:      roll.RollID,
-				Total:       int(roll.Total),
-				Dice:        dice,
-				Dropped:     dropped,
-				Description: roll.Description,
-			}
-		}
-		
-		var sessionID string
-		if diceResult.Session != nil {
-			sessionID = fmt.Sprintf("%s:%s", diceResult.Session.EntityID, diceResult.Session.Context)
-		}
-		
-		return &RollAbilityScoresOutput{
-			Rolls:     rolls,
-			SessionID: sessionID,
-		}, nil
+	diceResult, err := o.diceService.RollAbilityScores(ctx, &dice.RollAbilityScoresInput{
+		EntityID: input.DraftID, // Use draft ID as entity ID
+		Method:   input.Method,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to roll ability scores: %w", err)
 	}
 	
-	// Fallback to standard array if no dice service
+	// Convert dice service result to our output format
+	rolls := make([]AbilityScoreRoll, len(diceResult.Rolls))
+	for i, roll := range diceResult.Rolls {
+		// Convert int32 to int for our API
+		dice := make([]int, len(roll.Dice))
+		for j, d := range roll.Dice {
+			dice[j] = int(d)
+		}
+		dropped := make([]int, len(roll.Dropped))
+		for j, d := range roll.Dropped {
+			dropped[j] = int(d)
+		}
+		
+		rolls[i] = AbilityScoreRoll{
+			RollID:      roll.RollID,
+			Total:       int(roll.Total),
+			Dice:        dice,
+			Dropped:     dropped,
+			Description: roll.Description,
+		}
+	}
+	
+	var sessionID string
+	if diceResult.Session != nil {
+		sessionID = fmt.Sprintf("%s:%s", diceResult.Session.EntityID, diceResult.Session.Context)
+	}
+	
 	return &RollAbilityScoresOutput{
-		Rolls: []AbilityScoreRoll{
-			{Total: 15},
-			{Total: 14},
-			{Total: 13},
-			{Total: 12},
-			{Total: 10},
-			{Total: 8},
-		},
+		Rolls:     rolls,
+		SessionID: sessionID,
 	}, nil
 }
