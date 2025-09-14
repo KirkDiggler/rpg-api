@@ -2,7 +2,8 @@ package character
 
 import (
 	"context"
-	
+
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/backgrounds"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character/choices"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/classes"
@@ -17,27 +18,31 @@ type Service interface {
 	// Draft lifecycle
 	CreateDraft(ctx context.Context, input *CreateDraftInput) (*CreateDraftOutput, error)
 	GetDraft(ctx context.Context, input *GetDraftInput) (*GetDraftOutput, error)
+	ListDrafts(ctx context.Context, input *ListDraftsInput) (*ListDraftsOutput, error)
 	DeleteDraft(ctx context.Context, input *DeleteDraftInput) (*DeleteDraftOutput, error)
-	
+
 	// Requirements - what choices need to be made
 	GetRequirements(ctx context.Context, input *GetRequirementsInput) (*GetRequirementsOutput, error)
-	
+
 	// Draft updates with validation
 	SetName(ctx context.Context, input *SetNameInput) (*SetNameOutput, error)
 	SetRace(ctx context.Context, input *SetRaceInput) (*SetRaceOutput, error)
 	SetClass(ctx context.Context, input *SetClassInput) (*SetClassOutput, error)
 	SetBackground(ctx context.Context, input *SetBackgroundInput) (*SetBackgroundOutput, error)
 	SetAbilityScores(ctx context.Context, input *SetAbilityScoresInput) (*SetAbilityScoresOutput, error)
-	
+
 	// Validation and finalization
 	ValidateDraft(ctx context.Context, input *ValidateDraftInput) (*ValidateDraftOutput, error)
 	FinalizeDraft(ctx context.Context, input *FinalizeDraftInput) (*FinalizeDraftOutput, error)
-	
+
+	// Character operations
+	ListCharacters(ctx context.Context, input *ListCharactersInput) (*ListCharactersOutput, error)
+
 	// Data loading for UI
 	ListRaces(ctx context.Context, input *ListRacesInput) (*ListRacesOutput, error)
 	ListClasses(ctx context.Context, input *ListClassesInput) (*ListClassesOutput, error)
 	ListBackgrounds(ctx context.Context, input *ListBackgroundsInput) (*ListBackgroundsOutput, error)
-	
+
 	// Dice rolling
 	RollAbilityScores(ctx context.Context, input *RollAbilityScoresInput) (*RollAbilityScoresOutput, error)
 }
@@ -50,7 +55,7 @@ type CreateDraftInput struct {
 
 // CreateDraftOutput returns the created draft
 type CreateDraftOutput struct {
-	Draft *character.Draft
+	Draft *character.DraftData
 }
 
 // GetDraftInput gets a draft by ID
@@ -60,7 +65,7 @@ type GetDraftInput struct {
 
 // GetDraftOutput returns the draft and its progress
 type GetDraftOutput struct {
-	Draft    *character.Draft
+	Draft    *character.DraftData
 	Progress character.Progress
 }
 
@@ -94,7 +99,7 @@ type SetNameInput struct {
 
 // SetNameOutput returns updated draft
 type SetNameOutput struct {
-	Draft    *character.Draft
+	Draft    *character.DraftData
 	Progress character.Progress
 }
 
@@ -106,7 +111,7 @@ type SetRaceInput struct {
 
 // SetRaceOutput returns updated draft
 type SetRaceOutput struct {
-	Draft      *character.Draft
+	Draft      *character.DraftData
 	Progress   character.Progress
 	Validation *choices.ValidationResult
 }
@@ -119,7 +124,7 @@ type SetClassInput struct {
 
 // SetClassOutput returns updated draft
 type SetClassOutput struct {
-	Draft      *character.Draft
+	Draft      *character.DraftData
 	Progress   character.Progress
 	Validation *choices.ValidationResult
 }
@@ -132,7 +137,7 @@ type SetBackgroundInput struct {
 
 // SetBackgroundOutput returns updated draft
 type SetBackgroundOutput struct {
-	Draft      *character.Draft
+	Draft      *character.DraftData
 	Progress   character.Progress
 	Validation *choices.ValidationResult
 }
@@ -145,7 +150,7 @@ type SetAbilityScoresInput struct {
 
 // SetAbilityScoresOutput returns updated draft
 type SetAbilityScoresOutput struct {
-	Draft    *character.Draft
+	Draft    *character.DraftData
 	Progress character.Progress
 }
 
@@ -176,18 +181,9 @@ type ListRacesInput struct {
 	// Future: pagination
 }
 
-// RaceInfo contains race information for the UI
-type RaceInfo struct {
-	ID          races.Race
-	Name        string
-	Description string
-	Traits      []string
-	Subraces    []races.Subrace
-}
-
 // ListRacesOutput returns available races
 type ListRacesOutput struct {
-	Races []RaceInfo
+	Races []*races.Data // Toolkit Data is self-contained with ID, Name(), Description()
 }
 
 // ListClassesInput lists available classes
@@ -195,18 +191,9 @@ type ListClassesInput struct {
 	// Future: pagination
 }
 
-// ClassInfo contains class information for the UI
-type ClassInfo struct {
-	ID            classes.Class
-	Name          string
-	Description   string
-	HitDice       int
-	PrimaryAbility string
-}
-
 // ListClassesOutput returns available classes
 type ListClassesOutput struct {
-	Classes []ClassInfo
+	Classes []*classes.Data // Toolkit Data is self-contained with ID, Name(), Description()
 }
 
 // ListBackgroundsInput lists available backgrounds
@@ -214,17 +201,9 @@ type ListBackgroundsInput struct {
 	// Future: pagination
 }
 
-// BackgroundInfo contains background information for the UI
-type BackgroundInfo struct {
-	ID          string
-	Name        string
-	Description string
-	Skills      []string
-}
-
 // ListBackgroundsOutput returns available backgrounds
 type ListBackgroundsOutput struct {
-	Backgrounds []BackgroundInfo
+	Backgrounds []*backgrounds.Data // Toolkit Data is self-contained with ID, Name(), Description()
 }
 
 // RollAbilityScoresInput requests ability score rolls
@@ -246,4 +225,33 @@ type AbilityScoreRoll struct {
 type RollAbilityScoresOutput struct {
 	Rolls     []AbilityScoreRoll
 	SessionID string // For audit trail
+}
+
+// ListDraftsInput lists drafts with optional filters
+type ListDraftsInput struct {
+	PlayerID  string
+	SessionID string // Optional filter
+	PageSize  int
+	PageToken string
+}
+
+// ListDraftsOutput returns the draft list
+type ListDraftsOutput struct {
+	Drafts        []*character.DraftData
+	NextPageToken string
+}
+
+// ListCharactersInput lists characters with optional filters
+type ListCharactersInput struct {
+	PlayerID  string
+	SessionID string // Optional filter
+	PageSize  int
+	PageToken string
+}
+
+// ListCharactersOutput returns the character list
+type ListCharactersOutput struct {
+	Characters    []*character.Data
+	NextPageToken string
+	TotalSize     int
 }

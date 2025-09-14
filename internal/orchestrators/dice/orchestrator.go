@@ -78,6 +78,7 @@ func (c *Config) Validate() error {
 type orchestrator struct {
 	diceSessionRepo dicesession.Repository
 	idGen           idgen.Generator
+	roller          dice.Roller
 }
 
 // NewOrchestrator creates a new dice orchestrator with the provided dependencies
@@ -89,6 +90,7 @@ func NewOrchestrator(cfg *Config) (Service, error) {
 	return &orchestrator{
 		diceSessionRepo: cfg.DiceSessionRepo,
 		idGen:           cfg.IDGenerator,
+		roller:          dice.NewRoller(),
 	}, nil
 }
 
@@ -118,8 +120,8 @@ func (o *orchestrator) parseDiceNotation(notation string) (count, size int, err 
 
 // rollDiceWithToolkit uses rpg-toolkit to roll dice and returns individual results
 func (o *orchestrator) rollDiceWithToolkit(ctx context.Context, count, size int, dropLowest int) ([]int32, []int32, int32, error) {
-	// Use the default roller to roll dice
-	rolls, err := dice.DefaultRoller.RollN(ctx, count, size)
+	// Use the roller to roll dice
+	rolls, err := o.roller.RollN(ctx, count, size)
 	if err != nil {
 		return nil, nil, 0, errors.Wrapf(err, "failed to roll dice")
 	}

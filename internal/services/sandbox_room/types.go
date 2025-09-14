@@ -177,7 +177,7 @@ type GetEntitiesInRoomInput struct {
 
 // GetEntitiesInRoomOutput defines the response for getting entities in a room
 type GetEntitiesInRoomOutput struct {
-	Entities         []*roomcommon.Entity
-	EntityPositions  map[string]*roomcommon.Position
-	Count            int32
+	Entities        []*roomcommon.Entity
+	EntityPositions map[string]*roomcommon.Position
+	Count           int32
 }

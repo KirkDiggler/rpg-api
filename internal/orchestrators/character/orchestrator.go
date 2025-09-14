@@ -3,19 +3,21 @@ package character
 import (
 	"context"
 	"fmt"
-	
+
 	"github.com/KirkDiggler/rpg-api/internal/errors"
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/dice"
 	"github.com/KirkDiggler/rpg-api/internal/pkg/idgen"
-	"github.com/KirkDiggler/rpg-api/internal/repositories/draft"
+	characterdraft "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/backgrounds"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character/choices"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/classes"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/races"
 )
 
 // Config holds dependencies for the orchestrator
 type Config struct {
-	DraftRepo        draft.Repository
+	DraftRepo        characterdraft.Repository
 	DiceService      dice.Service
 	IDGenerator      idgen.Generator
 	DraftIDGenerator idgen.Generator
@@ -40,7 +42,7 @@ func (c *Config) Validate() error {
 
 // Orchestrator implements the character service
 type Orchestrator struct {
-	draftRepo   draft.Repository
+	draftRepo   characterdraft.Repository
 	diceService dice.Service
 	idGen       idgen.Generator
 	draftIDGen  idgen.Generator
@@ -54,7 +56,7 @@ func New(cfg *Config) (*Orchestrator, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
-	
+
 	return &Orchestrator{
 		draftRepo:   cfg.DraftRepo,
 		diceService: cfg.DiceService,
@@ -71,25 +73,27 @@ func (o *Orchestrator) CreateDraft(ctx context.Context, input *CreateDraftInput)
 	if input.PlayerID == "" {
 		return nil, errors.InvalidArgument("player ID is required")
 	}
-	
+
 	// Create new draft with generated ID
 	draftConfig := &character.DraftConfig{
 		ID:       o.draftIDGen.Generate(),
 		PlayerID: input.PlayerID,
 	}
-	
+
 	draft, err := character.NewDraft(draftConfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create draft: %w", err)
 	}
-	
+
 	// Save to repository
-	if err := o.draftRepo.Save(ctx, draft); err != nil {
+	if _, err := o.draftRepo.Create(ctx, characterdraft.CreateInput{
+		Draft: draft.ToData(),
+	}); err != nil {
 		return nil, fmt.Errorf("failed to save draft: %w", err)
 	}
-	
+
 	return &CreateDraftOutput{
-		Draft: draft,
+		Draft: draft.ToData(),
 	}, nil
 }
 
@@ -101,15 +105,17 @@ func (o *Orchestrator) GetDraft(ctx context.Context, input *GetDraftInput) (*Get
 	if input.DraftID == "" {
 		return nil, errors.InvalidArgument("draft ID is required")
 	}
-	
-	draft, err := o.draftRepo.Get(ctx, input.DraftID)
+
+	getOutput, err := o.draftRepo.Get(ctx, characterdraft.GetInput{
+		ID: input.DraftID,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to get draft: %w", err)
 	}
-	
+
 	return &GetDraftOutput{
-		Draft:    draft,
-		Progress: draft.Progress(),
+		Draft:    getOutput.Draft,
+		Progress: getOutput.Draft.Progress,
 	}, nil
 }
 
@@ -121,11 +127,13 @@ func (o *Orchestrator) DeleteDraft(ctx context.Context, input *DeleteDraftInput)
 	if input.DraftID == "" {
 		return nil, errors.InvalidArgument("draft ID is required")
 	}
-	
-	if err := o.draftRepo.Delete(ctx, input.DraftID); err != nil {
+
+	if _, err := o.draftRepo.Delete(ctx, characterdraft.DeleteInput{
+		ID: input.DraftID,
+	}); err != nil {
 		return nil, fmt.Errorf("failed to delete draft: %w", err)
 	}
-	
+
 	return &DeleteDraftOutput{
 		Success: true,
 	}, nil
@@ -136,20 +144,20 @@ func (o *Orchestrator) GetRequirements(ctx context.Context, input *GetRequiremen
 	if input == nil {
 		return nil, errors.InvalidArgument("input is required")
 	}
-	
+
 	// Default to level 1 if not specified
 	level := input.Level
 	if level == 0 {
 		level = 1
 	}
-	
+
 	var requirements *choices.Requirements
-	
+
 	// Get class requirements if class is specified
 	if input.Class != "" {
 		requirements = choices.GetClassRequirementsAtLevel(input.Class, level)
 	}
-	
+
 	// Get race requirements if race is specified
 	if input.Race != "" {
 		raceReqs := choices.GetRaceRequirements(input.Race)
@@ -165,12 +173,12 @@ func (o *Orchestrator) GetRequirements(ctx context.Context, input *GetRequiremen
 			}
 		}
 	}
-	
+
 	// If no requirements found, return empty requirements
 	if requirements == nil {
 		requirements = &choices.Requirements{}
 	}
-	
+
 	return &GetRequirementsOutput{
 		Requirements: requirements,
 	}, nil
@@ -187,25 +195,31 @@ func (o *Orchestrator) SetName(ctx context.Context, input *SetNameInput) (*SetNa
 	if input.Name == "" {
 		return nil, errors.InvalidArgument("name is required")
 	}
-	
+
 	// Get draft
-	draft, err := o.draftRepo.Get(ctx, input.DraftID)
+	getOutput, err := o.draftRepo.Get(ctx, characterdraft.GetInput{
+		ID: input.DraftID,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to get draft: %w", err)
 	}
-	
+
+	draft := character.LoadDraftFromData(getOutput.Draft)
 	// Set name
 	if err := draft.SetName(&character.SetNameInput{Name: input.Name}); err != nil {
 		return nil, fmt.Errorf("failed to set name: %w", err)
 	}
-	
+
 	// Save updated draft
-	if err := o.draftRepo.Save(ctx, draft); err != nil {
+	updateOutput, err := o.draftRepo.Update(ctx, characterdraft.UpdateInput{
+		Draft: draft.ToData(),
+	})
+	if err != nil {
 		return nil, fmt.Errorf("failed to save draft: %w", err)
 	}
-	
+
 	return &SetNameOutput{
-		Draft:    draft,
+		Draft:    updateOutput.Draft,
 		Progress: draft.Progress(),
 	}, nil
 }
@@ -221,23 +235,29 @@ func (o *Orchestrator) SetRace(ctx context.Context, input *SetRaceInput) (*SetRa
 	if input.Input == nil {
 		return nil, errors.InvalidArgument("race input is required")
 	}
-	
+
 	// Get draft
-	draft, err := o.draftRepo.Get(ctx, input.DraftID)
+	getOutput, err := o.draftRepo.Get(ctx, characterdraft.GetInput{
+		ID: input.DraftID,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to get draft: %w", err)
 	}
-	
+
+	draft := character.LoadDraftFromData(getOutput.Draft)
 	// Set race with choices
 	if err := draft.SetRace(input.Input); err != nil {
 		return nil, fmt.Errorf("failed to set race: %w", err)
 	}
-	
+
 	// Save updated draft
-	if err := o.draftRepo.Save(ctx, draft); err != nil {
+	updateOutput, err := o.draftRepo.Update(ctx, characterdraft.UpdateInput{
+		Draft: draft.ToData(),
+	})
+	if err != nil {
 		return nil, fmt.Errorf("failed to save draft: %w", err)
 	}
-	
+
 	// Validate race choices
 	var validation *choices.ValidationResult
 	if draft.IsRaceComplete() {
@@ -245,9 +265,9 @@ func (o *Orchestrator) SetRace(ctx context.Context, input *SetRaceInput) (*SetRa
 		// TODO: Add public method to Draft or handle differently
 		validation = nil
 	}
-	
+
 	return &SetRaceOutput{
-		Draft:      draft,
+		Draft:      updateOutput.Draft,
 		Progress:   draft.Progress(),
 		Validation: validation,
 	}, nil
@@ -264,23 +284,29 @@ func (o *Orchestrator) SetClass(ctx context.Context, input *SetClassInput) (*Set
 	if input.Input == nil {
 		return nil, errors.InvalidArgument("class input is required")
 	}
-	
+
 	// Get draft
-	draft, err := o.draftRepo.Get(ctx, input.DraftID)
+	getOutput, err := o.draftRepo.Get(ctx, characterdraft.GetInput{
+		ID: input.DraftID,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to get draft: %w", err)
 	}
-	
+
+	draft := character.LoadDraftFromData(getOutput.Draft)
 	// Set class with choices
 	if err := draft.SetClass(input.Input); err != nil {
 		return nil, fmt.Errorf("failed to set class: %w", err)
 	}
-	
+
 	// Save updated draft
-	if err := o.draftRepo.Save(ctx, draft); err != nil {
+	updateOutput, err := o.draftRepo.Update(ctx, characterdraft.UpdateInput{
+		Draft: draft.ToData(),
+	})
+	if err != nil {
 		return nil, fmt.Errorf("failed to save draft: %w", err)
 	}
-	
+
 	// Validate class choices
 	var validation *choices.ValidationResult
 	if draft.IsClassComplete() {
@@ -288,9 +314,9 @@ func (o *Orchestrator) SetClass(ctx context.Context, input *SetClassInput) (*Set
 		// TODO: Add public method to Draft or handle differently
 		validation = nil
 	}
-	
+
 	return &SetClassOutput{
-		Draft:      draft,
+		Draft:      updateOutput.Draft,
 		Progress:   draft.Progress(),
 		Validation: validation,
 	}, nil
@@ -307,23 +333,29 @@ func (o *Orchestrator) SetBackground(ctx context.Context, input *SetBackgroundIn
 	if input.Input == nil {
 		return nil, errors.InvalidArgument("background input is required")
 	}
-	
+
 	// Get draft
-	draft, err := o.draftRepo.Get(ctx, input.DraftID)
+	getOutput, err := o.draftRepo.Get(ctx, characterdraft.GetInput{
+		ID: input.DraftID,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to get draft: %w", err)
 	}
-	
+
+	draft := character.LoadDraftFromData(getOutput.Draft)
 	// Set background with choices
 	if err := draft.SetBackground(input.Input); err != nil {
 		return nil, fmt.Errorf("failed to set background: %w", err)
 	}
-	
+
 	// Save updated draft
-	if err := o.draftRepo.Save(ctx, draft); err != nil {
+	updateOutput, err := o.draftRepo.Update(ctx, characterdraft.UpdateInput{
+		Draft: draft.ToData(),
+	})
+	if err != nil {
 		return nil, fmt.Errorf("failed to save draft: %w", err)
 	}
-	
+
 	// Validate background choices
 	var validation *choices.ValidationResult
 	if draft.IsBackgroundComplete() {
@@ -331,9 +363,9 @@ func (o *Orchestrator) SetBackground(ctx context.Context, input *SetBackgroundIn
 		// TODO: Add background validation
 		validation = nil
 	}
-	
+
 	return &SetBackgroundOutput{
-		Draft:      draft,
+		Draft:      updateOutput.Draft,
 		Progress:   draft.Progress(),
 		Validation: validation,
 	}, nil
@@ -347,25 +379,31 @@ func (o *Orchestrator) SetAbilityScores(ctx context.Context, input *SetAbilitySc
 	if input.DraftID == "" {
 		return nil, errors.InvalidArgument("draft ID is required")
 	}
-	
+
 	// Get draft
-	draft, err := o.draftRepo.Get(ctx, input.DraftID)
+	getOutput, err := o.draftRepo.Get(ctx, characterdraft.GetInput{
+		ID: input.DraftID,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to get draft: %w", err)
 	}
-	
+
+	draft := character.LoadDraftFromData(getOutput.Draft)
 	// Set ability scores
 	if err := draft.SetAbilityScores(input.Input); err != nil {
 		return nil, fmt.Errorf("failed to set ability scores: %w", err)
 	}
-	
+
 	// Save updated draft
-	if err := o.draftRepo.Save(ctx, draft); err != nil {
+	updateOutput, err := o.draftRepo.Update(ctx, characterdraft.UpdateInput{
+		Draft: draft.ToData(),
+	})
+	if err != nil {
 		return nil, fmt.Errorf("failed to save draft: %w", err)
 	}
-	
+
 	return &SetAbilityScoresOutput{
-		Draft:    draft,
+		Draft:    updateOutput.Draft,
 		Progress: draft.Progress(),
 	}, nil
 }
@@ -378,23 +416,27 @@ func (o *Orchestrator) ValidateDraft(ctx context.Context, input *ValidateDraftIn
 	if input.DraftID == "" {
 		return nil, errors.InvalidArgument("draft ID is required")
 	}
-	
+
 	// Get draft
-	draft, err := o.draftRepo.Get(ctx, input.DraftID)
+	getOutput, err := o.draftRepo.Get(ctx, characterdraft.GetInput{
+		ID: input.DraftID,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to get draft: %w", err)
 	}
-	
+
+	draft := character.LoadDraftFromData(getOutput.Draft)
+
 	// Validate all choices
 	validationErr := draft.ValidateChoices()
-	
+
 	// TODO: Convert validation errors to proper ValidationResult
 	// For now, log validation errors for debugging
 	if validationErr != nil {
 		// This helps developers understand why validation failed
 		fmt.Printf("Draft validation failed: %v\n", validationErr)
 	}
-	
+
 	return &ValidateDraftOutput{
 		Valid:      validationErr == nil,
 		Progress:   draft.Progress(),
@@ -410,39 +452,45 @@ func (o *Orchestrator) FinalizeDraft(ctx context.Context, input *FinalizeDraftIn
 	if input.DraftID == "" {
 		return nil, errors.InvalidArgument("draft ID is required")
 	}
-	
+
 	// Get draft
-	draft, err := o.draftRepo.Get(ctx, input.DraftID)
+	getOutput, err := o.draftRepo.Get(ctx, characterdraft.GetInput{
+		ID: input.DraftID,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to get draft: %w", err)
 	}
-	
+
+	draft := character.LoadDraftFromData(getOutput.Draft)
+
 	// Check if draft is complete
 	if !draft.Progress().IsComplete() {
 		return nil, errors.InvalidArgument("draft is not complete")
 	}
-	
+
 	// Validate all choices
+	// TODO: Consider if validation should be optional or handled differently
+	// For now, we validate to ensure data integrity
 	if err := draft.ValidateChoices(); err != nil {
 		return nil, fmt.Errorf("draft validation failed: %w", err)
 	}
-	
+
 	// Convert to character with generated ID
 	characterID := o.idGen.Generate()
 	char, err := draft.ToCharacter(characterID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert draft to character: %w", err)
 	}
-	
+
 	// TODO: Save character to character repository
 	// For now, just return the character
-	
+
 	// Delete draft after successful finalization
-	if err := o.draftRepo.Delete(ctx, input.DraftID); err != nil {
-		// Log error but don't fail the operation
-		// TODO: Add logging
-	}
-	
+	_, _ = o.draftRepo.Delete(ctx, characterdraft.DeleteInput{
+		ID: input.DraftID,
+	})
+	// TODO: Add proper error logging
+
 	return &FinalizeDraftOutput{
 		Character: char,
 	}, nil
@@ -453,12 +501,15 @@ func (o *Orchestrator) ListRaces(ctx context.Context, input *ListRacesInput) (*L
 	if input == nil {
 		input = &ListRacesInput{}
 	}
-	
-	// TODO: Implement ListRaces
-	// Need to add similar structure to races as we did for backgrounds
-	
+
+	// Get races from toolkit - Data is now self-contained
+	result := make([]*races.Data, 0, len(races.RaceData))
+	for _, raceData := range races.RaceData {
+		result = append(result, raceData)
+	}
+
 	return &ListRacesOutput{
-		Races: []RaceInfo{},
+		Races: result,
 	}, nil
 }
 
@@ -467,12 +518,15 @@ func (o *Orchestrator) ListClasses(ctx context.Context, input *ListClassesInput)
 	if input == nil {
 		input = &ListClassesInput{}
 	}
-	
-	// TODO: Implement ListClasses
-	// Classes already have GetData() and methods, just need to wire up
-	
+
+	// Get classes from toolkit - Data is now self-contained
+	result := make([]*classes.Data, 0, len(classes.ClassData))
+	for _, classData := range classes.ClassData {
+		result = append(result, classData)
+	}
+
 	return &ListClassesOutput{
-		Classes: []ClassInfo{},
+		Classes: result,
 	}, nil
 }
 
@@ -481,29 +535,13 @@ func (o *Orchestrator) ListBackgrounds(ctx context.Context, input *ListBackgroun
 	if input == nil {
 		input = &ListBackgroundsInput{}
 	}
-	
-	// Get backgrounds from toolkit
-	result := make([]BackgroundInfo, 0, len(backgrounds.All))
-	for id, bg := range backgrounds.All {
-		bgData := backgrounds.GetData(bg)
-		if bgData == nil {
-			continue // Skip if no data available
-		}
-		
-		// Convert skills to string IDs
-		skillIDs := make([]string, len(bgData.Skills))
-		for i, skill := range bgData.Skills {
-			skillIDs[i] = string(skill)
-		}
-		
-		result = append(result, BackgroundInfo{
-			ID:          id,
-			Name:        bg.Name(),
-			Description: bg.Description(),
-			Skills:      skillIDs,
-		})
+
+	// Get backgrounds from toolkit - Data is now self-contained
+	result := make([]*backgrounds.Data, 0, len(backgrounds.BackgroundData))
+	for _, bgData := range backgrounds.BackgroundData {
+		result = append(result, bgData)
 	}
-	
+
 	return &ListBackgroundsOutput{
 		Backgrounds: result,
 	}, nil
@@ -514,7 +552,7 @@ func (o *Orchestrator) RollAbilityScores(ctx context.Context, input *RollAbility
 	if input == nil {
 		input = &RollAbilityScoresInput{}
 	}
-	
+
 	diceResult, err := o.diceService.RollAbilityScores(ctx, &dice.RollAbilityScoresInput{
 		EntityID: input.DraftID, // Use draft ID as entity ID
 		Method:   input.Method,
@@ -522,7 +560,7 @@ func (o *Orchestrator) RollAbilityScores(ctx context.Context, input *RollAbility
 	if err != nil {
 		return nil, fmt.Errorf("failed to roll ability scores: %w", err)
 	}
-	
+
 	// Convert dice service result to our output format
 	rolls := make([]AbilityScoreRoll, len(diceResult.Rolls))
 	for i, roll := range diceResult.Rolls {
@@ -535,7 +573,7 @@ func (o *Orchestrator) RollAbilityScores(ctx context.Context, input *RollAbility
 		for j, d := range roll.Dropped {
 			dropped[j] = int(d)
 		}
-		
+
 		rolls[i] = AbilityScoreRoll{
 			RollID:      roll.RollID,
 			Total:       int(roll.Total),
@@ -544,14 +582,35 @@ func (o *Orchestrator) RollAbilityScores(ctx context.Context, input *RollAbility
 			Description: roll.Description,
 		}
 	}
-	
+
 	var sessionID string
 	if diceResult.Session != nil {
 		sessionID = fmt.Sprintf("%s:%s", diceResult.Session.EntityID, diceResult.Session.Context)
 	}
-	
+
 	return &RollAbilityScoresOutput{
 		Rolls:     rolls,
 		SessionID: sessionID,
+	}, nil
+}
+
+// ListDrafts returns drafts for a player or session
+func (o *Orchestrator) ListDrafts(ctx context.Context, input *ListDraftsInput) (*ListDraftsOutput, error) {
+	// TODO: Implement when repository supports listing drafts
+	// For now, return empty list
+	return &ListDraftsOutput{
+		Drafts:        []*character.DraftData{},
+		NextPageToken: "",
+	}, nil
+}
+
+// ListCharacters returns characters for a player or session
+func (o *Orchestrator) ListCharacters(ctx context.Context, input *ListCharactersInput) (*ListCharactersOutput, error) {
+	// TODO: Implement when repository supports listing characters
+	// For now, return empty list
+	return &ListCharactersOutput{
+		Characters:    []*character.Data{},
+		NextPageToken: "",
+		TotalSize:     0,
 	}, nil
 }

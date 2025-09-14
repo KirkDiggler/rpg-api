@@ -101,7 +101,7 @@ This is useful for testing class validation logic during development.`,
 					"draft_id": draftID,
 					"class":    class,
 					"race":     race,
-					"warnings": updateResp.Warnings,
+					"draft":    updateResp.Draft,
 				}, "", "  ")
 				if err != nil {
 					return fmt.Errorf("failed to marshal response: %w", err)
@@ -116,13 +116,13 @@ This is useful for testing class validation logic during development.`,
 				}
 				fmt.Printf("Class: %s\n", class)
 
-				if len(updateResp.Warnings) > 0 {
-					fmt.Printf("\n⚠️  Validation Warnings (%d):\n", len(updateResp.Warnings))
-					for _, warning := range updateResp.Warnings {
-						fmt.Printf("  • [%s] %s\n", warning.Field, warning.Message)
+				if updateResp.Draft != nil && updateResp.Draft.Validation != nil && len(updateResp.Draft.Validation.Issues) > 0 {
+					fmt.Printf("\n⚠️  Validation Issues (%d):\n", len(updateResp.Draft.Validation.Issues))
+					for _, issue := range updateResp.Draft.Validation.Issues {
+						fmt.Printf("  • [%s] %s: %s\n", issue.Severity, issue.Field, issue.Message)
 					}
 				} else {
-					fmt.Printf("\n✅ No validation warnings\n")
+					fmt.Printf("\n✅ No validation issues\n")
 				}
 			}
 		}
@@ -261,8 +261,8 @@ var inspectDraftCmd = &cobra.Command{
 			fmt.Println(string(output))
 		} else {
 			fmt.Printf("=== Draft: %s ===\n", draftID)
-			fmt.Printf("Race: %s\n", getDraftResp.Draft.RaceId)
-			fmt.Printf("Class: %s\n", getDraftResp.Draft.ClassId)
+			fmt.Printf("Race: %s\n", getDraftResp.Draft.Race)
+			fmt.Printf("Class: %s\n", getDraftResp.Draft.Class)
 
 			if len(getDraftResp.Draft.Choices) > 0 {
 				fmt.Printf("\n📋 Choices (%d):\n", len(getDraftResp.Draft.Choices))
