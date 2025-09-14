@@ -25,14 +25,12 @@ import (
 
 	apiv1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/api/v1alpha1"
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
-	"github.com/KirkDiggler/rpg-api/internal/clients/external"
 	apiv1alpha1handler "github.com/KirkDiggler/rpg-api/internal/handlers/api/v1alpha1"
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
 	diceorc "github.com/KirkDiggler/rpg-api/internal/orchestrators/dice"
 	"github.com/KirkDiggler/rpg-api/internal/pkg/clock"
 	"github.com/KirkDiggler/rpg-api/internal/pkg/idgen"
 	"github.com/KirkDiggler/rpg-api/internal/redis"
-	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	characterdraftrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft"
 	dicesessionrepo "github.com/KirkDiggler/rpg-api/internal/repositories/dice_session"
 	// encountersrepo "github.com/KirkDiggler/rpg-api/internal/repositories/encounters" // Temporarily disabled
@@ -82,12 +80,12 @@ func runServer(_ *cobra.Command, _ []string) error {
 		),
 	)
 
-	charRepo, err := characterrepo.NewRedis(&characterrepo.RedisConfig{
-		Client: mustRedisClient(),
-	})
-	if err != nil {
-		return fmt.Errorf("failed to create character repository: %w", err)
-	}
+	// charRepo, err := characterrepo.NewRedis(&characterrepo.RedisConfig{
+	// 	Client: mustRedisClient(),
+	// })
+	// if err != nil {
+	// 	return fmt.Errorf("failed to create character repository: %w", err)
+	// }
 
 	draftRepo, err := characterdraftrepo.NewRedis(&characterdraftrepo.Config{
 		Clock:       clock.New(),
@@ -96,23 +94,6 @@ func runServer(_ *cobra.Command, _ []string) error {
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create character draft repository: %w", err)
-	}
-
-	// Get D&D API URL from environment or use default
-	dndAPIURL := os.Getenv("DND5E_API_URL")
-	if dndAPIURL == "" {
-		dndAPIURL = "http://localhost:3002/api/2014/"
-	}
-
-	slog.Info("Using D&D API URL", "url", dndAPIURL)
-
-	client, err := external.New(&external.Config{
-		BaseURL:     dndAPIURL,
-		CacheTTL:    24 * time.Hour,
-		HTTPTimeout: 30 * time.Second,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to create external client: %w", err)
 	}
 
 	// Create dice session repository
@@ -149,12 +130,10 @@ func runServer(_ *cobra.Command, _ []string) error {
 
 	// Initialize services
 	characterService, err := character.New(&character.Config{
-		CharacterRepo:      charRepo,
-		CharacterDraftRepo: draftRepo,
-		ExternalClient:     client,
-		DiceService:        diceService,
-		IDGenerator:        idgen.NewUUID("char"),
-		DraftIDGenerator:   idgen.NewUUID("draft"),
+		DraftRepo:        draftRepo,
+		DiceService:      diceService,
+		IDGenerator:      idgen.NewUUID("char"),
+		DraftIDGenerator: idgen.NewUUID("draft"),
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create character service: %w", err)

@@ -11,7 +11,9 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/errors"
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
-	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/classes"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character/choices"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
+	// "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/spells" // TODO: Re-enable when spell conversion is needed
 )
 
 // HandlerConfig holds dependencies for the handler
@@ -56,16 +58,8 @@ func (h *Handler) CreateDraft(
 
 	// Create input for orchestrator
 	input := &character.CreateDraftInput{
-		PlayerID:  req.GetPlayerId(),
-		SessionID: req.GetSessionId(),
-	}
-
-	// If initial data provided, convert it
-	if req.GetInitialData() != nil {
-		input.InitialData = &toolkitchar.DraftData{
-			Name: req.GetInitialData().GetName(),
-			// TODO: Convert other fields as we implement them
-		}
+		PlayerID:  req.PlayerId,
+		SessionID: req.SessionId,
 	}
 
 	// Call orchestrator
@@ -87,34 +81,7 @@ func (h *Handler) GetDraft(
 	ctx context.Context,
 	req *dnd5ev1alpha1.GetDraftRequest,
 ) (*dnd5ev1alpha1.GetDraftResponse, error) {
-	// Validate request
-	if req.GetDraftId() == "" {
-		return nil, status.Error(codes.InvalidArgument, "draft_id is required")
-	}
-
-	// Call orchestrator
-	output, err := h.characterService.GetDraft(ctx, &character.GetDraftInput{
-		DraftID: req.GetDraftId(),
-	})
-	if err != nil {
-		// Convert orchestrator errors to gRPC errors
-		if errors.IsNotFound(err) {
-			return nil, status.Error(codes.NotFound, "draft not found")
-		}
-		return nil, status.Error(codes.Internal, err.Error())
-	}
-
-	// Convert toolkit DraftData to proto CharacterDraft
-	protoDraft := convertDraftDataToProto(output.Draft)
-
-	// Add validation to the draft if present
-	if output.Validation != nil {
-		protoDraft.Validation = convertToolkitValidationToProto(output.Validation)
-	}
-
-	return &dnd5ev1alpha1.GetDraftResponse{
-		Draft: protoDraft,
-	}, nil
+	return nil, errors.Unimplemented("GetDraft not implemented")
 }
 
 // ListDrafts lists character drafts
@@ -122,24 +89,24 @@ func (h *Handler) ListDrafts(
 	ctx context.Context,
 	req *dnd5ev1alpha1.ListDraftsRequest,
 ) (*dnd5ev1alpha1.ListDraftsResponse, error) {
+	// Build input for orchestrator
+	input := &character.ListDraftsInput{
+		PlayerID:  req.GetPlayerId(),
+		SessionID: req.GetSessionId(),
+		PageSize:  int(req.GetPageSize()),
+		PageToken: req.GetPageToken(),
+	}
+
 	// Call orchestrator
-	output, err := h.characterService.ListDrafts(ctx, &character.ListDraftsInput{
-		PlayerID:  req.PlayerId,
-		SessionID: req.SessionId,
-		PageSize:  req.PageSize,
-		PageToken: req.PageToken,
-	})
+	output, err := h.characterService.ListDrafts(ctx, input)
 	if err != nil {
-		if errors.IsInvalidArgument(err) {
-			return nil, status.Error(codes.InvalidArgument, err.Error())
-		}
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
-	// Convert drafts to proto
-	protoDrafts := make([]*dnd5ev1alpha1.CharacterDraft, len(output.Drafts))
-	for i, draft := range output.Drafts {
-		protoDrafts[i] = convertDraftDataToProto(draft)
+	// Convert toolkit DraftData to proto CharacterDraft
+	protoDrafts := make([]*dnd5ev1alpha1.CharacterDraft, 0, len(output.Drafts))
+	for _, draftData := range output.Drafts {
+		protoDrafts = append(protoDrafts, convertDraftDataToProto(draftData))
 	}
 
 	return &dnd5ev1alpha1.ListDraftsResponse{
@@ -153,7 +120,7 @@ func (h *Handler) DeleteDraft(
 	ctx context.Context,
 	req *dnd5ev1alpha1.DeleteDraftRequest,
 ) (*dnd5ev1alpha1.DeleteDraftResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "not implemented")
+	return nil, errors.Unimplemented("DeleteDraft not implemented")
 }
 
 // UpdateName updates the name of a character draft
@@ -161,34 +128,28 @@ func (h *Handler) UpdateName(
 	ctx context.Context,
 	req *dnd5ev1alpha1.UpdateNameRequest,
 ) (*dnd5ev1alpha1.UpdateNameResponse, error) {
+	if req == nil {
+		return nil, errors.InvalidArgument("request is required")
+	}
+	if req.DraftId == "" {
+		return nil, errors.InvalidArgument("draft_id is required")
+	}
+	if req.Name == "" {
+		return nil, errors.InvalidArgument("name is required")
+	}
+
 	// Call orchestrator
-	output, err := h.characterService.UpdateName(ctx, &character.UpdateNameInput{
+	result, err := h.characterService.SetName(ctx, &character.SetNameInput{
 		DraftID: req.DraftId,
 		Name:    req.Name,
 	})
 	if err != nil {
-		if errors.IsInvalidArgument(err) {
-			return nil, status.Error(codes.InvalidArgument, err.Error())
-		}
-		if errors.IsNotFound(err) {
-			return nil, status.Error(codes.NotFound, err.Error())
-		}
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, err
 	}
 
-	// Convert warnings
-	protoWarnings := make([]*dnd5ev1alpha1.ValidationWarning, len(output.Warnings))
-	for i, warning := range output.Warnings {
-		protoWarnings[i] = &dnd5ev1alpha1.ValidationWarning{
-			Field:   warning.Field,
-			Message: warning.Message,
-			Type:    warning.Type,
-		}
-	}
-
+	// Convert result to proto
 	return &dnd5ev1alpha1.UpdateNameResponse{
-		Draft:    convertDraftDataToProto(output.Draft),
-		Warnings: protoWarnings,
+		Draft: convertDraftDataToProto(result.Draft),
 	}, nil
 }
 
@@ -197,40 +158,58 @@ func (h *Handler) UpdateRace(
 	ctx context.Context,
 	req *dnd5ev1alpha1.UpdateRaceRequest,
 ) (*dnd5ev1alpha1.UpdateRaceResponse, error) {
-	// Convert proto Race enum to toolkit constant
-	raceID := convertProtoRaceToToolkit(req.GetRace())
-	subraceID := convertProtoSubraceToToolkit(req.GetSubrace())
+	if req == nil {
+		return nil, errors.InvalidArgument("request is required")
+	}
+	if req.DraftId == "" {
+		return nil, errors.InvalidArgument("draft_id is required")
+	}
+
+	// Convert proto choices to toolkit format
+	var raceChoices toolkitchar.RaceChoices
+	if len(req.RaceChoices) > 0 {
+		for _, choice := range req.RaceChoices {
+			switch choice.Category {
+			case dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_LANGUAGES:
+				if langs := choice.GetLanguages(); langs != nil {
+					for _, lang := range langs.Languages {
+						raceChoices.Languages = append(raceChoices.Languages, convertProtoLanguageToToolkit(lang))
+					}
+				}
+			case dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_SKILLS:
+				if skills := choice.GetSkills(); skills != nil {
+					for _, skill := range skills.Skills {
+						raceChoices.Skills = append(raceChoices.Skills, convertProtoSkillToToolkit(skill))
+					}
+				}
+			case dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_SPELLS:
+				// Spells now include both spells and cantrips
+				if spellSelection := choice.GetSpells(); spellSelection != nil {
+					for _, spell := range spellSelection.Spells {
+						// TODO: Convert spell enum to spells.Spell when proper mapping is available
+						_ = spell
+					}
+				}
+			}
+		}
+	}
 
 	// Call orchestrator
-	output, err := h.characterService.UpdateRace(ctx, &character.UpdateRaceInput{
-		DraftID:   req.GetDraftId(),
-		RaceID:    raceID,
-		SubraceID: subraceID,
-		Choices:   convertProtoChoiceDataListToToolkit(req.GetRaceChoices()),
+	result, err := h.characterService.SetRace(ctx, &character.SetRaceInput{
+		DraftID: req.DraftId,
+		Input: &toolkitchar.SetRaceInput{
+			RaceID:    convertProtoRaceToToolkit(req.Race),
+			SubraceID: convertProtoSubraceToToolkit(req.Subrace),
+			Choices:   raceChoices,
+		},
 	})
 	if err != nil {
-		if errors.IsInvalidArgument(err) {
-			return nil, status.Error(codes.InvalidArgument, err.Error())
-		}
-		if errors.IsNotFound(err) {
-			return nil, status.Error(codes.NotFound, err.Error())
-		}
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, err
 	}
 
-	// Convert warnings
-	protoWarnings := make([]*dnd5ev1alpha1.ValidationWarning, len(output.Warnings))
-	for i, warning := range output.Warnings {
-		protoWarnings[i] = &dnd5ev1alpha1.ValidationWarning{
-			Field:   warning.Field,
-			Message: warning.Message,
-			Type:    warning.Type,
-		}
-	}
-
+	// Convert result to proto
 	return &dnd5ev1alpha1.UpdateRaceResponse{
-		Draft:    convertDraftDataToProto(output.Draft),
-		Warnings: protoWarnings,
+		Draft: convertDraftDataToProto(result.Draft),
 	}, nil
 }
 
@@ -239,50 +218,85 @@ func (h *Handler) UpdateClass(
 	ctx context.Context,
 	req *dnd5ev1alpha1.UpdateClassRequest,
 ) (*dnd5ev1alpha1.UpdateClassResponse, error) {
-	// Convert proto class to toolkit class constant
-	classID := convertProtoClassToToolkit(req.Class)
-	if classID == "" {
-		return nil, status.Error(codes.InvalidArgument, "invalid class")
+	if req == nil {
+		return nil, errors.InvalidArgument("request is required")
+	}
+	if req.DraftId == "" {
+		return nil, errors.InvalidArgument("draft_id is required")
 	}
 
-	// Convert proto subclass to toolkit subclass constant if provided
-	var subclassID classes.Subclass
-	if req.Subclass != dnd5ev1alpha1.Subclass_SUBCLASS_UNSPECIFIED {
-		subclassID = convertProtoSubclassToToolkit(req.Subclass)
-	}
+	// Convert proto choices to toolkit format
+	var classChoices toolkitchar.ClassChoices
+	if len(req.ClassChoices) > 0 {
+		for _, choice := range req.ClassChoices {
+			switch choice.Category {
+			case dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_SKILLS:
+				if skills := choice.GetSkills(); skills != nil {
+					for _, skill := range skills.Skills {
+						classChoices.Skills = append(classChoices.Skills, convertProtoSkillToToolkit(skill))
+					}
+				}
+			case dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_FIGHTING_STYLE:
+				if fs := choice.GetFightingStyle(); fs != nil && fs.Style != dnd5ev1alpha1.FightingStyle_FIGHTING_STYLE_UNSPECIFIED {
+					classChoices.FightingStyle = convertProtoFightingStyleToToolkit(fs.Style)
+				}
+			// Note: Cantrips are now part of SPELLS category
+			case dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_SPELLS:
+				if spellList := choice.GetSpells(); spellList != nil {
+					for range spellList.Spells {
+						// TODO: Convert spell enum to spells.Spell when mapping is available
+						// For now, skip spells
+					}
+				}
+			case dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_EQUIPMENT:
+				if equipment := choice.GetEquipment(); equipment != nil {
+					if classChoices.Equipment == nil {
+						classChoices.Equipment = make(map[choices.ChoiceID]shared.SelectionID)
+					}
+					// Handle equipment selection mapping
+					if choice.ChoiceId != "" && len(equipment.Items) > 0 {
+						// Extract the item ID from the first EquipmentSelection
+						firstItem := equipment.Items[0]
+						var itemID string
 
-	// Convert proto choices to toolkit choices
-	var choices []toolkitchar.ChoiceData
-	for _, protoChoice := range req.ClassChoices {
-		choices = append(choices, convertProtoChoiceDataToToolkit(protoChoice))
+						// Extract the ID based on the equipment type
+						switch eq := firstItem.Equipment.(type) {
+						case *dnd5ev1alpha1.EquipmentSelectionItem_Weapon:
+							// Convert weapon enum back to string ID
+							itemID = string(eq.Weapon) // Use enum string value as ID
+						case *dnd5ev1alpha1.EquipmentSelectionItem_Armor:
+							itemID = string(eq.Armor) // Use enum string value as ID
+						case *dnd5ev1alpha1.EquipmentSelectionItem_Tool:
+							itemID = string(eq.Tool) // Use enum string value as ID
+						case *dnd5ev1alpha1.EquipmentSelectionItem_OtherEquipmentId:
+							itemID = eq.OtherEquipmentId
+						}
+
+						if itemID != "" {
+							classChoices.Equipment[choices.ChoiceID(choice.ChoiceId)] = shared.SelectionID(itemID)
+						}
+					}
+				}
+			}
+		}
 	}
 
 	// Call orchestrator
-	output, err := h.characterService.UpdateClass(ctx, &character.UpdateClassInput{
-		DraftID:    req.DraftId,
-		ClassID:    classID,
-		SubclassID: subclassID,
-		Choices:    choices,
+	result, err := h.characterService.SetClass(ctx, &character.SetClassInput{
+		DraftID: req.DraftId,
+		Input: &toolkitchar.SetClassInput{
+			ClassID:    convertProtoClassToToolkit(req.Class),
+			SubclassID: convertProtoSubclassToToolkit(req.Subclass),
+			Choices:    classChoices,
+		},
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	// Convert response
-	protoDraft := convertDraftDataToProto(output.Draft)
-
-	// Convert warnings
-	warnings := make([]*dnd5ev1alpha1.ValidationWarning, 0, len(output.Warnings))
-	for _, w := range output.Warnings {
-		warnings = append(warnings, &dnd5ev1alpha1.ValidationWarning{
-			Field:   w.Field,
-			Message: w.Message,
-		})
-	}
-
+	// Convert result to proto
 	return &dnd5ev1alpha1.UpdateClassResponse{
-		Draft:    protoDraft,
-		Warnings: warnings,
+		Draft: convertDraftDataToProto(result.Draft),
 	}, nil
 }
 
@@ -291,37 +305,42 @@ func (h *Handler) UpdateBackground(
 	ctx context.Context,
 	req *dnd5ev1alpha1.UpdateBackgroundRequest,
 ) (*dnd5ev1alpha1.UpdateBackgroundResponse, error) {
-	// Convert proto background to toolkit background type
-	backgroundID := convertProtoBackgroundToToolkit(req.Background)
-	if backgroundID == "" {
-		return nil, status.Error(codes.InvalidArgument, "invalid background")
+	if req == nil {
+		return nil, errors.InvalidArgument("request is required")
+	}
+	if req.DraftId == "" {
+		return nil, errors.InvalidArgument("draft_id is required")
 	}
 
-	// Convert proto choices to toolkit choices
-	var choices []toolkitchar.ChoiceData
-	for _, protoChoice := range req.BackgroundChoices {
-		choices = append(choices, convertProtoChoiceDataToToolkit(protoChoice))
+	// Convert proto choices to toolkit format
+	var bgChoices toolkitchar.BackgroundChoices
+	if len(req.BackgroundChoices) > 0 {
+		for _, choice := range req.BackgroundChoices {
+			if choice.Category == dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_LANGUAGES {
+				if langs := choice.GetLanguages(); langs != nil {
+					for _, lang := range langs.Languages {
+						bgChoices.Languages = append(bgChoices.Languages, convertProtoLanguageToToolkit(lang))
+					}
+				}
+			}
+		}
 	}
 
 	// Call orchestrator
-	output, err := h.characterService.UpdateBackground(ctx, &character.UpdateBackgroundInput{
-		DraftID:      req.DraftId,
-		BackgroundID: backgroundID,
-		Choices:      choices,
+	result, err := h.characterService.SetBackground(ctx, &character.SetBackgroundInput{
+		DraftID: req.DraftId,
+		Input: &toolkitchar.SetBackgroundInput{
+			BackgroundID: convertProtoBackgroundToToolkit(req.Background),
+			Choices:      bgChoices,
+		},
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	// Convert response
-	protoDraft := convertDraftDataToProto(output.Draft)
-
-	// Convert warnings - no conversion needed for now
-	var warnings []*dnd5ev1alpha1.ValidationWarning
-
+	// Convert result to proto
 	return &dnd5ev1alpha1.UpdateBackgroundResponse{
-		Draft:    protoDraft,
-		Warnings: warnings,
+		Draft: convertDraftDataToProto(result.Draft),
 	}, nil
 }
 
@@ -330,72 +349,46 @@ func (h *Handler) UpdateAbilityScores(
 	ctx context.Context,
 	req *dnd5ev1alpha1.UpdateAbilityScoresRequest,
 ) (*dnd5ev1alpha1.UpdateAbilityScoresResponse, error) {
-	// Validate request
+	if req == nil {
+		return nil, errors.InvalidArgument("request is required")
+	}
 	if req.DraftId == "" {
-		return nil, status.Error(codes.InvalidArgument, "draft_id is required")
+		return nil, errors.InvalidArgument("draft_id is required")
 	}
+	// Handle the oneof scores_input field
+	var scores shared.AbilityScores
+	method := "standard"
 
-	// Check which type of input we have
-	switch scores := req.ScoresInput.(type) {
+	switch scoresInput := req.GetScoresInput().(type) {
 	case *dnd5ev1alpha1.UpdateAbilityScoresRequest_AbilityScores:
-		// Manual ability score assignment
-		// TODO: Implement manual score assignment
-		return nil, status.Error(codes.Unimplemented, "manual ability score assignment not yet implemented")
-
+		if scoresInput.AbilityScores == nil {
+			return nil, errors.InvalidArgument("ability_scores is required")
+		}
+		scores = convertProtoAbilityScoresToToolkit(scoresInput.AbilityScores)
+		method = "manual"
 	case *dnd5ev1alpha1.UpdateAbilityScoresRequest_RollAssignments:
-		// Roll-based assignment
-		assignments := scores.RollAssignments
-
-		// Validate all roll IDs are provided
-		if assignments.StrengthRollId == "" ||
-			assignments.DexterityRollId == "" ||
-			assignments.ConstitutionRollId == "" ||
-			assignments.IntelligenceRollId == "" ||
-			assignments.WisdomRollId == "" ||
-			assignments.CharismaRollId == "" {
-			return nil, status.Error(codes.InvalidArgument, "all ability score roll IDs must be provided")
-		}
-
-		// Call orchestrator to update ability scores with roll assignments
-		output, err := h.characterService.UpdateAbilityScores(ctx, &character.UpdateAbilityScoresInput{
-			DraftID: req.DraftId,
-			RollAssignments: &character.RollAssignments{
-				StrengthRollID:     assignments.StrengthRollId,
-				DexterityRollID:    assignments.DexterityRollId,
-				ConstitutionRollID: assignments.ConstitutionRollId,
-				IntelligenceRollID: assignments.IntelligenceRollId,
-				WisdomRollID:       assignments.WisdomRollId,
-				CharismaRollID:     assignments.CharismaRollId,
-			},
-		})
-		if err != nil {
-			if errors.IsNotFound(err) {
-				return nil, status.Error(codes.NotFound, err.Error())
-			}
-			if errors.IsInvalidArgument(err) {
-				return nil, status.Error(codes.InvalidArgument, err.Error())
-			}
-			return nil, status.Error(codes.Internal, err.Error())
-		}
-
-		// Convert warnings
-		protoWarnings := make([]*dnd5ev1alpha1.ValidationWarning, len(output.Warnings))
-		for i, warning := range output.Warnings {
-			protoWarnings[i] = &dnd5ev1alpha1.ValidationWarning{
-				Field:   warning.Field,
-				Message: warning.Message,
-				Type:    warning.Type,
-			}
-		}
-
-		return &dnd5ev1alpha1.UpdateAbilityScoresResponse{
-			Draft:    convertDraftDataToProto(output.Draft),
-			Warnings: protoWarnings,
-		}, nil
-
+		// TODO: Handle roll assignments when implemented
+		return nil, errors.InvalidArgument("roll assignments not yet implemented")
 	default:
-		return nil, status.Error(codes.InvalidArgument, "scores_input must be provided")
+		return nil, errors.InvalidArgument("scores_input is required")
 	}
+
+	// Call orchestrator
+	result, err := h.characterService.SetAbilityScores(ctx, &character.SetAbilityScoresInput{
+		DraftID: req.DraftId,
+		Input: &toolkitchar.SetAbilityScoresInput{
+			Scores: scores,
+			Method: method,
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert result to proto
+	return &dnd5ev1alpha1.UpdateAbilityScoresResponse{
+		Draft: convertDraftDataToProto(result.Draft),
+	}, nil
 }
 
 // UpdateSkills updates the skills of a character draft
@@ -403,7 +396,7 @@ func (h *Handler) UpdateSkills(
 	ctx context.Context,
 	req *dnd5ev1alpha1.UpdateSkillsRequest,
 ) (*dnd5ev1alpha1.UpdateSkillsResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "not implemented")
+	return nil, errors.Unimplemented("UpdateSkills not implemented")
 }
 
 // ValidateDraft validates a character draft
@@ -411,7 +404,7 @@ func (h *Handler) ValidateDraft(
 	ctx context.Context,
 	req *dnd5ev1alpha1.ValidateDraftRequest,
 ) (*dnd5ev1alpha1.ValidateDraftResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "not implemented")
+	return nil, errors.Unimplemented("ValidateDraft not implemented")
 }
 
 // GetDraftPreview gets a preview of what the character would look like if finalized
@@ -419,7 +412,7 @@ func (h *Handler) GetDraftPreview(
 	ctx context.Context,
 	req *dnd5ev1alpha1.GetDraftPreviewRequest,
 ) (*dnd5ev1alpha1.GetDraftPreviewResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "not implemented")
+	return nil, errors.Unimplemented("GetDraftPreview not implemented")
 }
 
 // FinalizeDraft finalizes a character draft
@@ -427,33 +420,7 @@ func (h *Handler) FinalizeDraft(
 	ctx context.Context,
 	req *dnd5ev1alpha1.FinalizeDraftRequest,
 ) (*dnd5ev1alpha1.FinalizeDraftResponse, error) {
-	// Validate request
-	if req.GetDraftId() == "" {
-		return nil, status.Error(codes.InvalidArgument, "draft_id is required")
-	}
-
-	// Call orchestrator to finalize the draft
-	output, err := h.characterService.FinalizeDraft(ctx, &character.FinalizeDraftInput{
-		DraftID: req.GetDraftId(),
-	})
-	if err != nil {
-		// Convert errors to gRPC status
-		if errors.IsInvalidArgument(err) {
-			return nil, status.Error(codes.InvalidArgument, err.Error())
-		}
-		if errors.IsNotFound(err) {
-			return nil, status.Error(codes.NotFound, err.Error())
-		}
-		return nil, status.Error(codes.Internal, err.Error())
-	}
-
-	// Convert character to proto
-	protoCharacter := ConvertCharacterDataToProto(output.Character)
-
-	return &dnd5ev1alpha1.FinalizeDraftResponse{
-		Character:    protoCharacter,
-		DraftDeleted: output.DraftDeleted,
-	}, nil
+	return nil, errors.Unimplemented("FinalizeDraft not implemented")
 }
 
 // GetCharacter retrieves a character
@@ -461,32 +428,7 @@ func (h *Handler) GetCharacter(
 	ctx context.Context,
 	req *dnd5ev1alpha1.GetCharacterRequest,
 ) (*dnd5ev1alpha1.GetCharacterResponse, error) {
-	// Validate request
-	if req.CharacterId == "" {
-		return nil, status.Error(codes.InvalidArgument, "character_id is required")
-	}
-
-	// Call orchestrator to get the character
-	output, err := h.characterService.GetCharacter(ctx, &character.GetCharacterInput{
-		CharacterID: req.CharacterId,
-	})
-	if err != nil {
-		// Convert errors to gRPC status
-		if errors.IsNotFound(err) {
-			return nil, status.Error(codes.NotFound, err.Error())
-		}
-		if errors.IsInvalidArgument(err) {
-			return nil, status.Error(codes.InvalidArgument, err.Error())
-		}
-		return nil, status.Error(codes.Internal, err.Error())
-	}
-
-	// Convert character to proto
-	protoCharacter := ConvertCharacterDataToProto(output.Character)
-
-	return &dnd5ev1alpha1.GetCharacterResponse{
-		Character: protoCharacter,
-	}, nil
+	return nil, errors.Unimplemented("GetCharacter not implemented")
 }
 
 // ListCharacters lists characters
@@ -494,25 +436,30 @@ func (h *Handler) ListCharacters(
 	ctx context.Context,
 	req *dnd5ev1alpha1.ListCharactersRequest,
 ) (*dnd5ev1alpha1.ListCharactersResponse, error) {
-	// Call orchestrator to list characters
-	output, err := h.characterService.ListCharacters(ctx, &character.ListCharactersInput{
-		PlayerID: req.PlayerId,
-	})
+	// Build input for orchestrator
+	input := &character.ListCharactersInput{
+		PlayerID:  req.GetPlayerId(),
+		SessionID: req.GetSessionId(),
+		PageSize:  int(req.GetPageSize()),
+		PageToken: req.GetPageToken(),
+	}
+
+	// Call orchestrator
+	output, err := h.characterService.ListCharacters(ctx, input)
 	if err != nil {
-		if errors.IsInvalidArgument(err) {
-			return nil, status.Error(codes.InvalidArgument, err.Error())
-		}
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
-	// Convert characters to proto
+	// Convert toolkit character.Data to proto Character
 	protoCharacters := make([]*dnd5ev1alpha1.Character, 0, len(output.Characters))
-	for _, char := range output.Characters {
-		protoCharacters = append(protoCharacters, ConvertCharacterDataToProto(char))
+	for _, charData := range output.Characters {
+		protoCharacters = append(protoCharacters, convertCharacterDataToProto(charData))
 	}
 
 	return &dnd5ev1alpha1.ListCharactersResponse{
-		Characters: protoCharacters,
+		Characters:    protoCharacters,
+		NextPageToken: output.NextPageToken,
+		TotalSize:     int32(output.TotalSize),
 	}, nil
 }
 
@@ -521,29 +468,7 @@ func (h *Handler) DeleteCharacter(
 	ctx context.Context,
 	req *dnd5ev1alpha1.DeleteCharacterRequest,
 ) (*dnd5ev1alpha1.DeleteCharacterResponse, error) {
-	// Validate request
-	if req.CharacterId == "" {
-		return nil, status.Error(codes.InvalidArgument, "character_id is required")
-	}
-
-	// Call orchestrator to delete the character
-	output, err := h.characterService.DeleteCharacter(ctx, &character.DeleteCharacterInput{
-		CharacterID: req.CharacterId,
-	})
-	if err != nil {
-		// Convert errors to gRPC status
-		if errors.IsNotFound(err) {
-			return nil, status.Error(codes.NotFound, err.Error())
-		}
-		if errors.IsInvalidArgument(err) {
-			return nil, status.Error(codes.InvalidArgument, err.Error())
-		}
-		return nil, status.Error(codes.Internal, err.Error())
-	}
-
-	return &dnd5ev1alpha1.DeleteCharacterResponse{
-		Message: output.Message,
-	}, nil
+	return nil, errors.Unimplemented("DeleteCharacter not implemented")
 }
 
 // ListRaces lists available races
@@ -552,24 +477,20 @@ func (h *Handler) ListRaces(
 	req *dnd5ev1alpha1.ListRacesRequest,
 ) (*dnd5ev1alpha1.ListRacesResponse, error) {
 	// Call orchestrator
-	output, err := h.characterService.ListRaces(ctx, &character.ListRacesInput{
-		PageSize:  req.GetPageSize(),
-		PageToken: req.GetPageToken(),
-	})
+	result, err := h.characterService.ListRaces(ctx, &character.ListRacesInput{})
 	if err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, err
 	}
 
-	// Convert to proto RaceInfo
-	protoRaces := make([]*dnd5ev1alpha1.RaceInfo, len(output.Races))
-	for i, race := range output.Races {
-		protoRaces[i] = convertRaceDataToProtoInfo(race.RaceData, race.UIData)
+	// Convert toolkit Data to proto
+	races := make([]*dnd5ev1alpha1.RaceInfo, 0, len(result.Races))
+	for _, raceData := range result.Races {
+		races = append(races, convertRaceDataToProto(raceData))
 	}
 
 	return &dnd5ev1alpha1.ListRacesResponse{
-		Races:         protoRaces,
-		NextPageToken: output.NextPageToken,
-		TotalSize:     int32(output.TotalSize),
+		Races:     races,
+		TotalSize: int32(len(races)),
 	}, nil
 }
 
@@ -579,24 +500,20 @@ func (h *Handler) ListClasses(
 	req *dnd5ev1alpha1.ListClassesRequest,
 ) (*dnd5ev1alpha1.ListClassesResponse, error) {
 	// Call orchestrator
-	output, err := h.characterService.ListClasses(ctx, &character.ListClassesInput{
-		PageSize:  req.GetPageSize(),
-		PageToken: req.GetPageToken(),
-	})
+	result, err := h.characterService.ListClasses(ctx, &character.ListClassesInput{})
 	if err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, err
 	}
 
-	// Convert to proto ClassInfo
-	protoClasses := make([]*dnd5ev1alpha1.ClassInfo, len(output.Classes))
-	for i, class := range output.Classes {
-		protoClasses[i] = convertStartingClassToProtoInfo(class)
+	// Convert toolkit Data to proto
+	classes := make([]*dnd5ev1alpha1.ClassInfo, 0, len(result.Classes))
+	for _, classData := range result.Classes {
+		classes = append(classes, convertClassDataToProto(classData))
 	}
 
 	return &dnd5ev1alpha1.ListClassesResponse{
-		Classes:       protoClasses,
-		NextPageToken: output.NextPageToken,
-		TotalSize:     int32(output.TotalSize),
+		Classes:   classes,
+		TotalSize: int32(len(classes)),
 	}, nil
 }
 
@@ -605,7 +522,22 @@ func (h *Handler) ListBackgrounds(
 	ctx context.Context,
 	req *dnd5ev1alpha1.ListBackgroundsRequest,
 ) (*dnd5ev1alpha1.ListBackgroundsResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "not implemented")
+	// Call orchestrator
+	result, err := h.characterService.ListBackgrounds(ctx, &character.ListBackgroundsInput{})
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert toolkit Data to proto
+	backgrounds := make([]*dnd5ev1alpha1.BackgroundInfo, 0, len(result.Backgrounds))
+	for _, bgData := range result.Backgrounds {
+		backgrounds = append(backgrounds, convertBackgroundDataToProto(bgData))
+	}
+
+	return &dnd5ev1alpha1.ListBackgroundsResponse{
+		Backgrounds: backgrounds,
+		TotalSize:   int32(len(backgrounds)),
+	}, nil
 }
 
 // GetRaceDetails returns detailed information about a specific race
@@ -645,48 +577,7 @@ func (h *Handler) RollAbilityScores(
 	ctx context.Context,
 	req *dnd5ev1alpha1.RollAbilityScoresRequest,
 ) (*dnd5ev1alpha1.RollAbilityScoresResponse, error) {
-	// Validate input
-	if req.DraftId == "" {
-		return nil, status.Error(codes.InvalidArgument, "draft_id is required")
-	}
-
-	// Call the character service to roll ability scores
-	output, err := h.characterService.RollAbilityScores(ctx, &character.RollAbilityScoresInput{
-		DraftID: req.DraftId,
-	})
-	if err != nil {
-		// Check for specific error types
-		if errors.IsNotFound(err) {
-			return nil, status.Error(codes.NotFound, err.Error())
-		}
-		if errors.IsInvalidArgument(err) {
-			return nil, status.Error(codes.InvalidArgument, err.Error())
-		}
-		return nil, status.Error(codes.Internal, err.Error())
-	}
-
-	// Convert rolls to proto format
-	protoRolls := make([]*dnd5ev1alpha1.AbilityScoreRoll, 0, len(output.Rolls))
-	for _, roll := range output.Rolls {
-		var dropped int32
-		if len(roll.Dropped) > 0 {
-			dropped = roll.Dropped[0] // Take the first dropped die
-		}
-
-		protoRoll := &dnd5ev1alpha1.AbilityScoreRoll{
-			RollId:   roll.RollID,
-			Dice:     roll.Dice,
-			Total:    roll.Total,
-			Dropped:  dropped,
-			Notation: roll.Description,
-		}
-		protoRolls = append(protoRolls, protoRoll)
-	}
-
-	return &dnd5ev1alpha1.RollAbilityScoresResponse{
-		Rolls:     protoRolls,
-		ExpiresAt: output.ExpiresAt.Unix(),
-	}, nil
+	return nil, errors.Unimplemented("RollAbilityScores not implemented")
 }
 
 // ListEquipmentByType lists equipment by type
@@ -694,7 +585,7 @@ func (h *Handler) ListEquipmentByType(
 	ctx context.Context,
 	req *dnd5ev1alpha1.ListEquipmentByTypeRequest,
 ) (*dnd5ev1alpha1.ListEquipmentByTypeResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "not implemented")
+	return nil, errors.Unimplemented("ListEquipmentByType not implemented")
 }
 
 // ListSpellsByLevel lists spells by level
@@ -702,7 +593,7 @@ func (h *Handler) ListSpellsByLevel(
 	ctx context.Context,
 	req *dnd5ev1alpha1.ListSpellsByLevelRequest,
 ) (*dnd5ev1alpha1.ListSpellsByLevelResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "not implemented")
+	return nil, errors.Unimplemented("ListSpellsByLevel not implemented")
 }
 
 // GetCharacterInventory gets character inventory
@@ -710,48 +601,7 @@ func (h *Handler) GetCharacterInventory(
 	ctx context.Context,
 	req *dnd5ev1alpha1.GetCharacterInventoryRequest,
 ) (*dnd5ev1alpha1.GetCharacterInventoryResponse, error) {
-	if req == nil || req.CharacterId == "" {
-		return nil, status.Error(codes.InvalidArgument, "character_id is required")
-	}
-
-	// Call orchestrator to get inventory
-	result, err := h.characterService.GetCharacterInventory(ctx, &character.GetCharacterInventoryInput{
-		CharacterID: req.CharacterId,
-	})
-	if err != nil {
-		if errors.IsNotFound(err) {
-			return nil, status.Error(codes.NotFound, "character not found")
-		}
-		return nil, status.Error(codes.Internal, err.Error())
-	}
-
-	// Convert to proto response
-	response := &dnd5ev1alpha1.GetCharacterInventoryResponse{
-		EquipmentSlots: convertEquipmentSlotsToProto(result.EquipmentSlots),
-		Inventory:      make([]*dnd5ev1alpha1.InventoryItem, 0),
-		Encumbrance: &dnd5ev1alpha1.EncumbranceInfo{
-			CurrentWeight:    0,
-			CarryingCapacity: 150, // Default for STR 10
-			MaxCapacity:      300,
-			Level:            dnd5ev1alpha1.EncumbranceLevel_ENCUMBRANCE_LEVEL_UNENCUMBERED,
-		},
-		AttunementSlotsUsed: result.AttunementSlotsUsed,
-		AttunementSlotsMax:  3, // D&D 5e standard
-	}
-
-	// Convert inventory items, separating equipped from unequipped
-	for _, item := range result.Inventory {
-		// If item is equipped, it should be in equipment slots and NOT in inventory
-		if !item.Equipped {
-			response.Inventory = append(response.Inventory, &dnd5ev1alpha1.InventoryItem{
-				ItemId:     item.ID,
-				Quantity:   item.Quantity,
-				CustomName: item.Name,
-			})
-		}
-	}
-
-	return response, nil
+	return nil, errors.Unimplemented("GetCharacterInventory not implemented")
 }
 
 // EquipItem equips an item
@@ -759,46 +609,7 @@ func (h *Handler) EquipItem(
 	ctx context.Context,
 	req *dnd5ev1alpha1.EquipItemRequest,
 ) (*dnd5ev1alpha1.EquipItemResponse, error) {
-	if req == nil || req.CharacterId == "" {
-		return nil, status.Error(codes.InvalidArgument, "character_id is required")
-	}
-	if req.ItemId == "" {
-		return nil, status.Error(codes.InvalidArgument, "item_id is required")
-	}
-
-	// Call orchestrator to equip item
-	result, err := h.characterService.EquipItem(ctx, &character.EquipItemInput{
-		CharacterID: req.CharacterId,
-		ItemID:      req.ItemId,
-		Slot:        req.Slot.String(),
-	})
-	if err != nil {
-		if errors.IsNotFound(err) {
-			return nil, status.Error(codes.NotFound, err.Error())
-		}
-		if errors.IsInvalidArgument(err) {
-			return nil, status.Error(codes.InvalidArgument, err.Error())
-		}
-		return nil, status.Error(codes.Internal, err.Error())
-	}
-
-	// For minimal implementation, just return success
-	// TODO: Implement proper character to proto conversion with equipment
-	response := &dnd5ev1alpha1.EquipItemResponse{
-		// Character field left nil for now - frontend can refetch if needed
-	}
-
-	// Add previously equipped item if any
-	if result.PreviouslyEquippedItem != nil {
-		response.PreviouslyEquippedItem = &dnd5ev1alpha1.InventoryItem{
-			ItemId:     result.PreviouslyEquippedItem.ID,
-			Quantity:   result.PreviouslyEquippedItem.Quantity,
-			IsAttuned:  result.PreviouslyEquippedItem.Equipped,
-			CustomName: result.PreviouslyEquippedItem.Name,
-		}
-	}
-
-	return response, nil
+	return nil, errors.Unimplemented("EquipItem not implemented")
 }
 
 // UnequipItem unequips an item
@@ -806,33 +617,7 @@ func (h *Handler) UnequipItem(
 	ctx context.Context,
 	req *dnd5ev1alpha1.UnequipItemRequest,
 ) (*dnd5ev1alpha1.UnequipItemResponse, error) {
-	if req == nil || req.CharacterId == "" {
-		return nil, status.Error(codes.InvalidArgument, "character_id is required")
-	}
-	if req.Slot == dnd5ev1alpha1.EquipmentSlot_EQUIPMENT_SLOT_UNSPECIFIED {
-		return nil, status.Error(codes.InvalidArgument, "slot is required")
-	}
-
-	// Call orchestrator to unequip item
-	_, err := h.characterService.UnequipItem(ctx, &character.UnequipItemInput{
-		CharacterID: req.CharacterId,
-		Slot:        req.Slot.String(),
-	})
-	if err != nil {
-		if errors.IsNotFound(err) {
-			return nil, status.Error(codes.NotFound, "character not found")
-		}
-		if errors.IsInvalidArgument(err) {
-			return nil, status.Error(codes.InvalidArgument, err.Error())
-		}
-		return nil, status.Error(codes.Internal, err.Error())
-	}
-
-	// For minimal implementation, just return success
-	// TODO: Implement proper character to proto conversion with equipment
-	return &dnd5ev1alpha1.UnequipItemResponse{
-		// Character field left nil for now - frontend can refetch if needed
-	}, nil
+	return nil, errors.Unimplemented("UnequipItem not implemented")
 }
 
 // AddToInventory adds items to inventory

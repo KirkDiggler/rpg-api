@@ -82,11 +82,6 @@ func (r *redisRepository) Create(ctx context.Context, input CreateInput) (*Creat
 		draft.ID = r.idGen.Generate()
 	}
 
-	// Repository sets timestamps
-	now := r.clock.Now()
-	draft.CreatedAt = now
-	draft.UpdatedAt = now
-
 	isNew := true
 	// Check for existing draft for this player
 	playerKey := playerMappingPrefix + draft.PlayerID
@@ -205,9 +200,6 @@ func (r *redisRepository) Update(ctx context.Context, input UpdateInput) (*Updat
 
 	// Make a copy to avoid modifying input
 	draft := *input.Draft
-
-	// Repository updates timestamp
-	draft.UpdatedAt = r.clock.Now()
 
 	// Marshal draft
 	data, err := json.Marshal(&draft)
