@@ -3,6 +3,7 @@ package character
 
 import (
 	"context"
+	"sort"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -13,6 +14,7 @@ import (
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character/choices"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/weapons"
 	// "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/spells" // TODO: Re-enable when spell conversion is needed
 )
 
@@ -81,7 +83,28 @@ func (h *Handler) GetDraft(
 	ctx context.Context,
 	req *dnd5ev1alpha1.GetDraftRequest,
 ) (*dnd5ev1alpha1.GetDraftResponse, error) {
-	return nil, errors.Unimplemented("GetDraft not implemented")
+	if req == nil {
+		return nil, errors.InvalidArgument("request is required")
+	}
+	if req.DraftId == "" {
+		return nil, errors.InvalidArgument("draft_id is required")
+	}
+
+	// Call orchestrator
+	output, err := h.characterService.GetDraft(ctx, &character.GetDraftInput{
+		DraftID: req.DraftId,
+	})
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return nil, status.Error(codes.NotFound, "draft not found")
+		}
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	// Convert result to proto
+	return &dnd5ev1alpha1.GetDraftResponse{
+		Draft: convertDraftDataToProto(output.Draft),
+	}, nil
 }
 
 // ListDrafts lists character drafts
@@ -254,8 +277,13 @@ func (h *Handler) UpdateClass(
 						classChoices.Equipment = make(map[choices.ChoiceID]shared.SelectionID)
 					}
 					// Handle equipment selection mapping
-					if choice.ChoiceId != "" && len(equipment.Items) > 0 {
-						// Extract the item ID from the first EquipmentSelection
+					// The submission includes optionId which tells us which bundle was selected
+					// We need to map the choice ID to the option ID (bundle ID)
+					if choice.ChoiceId != "" && choice.OptionId != "" {
+						// Use the option ID as the selection - this identifies the bundle chosen
+						classChoices.Equipment[choices.ChoiceID(choice.ChoiceId)] = shared.SelectionID(choice.OptionId)
+					} else if choice.ChoiceId != "" && len(equipment.Items) > 0 {
+						// Fallback: if no optionId, use the first item ID (old behavior)
 						firstItem := equipment.Items[0]
 						var itemID string
 
@@ -367,8 +395,25 @@ func (h *Handler) UpdateAbilityScores(
 		scores = convertProtoAbilityScoresToToolkit(scoresInput.AbilityScores)
 		method = "manual"
 	case *dnd5ev1alpha1.UpdateAbilityScoresRequest_RollAssignments:
-		// TODO: Handle roll assignments when implemented
-		return nil, errors.InvalidArgument("roll assignments not yet implemented")
+		if scoresInput.RollAssignments == nil {
+			return nil, errors.InvalidArgument("roll_assignments is required")
+		}
+		// Convert roll assignments to a map for the orchestrator
+		rollAssignments := convertRollAssignmentsToMap(scoresInput.RollAssignments)
+
+		// Call orchestrator with roll assignments - it will handle dice service lookup
+		result, err := h.characterService.SetAbilityScoresFromRolls(ctx, &character.SetAbilityScoresFromRollsInput{
+			DraftID:         req.DraftId,
+			RollAssignments: rollAssignments,
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		// Convert result to proto
+		return &dnd5ev1alpha1.UpdateAbilityScoresResponse{
+			Draft: convertDraftDataToProto(result.Draft),
+		}, nil
 	default:
 		return nil, errors.InvalidArgument("scores_input is required")
 	}
@@ -420,7 +465,27 @@ func (h *Handler) FinalizeDraft(
 	ctx context.Context,
 	req *dnd5ev1alpha1.FinalizeDraftRequest,
 ) (*dnd5ev1alpha1.FinalizeDraftResponse, error) {
-	return nil, errors.Unimplemented("FinalizeDraft not implemented")
+	if req == nil || req.DraftId == "" {
+		return nil, errors.InvalidArgument("draft ID is required")
+	}
+
+	// Call orchestrator to finalize the draft
+	output, err := h.characterService.FinalizeDraft(ctx, &character.FinalizeDraftInput{
+		DraftID: req.DraftId,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert toolkit character to proto
+	protoChar := convertCharacterToProto(output.Character)
+	if protoChar == nil {
+		return nil, errors.Internal("failed to convert character to proto")
+	}
+
+	return &dnd5ev1alpha1.FinalizeDraftResponse{
+		Character: protoChar,
+	}, nil
 }
 
 // GetCharacter retrieves a character
@@ -585,7 +650,63 @@ func (h *Handler) ListEquipmentByType(
 	ctx context.Context,
 	req *dnd5ev1alpha1.ListEquipmentByTypeRequest,
 ) (*dnd5ev1alpha1.ListEquipmentByTypeResponse, error) {
-	return nil, errors.Unimplemented("ListEquipmentByType not implemented")
+	// Handle different weapon type requests using the toolkit
+	var allWeapons []weapons.Weapon
+
+	switch req.EquipmentType {
+	case dnd5ev1alpha1.EquipmentType_EQUIPMENT_TYPE_SIMPLE_MELEE_WEAPON:
+		// Get simple melee weapons
+		for _, w := range weapons.GetSimpleWeapons() {
+			if w.IsMelee() {
+				allWeapons = append(allWeapons, w)
+			}
+		}
+	case dnd5ev1alpha1.EquipmentType_EQUIPMENT_TYPE_SIMPLE_RANGED_WEAPON:
+		// Get simple ranged weapons
+		for _, w := range weapons.GetSimpleWeapons() {
+			if w.IsRanged() {
+				allWeapons = append(allWeapons, w)
+			}
+		}
+	case dnd5ev1alpha1.EquipmentType_EQUIPMENT_TYPE_MARTIAL_MELEE_WEAPON:
+		// Get martial melee weapons
+		for _, w := range weapons.GetMartialWeapons() {
+			if w.IsMelee() {
+				allWeapons = append(allWeapons, w)
+			}
+		}
+	case dnd5ev1alpha1.EquipmentType_EQUIPMENT_TYPE_MARTIAL_RANGED_WEAPON:
+		// Get martial ranged weapons
+		for _, w := range weapons.GetMartialWeapons() {
+			if w.IsRanged() {
+				allWeapons = append(allWeapons, w)
+			}
+		}
+	default:
+		// For other equipment types, return empty for now
+		// TODO: Implement armor, tools, and other equipment types when toolkit supports them
+		return &dnd5ev1alpha1.ListEquipmentByTypeResponse{
+			Equipment: []*dnd5ev1alpha1.Equipment{},
+			TotalSize: 0,
+		}, nil
+	}
+
+	// Sort weapons by name for consistent results
+	sort.Slice(allWeapons, func(i, j int) bool {
+		return allWeapons[i].Name < allWeapons[j].Name
+	})
+
+	// Convert weapons to proto equipment
+	equipment := make([]*dnd5ev1alpha1.Equipment, 0, len(allWeapons))
+	for _, weapon := range allWeapons {
+		weaponCopy := weapon // Create a copy to avoid pointer issues
+		equipment = append(equipment, ConvertEquipmentToProto(&weaponCopy))
+	}
+
+	return &dnd5ev1alpha1.ListEquipmentByTypeResponse{
+		Equipment: equipment,
+		TotalSize: int32(len(equipment)),
+	}, nil
 }
 
 // ListSpellsByLevel lists spells by level

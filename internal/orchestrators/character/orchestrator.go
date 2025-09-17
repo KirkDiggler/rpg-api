@@ -7,17 +7,20 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/errors"
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/dice"
 	"github.com/KirkDiggler/rpg-api/internal/pkg/idgen"
+	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	characterdraft "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/backgrounds"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character/choices"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/classes"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/races"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
 )
 
 // Config holds dependencies for the orchestrator
 type Config struct {
 	DraftRepo        characterdraft.Repository
+	CharacterRepo    characterrepo.Repository
 	DiceService      dice.Service
 	IDGenerator      idgen.Generator
 	DraftIDGenerator idgen.Generator
@@ -27,6 +30,9 @@ type Config struct {
 func (c *Config) Validate() error {
 	if c.DraftRepo == nil {
 		return errors.InvalidArgument("draft repository is required")
+	}
+	if c.CharacterRepo == nil {
+		return errors.InvalidArgument("character repository is required")
 	}
 	if c.DiceService == nil {
 		return errors.InvalidArgument("dice service is required")
@@ -42,10 +48,11 @@ func (c *Config) Validate() error {
 
 // Orchestrator implements the character service
 type Orchestrator struct {
-	draftRepo   characterdraft.Repository
-	diceService dice.Service
-	idGen       idgen.Generator
-	draftIDGen  idgen.Generator
+	draftRepo     characterdraft.Repository
+	characterRepo characterrepo.Repository
+	diceService   dice.Service
+	idGen         idgen.Generator
+	draftIDGen    idgen.Generator
 }
 
 // New creates a new character orchestrator
@@ -58,10 +65,11 @@ func New(cfg *Config) (*Orchestrator, error) {
 	}
 
 	return &Orchestrator{
-		draftRepo:   cfg.DraftRepo,
-		diceService: cfg.DiceService,
-		idGen:       cfg.IDGenerator,
-		draftIDGen:  cfg.DraftIDGenerator,
+		draftRepo:     cfg.DraftRepo,
+		characterRepo: cfg.CharacterRepo,
+		diceService:   cfg.DiceService,
+		idGen:         cfg.IDGenerator,
+		draftIDGen:    cfg.DraftIDGenerator,
 	}, nil
 }
 
@@ -155,7 +163,12 @@ func (o *Orchestrator) GetRequirements(ctx context.Context, input *GetRequiremen
 
 	// Get class requirements if class is specified
 	if input.Class != "" {
-		requirements = choices.GetClassRequirementsAtLevel(input.Class, level)
+		// Use subclass-aware requirements if subclass is provided
+		if input.Subclass != "" {
+			requirements = choices.GetClassRequirementsWithSubclass(input.Class, level, input.Subclass)
+		} else {
+			requirements = choices.GetClassRequirementsAtLevel(input.Class, level)
+		}
 	}
 
 	// Get race requirements if race is specified
@@ -408,6 +421,88 @@ func (o *Orchestrator) SetAbilityScores(ctx context.Context, input *SetAbilitySc
 	}, nil
 }
 
+// SetAbilityScoresFromRolls sets ability scores from dice roll assignments
+func (o *Orchestrator) SetAbilityScoresFromRolls(ctx context.Context, input *SetAbilityScoresFromRollsInput) (*SetAbilityScoresFromRollsOutput, error) {
+	if input == nil {
+		return nil, errors.InvalidArgument("input is required")
+	}
+	if input.DraftID == "" {
+		return nil, errors.InvalidArgument("draft ID is required")
+	}
+	if len(input.RollAssignments) == 0 {
+		return nil, errors.InvalidArgument("roll assignments are required")
+	}
+
+	// Get draft first - we might need it for player ID lookup
+	getOutput, err := o.draftRepo.Get(ctx, characterdraft.GetInput{
+		ID: input.DraftID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get draft: %w", err)
+	}
+
+	// Get the dice session for this draft
+	// First try with draft ID (correct way)
+	sessionOutput, err := o.diceService.GetRollSession(ctx, &dice.GetRollSessionInput{
+		EntityID: input.DraftID,
+		Context:  dice.ContextAbilityScores,
+	})
+	if err != nil {
+		// If not found with draft ID, try with player ID
+		// (for backward compatibility with web app that might be using player ID)
+		if errors.IsNotFound(err) {
+			sessionOutput, err = o.diceService.GetRollSession(ctx, &dice.GetRollSessionInput{
+				EntityID: getOutput.Draft.PlayerID,
+				Context:  dice.ContextAbilityScores,
+			})
+			if err != nil {
+				return nil, errors.Wrap(err, "failed to get dice roll session (tried both draft ID and player ID)")
+			}
+		} else {
+			return nil, errors.Wrap(err, "failed to get dice roll session")
+		}
+	}
+
+	// Build a map of roll IDs to their totals
+	rollTotals := make(map[string]int32)
+	for _, roll := range sessionOutput.Session.Rolls {
+		rollTotals[roll.RollID] = roll.Total
+	}
+
+	// Convert roll assignments to ability scores
+	scores := make(shared.AbilityScores)
+	for ability, rollID := range input.RollAssignments {
+		if total, ok := rollTotals[rollID]; ok {
+			scores[ability] = int(total)
+		} else {
+			return nil, errors.InvalidArgument(fmt.Sprintf("roll ID %s not found in session", rollID))
+		}
+	}
+
+	draft := character.LoadDraftFromData(getOutput.Draft)
+
+	// Set ability scores with "rolled" method
+	if err := draft.SetAbilityScores(&character.SetAbilityScoresInput{
+		Scores: scores,
+		Method: "rolled",
+	}); err != nil {
+		return nil, fmt.Errorf("failed to set ability scores: %w", err)
+	}
+
+	// Save updated draft
+	updateOutput, err := o.draftRepo.Update(ctx, characterdraft.UpdateInput{
+		Draft: draft.ToData(),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to save draft: %w", err)
+	}
+
+	return &SetAbilityScoresFromRollsOutput{
+		Draft:    updateOutput.Draft,
+		Progress: draft.Progress(),
+	}, nil
+}
+
 // ValidateDraft validates a draft
 func (o *Orchestrator) ValidateDraft(ctx context.Context, input *ValidateDraftInput) (*ValidateDraftOutput, error) {
 	if input == nil {
@@ -482,17 +577,32 @@ func (o *Orchestrator) FinalizeDraft(ctx context.Context, input *FinalizeDraftIn
 		return nil, fmt.Errorf("failed to convert draft to character: %w", err)
 	}
 
-	// TODO: Save character to character repository
-	// For now, just return the character
+	// Convert character to data for storage
+	charData := character.FromCharacter(char)
+
+	// Save character to character repository
+	createOutput, err := o.characterRepo.Create(ctx, characterrepo.CreateInput{
+		CharacterData: charData,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to save character: %w", err)
+	}
 
 	// Delete draft after successful finalization
-	_, _ = o.draftRepo.Delete(ctx, characterdraft.DeleteInput{
+	_, err = o.draftRepo.Delete(ctx, characterdraft.DeleteInput{
 		ID: input.DraftID,
 	})
-	// TODO: Add proper error logging
+	if err != nil {
+		// Log error but don't fail the operation - character is already saved
+		// TODO: Add proper error logging
+		_ = err
+	}
+
+	// Load the saved character from the repository data
+	finalChar := createOutput.CharacterData.ToCharacter()
 
 	return &FinalizeDraftOutput{
-		Character: char,
+		Character: finalChar,
 	}, nil
 }
 
@@ -596,10 +706,32 @@ func (o *Orchestrator) RollAbilityScores(ctx context.Context, input *RollAbility
 
 // ListDrafts returns drafts for a player or session
 func (o *Orchestrator) ListDrafts(ctx context.Context, input *ListDraftsInput) (*ListDraftsOutput, error) {
-	// TODO: Implement when repository supports listing drafts
-	// For now, return empty list
+	if input == nil {
+		return nil, errors.InvalidArgument("input is required")
+	}
+	if input.PlayerID == "" {
+		return nil, errors.InvalidArgument("player ID is required")
+	}
+
+	// The repository uses a single-draft-per-player pattern
+	// Try to get the player's draft
+	getOutput, err := o.draftRepo.GetByPlayerID(ctx, characterdraft.GetByPlayerIDInput{
+		PlayerID: input.PlayerID,
+	})
+	if err != nil {
+		// If not found, return empty list
+		if errors.IsNotFound(err) {
+			return &ListDraftsOutput{
+				Drafts:        []*character.DraftData{},
+				NextPageToken: "",
+			}, nil
+		}
+		return nil, fmt.Errorf("failed to get drafts: %w", err)
+	}
+
+	// Return the single draft as a list
 	return &ListDraftsOutput{
-		Drafts:        []*character.DraftData{},
+		Drafts:        []*character.DraftData{getOutput.Draft},
 		NextPageToken: "",
 	}, nil
 }
@@ -612,5 +744,21 @@ func (o *Orchestrator) ListCharacters(ctx context.Context, input *ListCharacters
 		Characters:    []*character.Data{},
 		NextPageToken: "",
 		TotalSize:     0,
+	}, nil
+}
+
+// ListEquipmentByType returns equipment filtered by type
+func (o *Orchestrator) ListEquipmentByType(ctx context.Context, input *ListEquipmentByTypeInput) (*ListEquipmentByTypeOutput, error) {
+	if input == nil {
+		input = &ListEquipmentByTypeInput{}
+	}
+
+	// The handler will handle the conversion from proto enum to toolkit categories
+	// For now, we'll let the handler do the work directly with the toolkit
+	// This orchestrator method is a placeholder for future expansion
+
+	// Return empty for now - the handler will use the toolkit directly
+	return &ListEquipmentByTypeOutput{
+		Equipment: []interface{}{},
 	}, nil
 }

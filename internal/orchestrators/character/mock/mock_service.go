@@ -131,6 +131,21 @@ func (mr *MockServiceMockRecorder) ListBackgrounds(ctx, input any) *gomock.Call 
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListBackgrounds", reflect.TypeOf((*MockService)(nil).ListBackgrounds), ctx, input)
 }
 
+// ListCharacters mocks base method.
+func (m *MockService) ListCharacters(ctx context.Context, input *character.ListCharactersInput) (*character.ListCharactersOutput, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListCharacters", ctx, input)
+	ret0, _ := ret[0].(*character.ListCharactersOutput)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListCharacters indicates an expected call of ListCharacters.
+func (mr *MockServiceMockRecorder) ListCharacters(ctx, input any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListCharacters", reflect.TypeOf((*MockService)(nil).ListCharacters), ctx, input)
+}
+
 // ListClasses mocks base method.
 func (m *MockService) ListClasses(ctx context.Context, input *character.ListClassesInput) (*character.ListClassesOutput, error) {
 	m.ctrl.T.Helper()
@@ -144,6 +159,36 @@ func (m *MockService) ListClasses(ctx context.Context, input *character.ListClas
 func (mr *MockServiceMockRecorder) ListClasses(ctx, input any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListClasses", reflect.TypeOf((*MockService)(nil).ListClasses), ctx, input)
+}
+
+// ListDrafts mocks base method.
+func (m *MockService) ListDrafts(ctx context.Context, input *character.ListDraftsInput) (*character.ListDraftsOutput, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListDrafts", ctx, input)
+	ret0, _ := ret[0].(*character.ListDraftsOutput)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListDrafts indicates an expected call of ListDrafts.
+func (mr *MockServiceMockRecorder) ListDrafts(ctx, input any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListDrafts", reflect.TypeOf((*MockService)(nil).ListDrafts), ctx, input)
+}
+
+// ListEquipmentByType mocks base method.
+func (m *MockService) ListEquipmentByType(ctx context.Context, input *character.ListEquipmentByTypeInput) (*character.ListEquipmentByTypeOutput, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListEquipmentByType", ctx, input)
+	ret0, _ := ret[0].(*character.ListEquipmentByTypeOutput)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListEquipmentByType indicates an expected call of ListEquipmentByType.
+func (mr *MockServiceMockRecorder) ListEquipmentByType(ctx, input any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListEquipmentByType", reflect.TypeOf((*MockService)(nil).ListEquipmentByType), ctx, input)
 }
 
 // ListRaces mocks base method.
@@ -189,6 +234,21 @@ func (m *MockService) SetAbilityScores(ctx context.Context, input *character.Set
 func (mr *MockServiceMockRecorder) SetAbilityScores(ctx, input any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetAbilityScores", reflect.TypeOf((*MockService)(nil).SetAbilityScores), ctx, input)
+}
+
+// SetAbilityScoresFromRolls mocks base method.
+func (m *MockService) SetAbilityScoresFromRolls(ctx context.Context, input *character.SetAbilityScoresFromRollsInput) (*character.SetAbilityScoresFromRollsOutput, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SetAbilityScoresFromRolls", ctx, input)
+	ret0, _ := ret[0].(*character.SetAbilityScoresFromRollsOutput)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// SetAbilityScoresFromRolls indicates an expected call of SetAbilityScoresFromRolls.
+func (mr *MockServiceMockRecorder) SetAbilityScoresFromRolls(ctx, input any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetAbilityScoresFromRolls", reflect.TypeOf((*MockService)(nil).SetAbilityScoresFromRolls), ctx, input)
 }
 
 // SetBackground mocks base method.

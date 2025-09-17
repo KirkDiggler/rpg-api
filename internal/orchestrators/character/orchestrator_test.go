@@ -11,6 +11,7 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/dice"
 	dicemock "github.com/KirkDiggler/rpg-api/internal/orchestrators/dice/mock"
 	idgenmock "github.com/KirkDiggler/rpg-api/internal/pkg/idgen/mock"
+	charactermock "github.com/KirkDiggler/rpg-api/internal/repositories/character/mock"
 	characterdraft "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft"
 	draftmock "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft/mock"
 	dicesession "github.com/KirkDiggler/rpg-api/internal/repositories/dice_session"
@@ -29,13 +30,14 @@ import (
 
 type OrchestratorTestSuite struct {
 	suite.Suite
-	ctrl            *gomock.Controller
-	mockDraftRepo   *draftmock.MockRepository
-	mockDiceService *dicemock.MockService
-	mockIDGen       *idgenmock.MockGenerator
-	mockDraftIDGen  *idgenmock.MockGenerator
-	orchestrator    *Orchestrator
-	ctx             context.Context
+	ctrl              *gomock.Controller
+	mockDraftRepo     *draftmock.MockRepository
+	mockCharacterRepo *charactermock.MockRepository
+	mockDiceService   *dicemock.MockService
+	mockIDGen         *idgenmock.MockGenerator
+	mockDraftIDGen    *idgenmock.MockGenerator
+	orchestrator      *Orchestrator
+	ctx               context.Context
 
 	// Reusable test data
 	testDraftID     string
@@ -65,6 +67,7 @@ type OrchestratorTestSuite struct {
 func (s *OrchestratorTestSuite) SetupTest() {
 	s.ctrl = gomock.NewController(s.T())
 	s.mockDraftRepo = draftmock.NewMockRepository(s.ctrl)
+	s.mockCharacterRepo = charactermock.NewMockRepository(s.ctrl)
 	s.mockDiceService = dicemock.NewMockService(s.ctrl)
 	s.mockIDGen = idgenmock.NewMockGenerator(s.ctrl)
 	s.mockDraftIDGen = idgenmock.NewMockGenerator(s.ctrl)
@@ -72,6 +75,7 @@ func (s *OrchestratorTestSuite) SetupTest() {
 
 	config := &Config{
 		DraftRepo:        s.mockDraftRepo,
+		CharacterRepo:    s.mockCharacterRepo,
 		DiceService:      s.mockDiceService,
 		IDGenerator:      s.mockIDGen,
 		DraftIDGenerator: s.mockDraftIDGen,

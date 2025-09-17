@@ -3,6 +3,7 @@ package character
 import (
 	"context"
 
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/abilities"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/backgrounds"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character/choices"
@@ -30,6 +31,7 @@ type Service interface {
 	SetClass(ctx context.Context, input *SetClassInput) (*SetClassOutput, error)
 	SetBackground(ctx context.Context, input *SetBackgroundInput) (*SetBackgroundOutput, error)
 	SetAbilityScores(ctx context.Context, input *SetAbilityScoresInput) (*SetAbilityScoresOutput, error)
+	SetAbilityScoresFromRolls(ctx context.Context, input *SetAbilityScoresFromRollsInput) (*SetAbilityScoresFromRollsOutput, error)
 
 	// Validation and finalization
 	ValidateDraft(ctx context.Context, input *ValidateDraftInput) (*ValidateDraftOutput, error)
@@ -42,6 +44,7 @@ type Service interface {
 	ListRaces(ctx context.Context, input *ListRacesInput) (*ListRacesOutput, error)
 	ListClasses(ctx context.Context, input *ListClassesInput) (*ListClassesOutput, error)
 	ListBackgrounds(ctx context.Context, input *ListBackgroundsInput) (*ListBackgroundsOutput, error)
+	ListEquipmentByType(ctx context.Context, input *ListEquipmentByTypeInput) (*ListEquipmentByTypeOutput, error)
 
 	// Dice rolling
 	RollAbilityScores(ctx context.Context, input *RollAbilityScoresInput) (*RollAbilityScoresOutput, error)
@@ -81,9 +84,10 @@ type DeleteDraftOutput struct {
 
 // GetRequirementsInput gets requirements for character creation choices
 type GetRequirementsInput struct {
-	Class classes.Class
-	Race  races.Race
-	Level int // Default to 1 if not specified
+	Class    classes.Class
+	Subclass classes.Subclass // Optional: for getting subclass-modified requirements
+	Race     races.Race
+	Level    int // Default to 1 if not specified
 }
 
 // GetRequirementsOutput returns what choices need to be made
@@ -150,6 +154,18 @@ type SetAbilityScoresInput struct {
 
 // SetAbilityScoresOutput returns updated draft
 type SetAbilityScoresOutput struct {
+	Draft    *character.DraftData
+	Progress character.Progress
+}
+
+// SetAbilityScoresFromRollsInput provides roll assignments for ability scores
+type SetAbilityScoresFromRollsInput struct {
+	DraftID         string
+	RollAssignments map[abilities.Ability]string // Maps ability to roll ID
+}
+
+// SetAbilityScoresFromRollsOutput returns updated draft
+type SetAbilityScoresFromRollsOutput struct {
 	Draft    *character.DraftData
 	Progress character.Progress
 }
@@ -254,4 +270,14 @@ type ListCharactersOutput struct {
 	Characters    []*character.Data
 	NextPageToken string
 	TotalSize     int
+}
+
+// ListEquipmentByTypeInput requests equipment by type
+type ListEquipmentByTypeInput struct {
+	EquipmentType interface{} // Will use the proto enum value directly
+}
+
+// ListEquipmentByTypeOutput returns equipment list
+type ListEquipmentByTypeOutput struct {
+	Equipment []interface{} // Will hold toolkit Equipment interface values
 }
