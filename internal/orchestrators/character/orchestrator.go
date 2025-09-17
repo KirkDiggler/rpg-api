@@ -738,13 +738,44 @@ func (o *Orchestrator) ListDrafts(ctx context.Context, input *ListDraftsInput) (
 
 // ListCharacters returns characters for a player or session
 func (o *Orchestrator) ListCharacters(ctx context.Context, input *ListCharactersInput) (*ListCharactersOutput, error) {
-	// TODO: Implement when repository supports listing characters
-	// For now, return empty list
-	return &ListCharactersOutput{
-		Characters:    []*character.Data{},
-		NextPageToken: "",
-		TotalSize:     0,
-	}, nil
+	if input == nil {
+		return nil, errors.InvalidArgument("input is required")
+	}
+
+	// List by player ID (primary use case)
+	if input.PlayerID != "" {
+		result, err := o.characterRepo.ListByPlayerID(ctx, characterrepo.ListByPlayerIDInput{
+			PlayerID: input.PlayerID,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to list characters by player: %w", err)
+		}
+
+		return &ListCharactersOutput{
+			Characters:    result.Characters,
+			NextPageToken: "", // TODO: Add pagination support
+			TotalSize:     len(result.Characters),
+		}, nil
+	}
+
+	// List by session ID (secondary use case)
+	if input.SessionID != "" {
+		result, err := o.characterRepo.ListBySessionID(ctx, characterrepo.ListBySessionIDInput{
+			SessionID: input.SessionID,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to list characters by session: %w", err)
+		}
+
+		return &ListCharactersOutput{
+			Characters:    result.Characters,
+			NextPageToken: "", // TODO: Add pagination support
+			TotalSize:     len(result.Characters),
+		}, nil
+	}
+
+	// No filter provided - return error
+	return nil, errors.InvalidArgument("either player_id or session_id must be provided")
 }
 
 // ListEquipmentByType returns equipment filtered by type
