@@ -564,11 +564,11 @@ func (o *Orchestrator) FinalizeDraft(ctx context.Context, input *FinalizeDraftIn
 	}
 
 	// Validate all choices
-	// TODO: Consider if validation should be optional or handled differently
-	// For now, we validate to ensure data integrity
-	if err := draft.ValidateChoices(); err != nil {
-		return nil, fmt.Errorf("draft validation failed: %w", err)
-	}
+	// TODO: Temporarily disabled due to toolkit bug #313 - ValidateChoices doesn't handle fighting styles
+	// Re-enable once https://github.com/KirkDiggler/rpg-toolkit/issues/313 is fixed
+	// if err := draft.ValidateChoices(); err != nil {
+	// 	return nil, fmt.Errorf("draft validation failed: %w", err)
+	// }
 
 	// Convert to character with generated ID
 	characterID := o.idGen.Generate()
