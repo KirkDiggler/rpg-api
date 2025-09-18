@@ -3,6 +3,7 @@ package character
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/KirkDiggler/rpg-api/internal/errors"
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/dice"
@@ -525,17 +526,40 @@ func (o *Orchestrator) ValidateDraft(ctx context.Context, input *ValidateDraftIn
 	// Validate all choices
 	validationErr := draft.ValidateChoices()
 
-	// TODO: Convert validation errors to proper ValidationResult
-	// For now, log validation errors for debugging
+	// Convert validation error to structured result
+	var validationResult *choices.ValidationResult
 	if validationErr != nil {
-		// This helps developers understand why validation failed
-		fmt.Printf("Draft validation failed: %v\n", validationErr)
+		// Parse the error message to extract what's missing
+		errMsg := validationErr.Error()
+		validationResult = &choices.ValidationResult{
+			Valid: false,
+			Errors: []choices.ValidationError{
+				{
+					Category: "", // Unknown category
+					Message:  errMsg,
+				},
+			},
+		}
+
+		// Try to identify the specific category from the error message
+		if strings.Contains(errMsg, "fighting style") {
+			validationResult.Errors[0].Category = shared.ChoiceFightingStyle
+		} else if strings.Contains(errMsg, "skill") {
+			validationResult.Errors[0].Category = shared.ChoiceSkills
+		} else if strings.Contains(errMsg, "equipment") {
+			validationResult.Errors[0].Category = shared.ChoiceEquipment
+		}
+	} else {
+		validationResult = &choices.ValidationResult{
+			Valid:  true,
+			Errors: []choices.ValidationError{},
+		}
 	}
 
 	return &ValidateDraftOutput{
 		Valid:      validationErr == nil,
 		Progress:   draft.Progress(),
-		Validation: nil, // TODO: Convert error to ValidationResult
+		Validation: validationResult,
 	}, nil
 }
 
@@ -559,8 +583,36 @@ func (o *Orchestrator) FinalizeDraft(ctx context.Context, input *FinalizeDraftIn
 	draft := character.LoadDraftFromData(getOutput.Draft)
 
 	// Check if draft is complete
-	if !draft.Progress().IsComplete() {
-		return nil, errors.InvalidArgument("draft is not complete")
+	progress := draft.Progress()
+	if !progress.IsComplete() {
+		// Build detailed error message about what's missing
+		missing := []string{}
+		if !progress.Has(character.ProgressName) {
+			missing = append(missing, "name")
+		}
+		if !progress.Has(character.ProgressRace) {
+			missing = append(missing, "race selection or race choices")
+		}
+		if !progress.Has(character.ProgressClass) {
+			missing = append(missing, "class selection or class choices")
+		}
+		if !progress.Has(character.ProgressBackground) {
+			missing = append(missing, "background selection or background choices")
+		}
+		if !progress.Has(character.ProgressAbilityScores) {
+			missing = append(missing, "ability scores")
+		}
+
+		// For more detailed class validation, check what's missing
+		if !progress.Has(character.ProgressClass) && draft.Class() != "" {
+			// Class is set but choices are incomplete - validate to get details
+			if err := draft.ValidateChoices(); err != nil {
+				return nil, fmt.Errorf("draft is incomplete - missing: %v. Class validation: %w", missing, err)
+			}
+		}
+
+		return nil, errors.InvalidArgumentf("draft is incomplete - missing: %v (progress: %d%%)",
+			missing, progress.PercentComplete())
 	}
 
 	// Validate all choices
