@@ -293,7 +293,7 @@ func (h *Handler) UpdateClass(
 					// We need to map the choice ID to the option ID (bundle ID)
 					if choice.ChoiceId != "" && choice.OptionId != "" {
 						// Use the option ID as the selection - this identifies the bundle chosen
-						classChoices.Equipment[choices.ChoiceID(choice.ChoiceId)] = shared.SelectionID(choice.OptionId)
+						classChoices.Equipment[choices.ChoiceID(choice.ChoiceId)] = choice.OptionId
 					} else if choice.ChoiceId != "" && len(equipment.Items) > 0 {
 						// Fallback: if no optionId, use the first item ID (old behavior)
 						firstItem := equipment.Items[0]
@@ -313,7 +313,7 @@ func (h *Handler) UpdateClass(
 						}
 
 						if itemID != "" {
-							classChoices.Equipment[choices.ChoiceID(choice.ChoiceId)] = shared.SelectionID(itemID)
+							classChoices.Equipment[choices.ChoiceID(choice.ChoiceId)] = itemID
 						}
 					}
 				}
@@ -505,7 +505,26 @@ func (h *Handler) GetCharacter(
 	ctx context.Context,
 	req *dnd5ev1alpha1.GetCharacterRequest,
 ) (*dnd5ev1alpha1.GetCharacterResponse, error) {
-	return nil, errors.Unimplemented("GetCharacter not implemented")
+	// Validate request
+	if req.CharacterId == "" {
+		return nil, errors.InvalidArgument("character_id is required")
+	}
+
+	// Get character from orchestrator
+	result, err := h.characterService.GetCharacter(ctx, &character.GetCharacterInput{
+		CharacterID: req.CharacterId,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert Data to Character first, then to proto
+	char := result.Character.ToCharacter()
+	protoCharacter := convertCharacterToProto(char)
+
+	return &dnd5ev1alpha1.GetCharacterResponse{
+		Character: protoCharacter,
+	}, nil
 }
 
 // ListCharacters lists characters
@@ -545,7 +564,30 @@ func (h *Handler) DeleteCharacter(
 	ctx context.Context,
 	req *dnd5ev1alpha1.DeleteCharacterRequest,
 ) (*dnd5ev1alpha1.DeleteCharacterResponse, error) {
-	return nil, errors.Unimplemented("DeleteCharacter not implemented")
+	// Validate request
+	if req == nil {
+		return nil, status.Error(codes.InvalidArgument, "request is required")
+	}
+	if req.CharacterId == "" {
+		return nil, status.Error(codes.InvalidArgument, "character_id is required")
+	}
+
+	// Call orchestrator
+	_, err := h.characterService.DeleteCharacter(ctx, &character.DeleteCharacterInput{
+		CharacterID: req.CharacterId,
+	})
+	if err != nil {
+		// Convert orchestrator errors to gRPC status
+		if errors.IsNotFound(err) {
+			return nil, status.Error(codes.NotFound, "character not found")
+		}
+		if errors.IsInvalidArgument(err) {
+			return nil, status.Error(codes.InvalidArgument, err.Error())
+		}
+		return nil, status.Error(codes.Internal, "failed to delete character")
+	}
+
+	return &dnd5ev1alpha1.DeleteCharacterResponse{}, nil
 }
 
 // ListRaces lists available races
@@ -734,7 +776,33 @@ func (h *Handler) GetCharacterInventory(
 	ctx context.Context,
 	req *dnd5ev1alpha1.GetCharacterInventoryRequest,
 ) (*dnd5ev1alpha1.GetCharacterInventoryResponse, error) {
-	return nil, errors.Unimplemented("GetCharacterInventory not implemented")
+	// Validate request
+	if req.CharacterId == "" {
+		return nil, errors.InvalidArgument("character_id is required")
+	}
+
+	// Get equipment slots from orchestrator
+	result, err := h.characterService.GetEquipmentSlots(ctx, &character.GetEquipmentSlotsInput{
+		CharacterID: req.CharacterId,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert slots map to proto format
+	equippedItems := make(map[string]string)
+	for slot, itemID := range result.Slots {
+		equippedItems[slot] = itemID
+	}
+
+	// TODO: Get full inventory from character data, not just equipped items
+	// For now, return empty equipment slots
+	return &dnd5ev1alpha1.GetCharacterInventoryResponse{
+		EquipmentSlots: &dnd5ev1alpha1.EquipmentSlots{
+			// TODO: populate these with actual items from inventory
+		},
+		Inventory: []*dnd5ev1alpha1.InventoryItem{},
+	}, nil
 }
 
 // EquipItem equips an item
@@ -742,7 +810,36 @@ func (h *Handler) EquipItem(
 	ctx context.Context,
 	req *dnd5ev1alpha1.EquipItemRequest,
 ) (*dnd5ev1alpha1.EquipItemResponse, error) {
-	return nil, errors.Unimplemented("EquipItem not implemented")
+	// Validate request
+	if req.CharacterId == "" {
+		return nil, errors.InvalidArgument("character_id is required")
+	}
+	if req.ItemId == "" {
+		return nil, errors.InvalidArgument("item_id is required")
+	}
+	if req.Slot == dnd5ev1alpha1.EquipmentSlot_EQUIPMENT_SLOT_UNSPECIFIED {
+		return nil, errors.InvalidArgument("slot is required")
+	}
+
+	// Convert slot enum to string
+	slotName := req.Slot.String()
+
+	// Equip item via orchestrator
+	_, err := h.characterService.EquipItem(ctx, &character.EquipItemInput{
+		CharacterID: req.CharacterId,
+		ItemID:      req.ItemId,
+		Slot:        slotName,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	// TODO: Get updated character and return it
+	// For now, just return nil for both fields
+	return &dnd5ev1alpha1.EquipItemResponse{
+		Character:              nil, // TODO: fetch and convert updated character
+		PreviouslyEquippedItem: nil, // TODO: fetch item details if result.PreviousItemID is not empty
+	}, nil
 }
 
 // UnequipItem unequips an item
@@ -750,7 +847,31 @@ func (h *Handler) UnequipItem(
 	ctx context.Context,
 	req *dnd5ev1alpha1.UnequipItemRequest,
 ) (*dnd5ev1alpha1.UnequipItemResponse, error) {
-	return nil, errors.Unimplemented("UnequipItem not implemented")
+	// Validate request
+	if req.CharacterId == "" {
+		return nil, errors.InvalidArgument("character_id is required")
+	}
+	if req.Slot == dnd5ev1alpha1.EquipmentSlot_EQUIPMENT_SLOT_UNSPECIFIED {
+		return nil, errors.InvalidArgument("slot is required")
+	}
+
+	// Convert slot enum to string
+	slotName := req.Slot.String()
+
+	// Unequip item via orchestrator
+	_, err := h.characterService.UnequipItem(ctx, &character.UnequipItemInput{
+		CharacterID: req.CharacterId,
+		Slot:        slotName,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	// TODO: Get updated character and return it
+	// For now, just return nil
+	return &dnd5ev1alpha1.UnequipItemResponse{
+		Character: nil, // TODO: fetch and convert updated character
+	}, nil
 }
 
 // AddToInventory adds items to inventory

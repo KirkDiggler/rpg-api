@@ -6,6 +6,7 @@ import (
 
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/abilities"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/ammunition"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/armor"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/backgrounds"
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
@@ -14,6 +15,7 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/equipment"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/fightingstyles"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/languages"
+
 	// "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/packs" // TODO: Uncomment when Pack enum is available
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/proficiencies"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/races"
@@ -763,14 +765,14 @@ func convertRaceDataToProto(data *races.Data) *dnd5ev1alpha1.RaceInfo {
 	// TODO: Convert AbilityChoice for Half-Elf
 
 	return &dnd5ev1alpha1.RaceInfo{
-		RaceId:           convertRaceToProtoEnum(data.ID),
-		Name:             data.Name(),
-		Description:      data.Description(),
-		Speed:            int32(data.Speed),
-		AbilityBonuses:   abilityBonuses,
-		Languages:        langs,
+		RaceId:            convertRaceToProtoEnum(data.ID),
+		Name:              data.Name(),
+		Description:       data.Description(),
+		Speed:             int32(data.Speed),
+		AbilityBonuses:    abilityBonuses,
+		Languages:         langs,
 		ProficiencyGrants: profGrants,
-		Choices:          choices,
+		Choices:           choices,
 	}
 }
 
@@ -1246,9 +1248,9 @@ func convertWeaponToProto(id weapons.WeaponID) dnd5ev1alpha1.Weapon {
 	case weapons.Net:
 		return dnd5ev1alpha1.Weapon_WEAPON_NET
 	// Ammunition
-	case weapons.Arrows20:
+	case ammunition.Arrows20:
 		return dnd5ev1alpha1.Weapon_WEAPON_ARROWS_20
-	case weapons.Bolts20:
+	case ammunition.Bolts20:
 		return dnd5ev1alpha1.Weapon_WEAPON_BOLTS_20
 	// Category placeholders
 	case weapons.AnySimpleWeapon:
@@ -1423,21 +1425,17 @@ func convertEquipmentSelectionToProto(items []shared.SelectionID) *dnd5ev1alpha1
 			Quantity: 1, // Default quantity
 		}
 
-		// Try to convert the SelectionID to the appropriate proto enum type
-		// The SelectionID in toolkit is a string alias that could be a weapon, armor, tool, pack, etc.
-		itemStr := string(item)
-
 		// Try weapon conversion first
-		if weapon := convertWeaponToProto(weapons.WeaponID(item)); weapon != dnd5ev1alpha1.Weapon_WEAPON_UNSPECIFIED {
+		if weapon := convertWeaponToProto(item); weapon != dnd5ev1alpha1.Weapon_WEAPON_UNSPECIFIED {
 			equipItem.Equipment = &dnd5ev1alpha1.EquipmentSelectionItem_Weapon{
 				Weapon: weapon,
 			}
-		} else if armorEnum := convertArmorToProto(armor.ArmorID(item)); armorEnum != dnd5ev1alpha1.Armor_ARMOR_UNSPECIFIED {
+		} else if armorEnum := convertArmorToProto(item); armorEnum != dnd5ev1alpha1.Armor_ARMOR_UNSPECIFIED {
 			// Try armor conversion
 			equipItem.Equipment = &dnd5ev1alpha1.EquipmentSelectionItem_Armor{
 				Armor: armorEnum,
 			}
-		} else if tool := convertToolToProto(tools.ToolID(item)); tool != dnd5ev1alpha1.Tool_TOOL_UNSPECIFIED {
+		} else if tool := convertToolToProto(item); tool != dnd5ev1alpha1.Tool_TOOL_UNSPECIFIED {
 			// Try tool conversion
 			equipItem.Equipment = &dnd5ev1alpha1.EquipmentSelectionItem_Tool{
 				Tool: tool,
@@ -1446,7 +1444,7 @@ func convertEquipmentSelectionToProto(items []shared.SelectionID) *dnd5ev1alpha1
 			// Fall back to OtherEquipmentId for anything we can't identify
 			// This includes packs and other items not yet enumerated
 			equipItem.Equipment = &dnd5ev1alpha1.EquipmentSelectionItem_OtherEquipmentId{
-				OtherEquipmentId: itemStr,
+				OtherEquipmentId: item,
 			}
 		}
 

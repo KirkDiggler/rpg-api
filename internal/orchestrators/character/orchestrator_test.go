@@ -8,9 +8,11 @@ import (
 	"github.com/stretchr/testify/suite"
 	"go.uber.org/mock/gomock"
 
+	rpgerrors "github.com/KirkDiggler/rpg-api/internal/errors"
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/dice"
 	dicemock "github.com/KirkDiggler/rpg-api/internal/orchestrators/dice/mock"
 	idgenmock "github.com/KirkDiggler/rpg-api/internal/pkg/idgen/mock"
+	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	charactermock "github.com/KirkDiggler/rpg-api/internal/repositories/character/mock"
 	characterdraft "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft"
 	draftmock "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft/mock"
@@ -805,7 +807,7 @@ func (s *OrchestratorTestSuite) TestFinalizeDraft_IncompleteError() {
 	output, err := s.orchestrator.FinalizeDraft(s.ctx, input)
 
 	s.Assert().Error(err)
-	s.Assert().Contains(err.Error(), "draft is not complete")
+	s.Assert().Contains(err.Error(), "draft is incomplete")
 	s.Assert().Nil(output)
 }
 
@@ -894,12 +896,12 @@ func (s *OrchestratorTestSuite) TestFighterCreationViaOrchestrator() {
 				}
 				if choice.Category == shared.ChoiceFightingStyle && choice.Source == shared.SourceClass {
 					if choice.FightingStyleSelection != nil {
-						foundFightingStyle = string(*choice.FightingStyleSelection)
+						foundFightingStyle = *choice.FightingStyleSelection
 					}
 				}
 			}
 
-			s.Assert().Equal(string(fightingstyles.Defense), foundFightingStyle)
+			s.Assert().Equal(fightingstyles.Defense, foundFightingStyle)
 			s.Assert().Len(foundSkills, 2)
 			return &characterdraft.UpdateOutput{Draft: input.Draft}, nil
 		})
@@ -1037,6 +1039,96 @@ func (s *OrchestratorTestSuite) TestRollAbilityScores() {
 	s.Equal(16, result.Rolls[0].Total)
 	s.Equal([]int{6, 5, 5, 3}, result.Rolls[0].Dice)
 	s.Equal([]int{3}, result.Rolls[0].Dropped)
+}
+
+func (s *OrchestratorTestSuite) TestDeleteCharacter_Success() {
+	characterID := "char-123"
+
+	// Mock the repository delete call
+	s.mockCharacterRepo.EXPECT().
+		Delete(s.ctx, characterrepo.DeleteInput{
+			ID: characterID,
+		}).
+		Return(&characterrepo.DeleteOutput{}, nil)
+
+	// Call DeleteCharacter
+	output, err := s.orchestrator.DeleteCharacter(s.ctx, &DeleteCharacterInput{
+		CharacterID: characterID,
+	})
+
+	// Assert success
+	s.NoError(err)
+	s.NotNil(output)
+}
+
+func (s *OrchestratorTestSuite) TestDeleteCharacter_InvalidInput() {
+	testCases := []struct {
+		name  string
+		input *DeleteCharacterInput
+		error string
+	}{
+		{
+			name:  "nil input",
+			input: nil,
+			error: "input is required",
+		},
+		{
+			name:  "empty character ID",
+			input: &DeleteCharacterInput{CharacterID: ""},
+			error: "character ID is required",
+		},
+	}
+
+	for _, tc := range testCases {
+		s.Run(tc.name, func() {
+			output, err := s.orchestrator.DeleteCharacter(s.ctx, tc.input)
+			s.Error(err)
+			s.Contains(err.Error(), tc.error)
+			s.Nil(output)
+		})
+	}
+}
+
+func (s *OrchestratorTestSuite) TestDeleteCharacter_NotFound() {
+	characterID := "char-404"
+
+	// Mock the repository delete call to return not found
+	s.mockCharacterRepo.EXPECT().
+		Delete(s.ctx, characterrepo.DeleteInput{
+			ID: characterID,
+		}).
+		Return(nil, rpgerrors.NotFound("character not found"))
+
+	// Call DeleteCharacter
+	output, err := s.orchestrator.DeleteCharacter(s.ctx, &DeleteCharacterInput{
+		CharacterID: characterID,
+	})
+
+	// Assert error
+	s.Error(err)
+	s.Contains(err.Error(), "failed to delete character")
+	s.Nil(output)
+}
+
+func (s *OrchestratorTestSuite) TestDeleteCharacter_RepositoryError() {
+	characterID := "char-123"
+
+	// Mock the repository delete call to return an error
+	s.mockCharacterRepo.EXPECT().
+		Delete(s.ctx, characterrepo.DeleteInput{
+			ID: characterID,
+		}).
+		Return(nil, rpgerrors.Internal("database connection failed"))
+
+	// Call DeleteCharacter
+	output, err := s.orchestrator.DeleteCharacter(s.ctx, &DeleteCharacterInput{
+		CharacterID: characterID,
+	})
+
+	// Assert error
+	s.Error(err)
+	s.Contains(err.Error(), "failed to delete character")
+	s.Nil(output)
 }
 
 // Run the test suite

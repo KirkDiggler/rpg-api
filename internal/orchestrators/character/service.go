@@ -38,7 +38,14 @@ type Service interface {
 	FinalizeDraft(ctx context.Context, input *FinalizeDraftInput) (*FinalizeDraftOutput, error)
 
 	// Character operations
+	GetCharacter(ctx context.Context, input *GetCharacterInput) (*GetCharacterOutput, error)
 	ListCharacters(ctx context.Context, input *ListCharactersInput) (*ListCharactersOutput, error)
+	DeleteCharacter(ctx context.Context, input *DeleteCharacterInput) (*DeleteCharacterOutput, error)
+
+	// Equipment management
+	GetEquipmentSlots(ctx context.Context, input *GetEquipmentSlotsInput) (*GetEquipmentSlotsOutput, error)
+	EquipItem(ctx context.Context, input *EquipItemInput) (*EquipItemOutput, error)
+	UnequipItem(ctx context.Context, input *UnequipItemInput) (*UnequipItemOutput, error)
 
 	// Data loading for UI
 	ListRaces(ctx context.Context, input *ListRacesInput) (*ListRacesOutput, error)
@@ -257,6 +264,49 @@ type ListDraftsOutput struct {
 	NextPageToken string
 }
 
+// GetCharacterInput gets a character by ID
+type GetCharacterInput struct {
+	CharacterID string
+}
+
+// GetCharacterOutput returns the character
+type GetCharacterOutput struct {
+	Character *character.Data
+}
+
+// GetEquipmentSlotsInput gets equipment slots for a character
+type GetEquipmentSlotsInput struct {
+	CharacterID string
+}
+
+// GetEquipmentSlotsOutput returns the equipment slots
+type GetEquipmentSlotsOutput struct {
+	Slots map[string]string // slot name -> item ID
+}
+
+// EquipItemInput equips an item to a slot
+type EquipItemInput struct {
+	CharacterID string
+	ItemID      string
+	Slot        string // e.g. "main_hand", "armor", "ring1"
+}
+
+// EquipItemOutput returns the result of equipping
+type EquipItemOutput struct {
+	PreviousItemID string // Item that was previously in the slot, if any
+}
+
+// UnequipItemInput unequips an item from a slot
+type UnequipItemInput struct {
+	CharacterID string
+	Slot        string
+}
+
+// UnequipItemOutput returns the unequipped item
+type UnequipItemOutput struct {
+	UnequippedItemID string // Item that was removed from the slot
+}
+
 // ListCharactersInput lists characters with optional filters
 type ListCharactersInput struct {
 	PlayerID  string
@@ -270,6 +320,16 @@ type ListCharactersOutput struct {
 	Characters    []*character.Data
 	NextPageToken string
 	TotalSize     int
+}
+
+// DeleteCharacterInput deletes a character
+type DeleteCharacterInput struct {
+	CharacterID string
+}
+
+// DeleteCharacterOutput confirms deletion
+type DeleteCharacterOutput struct {
+	// Empty for now - can add deleted character data if needed
 }
 
 // ListEquipmentByTypeInput requests equipment by type
