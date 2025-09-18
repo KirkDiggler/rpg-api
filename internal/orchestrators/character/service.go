@@ -3,6 +3,7 @@ package character
 import (
 	"context"
 
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/abilities"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/backgrounds"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character/choices"
@@ -30,21 +31,33 @@ type Service interface {
 	SetClass(ctx context.Context, input *SetClassInput) (*SetClassOutput, error)
 	SetBackground(ctx context.Context, input *SetBackgroundInput) (*SetBackgroundOutput, error)
 	SetAbilityScores(ctx context.Context, input *SetAbilityScoresInput) (*SetAbilityScoresOutput, error)
+	SetAbilityScoresFromRolls(ctx context.Context, input *SetAbilityScoresFromRollsInput) (*SetAbilityScoresFromRollsOutput, error)
 
 	// Validation and finalization
 	ValidateDraft(ctx context.Context, input *ValidateDraftInput) (*ValidateDraftOutput, error)
 	FinalizeDraft(ctx context.Context, input *FinalizeDraftInput) (*FinalizeDraftOutput, error)
 
 	// Character operations
+	GetCharacter(ctx context.Context, input *GetCharacterInput) (*GetCharacterOutput, error)
 	ListCharacters(ctx context.Context, input *ListCharactersInput) (*ListCharactersOutput, error)
+	DeleteCharacter(ctx context.Context, input *DeleteCharacterInput) (*DeleteCharacterOutput, error)
+
+	// Equipment management
+	GetEquipmentSlots(ctx context.Context, input *GetEquipmentSlotsInput) (*GetEquipmentSlotsOutput, error)
+	EquipItem(ctx context.Context, input *EquipItemInput) (*EquipItemOutput, error)
+	UnequipItem(ctx context.Context, input *UnequipItemInput) (*UnequipItemOutput, error)
 
 	// Data loading for UI
 	ListRaces(ctx context.Context, input *ListRacesInput) (*ListRacesOutput, error)
 	ListClasses(ctx context.Context, input *ListClassesInput) (*ListClassesOutput, error)
 	ListBackgrounds(ctx context.Context, input *ListBackgroundsInput) (*ListBackgroundsOutput, error)
+	ListEquipmentByType(ctx context.Context, input *ListEquipmentByTypeInput) (*ListEquipmentByTypeOutput, error)
 
 	// Dice rolling
 	RollAbilityScores(ctx context.Context, input *RollAbilityScoresInput) (*RollAbilityScoresOutput, error)
+
+	// Spell information
+	ListSpellsByLevel(ctx context.Context, input *ListSpellsByLevelInput) (*ListSpellsByLevelOutput, error)
 }
 
 // CreateDraftInput creates a new character draft
@@ -81,9 +94,10 @@ type DeleteDraftOutput struct {
 
 // GetRequirementsInput gets requirements for character creation choices
 type GetRequirementsInput struct {
-	Class classes.Class
-	Race  races.Race
-	Level int // Default to 1 if not specified
+	Class    classes.Class
+	Subclass classes.Subclass // Optional: for getting subclass-modified requirements
+	Race     races.Race
+	Level    int // Default to 1 if not specified
 }
 
 // GetRequirementsOutput returns what choices need to be made
@@ -150,6 +164,18 @@ type SetAbilityScoresInput struct {
 
 // SetAbilityScoresOutput returns updated draft
 type SetAbilityScoresOutput struct {
+	Draft    *character.DraftData
+	Progress character.Progress
+}
+
+// SetAbilityScoresFromRollsInput provides roll assignments for ability scores
+type SetAbilityScoresFromRollsInput struct {
+	DraftID         string
+	RollAssignments map[abilities.Ability]string // Maps ability to roll ID
+}
+
+// SetAbilityScoresFromRollsOutput returns updated draft
+type SetAbilityScoresFromRollsOutput struct {
 	Draft    *character.DraftData
 	Progress character.Progress
 }
@@ -241,6 +267,49 @@ type ListDraftsOutput struct {
 	NextPageToken string
 }
 
+// GetCharacterInput gets a character by ID
+type GetCharacterInput struct {
+	CharacterID string
+}
+
+// GetCharacterOutput returns the character
+type GetCharacterOutput struct {
+	Character *character.Data
+}
+
+// GetEquipmentSlotsInput gets equipment slots for a character
+type GetEquipmentSlotsInput struct {
+	CharacterID string
+}
+
+// GetEquipmentSlotsOutput returns the equipment slots
+type GetEquipmentSlotsOutput struct {
+	Slots map[string]string // slot name -> item ID
+}
+
+// EquipItemInput equips an item to a slot
+type EquipItemInput struct {
+	CharacterID string
+	ItemID      string
+	Slot        string // e.g. "main_hand", "armor", "ring1"
+}
+
+// EquipItemOutput returns the result of equipping
+type EquipItemOutput struct {
+	PreviousItemID string // Item that was previously in the slot, if any
+}
+
+// UnequipItemInput unequips an item from a slot
+type UnequipItemInput struct {
+	CharacterID string
+	Slot        string
+}
+
+// UnequipItemOutput returns the unequipped item
+type UnequipItemOutput struct {
+	UnequippedItemID string // Item that was removed from the slot
+}
+
 // ListCharactersInput lists characters with optional filters
 type ListCharactersInput struct {
 	PlayerID  string
@@ -254,4 +323,45 @@ type ListCharactersOutput struct {
 	Characters    []*character.Data
 	NextPageToken string
 	TotalSize     int
+}
+
+// DeleteCharacterInput deletes a character
+type DeleteCharacterInput struct {
+	CharacterID string
+}
+
+// DeleteCharacterOutput confirms deletion
+type DeleteCharacterOutput struct {
+	// Empty for now - can add deleted character data if needed
+}
+
+// ListEquipmentByTypeInput requests equipment by type
+type ListEquipmentByTypeInput struct {
+	EquipmentType interface{} // Will use the proto enum value directly
+}
+
+// ListEquipmentByTypeOutput returns equipment list
+type ListEquipmentByTypeOutput struct {
+	Equipment []interface{} // Will hold toolkit Equipment interface values
+}
+
+// ListSpellsByLevelInput specifies the spell level to query
+type ListSpellsByLevelInput struct {
+	Level    int           // 0 for cantrips, 1-9 for leveled spells
+	ClassID  classes.Class // Optional: filter by class (not implemented yet)
+	PageSize int
+}
+
+// ListSpellsByLevelOutput returns spell information
+type ListSpellsByLevelOutput struct {
+	Spells []SpellInfo
+	Total  int
+}
+
+// SpellInfo contains spell details
+type SpellInfo struct {
+	ID          string
+	Name        string
+	Description string
+	Level       int
 }

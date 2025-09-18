@@ -1,21 +1,27 @@
 package character
 
 import (
+	"fmt"
+	"strings"
+
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/abilities"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/ammunition"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/armor"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/backgrounds"
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character/choices"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/classes"
-	// "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/equipment" // TODO: Uncomment when using typed equipment
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/equipment"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/fightingstyles"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/languages"
+
 	// "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/packs" // TODO: Uncomment when Pack enum is available
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/proficiencies"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/races"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/skills"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/spells"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/tools"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/weapons"
 )
@@ -565,20 +571,209 @@ func convertRaceDataToProto(data *races.Data) *dnd5ev1alpha1.RaceInfo {
 		langs = append(langs, convertLanguageToProtoEnum(lang))
 	}
 
-	// TODO: Convert skills when proto supports them
-	// Skills are available in data.Skills but proto doesn't have the field yet
+	// Convert proficiency grants (automatic proficiencies from race)
+	profGrants := &dnd5ev1alpha1.ProficiencyGrants{}
+
+	// Convert skill proficiencies
+	if len(data.Skills) > 0 {
+		profGrants.Skills = make([]dnd5ev1alpha1.Skill, 0, len(data.Skills))
+		for _, skill := range data.Skills {
+			profGrants.Skills = append(profGrants.Skills, convertSkillToProtoEnum(skill))
+		}
+	}
+
+	// Convert weapon proficiencies
+	if len(data.Weapons) > 0 {
+		profGrants.Weapons = make([]dnd5ev1alpha1.Weapon, 0, len(data.Weapons))
+		for _, weapon := range data.Weapons {
+			_, specific := convertWeaponProficiencyToProto(weapon)
+			if specific != dnd5ev1alpha1.Weapon_WEAPON_UNSPECIFIED {
+				profGrants.Weapons = append(profGrants.Weapons, specific)
+			}
+		}
+	}
+
+	// Convert tool proficiencies
+	if len(data.Tools) > 0 {
+		profGrants.Tools = make([]dnd5ev1alpha1.Tool, 0, len(data.Tools))
+		for _, tool := range data.Tools {
+			profGrants.Tools = append(profGrants.Tools, convertToolProficiencyToProto(tool))
+		}
+	}
+
+	// Convert race choices
+	var choices []*dnd5ev1alpha1.Choice
+
+	// Add language choice if present
+	if data.LanguageChoice != nil && data.LanguageChoice.Count > 0 {
+		var availableLanguages []dnd5ev1alpha1.Language
+
+		if len(data.LanguageChoice.Options) == 0 {
+			// Empty options means "any language" - populate all standard languages
+			// Note: In D&D 5e, players typically choose from standard languages
+			// unless they have special permission for exotic languages
+			availableLanguages = []dnd5ev1alpha1.Language{
+				dnd5ev1alpha1.Language_LANGUAGE_COMMON,
+				dnd5ev1alpha1.Language_LANGUAGE_DWARVISH,
+				dnd5ev1alpha1.Language_LANGUAGE_ELVISH,
+				dnd5ev1alpha1.Language_LANGUAGE_GIANT,
+				dnd5ev1alpha1.Language_LANGUAGE_GNOMISH,
+				dnd5ev1alpha1.Language_LANGUAGE_GOBLIN,
+				dnd5ev1alpha1.Language_LANGUAGE_HALFLING,
+				dnd5ev1alpha1.Language_LANGUAGE_ORC,
+				// Exotic languages (could be gated by DM permission)
+				dnd5ev1alpha1.Language_LANGUAGE_ABYSSAL,
+				dnd5ev1alpha1.Language_LANGUAGE_CELESTIAL,
+				dnd5ev1alpha1.Language_LANGUAGE_DRACONIC,
+				dnd5ev1alpha1.Language_LANGUAGE_DEEP_SPEECH,
+				dnd5ev1alpha1.Language_LANGUAGE_INFERNAL,
+				dnd5ev1alpha1.Language_LANGUAGE_PRIMORDIAL,
+				dnd5ev1alpha1.Language_LANGUAGE_SYLVAN,
+				dnd5ev1alpha1.Language_LANGUAGE_UNDERCOMMON,
+			}
+		} else {
+			// Convert specified language options
+			availableLanguages = make([]dnd5ev1alpha1.Language, 0, len(data.LanguageChoice.Options))
+			// TODO: Parse language strings when options are specified
+		}
+
+		langChoice := &dnd5ev1alpha1.Choice{
+			Id:          fmt.Sprintf("%s-languages", strings.ToLower(string(data.ID))),
+			Description: data.LanguageChoice.Description,
+			ChooseCount: int32(data.LanguageChoice.Count),
+			ChoiceType:  dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_LANGUAGES,
+			Options: &dnd5ev1alpha1.Choice_LanguageOptions{
+				LanguageOptions: &dnd5ev1alpha1.LanguageOptions{
+					Available: availableLanguages,
+				},
+			},
+		}
+		choices = append(choices, langChoice)
+	}
+
+	// Add skill choice if present
+	if data.SkillChoice != nil && data.SkillChoice.Count > 0 {
+		var availableSkills []dnd5ev1alpha1.Skill
+
+		if len(data.SkillChoice.Options) == 0 {
+			// Empty options means "any skill" - populate all skills
+			availableSkills = []dnd5ev1alpha1.Skill{
+				dnd5ev1alpha1.Skill_SKILL_ACROBATICS,
+				dnd5ev1alpha1.Skill_SKILL_ANIMAL_HANDLING,
+				dnd5ev1alpha1.Skill_SKILL_ARCANA,
+				dnd5ev1alpha1.Skill_SKILL_ATHLETICS,
+				dnd5ev1alpha1.Skill_SKILL_DECEPTION,
+				dnd5ev1alpha1.Skill_SKILL_HISTORY,
+				dnd5ev1alpha1.Skill_SKILL_INSIGHT,
+				dnd5ev1alpha1.Skill_SKILL_INTIMIDATION,
+				dnd5ev1alpha1.Skill_SKILL_INVESTIGATION,
+				dnd5ev1alpha1.Skill_SKILL_MEDICINE,
+				dnd5ev1alpha1.Skill_SKILL_NATURE,
+				dnd5ev1alpha1.Skill_SKILL_PERCEPTION,
+				dnd5ev1alpha1.Skill_SKILL_PERFORMANCE,
+				dnd5ev1alpha1.Skill_SKILL_PERSUASION,
+				dnd5ev1alpha1.Skill_SKILL_RELIGION,
+				dnd5ev1alpha1.Skill_SKILL_SLEIGHT_OF_HAND,
+				dnd5ev1alpha1.Skill_SKILL_STEALTH,
+				dnd5ev1alpha1.Skill_SKILL_SURVIVAL,
+			}
+		} else {
+			// Convert specified skill options
+			availableSkills = make([]dnd5ev1alpha1.Skill, 0, len(data.SkillChoice.Options))
+			for _, skillStr := range data.SkillChoice.Options {
+				// Parse skill string to skill enum
+				if skill := parseSkillString(skillStr); skill != dnd5ev1alpha1.Skill_SKILL_UNSPECIFIED {
+					availableSkills = append(availableSkills, skill)
+				}
+			}
+		}
+
+		skillChoice := &dnd5ev1alpha1.Choice{
+			Id:          fmt.Sprintf("%s-skills", strings.ToLower(string(data.ID))),
+			Description: data.SkillChoice.Description,
+			ChooseCount: int32(data.SkillChoice.Count),
+			ChoiceType:  dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_SKILLS,
+			Options: &dnd5ev1alpha1.Choice_SkillOptions{
+				SkillOptions: &dnd5ev1alpha1.SkillOptions{
+					Available: availableSkills,
+				},
+			},
+		}
+		choices = append(choices, skillChoice)
+	}
+
+	// Add tool choice if present (e.g., for Dwarf)
+	if data.ToolChoice != nil && data.ToolChoice.Count > 0 {
+		var availableTools []dnd5ev1alpha1.Tool
+
+		if len(data.ToolChoice.Options) == 0 {
+			// Empty options means "any tool" - populate all tools
+			availableTools = []dnd5ev1alpha1.Tool{
+				// Artisan's tools
+				dnd5ev1alpha1.Tool_TOOL_ALCHEMIST_SUPPLIES,
+				dnd5ev1alpha1.Tool_TOOL_BREWER_SUPPLIES,
+				dnd5ev1alpha1.Tool_TOOL_CALLIGRAPHER_SUPPLIES,
+				dnd5ev1alpha1.Tool_TOOL_CARPENTER_TOOLS,
+				dnd5ev1alpha1.Tool_TOOL_CARTOGRAPHER_TOOLS,
+				dnd5ev1alpha1.Tool_TOOL_COBBLER_TOOLS,
+				dnd5ev1alpha1.Tool_TOOL_COOK_UTENSILS,
+				dnd5ev1alpha1.Tool_TOOL_GLASSBLOWER_TOOLS,
+				dnd5ev1alpha1.Tool_TOOL_JEWELER_TOOLS,
+				dnd5ev1alpha1.Tool_TOOL_LEATHERWORKER_TOOLS,
+				dnd5ev1alpha1.Tool_TOOL_MASON_TOOLS,
+				dnd5ev1alpha1.Tool_TOOL_PAINTER_SUPPLIES,
+				dnd5ev1alpha1.Tool_TOOL_POTTER_TOOLS,
+				dnd5ev1alpha1.Tool_TOOL_SMITH_TOOLS,
+				dnd5ev1alpha1.Tool_TOOL_TINKER_TOOLS,
+				dnd5ev1alpha1.Tool_TOOL_WEAVER_TOOLS,
+				dnd5ev1alpha1.Tool_TOOL_WOODCARVER_TOOLS,
+				// Other tools
+				dnd5ev1alpha1.Tool_TOOL_DISGUISE_KIT,
+				dnd5ev1alpha1.Tool_TOOL_FORGERY_KIT,
+				dnd5ev1alpha1.Tool_TOOL_HERBALISM_KIT,
+				dnd5ev1alpha1.Tool_TOOL_NAVIGATOR_TOOLS,
+				dnd5ev1alpha1.Tool_TOOL_POISONER_KIT,
+				dnd5ev1alpha1.Tool_TOOL_THIEVES_TOOLS,
+			}
+		} else {
+			// Convert specified tool options
+			availableTools = make([]dnd5ev1alpha1.Tool, 0, len(data.ToolChoice.Options))
+			for _, toolStr := range data.ToolChoice.Options {
+				// Parse tool string to tool enum
+				if tool := parseToolString(toolStr); tool != dnd5ev1alpha1.Tool_TOOL_UNSPECIFIED {
+					availableTools = append(availableTools, tool)
+				}
+			}
+		}
+
+		toolChoice := &dnd5ev1alpha1.Choice{
+			Id:          fmt.Sprintf("%s-tools", strings.ToLower(string(data.ID))),
+			Description: data.ToolChoice.Description,
+			ChooseCount: int32(data.ToolChoice.Count),
+			ChoiceType:  dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_TOOLS,
+			Options: &dnd5ev1alpha1.Choice_ToolOptions{
+				ToolOptions: &dnd5ev1alpha1.ToolOptions{
+					Available: availableTools,
+				},
+			},
+		}
+		choices = append(choices, toolChoice)
+	}
 
 	// TODO: Convert Size string to proto enum when available
 	// TODO: Convert Traits when proto supports them
 	// TODO: Convert subraces when proto supports them
+	// TODO: Convert AbilityChoice for Half-Elf
 
 	return &dnd5ev1alpha1.RaceInfo{
-		RaceId:         convertRaceToProtoEnum(data.ID),
-		Name:           data.Name(),
-		Description:    data.Description(),
-		Speed:          int32(data.Speed),
-		AbilityBonuses: abilityBonuses,
-		Languages:      langs,
+		RaceId:            convertRaceToProtoEnum(data.ID),
+		Name:              data.Name(),
+		Description:       data.Description(),
+		Speed:             int32(data.Speed),
+		AbilityBonuses:    abilityBonuses,
+		Languages:         langs,
+		ProficiencyGrants: profGrants,
+		Choices:           choices,
 	}
 }
 
@@ -695,6 +890,144 @@ func convertBackgroundDataToProto(data *backgrounds.Data) *dnd5ev1alpha1.Backgro
 		SkillProficiencies:  skillList,
 		AdditionalLanguages: int32(data.LanguageCount),
 	}
+}
+
+// convertValidationResultToProto converts toolkit validation to proto ValidationResult
+func convertValidationResultToProto(toolkitValidation *choices.ValidationResult, progress toolkitchar.Progress) *dnd5ev1alpha1.ValidationResult {
+	if toolkitValidation == nil {
+		// If no validation result from toolkit, create one based on progress
+		return createValidationFromProgress(progress)
+	}
+
+	result := &dnd5ev1alpha1.ValidationResult{
+		IsValid: toolkitValidation.Valid,
+		Issues:  make([]*dnd5ev1alpha1.ValidationResult_Issue, 0),
+	}
+
+	// Convert toolkit validation errors to proto issues
+	for _, err := range toolkitValidation.Errors {
+		issue := &dnd5ev1alpha1.ValidationResult_Issue{
+			Message: err.Message,
+		}
+
+		// Map choice category to severity and field
+		if err.Category == "" {
+			issue.Severity = dnd5ev1alpha1.ValidationResult_SEVERITY_ERROR
+			issue.Field = dnd5ev1alpha1.ValidationField_VALIDATION_FIELD_UNSPECIFIED
+		} else {
+			// For missing choices, use INCOMPLETE severity
+			issue.Severity = dnd5ev1alpha1.ValidationResult_SEVERITY_INCOMPLETE
+
+			// Map category to field
+			switch err.Category {
+			case shared.ChoiceSkills:
+				issue.Field = dnd5ev1alpha1.ValidationField_VALIDATION_FIELD_SKILLS
+				issue.Source = dnd5ev1alpha1.ValidationSource_VALIDATION_SOURCE_CLASS
+			case shared.ChoiceFightingStyle:
+				issue.Field = dnd5ev1alpha1.ValidationField_VALIDATION_FIELD_FIGHTING_STYLE
+				issue.Source = dnd5ev1alpha1.ValidationSource_VALIDATION_SOURCE_CLASS
+			case shared.ChoiceEquipment:
+				issue.Field = dnd5ev1alpha1.ValidationField_VALIDATION_FIELD_EQUIPMENT
+				issue.Source = dnd5ev1alpha1.ValidationSource_VALIDATION_SOURCE_CLASS
+			case shared.ChoiceLanguages:
+				issue.Field = dnd5ev1alpha1.ValidationField_VALIDATION_FIELD_LANGUAGES
+				// Could be race or background
+				if strings.Contains(err.Message, "background") {
+					issue.Source = dnd5ev1alpha1.ValidationSource_VALIDATION_SOURCE_BACKGROUND
+				} else {
+					issue.Source = dnd5ev1alpha1.ValidationSource_VALIDATION_SOURCE_RACE
+				}
+			default:
+				issue.Field = dnd5ev1alpha1.ValidationField_VALIDATION_FIELD_UNSPECIFIED
+				issue.Source = dnd5ev1alpha1.ValidationSource_VALIDATION_SOURCE_UNSPECIFIED
+			}
+		}
+
+		result.Issues = append(result.Issues, issue)
+
+		// Update counts
+		switch issue.Severity {
+		case dnd5ev1alpha1.ValidationResult_SEVERITY_ERROR:
+			result.ErrorCount++
+		case dnd5ev1alpha1.ValidationResult_SEVERITY_INCOMPLETE:
+			result.IncompleteCount++
+		case dnd5ev1alpha1.ValidationResult_SEVERITY_WARNING:
+			result.WarningCount++
+		}
+	}
+
+	return result
+}
+
+// createValidationFromProgress creates a ValidationResult based on character progress
+func createValidationFromProgress(progress toolkitchar.Progress) *dnd5ev1alpha1.ValidationResult {
+	result := &dnd5ev1alpha1.ValidationResult{
+		IsValid: progress.IsComplete(),
+		Issues:  make([]*dnd5ev1alpha1.ValidationResult_Issue, 0),
+	}
+
+	// Check each progress field and add issues for incomplete items
+	if !progress.Has(toolkitchar.ProgressName) {
+		result.Issues = append(result.Issues, &dnd5ev1alpha1.ValidationResult_Issue{
+			Severity: dnd5ev1alpha1.ValidationResult_SEVERITY_INCOMPLETE,
+			Source:   dnd5ev1alpha1.ValidationSource_VALIDATION_SOURCE_NAME,
+			Field:    dnd5ev1alpha1.ValidationField_VALIDATION_FIELD_NAME,
+			Message:  "Character name is required",
+		})
+		result.IncompleteCount++
+	}
+
+	if !progress.Has(toolkitchar.ProgressRace) {
+		result.Issues = append(result.Issues, &dnd5ev1alpha1.ValidationResult_Issue{
+			Severity: dnd5ev1alpha1.ValidationResult_SEVERITY_INCOMPLETE,
+			Source:   dnd5ev1alpha1.ValidationSource_VALIDATION_SOURCE_RACE,
+			Field:    dnd5ev1alpha1.ValidationField_VALIDATION_FIELD_RACE,
+			Message:  "Race selection is incomplete",
+		})
+		result.IncompleteCount++
+	}
+
+	if !progress.Has(toolkitchar.ProgressClass) {
+		result.Issues = append(result.Issues, &dnd5ev1alpha1.ValidationResult_Issue{
+			Severity: dnd5ev1alpha1.ValidationResult_SEVERITY_INCOMPLETE,
+			Source:   dnd5ev1alpha1.ValidationSource_VALIDATION_SOURCE_CLASS,
+			Field:    dnd5ev1alpha1.ValidationField_VALIDATION_FIELD_CLASS,
+			Message:  "Class selection or class choices are incomplete",
+		})
+		result.IncompleteCount++
+	}
+
+	if !progress.Has(toolkitchar.ProgressBackground) {
+		result.Issues = append(result.Issues, &dnd5ev1alpha1.ValidationResult_Issue{
+			Severity: dnd5ev1alpha1.ValidationResult_SEVERITY_INCOMPLETE,
+			Source:   dnd5ev1alpha1.ValidationSource_VALIDATION_SOURCE_BACKGROUND,
+			Field:    dnd5ev1alpha1.ValidationField_VALIDATION_FIELD_BACKGROUND,
+			Message:  "Background selection is incomplete",
+		})
+		result.IncompleteCount++
+	}
+
+	if !progress.Has(toolkitchar.ProgressAbilityScores) {
+		result.Issues = append(result.Issues, &dnd5ev1alpha1.ValidationResult_Issue{
+			Severity: dnd5ev1alpha1.ValidationResult_SEVERITY_INCOMPLETE,
+			Source:   dnd5ev1alpha1.ValidationSource_VALIDATION_SOURCE_ABILITY_SCORES,
+			Field:    dnd5ev1alpha1.ValidationField_VALIDATION_FIELD_ABILITY_SCORES,
+			Message:  "Ability scores have not been assigned",
+		})
+		result.IncompleteCount++
+	}
+
+	return result
+}
+
+// convertCharacterToProto converts toolkit character.Character to proto Character
+func convertCharacterToProto(char *toolkitchar.Character) *dnd5ev1alpha1.Character {
+	if char == nil {
+		return nil
+	}
+	// Convert to Data first, then use existing converter
+	data := toolkitchar.FromCharacter(char)
+	return convertCharacterDataToProto(data)
 }
 
 // convertCharacterDataToProto converts toolkit character.Data to proto Character
@@ -916,9 +1249,9 @@ func convertWeaponToProto(id weapons.WeaponID) dnd5ev1alpha1.Weapon {
 	case weapons.Net:
 		return dnd5ev1alpha1.Weapon_WEAPON_NET
 	// Ammunition
-	case weapons.Arrows20:
+	case ammunition.Arrows20:
 		return dnd5ev1alpha1.Weapon_WEAPON_ARROWS_20
-	case weapons.Bolts20:
+	case ammunition.Bolts20:
 		return dnd5ev1alpha1.Weapon_WEAPON_BOLTS_20
 	// Category placeholders
 	case weapons.AnySimpleWeapon:
@@ -1093,21 +1426,17 @@ func convertEquipmentSelectionToProto(items []shared.SelectionID) *dnd5ev1alpha1
 			Quantity: 1, // Default quantity
 		}
 
-		// Try to convert the SelectionID to the appropriate proto enum type
-		// The SelectionID in toolkit is a string alias that could be a weapon, armor, tool, pack, etc.
-		itemStr := string(item)
-
 		// Try weapon conversion first
-		if weapon := convertWeaponToProto(weapons.WeaponID(item)); weapon != dnd5ev1alpha1.Weapon_WEAPON_UNSPECIFIED {
+		if weapon := convertWeaponToProto(item); weapon != dnd5ev1alpha1.Weapon_WEAPON_UNSPECIFIED {
 			equipItem.Equipment = &dnd5ev1alpha1.EquipmentSelectionItem_Weapon{
 				Weapon: weapon,
 			}
-		} else if armorEnum := convertArmorToProto(armor.ArmorID(item)); armorEnum != dnd5ev1alpha1.Armor_ARMOR_UNSPECIFIED {
+		} else if armorEnum := convertArmorToProto(item); armorEnum != dnd5ev1alpha1.Armor_ARMOR_UNSPECIFIED {
 			// Try armor conversion
 			equipItem.Equipment = &dnd5ev1alpha1.EquipmentSelectionItem_Armor{
 				Armor: armorEnum,
 			}
-		} else if tool := convertToolToProto(tools.ToolID(item)); tool != dnd5ev1alpha1.Tool_TOOL_UNSPECIFIED {
+		} else if tool := convertToolToProto(item); tool != dnd5ev1alpha1.Tool_TOOL_UNSPECIFIED {
 			// Try tool conversion
 			equipItem.Equipment = &dnd5ev1alpha1.EquipmentSelectionItem_Tool{
 				Tool: tool,
@@ -1116,7 +1445,7 @@ func convertEquipmentSelectionToProto(items []shared.SelectionID) *dnd5ev1alpha1
 			// Fall back to OtherEquipmentId for anything we can't identify
 			// This includes packs and other items not yet enumerated
 			equipItem.Equipment = &dnd5ev1alpha1.EquipmentSelectionItem_OtherEquipmentId{
-				OtherEquipmentId: itemStr,
+				OtherEquipmentId: item,
 			}
 		}
 
@@ -1378,6 +1707,36 @@ func convertProtoAbilityScoresToToolkit(scores *dnd5ev1alpha1.AbilityScores) sha
 	}
 }
 
+// convertRollAssignmentsToMap converts proto roll assignments to a simple map
+func convertRollAssignmentsToMap(assignments *dnd5ev1alpha1.RollAssignments) map[abilities.Ability]string {
+	if assignments == nil {
+		return nil
+	}
+
+	result := make(map[abilities.Ability]string)
+
+	if assignments.StrengthRollId != "" {
+		result[abilities.STR] = assignments.StrengthRollId
+	}
+	if assignments.DexterityRollId != "" {
+		result[abilities.DEX] = assignments.DexterityRollId
+	}
+	if assignments.ConstitutionRollId != "" {
+		result[abilities.CON] = assignments.ConstitutionRollId
+	}
+	if assignments.IntelligenceRollId != "" {
+		result[abilities.INT] = assignments.IntelligenceRollId
+	}
+	if assignments.WisdomRollId != "" {
+		result[abilities.WIS] = assignments.WisdomRollId
+	}
+	if assignments.CharismaRollId != "" {
+		result[abilities.CHA] = assignments.CharismaRollId
+	}
+
+	return result
+}
+
 // convertArmorProficiencyCategoryToProto converts toolkit armor proficiency to proto category
 func convertArmorProficiencyCategoryToProto(armor proficiencies.Armor) dnd5ev1alpha1.ArmorProficiencyCategory {
 	switch armor {
@@ -1540,15 +1899,54 @@ func createEquipmentChoice(req *choices.EquipmentRequirement) *dnd5ev1alpha1.Cho
 			equipItem := &dnd5ev1alpha1.EquipmentItem{
 				SelectionId: item.ID,
 				Quantity:    int32(item.Quantity),
-				// TODO: Add type_hint based on item ID when we have better type detection
 			}
+			// Set type hint if we can determine the type
+			setEquipmentItemTypeHint(equipItem, item.ID)
 			equipmentItems = append(equipmentItems, equipItem)
 		}
 
+		// Convert category choices (e.g., "choose a martial weapon")
+		categoryChoices := make([]*dnd5ev1alpha1.EquipmentCategoryChoice, 0, len(opt.CategoryChoices))
+		for _, catChoice := range opt.CategoryChoices {
+			categoryChoice := &dnd5ev1alpha1.EquipmentCategoryChoice{
+				Choose: int32(catChoice.Choose),
+				Label:  catChoice.Label,
+			}
+
+			// Determine the equipment type and set appropriate categories
+			if catChoice.Type == "weapon" {
+				// Convert weapon categories from toolkit's specific categories
+				// to proto's broader categories (SIMPLE, MARTIAL)
+				// TODO: For now we're only mapping melee types while we decide on the design
+				weaponCategorySet := make(map[dnd5ev1alpha1.WeaponCategory]bool)
+				for _, cat := range catChoice.Categories {
+					switch cat {
+					case weapons.CategorySimpleMelee:
+						weaponCategorySet[dnd5ev1alpha1.WeaponCategory_WEAPON_CATEGORY_SIMPLE] = true
+					case weapons.CategoryMartialMelee:
+						weaponCategorySet[dnd5ev1alpha1.WeaponCategory_WEAPON_CATEGORY_MARTIAL] = true
+					// TODO: Ignoring ranged categories for now
+					case weapons.CategorySimpleRanged, weapons.CategoryMartialRanged:
+						// Skip ranged for now
+					}
+				}
+				// Convert set to slice
+				weaponCategories := make([]dnd5ev1alpha1.WeaponCategory, 0, len(weaponCategorySet))
+				for cat := range weaponCategorySet {
+					weaponCategories = append(weaponCategories, cat)
+				}
+				categoryChoice.WeaponCategories = weaponCategories
+			}
+			// TODO: Handle armor and tool categories when needed
+
+			categoryChoices = append(categoryChoices, categoryChoice)
+		}
+
 		equipmentBundles = append(equipmentBundles, &dnd5ev1alpha1.EquipmentBundle{
-			Id:    opt.ID,
-			Label: opt.Label,
-			Items: equipmentItems,
+			Id:              opt.ID,
+			Label:           opt.Label,
+			Items:           equipmentItems,
+			CategoryChoices: categoryChoices,
 		})
 	}
 
@@ -1562,6 +1960,216 @@ func createEquipmentChoice(req *choices.EquipmentRequirement) *dnd5ev1alpha1.Cho
 				Bundles: equipmentBundles,
 			},
 		},
+	}
+}
+
+// setEquipmentItemTypeHint sets the type hint on an EquipmentItem based on the item ID
+func setEquipmentItemTypeHint(item *dnd5ev1alpha1.EquipmentItem, itemID string) {
+	// Common armor pieces
+	armorMap := map[string]dnd5ev1alpha1.Armor{
+		"shield":          dnd5ev1alpha1.Armor_ARMOR_SHIELD,
+		"padded":          dnd5ev1alpha1.Armor_ARMOR_PADDED,
+		"leather":         dnd5ev1alpha1.Armor_ARMOR_LEATHER,
+		"studded-leather": dnd5ev1alpha1.Armor_ARMOR_STUDDED_LEATHER,
+		"hide":            dnd5ev1alpha1.Armor_ARMOR_HIDE,
+		"chain-shirt":     dnd5ev1alpha1.Armor_ARMOR_CHAIN_SHIRT,
+		"scale-mail":      dnd5ev1alpha1.Armor_ARMOR_SCALE_MAIL,
+		"breastplate":     dnd5ev1alpha1.Armor_ARMOR_BREASTPLATE,
+		"half-plate":      dnd5ev1alpha1.Armor_ARMOR_HALF_PLATE,
+		"ring-mail":       dnd5ev1alpha1.Armor_ARMOR_RING_MAIL,
+		"chain-mail":      dnd5ev1alpha1.Armor_ARMOR_CHAIN_MAIL,
+		"splint":          dnd5ev1alpha1.Armor_ARMOR_SPLINT,
+		"plate":           dnd5ev1alpha1.Armor_ARMOR_PLATE,
+	}
+
+	if armor, ok := armorMap[itemID]; ok {
+		item.TypeHint = &dnd5ev1alpha1.EquipmentItem_Armor{
+			Armor: armor,
+		}
+		return
+	}
+
+	// Common weapons
+	weaponMap := map[string]dnd5ev1alpha1.Weapon{
+		"club":           dnd5ev1alpha1.Weapon_WEAPON_CLUB,
+		"dagger":         dnd5ev1alpha1.Weapon_WEAPON_DAGGER,
+		"greatclub":      dnd5ev1alpha1.Weapon_WEAPON_GREATCLUB,
+		"handaxe":        dnd5ev1alpha1.Weapon_WEAPON_HANDAXE,
+		"javelin":        dnd5ev1alpha1.Weapon_WEAPON_JAVELIN,
+		"light-hammer":   dnd5ev1alpha1.Weapon_WEAPON_LIGHT_HAMMER,
+		"mace":           dnd5ev1alpha1.Weapon_WEAPON_MACE,
+		"quarterstaff":   dnd5ev1alpha1.Weapon_WEAPON_QUARTERSTAFF,
+		"sickle":         dnd5ev1alpha1.Weapon_WEAPON_SICKLE,
+		"spear":          dnd5ev1alpha1.Weapon_WEAPON_SPEAR,
+		"light-crossbow": dnd5ev1alpha1.Weapon_WEAPON_LIGHT_CROSSBOW,
+		"dart":           dnd5ev1alpha1.Weapon_WEAPON_DART,
+		"shortbow":       dnd5ev1alpha1.Weapon_WEAPON_SHORTBOW,
+		"sling":          dnd5ev1alpha1.Weapon_WEAPON_SLING,
+		"battleaxe":      dnd5ev1alpha1.Weapon_WEAPON_BATTLEAXE,
+		"flail":          dnd5ev1alpha1.Weapon_WEAPON_FLAIL,
+		"glaive":         dnd5ev1alpha1.Weapon_WEAPON_GLAIVE,
+		"greataxe":       dnd5ev1alpha1.Weapon_WEAPON_GREATAXE,
+		"greatsword":     dnd5ev1alpha1.Weapon_WEAPON_GREATSWORD,
+		"halberd":        dnd5ev1alpha1.Weapon_WEAPON_HALBERD,
+		"lance":          dnd5ev1alpha1.Weapon_WEAPON_LANCE,
+		"longsword":      dnd5ev1alpha1.Weapon_WEAPON_LONGSWORD,
+		"maul":           dnd5ev1alpha1.Weapon_WEAPON_MAUL,
+		"morningstar":    dnd5ev1alpha1.Weapon_WEAPON_MORNINGSTAR,
+		"pike":           dnd5ev1alpha1.Weapon_WEAPON_PIKE,
+		"rapier":         dnd5ev1alpha1.Weapon_WEAPON_RAPIER,
+		"scimitar":       dnd5ev1alpha1.Weapon_WEAPON_SCIMITAR,
+		"shortsword":     dnd5ev1alpha1.Weapon_WEAPON_SHORTSWORD,
+		"trident":        dnd5ev1alpha1.Weapon_WEAPON_TRIDENT,
+		"war-pick":       dnd5ev1alpha1.Weapon_WEAPON_WAR_PICK,
+		"warhammer":      dnd5ev1alpha1.Weapon_WEAPON_WARHAMMER,
+		"whip":           dnd5ev1alpha1.Weapon_WEAPON_WHIP,
+		"blowgun":        dnd5ev1alpha1.Weapon_WEAPON_BLOWGUN,
+		"hand-crossbow":  dnd5ev1alpha1.Weapon_WEAPON_HAND_CROSSBOW,
+		"heavy-crossbow": dnd5ev1alpha1.Weapon_WEAPON_HEAVY_CROSSBOW,
+		"longbow":        dnd5ev1alpha1.Weapon_WEAPON_LONGBOW,
+		"net":            dnd5ev1alpha1.Weapon_WEAPON_NET,
+	}
+
+	if weapon, ok := weaponMap[itemID]; ok {
+		item.TypeHint = &dnd5ev1alpha1.EquipmentItem_Weapon{
+			Weapon: weapon,
+		}
+		return
+	}
+
+	// TODO: Add tools and packs when needed
+	// For now, leave TypeHint nil for unknown items
+}
+
+// parseSkillString converts a skill string to proto Skill enum
+func parseSkillString(skillStr string) dnd5ev1alpha1.Skill {
+	// Try to parse the string as a skills.Skill first
+	switch strings.ToLower(skillStr) {
+	case "acrobatics":
+		return dnd5ev1alpha1.Skill_SKILL_ACROBATICS
+	case "animal_handling", "animal handling":
+		return dnd5ev1alpha1.Skill_SKILL_ANIMAL_HANDLING
+	case "arcana":
+		return dnd5ev1alpha1.Skill_SKILL_ARCANA
+	case "athletics":
+		return dnd5ev1alpha1.Skill_SKILL_ATHLETICS
+	case "deception":
+		return dnd5ev1alpha1.Skill_SKILL_DECEPTION
+	case "history":
+		return dnd5ev1alpha1.Skill_SKILL_HISTORY
+	case "insight":
+		return dnd5ev1alpha1.Skill_SKILL_INSIGHT
+	case "intimidation":
+		return dnd5ev1alpha1.Skill_SKILL_INTIMIDATION
+	case "investigation":
+		return dnd5ev1alpha1.Skill_SKILL_INVESTIGATION
+	case "medicine":
+		return dnd5ev1alpha1.Skill_SKILL_MEDICINE
+	case "nature":
+		return dnd5ev1alpha1.Skill_SKILL_NATURE
+	case "perception":
+		return dnd5ev1alpha1.Skill_SKILL_PERCEPTION
+	case "performance":
+		return dnd5ev1alpha1.Skill_SKILL_PERFORMANCE
+	case "persuasion":
+		return dnd5ev1alpha1.Skill_SKILL_PERSUASION
+	case "religion":
+		return dnd5ev1alpha1.Skill_SKILL_RELIGION
+	case "sleight_of_hand", "sleight of hand":
+		return dnd5ev1alpha1.Skill_SKILL_SLEIGHT_OF_HAND
+	case "stealth":
+		return dnd5ev1alpha1.Skill_SKILL_STEALTH
+	case "survival":
+		return dnd5ev1alpha1.Skill_SKILL_SURVIVAL
+	default:
+		return dnd5ev1alpha1.Skill_SKILL_UNSPECIFIED
+	}
+}
+
+// parseToolString converts a tool string to proto Tool enum
+func parseToolString(toolStr string) dnd5ev1alpha1.Tool {
+	// Normalize the string and handle different formats
+	normalized := strings.ToLower(strings.TrimSpace(toolStr))
+	normalized = strings.ReplaceAll(normalized, "'", "")
+	normalized = strings.ReplaceAll(normalized, "-", " ")
+
+	switch normalized {
+	// Artisan's tools
+	case "smiths tools", "smith tools":
+		return dnd5ev1alpha1.Tool_TOOL_SMITH_TOOLS
+	case "brewers supplies", "brewer supplies":
+		return dnd5ev1alpha1.Tool_TOOL_BREWER_SUPPLIES
+	case "masons tools", "mason tools":
+		return dnd5ev1alpha1.Tool_TOOL_MASON_TOOLS
+	case "alchemists supplies", "alchemist supplies":
+		return dnd5ev1alpha1.Tool_TOOL_ALCHEMIST_SUPPLIES
+	case "calligraphers supplies", "calligrapher supplies":
+		return dnd5ev1alpha1.Tool_TOOL_CALLIGRAPHER_SUPPLIES
+	case "carpenters tools", "carpenter tools":
+		return dnd5ev1alpha1.Tool_TOOL_CARPENTER_TOOLS
+	case "cartographers tools", "cartographer tools":
+		return dnd5ev1alpha1.Tool_TOOL_CARTOGRAPHER_TOOLS
+	case "cobblers tools", "cobbler tools":
+		return dnd5ev1alpha1.Tool_TOOL_COBBLER_TOOLS
+	case "cooks utensils", "cook utensils":
+		return dnd5ev1alpha1.Tool_TOOL_COOK_UTENSILS
+	case "glassblowers tools", "glassblower tools":
+		return dnd5ev1alpha1.Tool_TOOL_GLASSBLOWER_TOOLS
+	case "jewelers tools", "jeweler tools":
+		return dnd5ev1alpha1.Tool_TOOL_JEWELER_TOOLS
+	case "leatherworkers tools", "leatherworker tools":
+		return dnd5ev1alpha1.Tool_TOOL_LEATHERWORKER_TOOLS
+	case "painters supplies", "painter supplies":
+		return dnd5ev1alpha1.Tool_TOOL_PAINTER_SUPPLIES
+	case "potters tools", "potter tools":
+		return dnd5ev1alpha1.Tool_TOOL_POTTER_TOOLS
+	case "tinkers tools", "tinker tools":
+		return dnd5ev1alpha1.Tool_TOOL_TINKER_TOOLS
+	case "weavers tools", "weaver tools":
+		return dnd5ev1alpha1.Tool_TOOL_WEAVER_TOOLS
+	case "woodcarvers tools", "woodcarver tools":
+		return dnd5ev1alpha1.Tool_TOOL_WOODCARVER_TOOLS
+	// Other tools
+	case "disguise kit":
+		return dnd5ev1alpha1.Tool_TOOL_DISGUISE_KIT
+	case "forgery kit":
+		return dnd5ev1alpha1.Tool_TOOL_FORGERY_KIT
+	case "herbalism kit":
+		return dnd5ev1alpha1.Tool_TOOL_HERBALISM_KIT
+	case "navigators tools", "navigator tools":
+		return dnd5ev1alpha1.Tool_TOOL_NAVIGATOR_TOOLS
+	case "poisoners kit", "poisoner kit":
+		return dnd5ev1alpha1.Tool_TOOL_POISONER_KIT
+	case "thieves tools", "thief tools":
+		return dnd5ev1alpha1.Tool_TOOL_THIEVES_TOOLS
+	// Gaming sets
+	case "dice set":
+		return dnd5ev1alpha1.Tool_TOOL_DICE_SET
+	case "playing card set", "playing cards":
+		return dnd5ev1alpha1.Tool_TOOL_PLAYING_CARD_SET
+	// Musical instruments
+	case "bagpipes":
+		return dnd5ev1alpha1.Tool_TOOL_BAGPIPES
+	case "drum":
+		return dnd5ev1alpha1.Tool_TOOL_DRUM
+	case "dulcimer":
+		return dnd5ev1alpha1.Tool_TOOL_DULCIMER
+	case "flute":
+		return dnd5ev1alpha1.Tool_TOOL_FLUTE
+	case "lute":
+		return dnd5ev1alpha1.Tool_TOOL_LUTE
+	case "lyre":
+		return dnd5ev1alpha1.Tool_TOOL_LYRE
+	case "horn":
+		return dnd5ev1alpha1.Tool_TOOL_HORN
+	case "pan flute":
+		return dnd5ev1alpha1.Tool_TOOL_PAN_FLUTE
+	case "shawm":
+		return dnd5ev1alpha1.Tool_TOOL_SHAWM
+	case "viol":
+		return dnd5ev1alpha1.Tool_TOOL_VIOL
+	default:
+		return dnd5ev1alpha1.Tool_TOOL_UNSPECIFIED
 	}
 }
 
@@ -1589,3 +2197,251 @@ func createFightingStyleChoice(req *choices.FightingStyleRequirement) *dnd5ev1al
 		},
 	}
 }
+
+// ConvertEquipmentToProto converts a toolkit Equipment interface to proto Equipment message
+func ConvertEquipmentToProto(equip equipment.Equipment) *dnd5ev1alpha1.Equipment {
+	if equip == nil {
+		return nil
+	}
+
+	// Base equipment data
+	result := &dnd5ev1alpha1.Equipment{
+		Id:          equip.EquipmentID(),
+		Name:        equip.EquipmentName(),
+		Description: equip.EquipmentDescription(),
+		Weight: &dnd5ev1alpha1.Weight{
+			Quantity: int32(equip.EquipmentWeight()),
+			Unit:     "lbs",
+		},
+	}
+
+	// Set category and type-specific data based on equipment type
+	switch equip.EquipmentType() {
+	case shared.EquipmentTypeWeapon:
+		if weapon, ok := equip.(*weapons.Weapon); ok {
+			// Set category based on weapon type
+			if weapon.IsSimple() {
+				result.Category = dnd5ev1alpha1.EquipmentCategory_EQUIPMENT_CATEGORY_SIMPLE_WEAPON
+			} else if weapon.IsMartial() {
+				result.Category = dnd5ev1alpha1.EquipmentCategory_EQUIPMENT_CATEGORY_MARTIAL_WEAPON
+			}
+			result.EquipmentData = &dnd5ev1alpha1.Equipment_WeaponData{
+				WeaponData: convertWeaponData(weapon),
+			}
+		}
+	case shared.EquipmentTypeArmor:
+		result.Category = dnd5ev1alpha1.EquipmentCategory_EQUIPMENT_CATEGORY_LIGHT_ARMOR
+		// TODO: Add armor data conversion when needed
+	case shared.EquipmentTypeTool:
+		result.Category = dnd5ev1alpha1.EquipmentCategory_EQUIPMENT_CATEGORY_TOOLS
+		// TODO: Add tool data conversion when needed
+	default:
+		result.Category = dnd5ev1alpha1.EquipmentCategory_EQUIPMENT_CATEGORY_ADVENTURING_GEAR
+	}
+
+	return result
+}
+
+// convertWeaponData converts weapon-specific data to proto
+func convertWeaponData(weapon *weapons.Weapon) *dnd5ev1alpha1.WeaponData {
+	if weapon == nil {
+		return nil
+	}
+
+	// Convert weapon properties
+	properties := make([]dnd5ev1alpha1.WeaponProperty, 0, len(weapon.Properties))
+	for _, prop := range weapon.Properties {
+		switch prop {
+		case weapons.PropertyLight:
+			properties = append(properties, dnd5ev1alpha1.WeaponProperty_WEAPON_PROPERTY_LIGHT)
+		case weapons.PropertyFinesse:
+			properties = append(properties, dnd5ev1alpha1.WeaponProperty_WEAPON_PROPERTY_FINESSE)
+		case weapons.PropertyThrown:
+			properties = append(properties, dnd5ev1alpha1.WeaponProperty_WEAPON_PROPERTY_THROWN)
+		case weapons.PropertyVersatile:
+			properties = append(properties, dnd5ev1alpha1.WeaponProperty_WEAPON_PROPERTY_VERSATILE)
+		case weapons.PropertyTwoHanded:
+			properties = append(properties, dnd5ev1alpha1.WeaponProperty_WEAPON_PROPERTY_TWO_HANDED)
+		case weapons.PropertyAmmunition:
+			properties = append(properties, dnd5ev1alpha1.WeaponProperty_WEAPON_PROPERTY_AMMUNITION)
+		case weapons.PropertyLoading:
+			properties = append(properties, dnd5ev1alpha1.WeaponProperty_WEAPON_PROPERTY_LOADING)
+		case weapons.PropertyReach:
+			properties = append(properties, dnd5ev1alpha1.WeaponProperty_WEAPON_PROPERTY_REACH)
+		case weapons.PropertyHeavy:
+			properties = append(properties, dnd5ev1alpha1.WeaponProperty_WEAPON_PROPERTY_HEAVY)
+		case weapons.PropertySpecial:
+			properties = append(properties, dnd5ev1alpha1.WeaponProperty_WEAPON_PROPERTY_SPECIAL)
+		}
+	}
+
+	// Determine weapon category
+	var weaponCategory dnd5ev1alpha1.WeaponCategory
+	if weapon.IsSimple() {
+		weaponCategory = dnd5ev1alpha1.WeaponCategory_WEAPON_CATEGORY_SIMPLE
+	} else if weapon.IsMartial() {
+		weaponCategory = dnd5ev1alpha1.WeaponCategory_WEAPON_CATEGORY_MARTIAL
+	}
+
+	result := &dnd5ev1alpha1.WeaponData{
+		WeaponCategory: weaponCategory,
+		DamageDice:     weapon.Damage,
+		DamageType:     convertDamageTypeToProto(string(weapon.DamageType)),
+		Properties:     properties,
+	}
+
+	// Add range if present
+	if weapon.Range != nil {
+		result.Range = "ranged"
+		result.NormalRange = int32(weapon.Range.Normal)
+		result.LongRange = int32(weapon.Range.Long)
+	} else {
+		result.Range = "melee"
+	}
+
+	return result
+}
+
+// convertDamageTypeToProto converts toolkit damage type to proto
+func convertDamageTypeToProto(damageType string) dnd5ev1alpha1.DamageType {
+	switch damageType {
+	case "slashing":
+		return dnd5ev1alpha1.DamageType_DAMAGE_TYPE_SLASHING
+	case "piercing":
+		return dnd5ev1alpha1.DamageType_DAMAGE_TYPE_PIERCING
+	case "bludgeoning":
+		return dnd5ev1alpha1.DamageType_DAMAGE_TYPE_BLUDGEONING
+	case "fire":
+		return dnd5ev1alpha1.DamageType_DAMAGE_TYPE_FIRE
+	case "cold":
+		return dnd5ev1alpha1.DamageType_DAMAGE_TYPE_COLD
+	case "lightning":
+		return dnd5ev1alpha1.DamageType_DAMAGE_TYPE_LIGHTNING
+	case "thunder":
+		return dnd5ev1alpha1.DamageType_DAMAGE_TYPE_THUNDER
+	case "poison":
+		return dnd5ev1alpha1.DamageType_DAMAGE_TYPE_POISON
+	case "acid":
+		return dnd5ev1alpha1.DamageType_DAMAGE_TYPE_ACID
+	case "psychic":
+		return dnd5ev1alpha1.DamageType_DAMAGE_TYPE_PSYCHIC
+	case "necrotic":
+		return dnd5ev1alpha1.DamageType_DAMAGE_TYPE_NECROTIC
+	case "radiant":
+		return dnd5ev1alpha1.DamageType_DAMAGE_TYPE_RADIANT
+	case "force":
+		return dnd5ev1alpha1.DamageType_DAMAGE_TYPE_FORCE
+	default:
+		return dnd5ev1alpha1.DamageType_DAMAGE_TYPE_UNSPECIFIED
+	}
+}
+
+// convertSpellToProtoEnum converts a toolkit spell to proto enum
+func convertSpellToProtoEnum(spell spells.Spell) dnd5ev1alpha1.Spell {
+	// Map spell IDs to proto enums
+	switch spell {
+	// Cantrips
+	case spells.FireBolt:
+		return dnd5ev1alpha1.Spell_SPELL_FIRE_BOLT
+	case spells.RayOfFrost:
+		return dnd5ev1alpha1.Spell_SPELL_RAY_OF_FROST
+	case spells.ShockingGrasp:
+		return dnd5ev1alpha1.Spell_SPELL_SHOCKING_GRASP
+	case spells.AcidSplash:
+		return dnd5ev1alpha1.Spell_SPELL_ACID_SPLASH
+	case spells.PoisonSpray:
+		return dnd5ev1alpha1.Spell_SPELL_POISON_SPRAY
+	case spells.ChillTouch:
+		return dnd5ev1alpha1.Spell_SPELL_CHILL_TOUCH
+	case spells.SacredFlame:
+		return dnd5ev1alpha1.Spell_SPELL_SACRED_FLAME
+	case spells.TollTheDead:
+		return dnd5ev1alpha1.Spell_SPELL_TOLL_THE_DEAD
+	case spells.WordOfRadiance:
+		return dnd5ev1alpha1.Spell_SPELL_WORD_OF_RADIANCE
+	case spells.EldritchBlast:
+		return dnd5ev1alpha1.Spell_SPELL_ELDRITCH_BLAST
+	case spells.Frostbite:
+		return dnd5ev1alpha1.Spell_SPELL_FROSTBITE
+	case spells.PrimalSavagery:
+		return dnd5ev1alpha1.Spell_SPELL_PRIMAL_SAVAGERY
+	case spells.Thornwhip:
+		return dnd5ev1alpha1.Spell_SPELL_THORNWHIP
+	case spells.MageHand:
+		return dnd5ev1alpha1.Spell_SPELL_MAGE_HAND
+	case spells.MinorIllusion:
+		return dnd5ev1alpha1.Spell_SPELL_MINOR_ILLUSION
+	case spells.Prestidigitation:
+		return dnd5ev1alpha1.Spell_SPELL_PRESTIDIGITATION
+	case spells.Light:
+		return dnd5ev1alpha1.Spell_SPELL_LIGHT
+	case spells.Guidance:
+		return dnd5ev1alpha1.Spell_SPELL_GUIDANCE
+	case spells.Resistance:
+		return dnd5ev1alpha1.Spell_SPELL_RESISTANCE
+	case spells.Thaumaturgy:
+		return dnd5ev1alpha1.Spell_SPELL_THAUMATURGY
+	case spells.SpareTheDying:
+		return dnd5ev1alpha1.Spell_SPELL_SPARE_THE_DYING
+
+	// Level 1 spells
+	case spells.MagicMissile:
+		return dnd5ev1alpha1.Spell_SPELL_MAGIC_MISSILE
+	case spells.BurningHands:
+		return dnd5ev1alpha1.Spell_SPELL_BURNING_HANDS
+	case spells.ChromaticOrb:
+		return dnd5ev1alpha1.Spell_SPELL_CHROMATIC_ORB
+	case spells.Thunderwave:
+		return dnd5ev1alpha1.Spell_SPELL_THUNDERWAVE
+	case spells.IceKnife:
+		return dnd5ev1alpha1.Spell_SPELL_ICE_KNIFE
+	case spells.WitchBolt:
+		return dnd5ev1alpha1.Spell_SPELL_WITCH_BOLT
+	case spells.GuidingBolt:
+		return dnd5ev1alpha1.Spell_SPELL_GUIDING_BOLT
+	case spells.InflictWounds:
+		return dnd5ev1alpha1.Spell_SPELL_INFLICT_WOUNDS
+	case spells.HailOfThorns:
+		return dnd5ev1alpha1.Spell_SPELL_HAIL_OF_THORNS
+	case spells.EnsnaringStrike:
+		return dnd5ev1alpha1.Spell_SPELL_ENSNARING_STRIKE
+	case spells.HellishRebuke:
+		return dnd5ev1alpha1.Spell_SPELL_HELLISH_REBUKE
+	case spells.ArmsOfHadar:
+		return dnd5ev1alpha1.Spell_SPELL_ARMS_OF_HADAR
+	case spells.Hex:
+		return dnd5ev1alpha1.Spell_SPELL_HEX
+	case spells.SearingSmite:
+		return dnd5ev1alpha1.Spell_SPELL_SEARING_SMITE
+	case spells.ThunderousSmite:
+		return dnd5ev1alpha1.Spell_SPELL_THUNDEROUS_SMITE
+	case spells.WrathfulSmite:
+		return dnd5ev1alpha1.Spell_SPELL_WRATHFUL_SMITE
+	case spells.Shield:
+		return dnd5ev1alpha1.Spell_SPELL_SHIELD
+	case spells.Sleep:
+		return dnd5ev1alpha1.Spell_SPELL_SLEEP
+	case spells.CharmPerson:
+		return dnd5ev1alpha1.Spell_SPELL_CHARM_PERSON
+	case spells.DetectMagic:
+		return dnd5ev1alpha1.Spell_SPELL_DETECT_MAGIC
+	case spells.Identify:
+		return dnd5ev1alpha1.Spell_SPELL_IDENTIFY
+	case spells.CureWounds:
+		return dnd5ev1alpha1.Spell_SPELL_CURE_WOUNDS
+	case spells.HealingWord:
+		return dnd5ev1alpha1.Spell_SPELL_HEALING_WORD
+	case spells.Bless:
+		return dnd5ev1alpha1.Spell_SPELL_BLESS
+	case spells.Bane:
+		return dnd5ev1alpha1.Spell_SPELL_BANE
+	case spells.ShieldOfFaith:
+		return dnd5ev1alpha1.Spell_SPELL_SHIELD_OF_FAITH
+
+	// TODO: Add more spell mappings as proto enums are defined
+
+	default:
+		return dnd5ev1alpha1.Spell_SPELL_UNSPECIFIED
+	}
+}
+

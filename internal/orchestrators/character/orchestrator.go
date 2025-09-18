@@ -3,21 +3,26 @@ package character
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/KirkDiggler/rpg-api/internal/errors"
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/dice"
 	"github.com/KirkDiggler/rpg-api/internal/pkg/idgen"
+	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	characterdraft "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/backgrounds"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character/choices"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/classes"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/races"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/spells"
 )
 
 // Config holds dependencies for the orchestrator
 type Config struct {
 	DraftRepo        characterdraft.Repository
+	CharacterRepo    characterrepo.Repository
 	DiceService      dice.Service
 	IDGenerator      idgen.Generator
 	DraftIDGenerator idgen.Generator
@@ -27,6 +32,9 @@ type Config struct {
 func (c *Config) Validate() error {
 	if c.DraftRepo == nil {
 		return errors.InvalidArgument("draft repository is required")
+	}
+	if c.CharacterRepo == nil {
+		return errors.InvalidArgument("character repository is required")
 	}
 	if c.DiceService == nil {
 		return errors.InvalidArgument("dice service is required")
@@ -42,10 +50,11 @@ func (c *Config) Validate() error {
 
 // Orchestrator implements the character service
 type Orchestrator struct {
-	draftRepo   characterdraft.Repository
-	diceService dice.Service
-	idGen       idgen.Generator
-	draftIDGen  idgen.Generator
+	draftRepo     characterdraft.Repository
+	characterRepo characterrepo.Repository
+	diceService   dice.Service
+	idGen         idgen.Generator
+	draftIDGen    idgen.Generator
 }
 
 // New creates a new character orchestrator
@@ -58,10 +67,11 @@ func New(cfg *Config) (*Orchestrator, error) {
 	}
 
 	return &Orchestrator{
-		draftRepo:   cfg.DraftRepo,
-		diceService: cfg.DiceService,
-		idGen:       cfg.IDGenerator,
-		draftIDGen:  cfg.DraftIDGenerator,
+		draftRepo:     cfg.DraftRepo,
+		characterRepo: cfg.CharacterRepo,
+		diceService:   cfg.DiceService,
+		idGen:         cfg.IDGenerator,
+		draftIDGen:    cfg.DraftIDGenerator,
 	}, nil
 }
 
@@ -155,7 +165,12 @@ func (o *Orchestrator) GetRequirements(ctx context.Context, input *GetRequiremen
 
 	// Get class requirements if class is specified
 	if input.Class != "" {
-		requirements = choices.GetClassRequirementsAtLevel(input.Class, level)
+		// Use subclass-aware requirements if subclass is provided
+		if input.Subclass != "" {
+			requirements = choices.GetClassRequirementsWithSubclass(input.Class, level, input.Subclass)
+		} else {
+			requirements = choices.GetClassRequirementsAtLevel(input.Class, level)
+		}
 	}
 
 	// Get race requirements if race is specified
@@ -408,6 +423,88 @@ func (o *Orchestrator) SetAbilityScores(ctx context.Context, input *SetAbilitySc
 	}, nil
 }
 
+// SetAbilityScoresFromRolls sets ability scores from dice roll assignments
+func (o *Orchestrator) SetAbilityScoresFromRolls(ctx context.Context, input *SetAbilityScoresFromRollsInput) (*SetAbilityScoresFromRollsOutput, error) {
+	if input == nil {
+		return nil, errors.InvalidArgument("input is required")
+	}
+	if input.DraftID == "" {
+		return nil, errors.InvalidArgument("draft ID is required")
+	}
+	if len(input.RollAssignments) == 0 {
+		return nil, errors.InvalidArgument("roll assignments are required")
+	}
+
+	// Get draft first - we might need it for player ID lookup
+	getOutput, err := o.draftRepo.Get(ctx, characterdraft.GetInput{
+		ID: input.DraftID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get draft: %w", err)
+	}
+
+	// Get the dice session for this draft
+	// First try with draft ID (correct way)
+	sessionOutput, err := o.diceService.GetRollSession(ctx, &dice.GetRollSessionInput{
+		EntityID: input.DraftID,
+		Context:  dice.ContextAbilityScores,
+	})
+	if err != nil {
+		// If not found with draft ID, try with player ID
+		// (for backward compatibility with web app that might be using player ID)
+		if errors.IsNotFound(err) {
+			sessionOutput, err = o.diceService.GetRollSession(ctx, &dice.GetRollSessionInput{
+				EntityID: getOutput.Draft.PlayerID,
+				Context:  dice.ContextAbilityScores,
+			})
+			if err != nil {
+				return nil, errors.Wrap(err, "failed to get dice roll session (tried both draft ID and player ID)")
+			}
+		} else {
+			return nil, errors.Wrap(err, "failed to get dice roll session")
+		}
+	}
+
+	// Build a map of roll IDs to their totals
+	rollTotals := make(map[string]int32)
+	for _, roll := range sessionOutput.Session.Rolls {
+		rollTotals[roll.RollID] = roll.Total
+	}
+
+	// Convert roll assignments to ability scores
+	scores := make(shared.AbilityScores)
+	for ability, rollID := range input.RollAssignments {
+		if total, ok := rollTotals[rollID]; ok {
+			scores[ability] = int(total)
+		} else {
+			return nil, errors.InvalidArgument(fmt.Sprintf("roll ID %s not found in session", rollID))
+		}
+	}
+
+	draft := character.LoadDraftFromData(getOutput.Draft)
+
+	// Set ability scores with "rolled" method
+	if err := draft.SetAbilityScores(&character.SetAbilityScoresInput{
+		Scores: scores,
+		Method: "rolled",
+	}); err != nil {
+		return nil, fmt.Errorf("failed to set ability scores: %w", err)
+	}
+
+	// Save updated draft
+	updateOutput, err := o.draftRepo.Update(ctx, characterdraft.UpdateInput{
+		Draft: draft.ToData(),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to save draft: %w", err)
+	}
+
+	return &SetAbilityScoresFromRollsOutput{
+		Draft:    updateOutput.Draft,
+		Progress: draft.Progress(),
+	}, nil
+}
+
 // ValidateDraft validates a draft
 func (o *Orchestrator) ValidateDraft(ctx context.Context, input *ValidateDraftInput) (*ValidateDraftOutput, error) {
 	if input == nil {
@@ -430,17 +527,40 @@ func (o *Orchestrator) ValidateDraft(ctx context.Context, input *ValidateDraftIn
 	// Validate all choices
 	validationErr := draft.ValidateChoices()
 
-	// TODO: Convert validation errors to proper ValidationResult
-	// For now, log validation errors for debugging
+	// Convert validation error to structured result
+	var validationResult *choices.ValidationResult
 	if validationErr != nil {
-		// This helps developers understand why validation failed
-		fmt.Printf("Draft validation failed: %v\n", validationErr)
+		// Parse the error message to extract what's missing
+		errMsg := validationErr.Error()
+		validationResult = &choices.ValidationResult{
+			Valid: false,
+			Errors: []choices.ValidationError{
+				{
+					Category: "", // Unknown category
+					Message:  errMsg,
+				},
+			},
+		}
+
+		// Try to identify the specific category from the error message
+		if strings.Contains(errMsg, "fighting style") {
+			validationResult.Errors[0].Category = shared.ChoiceFightingStyle
+		} else if strings.Contains(errMsg, "skill") {
+			validationResult.Errors[0].Category = shared.ChoiceSkills
+		} else if strings.Contains(errMsg, "equipment") {
+			validationResult.Errors[0].Category = shared.ChoiceEquipment
+		}
+	} else {
+		validationResult = &choices.ValidationResult{
+			Valid:  true,
+			Errors: []choices.ValidationError{},
+		}
 	}
 
 	return &ValidateDraftOutput{
 		Valid:      validationErr == nil,
 		Progress:   draft.Progress(),
-		Validation: nil, // TODO: Convert error to ValidationResult
+		Validation: validationResult,
 	}, nil
 }
 
@@ -464,16 +584,44 @@ func (o *Orchestrator) FinalizeDraft(ctx context.Context, input *FinalizeDraftIn
 	draft := character.LoadDraftFromData(getOutput.Draft)
 
 	// Check if draft is complete
-	if !draft.Progress().IsComplete() {
-		return nil, errors.InvalidArgument("draft is not complete")
+	progress := draft.Progress()
+	if !progress.IsComplete() {
+		// Build detailed error message about what's missing
+		missing := []string{}
+		if !progress.Has(character.ProgressName) {
+			missing = append(missing, "name")
+		}
+		if !progress.Has(character.ProgressRace) {
+			missing = append(missing, "race selection or race choices")
+		}
+		if !progress.Has(character.ProgressClass) {
+			missing = append(missing, "class selection or class choices")
+		}
+		if !progress.Has(character.ProgressBackground) {
+			missing = append(missing, "background selection or background choices")
+		}
+		if !progress.Has(character.ProgressAbilityScores) {
+			missing = append(missing, "ability scores")
+		}
+
+		// For more detailed class validation, check what's missing
+		if !progress.Has(character.ProgressClass) && draft.Class() != "" {
+			// Class is set but choices are incomplete - validate to get details
+			if err := draft.ValidateChoices(); err != nil {
+				return nil, fmt.Errorf("draft is incomplete - missing: %v. Class validation: %w", missing, err)
+			}
+		}
+
+		return nil, errors.InvalidArgumentf("draft is incomplete - missing: %v (progress: %d%%)",
+			missing, progress.PercentComplete())
 	}
 
 	// Validate all choices
-	// TODO: Consider if validation should be optional or handled differently
-	// For now, we validate to ensure data integrity
-	if err := draft.ValidateChoices(); err != nil {
-		return nil, fmt.Errorf("draft validation failed: %w", err)
-	}
+	// TODO: Temporarily disabled due to toolkit bug #313 - ValidateChoices doesn't handle fighting styles
+	// Re-enable once https://github.com/KirkDiggler/rpg-toolkit/issues/313 is fixed
+	// if err := draft.ValidateChoices(); err != nil {
+	// 	return nil, fmt.Errorf("draft validation failed: %w", err)
+	// }
 
 	// Convert to character with generated ID
 	characterID := o.idGen.Generate()
@@ -482,17 +630,32 @@ func (o *Orchestrator) FinalizeDraft(ctx context.Context, input *FinalizeDraftIn
 		return nil, fmt.Errorf("failed to convert draft to character: %w", err)
 	}
 
-	// TODO: Save character to character repository
-	// For now, just return the character
+	// Convert character to data for storage
+	charData := character.FromCharacter(char)
+
+	// Save character to character repository
+	createOutput, err := o.characterRepo.Create(ctx, characterrepo.CreateInput{
+		CharacterData: charData,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to save character: %w", err)
+	}
 
 	// Delete draft after successful finalization
-	_, _ = o.draftRepo.Delete(ctx, characterdraft.DeleteInput{
+	_, err = o.draftRepo.Delete(ctx, characterdraft.DeleteInput{
 		ID: input.DraftID,
 	})
-	// TODO: Add proper error logging
+	if err != nil {
+		// Log error but don't fail the operation - character is already saved
+		// TODO: Add proper error logging
+		_ = err
+	}
+
+	// Load the saved character from the repository data
+	finalChar := createOutput.CharacterData.ToCharacter()
 
 	return &FinalizeDraftOutput{
-		Character: char,
+		Character: finalChar,
 	}, nil
 }
 
@@ -596,21 +759,289 @@ func (o *Orchestrator) RollAbilityScores(ctx context.Context, input *RollAbility
 
 // ListDrafts returns drafts for a player or session
 func (o *Orchestrator) ListDrafts(ctx context.Context, input *ListDraftsInput) (*ListDraftsOutput, error) {
-	// TODO: Implement when repository supports listing drafts
-	// For now, return empty list
+	if input == nil {
+		return nil, errors.InvalidArgument("input is required")
+	}
+	if input.PlayerID == "" {
+		return nil, errors.InvalidArgument("player ID is required")
+	}
+
+	// The repository uses a single-draft-per-player pattern
+	// Try to get the player's draft
+	getOutput, err := o.draftRepo.GetByPlayerID(ctx, characterdraft.GetByPlayerIDInput{
+		PlayerID: input.PlayerID,
+	})
+	if err != nil {
+		// If not found, return empty list
+		if errors.IsNotFound(err) {
+			return &ListDraftsOutput{
+				Drafts:        []*character.DraftData{},
+				NextPageToken: "",
+			}, nil
+		}
+		return nil, fmt.Errorf("failed to get drafts: %w", err)
+	}
+
+	// Return the single draft as a list
 	return &ListDraftsOutput{
-		Drafts:        []*character.DraftData{},
+		Drafts:        []*character.DraftData{getOutput.Draft},
 		NextPageToken: "",
+	}, nil
+}
+
+// GetCharacter retrieves a character by ID
+func (o *Orchestrator) GetCharacter(ctx context.Context, input *GetCharacterInput) (*GetCharacterOutput, error) {
+	if input == nil {
+		return nil, errors.InvalidArgument("input is required")
+	}
+	if input.CharacterID == "" {
+		return nil, errors.InvalidArgument("character ID is required")
+	}
+
+	// Get character from repository
+	result, err := o.characterRepo.Get(ctx, characterrepo.GetInput{
+		ID: input.CharacterID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get character: %w", err)
+	}
+
+	return &GetCharacterOutput{
+		Character: result.CharacterData,
+	}, nil
+}
+
+// GetEquipmentSlots retrieves equipment slots for a character
+func (o *Orchestrator) GetEquipmentSlots(ctx context.Context, input *GetEquipmentSlotsInput) (*GetEquipmentSlotsOutput, error) {
+	if input == nil {
+		return nil, errors.InvalidArgument("input is required")
+	}
+	if input.CharacterID == "" {
+		return nil, errors.InvalidArgument("character ID is required")
+	}
+
+	// Get equipment slots from repository
+	result, err := o.characterRepo.GetEquipmentSlots(ctx, characterrepo.GetEquipmentSlotsInput{
+		CharacterID: input.CharacterID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get equipment slots: %w", err)
+	}
+
+	// Convert to map format
+	slots := make(map[string]string)
+	if result.EquipmentSlots != nil {
+		if result.EquipmentSlots.MainHand != "" {
+			slots["main_hand"] = result.EquipmentSlots.MainHand
+		}
+		if result.EquipmentSlots.OffHand != "" {
+			slots["off_hand"] = result.EquipmentSlots.OffHand
+		}
+		if result.EquipmentSlots.Armor != "" {
+			slots["armor"] = result.EquipmentSlots.Armor
+		}
+		if result.EquipmentSlots.Shield != "" {
+			slots["shield"] = result.EquipmentSlots.Shield
+		}
+		if result.EquipmentSlots.Ring1 != "" {
+			slots["ring1"] = result.EquipmentSlots.Ring1
+		}
+		if result.EquipmentSlots.Ring2 != "" {
+			slots["ring2"] = result.EquipmentSlots.Ring2
+		}
+		if result.EquipmentSlots.Amulet != "" {
+			slots["amulet"] = result.EquipmentSlots.Amulet
+		}
+		if result.EquipmentSlots.Boots != "" {
+			slots["boots"] = result.EquipmentSlots.Boots
+		}
+		if result.EquipmentSlots.Gloves != "" {
+			slots["gloves"] = result.EquipmentSlots.Gloves
+		}
+		if result.EquipmentSlots.Helmet != "" {
+			slots["helmet"] = result.EquipmentSlots.Helmet
+		}
+		if result.EquipmentSlots.Belt != "" {
+			slots["belt"] = result.EquipmentSlots.Belt
+		}
+		if result.EquipmentSlots.Cloak != "" {
+			slots["cloak"] = result.EquipmentSlots.Cloak
+		}
+	}
+
+	return &GetEquipmentSlotsOutput{
+		Slots: slots,
+	}, nil
+}
+
+// EquipItem equips an item to a specific slot
+func (o *Orchestrator) EquipItem(ctx context.Context, input *EquipItemInput) (*EquipItemOutput, error) {
+	if input == nil {
+		return nil, errors.InvalidArgument("input is required")
+	}
+	if input.CharacterID == "" {
+		return nil, errors.InvalidArgument("character ID is required")
+	}
+	if input.ItemID == "" {
+		return nil, errors.InvalidArgument("item ID is required")
+	}
+	if input.Slot == "" {
+		return nil, errors.InvalidArgument("slot is required")
+	}
+
+	// TODO: Validate that the item exists in character's inventory
+	// TODO: Validate that the item can be equipped to this slot
+
+	// Set equipment slot
+	result, err := o.characterRepo.SetEquipmentSlot(ctx, characterrepo.SetEquipmentSlotInput{
+		CharacterID: input.CharacterID,
+		Slot:        input.Slot,
+		ItemID:      input.ItemID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to equip item: %w", err)
+	}
+
+	return &EquipItemOutput{
+		PreviousItemID: result.PreviousItemID,
+	}, nil
+}
+
+// UnequipItem removes an item from a slot
+func (o *Orchestrator) UnequipItem(ctx context.Context, input *UnequipItemInput) (*UnequipItemOutput, error) {
+	if input == nil {
+		return nil, errors.InvalidArgument("input is required")
+	}
+	if input.CharacterID == "" {
+		return nil, errors.InvalidArgument("character ID is required")
+	}
+	if input.Slot == "" {
+		return nil, errors.InvalidArgument("slot is required")
+	}
+
+	// Clear equipment slot
+	result, err := o.characterRepo.ClearEquipmentSlot(ctx, characterrepo.ClearEquipmentSlotInput{
+		CharacterID: input.CharacterID,
+		Slot:        input.Slot,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to unequip item: %w", err)
+	}
+
+	return &UnequipItemOutput{
+		UnequippedItemID: result.ClearedItemID,
 	}, nil
 }
 
 // ListCharacters returns characters for a player or session
 func (o *Orchestrator) ListCharacters(ctx context.Context, input *ListCharactersInput) (*ListCharactersOutput, error) {
-	// TODO: Implement when repository supports listing characters
-	// For now, return empty list
-	return &ListCharactersOutput{
-		Characters:    []*character.Data{},
-		NextPageToken: "",
-		TotalSize:     0,
+	if input == nil {
+		return nil, errors.InvalidArgument("input is required")
+	}
+
+	// List by player ID (primary use case)
+	if input.PlayerID != "" {
+		result, err := o.characterRepo.ListByPlayerID(ctx, characterrepo.ListByPlayerIDInput{
+			PlayerID: input.PlayerID,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to list characters by player: %w", err)
+		}
+
+		return &ListCharactersOutput{
+			Characters:    result.Characters,
+			NextPageToken: "", // TODO: Add pagination support
+			TotalSize:     len(result.Characters),
+		}, nil
+	}
+
+	// List by session ID (secondary use case)
+	if input.SessionID != "" {
+		result, err := o.characterRepo.ListBySessionID(ctx, characterrepo.ListBySessionIDInput{
+			SessionID: input.SessionID,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to list characters by session: %w", err)
+		}
+
+		return &ListCharactersOutput{
+			Characters:    result.Characters,
+			NextPageToken: "", // TODO: Add pagination support
+			TotalSize:     len(result.Characters),
+		}, nil
+	}
+
+	// No filter provided - return error
+	return nil, errors.InvalidArgument("either player_id or session_id must be provided")
+}
+
+// DeleteCharacter deletes a character permanently
+func (o *Orchestrator) DeleteCharacter(ctx context.Context, input *DeleteCharacterInput) (*DeleteCharacterOutput, error) {
+	if input == nil {
+		return nil, errors.InvalidArgument("input is required")
+	}
+	if input.CharacterID == "" {
+		return nil, errors.InvalidArgument("character ID is required")
+	}
+
+	// Delete from repository
+	_, err := o.characterRepo.Delete(ctx, characterrepo.DeleteInput{
+		ID: input.CharacterID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to delete character: %w", err)
+	}
+
+	return &DeleteCharacterOutput{}, nil
+}
+
+// ListEquipmentByType returns equipment filtered by type
+func (o *Orchestrator) ListEquipmentByType(ctx context.Context, input *ListEquipmentByTypeInput) (*ListEquipmentByTypeOutput, error) {
+	if input == nil {
+		input = &ListEquipmentByTypeInput{}
+	}
+
+	// The handler will handle the conversion from proto enum to toolkit categories
+	// For now, we'll let the handler do the work directly with the toolkit
+	// This orchestrator method is a placeholder for future expansion
+
+	// Return empty for now - the handler will use the toolkit directly
+	return &ListEquipmentByTypeOutput{
+		Equipment: []interface{}{},
+	}, nil
+}
+
+// ListSpellsByLevel returns spells of a specific level with their info
+func (o *Orchestrator) ListSpellsByLevel(ctx context.Context, input *ListSpellsByLevelInput) (*ListSpellsByLevelOutput, error) {
+	if input == nil {
+		return nil, errors.InvalidArgument("input is required")
+	}
+
+	// Validate spell level
+	if input.Level < 0 || input.Level > 9 {
+		return nil, errors.InvalidArgument("spell level must be between 0 (cantrips) and 9")
+	}
+
+	// Get all spells for the requested level from the toolkit
+	toolkitSpells := spells.GetSpellsByLevel(input.Level)
+
+	// Convert to our SpellInfo format
+	result := make([]SpellInfo, 0, len(toolkitSpells))
+	for _, spellData := range toolkitSpells {
+		info := SpellInfo{
+			ID:          string(spellData.ID),
+			Name:        spellData.Name,
+			Description: spellData.Description,
+			Level:       spellData.Level,
+		}
+		result = append(result, info)
+	}
+
+	// TODO: Implement class filtering if needed
+	// TODO: Implement pagination if needed
+
+	return &ListSpellsByLevelOutput{
+		Spells: result,
+		Total:  len(result),
 	}, nil
 }

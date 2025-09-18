@@ -31,6 +31,7 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/pkg/clock"
 	"github.com/KirkDiggler/rpg-api/internal/pkg/idgen"
 	"github.com/KirkDiggler/rpg-api/internal/redis"
+	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	characterdraftrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft"
 	dicesessionrepo "github.com/KirkDiggler/rpg-api/internal/repositories/dice_session"
 	// encountersrepo "github.com/KirkDiggler/rpg-api/internal/repositories/encounters" // Temporarily disabled
@@ -80,12 +81,12 @@ func runServer(_ *cobra.Command, _ []string) error {
 		),
 	)
 
-	// charRepo, err := characterrepo.NewRedis(&characterrepo.RedisConfig{
-	// 	Client: mustRedisClient(),
-	// })
-	// if err != nil {
-	// 	return fmt.Errorf("failed to create character repository: %w", err)
-	// }
+	charRepo, err := characterrepo.NewRedis(&characterrepo.RedisConfig{
+		Client: mustRedisClient(),
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create character repository: %w", err)
+	}
 
 	draftRepo, err := characterdraftrepo.NewRedis(&characterdraftrepo.Config{
 		Clock:       clock.New(),
@@ -131,6 +132,7 @@ func runServer(_ *cobra.Command, _ []string) error {
 	// Initialize services
 	characterService, err := character.New(&character.Config{
 		DraftRepo:        draftRepo,
+		CharacterRepo:    charRepo,
 		DiceService:      diceService,
 		IDGenerator:      idgen.NewUUID("char"),
 		DraftIDGenerator: idgen.NewUUID("draft"),
