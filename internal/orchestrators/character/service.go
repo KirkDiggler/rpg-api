@@ -55,6 +55,9 @@ type Service interface {
 
 	// Dice rolling
 	RollAbilityScores(ctx context.Context, input *RollAbilityScoresInput) (*RollAbilityScoresOutput, error)
+
+	// Spell information
+	ListSpellsByLevel(ctx context.Context, input *ListSpellsByLevelInput) (*ListSpellsByLevelOutput, error)
 }
 
 // CreateDraftInput creates a new character draft
@@ -340,4 +343,25 @@ type ListEquipmentByTypeInput struct {
 // ListEquipmentByTypeOutput returns equipment list
 type ListEquipmentByTypeOutput struct {
 	Equipment []interface{} // Will hold toolkit Equipment interface values
+}
+
+// ListSpellsByLevelInput specifies the spell level to query
+type ListSpellsByLevelInput struct {
+	Level    int           // 0 for cantrips, 1-9 for leveled spells
+	ClassID  classes.Class // Optional: filter by class (not implemented yet)
+	PageSize int
+}
+
+// ListSpellsByLevelOutput returns spell information
+type ListSpellsByLevelOutput struct {
+	Spells []SpellInfo
+	Total  int
+}
+
+// SpellInfo contains spell details
+type SpellInfo struct {
+	ID          string
+	Name        string
+	Description string
+	Level       int
 }

@@ -21,6 +21,7 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/races"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/skills"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/spells"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/tools"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/weapons"
 )
@@ -2334,3 +2335,113 @@ func convertDamageTypeToProto(damageType string) dnd5ev1alpha1.DamageType {
 		return dnd5ev1alpha1.DamageType_DAMAGE_TYPE_UNSPECIFIED
 	}
 }
+
+// convertSpellToProtoEnum converts a toolkit spell to proto enum
+func convertSpellToProtoEnum(spell spells.Spell) dnd5ev1alpha1.Spell {
+	// Map spell IDs to proto enums
+	switch spell {
+	// Cantrips
+	case spells.FireBolt:
+		return dnd5ev1alpha1.Spell_SPELL_FIRE_BOLT
+	case spells.RayOfFrost:
+		return dnd5ev1alpha1.Spell_SPELL_RAY_OF_FROST
+	case spells.ShockingGrasp:
+		return dnd5ev1alpha1.Spell_SPELL_SHOCKING_GRASP
+	case spells.AcidSplash:
+		return dnd5ev1alpha1.Spell_SPELL_ACID_SPLASH
+	case spells.PoisonSpray:
+		return dnd5ev1alpha1.Spell_SPELL_POISON_SPRAY
+	case spells.ChillTouch:
+		return dnd5ev1alpha1.Spell_SPELL_CHILL_TOUCH
+	case spells.SacredFlame:
+		return dnd5ev1alpha1.Spell_SPELL_SACRED_FLAME
+	case spells.TollTheDead:
+		return dnd5ev1alpha1.Spell_SPELL_TOLL_THE_DEAD
+	case spells.WordOfRadiance:
+		return dnd5ev1alpha1.Spell_SPELL_WORD_OF_RADIANCE
+	case spells.EldritchBlast:
+		return dnd5ev1alpha1.Spell_SPELL_ELDRITCH_BLAST
+	case spells.Frostbite:
+		return dnd5ev1alpha1.Spell_SPELL_FROSTBITE
+	case spells.PrimalSavagery:
+		return dnd5ev1alpha1.Spell_SPELL_PRIMAL_SAVAGERY
+	case spells.Thornwhip:
+		return dnd5ev1alpha1.Spell_SPELL_THORNWHIP
+	case spells.MageHand:
+		return dnd5ev1alpha1.Spell_SPELL_MAGE_HAND
+	case spells.MinorIllusion:
+		return dnd5ev1alpha1.Spell_SPELL_MINOR_ILLUSION
+	case spells.Prestidigitation:
+		return dnd5ev1alpha1.Spell_SPELL_PRESTIDIGITATION
+	case spells.Light:
+		return dnd5ev1alpha1.Spell_SPELL_LIGHT
+	case spells.Guidance:
+		return dnd5ev1alpha1.Spell_SPELL_GUIDANCE
+	case spells.Resistance:
+		return dnd5ev1alpha1.Spell_SPELL_RESISTANCE
+	case spells.Thaumaturgy:
+		return dnd5ev1alpha1.Spell_SPELL_THAUMATURGY
+	case spells.SpareTheDying:
+		return dnd5ev1alpha1.Spell_SPELL_SPARE_THE_DYING
+
+	// Level 1 spells
+	case spells.MagicMissile:
+		return dnd5ev1alpha1.Spell_SPELL_MAGIC_MISSILE
+	case spells.BurningHands:
+		return dnd5ev1alpha1.Spell_SPELL_BURNING_HANDS
+	case spells.ChromaticOrb:
+		return dnd5ev1alpha1.Spell_SPELL_CHROMATIC_ORB
+	case spells.Thunderwave:
+		return dnd5ev1alpha1.Spell_SPELL_THUNDERWAVE
+	case spells.IceKnife:
+		return dnd5ev1alpha1.Spell_SPELL_ICE_KNIFE
+	case spells.WitchBolt:
+		return dnd5ev1alpha1.Spell_SPELL_WITCH_BOLT
+	case spells.GuidingBolt:
+		return dnd5ev1alpha1.Spell_SPELL_GUIDING_BOLT
+	case spells.InflictWounds:
+		return dnd5ev1alpha1.Spell_SPELL_INFLICT_WOUNDS
+	case spells.HailOfThorns:
+		return dnd5ev1alpha1.Spell_SPELL_HAIL_OF_THORNS
+	case spells.EnsnaringStrike:
+		return dnd5ev1alpha1.Spell_SPELL_ENSNARING_STRIKE
+	case spells.HellishRebuke:
+		return dnd5ev1alpha1.Spell_SPELL_HELLISH_REBUKE
+	case spells.ArmsOfHadar:
+		return dnd5ev1alpha1.Spell_SPELL_ARMS_OF_HADAR
+	case spells.Hex:
+		return dnd5ev1alpha1.Spell_SPELL_HEX
+	case spells.SearingSmite:
+		return dnd5ev1alpha1.Spell_SPELL_SEARING_SMITE
+	case spells.ThunderousSmite:
+		return dnd5ev1alpha1.Spell_SPELL_THUNDEROUS_SMITE
+	case spells.WrathfulSmite:
+		return dnd5ev1alpha1.Spell_SPELL_WRATHFUL_SMITE
+	case spells.Shield:
+		return dnd5ev1alpha1.Spell_SPELL_SHIELD
+	case spells.Sleep:
+		return dnd5ev1alpha1.Spell_SPELL_SLEEP
+	case spells.CharmPerson:
+		return dnd5ev1alpha1.Spell_SPELL_CHARM_PERSON
+	case spells.DetectMagic:
+		return dnd5ev1alpha1.Spell_SPELL_DETECT_MAGIC
+	case spells.Identify:
+		return dnd5ev1alpha1.Spell_SPELL_IDENTIFY
+	case spells.CureWounds:
+		return dnd5ev1alpha1.Spell_SPELL_CURE_WOUNDS
+	case spells.HealingWord:
+		return dnd5ev1alpha1.Spell_SPELL_HEALING_WORD
+	case spells.Bless:
+		return dnd5ev1alpha1.Spell_SPELL_BLESS
+	case spells.Bane:
+		return dnd5ev1alpha1.Spell_SPELL_BANE
+	case spells.ShieldOfFaith:
+		return dnd5ev1alpha1.Spell_SPELL_SHIELD_OF_FAITH
+
+	// TODO: Add more spell mappings as proto enums are defined
+
+	default:
+		return dnd5ev1alpha1.Spell_SPELL_UNSPECIFIED
+	}
+}
+

@@ -14,8 +14,8 @@ import (
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character/choices"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/spells"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/weapons"
-	// "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/spells" // TODO: Re-enable when spell conversion is needed
 )
 
 // HandlerConfig holds dependencies for the handler
@@ -768,7 +768,38 @@ func (h *Handler) ListSpellsByLevel(
 	ctx context.Context,
 	req *dnd5ev1alpha1.ListSpellsByLevelRequest,
 ) (*dnd5ev1alpha1.ListSpellsByLevelResponse, error) {
-	return nil, errors.Unimplemented("ListSpellsByLevel not implemented")
+	if req == nil {
+		return nil, errors.InvalidArgument("request is required")
+	}
+
+	// Call the orchestrator
+	result, err := h.characterService.ListSpellsByLevel(ctx, &character.ListSpellsByLevelInput{
+		Level:    int(req.Level),
+		PageSize: int(req.PageSize),
+		// TODO: Convert class filter when needed
+	})
+	if err != nil {
+		return nil, errors.ToGRPCError(err)
+	}
+
+	// Convert to proto format
+	protoSpells := make([]*dnd5ev1alpha1.SpellInfo, 0, len(result.Spells))
+	for _, spell := range result.Spells {
+		// Convert the orchestrator SpellInfo to proto SpellInfo
+		protoSpell := &dnd5ev1alpha1.SpellInfo{
+			SpellId:     convertSpellToProtoEnum(spells.Spell(spell.ID)),
+			Name:        spell.Name,
+			Description: spell.Description,
+			Level:       int32(spell.Level),
+		}
+		protoSpells = append(protoSpells, protoSpell)
+	}
+
+	return &dnd5ev1alpha1.ListSpellsByLevelResponse{
+		Spells:    protoSpells,
+		TotalSize: int32(result.Total),
+		// TODO: Implement pagination tokens if needed
+	}, nil
 }
 
 // GetCharacterInventory gets character inventory

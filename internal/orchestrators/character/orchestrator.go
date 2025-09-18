@@ -16,6 +16,7 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/classes"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/races"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/spells"
 )
 
 // Config holds dependencies for the orchestrator
@@ -1007,5 +1008,40 @@ func (o *Orchestrator) ListEquipmentByType(ctx context.Context, input *ListEquip
 	// Return empty for now - the handler will use the toolkit directly
 	return &ListEquipmentByTypeOutput{
 		Equipment: []interface{}{},
+	}, nil
+}
+
+// ListSpellsByLevel returns spells of a specific level with their info
+func (o *Orchestrator) ListSpellsByLevel(ctx context.Context, input *ListSpellsByLevelInput) (*ListSpellsByLevelOutput, error) {
+	if input == nil {
+		return nil, errors.InvalidArgument("input is required")
+	}
+
+	// Validate spell level
+	if input.Level < 0 || input.Level > 9 {
+		return nil, errors.InvalidArgument("spell level must be between 0 (cantrips) and 9")
+	}
+
+	// Get all spells for the requested level from the toolkit
+	toolkitSpells := spells.GetSpellsByLevel(input.Level)
+
+	// Convert to our SpellInfo format
+	result := make([]SpellInfo, 0, len(toolkitSpells))
+	for _, spellData := range toolkitSpells {
+		info := SpellInfo{
+			ID:          string(spellData.ID),
+			Name:        spellData.Name,
+			Description: spellData.Description,
+			Level:       spellData.Level,
+		}
+		result = append(result, info)
+	}
+
+	// TODO: Implement class filtering if needed
+	// TODO: Implement pagination if needed
+
+	return &ListSpellsByLevelOutput{
+		Spells: result,
+		Total:  len(result),
 	}, nil
 }

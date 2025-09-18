@@ -1,5 +1,5 @@
-github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20250914055024-b9f9b608b99d h1:ZLIhvzuWQPCpq57HQJBhkxJVczF1OTJXobzOQpP3EDc=
-github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20250914055024-b9f9b608b99d/go.mod h1:JA7C2gBU9qEI7C7d/ODBfPNLvzDzccKmQuTIYB920kg=
+github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20250918085706-a89bb4ca971d h1:EKF2tnhUcx8cscDlDcuKriX3nqsDyYSWaGwrpXGJaV4=
+github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20250918085706-a89bb4ca971d/go.mod h1:JA7C2gBU9qEI7C7d/ODBfPNLvzDzccKmQuTIYB920kg=
 github.com/KirkDiggler/rpg-toolkit/core v0.9.2 h1:UpH0aq/VLbqbV8sW0Q+dvZOMmSG+TKZjdizVD26ursc=
 github.com/KirkDiggler/rpg-toolkit/core v0.9.2/go.mod h1:XFQXYViPZUTYu/a8jdRadI3rGnKk4r7tRtPm++vSUV0=
 github.com/KirkDiggler/rpg-toolkit/dice v0.3.3-0.20250914062452-e2c6a0f32059 h1:74OW0fnq459g28p2JpyrB20tjno4FlF18+cHJ2xiTes=
@@ -12,6 +12,8 @@ github.com/KirkDiggler/rpg-toolkit/rpgerr v0.1.2 h1:B7IrROe3GcPrzMeV0EQryA194Y7Y
 github.com/KirkDiggler/rpg-toolkit/rpgerr v0.1.2/go.mod h1:wsyJmmf1X0iLFGy5Iyy5sUoZhXZQvuYVsKdXfc4b/T4=
 github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.19.4 h1:zvjqPVMo8s1Xopu9sj326uHuSsVhiP9nBzzTgSd0q1g=
 github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.19.4/go.mod h1:Mwnny6omiqXjUC5JmlqClXUI3AGPvmT5djAPgOJyAcs=
+github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.19.5 h1:rOOW9Ed1XA37HWMog/7fS90zQ0LyEvqoBCciaj2mG8I=
+github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.19.5/go.mod h1:Mwnny6omiqXjUC5JmlqClXUI3AGPvmT5djAPgOJyAcs=
 github.com/KirkDiggler/rpg-toolkit/tools/spatial v0.1.1 h1:CWKr7NurYH0JtREkN5NO+9s4Q0VQv/uXUA8L/2JKJkI=
 github.com/KirkDiggler/rpg-toolkit/tools/spatial v0.1.1/go.mod h1:6DSb4xhITAy0wstKWoS3BeEYywWLt+138bxRCfH0kzY=
 github.com/bsm/ginkgo/v2 v2.12.0 h1:Ny8MWAHyOepLGlLKYmXG4IEkioBysk6GpaRTLC8zwWs=
