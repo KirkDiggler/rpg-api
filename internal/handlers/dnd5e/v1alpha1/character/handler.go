@@ -101,9 +101,21 @@ func (h *Handler) GetDraft(
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
+	// Convert draft to proto
+	protoDraft := convertDraftDataToProto(output.Draft)
+
+	// Run validation to populate the validation field
+	validationOutput, err := h.characterService.ValidateDraft(ctx, &character.ValidateDraftInput{
+		DraftID: req.DraftId,
+	})
+	if err == nil && validationOutput != nil {
+		// Convert toolkit validation to proto format
+		protoDraft.Validation = convertValidationResultToProto(validationOutput.Validation, validationOutput.Progress)
+	}
+
 	// Convert result to proto
 	return &dnd5ev1alpha1.GetDraftResponse{
-		Draft: convertDraftDataToProto(output.Draft),
+		Draft: protoDraft,
 	}, nil
 }
 

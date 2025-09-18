@@ -889,6 +889,134 @@ func convertBackgroundDataToProto(data *backgrounds.Data) *dnd5ev1alpha1.Backgro
 	}
 }
 
+// convertValidationResultToProto converts toolkit validation to proto ValidationResult
+func convertValidationResultToProto(toolkitValidation *choices.ValidationResult, progress toolkitchar.Progress) *dnd5ev1alpha1.ValidationResult {
+	if toolkitValidation == nil {
+		// If no validation result from toolkit, create one based on progress
+		return createValidationFromProgress(progress)
+	}
+
+	result := &dnd5ev1alpha1.ValidationResult{
+		IsValid: toolkitValidation.Valid,
+		Issues:  make([]*dnd5ev1alpha1.ValidationResult_Issue, 0),
+	}
+
+	// Convert toolkit validation errors to proto issues
+	for _, err := range toolkitValidation.Errors {
+		issue := &dnd5ev1alpha1.ValidationResult_Issue{
+			Message: err.Message,
+		}
+
+		// Map choice category to severity and field
+		if err.Category == "" {
+			issue.Severity = dnd5ev1alpha1.ValidationResult_SEVERITY_ERROR
+			issue.Field = dnd5ev1alpha1.ValidationField_VALIDATION_FIELD_UNSPECIFIED
+		} else {
+			// For missing choices, use INCOMPLETE severity
+			issue.Severity = dnd5ev1alpha1.ValidationResult_SEVERITY_INCOMPLETE
+
+			// Map category to field
+			switch err.Category {
+			case shared.ChoiceSkills:
+				issue.Field = dnd5ev1alpha1.ValidationField_VALIDATION_FIELD_SKILLS
+				issue.Source = dnd5ev1alpha1.ValidationSource_VALIDATION_SOURCE_CLASS
+			case shared.ChoiceFightingStyle:
+				issue.Field = dnd5ev1alpha1.ValidationField_VALIDATION_FIELD_FIGHTING_STYLE
+				issue.Source = dnd5ev1alpha1.ValidationSource_VALIDATION_SOURCE_CLASS
+			case shared.ChoiceEquipment:
+				issue.Field = dnd5ev1alpha1.ValidationField_VALIDATION_FIELD_EQUIPMENT
+				issue.Source = dnd5ev1alpha1.ValidationSource_VALIDATION_SOURCE_CLASS
+			case shared.ChoiceLanguages:
+				issue.Field = dnd5ev1alpha1.ValidationField_VALIDATION_FIELD_LANGUAGES
+				// Could be race or background
+				if strings.Contains(err.Message, "background") {
+					issue.Source = dnd5ev1alpha1.ValidationSource_VALIDATION_SOURCE_BACKGROUND
+				} else {
+					issue.Source = dnd5ev1alpha1.ValidationSource_VALIDATION_SOURCE_RACE
+				}
+			default:
+				issue.Field = dnd5ev1alpha1.ValidationField_VALIDATION_FIELD_UNSPECIFIED
+				issue.Source = dnd5ev1alpha1.ValidationSource_VALIDATION_SOURCE_UNSPECIFIED
+			}
+		}
+
+		result.Issues = append(result.Issues, issue)
+
+		// Update counts
+		switch issue.Severity {
+		case dnd5ev1alpha1.ValidationResult_SEVERITY_ERROR:
+			result.ErrorCount++
+		case dnd5ev1alpha1.ValidationResult_SEVERITY_INCOMPLETE:
+			result.IncompleteCount++
+		case dnd5ev1alpha1.ValidationResult_SEVERITY_WARNING:
+			result.WarningCount++
+		}
+	}
+
+	return result
+}
+
+// createValidationFromProgress creates a ValidationResult based on character progress
+func createValidationFromProgress(progress toolkitchar.Progress) *dnd5ev1alpha1.ValidationResult {
+	result := &dnd5ev1alpha1.ValidationResult{
+		IsValid: progress.IsComplete(),
+		Issues:  make([]*dnd5ev1alpha1.ValidationResult_Issue, 0),
+	}
+
+	// Check each progress field and add issues for incomplete items
+	if !progress.Has(toolkitchar.ProgressName) {
+		result.Issues = append(result.Issues, &dnd5ev1alpha1.ValidationResult_Issue{
+			Severity: dnd5ev1alpha1.ValidationResult_SEVERITY_INCOMPLETE,
+			Source:   dnd5ev1alpha1.ValidationSource_VALIDATION_SOURCE_NAME,
+			Field:    dnd5ev1alpha1.ValidationField_VALIDATION_FIELD_NAME,
+			Message:  "Character name is required",
+		})
+		result.IncompleteCount++
+	}
+
+	if !progress.Has(toolkitchar.ProgressRace) {
+		result.Issues = append(result.Issues, &dnd5ev1alpha1.ValidationResult_Issue{
+			Severity: dnd5ev1alpha1.ValidationResult_SEVERITY_INCOMPLETE,
+			Source:   dnd5ev1alpha1.ValidationSource_VALIDATION_SOURCE_RACE,
+			Field:    dnd5ev1alpha1.ValidationField_VALIDATION_FIELD_RACE,
+			Message:  "Race selection is incomplete",
+		})
+		result.IncompleteCount++
+	}
+
+	if !progress.Has(toolkitchar.ProgressClass) {
+		result.Issues = append(result.Issues, &dnd5ev1alpha1.ValidationResult_Issue{
+			Severity: dnd5ev1alpha1.ValidationResult_SEVERITY_INCOMPLETE,
+			Source:   dnd5ev1alpha1.ValidationSource_VALIDATION_SOURCE_CLASS,
+			Field:    dnd5ev1alpha1.ValidationField_VALIDATION_FIELD_CLASS,
+			Message:  "Class selection or class choices are incomplete",
+		})
+		result.IncompleteCount++
+	}
+
+	if !progress.Has(toolkitchar.ProgressBackground) {
+		result.Issues = append(result.Issues, &dnd5ev1alpha1.ValidationResult_Issue{
+			Severity: dnd5ev1alpha1.ValidationResult_SEVERITY_INCOMPLETE,
+			Source:   dnd5ev1alpha1.ValidationSource_VALIDATION_SOURCE_BACKGROUND,
+			Field:    dnd5ev1alpha1.ValidationField_VALIDATION_FIELD_BACKGROUND,
+			Message:  "Background selection is incomplete",
+		})
+		result.IncompleteCount++
+	}
+
+	if !progress.Has(toolkitchar.ProgressAbilityScores) {
+		result.Issues = append(result.Issues, &dnd5ev1alpha1.ValidationResult_Issue{
+			Severity: dnd5ev1alpha1.ValidationResult_SEVERITY_INCOMPLETE,
+			Source:   dnd5ev1alpha1.ValidationSource_VALIDATION_SOURCE_ABILITY_SCORES,
+			Field:    dnd5ev1alpha1.ValidationField_VALIDATION_FIELD_ABILITY_SCORES,
+			Message:  "Ability scores have not been assigned",
+		})
+		result.IncompleteCount++
+	}
+
+	return result
+}
+
 // convertCharacterToProto converts toolkit character.Character to proto Character
 func convertCharacterToProto(char *toolkitchar.Character) *dnd5ev1alpha1.Character {
 	if char == nil {
