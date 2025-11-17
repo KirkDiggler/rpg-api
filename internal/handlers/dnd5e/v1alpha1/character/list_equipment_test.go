@@ -13,10 +13,10 @@ import (
 
 type ListEquipmentTestSuite struct {
 	suite.Suite
-	ctrl             *gomock.Controller
-	mockService      *charactermock.MockService
-	handler          *Handler
-	ctx              context.Context
+	ctrl        *gomock.Controller
+	mockService *charactermock.MockService
+	handler     *Handler
+	ctx         context.Context
 }
 
 func (s *ListEquipmentTestSuite) SetupTest() {

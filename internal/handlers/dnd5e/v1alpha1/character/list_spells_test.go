@@ -9,7 +9,7 @@ import (
 
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
-	"github.com/KirkDiggler/rpg-api/internal/orchestrators/character/mock"
+	charactermock "github.com/KirkDiggler/rpg-api/internal/orchestrators/character/mock"
 )
 
 type ListSpellsTestSuite struct {

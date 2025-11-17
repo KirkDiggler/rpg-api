@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"go.uber.org/mock/gomock"
 	"github.com/stretchr/testify/suite"
+	"go.uber.org/mock/gomock"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -17,10 +17,10 @@ import (
 
 type HandlerTestSuite struct {
 	suite.Suite
-	ctrl             *gomock.Controller
-	mockService      *charactermock.MockService
-	handler          *Handler
-	ctx              context.Context
+	ctrl        *gomock.Controller
+	mockService *charactermock.MockService
+	handler     *Handler
+	ctx         context.Context
 }
 
 func (s *HandlerTestSuite) SetupTest() {

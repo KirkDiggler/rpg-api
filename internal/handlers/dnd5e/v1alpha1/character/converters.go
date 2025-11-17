@@ -2445,4 +2445,3 @@ func convertSpellToProtoEnum(spell spells.Spell) dnd5ev1alpha1.Spell {
 		return dnd5ev1alpha1.Spell_SPELL_UNSPECIFIED
 	}
 }
-

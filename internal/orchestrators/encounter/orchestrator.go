@@ -1,3 +1,4 @@
+// Package encounter provides orchestration for D&D 5e encounter management and combat resolution.
 package encounter
 
 import (
