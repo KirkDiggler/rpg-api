@@ -10,6 +10,7 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/pkg/idgen"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	characterdraft "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft"
+	"github.com/KirkDiggler/rpg-toolkit/events"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/backgrounds"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character/choices"
@@ -625,13 +626,19 @@ func (o *Orchestrator) FinalizeDraft(ctx context.Context, input *FinalizeDraftIn
 
 	// Convert to character with generated ID
 	characterID := o.idGen.Generate()
-	char, err := draft.ToCharacter(characterID)
+
+	// Create EventBus for character features
+	bus := events.NewEventBus()
+
+	// ToCharacter now requires EventBus for feature subscription
+	char, err := draft.ToCharacter(ctx, characterID, bus)
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert draft to character: %w", err)
 	}
 
 	// Convert character to data for storage
-	charData := character.FromCharacter(char)
+	// ToData is now a method on Character
+	charData := char.ToData()
 
 	// Save character to character repository
 	createOutput, err := o.characterRepo.Create(ctx, characterrepo.CreateInput{
@@ -652,7 +659,14 @@ func (o *Orchestrator) FinalizeDraft(ctx context.Context, input *FinalizeDraftIn
 	}
 
 	// Load the saved character from the repository data
-	finalChar := createOutput.CharacterData.ToCharacter()
+	// Create EventBus for character features
+	finalBus := events.NewEventBus()
+
+	// LoadFromData reconstructs Character with features subscribed to events
+	finalChar, err := character.LoadFromData(ctx, createOutput.CharacterData, finalBus)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load character from data: %w", err)
+	}
 
 	return &FinalizeDraftOutput{
 		Character: finalChar,

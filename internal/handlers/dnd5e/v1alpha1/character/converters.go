@@ -1026,7 +1026,8 @@ func convertCharacterToProto(char *toolkitchar.Character) *dnd5ev1alpha1.Charact
 		return nil
 	}
 	// Convert to Data first, then use existing converter
-	data := toolkitchar.FromCharacter(char)
+	// ToData is now a method on Character
+	data := char.ToData()
 	return convertCharacterDataToProto(data)
 }
 
@@ -2444,4 +2445,3 @@ func convertSpellToProtoEnum(spell spells.Spell) dnd5ev1alpha1.Spell {
 		return dnd5ev1alpha1.Spell_SPELL_UNSPECIFIED
 	}
 }
-
