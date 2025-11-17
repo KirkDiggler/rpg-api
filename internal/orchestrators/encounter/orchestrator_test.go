@@ -3,7 +3,9 @@ package encounter
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/suite"
 	"go.uber.org/mock/gomock"
@@ -289,4 +291,124 @@ func createTestEncounterData(id string) *encounterrepo.EncounterData {
 	return &encounterrepo.EncounterData{
 		ID: id,
 	}
+}
+
+// CreateDungeon Tests
+
+func (s *OrchestratorTestSuite) TestCreateDungeon_Success() {
+	// Arrange - Mock encounter repo save
+	s.mockEncRepo.EXPECT().
+		Save(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, input *encounterrepo.SaveInput) (*encounterrepo.SaveOutput, error) {
+			// Verify encounter ID is present and follows expected format
+			s.Assert().NotEmpty(input.EncounterID)
+			s.Assert().Contains(input.EncounterID, "enc-")
+			return &encounterrepo.SaveOutput{Success: true}, nil
+		})
+
+	// Act
+	output, err := s.orchestrator.CreateDungeon(context.Background(), &CreateDungeonInput{
+		PlayerID: "player-1",
+	})
+
+	// Assert
+	s.Require().NoError(err)
+	s.Require().NotNil(output)
+	s.Assert().NotEmpty(output.EncounterID)
+	s.Assert().Contains(output.EncounterID, "enc-")
+}
+
+func (s *OrchestratorTestSuite) TestCreateDungeon_NilInput() {
+	// Act
+	output, err := s.orchestrator.CreateDungeon(context.Background(), nil)
+
+	// Assert
+	s.Require().Error(err)
+	s.Assert().Nil(output)
+	s.Assert().Contains(err.Error(), "input is required")
+}
+
+func (s *OrchestratorTestSuite) TestCreateDungeon_SaveError() {
+	// Arrange - Mock repo save to return error
+	expectedError := fmt.Errorf("database error")
+	s.mockEncRepo.EXPECT().
+		Save(gomock.Any(), gomock.Any()).
+		Return(nil, expectedError)
+
+	// Act
+	output, err := s.orchestrator.CreateDungeon(context.Background(), &CreateDungeonInput{
+		PlayerID: "player-1",
+	})
+
+	// Assert
+	s.Require().Error(err)
+	s.Assert().Nil(output)
+	s.Assert().Contains(err.Error(), "failed to save encounter")
+	s.Assert().ErrorIs(err, expectedError)
+}
+
+func (s *OrchestratorTestSuite) TestCreateDungeon_MinimalInput() {
+	// Test with empty PlayerID (optional field for Phase 2)
+	s.mockEncRepo.EXPECT().
+		Save(gomock.Any(), gomock.Any()).
+		Return(&encounterrepo.SaveOutput{Success: true}, nil)
+
+	output, err := s.orchestrator.CreateDungeon(context.Background(), &CreateDungeonInput{
+		PlayerID: "",
+	})
+
+	s.Require().NoError(err)
+	s.Assert().NotEmpty(output.EncounterID)
+}
+
+func (s *OrchestratorTestSuite) TestCreateDungeon_UniqueIDs() {
+	// Verify that multiple calls generate unique IDs
+	var capturedIDs []string
+
+	s.mockEncRepo.EXPECT().
+		Save(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, input *encounterrepo.SaveInput) (*encounterrepo.SaveOutput, error) {
+			capturedIDs = append(capturedIDs, input.EncounterID)
+			return &encounterrepo.SaveOutput{Success: true}, nil
+		}).
+		Times(3)
+
+	// Create three encounters
+	for i := 0; i < 3; i++ {
+		output, err := s.orchestrator.CreateDungeon(context.Background(), &CreateDungeonInput{
+			PlayerID: fmt.Sprintf("player-%d", i),
+		})
+		s.Require().NoError(err)
+		s.Assert().NotEmpty(output.EncounterID)
+
+		// Small delay to ensure different timestamps
+		time.Sleep(1 * time.Millisecond)
+	}
+
+	// Assert all IDs are unique
+	s.Assert().Len(capturedIDs, 3)
+	s.Assert().NotEqual(capturedIDs[0], capturedIDs[1])
+	s.Assert().NotEqual(capturedIDs[1], capturedIDs[2])
+	s.Assert().NotEqual(capturedIDs[0], capturedIDs[2])
+}
+
+func (s *OrchestratorTestSuite) TestCreateDungeon_SavesMinimalData() {
+	// Verify that for Phase 2, only EncounterID is set
+	s.mockEncRepo.EXPECT().
+		Save(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, input *encounterrepo.SaveInput) (*encounterrepo.SaveOutput, error) {
+			// Verify Phase 2: minimal data
+			s.Assert().NotEmpty(input.EncounterID)
+			s.Assert().Nil(input.RoomData, "RoomData should be nil for Phase 2")
+			s.Assert().Nil(input.InitiativeData, "InitiativeData should be nil for Phase 2")
+			s.Assert().Nil(input.InitiativeRolls, "InitiativeRolls should be nil for Phase 2")
+			return &encounterrepo.SaveOutput{Success: true}, nil
+		})
+
+	output, err := s.orchestrator.CreateDungeon(context.Background(), &CreateDungeonInput{
+		PlayerID: "player-1",
+	})
+
+	s.Require().NoError(err)
+	s.Assert().NotEmpty(output.EncounterID)
 }

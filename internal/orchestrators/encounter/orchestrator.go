@@ -4,6 +4,7 @@ package encounter
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/KirkDiggler/rpg-toolkit/dice"
 	"github.com/KirkDiggler/rpg-toolkit/events"
@@ -151,5 +152,31 @@ func (o *Orchestrator) ResolveAttack(ctx context.Context, input *ResolveAttackIn
 		},
 		MonsterHP:   newHP,
 		MonsterDead: newHP <= 0,
+	}, nil
+}
+
+// CreateDungeon creates a new encounter and returns the encounter ID
+// Phase 2: Minimal implementation - just encounter ID, no room
+func (o *Orchestrator) CreateDungeon(ctx context.Context, input *CreateDungeonInput) (*CreateDungeonOutput, error) {
+	if input == nil {
+		return nil, fmt.Errorf("input is required")
+	}
+
+	// Generate unique encounter ID using timestamp
+	encounterID := fmt.Sprintf("enc-%d", time.Now().UnixNano())
+
+	// Save minimal encounter data (Phase 2)
+	// TODO Phase 3: Add RoomData, InitiativeData, etc.
+	_, err := o.encRepo.Save(ctx, &encounterrepo.SaveInput{
+		EncounterID: encounterID,
+		// RoomData, InitiativeData, InitiativeRolls are nil for Phase 2
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to save encounter: %w", err)
+	}
+
+	// Return encounter ID
+	return &CreateDungeonOutput{
+		EncounterID: encounterID,
 	}, nil
 }

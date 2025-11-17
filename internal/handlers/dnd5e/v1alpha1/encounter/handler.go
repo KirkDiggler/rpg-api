@@ -79,10 +79,28 @@ func (h *Handler) Attack(ctx context.Context, req *dnd5ev1alpha1.AttackRequest) 
 
 // DungeonStart handles dungeon start requests
 func (h *Handler) DungeonStart(
-	_ context.Context,
-	_ *dnd5ev1alpha1.DungeonStartRequest,
+	ctx context.Context,
+	req *dnd5ev1alpha1.DungeonStartRequest,
 ) (*dnd5ev1alpha1.DungeonStartResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "DungeonStart endpoint not yet implemented")
+	// 1. Create service input
+	// Phase 2: Minimal - character_ids exist in proto but we're just creating encounter for now
+	input := &encounter.CreateDungeonInput{
+		// Phase 2: Just track that dungeon was started, ignore character_ids for now
+		PlayerID: "", // No player tracking yet in Phase 2
+	}
+
+	// 2. Call service
+	output, err := h.encounterService.CreateDungeon(ctx, input)
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	// 3. Convert to proto response
+	return &dnd5ev1alpha1.DungeonStartResponse{
+		EncounterId: output.EncounterID,
+		// TODO Phase 3: Add Room conversion when spatial is implemented
+		// TODO Phase 3: Add CombatState when combat initialization is implemented
+	}, nil
 }
 
 // GetCombatState retrieves current combat state

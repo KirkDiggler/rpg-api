@@ -42,6 +42,21 @@ func (m *MockService) EXPECT() *MockServiceMockRecorder {
 	return m.recorder
 }
 
+// CreateDungeon mocks base method.
+func (m *MockService) CreateDungeon(ctx context.Context, input *encounter.CreateDungeonInput) (*encounter.CreateDungeonOutput, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CreateDungeon", ctx, input)
+	ret0, _ := ret[0].(*encounter.CreateDungeonOutput)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// CreateDungeon indicates an expected call of CreateDungeon.
+func (mr *MockServiceMockRecorder) CreateDungeon(ctx, input any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateDungeon", reflect.TypeOf((*MockService)(nil).CreateDungeon), ctx, input)
+}
+
 // ResolveAttack mocks base method.
 func (m *MockService) ResolveAttack(ctx context.Context, input *encounter.ResolveAttackInput) (*encounter.ResolveAttackOutput, error) {
 	m.ctrl.T.Helper()

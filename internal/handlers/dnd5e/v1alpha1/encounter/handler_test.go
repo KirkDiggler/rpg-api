@@ -313,20 +313,68 @@ func (s *HandlerTestSuite) TestAttack_ServiceError() {
 	s.Assert().Equal(codes.Internal, st.Code())
 }
 
-// TestDungeonStart_Unimplemented tests that DungeonStart returns Unimplemented
-func (s *HandlerTestSuite) TestDungeonStart_Unimplemented() {
-	req := &dnd5ev1alpha1.DungeonStartRequest{
-		CharacterIds: []string{"char-1", "char-2"},
-	}
+// TestDungeonStart_Success tests successful dungeon creation
+func (s *HandlerTestSuite) TestDungeonStart_Success() {
+	// Arrange - Mock service to return encounter ID
+	s.mockService.EXPECT().
+		CreateDungeon(gomock.Any(), &encounter.CreateDungeonInput{
+			PlayerID: "", // Phase 2: No player tracking yet
+		}).
+		Return(&encounter.CreateDungeonOutput{
+			EncounterID: "enc-123",
+		}, nil)
 
-	resp, err := s.handler.DungeonStart(context.Background(), req)
+	// Act
+	resp, err := s.handler.DungeonStart(context.Background(), &dnd5ev1alpha1.DungeonStartRequest{
+		CharacterIds: []string{"char-1", "char-2"}, // Proto has character_ids
+	})
 
+	// Assert
+	s.Require().NoError(err)
+	s.Require().NotNil(resp)
+	s.Assert().Equal("enc-123", resp.EncounterId)
+}
+
+// TestDungeonStart_ServiceError tests when service returns error
+func (s *HandlerTestSuite) TestDungeonStart_ServiceError() {
+	// Arrange - Test when service returns error
+	s.mockService.EXPECT().
+		CreateDungeon(gomock.Any(), gomock.Any()).
+		Return(nil, status.Error(codes.Internal, "failed to create encounter"))
+
+	// Act
+	resp, err := s.handler.DungeonStart(context.Background(), &dnd5ev1alpha1.DungeonStartRequest{
+		CharacterIds: []string{"char-1"},
+	})
+
+	// Assert
 	s.Require().Error(err)
 	s.Assert().Nil(resp)
 
+	// Check for Internal error code
 	st, ok := status.FromError(err)
 	s.Require().True(ok)
-	s.Assert().Equal(codes.Unimplemented, st.Code())
+	s.Assert().Equal(codes.Internal, st.Code())
+}
+
+// TestDungeonStart_EmptyRequest tests with no character_ids
+func (s *HandlerTestSuite) TestDungeonStart_EmptyRequest() {
+	// Arrange - Test with empty request
+	s.mockService.EXPECT().
+		CreateDungeon(gomock.Any(), &encounter.CreateDungeonInput{
+			PlayerID: "", // Phase 2: No player tracking
+		}).
+		Return(&encounter.CreateDungeonOutput{
+			EncounterID: "enc-456",
+		}, nil)
+
+	// Act
+	resp, err := s.handler.DungeonStart(context.Background(), &dnd5ev1alpha1.DungeonStartRequest{})
+
+	// Assert
+	s.Require().NoError(err)
+	s.Require().NotNil(resp)
+	s.Assert().Equal("enc-456", resp.EncounterId)
 }
 
 // TestGetCombatState_Unimplemented tests that GetCombatState returns Unimplemented

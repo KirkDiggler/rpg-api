@@ -10,6 +10,9 @@ import (
 type Service interface {
 	// ResolveAttack handles a combat attack action
 	ResolveAttack(ctx context.Context, input *ResolveAttackInput) (*ResolveAttackOutput, error)
+
+	// CreateDungeon starts a new dungeon encounter
+	CreateDungeon(ctx context.Context, input *CreateDungeonInput) (*CreateDungeonOutput, error)
 }
 
 // ResolveAttackInput contains attack parameters
@@ -46,4 +49,17 @@ type AttackResult struct {
 	DamageBonus int    // Total damage bonus
 	TotalDamage int    // Final damage dealt
 	DamageType  string // Type of damage (slashing, piercing, etc.)
+}
+
+// CreateDungeonInput contains parameters for creating a dungeon encounter
+// Phase 2: Minimal - just tracking who starts the dungeon
+type CreateDungeonInput struct {
+	PlayerID string // Optional - ID of player starting the dungeon
+}
+
+// CreateDungeonOutput returns the created encounter details
+// Phase 2: Minimal - just encounter_id, no room yet
+type CreateDungeonOutput struct {
+	EncounterID string // ID of the created encounter
+	// TODO Phase 3: Add Room when implementing spatial
 }
