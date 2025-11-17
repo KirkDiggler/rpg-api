@@ -518,9 +518,9 @@ func (h *Handler) GetCharacter(
 		return nil, err
 	}
 
-	// Convert Data to Character first, then to proto
-	char := result.Character.ToCharacter()
-	protoCharacter := convertCharacterToProto(char)
+	// Convert Data directly to proto
+	// result.Character is already *character.Data
+	protoCharacter := convertCharacterDataToProto(result.Character)
 
 	return &dnd5ev1alpha1.GetCharacterResponse{
 		Character: protoCharacter,
