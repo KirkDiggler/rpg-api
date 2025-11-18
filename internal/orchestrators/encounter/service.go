@@ -39,6 +39,7 @@ type AttackResult struct {
 	AttackRoll      int  // The d20 roll
 	AttackBonus     int  // Total bonus applied
 	TotalAttack     int  // Roll + bonus
+	TargetAC        int  // Target's armor class
 	Hit             bool // Did the attack hit?
 	Critical        bool // Was it a critical hit?
 	IsNaturalTwenty bool // Natural 20

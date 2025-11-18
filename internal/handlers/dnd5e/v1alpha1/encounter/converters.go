@@ -17,7 +17,7 @@ func convertAttackResultToProto(result *encounter.AttackResult) *dnd5ev1alpha1.A
 		Hit:         result.Hit,
 		AttackRoll:  int32(result.AttackRoll),
 		AttackTotal: int32(result.TotalAttack),
-		TargetAc:    int32(result.AttackBonus), // TODO: Fix when orchestrator exposes TargetAC
+		TargetAc:    int32(result.TargetAC),
 		Damage:      int32(result.TotalDamage),
 		DamageType:  result.DamageType,
 		Critical:    result.Critical,

@@ -141,6 +141,7 @@ func (o *Orchestrator) ResolveAttack(ctx context.Context, input *ResolveAttackIn
 			AttackRoll:      result.AttackRoll,
 			AttackBonus:     result.AttackBonus,
 			TotalAttack:     result.TotalAttack,
+			TargetAC:        result.TargetAC,
 			Hit:             result.Hit,
 			Critical:        result.Critical,
 			IsNaturalTwenty: result.IsNaturalTwenty,
