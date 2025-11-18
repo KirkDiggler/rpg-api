@@ -12,8 +12,8 @@ github.com/KirkDiggler/rpg-toolkit/mechanics/resources v0.3.1 h1:wRshHQZfLnEh03/
 github.com/KirkDiggler/rpg-toolkit/mechanics/resources v0.3.1/go.mod h1:LzyZd5OAAic1UnyPwCx6HnmWcOQ/jZvqMSc+Q0k7fH8=
 github.com/KirkDiggler/rpg-toolkit/rpgerr v0.1.2 h1:B7IrROe3GcPrzMeV0EQryA194Y7Yjl3E4kw/OBx4Ucc=
 github.com/KirkDiggler/rpg-toolkit/rpgerr v0.1.2/go.mod h1:wsyJmmf1X0iLFGy5Iyy5sUoZhXZQvuYVsKdXfc4b/T4=
-github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.20.2 h1:Jx+9vEiQqPRlVUforyv+vK4xrr48I1uK8hNM2aZxYxQ=
-github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.20.2/go.mod h1:CvG7oLXInlmeRaUc+hvWW8zPCmsLneOFcrtlSJCQoJk=
+github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.20.4 h1:q2wK8ErTrk4FmXvCQb5Dj/FOHZ4xQZHXFPwiJuEHnqM=
+github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.20.4/go.mod h1:CvG7oLXInlmeRaUc+hvWW8zPCmsLneOFcrtlSJCQoJk=
 github.com/KirkDiggler/rpg-toolkit/tools/spatial v0.1.1 h1:CWKr7NurYH0JtREkN5NO+9s4Q0VQv/uXUA8L/2JKJkI=
 github.com/KirkDiggler/rpg-toolkit/tools/spatial v0.1.1/go.mod h1:6DSb4xhITAy0wstKWoS3BeEYywWLt+138bxRCfH0kzY=
 github.com/bsm/ginkgo/v2 v2.12.0 h1:Ny8MWAHyOepLGlLKYmXG4IEkioBysk6GpaRTLC8zwWs=
