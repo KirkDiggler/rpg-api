@@ -13,6 +13,9 @@ type Service interface {
 
 	// CreateDungeon starts a new dungeon encounter
 	CreateDungeon(ctx context.Context, input *CreateDungeonInput) (*CreateDungeonOutput, error)
+
+	// MoveCharacter handles character movement in the encounter
+	MoveCharacter(ctx context.Context, input *MoveCharacterInput) (*MoveCharacterOutput, error)
 }
 
 // ResolveAttackInput contains attack parameters
@@ -63,4 +66,28 @@ type CreateDungeonInput struct {
 type CreateDungeonOutput struct {
 	EncounterID string // ID of the created encounter
 	// TODO Phase 3: Add Room when implementing spatial
+}
+
+// MoveCharacterInput contains movement parameters
+// Phase 2: Simple movement to a single target position
+type MoveCharacterInput struct {
+	EncounterID    string    // ID of the encounter
+	EntityID       string    // ID of entity being moved
+	TargetPosition *Position // Target position to move to
+}
+
+// Position represents a 2D position in the room
+// This mirrors spatial.Position for handler layer use
+type Position struct {
+	X float64
+	Y float64
+}
+
+// MoveCharacterOutput returns movement results
+type MoveCharacterOutput struct {
+	Success           bool        // Whether the movement succeeded
+	FinalPosition     *Position   // Final position of the entity
+	MovementRemaining int32       // Movement points remaining (Phase 3)
+	StopReason        string      // Why movement stopped ("completed", "blocked", "out_of_bounds")
+	UpdatedRoom       interface{} // Updated room data (using interface{} until spatial is fixed)
 }

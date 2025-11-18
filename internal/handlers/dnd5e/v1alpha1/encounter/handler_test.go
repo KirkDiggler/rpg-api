@@ -2,6 +2,7 @@ package encounter
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/suite"
@@ -13,6 +14,7 @@ import (
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/encounter"
 	encountermock "github.com/KirkDiggler/rpg-api/internal/orchestrators/encounter/mock"
+	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
 )
 
 // HandlerTestSuite tests the encounter handler
@@ -393,25 +395,193 @@ func (s *HandlerTestSuite) TestGetCombatState_Unimplemented() {
 	s.Assert().Equal(codes.Unimplemented, st.Code())
 }
 
-// TestMoveCharacter_Unimplemented tests that MoveCharacter returns Unimplemented
-func (s *HandlerTestSuite) TestMoveCharacter_Unimplemented() {
-	req := &dnd5ev1alpha1.MoveCharacterRequest{
+// TestMoveCharacter_Success tests successful movement
+func (s *HandlerTestSuite) TestMoveCharacter_Success() {
+	// Arrange
+	expectedRoom := &spatial.RoomData{
+		ID:       "enc-1-room",
+		Type:     "dungeon",
+		Width:    20,
+		Height:   20,
+		GridType: spatial.GridTypeSquare,
+		Entities: map[string]spatial.EntityPlacement{
+			"char-1": {
+				EntityID:       "char-1",
+				EntityType:     "character",
+				Position:       spatial.Position{X: 5, Y: 5},
+				Size:           1,
+				BlocksMovement: true,
+			},
+		},
+	}
+
+	s.mockService.EXPECT().
+		MoveCharacter(gomock.Any(), &encounter.MoveCharacterInput{
+			EncounterID: "enc-1",
+			EntityID:    "char-1",
+			TargetPosition: &encounter.Position{
+				X: 5,
+				Y: 5,
+			},
+		}).
+		Return(&encounter.MoveCharacterOutput{
+			Success: true,
+			FinalPosition: &encounter.Position{
+				X: 5,
+				Y: 5,
+			},
+			MovementRemaining: 30,
+			StopReason:        "completed",
+			UpdatedRoom:       expectedRoom,
+		}, nil)
+
+	// Act
+	resp, err := s.handler.MoveCharacter(context.Background(), &dnd5ev1alpha1.MoveCharacterRequest{
 		EncounterId: "enc-1",
 		EntityId:    "char-1",
 		TargetPosition: &apiv1alpha1.Position{
 			X: 5,
 			Y: 5,
 		},
-	}
+	})
 
-	resp, err := s.handler.MoveCharacter(context.Background(), req)
+	// Assert
+	s.Require().NoError(err)
+	s.Require().NotNil(resp)
+	s.Assert().True(resp.Success)
+	s.Assert().Equal(int32(30), resp.MovementRemaining)
+	s.Require().NotNil(resp.UpdatedRoom)
+	s.Assert().Equal("enc-1-room", resp.UpdatedRoom.Id)
+	s.Assert().Equal(int32(20), resp.UpdatedRoom.Width)
+	s.Assert().Equal(int32(20), resp.UpdatedRoom.Height)
+	s.Assert().Len(resp.UpdatedRoom.Entities, 1)
+}
 
+// TestMoveCharacter_MissingEncounterId tests validation for missing encounter_id
+func (s *HandlerTestSuite) TestMoveCharacter_MissingEncounterId() {
+	// Act
+	resp, err := s.handler.MoveCharacter(context.Background(), &dnd5ev1alpha1.MoveCharacterRequest{
+		EntityId: "char-1",
+		TargetPosition: &apiv1alpha1.Position{
+			X: 5,
+			Y: 5,
+		},
+	})
+
+	// Assert
 	s.Require().Error(err)
 	s.Assert().Nil(resp)
 
 	st, ok := status.FromError(err)
 	s.Require().True(ok)
-	s.Assert().Equal(codes.Unimplemented, st.Code())
+	s.Assert().Equal(codes.InvalidArgument, st.Code())
+	s.Assert().Contains(st.Message(), "encounter_id is required")
+}
+
+// TestMoveCharacter_MissingEntityId tests validation for missing entity_id
+func (s *HandlerTestSuite) TestMoveCharacter_MissingEntityId() {
+	// Act
+	resp, err := s.handler.MoveCharacter(context.Background(), &dnd5ev1alpha1.MoveCharacterRequest{
+		EncounterId: "enc-1",
+		TargetPosition: &apiv1alpha1.Position{
+			X: 5,
+			Y: 5,
+		},
+	})
+
+	// Assert
+	s.Require().Error(err)
+	s.Assert().Nil(resp)
+
+	st, ok := status.FromError(err)
+	s.Require().True(ok)
+	s.Assert().Equal(codes.InvalidArgument, st.Code())
+	s.Assert().Contains(st.Message(), "entity_id is required")
+}
+
+// TestMoveCharacter_MissingTargetPosition tests validation for missing target_position
+func (s *HandlerTestSuite) TestMoveCharacter_MissingTargetPosition() {
+	// Act
+	resp, err := s.handler.MoveCharacter(context.Background(), &dnd5ev1alpha1.MoveCharacterRequest{
+		EncounterId: "enc-1",
+		EntityId:    "char-1",
+	})
+
+	// Assert
+	s.Require().Error(err)
+	s.Assert().Nil(resp)
+
+	st, ok := status.FromError(err)
+	s.Require().True(ok)
+	s.Assert().Equal(codes.InvalidArgument, st.Code())
+	s.Assert().Contains(st.Message(), "target_position is required")
+}
+
+// TestMoveCharacter_ServiceError tests handling of service errors
+func (s *HandlerTestSuite) TestMoveCharacter_ServiceError() {
+	// Arrange
+	s.mockService.EXPECT().
+		MoveCharacter(gomock.Any(), gomock.Any()).
+		Return(nil, fmt.Errorf("database error"))
+
+	// Act
+	resp, err := s.handler.MoveCharacter(context.Background(), &dnd5ev1alpha1.MoveCharacterRequest{
+		EncounterId: "enc-1",
+		EntityId:    "char-1",
+		TargetPosition: &apiv1alpha1.Position{
+			X: 5,
+			Y: 5,
+		},
+	})
+
+	// Assert
+	s.Require().Error(err)
+	s.Assert().Nil(resp)
+
+	st, ok := status.FromError(err)
+	s.Require().True(ok)
+	s.Assert().Equal(codes.Internal, st.Code())
+	s.Assert().Contains(st.Message(), "database error")
+}
+
+// TestMoveCharacter_OutOfBounds tests movement to invalid position
+func (s *HandlerTestSuite) TestMoveCharacter_OutOfBounds() {
+	// Arrange
+	s.mockService.EXPECT().
+		MoveCharacter(gomock.Any(), &encounter.MoveCharacterInput{
+			EncounterID: "enc-1",
+			EntityID:    "char-1",
+			TargetPosition: &encounter.Position{
+				X: 100,
+				Y: 100,
+			},
+		}).
+		Return(&encounter.MoveCharacterOutput{
+			Success: false,
+			FinalPosition: &encounter.Position{
+				X: 100,
+				Y: 100,
+			},
+			MovementRemaining: 0,
+			StopReason:        "out_of_bounds",
+			UpdatedRoom:       nil,
+		}, nil)
+
+	// Act
+	resp, err := s.handler.MoveCharacter(context.Background(), &dnd5ev1alpha1.MoveCharacterRequest{
+		EncounterId: "enc-1",
+		EntityId:    "char-1",
+		TargetPosition: &apiv1alpha1.Position{
+			X: 100,
+			Y: 100,
+		},
+	})
+
+	// Assert
+	s.Require().NoError(err)
+	s.Require().NotNil(resp)
+	s.Assert().False(resp.Success)
+	s.Assert().Equal(int32(0), resp.MovementRemaining)
 }
 
 // TestEndTurn_Unimplemented tests that EndTurn returns Unimplemented

@@ -13,6 +13,7 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/abilities"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
+	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
 
 	"github.com/KirkDiggler/rpg-api/internal/errors"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
@@ -411,4 +412,332 @@ func (s *OrchestratorTestSuite) TestCreateDungeon_SavesMinimalData() {
 
 	s.Require().NoError(err)
 	s.Assert().NotEmpty(output.EncounterID)
+}
+
+// TestMoveCharacter_Success tests successful movement
+func (s *OrchestratorTestSuite) TestMoveCharacter_Success() {
+	// Arrange
+	roomData := &spatial.RoomData{
+		ID:       "enc-1-room",
+		Type:     "dungeon",
+		Width:    20,
+		Height:   20,
+		GridType: spatial.GridTypeSquare,
+		Entities: map[string]spatial.EntityPlacement{
+			"char-1": {
+				EntityID:       "char-1",
+				EntityType:     "character",
+				Position:       spatial.Position{X: 0, Y: 0},
+				Size:           1,
+				BlocksMovement: true,
+			},
+		},
+	}
+
+	s.mockEncRepo.EXPECT().
+		Get(gomock.Any(), &encounterrepo.GetInput{
+			EncounterID: "enc-1",
+		}).
+		Return(&encounterrepo.GetOutput{
+			Data: &encounterrepo.EncounterData{
+				ID:       "enc-1",
+				RoomData: roomData,
+			},
+		}, nil)
+
+	s.mockEncRepo.EXPECT().
+		Update(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, input *encounterrepo.UpdateInput) (*encounterrepo.UpdateOutput, error) {
+			// Verify the room was updated with new position
+			updatedRoom, ok := input.RoomData.(*spatial.RoomData)
+			s.Require().True(ok)
+			s.Assert().Equal(float64(5), updatedRoom.Entities["char-1"].Position.X)
+			s.Assert().Equal(float64(5), updatedRoom.Entities["char-1"].Position.Y)
+			return &encounterrepo.UpdateOutput{Success: true}, nil
+		})
+
+	// Act
+	output, err := s.orchestrator.MoveCharacter(context.Background(), &MoveCharacterInput{
+		EncounterID: "enc-1",
+		EntityID:    "char-1",
+		TargetPosition: &Position{
+			X: 5,
+			Y: 5,
+		},
+	})
+
+	// Assert
+	s.Require().NoError(err)
+	s.Require().NotNil(output)
+	s.Assert().True(output.Success)
+	s.Assert().Equal(float64(5), output.FinalPosition.X)
+	s.Assert().Equal(float64(5), output.FinalPosition.Y)
+	s.Assert().Equal("completed", output.StopReason)
+	s.Assert().Equal(int32(30), output.MovementRemaining)
+}
+
+// TestMoveCharacter_OutOfBounds tests movement to invalid position
+func (s *OrchestratorTestSuite) TestMoveCharacter_OutOfBounds() {
+	// Arrange
+	roomData := &spatial.RoomData{
+		ID:       "enc-1-room",
+		Type:     "dungeon",
+		Width:    20,
+		Height:   20,
+		GridType: spatial.GridTypeSquare,
+		Entities: make(map[string]spatial.EntityPlacement),
+	}
+
+	s.mockEncRepo.EXPECT().
+		Get(gomock.Any(), &encounterrepo.GetInput{
+			EncounterID: "enc-1",
+		}).
+		Return(&encounterrepo.GetOutput{
+			Data: &encounterrepo.EncounterData{
+				ID:       "enc-1",
+				RoomData: roomData,
+			},
+		}, nil)
+
+	// Note: No Update call expected for out of bounds
+
+	// Act
+	output, err := s.orchestrator.MoveCharacter(context.Background(), &MoveCharacterInput{
+		EncounterID: "enc-1",
+		EntityID:    "char-1",
+		TargetPosition: &Position{
+			X: 100,
+			Y: 100,
+		},
+	})
+
+	// Assert
+	s.Require().NoError(err)
+	s.Require().NotNil(output)
+	s.Assert().False(output.Success)
+	s.Assert().Equal(float64(100), output.FinalPosition.X)
+	s.Assert().Equal(float64(100), output.FinalPosition.Y)
+	s.Assert().Equal("out_of_bounds", output.StopReason)
+	s.Assert().Equal(int32(0), output.MovementRemaining)
+}
+
+// TestMoveCharacter_PositionOccupied tests movement to occupied position
+func (s *OrchestratorTestSuite) TestMoveCharacter_PositionOccupied() {
+	// Arrange
+	roomData := &spatial.RoomData{
+		ID:       "enc-1-room",
+		Type:     "dungeon",
+		Width:    20,
+		Height:   20,
+		GridType: spatial.GridTypeSquare,
+		Entities: map[string]spatial.EntityPlacement{
+			"char-1": {
+				EntityID:       "char-1",
+				EntityType:     "character",
+				Position:       spatial.Position{X: 0, Y: 0},
+				Size:           1,
+				BlocksMovement: true,
+			},
+			"goblin-1": {
+				EntityID:       "goblin-1",
+				EntityType:     "monster",
+				Position:       spatial.Position{X: 5, Y: 5},
+				Size:           1,
+				BlocksMovement: true,
+			},
+		},
+	}
+
+	s.mockEncRepo.EXPECT().
+		Get(gomock.Any(), &encounterrepo.GetInput{
+			EncounterID: "enc-1",
+		}).
+		Return(&encounterrepo.GetOutput{
+			Data: &encounterrepo.EncounterData{
+				ID:       "enc-1",
+				RoomData: roomData,
+			},
+		}, nil)
+
+	// Note: No Update call expected for blocked position
+
+	// Act
+	output, err := s.orchestrator.MoveCharacter(context.Background(), &MoveCharacterInput{
+		EncounterID: "enc-1",
+		EntityID:    "char-1",
+		TargetPosition: &Position{
+			X: 5,
+			Y: 5,
+		},
+	})
+
+	// Assert
+	s.Require().NoError(err)
+	s.Require().NotNil(output)
+	s.Assert().False(output.Success)
+	s.Assert().Equal(float64(0), output.FinalPosition.X) // Returns current position
+	s.Assert().Equal(float64(0), output.FinalPosition.Y)
+	s.Assert().Equal("position_occupied", output.StopReason)
+	s.Assert().Equal(int32(0), output.MovementRemaining)
+}
+
+// TestMoveCharacter_CreatesRoomIfMissing tests creating default room when none exists
+func (s *OrchestratorTestSuite) TestMoveCharacter_CreatesRoomIfMissing() {
+	// Arrange
+	s.mockEncRepo.EXPECT().
+		Get(gomock.Any(), &encounterrepo.GetInput{
+			EncounterID: "enc-1",
+		}).
+		Return(&encounterrepo.GetOutput{
+			Data: &encounterrepo.EncounterData{
+				ID:       "enc-1",
+				RoomData: nil, // No room data
+			},
+		}, nil)
+
+	s.mockEncRepo.EXPECT().
+		Update(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, input *encounterrepo.UpdateInput) (*encounterrepo.UpdateOutput, error) {
+			// Verify a room was created
+			updatedRoom, ok := input.RoomData.(*spatial.RoomData)
+			s.Require().True(ok)
+			s.Assert().Equal("enc-1-room", updatedRoom.ID)
+			s.Assert().Equal(20, updatedRoom.Width)
+			s.Assert().Equal(20, updatedRoom.Height)
+			s.Assert().Contains(updatedRoom.Entities, "char-1")
+			return &encounterrepo.UpdateOutput{Success: true}, nil
+		})
+
+	// Act
+	output, err := s.orchestrator.MoveCharacter(context.Background(), &MoveCharacterInput{
+		EncounterID: "enc-1",
+		EntityID:    "char-1",
+		TargetPosition: &Position{
+			X: 5,
+			Y: 5,
+		},
+	})
+
+	// Assert
+	s.Require().NoError(err)
+	s.Require().NotNil(output)
+	s.Assert().True(output.Success)
+	s.Assert().Equal("completed", output.StopReason)
+}
+
+// TestMoveCharacter_NilInput tests nil input handling
+func (s *OrchestratorTestSuite) TestMoveCharacter_NilInput() {
+	// Act
+	output, err := s.orchestrator.MoveCharacter(context.Background(), nil)
+
+	// Assert
+	s.Require().Error(err)
+	s.Assert().Nil(output)
+	s.Assert().Contains(err.Error(), "input is required")
+}
+
+// TestMoveCharacter_MissingEncounterID tests missing encounter ID
+func (s *OrchestratorTestSuite) TestMoveCharacter_MissingEncounterID() {
+	// Act
+	output, err := s.orchestrator.MoveCharacter(context.Background(), &MoveCharacterInput{
+		EntityID:       "char-1",
+		TargetPosition: &Position{X: 5, Y: 5},
+	})
+
+	// Assert
+	s.Require().Error(err)
+	s.Assert().Nil(output)
+	s.Assert().Contains(err.Error(), "encounter ID is required")
+}
+
+// TestMoveCharacter_MissingEntityID tests missing entity ID
+func (s *OrchestratorTestSuite) TestMoveCharacter_MissingEntityID() {
+	// Act
+	output, err := s.orchestrator.MoveCharacter(context.Background(), &MoveCharacterInput{
+		EncounterID:    "enc-1",
+		TargetPosition: &Position{X: 5, Y: 5},
+	})
+
+	// Assert
+	s.Require().Error(err)
+	s.Assert().Nil(output)
+	s.Assert().Contains(err.Error(), "entity ID is required")
+}
+
+// TestMoveCharacter_MissingTargetPosition tests missing target position
+func (s *OrchestratorTestSuite) TestMoveCharacter_MissingTargetPosition() {
+	// Act
+	output, err := s.orchestrator.MoveCharacter(context.Background(), &MoveCharacterInput{
+		EncounterID: "enc-1",
+		EntityID:    "char-1",
+	})
+
+	// Assert
+	s.Require().Error(err)
+	s.Assert().Nil(output)
+	s.Assert().Contains(err.Error(), "target position is required")
+}
+
+// TestMoveCharacter_EncounterNotFound tests encounter not found error
+func (s *OrchestratorTestSuite) TestMoveCharacter_EncounterNotFound() {
+	// Arrange
+	s.mockEncRepo.EXPECT().
+		Get(gomock.Any(), &encounterrepo.GetInput{
+			EncounterID: "enc-1",
+		}).
+		Return(&encounterrepo.GetOutput{
+			Data: nil,
+		}, nil)
+
+	// Act
+	output, err := s.orchestrator.MoveCharacter(context.Background(), &MoveCharacterInput{
+		EncounterID:    "enc-1",
+		EntityID:       "char-1",
+		TargetPosition: &Position{X: 5, Y: 5},
+	})
+
+	// Assert
+	s.Require().Error(err)
+	s.Assert().Nil(output)
+	s.Assert().Contains(err.Error(), "encounter not found")
+}
+
+// TestMoveCharacter_UpdateError tests repository update error
+func (s *OrchestratorTestSuite) TestMoveCharacter_UpdateError() {
+	// Arrange
+	roomData := &spatial.RoomData{
+		ID:       "enc-1-room",
+		Type:     "dungeon",
+		Width:    20,
+		Height:   20,
+		GridType: spatial.GridTypeSquare,
+		Entities: make(map[string]spatial.EntityPlacement),
+	}
+
+	s.mockEncRepo.EXPECT().
+		Get(gomock.Any(), &encounterrepo.GetInput{
+			EncounterID: "enc-1",
+		}).
+		Return(&encounterrepo.GetOutput{
+			Data: &encounterrepo.EncounterData{
+				ID:       "enc-1",
+				RoomData: roomData,
+			},
+		}, nil)
+
+	s.mockEncRepo.EXPECT().
+		Update(gomock.Any(), gomock.Any()).
+		Return(nil, fmt.Errorf("database error"))
+
+	// Act
+	output, err := s.orchestrator.MoveCharacter(context.Background(), &MoveCharacterInput{
+		EncounterID:    "enc-1",
+		EntityID:       "char-1",
+		TargetPosition: &Position{X: 5, Y: 5},
+	})
+
+	// Assert
+	s.Require().Error(err)
+	s.Assert().Nil(output)
+	s.Assert().Contains(err.Error(), "failed to save updated room")
 }

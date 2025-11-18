@@ -113,10 +113,48 @@ func (h *Handler) GetCombatState(
 
 // MoveCharacter handles character movement
 func (h *Handler) MoveCharacter(
-	_ context.Context,
-	_ *dnd5ev1alpha1.MoveCharacterRequest,
+	ctx context.Context,
+	req *dnd5ev1alpha1.MoveCharacterRequest,
 ) (*dnd5ev1alpha1.MoveCharacterResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "MoveCharacter endpoint not yet implemented")
+	// 1. Validate request
+	if req.GetEncounterId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "encounter_id is required")
+	}
+	if req.GetEntityId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "entity_id is required")
+	}
+	if req.GetTargetPosition() == nil {
+		return nil, status.Error(codes.InvalidArgument, "target_position is required")
+	}
+
+	// 2. Create service input
+	input := &encounter.MoveCharacterInput{
+		EncounterID: req.GetEncounterId(),
+		EntityID:    req.GetEntityId(),
+		TargetPosition: &encounter.Position{
+			X: float64(req.GetTargetPosition().GetX()),
+			Y: float64(req.GetTargetPosition().GetY()),
+		},
+	}
+
+	// 3. Call service
+	output, err := h.encounterService.MoveCharacter(ctx, input)
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	// 4. Convert to proto response
+	response := &dnd5ev1alpha1.MoveCharacterResponse{
+		Success:           output.Success,
+		MovementRemaining: output.MovementRemaining,
+	}
+
+	// 5. Convert room data if present
+	if output.UpdatedRoom != nil {
+		response.UpdatedRoom = convertRoomDataToProto(output.UpdatedRoom)
+	}
+
+	return response, nil
 }
 
 // EndTurn handles turn ending

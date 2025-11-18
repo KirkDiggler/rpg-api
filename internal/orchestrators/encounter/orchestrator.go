@@ -12,6 +12,7 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/combat"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/monster"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/weapons"
+	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
 
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	encounterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/encounters"
@@ -179,5 +180,136 @@ func (o *Orchestrator) CreateDungeon(ctx context.Context, input *CreateDungeonIn
 	// Return encounter ID
 	return &CreateDungeonOutput{
 		EncounterID: encounterID,
+	}, nil
+}
+
+// MoveCharacter implements character movement within an encounter
+// Phase 2: Simple position validation and update
+func (o *Orchestrator) MoveCharacter(ctx context.Context, input *MoveCharacterInput) (*MoveCharacterOutput, error) {
+	if input == nil {
+		return nil, fmt.Errorf("input is required")
+	}
+	if input.EncounterID == "" {
+		return nil, fmt.Errorf("encounter ID is required")
+	}
+	if input.EntityID == "" {
+		return nil, fmt.Errorf("entity ID is required")
+	}
+	if input.TargetPosition == nil {
+		return nil, fmt.Errorf("target position is required")
+	}
+
+	// 1. Load encounter with room data
+	encOutput, err := o.encRepo.Get(ctx, &encounterrepo.GetInput{
+		EncounterID: input.EncounterID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to load encounter: %w", err)
+	}
+	if encOutput.Data == nil {
+		return nil, fmt.Errorf("encounter not found: %s", input.EncounterID)
+	}
+
+	// 2. Check if room data exists (Phase 2: might be nil for early encounters)
+	if encOutput.Data.RoomData == nil {
+		// Create a basic room for testing
+		roomData := &spatial.RoomData{
+			ID:       input.EncounterID + "-room",
+			Type:     "dungeon",
+			Width:    20,
+			Height:   20,
+			GridType: spatial.GridTypeSquare,
+			Entities: make(map[string]spatial.EntityPlacement),
+		}
+		encOutput.Data.RoomData = roomData
+	}
+
+	// 3. Type assert room data to spatial.RoomData
+	roomData, ok := encOutput.Data.RoomData.(*spatial.RoomData)
+	if !ok {
+		// Try non-pointer type
+		if roomDataVal, ok := encOutput.Data.RoomData.(spatial.RoomData); ok {
+			roomData = &roomDataVal
+		} else {
+			return nil, fmt.Errorf("invalid room data type in encounter")
+		}
+	}
+
+	// 4. Validate target position is within bounds
+	targetPos := spatial.Position{
+		X: input.TargetPosition.X,
+		Y: input.TargetPosition.Y,
+	}
+
+	if targetPos.X < 0 || targetPos.X >= float64(roomData.Width) ||
+		targetPos.Y < 0 || targetPos.Y >= float64(roomData.Height) {
+		return &MoveCharacterOutput{
+			Success:           false,
+			FinalPosition:     input.TargetPosition,
+			MovementRemaining: 0,
+			StopReason:        "out_of_bounds",
+			UpdatedRoom:       roomData,
+		}, nil
+	}
+
+	// 5. Check if target position is occupied
+	for id, entity := range roomData.Entities {
+		if id != input.EntityID && entity.BlocksMovement {
+			if entity.Position.Equals(targetPos) {
+				// Position is blocked by another entity
+				currentPos := input.TargetPosition // Default to target if entity not found
+				if currentEntity, exists := roomData.Entities[input.EntityID]; exists {
+					currentPos = &Position{
+						X: currentEntity.Position.X,
+						Y: currentEntity.Position.Y,
+					}
+				}
+				return &MoveCharacterOutput{
+					Success:           false,
+					FinalPosition:     currentPos,
+					MovementRemaining: 0,
+					StopReason:        "position_occupied",
+					UpdatedRoom:       roomData,
+				}, nil
+			}
+		}
+	}
+
+	// 6. Update entity position
+	entityPlacement, exists := roomData.Entities[input.EntityID]
+	if !exists {
+		// Create new entity placement if it doesn't exist
+		entityPlacement = spatial.EntityPlacement{
+			EntityID:       input.EntityID,
+			EntityType:     "character", // Default type for Phase 2
+			Position:       targetPos,
+			Size:           1,
+			BlocksMovement: true,
+		}
+	} else {
+		// Update existing entity position
+		entityPlacement.Position = targetPos
+	}
+	roomData.Entities[input.EntityID] = entityPlacement
+
+	// 7. Save updated room data
+	_, err = o.encRepo.Update(ctx, &encounterrepo.UpdateInput{
+		EncounterID: input.EncounterID,
+		RoomData:    roomData,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to save updated room: %w", err)
+	}
+
+	// 8. Return success with updated position
+	return &MoveCharacterOutput{
+		Success: true,
+		FinalPosition: &Position{
+			X: targetPos.X,
+			Y: targetPos.Y,
+		},
+		MovementRemaining: 30, // Default movement for Phase 2
+		StopReason:        "completed",
+		UpdatedRoom:       roomData,
 	}, nil
 }
