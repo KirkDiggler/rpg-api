@@ -257,18 +257,23 @@ func (o *Orchestrator) MoveCharacter(ctx context.Context, input *MoveCharacterIn
 		if id != input.EntityID && entity.BlocksMovement {
 			if entity.Position.Equals(targetPos) {
 				// Position is blocked by another entity
-				currentPos := input.TargetPosition // Default to target if entity not found
+				var currentPos *Position
+				stopReason := "position_occupied"
 				if currentEntity, exists := roomData.Entities[input.EntityID]; exists {
 					currentPos = &Position{
 						X: currentEntity.Position.X,
 						Y: currentEntity.Position.Y,
 					}
+				} else {
+					// Entity does not exist in the room
+					currentPos = nil
+					stopReason = "entity_not_found"
 				}
 				return &MoveCharacterOutput{
 					Success:           false,
 					FinalPosition:     currentPos,
 					MovementRemaining: 0,
-					StopReason:        "position_occupied",
+					StopReason:        stopReason,
 					UpdatedRoom:       roomData,
 				}, nil
 			}

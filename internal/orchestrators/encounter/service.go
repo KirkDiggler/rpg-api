@@ -88,6 +88,6 @@ type MoveCharacterOutput struct {
 	Success           bool        // Whether the movement succeeded
 	FinalPosition     *Position   // Final position of the entity
 	MovementRemaining int32       // Movement points remaining (Phase 3)
-	StopReason        string      // Why movement stopped ("completed", "blocked", "out_of_bounds")
+	StopReason        string      // Why movement stopped ("completed", "position_occupied", "out_of_bounds", "entity_not_found")
 	UpdatedRoom       interface{} // Updated room data (using interface{} until spatial is fixed)
 }

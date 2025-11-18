@@ -88,11 +88,11 @@ func convertGridTypeToProto(gridType string) apiv1alpha1.GridType {
 	switch gridType {
 	case spatial.GridTypeSquare:
 		return apiv1alpha1.GridType_GRID_TYPE_SQUARE
-	case "hex", "hex_pointy":
+	case spatial.GridTypeHex, "hex_pointy":
 		return apiv1alpha1.GridType_GRID_TYPE_HEX_POINTY
 	case "hex_flat":
 		return apiv1alpha1.GridType_GRID_TYPE_HEX_FLAT
-	case "gridless":
+	case spatial.GridTypeGridless:
 		return apiv1alpha1.GridType_GRID_TYPE_GRIDLESS
 	default:
 		return apiv1alpha1.GridType_GRID_TYPE_UNSPECIFIED
