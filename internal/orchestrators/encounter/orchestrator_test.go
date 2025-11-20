@@ -118,8 +118,27 @@ func (s *OrchestratorTestSuite) TestResolveAttack_Success() {
 		s.Assert().Greater(output.Result.TotalDamage, 0)
 		s.Assert().NotEmpty(output.Result.DamageRolls)
 		s.Assert().Equal("slashing", output.Result.DamageType)
+
+		// Verify breakdown is populated on hit
+		s.Require().NotNil(output.Result.Breakdown, "Breakdown should be present on hit")
+		s.Assert().NotEmpty(output.Result.Breakdown.Components, "Breakdown should have components")
+		s.Assert().NotEmpty(output.Result.Breakdown.AbilityUsed, "Breakdown should have ability used")
+		s.Assert().Greater(output.Result.Breakdown.TotalDamage, 0, "Breakdown total damage should be > 0")
+
+		// Verify components have expected fields
+		for i, comp := range output.Result.Breakdown.Components {
+			s.Assert().NotEmpty(comp.Source, "Component %d should have source", i)
+			s.Assert().NotEmpty(comp.DamageType, "Component %d should have damage type", i)
+			// Either dice rolls or flat bonus should be present
+			s.Assert().True(
+				len(comp.FinalDiceRolls) > 0 || comp.FlatBonus != 0,
+				"Component %d should have dice or flat bonus", i,
+			)
+		}
 	} else {
 		s.Assert().Equal(0, output.Result.TotalDamage)
+		// Breakdown should be nil on miss
+		s.Assert().Nil(output.Result.Breakdown, "Breakdown should be nil on miss")
 	}
 
 	// Monster HP should be calculated

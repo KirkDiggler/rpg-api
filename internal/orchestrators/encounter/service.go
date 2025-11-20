@@ -50,6 +50,35 @@ type AttackResult struct {
 	DamageBonus int    // Total damage bonus
 	TotalDamage int    // Final damage dealt
 	DamageType  string // Type of damage (slashing, piercing, etc.)
+
+	// Detailed breakdown
+	Breakdown *DamageBreakdown // Detailed damage breakdown (nil if attack missed)
+}
+
+// DamageBreakdown provides detailed component breakdown of damage calculation
+type DamageBreakdown struct {
+	Components  []DamageComponent
+	AbilityUsed string // Ability used for attack ("STR", "DEX", etc.)
+	TotalDamage int    // Sum of all components
+}
+
+// DamageComponent represents damage from one source
+type DamageComponent struct {
+	Source            string        // Type of damage source ("weapon", "ability", "rage", etc.)
+	OriginalDiceRolls []int         // Dice values as first rolled
+	FinalDiceRolls    []int         // Dice values after all rerolls
+	Rerolls           []RerollEvent // History of rerolls
+	FlatBonus         int           // Flat modifier (0 if none)
+	DamageType        string        // "slashing", "fire", "radiant", etc.
+	IsCritical        bool          // Was this component doubled for crit?
+}
+
+// RerollEvent tracks a single die reroll
+type RerollEvent struct {
+	DieIndex int    // Which die was rerolled (0-based index in original_dice_rolls)
+	Before   int    // Value before reroll
+	After    int    // Value after reroll
+	Reason   string // Feature that caused reroll (e.g., "great_weapon_fighting")
 }
 
 // CreateDungeonInput contains parameters for creating a dungeon encounter

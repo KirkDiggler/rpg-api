@@ -136,24 +136,81 @@ func (o *Orchestrator) ResolveAttack(ctx context.Context, input *ResolveAttackIn
 	}
 
 	// 9. Convert toolkit result to our output format
+	attackResult := &AttackResult{
+		AttackRoll:      result.AttackRoll,
+		AttackBonus:     result.AttackBonus,
+		TotalAttack:     result.TotalAttack,
+		TargetAC:        result.TargetAC,
+		Hit:             result.Hit,
+		Critical:        result.Critical,
+		IsNaturalTwenty: result.IsNaturalTwenty,
+		IsNaturalOne:    result.IsNaturalOne,
+		DamageRolls:     result.DamageRolls,
+		DamageBonus:     result.DamageBonus,
+		TotalDamage:     result.TotalDamage,
+		DamageType:      result.DamageType,
+	}
+
+	// 10. Map breakdown if present (only exists on hit)
+	if result.Breakdown != nil {
+		attackResult.Breakdown = convertToolkitBreakdown(result.Breakdown)
+	}
+
 	return &ResolveAttackOutput{
-		Result: &AttackResult{
-			AttackRoll:      result.AttackRoll,
-			AttackBonus:     result.AttackBonus,
-			TotalAttack:     result.TotalAttack,
-			TargetAC:        result.TargetAC,
-			Hit:             result.Hit,
-			Critical:        result.Critical,
-			IsNaturalTwenty: result.IsNaturalTwenty,
-			IsNaturalOne:    result.IsNaturalOne,
-			DamageRolls:     result.DamageRolls,
-			DamageBonus:     result.DamageBonus,
-			TotalDamage:     result.TotalDamage,
-			DamageType:      result.DamageType,
-		},
+		Result:      attackResult,
 		MonsterHP:   newHP,
 		MonsterDead: newHP <= 0,
 	}, nil
+}
+
+// convertToolkitBreakdown maps toolkit DamageBreakdown to orchestrator type
+func convertToolkitBreakdown(breakdown *combat.DamageBreakdown) *DamageBreakdown {
+	if breakdown == nil {
+		return nil
+	}
+
+	components := make([]DamageComponent, len(breakdown.Components))
+	for i, comp := range breakdown.Components {
+		components[i] = convertToolkitComponent(comp)
+	}
+
+	return &DamageBreakdown{
+		Components:  components,
+		AbilityUsed: string(breakdown.AbilityUsed), // Convert abilities.Ability to string
+		TotalDamage: breakdown.TotalDamage,
+	}
+}
+
+// convertToolkitComponent maps toolkit DamageComponent to orchestrator type
+func convertToolkitComponent(comp combat.DamageComponent) DamageComponent {
+	// Convert original dice rolls (toolkit uses int, orchestrator uses int)
+	originalRolls := make([]int, len(comp.OriginalDiceRolls))
+	copy(originalRolls, comp.OriginalDiceRolls)
+
+	// Convert final dice rolls
+	finalRolls := make([]int, len(comp.FinalDiceRolls))
+	copy(finalRolls, comp.FinalDiceRolls)
+
+	// Convert reroll events
+	rerolls := make([]RerollEvent, len(comp.Rerolls))
+	for i, r := range comp.Rerolls {
+		rerolls[i] = RerollEvent{
+			DieIndex: r.DieIndex,
+			Before:   r.Before,
+			After:    r.After,
+			Reason:   r.Reason,
+		}
+	}
+
+	return DamageComponent{
+		Source:            string(comp.Source), // DamageSourceType is already a string
+		OriginalDiceRolls: originalRolls,
+		FinalDiceRolls:    finalRolls,
+		Rerolls:           rerolls,
+		FlatBonus:         comp.FlatBonus,
+		DamageType:        comp.DamageType,
+		IsCritical:        comp.IsCritical,
+	}
 }
 
 // CreateDungeon creates a new encounter and returns the encounter ID
