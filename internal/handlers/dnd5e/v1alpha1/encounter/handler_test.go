@@ -78,6 +78,30 @@ func (s *HandlerTestSuite) TestAttack_Success() {
 		TotalDamage: 12,
 		DamageType:  "slashing",
 		Critical:    false,
+		Breakdown: &encounter.DamageBreakdown{
+			Components: []encounter.DamageComponent{
+				{
+					Source:            "weapon",
+					OriginalDiceRolls: []int{6},
+					FinalDiceRolls:    []int{6},
+					Rerolls:           []encounter.RerollEvent{},
+					FlatBonus:         0,
+					DamageType:        "slashing",
+					IsCritical:        false,
+				},
+				{
+					Source:            "ability",
+					OriginalDiceRolls: []int{},
+					FinalDiceRolls:    []int{},
+					Rerolls:           []encounter.RerollEvent{},
+					FlatBonus:         6,
+					DamageType:        "slashing",
+					IsCritical:        false,
+				},
+			},
+			AbilityUsed: "str",
+			TotalDamage: 12,
+		},
 	}
 
 	s.mockService.EXPECT().
@@ -111,11 +135,37 @@ func (s *HandlerTestSuite) TestAttack_Success() {
 	s.Assert().Equal(int32(12), resp.Result.Damage)
 	s.Assert().Equal("slashing", resp.Result.DamageType)
 	s.Assert().False(resp.Result.Critical)
+
+	// Verify breakdown is properly converted
+	s.Require().NotNil(resp.Result.DamageBreakdown, "DamageBreakdown should be present")
+	s.Assert().Equal("str", resp.Result.DamageBreakdown.AbilityUsed)
+	s.Assert().Equal(int32(12), resp.Result.DamageBreakdown.TotalDamage)
+	s.Require().Len(resp.Result.DamageBreakdown.Components, 2, "Should have 2 damage components")
+
+	// Verify weapon component
+	weaponComp := resp.Result.DamageBreakdown.Components[0]
+	s.Assert().Equal("weapon", weaponComp.Source)
+	s.Assert().Equal([]int32{6}, weaponComp.OriginalDiceRolls)
+	s.Assert().Equal([]int32{6}, weaponComp.FinalDiceRolls)
+	s.Assert().Empty(weaponComp.Rerolls)
+	s.Assert().Equal(int32(0), weaponComp.FlatBonus)
+	s.Assert().Equal("slashing", weaponComp.DamageType)
+	s.Assert().False(weaponComp.IsCritical)
+
+	// Verify ability component
+	abilityComp := resp.Result.DamageBreakdown.Components[1]
+	s.Assert().Equal("ability", abilityComp.Source)
+	s.Assert().Empty(abilityComp.OriginalDiceRolls)
+	s.Assert().Empty(abilityComp.FinalDiceRolls)
+	s.Assert().Empty(abilityComp.Rerolls)
+	s.Assert().Equal(int32(6), abilityComp.FlatBonus)
+	s.Assert().Equal("slashing", abilityComp.DamageType)
+	s.Assert().False(abilityComp.IsCritical)
 }
 
 // TestAttack_CriticalHit tests critical hit scenario
 func (s *HandlerTestSuite) TestAttack_CriticalHit() {
-	// Arrange - Test critical hit scenario
+	// Arrange - Test critical hit scenario with rerolls (e.g., Great Weapon Fighting)
 	expectedResult := &encounter.AttackResult{
 		Hit:             true,
 		AttackRoll:      20,
@@ -125,6 +175,37 @@ func (s *HandlerTestSuite) TestAttack_CriticalHit() {
 		DamageType:      "piercing",
 		Critical:        true,
 		IsNaturalTwenty: true,
+		Breakdown: &encounter.DamageBreakdown{
+			Components: []encounter.DamageComponent{
+				{
+					Source:            "weapon",
+					OriginalDiceRolls: []int{1, 8}, // Rolled 1 and 8 on 2d12 (crit)
+					FinalDiceRolls:    []int{7, 8}, // Rerolled the 1 to 7
+					Rerolls: []encounter.RerollEvent{
+						{
+							DieIndex: 0,
+							Before:   1,
+							After:    7,
+							Reason:   "great_weapon_fighting",
+						},
+					},
+					FlatBonus:  0,
+					DamageType: "piercing",
+					IsCritical: true,
+				},
+				{
+					Source:            "ability",
+					OriginalDiceRolls: []int{},
+					FinalDiceRolls:    []int{},
+					Rerolls:           []encounter.RerollEvent{},
+					FlatBonus:         9,
+					DamageType:        "piercing",
+					IsCritical:        false,
+				},
+			},
+			AbilityUsed: "str",
+			TotalDamage: 24,
+		},
 	}
 
 	s.mockService.EXPECT().
@@ -150,6 +231,25 @@ func (s *HandlerTestSuite) TestAttack_CriticalHit() {
 	s.Assert().True(resp.Result.Critical)
 	s.Assert().Equal(int32(20), resp.Result.AttackRoll)
 	s.Assert().Equal(int32(24), resp.Result.Damage)
+
+	// Verify breakdown with rerolls
+	s.Require().NotNil(resp.Result.DamageBreakdown)
+	s.Require().Len(resp.Result.DamageBreakdown.Components, 2)
+
+	// Verify weapon component with reroll
+	weaponComp := resp.Result.DamageBreakdown.Components[0]
+	s.Assert().Equal("weapon", weaponComp.Source)
+	s.Assert().Equal([]int32{1, 8}, weaponComp.OriginalDiceRolls)
+	s.Assert().Equal([]int32{7, 8}, weaponComp.FinalDiceRolls)
+	s.Assert().True(weaponComp.IsCritical)
+	s.Require().Len(weaponComp.Rerolls, 1)
+
+	// Verify reroll event
+	reroll := weaponComp.Rerolls[0]
+	s.Assert().Equal(int32(0), reroll.DieIndex)
+	s.Assert().Equal(int32(1), reroll.Before)
+	s.Assert().Equal(int32(7), reroll.After)
+	s.Assert().Equal("great_weapon_fighting", reroll.Reason)
 }
 
 // TestAttack_Miss tests miss scenario
@@ -398,9 +498,8 @@ func (s *HandlerTestSuite) TestMoveCharacter_Unimplemented() {
 	req := &dnd5ev1alpha1.MoveCharacterRequest{
 		EncounterId: "enc-1",
 		EntityId:    "char-1",
-		TargetPosition: &apiv1alpha1.Position{
-			X: 5,
-			Y: 5,
+		Path: []*apiv1alpha1.Position{
+			{X: 5, Y: 5},
 		},
 	}
 
