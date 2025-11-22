@@ -8,7 +8,9 @@ import (
 	"github.com/stretchr/testify/suite"
 
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character/choices"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/classes"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
 )
 
 type ConvertersTestSuite struct {
@@ -188,4 +190,30 @@ func (s *ConvertersTestSuite) TestLoadAllClassChoices_NoRequirements() {
 	result := loadAllClassChoices(classes.Barbarian)
 	// Should return empty slice, not nil
 	assert.NotNil(s.T(), result, "Should return empty slice for class with no requirements")
+}
+
+func (s *ConvertersTestSuite) TestConvertChoiceToProto_PreservesOptionID() {
+	// Create toolkit choice with OptionID (for equipment bundles)
+	toolkitChoice := choices.ChoiceData{
+		Category:           shared.ChoiceEquipment,
+		Source:             shared.SourceClass,
+		ChoiceID:           "barbarian-weapons-secondary",
+		OptionID:           "barbarian-secondary-b",
+		EquipmentSelection: []shared.SelectionID{"greatclub"},
+	}
+
+	// Convert to proto
+	protoChoice := convertChoiceToProto(toolkitChoice)
+
+	// Verify all fields are preserved
+	require.NotNil(s.T(), protoChoice, "Proto choice should not be nil")
+	assert.Equal(s.T(), dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_EQUIPMENT, protoChoice.Category)
+	assert.Equal(s.T(), dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_CLASS, protoChoice.Source)
+	assert.Equal(s.T(), "barbarian-weapons-secondary", protoChoice.ChoiceId)
+	assert.Equal(s.T(), "barbarian-secondary-b", protoChoice.OptionId, "OptionID should be preserved")
+
+	// Verify equipment selection
+	equipment := protoChoice.GetEquipment()
+	require.NotNil(s.T(), equipment, "Equipment selection should be set")
+	require.Len(s.T(), equipment.Items, 1, "Should have 1 equipment item")
 }
