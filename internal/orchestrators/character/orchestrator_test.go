@@ -98,12 +98,22 @@ func (s *OrchestratorTestSuite) SetupTest() {
 		Choices: character.ClassChoices{
 			Skills:        []skills.Skill{skills.Athletics, skills.Intimidation},
 			FightingStyle: fightingstyles.Defense,
-			Equipment: map[choices.ChoiceID]shared.SelectionID{
-				choices.FighterArmor:            "fighter-armor-a",  // Chain mail option
-				choices.FighterWeaponsPrimary:   "fighter-weapon-a", // Martial weapon + shield
-				choices.FighterWeaponsSecondary: "fighter-ranged-a", // Light crossbow + bolts
-				choices.FighterPack:             "fighter-pack-a",   // Dungeoneer's pack
+			Equipment: []character.EquipmentChoiceSelection{
+				{ChoiceID: choices.FighterArmor, OptionID: "fighter-armor-a"},
+				{
+					ChoiceID:           choices.FighterWeaponsPrimary,
+					OptionID:           "fighter-weapon-a",
+					CategorySelections: []shared.EquipmentID{"longsword"}, // Option A: martial weapon + shield
+				},
+				{ChoiceID: choices.FighterWeaponsSecondary, OptionID: "fighter-ranged-a"},
+				{ChoiceID: choices.FighterPack, OptionID: "fighter-pack-a"},
 			},
+
+
+
+
+
+
 		},
 	}
 
@@ -118,10 +128,10 @@ func (s *OrchestratorTestSuite) SetupTest() {
 				spells.Sleep, spells.CharmPerson,
 				spells.DetectMagic, spells.Identify,
 			},
-			Equipment: map[choices.ChoiceID]shared.SelectionID{
-				choices.WizardWeaponsPrimary: "wizard-weapon-a", // Quarterstaff
-				choices.WizardFocus:          "wizard-focus-a",  // Component pouch
-				choices.WizardPack:           "wizard-pack-a",   // Scholar's pack
+			Equipment: []character.EquipmentChoiceSelection{
+				{ChoiceID: choices.WizardWeaponsPrimary, OptionID: "wizard-weapon-a"},
+				{ChoiceID: choices.WizardFocus, OptionID: "wizard-focus-a"},
+				{ChoiceID: choices.WizardPack, OptionID: "wizard-pack-a"},
 			},
 		},
 	}
@@ -223,11 +233,15 @@ func (s *OrchestratorTestSuite) SetupSubTest() {
 		Choices: character.ClassChoices{
 			Skills:        []skills.Skill{skills.Athletics, skills.Intimidation},
 			FightingStyle: fightingstyles.Defense,
-			Equipment: map[choices.ChoiceID]shared.SelectionID{
-				choices.FighterArmor:            "fighter-armor-a",
-				choices.FighterWeaponsPrimary:   "fighter-weapon-a",
-				choices.FighterWeaponsSecondary: "fighter-ranged-a",
-				choices.FighterPack:             "fighter-pack-a",
+			Equipment: []character.EquipmentChoiceSelection{
+				{ChoiceID: choices.FighterArmor, OptionID: "fighter-armor-a"},
+				{
+					ChoiceID:           choices.FighterWeaponsPrimary,
+					OptionID:           "fighter-weapon-a",
+					CategorySelections: []shared.EquipmentID{"longsword"}, // Option A: martial weapon + shield
+				},
+				{ChoiceID: choices.FighterWeaponsSecondary, OptionID: "fighter-ranged-a"},
+				{ChoiceID: choices.FighterPack, OptionID: "fighter-pack-a"},
 			},
 		},
 	}
