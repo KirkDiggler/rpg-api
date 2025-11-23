@@ -57,6 +57,21 @@ func (mr *MockServiceMockRecorder) CreateDungeon(ctx, input any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateDungeon", reflect.TypeOf((*MockService)(nil).CreateDungeon), ctx, input)
 }
 
+// MoveCharacter mocks base method.
+func (m *MockService) MoveCharacter(ctx context.Context, input *encounter.MoveCharacterInput) (*encounter.MoveCharacterOutput, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "MoveCharacter", ctx, input)
+	ret0, _ := ret[0].(*encounter.MoveCharacterOutput)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// MoveCharacter indicates an expected call of MoveCharacter.
+func (mr *MockServiceMockRecorder) MoveCharacter(ctx, input any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "MoveCharacter", reflect.TypeOf((*MockService)(nil).MoveCharacter), ctx, input)
+}
+
 // ResolveAttack mocks base method.
 func (m *MockService) ResolveAttack(ctx context.Context, input *encounter.ResolveAttackInput) (*encounter.ResolveAttackOutput, error) {
 	m.ctrl.T.Helper()
