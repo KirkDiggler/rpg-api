@@ -417,13 +417,23 @@ func (s *HandlerTestSuite) TestAttack_ServiceError() {
 
 // TestDungeonStart_Success tests successful dungeon creation
 func (s *HandlerTestSuite) TestDungeonStart_Success() {
-	// Arrange - Mock service to return encounter ID
+	// Arrange - Mock service to return encounter ID and room data
+	expectedRoom := &spatial.RoomData{
+		ID:       "enc-123-room",
+		Type:     "dungeon",
+		Width:    20,
+		Height:   20,
+		GridType: spatial.GridTypeSquare,
+		Entities: make(map[string]spatial.EntityPlacement),
+	}
+
 	s.mockService.EXPECT().
 		CreateDungeon(gomock.Any(), &encounter.CreateDungeonInput{
 			PlayerID: "", // Phase 2: No player tracking yet
 		}).
 		Return(&encounter.CreateDungeonOutput{
 			EncounterID: "enc-123",
+			Room:        expectedRoom,
 		}, nil)
 
 	// Act
@@ -435,6 +445,15 @@ func (s *HandlerTestSuite) TestDungeonStart_Success() {
 	s.Require().NoError(err)
 	s.Require().NotNil(resp)
 	s.Assert().Equal("enc-123", resp.EncounterId)
+
+	// Verify room data is present in response
+	s.Require().NotNil(resp.Room)
+	s.Assert().Equal("enc-123-room", resp.Room.Id)
+	s.Assert().Equal("dungeon", resp.Room.Type)
+	s.Assert().Equal(int32(20), resp.Room.Width)
+	s.Assert().Equal(int32(20), resp.Room.Height)
+	s.Assert().Equal(apiv1alpha1.GridType_GRID_TYPE_SQUARE, resp.Room.GridType)
+	s.Assert().NotNil(resp.Room.Entities)
 }
 
 // TestDungeonStart_ServiceError tests when service returns error
@@ -462,12 +481,22 @@ func (s *HandlerTestSuite) TestDungeonStart_ServiceError() {
 // TestDungeonStart_EmptyRequest tests with no character_ids
 func (s *HandlerTestSuite) TestDungeonStart_EmptyRequest() {
 	// Arrange - Test with empty request
+	expectedRoom := &spatial.RoomData{
+		ID:       "enc-456-room",
+		Type:     "dungeon",
+		Width:    20,
+		Height:   20,
+		GridType: spatial.GridTypeSquare,
+		Entities: make(map[string]spatial.EntityPlacement),
+	}
+
 	s.mockService.EXPECT().
 		CreateDungeon(gomock.Any(), &encounter.CreateDungeonInput{
 			PlayerID: "", // Phase 2: No player tracking
 		}).
 		Return(&encounter.CreateDungeonOutput{
 			EncounterID: "enc-456",
+			Room:        expectedRoom,
 		}, nil)
 
 	// Act
@@ -477,6 +506,8 @@ func (s *HandlerTestSuite) TestDungeonStart_EmptyRequest() {
 	s.Require().NoError(err)
 	s.Require().NotNil(resp)
 	s.Assert().Equal("enc-456", resp.EncounterId)
+	s.Assert().NotNil(resp.Room)
+	s.Assert().Equal("enc-456-room", resp.Room.Id)
 }
 
 // TestGetCombatState_Unimplemented tests that GetCombatState returns Unimplemented
@@ -561,9 +592,8 @@ func (s *HandlerTestSuite) TestMoveCharacter_MissingEncounterId() {
 	// Act
 	resp, err := s.handler.MoveCharacter(context.Background(), &dnd5ev1alpha1.MoveCharacterRequest{
 		EntityId: "char-1",
-		TargetPosition: &apiv1alpha1.Position{
-			X: 5,
-			Y: 5,
+		Path: []*apiv1alpha1.Position{
+			{X: 5, Y: 5},
 		},
 	})
 
@@ -582,9 +612,8 @@ func (s *HandlerTestSuite) TestMoveCharacter_MissingEntityId() {
 	// Act
 	resp, err := s.handler.MoveCharacter(context.Background(), &dnd5ev1alpha1.MoveCharacterRequest{
 		EncounterId: "enc-1",
-		TargetPosition: &apiv1alpha1.Position{
-			X: 5,
-			Y: 5,
+		Path: []*apiv1alpha1.Position{
+			{X: 5, Y: 5},
 		},
 	})
 
@@ -598,12 +627,13 @@ func (s *HandlerTestSuite) TestMoveCharacter_MissingEntityId() {
 	s.Assert().Contains(st.Message(), "entity_id is required")
 }
 
-// TestMoveCharacter_MissingTargetPosition tests validation for missing target_position
-func (s *HandlerTestSuite) TestMoveCharacter_MissingTargetPosition() {
+// TestMoveCharacter_MissingPath tests validation for missing path
+func (s *HandlerTestSuite) TestMoveCharacter_MissingPath() {
 	// Act
 	resp, err := s.handler.MoveCharacter(context.Background(), &dnd5ev1alpha1.MoveCharacterRequest{
 		EncounterId: "enc-1",
 		EntityId:    "char-1",
+		Path:        []*apiv1alpha1.Position{},
 	})
 
 	// Assert
@@ -613,7 +643,7 @@ func (s *HandlerTestSuite) TestMoveCharacter_MissingTargetPosition() {
 	st, ok := status.FromError(err)
 	s.Require().True(ok)
 	s.Assert().Equal(codes.InvalidArgument, st.Code())
-	s.Assert().Contains(st.Message(), "target_position is required")
+	s.Assert().Contains(st.Message(), "path is required")
 }
 
 // TestMoveCharacter_ServiceError tests handling of service errors
@@ -627,9 +657,8 @@ func (s *HandlerTestSuite) TestMoveCharacter_ServiceError() {
 	resp, err := s.handler.MoveCharacter(context.Background(), &dnd5ev1alpha1.MoveCharacterRequest{
 		EncounterId: "enc-1",
 		EntityId:    "char-1",
-		TargetPosition: &apiv1alpha1.Position{
-			X: 5,
-			Y: 5,
+		Path: []*apiv1alpha1.Position{
+			{X: 5, Y: 5},
 		},
 	})
 
@@ -670,9 +699,8 @@ func (s *HandlerTestSuite) TestMoveCharacter_OutOfBounds() {
 	resp, err := s.handler.MoveCharacter(context.Background(), &dnd5ev1alpha1.MoveCharacterRequest{
 		EncounterId: "enc-1",
 		EntityId:    "char-1",
-		TargetPosition: &apiv1alpha1.Position{
-			X: 100,
-			Y: 100,
+		Path: []*apiv1alpha1.Position{
+			{X: 100, Y: 100},
 		},
 	})
 

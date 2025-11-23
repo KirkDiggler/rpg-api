@@ -214,8 +214,7 @@ func convertToolkitComponent(comp combat.DamageComponent) DamageComponent {
 	}
 }
 
-// CreateDungeon creates a new encounter and returns the encounter ID
-// Phase 2: Minimal implementation - just encounter ID, no room
+// CreateDungeon creates a new encounter with an initial room
 func (o *Orchestrator) CreateDungeon(ctx context.Context, input *CreateDungeonInput) (*CreateDungeonOutput, error) {
 	if input == nil {
 		return nil, fmt.Errorf("input is required")
@@ -224,19 +223,30 @@ func (o *Orchestrator) CreateDungeon(ctx context.Context, input *CreateDungeonIn
 	// Generate unique encounter ID using timestamp
 	encounterID := fmt.Sprintf("enc-%d", time.Now().UnixNano())
 
-	// Save minimal encounter data (Phase 2)
-	// TODO Phase 3: Add RoomData, InitiativeData, etc.
+	// Create initial room data
+	roomData := &spatial.RoomData{
+		ID:       encounterID + "-room",
+		Type:     "dungeon",
+		Width:    20,
+		Height:   20,
+		GridType: spatial.GridTypeSquare,
+		Entities: make(map[string]spatial.EntityPlacement),
+	}
+
+	// Save encounter data with room
 	_, err := o.encRepo.Save(ctx, &encounterrepo.SaveInput{
 		EncounterID: encounterID,
-		// RoomData, InitiativeData, InitiativeRolls are nil for Phase 2
+		RoomData:    roomData,
+		// InitiativeData, InitiativeRolls are nil for Phase 2
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to save encounter: %w", err)
 	}
 
-	// Return encounter ID
+	// Return encounter ID and room data
 	return &CreateDungeonOutput{
 		EncounterID: encounterID,
+		Room:        roomData,
 	}, nil
 }
 

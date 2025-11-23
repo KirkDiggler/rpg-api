@@ -98,7 +98,7 @@ func (h *Handler) DungeonStart(
 	// 3. Convert to proto response
 	return &dnd5ev1alpha1.DungeonStartResponse{
 		EncounterId: output.EncounterID,
-		// TODO Phase 3: Add Room conversion when spatial is implemented
+		Room:        convertRoomDataToProto(output.Room),
 		// TODO Phase 3: Add CombatState when combat initialization is implemented
 	}, nil
 }
@@ -123,17 +123,18 @@ func (h *Handler) MoveCharacter(
 	if req.GetEntityId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "entity_id is required")
 	}
-	if req.GetTargetPosition() == nil {
-		return nil, status.Error(codes.InvalidArgument, "target_position is required")
+	if len(req.GetPath()) == 0 {
+		return nil, status.Error(codes.InvalidArgument, "path is required")
 	}
 
-	// 2. Create service input
+	// 2. Create service input - use last position in path as target
+	lastPos := req.GetPath()[len(req.GetPath())-1]
 	input := &encounter.MoveCharacterInput{
 		EncounterID: req.GetEncounterId(),
 		EntityID:    req.GetEntityId(),
 		TargetPosition: &encounter.Position{
-			X: float64(req.GetTargetPosition().GetX()),
-			Y: float64(req.GetTargetPosition().GetY()),
+			X: float64(lastPos.GetX()),
+			Y: float64(lastPos.GetY()),
 		},
 	}
 

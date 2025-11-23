@@ -285,39 +285,39 @@ func (h *Handler) UpdateClass(
 				}
 			case dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_EQUIPMENT:
 				if equipment := choice.GetEquipment(); equipment != nil {
-				// Build equipment choice selection with ChoiceID, OptionID, and CategorySelections
-				selection := toolkitchar.EquipmentChoiceSelection{
-					ChoiceID: choices.ChoiceID(choice.ChoiceId),
-					OptionID: choice.OptionId,
-				}
-
-				// If there are equipment items, these are the category selections
-				// (specific items chosen from "any simple weapon" style choices)
-				if len(equipment.Items) > 0 {
-					categorySelections := make([]shared.EquipmentID, 0, len(equipment.Items))
-					for _, item := range equipment.Items {
-						var itemID string
-
-						// Extract the ID based on the equipment type
-						switch eq := item.Equipment.(type) {
-						case *dnd5ev1alpha1.EquipmentSelectionItem_Weapon:
-							itemID = string(eq.Weapon)
-						case *dnd5ev1alpha1.EquipmentSelectionItem_Armor:
-							itemID = string(eq.Armor)
-						case *dnd5ev1alpha1.EquipmentSelectionItem_Tool:
-							itemID = string(eq.Tool)
-						case *dnd5ev1alpha1.EquipmentSelectionItem_OtherEquipmentId:
-							itemID = eq.OtherEquipmentId
-						}
-
-						if itemID != "" {
-							categorySelections = append(categorySelections, itemID)
-						}
+					// Build equipment choice selection with ChoiceID, OptionID, and CategorySelections
+					selection := toolkitchar.EquipmentChoiceSelection{
+						ChoiceID: choices.ChoiceID(choice.ChoiceId),
+						OptionID: choice.OptionId,
 					}
-					selection.CategorySelections = categorySelections
-				}
 
-				classChoices.Equipment = append(classChoices.Equipment, selection)
+					// If there are equipment items, these are the category selections
+					// (specific items chosen from "any simple weapon" style choices)
+					if len(equipment.Items) > 0 {
+						categorySelections := make([]shared.EquipmentID, 0, len(equipment.Items))
+						for _, item := range equipment.Items {
+							var itemID string
+
+							// Extract the ID based on the equipment type
+							switch eq := item.Equipment.(type) {
+							case *dnd5ev1alpha1.EquipmentSelectionItem_Weapon:
+								itemID = string(eq.Weapon)
+							case *dnd5ev1alpha1.EquipmentSelectionItem_Armor:
+								itemID = string(eq.Armor)
+							case *dnd5ev1alpha1.EquipmentSelectionItem_Tool:
+								itemID = string(eq.Tool)
+							case *dnd5ev1alpha1.EquipmentSelectionItem_OtherEquipmentId:
+								itemID = eq.OtherEquipmentId
+							}
+
+							if itemID != "" {
+								categorySelections = append(categorySelections, itemID)
+							}
+						}
+						selection.CategorySelections = categorySelections
+					}
+
+					classChoices.Equipment = append(classChoices.Equipment, selection)
 				}
 			}
 		}

@@ -91,10 +91,9 @@ type CreateDungeonInput struct {
 }
 
 // CreateDungeonOutput returns the created encounter details
-// Phase 2: Minimal - just encounter_id, no room yet
 type CreateDungeonOutput struct {
-	EncounterID string // ID of the created encounter
-	// TODO Phase 3: Add Room when implementing spatial
+	EncounterID string      // ID of the created encounter
+	Room        interface{} // Room data (using interface{} to match spatial.RoomData)
 }
 
 // MoveCharacterInput contains movement parameters

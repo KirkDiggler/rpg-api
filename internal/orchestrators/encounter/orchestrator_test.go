@@ -323,6 +323,18 @@ func (s *OrchestratorTestSuite) TestCreateDungeon_Success() {
 			// Verify encounter ID is present and follows expected format
 			s.Assert().NotEmpty(input.EncounterID)
 			s.Assert().Contains(input.EncounterID, "enc-")
+
+			// Verify room data is present
+			s.Assert().NotNil(input.RoomData)
+			roomData, ok := input.RoomData.(*spatial.RoomData)
+			s.Assert().True(ok, "RoomData should be *spatial.RoomData")
+			s.Assert().Equal(input.EncounterID+"-room", roomData.ID)
+			s.Assert().Equal("dungeon", roomData.Type)
+			s.Assert().Equal(20, roomData.Width)
+			s.Assert().Equal(20, roomData.Height)
+			s.Assert().Equal(spatial.GridTypeSquare, roomData.GridType)
+			s.Assert().NotNil(roomData.Entities)
+
 			return &encounterrepo.SaveOutput{Success: true}, nil
 		})
 
@@ -336,6 +348,16 @@ func (s *OrchestratorTestSuite) TestCreateDungeon_Success() {
 	s.Require().NotNil(output)
 	s.Assert().NotEmpty(output.EncounterID)
 	s.Assert().Contains(output.EncounterID, "enc-")
+
+	// Verify room data in output
+	s.Assert().NotNil(output.Room)
+	roomData, ok := output.Room.(*spatial.RoomData)
+	s.Assert().True(ok, "Room should be *spatial.RoomData")
+	s.Assert().Equal(output.EncounterID+"-room", roomData.ID)
+	s.Assert().Equal("dungeon", roomData.Type)
+	s.Assert().Equal(20, roomData.Width)
+	s.Assert().Equal(20, roomData.Height)
+	s.Assert().Equal(spatial.GridTypeSquare, roomData.GridType)
 }
 
 func (s *OrchestratorTestSuite) TestCreateDungeon_NilInput() {
@@ -413,13 +435,15 @@ func (s *OrchestratorTestSuite) TestCreateDungeon_UniqueIDs() {
 }
 
 func (s *OrchestratorTestSuite) TestCreateDungeon_SavesMinimalData() {
-	// Verify that for Phase 2, only EncounterID is set
+	// Verify that encounter is created with room data but no initiative yet
 	s.mockEncRepo.EXPECT().
 		Save(gomock.Any(), gomock.Any()).
 		DoAndReturn(func(_ context.Context, input *encounterrepo.SaveInput) (*encounterrepo.SaveOutput, error) {
-			// Verify Phase 2: minimal data
+			// Verify encounter ID and room data are present
 			s.Assert().NotEmpty(input.EncounterID)
-			s.Assert().Nil(input.RoomData, "RoomData should be nil for Phase 2")
+			s.Assert().NotNil(input.RoomData, "RoomData should be present")
+
+			// Verify initiative data is still nil (Phase 2)
 			s.Assert().Nil(input.InitiativeData, "InitiativeData should be nil for Phase 2")
 			s.Assert().Nil(input.InitiativeRolls, "InitiativeRolls should be nil for Phase 2")
 			return &encounterrepo.SaveOutput{Success: true}, nil
@@ -431,6 +455,7 @@ func (s *OrchestratorTestSuite) TestCreateDungeon_SavesMinimalData() {
 
 	s.Require().NoError(err)
 	s.Assert().NotEmpty(output.EncounterID)
+	s.Assert().NotNil(output.Room, "Room should be present in output")
 }
 
 // TestMoveCharacter_Success tests successful movement
