@@ -274,6 +274,7 @@ func convertChoiceToProto(choice choices.ChoiceData) *dnd5ev1alpha1.ChoiceData {
 		Category: convertChoiceCategoryToProto(choice.Category),
 		Source:   convertChoiceSourceToProto(choice.Source),
 		ChoiceId: string(choice.ChoiceID),
+		OptionId: choice.OptionID,
 	}
 
 	// Map selections based on category
