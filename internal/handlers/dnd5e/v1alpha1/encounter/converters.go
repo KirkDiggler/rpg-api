@@ -171,3 +171,63 @@ func convertGridTypeToProto(gridType string) apiv1alpha1.GridType {
 		return apiv1alpha1.GridType_GRID_TYPE_UNSPECIFIED
 	}
 }
+
+// convertCombatStateToProto converts orchestrator's CombatState to proto
+//
+//nolint:gosec // G115: Game values are bounded by D&D rules, no overflow risk
+func convertCombatStateToProto(state *encounter.CombatState) *dnd5ev1alpha1.CombatState {
+	if state == nil {
+		return nil
+	}
+
+	turnOrder := make([]*dnd5ev1alpha1.InitiativeEntry, len(state.TurnOrder))
+	for i, entry := range state.TurnOrder {
+		turnOrder[i] = &dnd5ev1alpha1.InitiativeEntry{
+			EntityId:   entry.EntityID,
+			EntityType: entry.EntityType,
+			Initiative: int32(entry.InitiativeTotal),
+			Modifier:   int32(entry.InitiativeModifier),
+			HasActed:   false, // Default to false for new combat
+		}
+	}
+
+	// Create current turn state if combat is active
+	var currentTurn *dnd5ev1alpha1.TurnState
+	if state.CombatStarted && !state.CombatEnded && len(state.TurnOrder) > 0 {
+		activeEntry := state.TurnOrder[state.ActiveIndex]
+
+		// Convert position from service layer
+		var position *apiv1alpha1.Position
+		if activeEntry.Position != nil {
+			position = &apiv1alpha1.Position{
+				X: activeEntry.Position.X,
+				Y: activeEntry.Position.Y,
+			}
+		}
+
+		movementUsed := int32(30) - state.MovementRemaining
+		if movementUsed < 0 {
+			movementUsed = 0
+		}
+
+		currentTurn = &dnd5ev1alpha1.TurnState{
+			EntityId:          activeEntry.EntityID,
+			MovementUsed:      movementUsed,
+			MovementMax:       30, // Default movement - will be dynamic in Phase 4
+			ActionUsed:        false,
+			BonusActionUsed:   false,
+			ReactionAvailable: true,
+			Position:          position,
+		}
+	}
+
+	return &dnd5ev1alpha1.CombatState{
+		EncounterId:   state.EncounterID,
+		Round:         int32(state.Round),
+		TurnOrder:     turnOrder,
+		ActiveIndex:   int32(state.ActiveIndex),
+		CurrentTurn:   currentTurn,
+		CombatStarted: state.CombatStarted,
+		CombatEnded:   state.CombatEnded,
+	}
+}

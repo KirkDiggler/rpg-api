@@ -108,12 +108,6 @@ func (s *OrchestratorTestSuite) SetupTest() {
 				{ChoiceID: choices.FighterWeaponsSecondary, OptionID: "fighter-ranged-a"},
 				{ChoiceID: choices.FighterPack, OptionID: "fighter-pack-a"},
 			},
-
-
-
-
-
-
 		},
 	}
 

@@ -316,6 +316,18 @@ func createTestEncounterData(id string) *encounterrepo.EncounterData {
 // CreateDungeon Tests
 
 func (s *OrchestratorTestSuite) TestCreateDungeon_Success() {
+	// Arrange - Mock character repo to return character with DEX score
+	s.mockCharRepo.EXPECT().
+		Get(gomock.Any(), characterrepo.GetInput{ID: "char-1"}).
+		Return(&characterrepo.GetOutput{
+			CharacterData: &character.Data{
+				ID: "char-1",
+				AbilityScores: shared.AbilityScores{
+					abilities.DEX: 14, // +2 modifier
+				},
+			},
+		}, nil)
+
 	// Arrange - Mock encounter repo save
 	s.mockEncRepo.EXPECT().
 		Save(gomock.Any(), gomock.Any()).
@@ -323,12 +335,28 @@ func (s *OrchestratorTestSuite) TestCreateDungeon_Success() {
 			// Verify encounter ID is present and follows expected format
 			s.Assert().NotEmpty(input.EncounterID)
 			s.Assert().Contains(input.EncounterID, "enc-")
+
+			// Verify room data is present
+			s.Assert().NotNil(input.RoomData)
+			roomData, ok := input.RoomData.(*spatial.RoomData)
+			s.Assert().True(ok, "RoomData should be *spatial.RoomData")
+			s.Assert().Equal(input.EncounterID+"-room", roomData.ID)
+			s.Assert().Equal("dungeon", roomData.Type)
+			s.Assert().Equal(20, roomData.Width)
+			s.Assert().Equal(20, roomData.Height)
+			s.Assert().Equal(spatial.GridTypeHex, roomData.GridType)
+			s.Assert().NotNil(roomData.Entities)
+
+			// Verify initiative data is now saved
+			s.Assert().NotNil(input.InitiativeData, "InitiativeData should be present")
+			s.Assert().NotNil(input.InitiativeRolls, "InitiativeRolls should be present")
+
 			return &encounterrepo.SaveOutput{Success: true}, nil
 		})
 
 	// Act
 	output, err := s.orchestrator.CreateDungeon(context.Background(), &CreateDungeonInput{
-		PlayerID: "player-1",
+		CharacterIDs: []string{"char-1"},
 	})
 
 	// Assert
@@ -336,6 +364,29 @@ func (s *OrchestratorTestSuite) TestCreateDungeon_Success() {
 	s.Require().NotNil(output)
 	s.Assert().NotEmpty(output.EncounterID)
 	s.Assert().Contains(output.EncounterID, "enc-")
+
+	// Verify room data in output
+	s.Assert().NotNil(output.Room)
+	roomData, ok := output.Room.(*spatial.RoomData)
+	s.Assert().True(ok, "Room should be *spatial.RoomData")
+	s.Assert().Equal(output.EncounterID+"-room", roomData.ID)
+	s.Assert().Equal("dungeon", roomData.Type)
+	s.Assert().Equal(20, roomData.Width)
+	s.Assert().Equal(20, roomData.Height)
+	s.Assert().Equal(spatial.GridTypeHex, roomData.GridType)
+
+	// Verify combat state in output
+	s.Assert().NotNil(output.CombatState, "CombatState should be present")
+	s.Assert().Equal(output.EncounterID, output.CombatState.EncounterID)
+	s.Assert().True(output.CombatState.CombatStarted)
+	s.Assert().False(output.CombatState.CombatEnded)
+	s.Assert().Len(output.CombatState.TurnOrder, 2) // 1 character + 1 goblin
+
+	// Verify active turn is a player character (monsters are auto-skipped)
+	s.Require().GreaterOrEqual(output.CombatState.ActiveIndex, 0)
+	s.Require().Less(output.CombatState.ActiveIndex, len(output.CombatState.TurnOrder))
+	activeTurn := output.CombatState.TurnOrder[output.CombatState.ActiveIndex]
+	s.Assert().Equal("character", activeTurn.EntityType, "Active turn should be a character, not a monster")
 }
 
 func (s *OrchestratorTestSuite) TestCreateDungeon_NilInput() {
@@ -349,6 +400,18 @@ func (s *OrchestratorTestSuite) TestCreateDungeon_NilInput() {
 }
 
 func (s *OrchestratorTestSuite) TestCreateDungeon_SaveError() {
+	// Arrange - Mock character repo
+	s.mockCharRepo.EXPECT().
+		Get(gomock.Any(), characterrepo.GetInput{ID: "char-1"}).
+		Return(&characterrepo.GetOutput{
+			CharacterData: &character.Data{
+				ID: "char-1",
+				AbilityScores: shared.AbilityScores{
+					abilities.DEX: 14,
+				},
+			},
+		}, nil)
+
 	// Arrange - Mock repo save to return error
 	expectedError := fmt.Errorf("database error")
 	s.mockEncRepo.EXPECT().
@@ -357,7 +420,7 @@ func (s *OrchestratorTestSuite) TestCreateDungeon_SaveError() {
 
 	// Act
 	output, err := s.orchestrator.CreateDungeon(context.Background(), &CreateDungeonInput{
-		PlayerID: "player-1",
+		CharacterIDs: []string{"char-1"},
 	})
 
 	// Assert
@@ -368,17 +431,22 @@ func (s *OrchestratorTestSuite) TestCreateDungeon_SaveError() {
 }
 
 func (s *OrchestratorTestSuite) TestCreateDungeon_MinimalInput() {
-	// Test with empty PlayerID (optional field for Phase 2)
+	// Test with empty CharacterIDs (dungeon with just goblin)
+	// Since there are no player characters, combat should end automatically
 	s.mockEncRepo.EXPECT().
 		Save(gomock.Any(), gomock.Any()).
 		Return(&encounterrepo.SaveOutput{Success: true}, nil)
 
 	output, err := s.orchestrator.CreateDungeon(context.Background(), &CreateDungeonInput{
-		PlayerID: "",
+		CharacterIDs: []string{},
 	})
 
 	s.Require().NoError(err)
 	s.Assert().NotEmpty(output.EncounterID)
+	s.Assert().NotNil(output.CombatState)
+	s.Assert().Len(output.CombatState.TurnOrder, 1) // Only goblin
+	// Combat should end immediately since no player characters exist
+	s.Assert().True(output.CombatState.CombatEnded, "Combat should end when no player characters exist")
 }
 
 func (s *OrchestratorTestSuite) TestCreateDungeon_UniqueIDs() {
@@ -396,7 +464,7 @@ func (s *OrchestratorTestSuite) TestCreateDungeon_UniqueIDs() {
 	// Create three encounters
 	for i := 0; i < 3; i++ {
 		output, err := s.orchestrator.CreateDungeon(context.Background(), &CreateDungeonInput{
-			PlayerID: fmt.Sprintf("player-%d", i),
+			CharacterIDs: []string{}, // Empty - just goblin
 		})
 		s.Require().NoError(err)
 		s.Assert().NotEmpty(output.EncounterID)
@@ -412,25 +480,30 @@ func (s *OrchestratorTestSuite) TestCreateDungeon_UniqueIDs() {
 	s.Assert().NotEqual(capturedIDs[0], capturedIDs[2])
 }
 
-func (s *OrchestratorTestSuite) TestCreateDungeon_SavesMinimalData() {
-	// Verify that for Phase 2, only EncounterID is set
+func (s *OrchestratorTestSuite) TestCreateDungeon_SavesInitiativeData() {
+	// Verify that encounter is created with room data AND initiative data
 	s.mockEncRepo.EXPECT().
 		Save(gomock.Any(), gomock.Any()).
 		DoAndReturn(func(_ context.Context, input *encounterrepo.SaveInput) (*encounterrepo.SaveOutput, error) {
-			// Verify Phase 2: minimal data
+			// Verify encounter ID and room data are present
 			s.Assert().NotEmpty(input.EncounterID)
-			s.Assert().Nil(input.RoomData, "RoomData should be nil for Phase 2")
-			s.Assert().Nil(input.InitiativeData, "InitiativeData should be nil for Phase 2")
-			s.Assert().Nil(input.InitiativeRolls, "InitiativeRolls should be nil for Phase 2")
+			s.Assert().NotNil(input.RoomData, "RoomData should be present")
+
+			// Verify initiative data is now saved
+			s.Assert().NotNil(input.InitiativeData, "InitiativeData should be present")
+			s.Assert().NotNil(input.InitiativeRolls, "InitiativeRolls should be present")
+			s.Assert().Len(input.InitiativeRolls, 1, "Should have 1 entity (goblin)")
 			return &encounterrepo.SaveOutput{Success: true}, nil
 		})
 
 	output, err := s.orchestrator.CreateDungeon(context.Background(), &CreateDungeonInput{
-		PlayerID: "player-1",
+		CharacterIDs: []string{}, // Empty - just goblin
 	})
 
 	s.Require().NoError(err)
 	s.Assert().NotEmpty(output.EncounterID)
+	s.Assert().NotNil(output.Room, "Room should be present in output")
+	s.Assert().NotNil(output.CombatState, "CombatState should be present in output")
 }
 
 // TestMoveCharacter_Success tests successful movement
@@ -459,8 +532,9 @@ func (s *OrchestratorTestSuite) TestMoveCharacter_Success() {
 		}).
 		Return(&encounterrepo.GetOutput{
 			Data: &encounterrepo.EncounterData{
-				ID:       "enc-1",
-				RoomData: roomData,
+				ID:                "enc-1",
+				RoomData:          roomData,
+				MovementRemaining: 60, // Enough movement for the test (10 hexes = 50 feet)
 			},
 		}, nil)
 
@@ -472,6 +546,12 @@ func (s *OrchestratorTestSuite) TestMoveCharacter_Success() {
 			s.Require().True(ok)
 			s.Assert().Equal(float64(5), updatedRoom.Entities["char-1"].Position.X)
 			s.Assert().Equal(float64(5), updatedRoom.Entities["char-1"].Position.Y)
+
+			// Verify movement was decremented
+			s.Require().NotNil(input.MovementRemaining, "MovementRemaining should be updated")
+			// Moving from (0,0) to (5,5) = 10 hexes = 50 feet, so 60 - 50 = 10
+			s.Assert().Equal(int32(10), *input.MovementRemaining, "Movement should be decremented")
+
 			return &encounterrepo.UpdateOutput{Success: true}, nil
 		})
 
@@ -492,7 +572,7 @@ func (s *OrchestratorTestSuite) TestMoveCharacter_Success() {
 	s.Assert().Equal(float64(5), output.FinalPosition.X)
 	s.Assert().Equal(float64(5), output.FinalPosition.Y)
 	s.Assert().Equal("completed", output.StopReason)
-	s.Assert().Equal(int32(30), output.MovementRemaining)
+	s.Assert().Equal(int32(10), output.MovementRemaining) // 60 - 50 = 10
 }
 
 // TestMoveCharacter_OutOfBounds tests movement to invalid position
