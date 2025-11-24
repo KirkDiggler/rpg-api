@@ -1,3 +1,4 @@
+// Package encounters provides repository interfaces and implementations for encounter data storage.
 package encounters
 
 import (
@@ -21,7 +22,7 @@ func NewInMemory() *InMemoryRepository {
 }
 
 // Save stores an encounter
-func (r *InMemoryRepository) Save(ctx context.Context, input *SaveInput) (*SaveOutput, error) {
+func (r *InMemoryRepository) Save(_ context.Context, input *SaveInput) (*SaveOutput, error) {
 	if input == nil {
 		return nil, errors.InvalidArgument("input is required")
 	}
@@ -44,7 +45,7 @@ func (r *InMemoryRepository) Save(ctx context.Context, input *SaveInput) (*SaveO
 }
 
 // Get retrieves an encounter by ID
-func (r *InMemoryRepository) Get(ctx context.Context, input *GetInput) (*GetOutput, error) {
+func (r *InMemoryRepository) Get(_ context.Context, input *GetInput) (*GetOutput, error) {
 	if input == nil {
 		return nil, errors.InvalidArgument("input is required")
 	}
@@ -73,7 +74,7 @@ func (r *InMemoryRepository) Get(ctx context.Context, input *GetInput) (*GetOutp
 }
 
 // Update modifies an existing encounter
-func (r *InMemoryRepository) Update(ctx context.Context, input *UpdateInput) (*UpdateOutput, error) {
+func (r *InMemoryRepository) Update(_ context.Context, input *UpdateInput) (*UpdateOutput, error) {
 	if input == nil {
 		return nil, errors.InvalidArgument("input is required")
 	}
@@ -102,7 +103,7 @@ func (r *InMemoryRepository) Update(ctx context.Context, input *UpdateInput) (*U
 }
 
 // Delete removes an encounter
-func (r *InMemoryRepository) Delete(ctx context.Context, input *DeleteInput) (*DeleteOutput, error) {
+func (r *InMemoryRepository) Delete(_ context.Context, input *DeleteInput) (*DeleteOutput, error) {
 	if input == nil {
 		return nil, errors.InvalidArgument("input is required")
 	}

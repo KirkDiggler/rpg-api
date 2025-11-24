@@ -82,11 +82,9 @@ func (h *Handler) DungeonStart(
 	ctx context.Context,
 	req *dnd5ev1alpha1.DungeonStartRequest,
 ) (*dnd5ev1alpha1.DungeonStartResponse, error) {
-	// 1. Create service input
-	// Phase 2: Minimal - character_ids exist in proto but we're just creating encounter for now
+	// 1. Create service input with character IDs
 	input := &encounter.CreateDungeonInput{
-		// Phase 2: Just track that dungeon was started, ignore character_ids for now
-		PlayerID: "", // No player tracking yet in Phase 2
+		CharacterIDs: req.GetCharacterIds(),
 	}
 
 	// 2. Call service
@@ -99,7 +97,7 @@ func (h *Handler) DungeonStart(
 	return &dnd5ev1alpha1.DungeonStartResponse{
 		EncounterId: output.EncounterID,
 		Room:        convertRoomDataToProto(output.Room),
-		// TODO Phase 3: Add CombatState when combat initialization is implemented
+		CombatState: convertCombatStateToProto(output.CombatState),
 	}, nil
 }
 

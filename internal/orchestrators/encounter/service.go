@@ -85,15 +85,36 @@ type RerollEvent struct {
 }
 
 // CreateDungeonInput contains parameters for creating a dungeon encounter
-// Phase 2: Minimal - just tracking who starts the dungeon
 type CreateDungeonInput struct {
-	PlayerID string // Optional - ID of player starting the dungeon
+	CharacterIDs []string // IDs of characters entering the dungeon
 }
 
 // CreateDungeonOutput returns the created encounter details
 type CreateDungeonOutput struct {
-	EncounterID string      // ID of the created encounter
-	Room        interface{} // Room data (using interface{} to match spatial.RoomData)
+	EncounterID string       // ID of the created encounter
+	Room        interface{}  // Room data (using interface{} to match spatial.RoomData)
+	CombatState *CombatState // Combat state with initiative order
+}
+
+// CombatState represents the state of combat in an encounter
+type CombatState struct {
+	EncounterID       string
+	Round             int
+	TurnOrder         []InitiativeEntry
+	ActiveIndex       int
+	MovementRemaining int32 // Movement remaining for the active turn
+	CombatStarted     bool
+	CombatEnded       bool
+}
+
+// InitiativeEntry represents one entity in the initiative order
+type InitiativeEntry struct {
+	EntityID           string
+	EntityType         string
+	InitiativeRoll     int       // The d20 roll
+	InitiativeModifier int       // DEX modifier
+	InitiativeTotal    int       // Roll + Modifier
+	Position           *Position // Entity's position in the room
 }
 
 // MoveCharacterInput contains movement parameters
@@ -113,9 +134,10 @@ type Position struct {
 
 // MoveCharacterOutput returns movement results
 type MoveCharacterOutput struct {
-	Success           bool        // Whether the movement succeeded
+	Success           bool   // Whether the movement succeeded
 	FinalPosition     *Position   // Final position of the entity
-	MovementRemaining int32       // Movement points remaining (Phase 3)
-	StopReason        string      // Why movement stopped ("completed", "position_occupied", "out_of_bounds", "entity_not_found")
-	UpdatedRoom       interface{} // Updated room data (using interface{} until spatial is fixed)
+	MovementRemaining int32  // Movement points remaining (Phase 3)
+	// Why movement stopped: "completed", "position_occupied", "out_of_bounds", "entity_not_found"
+	StopReason  string
+	UpdatedRoom interface{} // Updated room data (using interface{} until spatial is fixed)
 }

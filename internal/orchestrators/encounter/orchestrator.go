@@ -6,10 +6,13 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/KirkDiggler/rpg-toolkit/core"
 	"github.com/KirkDiggler/rpg-toolkit/dice"
 	"github.com/KirkDiggler/rpg-toolkit/events"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/abilities"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/combat"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/initiative"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/monster"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/weapons"
 	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
@@ -223,31 +226,196 @@ func (o *Orchestrator) CreateDungeon(ctx context.Context, input *CreateDungeonIn
 	// Generate unique encounter ID using timestamp
 	encounterID := fmt.Sprintf("enc-%d", time.Now().UnixNano())
 
-	// Create initial room data
+	// Create initial room data (20x20 hex grid)
 	roomData := &spatial.RoomData{
 		ID:       encounterID + "-room",
 		Type:     "dungeon",
 		Width:    20,
 		Height:   20,
-		GridType: spatial.GridTypeSquare,
+		GridType: spatial.GridTypeHex,
 		Entities: make(map[string]spatial.EntityPlacement),
 	}
 
-	// Save encounter data with room
+	// Add goblin target dummy at fixed position (center-right area)
+	goblinID := "goblin-dummy"
+	roomData.Entities[goblinID] = spatial.EntityPlacement{
+		EntityID:       goblinID,
+		EntityType:     "monster",
+		Position:       spatial.Position{X: 15, Y: 10}, // Right side of room
+		Size:           1,
+		BlocksMovement: true,
+	}
+
+	// Define 4 spawn points on the left side of the room
+	spawnPoints := []spatial.Position{
+		{X: 2, Y: 8},  // Top-left spawn
+		{X: 2, Y: 10}, // Middle-left spawn
+		{X: 2, Y: 12}, // Bottom-left spawn
+		{X: 4, Y: 10}, // Second row middle spawn
+	}
+
+	// Place characters at spawn points (up to 4 characters)
+	for i, characterID := range input.CharacterIDs {
+		if i >= len(spawnPoints) {
+			break // Only place up to 4 characters
+		}
+
+		roomData.Entities[characterID] = spatial.EntityPlacement{
+			EntityID:       characterID,
+			EntityType:     "character",
+			Position:       spawnPoints[i],
+			Size:           1,
+			BlocksMovement: true,
+		}
+	}
+
+	// Add some static walls/obstacles for navigation
+	// Create a simple layout with pillars
+	obstacles := []spatial.Position{
+		{X: 7, Y: 5},   // Top-left pillar
+		{X: 7, Y: 15},  // Bottom-left pillar
+		{X: 13, Y: 5},  // Top-right pillar
+		{X: 13, Y: 15}, // Bottom-right pillar
+	}
+
+	for i, pos := range obstacles {
+		obstacleID := fmt.Sprintf("pillar-%d", i)
+		roomData.Entities[obstacleID] = spatial.EntityPlacement{
+			EntityID:       obstacleID,
+			EntityType:     "obstacle",
+			Position:       pos,
+			Size:           1,
+			BlocksMovement: true,
+		}
+	}
+
+	// Roll initiative for all combatants
+	entities := make(map[core.Entity]int)
+
+	// Add characters with their DEX modifiers
+	for _, characterID := range input.CharacterIDs {
+		// Load character to get DEX modifier
+		charOutput, err := o.charRepo.Get(ctx, characterrepo.GetInput{ID: characterID})
+		if err != nil {
+			return nil, fmt.Errorf("failed to load character %s: %w", characterID, err)
+		}
+
+		// Calculate DEX modifier from ability scores
+		dexModifier := charOutput.CharacterData.AbilityScores.Modifier(abilities.DEX)
+
+		// Create participant entity
+		char := initiative.NewParticipant(characterID, "character")
+		entities[char] = dexModifier
+	}
+
+	// Add goblin with hardcoded DEX modifier
+	goblin := initiative.NewParticipant(goblinID, "monster")
+	entities[goblin] = 2 // Goblin DEX +2
+
+	// Roll initiative using rpg-toolkit
+	rolls := initiative.RollForOrder(entities, dice.NewRoller())
+
+	// Create tracker and extract data
+	initiativeOrder := make([]core.Entity, len(rolls))
+	for i, roll := range rolls {
+		initiativeOrder[i] = roll.Entity
+	}
+	tracker := initiative.New(initiativeOrder)
+	trackerData := tracker.ToData()
+
+	// Convert rolls to service layer InitiativeEntry with positions from room
+	turnOrder := make([]InitiativeEntry, len(rolls))
+	for i, roll := range rolls {
+		entityID := roll.Entity.GetID()
+
+		// Get position from room data
+		var position *Position
+		if placement, exists := roomData.Entities[entityID]; exists {
+			position = &Position{
+				X: placement.Position.X,
+				Y: placement.Position.Y,
+			}
+		}
+
+		turnOrder[i] = InitiativeEntry{
+			EntityID:           entityID,
+			EntityType:         string(roll.Entity.GetType()),
+			InitiativeRoll:     roll.Roll,
+			InitiativeModifier: roll.Modifier,
+			InitiativeTotal:    roll.Total,
+			Position:           position,
+		}
+	}
+
+	// Create combat state
+	combatState := &CombatState{
+		EncounterID:       encounterID,
+		Round:             1,
+		TurnOrder:         turnOrder,
+		ActiveIndex:       0,
+		MovementRemaining: 30, // Default movement speed for D&D 5e
+		CombatStarted:     true,
+		CombatEnded:       false,
+	}
+
+	// Advance to first player character turn (skip any leading monster turns)
+	advanceToNextPlayerTurn(combatState)
+
+	// Save encounter data with room and initiative
 	_, err := o.encRepo.Save(ctx, &encounterrepo.SaveInput{
-		EncounterID: encounterID,
-		RoomData:    roomData,
-		// InitiativeData, InitiativeRolls are nil for Phase 2
+		EncounterID:       encounterID,
+		RoomData:          roomData,
+		InitiativeData:    &trackerData,
+		InitiativeRolls:   rolls,
+		MovementRemaining: combatState.MovementRemaining,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to save encounter: %w", err)
 	}
 
-	// Return encounter ID and room data
+	// Return encounter ID, room data, and combat state
 	return &CreateDungeonOutput{
 		EncounterID: encounterID,
 		Room:        roomData,
+		CombatState: combatState,
 	}, nil
+}
+
+// advanceToNextPlayerTurn advances the combat state to the next player character turn
+// Skips monster turns automatically (monsters act immediately when their turn comes up)
+// Returns true if a player turn was found, false if combat should end
+func advanceToNextPlayerTurn(state *CombatState) bool {
+	if state == nil || len(state.TurnOrder) == 0 {
+		return false
+	}
+
+	maxIterations := len(state.TurnOrder) * 2 // Prevent infinite loops (2 full rounds max)
+	iterationCount := 0
+
+	for iterationCount < maxIterations {
+		iterationCount++
+
+		// Check current turn
+		currentEntry := state.TurnOrder[state.ActiveIndex]
+		if currentEntry.EntityType == "character" {
+			// Found a player character turn
+			return true
+		}
+
+		// Current turn is a monster - skip it
+		// Advance to next turn
+		state.ActiveIndex++
+		if state.ActiveIndex >= len(state.TurnOrder) {
+			// Wrapped around to new round
+			state.ActiveIndex = 0
+			state.Round++
+		}
+	}
+
+	// If we've iterated too many times, something is wrong (no player characters?)
+	// End combat to prevent infinite loop
+	state.CombatEnded = true
+	return false
 }
 
 // MoveCharacter implements character movement within an encounter
@@ -275,6 +443,12 @@ func (o *Orchestrator) MoveCharacter(ctx context.Context, input *MoveCharacterIn
 	}
 	if encOutput.Data == nil {
 		return nil, fmt.Errorf("encounter not found: %s", input.EncounterID)
+	}
+
+	// Load movement remaining from encounter data
+	movementRemaining := encOutput.Data.MovementRemaining
+	if movementRemaining == 0 {
+		movementRemaining = 30 // Default if not set
 	}
 
 	// 2. Check if room data exists (Phase 2: might be nil for early encounters)
@@ -347,8 +521,48 @@ func (o *Orchestrator) MoveCharacter(ctx context.Context, input *MoveCharacterIn
 		}
 	}
 
-	// 6. Update entity position
+	// 6. Calculate distance and update movement
+	var oldPos spatial.Position
 	entityPlacement, exists := roomData.Entities[input.EntityID]
+	if exists {
+		oldPos = entityPlacement.Position
+	} else {
+		// Entity doesn't exist yet - treat as starting from target (0 distance)
+		oldPos = targetPos
+	}
+
+	// Calculate distance moved (simple distance for now - will use hex pathfinding later)
+	// For hex grids, approximate with manhattan distance
+	dx := targetPos.X - oldPos.X
+	dy := targetPos.Y - oldPos.Y
+	if dx < 0 {
+		dx = -dx
+	}
+	if dy < 0 {
+		dy = -dy
+	}
+	distance := int(dx + dy)
+	//nolint:gosec // G115: Game values are bounded by room size limits, no overflow risk
+	movementCost := int32(distance * 5) // Each hex is 5 feet
+
+	// Check if enough movement remaining
+	if movementCost > movementRemaining {
+		return &MoveCharacterOutput{
+			Success: false,
+			FinalPosition: &Position{
+				X: oldPos.X,
+				Y: oldPos.Y,
+			},
+			MovementRemaining: movementRemaining,
+			StopReason:        "insufficient_movement",
+			UpdatedRoom:       roomData,
+		}, nil
+	}
+
+	// Decrement movement
+	movementRemaining -= movementCost
+
+	// 7. Update entity position
 	if !exists {
 		// Create new entity placement if it doesn't exist
 		entityPlacement = spatial.EntityPlacement{
@@ -364,23 +578,24 @@ func (o *Orchestrator) MoveCharacter(ctx context.Context, input *MoveCharacterIn
 	}
 	roomData.Entities[input.EntityID] = entityPlacement
 
-	// 7. Save updated room data
+	// 8. Save updated room data and movement remaining
 	_, err = o.encRepo.Update(ctx, &encounterrepo.UpdateInput{
-		EncounterID: input.EncounterID,
-		RoomData:    roomData,
+		EncounterID:       input.EncounterID,
+		RoomData:          roomData,
+		MovementRemaining: &movementRemaining,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to save updated room: %w", err)
 	}
 
-	// 8. Return success with updated position
+	// 9. Return success with updated position
 	return &MoveCharacterOutput{
 		Success: true,
 		FinalPosition: &Position{
 			X: targetPos.X,
 			Y: targetPos.Y,
 		},
-		MovementRemaining: 30, // Default movement for Phase 2
+		MovementRemaining: movementRemaining,
 		StopReason:        "completed",
 		UpdatedRoom:       roomData,
 	}, nil

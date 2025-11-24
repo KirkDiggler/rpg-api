@@ -429,7 +429,7 @@ func (s *HandlerTestSuite) TestDungeonStart_Success() {
 
 	s.mockService.EXPECT().
 		CreateDungeon(gomock.Any(), &encounter.CreateDungeonInput{
-			PlayerID: "", // Phase 2: No player tracking yet
+			CharacterIDs: []string{"char-1", "char-2"},
 		}).
 		Return(&encounter.CreateDungeonOutput{
 			EncounterID: "enc-123",
@@ -438,7 +438,7 @@ func (s *HandlerTestSuite) TestDungeonStart_Success() {
 
 	// Act
 	resp, err := s.handler.DungeonStart(context.Background(), &dnd5ev1alpha1.DungeonStartRequest{
-		CharacterIds: []string{"char-1", "char-2"}, // Proto has character_ids
+		CharacterIds: []string{"char-1", "char-2"},
 	})
 
 	// Assert
@@ -491,9 +491,7 @@ func (s *HandlerTestSuite) TestDungeonStart_EmptyRequest() {
 	}
 
 	s.mockService.EXPECT().
-		CreateDungeon(gomock.Any(), &encounter.CreateDungeonInput{
-			PlayerID: "", // Phase 2: No player tracking
-		}).
+		CreateDungeon(gomock.Any(), gomock.Any()). // Accept any input for empty request test
 		Return(&encounter.CreateDungeonOutput{
 			EncounterID: "enc-456",
 			Room:        expectedRoom,
