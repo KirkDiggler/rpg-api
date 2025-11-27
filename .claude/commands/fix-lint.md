@@ -1,77 +1,58 @@
 # Fix Lint Issues
 
-Run golangci-lint and fix all issues systematically. This command handles the common patterns we encounter.
+Run golangci-lint and fix all issues systematically.
 
-## Instructions
+## Before Starting - Clarify Intent
 
-1. **Run the linter first** to get the full issue list:
+**Ask the user:**
+1. "Should I fix just the issues from your changes, or all lint issues in the codebase?"
+2. "For style-related warnings (like importShadow, hugeParam), do you prefer I fix the code or adjust the linter config to allow them?"
+3. "Any lint rules you consider non-negotiable vs ones you're flexible on?"
+
+## Process
+
+1. **Run the linter** to see the full picture:
    ```bash
-   golangci-lint run 2>&1
+   golangci-lint run 2>&1 | head -100
    ```
 
-2. **Fix issues by category** (in this order to avoid cascading fixes):
+2. **Categorize and report** what you find:
+   - How many issues total?
+   - What categories? (shadows, errcheck, style, etc.)
+   - Which are clear bugs vs style preferences?
 
-   ### Config Issues (if linter fails to run)
-   - Check `.golangci.yml` is valid v2 format
-   - `settings` goes under `linters`, not at root
-   - `exclusions` replaces `issues.exclude-rules`
+3. **Propose a plan** and get approval before making changes:
+   - "I found X shadow declarations - these are usually real issues, ok to fix?"
+   - "There are Y importShadow warnings in converters - this is a style check, should I disable it or rename variables?"
+   - "The dupl checker flagged bidirectional enum converters - this is a false positive, ok to exclude converters.go?"
 
-   ### Shadow Declarations (govet)
-   - `if err := ...` shadowing outer `err` → use `err = ...` or rename inner variable
-   - Defer functions: `if err := conn.Close()` → `if closeErr := conn.Close()`
+4. **For config changes**, always explain the tradeoff:
+   - What the check catches
+   - Why it's triggering here (false positive? intentional pattern?)
+   - What we lose by disabling it
 
-   ### Errcheck
-   - `defer conn.Close()` → `defer func() { _ = conn.Close() }()`
-   - Or handle the error if it matters
+## Common Decisions to Clarify
 
-   ### Unconvert
-   - Remove unnecessary type conversions like `int(x)` when x is already int
+| Issue Type | Question to Ask |
+|------------|-----------------|
+| Shadow declarations | "Fix by renaming, or is the shadow intentional?" |
+| importShadow | "Rename variable or disable check? (noisy in converters)" |
+| hugeParam | "Pass by pointer or disable? (adds complexity for read-only data)" |
+| dupl in converters | "Refactor or exclude? (bidirectional mappers are inherently similar)" |
+| errcheck on Close() | "Handle error or suppress? (usually safe to ignore)" |
+| gocyclo high complexity | "Refactor or raise threshold? (enum switches are naturally complex)" |
 
-   ### Staticcheck S1001
-   - Replace manual copy loops with `copy(dst, src)`
+## Known Patterns in This Codebase
 
-   ### Ineffassign
-   - Remove assignments to variables that are never read afterward
+These have been discussed and decided:
 
-   ### Noctx
-   - `net.Listen()` → `net.ListenConfig{}.Listen(ctx, ...)`
+- **Converters**: Excluded from `dupl` - bidirectional enum mappers are intentionally similar
+- **Test files**: Relaxed rules for dupl, errcheck, goconst, gosec, gocyclo, unparam, lll
+- **Proto boundaries**: G115 (int->int32) excluded in handlers - D&D values are small
+- **Style checks disabled**: importShadow, hugeParam, rangeValCopy, typeAssertChain, ifElseChain, paramTypeCombine, unnamedResult
 
-3. **For noisy style checks**, add to `.golangci.yml` disabled-checks:
-   - `importShadow` - too noisy for converters with matching package/variable names
-   - `hugeParam` - not worth pointer overhead for read-only data
-   - `rangeValCopy` - often false positive when value copy is needed
-   - `typeAssertChain` - type switches aren't always cleaner for 2 cases
-   - `ifElseChain` - switches aren't always cleaner for error checks
-   - `paramTypeCombine` - explicit params improve readability
-   - `unnamedResult` - named results not always clearer
+## After Fixing
 
-4. **For duplicate code (dupl)**:
-   - Bidirectional enum converters are false positives
-   - Add exclusion: `- path: "converters\\.go"` with `linters: [dupl]`
-   - Or increase threshold if needed (250-300 for large enum switches)
-
-5. **Verify clean** before finishing:
-   ```bash
-   golangci-lint run 2>&1
-   make pre-commit
-   ```
-
-## Common Exclusion Patterns for .golangci.yml
-
-```yaml
-linters:
-  exclusions:
-    rules:
-      # Test files get relaxed rules
-      - path: _test\.go
-        linters: [dupl, errcheck, goconst, gosec, gocyclo, unparam, lll]
-
-      # Converters have legitimate duplication
-      - path: "converters\\.go"
-        linters: [dupl]
-
-      # G115 int->int32 safe at proto boundaries
-      - linters: [gosec]
-        text: "G115:"
-        path: "handlers/"
-```
+1. Run `golangci-lint run` to verify clean
+2. Run `make pre-commit` to ensure tests still pass
+3. Summarize what was changed (code fixes vs config changes)
