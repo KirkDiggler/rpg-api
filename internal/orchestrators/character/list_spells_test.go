@@ -1,3 +1,4 @@
+// Package character contains the character orchestrator tests
 package character
 
 import (

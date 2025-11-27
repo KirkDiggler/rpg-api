@@ -35,10 +35,11 @@ func (r *InMemoryRepository) Save(_ context.Context, input *SaveInput) (*SaveOut
 	defer r.mu.Unlock()
 
 	r.store[input.EncounterID] = &EncounterData{
-		ID:              input.EncounterID,
-		RoomData:        input.RoomData,
-		InitiativeData:  input.InitiativeData,
-		InitiativeRolls: input.InitiativeRolls,
+		ID:                input.EncounterID,
+		RoomData:          input.RoomData,
+		InitiativeData:    input.InitiativeData,
+		InitiativeRolls:   input.InitiativeRolls,
+		MovementRemaining: input.MovementRemaining,
 	}
 
 	return &SaveOutput{Success: true}, nil
@@ -65,10 +66,11 @@ func (r *InMemoryRepository) Get(_ context.Context, input *GetInput) (*GetOutput
 	// Return a copy to prevent external modification
 	return &GetOutput{
 		Data: &EncounterData{
-			ID:              data.ID,
-			RoomData:        data.RoomData,
-			InitiativeData:  data.InitiativeData,
-			InitiativeRolls: data.InitiativeRolls,
+			ID:                data.ID,
+			RoomData:          data.RoomData,
+			InitiativeData:    data.InitiativeData,
+			InitiativeRolls:   data.InitiativeRolls,
+			MovementRemaining: data.MovementRemaining,
 		},
 	}, nil
 }
@@ -97,6 +99,9 @@ func (r *InMemoryRepository) Update(_ context.Context, input *UpdateInput) (*Upd
 	}
 	if input.RoomData != nil {
 		data.RoomData = input.RoomData
+	}
+	if input.MovementRemaining != nil {
+		data.MovementRemaining = *input.MovementRemaining
 	}
 
 	return &UpdateOutput{Success: true}, nil

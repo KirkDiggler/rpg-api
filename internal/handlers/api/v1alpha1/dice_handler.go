@@ -74,12 +74,12 @@ func (h *DiceHandler) RollDice(
 		rolls = append(rolls, &apiv1alpha1.DiceRoll{
 			RollId:      sessionRoll.RollID,
 			Notation:    sessionRoll.Notation,
-			Dice:        sessionRoll.Dice,
-			Total:       sessionRoll.Total,
-			Dropped:     sessionRoll.Dropped,
+			Dice:        intToInt32s(sessionRoll.Dice),
+			Total:       int32(sessionRoll.Total),
+			Dropped:     intToInt32s(sessionRoll.Dropped),
 			Description: sessionRoll.Description,
-			DiceTotal:   sessionRoll.DiceTotal,
-			Modifier:    sessionRoll.Modifier,
+			DiceTotal:   int32(sessionRoll.DiceTotal),
+			Modifier:    int32(sessionRoll.Modifier),
 		})
 	}
 
@@ -87,6 +87,14 @@ func (h *DiceHandler) RollDice(
 		Rolls:     rolls,
 		ExpiresAt: diceOutput.Session.ExpiresAt.Unix(),
 	}, nil
+}
+
+func intToInt32s(ints []int) []int32 {
+	int32s := make([]int32, len(ints))
+	for i, v := range ints {
+		int32s[i] = int32(v)
+	}
+	return int32s
 }
 
 // GetRollSession retrieves an existing dice roll session
@@ -118,12 +126,12 @@ func (h *DiceHandler) GetRollSession(
 		rolls = append(rolls, &apiv1alpha1.DiceRoll{
 			RollId:      sessionRoll.RollID,
 			Notation:    sessionRoll.Notation,
-			Dice:        sessionRoll.Dice,
-			Total:       sessionRoll.Total,
-			Dropped:     sessionRoll.Dropped,
+			Dice:        intToInt32s(sessionRoll.Dice),
+			Total:       int32(sessionRoll.Total),
+			Dropped:     intToInt32s(sessionRoll.Dropped),
 			Description: sessionRoll.Description,
-			DiceTotal:   sessionRoll.DiceTotal,
-			Modifier:    sessionRoll.Modifier,
+			DiceTotal:   int32(sessionRoll.DiceTotal),
+			Modifier:    int32(sessionRoll.Modifier),
 		})
 	}
 
@@ -159,6 +167,6 @@ func (h *DiceHandler) ClearRollSession(
 
 	return &apiv1alpha1.ClearRollSessionResponse{
 		Message:      "Roll session cleared successfully",
-		RollsCleared: diceOutput.RollsDeleted,
+		RollsCleared: int32(diceOutput.RollsDeleted),
 	}, nil
 }

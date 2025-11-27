@@ -119,24 +119,22 @@ func (o *orchestrator) parseDiceNotation(notation string) (count, size int, err 
 }
 
 // rollDiceWithToolkit uses rpg-toolkit to roll dice and returns individual results
-func (o *orchestrator) rollDiceWithToolkit(ctx context.Context, count, size int, dropLowest int) ([]int32, []int32, int32, error) {
+func (o *orchestrator) rollDiceWithToolkit(ctx context.Context, count, size int, dropLowest int) ([]int, []int, int, error) {
 	// Use the roller to roll dice
 	rolls, err := o.roller.RollN(ctx, count, size)
 	if err != nil {
 		return nil, nil, 0, errors.Wrapf(err, "failed to roll dice")
 	}
 
-	// Convert to int32
-	individualDice := make([]int32, len(rolls))
-	for i, r := range rolls {
-		individualDice[i] = int32(r)
-	}
+	// Copy rolls to individualDice
+	individualDice := make([]int, len(rolls))
+	copy(individualDice, rolls)
 
 	// Handle drop lowest logic if needed
-	var dropped []int32
+	var dropped []int
 	if dropLowest > 0 && len(individualDice) > dropLowest {
 		// Sort to find lowest dice
-		sorted := make([]int32, len(individualDice))
+		sorted := make([]int, len(individualDice))
 		copy(sorted, individualDice)
 
 		// Simple bubble sort to find lowest
@@ -156,7 +154,7 @@ func (o *orchestrator) rollDiceWithToolkit(ctx context.Context, count, size int,
 		dropped = sorted[:dropLowest]
 		kept := sorted[dropLowest:]
 
-		newTotal := int32(0)
+		newTotal := int(0)
 		for _, d := range kept {
 			newTotal += d
 		}
@@ -168,7 +166,7 @@ func (o *orchestrator) rollDiceWithToolkit(ctx context.Context, count, size int,
 	}
 
 	// Calculate total without dropping
-	total := int32(0)
+	total := int(0)
 	for _, d := range individualDice {
 		total += d
 	}
@@ -363,9 +361,9 @@ func (o *orchestrator) RollAbilityScores(ctx context.Context, input *RollAbility
 	var rolls []*dicesession.DiceRoll
 	for i := 0; i < 6; i++ {
 		// Roll the dice using rpg-toolkit
-		individualDice, droppedDice, total, err := o.rollDiceWithToolkit(ctx, count, size, dropLowestCount)
-		if err != nil {
-			return nil, errors.Wrapf(err, "failed to roll ability score %d", i+1)
+		individualDice, droppedDice, total, rollErr := o.rollDiceWithToolkit(ctx, count, size, dropLowestCount)
+		if rollErr != nil {
+			return nil, errors.Wrapf(rollErr, "failed to roll ability score %d", i+1)
 		}
 
 		roll := &dicesession.DiceRoll{

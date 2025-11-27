@@ -315,7 +315,7 @@ func (s *OrchestratorTestSuite) TestCreateDraft_Success() {
 
 	// Expect Create to be called with a draft that has the generated ID
 	s.mockDraftRepo.EXPECT().Create(s.ctx, gomock.Any()).DoAndReturn(
-		func(ctx context.Context, input characterdraft.CreateInput) (*characterdraft.CreateOutput, error) {
+		func(_ context.Context, input characterdraft.CreateInput) (*characterdraft.CreateOutput, error) {
 			s.Assert().Equal(s.testDraftID, input.Draft.ID)
 			s.Assert().Equal(s.testPlayerID, input.Draft.PlayerID)
 			s.Assert().Equal(character.ProgressNone, input.Draft.Progress)
@@ -379,7 +379,7 @@ func (s *OrchestratorTestSuite) TestGetDraft_Success() {
 	testDraft := s.createTestDraft(s.testDraftID, s.testPlayerID)
 
 	s.mockDraftRepo.EXPECT().Get(s.ctx, gomock.Any()).DoAndReturn(
-		func(ctx context.Context, input characterdraft.GetInput) (*characterdraft.GetOutput, error) {
+		func(_ context.Context, input characterdraft.GetInput) (*characterdraft.GetOutput, error) {
 			s.Assert().Equal(s.testDraftID, input.ID)
 			return &characterdraft.GetOutput{Draft: testDraft.ToData()}, nil
 		})
@@ -477,7 +477,7 @@ func (s *OrchestratorTestSuite) TestDeleteDraft_Success() {
 	}
 
 	s.mockDraftRepo.EXPECT().Delete(s.ctx, gomock.Any()).DoAndReturn(
-		func(ctx context.Context, input characterdraft.DeleteInput) (*characterdraft.DeleteOutput, error) {
+		func(_ context.Context, input characterdraft.DeleteInput) (*characterdraft.DeleteOutput, error) {
 			s.Assert().Equal("draft-123", input.ID)
 			return &characterdraft.DeleteOutput{}, nil
 		})
@@ -518,12 +518,12 @@ func (s *OrchestratorTestSuite) TestSetName_Success() {
 	s.Require().NoError(err)
 
 	s.mockDraftRepo.EXPECT().Get(s.ctx, gomock.Any()).DoAndReturn(
-		func(ctx context.Context, input characterdraft.GetInput) (*characterdraft.GetOutput, error) {
+		func(_ context.Context, input characterdraft.GetInput) (*characterdraft.GetOutput, error) {
 			s.Assert().Equal("draft-123", input.ID)
 			return &characterdraft.GetOutput{Draft: testDraft.ToData()}, nil
 		})
 	s.mockDraftRepo.EXPECT().Update(s.ctx, gomock.Any()).DoAndReturn(
-		func(ctx context.Context, input characterdraft.UpdateInput) (*characterdraft.UpdateOutput, error) {
+		func(_ context.Context, input characterdraft.UpdateInput) (*characterdraft.UpdateOutput, error) {
 			s.Assert().Equal("Aragorn", input.Draft.Name)
 			s.Assert().True(input.Draft.Progress.Has(character.ProgressName))
 			return &characterdraft.UpdateOutput{Draft: input.Draft}, nil
@@ -587,12 +587,12 @@ func (s *OrchestratorTestSuite) TestSetRace_Success() {
 	s.Require().NoError(err)
 
 	s.mockDraftRepo.EXPECT().Get(s.ctx, gomock.Any()).DoAndReturn(
-		func(ctx context.Context, input characterdraft.GetInput) (*characterdraft.GetOutput, error) {
+		func(_ context.Context, input characterdraft.GetInput) (*characterdraft.GetOutput, error) {
 			s.Assert().Equal("draft-123", input.ID)
 			return &characterdraft.GetOutput{Draft: testDraft.ToData()}, nil
 		})
 	s.mockDraftRepo.EXPECT().Update(s.ctx, gomock.Any()).DoAndReturn(
-		func(ctx context.Context, input characterdraft.UpdateInput) (*characterdraft.UpdateOutput, error) {
+		func(_ context.Context, input characterdraft.UpdateInput) (*characterdraft.UpdateOutput, error) {
 			s.Assert().Equal(races.Elf, input.Draft.Race)
 			s.Assert().Equal(races.HighElf, input.Draft.Subrace)
 			s.Assert().True(input.Draft.Progress.Has(character.ProgressRace))
@@ -657,12 +657,12 @@ func (s *OrchestratorTestSuite) TestSetClass_Success() {
 	s.Require().NoError(err)
 
 	s.mockDraftRepo.EXPECT().Get(s.ctx, gomock.Any()).DoAndReturn(
-		func(ctx context.Context, input characterdraft.GetInput) (*characterdraft.GetOutput, error) {
+		func(_ context.Context, input characterdraft.GetInput) (*characterdraft.GetOutput, error) {
 			s.Assert().Equal("draft-123", input.ID)
 			return &characterdraft.GetOutput{Draft: testDraft.ToData()}, nil
 		})
 	s.mockDraftRepo.EXPECT().Update(s.ctx, gomock.Any()).DoAndReturn(
-		func(ctx context.Context, input characterdraft.UpdateInput) (*characterdraft.UpdateOutput, error) {
+		func(_ context.Context, input characterdraft.UpdateInput) (*characterdraft.UpdateOutput, error) {
 			s.Assert().Equal(classes.Fighter, input.Draft.Class)
 			// ProgressClass won't be set without equipment choices
 			s.Assert().False(input.Draft.Progress.Has(character.ProgressClass))
@@ -699,12 +699,12 @@ func (s *OrchestratorTestSuite) TestSetBackground_Success() {
 	s.Require().NoError(err)
 
 	s.mockDraftRepo.EXPECT().Get(s.ctx, gomock.Any()).DoAndReturn(
-		func(ctx context.Context, input characterdraft.GetInput) (*characterdraft.GetOutput, error) {
+		func(_ context.Context, input characterdraft.GetInput) (*characterdraft.GetOutput, error) {
 			s.Assert().Equal("draft-123", input.ID)
 			return &characterdraft.GetOutput{Draft: testDraft.ToData()}, nil
 		})
 	s.mockDraftRepo.EXPECT().Update(s.ctx, gomock.Any()).DoAndReturn(
-		func(ctx context.Context, input characterdraft.UpdateInput) (*characterdraft.UpdateOutput, error) {
+		func(_ context.Context, input characterdraft.UpdateInput) (*characterdraft.UpdateOutput, error) {
 			s.Assert().Equal(backgrounds.Soldier, input.Draft.Background)
 			s.Assert().True(input.Draft.Progress.Has(character.ProgressBackground))
 			return &characterdraft.UpdateOutput{Draft: input.Draft}, nil
@@ -744,12 +744,12 @@ func (s *OrchestratorTestSuite) TestSetAbilityScores_Success() {
 	s.Require().NoError(err)
 
 	s.mockDraftRepo.EXPECT().Get(s.ctx, gomock.Any()).DoAndReturn(
-		func(ctx context.Context, input characterdraft.GetInput) (*characterdraft.GetOutput, error) {
+		func(_ context.Context, input characterdraft.GetInput) (*characterdraft.GetOutput, error) {
 			s.Assert().Equal("draft-123", input.ID)
 			return &characterdraft.GetOutput{Draft: testDraft.ToData()}, nil
 		})
 	s.mockDraftRepo.EXPECT().Update(s.ctx, gomock.Any()).DoAndReturn(
-		func(ctx context.Context, input characterdraft.UpdateInput) (*characterdraft.UpdateOutput, error) {
+		func(_ context.Context, input characterdraft.UpdateInput) (*characterdraft.UpdateOutput, error) {
 			scores := input.Draft.BaseAbilityScores
 			s.Assert().Equal(15, scores[abilities.STR])
 			s.Assert().Equal(14, scores[abilities.DEX])
@@ -775,7 +775,7 @@ func (s *OrchestratorTestSuite) TestValidateDraft_ReturnsToolkitResult() {
 	// Use any draft - we're just testing that orchestrator calls toolkit
 	testDraft := s.createTestDraft(s.testDraftID, s.testPlayerID)
 	s.mockDraftRepo.EXPECT().Get(s.ctx, gomock.Any()).DoAndReturn(
-		func(ctx context.Context, input characterdraft.GetInput) (*characterdraft.GetOutput, error) {
+		func(_ context.Context, input characterdraft.GetInput) (*characterdraft.GetOutput, error) {
 			s.Assert().Equal(s.testDraftID, input.ID)
 			return &characterdraft.GetOutput{Draft: testDraft.ToData()}, nil
 		})
@@ -807,7 +807,7 @@ func (s *OrchestratorTestSuite) TestFinalizeDraft_IncompleteError() {
 	testDraft.SetName(&character.SetNameInput{Name: "Aragorn"})
 
 	s.mockDraftRepo.EXPECT().Get(s.ctx, gomock.Any()).DoAndReturn(
-		func(ctx context.Context, input characterdraft.GetInput) (*characterdraft.GetOutput, error) {
+		func(_ context.Context, input characterdraft.GetInput) (*characterdraft.GetOutput, error) {
 			s.Assert().Equal("draft-123", input.ID)
 			return &characterdraft.GetOutput{Draft: testDraft.ToData()}, nil
 		})
@@ -884,12 +884,12 @@ func (s *OrchestratorTestSuite) TestFighterCreationViaOrchestrator() {
 	// Create a draft to return from Get
 	testDraft := s.createTestDraft(draftID, s.testPlayerID)
 	s.mockDraftRepo.EXPECT().Get(s.ctx, gomock.Any()).DoAndReturn(
-		func(ctx context.Context, input characterdraft.GetInput) (*characterdraft.GetOutput, error) {
+		func(_ context.Context, input characterdraft.GetInput) (*characterdraft.GetOutput, error) {
 			s.Assert().Equal(draftID, input.ID)
 			return &characterdraft.GetOutput{Draft: testDraft.ToData()}, nil
 		})
 	s.mockDraftRepo.EXPECT().Update(s.ctx, gomock.Any()).DoAndReturn(
-		func(ctx context.Context, input characterdraft.UpdateInput) (*characterdraft.UpdateOutput, error) {
+		func(_ context.Context, input characterdraft.UpdateInput) (*characterdraft.UpdateOutput, error) {
 			// Verify the fighter was set with fighting style
 			s.Assert().Equal(classes.Fighter, input.Draft.Class)
 
@@ -1020,12 +1020,12 @@ func (s *OrchestratorTestSuite) TestRollAbilityScores() {
 		RollAbilityScores(gomock.Any(), gomock.Any()).
 		Return(&dice.RollAbilityScoresOutput{
 			Rolls: []*dicesession.DiceRoll{
-				{RollID: "roll-1", Total: 16, Dice: []int32{6, 5, 5, 3}, Dropped: []int32{3}},
-				{RollID: "roll-2", Total: 14, Dice: []int32{5, 5, 4, 2}, Dropped: []int32{2}},
-				{RollID: "roll-3", Total: 13, Dice: []int32{4, 4, 5, 1}, Dropped: []int32{1}},
-				{RollID: "roll-4", Total: 12, Dice: []int32{4, 4, 4, 3}, Dropped: []int32{3}},
-				{RollID: "roll-5", Total: 11, Dice: []int32{4, 4, 3, 2}, Dropped: []int32{2}},
-				{RollID: "roll-6", Total: 9, Dice: []int32{3, 3, 3, 2}, Dropped: []int32{2}},
+				{RollID: "roll-1", Total: 16, Dice: []int{6, 5, 5, 3}, Dropped: []int{3}},
+				{RollID: "roll-2", Total: 14, Dice: []int{5, 5, 4, 2}, Dropped: []int{2}},
+				{RollID: "roll-3", Total: 13, Dice: []int{4, 4, 5, 1}, Dropped: []int{1}},
+				{RollID: "roll-4", Total: 12, Dice: []int{4, 4, 4, 3}, Dropped: []int{3}},
+				{RollID: "roll-5", Total: 11, Dice: []int{4, 4, 3, 2}, Dropped: []int{2}},
+				{RollID: "roll-6", Total: 9, Dice: []int{3, 3, 3, 2}, Dropped: []int{2}},
 			},
 			Session: &dicesession.DiceSession{
 				EntityID: "draft-123",

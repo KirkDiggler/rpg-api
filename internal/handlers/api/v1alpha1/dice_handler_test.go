@@ -54,9 +54,9 @@ func (s *DiceHandlerTestSuite) TestRollDice_Success() {
 	mockRoll := &dicesession.DiceRoll{
 		RollID:      "roll_abc",
 		Notation:    notation,
-		Dice:        []int32{6, 5, 4, 2},
+		Dice:        []int{6, 5, 4, 2},
 		Total:       15, // 6+5+4 (dropped 2)
-		Dropped:     []int32{2},
+		Dropped:     []int{2},
 		Description: "Ability Score Roll",
 		DiceTotal:   15,
 		Modifier:    0,
@@ -165,17 +165,17 @@ func (s *DiceHandlerTestSuite) TestGetRollSession_Success() {
 			{
 				RollID:    "roll_1",
 				Notation:  "4d6",
-				Dice:      []int32{6, 5, 4, 3},
+				Dice:      []int{6, 5, 4, 3},
 				Total:     15,
-				Dropped:   []int32{3},
+				Dropped:   []int{3},
 				DiceTotal: 15,
 			},
 			{
 				RollID:    "roll_2",
 				Notation:  "4d6",
-				Dice:      []int32{5, 5, 3, 2},
+				Dice:      []int{5, 5, 3, 2},
 				Total:     13,
-				Dropped:   []int32{2},
+				Dropped:   []int{2},
 				DiceTotal: 13,
 			},
 		},

@@ -1,6 +1,7 @@
 package character
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -8,6 +9,7 @@ import (
 	"github.com/stretchr/testify/suite"
 
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
+	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character/choices"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/classes"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
@@ -216,4 +218,269 @@ func (s *ConvertersTestSuite) TestConvertChoiceToProto_PreservesOptionID() {
 	equipment := protoChoice.GetEquipment()
 	require.NotNil(s.T(), equipment, "Equipment selection should be set")
 	require.Len(s.T(), equipment.Items, 1, "Should have 1 equipment item")
+}
+
+func (s *ConvertersTestSuite) TestConvertCharacterDataToProto_WithFeatures() {
+	// Create test data with features
+	testData := &toolkitchar.Data{
+		ID:    "test-char",
+		Name:  "Ragnar",
+		Level: 5,
+		Features: []json.RawMessage{
+			json.RawMessage(`{
+				"ref": {"value": "rage"},
+				"id": "rage-1",
+				"name": "Rage",
+				"level": 5,
+				"uses": 3,
+				"max_uses": 3
+			}`),
+		},
+	}
+
+	// Convert to proto
+	result := ConvertCharacterDataToProto(testData)
+
+	// Verify features are converted
+	require.NotNil(s.T(), result, "Result should not be nil")
+	require.NotEmpty(s.T(), result.Features, "Features should be populated")
+	assert.Len(s.T(), result.Features, 1, "Should have 1 feature")
+
+	// Check feature details
+	rageFeature := result.Features[0]
+	assert.Equal(s.T(), "rage-1", rageFeature.Id)
+	assert.Equal(s.T(), "Rage", rageFeature.Name)
+	assert.Equal(s.T(), "class", rageFeature.Source)
+}
+
+func (s *ConvertersTestSuite) TestConvertCharacterDataToProto_EmptyFeatures() {
+	// Create test data with no features
+	testData := &toolkitchar.Data{
+		ID:       "test-char",
+		Name:     "Fighter",
+		Level:    1,
+		Features: nil,
+	}
+
+	// Convert to proto
+	result := ConvertCharacterDataToProto(testData)
+
+	// Verify no features
+	require.NotNil(s.T(), result, "Result should not be nil")
+	assert.Empty(s.T(), result.Features, "Features should be empty")
+}
+
+func (s *ConvertersTestSuite) TestConvertCharacterDataToProto_InvalidFeatureJSON() {
+	// Create test data with invalid feature JSON
+	testData := &toolkitchar.Data{
+		ID:    "test-char",
+		Name:  "Barbarian",
+		Level: 1,
+		Features: []json.RawMessage{
+			json.RawMessage(`{invalid json`),
+			json.RawMessage(`{
+				"ref": {"value": "rage"},
+				"id": "valid-rage",
+				"name": "Rage",
+				"level": 1
+			}`),
+		},
+	}
+
+	// Convert to proto - should skip invalid feature and include valid one
+	result := ConvertCharacterDataToProto(testData)
+
+	// Verify only valid feature is included
+	require.NotNil(s.T(), result, "Result should not be nil")
+	assert.Len(s.T(), result.Features, 1, "Should have 1 valid feature")
+	assert.Equal(s.T(), "valid-rage", result.Features[0].Id)
+}
+
+func (s *ConvertersTestSuite) TestConvertCharacterDataToProto_FeatureWithMissingID() {
+	// Create test data with feature missing ID
+	testData := &toolkitchar.Data{
+		ID:    "test-char",
+		Name:  "Barbarian",
+		Level: 1,
+		Features: []json.RawMessage{
+			json.RawMessage(`{
+				"ref": {"value": "rage"},
+				"name": "Rage",
+				"level": 1
+			}`),
+		},
+	}
+
+	// Convert to proto - should use ref.value as ID fallback
+	result := ConvertCharacterDataToProto(testData)
+
+	// Verify feature uses fallback ID
+	require.NotNil(s.T(), result, "Result should not be nil")
+	require.Len(s.T(), result.Features, 1, "Should have 1 feature")
+	assert.Equal(s.T(), "rage", result.Features[0].Id, "Should use ref.value as fallback ID")
+}
+
+func (s *ConvertersTestSuite) TestGetFeatureDisplayName() {
+	// Test known feature names
+	assert.Equal(s.T(), "Rage", getFeatureDisplayName("rage"))
+	assert.Equal(s.T(), "Second Wind", getFeatureDisplayName("second_wind"))
+	assert.Equal(s.T(), "Action Surge", getFeatureDisplayName("action_surge"))
+
+	// Test unknown feature - should return the ID
+	assert.Equal(s.T(), "unknown_feature", getFeatureDisplayName("unknown_feature"))
+}
+
+func (s *ConvertersTestSuite) TestConvertCharacterDataToProto_WithConditions() {
+	// Create test data with conditions
+	testData := &toolkitchar.Data{
+		ID:    "test-char",
+		Name:  "Ragnar",
+		Level: 5,
+		Conditions: []json.RawMessage{
+			json.RawMessage(`{
+				"id": "raging-1",
+				"type": "raging",
+				"name": "Raging",
+				"source": "rage",
+				"duration": 10
+			}`),
+			json.RawMessage(`{
+				"id": "blessed-1",
+				"name": "Blessed",
+				"source": "bless_spell",
+				"duration": 6
+			}`),
+		},
+	}
+
+	// Convert to proto
+	result := ConvertCharacterDataToProto(testData)
+
+	// Verify conditions are converted
+	require.NotNil(s.T(), result, "Result should not be nil")
+	require.NotEmpty(s.T(), result.ActiveConditions, "ActiveConditions should be populated")
+	assert.Len(s.T(), result.ActiveConditions, 2, "Should have 2 conditions")
+
+	// Check first condition details (Raging)
+	ragingCondition := result.ActiveConditions[0]
+	assert.Equal(s.T(), "Raging", ragingCondition.Name)
+	assert.Equal(s.T(), "rage", ragingCondition.Source)
+	assert.Equal(s.T(), int32(10), ragingCondition.Duration)
+
+	// Check second condition details (Blessed)
+	blessedCondition := result.ActiveConditions[1]
+	assert.Equal(s.T(), "Blessed", blessedCondition.Name)
+	assert.Equal(s.T(), "bless_spell", blessedCondition.Source)
+	assert.Equal(s.T(), int32(6), blessedCondition.Duration)
+}
+
+func (s *ConvertersTestSuite) TestConvertCharacterDataToProto_EmptyConditions() {
+	// Create test data with no conditions
+	testData := &toolkitchar.Data{
+		ID:         "test-char",
+		Name:       "Fighter",
+		Level:      1,
+		Conditions: nil,
+	}
+
+	// Convert to proto
+	result := ConvertCharacterDataToProto(testData)
+
+	// Verify no conditions
+	require.NotNil(s.T(), result, "Result should not be nil")
+	assert.Empty(s.T(), result.ActiveConditions, "ActiveConditions should be empty")
+}
+
+func (s *ConvertersTestSuite) TestConvertCharacterDataToProto_InvalidConditionJSON() {
+	// Create test data with invalid condition JSON
+	testData := &toolkitchar.Data{
+		ID:    "test-char",
+		Name:  "Barbarian",
+		Level: 1,
+		Conditions: []json.RawMessage{
+			json.RawMessage(`{invalid json`),
+			json.RawMessage(`{
+				"id": "valid-condition",
+				"name": "Poisoned",
+				"source": "trap",
+				"duration": 3
+			}`),
+		},
+	}
+
+	// Convert to proto - should skip invalid condition and include valid one
+	result := ConvertCharacterDataToProto(testData)
+
+	// Verify only valid condition is included
+	require.NotNil(s.T(), result, "Result should not be nil")
+	assert.Len(s.T(), result.ActiveConditions, 1, "Should have 1 valid condition")
+	assert.Equal(s.T(), "Poisoned", result.ActiveConditions[0].Name)
+}
+
+func (s *ConvertersTestSuite) TestConvertCharacterDataToProto_ConditionNameFallback() {
+	// Create test data with condition missing name but having type
+	testData := &toolkitchar.Data{
+		ID:    "test-char",
+		Name:  "Rogue",
+		Level: 3,
+		Conditions: []json.RawMessage{
+			// Condition with type but no name - should fall back to type
+			json.RawMessage(`{
+				"id": "poisoned-1",
+				"type": "poisoned",
+				"source": "trap",
+				"duration": 5
+			}`),
+			// Condition with only id - should fall back to id
+			json.RawMessage(`{
+				"id": "stunned",
+				"source": "spell",
+				"duration": 1
+			}`),
+		},
+	}
+
+	// Convert to proto
+	result := ConvertCharacterDataToProto(testData)
+
+	// Verify name fallback logic
+	require.NotNil(s.T(), result, "Result should not be nil")
+	require.Len(s.T(), result.ActiveConditions, 2, "Should have 2 conditions")
+
+	// First condition should use type as name fallback
+	assert.Equal(s.T(), "poisoned", result.ActiveConditions[0].Name, "Should use type as fallback name")
+
+	// Second condition should use id as name fallback
+	assert.Equal(s.T(), "stunned", result.ActiveConditions[1].Name, "Should use id as fallback name")
+}
+
+func (s *ConvertersTestSuite) TestConvertCharacterDataToProto_ConditionWithNoIdentifier() {
+	// Create test data with condition having no name, type, or id
+	testData := &toolkitchar.Data{
+		ID:    "test-char",
+		Name:  "Fighter",
+		Level: 2,
+		Conditions: []json.RawMessage{
+			// Condition with no identifiable name - should be skipped
+			json.RawMessage(`{
+				"source": "unknown",
+				"duration": 2
+			}`),
+			// Valid condition - should be included
+			json.RawMessage(`{
+				"id": "frightened",
+				"name": "Frightened",
+				"source": "fear_spell",
+				"duration": 10
+			}`),
+		},
+	}
+
+	// Convert to proto
+	result := ConvertCharacterDataToProto(testData)
+
+	// Verify condition with no identifier is skipped
+	require.NotNil(s.T(), result, "Result should not be nil")
+	assert.Len(s.T(), result.ActiveConditions, 1, "Should skip condition with no identifier")
+	assert.Equal(s.T(), "Frightened", result.ActiveConditions[0].Name)
 }

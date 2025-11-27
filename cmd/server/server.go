@@ -67,7 +67,8 @@ func runServer(_ *cobra.Command, _ []string) error {
 		cancel()
 	}()
 
-	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", grpcPort))
+	lc := net.ListenConfig{}
+	lis, err := lc.Listen(ctx, "tcp", fmt.Sprintf(":%d", grpcPort))
 	if err != nil {
 		return fmt.Errorf("failed to listen: %w", err)
 	}

@@ -35,22 +35,22 @@ type DiceRoll struct {
 	Notation string
 
 	// Individual dice values that were rolled
-	Dice []int32
+	Dice []int
 
 	// Final result after applying modifiers
-	Total int32
+	Total int
 
 	// Any dice that were dropped (for "drop lowest" etc.)
-	Dropped []int32
+	Dropped []int
 
 	// Human-readable description of the roll
 	Description string
 
 	// Raw dice total before modifiers
-	DiceTotal int32
+	DiceTotal int
 
 	// Modifier applied to get final total
-	Modifier int32
+	Modifier int
 }
 
 // CreateInput contains parameters for creating a dice session
@@ -85,7 +85,7 @@ type DeleteInput struct {
 
 // DeleteOutput contains the result of deleting a dice session
 type DeleteOutput struct {
-	RollsDeleted int32
+	RollsDeleted int
 }
 
 // Repository defines the interface for dice session storage operations

@@ -48,7 +48,7 @@ func TestOrchestrator_RollDice_AbilityScores(t *testing.T) {
 		// Mock creating a new session
 		mockRepo.EXPECT().
 			Create(ctx, gomock.Any()).
-			DoAndReturn(func(ctx context.Context, input dicesession.CreateInput) (*dicesession.CreateOutput, error) {
+			DoAndReturn(func(_ context.Context, input dicesession.CreateInput) (*dicesession.CreateOutput, error) {
 				// Verify that we're storing the roll with dropped dice
 				require.Equal(t, "player-123", input.EntityID)
 				require.Equal(t, ContextAbilityScores, input.Context)
@@ -60,14 +60,14 @@ func TestOrchestrator_RollDice_AbilityScores(t *testing.T) {
 				// Should have 1 dropped die
 				assert.Len(t, roll.Dropped, 1, "Should have 1 dropped die")
 				// Total should be sum of kept dice only
-				var keptSum int32
+				var keptSum int
 				for _, d := range roll.Dice {
 					keptSum += d
 				}
 				assert.Equal(t, keptSum, roll.Total, "Total should be sum of kept dice")
 				// Total should be between 3 and 18 (3d6 range)
-				assert.GreaterOrEqual(t, roll.Total, int32(3))
-				assert.LessOrEqual(t, roll.Total, int32(18))
+				assert.GreaterOrEqual(t, roll.Total, 3)
+				assert.LessOrEqual(t, roll.Total, 18)
 
 				return &dicesession.CreateOutput{
 					Session: &dicesession.DiceSession{
@@ -87,8 +87,8 @@ func TestOrchestrator_RollDice_AbilityScores(t *testing.T) {
 		assert.Equal(t, "4d6", output.Roll.Notation)
 		assert.Len(t, output.Roll.Dice, 3, "Should have 3 kept dice")
 		assert.Len(t, output.Roll.Dropped, 1, "Should have 1 dropped die")
-		assert.GreaterOrEqual(t, output.Roll.Total, int32(3))
-		assert.LessOrEqual(t, output.Roll.Total, int32(18))
+		assert.GreaterOrEqual(t, output.Roll.Total, 3)
+		assert.LessOrEqual(t, output.Roll.Total, 18)
 	})
 
 	// Test rolling 4d6 for non-ability context - should NOT drop lowest
@@ -110,7 +110,7 @@ func TestOrchestrator_RollDice_AbilityScores(t *testing.T) {
 		// Mock creating a new session
 		mockRepo.EXPECT().
 			Create(ctx, gomock.Any()).
-			DoAndReturn(func(ctx context.Context, input dicesession.CreateInput) (*dicesession.CreateOutput, error) {
+			DoAndReturn(func(_ context.Context, input dicesession.CreateInput) (*dicesession.CreateOutput, error) {
 				// Verify that we're NOT dropping dice for non-ability context
 				require.Equal(t, "player-123", input.EntityID)
 				require.Equal(t, "damage_rolls", input.Context)
@@ -122,8 +122,8 @@ func TestOrchestrator_RollDice_AbilityScores(t *testing.T) {
 				// Should have no dropped dice
 				assert.Len(t, roll.Dropped, 0, "Should have no dropped dice")
 				// Total should be between 4 and 24 (4d6 range)
-				assert.GreaterOrEqual(t, roll.Total, int32(4))
-				assert.LessOrEqual(t, roll.Total, int32(24))
+				assert.GreaterOrEqual(t, roll.Total, 4)
+				assert.LessOrEqual(t, roll.Total, 24)
 
 				return &dicesession.CreateOutput{
 					Session: &dicesession.DiceSession{
@@ -143,7 +143,7 @@ func TestOrchestrator_RollDice_AbilityScores(t *testing.T) {
 		assert.Equal(t, "4d6", output.Roll.Notation)
 		assert.Len(t, output.Roll.Dice, 4, "Should have all 4 dice")
 		assert.Len(t, output.Roll.Dropped, 0, "Should have no dropped dice")
-		assert.GreaterOrEqual(t, output.Roll.Total, int32(4))
-		assert.LessOrEqual(t, output.Roll.Total, int32(24))
+		assert.GreaterOrEqual(t, output.Roll.Total, 4)
+		assert.LessOrEqual(t, output.Roll.Total, 24)
 	})
 }

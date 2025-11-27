@@ -12,6 +12,7 @@ import (
 
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/abilities"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/initiative"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
 	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
 
@@ -91,6 +92,17 @@ func (s *OrchestratorTestSuite) TestResolveAttack_Success() {
 	s.mockCharRepo.EXPECT().
 		Get(gomock.Any(), characterrepo.GetInput{ID: "char-1"}).
 		Return(&characterrepo.GetOutput{CharacterData: charData}, nil)
+
+	// Mock equipment slots - use greataxe (default fallback behavior)
+	s.mockCharRepo.EXPECT().
+		GetEquipmentSlots(gomock.Any(), characterrepo.GetEquipmentSlotsInput{
+			CharacterID: "char-1",
+		}).
+		Return(&characterrepo.GetEquipmentSlotsOutput{
+			EquipmentSlots: &characterrepo.EquipmentSlots{
+				MainHand: "greataxe",
+			},
+		}, nil)
 
 	// Arrange - Mock encounter repo
 	encData := createTestEncounterData("enc-1")
@@ -251,6 +263,18 @@ func (s *OrchestratorTestSuite) TestResolveAttack_MultipleAttacks() {
 	s.mockCharRepo.EXPECT().
 		Get(gomock.Any(), characterrepo.GetInput{ID: "char-1"}).
 		Return(&characterrepo.GetOutput{CharacterData: charData}, nil).
+		Times(3)
+
+	// Mock equipment slots for each attack
+	s.mockCharRepo.EXPECT().
+		GetEquipmentSlots(gomock.Any(), characterrepo.GetEquipmentSlotsInput{
+			CharacterID: "char-1",
+		}).
+		Return(&characterrepo.GetEquipmentSlotsOutput{
+			EquipmentSlots: &characterrepo.EquipmentSlots{
+				MainHand: "greataxe",
+			},
+		}, nil).
 		Times(3)
 
 	s.mockEncRepo.EXPECT().
@@ -839,4 +863,1072 @@ func (s *OrchestratorTestSuite) TestMoveCharacter_UpdateError() {
 	s.Require().Error(err)
 	s.Assert().Nil(output)
 	s.Assert().Contains(err.Error(), "failed to save updated room")
+}
+
+// ============================================================================
+// EndTurn Tests
+// ============================================================================
+
+func (s *OrchestratorTestSuite) TestEndTurn_Success() {
+	// Arrange - Set up encounter with 2 characters and 1 monster
+	// Turn order: char-1 (current), goblin-1, char-2
+	initiativeData := &initiative.TrackerData{
+		Order: []initiative.EntityData{
+			{ID: "char-1", Type: "character"},
+			{ID: "goblin-1", Type: "monster"},
+			{ID: "char-2", Type: "character"},
+		},
+		Current: 0, // char-1's turn
+		Round:   1,
+	}
+
+	initiativeRolls := []initiative.Roll{
+		{Entity: initiative.NewParticipant("char-1", "character"), Roll: 18, Modifier: 2, Total: 20},
+		{Entity: initiative.NewParticipant("goblin-1", "monster"), Roll: 15, Modifier: 2, Total: 17},
+		{Entity: initiative.NewParticipant("char-2", "character"), Roll: 10, Modifier: 1, Total: 11},
+	}
+
+	s.mockEncRepo.EXPECT().
+		Get(gomock.Any(), &encounterrepo.GetInput{EncounterID: "enc-1"}).
+		Return(&encounterrepo.GetOutput{
+			Data: &encounterrepo.EncounterData{
+				ID:              "enc-1",
+				InitiativeData:  initiativeData,
+				InitiativeRolls: initiativeRolls,
+			},
+		}, nil)
+
+	s.mockEncRepo.EXPECT().
+		Update(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, input *encounterrepo.UpdateInput) (*encounterrepo.UpdateOutput, error) {
+			// Verify initiative was advanced past monster to char-2
+			s.Assert().Equal("enc-1", input.EncounterID)
+			s.Require().NotNil(input.InitiativeData)
+			s.Assert().Equal(2, input.InitiativeData.Current, "Should skip monster and advance to char-2")
+			s.Assert().Equal(1, input.InitiativeData.Round, "Should still be round 1")
+
+			// Verify movement was reset
+			s.Require().NotNil(input.MovementRemaining)
+			s.Assert().Equal(int32(30), *input.MovementRemaining)
+
+			return &encounterrepo.UpdateOutput{Success: true}, nil
+		})
+
+	// Act - No EntityID needed, server determines active entity from state
+	output, err := s.orchestrator.EndTurn(context.Background(), &EndTurnInput{
+		EncounterID: "enc-1",
+	})
+
+	// Assert
+	s.Require().NoError(err)
+	s.Require().NotNil(output)
+
+	// Verify combat state
+	s.Require().NotNil(output.CombatState)
+	s.Assert().Equal("enc-1", output.CombatState.EncounterID)
+	s.Assert().Equal(1, output.CombatState.Round)
+	s.Assert().Equal(2, output.CombatState.ActiveIndex, "Should be char-2's turn (index 2)")
+	s.Assert().Equal(int32(30), output.CombatState.MovementRemaining)
+	s.Assert().True(output.CombatState.CombatStarted)
+	s.Assert().False(output.CombatState.CombatEnded)
+
+	// Verify turn change event
+	s.Require().NotNil(output.TurnChange)
+	s.Assert().Equal("char-1", output.TurnChange.PreviousEntityID)
+	s.Assert().Equal("char-2", output.TurnChange.NextEntityID)
+	s.Assert().Equal(1, output.TurnChange.Round)
+	s.Assert().False(output.TurnChange.NewRound)
+}
+
+func (s *OrchestratorTestSuite) TestEndTurn_AdvancesToNewRound() {
+	// Arrange - char-2 is last in order, ending turn should start round 2
+	initiativeData := &initiative.TrackerData{
+		Order: []initiative.EntityData{
+			{ID: "char-1", Type: "character"},
+			{ID: "char-2", Type: "character"},
+		},
+		Current: 1, // char-2's turn (last)
+		Round:   1,
+	}
+
+	initiativeRolls := []initiative.Roll{
+		{Entity: initiative.NewParticipant("char-1", "character"), Roll: 18, Modifier: 2, Total: 20},
+		{Entity: initiative.NewParticipant("char-2", "character"), Roll: 10, Modifier: 1, Total: 11},
+	}
+
+	s.mockEncRepo.EXPECT().
+		Get(gomock.Any(), &encounterrepo.GetInput{EncounterID: "enc-1"}).
+		Return(&encounterrepo.GetOutput{
+			Data: &encounterrepo.EncounterData{
+				ID:              "enc-1",
+				InitiativeData:  initiativeData,
+				InitiativeRolls: initiativeRolls,
+			},
+		}, nil)
+
+	s.mockEncRepo.EXPECT().
+		Update(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, input *encounterrepo.UpdateInput) (*encounterrepo.UpdateOutput, error) {
+			s.Assert().Equal(0, input.InitiativeData.Current, "Should wrap to index 0")
+			s.Assert().Equal(2, input.InitiativeData.Round, "Should be round 2")
+			return &encounterrepo.UpdateOutput{Success: true}, nil
+		})
+
+	// Act - No EntityID needed, server knows it's char-2's turn from state
+	output, err := s.orchestrator.EndTurn(context.Background(), &EndTurnInput{
+		EncounterID: "enc-1",
+	})
+
+	// Assert
+	s.Require().NoError(err)
+	s.Require().NotNil(output)
+
+	s.Assert().Equal(2, output.CombatState.Round)
+	s.Assert().Equal(0, output.CombatState.ActiveIndex)
+
+	s.Assert().True(output.TurnChange.NewRound)
+	s.Assert().Equal(2, output.TurnChange.Round)
+	s.Assert().Equal("char-2", output.TurnChange.PreviousEntityID)
+	s.Assert().Equal("char-1", output.TurnChange.NextEntityID)
+}
+
+func (s *OrchestratorTestSuite) TestEndTurn_SkipsMultipleMonsters() {
+	// Arrange - char-1 followed by 2 monsters, then char-2
+	initiativeData := &initiative.TrackerData{
+		Order: []initiative.EntityData{
+			{ID: "char-1", Type: "character"},
+			{ID: "goblin-1", Type: "monster"},
+			{ID: "goblin-2", Type: "monster"},
+			{ID: "char-2", Type: "character"},
+		},
+		Current: 0,
+		Round:   1,
+	}
+
+	initiativeRolls := []initiative.Roll{
+		{Entity: initiative.NewParticipant("char-1", "character"), Roll: 20, Modifier: 2, Total: 22},
+		{Entity: initiative.NewParticipant("goblin-1", "monster"), Roll: 15, Modifier: 2, Total: 17},
+		{Entity: initiative.NewParticipant("goblin-2", "monster"), Roll: 14, Modifier: 2, Total: 16},
+		{Entity: initiative.NewParticipant("char-2", "character"), Roll: 10, Modifier: 1, Total: 11},
+	}
+
+	s.mockEncRepo.EXPECT().
+		Get(gomock.Any(), &encounterrepo.GetInput{EncounterID: "enc-1"}).
+		Return(&encounterrepo.GetOutput{
+			Data: &encounterrepo.EncounterData{
+				ID:              "enc-1",
+				InitiativeData:  initiativeData,
+				InitiativeRolls: initiativeRolls,
+			},
+		}, nil)
+
+	s.mockEncRepo.EXPECT().
+		Update(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, input *encounterrepo.UpdateInput) (*encounterrepo.UpdateOutput, error) {
+			s.Assert().Equal(3, input.InitiativeData.Current, "Should skip both monsters to char-2 at index 3")
+			return &encounterrepo.UpdateOutput{Success: true}, nil
+		})
+
+	// Act - No EntityID needed
+	output, err := s.orchestrator.EndTurn(context.Background(), &EndTurnInput{
+		EncounterID: "enc-1",
+	})
+
+	// Assert
+	s.Require().NoError(err)
+	s.Assert().Equal(3, output.CombatState.ActiveIndex)
+	s.Assert().Equal("char-2", output.TurnChange.NextEntityID)
+}
+
+func (s *OrchestratorTestSuite) TestEndTurn_SkipsMonstersAcrossRoundBoundary() {
+	// Arrange - char-1 at end, followed by monsters at start of order
+	// Turn order: goblin-1, goblin-2, char-1 (current)
+	initiativeData := &initiative.TrackerData{
+		Order: []initiative.EntityData{
+			{ID: "goblin-1", Type: "monster"},
+			{ID: "goblin-2", Type: "monster"},
+			{ID: "char-1", Type: "character"},
+		},
+		Current: 2, // char-1's turn (last)
+		Round:   1,
+	}
+
+	initiativeRolls := []initiative.Roll{
+		{Entity: initiative.NewParticipant("goblin-1", "monster"), Roll: 20, Modifier: 2, Total: 22},
+		{Entity: initiative.NewParticipant("goblin-2", "monster"), Roll: 18, Modifier: 2, Total: 20},
+		{Entity: initiative.NewParticipant("char-1", "character"), Roll: 10, Modifier: 1, Total: 11},
+	}
+
+	s.mockEncRepo.EXPECT().
+		Get(gomock.Any(), &encounterrepo.GetInput{EncounterID: "enc-1"}).
+		Return(&encounterrepo.GetOutput{
+			Data: &encounterrepo.EncounterData{
+				ID:              "enc-1",
+				InitiativeData:  initiativeData,
+				InitiativeRolls: initiativeRolls,
+			},
+		}, nil)
+
+	s.mockEncRepo.EXPECT().
+		Update(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, input *encounterrepo.UpdateInput) (*encounterrepo.UpdateOutput, error) {
+			s.Assert().Equal(2, input.InitiativeData.Current, "Should wrap back to char-1 at index 2")
+			s.Assert().Equal(2, input.InitiativeData.Round, "Should advance to round 2")
+			return &encounterrepo.UpdateOutput{Success: true}, nil
+		})
+
+	// Act - No EntityID needed
+	output, err := s.orchestrator.EndTurn(context.Background(), &EndTurnInput{
+		EncounterID: "enc-1",
+	})
+
+	// Assert
+	s.Require().NoError(err)
+	s.Assert().Equal(2, output.CombatState.Round)
+	s.Assert().Equal(2, output.CombatState.ActiveIndex)
+	s.Assert().True(output.TurnChange.NewRound)
+	s.Assert().Equal("char-1", output.TurnChange.NextEntityID) // Back to char-1
+}
+
+func (s *OrchestratorTestSuite) TestEndTurn_NilInput() {
+	// Act
+	output, err := s.orchestrator.EndTurn(context.Background(), nil)
+
+	// Assert
+	s.Require().Error(err)
+	s.Assert().Nil(output)
+	s.Assert().Contains(err.Error(), "input is required")
+}
+
+func (s *OrchestratorTestSuite) TestEndTurn_MissingEncounterID() {
+	// Act
+	output, err := s.orchestrator.EndTurn(context.Background(), &EndTurnInput{})
+
+	// Assert
+	s.Require().Error(err)
+	s.Assert().Nil(output)
+	s.Assert().Contains(err.Error(), "encounter ID is required")
+}
+
+func (s *OrchestratorTestSuite) TestEndTurn_EncounterNotFound() {
+	// Arrange
+	s.mockEncRepo.EXPECT().
+		Get(gomock.Any(), &encounterrepo.GetInput{EncounterID: "nonexistent"}).
+		Return(&encounterrepo.GetOutput{Data: nil}, nil)
+
+	// Act
+	output, err := s.orchestrator.EndTurn(context.Background(), &EndTurnInput{
+		EncounterID: "nonexistent",
+	})
+
+	// Assert
+	s.Require().Error(err)
+	s.Assert().Nil(output)
+	s.Assert().Contains(err.Error(), "encounter not found")
+}
+
+func (s *OrchestratorTestSuite) TestEndTurn_GetError() {
+	// Arrange
+	s.mockEncRepo.EXPECT().
+		Get(gomock.Any(), &encounterrepo.GetInput{EncounterID: "enc-1"}).
+		Return(nil, fmt.Errorf("database error"))
+
+	// Act
+	output, err := s.orchestrator.EndTurn(context.Background(), &EndTurnInput{
+		EncounterID: "enc-1",
+	})
+
+	// Assert
+	s.Require().Error(err)
+	s.Assert().Nil(output)
+	s.Assert().Contains(err.Error(), "failed to load encounter")
+}
+
+func (s *OrchestratorTestSuite) TestEndTurn_NoInitiativeData() {
+	// Arrange
+	s.mockEncRepo.EXPECT().
+		Get(gomock.Any(), &encounterrepo.GetInput{EncounterID: "enc-1"}).
+		Return(&encounterrepo.GetOutput{
+			Data: &encounterrepo.EncounterData{
+				ID:             "enc-1",
+				InitiativeData: nil,
+			},
+		}, nil)
+
+	// Act
+	output, err := s.orchestrator.EndTurn(context.Background(), &EndTurnInput{
+		EncounterID: "enc-1",
+	})
+
+	// Assert
+	s.Require().Error(err)
+	s.Assert().Nil(output)
+	s.Assert().Contains(err.Error(), "no initiative data")
+}
+
+func (s *OrchestratorTestSuite) TestEndTurn_EmptyTurnOrder() {
+	// Arrange
+	s.mockEncRepo.EXPECT().
+		Get(gomock.Any(), &encounterrepo.GetInput{EncounterID: "enc-1"}).
+		Return(&encounterrepo.GetOutput{
+			Data: &encounterrepo.EncounterData{
+				ID: "enc-1",
+				InitiativeData: &initiative.TrackerData{
+					Order:   []initiative.EntityData{},
+					Current: 0,
+					Round:   1,
+				},
+			},
+		}, nil)
+
+	// Act
+	output, err := s.orchestrator.EndTurn(context.Background(), &EndTurnInput{
+		EncounterID: "enc-1",
+	})
+
+	// Assert
+	s.Require().Error(err)
+	s.Assert().Nil(output)
+	s.Assert().Contains(err.Error(), "empty turn order")
+}
+
+func (s *OrchestratorTestSuite) TestEndTurn_UpdateError() {
+	// Arrange
+	initiativeData := &initiative.TrackerData{
+		Order: []initiative.EntityData{
+			{ID: "char-1", Type: "character"},
+			{ID: "char-2", Type: "character"},
+		},
+		Current: 0,
+		Round:   1,
+	}
+
+	s.mockEncRepo.EXPECT().
+		Get(gomock.Any(), &encounterrepo.GetInput{EncounterID: "enc-1"}).
+		Return(&encounterrepo.GetOutput{
+			Data: &encounterrepo.EncounterData{
+				ID:             "enc-1",
+				InitiativeData: initiativeData,
+			},
+		}, nil)
+
+	s.mockEncRepo.EXPECT().
+		Update(gomock.Any(), gomock.Any()).
+		Return(nil, fmt.Errorf("database error"))
+
+	// Act
+	output, err := s.orchestrator.EndTurn(context.Background(), &EndTurnInput{
+		EncounterID: "enc-1",
+	})
+
+	// Assert
+	s.Require().Error(err)
+	s.Assert().Nil(output)
+	s.Assert().Contains(err.Error(), "failed to save turn state")
+}
+
+func (s *OrchestratorTestSuite) TestEndTurn_WithRoomData() {
+	// Arrange - Test that positions are included when room data exists
+	roomData := &spatial.RoomData{
+		ID:       "enc-1-room",
+		Type:     "dungeon",
+		Width:    20,
+		Height:   20,
+		GridType: spatial.GridTypeHex,
+		Entities: map[string]spatial.EntityPlacement{
+			"char-1": {
+				EntityID:       "char-1",
+				EntityType:     "character",
+				Position:       spatial.Position{X: 2, Y: 8},
+				Size:           1,
+				BlocksMovement: true,
+			},
+			"char-2": {
+				EntityID:       "char-2",
+				EntityType:     "character",
+				Position:       spatial.Position{X: 2, Y: 10},
+				Size:           1,
+				BlocksMovement: true,
+			},
+		},
+	}
+
+	initiativeData := &initiative.TrackerData{
+		Order: []initiative.EntityData{
+			{ID: "char-1", Type: "character"},
+			{ID: "char-2", Type: "character"},
+		},
+		Current: 0,
+		Round:   1,
+	}
+
+	initiativeRolls := []initiative.Roll{
+		{Entity: initiative.NewParticipant("char-1", "character"), Roll: 18, Modifier: 2, Total: 20},
+		{Entity: initiative.NewParticipant("char-2", "character"), Roll: 10, Modifier: 1, Total: 11},
+	}
+
+	s.mockEncRepo.EXPECT().
+		Get(gomock.Any(), &encounterrepo.GetInput{EncounterID: "enc-1"}).
+		Return(&encounterrepo.GetOutput{
+			Data: &encounterrepo.EncounterData{
+				ID:              "enc-1",
+				RoomData:        roomData,
+				InitiativeData:  initiativeData,
+				InitiativeRolls: initiativeRolls,
+			},
+		}, nil)
+
+	s.mockEncRepo.EXPECT().
+		Update(gomock.Any(), gomock.Any()).
+		Return(&encounterrepo.UpdateOutput{Success: true}, nil)
+
+	// Act
+	output, err := s.orchestrator.EndTurn(context.Background(), &EndTurnInput{
+		EncounterID: "enc-1",
+	})
+
+	// Assert
+	s.Require().NoError(err)
+	s.Require().NotNil(output)
+
+	// Verify turn order has positions
+	s.Require().Len(output.CombatState.TurnOrder, 2)
+	s.Require().NotNil(output.CombatState.TurnOrder[0].Position)
+	s.Assert().Equal(float64(2), output.CombatState.TurnOrder[0].Position.X)
+	s.Assert().Equal(float64(8), output.CombatState.TurnOrder[0].Position.Y)
+
+	s.Require().NotNil(output.CombatState.TurnOrder[1].Position)
+	s.Assert().Equal(float64(2), output.CombatState.TurnOrder[1].Position.X)
+	s.Assert().Equal(float64(10), output.CombatState.TurnOrder[1].Position.Y)
+}
+
+// ============================================================================
+// EndTurn Ownership Validation Tests
+// ============================================================================
+
+func (s *OrchestratorTestSuite) TestEndTurn_WithPlayerID_OwnershipValid() {
+	// Arrange - char-1 owned by player-1
+	initiativeData := &initiative.TrackerData{
+		Order: []initiative.EntityData{
+			{ID: "char-1", Type: "character"},
+			{ID: "char-2", Type: "character"},
+		},
+		Current: 0, // char-1's turn
+		Round:   1,
+	}
+
+	initiativeRolls := []initiative.Roll{
+		{Entity: initiative.NewParticipant("char-1", "character"), Roll: 18, Modifier: 2, Total: 20},
+		{Entity: initiative.NewParticipant("char-2", "character"), Roll: 10, Modifier: 1, Total: 11},
+	}
+
+	s.mockEncRepo.EXPECT().
+		Get(gomock.Any(), &encounterrepo.GetInput{EncounterID: "enc-1"}).
+		Return(&encounterrepo.GetOutput{
+			Data: &encounterrepo.EncounterData{
+				ID:              "enc-1",
+				InitiativeData:  initiativeData,
+				InitiativeRolls: initiativeRolls,
+			},
+		}, nil)
+
+	// Mock character lookup to verify ownership
+	s.mockCharRepo.EXPECT().
+		Get(gomock.Any(), characterrepo.GetInput{ID: "char-1"}).
+		Return(&characterrepo.GetOutput{
+			CharacterData: &character.Data{
+				ID:       "char-1",
+				PlayerID: "player-1", // Owned by player-1
+			},
+		}, nil)
+
+	s.mockEncRepo.EXPECT().
+		Update(gomock.Any(), gomock.Any()).
+		Return(&encounterrepo.UpdateOutput{Success: true}, nil)
+
+	// Act - player-1 ends their own character's turn
+	output, err := s.orchestrator.EndTurn(context.Background(), &EndTurnInput{
+		EncounterID: "enc-1",
+		PlayerID:    "player-1", // Correct owner
+	})
+
+	// Assert - should succeed
+	s.Require().NoError(err)
+	s.Require().NotNil(output)
+	s.Assert().Equal("char-1", output.TurnChange.PreviousEntityID)
+	s.Assert().Equal("char-2", output.TurnChange.NextEntityID)
+}
+
+func (s *OrchestratorTestSuite) TestEndTurn_WithPlayerID_NotYourCharacter() {
+	// Arrange - char-1 owned by player-1, but player-2 tries to end turn
+	initiativeData := &initiative.TrackerData{
+		Order: []initiative.EntityData{
+			{ID: "char-1", Type: "character"},
+			{ID: "char-2", Type: "character"},
+		},
+		Current: 0, // char-1's turn
+		Round:   1,
+	}
+
+	initiativeRolls := []initiative.Roll{
+		{Entity: initiative.NewParticipant("char-1", "character"), Roll: 18, Modifier: 2, Total: 20},
+		{Entity: initiative.NewParticipant("char-2", "character"), Roll: 10, Modifier: 1, Total: 11},
+	}
+
+	s.mockEncRepo.EXPECT().
+		Get(gomock.Any(), &encounterrepo.GetInput{EncounterID: "enc-1"}).
+		Return(&encounterrepo.GetOutput{
+			Data: &encounterrepo.EncounterData{
+				ID:              "enc-1",
+				InitiativeData:  initiativeData,
+				InitiativeRolls: initiativeRolls,
+			},
+		}, nil)
+
+	// Mock character lookup - char-1 is owned by player-1
+	s.mockCharRepo.EXPECT().
+		Get(gomock.Any(), characterrepo.GetInput{ID: "char-1"}).
+		Return(&characterrepo.GetOutput{
+			CharacterData: &character.Data{
+				ID:       "char-1",
+				PlayerID: "player-1", // Owned by player-1
+			},
+		}, nil)
+
+	// Act - player-2 tries to end someone else's turn
+	output, err := s.orchestrator.EndTurn(context.Background(), &EndTurnInput{
+		EncounterID: "enc-1",
+		PlayerID:    "player-2", // Wrong player!
+	})
+
+	// Assert - should fail with ownership error
+	s.Require().Error(err)
+	s.Assert().Nil(output)
+	s.Assert().Contains(err.Error(), "you do not control character")
+	s.Assert().Contains(err.Error(), "char-1")
+	s.Assert().Contains(err.Error(), "player-1")
+}
+
+func (s *OrchestratorTestSuite) TestEndTurn_WithPlayerID_MonsterTurn() {
+	// Arrange - it's a monster's turn, player cannot end it
+	// Note: This shouldn't normally happen since we auto-skip monster turns,
+	// but we need to handle it in case the state gets corrupted or initial load
+	initiativeData := &initiative.TrackerData{
+		Order: []initiative.EntityData{
+			{ID: "goblin-1", Type: "monster"}, // Monster first
+			{ID: "char-1", Type: "character"},
+		},
+		Current: 0, // Monster's turn (edge case)
+		Round:   1,
+	}
+
+	initiativeRolls := []initiative.Roll{
+		{Entity: initiative.NewParticipant("goblin-1", "monster"), Roll: 20, Modifier: 2, Total: 22},
+		{Entity: initiative.NewParticipant("char-1", "character"), Roll: 10, Modifier: 1, Total: 11},
+	}
+
+	s.mockEncRepo.EXPECT().
+		Get(gomock.Any(), &encounterrepo.GetInput{EncounterID: "enc-1"}).
+		Return(&encounterrepo.GetOutput{
+			Data: &encounterrepo.EncounterData{
+				ID:              "enc-1",
+				InitiativeData:  initiativeData,
+				InitiativeRolls: initiativeRolls,
+			},
+		}, nil)
+
+	// Act - player tries to end monster's turn
+	output, err := s.orchestrator.EndTurn(context.Background(), &EndTurnInput{
+		EncounterID: "enc-1",
+		PlayerID:    "player-1",
+	})
+
+	// Assert - should fail with monster turn error
+	s.Require().Error(err)
+	s.Assert().Nil(output)
+	s.Assert().Contains(err.Error(), "monster's turn")
+	s.Assert().Contains(err.Error(), "goblin-1")
+}
+
+func (s *OrchestratorTestSuite) TestEndTurn_WithPlayerID_CharacterLookupFails() {
+	// Arrange - character lookup fails
+	initiativeData := &initiative.TrackerData{
+		Order: []initiative.EntityData{
+			{ID: "char-1", Type: "character"},
+		},
+		Current: 0,
+		Round:   1,
+	}
+
+	s.mockEncRepo.EXPECT().
+		Get(gomock.Any(), &encounterrepo.GetInput{EncounterID: "enc-1"}).
+		Return(&encounterrepo.GetOutput{
+			Data: &encounterrepo.EncounterData{
+				ID:             "enc-1",
+				InitiativeData: initiativeData,
+			},
+		}, nil)
+
+	// Mock character lookup to fail
+	s.mockCharRepo.EXPECT().
+		Get(gomock.Any(), characterrepo.GetInput{ID: "char-1"}).
+		Return(nil, errors.NotFound("character not found"))
+
+	// Act
+	output, err := s.orchestrator.EndTurn(context.Background(), &EndTurnInput{
+		EncounterID: "enc-1",
+		PlayerID:    "player-1",
+	})
+
+	// Assert - should fail with lookup error
+	s.Require().Error(err)
+	s.Assert().Nil(output)
+	s.Assert().Contains(err.Error(), "failed to validate character ownership")
+}
+
+func (s *OrchestratorTestSuite) TestEndTurn_WithoutPlayerID_SkipsValidation() {
+	// Arrange - backward compatibility: no PlayerID means no validation
+	initiativeData := &initiative.TrackerData{
+		Order: []initiative.EntityData{
+			{ID: "char-1", Type: "character"},
+			{ID: "char-2", Type: "character"},
+		},
+		Current: 0,
+		Round:   1,
+	}
+
+	initiativeRolls := []initiative.Roll{
+		{Entity: initiative.NewParticipant("char-1", "character"), Roll: 18, Modifier: 2, Total: 20},
+		{Entity: initiative.NewParticipant("char-2", "character"), Roll: 10, Modifier: 1, Total: 11},
+	}
+
+	s.mockEncRepo.EXPECT().
+		Get(gomock.Any(), &encounterrepo.GetInput{EncounterID: "enc-1"}).
+		Return(&encounterrepo.GetOutput{
+			Data: &encounterrepo.EncounterData{
+				ID:              "enc-1",
+				InitiativeData:  initiativeData,
+				InitiativeRolls: initiativeRolls,
+			},
+		}, nil)
+
+	// Note: No character repo call expected - validation is skipped
+
+	s.mockEncRepo.EXPECT().
+		Update(gomock.Any(), gomock.Any()).
+		Return(&encounterrepo.UpdateOutput{Success: true}, nil)
+
+	// Act - no PlayerID provided
+	output, err := s.orchestrator.EndTurn(context.Background(), &EndTurnInput{
+		EncounterID: "enc-1",
+		// PlayerID intentionally omitted
+	})
+
+	// Assert - should succeed without validation
+	s.Require().NoError(err)
+	s.Require().NotNil(output)
+}
+
+// ============================================================================
+// ActivateFeature Tests
+// ============================================================================
+
+func (s *OrchestratorTestSuite) TestActivateFeature_NilInput() {
+	// Act
+	output, err := s.orchestrator.ActivateFeature(context.Background(), nil)
+
+	// Assert
+	s.Require().Error(err)
+	s.Assert().Nil(output)
+	s.Assert().Contains(err.Error(), "input is required")
+}
+
+func (s *OrchestratorTestSuite) TestActivateFeature_MissingEncounterID() {
+	// Act
+	output, err := s.orchestrator.ActivateFeature(context.Background(), &ActivateFeatureInput{
+		CharacterID: "char-1",
+		FeatureID:   "rage",
+	})
+
+	// Assert
+	s.Require().Error(err)
+	s.Assert().Nil(output)
+	s.Assert().Contains(err.Error(), "encounter ID is required")
+}
+
+func (s *OrchestratorTestSuite) TestActivateFeature_MissingCharacterID() {
+	// Act
+	output, err := s.orchestrator.ActivateFeature(context.Background(), &ActivateFeatureInput{
+		EncounterID: "enc-1",
+		FeatureID:   "rage",
+	})
+
+	// Assert
+	s.Require().Error(err)
+	s.Assert().Nil(output)
+	s.Assert().Contains(err.Error(), "character ID is required")
+}
+
+func (s *OrchestratorTestSuite) TestActivateFeature_MissingFeatureID() {
+	// Act
+	output, err := s.orchestrator.ActivateFeature(context.Background(), &ActivateFeatureInput{
+		EncounterID: "enc-1",
+		CharacterID: "char-1",
+	})
+
+	// Assert
+	s.Require().Error(err)
+	s.Assert().Nil(output)
+	s.Assert().Contains(err.Error(), "feature ID is required")
+}
+
+func (s *OrchestratorTestSuite) TestActivateFeature_EncounterNotFound() {
+	// Arrange
+	s.mockEncRepo.EXPECT().
+		Get(gomock.Any(), &encounterrepo.GetInput{EncounterID: "nonexistent"}).
+		Return(&encounterrepo.GetOutput{Data: nil}, nil)
+
+	// Act
+	output, err := s.orchestrator.ActivateFeature(context.Background(), &ActivateFeatureInput{
+		EncounterID: "nonexistent",
+		CharacterID: "char-1",
+		FeatureID:   "rage",
+	})
+
+	// Assert
+	s.Require().Error(err)
+	s.Assert().Nil(output)
+	s.Assert().Contains(err.Error(), "encounter not found")
+}
+
+func (s *OrchestratorTestSuite) TestActivateFeature_CharacterNotFound() {
+	// Arrange - Encounter exists
+	s.mockEncRepo.EXPECT().
+		Get(gomock.Any(), &encounterrepo.GetInput{EncounterID: "enc-1"}).
+		Return(&encounterrepo.GetOutput{
+			Data: &encounterrepo.EncounterData{ID: "enc-1"},
+		}, nil)
+
+	// Character not found
+	s.mockCharRepo.EXPECT().
+		Get(gomock.Any(), characterrepo.GetInput{ID: "char-1"}).
+		Return(nil, errors.NotFound("character not found"))
+
+	// Act
+	output, err := s.orchestrator.ActivateFeature(context.Background(), &ActivateFeatureInput{
+		EncounterID: "enc-1",
+		CharacterID: "char-1",
+		FeatureID:   "rage",
+	})
+
+	// Assert
+	s.Require().Error(err)
+	s.Assert().Nil(output)
+	s.Assert().Contains(err.Error(), "failed to load character")
+}
+
+func (s *OrchestratorTestSuite) TestActivateFeature_FeatureNotFound() {
+	// Arrange - Encounter and character exist, but character has no rage feature
+	s.mockEncRepo.EXPECT().
+		Get(gomock.Any(), &encounterrepo.GetInput{EncounterID: "enc-1"}).
+		Return(&encounterrepo.GetOutput{
+			Data: &encounterrepo.EncounterData{ID: "enc-1"},
+		}, nil)
+
+	// Character has no features (not a barbarian)
+	charData := &character.Data{
+		ID:      "char-1",
+		Name:    "Tordek",
+		Level:   1,
+		ClassID: "fighter", // Not a barbarian, no rage
+		AbilityScores: shared.AbilityScores{
+			abilities.STR: 16,
+			abilities.DEX: 14,
+			abilities.CON: 14,
+			abilities.INT: 10,
+			abilities.WIS: 12,
+			abilities.CHA: 8,
+		},
+		Features: []json.RawMessage{}, // No features
+	}
+	s.mockCharRepo.EXPECT().
+		Get(gomock.Any(), characterrepo.GetInput{ID: "char-1"}).
+		Return(&characterrepo.GetOutput{CharacterData: charData}, nil)
+
+	// Act
+	output, err := s.orchestrator.ActivateFeature(context.Background(), &ActivateFeatureInput{
+		EncounterID: "enc-1",
+		CharacterID: "char-1",
+		FeatureID:   "rage",
+	})
+
+	// Assert - Returns success=false, not an error
+	s.Require().NoError(err)
+	s.Require().NotNil(output)
+	s.Assert().False(output.Success)
+	s.Assert().Contains(output.Message, "not found")
+	s.Assert().NotNil(output.CharacterData)
+}
+
+func (s *OrchestratorTestSuite) TestActivateFeature_CharacterLoadsSuccessfully() {
+	// This test verifies the happy path up until feature lookup.
+	// Testing actual feature activation requires integration tests with the toolkit.
+	// The feature loading from JSON in LoadFromData is complex and toolkit-specific.
+
+	// Arrange - Barbarian with rage feature
+	s.mockEncRepo.EXPECT().
+		Get(gomock.Any(), &encounterrepo.GetInput{EncounterID: "enc-1"}).
+		Return(&encounterrepo.GetOutput{
+			Data: &encounterrepo.EncounterData{ID: "enc-1"},
+		}, nil)
+
+	// Create a basic character (features will be loaded from class by toolkit)
+	charData := &character.Data{
+		ID:               "char-1",
+		Name:             "Grog",
+		Level:            1,
+		RaceID:           "human",
+		ClassID:          "barbarian",
+		ProficiencyBonus: 2,
+		AbilityScores: shared.AbilityScores{
+			abilities.STR: 16,
+			abilities.DEX: 14,
+			abilities.CON: 14,
+			abilities.INT: 10,
+			abilities.WIS: 12,
+			abilities.CHA: 8,
+		},
+		Features: []json.RawMessage{}, // Toolkit loads features from class
+	}
+
+	s.mockCharRepo.EXPECT().
+		Get(gomock.Any(), characterrepo.GetInput{ID: "char-1"}).
+		Return(&characterrepo.GetOutput{CharacterData: charData}, nil)
+
+	// Act
+	output, err := s.orchestrator.ActivateFeature(context.Background(), &ActivateFeatureInput{
+		EncounterID: "enc-1",
+		CharacterID: "char-1",
+		FeatureID:   "rage",
+	})
+
+	// Assert - Feature may or may not be found depending on toolkit behavior
+	// The key is that we don't get a hard error, and character data is returned
+	s.Require().NoError(err)
+	s.Require().NotNil(output)
+	s.Assert().NotNil(output.CharacterData)
+	// Note: Success depends on whether toolkit loads barbarian features by default
+	// If not found, output.Success will be false with message about feature not found
+}
+
+func (s *OrchestratorTestSuite) TestActivateFeature_EncounterGetError() {
+	// Arrange
+	s.mockEncRepo.EXPECT().
+		Get(gomock.Any(), &encounterrepo.GetInput{EncounterID: "enc-1"}).
+		Return(nil, fmt.Errorf("database error"))
+
+	// Act
+	output, err := s.orchestrator.ActivateFeature(context.Background(), &ActivateFeatureInput{
+		EncounterID: "enc-1",
+		CharacterID: "char-1",
+		FeatureID:   "rage",
+	})
+
+	// Assert
+	s.Require().Error(err)
+	s.Assert().Nil(output)
+	s.Assert().Contains(err.Error(), "failed to load encounter")
+}
+
+// ============================================================================
+// ResolveAttack - Equipped Weapon Tests
+// ============================================================================
+
+func (s *OrchestratorTestSuite) TestResolveAttack_UsesEquippedWeapon() {
+	// Arrange - Create test character data
+	charData := createTestCharacterData("char-1", "Grog")
+	s.mockCharRepo.EXPECT().
+		Get(gomock.Any(), characterrepo.GetInput{ID: "char-1"}).
+		Return(&characterrepo.GetOutput{CharacterData: charData}, nil)
+
+	// Mock equipment slots - character has a longsword equipped
+	s.mockCharRepo.EXPECT().
+		GetEquipmentSlots(gomock.Any(), characterrepo.GetEquipmentSlotsInput{
+			CharacterID: "char-1",
+		}).
+		Return(&characterrepo.GetEquipmentSlotsOutput{
+			EquipmentSlots: &characterrepo.EquipmentSlots{
+				MainHand: "longsword",
+			},
+		}, nil)
+
+	// Arrange - Mock encounter repo
+	encData := createTestEncounterData("enc-1")
+	s.mockEncRepo.EXPECT().
+		Get(gomock.Any(), &encounterrepo.GetInput{EncounterID: "enc-1"}).
+		Return(&encounterrepo.GetOutput{Data: encData}, nil)
+
+	// Act
+	output, err := s.orchestrator.ResolveAttack(context.Background(), &ResolveAttackInput{
+		EncounterID: "enc-1",
+		AttackerID:  "char-1",
+		TargetID:    "goblin-1",
+	})
+
+	// Assert
+	s.Require().NoError(err)
+	s.Require().NotNil(output)
+	s.Assert().NotNil(output.Result)
+
+	// Longsword does slashing damage
+	if output.Result.Hit {
+		s.Assert().Equal("slashing", output.Result.DamageType)
+	}
+}
+
+func (s *OrchestratorTestSuite) TestResolveAttack_NoEquippedWeapon_FallsBackToGreataxe() {
+	// Arrange - Create test character data
+	charData := createTestCharacterData("char-1", "Grog")
+	s.mockCharRepo.EXPECT().
+		Get(gomock.Any(), characterrepo.GetInput{ID: "char-1"}).
+		Return(&characterrepo.GetOutput{CharacterData: charData}, nil)
+
+	// Mock equipment slots - no weapon equipped (empty mainhand)
+	s.mockCharRepo.EXPECT().
+		GetEquipmentSlots(gomock.Any(), characterrepo.GetEquipmentSlotsInput{
+			CharacterID: "char-1",
+		}).
+		Return(&characterrepo.GetEquipmentSlotsOutput{
+			EquipmentSlots: &characterrepo.EquipmentSlots{
+				MainHand: "", // No weapon
+			},
+		}, nil)
+
+	// Arrange - Mock encounter repo
+	encData := createTestEncounterData("enc-1")
+	s.mockEncRepo.EXPECT().
+		Get(gomock.Any(), &encounterrepo.GetInput{EncounterID: "enc-1"}).
+		Return(&encounterrepo.GetOutput{Data: encData}, nil)
+
+	// Act
+	output, err := s.orchestrator.ResolveAttack(context.Background(), &ResolveAttackInput{
+		EncounterID: "enc-1",
+		AttackerID:  "char-1",
+		TargetID:    "goblin-1",
+	})
+
+	// Assert - Should succeed with fallback to greataxe
+	s.Require().NoError(err)
+	s.Require().NotNil(output)
+	s.Assert().NotNil(output.Result)
+
+	// Greataxe does slashing damage
+	if output.Result.Hit {
+		s.Assert().Equal("slashing", output.Result.DamageType)
+	}
+}
+
+func (s *OrchestratorTestSuite) TestResolveAttack_EquipmentLookupFails_FallsBackToGreataxe() {
+	// Arrange - Create test character data
+	charData := createTestCharacterData("char-1", "Grog")
+	s.mockCharRepo.EXPECT().
+		Get(gomock.Any(), characterrepo.GetInput{ID: "char-1"}).
+		Return(&characterrepo.GetOutput{CharacterData: charData}, nil)
+
+	// Mock equipment slots - lookup fails (e.g., database error)
+	s.mockCharRepo.EXPECT().
+		GetEquipmentSlots(gomock.Any(), characterrepo.GetEquipmentSlotsInput{
+			CharacterID: "char-1",
+		}).
+		Return(nil, fmt.Errorf("database connection error"))
+
+	// Arrange - Mock encounter repo
+	encData := createTestEncounterData("enc-1")
+	s.mockEncRepo.EXPECT().
+		Get(gomock.Any(), &encounterrepo.GetInput{EncounterID: "enc-1"}).
+		Return(&encounterrepo.GetOutput{Data: encData}, nil)
+
+	// Act - Should still succeed with fallback
+	output, err := s.orchestrator.ResolveAttack(context.Background(), &ResolveAttackInput{
+		EncounterID: "enc-1",
+		AttackerID:  "char-1",
+		TargetID:    "goblin-1",
+	})
+
+	// Assert - Should succeed with fallback to greataxe
+	s.Require().NoError(err)
+	s.Require().NotNil(output)
+	s.Assert().NotNil(output.Result)
+}
+
+func (s *OrchestratorTestSuite) TestResolveAttack_NilEquipmentSlots_FallsBackToGreataxe() {
+	// Arrange - Create test character data
+	charData := createTestCharacterData("char-1", "Grog")
+	s.mockCharRepo.EXPECT().
+		Get(gomock.Any(), characterrepo.GetInput{ID: "char-1"}).
+		Return(&characterrepo.GetOutput{CharacterData: charData}, nil)
+
+	// Mock equipment slots - returns nil slots (character never set equipment)
+	s.mockCharRepo.EXPECT().
+		GetEquipmentSlots(gomock.Any(), characterrepo.GetEquipmentSlotsInput{
+			CharacterID: "char-1",
+		}).
+		Return(&characterrepo.GetEquipmentSlotsOutput{
+			EquipmentSlots: nil, // No equipment data at all
+		}, nil)
+
+	// Arrange - Mock encounter repo
+	encData := createTestEncounterData("enc-1")
+	s.mockEncRepo.EXPECT().
+		Get(gomock.Any(), &encounterrepo.GetInput{EncounterID: "enc-1"}).
+		Return(&encounterrepo.GetOutput{Data: encData}, nil)
+
+	// Act - Should still succeed with fallback
+	output, err := s.orchestrator.ResolveAttack(context.Background(), &ResolveAttackInput{
+		EncounterID: "enc-1",
+		AttackerID:  "char-1",
+		TargetID:    "goblin-1",
+	})
+
+	// Assert - Should succeed with fallback to greataxe
+	s.Require().NoError(err)
+	s.Require().NotNil(output)
+	s.Assert().NotNil(output.Result)
+}
+
+func (s *OrchestratorTestSuite) TestResolveAttack_UnknownWeaponID_FallsBackToGreataxe() {
+	// Arrange - Create test character data
+	charData := createTestCharacterData("char-1", "Grog")
+	s.mockCharRepo.EXPECT().
+		Get(gomock.Any(), characterrepo.GetInput{ID: "char-1"}).
+		Return(&characterrepo.GetOutput{CharacterData: charData}, nil)
+
+	// Mock equipment slots - character has an unknown weapon ID
+	s.mockCharRepo.EXPECT().
+		GetEquipmentSlots(gomock.Any(), characterrepo.GetEquipmentSlotsInput{
+			CharacterID: "char-1",
+		}).
+		Return(&characterrepo.GetEquipmentSlotsOutput{
+			EquipmentSlots: &characterrepo.EquipmentSlots{
+				MainHand: "magic-sword-of-doom-9000", // Unknown weapon ID
+			},
+		}, nil)
+
+	// Arrange - Mock encounter repo
+	encData := createTestEncounterData("enc-1")
+	s.mockEncRepo.EXPECT().
+		Get(gomock.Any(), &encounterrepo.GetInput{EncounterID: "enc-1"}).
+		Return(&encounterrepo.GetOutput{Data: encData}, nil)
+
+	// Act - Should still succeed with fallback
+	output, err := s.orchestrator.ResolveAttack(context.Background(), &ResolveAttackInput{
+		EncounterID: "enc-1",
+		AttackerID:  "char-1",
+		TargetID:    "goblin-1",
+	})
+
+	// Assert - Should succeed with fallback to greataxe
+	s.Require().NoError(err)
+	s.Require().NotNil(output)
+	s.Assert().NotNil(output.Result)
 }

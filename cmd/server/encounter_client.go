@@ -20,12 +20,12 @@ var encounterCmd = &cobra.Command{
 var dungeonStartCmd = &cobra.Command{
 	Use:   "start",
 	Short: "Start a dungeon encounter",
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(_ *cobra.Command, args []string) error {
 		conn, err := grpc.NewClient("localhost:50051", grpc.WithTransportCredentials(insecure.NewCredentials()))
 		if err != nil {
 			return fmt.Errorf("failed to connect: %w", err)
 		}
-		defer conn.Close()
+		defer func() { _ = conn.Close() }()
 
 		client := dnd5ev1alpha1.NewEncounterServiceClient(conn)
 
@@ -41,7 +41,7 @@ var dungeonStartCmd = &cobra.Command{
 
 		// Pretty print the response
 		data, _ := json.MarshalIndent(map[string]interface{}{
-			"encounterId": resp.GetEncounterId(),
+			"encounterID": resp.GetEncounterId(),
 			"room": map[string]interface{}{
 				"width":    resp.GetRoom().GetWidth(),
 				"height":   resp.GetRoom().GetHeight(),
@@ -67,12 +67,12 @@ var endTurnCmd = &cobra.Command{
 	Use:   "end-turn [encounter-id]",
 	Short: "End the current turn",
 	Args:  cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(_ *cobra.Command, args []string) error {
 		conn, err := grpc.NewClient("localhost:50051", grpc.WithTransportCredentials(insecure.NewCredentials()))
 		if err != nil {
 			return fmt.Errorf("failed to connect: %w", err)
 		}
-		defer conn.Close()
+		defer func() { _ = conn.Close() }()
 
 		client := dnd5ev1alpha1.NewEncounterServiceClient(conn)
 
@@ -110,12 +110,12 @@ var endTurnCmd = &cobra.Command{
 var testFlowCmd = &cobra.Command{
 	Use:   "test-flow",
 	Short: "Test the full encounter flow",
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(_ *cobra.Command, args []string) error {
 		conn, err := grpc.NewClient("localhost:50051", grpc.WithTransportCredentials(insecure.NewCredentials()))
 		if err != nil {
 			return fmt.Errorf("failed to connect: %w", err)
 		}
-		defer conn.Close()
+		defer func() { _ = conn.Close() }()
 
 		client := dnd5ev1alpha1.NewEncounterServiceClient(conn)
 
@@ -130,15 +130,15 @@ var testFlowCmd = &cobra.Command{
 			return fmt.Errorf("failed to start dungeon: %w", err)
 		}
 
-		encounterId := startResp.GetEncounterId()
-		fmt.Printf("Encounter ID: %s\n", encounterId)
+		encounterID := startResp.GetEncounterId()
+		fmt.Printf("Encounter ID: %s\n", encounterID)
 		fmt.Printf("Initial Turn: %s\n", startResp.GetCombatState().GetCurrentTurn().GetEntityId())
 
 		// Test ending turns multiple times
 		fmt.Println("\n=== Testing Turn Cycling ===")
 		for i := 0; i < 5; i++ {
 			endReq := &dnd5ev1alpha1.EndTurnRequest{
-				EncounterId: encounterId,
+				EncounterId: encounterID,
 			}
 
 			endResp, err := client.EndTurn(context.Background(), endReq)

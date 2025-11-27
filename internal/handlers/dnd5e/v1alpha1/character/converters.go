@@ -1,6 +1,7 @@
 package character
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -24,6 +25,13 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/spells"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/tools"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/weapons"
+)
+
+// Feature source constants
+const (
+	featureSourceClass      = "class"
+	featureSourceRace       = "race"
+	featureSourceBackground = "background"
 )
 
 // convertDraftDataToProto converts toolkit DraftData to proto CharacterDraft
@@ -97,6 +105,7 @@ func convertChoicesToProto(choices []choices.ChoiceData) []*dnd5ev1alpha1.Choice
 	return result
 }
 
+//nolint:dupl // Bidirectional enum conversion (skill->proto vs proto->skill) results in similar switch statements
 func convertSkillToProtoEnum(skill skills.Skill) dnd5ev1alpha1.Skill {
 	switch skill {
 	case skills.Acrobatics:
@@ -140,6 +149,7 @@ func convertSkillToProtoEnum(skill skills.Skill) dnd5ev1alpha1.Skill {
 	}
 }
 
+//nolint:dupl // Bidirectional enum conversion (language->proto vs proto->language) results in similar switch statements
 func convertLanguageToProtoEnum(lang languages.Language) dnd5ev1alpha1.Language {
 	switch lang {
 	case languages.Common:
@@ -179,6 +189,7 @@ func convertLanguageToProtoEnum(lang languages.Language) dnd5ev1alpha1.Language 
 	}
 }
 
+//nolint:dupl // Bidirectional enum conversion (tool->proto vs proto->tool) results in similar switch statements
 func convertProficiencyToolToProtoEnum(tool proficiencies.Tool) dnd5ev1alpha1.Tool {
 	switch tool {
 	// Artisan's tools
@@ -1029,11 +1040,11 @@ func convertCharacterToProto(char *toolkitchar.Character) *dnd5ev1alpha1.Charact
 	// Convert to Data first, then use existing converter
 	// ToData is now a method on Character
 	data := char.ToData()
-	return convertCharacterDataToProto(data)
+	return ConvertCharacterDataToProto(data)
 }
 
-// convertCharacterDataToProto converts toolkit character.Data to proto Character
-func convertCharacterDataToProto(data *toolkitchar.Data) *dnd5ev1alpha1.Character {
+// ConvertCharacterDataToProto converts toolkit character.Data to proto Character
+func ConvertCharacterDataToProto(data *toolkitchar.Data) *dnd5ev1alpha1.Character {
 	if data == nil {
 		return nil
 	}
@@ -1137,6 +1148,82 @@ func convertCharacterDataToProto(data *toolkitchar.Data) *dnd5ev1alpha1.Characte
 		_ = resource // Avoid unused variable warning
 	}
 
+	// Convert features
+	if len(data.Features) > 0 {
+		for _, featureJSON := range data.Features {
+			// Unmarshal to get basic info
+			var featureData struct {
+				Ref struct {
+					Value string `json:"value"`
+				} `json:"ref"`
+				ID   string `json:"id"`
+				Name string `json:"name"`
+			}
+			if err := json.Unmarshal(featureJSON, &featureData); err != nil {
+				continue // Skip invalid features
+			}
+
+			// Use ID or Ref.Value as the feature identifier
+			featureID := featureData.ID
+			if featureID == "" {
+				featureID = featureData.Ref.Value
+			}
+
+			// Skip if we still don't have an ID
+			if featureID == "" {
+				continue
+			}
+
+			// Get display name - prefer the name from JSON, fall back to lookup
+			displayName := featureData.Name
+			if displayName == "" {
+				displayName = getFeatureDisplayName(featureID)
+			}
+
+			char.Features = append(char.Features, &dnd5ev1alpha1.CharacterFeature{
+				Id:     featureID,
+				Name:   displayName,
+				Source: featureSourceClass, // Most features are class features
+			})
+		}
+	}
+
+	// Convert conditions (active status effects like "raging", "poisoned", etc.)
+	if len(data.Conditions) > 0 {
+		for _, conditionJSON := range data.Conditions {
+			var conditionData struct {
+				ID       string `json:"id"`
+				Type     string `json:"type"`
+				Name     string `json:"name"`
+				Source   string `json:"source"`
+				Duration int32  `json:"duration"`
+			}
+			if err := json.Unmarshal(conditionJSON, &conditionData); err != nil {
+				continue // Skip invalid conditions
+			}
+
+			// Get the condition name - use name if present, otherwise derive from type/id
+			conditionName := conditionData.Name
+			if conditionName == "" {
+				conditionName = conditionData.Type
+			}
+			if conditionName == "" {
+				conditionName = conditionData.ID
+			}
+
+			// Skip if we still don't have a name
+			if conditionName == "" {
+				continue
+			}
+
+			char.ActiveConditions = append(char.ActiveConditions, &dnd5ev1alpha1.Condition{
+				Name:     conditionName,
+				Source:   conditionData.Source,
+				Duration: conditionData.Duration,
+			})
+		}
+	}
+
 	// Set metadata
 	if data.CreatedAt.Unix() > 0 || data.UpdatedAt.Unix() > 0 {
 		char.Metadata = &dnd5ev1alpha1.CharacterMetadata{
@@ -1147,6 +1234,68 @@ func convertCharacterDataToProto(data *toolkitchar.Data) *dnd5ev1alpha1.Characte
 	}
 
 	return char
+}
+
+// convertEquipmentSlotToStorageKey converts a proto EquipmentSlot enum to the storage key format
+func convertEquipmentSlotToStorageKey(slot dnd5ev1alpha1.EquipmentSlot) string {
+	switch slot {
+	case dnd5ev1alpha1.EquipmentSlot_EQUIPMENT_SLOT_MAIN_HAND:
+		return "main_hand"
+	case dnd5ev1alpha1.EquipmentSlot_EQUIPMENT_SLOT_OFF_HAND:
+		return "off_hand"
+	case dnd5ev1alpha1.EquipmentSlot_EQUIPMENT_SLOT_ARMOR:
+		return "armor"
+	case dnd5ev1alpha1.EquipmentSlot_EQUIPMENT_SLOT_HELMET:
+		return "helmet"
+	case dnd5ev1alpha1.EquipmentSlot_EQUIPMENT_SLOT_BOOTS:
+		return "boots"
+	case dnd5ev1alpha1.EquipmentSlot_EQUIPMENT_SLOT_GLOVES:
+		return "gloves"
+	case dnd5ev1alpha1.EquipmentSlot_EQUIPMENT_SLOT_CLOAK:
+		return "cloak"
+	case dnd5ev1alpha1.EquipmentSlot_EQUIPMENT_SLOT_AMULET:
+		return "amulet"
+	case dnd5ev1alpha1.EquipmentSlot_EQUIPMENT_SLOT_RING_1:
+		return "ring1"
+	case dnd5ev1alpha1.EquipmentSlot_EQUIPMENT_SLOT_RING_2:
+		return "ring2"
+	case dnd5ev1alpha1.EquipmentSlot_EQUIPMENT_SLOT_BELT:
+		return "belt"
+	default:
+		return ""
+	}
+}
+
+// convertEquipmentSlotsToProto converts a map of slot name to item ID into proto EquipmentSlots
+func convertEquipmentSlotsToProto(slots map[string]string) *dnd5ev1alpha1.EquipmentSlots {
+	if len(slots) == 0 {
+		return nil
+	}
+
+	// Helper to create InventoryItem from item ID
+	makeItem := func(itemID string) *dnd5ev1alpha1.InventoryItem {
+		if itemID == "" {
+			return nil
+		}
+		return &dnd5ev1alpha1.InventoryItem{
+			ItemId:   itemID,
+			Quantity: 1,
+		}
+	}
+
+	return &dnd5ev1alpha1.EquipmentSlots{
+		MainHand: makeItem(slots["main_hand"]),
+		OffHand:  makeItem(slots["off_hand"]),
+		Armor:    makeItem(slots["armor"]),
+		Helmet:   makeItem(slots["helmet"]),
+		Boots:    makeItem(slots["boots"]),
+		Gloves:   makeItem(slots["gloves"]),
+		Cloak:    makeItem(slots["cloak"]),
+		Amulet:   makeItem(slots["amulet"]),
+		Ring_1:   makeItem(slots["ring1"]),
+		Ring_2:   makeItem(slots["ring2"]),
+		Belt:     makeItem(slots["belt"]),
+	}
 }
 
 // convertFightingStyleToProto converts toolkit FightingStyle to proto enum
@@ -2445,4 +2594,65 @@ func convertSpellToProtoEnum(spell spells.Spell) dnd5ev1alpha1.Spell {
 	default:
 		return dnd5ev1alpha1.Spell_SPELL_UNSPECIFIED
 	}
+}
+
+// getFeatureDisplayName returns a human-readable display name for a feature ID
+func getFeatureDisplayName(featureID string) string {
+	displayNames := map[string]string{
+		"rage":                 "Rage",
+		"second_wind":          "Second Wind",
+		"action_surge":         "Action Surge",
+		"fighting_style":       "Fighting Style",
+		"unarmored_defense":    "Unarmored Defense",
+		"reckless_attack":      "Reckless Attack",
+		"danger_sense":         "Danger Sense",
+		"extra_attack":         "Extra Attack",
+		"fast_movement":        "Fast Movement",
+		"feral_instinct":       "Feral Instinct",
+		"brutal_critical":      "Brutal Critical",
+		"relentless_rage":      "Relentless Rage",
+		"persistent_rage":      "Persistent Rage",
+		"indomitable_might":    "Indomitable Might",
+		"primal_champion":      "Primal Champion",
+		"spellcasting":         "Spellcasting",
+		"divine_sense":         "Divine Sense",
+		"lay_on_hands":         "Lay on Hands",
+		"divine_smite":         "Divine Smite",
+		"channel_divinity":     "Channel Divinity",
+		"sneak_attack":         "Sneak Attack",
+		"cunning_action":       "Cunning Action",
+		"uncanny_dodge":        "Uncanny Dodge",
+		"evasion":              "Evasion",
+		"wild_shape":           "Wild Shape",
+		"ki":                   "Ki",
+		"martial_arts":         "Martial Arts",
+		"flurry_of_blows":      "Flurry of Blows",
+		"patient_defense":      "Patient Defense",
+		"step_of_the_wind":     "Step of the Wind",
+		"arcane_recovery":      "Arcane Recovery",
+		"sorcery_points":       "Sorcery Points",
+		"metamagic":            "Metamagic",
+		"bardic_inspiration":   "Bardic Inspiration",
+		"song_of_rest":         "Song of Rest",
+		"eldritch_invocations": "Eldritch Invocations",
+		"pact_magic":           "Pact Magic",
+		"favored_enemy":        "Favored Enemy",
+		"natural_explorer":     "Natural Explorer",
+		"primeval_awareness":   "Primeval Awareness",
+		"hunters_mark":         "Hunter's Mark",
+		"destroy_undead":       "Destroy Undead",
+		"turn_undead":          "Turn Undead",
+		"divine_intervention":  "Divine Intervention",
+		"superiority_dice":     "Superiority Dice",
+		"combat_superiority":   "Combat Superiority",
+		"improved_critical":    "Improved Critical",
+		"remarkable_athlete":   "Remarkable Athlete",
+		"font_of_magic":        "Font of Magic",
+		"eldritch_blast":       "Eldritch Blast",
+		"agonizing_blast":      "Agonizing Blast",
+	}
+	if name, ok := displayNames[featureID]; ok {
+		return name
+	}
+	return featureID // Fall back to ID
 }

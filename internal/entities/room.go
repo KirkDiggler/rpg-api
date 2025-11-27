@@ -1,3 +1,4 @@
+// Package entities defines the core data structures for the RPG API
 package entities
 
 import (

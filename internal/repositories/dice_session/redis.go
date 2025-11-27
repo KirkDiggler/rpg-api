@@ -155,11 +155,11 @@ func (r *redisRepository) Delete(ctx context.Context, input DeleteInput) (*Delet
 	// Get the session first to count rolls
 	getOutput, err := r.Get(ctx, GetInput(input))
 
-	var rollsDeleted int32
+	var rollsDeleted int
 
 	if err == nil && getOutput.Session != nil {
 		// nolint:gosec // roll count is always small
-		rollsDeleted = int32(len(getOutput.Session.Rolls))
+		rollsDeleted = len(getOutput.Session.Rolls)
 	}
 
 	// Delete from Redis

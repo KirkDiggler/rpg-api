@@ -2,7 +2,6 @@ version: "2"
 
 run:
   timeout: 5m
-  tests: true
   build-tags:
     - integration
 
@@ -35,99 +34,119 @@ linters:
     - unparam        # Find unused parameters
     - whitespace     # Check unnecessary newlines
 
-settings:
-  dupl:
-    threshold: 100
-  
-  errcheck:
-    check-type-assertions: true
-  
-  goconst:
-    min-len: 3
-    min-occurrences: 3
-  
-  gocritic:
-    enabled-tags:
-      - diagnostic
-      - experimental
-      - opinionated
-      - performance
-      - style
-    disabled-checks:
-      - dupImport # https://github.com/go-critic/go-critic/issues/845
-      - whyNoLint
-  
-  gocyclo:
-    min-complexity: 15
-  
-  govet:
-    enable:
-      - shadow
-  
-  lll:
-    line-length: 160
-    tab-width: 4
-  
-  misspell:
-    locale: US
-  
-  nakedret:
-    max-func-lines: 30
-  
-  prealloc:
-    simple: true
-    range-loops: true
-    for-loops: false
-  
-  revive:
-    ignore-generated-header: true
-    severity: warning
-    rules:
-      - name: blank-imports
-      - name: context-as-argument
-      - name: context-keys-type
-      - name: dot-imports
-      - name: error-return
-      - name: error-strings
-      - name: error-naming
-      - name: if-return
-      - name: increment-decrement
-      - name: var-naming
-      - name: var-declaration
-      - name: package-comments
-      - name: range
-      - name: receiver-naming
-      - name: time-naming
-      - name: unexported-return
-      - name: indent-error-flow
-      - name: errorf
+  settings:
+    dupl:
+      threshold: 300  # Allow duplication for bidirectional converters (tool enums are ~90 lines)
 
-issues:
-  exclude-dirs:
-    - gen/go
-    - internal/services/character/mock
-    - ".*mock.*"
-    
-  exclude-rules:
-    # Exclude some linters from test files
-    - path: _test\.go
-      linters:
-        - dupl
-        - errcheck
-        - goconst
-        - gosec
-        - gocyclo
-        - typecheck  # Disable typecheck for test files due to testify suite embedded methods
-    
-    # Allow longer lines in generate directives
-    - source: "^//go:generate "
-      linters:
-        - lll
-    
-    # Allow longer lines in proto file paths
-    - source: "github.com/KirkDiggler/rpg-api/gen/go/"
-      linters:
-        - lll
-  
-  max-issues-per-linter: 0
-  max-same-issues: 0
+    errcheck:
+      check-type-assertions: true
+
+    goconst:
+      min-len: 3
+      min-occurrences: 3
+
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - experimental
+        - opinionated
+        - performance
+        - style
+      disabled-checks:
+        - dupImport
+        - whyNoLint
+        - importShadow    # Too noisy for converters with matching local/imported names
+        - hugeParam       # Not worth pointer overhead for read-only data
+        - rangeValCopy    # Often false positive when value is needed
+        - typeAssertChain # Type switches aren't always cleaner for 2 cases
+        - ifElseChain     # Switches aren't always cleaner for error message checks
+        - paramTypeCombine # Explicit param types improve readability
+        - unnamedResult   # Named results not always clearer for simple returns
+
+    gocyclo:
+      min-complexity: 50  # Allow high complexity for enum switch statements
+
+    govet:
+      enable:
+        - shadow
+
+    lll:
+      line-length: 160
+      tab-width: 4
+
+    misspell:
+      locale: US
+
+    nakedret:
+      max-func-lines: 30
+
+    prealloc:
+      simple: true
+      range-loops: true
+      for-loops: false
+
+    revive:
+      rules:
+        - name: blank-imports
+        - name: context-as-argument
+        - name: context-keys-type
+        - name: dot-imports
+        - name: error-return
+        - name: error-strings
+        - name: error-naming
+        - name: if-return
+        - name: increment-decrement
+        - name: var-naming
+        - name: var-declaration
+        - name: package-comments
+        - name: range
+        - name: receiver-naming
+        - name: time-naming
+        - name: unexported-return
+        - name: indent-error-flow
+        - name: errorf
+
+  exclusions:
+    rules:
+      # Exclude some linters from test files
+      - path: _test\.go
+        linters:
+          - dupl
+          - errcheck
+          - goconst
+          - gosec
+          - gocyclo
+          - unparam
+          - lll
+
+      # Allow longer lines in generate directives
+      - source: "^//go:generate "
+        linters:
+          - lll
+
+      # G115: int->int32 conversions at proto boundaries are safe for D&D values
+      - linters:
+          - gosec
+        text: "G115:"
+        path: "handlers/"
+
+      # G115: int->int32 conversions in dice rolling are safe (small values)
+      - linters:
+          - gosec
+        text: "G115:"
+        path: "orchestrators/dice/"
+
+      # Converters file contains bidirectional enum mappings (false positive duplication)
+      - path: "converters\\.go"
+        linters:
+          - dupl
+
+    paths:
+      - gen/go
+      - ".*mock.*"
+
+output:
+  formats:
+    text:
+      print-issued-lines: true
+      print-linter-name: true
