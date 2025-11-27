@@ -40,7 +40,7 @@ type ClearRollSessionInput struct {
 
 // ClearRollSessionOutput defines the response for clearing a roll session
 type ClearRollSessionOutput struct {
-	RollsDeleted int32
+	RollsDeleted int
 }
 
 // RollAbilityScoresInput defines the request for rolling ability scores for character creation

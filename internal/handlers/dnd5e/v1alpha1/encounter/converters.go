@@ -231,3 +231,19 @@ func convertCombatStateToProto(state *encounter.CombatState) *dnd5ev1alpha1.Comb
 		CombatEnded:   state.CombatEnded,
 	}
 }
+
+// convertTurnChangeToProto converts orchestrator's TurnChangeEvent to proto
+//
+//nolint:gosec // G115: Game values are bounded by D&D rules, no overflow risk
+func convertTurnChangeToProto(event *encounter.TurnChangeEvent) *dnd5ev1alpha1.TurnChangeEvent {
+	if event == nil {
+		return nil
+	}
+
+	return &dnd5ev1alpha1.TurnChangeEvent{
+		PreviousEntityId: event.PreviousEntityID,
+		NextEntityId:     event.NextEntityID,
+		Round:            int32(event.Round),
+		NewRound:         event.NewRound,
+	}
+}

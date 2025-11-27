@@ -1,4 +1,4 @@
-package sandbox_room
+package sandboxroom
 
 import (
 	"time"

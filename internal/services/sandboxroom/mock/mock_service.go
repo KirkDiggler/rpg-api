@@ -15,7 +15,7 @@ import (
 
 	gomock "go.uber.org/mock/gomock"
 
-	sandbox_room "github.com/KirkDiggler/rpg-api/internal/services/sandbox_room"
+	sandbox_room "github.com/KirkDiggler/rpg-api/internal/services/sandboxroom"
 )
 
 // MockService is a mock of Service interface.

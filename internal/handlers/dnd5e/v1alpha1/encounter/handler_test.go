@@ -709,19 +709,311 @@ func (s *HandlerTestSuite) TestMoveCharacter_OutOfBounds() {
 	s.Assert().Equal(int32(0), resp.MovementRemaining)
 }
 
-// TestEndTurn_Unimplemented tests that EndTurn returns Unimplemented
-func (s *HandlerTestSuite) TestEndTurn_Unimplemented() {
-	req := &dnd5ev1alpha1.EndTurnRequest{
+// TestEndTurn_Success tests successful turn ending
+func (s *HandlerTestSuite) TestEndTurn_Success() {
+	// Arrange - Note: entity_id is no longer required, server determines active entity
+	s.mockService.EXPECT().
+		EndTurn(gomock.Any(), &encounter.EndTurnInput{
+			EncounterID: "enc-1",
+		}).
+		Return(&encounter.EndTurnOutput{
+			CombatState: &encounter.CombatState{
+				EncounterID: "enc-1",
+				Round:       1,
+				TurnOrder: []encounter.InitiativeEntry{
+					{EntityID: "char-1", EntityType: "character", InitiativeTotal: 20},
+					{EntityID: "char-2", EntityType: "character", InitiativeTotal: 15},
+				},
+				ActiveIndex:       1,
+				MovementRemaining: 30,
+				CombatStarted:     true,
+				CombatEnded:       false,
+			},
+			TurnChange: &encounter.TurnChangeEvent{
+				PreviousEntityID: "char-1",
+				NextEntityID:     "char-2",
+				Round:            1,
+				NewRound:         false,
+			},
+		}, nil)
+
+	// Act - Client only sends encounter_id
+	resp, err := s.handler.EndTurn(context.Background(), &dnd5ev1alpha1.EndTurnRequest{
 		EncounterId: "enc-1",
-		EntityId:    "char-1",
-	}
+	})
 
-	resp, err := s.handler.EndTurn(context.Background(), req)
+	// Assert
+	s.Require().NoError(err)
+	s.Require().NotNil(resp)
+	s.Assert().True(resp.Success)
 
+	// Verify combat state
+	s.Require().NotNil(resp.CombatState)
+	s.Assert().Equal("enc-1", resp.CombatState.EncounterId)
+	s.Assert().Equal(int32(1), resp.CombatState.Round)
+	s.Assert().Equal(int32(1), resp.CombatState.ActiveIndex)
+	s.Assert().True(resp.CombatState.CombatStarted)
+	s.Assert().False(resp.CombatState.CombatEnded)
+
+	// Verify turn change event
+	s.Require().NotNil(resp.TurnChange)
+	s.Assert().Equal("char-1", resp.TurnChange.PreviousEntityId)
+	s.Assert().Equal("char-2", resp.TurnChange.NextEntityId)
+	s.Assert().Equal(int32(1), resp.TurnChange.Round)
+	s.Assert().False(resp.TurnChange.NewRound)
+}
+
+// TestEndTurn_NewRound tests turn ending that advances to a new round
+func (s *HandlerTestSuite) TestEndTurn_NewRound() {
+	// Arrange
+	s.mockService.EXPECT().
+		EndTurn(gomock.Any(), &encounter.EndTurnInput{
+			EncounterID: "enc-1",
+		}).
+		Return(&encounter.EndTurnOutput{
+			CombatState: &encounter.CombatState{
+				EncounterID: "enc-1",
+				Round:       2,
+				TurnOrder: []encounter.InitiativeEntry{
+					{EntityID: "char-1", EntityType: "character", InitiativeTotal: 20},
+					{EntityID: "char-2", EntityType: "character", InitiativeTotal: 15},
+				},
+				ActiveIndex:       0,
+				MovementRemaining: 30,
+				CombatStarted:     true,
+				CombatEnded:       false,
+			},
+			TurnChange: &encounter.TurnChangeEvent{
+				PreviousEntityID: "char-2",
+				NextEntityID:     "char-1",
+				Round:            2,
+				NewRound:         true,
+			},
+		}, nil)
+
+	// Act - Client only sends encounter_id
+	resp, err := s.handler.EndTurn(context.Background(), &dnd5ev1alpha1.EndTurnRequest{
+		EncounterId: "enc-1",
+	})
+
+	// Assert
+	s.Require().NoError(err)
+	s.Require().NotNil(resp)
+	s.Assert().True(resp.Success)
+	s.Assert().Equal(int32(2), resp.CombatState.Round)
+	s.Assert().True(resp.TurnChange.NewRound)
+}
+
+// TestEndTurn_MissingEncounterId tests validation for missing encounter_id
+func (s *HandlerTestSuite) TestEndTurn_MissingEncounterId() {
+	// Act
+	resp, err := s.handler.EndTurn(context.Background(), &dnd5ev1alpha1.EndTurnRequest{
+		EntityId: "char-1",
+	})
+
+	// Assert
 	s.Require().Error(err)
 	s.Assert().Nil(resp)
 
 	st, ok := status.FromError(err)
 	s.Require().True(ok)
-	s.Assert().Equal(codes.Unimplemented, st.Code())
+	s.Assert().Equal(codes.InvalidArgument, st.Code())
+	s.Assert().Contains(st.Message(), "encounter_id is required")
+}
+
+// TestEndTurn_ServiceError tests handling of service errors
+func (s *HandlerTestSuite) TestEndTurn_ServiceError() {
+	// Arrange
+	s.mockService.EXPECT().
+		EndTurn(gomock.Any(), &encounter.EndTurnInput{
+			EncounterID: "enc-1",
+		}).
+		Return(nil, fmt.Errorf("database error"))
+
+	// Act - Client only sends encounter_id
+	resp, err := s.handler.EndTurn(context.Background(), &dnd5ev1alpha1.EndTurnRequest{
+		EncounterId: "enc-1",
+	})
+
+	// Assert
+	s.Require().Error(err)
+	s.Assert().Nil(resp)
+
+	st, ok := status.FromError(err)
+	s.Require().True(ok)
+	s.Assert().Equal(codes.Internal, st.Code())
+	s.Assert().Contains(st.Message(), "database error")
+}
+
+// ============================================================================
+// ActivateFeature Tests
+// ============================================================================
+
+// TestActivateFeature_Success tests successful feature activation
+func (s *HandlerTestSuite) TestActivateFeature_Success() {
+	// Arrange
+	s.mockService.EXPECT().
+		ActivateFeature(gomock.Any(), &encounter.ActivateFeatureInput{
+			EncounterID: "enc-1",
+			CharacterID: "char-1",
+			FeatureID:   "rage",
+		}).
+		Return(&encounter.ActivateFeatureOutput{
+			Success:       true,
+			Message:       "rage activated successfully",
+			CharacterData: nil, // Character data conversion tested separately
+		}, nil)
+
+	// Act
+	resp, err := s.handler.ActivateFeature(context.Background(), &dnd5ev1alpha1.ActivateFeatureRequest{
+		EncounterId: "enc-1",
+		CharacterId: "char-1",
+		FeatureId:   "rage",
+	})
+
+	// Assert
+	s.Require().NoError(err)
+	s.Require().NotNil(resp)
+	s.Assert().True(resp.Success)
+	s.Assert().Contains(resp.Message, "activated")
+}
+
+// TestActivateFeature_FeatureNotFound tests when feature is not found on character
+func (s *HandlerTestSuite) TestActivateFeature_FeatureNotFound() {
+	// Arrange
+	s.mockService.EXPECT().
+		ActivateFeature(gomock.Any(), &encounter.ActivateFeatureInput{
+			EncounterID: "enc-1",
+			CharacterID: "char-1",
+			FeatureID:   "rage",
+		}).
+		Return(&encounter.ActivateFeatureOutput{
+			Success:       false,
+			Message:       "feature 'rage' not found on character",
+			CharacterData: nil,
+		}, nil)
+
+	// Act
+	resp, err := s.handler.ActivateFeature(context.Background(), &dnd5ev1alpha1.ActivateFeatureRequest{
+		EncounterId: "enc-1",
+		CharacterId: "char-1",
+		FeatureId:   "rage",
+	})
+
+	// Assert
+	s.Require().NoError(err) // Not an error, just unsuccessful
+	s.Require().NotNil(resp)
+	s.Assert().False(resp.Success)
+	s.Assert().Contains(resp.Message, "not found")
+}
+
+// TestActivateFeature_CannotActivate tests when feature cannot be activated
+func (s *HandlerTestSuite) TestActivateFeature_CannotActivate() {
+	// Arrange - e.g., already raging
+	s.mockService.EXPECT().
+		ActivateFeature(gomock.Any(), &encounter.ActivateFeatureInput{
+			EncounterID: "enc-1",
+			CharacterID: "char-1",
+			FeatureID:   "rage",
+		}).
+		Return(&encounter.ActivateFeatureOutput{
+			Success:       false,
+			Message:       "cannot activate rage: already raging",
+			CharacterData: nil,
+		}, nil)
+
+	// Act
+	resp, err := s.handler.ActivateFeature(context.Background(), &dnd5ev1alpha1.ActivateFeatureRequest{
+		EncounterId: "enc-1",
+		CharacterId: "char-1",
+		FeatureId:   "rage",
+	})
+
+	// Assert
+	s.Require().NoError(err)
+	s.Require().NotNil(resp)
+	s.Assert().False(resp.Success)
+	s.Assert().Contains(resp.Message, "cannot activate")
+}
+
+// TestActivateFeature_MissingEncounterId tests validation for missing encounter_id
+func (s *HandlerTestSuite) TestActivateFeature_MissingEncounterId() {
+	// Act
+	resp, err := s.handler.ActivateFeature(context.Background(), &dnd5ev1alpha1.ActivateFeatureRequest{
+		CharacterId: "char-1",
+		FeatureId:   "rage",
+	})
+
+	// Assert
+	s.Require().Error(err)
+	s.Assert().Nil(resp)
+
+	st, ok := status.FromError(err)
+	s.Require().True(ok)
+	s.Assert().Equal(codes.InvalidArgument, st.Code())
+	s.Assert().Contains(st.Message(), "encounter_id is required")
+}
+
+// TestActivateFeature_MissingCharacterId tests validation for missing character_id
+func (s *HandlerTestSuite) TestActivateFeature_MissingCharacterId() {
+	// Act
+	resp, err := s.handler.ActivateFeature(context.Background(), &dnd5ev1alpha1.ActivateFeatureRequest{
+		EncounterId: "enc-1",
+		FeatureId:   "rage",
+	})
+
+	// Assert
+	s.Require().Error(err)
+	s.Assert().Nil(resp)
+
+	st, ok := status.FromError(err)
+	s.Require().True(ok)
+	s.Assert().Equal(codes.InvalidArgument, st.Code())
+	s.Assert().Contains(st.Message(), "character_id is required")
+}
+
+// TestActivateFeature_MissingFeatureId tests validation for missing feature_id
+func (s *HandlerTestSuite) TestActivateFeature_MissingFeatureId() {
+	// Act
+	resp, err := s.handler.ActivateFeature(context.Background(), &dnd5ev1alpha1.ActivateFeatureRequest{
+		EncounterId: "enc-1",
+		CharacterId: "char-1",
+	})
+
+	// Assert
+	s.Require().Error(err)
+	s.Assert().Nil(resp)
+
+	st, ok := status.FromError(err)
+	s.Require().True(ok)
+	s.Assert().Equal(codes.InvalidArgument, st.Code())
+	s.Assert().Contains(st.Message(), "feature_id is required")
+}
+
+// TestActivateFeature_ServiceError tests handling of service errors
+func (s *HandlerTestSuite) TestActivateFeature_ServiceError() {
+	// Arrange
+	s.mockService.EXPECT().
+		ActivateFeature(gomock.Any(), &encounter.ActivateFeatureInput{
+			EncounterID: "enc-1",
+			CharacterID: "char-1",
+			FeatureID:   "rage",
+		}).
+		Return(nil, fmt.Errorf("database error"))
+
+	// Act
+	resp, err := s.handler.ActivateFeature(context.Background(), &dnd5ev1alpha1.ActivateFeatureRequest{
+		EncounterId: "enc-1",
+		CharacterId: "char-1",
+		FeatureId:   "rage",
+	})
+
+	// Assert
+	s.Require().Error(err)
+	s.Assert().Nil(resp)
+
+	st, ok := status.FromError(err)
+	s.Require().True(ok)
+	s.Assert().Equal(codes.Internal, st.Code())
+	s.Assert().Contains(st.Message(), "database error")
 }

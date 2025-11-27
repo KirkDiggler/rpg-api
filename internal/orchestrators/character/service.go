@@ -274,7 +274,8 @@ type GetCharacterInput struct {
 
 // GetCharacterOutput returns the character
 type GetCharacterOutput struct {
-	Character *character.Data
+	Character      *character.Data
+	EquipmentSlots map[string]string // slot name -> item ID
 }
 
 // GetEquipmentSlotsInput gets equipment slots for a character

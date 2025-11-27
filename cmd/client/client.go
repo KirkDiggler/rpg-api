@@ -44,8 +44,8 @@ var dungeonStartCmd = &cobra.Command{
 			return fmt.Errorf("failed to connect: %w", err)
 		}
 		defer func() {
-			if err := conn.Close(); err != nil {
-				log.Printf("Failed to close connection: %v", err)
+			if closeErr := conn.Close(); closeErr != nil {
+				log.Printf("Failed to close connection: %v", closeErr)
 			}
 		}()
 

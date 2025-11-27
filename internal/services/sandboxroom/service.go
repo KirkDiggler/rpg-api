@@ -1,4 +1,5 @@
-package sandbox_room
+// Package sandboxroom provides the sandbox room service for testing
+package sandboxroom
 
 //go:generate mockgen -destination=mock/mock_service.go -package=sandboxroommock github.com/KirkDiggler/rpg-api/internal/services/sandbox_room Service
 

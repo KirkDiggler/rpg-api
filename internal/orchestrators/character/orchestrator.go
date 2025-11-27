@@ -151,7 +151,7 @@ func (o *Orchestrator) DeleteDraft(ctx context.Context, input *DeleteDraftInput)
 }
 
 // GetRequirements returns the requirements for character creation choices
-func (o *Orchestrator) GetRequirements(ctx context.Context, input *GetRequirementsInput) (*GetRequirementsOutput, error) {
+func (o *Orchestrator) GetRequirements(_ context.Context, input *GetRequirementsInput) (*GetRequirementsOutput, error) {
 	if input == nil {
 		return nil, errors.InvalidArgument("input is required")
 	}
@@ -222,7 +222,8 @@ func (o *Orchestrator) SetName(ctx context.Context, input *SetNameInput) (*SetNa
 
 	draft := character.LoadDraftFromData(getOutput.Draft)
 	// Set name
-	if err := draft.SetName(&character.SetNameInput{Name: input.Name}); err != nil {
+	err = draft.SetName(&character.SetNameInput{Name: input.Name})
+	if err != nil {
 		return nil, fmt.Errorf("failed to set name: %w", err)
 	}
 
@@ -262,7 +263,8 @@ func (o *Orchestrator) SetRace(ctx context.Context, input *SetRaceInput) (*SetRa
 
 	draft := character.LoadDraftFromData(getOutput.Draft)
 	// Set race with choices
-	if err := draft.SetRace(input.Input); err != nil {
+	err = draft.SetRace(input.Input)
+	if err != nil {
 		return nil, fmt.Errorf("failed to set race: %w", err)
 	}
 
@@ -311,7 +313,8 @@ func (o *Orchestrator) SetClass(ctx context.Context, input *SetClassInput) (*Set
 
 	draft := character.LoadDraftFromData(getOutput.Draft)
 	// Set class with choices
-	if err := draft.SetClass(input.Input); err != nil {
+	err = draft.SetClass(input.Input)
+	if err != nil {
 		return nil, fmt.Errorf("failed to set class: %w", err)
 	}
 
@@ -360,7 +363,8 @@ func (o *Orchestrator) SetBackground(ctx context.Context, input *SetBackgroundIn
 
 	draft := character.LoadDraftFromData(getOutput.Draft)
 	// Set background with choices
-	if err := draft.SetBackground(input.Input); err != nil {
+	err = draft.SetBackground(input.Input)
+	if err != nil {
 		return nil, fmt.Errorf("failed to set background: %w", err)
 	}
 
@@ -406,7 +410,8 @@ func (o *Orchestrator) SetAbilityScores(ctx context.Context, input *SetAbilitySc
 
 	draft := character.LoadDraftFromData(getOutput.Draft)
 	// Set ability scores
-	if err := draft.SetAbilityScores(input.Input); err != nil {
+	err = draft.SetAbilityScores(input.Input)
+	if err != nil {
 		return nil, fmt.Errorf("failed to set ability scores: %w", err)
 	}
 
@@ -467,7 +472,7 @@ func (o *Orchestrator) SetAbilityScoresFromRolls(ctx context.Context, input *Set
 	}
 
 	// Build a map of roll IDs to their totals
-	rollTotals := make(map[string]int32)
+	rollTotals := make(map[string]int)
 	for _, roll := range sessionOutput.Session.Rolls {
 		rollTotals[roll.RollID] = roll.Total
 	}
@@ -476,7 +481,7 @@ func (o *Orchestrator) SetAbilityScoresFromRolls(ctx context.Context, input *Set
 	scores := make(shared.AbilityScores)
 	for ability, rollID := range input.RollAssignments {
 		if total, ok := rollTotals[rollID]; ok {
-			scores[ability] = int(total)
+			scores[ability] = total
 		} else {
 			return nil, errors.InvalidArgument(fmt.Sprintf("roll ID %s not found in session", rollID))
 		}
@@ -485,10 +490,11 @@ func (o *Orchestrator) SetAbilityScoresFromRolls(ctx context.Context, input *Set
 	draft := character.LoadDraftFromData(getOutput.Draft)
 
 	// Set ability scores with "rolled" method
-	if err := draft.SetAbilityScores(&character.SetAbilityScoresInput{
+	err = draft.SetAbilityScores(&character.SetAbilityScoresInput{
 		Scores: scores,
 		Method: "rolled",
-	}); err != nil {
+	})
+	if err != nil {
 		return nil, fmt.Errorf("failed to set ability scores: %w", err)
 	}
 
@@ -608,8 +614,8 @@ func (o *Orchestrator) FinalizeDraft(ctx context.Context, input *FinalizeDraftIn
 		// For more detailed class validation, check what's missing
 		if !progress.Has(character.ProgressClass) && draft.Class() != "" {
 			// Class is set but choices are incomplete - validate to get details
-			if err := draft.ValidateChoices(); err != nil {
-				return nil, fmt.Errorf("draft is incomplete - missing: %v. Class validation: %w", missing, err)
+			if validationErr := draft.ValidateChoices(); validationErr != nil {
+				return nil, fmt.Errorf("draft is incomplete - missing: %v. Class validation: %w", missing, validationErr)
 			}
 		}
 
@@ -674,11 +680,7 @@ func (o *Orchestrator) FinalizeDraft(ctx context.Context, input *FinalizeDraftIn
 }
 
 // ListRaces returns all available races
-func (o *Orchestrator) ListRaces(ctx context.Context, input *ListRacesInput) (*ListRacesOutput, error) {
-	if input == nil {
-		input = &ListRacesInput{}
-	}
-
+func (o *Orchestrator) ListRaces(_ context.Context, _ *ListRacesInput) (*ListRacesOutput, error) {
 	// Get races from toolkit - Data is now self-contained
 	result := make([]*races.Data, 0, len(races.RaceData))
 	for _, raceData := range races.RaceData {
@@ -691,11 +693,7 @@ func (o *Orchestrator) ListRaces(ctx context.Context, input *ListRacesInput) (*L
 }
 
 // ListClasses returns all available classes
-func (o *Orchestrator) ListClasses(ctx context.Context, input *ListClassesInput) (*ListClassesOutput, error) {
-	if input == nil {
-		input = &ListClassesInput{}
-	}
-
+func (o *Orchestrator) ListClasses(_ context.Context, _ *ListClassesInput) (*ListClassesOutput, error) {
 	// Get classes from toolkit - Data is now self-contained
 	result := make([]*classes.Data, 0, len(classes.ClassData))
 	for _, classData := range classes.ClassData {
@@ -708,11 +706,7 @@ func (o *Orchestrator) ListClasses(ctx context.Context, input *ListClassesInput)
 }
 
 // ListBackgrounds returns all available backgrounds
-func (o *Orchestrator) ListBackgrounds(ctx context.Context, input *ListBackgroundsInput) (*ListBackgroundsOutput, error) {
-	if input == nil {
-		input = &ListBackgroundsInput{}
-	}
-
+func (o *Orchestrator) ListBackgrounds(_ context.Context, _ *ListBackgroundsInput) (*ListBackgroundsOutput, error) {
 	// Get backgrounds from toolkit - Data is now self-contained
 	result := make([]*backgrounds.Data, 0, len(backgrounds.BackgroundData))
 	for _, bgData := range backgrounds.BackgroundData {
@@ -741,21 +735,11 @@ func (o *Orchestrator) RollAbilityScores(ctx context.Context, input *RollAbility
 	// Convert dice service result to our output format
 	rolls := make([]AbilityScoreRoll, len(diceResult.Rolls))
 	for i, roll := range diceResult.Rolls {
-		// Convert int32 to int for our API
-		dice := make([]int, len(roll.Dice))
-		for j, d := range roll.Dice {
-			dice[j] = int(d)
-		}
-		dropped := make([]int, len(roll.Dropped))
-		for j, d := range roll.Dropped {
-			dropped[j] = int(d)
-		}
-
 		rolls[i] = AbilityScoreRoll{
 			RollID:      roll.RollID,
-			Total:       int(roll.Total),
-			Dice:        dice,
-			Dropped:     dropped,
+			Total:       roll.Total,
+			Dice:        roll.Dice,
+			Dropped:     roll.Dropped,
 			Description: roll.Description,
 		}
 	}
@@ -812,7 +796,7 @@ func (o *Orchestrator) GetCharacter(ctx context.Context, input *GetCharacterInpu
 		return nil, errors.InvalidArgument("character ID is required")
 	}
 
-	// Get character from repository
+	// Get character from repository (includes equipment slots)
 	result, err := o.characterRepo.Get(ctx, characterrepo.GetInput{
 		ID: input.CharacterID,
 	})
@@ -820,8 +804,51 @@ func (o *Orchestrator) GetCharacter(ctx context.Context, input *GetCharacterInpu
 		return nil, fmt.Errorf("failed to get character: %w", err)
 	}
 
+	// Convert equipment slots to map
+	var equipmentSlots map[string]string
+	if result.EquipmentSlots != nil {
+		equipmentSlots = make(map[string]string)
+		if result.EquipmentSlots.MainHand != "" {
+			equipmentSlots["main_hand"] = result.EquipmentSlots.MainHand
+		}
+		if result.EquipmentSlots.OffHand != "" {
+			equipmentSlots["off_hand"] = result.EquipmentSlots.OffHand
+		}
+		if result.EquipmentSlots.Armor != "" {
+			equipmentSlots["armor"] = result.EquipmentSlots.Armor
+		}
+		if result.EquipmentSlots.Shield != "" {
+			equipmentSlots["shield"] = result.EquipmentSlots.Shield
+		}
+		if result.EquipmentSlots.Ring1 != "" {
+			equipmentSlots["ring1"] = result.EquipmentSlots.Ring1
+		}
+		if result.EquipmentSlots.Ring2 != "" {
+			equipmentSlots["ring2"] = result.EquipmentSlots.Ring2
+		}
+		if result.EquipmentSlots.Amulet != "" {
+			equipmentSlots["amulet"] = result.EquipmentSlots.Amulet
+		}
+		if result.EquipmentSlots.Boots != "" {
+			equipmentSlots["boots"] = result.EquipmentSlots.Boots
+		}
+		if result.EquipmentSlots.Gloves != "" {
+			equipmentSlots["gloves"] = result.EquipmentSlots.Gloves
+		}
+		if result.EquipmentSlots.Helmet != "" {
+			equipmentSlots["helmet"] = result.EquipmentSlots.Helmet
+		}
+		if result.EquipmentSlots.Belt != "" {
+			equipmentSlots["belt"] = result.EquipmentSlots.Belt
+		}
+		if result.EquipmentSlots.Cloak != "" {
+			equipmentSlots["cloak"] = result.EquipmentSlots.Cloak
+		}
+	}
+
 	return &GetCharacterOutput{
-		Character: result.CharacterData,
+		Character:      result.CharacterData,
+		EquipmentSlots: equipmentSlots,
 	}, nil
 }
 
@@ -1010,11 +1037,7 @@ func (o *Orchestrator) DeleteCharacter(ctx context.Context, input *DeleteCharact
 }
 
 // ListEquipmentByType returns equipment filtered by type
-func (o *Orchestrator) ListEquipmentByType(ctx context.Context, input *ListEquipmentByTypeInput) (*ListEquipmentByTypeOutput, error) {
-	if input == nil {
-		input = &ListEquipmentByTypeInput{}
-	}
-
+func (o *Orchestrator) ListEquipmentByType(_ context.Context, input *ListEquipmentByTypeInput) (*ListEquipmentByTypeOutput, error) {
 	// The handler will handle the conversion from proto enum to toolkit categories
 	// For now, we'll let the handler do the work directly with the toolkit
 	// This orchestrator method is a placeholder for future expansion
@@ -1026,7 +1049,7 @@ func (o *Orchestrator) ListEquipmentByType(ctx context.Context, input *ListEquip
 }
 
 // ListSpellsByLevel returns spells of a specific level with their info
-func (o *Orchestrator) ListSpellsByLevel(ctx context.Context, input *ListSpellsByLevelInput) (*ListSpellsByLevelOutput, error) {
+func (o *Orchestrator) ListSpellsByLevel(_ context.Context, input *ListSpellsByLevelInput) (*ListSpellsByLevelOutput, error) {
 	if input == nil {
 		return nil, errors.InvalidArgument("input is required")
 	}
@@ -1043,7 +1066,7 @@ func (o *Orchestrator) ListSpellsByLevel(ctx context.Context, input *ListSpellsB
 	result := make([]SpellInfo, 0, len(toolkitSpells))
 	for _, spellData := range toolkitSpells {
 		info := SpellInfo{
-			ID:          string(spellData.ID),
+			ID:          spellData.ID,
 			Name:        spellData.Name,
 			Description: spellData.Description,
 			Level:       spellData.Level,

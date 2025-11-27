@@ -132,11 +132,39 @@ func (r *redisRepository) Get(ctx context.Context, input GetInput) (*GetOutput, 
 	}
 
 	var charData toolkitchar.Data
-	if err := json.Unmarshal([]byte(result), &charData); err != nil {
-		return nil, errors.Wrapf(err, "failed to unmarshal character data")
+	if unmarshalErr := json.Unmarshal([]byte(result), &charData); unmarshalErr != nil {
+		return nil, errors.Wrapf(unmarshalErr, "failed to unmarshal character data")
 	}
 
-	return &GetOutput{CharacterData: &charData}, nil
+	// Fetch equipment slots (separate Redis key)
+	equipKey := equipmentSlotsPrefix + input.ID
+	equipResult, err := r.client.HGetAll(ctx, equipKey).Result()
+	if err != nil && err != redis.Nil {
+		return nil, errors.Wrapf(err, "failed to get equipment slots")
+	}
+
+	var equipmentSlots *EquipmentSlots
+	if len(equipResult) > 0 {
+		equipmentSlots = &EquipmentSlots{
+			MainHand: equipResult["main_hand"],
+			OffHand:  equipResult["off_hand"],
+			Armor:    equipResult["armor"],
+			Shield:   equipResult["shield"],
+			Ring1:    equipResult["ring1"],
+			Ring2:    equipResult["ring2"],
+			Amulet:   equipResult["amulet"],
+			Boots:    equipResult["boots"],
+			Gloves:   equipResult["gloves"],
+			Helmet:   equipResult["helmet"],
+			Belt:     equipResult["belt"],
+			Cloak:    equipResult["cloak"],
+		}
+	}
+
+	return &GetOutput{
+		CharacterData:  &charData,
+		EquipmentSlots: equipmentSlots,
+	}, nil
 }
 
 func (r *redisRepository) Update(ctx context.Context, input UpdateInput) (*UpdateOutput, error) {

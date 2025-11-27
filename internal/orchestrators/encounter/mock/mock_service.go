@@ -42,6 +42,21 @@ func (m *MockService) EXPECT() *MockServiceMockRecorder {
 	return m.recorder
 }
 
+// ActivateFeature mocks base method.
+func (m *MockService) ActivateFeature(ctx context.Context, input *encounter.ActivateFeatureInput) (*encounter.ActivateFeatureOutput, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ActivateFeature", ctx, input)
+	ret0, _ := ret[0].(*encounter.ActivateFeatureOutput)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ActivateFeature indicates an expected call of ActivateFeature.
+func (mr *MockServiceMockRecorder) ActivateFeature(ctx, input any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ActivateFeature", reflect.TypeOf((*MockService)(nil).ActivateFeature), ctx, input)
+}
+
 // CreateDungeon mocks base method.
 func (m *MockService) CreateDungeon(ctx context.Context, input *encounter.CreateDungeonInput) (*encounter.CreateDungeonOutput, error) {
 	m.ctrl.T.Helper()
@@ -55,6 +70,21 @@ func (m *MockService) CreateDungeon(ctx context.Context, input *encounter.Create
 func (mr *MockServiceMockRecorder) CreateDungeon(ctx, input any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateDungeon", reflect.TypeOf((*MockService)(nil).CreateDungeon), ctx, input)
+}
+
+// EndTurn mocks base method.
+func (m *MockService) EndTurn(ctx context.Context, input *encounter.EndTurnInput) (*encounter.EndTurnOutput, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "EndTurn", ctx, input)
+	ret0, _ := ret[0].(*encounter.EndTurnOutput)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// EndTurn indicates an expected call of EndTurn.
+func (mr *MockServiceMockRecorder) EndTurn(ctx, input any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "EndTurn", reflect.TypeOf((*MockService)(nil).EndTurn), ctx, input)
 }
 
 // MoveCharacter mocks base method.

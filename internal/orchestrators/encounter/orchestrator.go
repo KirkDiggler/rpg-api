@@ -12,6 +12,7 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/abilities"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/combat"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/features"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/initiative"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/monster"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/weapons"
@@ -107,12 +108,8 @@ func (o *Orchestrator) ResolveAttack(ctx context.Context, input *ResolveAttackIn
 	// TODO: Load monster state from encounter data in future
 	goblin := monster.NewGoblin(input.TargetID)
 
-	// 6. Get weapon (Phase 2: use greataxe)
-	// TODO: Load from character equipment or use input.WeaponID
-	weapon, err := weapons.GetByID(weapons.Greataxe)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get weapon: %w", err)
-	}
+	// 6. Get weapon from equipped items (with fallback to greataxe)
+	weapon := o.getEquippedWeapon(ctx, input.AttackerID)
 
 	// 7. Call toolkit combat (event-driven, Rage participates here!)
 	result, err := combat.ResolveAttack(ctx, &combat.AttackInput{
@@ -599,4 +596,380 @@ func (o *Orchestrator) MoveCharacter(ctx context.Context, input *MoveCharacterIn
 		StopReason:        "completed",
 		UpdatedRoom:       roomData,
 	}, nil
+}
+
+// EndTurn advances combat to the next entity's turn
+func (o *Orchestrator) EndTurn(ctx context.Context, input *EndTurnInput) (*EndTurnOutput, error) {
+	if input == nil {
+		return nil, fmt.Errorf("input is required")
+	}
+	if input.EncounterID == "" {
+		return nil, fmt.Errorf("encounter ID is required")
+	}
+
+	// 1. Load encounter data
+	encOutput, err := o.encRepo.Get(ctx, &encounterrepo.GetInput{
+		EncounterID: input.EncounterID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to load encounter: %w", err)
+	}
+	if encOutput.Data == nil {
+		return nil, fmt.Errorf("encounter not found: %s", input.EncounterID)
+	}
+
+	// 2. Validate initiative data exists
+	if encOutput.Data.InitiativeData == nil {
+		return nil, fmt.Errorf("no initiative data for encounter: %s", input.EncounterID)
+	}
+	if len(encOutput.Data.InitiativeData.Order) == 0 {
+		return nil, fmt.Errorf("empty turn order for encounter: %s", input.EncounterID)
+	}
+
+	// 3. Build combat state from stored data
+	initiativeData := encOutput.Data.InitiativeData
+	initiativeRolls := encOutput.Data.InitiativeRolls
+
+	// Create turn order from initiative data with rolls
+	turnOrder := buildTurnOrderFromData(initiativeData, initiativeRolls, encOutput.Data.RoomData)
+
+	// 4. Get the active entity from state (server is authoritative)
+	currentIndex := initiativeData.Current
+	if currentIndex < 0 || currentIndex >= len(turnOrder) {
+		return nil, fmt.Errorf("invalid active index %d for turn order of length %d", currentIndex, len(turnOrder))
+	}
+
+	activeEntity := turnOrder[currentIndex]
+
+	// 4a. Validate player ownership if PlayerID is provided
+	if input.PlayerID != "" {
+		if validateErr := o.validateTurnOwnership(ctx, activeEntity, input.PlayerID); validateErr != nil {
+			return nil, validateErr
+		}
+	}
+
+	// 5. Store previous state for turn change event
+	previousEntityID := activeEntity.EntityID
+	_ = initiativeData.Round // previousRound - stored but not currently used
+
+	// 6. Advance to next turn
+	newRound := false
+	currentIndex++
+	if currentIndex >= len(turnOrder) {
+		// Wrap around to start of order and increment round
+		currentIndex = 0
+		initiativeData.Round++
+		newRound = true
+	}
+
+	// 7. Skip monster turns (auto-advance to next player character)
+	// This loops until we find a character or complete a full cycle
+	maxIterations := len(turnOrder) * 2 // Safety limit
+	iterationCount := 0
+	for iterationCount < maxIterations {
+		iterationCount++
+		if turnOrder[currentIndex].EntityType == entityTypeCharacter {
+			break // Found a player character
+		}
+
+		// Skip this monster's turn
+		currentIndex++
+		if currentIndex >= len(turnOrder) {
+			currentIndex = 0
+			initiativeData.Round++
+			newRound = true
+		}
+	}
+
+	// Check if we couldn't find a player (all monsters)
+	if iterationCount >= maxIterations {
+		// No player characters found - end combat
+		combatState := &CombatState{
+			EncounterID:       input.EncounterID,
+			Round:             initiativeData.Round,
+			TurnOrder:         turnOrder,
+			ActiveIndex:       currentIndex,
+			MovementRemaining: defaultMovementSpeed,
+			CombatStarted:     true,
+			CombatEnded:       true,
+		}
+
+		return &EndTurnOutput{
+			CombatState: combatState,
+			TurnChange: &TurnChangeEvent{
+				PreviousEntityID: previousEntityID,
+				NextEntityID:     "",
+				Round:            initiativeData.Round,
+				NewRound:         newRound,
+			},
+		}, nil
+	}
+
+	// 8. Update initiative data
+	initiativeData.Current = currentIndex
+
+	// 9. Persist updated state
+	_, err = o.encRepo.Update(ctx, &encounterrepo.UpdateInput{
+		EncounterID:       input.EncounterID,
+		InitiativeData:    initiativeData,
+		MovementRemaining: ptrInt32(defaultMovementSpeed), // Reset movement for new turn
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to save turn state: %w", err)
+	}
+
+	// 10. Build output
+	nextEntity := turnOrder[currentIndex]
+	combatState := &CombatState{
+		EncounterID:       input.EncounterID,
+		Round:             initiativeData.Round,
+		TurnOrder:         turnOrder,
+		ActiveIndex:       currentIndex,
+		MovementRemaining: defaultMovementSpeed,
+		CombatStarted:     true,
+		CombatEnded:       false,
+	}
+
+	return &EndTurnOutput{
+		CombatState: combatState,
+		TurnChange: &TurnChangeEvent{
+			PreviousEntityID: previousEntityID,
+			NextEntityID:     nextEntity.EntityID,
+			Round:            initiativeData.Round,
+			NewRound:         newRound,
+		},
+	}, nil
+}
+
+// Constants for entity types
+const (
+	entityTypeCharacter = "character"
+	entityTypeMonster   = "monster"
+)
+
+// Default movement speed in feet (30 feet = 6 hexes at 5ft/hex)
+const defaultMovementSpeed = 30
+
+// ptrInt32 returns a pointer to the given int32 value
+func ptrInt32(v int32) *int32 {
+	return &v
+}
+
+// buildTurnOrderFromData reconstructs the turn order from stored initiative data
+func buildTurnOrderFromData(
+	initiativeData *initiative.TrackerData,
+	initiativeRolls []initiative.Roll,
+	roomData interface{},
+) []InitiativeEntry {
+	// Create a map for quick roll lookup by entity ID
+	rollMap := make(map[string]initiative.Roll)
+	for _, roll := range initiativeRolls {
+		rollMap[roll.Entity.GetID()] = roll
+	}
+
+	// Get room data for positions if available
+	var spatialRoom *spatial.RoomData
+	if roomData != nil {
+		if sr, ok := roomData.(*spatial.RoomData); ok {
+			spatialRoom = sr
+		} else if srVal, ok := roomData.(spatial.RoomData); ok {
+			spatialRoom = &srVal
+		}
+	}
+
+	// Build turn order
+	turnOrder := make([]InitiativeEntry, len(initiativeData.Order))
+	for i, entityData := range initiativeData.Order {
+		entry := InitiativeEntry{
+			EntityID:   entityData.ID,
+			EntityType: entityData.Type,
+		}
+
+		// Add roll data if available
+		if roll, exists := rollMap[entityData.ID]; exists {
+			entry.InitiativeRoll = roll.Roll
+			entry.InitiativeModifier = roll.Modifier
+			entry.InitiativeTotal = roll.Total
+		}
+
+		// Add position if available from room data
+		if spatialRoom != nil {
+			if placement, exists := spatialRoom.Entities[entityData.ID]; exists {
+				entry.Position = &Position{
+					X: placement.Position.X,
+					Y: placement.Position.Y,
+				}
+			}
+		}
+
+		turnOrder[i] = entry
+	}
+
+	return turnOrder
+}
+
+// validateTurnOwnership checks if the requesting player owns the entity whose turn it is.
+// Returns an error if:
+// - The active entity is a monster (players cannot control monsters)
+// - The active entity is a character owned by a different player
+func (o *Orchestrator) validateTurnOwnership(
+	ctx context.Context,
+	activeEntity InitiativeEntry,
+	playerID string,
+) error {
+	// Monsters cannot be controlled by players
+	if activeEntity.EntityType == entityTypeMonster {
+		return fmt.Errorf("cannot end turn: it is currently a monster's turn (%s)", activeEntity.EntityID)
+	}
+
+	// For characters, verify the player owns this character
+	if activeEntity.EntityType == entityTypeCharacter {
+		charOutput, err := o.charRepo.Get(ctx, characterrepo.GetInput{
+			ID: activeEntity.EntityID,
+		})
+		if err != nil {
+			return fmt.Errorf("failed to validate character ownership: %w", err)
+		}
+
+		// Check if this player owns the character
+		if charOutput.CharacterData.PlayerID != playerID {
+			return fmt.Errorf(
+				"cannot end turn: you do not control character %s (owned by player %s)",
+				activeEntity.EntityID,
+				charOutput.CharacterData.PlayerID,
+			)
+		}
+	}
+
+	return nil
+}
+
+// ActivateFeature activates a combat feature (e.g., Rage) for a character.
+// The character must have the feature and meet any activation requirements.
+func (o *Orchestrator) ActivateFeature(
+	ctx context.Context,
+	input *ActivateFeatureInput,
+) (*ActivateFeatureOutput, error) {
+	// 1. Validate input
+	if input == nil {
+		return nil, fmt.Errorf("input is required")
+	}
+	if input.EncounterID == "" {
+		return nil, fmt.Errorf("encounter ID is required")
+	}
+	if input.CharacterID == "" {
+		return nil, fmt.Errorf("character ID is required")
+	}
+	if input.FeatureID == "" {
+		return nil, fmt.Errorf("feature ID is required")
+	}
+
+	// 2. Load encounter to verify it exists (and could check turn order later)
+	encOutput, err := o.encRepo.Get(ctx, &encounterrepo.GetInput{
+		EncounterID: input.EncounterID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to load encounter: %w", err)
+	}
+	if encOutput.Data == nil {
+		return nil, fmt.Errorf("encounter not found: %s", input.EncounterID)
+	}
+
+	// 3. Load character data from repository
+	charOutput, err := o.charRepo.Get(ctx, characterrepo.GetInput{
+		ID: input.CharacterID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to load character: %w", err)
+	}
+
+	// 4. Create EventBus (CRITICAL for conditions to work)
+	bus := events.NewEventBus()
+
+	// 5. Load character domain object with EventBus
+	char, err := character.LoadFromData(ctx, charOutput.CharacterData, bus)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load character from data: %w", err)
+	}
+	defer func() {
+		_ = char.Cleanup(ctx)
+	}()
+
+	// 6. Get the feature by ID
+	feature := char.GetFeature(input.FeatureID)
+	if feature == nil {
+		return &ActivateFeatureOutput{
+			Success:       false,
+			Message:       fmt.Sprintf("feature '%s' not found on character", input.FeatureID),
+			CharacterData: charOutput.CharacterData,
+		}, nil
+	}
+
+	// 7. Feature implements core.Action[FeatureInput], so we can use CanActivate/Activate
+	// Create the feature input with the EventBus
+	featureInput := features.FeatureInput{Bus: bus}
+
+	// 8. Check if the feature can be activated
+	if canErr := feature.CanActivate(ctx, char, featureInput); canErr != nil {
+		return &ActivateFeatureOutput{
+			Success:       false,
+			Message:       fmt.Sprintf("cannot activate %s: %v", input.FeatureID, canErr),
+			CharacterData: charOutput.CharacterData,
+		}, nil
+	}
+
+	// 9. Activate the feature
+	if activateErr := feature.Activate(ctx, char, featureInput); activateErr != nil {
+		return nil, fmt.Errorf("failed to activate feature: %w", activateErr)
+	}
+
+	// 10. Convert back to data (includes new condition in Conditions slice)
+	updatedData := char.ToData()
+
+	// 11. Persist updated character
+	_, err = o.charRepo.Update(ctx, characterrepo.UpdateInput{
+		CharacterData: updatedData,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to save character: %w", err)
+	}
+
+	// 12. Return success with updated data
+	return &ActivateFeatureOutput{
+		Success:       true,
+		Message:       fmt.Sprintf("%s activated successfully", input.FeatureID),
+		CharacterData: updatedData,
+	}, nil
+}
+
+// getEquippedWeapon retrieves the weapon equipped in the character's mainhand slot.
+// If no weapon is equipped or the weapon cannot be found, it falls back to a greataxe.
+// This ensures combat never fails due to missing equipment data.
+func (o *Orchestrator) getEquippedWeapon(ctx context.Context, characterID string) weapons.Weapon {
+	// Default fallback weapon
+	fallbackWeapon, _ := weapons.GetByID(weapons.Greataxe)
+
+	// Try to load equipped weapon from character equipment
+	equipmentSlots, err := o.charRepo.GetEquipmentSlots(ctx, characterrepo.GetEquipmentSlotsInput{
+		CharacterID: characterID,
+	})
+	if err != nil {
+		// Equipment lookup failed, use fallback
+		return fallbackWeapon
+	}
+
+	// Check if equipment slots exist and mainhand has a weapon
+	if equipmentSlots.EquipmentSlots == nil || equipmentSlots.EquipmentSlots.MainHand == "" {
+		// No equipment data or no mainhand weapon, use fallback
+		return fallbackWeapon
+	}
+
+	// Try to get the equipped weapon by ID
+	weapon, err := weapons.GetByID(equipmentSlots.EquipmentSlots.MainHand)
+	if err != nil {
+		// Weapon ID not recognized, use fallback
+		return fallbackWeapon
+	}
+
+	return weapon
 }

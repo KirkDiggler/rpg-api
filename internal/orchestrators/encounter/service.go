@@ -16,6 +16,12 @@ type Service interface {
 
 	// MoveCharacter handles character movement in the encounter
 	MoveCharacter(ctx context.Context, input *MoveCharacterInput) (*MoveCharacterOutput, error)
+
+	// EndTurn advances combat to the next entity's turn
+	EndTurn(ctx context.Context, input *EndTurnInput) (*EndTurnOutput, error)
+
+	// ActivateFeature activates a combat feature (e.g., Rage)
+	ActivateFeature(ctx context.Context, input *ActivateFeatureInput) (*ActivateFeatureOutput, error)
 }
 
 // ResolveAttackInput contains attack parameters
@@ -134,10 +140,49 @@ type Position struct {
 
 // MoveCharacterOutput returns movement results
 type MoveCharacterOutput struct {
-	Success           bool   // Whether the movement succeeded
-	FinalPosition     *Position   // Final position of the entity
-	MovementRemaining int32  // Movement points remaining (Phase 3)
+	Success           bool      // Whether the movement succeeded
+	FinalPosition     *Position // Final position of the entity
+	MovementRemaining int32     // Movement points remaining (Phase 3)
 	// Why movement stopped: "completed", "position_occupied", "out_of_bounds", "entity_not_found"
 	StopReason  string
 	UpdatedRoom interface{} // Updated room data (using interface{} until spatial is fixed)
+}
+
+// EndTurnInput contains parameters for ending a turn
+type EndTurnInput struct {
+	EncounterID string // ID of the encounter
+	// EntityID is no longer required - the server determines whose turn it is from encounter state
+
+	// PlayerID is the authenticated player attempting to end the turn.
+	// The server validates that this player owns the character whose turn it is.
+	// If empty, ownership validation is skipped (for backward compatibility/testing).
+	PlayerID string
+}
+
+// EndTurnOutput returns the result of ending a turn
+type EndTurnOutput struct {
+	CombatState *CombatState     // Updated combat state with new active turn
+	TurnChange  *TurnChangeEvent // Details about the turn transition
+}
+
+// TurnChangeEvent describes a turn transition
+type TurnChangeEvent struct {
+	PreviousEntityID string // Entity that ended their turn
+	NextEntityID     string // Entity whose turn is starting
+	Round            int    // Current round number
+	NewRound         bool   // True if this starts a new round
+}
+
+// ActivateFeatureInput contains parameters for activating a combat feature
+type ActivateFeatureInput struct {
+	EncounterID string // ID of the encounter (for context/validation)
+	CharacterID string // ID of the character activating the feature
+	FeatureID   string // ID of the feature to activate (e.g., "rage")
+}
+
+// ActivateFeatureOutput returns the result of feature activation
+type ActivateFeatureOutput struct {
+	Success       bool   // Whether activation succeeded
+	Message       string // Human-readable result message
+	CharacterData interface{}
 }

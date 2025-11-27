@@ -80,7 +80,8 @@ type GetInput struct {
 
 // GetOutput defines the output for getting a character
 type GetOutput struct {
-	CharacterData *toolkitchar.Data
+	CharacterData  *toolkitchar.Data
+	EquipmentSlots *EquipmentSlots
 }
 
 // UpdateInput defines the input for updating a character
