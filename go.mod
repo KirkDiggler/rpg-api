@@ -4,10 +4,10 @@ go 1.24.1
 
 require (
 	github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20251126203631-2fa893118c33
-	github.com/KirkDiggler/rpg-toolkit/core v0.9.2
+	github.com/KirkDiggler/rpg-toolkit/core v0.9.5
 	github.com/KirkDiggler/rpg-toolkit/dice v0.3.3-0.20250914062452-e2c6a0f32059
 	github.com/KirkDiggler/rpg-toolkit/events v0.6.1
-	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.21.2
+	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.25.3
 	github.com/KirkDiggler/rpg-toolkit/tools/spatial v0.1.1
 	github.com/google/uuid v1.6.0
 	github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.3.2
@@ -20,6 +20,7 @@ require (
 
 require (
 	github.com/KirkDiggler/rpg-toolkit/game v0.1.0 // indirect
+	github.com/KirkDiggler/rpg-toolkit/gamectx v0.0.0 // indirect
 	github.com/KirkDiggler/rpg-toolkit/mechanics/resources v0.3.1 // indirect
 	github.com/KirkDiggler/rpg-toolkit/rpgerr v0.1.2 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
@@ -35,3 +36,8 @@ require (
 	google.golang.org/protobuf v1.36.10 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
+
+// Local development: use local gamectx and dnd5e with Dueling integration
+replace github.com/KirkDiggler/rpg-toolkit/gamectx => ../rpg-toolkit/gamectx
+
+replace github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e => ../rpg-toolkit/rulebooks/dnd5e

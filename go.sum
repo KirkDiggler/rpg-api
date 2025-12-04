@@ -1,7 +1,7 @@
 github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20251126203631-2fa893118c33 h1:04E91qOBr13YdaNyKjPtNSv9nBrsY/I5PLEvdyk9YSU=
 github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20251126203631-2fa893118c33/go.mod h1:uBC8Ykp8fFq6jvEQNs+Y3wEzm81Usdgt0GZf3WwFpnk=
-github.com/KirkDiggler/rpg-toolkit/core v0.9.2 h1:UpH0aq/VLbqbV8sW0Q+dvZOMmSG+TKZjdizVD26ursc=
-github.com/KirkDiggler/rpg-toolkit/core v0.9.2/go.mod h1:XFQXYViPZUTYu/a8jdRadI3rGnKk4r7tRtPm++vSUV0=
+github.com/KirkDiggler/rpg-toolkit/core v0.9.5 h1:E8oOYJEix6KSrwwgll83fgJRIT4LkR4B2XJdga1MNhQ=
+github.com/KirkDiggler/rpg-toolkit/core v0.9.5/go.mod h1:XFQXYViPZUTYu/a8jdRadI3rGnKk4r7tRtPm++vSUV0=
 github.com/KirkDiggler/rpg-toolkit/dice v0.3.3-0.20250914062452-e2c6a0f32059 h1:74OW0fnq459g28p2JpyrB20tjno4FlF18+cHJ2xiTes=
 github.com/KirkDiggler/rpg-toolkit/dice v0.3.3-0.20250914062452-e2c6a0f32059/go.mod h1:JEWKuYBi+h9f8jFAcE2MI2yVDFV6ldOVx36y5fbc6p4=
 github.com/KirkDiggler/rpg-toolkit/events v0.6.1 h1:cUFA6eM6aNiSD2WdrGbNXepza/3fA+YxE3qm6T2mSl0=
@@ -12,8 +12,6 @@ github.com/KirkDiggler/rpg-toolkit/mechanics/resources v0.3.1 h1:wRshHQZfLnEh03/
 github.com/KirkDiggler/rpg-toolkit/mechanics/resources v0.3.1/go.mod h1:LzyZd5OAAic1UnyPwCx6HnmWcOQ/jZvqMSc+Q0k7fH8=
 github.com/KirkDiggler/rpg-toolkit/rpgerr v0.1.2 h1:B7IrROe3GcPrzMeV0EQryA194Y7Yjl3E4kw/OBx4Ucc=
 github.com/KirkDiggler/rpg-toolkit/rpgerr v0.1.2/go.mod h1:wsyJmmf1X0iLFGy5Iyy5sUoZhXZQvuYVsKdXfc4b/T4=
-github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.21.2 h1:6MPNii8fPvvC9nGp3GYqRh+qMWYy58MR9f1SL5H9ORQ=
-github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.21.2/go.mod h1:CvG7oLXInlmeRaUc+hvWW8zPCmsLneOFcrtlSJCQoJk=
 github.com/KirkDiggler/rpg-toolkit/tools/spatial v0.1.1 h1:CWKr7NurYH0JtREkN5NO+9s4Q0VQv/uXUA8L/2JKJkI=
 github.com/KirkDiggler/rpg-toolkit/tools/spatial v0.1.1/go.mod h1:6DSb4xhITAy0wstKWoS3BeEYywWLt+138bxRCfH0kzY=
 github.com/bsm/ginkgo/v2 v2.12.0 h1:Ny8MWAHyOepLGlLKYmXG4IEkioBysk6GpaRTLC8zwWs=

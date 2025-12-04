@@ -9,6 +9,7 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/core"
 	"github.com/KirkDiggler/rpg-toolkit/dice"
 	"github.com/KirkDiggler/rpg-toolkit/events"
+	"github.com/KirkDiggler/rpg-toolkit/gamectx"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/abilities"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/combat"
@@ -108,10 +109,14 @@ func (o *Orchestrator) ResolveAttack(ctx context.Context, input *ResolveAttackIn
 	// TODO: Load monster state from encounter data in future
 	goblin := monster.NewGoblin(input.TargetID)
 
-	// 6. Get weapon from equipped items (with fallback to greataxe)
-	weapon := o.getEquippedWeapon(ctx, input.AttackerID)
+	// 6. Get weapon and equipment slots from equipped items (with fallback to greataxe)
+	weapon, equipmentSlots := o.getEquippedWeaponAndSlots(ctx, input.AttackerID)
 
-	// 7. Call toolkit combat (event-driven, Rage participates here!)
+	// 7. Build GameContext with character equipment for fighting style checks (e.g., Dueling)
+	gameCtx := o.buildGameContextFromEquipment(input.AttackerID, &weapon, equipmentSlots)
+	ctx = gamectx.WithGameContext(ctx, gameCtx)
+
+	// 8. Call toolkit combat (event-driven, Rage and fighting styles participate here!)
 	result, err := combat.ResolveAttack(ctx, &combat.AttackInput{
 		Attacker:         char,
 		Defender:         goblin,
@@ -126,7 +131,7 @@ func (o *Orchestrator) ResolveAttack(ctx context.Context, input *ResolveAttackIn
 		return nil, fmt.Errorf("combat resolution failed: %w", err)
 	}
 
-	// 8. Calculate new monster HP
+	// 9. Calculate new monster HP
 	newHP := goblin.HP()
 	if result.Hit {
 		newHP = goblin.HP() - result.TotalDamage
@@ -136,7 +141,7 @@ func (o *Orchestrator) ResolveAttack(ctx context.Context, input *ResolveAttackIn
 		// TODO: Persist updated HP to encounter repository
 	}
 
-	// 9. Convert toolkit result to our output format
+	// 10. Convert toolkit result to our output format
 	attackResult := &AttackResult{
 		AttackRoll:      result.AttackRoll,
 		AttackBonus:     result.AttackBonus,
@@ -152,7 +157,7 @@ func (o *Orchestrator) ResolveAttack(ctx context.Context, input *ResolveAttackIn
 		DamageType:      result.DamageType,
 	}
 
-	// 10. Map breakdown if present (only exists on hit)
+	// 11. Map breakdown if present (only exists on hit)
 	if result.Breakdown != nil {
 		attackResult.Breakdown = convertToolkitBreakdown(result.Breakdown)
 	}
@@ -942,10 +947,14 @@ func (o *Orchestrator) ActivateFeature(
 	}, nil
 }
 
-// getEquippedWeapon retrieves the weapon equipped in the character's mainhand slot.
+// getEquippedWeaponAndSlots retrieves the weapon equipped in the character's mainhand slot
+// along with the full equipment slots data for GameContext building.
 // If no weapon is equipped or the weapon cannot be found, it falls back to a greataxe.
 // This ensures combat never fails due to missing equipment data.
-func (o *Orchestrator) getEquippedWeapon(ctx context.Context, characterID string) weapons.Weapon {
+func (o *Orchestrator) getEquippedWeaponAndSlots(
+	ctx context.Context,
+	characterID string,
+) (weapons.Weapon, *characterrepo.EquipmentSlots) {
 	// Default fallback weapon
 	fallbackWeapon, _ := weapons.GetByID(weapons.Greataxe)
 
@@ -955,21 +964,85 @@ func (o *Orchestrator) getEquippedWeapon(ctx context.Context, characterID string
 	})
 	if err != nil {
 		// Equipment lookup failed, use fallback
-		return fallbackWeapon
+		return fallbackWeapon, nil
 	}
 
 	// Check if equipment slots exist and mainhand has a weapon
 	if equipmentSlots.EquipmentSlots == nil || equipmentSlots.EquipmentSlots.MainHand == "" {
 		// No equipment data or no mainhand weapon, use fallback
-		return fallbackWeapon
+		return fallbackWeapon, equipmentSlots.EquipmentSlots
 	}
 
 	// Try to get the equipped weapon by ID
 	weapon, err := weapons.GetByID(equipmentSlots.EquipmentSlots.MainHand)
 	if err != nil {
 		// Weapon ID not recognized, use fallback
-		return fallbackWeapon
+		return fallbackWeapon, equipmentSlots.EquipmentSlots
 	}
 
-	return weapon
+	return weapon, equipmentSlots.EquipmentSlots
+}
+
+// buildGameContextFromEquipment creates a GameContext with the character's equipped weapons.
+// This enables fighting style conditions (like Dueling) to query weapon state
+// during combat resolution without bloating event objects.
+// Uses already-loaded equipment slots to avoid duplicate repository calls.
+func (o *Orchestrator) buildGameContextFromEquipment(
+	characterID string,
+	mainHandWeapon *weapons.Weapon,
+	slots *characterrepo.EquipmentSlots,
+) *gamectx.GameContext {
+	// Create character registry
+	registry := gamectx.NewBasicCharacterRegistry()
+
+	// Build equipped weapons from main hand weapon
+	var equippedWeapons []*gamectx.EquippedWeapon
+
+	if mainHandWeapon != nil {
+		equippedWeapons = append(equippedWeapons, &gamectx.EquippedWeapon{
+			ID:          string(mainHandWeapon.ID),
+			Name:        mainHandWeapon.Name,
+			Slot:        gamectx.SlotMainHand,
+			IsShield:    false,
+			IsTwoHanded: mainHandWeapon.HasProperty(weapons.PropertyTwoHanded),
+			IsMelee:     !mainHandWeapon.IsRanged(),
+		})
+	}
+
+	// Add off-hand weapon or shield from equipment slots if available
+	if slots != nil {
+		// Add off-hand weapon if present
+		if slots.OffHand != "" {
+			offHandWeapon, weaponErr := weapons.GetByID(slots.OffHand)
+			if weaponErr == nil {
+				equippedWeapons = append(equippedWeapons, &gamectx.EquippedWeapon{
+					ID:          string(offHandWeapon.ID),
+					Name:        offHandWeapon.Name,
+					Slot:        gamectx.SlotOffHand,
+					IsShield:    false,
+					IsTwoHanded: offHandWeapon.HasProperty(weapons.PropertyTwoHanded),
+					IsMelee:     !offHandWeapon.IsRanged(),
+				})
+			}
+		}
+
+		// Add shield if present (shields go in off-hand slot but are marked as shields)
+		if slots.Shield != "" {
+			equippedWeapons = append(equippedWeapons, &gamectx.EquippedWeapon{
+				ID:       slots.Shield,
+				Name:     "Shield",
+				Slot:     gamectx.SlotOffHand,
+				IsShield: true,
+			})
+		}
+	}
+
+	// Add character to registry
+	charWeapons := gamectx.NewCharacterWeapons(equippedWeapons)
+	registry.Add(characterID, charWeapons)
+
+	// Create and return GameContext
+	return gamectx.NewGameContext(gamectx.GameContextConfig{
+		CharacterRegistry: registry,
+	})
 }
