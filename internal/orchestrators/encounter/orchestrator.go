@@ -238,22 +238,23 @@ func (o *Orchestrator) CreateDungeon(ctx context.Context, input *CreateDungeonIn
 		Entities: make(map[string]spatial.EntityPlacement),
 	}
 
-	// Add goblin target dummy at fixed position (center-right area)
+	// Add goblin target dummy at fixed position (center of room)
 	goblinID := "goblin-dummy"
 	roomData.Entities[goblinID] = spatial.EntityPlacement{
 		EntityID:       goblinID,
 		EntityType:     "monster",
-		Position:       spatial.Position{X: 15, Y: 10}, // Right side of room
+		Position:       spatial.Position{X: 10, Y: 10}, // Center of room
 		Size:           1,
 		BlocksMovement: true,
 	}
 
-	// Define 4 spawn points on the left side of the room
+	// Define 4 spawn points close to the goblin (within 30ft/6 squares movement)
+	// Players can move and attack on turn 1
 	spawnPoints := []spatial.Position{
-		{X: 2, Y: 8},  // Top-left spawn
-		{X: 2, Y: 10}, // Middle-left spawn
-		{X: 2, Y: 12}, // Bottom-left spawn
-		{X: 4, Y: 10}, // Second row middle spawn
+		{X: 5, Y: 8},  // 5 squares from goblin - reachable in one move
+		{X: 5, Y: 10}, // 5 squares from goblin
+		{X: 5, Y: 12}, // 5 squares from goblin
+		{X: 4, Y: 10}, // 6 squares from goblin - just reachable
 	}
 
 	// Place characters at spawn points (up to 4 characters)
@@ -272,12 +273,12 @@ func (o *Orchestrator) CreateDungeon(ctx context.Context, input *CreateDungeonIn
 	}
 
 	// Add some static walls/obstacles for navigation
-	// Create a simple layout with pillars
+	// Create a simple layout with pillars around the edges
 	obstacles := []spatial.Position{
-		{X: 7, Y: 5},   // Top-left pillar
-		{X: 7, Y: 15},  // Bottom-left pillar
-		{X: 13, Y: 5},  // Top-right pillar
-		{X: 13, Y: 15}, // Bottom-right pillar
+		{X: 3, Y: 3},   // Top-left pillar
+		{X: 3, Y: 17},  // Bottom-left pillar
+		{X: 17, Y: 3},  // Top-right pillar
+		{X: 17, Y: 17}, // Bottom-right pillar
 	}
 
 	for i, pos := range obstacles {
