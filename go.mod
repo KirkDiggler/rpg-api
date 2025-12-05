@@ -20,7 +20,6 @@ require (
 
 require (
 	github.com/KirkDiggler/rpg-toolkit/game v0.1.0 // indirect
-	github.com/KirkDiggler/rpg-toolkit/gamectx v0.0.0 // indirect
 	github.com/KirkDiggler/rpg-toolkit/mechanics/resources v0.3.1 // indirect
 	github.com/KirkDiggler/rpg-toolkit/rpgerr v0.1.2 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
@@ -37,7 +36,5 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-// Local development: use local gamectx and dnd5e with Dueling integration
-replace github.com/KirkDiggler/rpg-toolkit/gamectx => ../rpg-toolkit/gamectx
-
+// Local development: use local dnd5e with Dueling integration (gamectx is now part of dnd5e)
 replace github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e => ../rpg-toolkit/rulebooks/dnd5e

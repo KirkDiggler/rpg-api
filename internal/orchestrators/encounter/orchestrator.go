@@ -9,7 +9,7 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/core"
 	"github.com/KirkDiggler/rpg-toolkit/dice"
 	"github.com/KirkDiggler/rpg-toolkit/events"
-	"github.com/KirkDiggler/rpg-toolkit/gamectx"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/gamectx"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/abilities"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/combat"
@@ -963,20 +963,17 @@ func (o *Orchestrator) getEquippedWeaponAndSlots(
 		CharacterID: characterID,
 	})
 	if err != nil {
-		// Equipment lookup failed, use fallback
 		return fallbackWeapon, nil
 	}
 
 	// Check if equipment slots exist and mainhand has a weapon
 	if equipmentSlots.EquipmentSlots == nil || equipmentSlots.EquipmentSlots.MainHand == "" {
-		// No equipment data or no mainhand weapon, use fallback
 		return fallbackWeapon, equipmentSlots.EquipmentSlots
 	}
 
 	// Try to get the equipped weapon by ID
 	weapon, err := weapons.GetByID(equipmentSlots.EquipmentSlots.MainHand)
 	if err != nil {
-		// Weapon ID not recognized, use fallback
 		return fallbackWeapon, equipmentSlots.EquipmentSlots
 	}
 
