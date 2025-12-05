@@ -1006,10 +1006,19 @@ func (o *Orchestrator) buildGameContextFromEquipment(
 		})
 	}
 
-	// Add off-hand weapon or shield from equipment slots if available
+	// Add off-hand item from equipment slots if available
+	// Priority: shield takes precedence over off-hand weapon (can't hold both)
 	if slots != nil {
-		// Add off-hand weapon if present
-		if slots.OffHand != "" {
+		if slots.Shield != "" {
+			// Shield equipped - takes the off-hand slot
+			equippedWeapons = append(equippedWeapons, &gamectx.EquippedWeapon{
+				ID:       slots.Shield,
+				Name:     "Shield",
+				Slot:     gamectx.SlotOffHand,
+				IsShield: true,
+			})
+		} else if slots.OffHand != "" {
+			// No shield, check for off-hand weapon
 			offHandWeapon, weaponErr := weapons.GetByID(slots.OffHand)
 			if weaponErr == nil {
 				equippedWeapons = append(equippedWeapons, &gamectx.EquippedWeapon{
@@ -1021,16 +1030,6 @@ func (o *Orchestrator) buildGameContextFromEquipment(
 					IsMelee:     !offHandWeapon.IsRanged(),
 				})
 			}
-		}
-
-		// Add shield if present (shields go in off-hand slot but are marked as shields)
-		if slots.Shield != "" {
-			equippedWeapons = append(equippedWeapons, &gamectx.EquippedWeapon{
-				ID:       slots.Shield,
-				Name:     "Shield",
-				Slot:     gamectx.SlotOffHand,
-				IsShield: true,
-			})
 		}
 	}
 
