@@ -243,12 +243,13 @@ func (o *Orchestrator) CreateDungeon(ctx context.Context, input *CreateDungeonIn
 		BlocksMovement: true,
 	}
 
-	// Define 4 spawn points on the left side of the room
+	// Define 4 spawn points near the target (within 1 move / ~30 feet)
+	// Target is at {15, 10}, so spawn players 2-3 hexes away (10-15 feet)
 	spawnPoints := []spatial.Position{
-		{X: 2, Y: 8},  // Top-left spawn
-		{X: 2, Y: 10}, // Middle-left spawn
-		{X: 2, Y: 12}, // Bottom-left spawn
-		{X: 4, Y: 10}, // Second row middle spawn
+		{X: 12, Y: 9},  // Northwest of target
+		{X: 12, Y: 11}, // Southwest of target
+		{X: 13, Y: 8},  // North of target
+		{X: 13, Y: 12}, // South of target
 	}
 
 	// Place characters at spawn points (up to 4 characters)
