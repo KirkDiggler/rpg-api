@@ -1118,11 +1118,45 @@ func ConvertCharacterDataToProto(data *toolkitchar.Data) *dnd5ev1alpha1.Characte
 		}
 	}
 
+	// Convert tool proficiencies
+	toolProfs := make([]dnd5ev1alpha1.Tool, 0, len(data.ToolProficiencies))
+	for _, tool := range data.ToolProficiencies {
+		protoTool := convertToolProficiencyToProto(tool)
+		if protoTool != dnd5ev1alpha1.Tool_TOOL_UNSPECIFIED {
+			toolProfs = append(toolProfs, protoTool)
+		}
+	}
+
+	// Convert armor proficiency categories
+	armorCats := make([]dnd5ev1alpha1.ArmorProficiencyCategory, 0, len(data.ArmorProficiencies))
+	for _, armor := range data.ArmorProficiencies {
+		protoCat := convertArmorProficiencyCategoryToProto(armor)
+		if protoCat != dnd5ev1alpha1.ArmorProficiencyCategory_ARMOR_PROFICIENCY_CATEGORY_UNSPECIFIED {
+			armorCats = append(armorCats, protoCat)
+		}
+	}
+
+	// Convert weapon proficiencies - separate categories from specific weapons
+	weaponCats := make([]dnd5ev1alpha1.WeaponProficiencyCategory, 0)
+	specificWeapons := make([]dnd5ev1alpha1.Weapon, 0)
+	for _, weapon := range data.WeaponProficiencies {
+		cat, specific := convertWeaponProficiencyToProto(weapon)
+		if cat == dnd5ev1alpha1.WeaponProficiencyCategory_WEAPON_PROFICIENCY_CATEGORY_SIMPLE ||
+			cat == dnd5ev1alpha1.WeaponProficiencyCategory_WEAPON_PROFICIENCY_CATEGORY_MARTIAL {
+			weaponCats = append(weaponCats, cat)
+		} else if specific != dnd5ev1alpha1.Weapon_WEAPON_UNSPECIFIED {
+			specificWeapons = append(specificWeapons, specific)
+		}
+	}
+
 	// Set proficiencies structure
 	char.Proficiencies = &dnd5ev1alpha1.Proficiencies{
-		Skills:       skillList,
-		SavingThrows: savingThrows,
-		// TODO: Add armor, weapons, and tools when we have that data
+		Skills:           skillList,
+		SavingThrows:     savingThrows,
+		Tools:            toolProfs,
+		ArmorCategories:  armorCats,
+		WeaponCategories: weaponCats,
+		SpecificWeapons:  specificWeapons,
 	}
 
 	// Convert languages to enum
