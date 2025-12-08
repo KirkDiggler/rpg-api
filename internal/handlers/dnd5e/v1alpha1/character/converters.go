@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
+	"github.com/KirkDiggler/rpg-api/internal/errors"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/abilities"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/ammunition"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/armor"
@@ -1236,31 +1237,34 @@ func ConvertCharacterDataToProto(data *toolkitchar.Data) *dnd5ev1alpha1.Characte
 	return char
 }
 
-// convertEquipmentSlotToToolkit converts a proto EquipmentSlot enum to toolkit InventorySlot
-func convertEquipmentSlotToToolkit(slot dnd5ev1alpha1.EquipmentSlot) toolkitchar.InventorySlot {
+// convertEquipmentSlotToToolkit converts a proto EquipmentSlot enum to toolkit InventorySlot.
+// Returns an error for unsupported slots (GLOVES is deprecated and not supported).
+func convertEquipmentSlotToToolkit(slot dnd5ev1alpha1.EquipmentSlot) (toolkitchar.InventorySlot, error) {
 	switch slot {
 	case dnd5ev1alpha1.EquipmentSlot_EQUIPMENT_SLOT_MAIN_HAND:
-		return toolkitchar.SlotMainHand
+		return toolkitchar.SlotMainHand, nil
 	case dnd5ev1alpha1.EquipmentSlot_EQUIPMENT_SLOT_OFF_HAND:
-		return toolkitchar.SlotOffHand
+		return toolkitchar.SlotOffHand, nil
 	case dnd5ev1alpha1.EquipmentSlot_EQUIPMENT_SLOT_ARMOR:
-		return toolkitchar.SlotArmor
+		return toolkitchar.SlotArmor, nil
 	case dnd5ev1alpha1.EquipmentSlot_EQUIPMENT_SLOT_HELMET:
-		return toolkitchar.SlotHelm
+		return toolkitchar.SlotHelm, nil
 	case dnd5ev1alpha1.EquipmentSlot_EQUIPMENT_SLOT_BOOTS:
-		return toolkitchar.SlotBoots
+		return toolkitchar.SlotBoots, nil
 	case dnd5ev1alpha1.EquipmentSlot_EQUIPMENT_SLOT_CLOAK:
-		return toolkitchar.SlotCloak
+		return toolkitchar.SlotCloak, nil
 	case dnd5ev1alpha1.EquipmentSlot_EQUIPMENT_SLOT_AMULET:
-		return toolkitchar.SlotAmulet
+		return toolkitchar.SlotAmulet, nil
 	case dnd5ev1alpha1.EquipmentSlot_EQUIPMENT_SLOT_RING_1:
-		return toolkitchar.SlotRingLeft
+		return toolkitchar.SlotRingLeft, nil
 	case dnd5ev1alpha1.EquipmentSlot_EQUIPMENT_SLOT_RING_2:
-		return toolkitchar.SlotRingRight
+		return toolkitchar.SlotRingRight, nil
 	case dnd5ev1alpha1.EquipmentSlot_EQUIPMENT_SLOT_BELT:
-		return toolkitchar.SlotBelt
+		return toolkitchar.SlotBelt, nil
+	case dnd5ev1alpha1.EquipmentSlot_EQUIPMENT_SLOT_GLOVES:
+		return "", errors.InvalidArgument("EQUIPMENT_SLOT_GLOVES is deprecated and not supported")
 	default:
-		return ""
+		return "", errors.InvalidArgument("unsupported equipment slot")
 	}
 }
 

@@ -856,7 +856,10 @@ func (h *Handler) EquipItem(
 	}
 
 	// Convert slot enum to toolkit type
-	slot := convertEquipmentSlotToToolkit(req.Slot)
+	slot, err := convertEquipmentSlotToToolkit(req.Slot)
+	if err != nil {
+		return nil, err
+	}
 
 	// Equip item via orchestrator
 	equipResult, err := h.characterService.EquipItem(ctx, &character.EquipItemInput{
@@ -910,10 +913,13 @@ func (h *Handler) UnequipItem(
 	}
 
 	// Convert slot enum to toolkit type
-	slot := convertEquipmentSlotToToolkit(req.Slot)
+	slot, err := convertEquipmentSlotToToolkit(req.Slot)
+	if err != nil {
+		return nil, err
+	}
 
 	// Unequip item via orchestrator
-	_, err := h.characterService.UnequipItem(ctx, &character.UnequipItemInput{
+	_, err = h.characterService.UnequipItem(ctx, &character.UnequipItemInput{
 		CharacterID: req.CharacterId,
 		Slot:        slot,
 	})
