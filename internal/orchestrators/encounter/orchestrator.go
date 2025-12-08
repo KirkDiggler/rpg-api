@@ -12,6 +12,7 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/abilities"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/combat"
+	dnd5eEvents "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/events"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/features"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/initiative"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/monster"
@@ -183,7 +184,7 @@ func convertToolkitBreakdown(breakdown *combat.DamageBreakdown) *DamageBreakdown
 }
 
 // convertToolkitComponent maps toolkit DamageComponent to orchestrator type
-func convertToolkitComponent(comp combat.DamageComponent) DamageComponent {
+func convertToolkitComponent(comp dnd5eEvents.DamageComponent) DamageComponent {
 	// Convert original dice rolls (toolkit uses int, orchestrator uses int)
 	originalRolls := make([]int, len(comp.OriginalDiceRolls))
 	copy(originalRolls, comp.OriginalDiceRolls)
@@ -204,7 +205,8 @@ func convertToolkitComponent(comp combat.DamageComponent) DamageComponent {
 	}
 
 	return DamageComponent{
-		Source:            string(comp.Source), // DamageSourceType is already a string
+		Source:            string(comp.Source), // DamageSourceType to string
+		SourceRef:         comp.SourceRef,      // Pass through the core.Ref
 		OriginalDiceRolls: originalRolls,
 		FinalDiceRolls:    finalRolls,
 		Rerolls:           rerolls,
