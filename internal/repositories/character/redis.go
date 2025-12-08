@@ -14,18 +14,15 @@ import (
 )
 
 const (
-	characterKeyPrefix   = "character:"
-	playerIndexPrefix    = "character:player:"
-	sessionIndexPrefix   = "character:session:"
-	equipmentSlotsPrefix = "character:equipment:"
+	characterKeyPrefix = "character:"
+	playerIndexPrefix  = "character:player:"
+	sessionIndexPrefix = "character:session:"
 
 	// Error messages
 	errCharacterNil     = "character cannot be nil"
 	errCharacterIDEmpty = "character ID cannot be empty"
 	errPlayerIDEmpty    = "player ID cannot be empty"
 	errSessionIDEmpty   = "session ID cannot be empty"
-	errSlotEmpty        = "slot cannot be empty"
-	errItemIDEmpty      = "item ID cannot be empty"
 )
 
 type redisRepository struct {
@@ -136,34 +133,8 @@ func (r *redisRepository) Get(ctx context.Context, input GetInput) (*GetOutput, 
 		return nil, errors.Wrapf(unmarshalErr, "failed to unmarshal character data")
 	}
 
-	// Fetch equipment slots (separate Redis key)
-	equipKey := equipmentSlotsPrefix + input.ID
-	equipResult, err := r.client.HGetAll(ctx, equipKey).Result()
-	if err != nil && err != redis.Nil {
-		return nil, errors.Wrapf(err, "failed to get equipment slots")
-	}
-
-	var equipmentSlots *EquipmentSlots
-	if len(equipResult) > 0 {
-		equipmentSlots = &EquipmentSlots{
-			MainHand: equipResult["main_hand"],
-			OffHand:  equipResult["off_hand"],
-			Armor:    equipResult["armor"],
-			Shield:   equipResult["shield"],
-			Ring1:    equipResult["ring1"],
-			Ring2:    equipResult["ring2"],
-			Amulet:   equipResult["amulet"],
-			Boots:    equipResult["boots"],
-			Gloves:   equipResult["gloves"],
-			Helmet:   equipResult["helmet"],
-			Belt:     equipResult["belt"],
-			Cloak:    equipResult["cloak"],
-		}
-	}
-
 	return &GetOutput{
-		CharacterData:  &charData,
-		EquipmentSlots: equipmentSlots,
+		CharacterData: &charData,
 	}, nil
 }
 
@@ -362,102 +333,4 @@ func (r *redisRepository) listByIndex(ctx context.Context, indexKey string) ([]*
 		"total_found", len(characters))
 
 	return characters, nil
-}
-
-func (r *redisRepository) GetEquipmentSlots(ctx context.Context, input GetEquipmentSlotsInput) (*GetEquipmentSlotsOutput, error) {
-	if input.CharacterID == "" {
-		return nil, errors.InvalidArgument(errCharacterIDEmpty)
-	}
-
-	// Check if character exists
-	if _, err := r.Get(ctx, GetInput{ID: input.CharacterID}); err != nil {
-		return nil, err
-	}
-
-	key := equipmentSlotsPrefix + input.CharacterID
-	result, err := r.client.HGetAll(ctx, key).Result()
-	if err != nil {
-		return nil, errors.Wrapf(err, "failed to get equipment slots")
-	}
-
-	slog.DebugContext(ctx, "Retrieved equipment slots from Redis",
-		"key", key,
-		"result", result,
-		"armor", result["armor"])
-
-	// Convert map to EquipmentSlots struct
-	equipmentSlots := &EquipmentSlots{
-		MainHand: result["main_hand"],
-		OffHand:  result["off_hand"],
-		Armor:    result["armor"],
-		Shield:   result["shield"],
-		Ring1:    result["ring1"],
-		Ring2:    result["ring2"],
-		Amulet:   result["amulet"],
-		Boots:    result["boots"],
-		Gloves:   result["gloves"],
-		Helmet:   result["helmet"],
-		Belt:     result["belt"],
-		Cloak:    result["cloak"],
-	}
-
-	return &GetEquipmentSlotsOutput{EquipmentSlots: equipmentSlots}, nil
-}
-
-func (r *redisRepository) SetEquipmentSlot(ctx context.Context, input SetEquipmentSlotInput) (*SetEquipmentSlotOutput, error) {
-	if input.CharacterID == "" {
-		return nil, errors.InvalidArgument(errCharacterIDEmpty)
-	}
-	if input.Slot == "" {
-		return nil, errors.InvalidArgument(errSlotEmpty)
-	}
-	if input.ItemID == "" {
-		return nil, errors.InvalidArgument(errItemIDEmpty)
-	}
-
-	// Check if character exists
-	if _, err := r.Get(ctx, GetInput{ID: input.CharacterID}); err != nil {
-		return nil, err
-	}
-
-	key := equipmentSlotsPrefix + input.CharacterID
-
-	// Get previous item in the slot
-	previousItem, err := r.client.HGet(ctx, key, input.Slot).Result()
-	if err != nil && err != redis.Nil {
-		return nil, errors.Wrapf(err, "failed to get previous item in slot")
-	}
-
-	// Set the new item in the slot
-	err = r.client.HSet(ctx, key, input.Slot, input.ItemID).Err()
-	if err != nil {
-		return nil, errors.Wrapf(err, "failed to set equipment slot")
-	}
-
-	return &SetEquipmentSlotOutput{PreviousItemID: previousItem}, nil
-}
-
-func (r *redisRepository) ClearEquipmentSlot(ctx context.Context, input ClearEquipmentSlotInput) (*ClearEquipmentSlotOutput, error) {
-	if input.CharacterID == "" {
-		return nil, errors.InvalidArgument(errCharacterIDEmpty)
-	}
-	if input.Slot == "" {
-		return nil, errors.InvalidArgument(errSlotEmpty)
-	}
-
-	key := equipmentSlotsPrefix + input.CharacterID
-
-	// Get current item in the slot
-	currentItem, err := r.client.HGet(ctx, key, input.Slot).Result()
-	if err != nil && err != redis.Nil {
-		return nil, errors.Wrapf(err, "failed to get current item in slot")
-	}
-
-	// Clear the slot
-	err = r.client.HDel(ctx, key, input.Slot).Err()
-	if err != nil {
-		return nil, errors.Wrapf(err, "failed to clear equipment slot")
-	}
-
-	return &ClearEquipmentSlotOutput{ClearedItemID: currentItem}, nil
 }

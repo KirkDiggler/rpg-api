@@ -13,6 +13,7 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/abilities"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/combat"
+	dnd5eEvents "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/events"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/features"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/initiative"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/monster"
@@ -188,7 +189,7 @@ func convertToolkitBreakdown(breakdown *combat.DamageBreakdown) *DamageBreakdown
 }
 
 // convertToolkitComponent maps toolkit DamageComponent to orchestrator type
-func convertToolkitComponent(comp combat.DamageComponent) DamageComponent {
+func convertToolkitComponent(comp dnd5eEvents.DamageComponent) DamageComponent {
 	// Convert original dice rolls (toolkit uses int, orchestrator uses int)
 	originalRolls := make([]int, len(comp.OriginalDiceRolls))
 	copy(originalRolls, comp.OriginalDiceRolls)
@@ -209,7 +210,8 @@ func convertToolkitComponent(comp combat.DamageComponent) DamageComponent {
 	}
 
 	return DamageComponent{
-		Source:            string(comp.Source), // DamageSourceType is already a string
+		Source:            string(comp.Source), // DamageSourceType to string
+		SourceRef:         comp.SourceRef,      // Pass through the core.Ref
 		OriginalDiceRolls: originalRolls,
 		FinalDiceRolls:    finalRolls,
 		Rerolls:           rerolls,
@@ -959,21 +961,23 @@ func (o *Orchestrator) getEquippedWeaponAndSlots(
 	// Default fallback weapon
 	fallbackWeapon, _ := weapons.GetByID(weapons.Greataxe)
 
-	// Try to load equipped weapon from character equipment
-	equipmentSlots, err := o.charRepo.GetEquipmentSlots(ctx, characterrepo.GetEquipmentSlotsInput{
-		CharacterID: characterID,
+	// Try to load character data (equipment slots are part of character.Data)
+	charResult, err := o.charRepo.Get(ctx, characterrepo.GetInput{
+		ID: characterID,
 	})
 	if err != nil {
 		return fallbackWeapon, nil
 	}
 
-	// Check if equipment slots exist and mainhand has a weapon
-	if equipmentSlots.EquipmentSlots == nil || equipmentSlots.EquipmentSlots.MainHand == "" {
-		return fallbackWeapon, equipmentSlots.EquipmentSlots
+	// Check if mainhand has a weapon equipped
+	mainHandItemID := charResult.CharacterData.EquipmentSlots.Get(character.SlotMainHand)
+	if mainHandItemID == "" {
+		// No mainhand weapon, use fallback
+		return fallbackWeapon
 	}
 
 	// Try to get the equipped weapon by ID
-	weapon, err := weapons.GetByID(equipmentSlots.EquipmentSlots.MainHand)
+	weapon, err := weapons.GetByID(mainHandItemID)
 	if err != nil {
 		return fallbackWeapon, equipmentSlots.EquipmentSlots
 	}

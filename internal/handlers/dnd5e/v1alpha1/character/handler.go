@@ -815,46 +815,12 @@ func (h *Handler) GetCharacterInventory(
 		return nil, errors.InvalidArgument("character_id is required")
 	}
 
-	// Get character data to access inventory from character creation
+	// Get character data - equipment slots are part of character data
 	charResult, err := h.characterService.GetCharacter(ctx, &character.GetCharacterInput{
 		CharacterID: req.CharacterId,
 	})
 	if err != nil {
 		return nil, err
-	}
-
-	// Get equipment slots from Redis (for explicit equip overrides)
-	slotsResult, err := h.characterService.GetEquipmentSlots(ctx, &character.GetEquipmentSlotsInput{
-		CharacterID: req.CharacterId,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	// Helper to create InventoryItem from item ID
-	makeItem := func(itemID string) *dnd5ev1alpha1.InventoryItem {
-		if itemID == "" {
-			return nil
-		}
-		return &dnd5ev1alpha1.InventoryItem{
-			ItemId:   itemID,
-			Quantity: 1,
-		}
-	}
-
-	// Build equipment slots from Redis overrides
-	equipmentSlots := &dnd5ev1alpha1.EquipmentSlots{
-		MainHand: makeItem(slotsResult.Slots["main_hand"]),
-		OffHand:  makeItem(slotsResult.Slots["off_hand"]),
-		Armor:    makeItem(slotsResult.Slots["armor"]),
-		Helmet:   makeItem(slotsResult.Slots["helmet"]),
-		Boots:    makeItem(slotsResult.Slots["boots"]),
-		Gloves:   makeItem(slotsResult.Slots["gloves"]),
-		Cloak:    makeItem(slotsResult.Slots["cloak"]),
-		Amulet:   makeItem(slotsResult.Slots["amulet"]),
-		Ring_1:   makeItem(slotsResult.Slots["ring1"]),
-		Ring_2:   makeItem(slotsResult.Slots["ring2"]),
-		Belt:     makeItem(slotsResult.Slots["belt"]),
 	}
 
 	// Convert character inventory from character data
@@ -867,7 +833,7 @@ func (h *Handler) GetCharacterInventory(
 	}
 
 	return &dnd5ev1alpha1.GetCharacterInventoryResponse{
-		EquipmentSlots:     equipmentSlots,
+		EquipmentSlots:     convertEquipmentSlotsToProto(charResult.Character.EquipmentSlots),
 		Inventory:          inventory,
 		AttunementSlotsMax: 3, // Standard D&D 5e attunement limit
 	}, nil
@@ -889,14 +855,17 @@ func (h *Handler) EquipItem(
 		return nil, errors.InvalidArgument("slot is required")
 	}
 
-	// Convert slot enum to storage key
-	slotName := convertEquipmentSlotToStorageKey(req.Slot)
+	// Convert slot enum to toolkit type
+	slot, err := convertEquipmentSlotToToolkit(req.Slot)
+	if err != nil {
+		return nil, err
+	}
 
 	// Equip item via orchestrator
 	equipResult, err := h.characterService.EquipItem(ctx, &character.EquipItemInput{
 		CharacterID: req.CharacterId,
 		ItemID:      req.ItemId,
-		Slot:        slotName,
+		Slot:        slot,
 	})
 	if err != nil {
 		return nil, err
@@ -910,9 +879,9 @@ func (h *Handler) EquipItem(
 		return nil, err
 	}
 
-	// Convert character and add equipment slots
+	// Convert character - equipment slots are part of character data
 	protoChar := ConvertCharacterDataToProto(charResult.Character)
-	protoChar.EquipmentSlots = convertEquipmentSlotsToProto(charResult.EquipmentSlots)
+	protoChar.EquipmentSlots = convertEquipmentSlotsToProto(charResult.Character.EquipmentSlots)
 
 	// Build response
 	response := &dnd5ev1alpha1.EquipItemResponse{
@@ -943,13 +912,16 @@ func (h *Handler) UnequipItem(
 		return nil, errors.InvalidArgument("slot is required")
 	}
 
-	// Convert slot enum to storage key
-	slotName := convertEquipmentSlotToStorageKey(req.Slot)
+	// Convert slot enum to toolkit type
+	slot, err := convertEquipmentSlotToToolkit(req.Slot)
+	if err != nil {
+		return nil, err
+	}
 
 	// Unequip item via orchestrator
-	_, err := h.characterService.UnequipItem(ctx, &character.UnequipItemInput{
+	_, err = h.characterService.UnequipItem(ctx, &character.UnequipItemInput{
 		CharacterID: req.CharacterId,
-		Slot:        slotName,
+		Slot:        slot,
 	})
 	if err != nil {
 		return nil, err
