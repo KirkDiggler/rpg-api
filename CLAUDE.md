@@ -2,6 +2,19 @@
 
 **Note**: General development guidelines are in `/home/kirk/personal/CLAUDE.md`. This file contains rpg-api specific instructions.
 
+## Dependency Management
+
+### Proto Updates
+To get the latest compiled protos, pull from the `generated` branch:
+```bash
+GOPROXY=direct go get github.com/KirkDiggler/rpg-api-protos/gen/go@generated
+```
+
+### Toolkit Updates
+```bash
+GOPROXY=direct go get github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e@latest
+```
+
 ## Core Philosophy
 
 **rpg-api stores data. rpg-toolkit handles rules.**
