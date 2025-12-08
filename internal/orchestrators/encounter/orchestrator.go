@@ -9,9 +9,10 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/core"
 	"github.com/KirkDiggler/rpg-toolkit/dice"
 	"github.com/KirkDiggler/rpg-toolkit/events"
-	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/gamectx"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/abilities"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/armor"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/gamectx"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/combat"
 	dnd5eEvents "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/events"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/features"
@@ -957,7 +958,7 @@ func (o *Orchestrator) ActivateFeature(
 func (o *Orchestrator) getEquippedWeaponAndSlots(
 	ctx context.Context,
 	characterID string,
-) (weapons.Weapon, *characterrepo.EquipmentSlots) {
+) (weapons.Weapon, character.EquipmentSlots) {
 	// Default fallback weapon
 	fallbackWeapon, _ := weapons.GetByID(weapons.Greataxe)
 
@@ -969,20 +970,22 @@ func (o *Orchestrator) getEquippedWeaponAndSlots(
 		return fallbackWeapon, nil
 	}
 
+	slots := charResult.CharacterData.EquipmentSlots
+
 	// Check if mainhand has a weapon equipped
-	mainHandItemID := charResult.CharacterData.EquipmentSlots.Get(character.SlotMainHand)
+	mainHandItemID := slots.Get(character.SlotMainHand)
 	if mainHandItemID == "" {
 		// No mainhand weapon, use fallback
-		return fallbackWeapon
+		return fallbackWeapon, slots
 	}
 
 	// Try to get the equipped weapon by ID
 	weapon, err := weapons.GetByID(mainHandItemID)
 	if err != nil {
-		return fallbackWeapon, equipmentSlots.EquipmentSlots
+		return fallbackWeapon, slots
 	}
 
-	return weapon, equipmentSlots.EquipmentSlots
+	return weapon, slots
 }
 
 // buildGameContextFromEquipment creates a GameContext with the character's equipped weapons.
@@ -992,7 +995,7 @@ func (o *Orchestrator) getEquippedWeaponAndSlots(
 func (o *Orchestrator) buildGameContextFromEquipment(
 	characterID string,
 	mainHandWeapon *weapons.Weapon,
-	slots *characterrepo.EquipmentSlots,
+	slots character.EquipmentSlots,
 ) *gamectx.GameContext {
 	// Create character registry
 	registry := gamectx.NewBasicCharacterRegistry()
@@ -1002,7 +1005,7 @@ func (o *Orchestrator) buildGameContextFromEquipment(
 
 	if mainHandWeapon != nil {
 		equippedWeapons = append(equippedWeapons, &gamectx.EquippedWeapon{
-			ID:          string(mainHandWeapon.ID),
+			ID:          mainHandWeapon.ID,
 			Name:        mainHandWeapon.Name,
 			Slot:        gamectx.SlotMainHand,
 			IsShield:    false,
@@ -1012,28 +1015,32 @@ func (o *Orchestrator) buildGameContextFromEquipment(
 	}
 
 	// Add off-hand item from equipment slots if available
-	// Priority: shield takes precedence over off-hand weapon (can't hold both)
+	// In toolkit model, shields go in the off-hand slot
 	if slots != nil {
-		if slots.Shield != "" {
-			// Shield equipped - takes the off-hand slot
-			equippedWeapons = append(equippedWeapons, &gamectx.EquippedWeapon{
-				ID:       slots.Shield,
-				Name:     "Shield",
-				Slot:     gamectx.SlotOffHand,
-				IsShield: true,
-			})
-		} else if slots.OffHand != "" {
-			// No shield, check for off-hand weapon
-			offHandWeapon, weaponErr := weapons.GetByID(slots.OffHand)
-			if weaponErr == nil {
+		offHandItemID := slots.Get(character.SlotOffHand)
+		if offHandItemID != "" {
+			// Check if it's a shield (armor type) or a weapon
+			if offHandItemID == armor.Shield {
+				// Shield equipped
 				equippedWeapons = append(equippedWeapons, &gamectx.EquippedWeapon{
-					ID:          string(offHandWeapon.ID),
-					Name:        offHandWeapon.Name,
-					Slot:        gamectx.SlotOffHand,
-					IsShield:    false,
-					IsTwoHanded: offHandWeapon.HasProperty(weapons.PropertyTwoHanded),
-					IsMelee:     !offHandWeapon.IsRanged(),
+					ID:       offHandItemID,
+					Name:     "Shield",
+					Slot:     gamectx.SlotOffHand,
+					IsShield: true,
 				})
+			} else {
+				// Try to get as weapon
+				offHandWeapon, weaponErr := weapons.GetByID(offHandItemID)
+				if weaponErr == nil {
+					equippedWeapons = append(equippedWeapons, &gamectx.EquippedWeapon{
+						ID:          offHandWeapon.ID,
+						Name:        offHandWeapon.Name,
+						Slot:        gamectx.SlotOffHand,
+						IsShield:    false,
+						IsTwoHanded: offHandWeapon.HasProperty(weapons.PropertyTwoHanded),
+						IsMelee:     !offHandWeapon.IsRanged(),
+					})
+				}
 			}
 		}
 	}

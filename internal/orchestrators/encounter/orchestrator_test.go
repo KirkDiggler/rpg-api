@@ -11,6 +11,7 @@ import (
 	"go.uber.org/mock/gomock"
 
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/abilities"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/armor"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/gamectx"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/damage"
@@ -121,8 +122,7 @@ func (s *OrchestratorTestSuite) TestResolveAttack_Success() {
 
 	// Attack could hit or miss - both are valid
 	if output.Result.Hit {
-		s.Assert().Greater(output.Result.Total
-                       , 0)
+		s.Assert().Greater(output.Result.TotalDamage, 0)
 		s.Assert().NotEmpty(output.Result.DamageRolls)
 		s.Assert().Equal(damage.Slashing, output.Result.DamageType)
 
@@ -1858,8 +1858,8 @@ func (s *OrchestratorTestSuite) TestResolveAttack_NilEquipmentSlots_FallsBackToG
 // TestBuildGameContext_MainHandOnly tests GameContext with only a main-hand weapon
 func (s *OrchestratorTestSuite) TestBuildGameContext_MainHandOnly() {
 	longsword, _ := weapons.GetByID(weapons.Longsword)
-	slots := &characterrepo.EquipmentSlots{
-		MainHand: string(weapons.Longsword),
+	slots := character.EquipmentSlots{
+		character.SlotMainHand: weapons.Longsword,
 	}
 
 	gameCtx := s.orchestrator.buildGameContextFromEquipment("char-1", &longsword, slots)
@@ -1878,9 +1878,9 @@ func (s *OrchestratorTestSuite) TestBuildGameContext_MainHandOnly() {
 // TestBuildGameContext_MainHandAndOffHandWeapon tests dual-wielding scenario
 func (s *OrchestratorTestSuite) TestBuildGameContext_MainHandAndOffHandWeapon() {
 	longsword, _ := weapons.GetByID(weapons.Longsword)
-	slots := &characterrepo.EquipmentSlots{
-		MainHand: string(weapons.Longsword),
-		OffHand:  string(weapons.Dagger),
+	slots := character.EquipmentSlots{
+		character.SlotMainHand: weapons.Longsword,
+		character.SlotOffHand:  weapons.Dagger,
 	}
 
 	gameCtx := s.orchestrator.buildGameContextFromEquipment("char-1", &longsword, slots)
@@ -1900,9 +1900,10 @@ func (s *OrchestratorTestSuite) TestBuildGameContext_MainHandAndOffHandWeapon() 
 // TestBuildGameContext_MainHandAndShield tests sword-and-board scenario
 func (s *OrchestratorTestSuite) TestBuildGameContext_MainHandAndShield() {
 	longsword, _ := weapons.GetByID(weapons.Longsword)
-	slots := &characterrepo.EquipmentSlots{
-		MainHand: string(weapons.Longsword),
-		Shield:   "shield-1",
+	// In toolkit model, shields go in the off-hand slot with armor.Shield as ID
+	slots := character.EquipmentSlots{
+		character.SlotMainHand: weapons.Longsword,
+		character.SlotOffHand:  armor.Shield,
 	}
 
 	gameCtx := s.orchestrator.buildGameContextFromEquipment("char-1", &longsword, slots)
@@ -1915,33 +1916,14 @@ func (s *OrchestratorTestSuite) TestBuildGameContext_MainHandAndShield() {
 	s.Require().NotNil(charWeapons)
 	s.Assert().NotNil(charWeapons.MainHand())
 	s.Assert().Equal("Longsword", charWeapons.MainHand().Name)
+	// Shield is in off-hand slot but OffHand() returns nil for shields (by design)
 	s.Assert().Nil(charWeapons.OffHand(), "Shield should not count as off-hand weapon")
-}
-
-// TestBuildGameContext_ShieldTakesPrecedenceOverOffHand tests that shield wins when both are set
-func (s *OrchestratorTestSuite) TestBuildGameContext_ShieldTakesPrecedenceOverOffHand() {
-	longsword, _ := weapons.GetByID(weapons.Longsword)
-	slots := &characterrepo.EquipmentSlots{
-		MainHand: string(weapons.Longsword),
-		OffHand:  string(weapons.Dagger), // Both set - shield should win
-		Shield:   "shield-1",
-	}
-
-	gameCtx := s.orchestrator.buildGameContextFromEquipment("char-1", &longsword, slots)
-
-	s.Require().NotNil(gameCtx)
-	registry, ok := gamectx.Characters(gamectx.WithGameContext(context.Background(), gameCtx))
-	s.Require().True(ok)
-
-	charWeapons := registry.GetCharacterWeapons("char-1")
-	s.Require().NotNil(charWeapons)
-	s.Assert().Nil(charWeapons.OffHand(), "Shield should take precedence, no off-hand weapon")
 }
 
 // TestBuildGameContext_NilMainHandWeapon tests handling of nil main hand weapon
 func (s *OrchestratorTestSuite) TestBuildGameContext_NilMainHandWeapon() {
-	slots := &characterrepo.EquipmentSlots{
-		Shield: "shield-1",
+	slots := character.EquipmentSlots{
+		character.SlotOffHand: armor.Shield,
 	}
 
 	gameCtx := s.orchestrator.buildGameContextFromEquipment("char-1", nil, slots)
