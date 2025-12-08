@@ -2,6 +2,9 @@ package encounter
 
 import (
 	"context"
+
+	"github.com/KirkDiggler/rpg-toolkit/core"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/damage"
 )
 
 //go:generate mockgen -destination=mock/mock_service.go -package=encountermock github.com/KirkDiggler/rpg-api/internal/orchestrators/encounter Service
@@ -55,10 +58,10 @@ type AttackResult struct {
 	IsNaturalOne    bool // Natural 1
 
 	// Damage details
-	DamageRolls []int  // Individual damage dice rolls
-	DamageBonus int    // Total damage bonus
-	TotalDamage int    // Final damage dealt
-	DamageType  string // Type of damage (slashing, piercing, etc.)
+	DamageRolls []int       // Individual damage dice rolls
+	DamageBonus int         // Total damage bonus
+	TotalDamage int         // Final damage dealt
+	DamageType  damage.Type // Type of damage (slashing, piercing, etc.)
 
 	// Detailed breakdown
 	Breakdown *DamageBreakdown // Detailed damage breakdown (nil if attack missed)
@@ -73,12 +76,13 @@ type DamageBreakdown struct {
 
 // DamageComponent represents damage from one source
 type DamageComponent struct {
-	Source            string        // Type of damage source ("weapon", "ability", "rage", etc.)
+	Source            string        // Type of damage source ("weapon", "ability", "feature", etc.)
+	SourceRef         *core.Ref     // Type-safe reference identifying the specific source
 	OriginalDiceRolls []int         // Dice values as first rolled
 	FinalDiceRolls    []int         // Dice values after all rerolls
 	Rerolls           []RerollEvent // History of rerolls
 	FlatBonus         int           // Flat modifier (0 if none)
-	DamageType        string        // "slashing", "fire", "radiant", etc.
+	DamageType        damage.Type   // Type of damage (slashing, fire, radiant, etc.)
 	IsCritical        bool          // Was this component doubled for crit?
 }
 

@@ -14,6 +14,7 @@ import (
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/encounter"
 	encountermock "github.com/KirkDiggler/rpg-api/internal/orchestrators/encounter/mock"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/refs"
 	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
 )
 
@@ -84,6 +85,7 @@ func (s *HandlerTestSuite) TestAttack_Success() {
 			Components: []encounter.DamageComponent{
 				{
 					Source:            "weapon",
+					SourceRef:         refs.Weapons.Longsword(),
 					OriginalDiceRolls: []int{6},
 					FinalDiceRolls:    []int{6},
 					Rerolls:           []encounter.RerollEvent{},
@@ -93,6 +95,7 @@ func (s *HandlerTestSuite) TestAttack_Success() {
 				},
 				{
 					Source:            "ability",
+					SourceRef:         refs.Abilities.Strength(),
 					OriginalDiceRolls: []int{},
 					FinalDiceRolls:    []int{},
 					Rerolls:           []encounter.RerollEvent{},
@@ -146,7 +149,8 @@ func (s *HandlerTestSuite) TestAttack_Success() {
 
 	// Verify weapon component
 	weaponComp := resp.Result.DamageBreakdown.Components[0]
-	s.Assert().Equal("weapon", weaponComp.Source)
+	s.Require().NotNil(weaponComp.SourceRef, "SourceRef should be present for weapon")
+	s.Assert().Equal(dnd5ev1alpha1.Weapon_WEAPON_LONGSWORD, weaponComp.SourceRef.GetWeapon())
 	s.Assert().Equal([]int32{6}, weaponComp.OriginalDiceRolls)
 	s.Assert().Equal([]int32{6}, weaponComp.FinalDiceRolls)
 	s.Assert().Empty(weaponComp.Rerolls)
@@ -156,7 +160,8 @@ func (s *HandlerTestSuite) TestAttack_Success() {
 
 	// Verify ability component
 	abilityComp := resp.Result.DamageBreakdown.Components[1]
-	s.Assert().Equal("ability", abilityComp.Source)
+	s.Require().NotNil(abilityComp.SourceRef, "SourceRef should be present for ability")
+	s.Assert().Equal(dnd5ev1alpha1.Ability_ABILITY_STRENGTH, abilityComp.SourceRef.GetAbility())
 	s.Assert().Empty(abilityComp.OriginalDiceRolls)
 	s.Assert().Empty(abilityComp.FinalDiceRolls)
 	s.Assert().Empty(abilityComp.Rerolls)
@@ -181,6 +186,7 @@ func (s *HandlerTestSuite) TestAttack_CriticalHit() {
 			Components: []encounter.DamageComponent{
 				{
 					Source:            "weapon",
+					SourceRef:         refs.Weapons.Rapier(),
 					OriginalDiceRolls: []int{1, 8}, // Rolled 1 and 8 on 2d12 (crit)
 					FinalDiceRolls:    []int{7, 8}, // Rerolled the 1 to 7
 					Rerolls: []encounter.RerollEvent{
@@ -197,6 +203,7 @@ func (s *HandlerTestSuite) TestAttack_CriticalHit() {
 				},
 				{
 					Source:            "ability",
+					SourceRef:         refs.Abilities.Strength(),
 					OriginalDiceRolls: []int{},
 					FinalDiceRolls:    []int{},
 					Rerolls:           []encounter.RerollEvent{},
@@ -240,7 +247,8 @@ func (s *HandlerTestSuite) TestAttack_CriticalHit() {
 
 	// Verify weapon component with reroll
 	weaponComp := resp.Result.DamageBreakdown.Components[0]
-	s.Assert().Equal("weapon", weaponComp.Source)
+	s.Require().NotNil(weaponComp.SourceRef, "SourceRef should be present for weapon")
+	s.Assert().Equal(dnd5ev1alpha1.Weapon_WEAPON_RAPIER, weaponComp.SourceRef.GetWeapon())
 	s.Assert().Equal([]int32{1, 8}, weaponComp.OriginalDiceRolls)
 	s.Assert().Equal([]int32{7, 8}, weaponComp.FinalDiceRolls)
 	s.Assert().True(weaponComp.IsCritical)

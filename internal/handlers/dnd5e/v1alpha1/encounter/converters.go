@@ -4,6 +4,9 @@ import (
 	apiv1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/api/v1alpha1"
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/encounter"
+	"github.com/KirkDiggler/rpg-toolkit/core"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/abilities"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/refs"
 	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
 )
 
@@ -21,7 +24,7 @@ func convertAttackResultToProto(result *encounter.AttackResult) *dnd5ev1alpha1.A
 		AttackTotal:     int32(result.TotalAttack),
 		TargetAc:        int32(result.TargetAC),
 		Damage:          int32(result.TotalDamage),
-		DamageType:      result.DamageType,
+		DamageType:      string(result.DamageType), // damage.Type to proto string
 		Critical:        result.Critical,
 		DamageBreakdown: convertDamageBreakdownToProto(result.Breakdown),
 	}
@@ -75,11 +78,12 @@ func convertDamageComponentToProto(comp *encounter.DamageComponent) *dnd5ev1alph
 
 	return &dnd5ev1alpha1.DamageComponent{
 		Source:            comp.Source,
+		SourceRef:         convertCoreRefToProtoSourceRef(comp.SourceRef),
 		OriginalDiceRolls: originalRolls,
 		FinalDiceRolls:    finalRolls,
 		Rerolls:           rerolls,
 		FlatBonus:         int32(comp.FlatBonus),
-		DamageType:        comp.DamageType,
+		DamageType:        string(comp.DamageType), // damage.Type to proto string
 		IsCritical:        comp.IsCritical,
 	}
 }
@@ -245,5 +249,332 @@ func convertTurnChangeToProto(event *encounter.TurnChangeEvent) *dnd5ev1alpha1.T
 		NextEntityId:     event.NextEntityID,
 		Round:            int32(event.Round),
 		NewRound:         event.NewRound,
+	}
+}
+
+// convertCoreRefToProtoSourceRef converts a toolkit core.Ref to proto SourceRef.
+// Uses pointer comparison with singleton refs for type-safe, IDE-discoverable conversions.
+func convertCoreRefToProtoSourceRef(ref *core.Ref) *dnd5ev1alpha1.SourceRef {
+	if ref == nil {
+		return nil
+	}
+
+	switch ref.Type {
+	case refs.TypeAbilities:
+		return &dnd5ev1alpha1.SourceRef{
+			Source: &dnd5ev1alpha1.SourceRef_Ability{
+				Ability: abilityRefToProto(ref),
+			},
+		}
+	case refs.TypeWeapons:
+		return &dnd5ev1alpha1.SourceRef{
+			Source: &dnd5ev1alpha1.SourceRef_Weapon{
+				Weapon: weaponRefToProto(ref),
+			},
+		}
+	case refs.TypeConditions:
+		return &dnd5ev1alpha1.SourceRef{
+			Source: &dnd5ev1alpha1.SourceRef_Condition{
+				Condition: conditionRefToProto(ref),
+			},
+		}
+	case refs.TypeFeatures:
+		return &dnd5ev1alpha1.SourceRef{
+			Source: &dnd5ev1alpha1.SourceRef_Feature{
+				Feature: featureRefToProto(ref),
+			},
+		}
+	case refs.TypeFightingStyles:
+		// Fighting styles use ConditionId in the proto (they're condition-based modifiers)
+		return &dnd5ev1alpha1.SourceRef{
+			Source: &dnd5ev1alpha1.SourceRef_Condition{
+				Condition: fightingStyleRefToProto(ref),
+			},
+		}
+	default:
+		// Unknown type - return nil to indicate no mapping available
+		return nil
+	}
+}
+
+// abilityRefToProto converts toolkit ability ref to proto Ability enum using pointer comparison.
+// Falls back to string comparison for unknown refs (e.g., homebrew content).
+func abilityRefToProto(ref *core.Ref) dnd5ev1alpha1.Ability {
+	// Fast path: pointer comparison with singleton refs
+	switch ref {
+	case refs.Abilities.Strength():
+		return dnd5ev1alpha1.Ability_ABILITY_STRENGTH
+	case refs.Abilities.Dexterity():
+		return dnd5ev1alpha1.Ability_ABILITY_DEXTERITY
+	case refs.Abilities.Constitution():
+		return dnd5ev1alpha1.Ability_ABILITY_CONSTITUTION
+	case refs.Abilities.Intelligence():
+		return dnd5ev1alpha1.Ability_ABILITY_INTELLIGENCE
+	case refs.Abilities.Wisdom():
+		return dnd5ev1alpha1.Ability_ABILITY_WISDOM
+	case refs.Abilities.Charisma():
+		return dnd5ev1alpha1.Ability_ABILITY_CHARISMA
+	}
+
+	// Slow path: string comparison for unknown refs
+	switch abilities.Ability(ref.ID) {
+	case abilities.STR:
+		return dnd5ev1alpha1.Ability_ABILITY_STRENGTH
+	case abilities.DEX:
+		return dnd5ev1alpha1.Ability_ABILITY_DEXTERITY
+	case abilities.CON:
+		return dnd5ev1alpha1.Ability_ABILITY_CONSTITUTION
+	case abilities.INT:
+		return dnd5ev1alpha1.Ability_ABILITY_INTELLIGENCE
+	case abilities.WIS:
+		return dnd5ev1alpha1.Ability_ABILITY_WISDOM
+	case abilities.CHA:
+		return dnd5ev1alpha1.Ability_ABILITY_CHARISMA
+	default:
+		return dnd5ev1alpha1.Ability_ABILITY_UNSPECIFIED
+	}
+}
+
+// weaponRefToProto converts toolkit weapon ref to proto Weapon enum using pointer comparison.
+// Falls back to string comparison for unknown refs (e.g., homebrew content).
+//
+//nolint:gocyclo // Exhaustive weapon mapping requires many cases
+func weaponRefToProto(ref *core.Ref) dnd5ev1alpha1.Weapon {
+	// Fast path: pointer comparison with singleton refs
+	switch ref {
+	// Simple Melee Weapons
+	case refs.Weapons.Club():
+		return dnd5ev1alpha1.Weapon_WEAPON_CLUB
+	case refs.Weapons.Dagger():
+		return dnd5ev1alpha1.Weapon_WEAPON_DAGGER
+	case refs.Weapons.Greatclub():
+		return dnd5ev1alpha1.Weapon_WEAPON_GREATCLUB
+	case refs.Weapons.Handaxe():
+		return dnd5ev1alpha1.Weapon_WEAPON_HANDAXE
+	case refs.Weapons.Javelin():
+		return dnd5ev1alpha1.Weapon_WEAPON_JAVELIN
+	case refs.Weapons.LightHammer():
+		return dnd5ev1alpha1.Weapon_WEAPON_LIGHT_HAMMER
+	case refs.Weapons.Mace():
+		return dnd5ev1alpha1.Weapon_WEAPON_MACE
+	case refs.Weapons.Quarterstaff():
+		return dnd5ev1alpha1.Weapon_WEAPON_QUARTERSTAFF
+	case refs.Weapons.Sickle():
+		return dnd5ev1alpha1.Weapon_WEAPON_SICKLE
+	case refs.Weapons.Spear():
+		return dnd5ev1alpha1.Weapon_WEAPON_SPEAR
+	// Simple Ranged Weapons
+	case refs.Weapons.LightCrossbow():
+		return dnd5ev1alpha1.Weapon_WEAPON_LIGHT_CROSSBOW
+	case refs.Weapons.Dart():
+		return dnd5ev1alpha1.Weapon_WEAPON_DART
+	case refs.Weapons.Shortbow():
+		return dnd5ev1alpha1.Weapon_WEAPON_SHORTBOW
+	case refs.Weapons.Sling():
+		return dnd5ev1alpha1.Weapon_WEAPON_SLING
+	// Martial Melee Weapons
+	case refs.Weapons.Battleaxe():
+		return dnd5ev1alpha1.Weapon_WEAPON_BATTLEAXE
+	case refs.Weapons.Flail():
+		return dnd5ev1alpha1.Weapon_WEAPON_FLAIL
+	case refs.Weapons.Glaive():
+		return dnd5ev1alpha1.Weapon_WEAPON_GLAIVE
+	case refs.Weapons.Greataxe():
+		return dnd5ev1alpha1.Weapon_WEAPON_GREATAXE
+	case refs.Weapons.Greatsword():
+		return dnd5ev1alpha1.Weapon_WEAPON_GREATSWORD
+	case refs.Weapons.Halberd():
+		return dnd5ev1alpha1.Weapon_WEAPON_HALBERD
+	case refs.Weapons.Lance():
+		return dnd5ev1alpha1.Weapon_WEAPON_LANCE
+	case refs.Weapons.Longsword():
+		return dnd5ev1alpha1.Weapon_WEAPON_LONGSWORD
+	case refs.Weapons.Maul():
+		return dnd5ev1alpha1.Weapon_WEAPON_MAUL
+	case refs.Weapons.Morningstar():
+		return dnd5ev1alpha1.Weapon_WEAPON_MORNINGSTAR
+	case refs.Weapons.Pike():
+		return dnd5ev1alpha1.Weapon_WEAPON_PIKE
+	case refs.Weapons.Rapier():
+		return dnd5ev1alpha1.Weapon_WEAPON_RAPIER
+	case refs.Weapons.Scimitar():
+		return dnd5ev1alpha1.Weapon_WEAPON_SCIMITAR
+	case refs.Weapons.Shortsword():
+		return dnd5ev1alpha1.Weapon_WEAPON_SHORTSWORD
+	case refs.Weapons.Trident():
+		return dnd5ev1alpha1.Weapon_WEAPON_TRIDENT
+	case refs.Weapons.WarPick():
+		return dnd5ev1alpha1.Weapon_WEAPON_WAR_PICK
+	case refs.Weapons.Warhammer():
+		return dnd5ev1alpha1.Weapon_WEAPON_WARHAMMER
+	case refs.Weapons.Whip():
+		return dnd5ev1alpha1.Weapon_WEAPON_WHIP
+	// Martial Ranged Weapons
+	case refs.Weapons.Blowgun():
+		return dnd5ev1alpha1.Weapon_WEAPON_BLOWGUN
+	case refs.Weapons.HandCrossbow():
+		return dnd5ev1alpha1.Weapon_WEAPON_HAND_CROSSBOW
+	case refs.Weapons.HeavyCrossbow():
+		return dnd5ev1alpha1.Weapon_WEAPON_HEAVY_CROSSBOW
+	case refs.Weapons.Longbow():
+		return dnd5ev1alpha1.Weapon_WEAPON_LONGBOW
+	case refs.Weapons.Net():
+		return dnd5ev1alpha1.Weapon_WEAPON_NET
+	}
+
+	// Slow path: string comparison for unknown refs
+	switch ref.ID {
+	case "club":
+		return dnd5ev1alpha1.Weapon_WEAPON_CLUB
+	case "dagger":
+		return dnd5ev1alpha1.Weapon_WEAPON_DAGGER
+	case "greatclub":
+		return dnd5ev1alpha1.Weapon_WEAPON_GREATCLUB
+	case "handaxe":
+		return dnd5ev1alpha1.Weapon_WEAPON_HANDAXE
+	case "javelin":
+		return dnd5ev1alpha1.Weapon_WEAPON_JAVELIN
+	case "light-hammer":
+		return dnd5ev1alpha1.Weapon_WEAPON_LIGHT_HAMMER
+	case "mace":
+		return dnd5ev1alpha1.Weapon_WEAPON_MACE
+	case "quarterstaff":
+		return dnd5ev1alpha1.Weapon_WEAPON_QUARTERSTAFF
+	case "sickle":
+		return dnd5ev1alpha1.Weapon_WEAPON_SICKLE
+	case "spear":
+		return dnd5ev1alpha1.Weapon_WEAPON_SPEAR
+	case "light-crossbow":
+		return dnd5ev1alpha1.Weapon_WEAPON_LIGHT_CROSSBOW
+	case "dart":
+		return dnd5ev1alpha1.Weapon_WEAPON_DART
+	case "shortbow":
+		return dnd5ev1alpha1.Weapon_WEAPON_SHORTBOW
+	case "sling":
+		return dnd5ev1alpha1.Weapon_WEAPON_SLING
+	case "battleaxe":
+		return dnd5ev1alpha1.Weapon_WEAPON_BATTLEAXE
+	case "flail":
+		return dnd5ev1alpha1.Weapon_WEAPON_FLAIL
+	case "glaive":
+		return dnd5ev1alpha1.Weapon_WEAPON_GLAIVE
+	case "greataxe":
+		return dnd5ev1alpha1.Weapon_WEAPON_GREATAXE
+	case "greatsword":
+		return dnd5ev1alpha1.Weapon_WEAPON_GREATSWORD
+	case "halberd":
+		return dnd5ev1alpha1.Weapon_WEAPON_HALBERD
+	case "lance":
+		return dnd5ev1alpha1.Weapon_WEAPON_LANCE
+	case "longsword":
+		return dnd5ev1alpha1.Weapon_WEAPON_LONGSWORD
+	case "maul":
+		return dnd5ev1alpha1.Weapon_WEAPON_MAUL
+	case "morningstar":
+		return dnd5ev1alpha1.Weapon_WEAPON_MORNINGSTAR
+	case "pike":
+		return dnd5ev1alpha1.Weapon_WEAPON_PIKE
+	case "rapier":
+		return dnd5ev1alpha1.Weapon_WEAPON_RAPIER
+	case "scimitar":
+		return dnd5ev1alpha1.Weapon_WEAPON_SCIMITAR
+	case "shortsword":
+		return dnd5ev1alpha1.Weapon_WEAPON_SHORTSWORD
+	case "trident":
+		return dnd5ev1alpha1.Weapon_WEAPON_TRIDENT
+	case "war-pick":
+		return dnd5ev1alpha1.Weapon_WEAPON_WAR_PICK
+	case "warhammer":
+		return dnd5ev1alpha1.Weapon_WEAPON_WARHAMMER
+	case "whip":
+		return dnd5ev1alpha1.Weapon_WEAPON_WHIP
+	case "blowgun":
+		return dnd5ev1alpha1.Weapon_WEAPON_BLOWGUN
+	case "hand-crossbow":
+		return dnd5ev1alpha1.Weapon_WEAPON_HAND_CROSSBOW
+	case "heavy-crossbow":
+		return dnd5ev1alpha1.Weapon_WEAPON_HEAVY_CROSSBOW
+	case "longbow":
+		return dnd5ev1alpha1.Weapon_WEAPON_LONGBOW
+	case "net":
+		return dnd5ev1alpha1.Weapon_WEAPON_NET
+	default:
+		return dnd5ev1alpha1.Weapon_WEAPON_UNSPECIFIED
+	}
+}
+
+// conditionRefToProto converts toolkit condition ref to proto ConditionId enum using pointer comparison.
+// Falls back to string comparison for unknown refs.
+func conditionRefToProto(ref *core.Ref) dnd5ev1alpha1.ConditionId {
+	// Fast path: pointer comparison with singleton refs
+	switch ref {
+	case refs.Conditions.Raging():
+		return dnd5ev1alpha1.ConditionId_CONDITION_ID_RAGING
+	case refs.Conditions.BrutalCritical():
+		return dnd5ev1alpha1.ConditionId_CONDITION_ID_BRUTAL_CRITICAL
+	}
+
+	// Slow path: string comparison for unknown refs
+	switch ref.ID {
+	case "raging":
+		return dnd5ev1alpha1.ConditionId_CONDITION_ID_RAGING
+	case "brutal_critical":
+		return dnd5ev1alpha1.ConditionId_CONDITION_ID_BRUTAL_CRITICAL
+	case "sneak_attack":
+		return dnd5ev1alpha1.ConditionId_CONDITION_ID_SNEAK_ATTACK
+	case "divine_smite":
+		return dnd5ev1alpha1.ConditionId_CONDITION_ID_DIVINE_SMITE
+	default:
+		return dnd5ev1alpha1.ConditionId_CONDITION_ID_UNSPECIFIED
+	}
+}
+
+// featureRefToProto converts toolkit feature ref to proto FeatureId enum using pointer comparison.
+// Falls back to string comparison for unknown refs.
+// Note: Not all toolkit features have proto enum values yet (e.g., Rage, SecondWind).
+func featureRefToProto(ref *core.Ref) dnd5ev1alpha1.FeatureId {
+	// Fast path: pointer comparison with singleton refs
+	// (Currently no singleton features have corresponding proto enums)
+
+	// Slow path: string comparison for unknown refs
+	switch ref.ID {
+	case "breath_weapon":
+		return dnd5ev1alpha1.FeatureId_FEATURE_ID_BREATH_WEAPON
+	case "hellish_rebuke":
+		return dnd5ev1alpha1.FeatureId_FEATURE_ID_HELLISH_REBUKE
+	case "radiance_of_dawn":
+		return dnd5ev1alpha1.FeatureId_FEATURE_ID_RADIANCE_OF_DAWN
+	case "wrath_of_the_storm":
+		return dnd5ev1alpha1.FeatureId_FEATURE_ID_WRATH_OF_THE_STORM
+	case "destructive_wrath":
+		return dnd5ev1alpha1.FeatureId_FEATURE_ID_DESTRUCTIVE_WRATH
+	case "deflect_missiles":
+		return dnd5ev1alpha1.FeatureId_FEATURE_ID_DEFLECT_MISSILES
+	case "starry_form_archer":
+		return dnd5ev1alpha1.FeatureId_FEATURE_ID_STARRY_FORM_ARCHER
+	default:
+		return dnd5ev1alpha1.FeatureId_FEATURE_ID_UNSPECIFIED
+	}
+}
+
+// fightingStyleRefToProto converts toolkit fighting style ref to proto ConditionId enum using pointer comparison.
+// Falls back to string comparison for unknown refs.
+func fightingStyleRefToProto(ref *core.Ref) dnd5ev1alpha1.ConditionId {
+	// Fast path: pointer comparison with singleton refs
+	switch ref {
+	case refs.FightingStyles.Dueling():
+		return dnd5ev1alpha1.ConditionId_CONDITION_ID_FIGHTING_STYLE_DUELING
+	case refs.FightingStyles.TwoWeaponFighting():
+		return dnd5ev1alpha1.ConditionId_CONDITION_ID_FIGHTING_STYLE_TWO_WEAPON_FIGHTING
+	}
+
+	// Slow path: string comparison for unknown refs
+	switch ref.ID {
+	case "dueling":
+		return dnd5ev1alpha1.ConditionId_CONDITION_ID_FIGHTING_STYLE_DUELING
+	case "two_weapon_fighting":
+		return dnd5ev1alpha1.ConditionId_CONDITION_ID_FIGHTING_STYLE_TWO_WEAPON_FIGHTING
+	default:
+		return dnd5ev1alpha1.ConditionId_CONDITION_ID_UNSPECIFIED
 	}
 }
