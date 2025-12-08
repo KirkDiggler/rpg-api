@@ -11,10 +11,13 @@ import (
 	"go.uber.org/mock/gomock"
 
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/abilities"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/armor"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/gamectx"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/damage"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/initiative"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/weapons"
 	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
 
 	"github.com/KirkDiggler/rpg-api/internal/errors"
@@ -1850,4 +1853,102 @@ func (s *OrchestratorTestSuite) TestResolveAttack_NilEquipmentSlots_FallsBackToG
 	s.Require().NoError(err)
 	s.Require().NotNil(output)
 	s.Assert().NotNil(output.Result)
+}
+
+// TestBuildGameContext_MainHandOnly tests GameContext with only a main-hand weapon
+func (s *OrchestratorTestSuite) TestBuildGameContext_MainHandOnly() {
+	longsword, _ := weapons.GetByID(weapons.Longsword)
+	slots := character.EquipmentSlots{
+		character.SlotMainHand: weapons.Longsword,
+	}
+
+	gameCtx := s.orchestrator.buildGameContextFromEquipment("char-1", &longsword, slots)
+
+	s.Require().NotNil(gameCtx)
+	registry, ok := gamectx.Characters(gamectx.WithGameContext(context.Background(), gameCtx))
+	s.Require().True(ok)
+
+	charWeapons := registry.GetCharacterWeapons("char-1")
+	s.Require().NotNil(charWeapons)
+	s.Assert().NotNil(charWeapons.MainHand())
+	s.Assert().Equal("Longsword", charWeapons.MainHand().Name)
+	s.Assert().Nil(charWeapons.OffHand(), "Should have no off-hand weapon")
+}
+
+// TestBuildGameContext_MainHandAndOffHandWeapon tests dual-wielding scenario
+func (s *OrchestratorTestSuite) TestBuildGameContext_MainHandAndOffHandWeapon() {
+	longsword, _ := weapons.GetByID(weapons.Longsword)
+	slots := character.EquipmentSlots{
+		character.SlotMainHand: weapons.Longsword,
+		character.SlotOffHand:  weapons.Dagger,
+	}
+
+	gameCtx := s.orchestrator.buildGameContextFromEquipment("char-1", &longsword, slots)
+
+	s.Require().NotNil(gameCtx)
+	registry, ok := gamectx.Characters(gamectx.WithGameContext(context.Background(), gameCtx))
+	s.Require().True(ok)
+
+	charWeapons := registry.GetCharacterWeapons("char-1")
+	s.Require().NotNil(charWeapons)
+	s.Assert().NotNil(charWeapons.MainHand())
+	s.Assert().Equal("Longsword", charWeapons.MainHand().Name)
+	s.Assert().NotNil(charWeapons.OffHand(), "Should have off-hand weapon")
+	s.Assert().Equal("Dagger", charWeapons.OffHand().Name)
+}
+
+// TestBuildGameContext_MainHandAndShield tests sword-and-board scenario
+func (s *OrchestratorTestSuite) TestBuildGameContext_MainHandAndShield() {
+	longsword, _ := weapons.GetByID(weapons.Longsword)
+	// In toolkit model, shields go in the off-hand slot with armor.Shield as ID
+	slots := character.EquipmentSlots{
+		character.SlotMainHand: weapons.Longsword,
+		character.SlotOffHand:  armor.Shield,
+	}
+
+	gameCtx := s.orchestrator.buildGameContextFromEquipment("char-1", &longsword, slots)
+
+	s.Require().NotNil(gameCtx)
+	registry, ok := gamectx.Characters(gamectx.WithGameContext(context.Background(), gameCtx))
+	s.Require().True(ok)
+
+	charWeapons := registry.GetCharacterWeapons("char-1")
+	s.Require().NotNil(charWeapons)
+	s.Assert().NotNil(charWeapons.MainHand())
+	s.Assert().Equal("Longsword", charWeapons.MainHand().Name)
+	// Shield is in off-hand slot but OffHand() returns nil for shields (by design)
+	s.Assert().Nil(charWeapons.OffHand(), "Shield should not count as off-hand weapon")
+}
+
+// TestBuildGameContext_NilMainHandWeapon tests handling of nil main hand weapon
+func (s *OrchestratorTestSuite) TestBuildGameContext_NilMainHandWeapon() {
+	slots := character.EquipmentSlots{
+		character.SlotOffHand: armor.Shield,
+	}
+
+	gameCtx := s.orchestrator.buildGameContextFromEquipment("char-1", nil, slots)
+
+	s.Require().NotNil(gameCtx)
+	registry, ok := gamectx.Characters(gamectx.WithGameContext(context.Background(), gameCtx))
+	s.Require().True(ok)
+
+	charWeapons := registry.GetCharacterWeapons("char-1")
+	s.Require().NotNil(charWeapons)
+	s.Assert().Nil(charWeapons.MainHand(), "Should have no main-hand weapon")
+}
+
+// TestBuildGameContext_NilSlots tests handling of nil equipment slots
+func (s *OrchestratorTestSuite) TestBuildGameContext_NilSlots() {
+	longsword, _ := weapons.GetByID(weapons.Longsword)
+
+	gameCtx := s.orchestrator.buildGameContextFromEquipment("char-1", &longsword, nil)
+
+	s.Require().NotNil(gameCtx)
+	registry, ok := gamectx.Characters(gamectx.WithGameContext(context.Background(), gameCtx))
+	s.Require().True(ok)
+
+	charWeapons := registry.GetCharacterWeapons("char-1")
+	s.Require().NotNil(charWeapons)
+	s.Assert().NotNil(charWeapons.MainHand(), "Should still have main-hand from weapon param")
+	s.Assert().Nil(charWeapons.OffHand(), "Should have no off-hand with nil slots")
 }
