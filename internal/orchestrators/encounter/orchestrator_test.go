@@ -12,6 +12,7 @@ import (
 
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/abilities"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/damage"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/initiative"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
 	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
@@ -130,7 +131,7 @@ func (s *OrchestratorTestSuite) TestResolveAttack_Success() {
 	if output.Result.Hit {
 		s.Assert().Greater(output.Result.TotalDamage, 0)
 		s.Assert().NotEmpty(output.Result.DamageRolls)
-		s.Assert().Equal("slashing", output.Result.DamageType)
+		s.Assert().Equal(damage.Slashing, output.Result.DamageType)
 
 		// Verify breakdown is populated on hit
 		s.Require().NotNil(output.Result.Breakdown, "Breakdown should be present on hit")
@@ -1782,7 +1783,7 @@ func (s *OrchestratorTestSuite) TestResolveAttack_UsesEquippedWeapon() {
 
 	// Longsword does slashing damage
 	if output.Result.Hit {
-		s.Assert().Equal("slashing", output.Result.DamageType)
+		s.Assert().Equal(damage.Slashing, output.Result.DamageType)
 	}
 }
 
@@ -1824,7 +1825,7 @@ func (s *OrchestratorTestSuite) TestResolveAttack_NoEquippedWeapon_FallsBackToGr
 
 	// Greataxe does slashing damage
 	if output.Result.Hit {
-		s.Assert().Equal("slashing", output.Result.DamageType)
+		s.Assert().Equal(damage.Slashing, output.Result.DamageType)
 	}
 }
 
