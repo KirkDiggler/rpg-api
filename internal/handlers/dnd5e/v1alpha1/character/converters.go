@@ -1236,38 +1236,36 @@ func ConvertCharacterDataToProto(data *toolkitchar.Data) *dnd5ev1alpha1.Characte
 	return char
 }
 
-// convertEquipmentSlotToStorageKey converts a proto EquipmentSlot enum to the storage key format
-func convertEquipmentSlotToStorageKey(slot dnd5ev1alpha1.EquipmentSlot) string {
+// convertEquipmentSlotToToolkit converts a proto EquipmentSlot enum to toolkit InventorySlot
+func convertEquipmentSlotToToolkit(slot dnd5ev1alpha1.EquipmentSlot) toolkitchar.InventorySlot {
 	switch slot {
 	case dnd5ev1alpha1.EquipmentSlot_EQUIPMENT_SLOT_MAIN_HAND:
-		return "main_hand"
+		return toolkitchar.SlotMainHand
 	case dnd5ev1alpha1.EquipmentSlot_EQUIPMENT_SLOT_OFF_HAND:
-		return "off_hand"
+		return toolkitchar.SlotOffHand
 	case dnd5ev1alpha1.EquipmentSlot_EQUIPMENT_SLOT_ARMOR:
-		return "armor"
+		return toolkitchar.SlotArmor
 	case dnd5ev1alpha1.EquipmentSlot_EQUIPMENT_SLOT_HELMET:
-		return "helmet"
+		return toolkitchar.SlotHelm
 	case dnd5ev1alpha1.EquipmentSlot_EQUIPMENT_SLOT_BOOTS:
-		return "boots"
-	case dnd5ev1alpha1.EquipmentSlot_EQUIPMENT_SLOT_GLOVES:
-		return "gloves"
+		return toolkitchar.SlotBoots
 	case dnd5ev1alpha1.EquipmentSlot_EQUIPMENT_SLOT_CLOAK:
-		return "cloak"
+		return toolkitchar.SlotCloak
 	case dnd5ev1alpha1.EquipmentSlot_EQUIPMENT_SLOT_AMULET:
-		return "amulet"
+		return toolkitchar.SlotAmulet
 	case dnd5ev1alpha1.EquipmentSlot_EQUIPMENT_SLOT_RING_1:
-		return "ring1"
+		return toolkitchar.SlotRingLeft
 	case dnd5ev1alpha1.EquipmentSlot_EQUIPMENT_SLOT_RING_2:
-		return "ring2"
+		return toolkitchar.SlotRingRight
 	case dnd5ev1alpha1.EquipmentSlot_EQUIPMENT_SLOT_BELT:
-		return "belt"
+		return toolkitchar.SlotBelt
 	default:
 		return ""
 	}
 }
 
-// convertEquipmentSlotsToProto converts a map of slot name to item ID into proto EquipmentSlots
-func convertEquipmentSlotsToProto(slots map[string]string) *dnd5ev1alpha1.EquipmentSlots {
+// convertEquipmentSlotsToProto converts toolkit EquipmentSlots to proto EquipmentSlots
+func convertEquipmentSlotsToProto(slots toolkitchar.EquipmentSlots) *dnd5ev1alpha1.EquipmentSlots {
 	if len(slots) == 0 {
 		return nil
 	}
@@ -1284,17 +1282,16 @@ func convertEquipmentSlotsToProto(slots map[string]string) *dnd5ev1alpha1.Equipm
 	}
 
 	return &dnd5ev1alpha1.EquipmentSlots{
-		MainHand: makeItem(slots["main_hand"]),
-		OffHand:  makeItem(slots["off_hand"]),
-		Armor:    makeItem(slots["armor"]),
-		Helmet:   makeItem(slots["helmet"]),
-		Boots:    makeItem(slots["boots"]),
-		Gloves:   makeItem(slots["gloves"]),
-		Cloak:    makeItem(slots["cloak"]),
-		Amulet:   makeItem(slots["amulet"]),
-		Ring_1:   makeItem(slots["ring1"]),
-		Ring_2:   makeItem(slots["ring2"]),
-		Belt:     makeItem(slots["belt"]),
+		MainHand: makeItem(slots.Get(toolkitchar.SlotMainHand)),
+		OffHand:  makeItem(slots.Get(toolkitchar.SlotOffHand)),
+		Armor:    makeItem(slots.Get(toolkitchar.SlotArmor)),
+		Helmet:   makeItem(slots.Get(toolkitchar.SlotHelm)),
+		Boots:    makeItem(slots.Get(toolkitchar.SlotBoots)),
+		Cloak:    makeItem(slots.Get(toolkitchar.SlotCloak)),
+		Amulet:   makeItem(slots.Get(toolkitchar.SlotAmulet)),
+		Ring_1:   makeItem(slots.Get(toolkitchar.SlotRingLeft)),
+		Ring_2:   makeItem(slots.Get(toolkitchar.SlotRingRight)),
+		Belt:     makeItem(slots.Get(toolkitchar.SlotBelt)),
 	}
 }
 

@@ -796,7 +796,7 @@ func (o *Orchestrator) GetCharacter(ctx context.Context, input *GetCharacterInpu
 		return nil, errors.InvalidArgument("character ID is required")
 	}
 
-	// Get character from repository (includes equipment slots)
+	// Get character from repository - equipment slots are part of character.Data
 	result, err := o.characterRepo.Get(ctx, characterrepo.GetInput{
 		ID: input.CharacterID,
 	})
@@ -804,114 +804,8 @@ func (o *Orchestrator) GetCharacter(ctx context.Context, input *GetCharacterInpu
 		return nil, fmt.Errorf("failed to get character: %w", err)
 	}
 
-	// Convert equipment slots to map
-	var equipmentSlots map[string]string
-	if result.EquipmentSlots != nil {
-		equipmentSlots = make(map[string]string)
-		if result.EquipmentSlots.MainHand != "" {
-			equipmentSlots["main_hand"] = result.EquipmentSlots.MainHand
-		}
-		if result.EquipmentSlots.OffHand != "" {
-			equipmentSlots["off_hand"] = result.EquipmentSlots.OffHand
-		}
-		if result.EquipmentSlots.Armor != "" {
-			equipmentSlots["armor"] = result.EquipmentSlots.Armor
-		}
-		if result.EquipmentSlots.Shield != "" {
-			equipmentSlots["shield"] = result.EquipmentSlots.Shield
-		}
-		if result.EquipmentSlots.Ring1 != "" {
-			equipmentSlots["ring1"] = result.EquipmentSlots.Ring1
-		}
-		if result.EquipmentSlots.Ring2 != "" {
-			equipmentSlots["ring2"] = result.EquipmentSlots.Ring2
-		}
-		if result.EquipmentSlots.Amulet != "" {
-			equipmentSlots["amulet"] = result.EquipmentSlots.Amulet
-		}
-		if result.EquipmentSlots.Boots != "" {
-			equipmentSlots["boots"] = result.EquipmentSlots.Boots
-		}
-		if result.EquipmentSlots.Gloves != "" {
-			equipmentSlots["gloves"] = result.EquipmentSlots.Gloves
-		}
-		if result.EquipmentSlots.Helmet != "" {
-			equipmentSlots["helmet"] = result.EquipmentSlots.Helmet
-		}
-		if result.EquipmentSlots.Belt != "" {
-			equipmentSlots["belt"] = result.EquipmentSlots.Belt
-		}
-		if result.EquipmentSlots.Cloak != "" {
-			equipmentSlots["cloak"] = result.EquipmentSlots.Cloak
-		}
-	}
-
 	return &GetCharacterOutput{
-		Character:      result.CharacterData,
-		EquipmentSlots: equipmentSlots,
-	}, nil
-}
-
-// GetEquipmentSlots retrieves equipment slots for a character
-func (o *Orchestrator) GetEquipmentSlots(ctx context.Context, input *GetEquipmentSlotsInput) (*GetEquipmentSlotsOutput, error) {
-	if input == nil {
-		return nil, errors.InvalidArgument("input is required")
-	}
-	if input.CharacterID == "" {
-		return nil, errors.InvalidArgument("character ID is required")
-	}
-
-	// Get equipment slots from repository
-	result, err := o.characterRepo.GetEquipmentSlots(ctx, characterrepo.GetEquipmentSlotsInput{
-		CharacterID: input.CharacterID,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to get equipment slots: %w", err)
-	}
-
-	// Convert to map format
-	slots := make(map[string]string)
-	if result.EquipmentSlots != nil {
-		if result.EquipmentSlots.MainHand != "" {
-			slots["main_hand"] = result.EquipmentSlots.MainHand
-		}
-		if result.EquipmentSlots.OffHand != "" {
-			slots["off_hand"] = result.EquipmentSlots.OffHand
-		}
-		if result.EquipmentSlots.Armor != "" {
-			slots["armor"] = result.EquipmentSlots.Armor
-		}
-		if result.EquipmentSlots.Shield != "" {
-			slots["shield"] = result.EquipmentSlots.Shield
-		}
-		if result.EquipmentSlots.Ring1 != "" {
-			slots["ring1"] = result.EquipmentSlots.Ring1
-		}
-		if result.EquipmentSlots.Ring2 != "" {
-			slots["ring2"] = result.EquipmentSlots.Ring2
-		}
-		if result.EquipmentSlots.Amulet != "" {
-			slots["amulet"] = result.EquipmentSlots.Amulet
-		}
-		if result.EquipmentSlots.Boots != "" {
-			slots["boots"] = result.EquipmentSlots.Boots
-		}
-		if result.EquipmentSlots.Gloves != "" {
-			slots["gloves"] = result.EquipmentSlots.Gloves
-		}
-		if result.EquipmentSlots.Helmet != "" {
-			slots["helmet"] = result.EquipmentSlots.Helmet
-		}
-		if result.EquipmentSlots.Belt != "" {
-			slots["belt"] = result.EquipmentSlots.Belt
-		}
-		if result.EquipmentSlots.Cloak != "" {
-			slots["cloak"] = result.EquipmentSlots.Cloak
-		}
-	}
-
-	return &GetEquipmentSlotsOutput{
-		Slots: slots,
+		Character: result.CharacterData,
 	}, nil
 }
 
@@ -930,21 +824,37 @@ func (o *Orchestrator) EquipItem(ctx context.Context, input *EquipItemInput) (*E
 		return nil, errors.InvalidArgument("slot is required")
 	}
 
-	// TODO: Validate that the item exists in character's inventory
-	// TODO: Validate that the item can be equipped to this slot
-
-	// Set equipment slot
-	result, err := o.characterRepo.SetEquipmentSlot(ctx, characterrepo.SetEquipmentSlotInput{
-		CharacterID: input.CharacterID,
-		Slot:        input.Slot,
-		ItemID:      input.ItemID,
+	// Get character data
+	result, err := o.characterRepo.Get(ctx, characterrepo.GetInput{
+		ID: input.CharacterID,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to equip item: %w", err)
+		return nil, fmt.Errorf("failed to get character: %w", err)
+	}
+
+	charData := result.CharacterData
+
+	// Initialize equipment slots if nil
+	if charData.EquipmentSlots == nil {
+		charData.EquipmentSlots = make(character.EquipmentSlots)
+	}
+
+	// Get previous item ID for response
+	previousItemID := charData.EquipmentSlots.Get(input.Slot)
+
+	// Set the new item
+	charData.EquipmentSlots.Set(input.Slot, input.ItemID)
+
+	// Update character
+	_, err = o.characterRepo.Update(ctx, characterrepo.UpdateInput{
+		CharacterData: charData,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to update character: %w", err)
 	}
 
 	return &EquipItemOutput{
-		PreviousItemID: result.PreviousItemID,
+		PreviousItemID: previousItemID,
 	}, nil
 }
 
@@ -960,17 +870,32 @@ func (o *Orchestrator) UnequipItem(ctx context.Context, input *UnequipItemInput)
 		return nil, errors.InvalidArgument("slot is required")
 	}
 
-	// Clear equipment slot
-	result, err := o.characterRepo.ClearEquipmentSlot(ctx, characterrepo.ClearEquipmentSlotInput{
-		CharacterID: input.CharacterID,
-		Slot:        input.Slot,
+	// Get character data
+	result, err := o.characterRepo.Get(ctx, characterrepo.GetInput{
+		ID: input.CharacterID,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to unequip item: %w", err)
+		return nil, fmt.Errorf("failed to get character: %w", err)
+	}
+
+	charData := result.CharacterData
+
+	// Get the item being unequipped for response
+	unequippedItemID := charData.EquipmentSlots.Get(input.Slot)
+
+	// Clear the slot
+	charData.EquipmentSlots.Clear(input.Slot)
+
+	// Update character
+	_, err = o.characterRepo.Update(ctx, characterrepo.UpdateInput{
+		CharacterData: charData,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to update character: %w", err)
 	}
 
 	return &UnequipItemOutput{
-		UnequippedItemID: result.ClearedItemID,
+		UnequippedItemID: unequippedItemID,
 	}, nil
 }
 

@@ -951,23 +951,24 @@ func (o *Orchestrator) getEquippedWeapon(ctx context.Context, characterID string
 	// Default fallback weapon
 	fallbackWeapon, _ := weapons.GetByID(weapons.Greataxe)
 
-	// Try to load equipped weapon from character equipment
-	equipmentSlots, err := o.charRepo.GetEquipmentSlots(ctx, characterrepo.GetEquipmentSlotsInput{
-		CharacterID: characterID,
+	// Try to load character data (equipment slots are part of character.Data)
+	charResult, err := o.charRepo.Get(ctx, characterrepo.GetInput{
+		ID: characterID,
 	})
 	if err != nil {
-		// Equipment lookup failed, use fallback
+		// Character lookup failed, use fallback
 		return fallbackWeapon
 	}
 
-	// Check if equipment slots exist and mainhand has a weapon
-	if equipmentSlots.EquipmentSlots == nil || equipmentSlots.EquipmentSlots.MainHand == "" {
-		// No equipment data or no mainhand weapon, use fallback
+	// Check if mainhand has a weapon equipped
+	mainHandItemID := charResult.CharacterData.EquipmentSlots.Get(character.SlotMainHand)
+	if mainHandItemID == "" {
+		// No mainhand weapon, use fallback
 		return fallbackWeapon
 	}
 
 	// Try to get the equipped weapon by ID
-	weapon, err := weapons.GetByID(equipmentSlots.EquipmentSlots.MainHand)
+	weapon, err := weapons.GetByID(mainHandItemID)
 	if err != nil {
 		// Weapon ID not recognized, use fallback
 		return fallbackWeapon

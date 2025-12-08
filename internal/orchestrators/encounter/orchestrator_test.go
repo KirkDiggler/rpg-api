@@ -88,22 +88,12 @@ func (s *OrchestratorTestSuite) TestNew_MissingEncounterRepo() {
 }
 
 func (s *OrchestratorTestSuite) TestResolveAttack_Success() {
-	// Arrange - Create test character data
+	// Arrange - Create test character data (includes equipment slots)
 	charData := createTestCharacterData("char-1", "Grog")
 	s.mockCharRepo.EXPECT().
 		Get(gomock.Any(), characterrepo.GetInput{ID: "char-1"}).
-		Return(&characterrepo.GetOutput{CharacterData: charData}, nil)
-
-	// Mock equipment slots - use greataxe (default fallback behavior)
-	s.mockCharRepo.EXPECT().
-		GetEquipmentSlots(gomock.Any(), characterrepo.GetEquipmentSlotsInput{
-			CharacterID: "char-1",
-		}).
-		Return(&characterrepo.GetEquipmentSlotsOutput{
-			EquipmentSlots: &characterrepo.EquipmentSlots{
-				MainHand: "greataxe",
-			},
-		}, nil)
+		Return(&characterrepo.GetOutput{CharacterData: charData}, nil).
+		AnyTimes() // May be called multiple times (for character data and weapon lookup)
 
 	// Arrange - Mock encounter repo
 	encData := createTestEncounterData("enc-1")
@@ -260,23 +250,11 @@ func (s *OrchestratorTestSuite) TestResolveAttack_MultipleAttacks() {
 	charData := createTestCharacterData("char-1", "Grog")
 	encData := createTestEncounterData("enc-1")
 
-	// Set up expectations for multiple calls
+	// Set up expectations for multiple calls (includes weapon lookup)
 	s.mockCharRepo.EXPECT().
 		Get(gomock.Any(), characterrepo.GetInput{ID: "char-1"}).
 		Return(&characterrepo.GetOutput{CharacterData: charData}, nil).
-		Times(3)
-
-	// Mock equipment slots for each attack
-	s.mockCharRepo.EXPECT().
-		GetEquipmentSlots(gomock.Any(), characterrepo.GetEquipmentSlotsInput{
-			CharacterID: "char-1",
-		}).
-		Return(&characterrepo.GetEquipmentSlotsOutput{
-			EquipmentSlots: &characterrepo.EquipmentSlots{
-				MainHand: "greataxe",
-			},
-		}, nil).
-		Times(3)
+		AnyTimes()
 
 	s.mockEncRepo.EXPECT().
 		Get(gomock.Any(), &encounterrepo.GetInput{EncounterID: "enc-1"}).
@@ -329,6 +307,9 @@ func createTestCharacterData(id, name string) *character.Data {
 			abilities.CHA: 8,  // -1 modifier
 		},
 		Features: []json.RawMessage{}, // No features for basic test
+		EquipmentSlots: character.EquipmentSlots{
+			character.SlotMainHand: "greataxe", // Default equipped weapon
+		},
 	}
 }
 
@@ -1746,22 +1727,15 @@ func (s *OrchestratorTestSuite) TestActivateFeature_EncounterGetError() {
 // ============================================================================
 
 func (s *OrchestratorTestSuite) TestResolveAttack_UsesEquippedWeapon() {
-	// Arrange - Create test character data
+	// Arrange - Create test character data with longsword equipped
 	charData := createTestCharacterData("char-1", "Grog")
+	charData.EquipmentSlots = character.EquipmentSlots{
+		character.SlotMainHand: "longsword",
+	}
 	s.mockCharRepo.EXPECT().
 		Get(gomock.Any(), characterrepo.GetInput{ID: "char-1"}).
-		Return(&characterrepo.GetOutput{CharacterData: charData}, nil)
-
-	// Mock equipment slots - character has a longsword equipped
-	s.mockCharRepo.EXPECT().
-		GetEquipmentSlots(gomock.Any(), characterrepo.GetEquipmentSlotsInput{
-			CharacterID: "char-1",
-		}).
-		Return(&characterrepo.GetEquipmentSlotsOutput{
-			EquipmentSlots: &characterrepo.EquipmentSlots{
-				MainHand: "longsword",
-			},
-		}, nil)
+		Return(&characterrepo.GetOutput{CharacterData: charData}, nil).
+		AnyTimes()
 
 	// Arrange - Mock encounter repo
 	encData := createTestEncounterData("enc-1")
@@ -1788,22 +1762,13 @@ func (s *OrchestratorTestSuite) TestResolveAttack_UsesEquippedWeapon() {
 }
 
 func (s *OrchestratorTestSuite) TestResolveAttack_NoEquippedWeapon_FallsBackToGreataxe() {
-	// Arrange - Create test character data
+	// Arrange - Create test character data without equipped weapon
 	charData := createTestCharacterData("char-1", "Grog")
+	charData.EquipmentSlots = character.EquipmentSlots{} // Empty - no weapon equipped
 	s.mockCharRepo.EXPECT().
 		Get(gomock.Any(), characterrepo.GetInput{ID: "char-1"}).
-		Return(&characterrepo.GetOutput{CharacterData: charData}, nil)
-
-	// Mock equipment slots - no weapon equipped (empty mainhand)
-	s.mockCharRepo.EXPECT().
-		GetEquipmentSlots(gomock.Any(), characterrepo.GetEquipmentSlotsInput{
-			CharacterID: "char-1",
-		}).
-		Return(&characterrepo.GetEquipmentSlotsOutput{
-			EquipmentSlots: &characterrepo.EquipmentSlots{
-				MainHand: "", // No weapon
-			},
-		}, nil)
+		Return(&characterrepo.GetOutput{CharacterData: charData}, nil).
+		AnyTimes()
 
 	// Arrange - Mock encounter repo
 	encData := createTestEncounterData("enc-1")
@@ -1829,19 +1794,16 @@ func (s *OrchestratorTestSuite) TestResolveAttack_NoEquippedWeapon_FallsBackToGr
 	}
 }
 
-func (s *OrchestratorTestSuite) TestResolveAttack_EquipmentLookupFails_FallsBackToGreataxe() {
-	// Arrange - Create test character data
+func (s *OrchestratorTestSuite) TestResolveAttack_UnknownWeaponID_FallsBackToGreataxe() {
+	// Arrange - Create test character data with an unknown weapon ID
 	charData := createTestCharacterData("char-1", "Grog")
+	charData.EquipmentSlots = character.EquipmentSlots{
+		character.SlotMainHand: "unknown-weapon-id", // Invalid weapon ID
+	}
 	s.mockCharRepo.EXPECT().
 		Get(gomock.Any(), characterrepo.GetInput{ID: "char-1"}).
-		Return(&characterrepo.GetOutput{CharacterData: charData}, nil)
-
-	// Mock equipment slots - lookup fails (e.g., database error)
-	s.mockCharRepo.EXPECT().
-		GetEquipmentSlots(gomock.Any(), characterrepo.GetEquipmentSlotsInput{
-			CharacterID: "char-1",
-		}).
-		Return(nil, fmt.Errorf("database connection error"))
+		Return(&characterrepo.GetOutput{CharacterData: charData}, nil).
+		AnyTimes()
 
 	// Arrange - Mock encounter repo
 	encData := createTestEncounterData("enc-1")
@@ -1863,57 +1825,13 @@ func (s *OrchestratorTestSuite) TestResolveAttack_EquipmentLookupFails_FallsBack
 }
 
 func (s *OrchestratorTestSuite) TestResolveAttack_NilEquipmentSlots_FallsBackToGreataxe() {
-	// Arrange - Create test character data
+	// Arrange - Create test character data with nil equipment slots
 	charData := createTestCharacterData("char-1", "Grog")
+	charData.EquipmentSlots = nil // No equipment data at all
 	s.mockCharRepo.EXPECT().
 		Get(gomock.Any(), characterrepo.GetInput{ID: "char-1"}).
-		Return(&characterrepo.GetOutput{CharacterData: charData}, nil)
-
-	// Mock equipment slots - returns nil slots (character never set equipment)
-	s.mockCharRepo.EXPECT().
-		GetEquipmentSlots(gomock.Any(), characterrepo.GetEquipmentSlotsInput{
-			CharacterID: "char-1",
-		}).
-		Return(&characterrepo.GetEquipmentSlotsOutput{
-			EquipmentSlots: nil, // No equipment data at all
-		}, nil)
-
-	// Arrange - Mock encounter repo
-	encData := createTestEncounterData("enc-1")
-	s.mockEncRepo.EXPECT().
-		Get(gomock.Any(), &encounterrepo.GetInput{EncounterID: "enc-1"}).
-		Return(&encounterrepo.GetOutput{Data: encData}, nil)
-
-	// Act - Should still succeed with fallback
-	output, err := s.orchestrator.ResolveAttack(context.Background(), &ResolveAttackInput{
-		EncounterID: "enc-1",
-		AttackerID:  "char-1",
-		TargetID:    "goblin-1",
-	})
-
-	// Assert - Should succeed with fallback to greataxe
-	s.Require().NoError(err)
-	s.Require().NotNil(output)
-	s.Assert().NotNil(output.Result)
-}
-
-func (s *OrchestratorTestSuite) TestResolveAttack_UnknownWeaponID_FallsBackToGreataxe() {
-	// Arrange - Create test character data
-	charData := createTestCharacterData("char-1", "Grog")
-	s.mockCharRepo.EXPECT().
-		Get(gomock.Any(), characterrepo.GetInput{ID: "char-1"}).
-		Return(&characterrepo.GetOutput{CharacterData: charData}, nil)
-
-	// Mock equipment slots - character has an unknown weapon ID
-	s.mockCharRepo.EXPECT().
-		GetEquipmentSlots(gomock.Any(), characterrepo.GetEquipmentSlotsInput{
-			CharacterID: "char-1",
-		}).
-		Return(&characterrepo.GetEquipmentSlotsOutput{
-			EquipmentSlots: &characterrepo.EquipmentSlots{
-				MainHand: "magic-sword-of-doom-9000", // Unknown weapon ID
-			},
-		}, nil)
+		Return(&characterrepo.GetOutput{CharacterData: charData}, nil).
+		AnyTimes()
 
 	// Arrange - Mock encounter repo
 	encData := createTestEncounterData("enc-1")
