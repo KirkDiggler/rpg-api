@@ -42,8 +42,7 @@ type Service interface {
 	ListCharacters(ctx context.Context, input *ListCharactersInput) (*ListCharactersOutput, error)
 	DeleteCharacter(ctx context.Context, input *DeleteCharacterInput) (*DeleteCharacterOutput, error)
 
-	// Equipment management
-	GetEquipmentSlots(ctx context.Context, input *GetEquipmentSlotsInput) (*GetEquipmentSlotsOutput, error)
+	// Equipment management (equipment slots are part of character.Data)
 	EquipItem(ctx context.Context, input *EquipItemInput) (*EquipItemOutput, error)
 	UnequipItem(ctx context.Context, input *UnequipItemInput) (*UnequipItemOutput, error)
 
@@ -274,25 +273,14 @@ type GetCharacterInput struct {
 
 // GetCharacterOutput returns the character
 type GetCharacterOutput struct {
-	Character      *character.Data
-	EquipmentSlots map[string]string // slot name -> item ID
-}
-
-// GetEquipmentSlotsInput gets equipment slots for a character
-type GetEquipmentSlotsInput struct {
-	CharacterID string
-}
-
-// GetEquipmentSlotsOutput returns the equipment slots
-type GetEquipmentSlotsOutput struct {
-	Slots map[string]string // slot name -> item ID
+	Character *character.Data
 }
 
 // EquipItemInput equips an item to a slot
 type EquipItemInput struct {
 	CharacterID string
 	ItemID      string
-	Slot        string // e.g. "main_hand", "armor", "ring1"
+	Slot        character.InventorySlot
 }
 
 // EquipItemOutput returns the result of equipping
@@ -303,7 +291,7 @@ type EquipItemOutput struct {
 // UnequipItemInput unequips an item from a slot
 type UnequipItemInput struct {
 	CharacterID string
-	Slot        string
+	Slot        character.InventorySlot
 }
 
 // UnequipItemOutput returns the unequipped item

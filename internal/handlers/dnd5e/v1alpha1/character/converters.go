@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
+	"github.com/KirkDiggler/rpg-api/internal/errors"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/abilities"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/ammunition"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/armor"
@@ -1270,38 +1271,39 @@ func ConvertCharacterDataToProto(data *toolkitchar.Data) *dnd5ev1alpha1.Characte
 	return char
 }
 
-// convertEquipmentSlotToStorageKey converts a proto EquipmentSlot enum to the storage key format
-func convertEquipmentSlotToStorageKey(slot dnd5ev1alpha1.EquipmentSlot) string {
+// convertEquipmentSlotToToolkit converts a proto EquipmentSlot enum to toolkit InventorySlot.
+// Returns an error for unsupported slots (GLOVES is deprecated and not supported).
+func convertEquipmentSlotToToolkit(slot dnd5ev1alpha1.EquipmentSlot) (toolkitchar.InventorySlot, error) {
 	switch slot {
 	case dnd5ev1alpha1.EquipmentSlot_EQUIPMENT_SLOT_MAIN_HAND:
-		return "main_hand"
+		return toolkitchar.SlotMainHand, nil
 	case dnd5ev1alpha1.EquipmentSlot_EQUIPMENT_SLOT_OFF_HAND:
-		return "off_hand"
+		return toolkitchar.SlotOffHand, nil
 	case dnd5ev1alpha1.EquipmentSlot_EQUIPMENT_SLOT_ARMOR:
-		return "armor"
+		return toolkitchar.SlotArmor, nil
 	case dnd5ev1alpha1.EquipmentSlot_EQUIPMENT_SLOT_HELMET:
-		return "helmet"
+		return toolkitchar.SlotHelm, nil
 	case dnd5ev1alpha1.EquipmentSlot_EQUIPMENT_SLOT_BOOTS:
-		return "boots"
-	case dnd5ev1alpha1.EquipmentSlot_EQUIPMENT_SLOT_GLOVES:
-		return "gloves"
+		return toolkitchar.SlotBoots, nil
 	case dnd5ev1alpha1.EquipmentSlot_EQUIPMENT_SLOT_CLOAK:
-		return "cloak"
+		return toolkitchar.SlotCloak, nil
 	case dnd5ev1alpha1.EquipmentSlot_EQUIPMENT_SLOT_AMULET:
-		return "amulet"
+		return toolkitchar.SlotAmulet, nil
 	case dnd5ev1alpha1.EquipmentSlot_EQUIPMENT_SLOT_RING_1:
-		return "ring1"
+		return toolkitchar.SlotRingLeft, nil
 	case dnd5ev1alpha1.EquipmentSlot_EQUIPMENT_SLOT_RING_2:
-		return "ring2"
+		return toolkitchar.SlotRingRight, nil
 	case dnd5ev1alpha1.EquipmentSlot_EQUIPMENT_SLOT_BELT:
-		return "belt"
+		return toolkitchar.SlotBelt, nil
+	case dnd5ev1alpha1.EquipmentSlot_EQUIPMENT_SLOT_GLOVES:
+		return "", errors.InvalidArgument("EQUIPMENT_SLOT_GLOVES is deprecated and not supported")
 	default:
-		return ""
+		return "", errors.InvalidArgument("unsupported equipment slot")
 	}
 }
 
-// convertEquipmentSlotsToProto converts a map of slot name to item ID into proto EquipmentSlots
-func convertEquipmentSlotsToProto(slots map[string]string) *dnd5ev1alpha1.EquipmentSlots {
+// convertEquipmentSlotsToProto converts toolkit EquipmentSlots to proto EquipmentSlots
+func convertEquipmentSlotsToProto(slots toolkitchar.EquipmentSlots) *dnd5ev1alpha1.EquipmentSlots {
 	if len(slots) == 0 {
 		return nil
 	}
@@ -1318,17 +1320,16 @@ func convertEquipmentSlotsToProto(slots map[string]string) *dnd5ev1alpha1.Equipm
 	}
 
 	return &dnd5ev1alpha1.EquipmentSlots{
-		MainHand: makeItem(slots["main_hand"]),
-		OffHand:  makeItem(slots["off_hand"]),
-		Armor:    makeItem(slots["armor"]),
-		Helmet:   makeItem(slots["helmet"]),
-		Boots:    makeItem(slots["boots"]),
-		Gloves:   makeItem(slots["gloves"]),
-		Cloak:    makeItem(slots["cloak"]),
-		Amulet:   makeItem(slots["amulet"]),
-		Ring_1:   makeItem(slots["ring1"]),
-		Ring_2:   makeItem(slots["ring2"]),
-		Belt:     makeItem(slots["belt"]),
+		MainHand: makeItem(slots.Get(toolkitchar.SlotMainHand)),
+		OffHand:  makeItem(slots.Get(toolkitchar.SlotOffHand)),
+		Armor:    makeItem(slots.Get(toolkitchar.SlotArmor)),
+		Helmet:   makeItem(slots.Get(toolkitchar.SlotHelm)),
+		Boots:    makeItem(slots.Get(toolkitchar.SlotBoots)),
+		Cloak:    makeItem(slots.Get(toolkitchar.SlotCloak)),
+		Amulet:   makeItem(slots.Get(toolkitchar.SlotAmulet)),
+		Ring_1:   makeItem(slots.Get(toolkitchar.SlotRingLeft)),
+		Ring_2:   makeItem(slots.Get(toolkitchar.SlotRingRight)),
+		Belt:     makeItem(slots.Get(toolkitchar.SlotBelt)),
 	}
 }
 

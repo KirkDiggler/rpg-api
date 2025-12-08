@@ -147,21 +147,6 @@ func (mr *MockServiceMockRecorder) GetDraft(ctx, input any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetDraft", reflect.TypeOf((*MockService)(nil).GetDraft), ctx, input)
 }
 
-// GetEquipmentSlots mocks base method.
-func (m *MockService) GetEquipmentSlots(ctx context.Context, input *character.GetEquipmentSlotsInput) (*character.GetEquipmentSlotsOutput, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetEquipmentSlots", ctx, input)
-	ret0, _ := ret[0].(*character.GetEquipmentSlotsOutput)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// GetEquipmentSlots indicates an expected call of GetEquipmentSlots.
-func (mr *MockServiceMockRecorder) GetEquipmentSlots(ctx, input any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetEquipmentSlots", reflect.TypeOf((*MockService)(nil).GetEquipmentSlots), ctx, input)
-}
-
 // GetRequirements mocks base method.
 func (m *MockService) GetRequirements(ctx context.Context, input *character.GetRequirementsInput) (*character.GetRequirementsOutput, error) {
 	m.ctrl.T.Helper()
