@@ -46,6 +46,7 @@ func (c *Config) Validate() error {
 type Orchestrator struct {
 	charRepo characterrepo.Repository
 	encRepo  encounterrepo.Repository
+	roller   dice.Roller
 }
 
 // New creates a new encounter orchestrator
@@ -59,6 +60,7 @@ func New(cfg *Config) (*Orchestrator, error) {
 	return &Orchestrator{
 		charRepo: cfg.CharacterRepo,
 		encRepo:  cfg.EncounterRepo,
+		roller:   dice.NewRoller(),
 	}, nil
 }
 
@@ -127,7 +129,7 @@ func (o *Orchestrator) ResolveAttack(ctx context.Context, input *ResolveAttackIn
 		DefenderAC:       goblin.AC(),
 		ProficiencyBonus: char.GetProficiencyBonus(),
 		EventBus:         bus,
-		Roller:           dice.NewRoller(),
+		Roller:           o.roller,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("combat resolution failed: %w", err)
@@ -319,7 +321,7 @@ func (o *Orchestrator) CreateDungeon(ctx context.Context, input *CreateDungeonIn
 	entities[goblin] = 2 // Goblin DEX +2
 
 	// Roll initiative using rpg-toolkit
-	rolls := initiative.RollForOrder(entities, dice.NewRoller())
+	rolls := initiative.RollForOrder(entities, o.roller)
 
 	// Create tracker and extract data
 	initiativeOrder := make([]core.Entity, len(rolls))

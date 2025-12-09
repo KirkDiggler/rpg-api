@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/KirkDiggler/rpg-toolkit/dice"
 	"github.com/KirkDiggler/rpg-toolkit/events"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/combat"
@@ -134,7 +133,7 @@ func (o *Orchestrator) executeSingleMonsterTurn(
 		Bus:           bus,
 		ActionEconomy: actionEconomy,
 		Perception:    perception,
-		Roller:        dice.NewRoller(),
+		Roller:        o.roller,
 	}
 
 	// 6. Execute the turn
@@ -247,7 +246,7 @@ func (o *Orchestrator) resolveMonsterAttack(
 		DefenderAC:       defenderAC,
 		ProficiencyBonus: profBonus,
 		EventBus:         attackBus,
-		Roller:           dice.NewRoller(),
+		Roller:           o.roller,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("combat resolution failed: %w", err)

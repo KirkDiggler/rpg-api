@@ -10,6 +10,8 @@ import (
 	"github.com/stretchr/testify/suite"
 	"go.uber.org/mock/gomock"
 
+	"github.com/KirkDiggler/rpg-toolkit/dice"
+	dicemock "github.com/KirkDiggler/rpg-toolkit/dice/mock"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/abilities"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/armor"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
@@ -33,6 +35,7 @@ type OrchestratorTestSuite struct {
 	ctrl         *gomock.Controller
 	mockCharRepo *charactermock.MockRepository
 	mockEncRepo  *encountermock.MockRepository
+	mockRoller   *dicemock.MockRoller
 	orchestrator *Orchestrator
 }
 
@@ -40,6 +43,7 @@ func (s *OrchestratorTestSuite) SetupTest() {
 	s.ctrl = gomock.NewController(s.T())
 	s.mockCharRepo = charactermock.NewMockRepository(s.ctrl)
 	s.mockEncRepo = encountermock.NewMockRepository(s.ctrl)
+	s.mockRoller = dicemock.NewMockRoller(s.ctrl)
 
 	var err error
 	s.orchestrator, err = New(&Config{
@@ -47,6 +51,10 @@ func (s *OrchestratorTestSuite) SetupTest() {
 		EncounterRepo: s.mockEncRepo,
 	})
 	s.Require().NoError(err)
+
+	// Use real roller by default - tests that need deterministic rolls
+	// will inject mockRoller directly
+	s.orchestrator.roller = dice.NewRoller()
 }
 
 func (s *OrchestratorTestSuite) TearDownTest() {
@@ -327,8 +335,7 @@ func createTestEncounterData(id string) *encounterrepo.EncounterData {
 
 func (s *OrchestratorTestSuite) TestCreateDungeon_Success() {
 	// Arrange - Mock character repo to return character with DEX score
-	// MinTimes(1): Always called for initiative
-	// May be called again if monster wins initiative and attacks (random)
+	// Called for initiative, and again if monster goes first and attacks
 	s.mockCharRepo.EXPECT().
 		Get(gomock.Any(), characterrepo.GetInput{ID: "char-1"}).
 		Return(&characterrepo.GetOutput{
@@ -339,7 +346,7 @@ func (s *OrchestratorTestSuite) TestCreateDungeon_Success() {
 				},
 			},
 		}, nil).
-		MinTimes(1)
+		AnyTimes() // Initiative lookup + potential monster attack target
 
 	// Arrange - Mock encounter repo save
 	s.mockEncRepo.EXPECT().
@@ -367,7 +374,7 @@ func (s *OrchestratorTestSuite) TestCreateDungeon_Success() {
 			return &encounterrepo.SaveOutput{Success: true}, nil
 		})
 
-	// Arrange - Mock encounter repo update (called if monster goes first and executes turn)
+	// Arrange - Mock encounter repo update (called if monster goes first)
 	s.mockEncRepo.EXPECT().
 		Update(gomock.Any(), gomock.Any()).
 		Return(&encounterrepo.UpdateOutput{Success: true}, nil).
