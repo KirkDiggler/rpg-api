@@ -112,15 +112,14 @@ func (s *PerceptionTestSuite) TestBuildPerception_MonsterNotInRoom() {
 }
 
 func (s *PerceptionTestSuite) TestBuildPerception_HexGrid() {
-	// Test with hex grid
-	pointyTop := true
+	// Test with hex grid (HexFlatTop=false means pointy-top, which is D&D 5e default)
 	roomData := &spatial.RoomData{
-		ID:             "test-room",
-		Type:           "dungeon",
-		Width:          20,
-		Height:         20,
-		GridType:       spatial.GridTypeHex,
-		HexOrientation: &pointyTop,
+		ID:         "test-room",
+		Type:       "dungeon",
+		Width:      20,
+		Height:     20,
+		GridType:   spatial.GridTypeHex,
+		HexFlatTop: false, // pointy-top hex grid
 		Entities: map[string]spatial.EntityPlacement{
 			"monster-1": {
 				EntityID:   "monster-1",

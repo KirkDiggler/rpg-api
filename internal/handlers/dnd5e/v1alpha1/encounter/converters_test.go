@@ -686,7 +686,7 @@ func (s *ConvertersTestSuite) TestConvertRoomDataToProto_InvalidType() {
 // =============================================================================
 
 func (s *ConvertersTestSuite) TestConvertCombatStateToProto_Nil() {
-	result := convertCombatStateToProto(nil)
+	result := convertCombatStateToProto(nil, spatial.GridTypeHex, spatial.HexOrientationPointyTop)
 	s.Nil(result)
 }
 
@@ -717,7 +717,7 @@ func (s *ConvertersTestSuite) TestConvertCombatStateToProto_ActiveCombat() {
 		CombatEnded:       false,
 	}
 
-	result := convertCombatStateToProto(state)
+	result := convertCombatStateToProto(state, spatial.GridTypeSquare, spatial.HexOrientationPointyTop)
 
 	s.Require().NotNil(result)
 	s.Equal("enc-1", result.EncounterId)
@@ -738,7 +738,7 @@ func (s *ConvertersTestSuite) TestConvertCombatStateToProto_ActiveCombat() {
 	s.Equal(int32(10), result.CurrentTurn.MovementUsed) // 30 - 20 = 10
 	s.Equal(int32(30), result.CurrentTurn.MovementMax)
 	s.Require().NotNil(result.CurrentTurn.Position)
-	s.Equal(float64(5), result.CurrentTurn.Position.X)
+	s.Equal(float64(5), result.CurrentTurn.Position.X) // Square grid: offset coords
 }
 
 func (s *ConvertersTestSuite) TestConvertCombatStateToProto_NotStarted() {
@@ -749,7 +749,7 @@ func (s *ConvertersTestSuite) TestConvertCombatStateToProto_NotStarted() {
 		CombatEnded:   false,
 	}
 
-	result := convertCombatStateToProto(state)
+	result := convertCombatStateToProto(state, spatial.GridTypeHex, spatial.HexOrientationPointyTop)
 
 	s.Require().NotNil(result)
 	s.False(result.CombatStarted)

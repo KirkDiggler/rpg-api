@@ -12,6 +12,7 @@ import (
 	characterhandler "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v1alpha1/character"
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/encounter"
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
+	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
 )
 
 // HandlerConfig holds dependencies for the handler
@@ -95,12 +96,15 @@ func (h *Handler) DungeonStart(
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
-	// 3. Convert to proto response
+	// 3. Extract grid info for cube coordinate conversion
+	gridType, hexOrientation := extractGridInfo(output.Room)
+
+	// 4. Convert to proto response with cube coordinates for hex grids
 	return &dnd5ev1alpha1.DungeonStartResponse{
 		EncounterId:  output.EncounterID,
 		Room:         convertRoomDataToProto(output.Room),
-		CombatState:  convertCombatStateToProto(output.CombatState),
-		MonsterTurns: convertMonsterTurnsToProto(output.MonsterTurns),
+		CombatState:  convertCombatStateToProto(output.CombatState, gridType, hexOrientation),
+		MonsterTurns: convertMonsterTurnsToProto(output.MonsterTurns, gridType, hexOrientation),
 	}, nil
 }
 
@@ -188,19 +192,24 @@ func (h *Handler) EndTurn(
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
-	// 4. Convert to proto response
+	// 4. Use default hex grid settings (D&D 5e default: hex pointy-top)
+	// TODO: In the future, could fetch room data from encounter state for accuracy
+	gridType := spatial.GridTypeHex
+	hexOrientation := spatial.HexOrientationPointyTop
+
+	// 5. Convert to proto response with cube coordinates for hex grids
 	response := &dnd5ev1alpha1.EndTurnResponse{
 		Success:     true,
-		CombatState: convertCombatStateToProto(output.CombatState),
+		CombatState: convertCombatStateToProto(output.CombatState, gridType, hexOrientation),
 		TurnChange:  convertTurnChangeToProto(output.TurnChange),
 	}
 
-	// 5. Add monster turns if any were executed
+	// 6. Add monster turns if any were executed
 	if len(output.MonsterTurns) > 0 {
-		response.MonsterTurns = convertMonsterTurnsToProto(output.MonsterTurns)
+		response.MonsterTurns = convertMonsterTurnsToProto(output.MonsterTurns, gridType, hexOrientation)
 	}
 
-	// 6. Add encounter result if combat ended
+	// 7. Add encounter result if combat ended
 	if output.EncounterResult != nil {
 		response.EncounterResult = convertEncounterResultToProto(output.EncounterResult)
 	}
