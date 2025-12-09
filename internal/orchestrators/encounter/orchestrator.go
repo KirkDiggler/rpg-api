@@ -412,10 +412,11 @@ func (o *Orchestrator) CreateDungeon(ctx context.Context, input *CreateDungeonIn
 		combatState.ActiveIndex = encData.InitiativeData.Current
 		combatState.Round = encData.InitiativeData.Round
 
-		// Persist updated initiative state
+		// Persist updated initiative and monster state
 		_, err = o.encRepo.Update(ctx, &encounterrepo.UpdateInput{
 			EncounterID:    encounterID,
 			InitiativeData: encData.InitiativeData,
+			Monsters:       encData.Monsters, // Persist monster HP/state changes
 		})
 		if err != nil {
 			return nil, fmt.Errorf("failed to save initiative after monster turns: %w", err)
@@ -713,11 +714,12 @@ func (o *Orchestrator) EndTurn(ctx context.Context, input *EndTurnInput) (*EndTu
 		encounterResult = o.checkCombatEnd(encOutput.Data)
 	}
 
-	// 9. Persist updated state
+	// 9. Persist updated state (including monster state changes from their turns)
 	_, err = o.encRepo.Update(ctx, &encounterrepo.UpdateInput{
 		EncounterID:       input.EncounterID,
 		InitiativeData:    initiativeData,
 		MovementRemaining: ptrInt32(defaultMovementSpeed), // Reset movement for new turn
+		Monsters:          encOutput.Data.Monsters,        // Persist monster HP/state changes
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to save turn state: %w", err)

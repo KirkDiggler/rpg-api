@@ -168,8 +168,6 @@ func (o *Orchestrator) executeSingleMonsterTurn(
 
 			// TODO: Update character HP in character repository
 			// Character damage will be handled in a future PR
-			// For now, we just have the attack result stored in action.Details
-			_ = characterIDs // Suppress unused warning - will be used when we implement character HP updates
 		}
 	}
 

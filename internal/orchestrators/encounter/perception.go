@@ -74,7 +74,7 @@ func buildPerception(
 		enemies = append(enemies, monster.PerceivedEntity{
 			Entity: &entityAdapter{
 				id:         charID,
-				entityType: "character",
+				entityType: entityTypeCharacter,
 			},
 			Position: monster.Position{
 				X: int(charPlacement.Position.X),
@@ -105,7 +105,7 @@ func buildPerception(
 		allies = append(allies, monster.PerceivedEntity{
 			Entity: &entityAdapter{
 				id:         allyID,
-				entityType: "monster",
+				entityType: entityTypeMonster,
 			},
 			Position: monster.Position{
 				X: int(allyPlacement.Position.X),
