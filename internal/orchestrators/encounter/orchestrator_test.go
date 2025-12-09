@@ -327,7 +327,8 @@ func createTestEncounterData(id string) *encounterrepo.EncounterData {
 
 func (s *OrchestratorTestSuite) TestCreateDungeon_Success() {
 	// Arrange - Mock character repo to return character with DEX score
-	// AnyTimes() because Get is called for initiative AND possibly for monster attack resolution
+	// MinTimes(1): Always called for initiative
+	// May be called again if monster wins initiative and attacks (random)
 	s.mockCharRepo.EXPECT().
 		Get(gomock.Any(), characterrepo.GetInput{ID: "char-1"}).
 		Return(&characterrepo.GetOutput{
@@ -338,7 +339,7 @@ func (s *OrchestratorTestSuite) TestCreateDungeon_Success() {
 				},
 			},
 		}, nil).
-		AnyTimes()
+		MinTimes(1)
 
 	// Arrange - Mock encounter repo save
 	s.mockEncRepo.EXPECT().
