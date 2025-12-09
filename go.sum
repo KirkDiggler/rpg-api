@@ -1,5 +1,5 @@
-github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20251207225020-c1595770c44c h1:22/ZcxUDKhFsLAAm/uy30ovffYQyJKBHRj0m3dS6uZQ=
-github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20251207225020-c1595770c44c/go.mod h1:OsuPCU2A3YCjdMoDchyRO8GQGNAqF+rIlexlBXJgfGw=
+github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20251209023115-7adfe8cafa1e h1:FmGwXlJgud4PjjbEeFrQdfPTZEM6dkY9isO1t8/QfXs=
+github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20251209023115-7adfe8cafa1e/go.mod h1:OsuPCU2A3YCjdMoDchyRO8GQGNAqF+rIlexlBXJgfGw=
 github.com/KirkDiggler/rpg-toolkit/core v0.9.6-0.20251205065638-a6d3a75d2297 h1:NIuwrganxGUznQmiOBtWVf/qXQPm2u3U6MiBQmyKOC8=
 github.com/KirkDiggler/rpg-toolkit/core v0.9.6-0.20251205065638-a6d3a75d2297/go.mod h1:nPbQ/ZBTHKEavGQapmXo/MQxla7JuZNj2ICn9aNTQCw=
 github.com/KirkDiggler/rpg-toolkit/dice v0.3.3-0.20250914062452-e2c6a0f32059 h1:74OW0fnq459g28p2JpyrB20tjno4FlF18+cHJ2xiTes=
@@ -12,8 +12,8 @@ github.com/KirkDiggler/rpg-toolkit/mechanics/resources v0.3.1 h1:wRshHQZfLnEh03/
 github.com/KirkDiggler/rpg-toolkit/mechanics/resources v0.3.1/go.mod h1:LzyZd5OAAic1UnyPwCx6HnmWcOQ/jZvqMSc+Q0k7fH8=
 github.com/KirkDiggler/rpg-toolkit/rpgerr v0.1.2 h1:B7IrROe3GcPrzMeV0EQryA194Y7Yjl3E4kw/OBx4Ucc=
 github.com/KirkDiggler/rpg-toolkit/rpgerr v0.1.2/go.mod h1:wsyJmmf1X0iLFGy5Iyy5sUoZhXZQvuYVsKdXfc4b/T4=
-github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.27.0 h1:HAvDFwHcovmaa45iY2q1pwPI1gcxMsYqSwe5iun/Wek=
-github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.27.0/go.mod h1:EhBDz2h44/YZkbhy07OrZMe5AinXwMzOy5R5byTm1pI=
+github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.27.2 h1:jRBhS2Jr+mSx9k3sK+upu40WC3FSm8D2H45QTeRhqjk=
+github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.27.2/go.mod h1:EhBDz2h44/YZkbhy07OrZMe5AinXwMzOy5R5byTm1pI=
 github.com/KirkDiggler/rpg-toolkit/tools/spatial v0.1.1 h1:CWKr7NurYH0JtREkN5NO+9s4Q0VQv/uXUA8L/2JKJkI=
 github.com/KirkDiggler/rpg-toolkit/tools/spatial v0.1.1/go.mod h1:6DSb4xhITAy0wstKWoS3BeEYywWLt+138bxRCfH0kzY=
 github.com/bsm/ginkgo/v2 v2.12.0 h1:Ny8MWAHyOepLGlLKYmXG4IEkioBysk6GpaRTLC8zwWs=

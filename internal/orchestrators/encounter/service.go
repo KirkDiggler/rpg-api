@@ -101,9 +101,10 @@ type CreateDungeonInput struct {
 
 // CreateDungeonOutput returns the created encounter details
 type CreateDungeonOutput struct {
-	EncounterID string       // ID of the created encounter
-	Room        interface{}  // Room data (using interface{} to match spatial.RoomData)
-	CombatState *CombatState // Combat state with initiative order
+	EncounterID  string               // ID of the created encounter
+	Room         interface{}          // Room data (using interface{} to match spatial.RoomData)
+	CombatState  *CombatState         // Combat state with initiative order
+	MonsterTurns []*MonsterTurnResult // Monster turns if monsters go first in initiative
 }
 
 // CombatState represents the state of combat in an encounter
@@ -165,8 +166,15 @@ type EndTurnInput struct {
 
 // EndTurnOutput returns the result of ending a turn
 type EndTurnOutput struct {
-	CombatState *CombatState     // Updated combat state with new active turn
-	TurnChange  *TurnChangeEvent // Details about the turn transition
+	CombatState     *CombatState         // Updated combat state with new active turn
+	TurnChange      *TurnChangeEvent     // Details about the turn transition
+	MonsterTurns    []*MonsterTurnResult // Monster turns executed after player ended turn
+	EncounterResult *EncounterResult     // Set if combat ended (victory or TPK)
+}
+
+// EncounterResult indicates combat has ended
+type EncounterResult struct {
+	Reason string // "victory" (all monsters dead) or "defeat" (all players down)
 }
 
 // TurnChangeEvent describes a turn transition
@@ -189,4 +197,23 @@ type ActivateFeatureOutput struct {
 	Success       bool   // Whether activation succeeded
 	Message       string // Human-readable result message
 	CharacterData interface{}
+}
+
+// MonsterTurnResult represents the outcome of a monster's turn
+// This mirrors toolkit monster.TurnResult for handler layer use
+type MonsterTurnResult struct {
+	MonsterID   string                  // ID of the monster that took the turn
+	MonsterName string                  // Name for self-contained streaming
+	Actions     []MonsterExecutedAction // All actions taken this turn
+	Movement    []Position              // Path traversed during movement
+}
+
+// MonsterExecutedAction represents a single action taken by a monster
+// This mirrors toolkit monster.ExecutedAction for handler layer use
+type MonsterExecutedAction struct {
+	ActionID   string      // ID of the action used
+	ActionType string      // Type of action (melee_attack, heal, etc.) - matches monster.ActionType
+	TargetID   string      // ID of the target (if applicable)
+	Success    bool        // Whether the action succeeded
+	Details    interface{} // Action-specific details (AttackResult, heal amount, etc.)
 }
