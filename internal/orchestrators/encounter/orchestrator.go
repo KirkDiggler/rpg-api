@@ -12,10 +12,10 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/abilities"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/armor"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
-	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/gamectx"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/combat"
 	dnd5eEvents "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/events"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/features"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/gamectx"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/initiative"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/monster"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/weapons"
@@ -364,64 +364,73 @@ func (o *Orchestrator) CreateDungeon(ctx context.Context, input *CreateDungeonIn
 		CombatEnded:       false,
 	}
 
-	// Advance to first player character turn (skip any leading monster turns)
-	advanceToNextPlayerTurn(combatState)
+	// Create monster data for the goblin with scimitar action
+	goblinMonster := monster.NewGoblin(goblinID)
+	goblinMonster.AddAction(monster.NewScimitarAction(monster.ScimitarConfig{
+		AttackBonus: 4,       // +2 DEX + 2 proficiency
+		DamageDice:  "1d6+2", // Scimitar 1d6 + DEX
+		DamageBonus: 2,       // DEX modifier
+	}))
+	goblinData := goblinMonster.ToData()
 
-	// Save encounter data with room and initiative
+	// Save encounter data with room, initiative, and monsters
 	_, err := o.encRepo.Save(ctx, &encounterrepo.SaveInput{
 		EncounterID:       encounterID,
 		RoomData:          roomData,
 		InitiativeData:    &trackerData,
 		InitiativeRolls:   rolls,
 		MovementRemaining: combatState.MovementRemaining,
+		Monsters:          []*monster.Data{goblinData},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to save encounter: %w", err)
 	}
 
-	// Return encounter ID, room data, and combat state
+	// Check if a monster goes first in initiative
+	var monsterTurns []*MonsterTurnResult
+	if trackerData.Order[0].Type == entityTypeMonster {
+		// Monster(s) go first - execute all monster turns until a player's turn
+		// Create EncounterData for monster turn execution
+		encData := &encounterrepo.EncounterData{
+			ID:                encounterID,
+			RoomData:          roomData,
+			InitiativeData:    &trackerData,
+			InitiativeRolls:   rolls,
+			MovementRemaining: combatState.MovementRemaining,
+			Monsters:          []*monster.Data{goblinData},
+		}
+
+		// Execute monster turns
+		monsterTurns, err = o.executeMonsterTurns(ctx, encData, input.CharacterIDs)
+		if err != nil {
+			return nil, fmt.Errorf("failed to execute monster turns: %w", err)
+		}
+
+		// Update combat state to reflect the new active index after monster turns
+		combatState.ActiveIndex = encData.InitiativeData.Current
+		combatState.Round = encData.InitiativeData.Round
+
+		// Persist updated initiative state
+		_, err = o.encRepo.Update(ctx, &encounterrepo.UpdateInput{
+			EncounterID:    encounterID,
+			InitiativeData: encData.InitiativeData,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to save initiative after monster turns: %w", err)
+		}
+	} else {
+		// Player goes first - no monster turns to execute
+		// Active index is already set to the first entity (index 0)
+		combatState.ActiveIndex = 0
+	}
+
+	// Return encounter ID, room data, combat state, and any monster turns
 	return &CreateDungeonOutput{
-		EncounterID: encounterID,
-		Room:        roomData,
-		CombatState: combatState,
+		EncounterID:  encounterID,
+		Room:         roomData,
+		CombatState:  combatState,
+		MonsterTurns: monsterTurns,
 	}, nil
-}
-
-// advanceToNextPlayerTurn advances the combat state to the next player character turn
-// Skips monster turns automatically (monsters act immediately when their turn comes up)
-// Returns true if a player turn was found, false if combat should end
-func advanceToNextPlayerTurn(state *CombatState) bool {
-	if state == nil || len(state.TurnOrder) == 0 {
-		return false
-	}
-
-	maxIterations := len(state.TurnOrder) * 2 // Prevent infinite loops (2 full rounds max)
-	iterationCount := 0
-
-	for iterationCount < maxIterations {
-		iterationCount++
-
-		// Check current turn
-		currentEntry := state.TurnOrder[state.ActiveIndex]
-		if currentEntry.EntityType == "character" {
-			// Found a player character turn
-			return true
-		}
-
-		// Current turn is a monster - skip it
-		// Advance to next turn
-		state.ActiveIndex++
-		if state.ActiveIndex >= len(state.TurnOrder) {
-			// Wrapped around to new round
-			state.ActiveIndex = 0
-			state.Round++
-		}
-	}
-
-	// If we've iterated too many times, something is wrong (no player characters?)
-	// End combat to prevent infinite loop
-	state.CombatEnded = true
-	return false
 }
 
 // MoveCharacter implements character movement within an encounter
@@ -671,51 +680,36 @@ func (o *Orchestrator) EndTurn(ctx context.Context, input *EndTurnInput) (*EndTu
 		newRound = true
 	}
 
-	// 7. Skip monster turns (auto-advance to next player character)
-	// This loops until we find a character or complete a full cycle
-	maxIterations := len(turnOrder) * 2 // Safety limit
-	iterationCount := 0
-	for iterationCount < maxIterations {
-		iterationCount++
-		if turnOrder[currentIndex].EntityType == entityTypeCharacter {
-			break // Found a player character
-		}
-
-		// Skip this monster's turn
-		currentIndex++
-		if currentIndex >= len(turnOrder) {
-			currentIndex = 0
-			initiativeData.Round++
-			newRound = true
-		}
-	}
-
-	// Check if we couldn't find a player (all monsters)
-	if iterationCount >= maxIterations {
-		// No player characters found - end combat
-		combatState := &CombatState{
-			EncounterID:       input.EncounterID,
-			Round:             initiativeData.Round,
-			TurnOrder:         turnOrder,
-			ActiveIndex:       currentIndex,
-			MovementRemaining: defaultMovementSpeed,
-			CombatStarted:     true,
-			CombatEnded:       true,
-		}
-
-		return &EndTurnOutput{
-			CombatState: combatState,
-			TurnChange: &TurnChangeEvent{
-				PreviousEntityID: previousEntityID,
-				NextEntityID:     "",
-				Round:            initiativeData.Round,
-				NewRound:         newRound,
-			},
-		}, nil
-	}
-
-	// 8. Update initiative data
+	// 7. Update initiative data with the advanced index
 	initiativeData.Current = currentIndex
+
+	// 8. Execute monster turns if the next entity is a monster
+	// Collect character IDs for monster AI targeting
+	var characterIDs []string
+	for _, entry := range turnOrder {
+		if entry.EntityType == entityTypeCharacter {
+			characterIDs = append(characterIDs, entry.EntityID)
+		}
+	}
+
+	// Execute all consecutive monster turns until reaching a player character
+	var monsterTurns []*MonsterTurnResult
+	var encounterResult *EncounterResult
+
+	if o.isMonsterTurn(encOutput.Data) {
+		// Run monster turns
+		monsterTurns, err = o.executeMonsterTurns(ctx, encOutput.Data, characterIDs)
+		if err != nil {
+			return nil, fmt.Errorf("failed to execute monster turns: %w", err)
+		}
+
+		// Update currentIndex and round from modified encounter data
+		currentIndex = encOutput.Data.InitiativeData.Current
+		initiativeData.Round = encOutput.Data.InitiativeData.Round
+
+		// Check for combat ending conditions
+		encounterResult = o.checkCombatEnd(encOutput.Data)
+	}
 
 	// 9. Persist updated state
 	_, err = o.encRepo.Update(ctx, &encounterrepo.UpdateInput{
@@ -728,7 +722,15 @@ func (o *Orchestrator) EndTurn(ctx context.Context, input *EndTurnInput) (*EndTu
 	}
 
 	// 10. Build output
-	nextEntity := turnOrder[currentIndex]
+	var nextEntity InitiativeEntry
+	var nextEntityID string
+	combatEnded := encounterResult != nil
+
+	if !combatEnded && currentIndex >= 0 && currentIndex < len(turnOrder) {
+		nextEntity = turnOrder[currentIndex]
+		nextEntityID = nextEntity.EntityID
+	}
+
 	combatState := &CombatState{
 		EncounterID:       input.EncounterID,
 		Round:             initiativeData.Round,
@@ -736,17 +738,19 @@ func (o *Orchestrator) EndTurn(ctx context.Context, input *EndTurnInput) (*EndTu
 		ActiveIndex:       currentIndex,
 		MovementRemaining: defaultMovementSpeed,
 		CombatStarted:     true,
-		CombatEnded:       false,
+		CombatEnded:       combatEnded,
 	}
 
 	return &EndTurnOutput{
 		CombatState: combatState,
 		TurnChange: &TurnChangeEvent{
 			PreviousEntityID: previousEntityID,
-			NextEntityID:     nextEntity.EntityID,
+			NextEntityID:     nextEntityID,
 			Round:            initiativeData.Round,
 			NewRound:         newRound,
 		},
+		MonsterTurns:    monsterTurns,
+		EncounterResult: encounterResult,
 	}, nil
 }
 
@@ -1053,4 +1057,49 @@ func (o *Orchestrator) buildGameContextFromEquipment(
 	return gamectx.NewGameContext(gamectx.GameContextConfig{
 		CharacterRegistry: registry,
 	})
+}
+
+// checkCombatEnd checks if combat has ended (all monsters dead or all players dead)
+// Returns EncounterResult if combat ended, nil otherwise
+func (o *Orchestrator) checkCombatEnd(enc *encounterrepo.EncounterData) *EncounterResult {
+	if enc == nil || enc.InitiativeData == nil {
+		return nil
+	}
+
+	allMonstersDead := true
+	allPlayersDead := true
+
+	// Check each entity in initiative order
+	for _, entity := range enc.InitiativeData.Order {
+		switch entity.Type {
+		case entityTypeMonster:
+			// Check if this monster is alive
+			monsterData := o.findMonsterData(enc, entity.ID)
+			if monsterData != nil && monsterData.HitPoints > 0 {
+				allMonstersDead = false
+			}
+		case entityTypeCharacter:
+			// TODO: Check if character is alive (HP > 0, not unconscious, etc.)
+			// For now, assume all players are alive
+			// This will be implemented when we add character HP tracking
+			allPlayersDead = false
+		}
+	}
+
+	// Victory condition: all monsters dead and at least one player alive
+	if allMonstersDead && !allPlayersDead {
+		return &EncounterResult{
+			Reason: "victory",
+		}
+	}
+
+	// Defeat condition: all players dead/unconscious
+	if allPlayersDead {
+		return &EncounterResult{
+			Reason: "defeat",
+		}
+	}
+
+	// Combat continues
+	return nil
 }

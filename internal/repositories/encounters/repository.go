@@ -6,6 +6,7 @@ import (
 	"context"
 
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/initiative"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/monster"
 	// "github.com/KirkDiggler/rpg-toolkit/tools/spatial" // Temporarily disabled
 )
 
@@ -31,6 +32,7 @@ type EncounterData struct {
 	InitiativeData    *initiative.TrackerData
 	InitiativeRolls   []initiative.Roll // Store what was rolled for each entity
 	MovementRemaining int32             // Movement remaining for active turn
+	Monsters          []*monster.Data   // Monster state for this encounter
 }
 
 // SaveInput defines the request for saving an encounter
@@ -39,7 +41,8 @@ type SaveInput struct {
 	RoomData          interface{} // Temporarily using interface{} until spatial is fixed
 	InitiativeData    *initiative.TrackerData
 	InitiativeRolls   []initiative.Roll
-	MovementRemaining int32 // Movement remaining for active turn
+	MovementRemaining int32           // Movement remaining for active turn
+	Monsters          []*monster.Data // Monster state for this encounter
 }
 
 // SaveOutput defines the response for saving an encounter
@@ -63,6 +66,7 @@ type UpdateInput struct {
 	InitiativeData    *initiative.TrackerData // Turn order changes
 	RoomData          interface{}             // Position changes - temporarily using interface{}
 	MovementRemaining *int32                  // Movement remaining for active turn (optional - only update if provided)
+	Monsters          []*monster.Data         // Monster state updates (optional - only update if provided)
 }
 
 // UpdateOutput defines the response for updating an encounter

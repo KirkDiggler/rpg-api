@@ -40,6 +40,7 @@ func (r *InMemoryRepository) Save(_ context.Context, input *SaveInput) (*SaveOut
 		InitiativeData:    input.InitiativeData,
 		InitiativeRolls:   input.InitiativeRolls,
 		MovementRemaining: input.MovementRemaining,
+		Monsters:          input.Monsters,
 	}
 
 	return &SaveOutput{Success: true}, nil
@@ -71,6 +72,7 @@ func (r *InMemoryRepository) Get(_ context.Context, input *GetInput) (*GetOutput
 			InitiativeData:    data.InitiativeData,
 			InitiativeRolls:   data.InitiativeRolls,
 			MovementRemaining: data.MovementRemaining,
+			Monsters:          data.Monsters,
 		},
 	}, nil
 }
@@ -102,6 +104,9 @@ func (r *InMemoryRepository) Update(_ context.Context, input *UpdateInput) (*Upd
 	}
 	if input.MovementRemaining != nil {
 		data.MovementRemaining = *input.MovementRemaining
+	}
+	if input.Monsters != nil {
+		data.Monsters = input.Monsters
 	}
 
 	return &UpdateOutput{Success: true}, nil

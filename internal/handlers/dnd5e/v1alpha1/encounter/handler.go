@@ -97,9 +97,10 @@ func (h *Handler) DungeonStart(
 
 	// 3. Convert to proto response
 	return &dnd5ev1alpha1.DungeonStartResponse{
-		EncounterId: output.EncounterID,
-		Room:        convertRoomDataToProto(output.Room),
-		CombatState: convertCombatStateToProto(output.CombatState),
+		EncounterId:  output.EncounterID,
+		Room:         convertRoomDataToProto(output.Room),
+		CombatState:  convertCombatStateToProto(output.CombatState),
+		MonsterTurns: convertMonsterTurnsToProto(output.MonsterTurns),
 	}, nil
 }
 
@@ -188,11 +189,23 @@ func (h *Handler) EndTurn(
 	}
 
 	// 4. Convert to proto response
-	return &dnd5ev1alpha1.EndTurnResponse{
+	response := &dnd5ev1alpha1.EndTurnResponse{
 		Success:     true,
 		CombatState: convertCombatStateToProto(output.CombatState),
 		TurnChange:  convertTurnChangeToProto(output.TurnChange),
-	}, nil
+	}
+
+	// 5. Add monster turns if any were executed
+	if len(output.MonsterTurns) > 0 {
+		response.MonsterTurns = convertMonsterTurnsToProto(output.MonsterTurns)
+	}
+
+	// 6. Add encounter result if combat ended
+	if output.EncounterResult != nil {
+		response.EncounterResult = convertEncounterResultToProto(output.EncounterResult)
+	}
+
+	return response, nil
 }
 
 // ActivateFeature handles combat feature activation (e.g., Rage)

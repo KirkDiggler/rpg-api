@@ -6,6 +6,7 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/encounter"
 	"github.com/KirkDiggler/rpg-toolkit/core"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/abilities"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/monster"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/refs"
 	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
 )
@@ -576,5 +577,125 @@ func fightingStyleRefToProto(ref *core.Ref) dnd5ev1alpha1.ConditionId {
 		return dnd5ev1alpha1.ConditionId_CONDITION_ID_FIGHTING_STYLE_TWO_WEAPON_FIGHTING
 	default:
 		return dnd5ev1alpha1.ConditionId_CONDITION_ID_UNSPECIFIED
+	}
+}
+
+// convertMonsterTurnResultToProto converts orchestrator's MonsterTurnResult to proto
+func convertMonsterTurnResultToProto(result *encounter.MonsterTurnResult) *dnd5ev1alpha1.MonsterTurnResult {
+	if result == nil {
+		return nil
+	}
+
+	// Convert actions
+	actions := make([]*dnd5ev1alpha1.MonsterExecutedAction, len(result.Actions))
+	for i, action := range result.Actions {
+		actions[i] = convertMonsterExecutedActionToProto(&action)
+	}
+
+	// Convert movement path
+	movementPath := make([]*apiv1alpha1.Position, len(result.Movement))
+	for i, pos := range result.Movement {
+		movementPath[i] = &apiv1alpha1.Position{
+			X: pos.X,
+			Y: pos.Y,
+		}
+	}
+
+	return &dnd5ev1alpha1.MonsterTurnResult{
+		MonsterId:    result.MonsterID,
+		MonsterName:  result.MonsterName,
+		Actions:      actions,
+		MovementPath: movementPath,
+	}
+}
+
+// convertMonsterTurnsToProto converts a slice of MonsterTurnResult to proto
+func convertMonsterTurnsToProto(results []*encounter.MonsterTurnResult) []*dnd5ev1alpha1.MonsterTurnResult {
+	if results == nil {
+		return nil
+	}
+
+	protoResults := make([]*dnd5ev1alpha1.MonsterTurnResult, len(results))
+	for i, result := range results {
+		protoResults[i] = convertMonsterTurnResultToProto(result)
+	}
+
+	return protoResults
+}
+
+// convertMonsterExecutedActionToProto converts orchestrator's MonsterExecutedAction to proto
+func convertMonsterExecutedActionToProto(action *encounter.MonsterExecutedAction) *dnd5ev1alpha1.MonsterExecutedAction {
+	if action == nil {
+		return nil
+	}
+
+	protoAction := &dnd5ev1alpha1.MonsterExecutedAction{
+		ActionId:   action.ActionID,
+		ActionType: convertMonsterActionTypeToProto(action.ActionType),
+		TargetId:   action.TargetID,
+		Success:    action.Success,
+	}
+
+	// Convert Details based on action type and success
+	// For attack actions, Details should be an AttackResult
+	if action.Success && action.Details != nil {
+		switch action.ActionType {
+		case string(monster.TypeMeleeAttack), string(monster.TypeRangedAttack):
+			// Try to convert Details to AttackResult
+			if attackResult, ok := action.Details.(*encounter.AttackResult); ok {
+				protoAction.Details = &dnd5ev1alpha1.MonsterExecutedAction_AttackResult{
+					AttackResult: convertAttackResultToProto(attackResult),
+				}
+			}
+		case string(monster.TypeHeal):
+			// Future: Add HealResult conversion when needed
+			// For now, leave Details nil
+		}
+	}
+
+	return protoAction
+}
+
+// convertMonsterActionTypeToProto converts toolkit monster.ActionType to proto enum
+func convertMonsterActionTypeToProto(actionType string) dnd5ev1alpha1.MonsterActionType {
+	switch monster.ActionType(actionType) {
+	case monster.TypeMeleeAttack:
+		return dnd5ev1alpha1.MonsterActionType_MONSTER_ACTION_TYPE_MELEE_ATTACK
+	case monster.TypeRangedAttack:
+		return dnd5ev1alpha1.MonsterActionType_MONSTER_ACTION_TYPE_RANGED_ATTACK
+	case monster.TypeSpell:
+		return dnd5ev1alpha1.MonsterActionType_MONSTER_ACTION_TYPE_SPELL
+	case monster.TypeHeal:
+		return dnd5ev1alpha1.MonsterActionType_MONSTER_ACTION_TYPE_HEAL
+	case monster.TypeMovement:
+		return dnd5ev1alpha1.MonsterActionType_MONSTER_ACTION_TYPE_MOVEMENT
+	case monster.TypeStealth:
+		return dnd5ev1alpha1.MonsterActionType_MONSTER_ACTION_TYPE_STEALTH
+	case monster.TypeDefend:
+		return dnd5ev1alpha1.MonsterActionType_MONSTER_ACTION_TYPE_DEFEND
+	default:
+		return dnd5ev1alpha1.MonsterActionType_MONSTER_ACTION_TYPE_UNSPECIFIED
+	}
+}
+
+// convertEncounterResultToProto converts an EncounterResult to proto
+func convertEncounterResultToProto(result *encounter.EncounterResult) *dnd5ev1alpha1.EncounterResult {
+	if result == nil {
+		return nil
+	}
+
+	// Convert reason string to enum
+	var protoReason dnd5ev1alpha1.EncounterEndReason
+	switch result.Reason {
+	case "victory":
+		protoReason = dnd5ev1alpha1.EncounterEndReason_ENCOUNTER_END_REASON_VICTORY
+	case "defeat":
+		protoReason = dnd5ev1alpha1.EncounterEndReason_ENCOUNTER_END_REASON_DEFEAT
+	default:
+		protoReason = dnd5ev1alpha1.EncounterEndReason_ENCOUNTER_END_REASON_UNSPECIFIED
+	}
+
+	return &dnd5ev1alpha1.EncounterResult{
+		Reason: protoReason,
 	}
 }
