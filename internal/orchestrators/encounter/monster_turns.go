@@ -171,12 +171,24 @@ func (o *Orchestrator) executeSingleMonsterTurn(
 		}
 	}
 
-	// 8. Convert movement path
+	// 8. Convert movement path and update room data with final position
 	movement := make([]Position, len(turnResult.Movement))
 	for i, pos := range turnResult.Movement {
 		movement[i] = Position{
 			X: float64(pos.X),
 			Y: float64(pos.Y),
+		}
+	}
+
+	// Update monster's position in room data if it moved
+	if len(turnResult.Movement) > 0 && roomData != nil {
+		finalPos := turnResult.Movement[len(turnResult.Movement)-1]
+		if placement, exists := roomData.Entities[monsterData.ID]; exists {
+			placement.Position = spatial.Position{
+				X: float64(finalPos.X),
+				Y: float64(finalPos.Y),
+			}
+			roomData.Entities[monsterData.ID] = placement
 		}
 	}
 
