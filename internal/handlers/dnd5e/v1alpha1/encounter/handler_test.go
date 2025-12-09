@@ -533,31 +533,41 @@ func (s *HandlerTestSuite) TestGetCombatState_Unimplemented() {
 }
 
 // TestMoveCharacter_Success tests successful movement
+// Note: The handler converts cube coordinates (from client) to offset coordinates (for service)
+// The test uses hex grid, so input coords (5, -8, 3) cube -> (5, 5) offset after conversion
 func (s *HandlerTestSuite) TestMoveCharacter_Success() {
 	// Arrange
 	expectedRoom := &spatial.RoomData{
-		ID:       "enc-1-room",
-		Type:     "dungeon",
-		Width:    20,
-		Height:   20,
-		GridType: spatial.GridTypeSquare,
+		ID:         "enc-1-room",
+		Type:       "dungeon",
+		Width:      20,
+		Height:     20,
+		GridType:   spatial.GridTypeHex, // Use hex grid since that's alpha default
+		HexFlatTop: false,               // pointy-top hex
 		Entities: map[string]spatial.EntityPlacement{
 			"char-1": {
 				EntityID:       "char-1",
 				EntityType:     "character",
-				Position:       spatial.Position{X: 5, Y: 5},
+				Position:       spatial.Position{X: 5, Y: 5}, // Stored in offset internally
 				Size:           1,
 				BlocksMovement: true,
 			},
 		},
 	}
 
+	// Convert (5, 5) offset to cube for the test input
+	// Pointy-top hex: (5, 5) offset -> cube coords via spatial library
+	cubePos := spatial.OffsetCoordinateToCubeWithOrientation(
+		spatial.Position{X: 5, Y: 5},
+		spatial.HexOrientationPointyTop,
+	)
+
 	s.mockService.EXPECT().
 		MoveCharacter(gomock.Any(), &encounter.MoveCharacterInput{
 			EncounterID: "enc-1",
 			EntityID:    "char-1",
 			TargetPosition: &encounter.Position{
-				X: 5,
+				X: 5, // Expected offset coords after cube->offset conversion
 				Y: 5,
 			},
 		}).
@@ -572,12 +582,12 @@ func (s *HandlerTestSuite) TestMoveCharacter_Success() {
 			UpdatedRoom:       expectedRoom,
 		}, nil)
 
-	// Act
+	// Act - send cube coordinates (what client would send)
 	resp, err := s.handler.MoveCharacter(context.Background(), &dnd5ev1alpha1.MoveCharacterRequest{
 		EncounterId: "enc-1",
 		EntityId:    "char-1",
 		Path: []*apiv1alpha1.Position{
-			{X: 5, Y: 5},
+			{X: float64(cubePos.X), Y: float64(cubePos.Y), Z: float64(cubePos.Z)},
 		},
 	})
 
@@ -679,14 +689,21 @@ func (s *HandlerTestSuite) TestMoveCharacter_ServiceError() {
 }
 
 // TestMoveCharacter_OutOfBounds tests movement to invalid position
+// Note: The handler converts cube coordinates (from client) to offset coordinates (for service)
 func (s *HandlerTestSuite) TestMoveCharacter_OutOfBounds() {
+	// Convert (100, 100) offset to cube for the test input
+	cubePos := spatial.OffsetCoordinateToCubeWithOrientation(
+		spatial.Position{X: 100, Y: 100},
+		spatial.HexOrientationPointyTop,
+	)
+
 	// Arrange
 	s.mockService.EXPECT().
 		MoveCharacter(gomock.Any(), &encounter.MoveCharacterInput{
 			EncounterID: "enc-1",
 			EntityID:    "char-1",
 			TargetPosition: &encounter.Position{
-				X: 100,
+				X: 100, // Expected offset coords after cube->offset conversion
 				Y: 100,
 			},
 		}).
@@ -701,12 +718,12 @@ func (s *HandlerTestSuite) TestMoveCharacter_OutOfBounds() {
 			UpdatedRoom:       nil,
 		}, nil)
 
-	// Act
+	// Act - send cube coordinates (what client would send)
 	resp, err := s.handler.MoveCharacter(context.Background(), &dnd5ev1alpha1.MoveCharacterRequest{
 		EncounterId: "enc-1",
 		EntityId:    "char-1",
 		Path: []*apiv1alpha1.Position{
-			{X: 100, Y: 100},
+			{X: float64(cubePos.X), Y: float64(cubePos.Y), Z: float64(cubePos.Z)},
 		},
 	})
 

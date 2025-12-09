@@ -206,6 +206,32 @@ func convertPositionToProto(
 	}
 }
 
+// convertProtoPositionToOffset converts a proto Position to spatial.Position (offset)
+// For hex grids, converts cube coordinates (x, y, z) to offset coordinates
+// For other grid types, uses the x, y values directly as offset coordinates
+func convertProtoPositionToOffset(
+	pos *apiv1alpha1.Position,
+	gridType string,
+	hexOrientation spatial.HexOrientation,
+) spatial.Position {
+	if pos == nil {
+		return spatial.Position{X: 0, Y: 0}
+	}
+
+	if gridType == spatial.GridTypeHex {
+		// Convert cube to offset coordinates for hex grids
+		cube := spatial.CubeCoordinate{
+			X: int(pos.X),
+			Y: int(pos.Y),
+			Z: int(pos.Z),
+		}
+		return cube.ToOffsetCoordinateWithOrientation(hexOrientation)
+	}
+
+	// For square/gridless grids, use x, y directly as offset
+	return spatial.Position{X: pos.X, Y: pos.Y}
+}
+
 // extractGridInfo extracts grid type and hex orientation from room data
 // Returns default values (hex, pointy-top) if room data is nil or invalid
 func extractGridInfo(roomData interface{}) (string, spatial.HexOrientation) {

@@ -132,30 +132,37 @@ func (h *Handler) MoveCharacter(
 		return nil, status.Error(codes.InvalidArgument, "path is required")
 	}
 
-	// 2. Create service input - use last position in path as target
+	// 2. Use default hex grid settings for coordinate conversion
+	// The client sends cube coordinates; we need to convert to offset for internal use
+	// TODO: In the future, could fetch room data from encounter state for accuracy
+	gridType := spatial.GridTypeHex
+	hexOrientation := spatial.HexOrientationPointyTop
+
+	// 3. Create service input - convert cube coords to offset for internal use
 	lastPos := req.GetPath()[len(req.GetPath())-1]
+	offsetPos := convertProtoPositionToOffset(lastPos, gridType, hexOrientation)
 	input := &encounter.MoveCharacterInput{
 		EncounterID: req.GetEncounterId(),
 		EntityID:    req.GetEntityId(),
 		TargetPosition: &encounter.Position{
-			X: float64(lastPos.GetX()),
-			Y: float64(lastPos.GetY()),
+			X: offsetPos.X,
+			Y: offsetPos.Y,
 		},
 	}
 
-	// 3. Call service
+	// 4. Call service
 	output, err := h.encounterService.MoveCharacter(ctx, input)
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
-	// 4. Convert to proto response
+	// 5. Convert to proto response
 	response := &dnd5ev1alpha1.MoveCharacterResponse{
 		Success:           output.Success,
 		MovementRemaining: output.MovementRemaining,
 	}
 
-	// 5. Convert room data if present
+	// 6. Convert room data if present (will output cube coordinates)
 	if output.UpdatedRoom != nil {
 		response.UpdatedRoom = convertRoomDataToProto(output.UpdatedRoom)
 	}
