@@ -12,6 +12,7 @@ import (
 	characterhandler "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v1alpha1/character"
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/encounter"
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
+	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
 )
 
 // HandlerConfig holds dependencies for the handler
@@ -95,12 +96,15 @@ func (h *Handler) DungeonStart(
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
-	// 3. Convert to proto response
+	// 3. Extract grid info for cube coordinate conversion
+	gridType, hexOrientation := extractGridInfo(output.Room)
+
+	// 4. Convert to proto response with cube coordinates for hex grids
 	return &dnd5ev1alpha1.DungeonStartResponse{
 		EncounterId:  output.EncounterID,
 		Room:         convertRoomDataToProto(output.Room),
-		CombatState:  convertCombatStateToProto(output.CombatState),
-		MonsterTurns: convertMonsterTurnsToProto(output.MonsterTurns),
+		CombatState:  convertCombatStateToProto(output.CombatState, gridType, hexOrientation),
+		MonsterTurns: convertMonsterTurnsToProto(output.MonsterTurns, gridType, hexOrientation),
 	}, nil
 }
 
@@ -128,30 +132,37 @@ func (h *Handler) MoveCharacter(
 		return nil, status.Error(codes.InvalidArgument, "path is required")
 	}
 
-	// 2. Create service input - use last position in path as target
+	// 2. Use default hex grid settings for coordinate conversion
+	// The client sends cube coordinates; we need to convert to offset for internal use
+	// TODO: In the future, could fetch room data from encounter state for accuracy
+	gridType := spatial.GridTypeHex
+	hexOrientation := spatial.HexOrientationPointyTop
+
+	// 3. Create service input - convert cube coords to offset for internal use
 	lastPos := req.GetPath()[len(req.GetPath())-1]
+	offsetPos := convertProtoPositionToOffset(lastPos, gridType, hexOrientation)
 	input := &encounter.MoveCharacterInput{
 		EncounterID: req.GetEncounterId(),
 		EntityID:    req.GetEntityId(),
 		TargetPosition: &encounter.Position{
-			X: float64(lastPos.GetX()),
-			Y: float64(lastPos.GetY()),
+			X: offsetPos.X,
+			Y: offsetPos.Y,
 		},
 	}
 
-	// 3. Call service
+	// 4. Call service
 	output, err := h.encounterService.MoveCharacter(ctx, input)
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
-	// 4. Convert to proto response
+	// 5. Convert to proto response
 	response := &dnd5ev1alpha1.MoveCharacterResponse{
 		Success:           output.Success,
 		MovementRemaining: output.MovementRemaining,
 	}
 
-	// 5. Convert room data if present
+	// 6. Convert room data if present (will output cube coordinates)
 	if output.UpdatedRoom != nil {
 		response.UpdatedRoom = convertRoomDataToProto(output.UpdatedRoom)
 	}
@@ -188,19 +199,24 @@ func (h *Handler) EndTurn(
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
-	// 4. Convert to proto response
+	// 4. Use default hex grid settings (D&D 5e default: hex pointy-top)
+	// TODO: In the future, could fetch room data from encounter state for accuracy
+	gridType := spatial.GridTypeHex
+	hexOrientation := spatial.HexOrientationPointyTop
+
+	// 5. Convert to proto response with cube coordinates for hex grids
 	response := &dnd5ev1alpha1.EndTurnResponse{
 		Success:     true,
-		CombatState: convertCombatStateToProto(output.CombatState),
+		CombatState: convertCombatStateToProto(output.CombatState, gridType, hexOrientation),
 		TurnChange:  convertTurnChangeToProto(output.TurnChange),
 	}
 
-	// 5. Add monster turns if any were executed
+	// 6. Add monster turns if any were executed
 	if len(output.MonsterTurns) > 0 {
-		response.MonsterTurns = convertMonsterTurnsToProto(output.MonsterTurns)
+		response.MonsterTurns = convertMonsterTurnsToProto(output.MonsterTurns, gridType, hexOrientation)
 	}
 
-	// 6. Add encounter result if combat ended
+	// 7. Add encounter result if combat ended
 	if output.EncounterResult != nil {
 		response.EncounterResult = convertEncounterResultToProto(output.EncounterResult)
 	}

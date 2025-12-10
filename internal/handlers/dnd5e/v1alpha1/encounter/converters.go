@@ -127,10 +127,25 @@ func convertRoomDataToProto(roomData interface{}) *dnd5ev1alpha1.Room {
 	// Convert grid type string to proto enum
 	gridType := convertGridTypeToProto(spatialRoom.GridType)
 
-	// Convert entities map
+	// Determine hex orientation for cube coordinate conversion
+	hexOrientation := spatial.HexOrientationPointyTop // Default
+	if spatialRoom.HexFlatTop {
+		hexOrientation = spatial.HexOrientationFlatTop
+	}
+
+	// Convert entities map with cube coordinates for hex grids
 	entities := make(map[string]*dnd5ev1alpha1.EntityPlacement, len(spatialRoom.Entities))
 	for id, placement := range spatialRoom.Entities {
-		entities[id] = convertEntityPlacementToProto(placement)
+		entities[id] = convertEntityPlacementToProto(placement, spatialRoom.GridType, hexOrientation)
+	}
+
+	// Convert HexFlatTop (toolkit) to hex_orientation (proto)
+	// Toolkit: HexFlatTop=false means pointy-top, HexFlatTop=true means flat-top
+	// Proto: hex_orientation=true means pointy-top, hex_orientation=false means flat-top
+	var hexOrientationPtr *bool
+	if spatialRoom.GridType == spatial.GridTypeHex {
+		hexOrientationProto := !spatialRoom.HexFlatTop // Invert: pointy-top = true in proto
+		hexOrientationPtr = &hexOrientationProto
 	}
 
 	return &dnd5ev1alpha1.Room{
@@ -139,26 +154,106 @@ func convertRoomDataToProto(roomData interface{}) *dnd5ev1alpha1.Room {
 		Width:          int32(spatialRoom.Width),
 		Height:         int32(spatialRoom.Height),
 		GridType:       gridType,
-		HexOrientation: spatialRoom.HexOrientation,
+		HexOrientation: hexOrientationPtr,
 		Entities:       entities,
 	}
 }
 
 // convertEntityPlacementToProto converts spatial.EntityPlacement to proto
+// For hex grids, positions are converted to cube coordinates (x, y, z)
 //
 //nolint:gosec // G115: Game values are bounded, no overflow risk
-func convertEntityPlacementToProto(placement spatial.EntityPlacement) *dnd5ev1alpha1.EntityPlacement {
+func convertEntityPlacementToProto(
+	placement spatial.EntityPlacement,
+	gridType string,
+	hexOrientation spatial.HexOrientation,
+) *dnd5ev1alpha1.EntityPlacement {
+	position := convertPositionToProto(placement.Position, gridType, hexOrientation)
+
 	return &dnd5ev1alpha1.EntityPlacement{
-		EntityId:   placement.EntityID,
-		EntityType: placement.EntityType,
-		Position: &apiv1alpha1.Position{
-			X: placement.Position.X,
-			Y: placement.Position.Y,
-		},
+		EntityId:          placement.EntityID,
+		EntityType:        placement.EntityType,
+		Position:          position,
 		Size:              int32(placement.Size),
 		BlocksMovement:    placement.BlocksMovement,
 		BlocksLineOfSight: placement.BlocksLineOfSight,
 	}
+}
+
+// convertPositionToProto converts a spatial.Position to proto Position
+// For hex grids, converts offset coordinates to cube coordinates (x, y, z)
+// For other grid types, uses offset coordinates (x, y, z=0)
+func convertPositionToProto(
+	pos spatial.Position,
+	gridType string,
+	hexOrientation spatial.HexOrientation,
+) *apiv1alpha1.Position {
+	if gridType == spatial.GridTypeHex {
+		// Convert offset to cube coordinates for hex grids
+		cube := spatial.OffsetCoordinateToCubeWithOrientation(pos, hexOrientation)
+		return &apiv1alpha1.Position{
+			X: float64(cube.X),
+			Y: float64(cube.Y),
+			Z: float64(cube.Z),
+		}
+	}
+
+	// For square/gridless grids, use offset coordinates
+	return &apiv1alpha1.Position{
+		X: pos.X,
+		Y: pos.Y,
+		Z: 0,
+	}
+}
+
+// convertProtoPositionToOffset converts a proto Position to spatial.Position (offset)
+// For hex grids, converts cube coordinates (x, y, z) to offset coordinates
+// For other grid types, uses the x, y values directly as offset coordinates
+func convertProtoPositionToOffset(
+	pos *apiv1alpha1.Position,
+	gridType string,
+	hexOrientation spatial.HexOrientation,
+) spatial.Position {
+	if pos == nil {
+		return spatial.Position{X: 0, Y: 0}
+	}
+
+	if gridType == spatial.GridTypeHex {
+		// Convert cube to offset coordinates for hex grids
+		cube := spatial.CubeCoordinate{
+			X: int(pos.X),
+			Y: int(pos.Y),
+			Z: int(pos.Z),
+		}
+		return cube.ToOffsetCoordinateWithOrientation(hexOrientation)
+	}
+
+	// For square/gridless grids, use x, y directly as offset
+	return spatial.Position{X: pos.X, Y: pos.Y}
+}
+
+// extractGridInfo extracts grid type and hex orientation from room data
+// Returns default values (hex, pointy-top) if room data is nil or invalid
+func extractGridInfo(roomData interface{}) (string, spatial.HexOrientation) {
+	if roomData == nil {
+		return spatial.GridTypeHex, spatial.HexOrientationPointyTop
+	}
+
+	spatialRoom, ok := roomData.(*spatial.RoomData)
+	if !ok {
+		if spatialRoomVal, ok := roomData.(spatial.RoomData); ok {
+			spatialRoom = &spatialRoomVal
+		} else {
+			return spatial.GridTypeHex, spatial.HexOrientationPointyTop
+		}
+	}
+
+	hexOrientation := spatial.HexOrientationPointyTop
+	if spatialRoom.HexFlatTop {
+		hexOrientation = spatial.HexOrientationFlatTop
+	}
+
+	return spatialRoom.GridType, hexOrientation
 }
 
 // convertGridTypeToProto converts string grid type to proto enum
@@ -178,9 +273,14 @@ func convertGridTypeToProto(gridType string) apiv1alpha1.GridType {
 }
 
 // convertCombatStateToProto converts orchestrator's CombatState to proto
+// For hex grids, positions are converted to cube coordinates
 //
 //nolint:gosec // G115: Game values are bounded by D&D rules, no overflow risk
-func convertCombatStateToProto(state *encounter.CombatState) *dnd5ev1alpha1.CombatState {
+func convertCombatStateToProto(
+	state *encounter.CombatState,
+	gridType string,
+	hexOrientation spatial.HexOrientation,
+) *dnd5ev1alpha1.CombatState {
 	if state == nil {
 		return nil
 	}
@@ -201,13 +301,14 @@ func convertCombatStateToProto(state *encounter.CombatState) *dnd5ev1alpha1.Comb
 	if state.CombatStarted && !state.CombatEnded && len(state.TurnOrder) > 0 {
 		activeEntry := state.TurnOrder[state.ActiveIndex]
 
-		// Convert position from service layer
+		// Convert position from service layer using cube coordinates for hex grids
 		var position *apiv1alpha1.Position
 		if activeEntry.Position != nil {
-			position = &apiv1alpha1.Position{
-				X: activeEntry.Position.X,
-				Y: activeEntry.Position.Y,
-			}
+			position = convertPositionToProto(
+				spatial.Position{X: activeEntry.Position.X, Y: activeEntry.Position.Y},
+				gridType,
+				hexOrientation,
+			)
 		}
 
 		movementUsed := int32(30) - state.MovementRemaining
@@ -581,7 +682,12 @@ func fightingStyleRefToProto(ref *core.Ref) dnd5ev1alpha1.ConditionId {
 }
 
 // convertMonsterTurnResultToProto converts orchestrator's MonsterTurnResult to proto
-func convertMonsterTurnResultToProto(result *encounter.MonsterTurnResult) *dnd5ev1alpha1.MonsterTurnResult {
+// For hex grids, movement positions are converted to cube coordinates
+func convertMonsterTurnResultToProto(
+	result *encounter.MonsterTurnResult,
+	gridType string,
+	hexOrientation spatial.HexOrientation,
+) *dnd5ev1alpha1.MonsterTurnResult {
 	if result == nil {
 		return nil
 	}
@@ -592,13 +698,12 @@ func convertMonsterTurnResultToProto(result *encounter.MonsterTurnResult) *dnd5e
 		actions[i] = convertMonsterExecutedActionToProto(&action)
 	}
 
-	// Convert movement path
+	// Convert movement path using cube coordinates for hex grids
 	movementPath := make([]*apiv1alpha1.Position, len(result.Movement))
 	for i, pos := range result.Movement {
-		movementPath[i] = &apiv1alpha1.Position{
-			X: pos.X,
-			Y: pos.Y,
-		}
+		// Convert encounter.Position to spatial.Position for cube conversion
+		spatialPos := spatial.Position{X: pos.X, Y: pos.Y}
+		movementPath[i] = convertPositionToProto(spatialPos, gridType, hexOrientation)
 	}
 
 	return &dnd5ev1alpha1.MonsterTurnResult{
@@ -610,14 +715,19 @@ func convertMonsterTurnResultToProto(result *encounter.MonsterTurnResult) *dnd5e
 }
 
 // convertMonsterTurnsToProto converts a slice of MonsterTurnResult to proto
-func convertMonsterTurnsToProto(results []*encounter.MonsterTurnResult) []*dnd5ev1alpha1.MonsterTurnResult {
+// For hex grids, movement positions are converted to cube coordinates
+func convertMonsterTurnsToProto(
+	results []*encounter.MonsterTurnResult,
+	gridType string,
+	hexOrientation spatial.HexOrientation,
+) []*dnd5ev1alpha1.MonsterTurnResult {
 	if results == nil {
 		return nil
 	}
 
 	protoResults := make([]*dnd5ev1alpha1.MonsterTurnResult, len(results))
 	for i, result := range results {
-		protoResults[i] = convertMonsterTurnResultToProto(result)
+		protoResults[i] = convertMonsterTurnResultToProto(result, gridType, hexOrientation)
 	}
 
 	return protoResults

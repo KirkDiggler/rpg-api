@@ -682,11 +682,121 @@ func (s *ConvertersTestSuite) TestConvertRoomDataToProto_InvalidType() {
 }
 
 // =============================================================================
+// Position Conversion Tests (Offset <-> Cube Round-trip)
+// =============================================================================
+
+func (s *ConvertersTestSuite) TestConvertPositionToProto_HexGrid_PointyTop() {
+	// Test offset (10, 10) converts to cube correctly for pointy-top hex
+	pos := spatial.Position{X: 10, Y: 10}
+	gridType := spatial.GridTypeHex
+	hexOrientation := spatial.HexOrientationPointyTop
+
+	result := convertPositionToProto(pos, gridType, hexOrientation)
+
+	s.Require().NotNil(result)
+	// For pointy-top hex, (10, 10) offset -> cube coordinates
+	// The sum x + y + z should equal 0 for valid cube coordinates
+	s.Equal(float64(0), result.X+result.Y+result.Z, "cube coordinates must satisfy x+y+z=0")
+}
+
+func (s *ConvertersTestSuite) TestConvertPositionToProto_SquareGrid() {
+	// Square grid should just pass through offset coordinates
+	pos := spatial.Position{X: 5, Y: 7}
+	gridType := spatial.GridTypeSquare
+	hexOrientation := spatial.HexOrientationPointyTop // Ignored for square
+
+	result := convertPositionToProto(pos, gridType, hexOrientation)
+
+	s.Require().NotNil(result)
+	s.Equal(float64(5), result.X)
+	s.Equal(float64(7), result.Y)
+	s.Equal(float64(0), result.Z)
+}
+
+func (s *ConvertersTestSuite) TestConvertProtoPositionToOffset_HexGrid_PointyTop() {
+	// Test cube coordinates convert back to offset for pointy-top hex
+	// First convert offset to cube, then back
+	originalOffset := spatial.Position{X: 10, Y: 10}
+	gridType := spatial.GridTypeHex
+	hexOrientation := spatial.HexOrientationPointyTop
+
+	// Convert to proto (cube)
+	protoPos := convertPositionToProto(originalOffset, gridType, hexOrientation)
+
+	// Convert back to offset
+	result := convertProtoPositionToOffset(protoPos, gridType, hexOrientation)
+
+	// Should get back the original offset coordinates
+	s.Equal(originalOffset.X, result.X)
+	s.Equal(originalOffset.Y, result.Y)
+}
+
+func (s *ConvertersTestSuite) TestConvertProtoPositionToOffset_SquareGrid() {
+	// Square grid should pass through
+	protoPos := &apiv1alpha1.Position{X: 5, Y: 7, Z: 0}
+	gridType := spatial.GridTypeSquare
+	hexOrientation := spatial.HexOrientationPointyTop
+
+	result := convertProtoPositionToOffset(protoPos, gridType, hexOrientation)
+
+	s.Equal(float64(5), result.X)
+	s.Equal(float64(7), result.Y)
+}
+
+func (s *ConvertersTestSuite) TestConvertProtoPositionToOffset_Nil() {
+	gridType := spatial.GridTypeHex
+	hexOrientation := spatial.HexOrientationPointyTop
+
+	result := convertProtoPositionToOffset(nil, gridType, hexOrientation)
+
+	s.Equal(float64(0), result.X)
+	s.Equal(float64(0), result.Y)
+}
+
+func (s *ConvertersTestSuite) TestPositionConversion_RoundTrip_MultiplePositions() {
+	// Test round-trip for various positions
+	testCases := []struct {
+		name   string
+		offset spatial.Position
+	}{
+		{"origin", spatial.Position{X: 0, Y: 0}},
+		{"positive_even_row", spatial.Position{X: 10, Y: 10}},
+		{"positive_odd_row", spatial.Position{X: 10, Y: 11}},
+		{"near_origin", spatial.Position{X: 1, Y: 1}},
+		{"larger_coords", spatial.Position{X: 20, Y: 15}},
+	}
+
+	gridType := spatial.GridTypeHex
+	hexOrientation := spatial.HexOrientationPointyTop
+
+	for _, tc := range testCases {
+		s.Run(tc.name, func() {
+			// Offset -> Cube
+			protoPos := convertPositionToProto(tc.offset, gridType, hexOrientation)
+
+			// Verify cube coordinate validity (x + y + z = 0)
+			s.Equal(
+				float64(0),
+				protoPos.X+protoPos.Y+protoPos.Z,
+				"cube coordinates must satisfy x+y+z=0 for %s", tc.name,
+			)
+
+			// Cube -> Offset
+			result := convertProtoPositionToOffset(protoPos, gridType, hexOrientation)
+
+			// Verify round-trip preserves original
+			s.Equal(tc.offset.X, result.X, "X coordinate mismatch for %s", tc.name)
+			s.Equal(tc.offset.Y, result.Y, "Y coordinate mismatch for %s", tc.name)
+		})
+	}
+}
+
+// =============================================================================
 // convertCombatStateToProto Tests
 // =============================================================================
 
 func (s *ConvertersTestSuite) TestConvertCombatStateToProto_Nil() {
-	result := convertCombatStateToProto(nil)
+	result := convertCombatStateToProto(nil, spatial.GridTypeHex, spatial.HexOrientationPointyTop)
 	s.Nil(result)
 }
 
@@ -717,7 +827,7 @@ func (s *ConvertersTestSuite) TestConvertCombatStateToProto_ActiveCombat() {
 		CombatEnded:       false,
 	}
 
-	result := convertCombatStateToProto(state)
+	result := convertCombatStateToProto(state, spatial.GridTypeSquare, spatial.HexOrientationPointyTop)
 
 	s.Require().NotNil(result)
 	s.Equal("enc-1", result.EncounterId)
@@ -738,7 +848,7 @@ func (s *ConvertersTestSuite) TestConvertCombatStateToProto_ActiveCombat() {
 	s.Equal(int32(10), result.CurrentTurn.MovementUsed) // 30 - 20 = 10
 	s.Equal(int32(30), result.CurrentTurn.MovementMax)
 	s.Require().NotNil(result.CurrentTurn.Position)
-	s.Equal(float64(5), result.CurrentTurn.Position.X)
+	s.Equal(float64(5), result.CurrentTurn.Position.X) // Square grid: offset coords
 }
 
 func (s *ConvertersTestSuite) TestConvertCombatStateToProto_NotStarted() {
@@ -749,7 +859,7 @@ func (s *ConvertersTestSuite) TestConvertCombatStateToProto_NotStarted() {
 		CombatEnded:   false,
 	}
 
-	result := convertCombatStateToProto(state)
+	result := convertCombatStateToProto(state, spatial.GridTypeHex, spatial.HexOrientationPointyTop)
 
 	s.Require().NotNil(result)
 	s.False(result.CombatStarted)

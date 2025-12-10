@@ -144,10 +144,8 @@ func createGridFromRoomData(roomData *spatial.RoomData) spatial.Grid {
 	switch roomData.GridType {
 	case spatial.GridTypeHex:
 		// D&D 5e uses pointy-top hex by default
-		pointyTop := true
-		if roomData.HexOrientation != nil {
-			pointyTop = *roomData.HexOrientation
-		}
+		// HexFlatTop=false means pointy-top, HexFlatTop=true means flat-top
+		pointyTop := !roomData.HexFlatTop
 		return spatial.NewHexGrid(spatial.HexGridConfig{
 			Width:     float64(roomData.Width),
 			Height:    float64(roomData.Height),

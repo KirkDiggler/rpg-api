@@ -416,8 +416,8 @@ func (o *Orchestrator) CreateDungeon(ctx context.Context, input *CreateDungeonIn
 		_, err = o.encRepo.Update(ctx, &encounterrepo.UpdateInput{
 			EncounterID:    encounterID,
 			InitiativeData: encData.InitiativeData,
-			Monsters:       encData.Monsters,  // Persist monster HP/state changes
-			RoomData:       encData.RoomData,  // Persist monster position changes
+			Monsters:       encData.Monsters, // Persist monster HP/state changes
+			RoomData:       encData.RoomData, // Persist monster position changes
 		})
 		if err != nil {
 			return nil, fmt.Errorf("failed to save initiative after monster turns: %w", err)
