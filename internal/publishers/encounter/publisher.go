@@ -1,7 +1,7 @@
 // Package encounter provides the interface for encounter event publishing
 package encounter
 
-//go:generate mockgen -destination=mock/mock_publisher.go -package=encountermock github.com/KirkDiggler/rpg-api/internal/publishers/encounter Publisher
+//go:generate mockgen -destination=mock/mock_publisher.go -package=publishermock github.com/KirkDiggler/rpg-api/internal/publishers/encounter Publisher
 
 import (
 	"context"

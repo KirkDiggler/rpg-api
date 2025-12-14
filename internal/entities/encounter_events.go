@@ -3,8 +3,6 @@ package entities
 
 import (
 	"time"
-
-	"github.com/KirkDiggler/rpg-api/internal/orchestrators/encounter"
 )
 
 // EventType represents different types of encounter events
@@ -78,12 +76,12 @@ type PlayerReconnectedEvent struct {
 
 // CombatStartedEvent is emitted when combat begins
 type CombatStartedEvent struct {
-	CombatState *encounter.CombatState `json:"combat_state"` // Full combat state including initiative order
+	CombatState interface{} `json:"combat_state"` // Full combat state including initiative order
 }
 
 // CombatEndedEvent is emitted when combat ends
 type CombatEndedEvent struct {
-	EncounterResult *encounter.EncounterResult `json:"encounter_result"` // Victory or defeat
+	EncounterResult interface{} `json:"encounter_result"` // Victory or defeat
 }
 
 // CombatPausedEvent is emitted when combat is paused
@@ -99,21 +97,21 @@ type CombatResumedEvent struct {
 
 // MovementCompletedEvent is emitted when an entity completes movement
 type MovementCompletedEvent struct {
-	EntityID          string              `json:"entity_id"`
-	EntityType        string              `json:"entity_type"` // "character" or "monster"
-	FinalPosition     *encounter.Position `json:"final_position"`
-	MovementRemaining int32               `json:"movement_remaining"`
-	StopReason        string              `json:"stop_reason"` // "completed", "position_occupied", etc.
-	UpdatedRoom       interface{}         `json:"updated_room,omitempty"`
+	EntityID          string      `json:"entity_id"`
+	EntityType        string      `json:"entity_type"` // "character" or "monster"
+	FinalPosition     interface{} `json:"final_position"`
+	MovementRemaining int32       `json:"movement_remaining"`
+	StopReason        string      `json:"stop_reason"` // "completed", "position_occupied", etc.
+	UpdatedRoom       interface{} `json:"updated_room,omitempty"`
 }
 
 // AttackResolvedEvent is emitted when an attack is resolved
 type AttackResolvedEvent struct {
-	AttackerID string                  `json:"attacker_id"`
-	TargetID   string                  `json:"target_id"`
-	Result     *encounter.AttackResult `json:"result"`
-	TargetHP   int                     `json:"target_hp"`   // HP after attack
-	TargetDead bool                    `json:"target_dead"` // Whether target was killed
+	AttackerID string      `json:"attacker_id"`
+	TargetID   string      `json:"target_id"`
+	Result     interface{} `json:"result"`
+	TargetHP   int         `json:"target_hp"`   // HP after attack
+	TargetDead bool        `json:"target_dead"` // Whether target was killed
 }
 
 // FeatureActivatedEvent is emitted when a combat feature is activated
@@ -127,17 +125,17 @@ type FeatureActivatedEvent struct {
 
 // TurnEndedEvent is emitted when a turn ends
 type TurnEndedEvent struct {
-	PreviousEntityID string                 `json:"previous_entity_id"`
-	NextEntityID     string                 `json:"next_entity_id"`
-	Round            int                    `json:"round"`
-	NewRound         bool                   `json:"new_round"`
-	CombatState      *encounter.CombatState `json:"combat_state"` // Full updated combat state
+	PreviousEntityID string      `json:"previous_entity_id"`
+	NextEntityID     string      `json:"next_entity_id"`
+	Round            int         `json:"round"`
+	NewRound         bool        `json:"new_round"`
+	CombatState      interface{} `json:"combat_state"` // Full updated combat state
 }
 
 // MonsterTurnCompletedEvent is emitted when a monster completes its turn
 type MonsterTurnCompletedEvent struct {
-	MonsterID   string                            `json:"monster_id"`
-	MonsterName string                            `json:"monster_name"`
-	Actions     []encounter.MonsterExecutedAction `json:"actions"`
-	Movement    []encounter.Position              `json:"movement"`
+	MonsterID   string        `json:"monster_id"`
+	MonsterName string        `json:"monster_name"`
+	Actions     []interface{} `json:"actions"`
+	Movement    []interface{} `json:"movement"`
 }

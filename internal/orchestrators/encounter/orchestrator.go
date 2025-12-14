@@ -21,6 +21,9 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/weapons"
 	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
 
+	"github.com/KirkDiggler/rpg-api/internal/entities"
+	"github.com/KirkDiggler/rpg-api/internal/pkg/idgen"
+	encounterpub "github.com/KirkDiggler/rpg-api/internal/publishers/encounter"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	encounterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/encounters"
 )
@@ -29,6 +32,8 @@ import (
 type Config struct {
 	CharacterRepo characterrepo.Repository
 	EncounterRepo encounterrepo.Repository
+	Publisher     encounterpub.Publisher // Optional: for publishing encounter events
+	EventIDGen    idgen.Generator        // Optional: for generating event IDs (defaults to ULID)
 }
 
 // Validate ensures all required dependencies are present
@@ -44,9 +49,11 @@ func (c *Config) Validate() error {
 
 // Orchestrator implements the Service interface
 type Orchestrator struct {
-	charRepo characterrepo.Repository
-	encRepo  encounterrepo.Repository
-	roller   dice.Roller
+	charRepo   characterrepo.Repository
+	encRepo    encounterrepo.Repository
+	roller     dice.Roller
+	publisher  encounterpub.Publisher // Optional: for publishing encounter events
+	eventIDGen idgen.Generator        // For generating event IDs
 }
 
 // New creates a new encounter orchestrator
@@ -57,11 +64,45 @@ func New(cfg *Config) (*Orchestrator, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
+
+	// Default to ULID generator for event IDs if not provided
+	eventIDGen := cfg.EventIDGen
+	if eventIDGen == nil {
+		eventIDGen = idgen.NewULID("")
+	}
+
 	return &Orchestrator{
-		charRepo: cfg.CharacterRepo,
-		encRepo:  cfg.EncounterRepo,
-		roller:   dice.NewRoller(),
+		charRepo:   cfg.CharacterRepo,
+		encRepo:    cfg.EncounterRepo,
+		roller:     dice.NewRoller(),
+		publisher:  cfg.Publisher,
+		eventIDGen: eventIDGen,
 	}, nil
+}
+
+// publishEvent publishes an event if publisher is configured.
+// Errors are logged but not returned to avoid breaking combat flow.
+func (o *Orchestrator) publishEvent(ctx context.Context, encounterID string, eventType entities.EventType, data interface{}) {
+	if o.publisher == nil {
+		return
+	}
+
+	event := &entities.EncounterEvent{
+		ID:          o.eventIDGen.Generate(),
+		Type:        eventType,
+		EncounterID: encounterID,
+		Timestamp:   time.Now(),
+		Data:        data,
+	}
+
+	_, err := o.publisher.Publish(ctx, &encounterpub.PublishInput{
+		EncounterID: encounterID,
+		Event:       event,
+	})
+	if err != nil {
+		// Log but don't fail - event publishing is non-critical
+		fmt.Printf("failed to publish %s event for encounter %s: %v\n", eventType, encounterID, err)
+	}
 }
 
 // ResolveAttack implements the Service interface
@@ -165,6 +206,15 @@ func (o *Orchestrator) ResolveAttack(ctx context.Context, input *ResolveAttackIn
 	if result.Breakdown != nil {
 		attackResult.Breakdown = convertToolkitBreakdown(result.Breakdown)
 	}
+
+	// 12. Publish AttackResolved event
+	o.publishEvent(ctx, input.EncounterID, entities.EventTypeAttackResolved, &entities.AttackResolvedEvent{
+		AttackerID: input.AttackerID,
+		TargetID:   input.TargetID,
+		Result:     attackResult,
+		TargetHP:   newHP,
+		TargetDead: newHP <= 0,
+	})
 
 	return &ResolveAttackOutput{
 		Result:      attackResult,
@@ -607,7 +657,16 @@ func (o *Orchestrator) MoveCharacter(ctx context.Context, input *MoveCharacterIn
 		return nil, fmt.Errorf("failed to save updated room: %w", err)
 	}
 
-	// 9. Return success with updated position
+	// 9. Publish MovementCompleted event
+	o.publishEvent(ctx, input.EncounterID, entities.EventTypeMovementCompleted, &entities.MovementCompletedEvent{
+		EntityID:          input.EntityID,
+		EntityType:        entityPlacement.EntityType,
+		FinalPosition:     &Position{X: targetPos.X, Y: targetPos.Y},
+		MovementRemaining: movementRemaining,
+		StopReason:        "completed",
+	})
+
+	// 10. Return success with updated position
 	return &MoveCharacterOutput{
 		Success: true,
 		FinalPosition: &Position{
@@ -747,6 +806,43 @@ func (o *Orchestrator) EndTurn(ctx context.Context, input *EndTurnInput) (*EndTu
 		CombatEnded:       combatEnded,
 	}
 
+	// 11. Publish events
+	// Publish TurnEnded event
+	o.publishEvent(ctx, input.EncounterID, entities.EventTypeTurnEnded, &entities.TurnEndedEvent{
+		PreviousEntityID: previousEntityID,
+		NextEntityID:     nextEntityID,
+		Round:            initiativeData.Round,
+		NewRound:         newRound,
+		CombatState:      combatState,
+	})
+
+	// Publish MonsterTurnCompleted events for each monster turn
+	for _, mt := range monsterTurns {
+		// Convert actions to interface{} slice
+		actions := make([]interface{}, len(mt.Actions))
+		for i, a := range mt.Actions {
+			actions[i] = a
+		}
+		// Convert movement to interface{} slice
+		movement := make([]interface{}, len(mt.Movement))
+		for i, m := range mt.Movement {
+			movement[i] = m
+		}
+		o.publishEvent(ctx, input.EncounterID, entities.EventTypeMonsterTurnCompleted, &entities.MonsterTurnCompletedEvent{
+			MonsterID:   mt.MonsterID,
+			MonsterName: mt.MonsterName,
+			Actions:     actions,
+			Movement:    movement,
+		})
+	}
+
+	// Publish CombatEnded event if combat ended
+	if combatEnded {
+		o.publishEvent(ctx, input.EncounterID, entities.EventTypeCombatEnded, &entities.CombatEndedEvent{
+			EncounterResult: encounterResult,
+		})
+	}
+
 	return &EndTurnOutput{
 		CombatState: combatState,
 		TurnChange: &TurnChangeEvent{
@@ -825,6 +921,25 @@ func buildTurnOrderFromData(
 	}
 
 	return turnOrder
+}
+
+// buildCombatState creates a CombatState from encounter data
+func (o *Orchestrator) buildCombatState(encounterID string, enc *encounterrepo.EncounterData) *CombatState {
+	if enc.InitiativeData == nil {
+		return nil
+	}
+
+	turnOrder := buildTurnOrderFromData(enc.InitiativeData, enc.InitiativeRolls, enc.RoomData)
+
+	return &CombatState{
+		EncounterID:       encounterID,
+		Round:             enc.InitiativeData.Round,
+		TurnOrder:         turnOrder,
+		ActiveIndex:       enc.InitiativeData.Current,
+		MovementRemaining: enc.MovementRemaining,
+		CombatStarted:     enc.State == encounterrepo.StateActive || enc.State == encounterrepo.StatePaused,
+		CombatEnded:       enc.State == encounterrepo.StateCompleted,
+	}
 }
 
 // validateTurnOwnership checks if the requesting player owns the entity whose turn it is.
@@ -953,7 +1068,16 @@ func (o *Orchestrator) ActivateFeature(
 		return nil, fmt.Errorf("failed to save character: %w", err)
 	}
 
-	// 12. Return success with updated data
+	// 12. Publish FeatureActivated event
+	o.publishEvent(ctx, input.EncounterID, entities.EventTypeFeatureActivated, &entities.FeatureActivatedEvent{
+		CharacterID:   input.CharacterID,
+		FeatureID:     input.FeatureID,
+		Success:       true,
+		Message:       fmt.Sprintf("%s activated successfully", input.FeatureID),
+		CharacterData: updatedData,
+	})
+
+	// 13. Return success with updated data
 	return &ActivateFeatureOutput{
 		Success:       true,
 		Message:       fmt.Sprintf("%s activated successfully", input.FeatureID),
@@ -1251,7 +1375,13 @@ func (o *Orchestrator) JoinEncounter(
 		return nil, fmt.Errorf("failed to update encounter: %w", err)
 	}
 
-	// 7. Build party list for response
+	// 7. Publish PlayerJoined event
+	o.publishEvent(ctx, encOutput.Data.ID, entities.EventTypePlayerJoined, &entities.PlayerJoinedEvent{
+		PlayerID:    input.PlayerID,
+		CharacterID: input.CharacterIDs[0],
+	})
+
+	// 8. Build party list for response
 	party := o.buildPartyFromPlayers(ctx, encOutput.Data.Players, encOutput.Data.HostID)
 
 	return &JoinEncounterOutput{
@@ -1306,6 +1436,13 @@ func (o *Orchestrator) SetReady(
 	if err != nil {
 		return nil, fmt.Errorf("failed to update encounter: %w", err)
 	}
+
+	// 6. Publish PlayerReady event
+	o.publishEvent(ctx, input.EncounterID, entities.EventTypePlayerReady, &entities.PlayerReadyEvent{
+		PlayerID:    input.PlayerID,
+		CharacterID: player.CharacterID,
+		Ready:       input.IsReady,
+	})
 
 	return &SetReadyOutput{Success: true}, nil
 }
@@ -1397,7 +1534,7 @@ func (o *Orchestrator) StartCombat(
 	monsterData := o.createGoblinData(goblinID)
 
 	// 9. Roll initiative
-	entities := make(map[core.Entity]int)
+	participants := make(map[core.Entity]int)
 
 	// Add characters
 	for _, charID := range characterIDs {
@@ -1407,14 +1544,14 @@ func (o *Orchestrator) StartCombat(
 			return nil, fmt.Errorf("failed to load character %s: %w", charID, err)
 		}
 		dexMod := charOutput.CharacterData.AbilityScores.Modifier(abilities.DEX)
-		entities[initiative.NewParticipant(charID, entityTypeCharacter)] = dexMod
+		participants[initiative.NewParticipant(charID, entityTypeCharacter)] = dexMod
 	}
 
 	// Add goblin
-	entities[initiative.NewParticipant(goblinID, entityTypeMonster)] = 2 // Goblin DEX +2
+	participants[initiative.NewParticipant(goblinID, entityTypeMonster)] = 2 // Goblin DEX +2
 
 	// Roll initiative
-	rolls := initiative.RollForOrder(entities, o.roller)
+	rolls := initiative.RollForOrder(participants, o.roller)
 
 	// Create tracker
 	initiativeOrder := make([]core.Entity, len(rolls))
@@ -1469,6 +1606,11 @@ func (o *Orchestrator) StartCombat(
 
 	// TODO: Execute monster turns if they go first
 
+	// 12. Publish CombatStarted event
+	o.publishEvent(ctx, input.EncounterID, entities.EventTypeCombatStarted, &entities.CombatStartedEvent{
+		CombatState: combatState,
+	})
+
 	return &StartCombatOutput{
 		CombatState:  combatState,
 		MonsterTurns: nil, // TODO: Fill in if monsters go first
@@ -1500,15 +1642,24 @@ func (o *Orchestrator) LeaveEncounter(
 	}
 
 	// 3. Check if player is in encounter
-	if _, exists := encOutput.Data.Players[input.PlayerID]; !exists {
+	player, exists := encOutput.Data.Players[input.PlayerID]
+	if !exists {
 		return nil, ErrPlayerNotInEncounter
 	}
+	characterID := player.CharacterID // Save before deleting
 
 	// 4. Remove player
 	delete(encOutput.Data.Players, input.PlayerID)
 
 	// 5. If no players left, delete encounter
 	if len(encOutput.Data.Players) == 0 {
+		// Publish event before deleting
+		o.publishEvent(ctx, input.EncounterID, entities.EventTypePlayerLeft, &entities.PlayerLeftEvent{
+			PlayerID:    input.PlayerID,
+			CharacterID: characterID,
+			Reason:      "voluntary",
+		})
+
 		_, err = o.encRepo.Delete(ctx, &encounterrepo.DeleteInput{
 			EncounterID: input.EncounterID,
 		})
@@ -1541,9 +1692,211 @@ func (o *Orchestrator) LeaveEncounter(
 		return nil, fmt.Errorf("failed to update encounter: %w", err)
 	}
 
+	// 8. Publish PlayerLeft event
+	o.publishEvent(ctx, input.EncounterID, entities.EventTypePlayerLeft, &entities.PlayerLeftEvent{
+		PlayerID:    input.PlayerID,
+		CharacterID: characterID,
+		Reason:      "voluntary",
+	})
+
 	return &LeaveEncounterOutput{
 		Success:          true,
 		EncounterDeleted: false,
+	}, nil
+}
+
+// PlayerDisconnected marks a player as disconnected
+// If combat is active and all remaining players are disconnected, pauses the encounter
+func (o *Orchestrator) PlayerDisconnected(
+	ctx context.Context,
+	input *PlayerDisconnectedInput,
+) (*PlayerDisconnectedOutput, error) {
+	// 1. Validate input
+	if input == nil {
+		return nil, fmt.Errorf("input is required")
+	}
+	if input.EncounterID == "" {
+		return nil, fmt.Errorf("encounter ID is required")
+	}
+	if input.PlayerID == "" {
+		return nil, fmt.Errorf("player ID is required")
+	}
+
+	// 2. Load encounter
+	encOutput, err := o.encRepo.Get(ctx, &encounterrepo.GetInput{
+		EncounterID: input.EncounterID,
+	})
+	if err != nil {
+		return nil, ErrEncounterNotFound
+	}
+
+	// 3. Check if player is in encounter
+	player, exists := encOutput.Data.Players[input.PlayerID]
+	if !exists {
+		return nil, ErrPlayerNotInEncounter
+	}
+
+	// 4. Check if player is already disconnected
+	if !player.IsConnected {
+		return nil, ErrPlayerAlreadyDisconnected
+	}
+
+	// 5. Mark player as disconnected
+	player.IsConnected = false
+	encOutput.Data.Players[input.PlayerID] = player
+
+	// 6. Check if we should pause (combat is active and all players disconnected)
+	shouldPause := false
+	if encOutput.Data.State == encounterrepo.StateActive {
+		allDisconnected := true
+		for _, p := range encOutput.Data.Players {
+			if p.IsConnected {
+				allDisconnected = false
+				break
+			}
+		}
+		if allDisconnected {
+			shouldPause = true
+		}
+	}
+
+	// 7. Update encounter state
+	var newState *encounterrepo.EncounterState
+	if shouldPause {
+		paused := encounterrepo.StatePaused
+		newState = &paused
+	}
+
+	_, err = o.encRepo.Update(ctx, &encounterrepo.UpdateInput{
+		EncounterID: input.EncounterID,
+		State:       newState,
+		Players:     encOutput.Data.Players,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to update encounter: %w", err)
+	}
+
+	// 8. Publish PlayerDisconnected event
+	reason := input.Reason
+	if reason == "" {
+		reason = "unknown"
+	}
+	o.publishEvent(ctx, input.EncounterID, entities.EventTypePlayerDisconnected, &entities.PlayerDisconnectedEvent{
+		PlayerID:    input.PlayerID,
+		CharacterID: player.CharacterID,
+		Reason:      reason,
+	})
+
+	// 9. Publish CombatPaused event if we paused
+	if shouldPause {
+		o.publishEvent(ctx, input.EncounterID, entities.EventTypeCombatPaused, &entities.CombatPausedEvent{
+			PausedBy: input.PlayerID,
+			Reason:   "all players disconnected",
+		})
+	}
+
+	// Determine current state for response
+	currentState := string(encOutput.Data.State)
+	if shouldPause {
+		currentState = string(encounterrepo.StatePaused)
+	}
+
+	return &PlayerDisconnectedOutput{
+		Success:         true,
+		EncounterPaused: shouldPause,
+		State:           currentState,
+	}, nil
+}
+
+// PlayerReconnected marks a player as reconnected
+// If encounter was paused due to disconnection, resumes when a player reconnects
+func (o *Orchestrator) PlayerReconnected(
+	ctx context.Context,
+	input *PlayerReconnectedInput,
+) (*PlayerReconnectedOutput, error) {
+	// 1. Validate input
+	if input == nil {
+		return nil, fmt.Errorf("input is required")
+	}
+	if input.EncounterID == "" {
+		return nil, fmt.Errorf("encounter ID is required")
+	}
+	if input.PlayerID == "" {
+		return nil, fmt.Errorf("player ID is required")
+	}
+
+	// 2. Load encounter
+	encOutput, err := o.encRepo.Get(ctx, &encounterrepo.GetInput{
+		EncounterID: input.EncounterID,
+	})
+	if err != nil {
+		return nil, ErrEncounterNotFound
+	}
+
+	// 3. Check if player is in encounter
+	player, exists := encOutput.Data.Players[input.PlayerID]
+	if !exists {
+		return nil, ErrPlayerNotInEncounter
+	}
+
+	// 4. Check if player is already connected
+	if player.IsConnected {
+		return nil, ErrPlayerAlreadyConnected
+	}
+
+	// 5. Mark player as connected
+	player.IsConnected = true
+	encOutput.Data.Players[input.PlayerID] = player
+
+	// 6. Check if we should resume (encounter was paused)
+	shouldResume := encOutput.Data.State == encounterrepo.StatePaused
+
+	// 7. Update encounter state
+	var newState *encounterrepo.EncounterState
+	if shouldResume {
+		active := encounterrepo.StateActive
+		newState = &active
+	}
+
+	_, err = o.encRepo.Update(ctx, &encounterrepo.UpdateInput{
+		EncounterID: input.EncounterID,
+		State:       newState,
+		Players:     encOutput.Data.Players,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to update encounter: %w", err)
+	}
+
+	// 8. Publish PlayerReconnected event
+	o.publishEvent(ctx, input.EncounterID, entities.EventTypePlayerReconnected, &entities.PlayerReconnectedEvent{
+		PlayerID:    input.PlayerID,
+		CharacterID: player.CharacterID,
+	})
+
+	// 9. Publish CombatResumed event if we resumed
+	if shouldResume {
+		o.publishEvent(ctx, input.EncounterID, entities.EventTypeCombatResumed, &entities.CombatResumedEvent{
+			ResumedBy: input.PlayerID,
+		})
+	}
+
+	// Determine current state for response
+	currentState := string(encOutput.Data.State)
+	if shouldResume {
+		currentState = string(encounterrepo.StateActive)
+	}
+
+	// Build combat state if we resumed and have initiative data
+	var combatState *CombatState
+	if shouldResume && encOutput.Data.InitiativeData != nil {
+		combatState = o.buildCombatState(input.EncounterID, encOutput.Data)
+	}
+
+	return &PlayerReconnectedOutput{
+		Success:          true,
+		EncounterResumed: shouldResume,
+		State:            currentState,
+		CombatState:      combatState,
 	}, nil
 }
 
