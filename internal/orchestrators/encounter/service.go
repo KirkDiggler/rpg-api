@@ -317,6 +317,7 @@ type StartCombatInput struct {
 // StartCombatOutput returns the initial combat state
 type StartCombatOutput struct {
 	CombatState  *CombatState         // Combat state with initiative order
+	Room         interface{}          // Room with entity positions
 	MonsterTurns []*MonsterTurnResult // Monster turns if monsters go first
 }
 

@@ -412,6 +412,7 @@ func (h *Handler) StartCombat(
 
 	return &dnd5ev1alpha1.StartCombatResponse{
 		CombatState: convertCombatStateToProto(output.CombatState, gridType, hexOrientation),
+		Room:        convertRoomDataToProto(output.Room),
 	}, nil
 }
 

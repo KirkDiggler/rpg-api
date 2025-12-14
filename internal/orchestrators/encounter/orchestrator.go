@@ -1662,6 +1662,7 @@ func (o *Orchestrator) StartCombat(
 
 	return &StartCombatOutput{
 		CombatState:  combatState,
+		Room:         roomData,
 		MonsterTurns: nil, // TODO: Fill in if monsters go first
 	}, nil
 }
