@@ -7,7 +7,7 @@ import (
 
 	redis "github.com/redis/go-redis/v9"
 
-	"github.com/KirkDiggler/rpg-api/internal/errors"
+	"github.com/KirkDiggler/rpg-api/internal/apierrors"
 	"github.com/KirkDiggler/rpg-api/internal/pkg/clock"
 	redisclient "github.com/KirkDiggler/rpg-api/internal/redis"
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
@@ -39,10 +39,10 @@ type RedisConfig struct {
 // Validate validates the RedisConfig.
 func (cfg *RedisConfig) Validate() error {
 	if cfg == nil {
-		return errors.InvalidArgument("config cannot be nil")
+		return apierrors.InvalidArgument("config cannot be nil")
 	}
 	if cfg.Client == nil {
-		return errors.InvalidArgument("client cannot be nil")
+		return apierrors.InvalidArgument("client cannot be nil")
 	}
 	return nil
 }
@@ -67,10 +67,10 @@ func NewRedis(cfg *RedisConfig) (Repository, error) {
 
 func (r *redisRepository) Create(ctx context.Context, input CreateInput) (*CreateOutput, error) {
 	if input.CharacterData == nil {
-		return nil, errors.InvalidArgument(errCharacterNil)
+		return nil, apierrors.InvalidArgument(errCharacterNil)
 	}
 	if input.CharacterData.ID == "" {
-		return nil, errors.InvalidArgument(errCharacterIDEmpty)
+		return nil, apierrors.InvalidArgument(errCharacterIDEmpty)
 	}
 
 	key := characterKeyPrefix + input.CharacterData.ID
@@ -78,17 +78,17 @@ func (r *redisRepository) Create(ctx context.Context, input CreateInput) (*Creat
 	// Check if already exists
 	exists, err := r.client.Exists(ctx, key).Result()
 	if err != nil {
-		return nil, errors.Wrapf(err, "failed to check existence")
+		return nil, apierrors.Wrapf(err, "failed to check existence")
 	}
 
 	if exists > 0 {
-		return nil, errors.AlreadyExistsf("character with ID %s already exists", input.CharacterData.ID)
+		return nil, apierrors.AlreadyExistsf("character with ID %s already exists", input.CharacterData.ID)
 	}
 
 	// Marshal character data
 	data, err := json.Marshal(input.CharacterData)
 	if err != nil {
-		return nil, errors.Wrapf(err, "failed to marshal character data")
+		return nil, apierrors.Wrapf(err, "failed to marshal character data")
 	}
 
 	// Start transaction
@@ -108,7 +108,7 @@ func (r *redisRepository) Create(ctx context.Context, input CreateInput) (*Creat
 	// Execute transaction
 	_, err = pipe.Exec(ctx)
 	if err != nil {
-		return nil, errors.Wrapf(err, "failed to create character")
+		return nil, apierrors.Wrapf(err, "failed to create character")
 	}
 
 	return &CreateOutput{CharacterData: input.CharacterData}, nil
@@ -116,21 +116,21 @@ func (r *redisRepository) Create(ctx context.Context, input CreateInput) (*Creat
 
 func (r *redisRepository) Get(ctx context.Context, input GetInput) (*GetOutput, error) {
 	if input.ID == "" {
-		return nil, errors.InvalidArgument(errCharacterIDEmpty)
+		return nil, apierrors.InvalidArgument(errCharacterIDEmpty)
 	}
 
 	key := characterKeyPrefix + input.ID
 	result, err := r.client.Get(ctx, key).Result()
 	if err != nil {
 		if err == redis.Nil {
-			return nil, errors.NotFoundf("character with ID %s not found", input.ID)
+			return nil, apierrors.NotFoundf("character with ID %s not found", input.ID)
 		}
-		return nil, errors.Wrapf(err, "failed to get character")
+		return nil, apierrors.Wrapf(err, "failed to get character")
 	}
 
 	var charData toolkitchar.Data
 	if unmarshalErr := json.Unmarshal([]byte(result), &charData); unmarshalErr != nil {
-		return nil, errors.Wrapf(unmarshalErr, "failed to unmarshal character data")
+		return nil, apierrors.Wrapf(unmarshalErr, "failed to unmarshal character data")
 	}
 
 	return &GetOutput{
@@ -140,10 +140,10 @@ func (r *redisRepository) Get(ctx context.Context, input GetInput) (*GetOutput, 
 
 func (r *redisRepository) Update(ctx context.Context, input UpdateInput) (*UpdateOutput, error) {
 	if input.CharacterData == nil {
-		return nil, errors.InvalidArgument(errCharacterNil)
+		return nil, apierrors.InvalidArgument(errCharacterNil)
 	}
 	if input.CharacterData.ID == "" {
-		return nil, errors.InvalidArgument(errCharacterIDEmpty)
+		return nil, apierrors.InvalidArgument(errCharacterIDEmpty)
 	}
 
 	key := characterKeyPrefix + input.CharacterData.ID
@@ -158,7 +158,7 @@ func (r *redisRepository) Update(ctx context.Context, input UpdateInput) (*Updat
 	// Marshal updated character data
 	data, err := json.Marshal(input.CharacterData)
 	if err != nil {
-		return nil, errors.Wrapf(err, "failed to marshal character data")
+		return nil, apierrors.Wrapf(err, "failed to marshal character data")
 	}
 
 	// Start transaction
@@ -185,7 +185,7 @@ func (r *redisRepository) Update(ctx context.Context, input UpdateInput) (*Updat
 	// Execute transaction
 	_, err = pipe.Exec(ctx)
 	if err != nil {
-		return nil, errors.Wrapf(err, "failed to update character")
+		return nil, apierrors.Wrapf(err, "failed to update character")
 	}
 
 	return &UpdateOutput{CharacterData: input.CharacterData}, nil
@@ -193,7 +193,7 @@ func (r *redisRepository) Update(ctx context.Context, input UpdateInput) (*Updat
 
 func (r *redisRepository) Delete(ctx context.Context, input DeleteInput) (*DeleteOutput, error) {
 	if input.ID == "" {
-		return nil, errors.InvalidArgument(errCharacterIDEmpty)
+		return nil, apierrors.InvalidArgument(errCharacterIDEmpty)
 	}
 
 	// Get character to find indexes
@@ -221,7 +221,7 @@ func (r *redisRepository) Delete(ctx context.Context, input DeleteInput) (*Delet
 	// Execute transaction
 	_, err = pipe.Exec(ctx)
 	if err != nil {
-		return nil, errors.Wrapf(err, "failed to delete character")
+		return nil, apierrors.Wrapf(err, "failed to delete character")
 	}
 
 	return &DeleteOutput{}, nil
@@ -232,7 +232,7 @@ func (r *redisRepository) ListByPlayerID(
 	input ListByPlayerIDInput,
 ) (*ListByPlayerIDOutput, error) {
 	if input.PlayerID == "" {
-		return nil, errors.InvalidArgument(errPlayerIDEmpty)
+		return nil, apierrors.InvalidArgument(errPlayerIDEmpty)
 	}
 
 	indexKey := playerIndexPrefix + input.PlayerID
@@ -261,7 +261,7 @@ func (r *redisRepository) ListBySessionID(
 	input ListBySessionIDInput,
 ) (*ListBySessionIDOutput, error) {
 	if input.SessionID == "" {
-		return nil, errors.InvalidArgument(errSessionIDEmpty)
+		return nil, apierrors.InvalidArgument(errSessionIDEmpty)
 	}
 
 	indexKey := sessionIndexPrefix + input.SessionID
@@ -296,7 +296,7 @@ func (r *redisRepository) listByIndex(ctx context.Context, indexKey string) ([]*
 		slog.ErrorContext(ctx, "failed to get character IDs from Redis",
 			"index_key", indexKey,
 			"error", err.Error())
-		return nil, errors.Wrapf(err, "failed to get characters from index %s", indexKey)
+		return nil, apierrors.Wrapf(err, "failed to get characters from index %s", indexKey)
 	}
 
 	slog.DebugContext(ctx, "found character IDs in index",
@@ -313,7 +313,7 @@ func (r *redisRepository) listByIndex(ctx context.Context, indexKey string) ([]*
 		getOutput, err := r.Get(ctx, GetInput{ID: id})
 		if err != nil {
 			// If character doesn't exist, clean up the index
-			if errors.IsNotFound(err) {
+			if apierrors.IsNotFound(err) {
 				slog.WarnContext(ctx, "character not found, cleaning up index",
 					"character_id", id,
 					"index_key", indexKey)
@@ -323,7 +323,7 @@ func (r *redisRepository) listByIndex(ctx context.Context, indexKey string) ([]*
 			slog.ErrorContext(ctx, "failed to get character from Redis",
 				"character_id", id,
 				"error", err.Error())
-			return nil, errors.Wrapf(err, "failed to get character %s", id)
+			return nil, apierrors.Wrapf(err, "failed to get character %s", id)
 		}
 		characters = append(characters, getOutput.CharacterData)
 	}

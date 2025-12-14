@@ -115,4 +115,4 @@
 //   - DataLoss: Unrecoverable data loss
 //   - Canceled: Operation canceled
 //   - DeadlineExceeded: Operation timeout
-package errors
+package apierrors

@@ -1,5 +1,5 @@
 //nolint:revive // package name intentionally shadows stdlib errors for API consistency
-package errors
+package apierrors
 
 import "net/http"
 

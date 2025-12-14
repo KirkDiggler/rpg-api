@@ -9,8 +9,8 @@ import (
 	"google.golang.org/grpc/status"
 
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
+	"github.com/KirkDiggler/rpg-api/internal/apierrors"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
-	"github.com/KirkDiggler/rpg-api/internal/errors"
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character/choices"
@@ -26,7 +26,7 @@ type HandlerConfig struct {
 // Validate ensures all required dependencies are present
 func (c *HandlerConfig) Validate() error {
 	if c.CharacterService == nil {
-		return errors.InvalidArgument("character service is required")
+		return apierrors.InvalidArgument("character service is required")
 	}
 	return nil
 }
@@ -85,10 +85,10 @@ func (h *Handler) GetDraft(
 	req *dnd5ev1alpha1.GetDraftRequest,
 ) (*dnd5ev1alpha1.GetDraftResponse, error) {
 	if req == nil {
-		return nil, errors.InvalidArgument("request is required")
+		return nil, apierrors.InvalidArgument("request is required")
 	}
 	if req.DraftId == "" {
-		return nil, errors.InvalidArgument("draft_id is required")
+		return nil, apierrors.InvalidArgument("draft_id is required")
 	}
 
 	// Call orchestrator
@@ -96,7 +96,7 @@ func (h *Handler) GetDraft(
 		DraftID: req.DraftId,
 	})
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if apierrors.IsNotFound(err) {
 			return nil, status.Error(codes.NotFound, "draft not found")
 		}
 		return nil, status.Error(codes.Internal, err.Error())
@@ -162,7 +162,7 @@ func (h *Handler) DeleteDraft(
 	_ context.Context,
 	_ *dnd5ev1alpha1.DeleteDraftRequest,
 ) (*dnd5ev1alpha1.DeleteDraftResponse, error) {
-	return nil, errors.Unimplemented("DeleteDraft not implemented")
+	return nil, apierrors.Unimplemented("DeleteDraft not implemented")
 }
 
 // UpdateName updates the name of a character draft
@@ -171,13 +171,13 @@ func (h *Handler) UpdateName(
 	req *dnd5ev1alpha1.UpdateNameRequest,
 ) (*dnd5ev1alpha1.UpdateNameResponse, error) {
 	if req == nil {
-		return nil, errors.InvalidArgument("request is required")
+		return nil, apierrors.InvalidArgument("request is required")
 	}
 	if req.DraftId == "" {
-		return nil, errors.InvalidArgument("draft_id is required")
+		return nil, apierrors.InvalidArgument("draft_id is required")
 	}
 	if req.Name == "" {
-		return nil, errors.InvalidArgument("name is required")
+		return nil, apierrors.InvalidArgument("name is required")
 	}
 
 	// Call orchestrator
@@ -201,10 +201,10 @@ func (h *Handler) UpdateRace(
 	req *dnd5ev1alpha1.UpdateRaceRequest,
 ) (*dnd5ev1alpha1.UpdateRaceResponse, error) {
 	if req == nil {
-		return nil, errors.InvalidArgument("request is required")
+		return nil, apierrors.InvalidArgument("request is required")
 	}
 	if req.DraftId == "" {
-		return nil, errors.InvalidArgument("draft_id is required")
+		return nil, apierrors.InvalidArgument("draft_id is required")
 	}
 
 	// Convert proto choices to toolkit format
@@ -261,10 +261,10 @@ func (h *Handler) UpdateClass(
 	req *dnd5ev1alpha1.UpdateClassRequest,
 ) (*dnd5ev1alpha1.UpdateClassResponse, error) {
 	if req == nil {
-		return nil, errors.InvalidArgument("request is required")
+		return nil, apierrors.InvalidArgument("request is required")
 	}
 	if req.DraftId == "" {
-		return nil, errors.InvalidArgument("draft_id is required")
+		return nil, apierrors.InvalidArgument("draft_id is required")
 	}
 
 	// Convert proto choices to toolkit format
@@ -355,10 +355,10 @@ func (h *Handler) UpdateBackground(
 	req *dnd5ev1alpha1.UpdateBackgroundRequest,
 ) (*dnd5ev1alpha1.UpdateBackgroundResponse, error) {
 	if req == nil {
-		return nil, errors.InvalidArgument("request is required")
+		return nil, apierrors.InvalidArgument("request is required")
 	}
 	if req.DraftId == "" {
-		return nil, errors.InvalidArgument("draft_id is required")
+		return nil, apierrors.InvalidArgument("draft_id is required")
 	}
 
 	// Convert proto choices to toolkit format
@@ -399,10 +399,10 @@ func (h *Handler) UpdateAbilityScores(
 	req *dnd5ev1alpha1.UpdateAbilityScoresRequest,
 ) (*dnd5ev1alpha1.UpdateAbilityScoresResponse, error) {
 	if req == nil {
-		return nil, errors.InvalidArgument("request is required")
+		return nil, apierrors.InvalidArgument("request is required")
 	}
 	if req.DraftId == "" {
-		return nil, errors.InvalidArgument("draft_id is required")
+		return nil, apierrors.InvalidArgument("draft_id is required")
 	}
 	// Handle the oneof scores_input field
 	var scores shared.AbilityScores
@@ -411,13 +411,13 @@ func (h *Handler) UpdateAbilityScores(
 	switch scoresInput := req.GetScoresInput().(type) {
 	case *dnd5ev1alpha1.UpdateAbilityScoresRequest_AbilityScores:
 		if scoresInput.AbilityScores == nil {
-			return nil, errors.InvalidArgument("ability_scores is required")
+			return nil, apierrors.InvalidArgument("ability_scores is required")
 		}
 		scores = convertProtoAbilityScoresToToolkit(scoresInput.AbilityScores)
 		method = "manual"
 	case *dnd5ev1alpha1.UpdateAbilityScoresRequest_RollAssignments:
 		if scoresInput.RollAssignments == nil {
-			return nil, errors.InvalidArgument("roll_assignments is required")
+			return nil, apierrors.InvalidArgument("roll_assignments is required")
 		}
 		// Convert roll assignments to a map for the orchestrator
 		rollAssignments := convertRollAssignmentsToMap(scoresInput.RollAssignments)
@@ -436,7 +436,7 @@ func (h *Handler) UpdateAbilityScores(
 			Draft: convertDraftDataToProto(result.Draft),
 		}, nil
 	default:
-		return nil, errors.InvalidArgument("scores_input is required")
+		return nil, apierrors.InvalidArgument("scores_input is required")
 	}
 
 	// Call orchestrator
@@ -462,7 +462,7 @@ func (h *Handler) UpdateSkills(
 	_ context.Context,
 	_ *dnd5ev1alpha1.UpdateSkillsRequest,
 ) (*dnd5ev1alpha1.UpdateSkillsResponse, error) {
-	return nil, errors.Unimplemented("UpdateSkills not implemented")
+	return nil, apierrors.Unimplemented("UpdateSkills not implemented")
 }
 
 // ValidateDraft validates a character draft
@@ -470,7 +470,7 @@ func (h *Handler) ValidateDraft(
 	_ context.Context,
 	_ *dnd5ev1alpha1.ValidateDraftRequest,
 ) (*dnd5ev1alpha1.ValidateDraftResponse, error) {
-	return nil, errors.Unimplemented("ValidateDraft not implemented")
+	return nil, apierrors.Unimplemented("ValidateDraft not implemented")
 }
 
 // GetDraftPreview gets a preview of what the character would look like if finalized
@@ -478,7 +478,7 @@ func (h *Handler) GetDraftPreview(
 	_ context.Context,
 	_ *dnd5ev1alpha1.GetDraftPreviewRequest,
 ) (*dnd5ev1alpha1.GetDraftPreviewResponse, error) {
-	return nil, errors.Unimplemented("GetDraftPreview not implemented")
+	return nil, apierrors.Unimplemented("GetDraftPreview not implemented")
 }
 
 // FinalizeDraft finalizes a character draft
@@ -487,7 +487,7 @@ func (h *Handler) FinalizeDraft(
 	req *dnd5ev1alpha1.FinalizeDraftRequest,
 ) (*dnd5ev1alpha1.FinalizeDraftResponse, error) {
 	if req == nil || req.DraftId == "" {
-		return nil, errors.InvalidArgument("draft ID is required")
+		return nil, apierrors.InvalidArgument("draft ID is required")
 	}
 
 	// Call orchestrator to finalize the draft
@@ -501,7 +501,7 @@ func (h *Handler) FinalizeDraft(
 	// Convert toolkit character to proto
 	protoChar := convertCharacterToProto(output.Character)
 	if protoChar == nil {
-		return nil, errors.Internal("failed to convert character to proto")
+		return nil, apierrors.Internal("failed to convert character to proto")
 	}
 
 	return &dnd5ev1alpha1.FinalizeDraftResponse{
@@ -516,7 +516,7 @@ func (h *Handler) GetCharacter(
 ) (*dnd5ev1alpha1.GetCharacterResponse, error) {
 	// Validate request
 	if req.CharacterId == "" {
-		return nil, errors.InvalidArgument("character_id is required")
+		return nil, apierrors.InvalidArgument("character_id is required")
 	}
 
 	// Get character from orchestrator
@@ -593,10 +593,10 @@ func (h *Handler) DeleteCharacter(
 	})
 	if err != nil {
 		// Convert orchestrator errors to gRPC status
-		if errors.IsNotFound(err) {
+		if apierrors.IsNotFound(err) {
 			return nil, status.Error(codes.NotFound, "character not found")
 		}
-		if errors.IsInvalidArgument(err) {
+		if apierrors.IsInvalidArgument(err) {
 			return nil, status.Error(codes.InvalidArgument, err.Error())
 		}
 		return nil, status.Error(codes.Internal, "failed to delete character")
@@ -711,7 +711,7 @@ func (h *Handler) RollAbilityScores(
 	_ context.Context,
 	_ *dnd5ev1alpha1.RollAbilityScoresRequest,
 ) (*dnd5ev1alpha1.RollAbilityScoresResponse, error) {
-	return nil, errors.Unimplemented("RollAbilityScores not implemented")
+	return nil, apierrors.Unimplemented("RollAbilityScores not implemented")
 }
 
 // ListEquipmentByType lists equipment by type
@@ -786,7 +786,7 @@ func (h *Handler) ListSpellsByLevel(
 	req *dnd5ev1alpha1.ListSpellsByLevelRequest,
 ) (*dnd5ev1alpha1.ListSpellsByLevelResponse, error) {
 	if req == nil {
-		return nil, errors.InvalidArgument("request is required")
+		return nil, apierrors.InvalidArgument("request is required")
 	}
 
 	// Call the orchestrator
@@ -796,7 +796,7 @@ func (h *Handler) ListSpellsByLevel(
 		// TODO: Convert class filter when needed
 	})
 	if err != nil {
-		return nil, errors.ToGRPCError(err)
+		return nil, apierrors.ToGRPCError(err)
 	}
 
 	// Convert to proto format
@@ -826,7 +826,7 @@ func (h *Handler) GetCharacterInventory(
 ) (*dnd5ev1alpha1.GetCharacterInventoryResponse, error) {
 	// Validate request
 	if req.CharacterId == "" {
-		return nil, errors.InvalidArgument("character_id is required")
+		return nil, apierrors.InvalidArgument("character_id is required")
 	}
 
 	// Get character data - equipment slots are part of character data
@@ -860,13 +860,13 @@ func (h *Handler) EquipItem(
 ) (*dnd5ev1alpha1.EquipItemResponse, error) {
 	// Validate request
 	if req.CharacterId == "" {
-		return nil, errors.InvalidArgument("character_id is required")
+		return nil, apierrors.InvalidArgument("character_id is required")
 	}
 	if req.ItemId == "" {
-		return nil, errors.InvalidArgument("item_id is required")
+		return nil, apierrors.InvalidArgument("item_id is required")
 	}
 	if req.Slot == dnd5ev1alpha1.EquipmentSlot_EQUIPMENT_SLOT_UNSPECIFIED {
-		return nil, errors.InvalidArgument("slot is required")
+		return nil, apierrors.InvalidArgument("slot is required")
 	}
 
 	// Convert slot enum to toolkit type
@@ -920,10 +920,10 @@ func (h *Handler) UnequipItem(
 ) (*dnd5ev1alpha1.UnequipItemResponse, error) {
 	// Validate request
 	if req.CharacterId == "" {
-		return nil, errors.InvalidArgument("character_id is required")
+		return nil, apierrors.InvalidArgument("character_id is required")
 	}
 	if req.Slot == dnd5ev1alpha1.EquipmentSlot_EQUIPMENT_SLOT_UNSPECIFIED {
-		return nil, errors.InvalidArgument("slot is required")
+		return nil, apierrors.InvalidArgument("slot is required")
 	}
 
 	// Convert slot enum to toolkit type

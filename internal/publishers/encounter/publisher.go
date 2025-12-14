@@ -13,21 +13,21 @@ import (
 // Purpose: Enable real-time multiplayer synchronization via pub/sub pattern
 type Publisher interface {
 	// Publish publishes an event to all subscribers of the encounter
-	// Returns errors.InvalidArgument for nil events or empty encounter IDs
-	// Returns errors.Internal for publishing failures
+	// Returns apierrors.InvalidArgument for nil events or empty encounter IDs
+	// Returns apierrors.Internal for publishing failures
 	Publish(ctx context.Context, input *PublishInput) (*PublishOutput, error)
 
 	// Subscribe subscribes to events for a specific encounter
 	// Returns a channel that will receive events and an error channel
 	// The event channel will be closed when the context is canceled or Unsubscribe is called
-	// Returns errors.InvalidArgument for empty encounter IDs
-	// Returns errors.Internal for subscription failures
+	// Returns apierrors.InvalidArgument for empty encounter IDs
+	// Returns apierrors.Internal for subscription failures
 	Subscribe(ctx context.Context, input *SubscribeInput) (*SubscribeOutput, error)
 
 	// Unsubscribe unsubscribes from encounter events
 	// Closes the event channel associated with the subscription ID
-	// Returns errors.InvalidArgument for empty subscription IDs
-	// Returns errors.NotFound if subscription doesn't exist
+	// Returns apierrors.InvalidArgument for empty subscription IDs
+	// Returns apierrors.NotFound if subscription doesn't exist
 	Unsubscribe(ctx context.Context, input *UnsubscribeInput) (*UnsubscribeOutput, error)
 }
 

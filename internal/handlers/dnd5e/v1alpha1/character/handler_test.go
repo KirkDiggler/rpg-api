@@ -10,7 +10,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
-	"github.com/KirkDiggler/rpg-api/internal/errors"
+	"github.com/KirkDiggler/rpg-api/internal/apierrors"
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
 	charactermock "github.com/KirkDiggler/rpg-api/internal/orchestrators/character/mock"
 )
@@ -109,7 +109,7 @@ func (s *HandlerTestSuite) TestDeleteCharacter_NotFound() {
 		DeleteCharacter(s.ctx, &character.DeleteCharacterInput{
 			CharacterID: characterID,
 		}).
-		Return(nil, errors.NotFound("character not found"))
+		Return(nil, apierrors.NotFound("character not found"))
 
 	// Call the handler
 	resp, err := s.handler.DeleteCharacter(s.ctx, req)
@@ -135,7 +135,7 @@ func (s *HandlerTestSuite) TestDeleteCharacter_InvalidArgument() {
 		DeleteCharacter(s.ctx, &character.DeleteCharacterInput{
 			CharacterID: characterID,
 		}).
-		Return(nil, errors.InvalidArgument("invalid character ID format"))
+		Return(nil, apierrors.InvalidArgument("invalid character ID format"))
 
 	// Call the handler
 	resp, err := s.handler.DeleteCharacter(s.ctx, req)
@@ -161,7 +161,7 @@ func (s *HandlerTestSuite) TestDeleteCharacter_InternalError() {
 		DeleteCharacter(s.ctx, &character.DeleteCharacterInput{
 			CharacterID: characterID,
 		}).
-		Return(nil, errors.Internal("database error"))
+		Return(nil, apierrors.Internal("database error"))
 
 	// Call the handler
 	resp, err := s.handler.DeleteCharacter(s.ctx, req)

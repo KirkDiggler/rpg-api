@@ -9,8 +9,8 @@ import (
 	"google.golang.org/grpc/status"
 
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
+	apierrors "github.com/KirkDiggler/rpg-api/internal/apierrors"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
-	apierrors "github.com/KirkDiggler/rpg-api/internal/errors"
 	characterhandler "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v1alpha1/character"
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/encounter"
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
