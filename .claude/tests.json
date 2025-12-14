@@ -6,6 +6,41 @@
       "prompt": "Run make pre-commit and verify it passes (lint, test, format)",
       "passes": true,
       "last_checked": "2025-12-13"
+    },
+    {
+      "id": "create-encounter-handler",
+      "feature": "lobby",
+      "prompt": "CreateEncounter handler accepts request with character IDs and returns encounter ID + join code",
+      "passes": false,
+      "last_checked": null
+    },
+    {
+      "id": "join-encounter-handler",
+      "feature": "lobby",
+      "prompt": "JoinEncounter handler accepts join code and returns encounter state with party",
+      "passes": false,
+      "last_checked": null
+    },
+    {
+      "id": "set-ready-handler",
+      "feature": "lobby",
+      "prompt": "SetReady handler toggles player ready state",
+      "passes": false,
+      "last_checked": null
+    },
+    {
+      "id": "start-combat-handler",
+      "feature": "lobby",
+      "prompt": "StartCombat handler validates host + all ready, returns combat state",
+      "passes": false,
+      "last_checked": null
+    },
+    {
+      "id": "leave-encounter-handler",
+      "feature": "lobby",
+      "prompt": "LeaveEncounter handler removes player from encounter",
+      "passes": false,
+      "last_checked": null
     }
   ]
 }

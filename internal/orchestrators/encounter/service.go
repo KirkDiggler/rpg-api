@@ -2,9 +2,31 @@ package encounter
 
 import (
 	"context"
+	"errors"
 
 	"github.com/KirkDiggler/rpg-toolkit/core"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/damage"
+)
+
+// Sentinel errors for encounter operations
+var (
+	// ErrEncounterNotFound is returned when an encounter cannot be found
+	ErrEncounterNotFound = errors.New("encounter not found")
+
+	// ErrPlayerNotInEncounter is returned when a player is not part of the encounter
+	ErrPlayerNotInEncounter = errors.New("player not in encounter")
+
+	// ErrPlayerAlreadyInEncounter is returned when a player tries to join an encounter they're already in
+	ErrPlayerAlreadyInEncounter = errors.New("player already in encounter")
+
+	// ErrCombatAlreadyStarted is returned when an action requires waiting state but combat has started
+	ErrCombatAlreadyStarted = errors.New("combat already started")
+
+	// ErrNotHost is returned when a non-host player tries to perform a host-only action
+	ErrNotHost = errors.New("only the host can perform this action")
+
+	// ErrPlayersNotReady is returned when trying to start combat but not all players are ready
+	ErrPlayersNotReady = errors.New("not all players are ready")
 )
 
 //go:generate mockgen -destination=mock/mock_service.go -package=encountermock github.com/KirkDiggler/rpg-api/internal/orchestrators/encounter Service
@@ -25,6 +47,23 @@ type Service interface {
 
 	// ActivateFeature activates a combat feature (e.g., Rage)
 	ActivateFeature(ctx context.Context, input *ActivateFeatureInput) (*ActivateFeatureOutput, error)
+
+	// Multiplayer lobby methods
+
+	// CreateEncounter creates a new multiplayer encounter lobby
+	CreateEncounter(ctx context.Context, input *CreateEncounterInput) (*CreateEncounterOutput, error)
+
+	// JoinEncounter joins an existing encounter via join code
+	JoinEncounter(ctx context.Context, input *JoinEncounterInput) (*JoinEncounterOutput, error)
+
+	// SetReady marks a player as ready or not ready to start combat
+	SetReady(ctx context.Context, input *SetReadyInput) (*SetReadyOutput, error)
+
+	// StartCombat begins combat (host only, all players must be ready)
+	StartCombat(ctx context.Context, input *StartCombatInput) (*StartCombatOutput, error)
+
+	// LeaveEncounter removes a player from the encounter
+	LeaveEncounter(ctx context.Context, input *LeaveEncounterInput) (*LeaveEncounterOutput, error)
 }
 
 // ResolveAttackInput contains attack parameters
@@ -216,4 +255,80 @@ type MonsterExecutedAction struct {
 	TargetID   string      // ID of the target (if applicable)
 	Success    bool        // Whether the action succeeded
 	Details    interface{} // Action-specific details (AttackResult, heal amount, etc.)
+}
+
+// Multiplayer lobby types
+
+// CreateEncounterInput contains parameters for creating a multiplayer encounter
+type CreateEncounterInput struct {
+	PlayerID     string   // ID of the player creating the encounter (becomes host)
+	CharacterIDs []string // Character IDs to add to the encounter
+}
+
+// CreateEncounterOutput returns the created encounter details
+type CreateEncounterOutput struct {
+	EncounterID string      // ID of the created encounter
+	JoinCode    string      // 6-char code for others to join
+	Room        interface{} // Generated room data
+}
+
+// PartyMember represents a player and their character in the encounter
+type PartyMember struct {
+	PlayerID      string
+	CharacterID   string
+	CharacterData interface{} // Character data for the handler to convert
+	IsHost        bool
+	IsReady       bool
+	IsConnected   bool
+}
+
+// JoinEncounterInput contains parameters for joining an encounter
+type JoinEncounterInput struct {
+	JoinCode     string   // 6-char join code
+	PlayerID     string   // ID of the player joining
+	CharacterIDs []string // Character IDs to add to the encounter
+}
+
+// JoinEncounterOutput returns the encounter state after joining
+type JoinEncounterOutput struct {
+	EncounterID string         // ID of the joined encounter
+	Room        interface{}    // Room data
+	Party       []*PartyMember // All players in the encounter
+	State       string         // Current state (waiting, active, etc.)
+}
+
+// SetReadyInput contains parameters for setting ready status
+type SetReadyInput struct {
+	EncounterID string // ID of the encounter
+	PlayerID    string // ID of the player
+	IsReady     bool   // Ready status to set
+}
+
+// SetReadyOutput confirms the ready status change
+type SetReadyOutput struct {
+	Success bool
+}
+
+// StartCombatInput contains parameters for starting combat
+type StartCombatInput struct {
+	EncounterID string // ID of the encounter
+	PlayerID    string // ID of the player requesting start (must be host)
+}
+
+// StartCombatOutput returns the initial combat state
+type StartCombatOutput struct {
+	CombatState  *CombatState         // Combat state with initiative order
+	MonsterTurns []*MonsterTurnResult // Monster turns if monsters go first
+}
+
+// LeaveEncounterInput contains parameters for leaving an encounter
+type LeaveEncounterInput struct {
+	EncounterID string // ID of the encounter
+	PlayerID    string // ID of the player leaving
+}
+
+// LeaveEncounterOutput confirms the player left
+type LeaveEncounterOutput struct {
+	Success          bool // Whether the player successfully left
+	EncounterDeleted bool // Whether the encounter was deleted (last player left)
 }

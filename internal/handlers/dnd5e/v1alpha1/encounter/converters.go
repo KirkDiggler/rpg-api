@@ -809,3 +809,38 @@ func convertEncounterResultToProto(result *encounter.EncounterResult) *dnd5ev1al
 		Reason: protoReason,
 	}
 }
+
+// convertPartyToProto converts a slice of PartyMember to proto
+func convertPartyToProto(party []*encounter.PartyMember) []*dnd5ev1alpha1.PartyMember {
+	if party == nil {
+		return nil
+	}
+
+	protoParty := make([]*dnd5ev1alpha1.PartyMember, len(party))
+	for i, member := range party {
+		protoParty[i] = &dnd5ev1alpha1.PartyMember{
+			PlayerId:    member.PlayerID,
+			IsHost:      member.IsHost,
+			IsReady:     member.IsReady,
+			IsConnected: member.IsConnected,
+			// TODO: Convert character data when needed
+		}
+	}
+	return protoParty
+}
+
+// convertEncounterStateToProto converts state string to proto enum
+func convertEncounterStateToProto(state string) dnd5ev1alpha1.EncounterState {
+	switch state {
+	case "waiting":
+		return dnd5ev1alpha1.EncounterState_ENCOUNTER_STATE_WAITING
+	case "active":
+		return dnd5ev1alpha1.EncounterState_ENCOUNTER_STATE_ACTIVE
+	case "paused":
+		return dnd5ev1alpha1.EncounterState_ENCOUNTER_STATE_PAUSED
+	case "completed":
+		return dnd5ev1alpha1.EncounterState_ENCOUNTER_STATE_COMPLETED
+	default:
+		return dnd5ev1alpha1.EncounterState_ENCOUNTER_STATE_UNSPECIFIED
+	}
+}

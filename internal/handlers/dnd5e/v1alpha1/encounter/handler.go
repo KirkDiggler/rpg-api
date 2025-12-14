@@ -3,13 +3,14 @@ package encounter
 
 import (
 	"context"
+	"errors"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
-	"github.com/KirkDiggler/rpg-api/internal/errors"
+	apierrors "github.com/KirkDiggler/rpg-api/internal/errors"
 	characterhandler "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v1alpha1/character"
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/encounter"
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
@@ -24,7 +25,7 @@ type HandlerConfig struct {
 // Validate ensures all required dependencies are present
 func (c *HandlerConfig) Validate() error {
 	if c.EncounterService == nil {
-		return errors.InvalidArgument("encounter service is required")
+		return apierrors.InvalidArgument("encounter service is required")
 	}
 	return nil
 }
@@ -267,4 +268,177 @@ func (h *Handler) ActivateFeature(
 		UpdatedCharacter: updatedCharacter,
 		// TODO: Add UpdatedCombatState when needed
 	}, nil
+}
+
+// CreateEncounter creates a new multiplayer encounter lobby
+func (h *Handler) CreateEncounter(
+	ctx context.Context,
+	req *dnd5ev1alpha1.CreateEncounterRequest,
+) (*dnd5ev1alpha1.CreateEncounterResponse, error) {
+	// 1. Validate request
+	if len(req.GetCharacterIds()) == 0 {
+		return nil, status.Error(codes.InvalidArgument, "character_ids is required")
+	}
+
+	// 2. Get player ID from auth context
+	playerID := auth.GetPlayerID(ctx)
+
+	// 3. Call orchestrator
+	output, err := h.encounterService.CreateEncounter(ctx, &encounter.CreateEncounterInput{
+		PlayerID:     playerID,
+		CharacterIDs: req.GetCharacterIds(),
+	})
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	// 4. Convert response
+	return &dnd5ev1alpha1.CreateEncounterResponse{
+		EncounterId: output.EncounterID,
+		JoinCode:    output.JoinCode,
+		Room:        convertRoomDataToProto(output.Room),
+	}, nil
+}
+
+// JoinEncounter joins an existing encounter via join code
+func (h *Handler) JoinEncounter(
+	ctx context.Context,
+	req *dnd5ev1alpha1.JoinEncounterRequest,
+) (*dnd5ev1alpha1.JoinEncounterResponse, error) {
+	// 1. Validate request
+	if req.GetJoinCode() == "" {
+		return nil, status.Error(codes.InvalidArgument, "join_code is required")
+	}
+	if len(req.GetCharacterIds()) == 0 {
+		return nil, status.Error(codes.InvalidArgument, "character_ids is required")
+	}
+
+	// 2. Get player ID from auth context
+	playerID := auth.GetPlayerID(ctx)
+
+	// 3. Call orchestrator
+	output, err := h.encounterService.JoinEncounter(ctx, &encounter.JoinEncounterInput{
+		JoinCode:     req.GetJoinCode(),
+		PlayerID:     playerID,
+		CharacterIDs: req.GetCharacterIds(),
+	})
+	if err != nil {
+		if errors.Is(err, encounter.ErrEncounterNotFound) {
+			return nil, status.Error(codes.NotFound, err.Error())
+		}
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	// 4. Convert response
+	return &dnd5ev1alpha1.JoinEncounterResponse{
+		EncounterId: output.EncounterID,
+		Room:        convertRoomDataToProto(output.Room),
+		Party:       convertPartyToProto(output.Party),
+		State:       convertEncounterStateToProto(output.State),
+	}, nil
+}
+
+// SetReady marks a player as ready to start combat
+func (h *Handler) SetReady(
+	ctx context.Context,
+	req *dnd5ev1alpha1.SetReadyRequest,
+) (*dnd5ev1alpha1.SetReadyResponse, error) {
+	// 1. Validate request
+	if req.GetEncounterId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "encounter_id is required")
+	}
+	if req.GetPlayerId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "player_id is required")
+	}
+
+	// 2. Call orchestrator
+	output, err := h.encounterService.SetReady(ctx, &encounter.SetReadyInput{
+		EncounterID: req.GetEncounterId(),
+		PlayerID:    req.GetPlayerId(),
+		IsReady:     req.GetIsReady(),
+	})
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	// 3. Return response
+	return &dnd5ev1alpha1.SetReadyResponse{
+		Success: output.Success,
+	}, nil
+}
+
+// StartCombat begins combat (host only, all players must be ready)
+func (h *Handler) StartCombat(
+	ctx context.Context,
+	req *dnd5ev1alpha1.StartCombatRequest,
+) (*dnd5ev1alpha1.StartCombatResponse, error) {
+	// 1. Validate request
+	if req.GetEncounterId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "encounter_id is required")
+	}
+
+	// 2. Get player ID from auth context
+	playerID := auth.GetPlayerID(ctx)
+
+	// 3. Call orchestrator
+	output, err := h.encounterService.StartCombat(ctx, &encounter.StartCombatInput{
+		EncounterID: req.GetEncounterId(),
+		PlayerID:    playerID,
+	})
+	if err != nil {
+		if errors.Is(err, encounter.ErrNotHost) {
+			return nil, status.Error(codes.PermissionDenied, err.Error())
+		}
+		if errors.Is(err, encounter.ErrPlayersNotReady) {
+			return nil, status.Error(codes.FailedPrecondition, err.Error())
+		}
+		if errors.Is(err, encounter.ErrEncounterNotFound) {
+			return nil, status.Error(codes.NotFound, err.Error())
+		}
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	// 4. Convert response
+	gridType := spatial.GridTypeHex
+	hexOrientation := spatial.HexOrientationPointyTop
+
+	return &dnd5ev1alpha1.StartCombatResponse{
+		CombatState: convertCombatStateToProto(output.CombatState, gridType, hexOrientation),
+	}, nil
+}
+
+// LeaveEncounter removes a player from the encounter
+func (h *Handler) LeaveEncounter(
+	ctx context.Context,
+	req *dnd5ev1alpha1.LeaveEncounterRequest,
+) (*dnd5ev1alpha1.LeaveEncounterResponse, error) {
+	// 1. Validate request
+	if req.GetEncounterId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "encounter_id is required")
+	}
+	if req.GetPlayerId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "player_id is required")
+	}
+
+	// 2. Call orchestrator
+	output, err := h.encounterService.LeaveEncounter(ctx, &encounter.LeaveEncounterInput{
+		EncounterID: req.GetEncounterId(),
+		PlayerID:    req.GetPlayerId(),
+	})
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	// 3. Return response
+	return &dnd5ev1alpha1.LeaveEncounterResponse{
+		Success: output.Success,
+	}, nil
+}
+
+// StreamEncounterEvents subscribes to real-time encounter events
+func (h *Handler) StreamEncounterEvents(
+	_ *dnd5ev1alpha1.StreamEncounterEventsRequest,
+	_ dnd5ev1alpha1.EncounterService_StreamEncounterEventsServer,
+) error {
+	return status.Error(codes.Unimplemented, "StreamEncounterEvents endpoint not yet implemented")
 }
