@@ -26,6 +26,7 @@ import (
 
 	apiv1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/api/v1alpha1"
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
+	"github.com/KirkDiggler/rpg-api/internal/auth"
 	apiv1alpha1handler "github.com/KirkDiggler/rpg-api/internal/handlers/api/v1alpha1"
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
 	diceorc "github.com/KirkDiggler/rpg-api/internal/orchestrators/dice"
@@ -73,12 +74,26 @@ func runServer(_ *cobra.Command, _ []string) error {
 		return fmt.Errorf("failed to listen: %w", err)
 	}
 
+	// Initialize Discord authentication
+	discordClient := auth.NewDiscordClient()
+	tokenCache := auth.NewTokenCache(5 * time.Minute)
+
+	// Check if dev mode is enabled (allows "Dev <player_id>" auth scheme)
+	authConfig := &auth.InterceptorConfig{
+		DevMode: os.Getenv("AUTH_DEV_MODE") == "true",
+	}
+	if authConfig.DevMode {
+		log.Println("⚠️  AUTH_DEV_MODE enabled - Dev authentication scheme allowed")
+	}
+
 	srv := grpc.NewServer(
 		grpc.ChainUnaryInterceptor(
+			auth.UnaryAuthInterceptor(discordClient, tokenCache, authConfig),
 			grpc_logging.UnaryServerInterceptor(grpc_logging.LoggerFunc(logFunc)),
 			grpc_recovery.UnaryServerInterceptor(),
 		),
 		grpc.ChainStreamInterceptor(
+			auth.StreamAuthInterceptor(discordClient, tokenCache, authConfig),
 			grpc_logging.StreamServerInterceptor(grpc_logging.LoggerFunc(logFunc)),
 			grpc_recovery.StreamServerInterceptor(),
 		),
