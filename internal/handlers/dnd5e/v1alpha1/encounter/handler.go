@@ -8,6 +8,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
+	"github.com/KirkDiggler/rpg-api/internal/auth"
 	"github.com/KirkDiggler/rpg-api/internal/errors"
 	characterhandler "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v1alpha1/character"
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/encounter"
@@ -181,13 +182,8 @@ func (h *Handler) EndTurn(
 	}
 	// Note: entity_id is no longer required - server determines active entity from encounter state
 
-	// 2. Create service input
-	// TODO: Get player_id from authentication context or request field once available.
-	// Currently, ownership validation is skipped when player_id is empty.
-	// When auth is implemented:
-	//   - Option A: Add player_id field to EndTurnRequest proto
-	//   - Option B: Extract player_id from gRPC metadata/auth context
-	playerID := "" // Placeholder until auth is implemented
+	// 2. Create service input with authenticated player ID
+	playerID := auth.GetPlayerID(ctx)
 	input := &encounter.EndTurnInput{
 		EncounterID: req.GetEncounterId(),
 		PlayerID:    playerID,
