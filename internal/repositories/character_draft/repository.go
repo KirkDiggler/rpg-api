@@ -13,32 +13,32 @@ import (
 // Implements a single-draft-per-player pattern for simplicity
 type Repository interface {
 	// Create creates or replaces a player's character draft
-	// Returns apierrors.InvalidArgument for validation failures
-	// Returns apierrors.Internal for storage failures
+	// Returns apierr.InvalidArgument for validation failures
+	// Returns apierr.Internal for storage failures
 	Create(ctx context.Context, input CreateInput) (*CreateOutput, error)
 
 	// Get retrieves a character draft by ID
-	// Returns apierrors.InvalidArgument for empty/invalid IDs
-	// Returns apierrors.NotFound if draft doesn't exist
-	// Returns apierrors.Internal for storage failures
+	// Returns apierr.InvalidArgument for empty/invalid IDs
+	// Returns apierr.NotFound if draft doesn't exist
+	// Returns apierr.Internal for storage failures
 	Get(ctx context.Context, input GetInput) (*GetOutput, error)
 
 	// GetByPlayerID retrieves the player's single draft
-	// Returns apierrors.InvalidArgument for empty/invalid player IDs
-	// Returns apierrors.NotFound if player has no draft
-	// Returns apierrors.Internal for storage failures
+	// Returns apierr.InvalidArgument for empty/invalid player IDs
+	// Returns apierr.NotFound if player has no draft
+	// Returns apierr.Internal for storage failures
 	GetByPlayerID(ctx context.Context, input GetByPlayerIDInput) (*GetByPlayerIDOutput, error)
 
 	// Update updates an existing character draft
-	// Returns apierrors.InvalidArgument for validation failures
-	// Returns apierrors.NotFound if draft doesn't exist
-	// Returns apierrors.Internal for storage failures
+	// Returns apierr.InvalidArgument for validation failures
+	// Returns apierr.NotFound if draft doesn't exist
+	// Returns apierr.Internal for storage failures
 	Update(ctx context.Context, input UpdateInput) (*UpdateOutput, error)
 
 	// Delete deletes a character draft by ID
-	// Returns apierrors.InvalidArgument for empty/invalid IDs
-	// Returns apierrors.NotFound if draft doesn't exist
-	// Returns apierrors.Internal for storage failures
+	// Returns apierr.InvalidArgument for empty/invalid IDs
+	// Returns apierr.NotFound if draft doesn't exist
+	// Returns apierr.Internal for storage failures
 	Delete(ctx context.Context, input DeleteInput) (*DeleteOutput, error)
 }
 

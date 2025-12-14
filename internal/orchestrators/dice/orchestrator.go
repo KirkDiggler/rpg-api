@@ -14,7 +14,7 @@ import (
 
 	"github.com/KirkDiggler/rpg-toolkit/dice"
 
-	"github.com/KirkDiggler/rpg-api/internal/apierrors"
+	"github.com/KirkDiggler/rpg-api/internal/apierr"
 	"github.com/KirkDiggler/rpg-api/internal/pkg/idgen"
 	dicesession "github.com/KirkDiggler/rpg-api/internal/repositories/dice_session"
 )
@@ -63,7 +63,7 @@ type Config struct {
 
 // Validate ensures all required dependencies are provided
 func (c *Config) Validate() error {
-	vb := apierrors.NewValidationBuilder()
+	vb := apierr.NewValidationBuilder()
 
 	if c.DiceSessionRepo == nil {
 		vb.RequiredField("DiceSessionRepo")
@@ -84,7 +84,7 @@ type orchestrator struct {
 // NewOrchestrator creates a new dice orchestrator with the provided dependencies
 func NewOrchestrator(cfg *Config) (Service, error) {
 	if err := cfg.Validate(); err != nil {
-		return nil, apierrors.Wrap(err, "invalid config")
+		return nil, apierr.Wrap(err, "invalid config")
 	}
 
 	return &orchestrator{
@@ -98,21 +98,21 @@ func NewOrchestrator(cfg *Config) (Service, error) {
 func (o *orchestrator) parseDiceNotation(notation string) (count, size int, err error) {
 	matches := diceNotationRegex.FindStringSubmatch(strings.ToLower(notation))
 	if len(matches) != 3 {
-		return 0, 0, apierrors.InvalidArgumentf("invalid dice notation: %s (expected format: XdY)", notation)
+		return 0, 0, apierr.InvalidArgumentf("invalid dice notation: %s (expected format: XdY)", notation)
 	}
 
 	count, err = strconv.Atoi(matches[1])
 	if err != nil {
-		return 0, 0, apierrors.InvalidArgumentf("invalid dice count in notation: %s", notation)
+		return 0, 0, apierr.InvalidArgumentf("invalid dice count in notation: %s", notation)
 	}
 
 	size, err = strconv.Atoi(matches[2])
 	if err != nil {
-		return 0, 0, apierrors.InvalidArgumentf("invalid die size in notation: %s", notation)
+		return 0, 0, apierr.InvalidArgumentf("invalid die size in notation: %s", notation)
 	}
 
 	if count <= 0 || size <= 0 {
-		return 0, 0, apierrors.InvalidArgumentf("dice count and size must be positive: %s", notation)
+		return 0, 0, apierr.InvalidArgumentf("dice count and size must be positive: %s", notation)
 	}
 
 	return count, size, nil
@@ -123,7 +123,7 @@ func (o *orchestrator) rollDiceWithToolkit(ctx context.Context, count, size int,
 	// Use the roller to roll dice
 	rolls, err := o.roller.RollN(ctx, count, size)
 	if err != nil {
-		return nil, nil, 0, apierrors.Wrapf(err, "failed to roll dice")
+		return nil, nil, 0, apierr.Wrapf(err, "failed to roll dice")
 	}
 
 	// Copy rolls to individualDice
@@ -177,13 +177,13 @@ func (o *orchestrator) rollDiceWithToolkit(ctx context.Context, count, size int,
 // RollDice rolls dice using the specified notation and stores the result in a session
 func (o *orchestrator) RollDice(ctx context.Context, input *RollDiceInput) (*RollDiceOutput, error) {
 	if input.EntityID == "" {
-		return nil, apierrors.InvalidArgument("entity ID is required")
+		return nil, apierr.InvalidArgument("entity ID is required")
 	}
 	if input.Context == "" {
-		return nil, apierrors.InvalidArgument("context is required")
+		return nil, apierr.InvalidArgument("context is required")
 	}
 	if input.Notation == "" {
-		return nil, apierrors.InvalidArgument("dice notation is required")
+		return nil, apierr.InvalidArgument("dice notation is required")
 	}
 
 	// Parse the dice notation
@@ -201,7 +201,7 @@ func (o *orchestrator) RollDice(ctx context.Context, input *RollDiceInput) (*Rol
 	// Roll the dice using rpg-toolkit
 	individualDice, dropped, total, err := o.rollDiceWithToolkit(ctx, count, size, dropLowest)
 	if err != nil {
-		return nil, apierrors.Wrap(err, "failed to roll dice")
+		return nil, apierr.Wrap(err, "failed to roll dice")
 	}
 
 	// Create the dice roll
@@ -224,8 +224,8 @@ func (o *orchestrator) RollDice(ctx context.Context, input *RollDiceInput) (*Rol
 
 	var session *dicesession.DiceSession
 	if err != nil {
-		if !apierrors.IsNotFound(err) {
-			return nil, apierrors.Wrap(err, "failed to check for existing session")
+		if !apierr.IsNotFound(err) {
+			return nil, apierr.Wrap(err, "failed to check for existing session")
 		}
 
 		// No existing session, create a new one
@@ -241,7 +241,7 @@ func (o *orchestrator) RollDice(ctx context.Context, input *RollDiceInput) (*Rol
 			TTL:      ttl,
 		})
 		if err != nil {
-			return nil, apierrors.Wrap(err, "failed to create dice session")
+			return nil, apierr.Wrap(err, "failed to create dice session")
 		}
 		session = createOutput.Session
 	} else {
@@ -251,7 +251,7 @@ func (o *orchestrator) RollDice(ctx context.Context, input *RollDiceInput) (*Rol
 
 		// Update the session
 		if err := o.diceSessionRepo.Update(ctx, session); err != nil {
-			return nil, apierrors.Wrap(err, "failed to update dice session")
+			return nil, apierr.Wrap(err, "failed to update dice session")
 		}
 	}
 
@@ -272,10 +272,10 @@ func (o *orchestrator) RollDice(ctx context.Context, input *RollDiceInput) (*Rol
 // GetRollSession retrieves an existing dice roll session
 func (o *orchestrator) GetRollSession(ctx context.Context, input *GetRollSessionInput) (*GetRollSessionOutput, error) {
 	if input.EntityID == "" {
-		return nil, apierrors.InvalidArgument("entity ID is required")
+		return nil, apierr.InvalidArgument("entity ID is required")
 	}
 	if input.Context == "" {
-		return nil, apierrors.InvalidArgument("context is required")
+		return nil, apierr.InvalidArgument("context is required")
 	}
 
 	getOutput, err := o.diceSessionRepo.Get(ctx, dicesession.GetInput{
@@ -283,7 +283,7 @@ func (o *orchestrator) GetRollSession(ctx context.Context, input *GetRollSession
 		Context:  input.Context,
 	})
 	if err != nil {
-		return nil, apierrors.Wrap(err, "failed to get dice session")
+		return nil, apierr.Wrap(err, "failed to get dice session")
 	}
 
 	return &GetRollSessionOutput{
@@ -295,10 +295,10 @@ func (o *orchestrator) GetRollSession(ctx context.Context, input *GetRollSession
 func (o *orchestrator) ClearRollSession(ctx context.Context, input *ClearRollSessionInput) (
 	*ClearRollSessionOutput, error) {
 	if input.EntityID == "" {
-		return nil, apierrors.InvalidArgument("entity ID is required")
+		return nil, apierr.InvalidArgument("entity ID is required")
 	}
 	if input.Context == "" {
-		return nil, apierrors.InvalidArgument("context is required")
+		return nil, apierr.InvalidArgument("context is required")
 	}
 
 	deleteOutput, err := o.diceSessionRepo.Delete(ctx, dicesession.DeleteInput{
@@ -306,7 +306,7 @@ func (o *orchestrator) ClearRollSession(ctx context.Context, input *ClearRollSes
 		Context:  input.Context,
 	})
 	if err != nil {
-		return nil, apierrors.Wrap(err, "failed to delete dice session")
+		return nil, apierr.Wrap(err, "failed to delete dice session")
 	}
 
 	slog.Info("Dice session cleared",
@@ -324,7 +324,7 @@ func (o *orchestrator) ClearRollSession(ctx context.Context, input *ClearRollSes
 func (o *orchestrator) RollAbilityScores(ctx context.Context, input *RollAbilityScoresInput) (
 	*RollAbilityScoresOutput, error) {
 	if input.EntityID == "" {
-		return nil, apierrors.InvalidArgument("entity ID is required")
+		return nil, apierr.InvalidArgument("entity ID is required")
 	}
 	if input.Method == "" {
 		input.Method = MethodStandard // Default to 4d6 drop lowest
@@ -342,13 +342,13 @@ func (o *orchestrator) RollAbilityScores(ctx context.Context, input *RollAbility
 	case MethodHeroic:
 		notation = "4d6r1" // Reroll 1s
 	default:
-		return nil, apierrors.InvalidArgumentf("unsupported rolling method: %s", input.Method)
+		return nil, apierr.InvalidArgumentf("unsupported rolling method: %s", input.Method)
 	}
 
 	// Parse the dice notation for ability scores
 	count, size, err := o.parseDiceNotation(notation)
 	if err != nil {
-		return nil, apierrors.Wrap(err, "failed to parse ability score notation")
+		return nil, apierr.Wrap(err, "failed to parse ability score notation")
 	}
 
 	// Determine drop lowest count
@@ -363,7 +363,7 @@ func (o *orchestrator) RollAbilityScores(ctx context.Context, input *RollAbility
 		// Roll the dice using rpg-toolkit
 		individualDice, droppedDice, total, rollErr := o.rollDiceWithToolkit(ctx, count, size, dropLowestCount)
 		if rollErr != nil {
-			return nil, apierrors.Wrapf(rollErr, "failed to roll ability score %d", i+1)
+			return nil, apierr.Wrapf(rollErr, "failed to roll ability score %d", i+1)
 		}
 
 		roll := &dicesession.DiceRoll{
@@ -394,7 +394,7 @@ func (o *orchestrator) RollAbilityScores(ctx context.Context, input *RollAbility
 		TTL:      DefaultSessionTTL,
 	})
 	if err != nil {
-		return nil, apierrors.Wrap(err, "failed to create ability score session")
+		return nil, apierr.Wrap(err, "failed to create ability score session")
 	}
 
 	slog.Info("Ability scores rolled successfully",

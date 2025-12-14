@@ -11,7 +11,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	apiv1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/api/v1alpha1"
-	"github.com/KirkDiggler/rpg-api/internal/apierrors"
+	"github.com/KirkDiggler/rpg-api/internal/apierr"
 	"github.com/KirkDiggler/rpg-api/internal/handlers/api/v1alpha1"
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/dice"
 	dicemock "github.com/KirkDiggler/rpg-api/internal/orchestrators/dice/mock"
@@ -216,7 +216,7 @@ func (s *DiceHandlerTestSuite) TestGetRollSession_NotFound() {
 
 	s.mockDice.EXPECT().
 		GetRollSession(ctx, gomock.Any()).
-		Return(nil, apierrors.NotFound("session not found"))
+		Return(nil, apierr.NotFound("session not found"))
 
 	req := &apiv1alpha1.GetRollSessionRequest{
 		EntityId: entityID,

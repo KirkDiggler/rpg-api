@@ -778,7 +778,7 @@ func filterDynamicEntities(entities []*entities.Entity) []DynamicEntity {
 **Error Handling Pattern**:
 ```go
 import (
-    "github.com/KirkDiggler/rpg-api/internal/apierrors"
+    "github.com/KirkDiggler/rpg-api/internal/apierr"
     "github.com/KirkDiggler/rpg-api/internal/idgen"
 )
 

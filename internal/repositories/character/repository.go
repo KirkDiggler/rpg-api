@@ -12,37 +12,37 @@ import (
 // Repository defines the interface for character persistence
 type Repository interface {
 	// Create creates a new character
-	// Returns apierrors.InvalidArgument for validation failures
-	// Returns apierrors.AlreadyExists if character with same ID exists
-	// Returns apierrors.Internal for storage failures
+	// Returns apierr.InvalidArgument for validation failures
+	// Returns apierr.AlreadyExists if character with same ID exists
+	// Returns apierr.Internal for storage failures
 	Create(ctx context.Context, input CreateInput) (*CreateOutput, error)
 
 	// Get retrieves a character by ID
-	// Returns apierrors.InvalidArgument for empty/invalid IDs
-	// Returns apierrors.NotFound if character doesn't exist
-	// Returns apierrors.Internal for storage failures
+	// Returns apierr.InvalidArgument for empty/invalid IDs
+	// Returns apierr.NotFound if character doesn't exist
+	// Returns apierr.Internal for storage failures
 	Get(ctx context.Context, input GetInput) (*GetOutput, error)
 
 	// Update updates an existing character
-	// Returns apierrors.InvalidArgument for validation failures
-	// Returns apierrors.NotFound if character doesn't exist
-	// Returns apierrors.Internal for storage failures
+	// Returns apierr.InvalidArgument for validation failures
+	// Returns apierr.NotFound if character doesn't exist
+	// Returns apierr.Internal for storage failures
 	Update(ctx context.Context, input UpdateInput) (*UpdateOutput, error)
 
 	// Delete deletes a character by ID
-	// Returns apierrors.InvalidArgument for empty/invalid IDs
-	// Returns apierrors.NotFound if character doesn't exist
-	// Returns apierrors.Internal for storage failures
+	// Returns apierr.InvalidArgument for empty/invalid IDs
+	// Returns apierr.NotFound if character doesn't exist
+	// Returns apierr.Internal for storage failures
 	Delete(ctx context.Context, input DeleteInput) (*DeleteOutput, error)
 
 	// ListByPlayerID retrieves all characters for a player
-	// Returns apierrors.InvalidArgument for empty/invalid player IDs
-	// Returns apierrors.Internal for storage failures
+	// Returns apierr.InvalidArgument for empty/invalid player IDs
+	// Returns apierr.Internal for storage failures
 	ListByPlayerID(ctx context.Context, input ListByPlayerIDInput) (*ListByPlayerIDOutput, error)
 
 	// ListBySessionID retrieves all characters in a session
-	// Returns apierrors.InvalidArgument for empty/invalid session IDs
-	// Returns apierrors.Internal for storage failures
+	// Returns apierr.InvalidArgument for empty/invalid session IDs
+	// Returns apierr.Internal for storage failures
 	ListBySessionID(ctx context.Context, input ListBySessionIDInput) (*ListBySessionIDOutput, error)
 }
 

@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
-	"github.com/KirkDiggler/rpg-api/internal/apierrors"
+	"github.com/KirkDiggler/rpg-api/internal/apierr"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/abilities"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/ammunition"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/armor"
@@ -1296,9 +1296,9 @@ func convertEquipmentSlotToToolkit(slot dnd5ev1alpha1.EquipmentSlot) (toolkitcha
 	case dnd5ev1alpha1.EquipmentSlot_EQUIPMENT_SLOT_BELT:
 		return toolkitchar.SlotBelt, nil
 	case dnd5ev1alpha1.EquipmentSlot_EQUIPMENT_SLOT_GLOVES:
-		return "", apierrors.InvalidArgument("EQUIPMENT_SLOT_GLOVES is deprecated and not supported")
+		return "", apierr.InvalidArgument("EQUIPMENT_SLOT_GLOVES is deprecated and not supported")
 	default:
-		return "", apierrors.InvalidArgument("unsupported equipment slot")
+		return "", apierr.InvalidArgument("unsupported equipment slot")
 	}
 }
 
