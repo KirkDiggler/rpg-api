@@ -41,6 +41,11 @@ func (r *InMemoryRepository) Save(_ context.Context, input *SaveInput) (*SaveOut
 		InitiativeRolls:   input.InitiativeRolls,
 		MovementRemaining: input.MovementRemaining,
 		Monsters:          input.Monsters,
+		State:             input.State,
+		JoinCode:          input.JoinCode,
+		HostID:            input.HostID,
+		Players:           input.Players,
+		CreatedAt:         input.CreatedAt,
 	}
 
 	return &SaveOutput{Success: true}, nil
@@ -73,8 +78,51 @@ func (r *InMemoryRepository) Get(_ context.Context, input *GetInput) (*GetOutput
 			InitiativeRolls:   data.InitiativeRolls,
 			MovementRemaining: data.MovementRemaining,
 			Monsters:          data.Monsters,
+			State:             data.State,
+			JoinCode:          data.JoinCode,
+			HostID:            data.HostID,
+			Players:           data.Players,
+			CreatedAt:         data.CreatedAt,
 		},
 	}, nil
+}
+
+// GetByJoinCode retrieves an encounter by its join code
+func (r *InMemoryRepository) GetByJoinCode(_ context.Context, input *GetByJoinCodeInput) (*GetOutput, error) {
+	if input == nil {
+		return nil, errors.InvalidArgument("input is required")
+	}
+
+	if input.JoinCode == "" {
+		return nil, errors.InvalidArgument("join code is required")
+	}
+
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	// Search for encounter with matching join code
+	for _, data := range r.store {
+		if data.JoinCode == input.JoinCode {
+			// Return a copy to prevent external modification
+			return &GetOutput{
+				Data: &EncounterData{
+					ID:                data.ID,
+					RoomData:          data.RoomData,
+					InitiativeData:    data.InitiativeData,
+					InitiativeRolls:   data.InitiativeRolls,
+					MovementRemaining: data.MovementRemaining,
+					Monsters:          data.Monsters,
+					State:             data.State,
+					JoinCode:          data.JoinCode,
+					HostID:            data.HostID,
+					Players:           data.Players,
+					CreatedAt:         data.CreatedAt,
+				},
+			}, nil
+		}
+	}
+
+	return nil, errors.NotFound("encounter not found")
 }
 
 // Update modifies an existing encounter
