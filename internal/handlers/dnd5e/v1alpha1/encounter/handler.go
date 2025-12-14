@@ -270,42 +270,160 @@ func (h *Handler) ActivateFeature(
 
 // CreateEncounter creates a new multiplayer encounter lobby
 func (h *Handler) CreateEncounter(
-	_ context.Context,
-	_ *dnd5ev1alpha1.CreateEncounterRequest,
+	ctx context.Context,
+	req *dnd5ev1alpha1.CreateEncounterRequest,
 ) (*dnd5ev1alpha1.CreateEncounterResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "CreateEncounter endpoint not yet implemented")
+	// 1. Validate request
+	if len(req.GetCharacterIds()) == 0 {
+		return nil, status.Error(codes.InvalidArgument, "character_ids is required")
+	}
+
+	// TODO: Get player_id from authentication context
+	// For now, use first character ID as player ID placeholder
+	playerID := "player-" + req.GetCharacterIds()[0]
+
+	// 2. Call orchestrator
+	output, err := h.encounterService.CreateEncounter(ctx, &encounter.CreateEncounterInput{
+		PlayerID:     playerID,
+		CharacterIDs: req.GetCharacterIds(),
+	})
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	// 3. Convert response
+	return &dnd5ev1alpha1.CreateEncounterResponse{
+		EncounterId: output.EncounterID,
+		JoinCode:    output.JoinCode,
+		Room:        convertRoomDataToProto(output.Room),
+	}, nil
 }
 
 // JoinEncounter joins an existing encounter via join code
 func (h *Handler) JoinEncounter(
-	_ context.Context,
-	_ *dnd5ev1alpha1.JoinEncounterRequest,
+	ctx context.Context,
+	req *dnd5ev1alpha1.JoinEncounterRequest,
 ) (*dnd5ev1alpha1.JoinEncounterResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "JoinEncounter endpoint not yet implemented")
+	// 1. Validate request
+	if req.GetJoinCode() == "" {
+		return nil, status.Error(codes.InvalidArgument, "join_code is required")
+	}
+	if len(req.GetCharacterIds()) == 0 {
+		return nil, status.Error(codes.InvalidArgument, "character_ids is required")
+	}
+
+	// TODO: Get player_id from authentication context
+	playerID := "player-" + req.GetCharacterIds()[0]
+
+	// 2. Call orchestrator
+	output, err := h.encounterService.JoinEncounter(ctx, &encounter.JoinEncounterInput{
+		JoinCode:     req.GetJoinCode(),
+		PlayerID:     playerID,
+		CharacterIDs: req.GetCharacterIds(),
+	})
+	if err != nil {
+		if err.Error() == "encounter not found" {
+			return nil, status.Error(codes.NotFound, err.Error())
+		}
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	// 3. Convert response
+	return &dnd5ev1alpha1.JoinEncounterResponse{
+		EncounterId: output.EncounterID,
+		Room:        convertRoomDataToProto(output.Room),
+		Party:       convertPartyToProto(output.Party),
+		State:       convertEncounterStateToProto(output.State),
+	}, nil
 }
 
 // SetReady marks a player as ready to start combat
 func (h *Handler) SetReady(
-	_ context.Context,
-	_ *dnd5ev1alpha1.SetReadyRequest,
+	ctx context.Context,
+	req *dnd5ev1alpha1.SetReadyRequest,
 ) (*dnd5ev1alpha1.SetReadyResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "SetReady endpoint not yet implemented")
+	// 1. Validate request
+	if req.GetEncounterId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "encounter_id is required")
+	}
+	if req.GetPlayerId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "player_id is required")
+	}
+
+	// 2. Call orchestrator
+	output, err := h.encounterService.SetReady(ctx, &encounter.SetReadyInput{
+		EncounterID: req.GetEncounterId(),
+		PlayerID:    req.GetPlayerId(),
+		IsReady:     req.GetIsReady(),
+	})
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	// 3. Return response
+	return &dnd5ev1alpha1.SetReadyResponse{
+		Success: output.Success,
+	}, nil
 }
 
 // StartCombat begins combat (host only, all players must be ready)
 func (h *Handler) StartCombat(
-	_ context.Context,
-	_ *dnd5ev1alpha1.StartCombatRequest,
+	ctx context.Context,
+	req *dnd5ev1alpha1.StartCombatRequest,
 ) (*dnd5ev1alpha1.StartCombatResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "StartCombat endpoint not yet implemented")
+	// 1. Validate request
+	if req.GetEncounterId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "encounter_id is required")
+	}
+
+	// TODO: Get player_id from authentication context
+	// For now, we need a way to identify the caller
+	playerID := "" // Will fail if not host - handled by orchestrator
+
+	// 2. Call orchestrator
+	output, err := h.encounterService.StartCombat(ctx, &encounter.StartCombatInput{
+		EncounterID: req.GetEncounterId(),
+		PlayerID:    playerID,
+	})
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	// 3. Convert response
+	gridType := spatial.GridTypeHex
+	hexOrientation := spatial.HexOrientationPointyTop
+
+	return &dnd5ev1alpha1.StartCombatResponse{
+		CombatState: convertCombatStateToProto(output.CombatState, gridType, hexOrientation),
+	}, nil
 }
 
 // LeaveEncounter removes a player from the encounter
 func (h *Handler) LeaveEncounter(
-	_ context.Context,
-	_ *dnd5ev1alpha1.LeaveEncounterRequest,
+	ctx context.Context,
+	req *dnd5ev1alpha1.LeaveEncounterRequest,
 ) (*dnd5ev1alpha1.LeaveEncounterResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "LeaveEncounter endpoint not yet implemented")
+	// 1. Validate request
+	if req.GetEncounterId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "encounter_id is required")
+	}
+	if req.GetPlayerId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "player_id is required")
+	}
+
+	// 2. Call orchestrator
+	output, err := h.encounterService.LeaveEncounter(ctx, &encounter.LeaveEncounterInput{
+		EncounterID: req.GetEncounterId(),
+		PlayerID:    req.GetPlayerId(),
+	})
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	// 3. Return response
+	return &dnd5ev1alpha1.LeaveEncounterResponse{
+		Success: output.Success,
+	}, nil
 }
 
 // StreamEncounterEvents subscribes to real-time encounter events

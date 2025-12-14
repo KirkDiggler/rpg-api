@@ -1047,11 +1047,37 @@ func (s *HandlerTestSuite) TestActivateFeature_ServiceError() {
 // Lobby Methods Tests
 // ============================================================================
 
-// TestCreateEncounter_Unimplemented verifies the stub returns Unimplemented
-func (s *HandlerTestSuite) TestCreateEncounter_Unimplemented() {
+// TestCreateEncounter_Success tests successful encounter creation
+func (s *HandlerTestSuite) TestCreateEncounter_Success() {
+	// Arrange
+	s.mockService.EXPECT().
+		CreateEncounter(gomock.Any(), &encounter.CreateEncounterInput{
+			PlayerID:     "player-char-1", // Handler generates this from character ID
+			CharacterIDs: []string{"char-1"},
+		}).
+		Return(&encounter.CreateEncounterOutput{
+			EncounterID: "enc-123",
+			JoinCode:    "ABC123",
+			Room:        nil,
+		}, nil)
+
 	// Act
 	resp, err := s.handler.CreateEncounter(context.Background(), &dnd5ev1alpha1.CreateEncounterRequest{
 		CharacterIds: []string{"char-1"},
+	})
+
+	// Assert
+	s.Require().NoError(err)
+	s.Require().NotNil(resp)
+	s.Assert().Equal("enc-123", resp.EncounterId)
+	s.Assert().Equal("ABC123", resp.JoinCode)
+}
+
+// TestCreateEncounter_MissingCharacterIds tests validation
+func (s *HandlerTestSuite) TestCreateEncounter_MissingCharacterIds() {
+	// Act
+	resp, err := s.handler.CreateEncounter(context.Background(), &dnd5ev1alpha1.CreateEncounterRequest{
+		CharacterIds: []string{},
 	})
 
 	// Assert
@@ -1060,14 +1086,48 @@ func (s *HandlerTestSuite) TestCreateEncounter_Unimplemented() {
 
 	st, ok := status.FromError(err)
 	s.Require().True(ok)
-	s.Assert().Equal(codes.Unimplemented, st.Code())
+	s.Assert().Equal(codes.InvalidArgument, st.Code())
+	s.Assert().Contains(st.Message(), "character_ids is required")
 }
 
-// TestJoinEncounter_Unimplemented verifies the stub returns Unimplemented
-func (s *HandlerTestSuite) TestJoinEncounter_Unimplemented() {
+// TestJoinEncounter_Success tests successful encounter joining
+func (s *HandlerTestSuite) TestJoinEncounter_Success() {
+	// Arrange
+	s.mockService.EXPECT().
+		JoinEncounter(gomock.Any(), &encounter.JoinEncounterInput{
+			JoinCode:     "ABC123",
+			PlayerID:     "player-char-2",
+			CharacterIDs: []string{"char-2"},
+		}).
+		Return(&encounter.JoinEncounterOutput{
+			EncounterID: "enc-123",
+			Room:        nil,
+			Party: []*encounter.PartyMember{
+				{PlayerID: "player-1", CharacterID: "char-1", IsHost: true, IsReady: true, IsConnected: true},
+				{PlayerID: "player-2", CharacterID: "char-2", IsHost: false, IsReady: false, IsConnected: true},
+			},
+			State: "waiting",
+		}, nil)
+
 	// Act
 	resp, err := s.handler.JoinEncounter(context.Background(), &dnd5ev1alpha1.JoinEncounterRequest{
 		JoinCode:     "ABC123",
+		CharacterIds: []string{"char-2"},
+	})
+
+	// Assert
+	s.Require().NoError(err)
+	s.Require().NotNil(resp)
+	s.Assert().Equal("enc-123", resp.EncounterId)
+	s.Assert().Len(resp.Party, 2)
+	s.Assert().Equal(dnd5ev1alpha1.EncounterState_ENCOUNTER_STATE_WAITING, resp.State)
+}
+
+// TestJoinEncounter_MissingJoinCode tests validation
+func (s *HandlerTestSuite) TestJoinEncounter_MissingJoinCode() {
+	// Act
+	resp, err := s.handler.JoinEncounter(context.Background(), &dnd5ev1alpha1.JoinEncounterRequest{
+		JoinCode:     "",
 		CharacterIds: []string{"char-2"},
 	})
 
@@ -1077,14 +1137,39 @@ func (s *HandlerTestSuite) TestJoinEncounter_Unimplemented() {
 
 	st, ok := status.FromError(err)
 	s.Require().True(ok)
-	s.Assert().Equal(codes.Unimplemented, st.Code())
+	s.Assert().Equal(codes.InvalidArgument, st.Code())
+	s.Assert().Contains(st.Message(), "join_code is required")
 }
 
-// TestSetReady_Unimplemented verifies the stub returns Unimplemented
-func (s *HandlerTestSuite) TestSetReady_Unimplemented() {
+// TestSetReady_Success tests successful ready status change
+func (s *HandlerTestSuite) TestSetReady_Success() {
+	// Arrange
+	s.mockService.EXPECT().
+		SetReady(gomock.Any(), &encounter.SetReadyInput{
+			EncounterID: "enc-1",
+			PlayerID:    "player-1",
+			IsReady:     true,
+		}).
+		Return(&encounter.SetReadyOutput{Success: true}, nil)
+
 	// Act
 	resp, err := s.handler.SetReady(context.Background(), &dnd5ev1alpha1.SetReadyRequest{
 		EncounterId: "enc-1",
+		PlayerId:    "player-1",
+		IsReady:     true,
+	})
+
+	// Assert
+	s.Require().NoError(err)
+	s.Require().NotNil(resp)
+	s.Assert().True(resp.Success)
+}
+
+// TestSetReady_MissingEncounterId tests validation
+func (s *HandlerTestSuite) TestSetReady_MissingEncounterId() {
+	// Act
+	resp, err := s.handler.SetReady(context.Background(), &dnd5ev1alpha1.SetReadyRequest{
+		EncounterId: "",
 		PlayerId:    "player-1",
 		IsReady:     true,
 	})
@@ -1095,14 +1180,48 @@ func (s *HandlerTestSuite) TestSetReady_Unimplemented() {
 
 	st, ok := status.FromError(err)
 	s.Require().True(ok)
-	s.Assert().Equal(codes.Unimplemented, st.Code())
+	s.Assert().Equal(codes.InvalidArgument, st.Code())
+	s.Assert().Contains(st.Message(), "encounter_id is required")
 }
 
-// TestStartCombat_Unimplemented verifies the stub returns Unimplemented
-func (s *HandlerTestSuite) TestStartCombat_Unimplemented() {
+// TestStartCombat_Success tests successful combat start
+func (s *HandlerTestSuite) TestStartCombat_Success() {
+	// Arrange
+	s.mockService.EXPECT().
+		StartCombat(gomock.Any(), &encounter.StartCombatInput{
+			EncounterID: "enc-1",
+			PlayerID:    "", // No auth yet
+		}).
+		Return(&encounter.StartCombatOutput{
+			CombatState: &encounter.CombatState{
+				EncounterID:       "enc-1",
+				Round:             1,
+				TurnOrder:         []encounter.InitiativeEntry{},
+				ActiveIndex:       0,
+				MovementRemaining: 30,
+				CombatStarted:     true,
+				CombatEnded:       false,
+			},
+			MonsterTurns: nil,
+		}, nil)
+
 	// Act
 	resp, err := s.handler.StartCombat(context.Background(), &dnd5ev1alpha1.StartCombatRequest{
 		EncounterId: "enc-1",
+	})
+
+	// Assert
+	s.Require().NoError(err)
+	s.Require().NotNil(resp)
+	s.Require().NotNil(resp.CombatState)
+	s.Assert().Equal(int32(1), resp.CombatState.Round)
+}
+
+// TestStartCombat_MissingEncounterId tests validation
+func (s *HandlerTestSuite) TestStartCombat_MissingEncounterId() {
+	// Act
+	resp, err := s.handler.StartCombat(context.Background(), &dnd5ev1alpha1.StartCombatRequest{
+		EncounterId: "",
 	})
 
 	// Assert
@@ -1111,11 +1230,23 @@ func (s *HandlerTestSuite) TestStartCombat_Unimplemented() {
 
 	st, ok := status.FromError(err)
 	s.Require().True(ok)
-	s.Assert().Equal(codes.Unimplemented, st.Code())
+	s.Assert().Equal(codes.InvalidArgument, st.Code())
+	s.Assert().Contains(st.Message(), "encounter_id is required")
 }
 
-// TestLeaveEncounter_Unimplemented verifies the stub returns Unimplemented
-func (s *HandlerTestSuite) TestLeaveEncounter_Unimplemented() {
+// TestLeaveEncounter_Success tests successful player leaving
+func (s *HandlerTestSuite) TestLeaveEncounter_Success() {
+	// Arrange
+	s.mockService.EXPECT().
+		LeaveEncounter(gomock.Any(), &encounter.LeaveEncounterInput{
+			EncounterID: "enc-1",
+			PlayerID:    "player-1",
+		}).
+		Return(&encounter.LeaveEncounterOutput{
+			Success:          true,
+			EncounterDeleted: false,
+		}, nil)
+
 	// Act
 	resp, err := s.handler.LeaveEncounter(context.Background(), &dnd5ev1alpha1.LeaveEncounterRequest{
 		EncounterId: "enc-1",
@@ -1123,10 +1254,25 @@ func (s *HandlerTestSuite) TestLeaveEncounter_Unimplemented() {
 	})
 
 	// Assert
+	s.Require().NoError(err)
+	s.Require().NotNil(resp)
+	s.Assert().True(resp.Success)
+}
+
+// TestLeaveEncounter_MissingPlayerId tests validation
+func (s *HandlerTestSuite) TestLeaveEncounter_MissingPlayerId() {
+	// Act
+	resp, err := s.handler.LeaveEncounter(context.Background(), &dnd5ev1alpha1.LeaveEncounterRequest{
+		EncounterId: "enc-1",
+		PlayerId:    "",
+	})
+
+	// Assert
 	s.Require().Error(err)
 	s.Assert().Nil(resp)
 
 	st, ok := status.FromError(err)
 	s.Require().True(ok)
-	s.Assert().Equal(codes.Unimplemented, st.Code())
+	s.Assert().Equal(codes.InvalidArgument, st.Code())
+	s.Assert().Contains(st.Message(), "player_id is required")
 }

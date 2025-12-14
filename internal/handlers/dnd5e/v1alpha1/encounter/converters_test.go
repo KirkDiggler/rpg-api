@@ -456,7 +456,7 @@ func (s *ConvertersTestSuite) TestConvertAttackResultToProto_WithBreakdown() {
 	s.Require().Len(result.DamageBreakdown.Components, 1)
 
 	comp := result.DamageBreakdown.Components[0]
-	s.Equal("weapon", comp.Source)
+	s.Equal("weapon", comp.Source) //nolint:staticcheck // testing deprecated field for backwards compatibility
 	s.Equal([]int32{8}, comp.OriginalDiceRolls)
 	s.Equal([]int32{8}, comp.FinalDiceRolls)
 	s.Equal(int32(4), comp.FlatBonus)
@@ -504,11 +504,11 @@ func (s *ConvertersTestSuite) TestConvertDamageBreakdownToProto_MultipleComponen
 	s.Require().Len(result.Components, 2)
 
 	// Verify weapon component
-	s.Equal("weapon", result.Components[0].Source)
+	s.Equal("weapon", result.Components[0].Source) //nolint:staticcheck // testing deprecated field for backwards compatibility
 	s.Equal(int32(4), result.Components[0].FlatBonus)
 
 	// Verify rage bonus component
-	s.Equal("feature", result.Components[1].Source)
+	s.Equal("feature", result.Components[1].Source) //nolint:staticcheck // testing deprecated field for backwards compatibility
 	s.Equal(int32(2), result.Components[1].FlatBonus)
 }
 
@@ -539,7 +539,7 @@ func (s *ConvertersTestSuite) TestConvertDamageComponentToProto_WithRerolls() {
 	result := convertDamageComponentToProto(comp)
 
 	s.Require().NotNil(result)
-	s.Equal("weapon", result.Source)
+	s.Equal("weapon", result.Source) //nolint:staticcheck // testing deprecated field for backwards compatibility
 	s.Equal([]int32{1, 2, 6}, result.OriginalDiceRolls)
 	s.Equal([]int32{4, 5, 6}, result.FinalDiceRolls)
 	s.Require().Len(result.Rerolls, 2)

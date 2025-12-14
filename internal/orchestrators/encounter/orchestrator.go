@@ -1110,44 +1110,480 @@ func (o *Orchestrator) checkCombatEnd(enc *encounterrepo.EncounterData) *Encount
 	return nil
 }
 
-// Multiplayer lobby methods - stub implementations
+// Multiplayer lobby methods
 
 // CreateEncounter creates a new multiplayer encounter lobby
 func (o *Orchestrator) CreateEncounter(
-	_ context.Context,
-	_ *CreateEncounterInput,
+	ctx context.Context,
+	input *CreateEncounterInput,
 ) (*CreateEncounterOutput, error) {
-	return nil, fmt.Errorf("CreateEncounter not yet implemented")
+	// 1. Validate input
+	if input == nil {
+		return nil, fmt.Errorf("input is required")
+	}
+	if input.PlayerID == "" {
+		return nil, fmt.Errorf("player ID is required")
+	}
+	if len(input.CharacterIDs) == 0 {
+		return nil, fmt.Errorf("at least one character ID is required")
+	}
+
+	// 2. Generate unique encounter ID
+	encounterID := fmt.Sprintf("enc-%d", time.Now().UnixNano())
+
+	// 3. Generate join code
+	joinCode := encounterrepo.GenerateJoinCode()
+
+	// 4. Create room (20x20 hex grid, no entities yet - they're placed when combat starts)
+	roomData := &spatial.RoomData{
+		ID:       encounterID + "-room",
+		Type:     "dungeon",
+		Width:    20,
+		Height:   20,
+		GridType: spatial.GridTypeHex,
+		Entities: make(map[string]spatial.EntityPlacement),
+	}
+
+	// Add pillars for atmosphere
+	obstacles := []spatial.Position{
+		{X: 3, Y: 3},
+		{X: 3, Y: 17},
+		{X: 17, Y: 3},
+		{X: 17, Y: 17},
+	}
+	for i, pos := range obstacles {
+		obstacleID := fmt.Sprintf("pillar-%d", i)
+		roomData.Entities[obstacleID] = spatial.EntityPlacement{
+			EntityID:       obstacleID,
+			EntityType:     "obstacle",
+			Position:       pos,
+			Size:           1,
+			BlocksMovement: true,
+		}
+	}
+
+	// 5. Create host player entry with first character
+	players := make(map[string]*encounterrepo.Player)
+	players[input.PlayerID] = &encounterrepo.Player{
+		PlayerID:    input.PlayerID,
+		CharacterID: input.CharacterIDs[0], // First character for now
+		IsReady:     false,
+		IsConnected: true,
+		JoinedAt:    time.Now(),
+	}
+
+	// 6. Save encounter to repository
+	_, err := o.encRepo.Save(ctx, &encounterrepo.SaveInput{
+		EncounterID: encounterID,
+		RoomData:    roomData,
+		State:       encounterrepo.StateWaiting,
+		JoinCode:    joinCode,
+		HostID:      input.PlayerID,
+		Players:     players,
+		CreatedAt:   time.Now(),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to save encounter: %w", err)
+	}
+
+	return &CreateEncounterOutput{
+		EncounterID: encounterID,
+		JoinCode:    joinCode,
+		Room:        roomData,
+	}, nil
 }
 
 // JoinEncounter joins an existing encounter via join code
 func (o *Orchestrator) JoinEncounter(
-	_ context.Context,
-	_ *JoinEncounterInput,
+	ctx context.Context,
+	input *JoinEncounterInput,
 ) (*JoinEncounterOutput, error) {
-	return nil, fmt.Errorf("JoinEncounter not yet implemented")
+	// 1. Validate input
+	if input == nil {
+		return nil, fmt.Errorf("input is required")
+	}
+	if input.JoinCode == "" {
+		return nil, fmt.Errorf("join code is required")
+	}
+	if input.PlayerID == "" {
+		return nil, fmt.Errorf("player ID is required")
+	}
+	if len(input.CharacterIDs) == 0 {
+		return nil, fmt.Errorf("at least one character ID is required")
+	}
+
+	// 2. Look up encounter by join code
+	encOutput, err := o.encRepo.GetByJoinCode(ctx, &encounterrepo.GetByJoinCodeInput{
+		JoinCode: input.JoinCode,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("encounter not found: %w", err)
+	}
+
+	// 3. Validate encounter state
+	if encOutput.Data.State != encounterrepo.StateWaiting {
+		return nil, fmt.Errorf("cannot join encounter: combat already started")
+	}
+
+	// 4. Check if player is already in encounter
+	if _, exists := encOutput.Data.Players[input.PlayerID]; exists {
+		return nil, fmt.Errorf("player already in encounter")
+	}
+
+	// 5. Add player to encounter
+	if encOutput.Data.Players == nil {
+		encOutput.Data.Players = make(map[string]*encounterrepo.Player)
+	}
+	encOutput.Data.Players[input.PlayerID] = &encounterrepo.Player{
+		PlayerID:    input.PlayerID,
+		CharacterID: input.CharacterIDs[0],
+		IsReady:     false,
+		IsConnected: true,
+		JoinedAt:    time.Now(),
+	}
+
+	// 6. Update encounter in repository
+	_, err = o.encRepo.Update(ctx, &encounterrepo.UpdateInput{
+		EncounterID: encOutput.Data.ID,
+		Players:     encOutput.Data.Players,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to update encounter: %w", err)
+	}
+
+	// 7. Build party list for response
+	party := o.buildPartyFromPlayers(ctx, encOutput.Data.Players, encOutput.Data.HostID)
+
+	return &JoinEncounterOutput{
+		EncounterID: encOutput.Data.ID,
+		Room:        encOutput.Data.RoomData,
+		Party:       party,
+		State:       string(encOutput.Data.State),
+	}, nil
 }
 
 // SetReady marks a player as ready or not ready to start combat
 func (o *Orchestrator) SetReady(
-	_ context.Context,
-	_ *SetReadyInput,
+	ctx context.Context,
+	input *SetReadyInput,
 ) (*SetReadyOutput, error) {
-	return nil, fmt.Errorf("SetReady not yet implemented")
+	// 1. Validate input
+	if input == nil {
+		return nil, fmt.Errorf("input is required")
+	}
+	if input.EncounterID == "" {
+		return nil, fmt.Errorf("encounter ID is required")
+	}
+	if input.PlayerID == "" {
+		return nil, fmt.Errorf("player ID is required")
+	}
+
+	// 2. Load encounter
+	encOutput, err := o.encRepo.Get(ctx, &encounterrepo.GetInput{
+		EncounterID: input.EncounterID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("encounter not found: %w", err)
+	}
+
+	// 3. Validate state
+	if encOutput.Data.State != encounterrepo.StateWaiting {
+		return nil, fmt.Errorf("cannot change ready status: combat already started")
+	}
+
+	// 4. Find and update player
+	player, exists := encOutput.Data.Players[input.PlayerID]
+	if !exists {
+		return nil, fmt.Errorf("player not in encounter")
+	}
+	player.IsReady = input.IsReady
+
+	// 5. Update encounter
+	_, err = o.encRepo.Update(ctx, &encounterrepo.UpdateInput{
+		EncounterID: input.EncounterID,
+		Players:     encOutput.Data.Players,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to update encounter: %w", err)
+	}
+
+	return &SetReadyOutput{Success: true}, nil
 }
 
 // StartCombat begins combat (host only, all players must be ready)
 func (o *Orchestrator) StartCombat(
-	_ context.Context,
-	_ *StartCombatInput,
+	ctx context.Context,
+	input *StartCombatInput,
 ) (*StartCombatOutput, error) {
-	return nil, fmt.Errorf("StartCombat not yet implemented")
+	// 1. Validate input
+	if input == nil {
+		return nil, fmt.Errorf("input is required")
+	}
+	if input.EncounterID == "" {
+		return nil, fmt.Errorf("encounter ID is required")
+	}
+	if input.PlayerID == "" {
+		return nil, fmt.Errorf("player ID is required")
+	}
+
+	// 2. Load encounter
+	encOutput, err := o.encRepo.Get(ctx, &encounterrepo.GetInput{
+		EncounterID: input.EncounterID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("encounter not found: %w", err)
+	}
+
+	// 3. Validate state
+	if encOutput.Data.State != encounterrepo.StateWaiting {
+		return nil, fmt.Errorf("cannot start combat: encounter not in waiting state")
+	}
+
+	// 4. Validate caller is host
+	if encOutput.Data.HostID != input.PlayerID {
+		return nil, fmt.Errorf("only the host can start combat")
+	}
+
+	// 5. Validate all players are ready
+	for playerID, player := range encOutput.Data.Players {
+		if !player.IsReady {
+			return nil, fmt.Errorf("cannot start combat: player %s is not ready", playerID)
+		}
+	}
+
+	// 6. Collect character IDs and place them in the room
+	roomData, ok := encOutput.Data.RoomData.(*spatial.RoomData)
+	if !ok {
+		return nil, fmt.Errorf("invalid room data type")
+	}
+	characterIDs := make([]string, 0, len(encOutput.Data.Players))
+
+	// Define spawn points for players
+	spawnPoints := []spatial.Position{
+		{X: 5, Y: 8},
+		{X: 5, Y: 10},
+		{X: 5, Y: 12},
+		{X: 4, Y: 10},
+	}
+
+	i := 0
+	for _, player := range encOutput.Data.Players {
+		characterIDs = append(characterIDs, player.CharacterID)
+
+		// Place character in room
+		if i < len(spawnPoints) {
+			roomData.Entities[player.CharacterID] = spatial.EntityPlacement{
+				EntityID:       player.CharacterID,
+				EntityType:     entityTypeCharacter,
+				Position:       spawnPoints[i],
+				Size:           1,
+				BlocksMovement: true,
+			}
+		}
+		i++
+	}
+
+	// 7. Add goblin target (for now, simple combat)
+	goblinID := "goblin-1"
+	roomData.Entities[goblinID] = spatial.EntityPlacement{
+		EntityID:       goblinID,
+		EntityType:     entityTypeMonster,
+		Position:       spatial.Position{X: 10, Y: 10},
+		Size:           1,
+		BlocksMovement: true,
+	}
+
+	// 8. Create monster data
+	monsterData := o.createGoblinData(goblinID)
+
+	// 9. Roll initiative
+	entities := make(map[core.Entity]int)
+
+	// Add characters
+	for _, charID := range characterIDs {
+		var charOutput *characterrepo.GetOutput
+		charOutput, err = o.charRepo.Get(ctx, characterrepo.GetInput{ID: charID})
+		if err != nil {
+			return nil, fmt.Errorf("failed to load character %s: %w", charID, err)
+		}
+		dexMod := charOutput.CharacterData.AbilityScores.Modifier(abilities.DEX)
+		entities[initiative.NewParticipant(charID, entityTypeCharacter)] = dexMod
+	}
+
+	// Add goblin
+	entities[initiative.NewParticipant(goblinID, entityTypeMonster)] = 2 // Goblin DEX +2
+
+	// Roll initiative
+	rolls := initiative.RollForOrder(entities, o.roller)
+
+	// Create tracker
+	initiativeOrder := make([]core.Entity, len(rolls))
+	for i, roll := range rolls {
+		initiativeOrder[i] = roll.Entity
+	}
+	tracker := initiative.New(initiativeOrder)
+	trackerData := tracker.ToData()
+
+	// Build turn order
+	turnOrder := make([]InitiativeEntry, len(rolls))
+	for i, roll := range rolls {
+		entityID := roll.Entity.GetID()
+		var position *Position
+		if placement, exists := roomData.Entities[entityID]; exists {
+			position = &Position{X: placement.Position.X, Y: placement.Position.Y}
+		}
+		turnOrder[i] = InitiativeEntry{
+			EntityID:           entityID,
+			EntityType:         string(roll.Entity.GetType()),
+			InitiativeRoll:     roll.Roll,
+			InitiativeModifier: roll.Modifier,
+			InitiativeTotal:    roll.Total,
+			Position:           position,
+		}
+	}
+
+	// 10. Update encounter state to active
+	activeState := encounterrepo.StateActive
+	_, err = o.encRepo.Update(ctx, &encounterrepo.UpdateInput{
+		EncounterID:       input.EncounterID,
+		State:             &activeState,
+		RoomData:          roomData,
+		InitiativeData:    &trackerData,
+		MovementRemaining: ptrInt32(defaultMovementSpeed),
+		Monsters:          []*monster.Data{monsterData},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to update encounter: %w", err)
+	}
+
+	// 11. Build combat state
+	combatState := &CombatState{
+		EncounterID:       input.EncounterID,
+		Round:             1,
+		TurnOrder:         turnOrder,
+		ActiveIndex:       0,
+		MovementRemaining: defaultMovementSpeed,
+		CombatStarted:     true,
+		CombatEnded:       false,
+	}
+
+	// TODO: Execute monster turns if they go first
+
+	return &StartCombatOutput{
+		CombatState:  combatState,
+		MonsterTurns: nil, // TODO: Fill in if monsters go first
+	}, nil
 }
 
 // LeaveEncounter removes a player from the encounter
 func (o *Orchestrator) LeaveEncounter(
-	_ context.Context,
-	_ *LeaveEncounterInput,
+	ctx context.Context,
+	input *LeaveEncounterInput,
 ) (*LeaveEncounterOutput, error) {
-	return nil, fmt.Errorf("LeaveEncounter not yet implemented")
+	// 1. Validate input
+	if input == nil {
+		return nil, fmt.Errorf("input is required")
+	}
+	if input.EncounterID == "" {
+		return nil, fmt.Errorf("encounter ID is required")
+	}
+	if input.PlayerID == "" {
+		return nil, fmt.Errorf("player ID is required")
+	}
+
+	// 2. Load encounter
+	encOutput, err := o.encRepo.Get(ctx, &encounterrepo.GetInput{
+		EncounterID: input.EncounterID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("encounter not found: %w", err)
+	}
+
+	// 3. Check if player is in encounter
+	if _, exists := encOutput.Data.Players[input.PlayerID]; !exists {
+		return nil, fmt.Errorf("player not in encounter")
+	}
+
+	// 4. Remove player
+	delete(encOutput.Data.Players, input.PlayerID)
+
+	// 5. If no players left, delete encounter
+	if len(encOutput.Data.Players) == 0 {
+		_, err = o.encRepo.Delete(ctx, &encounterrepo.DeleteInput{
+			EncounterID: input.EncounterID,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to delete encounter: %w", err)
+		}
+		return &LeaveEncounterOutput{
+			Success:          true,
+			EncounterDeleted: true,
+		}, nil
+	}
+
+	// 6. If leaving player was host, transfer host to next player
+	if encOutput.Data.HostID == input.PlayerID {
+		// Find first remaining player to be new host
+		for newHostID := range encOutput.Data.Players {
+			encOutput.Data.HostID = newHostID
+			break
+		}
+		// Note: We'd need to update HostID in repo, but current UpdateInput
+		// doesn't support it. For now, host transfer is best-effort in memory.
+	}
+
+	// 7. Update encounter
+	_, err = o.encRepo.Update(ctx, &encounterrepo.UpdateInput{
+		EncounterID: input.EncounterID,
+		Players:     encOutput.Data.Players,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to update encounter: %w", err)
+	}
+
+	return &LeaveEncounterOutput{
+		Success:          true,
+		EncounterDeleted: false,
+	}, nil
+}
+
+// buildPartyFromPlayers converts repository player data to PartyMember list
+func (o *Orchestrator) buildPartyFromPlayers(
+	ctx context.Context,
+	players map[string]*encounterrepo.Player,
+	hostID string,
+) []*PartyMember {
+	party := make([]*PartyMember, 0, len(players))
+
+	for _, player := range players {
+		member := &PartyMember{
+			PlayerID:    player.PlayerID,
+			CharacterID: player.CharacterID,
+			IsHost:      player.PlayerID == hostID,
+			IsReady:     player.IsReady,
+			IsConnected: player.IsConnected,
+		}
+
+		// Try to load character data
+		charOutput, err := o.charRepo.Get(ctx, characterrepo.GetInput{ID: player.CharacterID})
+		if err == nil {
+			member.CharacterData = charOutput.CharacterData
+		}
+
+		party = append(party, member)
+	}
+
+	return party
+}
+
+// createGoblinData creates a goblin monster for encounters
+func (o *Orchestrator) createGoblinData(goblinID string) *monster.Data {
+	goblinMonster := monster.NewGoblin(goblinID)
+	goblinMonster.AddAction(monster.NewScimitarAction(monster.ScimitarConfig{
+		AttackBonus: 4,       // +2 DEX + 2 proficiency
+		DamageDice:  "1d6+2", // Scimitar 1d6 + DEX
+		DamageBonus: 2,       // DEX modifier
+	}))
+	data := goblinMonster.ToData()
+	return data
 }
