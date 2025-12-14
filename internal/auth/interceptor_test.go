@@ -229,3 +229,88 @@ func TestUnaryAuthInterceptor_DevScheme_NotAllowed(t *testing.T) {
 	assert.Nil(t, resp)
 	assert.Equal(t, codes.Unauthenticated, status.Code(err))
 }
+
+func TestUnaryAuthInterceptor_EmptyUserID(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockValidator := authmock.NewMockTokenValidator(ctrl)
+	cache := auth.NewTokenCache(5 * time.Minute)
+
+	// Discord returns user with empty ID (edge case)
+	mockValidator.EXPECT().
+		GetCurrentUser(gomock.Any(), "valid-token").
+		Return(&auth.DiscordUser{ID: "", Username: "testuser"}, nil)
+
+	interceptor := auth.UnaryAuthInterceptor(mockValidator, cache, nil)
+
+	md := metadata.New(map[string]string{"authorization": "Discord valid-token"})
+	ctx := metadata.NewIncomingContext(context.Background(), md)
+
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		t.Fatal("handler should not be called")
+		return nil, nil
+	}
+
+	resp, err := interceptor(ctx, nil, &grpc.UnaryServerInfo{}, handler)
+
+	assert.Nil(t, resp)
+	assert.Equal(t, codes.Unauthenticated, status.Code(err))
+	assert.Contains(t, status.Convert(err).Message(), "empty user ID")
+}
+
+func TestUnaryAuthInterceptor_SkipsHealthCheck(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockValidator := authmock.NewMockTokenValidator(ctrl)
+	cache := auth.NewTokenCache(5 * time.Minute)
+
+	// No Discord call expected - health check bypasses auth
+	interceptor := auth.UnaryAuthInterceptor(mockValidator, cache, nil)
+
+	// No authorization header provided
+	ctx := context.Background()
+
+	var handlerCalled bool
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		handlerCalled = true
+		return "healthy", nil
+	}
+
+	// Health check endpoint
+	info := &grpc.UnaryServerInfo{FullMethod: "/grpc.health.v1.Health/Check"}
+	resp, err := interceptor(ctx, nil, info, handler)
+
+	require.NoError(t, err)
+	assert.True(t, handlerCalled)
+	assert.Equal(t, "healthy", resp)
+}
+
+func TestUnaryAuthInterceptor_SkipsReflection(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockValidator := authmock.NewMockTokenValidator(ctrl)
+	cache := auth.NewTokenCache(5 * time.Minute)
+
+	// No Discord call expected - reflection bypasses auth
+	interceptor := auth.UnaryAuthInterceptor(mockValidator, cache, nil)
+
+	// No authorization header provided
+	ctx := context.Background()
+
+	var handlerCalled bool
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		handlerCalled = true
+		return "reflection", nil
+	}
+
+	// Reflection endpoint (v1 version)
+	info := &grpc.UnaryServerInfo{FullMethod: "/grpc.reflection.v1.ServerReflection/ServerReflectionInfo"}
+	resp, err := interceptor(ctx, nil, info, handler)
+
+	require.NoError(t, err)
+	assert.True(t, handlerCalled)
+	assert.Equal(t, "reflection", resp)
+}

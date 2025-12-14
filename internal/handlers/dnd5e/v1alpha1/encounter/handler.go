@@ -182,14 +182,19 @@ func (h *Handler) EndTurn(
 	}
 	// Note: entity_id is no longer required - server determines active entity from encounter state
 
-	// 2. Create service input with authenticated player ID
+	// 2. Get authenticated player ID
 	playerID := auth.GetPlayerID(ctx)
+	if playerID == "" {
+		return nil, status.Error(codes.Unauthenticated, "player not authenticated")
+	}
+
+	// 3. Create service input
 	input := &encounter.EndTurnInput{
 		EncounterID: req.GetEncounterId(),
 		PlayerID:    playerID,
 	}
 
-	// 3. Call service
+	// 4. Call service
 	output, err := h.encounterService.EndTurn(ctx, input)
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())

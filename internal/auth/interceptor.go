@@ -34,6 +34,11 @@ func UnaryAuthInterceptor(validator TokenValidator, cache *TokenCache, cfg *Inte
 		info *grpc.UnaryServerInfo,
 		handler grpc.UnaryHandler,
 	) (interface{}, error) {
+		// Skip auth for health checks and reflection endpoints
+		if shouldSkipAuth(info.FullMethod) {
+			return handler(ctx, req)
+		}
+
 		newCtx, err := authenticate(ctx, validator, cache, devMode)
 		if err != nil {
 			return nil, err
@@ -51,6 +56,11 @@ func StreamAuthInterceptor(validator TokenValidator, cache *TokenCache, cfg *Int
 		info *grpc.StreamServerInfo,
 		handler grpc.StreamHandler,
 	) error {
+		// Skip auth for health checks and reflection endpoints
+		if shouldSkipAuth(info.FullMethod) {
+			return handler(srv, ss)
+		}
+
 		ctx := ss.Context()
 		newCtx, err := authenticate(ctx, validator, cache, devMode)
 		if err != nil {
@@ -71,6 +81,21 @@ type wrappedServerStream struct {
 
 func (w *wrappedServerStream) Context() context.Context {
 	return w.ctx
+}
+
+// skipAuthMethods contains gRPC methods that don't require authentication.
+var skipAuthMethods = map[string]bool{
+	// gRPC health check
+	"/grpc.health.v1.Health/Check": true,
+	"/grpc.health.v1.Health/Watch": true,
+	// gRPC reflection (for debugging tools like grpcurl)
+	"/grpc.reflection.v1alpha.ServerReflection/ServerReflectionInfo": true,
+	"/grpc.reflection.v1.ServerReflection/ServerReflectionInfo":      true,
+}
+
+// shouldSkipAuth returns true if the method should bypass authentication.
+func shouldSkipAuth(method string) bool {
+	return skipAuthMethods[method]
 }
 
 // authenticate extracts and validates authentication from the request context.
@@ -107,6 +132,11 @@ func authenticate(ctx context.Context, validator TokenValidator, cache *TokenCac
 			return nil, status.Error(codes.Unavailable, "Discord API unavailable")
 		}
 		return nil, status.Error(codes.Internal, "authentication failed")
+	}
+
+	// Validate user ID before caching
+	if user.ID == "" {
+		return nil, status.Error(codes.Unauthenticated, "Discord returned empty user ID")
 	}
 
 	// Cache the result
