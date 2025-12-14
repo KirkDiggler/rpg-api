@@ -136,6 +136,10 @@ type UpdateInput struct {
 	RoomData          interface{}             // Position changes - temporarily using interface{}
 	MovementRemaining *int32                  // Movement remaining for active turn (optional - only update if provided)
 	Monsters          []*monster.Data         // Monster state updates (optional - only update if provided)
+
+	// Multiplayer fields (optional - only update if provided)
+	State   *EncounterState    // State transition (waiting->active, etc.)
+	Players map[string]*Player // Updated player map (ready status, connection status)
 }
 
 // UpdateOutput defines the response for updating an encounter

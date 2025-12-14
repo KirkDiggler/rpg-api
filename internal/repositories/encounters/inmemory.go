@@ -157,6 +157,14 @@ func (r *InMemoryRepository) Update(_ context.Context, input *UpdateInput) (*Upd
 		data.Monsters = input.Monsters
 	}
 
+	// Multiplayer fields
+	if input.State != nil {
+		data.State = *input.State
+	}
+	if input.Players != nil {
+		data.Players = input.Players
+	}
+
 	return &UpdateOutput{Success: true}, nil
 }
 
