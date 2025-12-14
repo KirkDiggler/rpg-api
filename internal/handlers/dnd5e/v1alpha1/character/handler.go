@@ -9,6 +9,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
+	"github.com/KirkDiggler/rpg-api/internal/auth"
 	"github.com/KirkDiggler/rpg-api/internal/errors"
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
@@ -52,14 +53,15 @@ func (h *Handler) CreateDraft(
 	ctx context.Context,
 	req *dnd5ev1alpha1.CreateDraftRequest,
 ) (*dnd5ev1alpha1.CreateDraftResponse, error) {
-	// Validate request
-	if req.GetPlayerId() == "" {
-		return nil, status.Error(codes.InvalidArgument, "player_id is required")
+	// Get authenticated player ID from context
+	playerID := auth.GetPlayerID(ctx)
+	if playerID == "" {
+		return nil, status.Error(codes.Unauthenticated, "player not authenticated")
 	}
 
 	// Create input for orchestrator
 	input := &character.CreateDraftInput{
-		PlayerID:  req.PlayerId,
+		PlayerID:  playerID,
 		SessionID: req.SessionId,
 	}
 
@@ -123,9 +125,15 @@ func (h *Handler) ListDrafts(
 	ctx context.Context,
 	req *dnd5ev1alpha1.ListDraftsRequest,
 ) (*dnd5ev1alpha1.ListDraftsResponse, error) {
+	// Get authenticated player ID from context
+	playerID := auth.GetPlayerID(ctx)
+	if playerID == "" {
+		return nil, status.Error(codes.Unauthenticated, "player not authenticated")
+	}
+
 	// Build input for orchestrator
 	input := &character.ListDraftsInput{
-		PlayerID:  req.GetPlayerId(),
+		PlayerID:  playerID,
 		SessionID: req.GetSessionId(),
 		PageSize:  int(req.GetPageSize()),
 		PageToken: req.GetPageToken(),
@@ -533,9 +541,15 @@ func (h *Handler) ListCharacters(
 	ctx context.Context,
 	req *dnd5ev1alpha1.ListCharactersRequest,
 ) (*dnd5ev1alpha1.ListCharactersResponse, error) {
+	// Get authenticated player ID from context
+	playerID := auth.GetPlayerID(ctx)
+	if playerID == "" {
+		return nil, status.Error(codes.Unauthenticated, "player not authenticated")
+	}
+
 	// Build input for orchestrator
 	input := &character.ListCharactersInput{
-		PlayerID:  req.GetPlayerId(),
+		PlayerID:  playerID,
 		SessionID: req.GetSessionId(),
 		PageSize:  int(req.GetPageSize()),
 		PageToken: req.GetPageToken(),
