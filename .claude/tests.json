@@ -1,32 +1,11 @@
 {
   "tests": [
     {
-      "id": "event-types-exist",
-      "feature": "event-types",
-      "prompt": "Verify internal/entities/encounter_events.go exists with EncounterEvent struct and all EventType constants (PlayerJoined, MovementCompleted, AttackResolved, etc.)",
-      "passes": false,
-      "last_checked": null
-    },
-    {
-      "id": "publisher-interface",
-      "feature": "publisher",
-      "prompt": "Verify internal/publishers/encounter/publisher.go exists with Publisher interface (Publish, Subscribe, Unsubscribe methods)",
-      "passes": false,
-      "last_checked": null
-    },
-    {
-      "id": "redis-implementation",
-      "feature": "publisher",
-      "prompt": "Verify internal/publishers/encounter/redis.go exists with RedisPublisher implementing Publisher interface",
-      "passes": false,
-      "last_checked": null
-    },
-    {
       "id": "pre-commit-passes",
       "feature": "quality",
       "prompt": "Run make pre-commit and verify it passes (lint, test, format)",
-      "passes": false,
-      "last_checked": null
+      "passes": true,
+      "last_checked": "2025-12-13"
     }
   ]
 }

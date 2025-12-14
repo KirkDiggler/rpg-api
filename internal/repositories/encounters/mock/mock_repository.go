@@ -13,9 +13,8 @@ import (
 	context "context"
 	reflect "reflect"
 
-	gomock "go.uber.org/mock/gomock"
-
 	encounters "github.com/KirkDiggler/rpg-api/internal/repositories/encounters"
+	gomock "go.uber.org/mock/gomock"
 )
 
 // MockRepository is a mock of Repository interface.
@@ -70,6 +69,21 @@ func (m *MockRepository) Get(ctx context.Context, input *encounters.GetInput) (*
 func (mr *MockRepositoryMockRecorder) Get(ctx, input any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Get", reflect.TypeOf((*MockRepository)(nil).Get), ctx, input)
+}
+
+// GetByJoinCode mocks base method.
+func (m *MockRepository) GetByJoinCode(ctx context.Context, input *encounters.GetByJoinCodeInput) (*encounters.GetOutput, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetByJoinCode", ctx, input)
+	ret0, _ := ret[0].(*encounters.GetOutput)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetByJoinCode indicates an expected call of GetByJoinCode.
+func (mr *MockRepositoryMockRecorder) GetByJoinCode(ctx, input any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetByJoinCode", reflect.TypeOf((*MockRepository)(nil).GetByJoinCode), ctx, input)
 }
 
 // Save mocks base method.
