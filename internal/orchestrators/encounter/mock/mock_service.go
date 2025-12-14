@@ -13,9 +13,8 @@ import (
 	context "context"
 	reflect "reflect"
 
-	gomock "go.uber.org/mock/gomock"
-
 	encounter "github.com/KirkDiggler/rpg-api/internal/orchestrators/encounter"
+	gomock "go.uber.org/mock/gomock"
 )
 
 // MockService is a mock of Service interface.
@@ -72,6 +71,21 @@ func (mr *MockServiceMockRecorder) CreateDungeon(ctx, input any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateDungeon", reflect.TypeOf((*MockService)(nil).CreateDungeon), ctx, input)
 }
 
+// CreateEncounter mocks base method.
+func (m *MockService) CreateEncounter(ctx context.Context, input *encounter.CreateEncounterInput) (*encounter.CreateEncounterOutput, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CreateEncounter", ctx, input)
+	ret0, _ := ret[0].(*encounter.CreateEncounterOutput)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// CreateEncounter indicates an expected call of CreateEncounter.
+func (mr *MockServiceMockRecorder) CreateEncounter(ctx, input any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateEncounter", reflect.TypeOf((*MockService)(nil).CreateEncounter), ctx, input)
+}
+
 // EndTurn mocks base method.
 func (m *MockService) EndTurn(ctx context.Context, input *encounter.EndTurnInput) (*encounter.EndTurnOutput, error) {
 	m.ctrl.T.Helper()
@@ -85,6 +99,36 @@ func (m *MockService) EndTurn(ctx context.Context, input *encounter.EndTurnInput
 func (mr *MockServiceMockRecorder) EndTurn(ctx, input any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "EndTurn", reflect.TypeOf((*MockService)(nil).EndTurn), ctx, input)
+}
+
+// JoinEncounter mocks base method.
+func (m *MockService) JoinEncounter(ctx context.Context, input *encounter.JoinEncounterInput) (*encounter.JoinEncounterOutput, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "JoinEncounter", ctx, input)
+	ret0, _ := ret[0].(*encounter.JoinEncounterOutput)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// JoinEncounter indicates an expected call of JoinEncounter.
+func (mr *MockServiceMockRecorder) JoinEncounter(ctx, input any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "JoinEncounter", reflect.TypeOf((*MockService)(nil).JoinEncounter), ctx, input)
+}
+
+// LeaveEncounter mocks base method.
+func (m *MockService) LeaveEncounter(ctx context.Context, input *encounter.LeaveEncounterInput) (*encounter.LeaveEncounterOutput, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "LeaveEncounter", ctx, input)
+	ret0, _ := ret[0].(*encounter.LeaveEncounterOutput)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// LeaveEncounter indicates an expected call of LeaveEncounter.
+func (mr *MockServiceMockRecorder) LeaveEncounter(ctx, input any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LeaveEncounter", reflect.TypeOf((*MockService)(nil).LeaveEncounter), ctx, input)
 }
 
 // MoveCharacter mocks base method.
@@ -115,4 +159,34 @@ func (m *MockService) ResolveAttack(ctx context.Context, input *encounter.Resolv
 func (mr *MockServiceMockRecorder) ResolveAttack(ctx, input any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ResolveAttack", reflect.TypeOf((*MockService)(nil).ResolveAttack), ctx, input)
+}
+
+// SetReady mocks base method.
+func (m *MockService) SetReady(ctx context.Context, input *encounter.SetReadyInput) (*encounter.SetReadyOutput, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SetReady", ctx, input)
+	ret0, _ := ret[0].(*encounter.SetReadyOutput)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// SetReady indicates an expected call of SetReady.
+func (mr *MockServiceMockRecorder) SetReady(ctx, input any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetReady", reflect.TypeOf((*MockService)(nil).SetReady), ctx, input)
+}
+
+// StartCombat mocks base method.
+func (m *MockService) StartCombat(ctx context.Context, input *encounter.StartCombatInput) (*encounter.StartCombatOutput, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "StartCombat", ctx, input)
+	ret0, _ := ret[0].(*encounter.StartCombatOutput)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// StartCombat indicates an expected call of StartCombat.
+func (mr *MockServiceMockRecorder) StartCombat(ctx, input any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StartCombat", reflect.TypeOf((*MockService)(nil).StartCombat), ctx, input)
 }

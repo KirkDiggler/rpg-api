@@ -1109,3 +1109,45 @@ func (o *Orchestrator) checkCombatEnd(enc *encounterrepo.EncounterData) *Encount
 	// Combat continues
 	return nil
 }
+
+// Multiplayer lobby methods - stub implementations
+
+// CreateEncounter creates a new multiplayer encounter lobby
+func (o *Orchestrator) CreateEncounter(
+	_ context.Context,
+	_ *CreateEncounterInput,
+) (*CreateEncounterOutput, error) {
+	return nil, fmt.Errorf("CreateEncounter not yet implemented")
+}
+
+// JoinEncounter joins an existing encounter via join code
+func (o *Orchestrator) JoinEncounter(
+	_ context.Context,
+	_ *JoinEncounterInput,
+) (*JoinEncounterOutput, error) {
+	return nil, fmt.Errorf("JoinEncounter not yet implemented")
+}
+
+// SetReady marks a player as ready or not ready to start combat
+func (o *Orchestrator) SetReady(
+	_ context.Context,
+	_ *SetReadyInput,
+) (*SetReadyOutput, error) {
+	return nil, fmt.Errorf("SetReady not yet implemented")
+}
+
+// StartCombat begins combat (host only, all players must be ready)
+func (o *Orchestrator) StartCombat(
+	_ context.Context,
+	_ *StartCombatInput,
+) (*StartCombatOutput, error) {
+	return nil, fmt.Errorf("StartCombat not yet implemented")
+}
+
+// LeaveEncounter removes a player from the encounter
+func (o *Orchestrator) LeaveEncounter(
+	_ context.Context,
+	_ *LeaveEncounterInput,
+) (*LeaveEncounterOutput, error) {
+	return nil, fmt.Errorf("LeaveEncounter not yet implemented")
+}

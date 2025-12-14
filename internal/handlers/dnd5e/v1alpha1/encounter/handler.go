@@ -267,3 +267,51 @@ func (h *Handler) ActivateFeature(
 		// TODO: Add UpdatedCombatState when needed
 	}, nil
 }
+
+// CreateEncounter creates a new multiplayer encounter lobby
+func (h *Handler) CreateEncounter(
+	_ context.Context,
+	_ *dnd5ev1alpha1.CreateEncounterRequest,
+) (*dnd5ev1alpha1.CreateEncounterResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "CreateEncounter endpoint not yet implemented")
+}
+
+// JoinEncounter joins an existing encounter via join code
+func (h *Handler) JoinEncounter(
+	_ context.Context,
+	_ *dnd5ev1alpha1.JoinEncounterRequest,
+) (*dnd5ev1alpha1.JoinEncounterResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "JoinEncounter endpoint not yet implemented")
+}
+
+// SetReady marks a player as ready to start combat
+func (h *Handler) SetReady(
+	_ context.Context,
+	_ *dnd5ev1alpha1.SetReadyRequest,
+) (*dnd5ev1alpha1.SetReadyResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "SetReady endpoint not yet implemented")
+}
+
+// StartCombat begins combat (host only, all players must be ready)
+func (h *Handler) StartCombat(
+	_ context.Context,
+	_ *dnd5ev1alpha1.StartCombatRequest,
+) (*dnd5ev1alpha1.StartCombatResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "StartCombat endpoint not yet implemented")
+}
+
+// LeaveEncounter removes a player from the encounter
+func (h *Handler) LeaveEncounter(
+	_ context.Context,
+	_ *dnd5ev1alpha1.LeaveEncounterRequest,
+) (*dnd5ev1alpha1.LeaveEncounterResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "LeaveEncounter endpoint not yet implemented")
+}
+
+// StreamEncounterEvents subscribes to real-time encounter events
+func (h *Handler) StreamEncounterEvents(
+	_ *dnd5ev1alpha1.StreamEncounterEventsRequest,
+	_ dnd5ev1alpha1.EncounterService_StreamEncounterEventsServer,
+) error {
+	return status.Error(codes.Unimplemented, "StreamEncounterEvents endpoint not yet implemented")
+}

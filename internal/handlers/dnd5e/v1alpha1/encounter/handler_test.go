@@ -1042,3 +1042,91 @@ func (s *HandlerTestSuite) TestActivateFeature_ServiceError() {
 	s.Assert().Equal(codes.Internal, st.Code())
 	s.Assert().Contains(st.Message(), "database error")
 }
+
+// ============================================================================
+// Lobby Methods Tests
+// ============================================================================
+
+// TestCreateEncounter_Unimplemented verifies the stub returns Unimplemented
+func (s *HandlerTestSuite) TestCreateEncounter_Unimplemented() {
+	// Act
+	resp, err := s.handler.CreateEncounter(context.Background(), &dnd5ev1alpha1.CreateEncounterRequest{
+		CharacterIds: []string{"char-1"},
+	})
+
+	// Assert
+	s.Require().Error(err)
+	s.Assert().Nil(resp)
+
+	st, ok := status.FromError(err)
+	s.Require().True(ok)
+	s.Assert().Equal(codes.Unimplemented, st.Code())
+}
+
+// TestJoinEncounter_Unimplemented verifies the stub returns Unimplemented
+func (s *HandlerTestSuite) TestJoinEncounter_Unimplemented() {
+	// Act
+	resp, err := s.handler.JoinEncounter(context.Background(), &dnd5ev1alpha1.JoinEncounterRequest{
+		JoinCode:     "ABC123",
+		CharacterIds: []string{"char-2"},
+	})
+
+	// Assert
+	s.Require().Error(err)
+	s.Assert().Nil(resp)
+
+	st, ok := status.FromError(err)
+	s.Require().True(ok)
+	s.Assert().Equal(codes.Unimplemented, st.Code())
+}
+
+// TestSetReady_Unimplemented verifies the stub returns Unimplemented
+func (s *HandlerTestSuite) TestSetReady_Unimplemented() {
+	// Act
+	resp, err := s.handler.SetReady(context.Background(), &dnd5ev1alpha1.SetReadyRequest{
+		EncounterId: "enc-1",
+		PlayerId:    "player-1",
+		IsReady:     true,
+	})
+
+	// Assert
+	s.Require().Error(err)
+	s.Assert().Nil(resp)
+
+	st, ok := status.FromError(err)
+	s.Require().True(ok)
+	s.Assert().Equal(codes.Unimplemented, st.Code())
+}
+
+// TestStartCombat_Unimplemented verifies the stub returns Unimplemented
+func (s *HandlerTestSuite) TestStartCombat_Unimplemented() {
+	// Act
+	resp, err := s.handler.StartCombat(context.Background(), &dnd5ev1alpha1.StartCombatRequest{
+		EncounterId: "enc-1",
+	})
+
+	// Assert
+	s.Require().Error(err)
+	s.Assert().Nil(resp)
+
+	st, ok := status.FromError(err)
+	s.Require().True(ok)
+	s.Assert().Equal(codes.Unimplemented, st.Code())
+}
+
+// TestLeaveEncounter_Unimplemented verifies the stub returns Unimplemented
+func (s *HandlerTestSuite) TestLeaveEncounter_Unimplemented() {
+	// Act
+	resp, err := s.handler.LeaveEncounter(context.Background(), &dnd5ev1alpha1.LeaveEncounterRequest{
+		EncounterId: "enc-1",
+		PlayerId:    "player-1",
+	})
+
+	// Assert
+	s.Require().Error(err)
+	s.Assert().Nil(resp)
+
+	st, ok := status.FromError(err)
+	s.Require().True(ok)
+	s.Assert().Equal(codes.Unimplemented, st.Code())
+}

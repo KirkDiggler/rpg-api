@@ -1,24 +1,13 @@
 {
-  "branch": "feat/multiplayer-repository-278",
-  "issues": ["#278"],
-  "goal": "Add multiplayer fields to encounter repository (state, players, join codes)",
-  "sessions": [
-    {
-      "date": "2025-12-13",
-      "work_completed": [
-        "Added EncounterState type with constants: StateWaiting, StateActive, StatePaused, StateCompleted",
-        "Added Player struct with PlayerID, CharacterID, IsReady, IsConnected, JoinedAt fields",
-        "Extended EncounterData with multiplayer fields: State, JoinCode, HostID, Players, CreatedAt",
-        "Implemented GenerateJoinCode() using crypto/rand (6-char alphanumeric, excludes I/l/O/0/1)",
-        "Added GetByJoinCode method to Repository interface",
-        "Implemented GetByJoinCode in InMemoryRepository with linear search",
-        "Updated Save/Get methods to persist and return multiplayer fields",
-        "Regenerated mocks for updated interface",
-        "All existing tests pass"
-      ],
-      "commit": "434e79a",
-      "tests_passing": true
-    }
-  ],
-  "next_steps": []
+  "branch": "feat/lobby-flow-279",
+  "issues": ["#279"],
+  "goal": "Implement lobby flow (Create/Join/Ready/Start/Leave) with outside-in development",
+  "sessions": [],
+  "next_steps": [
+    "Add lobby methods to handler (return Unimplemented)",
+    "Extend orchestrator Service interface",
+    "Write handler tests with mocked orchestrator",
+    "Implement orchestrator methods",
+    "Add event publishing"
+  ]
 }
