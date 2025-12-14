@@ -1,0 +1,15 @@
+{
+  "branch": "feat/multiplayer-repository-278",
+  "issues": ["#278"],
+  "goal": "Add multiplayer fields to encounter repository (state, players, join codes)",
+  "sessions": [],
+  "next_steps": [
+    "Add EncounterState type and constants (waiting/active/paused/completed)",
+    "Add Player struct (PlayerID, CharacterID, IsReady, IsConnected, JoinedAt)",
+    "Add multiplayer fields to EncounterData (State, JoinCode, HostID, Players, CreatedAt)",
+    "Add join code generation helper",
+    "Add GetByJoinCode method to repository interface",
+    "Add state validation helpers",
+    "Add tests"
+  ]
+}

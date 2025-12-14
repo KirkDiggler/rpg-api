@@ -1,0 +1,46 @@
+{
+  "tests": [
+    {
+      "id": "encounter-state-type",
+      "feature": "state",
+      "prompt": "Verify EncounterState type exists with constants: StateWaiting, StateActive, StatePaused, StateCompleted",
+      "passes": false,
+      "last_checked": null
+    },
+    {
+      "id": "player-struct",
+      "feature": "players",
+      "prompt": "Verify Player struct exists with fields: PlayerID, CharacterID, IsReady, IsConnected, JoinedAt",
+      "passes": false,
+      "last_checked": null
+    },
+    {
+      "id": "encounter-data-fields",
+      "feature": "repository",
+      "prompt": "Verify EncounterData has multiplayer fields: State, JoinCode, HostID, Players map, CreatedAt",
+      "passes": false,
+      "last_checked": null
+    },
+    {
+      "id": "join-code-generation",
+      "feature": "join-code",
+      "prompt": "Verify join code generation helper exists and produces 6-char alphanumeric codes",
+      "passes": false,
+      "last_checked": null
+    },
+    {
+      "id": "get-by-join-code",
+      "feature": "repository",
+      "prompt": "Verify repository has GetByJoinCode method that retrieves encounter by join code",
+      "passes": false,
+      "last_checked": null
+    },
+    {
+      "id": "pre-commit-passes",
+      "feature": "quality",
+      "prompt": "Run make pre-commit and verify it passes (lint, test, format)",
+      "passes": false,
+      "last_checked": null
+    }
+  ]
+}
