@@ -3,16 +3,19 @@ package entities
 
 import (
 	"time"
+
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 )
 
 // Player represents a player in an encounter
 type Player struct {
-	PlayerID    string    `json:"player_id"`
-	CharacterID string    `json:"character_id"`
-	IsReady     bool      `json:"is_ready"`
-	IsConnected bool      `json:"is_connected"`
-	IsHost      bool      `json:"is_host"`
-	JoinedAt    time.Time `json:"joined_at"`
+	PlayerID      string          `json:"player_id"`
+	CharacterID   string          `json:"character_id"`
+	CharacterData *character.Data `json:"character_data,omitempty"`
+	IsReady       bool            `json:"is_ready"`
+	IsConnected   bool            `json:"is_connected"`
+	IsHost        bool            `json:"is_host"`
+	JoinedAt      time.Time       `json:"joined_at"`
 }
 
 // Position represents a position using cube coordinates (x + y + z = 0)

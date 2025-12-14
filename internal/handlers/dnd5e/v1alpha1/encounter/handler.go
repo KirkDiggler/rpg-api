@@ -564,7 +564,7 @@ func (h *Handler) convertToProtoEvent(event *entities.EncounterEvent) (*dnd5ev1a
 		if event.CombatStarted == nil {
 			return nil, fmt.Errorf("missing CombatStarted data for CombatStartedEvent")
 		}
-		// Convert party members
+		// Convert party members (including character data)
 		var protoParty []*dnd5ev1alpha1.PartyMember
 		if event.CombatStarted.Party != nil {
 			protoParty = make([]*dnd5ev1alpha1.PartyMember, len(event.CombatStarted.Party))
@@ -574,6 +574,7 @@ func (h *Handler) convertToProtoEvent(event *entities.EncounterEvent) (*dnd5ev1a
 					IsHost:      p.IsHost,
 					IsReady:     p.IsReady,
 					IsConnected: p.IsConnected,
+					Character:   characterhandler.ConvertCharacterDataToProto(p.CharacterData),
 				}
 			}
 		}

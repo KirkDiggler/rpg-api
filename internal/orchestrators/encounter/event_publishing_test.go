@@ -229,7 +229,8 @@ func (s *EventPublishingTestSuite) TestStartCombat_PublishesCombatStartedEvent()
 			},
 		}, nil)
 
-	// Mock character lookup for initiative
+	// Mock character lookup for initiative AND for building party with character data
+	// StartCombat calls Get twice: once for initiative rolling, once for party building
 	s.mockCharRepo.EXPECT().
 		Get(gomock.Any(), characterrepo.GetInput{ID: characterID}).
 		Return(&characterrepo.GetOutput{
@@ -240,7 +241,7 @@ func (s *EventPublishingTestSuite) TestStartCombat_PublishesCombatStartedEvent()
 					abilities.DEX: 14, // +2 modifier
 				},
 			},
-		}, nil)
+		}, nil).Times(2)
 
 	// Mock Update
 	s.mockEncRepo.EXPECT().

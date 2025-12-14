@@ -1640,16 +1640,23 @@ func (o *Orchestrator) StartCombat(
 
 	// TODO: Execute monster turns if they go first
 
-	// 12. Build party list for event
+	// 12. Build party list for event (with character data)
 	party := make([]*entities.Player, 0, len(encOutput.Data.Players))
 	for _, player := range encOutput.Data.Players {
+		// Load character data for the event
+		charOutput, charErr := o.charRepo.Get(ctx, characterrepo.GetInput{ID: player.CharacterID})
+		var charData *character.Data
+		if charErr == nil && charOutput != nil {
+			charData = charOutput.CharacterData
+		}
 		party = append(party, &entities.Player{
-			PlayerID:    player.PlayerID,
-			CharacterID: player.CharacterID,
-			IsReady:     player.IsReady,
-			IsConnected: player.IsConnected,
-			IsHost:      player.PlayerID == encOutput.Data.HostID,
-			JoinedAt:    player.JoinedAt,
+			PlayerID:      player.PlayerID,
+			CharacterID:   player.CharacterID,
+			CharacterData: charData,
+			IsReady:       player.IsReady,
+			IsConnected:   player.IsConnected,
+			IsHost:        player.PlayerID == encOutput.Data.HostID,
+			JoinedAt:      player.JoinedAt,
 		})
 	}
 
