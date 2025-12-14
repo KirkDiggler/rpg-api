@@ -23,7 +23,7 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/weapons"
 	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
 
-	"github.com/KirkDiggler/rpg-api/internal/errors"
+	"github.com/KirkDiggler/rpg-api/internal/apierr"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	charactermock "github.com/KirkDiggler/rpg-api/internal/repositories/character/mock"
 	encounterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/encounters"
@@ -215,7 +215,7 @@ func (s *OrchestratorTestSuite) TestResolveAttack_CharacterNotFound() {
 	// Arrange
 	s.mockCharRepo.EXPECT().
 		Get(gomock.Any(), characterrepo.GetInput{ID: "nonexistent"}).
-		Return(nil, errors.NotFound("character not found"))
+		Return(nil, apierr.NotFound("character not found"))
 
 	// Act
 	output, err := s.orchestrator.ResolveAttack(context.Background(), &ResolveAttackInput{
@@ -240,7 +240,7 @@ func (s *OrchestratorTestSuite) TestResolveAttack_EncounterNotFound() {
 	// Arrange - Encounter not found
 	s.mockEncRepo.EXPECT().
 		Get(gomock.Any(), &encounterrepo.GetInput{EncounterID: "nonexistent"}).
-		Return(nil, errors.NotFound("encounter not found"))
+		Return(nil, apierr.NotFound("encounter not found"))
 
 	// Act
 	output, err := s.orchestrator.ResolveAttack(context.Background(), &ResolveAttackInput{
@@ -1512,7 +1512,7 @@ func (s *OrchestratorTestSuite) TestEndTurn_WithPlayerID_CharacterLookupFails() 
 	// Mock character lookup to fail
 	s.mockCharRepo.EXPECT().
 		Get(gomock.Any(), characterrepo.GetInput{ID: "char-1"}).
-		Return(nil, errors.NotFound("character not found"))
+		Return(nil, apierr.NotFound("character not found"))
 
 	// Act
 	output, err := s.orchestrator.EndTurn(context.Background(), &EndTurnInput{
@@ -1652,7 +1652,7 @@ func (s *OrchestratorTestSuite) TestActivateFeature_CharacterNotFound() {
 	// Character not found
 	s.mockCharRepo.EXPECT().
 		Get(gomock.Any(), characterrepo.GetInput{ID: "char-1"}).
-		Return(nil, errors.NotFound("character not found"))
+		Return(nil, apierr.NotFound("character not found"))
 
 	// Act
 	output, err := s.orchestrator.ActivateFeature(context.Background(), &ActivateFeatureInput{

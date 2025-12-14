@@ -1,4 +1,4 @@
-package errors_test
+package apierr_test
 
 import (
 	"fmt"
@@ -8,7 +8,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"github.com/KirkDiggler/rpg-api/internal/errors"
+	"github.com/KirkDiggler/rpg-api/internal/apierr"
 )
 
 type ErrorsTestSuite struct {
@@ -22,19 +22,19 @@ func TestErrorsSuite(t *testing.T) {
 func (s *ErrorsTestSuite) TestNewError() {
 	testCases := []struct {
 		name     string
-		code     errors.Code
+		code     apierr.Code
 		message  string
 		expected string
 	}{
 		{
 			name:     "not found error",
-			code:     errors.CodeNotFound,
+			code:     apierr.CodeNotFound,
 			message:  "character not found",
 			expected: "NOT_FOUND: character not found",
 		},
 		{
 			name:     "invalid argument error",
-			code:     errors.CodeInvalidArgument,
+			code:     apierr.CodeInvalidArgument,
 			message:  "invalid input",
 			expected: "INVALID_ARGUMENT: invalid input",
 		},
@@ -42,7 +42,7 @@ func (s *ErrorsTestSuite) TestNewError() {
 
 	for _, tc := range testCases {
 		s.Run(tc.name, func() {
-			err := errors.New(tc.code, tc.message)
+			err := apierr.New(tc.code, tc.message)
 			s.Assert().Equal(tc.expected, err.Error())
 			s.Assert().Equal(tc.code, err.Code)
 			s.Assert().Equal(tc.message, err.Message)
@@ -51,7 +51,7 @@ func (s *ErrorsTestSuite) TestNewError() {
 }
 
 func (s *ErrorsTestSuite) TestErrorWithMeta() {
-	err := errors.NotFound("character not found").
+	err := apierr.NotFound("character not found").
 		WithMeta("character_id", "123").
 		WithMeta("user_id", "456")
 
@@ -59,7 +59,7 @@ func (s *ErrorsTestSuite) TestErrorWithMeta() {
 	s.Assert().Equal("456", err.Meta["user_id"])
 
 	// Test WithMetaMap
-	err2 := errors.Internal("server error").
+	err2 := apierr.Internal("server error").
 		WithMetaMap(map[string]interface{}{
 			"request_id": "abc",
 			"trace_id":   "xyz",
@@ -71,29 +71,29 @@ func (s *ErrorsTestSuite) TestErrorWithMeta() {
 
 func (s *ErrorsTestSuite) TestWrap() {
 	baseErr := fmt.Errorf("database connection failed")
-	wrapped := errors.Wrap(baseErr, "failed to get character")
+	wrapped := apierr.Wrap(baseErr, "failed to get character")
 
-	s.Assert().Equal(errors.CodeInternal, wrapped.Code)
+	s.Assert().Equal(apierr.CodeInternal, wrapped.Code)
 	s.Assert().Equal("failed to get character", wrapped.Message)
 	s.Assert().Equal(baseErr, wrapped.Unwrap())
 }
 
 func (s *ErrorsTestSuite) TestWrapPreservesCode() {
-	baseErr := errors.NotFound("record not found")
-	wrapped := errors.Wrap(baseErr, "character not found")
+	baseErr := apierr.NotFound("record not found")
+	wrapped := apierr.Wrap(baseErr, "character not found")
 
-	s.Assert().Equal(errors.CodeNotFound, wrapped.Code)
+	s.Assert().Equal(apierr.CodeNotFound, wrapped.Code)
 	s.Assert().Equal("character not found", wrapped.Message)
 	s.Assert().Equal(baseErr, wrapped.Unwrap())
 }
 
 func (s *ErrorsTestSuite) TestWrapDoesNotShareMetadata() {
 	// Create base error with metadata
-	baseErr := errors.NotFound("record not found").
+	baseErr := apierr.NotFound("record not found").
 		WithMeta("original", "value")
 
 	// Wrap the error
-	wrapped := errors.Wrap(baseErr, "wrapped error")
+	wrapped := apierr.Wrap(baseErr, "wrapped error")
 
 	// Modify the wrapped error's metadata
 	err1 := wrapped.WithMeta("wrapped", "data")
@@ -112,40 +112,40 @@ func (s *ErrorsTestSuite) TestWrapDoesNotShareMetadata() {
 
 func (s *ErrorsTestSuite) TestWrapWithCode() {
 	baseErr := fmt.Errorf("connection timeout")
-	wrapped := errors.WrapWithCode(baseErr, errors.CodeUnavailable, "service unavailable")
+	wrapped := apierr.WrapWithCode(baseErr, apierr.CodeUnavailable, "service unavailable")
 
-	s.Assert().Equal(errors.CodeUnavailable, wrapped.Code)
+	s.Assert().Equal(apierr.CodeUnavailable, wrapped.Code)
 	s.Assert().Equal("service unavailable", wrapped.Message)
 	s.Assert().Equal(baseErr, wrapped.Unwrap())
 }
 
 func (s *ErrorsTestSuite) TestWrapNil() {
-	s.Assert().Nil(errors.Wrap(nil, "should be nil"))
-	s.Assert().Nil(errors.WrapWithCode(nil, errors.CodeNotFound, "should be nil"))
-	s.Assert().Nil(errors.Wrapf(nil, "should be nil: %s", "test"))
-	s.Assert().Nil(errors.WrapWithCodef(nil, errors.CodeNotFound, "should be nil: %s", "test"))
+	s.Assert().Nil(apierr.Wrap(nil, "should be nil"))
+	s.Assert().Nil(apierr.WrapWithCode(nil, apierr.CodeNotFound, "should be nil"))
+	s.Assert().Nil(apierr.Wrapf(nil, "should be nil: %s", "test"))
+	s.Assert().Nil(apierr.WrapWithCodef(nil, apierr.CodeNotFound, "should be nil: %s", "test"))
 }
 
 func (s *ErrorsTestSuite) TestWrapfFormatting() {
 	baseErr := fmt.Errorf("base error")
-	wrapped := errors.Wrapf(baseErr, "failed to process %s with id %d", "character", 123)
+	wrapped := apierr.Wrapf(baseErr, "failed to process %s with id %d", "character", 123)
 
-	s.Assert().Equal(errors.CodeInternal, wrapped.Code)
+	s.Assert().Equal(apierr.CodeInternal, wrapped.Code)
 	s.Assert().Equal("failed to process character with id 123", wrapped.Message)
 	s.Assert().Equal(baseErr, wrapped.Unwrap())
 }
 
 func (s *ErrorsTestSuite) TestWrapWithCodefFormatting() {
 	baseErr := fmt.Errorf("timeout")
-	wrapped := errors.WrapWithCodef(
+	wrapped := apierr.WrapWithCodef(
 		baseErr,
-		errors.CodeDeadlineExceeded,
+		apierr.CodeDeadlineExceeded,
 		"operation %s timed out after %d seconds",
 		"save",
 		30,
 	)
 
-	s.Assert().Equal(errors.CodeDeadlineExceeded, wrapped.Code)
+	s.Assert().Equal(apierr.CodeDeadlineExceeded, wrapped.Code)
 	s.Assert().Equal("operation save timed out after 30 seconds", wrapped.Message)
 	s.Assert().Equal(baseErr, wrapped.Unwrap())
 }
@@ -153,16 +153,16 @@ func (s *ErrorsTestSuite) TestWrapWithCodefFormatting() {
 func (s *ErrorsTestSuite) TestConstructorFunctions() {
 	testCases := []struct {
 		name        string
-		constructor func() *errors.Error
-		code        errors.Code
+		constructor func() *apierr.Error
+		code        apierr.Code
 	}{
-		{"NotFound", func() *errors.Error { return errors.NotFound("test") }, errors.CodeNotFound},
-		{"InvalidArgument", func() *errors.Error { return errors.InvalidArgument("test") }, errors.CodeInvalidArgument},
-		{"AlreadyExists", func() *errors.Error { return errors.AlreadyExists("test") }, errors.CodeAlreadyExists},
-		{"PermissionDenied", func() *errors.Error { return errors.PermissionDenied("test") }, errors.CodePermissionDenied},
-		{"Internal", func() *errors.Error { return errors.Internal("test") }, errors.CodeInternal},
-		{"Unavailable", func() *errors.Error { return errors.Unavailable("test") }, errors.CodeUnavailable},
-		{"Unauthenticated", func() *errors.Error { return errors.Unauthenticated("test") }, errors.CodeUnauthenticated},
+		{"NotFound", func() *apierr.Error { return apierr.NotFound("test") }, apierr.CodeNotFound},
+		{"InvalidArgument", func() *apierr.Error { return apierr.InvalidArgument("test") }, apierr.CodeInvalidArgument},
+		{"AlreadyExists", func() *apierr.Error { return apierr.AlreadyExists("test") }, apierr.CodeAlreadyExists},
+		{"PermissionDenied", func() *apierr.Error { return apierr.PermissionDenied("test") }, apierr.CodePermissionDenied},
+		{"Internal", func() *apierr.Error { return apierr.Internal("test") }, apierr.CodeInternal},
+		{"Unavailable", func() *apierr.Error { return apierr.Unavailable("test") }, apierr.CodeUnavailable},
+		{"Unauthenticated", func() *apierr.Error { return apierr.Unauthenticated("test") }, apierr.CodeUnauthenticated},
 	}
 
 	for _, tc := range testCases {
@@ -175,79 +175,79 @@ func (s *ErrorsTestSuite) TestConstructorFunctions() {
 }
 
 func (s *ErrorsTestSuite) TestFormattedConstructors() {
-	err := errors.NotFoundf("character %s not found", "123")
-	s.Assert().Equal(errors.CodeNotFound, err.Code)
+	err := apierr.NotFoundf("character %s not found", "123")
+	s.Assert().Equal(apierr.CodeNotFound, err.Code)
 	s.Assert().Equal("character 123 not found", err.Message)
 
-	err2 := errors.InvalidArgumentf("invalid level: %d", 25)
-	s.Assert().Equal(errors.CodeInvalidArgument, err2.Code)
+	err2 := apierr.InvalidArgumentf("invalid level: %d", 25)
+	s.Assert().Equal(apierr.CodeInvalidArgument, err2.Code)
 	s.Assert().Equal("invalid level: 25", err2.Message)
 }
 
 func (s *ErrorsTestSuite) TestErrorIs() {
-	err1 := errors.NotFound("test")
-	err2 := errors.NotFound("test")
-	err3 := errors.InvalidArgument("test")
+	err1 := apierr.NotFound("test")
+	err2 := apierr.NotFound("test")
+	err3 := apierr.InvalidArgument("test")
 
 	s.Assert().True(err1.Is(err2))
 	s.Assert().False(err1.Is(err3))
 }
 
 func (s *ErrorsTestSuite) TestHelperFunctions() {
-	notFoundErr := errors.NotFound("test")
-	invalidErr := errors.InvalidArgument("test")
-	wrappedErr := errors.Wrap(notFoundErr, "wrapped")
+	notFoundErr := apierr.NotFound("test")
+	invalidErr := apierr.InvalidArgument("test")
+	wrappedErr := apierr.Wrap(notFoundErr, "wrapped")
 
-	s.Assert().True(errors.IsNotFound(notFoundErr))
-	s.Assert().True(errors.IsNotFound(wrappedErr))
-	s.Assert().False(errors.IsNotFound(invalidErr))
+	s.Assert().True(apierr.IsNotFound(notFoundErr))
+	s.Assert().True(apierr.IsNotFound(wrappedErr))
+	s.Assert().False(apierr.IsNotFound(invalidErr))
 
-	s.Assert().True(errors.IsInvalidArgument(invalidErr))
-	s.Assert().False(errors.IsInvalidArgument(notFoundErr))
+	s.Assert().True(apierr.IsInvalidArgument(invalidErr))
+	s.Assert().False(apierr.IsInvalidArgument(notFoundErr))
 }
 
 func (s *ErrorsTestSuite) TestGetCode() {
-	err := errors.NotFound("test")
-	wrapped := errors.Wrap(err, "wrapped")
+	err := apierr.NotFound("test")
+	wrapped := apierr.Wrap(err, "wrapped")
 
-	s.Assert().Equal(errors.CodeNotFound, errors.GetCode(err))
-	s.Assert().Equal(errors.CodeNotFound, errors.GetCode(wrapped))
-	s.Assert().Equal(errors.CodeInternal, errors.GetCode(fmt.Errorf("standard error")))
-	s.Assert().Equal(errors.CodeOK, errors.GetCode(nil))
+	s.Assert().Equal(apierr.CodeNotFound, apierr.GetCode(err))
+	s.Assert().Equal(apierr.CodeNotFound, apierr.GetCode(wrapped))
+	s.Assert().Equal(apierr.CodeInternal, apierr.GetCode(fmt.Errorf("standard error")))
+	s.Assert().Equal(apierr.CodeOK, apierr.GetCode(nil))
 }
 
 func (s *ErrorsTestSuite) TestGetMeta() {
-	err := errors.NotFound("test").WithMeta("key", "value")
-	wrapped := errors.Wrap(err, "wrapped")
+	err := apierr.NotFound("test").WithMeta("key", "value")
+	wrapped := apierr.Wrap(err, "wrapped")
 
-	s.Assert().Equal("value", errors.GetMeta(err)["key"])
-	s.Assert().Equal("value", errors.GetMeta(wrapped)["key"])
-	s.Assert().Nil(errors.GetMeta(fmt.Errorf("standard error")))
+	s.Assert().Equal("value", apierr.GetMeta(err)["key"])
+	s.Assert().Equal("value", apierr.GetMeta(wrapped)["key"])
+	s.Assert().Nil(apierr.GetMeta(fmt.Errorf("standard error")))
 }
 
 func (s *ErrorsTestSuite) TestGetMessage() {
-	err := errors.NotFound("user friendly message")
-	wrapped := errors.Wrap(err, "wrapped message")
+	err := apierr.NotFound("user friendly message")
+	wrapped := apierr.Wrap(err, "wrapped message")
 	stdErr := fmt.Errorf("standard error")
 
-	s.Assert().Equal("user friendly message", errors.GetMessage(err))
-	s.Assert().Equal("wrapped message", errors.GetMessage(wrapped))
-	s.Assert().Equal("standard error", errors.GetMessage(stdErr))
+	s.Assert().Equal("user friendly message", apierr.GetMessage(err))
+	s.Assert().Equal("wrapped message", apierr.GetMessage(wrapped))
+	s.Assert().Equal("standard error", apierr.GetMessage(stdErr))
 }
 
 func (s *ErrorsTestSuite) TestHTTPStatus() {
 	testCases := []struct {
-		code     errors.Code
+		code     apierr.Code
 		expected int
 	}{
-		{errors.CodeOK, 200},
-		{errors.CodeNotFound, 404},
-		{errors.CodeInvalidArgument, 400},
-		{errors.CodeAlreadyExists, 409},
-		{errors.CodePermissionDenied, 403},
-		{errors.CodeUnauthenticated, 401},
-		{errors.CodeInternal, 500},
-		{errors.CodeUnavailable, 503},
+		{apierr.CodeOK, 200},
+		{apierr.CodeNotFound, 404},
+		{apierr.CodeInvalidArgument, 400},
+		{apierr.CodeAlreadyExists, 409},
+		{apierr.CodePermissionDenied, 403},
+		{apierr.CodeUnauthenticated, 401},
+		{apierr.CodeInternal, 500},
+		{apierr.CodeUnavailable, 503},
 	}
 
 	for _, tc := range testCases {
@@ -259,10 +259,10 @@ func (s *ErrorsTestSuite) TestHTTPStatus() {
 
 func (s *ErrorsTestSuite) TestGRPCConversion() {
 	// Test ToGRPCError
-	err := errors.NotFound("character not found").
+	err := apierr.NotFound("character not found").
 		WithMeta("character_id", "123")
 
-	grpcErr := errors.ToGRPCError(err)
+	grpcErr := apierr.ToGRPCError(err)
 	st, ok := status.FromError(grpcErr)
 	s.Require().True(ok)
 	s.Assert().Equal(codes.NotFound, st.Code())
@@ -270,23 +270,23 @@ func (s *ErrorsTestSuite) TestGRPCConversion() {
 
 	// Test FromGRPCError
 	grpcErr2 := status.Error(codes.InvalidArgument, "invalid input")
-	err2 := errors.FromGRPCError(grpcErr2)
-	s.Assert().Equal(errors.CodeInvalidArgument, errors.GetCode(err2))
-	s.Assert().Equal("invalid input", errors.GetMessage(err2))
+	err2 := apierr.FromGRPCError(grpcErr2)
+	s.Assert().Equal(apierr.CodeInvalidArgument, apierr.GetCode(err2))
+	s.Assert().Equal("invalid input", apierr.GetMessage(err2))
 }
 
 func (s *ErrorsTestSuite) TestGRPCCodeMapping() {
 	testCases := []struct {
-		code     errors.Code
+		code     apierr.Code
 		expected codes.Code
 	}{
-		{errors.CodeNotFound, codes.NotFound},
-		{errors.CodeInvalidArgument, codes.InvalidArgument},
-		{errors.CodeAlreadyExists, codes.AlreadyExists},
-		{errors.CodePermissionDenied, codes.PermissionDenied},
-		{errors.CodeInternal, codes.Internal},
-		{errors.CodeUnavailable, codes.Unavailable},
-		{errors.CodeUnauthenticated, codes.Unauthenticated},
+		{apierr.CodeNotFound, codes.NotFound},
+		{apierr.CodeInvalidArgument, codes.InvalidArgument},
+		{apierr.CodeAlreadyExists, codes.AlreadyExists},
+		{apierr.CodePermissionDenied, codes.PermissionDenied},
+		{apierr.CodeInternal, codes.Internal},
+		{apierr.CodeUnavailable, codes.Unavailable},
+		{apierr.CodeUnauthenticated, codes.Unauthenticated},
 	}
 
 	for _, tc := range testCases {

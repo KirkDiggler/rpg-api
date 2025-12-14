@@ -1,11 +1,11 @@
 //nolint:revive // package name intentionally shadows stdlib errors for API consistency
-package errors
+package apierr
 
 import (
 	"errors"
 )
 
-// As is a wrapper around errors.As that works with our Error type
+// As is a wrapper around apierr.As that works with our Error type
 func As(err error, target **Error) bool {
 	return errors.As(err, target)
 }

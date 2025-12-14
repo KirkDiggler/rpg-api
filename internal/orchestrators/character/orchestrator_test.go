@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/suite"
 	"go.uber.org/mock/gomock"
 
-	rpgerrors "github.com/KirkDiggler/rpg-api/internal/errors"
+	rpgerrors "github.com/KirkDiggler/rpg-api/internal/apierr"
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/dice"
 	dicemock "github.com/KirkDiggler/rpg-api/internal/orchestrators/dice/mock"
 	idgenmock "github.com/KirkDiggler/rpg-api/internal/pkg/idgen/mock"

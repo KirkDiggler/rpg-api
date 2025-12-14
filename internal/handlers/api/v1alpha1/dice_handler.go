@@ -4,7 +4,7 @@ package v1alpha1
 import (
 	"context"
 
-	"github.com/KirkDiggler/rpg-api/internal/errors"
+	"github.com/KirkDiggler/rpg-api/internal/apierr"
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/dice"
 
 	apiv1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/api/v1alpha1"
@@ -18,7 +18,7 @@ type DiceHandlerConfig struct {
 // Validate ensures all required dependencies are present
 func (c *DiceHandlerConfig) Validate() error {
 	if c.DiceService == nil {
-		return errors.InvalidArgument("dice service is required")
+		return apierr.InvalidArgument("dice service is required")
 	}
 	return nil
 }
@@ -46,13 +46,13 @@ func (h *DiceHandler) RollDice(
 	req *apiv1alpha1.RollDiceRequest,
 ) (*apiv1alpha1.RollDiceResponse, error) {
 	if req.EntityId == "" {
-		return nil, errors.ToGRPCError(errors.InvalidArgument("entity_id is required"))
+		return nil, apierr.ToGRPCError(apierr.InvalidArgument("entity_id is required"))
 	}
 	if req.Context == "" {
-		return nil, errors.ToGRPCError(errors.InvalidArgument("context is required"))
+		return nil, apierr.ToGRPCError(apierr.InvalidArgument("context is required"))
 	}
 	if req.Notation == "" {
-		return nil, errors.ToGRPCError(errors.InvalidArgument("notation is required"))
+		return nil, apierr.ToGRPCError(apierr.InvalidArgument("notation is required"))
 	}
 
 	// Use the dice service to roll dice
@@ -65,7 +65,7 @@ func (h *DiceHandler) RollDice(
 
 	diceOutput, err := h.diceService.RollDice(ctx, diceInput)
 	if err != nil {
-		return nil, errors.ToGRPCError(err)
+		return nil, apierr.ToGRPCError(err)
 	}
 
 	// Convert all session rolls to proto format
@@ -103,10 +103,10 @@ func (h *DiceHandler) GetRollSession(
 	req *apiv1alpha1.GetRollSessionRequest,
 ) (*apiv1alpha1.GetRollSessionResponse, error) {
 	if req.EntityId == "" {
-		return nil, errors.ToGRPCError(errors.InvalidArgument("entity_id is required"))
+		return nil, apierr.ToGRPCError(apierr.InvalidArgument("entity_id is required"))
 	}
 	if req.Context == "" {
-		return nil, errors.ToGRPCError(errors.InvalidArgument("context is required"))
+		return nil, apierr.ToGRPCError(apierr.InvalidArgument("context is required"))
 	}
 
 	// Use the dice service to get the session
@@ -117,7 +117,7 @@ func (h *DiceHandler) GetRollSession(
 
 	diceOutput, err := h.diceService.GetRollSession(ctx, diceInput)
 	if err != nil {
-		return nil, errors.ToGRPCError(err)
+		return nil, apierr.ToGRPCError(err)
 	}
 
 	// Convert session rolls to proto format
@@ -148,10 +148,10 @@ func (h *DiceHandler) ClearRollSession(
 	req *apiv1alpha1.ClearRollSessionRequest,
 ) (*apiv1alpha1.ClearRollSessionResponse, error) {
 	if req.EntityId == "" {
-		return nil, errors.ToGRPCError(errors.InvalidArgument("entity_id is required"))
+		return nil, apierr.ToGRPCError(apierr.InvalidArgument("entity_id is required"))
 	}
 	if req.Context == "" {
-		return nil, errors.ToGRPCError(errors.InvalidArgument("context is required"))
+		return nil, apierr.ToGRPCError(apierr.InvalidArgument("context is required"))
 	}
 
 	// Use the dice service to clear the session
@@ -162,7 +162,7 @@ func (h *DiceHandler) ClearRollSession(
 
 	diceOutput, err := h.diceService.ClearRollSession(ctx, diceInput)
 	if err != nil {
-		return nil, errors.ToGRPCError(err)
+		return nil, apierr.ToGRPCError(err)
 	}
 
 	return &apiv1alpha1.ClearRollSessionResponse{

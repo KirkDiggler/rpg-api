@@ -10,8 +10,8 @@ import (
 	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/suite"
 
+	"github.com/KirkDiggler/rpg-api/internal/apierr"
 	"github.com/KirkDiggler/rpg-api/internal/entities"
-	"github.com/KirkDiggler/rpg-api/internal/errors"
 	redisclient "github.com/KirkDiggler/rpg-api/internal/redis"
 )
 
@@ -318,7 +318,7 @@ func (s *RedisPublisherTestSuite) TestUnsubscribe_NotFound() {
 	// Assert
 	s.Require().Error(err)
 	s.Assert().Nil(output)
-	s.Assert().True(errors.IsNotFound(err))
+	s.Assert().True(apierr.IsNotFound(err))
 }
 
 // Integration Tests

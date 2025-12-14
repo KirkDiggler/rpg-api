@@ -8,7 +8,7 @@ import (
 
 	redis "github.com/redis/go-redis/v9"
 
-	"github.com/KirkDiggler/rpg-api/internal/errors"
+	"github.com/KirkDiggler/rpg-api/internal/apierr"
 	"github.com/KirkDiggler/rpg-api/internal/pkg/clock"
 	redisclient "github.com/KirkDiggler/rpg-api/internal/redis"
 )
@@ -34,10 +34,10 @@ type Config struct {
 // Validate ensures all required dependencies are provided
 func (c *Config) Validate() error {
 	if c.Client == nil {
-		return errors.InvalidArgument("redis client is required")
+		return apierr.InvalidArgument("redis client is required")
 	}
 	if c.Clock == nil {
-		return errors.InvalidArgument("clock is required")
+		return apierr.InvalidArgument("clock is required")
 	}
 	return nil
 }
@@ -50,7 +50,7 @@ type redisRepository struct {
 // NewRedisRepository creates a new Redis repository for dice sessions
 func NewRedisRepository(cfg *Config) (Repository, error) {
 	if err := cfg.Validate(); err != nil {
-		return nil, errors.Wrap(err, "invalid config")
+		return nil, apierr.Wrap(err, "invalid config")
 	}
 
 	return &redisRepository{
@@ -65,10 +65,10 @@ var _ Repository = (*redisRepository)(nil)
 // Create stores a new dice session with the specified TTL
 func (r *redisRepository) Create(ctx context.Context, input CreateInput) (*CreateOutput, error) {
 	if input.EntityID == "" {
-		return nil, errors.InvalidArgument(errEntityIDEmpty)
+		return nil, apierr.InvalidArgument(errEntityIDEmpty)
 	}
 	if input.Context == "" {
-		return nil, errors.InvalidArgument(errContextEmpty)
+		return nil, apierr.InvalidArgument(errContextEmpty)
 	}
 
 	now := r.clock.Now()
@@ -88,14 +88,14 @@ func (r *redisRepository) Create(ctx context.Context, input CreateInput) (*Creat
 	// Serialize the session
 	sessionJSON, err := json.Marshal(session)
 	if err != nil {
-		return nil, errors.Wrapf(err, "failed to marshal session")
+		return nil, apierr.Wrapf(err, "failed to marshal session")
 	}
 
 	// Store in Redis with TTL
 	key := r.buildKey(input.EntityID, input.Context)
 	err = r.client.Set(ctx, key, sessionJSON, ttl).Err()
 	if err != nil {
-		return nil, errors.Wrapf(err, "failed to store session in Redis")
+		return nil, apierr.Wrapf(err, "failed to store session in Redis")
 	}
 
 	return &CreateOutput{
@@ -106,10 +106,10 @@ func (r *redisRepository) Create(ctx context.Context, input CreateInput) (*Creat
 // Get retrieves a dice session by entity ID and context
 func (r *redisRepository) Get(ctx context.Context, input GetInput) (*GetOutput, error) {
 	if input.EntityID == "" {
-		return nil, errors.InvalidArgument(errEntityIDEmpty)
+		return nil, apierr.InvalidArgument(errEntityIDEmpty)
 	}
 	if input.Context == "" {
-		return nil, errors.InvalidArgument(errContextEmpty)
+		return nil, apierr.InvalidArgument(errContextEmpty)
 	}
 
 	key := r.buildKey(input.EntityID, input.Context)
@@ -118,22 +118,22 @@ func (r *redisRepository) Get(ctx context.Context, input GetInput) (*GetOutput, 
 	sessionJSON, err := r.client.Get(ctx, key).Result()
 	if err != nil {
 		if err == redis.Nil {
-			return nil, errors.NotFound("dice session not found")
+			return nil, apierr.NotFound("dice session not found")
 		}
-		return nil, errors.Wrapf(err, "failed to get session from Redis")
+		return nil, apierr.Wrapf(err, "failed to get session from Redis")
 	}
 
 	// Deserialize the session
 	var session DiceSession
 	if err := json.Unmarshal([]byte(sessionJSON), &session); err != nil {
-		return nil, errors.Wrapf(err, "failed to unmarshal session")
+		return nil, apierr.Wrapf(err, "failed to unmarshal session")
 	}
 
 	// Check if session has expired
 	if r.clock.Now().After(session.ExpiresAt) {
 		// Session has expired, clean it up
 		_ = r.client.Del(ctx, key)
-		return nil, errors.NotFound("dice session has expired")
+		return nil, apierr.NotFound("dice session has expired")
 	}
 
 	return &GetOutput{
@@ -144,10 +144,10 @@ func (r *redisRepository) Get(ctx context.Context, input GetInput) (*GetOutput, 
 // Delete removes a dice session
 func (r *redisRepository) Delete(ctx context.Context, input DeleteInput) (*DeleteOutput, error) {
 	if input.EntityID == "" {
-		return nil, errors.InvalidArgument(errEntityIDEmpty)
+		return nil, apierr.InvalidArgument(errEntityIDEmpty)
 	}
 	if input.Context == "" {
-		return nil, errors.InvalidArgument(errContextEmpty)
+		return nil, apierr.InvalidArgument(errContextEmpty)
 	}
 
 	key := r.buildKey(input.EntityID, input.Context)
@@ -165,7 +165,7 @@ func (r *redisRepository) Delete(ctx context.Context, input DeleteInput) (*Delet
 	// Delete from Redis
 	result := r.client.Del(ctx, key)
 	if result.Err() != nil {
-		return nil, errors.Wrapf(result.Err(), "failed to delete session from Redis")
+		return nil, apierr.Wrapf(result.Err(), "failed to delete session from Redis")
 	}
 
 	return &DeleteOutput{
@@ -176,19 +176,19 @@ func (r *redisRepository) Delete(ctx context.Context, input DeleteInput) (*Delet
 // Update replaces an existing dice session (used for adding rolls)
 func (r *redisRepository) Update(ctx context.Context, session *DiceSession) error {
 	if session == nil {
-		return errors.InvalidArgument(errSessionNil)
+		return apierr.InvalidArgument(errSessionNil)
 	}
 	if session.EntityID == "" {
-		return errors.InvalidArgument(errEntityIDEmpty)
+		return apierr.InvalidArgument(errEntityIDEmpty)
 	}
 	if session.Context == "" {
-		return errors.InvalidArgument(errContextEmpty)
+		return apierr.InvalidArgument(errContextEmpty)
 	}
 
 	// Calculate remaining TTL
 	now := r.clock.Now()
 	if now.After(session.ExpiresAt) {
-		return errors.InvalidArgument(errSessionExpired)
+		return apierr.InvalidArgument(errSessionExpired)
 	}
 
 	remainingTTL := session.ExpiresAt.Sub(now)
@@ -196,14 +196,14 @@ func (r *redisRepository) Update(ctx context.Context, session *DiceSession) erro
 	// Serialize the session
 	sessionJSON, err := json.Marshal(session)
 	if err != nil {
-		return errors.Wrapf(err, "failed to marshal session")
+		return apierr.Wrapf(err, "failed to marshal session")
 	}
 
 	// Update in Redis with remaining TTL
 	key := r.buildKey(session.EntityID, session.Context)
 	err = r.client.Set(ctx, key, sessionJSON, remainingTTL).Err()
 	if err != nil {
-		return errors.Wrapf(err, "failed to update session in Redis")
+		return apierr.Wrapf(err, "failed to update session in Redis")
 	}
 
 	return nil

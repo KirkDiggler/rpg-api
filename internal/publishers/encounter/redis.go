@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/KirkDiggler/rpg-api/internal/apierr"
 	"github.com/KirkDiggler/rpg-api/internal/entities"
-	"github.com/KirkDiggler/rpg-api/internal/errors"
 	"github.com/KirkDiggler/rpg-api/internal/pkg/idgen"
 	redisclient "github.com/KirkDiggler/rpg-api/internal/redis"
 )
@@ -49,10 +49,10 @@ type RedisConfig struct {
 // Validate validates the RedisConfig
 func (cfg *RedisConfig) Validate() error {
 	if cfg == nil {
-		return errors.InvalidArgument("config cannot be nil")
+		return apierr.InvalidArgument("config cannot be nil")
 	}
 	if cfg.Client == nil {
-		return errors.InvalidArgument("client cannot be nil")
+		return apierr.InvalidArgument("client cannot be nil")
 	}
 	return nil
 }
@@ -79,25 +79,25 @@ func NewRedis(cfg *RedisConfig) (Publisher, error) {
 // Publish publishes an event to all subscribers of the encounter
 func (p *redisPublisher) Publish(ctx context.Context, input *PublishInput) (*PublishOutput, error) {
 	if input == nil {
-		return nil, errors.InvalidArgument("input cannot be nil")
+		return nil, apierr.InvalidArgument("input cannot be nil")
 	}
 	if input.Event == nil {
-		return nil, errors.InvalidArgument(errEventNil)
+		return nil, apierr.InvalidArgument(errEventNil)
 	}
 	if input.EncounterID == "" {
-		return nil, errors.InvalidArgument(errEncounterIDEmpty)
+		return nil, apierr.InvalidArgument(errEncounterIDEmpty)
 	}
 
 	// Serialize event to JSON
 	data, err := json.Marshal(input.Event)
 	if err != nil {
-		return nil, errors.Wrapf(err, "failed to marshal event")
+		return nil, apierr.Wrapf(err, "failed to marshal event")
 	}
 
 	// Publish to Redis channel
 	channel := fmt.Sprintf(encounterChannelPattern, input.EncounterID)
 	if err := p.client.Publish(ctx, channel, data).Err(); err != nil {
-		return nil, errors.Wrapf(err, "failed to publish event to channel %s", channel)
+		return nil, apierr.Wrapf(err, "failed to publish event to channel %s", channel)
 	}
 
 	return &PublishOutput{}, nil
@@ -106,10 +106,10 @@ func (p *redisPublisher) Publish(ctx context.Context, input *PublishInput) (*Pub
 // Subscribe subscribes to events for a specific encounter
 func (p *redisPublisher) Subscribe(ctx context.Context, input *SubscribeInput) (*SubscribeOutput, error) {
 	if input == nil {
-		return nil, errors.InvalidArgument("input cannot be nil")
+		return nil, apierr.InvalidArgument("input cannot be nil")
 	}
 	if input.EncounterID == "" {
-		return nil, errors.InvalidArgument(errEncounterIDEmpty)
+		return nil, apierr.InvalidArgument(errEncounterIDEmpty)
 	}
 
 	// Generate unique subscription ID
@@ -150,17 +150,17 @@ func (p *redisPublisher) Subscribe(ctx context.Context, input *SubscribeInput) (
 // Unsubscribe unsubscribes from encounter events
 func (p *redisPublisher) Unsubscribe(ctx context.Context, input *UnsubscribeInput) (*UnsubscribeOutput, error) {
 	if input == nil {
-		return nil, errors.InvalidArgument("input cannot be nil")
+		return nil, apierr.InvalidArgument("input cannot be nil")
 	}
 	if input.SubscriptionID == "" {
-		return nil, errors.InvalidArgument(errSubscriptionIDEmpty)
+		return nil, apierr.InvalidArgument(errSubscriptionIDEmpty)
 	}
 
 	p.mu.Lock()
 	sub, exists := p.subscriptions[input.SubscriptionID]
 	if !exists {
 		p.mu.Unlock()
-		return nil, errors.NotFoundf("subscription %s not found", input.SubscriptionID)
+		return nil, apierr.NotFoundf("subscription %s not found", input.SubscriptionID)
 	}
 	delete(p.subscriptions, input.SubscriptionID)
 	p.mu.Unlock()
@@ -192,7 +192,7 @@ func (p *redisPublisher) listen(ctx context.Context, sub *subscription) {
 	_, err := pubsub.Receive(ctx)
 	if err != nil {
 		select {
-		case sub.errors <- errors.Wrapf(err, "failed to confirm subscription to %s", channel):
+		case sub.errors <- apierr.Wrapf(err, "failed to confirm subscription to %s", channel):
 		case <-ctx.Done():
 		}
 		return
@@ -214,7 +214,7 @@ func (p *redisPublisher) listen(ctx context.Context, sub *subscription) {
 			var event entities.EncounterEvent
 			if err := json.Unmarshal([]byte(msg.Payload), &event); err != nil {
 				select {
-				case sub.errors <- errors.Wrapf(err, "failed to unmarshal event"):
+				case sub.errors <- apierr.Wrapf(err, "failed to unmarshal event"):
 				case <-ctx.Done():
 					return
 				}

@@ -5,7 +5,7 @@ import (
 	"context"
 	"sync"
 
-	"github.com/KirkDiggler/rpg-api/internal/errors"
+	"github.com/KirkDiggler/rpg-api/internal/apierr"
 )
 
 // InMemoryRepository implements Repository using in-memory storage
@@ -24,11 +24,11 @@ func NewInMemory() *InMemoryRepository {
 // Save stores an encounter
 func (r *InMemoryRepository) Save(_ context.Context, input *SaveInput) (*SaveOutput, error) {
 	if input == nil {
-		return nil, errors.InvalidArgument("input is required")
+		return nil, apierr.InvalidArgument("input is required")
 	}
 
 	if input.EncounterID == "" {
-		return nil, errors.InvalidArgument("encounter ID is required")
+		return nil, apierr.InvalidArgument("encounter ID is required")
 	}
 
 	r.mu.Lock()
@@ -54,11 +54,11 @@ func (r *InMemoryRepository) Save(_ context.Context, input *SaveInput) (*SaveOut
 // Get retrieves an encounter by ID
 func (r *InMemoryRepository) Get(_ context.Context, input *GetInput) (*GetOutput, error) {
 	if input == nil {
-		return nil, errors.InvalidArgument("input is required")
+		return nil, apierr.InvalidArgument("input is required")
 	}
 
 	if input.EncounterID == "" {
-		return nil, errors.InvalidArgument("encounter ID is required")
+		return nil, apierr.InvalidArgument("encounter ID is required")
 	}
 
 	r.mu.RLock()
@@ -66,7 +66,7 @@ func (r *InMemoryRepository) Get(_ context.Context, input *GetInput) (*GetOutput
 
 	data, exists := r.store[input.EncounterID]
 	if !exists {
-		return nil, errors.NotFound("encounter not found")
+		return nil, apierr.NotFound("encounter not found")
 	}
 
 	// Return a copy to prevent external modification
@@ -90,11 +90,11 @@ func (r *InMemoryRepository) Get(_ context.Context, input *GetInput) (*GetOutput
 // GetByJoinCode retrieves an encounter by its join code
 func (r *InMemoryRepository) GetByJoinCode(_ context.Context, input *GetByJoinCodeInput) (*GetOutput, error) {
 	if input == nil {
-		return nil, errors.InvalidArgument("input is required")
+		return nil, apierr.InvalidArgument("input is required")
 	}
 
 	if input.JoinCode == "" {
-		return nil, errors.InvalidArgument("join code is required")
+		return nil, apierr.InvalidArgument("join code is required")
 	}
 
 	r.mu.RLock()
@@ -122,17 +122,17 @@ func (r *InMemoryRepository) GetByJoinCode(_ context.Context, input *GetByJoinCo
 		}
 	}
 
-	return nil, errors.NotFound("encounter not found")
+	return nil, apierr.NotFound("encounter not found")
 }
 
 // Update modifies an existing encounter
 func (r *InMemoryRepository) Update(_ context.Context, input *UpdateInput) (*UpdateOutput, error) {
 	if input == nil {
-		return nil, errors.InvalidArgument("input is required")
+		return nil, apierr.InvalidArgument("input is required")
 	}
 
 	if input.EncounterID == "" {
-		return nil, errors.InvalidArgument("encounter ID is required")
+		return nil, apierr.InvalidArgument("encounter ID is required")
 	}
 
 	r.mu.Lock()
@@ -140,7 +140,7 @@ func (r *InMemoryRepository) Update(_ context.Context, input *UpdateInput) (*Upd
 
 	data, exists := r.store[input.EncounterID]
 	if !exists {
-		return nil, errors.NotFound("encounter not found")
+		return nil, apierr.NotFound("encounter not found")
 	}
 
 	// Update only what's provided
@@ -174,18 +174,18 @@ func (r *InMemoryRepository) Update(_ context.Context, input *UpdateInput) (*Upd
 // Delete removes an encounter
 func (r *InMemoryRepository) Delete(_ context.Context, input *DeleteInput) (*DeleteOutput, error) {
 	if input == nil {
-		return nil, errors.InvalidArgument("input is required")
+		return nil, apierr.InvalidArgument("input is required")
 	}
 
 	if input.EncounterID == "" {
-		return nil, errors.InvalidArgument("encounter ID is required")
+		return nil, apierr.InvalidArgument("encounter ID is required")
 	}
 
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
 	if _, exists := r.store[input.EncounterID]; !exists {
-		return nil, errors.NotFound("encounter not found")
+		return nil, apierr.NotFound("encounter not found")
 	}
 
 	delete(r.store, input.EncounterID)

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/KirkDiggler/rpg-api/internal/errors"
+	"github.com/KirkDiggler/rpg-api/internal/apierr"
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/dice"
 	"github.com/KirkDiggler/rpg-api/internal/pkg/idgen"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
@@ -32,19 +32,19 @@ type Config struct {
 // Validate ensures all required dependencies are present
 func (c *Config) Validate() error {
 	if c.DraftRepo == nil {
-		return errors.InvalidArgument("draft repository is required")
+		return apierr.InvalidArgument("draft repository is required")
 	}
 	if c.CharacterRepo == nil {
-		return errors.InvalidArgument("character repository is required")
+		return apierr.InvalidArgument("character repository is required")
 	}
 	if c.DiceService == nil {
-		return errors.InvalidArgument("dice service is required")
+		return apierr.InvalidArgument("dice service is required")
 	}
 	if c.IDGenerator == nil {
-		return errors.InvalidArgument("ID generator is required")
+		return apierr.InvalidArgument("ID generator is required")
 	}
 	if c.DraftIDGenerator == nil {
-		return errors.InvalidArgument("draft ID generator is required")
+		return apierr.InvalidArgument("draft ID generator is required")
 	}
 	return nil
 }
@@ -61,7 +61,7 @@ type Orchestrator struct {
 // New creates a new character orchestrator
 func New(cfg *Config) (*Orchestrator, error) {
 	if cfg == nil {
-		return nil, errors.InvalidArgument("config is required")
+		return nil, apierr.InvalidArgument("config is required")
 	}
 	if err := cfg.Validate(); err != nil {
 		return nil, err
@@ -79,10 +79,10 @@ func New(cfg *Config) (*Orchestrator, error) {
 // CreateDraft creates a new character draft
 func (o *Orchestrator) CreateDraft(ctx context.Context, input *CreateDraftInput) (*CreateDraftOutput, error) {
 	if input == nil {
-		return nil, errors.InvalidArgument("input is required")
+		return nil, apierr.InvalidArgument("input is required")
 	}
 	if input.PlayerID == "" {
-		return nil, errors.InvalidArgument("player ID is required")
+		return nil, apierr.InvalidArgument("player ID is required")
 	}
 
 	// Create new draft with generated ID
@@ -111,10 +111,10 @@ func (o *Orchestrator) CreateDraft(ctx context.Context, input *CreateDraftInput)
 // GetDraft retrieves a draft by ID
 func (o *Orchestrator) GetDraft(ctx context.Context, input *GetDraftInput) (*GetDraftOutput, error) {
 	if input == nil {
-		return nil, errors.InvalidArgument("input is required")
+		return nil, apierr.InvalidArgument("input is required")
 	}
 	if input.DraftID == "" {
-		return nil, errors.InvalidArgument("draft ID is required")
+		return nil, apierr.InvalidArgument("draft ID is required")
 	}
 
 	getOutput, err := o.draftRepo.Get(ctx, characterdraft.GetInput{
@@ -133,10 +133,10 @@ func (o *Orchestrator) GetDraft(ctx context.Context, input *GetDraftInput) (*Get
 // DeleteDraft deletes a draft
 func (o *Orchestrator) DeleteDraft(ctx context.Context, input *DeleteDraftInput) (*DeleteDraftOutput, error) {
 	if input == nil {
-		return nil, errors.InvalidArgument("input is required")
+		return nil, apierr.InvalidArgument("input is required")
 	}
 	if input.DraftID == "" {
-		return nil, errors.InvalidArgument("draft ID is required")
+		return nil, apierr.InvalidArgument("draft ID is required")
 	}
 
 	if _, err := o.draftRepo.Delete(ctx, characterdraft.DeleteInput{
@@ -153,7 +153,7 @@ func (o *Orchestrator) DeleteDraft(ctx context.Context, input *DeleteDraftInput)
 // GetRequirements returns the requirements for character creation choices
 func (o *Orchestrator) GetRequirements(_ context.Context, input *GetRequirementsInput) (*GetRequirementsOutput, error) {
 	if input == nil {
-		return nil, errors.InvalidArgument("input is required")
+		return nil, apierr.InvalidArgument("input is required")
 	}
 
 	// Default to level 1 if not specified
@@ -203,13 +203,13 @@ func (o *Orchestrator) GetRequirements(_ context.Context, input *GetRequirements
 // SetName sets the character name
 func (o *Orchestrator) SetName(ctx context.Context, input *SetNameInput) (*SetNameOutput, error) {
 	if input == nil {
-		return nil, errors.InvalidArgument("input is required")
+		return nil, apierr.InvalidArgument("input is required")
 	}
 	if input.DraftID == "" {
-		return nil, errors.InvalidArgument("draft ID is required")
+		return nil, apierr.InvalidArgument("draft ID is required")
 	}
 	if input.Name == "" {
-		return nil, errors.InvalidArgument("name is required")
+		return nil, apierr.InvalidArgument("name is required")
 	}
 
 	// Get draft
@@ -244,13 +244,13 @@ func (o *Orchestrator) SetName(ctx context.Context, input *SetNameInput) (*SetNa
 // SetRace sets the race with choices
 func (o *Orchestrator) SetRace(ctx context.Context, input *SetRaceInput) (*SetRaceOutput, error) {
 	if input == nil {
-		return nil, errors.InvalidArgument("input is required")
+		return nil, apierr.InvalidArgument("input is required")
 	}
 	if input.DraftID == "" {
-		return nil, errors.InvalidArgument("draft ID is required")
+		return nil, apierr.InvalidArgument("draft ID is required")
 	}
 	if input.Input == nil {
-		return nil, errors.InvalidArgument("race input is required")
+		return nil, apierr.InvalidArgument("race input is required")
 	}
 
 	// Get draft
@@ -294,13 +294,13 @@ func (o *Orchestrator) SetRace(ctx context.Context, input *SetRaceInput) (*SetRa
 // SetClass sets the class with choices
 func (o *Orchestrator) SetClass(ctx context.Context, input *SetClassInput) (*SetClassOutput, error) {
 	if input == nil {
-		return nil, errors.InvalidArgument("input is required")
+		return nil, apierr.InvalidArgument("input is required")
 	}
 	if input.DraftID == "" {
-		return nil, errors.InvalidArgument("draft ID is required")
+		return nil, apierr.InvalidArgument("draft ID is required")
 	}
 	if input.Input == nil {
-		return nil, errors.InvalidArgument("class input is required")
+		return nil, apierr.InvalidArgument("class input is required")
 	}
 
 	// Get draft
@@ -344,13 +344,13 @@ func (o *Orchestrator) SetClass(ctx context.Context, input *SetClassInput) (*Set
 // SetBackground sets the background with choices
 func (o *Orchestrator) SetBackground(ctx context.Context, input *SetBackgroundInput) (*SetBackgroundOutput, error) {
 	if input == nil {
-		return nil, errors.InvalidArgument("input is required")
+		return nil, apierr.InvalidArgument("input is required")
 	}
 	if input.DraftID == "" {
-		return nil, errors.InvalidArgument("draft ID is required")
+		return nil, apierr.InvalidArgument("draft ID is required")
 	}
 	if input.Input == nil {
-		return nil, errors.InvalidArgument("background input is required")
+		return nil, apierr.InvalidArgument("background input is required")
 	}
 
 	// Get draft
@@ -394,10 +394,10 @@ func (o *Orchestrator) SetBackground(ctx context.Context, input *SetBackgroundIn
 // SetAbilityScores sets ability scores
 func (o *Orchestrator) SetAbilityScores(ctx context.Context, input *SetAbilityScoresInput) (*SetAbilityScoresOutput, error) {
 	if input == nil {
-		return nil, errors.InvalidArgument("input is required")
+		return nil, apierr.InvalidArgument("input is required")
 	}
 	if input.DraftID == "" {
-		return nil, errors.InvalidArgument("draft ID is required")
+		return nil, apierr.InvalidArgument("draft ID is required")
 	}
 
 	// Get draft
@@ -432,13 +432,13 @@ func (o *Orchestrator) SetAbilityScores(ctx context.Context, input *SetAbilitySc
 // SetAbilityScoresFromRolls sets ability scores from dice roll assignments
 func (o *Orchestrator) SetAbilityScoresFromRolls(ctx context.Context, input *SetAbilityScoresFromRollsInput) (*SetAbilityScoresFromRollsOutput, error) {
 	if input == nil {
-		return nil, errors.InvalidArgument("input is required")
+		return nil, apierr.InvalidArgument("input is required")
 	}
 	if input.DraftID == "" {
-		return nil, errors.InvalidArgument("draft ID is required")
+		return nil, apierr.InvalidArgument("draft ID is required")
 	}
 	if len(input.RollAssignments) == 0 {
-		return nil, errors.InvalidArgument("roll assignments are required")
+		return nil, apierr.InvalidArgument("roll assignments are required")
 	}
 
 	// Get draft first - we might need it for player ID lookup
@@ -458,16 +458,16 @@ func (o *Orchestrator) SetAbilityScoresFromRolls(ctx context.Context, input *Set
 	if err != nil {
 		// If not found with draft ID, try with player ID
 		// (for backward compatibility with web app that might be using player ID)
-		if errors.IsNotFound(err) {
+		if apierr.IsNotFound(err) {
 			sessionOutput, err = o.diceService.GetRollSession(ctx, &dice.GetRollSessionInput{
 				EntityID: getOutput.Draft.PlayerID,
 				Context:  dice.ContextAbilityScores,
 			})
 			if err != nil {
-				return nil, errors.Wrap(err, "failed to get dice roll session (tried both draft ID and player ID)")
+				return nil, apierr.Wrap(err, "failed to get dice roll session (tried both draft ID and player ID)")
 			}
 		} else {
-			return nil, errors.Wrap(err, "failed to get dice roll session")
+			return nil, apierr.Wrap(err, "failed to get dice roll session")
 		}
 	}
 
@@ -483,7 +483,7 @@ func (o *Orchestrator) SetAbilityScoresFromRolls(ctx context.Context, input *Set
 		if total, ok := rollTotals[rollID]; ok {
 			scores[ability] = total
 		} else {
-			return nil, errors.InvalidArgument(fmt.Sprintf("roll ID %s not found in session", rollID))
+			return nil, apierr.InvalidArgument(fmt.Sprintf("roll ID %s not found in session", rollID))
 		}
 	}
 
@@ -515,10 +515,10 @@ func (o *Orchestrator) SetAbilityScoresFromRolls(ctx context.Context, input *Set
 // ValidateDraft validates a draft
 func (o *Orchestrator) ValidateDraft(ctx context.Context, input *ValidateDraftInput) (*ValidateDraftOutput, error) {
 	if input == nil {
-		return nil, errors.InvalidArgument("input is required")
+		return nil, apierr.InvalidArgument("input is required")
 	}
 	if input.DraftID == "" {
-		return nil, errors.InvalidArgument("draft ID is required")
+		return nil, apierr.InvalidArgument("draft ID is required")
 	}
 
 	// Get draft
@@ -574,10 +574,10 @@ func (o *Orchestrator) ValidateDraft(ctx context.Context, input *ValidateDraftIn
 // FinalizeDraft converts a draft to a character
 func (o *Orchestrator) FinalizeDraft(ctx context.Context, input *FinalizeDraftInput) (*FinalizeDraftOutput, error) {
 	if input == nil {
-		return nil, errors.InvalidArgument("input is required")
+		return nil, apierr.InvalidArgument("input is required")
 	}
 	if input.DraftID == "" {
-		return nil, errors.InvalidArgument("draft ID is required")
+		return nil, apierr.InvalidArgument("draft ID is required")
 	}
 
 	// Get draft
@@ -619,7 +619,7 @@ func (o *Orchestrator) FinalizeDraft(ctx context.Context, input *FinalizeDraftIn
 			}
 		}
 
-		return nil, errors.InvalidArgumentf("draft is incomplete - missing: %v (progress: %d%%)",
+		return nil, apierr.InvalidArgumentf("draft is incomplete - missing: %v (progress: %d%%)",
 			missing, progress.PercentComplete())
 	}
 
@@ -758,10 +758,10 @@ func (o *Orchestrator) RollAbilityScores(ctx context.Context, input *RollAbility
 // ListDrafts returns drafts for a player or session
 func (o *Orchestrator) ListDrafts(ctx context.Context, input *ListDraftsInput) (*ListDraftsOutput, error) {
 	if input == nil {
-		return nil, errors.InvalidArgument("input is required")
+		return nil, apierr.InvalidArgument("input is required")
 	}
 	if input.PlayerID == "" {
-		return nil, errors.InvalidArgument("player ID is required")
+		return nil, apierr.InvalidArgument("player ID is required")
 	}
 
 	// The repository uses a single-draft-per-player pattern
@@ -771,7 +771,7 @@ func (o *Orchestrator) ListDrafts(ctx context.Context, input *ListDraftsInput) (
 	})
 	if err != nil {
 		// If not found, return empty list
-		if errors.IsNotFound(err) {
+		if apierr.IsNotFound(err) {
 			return &ListDraftsOutput{
 				Drafts:        []*character.DraftData{},
 				NextPageToken: "",
@@ -790,10 +790,10 @@ func (o *Orchestrator) ListDrafts(ctx context.Context, input *ListDraftsInput) (
 // GetCharacter retrieves a character by ID
 func (o *Orchestrator) GetCharacter(ctx context.Context, input *GetCharacterInput) (*GetCharacterOutput, error) {
 	if input == nil {
-		return nil, errors.InvalidArgument("input is required")
+		return nil, apierr.InvalidArgument("input is required")
 	}
 	if input.CharacterID == "" {
-		return nil, errors.InvalidArgument("character ID is required")
+		return nil, apierr.InvalidArgument("character ID is required")
 	}
 
 	// Get character from repository - equipment slots are part of character.Data
@@ -812,16 +812,16 @@ func (o *Orchestrator) GetCharacter(ctx context.Context, input *GetCharacterInpu
 // EquipItem equips an item to a specific slot
 func (o *Orchestrator) EquipItem(ctx context.Context, input *EquipItemInput) (*EquipItemOutput, error) {
 	if input == nil {
-		return nil, errors.InvalidArgument("input is required")
+		return nil, apierr.InvalidArgument("input is required")
 	}
 	if input.CharacterID == "" {
-		return nil, errors.InvalidArgument("character ID is required")
+		return nil, apierr.InvalidArgument("character ID is required")
 	}
 	if input.ItemID == "" {
-		return nil, errors.InvalidArgument("item ID is required")
+		return nil, apierr.InvalidArgument("item ID is required")
 	}
 	if input.Slot == "" {
-		return nil, errors.InvalidArgument("slot is required")
+		return nil, apierr.InvalidArgument("slot is required")
 	}
 
 	// Get character data
@@ -861,13 +861,13 @@ func (o *Orchestrator) EquipItem(ctx context.Context, input *EquipItemInput) (*E
 // UnequipItem removes an item from a slot
 func (o *Orchestrator) UnequipItem(ctx context.Context, input *UnequipItemInput) (*UnequipItemOutput, error) {
 	if input == nil {
-		return nil, errors.InvalidArgument("input is required")
+		return nil, apierr.InvalidArgument("input is required")
 	}
 	if input.CharacterID == "" {
-		return nil, errors.InvalidArgument("character ID is required")
+		return nil, apierr.InvalidArgument("character ID is required")
 	}
 	if input.Slot == "" {
-		return nil, errors.InvalidArgument("slot is required")
+		return nil, apierr.InvalidArgument("slot is required")
 	}
 
 	// Get character data
@@ -902,7 +902,7 @@ func (o *Orchestrator) UnequipItem(ctx context.Context, input *UnequipItemInput)
 // ListCharacters returns characters for a player or session
 func (o *Orchestrator) ListCharacters(ctx context.Context, input *ListCharactersInput) (*ListCharactersOutput, error) {
 	if input == nil {
-		return nil, errors.InvalidArgument("input is required")
+		return nil, apierr.InvalidArgument("input is required")
 	}
 
 	// List by player ID (primary use case)
@@ -938,16 +938,16 @@ func (o *Orchestrator) ListCharacters(ctx context.Context, input *ListCharacters
 	}
 
 	// No filter provided - return error
-	return nil, errors.InvalidArgument("either player_id or session_id must be provided")
+	return nil, apierr.InvalidArgument("either player_id or session_id must be provided")
 }
 
 // DeleteCharacter deletes a character permanently
 func (o *Orchestrator) DeleteCharacter(ctx context.Context, input *DeleteCharacterInput) (*DeleteCharacterOutput, error) {
 	if input == nil {
-		return nil, errors.InvalidArgument("input is required")
+		return nil, apierr.InvalidArgument("input is required")
 	}
 	if input.CharacterID == "" {
-		return nil, errors.InvalidArgument("character ID is required")
+		return nil, apierr.InvalidArgument("character ID is required")
 	}
 
 	// Delete from repository
@@ -976,12 +976,12 @@ func (o *Orchestrator) ListEquipmentByType(_ context.Context, input *ListEquipme
 // ListSpellsByLevel returns spells of a specific level with their info
 func (o *Orchestrator) ListSpellsByLevel(_ context.Context, input *ListSpellsByLevelInput) (*ListSpellsByLevelOutput, error) {
 	if input == nil {
-		return nil, errors.InvalidArgument("input is required")
+		return nil, apierr.InvalidArgument("input is required")
 	}
 
 	// Validate spell level
 	if input.Level < 0 || input.Level > 9 {
-		return nil, errors.InvalidArgument("spell level must be between 0 (cantrips) and 9")
+		return nil, apierr.InvalidArgument("spell level must be between 0 (cantrips) and 9")
 	}
 
 	// Get all spells for the requested level from the toolkit

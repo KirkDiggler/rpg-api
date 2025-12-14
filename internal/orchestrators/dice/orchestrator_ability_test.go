@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
-	"github.com/KirkDiggler/rpg-api/internal/errors"
+	"github.com/KirkDiggler/rpg-api/internal/apierr"
 	"github.com/KirkDiggler/rpg-api/internal/pkg/idgen"
 	dicesession "github.com/KirkDiggler/rpg-api/internal/repositories/dice_session"
 	dicemock "github.com/KirkDiggler/rpg-api/internal/repositories/dice_session/mock"
@@ -43,7 +43,7 @@ func TestOrchestrator_RollDice_AbilityScores(t *testing.T) {
 				EntityID: "player-123",
 				Context:  ContextAbilityScores,
 			}).
-			Return(nil, errors.NotFound("session not found"))
+			Return(nil, apierr.NotFound("session not found"))
 
 		// Mock creating a new session
 		mockRepo.EXPECT().
@@ -105,7 +105,7 @@ func TestOrchestrator_RollDice_AbilityScores(t *testing.T) {
 				EntityID: "player-123",
 				Context:  "damage_rolls",
 			}).
-			Return(nil, errors.NotFound("session not found"))
+			Return(nil, apierr.NotFound("session not found"))
 
 		// Mock creating a new session
 		mockRepo.EXPECT().
