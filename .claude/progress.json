@@ -1,0 +1,12 @@
+{
+  "branch": "feat/multiplayer-event-types-277",
+  "issues": ["#277"],
+  "goal": "Add event types and Redis pub/sub publisher infrastructure for multiplayer",
+  "sessions": [],
+  "next_steps": [
+    "Create internal/entities/encounter_events.go with event types",
+    "Create internal/publishers/encounter/publisher.go with interface",
+    "Create internal/publishers/encounter/redis.go implementation",
+    "Add unit tests for publisher"
+  ]
+}
