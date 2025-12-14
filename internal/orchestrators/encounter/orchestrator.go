@@ -1217,17 +1217,17 @@ func (o *Orchestrator) JoinEncounter(
 		JoinCode: input.JoinCode,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("encounter not found: %w", err)
+		return nil, ErrEncounterNotFound
 	}
 
 	// 3. Validate encounter state
 	if encOutput.Data.State != encounterrepo.StateWaiting {
-		return nil, fmt.Errorf("cannot join encounter: combat already started")
+		return nil, ErrCombatAlreadyStarted
 	}
 
 	// 4. Check if player is already in encounter
 	if _, exists := encOutput.Data.Players[input.PlayerID]; exists {
-		return nil, fmt.Errorf("player already in encounter")
+		return nil, ErrPlayerAlreadyInEncounter
 	}
 
 	// 5. Add player to encounter
@@ -1283,18 +1283,18 @@ func (o *Orchestrator) SetReady(
 		EncounterID: input.EncounterID,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("encounter not found: %w", err)
+		return nil, ErrEncounterNotFound
 	}
 
 	// 3. Validate state
 	if encOutput.Data.State != encounterrepo.StateWaiting {
-		return nil, fmt.Errorf("cannot change ready status: combat already started")
+		return nil, ErrCombatAlreadyStarted
 	}
 
 	// 4. Find and update player
 	player, exists := encOutput.Data.Players[input.PlayerID]
 	if !exists {
-		return nil, fmt.Errorf("player not in encounter")
+		return nil, ErrPlayerNotInEncounter
 	}
 	player.IsReady = input.IsReady
 
@@ -1331,23 +1331,23 @@ func (o *Orchestrator) StartCombat(
 		EncounterID: input.EncounterID,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("encounter not found: %w", err)
+		return nil, ErrEncounterNotFound
 	}
 
 	// 3. Validate state
 	if encOutput.Data.State != encounterrepo.StateWaiting {
-		return nil, fmt.Errorf("cannot start combat: encounter not in waiting state")
+		return nil, ErrCombatAlreadyStarted
 	}
 
 	// 4. Validate caller is host
 	if encOutput.Data.HostID != input.PlayerID {
-		return nil, fmt.Errorf("only the host can start combat")
+		return nil, ErrNotHost
 	}
 
 	// 5. Validate all players are ready
-	for playerID, player := range encOutput.Data.Players {
+	for _, player := range encOutput.Data.Players {
 		if !player.IsReady {
-			return nil, fmt.Errorf("cannot start combat: player %s is not ready", playerID)
+			return nil, ErrPlayersNotReady
 		}
 	}
 
@@ -1496,12 +1496,12 @@ func (o *Orchestrator) LeaveEncounter(
 		EncounterID: input.EncounterID,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("encounter not found: %w", err)
+		return nil, ErrEncounterNotFound
 	}
 
 	// 3. Check if player is in encounter
 	if _, exists := encOutput.Data.Players[input.PlayerID]; !exists {
-		return nil, fmt.Errorf("player not in encounter")
+		return nil, ErrPlayerNotInEncounter
 	}
 
 	// 4. Remove player

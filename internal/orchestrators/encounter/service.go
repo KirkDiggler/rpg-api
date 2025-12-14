@@ -2,9 +2,31 @@ package encounter
 
 import (
 	"context"
+	"errors"
 
 	"github.com/KirkDiggler/rpg-toolkit/core"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/damage"
+)
+
+// Sentinel errors for encounter operations
+var (
+	// ErrEncounterNotFound is returned when an encounter cannot be found
+	ErrEncounterNotFound = errors.New("encounter not found")
+
+	// ErrPlayerNotInEncounter is returned when a player is not part of the encounter
+	ErrPlayerNotInEncounter = errors.New("player not in encounter")
+
+	// ErrPlayerAlreadyInEncounter is returned when a player tries to join an encounter they're already in
+	ErrPlayerAlreadyInEncounter = errors.New("player already in encounter")
+
+	// ErrCombatAlreadyStarted is returned when an action requires waiting state but combat has started
+	ErrCombatAlreadyStarted = errors.New("combat already started")
+
+	// ErrNotHost is returned when a non-host player tries to perform a host-only action
+	ErrNotHost = errors.New("only the host can perform this action")
+
+	// ErrPlayersNotReady is returned when trying to start combat but not all players are ready
+	ErrPlayersNotReady = errors.New("not all players are ready")
 )
 
 //go:generate mockgen -destination=mock/mock_service.go -package=encountermock github.com/KirkDiggler/rpg-api/internal/orchestrators/encounter Service

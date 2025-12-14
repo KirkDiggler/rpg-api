@@ -1075,9 +1075,10 @@ func (s *HandlerTestSuite) TestActivateFeature_ServiceError() {
 // TestCreateEncounter_Success tests successful encounter creation
 func (s *HandlerTestSuite) TestCreateEncounter_Success() {
 	// Arrange
+	ctx := auth.WithPlayerID(context.Background(), "test-player-1")
 	s.mockService.EXPECT().
 		CreateEncounter(gomock.Any(), &encounter.CreateEncounterInput{
-			PlayerID:     "player-char-1", // Handler generates this from character ID
+			PlayerID:     "test-player-1",
 			CharacterIDs: []string{"char-1"},
 		}).
 		Return(&encounter.CreateEncounterOutput{
@@ -1087,7 +1088,7 @@ func (s *HandlerTestSuite) TestCreateEncounter_Success() {
 		}, nil)
 
 	// Act
-	resp, err := s.handler.CreateEncounter(context.Background(), &dnd5ev1alpha1.CreateEncounterRequest{
+	resp, err := s.handler.CreateEncounter(ctx, &dnd5ev1alpha1.CreateEncounterRequest{
 		CharacterIds: []string{"char-1"},
 	})
 
@@ -1118,10 +1119,11 @@ func (s *HandlerTestSuite) TestCreateEncounter_MissingCharacterIds() {
 // TestJoinEncounter_Success tests successful encounter joining
 func (s *HandlerTestSuite) TestJoinEncounter_Success() {
 	// Arrange
+	ctx := auth.WithPlayerID(context.Background(), "test-player-2")
 	s.mockService.EXPECT().
 		JoinEncounter(gomock.Any(), &encounter.JoinEncounterInput{
 			JoinCode:     "ABC123",
-			PlayerID:     "player-char-2",
+			PlayerID:     "test-player-2",
 			CharacterIDs: []string{"char-2"},
 		}).
 		Return(&encounter.JoinEncounterOutput{
@@ -1129,13 +1131,13 @@ func (s *HandlerTestSuite) TestJoinEncounter_Success() {
 			Room:        nil,
 			Party: []*encounter.PartyMember{
 				{PlayerID: "player-1", CharacterID: "char-1", IsHost: true, IsReady: true, IsConnected: true},
-				{PlayerID: "player-2", CharacterID: "char-2", IsHost: false, IsReady: false, IsConnected: true},
+				{PlayerID: "test-player-2", CharacterID: "char-2", IsHost: false, IsReady: false, IsConnected: true},
 			},
 			State: "waiting",
 		}, nil)
 
 	// Act
-	resp, err := s.handler.JoinEncounter(context.Background(), &dnd5ev1alpha1.JoinEncounterRequest{
+	resp, err := s.handler.JoinEncounter(ctx, &dnd5ev1alpha1.JoinEncounterRequest{
 		JoinCode:     "ABC123",
 		CharacterIds: []string{"char-2"},
 	})
@@ -1212,10 +1214,11 @@ func (s *HandlerTestSuite) TestSetReady_MissingEncounterId() {
 // TestStartCombat_Success tests successful combat start
 func (s *HandlerTestSuite) TestStartCombat_Success() {
 	// Arrange
+	ctx := auth.WithPlayerID(context.Background(), "test-host-player")
 	s.mockService.EXPECT().
 		StartCombat(gomock.Any(), &encounter.StartCombatInput{
 			EncounterID: "enc-1",
-			PlayerID:    "", // No auth yet
+			PlayerID:    "test-host-player",
 		}).
 		Return(&encounter.StartCombatOutput{
 			CombatState: &encounter.CombatState{
@@ -1231,7 +1234,7 @@ func (s *HandlerTestSuite) TestStartCombat_Success() {
 		}, nil)
 
 	// Act
-	resp, err := s.handler.StartCombat(context.Background(), &dnd5ev1alpha1.StartCombatRequest{
+	resp, err := s.handler.StartCombat(ctx, &dnd5ev1alpha1.StartCombatRequest{
 		EncounterId: "enc-1",
 	})
 

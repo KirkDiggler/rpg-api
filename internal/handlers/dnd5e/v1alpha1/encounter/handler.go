@@ -3,13 +3,14 @@ package encounter
 
 import (
 	"context"
+	"errors"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
-	"github.com/KirkDiggler/rpg-api/internal/errors"
+	apierrors "github.com/KirkDiggler/rpg-api/internal/errors"
 	characterhandler "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v1alpha1/character"
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/encounter"
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
@@ -24,7 +25,7 @@ type HandlerConfig struct {
 // Validate ensures all required dependencies are present
 func (c *HandlerConfig) Validate() error {
 	if c.EncounterService == nil {
-		return errors.InvalidArgument("encounter service is required")
+		return apierrors.InvalidArgument("encounter service is required")
 	}
 	return nil
 }
@@ -279,11 +280,10 @@ func (h *Handler) CreateEncounter(
 		return nil, status.Error(codes.InvalidArgument, "character_ids is required")
 	}
 
-	// TODO: Get player_id from authentication context
-	// For now, use first character ID as player ID placeholder
-	playerID := "player-" + req.GetCharacterIds()[0]
+	// 2. Get player ID from auth context
+	playerID := auth.GetPlayerID(ctx)
 
-	// 2. Call orchestrator
+	// 3. Call orchestrator
 	output, err := h.encounterService.CreateEncounter(ctx, &encounter.CreateEncounterInput{
 		PlayerID:     playerID,
 		CharacterIDs: req.GetCharacterIds(),
@@ -292,7 +292,7 @@ func (h *Handler) CreateEncounter(
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
-	// 3. Convert response
+	// 4. Convert response
 	return &dnd5ev1alpha1.CreateEncounterResponse{
 		EncounterId: output.EncounterID,
 		JoinCode:    output.JoinCode,
@@ -313,23 +313,23 @@ func (h *Handler) JoinEncounter(
 		return nil, status.Error(codes.InvalidArgument, "character_ids is required")
 	}
 
-	// TODO: Get player_id from authentication context
-	playerID := "player-" + req.GetCharacterIds()[0]
+	// 2. Get player ID from auth context
+	playerID := auth.GetPlayerID(ctx)
 
-	// 2. Call orchestrator
+	// 3. Call orchestrator
 	output, err := h.encounterService.JoinEncounter(ctx, &encounter.JoinEncounterInput{
 		JoinCode:     req.GetJoinCode(),
 		PlayerID:     playerID,
 		CharacterIDs: req.GetCharacterIds(),
 	})
 	if err != nil {
-		if err.Error() == "encounter not found" {
+		if errors.Is(err, encounter.ErrEncounterNotFound) {
 			return nil, status.Error(codes.NotFound, err.Error())
 		}
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
-	// 3. Convert response
+	// 4. Convert response
 	return &dnd5ev1alpha1.JoinEncounterResponse{
 		EncounterId: output.EncounterID,
 		Room:        convertRoomDataToProto(output.Room),
@@ -377,20 +377,28 @@ func (h *Handler) StartCombat(
 		return nil, status.Error(codes.InvalidArgument, "encounter_id is required")
 	}
 
-	// TODO: Get player_id from authentication context
-	// For now, we need a way to identify the caller
-	playerID := "" // Will fail if not host - handled by orchestrator
+	// 2. Get player ID from auth context
+	playerID := auth.GetPlayerID(ctx)
 
-	// 2. Call orchestrator
+	// 3. Call orchestrator
 	output, err := h.encounterService.StartCombat(ctx, &encounter.StartCombatInput{
 		EncounterID: req.GetEncounterId(),
 		PlayerID:    playerID,
 	})
 	if err != nil {
+		if errors.Is(err, encounter.ErrNotHost) {
+			return nil, status.Error(codes.PermissionDenied, err.Error())
+		}
+		if errors.Is(err, encounter.ErrPlayersNotReady) {
+			return nil, status.Error(codes.FailedPrecondition, err.Error())
+		}
+		if errors.Is(err, encounter.ErrEncounterNotFound) {
+			return nil, status.Error(codes.NotFound, err.Error())
+		}
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
-	// 3. Convert response
+	// 4. Convert response
 	gridType := spatial.GridTypeHex
 	hexOrientation := spatial.HexOrientationPointyTop
 
