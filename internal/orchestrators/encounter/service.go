@@ -4,8 +4,16 @@ import (
 	"context"
 	"errors"
 
+	"github.com/KirkDiggler/rpg-api/internal/entities"
 	"github.com/KirkDiggler/rpg-toolkit/core"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/damage"
+)
+
+// Type aliases to entities - these are the canonical types
+type (
+	CombatState     = entities.CombatState
+	InitiativeEntry = entities.InitiativeEntry
+	Position        = entities.Position
 )
 
 // Sentinel errors for encounter operations
@@ -165,40 +173,12 @@ type CreateDungeonOutput struct {
 	MonsterTurns []*MonsterTurnResult // Monster turns if monsters go first in initiative
 }
 
-// CombatState represents the state of combat in an encounter
-type CombatState struct {
-	EncounterID       string
-	Round             int
-	TurnOrder         []InitiativeEntry
-	ActiveIndex       int
-	MovementRemaining int32 // Movement remaining for the active turn
-	CombatStarted     bool
-	CombatEnded       bool
-}
-
-// InitiativeEntry represents one entity in the initiative order
-type InitiativeEntry struct {
-	EntityID           string
-	EntityType         string
-	InitiativeRoll     int       // The d20 roll
-	InitiativeModifier int       // DEX modifier
-	InitiativeTotal    int       // Roll + Modifier
-	Position           *Position // Entity's position in the room
-}
-
 // MoveCharacterInput contains movement parameters
 // Phase 2: Simple movement to a single target position
 type MoveCharacterInput struct {
 	EncounterID    string    // ID of the encounter
 	EntityID       string    // ID of entity being moved
 	TargetPosition *Position // Target position to move to
-}
-
-// Position represents a 2D position in the room
-// This mirrors spatial.Position for handler layer use
-type Position struct {
-	X float64
-	Y float64
 }
 
 // MoveCharacterOutput returns movement results

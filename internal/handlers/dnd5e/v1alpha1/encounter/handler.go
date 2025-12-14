@@ -560,10 +560,30 @@ func (h *Handler) convertToProtoEvent(event *entities.EncounterEvent) (*dnd5ev1a
 		}
 
 	case entities.EventTypeCombatStarted:
-		// CombatStarted has complex nested data - for now, send simplified version
+		if event.CombatStarted == nil {
+			return nil, fmt.Errorf("missing CombatStarted data for CombatStartedEvent")
+		}
+		// Convert party members
+		var protoParty []*dnd5ev1alpha1.PartyMember
+		if event.CombatStarted.Party != nil {
+			protoParty = make([]*dnd5ev1alpha1.PartyMember, len(event.CombatStarted.Party))
+			for i, p := range event.CombatStarted.Party {
+				protoParty[i] = &dnd5ev1alpha1.PartyMember{
+					PlayerId:    p.PlayerID,
+					IsHost:      p.IsHost,
+					IsReady:     p.IsReady,
+					IsConnected: p.IsConnected,
+				}
+			}
+		}
+		// Use default grid settings for event conversion
+		gridType := spatial.GridTypeHex
+		hexOrientation := spatial.HexOrientationPointyTop
 		protoEvent.Event = &dnd5ev1alpha1.EncounterEvent_CombatStarted{
 			CombatStarted: &dnd5ev1alpha1.CombatStartedEvent{
-				// TODO: Convert full combat state from event.CombatStarted
+				CombatState: convertCombatStateToProto(event.CombatStarted.CombatState, gridType, hexOrientation),
+				Room:        convertRoomDataToProto(event.CombatStarted.Room),
+				Party:       protoParty,
 			},
 		}
 

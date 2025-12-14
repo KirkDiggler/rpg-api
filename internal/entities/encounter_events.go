@@ -3,6 +3,8 @@ package entities
 
 import (
 	"time"
+
+	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
 )
 
 // EventType represents different types of encounter events
@@ -92,7 +94,9 @@ type PlayerReconnectedEvent struct {
 
 // CombatStartedEvent is emitted when combat begins
 type CombatStartedEvent struct {
-	CombatState interface{} `json:"combat_state"` // Full combat state including initiative order
+	CombatState *CombatState      `json:"combat_state"` // Full combat state including initiative order
+	Room        *spatial.RoomData `json:"room"`         // Room with entity positions
+	Party       []*Player         `json:"party"`        // Party members at combat start
 }
 
 // CombatEndedEvent is emitted when combat ends
@@ -113,12 +117,12 @@ type CombatResumedEvent struct {
 
 // MovementCompletedEvent is emitted when an entity completes movement
 type MovementCompletedEvent struct {
-	EntityID          string      `json:"entity_id"`
-	EntityType        string      `json:"entity_type"` // "character" or "monster"
-	FinalPosition     interface{} `json:"final_position"`
-	MovementRemaining int32       `json:"movement_remaining"`
-	StopReason        string      `json:"stop_reason"` // "completed", "position_occupied", etc.
-	UpdatedRoom       interface{} `json:"updated_room,omitempty"`
+	EntityID          string            `json:"entity_id"`
+	EntityType        string            `json:"entity_type"` // "character" or "monster"
+	FinalPosition     *Position         `json:"final_position"`
+	MovementRemaining int32             `json:"movement_remaining"`
+	StopReason        string            `json:"stop_reason"` // "completed", "position_occupied", etc.
+	UpdatedRoom       *spatial.RoomData `json:"updated_room,omitempty"`
 }
 
 // AttackResolvedEvent is emitted when an attack is resolved
@@ -141,11 +145,11 @@ type FeatureActivatedEvent struct {
 
 // TurnEndedEvent is emitted when a turn ends
 type TurnEndedEvent struct {
-	PreviousEntityID string      `json:"previous_entity_id"`
-	NextEntityID     string      `json:"next_entity_id"`
-	Round            int         `json:"round"`
-	NewRound         bool        `json:"new_round"`
-	CombatState      interface{} `json:"combat_state"` // Full updated combat state
+	PreviousEntityID string       `json:"previous_entity_id"`
+	NextEntityID     string       `json:"next_entity_id"`
+	Round            int          `json:"round"`
+	NewRound         bool         `json:"new_round"`
+	CombatState      *CombatState `json:"combat_state"` // Full updated combat state
 }
 
 // MonsterTurnCompletedEvent is emitted when a monster completes its turn

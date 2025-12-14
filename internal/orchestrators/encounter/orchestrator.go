@@ -1640,9 +1640,24 @@ func (o *Orchestrator) StartCombat(
 
 	// TODO: Execute monster turns if they go first
 
-	// 12. Publish CombatStarted event
+	// 12. Build party list for event
+	party := make([]*entities.Player, 0, len(encOutput.Data.Players))
+	for _, player := range encOutput.Data.Players {
+		party = append(party, &entities.Player{
+			PlayerID:    player.PlayerID,
+			CharacterID: player.CharacterID,
+			IsReady:     player.IsReady,
+			IsConnected: player.IsConnected,
+			IsHost:      player.PlayerID == encOutput.Data.HostID,
+			JoinedAt:    player.JoinedAt,
+		})
+	}
+
+	// 13. Publish CombatStarted event
 	o.publishEvent(ctx, input.EncounterID, entities.EventTypeCombatStarted, &entities.CombatStartedEvent{
 		CombatState: combatState,
+		Room:        roomData,
+		Party:       party,
 	})
 
 	return &StartCombatOutput{
