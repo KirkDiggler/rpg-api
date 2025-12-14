@@ -12,6 +12,7 @@ import (
 
 	apiv1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/api/v1alpha1"
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
+	"github.com/KirkDiggler/rpg-api/internal/auth"
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/encounter"
 	encountermock "github.com/KirkDiggler/rpg-api/internal/orchestrators/encounter/mock"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/refs"
@@ -740,6 +741,7 @@ func (s *HandlerTestSuite) TestEndTurn_Success() {
 	s.mockService.EXPECT().
 		EndTurn(gomock.Any(), &encounter.EndTurnInput{
 			EncounterID: "enc-1",
+			PlayerID:    "test-player",
 		}).
 		Return(&encounter.EndTurnOutput{
 			CombatState: &encounter.CombatState{
@@ -762,8 +764,9 @@ func (s *HandlerTestSuite) TestEndTurn_Success() {
 			},
 		}, nil)
 
-	// Act - Client only sends encounter_id
-	resp, err := s.handler.EndTurn(context.Background(), &dnd5ev1alpha1.EndTurnRequest{
+	// Act - Client only sends encounter_id, player ID comes from auth context
+	ctx := auth.WithPlayerID(context.Background(), "test-player")
+	resp, err := s.handler.EndTurn(ctx, &dnd5ev1alpha1.EndTurnRequest{
 		EncounterId: "enc-1",
 	})
 
@@ -794,6 +797,7 @@ func (s *HandlerTestSuite) TestEndTurn_NewRound() {
 	s.mockService.EXPECT().
 		EndTurn(gomock.Any(), &encounter.EndTurnInput{
 			EncounterID: "enc-1",
+			PlayerID:    "test-player",
 		}).
 		Return(&encounter.EndTurnOutput{
 			CombatState: &encounter.CombatState{
@@ -816,8 +820,9 @@ func (s *HandlerTestSuite) TestEndTurn_NewRound() {
 			},
 		}, nil)
 
-	// Act - Client only sends encounter_id
-	resp, err := s.handler.EndTurn(context.Background(), &dnd5ev1alpha1.EndTurnRequest{
+	// Act - Client only sends encounter_id, player ID comes from auth context
+	ctx := auth.WithPlayerID(context.Background(), "test-player")
+	resp, err := s.handler.EndTurn(ctx, &dnd5ev1alpha1.EndTurnRequest{
 		EncounterId: "enc-1",
 	})
 
@@ -831,8 +836,9 @@ func (s *HandlerTestSuite) TestEndTurn_NewRound() {
 
 // TestEndTurn_MissingEncounterId tests validation for missing encounter_id
 func (s *HandlerTestSuite) TestEndTurn_MissingEncounterId() {
-	// Act
-	resp, err := s.handler.EndTurn(context.Background(), &dnd5ev1alpha1.EndTurnRequest{
+	// Act - need auth context even though encounter_id is missing
+	ctx := auth.WithPlayerID(context.Background(), "test-player")
+	resp, err := s.handler.EndTurn(ctx, &dnd5ev1alpha1.EndTurnRequest{
 		EntityId: "char-1",
 	})
 
@@ -846,17 +852,36 @@ func (s *HandlerTestSuite) TestEndTurn_MissingEncounterId() {
 	s.Assert().Contains(st.Message(), "encounter_id is required")
 }
 
+// TestEndTurn_Unauthenticated tests that EndTurn requires authentication
+func (s *HandlerTestSuite) TestEndTurn_Unauthenticated() {
+	// Act - no auth context
+	resp, err := s.handler.EndTurn(context.Background(), &dnd5ev1alpha1.EndTurnRequest{
+		EncounterId: "enc-1",
+	})
+
+	// Assert
+	s.Require().Error(err)
+	s.Assert().Nil(resp)
+
+	st, ok := status.FromError(err)
+	s.Require().True(ok)
+	s.Assert().Equal(codes.Unauthenticated, st.Code())
+	s.Assert().Contains(st.Message(), "player not authenticated")
+}
+
 // TestEndTurn_ServiceError tests handling of service errors
 func (s *HandlerTestSuite) TestEndTurn_ServiceError() {
 	// Arrange
 	s.mockService.EXPECT().
 		EndTurn(gomock.Any(), &encounter.EndTurnInput{
 			EncounterID: "enc-1",
+			PlayerID:    "test-player",
 		}).
 		Return(nil, fmt.Errorf("database error"))
 
-	// Act - Client only sends encounter_id
-	resp, err := s.handler.EndTurn(context.Background(), &dnd5ev1alpha1.EndTurnRequest{
+	// Act - Client only sends encounter_id, player ID comes from auth context
+	ctx := auth.WithPlayerID(context.Background(), "test-player")
+	resp, err := s.handler.EndTurn(ctx, &dnd5ev1alpha1.EndTurnRequest{
 		EncounterId: "enc-1",
 	})
 
