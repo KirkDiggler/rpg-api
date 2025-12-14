@@ -139,6 +139,7 @@ type UpdateInput struct {
 
 	// Multiplayer fields (optional - only update if provided)
 	State   *EncounterState    // State transition (waiting->active, etc.)
+	HostID  *string            // New host ID (for host transfer when host leaves)
 	Players map[string]*Player // Updated player map (ready status, connection status)
 }
 

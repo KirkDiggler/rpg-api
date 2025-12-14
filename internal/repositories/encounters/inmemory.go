@@ -161,6 +161,9 @@ func (r *InMemoryRepository) Update(_ context.Context, input *UpdateInput) (*Upd
 	if input.State != nil {
 		data.State = *input.State
 	}
+	if input.HostID != nil {
+		data.HostID = *input.HostID
+	}
 	if input.Players != nil {
 		data.Players = input.Players
 	}

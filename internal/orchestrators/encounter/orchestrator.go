@@ -1522,19 +1522,19 @@ func (o *Orchestrator) LeaveEncounter(
 	}
 
 	// 6. If leaving player was host, transfer host to next player
+	var newHostID *string
 	if encOutput.Data.HostID == input.PlayerID {
 		// Find first remaining player to be new host
-		for newHostID := range encOutput.Data.Players {
-			encOutput.Data.HostID = newHostID
+		for playerID := range encOutput.Data.Players {
+			newHostID = &playerID
 			break
 		}
-		// Note: We'd need to update HostID in repo, but current UpdateInput
-		// doesn't support it. For now, host transfer is best-effort in memory.
 	}
 
 	// 7. Update encounter
 	_, err = o.encRepo.Update(ctx, &encounterrepo.UpdateInput{
 		EncounterID: input.EncounterID,
+		HostID:      newHostID,
 		Players:     encOutput.Data.Players,
 	})
 	if err != nil {
