@@ -14,17 +14,27 @@ import (
 const (
 	authorizationHeader = "authorization"
 	discordScheme       = "Discord "
+	devScheme           = "Dev "
 )
 
+// InterceptorConfig configures the auth interceptors.
+type InterceptorConfig struct {
+	// DevMode allows the "Dev <player_id>" scheme for local development.
+	// When true, requests with Dev scheme bypass Discord validation.
+	// NEVER enable in production!
+	DevMode bool
+}
+
 // UnaryAuthInterceptor returns a gRPC unary interceptor that validates Discord tokens.
-func UnaryAuthInterceptor(validator TokenValidator, cache *TokenCache) grpc.UnaryServerInterceptor {
+func UnaryAuthInterceptor(validator TokenValidator, cache *TokenCache, cfg *InterceptorConfig) grpc.UnaryServerInterceptor {
+	devMode := cfg != nil && cfg.DevMode
 	return func(
 		ctx context.Context,
 		req interface{},
 		info *grpc.UnaryServerInfo,
 		handler grpc.UnaryHandler,
 	) (interface{}, error) {
-		newCtx, err := authenticate(ctx, validator, cache)
+		newCtx, err := authenticate(ctx, validator, cache, devMode)
 		if err != nil {
 			return nil, err
 		}
@@ -33,7 +43,8 @@ func UnaryAuthInterceptor(validator TokenValidator, cache *TokenCache) grpc.Unar
 }
 
 // StreamAuthInterceptor returns a gRPC stream interceptor that validates Discord tokens.
-func StreamAuthInterceptor(validator TokenValidator, cache *TokenCache) grpc.StreamServerInterceptor {
+func StreamAuthInterceptor(validator TokenValidator, cache *TokenCache, cfg *InterceptorConfig) grpc.StreamServerInterceptor {
+	devMode := cfg != nil && cfg.DevMode
 	return func(
 		srv interface{},
 		ss grpc.ServerStream,
@@ -41,7 +52,7 @@ func StreamAuthInterceptor(validator TokenValidator, cache *TokenCache) grpc.Str
 		handler grpc.StreamHandler,
 	) error {
 		ctx := ss.Context()
-		newCtx, err := authenticate(ctx, validator, cache)
+		newCtx, err := authenticate(ctx, validator, cache, devMode)
 		if err != nil {
 			return err
 		}
@@ -62,12 +73,24 @@ func (w *wrappedServerStream) Context() context.Context {
 	return w.ctx
 }
 
-// authenticate extracts and validates the Discord token from the request context.
-func authenticate(ctx context.Context, validator TokenValidator, cache *TokenCache) (context.Context, error) {
-	token, err := extractToken(ctx)
+// authenticate extracts and validates authentication from the request context.
+func authenticate(ctx context.Context, validator TokenValidator, cache *TokenCache, devMode bool) (context.Context, error) {
+	info, err := extractAuthInfo(ctx)
 	if err != nil {
 		return nil, status.Error(codes.Unauthenticated, err.Error())
 	}
+
+	// Handle Dev scheme (development only)
+	if info.scheme == "dev" {
+		if !devMode {
+			return nil, status.Error(codes.Unauthenticated, "Dev authentication not allowed")
+		}
+		// In dev mode, use the player ID directly without Discord validation
+		return WithPlayerID(ctx, info.value), nil
+	}
+
+	// Handle Discord scheme - validate token
+	token := info.value
 
 	// Check cache first
 	if userID, ok := cache.Get(token); ok {
@@ -92,27 +115,46 @@ func authenticate(ctx context.Context, validator TokenValidator, cache *TokenCac
 	return WithPlayerID(ctx, user.ID), nil
 }
 
-// extractToken extracts the Discord token from the authorization header.
-func extractToken(ctx context.Context) (string, error) {
+// authInfo contains extracted authentication information.
+type authInfo struct {
+	scheme string
+	value  string // Token for Discord scheme, player ID for Dev scheme
+}
+
+// extractAuthInfo extracts authentication info from the authorization header.
+// Supports two schemes:
+//   - "Discord <token>" - Real Discord auth, token validated with Discord API
+//   - "Dev <player_id>" - Development mode, player ID used directly (requires devMode)
+func extractAuthInfo(ctx context.Context) (*authInfo, error) {
 	md, ok := metadata.FromIncomingContext(ctx)
 	if !ok {
-		return "", ErrMissingToken
+		return nil, ErrMissingToken
 	}
 
 	values := md.Get(authorizationHeader)
 	if len(values) == 0 {
-		return "", ErrMissingToken
+		return nil, ErrMissingToken
 	}
 
 	authHeader := values[0]
-	if !strings.HasPrefix(authHeader, discordScheme) {
-		return "", ErrInvalidTokenFormat
+
+	// Check for Discord scheme
+	if strings.HasPrefix(authHeader, discordScheme) {
+		token := strings.TrimPrefix(authHeader, discordScheme)
+		if token == "" {
+			return nil, ErrMissingToken
+		}
+		return &authInfo{scheme: "discord", value: token}, nil
 	}
 
-	token := strings.TrimPrefix(authHeader, discordScheme)
-	if token == "" {
-		return "", ErrMissingToken
+	// Check for Dev scheme
+	if strings.HasPrefix(authHeader, devScheme) {
+		playerID := strings.TrimPrefix(authHeader, devScheme)
+		if playerID == "" {
+			return nil, ErrMissingToken
+		}
+		return &authInfo{scheme: "dev", value: playerID}, nil
 	}
 
-	return token, nil
+	return nil, ErrInvalidTokenFormat
 }
