@@ -1,0 +1,143 @@
+// Package entities defines the core data structures for the RPG API
+package entities
+
+import (
+	"time"
+
+	"github.com/KirkDiggler/rpg-api/internal/orchestrators/encounter"
+)
+
+// EventType represents different types of encounter events
+type EventType string
+
+const (
+	// Player lifecycle events
+	EventTypePlayerJoined       EventType = "player_joined"
+	EventTypePlayerLeft         EventType = "player_left"
+	EventTypePlayerReady        EventType = "player_ready"
+	EventTypePlayerDisconnected EventType = "player_disconnected"
+	EventTypePlayerReconnected  EventType = "player_reconnected"
+
+	// Combat lifecycle events
+	EventTypeCombatStarted EventType = "combat_started"
+	EventTypeCombatEnded   EventType = "combat_ended"
+	EventTypeCombatPaused  EventType = "combat_paused"
+	EventTypeCombatResumed EventType = "combat_resumed"
+
+	// Combat action events
+	EventTypeMovementCompleted    EventType = "movement_completed"
+	EventTypeAttackResolved       EventType = "attack_resolved"
+	EventTypeFeatureActivated     EventType = "feature_activated"
+	EventTypeTurnEnded            EventType = "turn_ended"
+	EventTypeMonsterTurnCompleted EventType = "monster_turn_completed"
+)
+
+// EncounterEvent wraps all event types with common metadata
+// Purpose: Provides a consistent envelope for all encounter events with timestamp and type
+type EncounterEvent struct {
+	ID          string      `json:"id"`           // Unique event ID
+	Type        EventType   `json:"type"`         // Type of event
+	EncounterID string      `json:"encounter_id"` // ID of the encounter this event belongs to
+	Timestamp   time.Time   `json:"timestamp"`    // When the event occurred
+	Data        interface{} `json:"data"`         // Event-specific data (one of the event structs below)
+}
+
+// PlayerJoinedEvent is emitted when a player joins an encounter
+type PlayerJoinedEvent struct {
+	PlayerID    string `json:"player_id"`
+	CharacterID string `json:"character_id"`
+	PlayerName  string `json:"player_name,omitempty"`
+}
+
+// PlayerLeftEvent is emitted when a player leaves an encounter
+type PlayerLeftEvent struct {
+	PlayerID    string `json:"player_id"`
+	CharacterID string `json:"character_id"`
+	Reason      string `json:"reason,omitempty"` // "voluntary", "kicked", "timeout", etc.
+}
+
+// PlayerReadyEvent is emitted when a player marks themselves as ready
+type PlayerReadyEvent struct {
+	PlayerID    string `json:"player_id"`
+	CharacterID string `json:"character_id"`
+	Ready       bool   `json:"ready"` // true = ready, false = unready
+}
+
+// PlayerDisconnectedEvent is emitted when a player loses connection
+type PlayerDisconnectedEvent struct {
+	PlayerID    string `json:"player_id"`
+	CharacterID string `json:"character_id"`
+	Reason      string `json:"reason,omitempty"` // "timeout", "network_error", etc.
+}
+
+// PlayerReconnectedEvent is emitted when a player reconnects
+type PlayerReconnectedEvent struct {
+	PlayerID    string `json:"player_id"`
+	CharacterID string `json:"character_id"`
+}
+
+// CombatStartedEvent is emitted when combat begins
+type CombatStartedEvent struct {
+	CombatState *encounter.CombatState `json:"combat_state"` // Full combat state including initiative order
+}
+
+// CombatEndedEvent is emitted when combat ends
+type CombatEndedEvent struct {
+	EncounterResult *encounter.EncounterResult `json:"encounter_result"` // Victory or defeat
+}
+
+// CombatPausedEvent is emitted when combat is paused
+type CombatPausedEvent struct {
+	PausedBy string `json:"paused_by"` // Player ID who paused
+	Reason   string `json:"reason,omitempty"`
+}
+
+// CombatResumedEvent is emitted when combat is resumed
+type CombatResumedEvent struct {
+	ResumedBy string `json:"resumed_by"` // Player ID who resumed
+}
+
+// MovementCompletedEvent is emitted when an entity completes movement
+type MovementCompletedEvent struct {
+	EntityID          string              `json:"entity_id"`
+	EntityType        string              `json:"entity_type"` // "character" or "monster"
+	FinalPosition     *encounter.Position `json:"final_position"`
+	MovementRemaining int32               `json:"movement_remaining"`
+	StopReason        string              `json:"stop_reason"` // "completed", "position_occupied", etc.
+	UpdatedRoom       interface{}         `json:"updated_room,omitempty"`
+}
+
+// AttackResolvedEvent is emitted when an attack is resolved
+type AttackResolvedEvent struct {
+	AttackerID string                  `json:"attacker_id"`
+	TargetID   string                  `json:"target_id"`
+	Result     *encounter.AttackResult `json:"result"`
+	TargetHP   int                     `json:"target_hp"`   // HP after attack
+	TargetDead bool                    `json:"target_dead"` // Whether target was killed
+}
+
+// FeatureActivatedEvent is emitted when a combat feature is activated
+type FeatureActivatedEvent struct {
+	CharacterID   string      `json:"character_id"`
+	FeatureID     string      `json:"feature_id"`
+	Success       bool        `json:"success"`
+	Message       string      `json:"message"`
+	CharacterData interface{} `json:"character_data,omitempty"`
+}
+
+// TurnEndedEvent is emitted when a turn ends
+type TurnEndedEvent struct {
+	PreviousEntityID string                 `json:"previous_entity_id"`
+	NextEntityID     string                 `json:"next_entity_id"`
+	Round            int                    `json:"round"`
+	NewRound         bool                   `json:"new_round"`
+	CombatState      *encounter.CombatState `json:"combat_state"` // Full updated combat state
+}
+
+// MonsterTurnCompletedEvent is emitted when a monster completes its turn
+type MonsterTurnCompletedEvent struct {
+	MonsterID   string                            `json:"monster_id"`
+	MonsterName string                            `json:"monster_name"`
+	Actions     []encounter.MonsterExecutedAction `json:"actions"`
+	Movement    []encounter.Position              `json:"movement"`
+}
