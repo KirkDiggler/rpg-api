@@ -117,11 +117,10 @@ func (s *EventPublishingTestSuite) TestJoinEncounter_PublishesPlayerJoinedEvent(
 			s.Assert().Equal(encounterID, input.EncounterID)
 			s.Assert().Equal(entities.EventTypePlayerJoined, input.Event.Type)
 
-			// Verify event data
-			eventData, ok := input.Event.Data.(*entities.PlayerJoinedEvent)
-			s.Require().True(ok, "event data should be PlayerJoinedEvent")
-			s.Assert().Equal(playerID, eventData.PlayerID)
-			s.Assert().Equal(characterID, eventData.CharacterID)
+			// Verify event data using typed field
+			s.Require().NotNil(input.Event.PlayerJoined, "PlayerJoined should be set")
+			s.Assert().Equal(playerID, input.Event.PlayerJoined.PlayerID)
+			s.Assert().Equal(characterID, input.Event.PlayerJoined.CharacterID)
 
 			return &encounterpub.PublishOutput{}, nil
 		})
@@ -174,12 +173,11 @@ func (s *EventPublishingTestSuite) TestSetReady_PublishesPlayerReadyEvent() {
 			s.Assert().Equal(encounterID, input.EncounterID)
 			s.Assert().Equal(entities.EventTypePlayerReady, input.Event.Type)
 
-			// Verify event data
-			eventData, ok := input.Event.Data.(*entities.PlayerReadyEvent)
-			s.Require().True(ok, "event data should be PlayerReadyEvent")
-			s.Assert().Equal(playerID, eventData.PlayerID)
-			s.Assert().Equal(characterID, eventData.CharacterID)
-			s.Assert().True(eventData.Ready)
+			// Verify event data using typed field
+			s.Require().NotNil(input.Event.PlayerReady, "PlayerReady should be set")
+			s.Assert().Equal(playerID, input.Event.PlayerReady.PlayerID)
+			s.Assert().Equal(characterID, input.Event.PlayerReady.CharacterID)
+			s.Assert().True(input.Event.PlayerReady.Ready)
 
 			return &encounterpub.PublishOutput{}, nil
 		})
@@ -256,10 +254,9 @@ func (s *EventPublishingTestSuite) TestStartCombat_PublishesCombatStartedEvent()
 			s.Assert().Equal(encounterID, input.EncounterID)
 			s.Assert().Equal(entities.EventTypeCombatStarted, input.Event.Type)
 
-			// Verify event data
-			eventData, ok := input.Event.Data.(*entities.CombatStartedEvent)
-			s.Require().True(ok, "event data should be CombatStartedEvent")
-			s.Assert().NotNil(eventData.CombatState)
+			// Verify event data using typed field
+			s.Require().NotNil(input.Event.CombatStarted, "CombatStarted should be set")
+			s.Assert().NotNil(input.Event.CombatStarted.CombatState)
 
 			return &encounterpub.PublishOutput{}, nil
 		})
@@ -315,12 +312,11 @@ func (s *EventPublishingTestSuite) TestLeaveEncounter_PublishesPlayerLeftEvent()
 			s.Assert().Equal(encounterID, input.EncounterID)
 			s.Assert().Equal(entities.EventTypePlayerLeft, input.Event.Type)
 
-			// Verify event data
-			eventData, ok := input.Event.Data.(*entities.PlayerLeftEvent)
-			s.Require().True(ok, "event data should be PlayerLeftEvent")
-			s.Assert().Equal(playerID, eventData.PlayerID)
-			s.Assert().Equal(characterID, eventData.CharacterID)
-			s.Assert().Equal("voluntary", eventData.Reason)
+			// Verify event data using typed field
+			s.Require().NotNil(input.Event.PlayerLeft, "PlayerLeft should be set")
+			s.Assert().Equal(playerID, input.Event.PlayerLeft.PlayerID)
+			s.Assert().Equal(characterID, input.Event.PlayerLeft.CharacterID)
+			s.Assert().Equal("voluntary", input.Event.PlayerLeft.Reason)
 
 			return &encounterpub.PublishOutput{}, nil
 		})
@@ -388,12 +384,11 @@ func (s *EventPublishingTestSuite) TestMoveCharacter_PublishesMovementCompletedE
 			s.Assert().Equal(encounterID, input.EncounterID)
 			s.Assert().Equal(entities.EventTypeMovementCompleted, input.Event.Type)
 
-			// Verify event data
-			eventData, ok := input.Event.Data.(*entities.MovementCompletedEvent)
-			s.Require().True(ok, "event data should be MovementCompletedEvent")
-			s.Assert().Equal(entityID, eventData.EntityID)
-			s.Assert().Equal("character", eventData.EntityType)
-			s.Assert().Equal("completed", eventData.StopReason)
+			// Verify event data using typed field
+			s.Require().NotNil(input.Event.MovementCompleted, "MovementCompleted should be set")
+			s.Assert().Equal(entityID, input.Event.MovementCompleted.EntityID)
+			s.Assert().Equal("character", input.Event.MovementCompleted.EntityType)
+			s.Assert().Equal("completed", input.Event.MovementCompleted.StopReason)
 
 			return &encounterpub.PublishOutput{}, nil
 		})
@@ -452,13 +447,12 @@ func (s *EventPublishingTestSuite) TestEndTurn_PublishesTurnEndedEvent() {
 			s.Assert().Equal(encounterID, input.EncounterID)
 			s.Assert().Equal(entities.EventTypeTurnEnded, input.Event.Type)
 
-			// Verify event data
-			eventData, ok := input.Event.Data.(*entities.TurnEndedEvent)
-			s.Require().True(ok, "event data should be TurnEndedEvent")
-			s.Assert().Equal("char-1", eventData.PreviousEntityID)
-			s.Assert().Equal("char-2", eventData.NextEntityID)
-			s.Assert().Equal(1, eventData.Round)
-			s.Assert().False(eventData.NewRound)
+			// Verify event data using typed field
+			s.Require().NotNil(input.Event.TurnEnded, "TurnEnded should be set")
+			s.Assert().Equal("char-1", input.Event.TurnEnded.PreviousEntityID)
+			s.Assert().Equal("char-2", input.Event.TurnEnded.NextEntityID)
+			s.Assert().Equal(1, input.Event.TurnEnded.Round)
+			s.Assert().False(input.Event.TurnEnded.NewRound)
 
 			return &encounterpub.PublishOutput{}, nil
 		})
@@ -732,12 +726,12 @@ func (s *EventPublishingTestSuite) TestEndTurn_NewRound_SetsNewRoundFlag() {
 		DoAndReturn(func(ctx context.Context, input *encounterpub.PublishInput) (*encounterpub.PublishOutput, error) {
 			s.Assert().Equal(entities.EventTypeTurnEnded, input.Event.Type)
 
-			eventData, ok := input.Event.Data.(*entities.TurnEndedEvent)
-			s.Require().True(ok)
-			s.Assert().Equal("char-2", eventData.PreviousEntityID)
-			s.Assert().Equal("char-1", eventData.NextEntityID) // Wraps to first
-			s.Assert().Equal(2, eventData.Round)               // Incremented
-			s.Assert().True(eventData.NewRound)
+			// Verify event data using typed field
+			s.Require().NotNil(input.Event.TurnEnded, "TurnEnded should be set")
+			s.Assert().Equal("char-2", input.Event.TurnEnded.PreviousEntityID)
+			s.Assert().Equal("char-1", input.Event.TurnEnded.NextEntityID) // Wraps to first
+			s.Assert().Equal(2, input.Event.TurnEnded.Round)               // Incremented
+			s.Assert().True(input.Event.TurnEnded.NewRound)
 
 			return &encounterpub.PublishOutput{}, nil
 		})
@@ -843,11 +837,11 @@ func (s *EventPublishingTestSuite) TestPlayerDisconnected_PublishesEvent() {
 			s.Assert().Equal(encounterID, input.EncounterID)
 			s.Assert().Equal(entities.EventTypePlayerDisconnected, input.Event.Type)
 
-			eventData, ok := input.Event.Data.(*entities.PlayerDisconnectedEvent)
-			s.Require().True(ok, "event data should be PlayerDisconnectedEvent")
-			s.Assert().Equal(playerID, eventData.PlayerID)
-			s.Assert().Equal(characterID, eventData.CharacterID)
-			s.Assert().Equal("timeout", eventData.Reason)
+			// Verify event data using typed field
+			s.Require().NotNil(input.Event.PlayerDisconnected, "PlayerDisconnected should be set")
+			s.Assert().Equal(playerID, input.Event.PlayerDisconnected.PlayerID)
+			s.Assert().Equal(characterID, input.Event.PlayerDisconnected.CharacterID)
+			s.Assert().Equal("timeout", input.Event.PlayerDisconnected.Reason)
 
 			return &encounterpub.PublishOutput{}, nil
 		})
@@ -914,10 +908,10 @@ func (s *EventPublishingTestSuite) TestPlayerDisconnected_PausesCombatWhenAllDis
 		DoAndReturn(func(ctx context.Context, input *encounterpub.PublishInput) (*encounterpub.PublishOutput, error) {
 			s.Assert().Equal(entities.EventTypeCombatPaused, input.Event.Type)
 
-			eventData, ok := input.Event.Data.(*entities.CombatPausedEvent)
-			s.Require().True(ok, "event data should be CombatPausedEvent")
-			s.Assert().Equal(playerID, eventData.PausedBy)
-			s.Assert().Equal("all players disconnected", eventData.Reason)
+			// Verify event data using typed field
+			s.Require().NotNil(input.Event.CombatPaused, "CombatPaused should be set")
+			s.Assert().Equal(playerID, input.Event.CombatPaused.PausedBy)
+			s.Assert().Equal("all players disconnected", input.Event.CombatPaused.Reason)
 
 			return &encounterpub.PublishOutput{}, nil
 		}).After(firstCall)
@@ -973,10 +967,10 @@ func (s *EventPublishingTestSuite) TestPlayerReconnected_PublishesEvent() {
 			s.Assert().Equal(encounterID, input.EncounterID)
 			s.Assert().Equal(entities.EventTypePlayerReconnected, input.Event.Type)
 
-			eventData, ok := input.Event.Data.(*entities.PlayerReconnectedEvent)
-			s.Require().True(ok, "event data should be PlayerReconnectedEvent")
-			s.Assert().Equal(playerID, eventData.PlayerID)
-			s.Assert().Equal(characterID, eventData.CharacterID)
+			// Verify event data using typed field
+			s.Require().NotNil(input.Event.PlayerReconnected, "PlayerReconnected should be set")
+			s.Assert().Equal(playerID, input.Event.PlayerReconnected.PlayerID)
+			s.Assert().Equal(characterID, input.Event.PlayerReconnected.CharacterID)
 
 			return &encounterpub.PublishOutput{}, nil
 		})
@@ -1057,9 +1051,9 @@ func (s *EventPublishingTestSuite) TestPlayerReconnected_ResumesCombat() {
 		DoAndReturn(func(ctx context.Context, input *encounterpub.PublishInput) (*encounterpub.PublishOutput, error) {
 			s.Assert().Equal(entities.EventTypeCombatResumed, input.Event.Type)
 
-			eventData, ok := input.Event.Data.(*entities.CombatResumedEvent)
-			s.Require().True(ok, "event data should be CombatResumedEvent")
-			s.Assert().Equal(playerID, eventData.ResumedBy)
+			// Verify event data using typed field
+			s.Require().NotNil(input.Event.CombatResumed, "CombatResumed should be set")
+			s.Assert().Equal(playerID, input.Event.CombatResumed.ResumedBy)
 
 			return &encounterpub.PublishOutput{}, nil
 		}).After(firstCall)

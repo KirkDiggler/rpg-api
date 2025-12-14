@@ -515,49 +515,47 @@ func (h *Handler) StreamEncounterEvents(
 }
 
 // convertToProtoEvent converts an internal EncounterEvent to a proto EncounterEvent
+// Uses typed fields (oneof pattern) for type-safe event data access
 func (h *Handler) convertToProtoEvent(event *entities.EncounterEvent) (*dnd5ev1alpha1.EncounterEvent, error) {
 	protoEvent := &dnd5ev1alpha1.EncounterEvent{
 		EventId:   event.ID,
 		Timestamp: event.Timestamp.UnixMilli(),
 	}
 
-	// Set the appropriate oneof based on event type
+	// Set the appropriate oneof based on event type using typed fields
 	switch event.Type {
 	case entities.EventTypePlayerJoined:
-		data, ok := event.Data.(*entities.PlayerJoinedEvent)
-		if !ok {
-			return nil, fmt.Errorf("invalid data type for PlayerJoinedEvent")
+		if event.PlayerJoined == nil {
+			return nil, fmt.Errorf("missing PlayerJoined data for PlayerJoinedEvent")
 		}
 		protoEvent.Event = &dnd5ev1alpha1.EncounterEvent_PlayerJoined{
 			PlayerJoined: &dnd5ev1alpha1.PlayerJoinedEvent{
 				Member: &dnd5ev1alpha1.PartyMember{
-					PlayerId: data.PlayerID,
+					PlayerId: event.PlayerJoined.PlayerID,
 					// Note: Full Character object would require loading from repo
 				},
 			},
 		}
 
 	case entities.EventTypePlayerLeft:
-		data, ok := event.Data.(*entities.PlayerLeftEvent)
-		if !ok {
-			return nil, fmt.Errorf("invalid data type for PlayerLeftEvent")
+		if event.PlayerLeft == nil {
+			return nil, fmt.Errorf("missing PlayerLeft data for PlayerLeftEvent")
 		}
 		protoEvent.Event = &dnd5ev1alpha1.EncounterEvent_PlayerLeft{
 			PlayerLeft: &dnd5ev1alpha1.PlayerLeftEvent{
-				PlayerId:    data.PlayerID,
-				CharacterId: data.CharacterID,
+				PlayerId:    event.PlayerLeft.PlayerID,
+				CharacterId: event.PlayerLeft.CharacterID,
 			},
 		}
 
 	case entities.EventTypePlayerReady:
-		data, ok := event.Data.(*entities.PlayerReadyEvent)
-		if !ok {
-			return nil, fmt.Errorf("invalid data type for PlayerReadyEvent")
+		if event.PlayerReady == nil {
+			return nil, fmt.Errorf("missing PlayerReady data for PlayerReadyEvent")
 		}
 		protoEvent.Event = &dnd5ev1alpha1.EncounterEvent_PlayerReady{
 			PlayerReady: &dnd5ev1alpha1.PlayerReadyEvent{
-				PlayerId: data.PlayerID,
-				IsReady:  data.Ready,
+				PlayerId: event.PlayerReady.PlayerID,
+				IsReady:  event.PlayerReady.Ready,
 			},
 		}
 
@@ -565,78 +563,73 @@ func (h *Handler) convertToProtoEvent(event *entities.EncounterEvent) (*dnd5ev1a
 		// CombatStarted has complex nested data - for now, send simplified version
 		protoEvent.Event = &dnd5ev1alpha1.EncounterEvent_CombatStarted{
 			CombatStarted: &dnd5ev1alpha1.CombatStartedEvent{
-				// TODO: Convert full combat state
+				// TODO: Convert full combat state from event.CombatStarted
 			},
 		}
 
 	case entities.EventTypeMovementCompleted:
-		data, ok := event.Data.(*entities.MovementCompletedEvent)
-		if !ok {
-			return nil, fmt.Errorf("invalid data type for MovementCompletedEvent")
+		if event.MovementCompleted == nil {
+			return nil, fmt.Errorf("missing MovementCompleted data for MovementCompletedEvent")
 		}
 		protoEvent.Event = &dnd5ev1alpha1.EncounterEvent_MovementCompleted{
 			MovementCompleted: &dnd5ev1alpha1.MovementCompletedEvent{
-				EntityId:          data.EntityID,
-				MovementRemaining: data.MovementRemaining,
-				StopReason:        data.StopReason,
+				EntityId:          event.MovementCompleted.EntityID,
+				MovementRemaining: event.MovementCompleted.MovementRemaining,
+				StopReason:        event.MovementCompleted.StopReason,
 				// TODO: Convert FinalPosition
 			},
 		}
 
 	case entities.EventTypeAttackResolved:
-		data, ok := event.Data.(*entities.AttackResolvedEvent)
-		if !ok {
-			return nil, fmt.Errorf("invalid data type for AttackResolvedEvent")
+		if event.AttackResolved == nil {
+			return nil, fmt.Errorf("missing AttackResolved data for AttackResolvedEvent")
 		}
 		protoEvent.Event = &dnd5ev1alpha1.EncounterEvent_AttackResolved{
 			AttackResolved: &dnd5ev1alpha1.AttackResolvedEvent{
-				AttackerId: data.AttackerID,
-				TargetId:   data.TargetID,
+				AttackerId: event.AttackResolved.AttackerID,
+				TargetId:   event.AttackResolved.TargetID,
 				// TODO: Convert full AttackResult
 			},
 		}
 
 	case entities.EventTypeFeatureActivated:
-		data, ok := event.Data.(*entities.FeatureActivatedEvent)
-		if !ok {
-			return nil, fmt.Errorf("invalid data type for FeatureActivatedEvent")
+		if event.FeatureActivated == nil {
+			return nil, fmt.Errorf("missing FeatureActivated data for FeatureActivatedEvent")
 		}
 		protoEvent.Event = &dnd5ev1alpha1.EncounterEvent_FeatureActivated{
 			FeatureActivated: &dnd5ev1alpha1.FeatureActivatedEvent{
-				CharacterId: data.CharacterID,
-				FeatureId:   data.FeatureID,
-				Message:     data.Message,
+				CharacterId: event.FeatureActivated.CharacterID,
+				FeatureId:   event.FeatureActivated.FeatureID,
+				Message:     event.FeatureActivated.Message,
 				// Note: Updated character would require conversion
 			},
 		}
 
 	case entities.EventTypeTurnEnded:
-		data, ok := event.Data.(*entities.TurnEndedEvent)
-		if !ok {
-			return nil, fmt.Errorf("invalid data type for TurnEndedEvent")
+		if event.TurnEnded == nil {
+			return nil, fmt.Errorf("missing TurnEnded data for TurnEndedEvent")
 		}
 		protoEvent.Event = &dnd5ev1alpha1.EncounterEvent_TurnEnded{
 			TurnEnded: &dnd5ev1alpha1.TurnEndedEvent{
 				TurnChange: &dnd5ev1alpha1.TurnChangeEvent{
-					PreviousEntityId: data.PreviousEntityID,
-					NextEntityId:     data.NextEntityID,
-					Round:            int32(data.Round),
-					NewRound:         data.NewRound,
+					PreviousEntityId: event.TurnEnded.PreviousEntityID,
+					NextEntityId:     event.TurnEnded.NextEntityID,
+					Round:            int32(event.TurnEnded.Round),
+					NewRound:         event.TurnEnded.NewRound,
 				},
 				// TODO: Convert full CombatState
 			},
 		}
 
 	case entities.EventTypeMonsterTurnCompleted:
-		data, ok := event.Data.(*entities.MonsterTurnCompletedEvent)
-		if !ok {
-			return nil, fmt.Errorf("invalid data type for MonsterTurnCompletedEvent")
+		if event.MonsterTurnCompleted == nil {
+			return nil, fmt.Errorf("missing MonsterTurnCompleted data for MonsterTurnCompletedEvent")
 		}
 		protoEvent.Event = &dnd5ev1alpha1.EncounterEvent_MonsterTurnCompleted{
 			MonsterTurnCompleted: &dnd5ev1alpha1.MonsterTurnCompletedEvent{
 				MonsterTurn: &dnd5ev1alpha1.MonsterTurnResult{
-					MonsterId:   data.MonsterID,
-					MonsterName: data.MonsterName,
+					MonsterId:   event.MonsterTurnCompleted.MonsterID,
+					MonsterName: event.MonsterTurnCompleted.MonsterName,
 					// TODO: Convert Actions and Movement
 				},
 			},
@@ -645,52 +638,48 @@ func (h *Handler) convertToProtoEvent(event *entities.EncounterEvent) (*dnd5ev1a
 	case entities.EventTypeCombatEnded:
 		protoEvent.Event = &dnd5ev1alpha1.EncounterEvent_CombatEnded{
 			CombatEnded: &dnd5ev1alpha1.CombatEndedEvent{
-				// TODO: Convert EncounterResult
+				// TODO: Convert EncounterResult from event.CombatEnded
 			},
 		}
 
 	case entities.EventTypePlayerDisconnected:
-		data, ok := event.Data.(*entities.PlayerDisconnectedEvent)
-		if !ok {
-			return nil, fmt.Errorf("invalid data type for PlayerDisconnectedEvent")
+		if event.PlayerDisconnected == nil {
+			return nil, fmt.Errorf("missing PlayerDisconnected data for PlayerDisconnectedEvent")
 		}
 		protoEvent.Event = &dnd5ev1alpha1.EncounterEvent_PlayerDisconnected{
 			PlayerDisconnected: &dnd5ev1alpha1.PlayerDisconnectedEvent{
-				PlayerId:    data.PlayerID,
-				CharacterId: data.CharacterID,
+				PlayerId:    event.PlayerDisconnected.PlayerID,
+				CharacterId: event.PlayerDisconnected.CharacterID,
 			},
 		}
 
 	case entities.EventTypePlayerReconnected:
-		data, ok := event.Data.(*entities.PlayerReconnectedEvent)
-		if !ok {
-			return nil, fmt.Errorf("invalid data type for PlayerReconnectedEvent")
+		if event.PlayerReconnected == nil {
+			return nil, fmt.Errorf("missing PlayerReconnected data for PlayerReconnectedEvent")
 		}
 		protoEvent.Event = &dnd5ev1alpha1.EncounterEvent_PlayerReconnected{
 			PlayerReconnected: &dnd5ev1alpha1.PlayerReconnectedEvent{
-				PlayerId: data.PlayerID,
+				PlayerId: event.PlayerReconnected.PlayerID,
 				// Note: Full member state would require loading from repo
 			},
 		}
 
 	case entities.EventTypeCombatPaused:
-		data, ok := event.Data.(*entities.CombatPausedEvent)
-		if !ok {
-			return nil, fmt.Errorf("invalid data type for CombatPausedEvent")
+		if event.CombatPaused == nil {
+			return nil, fmt.Errorf("missing CombatPaused data for CombatPausedEvent")
 		}
 		protoEvent.Event = &dnd5ev1alpha1.EncounterEvent_CombatPaused{
 			CombatPaused: &dnd5ev1alpha1.CombatPausedEvent{
-				Reason:               data.Reason,
-				DisconnectedPlayerId: data.PausedBy,
+				Reason:               event.CombatPaused.Reason,
+				DisconnectedPlayerId: event.CombatPaused.PausedBy,
 			},
 		}
 
 	case entities.EventTypeCombatResumed:
-		// CombatResumed doesn't need the internal data for basic event
-		_ = event.Data // Mark as intentionally unused
+		// CombatResumed data is optional for basic event
 		protoEvent.Event = &dnd5ev1alpha1.EncounterEvent_CombatResumed{
 			CombatResumed: &dnd5ev1alpha1.CombatResumedEvent{
-				// TODO: Include full CombatState when resuming
+				// TODO: Include full CombatState from event.CombatResumed when resuming
 			},
 		}
 

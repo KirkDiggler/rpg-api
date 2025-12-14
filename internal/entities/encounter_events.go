@@ -32,12 +32,28 @@ const (
 
 // EncounterEvent wraps all event types with common metadata
 // Purpose: Provides a consistent envelope for all encounter events with timestamp and type
+// Only one of the event fields will be populated based on Type (oneof pattern)
 type EncounterEvent struct {
-	ID          string      `json:"id"`           // Unique event ID
-	Type        EventType   `json:"type"`         // Type of event
-	EncounterID string      `json:"encounter_id"` // ID of the encounter this event belongs to
-	Timestamp   time.Time   `json:"timestamp"`    // When the event occurred
-	Data        interface{} `json:"data"`         // Event-specific data (one of the event structs below)
+	ID          string    `json:"id"`           // Unique event ID
+	Type        EventType `json:"type"`         // Type of event
+	EncounterID string    `json:"encounter_id"` // ID of the encounter this event belongs to
+	Timestamp   time.Time `json:"timestamp"`    // When the event occurred
+
+	// Event-specific data - only one populated based on Type (oneof pattern)
+	PlayerJoined         *PlayerJoinedEvent         `json:"player_joined,omitempty"`
+	PlayerLeft           *PlayerLeftEvent           `json:"player_left,omitempty"`
+	PlayerReady          *PlayerReadyEvent          `json:"player_ready,omitempty"`
+	PlayerDisconnected   *PlayerDisconnectedEvent   `json:"player_disconnected,omitempty"`
+	PlayerReconnected    *PlayerReconnectedEvent    `json:"player_reconnected,omitempty"`
+	CombatStarted        *CombatStartedEvent        `json:"combat_started,omitempty"`
+	CombatEnded          *CombatEndedEvent          `json:"combat_ended,omitempty"`
+	CombatPaused         *CombatPausedEvent         `json:"combat_paused,omitempty"`
+	CombatResumed        *CombatResumedEvent        `json:"combat_resumed,omitempty"`
+	MovementCompleted    *MovementCompletedEvent    `json:"movement_completed,omitempty"`
+	AttackResolved       *AttackResolvedEvent       `json:"attack_resolved,omitempty"`
+	FeatureActivated     *FeatureActivatedEvent     `json:"feature_activated,omitempty"`
+	TurnEnded            *TurnEndedEvent            `json:"turn_ended,omitempty"`
+	MonsterTurnCompleted *MonsterTurnCompletedEvent `json:"monster_turn_completed,omitempty"`
 }
 
 // PlayerJoinedEvent is emitted when a player joins an encounter

@@ -92,7 +92,41 @@ func (o *Orchestrator) publishEvent(ctx context.Context, encounterID string, eve
 		Type:        eventType,
 		EncounterID: encounterID,
 		Timestamp:   time.Now(),
-		Data:        data,
+	}
+
+	// Set the appropriate typed field based on event type (oneof pattern)
+	switch v := data.(type) {
+	case *entities.PlayerJoinedEvent:
+		event.PlayerJoined = v
+	case *entities.PlayerLeftEvent:
+		event.PlayerLeft = v
+	case *entities.PlayerReadyEvent:
+		event.PlayerReady = v
+	case *entities.PlayerDisconnectedEvent:
+		event.PlayerDisconnected = v
+	case *entities.PlayerReconnectedEvent:
+		event.PlayerReconnected = v
+	case *entities.CombatStartedEvent:
+		event.CombatStarted = v
+	case *entities.CombatEndedEvent:
+		event.CombatEnded = v
+	case *entities.CombatPausedEvent:
+		event.CombatPaused = v
+	case *entities.CombatResumedEvent:
+		event.CombatResumed = v
+	case *entities.MovementCompletedEvent:
+		event.MovementCompleted = v
+	case *entities.AttackResolvedEvent:
+		event.AttackResolved = v
+	case *entities.FeatureActivatedEvent:
+		event.FeatureActivated = v
+	case *entities.TurnEndedEvent:
+		event.TurnEnded = v
+	case *entities.MonsterTurnCompletedEvent:
+		event.MonsterTurnCompleted = v
+	default:
+		fmt.Printf("unknown event data type for %s: %T\n", eventType, data)
+		return
 	}
 
 	_, err := o.publisher.Publish(ctx, &encounterpub.PublishInput{
