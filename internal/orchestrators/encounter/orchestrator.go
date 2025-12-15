@@ -193,9 +193,7 @@ func (o *Orchestrator) ResolveAttack(ctx context.Context, input *ResolveAttackIn
 	if !actionEconomy.HasAction() {
 		return nil, fmt.Errorf("no action available: action already used this turn")
 	}
-
-	// Consume the action
-	actionEconomy.UseAction()
+	// Note: Action is consumed later (step 10) after all validation succeeds
 
 	// 6. Load monster from encounter data (preserves HP across attacks)
 	monsterData := o.findMonsterData(encOutput.Data, input.TargetID)
@@ -243,7 +241,8 @@ func (o *Orchestrator) ResolveAttack(ctx context.Context, input *ResolveAttackIn
 		monsterData.HitPoints = newHP
 	}
 
-	// 10. Persist consumed action economy (and monster HP if hit)
+	// 10. Consume action and persist (action consumed only after all validation succeeds)
+	actionEconomy.UseAction()
 	_, err = o.encRepo.Update(ctx, &encounterrepo.UpdateInput{
 		EncounterID:   input.EncounterID,
 		ActionEconomy: actionEconomy,
@@ -955,15 +954,16 @@ func getFeatureActionCost(featureID string) actionCostType {
 	case "rage", "second-wind", "step-of-the-wind", "patient-defense", "flurry-of-blows":
 		return actionCostBonusAction
 
-	// Action features
-	case "action-surge": // Grants an additional action, but takes no action itself
+	// Free abilities (no action economy cost)
+	// Action Surge: Used "on your turn" without requiring action, bonus action, or reaction.
+	// Note: Usage limits (per rest) are tracked separately by the feature itself.
+	case "action-surge":
 		return actionCostNone
 
-	// Free/no action features
 	default:
-		// Default to no action cost for unknown features
+		// Default to no action cost for unknown features.
 		// This allows features to be used without action economy enforcement
-		// until they are explicitly mapped
+		// until they are explicitly mapped. New features should be added above.
 		return actionCostNone
 	}
 }
@@ -1142,7 +1142,8 @@ func (o *Orchestrator) ActivateFeature(
 				Message: "no reaction available: reaction already used this turn",
 			}, nil
 		}
-		// actionCostNone requires no action economy check
+	case actionCostNone:
+		// No action economy check required for free abilities
 	}
 
 	// 3. Load character data from repository
@@ -1201,6 +1202,8 @@ func (o *Orchestrator) ActivateFeature(
 		actionEconomy.UseBonusAction()
 	case actionCostReaction:
 		actionEconomy.UseReaction()
+	case actionCostNone:
+		// No action to consume for free abilities
 	}
 
 	// 11. Convert back to data (includes new condition in Conditions slice)

@@ -63,13 +63,6 @@ func NewActionEconomyState() *ActionEconomyState {
 	}
 }
 
-// Reset restores the action economy to default values
-func (a *ActionEconomyState) Reset() {
-	a.ActionsRemaining = 1
-	a.BonusActionsRemaining = 1
-	a.ReactionsRemaining = 1
-}
-
 // HasAction returns true if an action is available
 func (a *ActionEconomyState) HasAction() bool {
 	return a != nil && a.ActionsRemaining > 0
@@ -85,29 +78,23 @@ func (a *ActionEconomyState) HasReaction() bool {
 	return a != nil && a.ReactionsRemaining > 0
 }
 
-// UseAction consumes an action, returns false if none available
-func (a *ActionEconomyState) UseAction() bool {
-	if !a.HasAction() {
-		return false
+// UseAction consumes an action. Call HasAction() first to check availability.
+func (a *ActionEconomyState) UseAction() {
+	if a.HasAction() {
+		a.ActionsRemaining--
 	}
-	a.ActionsRemaining--
-	return true
 }
 
-// UseBonusAction consumes a bonus action, returns false if none available
-func (a *ActionEconomyState) UseBonusAction() bool {
-	if !a.HasBonusAction() {
-		return false
+// UseBonusAction consumes a bonus action. Call HasBonusAction() first to check availability.
+func (a *ActionEconomyState) UseBonusAction() {
+	if a.HasBonusAction() {
+		a.BonusActionsRemaining--
 	}
-	a.BonusActionsRemaining--
-	return true
 }
 
-// UseReaction consumes a reaction, returns false if none available
-func (a *ActionEconomyState) UseReaction() bool {
-	if !a.HasReaction() {
-		return false
+// UseReaction consumes a reaction. Call HasReaction() first to check availability.
+func (a *ActionEconomyState) UseReaction() {
+	if a.HasReaction() {
+		a.ReactionsRemaining--
 	}
-	a.ReactionsRemaining--
-	return true
 }
