@@ -113,6 +113,12 @@ func (s *OrchestratorTestSuite) TestResolveAttack_Success() {
 		Get(gomock.Any(), &encounterrepo.GetInput{EncounterID: "enc-1"}).
 		Return(&encounterrepo.GetOutput{Data: encData}, nil)
 
+	// Mock Update for when attack hits (may not be called if miss)
+	s.mockEncRepo.EXPECT().
+		Update(gomock.Any(), gomock.Any()).
+		Return(&encounterrepo.UpdateOutput{Success: true}, nil).
+		AnyTimes()
+
 	// Act
 	output, err := s.orchestrator.ResolveAttack(context.Background(), &ResolveAttackInput{
 		EncounterID: "enc-1",
@@ -273,6 +279,12 @@ func (s *OrchestratorTestSuite) TestResolveAttack_MultipleAttacks() {
 		Return(&encounterrepo.GetOutput{Data: encData}, nil).
 		Times(3)
 
+	// Mock Update for when attacks hit (may not be called for misses)
+	s.mockEncRepo.EXPECT().
+		Update(gomock.Any(), gomock.Any()).
+		Return(&encounterrepo.UpdateOutput{Success: true}, nil).
+		AnyTimes()
+
 	// Perform multiple attacks
 	results := make([]*ResolveAttackOutput, 3)
 	for i := 0; i < 3; i++ {
@@ -326,8 +338,18 @@ func createTestCharacterData(id, name string) *character.Data {
 }
 
 func createTestEncounterData(id string) *encounterrepo.EncounterData {
+	// Create a goblin with full HP for attack tests
+	goblin := monster.NewGoblin("goblin-1")
+	goblin.AddAction(monster.NewScimitarAction(monster.ScimitarConfig{
+		AttackBonus: 4,
+		DamageDice:  "1d6+2",
+		DamageBonus: 2,
+	}))
+	goblinData := goblin.ToData()
+
 	return &encounterrepo.EncounterData{
-		ID: id,
+		ID:       id,
+		Monsters: []*monster.Data{goblinData},
 	}
 }
 
@@ -1801,6 +1823,12 @@ func (s *OrchestratorTestSuite) TestResolveAttack_UsesEquippedWeapon() {
 		Get(gomock.Any(), &encounterrepo.GetInput{EncounterID: "enc-1"}).
 		Return(&encounterrepo.GetOutput{Data: encData}, nil)
 
+	// Mock Update for when attack hits
+	s.mockEncRepo.EXPECT().
+		Update(gomock.Any(), gomock.Any()).
+		Return(&encounterrepo.UpdateOutput{Success: true}, nil).
+		AnyTimes()
+
 	// Act
 	output, err := s.orchestrator.ResolveAttack(context.Background(), &ResolveAttackInput{
 		EncounterID: "enc-1",
@@ -1833,6 +1861,12 @@ func (s *OrchestratorTestSuite) TestResolveAttack_NoEquippedWeapon_FallsBackToGr
 	s.mockEncRepo.EXPECT().
 		Get(gomock.Any(), &encounterrepo.GetInput{EncounterID: "enc-1"}).
 		Return(&encounterrepo.GetOutput{Data: encData}, nil)
+
+	// Mock Update for when attack hits
+	s.mockEncRepo.EXPECT().
+		Update(gomock.Any(), gomock.Any()).
+		Return(&encounterrepo.UpdateOutput{Success: true}, nil).
+		AnyTimes()
 
 	// Act
 	output, err := s.orchestrator.ResolveAttack(context.Background(), &ResolveAttackInput{
@@ -1869,6 +1903,12 @@ func (s *OrchestratorTestSuite) TestResolveAttack_UnknownWeaponID_FallsBackToGre
 		Get(gomock.Any(), &encounterrepo.GetInput{EncounterID: "enc-1"}).
 		Return(&encounterrepo.GetOutput{Data: encData}, nil)
 
+	// Mock Update for when attack hits
+	s.mockEncRepo.EXPECT().
+		Update(gomock.Any(), gomock.Any()).
+		Return(&encounterrepo.UpdateOutput{Success: true}, nil).
+		AnyTimes()
+
 	// Act - Should still succeed with fallback
 	output, err := s.orchestrator.ResolveAttack(context.Background(), &ResolveAttackInput{
 		EncounterID: "enc-1",
@@ -1896,6 +1936,12 @@ func (s *OrchestratorTestSuite) TestResolveAttack_NilEquipmentSlots_FallsBackToG
 	s.mockEncRepo.EXPECT().
 		Get(gomock.Any(), &encounterrepo.GetInput{EncounterID: "enc-1"}).
 		Return(&encounterrepo.GetOutput{Data: encData}, nil)
+
+	// Mock Update for when attack hits
+	s.mockEncRepo.EXPECT().
+		Update(gomock.Any(), gomock.Any()).
+		Return(&encounterrepo.UpdateOutput{Success: true}, nil).
+		AnyTimes()
 
 	// Act - Should still succeed with fallback
 	output, err := s.orchestrator.ResolveAttack(context.Background(), &ResolveAttackInput{

@@ -179,14 +179,22 @@ func (o *Orchestrator) ResolveAttack(ctx context.Context, input *ResolveAttackIn
 		return nil, fmt.Errorf("failed to load encounter: %w", err)
 	}
 
-	// Verify encounter exists (even if we don't use its data yet)
+	// Verify encounter exists
 	if encOutput.Data == nil {
 		return nil, fmt.Errorf("encounter not found: %s", input.EncounterID)
 	}
 
-	// 5. Create monster (Phase 2: use NewGoblin factory)
-	// TODO: Load monster state from encounter data in future
-	goblin := monster.NewGoblin(input.TargetID)
+	// 5. Load monster from encounter data (preserves HP across attacks)
+	monsterData := o.findMonsterData(encOutput.Data, input.TargetID)
+	if monsterData == nil {
+		return nil, fmt.Errorf("monster not found: %s", input.TargetID)
+	}
+
+	// Create monster instance from stored data
+	goblin, err := monster.LoadFromData(ctx, monsterData, bus)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load monster from data: %w", err)
+	}
 
 	// 6. Get weapon and equipment slots from equipped items (with fallback to greataxe)
 	weapon, equipmentSlots := o.getEquippedWeaponAndSlots(ctx, input.AttackerID)
@@ -210,14 +218,25 @@ func (o *Orchestrator) ResolveAttack(ctx context.Context, input *ResolveAttackIn
 		return nil, fmt.Errorf("combat resolution failed: %w", err)
 	}
 
-	// 9. Calculate new monster HP
+	// 9. Calculate and persist new monster HP
 	newHP := goblin.HP()
 	if result.Hit {
 		newHP = goblin.HP() - result.TotalDamage
 		if newHP < 0 {
 			newHP = 0
 		}
-		// TODO: Persist updated HP to encounter repository
+
+		// Update monster data with new HP
+		monsterData.HitPoints = newHP
+
+		// Persist updated monster HP to encounter repository
+		_, err = o.encRepo.Update(ctx, &encounterrepo.UpdateInput{
+			EncounterID: input.EncounterID,
+			Monsters:    encOutput.Data.Monsters,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to save monster HP: %w", err)
+		}
 	}
 
 	// 10. Convert toolkit result to our output format
