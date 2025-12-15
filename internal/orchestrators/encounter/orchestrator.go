@@ -1638,9 +1638,42 @@ func (o *Orchestrator) StartCombat(
 		CombatEnded:       false,
 	}
 
-	// TODO: Execute monster turns if they go first
+	// 12. Execute monster turns if they go first
+	var monsterTurns []*MonsterTurnResult
+	if trackerData.Order[0].Type == entityTypeMonster {
+		// Monster(s) go first - execute all monster turns until a player's turn
+		encData := &encounterrepo.EncounterData{
+			ID:                input.EncounterID,
+			RoomData:          roomData,
+			InitiativeData:    &trackerData,
+			InitiativeRolls:   rolls,
+			MovementRemaining: combatState.MovementRemaining,
+			Monsters:          []*monster.Data{monsterData},
+		}
 
-	// 12. Build party list for event (with character data)
+		// Execute monster turns
+		monsterTurns, err = o.executeMonsterTurns(ctx, encData, characterIDs)
+		if err != nil {
+			return nil, fmt.Errorf("failed to execute monster turns: %w", err)
+		}
+
+		// Update combat state to reflect the new active index after monster turns
+		combatState.ActiveIndex = encData.InitiativeData.Current
+		combatState.Round = encData.InitiativeData.Round
+
+		// Persist updated initiative, monster state, and room positions
+		_, err = o.encRepo.Update(ctx, &encounterrepo.UpdateInput{
+			EncounterID:    input.EncounterID,
+			InitiativeData: encData.InitiativeData,
+			Monsters:       encData.Monsters,
+			RoomData:       encData.RoomData,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to save initiative after monster turns: %w", err)
+		}
+	}
+
+	// 13. Build party list for event (with character data)
 	party := make([]*entities.Player, 0, len(encOutput.Data.Players))
 	for _, player := range encOutput.Data.Players {
 		// Load character data for the event
@@ -1670,7 +1703,7 @@ func (o *Orchestrator) StartCombat(
 	return &StartCombatOutput{
 		CombatState:  combatState,
 		Room:         roomData,
-		MonsterTurns: nil, // TODO: Fill in if monsters go first
+		MonsterTurns: monsterTurns,
 	}, nil
 }
 
