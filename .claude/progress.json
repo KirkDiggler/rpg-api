@@ -1,24 +1,20 @@
 {
-  "branch": "feat/lobby-flow-279",
-  "issues": ["#279"],
-  "goal": "Implement lobby flow (Create/Join/Ready/Start/Leave) with outside-in development",
+  "branch": "fix/issue-292-multiplayer",
+  "issues": ["#292"],
+  "goal": "Fix multiplayer bug where second player shows with monster icon instead of character data",
   "sessions": [
     {
-      "date": "2025-12-13",
-      "completed": [
-        "Added lobby handler methods with validation",
-        "Extended Service interface with 5 lobby methods + Input/Output types",
-        "Regenerated mocks for Service and Repository",
-        "Wrote handler tests with mocked orchestrator",
-        "Implemented orchestrator methods: CreateEncounter, JoinEncounter, SetReady, StartCombat, LeaveEncounter",
-        "Wired handlers to call orchestrator",
-        "Added converters: convertPartyToProto, convertEncounterStateToProto",
-        "Fixed lint issues: type assertion, variable shadowing, deprecated field usage"
-      ]
+      "id": "2025-12-15-001",
+      "task": "Debug JoinEncounter/StartCombat flow to find where second player character data is lost",
+      "status": "in_progress",
+      "artifacts": [],
+      "commit": null,
+      "notes": "User reported: second player IS in turn order but has monster icon. Suggests character data not being sent correctly."
     }
   ],
   "next_steps": [
-    "Create PR for review",
-    "Add event publishing integration (future enhancement)"
+    "Trace how players and characters are added to combat state",
+    "Check GetCombatState response structure for player characters",
+    "Fix character association for non-host players"
   ]
 }
