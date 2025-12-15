@@ -1,23 +1,30 @@
 {
   "tests": [
     {
-      "id": "both-players-in-combat-state",
-      "feature": "multiplayer",
-      "prompt": "When two players join an encounter, do both characters appear in GetCombatState with correct character data (not monster icons)?",
+      "id": "attack-rejected-no-action",
+      "feature": "action-economy",
+      "prompt": "Is attack rejected when character has already used their action this turn?",
       "passes": false,
       "last_checked": null
     },
     {
-      "id": "initiative-includes-both",
-      "feature": "multiplayer",
-      "prompt": "Does initiative order include both player characters with proper names and stats?",
+      "id": "bonus-action-rejected-when-used",
+      "feature": "action-economy",
+      "prompt": "Is bonus action feature rejected when bonus action has been used?",
       "passes": false,
       "last_checked": null
     },
     {
-      "id": "second-player-can-act",
-      "feature": "multiplayer",
-      "prompt": "Can the second player take their turn when it comes (attack, move, etc.)?",
+      "id": "turn-end-resets-economy",
+      "feature": "action-economy",
+      "prompt": "Does ending turn reset action economy for next turn?",
+      "passes": false,
+      "last_checked": null
+    },
+    {
+      "id": "reaction-tracked-separately",
+      "feature": "action-economy",
+      "prompt": "Is reaction tracked separately from action and bonus action?",
       "passes": false,
       "last_checked": null
     }

@@ -1,33 +1,21 @@
 {
-  "branch": "fix/issue-292-multiplayer",
-  "issues": ["#292"],
-  "goal": "Fix multiplayer bug where second player shows with monster icon instead of character data",
+  "branch": "feat/issue-293-action-economy",
+  "issues": ["#293"],
+  "goal": "Implement action economy enforcement - track and enforce action/bonus action/reaction limits per turn",
   "sessions": [
     {
       "id": "2025-12-15-001",
-      "task": "Debug JoinEncounter/StartCombat flow to find where second player character data is lost",
-      "status": "completed",
+      "task": "Explore current action economy state in toolkit and API",
+      "status": "in_progress",
       "artifacts": [],
-      "commit": "90e1899",
-      "notes": "User reported: second player IS in turn order but has monster icon. Investigated and found PlayerJoinedEvent missing character data."
-    },
-    {
-      "id": "2025-12-15-002",
-      "task": "Fix PlayerJoinedEvent and convertPartyToProto to include character data",
-      "status": "completed",
-      "artifacts": [
-        "internal/entities/encounter_events.go",
-        "internal/orchestrators/encounter/orchestrator.go",
-        "internal/handlers/dnd5e/v1alpha1/encounter/handler.go",
-        "internal/handlers/dnd5e/v1alpha1/encounter/converters.go",
-        "internal/orchestrators/encounter/event_publishing_test.go"
-      ],
-      "commit": "e75561e",
-      "notes": "Added CharacterData to PlayerJoinedEvent entity. Updated orchestrator to load character data before publishing event. Updated handler to convert character data to proto. Fixed convertPartyToProto TODO. Updated test to verify character data is included."
+      "commit": null,
+      "notes": "Need to understand: what toolkit provides, what API tracks, where enforcement should happen"
     }
   ],
   "next_steps": [
-    "Manual verification with actual multiplayer test",
-    "Consider if any other events need character data"
+    "Add action economy fields to combat/turn state",
+    "Update Attack handler to check/consume action",
+    "Update ActivateFeature to check action cost",
+    "Handle turn end reset"
   ]
 }
