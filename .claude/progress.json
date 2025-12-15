@@ -1,24 +1,33 @@
 {
-  "branch": "feat/lobby-flow-279",
-  "issues": ["#279"],
-  "goal": "Implement lobby flow (Create/Join/Ready/Start/Leave) with outside-in development",
+  "branch": "fix/issue-292-multiplayer",
+  "issues": ["#292"],
+  "goal": "Fix multiplayer bug where second player shows with monster icon instead of character data",
   "sessions": [
     {
-      "date": "2025-12-13",
-      "completed": [
-        "Added lobby handler methods with validation",
-        "Extended Service interface with 5 lobby methods + Input/Output types",
-        "Regenerated mocks for Service and Repository",
-        "Wrote handler tests with mocked orchestrator",
-        "Implemented orchestrator methods: CreateEncounter, JoinEncounter, SetReady, StartCombat, LeaveEncounter",
-        "Wired handlers to call orchestrator",
-        "Added converters: convertPartyToProto, convertEncounterStateToProto",
-        "Fixed lint issues: type assertion, variable shadowing, deprecated field usage"
-      ]
+      "id": "2025-12-15-001",
+      "task": "Debug JoinEncounter/StartCombat flow to find where second player character data is lost",
+      "status": "completed",
+      "artifacts": [],
+      "commit": "90e1899",
+      "notes": "User reported: second player IS in turn order but has monster icon. Investigated and found PlayerJoinedEvent missing character data."
+    },
+    {
+      "id": "2025-12-15-002",
+      "task": "Fix PlayerJoinedEvent and convertPartyToProto to include character data",
+      "status": "completed",
+      "artifacts": [
+        "internal/entities/encounter_events.go",
+        "internal/orchestrators/encounter/orchestrator.go",
+        "internal/handlers/dnd5e/v1alpha1/encounter/handler.go",
+        "internal/handlers/dnd5e/v1alpha1/encounter/converters.go",
+        "internal/orchestrators/encounter/event_publishing_test.go"
+      ],
+      "commit": "e75561e",
+      "notes": "Added CharacterData to PlayerJoinedEvent entity. Updated orchestrator to load character data before publishing event. Updated handler to convert character data to proto. Fixed convertPartyToProto TODO. Updated test to verify character data is included."
     }
   ],
   "next_steps": [
-    "Create PR for review",
-    "Add event publishing integration (future enhancement)"
+    "Manual verification with actual multiplayer test",
+    "Consider if any other events need character data"
   ]
 }

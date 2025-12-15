@@ -99,7 +99,18 @@ func (s *EventPublishingTestSuite) TestJoinEncounter_PublishesPlayerJoinedEvent(
 		Update(gomock.Any(), gomock.Any()).
 		Return(&encounterrepo.UpdateOutput{Success: true}, nil)
 
-	// Mock character lookup for building party list (called after update)
+	// Mock character lookup for event publishing (called first)
+	s.mockCharRepo.EXPECT().
+		Get(gomock.Any(), characterrepo.GetInput{ID: characterID}).
+		Return(&characterrepo.GetOutput{
+			CharacterData: &character.Data{
+				ID:       characterID,
+				Name:     "Test Character",
+				PlayerID: playerID,
+			},
+		}, nil)
+
+	// Mock character lookup for building party list (called second)
 	s.mockCharRepo.EXPECT().
 		Get(gomock.Any(), characterrepo.GetInput{ID: characterID}).
 		Return(&characterrepo.GetOutput{
@@ -121,6 +132,9 @@ func (s *EventPublishingTestSuite) TestJoinEncounter_PublishesPlayerJoinedEvent(
 			s.Require().NotNil(input.Event.PlayerJoined, "PlayerJoined should be set")
 			s.Assert().Equal(playerID, input.Event.PlayerJoined.PlayerID)
 			s.Assert().Equal(characterID, input.Event.PlayerJoined.CharacterID)
+			// Verify character data is included
+			s.Require().NotNil(input.Event.PlayerJoined.CharacterData, "CharacterData should be set")
+			s.Assert().Equal("Test Character", input.Event.PlayerJoined.CharacterData.Name)
 
 			return &encounterpub.PublishOutput{}, nil
 		})

@@ -532,8 +532,8 @@ func (h *Handler) convertToProtoEvent(event *entities.EncounterEvent) (*dnd5ev1a
 		protoEvent.Event = &dnd5ev1alpha1.EncounterEvent_PlayerJoined{
 			PlayerJoined: &dnd5ev1alpha1.PlayerJoinedEvent{
 				Member: &dnd5ev1alpha1.PartyMember{
-					PlayerId: event.PlayerJoined.PlayerID,
-					// Note: Full Character object would require loading from repo
+					PlayerId:  event.PlayerJoined.PlayerID,
+					Character: characterhandler.ConvertCharacterDataToProto(event.PlayerJoined.CharacterData),
 				},
 			},
 		}

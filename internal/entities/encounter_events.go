@@ -4,6 +4,7 @@ package entities
 import (
 	"time"
 
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
 )
 
@@ -60,9 +61,10 @@ type EncounterEvent struct {
 
 // PlayerJoinedEvent is emitted when a player joins an encounter
 type PlayerJoinedEvent struct {
-	PlayerID    string `json:"player_id"`
-	CharacterID string `json:"character_id"`
-	PlayerName  string `json:"player_name,omitempty"`
+	PlayerID      string          `json:"player_id"`
+	CharacterID   string          `json:"character_id"`
+	CharacterData *character.Data `json:"character_data,omitempty"`
+	PlayerName    string          `json:"player_name,omitempty"`
 }
 
 // PlayerLeftEvent is emitted when a player leaves an encounter
