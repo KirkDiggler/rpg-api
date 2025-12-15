@@ -1,4 +1,4 @@
-// Package errors provides a comprehensive error handling solution for the rpg-api project.
+// Package apierr provides a comprehensive error handling solution for the rpg-api project.
 //
 // This package is inspired by the goaterr pattern and provides:
 //   - Structured errors with codes, messages, and metadata

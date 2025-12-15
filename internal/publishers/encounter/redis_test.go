@@ -136,7 +136,7 @@ func (s *RedisPublisherTestSuite) TestPublish_Success() {
 		Type:        entities.EventTypePlayerJoined,
 		EncounterID: "enc-1",
 		Timestamp:   time.Now(),
-		Data: &entities.PlayerJoinedEvent{
+		PlayerJoined: &entities.PlayerJoinedEvent{
 			PlayerID:    "player-1",
 			CharacterID: "char-1",
 			PlayerName:  "Test Player",
@@ -185,11 +185,11 @@ func (s *RedisPublisherTestSuite) TestPublish_NilEvent() {
 func (s *RedisPublisherTestSuite) TestPublish_EmptyEncounterID() {
 	// Arrange
 	event := &entities.EncounterEvent{
-		ID:          "event-1",
-		Type:        entities.EventTypePlayerJoined,
-		EncounterID: "enc-1",
-		Timestamp:   time.Now(),
-		Data:        &entities.PlayerJoinedEvent{},
+		ID:           "event-1",
+		Type:         entities.EventTypePlayerJoined,
+		EncounterID:  "enc-1",
+		Timestamp:    time.Now(),
+		PlayerJoined: &entities.PlayerJoinedEvent{},
 	}
 
 	input := &PublishInput{
@@ -339,7 +339,7 @@ func (s *RedisPublisherTestSuite) TestPublishSubscribe_Integration() {
 		Type:        entities.EventTypePlayerJoined,
 		EncounterID: "enc-1",
 		Timestamp:   time.Now(),
-		Data: &entities.PlayerJoinedEvent{
+		PlayerJoined: &entities.PlayerJoinedEvent{
 			PlayerID:    "player-1",
 			CharacterID: "char-1",
 			PlayerName:  "Test Player",
@@ -389,11 +389,11 @@ func (s *RedisPublisherTestSuite) TestMultipleSubscribers_Integration() {
 
 	// Prepare event
 	event := &entities.EncounterEvent{
-		ID:          "event-1",
-		Type:        entities.EventTypeCombatStarted,
-		EncounterID: "enc-1",
-		Timestamp:   time.Now(),
-		Data:        &entities.CombatStartedEvent{},
+		ID:            "event-1",
+		Type:          entities.EventTypeCombatStarted,
+		EncounterID:   "enc-1",
+		Timestamp:     time.Now(),
+		CombatStarted: &entities.CombatStartedEvent{},
 	}
 
 	// Act - Publish event
@@ -447,19 +447,19 @@ func (s *RedisPublisherTestSuite) TestDifferentEncounters_Integration() {
 
 	// Prepare events for different encounters
 	event1 := &entities.EncounterEvent{
-		ID:          "event-1",
-		Type:        entities.EventTypePlayerJoined,
-		EncounterID: "enc-1",
-		Timestamp:   time.Now(),
-		Data:        &entities.PlayerJoinedEvent{PlayerID: "player-1"},
+		ID:           "event-1",
+		Type:         entities.EventTypePlayerJoined,
+		EncounterID:  "enc-1",
+		Timestamp:    time.Now(),
+		PlayerJoined: &entities.PlayerJoinedEvent{PlayerID: "player-1"},
 	}
 
 	event2 := &entities.EncounterEvent{
-		ID:          "event-2",
-		Type:        entities.EventTypePlayerJoined,
-		EncounterID: "enc-2",
-		Timestamp:   time.Now(),
-		Data:        &entities.PlayerJoinedEvent{PlayerID: "player-2"},
+		ID:           "event-2",
+		Type:         entities.EventTypePlayerJoined,
+		EncounterID:  "enc-2",
+		Timestamp:    time.Now(),
+		PlayerJoined: &entities.PlayerJoinedEvent{PlayerID: "player-2"},
 	}
 
 	// Act - Publish events to different encounters

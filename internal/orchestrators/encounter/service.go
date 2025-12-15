@@ -4,8 +4,16 @@ import (
 	"context"
 	"errors"
 
+	"github.com/KirkDiggler/rpg-api/internal/entities"
 	"github.com/KirkDiggler/rpg-toolkit/core"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/damage"
+)
+
+// Type aliases to entities - these are the canonical types
+type (
+	CombatState     = entities.CombatState
+	InitiativeEntry = entities.InitiativeEntry
+	Position        = entities.Position
 )
 
 // Sentinel errors for encounter operations
@@ -27,6 +35,15 @@ var (
 
 	// ErrPlayersNotReady is returned when trying to start combat but not all players are ready
 	ErrPlayersNotReady = errors.New("not all players are ready")
+
+	// ErrPlayerAlreadyDisconnected is returned when marking a player as disconnected who is already disconnected
+	ErrPlayerAlreadyDisconnected = errors.New("player is already disconnected")
+
+	// ErrPlayerAlreadyConnected is returned when reconnecting a player who is already connected
+	ErrPlayerAlreadyConnected = errors.New("player is already connected")
+
+	// ErrEncounterPaused is returned when trying to perform an action on a paused encounter
+	ErrEncounterPaused = errors.New("encounter is paused")
 )
 
 //go:generate mockgen -destination=mock/mock_service.go -package=encountermock github.com/KirkDiggler/rpg-api/internal/orchestrators/encounter Service
@@ -64,6 +81,16 @@ type Service interface {
 
 	// LeaveEncounter removes a player from the encounter
 	LeaveEncounter(ctx context.Context, input *LeaveEncounterInput) (*LeaveEncounterOutput, error)
+
+	// Connection management methods
+
+	// PlayerDisconnected marks a player as disconnected
+	// If combat is active and all remaining players are disconnected, pauses the encounter
+	PlayerDisconnected(ctx context.Context, input *PlayerDisconnectedInput) (*PlayerDisconnectedOutput, error)
+
+	// PlayerReconnected marks a player as reconnected
+	// If encounter was paused due to disconnection, resumes when a player reconnects
+	PlayerReconnected(ctx context.Context, input *PlayerReconnectedInput) (*PlayerReconnectedOutput, error)
 }
 
 // ResolveAttackInput contains attack parameters
@@ -146,40 +173,12 @@ type CreateDungeonOutput struct {
 	MonsterTurns []*MonsterTurnResult // Monster turns if monsters go first in initiative
 }
 
-// CombatState represents the state of combat in an encounter
-type CombatState struct {
-	EncounterID       string
-	Round             int
-	TurnOrder         []InitiativeEntry
-	ActiveIndex       int
-	MovementRemaining int32 // Movement remaining for the active turn
-	CombatStarted     bool
-	CombatEnded       bool
-}
-
-// InitiativeEntry represents one entity in the initiative order
-type InitiativeEntry struct {
-	EntityID           string
-	EntityType         string
-	InitiativeRoll     int       // The d20 roll
-	InitiativeModifier int       // DEX modifier
-	InitiativeTotal    int       // Roll + Modifier
-	Position           *Position // Entity's position in the room
-}
-
 // MoveCharacterInput contains movement parameters
 // Phase 2: Simple movement to a single target position
 type MoveCharacterInput struct {
 	EncounterID    string    // ID of the encounter
 	EntityID       string    // ID of entity being moved
 	TargetPosition *Position // Target position to move to
-}
-
-// Position represents a 2D position in the room
-// This mirrors spatial.Position for handler layer use
-type Position struct {
-	X float64
-	Y float64
 }
 
 // MoveCharacterOutput returns movement results
@@ -318,6 +317,7 @@ type StartCombatInput struct {
 // StartCombatOutput returns the initial combat state
 type StartCombatOutput struct {
 	CombatState  *CombatState         // Combat state with initiative order
+	Room         interface{}          // Room with entity positions
 	MonsterTurns []*MonsterTurnResult // Monster turns if monsters go first
 }
 
@@ -331,4 +331,32 @@ type LeaveEncounterInput struct {
 type LeaveEncounterOutput struct {
 	Success          bool // Whether the player successfully left
 	EncounterDeleted bool // Whether the encounter was deleted (last player left)
+}
+
+// PlayerDisconnectedInput contains parameters for marking a player as disconnected
+type PlayerDisconnectedInput struct {
+	EncounterID string // ID of the encounter
+	PlayerID    string // ID of the player who disconnected
+	Reason      string // Reason for disconnection ("timeout", "network_error", "client_closed", etc.)
+}
+
+// PlayerDisconnectedOutput returns the result of marking a player as disconnected
+type PlayerDisconnectedOutput struct {
+	Success         bool   // Whether the operation succeeded
+	EncounterPaused bool   // Whether the encounter was paused due to this disconnection
+	State           string // Current encounter state after disconnection
+}
+
+// PlayerReconnectedInput contains parameters for marking a player as reconnected
+type PlayerReconnectedInput struct {
+	EncounterID string // ID of the encounter
+	PlayerID    string // ID of the player who reconnected
+}
+
+// PlayerReconnectedOutput returns the result of marking a player as reconnected
+type PlayerReconnectedOutput struct {
+	Success          bool         // Whether the operation succeeded
+	EncounterResumed bool         // Whether the encounter was resumed due to this reconnection
+	State            string       // Current encounter state after reconnection
+	CombatState      *CombatState // Combat state if encounter was resumed (nil if not in combat)
 }

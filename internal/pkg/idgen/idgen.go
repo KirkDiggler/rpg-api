@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/oklog/ulid/v2"
 )
 
 //go:generate mockgen -destination=mock/mock.go -package=idgenmock github.com/KirkDiggler/rpg-api/internal/pkg/idgen Generator
@@ -98,4 +99,26 @@ func (g *UUIDGenerator) Generate() string {
 		return fmt.Sprintf("%s_%s", g.prefix, id)
 	}
 	return id
+}
+
+// ULIDGenerator generates ULIDs (Universally Unique Lexicographically Sortable Identifiers)
+// ULIDs are sortable by generation time which makes them ideal for event IDs
+type ULIDGenerator struct {
+	prefix string
+}
+
+// NewULID creates a new ULID generator with optional prefix
+func NewULID(prefix string) *ULIDGenerator {
+	return &ULIDGenerator{prefix: prefix}
+}
+
+// Generate creates a new ULID-based ID
+// ULIDs are lexicographically sortable by timestamp (first 48 bits = milliseconds)
+func (g *ULIDGenerator) Generate() string {
+	entropy := ulid.Monotonic(rand.Reader, 0)
+	id := ulid.MustNew(ulid.Timestamp(time.Now()), entropy)
+	if g.prefix != "" {
+		return fmt.Sprintf("%s_%s", g.prefix, id.String())
+	}
+	return id.String()
 }

@@ -33,6 +33,7 @@ import (
 	encounterorc "github.com/KirkDiggler/rpg-api/internal/orchestrators/encounter"
 	"github.com/KirkDiggler/rpg-api/internal/pkg/clock"
 	"github.com/KirkDiggler/rpg-api/internal/pkg/idgen"
+	encounterpub "github.com/KirkDiggler/rpg-api/internal/publishers/encounter"
 	"github.com/KirkDiggler/rpg-api/internal/redis"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	characterdraftrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft"
@@ -136,10 +137,20 @@ func runServer(_ *cobra.Command, _ []string) error {
 	// Create encounter repository (in-memory for now)
 	encounterRepo := encountersrepo.NewInMemory()
 
+	// Create encounter event publisher
+	encounterPublisher, err := encounterpub.NewRedis(&encounterpub.RedisConfig{
+		Client: mustRedisClient(),
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create encounter publisher: %w", err)
+	}
+
 	// Create encounter orchestrator
 	encounterService, err := encounterorc.New(&encounterorc.Config{
 		CharacterRepo: charRepo,
 		EncounterRepo: encounterRepo,
+		Publisher:     encounterPublisher,
+		EventIDGen:    idgen.NewULID(""),
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create encounter service: %w", err)
@@ -174,6 +185,7 @@ func runServer(_ *cobra.Command, _ []string) error {
 
 	encounterHandler, err := encounterhandler.New(&encounterhandler.HandlerConfig{
 		EncounterService: encounterService,
+		Publisher:        encounterPublisher,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create encounter handler: %w", err)

@@ -4,6 +4,8 @@ package encounter
 import (
 	"context"
 	"errors"
+	"fmt"
+	"log"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -11,8 +13,10 @@ import (
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
 	apierrors "github.com/KirkDiggler/rpg-api/internal/apierr"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
+	"github.com/KirkDiggler/rpg-api/internal/entities"
 	characterhandler "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v1alpha1/character"
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/encounter"
+	encounterpub "github.com/KirkDiggler/rpg-api/internal/publishers/encounter"
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
 )
@@ -20,6 +24,7 @@ import (
 // HandlerConfig holds dependencies for the handler
 type HandlerConfig struct {
 	EncounterService encounter.Service
+	Publisher        encounterpub.Publisher // For event streaming
 }
 
 // Validate ensures all required dependencies are present
@@ -27,6 +32,7 @@ func (c *HandlerConfig) Validate() error {
 	if c.EncounterService == nil {
 		return apierrors.InvalidArgument("encounter service is required")
 	}
+	// Publisher is optional - streaming just won't work without it
 	return nil
 }
 
@@ -34,6 +40,7 @@ func (c *HandlerConfig) Validate() error {
 type Handler struct {
 	dnd5ev1alpha1.UnimplementedEncounterServiceServer
 	encounterService encounter.Service
+	publisher        encounterpub.Publisher
 }
 
 // New creates a new handler with the given configuration
@@ -44,6 +51,7 @@ func New(cfg *HandlerConfig) (*Handler, error) {
 
 	return &Handler{
 		encounterService: cfg.EncounterService,
+		publisher:        cfg.Publisher,
 	}, nil
 }
 
@@ -404,6 +412,7 @@ func (h *Handler) StartCombat(
 
 	return &dnd5ev1alpha1.StartCombatResponse{
 		CombatState: convertCombatStateToProto(output.CombatState, gridType, hexOrientation),
+		Room:        convertRoomDataToProto(output.Room),
 	}, nil
 }
 
@@ -437,8 +446,268 @@ func (h *Handler) LeaveEncounter(
 
 // StreamEncounterEvents subscribes to real-time encounter events
 func (h *Handler) StreamEncounterEvents(
-	_ *dnd5ev1alpha1.StreamEncounterEventsRequest,
-	_ dnd5ev1alpha1.EncounterService_StreamEncounterEventsServer,
+	req *dnd5ev1alpha1.StreamEncounterEventsRequest,
+	stream dnd5ev1alpha1.EncounterService_StreamEncounterEventsServer,
 ) error {
-	return status.Error(codes.Unimplemented, "StreamEncounterEvents endpoint not yet implemented")
+	// 1. Validate publisher is configured
+	if h.publisher == nil {
+		return status.Error(codes.Unavailable, "event streaming not configured")
+	}
+
+	// 2. Validate request
+	if req.GetEncounterId() == "" {
+		return status.Error(codes.InvalidArgument, "encounter_id is required")
+	}
+
+	ctx := stream.Context()
+	encounterID := req.GetEncounterId()
+	playerID := req.GetPlayerId()
+
+	log.Printf("Player %s subscribing to encounter %s events", playerID, encounterID)
+
+	// 3. Subscribe to encounter events
+	subOutput, err := h.publisher.Subscribe(ctx, &encounterpub.SubscribeInput{
+		EncounterID: encounterID,
+	})
+	if err != nil {
+		return status.Errorf(codes.Internal, "failed to subscribe to events: %v", err)
+	}
+
+	// Ensure we unsubscribe when the stream ends
+	defer func() {
+		if _, unsubErr := h.publisher.Unsubscribe(context.Background(), &encounterpub.UnsubscribeInput{
+			SubscriptionID: subOutput.SubscriptionID,
+		}); unsubErr != nil {
+			log.Printf("Failed to unsubscribe %s: %v", subOutput.SubscriptionID, unsubErr)
+		}
+		log.Printf("Player %s disconnected from encounter %s", playerID, encounterID)
+		// TODO: Call PlayerDisconnected on the orchestrator
+	}()
+
+	// 4. Stream events to the client
+	for {
+		select {
+		case <-ctx.Done():
+			// Client disconnected
+			return nil
+		case err := <-subOutput.Errors:
+			log.Printf("Subscription error for encounter %s: %v", encounterID, err)
+			return status.Errorf(codes.Internal, "subscription error: %v", err)
+		case event, ok := <-subOutput.Events:
+			if !ok {
+				// Channel closed
+				return nil
+			}
+
+			// Convert internal event to proto event
+			protoEvent, convertErr := h.convertToProtoEvent(event)
+			if convertErr != nil {
+				log.Printf("Failed to convert event: %v", convertErr)
+				continue // Skip malformed events
+			}
+
+			// Send to client
+			if sendErr := stream.Send(protoEvent); sendErr != nil {
+				// Client likely disconnected
+				return sendErr
+			}
+		}
+	}
+}
+
+// convertToProtoEvent converts an internal EncounterEvent to a proto EncounterEvent
+// Uses typed fields (oneof pattern) for type-safe event data access
+func (h *Handler) convertToProtoEvent(event *entities.EncounterEvent) (*dnd5ev1alpha1.EncounterEvent, error) {
+	protoEvent := &dnd5ev1alpha1.EncounterEvent{
+		EventId:   event.ID,
+		Timestamp: event.Timestamp.UnixMilli(),
+	}
+
+	// Set the appropriate oneof based on event type using typed fields
+	switch event.Type {
+	case entities.EventTypePlayerJoined:
+		if event.PlayerJoined == nil {
+			return nil, fmt.Errorf("missing PlayerJoined data for PlayerJoinedEvent")
+		}
+		protoEvent.Event = &dnd5ev1alpha1.EncounterEvent_PlayerJoined{
+			PlayerJoined: &dnd5ev1alpha1.PlayerJoinedEvent{
+				Member: &dnd5ev1alpha1.PartyMember{
+					PlayerId: event.PlayerJoined.PlayerID,
+					// Note: Full Character object would require loading from repo
+				},
+			},
+		}
+
+	case entities.EventTypePlayerLeft:
+		if event.PlayerLeft == nil {
+			return nil, fmt.Errorf("missing PlayerLeft data for PlayerLeftEvent")
+		}
+		protoEvent.Event = &dnd5ev1alpha1.EncounterEvent_PlayerLeft{
+			PlayerLeft: &dnd5ev1alpha1.PlayerLeftEvent{
+				PlayerId:    event.PlayerLeft.PlayerID,
+				CharacterId: event.PlayerLeft.CharacterID,
+			},
+		}
+
+	case entities.EventTypePlayerReady:
+		if event.PlayerReady == nil {
+			return nil, fmt.Errorf("missing PlayerReady data for PlayerReadyEvent")
+		}
+		protoEvent.Event = &dnd5ev1alpha1.EncounterEvent_PlayerReady{
+			PlayerReady: &dnd5ev1alpha1.PlayerReadyEvent{
+				PlayerId: event.PlayerReady.PlayerID,
+				IsReady:  event.PlayerReady.Ready,
+			},
+		}
+
+	case entities.EventTypeCombatStarted:
+		if event.CombatStarted == nil {
+			return nil, fmt.Errorf("missing CombatStarted data for CombatStartedEvent")
+		}
+		// Convert party members (including character data)
+		var protoParty []*dnd5ev1alpha1.PartyMember
+		if event.CombatStarted.Party != nil {
+			protoParty = make([]*dnd5ev1alpha1.PartyMember, len(event.CombatStarted.Party))
+			for i, p := range event.CombatStarted.Party {
+				protoParty[i] = &dnd5ev1alpha1.PartyMember{
+					PlayerId:    p.PlayerID,
+					IsHost:      p.IsHost,
+					IsReady:     p.IsReady,
+					IsConnected: p.IsConnected,
+					Character:   characterhandler.ConvertCharacterDataToProto(p.CharacterData),
+				}
+			}
+		}
+		// Use default grid settings for event conversion
+		gridType := spatial.GridTypeHex
+		hexOrientation := spatial.HexOrientationPointyTop
+		protoEvent.Event = &dnd5ev1alpha1.EncounterEvent_CombatStarted{
+			CombatStarted: &dnd5ev1alpha1.CombatStartedEvent{
+				CombatState: convertCombatStateToProto(event.CombatStarted.CombatState, gridType, hexOrientation),
+				Room:        convertRoomDataToProto(event.CombatStarted.Room),
+				Party:       protoParty,
+			},
+		}
+
+	case entities.EventTypeMovementCompleted:
+		if event.MovementCompleted == nil {
+			return nil, fmt.Errorf("missing MovementCompleted data for MovementCompletedEvent")
+		}
+		protoEvent.Event = &dnd5ev1alpha1.EncounterEvent_MovementCompleted{
+			MovementCompleted: &dnd5ev1alpha1.MovementCompletedEvent{
+				EntityId:          event.MovementCompleted.EntityID,
+				MovementRemaining: event.MovementCompleted.MovementRemaining,
+				StopReason:        event.MovementCompleted.StopReason,
+				// TODO: Convert FinalPosition
+			},
+		}
+
+	case entities.EventTypeAttackResolved:
+		if event.AttackResolved == nil {
+			return nil, fmt.Errorf("missing AttackResolved data for AttackResolvedEvent")
+		}
+		protoEvent.Event = &dnd5ev1alpha1.EncounterEvent_AttackResolved{
+			AttackResolved: &dnd5ev1alpha1.AttackResolvedEvent{
+				AttackerId: event.AttackResolved.AttackerID,
+				TargetId:   event.AttackResolved.TargetID,
+				// TODO: Convert full AttackResult
+			},
+		}
+
+	case entities.EventTypeFeatureActivated:
+		if event.FeatureActivated == nil {
+			return nil, fmt.Errorf("missing FeatureActivated data for FeatureActivatedEvent")
+		}
+		protoEvent.Event = &dnd5ev1alpha1.EncounterEvent_FeatureActivated{
+			FeatureActivated: &dnd5ev1alpha1.FeatureActivatedEvent{
+				CharacterId: event.FeatureActivated.CharacterID,
+				FeatureId:   event.FeatureActivated.FeatureID,
+				Message:     event.FeatureActivated.Message,
+				// Note: Updated character would require conversion
+			},
+		}
+
+	case entities.EventTypeTurnEnded:
+		if event.TurnEnded == nil {
+			return nil, fmt.Errorf("missing TurnEnded data for TurnEndedEvent")
+		}
+		protoEvent.Event = &dnd5ev1alpha1.EncounterEvent_TurnEnded{
+			TurnEnded: &dnd5ev1alpha1.TurnEndedEvent{
+				TurnChange: &dnd5ev1alpha1.TurnChangeEvent{
+					PreviousEntityId: event.TurnEnded.PreviousEntityID,
+					NextEntityId:     event.TurnEnded.NextEntityID,
+					Round:            int32(event.TurnEnded.Round),
+					NewRound:         event.TurnEnded.NewRound,
+				},
+				// TODO: Convert full CombatState
+			},
+		}
+
+	case entities.EventTypeMonsterTurnCompleted:
+		if event.MonsterTurnCompleted == nil {
+			return nil, fmt.Errorf("missing MonsterTurnCompleted data for MonsterTurnCompletedEvent")
+		}
+		protoEvent.Event = &dnd5ev1alpha1.EncounterEvent_MonsterTurnCompleted{
+			MonsterTurnCompleted: &dnd5ev1alpha1.MonsterTurnCompletedEvent{
+				MonsterTurn: &dnd5ev1alpha1.MonsterTurnResult{
+					MonsterId:   event.MonsterTurnCompleted.MonsterID,
+					MonsterName: event.MonsterTurnCompleted.MonsterName,
+					// TODO: Convert Actions and Movement
+				},
+			},
+		}
+
+	case entities.EventTypeCombatEnded:
+		protoEvent.Event = &dnd5ev1alpha1.EncounterEvent_CombatEnded{
+			CombatEnded: &dnd5ev1alpha1.CombatEndedEvent{
+				// TODO: Convert EncounterResult from event.CombatEnded
+			},
+		}
+
+	case entities.EventTypePlayerDisconnected:
+		if event.PlayerDisconnected == nil {
+			return nil, fmt.Errorf("missing PlayerDisconnected data for PlayerDisconnectedEvent")
+		}
+		protoEvent.Event = &dnd5ev1alpha1.EncounterEvent_PlayerDisconnected{
+			PlayerDisconnected: &dnd5ev1alpha1.PlayerDisconnectedEvent{
+				PlayerId:    event.PlayerDisconnected.PlayerID,
+				CharacterId: event.PlayerDisconnected.CharacterID,
+			},
+		}
+
+	case entities.EventTypePlayerReconnected:
+		if event.PlayerReconnected == nil {
+			return nil, fmt.Errorf("missing PlayerReconnected data for PlayerReconnectedEvent")
+		}
+		protoEvent.Event = &dnd5ev1alpha1.EncounterEvent_PlayerReconnected{
+			PlayerReconnected: &dnd5ev1alpha1.PlayerReconnectedEvent{
+				PlayerId: event.PlayerReconnected.PlayerID,
+				// Note: Full member state would require loading from repo
+			},
+		}
+
+	case entities.EventTypeCombatPaused:
+		if event.CombatPaused == nil {
+			return nil, fmt.Errorf("missing CombatPaused data for CombatPausedEvent")
+		}
+		protoEvent.Event = &dnd5ev1alpha1.EncounterEvent_CombatPaused{
+			CombatPaused: &dnd5ev1alpha1.CombatPausedEvent{
+				Reason:               event.CombatPaused.Reason,
+				DisconnectedPlayerId: event.CombatPaused.PausedBy,
+			},
+		}
+
+	case entities.EventTypeCombatResumed:
+		// CombatResumed data is optional for basic event
+		protoEvent.Event = &dnd5ev1alpha1.EncounterEvent_CombatResumed{
+			CombatResumed: &dnd5ev1alpha1.CombatResumedEvent{
+				// TODO: Include full CombatState from event.CombatResumed when resuming
+			},
+		}
+
+	default:
+		return nil, fmt.Errorf("unknown event type: %s", event.Type)
+	}
+
+	return protoEvent, nil
 }

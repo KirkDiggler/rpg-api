@@ -1,5 +1,5 @@
-github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20251214025433-1f951d245da5 h1:2V23lNNWGzGD32opsv1es3UYoXW0O/OA3aUss5z35vA=
-github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20251214025433-1f951d245da5/go.mod h1:nnvwwB7Z3PL+U/3XW25DYEojtMilVgkw39MG8y4F9ag=
+github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20251214124354-b0b5af73557f h1:ViUeCM2GQdvPe4KShjjxhk8SosXHX3wWYc41odAjCaU=
+github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20251214124354-b0b5af73557f/go.mod h1:nnvwwB7Z3PL+U/3XW25DYEojtMilVgkw39MG8y4F9ag=
 github.com/KirkDiggler/rpg-toolkit/core v0.9.6-0.20251205065638-a6d3a75d2297 h1:NIuwrganxGUznQmiOBtWVf/qXQPm2u3U6MiBQmyKOC8=
 github.com/KirkDiggler/rpg-toolkit/core v0.9.6-0.20251205065638-a6d3a75d2297/go.mod h1:nPbQ/ZBTHKEavGQapmXo/MQxla7JuZNj2ICn9aNTQCw=
 github.com/KirkDiggler/rpg-toolkit/dice v0.3.3-0.20250914062452-e2c6a0f32059 h1:74OW0fnq459g28p2JpyrB20tjno4FlF18+cHJ2xiTes=
@@ -48,6 +48,9 @@ github.com/kr/pretty v0.1.0/go.mod h1:dAy3ld7l9f0ibDNOQOHHMYYIIbhfbHSm3C4ZsoJORN
 github.com/kr/pty v1.1.1/go.mod h1:pFQYn66WHrOpPYNljwOMqo10TkYh1fy3cYio2l3bCsQ=
 github.com/kr/text v0.1.0 h1:45sCR5RtlFHMR4UwH9sdQ5TC8v0qDQCHnXt+kaKSTVE=
 github.com/kr/text v0.1.0/go.mod h1:4Jbv+DJW3UT/LiOwJeYQe1efqtUx/iVham/4vfdArNI=
+github.com/oklog/ulid/v2 v2.1.1 h1:suPZ4ARWLOJLegGFiZZ1dFAkqzhMjL3J1TzI+5wHz8s=
+github.com/oklog/ulid/v2 v2.1.1/go.mod h1:rcEKHmBBKfef9DhnvX7y1HZBYxjXb0cP5ExxNsTT1QQ=
+github.com/pborman/getopt v0.0.0-20170112200414-7148bc3a4c30/go.mod h1:85jBQOZwpVEaDAr341tbn15RS4fCAsIst0qp7i8ex1o=
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
 github.com/redis/go-redis/v9 v9.11.0 h1:E3S08Gl/nJNn5vkxd2i78wZxWAPNZgUNTp8WIJUAiIs=

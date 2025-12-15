@@ -4,7 +4,7 @@ package entities
 import (
 	"time"
 
-	"github.com/KirkDiggler/rpg-api/internal/orchestrators/encounter"
+	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
 )
 
 // EventType represents different types of encounter events
@@ -34,12 +34,28 @@ const (
 
 // EncounterEvent wraps all event types with common metadata
 // Purpose: Provides a consistent envelope for all encounter events with timestamp and type
+// Only one of the event fields will be populated based on Type (oneof pattern)
 type EncounterEvent struct {
-	ID          string      `json:"id"`           // Unique event ID
-	Type        EventType   `json:"type"`         // Type of event
-	EncounterID string      `json:"encounter_id"` // ID of the encounter this event belongs to
-	Timestamp   time.Time   `json:"timestamp"`    // When the event occurred
-	Data        interface{} `json:"data"`         // Event-specific data (one of the event structs below)
+	ID          string    `json:"id"`           // Unique event ID
+	Type        EventType `json:"type"`         // Type of event
+	EncounterID string    `json:"encounter_id"` // ID of the encounter this event belongs to
+	Timestamp   time.Time `json:"timestamp"`    // When the event occurred
+
+	// Event-specific data - only one populated based on Type (oneof pattern)
+	PlayerJoined         *PlayerJoinedEvent         `json:"player_joined,omitempty"`
+	PlayerLeft           *PlayerLeftEvent           `json:"player_left,omitempty"`
+	PlayerReady          *PlayerReadyEvent          `json:"player_ready,omitempty"`
+	PlayerDisconnected   *PlayerDisconnectedEvent   `json:"player_disconnected,omitempty"`
+	PlayerReconnected    *PlayerReconnectedEvent    `json:"player_reconnected,omitempty"`
+	CombatStarted        *CombatStartedEvent        `json:"combat_started,omitempty"`
+	CombatEnded          *CombatEndedEvent          `json:"combat_ended,omitempty"`
+	CombatPaused         *CombatPausedEvent         `json:"combat_paused,omitempty"`
+	CombatResumed        *CombatResumedEvent        `json:"combat_resumed,omitempty"`
+	MovementCompleted    *MovementCompletedEvent    `json:"movement_completed,omitempty"`
+	AttackResolved       *AttackResolvedEvent       `json:"attack_resolved,omitempty"`
+	FeatureActivated     *FeatureActivatedEvent     `json:"feature_activated,omitempty"`
+	TurnEnded            *TurnEndedEvent            `json:"turn_ended,omitempty"`
+	MonsterTurnCompleted *MonsterTurnCompletedEvent `json:"monster_turn_completed,omitempty"`
 }
 
 // PlayerJoinedEvent is emitted when a player joins an encounter
@@ -78,12 +94,14 @@ type PlayerReconnectedEvent struct {
 
 // CombatStartedEvent is emitted when combat begins
 type CombatStartedEvent struct {
-	CombatState *encounter.CombatState `json:"combat_state"` // Full combat state including initiative order
+	CombatState *CombatState      `json:"combat_state"` // Full combat state including initiative order
+	Room        *spatial.RoomData `json:"room"`         // Room with entity positions
+	Party       []*Player         `json:"party"`        // Party members at combat start
 }
 
 // CombatEndedEvent is emitted when combat ends
 type CombatEndedEvent struct {
-	EncounterResult *encounter.EncounterResult `json:"encounter_result"` // Victory or defeat
+	EncounterResult interface{} `json:"encounter_result"` // Victory or defeat
 }
 
 // CombatPausedEvent is emitted when combat is paused
@@ -99,21 +117,21 @@ type CombatResumedEvent struct {
 
 // MovementCompletedEvent is emitted when an entity completes movement
 type MovementCompletedEvent struct {
-	EntityID          string              `json:"entity_id"`
-	EntityType        string              `json:"entity_type"` // "character" or "monster"
-	FinalPosition     *encounter.Position `json:"final_position"`
-	MovementRemaining int32               `json:"movement_remaining"`
-	StopReason        string              `json:"stop_reason"` // "completed", "position_occupied", etc.
-	UpdatedRoom       interface{}         `json:"updated_room,omitempty"`
+	EntityID          string            `json:"entity_id"`
+	EntityType        string            `json:"entity_type"` // "character" or "monster"
+	FinalPosition     *Position         `json:"final_position"`
+	MovementRemaining int32             `json:"movement_remaining"`
+	StopReason        string            `json:"stop_reason"` // "completed", "position_occupied", etc.
+	UpdatedRoom       *spatial.RoomData `json:"updated_room,omitempty"`
 }
 
 // AttackResolvedEvent is emitted when an attack is resolved
 type AttackResolvedEvent struct {
-	AttackerID string                  `json:"attacker_id"`
-	TargetID   string                  `json:"target_id"`
-	Result     *encounter.AttackResult `json:"result"`
-	TargetHP   int                     `json:"target_hp"`   // HP after attack
-	TargetDead bool                    `json:"target_dead"` // Whether target was killed
+	AttackerID string      `json:"attacker_id"`
+	TargetID   string      `json:"target_id"`
+	Result     interface{} `json:"result"`
+	TargetHP   int         `json:"target_hp"`   // HP after attack
+	TargetDead bool        `json:"target_dead"` // Whether target was killed
 }
 
 // FeatureActivatedEvent is emitted when a combat feature is activated
@@ -127,17 +145,17 @@ type FeatureActivatedEvent struct {
 
 // TurnEndedEvent is emitted when a turn ends
 type TurnEndedEvent struct {
-	PreviousEntityID string                 `json:"previous_entity_id"`
-	NextEntityID     string                 `json:"next_entity_id"`
-	Round            int                    `json:"round"`
-	NewRound         bool                   `json:"new_round"`
-	CombatState      *encounter.CombatState `json:"combat_state"` // Full updated combat state
+	PreviousEntityID string       `json:"previous_entity_id"`
+	NextEntityID     string       `json:"next_entity_id"`
+	Round            int          `json:"round"`
+	NewRound         bool         `json:"new_round"`
+	CombatState      *CombatState `json:"combat_state"` // Full updated combat state
 }
 
 // MonsterTurnCompletedEvent is emitted when a monster completes its turn
 type MonsterTurnCompletedEvent struct {
-	MonsterID   string                            `json:"monster_id"`
-	MonsterName string                            `json:"monster_name"`
-	Actions     []encounter.MonsterExecutedAction `json:"actions"`
-	Movement    []encounter.Position              `json:"movement"`
+	MonsterID   string        `json:"monster_id"`
+	MonsterName string        `json:"monster_name"`
+	Actions     []interface{} `json:"actions"`
+	Movement    []interface{} `json:"movement"`
 }
