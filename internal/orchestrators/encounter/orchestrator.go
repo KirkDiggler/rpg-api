@@ -1431,17 +1431,16 @@ func (o *Orchestrator) JoinEncounter(
 	}
 
 	// 7. Load character data for the joining player
-	var charData *character.Data
-	charOutput, charErr := o.charRepo.Get(ctx, characterrepo.GetInput{ID: input.CharacterIDs[0]})
-	if charErr == nil && charOutput != nil {
-		charData = charOutput.CharacterData
+	charOutput, err := o.charRepo.Get(ctx, characterrepo.GetInput{ID: input.CharacterIDs[0]})
+	if err != nil {
+		return nil, fmt.Errorf("failed to load character %s: %w", input.CharacterIDs[0], err)
 	}
 
 	// 8. Publish PlayerJoined event with character data
 	o.publishEvent(ctx, encOutput.Data.ID, entities.EventTypePlayerJoined, &entities.PlayerJoinedEvent{
 		PlayerID:      input.PlayerID,
 		CharacterID:   input.CharacterIDs[0],
-		CharacterData: charData,
+		CharacterData: charOutput.CharacterData,
 	})
 
 	// 9. Build party list for response
