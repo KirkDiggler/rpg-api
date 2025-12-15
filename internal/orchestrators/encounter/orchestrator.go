@@ -179,14 +179,22 @@ func (o *Orchestrator) ResolveAttack(ctx context.Context, input *ResolveAttackIn
 		return nil, fmt.Errorf("failed to load encounter: %w", err)
 	}
 
-	// Verify encounter exists (even if we don't use its data yet)
+	// Verify encounter exists
 	if encOutput.Data == nil {
 		return nil, fmt.Errorf("encounter not found: %s", input.EncounterID)
 	}
 
-	// 5. Create monster (Phase 2: use NewGoblin factory)
-	// TODO: Load monster state from encounter data in future
-	goblin := monster.NewGoblin(input.TargetID)
+	// 5. Load monster from encounter data (preserves HP across attacks)
+	monsterData := o.findMonsterData(encOutput.Data, input.TargetID)
+	if monsterData == nil {
+		return nil, fmt.Errorf("monster not found: %s", input.TargetID)
+	}
+
+	// Create monster instance from stored data
+	goblin, err := monster.LoadFromData(ctx, monsterData, bus)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load monster from data: %w", err)
+	}
 
 	// 6. Get weapon and equipment slots from equipped items (with fallback to greataxe)
 	weapon, equipmentSlots := o.getEquippedWeaponAndSlots(ctx, input.AttackerID)
@@ -210,14 +218,25 @@ func (o *Orchestrator) ResolveAttack(ctx context.Context, input *ResolveAttackIn
 		return nil, fmt.Errorf("combat resolution failed: %w", err)
 	}
 
-	// 9. Calculate new monster HP
+	// 9. Calculate and persist new monster HP
 	newHP := goblin.HP()
 	if result.Hit {
 		newHP = goblin.HP() - result.TotalDamage
 		if newHP < 0 {
 			newHP = 0
 		}
-		// TODO: Persist updated HP to encounter repository
+
+		// Update monster data with new HP
+		monsterData.HitPoints = newHP
+
+		// Persist updated monster HP to encounter repository
+		_, err = o.encRepo.Update(ctx, &encounterrepo.UpdateInput{
+			EncounterID: input.EncounterID,
+			Monsters:    encOutput.Data.Monsters,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to save monster HP: %w", err)
+		}
 	}
 
 	// 10. Convert toolkit result to our output format
@@ -1303,11 +1322,13 @@ func (o *Orchestrator) CreateEncounter(
 	}
 
 	// Add pillars for atmosphere
+	// Note: Using positions that stay inside bounds after offset->cube conversion
+	// For odd-q hex, z = row - (col/2), so avoid high-X low-Y combinations
 	obstacles := []spatial.Position{
-		{X: 3, Y: 3},
-		{X: 3, Y: 17},
-		{X: 17, Y: 3},
-		{X: 17, Y: 17},
+		{X: 5, Y: 5},   // Inner left pillar
+		{X: 5, Y: 14},  // Inner left pillar (bottom)
+		{X: 14, Y: 10}, // Inner right pillar (middle to ensure z >= 0)
+		{X: 10, Y: 15}, // Center-bottom pillar
 	}
 	for i, pos := range obstacles {
 		obstacleID := fmt.Sprintf("pillar-%d", i)
@@ -1554,18 +1575,33 @@ func (o *Orchestrator) StartCombat(
 		i++
 	}
 
-	// 7. Add goblin target (for now, simple combat)
-	goblinID := "goblin-1"
-	roomData.Entities[goblinID] = spatial.EntityPlacement{
-		EntityID:       goblinID,
-		EntityType:     entityTypeMonster,
-		Position:       spatial.Position{X: 10, Y: 10},
-		Size:           1,
-		BlocksMovement: true,
+	// 7. Spawn monsters equal to number of players, spread across the room
+	// Monster spawn points on the right side of the room (away from players)
+	monsterSpawnPoints := []spatial.Position{
+		{X: 14, Y: 8},  // Right side
+		{X: 14, Y: 12}, // Right side lower
+		{X: 12, Y: 10}, // Center-right
+		{X: 13, Y: 6},  // Right upper
 	}
 
-	// 8. Create monster data
-	monsterData := o.createGoblinData(goblinID)
+	numPlayers := len(encOutput.Data.Players)
+	monsters := make([]*monster.Data, 0, numPlayers)
+
+	for i := 0; i < numPlayers; i++ {
+		goblinID := fmt.Sprintf("goblin-%d", i+1)
+		spawnPos := monsterSpawnPoints[i%len(monsterSpawnPoints)]
+
+		roomData.Entities[goblinID] = spatial.EntityPlacement{
+			EntityID:       goblinID,
+			EntityType:     entityTypeMonster,
+			Position:       spawnPos,
+			Size:           1,
+			BlocksMovement: true,
+		}
+
+		// Create monster data for each goblin
+		monsters = append(monsters, o.createGoblinData(goblinID))
+	}
 
 	// 9. Roll initiative
 	participants := make(map[core.Entity]int)
@@ -1581,8 +1617,10 @@ func (o *Orchestrator) StartCombat(
 		participants[initiative.NewParticipant(charID, entityTypeCharacter)] = dexMod
 	}
 
-	// Add goblin
-	participants[initiative.NewParticipant(goblinID, entityTypeMonster)] = 2 // Goblin DEX +2
+	// Add all goblins to initiative
+	for _, m := range monsters {
+		participants[initiative.NewParticipant(m.ID, entityTypeMonster)] = 2 // Goblin DEX +2
+	}
 
 	// Roll initiative
 	rolls := initiative.RollForOrder(participants, o.roller)
@@ -1621,7 +1659,7 @@ func (o *Orchestrator) StartCombat(
 		RoomData:          roomData,
 		InitiativeData:    &trackerData,
 		MovementRemaining: ptrInt32(defaultMovementSpeed),
-		Monsters:          []*monster.Data{monsterData},
+		Monsters:          monsters, // Save all monsters
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to update encounter: %w", err)
@@ -1638,9 +1676,42 @@ func (o *Orchestrator) StartCombat(
 		CombatEnded:       false,
 	}
 
-	// TODO: Execute monster turns if they go first
+	// 12. Execute monster turns if they go first
+	var monsterTurns []*MonsterTurnResult
+	if trackerData.Order[0].Type == entityTypeMonster {
+		// Monster(s) go first - execute all monster turns until a player's turn
+		encData := &encounterrepo.EncounterData{
+			ID:                input.EncounterID,
+			RoomData:          roomData,
+			InitiativeData:    &trackerData,
+			InitiativeRolls:   rolls,
+			MovementRemaining: combatState.MovementRemaining,
+			Monsters:          monsters, // All monsters
+		}
 
-	// 12. Build party list for event (with character data)
+		// Execute monster turns
+		monsterTurns, err = o.executeMonsterTurns(ctx, encData, characterIDs)
+		if err != nil {
+			return nil, fmt.Errorf("failed to execute monster turns: %w", err)
+		}
+
+		// Update combat state to reflect the new active index after monster turns
+		combatState.ActiveIndex = encData.InitiativeData.Current
+		combatState.Round = encData.InitiativeData.Round
+
+		// Persist updated initiative, monster state, and room positions
+		_, err = o.encRepo.Update(ctx, &encounterrepo.UpdateInput{
+			EncounterID:    input.EncounterID,
+			InitiativeData: encData.InitiativeData,
+			Monsters:       encData.Monsters,
+			RoomData:       encData.RoomData,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to save initiative after monster turns: %w", err)
+		}
+	}
+
+	// 13. Build party list for event (with character data)
 	party := make([]*entities.Player, 0, len(encOutput.Data.Players))
 	for _, player := range encOutput.Data.Players {
 		// Load character data for the event
@@ -1670,7 +1741,7 @@ func (o *Orchestrator) StartCombat(
 	return &StartCombatOutput{
 		CombatState:  combatState,
 		Room:         roomData,
-		MonsterTurns: nil, // TODO: Fill in if monsters go first
+		MonsterTurns: monsterTurns,
 	}, nil
 }
 
