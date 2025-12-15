@@ -40,6 +40,7 @@ func (r *InMemoryRepository) Save(_ context.Context, input *SaveInput) (*SaveOut
 		InitiativeData:    input.InitiativeData,
 		InitiativeRolls:   input.InitiativeRolls,
 		MovementRemaining: input.MovementRemaining,
+		ActionEconomy:     input.ActionEconomy,
 		Monsters:          input.Monsters,
 		State:             input.State,
 		JoinCode:          input.JoinCode,
@@ -77,6 +78,7 @@ func (r *InMemoryRepository) Get(_ context.Context, input *GetInput) (*GetOutput
 			InitiativeData:    data.InitiativeData,
 			InitiativeRolls:   data.InitiativeRolls,
 			MovementRemaining: data.MovementRemaining,
+			ActionEconomy:     data.ActionEconomy,
 			Monsters:          data.Monsters,
 			State:             data.State,
 			JoinCode:          data.JoinCode,
@@ -111,6 +113,7 @@ func (r *InMemoryRepository) GetByJoinCode(_ context.Context, input *GetByJoinCo
 					InitiativeData:    data.InitiativeData,
 					InitiativeRolls:   data.InitiativeRolls,
 					MovementRemaining: data.MovementRemaining,
+					ActionEconomy:     data.ActionEconomy,
 					Monsters:          data.Monsters,
 					State:             data.State,
 					JoinCode:          data.JoinCode,
@@ -152,6 +155,9 @@ func (r *InMemoryRepository) Update(_ context.Context, input *UpdateInput) (*Upd
 	}
 	if input.MovementRemaining != nil {
 		data.MovementRemaining = *input.MovementRemaining
+	}
+	if input.ActionEconomy != nil {
+		data.ActionEconomy = input.ActionEconomy
 	}
 	if input.Monsters != nil {
 		data.Monsters = input.Monsters
