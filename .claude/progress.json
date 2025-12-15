@@ -22,7 +22,7 @@
         "internal/handlers/dnd5e/v1alpha1/encounter/converters.go",
         "internal/orchestrators/encounter/event_publishing_test.go"
       ],
-      "commit": null,
+      "commit": "e75561e",
       "notes": "Added CharacterData to PlayerJoinedEvent entity. Updated orchestrator to load character data before publishing event. Updated handler to convert character data to proto. Fixed convertPartyToProto TODO. Updated test to verify character data is included."
     }
   ],
