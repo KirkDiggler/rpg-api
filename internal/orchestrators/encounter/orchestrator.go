@@ -184,7 +184,18 @@ func (o *Orchestrator) ResolveAttack(ctx context.Context, input *ResolveAttackIn
 		return nil, fmt.Errorf("encounter not found: %s", input.EncounterID)
 	}
 
-	// 5. Load monster from encounter data (preserves HP across attacks)
+	// 5. Check action economy - attack requires an action
+	actionEconomy := encOutput.Data.ActionEconomy
+	if actionEconomy == nil {
+		// Initialize if not present (backwards compatibility)
+		actionEconomy = entities.NewActionEconomyState()
+	}
+	if !actionEconomy.HasAction() {
+		return nil, fmt.Errorf("no action available: action already used this turn")
+	}
+	// Note: Action is consumed later (step 10) after all validation succeeds
+
+	// 6. Load monster from encounter data (preserves HP across attacks)
 	monsterData := o.findMonsterData(encOutput.Data, input.TargetID)
 	if monsterData == nil {
 		return nil, fmt.Errorf("monster not found: %s", input.TargetID)
@@ -218,7 +229,7 @@ func (o *Orchestrator) ResolveAttack(ctx context.Context, input *ResolveAttackIn
 		return nil, fmt.Errorf("combat resolution failed: %w", err)
 	}
 
-	// 9. Calculate and persist new monster HP
+	// 9. Calculate new monster HP
 	newHP := goblin.HP()
 	if result.Hit {
 		newHP = goblin.HP() - result.TotalDamage
@@ -228,18 +239,20 @@ func (o *Orchestrator) ResolveAttack(ctx context.Context, input *ResolveAttackIn
 
 		// Update monster data with new HP
 		monsterData.HitPoints = newHP
-
-		// Persist updated monster HP to encounter repository
-		_, err = o.encRepo.Update(ctx, &encounterrepo.UpdateInput{
-			EncounterID: input.EncounterID,
-			Monsters:    encOutput.Data.Monsters,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("failed to save monster HP: %w", err)
-		}
 	}
 
-	// 10. Convert toolkit result to our output format
+	// 10. Consume action and persist (action consumed only after all validation succeeds)
+	actionEconomy.UseAction()
+	_, err = o.encRepo.Update(ctx, &encounterrepo.UpdateInput{
+		EncounterID:   input.EncounterID,
+		ActionEconomy: actionEconomy,
+		Monsters:      encOutput.Data.Monsters,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to save encounter state: %w", err)
+	}
+
+	// 11. Convert toolkit result to our output format
 	attackResult := &AttackResult{
 		AttackRoll:      result.AttackRoll,
 		AttackBonus:     result.AttackBonus,
@@ -255,12 +268,12 @@ func (o *Orchestrator) ResolveAttack(ctx context.Context, input *ResolveAttackIn
 		DamageType:      result.DamageType,
 	}
 
-	// 11. Map breakdown if present (only exists on hit)
+	// 12. Map breakdown if present (only exists on hit)
 	if result.Breakdown != nil {
 		attackResult.Breakdown = convertToolkitBreakdown(result.Breakdown)
 	}
 
-	// 12. Publish AttackResolved event
+	// 13. Publish AttackResolved event
 	o.publishEvent(ctx, input.EncounterID, entities.EventTypeAttackResolved, &entities.AttackResolvedEvent{
 		AttackerID: input.AttackerID,
 		TargetID:   input.TargetID,
@@ -401,7 +414,7 @@ func (o *Orchestrator) CreateDungeon(ctx context.Context, input *CreateDungeonIn
 	}
 
 	// Roll initiative for all combatants
-	entities := make(map[core.Entity]int)
+	combatants := make(map[core.Entity]int)
 
 	// Add characters with their DEX modifiers
 	for _, characterID := range input.CharacterIDs {
@@ -416,15 +429,15 @@ func (o *Orchestrator) CreateDungeon(ctx context.Context, input *CreateDungeonIn
 
 		// Create participant entity
 		char := initiative.NewParticipant(characterID, "character")
-		entities[char] = dexModifier
+		combatants[char] = dexModifier
 	}
 
 	// Add goblin with hardcoded DEX modifier
 	goblin := initiative.NewParticipant(goblinID, "monster")
-	entities[goblin] = 2 // Goblin DEX +2
+	combatants[goblin] = 2 // Goblin DEX +2
 
 	// Roll initiative using rpg-toolkit
-	rolls := initiative.RollForOrder(entities, o.roller)
+	rolls := initiative.RollForOrder(combatants, o.roller)
 
 	// Create tracker and extract data
 	initiativeOrder := make([]core.Entity, len(rolls))
@@ -458,13 +471,14 @@ func (o *Orchestrator) CreateDungeon(ctx context.Context, input *CreateDungeonIn
 		}
 	}
 
-	// Create combat state
+	// Create combat state with fresh action economy
 	combatState := &CombatState{
 		EncounterID:       encounterID,
 		Round:             1,
 		TurnOrder:         turnOrder,
 		ActiveIndex:       0,
-		MovementRemaining: 30, // Default movement speed for D&D 5e
+		MovementRemaining: 30,                               // Default movement speed for D&D 5e
+		ActionEconomy:     entities.NewActionEconomyState(), // Fresh action economy for first turn
 		CombatStarted:     true,
 		CombatEnded:       false,
 	}
@@ -478,13 +492,14 @@ func (o *Orchestrator) CreateDungeon(ctx context.Context, input *CreateDungeonIn
 	}))
 	goblinData := goblinMonster.ToData()
 
-	// Save encounter data with room, initiative, and monsters
+	// Save encounter data with room, initiative, monsters, and action economy
 	_, err := o.encRepo.Save(ctx, &encounterrepo.SaveInput{
 		EncounterID:       encounterID,
 		RoomData:          roomData,
 		InitiativeData:    &trackerData,
 		InitiativeRolls:   rolls,
 		MovementRemaining: combatState.MovementRemaining,
+		ActionEconomy:     combatState.ActionEconomy,
 		Monsters:          []*monster.Data{goblinData},
 	})
 	if err != nil {
@@ -831,9 +846,10 @@ func (o *Orchestrator) EndTurn(ctx context.Context, input *EndTurnInput) (*EndTu
 	_, err = o.encRepo.Update(ctx, &encounterrepo.UpdateInput{
 		EncounterID:       input.EncounterID,
 		InitiativeData:    initiativeData,
-		MovementRemaining: ptrInt32(defaultMovementSpeed), // Reset movement for new turn
-		Monsters:          encOutput.Data.Monsters,        // Persist monster HP/state changes
-		RoomData:          encOutput.Data.RoomData,        // Persist monster position changes
+		MovementRemaining: ptrInt32(defaultMovementSpeed),   // Reset movement for new turn
+		ActionEconomy:     entities.NewActionEconomyState(), // Reset action economy for new turn
+		Monsters:          encOutput.Data.Monsters,          // Persist monster HP/state changes
+		RoomData:          encOutput.Data.RoomData,          // Persist monster position changes
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to save turn state: %w", err)
@@ -855,6 +871,7 @@ func (o *Orchestrator) EndTurn(ctx context.Context, input *EndTurnInput) (*EndTu
 		TurnOrder:         turnOrder,
 		ActiveIndex:       currentIndex,
 		MovementRemaining: defaultMovementSpeed,
+		ActionEconomy:     entities.NewActionEconomyState(), // Fresh action economy for new turn
 		CombatStarted:     true,
 		CombatEnded:       combatEnded,
 	}
@@ -917,6 +934,39 @@ const (
 
 // Default movement speed in feet (30 feet = 6 hexes at 5ft/hex)
 const defaultMovementSpeed = 30
+
+// Action cost types for features
+type actionCostType int
+
+const (
+	actionCostNone        actionCostType = iota // No action required (free action)
+	actionCostAction                            // Requires standard action
+	actionCostBonusAction                       // Requires bonus action
+	actionCostReaction                          // Requires reaction
+)
+
+// getFeatureActionCost returns the action cost for a feature.
+// This maps D&D 5e feature activation costs.
+func getFeatureActionCost(featureID string) actionCostType {
+	// D&D 5e feature action costs
+	switch featureID {
+	// Bonus action features
+	case "rage", "second-wind", "step-of-the-wind", "patient-defense", "flurry-of-blows":
+		return actionCostBonusAction
+
+	// Free abilities (no action economy cost)
+	// Action Surge: Used "on your turn" without requiring action, bonus action, or reaction.
+	// Note: Usage limits (per rest) are tracked separately by the feature itself.
+	case "action-surge":
+		return actionCostNone
+
+	default:
+		// Default to no action cost for unknown features.
+		// This allows features to be used without action economy enforcement
+		// until they are explicitly mapped. New features should be added above.
+		return actionCostNone
+	}
+}
 
 // ptrInt32 returns a pointer to the given int32 value
 func ptrInt32(v int32) *int32 {
@@ -1051,7 +1101,7 @@ func (o *Orchestrator) ActivateFeature(
 		return nil, fmt.Errorf("feature ID is required")
 	}
 
-	// 2. Load encounter to verify it exists (and could check turn order later)
+	// 2. Load encounter to verify it exists and get action economy
 	encOutput, err := o.encRepo.Get(ctx, &encounterrepo.GetInput{
 		EncounterID: input.EncounterID,
 	})
@@ -1060,6 +1110,40 @@ func (o *Orchestrator) ActivateFeature(
 	}
 	if encOutput.Data == nil {
 		return nil, fmt.Errorf("encounter not found: %s", input.EncounterID)
+	}
+
+	// 2a. Load action economy (initialize if not present for backwards compatibility)
+	actionEconomy := encOutput.Data.ActionEconomy
+	if actionEconomy == nil {
+		actionEconomy = entities.NewActionEconomyState()
+	}
+
+	// 2b. Check action economy based on feature's action cost
+	actionCost := getFeatureActionCost(input.FeatureID)
+	switch actionCost {
+	case actionCostAction:
+		if !actionEconomy.HasAction() {
+			return &ActivateFeatureOutput{
+				Success: false,
+				Message: "no action available: action already used this turn",
+			}, nil
+		}
+	case actionCostBonusAction:
+		if !actionEconomy.HasBonusAction() {
+			return &ActivateFeatureOutput{
+				Success: false,
+				Message: "no bonus action available: bonus action already used this turn",
+			}, nil
+		}
+	case actionCostReaction:
+		if !actionEconomy.HasReaction() {
+			return &ActivateFeatureOutput{
+				Success: false,
+				Message: "no reaction available: reaction already used this turn",
+			}, nil
+		}
+	case actionCostNone:
+		// No action economy check required for free abilities
 	}
 
 	// 3. Load character data from repository
@@ -1110,10 +1194,22 @@ func (o *Orchestrator) ActivateFeature(
 		return nil, fmt.Errorf("failed to activate feature: %w", activateErr)
 	}
 
-	// 10. Convert back to data (includes new condition in Conditions slice)
+	// 10. Consume the action based on feature's action cost
+	switch actionCost {
+	case actionCostAction:
+		actionEconomy.UseAction()
+	case actionCostBonusAction:
+		actionEconomy.UseBonusAction()
+	case actionCostReaction:
+		actionEconomy.UseReaction()
+	case actionCostNone:
+		// No action to consume for free abilities
+	}
+
+	// 11. Convert back to data (includes new condition in Conditions slice)
 	updatedData := char.ToData()
 
-	// 11. Persist updated character
+	// 12. Persist updated character
 	_, err = o.charRepo.Update(ctx, characterrepo.UpdateInput{
 		CharacterData: updatedData,
 	})
@@ -1121,7 +1217,16 @@ func (o *Orchestrator) ActivateFeature(
 		return nil, fmt.Errorf("failed to save character: %w", err)
 	}
 
-	// 12. Publish FeatureActivated event
+	// 13. Persist consumed action economy
+	_, err = o.encRepo.Update(ctx, &encounterrepo.UpdateInput{
+		EncounterID:   input.EncounterID,
+		ActionEconomy: actionEconomy,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to save action economy: %w", err)
+	}
+
+	// 14. Publish FeatureActivated event
 	o.publishEvent(ctx, input.EncounterID, entities.EventTypeFeatureActivated, &entities.FeatureActivatedEvent{
 		CharacterID:   input.CharacterID,
 		FeatureID:     input.FeatureID,
@@ -1130,7 +1235,7 @@ func (o *Orchestrator) ActivateFeature(
 		CharacterData: updatedData,
 	})
 
-	// 13. Return success with updated data
+	// 15. Return success with updated data
 	return &ActivateFeatureOutput{
 		Success:       true,
 		Message:       fmt.Sprintf("%s activated successfully", input.FeatureID),
@@ -1658,14 +1763,16 @@ func (o *Orchestrator) StartCombat(
 		}
 	}
 
-	// 10. Update encounter state to active
+	// 10. Update encounter state to active with fresh action economy
 	activeState := encounterrepo.StateActive
+	initialActionEconomy := entities.NewActionEconomyState()
 	_, err = o.encRepo.Update(ctx, &encounterrepo.UpdateInput{
 		EncounterID:       input.EncounterID,
 		State:             &activeState,
 		RoomData:          roomData,
 		InitiativeData:    &trackerData,
 		MovementRemaining: ptrInt32(defaultMovementSpeed),
+		ActionEconomy:     initialActionEconomy,
 		Monsters:          monsters, // Save all monsters
 	})
 	if err != nil {
@@ -1679,6 +1786,7 @@ func (o *Orchestrator) StartCombat(
 		TurnOrder:         turnOrder,
 		ActiveIndex:       0,
 		MovementRemaining: defaultMovementSpeed,
+		ActionEconomy:     initialActionEconomy, // Fresh action economy for first turn
 		CombatStarted:     true,
 		CombatEnded:       false,
 	}

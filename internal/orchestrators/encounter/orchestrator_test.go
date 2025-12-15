@@ -24,6 +24,7 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
 
 	"github.com/KirkDiggler/rpg-api/internal/apierr"
+	"github.com/KirkDiggler/rpg-api/internal/entities"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	charactermock "github.com/KirkDiggler/rpg-api/internal/repositories/character/mock"
 	encounterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/encounters"
@@ -1800,6 +1801,180 @@ func (s *OrchestratorTestSuite) TestActivateFeature_EncounterGetError() {
 	s.Require().Error(err)
 	s.Assert().Nil(output)
 	s.Assert().Contains(err.Error(), "failed to load encounter")
+}
+
+// ============================================================================
+// Action Economy Tests
+// ============================================================================
+
+func (s *OrchestratorTestSuite) TestResolveAttack_NoActionAvailable_RejectsAttack() {
+	// Arrange - Create test character data
+	charData := createTestCharacterData("char-1", "Grog")
+	s.mockCharRepo.EXPECT().
+		Get(gomock.Any(), characterrepo.GetInput{ID: "char-1"}).
+		Return(&characterrepo.GetOutput{CharacterData: charData}, nil).
+		AnyTimes()
+
+	// Arrange - Mock encounter repo with action already consumed
+	encData := createTestEncounterData("enc-1")
+	encData.ActionEconomy = &entities.ActionEconomyState{
+		ActionsRemaining:      0, // Action already used
+		BonusActionsRemaining: 1,
+		ReactionsRemaining:    1,
+	}
+	s.mockEncRepo.EXPECT().
+		Get(gomock.Any(), &encounterrepo.GetInput{EncounterID: "enc-1"}).
+		Return(&encounterrepo.GetOutput{Data: encData}, nil)
+
+	// Act
+	output, err := s.orchestrator.ResolveAttack(context.Background(), &ResolveAttackInput{
+		EncounterID: "enc-1",
+		AttackerID:  "char-1",
+		TargetID:    "goblin-1",
+	})
+
+	// Assert - Should return error when no action available
+	s.Require().Error(err)
+	s.Assert().Nil(output)
+	s.Assert().Contains(err.Error(), "no action available")
+}
+
+func (s *OrchestratorTestSuite) TestActivateFeature_NoBonusActionAvailable_RejectsActivation() {
+	// Arrange - Encounter exists with bonus action already consumed
+	// Action economy check happens BEFORE character lookup, so no character mock needed
+	encData := &encounterrepo.EncounterData{
+		ID: "enc-1",
+		ActionEconomy: &entities.ActionEconomyState{
+			ActionsRemaining:      1,
+			BonusActionsRemaining: 0, // Bonus action already used
+			ReactionsRemaining:    1,
+		},
+	}
+	s.mockEncRepo.EXPECT().
+		Get(gomock.Any(), &encounterrepo.GetInput{EncounterID: "enc-1"}).
+		Return(&encounterrepo.GetOutput{Data: encData}, nil)
+
+	// Act - Try to activate Rage (bonus action)
+	output, err := s.orchestrator.ActivateFeature(context.Background(), &ActivateFeatureInput{
+		EncounterID: "enc-1",
+		CharacterID: "char-1",
+		FeatureID:   "rage",
+	})
+
+	// Assert - Should return success=false with message about no bonus action
+	s.Require().NoError(err)
+	s.Require().NotNil(output)
+	s.Assert().False(output.Success)
+	s.Assert().Contains(output.Message, "no bonus action available")
+}
+
+func (s *OrchestratorTestSuite) TestEndTurn_ResetsActionEconomy() {
+	// Arrange - Create encounter with consumed action economy
+	encData := &encounterrepo.EncounterData{
+		ID: "enc-1",
+		InitiativeData: &initiative.TrackerData{
+			Round:   1,
+			Current: 0,
+			Order: []initiative.EntityData{
+				{ID: "char-1", Type: "character"},
+				{ID: "goblin-1", Type: "monster"},
+			},
+		},
+		ActionEconomy: &entities.ActionEconomyState{
+			ActionsRemaining:      0, // All consumed
+			BonusActionsRemaining: 0,
+			ReactionsRemaining:    0,
+		},
+		Monsters: []*monster.Data{monster.NewGoblin("goblin-1").ToData()},
+	}
+	s.mockEncRepo.EXPECT().
+		Get(gomock.Any(), &encounterrepo.GetInput{EncounterID: "enc-1"}).
+		Return(&encounterrepo.GetOutput{Data: encData}, nil)
+
+	// Mock Update - Capture the update to verify action economy reset
+	var capturedUpdate *encounterrepo.UpdateInput
+	s.mockEncRepo.EXPECT().
+		Update(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, input *encounterrepo.UpdateInput) (*encounterrepo.UpdateOutput, error) {
+			capturedUpdate = input
+			return &encounterrepo.UpdateOutput{Success: true}, nil
+		})
+
+	// Act
+	output, err := s.orchestrator.EndTurn(context.Background(), &EndTurnInput{
+		EncounterID: "enc-1",
+	})
+
+	// Assert
+	s.Require().NoError(err)
+	s.Require().NotNil(output)
+	s.Require().NotNil(output.CombatState)
+
+	// Verify Update was called with fresh action economy
+	s.Require().NotNil(capturedUpdate)
+	s.Require().NotNil(capturedUpdate.ActionEconomy)
+	s.Assert().Equal(1, capturedUpdate.ActionEconomy.ActionsRemaining, "Action should be reset")
+	s.Assert().Equal(1, capturedUpdate.ActionEconomy.BonusActionsRemaining, "Bonus action should be reset")
+	s.Assert().Equal(1, capturedUpdate.ActionEconomy.ReactionsRemaining, "Reaction should be reset")
+
+	// Verify CombatState output has fresh action economy
+	s.Require().NotNil(output.CombatState.ActionEconomy)
+	s.Assert().Equal(1, output.CombatState.ActionEconomy.ActionsRemaining)
+	s.Assert().Equal(1, output.CombatState.ActionEconomy.BonusActionsRemaining)
+	s.Assert().Equal(1, output.CombatState.ActionEconomy.ReactionsRemaining)
+}
+
+func (s *OrchestratorTestSuite) TestCreateDungeon_InitializesActionEconomy() {
+	// Arrange - Mock character repo
+	s.mockCharRepo.EXPECT().
+		Get(gomock.Any(), characterrepo.GetInput{ID: "char-1"}).
+		Return(&characterrepo.GetOutput{
+			CharacterData: &character.Data{
+				ID: "char-1",
+				AbilityScores: shared.AbilityScores{
+					abilities.DEX: 14, // +2 modifier for initiative
+				},
+			},
+		}, nil).
+		AnyTimes()
+
+	// Capture the save input to verify action economy
+	var capturedSave *encounterrepo.SaveInput
+	s.mockEncRepo.EXPECT().
+		Save(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, input *encounterrepo.SaveInput) (*encounterrepo.SaveOutput, error) {
+			capturedSave = input
+			return &encounterrepo.SaveOutput{Success: true}, nil
+		})
+
+	// Update might be called if monsters go first (monster turn execution)
+	s.mockEncRepo.EXPECT().
+		Update(gomock.Any(), gomock.Any()).
+		Return(&encounterrepo.UpdateOutput{Success: true}, nil).
+		AnyTimes()
+
+	// Act
+	output, err := s.orchestrator.CreateDungeon(context.Background(), &CreateDungeonInput{
+		CharacterIDs: []string{"char-1"},
+	})
+
+	// Assert
+	s.Require().NoError(err)
+	s.Require().NotNil(output)
+	s.Require().NotNil(output.CombatState)
+
+	// Verify Save was called with initialized action economy
+	s.Require().NotNil(capturedSave)
+	s.Require().NotNil(capturedSave.ActionEconomy)
+	s.Assert().Equal(1, capturedSave.ActionEconomy.ActionsRemaining, "Action should be initialized to 1")
+	s.Assert().Equal(1, capturedSave.ActionEconomy.BonusActionsRemaining, "Bonus action should be initialized to 1")
+	s.Assert().Equal(1, capturedSave.ActionEconomy.ReactionsRemaining, "Reaction should be initialized to 1")
+
+	// Verify CombatState output has action economy
+	s.Require().NotNil(output.CombatState.ActionEconomy)
+	s.Assert().Equal(1, output.CombatState.ActionEconomy.ActionsRemaining)
+	s.Assert().Equal(1, output.CombatState.ActionEconomy.BonusActionsRemaining)
+	s.Assert().Equal(1, output.CombatState.ActionEconomy.ReactionsRemaining)
 }
 
 // ============================================================================
