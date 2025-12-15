@@ -1430,13 +1430,21 @@ func (o *Orchestrator) JoinEncounter(
 		return nil, fmt.Errorf("failed to update encounter: %w", err)
 	}
 
-	// 7. Publish PlayerJoined event
+	// 7. Load character data for the joining player
+	var charData *character.Data
+	charOutput, charErr := o.charRepo.Get(ctx, characterrepo.GetInput{ID: input.CharacterIDs[0]})
+	if charErr == nil && charOutput != nil {
+		charData = charOutput.CharacterData
+	}
+
+	// 8. Publish PlayerJoined event with character data
 	o.publishEvent(ctx, encOutput.Data.ID, entities.EventTypePlayerJoined, &entities.PlayerJoinedEvent{
-		PlayerID:    input.PlayerID,
-		CharacterID: input.CharacterIDs[0],
+		PlayerID:      input.PlayerID,
+		CharacterID:   input.CharacterIDs[0],
+		CharacterData: charData,
 	})
 
-	// 8. Build party list for response
+	// 9. Build party list for response
 	party := o.buildPartyFromPlayers(ctx, encOutput.Data.Players, encOutput.Data.HostID)
 
 	return &JoinEncounterOutput{

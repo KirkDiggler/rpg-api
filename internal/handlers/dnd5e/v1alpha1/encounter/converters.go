@@ -3,9 +3,11 @@ package encounter
 import (
 	apiv1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/api/v1alpha1"
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
+	characterhandler "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v1alpha1/character"
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/encounter"
 	"github.com/KirkDiggler/rpg-toolkit/core"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/abilities"
+	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/monster"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/refs"
 	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
@@ -823,7 +825,12 @@ func convertPartyToProto(party []*encounter.PartyMember) []*dnd5ev1alpha1.PartyM
 			IsHost:      member.IsHost,
 			IsReady:     member.IsReady,
 			IsConnected: member.IsConnected,
-			// TODO: Convert character data when needed
+		}
+		// Convert character data if present
+		if member.CharacterData != nil {
+			if charData, ok := member.CharacterData.(*toolkitchar.Data); ok {
+				protoParty[i].Character = characterhandler.ConvertCharacterDataToProto(charData)
+			}
 		}
 	}
 	return protoParty
