@@ -1322,11 +1322,13 @@ func (o *Orchestrator) CreateEncounter(
 	}
 
 	// Add pillars for atmosphere
+	// Note: Using positions that stay inside bounds after offset->cube conversion
+	// For odd-q hex, z = row - (col/2), so avoid high-X low-Y combinations
 	obstacles := []spatial.Position{
-		{X: 3, Y: 3},
-		{X: 3, Y: 17},
-		{X: 17, Y: 3},
-		{X: 17, Y: 17},
+		{X: 5, Y: 5},   // Inner left pillar
+		{X: 5, Y: 14},  // Inner left pillar (bottom)
+		{X: 14, Y: 10}, // Inner right pillar (middle to ensure z >= 0)
+		{X: 10, Y: 15}, // Center-bottom pillar
 	}
 	for i, pos := range obstacles {
 		obstacleID := fmt.Sprintf("pillar-%d", i)
@@ -1573,18 +1575,33 @@ func (o *Orchestrator) StartCombat(
 		i++
 	}
 
-	// 7. Add goblin target (for now, simple combat)
-	goblinID := "goblin-1"
-	roomData.Entities[goblinID] = spatial.EntityPlacement{
-		EntityID:       goblinID,
-		EntityType:     entityTypeMonster,
-		Position:       spatial.Position{X: 10, Y: 10},
-		Size:           1,
-		BlocksMovement: true,
+	// 7. Spawn monsters equal to number of players, spread across the room
+	// Monster spawn points on the right side of the room (away from players)
+	monsterSpawnPoints := []spatial.Position{
+		{X: 14, Y: 8},  // Right side
+		{X: 14, Y: 12}, // Right side lower
+		{X: 12, Y: 10}, // Center-right
+		{X: 13, Y: 6},  // Right upper
 	}
 
-	// 8. Create monster data
-	monsterData := o.createGoblinData(goblinID)
+	numPlayers := len(encOutput.Data.Players)
+	monsters := make([]*monster.Data, 0, numPlayers)
+
+	for i := 0; i < numPlayers; i++ {
+		goblinID := fmt.Sprintf("goblin-%d", i+1)
+		spawnPos := monsterSpawnPoints[i%len(monsterSpawnPoints)]
+
+		roomData.Entities[goblinID] = spatial.EntityPlacement{
+			EntityID:       goblinID,
+			EntityType:     entityTypeMonster,
+			Position:       spawnPos,
+			Size:           1,
+			BlocksMovement: true,
+		}
+
+		// Create monster data for each goblin
+		monsters = append(monsters, o.createGoblinData(goblinID))
+	}
 
 	// 9. Roll initiative
 	participants := make(map[core.Entity]int)
@@ -1600,8 +1617,10 @@ func (o *Orchestrator) StartCombat(
 		participants[initiative.NewParticipant(charID, entityTypeCharacter)] = dexMod
 	}
 
-	// Add goblin
-	participants[initiative.NewParticipant(goblinID, entityTypeMonster)] = 2 // Goblin DEX +2
+	// Add all goblins to initiative
+	for _, m := range monsters {
+		participants[initiative.NewParticipant(m.ID, entityTypeMonster)] = 2 // Goblin DEX +2
+	}
 
 	// Roll initiative
 	rolls := initiative.RollForOrder(participants, o.roller)
@@ -1640,7 +1659,7 @@ func (o *Orchestrator) StartCombat(
 		RoomData:          roomData,
 		InitiativeData:    &trackerData,
 		MovementRemaining: ptrInt32(defaultMovementSpeed),
-		Monsters:          []*monster.Data{monsterData},
+		Monsters:          monsters, // Save all monsters
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to update encounter: %w", err)
@@ -1667,7 +1686,7 @@ func (o *Orchestrator) StartCombat(
 			InitiativeData:    &trackerData,
 			InitiativeRolls:   rolls,
 			MovementRemaining: combatState.MovementRemaining,
-			Monsters:          []*monster.Data{monsterData},
+			Monsters:          monsters, // All monsters
 		}
 
 		// Execute monster turns
