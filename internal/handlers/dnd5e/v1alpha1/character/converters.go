@@ -1185,41 +1185,30 @@ func ConvertCharacterDataToProto(data *toolkitchar.Data) *dnd5ev1alpha1.Characte
 	}
 
 	// Convert features
+	// Note: ref is stored as string "module:type:id", not an object
 	if len(data.Features) > 0 {
 		for _, featureJSON := range data.Features {
-			// Unmarshal to get basic info
 			var featureData struct {
-				Ref struct {
-					Value string `json:"value"`
-				} `json:"ref"`
 				ID   string `json:"id"`
 				Name string `json:"name"`
 			}
 			if err := json.Unmarshal(featureJSON, &featureData); err != nil {
-				continue // Skip invalid features
-			}
-
-			// Use ID or Ref.Value as the feature identifier
-			featureID := featureData.ID
-			if featureID == "" {
-				featureID = featureData.Ref.Value
-			}
-
-			// Skip if we still don't have an ID
-			if featureID == "" {
 				continue
 			}
 
-			// Get display name - prefer the name from JSON, fall back to lookup
+			if featureData.ID == "" {
+				continue
+			}
+
 			displayName := featureData.Name
 			if displayName == "" {
-				displayName = getFeatureDisplayName(featureID)
+				displayName = getFeatureDisplayName(featureData.ID)
 			}
 
 			char.Features = append(char.Features, &dnd5ev1alpha1.CharacterFeature{
-				Id:     featureID,
+				Id:     featureData.ID,
 				Name:   displayName,
-				Source: featureSourceClass, // Most features are class features
+				Source: featureSourceClass,
 			})
 		}
 	}
