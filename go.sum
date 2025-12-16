@@ -4,6 +4,7 @@ github.com/KirkDiggler/rpg-toolkit/core v0.9.6-0.20251205065638-a6d3a75d2297 h1:
 github.com/KirkDiggler/rpg-toolkit/core v0.9.6-0.20251205065638-a6d3a75d2297/go.mod h1:nPbQ/ZBTHKEavGQapmXo/MQxla7JuZNj2ICn9aNTQCw=
 github.com/KirkDiggler/rpg-toolkit/dice v0.3.3-0.20250914062452-e2c6a0f32059 h1:74OW0fnq459g28p2JpyrB20tjno4FlF18+cHJ2xiTes=
 github.com/KirkDiggler/rpg-toolkit/dice v0.3.3-0.20250914062452-e2c6a0f32059/go.mod h1:JEWKuYBi+h9f8jFAcE2MI2yVDFV6ldOVx36y5fbc6p4=
+github.com/KirkDiggler/rpg-toolkit/dice v0.3.3-0.20251215134529-a90b05680506/go.mod h1:JEWKuYBi+h9f8jFAcE2MI2yVDFV6ldOVx36y5fbc6p4=
 github.com/KirkDiggler/rpg-toolkit/events v0.6.2 h1:lRtKXko35bGw/l2TKYsN7JKOODUi6u66J8QcnQavm3s=
 github.com/KirkDiggler/rpg-toolkit/events v0.6.2/go.mod h1:JNzyCw1l/RL4nyoCpx3tSko8Dsocwye9eFg33Ot6mUw=
 github.com/KirkDiggler/rpg-toolkit/game v0.1.0 h1:jXYlCqkqK0LCHquu+1vgTEbedhgQbspR6748sO/KYqE=
@@ -14,6 +15,10 @@ github.com/KirkDiggler/rpg-toolkit/rpgerr v0.1.2 h1:B7IrROe3GcPrzMeV0EQryA194Y7Y
 github.com/KirkDiggler/rpg-toolkit/rpgerr v0.1.2/go.mod h1:wsyJmmf1X0iLFGy5Iyy5sUoZhXZQvuYVsKdXfc4b/T4=
 github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.27.2 h1:jRBhS2Jr+mSx9k3sK+upu40WC3FSm8D2H45QTeRhqjk=
 github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.27.2/go.mod h1:EhBDz2h44/YZkbhy07OrZMe5AinXwMzOy5R5byTm1pI=
+github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.30.1 h1:VzC5T9Mx7ltWzYzh6OwuVluucoSxoiAk5GscRiBtLV8=
+github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.30.1/go.mod h1:Cajv9abo1R1GO6tvcJ4rxoASRYVpR8kQ79Gs8kXMEFY=
+github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.30.2 h1:o2XxLJ+WPa0p7gU44Ymz1xJT/FtcT1Zbf75G7wDFkUU=
+github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.30.2/go.mod h1:Cajv9abo1R1GO6tvcJ4rxoASRYVpR8kQ79Gs8kXMEFY=
 github.com/KirkDiggler/rpg-toolkit/tools/spatial v0.2.0 h1:ejpq9e6Ulk6T4FhX2Tnp42E84F2oOBdm5hYRFhqFccE=
 github.com/KirkDiggler/rpg-toolkit/tools/spatial v0.2.0/go.mod h1:6DSb4xhITAy0wstKWoS3BeEYywWLt+138bxRCfH0kzY=
 github.com/alicebob/miniredis/v2 v2.35.0 h1:QwLphYqCEAo1eu1TqPRN2jgVMPBweeQcR21jeqDCONI=
