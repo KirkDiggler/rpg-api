@@ -56,20 +56,56 @@
         "All tests passing, pre-commit checks clean"
       ],
       "notes": "Encounter generation (Layer 3) complete per design doc. Uses math/rand for deterministic generation. D&D encounter math simplified (partySize * targetCR). Monster selection respects CR budgets and enforces tactical role distribution. All Input/Output patterns followed consistently."
+    },
+    {
+      "date": "2025-12-15",
+      "commit": "3f7511a",
+      "summary": "Created public dungeon generator API with dependency injection and stub implementations",
+      "completed": [
+        "Created generator.go with Generator struct and public Generate method",
+        "Defined generator interfaces: LayoutGenerator, ShapeGenerator, FeatureGenerator, EncounterGenerator, BudgetAllocator",
+        "Defined supporting types: LayoutInput/Output, ShapeInput/Output, FeatureInput/Output, EncounterInput/Output, BudgetInput/Output",
+        "Created LayoutConnection type for layout-level connections (uses int indexes)",
+        "Implemented full generation pipeline: Budget → Layout → Rooms (Shape → Features → Encounter) → Assemble Dungeon",
+        "Created adapter/ package to avoid import cycles between dungeon and encounter",
+        "Implemented EncounterAdapter bridging encounter.EncounterGenerator to dungeon interface",
+        "Implemented BudgetAllocator combining BossRoomBudget + RoomBudgets into single array",
+        "Created stub implementations: StubLayoutGenerator (linear), StubShapeGenerator (rectangles), StubFeatureGenerator (basic spawn zones)",
+        "Created 16 comprehensive end-to-end tests in adapter/generator_test.go",
+        "Tests verify: structure, connections, CR budgets, theme respect, seed reproducibility, input validation, different sizes/themes",
+        "All tests passing, pre-commit checks clean"
+      ],
+      "notes": "Public API complete and stable. Generator orchestrates all layers through injected dependencies. Stub implementations enable end-to-end testing without real shape/feature/layout generators. Next: implement actual shape, feature, and layout generators to replace stubs."
+    },
+    {
+      "date": "2025-12-15",
+      "commit": "pending",
+      "summary": "Implemented toolkit integration package with layout, shape, and feature generators",
+      "completed": [
+        "Created internal/components/dungeon/toolkit/ package",
+        "Implemented ToolkitLayoutGenerator with linear, branching, and hub layouts",
+        "Implemented ToolkitShapeGenerator for structured and organic room shapes",
+        "Implemented ToolkitFeatureGenerator for obstacles, terrain, and spawn zones",
+        "Created factory functions: NewToolkitGenerators and CreateGenerator",
+        "Added comprehensive test suite with 14 test cases covering all generators",
+        "All generators implement dungeon interfaces (LayoutGenerator, ShapeGenerator, FeatureGenerator)",
+        "All tests passing, minor staticcheck style warnings (non-blocking)",
+        "Added room type constants to avoid magic strings",
+        "Added #nosec G404 comments for deterministic random generation"
+      ],
+      "notes": "Toolkit integration complete but simplified from original plan. Initially attempted to use rpg-toolkit/tools/environments GraphBasedGenerator but encountered dependency compatibility issues with selectables module (breaking changes in events/dice API). Pivoted to simple graph-based implementations that can be enhanced with toolkit components later. Layout generator creates linear/branching/hub patterns. Shape generator creates rectangular shapes with variation based on style (structured vs organic). Feature generator places obstacles, terrain patches, and spawn zones based on room type and theme rules. Factory provides convenient generator creation and full dungeon generator assembly."
     }
   ],
   "next_steps": [
-    "Create shape/ package with structured and organic generation algorithms",
-    "Create feature/ package with obstacle and terrain placement",
-    "Create layout/ package with branching, linear, and hub connection patterns",
-    "Create generator.go with public API orchestrating all layers",
-    "Wire layout to toolkit environments.GraphBasedGenerator",
-    "Implement 'hidden main path' presentation logic"
+    "Enhance toolkit integration when environments module compatibility issues resolved",
+    "Implement 'hidden main path' presentation logic",
+    "Integration test with all real implementations",
+    "Consider adding more shape variety (L-shapes, T-shapes, irregular polygons)",
+    "Add more sophisticated obstacle and terrain placement algorithms"
   ],
   "toolkit_dependencies": {
-    "environments": "GraphBasedGenerator, RoomBuilder, wall patterns",
-    "spawn": "SpawnEngine, patterns, constraints",
-    "selectables": "BasicTable for weighted selection",
-    "spatial": "Room, RoomOrchestrator, connections"
+    "spatial": "Room, RoomOrchestrator, connections (currently unused but prepared for future integration)",
+    "environments": "GraphBasedGenerator (blocked by selectables compatibility issues)",
+    "selectables": "BasicTable (blocked by breaking changes in events/dice/core APIs)"
   }
 }
