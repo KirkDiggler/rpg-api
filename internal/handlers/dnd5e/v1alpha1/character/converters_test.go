@@ -296,28 +296,30 @@ func (s *ConvertersTestSuite) TestConvertCharacterDataToProto_InvalidFeatureJSON
 	assert.Equal(s.T(), "valid-rage", result.Features[0].Id)
 }
 
-func (s *ConvertersTestSuite) TestConvertCharacterDataToProto_FeatureWithMissingID() {
-	// Create test data with feature missing ID
+func (s *ConvertersTestSuite) TestConvertCharacterDataToProto_FeatureWithToolkitFormat() {
+	// Test actual toolkit format: ref is a string, id and name are top-level
 	testData := &toolkitchar.Data{
 		ID:    "test-char",
 		Name:  "Barbarian",
 		Level: 1,
 		Features: []json.RawMessage{
 			json.RawMessage(`{
-				"ref": {"value": "rage"},
+				"ref": "dnd5e:features:rage",
+				"id": "rage",
 				"name": "Rage",
-				"level": 1
+				"level": 1,
+				"uses": 2,
+				"max_uses": 2
 			}`),
 		},
 	}
 
-	// Convert to proto - should use ref.value as ID fallback
 	result := ConvertCharacterDataToProto(testData)
 
-	// Verify feature uses fallback ID
 	require.NotNil(s.T(), result, "Result should not be nil")
 	require.Len(s.T(), result.Features, 1, "Should have 1 feature")
-	assert.Equal(s.T(), "rage", result.Features[0].Id, "Should use ref.value as fallback ID")
+	assert.Equal(s.T(), "rage", result.Features[0].Id)
+	assert.Equal(s.T(), "Rage", result.Features[0].Name)
 }
 
 func (s *ConvertersTestSuite) TestGetFeatureDisplayName() {
