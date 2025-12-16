@@ -35,11 +35,34 @@
         "All tests passing (17 theme tests), pre-commit checks clean"
       ],
       "notes": "Theme system complete per design doc. Monster IDs are placeholder strings (e.g., 'skeleton', 'zombie') that will become toolkit constants later. Each theme has distinct shape style, obstacle types, and monster pools. Boss CR verified higher than regular monsters."
+    },
+    {
+      "date": "2025-12-15",
+      "commit": "1f85478",
+      "summary": "Implemented encounter package with CR budget allocation and role-based monster selection",
+      "completed": [
+        "Created internal/components/dungeon/encounter/ package",
+        "Implemented EncounterGenerator interface with Generate method",
+        "Created AllocateBudget function with 40/60 boss/regular split",
+        "Implemented progressive CR scaling for regular rooms (later rooms harder)",
+        "Created MonsterSelector with role-based composition rules",
+        "Low CR (<=2): 70% melee, 30% ranged",
+        "Medium CR (2-5): 50% melee, 30% ranged, 20% support",
+        "High CR (>5): 40% melee, 30% ranged, 30% support",
+        "Boss encounters: boss from BossPool + melee minions",
+        "Deterministic random selection with seed for reproducibility",
+        "Created 34 comprehensive tests across 3 test suites",
+        "Achieved 99.1% test coverage on encounter package",
+        "All tests passing, pre-commit checks clean"
+      ],
+      "notes": "Encounter generation (Layer 3) complete per design doc. Uses math/rand for deterministic generation. D&D encounter math simplified (partySize * targetCR). Monster selection respects CR budgets and enforces tactical role distribution. All Input/Output patterns followed consistently."
     }
   ],
   "next_steps": [
-    "Create encounter/ package with CR budget and role-based selection",
-    "Create generator.go with public API orchestrating toolkit tools",
+    "Create shape/ package with structured and organic generation algorithms",
+    "Create feature/ package with obstacle and terrain placement",
+    "Create layout/ package with branching, linear, and hub connection patterns",
+    "Create generator.go with public API orchestrating all layers",
     "Wire layout to toolkit environments.GraphBasedGenerator",
     "Implement 'hidden main path' presentation logic"
   ],
