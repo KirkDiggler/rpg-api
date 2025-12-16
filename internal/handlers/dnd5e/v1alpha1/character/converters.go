@@ -21,6 +21,7 @@ import (
 	// "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/packs" // TODO: Uncomment when Pack enum is available
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/proficiencies"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/races"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/refs"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/skills"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/spells"
@@ -1727,6 +1728,88 @@ func convertProtoSkillToToolkit(skill dnd5ev1alpha1.Skill) skills.Skill {
 	}
 }
 
+// convertProtoToolToToolkit converts proto Tool enum to toolkit SelectionID
+func convertProtoToolToToolkit(tool dnd5ev1alpha1.Tool) shared.SelectionID {
+	switch tool {
+	// Artisan's tools
+	case dnd5ev1alpha1.Tool_TOOL_ALCHEMIST_SUPPLIES:
+		return refs.Tools.AlchemistSupplies().ID
+	case dnd5ev1alpha1.Tool_TOOL_BREWER_SUPPLIES:
+		return refs.Tools.BrewerSupplies().ID
+	case dnd5ev1alpha1.Tool_TOOL_CALLIGRAPHER_SUPPLIES:
+		return refs.Tools.CalligrapherSupplies().ID
+	case dnd5ev1alpha1.Tool_TOOL_CARPENTER_TOOLS:
+		return refs.Tools.CarpenterTools().ID
+	case dnd5ev1alpha1.Tool_TOOL_CARTOGRAPHER_TOOLS:
+		return refs.Tools.CartographerTools().ID
+	case dnd5ev1alpha1.Tool_TOOL_COBBLER_TOOLS:
+		return refs.Tools.CobblerTools().ID
+	case dnd5ev1alpha1.Tool_TOOL_COOK_UTENSILS:
+		return refs.Tools.CookUtensils().ID
+	case dnd5ev1alpha1.Tool_TOOL_GLASSBLOWER_TOOLS:
+		return refs.Tools.GlassblowerTools().ID
+	case dnd5ev1alpha1.Tool_TOOL_JEWELER_TOOLS:
+		return refs.Tools.JewelerTools().ID
+	case dnd5ev1alpha1.Tool_TOOL_LEATHERWORKER_TOOLS:
+		return refs.Tools.LeatherworkerTools().ID
+	case dnd5ev1alpha1.Tool_TOOL_MASON_TOOLS:
+		return refs.Tools.MasonTools().ID
+	case dnd5ev1alpha1.Tool_TOOL_PAINTER_SUPPLIES:
+		return refs.Tools.PainterSupplies().ID
+	case dnd5ev1alpha1.Tool_TOOL_POTTER_TOOLS:
+		return refs.Tools.PotterTools().ID
+	case dnd5ev1alpha1.Tool_TOOL_SMITH_TOOLS:
+		return refs.Tools.SmithTools().ID
+	case dnd5ev1alpha1.Tool_TOOL_TINKER_TOOLS:
+		return refs.Tools.TinkerTools().ID
+	case dnd5ev1alpha1.Tool_TOOL_WEAVER_TOOLS:
+		return refs.Tools.WeaverTools().ID
+	case dnd5ev1alpha1.Tool_TOOL_WOODCARVER_TOOLS:
+		return refs.Tools.WoodcarverTools().ID
+	// Other tools
+	case dnd5ev1alpha1.Tool_TOOL_DISGUISE_KIT:
+		return refs.Tools.DisguiseKit().ID
+	case dnd5ev1alpha1.Tool_TOOL_FORGERY_KIT:
+		return refs.Tools.ForgeryKit().ID
+	case dnd5ev1alpha1.Tool_TOOL_HERBALISM_KIT:
+		return refs.Tools.HerbalismKit().ID
+	case dnd5ev1alpha1.Tool_TOOL_NAVIGATOR_TOOLS:
+		return refs.Tools.NavigatorTools().ID
+	case dnd5ev1alpha1.Tool_TOOL_POISONER_KIT:
+		return refs.Tools.PoisonerKit().ID
+	case dnd5ev1alpha1.Tool_TOOL_THIEVES_TOOLS:
+		return refs.Tools.ThievesTools().ID
+	// Gaming sets
+	case dnd5ev1alpha1.Tool_TOOL_DICE_SET:
+		return refs.Tools.DiceSet().ID
+	case dnd5ev1alpha1.Tool_TOOL_PLAYING_CARD_SET:
+		return refs.Tools.PlayingCardSet().ID
+	// Musical instruments
+	case dnd5ev1alpha1.Tool_TOOL_BAGPIPES:
+		return refs.Tools.Bagpipes().ID
+	case dnd5ev1alpha1.Tool_TOOL_DRUM:
+		return refs.Tools.Drum().ID
+	case dnd5ev1alpha1.Tool_TOOL_DULCIMER:
+		return refs.Tools.Dulcimer().ID
+	case dnd5ev1alpha1.Tool_TOOL_FLUTE:
+		return refs.Tools.Flute().ID
+	case dnd5ev1alpha1.Tool_TOOL_LUTE:
+		return refs.Tools.Lute().ID
+	case dnd5ev1alpha1.Tool_TOOL_LYRE:
+		return refs.Tools.Lyre().ID
+	case dnd5ev1alpha1.Tool_TOOL_HORN:
+		return refs.Tools.Horn().ID
+	case dnd5ev1alpha1.Tool_TOOL_PAN_FLUTE:
+		return refs.Tools.PanFlute().ID
+	case dnd5ev1alpha1.Tool_TOOL_SHAWM:
+		return refs.Tools.Shawm().ID
+	case dnd5ev1alpha1.Tool_TOOL_VIOL:
+		return refs.Tools.Viol().ID
+	default:
+		return ""
+	}
+}
+
 // convertProtoRaceToToolkit converts proto Race enum to toolkit Race
 func convertProtoRaceToToolkit(race dnd5ev1alpha1.Race) races.Race {
 	switch race {
@@ -2036,9 +2119,16 @@ func loadAllClassChoices(classID classes.Class) []*dnd5ev1alpha1.Choice {
 		}
 	}
 
+	// Add tool proficiency choice if present (e.g., Monk, Bard)
+	if requirements.Tools != nil && requirements.Tools.Count > 0 {
+		toolChoice := createToolChoice(requirements.Tools)
+		if toolChoice != nil {
+			result = append(result, toolChoice)
+		}
+	}
+
 	// TODO: Add other choice types as needed:
 	// - Language choices (requirements.Languages)
-	// - Tool choices (requirements.Tools)
 	// - Expertise (requirements.Expertise)
 
 	return result
@@ -2379,6 +2469,38 @@ func createFightingStyleChoice(req *choices.FightingStyleRequirement) *dnd5ev1al
 		Options: &dnd5ev1alpha1.Choice_FightingStyleOptions{
 			FightingStyleOptions: &dnd5ev1alpha1.FightingStyleOptions{
 				Available: fightingStyles,
+			},
+		},
+	}
+}
+
+// createToolChoice converts a tool requirement to a proto Choice
+func createToolChoice(req *choices.ToolRequirement) *dnd5ev1alpha1.Choice {
+	if req == nil || len(req.Options) == 0 {
+		return nil
+	}
+
+	// Convert tool options to proto enums
+	toolOptions := make([]dnd5ev1alpha1.Tool, 0, len(req.Options))
+	for _, toolStr := range req.Options {
+		if tool := parseToolString(toolStr); tool != dnd5ev1alpha1.Tool_TOOL_UNSPECIFIED {
+			toolOptions = append(toolOptions, tool)
+		}
+	}
+
+	// If no valid tools could be converted, return nil
+	if len(toolOptions) == 0 {
+		return nil
+	}
+
+	return &dnd5ev1alpha1.Choice{
+		Id:          string(req.ID),
+		Description: req.Label,
+		ChooseCount: int32(req.Count),
+		ChoiceType:  dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_TOOLS,
+		Options: &dnd5ev1alpha1.Choice_ToolOptions{
+			ToolOptions: &dnd5ev1alpha1.ToolOptions{
+				Available: toolOptions,
 			},
 		},
 	}

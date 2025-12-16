@@ -326,6 +326,14 @@ func (h *Handler) UpdateClass(
 
 					classChoices.Equipment = append(classChoices.Equipment, selection)
 				}
+			case dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_TOOLS:
+				if tools := choice.GetTools(); tools != nil {
+					for _, tool := range tools.Tools {
+						if toolID := convertProtoToolToToolkit(tool); toolID != "" {
+							classChoices.Tools = append(classChoices.Tools, toolID)
+						}
+					}
+				}
 			}
 		}
 	}
