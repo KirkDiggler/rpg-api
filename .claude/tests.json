@@ -1,30 +1,51 @@
 {
   "tests": [
     {
-      "id": "attack-rejected-no-action",
-      "feature": "action-economy",
-      "prompt": "Is attack rejected when character has already used their action this turn?",
+      "id": "generate-crypt-dungeon",
+      "feature": "dungeon-generation",
+      "prompt": "Call dungeon.Generate with ThemeCrypt, Length=4, PartySize=4, TargetCR=3. Verify output has 4 rooms, connections between rooms, and a designated boss room.",
       "passes": false,
       "last_checked": null
     },
     {
-      "id": "bonus-action-rejected-when-used",
-      "feature": "action-economy",
-      "prompt": "Is bonus action feature rejected when bonus action has been used?",
+      "id": "theme-shapes-correct",
+      "feature": "themes",
+      "prompt": "Generate a Crypt dungeon and verify rooms have structured shapes. Generate a Cave dungeon and verify rooms have organic shapes.",
       "passes": false,
       "last_checked": null
     },
     {
-      "id": "turn-end-resets-economy",
-      "feature": "action-economy",
-      "prompt": "Does ending turn reset action economy for next turn?",
+      "id": "cr-budget-allocation",
+      "feature": "encounters",
+      "prompt": "Generate a dungeon with TargetCR=5, PartySize=4. Verify boss room gets ~40% of total CR budget and remaining rooms have progressively harder encounters.",
       "passes": false,
       "last_checked": null
     },
     {
-      "id": "reaction-tracked-separately",
-      "feature": "action-economy",
-      "prompt": "Is reaction tracked separately from action and bonus action?",
+      "id": "role-based-monster-selection",
+      "feature": "encounters",
+      "prompt": "Generate encounters for a Crypt theme. Verify monsters are selected from the theme's MonsterPool with appropriate role distribution (melee, ranged, support).",
+      "passes": false,
+      "last_checked": null
+    },
+    {
+      "id": "branching-layout",
+      "feature": "layout",
+      "prompt": "Generate a dungeon with LayoutBranching and Length=5. Verify there are side rooms that branch off the main path, and multiple possible routes exist.",
+      "passes": false,
+      "last_checked": null
+    },
+    {
+      "id": "spawn-zones-placed",
+      "feature": "features",
+      "prompt": "Generate a dungeon room. Verify it has spawn zones defined (PlayerSpawn for entrance, MonsterSpawn for encounters, Boss zone for boss room).",
+      "passes": false,
+      "last_checked": null
+    },
+    {
+      "id": "seed-reproducibility",
+      "feature": "dungeon-generation",
+      "prompt": "Generate two dungeons with the same Seed value. Verify they produce identical layouts, rooms, and encounters.",
       "passes": false,
       "last_checked": null
     }

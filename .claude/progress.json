@@ -1,21 +1,21 @@
 {
-  "branch": "feat/issue-293-action-economy",
-  "issues": ["#293"],
-  "goal": "Implement action economy enforcement - track and enforce action/bonus action/reaction limits per turn",
-  "sessions": [
-    {
-      "id": "2025-12-15-001",
-      "task": "Explore current action economy state in toolkit and API",
-      "status": "in_progress",
-      "artifacts": [],
-      "commit": null,
-      "notes": "Need to understand: what toolkit provides, what API tracks, where enforcement should happen"
-    }
-  ],
+  "branch": "feat/dungeon-generation",
+  "issues": ["#300"],
+  "goal": "Implement procedural dungeon generation with themed, multi-room dungeons and CR-scaled encounters as a prototype in internal/components/dungeon/ that will later migrate to rpg-toolkit/rulebooks/dnd5e/",
+  "design_doc": "docs/plans/2025-01-15-dungeon-generation-design.md",
+  "sessions": [],
   "next_steps": [
-    "Add action economy fields to combat/turn state",
-    "Update Attack handler to check/consume action",
-    "Update ActivateFeature to check action cost",
-    "Handle turn end reset"
-  ]
+    "Create types.go with output structures (Dungeon, Room, Shape, Encounter, etc.)",
+    "Create theme.go with Theme struct and initial themes (Crypt, Cave, BanditLair)",
+    "Create encounter/ package with CR budget and role-based selection",
+    "Create generator.go with public API orchestrating toolkit tools",
+    "Wire layout to toolkit environments.GraphBasedGenerator",
+    "Implement 'hidden main path' presentation logic"
+  ],
+  "toolkit_dependencies": {
+    "environments": "GraphBasedGenerator, RoomBuilder, wall patterns",
+    "spawn": "SpawnEngine, patterns, constraints",
+    "selectables": "BasicTable for weighted selection",
+    "spatial": "Room, RoomOrchestrator, connections"
+  }
 }
