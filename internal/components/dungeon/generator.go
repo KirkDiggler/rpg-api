@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/KirkDiggler/rpg-api/internal/components/dungeon/presentation"
 )
 
 // LayoutGenerator creates room layouts and connections
@@ -213,7 +215,10 @@ func (g *Generator) Generate(ctx context.Context, input *GenerateInput) (*Genera
 		}
 	}
 
-	// Step 5: Assemble final dungeon
+	// Step 5: Apply presentation layer to obscure main path
+	connections = g.applyPresentation(connections, input.Theme, seed)
+
+	// Step 6: Assemble final dungeon
 	dungeon := &Dungeon{
 		ID:          uuid.New().String(),
 		Theme:       input.Theme,
@@ -288,4 +293,44 @@ func (g *Generator) generateRoom(ctx context.Context, input *generateRoomInput) 
 		SpawnZones: spawnZones,
 		Encounter:  encounterOutput.Encounter,
 	}, nil
+}
+
+// applyPresentation applies presentation layer transformations to obscure the main path
+func (g *Generator) applyPresentation(connections []*RoomConnection, theme Theme, seed int64) []*RoomConnection {
+	// Convert to presentation types
+	presConnections := make([]*presentation.RoomConnection, len(connections))
+	for i, conn := range connections {
+		presConnections[i] = &presentation.RoomConnection{
+			FromRoom:     conn.FromRoom,
+			ToRoom:       conn.ToRoom,
+			Type:         presentation.ConnectionType(conn.Type),
+			IsMainPath:   conn.IsMainPath,
+			PhysicalHint: conn.PhysicalHint,
+		}
+	}
+
+	// Generate themed physical hints for connections
+	hintGen := presentation.NewHintGenerator()
+	hintOutput := hintGen.GenerateHints(&presentation.HintInput{
+		Connections: presConnections,
+		Theme:       presentation.Theme{ID: theme.ID},
+		Seed:        seed + 1000, // Offset seed to avoid correlation with other generators
+	})
+
+	// Shuffle connection order to prevent "main path first" pattern
+	shuffled := presentation.ShuffleConnections(hintOutput.Connections, seed+2000)
+
+	// Convert back to dungeon types
+	result := make([]*RoomConnection, len(shuffled))
+	for i, conn := range shuffled {
+		result[i] = &RoomConnection{
+			FromRoom:     conn.FromRoom,
+			ToRoom:       conn.ToRoom,
+			Type:         ConnectionType(conn.Type),
+			IsMainPath:   conn.IsMainPath,
+			PhysicalHint: conn.PhysicalHint,
+		}
+	}
+
+	return result
 }

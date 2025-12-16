@@ -70,10 +70,10 @@ func (g *ToolkitLayoutGenerator) generateLinearLayout(length int) *dungeon.Layou
 	roomSlots := make([]dungeon.RoomSlot, length)
 	for i := 0; i < length; i++ {
 		roomType := roomTypeRegular
-		switch {
-		case i == 0:
+		switch i {
+		case 0:
 			roomType = roomTypeEntrance
-		case i == length-1:
+		case length - 1:
 			roomType = roomTypeBoss
 		}
 
@@ -113,10 +113,10 @@ func (g *ToolkitLayoutGenerator) generateBranchingLayout(length int) *dungeon.La
 	roomSlots := make([]dungeon.RoomSlot, length)
 	for i := 0; i < length; i++ {
 		roomType := roomTypeRegular
-		switch {
-		case i == 0:
+		switch i {
+		case 0:
 			roomType = roomTypeEntrance
-		case i == length-1:
+		case length - 1:
 			roomType = roomTypeBoss
 		}
 
