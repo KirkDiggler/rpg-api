@@ -4,50 +4,64 @@
       "id": "generate-crypt-dungeon",
       "feature": "dungeon-generation",
       "prompt": "Call dungeon.Generate with ThemeCrypt, Length=4, PartySize=4, TargetCR=3. Verify output has 4 rooms, connections between rooms, and a designated boss room.",
-      "passes": false,
-      "last_checked": null
+      "passes": true,
+      "last_checked": "2025-12-15",
+      "test_file": "internal/components/dungeon/integration_test.go",
+      "test_name": "TestIntegrationTestSuite/TestGenerateCryptDungeon"
     },
     {
       "id": "theme-shapes-correct",
       "feature": "themes",
       "prompt": "Generate a Crypt dungeon and verify rooms have structured shapes. Generate a Cave dungeon and verify rooms have organic shapes.",
-      "passes": false,
-      "last_checked": null
+      "passes": true,
+      "last_checked": "2025-12-15",
+      "test_file": "internal/components/dungeon/integration_test.go",
+      "test_name": "TestIntegrationTestSuite/TestThemeShapesCorrect"
     },
     {
       "id": "cr-budget-allocation",
       "feature": "encounters",
       "prompt": "Generate a dungeon with TargetCR=5, PartySize=4. Verify boss room gets ~40% of total CR budget and remaining rooms have progressively harder encounters.",
-      "passes": false,
-      "last_checked": null
+      "passes": true,
+      "last_checked": "2025-12-15",
+      "test_file": "internal/components/dungeon/integration_test.go",
+      "test_name": "TestIntegrationTestSuite/TestCRBudgetAllocation"
     },
     {
       "id": "role-based-monster-selection",
       "feature": "encounters",
       "prompt": "Generate encounters for a Crypt theme. Verify monsters are selected from the theme's MonsterPool with appropriate role distribution (melee, ranged, support).",
-      "passes": false,
-      "last_checked": null
+      "passes": true,
+      "last_checked": "2025-12-15",
+      "test_file": "internal/components/dungeon/integration_test.go",
+      "test_name": "TestIntegrationTestSuite/TestRoleBasedMonsterSelection"
     },
     {
       "id": "branching-layout",
       "feature": "layout",
       "prompt": "Generate a dungeon with LayoutBranching and Length=5. Verify there are side rooms that branch off the main path, and multiple possible routes exist.",
-      "passes": false,
-      "last_checked": null
+      "passes": true,
+      "last_checked": "2025-12-15",
+      "test_file": "internal/components/dungeon/integration_test.go",
+      "test_name": "TestIntegrationTestSuite/TestBranchingLayout"
     },
     {
       "id": "spawn-zones-placed",
       "feature": "features",
       "prompt": "Generate a dungeon room. Verify it has spawn zones defined (PlayerSpawn for entrance, MonsterSpawn for encounters, Boss zone for boss room).",
-      "passes": false,
-      "last_checked": null
+      "passes": true,
+      "last_checked": "2025-12-15",
+      "test_file": "internal/components/dungeon/integration_test.go",
+      "test_name": "TestIntegrationTestSuite/TestSpawnZonesPlaced"
     },
     {
       "id": "seed-reproducibility",
       "feature": "dungeon-generation",
       "prompt": "Generate two dungeons with the same Seed value. Verify they produce identical layouts, rooms, and encounters.",
-      "passes": false,
-      "last_checked": null
+      "passes": true,
+      "last_checked": "2025-12-15",
+      "test_file": "internal/components/dungeon/integration_test.go",
+      "test_name": "TestIntegrationTestSuite/TestSeedReproducibility"
     }
   ]
 }

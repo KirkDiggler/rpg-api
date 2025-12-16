@@ -115,11 +115,35 @@
         "All pre-commit checks clean"
       ],
       "notes": "Presentation layer complete per design doc requirement 'Main path not visually obvious'. Players discover the boss room through exploration, not by position or description patterns. Avoided import cycle by creating local presentation.RoomConnection and presentation.Theme types. Generator converts between dungeon and presentation types. Hint generation and shuffling both use deterministic seeding for reproducibility. This completes the dungeon generation feature - all layers implemented and tested."
+    },
+    {
+      "date": "2025-12-15",
+      "commit": "701204e",
+      "summary": "Created comprehensive integration tests for dungeon generation system",
+      "completed": [
+        "Created internal/components/dungeon/integration_test.go with IntegrationTestSuite",
+        "Implemented TestGenerateCryptDungeon verifying 4-room crypt with connections and boss",
+        "Implemented TestThemeShapesCorrect verifying crypt has structured shapes, cave has organic",
+        "Implemented TestCRBudgetAllocation verifying boss gets ~40% CR, progressive difficulty",
+        "Implemented TestRoleBasedMonsterSelection verifying monsters from theme pools with roles",
+        "Implemented TestBranchingLayout verifying side rooms and multiple routes",
+        "Implemented TestSpawnZonesPlaced verifying PlayerSpawn, MonsterSpawn, Boss zones",
+        "Implemented TestSeedReproducibility verifying identical dungeons with same seed",
+        "Added edge case tests: minimum 2-room dungeon, large 10-room dungeon",
+        "Added TestDifferentPartySizes verifying CR scaling with party size",
+        "Added TestAllThemesWork verifying all three themes generate successfully",
+        "Added TestDataIntegrity verifying unique IDs, valid connections, no nil pointers",
+        "Added TestValidationErrors verifying input validation errors",
+        "Created 13 test methods covering all tests.json verification criteria",
+        "All 21 test cases passing (including subtests)",
+        "Updated .claude/tests.json marking all 7 criteria as passing",
+        "All pre-commit checks clean, 88.5% coverage on dungeon package"
+      ],
+      "notes": "Integration tests complete using real toolkit generators (not stubs). Each test from tests.json has corresponding integration test. Tests verify complete output structure, CR budget allocation (20-60% range for boss), role distribution, spawn zones, seed reproducibility, and data integrity. Edge cases covered: min/max dungeon sizes, different party sizes, all themes. Tests are fast (0.03s total) so kept as regular tests without integration build tag."
     }
   ],
   "next_steps": [
     "Enhance toolkit integration when environments module compatibility issues resolved",
-    "Integration test with all real implementations",
     "Consider adding more shape variety (L-shapes, T-shapes, irregular polygons)",
     "Add more sophisticated obstacle and terrain placement algorithms",
     "Wire dungeon generation into encounter orchestrator"
