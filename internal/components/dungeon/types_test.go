@@ -17,7 +17,7 @@ func TestTypesTestSuite(t *testing.T) {
 
 func (s *TypesTestSuite) TestGenerateInput_Instantiation() {
 	input := &GenerateInput{
-		Theme:     0, // Will be defined in theme.go
+		Theme:     ThemeCrypt,
 		Size:      RoomSizeMedium,
 		Length:    4,
 		Layout:    LayoutBranching,
@@ -27,6 +27,7 @@ func (s *TypesTestSuite) TestGenerateInput_Instantiation() {
 	}
 
 	assert.NotNil(s.T(), input)
+	assert.Equal(s.T(), ThemeCrypt, input.Theme)
 	assert.Equal(s.T(), RoomSizeMedium, input.Size)
 	assert.Equal(s.T(), 4, input.Length)
 	assert.Equal(s.T(), LayoutBranching, input.Layout)
@@ -58,7 +59,7 @@ func (s *TypesTestSuite) TestGenerateOutput_Instantiation() {
 func (s *TypesTestSuite) TestDungeon_Instantiation() {
 	dungeon := &Dungeon{
 		ID:        "dungeon-1",
-		Theme:     0,
+		Theme:     ThemeCave,
 		StartRoom: "room-1",
 		BossRoom:  "room-4",
 		Rooms: []*Room{
@@ -74,6 +75,7 @@ func (s *TypesTestSuite) TestDungeon_Instantiation() {
 
 	assert.NotNil(s.T(), dungeon)
 	assert.Equal(s.T(), "dungeon-1", dungeon.ID)
+	assert.Equal(s.T(), ThemeCave, dungeon.Theme)
 	assert.Equal(s.T(), 4, len(dungeon.Rooms))
 	assert.Equal(s.T(), 1, len(dungeon.Connections))
 }

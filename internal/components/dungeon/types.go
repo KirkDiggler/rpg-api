@@ -289,5 +289,4 @@ const (
 	TerrainTypeIce
 )
 
-// Theme will be defined in theme.go
-type Theme int
+// Theme is defined in theme.go and bundles all generation rules for a cohesive dungeon style
