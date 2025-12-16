@@ -3,10 +3,41 @@
   "issues": ["#300"],
   "goal": "Implement procedural dungeon generation with themed, multi-room dungeons and CR-scaled encounters as a prototype in internal/components/dungeon/ that will later migrate to rpg-toolkit/rulebooks/dnd5e/",
   "design_doc": "docs/plans/2025-01-15-dungeon-generation-design.md",
-  "sessions": [],
+  "sessions": [
+    {
+      "date": "2025-12-15",
+      "commit": "77503b7",
+      "summary": "Created dungeon types.go with all core structures",
+      "completed": [
+        "Created internal/components/dungeon/ directory",
+        "Defined GenerateInput/Output for public API",
+        "Defined Dungeon, Room, Shape, FeatureLayout, Zone, Encounter structures",
+        "Defined all enums: RoomSize, LayoutType, ShapeStyle, ZoneType, MonsterRole, ConnectionType, GridType, ObstacleType, TerrainType",
+        "Created comprehensive tests in types_test.go",
+        "All tests passing, pre-commit checks clean"
+      ],
+      "notes": "Foundation types match design doc exactly. Theme type placeholder added, will be implemented in theme.go next."
+    },
+    {
+      "date": "2025-12-15",
+      "commit": "99a32a7",
+      "summary": "Implemented dungeon theme system with three predefined themes",
+      "completed": [
+        "Replaced placeholder Theme type in types.go with proper struct",
+        "Created Theme struct with ID, Name, ShapeStyle, Features, MonsterPool, BossPool",
+        "Created FeatureRules struct with obstacle/terrain configuration",
+        "Created MonsterRef struct for rulebook monster references",
+        "Implemented ThemeCrypt with structured shapes and undead monsters",
+        "Implemented ThemeCave with organic shapes and beast monsters",
+        "Implemented ThemeBanditLair with mixed shapes and humanoid monsters",
+        "Created comprehensive theme_test.go with 14 test cases",
+        "Updated types_test.go to use predefined themes",
+        "All tests passing (17 theme tests), pre-commit checks clean"
+      ],
+      "notes": "Theme system complete per design doc. Monster IDs are placeholder strings (e.g., 'skeleton', 'zombie') that will become toolkit constants later. Each theme has distinct shape style, obstacle types, and monster pools. Boss CR verified higher than regular monsters."
+    }
+  ],
   "next_steps": [
-    "Create types.go with output structures (Dungeon, Room, Shape, Encounter, etc.)",
-    "Create theme.go with Theme struct and initial themes (Crypt, Cave, BanditLair)",
     "Create encounter/ package with CR budget and role-based selection",
     "Create generator.go with public API orchestrating toolkit tools",
     "Wire layout to toolkit environments.GraphBasedGenerator",
