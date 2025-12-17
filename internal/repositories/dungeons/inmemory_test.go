@@ -7,7 +7,9 @@ import (
 
 	"github.com/stretchr/testify/suite"
 
+	"github.com/KirkDiggler/rpg-api/internal/components/dungeon"
 	"github.com/KirkDiggler/rpg-api/internal/entities"
+	"github.com/KirkDiggler/rpg-toolkit/tools/environments"
 )
 
 type InMemoryRepositoryTestSuite struct {
@@ -25,37 +27,36 @@ func TestInMemoryRepositorySuite(t *testing.T) {
 	suite.Run(t, new(InMemoryRepositoryTestSuite))
 }
 
-// Helper to create a test dungeon
+// Helper to create a test dungeon using toolkit and component types
 func (s *InMemoryRepositoryTestSuite) createTestDungeon(id, encounterID string) *entities.Dungeon {
 	return &entities.Dungeon{
 		ID:          id,
 		EncounterID: encounterID,
-		Theme:       entities.DungeonThemeCrypt,
-		Difficulty:  entities.DungeonDifficultyMedium,
-		Length:      entities.DungeonLengthShort,
 		Seed:        12345,
 		State:       entities.DungeonStateActive,
-		Rooms: map[string]*entities.DungeonRoom{
+		Rooms: map[string]*dungeon.Room{
 			"room-1": {
-				ID:     "room-1",
-				Type:   "entrance",
-				Width:  10,
-				Height: 10,
+				ID: "room-1",
+				Shape: &dungeon.Shape{
+					Width:  10,
+					Height: 10,
+				},
 			},
 			"room-2": {
-				ID:     "room-2",
-				Type:   "boss",
-				Width:  15,
-				Height: 15,
-				IsBoss: true,
+				ID: "room-2",
+				Shape: &dungeon.Shape{
+					Width:  15,
+					Height: 15,
+				},
 			},
 		},
-		Connections: []*entities.DungeonConnection{
+		Connections: []*environments.ConnectionEdge{
 			{
-				ID:           "conn-1",
-				FromRoomID:   "room-1",
-				ToRoomID:     "room-2",
-				PhysicalHint: "heavy stone door",
+				ID:            "conn-1",
+				FromRoomID:    "room-1",
+				ToRoomID:      "room-2",
+				Type:          "door",
+				Bidirectional: true,
 			},
 		},
 		StartRoomID:   "room-1",
@@ -71,8 +72,8 @@ func (s *InMemoryRepositoryTestSuite) createTestDungeon(id, encounterID string) 
 
 func (s *InMemoryRepositoryTestSuite) TestSave_Success() {
 	// Arrange
-	dungeon := s.createTestDungeon("dng-1", "enc-1")
-	input := &SaveInput{Dungeon: dungeon}
+	d := s.createTestDungeon("dng-1", "enc-1")
+	input := &SaveInput{Dungeon: d}
 
 	// Act
 	output, err := s.repo.Save(s.ctx, input)
@@ -107,8 +108,8 @@ func (s *InMemoryRepositoryTestSuite) TestSave_NilDungeon() {
 
 func (s *InMemoryRepositoryTestSuite) TestSave_EmptyDungeonID() {
 	// Arrange
-	dungeon := s.createTestDungeon("", "enc-1")
-	input := &SaveInput{Dungeon: dungeon}
+	d := s.createTestDungeon("", "enc-1")
+	input := &SaveInput{Dungeon: d}
 
 	// Act
 	output, err := s.repo.Save(s.ctx, input)
@@ -121,8 +122,8 @@ func (s *InMemoryRepositoryTestSuite) TestSave_EmptyDungeonID() {
 
 func (s *InMemoryRepositoryTestSuite) TestSave_UpdatesEncounterIndex() {
 	// Arrange
-	dungeon := s.createTestDungeon("dng-1", "enc-1")
-	_, err := s.repo.Save(s.ctx, &SaveInput{Dungeon: dungeon})
+	d := s.createTestDungeon("dng-1", "enc-1")
+	_, err := s.repo.Save(s.ctx, &SaveInput{Dungeon: d})
 	s.Require().NoError(err)
 
 	// Act - Should be retrievable by encounter ID
@@ -137,8 +138,8 @@ func (s *InMemoryRepositoryTestSuite) TestSave_UpdatesEncounterIndex() {
 
 func (s *InMemoryRepositoryTestSuite) TestGet_Success() {
 	// Arrange
-	dungeon := s.createTestDungeon("dng-1", "enc-1")
-	_, err := s.repo.Save(s.ctx, &SaveInput{Dungeon: dungeon})
+	d := s.createTestDungeon("dng-1", "enc-1")
+	_, err := s.repo.Save(s.ctx, &SaveInput{Dungeon: d})
 	s.Require().NoError(err)
 
 	// Act
@@ -150,8 +151,6 @@ func (s *InMemoryRepositoryTestSuite) TestGet_Success() {
 	s.Require().NotNil(output.Dungeon)
 	s.Assert().Equal("dng-1", output.Dungeon.ID)
 	s.Assert().Equal("enc-1", output.Dungeon.EncounterID)
-	s.Assert().Equal(entities.DungeonThemeCrypt, output.Dungeon.Theme)
-	s.Assert().Equal(entities.DungeonDifficultyMedium, output.Dungeon.Difficulty)
 	s.Assert().Len(output.Dungeon.Rooms, 2)
 	s.Assert().Len(output.Dungeon.Connections, 1)
 }
@@ -188,8 +187,8 @@ func (s *InMemoryRepositoryTestSuite) TestGet_NotFound() {
 
 func (s *InMemoryRepositoryTestSuite) TestGet_ReturnsCopy() {
 	// Arrange
-	dungeon := s.createTestDungeon("dng-1", "enc-1")
-	_, err := s.repo.Save(s.ctx, &SaveInput{Dungeon: dungeon})
+	d := s.createTestDungeon("dng-1", "enc-1")
+	_, err := s.repo.Save(s.ctx, &SaveInput{Dungeon: d})
 	s.Require().NoError(err)
 
 	// Act - Get and modify the returned data
@@ -211,8 +210,8 @@ func (s *InMemoryRepositoryTestSuite) TestGet_ReturnsCopy() {
 
 func (s *InMemoryRepositoryTestSuite) TestGetByEncounterID_Success() {
 	// Arrange
-	dungeon := s.createTestDungeon("dng-1", "enc-1")
-	_, err := s.repo.Save(s.ctx, &SaveInput{Dungeon: dungeon})
+	d := s.createTestDungeon("dng-1", "enc-1")
+	_, err := s.repo.Save(s.ctx, &SaveInput{Dungeon: d})
 	s.Require().NoError(err)
 
 	// Act
@@ -259,8 +258,8 @@ func (s *InMemoryRepositoryTestSuite) TestGetByEncounterID_NotFound() {
 
 func (s *InMemoryRepositoryTestSuite) TestUpdate_Success() {
 	// Arrange
-	dungeon := s.createTestDungeon("dng-1", "enc-1")
-	_, err := s.repo.Save(s.ctx, &SaveInput{Dungeon: dungeon})
+	d := s.createTestDungeon("dng-1", "enc-1")
+	_, err := s.repo.Save(s.ctx, &SaveInput{Dungeon: d})
 	s.Require().NoError(err)
 
 	// Act
@@ -312,8 +311,8 @@ func (s *InMemoryRepositoryTestSuite) TestUpdate_NotFound() {
 
 func (s *InMemoryRepositoryTestSuite) TestUpdate_RevealedRooms() {
 	// Arrange
-	dungeon := s.createTestDungeon("dng-1", "enc-1")
-	_, err := s.repo.Save(s.ctx, &SaveInput{Dungeon: dungeon})
+	d := s.createTestDungeon("dng-1", "enc-1")
+	_, err := s.repo.Save(s.ctx, &SaveInput{Dungeon: d})
 	s.Require().NoError(err)
 
 	// Act - Reveal room-2
@@ -332,8 +331,8 @@ func (s *InMemoryRepositoryTestSuite) TestUpdate_RevealedRooms() {
 
 func (s *InMemoryRepositoryTestSuite) TestUpdate_OpenDoors() {
 	// Arrange
-	dungeon := s.createTestDungeon("dng-1", "enc-1")
-	_, err := s.repo.Save(s.ctx, &SaveInput{Dungeon: dungeon})
+	d := s.createTestDungeon("dng-1", "enc-1")
+	_, err := s.repo.Save(s.ctx, &SaveInput{Dungeon: d})
 	s.Require().NoError(err)
 
 	// Act - Open conn-1
@@ -351,8 +350,8 @@ func (s *InMemoryRepositoryTestSuite) TestUpdate_OpenDoors() {
 
 func (s *InMemoryRepositoryTestSuite) TestUpdate_CurrentRoomID() {
 	// Arrange
-	dungeon := s.createTestDungeon("dng-1", "enc-1")
-	_, err := s.repo.Save(s.ctx, &SaveInput{Dungeon: dungeon})
+	d := s.createTestDungeon("dng-1", "enc-1")
+	_, err := s.repo.Save(s.ctx, &SaveInput{Dungeon: d})
 	s.Require().NoError(err)
 
 	// Act
@@ -371,8 +370,8 @@ func (s *InMemoryRepositoryTestSuite) TestUpdate_CurrentRoomID() {
 
 func (s *InMemoryRepositoryTestSuite) TestUpdate_Metrics() {
 	// Arrange
-	dungeon := s.createTestDungeon("dng-1", "enc-1")
-	_, err := s.repo.Save(s.ctx, &SaveInput{Dungeon: dungeon})
+	d := s.createTestDungeon("dng-1", "enc-1")
+	_, err := s.repo.Save(s.ctx, &SaveInput{Dungeon: d})
 	s.Require().NoError(err)
 
 	// Act
@@ -394,8 +393,8 @@ func (s *InMemoryRepositoryTestSuite) TestUpdate_Metrics() {
 
 func (s *InMemoryRepositoryTestSuite) TestUpdate_CompletedAt() {
 	// Arrange
-	dungeon := s.createTestDungeon("dng-1", "enc-1")
-	_, err := s.repo.Save(s.ctx, &SaveInput{Dungeon: dungeon})
+	d := s.createTestDungeon("dng-1", "enc-1")
+	_, err := s.repo.Save(s.ctx, &SaveInput{Dungeon: d})
 	s.Require().NoError(err)
 
 	// Act
@@ -417,8 +416,8 @@ func (s *InMemoryRepositoryTestSuite) TestUpdate_CompletedAt() {
 
 func (s *InMemoryRepositoryTestSuite) TestUpdate_OnlyUpdatesProvided() {
 	// Arrange
-	dungeon := s.createTestDungeon("dng-1", "enc-1")
-	_, err := s.repo.Save(s.ctx, &SaveInput{Dungeon: dungeon})
+	d := s.createTestDungeon("dng-1", "enc-1")
+	_, err := s.repo.Save(s.ctx, &SaveInput{Dungeon: d})
 	s.Require().NoError(err)
 
 	// Act - Update only rooms cleared
@@ -442,8 +441,8 @@ func (s *InMemoryRepositoryTestSuite) TestUpdate_OnlyUpdatesProvided() {
 
 func (s *InMemoryRepositoryTestSuite) TestDelete_Success() {
 	// Arrange
-	dungeon := s.createTestDungeon("dng-1", "enc-1")
-	_, err := s.repo.Save(s.ctx, &SaveInput{Dungeon: dungeon})
+	d := s.createTestDungeon("dng-1", "enc-1")
+	_, err := s.repo.Save(s.ctx, &SaveInput{Dungeon: d})
 	s.Require().NoError(err)
 
 	// Act
@@ -491,8 +490,8 @@ func (s *InMemoryRepositoryTestSuite) TestDelete_NotFound() {
 
 func (s *InMemoryRepositoryTestSuite) TestDelete_RemovesEncounterIndex() {
 	// Arrange
-	dungeon := s.createTestDungeon("dng-1", "enc-1")
-	_, err := s.repo.Save(s.ctx, &SaveInput{Dungeon: dungeon})
+	d := s.createTestDungeon("dng-1", "enc-1")
+	_, err := s.repo.Save(s.ctx, &SaveInput{Dungeon: d})
 	s.Require().NoError(err)
 
 	// Act
@@ -509,8 +508,8 @@ func (s *InMemoryRepositoryTestSuite) TestDelete_RemovesEncounterIndex() {
 
 func (s *InMemoryRepositoryTestSuite) TestWorkflow_DungeonRun() {
 	// Create dungeon
-	dungeon := s.createTestDungeon("dng-workflow", "enc-workflow")
-	_, err := s.repo.Save(s.ctx, &SaveInput{Dungeon: dungeon})
+	d := s.createTestDungeon("dng-workflow", "enc-workflow")
+	_, err := s.repo.Save(s.ctx, &SaveInput{Dungeon: d})
 	s.Require().NoError(err)
 
 	// Verify initial state

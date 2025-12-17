@@ -1,39 +1,14 @@
 // Package entities defines the core data structures for the RPG API
 package entities
 
-import "time"
+import (
+	"time"
 
-// DungeonTheme defines the thematic style of a dungeon
-type DungeonTheme int
-
-const (
-	DungeonThemeUnspecified DungeonTheme = iota
-	DungeonThemeCrypt                    // Undead, structured stone, tombs
-	DungeonThemeCave                     // Beasts, organic shapes, natural caverns
-	DungeonThemeRuins                    // Mixed creatures, ancient structures
+	"github.com/KirkDiggler/rpg-api/internal/components/dungeon"
+	"github.com/KirkDiggler/rpg-toolkit/tools/environments"
 )
 
-// DungeonDifficulty controls encounter CR scaling
-type DungeonDifficulty int
-
-const (
-	DungeonDifficultyUnspecified DungeonDifficulty = iota
-	DungeonDifficultyEasy                          // Lower CR encounters
-	DungeonDifficultyMedium                        // Standard CR encounters
-	DungeonDifficultyHard                          // Higher CR encounters
-)
-
-// DungeonLength determines the number of rooms
-type DungeonLength int
-
-const (
-	DungeonLengthUnspecified DungeonLength = iota
-	DungeonLengthShort                     // 3-4 rooms
-	DungeonLengthMedium                    // 5-7 rooms
-	DungeonLengthLong                      // 8-10 rooms
-)
-
-// DungeonState tracks the lifecycle of a dungeon run
+// DungeonState tracks the lifecycle of a dungeon run (proving ground - may move to toolkit)
 type DungeonState int
 
 const (
@@ -44,51 +19,26 @@ const (
 	DungeonStateAbandoned                // Players left the dungeon
 )
 
-// DungeonRoom represents a room within a dungeon
-type DungeonRoom struct {
-	ID       string   `json:"id"`
-	Type     string   `json:"type"`     // "entrance", "boss", "corridor", "chamber", etc.
-	Width    int      `json:"width"`    // Room width in grid units
-	Height   int      `json:"height"`   // Room height in grid units
-	Theme    string   `json:"theme"`    // Visual theme for this room
-	IsBoss   bool     `json:"is_boss"`  // Whether this is a boss room
-	Monsters []string `json:"monsters"` // Monster IDs spawned in this room
-}
-
-// DungeonConnection represents a connection between two rooms
-type DungeonConnection struct {
-	ID           string    `json:"id"`
-	FromRoomID   string    `json:"from_room_id"`
-	ToRoomID     string    `json:"to_room_id"`
-	FromPosition *Position `json:"from_position"` // Door position in source room
-	ToPosition   *Position `json:"to_position"`   // Door position in destination room
-	PhysicalHint string    `json:"physical_hint"` // "heavy stone door", "narrow crevice", etc.
-}
-
-// Dungeon represents a complete dungeon run with its state
+// Dungeon represents a complete dungeon run with its state.
+// It wraps toolkit types (ConnectionEdge) and component types (Room) with exploration state.
 type Dungeon struct {
 	ID          string `json:"id"`
 	EncounterID string `json:"encounter_id"` // Link to the associated encounter
+	Seed        int64  `json:"seed"`         // Random seed for reproducibility
 
-	// Configuration
-	Theme      DungeonTheme      `json:"theme"`
-	Difficulty DungeonDifficulty `json:"difficulty"`
-	Length     DungeonLength     `json:"length"`
-	Seed       int64             `json:"seed"` // Random seed for reproducibility
+	// From toolkit - connection graph structure
+	Connections []*environments.ConnectionEdge `json:"connections"`
+	StartRoomID string                         `json:"start_room_id"`
+	BossRoomID  string                         `json:"boss_room_id"`
 
-	// Current state
-	State DungeonState `json:"state"`
+	// From component - room content with D&D 5e encounters
+	Rooms map[string]*dungeon.Room `json:"rooms"`
 
-	// Map structure
-	Rooms         map[string]*DungeonRoom `json:"rooms"`
-	Connections   []*DungeonConnection    `json:"connections"`
-	StartRoomID   string                  `json:"start_room_id"`
-	BossRoomID    string                  `json:"boss_room_id"`
-	CurrentRoomID string                  `json:"current_room_id"` // Room players are currently in
-
-	// Exploration state
-	RevealedRooms map[string]bool `json:"revealed_rooms"` // Room ID -> explored
-	OpenDoors     map[string]bool `json:"open_doors"`     // Connection ID -> open
+	// Exploration state (proving ground - may move to toolkit)
+	State         DungeonState    `json:"state"`
+	CurrentRoomID string          `json:"current_room_id"` // Room players are currently in
+	RevealedRooms map[string]bool `json:"revealed_rooms"`  // Room ID -> explored
+	OpenDoors     map[string]bool `json:"open_doors"`      // Connection ID -> open
 
 	// Metrics
 	RoomsCleared   int `json:"rooms_cleared"`
@@ -132,7 +82,7 @@ func (d *Dungeon) OpenDoor(connectionID string) {
 }
 
 // GetRoom returns a room by ID
-func (d *Dungeon) GetRoom(roomID string) *DungeonRoom {
+func (d *Dungeon) GetRoom(roomID string) *dungeon.Room {
 	if d.Rooms == nil {
 		return nil
 	}
@@ -140,8 +90,8 @@ func (d *Dungeon) GetRoom(roomID string) *DungeonRoom {
 }
 
 // GetConnectionsFromRoom returns all connections originating from a room
-func (d *Dungeon) GetConnectionsFromRoom(roomID string) []*DungeonConnection {
-	var result []*DungeonConnection
+func (d *Dungeon) GetConnectionsFromRoom(roomID string) []*environments.ConnectionEdge {
+	var result []*environments.ConnectionEdge
 	for _, conn := range d.Connections {
 		if conn.FromRoomID == roomID || conn.ToRoomID == roomID {
 			result = append(result, conn)
@@ -150,10 +100,10 @@ func (d *Dungeon) GetConnectionsFromRoom(roomID string) []*DungeonConnection {
 	return result
 }
 
-// GetVisibleDoors returns connections from the current room that are visible (not yet open)
-func (d *Dungeon) GetVisibleDoors() []*DungeonConnection {
+// GetVisibleDoors returns connections from the current room that lead to unrevealed rooms
+func (d *Dungeon) GetVisibleDoors() []*environments.ConnectionEdge {
 	connections := d.GetConnectionsFromRoom(d.CurrentRoomID)
-	var visible []*DungeonConnection
+	var visible []*environments.ConnectionEdge
 	for _, conn := range connections {
 		// Door is visible if the room it leads to hasn't been revealed yet
 		targetRoomID := conn.ToRoomID

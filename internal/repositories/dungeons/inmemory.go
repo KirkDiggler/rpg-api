@@ -3,6 +3,7 @@ package dungeons
 
 import (
 	"context"
+	"encoding/json"
 	"sync"
 
 	"github.com/KirkDiggler/rpg-api/internal/apierr"
@@ -42,7 +43,11 @@ func (r *InMemoryRepository) Save(_ context.Context, input *SaveInput) (*SaveOut
 	defer r.mu.Unlock()
 
 	// Store the dungeon (deep copy to prevent external mutation)
-	r.store[input.Dungeon.ID] = copyDungeon(input.Dungeon)
+	copied, err := copyDungeon(input.Dungeon)
+	if err != nil {
+		return nil, apierr.Internal("failed to copy dungeon: " + err.Error())
+	}
+	r.store[input.Dungeon.ID] = copied
 
 	// Update encounter ID index if set
 	if input.Dungeon.EncounterID != "" {
@@ -71,8 +76,13 @@ func (r *InMemoryRepository) Get(_ context.Context, input *GetInput) (*GetOutput
 	}
 
 	// Return a copy to prevent external modification
+	copied, err := copyDungeon(dungeon)
+	if err != nil {
+		return nil, apierr.Internal("failed to copy dungeon: " + err.Error())
+	}
+
 	return &GetOutput{
-		Dungeon: copyDungeon(dungeon),
+		Dungeon: copied,
 	}, nil
 }
 
@@ -101,8 +111,13 @@ func (r *InMemoryRepository) GetByEncounterID(_ context.Context, input *GetByEnc
 	}
 
 	// Return a copy to prevent external modification
+	copied, err := copyDungeon(dungeon)
+	if err != nil {
+		return nil, apierr.Internal("failed to copy dungeon: " + err.Error())
+	}
+
 	return &GetOutput{
-		Dungeon: copyDungeon(dungeon),
+		Dungeon: copied,
 	}, nil
 }
 
@@ -203,92 +218,24 @@ func (r *InMemoryRepository) Delete(_ context.Context, input *DeleteInput) (*Del
 	return &DeleteOutput{Success: true}, nil
 }
 
-// copyDungeon creates a deep copy of a dungeon to prevent external mutation
-func copyDungeon(d *entities.Dungeon) *entities.Dungeon {
+// copyDungeon creates a deep copy of a dungeon using JSON serialization.
+// This handles toolkit types (ConnectionEdge) and component types (Room) generically.
+func copyDungeon(d *entities.Dungeon) (*entities.Dungeon, error) {
 	if d == nil {
-		return nil
+		return nil, nil
 	}
 
-	result := &entities.Dungeon{
-		ID:             d.ID,
-		EncounterID:    d.EncounterID,
-		Theme:          d.Theme,
-		Difficulty:     d.Difficulty,
-		Length:         d.Length,
-		Seed:           d.Seed,
-		State:          d.State,
-		StartRoomID:    d.StartRoomID,
-		BossRoomID:     d.BossRoomID,
-		CurrentRoomID:  d.CurrentRoomID,
-		RoomsCleared:   d.RoomsCleared,
-		MonstersKilled: d.MonstersKilled,
-		CreatedAt:      d.CreatedAt,
-		CompletedAt:    d.CompletedAt,
+	// Use JSON marshal/unmarshal for deep copy
+	// This works because toolkit and component types are JSON-serializable
+	data, err := json.Marshal(d)
+	if err != nil {
+		return nil, err
 	}
 
-	// Copy rooms map
-	if d.Rooms != nil {
-		result.Rooms = make(map[string]*entities.DungeonRoom, len(d.Rooms))
-		for k, v := range d.Rooms {
-			roomCopy := &entities.DungeonRoom{
-				ID:     v.ID,
-				Type:   v.Type,
-				Width:  v.Width,
-				Height: v.Height,
-				Theme:  v.Theme,
-				IsBoss: v.IsBoss,
-			}
-			if v.Monsters != nil {
-				roomCopy.Monsters = make([]string, len(v.Monsters))
-				copy(roomCopy.Monsters, v.Monsters)
-			}
-			result.Rooms[k] = roomCopy
-		}
+	var result entities.Dungeon
+	if err := json.Unmarshal(data, &result); err != nil {
+		return nil, err
 	}
 
-	// Copy connections slice
-	if d.Connections != nil {
-		result.Connections = make([]*entities.DungeonConnection, len(d.Connections))
-		for i, conn := range d.Connections {
-			connCopy := &entities.DungeonConnection{
-				ID:           conn.ID,
-				FromRoomID:   conn.FromRoomID,
-				ToRoomID:     conn.ToRoomID,
-				PhysicalHint: conn.PhysicalHint,
-			}
-			if conn.FromPosition != nil {
-				connCopy.FromPosition = &entities.Position{
-					X: conn.FromPosition.X,
-					Y: conn.FromPosition.Y,
-					Z: conn.FromPosition.Z,
-				}
-			}
-			if conn.ToPosition != nil {
-				connCopy.ToPosition = &entities.Position{
-					X: conn.ToPosition.X,
-					Y: conn.ToPosition.Y,
-					Z: conn.ToPosition.Z,
-				}
-			}
-			result.Connections[i] = connCopy
-		}
-	}
-
-	// Copy revealed rooms map
-	if d.RevealedRooms != nil {
-		result.RevealedRooms = make(map[string]bool, len(d.RevealedRooms))
-		for k, v := range d.RevealedRooms {
-			result.RevealedRooms[k] = v
-		}
-	}
-
-	// Copy open doors map
-	if d.OpenDoors != nil {
-		result.OpenDoors = make(map[string]bool, len(d.OpenDoors))
-		for k, v := range d.OpenDoors {
-			result.OpenDoors[k] = v
-		}
-	}
-
-	return result
+	return &result, nil
 }
