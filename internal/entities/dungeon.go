@@ -116,3 +116,25 @@ func (d *Dungeon) GetVisibleDoors() []*environments.ConnectionEdge {
 	}
 	return visible
 }
+
+// IsBossRoom returns true if the given room ID is the boss room
+func (d *Dungeon) IsBossRoom(roomID string) bool {
+	if d.BossRoomID == "" {
+		return false
+	}
+	return d.BossRoomID == roomID
+}
+
+// MarkVictory sets the dungeon state to victorious and records completion time
+func (d *Dungeon) MarkVictory() {
+	d.State = DungeonStateVictorious
+	now := time.Now()
+	d.CompletedAt = &now
+}
+
+// MarkFailed sets the dungeon state to failed and records completion time
+func (d *Dungeon) MarkFailed() {
+	d.State = DungeonStateFailed
+	now := time.Now()
+	d.CompletedAt = &now
+}

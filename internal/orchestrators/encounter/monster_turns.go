@@ -166,8 +166,15 @@ func (o *Orchestrator) executeSingleMonsterTurn(
 			// Store attack result in action details
 			actions[i].Details = attackResult
 
-			// TODO: Update character HP in character repository
-			// Character damage will be handled in a future PR
+			// Update character HP in encounter data for TPK tracking
+			if attackResult.Hit && enc.CharacterHP != nil {
+				currentHP := enc.CharacterHP[action.TargetID]
+				newHP := currentHP - attackResult.TotalDamage
+				if newHP < 0 {
+					newHP = 0 // HP can't go below 0
+				}
+				enc.CharacterHP[action.TargetID] = newHP
+			}
 		}
 	}
 
