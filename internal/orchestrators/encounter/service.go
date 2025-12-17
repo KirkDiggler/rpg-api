@@ -163,12 +163,29 @@ type RerollEvent struct {
 // CreateDungeonInput contains parameters for creating a dungeon encounter
 type CreateDungeonInput struct {
 	CharacterIDs []string // IDs of characters entering the dungeon
+	ThemeID      string   // Theme identifier (crypt, cave, bandit-lair) - defaults to crypt
+	Difficulty   string   // Difficulty level (easy, medium, hard, deadly) - defaults to easy
+	Length       string   // Dungeon length (short, medium, long) - defaults to medium
+	PartyLevel   int      // Average party level for CR calculation - defaults to 1
+	Seed         int64    // Optional seed for reproducibility (0 = random)
+}
+
+// DoorInfo describes a door or passage connecting the current room to another room.
+// Each door corresponds to a connection in the dungeon graph, allowing players
+// to navigate between rooms during exploration.
+type DoorInfo struct {
+	ConnectionID string // Unique ID of this connection, used to reference it when opening/traversing
+	TargetRoomID string // ID of the room this door leads to
+	Direction    string // Physical description of the exit (e.g., "north door", "stairs down", "eastern passage")
+	IsOpen       bool   // Whether the door has been opened (affects visibility and traversal)
 }
 
 // CreateDungeonOutput returns the created encounter details
 type CreateDungeonOutput struct {
 	EncounterID  string               // ID of the created encounter
+	DungeonID    string               // ID of the generated dungeon
 	Room         interface{}          // Room data (using interface{} to match spatial.RoomData)
+	Doors        []DoorInfo           // Doors/exits from the starting room
 	CombatState  *CombatState         // Combat state with initiative order
 	MonsterTurns []*MonsterTurnResult // Monster turns if monsters go first in initiative
 }
