@@ -1839,6 +1839,11 @@ func (o *Orchestrator) OpenDoor(
 	if room1Revealed && room2Revealed {
 		return nil, fmt.Errorf("both rooms already revealed")
 	}
+	if !room1Revealed && !room2Revealed {
+		// This shouldn't happen in normal gameplay (start room is always revealed)
+		// but handle it defensively by revealing the "from" room
+		return nil, fmt.Errorf("neither room is revealed - invalid dungeon state")
+	}
 	if !room1Revealed {
 		revealedRoomID = connection.FromRoomID
 	} else {
@@ -1872,7 +1877,10 @@ func (o *Orchestrator) OpenDoor(
 
 			// Roll initiative for this monster
 			dexMod := monsterData.AbilityScores.Modifier(abilities.DEX)
-			roll, _ := o.roller.Roll(ctx, 20) // d20 roll
+			roll, rollErr := o.roller.Roll(ctx, 20) // d20 roll
+			if rollErr != nil {
+				return nil, fmt.Errorf("failed to roll initiative for monster %s: %w", monsterID, rollErr)
+			}
 			total := roll + dexMod
 
 			monsters = append(monsters, MonsterInfo{
@@ -1897,7 +1905,18 @@ func (o *Orchestrator) OpenDoor(
 		}
 	}
 
-	// 9. Merge initiative orders - create new slice to avoid modifying original
+	// 9. Validate initiative data exists
+	if encOutput.Data.InitiativeData == nil {
+		return nil, fmt.Errorf("no initiative data for encounter: %s", dng.EncounterID)
+	}
+	if len(encOutput.Data.InitiativeData.Order) == 0 {
+		return nil, fmt.Errorf("empty turn order for encounter: %s", dng.EncounterID)
+	}
+	if encOutput.Data.InitiativeData.Current >= len(encOutput.Data.InitiativeData.Order) {
+		return nil, fmt.Errorf("invalid current index for encounter: %s", dng.EncounterID)
+	}
+
+	// 10. Merge initiative orders - create new slice to avoid modifying original
 	allRolls := make([]initiative.Roll, 0, len(encOutput.Data.InitiativeRolls)+len(newInitiativeRolls))
 	allRolls = append(allRolls, encOutput.Data.InitiativeRolls...)
 	allRolls = append(allRolls, newInitiativeRolls...)
@@ -1989,11 +2008,18 @@ func (o *Orchestrator) OpenDoor(
 		}
 	}
 
+	// TODO: Implement monster turns for monsters that act before the current entity
+	// For now, monsters are added to initiative but don't immediately take turns.
+	// This would require checking if any new monsters have higher initiative than
+	// the current entity and executing their turns.
+
 	return &OpenDoorOutput{
 		RevealedRoom: roomData,
+		RoomOffset:   nil, // TODO: Calculate offset for grid merge when implementing multi-room display
 		NewDoors:     newDoors,
 		Monsters:     monsters,
 		CombatState:  combatState,
+		MonsterTurns: nil, // Monsters don't immediately act; they wait for their turn in initiative
 	}, nil
 }
 
