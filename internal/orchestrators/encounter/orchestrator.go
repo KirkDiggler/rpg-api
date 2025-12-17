@@ -4,6 +4,7 @@ package encounter
 import (
 	"context"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/KirkDiggler/rpg-toolkit/core"
@@ -1786,6 +1787,240 @@ func (o *Orchestrator) checkCombatEnd(enc *encounterrepo.EncounterData) *Encount
 
 	// Combat continues
 	return nil
+}
+
+// OpenDoor opens a door to reveal the connected room and adds its monsters to combat
+func (o *Orchestrator) OpenDoor(
+	ctx context.Context,
+	input *OpenDoorInput,
+) (*OpenDoorOutput, error) {
+	// 1. Validate input
+	if input == nil {
+		return nil, fmt.Errorf("input is required")
+	}
+	if input.DungeonID == "" {
+		return nil, fmt.Errorf("dungeon ID is required")
+	}
+	if input.ConnectionID == "" {
+		return nil, fmt.Errorf("connection ID is required")
+	}
+
+	// 2. Load dungeon by ID
+	dungeonOutput, err := o.dungeonRepo.Get(ctx, &dungeonrepo.GetInput{
+		DungeonID: input.DungeonID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to load dungeon: %w", err)
+	}
+	dng := dungeonOutput.Dungeon
+
+	// 3. Find the connection
+	var connection *environments.ConnectionEdge
+	for _, conn := range dng.Connections {
+		if conn.ID == input.ConnectionID {
+			connection = conn
+			break
+		}
+	}
+	if connection == nil {
+		return nil, fmt.Errorf("connection not found: %s", input.ConnectionID)
+	}
+
+	// 4. Check if door is already open
+	if dng.IsDoorOpen(input.ConnectionID) {
+		return nil, fmt.Errorf("door is already open")
+	}
+
+	// 5. Determine which room to reveal (the one that's NOT already revealed)
+	var revealedRoomID string
+	room1Revealed := dng.IsRoomRevealed(connection.FromRoomID)
+	room2Revealed := dng.IsRoomRevealed(connection.ToRoomID)
+
+	if room1Revealed && room2Revealed {
+		return nil, fmt.Errorf("both rooms already revealed")
+	}
+	if !room1Revealed && !room2Revealed {
+		// This shouldn't happen in normal gameplay (start room is always revealed)
+		// but handle it defensively by revealing the "from" room
+		return nil, fmt.Errorf("neither room is revealed - invalid dungeon state")
+	}
+	if !room1Revealed {
+		revealedRoomID = connection.FromRoomID
+	} else {
+		revealedRoomID = connection.ToRoomID
+	}
+
+	// 6. Get the room data
+	revealedRoom := dng.GetRoom(revealedRoomID)
+	if revealedRoom == nil {
+		return nil, fmt.Errorf("room not found: %s", revealedRoomID)
+	}
+
+	// 7. Load encounter data (using dungeon's associated encounter)
+	encOutput, err := o.encRepo.Get(ctx, &encounterrepo.GetInput{
+		EncounterID: dng.EncounterID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to load encounter: %w", err)
+	}
+
+	// 8. Create monsters and roll initiative
+	var monsters []MonsterInfo
+	var newInitiativeRolls []initiative.Roll
+	factory := dungeon.NewMonsterFactory()
+
+	if revealedRoom.Encounter != nil {
+		for _, placement := range revealedRoom.Encounter.Monsters {
+			monsterID := fmt.Sprintf("monster-%s", placement.ID)
+			m := factory.CreateMonster(monsterID, placement.MonsterID)
+			monsterData := m.ToData()
+
+			// Roll initiative for this monster
+			dexMod := monsterData.AbilityScores.Modifier(abilities.DEX)
+			roll, rollErr := o.roller.Roll(ctx, 20) // d20 roll
+			if rollErr != nil {
+				return nil, fmt.Errorf("failed to roll initiative for monster %s: %w", monsterID, rollErr)
+			}
+			total := roll + dexMod
+
+			monsters = append(monsters, MonsterInfo{
+				ID:         monsterID,
+				MonsterID:  placement.MonsterID,
+				Name:       monsterData.Name,
+				Position:   &Position{X: float64(placement.Position.X), Y: float64(placement.Position.Y)},
+				HP:         monsterData.HitPoints,
+				MaxHP:      monsterData.MaxHitPoints,
+				Initiative: total,
+			})
+
+			newInitiativeRolls = append(newInitiativeRolls, initiative.Roll{
+				Entity:   initiative.NewParticipant(monsterID, entityTypeMonster),
+				Roll:     roll,
+				Modifier: dexMod,
+				Total:    total,
+			})
+
+			// Add monster to encounter data
+			encOutput.Data.Monsters = append(encOutput.Data.Monsters, monsterData)
+		}
+	}
+
+	// 9. Validate initiative data exists
+	if encOutput.Data.InitiativeData == nil {
+		return nil, fmt.Errorf("no initiative data for encounter: %s", dng.EncounterID)
+	}
+	if len(encOutput.Data.InitiativeData.Order) == 0 {
+		return nil, fmt.Errorf("empty turn order for encounter: %s", dng.EncounterID)
+	}
+	if encOutput.Data.InitiativeData.Current >= len(encOutput.Data.InitiativeData.Order) {
+		return nil, fmt.Errorf("invalid current index for encounter: %s", dng.EncounterID)
+	}
+
+	// 10. Merge initiative orders - create new slice to avoid modifying original
+	allRolls := make([]initiative.Roll, 0, len(encOutput.Data.InitiativeRolls)+len(newInitiativeRolls))
+	allRolls = append(allRolls, encOutput.Data.InitiativeRolls...)
+	allRolls = append(allRolls, newInitiativeRolls...)
+
+	// Sort by total (descending)
+	sort.Slice(allRolls, func(i, j int) bool {
+		if allRolls[i].Total != allRolls[j].Total {
+			return allRolls[i].Total > allRolls[j].Total
+		}
+		// Tie-breaker: higher modifier goes first
+		return allRolls[i].Modifier > allRolls[j].Modifier
+	})
+
+	// Build new initiative order
+	newOrder := make([]initiative.EntityData, len(allRolls))
+	for i, roll := range allRolls {
+		newOrder[i] = initiative.EntityData{
+			ID:   roll.Entity.GetID(),
+			Type: string(roll.Entity.GetType()),
+		}
+	}
+
+	// Find the new current index (where the current entity moved to)
+	currentEntityID := encOutput.Data.InitiativeData.Order[encOutput.Data.InitiativeData.Current].ID
+	newCurrent := 0
+	for i, entity := range newOrder {
+		if entity.ID == currentEntityID {
+			newCurrent = i
+			break
+		}
+	}
+
+	newInitiativeData := &initiative.TrackerData{
+		Order:   newOrder,
+		Current: newCurrent,
+		Round:   encOutput.Data.InitiativeData.Round,
+	}
+
+	// 10. Update dungeon state (mark door open, room revealed)
+	_, err = o.dungeonRepo.Update(ctx, &dungeonrepo.UpdateInput{
+		DungeonID:     dng.ID,
+		OpenDoors:     map[string]bool{input.ConnectionID: true},
+		RevealedRooms: map[string]bool{revealedRoomID: true},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to update dungeon: %w", err)
+	}
+
+	// 11. Update encounter state with new initiative
+	_, err = o.encRepo.Update(ctx, &encounterrepo.UpdateInput{
+		EncounterID:    dng.EncounterID,
+		InitiativeData: newInitiativeData,
+		Monsters:       encOutput.Data.Monsters,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to update encounter: %w", err)
+	}
+
+	// 12. Build room data for response
+	roomData := &RoomData{
+		ID:       revealedRoom.ID,
+		Width:    revealedRoom.Shape.Width,
+		Height:   revealedRoom.Shape.Height,
+		Entities: make(map[string]interface{}),
+	}
+
+	// 13. Get doors for the newly revealed room
+	newDoors := o.getDoorInfoForRoom(dng, revealedRoomID)
+
+	// 14. Build combat state for response
+	combatState := &CombatState{
+		TurnOrder:   make([]InitiativeEntry, len(newOrder)),
+		ActiveIndex: newCurrent,
+		Round:       newInitiativeData.Round,
+	}
+	for i, entity := range newOrder {
+		// Find the roll for this entity
+		var initTotal int
+		for _, roll := range allRolls {
+			if roll.Entity.GetID() == entity.ID {
+				initTotal = roll.Total
+				break
+			}
+		}
+		combatState.TurnOrder[i] = InitiativeEntry{
+			EntityID:        entity.ID,
+			EntityType:      entity.Type,
+			InitiativeTotal: initTotal,
+		}
+	}
+
+	// TODO: Implement monster turns for monsters that act before the current entity
+	// For now, monsters are added to initiative but don't immediately take turns.
+	// This would require checking if any new monsters have higher initiative than
+	// the current entity and executing their turns.
+
+	return &OpenDoorOutput{
+		RevealedRoom: roomData,
+		RoomOffset:   nil, // TODO: Calculate offset for grid merge when implementing multi-room display
+		NewDoors:     newDoors,
+		Monsters:     monsters,
+		CombatState:  combatState,
+		MonsterTurns: nil, // Monsters don't immediately act; they wait for their turn in initiative
+	}, nil
 }
 
 // Multiplayer lobby methods
