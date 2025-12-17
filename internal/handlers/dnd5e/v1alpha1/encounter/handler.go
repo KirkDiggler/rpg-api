@@ -118,6 +118,45 @@ func (h *Handler) DungeonStart(
 	}, nil
 }
 
+// OpenDoor opens a door to reveal the next room and add monsters to initiative
+func (h *Handler) OpenDoor(
+	ctx context.Context,
+	req *dnd5ev1alpha1.OpenDoorRequest,
+) (*dnd5ev1alpha1.OpenDoorResponse, error) {
+	// 1. Validate request
+	if req.GetDungeonId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "dungeon_id is required")
+	}
+	if req.GetConnectionId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "connection_id is required")
+	}
+
+	// 2. Create service input
+	input := &encounter.OpenDoorInput{
+		DungeonID:    req.GetDungeonId(),
+		ConnectionID: req.GetConnectionId(),
+	}
+
+	// 3. Call service
+	output, err := h.encounterService.OpenDoor(ctx, input)
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	// 4. Convert to proto response
+	// Use default hex grid settings for coordinate conversion
+	gridType := spatial.GridTypeHex
+	hexOrientation := spatial.HexOrientationPointyTop
+
+	return &dnd5ev1alpha1.OpenDoorResponse{
+		Success:      true,
+		Room:         convertOpenDoorRoomToProto(output.RevealedRoom),
+		CombatState:  convertCombatStateToProto(output.CombatState, gridType, hexOrientation),
+		MonsterTurns: convertMonsterTurnsToProto(output.MonsterTurns, gridType, hexOrientation),
+		Doors:        convertDoorInfoSliceToProto(output.NewDoors),
+	}, nil
+}
+
 // GetCombatState retrieves current combat state
 func (h *Handler) GetCombatState(
 	_ context.Context,

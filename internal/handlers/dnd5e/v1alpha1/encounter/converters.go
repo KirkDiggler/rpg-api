@@ -851,3 +851,41 @@ func convertEncounterStateToProto(state string) dnd5ev1alpha1.EncounterState {
 		return dnd5ev1alpha1.EncounterState_ENCOUNTER_STATE_UNSPECIFIED
 	}
 }
+
+// convertOpenDoorRoomToProto converts the orchestrator's RoomData to proto Room
+func convertOpenDoorRoomToProto(roomData *encounter.RoomData) *dnd5ev1alpha1.Room {
+	if roomData == nil {
+		return nil
+	}
+
+	// Default to hex grid with pointy-top orientation
+	hexOrientation := true
+
+	return &dnd5ev1alpha1.Room{
+		Id:             roomData.ID,
+		Type:           "dungeon",
+		Width:          int32(roomData.Width),
+		Height:         int32(roomData.Height),
+		GridType:       apiv1alpha1.GridType_GRID_TYPE_HEX_POINTY,
+		HexOrientation: &hexOrientation,
+		Entities:       make(map[string]*dnd5ev1alpha1.EntityPlacement),
+	}
+}
+
+// convertDoorInfoSliceToProto converts a slice of DoorInfo to proto
+func convertDoorInfoSliceToProto(doors []encounter.DoorInfo) []*dnd5ev1alpha1.DoorInfo {
+	if doors == nil {
+		return nil
+	}
+
+	result := make([]*dnd5ev1alpha1.DoorInfo, len(doors))
+	for i, door := range doors {
+		result[i] = &dnd5ev1alpha1.DoorInfo{
+			ConnectionId:  door.ConnectionID,
+			PhysicalHint:  door.Direction,
+			IsOpen:        door.IsOpen,
+			LeadsToRoomId: door.TargetRoomID,
+		}
+	}
+	return result
+}

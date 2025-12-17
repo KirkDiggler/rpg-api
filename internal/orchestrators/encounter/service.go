@@ -65,6 +65,9 @@ type Service interface {
 	// ActivateFeature activates a combat feature (e.g., Rage)
 	ActivateFeature(ctx context.Context, input *ActivateFeatureInput) (*ActivateFeatureOutput, error)
 
+	// OpenDoor opens a door to reveal the connected room and adds its monsters to combat
+	OpenDoor(ctx context.Context, input *OpenDoorInput) (*OpenDoorOutput, error)
+
 	// Multiplayer lobby methods
 
 	// CreateEncounter creates a new multiplayer encounter lobby
@@ -376,4 +379,40 @@ type PlayerReconnectedOutput struct {
 	EncounterResumed bool         // Whether the encounter was resumed due to this reconnection
 	State            string       // Current encounter state after reconnection
 	CombatState      *CombatState // Combat state if encounter was resumed (nil if not in combat)
+}
+
+// OpenDoorInput contains parameters for opening a door
+type OpenDoorInput struct {
+	DungeonID    string // ID of the dungeon
+	ConnectionID string // ID of the door/connection to open
+}
+
+// OpenDoorOutput returns the result of opening a door
+type OpenDoorOutput struct {
+	RevealedRoom *RoomData            // The newly revealed room with entities
+	RoomOffset   *Position            // Offset to apply to revealed room positions for grid merge
+	NewDoors     []DoorInfo           // Doors visible from the newly revealed room
+	Monsters     []MonsterInfo        // Monsters in the revealed room with initiative
+	CombatState  *CombatState         // Updated combat state with monsters inserted
+	MonsterTurns []*MonsterTurnResult // Monster turns if any monsters act before current entity
+}
+
+// RoomData represents a room for the OpenDoor response
+// This wraps spatial.RoomData for the service layer
+type RoomData struct {
+	ID       string                 // Room ID
+	Width    int                    // Room width in cells
+	Height   int                    // Room height in cells
+	Entities map[string]interface{} // Entity placements
+}
+
+// MonsterInfo contains information about a monster in a revealed room
+type MonsterInfo struct {
+	ID         string    // Monster instance ID
+	MonsterID  string    // Monster type ID (e.g., "skeleton", "goblin")
+	Name       string    // Monster display name
+	Position   *Position // Position in the room (with offset applied)
+	HP         int       // Current hit points
+	MaxHP      int       // Maximum hit points
+	Initiative int       // Initiative roll total
 }
