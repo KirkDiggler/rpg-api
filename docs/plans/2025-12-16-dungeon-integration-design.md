@@ -19,31 +19,67 @@ Wire the existing `internal/components/dungeon/` generator into the encounter fl
 
 ## Data Model
 
+### Philosophy: Proving Ground Pattern
+
+The `internal/components/dungeon/` package serves as a **proving ground** for features that may graduate to rpg-toolkit:
+
+1. **Use toolkit types where they exist** - Don't duplicate what toolkit provides
+2. **Add what toolkit lacks here** - Exploration state, dungeon lifecycle, etc.
+3. **Iterate fast, validate assumptions** - Confirm patterns work before moving to toolkit
+4. **Graduate proven patterns** - Create explicit toolkit issues once we're confident
+
+This keeps the toolkit clean while letting us move quickly.
+
+### Type Layering
+
+| Layer | Types Used | Source |
+|-------|------------|--------|
+| Entity | `entities.Dungeon` | rpg-api (wraps below) |
+| Room content | `dungeon.Room` | rpg-api component (D&D 5e specific) |
+| Connections | `environments.ConnectionEdge` | rpg-toolkit |
+| Positions | `spatial.Position` | rpg-toolkit |
+| Exploration state | `DungeonState`, `RevealedRooms`, etc. | rpg-api (proving ground) |
+
 ### New Dungeon Entity
 
 Separate from Encounter. Dungeon owns the map and exploration state, Encounter owns combat state.
 
 ```go
+import (
+    "github.com/KirkDiggler/rpg-toolkit/tools/environments"
+    "github.com/KirkDiggler/rpg-api/internal/components/dungeon"
+)
+
 type Dungeon struct {
-    ID           string
-    Theme        DungeonTheme
-    Difficulty   DungeonDifficulty
-    Length       DungeonLength
-    Seed         int64
-    State        DungeonState  // ACTIVE, VICTORIOUS, FAILED, ABANDONED
+    ID          string
+    EncounterID string
+    Seed        int64
 
-    Rooms        map[string]*DungeonRoom
-    Connections  []*DungeonConnection
-    StartRoomID  string
-    BossRoomID   string
+    // From toolkit - connection graph structure
+    Connections []*environments.ConnectionEdge
+    StartRoomID string
+    BossRoomID  string
 
-    // Exploration state
-    RevealedRooms  map[string]bool  // Room ID -> explored
-    OpenDoors      map[string]bool  // Connection ID -> open
+    // From component - room content with D&D 5e encounters
+    Rooms map[string]*dungeon.Room
 
-    // Merged grid state
-    ActiveGrid     *MergedGrid
-    RoomOffsets    map[string]Position
+    // Exploration state (proving ground - may move to toolkit)
+    State         DungeonState
+    CurrentRoomID string
+    RevealedRooms map[string]bool  // Room ID -> explored
+    OpenDoors     map[string]bool  // Connection ID -> open
+
+    // Merged grid state (proving ground)
+    ActiveGrid  *MergedGrid
+    RoomOffsets map[string]spatial.Position
+
+    // Metrics
+    RoomsCleared   int
+    MonstersKilled int
+
+    // Timestamps
+    CreatedAt   time.Time
+    CompletedAt *time.Time
 }
 
 type DungeonState int
@@ -55,6 +91,8 @@ const (
     DungeonStateAbandoned
 )
 ```
+
+Note: Theme, Difficulty, and Length enums live in the component package, not the entity. They're input parameters for generation, not persisted dungeon state.
 
 ### Encounter Changes
 
@@ -294,4 +332,11 @@ func mapToGeneratorInput(theme DungeonTheme, diff DungeonDifficulty, length Dung
 - **Death saves**: Replace TPK with proper 0 HP mechanics (backlog item API 5/5)
 - **Retreat**: Allow party to flee back to start and exit
 - **Room effects**: Traps, environmental hazards per room
-- **Toolkit integration**: Refactor MergedGrid to use rpg-toolkit's spatial package internally
+
+### Proving Ground → Toolkit Graduation
+
+As patterns are validated here, create toolkit issues for:
+
+- **Exploration state**: `RevealedRooms`, `OpenDoors` tracking could become toolkit features
+- **MergedGrid**: Multi-room coordinate merging could move to `tools/spatial`
+- **DungeonState lifecycle**: Active/Victory/Failed state machine may be generally useful
