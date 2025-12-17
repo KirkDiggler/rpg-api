@@ -378,7 +378,8 @@ func (s *OrchestratorTestSuite) TestCreateDungeon_Success() {
 		Get(gomock.Any(), characterrepo.GetInput{ID: "char-1"}).
 		Return(&characterrepo.GetOutput{
 			CharacterData: &character.Data{
-				ID: "char-1",
+				ID:        "char-1",
+				HitPoints: 10, // Set HP to non-zero to avoid triggering TPK check
 				AbilityScores: shared.AbilityScores{
 					abilities.DEX: 14, // +2 modifier
 				},
