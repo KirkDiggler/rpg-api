@@ -92,12 +92,19 @@ func (g *MergedGrid) RemoveEntity(entityID string) {
 }
 
 // MoveEntity moves an entity to a new position if it's not blocked.
-// Returns true if the move succeeded, false if blocked or entity not found.
+// Returns true if the move succeeded or entity is already at the target position.
+// Returns false if the position is blocked by another entity/obstacle or entity not found.
 func (g *MergedGrid) MoveEntity(entityID string, newPos spatial.CubeCoordinate) bool {
 	placement, exists := g.Entities[entityID]
 	if !exists {
 		return false
 	}
+
+	// Already at target position - no-op success
+	if placement.CubePosition.Equals(newPos) {
+		return true
+	}
+
 	if g.IsBlocked(newPos) {
 		return false
 	}

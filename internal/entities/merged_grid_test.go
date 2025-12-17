@@ -257,6 +257,23 @@ func (s *MergedGridTestSuite) TestMoveEntity() {
 		success := s.grid.MoveEntity("nonexistent", newPos)
 		s.False(success)
 	})
+
+	s.Run("move to current position succeeds as no-op", func() {
+		pos := spatial.CubeCoordinate{X: 5, Y: -3, Z: -2}
+		s.grid.AddEntity(spatial.EntityCubePlacement{
+			EntityID:     "hero-1",
+			EntityType:   "character",
+			CubePosition: pos,
+			Size:         1,
+		})
+
+		// Move to same position should succeed
+		success := s.grid.MoveEntity("hero-1", pos)
+
+		s.True(success)
+		s.Equal(pos, s.grid.Entities["hero-1"].CubePosition)
+		s.True(s.grid.IsBlocked(pos)) // Still blocked
+	})
 }
 
 func (s *MergedGridTestSuite) TestGetEntityPosition() {
