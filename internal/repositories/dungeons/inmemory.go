@@ -25,7 +25,7 @@ func NewInMemory() *InMemoryRepository {
 	}
 }
 
-// Save stores a dungeon
+// Save stores a dungeon. This is an upsert operation - existing dungeons will be overwritten.
 func (r *InMemoryRepository) Save(_ context.Context, input *SaveInput) (*SaveOutput, error) {
 	if input == nil {
 		return nil, apierr.InvalidArgument("input is required")
@@ -148,7 +148,7 @@ func (r *InMemoryRepository) Update(_ context.Context, input *UpdateInput) (*Upd
 		dungeon.CurrentRoomID = *input.CurrentRoomID
 	}
 
-	// Merge revealed rooms
+	// Merge revealed rooms - only adds true values since rooms cannot be "unexplored"
 	if input.RevealedRooms != nil {
 		if dungeon.RevealedRooms == nil {
 			dungeon.RevealedRooms = make(map[string]bool)
@@ -160,7 +160,7 @@ func (r *InMemoryRepository) Update(_ context.Context, input *UpdateInput) (*Upd
 		}
 	}
 
-	// Merge open doors
+	// Merge open doors - only adds true values since doors cannot be "closed" once opened
 	if input.OpenDoors != nil {
 		if dungeon.OpenDoors == nil {
 			dungeon.OpenDoors = make(map[string]bool)
