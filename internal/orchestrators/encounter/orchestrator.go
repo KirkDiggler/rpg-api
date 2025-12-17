@@ -33,12 +33,15 @@ import (
 
 // Config holds orchestrator dependencies
 type Config struct {
-	CharacterRepo characterrepo.Repository
-	EncounterRepo encounterrepo.Repository
-	DungeonRepo   dungeonrepo.Repository // Optional: for dungeon persistence
-	DungeonGen    *dungeon.Generator     // Optional: for procedural dungeon generation
-	Publisher     encounterpub.Publisher // Optional: for publishing encounter events
-	EventIDGen    idgen.Generator        // Optional: for generating event IDs (defaults to ULID)
+	CharacterRepo   characterrepo.Repository
+	EncounterRepo   encounterrepo.Repository
+	DungeonRepo     dungeonrepo.Repository // Optional: for dungeon persistence
+	DungeonGen      *dungeon.Generator     // Optional: for procedural dungeon generation
+	Publisher       encounterpub.Publisher // Optional: for publishing encounter events
+	EventIDGen      idgen.Generator        // Optional: for generating event IDs (defaults to ULID)
+	EncounterIDGen  idgen.Generator        // Optional: for generating encounter IDs (defaults to "enc-" prefix)
+	DungeonIDGen    idgen.Generator        // Optional: for generating dungeon IDs (defaults to "dng-" prefix)
+	ConnectionIDGen idgen.Generator        // Optional: for generating connection IDs (defaults to "conn-" prefix)
 }
 
 // Validate ensures all required dependencies are present
@@ -54,13 +57,16 @@ func (c *Config) Validate() error {
 
 // Orchestrator implements the Service interface
 type Orchestrator struct {
-	charRepo    characterrepo.Repository
-	encRepo     encounterrepo.Repository
-	dungeonRepo dungeonrepo.Repository // Optional: for dungeon persistence
-	dungeonGen  *dungeon.Generator     // Optional: for procedural dungeon generation
-	roller      dice.Roller
-	publisher   encounterpub.Publisher // Optional: for publishing encounter events
-	eventIDGen  idgen.Generator        // For generating event IDs
+	charRepo        characterrepo.Repository
+	encRepo         encounterrepo.Repository
+	dungeonRepo     dungeonrepo.Repository // Optional: for dungeon persistence
+	dungeonGen      *dungeon.Generator     // Optional: for procedural dungeon generation
+	roller          dice.Roller
+	publisher       encounterpub.Publisher // Optional: for publishing encounter events
+	eventIDGen      idgen.Generator        // For generating event IDs
+	encounterIDGen  idgen.Generator        // For generating encounter IDs
+	dungeonIDGen    idgen.Generator        // For generating dungeon IDs
+	connectionIDGen idgen.Generator        // For generating connection IDs
 }
 
 // New creates a new encounter orchestrator
@@ -78,14 +84,31 @@ func New(cfg *Config) (*Orchestrator, error) {
 		eventIDGen = idgen.NewULID("")
 	}
 
+	// Default to prefixed generators for encounter/dungeon/connection IDs if not provided
+	encounterIDGen := cfg.EncounterIDGen
+	if encounterIDGen == nil {
+		encounterIDGen = idgen.NewPrefixed("enc-")
+	}
+	dungeonIDGen := cfg.DungeonIDGen
+	if dungeonIDGen == nil {
+		dungeonIDGen = idgen.NewPrefixed("dng-")
+	}
+	connectionIDGen := cfg.ConnectionIDGen
+	if connectionIDGen == nil {
+		connectionIDGen = idgen.NewPrefixed("conn-")
+	}
+
 	return &Orchestrator{
-		charRepo:    cfg.CharacterRepo,
-		encRepo:     cfg.EncounterRepo,
-		dungeonRepo: cfg.DungeonRepo,
-		dungeonGen:  cfg.DungeonGen,
-		roller:      dice.NewRoller(),
-		publisher:   cfg.Publisher,
-		eventIDGen:  eventIDGen,
+		charRepo:        cfg.CharacterRepo,
+		encRepo:         cfg.EncounterRepo,
+		dungeonRepo:     cfg.DungeonRepo,
+		dungeonGen:      cfg.DungeonGen,
+		roller:          dice.NewRoller(),
+		publisher:       cfg.Publisher,
+		eventIDGen:      eventIDGen,
+		encounterIDGen:  encounterIDGen,
+		dungeonIDGen:    dungeonIDGen,
+		connectionIDGen: connectionIDGen,
 	}, nil
 }
 
@@ -355,8 +378,8 @@ func (o *Orchestrator) CreateDungeon(ctx context.Context, input *CreateDungeonIn
 		return nil, fmt.Errorf("input is required")
 	}
 
-	// Generate unique encounter ID using timestamp
-	encounterID := fmt.Sprintf("enc-%d", time.Now().UnixNano())
+	// Generate unique encounter ID
+	encounterID := o.encounterIDGen.Generate()
 
 	// If dungeon generator is available, use it for procedural generation
 	if o.dungeonGen != nil {
@@ -596,6 +619,17 @@ func (o *Orchestrator) createDungeonWithGenerator(
 
 	generatedDungeon := genOutput.Dungeon
 
+	// Validate generated dungeon
+	if generatedDungeon == nil {
+		return nil, fmt.Errorf("dungeon generator returned nil dungeon")
+	}
+	if len(generatedDungeon.Rooms) == 0 {
+		return nil, fmt.Errorf("dungeon generator returned empty dungeon with no rooms")
+	}
+	if generatedDungeon.StartRoom == "" {
+		return nil, fmt.Errorf("dungeon generator did not specify a start room")
+	}
+
 	// Create entities.Dungeon for storage
 	dungeonEntity := o.convertToDungeonEntity(encounterID, generatedDungeon, genOutput.Seed)
 
@@ -636,8 +670,8 @@ func (o *Orchestrator) createDungeonWithGenerator(
 	// Place monsters from the encounter
 	monsters := o.placeMonsters(roomData, startRoom)
 
-	// Extract doors for response
-	doors := o.getDoorInfoForRoom(generatedDungeon, generatedDungeon.StartRoom)
+	// Extract doors for response using entity connections (which have proper IDs)
+	doors := o.getDoorInfoForRoom(dungeonEntity, generatedDungeon.StartRoom)
 
 	// Roll initiative for all combatants
 	combatants := make(map[core.Entity]int)
@@ -653,11 +687,11 @@ func (o *Orchestrator) createDungeonWithGenerator(
 		combatants[char] = dexModifier
 	}
 
-	// Add monsters to initiative
+	// Add monsters to initiative with their actual DEX modifiers
 	for _, m := range monsters {
 		monsterEntity := initiative.NewParticipant(m.ID, entityTypeMonster)
-		// Use DEX modifier from monster (default to +2 for goblins)
-		combatants[monsterEntity] = 2
+		dexModifier := m.AbilityScores.Modifier(abilities.DEX)
+		combatants[monsterEntity] = dexModifier
 	}
 
 	// Roll initiative
@@ -772,16 +806,17 @@ func (o *Orchestrator) convertToDungeonEntity(
 	connections := make([]*environments.ConnectionEdge, len(genDungeon.Connections))
 	for i, conn := range genDungeon.Connections {
 		connections[i] = &environments.ConnectionEdge{
-			ID:            fmt.Sprintf("conn-%d", i),
+			ID:            o.connectionIDGen.Generate(),
 			FromRoomID:    conn.FromRoom,
 			ToRoomID:      conn.ToRoom,
 			Bidirectional: true,
-			Required:      conn.IsMainPath, // Main path connections are required
+			Required:      conn.IsMainPath,   // Main path connections are required
+			Type:          conn.PhysicalHint, // Store physical hint in Type field for DoorInfo
 		}
 	}
 
 	return &entities.Dungeon{
-		ID:            fmt.Sprintf("dng-%d", time.Now().UnixNano()),
+		ID:            o.dungeonIDGen.Generate(),
 		EncounterID:   encounterID,
 		Seed:          seed,
 		Connections:   connections,
@@ -865,11 +900,13 @@ func (o *Orchestrator) getSpawnPositions(room *dungeon.Room) []spatial.Position 
 }
 
 // placeMonsters places monsters from the room's encounter into the room data
+// Uses the monster factory to create theme-appropriate monsters (skeletons for crypt, etc.)
 func (o *Orchestrator) placeMonsters(roomData *spatial.RoomData, room *dungeon.Room) []*monster.Data {
 	if room.Encounter == nil {
 		return nil
 	}
 
+	factory := dungeon.NewMonsterFactory()
 	monsters := make([]*monster.Data, 0, len(room.Encounter.Monsters))
 	for _, placement := range room.Encounter.Monsters {
 		monsterID := fmt.Sprintf("monster-%s", placement.ID)
@@ -883,34 +920,29 @@ func (o *Orchestrator) placeMonsters(roomData *spatial.RoomData, room *dungeon.R
 			BlocksMovement: true,
 		}
 
-		// Create monster data (using goblin as default for now)
-		goblinMonster := monster.NewGoblin(monsterID)
-		goblinMonster.AddAction(monster.NewScimitarAction(monster.ScimitarConfig{
-			AttackBonus: 4,
-			DamageDice:  "1d6+2",
-			DamageBonus: 2,
-		}))
-		monsters = append(monsters, goblinMonster.ToData())
+		// Create monster using factory based on MonsterID from theme
+		m := factory.CreateMonster(monsterID, placement.MonsterID)
+		monsters = append(monsters, m.ToData())
 	}
 
 	return monsters
 }
 
-// getDoorInfoForRoom extracts door information for a room
-func (o *Orchestrator) getDoorInfoForRoom(genDungeon *dungeon.Dungeon, roomID string) []DoorInfo {
+// getDoorInfoForRoom extracts door information for a room using stored entity connections
+func (o *Orchestrator) getDoorInfoForRoom(dungeonEntity *entities.Dungeon, roomID string) []DoorInfo {
 	var doors []DoorInfo
 
-	for i, conn := range genDungeon.Connections {
-		if conn.FromRoom == roomID || conn.ToRoom == roomID {
-			targetRoomID := conn.ToRoom
-			if conn.ToRoom == roomID {
-				targetRoomID = conn.FromRoom
+	for _, conn := range dungeonEntity.Connections {
+		if conn.FromRoomID == roomID || conn.ToRoomID == roomID {
+			targetRoomID := conn.ToRoomID
+			if conn.ToRoomID == roomID {
+				targetRoomID = conn.FromRoomID
 			}
 
 			doors = append(doors, DoorInfo{
-				ConnectionID: fmt.Sprintf("conn-%d", i),
+				ConnectionID: conn.ID,
 				TargetRoomID: targetRoomID,
-				Direction:    conn.PhysicalHint,
+				Direction:    conn.Type, // Physical hint is stored in Type field
 				IsOpen:       false,
 			})
 		}
@@ -1775,7 +1807,7 @@ func (o *Orchestrator) CreateEncounter(
 	}
 
 	// 2. Generate unique encounter ID
-	encounterID := fmt.Sprintf("enc-%d", time.Now().UnixNano())
+	encounterID := o.encounterIDGen.Generate()
 
 	// 3. Generate join code
 	joinCode := encounterrepo.GenerateJoinCode()
