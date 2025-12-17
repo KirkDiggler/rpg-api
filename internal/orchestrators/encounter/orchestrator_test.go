@@ -27,6 +27,7 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/entities"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	charactermock "github.com/KirkDiggler/rpg-api/internal/repositories/character/mock"
+	dungeonmock "github.com/KirkDiggler/rpg-api/internal/repositories/dungeons/mock"
 	encounterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/encounters"
 	encountermock "github.com/KirkDiggler/rpg-api/internal/repositories/encounters/mock"
 )
@@ -70,6 +71,20 @@ func (s *OrchestratorTestSuite) TestNew_Success() {
 	orch, err := New(&Config{
 		CharacterRepo: s.mockCharRepo,
 		EncounterRepo: s.mockEncRepo,
+	})
+	s.Require().NoError(err)
+	s.Assert().NotNil(orch)
+}
+
+func (s *OrchestratorTestSuite) TestNew_WithDungeonDependencies() {
+	// Create a mock dungeon repo
+	mockDungeonRepo := dungeonmock.NewMockRepository(s.ctrl)
+
+	orch, err := New(&Config{
+		CharacterRepo: s.mockCharRepo,
+		EncounterRepo: s.mockEncRepo,
+		DungeonRepo:   mockDungeonRepo,
+		// DungeonGen is nil - optional for unit tests
 	})
 	s.Require().NoError(err)
 	s.Assert().NotNil(orch)

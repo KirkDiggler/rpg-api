@@ -27,6 +27,7 @@ import (
 	apiv1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/api/v1alpha1"
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
+	dungeontoolkit "github.com/KirkDiggler/rpg-api/internal/components/dungeon/toolkit"
 	apiv1alpha1handler "github.com/KirkDiggler/rpg-api/internal/handlers/api/v1alpha1"
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
 	diceorc "github.com/KirkDiggler/rpg-api/internal/orchestrators/dice"
@@ -38,6 +39,7 @@ import (
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	characterdraftrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft"
 	dicesessionrepo "github.com/KirkDiggler/rpg-api/internal/repositories/dice_session"
+	dungeonsrepo "github.com/KirkDiggler/rpg-api/internal/repositories/dungeons"
 	encountersrepo "github.com/KirkDiggler/rpg-api/internal/repositories/encounters"
 )
 
@@ -137,6 +139,10 @@ func runServer(_ *cobra.Command, _ []string) error {
 	// Create encounter repository (in-memory for now)
 	encounterRepo := encountersrepo.NewInMemory()
 
+	// Create dungeon repository and generator
+	dungeonRepo := dungeonsrepo.NewInMemory()
+	dungeonGen := dungeontoolkit.CreateGenerator(&dungeontoolkit.ToolkitConfig{})
+
 	// Create encounter event publisher
 	encounterPublisher, err := encounterpub.NewRedis(&encounterpub.RedisConfig{
 		Client: mustRedisClient(),
@@ -145,10 +151,12 @@ func runServer(_ *cobra.Command, _ []string) error {
 		return fmt.Errorf("failed to create encounter publisher: %w", err)
 	}
 
-	// Create encounter orchestrator
+	// Create encounter orchestrator with dungeon support
 	encounterService, err := encounterorc.New(&encounterorc.Config{
 		CharacterRepo: charRepo,
 		EncounterRepo: encounterRepo,
+		DungeonRepo:   dungeonRepo,
+		DungeonGen:    dungeonGen,
 		Publisher:     encounterPublisher,
 		EventIDGen:    idgen.NewULID(""),
 	})

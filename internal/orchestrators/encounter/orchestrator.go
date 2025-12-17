@@ -19,12 +19,15 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/initiative"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/monster"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/weapons"
+	"github.com/KirkDiggler/rpg-toolkit/tools/environments"
 	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
 
+	"github.com/KirkDiggler/rpg-api/internal/components/dungeon"
 	"github.com/KirkDiggler/rpg-api/internal/entities"
 	"github.com/KirkDiggler/rpg-api/internal/pkg/idgen"
 	encounterpub "github.com/KirkDiggler/rpg-api/internal/publishers/encounter"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
+	dungeonrepo "github.com/KirkDiggler/rpg-api/internal/repositories/dungeons"
 	encounterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/encounters"
 )
 
@@ -32,6 +35,8 @@ import (
 type Config struct {
 	CharacterRepo characterrepo.Repository
 	EncounterRepo encounterrepo.Repository
+	DungeonRepo   dungeonrepo.Repository // Optional: for dungeon persistence
+	DungeonGen    *dungeon.Generator     // Optional: for procedural dungeon generation
 	Publisher     encounterpub.Publisher // Optional: for publishing encounter events
 	EventIDGen    idgen.Generator        // Optional: for generating event IDs (defaults to ULID)
 }
@@ -49,11 +54,13 @@ func (c *Config) Validate() error {
 
 // Orchestrator implements the Service interface
 type Orchestrator struct {
-	charRepo   characterrepo.Repository
-	encRepo    encounterrepo.Repository
-	roller     dice.Roller
-	publisher  encounterpub.Publisher // Optional: for publishing encounter events
-	eventIDGen idgen.Generator        // For generating event IDs
+	charRepo    characterrepo.Repository
+	encRepo     encounterrepo.Repository
+	dungeonRepo dungeonrepo.Repository // Optional: for dungeon persistence
+	dungeonGen  *dungeon.Generator     // Optional: for procedural dungeon generation
+	roller      dice.Roller
+	publisher   encounterpub.Publisher // Optional: for publishing encounter events
+	eventIDGen  idgen.Generator        // For generating event IDs
 }
 
 // New creates a new encounter orchestrator
@@ -72,11 +79,13 @@ func New(cfg *Config) (*Orchestrator, error) {
 	}
 
 	return &Orchestrator{
-		charRepo:   cfg.CharacterRepo,
-		encRepo:    cfg.EncounterRepo,
-		roller:     dice.NewRoller(),
-		publisher:  cfg.Publisher,
-		eventIDGen: eventIDGen,
+		charRepo:    cfg.CharacterRepo,
+		encRepo:     cfg.EncounterRepo,
+		dungeonRepo: cfg.DungeonRepo,
+		dungeonGen:  cfg.DungeonGen,
+		roller:      dice.NewRoller(),
+		publisher:   cfg.Publisher,
+		eventIDGen:  eventIDGen,
 	}, nil
 }
 
@@ -349,6 +358,12 @@ func (o *Orchestrator) CreateDungeon(ctx context.Context, input *CreateDungeonIn
 	// Generate unique encounter ID using timestamp
 	encounterID := fmt.Sprintf("enc-%d", time.Now().UnixNano())
 
+	// If dungeon generator is available, use it for procedural generation
+	if o.dungeonGen != nil {
+		return o.createDungeonWithGenerator(ctx, encounterID, input)
+	}
+
+	// Fallback: Create hardcoded room for backwards compatibility
 	// Create initial room data (20x20 hex grid)
 	roomData := &spatial.RoomData{
 		ID:       encounterID + "-room",
@@ -549,10 +564,359 @@ func (o *Orchestrator) CreateDungeon(ctx context.Context, input *CreateDungeonIn
 	// Return encounter ID, room data, combat state, and any monster turns
 	return &CreateDungeonOutput{
 		EncounterID:  encounterID,
+		DungeonID:    "", // Empty for fallback path (no generator)
 		Room:         roomData,
+		Doors:        nil, // No doors for fallback path
 		CombatState:  combatState,
 		MonsterTurns: monsterTurns,
 	}, nil
+}
+
+// createDungeonWithGenerator uses the procedural generator to create a dungeon
+func (o *Orchestrator) createDungeonWithGenerator(
+	ctx context.Context,
+	encounterID string,
+	input *CreateDungeonInput,
+) (*CreateDungeonOutput, error) {
+	// Map input parameters to generator input
+	genInput := MapToGeneratorInput(&MapToGeneratorInputParams{
+		PartySize:  len(input.CharacterIDs),
+		PartyLevel: input.PartyLevel,
+		ThemeID:    input.ThemeID,
+		Difficulty: input.Difficulty,
+		Length:     input.Length,
+		Seed:       input.Seed,
+	})
+
+	// Generate the dungeon
+	genOutput, err := o.dungeonGen.Generate(ctx, genInput)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate dungeon: %w", err)
+	}
+
+	generatedDungeon := genOutput.Dungeon
+
+	// Create entities.Dungeon for storage
+	dungeonEntity := o.convertToDungeonEntity(encounterID, generatedDungeon, genOutput.Seed)
+
+	// Save dungeon to repository if available
+	if o.dungeonRepo != nil {
+		_, err = o.dungeonRepo.Save(ctx, &dungeonrepo.SaveInput{
+			Dungeon: dungeonEntity,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to save dungeon: %w", err)
+		}
+	}
+
+	// Get the start room
+	startRoom := o.findRoom(generatedDungeon, generatedDungeon.StartRoom)
+	if startRoom == nil {
+		return nil, fmt.Errorf("start room not found: %s", generatedDungeon.StartRoom)
+	}
+
+	// Convert start room to spatial.RoomData
+	roomData := o.convertToRoomData(encounterID, startRoom)
+
+	// Place characters at spawn zones
+	spawnPositions := o.getSpawnPositions(startRoom)
+	for i, characterID := range input.CharacterIDs {
+		if i >= len(spawnPositions) {
+			break
+		}
+		roomData.Entities[characterID] = spatial.EntityPlacement{
+			EntityID:       characterID,
+			EntityType:     entityTypeCharacter,
+			Position:       spawnPositions[i],
+			Size:           1,
+			BlocksMovement: true,
+		}
+	}
+
+	// Place monsters from the encounter
+	monsters := o.placeMonsters(roomData, startRoom)
+
+	// Extract doors for response
+	doors := o.getDoorInfoForRoom(generatedDungeon, generatedDungeon.StartRoom)
+
+	// Roll initiative for all combatants
+	combatants := make(map[core.Entity]int)
+
+	// Add characters with their DEX modifiers
+	for _, characterID := range input.CharacterIDs {
+		charOutput, charErr := o.charRepo.Get(ctx, characterrepo.GetInput{ID: characterID})
+		if charErr != nil {
+			return nil, fmt.Errorf("failed to load character %s: %w", characterID, charErr)
+		}
+		dexModifier := charOutput.CharacterData.AbilityScores.Modifier(abilities.DEX)
+		char := initiative.NewParticipant(characterID, entityTypeCharacter)
+		combatants[char] = dexModifier
+	}
+
+	// Add monsters to initiative
+	for _, m := range monsters {
+		monsterEntity := initiative.NewParticipant(m.ID, entityTypeMonster)
+		// Use DEX modifier from monster (default to +2 for goblins)
+		combatants[monsterEntity] = 2
+	}
+
+	// Roll initiative
+	rolls := initiative.RollForOrder(combatants, o.roller)
+
+	// Create tracker and extract data
+	initiativeOrder := make([]core.Entity, len(rolls))
+	for i, roll := range rolls {
+		initiativeOrder[i] = roll.Entity
+	}
+	tracker := initiative.New(initiativeOrder)
+	trackerData := tracker.ToData()
+
+	// Convert rolls to service layer InitiativeEntry
+	turnOrder := make([]InitiativeEntry, len(rolls))
+	for i, roll := range rolls {
+		entityID := roll.Entity.GetID()
+		var position *Position
+		if placement, exists := roomData.Entities[entityID]; exists {
+			position = &Position{X: placement.Position.X, Y: placement.Position.Y}
+		}
+		turnOrder[i] = InitiativeEntry{
+			EntityID:           entityID,
+			EntityType:         string(roll.Entity.GetType()),
+			InitiativeRoll:     roll.Roll,
+			InitiativeModifier: roll.Modifier,
+			InitiativeTotal:    roll.Total,
+			Position:           position,
+		}
+	}
+
+	// Create combat state
+	combatState := &CombatState{
+		EncounterID:       encounterID,
+		Round:             1,
+		TurnOrder:         turnOrder,
+		ActiveIndex:       0,
+		MovementRemaining: defaultMovementSpeed,
+		ActionEconomy:     entities.NewActionEconomyState(),
+		CombatStarted:     true,
+		CombatEnded:       false,
+	}
+
+	// Save encounter data
+	_, err = o.encRepo.Save(ctx, &encounterrepo.SaveInput{
+		EncounterID:       encounterID,
+		RoomData:          roomData,
+		InitiativeData:    &trackerData,
+		InitiativeRolls:   rolls,
+		MovementRemaining: combatState.MovementRemaining,
+		ActionEconomy:     combatState.ActionEconomy,
+		Monsters:          monsters,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to save encounter: %w", err)
+	}
+
+	// Execute monster turns if they go first
+	var monsterTurns []*MonsterTurnResult
+	if len(trackerData.Order) > 0 && trackerData.Order[0].Type == entityTypeMonster {
+		encData := &encounterrepo.EncounterData{
+			ID:                encounterID,
+			RoomData:          roomData,
+			InitiativeData:    &trackerData,
+			InitiativeRolls:   rolls,
+			MovementRemaining: combatState.MovementRemaining,
+			Monsters:          monsters,
+		}
+
+		monsterTurns, err = o.executeMonsterTurns(ctx, encData, input.CharacterIDs)
+		if err != nil {
+			return nil, fmt.Errorf("failed to execute monster turns: %w", err)
+		}
+
+		combatState.ActiveIndex = encData.InitiativeData.Current
+		combatState.Round = encData.InitiativeData.Round
+
+		_, err = o.encRepo.Update(ctx, &encounterrepo.UpdateInput{
+			EncounterID:    encounterID,
+			InitiativeData: encData.InitiativeData,
+			Monsters:       encData.Monsters,
+			RoomData:       encData.RoomData,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to save initiative after monster turns: %w", err)
+		}
+	}
+
+	return &CreateDungeonOutput{
+		EncounterID:  encounterID,
+		DungeonID:    dungeonEntity.ID,
+		Room:         roomData,
+		Doors:        doors,
+		CombatState:  combatState,
+		MonsterTurns: monsterTurns,
+	}, nil
+}
+
+// convertToDungeonEntity converts a generated dungeon to an entities.Dungeon
+func (o *Orchestrator) convertToDungeonEntity(
+	encounterID string,
+	genDungeon *dungeon.Dungeon,
+	seed int64,
+) *entities.Dungeon {
+	// Convert rooms to map
+	rooms := make(map[string]*dungeon.Room)
+	for _, room := range genDungeon.Rooms {
+		rooms[room.ID] = room
+	}
+
+	// Convert connections to toolkit format
+	connections := make([]*environments.ConnectionEdge, len(genDungeon.Connections))
+	for i, conn := range genDungeon.Connections {
+		connections[i] = &environments.ConnectionEdge{
+			ID:            fmt.Sprintf("conn-%d", i),
+			FromRoomID:    conn.FromRoom,
+			ToRoomID:      conn.ToRoom,
+			Bidirectional: true,
+			Required:      conn.IsMainPath, // Main path connections are required
+		}
+	}
+
+	return &entities.Dungeon{
+		ID:            fmt.Sprintf("dng-%d", time.Now().UnixNano()),
+		EncounterID:   encounterID,
+		Seed:          seed,
+		Connections:   connections,
+		StartRoomID:   genDungeon.StartRoom,
+		BossRoomID:    genDungeon.BossRoom,
+		Rooms:         rooms,
+		State:         entities.DungeonStateActive,
+		CurrentRoomID: genDungeon.StartRoom,
+		RevealedRooms: map[string]bool{genDungeon.StartRoom: true},
+		OpenDoors:     make(map[string]bool),
+		CreatedAt:     time.Now(),
+	}
+}
+
+// findRoom finds a room by ID in the generated dungeon
+func (o *Orchestrator) findRoom(genDungeon *dungeon.Dungeon, roomID string) *dungeon.Room {
+	for _, room := range genDungeon.Rooms {
+		if room.ID == roomID {
+			return room
+		}
+	}
+	return nil
+}
+
+// convertToRoomData converts a dungeon.Room to spatial.RoomData
+func (o *Orchestrator) convertToRoomData(encounterID string, room *dungeon.Room) *spatial.RoomData {
+	roomData := &spatial.RoomData{
+		ID:       encounterID + "-" + room.ID,
+		Type:     "dungeon",
+		Width:    room.Shape.Width,
+		Height:   room.Shape.Height,
+		GridType: spatial.GridTypeHex,
+		Entities: make(map[string]spatial.EntityPlacement),
+	}
+
+	// Add obstacles from features
+	if room.Features != nil {
+		for _, obstacle := range room.Features.Obstacles {
+			roomData.Entities[obstacle.ID] = spatial.EntityPlacement{
+				EntityID:       obstacle.ID,
+				EntityType:     "obstacle",
+				Position:       spatial.Position{X: float64(obstacle.Position.X), Y: float64(obstacle.Position.Y)},
+				Size:           1,
+				BlocksMovement: obstacle.BlocksMovement,
+			}
+		}
+	}
+
+	return roomData
+}
+
+// getSpawnPositions extracts player spawn positions from a room
+func (o *Orchestrator) getSpawnPositions(room *dungeon.Room) []spatial.Position {
+	var positions []spatial.Position
+
+	for _, zone := range room.SpawnZones {
+		if zone.Type == dungeon.ZoneTypePlayerSpawn || zone.Type == dungeon.ZoneTypeEntrance {
+			for _, pos := range zone.Bounds {
+				positions = append(positions, spatial.Position{
+					X: float64(pos.X),
+					Y: float64(pos.Y),
+				})
+				if len(positions) >= 4 {
+					return positions
+				}
+			}
+		}
+	}
+
+	// Fallback: if no spawn zones, use default positions
+	if len(positions) == 0 {
+		positions = []spatial.Position{
+			{X: 2, Y: 2},
+			{X: 2, Y: 4},
+			{X: 4, Y: 2},
+			{X: 4, Y: 4},
+		}
+	}
+
+	return positions
+}
+
+// placeMonsters places monsters from the room's encounter into the room data
+func (o *Orchestrator) placeMonsters(roomData *spatial.RoomData, room *dungeon.Room) []*monster.Data {
+	if room.Encounter == nil {
+		return nil
+	}
+
+	monsters := make([]*monster.Data, 0, len(room.Encounter.Monsters))
+	for _, placement := range room.Encounter.Monsters {
+		monsterID := fmt.Sprintf("monster-%s", placement.ID)
+
+		// Add to room entities
+		roomData.Entities[monsterID] = spatial.EntityPlacement{
+			EntityID:       monsterID,
+			EntityType:     entityTypeMonster,
+			Position:       spatial.Position{X: float64(placement.Position.X), Y: float64(placement.Position.Y)},
+			Size:           1,
+			BlocksMovement: true,
+		}
+
+		// Create monster data (using goblin as default for now)
+		goblinMonster := monster.NewGoblin(monsterID)
+		goblinMonster.AddAction(monster.NewScimitarAction(monster.ScimitarConfig{
+			AttackBonus: 4,
+			DamageDice:  "1d6+2",
+			DamageBonus: 2,
+		}))
+		monsters = append(monsters, goblinMonster.ToData())
+	}
+
+	return monsters
+}
+
+// getDoorInfoForRoom extracts door information for a room
+func (o *Orchestrator) getDoorInfoForRoom(genDungeon *dungeon.Dungeon, roomID string) []DoorInfo {
+	var doors []DoorInfo
+
+	for i, conn := range genDungeon.Connections {
+		if conn.FromRoom == roomID || conn.ToRoom == roomID {
+			targetRoomID := conn.ToRoom
+			if conn.ToRoom == roomID {
+				targetRoomID = conn.FromRoom
+			}
+
+			doors = append(doors, DoorInfo{
+				ConnectionID: fmt.Sprintf("conn-%d", i),
+				TargetRoomID: targetRoomID,
+				Direction:    conn.PhysicalHint,
+				IsOpen:       false,
+			})
+		}
+	}
+
+	return doors
 }
 
 // MoveCharacter implements character movement within an encounter
