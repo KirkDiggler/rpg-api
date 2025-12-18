@@ -488,6 +488,7 @@ func (s *ConvertersTestSuite) TestConvertCharacterDataToProto_ConditionWithNoIde
 }
 
 func (s *ConvertersTestSuite) TestGetFeatureActionType() {
+	// Test features implemented in the toolkit - action types come from toolkit, not hardcoded
 	testCases := []struct {
 		name       string
 		featureID  string
@@ -517,41 +518,29 @@ func (s *ConvertersTestSuite) TestGetFeatureActionType() {
 			wantAction: dnd5ev1alpha1.ActionType_ACTION_TYPE_BONUS_ACTION,
 		},
 		{
+			name:       "Patient Defense is bonus action",
+			featureID:  "patient_defense",
+			wantAction: dnd5ev1alpha1.ActionType_ACTION_TYPE_BONUS_ACTION,
+		},
+		{
+			name:       "Step of the Wind is bonus action",
+			featureID:  "step_of_the_wind",
+			wantAction: dnd5ev1alpha1.ActionType_ACTION_TYPE_BONUS_ACTION,
+		},
+		{
 			name:       "Deflect Missiles is reaction",
 			featureID:  "deflect_missiles",
 			wantAction: dnd5ev1alpha1.ActionType_ACTION_TYPE_REACTION,
 		},
-		// Rogue
-		{
-			name:       "Sneak Attack is free",
-			featureID:  "sneak_attack",
-			wantAction: dnd5ev1alpha1.ActionType_ACTION_TYPE_FREE,
-		},
-		{
-			name:       "Cunning Action is bonus action",
-			featureID:  "cunning_action",
-			wantAction: dnd5ev1alpha1.ActionType_ACTION_TYPE_BONUS_ACTION,
-		},
-		{
-			name:       "Uncanny Dodge is reaction",
-			featureID:  "uncanny_dodge",
-			wantAction: dnd5ev1alpha1.ActionType_ACTION_TYPE_REACTION,
-		},
-		// Paladin
-		{
-			name:       "Divine Smite is free",
-			featureID:  "divine_smite",
-			wantAction: dnd5ev1alpha1.ActionType_ACTION_TYPE_FREE,
-		},
-		{
-			name:       "Lay on Hands is action",
-			featureID:  "lay_on_hands",
-			wantAction: dnd5ev1alpha1.ActionType_ACTION_TYPE_ACTION,
-		},
-		// Unknown feature returns unspecified
+		// Features not yet in toolkit return unspecified
 		{
 			name:       "Unknown feature returns unspecified",
 			featureID:  "totally_made_up_feature",
+			wantAction: dnd5ev1alpha1.ActionType_ACTION_TYPE_UNSPECIFIED,
+		},
+		{
+			name:       "Feature not in toolkit returns unspecified",
+			featureID:  "sneak_attack",
 			wantAction: dnd5ev1alpha1.ActionType_ACTION_TYPE_UNSPECIFIED,
 		},
 	}
