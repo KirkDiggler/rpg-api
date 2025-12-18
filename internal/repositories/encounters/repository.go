@@ -94,6 +94,9 @@ type EncounterData struct {
 	HostID    string             // ID of the player who created the encounter
 	Players   map[string]*Player // Map of PlayerID to Player
 	CreatedAt time.Time          // When the encounter was created
+
+	// Event tracking for load-then-stream pattern
+	LastEventID string // ULID of the most recent event published for this encounter
 }
 
 // SaveInput defines the request for saving an encounter
@@ -114,6 +117,9 @@ type SaveInput struct {
 	HostID    string             // ID of the player who created the encounter
 	Players   map[string]*Player // Map of PlayerID to Player
 	CreatedAt time.Time          // When the encounter was created
+
+	// Event tracking
+	LastEventID string // ULID of the most recent event (optional on create)
 }
 
 // SaveOutput defines the response for saving an encounter
@@ -151,6 +157,9 @@ type UpdateInput struct {
 	State   *EncounterState    // State transition (waiting->active, etc.)
 	HostID  *string            // New host ID (for host transfer when host leaves)
 	Players map[string]*Player // Updated player map (ready status, connection status)
+
+	// Event tracking (optional - only update if provided)
+	LastEventID *string // ULID of the most recent event
 }
 
 // UpdateOutput defines the response for updating an encounter

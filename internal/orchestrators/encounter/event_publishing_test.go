@@ -70,6 +70,44 @@ func (m *mockEventIDGen) Generate() string {
 	return m.prefix + "-" + string(rune('0'+m.count))
 }
 
+// lastEventIDUpdateMatcher matches Update calls that only set LastEventID
+type lastEventIDUpdateMatcher struct {
+	encounterID string
+}
+
+func (m lastEventIDUpdateMatcher) Matches(x interface{}) bool {
+	input, ok := x.(*encounterrepo.UpdateInput)
+	if !ok {
+		return false
+	}
+	// Must have the right encounter ID
+	if input.EncounterID != m.encounterID {
+		return false
+	}
+	// Must have LastEventID set
+	if input.LastEventID == nil {
+		return false
+	}
+	// Should not have other fields set (this is a LastEventID-only update)
+	if input.InitiativeData != nil || input.RoomData != nil ||
+		input.MovementRemaining != nil || input.ActionEconomy != nil ||
+		input.Monsters != nil || input.BossMonsterIDs != nil ||
+		input.CharacterHP != nil || input.State != nil ||
+		input.HostID != nil || input.Players != nil {
+		return false
+	}
+	return true
+}
+
+func (m lastEventIDUpdateMatcher) String() string {
+	return "is LastEventID update for " + m.encounterID
+}
+
+// isLastEventIDUpdate returns a matcher for LastEventID-only updates
+func isLastEventIDUpdate(encounterID string) gomock.Matcher {
+	return lastEventIDUpdateMatcher{encounterID: encounterID}
+}
+
 // ============================================================================
 // Lobby Event Publishing Tests
 // ============================================================================
@@ -94,7 +132,7 @@ func (s *EventPublishingTestSuite) TestJoinEncounter_PublishesPlayerJoinedEvent(
 			},
 		}, nil)
 
-	// Mock Update
+	// Mock Update (may be called multiple times: once for main operation, once for LastEventID)
 	s.mockEncRepo.EXPECT().
 		Update(gomock.Any(), gomock.Any()).
 		Return(&encounterrepo.UpdateOutput{Success: true}, nil)
@@ -138,6 +176,11 @@ func (s *EventPublishingTestSuite) TestJoinEncounter_PublishesPlayerJoinedEvent(
 
 			return &encounterpub.PublishOutput{}, nil
 		})
+
+	// Expect LastEventID update after publish
+	s.mockEncRepo.EXPECT().
+		Update(gomock.Any(), isLastEventIDUpdate(encounterID)).
+		Return(&encounterrepo.UpdateOutput{Success: true}, nil)
 
 	// Act
 	output, err := s.orchestrator.JoinEncounter(context.Background(), &JoinEncounterInput{
@@ -195,6 +238,11 @@ func (s *EventPublishingTestSuite) TestSetReady_PublishesPlayerReadyEvent() {
 
 			return &encounterpub.PublishOutput{}, nil
 		})
+
+	// Expect LastEventID update after publish
+	s.mockEncRepo.EXPECT().
+		Update(gomock.Any(), isLastEventIDUpdate(encounterID)).
+		Return(&encounterrepo.UpdateOutput{Success: true}, nil)
 
 	// Act
 	output, err := s.orchestrator.SetReady(context.Background(), &SetReadyInput{
@@ -338,6 +386,11 @@ func (s *EventPublishingTestSuite) TestLeaveEncounter_PublishesPlayerLeftEvent()
 			return &encounterpub.PublishOutput{}, nil
 		})
 
+	// Expect LastEventID update after publish
+	s.mockEncRepo.EXPECT().
+		Update(gomock.Any(), isLastEventIDUpdate(encounterID)).
+		Return(&encounterrepo.UpdateOutput{Success: true}, nil)
+
 	// Act
 	output, err := s.orchestrator.LeaveEncounter(context.Background(), &LeaveEncounterInput{
 		EncounterID: encounterID,
@@ -365,15 +418,15 @@ func (s *EventPublishingTestSuite) TestMoveCharacter_PublishesMovementCompletedE
 	targetZ := 5.0
 
 	roomData := &spatial.RoomData{
-		ID:           encounterID + "-room",
-		Width:        20,
-		Height:       20,
-		GridType:     spatial.GridTypeHex,
+		ID:       encounterID + "-room",
+		Width:    20,
+		Height:   20,
+		GridType: spatial.GridTypeHex,
 		CubeEntities: map[string]spatial.EntityCubePlacement{
 			entityID: {
 				EntityID:       entityID,
 				EntityType:     "character",
-				CubePosition:   spatial.CubeCoordinate{X: 3, Y: -6, Z: 3}, // 3 + -6 + 3 = 0
+				CubePosition:   spatial.CubeCoordinate{X: 3, Y: -6, Z: 3}, //nolint:gocritic // valid cube coords
 				Size:           1,
 				BlocksMovement: true,
 			},
@@ -411,6 +464,11 @@ func (s *EventPublishingTestSuite) TestMoveCharacter_PublishesMovementCompletedE
 
 			return &encounterpub.PublishOutput{}, nil
 		})
+
+	// Expect LastEventID update after publish
+	s.mockEncRepo.EXPECT().
+		Update(gomock.Any(), isLastEventIDUpdate(encounterID)).
+		Return(&encounterrepo.UpdateOutput{Success: true}, nil)
 
 	// Act
 	output, err := s.orchestrator.MoveCharacter(context.Background(), &MoveCharacterInput{
@@ -475,6 +533,11 @@ func (s *EventPublishingTestSuite) TestEndTurn_PublishesTurnEndedEvent() {
 
 			return &encounterpub.PublishOutput{}, nil
 		})
+
+	// Expect LastEventID update after publish
+	s.mockEncRepo.EXPECT().
+		Update(gomock.Any(), isLastEventIDUpdate(encounterID)).
+		Return(&encounterrepo.UpdateOutput{Success: true}, nil)
 
 	// Act
 	output, err := s.orchestrator.EndTurn(context.Background(), &EndTurnInput{
@@ -683,6 +746,11 @@ func (s *EventPublishingTestSuite) TestLeaveEncounter_LastPlayer_PublishesBefore
 			return &encounterpub.PublishOutput{}, nil
 		})
 
+	// Expect LastEventID update after publish
+	s.mockEncRepo.EXPECT().
+		Update(gomock.Any(), isLastEventIDUpdate(encounterID)).
+		Return(&encounterrepo.UpdateOutput{Success: true}, nil)
+
 	// Mock Delete (called after publish)
 	s.mockEncRepo.EXPECT().
 		Delete(gomock.Any(), &encounterrepo.DeleteInput{EncounterID: encounterID}).
@@ -755,6 +823,11 @@ func (s *EventPublishingTestSuite) TestEndTurn_NewRound_SetsNewRoundFlag() {
 			return &encounterpub.PublishOutput{}, nil
 		})
 
+	// Expect LastEventID update after publish
+	s.mockEncRepo.EXPECT().
+		Update(gomock.Any(), isLastEventIDUpdate(encounterID)).
+		Return(&encounterrepo.UpdateOutput{Success: true}, nil)
+
 	// Act
 	output, err := s.orchestrator.EndTurn(context.Background(), &EndTurnInput{
 		EncounterID: encounterID,
@@ -804,6 +877,11 @@ func (s *EventPublishingTestSuite) TestEventTimestamp_IsRecent() {
 			s.Assert().WithinDuration(beforeTest, input.Event.Timestamp, time.Second)
 			return &encounterpub.PublishOutput{}, nil
 		})
+
+	// Expect LastEventID update after publish
+	s.mockEncRepo.EXPECT().
+		Update(gomock.Any(), isLastEventIDUpdate(encounterID)).
+		Return(&encounterrepo.UpdateOutput{Success: true}, nil)
 
 	// Act
 	_, err := s.orchestrator.SetReady(context.Background(), &SetReadyInput{
@@ -865,6 +943,11 @@ func (s *EventPublishingTestSuite) TestPlayerDisconnected_PublishesEvent() {
 			return &encounterpub.PublishOutput{}, nil
 		})
 
+	// Expect LastEventID update after publish
+	s.mockEncRepo.EXPECT().
+		Update(gomock.Any(), isLastEventIDUpdate(encounterID)).
+		Return(&encounterrepo.UpdateOutput{Success: true}, nil)
+
 	// Act
 	output, err := s.orchestrator.PlayerDisconnected(context.Background(), &PlayerDisconnectedInput{
 		EncounterID: encounterID,
@@ -921,6 +1004,11 @@ func (s *EventPublishingTestSuite) TestPlayerDisconnected_PausesCombatWhenAllDis
 			return &encounterpub.PublishOutput{}, nil
 		})
 
+	// Expect LastEventID update after first publish
+	s.mockEncRepo.EXPECT().
+		Update(gomock.Any(), isLastEventIDUpdate(encounterID)).
+		Return(&encounterrepo.UpdateOutput{Success: true}, nil)
+
 	// Then CombatPaused event
 	s.mockPublisher.EXPECT().
 		Publish(gomock.Any(), gomock.Any()).
@@ -934,6 +1022,11 @@ func (s *EventPublishingTestSuite) TestPlayerDisconnected_PausesCombatWhenAllDis
 
 			return &encounterpub.PublishOutput{}, nil
 		}).After(firstCall)
+
+	// Expect LastEventID update after second publish
+	s.mockEncRepo.EXPECT().
+		Update(gomock.Any(), isLastEventIDUpdate(encounterID)).
+		Return(&encounterrepo.UpdateOutput{Success: true}, nil)
 
 	// Act
 	output, err := s.orchestrator.PlayerDisconnected(context.Background(), &PlayerDisconnectedInput{
@@ -993,6 +1086,11 @@ func (s *EventPublishingTestSuite) TestPlayerReconnected_PublishesEvent() {
 
 			return &encounterpub.PublishOutput{}, nil
 		})
+
+	// Expect LastEventID update after publish
+	s.mockEncRepo.EXPECT().
+		Update(gomock.Any(), isLastEventIDUpdate(encounterID)).
+		Return(&encounterrepo.UpdateOutput{Success: true}, nil)
 
 	// Act
 	output, err := s.orchestrator.PlayerReconnected(context.Background(), &PlayerReconnectedInput{
@@ -1064,6 +1162,11 @@ func (s *EventPublishingTestSuite) TestPlayerReconnected_ResumesCombat() {
 			return &encounterpub.PublishOutput{}, nil
 		})
 
+	// Expect LastEventID update after first publish
+	s.mockEncRepo.EXPECT().
+		Update(gomock.Any(), isLastEventIDUpdate(encounterID)).
+		Return(&encounterrepo.UpdateOutput{Success: true}, nil)
+
 	// Then CombatResumed event
 	s.mockPublisher.EXPECT().
 		Publish(gomock.Any(), gomock.Any()).
@@ -1076,6 +1179,11 @@ func (s *EventPublishingTestSuite) TestPlayerReconnected_ResumesCombat() {
 
 			return &encounterpub.PublishOutput{}, nil
 		}).After(firstCall)
+
+	// Expect LastEventID update after second publish
+	s.mockEncRepo.EXPECT().
+		Update(gomock.Any(), isLastEventIDUpdate(encounterID)).
+		Return(&encounterrepo.UpdateOutput{Success: true}, nil)
 
 	// Act
 	output, err := s.orchestrator.PlayerReconnected(context.Background(), &PlayerReconnectedInput{

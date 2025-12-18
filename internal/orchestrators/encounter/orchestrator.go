@@ -114,14 +114,16 @@ func New(cfg *Config) (*Orchestrator, error) {
 }
 
 // publishEvent publishes an event if publisher is configured.
+// Also updates the encounter's LastEventID for the load-then-stream pattern.
 // Errors are logged but not returned to avoid breaking combat flow.
 func (o *Orchestrator) publishEvent(ctx context.Context, encounterID string, eventType entities.EventType, data interface{}) {
 	if o.publisher == nil {
 		return
 	}
 
+	eventID := o.eventIDGen.Generate()
 	event := &entities.EncounterEvent{
-		ID:          o.eventIDGen.Generate(),
+		ID:          eventID,
 		Type:        eventType,
 		EncounterID: encounterID,
 		Timestamp:   time.Now(),
@@ -157,6 +159,10 @@ func (o *Orchestrator) publishEvent(ctx context.Context, encounterID string, eve
 		event.TurnEnded = v
 	case *entities.MonsterTurnCompletedEvent:
 		event.MonsterTurnCompleted = v
+	case *entities.DungeonVictoryEvent:
+		event.DungeonVictory = v
+	case *entities.DungeonFailureEvent:
+		event.DungeonFailure = v
 	default:
 		fmt.Printf("unknown event data type for %s: %T\n", eventType, data)
 		return
@@ -169,6 +175,17 @@ func (o *Orchestrator) publishEvent(ctx context.Context, encounterID string, eve
 	if err != nil {
 		// Log but don't fail - event publishing is non-critical
 		fmt.Printf("failed to publish %s event for encounter %s: %v\n", eventType, encounterID, err)
+		return
+	}
+
+	// Update LastEventID in the encounter record for load-then-stream pattern
+	_, err = o.encRepo.Update(ctx, &encounterrepo.UpdateInput{
+		EncounterID: encounterID,
+		LastEventID: &eventID,
+	})
+	if err != nil {
+		// Log but don't fail - this is non-critical for the current operation
+		fmt.Printf("failed to update LastEventID for encounter %s: %v\n", encounterID, err)
 	}
 }
 
@@ -876,11 +893,11 @@ func (o *Orchestrator) findRoom(genDungeon *dungeon.Dungeon, roomID string) *dun
 // Uses CubeEntities for hex grids (cube coordinates are the native format)
 func (o *Orchestrator) convertToRoomData(encounterID string, room *dungeon.Room) *spatial.RoomData {
 	roomData := &spatial.RoomData{
-		ID:          encounterID + "-" + room.ID,
-		Type:        "dungeon",
-		Width:       room.Shape.Width,
-		Height:      room.Shape.Height,
-		GridType:    spatial.GridTypeHex,
+		ID:           encounterID + "-" + room.ID,
+		Type:         "dungeon",
+		Width:        room.Shape.Width,
+		Height:       room.Shape.Height,
+		GridType:     spatial.GridTypeHex,
 		CubeEntities: make(map[string]spatial.EntityCubePlacement),
 	}
 
@@ -3088,4 +3105,70 @@ func (o *Orchestrator) createGoblinData(goblinID string) *monster.Data {
 	}))
 	data := goblinMonster.ToData()
 	return data
+}
+
+// GetEncounterState returns a full snapshot of the encounter state.
+// Used by clients for the load-then-stream pattern to sync state before processing events.
+func (o *Orchestrator) GetEncounterState(ctx context.Context, input *GetEncounterStateInput) (*GetEncounterStateOutput, error) {
+	if input == nil {
+		return nil, fmt.Errorf("input is required")
+	}
+	if input.EncounterID == "" {
+		return nil, fmt.Errorf("encounter ID is required")
+	}
+
+	// Load encounter data
+	encOutput, err := o.encRepo.Get(ctx, &encounterrepo.GetInput{
+		EncounterID: input.EncounterID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get encounter: %w", err)
+	}
+
+	encData := encOutput.Data
+
+	// Build party list with character data
+	party := o.buildPartyFromPlayers(ctx, encData.Players, encData.HostID)
+
+	// Map repository state to string state
+	stateStr := string(encData.State)
+
+	output := &GetEncounterStateOutput{
+		EncounterID: encData.ID,
+		State:       stateStr,
+		Party:       party,
+		JoinCode:    encData.JoinCode,
+		HostID:      encData.HostID,
+		LastEventID: encData.LastEventID,
+	}
+
+	// If combat is active or paused, include combat state
+	if encData.State == encounterrepo.StateActive || encData.State == encounterrepo.StatePaused {
+		// Build combat state
+		if encData.InitiativeData != nil {
+			combatState := o.buildCombatState(encData.ID, encData)
+			output.CombatState = combatState
+		}
+
+		// Include room data
+		output.Room = encData.RoomData
+
+		// Build monster combat states
+		if encData.Monsters != nil {
+			monsters := make([]*MonsterCombatState, 0, len(encData.Monsters))
+			for _, m := range encData.Monsters {
+				if m.HitPoints > 0 { // Only include alive monsters
+					monsters = append(monsters, &MonsterCombatState{
+						MonsterID:        m.ID,
+						MonsterName:      m.Name,
+						CurrentHitPoints: m.HitPoints,
+						MaxHitPoints:     m.MaxHitPoints,
+					})
+				}
+			}
+			output.Monsters = monsters
+		}
+	}
+
+	return output, nil
 }

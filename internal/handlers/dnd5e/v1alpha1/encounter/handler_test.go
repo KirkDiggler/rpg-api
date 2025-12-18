@@ -543,12 +543,12 @@ func (s *HandlerTestSuite) TestMoveCharacter_Success() {
 	cubeZ := 5.0
 
 	expectedRoom := &spatial.RoomData{
-		ID:           "enc-1-room",
-		Type:         "dungeon",
-		Width:        20,
-		Height:       20,
-		GridType:     spatial.GridTypeHex,
-		HexFlatTop:   false,
+		ID:         "enc-1-room",
+		Type:       "dungeon",
+		Width:      20,
+		Height:     20,
+		GridType:   spatial.GridTypeHex,
+		HexFlatTop: false,
 		CubeEntities: map[string]spatial.EntityCubePlacement{
 			"char-1": {
 				EntityID:       "char-1",

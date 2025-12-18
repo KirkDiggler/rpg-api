@@ -593,11 +593,11 @@ func (s *OrchestratorTestSuite) TestCreateDungeon_SavesInitiativeData() {
 func (s *OrchestratorTestSuite) TestMoveCharacter_Success() {
 	// Arrange - use hex grid with CubeEntities and cube coordinates
 	roomData := &spatial.RoomData{
-		ID:           "enc-1-room",
-		Type:         "dungeon",
-		Width:        20,
-		Height:       20,
-		GridType:     spatial.GridTypeHex,
+		ID:       "enc-1-room",
+		Type:     "dungeon",
+		Width:    20,
+		Height:   20,
+		GridType: spatial.GridTypeHex,
 		CubeEntities: map[string]spatial.EntityCubePlacement{
 			"char-1": {
 				EntityID:       "char-1",
@@ -694,7 +694,7 @@ func (s *OrchestratorTestSuite) TestMoveCharacter_InvalidCubeCoordinates() {
 		TargetPosition: &Position{
 			X: 100,
 			Y: 100,
-			Z: 0, // Invalid: 100 + 100 + 0 = 200 != 0
+			Z: 0, //nolint:gocritic // invalid cube coords for test
 		},
 	})
 
@@ -713,11 +713,11 @@ func (s *OrchestratorTestSuite) TestMoveCharacter_InvalidCubeCoordinates() {
 func (s *OrchestratorTestSuite) TestMoveCharacter_PositionOccupied() {
 	// Arrange - use hex grid with CubeEntities
 	roomData := &spatial.RoomData{
-		ID:           "enc-1-room",
-		Type:         "dungeon",
-		Width:        20,
-		Height:       20,
-		GridType:     spatial.GridTypeHex,
+		ID:       "enc-1-room",
+		Type:     "dungeon",
+		Width:    20,
+		Height:   20,
+		GridType: spatial.GridTypeHex,
 		CubeEntities: map[string]spatial.EntityCubePlacement{
 			"char-1": {
 				EntityID:       "char-1",

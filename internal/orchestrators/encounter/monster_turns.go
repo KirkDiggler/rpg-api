@@ -115,7 +115,7 @@ func (o *Orchestrator) executeSingleMonsterTurn(
 	}()
 
 	// 3. Load monster actions (required for combat - LoadFromData doesn't load them)
-	if err := actions.LoadMonsterActions(mon, monsterData.Actions); err != nil {
+	if err = actions.LoadMonsterActions(mon, monsterData.Actions); err != nil {
 		return nil, fmt.Errorf("failed to load monster actions: %w", err)
 	}
 
