@@ -42,6 +42,8 @@ func (r *InMemoryRepository) Save(_ context.Context, input *SaveInput) (*SaveOut
 		MovementRemaining: input.MovementRemaining,
 		ActionEconomy:     input.ActionEconomy,
 		Monsters:          input.Monsters,
+		BossMonsterIDs:    input.BossMonsterIDs,
+		CharacterHP:       input.CharacterHP,
 		State:             input.State,
 		JoinCode:          input.JoinCode,
 		HostID:            input.HostID,
@@ -80,6 +82,8 @@ func (r *InMemoryRepository) Get(_ context.Context, input *GetInput) (*GetOutput
 			MovementRemaining: data.MovementRemaining,
 			ActionEconomy:     data.ActionEconomy,
 			Monsters:          data.Monsters,
+			BossMonsterIDs:    data.BossMonsterIDs,
+			CharacterHP:       data.CharacterHP,
 			State:             data.State,
 			JoinCode:          data.JoinCode,
 			HostID:            data.HostID,
@@ -115,6 +119,8 @@ func (r *InMemoryRepository) GetByJoinCode(_ context.Context, input *GetByJoinCo
 					MovementRemaining: data.MovementRemaining,
 					ActionEconomy:     data.ActionEconomy,
 					Monsters:          data.Monsters,
+					BossMonsterIDs:    data.BossMonsterIDs,
+					CharacterHP:       data.CharacterHP,
 					State:             data.State,
 					JoinCode:          data.JoinCode,
 					HostID:            data.HostID,
@@ -161,6 +167,12 @@ func (r *InMemoryRepository) Update(_ context.Context, input *UpdateInput) (*Upd
 	}
 	if input.Monsters != nil {
 		data.Monsters = input.Monsters
+	}
+	if input.BossMonsterIDs != nil {
+		data.BossMonsterIDs = input.BossMonsterIDs
+	}
+	if input.CharacterHP != nil {
+		data.CharacterHP = input.CharacterHP
 	}
 
 	// Multiplayer fields

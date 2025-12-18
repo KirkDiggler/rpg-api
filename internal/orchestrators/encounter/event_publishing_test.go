@@ -249,8 +249,9 @@ func (s *EventPublishingTestSuite) TestStartCombat_PublishesCombatStartedEvent()
 		Get(gomock.Any(), characterrepo.GetInput{ID: characterID}).
 		Return(&characterrepo.GetOutput{
 			CharacterData: &character.Data{
-				ID:       characterID,
-				PlayerID: playerID,
+				ID:        characterID,
+				PlayerID:  playerID,
+				HitPoints: 10, // Set HP to non-zero to avoid triggering TPK check
 				AbilityScores: shared.AbilityScores{
 					abilities.DEX: 14, // +2 modifier
 				},

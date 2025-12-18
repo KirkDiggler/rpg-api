@@ -315,6 +315,11 @@ func (o *Orchestrator) ResolveAttack(ctx context.Context, input *ResolveAttackIn
 		TargetDead: newHP <= 0,
 	})
 
+	// 14. Check for dungeon victory if monster died
+	if newHP <= 0 {
+		o.checkAndHandleVictory(ctx, input.EncounterID, encOutput.Data, input.TargetID)
+	}
+
 	return &ResolveAttackOutput{
 		Result:      attackResult,
 		MonsterHP:   newHP,
@@ -455,6 +460,9 @@ func (o *Orchestrator) CreateDungeon(ctx context.Context, input *CreateDungeonIn
 	// Roll initiative for all combatants
 	combatants := make(map[core.Entity]int)
 
+	// Initialize CharacterHP map for TPK tracking
+	characterHP := make(map[string]int)
+
 	// Add characters with their DEX modifiers
 	for _, characterID := range input.CharacterIDs {
 		// Load character to get DEX modifier
@@ -465,6 +473,9 @@ func (o *Orchestrator) CreateDungeon(ctx context.Context, input *CreateDungeonIn
 
 		// Calculate DEX modifier from ability scores
 		dexModifier := charOutput.CharacterData.AbilityScores.Modifier(abilities.DEX)
+
+		// Track character's current HP for TPK detection
+		characterHP[characterID] = charOutput.CharacterData.HitPoints
 
 		// Create participant entity
 		char := initiative.NewParticipant(characterID, "character")
@@ -540,6 +551,7 @@ func (o *Orchestrator) CreateDungeon(ctx context.Context, input *CreateDungeonIn
 		MovementRemaining: combatState.MovementRemaining,
 		ActionEconomy:     combatState.ActionEconomy,
 		Monsters:          []*monster.Data{goblinData},
+		CharacterHP:       characterHP,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to save encounter: %w", err)
@@ -557,6 +569,7 @@ func (o *Orchestrator) CreateDungeon(ctx context.Context, input *CreateDungeonIn
 			InitiativeRolls:   rolls,
 			MovementRemaining: combatState.MovementRemaining,
 			Monsters:          []*monster.Data{goblinData},
+			CharacterHP:       characterHP,
 		}
 
 		// Execute monster turns
@@ -569,16 +582,20 @@ func (o *Orchestrator) CreateDungeon(ctx context.Context, input *CreateDungeonIn
 		combatState.ActiveIndex = encData.InitiativeData.Current
 		combatState.Round = encData.InitiativeData.Round
 
-		// Persist updated initiative, monster state, and room positions
+		// Persist updated initiative, monster state, room positions, and character HP
 		_, err = o.encRepo.Update(ctx, &encounterrepo.UpdateInput{
 			EncounterID:    encounterID,
 			InitiativeData: encData.InitiativeData,
-			Monsters:       encData.Monsters, // Persist monster HP/state changes
-			RoomData:       encData.RoomData, // Persist monster position changes
+			Monsters:       encData.Monsters,    // Persist monster HP/state changes
+			RoomData:       encData.RoomData,    // Persist monster position changes
+			CharacterHP:    encData.CharacterHP, // Persist character HP changes from monster attacks
 		})
 		if err != nil {
 			return nil, fmt.Errorf("failed to save initiative after monster turns: %w", err)
 		}
+
+		// Check for TPK after monster turns
+		o.checkAndHandleFailure(ctx, encounterID, encData)
 	} else {
 		// Player goes first - no monster turns to execute
 		// Active index is already set to the first entity (index 0)
@@ -677,6 +694,9 @@ func (o *Orchestrator) createDungeonWithGenerator(
 	// Roll initiative for all combatants
 	combatants := make(map[core.Entity]int)
 
+	// Initialize CharacterHP map for TPK tracking
+	characterHP := make(map[string]int)
+
 	// Add characters with their DEX modifiers
 	for _, characterID := range input.CharacterIDs {
 		charOutput, charErr := o.charRepo.Get(ctx, characterrepo.GetInput{ID: characterID})
@@ -684,6 +704,10 @@ func (o *Orchestrator) createDungeonWithGenerator(
 			return nil, fmt.Errorf("failed to load character %s: %w", characterID, charErr)
 		}
 		dexModifier := charOutput.CharacterData.AbilityScores.Modifier(abilities.DEX)
+
+		// Track character's current HP for TPK detection
+		characterHP[characterID] = charOutput.CharacterData.HitPoints
+
 		char := initiative.NewParticipant(characterID, entityTypeCharacter)
 		combatants[char] = dexModifier
 	}
@@ -745,6 +769,7 @@ func (o *Orchestrator) createDungeonWithGenerator(
 		MovementRemaining: combatState.MovementRemaining,
 		ActionEconomy:     combatState.ActionEconomy,
 		Monsters:          monsters,
+		CharacterHP:       characterHP,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to save encounter: %w", err)
@@ -760,6 +785,7 @@ func (o *Orchestrator) createDungeonWithGenerator(
 			InitiativeRolls:   rolls,
 			MovementRemaining: combatState.MovementRemaining,
 			Monsters:          monsters,
+			CharacterHP:       characterHP,
 		}
 
 		monsterTurns, err = o.executeMonsterTurns(ctx, encData, input.CharacterIDs)
@@ -775,10 +801,14 @@ func (o *Orchestrator) createDungeonWithGenerator(
 			InitiativeData: encData.InitiativeData,
 			Monsters:       encData.Monsters,
 			RoomData:       encData.RoomData,
+			CharacterHP:    encData.CharacterHP,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("failed to save initiative after monster turns: %w", err)
 		}
+
+		// Check for TPK after monster turns
+		o.checkAndHandleFailure(ctx, encounterID, encData)
 	}
 
 	return &CreateDungeonOutput{
@@ -1237,6 +1267,9 @@ func (o *Orchestrator) EndTurn(ctx context.Context, input *EndTurnInput) (*EndTu
 
 		// Check for combat ending conditions
 		encounterResult = o.checkCombatEnd(encOutput.Data)
+
+		// Check for TPK after monster turns
+		o.checkAndHandleFailure(ctx, input.EncounterID, encOutput.Data)
 	}
 
 	// 9. Persist updated state (including monster state and position changes from their turns)
@@ -1247,6 +1280,7 @@ func (o *Orchestrator) EndTurn(ctx context.Context, input *EndTurnInput) (*EndTu
 		ActionEconomy:     entities.NewActionEconomyState(), // Reset action economy for new turn
 		Monsters:          encOutput.Data.Monsters,          // Persist monster HP/state changes
 		RoomData:          encOutput.Data.RoomData,          // Persist monster position changes
+		CharacterHP:       encOutput.Data.CharacterHP,       // Persist character HP changes from monster attacks
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to save turn state: %w", err)
@@ -1789,6 +1823,167 @@ func (o *Orchestrator) checkCombatEnd(enc *encounterrepo.EncounterData) *Encount
 	return nil
 }
 
+// checkBossesDefeated checks if all boss monsters are dead
+// Returns (allDead, bossInfo) where bossInfo contains the last boss for event data
+func (o *Orchestrator) checkBossesDefeated(enc *encounterrepo.EncounterData) (bool, *monster.Data) {
+	if len(enc.BossMonsterIDs) == 0 {
+		return false, nil // No bosses tracked, victory not possible this way
+	}
+
+	var lastBoss *monster.Data
+	for _, bossID := range enc.BossMonsterIDs {
+		bossData := o.findMonsterData(enc, bossID)
+		if bossData == nil {
+			// Boss not found - shouldn't happen, but treat as dead
+			continue
+		}
+		if bossData.HitPoints > 0 {
+			// At least one boss is still alive
+			return false, nil
+		}
+		lastBoss = bossData
+	}
+
+	// All bosses are dead
+	return true, lastBoss
+}
+
+// checkAndHandleVictory checks if the killed monster was the last boss and handles victory
+func (o *Orchestrator) checkAndHandleVictory(
+	ctx context.Context,
+	encounterID string,
+	enc *encounterrepo.EncounterData,
+	killedMonsterID string,
+) {
+	// Check if the killed monster was a boss
+	isBoss := false
+	for _, bossID := range enc.BossMonsterIDs {
+		if bossID == killedMonsterID {
+			isBoss = true
+			break
+		}
+	}
+
+	if !isBoss {
+		return // Not a boss, no victory check needed
+	}
+
+	// Check if all bosses are now dead
+	allBossesDead, bossData := o.checkBossesDefeated(enc)
+	if !allBossesDead {
+		return // Some bosses still alive
+	}
+
+	// Load dungeon to update its state
+	dungeonOutput, err := o.dungeonRepo.GetByEncounterID(ctx, &dungeonrepo.GetByEncounterIDInput{
+		EncounterID: encounterID,
+	})
+	if err != nil {
+		// Log error but don't fail the attack
+		fmt.Printf("failed to load dungeon for victory check: %v\n", err)
+		return
+	}
+	dng := dungeonOutput.Dungeon
+
+	// Mark dungeon as victorious
+	dng.MarkVictory()
+	dng.MonstersKilled++ // Increment for the boss that just died
+
+	// Persist dungeon state
+	_, err = o.dungeonRepo.Update(ctx, &dungeonrepo.UpdateInput{
+		DungeonID:      dng.ID,
+		State:          &dng.State,
+		CompletedAt:    dng.CompletedAt,
+		MonstersKilled: &dng.MonstersKilled,
+	})
+	if err != nil {
+		fmt.Printf("failed to update dungeon state for victory: %v\n", err)
+		return
+	}
+
+	// Get boss name for event
+	bossName := "Boss"
+	if bossData != nil {
+		bossName = bossData.Name
+	}
+
+	// Publish victory event
+	o.publishEvent(ctx, encounterID, entities.EventTypeDungeonVictory, &entities.DungeonVictoryEvent{
+		DungeonID:      dng.ID,
+		BossID:         killedMonsterID,
+		BossName:       bossName,
+		MonstersKilled: dng.MonstersKilled,
+		RoomsExplored:  len(dng.RevealedRooms),
+	})
+}
+
+// checkAllCharactersDead checks if all characters in the encounter are at 0 HP
+func (o *Orchestrator) checkAllCharactersDead(enc *encounterrepo.EncounterData) bool {
+	if len(enc.CharacterHP) == 0 {
+		return false // No characters tracked, can't be TPK
+	}
+
+	for _, hp := range enc.CharacterHP {
+		if hp > 0 {
+			return false // At least one character still alive
+		}
+	}
+
+	return true // All characters at 0 HP = TPK
+}
+
+// checkAndHandleFailure checks if all characters are down (TPK) and handles failure
+func (o *Orchestrator) checkAndHandleFailure(
+	ctx context.Context,
+	encounterID string,
+	enc *encounterrepo.EncounterData,
+) {
+	if !o.checkAllCharactersDead(enc) {
+		return // Not a TPK
+	}
+
+	// Load dungeon to update its state
+	dungeonOutput, err := o.dungeonRepo.GetByEncounterID(ctx, &dungeonrepo.GetByEncounterIDInput{
+		EncounterID: encounterID,
+	})
+	if err != nil {
+		fmt.Printf("failed to load dungeon for TPK check: %v\n", err)
+		return
+	}
+	dng := dungeonOutput.Dungeon
+
+	// Mark dungeon as failed
+	dng.MarkFailed()
+
+	// Persist dungeon state
+	_, err = o.dungeonRepo.Update(ctx, &dungeonrepo.UpdateInput{
+		DungeonID:   dng.ID,
+		State:       &dng.State,
+		CompletedAt: dng.CompletedAt,
+	})
+	if err != nil {
+		fmt.Printf("failed to update dungeon state for TPK: %v\n", err)
+		return
+	}
+
+	// Update encounter state to completed
+	completedState := encounterrepo.StateCompleted
+	_, err = o.encRepo.Update(ctx, &encounterrepo.UpdateInput{
+		EncounterID: encounterID,
+		State:       &completedState,
+	})
+	if err != nil {
+		fmt.Printf("failed to update encounter state for TPK: %v\n", err)
+		return
+	}
+
+	// Publish failure event
+	o.publishEvent(ctx, encounterID, entities.EventTypeDungeonFailure, &entities.DungeonFailureEvent{
+		DungeonID: dng.ID,
+		Reason:    "tpk", // Total party kill
+	})
+}
+
 // OpenDoor opens a door to reveal the connected room and adds its monsters to combat
 func (o *Orchestrator) OpenDoor(
 	ctx context.Context,
@@ -1867,13 +2062,20 @@ func (o *Orchestrator) OpenDoor(
 	// 8. Create monsters and roll initiative
 	var monsters []MonsterInfo
 	var newInitiativeRolls []initiative.Roll
+	var newBossMonsterIDs []string
 	factory := dungeon.NewMonsterFactory()
+	isBossRoom := dng.IsBossRoom(revealedRoomID)
 
 	if revealedRoom.Encounter != nil {
 		for _, placement := range revealedRoom.Encounter.Monsters {
 			monsterID := fmt.Sprintf("monster-%s", placement.ID)
 			m := factory.CreateMonster(monsterID, placement.MonsterID)
 			monsterData := m.ToData()
+
+			// Track boss monsters in the boss room
+			if isBossRoom && placement.Role == dungeon.RoleBoss {
+				newBossMonsterIDs = append(newBossMonsterIDs, monsterID)
+			}
 
 			// Roll initiative for this monster
 			dexMod := monsterData.AbilityScores.Modifier(abilities.DEX)
@@ -1965,11 +2167,16 @@ func (o *Orchestrator) OpenDoor(
 		return nil, fmt.Errorf("failed to update dungeon: %w", err)
 	}
 
-	// 11. Update encounter state with new initiative
+	// 11. Update encounter state with new initiative and boss monster IDs
+	// Merge new boss IDs with any existing ones
+	allBossIDs := make([]string, 0, len(encOutput.Data.BossMonsterIDs)+len(newBossMonsterIDs))
+	allBossIDs = append(allBossIDs, encOutput.Data.BossMonsterIDs...)
+	allBossIDs = append(allBossIDs, newBossMonsterIDs...)
 	_, err = o.encRepo.Update(ctx, &encounterrepo.UpdateInput{
 		EncounterID:    dng.EncounterID,
 		InitiativeData: newInitiativeData,
 		Monsters:       encOutput.Data.Monsters,
+		BossMonsterIDs: allBossIDs,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to update encounter: %w", err)
@@ -2349,6 +2556,9 @@ func (o *Orchestrator) StartCombat(
 	// 9. Roll initiative
 	participants := make(map[core.Entity]int)
 
+	// Initialize CharacterHP map for TPK tracking
+	characterHP := make(map[string]int)
+
 	// Add characters
 	for _, charID := range characterIDs {
 		var charOutput *characterrepo.GetOutput
@@ -2358,6 +2568,9 @@ func (o *Orchestrator) StartCombat(
 		}
 		dexMod := charOutput.CharacterData.AbilityScores.Modifier(abilities.DEX)
 		participants[initiative.NewParticipant(charID, entityTypeCharacter)] = dexMod
+
+		// Track character's current HP for TPK detection
+		characterHP[charID] = charOutput.CharacterData.HitPoints
 	}
 
 	// Add all goblins to initiative
@@ -2404,7 +2617,8 @@ func (o *Orchestrator) StartCombat(
 		InitiativeData:    &trackerData,
 		MovementRemaining: ptrInt32(defaultMovementSpeed),
 		ActionEconomy:     initialActionEconomy,
-		Monsters:          monsters, // Save all monsters
+		Monsters:          monsters,    // Save all monsters
+		CharacterHP:       characterHP, // Track character HP for TPK detection
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to update encounter: %w", err)
@@ -2432,7 +2646,8 @@ func (o *Orchestrator) StartCombat(
 			InitiativeData:    &trackerData,
 			InitiativeRolls:   rolls,
 			MovementRemaining: combatState.MovementRemaining,
-			Monsters:          monsters, // All monsters
+			Monsters:          monsters,    // All monsters
+			CharacterHP:       characterHP, // Track character HP for TPK
 		}
 
 		// Execute monster turns
@@ -2445,16 +2660,20 @@ func (o *Orchestrator) StartCombat(
 		combatState.ActiveIndex = encData.InitiativeData.Current
 		combatState.Round = encData.InitiativeData.Round
 
-		// Persist updated initiative, monster state, and room positions
+		// Persist updated initiative, monster state, room positions, and character HP
 		_, err = o.encRepo.Update(ctx, &encounterrepo.UpdateInput{
 			EncounterID:    input.EncounterID,
 			InitiativeData: encData.InitiativeData,
 			Monsters:       encData.Monsters,
 			RoomData:       encData.RoomData,
+			CharacterHP:    encData.CharacterHP,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("failed to save initiative after monster turns: %w", err)
 		}
+
+		// Check for TPK after monster turns
+		o.checkAndHandleFailure(ctx, input.EncounterID, encData)
 	}
 
 	// 13. Build party list for event (with character data)

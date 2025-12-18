@@ -85,6 +85,8 @@ type EncounterData struct {
 	MovementRemaining int32                        // Movement remaining for active turn
 	ActionEconomy     *entities.ActionEconomyState // Action/bonus/reaction tracking for current turn
 	Monsters          []*monster.Data              // Monster state for this encounter
+	BossMonsterIDs    []string                     // IDs of boss monsters (for victory detection)
+	CharacterHP       map[string]int               // Character ID -> current HP (for TPK detection)
 
 	// Multiplayer fields
 	State     EncounterState     // Current state (waiting/active/paused/completed)
@@ -103,6 +105,8 @@ type SaveInput struct {
 	MovementRemaining int32                        // Movement remaining for active turn
 	ActionEconomy     *entities.ActionEconomyState // Action/bonus/reaction tracking for current turn
 	Monsters          []*monster.Data              // Monster state for this encounter
+	BossMonsterIDs    []string                     // IDs of boss monsters (for victory detection)
+	CharacterHP       map[string]int               // Character ID -> current HP (for TPK detection)
 
 	// Multiplayer fields
 	State     EncounterState     // Current state (waiting/active/paused/completed)
@@ -140,6 +144,8 @@ type UpdateInput struct {
 	MovementRemaining *int32                       // Movement remaining for active turn (optional - only update if provided)
 	ActionEconomy     *entities.ActionEconomyState // Action/bonus/reaction tracking (optional - only update if provided)
 	Monsters          []*monster.Data              // Monster state updates (optional - only update if provided)
+	BossMonsterIDs    []string                     // IDs of boss monsters (optional - only update if provided)
+	CharacterHP       map[string]int               // Character HP updates (optional - only update if provided)
 
 	// Multiplayer fields (optional - only update if provided)
 	State   *EncounterState    // State transition (waiting->active, etc.)

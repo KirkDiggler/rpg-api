@@ -378,7 +378,8 @@ func (s *OrchestratorTestSuite) TestCreateDungeon_Success() {
 		Get(gomock.Any(), characterrepo.GetInput{ID: "char-1"}).
 		Return(&characterrepo.GetOutput{
 			CharacterData: &character.Data{
-				ID: "char-1",
+				ID:        "char-1",
+				HitPoints: 10, // Set HP to non-zero to avoid triggering TPK check
 				AbilityScores: shared.AbilityScores{
 					abilities.DEX: 14, // +2 modifier
 				},
@@ -1945,7 +1946,8 @@ func (s *OrchestratorTestSuite) TestCreateDungeon_InitializesActionEconomy() {
 		Get(gomock.Any(), characterrepo.GetInput{ID: "char-1"}).
 		Return(&characterrepo.GetOutput{
 			CharacterData: &character.Data{
-				ID: "char-1",
+				ID:        "char-1",
+				HitPoints: 10, // Set HP to non-zero to avoid triggering TPK check
 				AbilityScores: shared.AbilityScores{
 					abilities.DEX: 14, // +2 modifier for initiative
 				},
@@ -2242,4 +2244,113 @@ func (s *OrchestratorTestSuite) TestBuildGameContext_NilSlots() {
 	s.Require().NotNil(charWeapons)
 	s.Assert().NotNil(charWeapons.MainHand(), "Should still have main-hand from weapon param")
 	s.Assert().Nil(charWeapons.OffHand(), "Should have no off-hand with nil slots")
+}
+
+// Victory/Failure Detection Tests
+
+func (s *OrchestratorTestSuite) TestCheckAllCharactersDead_AllDead() {
+	enc := &encounterrepo.EncounterData{
+		CharacterHP: map[string]int{
+			"char-1": 0,
+			"char-2": 0,
+			"char-3": 0,
+		},
+	}
+
+	s.True(s.orchestrator.checkAllCharactersDead(enc))
+}
+
+func (s *OrchestratorTestSuite) TestCheckAllCharactersDead_SomeAlive() {
+	enc := &encounterrepo.EncounterData{
+		CharacterHP: map[string]int{
+			"char-1": 0,
+			"char-2": 10, // Still alive
+			"char-3": 0,
+		},
+	}
+
+	s.False(s.orchestrator.checkAllCharactersDead(enc))
+}
+
+func (s *OrchestratorTestSuite) TestCheckAllCharactersDead_AllAlive() {
+	enc := &encounterrepo.EncounterData{
+		CharacterHP: map[string]int{
+			"char-1": 25,
+			"char-2": 10,
+			"char-3": 15,
+		},
+	}
+
+	s.False(s.orchestrator.checkAllCharactersDead(enc))
+}
+
+func (s *OrchestratorTestSuite) TestCheckAllCharactersDead_EmptyMap() {
+	enc := &encounterrepo.EncounterData{
+		CharacterHP: map[string]int{},
+	}
+
+	s.False(s.orchestrator.checkAllCharactersDead(enc), "Empty map should not be TPK")
+}
+
+func (s *OrchestratorTestSuite) TestCheckAllCharactersDead_NilMap() {
+	enc := &encounterrepo.EncounterData{
+		CharacterHP: nil,
+	}
+
+	s.False(s.orchestrator.checkAllCharactersDead(enc), "Nil map should not be TPK")
+}
+
+func (s *OrchestratorTestSuite) TestCheckBossesDefeated_AllBossesDead() {
+	enc := &encounterrepo.EncounterData{
+		BossMonsterIDs: []string{"boss-1", "boss-2"},
+		Monsters: []*monster.Data{
+			{ID: "boss-1", Name: "Dragon", HitPoints: 0},
+			{ID: "boss-2", Name: "Lich", HitPoints: 0},
+			{ID: "goblin-1", Name: "Goblin", HitPoints: 10},
+		},
+	}
+
+	allDead, lastBoss := s.orchestrator.checkBossesDefeated(enc)
+	s.True(allDead)
+	s.NotNil(lastBoss)
+}
+
+func (s *OrchestratorTestSuite) TestCheckBossesDefeated_SomeBossesAlive() {
+	enc := &encounterrepo.EncounterData{
+		BossMonsterIDs: []string{"boss-1", "boss-2"},
+		Monsters: []*monster.Data{
+			{ID: "boss-1", Name: "Dragon", HitPoints: 0},
+			{ID: "boss-2", Name: "Lich", HitPoints: 50}, // Still alive
+		},
+	}
+
+	allDead, _ := s.orchestrator.checkBossesDefeated(enc)
+	s.False(allDead)
+}
+
+func (s *OrchestratorTestSuite) TestCheckBossesDefeated_NoBossIDs() {
+	enc := &encounterrepo.EncounterData{
+		BossMonsterIDs: []string{},
+		Monsters: []*monster.Data{
+			{ID: "goblin-1", Name: "Goblin", HitPoints: 0},
+		},
+	}
+
+	allDead, _ := s.orchestrator.checkBossesDefeated(enc)
+	s.False(allDead, "No boss IDs means no victory condition")
+}
+
+func (s *OrchestratorTestSuite) TestCheckBossesDefeated_BossIDsButNoMatchingMonsters() {
+	// When boss ID exists but monster data is not found,
+	// it's treated as "dead" to not block victory
+	enc := &encounterrepo.EncounterData{
+		BossMonsterIDs: []string{"boss-1"},
+		Monsters: []*monster.Data{
+			{ID: "goblin-1", Name: "Goblin", HitPoints: 10},
+		},
+	}
+
+	allDead, lastBoss := s.orchestrator.checkBossesDefeated(enc)
+	s.True(allDead, "Missing boss treated as defeated")
+	s.Nil(lastBoss, "No boss data to return")
 }

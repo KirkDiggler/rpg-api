@@ -31,6 +31,10 @@ const (
 	EventTypeFeatureActivated     EventType = "feature_activated"
 	EventTypeTurnEnded            EventType = "turn_ended"
 	EventTypeMonsterTurnCompleted EventType = "monster_turn_completed"
+
+	// Dungeon lifecycle events
+	EventTypeDungeonVictory EventType = "dungeon_victory"
+	EventTypeDungeonFailure EventType = "dungeon_failure"
 )
 
 // EncounterEvent wraps all event types with common metadata
@@ -57,6 +61,8 @@ type EncounterEvent struct {
 	FeatureActivated     *FeatureActivatedEvent     `json:"feature_activated,omitempty"`
 	TurnEnded            *TurnEndedEvent            `json:"turn_ended,omitempty"`
 	MonsterTurnCompleted *MonsterTurnCompletedEvent `json:"monster_turn_completed,omitempty"`
+	DungeonVictory       *DungeonVictoryEvent       `json:"dungeon_victory,omitempty"`
+	DungeonFailure       *DungeonFailureEvent       `json:"dungeon_failure,omitempty"`
 }
 
 // PlayerJoinedEvent is emitted when a player joins an encounter
@@ -160,4 +166,20 @@ type MonsterTurnCompletedEvent struct {
 	MonsterName string        `json:"monster_name"`
 	Actions     []interface{} `json:"actions"`
 	Movement    []interface{} `json:"movement"`
+}
+
+// DungeonVictoryEvent is emitted when the boss is defeated
+// Note: Combat continues after victory - players can keep exploring
+type DungeonVictoryEvent struct {
+	DungeonID      string `json:"dungeon_id"`
+	BossID         string `json:"boss_id"`         // ID of the defeated boss monster
+	BossName       string `json:"boss_name"`       // Name of the boss for display
+	MonstersKilled int    `json:"monsters_killed"` // Total monsters killed in the dungeon
+	RoomsExplored  int    `json:"rooms_explored"`  // Number of rooms explored
+}
+
+// DungeonFailureEvent is emitted when all party members are defeated (TPK)
+type DungeonFailureEvent struct {
+	DungeonID string `json:"dungeon_id"`
+	Reason    string `json:"reason"` // "tpk" (total party kill), "abandoned", etc.
 }
