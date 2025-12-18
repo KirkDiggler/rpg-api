@@ -591,18 +591,18 @@ func (s *OrchestratorTestSuite) TestCreateDungeon_SavesInitiativeData() {
 
 // TestMoveCharacter_Success tests successful movement
 func (s *OrchestratorTestSuite) TestMoveCharacter_Success() {
-	// Arrange
+	// Arrange - use hex grid with CubeEntities and cube coordinates
 	roomData := &spatial.RoomData{
-		ID:       "enc-1-room",
-		Type:     "dungeon",
-		Width:    20,
-		Height:   20,
-		GridType: spatial.GridTypeSquare,
-		Entities: map[string]spatial.EntityPlacement{
+		ID:           "enc-1-room",
+		Type:         "dungeon",
+		Width:        20,
+		Height:       20,
+		GridType:     spatial.GridTypeHex,
+		CubeEntities: map[string]spatial.EntityCubePlacement{
 			"char-1": {
 				EntityID:       "char-1",
 				EntityType:     "character",
-				Position:       spatial.Position{X: 0, Y: 0},
+				CubePosition:   spatial.CubeCoordinate{X: 0, Y: 0, Z: 0},
 				Size:           1,
 				BlocksMovement: true,
 			},
@@ -617,34 +617,37 @@ func (s *OrchestratorTestSuite) TestMoveCharacter_Success() {
 			Data: &encounterrepo.EncounterData{
 				ID:                "enc-1",
 				RoomData:          roomData,
-				MovementRemaining: 60, // Enough movement for the test (10 hexes = 50 feet)
+				MovementRemaining: 60, // Enough movement for the test
 			},
 		}, nil)
 
 	s.mockEncRepo.EXPECT().
 		Update(gomock.Any(), gomock.Any()).
 		DoAndReturn(func(_ context.Context, input *encounterrepo.UpdateInput) (*encounterrepo.UpdateOutput, error) {
-			// Verify the room was updated with new position
+			// Verify the room was updated with new cube position
 			updatedRoom, ok := input.RoomData.(*spatial.RoomData)
 			s.Require().True(ok)
-			s.Assert().Equal(float64(5), updatedRoom.Entities["char-1"].Position.X)
-			s.Assert().Equal(float64(5), updatedRoom.Entities["char-1"].Position.Y)
+			s.Assert().Equal(5, updatedRoom.CubeEntities["char-1"].CubePosition.X)
+			s.Assert().Equal(-10, updatedRoom.CubeEntities["char-1"].CubePosition.Y)
+			s.Assert().Equal(5, updatedRoom.CubeEntities["char-1"].CubePosition.Z)
 
 			// Verify movement was decremented
 			s.Require().NotNil(input.MovementRemaining, "MovementRemaining should be updated")
-			// Moving from (0,0) to (5,5) = 10 hexes = 50 feet, so 60 - 50 = 10
+			// Cube distance from (0,0,0) to (5,-10,5): (|5| + |-10| + |5|) / 2 = 10
+			// 10 hexes * 5 feet = 50 feet, so 60 - 50 = 10
 			s.Assert().Equal(int32(10), *input.MovementRemaining, "Movement should be decremented")
 
 			return &encounterrepo.UpdateOutput{Success: true}, nil
 		})
 
-	// Act
+	// Act - use cube coordinates (x + y + z = 0)
 	output, err := s.orchestrator.MoveCharacter(context.Background(), &MoveCharacterInput{
 		EncounterID: "enc-1",
 		EntityID:    "char-1",
 		TargetPosition: &Position{
 			X: 5,
-			Y: 5,
+			Y: -10,
+			Z: 5,
 		},
 	})
 
@@ -653,21 +656,22 @@ func (s *OrchestratorTestSuite) TestMoveCharacter_Success() {
 	s.Require().NotNil(output)
 	s.Assert().True(output.Success)
 	s.Assert().Equal(float64(5), output.FinalPosition.X)
-	s.Assert().Equal(float64(5), output.FinalPosition.Y)
+	s.Assert().Equal(float64(-10), output.FinalPosition.Y)
+	s.Assert().Equal(float64(5), output.FinalPosition.Z)
 	s.Assert().Equal("completed", output.StopReason)
 	s.Assert().Equal(int32(10), output.MovementRemaining) // 60 - 50 = 10
 }
 
-// TestMoveCharacter_OutOfBounds tests movement to invalid position
-func (s *OrchestratorTestSuite) TestMoveCharacter_OutOfBounds() {
-	// Arrange
+// TestMoveCharacter_InvalidCubeCoordinates tests movement with invalid cube coordinates
+func (s *OrchestratorTestSuite) TestMoveCharacter_InvalidCubeCoordinates() {
+	// Arrange - use hex grid with CubeEntities
 	roomData := &spatial.RoomData{
-		ID:       "enc-1-room",
-		Type:     "dungeon",
-		Width:    20,
-		Height:   20,
-		GridType: spatial.GridTypeSquare,
-		Entities: make(map[string]spatial.EntityPlacement),
+		ID:           "enc-1-room",
+		Type:         "dungeon",
+		Width:        20,
+		Height:       20,
+		GridType:     spatial.GridTypeHex,
+		CubeEntities: make(map[string]spatial.EntityCubePlacement),
 	}
 
 	s.mockEncRepo.EXPECT().
@@ -681,15 +685,16 @@ func (s *OrchestratorTestSuite) TestMoveCharacter_OutOfBounds() {
 			},
 		}, nil)
 
-	// Note: No Update call expected for out of bounds
+	// Note: No Update call expected for invalid coordinates
 
-	// Act
+	// Act - use invalid cube coordinates (x + y + z != 0)
 	output, err := s.orchestrator.MoveCharacter(context.Background(), &MoveCharacterInput{
 		EncounterID: "enc-1",
 		EntityID:    "char-1",
 		TargetPosition: &Position{
 			X: 100,
 			Y: 100,
+			Z: 0, // Invalid: 100 + 100 + 0 = 200 != 0
 		},
 	})
 
@@ -699,31 +704,32 @@ func (s *OrchestratorTestSuite) TestMoveCharacter_OutOfBounds() {
 	s.Assert().False(output.Success)
 	s.Assert().Equal(float64(100), output.FinalPosition.X)
 	s.Assert().Equal(float64(100), output.FinalPosition.Y)
-	s.Assert().Equal("out_of_bounds", output.StopReason)
+	s.Assert().Equal(float64(0), output.FinalPosition.Z)
+	s.Assert().Equal("invalid_coordinates", output.StopReason)
 	s.Assert().Equal(int32(0), output.MovementRemaining)
 }
 
 // TestMoveCharacter_PositionOccupied tests movement to occupied position
 func (s *OrchestratorTestSuite) TestMoveCharacter_PositionOccupied() {
-	// Arrange
+	// Arrange - use hex grid with CubeEntities
 	roomData := &spatial.RoomData{
-		ID:       "enc-1-room",
-		Type:     "dungeon",
-		Width:    20,
-		Height:   20,
-		GridType: spatial.GridTypeSquare,
-		Entities: map[string]spatial.EntityPlacement{
+		ID:           "enc-1-room",
+		Type:         "dungeon",
+		Width:        20,
+		Height:       20,
+		GridType:     spatial.GridTypeHex,
+		CubeEntities: map[string]spatial.EntityCubePlacement{
 			"char-1": {
 				EntityID:       "char-1",
 				EntityType:     "character",
-				Position:       spatial.Position{X: 0, Y: 0},
+				CubePosition:   spatial.CubeCoordinate{X: 0, Y: 0, Z: 0},
 				Size:           1,
 				BlocksMovement: true,
 			},
 			"goblin-1": {
 				EntityID:       "goblin-1",
 				EntityType:     "monster",
-				Position:       spatial.Position{X: 5, Y: 5},
+				CubePosition:   spatial.CubeCoordinate{X: 5, Y: -10, Z: 5}, // Target position
 				Size:           1,
 				BlocksMovement: true,
 			},
@@ -743,13 +749,14 @@ func (s *OrchestratorTestSuite) TestMoveCharacter_PositionOccupied() {
 
 	// Note: No Update call expected for blocked position
 
-	// Act
+	// Act - try to move to goblin's position (x + y + z = 0)
 	output, err := s.orchestrator.MoveCharacter(context.Background(), &MoveCharacterInput{
 		EncounterID: "enc-1",
 		EntityID:    "char-1",
 		TargetPosition: &Position{
 			X: 5,
-			Y: 5,
+			Y: -10,
+			Z: 5,
 		},
 	})
 
@@ -759,6 +766,7 @@ func (s *OrchestratorTestSuite) TestMoveCharacter_PositionOccupied() {
 	s.Assert().False(output.Success)
 	s.Assert().Equal(float64(0), output.FinalPosition.X) // Returns current position
 	s.Assert().Equal(float64(0), output.FinalPosition.Y)
+	s.Assert().Equal(float64(0), output.FinalPosition.Z)
 	s.Assert().Equal("position_occupied", output.StopReason)
 	s.Assert().Equal(int32(0), output.MovementRemaining)
 }
@@ -780,23 +788,24 @@ func (s *OrchestratorTestSuite) TestMoveCharacter_CreatesRoomIfMissing() {
 	s.mockEncRepo.EXPECT().
 		Update(gomock.Any(), gomock.Any()).
 		DoAndReturn(func(_ context.Context, input *encounterrepo.UpdateInput) (*encounterrepo.UpdateOutput, error) {
-			// Verify a room was created
+			// Verify a room was created with CubeEntities (for hex grids)
 			updatedRoom, ok := input.RoomData.(*spatial.RoomData)
 			s.Require().True(ok)
 			s.Assert().Equal("enc-1-room", updatedRoom.ID)
 			s.Assert().Equal(20, updatedRoom.Width)
 			s.Assert().Equal(20, updatedRoom.Height)
-			s.Assert().Contains(updatedRoom.Entities, "char-1")
+			s.Assert().Contains(updatedRoom.CubeEntities, "char-1")
 			return &encounterrepo.UpdateOutput{Success: true}, nil
 		})
 
-	// Act
+	// Act - use cube coordinates (x + y + z = 0)
 	output, err := s.orchestrator.MoveCharacter(context.Background(), &MoveCharacterInput{
 		EncounterID: "enc-1",
 		EntityID:    "char-1",
 		TargetPosition: &Position{
 			X: 5,
-			Y: 5,
+			Y: -10,
+			Z: 5,
 		},
 	})
 
@@ -886,14 +895,14 @@ func (s *OrchestratorTestSuite) TestMoveCharacter_EncounterNotFound() {
 
 // TestMoveCharacter_UpdateError tests repository update error
 func (s *OrchestratorTestSuite) TestMoveCharacter_UpdateError() {
-	// Arrange
+	// Arrange - use hex grid with CubeEntities
 	roomData := &spatial.RoomData{
-		ID:       "enc-1-room",
-		Type:     "dungeon",
-		Width:    20,
-		Height:   20,
-		GridType: spatial.GridTypeSquare,
-		Entities: make(map[string]spatial.EntityPlacement),
+		ID:           "enc-1-room",
+		Type:         "dungeon",
+		Width:        20,
+		Height:       20,
+		GridType:     spatial.GridTypeHex,
+		CubeEntities: make(map[string]spatial.EntityCubePlacement),
 	}
 
 	s.mockEncRepo.EXPECT().
@@ -911,11 +920,11 @@ func (s *OrchestratorTestSuite) TestMoveCharacter_UpdateError() {
 		Update(gomock.Any(), gomock.Any()).
 		Return(nil, fmt.Errorf("database error"))
 
-	// Act
+	// Act - use cube coordinates (x + y + z = 0)
 	output, err := s.orchestrator.MoveCharacter(context.Background(), &MoveCharacterInput{
 		EncounterID:    "enc-1",
 		EntityID:       "char-1",
-		TargetPosition: &Position{X: 5, Y: 5},
+		TargetPosition: &Position{X: 5, Y: -10, Z: 5},
 	})
 
 	// Assert

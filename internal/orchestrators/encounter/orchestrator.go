@@ -670,16 +670,16 @@ func (o *Orchestrator) createDungeonWithGenerator(
 	// Convert start room to spatial.RoomData
 	roomData := o.convertToRoomData(encounterID, startRoom)
 
-	// Place characters at spawn zones
-	spawnPositions := o.getSpawnPositions(startRoom)
+	// Place characters at spawn zones using cube coordinates
+	spawnPositions := o.getPlayerSpawnPositions(startRoom)
 	for i, characterID := range input.CharacterIDs {
 		if i >= len(spawnPositions) {
 			break
 		}
-		roomData.Entities[characterID] = spatial.EntityPlacement{
+		roomData.CubeEntities[characterID] = spatial.EntityCubePlacement{
 			EntityID:       characterID,
 			EntityType:     entityTypeCharacter,
-			Position:       spawnPositions[i],
+			CubePosition:   spawnPositions[i],
 			Size:           1,
 			BlocksMovement: true,
 		}
@@ -873,23 +873,24 @@ func (o *Orchestrator) findRoom(genDungeon *dungeon.Dungeon, roomID string) *dun
 }
 
 // convertToRoomData converts a dungeon.Room to spatial.RoomData
+// Uses CubeEntities for hex grids (cube coordinates are the native format)
 func (o *Orchestrator) convertToRoomData(encounterID string, room *dungeon.Room) *spatial.RoomData {
 	roomData := &spatial.RoomData{
-		ID:       encounterID + "-" + room.ID,
-		Type:     "dungeon",
-		Width:    room.Shape.Width,
-		Height:   room.Shape.Height,
-		GridType: spatial.GridTypeHex,
-		Entities: make(map[string]spatial.EntityPlacement),
+		ID:          encounterID + "-" + room.ID,
+		Type:        "dungeon",
+		Width:       room.Shape.Width,
+		Height:      room.Shape.Height,
+		GridType:    spatial.GridTypeHex,
+		CubeEntities: make(map[string]spatial.EntityCubePlacement),
 	}
 
-	// Add obstacles from features
+	// Add obstacles from features using cube coordinates
 	if room.Features != nil {
 		for _, obstacle := range room.Features.Obstacles {
-			roomData.Entities[obstacle.ID] = spatial.EntityPlacement{
+			roomData.CubeEntities[obstacle.ID] = spatial.EntityCubePlacement{
 				EntityID:       obstacle.ID,
 				EntityType:     "obstacle",
-				Position:       spatial.Position{X: float64(obstacle.Position.X), Y: float64(obstacle.Position.Y)},
+				CubePosition:   spatial.CubeCoordinate{X: obstacle.Position.X, Y: obstacle.Position.Y, Z: obstacle.Position.Z},
 				Size:           1,
 				BlocksMovement: obstacle.BlocksMovement,
 			}
@@ -899,16 +900,17 @@ func (o *Orchestrator) convertToRoomData(encounterID string, room *dungeon.Room)
 	return roomData
 }
 
-// getSpawnPositions extracts player spawn positions from a room
-func (o *Orchestrator) getSpawnPositions(room *dungeon.Room) []spatial.Position {
-	var positions []spatial.Position
+// getPlayerSpawnPositions extracts player spawn positions from a room as cube coordinates
+func (o *Orchestrator) getPlayerSpawnPositions(room *dungeon.Room) []spatial.CubeCoordinate {
+	var positions []spatial.CubeCoordinate
 
 	for _, zone := range room.SpawnZones {
 		if zone.Type == dungeon.ZoneTypePlayerSpawn || zone.Type == dungeon.ZoneTypeEntrance {
 			for _, pos := range zone.Bounds {
-				positions = append(positions, spatial.Position{
-					X: float64(pos.X),
-					Y: float64(pos.Y),
+				positions = append(positions, spatial.CubeCoordinate{
+					X: pos.X,
+					Y: pos.Y,
+					Z: pos.Z,
 				})
 				if len(positions) >= 4 {
 					return positions
@@ -917,13 +919,43 @@ func (o *Orchestrator) getSpawnPositions(room *dungeon.Room) []spatial.Position 
 		}
 	}
 
-	// Fallback: if no spawn zones, use default positions
+	// Fallback: if no spawn zones, use default cube coordinates
+	// These are valid cube coords (x + y + z = 0) near the room entrance
 	if len(positions) == 0 {
-		positions = []spatial.Position{
-			{X: 2, Y: 2},
-			{X: 2, Y: 4},
-			{X: 4, Y: 2},
-			{X: 4, Y: 4},
+		positions = []spatial.CubeCoordinate{
+			{X: 2, Y: -4, Z: 2},
+			{X: 3, Y: -5, Z: 2},
+			{X: 2, Y: -5, Z: 3},
+			{X: 3, Y: -6, Z: 3},
+		}
+	}
+
+	return positions
+}
+
+// getMonsterSpawnPositions extracts monster spawn positions from a room as cube coordinates
+func (o *Orchestrator) getMonsterSpawnPositions(room *dungeon.Room) []spatial.CubeCoordinate {
+	var positions []spatial.CubeCoordinate
+
+	for _, zone := range room.SpawnZones {
+		if zone.Type == dungeon.ZoneTypeMonsterSpawn || zone.Type == dungeon.ZoneTypeBoss {
+			for _, pos := range zone.Bounds {
+				positions = append(positions, spatial.CubeCoordinate{
+					X: pos.X,
+					Y: pos.Y,
+					Z: pos.Z,
+				})
+			}
+		}
+	}
+
+	// Fallback: if no monster spawn zones, use center-right positions
+	if len(positions) == 0 {
+		positions = []spatial.CubeCoordinate{
+			{X: 8, Y: -12, Z: 4},
+			{X: 9, Y: -13, Z: 4},
+			{X: 8, Y: -13, Z: 5},
+			{X: 9, Y: -14, Z: 5},
 		}
 	}
 
@@ -932,21 +964,34 @@ func (o *Orchestrator) getSpawnPositions(room *dungeon.Room) []spatial.Position 
 
 // placeMonsters places monsters from the room's encounter into the room data
 // Uses the monster factory to create theme-appropriate monsters (skeletons for crypt, etc.)
+// Gets spawn positions from MonsterSpawn zones rather than encounter placement positions
 func (o *Orchestrator) placeMonsters(roomData *spatial.RoomData, room *dungeon.Room) []*monster.Data {
 	if room.Encounter == nil {
 		return nil
 	}
 
+	// Get monster spawn positions from the room
+	spawnPositions := o.getMonsterSpawnPositions(room)
+
 	factory := dungeon.NewMonsterFactory()
 	monsters := make([]*monster.Data, 0, len(room.Encounter.Monsters))
-	for _, placement := range room.Encounter.Monsters {
+	for i, placement := range room.Encounter.Monsters {
 		monsterID := fmt.Sprintf("monster-%s", placement.ID)
 
-		// Add to room entities
-		roomData.Entities[monsterID] = spatial.EntityPlacement{
+		// Get spawn position (cycle through available positions if more monsters than positions)
+		var spawnPos spatial.CubeCoordinate
+		if len(spawnPositions) > 0 {
+			spawnPos = spawnPositions[i%len(spawnPositions)]
+		} else {
+			// Fallback position
+			spawnPos = spatial.CubeCoordinate{X: 8 + i, Y: -12 - i, Z: 4}
+		}
+
+		// Add to room cube entities
+		roomData.CubeEntities[monsterID] = spatial.EntityCubePlacement{
 			EntityID:       monsterID,
 			EntityType:     entityTypeMonster,
-			Position:       spatial.Position{X: float64(placement.Position.X), Y: float64(placement.Position.Y)},
+			CubePosition:   spawnPos,
 			Size:           1,
 			BlocksMovement: true,
 		}
@@ -1017,14 +1062,14 @@ func (o *Orchestrator) MoveCharacter(ctx context.Context, input *MoveCharacterIn
 
 	// 2. Check if room data exists (Phase 2: might be nil for early encounters)
 	if encOutput.Data.RoomData == nil {
-		// Create a basic room for testing
+		// Create a basic room for testing - use hex grid with CubeEntities
 		roomData := &spatial.RoomData{
-			ID:       input.EncounterID + "-room",
-			Type:     "dungeon",
-			Width:    20,
-			Height:   20,
-			GridType: spatial.GridTypeSquare,
-			Entities: make(map[string]spatial.EntityPlacement),
+			ID:           input.EncounterID + "-room",
+			Type:         "dungeon",
+			Width:        20,
+			Height:       20,
+			GridType:     spatial.GridTypeHex,
+			CubeEntities: make(map[string]spatial.EntityCubePlacement),
 		}
 		encOutput.Data.RoomData = roomData
 	}
@@ -1040,34 +1085,40 @@ func (o *Orchestrator) MoveCharacter(ctx context.Context, input *MoveCharacterIn
 		}
 	}
 
-	// 4. Validate target position is within bounds
-	targetPos := spatial.Position{
-		X: input.TargetPosition.X,
-		Y: input.TargetPosition.Y,
+	// 4. Target position from input (cube coordinates for hex grids)
+	targetCube := spatial.CubeCoordinate{
+		X: int(input.TargetPosition.X),
+		Y: int(input.TargetPosition.Y),
+		Z: int(input.TargetPosition.Z),
 	}
 
-	if targetPos.X < 0 || targetPos.X >= float64(roomData.Width) ||
-		targetPos.Y < 0 || targetPos.Y >= float64(roomData.Height) {
-		return &MoveCharacterOutput{
-			Success:           false,
-			FinalPosition:     input.TargetPosition,
-			MovementRemaining: 0,
-			StopReason:        "out_of_bounds",
-			UpdatedRoom:       roomData,
-		}, nil
+	// Validate cube coordinates sum to zero for hex grids
+	if roomData.GridType == spatial.GridTypeHex {
+		if targetCube.X+targetCube.Y+targetCube.Z != 0 {
+			return &MoveCharacterOutput{
+				Success:           false,
+				FinalPosition:     input.TargetPosition,
+				MovementRemaining: 0,
+				StopReason:        "invalid_coordinates",
+				UpdatedRoom:       roomData,
+			}, nil
+		}
 	}
 
-	// 5. Check if target position is occupied
-	for id, entity := range roomData.Entities {
+	// 5. Check if target position is occupied (using CubeEntities for hex grids)
+	for id, entity := range roomData.CubeEntities {
 		if id != input.EntityID && entity.BlocksMovement {
-			if entity.Position.Equals(targetPos) {
+			if entity.CubePosition.X == targetCube.X &&
+				entity.CubePosition.Y == targetCube.Y &&
+				entity.CubePosition.Z == targetCube.Z {
 				// Position is blocked by another entity
 				var currentPos *Position
 				stopReason := "position_occupied"
-				if currentEntity, exists := roomData.Entities[input.EntityID]; exists {
+				if currentEntity, exists := roomData.CubeEntities[input.EntityID]; exists {
 					currentPos = &Position{
-						X: currentEntity.Position.X,
-						Y: currentEntity.Position.Y,
+						X: float64(currentEntity.CubePosition.X),
+						Y: float64(currentEntity.CubePosition.Y),
+						Z: float64(currentEntity.CubePosition.Z),
 					}
 				} else {
 					// Entity does not exist in the room
@@ -1086,26 +1137,29 @@ func (o *Orchestrator) MoveCharacter(ctx context.Context, input *MoveCharacterIn
 	}
 
 	// 6. Calculate distance and update movement
-	var oldPos spatial.Position
-	entityPlacement, exists := roomData.Entities[input.EntityID]
+	var oldCube spatial.CubeCoordinate
+	cubePlacement, exists := roomData.CubeEntities[input.EntityID]
 	if exists {
-		oldPos = entityPlacement.Position
+		oldCube = cubePlacement.CubePosition
 	} else {
 		// Entity doesn't exist yet - treat as starting from target (0 distance)
-		oldPos = targetPos
+		oldCube = targetCube
 	}
 
-	// Calculate distance moved (simple distance for now - will use hex pathfinding later)
-	// For hex grids, approximate with manhattan distance
-	dx := targetPos.X - oldPos.X
-	dy := targetPos.Y - oldPos.Y
+	// Calculate cube distance for hex grids: (|dx| + |dy| + |dz|) / 2
+	dx := targetCube.X - oldCube.X
+	dy := targetCube.Y - oldCube.Y
+	dz := targetCube.Z - oldCube.Z
 	if dx < 0 {
 		dx = -dx
 	}
 	if dy < 0 {
 		dy = -dy
 	}
-	distance := int(dx + dy)
+	if dz < 0 {
+		dz = -dz
+	}
+	distance := (dx + dy + dz) / 2
 	//nolint:gosec // G115: Game values are bounded by room size limits, no overflow risk
 	movementCost := int32(distance * 5) // Each hex is 5 feet
 
@@ -1114,8 +1168,9 @@ func (o *Orchestrator) MoveCharacter(ctx context.Context, input *MoveCharacterIn
 		return &MoveCharacterOutput{
 			Success: false,
 			FinalPosition: &Position{
-				X: oldPos.X,
-				Y: oldPos.Y,
+				X: float64(oldCube.X),
+				Y: float64(oldCube.Y),
+				Z: float64(oldCube.Z),
 			},
 			MovementRemaining: movementRemaining,
 			StopReason:        "insufficient_movement",
@@ -1126,21 +1181,18 @@ func (o *Orchestrator) MoveCharacter(ctx context.Context, input *MoveCharacterIn
 	// Decrement movement
 	movementRemaining -= movementCost
 
-	// 7. Update entity position
-	if !exists {
-		// Create new entity placement if it doesn't exist
-		entityPlacement = spatial.EntityPlacement{
-			EntityID:       input.EntityID,
-			EntityType:     "character", // Default type for Phase 2
-			Position:       targetPos,
-			Size:           1,
-			BlocksMovement: true,
-		}
-	} else {
-		// Update existing entity position
-		entityPlacement.Position = targetPos
+	// 7. Update entity position in CubeEntities
+	entityType := "character"
+	if exists {
+		entityType = cubePlacement.EntityType
 	}
-	roomData.Entities[input.EntityID] = entityPlacement
+	roomData.CubeEntities[input.EntityID] = spatial.EntityCubePlacement{
+		EntityID:       input.EntityID,
+		EntityType:     entityType,
+		CubePosition:   targetCube,
+		Size:           1,
+		BlocksMovement: true,
+	}
 
 	// 8. Save updated room data and movement remaining
 	_, err = o.encRepo.Update(ctx, &encounterrepo.UpdateInput{
@@ -1154,9 +1206,13 @@ func (o *Orchestrator) MoveCharacter(ctx context.Context, input *MoveCharacterIn
 
 	// 9. Publish MovementCompleted event
 	o.publishEvent(ctx, input.EncounterID, entities.EventTypeMovementCompleted, &entities.MovementCompletedEvent{
-		EntityID:          input.EntityID,
-		EntityType:        entityPlacement.EntityType,
-		FinalPosition:     &Position{X: targetPos.X, Y: targetPos.Y},
+		EntityID:   input.EntityID,
+		EntityType: entityType,
+		FinalPosition: &Position{
+			X: float64(targetCube.X),
+			Y: float64(targetCube.Y),
+			Z: float64(targetCube.Z),
+		},
 		MovementRemaining: movementRemaining,
 		StopReason:        "completed",
 	})
@@ -1165,8 +1221,9 @@ func (o *Orchestrator) MoveCharacter(ctx context.Context, input *MoveCharacterIn
 	return &MoveCharacterOutput{
 		Success: true,
 		FinalPosition: &Position{
-			X: targetPos.X,
-			Y: targetPos.Y,
+			X: float64(targetCube.X),
+			Y: float64(targetCube.Y),
+			Z: float64(targetCube.Z),
 		},
 		MovementRemaining: movementRemaining,
 		StopReason:        "completed",
@@ -2255,30 +2312,29 @@ func (o *Orchestrator) CreateEncounter(
 	joinCode := encounterrepo.GenerateJoinCode()
 
 	// 4. Create room (20x20 hex grid, no entities yet - they're placed when combat starts)
+	// Using CubeEntities for hex grids (cube coordinates are the native format)
 	roomData := &spatial.RoomData{
-		ID:       encounterID + "-room",
-		Type:     "dungeon",
-		Width:    20,
-		Height:   20,
-		GridType: spatial.GridTypeHex,
-		Entities: make(map[string]spatial.EntityPlacement),
+		ID:           encounterID + "-room",
+		Type:         "dungeon",
+		Width:        20,
+		Height:       20,
+		GridType:     spatial.GridTypeHex,
+		CubeEntities: make(map[string]spatial.EntityCubePlacement),
 	}
 
-	// Add pillars for atmosphere
-	// Note: Using positions that stay inside bounds after offset->cube conversion
-	// For odd-q hex, z = row - (col/2), so avoid high-X low-Y combinations
-	obstacles := []spatial.Position{
-		{X: 5, Y: 5},   // Inner left pillar
-		{X: 5, Y: 14},  // Inner left pillar (bottom)
-		{X: 14, Y: 10}, // Inner right pillar (middle to ensure z >= 0)
-		{X: 10, Y: 15}, // Center-bottom pillar
+	// Add pillars for atmosphere using cube coordinates (x + y + z = 0)
+	obstacles := []spatial.CubeCoordinate{
+		{X: 5, Y: -10, Z: 5},   // Inner left pillar
+		{X: 5, Y: -19, Z: 14},  // Inner left pillar (bottom)
+		{X: 14, Y: -24, Z: 10}, // Inner right pillar
+		{X: 10, Y: -25, Z: 15}, // Center-bottom pillar
 	}
 	for i, pos := range obstacles {
 		obstacleID := fmt.Sprintf("pillar-%d", i)
-		roomData.Entities[obstacleID] = spatial.EntityPlacement{
+		roomData.CubeEntities[obstacleID] = spatial.EntityCubePlacement{
 			EntityID:       obstacleID,
 			EntityType:     "obstacle",
-			Position:       pos,
+			CubePosition:   pos,
 			Size:           1,
 			BlocksMovement: true,
 		}
@@ -2500,24 +2556,24 @@ func (o *Orchestrator) StartCombat(
 	}
 	characterIDs := make([]string, 0, len(encOutput.Data.Players))
 
-	// Define spawn points for players
-	spawnPoints := []spatial.Position{
-		{X: 5, Y: 8},
-		{X: 5, Y: 10},
-		{X: 5, Y: 12},
-		{X: 4, Y: 10},
+	// Define spawn points for players using cube coordinates (x + y + z = 0)
+	spawnPoints := []spatial.CubeCoordinate{
+		{X: 5, Y: -13, Z: 8},
+		{X: 5, Y: -15, Z: 10},
+		{X: 5, Y: -17, Z: 12},
+		{X: 4, Y: -14, Z: 10},
 	}
 
 	i := 0
 	for _, player := range encOutput.Data.Players {
 		characterIDs = append(characterIDs, player.CharacterID)
 
-		// Place character in room
+		// Place character in room using cube coordinates
 		if i < len(spawnPoints) {
-			roomData.Entities[player.CharacterID] = spatial.EntityPlacement{
+			roomData.CubeEntities[player.CharacterID] = spatial.EntityCubePlacement{
 				EntityID:       player.CharacterID,
 				EntityType:     entityTypeCharacter,
-				Position:       spawnPoints[i],
+				CubePosition:   spawnPoints[i],
 				Size:           1,
 				BlocksMovement: true,
 			}
@@ -2526,12 +2582,12 @@ func (o *Orchestrator) StartCombat(
 	}
 
 	// 7. Spawn monsters equal to number of players, spread across the room
-	// Monster spawn points on the right side of the room (away from players)
-	monsterSpawnPoints := []spatial.Position{
-		{X: 14, Y: 8},  // Right side
-		{X: 14, Y: 12}, // Right side lower
-		{X: 12, Y: 10}, // Center-right
-		{X: 13, Y: 6},  // Right upper
+	// Monster spawn points on the right side of the room (away from players) using cube coordinates
+	monsterSpawnPoints := []spatial.CubeCoordinate{
+		{X: 14, Y: -22, Z: 8},  // Right side
+		{X: 14, Y: -26, Z: 12}, // Right side lower
+		{X: 12, Y: -22, Z: 10}, // Center-right
+		{X: 13, Y: -19, Z: 6},  // Right upper
 	}
 
 	numPlayers := len(encOutput.Data.Players)
@@ -2541,10 +2597,10 @@ func (o *Orchestrator) StartCombat(
 		goblinID := fmt.Sprintf("goblin-%d", i+1)
 		spawnPos := monsterSpawnPoints[i%len(monsterSpawnPoints)]
 
-		roomData.Entities[goblinID] = spatial.EntityPlacement{
+		roomData.CubeEntities[goblinID] = spatial.EntityCubePlacement{
 			EntityID:       goblinID,
 			EntityType:     entityTypeMonster,
-			Position:       spawnPos,
+			CubePosition:   spawnPos,
 			Size:           1,
 			BlocksMovement: true,
 		}

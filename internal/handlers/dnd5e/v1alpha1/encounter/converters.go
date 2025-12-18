@@ -108,6 +108,7 @@ func convertRerollEventToProto(event *encounter.RerollEvent) *dnd5ev1alpha1.Rero
 }
 
 // convertRoomDataToProto converts spatial.RoomData to proto Room
+// For hex grids, uses CubeEntities which already have cube coordinates (no conversion needed)
 //
 //nolint:gosec // G115: Game values are bounded by room size limits, no overflow risk
 func convertRoomDataToProto(roomData interface{}) *dnd5ev1alpha1.Room {
@@ -129,16 +130,26 @@ func convertRoomDataToProto(roomData interface{}) *dnd5ev1alpha1.Room {
 	// Convert grid type string to proto enum
 	gridType := convertGridTypeToProto(spatialRoom.GridType)
 
-	// Determine hex orientation for cube coordinate conversion
-	hexOrientation := spatial.HexOrientationPointyTop // Default
-	if spatialRoom.HexFlatTop {
-		hexOrientation = spatial.HexOrientationFlatTop
-	}
+	// For hex grids, use CubeEntities (cube coordinates passed through directly)
+	// For other grids, use Entities (offset coordinates)
+	var entities map[string]*dnd5ev1alpha1.EntityPlacement
 
-	// Convert entities map with cube coordinates for hex grids
-	entities := make(map[string]*dnd5ev1alpha1.EntityPlacement, len(spatialRoom.Entities))
-	for id, placement := range spatialRoom.Entities {
-		entities[id] = convertEntityPlacementToProto(placement, spatialRoom.GridType, hexOrientation)
+	if spatialRoom.GridType == spatial.GridTypeHex && len(spatialRoom.CubeEntities) > 0 {
+		// Use CubeEntities for hex grids - coordinates are already cube, pass through directly
+		entities = make(map[string]*dnd5ev1alpha1.EntityPlacement, len(spatialRoom.CubeEntities))
+		for id, placement := range spatialRoom.CubeEntities {
+			entities[id] = convertCubeEntityPlacementToProto(placement)
+		}
+	} else {
+		// Use Entities for non-hex grids or legacy data
+		hexOrientation := spatial.HexOrientationPointyTop
+		if spatialRoom.HexFlatTop {
+			hexOrientation = spatial.HexOrientationFlatTop
+		}
+		entities = make(map[string]*dnd5ev1alpha1.EntityPlacement, len(spatialRoom.Entities))
+		for id, placement := range spatialRoom.Entities {
+			entities[id] = convertEntityPlacementToProto(placement, spatialRoom.GridType, hexOrientation)
+		}
 	}
 
 	// Convert HexFlatTop (toolkit) to hex_orientation (proto)
@@ -158,6 +169,25 @@ func convertRoomDataToProto(roomData interface{}) *dnd5ev1alpha1.Room {
 		GridType:       gridType,
 		HexOrientation: hexOrientationPtr,
 		Entities:       entities,
+	}
+}
+
+// convertCubeEntityPlacementToProto converts spatial.EntityCubePlacement to proto
+// Cube coordinates are passed through directly without conversion
+//
+//nolint:gosec // G115: Game values are bounded, no overflow risk
+func convertCubeEntityPlacementToProto(placement spatial.EntityCubePlacement) *dnd5ev1alpha1.EntityPlacement {
+	return &dnd5ev1alpha1.EntityPlacement{
+		EntityId:          placement.EntityID,
+		EntityType:        placement.EntityType,
+		Position:          &apiv1alpha1.Position{
+			X: float64(placement.CubePosition.X),
+			Y: float64(placement.CubePosition.Y),
+			Z: float64(placement.CubePosition.Z),
+		},
+		Size:              int32(placement.Size),
+		BlocksMovement:    placement.BlocksMovement,
+		BlocksLineOfSight: placement.BlocksLineOfSight,
 	}
 }
 

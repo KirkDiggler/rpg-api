@@ -1,7 +1,6 @@
 package encounter
 
 import (
-	"math"
 	"sort"
 
 	"github.com/KirkDiggler/rpg-toolkit/core"
@@ -13,7 +12,7 @@ import (
 // Characters are enemies (from the monster's perspective)
 // Other monsters are allies
 // Enemies are sorted by distance (closest first)
-// Adjacent is marked if distance <= 5 feet
+// Adjacent is marked if distance == 1 hex
 func buildPerception(
 	roomData *spatial.RoomData,
 	monsterID string,
@@ -27,8 +26,8 @@ func buildPerception(
 		}
 	}
 
-	// Get monster's position
-	monsterPlacement, exists := roomData.Entities[monsterID]
+	// Get monster's cube position from CubeEntities
+	monsterPlacement, exists := roomData.CubeEntities[monsterID]
 	if !exists {
 		return &monster.PerceptionData{
 			Enemies: []monster.PerceivedEntity{},
@@ -36,20 +35,7 @@ func buildPerception(
 		}
 	}
 
-	// Convert to toolkit Position (monster.Position uses int, spatial.Position uses float64)
-	monsterPos := monster.Position{
-		X: int(monsterPlacement.Position.X),
-		Y: int(monsterPlacement.Position.Y),
-	}
-
-	// Create Grid for distance calculations
-	grid := createGridFromRoomData(roomData)
-
-	// Build character ID map for quick lookup
-	charIDMap := make(map[string]bool)
-	for _, charID := range characterIDs {
-		charIDMap[charID] = true
-	}
+	monsterPos := monsterPlacement.CubePosition
 
 	// Build monster ID map for quick lookup (excluding self)
 	monsterIDMap := make(map[string]*monster.Data)
@@ -62,26 +48,22 @@ func buildPerception(
 	// Collect enemies (characters)
 	enemies := make([]monster.PerceivedEntity, 0, len(characterIDs))
 	for _, charID := range characterIDs {
-		charPlacement, exists := roomData.Entities[charID]
+		charPlacement, exists := roomData.CubeEntities[charID]
 		if !exists {
 			continue
 		}
 
-		// Calculate distance in feet
-		distance := calculateDistance(grid, monsterPlacement.Position, charPlacement.Position)
+		// Calculate cube distance in hexes
+		distance := cubeDistance(monsterPos, charPlacement.CubePosition)
 
-		// Create PerceivedEntity
 		enemies = append(enemies, monster.PerceivedEntity{
 			Entity: &entityAdapter{
 				id:         charID,
 				entityType: entityTypeCharacter,
 			},
-			Position: monster.Position{
-				X: int(charPlacement.Position.X),
-				Y: int(charPlacement.Position.Y),
-			},
+			Position: charPlacement.CubePosition,
 			Distance: distance,
-			Adjacent: distance <= 5,
+			Adjacent: distance == 1,
 		})
 	}
 
@@ -93,26 +75,21 @@ func buildPerception(
 	// Collect allies (other monsters)
 	allies := make([]monster.PerceivedEntity, 0, len(monsterIDMap))
 	for allyID := range monsterIDMap {
-		allyPlacement, exists := roomData.Entities[allyID]
+		allyPlacement, exists := roomData.CubeEntities[allyID]
 		if !exists {
 			continue
 		}
 
-		// Calculate distance in feet
-		distance := calculateDistance(grid, monsterPlacement.Position, allyPlacement.Position)
+		distance := cubeDistance(monsterPos, allyPlacement.CubePosition)
 
-		// Create PerceivedEntity
 		allies = append(allies, monster.PerceivedEntity{
 			Entity: &entityAdapter{
 				id:         allyID,
 				entityType: entityTypeMonster,
 			},
-			Position: monster.Position{
-				X: int(allyPlacement.Position.X),
-				Y: int(allyPlacement.Position.Y),
-			},
+			Position: allyPlacement.CubePosition,
 			Distance: distance,
-			Adjacent: distance <= 5,
+			Adjacent: distance == 1,
 		})
 	}
 
@@ -121,6 +98,24 @@ func buildPerception(
 		Enemies:    enemies,
 		Allies:     allies,
 	}
+}
+
+// cubeDistance calculates the distance in hexes between two cube coordinates
+// Uses the hex cube distance formula: (|dx| + |dy| + |dz|) / 2
+func cubeDistance(from, to spatial.CubeCoordinate) int {
+	dx := to.X - from.X
+	dy := to.Y - from.Y
+	dz := to.Z - from.Z
+	if dx < 0 {
+		dx = -dx
+	}
+	if dy < 0 {
+		dy = -dy
+	}
+	if dz < 0 {
+		dz = -dz
+	}
+	return (dx + dy + dz) / 2
 }
 
 // entityAdapter implements core.Entity for ID lookup
@@ -137,38 +132,4 @@ func (e *entityAdapter) GetID() string {
 // GetType returns the entity's type
 func (e *entityAdapter) GetType() core.EntityType {
 	return e.entityType
-}
-
-// createGridFromRoomData creates a Grid instance from RoomData for distance calculations
-func createGridFromRoomData(roomData *spatial.RoomData) spatial.Grid {
-	switch roomData.GridType {
-	case spatial.GridTypeHex:
-		// D&D 5e uses pointy-top hex by default
-		// HexFlatTop=false means pointy-top, HexFlatTop=true means flat-top
-		pointyTop := !roomData.HexFlatTop
-		return spatial.NewHexGrid(spatial.HexGridConfig{
-			Width:     float64(roomData.Width),
-			Height:    float64(roomData.Height),
-			PointyTop: pointyTop,
-		})
-	case spatial.GridTypeSquare:
-		return spatial.NewSquareGrid(spatial.SquareGridConfig{
-			Width:  float64(roomData.Width),
-			Height: float64(roomData.Height),
-		})
-	default:
-		// Default to square grid
-		return spatial.NewSquareGrid(spatial.SquareGridConfig{
-			Width:  float64(roomData.Width),
-			Height: float64(roomData.Height),
-		})
-	}
-}
-
-// calculateDistance calculates the distance in feet between two positions
-// Uses the grid's Distance method and converts to feet (5ft per grid square/hex)
-func calculateDistance(grid spatial.Grid, from, to spatial.Position) int {
-	gridDistance := grid.Distance(from, to)
-	feetDistance := gridDistance * 5.0 // Each grid unit is 5 feet in D&D 5e
-	return int(math.Round(feetDistance))
 }
