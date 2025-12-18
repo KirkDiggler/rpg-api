@@ -18,37 +18,53 @@ func TestPerceptionTestSuite(t *testing.T) {
 }
 
 func (s *PerceptionTestSuite) TestBuildPerception_WithCharactersAndMonsters() {
-	// Create a simple room with entities
+	// Create a room with cube entities (cube coordinates: x + y + z = 0)
 	roomData := &spatial.RoomData{
 		ID:       "test-room",
 		Type:     "dungeon",
 		Width:    20,
 		Height:   20,
-		GridType: spatial.GridTypeSquare,
-		Entities: map[string]spatial.EntityPlacement{
+		GridType: spatial.GridTypeHex,
+		CubeEntities: map[string]spatial.EntityCubePlacement{
 			// Monster at center
 			"monster-1": {
 				EntityID:   "monster-1",
 				EntityType: "monster",
-				Position:   spatial.Position{X: 10, Y: 10},
+				CubePosition: spatial.CubeCoordinate{
+					X: 10,
+					Y: -20, // y = -x - z
+					Z: 10,
+				},
 			},
-			// Character close to monster (adjacent)
+			// Character close to monster (adjacent - 1 hex away)
 			"char-1": {
 				EntityID:   "char-1",
 				EntityType: "character",
-				Position:   spatial.Position{X: 10, Y: 11}, // 1 square away = 5 feet
+				CubePosition: spatial.CubeCoordinate{
+					X: 11,
+					Y: -21, // y = -x - z
+					Z: 10,
+				},
 			},
-			// Character farther away
+			// Character farther away (4 hexes)
 			"char-2": {
 				EntityID:   "char-2",
 				EntityType: "character",
-				Position:   spatial.Position{X: 10, Y: 14}, // 4 squares away = 20 feet
+				CubePosition: spatial.CubeCoordinate{
+					X: 10,
+					Y: -24, // y = -x - z
+					Z: 14,
+				},
 			},
-			// Another monster (ally)
+			// Another monster (ally - 2 hexes away)
 			"monster-2": {
 				EntityID:   "monster-2",
 				EntityType: "monster",
-				Position:   spatial.Position{X: 12, Y: 10}, // 2 squares away = 10 feet
+				CubePosition: spatial.CubeCoordinate{
+					X: 12,
+					Y: -22, // y = -x - z
+					Z: 10,
+				},
 			},
 		},
 	}
@@ -65,24 +81,25 @@ func (s *PerceptionTestSuite) TestBuildPerception_WithCharactersAndMonsters() {
 	// Verify perception data
 	s.NotNil(perception)
 	s.Equal(10, perception.MyPosition.X)
-	s.Equal(10, perception.MyPosition.Y)
+	s.Equal(-20, perception.MyPosition.Y)
+	s.Equal(10, perception.MyPosition.Z)
 
 	// Should have 2 enemies (characters)
 	s.Len(perception.Enemies, 2)
 
 	// Enemies should be sorted by distance (closest first)
 	s.Equal("char-1", perception.Enemies[0].Entity.GetID())
-	s.Equal(5, perception.Enemies[0].Distance)
+	s.Equal(1, perception.Enemies[0].Distance) // 1 hex away
 	s.True(perception.Enemies[0].Adjacent)
 
 	s.Equal("char-2", perception.Enemies[1].Entity.GetID())
-	s.Equal(20, perception.Enemies[1].Distance)
+	s.Equal(4, perception.Enemies[1].Distance) // 4 hexes away
 	s.False(perception.Enemies[1].Adjacent)
 
 	// Should have 1 ally (other monster)
 	s.Len(perception.Allies, 1)
 	s.Equal("monster-2", perception.Allies[0].Entity.GetID())
-	s.Equal(10, perception.Allies[0].Distance)
+	s.Equal(2, perception.Allies[0].Distance) // 2 hexes away
 	s.False(perception.Allies[0].Adjacent)
 }
 
@@ -96,12 +113,12 @@ func (s *PerceptionTestSuite) TestBuildPerception_NilRoomData() {
 
 func (s *PerceptionTestSuite) TestBuildPerception_MonsterNotInRoom() {
 	roomData := &spatial.RoomData{
-		ID:       "test-room",
-		Type:     "dungeon",
-		Width:    20,
-		Height:   20,
-		GridType: spatial.GridTypeSquare,
-		Entities: map[string]spatial.EntityPlacement{},
+		ID:           "test-room",
+		Type:         "dungeon",
+		Width:        20,
+		Height:       20,
+		GridType:     spatial.GridTypeHex,
+		CubeEntities: map[string]spatial.EntityCubePlacement{},
 	}
 
 	perception := buildPerception(roomData, "missing-monster", []string{"char-1"}, nil)
@@ -112,7 +129,7 @@ func (s *PerceptionTestSuite) TestBuildPerception_MonsterNotInRoom() {
 }
 
 func (s *PerceptionTestSuite) TestBuildPerception_HexGrid() {
-	// Test with hex grid (HexFlatTop=false means pointy-top, which is D&D 5e default)
+	// Test with hex grid using CubeEntities (cube coordinates: x + y + z = 0)
 	roomData := &spatial.RoomData{
 		ID:         "test-room",
 		Type:       "dungeon",
@@ -120,16 +137,24 @@ func (s *PerceptionTestSuite) TestBuildPerception_HexGrid() {
 		Height:     20,
 		GridType:   spatial.GridTypeHex,
 		HexFlatTop: false, // pointy-top hex grid
-		Entities: map[string]spatial.EntityPlacement{
+		CubeEntities: map[string]spatial.EntityCubePlacement{
 			"monster-1": {
 				EntityID:   "monster-1",
 				EntityType: "monster",
-				Position:   spatial.Position{X: 10, Y: 10},
+				CubePosition: spatial.CubeCoordinate{
+					X: 10,
+					Y: -20, // y = -x - z
+					Z: 10,
+				},
 			},
 			"char-1": {
 				EntityID:   "char-1",
 				EntityType: "character",
-				Position:   spatial.Position{X: 11, Y: 10}, // 1 hex away
+				CubePosition: spatial.CubeCoordinate{
+					X: 11,
+					Y: -21, // y = -x - z
+					Z: 10,
+				}, // 1 hex away (dx=1, dy=1, dz=0 -> distance = 1 hex)
 			},
 		},
 	}
@@ -144,8 +169,9 @@ func (s *PerceptionTestSuite) TestBuildPerception_HexGrid() {
 	s.NotNil(perception)
 	s.Len(perception.Enemies, 1)
 	s.Equal("char-1", perception.Enemies[0].Entity.GetID())
-	// Hex grid distance should be calculated correctly
-	s.True(perception.Enemies[0].Distance > 0)
+	// Hex grid distance: (|dx| + |dy| + |dz|) / 2 = (1 + 1 + 0) / 2 = 1 hex
+	s.Equal(1, perception.Enemies[0].Distance)
+	s.True(perception.Enemies[0].Adjacent) // 1 hex is adjacent
 }
 
 func (s *PerceptionTestSuite) TestEntityAdapter() {

@@ -537,46 +537,46 @@ func (s *HandlerTestSuite) TestGetCombatState_Unimplemented() {
 // Note: The handler converts cube coordinates (from client) to offset coordinates (for service)
 // The test uses hex grid, so input coords (5, -8, 3) cube -> (5, 5) offset after conversion
 func (s *HandlerTestSuite) TestMoveCharacter_Success() {
-	// Arrange
+	// Arrange - use cube coordinates (x + y + z = 0)
+	cubeX := 5.0
+	cubeY := -10.0 // y = -x - z
+	cubeZ := 5.0
+
 	expectedRoom := &spatial.RoomData{
-		ID:         "enc-1-room",
-		Type:       "dungeon",
-		Width:      20,
-		Height:     20,
-		GridType:   spatial.GridTypeHex, // Use hex grid since that's alpha default
-		HexFlatTop: false,               // pointy-top hex
-		Entities: map[string]spatial.EntityPlacement{
+		ID:           "enc-1-room",
+		Type:         "dungeon",
+		Width:        20,
+		Height:       20,
+		GridType:     spatial.GridTypeHex,
+		HexFlatTop:   false,
+		CubeEntities: map[string]spatial.EntityCubePlacement{
 			"char-1": {
 				EntityID:       "char-1",
 				EntityType:     "character",
-				Position:       spatial.Position{X: 5, Y: 5}, // Stored in offset internally
+				CubePosition:   spatial.CubeCoordinate{X: 5, Y: -10, Z: 5},
 				Size:           1,
 				BlocksMovement: true,
 			},
 		},
 	}
 
-	// Convert (5, 5) offset to cube for the test input
-	// Pointy-top hex: (5, 5) offset -> cube coords via spatial library
-	cubePos := spatial.OffsetCoordinateToCubeWithOrientation(
-		spatial.Position{X: 5, Y: 5},
-		spatial.HexOrientationPointyTop,
-	)
-
+	// Handler passes cube coordinates directly to service
 	s.mockService.EXPECT().
 		MoveCharacter(gomock.Any(), &encounter.MoveCharacterInput{
 			EncounterID: "enc-1",
 			EntityID:    "char-1",
 			TargetPosition: &encounter.Position{
-				X: 5, // Expected offset coords after cube->offset conversion
-				Y: 5,
+				X: cubeX,
+				Y: cubeY,
+				Z: cubeZ,
 			},
 		}).
 		Return(&encounter.MoveCharacterOutput{
 			Success: true,
 			FinalPosition: &encounter.Position{
-				X: 5,
-				Y: 5,
+				X: cubeX,
+				Y: cubeY,
+				Z: cubeZ,
 			},
 			MovementRemaining: 30,
 			StopReason:        "completed",
@@ -588,7 +588,7 @@ func (s *HandlerTestSuite) TestMoveCharacter_Success() {
 		EncounterId: "enc-1",
 		EntityId:    "char-1",
 		Path: []*apiv1alpha1.Position{
-			{X: float64(cubePos.X), Y: float64(cubePos.Y), Z: float64(cubePos.Z)},
+			{X: cubeX, Y: cubeY, Z: cubeZ},
 		},
 	})
 
@@ -690,13 +690,12 @@ func (s *HandlerTestSuite) TestMoveCharacter_ServiceError() {
 }
 
 // TestMoveCharacter_OutOfBounds tests movement to invalid position
-// Note: The handler converts cube coordinates (from client) to offset coordinates (for service)
+// The handler passes cube coordinates directly to the service
 func (s *HandlerTestSuite) TestMoveCharacter_OutOfBounds() {
-	// Convert (100, 100) offset to cube for the test input
-	cubePos := spatial.OffsetCoordinateToCubeWithOrientation(
-		spatial.Position{X: 100, Y: 100},
-		spatial.HexOrientationPointyTop,
-	)
+	// Use out-of-bounds cube coordinates (x + y + z = 0)
+	cubeX := 100.0
+	cubeY := -200.0 // y = -x - z
+	cubeZ := 100.0
 
 	// Arrange
 	s.mockService.EXPECT().
@@ -704,15 +703,17 @@ func (s *HandlerTestSuite) TestMoveCharacter_OutOfBounds() {
 			EncounterID: "enc-1",
 			EntityID:    "char-1",
 			TargetPosition: &encounter.Position{
-				X: 100, // Expected offset coords after cube->offset conversion
-				Y: 100,
+				X: cubeX,
+				Y: cubeY,
+				Z: cubeZ,
 			},
 		}).
 		Return(&encounter.MoveCharacterOutput{
 			Success: false,
 			FinalPosition: &encounter.Position{
-				X: 100,
-				Y: 100,
+				X: cubeX,
+				Y: cubeY,
+				Z: cubeZ,
 			},
 			MovementRemaining: 0,
 			StopReason:        "out_of_bounds",
@@ -724,7 +725,7 @@ func (s *HandlerTestSuite) TestMoveCharacter_OutOfBounds() {
 		EncounterId: "enc-1",
 		EntityId:    "char-1",
 		Path: []*apiv1alpha1.Position{
-			{X: float64(cubePos.X), Y: float64(cubePos.Y), Z: float64(cubePos.Z)},
+			{X: cubeX, Y: cubeY, Z: cubeZ},
 		},
 	})
 

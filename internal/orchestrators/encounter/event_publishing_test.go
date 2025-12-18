@@ -216,11 +216,11 @@ func (s *EventPublishingTestSuite) TestStartCombat_PublishesCombatStartedEvent()
 	characterID := "char-1"
 
 	roomData := &spatial.RoomData{
-		ID:       encounterID + "-room",
-		Width:    20,
-		Height:   20,
-		GridType: spatial.GridTypeHex,
-		Entities: make(map[string]spatial.EntityPlacement),
+		ID:           encounterID + "-room",
+		Width:        20,
+		Height:       20,
+		GridType:     spatial.GridTypeHex,
+		CubeEntities: make(map[string]spatial.EntityCubePlacement),
 	}
 
 	// Mock Get
@@ -359,19 +359,21 @@ func (s *EventPublishingTestSuite) TestMoveCharacter_PublishesMovementCompletedE
 	// Arrange
 	encounterID := "enc-123"
 	entityID := "char-1"
+	// Use valid cube coordinates (x + y + z = 0)
 	targetX := 5.0
-	targetY := 5.0
+	targetY := -10.0 // y = -x - z
+	targetZ := 5.0
 
 	roomData := &spatial.RoomData{
-		ID:       encounterID + "-room",
-		Width:    20,
-		Height:   20,
-		GridType: spatial.GridTypeHex,
-		Entities: map[string]spatial.EntityPlacement{
+		ID:           encounterID + "-room",
+		Width:        20,
+		Height:       20,
+		GridType:     spatial.GridTypeHex,
+		CubeEntities: map[string]spatial.EntityCubePlacement{
 			entityID: {
 				EntityID:       entityID,
 				EntityType:     "character",
-				Position:       spatial.Position{X: 3, Y: 3},
+				CubePosition:   spatial.CubeCoordinate{X: 3, Y: -6, Z: 3}, // 3 + -6 + 3 = 0
 				Size:           1,
 				BlocksMovement: true,
 			},
@@ -414,7 +416,7 @@ func (s *EventPublishingTestSuite) TestMoveCharacter_PublishesMovementCompletedE
 	output, err := s.orchestrator.MoveCharacter(context.Background(), &MoveCharacterInput{
 		EncounterID:    encounterID,
 		EntityID:       entityID,
-		TargetPosition: &Position{X: targetX, Y: targetY},
+		TargetPosition: &Position{X: targetX, Y: targetY, Z: targetZ},
 	})
 
 	// Assert

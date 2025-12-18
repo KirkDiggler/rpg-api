@@ -8,6 +8,7 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/combat"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/monster"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/monster/actions"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/weapons"
 	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
 
@@ -113,10 +114,15 @@ func (o *Orchestrator) executeSingleMonsterTurn(
 		_ = mon.Cleanup(ctx)
 	}()
 
-	// 3. Create action economy for the turn
+	// 3. Load monster actions (required for combat - LoadFromData doesn't load them)
+	if err := actions.LoadMonsterActions(mon, monsterData.Actions); err != nil {
+		return nil, fmt.Errorf("failed to load monster actions: %w", err)
+	}
+
+	// 4. Create action economy for the turn
 	actionEconomy := combat.NewActionEconomy()
 
-	// 4. Build perception from room data
+	// 5. Build perception from room data
 	var roomData *spatial.RoomData
 	if enc.RoomData != nil {
 		if rd, ok := enc.RoomData.(*spatial.RoomData); ok {
@@ -128,7 +134,7 @@ func (o *Orchestrator) executeSingleMonsterTurn(
 
 	perception := buildPerception(roomData, monsterData.ID, characterIDs, enc.Monsters)
 
-	// 5. Create turn input
+	// 6. Create turn input
 	turnInput := &monster.TurnInput{
 		Bus:           bus,
 		ActionEconomy: actionEconomy,
@@ -136,13 +142,13 @@ func (o *Orchestrator) executeSingleMonsterTurn(
 		Roller:        o.roller,
 	}
 
-	// 6. Execute the turn
+	// 7. Execute the turn
 	turnResult, err := mon.TakeTurn(ctx, turnInput)
 	if err != nil {
 		return nil, fmt.Errorf("monster turn failed: %w", err)
 	}
 
-	// 7. Process executed actions and resolve attacks
+	// 8. Process executed actions and resolve attacks
 	// The toolkit publishes AttackEvent but doesn't populate ExecutedAction.Details
 	// We need to resolve attacks ourselves based on action type
 	actions := make([]MonsterExecutedAction, len(turnResult.Actions))
@@ -178,28 +184,27 @@ func (o *Orchestrator) executeSingleMonsterTurn(
 		}
 	}
 
-	// 8. Convert movement path and update room data with final position
+	// 9. Convert movement path (cube coordinates) to Position for result
 	movement := make([]Position, len(turnResult.Movement))
 	for i, pos := range turnResult.Movement {
 		movement[i] = Position{
 			X: float64(pos.X),
 			Y: float64(pos.Y),
+			Z: float64(pos.Z),
 		}
 	}
 
 	// Update monster's position in room data if it moved
 	if len(turnResult.Movement) > 0 && roomData != nil {
 		finalPos := turnResult.Movement[len(turnResult.Movement)-1]
-		if placement, exists := roomData.Entities[monsterData.ID]; exists {
-			placement.Position = spatial.Position{
-				X: float64(finalPos.X),
-				Y: float64(finalPos.Y),
-			}
-			roomData.Entities[monsterData.ID] = placement
+
+		if placement, exists := roomData.CubeEntities[monsterData.ID]; exists {
+			placement.CubePosition = finalPos // Direct assignment - both are cube coordinates
+			roomData.CubeEntities[monsterData.ID] = placement
 		}
 	}
 
-	// 9. Create result
+	// 10. Create result
 	result := &MonsterTurnResult{
 		MonsterID:   turnResult.MonsterID,
 		MonsterName: monsterData.Name,

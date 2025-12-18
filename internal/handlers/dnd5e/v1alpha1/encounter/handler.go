@@ -181,21 +181,16 @@ func (h *Handler) MoveCharacter(
 		return nil, status.Error(codes.InvalidArgument, "path is required")
 	}
 
-	// 2. Use default hex grid settings for coordinate conversion
-	// The client sends cube coordinates; we need to convert to offset for internal use
-	// TODO: In the future, could fetch room data from encounter state for accuracy
-	gridType := spatial.GridTypeHex
-	hexOrientation := spatial.HexOrientationPointyTop
-
-	// 3. Create service input - convert cube coords to offset for internal use
+	// 2. Pass cube coordinates directly - the client sends cube coords (X, Y, Z)
+	// and the orchestrator uses CubeEntities for hex grids
 	lastPos := req.GetPath()[len(req.GetPath())-1]
-	offsetPos := convertProtoPositionToOffset(lastPos, gridType, hexOrientation)
 	input := &encounter.MoveCharacterInput{
 		EncounterID: req.GetEncounterId(),
 		EntityID:    req.GetEntityId(),
 		TargetPosition: &encounter.Position{
-			X: offsetPos.X,
-			Y: offsetPos.Y,
+			X: lastPos.GetX(),
+			Y: lastPos.GetY(),
+			Z: lastPos.GetZ(),
 		},
 	}
 
