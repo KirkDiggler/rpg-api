@@ -157,12 +157,83 @@ func (h *Handler) OpenDoor(
 	}, nil
 }
 
-// GetCombatState retrieves current combat state
+// GetCombatState retrieves current combat state.
+//
+// Deprecated: Use GetEncounterState for full snapshot with event sync.
 func (h *Handler) GetCombatState(
 	_ context.Context,
 	_ *dnd5ev1alpha1.GetCombatStateRequest,
 ) (*dnd5ev1alpha1.GetCombatStateResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "GetCombatState endpoint not yet implemented")
+	return nil, status.Error(codes.Unimplemented, "GetCombatState is deprecated, use GetEncounterState instead")
+}
+
+// GetEncounterState retrieves full encounter snapshot for load-then-stream pattern
+func (h *Handler) GetEncounterState(
+	ctx context.Context,
+	req *dnd5ev1alpha1.GetEncounterStateRequest,
+) (*dnd5ev1alpha1.GetEncounterStateResponse, error) {
+	// 1. Validate request
+	if req.GetEncounterId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "encounter_id is required")
+	}
+	if req.GetPlayerId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "player_id is required")
+	}
+
+	// 2. Create service input
+	input := &encounter.GetEncounterStateInput{
+		EncounterID: req.GetEncounterId(),
+		PlayerID:    req.GetPlayerId(),
+	}
+
+	// 3. Call service
+	output, err := h.encounterService.GetEncounterState(ctx, input)
+	if err != nil {
+		if errors.Is(err, encounter.ErrEncounterNotFound) {
+			return nil, status.Error(codes.NotFound, "encounter not found")
+		}
+		if errors.Is(err, encounter.ErrPlayerNotInEncounter) {
+			return nil, status.Error(codes.PermissionDenied, "player not in encounter")
+		}
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	// 4. Convert to proto response
+	response := &dnd5ev1alpha1.GetEncounterStateResponse{
+		EncounterId: output.EncounterID,
+		State:       convertEncounterStateToProto(output.State),
+		JoinCode:    output.JoinCode,
+		HostId:      output.HostID,
+		LastEventId: output.LastEventID,
+	}
+
+	// Convert party members
+	response.Party = convertPartyToProto(output.Party)
+
+	// Extract grid info for coordinate conversion
+	gridType, hexOrientation := extractGridInfo(output.Room)
+
+	// Convert combat state if present
+	if output.CombatState != nil {
+		response.CombatState = convertCombatStateToProto(output.CombatState, gridType, hexOrientation)
+	}
+
+	// Convert room if present
+	if output.Room != nil {
+		response.Room = convertRoomDataToProto(output.Room)
+	}
+
+	// Convert monsters
+	for _, m := range output.Monsters {
+		response.Monsters = append(response.Monsters, &dnd5ev1alpha1.MonsterCombatState{
+			MonsterId:        m.MonsterID,
+			MonsterName:      m.MonsterName,
+			CurrentHitPoints: int32(m.CurrentHitPoints),
+			MaxHitPoints:     int32(m.MaxHitPoints),
+		})
+	}
+
+	return response, nil
 }
 
 // MoveCharacter handles character movement

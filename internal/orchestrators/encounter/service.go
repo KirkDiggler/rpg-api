@@ -94,6 +94,12 @@ type Service interface {
 	// PlayerReconnected marks a player as reconnected
 	// If encounter was paused due to disconnection, resumes when a player reconnects
 	PlayerReconnected(ctx context.Context, input *PlayerReconnectedInput) (*PlayerReconnectedOutput, error)
+
+	// State retrieval for load-then-stream pattern
+
+	// GetEncounterState returns a full snapshot of the encounter state
+	// Used by clients to sync state before processing streamed events
+	GetEncounterState(ctx context.Context, input *GetEncounterStateInput) (*GetEncounterStateOutput, error)
 }
 
 // ResolveAttackInput contains attack parameters
@@ -415,4 +421,41 @@ type MonsterInfo struct {
 	HP         int       // Current hit points
 	MaxHP      int       // Maximum hit points
 	Initiative int       // Initiative roll total
+}
+
+// GetEncounterStateInput contains parameters for retrieving encounter state snapshot
+type GetEncounterStateInput struct {
+	EncounterID string // ID of the encounter
+	PlayerID    string // ID of the player requesting the state
+}
+
+// MonsterCombatState contains monster HP information for rendering
+// Entity positions are in Room, this provides combat stats
+type MonsterCombatState struct {
+	MonsterID        string // Unique ID of this monster instance
+	MonsterName      string // Display name (e.g., "Goblin")
+	CurrentHitPoints int    // Current HP
+	MaxHitPoints     int    // Maximum HP
+}
+
+// GetEncounterStateOutput returns a full snapshot of the encounter
+// Includes everything needed to render the current state without events
+type GetEncounterStateOutput struct {
+	// Encounter metadata
+	EncounterID string // ID of the encounter
+	State       string // Current state: "waiting", "active", "paused", "completed"
+
+	// Lobby state (populated in all states)
+	Party    []*PartyMember // All players and their characters
+	JoinCode string         // 6-char join code
+	HostID   string         // Player ID of the host
+
+	// Combat state (populated when state is "active" or "paused")
+	CombatState *CombatState          // Initiative order, current turn, etc.
+	Room        interface{}           // Room data with entity positions
+	Monsters    []*MonsterCombatState // Monster HP for rendering
+
+	// Event synchronization
+	// ULID of the most recent event - clients filter events where id > lastEventID
+	LastEventID string
 }

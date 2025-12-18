@@ -593,11 +593,11 @@ func (s *OrchestratorTestSuite) TestCreateDungeon_SavesInitiativeData() {
 func (s *OrchestratorTestSuite) TestMoveCharacter_Success() {
 	// Arrange - use hex grid with CubeEntities and cube coordinates
 	roomData := &spatial.RoomData{
-		ID:           "enc-1-room",
-		Type:         "dungeon",
-		Width:        20,
-		Height:       20,
-		GridType:     spatial.GridTypeHex,
+		ID:       "enc-1-room",
+		Type:     "dungeon",
+		Width:    20,
+		Height:   20,
+		GridType: spatial.GridTypeHex,
 		CubeEntities: map[string]spatial.EntityCubePlacement{
 			"char-1": {
 				EntityID:       "char-1",
@@ -694,7 +694,7 @@ func (s *OrchestratorTestSuite) TestMoveCharacter_InvalidCubeCoordinates() {
 		TargetPosition: &Position{
 			X: 100,
 			Y: 100,
-			Z: 0, // Invalid: 100 + 100 + 0 = 200 != 0
+			Z: 0, //nolint:gocritic // invalid cube coords for test
 		},
 	})
 
@@ -713,11 +713,11 @@ func (s *OrchestratorTestSuite) TestMoveCharacter_InvalidCubeCoordinates() {
 func (s *OrchestratorTestSuite) TestMoveCharacter_PositionOccupied() {
 	// Arrange - use hex grid with CubeEntities
 	roomData := &spatial.RoomData{
-		ID:           "enc-1-room",
-		Type:         "dungeon",
-		Width:        20,
-		Height:       20,
-		GridType:     spatial.GridTypeHex,
+		ID:       "enc-1-room",
+		Type:     "dungeon",
+		Width:    20,
+		Height:   20,
+		GridType: spatial.GridTypeHex,
 		CubeEntities: map[string]spatial.EntityCubePlacement{
 			"char-1": {
 				EntityID:       "char-1",
@@ -2362,4 +2362,211 @@ func (s *OrchestratorTestSuite) TestCheckBossesDefeated_BossIDsButNoMatchingMons
 	allDead, lastBoss := s.orchestrator.checkBossesDefeated(enc)
 	s.True(allDead, "Missing boss treated as defeated")
 	s.Nil(lastBoss, "No boss data to return")
+}
+
+// ============================================================================
+// GetEncounterState Tests
+// ============================================================================
+
+func (s *OrchestratorTestSuite) TestGetEncounterState_Success_WaitingState() {
+	encounterID := "enc-123"
+	playerID := "player-1"
+	characterID := "char-1"
+
+	charData := &character.Data{
+		ID:   characterID,
+		Name: "Test Character",
+	}
+
+	s.mockEncRepo.EXPECT().
+		Get(gomock.Any(), &encounterrepo.GetInput{EncounterID: encounterID}).
+		Return(&encounterrepo.GetOutput{
+			Data: &encounterrepo.EncounterData{
+				ID:       encounterID,
+				State:    encounterrepo.StateWaiting,
+				JoinCode: "ABC123",
+				HostID:   playerID,
+				Players: map[string]*encounterrepo.Player{
+					playerID: {
+						PlayerID:    playerID,
+						CharacterID: characterID,
+						IsReady:     false,
+					},
+				},
+				LastEventID: "01JFABC123",
+			},
+		}, nil)
+
+	s.mockCharRepo.EXPECT().
+		Get(gomock.Any(), characterrepo.GetInput{ID: characterID}).
+		Return(&characterrepo.GetOutput{CharacterData: charData}, nil)
+
+	output, err := s.orchestrator.GetEncounterState(context.Background(), &GetEncounterStateInput{
+		EncounterID: encounterID,
+		PlayerID:    playerID,
+	})
+
+	s.Require().NoError(err)
+	s.Require().NotNil(output)
+	s.Assert().Equal(encounterID, output.EncounterID)
+	s.Assert().Equal("waiting", output.State)
+	s.Assert().Equal("ABC123", output.JoinCode)
+	s.Assert().Equal(playerID, output.HostID)
+	s.Assert().Equal("01JFABC123", output.LastEventID)
+	s.Assert().Len(output.Party, 1)
+	s.Assert().Equal(characterID, output.Party[0].CharacterID)
+	s.Assert().Nil(output.CombatState) // No combat state in waiting
+	s.Assert().Nil(output.Room)        // No room in waiting
+}
+
+func (s *OrchestratorTestSuite) TestGetEncounterState_Success_ActiveState() {
+	encounterID := "enc-123"
+	playerID := "player-1"
+	characterID := "char-1"
+
+	charData := &character.Data{
+		ID:        characterID,
+		Name:      "Test Character",
+		HitPoints: 30,
+	}
+
+	initiativeData := &initiative.TrackerData{
+		Order: []initiative.EntityData{
+			{ID: characterID, Type: "character"},
+			{ID: "goblin-1", Type: "monster"},
+		},
+		Current: 0,
+		Round:   1,
+	}
+
+	roomData := &spatial.RoomData{
+		ID:       "room-1",
+		Width:    10,
+		Height:   10,
+		GridType: spatial.GridTypeHex,
+	}
+
+	s.mockEncRepo.EXPECT().
+		Get(gomock.Any(), &encounterrepo.GetInput{EncounterID: encounterID}).
+		Return(&encounterrepo.GetOutput{
+			Data: &encounterrepo.EncounterData{
+				ID:                encounterID,
+				State:             encounterrepo.StateActive,
+				JoinCode:          "ABC123",
+				HostID:            playerID,
+				InitiativeData:    initiativeData,
+				RoomData:          roomData,
+				MovementRemaining: 30,
+				Players: map[string]*encounterrepo.Player{
+					playerID: {
+						PlayerID:    playerID,
+						CharacterID: characterID,
+						IsReady:     true,
+					},
+				},
+				Monsters: []*monster.Data{
+					{ID: "goblin-1", Name: "Goblin", HitPoints: 7, MaxHitPoints: 7},
+					{ID: "goblin-2", Name: "Goblin", HitPoints: 0, MaxHitPoints: 7}, // Dead
+				},
+				LastEventID: "01JFXYZ789",
+			},
+		}, nil)
+
+	s.mockCharRepo.EXPECT().
+		Get(gomock.Any(), characterrepo.GetInput{ID: characterID}).
+		Return(&characterrepo.GetOutput{CharacterData: charData}, nil)
+
+	output, err := s.orchestrator.GetEncounterState(context.Background(), &GetEncounterStateInput{
+		EncounterID: encounterID,
+		PlayerID:    playerID,
+	})
+
+	s.Require().NoError(err)
+	s.Require().NotNil(output)
+	s.Assert().Equal(encounterID, output.EncounterID)
+	s.Assert().Equal("active", output.State)
+	s.Assert().Equal("01JFXYZ789", output.LastEventID)
+	s.Assert().NotNil(output.CombatState)
+	s.Assert().Equal(1, output.CombatState.Round)
+	s.Assert().NotNil(output.Room)
+	// Only alive monsters
+	s.Assert().Len(output.Monsters, 1)
+	s.Assert().Equal("goblin-1", output.Monsters[0].MonsterID)
+	s.Assert().Equal(7, output.Monsters[0].CurrentHitPoints)
+}
+
+func (s *OrchestratorTestSuite) TestGetEncounterState_EncounterNotFound() {
+	encounterID := "nonexistent"
+	playerID := "player-1"
+
+	s.mockEncRepo.EXPECT().
+		Get(gomock.Any(), &encounterrepo.GetInput{EncounterID: encounterID}).
+		Return(nil, fmt.Errorf("not found"))
+
+	output, err := s.orchestrator.GetEncounterState(context.Background(), &GetEncounterStateInput{
+		EncounterID: encounterID,
+		PlayerID:    playerID,
+	})
+
+	s.Require().Error(err)
+	s.Assert().Equal(ErrEncounterNotFound, err)
+	s.Assert().Nil(output)
+}
+
+func (s *OrchestratorTestSuite) TestGetEncounterState_PlayerNotInEncounter() {
+	encounterID := "enc-123"
+	playerID := "other-player"
+
+	s.mockEncRepo.EXPECT().
+		Get(gomock.Any(), &encounterrepo.GetInput{EncounterID: encounterID}).
+		Return(&encounterrepo.GetOutput{
+			Data: &encounterrepo.EncounterData{
+				ID:     encounterID,
+				State:  encounterrepo.StateWaiting,
+				HostID: "host-player",
+				Players: map[string]*encounterrepo.Player{
+					"host-player": {
+						PlayerID:    "host-player",
+						CharacterID: "char-1",
+					},
+				},
+			},
+		}, nil)
+
+	output, err := s.orchestrator.GetEncounterState(context.Background(), &GetEncounterStateInput{
+		EncounterID: encounterID,
+		PlayerID:    playerID,
+	})
+
+	s.Require().Error(err)
+	s.Assert().Equal(ErrPlayerNotInEncounter, err)
+	s.Assert().Nil(output)
+}
+
+func (s *OrchestratorTestSuite) TestGetEncounterState_NilInput() {
+	output, err := s.orchestrator.GetEncounterState(context.Background(), nil)
+
+	s.Require().Error(err)
+	s.Assert().Contains(err.Error(), "input is required")
+	s.Assert().Nil(output)
+}
+
+func (s *OrchestratorTestSuite) TestGetEncounterState_MissingEncounterID() {
+	output, err := s.orchestrator.GetEncounterState(context.Background(), &GetEncounterStateInput{
+		PlayerID: "player-1",
+	})
+
+	s.Require().Error(err)
+	s.Assert().Contains(err.Error(), "encounter ID is required")
+	s.Assert().Nil(output)
+}
+
+func (s *OrchestratorTestSuite) TestGetEncounterState_MissingPlayerID() {
+	output, err := s.orchestrator.GetEncounterState(context.Background(), &GetEncounterStateInput{
+		EncounterID: "enc-123",
+	})
+
+	s.Require().Error(err)
+	s.Assert().Contains(err.Error(), "player ID is required")
+	s.Assert().Nil(output)
 }

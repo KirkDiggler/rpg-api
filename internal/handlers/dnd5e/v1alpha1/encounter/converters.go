@@ -178,9 +178,9 @@ func convertRoomDataToProto(roomData interface{}) *dnd5ev1alpha1.Room {
 //nolint:gosec // G115: Game values are bounded, no overflow risk
 func convertCubeEntityPlacementToProto(placement spatial.EntityCubePlacement) *dnd5ev1alpha1.EntityPlacement {
 	return &dnd5ev1alpha1.EntityPlacement{
-		EntityId:          placement.EntityID,
-		EntityType:        placement.EntityType,
-		Position:          &apiv1alpha1.Position{
+		EntityId:   placement.EntityID,
+		EntityType: placement.EntityType,
+		Position: &apiv1alpha1.Position{
 			X: float64(placement.CubePosition.X),
 			Y: float64(placement.CubePosition.Y),
 			Z: float64(placement.CubePosition.Z),

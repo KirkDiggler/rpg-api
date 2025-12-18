@@ -543,12 +543,12 @@ func (s *HandlerTestSuite) TestMoveCharacter_Success() {
 	cubeZ := 5.0
 
 	expectedRoom := &spatial.RoomData{
-		ID:           "enc-1-room",
-		Type:         "dungeon",
-		Width:        20,
-		Height:       20,
-		GridType:     spatial.GridTypeHex,
-		HexFlatTop:   false,
+		ID:         "enc-1-room",
+		Type:       "dungeon",
+		Width:      20,
+		Height:     20,
+		GridType:   spatial.GridTypeHex,
+		HexFlatTop: false,
 		CubeEntities: map[string]spatial.EntityCubePlacement{
 			"char-1": {
 				EntityID:       "char-1",
@@ -1304,4 +1304,125 @@ func (s *HandlerTestSuite) TestLeaveEncounter_MissingPlayerId() {
 	s.Require().True(ok)
 	s.Assert().Equal(codes.InvalidArgument, st.Code())
 	s.Assert().Contains(st.Message(), "player_id is required")
+}
+
+// ============================================================================
+// GetEncounterState Tests
+// ============================================================================
+
+func (s *HandlerTestSuite) TestGetEncounterState_Success() {
+	encounterID := "enc-123"
+	playerID := "player-1"
+
+	s.mockService.EXPECT().
+		GetEncounterState(gomock.Any(), &encounter.GetEncounterStateInput{
+			EncounterID: encounterID,
+			PlayerID:    playerID,
+		}).
+		Return(&encounter.GetEncounterStateOutput{
+			EncounterID: encounterID,
+			State:       "waiting",
+			JoinCode:    "ABC123",
+			HostID:      playerID,
+			LastEventID: "01JFABC123",
+			Party: []*encounter.PartyMember{
+				{
+					PlayerID:    playerID,
+					CharacterID: "char-1",
+					IsHost:      true,
+				},
+			},
+		}, nil)
+
+	resp, err := s.handler.GetEncounterState(context.Background(), &dnd5ev1alpha1.GetEncounterStateRequest{
+		EncounterId: encounterID,
+		PlayerId:    playerID,
+	})
+
+	s.Require().NoError(err)
+	s.Require().NotNil(resp)
+	s.Assert().Equal(encounterID, resp.EncounterId)
+	s.Assert().Equal(dnd5ev1alpha1.EncounterState_ENCOUNTER_STATE_WAITING, resp.State)
+	s.Assert().Equal("ABC123", resp.JoinCode)
+	s.Assert().Equal(playerID, resp.HostId)
+	s.Assert().Equal("01JFABC123", resp.LastEventId)
+	s.Assert().Len(resp.Party, 1)
+}
+
+func (s *HandlerTestSuite) TestGetEncounterState_MissingEncounterId() {
+	resp, err := s.handler.GetEncounterState(context.Background(), &dnd5ev1alpha1.GetEncounterStateRequest{
+		EncounterId: "",
+		PlayerId:    "player-1",
+	})
+
+	s.Require().Error(err)
+	s.Assert().Nil(resp)
+
+	st, ok := status.FromError(err)
+	s.Require().True(ok)
+	s.Assert().Equal(codes.InvalidArgument, st.Code())
+	s.Assert().Contains(st.Message(), "encounter_id is required")
+}
+
+func (s *HandlerTestSuite) TestGetEncounterState_MissingPlayerId() {
+	resp, err := s.handler.GetEncounterState(context.Background(), &dnd5ev1alpha1.GetEncounterStateRequest{
+		EncounterId: "enc-123",
+		PlayerId:    "",
+	})
+
+	s.Require().Error(err)
+	s.Assert().Nil(resp)
+
+	st, ok := status.FromError(err)
+	s.Require().True(ok)
+	s.Assert().Equal(codes.InvalidArgument, st.Code())
+	s.Assert().Contains(st.Message(), "player_id is required")
+}
+
+func (s *HandlerTestSuite) TestGetEncounterState_EncounterNotFound() {
+	encounterID := "nonexistent"
+	playerID := "player-1"
+
+	s.mockService.EXPECT().
+		GetEncounterState(gomock.Any(), &encounter.GetEncounterStateInput{
+			EncounterID: encounterID,
+			PlayerID:    playerID,
+		}).
+		Return(nil, encounter.ErrEncounterNotFound)
+
+	resp, err := s.handler.GetEncounterState(context.Background(), &dnd5ev1alpha1.GetEncounterStateRequest{
+		EncounterId: encounterID,
+		PlayerId:    playerID,
+	})
+
+	s.Require().Error(err)
+	s.Assert().Nil(resp)
+
+	st, ok := status.FromError(err)
+	s.Require().True(ok)
+	s.Assert().Equal(codes.NotFound, st.Code())
+}
+
+func (s *HandlerTestSuite) TestGetEncounterState_PlayerNotInEncounter() {
+	encounterID := "enc-123"
+	playerID := "other-player"
+
+	s.mockService.EXPECT().
+		GetEncounterState(gomock.Any(), &encounter.GetEncounterStateInput{
+			EncounterID: encounterID,
+			PlayerID:    playerID,
+		}).
+		Return(nil, encounter.ErrPlayerNotInEncounter)
+
+	resp, err := s.handler.GetEncounterState(context.Background(), &dnd5ev1alpha1.GetEncounterStateRequest{
+		EncounterId: encounterID,
+		PlayerId:    playerID,
+	})
+
+	s.Require().Error(err)
+	s.Assert().Nil(resp)
+
+	st, ok := status.FromError(err)
+	s.Require().True(ok)
+	s.Assert().Equal(codes.PermissionDenied, st.Code())
 }

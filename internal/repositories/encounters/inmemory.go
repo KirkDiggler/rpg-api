@@ -49,6 +49,7 @@ func (r *InMemoryRepository) Save(_ context.Context, input *SaveInput) (*SaveOut
 		HostID:            input.HostID,
 		Players:           input.Players,
 		CreatedAt:         input.CreatedAt,
+		LastEventID:       input.LastEventID,
 	}
 
 	return &SaveOutput{Success: true}, nil
@@ -89,6 +90,7 @@ func (r *InMemoryRepository) Get(_ context.Context, input *GetInput) (*GetOutput
 			HostID:            data.HostID,
 			Players:           data.Players,
 			CreatedAt:         data.CreatedAt,
+			LastEventID:       data.LastEventID,
 		},
 	}, nil
 }
@@ -126,6 +128,7 @@ func (r *InMemoryRepository) GetByJoinCode(_ context.Context, input *GetByJoinCo
 					HostID:            data.HostID,
 					Players:           data.Players,
 					CreatedAt:         data.CreatedAt,
+					LastEventID:       data.LastEventID,
 				},
 			}, nil
 		}
@@ -184,6 +187,11 @@ func (r *InMemoryRepository) Update(_ context.Context, input *UpdateInput) (*Upd
 	}
 	if input.Players != nil {
 		data.Players = input.Players
+	}
+
+	// Event tracking
+	if input.LastEventID != nil {
+		data.LastEventID = *input.LastEventID
 	}
 
 	return &UpdateOutput{Success: true}, nil
