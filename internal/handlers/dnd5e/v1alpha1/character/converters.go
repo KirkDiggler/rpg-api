@@ -7,6 +7,7 @@ import (
 
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
 	"github.com/KirkDiggler/rpg-api/internal/apierr"
+	"github.com/KirkDiggler/rpg-toolkit/core/combat"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/abilities"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/ammunition"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/armor"
@@ -15,6 +16,7 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character/choices"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/classes"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/equipment"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/features"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/fightingstyles"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/languages"
 
@@ -1206,9 +1208,10 @@ func ConvertCharacterDataToProto(data *toolkitchar.Data) *dnd5ev1alpha1.Characte
 			}
 
 			char.Features = append(char.Features, &dnd5ev1alpha1.CharacterFeature{
-				Id:     featureData.ID,
-				Name:   displayName,
-				Source: featureSourceClass,
+				Id:         featureData.ID,
+				Name:       displayName,
+				Source:     featureSourceClass,
+				ActionType: getFeatureActionType(featureData.ID),
 			})
 		}
 	}
@@ -2801,4 +2804,40 @@ func getFeatureDisplayName(featureID string) string {
 		return name
 	}
 	return featureID // Fall back to ID
+}
+
+// getFeatureActionType returns the action economy cost for a feature by querying the toolkit.
+// Returns ACTION_TYPE_UNSPECIFIED for features not implemented in the toolkit.
+func getFeatureActionType(featureID string) dnd5ev1alpha1.ActionType {
+	// Construct the full ref string for the feature
+	refString := fmt.Sprintf("%s:%s:%s", refs.Module, refs.TypeFeatures, featureID)
+
+	// Try to create the feature from the toolkit
+	output, err := features.CreateFromRef(&features.CreateFromRefInput{
+		Ref:         refString,
+		CharacterID: "action-type-lookup", // Placeholder - not used for ActionType()
+	})
+	if err != nil {
+		// Feature not implemented in toolkit, return unspecified
+		return dnd5ev1alpha1.ActionType_ACTION_TYPE_UNSPECIFIED
+	}
+
+	// Map toolkit ActionType to proto ActionType
+	return convertActionTypeToProto(output.Feature.ActionType())
+}
+
+// convertActionTypeToProto maps toolkit combat.ActionType to proto ActionType.
+func convertActionTypeToProto(actionType combat.ActionType) dnd5ev1alpha1.ActionType {
+	switch actionType {
+	case combat.ActionStandard:
+		return dnd5ev1alpha1.ActionType_ACTION_TYPE_ACTION
+	case combat.ActionBonus:
+		return dnd5ev1alpha1.ActionType_ACTION_TYPE_BONUS_ACTION
+	case combat.ActionReaction:
+		return dnd5ev1alpha1.ActionType_ACTION_TYPE_REACTION
+	case combat.ActionFree:
+		return dnd5ev1alpha1.ActionType_ACTION_TYPE_FREE
+	default:
+		return dnd5ev1alpha1.ActionType_ACTION_TYPE_UNSPECIFIED
+	}
 }

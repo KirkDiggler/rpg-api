@@ -486,3 +486,106 @@ func (s *ConvertersTestSuite) TestConvertCharacterDataToProto_ConditionWithNoIde
 	assert.Len(s.T(), result.ActiveConditions, 1, "Should skip condition with no identifier")
 	assert.Equal(s.T(), "Frightened", result.ActiveConditions[0].Name)
 }
+
+func (s *ConvertersTestSuite) TestGetFeatureActionType() {
+	// Test features implemented in the toolkit - action types come from toolkit, not hardcoded
+	testCases := []struct {
+		name       string
+		featureID  string
+		wantAction dnd5ev1alpha1.ActionType
+	}{
+		// Barbarian
+		{
+			name:       "Rage is bonus action",
+			featureID:  "rage",
+			wantAction: dnd5ev1alpha1.ActionType_ACTION_TYPE_BONUS_ACTION,
+		},
+		// Fighter
+		{
+			name:       "Second Wind is bonus action",
+			featureID:  "second_wind",
+			wantAction: dnd5ev1alpha1.ActionType_ACTION_TYPE_BONUS_ACTION,
+		},
+		{
+			name:       "Action Surge is free",
+			featureID:  "action_surge",
+			wantAction: dnd5ev1alpha1.ActionType_ACTION_TYPE_FREE,
+		},
+		// Monk
+		{
+			name:       "Flurry of Blows is bonus action",
+			featureID:  "flurry_of_blows",
+			wantAction: dnd5ev1alpha1.ActionType_ACTION_TYPE_BONUS_ACTION,
+		},
+		{
+			name:       "Patient Defense is bonus action",
+			featureID:  "patient_defense",
+			wantAction: dnd5ev1alpha1.ActionType_ACTION_TYPE_BONUS_ACTION,
+		},
+		{
+			name:       "Step of the Wind is bonus action",
+			featureID:  "step_of_the_wind",
+			wantAction: dnd5ev1alpha1.ActionType_ACTION_TYPE_BONUS_ACTION,
+		},
+		{
+			name:       "Deflect Missiles is reaction",
+			featureID:  "deflect_missiles",
+			wantAction: dnd5ev1alpha1.ActionType_ACTION_TYPE_REACTION,
+		},
+		// Features not yet in toolkit return unspecified
+		{
+			name:       "Unknown feature returns unspecified",
+			featureID:  "totally_made_up_feature",
+			wantAction: dnd5ev1alpha1.ActionType_ACTION_TYPE_UNSPECIFIED,
+		},
+		{
+			name:       "Feature not in toolkit returns unspecified",
+			featureID:  "sneak_attack",
+			wantAction: dnd5ev1alpha1.ActionType_ACTION_TYPE_UNSPECIFIED,
+		},
+	}
+
+	for _, tc := range testCases {
+		s.Run(tc.name, func() {
+			result := getFeatureActionType(tc.featureID)
+			assert.Equal(s.T(), tc.wantAction, result)
+		})
+	}
+}
+
+func (s *ConvertersTestSuite) TestConvertCharacterDataToProto_FeaturesWithActionType() {
+	testData := &toolkitchar.Data{
+		ID:           "char-1",
+		Name:         "Test Fighter",
+		MaxHitPoints: 10,
+		Level:        2,
+		RaceID:       "human",
+		ClassID:      classes.Fighter,
+		Features: []json.RawMessage{
+			json.RawMessage(`{"id": "second_wind", "name": "Second Wind"}`),
+			json.RawMessage(`{"id": "action_surge", "name": "Action Surge"}`),
+		},
+	}
+
+	result := ConvertCharacterDataToProto(testData)
+
+	require.NotNil(s.T(), result)
+	require.Len(s.T(), result.Features, 2, "Should have 2 features")
+
+	// Verify action types are populated
+	var secondWind, actionSurge *dnd5ev1alpha1.CharacterFeature
+	for _, f := range result.Features {
+		switch f.Id {
+		case "second_wind":
+			secondWind = f
+		case "action_surge":
+			actionSurge = f
+		}
+	}
+
+	require.NotNil(s.T(), secondWind, "Should have Second Wind feature")
+	assert.Equal(s.T(), dnd5ev1alpha1.ActionType_ACTION_TYPE_BONUS_ACTION, secondWind.ActionType)
+
+	require.NotNil(s.T(), actionSurge, "Should have Action Surge feature")
+	assert.Equal(s.T(), dnd5ev1alpha1.ActionType_ACTION_TYPE_FREE, actionSurge.ActionType)
+}
