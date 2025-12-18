@@ -1206,9 +1206,10 @@ func ConvertCharacterDataToProto(data *toolkitchar.Data) *dnd5ev1alpha1.Characte
 			}
 
 			char.Features = append(char.Features, &dnd5ev1alpha1.CharacterFeature{
-				Id:     featureData.ID,
-				Name:   displayName,
-				Source: featureSourceClass,
+				Id:         featureData.ID,
+				Name:       displayName,
+				Source:     featureSourceClass,
+				ActionType: getFeatureActionType(featureData.ID),
 			})
 		}
 	}
@@ -2801,4 +2802,54 @@ func getFeatureDisplayName(featureID string) string {
 		return name
 	}
 	return featureID // Fall back to ID
+}
+
+// getFeatureActionType returns the action economy cost for a feature based on D&D 5e rules.
+// Returns ACTION_TYPE_UNSPECIFIED for unknown features.
+func getFeatureActionType(featureID string) dnd5ev1alpha1.ActionType {
+	actionTypes := map[string]dnd5ev1alpha1.ActionType{
+		// Barbarian
+		"rage": dnd5ev1alpha1.ActionType_ACTION_TYPE_BONUS_ACTION,
+
+		// Fighter
+		"second_wind":  dnd5ev1alpha1.ActionType_ACTION_TYPE_BONUS_ACTION,
+		"action_surge": dnd5ev1alpha1.ActionType_ACTION_TYPE_FREE, // Grants extra action, no cost itself
+
+		// Monk
+		"flurry_of_blows":   dnd5ev1alpha1.ActionType_ACTION_TYPE_BONUS_ACTION,
+		"patient_defense":   dnd5ev1alpha1.ActionType_ACTION_TYPE_BONUS_ACTION,
+		"step_of_the_wind":  dnd5ev1alpha1.ActionType_ACTION_TYPE_BONUS_ACTION,
+		"deflect_missiles":  dnd5ev1alpha1.ActionType_ACTION_TYPE_REACTION,
+		"stunning_strike":   dnd5ev1alpha1.ActionType_ACTION_TYPE_FREE, // On hit, no extra action
+		"slow_fall":         dnd5ev1alpha1.ActionType_ACTION_TYPE_REACTION,
+		"stillness_of_mind": dnd5ev1alpha1.ActionType_ACTION_TYPE_ACTION,
+
+		// Rogue
+		"sneak_attack":    dnd5ev1alpha1.ActionType_ACTION_TYPE_FREE, // Modifies attack damage
+		"cunning_action":  dnd5ev1alpha1.ActionType_ACTION_TYPE_BONUS_ACTION,
+		"uncanny_dodge":   dnd5ev1alpha1.ActionType_ACTION_TYPE_REACTION,
+		"evasion":         dnd5ev1alpha1.ActionType_ACTION_TYPE_FREE, // Passive
+		"reliable_talent": dnd5ev1alpha1.ActionType_ACTION_TYPE_FREE, // Passive
+
+		// Paladin
+		"divine_smite":     dnd5ev1alpha1.ActionType_ACTION_TYPE_FREE, // On hit, expend spell slot
+		"lay_on_hands":     dnd5ev1alpha1.ActionType_ACTION_TYPE_ACTION,
+		"divine_sense":     dnd5ev1alpha1.ActionType_ACTION_TYPE_ACTION,
+		"channel_divinity": dnd5ev1alpha1.ActionType_ACTION_TYPE_ACTION,
+
+		// Ranger
+		"hunters_mark": dnd5ev1alpha1.ActionType_ACTION_TYPE_BONUS_ACTION,
+
+		// Warlock
+		"eldritch_blast":  dnd5ev1alpha1.ActionType_ACTION_TYPE_ACTION, // Cantrip
+		"agonizing_blast": dnd5ev1alpha1.ActionType_ACTION_TYPE_FREE,   // Modifies eldritch blast
+
+		// Cleric
+		"turn_undead": dnd5ev1alpha1.ActionType_ACTION_TYPE_ACTION,
+	}
+
+	if actionType, ok := actionTypes[featureID]; ok {
+		return actionType
+	}
+	return dnd5ev1alpha1.ActionType_ACTION_TYPE_UNSPECIFIED
 }
