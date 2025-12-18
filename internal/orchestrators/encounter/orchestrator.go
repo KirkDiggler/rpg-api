@@ -3116,16 +3116,24 @@ func (o *Orchestrator) GetEncounterState(ctx context.Context, input *GetEncounte
 	if input.EncounterID == "" {
 		return nil, fmt.Errorf("encounter ID is required")
 	}
+	if input.PlayerID == "" {
+		return nil, fmt.Errorf("player ID is required")
+	}
 
 	// Load encounter data
 	encOutput, err := o.encRepo.Get(ctx, &encounterrepo.GetInput{
 		EncounterID: input.EncounterID,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to get encounter: %w", err)
+		return nil, ErrEncounterNotFound
 	}
 
 	encData := encOutput.Data
+
+	// Validate player is in the encounter
+	if _, exists := encData.Players[input.PlayerID]; !exists {
+		return nil, ErrPlayerNotInEncounter
+	}
 
 	// Build party list with character data
 	party := o.buildPartyFromPlayers(ctx, encData.Players, encData.HostID)

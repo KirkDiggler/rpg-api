@@ -919,19 +919,3 @@ func convertDoorInfoSliceToProto(doors []encounter.DoorInfo) []*dnd5ev1alpha1.Do
 	}
 	return result
 }
-
-// convertStateToProto converts a string encounter state to proto enum
-func convertStateToProto(state string) dnd5ev1alpha1.EncounterState {
-	switch state {
-	case "waiting":
-		return dnd5ev1alpha1.EncounterState_ENCOUNTER_STATE_WAITING
-	case "active":
-		return dnd5ev1alpha1.EncounterState_ENCOUNTER_STATE_ACTIVE
-	case "paused":
-		return dnd5ev1alpha1.EncounterState_ENCOUNTER_STATE_PAUSED
-	case "completed":
-		return dnd5ev1alpha1.EncounterState_ENCOUNTER_STATE_COMPLETED
-	default:
-		return dnd5ev1alpha1.EncounterState_ENCOUNTER_STATE_UNSPECIFIED
-	}
-}

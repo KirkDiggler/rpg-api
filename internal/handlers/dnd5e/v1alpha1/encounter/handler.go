@@ -176,6 +176,9 @@ func (h *Handler) GetEncounterState(
 	if req.GetEncounterId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "encounter_id is required")
 	}
+	if req.GetPlayerId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "player_id is required")
+	}
 
 	// 2. Create service input
 	input := &encounter.GetEncounterStateInput{
@@ -189,13 +192,16 @@ func (h *Handler) GetEncounterState(
 		if errors.Is(err, encounter.ErrEncounterNotFound) {
 			return nil, status.Error(codes.NotFound, "encounter not found")
 		}
+		if errors.Is(err, encounter.ErrPlayerNotInEncounter) {
+			return nil, status.Error(codes.PermissionDenied, "player not in encounter")
+		}
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
 	// 4. Convert to proto response
 	response := &dnd5ev1alpha1.GetEncounterStateResponse{
 		EncounterId: output.EncounterID,
-		State:       convertStateToProto(output.State),
+		State:       convertEncounterStateToProto(output.State),
 		JoinCode:    output.JoinCode,
 		HostId:      output.HostID,
 		LastEventId: output.LastEventID,
