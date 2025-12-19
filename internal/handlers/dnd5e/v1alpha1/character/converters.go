@@ -2893,6 +2893,14 @@ func conditionIDToEnum(id string) dnd5ev1alpha1.ConditionId {
 		return dnd5ev1alpha1.ConditionId_CONDITION_ID_FIGHTING_STYLE_TWO_WEAPON_FIGHTING
 	case refs.Conditions.FightingStyleGreatWeaponFighting().ID:
 		return dnd5ev1alpha1.ConditionId_CONDITION_ID_FIGHTING_STYLE_GREAT_WEAPON_FIGHTING
+	case refs.Conditions.UnarmoredDefense().ID:
+		return dnd5ev1alpha1.ConditionId_CONDITION_ID_UNARMORED_DEFENSE
+	case refs.Conditions.ImprovedCritical().ID:
+		return dnd5ev1alpha1.ConditionId_CONDITION_ID_IMPROVED_CRITICAL
+	case refs.Conditions.MartialArts().ID:
+		return dnd5ev1alpha1.ConditionId_CONDITION_ID_MARTIAL_ARTS
+	case refs.Conditions.UnarmoredMovement().ID:
+		return dnd5ev1alpha1.ConditionId_CONDITION_ID_UNARMORED_MOVEMENT
 	default:
 		return dnd5ev1alpha1.ConditionId_CONDITION_ID_UNSPECIFIED
 	}
