@@ -26,7 +26,7 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/components/dungeon"
 	"github.com/KirkDiggler/rpg-api/internal/entities"
 	"github.com/KirkDiggler/rpg-api/internal/pkg/idgen"
-	encounterpub "github.com/KirkDiggler/rpg-api/internal/publishers/encounter"
+	eventprocessor "github.com/KirkDiggler/rpg-api/internal/processors/event"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	dungeonrepo "github.com/KirkDiggler/rpg-api/internal/repositories/dungeons"
 	encounterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/encounters"
@@ -36,13 +36,12 @@ import (
 type Config struct {
 	CharacterRepo   characterrepo.Repository
 	EncounterRepo   encounterrepo.Repository
-	DungeonRepo     dungeonrepo.Repository // Optional: for dungeon persistence
-	DungeonGen      *dungeon.Generator     // Optional: for procedural dungeon generation
-	Publisher       encounterpub.Publisher // Optional: for publishing encounter events
-	EventIDGen      idgen.Generator        // Optional: for generating event IDs (defaults to ULID)
-	EncounterIDGen  idgen.Generator        // Optional: for generating encounter IDs (defaults to "enc-" prefix)
-	DungeonIDGen    idgen.Generator        // Optional: for generating dungeon IDs (defaults to "dng-" prefix)
-	ConnectionIDGen idgen.Generator        // Optional: for generating connection IDs (defaults to "conn-" prefix)
+	DungeonRepo     dungeonrepo.Repository   // Optional: for dungeon persistence
+	DungeonGen      *dungeon.Generator       // Optional: for procedural dungeon generation
+	EventProcessor  eventprocessor.Processor // Optional: for persisting and publishing events
+	EncounterIDGen  idgen.Generator          // Optional: for generating encounter IDs (defaults to "enc-" prefix)
+	DungeonIDGen    idgen.Generator          // Optional: for generating dungeon IDs (defaults to "dng-" prefix)
+	ConnectionIDGen idgen.Generator          // Optional: for generating connection IDs (defaults to "conn-" prefix)
 }
 
 // Validate ensures all required dependencies are present
@@ -63,11 +62,10 @@ type Orchestrator struct {
 	dungeonRepo     dungeonrepo.Repository // Optional: for dungeon persistence
 	dungeonGen      *dungeon.Generator     // Optional: for procedural dungeon generation
 	roller          dice.Roller
-	publisher       encounterpub.Publisher // Optional: for publishing encounter events
-	eventIDGen      idgen.Generator        // For generating event IDs
-	encounterIDGen  idgen.Generator        // For generating encounter IDs
-	dungeonIDGen    idgen.Generator        // For generating dungeon IDs
-	connectionIDGen idgen.Generator        // For generating connection IDs
+	eventProcessor  eventprocessor.Processor // Optional: for persisting and publishing events
+	encounterIDGen  idgen.Generator          // For generating encounter IDs
+	dungeonIDGen    idgen.Generator          // For generating dungeon IDs
+	connectionIDGen idgen.Generator          // For generating connection IDs
 }
 
 // New creates a new encounter orchestrator
@@ -77,12 +75,6 @@ func New(cfg *Config) (*Orchestrator, error) {
 	}
 	if err := cfg.Validate(); err != nil {
 		return nil, err
-	}
-
-	// Default to ULID generator for event IDs if not provided
-	eventIDGen := cfg.EventIDGen
-	if eventIDGen == nil {
-		eventIDGen = idgen.NewULID("")
 	}
 
 	// Default to prefixed generators for encounter/dungeon/connection IDs if not provided
@@ -105,25 +97,22 @@ func New(cfg *Config) (*Orchestrator, error) {
 		dungeonRepo:     cfg.DungeonRepo,
 		dungeonGen:      cfg.DungeonGen,
 		roller:          dice.NewRoller(),
-		publisher:       cfg.Publisher,
-		eventIDGen:      eventIDGen,
+		eventProcessor:  cfg.EventProcessor,
 		encounterIDGen:  encounterIDGen,
 		dungeonIDGen:    dungeonIDGen,
 		connectionIDGen: connectionIDGen,
 	}, nil
 }
 
-// publishEvent publishes an event if publisher is configured.
+// publishEvent persists and publishes an event if EventProcessor is configured.
 // Also updates the encounter's LastEventID for the load-then-stream pattern.
 // Errors are logged but not returned to avoid breaking combat flow.
 func (o *Orchestrator) publishEvent(ctx context.Context, encounterID string, eventType entities.EventType, data interface{}) {
-	if o.publisher == nil {
+	if o.eventProcessor == nil {
 		return
 	}
 
-	eventID := o.eventIDGen.Generate()
 	event := &entities.EncounterEvent{
-		ID:          eventID,
 		Type:        eventType,
 		EncounterID: encounterID,
 		Timestamp:   time.Now(),
@@ -168,20 +157,21 @@ func (o *Orchestrator) publishEvent(ctx context.Context, encounterID string, eve
 		return
 	}
 
-	_, err := o.publisher.Publish(ctx, &encounterpub.PublishInput{
+	// Process persists to encounter log and publishes to subscribers
+	output, err := o.eventProcessor.Process(ctx, &eventprocessor.ProcessInput{
 		EncounterID: encounterID,
 		Event:       event,
 	})
 	if err != nil {
-		// Log but don't fail - event publishing is non-critical
-		fmt.Printf("failed to publish %s event for encounter %s: %v\n", eventType, encounterID, err)
+		// Log but don't fail - event processing is non-critical to combat flow
+		fmt.Printf("failed to process %s event for encounter %s: %v\n", eventType, encounterID, err)
 		return
 	}
 
 	// Update LastEventID in the encounter record for load-then-stream pattern
 	_, err = o.encRepo.Update(ctx, &encounterrepo.UpdateInput{
 		EncounterID: encounterID,
-		LastEventID: &eventID,
+		LastEventID: &output.EventID,
 	})
 	if err != nil {
 		// Log but don't fail - this is non-critical for the current operation
