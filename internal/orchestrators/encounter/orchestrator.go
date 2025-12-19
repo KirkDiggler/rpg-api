@@ -29,19 +29,21 @@ import (
 	eventprocessor "github.com/KirkDiggler/rpg-api/internal/processors/event"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	dungeonrepo "github.com/KirkDiggler/rpg-api/internal/repositories/dungeons"
+	encounterlogrepo "github.com/KirkDiggler/rpg-api/internal/repositories/encounterlog"
 	encounterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/encounters"
 )
 
 // Config holds orchestrator dependencies
 type Config struct {
-	CharacterRepo   characterrepo.Repository
-	EncounterRepo   encounterrepo.Repository
-	DungeonRepo     dungeonrepo.Repository   // Optional: for dungeon persistence
-	DungeonGen      *dungeon.Generator       // Optional: for procedural dungeon generation
-	EventProcessor  eventprocessor.Processor // Optional: for persisting and publishing events
-	EncounterIDGen  idgen.Generator          // Optional: for generating encounter IDs (defaults to "enc-" prefix)
-	DungeonIDGen    idgen.Generator          // Optional: for generating dungeon IDs (defaults to "dng-" prefix)
-	ConnectionIDGen idgen.Generator          // Optional: for generating connection IDs (defaults to "conn-" prefix)
+	CharacterRepo    characterrepo.Repository
+	EncounterRepo    encounterrepo.Repository
+	DungeonRepo      dungeonrepo.Repository      // Optional: for dungeon persistence
+	DungeonGen       *dungeon.Generator          // Optional: for procedural dungeon generation
+	EventProcessor   eventprocessor.Processor    // Optional: for persisting and publishing events
+	EncounterLogRepo encounterlogrepo.Repository // Optional: for reading event history
+	EncounterIDGen   idgen.Generator             // Optional: for generating encounter IDs (defaults to "enc-" prefix)
+	DungeonIDGen     idgen.Generator             // Optional: for generating dungeon IDs (defaults to "dng-" prefix)
+	ConnectionIDGen  idgen.Generator             // Optional: for generating connection IDs (defaults to "conn-" prefix)
 }
 
 // Validate ensures all required dependencies are present
@@ -57,15 +59,16 @@ func (c *Config) Validate() error {
 
 // Orchestrator implements the Service interface
 type Orchestrator struct {
-	charRepo        characterrepo.Repository
-	encRepo         encounterrepo.Repository
-	dungeonRepo     dungeonrepo.Repository // Optional: for dungeon persistence
-	dungeonGen      *dungeon.Generator     // Optional: for procedural dungeon generation
-	roller          dice.Roller
-	eventProcessor  eventprocessor.Processor // Optional: for persisting and publishing events
-	encounterIDGen  idgen.Generator          // For generating encounter IDs
-	dungeonIDGen    idgen.Generator          // For generating dungeon IDs
-	connectionIDGen idgen.Generator          // For generating connection IDs
+	charRepo         characterrepo.Repository
+	encRepo          encounterrepo.Repository
+	dungeonRepo      dungeonrepo.Repository // Optional: for dungeon persistence
+	dungeonGen       *dungeon.Generator     // Optional: for procedural dungeon generation
+	roller           dice.Roller
+	eventProcessor   eventprocessor.Processor    // Optional: for persisting and publishing events
+	encounterLogRepo encounterlogrepo.Repository // Optional: for reading event history
+	encounterIDGen   idgen.Generator             // For generating encounter IDs
+	dungeonIDGen     idgen.Generator             // For generating dungeon IDs
+	connectionIDGen  idgen.Generator             // For generating connection IDs
 }
 
 // New creates a new encounter orchestrator
@@ -92,15 +95,16 @@ func New(cfg *Config) (*Orchestrator, error) {
 	}
 
 	return &Orchestrator{
-		charRepo:        cfg.CharacterRepo,
-		encRepo:         cfg.EncounterRepo,
-		dungeonRepo:     cfg.DungeonRepo,
-		dungeonGen:      cfg.DungeonGen,
-		roller:          dice.NewRoller(),
-		eventProcessor:  cfg.EventProcessor,
-		encounterIDGen:  encounterIDGen,
-		dungeonIDGen:    dungeonIDGen,
-		connectionIDGen: connectionIDGen,
+		charRepo:         cfg.CharacterRepo,
+		encRepo:          cfg.EncounterRepo,
+		dungeonRepo:      cfg.DungeonRepo,
+		dungeonGen:       cfg.DungeonGen,
+		roller:           dice.NewRoller(),
+		eventProcessor:   cfg.EventProcessor,
+		encounterLogRepo: cfg.EncounterLogRepo,
+		encounterIDGen:   encounterIDGen,
+		dungeonIDGen:     dungeonIDGen,
+		connectionIDGen:  connectionIDGen,
 	}, nil
 }
 
@@ -3188,4 +3192,39 @@ func (o *Orchestrator) GetEncounterState(ctx context.Context, input *GetEncounte
 	}
 
 	return output, nil
+}
+
+// GetEncounterHistory retrieves historical events for an encounter.
+// Used by late joiners to populate their event log before streaming new events.
+func (o *Orchestrator) GetEncounterHistory(ctx context.Context, input *GetEncounterHistoryInput) (*GetEncounterHistoryOutput, error) {
+	if input == nil {
+		return nil, fmt.Errorf("input is required")
+	}
+	if input.EncounterID == "" {
+		return nil, fmt.Errorf("encounter ID is required")
+	}
+
+	// If encounterLogRepo is not configured, return empty history
+	if o.encounterLogRepo == nil {
+		return &GetEncounterHistoryOutput{
+			Events:  []*entities.EncounterEvent{},
+			HasMore: false,
+		}, nil
+	}
+
+	// Retrieve events from the encounter log repository
+	result, err := o.encounterLogRepo.GetByEncounter(ctx, &encounterlogrepo.GetByEncounterInput{
+		EncounterID: input.EncounterID,
+		UpToEventID: input.UpToEventID,
+		Limit:       input.Limit,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get encounter history: %w", err)
+	}
+
+	return &GetEncounterHistoryOutput{
+		Events:      result.Events,
+		HasMore:     result.HasMore,
+		LastEventID: result.LastEventID,
+	}, nil
 }

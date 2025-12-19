@@ -100,6 +100,10 @@ type Service interface {
 	// GetEncounterState returns a full snapshot of the encounter state
 	// Used by clients to sync state before processing streamed events
 	GetEncounterState(ctx context.Context, input *GetEncounterStateInput) (*GetEncounterStateOutput, error)
+
+	// GetEncounterHistory retrieves historical events for an encounter
+	// Used by late joiners to populate event log before streaming new events
+	GetEncounterHistory(ctx context.Context, input *GetEncounterHistoryInput) (*GetEncounterHistoryOutput, error)
 }
 
 // ResolveAttackInput contains attack parameters
@@ -458,4 +462,18 @@ type GetEncounterStateOutput struct {
 	// Event synchronization
 	// ULID of the most recent event - clients filter events where id > lastEventID
 	LastEventID string
+}
+
+// GetEncounterHistoryInput contains parameters for retrieving encounter history
+type GetEncounterHistoryInput struct {
+	EncounterID string // ID of the encounter
+	UpToEventID string // Get events up to this ID (from GetEncounterState.LastEventID; empty = all)
+	Limit       int    // Max events to return (0 = no limit)
+}
+
+// GetEncounterHistoryOutput returns historical encounter events
+type GetEncounterHistoryOutput struct {
+	Events      []*entities.EncounterEvent // Events in chronological order
+	HasMore     bool                       // True if more events exist beyond the limit
+	LastEventID string                     // ID of the last event returned (for pagination)
 }

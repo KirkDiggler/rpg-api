@@ -549,6 +549,44 @@ func (h *Handler) LeaveEncounter(
 	}, nil
 }
 
+// GetEncounterHistory retrieves historical events for late join/reconnect
+func (h *Handler) GetEncounterHistory(
+	ctx context.Context,
+	req *dnd5ev1alpha1.GetEncounterHistoryRequest,
+) (*dnd5ev1alpha1.GetEncounterHistoryResponse, error) {
+	// 1. Validate request
+	if req.GetEncounterId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "encounter_id is required")
+	}
+
+	// 2. Call orchestrator
+	output, err := h.encounterService.GetEncounterHistory(ctx, &encounter.GetEncounterHistoryInput{
+		EncounterID: req.GetEncounterId(),
+		UpToEventID: req.GetUpToEventId(),
+		Limit:       int(req.GetLimit()),
+	})
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	// 3. Convert events to proto
+	protoEvents := make([]*dnd5ev1alpha1.EncounterEvent, 0, len(output.Events))
+	for _, event := range output.Events {
+		protoEvent, convertErr := h.convertToProtoEvent(event)
+		if convertErr != nil {
+			log.Printf("Failed to convert event %s: %v", event.ID, convertErr)
+			continue // Skip malformed events
+		}
+		protoEvents = append(protoEvents, protoEvent)
+	}
+
+	return &dnd5ev1alpha1.GetEncounterHistoryResponse{
+		Events:      protoEvents,
+		HasMore:     output.HasMore,
+		LastEventId: output.LastEventID,
+	}, nil
+}
+
 // StreamEncounterEvents subscribes to real-time encounter events
 func (h *Handler) StreamEncounterEvents(
 	req *dnd5ev1alpha1.StreamEncounterEventsRequest,
