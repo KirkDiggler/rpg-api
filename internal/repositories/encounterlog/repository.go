@@ -1,7 +1,7 @@
-// Package combatlog provides storage for combat events (event sourcing)
-package combatlog
+// Package encounterlog provides storage for encounter events (event sourcing)
+package encounterlog
 
-//go:generate mockgen -destination=mock/mock_repository.go -package=combatlogmock github.com/KirkDiggler/rpg-api/internal/repositories/combatlog Repository
+//go:generate mockgen -destination=mock/mock_repository.go -package=encounterlogmock github.com/KirkDiggler/rpg-api/internal/repositories/encounterlog Repository
 
 import (
 	"context"
@@ -9,7 +9,7 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/entities"
 )
 
-// Repository defines the storage interface for combat events
+// Repository defines the storage interface for encounter events
 // Append-only by design (event sourcing)
 type Repository interface {
 	// Append stores a new event (events are immutable)
@@ -19,12 +19,12 @@ type Repository interface {
 	GetByEncounter(ctx context.Context, input *GetByEncounterInput) (*GetByEncounterOutput, error)
 }
 
-// AppendInput contains parameters for appending a combat event
+// AppendInput contains parameters for appending an encounter event
 type AppendInput struct {
 	Event *entities.EncounterEvent
 }
 
-// AppendOutput contains the result of appending a combat event
+// AppendOutput contains the result of appending an encounter event
 type AppendOutput struct {
 	EventID string // The event's ID (from the event itself)
 }
