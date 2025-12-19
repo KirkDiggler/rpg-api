@@ -2,6 +2,7 @@ package encounterlog
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -111,10 +112,7 @@ func (s *InMemoryRepositoryTestSuite) TestAppend_EmptyEventID() {
 func (s *InMemoryRepositoryTestSuite) TestAppend_MultipleEventsPreservesOrder() {
 	// Arrange & Act - Append 3 events
 	for i := 1; i <= 3; i++ {
-		event := s.createEvent(
-			"evt-"+string(rune('0'+i)),
-			"enc-1",
-		)
+		event := s.createEvent(fmt.Sprintf("evt-%d", i), "enc-1")
 		_, err := s.repo.Append(s.ctx, &AppendInput{Event: event})
 		s.Require().NoError(err)
 	}
@@ -170,10 +168,7 @@ func (s *InMemoryRepositoryTestSuite) TestGetByEncounter_NoEvents() {
 func (s *InMemoryRepositoryTestSuite) TestGetByEncounter_ReturnsAllEvents() {
 	// Arrange - Add 5 events
 	for i := 1; i <= 5; i++ {
-		event := s.createEvent(
-			"evt-"+string(rune('0'+i)),
-			"enc-1",
-		)
+		event := s.createEvent(fmt.Sprintf("evt-%d", i), "enc-1")
 		_, err := s.repo.Append(s.ctx, &AppendInput{Event: event})
 		s.Require().NoError(err)
 	}
@@ -191,10 +186,7 @@ func (s *InMemoryRepositoryTestSuite) TestGetByEncounter_ReturnsAllEvents() {
 func (s *InMemoryRepositoryTestSuite) TestGetByEncounter_WithLimit() {
 	// Arrange - Add 5 events
 	for i := 1; i <= 5; i++ {
-		event := s.createEvent(
-			"evt-"+string(rune('0'+i)),
-			"enc-1",
-		)
+		event := s.createEvent(fmt.Sprintf("evt-%d", i), "enc-1")
 		_, err := s.repo.Append(s.ctx, &AppendInput{Event: event})
 		s.Require().NoError(err)
 	}
@@ -215,10 +207,7 @@ func (s *InMemoryRepositoryTestSuite) TestGetByEncounter_WithLimit() {
 func (s *InMemoryRepositoryTestSuite) TestGetByEncounter_LimitGreaterThanEvents() {
 	// Arrange - Add 3 events
 	for i := 1; i <= 3; i++ {
-		event := s.createEvent(
-			"evt-"+string(rune('0'+i)),
-			"enc-1",
-		)
+		event := s.createEvent(fmt.Sprintf("evt-%d", i), "enc-1")
 		_, err := s.repo.Append(s.ctx, &AppendInput{Event: event})
 		s.Require().NoError(err)
 	}
@@ -238,10 +227,7 @@ func (s *InMemoryRepositoryTestSuite) TestGetByEncounter_LimitGreaterThanEvents(
 func (s *InMemoryRepositoryTestSuite) TestGetByEncounter_WithUpToEventID() {
 	// Arrange - Add 5 events
 	for i := 1; i <= 5; i++ {
-		event := s.createEvent(
-			"evt-"+string(rune('0'+i)),
-			"enc-1",
-		)
+		event := s.createEvent(fmt.Sprintf("evt-%d", i), "enc-1")
 		_, err := s.repo.Append(s.ctx, &AppendInput{Event: event})
 		s.Require().NoError(err)
 	}
@@ -265,10 +251,7 @@ func (s *InMemoryRepositoryTestSuite) TestGetByEncounter_WithUpToEventID() {
 func (s *InMemoryRepositoryTestSuite) TestGetByEncounter_UpToEventIDNotFound() {
 	// Arrange - Add 3 events
 	for i := 1; i <= 3; i++ {
-		event := s.createEvent(
-			"evt-"+string(rune('0'+i)),
-			"enc-1",
-		)
+		event := s.createEvent(fmt.Sprintf("evt-%d", i), "enc-1")
 		_, err := s.repo.Append(s.ctx, &AppendInput{Event: event})
 		s.Require().NoError(err)
 	}
@@ -287,13 +270,7 @@ func (s *InMemoryRepositoryTestSuite) TestGetByEncounter_UpToEventIDNotFound() {
 func (s *InMemoryRepositoryTestSuite) TestGetByEncounter_UpToEventIDWithLimit() {
 	// Arrange - Add 10 events
 	for i := 1; i <= 10; i++ {
-		id := "evt-"
-		if i < 10 {
-			id += "0" + string(rune('0'+i))
-		} else {
-			id += "10"
-		}
-		event := s.createEvent(id, "enc-1")
+		event := s.createEvent(fmt.Sprintf("evt-%02d", i), "enc-1")
 		_, err := s.repo.Append(s.ctx, &AppendInput{Event: event})
 		s.Require().NoError(err)
 	}
@@ -351,7 +328,7 @@ func (s *InMemoryRepositoryTestSuite) TestConcurrentAccess() {
 			defer wg.Done()
 			for i := 0; i < eventsPerGoroutine; i++ {
 				event := &entities.EncounterEvent{
-					ID:          "evt-" + string(rune('A'+goroutineID)) + "-" + string(rune('0'+i)),
+					ID:          fmt.Sprintf("evt-%c-%d", 'A'+goroutineID, i),
 					EncounterID: "enc-concurrent",
 					Type:        entities.EventTypeMovementCompleted,
 					Timestamp:   time.Now(),
