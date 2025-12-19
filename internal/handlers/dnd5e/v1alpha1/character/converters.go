@@ -2758,67 +2758,6 @@ func convertSpellToProtoEnum(spell spells.Spell) dnd5ev1alpha1.Spell {
 	}
 }
 
-// getFeatureDisplayName returns a human-readable display name for a feature ID
-func getFeatureDisplayName(featureID string) string {
-	displayNames := map[string]string{
-		"rage":                 "Rage",
-		"second_wind":          "Second Wind",
-		"action_surge":         "Action Surge",
-		"fighting_style":       "Fighting Style",
-		"unarmored_defense":    "Unarmored Defense",
-		"reckless_attack":      "Reckless Attack",
-		"danger_sense":         "Danger Sense",
-		"extra_attack":         "Extra Attack",
-		"fast_movement":        "Fast Movement",
-		"feral_instinct":       "Feral Instinct",
-		"brutal_critical":      "Brutal Critical",
-		"relentless_rage":      "Relentless Rage",
-		"persistent_rage":      "Persistent Rage",
-		"indomitable_might":    "Indomitable Might",
-		"primal_champion":      "Primal Champion",
-		"spellcasting":         "Spellcasting",
-		"divine_sense":         "Divine Sense",
-		"lay_on_hands":         "Lay on Hands",
-		"divine_smite":         "Divine Smite",
-		"channel_divinity":     "Channel Divinity",
-		"sneak_attack":         "Sneak Attack",
-		"cunning_action":       "Cunning Action",
-		"uncanny_dodge":        "Uncanny Dodge",
-		"evasion":              "Evasion",
-		"wild_shape":           "Wild Shape",
-		"ki":                   "Ki",
-		"martial_arts":         "Martial Arts",
-		"flurry_of_blows":      "Flurry of Blows",
-		"patient_defense":      "Patient Defense",
-		"step_of_the_wind":     "Step of the Wind",
-		"arcane_recovery":      "Arcane Recovery",
-		"sorcery_points":       "Sorcery Points",
-		"metamagic":            "Metamagic",
-		"bardic_inspiration":   "Bardic Inspiration",
-		"song_of_rest":         "Song of Rest",
-		"eldritch_invocations": "Eldritch Invocations",
-		"pact_magic":           "Pact Magic",
-		"favored_enemy":        "Favored Enemy",
-		"natural_explorer":     "Natural Explorer",
-		"primeval_awareness":   "Primeval Awareness",
-		"hunters_mark":         "Hunter's Mark",
-		"destroy_undead":       "Destroy Undead",
-		"turn_undead":          "Turn Undead",
-		"divine_intervention":  "Divine Intervention",
-		"superiority_dice":     "Superiority Dice",
-		"combat_superiority":   "Combat Superiority",
-		"improved_critical":    "Improved Critical",
-		"remarkable_athlete":   "Remarkable Athlete",
-		"font_of_magic":        "Font of Magic",
-		"eldritch_blast":       "Eldritch Blast",
-		"agonizing_blast":      "Agonizing Blast",
-	}
-	if name, ok := displayNames[featureID]; ok {
-		return name
-	}
-	return featureID // Fall back to ID
-}
-
 // getFeatureActionType returns the action economy cost for a feature by querying the toolkit.
 // Returns ACTION_TYPE_UNSPECIFIED for features not implemented in the toolkit.
 func getFeatureActionType(featureID string) dnd5ev1alpha1.ActionType {

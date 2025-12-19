@@ -12,6 +12,7 @@ import (
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character/choices"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/classes"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/refs"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
 )
 
@@ -328,14 +329,14 @@ func (s *ConvertersTestSuite) TestConvertCharacterDataToProto_FeatureWithToolkit
 	assert.NotEmpty(s.T(), result.Features[0].FeatureData)
 }
 
-func (s *ConvertersTestSuite) TestGetFeatureDisplayName() {
-	// Test known feature names
-	assert.Equal(s.T(), "Rage", getFeatureDisplayName("rage"))
-	assert.Equal(s.T(), "Second Wind", getFeatureDisplayName("second_wind"))
-	assert.Equal(s.T(), "Action Surge", getFeatureDisplayName("action_surge"))
+func (s *ConvertersTestSuite) TestFeatureIDToDisplayName() {
+	// Test known feature names (using refs)
+	assert.Equal(s.T(), "Rage", featureIDToDisplayName(refs.Features.Rage().ID))
+	assert.Equal(s.T(), "Second Wind", featureIDToDisplayName(refs.Features.SecondWind().ID))
+	assert.Equal(s.T(), "Action Surge", featureIDToDisplayName(refs.Features.ActionSurge().ID))
 
-	// Test unknown feature - should return the ID
-	assert.Equal(s.T(), "unknown_feature", getFeatureDisplayName("unknown_feature"))
+	// Test unknown feature - should convert snake_case to Title Case
+	assert.Equal(s.T(), "Unknown Feature", featureIDToDisplayName("unknown_feature"))
 }
 
 func (s *ConvertersTestSuite) TestConvertCharacterDataToProto_WithConditions() {
