@@ -341,7 +341,7 @@ func (o *Orchestrator) ResolveAttack(ctx context.Context, input *ResolveAttackIn
 		Room:       roomData,
 	})
 
-	// 14. Check for dungeon victory if monster died
+	// 15. Check for dungeon victory if monster died
 	if newHP <= 0 {
 		o.checkAndHandleVictory(ctx, input.EncounterID, encOutput.Data, input.TargetID)
 	}

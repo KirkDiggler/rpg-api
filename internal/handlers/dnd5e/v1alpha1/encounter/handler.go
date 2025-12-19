@@ -742,9 +742,8 @@ func (h *Handler) convertToProtoEvent(event *entities.EncounterEvent) (*dnd5ev1a
 		if event.TurnEnded == nil {
 			return nil, fmt.Errorf("missing TurnEnded data for TurnEndedEvent")
 		}
-		// Use default grid type (hex) and orientation (pointy-top) for event conversion
-		gridType := spatial.GridTypeHex
-		hexOrientation := spatial.HexOrientationPointyTop
+		// Extract grid info from room data for coordinate conversion
+		gridType, hexOrientation := extractGridInfo(event.TurnEnded.Room)
 		protoEvent.Event = &dnd5ev1alpha1.EncounterEvent_TurnEnded{
 			TurnEnded: &dnd5ev1alpha1.TurnEndedEvent{
 				TurnChange: &dnd5ev1alpha1.TurnChangeEvent{
