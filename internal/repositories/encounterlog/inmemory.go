@@ -6,22 +6,39 @@ import (
 
 	"github.com/KirkDiggler/rpg-api/internal/apierr"
 	"github.com/KirkDiggler/rpg-api/internal/entities"
+	"github.com/KirkDiggler/rpg-api/internal/pkg/idgen"
 )
 
 // InMemoryRepository stores encounter events in memory
 type InMemoryRepository struct {
 	mu     sync.RWMutex
 	events map[string][]*entities.EncounterEvent // encounterID -> events (ordered by insertion)
+	idGen  idgen.Generator
+}
+
+// InMemoryConfig holds configuration for the in-memory repository
+type InMemoryConfig struct {
+	IDGenerator idgen.Generator
 }
 
 // NewInMemory creates a new in-memory repository
-func NewInMemory() *InMemoryRepository {
+func NewInMemory(cfg *InMemoryConfig) *InMemoryRepository {
+	var generator idgen.Generator
+	if cfg != nil && cfg.IDGenerator != nil {
+		generator = cfg.IDGenerator
+	} else {
+		// Default to ULID generator for event IDs
+		generator = idgen.NewULID("")
+	}
+
 	return &InMemoryRepository{
 		events: make(map[string][]*entities.EncounterEvent),
+		idGen:  generator,
 	}
 }
 
 // Append stores a new event (events are immutable)
+// The repository generates the event ID using ULIDs for natural ordering
 func (r *InMemoryRepository) Append(_ context.Context, input *AppendInput) (*AppendOutput, error) {
 	if input == nil || input.Event == nil {
 		return nil, apierr.InvalidArgument("event is required")
@@ -29,16 +46,17 @@ func (r *InMemoryRepository) Append(_ context.Context, input *AppendInput) (*App
 	if input.Event.EncounterID == "" {
 		return nil, apierr.InvalidArgument("encounter ID is required")
 	}
-	if input.Event.ID == "" {
-		return nil, apierr.InvalidArgument("event ID is required")
-	}
 
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
+	// Generate the event ID - repository is source of truth for identity
+	eventID := r.idGen.Generate()
+	input.Event.ID = eventID
+
 	r.events[input.Event.EncounterID] = append(r.events[input.Event.EncounterID], input.Event)
 
-	return &AppendOutput{EventID: input.Event.ID}, nil
+	return &AppendOutput{EventID: eventID}, nil
 }
 
 // GetByEncounter retrieves events for an encounter
