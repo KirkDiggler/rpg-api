@@ -32,7 +32,7 @@ type AppendOutput struct {
 // GetByEncounterInput contains parameters for retrieving events by encounter
 type GetByEncounterInput struct {
 	EncounterID string
-	UpToEventID string // Get events up to this ID (for late join)
+	UpToEventID string // Get events up to and including this ID (for late join; empty means from the beginning)
 	Limit       int    // Max events to return (0 = no limit)
 }
 
