@@ -1411,21 +1411,11 @@ func (o *Orchestrator) EndTurn(ctx context.Context, input *EndTurnInput) (*EndTu
 
 	// Publish MonsterTurnCompleted events for each monster turn
 	for _, mt := range monsterTurns {
-		// Convert actions to interface{} slice
-		actions := make([]interface{}, len(mt.Actions))
-		for i, a := range mt.Actions {
-			actions[i] = a
-		}
-		// Convert movement to interface{} slice
-		movement := make([]interface{}, len(mt.Movement))
-		for i, m := range mt.Movement {
-			movement[i] = m
-		}
 		o.publishEvent(ctx, input.EncounterID, entities.EventTypeMonsterTurnCompleted, &entities.MonsterTurnCompletedEvent{
 			MonsterID:   mt.MonsterID,
 			MonsterName: mt.MonsterName,
-			Actions:     actions,
-			Movement:    movement,
+			Actions:     mt.Actions,
+			Movement:    mt.Movement,
 			Room:        turnEndedRoomData,
 		})
 	}

@@ -162,13 +162,22 @@ type TurnEndedEvent struct {
 	Room             *spatial.RoomData `json:"room,omitempty"` // Updated room with entity positions
 }
 
+// MonsterExecutedAction represents a single action taken by a monster during its turn
+type MonsterExecutedAction struct {
+	ActionID   string      `json:"action_id"`   // ID of the action used
+	ActionType string      `json:"action_type"` // Type of action (melee_attack, heal, etc.)
+	TargetID   string      `json:"target_id"`   // ID of the target (if applicable)
+	Success    bool        `json:"success"`     // Whether the action succeeded
+	Details    interface{} `json:"details"`     // Action-specific details (AttackResult, heal amount, etc.)
+}
+
 // MonsterTurnCompletedEvent is emitted when a monster completes its turn
 type MonsterTurnCompletedEvent struct {
-	MonsterID   string            `json:"monster_id"`
-	MonsterName string            `json:"monster_name"`
-	Actions     []interface{}     `json:"actions"`
-	Movement    []interface{}     `json:"movement"`
-	Room        *spatial.RoomData `json:"room,omitempty"` // Updated room with entity positions
+	MonsterID   string                  `json:"monster_id"`
+	MonsterName string                  `json:"monster_name"`
+	Actions     []MonsterExecutedAction `json:"actions"`
+	Movement    []Position              `json:"movement"`
+	Room        *spatial.RoomData       `json:"room,omitempty"` // Updated room with entity positions
 }
 
 // DungeonVictoryEvent is emitted when the boss is defeated

@@ -266,20 +266,10 @@ type ActivateFeatureOutput struct {
 // MonsterTurnResult represents the outcome of a monster's turn
 // This mirrors toolkit monster.TurnResult for handler layer use
 type MonsterTurnResult struct {
-	MonsterID   string                  // ID of the monster that took the turn
-	MonsterName string                  // Name for self-contained streaming
-	Actions     []MonsterExecutedAction // All actions taken this turn
-	Movement    []Position              // Path traversed during movement
-}
-
-// MonsterExecutedAction represents a single action taken by a monster
-// This mirrors toolkit monster.ExecutedAction for handler layer use
-type MonsterExecutedAction struct {
-	ActionID   string      // ID of the action used
-	ActionType string      // Type of action (melee_attack, heal, etc.) - matches monster.ActionType
-	TargetID   string      // ID of the target (if applicable)
-	Success    bool        // Whether the action succeeded
-	Details    interface{} // Action-specific details (AttackResult, heal amount, etc.)
+	MonsterID   string                           // ID of the monster that took the turn
+	MonsterName string                           // Name for self-contained streaming
+	Actions     []entities.MonsterExecutedAction // All actions taken this turn
+	Movement    []entities.Position              // Path traversed during movement
 }
 
 // Multiplayer lobby types

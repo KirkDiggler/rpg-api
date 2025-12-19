@@ -114,7 +114,7 @@ func (h *Handler) DungeonStart(
 		EncounterId:  output.EncounterID,
 		Room:         convertRoomDataToProto(output.Room),
 		CombatState:  convertCombatStateToProto(output.CombatState, gridType, hexOrientation),
-		MonsterTurns: convertMonsterTurnsToProto(output.MonsterTurns, gridType, hexOrientation),
+		MonsterTurns: convertMonsterTurnsToProto(output.MonsterTurns),
 	}, nil
 }
 
@@ -152,7 +152,7 @@ func (h *Handler) OpenDoor(
 		Success:      true,
 		Room:         convertOpenDoorRoomToProto(output.RevealedRoom),
 		CombatState:  convertCombatStateToProto(output.CombatState, gridType, hexOrientation),
-		MonsterTurns: convertMonsterTurnsToProto(output.MonsterTurns, gridType, hexOrientation),
+		MonsterTurns: convertMonsterTurnsToProto(output.MonsterTurns),
 		Doors:        convertDoorInfoSliceToProto(output.NewDoors),
 	}, nil
 }
@@ -328,7 +328,7 @@ func (h *Handler) EndTurn(
 
 	// 6. Add monster turns if any were executed
 	if len(output.MonsterTurns) > 0 {
-		response.MonsterTurns = convertMonsterTurnsToProto(output.MonsterTurns, gridType, hexOrientation)
+		response.MonsterTurns = convertMonsterTurnsToProto(output.MonsterTurns)
 	}
 
 	// 7. Add encounter result if combat ended
@@ -764,9 +764,10 @@ func (h *Handler) convertToProtoEvent(event *entities.EncounterEvent) (*dnd5ev1a
 		protoEvent.Event = &dnd5ev1alpha1.EncounterEvent_MonsterTurnCompleted{
 			MonsterTurnCompleted: &dnd5ev1alpha1.MonsterTurnCompletedEvent{
 				MonsterTurn: &dnd5ev1alpha1.MonsterTurnResult{
-					MonsterId:   event.MonsterTurnCompleted.MonsterID,
-					MonsterName: event.MonsterTurnCompleted.MonsterName,
-					// TODO: Convert Actions and Movement
+					MonsterId:    event.MonsterTurnCompleted.MonsterID,
+					MonsterName:  event.MonsterTurnCompleted.MonsterName,
+					Actions:      convertEntityActionsToProto(event.MonsterTurnCompleted.Actions),
+					MovementPath: convertEntityPositionsToProto(event.MonsterTurnCompleted.Movement),
 				},
 				UpdatedRoom: convertRoomDataToProto(event.MonsterTurnCompleted.Room),
 			},

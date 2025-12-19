@@ -3,6 +3,7 @@ package encounter
 import (
 	apiv1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/api/v1alpha1"
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
+	"github.com/KirkDiggler/rpg-api/internal/entities"
 	characterhandler "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v1alpha1/character"
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/encounter"
 	"github.com/KirkDiggler/rpg-toolkit/core"
@@ -709,29 +710,17 @@ func featureRefToProto(ref *core.Ref) dnd5ev1alpha1.FeatureId {
 // Fighting styles are now at refs.Conditions.FightingStyle*().
 
 // convertMonsterTurnResultToProto converts orchestrator's MonsterTurnResult to proto
-// For hex grids, movement positions are converted to cube coordinates
-func convertMonsterTurnResultToProto(
-	result *encounter.MonsterTurnResult,
-	gridType string,
-	hexOrientation spatial.HexOrientation,
-) *dnd5ev1alpha1.MonsterTurnResult {
+// Positions are already in cube coordinates (entities.Position) so no grid conversion needed
+func convertMonsterTurnResultToProto(result *encounter.MonsterTurnResult) *dnd5ev1alpha1.MonsterTurnResult {
 	if result == nil {
 		return nil
 	}
 
-	// Convert actions
-	actions := make([]*dnd5ev1alpha1.MonsterExecutedAction, len(result.Actions))
-	for i, action := range result.Actions {
-		actions[i] = convertMonsterExecutedActionToProto(&action)
-	}
+	// Convert actions using entity converter (MonsterTurnResult uses entities.MonsterExecutedAction)
+	actions := convertEntityActionsToProto(result.Actions)
 
-	// Convert movement path using cube coordinates for hex grids
-	movementPath := make([]*apiv1alpha1.Position, len(result.Movement))
-	for i, pos := range result.Movement {
-		// Convert encounter.Position to spatial.Position for cube conversion
-		spatialPos := spatial.Position{X: pos.X, Y: pos.Y}
-		movementPath[i] = convertPositionToProto(spatialPos, gridType, hexOrientation)
-	}
+	// Convert movement path - positions are already cube coordinates (entities.Position)
+	movementPath := convertEntityPositionsToProto(result.Movement)
 
 	return &dnd5ev1alpha1.MonsterTurnResult{
 		MonsterId:    result.MonsterID,
@@ -742,26 +731,44 @@ func convertMonsterTurnResultToProto(
 }
 
 // convertMonsterTurnsToProto converts a slice of MonsterTurnResult to proto
-// For hex grids, movement positions are converted to cube coordinates
-func convertMonsterTurnsToProto(
-	results []*encounter.MonsterTurnResult,
-	gridType string,
-	hexOrientation spatial.HexOrientation,
-) []*dnd5ev1alpha1.MonsterTurnResult {
+// Positions are already in cube coordinates (entities.Position) so no grid conversion needed
+func convertMonsterTurnsToProto(results []*encounter.MonsterTurnResult) []*dnd5ev1alpha1.MonsterTurnResult {
 	if results == nil {
 		return nil
 	}
 
 	protoResults := make([]*dnd5ev1alpha1.MonsterTurnResult, len(results))
 	for i, result := range results {
-		protoResults[i] = convertMonsterTurnResultToProto(result, gridType, hexOrientation)
+		protoResults[i] = convertMonsterTurnResultToProto(result)
 	}
 
 	return protoResults
 }
 
-// convertMonsterExecutedActionToProto converts orchestrator's MonsterExecutedAction to proto
-func convertMonsterExecutedActionToProto(action *encounter.MonsterExecutedAction) *dnd5ev1alpha1.MonsterExecutedAction {
+// convertMonsterActionTypeToProto converts toolkit monster.ActionType to proto enum
+func convertMonsterActionTypeToProto(actionType string) dnd5ev1alpha1.MonsterActionType {
+	switch monster.ActionType(actionType) {
+	case monster.TypeMeleeAttack:
+		return dnd5ev1alpha1.MonsterActionType_MONSTER_ACTION_TYPE_MELEE_ATTACK
+	case monster.TypeRangedAttack:
+		return dnd5ev1alpha1.MonsterActionType_MONSTER_ACTION_TYPE_RANGED_ATTACK
+	case monster.TypeSpell:
+		return dnd5ev1alpha1.MonsterActionType_MONSTER_ACTION_TYPE_SPELL
+	case monster.TypeHeal:
+		return dnd5ev1alpha1.MonsterActionType_MONSTER_ACTION_TYPE_HEAL
+	case monster.TypeMovement:
+		return dnd5ev1alpha1.MonsterActionType_MONSTER_ACTION_TYPE_MOVEMENT
+	case monster.TypeStealth:
+		return dnd5ev1alpha1.MonsterActionType_MONSTER_ACTION_TYPE_STEALTH
+	case monster.TypeDefend:
+		return dnd5ev1alpha1.MonsterActionType_MONSTER_ACTION_TYPE_DEFEND
+	default:
+		return dnd5ev1alpha1.MonsterActionType_MONSTER_ACTION_TYPE_UNSPECIFIED
+	}
+}
+
+// convertEntityMonsterExecutedActionToProto converts entities.MonsterExecutedAction to proto
+func convertEntityMonsterExecutedActionToProto(action *entities.MonsterExecutedAction) *dnd5ev1alpha1.MonsterExecutedAction {
 	if action == nil {
 		return nil
 	}
@@ -793,26 +800,37 @@ func convertMonsterExecutedActionToProto(action *encounter.MonsterExecutedAction
 	return protoAction
 }
 
-// convertMonsterActionTypeToProto converts toolkit monster.ActionType to proto enum
-func convertMonsterActionTypeToProto(actionType string) dnd5ev1alpha1.MonsterActionType {
-	switch monster.ActionType(actionType) {
-	case monster.TypeMeleeAttack:
-		return dnd5ev1alpha1.MonsterActionType_MONSTER_ACTION_TYPE_MELEE_ATTACK
-	case monster.TypeRangedAttack:
-		return dnd5ev1alpha1.MonsterActionType_MONSTER_ACTION_TYPE_RANGED_ATTACK
-	case monster.TypeSpell:
-		return dnd5ev1alpha1.MonsterActionType_MONSTER_ACTION_TYPE_SPELL
-	case monster.TypeHeal:
-		return dnd5ev1alpha1.MonsterActionType_MONSTER_ACTION_TYPE_HEAL
-	case monster.TypeMovement:
-		return dnd5ev1alpha1.MonsterActionType_MONSTER_ACTION_TYPE_MOVEMENT
-	case monster.TypeStealth:
-		return dnd5ev1alpha1.MonsterActionType_MONSTER_ACTION_TYPE_STEALTH
-	case monster.TypeDefend:
-		return dnd5ev1alpha1.MonsterActionType_MONSTER_ACTION_TYPE_DEFEND
-	default:
-		return dnd5ev1alpha1.MonsterActionType_MONSTER_ACTION_TYPE_UNSPECIFIED
+// convertEntityActionsToProto converts []entities.MonsterExecutedAction to proto
+func convertEntityActionsToProto(actions []entities.MonsterExecutedAction) []*dnd5ev1alpha1.MonsterExecutedAction {
+	if actions == nil {
+		return nil
 	}
+
+	protoActions := make([]*dnd5ev1alpha1.MonsterExecutedAction, len(actions))
+	for i := range actions {
+		protoActions[i] = convertEntityMonsterExecutedActionToProto(&actions[i])
+	}
+
+	return protoActions
+}
+
+// convertEntityPositionsToProto converts []entities.Position to proto Position slice
+// Positions are already in cube coordinates, so they pass through directly
+func convertEntityPositionsToProto(positions []entities.Position) []*apiv1alpha1.Position {
+	if positions == nil {
+		return nil
+	}
+
+	protoPositions := make([]*apiv1alpha1.Position, len(positions))
+	for i, pos := range positions {
+		protoPositions[i] = &apiv1alpha1.Position{
+			X: pos.X,
+			Y: pos.Y,
+			Z: pos.Z,
+		}
+	}
+
+	return protoPositions
 }
 
 // convertEncounterResultToProto converts an EncounterResult to proto

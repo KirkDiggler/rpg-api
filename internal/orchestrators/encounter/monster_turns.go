@@ -12,6 +12,7 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/weapons"
 	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
 
+	"github.com/KirkDiggler/rpg-api/internal/entities"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	encounterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/encounters"
 )
@@ -151,9 +152,9 @@ func (o *Orchestrator) executeSingleMonsterTurn(
 	// 8. Process executed actions and resolve attacks
 	// The toolkit publishes AttackEvent but doesn't populate ExecutedAction.Details
 	// We need to resolve attacks ourselves based on action type
-	actions := make([]MonsterExecutedAction, len(turnResult.Actions))
+	actions := make([]entities.MonsterExecutedAction, len(turnResult.Actions))
 	for i, action := range turnResult.Actions {
-		actions[i] = MonsterExecutedAction{
+		actions[i] = entities.MonsterExecutedAction{
 			ActionID:   action.ActionID,
 			ActionType: string(action.ActionType),
 			TargetID:   action.TargetID,
@@ -185,9 +186,9 @@ func (o *Orchestrator) executeSingleMonsterTurn(
 	}
 
 	// 9. Convert movement path (cube coordinates) to Position for result
-	movement := make([]Position, len(turnResult.Movement))
+	movement := make([]entities.Position, len(turnResult.Movement))
 	for i, pos := range turnResult.Movement {
-		movement[i] = Position{
+		movement[i] = entities.Position{
 			X: float64(pos.X),
 			Y: float64(pos.Y),
 			Z: float64(pos.Z),
