@@ -65,7 +65,7 @@ func (p *processor) Process(ctx context.Context, input *ProcessInput) (*ProcessO
 	}
 
 	// 1. Persist to encounter log (source of truth)
-	_, err := p.encounterLogRepo.Append(ctx, &encounterlog.AppendInput{
+	appendOutput, err := p.encounterLogRepo.Append(ctx, &encounterlog.AppendInput{
 		Event: input.Event,
 	})
 	if err != nil {
@@ -80,5 +80,6 @@ func (p *processor) Process(ctx context.Context, input *ProcessInput) (*ProcessO
 		Event:       input.Event,
 	})
 
-	return &ProcessOutput{EventID: input.Event.ID}, nil
+	// Use the EventID from the repository response - repo is source of truth
+	return &ProcessOutput{EventID: appendOutput.EventID}, nil
 }
