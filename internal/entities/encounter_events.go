@@ -135,11 +135,12 @@ type MovementCompletedEvent struct {
 
 // AttackResolvedEvent is emitted when an attack is resolved
 type AttackResolvedEvent struct {
-	AttackerID string      `json:"attacker_id"`
-	TargetID   string      `json:"target_id"`
-	Result     interface{} `json:"result"`
-	TargetHP   int         `json:"target_hp"`   // HP after attack
-	TargetDead bool        `json:"target_dead"` // Whether target was killed
+	AttackerID string            `json:"attacker_id"`
+	TargetID   string            `json:"target_id"`
+	Result     interface{}       `json:"result"`
+	TargetHP   int               `json:"target_hp"`      // HP after attack
+	TargetDead bool              `json:"target_dead"`    // Whether target was killed
+	Room       *spatial.RoomData `json:"room,omitempty"` // Updated room with entity positions
 }
 
 // FeatureActivatedEvent is emitted when a combat feature is activated
@@ -153,11 +154,12 @@ type FeatureActivatedEvent struct {
 
 // TurnEndedEvent is emitted when a turn ends
 type TurnEndedEvent struct {
-	PreviousEntityID string       `json:"previous_entity_id"`
-	NextEntityID     string       `json:"next_entity_id"`
-	Round            int          `json:"round"`
-	NewRound         bool         `json:"new_round"`
-	CombatState      *CombatState `json:"combat_state"` // Full updated combat state
+	PreviousEntityID string            `json:"previous_entity_id"`
+	NextEntityID     string            `json:"next_entity_id"`
+	Round            int               `json:"round"`
+	NewRound         bool              `json:"new_round"`
+	CombatState      *CombatState      `json:"combat_state"`   // Full updated combat state
+	Room             *spatial.RoomData `json:"room,omitempty"` // Updated room with entity positions
 }
 
 // MonsterTurnCompletedEvent is emitted when a monster completes its turn

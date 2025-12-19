@@ -323,13 +323,22 @@ func (o *Orchestrator) ResolveAttack(ctx context.Context, input *ResolveAttackIn
 		attackResult.Breakdown = convertToolkitBreakdown(result.Breakdown)
 	}
 
-	// 13. Publish AttackResolved event
+	// 13. Get room data for the event (if available)
+	var roomData *spatial.RoomData
+	if encOutput.Data.RoomData != nil {
+		if rd, ok := encOutput.Data.RoomData.(*spatial.RoomData); ok {
+			roomData = rd
+		}
+	}
+
+	// 14. Publish AttackResolved event
 	o.publishEvent(ctx, input.EncounterID, entities.EventTypeAttackResolved, &entities.AttackResolvedEvent{
 		AttackerID: input.AttackerID,
 		TargetID:   input.TargetID,
 		Result:     attackResult,
 		TargetHP:   newHP,
 		TargetDead: newHP <= 0,
+		Room:       roomData,
 	})
 
 	// 14. Check for dungeon victory if monster died
@@ -1381,7 +1390,15 @@ func (o *Orchestrator) EndTurn(ctx context.Context, input *EndTurnInput) (*EndTu
 		CombatEnded:       combatEnded,
 	}
 
-	// 11. Publish events
+	// 11. Get room data for the event (if available)
+	var turnEndedRoomData *spatial.RoomData
+	if encOutput.Data.RoomData != nil {
+		if rd, ok := encOutput.Data.RoomData.(*spatial.RoomData); ok {
+			turnEndedRoomData = rd
+		}
+	}
+
+	// 12. Publish events
 	// Publish TurnEnded event
 	o.publishEvent(ctx, input.EncounterID, entities.EventTypeTurnEnded, &entities.TurnEndedEvent{
 		PreviousEntityID: previousEntityID,
@@ -1389,6 +1406,7 @@ func (o *Orchestrator) EndTurn(ctx context.Context, input *EndTurnInput) (*EndTu
 		Round:            initiativeData.Round,
 		NewRound:         newRound,
 		CombatState:      combatState,
+		Room:             turnEndedRoomData,
 	})
 
 	// Publish MonsterTurnCompleted events for each monster turn

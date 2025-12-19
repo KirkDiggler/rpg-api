@@ -711,11 +711,17 @@ func (h *Handler) convertToProtoEvent(event *entities.EncounterEvent) (*dnd5ev1a
 		if event.AttackResolved == nil {
 			return nil, fmt.Errorf("missing AttackResolved data for AttackResolvedEvent")
 		}
+		// Convert AttackResult if available (type assert from interface{})
+		var attackResult *dnd5ev1alpha1.AttackResult
+		if result, ok := event.AttackResolved.Result.(*encounter.AttackResult); ok {
+			attackResult = convertAttackResultToProto(result)
+		}
 		protoEvent.Event = &dnd5ev1alpha1.EncounterEvent_AttackResolved{
 			AttackResolved: &dnd5ev1alpha1.AttackResolvedEvent{
-				AttackerId: event.AttackResolved.AttackerID,
-				TargetId:   event.AttackResolved.TargetID,
-				// TODO: Convert full AttackResult
+				AttackerId:  event.AttackResolved.AttackerID,
+				TargetId:    event.AttackResolved.TargetID,
+				Result:      attackResult,
+				UpdatedRoom: convertRoomDataToProto(event.AttackResolved.Room),
 			},
 		}
 
@@ -736,6 +742,9 @@ func (h *Handler) convertToProtoEvent(event *entities.EncounterEvent) (*dnd5ev1a
 		if event.TurnEnded == nil {
 			return nil, fmt.Errorf("missing TurnEnded data for TurnEndedEvent")
 		}
+		// Use default grid type (hex) and orientation (pointy-top) for event conversion
+		gridType := spatial.GridTypeHex
+		hexOrientation := spatial.HexOrientationPointyTop
 		protoEvent.Event = &dnd5ev1alpha1.EncounterEvent_TurnEnded{
 			TurnEnded: &dnd5ev1alpha1.TurnEndedEvent{
 				TurnChange: &dnd5ev1alpha1.TurnChangeEvent{
@@ -744,7 +753,8 @@ func (h *Handler) convertToProtoEvent(event *entities.EncounterEvent) (*dnd5ev1a
 					Round:            int32(event.TurnEnded.Round),
 					NewRound:         event.TurnEnded.NewRound,
 				},
-				// TODO: Convert full CombatState
+				CombatState: convertCombatStateToProto(event.TurnEnded.CombatState, gridType, hexOrientation),
+				UpdatedRoom: convertRoomDataToProto(event.TurnEnded.Room),
 			},
 		}
 
