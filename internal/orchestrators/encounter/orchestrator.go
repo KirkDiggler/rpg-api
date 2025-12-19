@@ -1426,6 +1426,7 @@ func (o *Orchestrator) EndTurn(ctx context.Context, input *EndTurnInput) (*EndTu
 			MonsterName: mt.MonsterName,
 			Actions:     actions,
 			Movement:    movement,
+			Room:        turnEndedRoomData,
 		})
 	}
 

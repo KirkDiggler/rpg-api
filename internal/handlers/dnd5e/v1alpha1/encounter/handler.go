@@ -768,6 +768,7 @@ func (h *Handler) convertToProtoEvent(event *entities.EncounterEvent) (*dnd5ev1a
 					MonsterName: event.MonsterTurnCompleted.MonsterName,
 					// TODO: Convert Actions and Movement
 				},
+				UpdatedRoom: convertRoomDataToProto(event.MonsterTurnCompleted.Room),
 			},
 		}
 
