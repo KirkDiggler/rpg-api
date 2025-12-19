@@ -41,6 +41,7 @@ type Config struct {
 	DungeonGen       *dungeon.Generator          // Optional: for procedural dungeon generation
 	EventProcessor   eventprocessor.Processor    // Optional: for persisting and publishing events
 	EncounterLogRepo encounterlogrepo.Repository // Optional: for reading event history
+	Roller           dice.Roller                 // Optional: for dice rolls (defaults to random roller)
 	EncounterIDGen   idgen.Generator             // Optional: for generating encounter IDs (defaults to "enc-" prefix)
 	DungeonIDGen     idgen.Generator             // Optional: for generating dungeon IDs (defaults to "dng-" prefix)
 	ConnectionIDGen  idgen.Generator             // Optional: for generating connection IDs (defaults to "conn-" prefix)
@@ -93,13 +94,17 @@ func New(cfg *Config) (*Orchestrator, error) {
 	if connectionIDGen == nil {
 		connectionIDGen = idgen.NewPrefixed("conn-")
 	}
+	roller := cfg.Roller
+	if roller == nil {
+		roller = dice.NewRoller()
+	}
 
 	return &Orchestrator{
 		charRepo:         cfg.CharacterRepo,
 		encRepo:          cfg.EncounterRepo,
 		dungeonRepo:      cfg.DungeonRepo,
 		dungeonGen:       cfg.DungeonGen,
-		roller:           dice.NewRoller(),
+		roller:           roller,
 		eventProcessor:   cfg.EventProcessor,
 		encounterLogRepo: cfg.EncounterLogRepo,
 		encounterIDGen:   encounterIDGen,
