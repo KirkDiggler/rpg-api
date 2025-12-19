@@ -233,47 +233,46 @@ func (s *ConvertersTestSuite) TestFeatureRefToProto_Unknown() {
 // fightingStyleRefToProto Tests
 // =============================================================================
 
-func (s *ConvertersTestSuite) TestFightingStyleRefToProto_FastPath_Singleton() {
+// TestConditionRefToProto_FightingStyles tests that fighting style conditions
+// (merged from refs.FightingStyles in toolkit PR #485) are properly converted.
+func (s *ConvertersTestSuite) TestConditionRefToProto_FightingStyles_FastPath() {
 	tests := []struct {
 		name     string
 		ref      *core.Ref
 		expected dnd5ev1alpha1.ConditionId
 	}{
-		{"Dueling", refs.FightingStyles.Dueling(), dnd5ev1alpha1.ConditionId_CONDITION_ID_FIGHTING_STYLE_DUELING},
-		{"TwoWeaponFighting", refs.FightingStyles.TwoWeaponFighting(), dnd5ev1alpha1.ConditionId_CONDITION_ID_FIGHTING_STYLE_TWO_WEAPON_FIGHTING},
+		{"Dueling", refs.Conditions.FightingStyleDueling(), dnd5ev1alpha1.ConditionId_CONDITION_ID_FIGHTING_STYLE_DUELING},
+		{"TwoWeaponFighting", refs.Conditions.FightingStyleTwoWeaponFighting(), dnd5ev1alpha1.ConditionId_CONDITION_ID_FIGHTING_STYLE_TWO_WEAPON_FIGHTING},
+		{"GreatWeaponFighting", refs.Conditions.FightingStyleGreatWeaponFighting(), dnd5ev1alpha1.ConditionId_CONDITION_ID_FIGHTING_STYLE_GREAT_WEAPON_FIGHTING},
 	}
 
 	for _, tt := range tests {
 		s.Run(tt.name, func() {
-			result := fightingStyleRefToProto(tt.ref)
+			result := conditionRefToProto(tt.ref)
 			s.Equal(tt.expected, result)
 		})
 	}
 }
 
-func (s *ConvertersTestSuite) TestFightingStyleRefToProto_SlowPath_ManualRef() {
+func (s *ConvertersTestSuite) TestConditionRefToProto_FightingStyles_SlowPath() {
 	tests := []struct {
 		name     string
 		refID    string
 		expected dnd5ev1alpha1.ConditionId
 	}{
-		{"dueling", "dueling", dnd5ev1alpha1.ConditionId_CONDITION_ID_FIGHTING_STYLE_DUELING},
-		{"two_weapon_fighting", "two_weapon_fighting", dnd5ev1alpha1.ConditionId_CONDITION_ID_FIGHTING_STYLE_TWO_WEAPON_FIGHTING},
+		{"dueling", "fighting_style_dueling", dnd5ev1alpha1.ConditionId_CONDITION_ID_FIGHTING_STYLE_DUELING},
+		{"two_weapon_fighting", "fighting_style_two_weapon_fighting", dnd5ev1alpha1.ConditionId_CONDITION_ID_FIGHTING_STYLE_TWO_WEAPON_FIGHTING},
+		{"great_weapon_fighting", "fighting_style_great_weapon_fighting", dnd5ev1alpha1.ConditionId_CONDITION_ID_FIGHTING_STYLE_GREAT_WEAPON_FIGHTING},
 	}
 
 	for _, tt := range tests {
 		s.Run(tt.name, func() {
-			manualRef := &core.Ref{Module: refs.Module, Type: refs.TypeFightingStyles, ID: tt.refID}
-			result := fightingStyleRefToProto(manualRef)
+			// Fighting styles are now conditions (Type: "conditions")
+			manualRef := &core.Ref{Module: refs.Module, Type: refs.TypeConditions, ID: tt.refID}
+			result := conditionRefToProto(manualRef)
 			s.Equal(tt.expected, result)
 		})
 	}
-}
-
-func (s *ConvertersTestSuite) TestFightingStyleRefToProto_Unknown() {
-	unknownRef := &core.Ref{Module: refs.Module, Type: refs.TypeFightingStyles, ID: "homebrew_style"}
-	result := fightingStyleRefToProto(unknownRef)
-	s.Equal(dnd5ev1alpha1.ConditionId_CONDITION_ID_UNSPECIFIED, result)
 }
 
 // =============================================================================
@@ -325,14 +324,15 @@ func (s *ConvertersTestSuite) TestConvertCoreRefToProtoSourceRef_FeatureType() {
 	s.Equal(dnd5ev1alpha1.FeatureId_FEATURE_ID_BREATH_WEAPON, feature.Feature)
 }
 
-func (s *ConvertersTestSuite) TestConvertCoreRefToProtoSourceRef_FightingStyleType() {
-	ref := refs.FightingStyles.Dueling()
+func (s *ConvertersTestSuite) TestConvertCoreRefToProtoSourceRef_FightingStyleCondition() {
+	// Fighting styles are now conditions (PR #485 merged them into refs.Conditions)
+	ref := refs.Conditions.FightingStyleDueling()
 	result := convertCoreRefToProtoSourceRef(ref)
 
 	s.Require().NotNil(result)
-	// Fighting styles map to ConditionId
+	// Fighting styles map to ConditionId since they're conditions
 	condition, ok := result.Source.(*dnd5ev1alpha1.SourceRef_Condition)
-	s.Require().True(ok, "expected SourceRef_Condition for fighting style")
+	s.Require().True(ok, "expected SourceRef_Condition for fighting style condition")
 	s.Equal(dnd5ev1alpha1.ConditionId_CONDITION_ID_FIGHTING_STYLE_DUELING, condition.Condition)
 }
 

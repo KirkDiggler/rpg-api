@@ -418,13 +418,8 @@ func convertCoreRefToProtoSourceRef(ref *core.Ref) *dnd5ev1alpha1.SourceRef {
 				Feature: featureRefToProto(ref),
 			},
 		}
-	case refs.TypeFightingStyles:
-		// Fighting styles use ConditionId in the proto (they're condition-based modifiers)
-		return &dnd5ev1alpha1.SourceRef{
-			Source: &dnd5ev1alpha1.SourceRef_Condition{
-				Condition: fightingStyleRefToProto(ref),
-			},
-		}
+	// Note: refs.TypeFightingStyles was removed in toolkit PR #485
+	// Fighting styles are now conditions (refs.TypeConditions) and handled above
 	default:
 		// Unknown type - return nil to indicate no mapping available
 		return nil
@@ -639,6 +634,7 @@ func weaponRefToProto(ref *core.Ref) dnd5ev1alpha1.Weapon {
 
 // conditionRefToProto converts toolkit condition ref to proto ConditionId enum using pointer comparison.
 // Falls back to string comparison for unknown refs.
+// Also handles fighting style conditions (PR #485 merged them into refs.Conditions).
 func conditionRefToProto(ref *core.Ref) dnd5ev1alpha1.ConditionId {
 	// Fast path: pointer comparison with singleton refs
 	switch ref {
@@ -646,18 +642,34 @@ func conditionRefToProto(ref *core.Ref) dnd5ev1alpha1.ConditionId {
 		return dnd5ev1alpha1.ConditionId_CONDITION_ID_RAGING
 	case refs.Conditions.BrutalCritical():
 		return dnd5ev1alpha1.ConditionId_CONDITION_ID_BRUTAL_CRITICAL
+	case refs.Conditions.SneakAttack():
+		return dnd5ev1alpha1.ConditionId_CONDITION_ID_SNEAK_ATTACK
+	case refs.Conditions.FightingStyleDueling():
+		return dnd5ev1alpha1.ConditionId_CONDITION_ID_FIGHTING_STYLE_DUELING
+	case refs.Conditions.FightingStyleTwoWeaponFighting():
+		return dnd5ev1alpha1.ConditionId_CONDITION_ID_FIGHTING_STYLE_TWO_WEAPON_FIGHTING
+	case refs.Conditions.FightingStyleGreatWeaponFighting():
+		return dnd5ev1alpha1.ConditionId_CONDITION_ID_FIGHTING_STYLE_GREAT_WEAPON_FIGHTING
+	case refs.Features.DivineSmite():
+		return dnd5ev1alpha1.ConditionId_CONDITION_ID_DIVINE_SMITE
 	}
 
-	// Slow path: string comparison for unknown refs
+	// Slow path: string comparison for unknown refs (e.g., homebrew)
 	switch ref.ID {
-	case "raging":
+	case refs.Conditions.Raging().ID:
 		return dnd5ev1alpha1.ConditionId_CONDITION_ID_RAGING
-	case "brutal_critical":
+	case refs.Conditions.BrutalCritical().ID:
 		return dnd5ev1alpha1.ConditionId_CONDITION_ID_BRUTAL_CRITICAL
-	case "sneak_attack":
+	case refs.Conditions.SneakAttack().ID:
 		return dnd5ev1alpha1.ConditionId_CONDITION_ID_SNEAK_ATTACK
-	case "divine_smite":
+	case refs.Features.DivineSmite().ID:
 		return dnd5ev1alpha1.ConditionId_CONDITION_ID_DIVINE_SMITE
+	case refs.Conditions.FightingStyleDueling().ID:
+		return dnd5ev1alpha1.ConditionId_CONDITION_ID_FIGHTING_STYLE_DUELING
+	case refs.Conditions.FightingStyleTwoWeaponFighting().ID:
+		return dnd5ev1alpha1.ConditionId_CONDITION_ID_FIGHTING_STYLE_TWO_WEAPON_FIGHTING
+	case refs.Conditions.FightingStyleGreatWeaponFighting().ID:
+		return dnd5ev1alpha1.ConditionId_CONDITION_ID_FIGHTING_STYLE_GREAT_WEAPON_FIGHTING
 	default:
 		return dnd5ev1alpha1.ConditionId_CONDITION_ID_UNSPECIFIED
 	}
@@ -691,27 +703,10 @@ func featureRefToProto(ref *core.Ref) dnd5ev1alpha1.FeatureId {
 	}
 }
 
-// fightingStyleRefToProto converts toolkit fighting style ref to proto ConditionId enum using pointer comparison.
-// Falls back to string comparison for unknown refs.
-func fightingStyleRefToProto(ref *core.Ref) dnd5ev1alpha1.ConditionId {
-	// Fast path: pointer comparison with singleton refs
-	switch ref {
-	case refs.FightingStyles.Dueling():
-		return dnd5ev1alpha1.ConditionId_CONDITION_ID_FIGHTING_STYLE_DUELING
-	case refs.FightingStyles.TwoWeaponFighting():
-		return dnd5ev1alpha1.ConditionId_CONDITION_ID_FIGHTING_STYLE_TWO_WEAPON_FIGHTING
-	}
-
-	// Slow path: string comparison for unknown refs
-	switch ref.ID {
-	case "dueling":
-		return dnd5ev1alpha1.ConditionId_CONDITION_ID_FIGHTING_STYLE_DUELING
-	case "two_weapon_fighting":
-		return dnd5ev1alpha1.ConditionId_CONDITION_ID_FIGHTING_STYLE_TWO_WEAPON_FIGHTING
-	default:
-		return dnd5ev1alpha1.ConditionId_CONDITION_ID_UNSPECIFIED
-	}
-}
+// fightingStyleRefToProto is deprecated - fighting styles are now conditions.
+// Use conditionRefToProto instead. This function is kept for reference.
+// Note: Removed in toolkit PR #485 - refs.FightingStyles no longer exists.
+// Fighting styles are now at refs.Conditions.FightingStyle*().
 
 // convertMonsterTurnResultToProto converts orchestrator's MonsterTurnResult to proto
 // For hex grids, movement positions are converted to cube coordinates
