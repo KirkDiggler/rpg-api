@@ -12,6 +12,7 @@ import (
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character/choices"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/classes"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/refs"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
 )
 
@@ -221,14 +222,14 @@ func (s *ConvertersTestSuite) TestConvertChoiceToProto_PreservesOptionID() {
 }
 
 func (s *ConvertersTestSuite) TestConvertCharacterDataToProto_WithFeatures() {
-	// Create test data with features
+	// Create test data with features - using toolkit's ref string format
 	testData := &toolkitchar.Data{
 		ID:    "test-char",
 		Name:  "Ragnar",
 		Level: 5,
 		Features: []json.RawMessage{
 			json.RawMessage(`{
-				"ref": {"value": "rage"},
+				"ref": "dnd5e:features:rage",
 				"id": "rage-1",
 				"name": "Rage",
 				"level": 5,
@@ -246,11 +247,13 @@ func (s *ConvertersTestSuite) TestConvertCharacterDataToProto_WithFeatures() {
 	require.NotEmpty(s.T(), result.Features, "Features should be populated")
 	assert.Len(s.T(), result.Features, 1, "Should have 1 feature")
 
-	// Check feature details
+	// Check feature details - Id is now FeatureId enum (UNSPECIFIED since rage has no enum value yet)
 	rageFeature := result.Features[0]
-	assert.Equal(s.T(), "rage-1", rageFeature.Id)
+	assert.Equal(s.T(), dnd5ev1alpha1.FeatureId_FEATURE_ID_UNSPECIFIED, rageFeature.Id)
 	assert.Equal(s.T(), "Rage", rageFeature.Name)
 	assert.Equal(s.T(), "class", rageFeature.Source)
+	// Verify raw JSON is passed through
+	assert.NotEmpty(s.T(), rageFeature.FeatureData, "FeatureData should contain raw JSON")
 }
 
 func (s *ConvertersTestSuite) TestConvertCharacterDataToProto_EmptyFeatures() {
@@ -279,7 +282,7 @@ func (s *ConvertersTestSuite) TestConvertCharacterDataToProto_InvalidFeatureJSON
 		Features: []json.RawMessage{
 			json.RawMessage(`{invalid json`),
 			json.RawMessage(`{
-				"ref": {"value": "rage"},
+				"ref": "dnd5e:features:rage",
 				"id": "valid-rage",
 				"name": "Rage",
 				"level": 1
@@ -293,7 +296,8 @@ func (s *ConvertersTestSuite) TestConvertCharacterDataToProto_InvalidFeatureJSON
 	// Verify only valid feature is included
 	require.NotNil(s.T(), result, "Result should not be nil")
 	assert.Len(s.T(), result.Features, 1, "Should have 1 valid feature")
-	assert.Equal(s.T(), "valid-rage", result.Features[0].Id)
+	assert.Equal(s.T(), dnd5ev1alpha1.FeatureId_FEATURE_ID_UNSPECIFIED, result.Features[0].Id)
+	assert.Equal(s.T(), "Rage", result.Features[0].Name)
 }
 
 func (s *ConvertersTestSuite) TestConvertCharacterDataToProto_FeatureWithToolkitFormat() {
@@ -318,37 +322,37 @@ func (s *ConvertersTestSuite) TestConvertCharacterDataToProto_FeatureWithToolkit
 
 	require.NotNil(s.T(), result, "Result should not be nil")
 	require.Len(s.T(), result.Features, 1, "Should have 1 feature")
-	assert.Equal(s.T(), "rage", result.Features[0].Id)
+	// Id is now FeatureId enum - rage doesn't have an enum value yet so it's UNSPECIFIED
+	assert.Equal(s.T(), dnd5ev1alpha1.FeatureId_FEATURE_ID_UNSPECIFIED, result.Features[0].Id)
 	assert.Equal(s.T(), "Rage", result.Features[0].Name)
+	// Verify raw JSON is passed through for UI
+	assert.NotEmpty(s.T(), result.Features[0].FeatureData)
 }
 
-func (s *ConvertersTestSuite) TestGetFeatureDisplayName() {
-	// Test known feature names
-	assert.Equal(s.T(), "Rage", getFeatureDisplayName("rage"))
-	assert.Equal(s.T(), "Second Wind", getFeatureDisplayName("second_wind"))
-	assert.Equal(s.T(), "Action Surge", getFeatureDisplayName("action_surge"))
+func (s *ConvertersTestSuite) TestFeatureIDToDisplayName() {
+	// Test known feature names (using refs)
+	assert.Equal(s.T(), "Rage", featureIDToDisplayName(refs.Features.Rage().ID))
+	assert.Equal(s.T(), "Second Wind", featureIDToDisplayName(refs.Features.SecondWind().ID))
+	assert.Equal(s.T(), "Action Surge", featureIDToDisplayName(refs.Features.ActionSurge().ID))
 
-	// Test unknown feature - should return the ID
-	assert.Equal(s.T(), "unknown_feature", getFeatureDisplayName("unknown_feature"))
+	// Test unknown feature - should convert snake_case to Title Case
+	assert.Equal(s.T(), "Unknown Feature", featureIDToDisplayName("unknown_feature"))
 }
 
 func (s *ConvertersTestSuite) TestConvertCharacterDataToProto_WithConditions() {
-	// Create test data with conditions
+	// Create test data with conditions - using toolkit's ref string format
 	testData := &toolkitchar.Data{
 		ID:    "test-char",
 		Name:  "Ragnar",
 		Level: 5,
 		Conditions: []json.RawMessage{
 			json.RawMessage(`{
-				"id": "raging-1",
-				"type": "raging",
-				"name": "Raging",
-				"source": "rage",
+				"ref": "dnd5e:conditions:raging",
+				"source": "dnd5e:features:rage",
 				"duration": 10
 			}`),
 			json.RawMessage(`{
-				"id": "blessed-1",
-				"name": "Blessed",
+				"ref": "dnd5e:conditions:blessed",
 				"source": "bless_spell",
 				"duration": 6
 			}`),
@@ -365,12 +369,15 @@ func (s *ConvertersTestSuite) TestConvertCharacterDataToProto_WithConditions() {
 
 	// Check first condition details (Raging)
 	ragingCondition := result.ActiveConditions[0]
+	assert.Equal(s.T(), dnd5ev1alpha1.ConditionId_CONDITION_ID_RAGING, ragingCondition.Id)
 	assert.Equal(s.T(), "Raging", ragingCondition.Name)
-	assert.Equal(s.T(), "rage", ragingCondition.Source)
+	assert.Equal(s.T(), "dnd5e:features:rage", ragingCondition.Source)
 	assert.Equal(s.T(), int32(10), ragingCondition.Duration)
+	assert.NotEmpty(s.T(), ragingCondition.ConditionData, "ConditionData should contain raw JSON")
 
-	// Check second condition details (Blessed)
+	// Check second condition details (Blessed - no enum, should be UNSPECIFIED)
 	blessedCondition := result.ActiveConditions[1]
+	assert.Equal(s.T(), dnd5ev1alpha1.ConditionId_CONDITION_ID_UNSPECIFIED, blessedCondition.Id)
 	assert.Equal(s.T(), "Blessed", blessedCondition.Name)
 	assert.Equal(s.T(), "bless_spell", blessedCondition.Source)
 	assert.Equal(s.T(), int32(6), blessedCondition.Duration)
@@ -402,8 +409,7 @@ func (s *ConvertersTestSuite) TestConvertCharacterDataToProto_InvalidConditionJS
 		Conditions: []json.RawMessage{
 			json.RawMessage(`{invalid json`),
 			json.RawMessage(`{
-				"id": "valid-condition",
-				"name": "Poisoned",
+				"ref": "dnd5e:conditions:poisoned",
 				"source": "trap",
 				"duration": 3
 			}`),
@@ -420,22 +426,21 @@ func (s *ConvertersTestSuite) TestConvertCharacterDataToProto_InvalidConditionJS
 }
 
 func (s *ConvertersTestSuite) TestConvertCharacterDataToProto_ConditionNameFallback() {
-	// Create test data with condition missing name but having type
+	// Create test data with conditions - name is derived from ref ID
 	testData := &toolkitchar.Data{
 		ID:    "test-char",
 		Name:  "Rogue",
 		Level: 3,
 		Conditions: []json.RawMessage{
-			// Condition with type but no name - should fall back to type
+			// Condition with known ref - name should be derived
 			json.RawMessage(`{
-				"id": "poisoned-1",
-				"type": "poisoned",
-				"source": "trap",
+				"ref": "dnd5e:conditions:raging",
+				"source": "rage",
 				"duration": 5
 			}`),
-			// Condition with only id - should fall back to id
+			// Condition with unknown ref - should use toTitleCase fallback
 			json.RawMessage(`{
-				"id": "stunned",
+				"ref": "dnd5e:conditions:custom_effect",
 				"source": "spell",
 				"duration": 1
 			}`),
@@ -445,33 +450,32 @@ func (s *ConvertersTestSuite) TestConvertCharacterDataToProto_ConditionNameFallb
 	// Convert to proto
 	result := ConvertCharacterDataToProto(testData)
 
-	// Verify name fallback logic
+	// Verify name derivation from ref
 	require.NotNil(s.T(), result, "Result should not be nil")
 	require.Len(s.T(), result.ActiveConditions, 2, "Should have 2 conditions")
 
-	// First condition should use type as name fallback
-	assert.Equal(s.T(), "poisoned", result.ActiveConditions[0].Name, "Should use type as fallback name")
+	// First condition should use known display name
+	assert.Equal(s.T(), "Raging", result.ActiveConditions[0].Name, "Should derive display name from ref")
 
-	// Second condition should use id as name fallback
-	assert.Equal(s.T(), "stunned", result.ActiveConditions[1].Name, "Should use id as fallback name")
+	// Second condition should use title case fallback
+	assert.Equal(s.T(), "Custom Effect", result.ActiveConditions[1].Name, "Should use toTitleCase fallback")
 }
 
-func (s *ConvertersTestSuite) TestConvertCharacterDataToProto_ConditionWithNoIdentifier() {
-	// Create test data with condition having no name, type, or id
+func (s *ConvertersTestSuite) TestConvertCharacterDataToProto_ConditionWithNoRef() {
+	// Create test data with condition missing ref - should be skipped
 	testData := &toolkitchar.Data{
 		ID:    "test-char",
 		Name:  "Fighter",
 		Level: 2,
 		Conditions: []json.RawMessage{
-			// Condition with no identifiable name - should be skipped
+			// Condition with no ref - should be skipped
 			json.RawMessage(`{
 				"source": "unknown",
 				"duration": 2
 			}`),
-			// Valid condition - should be included
+			// Valid condition with ref - should be included
 			json.RawMessage(`{
-				"id": "frightened",
-				"name": "Frightened",
+				"ref": "dnd5e:conditions:frightened",
 				"source": "fear_spell",
 				"duration": 10
 			}`),
@@ -481,9 +485,9 @@ func (s *ConvertersTestSuite) TestConvertCharacterDataToProto_ConditionWithNoIde
 	// Convert to proto
 	result := ConvertCharacterDataToProto(testData)
 
-	// Verify condition with no identifier is skipped
+	// Verify condition with no ref is skipped
 	require.NotNil(s.T(), result, "Result should not be nil")
-	assert.Len(s.T(), result.ActiveConditions, 1, "Should skip condition with no identifier")
+	assert.Len(s.T(), result.ActiveConditions, 1, "Should skip condition with no ref")
 	assert.Equal(s.T(), "Frightened", result.ActiveConditions[0].Name)
 }
 
@@ -562,8 +566,8 @@ func (s *ConvertersTestSuite) TestConvertCharacterDataToProto_FeaturesWithAction
 		RaceID:       "human",
 		ClassID:      classes.Fighter,
 		Features: []json.RawMessage{
-			json.RawMessage(`{"id": "second_wind", "name": "Second Wind"}`),
-			json.RawMessage(`{"id": "action_surge", "name": "Action Surge"}`),
+			json.RawMessage(`{"ref": "dnd5e:features:second_wind", "id": "second_wind", "name": "Second Wind"}`),
+			json.RawMessage(`{"ref": "dnd5e:features:action_surge", "id": "action_surge", "name": "Action Surge"}`),
 		},
 	}
 
@@ -573,12 +577,14 @@ func (s *ConvertersTestSuite) TestConvertCharacterDataToProto_FeaturesWithAction
 	require.Len(s.T(), result.Features, 2, "Should have 2 features")
 
 	// Verify action types are populated
+	// Note: Since second_wind and action_surge don't have FeatureId enum values,
+	// they both return FEATURE_ID_UNSPECIFIED. We identify them by name instead.
 	var secondWind, actionSurge *dnd5ev1alpha1.CharacterFeature
 	for _, f := range result.Features {
-		switch f.Id {
-		case "second_wind":
+		switch f.Name {
+		case "Second Wind":
 			secondWind = f
-		case "action_surge":
+		case "Action Surge":
 			actionSurge = f
 		}
 	}

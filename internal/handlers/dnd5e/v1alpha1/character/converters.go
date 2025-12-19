@@ -1191,27 +1191,39 @@ func ConvertCharacterDataToProto(data *toolkitchar.Data) *dnd5ev1alpha1.Characte
 	if len(data.Features) > 0 {
 		for _, featureJSON := range data.Features {
 			var featureData struct {
-				ID   string `json:"id"`
-				Name string `json:"name"`
+				Ref  string `json:"ref"`  // Feature type ref "dnd5e:features:rage"
+				ID   string `json:"id"`   // Entity ID
+				Name string `json:"name"` // Display name
 			}
 			if err := json.Unmarshal(featureJSON, &featureData); err != nil {
 				continue
 			}
 
-			if featureData.ID == "" {
+			// Skip if no ref
+			if featureData.Ref == "" {
 				continue
 			}
 
+			// Extract feature type from ref (e.g., "dnd5e:features:rage" -> "rage")
+			featureType := extractIDFromRef(featureData.Ref)
+			if featureType == "" {
+				continue
+			}
+
+			// Map to enum
+			featureEnum := featureIDToEnum(featureType)
+
 			displayName := featureData.Name
 			if displayName == "" {
-				displayName = getFeatureDisplayName(featureData.ID)
+				displayName = featureIDToDisplayName(featureType)
 			}
 
 			char.Features = append(char.Features, &dnd5ev1alpha1.CharacterFeature{
-				Id:         featureData.ID,
-				Name:       displayName,
-				Source:     featureSourceClass,
-				ActionType: getFeatureActionType(featureData.ID),
+				Id:          featureEnum,
+				Name:        displayName,
+				Source:      featureSourceClass,
+				ActionType:  getFeatureActionType(featureType),
+				FeatureData: featureJSON, // Pass through raw JSON for UI display
 			})
 		}
 	}
@@ -1220,34 +1232,35 @@ func ConvertCharacterDataToProto(data *toolkitchar.Data) *dnd5ev1alpha1.Characte
 	if len(data.Conditions) > 0 {
 		for _, conditionJSON := range data.Conditions {
 			var conditionData struct {
-				ID       string `json:"id"`
-				Type     string `json:"type"`
-				Name     string `json:"name"`
-				Source   string `json:"source"`
+				Ref      string `json:"ref"`    // Toolkit stores ref as string "dnd5e:conditions:raging"
+				Source   string `json:"source"` // Source ref string "dnd5e:features:rage"
 				Duration int32  `json:"duration"`
 			}
 			if err := json.Unmarshal(conditionJSON, &conditionData); err != nil {
 				continue // Skip invalid conditions
 			}
 
-			// Get the condition name - use name if present, otherwise derive from type/id
-			conditionName := conditionData.Name
-			if conditionName == "" {
-				conditionName = conditionData.Type
-			}
-			if conditionName == "" {
-				conditionName = conditionData.ID
-			}
-
-			// Skip if we still don't have a name
-			if conditionName == "" {
+			// Skip if no ref
+			if conditionData.Ref == "" {
 				continue
 			}
 
+			// Extract condition ID from ref string (e.g., "dnd5e:conditions:raging" -> "raging")
+			conditionID := extractIDFromRef(conditionData.Ref)
+			if conditionID == "" {
+				continue
+			}
+
+			// Map to enum and derive display name
+			conditionEnum := conditionIDToEnum(conditionID)
+			conditionName := conditionIDToDisplayName(conditionID)
+
 			char.ActiveConditions = append(char.ActiveConditions, &dnd5ev1alpha1.Condition{
-				Name:     conditionName,
-				Source:   conditionData.Source,
-				Duration: conditionData.Duration,
+				Id:            conditionEnum,
+				Name:          conditionName,
+				Source:        conditionData.Source,
+				Duration:      conditionData.Duration,
+				ConditionData: conditionJSON, // Pass through raw JSON for UI display
 			})
 		}
 	}
@@ -2745,67 +2758,6 @@ func convertSpellToProtoEnum(spell spells.Spell) dnd5ev1alpha1.Spell {
 	}
 }
 
-// getFeatureDisplayName returns a human-readable display name for a feature ID
-func getFeatureDisplayName(featureID string) string {
-	displayNames := map[string]string{
-		"rage":                 "Rage",
-		"second_wind":          "Second Wind",
-		"action_surge":         "Action Surge",
-		"fighting_style":       "Fighting Style",
-		"unarmored_defense":    "Unarmored Defense",
-		"reckless_attack":      "Reckless Attack",
-		"danger_sense":         "Danger Sense",
-		"extra_attack":         "Extra Attack",
-		"fast_movement":        "Fast Movement",
-		"feral_instinct":       "Feral Instinct",
-		"brutal_critical":      "Brutal Critical",
-		"relentless_rage":      "Relentless Rage",
-		"persistent_rage":      "Persistent Rage",
-		"indomitable_might":    "Indomitable Might",
-		"primal_champion":      "Primal Champion",
-		"spellcasting":         "Spellcasting",
-		"divine_sense":         "Divine Sense",
-		"lay_on_hands":         "Lay on Hands",
-		"divine_smite":         "Divine Smite",
-		"channel_divinity":     "Channel Divinity",
-		"sneak_attack":         "Sneak Attack",
-		"cunning_action":       "Cunning Action",
-		"uncanny_dodge":        "Uncanny Dodge",
-		"evasion":              "Evasion",
-		"wild_shape":           "Wild Shape",
-		"ki":                   "Ki",
-		"martial_arts":         "Martial Arts",
-		"flurry_of_blows":      "Flurry of Blows",
-		"patient_defense":      "Patient Defense",
-		"step_of_the_wind":     "Step of the Wind",
-		"arcane_recovery":      "Arcane Recovery",
-		"sorcery_points":       "Sorcery Points",
-		"metamagic":            "Metamagic",
-		"bardic_inspiration":   "Bardic Inspiration",
-		"song_of_rest":         "Song of Rest",
-		"eldritch_invocations": "Eldritch Invocations",
-		"pact_magic":           "Pact Magic",
-		"favored_enemy":        "Favored Enemy",
-		"natural_explorer":     "Natural Explorer",
-		"primeval_awareness":   "Primeval Awareness",
-		"hunters_mark":         "Hunter's Mark",
-		"destroy_undead":       "Destroy Undead",
-		"turn_undead":          "Turn Undead",
-		"divine_intervention":  "Divine Intervention",
-		"superiority_dice":     "Superiority Dice",
-		"combat_superiority":   "Combat Superiority",
-		"improved_critical":    "Improved Critical",
-		"remarkable_athlete":   "Remarkable Athlete",
-		"font_of_magic":        "Font of Magic",
-		"eldritch_blast":       "Eldritch Blast",
-		"agonizing_blast":      "Agonizing Blast",
-	}
-	if name, ok := displayNames[featureID]; ok {
-		return name
-	}
-	return featureID // Fall back to ID
-}
-
 // getFeatureActionType returns the action economy cost for a feature by querying the toolkit.
 // Returns ACTION_TYPE_UNSPECIFIED for features not implemented in the toolkit.
 func getFeatureActionType(featureID string) dnd5ev1alpha1.ActionType {
@@ -2839,5 +2791,136 @@ func convertActionTypeToProto(actionType combat.ActionType) dnd5ev1alpha1.Action
 		return dnd5ev1alpha1.ActionType_ACTION_TYPE_FREE
 	default:
 		return dnd5ev1alpha1.ActionType_ACTION_TYPE_UNSPECIFIED
+	}
+}
+
+// extractIDFromRef extracts the ID part from a ref string (e.g., "dnd5e:conditions:raging" -> "raging")
+func extractIDFromRef(ref string) string {
+	parts := strings.Split(ref, ":")
+	if len(parts) < 3 {
+		return ""
+	}
+	return parts[len(parts)-1]
+}
+
+// toTitleCase converts snake_case to Title Case (e.g., "sneak_attack" -> "Sneak Attack")
+func toTitleCase(s string) string {
+	words := strings.Split(s, "_")
+	for i, word := range words {
+		if word != "" {
+			words[i] = strings.ToUpper(word[:1]) + strings.ToLower(word[1:])
+		}
+	}
+	return strings.Join(words, " ")
+}
+
+// conditionIDToEnum maps a condition ID string to the ConditionId proto enum
+// Uses toolkit refs for type-safe comparison - no magic strings
+func conditionIDToEnum(id string) dnd5ev1alpha1.ConditionId {
+	switch id {
+	case refs.Conditions.Raging().ID:
+		return dnd5ev1alpha1.ConditionId_CONDITION_ID_RAGING
+	case refs.Conditions.BrutalCritical().ID:
+		return dnd5ev1alpha1.ConditionId_CONDITION_ID_BRUTAL_CRITICAL
+	case refs.Conditions.SneakAttack().ID:
+		return dnd5ev1alpha1.ConditionId_CONDITION_ID_SNEAK_ATTACK
+	case refs.Features.DivineSmite().ID:
+		return dnd5ev1alpha1.ConditionId_CONDITION_ID_DIVINE_SMITE
+	case refs.Conditions.FightingStyleDueling().ID:
+		return dnd5ev1alpha1.ConditionId_CONDITION_ID_FIGHTING_STYLE_DUELING
+	case refs.Conditions.FightingStyleTwoWeaponFighting().ID:
+		return dnd5ev1alpha1.ConditionId_CONDITION_ID_FIGHTING_STYLE_TWO_WEAPON_FIGHTING
+	case refs.Conditions.FightingStyleGreatWeaponFighting().ID:
+		return dnd5ev1alpha1.ConditionId_CONDITION_ID_FIGHTING_STYLE_GREAT_WEAPON_FIGHTING
+	case refs.Conditions.UnarmoredDefense().ID:
+		return dnd5ev1alpha1.ConditionId_CONDITION_ID_UNARMORED_DEFENSE
+	case refs.Conditions.ImprovedCritical().ID:
+		return dnd5ev1alpha1.ConditionId_CONDITION_ID_IMPROVED_CRITICAL
+	case refs.Conditions.MartialArts().ID:
+		return dnd5ev1alpha1.ConditionId_CONDITION_ID_MARTIAL_ARTS
+	case refs.Conditions.UnarmoredMovement().ID:
+		return dnd5ev1alpha1.ConditionId_CONDITION_ID_UNARMORED_MOVEMENT
+	default:
+		return dnd5ev1alpha1.ConditionId_CONDITION_ID_UNSPECIFIED
+	}
+}
+
+// conditionIDToDisplayName converts a condition ID to a human-readable display name
+// Uses toolkit refs for type-safe comparison - no magic strings
+func conditionIDToDisplayName(id string) string {
+	switch id {
+	case refs.Conditions.Raging().ID:
+		return "Raging"
+	case refs.Conditions.BrutalCritical().ID:
+		return "Brutal Critical"
+	case refs.Conditions.SneakAttack().ID:
+		return "Sneak Attack"
+	case refs.Features.DivineSmite().ID:
+		return "Divine Smite"
+	case refs.Conditions.FightingStyleDueling().ID:
+		return "Fighting Style: Dueling"
+	case refs.Conditions.FightingStyleTwoWeaponFighting().ID:
+		return "Fighting Style: Two-Weapon Fighting"
+	case refs.Conditions.FightingStyleGreatWeaponFighting().ID:
+		return "Fighting Style: Great Weapon Fighting"
+	default:
+		// Convert snake_case to Title Case as fallback
+		return toTitleCase(id)
+	}
+}
+
+// featureIDToEnum maps a feature ID string to the FeatureId proto enum
+// Uses toolkit refs where available - remaining magic strings are for features
+// that don't have toolkit refs yet (breath_weapon, hellish_rebuke, etc.)
+func featureIDToEnum(id string) dnd5ev1alpha1.FeatureId {
+	switch id {
+	case refs.Features.DeflectMissiles().ID:
+		return dnd5ev1alpha1.FeatureId_FEATURE_ID_DEFLECT_MISSILES
+	// Features below don't have toolkit refs yet - magic strings until toolkit adds them
+	case "breath_weapon":
+		return dnd5ev1alpha1.FeatureId_FEATURE_ID_BREATH_WEAPON
+	case "hellish_rebuke":
+		return dnd5ev1alpha1.FeatureId_FEATURE_ID_HELLISH_REBUKE
+	case "radiance_of_dawn":
+		return dnd5ev1alpha1.FeatureId_FEATURE_ID_RADIANCE_OF_DAWN
+	case "wrath_of_the_storm":
+		return dnd5ev1alpha1.FeatureId_FEATURE_ID_WRATH_OF_THE_STORM
+	case "destructive_wrath":
+		return dnd5ev1alpha1.FeatureId_FEATURE_ID_DESTRUCTIVE_WRATH
+	case "starry_form_archer":
+		return dnd5ev1alpha1.FeatureId_FEATURE_ID_STARRY_FORM_ARCHER
+	default:
+		// Features like rage, second_wind, action_surge don't have enum values yet
+		return dnd5ev1alpha1.FeatureId_FEATURE_ID_UNSPECIFIED
+	}
+}
+
+// featureIDToDisplayName converts a feature ID to a human-readable display name
+// Uses toolkit refs for type-safe comparison - no magic strings
+func featureIDToDisplayName(id string) string {
+	switch id {
+	case refs.Features.Rage().ID:
+		return "Rage"
+	case refs.Features.SecondWind().ID:
+		return "Second Wind"
+	case refs.Features.ActionSurge().ID:
+		return "Action Surge"
+	case refs.Features.FlurryOfBlows().ID:
+		return "Flurry of Blows"
+	case refs.Features.PatientDefense().ID:
+		return "Patient Defense"
+	case refs.Features.StepOfTheWind().ID:
+		return "Step of the Wind"
+	case refs.Features.DeflectMissiles().ID:
+		return "Deflect Missiles"
+	case refs.Features.SneakAttack().ID:
+		return "Sneak Attack"
+	case refs.Features.DivineSmite().ID:
+		return "Divine Smite"
+	case refs.Features.BrutalCritical().ID:
+		return "Brutal Critical"
+	default:
+		// Convert snake_case to Title Case as fallback
+		return toTitleCase(id)
 	}
 }
