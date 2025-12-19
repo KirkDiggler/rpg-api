@@ -16,8 +16,8 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
 
 	"github.com/KirkDiggler/rpg-api/internal/entities"
-	encounterpub "github.com/KirkDiggler/rpg-api/internal/publishers/encounter"
-	publishermock "github.com/KirkDiggler/rpg-api/internal/publishers/encounter/mock"
+	eventprocessor "github.com/KirkDiggler/rpg-api/internal/processors/event"
+	eventmock "github.com/KirkDiggler/rpg-api/internal/processors/event/mock"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	charactermock "github.com/KirkDiggler/rpg-api/internal/repositories/character/mock"
 	encounterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/encounters"
@@ -28,25 +28,24 @@ import (
 // when orchestrator methods are called
 type EventPublishingTestSuite struct {
 	suite.Suite
-	ctrl          *gomock.Controller
-	mockCharRepo  *charactermock.MockRepository
-	mockEncRepo   *encountermock.MockRepository
-	mockPublisher *publishermock.MockPublisher
-	orchestrator  *Orchestrator
+	ctrl               *gomock.Controller
+	mockCharRepo       *charactermock.MockRepository
+	mockEncRepo        *encountermock.MockRepository
+	mockEventProcessor *eventmock.MockProcessor
+	orchestrator       *Orchestrator
 }
 
 func (s *EventPublishingTestSuite) SetupTest() {
 	s.ctrl = gomock.NewController(s.T())
 	s.mockCharRepo = charactermock.NewMockRepository(s.ctrl)
 	s.mockEncRepo = encountermock.NewMockRepository(s.ctrl)
-	s.mockPublisher = publishermock.NewMockPublisher(s.ctrl)
+	s.mockEventProcessor = eventmock.NewMockProcessor(s.ctrl)
 
 	var err error
 	s.orchestrator, err = New(&Config{
-		CharacterRepo: s.mockCharRepo,
-		EncounterRepo: s.mockEncRepo,
-		Publisher:     s.mockPublisher,
-		EventIDGen:    &mockEventIDGen{prefix: "evt"},
+		CharacterRepo:  s.mockCharRepo,
+		EncounterRepo:  s.mockEncRepo,
+		EventProcessor: s.mockEventProcessor,
 	})
 	s.Require().NoError(err)
 }
@@ -57,17 +56,6 @@ func (s *EventPublishingTestSuite) TearDownTest() {
 
 func TestEventPublishingSuite(t *testing.T) {
 	suite.Run(t, new(EventPublishingTestSuite))
-}
-
-// mockEventIDGen generates predictable event IDs for testing
-type mockEventIDGen struct {
-	prefix string
-	count  int
-}
-
-func (m *mockEventIDGen) Generate() string {
-	m.count++
-	return m.prefix + "-" + string(rune('0'+m.count))
 }
 
 // lastEventIDUpdateMatcher matches Update calls that only set LastEventID
@@ -159,10 +147,10 @@ func (s *EventPublishingTestSuite) TestJoinEncounter_PublishesPlayerJoinedEvent(
 			},
 		}, nil)
 
-	// Expect PlayerJoined event to be published
-	s.mockPublisher.EXPECT().
-		Publish(gomock.Any(), gomock.Any()).
-		DoAndReturn(func(ctx context.Context, input *encounterpub.PublishInput) (*encounterpub.PublishOutput, error) {
+	// Expect PlayerJoined event to be processed
+	s.mockEventProcessor.EXPECT().
+		Process(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(ctx context.Context, input *eventprocessor.ProcessInput) (*eventprocessor.ProcessOutput, error) {
 			s.Assert().Equal(encounterID, input.EncounterID)
 			s.Assert().Equal(entities.EventTypePlayerJoined, input.Event.Type)
 
@@ -174,7 +162,7 @@ func (s *EventPublishingTestSuite) TestJoinEncounter_PublishesPlayerJoinedEvent(
 			s.Require().NotNil(input.Event.PlayerJoined.CharacterData, "CharacterData should be set")
 			s.Assert().Equal("Test Character", input.Event.PlayerJoined.CharacterData.Name)
 
-			return &encounterpub.PublishOutput{}, nil
+			return &eventprocessor.ProcessOutput{EventID: "evt-1"}, nil
 		})
 
 	// Expect LastEventID update after publish
@@ -223,10 +211,10 @@ func (s *EventPublishingTestSuite) TestSetReady_PublishesPlayerReadyEvent() {
 		Update(gomock.Any(), gomock.Any()).
 		Return(&encounterrepo.UpdateOutput{Success: true}, nil)
 
-	// Expect PlayerReady event to be published
-	s.mockPublisher.EXPECT().
-		Publish(gomock.Any(), gomock.Any()).
-		DoAndReturn(func(ctx context.Context, input *encounterpub.PublishInput) (*encounterpub.PublishOutput, error) {
+	// Expect PlayerReady event to be processed
+	s.mockEventProcessor.EXPECT().
+		Process(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(ctx context.Context, input *eventprocessor.ProcessInput) (*eventprocessor.ProcessOutput, error) {
 			s.Assert().Equal(encounterID, input.EncounterID)
 			s.Assert().Equal(entities.EventTypePlayerReady, input.Event.Type)
 
@@ -236,7 +224,7 @@ func (s *EventPublishingTestSuite) TestSetReady_PublishesPlayerReadyEvent() {
 			s.Assert().Equal(characterID, input.Event.PlayerReady.CharacterID)
 			s.Assert().True(input.Event.PlayerReady.Ready)
 
-			return &encounterpub.PublishOutput{}, nil
+			return &eventprocessor.ProcessOutput{EventID: "evt-1"}, nil
 		})
 
 	// Expect LastEventID update after publish
@@ -312,10 +300,10 @@ func (s *EventPublishingTestSuite) TestStartCombat_PublishesCombatStartedEvent()
 		Return(&encounterrepo.UpdateOutput{Success: true}, nil).
 		AnyTimes()
 
-	// Expect CombatStarted event to be published
-	s.mockPublisher.EXPECT().
-		Publish(gomock.Any(), gomock.Any()).
-		DoAndReturn(func(ctx context.Context, input *encounterpub.PublishInput) (*encounterpub.PublishOutput, error) {
+	// Expect CombatStarted event to be processed
+	s.mockEventProcessor.EXPECT().
+		Process(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(ctx context.Context, input *eventprocessor.ProcessInput) (*eventprocessor.ProcessOutput, error) {
 			s.Assert().Equal(encounterID, input.EncounterID)
 			s.Assert().Equal(entities.EventTypeCombatStarted, input.Event.Type)
 
@@ -323,7 +311,7 @@ func (s *EventPublishingTestSuite) TestStartCombat_PublishesCombatStartedEvent()
 			s.Require().NotNil(input.Event.CombatStarted, "CombatStarted should be set")
 			s.Assert().NotNil(input.Event.CombatStarted.CombatState)
 
-			return &encounterpub.PublishOutput{}, nil
+			return &eventprocessor.ProcessOutput{EventID: "evt-1"}, nil
 		})
 
 	// Act
@@ -370,10 +358,10 @@ func (s *EventPublishingTestSuite) TestLeaveEncounter_PublishesPlayerLeftEvent()
 		Update(gomock.Any(), gomock.Any()).
 		Return(&encounterrepo.UpdateOutput{Success: true}, nil)
 
-	// Expect PlayerLeft event to be published
-	s.mockPublisher.EXPECT().
-		Publish(gomock.Any(), gomock.Any()).
-		DoAndReturn(func(ctx context.Context, input *encounterpub.PublishInput) (*encounterpub.PublishOutput, error) {
+	// Expect PlayerLeft event to be processed
+	s.mockEventProcessor.EXPECT().
+		Process(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(ctx context.Context, input *eventprocessor.ProcessInput) (*eventprocessor.ProcessOutput, error) {
 			s.Assert().Equal(encounterID, input.EncounterID)
 			s.Assert().Equal(entities.EventTypePlayerLeft, input.Event.Type)
 
@@ -383,7 +371,7 @@ func (s *EventPublishingTestSuite) TestLeaveEncounter_PublishesPlayerLeftEvent()
 			s.Assert().Equal(characterID, input.Event.PlayerLeft.CharacterID)
 			s.Assert().Equal("voluntary", input.Event.PlayerLeft.Reason)
 
-			return &encounterpub.PublishOutput{}, nil
+			return &eventprocessor.ProcessOutput{EventID: "evt-1"}, nil
 		})
 
 	// Expect LastEventID update after publish
@@ -449,10 +437,10 @@ func (s *EventPublishingTestSuite) TestMoveCharacter_PublishesMovementCompletedE
 		Update(gomock.Any(), gomock.Any()).
 		Return(&encounterrepo.UpdateOutput{Success: true}, nil)
 
-	// Expect MovementCompleted event to be published
-	s.mockPublisher.EXPECT().
-		Publish(gomock.Any(), gomock.Any()).
-		DoAndReturn(func(ctx context.Context, input *encounterpub.PublishInput) (*encounterpub.PublishOutput, error) {
+	// Expect MovementCompleted event to be processed
+	s.mockEventProcessor.EXPECT().
+		Process(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(ctx context.Context, input *eventprocessor.ProcessInput) (*eventprocessor.ProcessOutput, error) {
 			s.Assert().Equal(encounterID, input.EncounterID)
 			s.Assert().Equal(entities.EventTypeMovementCompleted, input.Event.Type)
 
@@ -462,7 +450,7 @@ func (s *EventPublishingTestSuite) TestMoveCharacter_PublishesMovementCompletedE
 			s.Assert().Equal("character", input.Event.MovementCompleted.EntityType)
 			s.Assert().Equal("completed", input.Event.MovementCompleted.StopReason)
 
-			return &encounterpub.PublishOutput{}, nil
+			return &eventprocessor.ProcessOutput{EventID: "evt-1"}, nil
 		})
 
 	// Expect LastEventID update after publish
@@ -517,10 +505,10 @@ func (s *EventPublishingTestSuite) TestEndTurn_PublishesTurnEndedEvent() {
 		Update(gomock.Any(), gomock.Any()).
 		Return(&encounterrepo.UpdateOutput{Success: true}, nil)
 
-	// Expect TurnEnded event to be published
-	s.mockPublisher.EXPECT().
-		Publish(gomock.Any(), gomock.Any()).
-		DoAndReturn(func(ctx context.Context, input *encounterpub.PublishInput) (*encounterpub.PublishOutput, error) {
+	// Expect TurnEnded event to be processed
+	s.mockEventProcessor.EXPECT().
+		Process(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(ctx context.Context, input *eventprocessor.ProcessInput) (*eventprocessor.ProcessOutput, error) {
 			s.Assert().Equal(encounterID, input.EncounterID)
 			s.Assert().Equal(entities.EventTypeTurnEnded, input.Event.Type)
 
@@ -531,7 +519,7 @@ func (s *EventPublishingTestSuite) TestEndTurn_PublishesTurnEndedEvent() {
 			s.Assert().Equal(1, input.Event.TurnEnded.Round)
 			s.Assert().False(input.Event.TurnEnded.NewRound)
 
-			return &encounterpub.PublishOutput{}, nil
+			return &eventprocessor.ProcessOutput{EventID: "evt-1"}, nil
 		})
 
 	// Expect LastEventID update after publish
@@ -644,10 +632,10 @@ func (s *EventPublishingTestSuite) TestPublishing_ContinuesOnPublishError() {
 		Update(gomock.Any(), gomock.Any()).
 		Return(&encounterrepo.UpdateOutput{Success: true}, nil)
 
-	// Publisher returns error - but operation should still succeed
-	s.mockPublisher.EXPECT().
-		Publish(gomock.Any(), gomock.Any()).
-		Return(nil, errors.New("publish failed")) // Using any error for testing
+	// EventProcessor returns error - but operation should still succeed
+	s.mockEventProcessor.EXPECT().
+		Process(gomock.Any(), gomock.Any()).
+		Return(nil, errors.New("process failed")) // Using any error for testing
 
 	// Act - should NOT fail even though publish failed
 	output, err := s.orchestrator.SetReady(context.Background(), &SetReadyInput{
@@ -662,12 +650,12 @@ func (s *EventPublishingTestSuite) TestPublishing_ContinuesOnPublishError() {
 	s.Assert().True(output.Success)
 }
 
-func (s *EventPublishingTestSuite) TestNoPublisher_DoesNotPanic() {
-	// Arrange - orchestrator without publisher
-	orchWithoutPublisher, err := New(&Config{
+func (s *EventPublishingTestSuite) TestNoEventProcessor_DoesNotPanic() {
+	// Arrange - orchestrator without event processor
+	orchWithoutEventProcessor, err := New(&Config{
 		CharacterRepo: s.mockCharRepo,
 		EncounterRepo: s.mockEncRepo,
-		// Publisher: nil - intentionally omitted
+		// EventProcessor: nil - intentionally omitted
 	})
 	s.Require().NoError(err)
 
@@ -698,10 +686,10 @@ func (s *EventPublishingTestSuite) TestNoPublisher_DoesNotPanic() {
 		Update(gomock.Any(), gomock.Any()).
 		Return(&encounterrepo.UpdateOutput{Success: true}, nil)
 
-	// NO publisher expectations - it's nil
+	// NO event processor expectations - it's nil
 
 	// Act - should NOT panic
-	output, err := orchWithoutPublisher.SetReady(context.Background(), &SetReadyInput{
+	output, err := orchWithoutEventProcessor.SetReady(context.Background(), &SetReadyInput{
 		EncounterID: encounterID,
 		PlayerID:    playerID,
 		IsReady:     true,
@@ -737,13 +725,13 @@ func (s *EventPublishingTestSuite) TestLeaveEncounter_LastPlayer_PublishesBefore
 		}, nil)
 
 	// Expect event BEFORE delete
-	publishCalled := false
-	s.mockPublisher.EXPECT().
-		Publish(gomock.Any(), gomock.Any()).
-		DoAndReturn(func(ctx context.Context, input *encounterpub.PublishInput) (*encounterpub.PublishOutput, error) {
-			publishCalled = true
+	processCalled := false
+	s.mockEventProcessor.EXPECT().
+		Process(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(ctx context.Context, input *eventprocessor.ProcessInput) (*eventprocessor.ProcessOutput, error) {
+			processCalled = true
 			s.Assert().Equal(entities.EventTypePlayerLeft, input.Event.Type)
-			return &encounterpub.PublishOutput{}, nil
+			return &eventprocessor.ProcessOutput{EventID: "evt-1"}, nil
 		})
 
 	// Expect LastEventID update after publish
@@ -751,12 +739,12 @@ func (s *EventPublishingTestSuite) TestLeaveEncounter_LastPlayer_PublishesBefore
 		Update(gomock.Any(), isLastEventIDUpdate(encounterID)).
 		Return(&encounterrepo.UpdateOutput{Success: true}, nil)
 
-	// Mock Delete (called after publish)
+	// Mock Delete (called after process)
 	s.mockEncRepo.EXPECT().
 		Delete(gomock.Any(), &encounterrepo.DeleteInput{EncounterID: encounterID}).
 		DoAndReturn(func(ctx context.Context, input *encounterrepo.DeleteInput) (*encounterrepo.DeleteOutput, error) {
-			// Verify publish was called before delete
-			s.Assert().True(publishCalled, "publish should be called before delete")
+			// Verify process was called before delete
+			s.Assert().True(processCalled, "process should be called before delete")
 			return &encounterrepo.DeleteOutput{Success: true}, nil
 		})
 
@@ -808,9 +796,9 @@ func (s *EventPublishingTestSuite) TestEndTurn_NewRound_SetsNewRoundFlag() {
 		Return(&encounterrepo.UpdateOutput{Success: true}, nil)
 
 	// Expect TurnEnded with NewRound=true
-	s.mockPublisher.EXPECT().
-		Publish(gomock.Any(), gomock.Any()).
-		DoAndReturn(func(ctx context.Context, input *encounterpub.PublishInput) (*encounterpub.PublishOutput, error) {
+	s.mockEventProcessor.EXPECT().
+		Process(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(ctx context.Context, input *eventprocessor.ProcessInput) (*eventprocessor.ProcessOutput, error) {
 			s.Assert().Equal(entities.EventTypeTurnEnded, input.Event.Type)
 
 			// Verify event data using typed field
@@ -820,7 +808,7 @@ func (s *EventPublishingTestSuite) TestEndTurn_NewRound_SetsNewRoundFlag() {
 			s.Assert().Equal(2, input.Event.TurnEnded.Round)               // Incremented
 			s.Assert().True(input.Event.TurnEnded.NewRound)
 
-			return &encounterpub.PublishOutput{}, nil
+			return &eventprocessor.ProcessOutput{EventID: "evt-1"}, nil
 		})
 
 	// Expect LastEventID update after publish
@@ -870,12 +858,12 @@ func (s *EventPublishingTestSuite) TestEventTimestamp_IsRecent() {
 	beforeTest := time.Now()
 
 	// Capture timestamp
-	s.mockPublisher.EXPECT().
-		Publish(gomock.Any(), gomock.Any()).
-		DoAndReturn(func(ctx context.Context, input *encounterpub.PublishInput) (*encounterpub.PublishOutput, error) {
+	s.mockEventProcessor.EXPECT().
+		Process(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(ctx context.Context, input *eventprocessor.ProcessInput) (*eventprocessor.ProcessOutput, error) {
 			// Verify timestamp is reasonable (within 1 second)
 			s.Assert().WithinDuration(beforeTest, input.Event.Timestamp, time.Second)
-			return &encounterpub.PublishOutput{}, nil
+			return &eventprocessor.ProcessOutput{EventID: "evt-1"}, nil
 		})
 
 	// Expect LastEventID update after publish
@@ -928,9 +916,9 @@ func (s *EventPublishingTestSuite) TestPlayerDisconnected_PublishesEvent() {
 		Return(&encounterrepo.UpdateOutput{Success: true}, nil)
 
 	// Expect PlayerDisconnected event
-	s.mockPublisher.EXPECT().
-		Publish(gomock.Any(), gomock.Any()).
-		DoAndReturn(func(ctx context.Context, input *encounterpub.PublishInput) (*encounterpub.PublishOutput, error) {
+	s.mockEventProcessor.EXPECT().
+		Process(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(ctx context.Context, input *eventprocessor.ProcessInput) (*eventprocessor.ProcessOutput, error) {
 			s.Assert().Equal(encounterID, input.EncounterID)
 			s.Assert().Equal(entities.EventTypePlayerDisconnected, input.Event.Type)
 
@@ -940,7 +928,7 @@ func (s *EventPublishingTestSuite) TestPlayerDisconnected_PublishesEvent() {
 			s.Assert().Equal(characterID, input.Event.PlayerDisconnected.CharacterID)
 			s.Assert().Equal("timeout", input.Event.PlayerDisconnected.Reason)
 
-			return &encounterpub.PublishOutput{}, nil
+			return &eventprocessor.ProcessOutput{EventID: "evt-1"}, nil
 		})
 
 	// Expect LastEventID update after publish
@@ -997,22 +985,22 @@ func (s *EventPublishingTestSuite) TestPlayerDisconnected_PausesCombatWhenAllDis
 		})
 
 	// Expect PlayerDisconnected event first
-	firstCall := s.mockPublisher.EXPECT().
-		Publish(gomock.Any(), gomock.Any()).
-		DoAndReturn(func(ctx context.Context, input *encounterpub.PublishInput) (*encounterpub.PublishOutput, error) {
+	firstCall := s.mockEventProcessor.EXPECT().
+		Process(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(ctx context.Context, input *eventprocessor.ProcessInput) (*eventprocessor.ProcessOutput, error) {
 			s.Assert().Equal(entities.EventTypePlayerDisconnected, input.Event.Type)
-			return &encounterpub.PublishOutput{}, nil
+			return &eventprocessor.ProcessOutput{EventID: "evt-1"}, nil
 		})
 
-	// Expect LastEventID update after first publish
+	// Expect LastEventID update after first process
 	s.mockEncRepo.EXPECT().
 		Update(gomock.Any(), isLastEventIDUpdate(encounterID)).
 		Return(&encounterrepo.UpdateOutput{Success: true}, nil)
 
 	// Then CombatPaused event
-	s.mockPublisher.EXPECT().
-		Publish(gomock.Any(), gomock.Any()).
-		DoAndReturn(func(ctx context.Context, input *encounterpub.PublishInput) (*encounterpub.PublishOutput, error) {
+	s.mockEventProcessor.EXPECT().
+		Process(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(ctx context.Context, input *eventprocessor.ProcessInput) (*eventprocessor.ProcessOutput, error) {
 			s.Assert().Equal(entities.EventTypeCombatPaused, input.Event.Type)
 
 			// Verify event data using typed field
@@ -1020,7 +1008,7 @@ func (s *EventPublishingTestSuite) TestPlayerDisconnected_PausesCombatWhenAllDis
 			s.Assert().Equal(playerID, input.Event.CombatPaused.PausedBy)
 			s.Assert().Equal("all players disconnected", input.Event.CombatPaused.Reason)
 
-			return &encounterpub.PublishOutput{}, nil
+			return &eventprocessor.ProcessOutput{EventID: "evt-2"}, nil
 		}).After(firstCall)
 
 	// Expect LastEventID update after second publish
@@ -1073,9 +1061,9 @@ func (s *EventPublishingTestSuite) TestPlayerReconnected_PublishesEvent() {
 		Return(&encounterrepo.UpdateOutput{Success: true}, nil)
 
 	// Expect PlayerReconnected event
-	s.mockPublisher.EXPECT().
-		Publish(gomock.Any(), gomock.Any()).
-		DoAndReturn(func(ctx context.Context, input *encounterpub.PublishInput) (*encounterpub.PublishOutput, error) {
+	s.mockEventProcessor.EXPECT().
+		Process(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(ctx context.Context, input *eventprocessor.ProcessInput) (*eventprocessor.ProcessOutput, error) {
 			s.Assert().Equal(encounterID, input.EncounterID)
 			s.Assert().Equal(entities.EventTypePlayerReconnected, input.Event.Type)
 
@@ -1084,7 +1072,7 @@ func (s *EventPublishingTestSuite) TestPlayerReconnected_PublishesEvent() {
 			s.Assert().Equal(playerID, input.Event.PlayerReconnected.PlayerID)
 			s.Assert().Equal(characterID, input.Event.PlayerReconnected.CharacterID)
 
-			return &encounterpub.PublishOutput{}, nil
+			return &eventprocessor.ProcessOutput{EventID: "evt-1"}, nil
 		})
 
 	// Expect LastEventID update after publish
@@ -1155,29 +1143,29 @@ func (s *EventPublishingTestSuite) TestPlayerReconnected_ResumesCombat() {
 		})
 
 	// Expect PlayerReconnected event first
-	firstCall := s.mockPublisher.EXPECT().
-		Publish(gomock.Any(), gomock.Any()).
-		DoAndReturn(func(ctx context.Context, input *encounterpub.PublishInput) (*encounterpub.PublishOutput, error) {
+	firstCall := s.mockEventProcessor.EXPECT().
+		Process(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(ctx context.Context, input *eventprocessor.ProcessInput) (*eventprocessor.ProcessOutput, error) {
 			s.Assert().Equal(entities.EventTypePlayerReconnected, input.Event.Type)
-			return &encounterpub.PublishOutput{}, nil
+			return &eventprocessor.ProcessOutput{EventID: "evt-1"}, nil
 		})
 
-	// Expect LastEventID update after first publish
+	// Expect LastEventID update after first process
 	s.mockEncRepo.EXPECT().
 		Update(gomock.Any(), isLastEventIDUpdate(encounterID)).
 		Return(&encounterrepo.UpdateOutput{Success: true}, nil)
 
 	// Then CombatResumed event
-	s.mockPublisher.EXPECT().
-		Publish(gomock.Any(), gomock.Any()).
-		DoAndReturn(func(ctx context.Context, input *encounterpub.PublishInput) (*encounterpub.PublishOutput, error) {
+	s.mockEventProcessor.EXPECT().
+		Process(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(ctx context.Context, input *eventprocessor.ProcessInput) (*eventprocessor.ProcessOutput, error) {
 			s.Assert().Equal(entities.EventTypeCombatResumed, input.Event.Type)
 
 			// Verify event data using typed field
 			s.Require().NotNil(input.Event.CombatResumed, "CombatResumed should be set")
 			s.Assert().Equal(playerID, input.Event.CombatResumed.ResumedBy)
 
-			return &encounterpub.PublishOutput{}, nil
+			return &eventprocessor.ProcessOutput{EventID: "evt-2"}, nil
 		}).After(firstCall)
 
 	// Expect LastEventID update after second publish

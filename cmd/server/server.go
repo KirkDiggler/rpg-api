@@ -34,12 +34,14 @@ import (
 	encounterorc "github.com/KirkDiggler/rpg-api/internal/orchestrators/encounter"
 	"github.com/KirkDiggler/rpg-api/internal/pkg/clock"
 	"github.com/KirkDiggler/rpg-api/internal/pkg/idgen"
+	eventprocessor "github.com/KirkDiggler/rpg-api/internal/processors/event"
 	encounterpub "github.com/KirkDiggler/rpg-api/internal/publishers/encounter"
 	"github.com/KirkDiggler/rpg-api/internal/redis"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	characterdraftrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft"
 	dicesessionrepo "github.com/KirkDiggler/rpg-api/internal/repositories/dice_session"
 	dungeonsrepo "github.com/KirkDiggler/rpg-api/internal/repositories/dungeons"
+	encounterlogrepo "github.com/KirkDiggler/rpg-api/internal/repositories/encounterlog"
 	encountersrepo "github.com/KirkDiggler/rpg-api/internal/repositories/encounters"
 )
 
@@ -143,6 +145,9 @@ func runServer(_ *cobra.Command, _ []string) error {
 	dungeonRepo := dungeonsrepo.NewInMemory()
 	dungeonGen := dungeontoolkit.CreateGenerator(&dungeontoolkit.ToolkitConfig{})
 
+	// Create encounter log repository (in-memory for now)
+	encounterLogRepo := encounterlogrepo.NewInMemory(nil)
+
 	// Create encounter event publisher
 	encounterPublisher, err := encounterpub.NewRedis(&encounterpub.RedisConfig{
 		Client: mustRedisClient(),
@@ -151,14 +156,22 @@ func runServer(_ *cobra.Command, _ []string) error {
 		return fmt.Errorf("failed to create encounter publisher: %w", err)
 	}
 
+	// Create event processor for persisting and publishing events
+	eventProc, err := eventprocessor.New(&eventprocessor.Config{
+		EncounterLogRepo: encounterLogRepo,
+		Publisher:        encounterPublisher,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create event processor: %w", err)
+	}
+
 	// Create encounter orchestrator with dungeon support
 	encounterService, err := encounterorc.New(&encounterorc.Config{
-		CharacterRepo: charRepo,
-		EncounterRepo: encounterRepo,
-		DungeonRepo:   dungeonRepo,
-		DungeonGen:    dungeonGen,
-		Publisher:     encounterPublisher,
-		EventIDGen:    idgen.NewULID(""),
+		CharacterRepo:  charRepo,
+		EncounterRepo:  encounterRepo,
+		DungeonRepo:    dungeonRepo,
+		DungeonGen:     dungeonGen,
+		EventProcessor: eventProc,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create encounter service: %w", err)
