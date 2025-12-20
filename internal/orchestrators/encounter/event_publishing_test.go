@@ -16,11 +16,14 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
 	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
 
+	dungeontoolkit "github.com/KirkDiggler/rpg-api/internal/components/dungeon/toolkit"
 	"github.com/KirkDiggler/rpg-api/internal/entities"
 	eventprocessor "github.com/KirkDiggler/rpg-api/internal/processors/event"
 	eventmock "github.com/KirkDiggler/rpg-api/internal/processors/event/mock"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	charactermock "github.com/KirkDiggler/rpg-api/internal/repositories/character/mock"
+	dungeonrepo "github.com/KirkDiggler/rpg-api/internal/repositories/dungeons"
+	dungeonmock "github.com/KirkDiggler/rpg-api/internal/repositories/dungeons/mock"
 	encounterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/encounters"
 	encountermock "github.com/KirkDiggler/rpg-api/internal/repositories/encounters/mock"
 )
@@ -32,6 +35,7 @@ type EventPublishingTestSuite struct {
 	ctrl               *gomock.Controller
 	mockCharRepo       *charactermock.MockRepository
 	mockEncRepo        *encountermock.MockRepository
+	mockDungeonRepo    *dungeonmock.MockRepository
 	mockEventProcessor *eventmock.MockProcessor
 	mockRoller         *mock_dice.MockRoller
 	orchestrator       *Orchestrator
@@ -41,16 +45,21 @@ func (s *EventPublishingTestSuite) SetupTest() {
 	s.ctrl = gomock.NewController(s.T())
 	s.mockCharRepo = charactermock.NewMockRepository(s.ctrl)
 	s.mockEncRepo = encountermock.NewMockRepository(s.ctrl)
+	s.mockDungeonRepo = dungeonmock.NewMockRepository(s.ctrl)
 	s.mockEventProcessor = eventmock.NewMockProcessor(s.ctrl)
 	s.mockRoller = mock_dice.NewMockRoller(s.ctrl)
 
 	// Default: high rolls ensure players go first in initiative (deterministic tests)
 	s.mockRoller.EXPECT().Roll(gomock.Any(), gomock.Any()).Return(20, nil).AnyTimes()
+	// RollN is used by dungeon generator for monster HP (hit dice)
+	s.mockRoller.EXPECT().RollN(gomock.Any(), gomock.Any(), gomock.Any()).Return([]int{4}, nil).AnyTimes()
 
 	var err error
 	s.orchestrator, err = New(&Config{
 		CharacterRepo:  s.mockCharRepo,
 		EncounterRepo:  s.mockEncRepo,
+		DungeonRepo:    s.mockDungeonRepo,
+		DungeonGen:     dungeontoolkit.CreateGenerator(&dungeontoolkit.ToolkitConfig{}),
 		EventProcessor: s.mockEventProcessor,
 		Roller:         s.mockRoller,
 	})
@@ -300,6 +309,11 @@ func (s *EventPublishingTestSuite) TestStartCombat_PublishesCombatStartedEvent()
 				},
 			},
 		}, nil).AnyTimes()
+
+	// Mock dungeon repo save (dungeon is generated when combat starts)
+	s.mockDungeonRepo.EXPECT().
+		Save(gomock.Any(), gomock.Any()).
+		Return(&dungeonrepo.SaveOutput{Success: true}, nil)
 
 	// Mock Update (may be called multiple times if monster goes first)
 	s.mockEncRepo.EXPECT().
@@ -662,6 +676,8 @@ func (s *EventPublishingTestSuite) TestNoEventProcessor_DoesNotPanic() {
 	orchWithoutEventProcessor, err := New(&Config{
 		CharacterRepo: s.mockCharRepo,
 		EncounterRepo: s.mockEncRepo,
+		DungeonRepo:   s.mockDungeonRepo,
+		DungeonGen:    dungeontoolkit.CreateGenerator(&dungeontoolkit.ToolkitConfig{}),
 		// EventProcessor: nil - intentionally omitted
 	})
 	s.Require().NoError(err)

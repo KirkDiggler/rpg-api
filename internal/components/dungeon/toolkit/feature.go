@@ -7,6 +7,8 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
+
 	"github.com/KirkDiggler/rpg-api/internal/components/dungeon"
 )
 
@@ -167,70 +169,79 @@ func getTerrainMovementCost(terrainType dungeon.TerrainType) float64 {
 	}
 }
 
+// gridToCube converts a grid position (col, row) to cube coordinates using toolkit's converter.
+// This ensures we always use the same conversion logic as the toolkit.
+func gridToCube(col, row int) dungeon.Position {
+	// Use toolkit's standard offset-to-cube conversion
+	cube := spatial.OffsetCoordinateToCube(spatial.Position{X: float64(col), Y: float64(row)})
+	return dungeon.Position{X: cube.X, Y: cube.Y, Z: cube.Z}
+}
+
 // generateSpawnZones creates spawn zones based on room type
+// All positions use cube coordinates via toolkit's converter
 func (g *ToolkitFeatureGenerator) generateSpawnZones(shape *dungeon.Shape, roomType string) []dungeon.Zone {
 	var zones []dungeon.Zone
 
 	switch roomType {
 	case "entrance":
-		// Entrance rooms have a player spawn zone near the entrance
+		// Entrance rooms have a player spawn zone near the entrance (bottom-left area)
+		// Generate individual spawn positions for up to 4 players
 		zones = append(zones, dungeon.Zone{
 			ID:   uuid.New().String(),
 			Type: dungeon.ZoneTypePlayerSpawn,
 			Bounds: []dungeon.Position{
-				{X: 0, Y: 0, Z: 0},
-				{X: 3, Y: 0, Z: 0},
-				{X: 3, Y: 3, Z: 0},
-				{X: 0, Y: 3, Z: 0},
+				gridToCube(1, 1),
+				gridToCube(2, 1),
+				gridToCube(1, 2),
+				gridToCube(2, 2),
 			},
 			Capacity: 4, // Standard party size
 		})
 
 	case "boss":
 		// Boss rooms have a boss zone in the center and monster spawn zones around it
-		centerX := shape.Width / 2
-		centerY := shape.Height / 2
+		centerCol := shape.Width / 2
+		centerRow := shape.Height / 2
 
-		// Boss zone in center and monster spawn zones in corners
+		// Boss zone - single position in center
 		zones = append(zones,
 			dungeon.Zone{
 				ID:   uuid.New().String(),
 				Type: dungeon.ZoneTypeBoss,
 				Bounds: []dungeon.Position{
-					{X: centerX - 2, Y: centerY - 2, Z: 0},
-					{X: centerX + 2, Y: centerY - 2, Z: 0},
-					{X: centerX + 2, Y: centerY + 2, Z: 0},
-					{X: centerX - 2, Y: centerY + 2, Z: 0},
+					gridToCube(centerCol, centerRow),
 				},
 				Capacity: 1,
 			},
+			// Monster spawn zone - positions in upper area
 			dungeon.Zone{
 				ID:   uuid.New().String(),
 				Type: dungeon.ZoneTypeMonsterSpawn,
 				Bounds: []dungeon.Position{
-					{X: 0, Y: 0, Z: 0},
-					{X: 4, Y: 0, Z: 0},
-					{X: 4, Y: 4, Z: 0},
-					{X: 0, Y: 4, Z: 0},
+					gridToCube(centerCol-2, centerRow-2),
+					gridToCube(centerCol, centerRow-2),
+					gridToCube(centerCol+2, centerRow-2),
 				},
 				Capacity: 3,
 			},
 		)
 
 	default:
-		// Regular rooms have monster spawn zones
-		// Place spawn zone in the center
-		centerX := shape.Width / 2
-		centerY := shape.Height / 2
+		// Regular rooms have monster spawn zones in the center area
+		centerCol := shape.Width / 2
+		centerRow := shape.Height / 2
 
+		// Generate individual spawn positions for monsters
 		zones = append(zones, dungeon.Zone{
 			ID:   uuid.New().String(),
 			Type: dungeon.ZoneTypeMonsterSpawn,
 			Bounds: []dungeon.Position{
-				{X: centerX - 3, Y: centerY - 3, Z: 0},
-				{X: centerX + 3, Y: centerY - 3, Z: 0},
-				{X: centerX + 3, Y: centerY + 3, Z: 0},
-				{X: centerX - 3, Y: centerY + 3, Z: 0},
+				gridToCube(centerCol-1, centerRow-1),
+				gridToCube(centerCol, centerRow-1),
+				gridToCube(centerCol+1, centerRow-1),
+				gridToCube(centerCol-1, centerRow),
+				gridToCube(centerCol+1, centerRow),
+				gridToCube(centerCol, centerRow+1),
 			},
 			Capacity: 6,
 		})

@@ -1,7 +1,5 @@
-github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20251219125259-b1f685b8ebc3 h1:/LFNzIMg4dL0frrVf1MMK7YVKRdaPWc09w/6nT3rcms=
-github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20251219125259-b1f685b8ebc3/go.mod h1:nnvwwB7Z3PL+U/3XW25DYEojtMilVgkw39MG8y4F9ag=
-github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20251220052702-f6a1894a76ec h1:K/a4jh+Hu56tDU4S9+wlez8D5L8RIgYk2GkFM+PVLLk=
-github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20251220052702-f6a1894a76ec/go.mod h1:nnvwwB7Z3PL+U/3XW25DYEojtMilVgkw39MG8y4F9ag=
+github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20251220072911-0e78e0cfc17e h1:dGxK84wFOVOImXTW1A1Vf6COWGXlmDKoBSx9GIxrmJc=
+github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20251220072911-0e78e0cfc17e/go.mod h1:nnvwwB7Z3PL+U/3XW25DYEojtMilVgkw39MG8y4F9ag=
 github.com/KirkDiggler/rpg-toolkit/core v0.9.6 h1:Mqd7jxxiXOfD0vQYzoOrtoa+fqKbVGIY5/Oo7pqbGBk=
 github.com/KirkDiggler/rpg-toolkit/core v0.9.6/go.mod h1:XFQXYViPZUTYu/a8jdRadI3rGnKk4r7tRtPm++vSUV0=
 github.com/KirkDiggler/rpg-toolkit/dice v0.3.2 h1:cLLP4Z+4VYSxeRkNbmI5gym6dC/xBOw6kDIylWDK/z0=
@@ -14,10 +12,6 @@ github.com/KirkDiggler/rpg-toolkit/mechanics/resources v0.3.1 h1:wRshHQZfLnEh03/
 github.com/KirkDiggler/rpg-toolkit/mechanics/resources v0.3.1/go.mod h1:LzyZd5OAAic1UnyPwCx6HnmWcOQ/jZvqMSc+Q0k7fH8=
 github.com/KirkDiggler/rpg-toolkit/rpgerr v0.1.2 h1:B7IrROe3GcPrzMeV0EQryA194Y7Yjl3E4kw/OBx4Ucc=
 github.com/KirkDiggler/rpg-toolkit/rpgerr v0.1.2/go.mod h1:wsyJmmf1X0iLFGy5Iyy5sUoZhXZQvuYVsKdXfc4b/T4=
-github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.32.1 h1:pYxNUkFjWk/TRJE7L1eR/4yuKUWLBBsmFT1jnWL26pY=
-github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.32.1/go.mod h1:EHwAU/BFTH9MyGXz1gfJDC5EPZHYOcHAX3oQeW58yvA=
-github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.33.0 h1:qK3//O4BoqZMxbabEU3Rz2sCzZKPL5ur6AwFAD9+Lnk=
-github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.33.0/go.mod h1:EHwAU/BFTH9MyGXz1gfJDC5EPZHYOcHAX3oQeW58yvA=
 github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.34.0 h1:uwbuj+uhT/RejcsH3IxM/CZpYSqbEE/DN/UfSZtr55A=
 github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.34.0/go.mod h1:EHwAU/BFTH9MyGXz1gfJDC5EPZHYOcHAX3oQeW58yvA=
 github.com/KirkDiggler/rpg-toolkit/tools/environments v0.1.2 h1:warO6dvk/Ymyc3lnVU7x1xIM0T6dw7h6DQ8Clz4z/PI=

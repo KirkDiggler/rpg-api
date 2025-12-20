@@ -24,9 +24,11 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
 
 	"github.com/KirkDiggler/rpg-api/internal/apierr"
+	dungeontoolkit "github.com/KirkDiggler/rpg-api/internal/components/dungeon/toolkit"
 	"github.com/KirkDiggler/rpg-api/internal/entities"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	charactermock "github.com/KirkDiggler/rpg-api/internal/repositories/character/mock"
+	dungeonrepo "github.com/KirkDiggler/rpg-api/internal/repositories/dungeons"
 	dungeonmock "github.com/KirkDiggler/rpg-api/internal/repositories/dungeons/mock"
 	encounterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/encounters"
 	encountermock "github.com/KirkDiggler/rpg-api/internal/repositories/encounters/mock"
@@ -34,23 +36,27 @@ import (
 
 type OrchestratorTestSuite struct {
 	suite.Suite
-	ctrl         *gomock.Controller
-	mockCharRepo *charactermock.MockRepository
-	mockEncRepo  *encountermock.MockRepository
-	mockRoller   *dicemock.MockRoller
-	orchestrator *Orchestrator
+	ctrl            *gomock.Controller
+	mockCharRepo    *charactermock.MockRepository
+	mockEncRepo     *encountermock.MockRepository
+	mockDungeonRepo *dungeonmock.MockRepository
+	mockRoller      *dicemock.MockRoller
+	orchestrator    *Orchestrator
 }
 
 func (s *OrchestratorTestSuite) SetupTest() {
 	s.ctrl = gomock.NewController(s.T())
 	s.mockCharRepo = charactermock.NewMockRepository(s.ctrl)
 	s.mockEncRepo = encountermock.NewMockRepository(s.ctrl)
+	s.mockDungeonRepo = dungeonmock.NewMockRepository(s.ctrl)
 	s.mockRoller = dicemock.NewMockRoller(s.ctrl)
 
 	var err error
 	s.orchestrator, err = New(&Config{
 		CharacterRepo: s.mockCharRepo,
 		EncounterRepo: s.mockEncRepo,
+		DungeonRepo:   s.mockDungeonRepo,
+		DungeonGen:    dungeontoolkit.CreateGenerator(&dungeontoolkit.ToolkitConfig{}),
 	})
 	s.Require().NoError(err)
 
@@ -71,20 +77,8 @@ func (s *OrchestratorTestSuite) TestNew_Success() {
 	orch, err := New(&Config{
 		CharacterRepo: s.mockCharRepo,
 		EncounterRepo: s.mockEncRepo,
-	})
-	s.Require().NoError(err)
-	s.Assert().NotNil(orch)
-}
-
-func (s *OrchestratorTestSuite) TestNew_WithDungeonDependencies() {
-	// Create a mock dungeon repo
-	mockDungeonRepo := dungeonmock.NewMockRepository(s.ctrl)
-
-	orch, err := New(&Config{
-		CharacterRepo: s.mockCharRepo,
-		EncounterRepo: s.mockEncRepo,
-		DungeonRepo:   mockDungeonRepo,
-		// DungeonGen is nil - optional for unit tests
+		DungeonRepo:   s.mockDungeonRepo,
+		DungeonGen:    dungeontoolkit.CreateGenerator(&dungeontoolkit.ToolkitConfig{}),
 	})
 	s.Require().NoError(err)
 	s.Assert().NotNil(orch)
@@ -387,6 +381,11 @@ func (s *OrchestratorTestSuite) TestCreateDungeon_Success() {
 		}, nil).
 		AnyTimes() // Initiative lookup + potential monster attack target
 
+	// Arrange - Mock dungeon repo save (required for generator path)
+	s.mockDungeonRepo.EXPECT().
+		Save(gomock.Any(), gomock.Any()).
+		Return(&dungeonrepo.SaveOutput{Success: true}, nil)
+
 	// Arrange - Mock encounter repo save
 	s.mockEncRepo.EXPECT().
 		Save(gomock.Any(), gomock.Any()).
@@ -399,12 +398,8 @@ func (s *OrchestratorTestSuite) TestCreateDungeon_Success() {
 			s.Assert().NotNil(input.RoomData)
 			roomData, ok := input.RoomData.(*spatial.RoomData)
 			s.Assert().True(ok, "RoomData should be *spatial.RoomData")
-			s.Assert().Equal(input.EncounterID+"-room", roomData.ID)
 			s.Assert().Equal("dungeon", roomData.Type)
-			s.Assert().Equal(20, roomData.Width)
-			s.Assert().Equal(20, roomData.Height)
 			s.Assert().Equal(spatial.GridTypeHex, roomData.GridType)
-			s.Assert().NotNil(roomData.Entities)
 
 			// Verify initiative data is now saved
 			s.Assert().NotNil(input.InitiativeData, "InitiativeData should be present")
@@ -430,14 +425,14 @@ func (s *OrchestratorTestSuite) TestCreateDungeon_Success() {
 	s.Assert().NotEmpty(output.EncounterID)
 	s.Assert().Contains(output.EncounterID, "enc-")
 
+	// Verify dungeon ID is present (generator was used)
+	s.Assert().NotEmpty(output.DungeonID)
+
 	// Verify room data in output
 	s.Assert().NotNil(output.Room)
 	roomData, ok := output.Room.(*spatial.RoomData)
 	s.Assert().True(ok, "Room should be *spatial.RoomData")
-	s.Assert().Equal(output.EncounterID+"-room", roomData.ID)
 	s.Assert().Equal("dungeon", roomData.Type)
-	s.Assert().Equal(20, roomData.Width)
-	s.Assert().Equal(20, roomData.Height)
 	s.Assert().Equal(spatial.GridTypeHex, roomData.GridType)
 
 	// Verify combat state in output
@@ -445,9 +440,9 @@ func (s *OrchestratorTestSuite) TestCreateDungeon_Success() {
 	s.Assert().Equal(output.EncounterID, output.CombatState.EncounterID)
 	s.Assert().True(output.CombatState.CombatStarted)
 	s.Assert().False(output.CombatState.CombatEnded)
-	s.Assert().Len(output.CombatState.TurnOrder, 2) // 1 character + 1 goblin
+	s.Assert().GreaterOrEqual(len(output.CombatState.TurnOrder), 2) // At least 1 character + 1 monster
 
-	// Verify active turn is a player character (monsters are auto-skipped)
+	// Verify active turn index is valid
 	s.Require().GreaterOrEqual(output.CombatState.ActiveIndex, 0)
 	s.Require().Less(output.CombatState.ActiveIndex, len(output.CombatState.TurnOrder))
 	activeTurn := output.CombatState.TurnOrder[output.CombatState.ActiveIndex]
@@ -470,14 +465,21 @@ func (s *OrchestratorTestSuite) TestCreateDungeon_SaveError() {
 		Get(gomock.Any(), characterrepo.GetInput{ID: "char-1"}).
 		Return(&characterrepo.GetOutput{
 			CharacterData: &character.Data{
-				ID: "char-1",
+				ID:        "char-1",
+				HitPoints: 10,
 				AbilityScores: shared.AbilityScores{
 					abilities.DEX: 14,
 				},
 			},
-		}, nil)
+		}, nil).
+		AnyTimes()
 
-	// Arrange - Mock repo save to return error
+	// Mock dungeon repo save (called before encounter save)
+	s.mockDungeonRepo.EXPECT().
+		Save(gomock.Any(), gomock.Any()).
+		Return(&dungeonrepo.SaveOutput{Success: true}, nil)
+
+	// Arrange - Mock encounter repo save to return error
 	expectedError := fmt.Errorf("database error")
 	s.mockEncRepo.EXPECT().
 		Save(gomock.Any(), gomock.Any()).
@@ -495,35 +497,40 @@ func (s *OrchestratorTestSuite) TestCreateDungeon_SaveError() {
 	s.Assert().ErrorIs(err, expectedError)
 }
 
-func (s *OrchestratorTestSuite) TestCreateDungeon_MinimalInput() {
-	// Test with empty CharacterIDs (dungeon with just goblin)
-	// Since there are no player characters, combat should end automatically
-	s.mockEncRepo.EXPECT().
-		Save(gomock.Any(), gomock.Any()).
-		Return(&encounterrepo.SaveOutput{Success: true}, nil)
-
-	// Expect Update call to save initiative after monster turns
-	s.mockEncRepo.EXPECT().
-		Update(gomock.Any(), gomock.Any()).
-		Return(&encounterrepo.UpdateOutput{Success: true}, nil)
-
+func (s *OrchestratorTestSuite) TestCreateDungeon_RequiresCharacters() {
+	// Test that empty CharacterIDs fails since dungeon generator requires at least one character
 	output, err := s.orchestrator.CreateDungeon(context.Background(), &CreateDungeonInput{
 		CharacterIDs: []string{},
 	})
 
-	s.Require().NoError(err)
-	s.Assert().NotEmpty(output.EncounterID)
-	s.Assert().NotNil(output.CombatState)
-	s.Assert().Len(output.CombatState.TurnOrder, 1) // Only goblin
-	// TODO: Combat should detect when there are no players and end automatically
-	// Currently monster will loop through initiative until max iterations
-	// This will be fixed in a follow-up PR
-	s.Assert().NotEmpty(output.MonsterTurns, "Monster should execute turns")
+	s.Require().Error(err)
+	s.Assert().Nil(output)
+	s.Assert().Contains(err.Error(), "party size must be greater than 0")
 }
 
 func (s *OrchestratorTestSuite) TestCreateDungeon_UniqueIDs() {
 	// Verify that multiple calls generate unique IDs
 	var capturedIDs []string
+
+	// Mock character repo for all three calls
+	s.mockCharRepo.EXPECT().
+		Get(gomock.Any(), characterrepo.GetInput{ID: "char-1"}).
+		Return(&characterrepo.GetOutput{
+			CharacterData: &character.Data{
+				ID:        "char-1",
+				HitPoints: 10,
+				AbilityScores: shared.AbilityScores{
+					abilities.DEX: 14,
+				},
+			},
+		}, nil).
+		AnyTimes()
+
+	// Mock dungeon repo for all three calls
+	s.mockDungeonRepo.EXPECT().
+		Save(gomock.Any(), gomock.Any()).
+		Return(&dungeonrepo.SaveOutput{Success: true}, nil).
+		Times(3)
 
 	s.mockEncRepo.EXPECT().
 		Save(gomock.Any(), gomock.Any()).
@@ -537,12 +544,12 @@ func (s *OrchestratorTestSuite) TestCreateDungeon_UniqueIDs() {
 	s.mockEncRepo.EXPECT().
 		Update(gomock.Any(), gomock.Any()).
 		Return(&encounterrepo.UpdateOutput{Success: true}, nil).
-		Times(3)
+		AnyTimes()
 
 	// Create three encounters
 	for i := 0; i < 3; i++ {
 		output, err := s.orchestrator.CreateDungeon(context.Background(), &CreateDungeonInput{
-			CharacterIDs: []string{}, // Empty - just goblin
+			CharacterIDs: []string{"char-1"},
 		})
 		s.Require().NoError(err)
 		s.Assert().NotEmpty(output.EncounterID)
@@ -559,6 +566,25 @@ func (s *OrchestratorTestSuite) TestCreateDungeon_UniqueIDs() {
 }
 
 func (s *OrchestratorTestSuite) TestCreateDungeon_SavesInitiativeData() {
+	// Mock character repo
+	s.mockCharRepo.EXPECT().
+		Get(gomock.Any(), characterrepo.GetInput{ID: "char-1"}).
+		Return(&characterrepo.GetOutput{
+			CharacterData: &character.Data{
+				ID:        "char-1",
+				HitPoints: 10,
+				AbilityScores: shared.AbilityScores{
+					abilities.DEX: 14,
+				},
+			},
+		}, nil).
+		AnyTimes()
+
+	// Mock dungeon repo save
+	s.mockDungeonRepo.EXPECT().
+		Save(gomock.Any(), gomock.Any()).
+		Return(&dungeonrepo.SaveOutput{Success: true}, nil)
+
 	// Verify that encounter is created with room data AND initiative data
 	s.mockEncRepo.EXPECT().
 		Save(gomock.Any(), gomock.Any()).
@@ -570,17 +596,18 @@ func (s *OrchestratorTestSuite) TestCreateDungeon_SavesInitiativeData() {
 			// Verify initiative data is now saved
 			s.Assert().NotNil(input.InitiativeData, "InitiativeData should be present")
 			s.Assert().NotNil(input.InitiativeRolls, "InitiativeRolls should be present")
-			s.Assert().Len(input.InitiativeRolls, 1, "Should have 1 entity (goblin)")
+			s.Assert().GreaterOrEqual(len(input.InitiativeRolls), 2, "Should have at least 2 entities (1 char + monsters)")
 			return &encounterrepo.SaveOutput{Success: true}, nil
 		})
 
-	// Expect Update call to save initiative after monster turns (goblin goes first)
+	// Expect Update call to save initiative after monster turns
 	s.mockEncRepo.EXPECT().
 		Update(gomock.Any(), gomock.Any()).
-		Return(&encounterrepo.UpdateOutput{Success: true}, nil)
+		Return(&encounterrepo.UpdateOutput{Success: true}, nil).
+		AnyTimes()
 
 	output, err := s.orchestrator.CreateDungeon(context.Background(), &CreateDungeonInput{
-		CharacterIDs: []string{}, // Empty - just goblin
+		CharacterIDs: []string{"char-1"},
 	})
 
 	s.Require().NoError(err)
@@ -1963,6 +1990,11 @@ func (s *OrchestratorTestSuite) TestCreateDungeon_InitializesActionEconomy() {
 			},
 		}, nil).
 		AnyTimes()
+
+	// Mock dungeon repo save
+	s.mockDungeonRepo.EXPECT().
+		Save(gomock.Any(), gomock.Any()).
+		Return(&dungeonrepo.SaveOutput{Success: true}, nil)
 
 	// Capture the save input to verify action economy
 	var capturedSave *encounterrepo.SaveInput

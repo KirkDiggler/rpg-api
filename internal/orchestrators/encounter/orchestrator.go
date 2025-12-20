@@ -37,8 +37,8 @@ import (
 type Config struct {
 	CharacterRepo    characterrepo.Repository
 	EncounterRepo    encounterrepo.Repository
-	DungeonRepo      dungeonrepo.Repository      // Optional: for dungeon persistence
-	DungeonGen       *dungeon.Generator          // Optional: for procedural dungeon generation
+	DungeonRepo      dungeonrepo.Repository      // Required: for dungeon persistence
+	DungeonGen       *dungeon.Generator          // Required: for procedural dungeon generation
 	EventProcessor   eventprocessor.Processor    // Optional: for persisting and publishing events
 	EncounterLogRepo encounterlogrepo.Repository // Optional: for reading event history
 	Roller           dice.Roller                 // Optional: for dice rolls (defaults to random roller)
@@ -55,6 +55,12 @@ func (c *Config) Validate() error {
 	if c.EncounterRepo == nil {
 		return fmt.Errorf("EncounterRepo is required")
 	}
+	if c.DungeonRepo == nil {
+		return fmt.Errorf("DungeonRepo is required")
+	}
+	if c.DungeonGen == nil {
+		return fmt.Errorf("DungeonGen is required")
+	}
 	return nil
 }
 
@@ -62,8 +68,8 @@ func (c *Config) Validate() error {
 type Orchestrator struct {
 	charRepo         characterrepo.Repository
 	encRepo          encounterrepo.Repository
-	dungeonRepo      dungeonrepo.Repository // Optional: for dungeon persistence
-	dungeonGen       *dungeon.Generator     // Optional: for procedural dungeon generation
+	dungeonRepo      dungeonrepo.Repository // Required: for dungeon persistence
+	dungeonGen       *dungeon.Generator     // Required: for procedural dungeon generation
 	roller           dice.Roller
 	eventProcessor   eventprocessor.Processor    // Optional: for persisting and publishing events
 	encounterLogRepo encounterlogrepo.Repository // Optional: for reading event history
@@ -412,230 +418,7 @@ func (o *Orchestrator) CreateDungeon(ctx context.Context, input *CreateDungeonIn
 	// Generate unique encounter ID
 	encounterID := o.encounterIDGen.Generate()
 
-	// If dungeon generator is available, use it for procedural generation
-	if o.dungeonGen != nil {
-		return o.createDungeonWithGenerator(ctx, encounterID, input)
-	}
-
-	// Fallback: Create hardcoded room for backwards compatibility
-	// Create initial room data (20x20 hex grid)
-	roomData := &spatial.RoomData{
-		ID:       encounterID + "-room",
-		Type:     "dungeon",
-		Width:    20,
-		Height:   20,
-		GridType: spatial.GridTypeHex,
-		Entities: make(map[string]spatial.EntityPlacement),
-	}
-
-	// Add goblin target dummy at fixed position (center of room)
-	goblinID := "goblin-dummy"
-	roomData.Entities[goblinID] = spatial.EntityPlacement{
-		EntityID:       goblinID,
-		EntityType:     "monster",
-		Position:       spatial.Position{X: 10, Y: 10}, // Center of room
-		Size:           1,
-		BlocksMovement: true,
-	}
-
-	// Define 4 spawn points close to the goblin (within 30ft/6 squares movement)
-	// Players can move and attack on turn 1
-	spawnPoints := []spatial.Position{
-		{X: 5, Y: 8},  // 5 squares from goblin - reachable in one move
-		{X: 5, Y: 10}, // 5 squares from goblin
-		{X: 5, Y: 12}, // 5 squares from goblin
-		{X: 4, Y: 10}, // 6 squares from goblin - just reachable
-	}
-
-	// Place characters at spawn points (up to 4 characters)
-	for i, characterID := range input.CharacterIDs {
-		if i >= len(spawnPoints) {
-			break // Only place up to 4 characters
-		}
-
-		roomData.Entities[characterID] = spatial.EntityPlacement{
-			EntityID:       characterID,
-			EntityType:     "character",
-			Position:       spawnPoints[i],
-			Size:           1,
-			BlocksMovement: true,
-		}
-	}
-
-	// Add some static walls/obstacles for navigation
-	// Create a simple layout with pillars around the edges
-	obstacles := []spatial.Position{
-		{X: 3, Y: 3},   // Top-left pillar
-		{X: 3, Y: 17},  // Bottom-left pillar
-		{X: 17, Y: 3},  // Top-right pillar
-		{X: 17, Y: 17}, // Bottom-right pillar
-	}
-
-	for i, pos := range obstacles {
-		obstacleID := fmt.Sprintf("pillar-%d", i)
-		roomData.Entities[obstacleID] = spatial.EntityPlacement{
-			EntityID:       obstacleID,
-			EntityType:     "obstacle",
-			Position:       pos,
-			Size:           1,
-			BlocksMovement: true,
-		}
-	}
-
-	// Roll initiative for all combatants
-	combatants := make(map[core.Entity]int)
-
-	// Initialize CharacterHP map for TPK tracking
-	characterHP := make(map[string]int)
-
-	// Add characters with their DEX modifiers
-	for _, characterID := range input.CharacterIDs {
-		// Load character to get DEX modifier
-		charOutput, err := o.charRepo.Get(ctx, characterrepo.GetInput{ID: characterID})
-		if err != nil {
-			return nil, fmt.Errorf("failed to load character %s: %w", characterID, err)
-		}
-
-		// Calculate DEX modifier from ability scores
-		dexModifier := charOutput.CharacterData.AbilityScores.Modifier(abilities.DEX)
-
-		// Track character's current HP for TPK detection
-		characterHP[characterID] = charOutput.CharacterData.HitPoints
-
-		// Create participant entity
-		char := initiative.NewParticipant(characterID, "character")
-		combatants[char] = dexModifier
-	}
-
-	// Add goblin with hardcoded DEX modifier
-	goblin := initiative.NewParticipant(goblinID, "monster")
-	combatants[goblin] = 2 // Goblin DEX +2
-
-	// Roll initiative using rpg-toolkit
-	rolls := initiative.RollForOrder(combatants, o.roller)
-
-	// Create tracker and extract data
-	initiativeOrder := make([]core.Entity, len(rolls))
-	for i, roll := range rolls {
-		initiativeOrder[i] = roll.Entity
-	}
-	tracker := initiative.New(initiativeOrder)
-	trackerData := tracker.ToData()
-
-	// Convert rolls to service layer InitiativeEntry with positions from room
-	turnOrder := make([]InitiativeEntry, len(rolls))
-	for i, roll := range rolls {
-		entityID := roll.Entity.GetID()
-
-		// Get position from room data
-		var position *Position
-		if placement, exists := roomData.Entities[entityID]; exists {
-			position = &Position{
-				X: placement.Position.X,
-				Y: placement.Position.Y,
-			}
-		}
-
-		turnOrder[i] = InitiativeEntry{
-			EntityID:           entityID,
-			EntityType:         string(roll.Entity.GetType()),
-			InitiativeRoll:     roll.Roll,
-			InitiativeModifier: roll.Modifier,
-			InitiativeTotal:    roll.Total,
-			Position:           position,
-		}
-	}
-
-	// Create combat state with fresh action economy
-	combatState := &CombatState{
-		EncounterID:       encounterID,
-		Round:             1,
-		TurnOrder:         turnOrder,
-		ActiveIndex:       0,
-		MovementRemaining: 30,                               // Default movement speed for D&D 5e
-		ActionEconomy:     entities.NewActionEconomyState(), // Fresh action economy for first turn
-		CombatStarted:     true,
-		CombatEnded:       false,
-	}
-
-	// Create monster data for the goblin with scimitar action
-	goblinMonster := monster.NewGoblin(goblinID)
-	goblinMonster.AddAction(monster.NewScimitarAction(monster.ScimitarConfig{
-		AttackBonus: 4,       // +2 DEX + 2 proficiency
-		DamageDice:  "1d6+2", // Scimitar 1d6 + DEX
-		DamageBonus: 2,       // DEX modifier
-	}))
-	goblinData := goblinMonster.ToData()
-
-	// Save encounter data with room, initiative, monsters, and action economy
-	_, err := o.encRepo.Save(ctx, &encounterrepo.SaveInput{
-		EncounterID:       encounterID,
-		RoomData:          roomData,
-		InitiativeData:    &trackerData,
-		InitiativeRolls:   rolls,
-		MovementRemaining: combatState.MovementRemaining,
-		ActionEconomy:     combatState.ActionEconomy,
-		Monsters:          []*monster.Data{goblinData},
-		CharacterHP:       characterHP,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to save encounter: %w", err)
-	}
-
-	// Check if a monster goes first in initiative
-	var monsterTurns []*MonsterTurnResult
-	if trackerData.Order[0].Type == entityTypeMonster {
-		// Monster(s) go first - execute all monster turns until a player's turn
-		// Create EncounterData for monster turn execution
-		encData := &encounterrepo.EncounterData{
-			ID:                encounterID,
-			RoomData:          roomData,
-			InitiativeData:    &trackerData,
-			InitiativeRolls:   rolls,
-			MovementRemaining: combatState.MovementRemaining,
-			Monsters:          []*monster.Data{goblinData},
-			CharacterHP:       characterHP,
-		}
-
-		// Execute monster turns
-		monsterTurns, err = o.executeMonsterTurns(ctx, encData, input.CharacterIDs)
-		if err != nil {
-			return nil, fmt.Errorf("failed to execute monster turns: %w", err)
-		}
-
-		// Update combat state to reflect the new active index after monster turns
-		combatState.ActiveIndex = encData.InitiativeData.Current
-		combatState.Round = encData.InitiativeData.Round
-
-		// Persist updated initiative, monster state, room positions, and character HP
-		_, err = o.encRepo.Update(ctx, &encounterrepo.UpdateInput{
-			EncounterID:    encounterID,
-			InitiativeData: encData.InitiativeData,
-			Monsters:       encData.Monsters,    // Persist monster HP/state changes
-			RoomData:       encData.RoomData,    // Persist monster position changes
-			CharacterHP:    encData.CharacterHP, // Persist character HP changes from monster attacks
-		})
-		if err != nil {
-			return nil, fmt.Errorf("failed to save initiative after monster turns: %w", err)
-		}
-
-		// Check for TPK after monster turns
-		o.checkAndHandleFailure(ctx, encounterID, encData)
-	} else {
-		// Player goes first - no monster turns to execute
-		// Active index is already set to the first entity (index 0)
-		combatState.ActiveIndex = 0
-	}
-
-	// Return encounter ID, room data, combat state, and any monster turns
-	return &CreateDungeonOutput{
-		EncounterID:  encounterID,
-		DungeonID:    "", // Empty for fallback path (no generator)
-		Room:         roomData,
-		Doors:        nil, // No doors for fallback path
-		CombatState:  combatState,
-		MonsterTurns: monsterTurns,
-	}, nil
+	return o.createDungeonWithGenerator(ctx, encounterID, input)
 }
 
 // createDungeonWithGenerator uses the procedural generator to create a dungeon
@@ -2534,6 +2317,7 @@ func (o *Orchestrator) SetReady(
 }
 
 // StartCombat begins combat (host only, all players must be ready)
+// Generates a dungeon using the dungeon generator and starts combat in the first room.
 func (o *Orchestrator) StartCombat(
 	ctx context.Context,
 	input *StartCombatInput,
@@ -2574,93 +2358,103 @@ func (o *Orchestrator) StartCombat(
 		}
 	}
 
-	// 6. Collect character IDs and place them in the room
-	roomData, ok := encOutput.Data.RoomData.(*spatial.RoomData)
-	if !ok {
-		return nil, fmt.Errorf("invalid room data type")
-	}
+	// 6. Collect character IDs from players
 	characterIDs := make([]string, 0, len(encOutput.Data.Players))
-
-	// Define spawn points for players using cube coordinates (x + y + z = 0)
-	spawnPoints := []spatial.CubeCoordinate{
-		{X: 5, Y: -13, Z: 8},
-		{X: 5, Y: -15, Z: 10},
-		{X: 5, Y: -17, Z: 12},
-		{X: 4, Y: -14, Z: 10},
-	}
-
-	i := 0
 	for _, player := range encOutput.Data.Players {
 		characterIDs = append(characterIDs, player.CharacterID)
+	}
 
-		// Place character in room using cube coordinates
-		if i < len(spawnPoints) {
-			roomData.CubeEntities[player.CharacterID] = spatial.EntityCubePlacement{
-				EntityID:       player.CharacterID,
-				EntityType:     entityTypeCharacter,
-				CubePosition:   spawnPoints[i],
-				Size:           1,
-				BlocksMovement: true,
-			}
+	// 7. Generate dungeon using the dungeon generator
+	partyLevel := input.PartyLevel
+	if partyLevel == 0 {
+		partyLevel = 1 // Default to level 1
+	}
+
+	genInput := MapToGeneratorInput(&MapToGeneratorInputParams{
+		PartySize:  len(characterIDs),
+		PartyLevel: partyLevel,
+		ThemeID:    input.ThemeID,    // Defaults to crypt if empty
+		Difficulty: input.Difficulty, // Defaults to easy if empty
+		Length:     input.Length,     // Defaults to short if empty
+		Seed:       input.Seed,
+	})
+
+	genOutput, err := o.dungeonGen.Generate(ctx, genInput)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate dungeon: %w", err)
+	}
+
+	generatedDungeon := genOutput.Dungeon
+	if generatedDungeon == nil {
+		return nil, fmt.Errorf("dungeon generator returned nil dungeon")
+	}
+	if len(generatedDungeon.Rooms) == 0 {
+		return nil, fmt.Errorf("dungeon generator returned empty dungeon with no rooms")
+	}
+	if generatedDungeon.StartRoom == "" {
+		return nil, fmt.Errorf("dungeon generator did not specify a start room")
+	}
+
+	// 8. Create entities.Dungeon for storage and save it
+	dungeonEntity := o.convertToDungeonEntity(input.EncounterID, generatedDungeon, genOutput.Seed)
+	_, err = o.dungeonRepo.Save(ctx, &dungeonrepo.SaveInput{
+		Dungeon: dungeonEntity,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to save dungeon: %w", err)
+	}
+
+	// 9. Get the start room and convert to room data
+	startRoom := o.findRoom(generatedDungeon, generatedDungeon.StartRoom)
+	if startRoom == nil {
+		return nil, fmt.Errorf("start room not found: %s", generatedDungeon.StartRoom)
+	}
+
+	roomData := o.convertToRoomData(input.EncounterID, startRoom)
+
+	// 10. Place characters at spawn zones
+	spawnPositions := o.getPlayerSpawnPositions(startRoom)
+	for i, characterID := range characterIDs {
+		if i >= len(spawnPositions) {
+			break
 		}
-		i++
-	}
-
-	// 7. Spawn monsters equal to number of players, spread across the room
-	// Monster spawn points on the right side of the room (away from players) using cube coordinates
-	monsterSpawnPoints := []spatial.CubeCoordinate{
-		{X: 14, Y: -22, Z: 8},  // Right side
-		{X: 14, Y: -26, Z: 12}, // Right side lower
-		{X: 12, Y: -22, Z: 10}, // Center-right
-		{X: 13, Y: -19, Z: 6},  // Right upper
-	}
-
-	numPlayers := len(encOutput.Data.Players)
-	monsters := make([]*monster.Data, 0, numPlayers)
-
-	for i := 0; i < numPlayers; i++ {
-		goblinID := fmt.Sprintf("goblin-%d", i+1)
-		spawnPos := monsterSpawnPoints[i%len(monsterSpawnPoints)]
-
-		roomData.CubeEntities[goblinID] = spatial.EntityCubePlacement{
-			EntityID:       goblinID,
-			EntityType:     entityTypeMonster,
-			CubePosition:   spawnPos,
+		roomData.CubeEntities[characterID] = spatial.EntityCubePlacement{
+			EntityID:       characterID,
+			EntityType:     entityTypeCharacter,
+			CubePosition:   spawnPositions[i],
 			Size:           1,
 			BlocksMovement: true,
 		}
-
-		// Create monster data for each goblin
-		monsters = append(monsters, o.createGoblinData(goblinID))
 	}
 
-	// 9. Roll initiative
-	participants := make(map[core.Entity]int)
+	// 11. Place monsters from the dungeon's encounter
+	monsters := o.placeMonsters(roomData, startRoom)
 
-	// Initialize CharacterHP map for TPK tracking
+	// 12. Roll initiative
+	combatants := make(map[core.Entity]int)
 	characterHP := make(map[string]int)
 
-	// Add characters
-	for _, charID := range characterIDs {
-		var charOutput *characterrepo.GetOutput
-		charOutput, err = o.charRepo.Get(ctx, characterrepo.GetInput{ID: charID})
-		if err != nil {
-			return nil, fmt.Errorf("failed to load character %s: %w", charID, err)
+	// Add characters with their DEX modifiers
+	for _, characterID := range characterIDs {
+		charOutput, charErr := o.charRepo.Get(ctx, characterrepo.GetInput{ID: characterID})
+		if charErr != nil {
+			return nil, fmt.Errorf("failed to load character %s: %w", characterID, charErr)
 		}
-		dexMod := charOutput.CharacterData.AbilityScores.Modifier(abilities.DEX)
-		participants[initiative.NewParticipant(charID, entityTypeCharacter)] = dexMod
-
-		// Track character's current HP for TPK detection
-		characterHP[charID] = charOutput.CharacterData.HitPoints
+		dexModifier := charOutput.CharacterData.AbilityScores.Modifier(abilities.DEX)
+		characterHP[characterID] = charOutput.CharacterData.HitPoints
+		char := initiative.NewParticipant(characterID, entityTypeCharacter)
+		combatants[char] = dexModifier
 	}
 
-	// Add all goblins to initiative
+	// Add monsters to initiative with their actual DEX modifiers
 	for _, m := range monsters {
-		participants[initiative.NewParticipant(m.ID, entityTypeMonster)] = 2 // Goblin DEX +2
+		monsterEntity := initiative.NewParticipant(m.ID, entityTypeMonster)
+		dexModifier := m.AbilityScores.Modifier(abilities.DEX)
+		combatants[monsterEntity] = dexModifier
 	}
 
 	// Roll initiative
-	rolls := initiative.RollForOrder(participants, o.roller)
+	rolls := initiative.RollForOrder(combatants, o.roller)
 
 	// Create tracker
 	initiativeOrder := make([]core.Entity, len(rolls))
@@ -2688,7 +2482,7 @@ func (o *Orchestrator) StartCombat(
 		}
 	}
 
-	// 10. Update encounter state to active with fresh action economy
+	// 13. Update encounter state to active with fresh action economy
 	activeState := encounterrepo.StateActive
 	initialActionEconomy := entities.NewActionEconomyState()
 	_, err = o.encRepo.Update(ctx, &encounterrepo.UpdateInput{
@@ -2698,50 +2492,46 @@ func (o *Orchestrator) StartCombat(
 		InitiativeData:    &trackerData,
 		MovementRemaining: ptrInt32(defaultMovementSpeed),
 		ActionEconomy:     initialActionEconomy,
-		Monsters:          monsters,    // Save all monsters
-		CharacterHP:       characterHP, // Track character HP for TPK detection
+		Monsters:          monsters,
+		CharacterHP:       characterHP,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to update encounter: %w", err)
 	}
 
-	// 11. Build combat state
+	// 14. Build combat state
 	combatState := &CombatState{
 		EncounterID:       input.EncounterID,
 		Round:             1,
 		TurnOrder:         turnOrder,
 		ActiveIndex:       0,
 		MovementRemaining: defaultMovementSpeed,
-		ActionEconomy:     initialActionEconomy, // Fresh action economy for first turn
+		ActionEconomy:     initialActionEconomy,
 		CombatStarted:     true,
 		CombatEnded:       false,
 	}
 
-	// 12. Execute monster turns if they go first
+	// 15. Execute monster turns if they go first
 	var monsterTurns []*MonsterTurnResult
-	if trackerData.Order[0].Type == entityTypeMonster {
-		// Monster(s) go first - execute all monster turns until a player's turn
+	if len(trackerData.Order) > 0 && trackerData.Order[0].Type == entityTypeMonster {
 		encData := &encounterrepo.EncounterData{
 			ID:                input.EncounterID,
 			RoomData:          roomData,
 			InitiativeData:    &trackerData,
 			InitiativeRolls:   rolls,
 			MovementRemaining: combatState.MovementRemaining,
-			Monsters:          monsters,    // All monsters
-			CharacterHP:       characterHP, // Track character HP for TPK
+			Monsters:          monsters,
+			CharacterHP:       characterHP,
 		}
 
-		// Execute monster turns
 		monsterTurns, err = o.executeMonsterTurns(ctx, encData, characterIDs)
 		if err != nil {
 			return nil, fmt.Errorf("failed to execute monster turns: %w", err)
 		}
 
-		// Update combat state to reflect the new active index after monster turns
 		combatState.ActiveIndex = encData.InitiativeData.Current
 		combatState.Round = encData.InitiativeData.Round
 
-		// Persist updated initiative, monster state, room positions, and character HP
 		_, err = o.encRepo.Update(ctx, &encounterrepo.UpdateInput{
 			EncounterID:    input.EncounterID,
 			InitiativeData: encData.InitiativeData,
@@ -2753,14 +2543,12 @@ func (o *Orchestrator) StartCombat(
 			return nil, fmt.Errorf("failed to save initiative after monster turns: %w", err)
 		}
 
-		// Check for TPK after monster turns
 		o.checkAndHandleFailure(ctx, input.EncounterID, encData)
 	}
 
-	// 13. Build party list for event (with character data)
+	// 16. Build party list for event
 	party := make([]*entities.Player, 0, len(encOutput.Data.Players))
 	for _, player := range encOutput.Data.Players {
-		// Load character data for the event
 		charOutput, charErr := o.charRepo.Get(ctx, characterrepo.GetInput{ID: player.CharacterID})
 		var charData *character.Data
 		if charErr == nil && charOutput != nil {
@@ -2777,14 +2565,31 @@ func (o *Orchestrator) StartCombat(
 		})
 	}
 
-	// 13. Publish CombatStarted event
+	// 17. Build monster state list for event
+	monsterStates := make([]*entities.MonsterState, 0, len(monsters))
+	for _, m := range monsters {
+		monsterType := ""
+		if m.Ref != nil {
+			monsterType = m.Ref.ID // Use ref ID as monster type (e.g., "skeleton", "goblin")
+		}
+		monsterStates = append(monsterStates, &entities.MonsterState{
+			MonsterID:        m.ID,
+			MonsterName:      m.Name,
+			CurrentHitPoints: m.HitPoints,
+			MaxHitPoints:     m.MaxHitPoints,
+			MonsterType:      monsterType,
+		})
+	}
+
+	// 18. Publish CombatStarted event
 	o.publishEvent(ctx, input.EncounterID, entities.EventTypeCombatStarted, &entities.CombatStartedEvent{
 		CombatState: combatState,
 		Room:        roomData,
 		Party:       party,
+		Monsters:    monsterStates,
 	})
 
-	// 14. Publish MonsterTurnCompleted events if monsters went first
+	// 19. Publish MonsterTurnCompleted events if monsters went first
 	for _, mt := range monsterTurns {
 		o.publishEvent(ctx, input.EncounterID, entities.EventTypeMonsterTurnCompleted, &entities.MonsterTurnCompletedEvent{
 			MonsterID:   mt.MonsterID,
@@ -3112,18 +2917,6 @@ func (o *Orchestrator) buildPartyFromPlayers(
 	}
 
 	return party
-}
-
-// createGoblinData creates a goblin monster for encounters
-func (o *Orchestrator) createGoblinData(goblinID string) *monster.Data {
-	goblinMonster := monster.NewGoblin(goblinID)
-	goblinMonster.AddAction(monster.NewScimitarAction(monster.ScimitarConfig{
-		AttackBonus: 4,       // +2 DEX + 2 proficiency
-		DamageDice:  "1d6+2", // Scimitar 1d6 + DEX
-		DamageBonus: 2,       // DEX modifier
-	}))
-	data := goblinMonster.ToData()
-	return data
 }
 
 // GetEncounterState returns a full snapshot of the encounter state.

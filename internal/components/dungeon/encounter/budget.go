@@ -22,7 +22,12 @@ type BudgetOutput struct {
 	RoomBudgets []float64
 }
 
-// AllocateBudget distributes CR across dungeon rooms with boss room priority
+// MinimumRoomCR is the minimum CR budget per room to ensure at least one monster can spawn.
+// Based on the cheapest monsters in theme pools (Skeleton at CR 0.25).
+const MinimumRoomCR = 0.25
+
+// AllocateBudget distributes CR across dungeon rooms with boss room priority.
+// Ensures each room has at least MinimumRoomCR to spawn at least one monster.
 func AllocateBudget(input *BudgetInput) (*BudgetOutput, error) {
 	if input == nil {
 		return nil, fmt.Errorf("input is required")
@@ -46,12 +51,6 @@ func AllocateBudget(input *BudgetInput) (*BudgetOutput, error) {
 		totalCR = float64(input.PartySize) * input.TargetCR
 	}
 
-	// Allocate 40% to boss room
-	bossRoomBudget := totalCR * 0.4
-
-	// Remaining 60% distributed across regular rooms
-	remainingBudget := totalCR * 0.6
-
 	// Calculate number of regular rooms (total - 1 boss room)
 	regularRoomCount := input.RoomCount - 1
 	if regularRoomCount <= 0 {
@@ -61,6 +60,22 @@ func AllocateBudget(input *BudgetInput) (*BudgetOutput, error) {
 			RoomBudgets:    []float64{},
 		}, nil
 	}
+
+	// Ensure minimum total CR so every room can have at least one monster
+	// Minimum = (regularRoomCount * MinimumRoomCR) + MinimumRoomCR for boss
+	minimumTotalCR := float64(regularRoomCount+1) * MinimumRoomCR
+	if totalCR < minimumTotalCR {
+		totalCR = minimumTotalCR
+	}
+
+	// Allocate 40% to boss room (but at least MinimumRoomCR)
+	bossRoomBudget := totalCR * 0.4
+	if bossRoomBudget < MinimumRoomCR {
+		bossRoomBudget = MinimumRoomCR
+	}
+
+	// Remaining budget distributed across regular rooms
+	remainingBudget := totalCR - bossRoomBudget
 
 	// Progressive scaling: later rooms are harder
 	// Use weighted distribution where room weight = 1 + (index / roomCount)
@@ -75,9 +90,13 @@ func AllocateBudget(input *BudgetInput) (*BudgetOutput, error) {
 		totalWeight += weight
 	}
 
-	// Allocate budget proportional to weight
+	// Allocate budget proportional to weight, ensuring minimum per room
 	for i := 0; i < regularRoomCount; i++ {
-		roomBudgets[i] = remainingBudget * (weights[i] / totalWeight)
+		budget := remainingBudget * (weights[i] / totalWeight)
+		if budget < MinimumRoomCR {
+			budget = MinimumRoomCR
+		}
+		roomBudgets[i] = budget
 	}
 
 	return &BudgetOutput{

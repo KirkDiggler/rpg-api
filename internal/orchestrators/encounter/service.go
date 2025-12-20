@@ -336,6 +336,13 @@ type SetReadyOutput struct {
 type StartCombatInput struct {
 	EncounterID string // ID of the encounter
 	PlayerID    string // ID of the player requesting start (must be host)
+
+	// Dungeon generation options (all optional with sensible defaults)
+	ThemeID    string // Theme identifier (crypt, cave, bandit-lair) - defaults to crypt
+	Difficulty string // Difficulty level (easy, medium, hard, deadly) - defaults to easy
+	Length     string // Dungeon length (short, medium, long) - defaults to short
+	PartyLevel int    // Average party level for CR calculation - defaults to 1
+	Seed       int64  // Optional seed for reproducibility (0 = random)
 }
 
 // StartCombatOutput returns the initial combat state

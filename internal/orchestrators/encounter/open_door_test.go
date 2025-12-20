@@ -9,6 +9,7 @@ import (
 	"go.uber.org/mock/gomock"
 
 	"github.com/KirkDiggler/rpg-api/internal/components/dungeon"
+	dungeontoolkit "github.com/KirkDiggler/rpg-api/internal/components/dungeon/toolkit"
 	"github.com/KirkDiggler/rpg-api/internal/entities"
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/encounter"
 	charactermock "github.com/KirkDiggler/rpg-api/internal/repositories/character/mock"
@@ -47,6 +48,7 @@ func (s *OpenDoorTestSuite) SetupTest() {
 		CharacterRepo: s.mockCharRepo,
 		EncounterRepo: s.mockEncRepo,
 		DungeonRepo:   s.mockDungeonRepo,
+		DungeonGen:    dungeontoolkit.CreateGenerator(&dungeontoolkit.ToolkitConfig{}),
 	})
 	s.Require().NoError(err)
 	s.orchestrator = orc

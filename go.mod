@@ -3,7 +3,7 @@ module github.com/KirkDiggler/rpg-api
 go 1.24.1
 
 require (
-	github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20251220052702-f6a1894a76ec
+	github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20251220072911-0e78e0cfc17e
 	github.com/KirkDiggler/rpg-toolkit/core v0.9.6
 	github.com/KirkDiggler/rpg-toolkit/dice v0.3.2
 	github.com/KirkDiggler/rpg-toolkit/events v0.6.2
