@@ -129,21 +129,21 @@ func Monsters() *monsterRefs {
 
 ```go
 type Monster struct {
-    ID        string           // Unique instance ID
-    SourceRef *refs.MonsterRef // The type this monster was created from
-    Name      string
+    ID   string           // Unique instance ID
+    Ref  *refs.MonsterRef // The type this monster was created from
+    Name string
     // ... rest of fields
 }
 ```
 
-**Update monster constructors** to set SourceRef:
+**Update monster constructors** to set Ref:
 
 ```go
 func NewSkeleton(id string) *Monster {
     return &Monster{
-        ID:        id,
-        SourceRef: &refs.Monsters().Skeleton,
-        Name:      "Skeleton",
+        ID:   id,
+        Ref:  &refs.Monsters().Skeleton,
+        Name: "Skeleton",
         // ...
     }
 }
@@ -182,7 +182,7 @@ var monsterTypeMap = map[string]pb.MonsterType{
     refs.Monsters().Goblin.ID:          pb.MonsterType_MONSTER_TYPE_GOBLIN,
 }
 
-// MonsterTypeFromRef returns the proto MonsterType for a monster's source ref
+// MonsterTypeFromRef returns the proto MonsterType for a monster's ref
 func MonsterTypeFromRef(ref *refs.MonsterRef) pb.MonsterType {
     if ref == nil {
         return pb.MonsterType_MONSTER_TYPE_GOBLIN
