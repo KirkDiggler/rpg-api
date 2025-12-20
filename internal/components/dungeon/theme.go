@@ -1,5 +1,7 @@
 package dungeon
 
+import "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/refs"
+
 // Theme bundles all generation rules for a cohesive dungeon style.
 // Themes control shape generation, feature placement, and monster selection.
 type Theme struct {
@@ -55,12 +57,12 @@ var ThemeCrypt = Theme{
 		TerrainTypes:  []TerrainType{},
 	},
 	MonsterPool: []MonsterRef{
-		{ID: "skeleton", Role: RoleMelee, CR: 0.25},
-		{ID: "zombie", Role: RoleMelee, CR: 0.25},
-		{ID: "skeleton-archer", Role: RoleRanged, CR: 0.25},
+		{ID: refs.Monsters.Skeleton().ID, Role: RoleMelee, CR: 0.25},
+		{ID: refs.Monsters.Zombie().ID, Role: RoleMelee, CR: 0.25},
+		{ID: refs.Monsters.SkeletonArcher().ID, Role: RoleRanged, CR: 0.25},
 	},
 	BossPool: []MonsterRef{
-		{ID: "skeleton-captain", Role: RoleBoss, CR: 2},
+		{ID: refs.Monsters.SkeletonCaptain().ID, Role: RoleBoss, CR: 2},
 	},
 }
 
@@ -80,11 +82,11 @@ var ThemeCave = Theme{
 		TerrainTypes:  []TerrainType{},
 	},
 	MonsterPool: []MonsterRef{
-		{ID: "giant-rat", Role: RoleMelee, CR: 0.125},
-		{ID: "giant-spider", Role: RoleMelee, CR: 0.5},
+		{ID: refs.Monsters.GiantRat().ID, Role: RoleMelee, CR: 0.125},
+		{ID: refs.Monsters.GiantSpider().ID, Role: RoleMelee, CR: 0.5},
 	},
 	BossPool: []MonsterRef{
-		{ID: "giant-wolf-spider", Role: RoleBoss, CR: 1},
+		{ID: refs.Monsters.GiantWolfSpider().ID, Role: RoleBoss, CR: 1},
 	},
 }
 
@@ -103,10 +105,10 @@ var ThemeBanditLair = Theme{
 		TerrainTypes:  []TerrainType{},
 	},
 	MonsterPool: []MonsterRef{
-		{ID: "bandit", Role: RoleMelee, CR: 0.125},
-		{ID: "bandit-archer", Role: RoleRanged, CR: 0.25},
+		{ID: refs.Monsters.Bandit().ID, Role: RoleMelee, CR: 0.125},
+		{ID: refs.Monsters.BanditArcher().ID, Role: RoleRanged, CR: 0.25},
 	},
 	BossPool: []MonsterRef{
-		{ID: "bandit-captain", Role: RoleBoss, CR: 2},
+		{ID: refs.Monsters.BanditCaptain().ID, Role: RoleBoss, CR: 2},
 	},
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 
+	pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
 	"github.com/KirkDiggler/rpg-api/internal/entities"
 	"github.com/KirkDiggler/rpg-toolkit/core"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/damage"
@@ -429,10 +430,11 @@ type GetEncounterStateInput struct {
 // MonsterCombatState contains monster HP information for rendering
 // Entity positions are in Room, this provides combat stats
 type MonsterCombatState struct {
-	MonsterID        string // Unique ID of this monster instance
-	MonsterName      string // Display name (e.g., "Goblin")
-	CurrentHitPoints int    // Current HP
-	MaxHitPoints     int    // Maximum HP
+	MonsterID        string         // Unique ID of this monster instance
+	MonsterName      string         // Display name (e.g., "Goblin")
+	CurrentHitPoints int            // Current HP
+	MaxHitPoints     int            // Maximum HP
+	MonsterType      pb.MonsterType // Type for UI texture selection
 }
 
 // GetEncounterStateOutput returns a full snapshot of the encounter

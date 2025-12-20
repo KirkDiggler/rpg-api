@@ -4,6 +4,7 @@ package dungeon
 import (
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/monster"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/monster/monsters"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/refs"
 )
 
 // MonsterFactory creates monsters based on their ID from theme monster pools
@@ -19,39 +20,39 @@ func NewMonsterFactory() *MonsterFactory {
 func (f *MonsterFactory) CreateMonster(id, monsterID string) *monster.Monster {
 	switch monsterID {
 	// Undead (Crypt theme)
-	case "skeleton", "skeleton-archer":
+	case refs.Monsters.Skeleton().ID, refs.Monsters.SkeletonArcher().ID:
 		return monsters.NewSkeleton(id)
-	case "zombie":
+	case refs.Monsters.Zombie().ID:
 		return monsters.NewZombie(id)
-	case "skeleton-captain":
+	case refs.Monsters.SkeletonCaptain().ID:
 		// Use Ghoul as a stronger undead for boss (CR 1)
 		return monsters.NewGhoul(id)
-	case "ghoul":
+	case refs.Monsters.Ghoul().ID:
 		return monsters.NewGhoul(id)
 
 	// Beasts (Cave theme)
-	case "giant-rat":
+	case refs.Monsters.GiantRat().ID:
 		return monsters.NewGiantRat(id)
-	case "giant-spider":
+	case refs.Monsters.GiantSpider().ID:
 		// Use Wolf as similar CR beast
 		return monsters.NewWolf(id)
-	case "giant-wolf-spider":
+	case refs.Monsters.GiantWolfSpider().ID:
 		// Use Brown Bear for cave boss (CR 1)
 		return monsters.NewBrownBear(id)
-	case "wolf":
+	case refs.Monsters.Wolf().ID:
 		return monsters.NewWolf(id)
-	case "brown-bear":
+	case refs.Monsters.BrownBear().ID:
 		return monsters.NewBrownBear(id)
 
 	// Humanoids (Bandit Lair theme)
-	case "bandit":
+	case refs.Monsters.Bandit().ID:
 		return monsters.NewBanditMelee(id)
-	case "bandit-archer":
+	case refs.Monsters.BanditArcher().ID:
 		return monsters.NewBanditRanged(id)
-	case "bandit-captain":
+	case refs.Monsters.BanditCaptain().ID:
 		// Use Thug for bandit boss (CR 1/2)
 		return monsters.NewThug(id)
-	case "thug":
+	case refs.Monsters.Thug().ID:
 		return monsters.NewThug(id)
 
 	// Fallback to goblin for unknown types

@@ -3190,6 +3190,7 @@ func (o *Orchestrator) GetEncounterState(ctx context.Context, input *GetEncounte
 						MonsterName:      m.Name,
 						CurrentHitPoints: m.HitPoints,
 						MaxHitPoints:     m.MaxHitPoints,
+						MonsterType:      dungeon.MonsterTypeFromRef(m.Ref),
 					})
 				}
 			}

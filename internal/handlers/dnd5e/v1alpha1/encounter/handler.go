@@ -231,6 +231,7 @@ func (h *Handler) GetEncounterState(
 			MonsterName:      m.MonsterName,
 			CurrentHitPoints: int32(m.CurrentHitPoints),
 			MaxHitPoints:     int32(m.MaxHitPoints),
+			MonsterType:      m.MonsterType,
 		})
 	}
 
