@@ -14,6 +14,7 @@ import (
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
 	apierrors "github.com/KirkDiggler/rpg-api/internal/apierr"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
+	"github.com/KirkDiggler/rpg-api/internal/components/dungeon"
 	"github.com/KirkDiggler/rpg-api/internal/entities"
 	characterhandler "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v1alpha1/character"
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/encounter"
@@ -723,6 +724,21 @@ func (h *Handler) convertToProtoEvent(event *entities.EncounterEvent) (*dnd5ev1a
 				}
 			}
 		}
+		// Convert monsters for event
+		var protoMonsters []*dnd5ev1alpha1.MonsterCombatState
+		if event.CombatStarted.Monsters != nil {
+			protoMonsters = make([]*dnd5ev1alpha1.MonsterCombatState, len(event.CombatStarted.Monsters))
+			for i, m := range event.CombatStarted.Monsters {
+				protoMonsters[i] = &dnd5ev1alpha1.MonsterCombatState{
+					MonsterId:        m.MonsterID,
+					MonsterName:      m.MonsterName,
+					CurrentHitPoints: int32(m.CurrentHitPoints),
+					MaxHitPoints:     int32(m.MaxHitPoints),
+					MonsterType:      dungeon.MonsterTypeFromID(m.MonsterType),
+				}
+			}
+		}
+
 		// Use default grid settings for event conversion
 		gridType := spatial.GridTypeHex
 		hexOrientation := spatial.HexOrientationPointyTop
@@ -731,6 +747,7 @@ func (h *Handler) convertToProtoEvent(event *entities.EncounterEvent) (*dnd5ev1a
 				CombatState: convertCombatStateToProto(event.CombatStarted.CombatState, gridType, hexOrientation),
 				Room:        convertRoomDataToProto(event.CombatStarted.Room),
 				Party:       protoParty,
+				Monsters:    protoMonsters,
 			},
 		}
 

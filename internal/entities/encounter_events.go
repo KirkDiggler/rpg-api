@@ -100,11 +100,21 @@ type PlayerReconnectedEvent struct {
 	CharacterID string `json:"character_id"`
 }
 
+// MonsterState represents a monster's combat state for events
+type MonsterState struct {
+	MonsterID        string `json:"monster_id"`         // Unique ID of this monster instance
+	MonsterName      string `json:"monster_name"`       // Display name (e.g., "Skeleton")
+	CurrentHitPoints int    `json:"current_hit_points"` // Current HP
+	MaxHitPoints     int    `json:"max_hit_points"`     // Maximum HP
+	MonsterType      string `json:"monster_type"`       // Type for UI texture (e.g., "skeleton", "goblin")
+}
+
 // CombatStartedEvent is emitted when combat begins
 type CombatStartedEvent struct {
 	CombatState *CombatState      `json:"combat_state"` // Full combat state including initiative order
 	Room        *spatial.RoomData `json:"room"`         // Room with entity positions
 	Party       []*Player         `json:"party"`        // Party members at combat start
+	Monsters    []*MonsterState   `json:"monsters"`     // Monster state with types for UI textures
 }
 
 // CombatEndedEvent is emitted when combat ends

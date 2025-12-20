@@ -119,6 +119,18 @@ func (s *selector) selectRegularEncounter(input *SelectInput, rng *rand.Rand) *S
 	totalCR := 0.0
 	remainingBudget := input.Budget
 
+	// For low budgets, skip role distribution and just fill with any affordable monster
+	// This ensures at least one monster spawns when budget is tight
+	cheapestMonsterCR := s.getCheapestMonsterCR(input.Pool)
+	if remainingBudget < cheapestMonsterCR*2 {
+		// Not enough budget for role-based distribution, just fill with any affordable
+		monsters, totalCR = s.fillRoleSlot(monsters, totalCR, input.Pool, remainingBudget, rng)
+		return &SelectOutput{
+			Monsters: monsters,
+			TotalCR:  totalCR,
+		}
+	}
+
 	// Determine role distribution based on CR budget
 	roleDistribution := s.getRoleDistribution(input.Budget)
 
@@ -141,10 +153,29 @@ func (s *selector) selectRegularEncounter(input *SelectInput, rng *rand.Rand) *S
 	// Select support monsters
 	monsters, totalCR = s.fillRoleSlot(monsters, totalCR, supportMonsters, supportBudget, rng)
 
+	// If no monsters were selected (role budgets too small), fall back to any affordable
+	if len(monsters) == 0 {
+		monsters, totalCR = s.fillRoleSlot(monsters, totalCR, input.Pool, remainingBudget, rng)
+	}
+
 	return &SelectOutput{
 		Monsters: monsters,
 		TotalCR:  totalCR,
 	}
+}
+
+// getCheapestMonsterCR returns the lowest CR monster in the pool
+func (s *selector) getCheapestMonsterCR(pool []dungeon.MonsterRef) float64 {
+	if len(pool) == 0 {
+		return 0
+	}
+	cheapest := pool[0].CR
+	for _, m := range pool {
+		if m.CR < cheapest {
+			cheapest = m.CR
+		}
+	}
+	return cheapest
 }
 
 // roleDistribution defines percentage allocation for each role
