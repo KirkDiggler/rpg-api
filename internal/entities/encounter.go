@@ -25,6 +25,15 @@ type Position struct {
 	Z float64 `json:"z"`
 }
 
+// MonsterExecutedAction represents an action taken by a monster during its turn
+type MonsterExecutedAction struct {
+	ActionID   string      `json:"action_id"`
+	ActionType string      `json:"action_type"` // melee_attack, ranged_attack, spell, heal, etc.
+	TargetID   string      `json:"target_id,omitempty"`
+	Success    bool        `json:"success"`
+	Details    interface{} `json:"details,omitempty"` // AttackResult, HealResult, etc.
+}
+
 // InitiativeEntry represents one entity in the initiative order
 type InitiativeEntry struct {
 	EntityID           string    `json:"entity_id"`

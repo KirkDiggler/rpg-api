@@ -11,9 +11,10 @@ import (
 
 // Type aliases to entities - these are the canonical types
 type (
-	CombatState     = entities.CombatState
-	InitiativeEntry = entities.InitiativeEntry
-	Position        = entities.Position
+	CombatState           = entities.CombatState
+	InitiativeEntry       = entities.InitiativeEntry
+	Position              = entities.Position
+	MonsterExecutedAction = entities.MonsterExecutedAction
 )
 
 // Sentinel errors for encounter operations
@@ -100,6 +101,10 @@ type Service interface {
 	// GetEncounterState returns a full snapshot of the encounter state
 	// Used by clients to sync state before processing streamed events
 	GetEncounterState(ctx context.Context, input *GetEncounterStateInput) (*GetEncounterStateOutput, error)
+
+	// GetEncounterHistory retrieves historical events for an encounter
+	// Used by late joiners to populate event log before streaming new events
+	GetEncounterHistory(ctx context.Context, input *GetEncounterHistoryInput) (*GetEncounterHistoryOutput, error)
 }
 
 // ResolveAttackInput contains attack parameters
@@ -272,15 +277,7 @@ type MonsterTurnResult struct {
 	Movement    []Position              // Path traversed during movement
 }
 
-// MonsterExecutedAction represents a single action taken by a monster
-// This mirrors toolkit monster.ExecutedAction for handler layer use
-type MonsterExecutedAction struct {
-	ActionID   string      // ID of the action used
-	ActionType string      // Type of action (melee_attack, heal, etc.) - matches monster.ActionType
-	TargetID   string      // ID of the target (if applicable)
-	Success    bool        // Whether the action succeeded
-	Details    interface{} // Action-specific details (AttackResult, heal amount, etc.)
-}
+// MonsterExecutedAction is aliased from entities at the top of this file
 
 // Multiplayer lobby types
 
@@ -458,4 +455,18 @@ type GetEncounterStateOutput struct {
 	// Event synchronization
 	// ULID of the most recent event - clients filter events where id > lastEventID
 	LastEventID string
+}
+
+// GetEncounterHistoryInput contains parameters for retrieving encounter history
+type GetEncounterHistoryInput struct {
+	EncounterID string // ID of the encounter
+	UpToEventID string // Get events up to this ID (from GetEncounterState.LastEventID; empty = all)
+	Limit       int    // Max events to return (0 = no limit)
+}
+
+// GetEncounterHistoryOutput returns historical encounter events
+type GetEncounterHistoryOutput struct {
+	Events      []*entities.EncounterEvent // Events in chronological order
+	HasMore     bool                       // True if more events exist beyond the limit
+	LastEventID string                     // ID of the last event returned (for pagination)
 }

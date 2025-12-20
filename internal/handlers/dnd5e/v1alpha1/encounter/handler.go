@@ -10,6 +10,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	apiv1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/api/v1alpha1"
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
 	apierrors "github.com/KirkDiggler/rpg-api/internal/apierr"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
@@ -549,6 +550,44 @@ func (h *Handler) LeaveEncounter(
 	}, nil
 }
 
+// GetEncounterHistory retrieves historical events for late join/reconnect
+func (h *Handler) GetEncounterHistory(
+	ctx context.Context,
+	req *dnd5ev1alpha1.GetEncounterHistoryRequest,
+) (*dnd5ev1alpha1.GetEncounterHistoryResponse, error) {
+	// 1. Validate request
+	if req.GetEncounterId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "encounter_id is required")
+	}
+
+	// 2. Call orchestrator
+	output, err := h.encounterService.GetEncounterHistory(ctx, &encounter.GetEncounterHistoryInput{
+		EncounterID: req.GetEncounterId(),
+		UpToEventID: req.GetUpToEventId(),
+		Limit:       int(req.GetLimit()),
+	})
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	// 3. Convert events to proto
+	protoEvents := make([]*dnd5ev1alpha1.EncounterEvent, 0, len(output.Events))
+	for _, event := range output.Events {
+		protoEvent, convertErr := h.convertToProtoEvent(event)
+		if convertErr != nil {
+			log.Printf("Failed to convert event %s: %v", event.ID, convertErr)
+			continue // Skip malformed events
+		}
+		protoEvents = append(protoEvents, protoEvent)
+	}
+
+	return &dnd5ev1alpha1.GetEncounterHistoryResponse{
+		Events:      protoEvents,
+		HasMore:     output.HasMore,
+		LastEventId: output.LastEventID,
+	}, nil
+}
+
 // StreamEncounterEvents subscribes to real-time encounter events
 func (h *Handler) StreamEncounterEvents(
 	req *dnd5ev1alpha1.StreamEncounterEventsRequest,
@@ -761,12 +800,27 @@ func (h *Handler) convertToProtoEvent(event *entities.EncounterEvent) (*dnd5ev1a
 		if event.MonsterTurnCompleted == nil {
 			return nil, fmt.Errorf("missing MonsterTurnCompleted data for MonsterTurnCompletedEvent")
 		}
+		// Convert actions
+		actions := make([]*dnd5ev1alpha1.MonsterExecutedAction, len(event.MonsterTurnCompleted.Actions))
+		for i, action := range event.MonsterTurnCompleted.Actions {
+			actions[i] = convertMonsterExecutedActionToProto(&action)
+		}
+		// Convert movement path (already cube coordinates)
+		movementPath := make([]*apiv1alpha1.Position, len(event.MonsterTurnCompleted.Movement))
+		for i, pos := range event.MonsterTurnCompleted.Movement {
+			movementPath[i] = &apiv1alpha1.Position{
+				X: pos.X,
+				Y: pos.Y,
+				Z: pos.Z,
+			}
+		}
 		protoEvent.Event = &dnd5ev1alpha1.EncounterEvent_MonsterTurnCompleted{
 			MonsterTurnCompleted: &dnd5ev1alpha1.MonsterTurnCompletedEvent{
 				MonsterTurn: &dnd5ev1alpha1.MonsterTurnResult{
-					MonsterId:   event.MonsterTurnCompleted.MonsterID,
-					MonsterName: event.MonsterTurnCompleted.MonsterName,
-					// TODO: Convert Actions and Movement
+					MonsterId:    event.MonsterTurnCompleted.MonsterID,
+					MonsterName:  event.MonsterTurnCompleted.MonsterName,
+					Actions:      actions,
+					MovementPath: movementPath,
 				},
 				UpdatedRoom: convertRoomDataToProto(event.MonsterTurnCompleted.Room),
 			},

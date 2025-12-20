@@ -102,6 +102,21 @@ func (mr *MockServiceMockRecorder) EndTurn(ctx, input any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "EndTurn", reflect.TypeOf((*MockService)(nil).EndTurn), ctx, input)
 }
 
+// GetEncounterHistory mocks base method.
+func (m *MockService) GetEncounterHistory(ctx context.Context, input *encounter.GetEncounterHistoryInput) (*encounter.GetEncounterHistoryOutput, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetEncounterHistory", ctx, input)
+	ret0, _ := ret[0].(*encounter.GetEncounterHistoryOutput)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetEncounterHistory indicates an expected call of GetEncounterHistory.
+func (mr *MockServiceMockRecorder) GetEncounterHistory(ctx, input any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetEncounterHistory", reflect.TypeOf((*MockService)(nil).GetEncounterHistory), ctx, input)
+}
+
 // GetEncounterState mocks base method.
 func (m *MockService) GetEncounterState(ctx context.Context, input *encounter.GetEncounterStateInput) (*encounter.GetEncounterStateOutput, error) {
 	m.ctrl.T.Helper()
