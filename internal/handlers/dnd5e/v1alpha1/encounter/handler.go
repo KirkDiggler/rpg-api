@@ -10,6 +10,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	apiv1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/api/v1alpha1"
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
 	apierrors "github.com/KirkDiggler/rpg-api/internal/apierr"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
@@ -799,12 +800,27 @@ func (h *Handler) convertToProtoEvent(event *entities.EncounterEvent) (*dnd5ev1a
 		if event.MonsterTurnCompleted == nil {
 			return nil, fmt.Errorf("missing MonsterTurnCompleted data for MonsterTurnCompletedEvent")
 		}
+		// Convert actions
+		actions := make([]*dnd5ev1alpha1.MonsterExecutedAction, len(event.MonsterTurnCompleted.Actions))
+		for i, action := range event.MonsterTurnCompleted.Actions {
+			actions[i] = convertMonsterExecutedActionToProto(&action)
+		}
+		// Convert movement path (already cube coordinates)
+		movementPath := make([]*apiv1alpha1.Position, len(event.MonsterTurnCompleted.Movement))
+		for i, pos := range event.MonsterTurnCompleted.Movement {
+			movementPath[i] = &apiv1alpha1.Position{
+				X: pos.X,
+				Y: pos.Y,
+				Z: pos.Z,
+			}
+		}
 		protoEvent.Event = &dnd5ev1alpha1.EncounterEvent_MonsterTurnCompleted{
 			MonsterTurnCompleted: &dnd5ev1alpha1.MonsterTurnCompletedEvent{
 				MonsterTurn: &dnd5ev1alpha1.MonsterTurnResult{
-					MonsterId:   event.MonsterTurnCompleted.MonsterID,
-					MonsterName: event.MonsterTurnCompleted.MonsterName,
-					// TODO: Convert Actions and Movement
+					MonsterId:    event.MonsterTurnCompleted.MonsterID,
+					MonsterName:  event.MonsterTurnCompleted.MonsterName,
+					Actions:      actions,
+					MovementPath: movementPath,
 				},
 				UpdatedRoom: convertRoomDataToProto(event.MonsterTurnCompleted.Room),
 			},

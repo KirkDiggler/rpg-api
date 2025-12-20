@@ -11,9 +11,10 @@ import (
 
 // Type aliases to entities - these are the canonical types
 type (
-	CombatState     = entities.CombatState
-	InitiativeEntry = entities.InitiativeEntry
-	Position        = entities.Position
+	CombatState           = entities.CombatState
+	InitiativeEntry       = entities.InitiativeEntry
+	Position              = entities.Position
+	MonsterExecutedAction = entities.MonsterExecutedAction
 )
 
 // Sentinel errors for encounter operations
@@ -276,15 +277,7 @@ type MonsterTurnResult struct {
 	Movement    []Position              // Path traversed during movement
 }
 
-// MonsterExecutedAction represents a single action taken by a monster
-// This mirrors toolkit monster.ExecutedAction for handler layer use
-type MonsterExecutedAction struct {
-	ActionID   string      // ID of the action used
-	ActionType string      // Type of action (melee_attack, heal, etc.) - matches monster.ActionType
-	TargetID   string      // ID of the target (if applicable)
-	Success    bool        // Whether the action succeeded
-	Details    interface{} // Action-specific details (AttackResult, heal amount, etc.)
-}
+// MonsterExecutedAction is aliased from entities at the top of this file
 
 // Multiplayer lobby types
 
