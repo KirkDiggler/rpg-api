@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/suite"
 	"go.uber.org/mock/gomock"
 
+	mock_dice "github.com/KirkDiggler/rpg-toolkit/dice/mock"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/abilities"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/initiative"
@@ -32,6 +33,7 @@ type EventPublishingTestSuite struct {
 	mockCharRepo       *charactermock.MockRepository
 	mockEncRepo        *encountermock.MockRepository
 	mockEventProcessor *eventmock.MockProcessor
+	mockRoller         *mock_dice.MockRoller
 	orchestrator       *Orchestrator
 }
 
@@ -40,12 +42,17 @@ func (s *EventPublishingTestSuite) SetupTest() {
 	s.mockCharRepo = charactermock.NewMockRepository(s.ctrl)
 	s.mockEncRepo = encountermock.NewMockRepository(s.ctrl)
 	s.mockEventProcessor = eventmock.NewMockProcessor(s.ctrl)
+	s.mockRoller = mock_dice.NewMockRoller(s.ctrl)
+
+	// Default: high rolls ensure players go first in initiative (deterministic tests)
+	s.mockRoller.EXPECT().Roll(gomock.Any(), gomock.Any()).Return(20, nil).AnyTimes()
 
 	var err error
 	s.orchestrator, err = New(&Config{
 		CharacterRepo:  s.mockCharRepo,
 		EncounterRepo:  s.mockEncRepo,
 		EventProcessor: s.mockEventProcessor,
+		Roller:         s.mockRoller,
 	})
 	s.Require().NoError(err)
 }

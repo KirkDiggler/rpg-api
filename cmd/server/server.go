@@ -167,11 +167,12 @@ func runServer(_ *cobra.Command, _ []string) error {
 
 	// Create encounter orchestrator with dungeon support
 	encounterService, err := encounterorc.New(&encounterorc.Config{
-		CharacterRepo:  charRepo,
-		EncounterRepo:  encounterRepo,
-		DungeonRepo:    dungeonRepo,
-		DungeonGen:     dungeonGen,
-		EventProcessor: eventProc,
+		CharacterRepo:    charRepo,
+		EncounterRepo:    encounterRepo,
+		DungeonRepo:      dungeonRepo,
+		DungeonGen:       dungeonGen,
+		EventProcessor:   eventProc,
+		EncounterLogRepo: encounterLogRepo,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create encounter service: %w", err)
