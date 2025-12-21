@@ -114,9 +114,11 @@ func (h *Handler) DungeonStart(
 	// 4. Convert to proto response with cube coordinates for hex grids
 	return &dnd5ev1alpha1.DungeonStartResponse{
 		EncounterId:  output.EncounterID,
+		DungeonId:    output.DungeonID,
 		Room:         convertRoomDataToProto(output.Room),
 		CombatState:  convertCombatStateToProto(output.CombatState, gridType, hexOrientation),
 		MonsterTurns: convertMonsterTurnsToProto(output.MonsterTurns, gridType, hexOrientation),
+		Doors:        convertDoorInfoSliceToProto(output.Doors),
 	}, nil
 }
 

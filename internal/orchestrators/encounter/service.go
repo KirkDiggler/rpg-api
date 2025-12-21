@@ -189,10 +189,11 @@ type CreateDungeonInput struct {
 // Each door corresponds to a connection in the dungeon graph, allowing players
 // to navigate between rooms during exploration.
 type DoorInfo struct {
-	ConnectionID string // Unique ID of this connection, used to reference it when opening/traversing
-	TargetRoomID string // ID of the room this door leads to
-	Direction    string // Physical description of the exit (e.g., "north door", "stairs down", "eastern passage")
-	IsOpen       bool   // Whether the door has been opened (affects visibility and traversal)
+	ConnectionID string    // Unique ID of this connection, used to reference it when opening/traversing
+	TargetRoomID string    // ID of the room this door leads to
+	Direction    string    // Physical description of the exit (e.g., "north door", "stairs down", "eastern passage")
+	Position     *Position // Position of the door within the current room (cube coordinates)
+	IsOpen       bool      // Whether the door has been opened (affects visibility and traversal)
 }
 
 // CreateDungeonOutput returns the created encounter details

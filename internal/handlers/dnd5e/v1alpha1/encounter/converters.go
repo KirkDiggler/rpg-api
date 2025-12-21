@@ -905,8 +905,18 @@ func convertDoorInfoSliceToProto(doors []encounter.DoorInfo) []*dnd5ev1alpha1.Do
 
 	result := make([]*dnd5ev1alpha1.DoorInfo, len(doors))
 	for i, door := range doors {
+		var position *apiv1alpha1.Position
+		if door.Position != nil {
+			position = &apiv1alpha1.Position{
+				X: door.Position.X,
+				Y: door.Position.Y,
+				Z: door.Position.Z,
+			}
+		}
+
 		result[i] = &dnd5ev1alpha1.DoorInfo{
 			ConnectionId:  door.ConnectionID,
+			Position:      position,
 			PhysicalHint:  door.Direction,
 			IsOpen:        door.IsOpen,
 			LeadsToRoomId: door.TargetRoomID,

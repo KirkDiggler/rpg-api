@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/KirkDiggler/rpg-toolkit/core"
@@ -816,6 +817,14 @@ func (o *Orchestrator) placeMonsters(roomData *spatial.RoomData, room *dungeon.R
 func (o *Orchestrator) getDoorInfoForRoom(dungeonEntity *entities.Dungeon, roomID string) []DoorInfo {
 	var doors []DoorInfo
 
+	// Get room dimensions for position calculation
+	room := dungeonEntity.GetRoom(roomID)
+	var width, height int
+	if room != nil && room.Shape != nil {
+		width = room.Shape.Width
+		height = room.Shape.Height
+	}
+
 	for _, conn := range dungeonEntity.Connections {
 		if conn.FromRoomID == roomID || conn.ToRoomID == roomID {
 			targetRoomID := conn.ToRoomID
@@ -823,16 +832,85 @@ func (o *Orchestrator) getDoorInfoForRoom(dungeonEntity *entities.Dungeon, roomI
 				targetRoomID = conn.FromRoomID
 			}
 
+			// Calculate door position based on physical hint (direction)
+			position := calculateDoorPosition(conn.Type, width, height)
+
 			doors = append(doors, DoorInfo{
 				ConnectionID: conn.ID,
 				TargetRoomID: targetRoomID,
 				Direction:    conn.Type, // Physical hint is stored in Type field
+				Position:     position,
 				IsOpen:       false,
 			})
 		}
 	}
 
 	return doors
+}
+
+// calculateDoorPosition determines where to place a door based on the physical hint
+// and room dimensions. Uses cube coordinates for hex grid compatibility.
+func calculateDoorPosition(physicalHint string, width, height int) *Position {
+	if width == 0 || height == 0 {
+		return nil
+	}
+
+	// Parse direction from physical hint (e.g., "north door", "eastern passage", "stairs down")
+	hint := strings.ToLower(physicalHint)
+
+	// Calculate center positions for each edge
+	// In cube coordinates: x increases right, z increases down, y = -x-z
+	centerX := width / 2
+	centerZ := height / 2
+
+	var x, z int
+
+	switch {
+	case strings.Contains(hint, "north"):
+		// Top edge: z = 0, x = center
+		x, z = centerX, 0
+	case strings.Contains(hint, "south"):
+		// Bottom edge: z = height-1, x = center
+		x, z = centerX, height-1
+	case strings.Contains(hint, "east"):
+		// Right edge: x = width-1, z = center
+		x, z = width-1, centerZ
+	case strings.Contains(hint, "west"):
+		// Left edge: x = 0, z = center
+		x, z = 0, centerZ
+	case strings.Contains(hint, "up"), strings.Contains(hint, "stairs"):
+		// Stairs up - place in corner (top-left)
+		x, z = 1, 1
+	case strings.Contains(hint, "down"):
+		// Stairs down - place in opposite corner (bottom-right)
+		x, z = width-2, height-2
+	default:
+		// Unknown direction - place at center of room
+		x, z = centerX, centerZ
+	}
+
+	// Ensure position is within bounds
+	if x < 0 {
+		x = 0
+	}
+	if x >= width {
+		x = width - 1
+	}
+	if z < 0 {
+		z = 0
+	}
+	if z >= height {
+		z = height - 1
+	}
+
+	// Calculate y for cube coordinates (x + y + z = 0)
+	y := -x - z
+
+	return &Position{
+		X: float64(x),
+		Y: float64(y),
+		Z: float64(z),
+	}
 }
 
 // MoveCharacter implements character movement within an encounter
