@@ -269,14 +269,14 @@ func (o *Orchestrator) ResolveAttack(ctx context.Context, input *ResolveAttackIn
 		return nil, fmt.Errorf("failed to load monster conditions: %w", err)
 	}
 
-	// 6. Get weapon and equipment slots from equipped items (with fallback to greataxe)
+	// 7. Get weapon and equipment slots from equipped items (with fallback to greataxe)
 	weapon, equipmentSlots := o.getEquippedWeaponAndSlots(ctx, input.AttackerID)
 
-	// 7. Build GameContext with character equipment for fighting style checks (e.g., Dueling)
+	// 8. Build GameContext with character equipment for fighting style checks (e.g., Dueling)
 	gameCtx := o.buildGameContextFromEquipment(input.AttackerID, &weapon, equipmentSlots)
 	ctx = gamectx.WithGameContext(ctx, gameCtx)
 
-	// 8. Call toolkit combat (event-driven, Rage and fighting styles participate here!)
+	// 9. Call toolkit combat (event-driven, Rage and fighting styles participate here!)
 	result, err := combat.ResolveAttack(ctx, &combat.AttackInput{
 		Attacker:         char,
 		Defender:         goblin,
@@ -291,7 +291,7 @@ func (o *Orchestrator) ResolveAttack(ctx context.Context, input *ResolveAttackIn
 		return nil, fmt.Errorf("combat resolution failed: %w", err)
 	}
 
-	// 9. Calculate new monster HP
+	// 10. Calculate new monster HP
 	newHP := goblin.HP()
 	if result.Hit {
 		newHP = goblin.HP() - result.TotalDamage
@@ -303,7 +303,7 @@ func (o *Orchestrator) ResolveAttack(ctx context.Context, input *ResolveAttackIn
 		monsterData.HitPoints = newHP
 	}
 
-	// 10. Consume action and persist (action consumed only after all validation succeeds)
+	// 11. Consume action and persist (action consumed only after all validation succeeds)
 	actionEconomy.UseAction()
 	_, err = o.encRepo.Update(ctx, &encounterrepo.UpdateInput{
 		EncounterID:   input.EncounterID,
@@ -314,7 +314,7 @@ func (o *Orchestrator) ResolveAttack(ctx context.Context, input *ResolveAttackIn
 		return nil, fmt.Errorf("failed to save encounter state: %w", err)
 	}
 
-	// 11. Convert toolkit result to our output format
+	// 12. Convert toolkit result to our output format
 	attackResult := &AttackResult{
 		AttackRoll:      result.AttackRoll,
 		AttackBonus:     result.AttackBonus,

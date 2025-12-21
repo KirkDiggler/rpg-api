@@ -90,8 +90,9 @@ func convertDamageComponentToProto(comp *encounter.DamageComponent) *dnd5ev1alph
 		IsCritical:        comp.IsCritical,
 	}
 
-	// Set multiplier if non-zero (for vulnerability/resistance/immunity components)
-	if comp.Multiplier != 0 {
+	// Set multiplier for monster trait components (vulnerability=2.0, resistance=0.5, immunity=0.0)
+	// Check source type since immunity uses 0 which would otherwise be indistinguishable from "not set"
+	if comp.Multiplier != 0 || comp.Source == "monster_trait" {
 		mult := float32(comp.Multiplier)
 		result.Multiplier = &mult
 	}
