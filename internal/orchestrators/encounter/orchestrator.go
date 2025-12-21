@@ -878,12 +878,12 @@ func calculateDoorPosition(physicalHint string, width, height int) *Position {
 	case strings.Contains(hint, "west"):
 		// Left edge: x = 0, z = center
 		x, z = 0, centerZ
-	case strings.Contains(hint, "up"), strings.Contains(hint, "stairs"):
-		// Stairs up - place in corner (top-left)
-		x, z = 1, 1
 	case strings.Contains(hint, "down"):
 		// Stairs down - place in opposite corner (bottom-right)
 		x, z = width-2, height-2
+	case strings.Contains(hint, "up"), strings.Contains(hint, "stairs"):
+		// Stairs up - place in corner (top-left)
+		x, z = 1, 1
 	default:
 		// Unknown direction - place at center of room
 		x, z = centerX, centerZ
