@@ -684,15 +684,34 @@ func conditionRefToProto(ref *core.Ref) dnd5ev1alpha1.ConditionId {
 	}
 }
 
-// featureRefToProto converts toolkit feature ref to proto FeatureId enum using pointer comparison.
-// Falls back to string comparison for unknown refs.
-// Note: Not all toolkit features have proto enum values yet (e.g., Rage, SecondWind).
+// featureRefToProto converts toolkit feature ref to proto FeatureId enum.
+// Uses toolkit refs for type-safe comparison where available.
 func featureRefToProto(ref *core.Ref) dnd5ev1alpha1.FeatureId {
-	// Fast path: pointer comparison with singleton refs
-	// (Currently no singleton features have corresponding proto enums)
-
-	// Slow path: string comparison for unknown refs
 	switch ref.ID {
+	// Barbarian features
+	case refs.Features.Rage().ID:
+		return dnd5ev1alpha1.FeatureId_FEATURE_ID_RAGE
+	// Fighter features
+	case refs.Features.SecondWind().ID:
+		return dnd5ev1alpha1.FeatureId_FEATURE_ID_SECOND_WIND
+	case refs.Features.ActionSurge().ID:
+		return dnd5ev1alpha1.FeatureId_FEATURE_ID_ACTION_SURGE
+	// Rogue features
+	case refs.Features.SneakAttack().ID:
+		return dnd5ev1alpha1.FeatureId_FEATURE_ID_SNEAK_ATTACK
+	// Paladin features
+	case refs.Features.DivineSmite().ID:
+		return dnd5ev1alpha1.FeatureId_FEATURE_ID_DIVINE_SMITE
+	// Monk features
+	case refs.Features.FlurryOfBlows().ID:
+		return dnd5ev1alpha1.FeatureId_FEATURE_ID_FLURRY_OF_BLOWS
+	case refs.Features.PatientDefense().ID:
+		return dnd5ev1alpha1.FeatureId_FEATURE_ID_PATIENT_DEFENSE
+	case refs.Features.StepOfTheWind().ID:
+		return dnd5ev1alpha1.FeatureId_FEATURE_ID_STEP_OF_THE_WIND
+	case refs.Features.DeflectMissiles().ID:
+		return dnd5ev1alpha1.FeatureId_FEATURE_ID_DEFLECT_MISSILES
+	// Features below don't have toolkit refs yet - magic strings until toolkit adds them
 	case "breath_weapon":
 		return dnd5ev1alpha1.FeatureId_FEATURE_ID_BREATH_WEAPON
 	case "hellish_rebuke":
@@ -703,12 +722,55 @@ func featureRefToProto(ref *core.Ref) dnd5ev1alpha1.FeatureId {
 		return dnd5ev1alpha1.FeatureId_FEATURE_ID_WRATH_OF_THE_STORM
 	case "destructive_wrath":
 		return dnd5ev1alpha1.FeatureId_FEATURE_ID_DESTRUCTIVE_WRATH
-	case "deflect_missiles":
-		return dnd5ev1alpha1.FeatureId_FEATURE_ID_DEFLECT_MISSILES
 	case "starry_form_archer":
 		return dnd5ev1alpha1.FeatureId_FEATURE_ID_STARRY_FORM_ARCHER
 	default:
 		return dnd5ev1alpha1.FeatureId_FEATURE_ID_UNSPECIFIED
+	}
+}
+
+// featureEnumToID converts a proto FeatureId enum to the toolkit feature ID string.
+// This is the reverse of featureRefToProto.
+func featureEnumToID(featureID dnd5ev1alpha1.FeatureId) string {
+	switch featureID {
+	// Barbarian features
+	case dnd5ev1alpha1.FeatureId_FEATURE_ID_RAGE:
+		return refs.Features.Rage().ID
+	// Fighter features
+	case dnd5ev1alpha1.FeatureId_FEATURE_ID_SECOND_WIND:
+		return refs.Features.SecondWind().ID
+	case dnd5ev1alpha1.FeatureId_FEATURE_ID_ACTION_SURGE:
+		return refs.Features.ActionSurge().ID
+	// Rogue features
+	case dnd5ev1alpha1.FeatureId_FEATURE_ID_SNEAK_ATTACK:
+		return refs.Features.SneakAttack().ID
+	// Paladin features
+	case dnd5ev1alpha1.FeatureId_FEATURE_ID_DIVINE_SMITE:
+		return refs.Features.DivineSmite().ID
+	// Monk features
+	case dnd5ev1alpha1.FeatureId_FEATURE_ID_FLURRY_OF_BLOWS:
+		return refs.Features.FlurryOfBlows().ID
+	case dnd5ev1alpha1.FeatureId_FEATURE_ID_PATIENT_DEFENSE:
+		return refs.Features.PatientDefense().ID
+	case dnd5ev1alpha1.FeatureId_FEATURE_ID_STEP_OF_THE_WIND:
+		return refs.Features.StepOfTheWind().ID
+	case dnd5ev1alpha1.FeatureId_FEATURE_ID_DEFLECT_MISSILES:
+		return refs.Features.DeflectMissiles().ID
+	// Features without toolkit refs
+	case dnd5ev1alpha1.FeatureId_FEATURE_ID_BREATH_WEAPON:
+		return "breath_weapon"
+	case dnd5ev1alpha1.FeatureId_FEATURE_ID_HELLISH_REBUKE:
+		return "hellish_rebuke"
+	case dnd5ev1alpha1.FeatureId_FEATURE_ID_RADIANCE_OF_DAWN:
+		return "radiance_of_dawn"
+	case dnd5ev1alpha1.FeatureId_FEATURE_ID_WRATH_OF_THE_STORM:
+		return "wrath_of_the_storm"
+	case dnd5ev1alpha1.FeatureId_FEATURE_ID_DESTRUCTIVE_WRATH:
+		return "destructive_wrath"
+	case dnd5ev1alpha1.FeatureId_FEATURE_ID_STARRY_FORM_ARCHER:
+		return "starry_form_archer"
+	default:
+		return ""
 	}
 }
 

@@ -247,9 +247,9 @@ func (s *ConvertersTestSuite) TestConvertCharacterDataToProto_WithFeatures() {
 	require.NotEmpty(s.T(), result.Features, "Features should be populated")
 	assert.Len(s.T(), result.Features, 1, "Should have 1 feature")
 
-	// Check feature details - Id is now FeatureId enum (UNSPECIFIED since rage has no enum value yet)
+	// Check feature details - Id is FeatureId enum (RAGE extracted from ref "dnd5e:features:rage")
 	rageFeature := result.Features[0]
-	assert.Equal(s.T(), dnd5ev1alpha1.FeatureId_FEATURE_ID_UNSPECIFIED, rageFeature.Id)
+	assert.Equal(s.T(), dnd5ev1alpha1.FeatureId_FEATURE_ID_RAGE, rageFeature.Id)
 	assert.Equal(s.T(), "Rage", rageFeature.Name)
 	assert.Equal(s.T(), "class", rageFeature.Source)
 	// Verify raw JSON is passed through
@@ -296,7 +296,8 @@ func (s *ConvertersTestSuite) TestConvertCharacterDataToProto_InvalidFeatureJSON
 	// Verify only valid feature is included
 	require.NotNil(s.T(), result, "Result should not be nil")
 	assert.Len(s.T(), result.Features, 1, "Should have 1 valid feature")
-	assert.Equal(s.T(), dnd5ev1alpha1.FeatureId_FEATURE_ID_UNSPECIFIED, result.Features[0].Id)
+	// RAGE extracted from ref "dnd5e:features:rage"
+	assert.Equal(s.T(), dnd5ev1alpha1.FeatureId_FEATURE_ID_RAGE, result.Features[0].Id)
 	assert.Equal(s.T(), "Rage", result.Features[0].Name)
 }
 
@@ -322,8 +323,8 @@ func (s *ConvertersTestSuite) TestConvertCharacterDataToProto_FeatureWithToolkit
 
 	require.NotNil(s.T(), result, "Result should not be nil")
 	require.Len(s.T(), result.Features, 1, "Should have 1 feature")
-	// Id is now FeatureId enum - rage doesn't have an enum value yet so it's UNSPECIFIED
-	assert.Equal(s.T(), dnd5ev1alpha1.FeatureId_FEATURE_ID_UNSPECIFIED, result.Features[0].Id)
+	// Id is now FeatureId enum - rage maps to FEATURE_ID_RAGE
+	assert.Equal(s.T(), dnd5ev1alpha1.FeatureId_FEATURE_ID_RAGE, result.Features[0].Id)
 	assert.Equal(s.T(), "Rage", result.Features[0].Name)
 	// Verify raw JSON is passed through for UI
 	assert.NotEmpty(s.T(), result.Features[0].FeatureData)
