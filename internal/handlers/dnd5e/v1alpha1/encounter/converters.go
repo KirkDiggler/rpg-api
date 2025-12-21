@@ -79,7 +79,7 @@ func convertDamageComponentToProto(comp *encounter.DamageComponent) *dnd5ev1alph
 		rerolls[i] = convertRerollEventToProto(&r)
 	}
 
-	return &dnd5ev1alpha1.DamageComponent{
+	result := &dnd5ev1alpha1.DamageComponent{
 		Source:            comp.Source,
 		SourceRef:         convertCoreRefToProtoSourceRef(comp.SourceRef),
 		OriginalDiceRolls: originalRolls,
@@ -89,6 +89,14 @@ func convertDamageComponentToProto(comp *encounter.DamageComponent) *dnd5ev1alph
 		DamageType:        string(comp.DamageType), // damage.Type to proto string
 		IsCritical:        comp.IsCritical,
 	}
+
+	// Set multiplier if non-zero (for vulnerability/resistance/immunity components)
+	if comp.Multiplier != 0 {
+		mult := float32(comp.Multiplier)
+		result.Multiplier = &mult
+	}
+
+	return result
 }
 
 // convertRerollEventToProto converts orchestrator's RerollEvent to proto

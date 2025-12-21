@@ -20,6 +20,7 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/gamectx"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/initiative"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/monster"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/monstertraits"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/weapons"
 	"github.com/KirkDiggler/rpg-toolkit/tools/environments"
 	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
@@ -263,6 +264,11 @@ func (o *Orchestrator) ResolveAttack(ctx context.Context, input *ResolveAttackIn
 		return nil, fmt.Errorf("failed to load monster from data: %w", err)
 	}
 
+	// Load monster conditions/traits (vulnerability, immunity, etc.) so they affect combat
+	if err = monstertraits.LoadMonsterConditions(ctx, goblin, monsterData.Conditions, bus, o.roller); err != nil {
+		return nil, fmt.Errorf("failed to load monster conditions: %w", err)
+	}
+
 	// 6. Get weapon and equipment slots from equipped items (with fallback to greataxe)
 	weapon, equipmentSlots := o.getEquippedWeaponAndSlots(ctx, input.AttackerID)
 
@@ -407,6 +413,7 @@ func convertToolkitComponent(comp dnd5eEvents.DamageComponent) DamageComponent {
 		FlatBonus:         comp.FlatBonus,
 		DamageType:        comp.DamageType,
 		IsCritical:        comp.IsCritical,
+		Multiplier:        comp.Multiplier,
 	}
 }
 

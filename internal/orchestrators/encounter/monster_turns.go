@@ -9,6 +9,7 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/combat"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/monster"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/monster/actions"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/monstertraits"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/weapons"
 	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
 
@@ -119,10 +120,15 @@ func (o *Orchestrator) executeSingleMonsterTurn(
 		return nil, fmt.Errorf("failed to load monster actions: %w", err)
 	}
 
-	// 4. Create action economy for the turn
+	// 4. Load monster conditions/traits (vulnerability, immunity, pack tactics, etc.)
+	if err = monstertraits.LoadMonsterConditions(ctx, mon, monsterData.Conditions, bus, o.roller); err != nil {
+		return nil, fmt.Errorf("failed to load monster conditions: %w", err)
+	}
+
+	// 5. Create action economy for the turn
 	actionEconomy := combat.NewActionEconomy()
 
-	// 5. Build perception from room data
+	// 6. Build perception from room data
 	var roomData *spatial.RoomData
 	if enc.RoomData != nil {
 		if rd, ok := enc.RoomData.(*spatial.RoomData); ok {
@@ -134,7 +140,7 @@ func (o *Orchestrator) executeSingleMonsterTurn(
 
 	perception := buildPerception(roomData, monsterData.ID, characterIDs, enc.Monsters)
 
-	// 6. Create turn input
+	// 7. Create turn input
 	turnInput := &monster.TurnInput{
 		Bus:           bus,
 		ActionEconomy: actionEconomy,
@@ -142,13 +148,13 @@ func (o *Orchestrator) executeSingleMonsterTurn(
 		Roller:        o.roller,
 	}
 
-	// 7. Execute the turn
+	// 8. Execute the turn
 	turnResult, err := mon.TakeTurn(ctx, turnInput)
 	if err != nil {
 		return nil, fmt.Errorf("monster turn failed: %w", err)
 	}
 
-	// 8. Process executed actions and resolve attacks
+	// 9. Process executed actions and resolve attacks
 	// The toolkit publishes AttackEvent but doesn't populate ExecutedAction.Details
 	// We need to resolve attacks ourselves based on action type
 	actions := make([]MonsterExecutedAction, len(turnResult.Actions))
@@ -184,7 +190,7 @@ func (o *Orchestrator) executeSingleMonsterTurn(
 		}
 	}
 
-	// 9. Convert movement path (cube coordinates) to Position for result
+	// 10. Convert movement path (cube coordinates) to Position for result
 	movement := make([]Position, len(turnResult.Movement))
 	for i, pos := range turnResult.Movement {
 		movement[i] = Position{
@@ -204,7 +210,7 @@ func (o *Orchestrator) executeSingleMonsterTurn(
 		}
 	}
 
-	// 10. Create result
+	// 11. Create result
 	result := &MonsterTurnResult{
 		MonsterID:   turnResult.MonsterID,
 		MonsterName: monsterData.Name,
