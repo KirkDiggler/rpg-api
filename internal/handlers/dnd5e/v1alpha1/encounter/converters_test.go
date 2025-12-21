@@ -569,6 +569,55 @@ func (s *ConvertersTestSuite) TestConvertDamageComponentToProto_CriticalDamage()
 	s.Equal([]int32{8, 6}, result.OriginalDiceRolls)
 }
 
+func (s *ConvertersTestSuite) TestConvertDamageComponentToProto_VulnerabilityMultiplier() {
+	comp := &encounter.DamageComponent{
+		Source:     "monster_trait",
+		SourceRef:  refs.MonsterTraits.Vulnerability(),
+		DamageType: damage.Bludgeoning,
+		Multiplier: 2.0,
+	}
+
+	result := convertDamageComponentToProto(comp)
+
+	s.Require().NotNil(result)
+	s.Require().NotNil(result.Multiplier)
+	s.Equal(float32(2.0), *result.Multiplier)
+	s.Equal("monster_trait", result.Source)
+}
+
+func (s *ConvertersTestSuite) TestConvertDamageComponentToProto_ImmunityMultiplier() {
+	// Immunity uses multiplier = 0, which would be filtered out without the source check
+	comp := &encounter.DamageComponent{
+		Source:     "monster_trait",
+		SourceRef:  refs.MonsterTraits.Immunity(),
+		DamageType: damage.Poison,
+		Multiplier: 0.0, // Immunity = multiply by 0
+	}
+
+	result := convertDamageComponentToProto(comp)
+
+	s.Require().NotNil(result)
+	s.Require().NotNil(result.Multiplier, "immunity multiplier should be set even when 0")
+	s.Equal(float32(0.0), *result.Multiplier)
+}
+
+func (s *ConvertersTestSuite) TestConvertDamageComponentToProto_NoMultiplierForRegularComponent() {
+	// Regular components should not have a multiplier set
+	comp := &encounter.DamageComponent{
+		Source:         "weapon",
+		SourceRef:      refs.Weapons.Longsword(),
+		FinalDiceRolls: []int{6},
+		FlatBonus:      3,
+		DamageType:     damage.Slashing,
+		Multiplier:     0, // Not set (zero value)
+	}
+
+	result := convertDamageComponentToProto(comp)
+
+	s.Require().NotNil(result)
+	s.Nil(result.Multiplier, "regular components should not have multiplier set")
+}
+
 // =============================================================================
 // convertRerollEventToProto Tests
 // =============================================================================

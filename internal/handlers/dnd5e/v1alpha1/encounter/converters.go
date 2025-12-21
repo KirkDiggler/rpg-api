@@ -79,7 +79,7 @@ func convertDamageComponentToProto(comp *encounter.DamageComponent) *dnd5ev1alph
 		rerolls[i] = convertRerollEventToProto(&r)
 	}
 
-	return &dnd5ev1alpha1.DamageComponent{
+	result := &dnd5ev1alpha1.DamageComponent{
 		Source:            comp.Source,
 		SourceRef:         convertCoreRefToProtoSourceRef(comp.SourceRef),
 		OriginalDiceRolls: originalRolls,
@@ -89,6 +89,15 @@ func convertDamageComponentToProto(comp *encounter.DamageComponent) *dnd5ev1alph
 		DamageType:        string(comp.DamageType), // damage.Type to proto string
 		IsCritical:        comp.IsCritical,
 	}
+
+	// Set multiplier for monster trait components (vulnerability=2.0, resistance=0.5, immunity=0.0)
+	// Check source type since immunity uses 0 which would otherwise be indistinguishable from "not set"
+	if comp.Multiplier != 0 || comp.Source == "monster_trait" {
+		mult := float32(comp.Multiplier)
+		result.Multiplier = &mult
+	}
+
+	return result
 }
 
 // convertRerollEventToProto converts orchestrator's RerollEvent to proto

@@ -157,7 +157,7 @@ type DamageBreakdown struct {
 
 // DamageComponent represents damage from one source
 type DamageComponent struct {
-	Source            string        // Type of damage source ("weapon", "ability", "feature", etc.)
+	Source            string        // Type of damage source ("weapon", "ability", "feature", "monster_trait", etc.)
 	SourceRef         *core.Ref     // Type-safe reference identifying the specific source
 	OriginalDiceRolls []int         // Dice values as first rolled
 	FinalDiceRolls    []int         // Dice values after all rerolls
@@ -165,6 +165,7 @@ type DamageComponent struct {
 	FlatBonus         int           // Flat modifier (0 if none)
 	DamageType        damage.Type   // Type of damage (slashing, fire, radiant, etc.)
 	IsCritical        bool          // Was this component doubled for crit?
+	Multiplier        float64       // Multiplier for vulnerability (2.0), resistance (0.5), or immunity (0)
 }
 
 // RerollEvent tracks a single die reroll
