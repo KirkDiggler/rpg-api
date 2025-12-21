@@ -2832,6 +2832,12 @@ func conditionIDToEnum(id string) dnd5ev1alpha1.ConditionId {
 		return dnd5ev1alpha1.ConditionId_CONDITION_ID_FIGHTING_STYLE_TWO_WEAPON_FIGHTING
 	case refs.Conditions.FightingStyleGreatWeaponFighting().ID:
 		return dnd5ev1alpha1.ConditionId_CONDITION_ID_FIGHTING_STYLE_GREAT_WEAPON_FIGHTING
+	case refs.Conditions.FightingStyleArchery().ID:
+		return dnd5ev1alpha1.ConditionId_CONDITION_ID_FIGHTING_STYLE_ARCHERY
+	case refs.Conditions.FightingStyleDefense().ID:
+		return dnd5ev1alpha1.ConditionId_CONDITION_ID_FIGHTING_STYLE_DEFENSE
+	case refs.Conditions.FightingStyleProtection().ID:
+		return dnd5ev1alpha1.ConditionId_CONDITION_ID_FIGHTING_STYLE_PROTECTION
 	case refs.Conditions.UnarmoredDefense().ID:
 		return dnd5ev1alpha1.ConditionId_CONDITION_ID_UNARMORED_DEFENSE
 	case refs.Conditions.ImprovedCritical().ID:
@@ -2863,6 +2869,20 @@ func conditionIDToDisplayName(id string) string {
 		return "Fighting Style: Two-Weapon Fighting"
 	case refs.Conditions.FightingStyleGreatWeaponFighting().ID:
 		return "Fighting Style: Great Weapon Fighting"
+	case refs.Conditions.FightingStyleArchery().ID:
+		return "Fighting Style: Archery"
+	case refs.Conditions.FightingStyleDefense().ID:
+		return "Fighting Style: Defense"
+	case refs.Conditions.FightingStyleProtection().ID:
+		return "Fighting Style: Protection"
+	case refs.Conditions.UnarmoredDefense().ID:
+		return "Unarmored Defense"
+	case refs.Conditions.ImprovedCritical().ID:
+		return "Improved Critical"
+	case refs.Conditions.MartialArts().ID:
+		return "Martial Arts"
+	case refs.Conditions.UnarmoredMovement().ID:
+		return "Unarmored Movement"
 	default:
 		// Convert snake_case to Title Case as fallback
 		return toTitleCase(id)
@@ -2874,6 +2894,27 @@ func conditionIDToDisplayName(id string) string {
 // that don't have toolkit refs yet (breath_weapon, hellish_rebuke, etc.)
 func featureIDToEnum(id string) dnd5ev1alpha1.FeatureId {
 	switch id {
+	// Barbarian features
+	case refs.Features.Rage().ID:
+		return dnd5ev1alpha1.FeatureId_FEATURE_ID_RAGE
+	// Fighter features
+	case refs.Features.SecondWind().ID:
+		return dnd5ev1alpha1.FeatureId_FEATURE_ID_SECOND_WIND
+	case refs.Features.ActionSurge().ID:
+		return dnd5ev1alpha1.FeatureId_FEATURE_ID_ACTION_SURGE
+	// Rogue features
+	case refs.Features.SneakAttack().ID:
+		return dnd5ev1alpha1.FeatureId_FEATURE_ID_SNEAK_ATTACK
+	// Paladin features
+	case refs.Features.DivineSmite().ID:
+		return dnd5ev1alpha1.FeatureId_FEATURE_ID_DIVINE_SMITE
+	// Monk features
+	case refs.Features.FlurryOfBlows().ID:
+		return dnd5ev1alpha1.FeatureId_FEATURE_ID_FLURRY_OF_BLOWS
+	case refs.Features.PatientDefense().ID:
+		return dnd5ev1alpha1.FeatureId_FEATURE_ID_PATIENT_DEFENSE
+	case refs.Features.StepOfTheWind().ID:
+		return dnd5ev1alpha1.FeatureId_FEATURE_ID_STEP_OF_THE_WIND
 	case refs.Features.DeflectMissiles().ID:
 		return dnd5ev1alpha1.FeatureId_FEATURE_ID_DEFLECT_MISSILES
 	// Features below don't have toolkit refs yet - magic strings until toolkit adds them
@@ -2890,7 +2931,6 @@ func featureIDToEnum(id string) dnd5ev1alpha1.FeatureId {
 	case "starry_form_archer":
 		return dnd5ev1alpha1.FeatureId_FEATURE_ID_STARRY_FORM_ARCHER
 	default:
-		// Features like rage, second_wind, action_surge don't have enum values yet
 		return dnd5ev1alpha1.FeatureId_FEATURE_ID_UNSPECIFIED
 	}
 }

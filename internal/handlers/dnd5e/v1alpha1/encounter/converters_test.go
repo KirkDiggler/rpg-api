@@ -223,10 +223,17 @@ func (s *ConvertersTestSuite) TestFeatureRefToProto_SlowPath() {
 }
 
 func (s *ConvertersTestSuite) TestFeatureRefToProto_Unknown() {
-	// Rage and SecondWind don't have proto enums yet
-	unknownRef := &core.Ref{Module: refs.Module, Type: refs.TypeFeatures, ID: "rage"}
+	// Test that unknown features return UNSPECIFIED
+	unknownRef := &core.Ref{Module: refs.Module, Type: refs.TypeFeatures, ID: "unknown_feature"}
 	result := featureRefToProto(unknownRef)
 	s.Equal(dnd5ev1alpha1.FeatureId_FEATURE_ID_UNSPECIFIED, result)
+}
+
+func (s *ConvertersTestSuite) TestFeatureRefToProto_Rage() {
+	// Rage now has a proto enum value
+	rageRef := &core.Ref{Module: refs.Module, Type: refs.TypeFeatures, ID: refs.Features.Rage().ID}
+	result := featureRefToProto(rageRef)
+	s.Equal(dnd5ev1alpha1.FeatureId_FEATURE_ID_RAGE, result)
 }
 
 // =============================================================================
@@ -582,7 +589,7 @@ func (s *ConvertersTestSuite) TestConvertDamageComponentToProto_VulnerabilityMul
 	s.Require().NotNil(result)
 	s.Require().NotNil(result.Multiplier)
 	s.Equal(float32(2.0), *result.Multiplier)
-	s.Equal("monster_trait", result.Source)
+	s.Equal("monster_trait", result.Source) //nolint:staticcheck // TODO: migrate to source_ref
 }
 
 func (s *ConvertersTestSuite) TestConvertDamageComponentToProto_ImmunityMultiplier() {

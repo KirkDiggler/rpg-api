@@ -919,7 +919,7 @@ func (s *HandlerTestSuite) TestActivateFeature_Success() {
 	resp, err := s.handler.ActivateFeature(context.Background(), &dnd5ev1alpha1.ActivateFeatureRequest{
 		EncounterId: "enc-1",
 		CharacterId: "char-1",
-		FeatureId:   "rage",
+		FeatureId:   dnd5ev1alpha1.FeatureId_FEATURE_ID_RAGE,
 	})
 
 	// Assert
@@ -948,7 +948,7 @@ func (s *HandlerTestSuite) TestActivateFeature_FeatureNotFound() {
 	resp, err := s.handler.ActivateFeature(context.Background(), &dnd5ev1alpha1.ActivateFeatureRequest{
 		EncounterId: "enc-1",
 		CharacterId: "char-1",
-		FeatureId:   "rage",
+		FeatureId:   dnd5ev1alpha1.FeatureId_FEATURE_ID_RAGE,
 	})
 
 	// Assert
@@ -977,7 +977,7 @@ func (s *HandlerTestSuite) TestActivateFeature_CannotActivate() {
 	resp, err := s.handler.ActivateFeature(context.Background(), &dnd5ev1alpha1.ActivateFeatureRequest{
 		EncounterId: "enc-1",
 		CharacterId: "char-1",
-		FeatureId:   "rage",
+		FeatureId:   dnd5ev1alpha1.FeatureId_FEATURE_ID_RAGE,
 	})
 
 	// Assert
@@ -992,7 +992,7 @@ func (s *HandlerTestSuite) TestActivateFeature_MissingEncounterId() {
 	// Act
 	resp, err := s.handler.ActivateFeature(context.Background(), &dnd5ev1alpha1.ActivateFeatureRequest{
 		CharacterId: "char-1",
-		FeatureId:   "rage",
+		FeatureId:   dnd5ev1alpha1.FeatureId_FEATURE_ID_RAGE,
 	})
 
 	// Assert
@@ -1010,7 +1010,7 @@ func (s *HandlerTestSuite) TestActivateFeature_MissingCharacterId() {
 	// Act
 	resp, err := s.handler.ActivateFeature(context.Background(), &dnd5ev1alpha1.ActivateFeatureRequest{
 		EncounterId: "enc-1",
-		FeatureId:   "rage",
+		FeatureId:   dnd5ev1alpha1.FeatureId_FEATURE_ID_RAGE,
 	})
 
 	// Assert
@@ -1056,7 +1056,7 @@ func (s *HandlerTestSuite) TestActivateFeature_ServiceError() {
 	resp, err := s.handler.ActivateFeature(context.Background(), &dnd5ev1alpha1.ActivateFeatureRequest{
 		EncounterId: "enc-1",
 		CharacterId: "char-1",
-		FeatureId:   "rage",
+		FeatureId:   dnd5ev1alpha1.FeatureId_FEATURE_ID_RAGE,
 	})
 
 	// Assert

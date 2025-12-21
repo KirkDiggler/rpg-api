@@ -356,15 +356,21 @@ func (h *Handler) ActivateFeature(
 	if req.GetCharacterId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "character_id is required")
 	}
-	if req.GetFeatureId() == "" {
+	if req.GetFeatureId() == dnd5ev1alpha1.FeatureId_FEATURE_ID_UNSPECIFIED {
 		return nil, status.Error(codes.InvalidArgument, "feature_id is required")
+	}
+
+	// Convert enum to toolkit feature ID string
+	featureID := featureEnumToID(req.GetFeatureId())
+	if featureID == "" {
+		return nil, status.Error(codes.InvalidArgument, "unsupported feature_id")
 	}
 
 	// 2. Create service input
 	input := &encounter.ActivateFeatureInput{
 		EncounterID: req.GetEncounterId(),
 		CharacterID: req.GetCharacterId(),
-		FeatureID:   req.GetFeatureId(),
+		FeatureID:   featureID,
 	}
 
 	// 3. Call service
