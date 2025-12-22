@@ -514,18 +514,41 @@ func (o *Orchestrator) createDungeonWithGenerator(
 	characterHP := make(map[string]int)
 
 	// Add characters with their DEX modifiers
+	// Also perform a long rest to restore HP, feature charges, and clear conditions
 	for _, characterID := range input.CharacterIDs {
 		charOutput, charErr := o.charRepo.Get(ctx, characterrepo.GetInput{ID: characterID})
 		if charErr != nil {
 			return nil, fmt.Errorf("failed to load character %s: %w", characterID, charErr)
 		}
-		dexModifier := charOutput.CharacterData.AbilityScores.Modifier(abilities.DEX)
 
-		// Track character's current HP for TPK detection
-		characterHP[characterID] = charOutput.CharacterData.HitPoints
+		// Perform long rest before dungeon starts
+		bus := events.NewEventBus()
+		char, charErr := character.LoadFromData(ctx, charOutput.CharacterData, bus)
+		if charErr != nil {
+			return nil, fmt.Errorf("failed to load character %s for rest: %w", characterID, charErr)
+		}
 
-		char := initiative.NewParticipant(characterID, entityTypeCharacter)
-		combatants[char] = dexModifier
+		if restErr := char.LongRest(ctx); restErr != nil {
+			_ = char.Cleanup(ctx)
+			return nil, fmt.Errorf("failed to perform long rest for character %s: %w", characterID, restErr)
+		}
+
+		// Save the rested character
+		updatedData := char.ToData()
+		_, updateErr := o.charRepo.Update(ctx, characterrepo.UpdateInput{CharacterData: updatedData})
+		if updateErr != nil {
+			_ = char.Cleanup(ctx)
+			return nil, fmt.Errorf("failed to save rested character %s: %w", characterID, updateErr)
+		}
+		_ = char.Cleanup(ctx)
+
+		dexModifier := updatedData.AbilityScores.Modifier(abilities.DEX)
+
+		// Track character's current HP for TPK detection (now at full after rest)
+		characterHP[characterID] = updatedData.HitPoints
+
+		char2 := initiative.NewParticipant(characterID, entityTypeCharacter)
+		combatants[char2] = dexModifier
 	}
 
 	// Add monsters to initiative with their actual DEX modifiers

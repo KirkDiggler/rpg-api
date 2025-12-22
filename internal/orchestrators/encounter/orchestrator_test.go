@@ -381,10 +381,30 @@ func (s *OrchestratorTestSuite) TestCreateDungeon_Success() {
 		}, nil).
 		AnyTimes() // Initiative lookup + potential monster attack target
 
+	// Mock character Update for long rest before dungeon starts
+	s.mockCharRepo.EXPECT().
+		Update(gomock.Any(), gomock.Any()).
+		Return(&characterrepo.UpdateOutput{}, nil).
+		AnyTimes()
+
 	// Arrange - Mock dungeon repo save (required for generator path)
 	s.mockDungeonRepo.EXPECT().
 		Save(gomock.Any(), gomock.Any()).
 		Return(&dungeonrepo.SaveOutput{Success: true}, nil)
+
+	// Mock GetByEncounterID (called by various post-creation flows)
+	s.mockDungeonRepo.EXPECT().
+		GetByEncounterID(gomock.Any(), gomock.Any()).
+		Return(&dungeonrepo.GetOutput{
+			Dungeon: &entities.Dungeon{ID: "test-dungeon"},
+		}, nil).
+		AnyTimes()
+
+	// Mock dungeon Update (called after TPK check)
+	s.mockDungeonRepo.EXPECT().
+		Update(gomock.Any(), gomock.Any()).
+		Return(&dungeonrepo.UpdateOutput{Success: true}, nil).
+		AnyTimes()
 
 	// Arrange - Mock encounter repo save
 	s.mockEncRepo.EXPECT().
@@ -474,6 +494,12 @@ func (s *OrchestratorTestSuite) TestCreateDungeon_SaveError() {
 		}, nil).
 		AnyTimes()
 
+	// Mock character Update for long rest before dungeon starts
+	s.mockCharRepo.EXPECT().
+		Update(gomock.Any(), gomock.Any()).
+		Return(&characterrepo.UpdateOutput{}, nil).
+		AnyTimes()
+
 	// Mock dungeon repo save (called before encounter save)
 	s.mockDungeonRepo.EXPECT().
 		Save(gomock.Any(), gomock.Any()).
@@ -526,11 +552,31 @@ func (s *OrchestratorTestSuite) TestCreateDungeon_UniqueIDs() {
 		}, nil).
 		AnyTimes()
 
+	// Mock character Update for long rest before dungeon starts
+	s.mockCharRepo.EXPECT().
+		Update(gomock.Any(), gomock.Any()).
+		Return(&characterrepo.UpdateOutput{}, nil).
+		AnyTimes()
+
 	// Mock dungeon repo for all three calls
 	s.mockDungeonRepo.EXPECT().
 		Save(gomock.Any(), gomock.Any()).
 		Return(&dungeonrepo.SaveOutput{Success: true}, nil).
 		Times(3)
+
+	// Mock GetByEncounterID (called by various post-creation flows)
+	s.mockDungeonRepo.EXPECT().
+		GetByEncounterID(gomock.Any(), gomock.Any()).
+		Return(&dungeonrepo.GetOutput{
+			Dungeon: &entities.Dungeon{ID: "test-dungeon"},
+		}, nil).
+		AnyTimes()
+
+	// Mock dungeon Update (called after TPK check)
+	s.mockDungeonRepo.EXPECT().
+		Update(gomock.Any(), gomock.Any()).
+		Return(&dungeonrepo.UpdateOutput{Success: true}, nil).
+		AnyTimes()
 
 	s.mockEncRepo.EXPECT().
 		Save(gomock.Any(), gomock.Any()).
@@ -580,10 +626,30 @@ func (s *OrchestratorTestSuite) TestCreateDungeon_SavesInitiativeData() {
 		}, nil).
 		AnyTimes()
 
+	// Mock character Update for long rest before dungeon starts
+	s.mockCharRepo.EXPECT().
+		Update(gomock.Any(), gomock.Any()).
+		Return(&characterrepo.UpdateOutput{}, nil).
+		AnyTimes()
+
 	// Mock dungeon repo save
 	s.mockDungeonRepo.EXPECT().
 		Save(gomock.Any(), gomock.Any()).
 		Return(&dungeonrepo.SaveOutput{Success: true}, nil)
+
+	// Mock GetByEncounterID (called by various post-creation flows)
+	s.mockDungeonRepo.EXPECT().
+		GetByEncounterID(gomock.Any(), gomock.Any()).
+		Return(&dungeonrepo.GetOutput{
+			Dungeon: &entities.Dungeon{ID: "test-dungeon"},
+		}, nil).
+		AnyTimes()
+
+	// Mock dungeon Update (called after TPK check)
+	s.mockDungeonRepo.EXPECT().
+		Update(gomock.Any(), gomock.Any()).
+		Return(&dungeonrepo.UpdateOutput{Success: true}, nil).
+		AnyTimes()
 
 	// Verify that encounter is created with room data AND initiative data
 	s.mockEncRepo.EXPECT().
@@ -1991,10 +2057,30 @@ func (s *OrchestratorTestSuite) TestCreateDungeon_InitializesActionEconomy() {
 		}, nil).
 		AnyTimes()
 
+	// Mock character Update for long rest before dungeon starts
+	s.mockCharRepo.EXPECT().
+		Update(gomock.Any(), gomock.Any()).
+		Return(&characterrepo.UpdateOutput{}, nil).
+		AnyTimes()
+
 	// Mock dungeon repo save
 	s.mockDungeonRepo.EXPECT().
 		Save(gomock.Any(), gomock.Any()).
 		Return(&dungeonrepo.SaveOutput{Success: true}, nil)
+
+	// Mock GetByEncounterID (called by various post-creation flows)
+	s.mockDungeonRepo.EXPECT().
+		GetByEncounterID(gomock.Any(), gomock.Any()).
+		Return(&dungeonrepo.GetOutput{
+			Dungeon: &entities.Dungeon{ID: "test-dungeon"},
+		}, nil).
+		AnyTimes()
+
+	// Mock dungeon Update (called after TPK check)
+	s.mockDungeonRepo.EXPECT().
+		Update(gomock.Any(), gomock.Any()).
+		Return(&dungeonrepo.UpdateOutput{Success: true}, nil).
+		AnyTimes()
 
 	// Capture the save input to verify action economy
 	var capturedSave *encounterrepo.SaveInput
