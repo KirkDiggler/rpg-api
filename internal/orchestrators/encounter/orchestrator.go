@@ -515,6 +515,9 @@ func (o *Orchestrator) createDungeonWithGenerator(
 
 	// Add characters with their DEX modifiers
 	// Also perform a long rest to restore HP, feature charges, and clear conditions
+	// Single event bus shared by all characters in the encounter
+	restBus := events.NewEventBus()
+
 	for _, characterID := range input.CharacterIDs {
 		charOutput, charErr := o.charRepo.Get(ctx, characterrepo.GetInput{ID: characterID})
 		if charErr != nil {
@@ -522,33 +525,32 @@ func (o *Orchestrator) createDungeonWithGenerator(
 		}
 
 		// Perform long rest before dungeon starts
-		bus := events.NewEventBus()
-		char, charErr := character.LoadFromData(ctx, charOutput.CharacterData, bus)
+		loadedChar, charErr := character.LoadFromData(ctx, charOutput.CharacterData, restBus)
 		if charErr != nil {
 			return nil, fmt.Errorf("failed to load character %s for rest: %w", characterID, charErr)
 		}
 
-		if restErr := char.LongRest(ctx); restErr != nil {
-			_ = char.Cleanup(ctx)
+		if restErr := loadedChar.LongRest(ctx); restErr != nil {
+			_ = loadedChar.Cleanup(ctx)
 			return nil, fmt.Errorf("failed to perform long rest for character %s: %w", characterID, restErr)
 		}
 
 		// Save the rested character
-		updatedData := char.ToData()
+		updatedData := loadedChar.ToData()
 		_, updateErr := o.charRepo.Update(ctx, characterrepo.UpdateInput{CharacterData: updatedData})
 		if updateErr != nil {
-			_ = char.Cleanup(ctx)
+			_ = loadedChar.Cleanup(ctx)
 			return nil, fmt.Errorf("failed to save rested character %s: %w", characterID, updateErr)
 		}
-		_ = char.Cleanup(ctx)
+		_ = loadedChar.Cleanup(ctx)
 
 		dexModifier := updatedData.AbilityScores.Modifier(abilities.DEX)
 
 		// Track character's current HP for TPK detection (now at full after rest)
 		characterHP[characterID] = updatedData.HitPoints
 
-		char2 := initiative.NewParticipant(characterID, entityTypeCharacter)
-		combatants[char2] = dexModifier
+		combatant := initiative.NewParticipant(characterID, entityTypeCharacter)
+		combatants[combatant] = dexModifier
 	}
 
 	// Add monsters to initiative with their actual DEX modifiers
