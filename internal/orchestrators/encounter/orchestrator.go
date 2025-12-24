@@ -196,6 +196,52 @@ func (o *Orchestrator) publishEvent(ctx context.Context, encounterID string, eve
 	}
 }
 
+// publishCharacterTurnEnd publishes a TurnEndEvent to the character's event bus.
+// This allows conditions like Rage and Sneak Attack to process turn-end logic.
+// The character is loaded with their persisted condition state, the event is published,
+// and the updated state is persisted back.
+func (o *Orchestrator) publishCharacterTurnEnd(ctx context.Context, characterID string, round int) error {
+	// 1. Load character data from repository
+	charOutput, err := o.charRepo.Get(ctx, characterrepo.GetInput{
+		ID: characterID,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to load character: %w", err)
+	}
+
+	// 2. Create fresh event bus and load character (conditions subscribe to bus)
+	bus := events.NewEventBus()
+	char, err := character.LoadFromData(ctx, charOutput.CharacterData, bus)
+	if err != nil {
+		return fmt.Errorf("failed to load character from data: %w", err)
+	}
+
+	// 3. Publish TurnEndEvent to the character's event bus
+	// Conditions like Rage subscribe to this and will:
+	// - Track turn count
+	// - Check if attack/damage occurred (Rage maintenance)
+	// - Reset per-turn flags (Sneak Attack)
+	turnEndTopic := dnd5eEvents.TurnEndTopic.On(bus)
+	err = turnEndTopic.Publish(ctx, dnd5eEvents.TurnEndEvent{
+		CharacterID: characterID,
+		Round:       round,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to publish turn end event: %w", err)
+	}
+
+	// 4. Persist updated character state (conditions may have changed)
+	updatedData := char.ToData()
+	_, err = o.charRepo.Update(ctx, characterrepo.UpdateInput{
+		CharacterData: updatedData,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to persist character state: %w", err)
+	}
+
+	return nil
+}
+
 // ResolveAttack implements the Service interface
 func (o *Orchestrator) ResolveAttack(ctx context.Context, input *ResolveAttackInput) (*ResolveAttackOutput, error) {
 	if input == nil {
@@ -1201,7 +1247,17 @@ func (o *Orchestrator) EndTurn(ctx context.Context, input *EndTurnInput) (*EndTu
 
 	// 5. Store previous state for turn change event
 	previousEntityID := activeEntity.EntityID
-	_ = initiativeData.Round // previousRound - stored but not currently used
+	previousRound := initiativeData.Round
+
+	// 5a. Publish TurnEndEvent to character's event bus (for Rage, Sneak Attack, etc.)
+	// This allows conditions to process turn end logic like checking for combat activity.
+	if activeEntity.EntityType == entityTypeCharacter {
+		if publishErr := o.publishCharacterTurnEnd(ctx, previousEntityID, previousRound); publishErr != nil {
+			// Log but don't fail - turn end events are important but not critical
+			// The turn will still advance; conditions just won't update
+			fmt.Printf("warning: failed to publish turn end event for character %s: %v\n", previousEntityID, publishErr)
+		}
+	}
 
 	// 6. Advance to next turn
 	newRound := false

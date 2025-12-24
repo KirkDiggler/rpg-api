@@ -495,10 +495,11 @@ func (s *EventPublishingTestSuite) TestMoveCharacter_PublishesMovementCompletedE
 func (s *EventPublishingTestSuite) TestEndTurn_PublishesTurnEndedEvent() {
 	// Arrange
 	encounterID := "enc-123"
+	characterID := "char-1"
 
 	initiativeData := &initiative.TrackerData{
 		Order: []initiative.EntityData{
-			{ID: "char-1", Type: "character"},
+			{ID: characterID, Type: "character"},
 			{ID: "char-2", Type: "character"},
 		},
 		Current: 0,
@@ -506,11 +507,32 @@ func (s *EventPublishingTestSuite) TestEndTurn_PublishesTurnEndedEvent() {
 	}
 
 	initiativeRolls := []initiative.Roll{
-		{Entity: initiative.NewParticipant("char-1", "character"), Roll: 18, Modifier: 2, Total: 20},
+		{Entity: initiative.NewParticipant(characterID, "character"), Roll: 18, Modifier: 2, Total: 20},
 		{Entity: initiative.NewParticipant("char-2", "character"), Roll: 10, Modifier: 1, Total: 11},
 	}
 
-	// Mock Get
+	// Create character data for turn-end event publishing
+	charData := &character.Data{
+		ID:               characterID,
+		Name:             "Test Character",
+		PlayerID:         "player-1",
+		Level:            1,
+		RaceID:           "human",
+		ClassID:          "fighter",
+		ProficiencyBonus: 2,
+		AbilityScores: shared.AbilityScores{
+			abilities.STR: 16,
+			abilities.DEX: 14,
+			abilities.CON: 15,
+			abilities.INT: 10,
+			abilities.WIS: 12,
+			abilities.CHA: 8,
+		},
+		HitPoints:    12,
+		MaxHitPoints: 12,
+	}
+
+	// Mock Get encounter
 	s.mockEncRepo.EXPECT().
 		Get(gomock.Any(), &encounterrepo.GetInput{EncounterID: encounterID}).
 		Return(&encounterrepo.GetOutput{
@@ -521,7 +543,17 @@ func (s *EventPublishingTestSuite) TestEndTurn_PublishesTurnEndedEvent() {
 			},
 		}, nil)
 
-	// Mock Update
+	// Mock Get character for turn-end event publishing
+	s.mockCharRepo.EXPECT().
+		Get(gomock.Any(), characterrepo.GetInput{ID: characterID}).
+		Return(&characterrepo.GetOutput{CharacterData: charData}, nil)
+
+	// Mock Update character after turn-end event processing
+	s.mockCharRepo.EXPECT().
+		Update(gomock.Any(), gomock.Any()).
+		Return(&characterrepo.UpdateOutput{}, nil)
+
+	// Mock Update encounter
 	s.mockEncRepo.EXPECT().
 		Update(gomock.Any(), gomock.Any()).
 		Return(&encounterrepo.UpdateOutput{Success: true}, nil)
@@ -535,7 +567,7 @@ func (s *EventPublishingTestSuite) TestEndTurn_PublishesTurnEndedEvent() {
 
 			// Verify event data using typed field
 			s.Require().NotNil(input.Event.TurnEnded, "TurnEnded should be set")
-			s.Assert().Equal("char-1", input.Event.TurnEnded.PreviousEntityID)
+			s.Assert().Equal(characterID, input.Event.TurnEnded.PreviousEntityID)
 			s.Assert().Equal("char-2", input.Event.TurnEnded.NextEntityID)
 			s.Assert().Equal(1, input.Event.TurnEnded.Round)
 			s.Assert().False(input.Event.TurnEnded.NewRound)
@@ -787,11 +819,12 @@ func (s *EventPublishingTestSuite) TestLeaveEncounter_LastPlayer_PublishesBefore
 func (s *EventPublishingTestSuite) TestEndTurn_NewRound_SetsNewRoundFlag() {
 	// Arrange - last turn of round
 	encounterID := "enc-123"
+	characterID := "char-2" // This is the active entity (Current: 1)
 
 	initiativeData := &initiative.TrackerData{
 		Order: []initiative.EntityData{
 			{ID: "char-1", Type: "character"},
-			{ID: "char-2", Type: "character"},
+			{ID: characterID, Type: "character"},
 		},
 		Current: 1, // Last entity in order
 		Round:   1,
@@ -799,10 +832,31 @@ func (s *EventPublishingTestSuite) TestEndTurn_NewRound_SetsNewRoundFlag() {
 
 	initiativeRolls := []initiative.Roll{
 		{Entity: initiative.NewParticipant("char-1", "character"), Roll: 18, Modifier: 2, Total: 20},
-		{Entity: initiative.NewParticipant("char-2", "character"), Roll: 10, Modifier: 1, Total: 11},
+		{Entity: initiative.NewParticipant(characterID, "character"), Roll: 10, Modifier: 1, Total: 11},
 	}
 
-	// Mock Get
+	// Create character data for turn-end event publishing
+	charData := &character.Data{
+		ID:               characterID,
+		Name:             "Test Character 2",
+		PlayerID:         "player-2",
+		Level:            1,
+		RaceID:           "human",
+		ClassID:          "fighter",
+		ProficiencyBonus: 2,
+		AbilityScores: shared.AbilityScores{
+			abilities.STR: 16,
+			abilities.DEX: 14,
+			abilities.CON: 15,
+			abilities.INT: 10,
+			abilities.WIS: 12,
+			abilities.CHA: 8,
+		},
+		HitPoints:    12,
+		MaxHitPoints: 12,
+	}
+
+	// Mock Get encounter
 	s.mockEncRepo.EXPECT().
 		Get(gomock.Any(), &encounterrepo.GetInput{EncounterID: encounterID}).
 		Return(&encounterrepo.GetOutput{
@@ -813,7 +867,17 @@ func (s *EventPublishingTestSuite) TestEndTurn_NewRound_SetsNewRoundFlag() {
 			},
 		}, nil)
 
-	// Mock Update
+	// Mock Get character for turn-end event publishing
+	s.mockCharRepo.EXPECT().
+		Get(gomock.Any(), characterrepo.GetInput{ID: characterID}).
+		Return(&characterrepo.GetOutput{CharacterData: charData}, nil)
+
+	// Mock Update character after turn-end event processing
+	s.mockCharRepo.EXPECT().
+		Update(gomock.Any(), gomock.Any()).
+		Return(&characterrepo.UpdateOutput{}, nil)
+
+	// Mock Update encounter
 	s.mockEncRepo.EXPECT().
 		Update(gomock.Any(), gomock.Any()).
 		Return(&encounterrepo.UpdateOutput{Success: true}, nil)

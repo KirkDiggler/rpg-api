@@ -73,6 +73,39 @@ func TestOrchestratorSuite(t *testing.T) {
 	suite.Run(t, new(OrchestratorTestSuite))
 }
 
+// expectCharacterTurnEnd sets up mock expectations for the character repository
+// calls that happen during EndTurn's turn-end event publishing.
+// This is needed because EndTurn now publishes TurnEndEvent to character event buses.
+func (s *OrchestratorTestSuite) expectCharacterTurnEnd(characterID string) {
+	charData := &character.Data{
+		ID:               characterID,
+		Name:             "Test Character",
+		PlayerID:         "player-1",
+		Level:            1,
+		RaceID:           "human",
+		ClassID:          "fighter",
+		ProficiencyBonus: 2,
+		AbilityScores: shared.AbilityScores{
+			abilities.STR: 16,
+			abilities.DEX: 14,
+			abilities.CON: 15,
+			abilities.INT: 10,
+			abilities.WIS: 12,
+			abilities.CHA: 8,
+		},
+		HitPoints:    12,
+		MaxHitPoints: 12,
+	}
+
+	s.mockCharRepo.EXPECT().
+		Get(gomock.Any(), characterrepo.GetInput{ID: characterID}).
+		Return(&characterrepo.GetOutput{CharacterData: charData}, nil)
+
+	s.mockCharRepo.EXPECT().
+		Update(gomock.Any(), gomock.Any()).
+		Return(&characterrepo.UpdateOutput{}, nil)
+}
+
 func (s *OrchestratorTestSuite) TestNew_Success() {
 	orch, err := New(&Config{
 		CharacterRepo: s.mockCharRepo,
@@ -1049,6 +1082,9 @@ func (s *OrchestratorTestSuite) TestEndTurn_Success() {
 		{Entity: initiative.NewParticipant("char-2", "character"), Roll: 10, Modifier: 1, Total: 11},
 	}
 
+	// Expect character turn-end event publishing for char-1 (whose turn is ending)
+	s.expectCharacterTurnEnd("char-1")
+
 	s.mockEncRepo.EXPECT().
 		Get(gomock.Any(), &encounterrepo.GetInput{EncounterID: "enc-1"}).
 		Return(&encounterrepo.GetOutput{
@@ -1125,6 +1161,9 @@ func (s *OrchestratorTestSuite) TestEndTurn_AdvancesToNewRound() {
 		{Entity: initiative.NewParticipant("char-2", "character"), Roll: 10, Modifier: 1, Total: 11},
 	}
 
+	// Expect character turn-end event publishing for char-2 (whose turn is ending)
+	s.expectCharacterTurnEnd("char-2")
+
 	s.mockEncRepo.EXPECT().
 		Get(gomock.Any(), &encounterrepo.GetInput{EncounterID: "enc-1"}).
 		Return(&encounterrepo.GetOutput{
@@ -1181,6 +1220,9 @@ func (s *OrchestratorTestSuite) TestEndTurn_SkipsMultipleMonsters() {
 		{Entity: initiative.NewParticipant("char-2", "character"), Roll: 10, Modifier: 1, Total: 11},
 	}
 
+	// Expect character turn-end event publishing for char-1 (whose turn is ending)
+	s.expectCharacterTurnEnd("char-1")
+
 	s.mockEncRepo.EXPECT().
 		Get(gomock.Any(), &encounterrepo.GetInput{EncounterID: "enc-1"}).
 		Return(&encounterrepo.GetOutput{
@@ -1233,6 +1275,9 @@ func (s *OrchestratorTestSuite) TestEndTurn_SkipsMonstersAcrossRoundBoundary() {
 		{Entity: initiative.NewParticipant("goblin-2", "monster"), Roll: 18, Modifier: 2, Total: 20},
 		{Entity: initiative.NewParticipant("char-1", "character"), Roll: 10, Modifier: 1, Total: 11},
 	}
+
+	// Expect character turn-end event publishing for char-1 (whose turn is ending)
+	s.expectCharacterTurnEnd("char-1")
 
 	s.mockEncRepo.EXPECT().
 		Get(gomock.Any(), &encounterrepo.GetInput{EncounterID: "enc-1"}).
@@ -1384,6 +1429,9 @@ func (s *OrchestratorTestSuite) TestEndTurn_UpdateError() {
 		Round:   1,
 	}
 
+	// Expect character turn-end event publishing for char-1 (whose turn is ending)
+	s.expectCharacterTurnEnd("char-1")
+
 	s.mockEncRepo.EXPECT().
 		Get(gomock.Any(), &encounterrepo.GetInput{EncounterID: "enc-1"}).
 		Return(&encounterrepo.GetOutput{
@@ -1448,6 +1496,9 @@ func (s *OrchestratorTestSuite) TestEndTurn_WithRoomData() {
 		{Entity: initiative.NewParticipant("char-2", "character"), Roll: 10, Modifier: 1, Total: 11},
 	}
 
+	// Expect character turn-end event publishing for char-1 (whose turn is ending)
+	s.expectCharacterTurnEnd("char-1")
+
 	s.mockEncRepo.EXPECT().
 		Get(gomock.Any(), &encounterrepo.GetInput{EncounterID: "enc-1"}).
 		Return(&encounterrepo.GetOutput{
@@ -1503,6 +1554,27 @@ func (s *OrchestratorTestSuite) TestEndTurn_WithPlayerID_OwnershipValid() {
 		{Entity: initiative.NewParticipant("char-2", "character"), Roll: 10, Modifier: 1, Total: 11},
 	}
 
+	// Character data used for both ownership validation and turn-end event publishing
+	charData := &character.Data{
+		ID:               "char-1",
+		Name:             "Test Character",
+		PlayerID:         "player-1", // Owned by player-1
+		Level:            1,
+		RaceID:           "human",
+		ClassID:          "fighter",
+		ProficiencyBonus: 2,
+		AbilityScores: shared.AbilityScores{
+			abilities.STR: 16,
+			abilities.DEX: 14,
+			abilities.CON: 15,
+			abilities.INT: 10,
+			abilities.WIS: 12,
+			abilities.CHA: 8,
+		},
+		HitPoints:    12,
+		MaxHitPoints: 12,
+	}
+
 	s.mockEncRepo.EXPECT().
 		Get(gomock.Any(), &encounterrepo.GetInput{EncounterID: "enc-1"}).
 		Return(&encounterrepo.GetOutput{
@@ -1513,15 +1585,16 @@ func (s *OrchestratorTestSuite) TestEndTurn_WithPlayerID_OwnershipValid() {
 			},
 		}, nil)
 
-	// Mock character lookup to verify ownership
+	// Mock character lookup - called twice: ownership validation and turn-end event publishing
 	s.mockCharRepo.EXPECT().
 		Get(gomock.Any(), characterrepo.GetInput{ID: "char-1"}).
-		Return(&characterrepo.GetOutput{
-			CharacterData: &character.Data{
-				ID:       "char-1",
-				PlayerID: "player-1", // Owned by player-1
-			},
-		}, nil)
+		Return(&characterrepo.GetOutput{CharacterData: charData}, nil).
+		Times(2)
+
+	// Mock character update after turn-end event processing
+	s.mockCharRepo.EXPECT().
+		Update(gomock.Any(), gomock.Any()).
+		Return(&characterrepo.UpdateOutput{}, nil)
 
 	s.mockEncRepo.EXPECT().
 		Update(gomock.Any(), gomock.Any()).
@@ -1668,7 +1741,7 @@ func (s *OrchestratorTestSuite) TestEndTurn_WithPlayerID_CharacterLookupFails() 
 }
 
 func (s *OrchestratorTestSuite) TestEndTurn_WithoutPlayerID_SkipsValidation() {
-	// Arrange - backward compatibility: no PlayerID means no validation
+	// Arrange - backward compatibility: no PlayerID means no ownership validation
 	initiativeData := &initiative.TrackerData{
 		Order: []initiative.EntityData{
 			{ID: "char-1", Type: "character"},
@@ -1683,6 +1756,10 @@ func (s *OrchestratorTestSuite) TestEndTurn_WithoutPlayerID_SkipsValidation() {
 		{Entity: initiative.NewParticipant("char-2", "character"), Roll: 10, Modifier: 1, Total: 11},
 	}
 
+	// Expect character turn-end event publishing for char-1 (whose turn is ending)
+	// Note: Ownership validation is skipped (no PlayerID), but turn-end event publishing still happens
+	s.expectCharacterTurnEnd("char-1")
+
 	s.mockEncRepo.EXPECT().
 		Get(gomock.Any(), &encounterrepo.GetInput{EncounterID: "enc-1"}).
 		Return(&encounterrepo.GetOutput{
@@ -1692,8 +1769,6 @@ func (s *OrchestratorTestSuite) TestEndTurn_WithoutPlayerID_SkipsValidation() {
 				InitiativeRolls: initiativeRolls,
 			},
 		}, nil)
-
-	// Note: No character repo call expected - validation is skipped
 
 	s.mockEncRepo.EXPECT().
 		Update(gomock.Any(), gomock.Any()).
@@ -2005,6 +2080,10 @@ func (s *OrchestratorTestSuite) TestEndTurn_ResetsActionEconomy() {
 		},
 		Monsters: []*monster.Data{monster.NewGoblin("goblin-1").ToData()},
 	}
+
+	// Expect character turn-end event publishing for char-1 (whose turn is ending)
+	s.expectCharacterTurnEnd("char-1")
+
 	s.mockEncRepo.EXPECT().
 		Get(gomock.Any(), &encounterrepo.GetInput{EncounterID: "enc-1"}).
 		Return(&encounterrepo.GetOutput{Data: encData}, nil)
