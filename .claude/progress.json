@@ -1,156 +1,22 @@
 {
-  "branch": "feat/dungeon-generation",
-  "issues": ["#300"],
-  "goal": "Implement procedural dungeon generation with themed, multi-room dungeons and CR-scaled encounters as a prototype in internal/components/dungeon/ that will later migrate to rpg-toolkit/rulebooks/dnd5e/",
-  "design_doc": "docs/plans/2025-01-15-dungeon-generation-design.md",
-  "sessions": [
-    {
-      "date": "2025-12-15",
-      "commit": "77503b7",
-      "summary": "Created dungeon types.go with all core structures",
-      "completed": [
-        "Created internal/components/dungeon/ directory",
-        "Defined GenerateInput/Output for public API",
-        "Defined Dungeon, Room, Shape, FeatureLayout, Zone, Encounter structures",
-        "Defined all enums: RoomSize, LayoutType, ShapeStyle, ZoneType, MonsterRole, ConnectionType, GridType, ObstacleType, TerrainType",
-        "Created comprehensive tests in types_test.go",
-        "All tests passing, pre-commit checks clean"
-      ],
-      "notes": "Foundation types match design doc exactly. Theme type placeholder added, will be implemented in theme.go next."
-    },
-    {
-      "date": "2025-12-15",
-      "commit": "99a32a7",
-      "summary": "Implemented dungeon theme system with three predefined themes",
-      "completed": [
-        "Replaced placeholder Theme type in types.go with proper struct",
-        "Created Theme struct with ID, Name, ShapeStyle, Features, MonsterPool, BossPool",
-        "Created FeatureRules struct with obstacle/terrain configuration",
-        "Created MonsterRef struct for rulebook monster references",
-        "Implemented ThemeCrypt with structured shapes and undead monsters",
-        "Implemented ThemeCave with organic shapes and beast monsters",
-        "Implemented ThemeBanditLair with mixed shapes and humanoid monsters",
-        "Created comprehensive theme_test.go with 14 test cases",
-        "Updated types_test.go to use predefined themes",
-        "All tests passing (17 theme tests), pre-commit checks clean"
-      ],
-      "notes": "Theme system complete per design doc. Monster IDs are placeholder strings (e.g., 'skeleton', 'zombie') that will become toolkit constants later. Each theme has distinct shape style, obstacle types, and monster pools. Boss CR verified higher than regular monsters."
-    },
-    {
-      "date": "2025-12-15",
-      "commit": "1f85478",
-      "summary": "Implemented encounter package with CR budget allocation and role-based monster selection",
-      "completed": [
-        "Created internal/components/dungeon/encounter/ package",
-        "Implemented EncounterGenerator interface with Generate method",
-        "Created AllocateBudget function with 40/60 boss/regular split",
-        "Implemented progressive CR scaling for regular rooms (later rooms harder)",
-        "Created MonsterSelector with role-based composition rules",
-        "Low CR (<=2): 70% melee, 30% ranged",
-        "Medium CR (2-5): 50% melee, 30% ranged, 20% support",
-        "High CR (>5): 40% melee, 30% ranged, 30% support",
-        "Boss encounters: boss from BossPool + melee minions",
-        "Deterministic random selection with seed for reproducibility",
-        "Created 34 comprehensive tests across 3 test suites",
-        "Achieved 99.1% test coverage on encounter package",
-        "All tests passing, pre-commit checks clean"
-      ],
-      "notes": "Encounter generation (Layer 3) complete per design doc. Uses math/rand for deterministic generation. D&D encounter math simplified (partySize * targetCR). Monster selection respects CR budgets and enforces tactical role distribution. All Input/Output patterns followed consistently."
-    },
-    {
-      "date": "2025-12-15",
-      "commit": "3f7511a",
-      "summary": "Created public dungeon generator API with dependency injection and stub implementations",
-      "completed": [
-        "Created generator.go with Generator struct and public Generate method",
-        "Defined generator interfaces: LayoutGenerator, ShapeGenerator, FeatureGenerator, EncounterGenerator, BudgetAllocator",
-        "Defined supporting types: LayoutInput/Output, ShapeInput/Output, FeatureInput/Output, EncounterInput/Output, BudgetInput/Output",
-        "Created LayoutConnection type for layout-level connections (uses int indexes)",
-        "Implemented full generation pipeline: Budget → Layout → Rooms (Shape → Features → Encounter) → Assemble Dungeon",
-        "Created adapter/ package to avoid import cycles between dungeon and encounter",
-        "Implemented EncounterAdapter bridging encounter.EncounterGenerator to dungeon interface",
-        "Implemented BudgetAllocator combining BossRoomBudget + RoomBudgets into single array",
-        "Created stub implementations: StubLayoutGenerator (linear), StubShapeGenerator (rectangles), StubFeatureGenerator (basic spawn zones)",
-        "Created 16 comprehensive end-to-end tests in adapter/generator_test.go",
-        "Tests verify: structure, connections, CR budgets, theme respect, seed reproducibility, input validation, different sizes/themes",
-        "All tests passing, pre-commit checks clean"
-      ],
-      "notes": "Public API complete and stable. Generator orchestrates all layers through injected dependencies. Stub implementations enable end-to-end testing without real shape/feature/layout generators. Next: implement actual shape, feature, and layout generators to replace stubs."
-    },
-    {
-      "date": "2025-12-15",
-      "commit": "7e87a78",
-      "summary": "Implemented toolkit integration package with layout, shape, and feature generators",
-      "completed": [
-        "Created internal/components/dungeon/toolkit/ package",
-        "Implemented ToolkitLayoutGenerator with linear, branching, and hub layouts",
-        "Implemented ToolkitShapeGenerator for structured and organic room shapes",
-        "Implemented ToolkitFeatureGenerator for obstacles, terrain, and spawn zones",
-        "Created factory functions: NewToolkitGenerators and CreateGenerator",
-        "Added comprehensive test suite with 14 test cases covering all generators",
-        "All generators implement dungeon interfaces (LayoutGenerator, ShapeGenerator, FeatureGenerator)",
-        "All tests passing, minor staticcheck style warnings (non-blocking)",
-        "Added room type constants to avoid magic strings",
-        "Added #nosec G404 comments for deterministic random generation"
-      ],
-      "notes": "Toolkit integration complete but simplified from original plan. Initially attempted to use rpg-toolkit/tools/environments GraphBasedGenerator but encountered dependency compatibility issues with selectables module (breaking changes in events/dice API). Pivoted to simple graph-based implementations that can be enhanced with toolkit components later. Layout generator creates linear/branching/hub patterns. Shape generator creates rectangular shapes with variation based on style (structured vs organic). Feature generator places obstacles, terrain patches, and spawn zones based on room type and theme rules. Factory provides convenient generator creation and full dungeon generator assembly."
-    },
-    {
-      "date": "2025-12-15",
-      "commit": "6b95ed6",
-      "summary": "Implemented presentation layer to obscure main path in dungeon generation",
-      "completed": [
-        "Created internal/components/dungeon/presentation/ package",
-        "Implemented HintGenerator with theme-aware physical hint vocabulary",
-        "Created themed hints for crypt (heavy stone door, vaulted hallway, worn stone steps)",
-        "Created themed hints for cave (narrow crevice, winding tunnel, slippery descent)",
-        "Created themed hints for bandit lair (reinforced wooden door, guard corridor, rickety stairs)",
-        "Implemented ShuffleConnections using Fisher-Yates shuffle algorithm",
-        "Wired presentation layer into Generator.applyPresentation after connection creation",
-        "Ensured main path and side paths have equally interesting descriptions",
-        "Connection order randomized to prevent 'main path first' pattern",
-        "Created 20 comprehensive tests in hints_test.go and shuffler_test.go",
-        "All tests passing, 91.7% coverage on presentation package",
-        "Fixed staticcheck warnings in toolkit/layout.go (tagged switch)",
-        "All pre-commit checks clean"
-      ],
-      "notes": "Presentation layer complete per design doc requirement 'Main path not visually obvious'. Players discover the boss room through exploration, not by position or description patterns. Avoided import cycle by creating local presentation.RoomConnection and presentation.Theme types. Generator converts between dungeon and presentation types. Hint generation and shuffling both use deterministic seeding for reproducibility. This completes the dungeon generation feature - all layers implemented and tested."
-    },
-    {
-      "date": "2025-12-15",
-      "commit": "701204e",
-      "summary": "Created comprehensive integration tests for dungeon generation system",
-      "completed": [
-        "Created internal/components/dungeon/integration_test.go with IntegrationTestSuite",
-        "Implemented TestGenerateCryptDungeon verifying 4-room crypt with connections and boss",
-        "Implemented TestThemeShapesCorrect verifying crypt has structured shapes, cave has organic",
-        "Implemented TestCRBudgetAllocation verifying boss gets ~40% CR, progressive difficulty",
-        "Implemented TestRoleBasedMonsterSelection verifying monsters from theme pools with roles",
-        "Implemented TestBranchingLayout verifying side rooms and multiple routes",
-        "Implemented TestSpawnZonesPlaced verifying PlayerSpawn, MonsterSpawn, Boss zones",
-        "Implemented TestSeedReproducibility verifying identical dungeons with same seed",
-        "Added edge case tests: minimum 2-room dungeon, large 10-room dungeon",
-        "Added TestDifferentPartySizes verifying CR scaling with party size",
-        "Added TestAllThemesWork verifying all three themes generate successfully",
-        "Added TestDataIntegrity verifying unique IDs, valid connections, no nil pointers",
-        "Added TestValidationErrors verifying input validation errors",
-        "Created 13 test methods covering all tests.json verification criteria",
-        "All 21 test cases passing (including subtests)",
-        "Updated .claude/tests.json marking all 7 criteria as passing",
-        "All pre-commit checks clean, 88.5% coverage on dungeon package"
-      ],
-      "notes": "Integration tests complete using real toolkit generators (not stubs). Each test from tests.json has corresponding integration test. Tests verify complete output structure, CR budget allocation (20-60% range for boss), role distribution, spawn zones, seed reproducibility, and data integrity. Edge cases covered: min/max dungeon sizes, different party sizes, all themes. Tests are fast (0.03s total) so kept as regular tests without integration build tag."
-    }
+  "branch": "feat/issue-356-appearance-storage",
+  "issues": ["#356"],
+  "goal": "Add appearance storage to Character - persist skin tone, armor colors, eye color as part of character data in rpg-api repository layer",
+  "design_decisions": [
+    "Appearance is cosmetic data - belongs in API layer, not toolkit",
+    "Store appearance separately from character/draft JSON (separate Redis keys)",
+    "Add methods to existing repos rather than creating separate appearance repo",
+    "Appearance flows: draft creation -> finalize -> character storage",
+    "Post-creation editing will be supported later"
   ],
+  "sessions": [],
   "next_steps": [
-    "Enhance toolkit integration when environments module compatibility issues resolved",
-    "Consider adding more shape variety (L-shapes, T-shapes, irregular polygons)",
-    "Add more sophisticated obstacle and terrain placement algorithms",
-    "Wire dungeon generation into encounter orchestrator"
-  ],
-  "toolkit_dependencies": {
-    "spatial": "Room, RoomOrchestrator, connections (currently unused but prepared for future integration)",
-    "environments": "GraphBasedGenerator (blocked by selectables compatibility issues)",
-    "selectables": "BasicTable (blocked by breaking changes in events/dice/core APIs)"
-  }
+    "Add Appearance entity to internal/entities/",
+    "Add SetAppearance/GetAppearance to character_draft repository",
+    "Add SetAppearance/GetAppearance to character repository",
+    "Wire up orchestrator to handle appearance in draft flow",
+    "Implement UpdateAppearance handler",
+    "Wire appearance into Finalize flow (copy from draft to character)",
+    "Wire appearance into GetDraft/GetCharacter responses"
+  ]
 }
