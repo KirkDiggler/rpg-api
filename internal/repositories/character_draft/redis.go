@@ -8,6 +8,7 @@ import (
 	redis "github.com/redis/go-redis/v9"
 
 	"github.com/KirkDiggler/rpg-api/internal/apierr"
+	"github.com/KirkDiggler/rpg-api/internal/entities"
 	"github.com/KirkDiggler/rpg-api/internal/pkg/clock"
 	"github.com/KirkDiggler/rpg-api/internal/pkg/idgen"
 	redisclient "github.com/KirkDiggler/rpg-api/internal/redis"
@@ -15,15 +16,17 @@ import (
 )
 
 const (
-	draftKeyPrefix      = "draft:"
-	playerMappingPrefix = "draft:player:"
-	defaultTTL          = 24 * time.Hour
+	draftKeyPrefix          = "draft:"
+	playerMappingPrefix     = "draft:player:"
+	draftAppearancePrefix   = "draft:appearance:"
+	defaultTTL              = 24 * time.Hour
 
 	// Error messages
-	errDraftNil      = "draft cannot be nil"
-	errDraftIDEmpty  = "draft ID cannot be empty"
-	errPlayerIDEmpty = "player ID cannot be empty"
-	errDraftExpired  = "draft has already expired"
+	errDraftNil        = "draft cannot be nil"
+	errDraftIDEmpty    = "draft ID cannot be empty"
+	errPlayerIDEmpty   = "player ID cannot be empty"
+	errDraftExpired    = "draft has already expired"
+	errAppearanceNil   = "appearance cannot be nil"
 )
 
 // Config holds the configuration for the Redis repository
@@ -232,6 +235,10 @@ func (r *redisRepository) Delete(ctx context.Context, input DeleteInput) (*Delet
 	draftKey := draftKeyPrefix + input.ID
 	pipe.Del(ctx, draftKey)
 
+	// Delete appearance
+	appearanceKey := draftAppearancePrefix + input.ID
+	pipe.Del(ctx, appearanceKey)
+
 	// Delete player mapping
 	if getOutput.Draft.PlayerID != "" {
 		playerKey := playerMappingPrefix + getOutput.Draft.PlayerID
@@ -245,4 +252,50 @@ func (r *redisRepository) Delete(ctx context.Context, input DeleteInput) (*Delet
 	}
 
 	return &DeleteOutput{}, nil
+}
+
+func (r *redisRepository) SetAppearance(ctx context.Context, input SetAppearanceInput) (*SetAppearanceOutput, error) {
+	if input.DraftID == "" {
+		return nil, apierr.InvalidArgument(errDraftIDEmpty)
+	}
+	if input.Appearance == nil {
+		return nil, apierr.InvalidArgument(errAppearanceNil)
+	}
+
+	// Marshal appearance
+	data, err := json.Marshal(input.Appearance)
+	if err != nil {
+		return nil, apierr.Wrapf(err, "failed to marshal appearance")
+	}
+
+	// Store with same TTL as draft
+	key := draftAppearancePrefix + input.DraftID
+	if err := r.client.Set(ctx, key, data, defaultTTL).Err(); err != nil {
+		return nil, apierr.Wrapf(err, "failed to set appearance")
+	}
+
+	return &SetAppearanceOutput{Appearance: input.Appearance}, nil
+}
+
+func (r *redisRepository) GetAppearance(ctx context.Context, input GetAppearanceInput) (*GetAppearanceOutput, error) {
+	if input.DraftID == "" {
+		return nil, apierr.InvalidArgument(errDraftIDEmpty)
+	}
+
+	key := draftAppearancePrefix + input.DraftID
+	result, err := r.client.Get(ctx, key).Result()
+	if err != nil {
+		if err == redis.Nil {
+			// Not found is not an error - just return nil appearance
+			return &GetAppearanceOutput{Appearance: nil}, nil
+		}
+		return nil, apierr.Wrapf(err, "failed to get appearance")
+	}
+
+	var appearance entities.Appearance
+	if err := json.Unmarshal([]byte(result), &appearance); err != nil {
+		return nil, apierr.Wrapf(err, "failed to unmarshal appearance")
+	}
+
+	return &GetAppearanceOutput{Appearance: &appearance}, nil
 }
