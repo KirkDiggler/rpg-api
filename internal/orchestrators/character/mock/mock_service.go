@@ -13,9 +13,8 @@ import (
 	context "context"
 	reflect "reflect"
 
-	gomock "go.uber.org/mock/gomock"
-
 	character "github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
+	gomock "go.uber.org/mock/gomock"
 )
 
 // MockService is a mock of Service interface.
@@ -310,6 +309,21 @@ func (m *MockService) SetAbilityScoresFromRolls(ctx context.Context, input *char
 func (mr *MockServiceMockRecorder) SetAbilityScoresFromRolls(ctx, input any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetAbilityScoresFromRolls", reflect.TypeOf((*MockService)(nil).SetAbilityScoresFromRolls), ctx, input)
+}
+
+// SetAppearance mocks base method.
+func (m *MockService) SetAppearance(ctx context.Context, input *character.SetAppearanceInput) (*character.SetAppearanceOutput, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SetAppearance", ctx, input)
+	ret0, _ := ret[0].(*character.SetAppearanceOutput)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// SetAppearance indicates an expected call of SetAppearance.
+func (mr *MockServiceMockRecorder) SetAppearance(ctx, input any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetAppearance", reflect.TypeOf((*MockService)(nil).SetAppearance), ctx, input)
 }
 
 // SetBackground mocks base method.

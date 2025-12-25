@@ -512,6 +512,41 @@ func (o *Orchestrator) SetAbilityScoresFromRolls(ctx context.Context, input *Set
 	}, nil
 }
 
+// SetAppearance sets the appearance for a draft
+// Appearance is stored separately from draft data (cosmetic only)
+func (o *Orchestrator) SetAppearance(ctx context.Context, input *SetAppearanceInput) (*SetAppearanceOutput, error) {
+	if input == nil {
+		return nil, apierr.InvalidArgument("input is required")
+	}
+	if input.DraftID == "" {
+		return nil, apierr.InvalidArgument("draft ID is required")
+	}
+	if input.Appearance == nil {
+		return nil, apierr.InvalidArgument("appearance is required")
+	}
+
+	// Verify draft exists
+	_, err := o.draftRepo.Get(ctx, characterdraft.GetInput{
+		ID: input.DraftID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get draft: %w", err)
+	}
+
+	// Store appearance
+	setOutput, err := o.draftRepo.SetAppearance(ctx, characterdraft.SetAppearanceInput{
+		DraftID:    input.DraftID,
+		Appearance: input.Appearance,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to set appearance: %w", err)
+	}
+
+	return &SetAppearanceOutput{
+		Appearance: setOutput.Appearance,
+	}, nil
+}
+
 // ValidateDraft validates a draft
 func (o *Orchestrator) ValidateDraft(ctx context.Context, input *ValidateDraftInput) (*ValidateDraftOutput, error) {
 	if input == nil {
