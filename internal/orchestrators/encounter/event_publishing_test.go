@@ -145,22 +145,22 @@ func (s *EventPublishingTestSuite) TestJoinEncounter_PublishesPlayerJoinedEvent(
 	s.mockCharRepo.EXPECT().
 		Get(gomock.Any(), characterrepo.GetInput{ID: characterID}).
 		Return(&characterrepo.GetOutput{
-			CharacterData: &character.Data{
+			Character: &entities.Character{Data: &character.Data{
 				ID:       characterID,
 				Name:     "Test Character",
 				PlayerID: playerID,
-			},
+			}},
 		}, nil)
 
 	// Mock character lookup for building party list (called second)
 	s.mockCharRepo.EXPECT().
 		Get(gomock.Any(), characterrepo.GetInput{ID: characterID}).
 		Return(&characterrepo.GetOutput{
-			CharacterData: &character.Data{
+			Character: &entities.Character{Data: &character.Data{
 				ID:       characterID,
 				Name:     "Test Character",
 				PlayerID: playerID,
-			},
+			}},
 		}, nil)
 
 	// Expect PlayerJoined event to be processed
@@ -300,14 +300,14 @@ func (s *EventPublishingTestSuite) TestStartCombat_PublishesCombatStartedEvent()
 	s.mockCharRepo.EXPECT().
 		Get(gomock.Any(), characterrepo.GetInput{ID: characterID}).
 		Return(&characterrepo.GetOutput{
-			CharacterData: &character.Data{
+			Character: &entities.Character{Data: &character.Data{
 				ID:        characterID,
 				PlayerID:  playerID,
 				HitPoints: 10, // Set HP to non-zero to avoid triggering TPK check
 				AbilityScores: shared.AbilityScores{
 					abilities.DEX: 14, // +2 modifier
 				},
-			},
+			}},
 		}, nil).AnyTimes()
 
 	// Mock dungeon repo save (dungeon is generated when combat starts)
@@ -546,7 +546,7 @@ func (s *EventPublishingTestSuite) TestEndTurn_PublishesTurnEndedEvent() {
 	// Mock Get character for turn-end event publishing
 	s.mockCharRepo.EXPECT().
 		Get(gomock.Any(), characterrepo.GetInput{ID: characterID}).
-		Return(&characterrepo.GetOutput{CharacterData: charData}, nil)
+		Return(&characterrepo.GetOutput{Character: &entities.Character{Data: charData}}, nil)
 
 	// Mock Update character after turn-end event processing
 	s.mockCharRepo.EXPECT().
@@ -632,7 +632,7 @@ func (s *EventPublishingTestSuite) TestActivateFeature_NoEventWhenFeatureNotFoun
 	s.mockCharRepo.EXPECT().
 		Get(gomock.Any(), characterrepo.GetInput{ID: characterID}).
 		Return(&characterrepo.GetOutput{
-			CharacterData: charData,
+			Character: &entities.Character{Data: charData},
 		}, nil)
 
 	// NO character Update expected - we return early when feature not found
@@ -870,7 +870,7 @@ func (s *EventPublishingTestSuite) TestEndTurn_NewRound_SetsNewRoundFlag() {
 	// Mock Get character for turn-end event publishing
 	s.mockCharRepo.EXPECT().
 		Get(gomock.Any(), characterrepo.GetInput{ID: characterID}).
-		Return(&characterrepo.GetOutput{CharacterData: charData}, nil)
+		Return(&characterrepo.GetOutput{Character: &entities.Character{Data: charData}}, nil)
 
 	// Mock Update character after turn-end event processing
 	s.mockCharRepo.EXPECT().

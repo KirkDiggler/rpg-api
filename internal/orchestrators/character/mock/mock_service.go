@@ -312,6 +312,21 @@ func (mr *MockServiceMockRecorder) SetAbilityScoresFromRolls(ctx, input any) *go
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetAbilityScoresFromRolls", reflect.TypeOf((*MockService)(nil).SetAbilityScoresFromRolls), ctx, input)
 }
 
+// SetAppearance mocks base method.
+func (m *MockService) SetAppearance(ctx context.Context, input *character.SetAppearanceInput) (*character.SetAppearanceOutput, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SetAppearance", ctx, input)
+	ret0, _ := ret[0].(*character.SetAppearanceOutput)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// SetAppearance indicates an expected call of SetAppearance.
+func (mr *MockServiceMockRecorder) SetAppearance(ctx, input any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetAppearance", reflect.TypeOf((*MockService)(nil).SetAppearance), ctx, input)
+}
+
 // SetBackground mocks base method.
 func (m *MockService) SetBackground(ctx context.Context, input *character.SetBackgroundInput) (*character.SetBackgroundOutput, error) {
 	m.ctrl.T.Helper()

@@ -99,7 +99,7 @@ func (s *OrchestratorTestSuite) expectCharacterTurnEnd(characterID string) {
 
 	s.mockCharRepo.EXPECT().
 		Get(gomock.Any(), characterrepo.GetInput{ID: characterID}).
-		Return(&characterrepo.GetOutput{CharacterData: charData}, nil)
+		Return(&characterrepo.GetOutput{Character: &entities.Character{Data: charData}}, nil)
 
 	s.mockCharRepo.EXPECT().
 		Update(gomock.Any(), gomock.Any()).
@@ -147,7 +147,7 @@ func (s *OrchestratorTestSuite) TestResolveAttack_Success() {
 	charData := createTestCharacterData("char-1", "Grog")
 	s.mockCharRepo.EXPECT().
 		Get(gomock.Any(), characterrepo.GetInput{ID: "char-1"}).
-		Return(&characterrepo.GetOutput{CharacterData: charData}, nil).
+		Return(&characterrepo.GetOutput{Character: &entities.Character{Data: charData}}, nil).
 		AnyTimes() // May be called multiple times (for character data and weapon lookup)
 
 	// Arrange - Mock encounter repo
@@ -284,7 +284,7 @@ func (s *OrchestratorTestSuite) TestResolveAttack_EncounterNotFound() {
 	charData := createTestCharacterData("char-1", "Grog")
 	s.mockCharRepo.EXPECT().
 		Get(gomock.Any(), characterrepo.GetInput{ID: "char-1"}).
-		Return(&characterrepo.GetOutput{CharacterData: charData}, nil)
+		Return(&characterrepo.GetOutput{Character: &entities.Character{Data: charData}}, nil)
 
 	// Arrange - Encounter not found
 	s.mockEncRepo.EXPECT().
@@ -314,7 +314,7 @@ func (s *OrchestratorTestSuite) TestResolveAttack_MultipleAttacks() {
 	// Set up expectations for multiple calls (includes weapon lookup)
 	s.mockCharRepo.EXPECT().
 		Get(gomock.Any(), characterrepo.GetInput{ID: "char-1"}).
-		Return(&characterrepo.GetOutput{CharacterData: charData}, nil).
+		Return(&characterrepo.GetOutput{Character: &entities.Character{Data: charData}}, nil).
 		AnyTimes()
 
 	s.mockEncRepo.EXPECT().
@@ -404,13 +404,13 @@ func (s *OrchestratorTestSuite) TestCreateDungeon_Success() {
 	s.mockCharRepo.EXPECT().
 		Get(gomock.Any(), characterrepo.GetInput{ID: "char-1"}).
 		Return(&characterrepo.GetOutput{
-			CharacterData: &character.Data{
+			Character: &entities.Character{Data: &character.Data{
 				ID:        "char-1",
 				HitPoints: 10, // Set HP to non-zero to avoid triggering TPK check
 				AbilityScores: shared.AbilityScores{
 					abilities.DEX: 14, // +2 modifier
 				},
-			},
+			}},
 		}, nil).
 		AnyTimes() // Initiative lookup + potential monster attack target
 
@@ -517,13 +517,13 @@ func (s *OrchestratorTestSuite) TestCreateDungeon_SaveError() {
 	s.mockCharRepo.EXPECT().
 		Get(gomock.Any(), characterrepo.GetInput{ID: "char-1"}).
 		Return(&characterrepo.GetOutput{
-			CharacterData: &character.Data{
+			Character: &entities.Character{Data: &character.Data{
 				ID:        "char-1",
 				HitPoints: 10,
 				AbilityScores: shared.AbilityScores{
 					abilities.DEX: 14,
 				},
-			},
+			}},
 		}, nil).
 		AnyTimes()
 
@@ -575,13 +575,13 @@ func (s *OrchestratorTestSuite) TestCreateDungeon_UniqueIDs() {
 	s.mockCharRepo.EXPECT().
 		Get(gomock.Any(), characterrepo.GetInput{ID: "char-1"}).
 		Return(&characterrepo.GetOutput{
-			CharacterData: &character.Data{
+			Character: &entities.Character{Data: &character.Data{
 				ID:        "char-1",
 				HitPoints: 10,
 				AbilityScores: shared.AbilityScores{
 					abilities.DEX: 14,
 				},
-			},
+			}},
 		}, nil).
 		AnyTimes()
 
@@ -649,13 +649,13 @@ func (s *OrchestratorTestSuite) TestCreateDungeon_SavesInitiativeData() {
 	s.mockCharRepo.EXPECT().
 		Get(gomock.Any(), characterrepo.GetInput{ID: "char-1"}).
 		Return(&characterrepo.GetOutput{
-			CharacterData: &character.Data{
+			Character: &entities.Character{Data: &character.Data{
 				ID:        "char-1",
 				HitPoints: 10,
 				AbilityScores: shared.AbilityScores{
 					abilities.DEX: 14,
 				},
-			},
+			}},
 		}, nil).
 		AnyTimes()
 
@@ -1588,7 +1588,7 @@ func (s *OrchestratorTestSuite) TestEndTurn_WithPlayerID_OwnershipValid() {
 	// Mock character lookup - called twice: ownership validation and turn-end event publishing
 	s.mockCharRepo.EXPECT().
 		Get(gomock.Any(), characterrepo.GetInput{ID: "char-1"}).
-		Return(&characterrepo.GetOutput{CharacterData: charData}, nil).
+		Return(&characterrepo.GetOutput{Character: &entities.Character{Data: charData}}, nil).
 		Times(2)
 
 	// Mock character update after turn-end event processing
@@ -1643,10 +1643,10 @@ func (s *OrchestratorTestSuite) TestEndTurn_WithPlayerID_NotYourCharacter() {
 	s.mockCharRepo.EXPECT().
 		Get(gomock.Any(), characterrepo.GetInput{ID: "char-1"}).
 		Return(&characterrepo.GetOutput{
-			CharacterData: &character.Data{
+			Character: &entities.Character{Data: &character.Data{
 				ID:       "char-1",
 				PlayerID: "player-1", // Owned by player-1
-			},
+			}},
 		}, nil)
 
 	// Act - player-2 tries to end someone else's turn
@@ -1909,7 +1909,7 @@ func (s *OrchestratorTestSuite) TestActivateFeature_FeatureNotFound() {
 	}
 	s.mockCharRepo.EXPECT().
 		Get(gomock.Any(), characterrepo.GetInput{ID: "char-1"}).
-		Return(&characterrepo.GetOutput{CharacterData: charData}, nil)
+		Return(&characterrepo.GetOutput{Character: &entities.Character{Data: charData}}, nil)
 
 	// Act
 	output, err := s.orchestrator.ActivateFeature(context.Background(), &ActivateFeatureInput{
@@ -1959,7 +1959,7 @@ func (s *OrchestratorTestSuite) TestActivateFeature_CharacterLoadsSuccessfully()
 
 	s.mockCharRepo.EXPECT().
 		Get(gomock.Any(), characterrepo.GetInput{ID: "char-1"}).
-		Return(&characterrepo.GetOutput{CharacterData: charData}, nil)
+		Return(&characterrepo.GetOutput{Character: &entities.Character{Data: charData}}, nil)
 
 	// Act
 	output, err := s.orchestrator.ActivateFeature(context.Background(), &ActivateFeatureInput{
@@ -2005,7 +2005,7 @@ func (s *OrchestratorTestSuite) TestResolveAttack_NoActionAvailable_RejectsAttac
 	charData := createTestCharacterData("char-1", "Grog")
 	s.mockCharRepo.EXPECT().
 		Get(gomock.Any(), characterrepo.GetInput{ID: "char-1"}).
-		Return(&characterrepo.GetOutput{CharacterData: charData}, nil).
+		Return(&characterrepo.GetOutput{Character: &entities.Character{Data: charData}}, nil).
 		AnyTimes()
 
 	// Arrange - Mock encounter repo with action already consumed
@@ -2126,13 +2126,13 @@ func (s *OrchestratorTestSuite) TestCreateDungeon_InitializesActionEconomy() {
 	s.mockCharRepo.EXPECT().
 		Get(gomock.Any(), characterrepo.GetInput{ID: "char-1"}).
 		Return(&characterrepo.GetOutput{
-			CharacterData: &character.Data{
+			Character: &entities.Character{Data: &character.Data{
 				ID:        "char-1",
 				HitPoints: 10, // Set HP to non-zero to avoid triggering TPK check
 				AbilityScores: shared.AbilityScores{
 					abilities.DEX: 14, // +2 modifier for initiative
 				},
-			},
+			}},
 		}, nil).
 		AnyTimes()
 
@@ -2212,7 +2212,7 @@ func (s *OrchestratorTestSuite) TestResolveAttack_UsesEquippedWeapon() {
 	}
 	s.mockCharRepo.EXPECT().
 		Get(gomock.Any(), characterrepo.GetInput{ID: "char-1"}).
-		Return(&characterrepo.GetOutput{CharacterData: charData}, nil).
+		Return(&characterrepo.GetOutput{Character: &entities.Character{Data: charData}}, nil).
 		AnyTimes()
 
 	// Arrange - Mock encounter repo
@@ -2251,7 +2251,7 @@ func (s *OrchestratorTestSuite) TestResolveAttack_NoEquippedWeapon_FallsBackToGr
 	charData.EquipmentSlots = character.EquipmentSlots{} // Empty - no weapon equipped
 	s.mockCharRepo.EXPECT().
 		Get(gomock.Any(), characterrepo.GetInput{ID: "char-1"}).
-		Return(&characterrepo.GetOutput{CharacterData: charData}, nil).
+		Return(&characterrepo.GetOutput{Character: &entities.Character{Data: charData}}, nil).
 		AnyTimes()
 
 	// Arrange - Mock encounter repo
@@ -2292,7 +2292,7 @@ func (s *OrchestratorTestSuite) TestResolveAttack_UnknownWeaponID_FallsBackToGre
 	}
 	s.mockCharRepo.EXPECT().
 		Get(gomock.Any(), characterrepo.GetInput{ID: "char-1"}).
-		Return(&characterrepo.GetOutput{CharacterData: charData}, nil).
+		Return(&characterrepo.GetOutput{Character: &entities.Character{Data: charData}}, nil).
 		AnyTimes()
 
 	// Arrange - Mock encounter repo
@@ -2326,7 +2326,7 @@ func (s *OrchestratorTestSuite) TestResolveAttack_NilEquipmentSlots_FallsBackToG
 	charData.EquipmentSlots = nil // No equipment data at all
 	s.mockCharRepo.EXPECT().
 		Get(gomock.Any(), characterrepo.GetInput{ID: "char-1"}).
-		Return(&characterrepo.GetOutput{CharacterData: charData}, nil).
+		Return(&characterrepo.GetOutput{Character: &entities.Character{Data: charData}}, nil).
 		AnyTimes()
 
 	// Arrange - Mock encounter repo
@@ -2596,7 +2596,7 @@ func (s *OrchestratorTestSuite) TestGetEncounterState_Success_WaitingState() {
 
 	s.mockCharRepo.EXPECT().
 		Get(gomock.Any(), characterrepo.GetInput{ID: characterID}).
-		Return(&characterrepo.GetOutput{CharacterData: charData}, nil)
+		Return(&characterrepo.GetOutput{Character: &entities.Character{Data: charData}}, nil)
 
 	output, err := s.orchestrator.GetEncounterState(context.Background(), &GetEncounterStateInput{
 		EncounterID: encounterID,
@@ -2671,7 +2671,7 @@ func (s *OrchestratorTestSuite) TestGetEncounterState_Success_ActiveState() {
 
 	s.mockCharRepo.EXPECT().
 		Get(gomock.Any(), characterrepo.GetInput{ID: characterID}).
-		Return(&characterrepo.GetOutput{CharacterData: charData}, nil)
+		Return(&characterrepo.GetOutput{Character: &entities.Character{Data: charData}}, nil)
 
 	output, err := s.orchestrator.GetEncounterState(context.Background(), &GetEncounterStateInput{
 		EncounterID: encounterID,

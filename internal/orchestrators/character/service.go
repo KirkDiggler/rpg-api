@@ -3,6 +3,7 @@ package character
 import (
 	"context"
 
+	"github.com/KirkDiggler/rpg-api/internal/entities"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/abilities"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/backgrounds"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
@@ -32,6 +33,9 @@ type Service interface {
 	SetBackground(ctx context.Context, input *SetBackgroundInput) (*SetBackgroundOutput, error)
 	SetAbilityScores(ctx context.Context, input *SetAbilityScoresInput) (*SetAbilityScoresOutput, error)
 	SetAbilityScoresFromRolls(ctx context.Context, input *SetAbilityScoresFromRollsInput) (*SetAbilityScoresFromRollsOutput, error)
+
+	// Appearance (cosmetic, stored separately from game data)
+	SetAppearance(ctx context.Context, input *SetAppearanceInput) (*SetAppearanceOutput, error)
 
 	// Validation and finalization
 	ValidateDraft(ctx context.Context, input *ValidateDraftInput) (*ValidateDraftOutput, error)
@@ -77,7 +81,7 @@ type GetDraftInput struct {
 
 // GetDraftOutput returns the draft and its progress
 type GetDraftOutput struct {
-	Draft    *character.DraftData
+	Draft    *entities.CharacterDraft // includes appearance
 	Progress character.Progress
 }
 
@@ -273,7 +277,7 @@ type GetCharacterInput struct {
 
 // GetCharacterOutput returns the character
 type GetCharacterOutput struct {
-	Character *character.Data
+	Character *entities.Character // includes appearance
 }
 
 // EquipItemInput equips an item to a slot
@@ -309,7 +313,7 @@ type ListCharactersInput struct {
 
 // ListCharactersOutput returns the character list
 type ListCharactersOutput struct {
-	Characters    []*character.Data
+	Characters    []*entities.Character
 	NextPageToken string
 	TotalSize     int
 }
@@ -353,4 +357,15 @@ type SpellInfo struct {
 	Name        string
 	Description string
 	Level       int
+}
+
+// SetAppearanceInput sets the appearance for a draft
+type SetAppearanceInput struct {
+	DraftID    string
+	Appearance *entities.Appearance
+}
+
+// SetAppearanceOutput returns the updated appearance
+type SetAppearanceOutput struct {
+	Appearance *entities.Appearance
 }
