@@ -689,6 +689,25 @@ func (o *Orchestrator) FinalizeDraft(ctx context.Context, input *FinalizeDraftIn
 		return nil, fmt.Errorf("failed to save character: %w", err)
 	}
 
+	// Copy appearance from draft to character (before deleting draft)
+	appearanceOutput, err := o.draftRepo.GetAppearance(ctx, characterdraft.GetAppearanceInput{
+		DraftID: input.DraftID,
+	})
+	if err != nil {
+		// Log error but don't fail - appearance is optional
+		_ = err
+	} else if appearanceOutput.Appearance != nil {
+		// Copy appearance to character storage
+		_, err = o.characterRepo.SetAppearance(ctx, characterrepo.SetAppearanceInput{
+			CharacterID: createOutput.CharacterData.ID,
+			Appearance:  appearanceOutput.Appearance,
+		})
+		if err != nil {
+			// Log error but don't fail - appearance is cosmetic only
+			_ = err
+		}
+	}
+
 	// Delete draft after successful finalization
 	_, err = o.draftRepo.Delete(ctx, characterdraft.DeleteInput{
 		ID: input.DraftID,
