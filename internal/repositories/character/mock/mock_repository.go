@@ -13,9 +13,8 @@ import (
 	context "context"
 	reflect "reflect"
 
-	gomock "go.uber.org/mock/gomock"
-
 	character "github.com/KirkDiggler/rpg-api/internal/repositories/character"
+	gomock "go.uber.org/mock/gomock"
 )
 
 // MockRepository is a mock of Repository interface.
@@ -87,6 +86,21 @@ func (mr *MockRepositoryMockRecorder) Get(ctx, input any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Get", reflect.TypeOf((*MockRepository)(nil).Get), ctx, input)
 }
 
+// GetAppearance mocks base method.
+func (m *MockRepository) GetAppearance(ctx context.Context, input character.GetAppearanceInput) (*character.GetAppearanceOutput, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetAppearance", ctx, input)
+	ret0, _ := ret[0].(*character.GetAppearanceOutput)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetAppearance indicates an expected call of GetAppearance.
+func (mr *MockRepositoryMockRecorder) GetAppearance(ctx, input any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetAppearance", reflect.TypeOf((*MockRepository)(nil).GetAppearance), ctx, input)
+}
+
 // ListByPlayerID mocks base method.
 func (m *MockRepository) ListByPlayerID(ctx context.Context, input character.ListByPlayerIDInput) (*character.ListByPlayerIDOutput, error) {
 	m.ctrl.T.Helper()
@@ -115,6 +129,21 @@ func (m *MockRepository) ListBySessionID(ctx context.Context, input character.Li
 func (mr *MockRepositoryMockRecorder) ListBySessionID(ctx, input any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListBySessionID", reflect.TypeOf((*MockRepository)(nil).ListBySessionID), ctx, input)
+}
+
+// SetAppearance mocks base method.
+func (m *MockRepository) SetAppearance(ctx context.Context, input character.SetAppearanceInput) (*character.SetAppearanceOutput, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SetAppearance", ctx, input)
+	ret0, _ := ret[0].(*character.SetAppearanceOutput)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// SetAppearance indicates an expected call of SetAppearance.
+func (mr *MockRepositoryMockRecorder) SetAppearance(ctx, input any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetAppearance", reflect.TypeOf((*MockRepository)(nil).SetAppearance), ctx, input)
 }
 
 // Update mocks base method.
