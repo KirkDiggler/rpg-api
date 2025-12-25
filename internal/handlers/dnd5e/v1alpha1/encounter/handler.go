@@ -840,6 +840,13 @@ func (h *Handler) convertToProtoEvent(event *entities.EncounterEvent) (*dnd5ev1a
 				Z: pos.Z,
 			}
 		}
+		// Convert updated characters to proto
+		var updatedCharacters []*dnd5ev1alpha1.Character
+		for _, charData := range event.MonsterTurnCompleted.UpdatedCharacters {
+			if charData != nil {
+				updatedCharacters = append(updatedCharacters, characterhandler.ConvertCharacterDataToProto(charData))
+			}
+		}
 		protoEvent.Event = &dnd5ev1alpha1.EncounterEvent_MonsterTurnCompleted{
 			MonsterTurnCompleted: &dnd5ev1alpha1.MonsterTurnCompletedEvent{
 				MonsterTurn: &dnd5ev1alpha1.MonsterTurnResult{
@@ -848,7 +855,8 @@ func (h *Handler) convertToProtoEvent(event *entities.EncounterEvent) (*dnd5ev1a
 					Actions:      actions,
 					MovementPath: movementPath,
 				},
-				UpdatedRoom: convertRoomDataToProto(event.MonsterTurnCompleted.Room),
+				UpdatedCharacters: updatedCharacters,
+				UpdatedRoom:       convertRoomDataToProto(event.MonsterTurnCompleted.Room),
 			},
 		}
 

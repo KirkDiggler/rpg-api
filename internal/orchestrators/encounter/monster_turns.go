@@ -158,6 +158,7 @@ func (o *Orchestrator) executeSingleMonsterTurn(
 	// The toolkit publishes AttackEvent but doesn't populate ExecutedAction.Details
 	// We need to resolve attacks ourselves based on action type
 	actions := make([]MonsterExecutedAction, len(turnResult.Actions))
+	damagedCharacterIDs := make(map[string]bool) // Track unique damaged characters
 	for i, action := range turnResult.Actions {
 		actions[i] = MonsterExecutedAction{
 			ActionID:   action.ActionID,
@@ -186,6 +187,9 @@ func (o *Orchestrator) executeSingleMonsterTurn(
 					newHP = 0 // HP can't go below 0
 				}
 				enc.CharacterHP[action.TargetID] = newHP
+
+				// Track this character as damaged for event broadcast
+				damagedCharacterIDs[action.TargetID] = true
 			}
 		}
 	}
@@ -210,12 +214,31 @@ func (o *Orchestrator) executeSingleMonsterTurn(
 		}
 	}
 
-	// 11. Create result
+	// 11. Load updated character data for damaged characters
+	var updatedCharacters []*character.Data
+	for charID := range damagedCharacterIDs {
+		charOutput, charErr := o.charRepo.Get(ctx, characterrepo.GetInput{ID: charID})
+		if charErr != nil {
+			// Log but don't fail - character data is supplementary
+			continue
+		}
+		if charOutput.CharacterData != nil {
+			// Update the HP in the character data to reflect damage taken
+			charData := charOutput.CharacterData
+			if newHP, exists := enc.CharacterHP[charID]; exists {
+				charData.HitPoints = newHP
+			}
+			updatedCharacters = append(updatedCharacters, charData)
+		}
+	}
+
+	// 12. Create result
 	result := &MonsterTurnResult{
-		MonsterID:   turnResult.MonsterID,
-		MonsterName: monsterData.Name,
-		Actions:     actions,
-		Movement:    movement,
+		MonsterID:         turnResult.MonsterID,
+		MonsterName:       monsterData.Name,
+		Actions:           actions,
+		Movement:          movement,
+		UpdatedCharacters: updatedCharacters,
 	}
 
 	return result, nil

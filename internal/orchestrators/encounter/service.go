@@ -7,6 +7,7 @@ import (
 	pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
 	"github.com/KirkDiggler/rpg-api/internal/entities"
 	"github.com/KirkDiggler/rpg-toolkit/core"
+	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/damage"
 )
 
@@ -274,10 +275,11 @@ type ActivateFeatureOutput struct {
 // MonsterTurnResult represents the outcome of a monster's turn
 // This mirrors toolkit monster.TurnResult for handler layer use
 type MonsterTurnResult struct {
-	MonsterID   string                  // ID of the monster that took the turn
-	MonsterName string                  // Name for self-contained streaming
-	Actions     []MonsterExecutedAction // All actions taken this turn
-	Movement    []Position              // Path traversed during movement
+	MonsterID         string                  // ID of the monster that took the turn
+	MonsterName       string                  // Name for self-contained streaming
+	Actions           []MonsterExecutedAction // All actions taken this turn
+	Movement          []Position              // Path traversed during movement
+	UpdatedCharacters []*toolkitchar.Data     // Characters that took damage (with updated HP)
 }
 
 // MonsterExecutedAction is aliased from entities at the top of this file

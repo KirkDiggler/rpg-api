@@ -1360,11 +1360,12 @@ func (o *Orchestrator) EndTurn(ctx context.Context, input *EndTurnInput) (*EndTu
 	// Publish MonsterTurnCompleted events for each monster turn
 	for _, mt := range monsterTurns {
 		o.publishEvent(ctx, input.EncounterID, entities.EventTypeMonsterTurnCompleted, &entities.MonsterTurnCompletedEvent{
-			MonsterID:   mt.MonsterID,
-			MonsterName: mt.MonsterName,
-			Actions:     mt.Actions,
-			Movement:    mt.Movement,
-			Room:        turnEndedRoomData,
+			MonsterID:         mt.MonsterID,
+			MonsterName:       mt.MonsterName,
+			Actions:           mt.Actions,
+			Movement:          mt.Movement,
+			Room:              turnEndedRoomData,
+			UpdatedCharacters: mt.UpdatedCharacters,
 		})
 	}
 
@@ -2758,11 +2759,12 @@ func (o *Orchestrator) StartCombat(
 	// 19. Publish MonsterTurnCompleted events if monsters went first
 	for _, mt := range monsterTurns {
 		o.publishEvent(ctx, input.EncounterID, entities.EventTypeMonsterTurnCompleted, &entities.MonsterTurnCompletedEvent{
-			MonsterID:   mt.MonsterID,
-			MonsterName: mt.MonsterName,
-			Actions:     mt.Actions,
-			Movement:    mt.Movement,
-			Room:        roomData,
+			MonsterID:         mt.MonsterID,
+			MonsterName:       mt.MonsterName,
+			Actions:           mt.Actions,
+			Movement:          mt.Movement,
+			Room:              roomData,
+			UpdatedCharacters: mt.UpdatedCharacters,
 		})
 	}
 
