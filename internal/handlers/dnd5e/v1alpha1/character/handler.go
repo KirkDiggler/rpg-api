@@ -977,3 +977,52 @@ func (h *Handler) RemoveFromInventory(
 ) (*dnd5ev1alpha1.RemoveFromInventoryResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "not implemented")
 }
+
+// UpdateAppearance updates the appearance for a character draft
+func (h *Handler) UpdateAppearance(
+	ctx context.Context,
+	req *dnd5ev1alpha1.UpdateAppearanceRequest,
+) (*dnd5ev1alpha1.UpdateAppearanceResponse, error) {
+	if req == nil {
+		return nil, apierr.InvalidArgument("request is required")
+	}
+	if req.DraftId == "" {
+		return nil, apierr.InvalidArgument("draft_id is required")
+	}
+	if req.Appearance == nil {
+		return nil, apierr.InvalidArgument("appearance is required")
+	}
+
+	// Convert proto appearance to entity
+	appearance := convertProtoAppearanceToEntity(req.Appearance)
+
+	// Call orchestrator to set appearance
+	_, err := h.characterService.SetAppearance(ctx, &character.SetAppearanceInput{
+		DraftID:    req.DraftId,
+		Appearance: appearance,
+	})
+	if err != nil {
+		if apierr.IsNotFound(err) {
+			return nil, status.Error(codes.NotFound, "draft not found")
+		}
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	// Get the updated draft to return in response
+	getDraftOutput, err := h.characterService.GetDraft(ctx, &character.GetDraftInput{
+		DraftID: req.DraftId,
+	})
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	// Convert to proto draft
+	protoDraft := convertDraftDataToProto(getDraftOutput.Draft)
+
+	// The appearance is stored separately, so we add it to the proto response
+	protoDraft.Appearance = req.Appearance
+
+	return &dnd5ev1alpha1.UpdateAppearanceResponse{
+		Draft: protoDraft,
+	}, nil
+}

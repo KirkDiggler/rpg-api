@@ -7,6 +7,7 @@ import (
 
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
 	"github.com/KirkDiggler/rpg-api/internal/apierr"
+	"github.com/KirkDiggler/rpg-api/internal/entities"
 	"github.com/KirkDiggler/rpg-toolkit/core/combat"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/abilities"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/ammunition"
@@ -2962,5 +2963,31 @@ func featureIDToDisplayName(id string) string {
 	default:
 		// Convert snake_case to Title Case as fallback
 		return toTitleCase(id)
+	}
+}
+
+// convertProtoAppearanceToEntity converts proto Appearance to entity Appearance
+func convertProtoAppearanceToEntity(proto *dnd5ev1alpha1.Appearance) *entities.Appearance {
+	if proto == nil {
+		return nil
+	}
+	return &entities.Appearance{
+		SkinTone:       proto.SkinTone,
+		PrimaryColor:   proto.PrimaryColor,
+		SecondaryColor: proto.SecondaryColor,
+		EyeColor:       proto.EyeColor,
+	}
+}
+
+// convertEntityAppearanceToProto converts entity Appearance to proto Appearance
+func convertEntityAppearanceToProto(entity *entities.Appearance) *dnd5ev1alpha1.Appearance {
+	if entity == nil {
+		return nil
+	}
+	return &dnd5ev1alpha1.Appearance{
+		SkinTone:       entity.SkinTone,
+		PrimaryColor:   entity.PrimaryColor,
+		SecondaryColor: entity.SecondaryColor,
+		EyeColor:       entity.EyeColor,
 	}
 }
