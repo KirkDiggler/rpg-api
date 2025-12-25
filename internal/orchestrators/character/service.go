@@ -81,7 +81,7 @@ type GetDraftInput struct {
 
 // GetDraftOutput returns the draft and its progress
 type GetDraftOutput struct {
-	Draft    *character.DraftData
+	Draft    *entities.CharacterDraft // includes appearance
 	Progress character.Progress
 }
 
@@ -277,7 +277,7 @@ type GetCharacterInput struct {
 
 // GetCharacterOutput returns the character
 type GetCharacterOutput struct {
-	Character *character.Data
+	Character *entities.Character // includes appearance
 }
 
 // EquipItemInput equips an item to a slot
@@ -313,7 +313,7 @@ type ListCharactersInput struct {
 
 // ListCharactersOutput returns the character list
 type ListCharactersOutput struct {
-	Characters    []*character.Data
+	Characters    []*entities.Character
 	NextPageToken string
 	TotalSize     int
 }

@@ -12,21 +12,18 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/pkg/clock"
 	"github.com/KirkDiggler/rpg-api/internal/pkg/idgen"
 	redisclient "github.com/KirkDiggler/rpg-api/internal/redis"
-	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 )
 
 const (
-	draftKeyPrefix          = "draft:"
-	playerMappingPrefix     = "draft:player:"
-	draftAppearancePrefix   = "draft:appearance:"
-	defaultTTL              = 24 * time.Hour
+	draftKeyPrefix      = "draft:"
+	playerMappingPrefix = "draft:player:"
+	defaultTTL          = 24 * time.Hour
 
 	// Error messages
-	errDraftNil        = "draft cannot be nil"
-	errDraftIDEmpty    = "draft ID cannot be empty"
-	errPlayerIDEmpty   = "player ID cannot be empty"
-	errDraftExpired    = "draft has already expired"
-	errAppearanceNil   = "appearance cannot be nil"
+	errDraftNil      = "draft cannot be nil"
+	errDraftDataNil  = "draft data cannot be nil"
+	errDraftIDEmpty  = "draft ID cannot be empty"
+	errPlayerIDEmpty = "player ID cannot be empty"
 )
 
 // Config holds the configuration for the Redis repository
@@ -73,21 +70,27 @@ func (r *redisRepository) Create(ctx context.Context, input CreateInput) (*Creat
 	if input.Draft == nil {
 		return nil, apierr.InvalidArgument(errDraftNil)
 	}
-	if input.Draft.PlayerID == "" {
+	if input.Draft.Data == nil {
+		return nil, apierr.InvalidArgument(errDraftDataNil)
+	}
+	if input.Draft.Data.PlayerID == "" {
 		return nil, apierr.InvalidArgument(errPlayerIDEmpty)
 	}
 
 	// Make a copy to avoid modifying input
-	draft := *input.Draft
+	draft := &entities.CharacterDraft{
+		Data:       input.Draft.Data,
+		Appearance: input.Draft.Appearance,
+	}
 
 	// Repository generates ID if not provided
-	if draft.ID == "" {
-		draft.ID = r.idGen.Generate()
+	if draft.Data.ID == "" {
+		draft.Data.ID = r.idGen.Generate()
 	}
 
 	isNew := true
 	// Check for existing draft for this player
-	playerKey := playerMappingPrefix + draft.PlayerID
+	playerKey := playerMappingPrefix + draft.Data.PlayerID
 	existingDraftID, err := r.client.Get(ctx, playerKey).Result()
 	if err != nil {
 		if err != redis.Nil {
@@ -108,18 +111,18 @@ func (r *redisRepository) Create(ctx context.Context, input CreateInput) (*Creat
 		pipe.Del(ctx, oldDraftKey)
 	}
 
-	// Marshal new draft
-	data, err := json.Marshal(&draft)
+	// Marshal draft (includes appearance)
+	data, err := json.Marshal(draft)
 	if err != nil {
 		return nil, apierr.Wrapf(err, "failed to marshal draft")
 	}
 
 	// Set draft data
-	draftKey := draftKeyPrefix + draft.ID
+	draftKey := draftKeyPrefix + draft.Data.ID
 	pipe.Set(ctx, draftKey, data, defaultTTL)
 
 	// Set player mapping (no TTL on this key)
-	pipe.Set(ctx, playerKey, draft.ID, 0)
+	pipe.Set(ctx, playerKey, draft.Data.ID, 0)
 
 	// Execute transaction
 	_, err = pipe.Exec(ctx)
@@ -127,7 +130,7 @@ func (r *redisRepository) Create(ctx context.Context, input CreateInput) (*Creat
 		return nil, apierr.Wrapf(err, "failed to create draft")
 	}
 
-	return &CreateOutput{Draft: &draft}, nil
+	return &CreateOutput{Draft: draft}, nil
 }
 
 func (r *redisRepository) Get(ctx context.Context, input GetInput) (*GetOutput, error) {
@@ -144,10 +147,8 @@ func (r *redisRepository) Get(ctx context.Context, input GetInput) (*GetOutput, 
 		return nil, apierr.Wrapf(err, "failed to get draft")
 	}
 
-	data := []byte(result)
-
-	var draft character.DraftData
-	if err := json.Unmarshal(data, &draft); err != nil {
+	var draft entities.CharacterDraft
+	if err := json.Unmarshal([]byte(result), &draft); err != nil {
 		return nil, apierr.Wrapf(err, "failed to unmarshal draft")
 	}
 
@@ -186,11 +187,14 @@ func (r *redisRepository) Update(ctx context.Context, input UpdateInput) (*Updat
 	if input.Draft == nil {
 		return nil, apierr.InvalidArgument(errDraftNil)
 	}
-	if input.Draft.ID == "" {
+	if input.Draft.Data == nil {
+		return nil, apierr.InvalidArgument(errDraftDataNil)
+	}
+	if input.Draft.Data.ID == "" {
 		return nil, apierr.InvalidArgument(errDraftIDEmpty)
 	}
 
-	key := draftKeyPrefix + input.Draft.ID
+	key := draftKeyPrefix + input.Draft.Data.ID
 
 	// Check if exists
 	exists, err := r.client.Exists(ctx, key).Result()
@@ -198,14 +202,17 @@ func (r *redisRepository) Update(ctx context.Context, input UpdateInput) (*Updat
 		return nil, apierr.Wrapf(err, "failed to check existence")
 	}
 	if exists == 0 {
-		return nil, apierr.NotFoundf("draft with ID %s not found", input.Draft.ID)
+		return nil, apierr.NotFoundf("draft with ID %s not found", input.Draft.Data.ID)
 	}
 
 	// Make a copy to avoid modifying input
-	draft := *input.Draft
+	draft := &entities.CharacterDraft{
+		Data:       input.Draft.Data,
+		Appearance: input.Draft.Appearance,
+	}
 
-	// Marshal draft
-	data, err := json.Marshal(&draft)
+	// Marshal draft (includes appearance)
+	data, err := json.Marshal(draft)
 	if err != nil {
 		return nil, apierr.Wrapf(err, "failed to marshal draft")
 	}
@@ -215,7 +222,7 @@ func (r *redisRepository) Update(ctx context.Context, input UpdateInput) (*Updat
 		return nil, apierr.Wrapf(err, "failed to update draft")
 	}
 
-	return &UpdateOutput{Draft: &draft}, nil
+	return &UpdateOutput{Draft: draft}, nil
 }
 
 func (r *redisRepository) Delete(ctx context.Context, input DeleteInput) (*DeleteOutput, error) {
@@ -235,13 +242,9 @@ func (r *redisRepository) Delete(ctx context.Context, input DeleteInput) (*Delet
 	draftKey := draftKeyPrefix + input.ID
 	pipe.Del(ctx, draftKey)
 
-	// Delete appearance
-	appearanceKey := draftAppearancePrefix + input.ID
-	pipe.Del(ctx, appearanceKey)
-
 	// Delete player mapping
-	if getOutput.Draft.PlayerID != "" {
-		playerKey := playerMappingPrefix + getOutput.Draft.PlayerID
+	if getOutput.Draft.Data != nil && getOutput.Draft.Data.PlayerID != "" {
+		playerKey := playerMappingPrefix + getOutput.Draft.Data.PlayerID
 		pipe.Del(ctx, playerKey)
 	}
 
@@ -252,50 +255,4 @@ func (r *redisRepository) Delete(ctx context.Context, input DeleteInput) (*Delet
 	}
 
 	return &DeleteOutput{}, nil
-}
-
-func (r *redisRepository) SetAppearance(ctx context.Context, input SetAppearanceInput) (*SetAppearanceOutput, error) {
-	if input.DraftID == "" {
-		return nil, apierr.InvalidArgument(errDraftIDEmpty)
-	}
-	if input.Appearance == nil {
-		return nil, apierr.InvalidArgument(errAppearanceNil)
-	}
-
-	// Marshal appearance
-	data, err := json.Marshal(input.Appearance)
-	if err != nil {
-		return nil, apierr.Wrapf(err, "failed to marshal appearance")
-	}
-
-	// Store with same TTL as draft
-	key := draftAppearancePrefix + input.DraftID
-	if err := r.client.Set(ctx, key, data, defaultTTL).Err(); err != nil {
-		return nil, apierr.Wrapf(err, "failed to set appearance")
-	}
-
-	return &SetAppearanceOutput{Appearance: input.Appearance}, nil
-}
-
-func (r *redisRepository) GetAppearance(ctx context.Context, input GetAppearanceInput) (*GetAppearanceOutput, error) {
-	if input.DraftID == "" {
-		return nil, apierr.InvalidArgument(errDraftIDEmpty)
-	}
-
-	key := draftAppearancePrefix + input.DraftID
-	result, err := r.client.Get(ctx, key).Result()
-	if err != nil {
-		if err == redis.Nil {
-			// Not found is not an error - just return nil appearance
-			return &GetAppearanceOutput{Appearance: nil}, nil
-		}
-		return nil, apierr.Wrapf(err, "failed to get appearance")
-	}
-
-	var appearance entities.Appearance
-	if err := json.Unmarshal([]byte(result), &appearance); err != nil {
-		return nil, apierr.Wrapf(err, "failed to unmarshal appearance")
-	}
-
-	return &GetAppearanceOutput{Appearance: &appearance}, nil
 }

@@ -102,8 +102,13 @@ func (h *Handler) GetDraft(
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
-	// Convert draft to proto
-	protoDraft := convertDraftDataToProto(output.Draft)
+	// Convert draft to proto (draft entity includes appearance)
+	protoDraft := convertDraftDataToProto(output.Draft.Data)
+
+	// Add appearance if present
+	if output.Draft.Appearance != nil {
+		protoDraft.Appearance = convertEntityAppearanceToProto(output.Draft.Appearance)
+	}
 
 	// Run validation to populate the validation field
 	validationOutput, err := h.characterService.ValidateDraft(ctx, &character.ValidateDraftInput{
@@ -535,9 +540,13 @@ func (h *Handler) GetCharacter(
 		return nil, err
 	}
 
-	// Convert Data directly to proto
-	// result.Character is already *character.Data
-	protoCharacter := ConvertCharacterDataToProto(result.Character)
+	// Convert character entity to proto (includes appearance)
+	protoCharacter := ConvertCharacterDataToProto(result.Character.Data)
+
+	// Add appearance if present
+	if result.Character.Appearance != nil {
+		protoCharacter.Appearance = convertEntityAppearanceToProto(result.Character.Appearance)
+	}
 
 	return &dnd5ev1alpha1.GetCharacterResponse{
 		Character: protoCharacter,
@@ -569,10 +578,14 @@ func (h *Handler) ListCharacters(
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
-	// Convert toolkit character.Data to proto Character
+	// Convert character entities to proto Character
 	protoCharacters := make([]*dnd5ev1alpha1.Character, 0, len(output.Characters))
-	for _, charData := range output.Characters {
-		protoCharacters = append(protoCharacters, ConvertCharacterDataToProto(charData))
+	for _, charEntity := range output.Characters {
+		protoChar := ConvertCharacterDataToProto(charEntity.Data)
+		if charEntity.Appearance != nil {
+			protoChar.Appearance = convertEntityAppearanceToProto(charEntity.Appearance)
+		}
+		protoCharacters = append(protoCharacters, protoChar)
 	}
 
 	return &dnd5ev1alpha1.ListCharactersResponse{
@@ -846,8 +859,9 @@ func (h *Handler) GetCharacterInventory(
 	}
 
 	// Convert character inventory from character data
-	inventory := make([]*dnd5ev1alpha1.InventoryItem, 0, len(charResult.Character.Inventory))
-	for _, item := range charResult.Character.Inventory {
+	charData := charResult.Character.Data
+	inventory := make([]*dnd5ev1alpha1.InventoryItem, 0, len(charData.Inventory))
+	for _, item := range charData.Inventory {
 		inventory = append(inventory, &dnd5ev1alpha1.InventoryItem{
 			ItemId:   item.ID,
 			Quantity: int32(item.Quantity),
@@ -855,7 +869,7 @@ func (h *Handler) GetCharacterInventory(
 	}
 
 	return &dnd5ev1alpha1.GetCharacterInventoryResponse{
-		EquipmentSlots:     convertEquipmentSlotsToProto(charResult.Character.EquipmentSlots),
+		EquipmentSlots:     convertEquipmentSlotsToProto(charData.EquipmentSlots),
 		Inventory:          inventory,
 		AttunementSlotsMax: 3, // Standard D&D 5e attunement limit
 	}, nil
@@ -902,8 +916,11 @@ func (h *Handler) EquipItem(
 	}
 
 	// Convert character - equipment slots are part of character data
-	protoChar := ConvertCharacterDataToProto(charResult.Character)
-	protoChar.EquipmentSlots = convertEquipmentSlotsToProto(charResult.Character.EquipmentSlots)
+	protoChar := ConvertCharacterDataToProto(charResult.Character.Data)
+	protoChar.EquipmentSlots = convertEquipmentSlotsToProto(charResult.Character.Data.EquipmentSlots)
+	if charResult.Character.Appearance != nil {
+		protoChar.Appearance = convertEntityAppearanceToProto(charResult.Character.Appearance)
+	}
 
 	// Build response
 	response := &dnd5ev1alpha1.EquipItemResponse{
@@ -957,8 +974,13 @@ func (h *Handler) UnequipItem(
 		return nil, err
 	}
 
+	protoChar := ConvertCharacterDataToProto(charResult.Character.Data)
+	if charResult.Character.Appearance != nil {
+		protoChar.Appearance = convertEntityAppearanceToProto(charResult.Character.Appearance)
+	}
+
 	return &dnd5ev1alpha1.UnequipItemResponse{
-		Character: ConvertCharacterDataToProto(charResult.Character),
+		Character: protoChar,
 	}, nil
 }
 
@@ -1016,11 +1038,13 @@ func (h *Handler) UpdateAppearance(
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
-	// Convert to proto draft
-	protoDraft := convertDraftDataToProto(getDraftOutput.Draft)
+	// Convert to proto draft (draft entity now includes appearance)
+	protoDraft := convertDraftDataToProto(getDraftOutput.Draft.Data)
 
-	// The appearance is stored separately, so we add it to the proto response
-	protoDraft.Appearance = req.Appearance
+	// Add appearance to proto response
+	if getDraftOutput.Draft.Appearance != nil {
+		protoDraft.Appearance = convertEntityAppearanceToProto(getDraftOutput.Draft.Appearance)
+	}
 
 	return &dnd5ev1alpha1.UpdateAppearanceResponse{
 		Draft: protoDraft,

@@ -178,7 +178,7 @@ type MonsterTurnCompletedEvent struct {
 	MonsterName       string                  `json:"monster_name"`
 	Actions           []MonsterExecutedAction `json:"actions"`
 	Movement          []Position              `json:"movement"`
-	Room              *spatial.RoomData       `json:"room,omitempty"`              // Updated room with entity positions
+	Room              *spatial.RoomData       `json:"room,omitempty"`               // Updated room with entity positions
 	UpdatedCharacters []*character.Data       `json:"updated_characters,omitempty"` // Characters that took damage
 }
 

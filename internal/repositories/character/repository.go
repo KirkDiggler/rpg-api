@@ -7,7 +7,6 @@ import (
 	"context"
 
 	"github.com/KirkDiggler/rpg-api/internal/entities"
-	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 )
 
 // Repository defines the interface for character persistence
@@ -45,27 +44,16 @@ type Repository interface {
 	// Returns apierr.InvalidArgument for empty/invalid session IDs
 	// Returns apierr.Internal for storage failures
 	ListBySessionID(ctx context.Context, input ListBySessionIDInput) (*ListBySessionIDOutput, error)
-
-	// SetAppearance sets or updates the appearance for a character
-	// Returns apierr.InvalidArgument for empty character ID
-	// Returns apierr.Internal for storage failures
-	SetAppearance(ctx context.Context, input SetAppearanceInput) (*SetAppearanceOutput, error)
-
-	// GetAppearance retrieves the appearance for a character
-	// Returns apierr.InvalidArgument for empty character ID
-	// Returns nil Appearance (not error) if not set
-	// Returns apierr.Internal for storage failures
-	GetAppearance(ctx context.Context, input GetAppearanceInput) (*GetAppearanceOutput, error)
 }
 
 // CreateInput defines the input for creating a character
 type CreateInput struct {
-	CharacterData *toolkitchar.Data
+	Character *entities.Character
 }
 
 // CreateOutput defines the output for creating a character
 type CreateOutput struct {
-	CharacterData *toolkitchar.Data
+	Character *entities.Character
 }
 
 // GetInput defines the input for getting a character
@@ -75,17 +63,17 @@ type GetInput struct {
 
 // GetOutput defines the output for getting a character
 type GetOutput struct {
-	CharacterData *toolkitchar.Data
+	Character *entities.Character
 }
 
 // UpdateInput defines the input for updating a character
 type UpdateInput struct {
-	CharacterData *toolkitchar.Data
+	Character *entities.Character
 }
 
 // UpdateOutput defines the output for updating a character
 type UpdateOutput struct {
-	CharacterData *toolkitchar.Data
+	Character *entities.Character
 }
 
 // DeleteInput defines the input for deleting a character
@@ -105,7 +93,7 @@ type ListByPlayerIDInput struct {
 
 // ListByPlayerIDOutput defines the output for listing characters by player
 type ListByPlayerIDOutput struct {
-	Characters []*toolkitchar.Data
+	Characters []*entities.Character
 }
 
 // ListBySessionIDInput defines the input for listing characters by session
@@ -115,26 +103,5 @@ type ListBySessionIDInput struct {
 
 // ListBySessionIDOutput defines the output for listing characters by session
 type ListBySessionIDOutput struct {
-	Characters []*toolkitchar.Data
-}
-
-// SetAppearanceInput defines the input for setting a character's appearance
-type SetAppearanceInput struct {
-	CharacterID string
-	Appearance  *entities.Appearance
-}
-
-// SetAppearanceOutput defines the output for setting a character's appearance
-type SetAppearanceOutput struct {
-	Appearance *entities.Appearance
-}
-
-// GetAppearanceInput defines the input for getting a character's appearance
-type GetAppearanceInput struct {
-	CharacterID string
-}
-
-// GetAppearanceOutput defines the output for getting a character's appearance
-type GetAppearanceOutput struct {
-	Appearance *entities.Appearance // nil if not set
+	Characters []*entities.Character
 }

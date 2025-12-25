@@ -211,7 +211,7 @@ func (o *Orchestrator) publishCharacterTurnEnd(ctx context.Context, characterID 
 
 	// 2. Create fresh event bus and load character (conditions subscribe to bus)
 	bus := events.NewEventBus()
-	char, err := character.LoadFromData(ctx, charOutput.CharacterData, bus)
+	char, err := character.LoadFromData(ctx, charOutput.Character.Data, bus)
 	if err != nil {
 		return fmt.Errorf("failed to load character from data: %w", err)
 	}
@@ -233,7 +233,10 @@ func (o *Orchestrator) publishCharacterTurnEnd(ctx context.Context, characterID 
 	// 4. Persist updated character state (conditions may have changed)
 	updatedData := char.ToData()
 	_, err = o.charRepo.Update(ctx, characterrepo.UpdateInput{
-		CharacterData: updatedData,
+		Character: &entities.Character{
+			Data:       updatedData,
+			Appearance: charOutput.Character.Appearance,
+		},
 	})
 	if err != nil {
 		return fmt.Errorf("failed to persist character state: %w", err)
@@ -269,7 +272,7 @@ func (o *Orchestrator) ResolveAttack(ctx context.Context, input *ResolveAttackIn
 	}
 
 	// 3. Load Character from Data (reconstructs features, subscribes to events)
-	char, err := character.LoadFromData(ctx, charOutput.CharacterData, bus)
+	char, err := character.LoadFromData(ctx, charOutput.Character.Data, bus)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load character from data: %w", err)
 	}
@@ -327,7 +330,7 @@ func (o *Orchestrator) ResolveAttack(ctx context.Context, input *ResolveAttackIn
 		Attacker:         char,
 		Defender:         goblin,
 		Weapon:           &weapon,
-		AttackerScores:   charOutput.CharacterData.AbilityScores,
+		AttackerScores:   charOutput.Character.Data.AbilityScores,
 		DefenderAC:       goblin.AC(),
 		ProficiencyBonus: char.GetProficiencyBonus(),
 		EventBus:         bus,
@@ -571,7 +574,7 @@ func (o *Orchestrator) createDungeonWithGenerator(
 		}
 
 		// Perform long rest before dungeon starts
-		loadedChar, charErr := character.LoadFromData(ctx, charOutput.CharacterData, restBus)
+		loadedChar, charErr := character.LoadFromData(ctx, charOutput.Character.Data, restBus)
 		if charErr != nil {
 			return nil, fmt.Errorf("failed to load character %s for rest: %w", characterID, charErr)
 		}
@@ -583,7 +586,12 @@ func (o *Orchestrator) createDungeonWithGenerator(
 
 		// Save the rested character
 		updatedData := loadedChar.ToData()
-		_, updateErr := o.charRepo.Update(ctx, characterrepo.UpdateInput{CharacterData: updatedData})
+		_, updateErr := o.charRepo.Update(ctx, characterrepo.UpdateInput{
+			Character: &entities.Character{
+				Data:       updatedData,
+				Appearance: charOutput.Character.Appearance,
+			},
+		})
 		if updateErr != nil {
 			_ = loadedChar.Cleanup(ctx)
 			return nil, fmt.Errorf("failed to save rested character %s: %w", characterID, updateErr)
@@ -1532,11 +1540,11 @@ func (o *Orchestrator) validateTurnOwnership(
 		}
 
 		// Check if this player owns the character
-		if charOutput.CharacterData.PlayerID != playerID {
+		if charOutput.Character.Data.PlayerID != playerID {
 			return fmt.Errorf(
 				"cannot end turn: you do not control character %s (owned by player %s)",
 				activeEntity.EntityID,
-				charOutput.CharacterData.PlayerID,
+				charOutput.Character.Data.PlayerID,
 			)
 		}
 	}
@@ -1621,7 +1629,7 @@ func (o *Orchestrator) ActivateFeature(
 	bus := events.NewEventBus()
 
 	// 5. Load character domain object with EventBus
-	char, err := character.LoadFromData(ctx, charOutput.CharacterData, bus)
+	char, err := character.LoadFromData(ctx, charOutput.Character.Data, bus)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load character from data: %w", err)
 	}
@@ -1635,7 +1643,7 @@ func (o *Orchestrator) ActivateFeature(
 		return &ActivateFeatureOutput{
 			Success:       false,
 			Message:       fmt.Sprintf("feature '%s' not found on character", input.FeatureID),
-			CharacterData: charOutput.CharacterData,
+			CharacterData: charOutput.Character.Data,
 		}, nil
 	}
 
@@ -1648,7 +1656,7 @@ func (o *Orchestrator) ActivateFeature(
 		return &ActivateFeatureOutput{
 			Success:       false,
 			Message:       fmt.Sprintf("cannot activate %s: %v", input.FeatureID, canErr),
-			CharacterData: charOutput.CharacterData,
+			CharacterData: charOutput.Character.Data,
 		}, nil
 	}
 
@@ -1674,7 +1682,10 @@ func (o *Orchestrator) ActivateFeature(
 
 	// 12. Persist updated character
 	_, err = o.charRepo.Update(ctx, characterrepo.UpdateInput{
-		CharacterData: updatedData,
+		Character: &entities.Character{
+			Data:       updatedData,
+			Appearance: charOutput.Character.Appearance,
+		},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to save character: %w", err)
@@ -1725,7 +1736,7 @@ func (o *Orchestrator) getEquippedWeaponAndSlots(
 		return fallbackWeapon, nil
 	}
 
-	slots := charResult.CharacterData.EquipmentSlots
+	slots := charResult.Character.Data.EquipmentSlots
 
 	// Check if mainhand has a weapon equipped
 	mainHandItemID := slots.Get(character.SlotMainHand)
@@ -2414,7 +2425,7 @@ func (o *Orchestrator) JoinEncounter(
 	o.publishEvent(ctx, encOutput.Data.ID, entities.EventTypePlayerJoined, &entities.PlayerJoinedEvent{
 		PlayerID:      input.PlayerID,
 		CharacterID:   input.CharacterIDs[0],
-		CharacterData: charOutput.CharacterData,
+		CharacterData: charOutput.Character.Data,
 	})
 
 	// 9. Build party list for response
@@ -2607,8 +2618,8 @@ func (o *Orchestrator) StartCombat(
 		if charErr != nil {
 			return nil, fmt.Errorf("failed to load character %s: %w", characterID, charErr)
 		}
-		dexModifier := charOutput.CharacterData.AbilityScores.Modifier(abilities.DEX)
-		characterHP[characterID] = charOutput.CharacterData.HitPoints
+		dexModifier := charOutput.Character.Data.AbilityScores.Modifier(abilities.DEX)
+		characterHP[characterID] = charOutput.Character.Data.HitPoints
 		char := initiative.NewParticipant(characterID, entityTypeCharacter)
 		combatants[char] = dexModifier
 	}
@@ -2719,7 +2730,7 @@ func (o *Orchestrator) StartCombat(
 		charOutput, charErr := o.charRepo.Get(ctx, characterrepo.GetInput{ID: player.CharacterID})
 		var charData *character.Data
 		if charErr == nil && charOutput != nil {
-			charData = charOutput.CharacterData
+			charData = charOutput.Character.Data
 		}
 		party = append(party, &entities.Player{
 			PlayerID:      player.PlayerID,
@@ -3078,7 +3089,7 @@ func (o *Orchestrator) buildPartyFromPlayers(
 		// Try to load character data
 		charOutput, err := o.charRepo.Get(ctx, characterrepo.GetInput{ID: player.CharacterID})
 		if err == nil {
-			member.CharacterData = charOutput.CharacterData
+			member.CharacterData = charOutput.Character.Data
 		}
 
 		party = append(party, member)

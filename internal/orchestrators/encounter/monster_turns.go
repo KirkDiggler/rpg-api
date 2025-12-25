@@ -222,9 +222,9 @@ func (o *Orchestrator) executeSingleMonsterTurn(
 			// Log but don't fail - character data is supplementary
 			continue
 		}
-		if charOutput.CharacterData != nil {
+		if charOutput.Character != nil && charOutput.Character.Data != nil {
 			// Update the HP in the character data to reflect damage taken
-			charData := charOutput.CharacterData
+			charData := charOutput.Character.Data
 			if newHP, exists := enc.CharacterHP[charID]; exists {
 				charData.HitPoints = newHP
 			}
@@ -263,7 +263,7 @@ func (o *Orchestrator) resolveMonsterAttack(
 	attackBus := events.NewEventBus()
 
 	// Load character for defense (no need for features to participate in defense yet)
-	defender, err := character.LoadFromData(ctx, charOutput.CharacterData, attackBus)
+	defender, err := character.LoadFromData(ctx, charOutput.Character.Data, attackBus)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load defender: %w", err)
 	}

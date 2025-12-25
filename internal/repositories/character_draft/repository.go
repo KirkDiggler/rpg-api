@@ -7,7 +7,6 @@ import (
 	"context"
 
 	"github.com/KirkDiggler/rpg-api/internal/entities"
-	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 )
 
 // Repository defines the interface for character draft persistence
@@ -41,27 +40,16 @@ type Repository interface {
 	// Returns apierr.NotFound if draft doesn't exist
 	// Returns apierr.Internal for storage failures
 	Delete(ctx context.Context, input DeleteInput) (*DeleteOutput, error)
-
-	// SetAppearance sets or updates the appearance for a draft
-	// Returns apierr.InvalidArgument for empty draft ID
-	// Returns apierr.Internal for storage failures
-	SetAppearance(ctx context.Context, input SetAppearanceInput) (*SetAppearanceOutput, error)
-
-	// GetAppearance retrieves the appearance for a draft
-	// Returns apierr.InvalidArgument for empty draft ID
-	// Returns nil Appearance (not error) if not set
-	// Returns apierr.Internal for storage failures
-	GetAppearance(ctx context.Context, input GetAppearanceInput) (*GetAppearanceOutput, error)
 }
 
 // CreateInput defines the input for creating a character draft
 type CreateInput struct {
-	Draft *character.DraftData
+	Draft *entities.CharacterDraft
 }
 
 // CreateOutput defines the output for creating a character draft
 type CreateOutput struct {
-	Draft *character.DraftData
+	Draft *entities.CharacterDraft
 }
 
 // GetInput defines the input for getting a character draft
@@ -71,7 +59,7 @@ type GetInput struct {
 
 // GetOutput defines the output for getting a character draft
 type GetOutput struct {
-	Draft *character.DraftData
+	Draft *entities.CharacterDraft
 }
 
 // GetByPlayerIDInput defines the input for getting a player's draft
@@ -81,17 +69,17 @@ type GetByPlayerIDInput struct {
 
 // GetByPlayerIDOutput defines the output for getting a player's draft
 type GetByPlayerIDOutput struct {
-	Draft *character.DraftData
+	Draft *entities.CharacterDraft
 }
 
 // UpdateInput defines the input for updating a character draft
 type UpdateInput struct {
-	Draft *character.DraftData
+	Draft *entities.CharacterDraft
 }
 
 // UpdateOutput defines the output for updating a character draft
 type UpdateOutput struct {
-	Draft *character.DraftData
+	Draft *entities.CharacterDraft
 }
 
 // DeleteInput defines the input for deleting a character draft
@@ -102,25 +90,4 @@ type DeleteInput struct {
 // DeleteOutput defines the output for deleting a character draft
 type DeleteOutput struct {
 	// Empty for now, can be extended later
-}
-
-// SetAppearanceInput defines the input for setting a draft's appearance
-type SetAppearanceInput struct {
-	DraftID    string
-	Appearance *entities.Appearance
-}
-
-// SetAppearanceOutput defines the output for setting a draft's appearance
-type SetAppearanceOutput struct {
-	Appearance *entities.Appearance
-}
-
-// GetAppearanceInput defines the input for getting a draft's appearance
-type GetAppearanceInput struct {
-	DraftID string
-}
-
-// GetAppearanceOutput defines the output for getting a draft's appearance
-type GetAppearanceOutput struct {
-	Appearance *entities.Appearance // nil if not set
 }
