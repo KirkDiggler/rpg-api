@@ -1193,6 +1193,7 @@ func (o *Orchestrator) MoveCharacter(ctx context.Context, input *MoveCharacterIn
 		},
 		MovementRemaining: movementRemaining,
 		StopReason:        "completed",
+		UpdatedRoom:       roomData,
 	})
 
 	// 10. Return success with updated position
