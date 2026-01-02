@@ -23,6 +23,43 @@ This separation is fundamental. When in doubt:
 - If it's a game mechanic or calculation → rpg-toolkit
 - If it's data storage or API orchestration → rpg-api
 
+### Code Smell: Game Logic in the API
+
+**If you find yourself adding game logic in rpg-api, STOP.** This is a smell that the toolkit is missing something.
+
+**Examples of game logic that does NOT belong here:**
+- Checking weapon properties (is it light? is it a shield?)
+- Determining if conditions are met for abilities
+- Calculating bonuses or modifiers
+- Knowing what slots weapons go in
+
+**What rpg-api SHOULD do:**
+- Load data from repositories
+- Pass entities to toolkit functions
+- Persist results back to repositories
+- Convert between proto and domain types
+
+**When you hit this smell:**
+1. Create an issue in rpg-toolkit for the missing helper
+2. The toolkit should provide a function that takes the entity directly
+3. The API just passes the entity through
+
+**Example - Wrong (game logic in API):**
+```go
+// BAD: API is checking game rules
+mainHandID := slots.Get(character.SlotMainHand)
+offHandID := slots.Get(character.SlotOffHand)
+if mainHandID != "" && offHandID != "" && offHandID != armor.Shield {
+    // extract weapon IDs, check conditions...
+}
+```
+
+**Example - Right (toolkit handles logic):**
+```go
+// GOOD: API just passes the character, toolkit knows the rules
+result, err := actions.CheckAndGrantOffHandStrikeForCharacter(ctx, char, attackHand, bus)
+```
+
 ## Project Structure
 
 Our battle-tested structure from production gRPC services:
