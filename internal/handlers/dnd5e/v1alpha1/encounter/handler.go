@@ -767,12 +767,21 @@ func (h *Handler) convertToProtoEvent(event *entities.EncounterEvent) (*dnd5ev1a
 		if event.MovementCompleted == nil {
 			return nil, fmt.Errorf("missing MovementCompleted data for MovementCompletedEvent")
 		}
+		var finalPos *apiv1alpha1.Position
+		if event.MovementCompleted.FinalPosition != nil {
+			finalPos = &apiv1alpha1.Position{
+				X: event.MovementCompleted.FinalPosition.X,
+				Y: event.MovementCompleted.FinalPosition.Y,
+				Z: event.MovementCompleted.FinalPosition.Z,
+			}
+		}
 		protoEvent.Event = &dnd5ev1alpha1.EncounterEvent_MovementCompleted{
 			MovementCompleted: &dnd5ev1alpha1.MovementCompletedEvent{
 				EntityId:          event.MovementCompleted.EntityID,
 				MovementRemaining: event.MovementCompleted.MovementRemaining,
 				StopReason:        event.MovementCompleted.StopReason,
-				// TODO: Convert FinalPosition
+				FinalPosition:     finalPos,
+				UpdatedRoom:       convertRoomDataToProto(event.MovementCompleted.UpdatedRoom),
 			},
 		}
 
