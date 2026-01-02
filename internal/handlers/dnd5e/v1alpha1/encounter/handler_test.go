@@ -15,6 +15,7 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/auth"
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/encounter"
 	encountermock "github.com/KirkDiggler/rpg-api/internal/orchestrators/encounter/mock"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/combat"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/refs"
 	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
 )
@@ -116,6 +117,7 @@ func (s *HandlerTestSuite) TestAttack_Success() {
 			AttackerID:  "char-1",
 			TargetID:    "goblin-1",
 			WeaponID:    "",
+			AttackHand:  combat.AttackHandMain, // Default for unspecified
 		}).
 		Return(&encounter.ResolveAttackOutput{
 			Result:      expectedResult,
@@ -320,6 +322,7 @@ func (s *HandlerTestSuite) TestAttack_WithWeapon() {
 			AttackerID:  "char-1",
 			TargetID:    "goblin-1",
 			WeaponID:    "longsword",
+			AttackHand:  combat.AttackHandMain, // Default for unspecified
 		}).
 		Return(&encounter.ResolveAttackOutput{
 			Result:      expectedResult,

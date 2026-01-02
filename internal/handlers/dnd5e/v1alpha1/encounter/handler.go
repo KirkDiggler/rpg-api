@@ -75,7 +75,8 @@ func (h *Handler) Attack(ctx context.Context, req *dnd5ev1alpha1.AttackRequest) 
 		EncounterID: req.GetEncounterId(),
 		AttackerID:  req.GetAttackerId(),
 		TargetID:    req.GetTargetId(),
-		WeaponID:    req.GetWeaponId(), // Optional
+		WeaponID:    req.GetWeaponId(),                             // Optional
+		AttackHand:  protoAttackHandToToolkit(req.GetAttackHand()), // For two-weapon fighting
 	}
 
 	// 3. Call service

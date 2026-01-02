@@ -8,6 +8,7 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/core"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/abilities"
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/combat"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/monster"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/refs"
 	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
@@ -994,4 +995,17 @@ func convertDoorInfoSliceToProto(doors []encounter.DoorInfo) []*dnd5ev1alpha1.Do
 		}
 	}
 	return result
+}
+
+// protoAttackHandToToolkit converts proto AttackHand enum to toolkit combat.AttackHand
+func protoAttackHandToToolkit(hand dnd5ev1alpha1.AttackHand) combat.AttackHand {
+	switch hand {
+	case dnd5ev1alpha1.AttackHand_ATTACK_HAND_OFF:
+		return combat.AttackHandOff
+	case dnd5ev1alpha1.AttackHand_ATTACK_HAND_MAIN:
+		return combat.AttackHandMain
+	default:
+		// UNSPECIFIED defaults to main hand behavior
+		return combat.AttackHandMain
+	}
 }
