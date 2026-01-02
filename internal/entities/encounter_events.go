@@ -145,12 +145,22 @@ type MovementCompletedEvent struct {
 
 // AttackResolvedEvent is emitted when an attack is resolved
 type AttackResolvedEvent struct {
-	AttackerID string            `json:"attacker_id"`
-	TargetID   string            `json:"target_id"`
-	Result     interface{}       `json:"result"`
-	TargetHP   int               `json:"target_hp"`      // HP after attack
-	TargetDead bool              `json:"target_dead"`    // Whether target was killed
-	Room       *spatial.RoomData `json:"room,omitempty"` // Updated room with entity positions
+	AttackerID    string             `json:"attacker_id"`
+	TargetID      string             `json:"target_id"`
+	Result        interface{}        `json:"result"`
+	TargetHP      int                `json:"target_hp"`                // HP after attack
+	TargetDead    bool               `json:"target_dead"`              // Whether target was killed
+	Room          *spatial.RoomData  `json:"room,omitempty"`           // Updated room with entity positions
+	GrantedAction *GrantedActionInfo `json:"granted_action,omitempty"` // Action granted from this attack
+}
+
+// GrantedActionInfo represents info about an action granted during combat
+type GrantedActionInfo struct {
+	ID       string `json:"id"`
+	Type     string `json:"type"`   // e.g., "off-hand-strike"
+	Name     string `json:"name"`   // Display name
+	Reason   string `json:"reason"` // Why this action was granted
+	WeaponID string `json:"weapon_id,omitempty"`
 }
 
 // FeatureActivatedEvent is emitted when a combat feature is activated

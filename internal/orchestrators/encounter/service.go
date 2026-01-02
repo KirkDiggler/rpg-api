@@ -122,9 +122,19 @@ type ResolveAttackInput struct {
 // ResolveAttackOutput returns attack results
 // TODO: Replace AttackResult with toolkit combat.AttackResult when combat package is published
 type ResolveAttackOutput struct {
-	Result      *AttackResult // Attack result with full breakdown
-	MonsterHP   int           // Updated monster HP
-	MonsterDead bool          // Whether monster was defeated
+	Result        *AttackResult  // Attack result with full breakdown
+	MonsterHP     int            // Updated monster HP
+	MonsterDead   bool           // Whether monster was defeated
+	GrantedAction *GrantedAction // Action granted from this attack (e.g., OffHandStrike for TWF)
+}
+
+// GrantedAction represents an action granted during combat (e.g., OffHandStrike from two-weapon fighting)
+type GrantedAction struct {
+	ID       string // Unique action ID
+	Type     string // Action type (e.g., "off-hand-strike")
+	Name     string // Display name
+	Reason   string // Why this action was granted (e.g., "dual-wielding light weapons")
+	WeaponID string // Associated weapon (if applicable)
 }
 
 // AttackResult contains the outcome of an attack

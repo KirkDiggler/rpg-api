@@ -12,6 +12,7 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/dice"
 	"github.com/KirkDiggler/rpg-toolkit/events"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/abilities"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/actions"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/armor"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/combat"
@@ -358,6 +359,39 @@ func (o *Orchestrator) ResolveAttack(ctx context.Context, input *ResolveAttackIn
 		monsterData.HitPoints = newHP
 	}
 
+	// 11a. Check for two-weapon fighting: grant off-hand strike if conditions are met
+	var grantedAction *GrantedAction
+	if equipmentSlots != nil {
+		mainHandID := equipmentSlots.Get(character.SlotMainHand)
+		offHandID := equipmentSlots.Get(character.SlotOffHand)
+
+		// Only check if both hands have items and off-hand is not a shield
+		if mainHandID != "" && offHandID != "" && offHandID != armor.Shield {
+			twfResult, twfErr := actions.CheckAndGrantOffHandStrike(ctx, &actions.TwoWeaponGranterInput{
+				CharacterID: input.AttackerID,
+				AttackHand:  actions.AttackHand(input.AttackHand), // Convert from combat.AttackHand
+				MainHandWeapon: &actions.EquippedWeaponInfo{
+					WeaponID: mainHandID,
+				},
+				OffHandWeapon: &actions.EquippedWeaponInfo{
+					WeaponID: offHandID,
+				},
+				ActionHolder: char,
+				EventBus:     bus,
+			})
+			// Non-fatal error - log but continue
+			if twfErr == nil && twfResult.Granted {
+				grantedAction = &GrantedAction{
+					ID:       twfResult.Action.GetID(),
+					Type:     "off-hand-strike",
+					Name:     "Off-Hand Strike",
+					Reason:   twfResult.Reason,
+					WeaponID: twfResult.Action.GetWeaponID(),
+				}
+			}
+		}
+	}
+
 	// 12. Consume action and persist (action consumed only after all validation succeeds)
 	actionEconomy.UseAction()
 	_, err = o.encRepo.Update(ctx, &encounterrepo.UpdateInput{
@@ -398,25 +432,39 @@ func (o *Orchestrator) ResolveAttack(ctx context.Context, input *ResolveAttackIn
 		}
 	}
 
-	// 16. Publish AttackResolved event
+	// 16. Convert granted action for event
+	var grantedActionInfo *entities.GrantedActionInfo
+	if grantedAction != nil {
+		grantedActionInfo = &entities.GrantedActionInfo{
+			ID:       grantedAction.ID,
+			Type:     grantedAction.Type,
+			Name:     grantedAction.Name,
+			Reason:   grantedAction.Reason,
+			WeaponID: grantedAction.WeaponID,
+		}
+	}
+
+	// 17. Publish AttackResolved event
 	o.publishEvent(ctx, input.EncounterID, entities.EventTypeAttackResolved, &entities.AttackResolvedEvent{
-		AttackerID: input.AttackerID,
-		TargetID:   input.TargetID,
-		Result:     attackResult,
-		TargetHP:   newHP,
-		TargetDead: newHP <= 0,
-		Room:       roomData,
+		AttackerID:    input.AttackerID,
+		TargetID:      input.TargetID,
+		Result:        attackResult,
+		TargetHP:      newHP,
+		TargetDead:    newHP <= 0,
+		Room:          roomData,
+		GrantedAction: grantedActionInfo,
 	})
 
-	// 17. Check for dungeon victory if monster died
+	// 18. Check for dungeon victory if monster died
 	if newHP <= 0 {
 		o.checkAndHandleVictory(ctx, input.EncounterID, encOutput.Data, input.TargetID)
 	}
 
 	return &ResolveAttackOutput{
-		Result:      attackResult,
-		MonsterHP:   newHP,
-		MonsterDead: newHP <= 0,
+		Result:        attackResult,
+		MonsterHP:     newHP,
+		MonsterDead:   newHP <= 0,
+		GrantedAction: grantedAction,
 	}, nil
 }
 
