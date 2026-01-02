@@ -325,7 +325,15 @@ func (o *Orchestrator) ResolveAttack(ctx context.Context, input *ResolveAttackIn
 	gameCtx := o.buildGameContextFromEquipment(input.AttackerID, &weapon, equipmentSlots)
 	ctx = gamectx.WithGameContext(ctx, gameCtx)
 
-	// 9. Call toolkit combat (event-driven, Rage and fighting styles participate here!)
+	// 9. Create CombatantRegistry for damage chain lookups (vulnerability, resistance, etc.)
+	// The registry allows traits to look up combatants during damage resolution.
+	registry := gamectx.NewCombatantRegistry()
+	registry.Add(char)
+	registry.Add(goblin)
+	ctx = gamectx.WithCombatants(ctx, registry)
+
+	// 10. Call toolkit combat (event-driven, Rage and fighting styles participate here!)
+	// Damage is applied to the monster via DamageReceivedEvent -> monster.TakeDamage
 	result, err := combat.ResolveAttack(ctx, &combat.AttackInput{
 		Attacker:         char,
 		Defender:         goblin,
@@ -340,19 +348,16 @@ func (o *Orchestrator) ResolveAttack(ctx context.Context, input *ResolveAttackIn
 		return nil, fmt.Errorf("combat resolution failed: %w", err)
 	}
 
-	// 10. Calculate new monster HP
+	// 11. Get monster HP after damage was applied via event-driven flow
+	// ResolveAttack publishes DamageReceivedEvent which monster.TakeDamage handles
+	// Damage includes vulnerability/resistance multipliers from the damage chain
 	newHP := goblin.HP()
 	if result.Hit {
-		newHP = goblin.HP() - result.TotalDamage
-		if newHP < 0 {
-			newHP = 0
-		}
-
-		// Update monster data with new HP
+		// Update monster data with new HP from the monster instance
 		monsterData.HitPoints = newHP
 	}
 
-	// 11. Consume action and persist (action consumed only after all validation succeeds)
+	// 12. Consume action and persist (action consumed only after all validation succeeds)
 	actionEconomy.UseAction()
 	_, err = o.encRepo.Update(ctx, &encounterrepo.UpdateInput{
 		EncounterID:   input.EncounterID,
@@ -363,7 +368,7 @@ func (o *Orchestrator) ResolveAttack(ctx context.Context, input *ResolveAttackIn
 		return nil, fmt.Errorf("failed to save encounter state: %w", err)
 	}
 
-	// 12. Convert toolkit result to our output format
+	// 13. Convert toolkit result to our output format
 	attackResult := &AttackResult{
 		AttackRoll:      result.AttackRoll,
 		AttackBonus:     result.AttackBonus,
@@ -379,12 +384,12 @@ func (o *Orchestrator) ResolveAttack(ctx context.Context, input *ResolveAttackIn
 		DamageType:      result.DamageType,
 	}
 
-	// 12. Map breakdown if present (only exists on hit)
+	// 14. Map breakdown if present (only exists on hit)
 	if result.Breakdown != nil {
 		attackResult.Breakdown = convertToolkitBreakdown(result.Breakdown)
 	}
 
-	// 13. Get room data for the event (if available)
+	// 15. Get room data for the event (if available)
 	var roomData *spatial.RoomData
 	if encOutput.Data.RoomData != nil {
 		if rd, ok := encOutput.Data.RoomData.(*spatial.RoomData); ok {
@@ -392,7 +397,7 @@ func (o *Orchestrator) ResolveAttack(ctx context.Context, input *ResolveAttackIn
 		}
 	}
 
-	// 14. Publish AttackResolved event
+	// 16. Publish AttackResolved event
 	o.publishEvent(ctx, input.EncounterID, entities.EventTypeAttackResolved, &entities.AttackResolvedEvent{
 		AttackerID: input.AttackerID,
 		TargetID:   input.TargetID,
@@ -402,7 +407,7 @@ func (o *Orchestrator) ResolveAttack(ctx context.Context, input *ResolveAttackIn
 		Room:       roomData,
 	})
 
-	// 15. Check for dungeon victory if monster died
+	// 17. Check for dungeon victory if monster died
 	if newHP <= 0 {
 		o.checkAndHandleVictory(ctx, input.EncounterID, encOutput.Data, input.TargetID)
 	}
