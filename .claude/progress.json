@@ -8,13 +8,22 @@
     "Character state must be saved after attacks (like ActivateFeature does)",
     "Vulnerability multipliers must appear in AttackResolvedEvent breakdown"
   ],
-  "sessions": [],
+  "sessions": [
+    {
+      "date": "2026-01-02",
+      "changes": [
+        "Added Monster.GetHitPoints, Monster.GetMaxHitPoints, Monster.ApplyDamage to toolkit (combat.Combatant interface)",
+        "Updated ResolveAttack to create CombatantRegistry with attacker and defender",
+        "Added gamectx.WithCombatants(ctx, registry) before combat resolution",
+        "Replaced manual HP calculation (newHP = goblin.HP() - result.TotalDamage) with reading monster.HP() after event-driven damage",
+        "Damage now flows through the proper event chain: ResolveAttack -> DamageReceivedEvent -> monster.TakeDamage"
+      ],
+      "notes": "Monster's event handler (onDamageReceived) already applies damage when DamageReceivedEvent is published. The orchestrator now just reads the updated HP instead of recalculating it."
+    }
+  ],
   "next_steps": [
-    "Bump toolkit dependency to get unified damage flow",
-    "Add CombatantRegistry integration to ResolveAttack",
-    "Replace manual HP calculation with ApplyDamage",
-    "Save character and monster state after attack",
-    "Verify vulnerability multipliers in events",
-    "Add test scenarios for different class/weapon combos"
+    "Save character state after attack (like ActivateFeature does)",
+    "Verify vulnerability multipliers in events via integration tests",
+    "Add test scenarios for different class/weapon combos (fighter + mace vs skeleton)"
   ]
 }
