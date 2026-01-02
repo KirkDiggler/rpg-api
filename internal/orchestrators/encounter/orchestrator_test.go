@@ -19,6 +19,7 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/gamectx"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/initiative"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/monster"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/monster/monsters"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/weapons"
 	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
@@ -352,6 +353,110 @@ func (s *OrchestratorTestSuite) TestResolveAttack_MultipleAttacks() {
 		}
 	}
 	s.Assert().False(allIdentical, "Multiple attacks should produce different results due to dice rolls")
+}
+
+func (s *OrchestratorTestSuite) TestResolveAttack_VulnerabilityMultiplier_AppearsInBreakdown() {
+	// Test that vulnerability (2.0 multiplier) appears in the damage breakdown
+	// when attacking a skeleton (vulnerable to bludgeoning) with a mace
+
+	// Create a fighter with mace (bludgeoning damage)
+	charData := &character.Data{
+		ID:               "char-1",
+		Name:             "Sir Bonecrusher",
+		Level:            1,
+		RaceID:           "human",
+		ClassID:          "fighter",
+		ProficiencyBonus: 2,
+		AbilityScores: shared.AbilityScores{
+			abilities.STR: 16, // +3 modifier
+			abilities.DEX: 14,
+			abilities.CON: 14,
+			abilities.INT: 10,
+			abilities.WIS: 12,
+			abilities.CHA: 8,
+		},
+		Features: []json.RawMessage{},
+		EquipmentSlots: character.EquipmentSlots{
+			character.SlotMainHand: weapons.Mace, // Mace does bludgeoning damage
+		},
+	}
+
+	s.mockCharRepo.EXPECT().
+		Get(gomock.Any(), characterrepo.GetInput{ID: "char-1"}).
+		Return(&characterrepo.GetOutput{Character: &entities.Character{Data: charData}}, nil).
+		AnyTimes()
+
+	// Create skeleton - has bludgeoning vulnerability via monstertraits
+	skeleton := monsters.NewSkeleton("skeleton-1")
+	skeletonData := skeleton.ToData()
+
+	encData := &encounterrepo.EncounterData{
+		ID:       "enc-1",
+		Monsters: []*monster.Data{skeletonData},
+	}
+
+	s.mockEncRepo.EXPECT().
+		Get(gomock.Any(), &encounterrepo.GetInput{EncounterID: "enc-1"}).
+		Return(&encounterrepo.GetOutput{Data: encData}, nil)
+
+	s.mockEncRepo.EXPECT().
+		Update(gomock.Any(), gomock.Any()).
+		Return(&encounterrepo.UpdateOutput{Success: true}, nil).
+		AnyTimes()
+
+	// Loop until we get a hit (random dice could miss)
+	var hitOutput *ResolveAttackOutput
+	for i := 0; i < 20; i++ { // Try up to 20 times to get a hit
+		output, err := s.orchestrator.ResolveAttack(context.Background(), &ResolveAttackInput{
+			EncounterID: "enc-1",
+			AttackerID:  "char-1",
+			TargetID:    "skeleton-1",
+		})
+		s.Require().NoError(err)
+		s.Require().NotNil(output)
+
+		if output.Result.Hit {
+			hitOutput = output
+			break
+		}
+
+		// Reset encounter data for next attempt (skeleton needs full HP)
+		skeleton = monsters.NewSkeleton("skeleton-1")
+		skeletonData = skeleton.ToData()
+		encData = &encounterrepo.EncounterData{
+			ID:       "enc-1",
+			Monsters: []*monster.Data{skeletonData},
+		}
+		s.mockEncRepo.EXPECT().
+			Get(gomock.Any(), &encounterrepo.GetInput{EncounterID: "enc-1"}).
+			Return(&encounterrepo.GetOutput{Data: encData}, nil)
+	}
+
+	s.Require().NotNil(hitOutput, "Should have gotten at least one hit in 20 attempts")
+	s.Require().True(hitOutput.Result.Hit, "Attack should have hit")
+	s.Require().NotNil(hitOutput.Result.Breakdown, "Breakdown should be present on hit")
+
+	// Verify damage type is bludgeoning (from mace)
+	s.Assert().Equal(damage.Bludgeoning, hitOutput.Result.DamageType, "Damage type should be bludgeoning")
+
+	// Look for vulnerability multiplier component in breakdown
+	var foundVulnerabilityMultiplier bool
+	for _, comp := range hitOutput.Result.Breakdown.Components {
+		if comp.Multiplier == 2.0 && comp.DamageType == damage.Bludgeoning {
+			foundVulnerabilityMultiplier = true
+			s.Assert().Equal("monster_trait", comp.Source, "Vulnerability should come from monster_trait source")
+			break
+		}
+	}
+
+	s.Assert().True(foundVulnerabilityMultiplier,
+		"Breakdown should contain a component with Multiplier=2.0 for bludgeoning vulnerability. Got components: %+v",
+		hitOutput.Result.Breakdown.Components)
+
+	// Verify total damage reflects vulnerability (should be roughly doubled)
+	// Base mace damage: 1d6 (1-6) + 3 STR = 4-9
+	// With vulnerability: 8-18
+	s.Assert().GreaterOrEqual(hitOutput.Result.TotalDamage, 2, "Total damage should be at least 2 (minimum 1 base doubled)")
 }
 
 // Helper functions for test data
