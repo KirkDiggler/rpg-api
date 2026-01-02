@@ -12,6 +12,7 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/dice"
 	"github.com/KirkDiggler/rpg-toolkit/events"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/abilities"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/actions"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/armor"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/combat"
@@ -359,11 +360,37 @@ func (o *Orchestrator) ResolveAttack(ctx context.Context, input *ResolveAttackIn
 	}
 
 	// 11a. Two-weapon fighting: grant off-hand strike after main-hand attack
-	// TODO(toolkit#519): Use CheckAndGrantOffHandStrikeForCharacter when available
-	// The toolkit should handle all game logic (checking slots, weapon properties, etc.)
-	// API should just pass: char, attackHand, bus
+	// API just extracts slot contents and passes to toolkit - toolkit decides if conditions are met
 	var grantedAction *GrantedAction
-	_ = grantedAction // Placeholder until toolkit#519
+	if equipmentSlots != nil {
+		// Build weapon info from slots - pass nil if slot is empty
+		var mainWeapon, offWeapon *actions.EquippedWeaponInfo
+		if mainID := equipmentSlots.Get(character.SlotMainHand); mainID != "" {
+			mainWeapon = &actions.EquippedWeaponInfo{WeaponID: mainID}
+		}
+		if offID := equipmentSlots.Get(character.SlotOffHand); offID != "" {
+			offWeapon = &actions.EquippedWeaponInfo{WeaponID: offID}
+		}
+
+		// Let toolkit check all conditions (is it a weapon? is it light? etc.)
+		twfResult, _ := actions.CheckAndGrantOffHandStrike(ctx, &actions.TwoWeaponGranterInput{
+			CharacterID:    input.AttackerID,
+			AttackHand:     actions.AttackHand(input.AttackHand),
+			MainHandWeapon: mainWeapon,
+			OffHandWeapon:  offWeapon,
+			ActionHolder:   char,
+			EventBus:       bus,
+		})
+		if twfResult != nil && twfResult.Granted {
+			grantedAction = &GrantedAction{
+				ID:       twfResult.Action.GetID(),
+				Type:     "off-hand-strike",
+				Name:     "Off-Hand Strike",
+				Reason:   twfResult.Reason,
+				WeaponID: twfResult.Action.GetWeaponID(),
+			}
+		}
+	}
 
 	// 12. Consume action and persist (action consumed only after all validation succeeds)
 	actionEconomy.UseAction()
