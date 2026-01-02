@@ -1,22 +1,20 @@
 {
-  "branch": "feat/issue-356-appearance-storage",
-  "issues": ["#356"],
-  "goal": "Add appearance storage to Character - persist skin tone, armor colors, eye color as part of character data in rpg-api repository layer",
+  "branch": "feat/issue-358-unified-damage-flow",
+  "issues": ["#358"],
+  "goal": "Integrate unified damage flow from toolkit refactor - use CombatantRegistry and ApplyDamage instead of manual HP calculation",
   "design_decisions": [
-    "Appearance is cosmetic data - belongs in API layer, not toolkit",
-    "Store appearance separately from character/draft JSON (separate Redis keys)",
-    "Add methods to existing repos rather than creating separate appearance repo",
-    "Appearance flows: draft creation -> finalize -> character storage",
-    "Post-creation editing will be supported later"
+    "CombatantRegistry holds all combat participants for proper context",
+    "ApplyDamage handles traits (vulnerability, resistance, immunity) properly",
+    "Character state must be saved after attacks (like ActivateFeature does)",
+    "Vulnerability multipliers must appear in AttackResolvedEvent breakdown"
   ],
   "sessions": [],
   "next_steps": [
-    "Add Appearance entity to internal/entities/",
-    "Add SetAppearance/GetAppearance to character_draft repository",
-    "Add SetAppearance/GetAppearance to character repository",
-    "Wire up orchestrator to handle appearance in draft flow",
-    "Implement UpdateAppearance handler",
-    "Wire appearance into Finalize flow (copy from draft to character)",
-    "Wire appearance into GetDraft/GetCharacter responses"
+    "Bump toolkit dependency to get unified damage flow",
+    "Add CombatantRegistry integration to ResolveAttack",
+    "Replace manual HP calculation with ApplyDamage",
+    "Save character and monster state after attack",
+    "Verify vulnerability multipliers in events",
+    "Add test scenarios for different class/weapon combos"
   ]
 }

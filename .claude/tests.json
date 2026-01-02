@@ -1,58 +1,65 @@
 {
   "tests": [
     {
-      "id": "appearance-entity-exists",
-      "feature": "appearance-storage",
-      "prompt": "Verify Appearance struct exists in internal/entities with SkinTone, PrimaryColor, SecondaryColor, EyeColor fields",
+      "id": "toolkit-dependency-bumped",
+      "feature": "dependency",
+      "prompt": "Verify rpg-toolkit/rulebooks/dnd5e is updated to include unified damage flow (commit dce7d45 or later)",
       "passes": false,
       "last_checked": null
     },
     {
-      "id": "draft-repo-appearance-methods",
-      "feature": "appearance-storage",
-      "prompt": "Verify character_draft repository has SetAppearance and GetAppearance methods with proper Input/Output types",
+      "id": "combatant-registry-created",
+      "feature": "registry",
+      "prompt": "ResolveAttack creates CombatantRegistry and adds attacker + target before combat",
       "passes": false,
       "last_checked": null
     },
     {
-      "id": "character-repo-appearance-methods",
-      "feature": "appearance-storage",
-      "prompt": "Verify character repository has SetAppearance and GetAppearance methods with proper Input/Output types",
+      "id": "context-has-combatants",
+      "feature": "registry",
+      "prompt": "ResolveAttack uses gamectx.WithCombatants(ctx, registry) before calling combat.ResolveAttack",
       "passes": false,
       "last_checked": null
     },
     {
-      "id": "update-appearance-handler",
-      "feature": "appearance-storage",
-      "prompt": "Verify UpdateAppearance RPC handler exists and calls orchestrator SetAppearance",
+      "id": "apply-damage-used",
+      "feature": "damage",
+      "prompt": "ResolveAttack uses target.ApplyDamage() instead of manual HP calculation (no more newHP = goblin.HP() - result.TotalDamage)",
       "passes": false,
       "last_checked": null
     },
     {
-      "id": "finalize-copies-appearance",
-      "feature": "appearance-storage",
-      "prompt": "Verify Finalize flow copies appearance from draft storage to character storage",
+      "id": "character-state-saved",
+      "feature": "persistence",
+      "prompt": "Character state is saved to repository after attack (like ActivateFeature does)",
       "passes": false,
       "last_checked": null
     },
     {
-      "id": "get-draft-includes-appearance",
-      "feature": "appearance-storage",
-      "prompt": "Verify GetDraft response includes appearance data from repository",
+      "id": "monster-state-from-registry",
+      "feature": "persistence",
+      "prompt": "Monster state is retrieved from registry and saved after attack",
       "passes": false,
       "last_checked": null
     },
     {
-      "id": "get-character-includes-appearance",
-      "feature": "appearance-storage",
-      "prompt": "Verify GetCharacter response includes appearance data from repository",
+      "id": "vulnerability-multiplier-in-event",
+      "feature": "events",
+      "prompt": "When skeleton (vulnerable to bludgeoning) takes mace damage, AttackResolvedEvent.Result.Breakdown contains component with Multiplier: 2.0",
       "passes": false,
       "last_checked": null
     },
     {
-      "id": "all-tests-pass",
-      "feature": "appearance-storage",
-      "prompt": "Run make pre-commit and verify all tests pass with no lint errors",
+      "id": "fighter-mace-vs-skeleton",
+      "feature": "integration",
+      "prompt": "Fighter with mace attacks skeleton: damage is doubled (vulnerability), event shows multiplier",
+      "passes": false,
+      "last_checked": null
+    },
+    {
+      "id": "existing-tests-pass",
+      "feature": "regression",
+      "prompt": "All existing encounter tests pass after refactor (go test ./internal/orchestrators/encounter/...)",
       "passes": false,
       "last_checked": null
     }
