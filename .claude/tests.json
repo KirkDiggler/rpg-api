@@ -52,17 +52,17 @@
       "id": "vulnerability-multiplier-in-event",
       "feature": "events",
       "prompt": "When skeleton (vulnerable to bludgeoning) takes mace damage, AttackResolvedEvent.Result.Breakdown contains component with Multiplier: 2.0",
-      "passes": false,
+      "passes": true,
       "last_checked": "2026-01-02",
-      "notes": "Needs integration test - damage chain already applies multipliers via ResolveDamage"
+      "notes": "Verified via TestResolveAttack_VulnerabilityMultiplier_AppearsInBreakdown - test passes"
     },
     {
       "id": "fighter-mace-vs-skeleton",
       "feature": "integration",
       "prompt": "Fighter with mace attacks skeleton: damage is doubled (vulnerability), event shows multiplier",
-      "passes": false,
+      "passes": true,
       "last_checked": "2026-01-02",
-      "notes": "Needs integration test to verify end-to-end vulnerability flow"
+      "notes": "Verified via integration test - fighter with mace vs skeleton shows 2.0 multiplier"
     },
     {
       "id": "existing-tests-pass",
