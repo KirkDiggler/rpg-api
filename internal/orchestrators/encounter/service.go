@@ -8,6 +8,7 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/entities"
 	"github.com/KirkDiggler/rpg-toolkit/core"
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/combat"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/damage"
 )
 
@@ -114,7 +115,8 @@ type ResolveAttackInput struct {
 	EncounterID string
 	AttackerID  string
 	TargetID    string
-	WeaponID    string // Optional, uses default weapon if empty
+	WeaponID    string            // Optional, uses default weapon if empty
+	AttackHand  combat.AttackHand // Which hand is attacking (main/off for TWF)
 }
 
 // ResolveAttackOutput returns attack results

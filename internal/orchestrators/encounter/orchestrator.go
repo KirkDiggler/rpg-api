@@ -343,6 +343,7 @@ func (o *Orchestrator) ResolveAttack(ctx context.Context, input *ResolveAttackIn
 		ProficiencyBonus: char.GetProficiencyBonus(),
 		EventBus:         bus,
 		Roller:           o.roller,
+		AttackHand:       input.AttackHand, // For two-weapon fighting
 	})
 	if err != nil {
 		return nil, fmt.Errorf("combat resolution failed: %w", err)
