@@ -1,5 +1,5 @@
-github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20260102051912-028dc289e557 h1:AIoLE5MKf2Grb8Vs/qg/fWEixnK2hsOVQMp3rlv0mBo=
-github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20260102051912-028dc289e557/go.mod h1:oKePHWFHmXQnRlViAFBVNpgJlMsV7oxJu13SDr3h+Es=
+github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20260102061758-933da20f267f h1:hhwh+o2/eoI/VjlPRERyqRN63wNMmHSO3sV88Tikxc4=
+github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20260102061758-933da20f267f/go.mod h1:oKePHWFHmXQnRlViAFBVNpgJlMsV7oxJu13SDr3h+Es=
 github.com/KirkDiggler/rpg-toolkit/core v0.10.0 h1:LLsvsYsukE26BlRS0wL1o3UjjmP5Qm2Bq5Hb6yFdxzs=
 github.com/KirkDiggler/rpg-toolkit/core v0.10.0/go.mod h1:XFQXYViPZUTYu/a8jdRadI3rGnKk4r7tRtPm++vSUV0=
 github.com/KirkDiggler/rpg-toolkit/dice v0.3.2 h1:cLLP4Z+4VYSxeRkNbmI5gym6dC/xBOw6kDIylWDK/z0=

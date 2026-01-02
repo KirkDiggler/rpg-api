@@ -505,10 +505,13 @@ func (h *Handler) StartCombat(
 	// 2. Get player ID from auth context
 	playerID := auth.GetPlayerID(ctx)
 
-	// 3. Call orchestrator
+	// 3. Call orchestrator with dungeon config from request
 	output, err := h.encounterService.StartCombat(ctx, &encounter.StartCombatInput{
 		EncounterID: req.GetEncounterId(),
 		PlayerID:    playerID,
+		ThemeID:     protoDungeonThemeToString(req.GetTheme()),
+		Difficulty:  protoDungeonDifficultyToString(req.GetDifficulty()),
+		Length:      protoDungeonLengthToString(req.GetLength()),
 	})
 	if err != nil {
 		if errors.Is(err, encounter.ErrNotHost) {
@@ -764,12 +767,21 @@ func (h *Handler) convertToProtoEvent(event *entities.EncounterEvent) (*dnd5ev1a
 		if event.MovementCompleted == nil {
 			return nil, fmt.Errorf("missing MovementCompleted data for MovementCompletedEvent")
 		}
+		var finalPos *apiv1alpha1.Position
+		if event.MovementCompleted.FinalPosition != nil {
+			finalPos = &apiv1alpha1.Position{
+				X: event.MovementCompleted.FinalPosition.X,
+				Y: event.MovementCompleted.FinalPosition.Y,
+				Z: event.MovementCompleted.FinalPosition.Z,
+			}
+		}
 		protoEvent.Event = &dnd5ev1alpha1.EncounterEvent_MovementCompleted{
 			MovementCompleted: &dnd5ev1alpha1.MovementCompletedEvent{
 				EntityId:          event.MovementCompleted.EntityID,
 				MovementRemaining: event.MovementCompleted.MovementRemaining,
 				StopReason:        event.MovementCompleted.StopReason,
-				// TODO: Convert FinalPosition
+				FinalPosition:     finalPos,
+				UpdatedRoom:       convertRoomDataToProto(event.MovementCompleted.UpdatedRoom),
 			},
 		}
 
