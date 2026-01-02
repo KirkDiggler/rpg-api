@@ -12,7 +12,6 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/dice"
 	"github.com/KirkDiggler/rpg-toolkit/events"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/abilities"
-	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/actions"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/armor"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/combat"
@@ -359,38 +358,12 @@ func (o *Orchestrator) ResolveAttack(ctx context.Context, input *ResolveAttackIn
 		monsterData.HitPoints = newHP
 	}
 
-	// 11a. Check for two-weapon fighting: grant off-hand strike if conditions are met
+	// 11a. Two-weapon fighting: grant off-hand strike after main-hand attack
+	// TODO(toolkit#519): Use CheckAndGrantOffHandStrikeForCharacter when available
+	// The toolkit should handle all game logic (checking slots, weapon properties, etc.)
+	// API should just pass: char, attackHand, bus
 	var grantedAction *GrantedAction
-	if equipmentSlots != nil {
-		mainHandID := equipmentSlots.Get(character.SlotMainHand)
-		offHandID := equipmentSlots.Get(character.SlotOffHand)
-
-		// Only check if both hands have items and off-hand is not a shield
-		if mainHandID != "" && offHandID != "" && offHandID != armor.Shield {
-			twfResult, twfErr := actions.CheckAndGrantOffHandStrike(ctx, &actions.TwoWeaponGranterInput{
-				CharacterID: input.AttackerID,
-				AttackHand:  actions.AttackHand(input.AttackHand), // Convert from combat.AttackHand
-				MainHandWeapon: &actions.EquippedWeaponInfo{
-					WeaponID: mainHandID,
-				},
-				OffHandWeapon: &actions.EquippedWeaponInfo{
-					WeaponID: offHandID,
-				},
-				ActionHolder: char,
-				EventBus:     bus,
-			})
-			// Non-fatal error - log but continue
-			if twfErr == nil && twfResult.Granted {
-				grantedAction = &GrantedAction{
-					ID:       twfResult.Action.GetID(),
-					Type:     "off-hand-strike",
-					Name:     "Off-Hand Strike",
-					Reason:   twfResult.Reason,
-					WeaponID: twfResult.Action.GetWeaponID(),
-				}
-			}
-		}
-	}
+	_ = grantedAction // Placeholder until toolkit#519
 
 	// 12. Consume action and persist (action consumed only after all validation succeeds)
 	actionEconomy.UseAction()
