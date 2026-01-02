@@ -505,10 +505,13 @@ func (h *Handler) StartCombat(
 	// 2. Get player ID from auth context
 	playerID := auth.GetPlayerID(ctx)
 
-	// 3. Call orchestrator
+	// 3. Call orchestrator with dungeon config from request
 	output, err := h.encounterService.StartCombat(ctx, &encounter.StartCombatInput{
 		EncounterID: req.GetEncounterId(),
 		PlayerID:    playerID,
+		ThemeID:     protoDungeonThemeToString(req.GetTheme()),
+		Difficulty:  protoDungeonDifficultyToString(req.GetDifficulty()),
+		Length:      protoDungeonLengthToString(req.GetLength()),
 	})
 	if err != nil {
 		if errors.Is(err, encounter.ErrNotHost) {

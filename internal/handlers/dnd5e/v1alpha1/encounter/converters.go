@@ -1009,3 +1009,48 @@ func protoAttackHandToToolkit(hand dnd5ev1alpha1.AttackHand) combat.AttackHand {
 		return combat.AttackHandMain
 	}
 }
+
+// protoDungeonThemeToString converts proto DungeonTheme enum to theme ID string
+func protoDungeonThemeToString(theme dnd5ev1alpha1.DungeonTheme) string {
+	switch theme {
+	case dnd5ev1alpha1.DungeonTheme_DUNGEON_THEME_CRYPT:
+		return "crypt"
+	case dnd5ev1alpha1.DungeonTheme_DUNGEON_THEME_CAVE:
+		return "cave"
+	case dnd5ev1alpha1.DungeonTheme_DUNGEON_THEME_RUINS:
+		return "bandit-lair" // RUINS not yet implemented, use bandit-lair
+	default:
+		// UNSPECIFIED defaults to crypt
+		return ""
+	}
+}
+
+// protoDungeonDifficultyToString converts proto DungeonDifficulty enum to difficulty string
+func protoDungeonDifficultyToString(difficulty dnd5ev1alpha1.DungeonDifficulty) string {
+	switch difficulty {
+	case dnd5ev1alpha1.DungeonDifficulty_DUNGEON_DIFFICULTY_EASY:
+		return "easy"
+	case dnd5ev1alpha1.DungeonDifficulty_DUNGEON_DIFFICULTY_MEDIUM:
+		return "medium"
+	case dnd5ev1alpha1.DungeonDifficulty_DUNGEON_DIFFICULTY_HARD:
+		return "hard"
+	default:
+		// UNSPECIFIED defaults to easy
+		return ""
+	}
+}
+
+// protoDungeonLengthToString converts proto DungeonLength enum to length string
+func protoDungeonLengthToString(length dnd5ev1alpha1.DungeonLength) string {
+	switch length {
+	case dnd5ev1alpha1.DungeonLength_DUNGEON_LENGTH_SHORT:
+		return "short"
+	case dnd5ev1alpha1.DungeonLength_DUNGEON_LENGTH_MEDIUM:
+		return "medium"
+	case dnd5ev1alpha1.DungeonLength_DUNGEON_LENGTH_LONG:
+		return "long"
+	default:
+		// UNSPECIFIED defaults to short
+		return ""
+	}
+}
