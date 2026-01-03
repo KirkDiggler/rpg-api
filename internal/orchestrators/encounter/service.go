@@ -6,10 +6,8 @@ import (
 
 	pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
 	"github.com/KirkDiggler/rpg-api/internal/entities"
-	"github.com/KirkDiggler/rpg-toolkit/core"
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/combat"
-	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/damage"
 )
 
 // Type aliases to entities - these are the canonical types
@@ -137,57 +135,18 @@ type GrantedAction struct {
 	WeaponID string // Associated weapon (if applicable)
 }
 
-// AttackResult contains the outcome of an attack
-// TODO: Replace with toolkit combat.AttackResult when available
-// This mirrors the toolkit type structure for compatibility
-type AttackResult struct {
-	// Attack roll details
-	AttackRoll      int  // The d20 roll
-	AttackBonus     int  // Total bonus applied
-	TotalAttack     int  // Roll + bonus
-	TargetAC        int  // Target's armor class
-	Hit             bool // Did the attack hit?
-	Critical        bool // Was it a critical hit?
-	IsNaturalTwenty bool // Natural 20
-	IsNaturalOne    bool // Natural 1
+// AttackResult is an alias to entities.AttackResult for backwards compatibility
+// The canonical type is in entities to avoid circular imports and enable proper JSON serialization
+type AttackResult = entities.AttackResult
 
-	// Damage details
-	DamageRolls []int       // Individual damage dice rolls
-	DamageBonus int         // Total damage bonus
-	TotalDamage int         // Final damage dealt
-	DamageType  damage.Type // Type of damage (slashing, piercing, etc.)
+// DamageBreakdown is an alias to entities.DamageBreakdown
+type DamageBreakdown = entities.DamageBreakdown
 
-	// Detailed breakdown
-	Breakdown *DamageBreakdown // Detailed damage breakdown (nil if attack missed)
-}
+// DamageComponent is an alias to entities.DamageComponent
+type DamageComponent = entities.DamageComponent
 
-// DamageBreakdown provides detailed component breakdown of damage calculation
-type DamageBreakdown struct {
-	Components  []DamageComponent
-	AbilityUsed string // Ability used for attack ("STR", "DEX", etc.)
-	TotalDamage int    // Sum of all components
-}
-
-// DamageComponent represents damage from one source
-type DamageComponent struct {
-	Source            string        // Type of damage source ("weapon", "ability", "feature", "monster_trait", etc.)
-	SourceRef         *core.Ref     // Type-safe reference identifying the specific source
-	OriginalDiceRolls []int         // Dice values as first rolled
-	FinalDiceRolls    []int         // Dice values after all rerolls
-	Rerolls           []RerollEvent // History of rerolls
-	FlatBonus         int           // Flat modifier (0 if none)
-	DamageType        damage.Type   // Type of damage (slashing, fire, radiant, etc.)
-	IsCritical        bool          // Was this component doubled for crit?
-	Multiplier        float64       // Multiplier for vulnerability (2.0), resistance (0.5), or immunity (0)
-}
-
-// RerollEvent tracks a single die reroll
-type RerollEvent struct {
-	DieIndex int    // Which die was rerolled (0-based index in original_dice_rolls)
-	Before   int    // Value before reroll
-	After    int    // Value after reroll
-	Reason   string // Feature that caused reroll (e.g., "great_weapon_fighting")
-}
+// RerollEvent is an alias to entities.RerollEvent
+type RerollEvent = entities.RerollEvent
 
 // CreateDungeonInput contains parameters for creating a dungeon encounter
 type CreateDungeonInput struct {
