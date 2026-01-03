@@ -129,3 +129,42 @@ func (s *PatternRegistryTestSuite) TestRegisterPattern_Custom() {
 	assert.Len(s.T(), result.Walls, 1)
 	assert.Equal(s.T(), "custom_0", result.Walls[0].ID)
 }
+
+func (s *PatternRegistryTestSuite) TestGetPattern_CoverClusters() {
+	pattern, exists := s.registry.GetPattern(dungeon.PatternCoverClusters)
+	require.True(s.T(), exists, "cover_clusters pattern should exist")
+	require.NotNil(s.T(), pattern)
+
+	result := pattern(&PatternInput{
+		Shape:   &dungeon.Shape{Width: 20, Height: 20},
+		Density: dungeon.DensityMedium,
+		Seed:    12345,
+	})
+
+	// Should have multiple walls grouped into clusters
+	assert.GreaterOrEqual(s.T(), len(result.Walls), 4, "cover clusters should have multiple walls")
+	assert.LessOrEqual(s.T(), len(result.Walls), 16, "cover clusters should not be too dense")
+}
+
+func (s *PatternRegistryTestSuite) TestCoverClustersPattern_NilInput() {
+	pattern, _ := s.registry.GetPattern(dungeon.PatternCoverClusters)
+
+	result := pattern(nil)
+
+	assert.Empty(s.T(), result.Walls)
+}
+
+func (s *PatternRegistryTestSuite) TestCoverClustersPattern_Deterministic() {
+	pattern, _ := s.registry.GetPattern(dungeon.PatternCoverClusters)
+
+	input := &PatternInput{
+		Shape:   &dungeon.Shape{Width: 20, Height: 20},
+		Density: dungeon.DensityMedium,
+		Seed:    777,
+	}
+
+	result1 := pattern(input)
+	result2 := pattern(input)
+
+	assert.Equal(s.T(), len(result1.Walls), len(result2.Walls), "same seed should produce same wall count")
+}
