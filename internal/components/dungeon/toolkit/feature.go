@@ -133,22 +133,18 @@ func (g *ToolkitFeatureGenerator) generateObstacles(shape *dungeon.Shape, rules 
 		numObstacles = 10 // Cap at 10 obstacles
 	}
 
-	// Place obstacles at random positions
+	// Place obstacles at random positions using cube coordinates
 	for i := 0; i < numObstacles; i++ {
 		obstacleType := rules.ObstacleTypes[g.random.Intn(len(rules.ObstacleTypes))]
 
-		// Random position within bounds
-		x := g.random.Intn(shape.Width)
-		y := g.random.Intn(shape.Height)
+		// Random position within bounds (col, row)
+		col := g.random.Intn(shape.Width)
+		row := g.random.Intn(shape.Height)
 
 		obstacles = append(obstacles, dungeon.Obstacle{
-			ID:   uuid.New().String(),
-			Type: obstacleType,
-			Position: dungeon.Position{
-				X: x,
-				Y: y,
-				Z: 0,
-			},
+			ID:       uuid.New().String(),
+			Type:     obstacleType,
+			Position: offsetToCube(col, row),
 			BlocksMovement:    true,
 			BlocksLineOfSight: isObstacleBlockingSight(obstacleType),
 		})

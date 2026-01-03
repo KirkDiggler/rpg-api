@@ -82,7 +82,7 @@ func (s *ToolkitGeneratorsTestSuite) TestShapeGenerator() {
 		s.Assert().GreaterOrEqual(output.Shape.Width, 10)
 		s.Assert().LessOrEqual(output.Shape.Width, 15)
 		s.Assert().NotEmpty(output.Shape.Bounds)
-		s.Assert().Equal(dungeon.GridTypeSquare, output.Shape.GridType)
+		s.Assert().Equal(dungeon.GridTypeHex, output.Shape.GridType)
 
 		// Verify perimeter walls are generated (4 walls for rectangular room)
 		s.Assert().Len(output.PerimeterWalls, 4)

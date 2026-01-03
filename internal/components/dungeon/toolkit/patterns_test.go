@@ -201,13 +201,13 @@ func (s *PatternRegistryTestSuite) TestGetPattern_CentralFeature() {
 	// Should have walls clustered in the center
 	assert.GreaterOrEqual(s.T(), len(result.Walls), 2, "central feature should have walls")
 
-	// Verify walls are near center
+	// Verify walls are near center using X and Z (cube coordinate primary axes)
 	centerX := float64(20) / 2
-	centerY := float64(20) / 2
+	centerZ := float64(20) / 2
 	for _, wall := range result.Walls {
 		midX := float64(wall.Start.X+wall.End.X) / 2
-		midY := float64(wall.Start.Y+wall.End.Y) / 2
-		distFromCenter := math.Sqrt((midX-centerX)*(midX-centerX) + (midY-centerY)*(midY-centerY))
+		midZ := float64(wall.Start.Z+wall.End.Z) / 2
+		distFromCenter := math.Sqrt((midX-centerX)*(midX-centerX) + (midZ-centerZ)*(midZ-centerZ))
 		assert.Less(s.T(), distFromCenter, 8.0, "walls should be near center")
 	}
 }

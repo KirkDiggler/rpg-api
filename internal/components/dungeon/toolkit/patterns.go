@@ -91,11 +91,11 @@ func SparsePattern(input *PatternInput) *PatternOutput {
 
 		var start, end dungeon.Position
 		if horizontal {
-			start = dungeon.Position{X: int(x - length/2), Y: int(y)}
-			end = dungeon.Position{X: int(x + length/2), Y: int(y)}
+			start = offsetToCube(int(x-length/2), int(y))
+			end = offsetToCube(int(x+length/2), int(y))
 		} else {
-			start = dungeon.Position{X: int(x), Y: int(y - length/2)}
-			end = dungeon.Position{X: int(x), Y: int(y + length/2)}
+			start = offsetToCube(int(x), int(y-length/2))
+			end = offsetToCube(int(x), int(y+length/2))
 		}
 
 		walls = append(walls, dungeon.WallSegment{
@@ -168,8 +168,8 @@ func generateCluster(centerX, centerY float64, rng *rand.Rand, wallID *int) []du
 
 		walls = append(walls, dungeon.WallSegment{
 			ID:                fmt.Sprintf("cluster_%d", *wallID),
-			Start:             dungeon.Position{X: int(centerX - dx), Y: int(centerY - dy)},
-			End:               dungeon.Position{X: int(centerX + dx), Y: int(centerY + dy)},
+			Start:             offsetToCube(int(centerX-dx), int(centerY-dy)),
+			End:               offsetToCube(int(centerX+dx), int(centerY+dy)),
 			Type:              dungeon.WallTypeDestructible,
 			BlocksMovement:    true,
 			BlocksLineOfSight: true,
@@ -213,16 +213,16 @@ func ChokepointsPattern(input *PatternInput) *PatternOutput {
 			walls = append(walls,
 				dungeon.WallSegment{
 					ID:                fmt.Sprintf("choke_%d_a", i),
-					Start:             dungeon.Position{X: int(margin), Y: int(y)},
-					End:               dungeon.Position{X: int(gapStart), Y: int(y)},
+					Start:             offsetToCube(int(margin), int(y)),
+					End:               offsetToCube(int(gapStart), int(y)),
 					Type:              dungeon.WallTypeDestructible,
 					BlocksMovement:    true,
 					BlocksLineOfSight: true,
 				},
 				dungeon.WallSegment{
 					ID:                fmt.Sprintf("choke_%d_b", i),
-					Start:             dungeon.Position{X: int(gapStart + gapSize), Y: int(y)},
-					End:               dungeon.Position{X: int(width - margin), Y: int(y)},
+					Start:             offsetToCube(int(gapStart+gapSize), int(y)),
+					End:               offsetToCube(int(width-margin), int(y)),
 					Type:              dungeon.WallTypeDestructible,
 					BlocksMovement:    true,
 					BlocksLineOfSight: true,
@@ -232,8 +232,8 @@ func ChokepointsPattern(input *PatternInput) *PatternOutput {
 			x := margin + rng.Float64()*(width-2*margin)
 			gapStart := margin + rng.Float64()*(height-2*margin-gapSize)
 
-			start = dungeon.Position{X: int(x), Y: int(margin)}
-			end = dungeon.Position{X: int(x), Y: int(gapStart)}
+			start = offsetToCube(int(x), int(margin))
+			end = offsetToCube(int(x), int(gapStart))
 			walls = append(walls, dungeon.WallSegment{
 				ID:                fmt.Sprintf("choke_%d_a", i),
 				Start:             start,
@@ -243,8 +243,8 @@ func ChokepointsPattern(input *PatternInput) *PatternOutput {
 				BlocksLineOfSight: true,
 			})
 
-			start = dungeon.Position{X: int(x), Y: int(gapStart + gapSize)}
-			end = dungeon.Position{X: int(x), Y: int(height - margin)}
+			start = offsetToCube(int(x), int(gapStart+gapSize))
+			end = offsetToCube(int(x), int(height-margin))
 			walls = append(walls, dungeon.WallSegment{
 				ID:                fmt.Sprintf("choke_%d_b", i),
 				Start:             start,
@@ -294,8 +294,8 @@ func CentralFeaturePattern(input *PatternInput) *PatternOutput {
 
 		walls = append(walls, dungeon.WallSegment{
 			ID:                fmt.Sprintf("central_%d", i),
-			Start:             dungeon.Position{X: int(wx - dx), Y: int(wy - dy)},
-			End:               dungeon.Position{X: int(wx + dx), Y: int(wy + dy)},
+			Start:             offsetToCube(int(wx-dx), int(wy-dy)),
+			End:               offsetToCube(int(wx+dx), int(wy+dy)),
 			Type:              dungeon.WallTypeDestructible,
 			BlocksMovement:    true,
 			BlocksLineOfSight: true,
@@ -336,20 +336,20 @@ func PerimeterCoverPattern(input *PatternInput) *PatternOutput {
 		switch edge {
 		case 0: // Top edge
 			x := margin + rng.Float64()*(width-2*margin)
-			start = dungeon.Position{X: int(x), Y: int(margin)}
-			end = dungeon.Position{X: int(x), Y: int(margin + wallLength)}
+			start = offsetToCube(int(x), int(margin))
+			end = offsetToCube(int(x), int(margin+wallLength))
 		case 1: // Right edge
 			y := margin + rng.Float64()*(height-2*margin)
-			start = dungeon.Position{X: int(width - margin - wallLength), Y: int(y)}
-			end = dungeon.Position{X: int(width - margin), Y: int(y)}
+			start = offsetToCube(int(width-margin-wallLength), int(y))
+			end = offsetToCube(int(width-margin), int(y))
 		case 2: // Bottom edge
 			x := margin + rng.Float64()*(width-2*margin)
-			start = dungeon.Position{X: int(x), Y: int(height - margin - wallLength)}
-			end = dungeon.Position{X: int(x), Y: int(height - margin)}
+			start = offsetToCube(int(x), int(height-margin-wallLength))
+			end = offsetToCube(int(x), int(height-margin))
 		case 3: // Left edge
 			y := margin + rng.Float64()*(height-2*margin)
-			start = dungeon.Position{X: int(margin), Y: int(y)}
-			end = dungeon.Position{X: int(margin + wallLength), Y: int(y)}
+			start = offsetToCube(int(margin), int(y))
+			end = offsetToCube(int(margin+wallLength), int(y))
 		}
 
 		walls = append(walls, dungeon.WallSegment{
@@ -398,16 +398,16 @@ func PillarGridPattern(input *PatternInput) *PatternOutput {
 			walls = append(walls,
 				dungeon.WallSegment{
 					ID:                fmt.Sprintf("pillar_%d_h", wallID),
-					Start:             dungeon.Position{X: int(x - pillarSize), Y: int(y)},
-					End:               dungeon.Position{X: int(x + pillarSize), Y: int(y)},
+					Start:             offsetToCube(int(x-pillarSize), int(y)),
+					End:               offsetToCube(int(x+pillarSize), int(y)),
 					Type:              dungeon.WallTypeIndestructible,
 					BlocksMovement:    true,
 					BlocksLineOfSight: true,
 				},
 				dungeon.WallSegment{
 					ID:                fmt.Sprintf("pillar_%d_v", wallID),
-					Start:             dungeon.Position{X: int(x), Y: int(y - pillarSize)},
-					End:               dungeon.Position{X: int(x), Y: int(y + pillarSize)},
+					Start:             offsetToCube(int(x), int(y-pillarSize)),
+					End:               offsetToCube(int(x), int(y+pillarSize)),
 					Type:              dungeon.WallTypeIndestructible,
 					BlocksMovement:    true,
 					BlocksLineOfSight: true,
