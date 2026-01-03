@@ -209,25 +209,24 @@ func ChokepointsPattern(input *PatternInput) *PatternOutput {
 			y := margin + rng.Float64()*(height-2*margin)
 			gapStart := margin + rng.Float64()*(width-2*margin-gapSize)
 
-			// Wall before gap
-			walls = append(walls, dungeon.WallSegment{
-				ID:                fmt.Sprintf("choke_%d_a", i),
-				Start:             dungeon.Position{X: int(margin), Y: int(y)},
-				End:               dungeon.Position{X: int(gapStart), Y: int(y)},
-				Type:              dungeon.WallTypeDestructible,
-				BlocksMovement:    true,
-				BlocksLineOfSight: true,
-			})
-
-			// Wall after gap
-			walls = append(walls, dungeon.WallSegment{
-				ID:                fmt.Sprintf("choke_%d_b", i),
-				Start:             dungeon.Position{X: int(gapStart + gapSize), Y: int(y)},
-				End:               dungeon.Position{X: int(width - margin), Y: int(y)},
-				Type:              dungeon.WallTypeDestructible,
-				BlocksMovement:    true,
-				BlocksLineOfSight: true,
-			})
+			// Walls before and after gap
+			walls = append(walls,
+				dungeon.WallSegment{
+					ID:                fmt.Sprintf("choke_%d_a", i),
+					Start:             dungeon.Position{X: int(margin), Y: int(y)},
+					End:               dungeon.Position{X: int(gapStart), Y: int(y)},
+					Type:              dungeon.WallTypeDestructible,
+					BlocksMovement:    true,
+					BlocksLineOfSight: true,
+				},
+				dungeon.WallSegment{
+					ID:                fmt.Sprintf("choke_%d_b", i),
+					Start:             dungeon.Position{X: int(gapStart + gapSize), Y: int(y)},
+					End:               dungeon.Position{X: int(width - margin), Y: int(y)},
+					Type:              dungeon.WallTypeDestructible,
+					BlocksMovement:    true,
+					BlocksLineOfSight: true,
+				})
 		} else {
 			// Vertical wall with gap
 			x := margin + rng.Float64()*(width-2*margin)
@@ -395,25 +394,24 @@ func PillarGridPattern(input *PatternInput) *PatternOutput {
 			// Create a small cross-shaped pillar (2 perpendicular walls)
 			pillarSize := 1.5
 
-			// Horizontal segment
-			walls = append(walls, dungeon.WallSegment{
-				ID:                fmt.Sprintf("pillar_%d_h", wallID),
-				Start:             dungeon.Position{X: int(x - pillarSize), Y: int(y)},
-				End:               dungeon.Position{X: int(x + pillarSize), Y: int(y)},
-				Type:              dungeon.WallTypeIndestructible,
-				BlocksMovement:    true,
-				BlocksLineOfSight: true,
-			})
-
-			// Vertical segment
-			walls = append(walls, dungeon.WallSegment{
-				ID:                fmt.Sprintf("pillar_%d_v", wallID),
-				Start:             dungeon.Position{X: int(x), Y: int(y - pillarSize)},
-				End:               dungeon.Position{X: int(x), Y: int(y + pillarSize)},
-				Type:              dungeon.WallTypeIndestructible,
-				BlocksMovement:    true,
-				BlocksLineOfSight: true,
-			})
+			// Horizontal and vertical segments
+			walls = append(walls,
+				dungeon.WallSegment{
+					ID:                fmt.Sprintf("pillar_%d_h", wallID),
+					Start:             dungeon.Position{X: int(x - pillarSize), Y: int(y)},
+					End:               dungeon.Position{X: int(x + pillarSize), Y: int(y)},
+					Type:              dungeon.WallTypeIndestructible,
+					BlocksMovement:    true,
+					BlocksLineOfSight: true,
+				},
+				dungeon.WallSegment{
+					ID:                fmt.Sprintf("pillar_%d_v", wallID),
+					Start:             dungeon.Position{X: int(x), Y: int(y - pillarSize)},
+					End:               dungeon.Position{X: int(x), Y: int(y + pillarSize)},
+					Type:              dungeon.WallTypeIndestructible,
+					BlocksMovement:    true,
+					BlocksLineOfSight: true,
+				})
 
 			wallID++
 		}

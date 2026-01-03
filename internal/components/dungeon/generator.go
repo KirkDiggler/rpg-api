@@ -59,7 +59,8 @@ type ShapeInput struct {
 
 // ShapeOutput contains the generated shape
 type ShapeOutput struct {
-	Shape *Shape
+	Shape          *Shape
+	PerimeterWalls []WallSegment
 }
 
 // FeatureGenerator places obstacles and spawn zones

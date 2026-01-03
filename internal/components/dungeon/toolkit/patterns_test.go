@@ -4,10 +4,11 @@ import (
 	"math"
 	"testing"
 
-	"github.com/KirkDiggler/rpg-api/internal/components/dungeon"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
+
+	"github.com/KirkDiggler/rpg-api/internal/components/dungeon"
 )
 
 type PatternRegistryTestSuite struct {

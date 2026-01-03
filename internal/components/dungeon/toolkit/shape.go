@@ -10,14 +10,16 @@ import (
 
 // ToolkitShapeGenerator implements dungeon.ShapeGenerator using simple geometric shapes
 type ToolkitShapeGenerator struct {
-	random *rand.Rand
+	random    *rand.Rand
+	perimeter *PerimeterGenerator
 }
 
 // NewToolkitShapeGenerator creates a new shape generator
 func NewToolkitShapeGenerator() *ToolkitShapeGenerator {
 	// #nosec G404 - Using math/rand for seeded procedural generation, not cryptographic purposes
 	return &ToolkitShapeGenerator{
-		random: rand.New(rand.NewSource(0)), // Will be reseeded per generation
+		random:    rand.New(rand.NewSource(0)), // Will be reseeded per generation
+		perimeter: NewPerimeterGenerator(),
 	}
 }
 
@@ -38,8 +40,15 @@ func (g *ToolkitShapeGenerator) Generate(ctx context.Context, input *dungeon.Sha
 	// Generate shape based on style
 	shape := generateShapeForStyle(width, height, input.Style, g.random)
 
+	// Generate perimeter walls (without doors - those are added later based on connections)
+	perimeterOutput := g.perimeter.Generate(&PerimeterInput{
+		Shape:       shape,
+		Connections: nil, // Connections are not known at shape generation time
+	})
+
 	return &dungeon.ShapeOutput{
-		Shape: shape,
+		Shape:          shape,
+		PerimeterWalls: perimeterOutput.Walls,
 	}, nil
 }
 
