@@ -1553,14 +1553,6 @@ func ptrInt32(v int32) *int32 {
 	return &v
 }
 
-// abs returns the absolute value of an integer
-func abs(x int) int {
-	if x < 0 {
-		return -x
-	}
-	return x
-}
-
 // buildTurnOrderFromData reconstructs the turn order from stored initiative data
 func buildTurnOrderFromData(
 	initiativeData *initiative.TrackerData,
@@ -2247,20 +2239,19 @@ func (o *Orchestrator) OpenDoor(
 		return nil, fmt.Errorf("invalid room data")
 	}
 	isAdjacent := false
-	for entityID, placement := range roomData.CubeEntities {
+	for _, placement := range roomData.CubeEntities {
 		// Only check character entities (not monsters)
 		if placement.EntityType != entityTypeCharacter {
 			continue
 		}
-		// Check adjacency (within 1 hex of door position)
-		charX, charZ := placement.CubePosition.X, placement.CubePosition.Z
-		doorX, doorZ := int(doorPos.X), int(doorPos.Z)
-		dx := abs(charX - doorX)
-		dz := abs(charZ - doorZ)
-		// In cube coordinates, adjacent means max distance of 1 in any direction
-		if dx <= 1 && dz <= 1 && (dx+dz) <= 2 {
+		// Check adjacency using proper cube distance formula
+		doorCube := spatial.CubeCoordinate{
+			X: int(doorPos.X),
+			Y: int(doorPos.Y),
+			Z: int(doorPos.Z),
+		}
+		if cubeDistance(placement.CubePosition, doorCube) <= 1 {
 			isAdjacent = true
-			_ = entityID // Silence unused warning
 			break
 		}
 	}
