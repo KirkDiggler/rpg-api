@@ -4,7 +4,9 @@ package entities
 import (
 	"time"
 
+	"github.com/KirkDiggler/rpg-toolkit/core"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/damage"
 	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
 )
 
@@ -148,11 +150,61 @@ type MovementCompletedEvent struct {
 	UpdatedRoom       *spatial.RoomData `json:"updated_room,omitempty"`
 }
 
+// AttackResult contains the full details of an attack resolution
+type AttackResult struct {
+	// Attack roll details
+	AttackRoll      int  `json:"attack_roll"`       // The d20 roll
+	AttackBonus     int  `json:"attack_bonus"`      // Total bonus applied
+	TotalAttack     int  `json:"total_attack"`      // Roll + bonus
+	TargetAC        int  `json:"target_ac"`         // Target's armor class
+	Hit             bool `json:"hit"`               // Did the attack hit?
+	Critical        bool `json:"critical"`          // Was it a critical hit?
+	IsNaturalTwenty bool `json:"is_natural_twenty"` // Natural 20
+	IsNaturalOne    bool `json:"is_natural_one"`    // Natural 1
+
+	// Damage details
+	DamageRolls []int       `json:"damage_rolls"` // Individual damage dice rolls
+	DamageBonus int         `json:"damage_bonus"` // Total damage bonus
+	TotalDamage int         `json:"total_damage"` // Final damage dealt
+	DamageType  damage.Type `json:"damage_type"`  // Type of damage (slashing, piercing, etc.)
+
+	// Detailed breakdown
+	Breakdown *DamageBreakdown `json:"breakdown,omitempty"` // Detailed damage breakdown (nil if attack missed)
+}
+
+// DamageBreakdown provides detailed component breakdown of damage calculation
+type DamageBreakdown struct {
+	Components  []DamageComponent `json:"components"`
+	AbilityUsed string            `json:"ability_used"` // Ability used for attack ("STR", "DEX", etc.)
+	TotalDamage int               `json:"total_damage"` // Sum of all components
+}
+
+// DamageComponent represents damage from one source
+type DamageComponent struct {
+	Source            string        `json:"source"`              // Type of damage source ("weapon", "ability", "feature", "monster_trait", etc.)
+	SourceRef         *core.Ref     `json:"source_ref"`          // Type-safe reference identifying the specific source
+	OriginalDiceRolls []int         `json:"original_dice_rolls"` // Dice values as first rolled
+	FinalDiceRolls    []int         `json:"final_dice_rolls"`    // Dice values after all rerolls
+	Rerolls           []RerollEvent `json:"rerolls,omitempty"`   // History of rerolls
+	FlatBonus         int           `json:"flat_bonus"`          // Flat modifier (0 if none)
+	DamageType        damage.Type   `json:"damage_type"`         // Type of damage (slashing, fire, radiant, etc.)
+	IsCritical        bool          `json:"is_critical"`         // Was this component doubled for crit?
+	Multiplier        float64       `json:"multiplier"`          // Multiplier for vulnerability (2.0), resistance (0.5), or immunity (0)
+}
+
+// RerollEvent tracks a single die reroll
+type RerollEvent struct {
+	DieIndex int    `json:"die_index"` // Which die was rerolled (0-based index in original_dice_rolls)
+	Before   int    `json:"before"`    // Value before reroll
+	After    int    `json:"after"`     // Value after reroll
+	Reason   string `json:"reason"`    // Feature that caused reroll (e.g., "great_weapon_fighting")
+}
+
 // AttackResolvedEvent is emitted when an attack is resolved
 type AttackResolvedEvent struct {
 	AttackerID    string             `json:"attacker_id"`
 	TargetID      string             `json:"target_id"`
-	Result        interface{}        `json:"result"`
+	Result        *AttackResult      `json:"result"`
 	TargetHP      int                `json:"target_hp"`                // HP after attack
 	TargetDead    bool               `json:"target_dead"`              // Whether target was killed
 	Room          *spatial.RoomData  `json:"room,omitempty"`           // Updated room with entity positions

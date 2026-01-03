@@ -798,10 +798,10 @@ func (h *Handler) convertToProtoEvent(event *entities.EncounterEvent) (*dnd5ev1a
 		if event.AttackResolved == nil {
 			return nil, fmt.Errorf("missing AttackResolved data for AttackResolvedEvent")
 		}
-		// Convert AttackResult if available (type assert from interface{})
+		// Convert AttackResult - now a concrete type, no type assertion needed
 		var attackResult *dnd5ev1alpha1.AttackResult
-		if result, ok := event.AttackResolved.Result.(*encounter.AttackResult); ok {
-			attackResult = convertAttackResultToProto(result)
+		if event.AttackResolved.Result != nil {
+			attackResult = convertAttackResultToProto(event.AttackResolved.Result)
 		}
 		protoEvent.Event = &dnd5ev1alpha1.EncounterEvent_AttackResolved{
 			AttackResolved: &dnd5ev1alpha1.AttackResolvedEvent{
