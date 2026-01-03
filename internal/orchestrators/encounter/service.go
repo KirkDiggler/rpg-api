@@ -366,6 +366,8 @@ type StartCombatOutput struct {
 	CombatState  *CombatState         // Combat state with initiative order
 	Room         interface{}          // Room with entity positions
 	MonsterTurns []*MonsterTurnResult // Monster turns if monsters go first
+	Doors        []DoorInfo           // Doors/exits from the starting room
+	DungeonID    string               // ID of the generated dungeon
 }
 
 // LeaveEncounterInput contains parameters for leaving an encounter
@@ -476,6 +478,8 @@ type GetEncounterStateOutput struct {
 	CombatState *CombatState          // Initiative order, current turn, etc.
 	Room        interface{}           // Room data with entity positions
 	Monsters    []*MonsterCombatState // Monster HP for rendering
+	Doors       []DoorInfo            // Doors/exits from the current room
+	DungeonID   string                // ID of the generated dungeon
 
 	// Event synchronization
 	// ULID of the most recent event - clients filter events where id > lastEventID

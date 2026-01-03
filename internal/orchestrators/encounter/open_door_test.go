@@ -122,6 +122,61 @@ func (s *OpenDoorTestSuite) createTestEncounterData() *encounterrepo.EncounterDa
 			Entities: map[string]spatial.EntityPlacement{
 				"char-1": {EntityID: "char-1", EntityType: "character"},
 			},
+			// Character positioned adjacent to north door (door is at x=10, z=0)
+			// Position at z=1 is one row down from door, which is adjacent
+			CubeEntities: map[string]spatial.EntityCubePlacement{
+				"char-1": {
+					EntityID:   "char-1",
+					EntityType: "character",
+					CubePosition: spatial.CubeCoordinate{
+						X: 10,
+						Y: -11, // y = -x - z
+						Z: 1,
+					},
+				},
+			},
+		},
+		InitiativeData: &initiative.TrackerData{
+			Order: []initiative.EntityData{
+				{ID: "char-1", Type: "character"},
+			},
+			Current: 0,
+			Round:   1,
+		},
+		InitiativeRolls: []initiative.Roll{
+			{Entity: initiative.NewParticipant("char-1", "character"), Roll: 13, Modifier: 2, Total: 15},
+		},
+		Monsters: []*monster.Data{},
+	}
+}
+
+// Helper to create test encounter data for room-2 (character at north door)
+// Note: connection.Type "north door" is used directly for door position calculation,
+// so even in room-2, the door is at the north edge (z=0)
+func (s *OpenDoorTestSuite) createTestEncounterDataRoom2() *encounterrepo.EncounterData {
+	return &encounterrepo.EncounterData{
+		ID: "enc-123",
+		RoomData: &spatial.RoomData{
+			ID:       "room-2",
+			Width:    15,
+			Height:   15,
+			GridType: spatial.GridTypeHex,
+			Entities: map[string]spatial.EntityPlacement{
+				"char-1": {EntityID: "char-1", EntityType: "character"},
+			},
+			// Character positioned adjacent to north door (door is at x=7, z=0)
+			// Position at z=1 is one row down from door, which is adjacent
+			CubeEntities: map[string]spatial.EntityCubePlacement{
+				"char-1": {
+					EntityID:   "char-1",
+					EntityType: "character",
+					CubePosition: spatial.CubeCoordinate{
+						X: 7,
+						Y: -8, // y = -x - z = -7 - 1
+						Z: 1,
+					},
+				},
+			},
 		},
 		InitiativeData: &initiative.TrackerData{
 			Order: []initiative.EntityData{
@@ -286,7 +341,7 @@ func (s *OpenDoorTestSuite) TestOpenDoor_RevealsCorrectRoom() {
 	// Room-1 has no monsters for this test
 	testDungeon.Rooms["room-1"].Encounter = nil
 
-	testEncounter := s.createTestEncounterData()
+	testEncounter := s.createTestEncounterDataRoom2()
 
 	s.mockDungeonRepo.EXPECT().
 		Get(gomock.Any(), &dungeonrepo.GetInput{DungeonID: "dng-123"}).

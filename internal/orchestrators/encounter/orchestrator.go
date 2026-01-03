@@ -520,6 +520,60 @@ func convertToolkitComponent(comp dnd5eEvents.DamageComponent) DamageComponent {
 	}
 }
 
+// convertDoorsToEntityDoors converts service DoorInfo to entities DoorInfo for events
+func convertDoorsToEntityDoors(doors []DoorInfo) []*entities.DoorInfo {
+	if len(doors) == 0 {
+		return nil
+	}
+	result := make([]*entities.DoorInfo, len(doors))
+	for i, d := range doors {
+		var pos *entities.Position
+		if d.Position != nil {
+			pos = &entities.Position{
+				X: float64(d.Position.X),
+				Y: float64(d.Position.Y),
+				Z: float64(d.Position.Z),
+			}
+		}
+		result[i] = &entities.DoorInfo{
+			ConnectionID: d.ConnectionID,
+			TargetRoomID: d.TargetRoomID,
+			Direction:    d.Direction,
+			Position:     pos,
+			IsOpen:       d.IsOpen,
+		}
+	}
+	return result
+}
+
+// convertMonsterTurnsToEntityEvents converts service MonsterTurnResult to entity events
+func convertMonsterTurnsToEntityEvents(turns []*MonsterTurnResult, roomData *spatial.RoomData) []*entities.MonsterTurnCompletedEvent {
+	if len(turns) == 0 {
+		return nil
+	}
+	result := make([]*entities.MonsterTurnCompletedEvent, len(turns))
+	for i, mt := range turns {
+		// Convert positions to entity positions
+		var movement []entities.Position
+		for _, pos := range mt.Movement {
+			movement = append(movement, entities.Position{
+				X: float64(pos.X),
+				Y: float64(pos.Y),
+				Z: float64(pos.Z),
+			})
+		}
+		result[i] = &entities.MonsterTurnCompletedEvent{
+			MonsterID:         mt.MonsterID,
+			MonsterName:       mt.MonsterName,
+			Actions:           mt.Actions,
+			Movement:          movement,
+			Room:              roomData,
+			UpdatedCharacters: mt.UpdatedCharacters,
+		}
+	}
+	return result
+}
+
 // CreateDungeon creates a new encounter with an initial room
 func (o *Orchestrator) CreateDungeon(ctx context.Context, input *CreateDungeonInput) (*CreateDungeonOutput, error) {
 	if input == nil {
@@ -2157,6 +2211,54 @@ func (o *Orchestrator) OpenDoor(
 		return nil, fmt.Errorf("failed to load encounter: %w", err)
 	}
 
+	// 7a. Validate proximity - a party member must be adjacent to the door
+	// Get current room (the revealed one where players are)
+	currentRoomID := dng.CurrentRoomID
+	if currentRoomID == "" {
+		currentRoomID = dng.StartRoomID
+	}
+	currentRoom := dng.GetRoom(currentRoomID)
+	if currentRoom == nil {
+		return nil, fmt.Errorf("current room not found: %s", currentRoomID)
+	}
+
+	// Calculate door position in the current room
+	var doorWidth, doorHeight int
+	if currentRoom.Shape != nil {
+		doorWidth = currentRoom.Shape.Width
+		doorHeight = currentRoom.Shape.Height
+	}
+	doorPos := calculateDoorPosition(connection.Type, doorWidth, doorHeight)
+	if doorPos == nil {
+		return nil, fmt.Errorf("cannot determine door position")
+	}
+
+	// Check if any character is adjacent to the door
+	roomData, ok := encOutput.Data.RoomData.(*spatial.RoomData)
+	if !ok || roomData == nil {
+		return nil, fmt.Errorf("invalid room data")
+	}
+	isAdjacent := false
+	for _, placement := range roomData.CubeEntities {
+		// Only check character entities (not monsters)
+		if placement.EntityType != entityTypeCharacter {
+			continue
+		}
+		// Check adjacency using proper cube distance formula
+		doorCube := spatial.CubeCoordinate{
+			X: int(doorPos.X),
+			Y: int(doorPos.Y),
+			Z: int(doorPos.Z),
+		}
+		if cubeDistance(placement.CubePosition, doorCube) <= 1 {
+			isAdjacent = true
+			break
+		}
+	}
+	if !isAdjacent {
+		return nil, fmt.Errorf("no party member is adjacent to the door")
+	}
+
 	// 8. Create monsters and roll initiative
 	var monsters []MonsterInfo
 	var newInitiativeRolls []initiative.Roll
@@ -2281,7 +2383,7 @@ func (o *Orchestrator) OpenDoor(
 	}
 
 	// 12. Build room data for response
-	roomData := &RoomData{
+	responseRoomData := &RoomData{
 		ID:       revealedRoom.ID,
 		Width:    revealedRoom.Shape.Width,
 		Height:   revealedRoom.Shape.Height,
@@ -2318,8 +2420,34 @@ func (o *Orchestrator) OpenDoor(
 	// This would require checking if any new monsters have higher initiative than
 	// the current entity and executing their turns.
 
+	// 15. Build monster states for event
+	monsterStates := make([]*entities.MonsterState, 0, len(monsters))
+	for _, m := range monsters {
+		monsterStates = append(monsterStates, &entities.MonsterState{
+			MonsterID:        m.ID,
+			MonsterName:      m.Name,
+			CurrentHitPoints: m.HP,
+			MaxHitPoints:     m.MaxHP,
+			MonsterType:      m.MonsterID, // Use monster type ID (e.g., "skeleton", "goblin")
+		})
+	}
+
+	// 16. Build revealed room spatial data for event
+	revealedSpatialRoom := o.convertToRoomData(dng.EncounterID, revealedRoom)
+
+	// 17. Publish RoomRevealed event
+	o.publishEvent(ctx, dng.EncounterID, entities.EventTypeRoomRevealed, &entities.RoomRevealedEvent{
+		DungeonID:    dng.ID,
+		ConnectionID: input.ConnectionID,
+		RevealedRoom: revealedSpatialRoom,
+		NewDoors:     convertDoorsToEntityDoors(newDoors),
+		Monsters:     monsterStates,
+		CombatState:  combatState,
+		MonsterTurns: nil, // Monsters don't immediately act; they wait for their turn
+	})
+
 	return &OpenDoorOutput{
-		RevealedRoom: roomData,
+		RevealedRoom: responseRoomData,
 		RoomOffset:   nil, // TODO: Calculate offset for grid merge when implementing multi-room display
 		NewDoors:     newDoors,
 		Monsters:     monsters,
@@ -2814,15 +2942,21 @@ func (o *Orchestrator) StartCombat(
 		})
 	}
 
-	// 18. Publish CombatStarted event
+	// 18. Extract doors for response and event
+	doors := o.getDoorInfoForRoom(dungeonEntity, generatedDungeon.StartRoom)
+
+	// 19. Publish CombatStarted event (includes monster turns if monsters won initiative)
 	o.publishEvent(ctx, input.EncounterID, entities.EventTypeCombatStarted, &entities.CombatStartedEvent{
-		CombatState: combatState,
-		Room:        roomData,
-		Party:       party,
-		Monsters:    monsterStates,
+		CombatState:  combatState,
+		Room:         roomData,
+		Party:        party,
+		Monsters:     monsterStates,
+		Doors:        convertDoorsToEntityDoors(doors),
+		DungeonID:    dungeonEntity.ID,
+		MonsterTurns: convertMonsterTurnsToEntityEvents(monsterTurns, roomData),
 	})
 
-	// 19. Publish MonsterTurnCompleted events if monsters went first
+	// 20. Publish MonsterTurnCompleted events if monsters went first
 	for _, mt := range monsterTurns {
 		o.publishEvent(ctx, input.EncounterID, entities.EventTypeMonsterTurnCompleted, &entities.MonsterTurnCompletedEvent{
 			MonsterID:         mt.MonsterID,
@@ -2838,6 +2972,8 @@ func (o *Orchestrator) StartCombat(
 		CombatState:  combatState,
 		Room:         roomData,
 		MonsterTurns: monsterTurns,
+		Doors:        doors,
+		DungeonID:    dungeonEntity.ID,
 	}, nil
 }
 
@@ -3222,6 +3358,23 @@ func (o *Orchestrator) GetEncounterState(ctx context.Context, input *GetEncounte
 				}
 			}
 			output.Monsters = monsters
+		}
+
+		// Load dungeon to get doors for current room
+		if o.dungeonRepo != nil {
+			dungeonOutput, dungeonErr := o.dungeonRepo.GetByEncounterID(ctx, &dungeonrepo.GetByEncounterIDInput{
+				EncounterID: input.EncounterID,
+			})
+			if dungeonErr == nil && dungeonOutput != nil && dungeonOutput.Dungeon != nil {
+				dungeonEntity := dungeonOutput.Dungeon
+				output.DungeonID = dungeonEntity.ID
+				// Get doors for current room (start room or current exploration room)
+				currentRoomID := dungeonEntity.CurrentRoomID
+				if currentRoomID == "" {
+					currentRoomID = dungeonEntity.StartRoomID
+				}
+				output.Doors = o.getDoorInfoForRoom(dungeonEntity, currentRoomID)
+			}
 		}
 	}
 

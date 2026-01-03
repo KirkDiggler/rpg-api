@@ -239,6 +239,10 @@ func (h *Handler) GetEncounterState(
 		})
 	}
 
+	// Convert doors and dungeon ID
+	response.Doors = convertDoorInfoSliceToProto(output.Doors)
+	response.DungeonId = output.DungeonID
+
 	return response, nil
 }
 
@@ -533,6 +537,8 @@ func (h *Handler) StartCombat(
 	return &dnd5ev1alpha1.StartCombatResponse{
 		CombatState: convertCombatStateToProto(output.CombatState, gridType, hexOrientation),
 		Room:        convertRoomDataToProto(output.Room),
+		Doors:       convertDoorInfoSliceToProto(output.Doors),
+		DungeonId:   output.DungeonID,
 	}, nil
 }
 
@@ -756,10 +762,13 @@ func (h *Handler) convertToProtoEvent(event *entities.EncounterEvent) (*dnd5ev1a
 		hexOrientation := spatial.HexOrientationPointyTop
 		protoEvent.Event = &dnd5ev1alpha1.EncounterEvent_CombatStarted{
 			CombatStarted: &dnd5ev1alpha1.CombatStartedEvent{
-				CombatState: convertCombatStateToProto(event.CombatStarted.CombatState, gridType, hexOrientation),
-				Room:        convertRoomDataToProto(event.CombatStarted.Room),
-				Party:       protoParty,
-				Monsters:    protoMonsters,
+				CombatState:  convertCombatStateToProto(event.CombatStarted.CombatState, gridType, hexOrientation),
+				Room:         convertRoomDataToProto(event.CombatStarted.Room),
+				Party:        protoParty,
+				Monsters:     protoMonsters,
+				Doors:        convertEntityDoorsToProto(event.CombatStarted.Doors),
+				DungeonId:    event.CombatStarted.DungeonID,
+				MonsterTurns: convertEntityMonsterTurnsToProto(event.CombatStarted.MonsterTurns, gridType, hexOrientation),
 			},
 		}
 
@@ -918,6 +927,22 @@ func (h *Handler) convertToProtoEvent(event *entities.EncounterEvent) (*dnd5ev1a
 		protoEvent.Event = &dnd5ev1alpha1.EncounterEvent_CombatResumed{
 			CombatResumed: &dnd5ev1alpha1.CombatResumedEvent{
 				// TODO: Include full CombatState from event.CombatResumed when resuming
+			},
+		}
+
+	case entities.EventTypeRoomRevealed:
+		if event.RoomRevealed == nil {
+			return nil, fmt.Errorf("missing RoomRevealed data for RoomRevealedEvent")
+		}
+		// Extract grid info from room data for coordinate conversion
+		gridType, hexOrientation := extractGridInfo(event.RoomRevealed.RevealedRoom)
+		protoEvent.Event = &dnd5ev1alpha1.EncounterEvent_RoomRevealed{
+			RoomRevealed: &dnd5ev1alpha1.RoomRevealedEvent{
+				DungeonId:    event.RoomRevealed.DungeonID,
+				ConnectionId: event.RoomRevealed.ConnectionID,
+				Room:         convertRoomDataToProto(event.RoomRevealed.RevealedRoom),
+				CombatState:  convertCombatStateToProto(event.RoomRevealed.CombatState, gridType, hexOrientation),
+				Doors:        convertEntityDoorsToProto(event.RoomRevealed.NewDoors),
 			},
 		}
 

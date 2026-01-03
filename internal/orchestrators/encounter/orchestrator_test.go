@@ -2778,6 +2778,17 @@ func (s *OrchestratorTestSuite) TestGetEncounterState_Success_ActiveState() {
 		Get(gomock.Any(), characterrepo.GetInput{ID: characterID}).
 		Return(&characterrepo.GetOutput{Character: &entities.Character{Data: charData}}, nil)
 
+	// Mock dungeon repo for doors
+	s.mockDungeonRepo.EXPECT().
+		GetByEncounterID(gomock.Any(), &dungeonrepo.GetByEncounterIDInput{EncounterID: encounterID}).
+		Return(&dungeonrepo.GetOutput{
+			Dungeon: &entities.Dungeon{
+				ID:          "dungeon-1",
+				EncounterID: encounterID,
+				StartRoomID: "room-1",
+			},
+		}, nil)
+
 	output, err := s.orchestrator.GetEncounterState(context.Background(), &GetEncounterStateInput{
 		EncounterID: encounterID,
 		PlayerID:    playerID,
@@ -2795,6 +2806,8 @@ func (s *OrchestratorTestSuite) TestGetEncounterState_Success_ActiveState() {
 	s.Assert().Len(output.Monsters, 1)
 	s.Assert().Equal("goblin-1", output.Monsters[0].MonsterID)
 	s.Assert().Equal(7, output.Monsters[0].CurrentHitPoints)
+	// Dungeon info should be populated
+	s.Assert().Equal("dungeon-1", output.DungeonID)
 }
 
 func (s *OrchestratorTestSuite) TestGetEncounterState_EncounterNotFound() {
