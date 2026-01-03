@@ -289,4 +289,55 @@ const (
 	TerrainTypeIce
 )
 
+// PatternType defines tactical wall pattern algorithms
+type PatternType string
+
+const (
+	// PatternEmpty creates no internal walls
+	PatternEmpty PatternType = "empty"
+	// PatternSparse creates 1-2 single obstacles for easy navigation
+	PatternSparse PatternType = "sparse"
+	// PatternCoverClusters creates 2-4 groups of connected walls for tactical movement
+	PatternCoverClusters PatternType = "cover_clusters"
+	// PatternChokepoints creates wall segments that divide space into sections
+	PatternChokepoints PatternType = "chokepoints"
+	// PatternCentralFeature creates an obstacle cluster in room center
+	PatternCentralFeature PatternType = "central_feature"
+	// PatternPerimeterCover creates alcoves and pillars along room edges
+	PatternPerimeterCover PatternType = "perimeter_cover"
+	// PatternPillarGrid creates evenly spaced pillars for sightline breaks
+	PatternPillarGrid PatternType = "pillar_grid"
+)
+
+// RoomType defines the purpose of a room for pattern selection
+type RoomType string
+
+const (
+	// RoomTypeEntrance is the dungeon entry point
+	RoomTypeEntrance RoomType = "entrance"
+	// RoomTypeChamber is a standard tactical room
+	RoomTypeChamber RoomType = "chamber"
+	// RoomTypeCorridor is a narrow connecting passage
+	RoomTypeCorridor RoomType = "corridor"
+	// RoomTypeBoss is the final boss encounter room
+	RoomTypeBoss RoomType = "boss"
+	// RoomTypeTreasure contains loot and is defensible
+	RoomTypeTreasure RoomType = "treasure"
+	// RoomTypeTrap is maze-like with limited sightlines
+	RoomTypeTrap RoomType = "trap"
+)
+
+// DensityRange represents a min/max range for obstacle density
+type DensityRange struct {
+	Min float64
+	Max float64
+}
+
+// Common density ranges
+var (
+	DensityLow    = DensityRange{Min: 0.1, Max: 0.3}
+	DensityMedium = DensityRange{Min: 0.3, Max: 0.6}
+	DensityHigh   = DensityRange{Min: 0.6, Max: 0.9}
+)
+
 // Theme is defined in theme.go and bundles all generation rules for a cohesive dungeon style
