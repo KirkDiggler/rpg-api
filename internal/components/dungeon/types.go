@@ -340,4 +340,30 @@ var (
 	DensityHigh   = DensityRange{Min: 0.6, Max: 0.9}
 )
 
+// WallType categorizes wall behavior
+type WallType int
+
+const (
+	// WallTypeIndestructible represents permanent structural walls
+	WallTypeIndestructible WallType = iota
+	// WallTypeDestructible represents walls that can be destroyed
+	WallTypeDestructible
+)
+
+// WallSegment represents a wall within a room
+type WallSegment struct {
+	// ID uniquely identifies this wall
+	ID string
+	// Start is the wall start position
+	Start Position
+	// End is the wall end position
+	End Position
+	// Type is the wall behavior type
+	Type WallType
+	// BlocksMovement indicates if entities can pass through
+	BlocksMovement bool
+	// BlocksLineOfSight indicates if vision is blocked
+	BlocksLineOfSight bool
+}
+
 // Theme is defined in theme.go and bundles all generation rules for a cohesive dungeon style
