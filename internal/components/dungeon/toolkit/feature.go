@@ -14,19 +14,21 @@ import (
 
 // ToolkitFeatureGenerator implements dungeon.FeatureGenerator
 type ToolkitFeatureGenerator struct {
-	random *rand.Rand
+	random   *rand.Rand
+	patterns *PatternRegistry
 }
 
 // NewToolkitFeatureGenerator creates a new feature generator
 func NewToolkitFeatureGenerator() *ToolkitFeatureGenerator {
 	// #nosec G404 - Using math/rand for seeded procedural generation, not cryptographic purposes
 	return &ToolkitFeatureGenerator{
-		random: rand.New(rand.NewSource(0)), // Will be reseeded per generation
+		random:   rand.New(rand.NewSource(0)), // Will be reseeded per generation
+		patterns: NewPatternRegistry(),
 	}
 }
 
-// Generate places obstacles, terrain, and spawn zones in a room
-func (g *ToolkitFeatureGenerator) Generate(ctx context.Context, input *dungeon.FeatureInput) (*dungeon.FeatureOutput, error) {
+// Generate places obstacles, terrain, spawn zones, and internal walls in a room
+func (g *ToolkitFeatureGenerator) Generate(_ context.Context, input *dungeon.FeatureInput) (*dungeon.FeatureOutput, error) {
 	if input == nil {
 		return nil, fmt.Errorf("input is required")
 	}
@@ -40,6 +42,12 @@ func (g *ToolkitFeatureGenerator) Generate(ctx context.Context, input *dungeon.F
 		g.random.Seed(input.Seed)
 	}
 
+	// Generate internal walls using pattern system
+	var walls []dungeon.WallSegment
+	if input.Tables != nil {
+		walls = g.generateWallsFromPattern(input)
+	}
+
 	// Generate obstacles based on feature rules
 	obstacles := g.generateObstacles(input.Shape, input.Rules)
 
@@ -47,7 +55,7 @@ func (g *ToolkitFeatureGenerator) Generate(ctx context.Context, input *dungeon.F
 	terrain := g.generateTerrain(input.Shape, input.Rules)
 
 	// Generate spawn zones based on room type
-	spawnZones := g.generateSpawnZones(input.Shape, input.RoomType)
+	spawnZones := g.generateSpawnZones(input.Shape, string(input.RoomType))
 
 	return &dungeon.FeatureOutput{
 		Features: &dungeon.FeatureLayout{
@@ -55,7 +63,42 @@ func (g *ToolkitFeatureGenerator) Generate(ctx context.Context, input *dungeon.F
 			Terrain:    terrain,
 			SpawnZones: spawnZones,
 		},
+		Walls: walls,
 	}, nil
+}
+
+// generateWallsFromPattern uses theme tables to select and apply a pattern
+func (g *ToolkitFeatureGenerator) generateWallsFromPattern(input *dungeon.FeatureInput) []dungeon.WallSegment {
+	if input.Tables == nil {
+		return nil
+	}
+
+	// Select pattern based on room type
+	patternType, err := input.Tables.SelectPattern(input.RoomType, g.random)
+	if err != nil {
+		patternType = dungeon.PatternEmpty
+	}
+
+	// Get pattern function
+	patternFunc, exists := g.patterns.GetPattern(patternType)
+	if !exists {
+		return nil
+	}
+
+	// Select density
+	density := dungeon.DensityMedium
+	if len(input.Tables.Density) > 0 {
+		density = input.Tables.SelectDensity(g.random)
+	}
+
+	// Generate walls using pattern
+	patternOutput := patternFunc(&PatternInput{
+		Shape:   input.Shape,
+		Density: density,
+		Seed:    input.Seed,
+	})
+
+	return patternOutput.Walls
 }
 
 // generateObstacles places obstacles in the room based on rules

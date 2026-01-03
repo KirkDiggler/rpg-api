@@ -27,14 +27,14 @@ func (s *StubLayoutGenerator) Generate(ctx context.Context, input *dungeon.Layou
 	connections := make([]*dungeon.LayoutConnection, 0, input.Length-1)
 
 	for i := 0; i < input.Length; i++ {
-		var roomType string
+		var roomType dungeon.RoomType
 		switch i {
 		case 0:
-			roomType = "entrance"
+			roomType = dungeon.RoomTypeEntrance
 		case input.Length - 1:
-			roomType = "boss"
+			roomType = dungeon.RoomTypeBoss
 		default:
-			roomType = "regular"
+			roomType = dungeon.RoomTypeChamber
 		}
 
 		slots[i] = dungeon.RoomSlot{

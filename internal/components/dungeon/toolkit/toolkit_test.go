@@ -33,8 +33,8 @@ func (s *ToolkitGeneratorsTestSuite) TestLayoutGenerator() {
 		s.Assert().Len(output.RoomSlots, 5)
 		s.Assert().Equal(0, output.StartRoom)
 		s.Assert().Equal(4, output.BossRoom)
-		s.Assert().Equal("entrance", output.RoomSlots[0].RoomType)
-		s.Assert().Equal("boss", output.RoomSlots[4].RoomType)
+		s.Assert().Equal(dungeon.RoomTypeEntrance, output.RoomSlots[0].RoomType)
+		s.Assert().Equal(dungeon.RoomTypeBoss, output.RoomSlots[4].RoomType)
 	})
 
 	s.Run("generates branching layout", func() {

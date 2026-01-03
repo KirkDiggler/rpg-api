@@ -10,11 +10,11 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/components/dungeon"
 )
 
-// Room type constants
-const (
-	roomTypeEntrance = "entrance"
-	roomTypeRegular  = "regular"
-	roomTypeBoss     = "boss"
+// Room type mappings for layout generation
+var (
+	roomTypeEntrance = dungeon.RoomTypeEntrance
+	roomTypeRegular  = dungeon.RoomTypeChamber
+	roomTypeBoss     = dungeon.RoomTypeBoss
 )
 
 // ToolkitLayoutConfig contains configuration for the toolkit layout generator
