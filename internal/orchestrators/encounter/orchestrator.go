@@ -903,6 +903,41 @@ func (o *Orchestrator) convertToRoomData(encounterID string, room *dungeon.Room)
 	return roomData
 }
 
+// convertToWallInfo converts dungeon walls to WallInfo for the API response
+func (o *Orchestrator) convertToWallInfo(room *dungeon.Room) []WallInfo {
+	if room == nil || len(room.Walls) == 0 {
+		return nil
+	}
+
+	walls := make([]WallInfo, len(room.Walls))
+	for i, wall := range room.Walls {
+		// Determine material based on wall type
+		material := "stone"
+		if wall.Type == dungeon.WallTypeDestructible {
+			material = "wood"
+		}
+
+		walls[i] = WallInfo{
+			ID: wall.ID,
+			Start: &Position{
+				X: float64(wall.Start.X),
+				Y: float64(wall.Start.Y),
+				Z: float64(wall.Start.Z),
+			},
+			End: &Position{
+				X: float64(wall.End.X),
+				Y: float64(wall.End.Y),
+				Z: float64(wall.End.Z),
+			},
+			Material:          material,
+			BlocksMovement:    wall.BlocksMovement,
+			BlocksLineOfSight: wall.BlocksLineOfSight,
+		}
+	}
+
+	return walls
+}
+
 // getPlayerSpawnPositions extracts player spawn positions from a room as cube coordinates
 func (o *Orchestrator) getPlayerSpawnPositions(room *dungeon.Room) []spatial.CubeCoordinate {
 	var positions []spatial.CubeCoordinate
@@ -2971,6 +3006,7 @@ func (o *Orchestrator) StartCombat(
 	return &StartCombatOutput{
 		CombatState:  combatState,
 		Room:         roomData,
+		Walls:        o.convertToWallInfo(startRoom),
 		MonsterTurns: monsterTurns,
 		Doors:        doors,
 		DungeonID:    dungeonEntity.ID,

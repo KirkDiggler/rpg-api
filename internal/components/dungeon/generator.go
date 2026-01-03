@@ -290,11 +290,17 @@ func (g *Generator) generateRoom(ctx context.Context, input *generateRoomInput) 
 		spawnZones[i] = &zone
 	}
 
+	// Combine perimeter walls and internal walls
+	walls := make([]WallSegment, 0, len(shapeOutput.PerimeterWalls)+len(featureOutput.Walls))
+	walls = append(walls, shapeOutput.PerimeterWalls...)
+	walls = append(walls, featureOutput.Walls...)
+
 	return &Room{
 		ID:         input.slot.ID,
 		Shape:      shapeOutput.Shape,
 		Features:   featureOutput.Features,
 		SpawnZones: spawnZones,
+		Walls:      walls,
 		Encounter:  encounterOutput.Encounter,
 	}, nil
 }

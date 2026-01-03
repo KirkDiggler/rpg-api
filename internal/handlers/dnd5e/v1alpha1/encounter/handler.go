@@ -534,9 +534,15 @@ func (h *Handler) StartCombat(
 	gridType := spatial.GridTypeHex
 	hexOrientation := spatial.HexOrientationPointyTop
 
+	// Convert room and add walls
+	room := convertRoomDataToProto(output.Room)
+	if room != nil {
+		room.Walls = convertWallsToProto(output.Walls)
+	}
+
 	return &dnd5ev1alpha1.StartCombatResponse{
 		CombatState: convertCombatStateToProto(output.CombatState, gridType, hexOrientation),
-		Room:        convertRoomDataToProto(output.Room),
+		Room:        room,
 		Doors:       convertDoorInfoSliceToProto(output.Doors),
 		DungeonId:   output.DungeonID,
 	}, nil

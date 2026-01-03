@@ -54,6 +54,8 @@ type Room struct {
 	Features *FeatureLayout
 	// SpawnZones defines player and monster spawn areas
 	SpawnZones []*Zone
+	// Walls contains all wall segments (perimeter + internal)
+	Walls []WallSegment
 	// Encounter contains the monster composition
 	Encounter *Encounter
 }
