@@ -124,9 +124,14 @@ type CombatStartedEvent struct {
 	MonsterTurns []*MonsterTurnCompletedEvent `json:"monster_turns,omitempty"` // Monster turns if monsters won initiative
 }
 
+// EncounterResult describes the outcome of an encounter
+type EncounterResult struct {
+	Reason string `json:"reason"` // "victory" (all monsters dead) or "defeat" (all players down)
+}
+
 // CombatEndedEvent is emitted when combat ends
 type CombatEndedEvent struct {
-	EncounterResult interface{} `json:"encounter_result"` // Victory or defeat
+	EncounterResult *EncounterResult `json:"encounter_result"` // Victory or defeat
 }
 
 // CombatPausedEvent is emitted when combat is paused
@@ -222,11 +227,11 @@ type GrantedActionInfo struct {
 
 // FeatureActivatedEvent is emitted when a combat feature is activated
 type FeatureActivatedEvent struct {
-	CharacterID   string      `json:"character_id"`
-	FeatureID     string      `json:"feature_id"`
-	Success       bool        `json:"success"`
-	Message       string      `json:"message"`
-	CharacterData interface{} `json:"character_data,omitempty"`
+	CharacterID   string          `json:"character_id"`
+	FeatureID     string          `json:"feature_id"`
+	Success       bool            `json:"success"`
+	Message       string          `json:"message"`
+	CharacterData *character.Data `json:"character_data,omitempty"`
 }
 
 // TurnEndedEvent is emitted when a turn ends

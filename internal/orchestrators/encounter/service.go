@@ -216,10 +216,8 @@ type EndTurnOutput struct {
 	EncounterResult *EncounterResult     // Set if combat ended (victory or TPK)
 }
 
-// EncounterResult indicates combat has ended
-type EncounterResult struct {
-	Reason string // "victory" (all monsters dead) or "defeat" (all players down)
-}
+// EncounterResult is an alias to entities.EncounterResult
+type EncounterResult = entities.EncounterResult
 
 // TurnChangeEvent describes a turn transition
 type TurnChangeEvent struct {
