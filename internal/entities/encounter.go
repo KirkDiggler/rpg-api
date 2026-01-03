@@ -25,6 +25,15 @@ type Position struct {
 	Z float64 `json:"z"`
 }
 
+// DoorInfo describes a door or passage connecting the current room to another room
+type DoorInfo struct {
+	ConnectionID string    `json:"connection_id"` // Unique ID of this connection
+	TargetRoomID string    `json:"target_room_id"`
+	Direction    string    `json:"direction"` // Physical description (e.g., "north door", "stairs down")
+	Position     *Position `json:"position,omitempty"`
+	IsOpen       bool      `json:"is_open"`
+}
+
 // MonsterExecutedAction represents an action taken by a monster during its turn
 type MonsterExecutedAction struct {
 	ActionID   string      `json:"action_id"`

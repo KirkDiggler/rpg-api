@@ -3,6 +3,7 @@ package encounter
 import (
 	apiv1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/api/v1alpha1"
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
+	"github.com/KirkDiggler/rpg-api/internal/entities"
 	characterhandler "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v1alpha1/character"
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/encounter"
 	"github.com/KirkDiggler/rpg-toolkit/core"
@@ -1053,4 +1054,84 @@ func protoDungeonLengthToString(length dnd5ev1alpha1.DungeonLength) string {
 		// UNSPECIFIED defaults to short
 		return ""
 	}
+}
+
+// convertEntityDoorsToProto converts entities.DoorInfo to proto DoorInfo
+func convertEntityDoorsToProto(doors []*entities.DoorInfo) []*dnd5ev1alpha1.DoorInfo {
+	if doors == nil {
+		return nil
+	}
+	result := make([]*dnd5ev1alpha1.DoorInfo, len(doors))
+	for i, d := range doors {
+		var pos *apiv1alpha1.Position
+		if d.Position != nil {
+			pos = &apiv1alpha1.Position{
+				X: d.Position.X,
+				Y: d.Position.Y,
+				Z: d.Position.Z,
+			}
+		}
+		result[i] = &dnd5ev1alpha1.DoorInfo{
+			ConnectionId:  d.ConnectionID,
+			LeadsToRoomId: d.TargetRoomID,
+			PhysicalHint:  d.Direction,
+			Position:      pos,
+			IsOpen:        d.IsOpen,
+		}
+	}
+	return result
+}
+
+// convertEntityMonsterTurnsToProto converts entity-based MonsterTurnCompletedEvent to proto
+// Note: Proto MonsterTurnResult only has MonsterId, MonsterName, Actions, MovementPath
+// Room and UpdatedCharacters are in the separate streaming event, not the embedded result
+func convertEntityMonsterTurnsToProto(
+	turns []*entities.MonsterTurnCompletedEvent,
+	_ string, // gridType - unused but kept for interface consistency
+	_ spatial.HexOrientation, // hexOrientation - unused but kept for interface consistency
+) []*dnd5ev1alpha1.MonsterTurnResult {
+	if turns == nil {
+		return nil
+	}
+	result := make([]*dnd5ev1alpha1.MonsterTurnResult, len(turns))
+	for i, t := range turns {
+		// Convert actions
+		var protoActions []*dnd5ev1alpha1.MonsterExecutedAction
+		for _, a := range t.Actions {
+			protoActions = append(protoActions, convertEntityMonsterActionToProto(&a))
+		}
+
+		// Convert movement positions
+		var protoMovement []*apiv1alpha1.Position
+		for _, pos := range t.Movement {
+			protoMovement = append(protoMovement, &apiv1alpha1.Position{
+				X: pos.X,
+				Y: pos.Y,
+				Z: pos.Z,
+			})
+		}
+
+		result[i] = &dnd5ev1alpha1.MonsterTurnResult{
+			MonsterId:    t.MonsterID,
+			MonsterName:  t.MonsterName,
+			Actions:      protoActions,
+			MovementPath: protoMovement,
+		}
+	}
+	return result
+}
+
+// convertEntityMonsterActionToProto converts entity MonsterExecutedAction to proto
+func convertEntityMonsterActionToProto(action *entities.MonsterExecutedAction) *dnd5ev1alpha1.MonsterExecutedAction {
+	if action == nil {
+		return nil
+	}
+	protoAction := &dnd5ev1alpha1.MonsterExecutedAction{
+		ActionId:   action.ActionID,
+		ActionType: convertMonsterActionTypeToProto(action.ActionType),
+		TargetId:   action.TargetID,
+		Success:    action.Success,
+	}
+	// Note: Details conversion would go here if needed
+	return protoAction
 }

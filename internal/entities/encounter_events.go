@@ -35,6 +35,7 @@ const (
 	// Dungeon lifecycle events
 	EventTypeDungeonVictory EventType = "dungeon_victory"
 	EventTypeDungeonFailure EventType = "dungeon_failure"
+	EventTypeRoomRevealed   EventType = "room_revealed"
 )
 
 // EncounterEvent wraps all event types with common metadata
@@ -63,6 +64,7 @@ type EncounterEvent struct {
 	MonsterTurnCompleted *MonsterTurnCompletedEvent `json:"monster_turn_completed,omitempty"`
 	DungeonVictory       *DungeonVictoryEvent       `json:"dungeon_victory,omitempty"`
 	DungeonFailure       *DungeonFailureEvent       `json:"dungeon_failure,omitempty"`
+	RoomRevealed         *RoomRevealedEvent         `json:"room_revealed,omitempty"`
 }
 
 // PlayerJoinedEvent is emitted when a player joins an encounter
@@ -111,10 +113,13 @@ type MonsterState struct {
 
 // CombatStartedEvent is emitted when combat begins
 type CombatStartedEvent struct {
-	CombatState *CombatState      `json:"combat_state"` // Full combat state including initiative order
-	Room        *spatial.RoomData `json:"room"`         // Room with entity positions
-	Party       []*Player         `json:"party"`        // Party members at combat start
-	Monsters    []*MonsterState   `json:"monsters"`     // Monster state with types for UI textures
+	CombatState  *CombatState                 `json:"combat_state"`            // Full combat state including initiative order
+	Room         *spatial.RoomData            `json:"room"`                    // Room with entity positions
+	Party        []*Player                    `json:"party"`                   // Party members at combat start
+	Monsters     []*MonsterState              `json:"monsters"`                // Monster state with types for UI textures
+	Doors        []*DoorInfo                  `json:"doors"`                   // Doors/exits from the starting room
+	DungeonID    string                       `json:"dungeon_id"`              // ID of the generated dungeon
+	MonsterTurns []*MonsterTurnCompletedEvent `json:"monster_turns,omitempty"` // Monster turns if monsters won initiative
 }
 
 // CombatEndedEvent is emitted when combat ends
@@ -206,4 +211,15 @@ type DungeonVictoryEvent struct {
 type DungeonFailureEvent struct {
 	DungeonID string `json:"dungeon_id"`
 	Reason    string `json:"reason"` // "tpk" (total party kill), "abandoned", etc.
+}
+
+// RoomRevealedEvent is emitted when a door is opened and a new room is revealed
+type RoomRevealedEvent struct {
+	DungeonID    string                       `json:"dungeon_id"`              // ID of the dungeon
+	ConnectionID string                       `json:"connection_id"`           // ID of the opened door/connection
+	RevealedRoom *spatial.RoomData            `json:"revealed_room"`           // The newly revealed room
+	NewDoors     []*DoorInfo                  `json:"new_doors"`               // Doors visible from the newly revealed room
+	Monsters     []*MonsterState              `json:"monsters"`                // Monsters in the revealed room
+	CombatState  *CombatState                 `json:"combat_state"`            // Updated combat state with new monsters in initiative
+	MonsterTurns []*MonsterTurnCompletedEvent `json:"monster_turns,omitempty"` // Monster turns if new monsters act immediately
 }
