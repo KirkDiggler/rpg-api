@@ -1,6 +1,7 @@
 package toolkit
 
 import (
+	"math"
 	"testing"
 
 	"github.com/KirkDiggler/rpg-api/internal/components/dungeon"
@@ -167,4 +168,75 @@ func (s *PatternRegistryTestSuite) TestCoverClustersPattern_Deterministic() {
 	result2 := pattern(input)
 
 	assert.Equal(s.T(), len(result1.Walls), len(result2.Walls), "same seed should produce same wall count")
+}
+
+func (s *PatternRegistryTestSuite) TestGetPattern_Chokepoints() {
+	pattern, exists := s.registry.GetPattern(dungeon.PatternChokepoints)
+	require.True(s.T(), exists, "chokepoints pattern should exist")
+	require.NotNil(s.T(), pattern)
+
+	result := pattern(&PatternInput{
+		Shape:   &dungeon.Shape{Width: 20, Height: 15},
+		Density: dungeon.DensityMedium,
+		Seed:    12345,
+	})
+
+	// Should have walls that divide the room (each chokepoint has 2 segments)
+	assert.GreaterOrEqual(s.T(), len(result.Walls), 2, "chokepoints should have at least 2 wall segments")
+	assert.LessOrEqual(s.T(), len(result.Walls), 6, "chokepoints should not have too many walls")
+}
+
+func (s *PatternRegistryTestSuite) TestGetPattern_CentralFeature() {
+	pattern, exists := s.registry.GetPattern(dungeon.PatternCentralFeature)
+	require.True(s.T(), exists, "central_feature pattern should exist")
+	require.NotNil(s.T(), pattern)
+
+	result := pattern(&PatternInput{
+		Shape:   &dungeon.Shape{Width: 20, Height: 20},
+		Density: dungeon.DensityMedium,
+		Seed:    12345,
+	})
+
+	// Should have walls clustered in the center
+	assert.GreaterOrEqual(s.T(), len(result.Walls), 2, "central feature should have walls")
+
+	// Verify walls are near center
+	centerX := float64(20) / 2
+	centerY := float64(20) / 2
+	for _, wall := range result.Walls {
+		midX := float64(wall.Start.X+wall.End.X) / 2
+		midY := float64(wall.Start.Y+wall.End.Y) / 2
+		distFromCenter := math.Sqrt((midX-centerX)*(midX-centerX) + (midY-centerY)*(midY-centerY))
+		assert.Less(s.T(), distFromCenter, 8.0, "walls should be near center")
+	}
+}
+
+func (s *PatternRegistryTestSuite) TestGetPattern_PerimeterCover() {
+	pattern, exists := s.registry.GetPattern(dungeon.PatternPerimeterCover)
+	require.True(s.T(), exists, "perimeter_cover pattern should exist")
+	require.NotNil(s.T(), pattern)
+
+	result := pattern(&PatternInput{
+		Shape:   &dungeon.Shape{Width: 20, Height: 20},
+		Density: dungeon.DensityMedium,
+		Seed:    12345,
+	})
+
+	// Should have walls along the edges
+	assert.GreaterOrEqual(s.T(), len(result.Walls), 2, "perimeter cover should have walls")
+}
+
+func (s *PatternRegistryTestSuite) TestGetPattern_PillarGrid() {
+	pattern, exists := s.registry.GetPattern(dungeon.PatternPillarGrid)
+	require.True(s.T(), exists, "pillar_grid pattern should exist")
+	require.NotNil(s.T(), pattern)
+
+	result := pattern(&PatternInput{
+		Shape:   &dungeon.Shape{Width: 20, Height: 20},
+		Density: dungeon.DensityMedium,
+		Seed:    12345,
+	})
+
+	// Should have evenly spaced pillars
+	assert.GreaterOrEqual(s.T(), len(result.Walls), 4, "pillar grid should have multiple pillars")
 }
