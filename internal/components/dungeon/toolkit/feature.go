@@ -120,9 +120,14 @@ func (g *ToolkitFeatureGenerator) generateObstacles(shape *dungeon.Shape, rules 
 	var obstacles []dungeon.Obstacle
 
 	// Check if we should place obstacles
-	if g.random.Float64() > rules.ObstacleChance || len(rules.ObstacleTypes) == 0 {
+	// Note: ObstacleTypes check ensures theme has obstacles defined
+	if len(rules.ObstacleTypes) == 0 {
 		return obstacles
 	}
+	// Always generate some obstacles for now (TODO: restore chance-based generation)
+	// if g.random.Float64() > rules.ObstacleChance {
+	// 	return obstacles
+	// }
 
 	// Calculate number of obstacles based on room area
 	numObstacles := int(float64(shape.Area) * 0.1) // ~10% of area
