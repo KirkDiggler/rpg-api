@@ -14,16 +14,18 @@ import (
 
 // ToolkitFeatureGenerator implements dungeon.FeatureGenerator
 type ToolkitFeatureGenerator struct {
-	random   *rand.Rand
-	patterns *PatternRegistry
+	random    *rand.Rand
+	patterns  *PatternRegistry
+	validator *WallValidator
 }
 
 // NewToolkitFeatureGenerator creates a new feature generator
 func NewToolkitFeatureGenerator() *ToolkitFeatureGenerator {
 	// #nosec G404 - Using math/rand for seeded procedural generation, not cryptographic purposes
 	return &ToolkitFeatureGenerator{
-		random:   rand.New(rand.NewSource(0)), // Will be reseeded per generation
-		patterns: NewPatternRegistry(),
+		random:    rand.New(rand.NewSource(0)), // Will be reseeded per generation
+		patterns:  NewPatternRegistry(),
+		validator: NewWallValidator(),
 	}
 }
 
@@ -42,10 +44,25 @@ func (g *ToolkitFeatureGenerator) Generate(_ context.Context, input *dungeon.Fea
 		g.random.Seed(input.Seed)
 	}
 
+	// Generate spawn zones based on room type (need these before validating walls)
+	spawnZones := g.generateSpawnZones(input.Shape, string(input.RoomType))
+
 	// Generate internal walls using pattern system
 	var walls []dungeon.WallSegment
 	if input.Tables != nil {
 		walls = g.generateWallsFromPattern(input)
+
+		// Validate walls don't block spawn zones
+		validationResult := g.validator.Validate(&ValidationInput{
+			Shape:      input.Shape,
+			Walls:      walls,
+			SpawnZones: spawnZones,
+		})
+
+		// If validation fails, use suggested safe walls
+		if !validationResult.IsValid {
+			walls = validationResult.SuggestedWalls
+		}
 	}
 
 	// Generate obstacles based on feature rules
@@ -53,9 +70,6 @@ func (g *ToolkitFeatureGenerator) Generate(_ context.Context, input *dungeon.Fea
 
 	// Generate terrain patches based on feature rules
 	terrain := g.generateTerrain(input.Shape, input.Rules)
-
-	// Generate spawn zones based on room type
-	spawnZones := g.generateSpawnZones(input.Shape, string(input.RoomType))
 
 	return &dungeon.FeatureOutput{
 		Features: &dungeon.FeatureLayout{
