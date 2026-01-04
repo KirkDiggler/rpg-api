@@ -77,16 +77,38 @@ func (g *ToolkitShapeGenerator) convertToDungeonShape(toolkitShape *environments
 		bounds[i] = offsetToCube(scaledX, scaledY)
 	}
 
+	// Convert connection points from toolkit to dungeon coordinates
+	connectionPoints := g.convertConnectionPoints(toolkitShape.Connections, width, height)
+
 	// Calculate area based on shape type
 	area := g.calculateArea(toolkitShape, width, height)
 
 	return &dungeon.Shape{
-		Bounds:   bounds,
-		GridType: dungeon.GridTypeHex,
-		Width:    width,
-		Height:   height,
-		Area:     area,
+		Bounds:           bounds,
+		ConnectionPoints: connectionPoints,
+		GridType:         dungeon.GridTypeHex,
+		Width:            width,
+		Height:           height,
+		Area:             area,
 	}
+}
+
+// convertConnectionPoints scales toolkit connection points to actual grid dimensions
+func (g *ToolkitShapeGenerator) convertConnectionPoints(connections []environments.ConnectionPoint, width, height int) []dungeon.ConnectionPoint {
+	result := make([]dungeon.ConnectionPoint, len(connections))
+	for i, conn := range connections {
+		// Scale normalized position to grid dimensions
+		scaledX := int(conn.Position.X * float64(width-1))
+		scaledY := int(conn.Position.Y * float64(height-1))
+
+		result[i] = dungeon.ConnectionPoint{
+			Name:      conn.Name,
+			Position:  offsetToCube(scaledX, scaledY),
+			Direction: conn.Direction,
+			Type:      conn.Type,
+		}
+	}
+	return result
 }
 
 // createRectangleShape creates a simple rectangular shape as fallback
@@ -98,12 +120,23 @@ func (g *ToolkitShapeGenerator) createRectangleShape(width, height int) *dungeon
 		offsetToCube(0, height-1),
 	}
 
+	// Default connection points at wall midpoints
+	midX := (width - 1) / 2
+	midY := (height - 1) / 2
+	connectionPoints := []dungeon.ConnectionPoint{
+		{Name: "south", Position: offsetToCube(midX, 0), Direction: "south", Type: "door"},
+		{Name: "east", Position: offsetToCube(width-1, midY), Direction: "east", Type: "door"},
+		{Name: "north", Position: offsetToCube(midX, height-1), Direction: "north", Type: "door"},
+		{Name: "west", Position: offsetToCube(0, midY), Direction: "west", Type: "door"},
+	}
+
 	return &dungeon.Shape{
-		Bounds:   bounds,
-		GridType: dungeon.GridTypeHex,
-		Width:    width,
-		Height:   height,
-		Area:     width * height,
+		Bounds:           bounds,
+		ConnectionPoints: connectionPoints,
+		GridType:         dungeon.GridTypeHex,
+		Width:            width,
+		Height:           height,
+		Area:             width * height,
 	}
 }
 

@@ -152,6 +152,35 @@ func (s *ToolkitGeneratorsTestSuite) TestShapeGenerator() {
 		s.Assert().Equal(21, output.Shape.Height)
 	})
 
+	s.Run("includes connection points for door placement", func() {
+		gen := NewToolkitShapeGenerator()
+
+		output, err := gen.Generate(context.Background(), &dungeon.ShapeInput{
+			Size:     dungeon.RoomSizeMedium,
+			Style:    dungeon.ShapeStyleStructured,
+			RoomType: dungeon.RoomTypeChamber,
+			Seed:     12345,
+		})
+
+		s.Require().NoError(err)
+		s.Require().NotNil(output.Shape)
+
+		// Should have 4 connection points for rectangle (N, S, E, W)
+		s.Assert().Len(output.Shape.ConnectionPoints, 4)
+
+		// Check that each direction is represented
+		directions := make(map[string]bool)
+		for _, cp := range output.Shape.ConnectionPoints {
+			directions[cp.Direction] = true
+			s.Assert().NotEmpty(cp.Name)
+			s.Assert().Equal("door", cp.Type)
+		}
+		s.Assert().True(directions["north"], "missing north connection")
+		s.Assert().True(directions["south"], "missing south connection")
+		s.Assert().True(directions["east"], "missing east connection")
+		s.Assert().True(directions["west"], "missing west connection")
+	})
+
 	s.Run("validates input", func() {
 		gen := NewToolkitShapeGenerator()
 

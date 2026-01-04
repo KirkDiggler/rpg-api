@@ -64,6 +64,8 @@ type Room struct {
 type Shape struct {
 	// Bounds defines the polygon vertices
 	Bounds []Position
+	// ConnectionPoints defines valid door/passage locations
+	ConnectionPoints []ConnectionPoint
 	// GridType specifies hex or square grid
 	GridType GridType
 	// Width is the number of cells across
@@ -72,6 +74,18 @@ type Shape struct {
 	Height int
 	// Area is the total walkable cells
 	Area int
+}
+
+// ConnectionPoint defines where a room can connect to others
+type ConnectionPoint struct {
+	// Name identifies this connection (e.g., "north", "south")
+	Name string
+	// Position is the grid location of the connection
+	Position Position
+	// Direction indicates which wall this is on
+	Direction string
+	// Type specifies the connection kind (e.g., "door", "passage")
+	Type string
 }
 
 // Position represents a coordinate in the grid
