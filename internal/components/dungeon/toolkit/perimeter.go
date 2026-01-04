@@ -104,19 +104,28 @@ func (g *PerimeterGenerator) findConnectionOnSegment(
 
 func (g *PerimeterGenerator) calculateDoorPosition(start, end dungeon.Position) dungeon.Position {
 	// Door is placed at midpoint of wall segment
+	midX := (start.X + end.X) / 2
+	midY := (start.Y + end.Y) / 2
 	return dungeon.Position{
-		X: (start.X + end.X) / 2,
-		Y: (start.Y + end.Y) / 2,
+		X: midX,
+		Y: midY,
+		Z: -midX - midY, // Maintain cube coordinate constraint: x + y + z = 0
 	}
 }
 
 func (g *PerimeterGenerator) createWallBeforeDoor(start, doorPos dungeon.Position, id int) dungeon.WallSegment {
 	// Leave gap of 2 units for door
 	doorGap := 1
-	adjustedEnd := dungeon.Position{X: doorPos.X - doorGap, Y: doorPos.Y}
+	var adjustedEnd dungeon.Position
 	if start.X == doorPos.X {
 		// Vertical wall
-		adjustedEnd = dungeon.Position{X: doorPos.X, Y: doorPos.Y - doorGap}
+		endX := doorPos.X
+		endY := doorPos.Y - doorGap
+		adjustedEnd = dungeon.Position{X: endX, Y: endY, Z: -endX - endY}
+	} else {
+		endX := doorPos.X - doorGap
+		endY := doorPos.Y
+		adjustedEnd = dungeon.Position{X: endX, Y: endY, Z: -endX - endY}
 	}
 
 	return dungeon.WallSegment{
@@ -131,10 +140,16 @@ func (g *PerimeterGenerator) createWallBeforeDoor(start, doorPos dungeon.Positio
 
 func (g *PerimeterGenerator) createWallAfterDoor(doorPos, end dungeon.Position, id int) dungeon.WallSegment {
 	doorGap := 1
-	adjustedStart := dungeon.Position{X: doorPos.X + doorGap, Y: doorPos.Y}
+	var adjustedStart dungeon.Position
 	if doorPos.X == end.X {
 		// Vertical wall
-		adjustedStart = dungeon.Position{X: doorPos.X, Y: doorPos.Y + doorGap}
+		startX := doorPos.X
+		startY := doorPos.Y + doorGap
+		adjustedStart = dungeon.Position{X: startX, Y: startY, Z: -startX - startY}
+	} else {
+		startX := doorPos.X + doorGap
+		startY := doorPos.Y
+		adjustedStart = dungeon.Position{X: startX, Y: startY, Z: -startX - startY}
 	}
 
 	return dungeon.WallSegment{

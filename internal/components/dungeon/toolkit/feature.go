@@ -45,7 +45,7 @@ func (g *ToolkitFeatureGenerator) Generate(_ context.Context, input *dungeon.Fea
 	}
 
 	// Generate spawn zones based on room type (need these before validating walls)
-	spawnZones := g.generateSpawnZones(input.Shape, string(input.RoomType))
+	spawnZones := g.generateSpawnZones(input.Shape, input.RoomType)
 
 	// Generate internal walls using pattern system
 	var walls []dungeon.WallSegment
@@ -232,11 +232,11 @@ func gridToCube(col, row int) dungeon.Position {
 
 // generateSpawnZones creates spawn zones based on room type
 // All positions use cube coordinates via toolkit's converter
-func (g *ToolkitFeatureGenerator) generateSpawnZones(shape *dungeon.Shape, roomType string) []dungeon.Zone {
+func (g *ToolkitFeatureGenerator) generateSpawnZones(shape *dungeon.Shape, roomType dungeon.RoomType) []dungeon.Zone {
 	var zones []dungeon.Zone
 
 	switch roomType {
-	case "entrance":
+	case dungeon.RoomTypeEntrance:
 		// Entrance rooms have a player spawn zone near the entrance (bottom-left area)
 		// Generate individual spawn positions for up to 4 players
 		zones = append(zones, dungeon.Zone{
@@ -251,7 +251,7 @@ func (g *ToolkitFeatureGenerator) generateSpawnZones(shape *dungeon.Shape, roomT
 			Capacity: 4, // Standard party size
 		})
 
-	case "boss":
+	case dungeon.RoomTypeBoss:
 		// Boss rooms have a boss zone in the center and monster spawn zones around it
 		centerCol := shape.Width / 2
 		centerRow := shape.Height / 2

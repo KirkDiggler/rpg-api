@@ -201,7 +201,7 @@ func (s *PatternRegistryTestSuite) TestGetPattern_CentralFeature() {
 	// Should have walls clustered in the center
 	assert.GreaterOrEqual(s.T(), len(result.Walls), 2, "central feature should have walls")
 
-	// Verify walls are near center using X and Z (cube coordinate primary axes)
+	// Verify walls are near center using X and Z grid dimensions
 	centerX := float64(20) / 2
 	centerZ := float64(20) / 2
 	for _, wall := range result.Walls {

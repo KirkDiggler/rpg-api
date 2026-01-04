@@ -99,9 +99,13 @@ func (v *WallValidator) getZoneCenter(zone dungeon.Zone) dungeon.Position {
 		sumY += pos.Y
 	}
 
+	centerX := sumX / len(zone.Bounds)
+	centerY := sumY / len(zone.Bounds)
+
 	return dungeon.Position{
-		X: sumX / len(zone.Bounds),
-		Y: sumY / len(zone.Bounds),
+		X: centerX,
+		Y: centerY,
+		Z: -centerX - centerY, // Maintain cube coordinate constraint: x + y + z = 0
 	}
 }
 
