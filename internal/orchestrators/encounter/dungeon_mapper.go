@@ -41,7 +41,9 @@ func mapTheme(themeID string) dungeon.Theme {
 	case "bandit-lair":
 		return dungeon.ThemeBanditLair
 	case "crypt":
-		return dungeon.ThemeCrypt
+		return dungeon.ThemeDebugWalls // TODO: swap back to ThemeCrypt after wall UI testing
+	case "debug-walls":
+		return dungeon.ThemeDebugWalls
 	default:
 		return dungeon.ThemeCrypt // Default
 	}

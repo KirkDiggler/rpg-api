@@ -27,6 +27,7 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
 
 	"github.com/KirkDiggler/rpg-api/internal/components/dungeon"
+	dungeontoolkit "github.com/KirkDiggler/rpg-api/internal/components/dungeon/toolkit"
 	"github.com/KirkDiggler/rpg-api/internal/entities"
 	"github.com/KirkDiggler/rpg-api/internal/pkg/idgen"
 	eventprocessor "github.com/KirkDiggler/rpg-api/internal/processors/event"
@@ -444,6 +445,24 @@ func (o *Orchestrator) ResolveAttack(ctx context.Context, input *ResolveAttackIn
 		}
 	}
 
+	// 16b. Load dungeon to get walls for the current room
+	var dungeonWalls []dungeon.WallSegment
+	if o.dungeonRepo != nil {
+		dungeonOutput, dungeonErr := o.dungeonRepo.GetByEncounterID(ctx, &dungeonrepo.GetByEncounterIDInput{
+			EncounterID: input.EncounterID,
+		})
+		if dungeonErr == nil && dungeonOutput.Dungeon != nil {
+			dungeonEntity := dungeonOutput.Dungeon
+			currentRoomID := dungeonEntity.CurrentRoomID
+			if currentRoomID == "" {
+				currentRoomID = dungeonEntity.StartRoomID
+			}
+			if currentRoom := dungeonEntity.GetRoom(currentRoomID); currentRoom != nil {
+				dungeonWalls = currentRoom.Walls
+			}
+		}
+	}
+
 	// 17. Publish AttackResolved event
 	o.publishEvent(ctx, input.EncounterID, entities.EventTypeAttackResolved, &entities.AttackResolvedEvent{
 		AttackerID:    input.AttackerID,
@@ -452,6 +471,7 @@ func (o *Orchestrator) ResolveAttack(ctx context.Context, input *ResolveAttackIn
 		TargetHP:      newHP,
 		TargetDead:    newHP <= 0,
 		Room:          roomData,
+		Walls:         dungeonWalls,
 		GrantedAction: grantedActionInfo,
 	})
 
@@ -837,15 +857,19 @@ func (o *Orchestrator) convertToDungeonEntity(
 	}
 
 	// Convert connections to toolkit format
+	// Type field encodes "direction|physical_hint" for later parsing
 	connections := make([]*environments.ConnectionEdge, len(genDungeon.Connections))
 	for i, conn := range genDungeon.Connections {
+		// Encode direction and physical hint as "direction|hint"
+		// Direction is used for positioning, hint is for player display
+		connType := string(conn.Direction) + "|" + conn.PhysicalHint
 		connections[i] = &environments.ConnectionEdge{
 			ID:            o.connectionIDGen.Generate(),
 			FromRoomID:    conn.FromRoom,
 			ToRoomID:      conn.ToRoom,
 			Bidirectional: true,
-			Required:      conn.IsMainPath,   // Main path connections are required
-			Type:          conn.PhysicalHint, // Store physical hint in Type field for DoorInfo
+			Required:      conn.IsMainPath, // Main path connections are required
+			Type:          connType,
 		}
 	}
 
@@ -1042,6 +1066,17 @@ func (o *Orchestrator) placeMonsters(roomData *spatial.RoomData, room *dungeon.R
 	return monsters
 }
 
+// parseConnectionType extracts direction and physical hint from encoded Type field
+// Format is "direction|physical_hint" (e.g., "south|heavy stone door")
+func parseConnectionType(connType string) (direction, physicalHint string) {
+	parts := strings.SplitN(connType, "|", 2)
+	if len(parts) == 2 {
+		return parts[0], parts[1]
+	}
+	// Fallback for old format without direction
+	return "", connType
+}
+
 // getDoorInfoForRoom extracts door information for a room using stored entity connections
 func (o *Orchestrator) getDoorInfoForRoom(dungeonEntity *entities.Dungeon, roomID string) []DoorInfo {
 	// Get room for position lookup
@@ -1060,18 +1095,21 @@ func (o *Orchestrator) getDoorInfoForRoom(dungeonEntity *entities.Dungeon, roomI
 			targetRoomID = conn.FromRoomID
 		}
 
+		// Parse direction and physical hint from Type field
+		direction, physicalHint := parseConnectionType(conn.Type)
+
 		// Try to get door position from shape's ConnectionPoints first
-		position := getDoorPositionFromShape(room, conn.Type)
+		position := getDoorPositionFromShape(room, direction)
 
 		// Fall back to calculated position if no ConnectionPoint found
 		if position == nil && room != nil && room.Shape != nil {
-			position = calculateDoorPosition(conn.Type, room.Shape.Width, room.Shape.Height)
+			position = calculateDoorPosition(direction, room.Shape.Width, room.Shape.Height)
 		}
 
 		doors = append(doors, DoorInfo{
 			ConnectionID: conn.ID,
 			TargetRoomID: targetRoomID,
-			Direction:    conn.Type, // Physical hint is stored in Type field
+			Direction:    physicalHint, // Show physical hint to players
 			Position:     position,
 			IsOpen:       false,
 		})
@@ -1194,6 +1232,26 @@ func (o *Orchestrator) MoveCharacter(ctx context.Context, input *MoveCharacterIn
 		return nil, fmt.Errorf("encounter not found: %s", input.EncounterID)
 	}
 
+	// Load dungeon to get walls for the current room
+	var walls []WallInfo
+	var dungeonWalls []dungeon.WallSegment // Raw walls for event
+	if o.dungeonRepo != nil {
+		dungeonOutput, dungeonErr := o.dungeonRepo.GetByEncounterID(ctx, &dungeonrepo.GetByEncounterIDInput{
+			EncounterID: input.EncounterID,
+		})
+		if dungeonErr == nil && dungeonOutput != nil && dungeonOutput.Dungeon != nil {
+			dungeonEntity := dungeonOutput.Dungeon
+			currentRoomID := dungeonEntity.CurrentRoomID
+			if currentRoomID == "" {
+				currentRoomID = dungeonEntity.StartRoomID
+			}
+			if currentRoom := dungeonEntity.GetRoom(currentRoomID); currentRoom != nil {
+				walls = o.convertToWallInfo(currentRoom)
+				dungeonWalls = currentRoom.Walls
+			}
+		}
+	}
+
 	// Load movement remaining from encounter data
 	movementRemaining := encOutput.Data.MovementRemaining
 	if movementRemaining == 0 {
@@ -1241,6 +1299,7 @@ func (o *Orchestrator) MoveCharacter(ctx context.Context, input *MoveCharacterIn
 				MovementRemaining: 0,
 				StopReason:        "invalid_coordinates",
 				UpdatedRoom:       roomData,
+				Walls:             walls,
 			}, nil
 		}
 	}
@@ -1271,12 +1330,13 @@ func (o *Orchestrator) MoveCharacter(ctx context.Context, input *MoveCharacterIn
 					MovementRemaining: 0,
 					StopReason:        stopReason,
 					UpdatedRoom:       roomData,
+					Walls:             walls,
 				}, nil
 			}
 		}
 	}
 
-	// 6. Calculate distance and update movement
+	// 5b. Get current position for wall collision and distance calculation
 	var oldCube spatial.CubeCoordinate
 	cubePlacement, exists := roomData.CubeEntities[input.EntityID]
 	if exists {
@@ -1285,6 +1345,30 @@ func (o *Orchestrator) MoveCharacter(ctx context.Context, input *MoveCharacterIn
 		// Entity doesn't exist yet - treat as starting from target (0 distance)
 		oldCube = targetCube
 	}
+
+	// 5c. Check if path crosses any walls
+	if len(dungeonWalls) > 0 && exists {
+		wallValidator := dungeontoolkit.NewWallValidator()
+		startPos := dungeon.Position{X: oldCube.X, Y: oldCube.Y, Z: oldCube.Z}
+		endPos := dungeon.Position{X: targetCube.X, Y: targetCube.Y, Z: targetCube.Z}
+
+		if wallValidator.PathCrossesWall(startPos, endPos, dungeonWalls) {
+			return &MoveCharacterOutput{
+				Success: false,
+				FinalPosition: &Position{
+					X: float64(oldCube.X),
+					Y: float64(oldCube.Y),
+					Z: float64(oldCube.Z),
+				},
+				MovementRemaining: movementRemaining,
+				StopReason:        "blocked_by_wall",
+				UpdatedRoom:       roomData,
+				Walls:             walls,
+			}, nil
+		}
+	}
+
+	// 6. Calculate distance and update movement
 
 	// Calculate cube distance for hex grids: (|dx| + |dy| + |dz|) / 2
 	dx := targetCube.X - oldCube.X
@@ -1315,6 +1399,7 @@ func (o *Orchestrator) MoveCharacter(ctx context.Context, input *MoveCharacterIn
 			MovementRemaining: movementRemaining,
 			StopReason:        "insufficient_movement",
 			UpdatedRoom:       roomData,
+			Walls:             walls,
 		}, nil
 	}
 
@@ -1356,6 +1441,7 @@ func (o *Orchestrator) MoveCharacter(ctx context.Context, input *MoveCharacterIn
 		MovementRemaining: movementRemaining,
 		StopReason:        "completed",
 		UpdatedRoom:       roomData,
+		Walls:             dungeonWalls,
 	})
 
 	// 10. Return success with updated position
@@ -1369,6 +1455,7 @@ func (o *Orchestrator) MoveCharacter(ctx context.Context, input *MoveCharacterIn
 		MovementRemaining: movementRemaining,
 		StopReason:        "completed",
 		UpdatedRoom:       roomData,
+		Walls:             walls,
 	}, nil
 }
 
@@ -1523,6 +1610,24 @@ func (o *Orchestrator) EndTurn(ctx context.Context, input *EndTurnInput) (*EndTu
 		}
 	}
 
+	// 11b. Load dungeon to get walls for the current room
+	var dungeonWalls []dungeon.WallSegment
+	if o.dungeonRepo != nil {
+		dungeonOutput, dungeonErr := o.dungeonRepo.GetByEncounterID(ctx, &dungeonrepo.GetByEncounterIDInput{
+			EncounterID: input.EncounterID,
+		})
+		if dungeonErr == nil && dungeonOutput.Dungeon != nil {
+			dungeonEntity := dungeonOutput.Dungeon
+			currentRoomID := dungeonEntity.CurrentRoomID
+			if currentRoomID == "" {
+				currentRoomID = dungeonEntity.StartRoomID
+			}
+			if currentRoom := dungeonEntity.GetRoom(currentRoomID); currentRoom != nil {
+				dungeonWalls = currentRoom.Walls
+			}
+		}
+	}
+
 	// 12. Publish events
 	// Publish TurnEnded event
 	o.publishEvent(ctx, input.EncounterID, entities.EventTypeTurnEnded, &entities.TurnEndedEvent{
@@ -1532,6 +1637,7 @@ func (o *Orchestrator) EndTurn(ctx context.Context, input *EndTurnInput) (*EndTu
 		NewRound:         newRound,
 		CombatState:      combatState,
 		Room:             turnEndedRoomData,
+		Walls:            dungeonWalls,
 	})
 
 	// Publish MonsterTurnCompleted events for each monster turn
@@ -1542,6 +1648,7 @@ func (o *Orchestrator) EndTurn(ctx context.Context, input *EndTurnInput) (*EndTu
 			Actions:           mt.Actions,
 			Movement:          mt.Movement,
 			Room:              turnEndedRoomData,
+			Walls:             dungeonWalls,
 			UpdatedCharacters: mt.UpdatedCharacters,
 		})
 	}
@@ -3009,6 +3116,7 @@ func (o *Orchestrator) StartCombat(
 	o.publishEvent(ctx, input.EncounterID, entities.EventTypeCombatStarted, &entities.CombatStartedEvent{
 		CombatState:  combatState,
 		Room:         roomData,
+		Walls:        startRoom.Walls,
 		Party:        party,
 		Monsters:     monsterStates,
 		Doors:        convertDoorsToEntityDoors(doors),
@@ -3024,6 +3132,7 @@ func (o *Orchestrator) StartCombat(
 			Actions:           mt.Actions,
 			Movement:          mt.Movement,
 			Room:              roomData,
+			Walls:             startRoom.Walls,
 			UpdatedCharacters: mt.UpdatedCharacters,
 		})
 	}
@@ -3421,7 +3530,7 @@ func (o *Orchestrator) GetEncounterState(ctx context.Context, input *GetEncounte
 			output.Monsters = monsters
 		}
 
-		// Load dungeon to get doors for current room
+		// Load dungeon to get doors and walls for current room
 		if o.dungeonRepo != nil {
 			dungeonOutput, dungeonErr := o.dungeonRepo.GetByEncounterID(ctx, &dungeonrepo.GetByEncounterIDInput{
 				EncounterID: input.EncounterID,
@@ -3429,12 +3538,16 @@ func (o *Orchestrator) GetEncounterState(ctx context.Context, input *GetEncounte
 			if dungeonErr == nil && dungeonOutput != nil && dungeonOutput.Dungeon != nil {
 				dungeonEntity := dungeonOutput.Dungeon
 				output.DungeonID = dungeonEntity.ID
-				// Get doors for current room (start room or current exploration room)
+				// Get doors and walls for current room (start room or current exploration room)
 				currentRoomID := dungeonEntity.CurrentRoomID
 				if currentRoomID == "" {
 					currentRoomID = dungeonEntity.StartRoomID
 				}
 				output.Doors = o.getDoorInfoForRoom(dungeonEntity, currentRoomID)
+				// Get walls from dungeon room
+				if currentRoom := dungeonEntity.GetRoom(currentRoomID); currentRoom != nil {
+					output.Walls = o.convertToWallInfo(currentRoom)
+				}
 			}
 		}
 	}

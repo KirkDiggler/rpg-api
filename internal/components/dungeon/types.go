@@ -175,7 +175,9 @@ type RoomConnection struct {
 	Type ConnectionType
 	// IsMainPath indicates if this is on the critical path
 	IsMainPath bool
-	// PhysicalHint describes the location (e.g., "north door")
+	// Direction is the cardinal direction from FromRoom (which wall the door is on)
+	Direction Direction
+	// PhysicalHint describes the connection for players (e.g., "heavy stone door")
 	PhysicalHint string
 }
 
@@ -256,6 +258,44 @@ const (
 	// ConnectionTypePassage is an open passage
 	ConnectionTypePassage
 )
+
+// Direction represents a cardinal direction for connection placement
+type Direction string
+
+const (
+	// DirectionNorth places connection on the north (top) wall
+	DirectionNorth Direction = "north"
+	// DirectionSouth places connection on the south (bottom) wall
+	DirectionSouth Direction = "south"
+	// DirectionEast places connection on the east (right) wall
+	DirectionEast Direction = "east"
+	// DirectionWest places connection on the west (left) wall
+	DirectionWest Direction = "west"
+	// DirectionUp for vertical connections (stairs up)
+	DirectionUp Direction = "up"
+	// DirectionDown for vertical connections (stairs down)
+	DirectionDown Direction = "down"
+)
+
+// Opposite returns the opposite direction
+func (d Direction) Opposite() Direction {
+	switch d {
+	case DirectionNorth:
+		return DirectionSouth
+	case DirectionSouth:
+		return DirectionNorth
+	case DirectionEast:
+		return DirectionWest
+	case DirectionWest:
+		return DirectionEast
+	case DirectionUp:
+		return DirectionDown
+	case DirectionDown:
+		return DirectionUp
+	default:
+		return ""
+	}
+}
 
 // GridType defines the grid coordinate system
 type GridType int

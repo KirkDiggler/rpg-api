@@ -131,21 +131,23 @@ type GeneratorConfig struct {
 
 // Generator orchestrates all layers of dungeon generation
 type Generator struct {
-	layoutGen       LayoutGenerator
-	shapeGen        ShapeGenerator
-	featureGen      FeatureGenerator
-	encounterGen    EncounterGenerator
-	budgetAllocator BudgetAllocator
+	layoutGen        LayoutGenerator
+	shapeGen         ShapeGenerator
+	featureGen       FeatureGenerator
+	encounterGen     EncounterGenerator
+	budgetAllocator  BudgetAllocator
+	directionAdapter *DirectionAdapter
 }
 
 // NewGenerator creates a new dungeon generator with injected dependencies
 func NewGenerator(cfg *GeneratorConfig) *Generator {
 	return &Generator{
-		layoutGen:       cfg.LayoutGen,
-		shapeGen:        cfg.ShapeGen,
-		featureGen:      cfg.FeatureGen,
-		encounterGen:    cfg.EncounterGen,
-		budgetAllocator: cfg.BudgetAllocator,
+		layoutGen:        cfg.LayoutGen,
+		shapeGen:         cfg.ShapeGen,
+		featureGen:       cfg.FeatureGen,
+		encounterGen:     cfg.EncounterGen,
+		budgetAllocator:  cfg.BudgetAllocator,
+		directionAdapter: NewDirectionAdapter(),
 	}
 }
 
@@ -207,7 +209,7 @@ func (g *Generator) Generate(ctx context.Context, input *GenerateInput) (*Genera
 		rooms[i] = room
 	}
 
-	// Step 4: Update connections with actual room IDs
+	// Step 4: Update connections with actual room IDs and assign directions
 	connections := make([]*RoomConnection, len(layoutOutput.Connections))
 	for i, conn := range layoutOutput.Connections {
 		connections[i] = &RoomConnection{
@@ -218,6 +220,22 @@ func (g *Generator) Generate(ctx context.Context, input *GenerateInput) (*Genera
 			PhysicalHint: conn.PhysicalHint,
 		}
 	}
+
+	// Step 4b: Derive cardinal directions from layout topology
+	roomOrder := make([]string, len(rooms))
+	for i, room := range rooms {
+		roomOrder[i] = room.ID
+	}
+	dirAdapter := g.directionAdapter
+	if dirAdapter == nil {
+		dirAdapter = &DirectionAdapter{}
+	}
+	dirOutput := dirAdapter.AssignDirections(&DirectionAdapterInput{
+		Connections: connections,
+		Layout:      input.Layout,
+		RoomOrder:   roomOrder,
+	})
+	connections = dirOutput.Connections
 
 	// Step 5: Apply presentation layer to obscure main path
 	connections = g.applyPresentation(connections, input.Theme, seed)
@@ -317,6 +335,7 @@ func (g *Generator) applyPresentation(connections []*RoomConnection, theme Theme
 			ToRoom:       conn.ToRoom,
 			Type:         presentation.ConnectionType(conn.Type),
 			IsMainPath:   conn.IsMainPath,
+			Direction:    presentation.Direction(conn.Direction),
 			PhysicalHint: conn.PhysicalHint,
 		}
 	}
@@ -340,6 +359,7 @@ func (g *Generator) applyPresentation(connections []*RoomConnection, theme Theme
 			ToRoom:       conn.ToRoom,
 			Type:         ConnectionType(conn.Type),
 			IsMainPath:   conn.IsMainPath,
+			Direction:    Direction(conn.Direction),
 			PhysicalHint: conn.PhysicalHint,
 		}
 	}

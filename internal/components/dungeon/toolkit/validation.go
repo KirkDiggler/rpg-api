@@ -219,3 +219,67 @@ func (v *WallValidator) isAdjacent(p1, p2 dungeon.Position) bool {
 	}
 	return dx <= 1 && dy <= 1
 }
+
+// PathCrossesWall checks if a movement path from start to end crosses any wall
+// Returns true if the path is blocked by a wall, false if the path is clear
+func (v *WallValidator) PathCrossesWall(start, end dungeon.Position, walls []dungeon.WallSegment) bool {
+	for _, wall := range walls {
+		if !wall.BlocksMovement {
+			continue // Skip walls that don't block movement
+		}
+		if v.segmentsIntersect(start, end, wall.Start, wall.End) {
+			return true
+		}
+	}
+	return false
+}
+
+// segmentsIntersect checks if two line segments intersect
+// Uses the standard cross product method for 2D line segment intersection
+func (v *WallValidator) segmentsIntersect(p1, p2, p3, p4 dungeon.Position) bool {
+	// Calculate orientation of triplets
+	d1 := v.orientation(p3, p4, p1)
+	d2 := v.orientation(p3, p4, p2)
+	d3 := v.orientation(p1, p2, p3)
+	d4 := v.orientation(p1, p2, p4)
+
+	// General case: segments intersect if orientations differ
+	if d1 != d2 && d3 != d4 {
+		return true
+	}
+
+	// Special cases: collinear points
+	if d1 == 0 && v.onSegment(p3, p1, p4) {
+		return true
+	}
+	if d2 == 0 && v.onSegment(p3, p2, p4) {
+		return true
+	}
+	if d3 == 0 && v.onSegment(p1, p3, p2) {
+		return true
+	}
+	if d4 == 0 && v.onSegment(p1, p4, p2) {
+		return true
+	}
+
+	return false
+}
+
+// orientation returns the orientation of triplet (p, q, r)
+// 0 -> Collinear, 1 -> Clockwise, 2 -> Counter-clockwise
+func (v *WallValidator) orientation(p, q, r dungeon.Position) int {
+	val := (q.Y-p.Y)*(r.X-q.X) - (q.X-p.X)*(r.Y-q.Y)
+	if val == 0 {
+		return 0 // Collinear
+	}
+	if val > 0 {
+		return 1 // Clockwise
+	}
+	return 2 // Counter-clockwise
+}
+
+// onSegment checks if point q lies on segment pr (given p, q, r are collinear)
+func (v *WallValidator) onSegment(p, q, r dungeon.Position) bool {
+	return q.X <= max(p.X, r.X) && q.X >= min(p.X, r.X) &&
+		q.Y <= max(p.Y, r.Y) && q.Y >= min(p.Y, r.Y)
+}

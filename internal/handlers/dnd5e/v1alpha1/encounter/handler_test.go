@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/suite"
 	"go.uber.org/mock/gomock"
@@ -13,6 +14,8 @@ import (
 	apiv1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/api/v1alpha1"
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
+	"github.com/KirkDiggler/rpg-api/internal/components/dungeon"
+	"github.com/KirkDiggler/rpg-api/internal/entities"
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/encounter"
 	encountermock "github.com/KirkDiggler/rpg-api/internal/orchestrators/encounter/mock"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/combat"
@@ -1428,4 +1431,186 @@ func (s *HandlerTestSuite) TestGetEncounterState_PlayerNotInEncounter() {
 	st, ok := status.FromError(err)
 	s.Require().True(ok)
 	s.Assert().Equal(codes.PermissionDenied, st.Code())
+}
+
+// =============================================================================
+// convertToProtoEvent Tests - MovementCompleted with Walls
+// =============================================================================
+
+func (s *HandlerTestSuite) TestConvertToProtoEvent_MovementCompleted_IncludesWalls() {
+	// Arrange: Create a MovementCompletedEvent with walls
+	roomData := &spatial.RoomData{
+		ID:       "room-1",
+		Type:     "dungeon",
+		Width:    20,
+		Height:   20,
+		GridType: spatial.GridTypeHex,
+	}
+
+	walls := []dungeon.WallSegment{
+		{
+			ID:             "wall-1",
+			Start:          dungeon.Position{X: 5, Y: -10, Z: 5},
+			End:            dungeon.Position{X: 6, Y: -12, Z: 6},
+			Type:           dungeon.WallTypeIndestructible,
+			BlocksMovement: true,
+		},
+		{
+			ID:             "wall-2",
+			Start:          dungeon.Position{X: 10, Y: -20, Z: 10},
+			End:            dungeon.Position{X: 12, Y: -24, Z: 12},
+			Type:           dungeon.WallTypeDestructible,
+			BlocksMovement: true,
+		},
+	}
+
+	event := &entities.EncounterEvent{
+		ID:        "evt-123",
+		Type:      entities.EventTypeMovementCompleted,
+		Timestamp: time.Now(),
+		MovementCompleted: &entities.MovementCompletedEvent{
+			EntityID:   "char-1",
+			EntityType: "character",
+			FinalPosition: &entities.Position{
+				X: 5,
+				Y: -10,
+				Z: 5,
+			},
+			MovementRemaining: 15,
+			StopReason:        "completed",
+			UpdatedRoom:       roomData,
+			Walls:             walls,
+		},
+	}
+
+	// Act: Convert to proto
+	protoEvent, err := s.handler.convertToProtoEvent(event)
+
+	// Assert: No error and walls are present
+	s.Require().NoError(err)
+	s.Require().NotNil(protoEvent)
+
+	// Get the MovementCompleted event
+	movementCompleted := protoEvent.GetMovementCompleted()
+	s.Require().NotNil(movementCompleted, "MovementCompleted should be set")
+
+	// Verify the room has walls
+	s.Require().NotNil(movementCompleted.UpdatedRoom, "UpdatedRoom should be set")
+	s.Require().NotEmpty(movementCompleted.UpdatedRoom.Walls, "Walls should NOT be empty")
+	s.Equal(2, len(movementCompleted.UpdatedRoom.Walls), "Should have 2 walls")
+
+	// Verify wall properties
+	wall1 := movementCompleted.UpdatedRoom.Walls[0]
+	s.NotNil(wall1.Start, "Wall start position should be set")
+	s.NotNil(wall1.End, "Wall end position should be set")
+	s.True(wall1.BlocksMovement, "Wall should block movement")
+}
+
+func (s *HandlerTestSuite) TestConvertToProtoEvent_TurnEnded_IncludesWalls() {
+	// Arrange: Create a TurnEndedEvent with walls
+	roomData := &spatial.RoomData{
+		ID:       "room-1",
+		Type:     "dungeon",
+		Width:    20,
+		Height:   20,
+		GridType: spatial.GridTypeHex,
+	}
+
+	walls := []dungeon.WallSegment{
+		{
+			ID:             "wall-1",
+			Start:          dungeon.Position{X: 5, Y: -10, Z: 5},
+			End:            dungeon.Position{X: 6, Y: -12, Z: 6},
+			Type:           dungeon.WallTypeIndestructible,
+			BlocksMovement: true,
+		},
+	}
+
+	event := &entities.EncounterEvent{
+		ID:        "evt-123",
+		Type:      entities.EventTypeTurnEnded,
+		Timestamp: time.Now(),
+		TurnEnded: &entities.TurnEndedEvent{
+			PreviousEntityID: "char-1",
+			NextEntityID:     "char-2",
+			Round:            1,
+			NewRound:         false,
+			Room:             roomData,
+			Walls:            walls,
+		},
+	}
+
+	// Act: Convert to proto
+	protoEvent, err := s.handler.convertToProtoEvent(event)
+
+	// Assert: No error and walls are present
+	s.Require().NoError(err)
+	s.Require().NotNil(protoEvent)
+
+	// Get the TurnEnded event
+	turnEnded := protoEvent.GetTurnEnded()
+	s.Require().NotNil(turnEnded, "TurnEnded should be set")
+
+	// Verify the room has walls
+	s.Require().NotNil(turnEnded.UpdatedRoom, "UpdatedRoom should be set")
+	s.Require().NotEmpty(turnEnded.UpdatedRoom.Walls, "Walls should NOT be empty")
+	s.Equal(1, len(turnEnded.UpdatedRoom.Walls), "Should have 1 wall")
+}
+
+func (s *HandlerTestSuite) TestConvertToProtoEvent_MonsterTurnCompleted_IncludesWalls() {
+	// Arrange: Create a MonsterTurnCompletedEvent with walls
+	roomData := &spatial.RoomData{
+		ID:       "room-1",
+		Type:     "dungeon",
+		Width:    20,
+		Height:   20,
+		GridType: spatial.GridTypeHex,
+	}
+
+	walls := []dungeon.WallSegment{
+		{
+			ID:             "wall-1",
+			Start:          dungeon.Position{X: 5, Y: -10, Z: 5},
+			End:            dungeon.Position{X: 6, Y: -12, Z: 6},
+			Type:           dungeon.WallTypeIndestructible,
+			BlocksMovement: true,
+		},
+		{
+			ID:             "wall-2",
+			Start:          dungeon.Position{X: 10, Y: -20, Z: 10},
+			End:            dungeon.Position{X: 12, Y: -24, Z: 12},
+			Type:           dungeon.WallTypeDestructible,
+			BlocksMovement: true,
+		},
+	}
+
+	event := &entities.EncounterEvent{
+		ID:        "evt-456",
+		Type:      entities.EventTypeMonsterTurnCompleted,
+		Timestamp: time.Now(),
+		MonsterTurnCompleted: &entities.MonsterTurnCompletedEvent{
+			MonsterID:   "monster-1",
+			MonsterName: "Skeleton",
+			Actions:     []entities.MonsterExecutedAction{},
+			Movement:    []entities.Position{},
+			Room:        roomData,
+			Walls:       walls,
+		},
+	}
+
+	// Act: Convert to proto
+	protoEvent, err := s.handler.convertToProtoEvent(event)
+
+	// Assert: No error and walls are present
+	s.Require().NoError(err)
+	s.Require().NotNil(protoEvent)
+
+	// Get the MonsterTurnCompleted event
+	monsterTurn := protoEvent.GetMonsterTurnCompleted()
+	s.Require().NotNil(monsterTurn, "MonsterTurnCompleted should be set")
+
+	// Verify the room has walls
+	s.Require().NotNil(monsterTurn.UpdatedRoom, "UpdatedRoom should be set")
+	s.Require().NotEmpty(monsterTurn.UpdatedRoom.Walls, "Walls should NOT be empty")
+	s.Equal(2, len(monsterTurn.UpdatedRoom.Walls), "Should have 2 walls")
 }
