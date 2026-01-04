@@ -5,13 +5,16 @@ import (
 	"fmt"
 	"math/rand"
 
+	"github.com/KirkDiggler/rpg-toolkit/tools/environments"
+
 	"github.com/KirkDiggler/rpg-api/internal/components/dungeon"
 )
 
-// ToolkitShapeGenerator implements dungeon.ShapeGenerator using simple geometric shapes
+// ToolkitShapeGenerator implements dungeon.ShapeGenerator using toolkit shapes
 type ToolkitShapeGenerator struct {
 	random    *rand.Rand
 	perimeter *PerimeterGenerator
+	selector  *ShapeSelector
 }
 
 // NewToolkitShapeGenerator creates a new shape generator
@@ -20,11 +23,12 @@ func NewToolkitShapeGenerator() *ToolkitShapeGenerator {
 	return &ToolkitShapeGenerator{
 		random:    rand.New(rand.NewSource(0)), // Will be reseeded per generation
 		perimeter: NewPerimeterGenerator(),
+		selector:  NewShapeSelector(),
 	}
 }
 
 // Generate creates a room shape based on the input parameters
-func (g *ToolkitShapeGenerator) Generate(ctx context.Context, input *dungeon.ShapeInput) (*dungeon.ShapeOutput, error) {
+func (g *ToolkitShapeGenerator) Generate(_ context.Context, input *dungeon.ShapeInput) (*dungeon.ShapeOutput, error) {
 	if input == nil {
 		return nil, fmt.Errorf("input is required")
 	}
@@ -34,13 +38,16 @@ func (g *ToolkitShapeGenerator) Generate(ctx context.Context, input *dungeon.Sha
 		g.random.Seed(input.Seed)
 	}
 
-	// Determine room dimensions based on size
-	width, height := calculateDimensions(input.Size, input.Style, g.random)
+	// Select appropriate shape from toolkit based on room type and style
+	toolkitShape := g.selector.SelectShape(input.RoomType, input.Style)
 
-	// Generate shape based on style
-	shape := generateShapeForStyle(width, height, input.Style, g.random)
+	// Get dimensions appropriate for this room type and size
+	width, height := g.selector.GetDimensions(input.RoomType, input.Size, toolkitShape)
 
-	// Generate perimeter walls (without doors - those are added later based on connections)
+	// Convert toolkit shape to dungeon shape with cube coordinates
+	shape := g.convertToDungeonShape(toolkitShape, width, height)
+
+	// Generate perimeter walls
 	perimeterOutput := g.perimeter.Generate(&PerimeterInput{
 		Shape:       shape,
 		Connections: nil, // Connections are not known at shape generation time
@@ -52,70 +59,38 @@ func (g *ToolkitShapeGenerator) Generate(ctx context.Context, input *dungeon.Sha
 	}, nil
 }
 
-// calculateDimensions returns width and height based on room size
-func calculateDimensions(size dungeon.RoomSize, style dungeon.ShapeStyle, rng *rand.Rand) (int, int) {
-	var minW, maxW, minH, maxH int
-
-	// Base dimensions on size category
-	switch size {
-	case dungeon.RoomSizeSmall:
-		minW, maxW = 10, 15
-		minH, maxH = 10, 15
-	case dungeon.RoomSizeMedium:
-		minW, maxW = 15, 25
-		minH, maxH = 15, 20
-	case dungeon.RoomSizeLarge:
-		minW, maxW = 25, 40
-		minH, maxH = 20, 30
-	default:
-		minW, maxW = 15, 25
-		minH, maxH = 15, 20
+// convertToDungeonShape transforms a toolkit RoomShape to a dungeon.Shape with cube coordinates
+func (g *ToolkitShapeGenerator) convertToDungeonShape(toolkitShape *environments.RoomShape, width, height int) *dungeon.Shape {
+	if toolkitShape == nil {
+		// Fallback to simple rectangle
+		return g.createRectangleShape(width, height)
 	}
 
-	// Add variation based on style
-	if style == dungeon.ShapeStyleOrganic {
-		// Organic shapes have more variation
-		minW -= 2
-		maxW += 3
-		minH -= 2
-		maxH += 3
+	// Scale normalized boundary (0.0-1.0) to actual dimensions
+	bounds := make([]dungeon.Position, len(toolkitShape.Boundary))
+	for i, point := range toolkitShape.Boundary {
+		// Scale normalized coords to grid dimensions
+		scaledX := int(point.X * float64(width-1))
+		scaledY := int(point.Y * float64(height-1))
+
+		// Convert to cube coordinates
+		bounds[i] = offsetToCube(scaledX, scaledY)
 	}
 
-	// Generate random dimensions within bounds
-	width := minW
-	if maxW > minW {
-		width += rng.Intn(maxW - minW + 1)
-	}
+	// Calculate area based on shape type
+	area := g.calculateArea(toolkitShape, width, height)
 
-	height := minH
-	if maxH > minH {
-		height += rng.Intn(maxH - minH + 1)
-	}
-
-	return width, height
-}
-
-// generateShapeForStyle creates a shape with bounds appropriate to the style
-func generateShapeForStyle(width, height int, style dungeon.ShapeStyle, rng *rand.Rand) *dungeon.Shape {
-	switch style {
-	case dungeon.ShapeStyleStructured:
-		return generateStructuredShape(width, height, rng)
-	case dungeon.ShapeStyleOrganic:
-		return generateOrganicShape(width, height, rng)
-	case dungeon.ShapeStyleMixed:
-		// Randomly choose between structured and organic
-		if rng.Float64() < 0.5 {
-			return generateStructuredShape(width, height, rng)
-		}
-		return generateOrganicShape(width, height, rng)
-	default:
-		return generateStructuredShape(width, height, rng)
+	return &dungeon.Shape{
+		Bounds:   bounds,
+		GridType: dungeon.GridTypeHex,
+		Width:    width,
+		Height:   height,
+		Area:     area,
 	}
 }
 
-// generateStructuredShape creates a rectangular room with clean edges
-func generateStructuredShape(width, height int, _ *rand.Rand) *dungeon.Shape {
-	// Simple rectangle using cube coordinates
+// createRectangleShape creates a simple rectangular shape as fallback
+func (g *ToolkitShapeGenerator) createRectangleShape(width, height int) *dungeon.Shape {
 	bounds := []dungeon.Position{
 		offsetToCube(0, 0),
 		offsetToCube(width-1, 0),
@@ -132,30 +107,25 @@ func generateStructuredShape(width, height int, _ *rand.Rand) *dungeon.Shape {
 	}
 }
 
-// generateOrganicShape creates an irregular cave-like room
-func generateOrganicShape(width, height int, rng *rand.Rand) *dungeon.Shape {
-	// For now, create a rectangle with some irregular edges
-	// In a full implementation, this would create truly organic shapes
-	// with varying edge positions
+// calculateArea estimates the area based on shape type
+func (g *ToolkitShapeGenerator) calculateArea(shape *environments.RoomShape, width, height int) int {
+	fullArea := width * height
 
-	variation := 2 // How much edges can vary
-
-	// Use cube coordinates for bounds
-	bounds := []dungeon.Position{
-		offsetToCube(rng.Intn(variation), 0),
-		offsetToCube(width-1-rng.Intn(variation), rng.Intn(variation)),
-		offsetToCube(width-1, height-1-rng.Intn(variation)),
-		offsetToCube(rng.Intn(variation), height-1),
-	}
-
-	// Calculate approximate area (simplified)
-	area := width * height
-
-	return &dungeon.Shape{
-		Bounds:   bounds,
-		GridType: dungeon.GridTypeHex,
-		Width:    width,
-		Height:   height,
-		Area:     area,
+	// Adjust for shape type
+	switch shape.Type {
+	case "basic":
+		// Rectangle/square - full area
+		return fullArea
+	case "junction":
+		// L-shape, T-shape - roughly 60-70% of bounding box
+		return fullArea * 65 / 100
+	case "hub":
+		// Cross - roughly 50% of bounding box
+		return fullArea * 50 / 100
+	case "organic":
+		// Oval, hexagon - roughly 75-80% of bounding box
+		return fullArea * 78 / 100
+	default:
+		return fullArea
 	}
 }

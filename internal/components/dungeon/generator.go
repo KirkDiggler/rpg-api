@@ -52,9 +52,10 @@ type ShapeGenerator interface {
 
 // ShapeInput defines parameters for shape generation
 type ShapeInput struct {
-	Size  RoomSize
-	Style ShapeStyle
-	Seed  int64
+	Size     RoomSize
+	Style    ShapeStyle
+	RoomType RoomType // Used for shape selection based on room purpose
+	Seed     int64
 }
 
 // ShapeOutput contains the generated shape
@@ -251,9 +252,10 @@ type generateRoomInput struct {
 func (g *Generator) generateRoom(ctx context.Context, input *generateRoomInput) (*Room, error) {
 	// Generate shape
 	shapeOutput, err := g.shapeGen.Generate(ctx, &ShapeInput{
-		Size:  input.size,
-		Style: input.theme.ShapeStyle,
-		Seed:  input.seed,
+		Size:     input.size,
+		Style:    input.theme.ShapeStyle,
+		RoomType: input.slot.RoomType,
+		Seed:     input.seed,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate shape: %w", err)

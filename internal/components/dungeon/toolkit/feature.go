@@ -142,9 +142,9 @@ func (g *ToolkitFeatureGenerator) generateObstacles(shape *dungeon.Shape, rules 
 		row := g.random.Intn(shape.Height)
 
 		obstacles = append(obstacles, dungeon.Obstacle{
-			ID:       uuid.New().String(),
-			Type:     obstacleType,
-			Position: offsetToCube(col, row),
+			ID:                uuid.New().String(),
+			Type:              obstacleType,
+			Position:          offsetToCube(col, row),
 			BlocksMovement:    true,
 			BlocksLineOfSight: isObstacleBlockingSight(obstacleType),
 		})
