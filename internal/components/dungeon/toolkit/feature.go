@@ -87,6 +87,15 @@ func (g *ToolkitFeatureGenerator) generateWallsFromPattern(input *dungeon.Featur
 		return nil
 	}
 
+	// Check room size - small rooms don't need interior walls
+	if input.Shape != nil {
+		area := input.Shape.Width * input.Shape.Height
+		if area < 80 {
+			// Very small room - skip interior walls entirely
+			return nil
+		}
+	}
+
 	// Select pattern based on room type
 	patternType, err := input.Tables.SelectPattern(input.RoomType, g.random)
 	if err != nil {
@@ -112,7 +121,46 @@ func (g *ToolkitFeatureGenerator) generateWallsFromPattern(input *dungeon.Featur
 		Seed:    input.Seed,
 	})
 
-	return patternOutput.Walls
+	// Scale walls based on room size
+	walls := g.scaleWallsByRoomSize(patternOutput.Walls, input.Shape)
+
+	return walls
+}
+
+// scaleWallsByRoomSize reduces the number of interior walls for smaller rooms
+// Small rooms get cluttered quickly, so we reduce or eliminate interior walls
+func (g *ToolkitFeatureGenerator) scaleWallsByRoomSize(walls []dungeon.WallSegment, shape *dungeon.Shape) []dungeon.WallSegment {
+	if shape == nil || len(walls) == 0 {
+		return walls
+	}
+
+	area := shape.Width * shape.Height
+
+	// Small rooms (area < 120): max 2 walls
+	if area < 120 {
+		if len(walls) > 2 {
+			// Randomly select 2 walls to keep
+			g.random.Shuffle(len(walls), func(i, j int) {
+				walls[i], walls[j] = walls[j], walls[i]
+			})
+			return walls[:2]
+		}
+		return walls
+	}
+
+	// Medium rooms (area < 200): max 4 walls
+	if area < 200 {
+		if len(walls) > 4 {
+			g.random.Shuffle(len(walls), func(i, j int) {
+				walls[i], walls[j] = walls[j], walls[i]
+			})
+			return walls[:4]
+		}
+		return walls
+	}
+
+	// Large rooms: keep all walls
+	return walls
 }
 
 // generateObstacles places obstacles in the room based on rules
