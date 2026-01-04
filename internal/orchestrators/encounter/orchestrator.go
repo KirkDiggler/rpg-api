@@ -1044,37 +1044,62 @@ func (o *Orchestrator) placeMonsters(roomData *spatial.RoomData, room *dungeon.R
 
 // getDoorInfoForRoom extracts door information for a room using stored entity connections
 func (o *Orchestrator) getDoorInfoForRoom(dungeonEntity *entities.Dungeon, roomID string) []DoorInfo {
-	var doors []DoorInfo
-
-	// Get room dimensions for position calculation
+	// Get room for position lookup
 	room := dungeonEntity.GetRoom(roomID)
-	var width, height int
-	if room != nil && room.Shape != nil {
-		width = room.Shape.Width
-		height = room.Shape.Height
-	}
+
+	// Pre-allocate doors slice based on connection count
+	doors := make([]DoorInfo, 0, len(dungeonEntity.Connections))
 
 	for _, conn := range dungeonEntity.Connections {
-		if conn.FromRoomID == roomID || conn.ToRoomID == roomID {
-			targetRoomID := conn.ToRoomID
-			if conn.ToRoomID == roomID {
-				targetRoomID = conn.FromRoomID
-			}
-
-			// Calculate door position based on physical hint (direction)
-			position := calculateDoorPosition(conn.Type, width, height)
-
-			doors = append(doors, DoorInfo{
-				ConnectionID: conn.ID,
-				TargetRoomID: targetRoomID,
-				Direction:    conn.Type, // Physical hint is stored in Type field
-				Position:     position,
-				IsOpen:       false,
-			})
+		if conn.FromRoomID != roomID && conn.ToRoomID != roomID {
+			continue
 		}
+
+		targetRoomID := conn.ToRoomID
+		if conn.ToRoomID == roomID {
+			targetRoomID = conn.FromRoomID
+		}
+
+		// Try to get door position from shape's ConnectionPoints first
+		position := getDoorPositionFromShape(room, conn.Type)
+
+		// Fall back to calculated position if no ConnectionPoint found
+		if position == nil && room != nil && room.Shape != nil {
+			position = calculateDoorPosition(conn.Type, room.Shape.Width, room.Shape.Height)
+		}
+
+		doors = append(doors, DoorInfo{
+			ConnectionID: conn.ID,
+			TargetRoomID: targetRoomID,
+			Direction:    conn.Type, // Physical hint is stored in Type field
+			Position:     position,
+			IsOpen:       false,
+		})
 	}
 
 	return doors
+}
+
+// getDoorPositionFromShape finds the door position from the shape's ConnectionPoints
+func getDoorPositionFromShape(room *dungeon.Room, direction string) *Position {
+	if room == nil || room.Shape == nil {
+		return nil
+	}
+
+	// Normalize direction for matching
+	dirLower := strings.ToLower(direction)
+
+	for _, cp := range room.Shape.ConnectionPoints {
+		if strings.EqualFold(cp.Direction, direction) || strings.Contains(dirLower, strings.ToLower(cp.Direction)) {
+			return &Position{
+				X: float64(cp.Position.X),
+				Y: float64(cp.Position.Y),
+				Z: float64(cp.Position.Z),
+			}
+		}
+	}
+
+	return nil
 }
 
 // calculateDoorPosition determines where to place a door based on the physical hint
