@@ -109,10 +109,12 @@ func (s *OrchestratorTestSuite) expectCharacterTurnEnd(characterID string) {
 
 // expectDungeonLookup sets up a mock expectation for optional dungeon lookups during EndTurn.
 // Walls are optional in events, so we just return an empty result.
+// Uses AnyTimes() since dungeon lookups can happen multiple times (event publishing, monster turns, etc.)
 func (s *OrchestratorTestSuite) expectDungeonLookup(encounterID string) {
 	s.mockDungeonRepo.EXPECT().
 		GetByEncounterID(gomock.Any(), &dungeonrepo.GetByEncounterIDInput{EncounterID: encounterID}).
-		Return(&dungeonrepo.GetOutput{}, nil)
+		Return(&dungeonrepo.GetOutput{}, nil).
+		AnyTimes()
 }
 
 func (s *OrchestratorTestSuite) TestNew_Success() {

@@ -13,7 +13,10 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/weapons"
 	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
 
+	"github.com/KirkDiggler/rpg-api/internal/components/dungeon"
+	dungeontoolkit "github.com/KirkDiggler/rpg-api/internal/components/dungeon/toolkit"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
+	dungeonrepo "github.com/KirkDiggler/rpg-api/internal/repositories/dungeons"
 	encounterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/encounters"
 )
 
@@ -29,6 +32,23 @@ func (o *Orchestrator) executeMonsterTurns(
 	}
 	if enc.InitiativeData == nil {
 		return nil, fmt.Errorf("initiative data is required")
+	}
+
+	// Load dungeon walls for wall collision detection
+	var dungeonWalls []dungeon.WallSegment
+	if o.dungeonRepo != nil && enc.ID != "" {
+		dungeonOutput, dungeonErr := o.dungeonRepo.GetByEncounterID(ctx, &dungeonrepo.GetByEncounterIDInput{
+			EncounterID: enc.ID,
+		})
+		if dungeonErr == nil && dungeonOutput.Dungeon != nil {
+			currentRoomID := dungeonOutput.Dungeon.CurrentRoomID
+			if currentRoomID == "" {
+				currentRoomID = dungeonOutput.Dungeon.StartRoomID
+			}
+			if currentRoom := dungeonOutput.Dungeon.GetRoom(currentRoomID); currentRoom != nil {
+				dungeonWalls = currentRoom.Walls
+			}
+		}
 	}
 
 	var results []*MonsterTurnResult
@@ -70,7 +90,7 @@ func (o *Orchestrator) executeMonsterTurns(
 		}
 
 		// Execute monster's turn
-		result, err := o.executeSingleMonsterTurn(ctx, enc, monsterData, characterIDs)
+		result, err := o.executeSingleMonsterTurn(ctx, enc, monsterData, characterIDs, dungeonWalls)
 		if err != nil {
 			return results, fmt.Errorf("failed to execute monster turn for %s: %w", monsterData.ID, err)
 		}
@@ -98,6 +118,7 @@ func (o *Orchestrator) executeSingleMonsterTurn(
 	enc *encounterrepo.EncounterData,
 	monsterData *monster.Data,
 	characterIDs []string,
+	walls []dungeon.WallSegment,
 ) (*MonsterTurnResult, error) {
 	if monsterData == nil {
 		return nil, fmt.Errorf("monster data is required")
@@ -138,7 +159,7 @@ func (o *Orchestrator) executeSingleMonsterTurn(
 		}
 	}
 
-	perception := buildPerception(roomData, monsterData.ID, characterIDs, enc.Monsters)
+	perception := buildPerception(roomData, monsterData.ID, characterIDs, enc.Monsters, walls)
 
 	// 7. Create turn input
 	turnInput := &monster.TurnInput{
@@ -152,6 +173,11 @@ func (o *Orchestrator) executeSingleMonsterTurn(
 	turnResult, err := mon.TakeTurn(ctx, turnInput)
 	if err != nil {
 		return nil, fmt.Errorf("monster turn failed: %w", err)
+	}
+
+	// 8b. Validate movement against walls - truncate if path crosses or lands on a wall
+	if len(turnResult.Movement) > 0 && len(walls) > 0 {
+		turnResult.Movement = validateMovementAgainstWalls(turnResult.Movement, walls, monsterData.ID, roomData)
 	}
 
 	// 9. Process executed actions and resolve attacks
@@ -353,4 +379,61 @@ func (o *Orchestrator) findMonsterData(enc *encounterrepo.EncounterData, id stri
 	}
 
 	return nil
+}
+
+// validateMovementAgainstWalls checks the movement path against walls and truncates if blocked
+// Returns a valid movement path that doesn't cross or land on walls
+func validateMovementAgainstWalls(
+	movement []spatial.CubeCoordinate,
+	walls []dungeon.WallSegment,
+	monsterID string,
+	roomData *spatial.RoomData,
+) []spatial.CubeCoordinate {
+	if len(movement) == 0 || len(walls) == 0 {
+		return movement
+	}
+
+	// Get monster's current position as starting point
+	var currentPos spatial.CubeCoordinate
+	if roomData != nil {
+		if placement, exists := roomData.CubeEntities[monsterID]; exists {
+			currentPos = placement.CubePosition
+		}
+	}
+
+	// Create wall validator
+	wallValidator := dungeontoolkit.NewWallValidator()
+
+	// Convert walls to blocked hexes for position checking
+	blockedHexes := wallsToBlockedHexes(walls)
+	blockedSet := make(map[spatial.CubeCoordinate]bool)
+	for _, hex := range blockedHexes {
+		blockedSet[hex] = true
+	}
+
+	// Validate each step of movement
+	validMovement := make([]spatial.CubeCoordinate, 0, len(movement))
+
+	for _, nextPos := range movement {
+		// Check if the target position is on a wall
+		if blockedSet[nextPos] {
+			// Can't move onto a wall - stop here
+			break
+		}
+
+		// Check if the path crosses a wall
+		startDungeon := dungeon.Position{X: currentPos.X, Y: currentPos.Y, Z: currentPos.Z}
+		endDungeon := dungeon.Position{X: nextPos.X, Y: nextPos.Y, Z: nextPos.Z}
+
+		if wallValidator.PathCrossesWall(startDungeon, endDungeon, walls) {
+			// Path crosses a wall - stop here
+			break
+		}
+
+		// This step is valid
+		validMovement = append(validMovement, nextPos)
+		currentPos = nextPos
+	}
+
+	return validMovement
 }

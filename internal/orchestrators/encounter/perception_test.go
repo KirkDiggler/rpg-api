@@ -75,8 +75,8 @@ func (s *PerceptionTestSuite) TestBuildPerception_WithCharactersAndMonsters() {
 		{ID: "monster-2", Name: "Goblin 2"},
 	}
 
-	// Build perception for monster-1
-	perception := buildPerception(roomData, "monster-1", characterIDs, monsters)
+	// Build perception for monster-1 (no walls in this test)
+	perception := buildPerception(roomData, "monster-1", characterIDs, monsters, nil)
 
 	// Verify perception data
 	s.NotNil(perception)
@@ -104,7 +104,7 @@ func (s *PerceptionTestSuite) TestBuildPerception_WithCharactersAndMonsters() {
 }
 
 func (s *PerceptionTestSuite) TestBuildPerception_NilRoomData() {
-	perception := buildPerception(nil, "monster-1", []string{"char-1"}, nil)
+	perception := buildPerception(nil, "monster-1", []string{"char-1"}, nil, nil)
 
 	s.NotNil(perception)
 	s.Len(perception.Enemies, 0)
@@ -121,7 +121,7 @@ func (s *PerceptionTestSuite) TestBuildPerception_MonsterNotInRoom() {
 		CubeEntities: map[string]spatial.EntityCubePlacement{},
 	}
 
-	perception := buildPerception(roomData, "missing-monster", []string{"char-1"}, nil)
+	perception := buildPerception(roomData, "missing-monster", []string{"char-1"}, nil, nil)
 
 	s.NotNil(perception)
 	s.Len(perception.Enemies, 0)
@@ -164,7 +164,7 @@ func (s *PerceptionTestSuite) TestBuildPerception_HexGrid() {
 		{ID: "monster-1", Name: "Goblin"},
 	}
 
-	perception := buildPerception(roomData, "monster-1", characterIDs, monsters)
+	perception := buildPerception(roomData, "monster-1", characterIDs, monsters, nil)
 
 	s.NotNil(perception)
 	s.Len(perception.Enemies, 1)

@@ -6,6 +6,8 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/core"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/monster"
 	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
+
+	"github.com/KirkDiggler/rpg-api/internal/components/dungeon"
 )
 
 // buildPerception creates PerceptionData for a monster from room spatial data
@@ -13,16 +15,19 @@ import (
 // Other monsters are allies
 // Enemies are sorted by distance (closest first)
 // Adjacent is marked if distance == 1 hex
+// Walls are converted to BlockedHexes for pathfinding
 func buildPerception(
 	roomData *spatial.RoomData,
 	monsterID string,
 	characterIDs []string,
 	monsters []*monster.Data,
+	walls []dungeon.WallSegment,
 ) *monster.PerceptionData {
 	if roomData == nil {
 		return &monster.PerceptionData{
-			Enemies: []monster.PerceivedEntity{},
-			Allies:  []monster.PerceivedEntity{},
+			Enemies:      []monster.PerceivedEntity{},
+			Allies:       []monster.PerceivedEntity{},
+			BlockedHexes: wallsToBlockedHexes(walls),
 		}
 	}
 
@@ -30,8 +35,9 @@ func buildPerception(
 	monsterPlacement, exists := roomData.CubeEntities[monsterID]
 	if !exists {
 		return &monster.PerceptionData{
-			Enemies: []monster.PerceivedEntity{},
-			Allies:  []monster.PerceivedEntity{},
+			Enemies:      []monster.PerceivedEntity{},
+			Allies:       []monster.PerceivedEntity{},
+			BlockedHexes: wallsToBlockedHexes(walls),
 		}
 	}
 
@@ -94,9 +100,10 @@ func buildPerception(
 	}
 
 	return &monster.PerceptionData{
-		MyPosition: monsterPos,
-		Enemies:    enemies,
-		Allies:     allies,
+		MyPosition:   monsterPos,
+		Enemies:      enemies,
+		Allies:       allies,
+		BlockedHexes: wallsToBlockedHexes(walls),
 	}
 }
 
@@ -132,4 +139,112 @@ func (e *entityAdapter) GetID() string {
 // GetType returns the entity's type
 func (e *entityAdapter) GetType() core.EntityType {
 	return e.entityType
+}
+
+// wallsToBlockedHexes converts wall segments to a list of blocked cube coordinates
+// Each wall segment is rasterized to find all hexes it passes through
+func wallsToBlockedHexes(walls []dungeon.WallSegment) []spatial.CubeCoordinate {
+	if len(walls) == 0 {
+		return nil
+	}
+
+	// Use a map to deduplicate blocked positions
+	blocked := make(map[spatial.CubeCoordinate]bool)
+
+	for _, wall := range walls {
+		// Add all hexes along the wall segment
+		hexes := rasterizeWallSegment(wall.Start, wall.End)
+		for _, hex := range hexes {
+			blocked[hex] = true
+		}
+	}
+
+	// Convert map to slice
+	result := make([]spatial.CubeCoordinate, 0, len(blocked))
+	for pos := range blocked {
+		result = append(result, pos)
+	}
+
+	return result
+}
+
+// rasterizeWallSegment returns all hex positions along a wall segment
+// Uses a simple line rasterization for cube coordinates
+func rasterizeWallSegment(start, end dungeon.Position) []spatial.CubeCoordinate {
+	var result []spatial.CubeCoordinate
+
+	// Calculate the number of steps needed
+	dx := end.X - start.X
+	dy := end.Y - start.Y
+	dz := end.Z - start.Z
+	if dx < 0 {
+		dx = -dx
+	}
+	if dy < 0 {
+		dy = -dy
+	}
+	if dz < 0 {
+		dz = -dz
+	}
+
+	// For cube coordinates, use the maximum absolute difference
+	steps := dx
+	if dy > steps {
+		steps = dy
+	}
+	if dz > steps {
+		steps = dz
+	}
+
+	if steps == 0 {
+		// Start and end are the same point
+		return []spatial.CubeCoordinate{{X: start.X, Y: start.Y, Z: start.Z}}
+	}
+
+	// Interpolate along the line
+	for i := 0; i <= steps; i++ {
+		t := float64(i) / float64(steps)
+		x := float64(start.X) + t*float64(end.X-start.X)
+		y := float64(start.Y) + t*float64(end.Y-start.Y)
+		z := float64(start.Z) + t*float64(end.Z-start.Z)
+
+		// Round to nearest cube coordinate
+		cube := roundCube(x, y, z)
+		result = append(result, cube)
+	}
+
+	return result
+}
+
+// roundCube rounds floating point cube coordinates to the nearest valid cube coordinate
+// Ensures x + y + z = 0 constraint is maintained
+func roundCube(x, y, z float64) spatial.CubeCoordinate {
+	rx := int(x + 0.5)
+	ry := int(y + 0.5)
+	rz := int(z + 0.5)
+
+	// Fix rounding errors to maintain x + y + z = 0
+	xDiff := float64(rx) - x
+	yDiff := float64(ry) - y
+	zDiff := float64(rz) - z
+
+	if xDiff < 0 {
+		xDiff = -xDiff
+	}
+	if yDiff < 0 {
+		yDiff = -yDiff
+	}
+	if zDiff < 0 {
+		zDiff = -zDiff
+	}
+
+	if xDiff > yDiff && xDiff > zDiff {
+		rx = -ry - rz
+	} else if yDiff > zDiff {
+		ry = -rx - rz
+	} else {
+		rz = -rx - ry
+	}
+
+	return spatial.CubeCoordinate{X: rx, Y: ry, Z: rz}
 }
