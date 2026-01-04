@@ -169,6 +169,16 @@ type DoorInfo struct {
 	IsOpen       bool      // Whether the door has been opened (affects visibility and traversal)
 }
 
+// WallInfo represents a wall segment in a room
+type WallInfo struct {
+	ID                string    // Unique identifier for this wall
+	Start             *Position // Start position in cube coordinates
+	End               *Position // End position in cube coordinates
+	Material          string    // Material type (e.g., "stone", "wood")
+	BlocksMovement    bool      // Whether movement through this wall is blocked
+	BlocksLineOfSight bool      // Whether line of sight is blocked
+}
+
 // CreateDungeonOutput returns the created encounter details
 type CreateDungeonOutput struct {
 	EncounterID  string               // ID of the created encounter
@@ -322,6 +332,7 @@ type StartCombatInput struct {
 type StartCombatOutput struct {
 	CombatState  *CombatState         // Combat state with initiative order
 	Room         interface{}          // Room with entity positions
+	Walls        []WallInfo           // Wall segments in the room
 	MonsterTurns []*MonsterTurnResult // Monster turns if monsters go first
 	Doors        []DoorInfo           // Doors/exits from the starting room
 	DungeonID    string               // ID of the generated dungeon

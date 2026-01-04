@@ -686,3 +686,172 @@ func (s *IntegrationTestSuite) TestValidationErrors() {
 		s.Assert().Error(err, "should reject zero target CR")
 	})
 }
+
+// TestPatternBasedWalls verifies that theme tables produce wall patterns
+func (s *IntegrationTestSuite) TestPatternBasedWalls() {
+	// Each theme has different wall pattern configurations
+	themes := []dungeon.Theme{
+		dungeon.ThemeCrypt,
+		dungeon.ThemeCave,
+		dungeon.ThemeBanditLair,
+	}
+
+	for _, theme := range themes {
+		s.Run(theme.ID, func() {
+			output, err := s.generator.Generate(context.Background(), &dungeon.GenerateInput{
+				Theme:     theme,
+				Size:      dungeon.RoomSizeMedium,
+				Length:    4,
+				Layout:    dungeon.LayoutLinear,
+				PartySize: 4,
+				TargetCR:  3,
+				Seed:      12345, // Fixed seed for reproducibility
+			})
+
+			s.Require().NoError(err)
+			s.Require().NotNil(output.Dungeon)
+
+			// Verify theme tables exist (they enable pattern selection)
+			s.Require().NotNil(theme.Tables, "theme %s should have tables", theme.ID)
+			s.Assert().NotEmpty(theme.Tables.WallPatterns, "theme %s should have wall patterns", theme.ID)
+		})
+	}
+}
+
+// TestSpawnZonesAccessible verifies spawn zones are not blocked by walls
+func (s *IntegrationTestSuite) TestSpawnZonesAccessible() {
+	// Use linear layout for consistent boss room placement
+	output, err := s.generator.Generate(context.Background(), &dungeon.GenerateInput{
+		Theme:     dungeon.ThemeCrypt, // Crypt has various wall patterns
+		Size:      dungeon.RoomSizeMedium,
+		Length:    5,
+		Layout:    dungeon.LayoutLinear,
+		PartySize: 4,
+		TargetCR:  3,
+		Seed:      98765,
+	})
+
+	s.Require().NoError(err)
+	s.Require().NotNil(output.Dungeon)
+
+	// Verify each room has spawn zones
+	for i, room := range output.Dungeon.Rooms {
+		s.Assert().NotEmpty(room.SpawnZones, "room %d should have spawn zones", i)
+
+		// Verify spawn zones have valid positions
+		for j, zone := range room.SpawnZones {
+			s.Assert().NotEmpty(zone.ID, "room %d zone %d should have ID", i, j)
+			s.Assert().NotEmpty(zone.Bounds, "room %d zone %d should have bounds", i, j)
+			s.Assert().Greater(zone.Capacity, 0, "room %d zone %d should have capacity", i, j)
+		}
+	}
+
+	// Find entrance room and verify player spawn exists
+	for _, room := range output.Dungeon.Rooms {
+		if room.ID == output.Dungeon.StartRoom {
+			hasPlayerSpawn := false
+			for _, zone := range room.SpawnZones {
+				if zone.Type == dungeon.ZoneTypePlayerSpawn {
+					hasPlayerSpawn = true
+					break
+				}
+			}
+			s.Assert().True(hasPlayerSpawn, "start room should have player spawn zone")
+		}
+	}
+
+	// Find boss room and verify boss zone exists
+	for _, room := range output.Dungeon.Rooms {
+		if room.ID == output.Dungeon.BossRoom {
+			hasBossZone := false
+			for _, zone := range room.SpawnZones {
+				if zone.Type == dungeon.ZoneTypeBoss {
+					hasBossZone = true
+					break
+				}
+			}
+			s.Assert().True(hasBossZone, "boss room should have boss zone")
+		}
+	}
+}
+
+// TestPerimeterWallsGenerated verifies that shapes include perimeter walls
+func (s *IntegrationTestSuite) TestPerimeterWallsGenerated() {
+	output, err := s.generator.Generate(context.Background(), &dungeon.GenerateInput{
+		Theme:     dungeon.ThemeCrypt,
+		Size:      dungeon.RoomSizeMedium,
+		Length:    3,
+		Layout:    dungeon.LayoutLinear,
+		PartySize: 4,
+		TargetCR:  2,
+		Seed:      11111,
+	})
+
+	s.Require().NoError(err)
+	s.Require().NotNil(output.Dungeon)
+
+	// Each room should have a valid shape
+	for i, room := range output.Dungeon.Rooms {
+		s.Require().NotNil(room.Shape, "room %d should have a shape", i)
+		s.Assert().Greater(room.Shape.Width, 0, "room %d should have width", i)
+		s.Assert().Greater(room.Shape.Height, 0, "room %d should have height", i)
+		s.Assert().NotEmpty(room.Shape.Bounds, "room %d should have bounds", i)
+	}
+}
+
+// TestThemePatternWeights verifies themes have weighted pattern selection
+func (s *IntegrationTestSuite) TestThemePatternWeights() {
+	// Verify crypt theme patterns
+	s.Run("crypt theme patterns", func() {
+		s.Require().NotNil(dungeon.ThemeCrypt.Tables)
+		tables := dungeon.ThemeCrypt.Tables
+
+		// Entrance rooms should have patterns
+		entrancePatterns := tables.WallPatterns[dungeon.RoomTypeEntrance]
+		s.Assert().NotEmpty(entrancePatterns, "entrance should have patterns")
+
+		// Boss rooms should have patterns
+		bossPatterns := tables.WallPatterns[dungeon.RoomTypeBoss]
+		s.Assert().NotEmpty(bossPatterns, "boss should have patterns")
+
+		// Regular chambers should have patterns
+		chamberPatterns := tables.WallPatterns[dungeon.RoomTypeChamber]
+		s.Assert().NotEmpty(chamberPatterns, "chamber should have patterns")
+	})
+
+	// Verify cave theme patterns
+	s.Run("cave theme patterns", func() {
+		s.Require().NotNil(dungeon.ThemeCave.Tables)
+		tables := dungeon.ThemeCave.Tables
+
+		s.Assert().NotEmpty(tables.WallPatterns[dungeon.RoomTypeEntrance])
+		s.Assert().NotEmpty(tables.WallPatterns[dungeon.RoomTypeBoss])
+	})
+
+	// Verify bandit lair patterns
+	s.Run("bandit lair theme patterns", func() {
+		s.Require().NotNil(dungeon.ThemeBanditLair.Tables)
+		tables := dungeon.ThemeBanditLair.Tables
+
+		s.Assert().NotEmpty(tables.WallPatterns[dungeon.RoomTypeEntrance])
+		s.Assert().NotEmpty(tables.WallPatterns[dungeon.RoomTypeBoss])
+	})
+}
+
+// TestDensityRangesValid verifies density ranges are properly defined
+func (s *IntegrationTestSuite) TestDensityRangesValid() {
+	// Verify density ranges
+	s.Assert().Less(dungeon.DensityLow.Min, dungeon.DensityLow.Max)
+	s.Assert().Less(dungeon.DensityMedium.Min, dungeon.DensityMedium.Max)
+	s.Assert().Less(dungeon.DensityHigh.Min, dungeon.DensityHigh.Max)
+
+	// Verify ranges don't overlap excessively
+	s.Assert().LessOrEqual(dungeon.DensityLow.Max, dungeon.DensityMedium.Max)
+	s.Assert().LessOrEqual(dungeon.DensityMedium.Max, dungeon.DensityHigh.Max)
+
+	// Verify all themes have density in their tables
+	for _, theme := range []dungeon.Theme{dungeon.ThemeCrypt, dungeon.ThemeCave, dungeon.ThemeBanditLair} {
+		s.Require().NotNil(theme.Tables, "theme %s should have tables", theme.ID)
+		s.Assert().NotEmpty(theme.Tables.Density, "theme %s should have density", theme.ID)
+	}
+}

@@ -1135,3 +1135,39 @@ func convertEntityMonsterActionToProto(action *entities.MonsterExecutedAction) *
 	// Note: Details conversion would go here if needed
 	return protoAction
 }
+
+// convertWallsToProto converts orchestrator WallInfo to proto Wall
+func convertWallsToProto(walls []encounter.WallInfo) []*apiv1alpha1.Wall {
+	if walls == nil {
+		return nil
+	}
+
+	result := make([]*apiv1alpha1.Wall, len(walls))
+	for i, w := range walls {
+		var start, end *apiv1alpha1.Position
+		if w.Start != nil {
+			start = &apiv1alpha1.Position{
+				X: w.Start.X,
+				Y: w.Start.Y,
+				Z: w.Start.Z,
+			}
+		}
+		if w.End != nil {
+			end = &apiv1alpha1.Position{
+				X: w.End.X,
+				Y: w.End.Y,
+				Z: w.End.Z,
+			}
+		}
+
+		result[i] = &apiv1alpha1.Wall{
+			Start:             start,
+			End:               end,
+			Material:          w.Material,
+			BlocksMovement:    w.BlocksMovement,
+			BlocksLineOfSight: w.BlocksLineOfSight,
+		}
+	}
+
+	return result
+}

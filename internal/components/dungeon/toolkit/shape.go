@@ -10,14 +10,16 @@ import (
 
 // ToolkitShapeGenerator implements dungeon.ShapeGenerator using simple geometric shapes
 type ToolkitShapeGenerator struct {
-	random *rand.Rand
+	random    *rand.Rand
+	perimeter *PerimeterGenerator
 }
 
 // NewToolkitShapeGenerator creates a new shape generator
 func NewToolkitShapeGenerator() *ToolkitShapeGenerator {
 	// #nosec G404 - Using math/rand for seeded procedural generation, not cryptographic purposes
 	return &ToolkitShapeGenerator{
-		random: rand.New(rand.NewSource(0)), // Will be reseeded per generation
+		random:    rand.New(rand.NewSource(0)), // Will be reseeded per generation
+		perimeter: NewPerimeterGenerator(),
 	}
 }
 
@@ -38,8 +40,15 @@ func (g *ToolkitShapeGenerator) Generate(ctx context.Context, input *dungeon.Sha
 	// Generate shape based on style
 	shape := generateShapeForStyle(width, height, input.Style, g.random)
 
+	// Generate perimeter walls (without doors - those are added later based on connections)
+	perimeterOutput := g.perimeter.Generate(&PerimeterInput{
+		Shape:       shape,
+		Connections: nil, // Connections are not known at shape generation time
+	})
+
 	return &dungeon.ShapeOutput{
-		Shape: shape,
+		Shape:          shape,
+		PerimeterWalls: perimeterOutput.Walls,
 	}, nil
 }
 
@@ -106,17 +115,17 @@ func generateShapeForStyle(width, height int, style dungeon.ShapeStyle, rng *ran
 
 // generateStructuredShape creates a rectangular room with clean edges
 func generateStructuredShape(width, height int, _ *rand.Rand) *dungeon.Shape {
-	// Simple rectangle
+	// Simple rectangle using cube coordinates
 	bounds := []dungeon.Position{
-		{X: 0, Y: 0, Z: 0},
-		{X: width - 1, Y: 0, Z: 0},
-		{X: width - 1, Y: height - 1, Z: 0},
-		{X: 0, Y: height - 1, Z: 0},
+		offsetToCube(0, 0),
+		offsetToCube(width-1, 0),
+		offsetToCube(width-1, height-1),
+		offsetToCube(0, height-1),
 	}
 
 	return &dungeon.Shape{
 		Bounds:   bounds,
-		GridType: dungeon.GridTypeSquare,
+		GridType: dungeon.GridTypeHex,
 		Width:    width,
 		Height:   height,
 		Area:     width * height,
@@ -131,11 +140,12 @@ func generateOrganicShape(width, height int, rng *rand.Rand) *dungeon.Shape {
 
 	variation := 2 // How much edges can vary
 
+	// Use cube coordinates for bounds
 	bounds := []dungeon.Position{
-		{X: rng.Intn(variation), Y: 0, Z: 0},
-		{X: width - 1 - rng.Intn(variation), Y: rng.Intn(variation), Z: 0},
-		{X: width - 1, Y: height - 1 - rng.Intn(variation), Z: 0},
-		{X: rng.Intn(variation), Y: height - 1, Z: 0},
+		offsetToCube(rng.Intn(variation), 0),
+		offsetToCube(width-1-rng.Intn(variation), rng.Intn(variation)),
+		offsetToCube(width-1, height-1-rng.Intn(variation)),
+		offsetToCube(rng.Intn(variation), height-1),
 	}
 
 	// Calculate approximate area (simplified)
@@ -143,7 +153,7 @@ func generateOrganicShape(width, height int, rng *rand.Rand) *dungeon.Shape {
 
 	return &dungeon.Shape{
 		Bounds:   bounds,
-		GridType: dungeon.GridTypeSquare,
+		GridType: dungeon.GridTypeHex,
 		Width:    width,
 		Height:   height,
 		Area:     area,

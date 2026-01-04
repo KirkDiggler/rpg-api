@@ -14,19 +14,23 @@ import (
 
 // ToolkitFeatureGenerator implements dungeon.FeatureGenerator
 type ToolkitFeatureGenerator struct {
-	random *rand.Rand
+	random    *rand.Rand
+	patterns  *PatternRegistry
+	validator *WallValidator
 }
 
 // NewToolkitFeatureGenerator creates a new feature generator
 func NewToolkitFeatureGenerator() *ToolkitFeatureGenerator {
 	// #nosec G404 - Using math/rand for seeded procedural generation, not cryptographic purposes
 	return &ToolkitFeatureGenerator{
-		random: rand.New(rand.NewSource(0)), // Will be reseeded per generation
+		random:    rand.New(rand.NewSource(0)), // Will be reseeded per generation
+		patterns:  NewPatternRegistry(),
+		validator: NewWallValidator(),
 	}
 }
 
-// Generate places obstacles, terrain, and spawn zones in a room
-func (g *ToolkitFeatureGenerator) Generate(ctx context.Context, input *dungeon.FeatureInput) (*dungeon.FeatureOutput, error) {
+// Generate places obstacles, terrain, spawn zones, and internal walls in a room
+func (g *ToolkitFeatureGenerator) Generate(_ context.Context, input *dungeon.FeatureInput) (*dungeon.FeatureOutput, error) {
 	if input == nil {
 		return nil, fmt.Errorf("input is required")
 	}
@@ -40,14 +44,32 @@ func (g *ToolkitFeatureGenerator) Generate(ctx context.Context, input *dungeon.F
 		g.random.Seed(input.Seed)
 	}
 
+	// Generate spawn zones based on room type (need these before validating walls)
+	spawnZones := g.generateSpawnZones(input.Shape, input.RoomType)
+
+	// Generate internal walls using pattern system
+	var walls []dungeon.WallSegment
+	if input.Tables != nil {
+		walls = g.generateWallsFromPattern(input)
+
+		// Validate walls don't block spawn zones
+		validationResult := g.validator.Validate(&ValidationInput{
+			Shape:      input.Shape,
+			Walls:      walls,
+			SpawnZones: spawnZones,
+		})
+
+		// If validation fails, use suggested safe walls
+		if !validationResult.IsValid {
+			walls = validationResult.SuggestedWalls
+		}
+	}
+
 	// Generate obstacles based on feature rules
 	obstacles := g.generateObstacles(input.Shape, input.Rules)
 
 	// Generate terrain patches based on feature rules
 	terrain := g.generateTerrain(input.Shape, input.Rules)
-
-	// Generate spawn zones based on room type
-	spawnZones := g.generateSpawnZones(input.Shape, input.RoomType)
 
 	return &dungeon.FeatureOutput{
 		Features: &dungeon.FeatureLayout{
@@ -55,7 +77,42 @@ func (g *ToolkitFeatureGenerator) Generate(ctx context.Context, input *dungeon.F
 			Terrain:    terrain,
 			SpawnZones: spawnZones,
 		},
+		Walls: walls,
 	}, nil
+}
+
+// generateWallsFromPattern uses theme tables to select and apply a pattern
+func (g *ToolkitFeatureGenerator) generateWallsFromPattern(input *dungeon.FeatureInput) []dungeon.WallSegment {
+	if input.Tables == nil {
+		return nil
+	}
+
+	// Select pattern based on room type
+	patternType, err := input.Tables.SelectPattern(input.RoomType, g.random)
+	if err != nil {
+		patternType = dungeon.PatternEmpty
+	}
+
+	// Get pattern function
+	patternFunc, exists := g.patterns.GetPattern(patternType)
+	if !exists {
+		return nil
+	}
+
+	// Select density
+	density := dungeon.DensityMedium
+	if len(input.Tables.Density) > 0 {
+		density = input.Tables.SelectDensity(g.random)
+	}
+
+	// Generate walls using pattern
+	patternOutput := patternFunc(&PatternInput{
+		Shape:   input.Shape,
+		Density: density,
+		Seed:    input.Seed,
+	})
+
+	return patternOutput.Walls
 }
 
 // generateObstacles places obstacles in the room based on rules
@@ -76,22 +133,18 @@ func (g *ToolkitFeatureGenerator) generateObstacles(shape *dungeon.Shape, rules 
 		numObstacles = 10 // Cap at 10 obstacles
 	}
 
-	// Place obstacles at random positions
+	// Place obstacles at random positions using cube coordinates
 	for i := 0; i < numObstacles; i++ {
 		obstacleType := rules.ObstacleTypes[g.random.Intn(len(rules.ObstacleTypes))]
 
-		// Random position within bounds
-		x := g.random.Intn(shape.Width)
-		y := g.random.Intn(shape.Height)
+		// Random position within bounds (col, row)
+		col := g.random.Intn(shape.Width)
+		row := g.random.Intn(shape.Height)
 
 		obstacles = append(obstacles, dungeon.Obstacle{
-			ID:   uuid.New().String(),
-			Type: obstacleType,
-			Position: dungeon.Position{
-				X: x,
-				Y: y,
-				Z: 0,
-			},
+			ID:       uuid.New().String(),
+			Type:     obstacleType,
+			Position: offsetToCube(col, row),
 			BlocksMovement:    true,
 			BlocksLineOfSight: isObstacleBlockingSight(obstacleType),
 		})
@@ -179,11 +232,11 @@ func gridToCube(col, row int) dungeon.Position {
 
 // generateSpawnZones creates spawn zones based on room type
 // All positions use cube coordinates via toolkit's converter
-func (g *ToolkitFeatureGenerator) generateSpawnZones(shape *dungeon.Shape, roomType string) []dungeon.Zone {
+func (g *ToolkitFeatureGenerator) generateSpawnZones(shape *dungeon.Shape, roomType dungeon.RoomType) []dungeon.Zone {
 	var zones []dungeon.Zone
 
 	switch roomType {
-	case "entrance":
+	case dungeon.RoomTypeEntrance:
 		// Entrance rooms have a player spawn zone near the entrance (bottom-left area)
 		// Generate individual spawn positions for up to 4 players
 		zones = append(zones, dungeon.Zone{
@@ -198,7 +251,7 @@ func (g *ToolkitFeatureGenerator) generateSpawnZones(shape *dungeon.Shape, roomT
 			Capacity: 4, // Standard party size
 		})
 
-	case "boss":
+	case dungeon.RoomTypeBoss:
 		// Boss rooms have a boss zone in the center and monster spawn zones around it
 		centerCol := shape.Width / 2
 		centerRow := shape.Height / 2

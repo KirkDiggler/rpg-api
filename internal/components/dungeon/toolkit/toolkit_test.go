@@ -33,8 +33,8 @@ func (s *ToolkitGeneratorsTestSuite) TestLayoutGenerator() {
 		s.Assert().Len(output.RoomSlots, 5)
 		s.Assert().Equal(0, output.StartRoom)
 		s.Assert().Equal(4, output.BossRoom)
-		s.Assert().Equal("entrance", output.RoomSlots[0].RoomType)
-		s.Assert().Equal("boss", output.RoomSlots[4].RoomType)
+		s.Assert().Equal(dungeon.RoomTypeEntrance, output.RoomSlots[0].RoomType)
+		s.Assert().Equal(dungeon.RoomTypeBoss, output.RoomSlots[4].RoomType)
 	})
 
 	s.Run("generates branching layout", func() {
@@ -82,7 +82,15 @@ func (s *ToolkitGeneratorsTestSuite) TestShapeGenerator() {
 		s.Assert().GreaterOrEqual(output.Shape.Width, 10)
 		s.Assert().LessOrEqual(output.Shape.Width, 15)
 		s.Assert().NotEmpty(output.Shape.Bounds)
-		s.Assert().Equal(dungeon.GridTypeSquare, output.Shape.GridType)
+		s.Assert().Equal(dungeon.GridTypeHex, output.Shape.GridType)
+
+		// Verify perimeter walls are generated (4 walls for rectangular room)
+		s.Assert().Len(output.PerimeterWalls, 4)
+		for _, wall := range output.PerimeterWalls {
+			s.Assert().Equal(dungeon.WallTypeIndestructible, wall.Type)
+			s.Assert().True(wall.BlocksMovement)
+			s.Assert().True(wall.BlocksLineOfSight)
+		}
 	})
 
 	s.Run("generates medium organic shape", func() {
@@ -98,6 +106,9 @@ func (s *ToolkitGeneratorsTestSuite) TestShapeGenerator() {
 		s.Require().NotNil(output)
 		s.Assert().GreaterOrEqual(output.Shape.Width, 13) // Min with organic variation
 		s.Assert().NotEmpty(output.Shape.Bounds)
+
+		// Organic shapes also have perimeter walls
+		s.Assert().NotEmpty(output.PerimeterWalls)
 	})
 
 	s.Run("validates input", func() {

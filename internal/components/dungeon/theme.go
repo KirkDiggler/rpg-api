@@ -13,6 +13,8 @@ type Theme struct {
 	ShapeStyle ShapeStyle
 	// Features contains rules for obstacle and terrain placement
 	Features FeatureRules
+	// Tables contains weighted selection tables for pattern-based generation
+	Tables *ThemeTables
 	// MonsterPool contains regular monsters for encounters
 	MonsterPool []MonsterRef
 	// BossPool contains boss monsters for final rooms
@@ -56,6 +58,46 @@ var ThemeCrypt = Theme{
 		TerrainChance: 0.0,
 		TerrainTypes:  []TerrainType{},
 	},
+	Tables: &ThemeTables{
+		WallPatterns: map[RoomType][]WeightedPattern{
+			RoomTypeEntrance: {
+				{Pattern: PatternSparse, Weight: 70},
+				{Pattern: PatternPillarGrid, Weight: 30},
+			},
+			RoomTypeChamber: {
+				{Pattern: PatternPillarGrid, Weight: 50},
+				{Pattern: PatternCoverClusters, Weight: 30},
+				{Pattern: PatternPerimeterCover, Weight: 20},
+			},
+			RoomTypeCorridor: {
+				{Pattern: PatternChokepoints, Weight: 50},
+				{Pattern: PatternPillarGrid, Weight: 50},
+			},
+			RoomTypeBoss: {
+				{Pattern: PatternCentralFeature, Weight: 50},
+				{Pattern: PatternPillarGrid, Weight: 30},
+				{Pattern: PatternPerimeterCover, Weight: 20},
+			},
+			RoomTypeTreasure: {
+				{Pattern: PatternPerimeterCover, Weight: 60},
+				{Pattern: PatternPillarGrid, Weight: 40},
+			},
+			RoomTypeTrap: {
+				{Pattern: PatternChokepoints, Weight: 60},
+				{Pattern: PatternCoverClusters, Weight: 40},
+			},
+		},
+		Obstacles: []WeightedObstacle{
+			{Obstacle: ObstacleTypePillar, Weight: 40},
+			{Obstacle: ObstacleTypeSarcophagus, Weight: 40},
+			{Obstacle: ObstacleTypeAltar, Weight: 20},
+		},
+		Density: []WeightedDensity{
+			{Density: DensityLow, Weight: 20},
+			{Density: DensityMedium, Weight: 50},
+			{Density: DensityHigh, Weight: 30},
+		},
+	},
 	MonsterPool: []MonsterRef{
 		{ID: refs.Monsters.Skeleton().ID, Role: RoleMelee, CR: 0.25},
 		{ID: refs.Monsters.Zombie().ID, Role: RoleMelee, CR: 0.25},
@@ -81,6 +123,45 @@ var ThemeCave = Theme{
 		TerrainChance: 0.0,
 		TerrainTypes:  []TerrainType{},
 	},
+	Tables: &ThemeTables{
+		WallPatterns: map[RoomType][]WeightedPattern{
+			RoomTypeEntrance: {
+				{Pattern: PatternSparse, Weight: 80},
+				{Pattern: PatternPerimeterCover, Weight: 20},
+			},
+			RoomTypeChamber: {
+				{Pattern: PatternCoverClusters, Weight: 50},
+				{Pattern: PatternSparse, Weight: 30},
+				{Pattern: PatternCentralFeature, Weight: 20},
+			},
+			RoomTypeCorridor: {
+				{Pattern: PatternChokepoints, Weight: 60},
+				{Pattern: PatternSparse, Weight: 40},
+			},
+			RoomTypeBoss: {
+				{Pattern: PatternCentralFeature, Weight: 70},
+				{Pattern: PatternCoverClusters, Weight: 30},
+			},
+			RoomTypeTreasure: {
+				{Pattern: PatternPerimeterCover, Weight: 50},
+				{Pattern: PatternCoverClusters, Weight: 50},
+			},
+			RoomTypeTrap: {
+				{Pattern: PatternChokepoints, Weight: 50},
+				{Pattern: PatternCoverClusters, Weight: 50},
+			},
+		},
+		Obstacles: []WeightedObstacle{
+			{Obstacle: ObstacleTypeBoulder, Weight: 50},
+			{Obstacle: ObstacleTypeStalagmite, Weight: 30},
+			{Obstacle: ObstacleTypePool, Weight: 20},
+		},
+		Density: []WeightedDensity{
+			{Density: DensityLow, Weight: 30},
+			{Density: DensityMedium, Weight: 50},
+			{Density: DensityHigh, Weight: 20},
+		},
+	},
 	MonsterPool: []MonsterRef{
 		{ID: refs.Monsters.GiantRat().ID, Role: RoleMelee, CR: 0.125},
 		{ID: refs.Monsters.GiantSpider().ID, Role: RoleMelee, CR: 0.5},
@@ -103,6 +184,45 @@ var ThemeBanditLair = Theme{
 		},
 		TerrainChance: 0.0,
 		TerrainTypes:  []TerrainType{},
+	},
+	Tables: &ThemeTables{
+		WallPatterns: map[RoomType][]WeightedPattern{
+			RoomTypeEntrance: {
+				{Pattern: PatternSparse, Weight: 60},
+				{Pattern: PatternCoverClusters, Weight: 40},
+			},
+			RoomTypeChamber: {
+				{Pattern: PatternCoverClusters, Weight: 60},
+				{Pattern: PatternChokepoints, Weight: 20},
+				{Pattern: PatternSparse, Weight: 20},
+			},
+			RoomTypeCorridor: {
+				{Pattern: PatternChokepoints, Weight: 70},
+				{Pattern: PatternCoverClusters, Weight: 30},
+			},
+			RoomTypeBoss: {
+				{Pattern: PatternCentralFeature, Weight: 40},
+				{Pattern: PatternCoverClusters, Weight: 40},
+				{Pattern: PatternPerimeterCover, Weight: 20},
+			},
+			RoomTypeTreasure: {
+				{Pattern: PatternPerimeterCover, Weight: 50},
+				{Pattern: PatternChokepoints, Weight: 50},
+			},
+			RoomTypeTrap: {
+				{Pattern: PatternChokepoints, Weight: 60},
+				{Pattern: PatternCoverClusters, Weight: 40},
+			},
+		},
+		Obstacles: []WeightedObstacle{
+			{Obstacle: ObstacleTypeCrate, Weight: 50},
+			{Obstacle: ObstacleTypeBarrel, Weight: 50},
+		},
+		Density: []WeightedDensity{
+			{Density: DensityLow, Weight: 20},
+			{Density: DensityMedium, Weight: 60},
+			{Density: DensityHigh, Weight: 20},
+		},
 	},
 	MonsterPool: []MonsterRef{
 		{ID: refs.Monsters.Bandit().ID, Role: RoleMelee, CR: 0.125},
