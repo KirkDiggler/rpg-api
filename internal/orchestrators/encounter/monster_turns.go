@@ -196,6 +196,14 @@ func (o *Orchestrator) executeSingleMonsterTurn(
 
 		// If this was an attack action and it succeeded, resolve it
 		if action.ActionType == monster.TypeMeleeAttack && action.Success {
+			// Validate adjacency for melee attacks - skip if target is not adjacent
+			if roomData != nil && !isTargetAdjacent(roomData, monsterData.ID, action.TargetID) {
+				// Target is not adjacent - melee attack cannot hit
+				// Mark as unsuccessful and skip resolution
+				actions[i].Success = false
+				continue
+			}
+
 			// Resolve the attack
 			attackResult, resolveErr := o.resolveMonsterAttack(ctx, mon, monsterData, action.TargetID)
 			if resolveErr != nil {
@@ -436,4 +444,20 @@ func validateMovementAgainstWalls(
 	}
 
 	return validMovement
+}
+
+// isTargetAdjacent checks if the target is adjacent (distance 1) to the attacker
+func isTargetAdjacent(roomData *spatial.RoomData, attackerID, targetID string) bool {
+	attackerPlacement, exists := roomData.CubeEntities[attackerID]
+	if !exists {
+		return false
+	}
+
+	targetPlacement, exists := roomData.CubeEntities[targetID]
+	if !exists {
+		return false
+	}
+
+	distance := cubeDistance(attackerPlacement.CubePosition, targetPlacement.CubePosition)
+	return distance == 1
 }

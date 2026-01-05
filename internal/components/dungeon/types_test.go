@@ -91,9 +91,8 @@ func (s *TypesTestSuite) TestRoom_Instantiation() {
 			Area:     300,
 		},
 		Features: &FeatureLayout{
-			Obstacles:  []Obstacle{},
-			Terrain:    []TerrainPatch{},
-			SpawnZones: []Zone{},
+			Obstacles: []Obstacle{},
+			Terrain:   []TerrainPatch{},
 		},
 		SpawnZones: []*Zone{},
 		Encounter: &Encounter{
@@ -151,20 +150,11 @@ func (s *TypesTestSuite) TestFeatureLayout_Instantiation() {
 				MovementCost: 2.0,
 			},
 		},
-		SpawnZones: []Zone{
-			{
-				ID:       "zone-1",
-				Type:     ZoneTypePlayerSpawn,
-				Bounds:   []Position{{X: 0, Y: 0, Z: 0}},
-				Capacity: 4,
-			},
-		},
 	}
 
 	assert.NotNil(s.T(), layout)
 	assert.Equal(s.T(), 1, len(layout.Obstacles))
 	assert.Equal(s.T(), 1, len(layout.Terrain))
-	assert.Equal(s.T(), 1, len(layout.SpawnZones))
 	assert.Equal(s.T(), ObstacleTypePillar, layout.Obstacles[0].Type)
 	assert.True(s.T(), layout.Obstacles[0].BlocksMovement)
 }

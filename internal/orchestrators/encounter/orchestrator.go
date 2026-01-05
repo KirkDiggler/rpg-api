@@ -28,6 +28,7 @@ import (
 
 	"github.com/KirkDiggler/rpg-api/internal/components/dungeon"
 	dungeontoolkit "github.com/KirkDiggler/rpg-api/internal/components/dungeon/toolkit"
+	"github.com/KirkDiggler/rpg-api/internal/components/spawner"
 	"github.com/KirkDiggler/rpg-api/internal/entities"
 	"github.com/KirkDiggler/rpg-api/internal/pkg/idgen"
 	eventprocessor "github.com/KirkDiggler/rpg-api/internal/processors/event"
@@ -46,6 +47,7 @@ type Config struct {
 	EventProcessor   eventprocessor.Processor    // Optional: for persisting and publishing events
 	EncounterLogRepo encounterlogrepo.Repository // Optional: for reading event history
 	Roller           dice.Roller                 // Optional: for dice rolls (defaults to random roller)
+	Spawner          spawner.Spawner             // Optional: for entity placement (defaults to DefaultSpawner)
 	EncounterIDGen   idgen.Generator             // Optional: for generating encounter IDs (defaults to "enc-" prefix)
 	DungeonIDGen     idgen.Generator             // Optional: for generating dungeon IDs (defaults to "dng-" prefix)
 	ConnectionIDGen  idgen.Generator             // Optional: for generating connection IDs (defaults to "conn-" prefix)
@@ -75,6 +77,7 @@ type Orchestrator struct {
 	dungeonRepo      dungeonrepo.Repository // Required: for dungeon persistence
 	dungeonGen       *dungeon.Generator     // Required: for procedural dungeon generation
 	roller           dice.Roller
+	spawner          spawner.Spawner             // For entity placement
 	eventProcessor   eventprocessor.Processor    // Optional: for persisting and publishing events
 	encounterLogRepo encounterlogrepo.Repository // Optional: for reading event history
 	encounterIDGen   idgen.Generator             // For generating encounter IDs
@@ -108,6 +111,10 @@ func New(cfg *Config) (*Orchestrator, error) {
 	if roller == nil {
 		roller = dice.NewRoller()
 	}
+	spwn := cfg.Spawner
+	if spwn == nil {
+		spwn = spawner.NewSpawner()
+	}
 
 	return &Orchestrator{
 		charRepo:         cfg.CharacterRepo,
@@ -115,6 +122,7 @@ func New(cfg *Config) (*Orchestrator, error) {
 		dungeonRepo:      cfg.DungeonRepo,
 		dungeonGen:       cfg.DungeonGen,
 		roller:           roller,
+		spawner:          spwn,
 		eventProcessor:   cfg.EventProcessor,
 		encounterLogRepo: cfg.EncounterLogRepo,
 		encounterIDGen:   encounterIDGen,
@@ -995,58 +1003,56 @@ func (o *Orchestrator) getPlayerSpawnPositions(room *dungeon.Room) []spatial.Cub
 	return positions
 }
 
-// getMonsterSpawnPositions extracts monster spawn positions from a room as cube coordinates
-func (o *Orchestrator) getMonsterSpawnPositions(room *dungeon.Room) []spatial.CubeCoordinate {
-	var positions []spatial.CubeCoordinate
-
-	for _, zone := range room.SpawnZones {
-		if zone.Type == dungeon.ZoneTypeMonsterSpawn || zone.Type == dungeon.ZoneTypeBoss {
-			for _, pos := range zone.Bounds {
-				positions = append(positions, spatial.CubeCoordinate{
-					X: pos.X,
-					Y: pos.Y,
-					Z: pos.Z,
-				})
-			}
-		}
-	}
-
-	// Fallback: if no monster spawn zones, use center-right positions
-	if len(positions) == 0 {
-		positions = []spatial.CubeCoordinate{
-			{X: 8, Y: -12, Z: 4},
-			{X: 9, Y: -13, Z: 4},
-			{X: 8, Y: -13, Z: 5},
-			{X: 9, Y: -14, Z: 5},
-		}
-	}
-
-	return positions
-}
-
 // placeMonsters places monsters from the room's encounter into the room data
-// Uses the monster factory to create theme-appropriate monsters (skeletons for crypt, etc.)
-// Gets spawn positions from MonsterSpawn zones rather than encounter placement positions
+// Uses the spawner component for spatial-aware placement that avoids walls and other entities
 func (o *Orchestrator) placeMonsters(roomData *spatial.RoomData, room *dungeon.Room) []*monster.Data {
 	if room.Encounter == nil {
 		return nil
 	}
 
-	// Get monster spawn positions from the room
-	spawnPositions := o.getMonsterSpawnPositions(room)
+	// Build list of monster IDs to spawn
+	monsterIDs := make([]string, 0, len(room.Encounter.Monsters))
+	for _, placement := range room.Encounter.Monsters {
+		monsterIDs = append(monsterIDs, fmt.Sprintf("monster-%s", placement.ID))
+	}
+
+	// Get currently occupied positions (characters already in room)
+	occupiedPositions := make([]dungeon.Position, 0)
+	for _, entity := range roomData.CubeEntities {
+		occupiedPositions = append(occupiedPositions, dungeon.Position{
+			X: entity.CubePosition.X,
+			Y: entity.CubePosition.Y,
+			Z: entity.CubePosition.Z,
+		})
+	}
+
+	// Use spawner to place monsters in valid positions
+	spawnOutput, err := spawner.SpawnInRoom(o.spawner, &spawner.DungeonSpawnInput{
+		Room:              room,
+		OccupiedPositions: occupiedPositions,
+		EntitiesToSpawn:   spawner.CreateMonsterSpawnEntities(monsterIDs),
+	})
+
+	// Build a map of entity ID to placement position
+	placementMap := make(map[string]spawner.CubePosition)
+	if err == nil && spawnOutput != nil {
+		for _, placement := range spawnOutput.Placements {
+			placementMap[placement.EntityID] = placement.Position
+		}
+	}
 
 	factory := dungeon.NewMonsterFactory()
 	monsters := make([]*monster.Data, 0, len(room.Encounter.Monsters))
-	for i, placement := range room.Encounter.Monsters {
+	for _, placement := range room.Encounter.Monsters {
 		monsterID := fmt.Sprintf("monster-%s", placement.ID)
 
-		// Get spawn position (cycle through available positions if more monsters than positions)
+		// Get spawn position from spawner results
 		var spawnPos spatial.CubeCoordinate
-		if len(spawnPositions) > 0 {
-			spawnPos = spawnPositions[i%len(spawnPositions)]
+		if pos, ok := placementMap[monsterID]; ok {
+			spawnPos = spatial.CubeCoordinate{X: pos.X, Y: pos.Y, Z: pos.Z}
 		} else {
-			// Fallback position
-			spawnPos = spatial.CubeCoordinate{X: 8 + i, Y: -12 - i, Z: 4}
+			// Fallback: find a safe position that's not on a wall
+			spawnPos = findSafeFallbackPosition(room, roomData)
 		}
 
 		// Add to room cube entities
@@ -1064,6 +1070,109 @@ func (o *Orchestrator) placeMonsters(roomData *spatial.RoomData, room *dungeon.R
 	}
 
 	return monsters
+}
+
+// findSafeFallbackPosition finds a position that is not on a wall or occupied
+// Searches outward from center until a valid position is found
+func findSafeFallbackPosition(room *dungeon.Room, roomData *spatial.RoomData) spatial.CubeCoordinate {
+	if room.Shape == nil {
+		return spatial.CubeCoordinate{X: 5, Y: -10, Z: 5}
+	}
+
+	// Build set of blocked positions (walls)
+	blocked := make(map[string]bool)
+	for _, wall := range room.Walls {
+		if !wall.BlocksMovement {
+			continue
+		}
+		// Get all positions along the wall
+		positions := getWallPositionsForFallback(wall)
+		for _, pos := range positions {
+			key := fmt.Sprintf("%d,%d,%d", pos.X, pos.Y, pos.Z)
+			blocked[key] = true
+		}
+	}
+
+	// Also mark occupied positions
+	for _, entity := range roomData.CubeEntities {
+		key := fmt.Sprintf("%d,%d,%d", entity.CubePosition.X, entity.CubePosition.Y, entity.CubePosition.Z)
+		blocked[key] = true
+	}
+
+	// Search from center outward for a valid position
+	centerCol := room.Shape.Width / 2
+	centerRow := room.Shape.Height / 2
+
+	// Spiral search: check increasingly distant positions from center
+	for radius := 0; radius < room.Shape.Width; radius++ {
+		for dCol := -radius; dCol <= radius; dCol++ {
+			for dRow := -radius; dRow <= radius; dRow++ {
+				// Only check positions at this radius
+				if abs(dCol) != radius && abs(dRow) != radius {
+					continue
+				}
+
+				col := centerCol + dCol
+				row := centerRow + dRow
+
+				// Skip positions outside playable area (perimeter is walls)
+				if col < 1 || col >= room.Shape.Width-1 || row < 1 || row >= room.Shape.Height-1 {
+					continue
+				}
+
+				// Convert to cube coordinates
+				x := col
+				z := row
+				y := -x - z
+
+				key := fmt.Sprintf("%d,%d,%d", x, y, z)
+				if !blocked[key] {
+					// Found a valid position
+					return spatial.CubeCoordinate{X: x, Y: y, Z: z}
+				}
+			}
+		}
+	}
+
+	// Ultimate fallback: just use center (shouldn't reach here in practice)
+	x := centerCol
+	z := centerRow
+	y := -x - z
+	return spatial.CubeCoordinate{X: x, Y: y, Z: z}
+}
+
+// getWallPositionsForFallback returns all positions along a wall segment
+func getWallPositionsForFallback(wall dungeon.WallSegment) []spatial.CubeCoordinate {
+	var positions []spatial.CubeCoordinate
+
+	dx := wall.End.X - wall.Start.X
+	dz := wall.End.Z - wall.Start.Z
+
+	steps := abs(dx)
+	if abs(dz) > steps {
+		steps = abs(dz)
+	}
+	if steps == 0 {
+		steps = 1
+	}
+
+	for i := 0; i <= steps; i++ {
+		t := float64(i) / float64(steps)
+		x := wall.Start.X + int(float64(dx)*t)
+		z := wall.Start.Z + int(float64(dz)*t)
+		y := -x - z
+		positions = append(positions, spatial.CubeCoordinate{X: x, Y: y, Z: z})
+	}
+
+	return positions
+}
+
+// abs returns the absolute value of an integer
+func abs(x int) int {
+	if x < 0 {
+		return -x
+	}
+	return x
 }
 
 // parseConnectionType extracts direction and physical hint from encoded Type field

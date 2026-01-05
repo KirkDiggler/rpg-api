@@ -155,3 +155,53 @@ func (s *PerimeterGeneratorTestSuite) TestGenerate_MultipleDoors() {
 	require.NotNil(s.T(), result)
 	assert.Len(s.T(), result.DoorPositions, 2, "should have two door positions")
 }
+
+func (s *PerimeterGeneratorTestSuite) TestUpdatePerimeter_WithDoor() {
+	shape := &dungeon.Shape{
+		Bounds: []dungeon.Position{
+			{X: 0, Y: 0},
+			{X: 10, Y: 0},
+			{X: 10, Y: 10},
+			{X: 0, Y: 10},
+		},
+		Width:  10,
+		Height: 10,
+	}
+
+	connections := []*dungeon.RoomConnection{
+		{
+			FromRoom:     "room1",
+			ToRoom:       "room2",
+			Type:         dungeon.ConnectionTypeDoor,
+			PhysicalHint: "south",
+		},
+	}
+
+	result := s.generator.UpdatePerimeter(&dungeon.UpdatePerimeterInput{
+		Shape:       shape,
+		Connections: connections,
+	})
+
+	require.NotNil(s.T(), result)
+	// Should have 5 wall segments: 3 solid + 2 around door
+	assert.Len(s.T(), result.Walls, 5, "should have 5 wall segments (3 solid + 2 split)")
+	assert.Len(s.T(), result.DoorPositions, 1, "should have one door position")
+}
+
+func (s *PerimeterGeneratorTestSuite) TestUpdatePerimeter_NilInput() {
+	result := s.generator.UpdatePerimeter(nil)
+
+	require.NotNil(s.T(), result)
+	assert.Empty(s.T(), result.Walls)
+	assert.Empty(s.T(), result.DoorPositions)
+}
+
+func (s *PerimeterGeneratorTestSuite) TestUpdatePerimeter_NilShape() {
+	result := s.generator.UpdatePerimeter(&dungeon.UpdatePerimeterInput{
+		Shape:       nil,
+		Connections: []*dungeon.RoomConnection{},
+	})
+
+	require.NotNil(s.T(), result)
+	assert.Empty(s.T(), result.Walls)
+}

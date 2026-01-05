@@ -116,7 +116,7 @@ func (s *ToolkitGeneratorsTestSuite) TestShapeGenerator() {
 		s.Assert().NotEmpty(output.PerimeterWalls)
 	})
 
-	s.Run("generates smaller entrance room", func() {
+	s.Run("generates full-sized entrance room for combat", func() {
 		gen := NewToolkitShapeGenerator()
 
 		output, err := gen.Generate(context.Background(), &dungeon.ShapeInput{
@@ -128,10 +128,10 @@ func (s *ToolkitGeneratorsTestSuite) TestShapeGenerator() {
 
 		s.Require().NoError(err)
 		s.Require().NotNil(output)
-		// Entrance rooms are narrower: width/2, height*2/3 with minimums
-		// Medium base 18x16 -> 9x10 but min 6x8 -> 9x10
-		s.Assert().Equal(9, output.Shape.Width)
-		s.Assert().Equal(10, output.Shape.Height)
+		// Entrance rooms are combat starting rooms - full base size with minimums 10x12
+		// Medium base 18x16 -> 18x16 (meets minimums)
+		s.Assert().Equal(18, output.Shape.Width)
+		s.Assert().Equal(16, output.Shape.Height)
 	})
 
 	s.Run("generates larger boss room", func() {
@@ -214,11 +214,11 @@ func (s *ToolkitGeneratorsTestSuite) TestFeatureGenerator() {
 		s.Require().NotNil(output)
 		s.Require().NotNil(output.Features)
 		s.Assert().NotEmpty(output.Features.Obstacles)
-		s.Assert().NotEmpty(output.Features.SpawnZones)
+		s.Assert().NotEmpty(output.Zones)
 
 		// Check for player spawn zone
 		hasPlayerSpawn := false
-		for _, zone := range output.Features.SpawnZones {
+		for _, zone := range output.Zones {
 			if zone.Type == dungeon.ZoneTypePlayerSpawn {
 				hasPlayerSpawn = true
 				break
@@ -245,11 +245,11 @@ func (s *ToolkitGeneratorsTestSuite) TestFeatureGenerator() {
 
 		s.Require().NoError(err)
 		s.Require().NotNil(output)
-		s.Assert().NotEmpty(output.Features.SpawnZones)
+		s.Assert().NotEmpty(output.Zones)
 
 		// Check for boss zone
 		hasBossZone := false
-		for _, zone := range output.Features.SpawnZones {
+		for _, zone := range output.Zones {
 			if zone.Type == dungeon.ZoneTypeBoss {
 				hasBossZone = true
 				break

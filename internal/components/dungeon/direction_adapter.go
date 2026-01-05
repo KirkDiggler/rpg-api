@@ -99,24 +99,25 @@ func (a *DirectionAdapter) parseDirectionFromHint(hint string) Direction {
 }
 
 // linearDirection assigns directions for linear layouts
-// Rooms progress from north to south (entrance at top, boss at bottom)
+// Rooms progress from south to north (entrance at bottom, boss at top)
+// Players enter from south and move north through the dungeon
 func (a *DirectionAdapter) linearDirection(fromIdx, toIdx int, _ bool) Direction {
 	if toIdx > fromIdx {
-		// Moving forward in the dungeon (deeper)
-		return DirectionSouth
+		// Moving forward in the dungeon (deeper) = going north
+		return DirectionNorth
 	}
-	// Moving backward (toward entrance)
-	return DirectionNorth
+	// Moving backward (toward entrance) = going south
+	return DirectionSouth
 }
 
 // branchingDirection assigns directions for branching layouts
 func (a *DirectionAdapter) branchingDirection(fromIdx, toIdx int, isMainPath bool) Direction {
 	if isMainPath {
-		// Main path goes south
+		// Main path goes north (players enter from south, move north)
 		if toIdx > fromIdx {
-			return DirectionSouth
+			return DirectionNorth
 		}
-		return DirectionNorth
+		return DirectionSouth
 	}
 	// Side branches go east/west alternating
 	if fromIdx%2 == 0 {

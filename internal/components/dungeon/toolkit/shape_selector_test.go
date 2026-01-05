@@ -57,15 +57,18 @@ func (s *ShapeSelectorTestSuite) TestSelectShape_DefaultFallback() {
 	s.Equal("rectangle", shape.Name, "unknown room types with structured style should use rectangle")
 }
 
-func (s *ShapeSelectorTestSuite) TestGetDimensions_EntranceIsNarrower() {
+func (s *ShapeSelectorTestSuite) TestGetDimensions_EntranceIsCombatSized() {
 	shape := s.selector.SelectShape(dungeon.RoomTypeEntrance, dungeon.ShapeStyleStructured)
 	entranceWidth, entranceHeight := s.selector.GetDimensions(dungeon.RoomTypeEntrance, dungeon.RoomSizeMedium, shape)
 
 	chamberShape := s.selector.SelectShape(dungeon.RoomTypeChamber, dungeon.ShapeStyleStructured)
-	chamberWidth, _ := s.selector.GetDimensions(dungeon.RoomTypeChamber, dungeon.RoomSizeMedium, chamberShape)
+	chamberWidth, chamberHeight := s.selector.GetDimensions(dungeon.RoomTypeChamber, dungeon.RoomSizeMedium, chamberShape)
 
-	s.Less(entranceWidth, chamberWidth, "entrance rooms should be narrower than chambers")
-	s.GreaterOrEqual(entranceHeight, 8, "entrance rooms should have minimum height for playability")
+	// Entrance rooms are combat starting rooms - same size as chambers with minimums 10x12
+	s.Equal(entranceWidth, chamberWidth, "entrance rooms should be same width as chambers for combat")
+	s.Equal(entranceHeight, chamberHeight, "entrance rooms should be same height as chambers for combat")
+	s.GreaterOrEqual(entranceWidth, 10, "entrance rooms should have minimum width for combat")
+	s.GreaterOrEqual(entranceHeight, 12, "entrance rooms should have minimum height for combat")
 }
 
 func (s *ShapeSelectorTestSuite) TestGetDimensions_BossIsLarger() {

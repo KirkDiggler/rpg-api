@@ -188,3 +188,22 @@ func (g *PerimeterGenerator) createWallAfterDoor(doorPos, end dungeon.Position, 
 		BlocksLineOfSight: true,
 	}
 }
+
+// UpdatePerimeter implements dungeon.PerimeterUpdater
+// Regenerates perimeter walls with door openings based on room connections
+func (g *PerimeterGenerator) UpdatePerimeter(input *dungeon.UpdatePerimeterInput) *dungeon.UpdatePerimeterOutput {
+	if input == nil || input.Shape == nil {
+		return &dungeon.UpdatePerimeterOutput{}
+	}
+
+	// Generate perimeter with connections
+	output := g.Generate(&PerimeterInput{
+		Shape:       input.Shape,
+		Connections: input.Connections,
+	})
+
+	return &dungeon.UpdatePerimeterOutput{
+		Walls:         output.Walls,
+		DoorPositions: output.DoorPositions,
+	}
+}

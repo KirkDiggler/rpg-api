@@ -92,14 +92,15 @@ func (s *ShapeSelector) GetDimensions(roomType dungeon.RoomType, size dungeon.Ro
 	// Apply room type modifiers
 	switch roomType {
 	case dungeon.RoomTypeEntrance:
-		// Entrances are narrower - feel like entering a space
-		width = baseWidth / 2
-		if width < 6 {
-			width = 6
+		// Entrance rooms are the combat starting room - need space for party and monsters
+		// with separation between them (players near south door, monsters near north)
+		width = baseWidth
+		if width < 10 {
+			width = 10
 		}
-		height = baseHeight * 2 / 3
-		if height < 8 {
-			height = 8
+		height = baseHeight
+		if height < 12 {
+			height = 12
 		}
 
 	case dungeon.RoomTypeCorridor:

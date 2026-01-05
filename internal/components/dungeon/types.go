@@ -101,8 +101,6 @@ type FeatureLayout struct {
 	Obstacles []Obstacle
 	// Terrain contains special terrain patches
 	Terrain []TerrainPatch
-	// SpawnZones defines designated areas
-	SpawnZones []Zone
 }
 
 // Obstacle represents a blocking feature in the room
