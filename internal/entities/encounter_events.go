@@ -180,6 +180,13 @@ type AttackResult struct {
 	Breakdown *DamageBreakdown `json:"breakdown,omitempty"` // Detailed damage breakdown (nil if attack missed)
 }
 
+// HealResult contains the outcome of a healing action
+type HealResult struct {
+	AmountHealed int `json:"amount_healed"` // HP restored
+	NewHP        int `json:"new_hp"`        // Current HP after healing
+	MaxHP        int `json:"max_hp"`        // Maximum HP (for context)
+}
+
 // DamageBreakdown provides detailed component breakdown of damage calculation
 type DamageBreakdown struct {
 	Components  []DamageComponent `json:"components"`

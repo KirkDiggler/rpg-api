@@ -155,6 +155,7 @@ func (h *Handler) OpenDoor(
 
 	return &dnd5ev1alpha1.OpenDoorResponse{
 		Success:      true,
+		EncounterId:  output.EncounterID,
 		Room:         convertOpenDoorRoomToProto(output.RevealedRoom),
 		CombatState:  convertCombatStateToProto(output.CombatState, gridType, hexOrientation),
 		MonsterTurns: convertMonsterTurnsToProto(output.MonsterTurns, gridType, hexOrientation),

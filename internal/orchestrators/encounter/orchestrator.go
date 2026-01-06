@@ -179,6 +179,8 @@ func (o *Orchestrator) publishEvent(ctx context.Context, encounterID string, eve
 		event.DungeonVictory = v
 	case *entities.DungeonFailureEvent:
 		event.DungeonFailure = v
+	case *entities.RoomRevealedEvent:
+		event.RoomRevealed = v
 	default:
 		fmt.Printf("unknown event data type for %s: %T\n", eventType, data)
 		return
@@ -340,20 +342,19 @@ func (o *Orchestrator) ResolveAttack(ctx context.Context, input *ResolveAttackIn
 	registry := gamectx.NewCombatantRegistry()
 	registry.Add(char)
 	registry.Add(goblin)
-	ctx = gamectx.WithCombatants(ctx, registry)
+	// Use combat.WithCombatantLookup for the new ID-based lookup API
+	ctx = combat.WithCombatantLookup(ctx, registry)
 
 	// 10. Call toolkit combat (event-driven, Rage and fighting styles participate here!)
 	// Damage is applied to the monster via DamageReceivedEvent -> monster.TakeDamage
+	// New API uses IDs - combatants are looked up from context
 	result, err := combat.ResolveAttack(ctx, &combat.AttackInput{
-		Attacker:         char,
-		Defender:         goblin,
-		Weapon:           &weapon,
-		AttackerScores:   charOutput.Character.Data.AbilityScores,
-		DefenderAC:       goblin.AC(),
-		ProficiencyBonus: char.GetProficiencyBonus(),
-		EventBus:         bus,
-		Roller:           o.roller,
-		AttackHand:       input.AttackHand, // For two-weapon fighting
+		AttackerID: input.AttackerID,
+		TargetID:   input.TargetID,
+		Weapon:     &weapon,
+		EventBus:   bus,
+		Roller:     o.roller,
+		AttackHand: input.AttackHand, // For two-weapon fighting
 	})
 	if err != nil {
 		return nil, fmt.Errorf("combat resolution failed: %w", err)
@@ -1211,8 +1212,9 @@ func (o *Orchestrator) getDoorInfoForRoom(dungeonEntity *entities.Dungeon, roomI
 		position := getDoorPositionFromShape(room, direction)
 
 		// Fall back to calculated position if no ConnectionPoint found
+		// Use conn.Type for the hint since it contains direction info like "north door"
 		if position == nil && room != nil && room.Shape != nil {
-			position = calculateDoorPosition(direction, room.Shape.Width, room.Shape.Height)
+			position = calculateDoorPosition(conn.Type, room.Shape.Width, room.Shape.Height)
 		}
 
 		doors = append(doors, DoorInfo{
@@ -2208,6 +2210,7 @@ func (o *Orchestrator) buildGameContextFromEquipment(
 
 // checkCombatEnd checks if combat has ended (all monsters dead or all players dead)
 // Returns EncounterResult if combat ended, nil otherwise
+// NOTE: For dungeons with bosses, victory is handled by checkAndHandleVictory when boss is killed
 func (o *Orchestrator) checkCombatEnd(enc *encounterrepo.EncounterData) *EncounterResult {
 	if enc == nil || enc.InitiativeData == nil {
 		return nil
@@ -2234,7 +2237,15 @@ func (o *Orchestrator) checkCombatEnd(enc *encounterrepo.EncounterData) *Encount
 	}
 
 	// Victory condition: all monsters dead and at least one player alive
+	// BUT: If there are boss monsters defined, victory is only triggered by boss kill
+	// (handled by checkAndHandleVictory), not by clearing current room's monsters
 	if allMonstersDead && !allPlayersDead {
+		// If bosses are defined, don't declare victory here - wait for boss kill
+		if len(enc.BossMonsterIDs) > 0 {
+			// Bosses exist, so victory only happens when boss is killed
+			// Combat continues (player can open doors to find boss)
+			return nil
+		}
 		return &EncounterResult{
 			Reason: "victory",
 		}
@@ -2498,13 +2509,18 @@ func (o *Orchestrator) OpenDoor(
 		return nil, fmt.Errorf("current room not found: %s", currentRoomID)
 	}
 
-	// Calculate door position in the current room
-	var doorWidth, doorHeight int
-	if currentRoom.Shape != nil {
-		doorWidth = currentRoom.Shape.Width
-		doorHeight = currentRoom.Shape.Height
+	// Calculate door position in the current room using same logic as getDoorInfoForRoom
+	// to ensure consistency between what the client sees and what the server validates
+	direction, _ := parseConnectionType(connection.Type)
+
+	// Try to get door position from shape's ConnectionPoints first
+	doorPos := getDoorPositionFromShape(currentRoom, direction)
+
+	// Fall back to calculated position if no ConnectionPoint found
+	// Use connection.Type for the hint since it contains direction info like "north door"
+	if doorPos == nil && currentRoom.Shape != nil {
+		doorPos = calculateDoorPosition(connection.Type, currentRoom.Shape.Width, currentRoom.Shape.Height)
 	}
-	doorPos := calculateDoorPosition(connection.Type, doorWidth, doorHeight)
 	if doorPos == nil {
 		return nil, fmt.Errorf("cannot determine door position")
 	}
@@ -2658,12 +2674,34 @@ func (o *Orchestrator) OpenDoor(
 		return nil, fmt.Errorf("failed to update encounter: %w", err)
 	}
 
-	// 12. Build room data for response
+	// 12. Build room data for response with entities and walls
 	responseRoomData := &RoomData{
 		ID:       revealedRoom.ID,
 		Width:    revealedRoom.Shape.Width,
 		Height:   revealedRoom.Shape.Height,
-		Entities: make(map[string]interface{}),
+		Entities: make(map[string]*EntityPlacement),
+		Walls:    o.convertToWallInfo(revealedRoom),
+	}
+
+	// Add monster placements to entities
+	for _, m := range monsters {
+		// Convert 2D position to cube coordinates for hex grid
+		cubeX := int(m.Position.X)
+		cubeZ := int(m.Position.Y) // Y in 2D maps to Z in cube coords
+		cubeY := -cubeX - cubeZ    // y = -x - z for valid cube coordinate
+
+		responseRoomData.Entities[m.ID] = &EntityPlacement{
+			EntityID:          m.ID,
+			EntityType:        "monster",
+			Size:              1,
+			BlocksMovement:    true,
+			BlocksLineOfSight: false,
+			Position: &Position{
+				X: float64(cubeX),
+				Y: float64(cubeY),
+				Z: float64(cubeZ),
+			},
+		}
 	}
 
 	// 13. Get doors for the newly revealed room
@@ -2671,9 +2709,11 @@ func (o *Orchestrator) OpenDoor(
 
 	// 14. Build combat state for response
 	combatState := &CombatState{
-		TurnOrder:   make([]InitiativeEntry, len(newOrder)),
-		ActiveIndex: newCurrent,
-		Round:       newInitiativeData.Round,
+		EncounterID:   dng.EncounterID,
+		TurnOrder:     make([]InitiativeEntry, len(newOrder)),
+		ActiveIndex:   newCurrent,
+		Round:         newInitiativeData.Round,
+		CombatStarted: true, // Combat is active when opening doors
 	}
 	for i, entity := range newOrder {
 		// Find the roll for this entity
@@ -2716,6 +2756,7 @@ func (o *Orchestrator) OpenDoor(
 		DungeonID:    dng.ID,
 		ConnectionID: input.ConnectionID,
 		RevealedRoom: revealedSpatialRoom,
+		Walls:        revealedRoom.Walls,
 		NewDoors:     convertDoorsToEntityDoors(newDoors),
 		Monsters:     monsterStates,
 		CombatState:  combatState,
@@ -2723,6 +2764,7 @@ func (o *Orchestrator) OpenDoor(
 	})
 
 	return &OpenDoorOutput{
+		EncounterID:  dng.EncounterID,
 		RevealedRoom: responseRoomData,
 		RoomOffset:   nil, // TODO: Calculate offset for grid merge when implementing multi-room display
 		NewDoors:     newDoors,

@@ -7,6 +7,7 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/events"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/combat"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/gamectx"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/monster"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/monster/actions"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/monstertraits"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/KirkDiggler/rpg-api/internal/components/dungeon"
 	dungeontoolkit "github.com/KirkDiggler/rpg-api/internal/components/dungeon/toolkit"
+	"github.com/KirkDiggler/rpg-api/internal/entities"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	dungeonrepo "github.com/KirkDiggler/rpg-api/internal/repositories/dungeons"
 	encounterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/encounters"
@@ -191,7 +193,7 @@ func (o *Orchestrator) executeSingleMonsterTurn(
 			ActionType: string(action.ActionType),
 			TargetID:   action.TargetID,
 			Success:    action.Success,
-			Details:    action.Details,
+			// Details will be set below if action succeeds
 		}
 
 		// If this was an attack action and it succeeded, resolve it
@@ -210,8 +212,10 @@ func (o *Orchestrator) executeSingleMonsterTurn(
 				return nil, fmt.Errorf("failed to resolve attack: %w", resolveErr)
 			}
 
-			// Store attack result in action details
-			actions[i].Details = attackResult
+			// Store attack result in action details using typed struct
+			actions[i].Details = &entities.MonsterActionDetails{
+				AttackResult: attackResult,
+			}
 
 			// Update character HP in encounter data for TPK tracking
 			if attackResult.Hit && enc.CharacterHP != nil {
@@ -313,25 +317,21 @@ func (o *Orchestrator) resolveMonsterAttack(
 		return nil, fmt.Errorf("failed to get weapon: %w", err)
 	}
 
-	// Get defender's AC
-	acBreakdown := defender.EffectiveAC(ctx)
-	defenderAC := acBreakdown.Total
-
-	// Calculate proficiency bonus from monster data
-	// D&D 5e doesn't have a ProficiencyBonus field on monsters directly
-	// They have CR-based proficiency, but for now use +2 (goblin default)
-	profBonus := 2
+	// Create CombatantRegistry for ID-based lookup
+	// Both monster and character implement the Combatant interface
+	registry := gamectx.NewCombatantRegistry()
+	registry.Add(mon)
+	registry.Add(defender)
+	ctx = combat.WithCombatantLookup(ctx, registry)
 
 	// Resolve the attack using toolkit combat
+	// New API uses IDs - ability scores, AC, proficiency are looked up from combatants
 	combatResult, err := combat.ResolveAttack(ctx, &combat.AttackInput{
-		Attacker:         mon,
-		Defender:         defender,
-		Weapon:           &weapon,
-		AttackerScores:   monsterData.AbilityScores,
-		DefenderAC:       defenderAC,
-		ProficiencyBonus: profBonus,
-		EventBus:         attackBus,
-		Roller:           o.roller,
+		AttackerID: monsterData.ID,
+		TargetID:   targetID,
+		Weapon:     &weapon,
+		EventBus:   attackBus,
+		Roller:     o.roller,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("combat resolution failed: %w", err)

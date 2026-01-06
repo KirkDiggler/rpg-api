@@ -847,20 +847,16 @@ func convertMonsterExecutedActionToProto(action *encounter.MonsterExecutedAction
 		Success:    action.Success,
 	}
 
-	// Convert Details based on action type and success
-	// For attack actions, Details should be an AttackResult
-	if action.Success && action.Details != nil {
-		switch action.ActionType {
-		case string(monster.TypeMeleeAttack), string(monster.TypeRangedAttack):
-			// Try to convert Details to AttackResult
-			if attackResult, ok := action.Details.(*encounter.AttackResult); ok {
-				protoAction.Details = &dnd5ev1alpha1.MonsterExecutedAction_AttackResult{
-					AttackResult: convertAttackResultToProto(attackResult),
-				}
+	// Convert Details from typed struct (survives JSON serialization)
+	if action.Details != nil {
+		if action.Details.AttackResult != nil {
+			protoAction.Details = &dnd5ev1alpha1.MonsterExecutedAction_AttackResult{
+				AttackResult: convertAttackResultToProto(action.Details.AttackResult),
 			}
-		case string(monster.TypeHeal):
-			// Future: Add HealResult conversion when needed
-			// For now, leave Details nil
+		} else if action.Details.HealResult != nil {
+			protoAction.Details = &dnd5ev1alpha1.MonsterExecutedAction_HealResult{
+				HealResult: convertHealResultToProto(action.Details.HealResult),
+			}
 		}
 	}
 
@@ -952,6 +948,8 @@ func convertEncounterStateToProto(state string) dnd5ev1alpha1.EncounterState {
 }
 
 // convertOpenDoorRoomToProto converts the orchestrator's RoomData to proto Room
+//
+//nolint:gosec // G115: Game values are bounded, no overflow risk
 func convertOpenDoorRoomToProto(roomData *encounter.RoomData) *dnd5ev1alpha1.Room {
 	if roomData == nil {
 		return nil
@@ -960,6 +958,30 @@ func convertOpenDoorRoomToProto(roomData *encounter.RoomData) *dnd5ev1alpha1.Roo
 	// Default to hex grid with pointy-top orientation
 	hexOrientation := true
 
+	// Convert entities
+	entities := make(map[string]*dnd5ev1alpha1.EntityPlacement, len(roomData.Entities))
+	for id, placement := range roomData.Entities {
+		if placement == nil {
+			continue
+		}
+		var position *apiv1alpha1.Position
+		if placement.Position != nil {
+			position = &apiv1alpha1.Position{
+				X: placement.Position.X,
+				Y: placement.Position.Y,
+				Z: placement.Position.Z,
+			}
+		}
+		entities[id] = &dnd5ev1alpha1.EntityPlacement{
+			EntityId:          placement.EntityID,
+			EntityType:        placement.EntityType,
+			Position:          position,
+			Size:              int32(placement.Size),
+			BlocksMovement:    placement.BlocksMovement,
+			BlocksLineOfSight: placement.BlocksLineOfSight,
+		}
+	}
+
 	return &dnd5ev1alpha1.Room{
 		Id:             roomData.ID,
 		Type:           "dungeon",
@@ -967,7 +989,8 @@ func convertOpenDoorRoomToProto(roomData *encounter.RoomData) *dnd5ev1alpha1.Roo
 		Height:         int32(roomData.Height),
 		GridType:       apiv1alpha1.GridType_GRID_TYPE_HEX_POINTY,
 		HexOrientation: &hexOrientation,
-		Entities:       make(map[string]*dnd5ev1alpha1.EntityPlacement),
+		Entities:       entities,
+		Walls:          convertWallsToProto(roomData.Walls),
 	}
 }
 
@@ -1133,8 +1156,35 @@ func convertEntityMonsterActionToProto(action *entities.MonsterExecutedAction) *
 		TargetId:   action.TargetID,
 		Success:    action.Success,
 	}
-	// Note: Details conversion would go here if needed
+
+	// Convert Details from typed struct (survives JSON serialization)
+	if action.Details != nil {
+		if action.Details.AttackResult != nil {
+			protoAction.Details = &dnd5ev1alpha1.MonsterExecutedAction_AttackResult{
+				AttackResult: convertAttackResultToProto(action.Details.AttackResult),
+			}
+		} else if action.Details.HealResult != nil {
+			protoAction.Details = &dnd5ev1alpha1.MonsterExecutedAction_HealResult{
+				HealResult: convertHealResultToProto(action.Details.HealResult),
+			}
+		}
+	}
+
 	return protoAction
+}
+
+// convertHealResultToProto converts entities.HealResult to proto
+//
+//nolint:gosec // G115: Game values are bounded by D&D rules, no overflow risk
+func convertHealResultToProto(result *entities.HealResult) *dnd5ev1alpha1.HealResult {
+	if result == nil {
+		return nil
+	}
+	return &dnd5ev1alpha1.HealResult{
+		AmountHealed: int32(result.AmountHealed),
+		NewHp:        int32(result.NewHP),
+		MaxHp:        int32(result.MaxHP),
+	}
 }
 
 // convertWallsToProto converts orchestrator WallInfo to proto Wall
