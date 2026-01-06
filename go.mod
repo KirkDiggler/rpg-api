@@ -42,3 +42,6 @@ require (
 	gopkg.in/check.v1 v1.0.0-20190902080502-41f04d3bba15 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
+
+// DO NOT COMMIT - Local development override for testing pathfinding
+replace github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e => ../rpg-toolkit/rulebooks/dnd5e

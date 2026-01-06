@@ -179,6 +179,8 @@ func (o *Orchestrator) publishEvent(ctx context.Context, encounterID string, eve
 		event.DungeonVictory = v
 	case *entities.DungeonFailureEvent:
 		event.DungeonFailure = v
+	case *entities.RoomRevealedEvent:
+		event.RoomRevealed = v
 	default:
 		fmt.Printf("unknown event data type for %s: %T\n", eventType, data)
 		return
