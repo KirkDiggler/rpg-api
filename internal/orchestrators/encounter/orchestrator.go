@@ -340,20 +340,19 @@ func (o *Orchestrator) ResolveAttack(ctx context.Context, input *ResolveAttackIn
 	registry := gamectx.NewCombatantRegistry()
 	registry.Add(char)
 	registry.Add(goblin)
-	ctx = gamectx.WithCombatants(ctx, registry)
+	// Use combat.WithCombatantLookup for the new ID-based lookup API
+	ctx = combat.WithCombatantLookup(ctx, registry)
 
 	// 10. Call toolkit combat (event-driven, Rage and fighting styles participate here!)
 	// Damage is applied to the monster via DamageReceivedEvent -> monster.TakeDamage
+	// New API uses IDs - combatants are looked up from context
 	result, err := combat.ResolveAttack(ctx, &combat.AttackInput{
-		Attacker:         char,
-		Defender:         goblin,
-		Weapon:           &weapon,
-		AttackerScores:   charOutput.Character.Data.AbilityScores,
-		DefenderAC:       goblin.AC(),
-		ProficiencyBonus: char.GetProficiencyBonus(),
-		EventBus:         bus,
-		Roller:           o.roller,
-		AttackHand:       input.AttackHand, // For two-weapon fighting
+		AttackerID: input.AttackerID,
+		TargetID:   input.TargetID,
+		Weapon:     &weapon,
+		EventBus:   bus,
+		Roller:     o.roller,
+		AttackHand: input.AttackHand, // For two-weapon fighting
 	})
 	if err != nil {
 		return nil, fmt.Errorf("combat resolution failed: %w", err)
@@ -2209,6 +2208,7 @@ func (o *Orchestrator) buildGameContextFromEquipment(
 
 // checkCombatEnd checks if combat has ended (all monsters dead or all players dead)
 // Returns EncounterResult if combat ended, nil otherwise
+// NOTE: For dungeons with bosses, victory is handled by checkAndHandleVictory when boss is killed
 func (o *Orchestrator) checkCombatEnd(enc *encounterrepo.EncounterData) *EncounterResult {
 	if enc == nil || enc.InitiativeData == nil {
 		return nil
@@ -2235,7 +2235,15 @@ func (o *Orchestrator) checkCombatEnd(enc *encounterrepo.EncounterData) *Encount
 	}
 
 	// Victory condition: all monsters dead and at least one player alive
+	// BUT: If there are boss monsters defined, victory is only triggered by boss kill
+	// (handled by checkAndHandleVictory), not by clearing current room's monsters
 	if allMonstersDead && !allPlayersDead {
+		// If bosses are defined, don't declare victory here - wait for boss kill
+		if len(enc.BossMonsterIDs) > 0 {
+			// Bosses exist, so victory only happens when boss is killed
+			// Combat continues (player can open doors to find boss)
+			return nil
+		}
 		return &EncounterResult{
 			Reason: "victory",
 		}
