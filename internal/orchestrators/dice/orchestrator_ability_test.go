@@ -147,3 +147,166 @@ func TestOrchestrator_RollDice_AbilityScores(t *testing.T) {
 		assert.LessOrEqual(t, output.Roll.Total, 24)
 	})
 }
+
+func TestOrchestrator_RollAbilityScores_StandardArray(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockRepo := dicemock.NewMockRepository(ctrl)
+	idGen := idgen.NewUUID("roll")
+
+	o, err := NewOrchestrator(&Config{
+		DiceSessionRepo: mockRepo,
+		IDGenerator:     idGen,
+	})
+	require.NoError(t, err)
+
+	ctx := context.Background()
+
+	t.Run("creates 6 rolls with standard array values", func(t *testing.T) {
+		input := &RollAbilityScoresInput{
+			EntityID: "draft-123",
+			Method:   MethodStandardArray,
+		}
+
+		// Mock creating the session
+		mockRepo.EXPECT().
+			Create(ctx, gomock.Any()).
+			DoAndReturn(func(_ context.Context, createInput dicesession.CreateInput) (*dicesession.CreateOutput, error) {
+				require.Equal(t, "draft-123", createInput.EntityID)
+				require.Equal(t, ContextAbilityScores, createInput.Context)
+				require.Len(t, createInput.Rolls, 6)
+
+				// Verify standard array values: 15, 14, 13, 12, 10, 8
+				expectedValues := []int{15, 14, 13, 12, 10, 8}
+				for i, roll := range createInput.Rolls {
+					assert.Equal(t, expectedValues[i], roll.Total, "Roll %d should have value %d", i, expectedValues[i])
+					assert.Equal(t, MethodStandardArray, roll.Notation)
+					assert.Nil(t, roll.Dropped)
+				}
+
+				return &dicesession.CreateOutput{
+					Session: &dicesession.DiceSession{
+						EntityID: createInput.EntityID,
+						Context:  createInput.Context,
+						Rolls:    createInput.Rolls,
+					},
+				}, nil
+			})
+
+		output, err := o.RollAbilityScores(ctx, input)
+		require.NoError(t, err)
+		require.NotNil(t, output)
+		require.Len(t, output.Rolls, 6)
+
+		// Verify output rolls have standard array values
+		expectedValues := []int{15, 14, 13, 12, 10, 8}
+		for i, roll := range output.Rolls {
+			assert.Equal(t, expectedValues[i], roll.Total)
+		}
+	})
+}
+
+func TestOrchestrator_GetRollSession_AutoCreatesStandardArray(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockRepo := dicemock.NewMockRepository(ctrl)
+	idGen := idgen.NewUUID("roll")
+
+	o, err := NewOrchestrator(&Config{
+		DiceSessionRepo: mockRepo,
+		IDGenerator:     idGen,
+	})
+	require.NoError(t, err)
+
+	ctx := context.Background()
+
+	t.Run("auto-creates standard array for ability_scores when not found", func(t *testing.T) {
+		// First call returns not found
+		mockRepo.EXPECT().
+			Get(ctx, dicesession.GetInput{
+				EntityID: "draft-456",
+				Context:  ContextAbilityScores,
+			}).
+			Return(nil, apierr.NotFound("session not found"))
+
+		// Then it should create a standard array session
+		mockRepo.EXPECT().
+			Create(ctx, gomock.Any()).
+			DoAndReturn(func(_ context.Context, createInput dicesession.CreateInput) (*dicesession.CreateOutput, error) {
+				require.Equal(t, "draft-456", createInput.EntityID)
+				require.Equal(t, ContextAbilityScores, createInput.Context)
+				require.Len(t, createInput.Rolls, 6)
+
+				// Verify it's creating standard array
+				expectedValues := []int{15, 14, 13, 12, 10, 8}
+				for i, roll := range createInput.Rolls {
+					assert.Equal(t, expectedValues[i], roll.Total)
+				}
+
+				return &dicesession.CreateOutput{
+					Session: &dicesession.DiceSession{
+						EntityID: createInput.EntityID,
+						Context:  createInput.Context,
+						Rolls:    createInput.Rolls,
+					},
+				}, nil
+			})
+
+		output, err := o.GetRollSession(ctx, &GetRollSessionInput{
+			EntityID: "draft-456",
+			Context:  ContextAbilityScores,
+		})
+		require.NoError(t, err)
+		require.NotNil(t, output)
+		require.NotNil(t, output.Session)
+		require.Len(t, output.Session.Rolls, 6)
+	})
+
+	t.Run("returns error for non-ability_scores context when not found", func(t *testing.T) {
+		mockRepo.EXPECT().
+			Get(ctx, dicesession.GetInput{
+				EntityID: "player-789",
+				Context:  "damage_rolls",
+			}).
+			Return(nil, apierr.NotFound("session not found"))
+
+		output, err := o.GetRollSession(ctx, &GetRollSessionInput{
+			EntityID: "player-789",
+			Context:  "damage_rolls",
+		})
+		require.Error(t, err)
+		require.Nil(t, output)
+	})
+
+	t.Run("returns existing session if found", func(t *testing.T) {
+		existingSession := &dicesession.DiceSession{
+			EntityID: "draft-existing",
+			Context:  ContextAbilityScores,
+			Rolls: []dicesession.DiceRoll{
+				{RollID: "r1", Total: 15},
+				{RollID: "r2", Total: 14},
+				{RollID: "r3", Total: 13},
+				{RollID: "r4", Total: 12},
+				{RollID: "r5", Total: 10},
+				{RollID: "r6", Total: 8},
+			},
+		}
+
+		mockRepo.EXPECT().
+			Get(ctx, dicesession.GetInput{
+				EntityID: "draft-existing",
+				Context:  ContextAbilityScores,
+			}).
+			Return(&dicesession.GetOutput{Session: existingSession}, nil)
+
+		output, err := o.GetRollSession(ctx, &GetRollSessionInput{
+			EntityID: "draft-existing",
+			Context:  ContextAbilityScores,
+		})
+		require.NoError(t, err)
+		require.NotNil(t, output)
+		require.Equal(t, existingSession, output.Session)
+	})
+}

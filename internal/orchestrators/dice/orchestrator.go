@@ -34,6 +34,8 @@ const (
 	MethodHeroic = "4d6_reroll_1s"
 	// MethodPointBuy is the point buy method for ability scores
 	MethodPointBuy = "point_buy"
+	// MethodStandardArray uses the D&D 5e standard array (15, 14, 13, 12, 10, 8)
+	MethodStandardArray = "standard_array"
 
 	// AbilityScoreNotation is the standard ability score dice notation
 	AbilityScoreNotation = "4d6"
@@ -42,6 +44,9 @@ const (
 var (
 	// Regex for parsing simple dice notation like "2d6", "1d20", "3d8"
 	diceNotationRegex = regexp.MustCompile(`^(\d+)d(\d+)$`)
+
+	// StandardArray is the D&D 5e standard array for ability scores
+	StandardArray = []int{15, 14, 13, 12, 10, 8}
 )
 
 // Service defines the interface for dice operations
@@ -269,7 +274,8 @@ func (o *orchestrator) RollDice(ctx context.Context, input *RollDiceInput) (*Rol
 	}, nil
 }
 
-// GetRollSession retrieves an existing dice roll session
+// GetRollSession retrieves an existing dice roll session.
+// For ability_scores context, auto-creates a standard array session if none exists.
 func (o *orchestrator) GetRollSession(ctx context.Context, input *GetRollSessionInput) (*GetRollSessionOutput, error) {
 	if input.EntityID == "" {
 		return nil, apierr.InvalidArgument("entity ID is required")
@@ -283,6 +289,19 @@ func (o *orchestrator) GetRollSession(ctx context.Context, input *GetRollSession
 		Context:  input.Context,
 	})
 	if err != nil {
+		// For ability_scores context, auto-create with standard array if not found
+		if apierr.IsNotFound(err) && input.Context == ContextAbilityScores {
+			rollOutput, rollErr := o.RollAbilityScores(ctx, &RollAbilityScoresInput{
+				EntityID: input.EntityID,
+				Method:   MethodStandardArray,
+			})
+			if rollErr != nil {
+				return nil, apierr.Wrap(rollErr, "failed to create standard array session")
+			}
+			return &GetRollSessionOutput{
+				Session: rollOutput.Session,
+			}, nil
+		}
 		return nil, apierr.Wrap(err, "failed to get dice session")
 	}
 
@@ -330,54 +349,60 @@ func (o *orchestrator) RollAbilityScores(ctx context.Context, input *RollAbility
 		input.Method = MethodStandard // Default to 4d6 drop lowest
 	}
 
-	// Validate the method
-	notation := ""
-	dropLowest := false
-	switch input.Method {
-	case MethodStandard:
-		notation = AbilityScoreNotation
-		dropLowest = true
-	case MethodClassic:
-		notation = "3d6"
-	case MethodHeroic:
-		notation = "4d6r1" // Reroll 1s
-	default:
-		return nil, apierr.InvalidArgumentf("unsupported rolling method: %s", input.Method)
-	}
-
-	// Parse the dice notation for ability scores
-	count, size, err := o.parseDiceNotation(notation)
-	if err != nil {
-		return nil, apierr.Wrap(err, "failed to parse ability score notation")
-	}
-
-	// Determine drop lowest count
-	dropLowestCount := 0
-	if dropLowest {
-		dropLowestCount = 1
-	}
-
-	// Roll 6 sets of ability scores
 	var rolls []*dicesession.DiceRoll
-	for i := 0; i < 6; i++ {
-		// Roll the dice using rpg-toolkit
-		individualDice, droppedDice, total, rollErr := o.rollDiceWithToolkit(ctx, count, size, dropLowestCount)
-		if rollErr != nil {
-			return nil, apierr.Wrapf(rollErr, "failed to roll ability score %d", i+1)
+
+	// Handle standard array separately - no dice rolling needed
+	if input.Method == MethodStandardArray {
+		rolls = o.createStandardArrayRolls()
+	} else {
+		// Validate the method and get notation
+		notation := ""
+		dropLowest := false
+		switch input.Method {
+		case MethodStandard:
+			notation = AbilityScoreNotation
+			dropLowest = true
+		case MethodClassic:
+			notation = "3d6"
+		case MethodHeroic:
+			notation = "4d6r1" // Reroll 1s
+		default:
+			return nil, apierr.InvalidArgumentf("unsupported rolling method: %s", input.Method)
 		}
 
-		roll := &dicesession.DiceRoll{
-			RollID:      o.idGen.Generate(),
-			Notation:    notation,
-			Dice:        individualDice,
-			Total:       total,
-			Dropped:     droppedDice,
-			Description: fmt.Sprintf("Ability Score %d (%s)", i+1, input.Method),
-			DiceTotal:   total, // Same as total since no modifiers
-			Modifier:    0,     // No modifiers for ability scores
+		// Parse the dice notation for ability scores
+		count, size, err := o.parseDiceNotation(notation)
+		if err != nil {
+			return nil, apierr.Wrap(err, "failed to parse ability score notation")
 		}
 
-		rolls = append(rolls, roll)
+		// Determine drop lowest count
+		dropLowestCount := 0
+		if dropLowest {
+			dropLowestCount = 1
+		}
+
+		// Roll 6 sets of ability scores
+		for i := 0; i < 6; i++ {
+			// Roll the dice using rpg-toolkit
+			individualDice, droppedDice, total, rollErr := o.rollDiceWithToolkit(ctx, count, size, dropLowestCount)
+			if rollErr != nil {
+				return nil, apierr.Wrapf(rollErr, "failed to roll ability score %d", i+1)
+			}
+
+			roll := &dicesession.DiceRoll{
+				RollID:      o.idGen.Generate(),
+				Notation:    notation,
+				Dice:        individualDice,
+				Total:       total,
+				Dropped:     droppedDice,
+				Description: fmt.Sprintf("Ability Score %d (%s)", i+1, input.Method),
+				DiceTotal:   total, // Same as total since no modifiers
+				Modifier:    0,     // No modifiers for ability scores
+			}
+
+			rolls = append(rolls, roll)
+		}
 	}
 
 	// Convert to slice of values for the repository
@@ -407,4 +432,22 @@ func (o *orchestrator) RollAbilityScores(ctx context.Context, input *RollAbility
 		Rolls:   rolls,
 		Session: createOutput.Session,
 	}, nil
+}
+
+// createStandardArrayRolls creates dice roll records for the D&D 5e standard array
+func (o *orchestrator) createStandardArrayRolls() []*dicesession.DiceRoll {
+	rolls := make([]*dicesession.DiceRoll, len(StandardArray))
+	for i, value := range StandardArray {
+		rolls[i] = &dicesession.DiceRoll{
+			RollID:      o.idGen.Generate(),
+			Notation:    MethodStandardArray,
+			Dice:        []int{value}, // Single "die" showing the value
+			Total:       value,
+			Dropped:     nil,
+			Description: fmt.Sprintf("Ability Score %d (Standard Array)", i+1),
+			DiceTotal:   value,
+			Modifier:    0,
+		}
+	}
+	return rolls
 }
