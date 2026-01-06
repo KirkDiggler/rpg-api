@@ -222,7 +222,7 @@ func TestOrchestrator_GetRollSession_AutoCreatesStandardArray(t *testing.T) {
 
 	ctx := context.Background()
 
-	t.Run("auto-creates standard array for ability_scores when not found", func(t *testing.T) {
+	t.Run("auto-creates standard array for ability_scores when not found and AutoCreate is true", func(t *testing.T) {
 		// First call returns not found
 		mockRepo.EXPECT().
 			Get(ctx, dicesession.GetInput{
@@ -255,13 +255,31 @@ func TestOrchestrator_GetRollSession_AutoCreatesStandardArray(t *testing.T) {
 			})
 
 		output, err := o.GetRollSession(ctx, &GetRollSessionInput{
-			EntityID: "draft-456",
-			Context:  ContextAbilityScores,
+			EntityID:   "draft-456",
+			Context:    ContextAbilityScores,
+			AutoCreate: true,
 		})
 		require.NoError(t, err)
 		require.NotNil(t, output)
 		require.NotNil(t, output.Session)
 		require.Len(t, output.Session.Rolls, 6)
+	})
+
+	t.Run("returns error for ability_scores when not found and AutoCreate is false", func(t *testing.T) {
+		mockRepo.EXPECT().
+			Get(ctx, dicesession.GetInput{
+				EntityID: "draft-no-auto",
+				Context:  ContextAbilityScores,
+			}).
+			Return(nil, apierr.NotFound("session not found"))
+
+		output, err := o.GetRollSession(ctx, &GetRollSessionInput{
+			EntityID:   "draft-no-auto",
+			Context:    ContextAbilityScores,
+			AutoCreate: false, // Explicit false - should NOT auto-create
+		})
+		require.Error(t, err)
+		require.Nil(t, output)
 	})
 
 	t.Run("returns error for non-ability_scores context when not found", func(t *testing.T) {
@@ -273,8 +291,9 @@ func TestOrchestrator_GetRollSession_AutoCreatesStandardArray(t *testing.T) {
 			Return(nil, apierr.NotFound("session not found"))
 
 		output, err := o.GetRollSession(ctx, &GetRollSessionInput{
-			EntityID: "player-789",
-			Context:  "damage_rolls",
+			EntityID:   "player-789",
+			Context:    "damage_rolls",
+			AutoCreate: true, // Even with AutoCreate, non-ability_scores should error
 		})
 		require.Error(t, err)
 		require.Nil(t, output)

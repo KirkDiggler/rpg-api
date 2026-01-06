@@ -275,7 +275,7 @@ func (o *orchestrator) RollDice(ctx context.Context, input *RollDiceInput) (*Rol
 }
 
 // GetRollSession retrieves an existing dice roll session.
-// For ability_scores context, auto-creates a standard array session if none exists.
+// If AutoCreate is true and context is ability_scores, creates a standard array session if none exists.
 func (o *orchestrator) GetRollSession(ctx context.Context, input *GetRollSessionInput) (*GetRollSessionOutput, error) {
 	if input.EntityID == "" {
 		return nil, apierr.InvalidArgument("entity ID is required")
@@ -289,8 +289,8 @@ func (o *orchestrator) GetRollSession(ctx context.Context, input *GetRollSession
 		Context:  input.Context,
 	})
 	if err != nil {
-		// For ability_scores context, auto-create with standard array if not found
-		if apierr.IsNotFound(err) && input.Context == ContextAbilityScores {
+		// Auto-create with standard array if requested and context is ability_scores
+		if apierr.IsNotFound(err) && input.AutoCreate && input.Context == ContextAbilityScores {
 			rollOutput, rollErr := o.RollAbilityScores(ctx, &RollAbilityScoresInput{
 				EntityID: input.EntityID,
 				Method:   MethodStandardArray,

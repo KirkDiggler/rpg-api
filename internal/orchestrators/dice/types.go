@@ -25,6 +25,8 @@ type RollDiceOutput struct {
 type GetRollSessionInput struct {
 	EntityID string
 	Context  string
+	// AutoCreate creates a standard array session if not found (for ability_scores context only)
+	AutoCreate bool
 }
 
 // GetRollSessionOutput defines the response for getting a roll session
