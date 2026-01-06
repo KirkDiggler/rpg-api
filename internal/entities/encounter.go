@@ -34,13 +34,20 @@ type DoorInfo struct {
 	IsOpen       bool      `json:"is_open"`
 }
 
+// MonsterActionDetails holds the action-specific result data (oneof-style pattern)
+// Only one field should be populated based on the action type
+type MonsterActionDetails struct {
+	AttackResult *AttackResult `json:"attack_result,omitempty"`
+	HealResult   *HealResult   `json:"heal_result,omitempty"`
+}
+
 // MonsterExecutedAction represents an action taken by a monster during its turn
 type MonsterExecutedAction struct {
-	ActionID   string      `json:"action_id"`
-	ActionType string      `json:"action_type"` // melee_attack, ranged_attack, spell, heal, etc.
-	TargetID   string      `json:"target_id,omitempty"`
-	Success    bool        `json:"success"`
-	Details    interface{} `json:"details,omitempty"` // AttackResult, HealResult, etc.
+	ActionID   string                `json:"action_id"`
+	ActionType string                `json:"action_type"` // melee_attack, ranged_attack, spell, heal, etc.
+	TargetID   string                `json:"target_id,omitempty"`
+	Success    bool                  `json:"success"`
+	Details    *MonsterActionDetails `json:"details,omitempty"`
 }
 
 // InitiativeEntry represents one entity in the initiative order

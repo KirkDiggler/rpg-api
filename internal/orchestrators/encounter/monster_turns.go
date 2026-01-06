@@ -15,6 +15,7 @@ import (
 
 	"github.com/KirkDiggler/rpg-api/internal/components/dungeon"
 	dungeontoolkit "github.com/KirkDiggler/rpg-api/internal/components/dungeon/toolkit"
+	"github.com/KirkDiggler/rpg-api/internal/entities"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	dungeonrepo "github.com/KirkDiggler/rpg-api/internal/repositories/dungeons"
 	encounterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/encounters"
@@ -191,7 +192,7 @@ func (o *Orchestrator) executeSingleMonsterTurn(
 			ActionType: string(action.ActionType),
 			TargetID:   action.TargetID,
 			Success:    action.Success,
-			Details:    action.Details,
+			// Details will be set below if action succeeds
 		}
 
 		// If this was an attack action and it succeeded, resolve it
@@ -210,8 +211,10 @@ func (o *Orchestrator) executeSingleMonsterTurn(
 				return nil, fmt.Errorf("failed to resolve attack: %w", resolveErr)
 			}
 
-			// Store attack result in action details
-			actions[i].Details = attackResult
+			// Store attack result in action details using typed struct
+			actions[i].Details = &entities.MonsterActionDetails{
+				AttackResult: attackResult,
+			}
 
 			// Update character HP in encounter data for TPK tracking
 			if attackResult.Hit && enc.CharacterHP != nil {

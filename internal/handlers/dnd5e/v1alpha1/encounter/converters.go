@@ -847,20 +847,16 @@ func convertMonsterExecutedActionToProto(action *encounter.MonsterExecutedAction
 		Success:    action.Success,
 	}
 
-	// Convert Details based on action type and success
-	// For attack actions, Details should be an AttackResult
-	if action.Success && action.Details != nil {
-		switch action.ActionType {
-		case string(monster.TypeMeleeAttack), string(monster.TypeRangedAttack):
-			// Try to convert Details to AttackResult
-			if attackResult, ok := action.Details.(*encounter.AttackResult); ok {
-				protoAction.Details = &dnd5ev1alpha1.MonsterExecutedAction_AttackResult{
-					AttackResult: convertAttackResultToProto(attackResult),
-				}
+	// Convert Details from typed struct (survives JSON serialization)
+	if action.Details != nil {
+		if action.Details.AttackResult != nil {
+			protoAction.Details = &dnd5ev1alpha1.MonsterExecutedAction_AttackResult{
+				AttackResult: convertAttackResultToProto(action.Details.AttackResult),
 			}
-		case string(monster.TypeHeal):
-			// Future: Add HealResult conversion when needed
-			// For now, leave Details nil
+		} else if action.Details.HealResult != nil {
+			protoAction.Details = &dnd5ev1alpha1.MonsterExecutedAction_HealResult{
+				HealResult: convertHealResultToProto(action.Details.HealResult),
+			}
 		}
 	}
 
@@ -1133,8 +1129,35 @@ func convertEntityMonsterActionToProto(action *entities.MonsterExecutedAction) *
 		TargetId:   action.TargetID,
 		Success:    action.Success,
 	}
-	// Note: Details conversion would go here if needed
+
+	// Convert Details from typed struct (survives JSON serialization)
+	if action.Details != nil {
+		if action.Details.AttackResult != nil {
+			protoAction.Details = &dnd5ev1alpha1.MonsterExecutedAction_AttackResult{
+				AttackResult: convertAttackResultToProto(action.Details.AttackResult),
+			}
+		} else if action.Details.HealResult != nil {
+			protoAction.Details = &dnd5ev1alpha1.MonsterExecutedAction_HealResult{
+				HealResult: convertHealResultToProto(action.Details.HealResult),
+			}
+		}
+	}
+
 	return protoAction
+}
+
+// convertHealResultToProto converts entities.HealResult to proto
+//
+//nolint:gosec // G115: Game values are bounded by D&D rules, no overflow risk
+func convertHealResultToProto(result *entities.HealResult) *dnd5ev1alpha1.HealResult {
+	if result == nil {
+		return nil
+	}
+	return &dnd5ev1alpha1.HealResult{
+		AmountHealed: int32(result.AmountHealed),
+		NewHp:        int32(result.NewHP),
+		MaxHp:        int32(result.MaxHP),
+	}
 }
 
 // convertWallsToProto converts orchestrator WallInfo to proto Wall
