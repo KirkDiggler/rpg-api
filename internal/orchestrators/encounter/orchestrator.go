@@ -2664,12 +2664,34 @@ func (o *Orchestrator) OpenDoor(
 		return nil, fmt.Errorf("failed to update encounter: %w", err)
 	}
 
-	// 12. Build room data for response
+	// 12. Build room data for response with entities and walls
 	responseRoomData := &RoomData{
 		ID:       revealedRoom.ID,
 		Width:    revealedRoom.Shape.Width,
 		Height:   revealedRoom.Shape.Height,
-		Entities: make(map[string]interface{}),
+		Entities: make(map[string]*EntityPlacement),
+		Walls:    o.convertToWallInfo(revealedRoom),
+	}
+
+	// Add monster placements to entities
+	for _, m := range monsters {
+		// Convert 2D position to cube coordinates for hex grid
+		cubeX := int(m.Position.X)
+		cubeZ := int(m.Position.Y) // Y in 2D maps to Z in cube coords
+		cubeY := -cubeX - cubeZ    // y = -x - z for valid cube coordinate
+
+		responseRoomData.Entities[m.ID] = &EntityPlacement{
+			EntityID:          m.ID,
+			EntityType:        "monster",
+			Size:              1,
+			BlocksMovement:    true,
+			BlocksLineOfSight: false,
+			Position: &Position{
+				X: float64(cubeX),
+				Y: float64(cubeY),
+				Z: float64(cubeZ),
+			},
+		}
 	}
 
 	// 13. Get doors for the newly revealed room
@@ -2677,9 +2699,11 @@ func (o *Orchestrator) OpenDoor(
 
 	// 14. Build combat state for response
 	combatState := &CombatState{
-		TurnOrder:   make([]InitiativeEntry, len(newOrder)),
-		ActiveIndex: newCurrent,
-		Round:       newInitiativeData.Round,
+		EncounterID:   dng.EncounterID,
+		TurnOrder:     make([]InitiativeEntry, len(newOrder)),
+		ActiveIndex:   newCurrent,
+		Round:         newInitiativeData.Round,
+		CombatStarted: true, // Combat is active when opening doors
 	}
 	for i, entity := range newOrder {
 		// Find the roll for this entity
@@ -2722,6 +2746,7 @@ func (o *Orchestrator) OpenDoor(
 		DungeonID:    dng.ID,
 		ConnectionID: input.ConnectionID,
 		RevealedRoom: revealedSpatialRoom,
+		Walls:        revealedRoom.Walls,
 		NewDoors:     convertDoorsToEntityDoors(newDoors),
 		Monsters:     monsterStates,
 		CombatState:  combatState,
@@ -2729,6 +2754,7 @@ func (o *Orchestrator) OpenDoor(
 	})
 
 	return &OpenDoorOutput{
+		EncounterID:  dng.EncounterID,
 		RevealedRoom: responseRoomData,
 		RoomOffset:   nil, // TODO: Calculate offset for grid merge when implementing multi-room display
 		NewDoors:     newDoors,

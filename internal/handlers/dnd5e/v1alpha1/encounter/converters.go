@@ -948,6 +948,8 @@ func convertEncounterStateToProto(state string) dnd5ev1alpha1.EncounterState {
 }
 
 // convertOpenDoorRoomToProto converts the orchestrator's RoomData to proto Room
+//
+//nolint:gosec // G115: Game values are bounded, no overflow risk
 func convertOpenDoorRoomToProto(roomData *encounter.RoomData) *dnd5ev1alpha1.Room {
 	if roomData == nil {
 		return nil
@@ -956,6 +958,30 @@ func convertOpenDoorRoomToProto(roomData *encounter.RoomData) *dnd5ev1alpha1.Roo
 	// Default to hex grid with pointy-top orientation
 	hexOrientation := true
 
+	// Convert entities
+	entities := make(map[string]*dnd5ev1alpha1.EntityPlacement, len(roomData.Entities))
+	for id, placement := range roomData.Entities {
+		if placement == nil {
+			continue
+		}
+		var position *apiv1alpha1.Position
+		if placement.Position != nil {
+			position = &apiv1alpha1.Position{
+				X: placement.Position.X,
+				Y: placement.Position.Y,
+				Z: placement.Position.Z,
+			}
+		}
+		entities[id] = &dnd5ev1alpha1.EntityPlacement{
+			EntityId:          placement.EntityID,
+			EntityType:        placement.EntityType,
+			Position:          position,
+			Size:              int32(placement.Size),
+			BlocksMovement:    placement.BlocksMovement,
+			BlocksLineOfSight: placement.BlocksLineOfSight,
+		}
+	}
+
 	return &dnd5ev1alpha1.Room{
 		Id:             roomData.ID,
 		Type:           "dungeon",
@@ -963,7 +989,8 @@ func convertOpenDoorRoomToProto(roomData *encounter.RoomData) *dnd5ev1alpha1.Roo
 		Height:         int32(roomData.Height),
 		GridType:       apiv1alpha1.GridType_GRID_TYPE_HEX_POINTY,
 		HexOrientation: &hexOrientation,
-		Entities:       make(map[string]*dnd5ev1alpha1.EntityPlacement),
+		Entities:       entities,
+		Walls:          convertWallsToProto(roomData.Walls),
 	}
 }
 

@@ -387,6 +387,7 @@ type OpenDoorInput struct {
 
 // OpenDoorOutput returns the result of opening a door
 type OpenDoorOutput struct {
+	EncounterID  string               // Encounter ID for reference
 	RevealedRoom *RoomData            // The newly revealed room with entities
 	RoomOffset   *Position            // Offset to apply to revealed room positions for grid merge
 	NewDoors     []DoorInfo           // Doors visible from the newly revealed room
@@ -395,13 +396,24 @@ type OpenDoorOutput struct {
 	MonsterTurns []*MonsterTurnResult // Monster turns if any monsters act before current entity
 }
 
+// EntityPlacement represents an entity's position in a room
+type EntityPlacement struct {
+	EntityID          string    // Unique ID of the entity
+	EntityType        string    // Type: "character" or "monster"
+	Position          *Position // Cube coordinates (x, y, z)
+	Size              int       // Size in hexes (default 1)
+	BlocksMovement    bool      // Whether the entity blocks movement
+	BlocksLineOfSight bool      // Whether the entity blocks line of sight
+}
+
 // RoomData represents a room for the OpenDoor response
 // This wraps spatial.RoomData for the service layer
 type RoomData struct {
-	ID       string                 // Room ID
-	Width    int                    // Room width in cells
-	Height   int                    // Room height in cells
-	Entities map[string]interface{} // Entity placements
+	ID       string                      // Room ID
+	Width    int                         // Room width in cells
+	Height   int                         // Room height in cells
+	Entities map[string]*EntityPlacement // Entity placements
+	Walls    []WallInfo                  // Walls in the room
 }
 
 // MonsterInfo contains information about a monster in a revealed room
