@@ -315,6 +315,12 @@ func (s *EventPublishingTestSuite) TestStartCombat_PublishesCombatStartedEvent()
 		Save(gomock.Any(), gomock.Any()).
 		Return(&dungeonrepo.SaveOutput{Success: true}, nil)
 
+	// Mock dungeon repo get (for wall collision in monster turns)
+	s.mockDungeonRepo.EXPECT().
+		GetByEncounterID(gomock.Any(), &dungeonrepo.GetByEncounterIDInput{EncounterID: encounterID}).
+		Return(&dungeonrepo.GetOutput{Dungeon: nil}, nil).
+		AnyTimes()
+
 	// Mock Update (may be called multiple times if monster goes first)
 	s.mockEncRepo.EXPECT().
 		Update(gomock.Any(), gomock.Any()).
