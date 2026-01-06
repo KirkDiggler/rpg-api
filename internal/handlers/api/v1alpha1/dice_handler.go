@@ -110,9 +110,11 @@ func (h *DiceHandler) GetRollSession(
 	}
 
 	// Use the dice service to get the session
+	// AutoCreate for ability_scores so UI doesn't need to click roll button
 	diceInput := &dice.GetRollSessionInput{
-		EntityID: req.EntityId,
-		Context:  req.Context,
+		EntityID:   req.EntityId,
+		Context:    req.Context,
+		AutoCreate: req.Context == dice.ContextAbilityScores,
 	}
 
 	diceOutput, err := h.diceService.GetRollSession(ctx, diceInput)
