@@ -20,6 +20,7 @@ type ToolkitGenerators struct {
 	Feature   dungeon.FeatureGenerator
 	Encounter dungeon.EncounterGenerator
 	Budget    dungeon.BudgetAllocator
+	Perimeter dungeon.PerimeterUpdater
 }
 
 // NewToolkitGenerators creates all generators
@@ -28,6 +29,7 @@ func NewToolkitGenerators(cfg *ToolkitConfig) *ToolkitGenerators {
 	layoutGen := NewToolkitLayoutGenerator(&ToolkitLayoutConfig{})
 	shapeGen := NewToolkitShapeGenerator()
 	featureGen := NewToolkitFeatureGenerator()
+	perimeterGen := NewPerimeterGenerator()
 
 	// Create encounter generator (uses our encounter package)
 	encounterGen := encounter.NewGenerator()
@@ -44,6 +46,7 @@ func NewToolkitGenerators(cfg *ToolkitConfig) *ToolkitGenerators {
 		Feature:   featureGen,
 		Encounter: encounterAdapter,
 		Budget:    budgetAllocator,
+		Perimeter: perimeterGen,
 	}
 }
 
@@ -52,10 +55,11 @@ func CreateGenerator(cfg *ToolkitConfig) *dungeon.Generator {
 	generators := NewToolkitGenerators(cfg)
 
 	return dungeon.NewGenerator(&dungeon.GeneratorConfig{
-		LayoutGen:       generators.Layout,
-		ShapeGen:        generators.Shape,
-		FeatureGen:      generators.Feature,
-		EncounterGen:    generators.Encounter,
-		BudgetAllocator: generators.Budget,
+		LayoutGen:        generators.Layout,
+		ShapeGen:         generators.Shape,
+		FeatureGen:       generators.Feature,
+		EncounterGen:     generators.Encounter,
+		BudgetAllocator:  generators.Budget,
+		PerimeterUpdater: generators.Perimeter,
 	})
 }

@@ -205,6 +205,7 @@ type MoveCharacterOutput struct {
 	// Why movement stopped: "completed", "position_occupied", "out_of_bounds", "entity_not_found"
 	StopReason  string
 	UpdatedRoom interface{} // Updated room data (using interface{} until spatial is fixed)
+	Walls       []WallInfo  // Wall segments in the current room
 }
 
 // EndTurnInput contains parameters for ending a turn
@@ -445,6 +446,7 @@ type GetEncounterStateOutput struct {
 	// Combat state (populated when state is "active" or "paused")
 	CombatState *CombatState          // Initiative order, current turn, etc.
 	Room        interface{}           // Room data with entity positions
+	Walls       []WallInfo            // Wall segments in the current room
 	Monsters    []*MonsterCombatState // Monster HP for rendering
 	Doors       []DoorInfo            // Doors/exits from the current room
 	DungeonID   string                // ID of the generated dungeon

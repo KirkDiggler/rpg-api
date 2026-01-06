@@ -209,3 +209,158 @@ func (s *WallValidatorTestSuite) TestIsAdjacent() {
 	s.False(s.validator.isAdjacent(p1, dungeon.Position{X: 7, Y: 5}))
 	s.False(s.validator.isAdjacent(p1, dungeon.Position{X: 5, Y: 7}))
 }
+
+func (s *WallValidatorTestSuite) TestPathCrossesWall_NoCrossing() {
+	walls := []dungeon.WallSegment{
+		{
+			ID:             "wall1",
+			Start:          dungeon.Position{X: 5, Y: 0},
+			End:            dungeon.Position{X: 5, Y: 10},
+			BlocksMovement: true,
+		},
+	}
+
+	// Path that doesn't cross the wall (both points on same side)
+	s.False(s.validator.PathCrossesWall(
+		dungeon.Position{X: 0, Y: 5},
+		dungeon.Position{X: 3, Y: 5},
+		walls,
+	))
+}
+
+func (s *WallValidatorTestSuite) TestPathCrossesWall_CrossesVerticalWall() {
+	walls := []dungeon.WallSegment{
+		{
+			ID:             "wall1",
+			Start:          dungeon.Position{X: 5, Y: 0},
+			End:            dungeon.Position{X: 5, Y: 10},
+			BlocksMovement: true,
+		},
+	}
+
+	// Path that crosses the wall
+	s.True(s.validator.PathCrossesWall(
+		dungeon.Position{X: 0, Y: 5},
+		dungeon.Position{X: 10, Y: 5},
+		walls,
+	))
+}
+
+func (s *WallValidatorTestSuite) TestPathCrossesWall_CrossesHorizontalWall() {
+	walls := []dungeon.WallSegment{
+		{
+			ID:             "wall1",
+			Start:          dungeon.Position{X: 0, Y: 5},
+			End:            dungeon.Position{X: 10, Y: 5},
+			BlocksMovement: true,
+		},
+	}
+
+	// Path that crosses the wall
+	s.True(s.validator.PathCrossesWall(
+		dungeon.Position{X: 5, Y: 0},
+		dungeon.Position{X: 5, Y: 10},
+		walls,
+	))
+}
+
+func (s *WallValidatorTestSuite) TestPathCrossesWall_NonBlockingWallIgnored() {
+	walls := []dungeon.WallSegment{
+		{
+			ID:             "wall1",
+			Start:          dungeon.Position{X: 5, Y: 0},
+			End:            dungeon.Position{X: 5, Y: 10},
+			BlocksMovement: false, // Does not block movement
+		},
+	}
+
+	// Path that would cross the wall but wall doesn't block movement
+	s.False(s.validator.PathCrossesWall(
+		dungeon.Position{X: 0, Y: 5},
+		dungeon.Position{X: 10, Y: 5},
+		walls,
+	))
+}
+
+func (s *WallValidatorTestSuite) TestPathCrossesWall_DiagonalPath() {
+	walls := []dungeon.WallSegment{
+		{
+			ID:             "wall1",
+			Start:          dungeon.Position{X: 0, Y: 5},
+			End:            dungeon.Position{X: 10, Y: 5},
+			BlocksMovement: true,
+		},
+	}
+
+	// Diagonal path that crosses horizontal wall
+	s.True(s.validator.PathCrossesWall(
+		dungeon.Position{X: 0, Y: 0},
+		dungeon.Position{X: 10, Y: 10},
+		walls,
+	))
+}
+
+func (s *WallValidatorTestSuite) TestPathCrossesWall_PathParallelToWall() {
+	walls := []dungeon.WallSegment{
+		{
+			ID:             "wall1",
+			Start:          dungeon.Position{X: 5, Y: 0},
+			End:            dungeon.Position{X: 5, Y: 10},
+			BlocksMovement: true,
+		},
+	}
+
+	// Parallel path that doesn't cross
+	s.False(s.validator.PathCrossesWall(
+		dungeon.Position{X: 3, Y: 0},
+		dungeon.Position{X: 3, Y: 10},
+		walls,
+	))
+}
+
+func (s *WallValidatorTestSuite) TestPathCrossesWall_EmptyWalls() {
+	// No walls - should not cross
+	s.False(s.validator.PathCrossesWall(
+		dungeon.Position{X: 0, Y: 0},
+		dungeon.Position{X: 10, Y: 10},
+		nil,
+	))
+}
+
+func (s *WallValidatorTestSuite) TestPathCrossesWall_MultipleWalls() {
+	walls := []dungeon.WallSegment{
+		{
+			ID:             "wall1",
+			Start:          dungeon.Position{X: 3, Y: 0},
+			End:            dungeon.Position{X: 3, Y: 10},
+			BlocksMovement: true,
+		},
+		{
+			ID:             "wall2",
+			Start:          dungeon.Position{X: 7, Y: 0},
+			End:            dungeon.Position{X: 7, Y: 10},
+			BlocksMovement: true,
+		},
+	}
+
+	// Path between walls (no crossing)
+	s.False(s.validator.PathCrossesWall(
+		dungeon.Position{X: 4, Y: 5},
+		dungeon.Position{X: 6, Y: 5},
+		walls,
+	))
+
+	// Path that crosses first wall
+	s.True(s.validator.PathCrossesWall(
+		dungeon.Position{X: 0, Y: 5},
+		dungeon.Position{X: 5, Y: 5},
+		walls,
+	))
+
+	// Path that crosses second wall
+	s.True(s.validator.PathCrossesWall(
+		dungeon.Position{X: 5, Y: 5},
+		dungeon.Position{X: 10, Y: 5},
+		walls,
+	))
+}

@@ -6,12 +6,16 @@ import (
 	"math/rand"
 )
 
+// Direction represents a cardinal direction for connection placement
+type Direction string
+
 // RoomConnection is a local type to avoid import cycles
 type RoomConnection struct {
 	FromRoom     string
 	ToRoom       string
 	Type         ConnectionType
 	IsMainPath   bool
+	Direction    Direction
 	PhysicalHint string
 }
 
@@ -85,6 +89,7 @@ func (g *hintGenerator) GenerateHints(input *HintInput) *HintOutput {
 			ToRoom:       conn.ToRoom,
 			Type:         conn.Type,
 			IsMainPath:   conn.IsMainPath,
+			Direction:    conn.Direction, // Preserve direction through presentation layer
 			PhysicalHint: g.generateHint(conn, vocab),
 		}
 		connections[i] = newConn

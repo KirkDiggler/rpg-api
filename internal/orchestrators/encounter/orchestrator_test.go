@@ -107,6 +107,16 @@ func (s *OrchestratorTestSuite) expectCharacterTurnEnd(characterID string) {
 		Return(&characterrepo.UpdateOutput{}, nil)
 }
 
+// expectDungeonLookup sets up a mock expectation for optional dungeon lookups during EndTurn.
+// Walls are optional in events, so we just return an empty result.
+// Uses AnyTimes() since dungeon lookups can happen multiple times (event publishing, monster turns, etc.)
+func (s *OrchestratorTestSuite) expectDungeonLookup(encounterID string) {
+	s.mockDungeonRepo.EXPECT().
+		GetByEncounterID(gomock.Any(), &dungeonrepo.GetByEncounterIDInput{EncounterID: encounterID}).
+		Return(&dungeonrepo.GetOutput{}, nil).
+		AnyTimes()
+}
+
 func (s *OrchestratorTestSuite) TestNew_Success() {
 	orch, err := New(&Config{
 		CharacterRepo: s.mockCharRepo,
@@ -161,6 +171,14 @@ func (s *OrchestratorTestSuite) TestResolveAttack_Success() {
 	s.mockEncRepo.EXPECT().
 		Update(gomock.Any(), gomock.Any()).
 		Return(&encounterrepo.UpdateOutput{Success: true}, nil).
+		AnyTimes()
+
+	// Mock dungeon repo for wall loading
+	s.mockDungeonRepo.EXPECT().
+		GetByEncounterID(gomock.Any(), gomock.Any()).
+		Return(&dungeonrepo.GetOutput{
+			Dungeon: &entities.Dungeon{ID: "test-dungeon"},
+		}, nil).
 		AnyTimes()
 
 	// Act
@@ -329,6 +347,14 @@ func (s *OrchestratorTestSuite) TestResolveAttack_MultipleAttacks() {
 		Return(&encounterrepo.UpdateOutput{Success: true}, nil).
 		AnyTimes()
 
+	// Mock dungeon repo for wall loading
+	s.mockDungeonRepo.EXPECT().
+		GetByEncounterID(gomock.Any(), gomock.Any()).
+		Return(&dungeonrepo.GetOutput{
+			Dungeon: &entities.Dungeon{ID: "test-dungeon"},
+		}, nil).
+		AnyTimes()
+
 	// Perform multiple attacks
 	results := make([]*ResolveAttackOutput, 3)
 	for i := 0; i < 3; i++ {
@@ -402,6 +428,14 @@ func (s *OrchestratorTestSuite) TestResolveAttack_VulnerabilityMultiplier_Appear
 	s.mockEncRepo.EXPECT().
 		Update(gomock.Any(), gomock.Any()).
 		Return(&encounterrepo.UpdateOutput{Success: true}, nil).
+		AnyTimes()
+
+	// Mock dungeon repo for wall loading
+	s.mockDungeonRepo.EXPECT().
+		GetByEncounterID(gomock.Any(), gomock.Any()).
+		Return(&dungeonrepo.GetOutput{
+			Dungeon: &entities.Dungeon{ID: "test-dungeon"},
+		}, nil).
 		AnyTimes()
 
 	// Loop until we get a hit (random dice could miss)
@@ -852,6 +886,13 @@ func (s *OrchestratorTestSuite) TestMoveCharacter_Success() {
 			},
 		}, nil)
 
+	// Mock dungeon repo for walls loading
+	s.mockDungeonRepo.EXPECT().
+		GetByEncounterID(gomock.Any(), gomock.Any()).
+		Return(&dungeonrepo.GetOutput{
+			Dungeon: &entities.Dungeon{ID: "test-dungeon"},
+		}, nil)
+
 	s.mockEncRepo.EXPECT().
 		Update(gomock.Any(), gomock.Any()).
 		DoAndReturn(func(_ context.Context, input *encounterrepo.UpdateInput) (*encounterrepo.UpdateOutput, error) {
@@ -916,6 +957,13 @@ func (s *OrchestratorTestSuite) TestMoveCharacter_InvalidCubeCoordinates() {
 			},
 		}, nil)
 
+	// Mock dungeon repo for walls loading
+	s.mockDungeonRepo.EXPECT().
+		GetByEncounterID(gomock.Any(), gomock.Any()).
+		Return(&dungeonrepo.GetOutput{
+			Dungeon: &entities.Dungeon{ID: "test-dungeon"},
+		}, nil)
+
 	// Note: No Update call expected for invalid coordinates
 
 	// Act - use invalid cube coordinates (x + y + z != 0)
@@ -978,6 +1026,13 @@ func (s *OrchestratorTestSuite) TestMoveCharacter_PositionOccupied() {
 			},
 		}, nil)
 
+	// Mock dungeon repo for walls loading
+	s.mockDungeonRepo.EXPECT().
+		GetByEncounterID(gomock.Any(), gomock.Any()).
+		Return(&dungeonrepo.GetOutput{
+			Dungeon: &entities.Dungeon{ID: "test-dungeon"},
+		}, nil)
+
 	// Note: No Update call expected for blocked position
 
 	// Act - try to move to goblin's position (x + y + z = 0)
@@ -1014,6 +1069,13 @@ func (s *OrchestratorTestSuite) TestMoveCharacter_CreatesRoomIfMissing() {
 				ID:       "enc-1",
 				RoomData: nil, // No room data
 			},
+		}, nil)
+
+	// Mock dungeon repo for walls loading
+	s.mockDungeonRepo.EXPECT().
+		GetByEncounterID(gomock.Any(), gomock.Any()).
+		Return(&dungeonrepo.GetOutput{
+			Dungeon: &entities.Dungeon{ID: "test-dungeon"},
 		}, nil)
 
 	s.mockEncRepo.EXPECT().
@@ -1147,6 +1209,13 @@ func (s *OrchestratorTestSuite) TestMoveCharacter_UpdateError() {
 			},
 		}, nil)
 
+	// Mock dungeon repo for walls loading
+	s.mockDungeonRepo.EXPECT().
+		GetByEncounterID(gomock.Any(), gomock.Any()).
+		Return(&dungeonrepo.GetOutput{
+			Dungeon: &entities.Dungeon{ID: "test-dungeon"},
+		}, nil)
+
 	s.mockEncRepo.EXPECT().
 		Update(gomock.Any(), gomock.Any()).
 		Return(nil, fmt.Errorf("database error"))
@@ -1189,6 +1258,7 @@ func (s *OrchestratorTestSuite) TestEndTurn_Success() {
 
 	// Expect character turn-end event publishing for char-1 (whose turn is ending)
 	s.expectCharacterTurnEnd("char-1")
+	s.expectDungeonLookup("enc-1")
 
 	s.mockEncRepo.EXPECT().
 		Get(gomock.Any(), &encounterrepo.GetInput{EncounterID: "enc-1"}).
@@ -1268,6 +1338,7 @@ func (s *OrchestratorTestSuite) TestEndTurn_AdvancesToNewRound() {
 
 	// Expect character turn-end event publishing for char-2 (whose turn is ending)
 	s.expectCharacterTurnEnd("char-2")
+	s.expectDungeonLookup("enc-1")
 
 	s.mockEncRepo.EXPECT().
 		Get(gomock.Any(), &encounterrepo.GetInput{EncounterID: "enc-1"}).
@@ -1327,6 +1398,7 @@ func (s *OrchestratorTestSuite) TestEndTurn_SkipsMultipleMonsters() {
 
 	// Expect character turn-end event publishing for char-1 (whose turn is ending)
 	s.expectCharacterTurnEnd("char-1")
+	s.expectDungeonLookup("enc-1")
 
 	s.mockEncRepo.EXPECT().
 		Get(gomock.Any(), &encounterrepo.GetInput{EncounterID: "enc-1"}).
@@ -1383,6 +1455,7 @@ func (s *OrchestratorTestSuite) TestEndTurn_SkipsMonstersAcrossRoundBoundary() {
 
 	// Expect character turn-end event publishing for char-1 (whose turn is ending)
 	s.expectCharacterTurnEnd("char-1")
+	s.expectDungeonLookup("enc-1")
 
 	s.mockEncRepo.EXPECT().
 		Get(gomock.Any(), &encounterrepo.GetInput{EncounterID: "enc-1"}).
@@ -1603,6 +1676,7 @@ func (s *OrchestratorTestSuite) TestEndTurn_WithRoomData() {
 
 	// Expect character turn-end event publishing for char-1 (whose turn is ending)
 	s.expectCharacterTurnEnd("char-1")
+	s.expectDungeonLookup("enc-1")
 
 	s.mockEncRepo.EXPECT().
 		Get(gomock.Any(), &encounterrepo.GetInput{EncounterID: "enc-1"}).
@@ -1700,6 +1774,8 @@ func (s *OrchestratorTestSuite) TestEndTurn_WithPlayerID_OwnershipValid() {
 	s.mockCharRepo.EXPECT().
 		Update(gomock.Any(), gomock.Any()).
 		Return(&characterrepo.UpdateOutput{}, nil)
+
+	s.expectDungeonLookup("enc-1")
 
 	s.mockEncRepo.EXPECT().
 		Update(gomock.Any(), gomock.Any()).
@@ -1864,6 +1940,7 @@ func (s *OrchestratorTestSuite) TestEndTurn_WithoutPlayerID_SkipsValidation() {
 	// Expect character turn-end event publishing for char-1 (whose turn is ending)
 	// Note: Ownership validation is skipped (no PlayerID), but turn-end event publishing still happens
 	s.expectCharacterTurnEnd("char-1")
+	s.expectDungeonLookup("enc-1")
 
 	s.mockEncRepo.EXPECT().
 		Get(gomock.Any(), &encounterrepo.GetInput{EncounterID: "enc-1"}).
@@ -2188,6 +2265,7 @@ func (s *OrchestratorTestSuite) TestEndTurn_ResetsActionEconomy() {
 
 	// Expect character turn-end event publishing for char-1 (whose turn is ending)
 	s.expectCharacterTurnEnd("char-1")
+	s.expectDungeonLookup("enc-1")
 
 	s.mockEncRepo.EXPECT().
 		Get(gomock.Any(), &encounterrepo.GetInput{EncounterID: "enc-1"}).
@@ -2332,6 +2410,14 @@ func (s *OrchestratorTestSuite) TestResolveAttack_UsesEquippedWeapon() {
 		Return(&encounterrepo.UpdateOutput{Success: true}, nil).
 		AnyTimes()
 
+	// Mock dungeon repo for wall loading
+	s.mockDungeonRepo.EXPECT().
+		GetByEncounterID(gomock.Any(), gomock.Any()).
+		Return(&dungeonrepo.GetOutput{
+			Dungeon: &entities.Dungeon{ID: "test-dungeon"},
+		}, nil).
+		AnyTimes()
+
 	// Act
 	output, err := s.orchestrator.ResolveAttack(context.Background(), &ResolveAttackInput{
 		EncounterID: "enc-1",
@@ -2369,6 +2455,14 @@ func (s *OrchestratorTestSuite) TestResolveAttack_NoEquippedWeapon_FallsBackToGr
 	s.mockEncRepo.EXPECT().
 		Update(gomock.Any(), gomock.Any()).
 		Return(&encounterrepo.UpdateOutput{Success: true}, nil).
+		AnyTimes()
+
+	// Mock dungeon repo for wall loading
+	s.mockDungeonRepo.EXPECT().
+		GetByEncounterID(gomock.Any(), gomock.Any()).
+		Return(&dungeonrepo.GetOutput{
+			Dungeon: &entities.Dungeon{ID: "test-dungeon"},
+		}, nil).
 		AnyTimes()
 
 	// Act
@@ -2412,6 +2506,14 @@ func (s *OrchestratorTestSuite) TestResolveAttack_UnknownWeaponID_FallsBackToGre
 		Return(&encounterrepo.UpdateOutput{Success: true}, nil).
 		AnyTimes()
 
+	// Mock dungeon repo for wall loading
+	s.mockDungeonRepo.EXPECT().
+		GetByEncounterID(gomock.Any(), gomock.Any()).
+		Return(&dungeonrepo.GetOutput{
+			Dungeon: &entities.Dungeon{ID: "test-dungeon"},
+		}, nil).
+		AnyTimes()
+
 	// Act - Should still succeed with fallback
 	output, err := s.orchestrator.ResolveAttack(context.Background(), &ResolveAttackInput{
 		EncounterID: "enc-1",
@@ -2444,6 +2546,14 @@ func (s *OrchestratorTestSuite) TestResolveAttack_NilEquipmentSlots_FallsBackToG
 	s.mockEncRepo.EXPECT().
 		Update(gomock.Any(), gomock.Any()).
 		Return(&encounterrepo.UpdateOutput{Success: true}, nil).
+		AnyTimes()
+
+	// Mock dungeon repo for wall loading
+	s.mockDungeonRepo.EXPECT().
+		GetByEncounterID(gomock.Any(), gomock.Any()).
+		Return(&dungeonrepo.GetOutput{
+			Dungeon: &entities.Dungeon{ID: "test-dungeon"},
+		}, nil).
 		AnyTimes()
 
 	// Act - Should still succeed with fallback

@@ -232,3 +232,49 @@ var ThemeBanditLair = Theme{
 		{ID: refs.Monsters.BanditCaptain().ID, Role: RoleBoss, CR: 2},
 	},
 }
+
+// ThemeDebugWalls is a test theme that forces wall generation for UI testing.
+// Uses PillarGrid pattern with 100% weight for all room types.
+var ThemeDebugWalls = Theme{
+	ID:         "debug_walls",
+	Name:       "Debug (Forced Walls)",
+	ShapeStyle: ShapeStyleStructured,
+	Features: FeatureRules{
+		ObstacleChance: 0.0, // No obstacles, just walls
+		ObstacleTypes:  []ObstacleType{},
+		TerrainChance:  0.0,
+		TerrainTypes:   []TerrainType{},
+	},
+	Tables: &ThemeTables{
+		WallPatterns: map[RoomType][]WeightedPattern{
+			RoomTypeEntrance: {
+				{Pattern: PatternPillarGrid, Weight: 100},
+			},
+			RoomTypeChamber: {
+				{Pattern: PatternPillarGrid, Weight: 100},
+			},
+			RoomTypeCorridor: {
+				{Pattern: PatternChokepoints, Weight: 100},
+			},
+			RoomTypeBoss: {
+				{Pattern: PatternCentralFeature, Weight: 100},
+			},
+			RoomTypeTreasure: {
+				{Pattern: PatternPillarGrid, Weight: 100},
+			},
+			RoomTypeTrap: {
+				{Pattern: PatternChokepoints, Weight: 100},
+			},
+		},
+		Obstacles: []WeightedObstacle{},
+		Density: []WeightedDensity{
+			{Density: DensityHigh, Weight: 100},
+		},
+	},
+	MonsterPool: []MonsterRef{
+		{ID: refs.Monsters.Skeleton().ID, Role: RoleMelee, CR: 0.25},
+	},
+	BossPool: []MonsterRef{
+		{ID: refs.Monsters.SkeletonCaptain().ID, Role: RoleBoss, CR: 2},
+	},
+}

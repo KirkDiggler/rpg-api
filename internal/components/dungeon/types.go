@@ -64,6 +64,8 @@ type Room struct {
 type Shape struct {
 	// Bounds defines the polygon vertices
 	Bounds []Position
+	// ConnectionPoints defines valid door/passage locations
+	ConnectionPoints []ConnectionPoint
 	// GridType specifies hex or square grid
 	GridType GridType
 	// Width is the number of cells across
@@ -72,6 +74,18 @@ type Shape struct {
 	Height int
 	// Area is the total walkable cells
 	Area int
+}
+
+// ConnectionPoint defines where a room can connect to others
+type ConnectionPoint struct {
+	// Name identifies this connection (e.g., "north", "south")
+	Name string
+	// Position is the grid location of the connection
+	Position Position
+	// Direction indicates which wall this is on
+	Direction string
+	// Type specifies the connection kind (e.g., "door", "passage")
+	Type string
 }
 
 // Position represents a coordinate in the grid
@@ -87,8 +101,6 @@ type FeatureLayout struct {
 	Obstacles []Obstacle
 	// Terrain contains special terrain patches
 	Terrain []TerrainPatch
-	// SpawnZones defines designated areas
-	SpawnZones []Zone
 }
 
 // Obstacle represents a blocking feature in the room
@@ -161,7 +173,9 @@ type RoomConnection struct {
 	Type ConnectionType
 	// IsMainPath indicates if this is on the critical path
 	IsMainPath bool
-	// PhysicalHint describes the location (e.g., "north door")
+	// Direction is the cardinal direction from FromRoom (which wall the door is on)
+	Direction Direction
+	// PhysicalHint describes the connection for players (e.g., "heavy stone door")
 	PhysicalHint string
 }
 
@@ -242,6 +256,44 @@ const (
 	// ConnectionTypePassage is an open passage
 	ConnectionTypePassage
 )
+
+// Direction represents a cardinal direction for connection placement
+type Direction string
+
+const (
+	// DirectionNorth places connection on the north (top) wall
+	DirectionNorth Direction = "north"
+	// DirectionSouth places connection on the south (bottom) wall
+	DirectionSouth Direction = "south"
+	// DirectionEast places connection on the east (right) wall
+	DirectionEast Direction = "east"
+	// DirectionWest places connection on the west (left) wall
+	DirectionWest Direction = "west"
+	// DirectionUp for vertical connections (stairs up)
+	DirectionUp Direction = "up"
+	// DirectionDown for vertical connections (stairs down)
+	DirectionDown Direction = "down"
+)
+
+// Opposite returns the opposite direction
+func (d Direction) Opposite() Direction {
+	switch d {
+	case DirectionNorth:
+		return DirectionSouth
+	case DirectionSouth:
+		return DirectionNorth
+	case DirectionEast:
+		return DirectionWest
+	case DirectionWest:
+		return DirectionEast
+	case DirectionUp:
+		return DirectionDown
+	case DirectionDown:
+		return DirectionUp
+	default:
+		return ""
+	}
+}
 
 // GridType defines the grid coordinate system
 type GridType int

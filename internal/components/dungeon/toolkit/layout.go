@@ -83,16 +83,28 @@ func (g *ToolkitLayoutGenerator) generateLinearLayout(length int) *dungeon.Layou
 		}
 	}
 
-	// Create linear connections
-	connections := make([]*dungeon.LayoutConnection, length-1)
+	// Create connections - include entrance from outside
+	// Outside is represented by FromRoom = -1
+	connections := make([]*dungeon.LayoutConnection, 0, length)
+
+	// Add entrance connection from outside to room 0
+	connections = append(connections, &dungeon.LayoutConnection{
+		FromRoom:     -1, // Outside marker
+		ToRoom:       0,  // Entrance room
+		Type:         dungeon.ConnectionTypeDoor,
+		IsMainPath:   true,
+		PhysicalHint: "south",
+	})
+
+	// Add room-to-room connections
 	for i := 0; i < length-1; i++ {
-		connections[i] = &dungeon.LayoutConnection{
+		connections = append(connections, &dungeon.LayoutConnection{
 			FromRoom:     i,
 			ToRoom:       i + 1,
 			Type:         dungeon.ConnectionTypeDoor,
 			IsMainPath:   true,
 			PhysicalHint: "forward",
-		}
+		})
 	}
 
 	return &dungeon.LayoutOutput{
@@ -135,7 +147,16 @@ func (g *ToolkitLayoutGenerator) generateBranchingLayout(length int) *dungeon.La
 		mainPathLength = length - 1
 	}
 
-	connections := make([]*dungeon.LayoutConnection, 0, length)
+	connections := make([]*dungeon.LayoutConnection, 0, length+1)
+
+	// Add entrance connection from outside to room 0
+	connections = append(connections, &dungeon.LayoutConnection{
+		FromRoom:     -1, // Outside marker
+		ToRoom:       0,  // Entrance room
+		Type:         dungeon.ConnectionTypeDoor,
+		IsMainPath:   true,
+		PhysicalHint: "south",
+	})
 
 	// Main path connections
 	for i := 0; i < mainPathLength; i++ {
@@ -206,17 +227,26 @@ func (g *ToolkitLayoutGenerator) generateHubLayout(length int) *dungeon.LayoutOu
 		}
 	}
 
-	// Create connections
-	connections := make([]*dungeon.LayoutConnection, 0, length)
-
-	// Connect entrance to hub
-	connections = append(connections, &dungeon.LayoutConnection{
-		FromRoom:     0,
-		ToRoom:       1,
-		Type:         dungeon.ConnectionTypeDoor,
-		IsMainPath:   true,
-		PhysicalHint: "to hub",
-	})
+	// Create connections - entrance from outside and entrance to hub
+	connections := make([]*dungeon.LayoutConnection, 0, length+1)
+	connections = append(connections,
+		// Entrance connection from outside to room 0
+		&dungeon.LayoutConnection{
+			FromRoom:     -1, // Outside marker
+			ToRoom:       0,  // Entrance room
+			Type:         dungeon.ConnectionTypeDoor,
+			IsMainPath:   true,
+			PhysicalHint: "south",
+		},
+		// Connect entrance to hub
+		&dungeon.LayoutConnection{
+			FromRoom:     0,
+			ToRoom:       1,
+			Type:         dungeon.ConnectionTypeDoor,
+			IsMainPath:   true,
+			PhysicalHint: "to hub",
+		},
+	)
 
 	// Connect all other rooms to hub
 	for i := 2; i < length; i++ {

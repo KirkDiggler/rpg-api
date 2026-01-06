@@ -36,6 +36,9 @@ func (g *PerimeterGenerator) Generate(input *PerimeterInput) *PerimeterOutput {
 	var doorPositions []dungeon.Position
 	wallID := 0
 
+	// Direction mapping for rectangular rooms: segment 0=south, 1=east, 2=north, 3=west
+	directions := []string{"south", "east", "north", "west"}
+
 	bounds := input.Shape.Bounds
 	numPoints := len(bounds)
 
@@ -43,12 +46,18 @@ func (g *PerimeterGenerator) Generate(input *PerimeterInput) *PerimeterOutput {
 		start := bounds[i]
 		end := bounds[(i+1)%numPoints]
 
+		// Get direction for this segment
+		direction := ""
+		if i < len(directions) {
+			direction = directions[i]
+		}
+
 		// Check if any connection should create a door on this segment
-		doorConn := g.findConnectionOnSegment(start, end, input.Connections, i)
+		doorConn := g.findConnectionOnSegment(input.Connections, i)
 
 		if doorConn != nil {
-			// Split wall segment for door
-			doorPos := g.calculateDoorPosition(start, end)
+			// Split wall segment for door using ConnectionPoints
+			doorPos := g.calculateDoorPosition(input.Shape, direction, start, end)
 			doorPositions = append(doorPositions, doorPos)
 
 			// Wall before door
@@ -82,7 +91,6 @@ func (g *PerimeterGenerator) Generate(input *PerimeterInput) *PerimeterOutput {
 }
 
 func (g *PerimeterGenerator) findConnectionOnSegment(
-	_, _ dungeon.Position,
 	connections []*dungeon.RoomConnection,
 	segmentIndex int,
 ) *dungeon.RoomConnection {
@@ -102,8 +110,27 @@ func (g *PerimeterGenerator) findConnectionOnSegment(
 	return nil
 }
 
-func (g *PerimeterGenerator) calculateDoorPosition(start, end dungeon.Position) dungeon.Position {
-	// Door is placed at midpoint of wall segment
+// getDoorPositionFromConnectionPoints finds the door position using shape's ConnectionPoints
+func (g *PerimeterGenerator) getDoorPositionFromConnectionPoints(shape *dungeon.Shape, direction string) *dungeon.Position {
+	if shape == nil {
+		return nil
+	}
+
+	for _, cp := range shape.ConnectionPoints {
+		if cp.Direction == direction {
+			return &cp.Position
+		}
+	}
+	return nil
+}
+
+func (g *PerimeterGenerator) calculateDoorPosition(shape *dungeon.Shape, direction string, start, end dungeon.Position) dungeon.Position {
+	// First try to use ConnectionPoints from the shape
+	if pos := g.getDoorPositionFromConnectionPoints(shape, direction); pos != nil {
+		return *pos
+	}
+
+	// Fallback: door is placed at midpoint of wall segment
 	midX := (start.X + end.X) / 2
 	midY := (start.Y + end.Y) / 2
 	return dungeon.Position{
@@ -159,5 +186,24 @@ func (g *PerimeterGenerator) createWallAfterDoor(doorPos, end dungeon.Position, 
 		Type:              dungeon.WallTypeIndestructible,
 		BlocksMovement:    true,
 		BlocksLineOfSight: true,
+	}
+}
+
+// UpdatePerimeter implements dungeon.PerimeterUpdater
+// Regenerates perimeter walls with door openings based on room connections
+func (g *PerimeterGenerator) UpdatePerimeter(input *dungeon.UpdatePerimeterInput) *dungeon.UpdatePerimeterOutput {
+	if input == nil || input.Shape == nil {
+		return &dungeon.UpdatePerimeterOutput{}
+	}
+
+	// Generate perimeter with connections
+	output := g.Generate(&PerimeterInput{
+		Shape:       input.Shape,
+		Connections: input.Connections,
+	})
+
+	return &dungeon.UpdatePerimeterOutput{
+		Walls:         output.Walls,
+		DoorPositions: output.DoorPositions,
 	}
 }

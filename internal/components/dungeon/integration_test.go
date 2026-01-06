@@ -590,13 +590,18 @@ func (s *IntegrationTestSuite) TestDataIntegrity() {
 	}
 
 	// Verify all connections reference valid rooms
+	// Note: FromRoom can be empty for outside connections (entrance from outside dungeon)
 	for i, conn := range dun.Connections {
-		s.Assert().True(roomIDs[conn.FromRoom],
-			"connection %d FromRoom (%s) should reference valid room", i, conn.FromRoom)
+		if conn.FromRoom != "" {
+			s.Assert().True(roomIDs[conn.FromRoom],
+				"connection %d FromRoom (%s) should reference valid room", i, conn.FromRoom)
+		}
 		s.Assert().True(roomIDs[conn.ToRoom],
 			"connection %d ToRoom (%s) should reference valid room", i, conn.ToRoom)
-		s.Assert().NotEqual(conn.FromRoom, conn.ToRoom,
-			"connection %d should not be self-referential", i)
+		if conn.FromRoom != "" {
+			s.Assert().NotEqual(conn.FromRoom, conn.ToRoom,
+				"connection %d should not be self-referential", i)
+		}
 	}
 
 	// Verify StartRoom and BossRoom are valid and different
@@ -854,4 +859,54 @@ func (s *IntegrationTestSuite) TestDensityRangesValid() {
 		s.Require().NotNil(theme.Tables, "theme %s should have tables", theme.ID)
 		s.Assert().NotEmpty(theme.Tables.Density, "theme %s should have density", theme.ID)
 	}
+}
+
+// TestPerimeterWallsSplitAtDoors verifies that walls with doors are split into two segments
+func (s *IntegrationTestSuite) TestPerimeterWallsSplitAtDoors() {
+	output, err := s.generator.Generate(context.Background(), &dungeon.GenerateInput{
+		Theme:     dungeon.ThemeCrypt,
+		Size:      dungeon.RoomSizeMedium,
+		Length:    3, // Need at least 3 rooms to ensure connections
+		Layout:    dungeon.LayoutLinear,
+		PartySize: 4,
+		TargetCR:  2,
+		Seed:      333333,
+	})
+
+	s.Require().NoError(err)
+	s.Require().NotNil(output.Dungeon)
+	s.Require().NotEmpty(output.Dungeon.Connections, "should have connections")
+
+	// For a linear dungeon with 3 rooms, middle room should have 2 connections
+	// Find a room with at least one connection
+	roomWithConnection := ""
+	for _, conn := range output.Dungeon.Connections {
+		roomWithConnection = conn.FromRoom
+		break
+	}
+	s.Require().NotEmpty(roomWithConnection, "should find a room with connection")
+
+	// Find that room
+	var targetRoom *dungeon.Room
+	for _, room := range output.Dungeon.Rooms {
+		if room.ID == roomWithConnection {
+			targetRoom = room
+			break
+		}
+	}
+	s.Require().NotNil(targetRoom, "should find target room")
+	s.Require().NotEmpty(targetRoom.Walls, "room should have walls")
+
+	// Count perimeter walls - with doors, should have more than 4 segments
+	perimeterWallCount := 0
+	for _, wall := range targetRoom.Walls {
+		if len(wall.ID) > 10 && wall.ID[:10] == "perimeter_" {
+			perimeterWallCount++
+		}
+	}
+
+	// A rectangular room with connections should have more than 4 perimeter walls
+	// because walls with doors are split into 2 segments each
+	s.Assert().Greater(perimeterWallCount, 4,
+		"room with connection should have split perimeter walls (got %d)", perimeterWallCount)
 }

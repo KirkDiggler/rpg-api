@@ -315,6 +315,12 @@ func (s *EventPublishingTestSuite) TestStartCombat_PublishesCombatStartedEvent()
 		Save(gomock.Any(), gomock.Any()).
 		Return(&dungeonrepo.SaveOutput{Success: true}, nil)
 
+	// Mock dungeon repo get (for wall collision in monster turns)
+	s.mockDungeonRepo.EXPECT().
+		GetByEncounterID(gomock.Any(), &dungeonrepo.GetByEncounterIDInput{EncounterID: encounterID}).
+		Return(&dungeonrepo.GetOutput{Dungeon: nil}, nil).
+		AnyTimes()
+
 	// Mock Update (may be called multiple times if monster goes first)
 	s.mockEncRepo.EXPECT().
 		Update(gomock.Any(), gomock.Any()).
@@ -453,6 +459,13 @@ func (s *EventPublishingTestSuite) TestMoveCharacter_PublishesMovementCompletedE
 			},
 		}, nil)
 
+	// Mock dungeon repo for walls loading
+	s.mockDungeonRepo.EXPECT().
+		GetByEncounterID(gomock.Any(), gomock.Any()).
+		Return(&dungeonrepo.GetOutput{
+			Dungeon: &entities.Dungeon{ID: "test-dungeon"},
+		}, nil)
+
 	// Mock Update
 	s.mockEncRepo.EXPECT().
 		Update(gomock.Any(), gomock.Any()).
@@ -552,6 +565,11 @@ func (s *EventPublishingTestSuite) TestEndTurn_PublishesTurnEndedEvent() {
 	s.mockCharRepo.EXPECT().
 		Update(gomock.Any(), gomock.Any()).
 		Return(&characterrepo.UpdateOutput{}, nil)
+
+	// Mock dungeon lookup for walls (optional - just return empty)
+	s.mockDungeonRepo.EXPECT().
+		GetByEncounterID(gomock.Any(), &dungeonrepo.GetByEncounterIDInput{EncounterID: encounterID}).
+		Return(&dungeonrepo.GetOutput{}, nil)
 
 	// Mock Update encounter
 	s.mockEncRepo.EXPECT().
@@ -876,6 +894,11 @@ func (s *EventPublishingTestSuite) TestEndTurn_NewRound_SetsNewRoundFlag() {
 	s.mockCharRepo.EXPECT().
 		Update(gomock.Any(), gomock.Any()).
 		Return(&characterrepo.UpdateOutput{}, nil)
+
+	// Mock dungeon lookup for walls (optional - just return empty)
+	s.mockDungeonRepo.EXPECT().
+		GetByEncounterID(gomock.Any(), &dungeonrepo.GetByEncounterIDInput{EncounterID: encounterID}).
+		Return(&dungeonrepo.GetOutput{}, nil)
 
 	// Mock Update encounter
 	s.mockEncRepo.EXPECT().

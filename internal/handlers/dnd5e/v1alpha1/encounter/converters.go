@@ -3,6 +3,7 @@ package encounter
 import (
 	apiv1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/api/v1alpha1"
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
+	"github.com/KirkDiggler/rpg-api/internal/components/dungeon"
 	"github.com/KirkDiggler/rpg-api/internal/entities"
 	characterhandler "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v1alpha1/character"
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/encounter"
@@ -1164,6 +1165,49 @@ func convertWallsToProto(walls []encounter.WallInfo) []*apiv1alpha1.Wall {
 			Start:             start,
 			End:               end,
 			Material:          w.Material,
+			BlocksMovement:    w.BlocksMovement,
+			BlocksLineOfSight: w.BlocksLineOfSight,
+		}
+	}
+
+	return result
+}
+
+// convertDungeonWallsToProto converts dungeon.WallSegment slices to proto Walls
+// Used for event data that comes directly from dungeon entities rather than orchestrator types
+func convertDungeonWallsToProto(walls []dungeon.WallSegment) []*apiv1alpha1.Wall {
+	if walls == nil {
+		return nil
+	}
+
+	result := make([]*apiv1alpha1.Wall, len(walls))
+	for i, w := range walls {
+		start := &apiv1alpha1.Position{
+			X: float64(w.Start.X),
+			Y: float64(w.Start.Y),
+			Z: float64(w.Start.Z),
+		}
+		end := &apiv1alpha1.Position{
+			X: float64(w.End.X),
+			Y: float64(w.End.Y),
+			Z: float64(w.End.Z),
+		}
+
+		// Convert WallType to material string
+		var material string
+		switch w.Type {
+		case dungeon.WallTypeIndestructible:
+			material = "indestructible"
+		case dungeon.WallTypeDestructible:
+			material = "destructible"
+		default:
+			material = "unknown"
+		}
+
+		result[i] = &apiv1alpha1.Wall{
+			Start:             start,
+			End:               end,
+			Material:          material,
 			BlocksMovement:    w.BlocksMovement,
 			BlocksLineOfSight: w.BlocksLineOfSight,
 		}

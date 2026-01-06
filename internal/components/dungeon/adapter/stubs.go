@@ -167,9 +167,9 @@ func (s *StubFeatureGenerator) Generate(ctx context.Context, input *dungeon.Feat
 
 	return &dungeon.FeatureOutput{
 		Features: &dungeon.FeatureLayout{
-			Obstacles:  []dungeon.Obstacle{},
-			Terrain:    []dungeon.TerrainPatch{},
-			SpawnZones: zones,
+			Obstacles: []dungeon.Obstacle{},
+			Terrain:   []dungeon.TerrainPatch{},
 		},
+		Zones: zones,
 	}, nil
 }
