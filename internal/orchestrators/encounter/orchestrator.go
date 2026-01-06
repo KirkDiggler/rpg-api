@@ -1211,8 +1211,9 @@ func (o *Orchestrator) getDoorInfoForRoom(dungeonEntity *entities.Dungeon, roomI
 		position := getDoorPositionFromShape(room, direction)
 
 		// Fall back to calculated position if no ConnectionPoint found
+		// Use conn.Type for the hint since it contains direction info like "north door"
 		if position == nil && room != nil && room.Shape != nil {
-			position = calculateDoorPosition(direction, room.Shape.Width, room.Shape.Height)
+			position = calculateDoorPosition(conn.Type, room.Shape.Width, room.Shape.Height)
 		}
 
 		doors = append(doors, DoorInfo{
@@ -2498,13 +2499,18 @@ func (o *Orchestrator) OpenDoor(
 		return nil, fmt.Errorf("current room not found: %s", currentRoomID)
 	}
 
-	// Calculate door position in the current room
-	var doorWidth, doorHeight int
-	if currentRoom.Shape != nil {
-		doorWidth = currentRoom.Shape.Width
-		doorHeight = currentRoom.Shape.Height
+	// Calculate door position in the current room using same logic as getDoorInfoForRoom
+	// to ensure consistency between what the client sees and what the server validates
+	direction, _ := parseConnectionType(connection.Type)
+
+	// Try to get door position from shape's ConnectionPoints first
+	doorPos := getDoorPositionFromShape(currentRoom, direction)
+
+	// Fall back to calculated position if no ConnectionPoint found
+	// Use connection.Type for the hint since it contains direction info like "north door"
+	if doorPos == nil && currentRoom.Shape != nil {
+		doorPos = calculateDoorPosition(connection.Type, currentRoom.Shape.Width, currentRoom.Shape.Height)
 	}
-	doorPos := calculateDoorPosition(connection.Type, doorWidth, doorHeight)
 	if doorPos == nil {
 		return nil, fmt.Errorf("cannot determine door position")
 	}
