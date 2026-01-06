@@ -472,22 +472,21 @@ func (o *Orchestrator) SetAbilityScoresFromRolls(ctx context.Context, input *Set
 		return nil, fmt.Errorf("failed to get draft: %w", err)
 	}
 
-	// Get the dice session for this draft
-	// First try with draft ID (correct way)
+	// Get the dice session - try player ID first (prevents gaming by deleting drafts)
+	// then fall back to draft ID for backwards compatibility
 	sessionOutput, err := o.diceService.GetRollSession(ctx, &dice.GetRollSessionInput{
-		EntityID: input.DraftID,
+		EntityID: getOutput.Draft.Data.PlayerID,
 		Context:  dice.ContextAbilityScores,
 	})
 	if err != nil {
-		// If not found with draft ID, try with player ID
-		// (for backward compatibility with web app that might be using player ID)
 		if apierr.IsNotFound(err) {
+			// Fall back to draft ID
 			sessionOutput, err = o.diceService.GetRollSession(ctx, &dice.GetRollSessionInput{
-				EntityID: getOutput.Draft.Data.PlayerID,
+				EntityID: input.DraftID,
 				Context:  dice.ContextAbilityScores,
 			})
 			if err != nil {
-				return nil, apierr.Wrap(err, "failed to get dice roll session (tried both draft ID and player ID)")
+				return nil, apierr.Wrap(err, "failed to get dice roll session (tried both player ID and draft ID)")
 			}
 		} else {
 			return nil, apierr.Wrap(err, "failed to get dice roll session")
