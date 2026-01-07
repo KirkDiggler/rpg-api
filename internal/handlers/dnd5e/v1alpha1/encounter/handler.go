@@ -153,6 +153,16 @@ func (h *Handler) OpenDoor(
 	gridType := spatial.GridTypeHex
 	hexOrientation := spatial.HexOrientationPointyTop
 
+	// Convert room origin if available
+	var roomOrigin *apiv1alpha1.Position
+	if output.RoomOrigin != nil {
+		roomOrigin = &apiv1alpha1.Position{
+			X: output.RoomOrigin.X,
+			Y: output.RoomOrigin.Y,
+			Z: output.RoomOrigin.Z,
+		}
+	}
+
 	return &dnd5ev1alpha1.OpenDoorResponse{
 		Success:      true,
 		EncounterId:  output.EncounterID,
@@ -160,6 +170,7 @@ func (h *Handler) OpenDoor(
 		CombatState:  convertCombatStateToProto(output.CombatState, gridType, hexOrientation),
 		MonsterTurns: convertMonsterTurnsToProto(output.MonsterTurns, gridType, hexOrientation),
 		Doors:        convertDoorInfoSliceToProto(output.NewDoors),
+		RoomOrigin:   roomOrigin,
 	}, nil
 }
 

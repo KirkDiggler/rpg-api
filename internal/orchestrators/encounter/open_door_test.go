@@ -108,8 +108,8 @@ func (s *OpenDoorTestSuite) createTestDungeon() *entities.Dungeon {
 		},
 		// Room positions for dungeon-absolute coordinate system
 		RoomPositions: map[string]spatial.CubeCoordinate{
-			"room-1": {X: 0, Y: 0, Z: 0},           // Start room at origin
-			"room-2": {X: 0, Y: 20, Z: -20},        // Room 2 north of room 1
+			"room-1": {X: 0, Y: 0, Z: 0},    // Start room at origin
+			"room-2": {X: 0, Y: 20, Z: -20}, // Room 2 north of room 1
 		},
 		State: entities.DungeonStateActive,
 	}
@@ -180,7 +180,7 @@ func (s *OpenDoorTestSuite) createTestEncounterDataRoom2() *encounterrepo.Encoun
 					EntityType: "character",
 					CubePosition: spatial.CubeCoordinate{
 						X: 7,
-						Y: 12, // absolute y = 20 + (-8) = 12
+						Y: 12,  // absolute y = 20 + (-8) = 12
 						Z: -19, // absolute z = -20 + 1 = -19
 					},
 				},

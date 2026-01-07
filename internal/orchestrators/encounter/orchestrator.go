@@ -2878,7 +2878,11 @@ func (o *Orchestrator) OpenDoor(
 	return &OpenDoorOutput{
 		EncounterID:  dng.EncounterID,
 		RevealedRoom: responseRoomData,
-		RoomOffset:   nil, // TODO: Calculate offset for grid merge when implementing multi-room display
+		RoomOrigin: &Position{
+			X: float64(revealedRoomOrigin.X),
+			Y: float64(revealedRoomOrigin.Y),
+			Z: float64(revealedRoomOrigin.Z),
+		},
 		NewDoors:     newDoors,
 		Monsters:     monsters,
 		CombatState:  combatState,

@@ -389,7 +389,7 @@ type OpenDoorInput struct {
 type OpenDoorOutput struct {
 	EncounterID  string               // Encounter ID for reference
 	RevealedRoom *RoomData            // The newly revealed room with entities
-	RoomOffset   *Position            // Offset to apply to revealed room positions for grid merge
+	RoomOrigin   *Position            // Room origin in dungeon-absolute coordinates (for floor hex rendering)
 	NewDoors     []DoorInfo           // Doors visible from the newly revealed room
 	Monsters     []MonsterInfo        // Monsters in the revealed room with initiative
 	CombatState  *CombatState         // Updated combat state with monsters inserted
