@@ -950,7 +950,7 @@ func convertEncounterStateToProto(state string) dnd5ev1alpha1.EncounterState {
 // convertOpenDoorRoomToProto converts the orchestrator's RoomData to proto Room
 //
 //nolint:gosec // G115: Game values are bounded, no overflow risk
-func convertOpenDoorRoomToProto(roomData *encounter.RoomData) *dnd5ev1alpha1.Room {
+func convertOpenDoorRoomToProto(roomData *encounter.RoomData, roomOrigin *encounter.Position) *dnd5ev1alpha1.Room {
 	if roomData == nil {
 		return nil
 	}
@@ -982,6 +982,16 @@ func convertOpenDoorRoomToProto(roomData *encounter.RoomData) *dnd5ev1alpha1.Roo
 		}
 	}
 
+	// Convert room origin if available
+	var origin *apiv1alpha1.Position
+	if roomOrigin != nil {
+		origin = &apiv1alpha1.Position{
+			X: roomOrigin.X,
+			Y: roomOrigin.Y,
+			Z: roomOrigin.Z,
+		}
+	}
+
 	return &dnd5ev1alpha1.Room{
 		Id:             roomData.ID,
 		Type:           "dungeon",
@@ -991,6 +1001,7 @@ func convertOpenDoorRoomToProto(roomData *encounter.RoomData) *dnd5ev1alpha1.Roo
 		HexOrientation: &hexOrientation,
 		Entities:       entities,
 		Walls:          convertWallsToProto(roomData.Walls),
+		Origin:         origin,
 	}
 }
 
