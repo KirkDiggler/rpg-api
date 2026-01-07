@@ -974,11 +974,16 @@ func (h *Handler) convertToProtoEvent(event *entities.EncounterEvent) (*dnd5ev1a
 		}
 		// Extract grid info from room data for coordinate conversion
 		gridType, hexOrientation := extractGridInfo(event.RoomRevealed.RevealedRoom)
+		// Convert room data to proto and add walls
+		room := convertRoomDataToProto(event.RoomRevealed.RevealedRoom)
+		if room != nil {
+			room.Walls = convertDungeonWallsToProto(event.RoomRevealed.Walls)
+		}
 		protoEvent.Event = &dnd5ev1alpha1.EncounterEvent_RoomRevealed{
 			RoomRevealed: &dnd5ev1alpha1.RoomRevealedEvent{
 				DungeonId:    event.RoomRevealed.DungeonID,
 				ConnectionId: event.RoomRevealed.ConnectionID,
-				Room:         convertRoomDataToProto(event.RoomRevealed.RevealedRoom),
+				Room:         room,
 				CombatState:  convertCombatStateToProto(event.RoomRevealed.CombatState, gridType, hexOrientation),
 				Doors:        convertEntityDoorsToProto(event.RoomRevealed.NewDoors),
 			},
