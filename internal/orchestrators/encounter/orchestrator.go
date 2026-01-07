@@ -2693,6 +2693,7 @@ func (o *Orchestrator) OpenDoor(
 	_, err = o.encRepo.Update(ctx, &encounterrepo.UpdateInput{
 		EncounterID:    dng.EncounterID,
 		InitiativeData: newInitiativeData,
+		InitiativeRolls: allRolls, // Persist merged rolls so EndTurn can re-sort at round start
 		Monsters:       encOutput.Data.Monsters,
 		BossMonsterIDs: allBossIDs,
 	})

@@ -159,6 +159,9 @@ func (r *InMemoryRepository) Update(_ context.Context, input *UpdateInput) (*Upd
 	if input.InitiativeData != nil {
 		data.InitiativeData = input.InitiativeData
 	}
+	if input.InitiativeRolls != nil {
+		data.InitiativeRolls = input.InitiativeRolls
+	}
 	if input.RoomData != nil {
 		data.RoomData = input.RoomData
 	}

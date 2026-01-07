@@ -146,6 +146,7 @@ type GetByJoinCodeInput struct {
 type UpdateInput struct {
 	EncounterID       string
 	InitiativeData    *initiative.TrackerData      // Turn order changes
+	InitiativeRolls   []initiative.Roll            // Initiative roll data (optional - for mid-round combatant additions)
 	RoomData          interface{}                  // Position changes - temporarily using interface{}
 	MovementRemaining *int32                       // Movement remaining for active turn (optional - only update if provided)
 	ActionEconomy     *entities.ActionEconomyState // Action/bonus/reaction tracking (optional - only update if provided)
