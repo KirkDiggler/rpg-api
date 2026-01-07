@@ -1642,6 +1642,31 @@ func (o *Orchestrator) EndTurn(ctx context.Context, input *EndTurnInput) (*EndTu
 		currentIndex = 0
 		initiativeData.Round++
 		newRound = true
+
+		// Re-sort initiative order at the start of each new round
+		// This ensures proper initiative order after new combatants were added mid-round
+		// (they were appended at the end for their first partial round)
+		if len(initiativeRolls) > 0 {
+			sort.Slice(initiativeRolls, func(i, j int) bool {
+				if initiativeRolls[i].Total != initiativeRolls[j].Total {
+					return initiativeRolls[i].Total > initiativeRolls[j].Total
+				}
+				return initiativeRolls[i].Modifier > initiativeRolls[j].Modifier
+			})
+
+			// Rebuild order from sorted rolls
+			newOrder := make([]initiative.EntityData, len(initiativeRolls))
+			for i, roll := range initiativeRolls {
+				newOrder[i] = initiative.EntityData{
+					ID:   roll.Entity.GetID(),
+					Type: string(roll.Entity.GetType()),
+				}
+			}
+			initiativeData.Order = newOrder
+
+			// Update turnOrder for monster execution below
+			turnOrder = buildTurnOrderFromData(initiativeData, initiativeRolls, encOutput.Data.RoomData)
+		}
 	}
 
 	// 7. Update initiative data with the advanced index
@@ -2610,38 +2635,39 @@ func (o *Orchestrator) OpenDoor(
 		return nil, fmt.Errorf("invalid current index for encounter: %s", dng.EncounterID)
 	}
 
-	// 10. Merge initiative orders - create new slice to avoid modifying original
+	// 10. Merge initiative - preserve current round order, add new monsters at end
+	// D&D rule: new combatants joining mid-round act after everyone who was already
+	// in initiative finishes their turn this round. Next round they take their
+	// proper sorted position.
+	//
+	// This prevents the confusing behavior of the initiative order visually changing
+	// while maintaining correct turn sequence.
 	allRolls := make([]initiative.Roll, 0, len(encOutput.Data.InitiativeRolls)+len(newInitiativeRolls))
 	allRolls = append(allRolls, encOutput.Data.InitiativeRolls...)
 	allRolls = append(allRolls, newInitiativeRolls...)
 
-	// Sort by total (descending)
-	sort.Slice(allRolls, func(i, j int) bool {
-		if allRolls[i].Total != allRolls[j].Total {
-			return allRolls[i].Total > allRolls[j].Total
+	// Build new initiative order: keep existing order, append new monsters sorted among themselves
+	// Sort only the NEW monsters by initiative (they go after existing entities this round)
+	sort.Slice(newInitiativeRolls, func(i, j int) bool {
+		if newInitiativeRolls[i].Total != newInitiativeRolls[j].Total {
+			return newInitiativeRolls[i].Total > newInitiativeRolls[j].Total
 		}
-		// Tie-breaker: higher modifier goes first
-		return allRolls[i].Modifier > allRolls[j].Modifier
+		return newInitiativeRolls[i].Modifier > newInitiativeRolls[j].Modifier
 	})
 
-	// Build new initiative order
-	newOrder := make([]initiative.EntityData, len(allRolls))
-	for i, roll := range allRolls {
-		newOrder[i] = initiative.EntityData{
+	// Preserve existing order, append new monsters at the end
+	existingOrder := encOutput.Data.InitiativeData.Order
+	newOrder := make([]initiative.EntityData, 0, len(existingOrder)+len(newInitiativeRolls))
+	newOrder = append(newOrder, existingOrder...)
+	for _, roll := range newInitiativeRolls {
+		newOrder = append(newOrder, initiative.EntityData{
 			ID:   roll.Entity.GetID(),
 			Type: string(roll.Entity.GetType()),
-		}
+		})
 	}
 
-	// Find the new current index (where the current entity moved to)
-	currentEntityID := encOutput.Data.InitiativeData.Order[encOutput.Data.InitiativeData.Current].ID
-	newCurrent := 0
-	for i, entity := range newOrder {
-		if entity.ID == currentEntityID {
-			newCurrent = i
-			break
-		}
-	}
+	// Current index stays the same - we didn't reorder existing entities
+	newCurrent := encOutput.Data.InitiativeData.Current
 
 	newInitiativeData := &initiative.TrackerData{
 		Order:   newOrder,
@@ -2748,8 +2774,25 @@ func (o *Orchestrator) OpenDoor(
 		})
 	}
 
-	// 16. Build revealed room spatial data for event
+	// 16. Build revealed room spatial data for event (including monsters)
 	revealedSpatialRoom := o.convertToRoomData(dng.EncounterID, revealedRoom)
+
+	// Add monster placements to the spatial room data for the event
+	// This ensures the RoomRevealedEvent includes monsters, matching the OpenDoor response
+	for _, m := range monsters {
+		cubeX := int(m.Position.X)
+		cubeZ := int(m.Position.Y) // Y in 2D maps to Z in cube coords
+		cubeY := -cubeX - cubeZ    // y = -x - z for valid cube coordinate
+
+		revealedSpatialRoom.CubeEntities[m.ID] = spatial.EntityCubePlacement{
+			EntityID:          m.ID,
+			EntityType:        "monster",
+			CubePosition:      spatial.CubeCoordinate{X: cubeX, Y: cubeY, Z: cubeZ},
+			Size:              1,
+			BlocksMovement:    true,
+			BlocksLineOfSight: false,
+		}
+	}
 
 	// 17. Publish RoomRevealed event
 	o.publishEvent(ctx, dng.EncounterID, entities.EventTypeRoomRevealed, &entities.RoomRevealedEvent{
