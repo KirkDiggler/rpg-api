@@ -673,7 +673,10 @@ func (o *Orchestrator) createDungeonWithGenerator(
 	}
 
 	// Get room origin for dungeon-absolute coordinates
-	roomOrigin, _ := dungeonEntity.GetRoomPosition(startRoom.ID)
+	roomOrigin, ok := dungeonEntity.GetRoomPosition(startRoom.ID)
+	if !ok {
+		return nil, fmt.Errorf("room position not found for start room: %s", startRoom.ID)
+	}
 
 	// Convert start room to spatial.RoomData with dungeon-absolute coordinates
 	roomData := o.convertToRoomDataAbsolute(encounterID, startRoom, roomOrigin)
@@ -1389,8 +1392,14 @@ func (o *Orchestrator) MoveCharacter(ctx context.Context, input *MoveCharacterIn
 				walls = o.convertToWallInfo(currentRoom)
 				dungeonWalls = currentRoom.Walls
 			}
-			// Get room origin for coordinate conversion
-			roomOrigin, _ = dungeonEntity.GetRoomPosition(currentRoomID)
+			// Get room origin for coordinate conversion; only use walls if found
+			if origin, ok := dungeonEntity.GetRoomPosition(currentRoomID); ok {
+				roomOrigin = origin
+			} else {
+				// If we can't determine the room position, avoid using potentially incorrect wall data
+				walls = nil
+				dungeonWalls = nil
+			}
 		}
 	}
 
@@ -2578,8 +2587,14 @@ func (o *Orchestrator) OpenDoor(
 	}
 
 	// Get room origins for coordinate conversion
-	currentRoomOrigin, _ := dng.GetRoomPosition(currentRoomID)
-	revealedRoomOrigin, _ := dng.GetRoomPosition(revealedRoomID)
+	currentRoomOrigin, ok := dng.GetRoomPosition(currentRoomID)
+	if !ok {
+		return nil, fmt.Errorf("room position not found for current room: %s", currentRoomID)
+	}
+	revealedRoomOrigin, ok := dng.GetRoomPosition(revealedRoomID)
+	if !ok {
+		return nil, fmt.Errorf("room position not found for revealed room: %s", revealedRoomID)
+	}
 
 	// Calculate door position in the current room using same logic as getDoorInfoForRoom
 	// to ensure consistency between what the client sees and what the server validates
@@ -3191,7 +3206,10 @@ func (o *Orchestrator) StartCombat(
 	}
 
 	// Get room origin for dungeon-absolute coordinates
-	roomOrigin, _ := dungeonEntity.GetRoomPosition(startRoom.ID)
+	roomOrigin, ok := dungeonEntity.GetRoomPosition(startRoom.ID)
+	if !ok {
+		return nil, fmt.Errorf("room position not found for start room: %s", startRoom.ID)
+	}
 
 	roomData := o.convertToRoomDataAbsolute(input.EncounterID, startRoom, roomOrigin)
 

@@ -106,6 +106,11 @@ func (s *OpenDoorTestSuite) createTestDungeon() *entities.Dungeon {
 				},
 			},
 		},
+		// Room positions for dungeon-absolute coordinate system
+		RoomPositions: map[string]spatial.CubeCoordinate{
+			"room-1": {X: 0, Y: 0, Z: 0},           // Start room at origin
+			"room-2": {X: 0, Y: 20, Z: -20},        // Room 2 north of room 1
+		},
 		State: entities.DungeonStateActive,
 	}
 }
@@ -154,6 +159,8 @@ func (s *OpenDoorTestSuite) createTestEncounterData() *encounterrepo.EncounterDa
 // Note: connection.Type "north door" is used directly for door position calculation,
 // so even in room-2, the door is at the north edge (z=0)
 func (s *OpenDoorTestSuite) createTestEncounterDataRoom2() *encounterrepo.EncounterData {
+	// Room-2 origin is at (0, 20, -20), so character at room-local (7, -8, 1)
+	// becomes absolute (7, 12, -19)
 	return &encounterrepo.EncounterData{
 		ID: "enc-123",
 		RoomData: &spatial.RoomData{
@@ -164,16 +171,17 @@ func (s *OpenDoorTestSuite) createTestEncounterDataRoom2() *encounterrepo.Encoun
 			Entities: map[string]spatial.EntityPlacement{
 				"char-1": {EntityID: "char-1", EntityType: "character"},
 			},
-			// Character positioned adjacent to north door (door is at x=7, z=0)
+			// Character positioned adjacent to north door (door is at room-local x=7, z=0)
 			// Position at z=1 is one row down from door, which is adjacent
+			// Absolute coords: room origin (0, 20, -20) + local (7, -8, 1) = (7, 12, -19)
 			CubeEntities: map[string]spatial.EntityCubePlacement{
 				"char-1": {
 					EntityID:   "char-1",
 					EntityType: "character",
 					CubePosition: spatial.CubeCoordinate{
 						X: 7,
-						Y: -8, // y = -x - z = -7 - 1
-						Z: 1,
+						Y: 12, // absolute y = 20 + (-8) = 12
+						Z: -19, // absolute z = -20 + 1 = -19
 					},
 				},
 			},
