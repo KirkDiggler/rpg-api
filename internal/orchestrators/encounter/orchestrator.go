@@ -653,6 +653,9 @@ func (o *Orchestrator) createDungeonWithGenerator(
 	// Create entities.Dungeon for storage
 	dungeonEntity := o.convertToDungeonEntity(encounterID, generatedDungeon, genOutput.Seed)
 
+	// Calculate dungeon-absolute room positions for unified coordinate system
+	dungeonEntity.CalculateRoomPositions()
+
 	// Save dungeon to repository if available
 	if o.dungeonRepo != nil {
 		_, err = o.dungeonRepo.Save(ctx, &dungeonrepo.SaveInput{
@@ -669,26 +672,35 @@ func (o *Orchestrator) createDungeonWithGenerator(
 		return nil, fmt.Errorf("start room not found: %s", generatedDungeon.StartRoom)
 	}
 
-	// Convert start room to spatial.RoomData
-	roomData := o.convertToRoomData(encounterID, startRoom)
+	// Get room origin for dungeon-absolute coordinates
+	roomOrigin, _ := dungeonEntity.GetRoomPosition(startRoom.ID)
 
-	// Place characters at spawn zones using cube coordinates
+	// Convert start room to spatial.RoomData with dungeon-absolute coordinates
+	roomData := o.convertToRoomDataAbsolute(encounterID, startRoom, roomOrigin)
+
+	// Place characters at spawn zones using dungeon-absolute coordinates
 	spawnPositions := o.getPlayerSpawnPositions(startRoom)
 	for i, characterID := range input.CharacterIDs {
 		if i >= len(spawnPositions) {
 			break
 		}
+		// Convert spawn position to absolute
+		absolutePos := spatial.CubeCoordinate{
+			X: roomOrigin.X + spawnPositions[i].X,
+			Y: roomOrigin.Y + spawnPositions[i].Y,
+			Z: roomOrigin.Z + spawnPositions[i].Z,
+		}
 		roomData.CubeEntities[characterID] = spatial.EntityCubePlacement{
 			EntityID:       characterID,
 			EntityType:     entityTypeCharacter,
-			CubePosition:   spawnPositions[i],
+			CubePosition:   absolutePos,
 			Size:           1,
 			BlocksMovement: true,
 		}
 	}
 
-	// Place monsters from the encounter
-	monsters := o.placeMonsters(roomData, startRoom)
+	// Place monsters from the encounter with absolute coordinates
+	monsters := o.placeMonsters(roomData, startRoom, roomOrigin)
 
 	// Extract doors for response using entity connections (which have proper IDs)
 	doors := o.getDoorInfoForRoom(dungeonEntity, generatedDungeon.StartRoom)
@@ -843,6 +855,7 @@ func (o *Orchestrator) createDungeonWithGenerator(
 		o.checkAndHandleFailure(ctx, encounterID, encData)
 	}
 
+	// roomData already has dungeon-absolute coordinates - return directly
 	return &CreateDungeonOutput{
 		EncounterID:  encounterID,
 		DungeonID:    dungeonEntity.ID,
@@ -908,9 +921,10 @@ func (o *Orchestrator) findRoom(genDungeon *dungeon.Dungeon, roomID string) *dun
 	return nil
 }
 
-// convertToRoomData converts a dungeon.Room to spatial.RoomData
-// Uses CubeEntities for hex grids (cube coordinates are the native format)
-func (o *Orchestrator) convertToRoomData(encounterID string, room *dungeon.Room) *spatial.RoomData {
+// convertToRoomData converts a dungeon.Room to spatial.RoomData with room-local coordinates.
+// convertToRoomDataAbsolute converts a dungeon.Room to spatial.RoomData with dungeon-absolute coordinates.
+// The roomOrigin is added to all entity positions to place them in the unified dungeon coordinate system.
+func (o *Orchestrator) convertToRoomDataAbsolute(encounterID string, room *dungeon.Room, roomOrigin spatial.CubeCoordinate) *spatial.RoomData {
 	roomData := &spatial.RoomData{
 		ID:           encounterID + "-" + room.ID,
 		Type:         "dungeon",
@@ -920,13 +934,19 @@ func (o *Orchestrator) convertToRoomData(encounterID string, room *dungeon.Room)
 		CubeEntities: make(map[string]spatial.EntityCubePlacement),
 	}
 
-	// Add obstacles from features using cube coordinates
+	// Add obstacles from features using dungeon-absolute coordinates
 	if room.Features != nil {
 		for _, obstacle := range room.Features.Obstacles {
+			// Convert room-local obstacle position to dungeon-absolute
+			absolutePos := spatial.CubeCoordinate{
+				X: roomOrigin.X + obstacle.Position.X,
+				Y: roomOrigin.Y + obstacle.Position.Y,
+				Z: roomOrigin.Z + obstacle.Position.Z,
+			}
 			roomData.CubeEntities[obstacle.ID] = spatial.EntityCubePlacement{
 				EntityID:       obstacle.ID,
 				EntityType:     "obstacle",
-				CubePosition:   spatial.CubeCoordinate{X: obstacle.Position.X, Y: obstacle.Position.Y, Z: obstacle.Position.Z},
+				CubePosition:   absolutePos,
 				Size:           1,
 				BlocksMovement: obstacle.BlocksMovement,
 			}
@@ -1005,8 +1025,9 @@ func (o *Orchestrator) getPlayerSpawnPositions(room *dungeon.Room) []spatial.Cub
 }
 
 // placeMonsters places monsters from the room's encounter into the room data
-// Uses the spawner component for spatial-aware placement that avoids walls and other entities
-func (o *Orchestrator) placeMonsters(roomData *spatial.RoomData, room *dungeon.Room) []*monster.Data {
+// Uses the spawner component for spatial-aware placement that avoids walls and other entities.
+// roomOrigin is used to convert room-local spawn positions to dungeon-absolute coordinates.
+func (o *Orchestrator) placeMonsters(roomData *spatial.RoomData, room *dungeon.Room, roomOrigin spatial.CubeCoordinate) []*monster.Data {
 	if room.Encounter == nil {
 		return nil
 	}
@@ -1047,20 +1068,27 @@ func (o *Orchestrator) placeMonsters(roomData *spatial.RoomData, room *dungeon.R
 	for _, placement := range room.Encounter.Monsters {
 		monsterID := fmt.Sprintf("monster-%s", placement.ID)
 
-		// Get spawn position from spawner results
-		var spawnPos spatial.CubeCoordinate
+		// Get spawn position from spawner results (room-local)
+		var localPos spatial.CubeCoordinate
 		if pos, ok := placementMap[monsterID]; ok {
-			spawnPos = spatial.CubeCoordinate{X: pos.X, Y: pos.Y, Z: pos.Z}
+			localPos = spatial.CubeCoordinate{X: pos.X, Y: pos.Y, Z: pos.Z}
 		} else {
-			// Fallback: find a safe position that's not on a wall
-			spawnPos = findSafeFallbackPosition(room, roomData)
+			// Fallback: find a safe position that's not on a wall (room-local)
+			localPos = findSafeFallbackPosition(room, roomData)
 		}
 
-		// Add to room cube entities
+		// Convert to dungeon-absolute coordinates
+		absolutePos := spatial.CubeCoordinate{
+			X: roomOrigin.X + localPos.X,
+			Y: roomOrigin.Y + localPos.Y,
+			Z: roomOrigin.Z + localPos.Z,
+		}
+
+		// Add to room cube entities with absolute position
 		roomData.CubeEntities[monsterID] = spatial.EntityCubePlacement{
 			EntityID:       monsterID,
 			EntityType:     entityTypeMonster,
-			CubePosition:   spawnPos,
+			CubePosition:   absolutePos,
 			Size:           1,
 			BlocksMovement: true,
 		}
@@ -1343,9 +1371,10 @@ func (o *Orchestrator) MoveCharacter(ctx context.Context, input *MoveCharacterIn
 		return nil, fmt.Errorf("encounter not found: %s", input.EncounterID)
 	}
 
-	// Load dungeon to get walls for the current room
+	// Load dungeon to get walls and room origin for the current room
 	var walls []WallInfo
 	var dungeonWalls []dungeon.WallSegment // Raw walls for event
+	var roomOrigin spatial.CubeCoordinate  // For converting absolute coords to room-local for wall checks
 	if o.dungeonRepo != nil {
 		dungeonOutput, dungeonErr := o.dungeonRepo.GetByEncounterID(ctx, &dungeonrepo.GetByEncounterIDInput{
 			EncounterID: input.EncounterID,
@@ -1360,6 +1389,8 @@ func (o *Orchestrator) MoveCharacter(ctx context.Context, input *MoveCharacterIn
 				walls = o.convertToWallInfo(currentRoom)
 				dungeonWalls = currentRoom.Walls
 			}
+			// Get room origin for coordinate conversion
+			roomOrigin, _ = dungeonEntity.GetRoomPosition(currentRoomID)
 		}
 	}
 
@@ -1458,10 +1489,22 @@ func (o *Orchestrator) MoveCharacter(ctx context.Context, input *MoveCharacterIn
 	}
 
 	// 5c. Check if path crosses any walls
+	// Walls are defined in room-local coords, so convert absolute positions to room-local
 	if len(dungeonWalls) > 0 && exists {
 		wallValidator := dungeontoolkit.NewWallValidator()
-		startPos := dungeon.Position{X: oldCube.X, Y: oldCube.Y, Z: oldCube.Z}
-		endPos := dungeon.Position{X: targetCube.X, Y: targetCube.Y, Z: targetCube.Z}
+		// Convert absolute positions to room-local for wall check
+		localOld := spatial.CubeCoordinate{
+			X: oldCube.X - roomOrigin.X,
+			Y: oldCube.Y - roomOrigin.Y,
+			Z: oldCube.Z - roomOrigin.Z,
+		}
+		localTarget := spatial.CubeCoordinate{
+			X: targetCube.X - roomOrigin.X,
+			Y: targetCube.Y - roomOrigin.Y,
+			Z: targetCube.Z - roomOrigin.Z,
+		}
+		startPos := dungeon.Position{X: localOld.X, Y: localOld.Y, Z: localOld.Z}
+		endPos := dungeon.Position{X: localTarget.X, Y: localTarget.Y, Z: localTarget.Z}
 
 		if wallValidator.PathCrossesWall(startPos, endPos, dungeonWalls) {
 			return &MoveCharacterOutput{
@@ -2534,6 +2577,10 @@ func (o *Orchestrator) OpenDoor(
 		return nil, fmt.Errorf("current room not found: %s", currentRoomID)
 	}
 
+	// Get room origins for coordinate conversion
+	currentRoomOrigin, _ := dng.GetRoomPosition(currentRoomID)
+	revealedRoomOrigin, _ := dng.GetRoomPosition(revealedRoomID)
+
 	// Calculate door position in the current room using same logic as getDoorInfoForRoom
 	// to ensure consistency between what the client sees and what the server validates
 	direction, _ := parseConnectionType(connection.Type)
@@ -2562,10 +2609,11 @@ func (o *Orchestrator) OpenDoor(
 			continue
 		}
 		// Check adjacency using proper cube distance formula
+		// doorPos is room-local, convert to absolute by adding room origin
 		doorCube := spatial.CubeCoordinate{
-			X: int(doorPos.X),
-			Y: int(doorPos.Y),
-			Z: int(doorPos.Z),
+			X: currentRoomOrigin.X + int(doorPos.X),
+			Y: currentRoomOrigin.Y + int(doorPos.Y),
+			Z: currentRoomOrigin.Z + int(doorPos.Z),
 		}
 		if cubeDistance(placement.CubePosition, doorCube) <= 1 {
 			isAdjacent = true
@@ -2602,11 +2650,16 @@ func (o *Orchestrator) OpenDoor(
 			}
 			total := roll + dexMod
 
+			// Convert room-local position to dungeon-absolute
+			// Position.X stores cube X, Position.Y stores cube Z
+			absoluteX := revealedRoomOrigin.X + placement.Position.X
+			absoluteZ := revealedRoomOrigin.Z + placement.Position.Y
+
 			monsters = append(monsters, MonsterInfo{
 				ID:         monsterID,
 				MonsterID:  placement.MonsterID,
 				Name:       monsterData.Name,
-				Position:   &Position{X: float64(placement.Position.X), Y: float64(placement.Position.Y)},
+				Position:   &Position{X: float64(absoluteX), Y: float64(absoluteZ)},
 				HP:         monsterData.HitPoints,
 				MaxHP:      monsterData.MaxHitPoints,
 				Initiative: total,
@@ -2691,11 +2744,11 @@ func (o *Orchestrator) OpenDoor(
 	allBossIDs = append(allBossIDs, encOutput.Data.BossMonsterIDs...)
 	allBossIDs = append(allBossIDs, newBossMonsterIDs...)
 	_, err = o.encRepo.Update(ctx, &encounterrepo.UpdateInput{
-		EncounterID:    dng.EncounterID,
-		InitiativeData: newInitiativeData,
+		EncounterID:     dng.EncounterID,
+		InitiativeData:  newInitiativeData,
 		InitiativeRolls: allRolls, // Persist merged rolls so EndTurn can re-sort at round start
-		Monsters:       encOutput.Data.Monsters,
-		BossMonsterIDs: allBossIDs,
+		Monsters:        encOutput.Data.Monsters,
+		BossMonsterIDs:  allBossIDs,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to update encounter: %w", err)
@@ -2776,7 +2829,7 @@ func (o *Orchestrator) OpenDoor(
 	}
 
 	// 16. Build revealed room spatial data for event (including monsters)
-	revealedSpatialRoom := o.convertToRoomData(dng.EncounterID, revealedRoom)
+	revealedSpatialRoom := o.convertToRoomDataAbsolute(dng.EncounterID, revealedRoom, revealedRoomOrigin)
 
 	// Add monster placements to the spatial room data for the event
 	// This ensures the RoomRevealedEvent includes monsters, matching the OpenDoor response
@@ -3120,6 +3173,10 @@ func (o *Orchestrator) StartCombat(
 
 	// 8. Create entities.Dungeon for storage and save it
 	dungeonEntity := o.convertToDungeonEntity(input.EncounterID, generatedDungeon, genOutput.Seed)
+
+	// Calculate dungeon-absolute room positions for unified coordinate system
+	dungeonEntity.CalculateRoomPositions()
+
 	_, err = o.dungeonRepo.Save(ctx, &dungeonrepo.SaveInput{
 		Dungeon: dungeonEntity,
 	})
@@ -3127,31 +3184,40 @@ func (o *Orchestrator) StartCombat(
 		return nil, fmt.Errorf("failed to save dungeon: %w", err)
 	}
 
-	// 9. Get the start room and convert to room data
+	// 9. Get the start room and convert to room data with absolute coordinates
 	startRoom := o.findRoom(generatedDungeon, generatedDungeon.StartRoom)
 	if startRoom == nil {
 		return nil, fmt.Errorf("start room not found: %s", generatedDungeon.StartRoom)
 	}
 
-	roomData := o.convertToRoomData(input.EncounterID, startRoom)
+	// Get room origin for dungeon-absolute coordinates
+	roomOrigin, _ := dungeonEntity.GetRoomPosition(startRoom.ID)
 
-	// 10. Place characters at spawn zones
+	roomData := o.convertToRoomDataAbsolute(input.EncounterID, startRoom, roomOrigin)
+
+	// 10. Place characters at spawn zones using dungeon-absolute coordinates
 	spawnPositions := o.getPlayerSpawnPositions(startRoom)
 	for i, characterID := range characterIDs {
 		if i >= len(spawnPositions) {
 			break
 		}
+		// Convert spawn position to absolute
+		absolutePos := spatial.CubeCoordinate{
+			X: roomOrigin.X + spawnPositions[i].X,
+			Y: roomOrigin.Y + spawnPositions[i].Y,
+			Z: roomOrigin.Z + spawnPositions[i].Z,
+		}
 		roomData.CubeEntities[characterID] = spatial.EntityCubePlacement{
 			EntityID:       characterID,
 			EntityType:     entityTypeCharacter,
-			CubePosition:   spawnPositions[i],
+			CubePosition:   absolutePos,
 			Size:           1,
 			BlocksMovement: true,
 		}
 	}
 
-	// 11. Place monsters from the dungeon's encounter
-	monsters := o.placeMonsters(roomData, startRoom)
+	// 11. Place monsters from the dungeon's encounter with absolute coordinates
+	monsters := o.placeMonsters(roomData, startRoom, roomOrigin)
 
 	// 12. Roll initiative
 	combatants := make(map[core.Entity]int)
@@ -3705,8 +3771,8 @@ func (o *Orchestrator) GetEncounterState(ctx context.Context, input *GetEncounte
 			output.CombatState = combatState
 		}
 
-		// Include room data
-		output.Room = encData.RoomData
+		// Room data will be converted to absolute after dungeon is loaded
+		// (see below where dungeon is fetched)
 
 		// Build monster combat states
 		if encData.Monsters != nil {
@@ -3725,7 +3791,7 @@ func (o *Orchestrator) GetEncounterState(ctx context.Context, input *GetEncounte
 			output.Monsters = monsters
 		}
 
-		// Load dungeon to get doors and walls for current room
+		// Load dungeon to get doors, walls, and convert room coordinates to absolute
 		if o.dungeonRepo != nil {
 			dungeonOutput, dungeonErr := o.dungeonRepo.GetByEncounterID(ctx, &dungeonrepo.GetByEncounterIDInput{
 				EncounterID: input.EncounterID,
@@ -3745,6 +3811,9 @@ func (o *Orchestrator) GetEncounterState(ctx context.Context, input *GetEncounte
 				}
 			}
 		}
+
+		// Room data is already stored with dungeon-absolute coordinates
+		output.Room = encData.RoomData
 	}
 
 	return output, nil

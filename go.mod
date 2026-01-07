@@ -8,8 +8,8 @@ require (
 	github.com/KirkDiggler/rpg-toolkit/dice v0.3.2
 	github.com/KirkDiggler/rpg-toolkit/events v0.6.2
 	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.42.0
-	github.com/KirkDiggler/rpg-toolkit/tools/environments v0.1.2
-	github.com/KirkDiggler/rpg-toolkit/tools/spatial v0.3.1-0.20251218021904-e9530f960b23
+	github.com/KirkDiggler/rpg-toolkit/tools/environments v0.2.0
+	github.com/KirkDiggler/rpg-toolkit/tools/spatial v0.4.0
 	github.com/alicebob/miniredis/v2 v2.35.0
 	github.com/google/uuid v1.6.0
 	github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.3.2
