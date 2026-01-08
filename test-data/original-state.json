@@ -1,0 +1,845 @@
+{
+    "$typeName": "dnd5e.api.v1alpha1.GetEncounterStateResponse",
+    "encounterId": "enc-_1767847365958404745_ba9ff17a",
+    "state": 2,
+    "party": [
+        {
+            "$typeName": "dnd5e.api.v1alpha1.PartyMember",
+            "playerId": "test-player",
+            "isHost": true,
+            "isReady": true,
+            "isConnected": true,
+            "character": {
+                "$typeName": "dnd5e.api.v1alpha1.Character",
+                "id": "char_ef24b0fc-7ad3-4885-947b-5f9b246a35cc",
+                "name": "STanthony Hopkins",
+                "level": 1,
+                "experiencePoints": 0,
+                "race": 1,
+                "subrace": 0,
+                "class": 5,
+                "background": 0,
+                "alignment": 0,
+                "languages": [],
+                "currentHitPoints": 13,
+                "temporaryHitPoints": 0,
+                "sessionId": "",
+                "inventory": [
+                    {
+                        "$typeName": "dnd5e.api.v1alpha1.InventoryItem",
+                        "itemId": "chain-mail",
+                        "quantity": 1,
+                        "isAttuned": false,
+                        "customName": ""
+                    },
+                    {
+                        "$typeName": "dnd5e.api.v1alpha1.InventoryItem",
+                        "itemId": "warhammer",
+                        "quantity": 1,
+                        "isAttuned": false,
+                        "customName": ""
+                    },
+                    {
+                        "$typeName": "dnd5e.api.v1alpha1.InventoryItem",
+                        "itemId": "warhammer",
+                        "quantity": 1,
+                        "isAttuned": false,
+                        "customName": ""
+                    },
+                    {
+                        "$typeName": "dnd5e.api.v1alpha1.InventoryItem",
+                        "itemId": "handaxe",
+                        "quantity": 1,
+                        "isAttuned": false,
+                        "customName": ""
+                    },
+                    {
+                        "$typeName": "dnd5e.api.v1alpha1.InventoryItem",
+                        "itemId": "dungeoneer-pack",
+                        "quantity": 1,
+                        "isAttuned": false,
+                        "customName": ""
+                    }
+                ],
+                "features": [
+                    {
+                        "$typeName": "dnd5e.api.v1alpha1.CharacterFeature",
+                        "id": 13,
+                        "name": "Second Wind",
+                        "description": "",
+                        "source": "class",
+                        "level": 0,
+                        "actionType": 2,
+                        "featureData": {
+                            "0": 123,
+                            "1": 34,
+                            "2": 114,
+                            "3": 101,
+                            "4": 102,
+                            "5": 34,
+                            "6": 58,
+                            "7": 34,
+                            "8": 100,
+                            "9": 110,
+                            "10": 100,
+                            "11": 53,
+                            "12": 101,
+                            "13": 58,
+                            "14": 102,
+                            "15": 101,
+                            "16": 97,
+                            "17": 116,
+                            "18": 117,
+                            "19": 114,
+                            "20": 101,
+                            "21": 115,
+                            "22": 58,
+                            "23": 115,
+                            "24": 101,
+                            "25": 99,
+                            "26": 111,
+                            "27": 110,
+                            "28": 100,
+                            "29": 95,
+                            "30": 119,
+                            "31": 105,
+                            "32": 110,
+                            "33": 100,
+                            "34": 34,
+                            "35": 44,
+                            "36": 34,
+                            "37": 105,
+                            "38": 100,
+                            "39": 34,
+                            "40": 58,
+                            "41": 34,
+                            "42": 115,
+                            "43": 101,
+                            "44": 99,
+                            "45": 111,
+                            "46": 110,
+                            "47": 100,
+                            "48": 95,
+                            "49": 119,
+                            "50": 105,
+                            "51": 110,
+                            "52": 100,
+                            "53": 34,
+                            "54": 44,
+                            "55": 34,
+                            "56": 110,
+                            "57": 97,
+                            "58": 109,
+                            "59": 101,
+                            "60": 34,
+                            "61": 58,
+                            "62": 34,
+                            "63": 83,
+                            "64": 101,
+                            "65": 99,
+                            "66": 111,
+                            "67": 110,
+                            "68": 100,
+                            "69": 32,
+                            "70": 87,
+                            "71": 105,
+                            "72": 110,
+                            "73": 100,
+                            "74": 34,
+                            "75": 44,
+                            "76": 34,
+                            "77": 108,
+                            "78": 101,
+                            "79": 118,
+                            "80": 101,
+                            "81": 108,
+                            "82": 34,
+                            "83": 58,
+                            "84": 49,
+                            "85": 44,
+                            "86": 34,
+                            "87": 99,
+                            "88": 104,
+                            "89": 97,
+                            "90": 114,
+                            "91": 97,
+                            "92": 99,
+                            "93": 116,
+                            "94": 101,
+                            "95": 114,
+                            "96": 95,
+                            "97": 105,
+                            "98": 100,
+                            "99": 34,
+                            "100": 58,
+                            "101": 34,
+                            "102": 99,
+                            "103": 104,
+                            "104": 97,
+                            "105": 114,
+                            "106": 95,
+                            "107": 101,
+                            "108": 102,
+                            "109": 50,
+                            "110": 52,
+                            "111": 98,
+                            "112": 48,
+                            "113": 102,
+                            "114": 99,
+                            "115": 45,
+                            "116": 55,
+                            "117": 97,
+                            "118": 100,
+                            "119": 51,
+                            "120": 45,
+                            "121": 52,
+                            "122": 56,
+                            "123": 56,
+                            "124": 53,
+                            "125": 45,
+                            "126": 57,
+                            "127": 52,
+                            "128": 55,
+                            "129": 98,
+                            "130": 45,
+                            "131": 53,
+                            "132": 102,
+                            "133": 57,
+                            "134": 98,
+                            "135": 50,
+                            "136": 52,
+                            "137": 54,
+                            "138": 97,
+                            "139": 51,
+                            "140": 53,
+                            "141": 99,
+                            "142": 99,
+                            "143": 34,
+                            "144": 44,
+                            "145": 34,
+                            "146": 117,
+                            "147": 115,
+                            "148": 101,
+                            "149": 115,
+                            "150": 34,
+                            "151": 58,
+                            "152": 49,
+                            "153": 44,
+                            "154": 34,
+                            "155": 109,
+                            "156": 97,
+                            "157": 120,
+                            "158": 95,
+                            "159": 117,
+                            "160": 115,
+                            "161": 101,
+                            "162": 115,
+                            "163": 34,
+                            "164": 58,
+                            "165": 49,
+                            "166": 125
+                        }
+                    }
+                ],
+                "fightingStyles": [],
+                "racialTraits": [],
+                "classResources": [],
+                "activeConditions": [
+                    {
+                        "$typeName": "dnd5e.api.v1alpha1.Condition",
+                        "name": "Fighting Style: Two-Weapon Fighting",
+                        "source": "",
+                        "duration": 0,
+                        "notes": "",
+                        "id": 4,
+                        "conditionData": {
+                            "0": 123,
+                            "1": 34,
+                            "2": 114,
+                            "3": 101,
+                            "4": 102,
+                            "5": 34,
+                            "6": 58,
+                            "7": 34,
+                            "8": 100,
+                            "9": 110,
+                            "10": 100,
+                            "11": 53,
+                            "12": 101,
+                            "13": 58,
+                            "14": 99,
+                            "15": 111,
+                            "16": 110,
+                            "17": 100,
+                            "18": 105,
+                            "19": 116,
+                            "20": 105,
+                            "21": 111,
+                            "22": 110,
+                            "23": 115,
+                            "24": 58,
+                            "25": 102,
+                            "26": 105,
+                            "27": 103,
+                            "28": 104,
+                            "29": 116,
+                            "30": 105,
+                            "31": 110,
+                            "32": 103,
+                            "33": 95,
+                            "34": 115,
+                            "35": 116,
+                            "36": 121,
+                            "37": 108,
+                            "38": 101,
+                            "39": 95,
+                            "40": 116,
+                            "41": 119,
+                            "42": 111,
+                            "43": 95,
+                            "44": 119,
+                            "45": 101,
+                            "46": 97,
+                            "47": 112,
+                            "48": 111,
+                            "49": 110,
+                            "50": 95,
+                            "51": 102,
+                            "52": 105,
+                            "53": 103,
+                            "54": 104,
+                            "55": 116,
+                            "56": 105,
+                            "57": 110,
+                            "58": 103,
+                            "59": 34,
+                            "60": 44,
+                            "61": 34,
+                            "62": 99,
+                            "63": 104,
+                            "64": 97,
+                            "65": 114,
+                            "66": 97,
+                            "67": 99,
+                            "68": 116,
+                            "69": 101,
+                            "70": 114,
+                            "71": 95,
+                            "72": 105,
+                            "73": 100,
+                            "74": 34,
+                            "75": 58,
+                            "76": 34,
+                            "77": 99,
+                            "78": 104,
+                            "79": 97,
+                            "80": 114,
+                            "81": 95,
+                            "82": 101,
+                            "83": 102,
+                            "84": 50,
+                            "85": 52,
+                            "86": 98,
+                            "87": 48,
+                            "88": 102,
+                            "89": 99,
+                            "90": 45,
+                            "91": 55,
+                            "92": 97,
+                            "93": 100,
+                            "94": 51,
+                            "95": 45,
+                            "96": 52,
+                            "97": 56,
+                            "98": 56,
+                            "99": 53,
+                            "100": 45,
+                            "101": 57,
+                            "102": 52,
+                            "103": 55,
+                            "104": 98,
+                            "105": 45,
+                            "106": 53,
+                            "107": 102,
+                            "108": 57,
+                            "109": 98,
+                            "110": 50,
+                            "111": 52,
+                            "112": 54,
+                            "113": 97,
+                            "114": 51,
+                            "115": 53,
+                            "116": 99,
+                            "117": 99,
+                            "118": 34,
+                            "119": 125
+                        }
+                    }
+                ],
+                "abilityScores": {
+                    "$typeName": "dnd5e.api.v1alpha1.AbilityScores",
+                    "strength": 16,
+                    "dexterity": 15,
+                    "constitution": 16,
+                    "intelligence": 13,
+                    "wisdom": 14,
+                    "charisma": 13
+                },
+                "combatStats": {
+                    "$typeName": "dnd5e.api.v1alpha1.CombatStats",
+                    "hitPointMaximum": 13,
+                    "armorClass": 12,
+                    "initiative": 0,
+                    "speed": 0,
+                    "proficiencyBonus": 2,
+                    "hitDice": ""
+                },
+                "proficiencies": {
+                    "$typeName": "dnd5e.api.v1alpha1.Proficiencies",
+                    "skills": [
+                        1,
+                        7
+                    ],
+                    "savingThrows": [
+                        3,
+                        1
+                    ],
+                    "armorCategories": [
+                        1,
+                        2,
+                        3,
+                        4
+                    ],
+                    "weaponCategories": [
+                        1,
+                        2
+                    ],
+                    "specificWeapons": [],
+                    "tools": [],
+                    "armor": [],
+                    "weapons": []
+                },
+                "metadata": {
+                    "$typeName": "dnd5e.api.v1alpha1.CharacterMetadata",
+                    "createdAt": "-62135596800",
+                    "updatedAt": "1767845961",
+                    "playerId": "test-player"
+                }
+            }
+        }
+    ],
+    "joinCode": "QNW49Q",
+    "hostId": "test-player",
+    "monsters": [
+        {
+            "$typeName": "dnd5e.api.v1alpha1.MonsterCombatState",
+            "monsterId": "monster-melee-0",
+            "monsterName": "Skeleton",
+            "currentHitPoints": 13,
+            "maxHitPoints": 13,
+            "monsterType": 1
+        }
+    ],
+    "lastEventId": "01KEDYM6R6R6B8DVEZ7AC9YFFB",
+    "doors": [
+        {
+            "$typeName": "dnd5e.api.v1alpha1.DoorInfo",
+            "connectionId": "conn-_1767847369476859279_d68fcd0f",
+            "physicalHint": "stone door",
+            "isOpen": false,
+            "leadsToRoomId": "",
+            "position": {
+                "$typeName": "api.v1alpha1.Position",
+                "x": 8,
+                "y": -8,
+                "z": 0
+            }
+        },
+        {
+            "$typeName": "dnd5e.api.v1alpha1.DoorInfo",
+            "connectionId": "conn-_1767847369476859730_746501c3",
+            "physicalHint": "dark entrance",
+            "isOpen": false,
+            "leadsToRoomId": "b2a36618-9413-4f99-a723-7cd43d65bc54",
+            "position": {
+                "$typeName": "api.v1alpha1.Position",
+                "x": 8,
+                "y": -23,
+                "z": 15
+            }
+        }
+    ],
+    "dungeonId": "dng-_1767847369476860622_a12ebc8b",
+    "combatState": {
+        "$typeName": "dnd5e.api.v1alpha1.CombatState",
+        "encounterId": "enc-_1767847365958404745_ba9ff17a",
+        "round": 1,
+        "turnOrder": [
+            {
+                "$typeName": "dnd5e.api.v1alpha1.InitiativeEntry",
+                "entityId": "monster-melee-0",
+                "entityType": "monster",
+                "initiative": 0,
+                "modifier": 0,
+                "hasActed": false
+            },
+            {
+                "$typeName": "dnd5e.api.v1alpha1.InitiativeEntry",
+                "entityId": "char_ef24b0fc-7ad3-4885-947b-5f9b246a35cc",
+                "entityType": "character",
+                "initiative": 0,
+                "modifier": 0,
+                "hasActed": false
+            }
+        ],
+        "activeIndex": 1,
+        "combatStarted": true,
+        "combatEnded": false,
+        "currentTurn": {
+            "$typeName": "dnd5e.api.v1alpha1.TurnState",
+            "entityId": "char_ef24b0fc-7ad3-4885-947b-5f9b246a35cc",
+            "movementUsed": 0,
+            "movementMax": 30,
+            "actionUsed": false,
+            "bonusActionUsed": false,
+            "reactionAvailable": true
+        }
+    },
+    "room": {
+        "$typeName": "dnd5e.api.v1alpha1.Room",
+        "id": "enc-_1767847365958404745_ba9ff17a-c80c9c72-82e0-4d91-bfb5-d92d5a8188ad",
+        "type": "dungeon",
+        "width": 18,
+        "height": 16,
+        "gridType": 2,
+        "entities": {
+            "char_ef24b0fc-7ad3-4885-947b-5f9b246a35cc": {
+                "$typeName": "dnd5e.api.v1alpha1.EntityPlacement",
+                "entityId": "char_ef24b0fc-7ad3-4885-947b-5f9b246a35cc",
+                "entityType": 1,
+                "size": 1,
+                "blocksMovement": true,
+                "blocksLineOfSight": false,
+                "visualType": {},
+                "position": {
+                    "$typeName": "api.v1alpha1.Position",
+                    "x": 8,
+                    "y": -10,
+                    "z": 2
+                }
+            },
+            "monster-melee-0": {
+                "$typeName": "dnd5e.api.v1alpha1.EntityPlacement",
+                "entityId": "monster-melee-0",
+                "entityType": 2,
+                "size": 1,
+                "blocksMovement": true,
+                "blocksLineOfSight": false,
+                "visualType": {},
+                "position": {
+                    "$typeName": "api.v1alpha1.Position",
+                    "x": 4,
+                    "y": -14,
+                    "z": 10
+                }
+            }
+        },
+        "walls": [
+            {
+                "$typeName": "api.v1alpha1.Wall",
+                "material": "stone",
+                "thickness": 0,
+                "blocksMovement": true,
+                "blocksLineOfSight": true,
+                "textureId": "",
+                "properties": {},
+                "start": {
+                    "$typeName": "api.v1alpha1.Position",
+                    "x": 0,
+                    "y": 0,
+                    "z": 0
+                },
+                "end": {
+                    "$typeName": "api.v1alpha1.Position",
+                    "x": 7,
+                    "y": -8,
+                    "z": 1
+                }
+            },
+            {
+                "$typeName": "api.v1alpha1.Wall",
+                "material": "stone",
+                "thickness": 0,
+                "blocksMovement": true,
+                "blocksLineOfSight": true,
+                "textureId": "",
+                "properties": {},
+                "start": {
+                    "$typeName": "api.v1alpha1.Position",
+                    "x": 9,
+                    "y": -8,
+                    "z": -1
+                },
+                "end": {
+                    "$typeName": "api.v1alpha1.Position",
+                    "x": 17,
+                    "y": -17,
+                    "z": 0
+                }
+            },
+            {
+                "$typeName": "api.v1alpha1.Wall",
+                "material": "stone",
+                "thickness": 0,
+                "blocksMovement": true,
+                "blocksLineOfSight": true,
+                "textureId": "",
+                "properties": {},
+                "start": {
+                    "$typeName": "api.v1alpha1.Position",
+                    "x": 17,
+                    "y": -17,
+                    "z": 0
+                },
+                "end": {
+                    "$typeName": "api.v1alpha1.Position",
+                    "x": 17,
+                    "y": -32,
+                    "z": 15
+                }
+            },
+            {
+                "$typeName": "api.v1alpha1.Wall",
+                "material": "stone",
+                "thickness": 0,
+                "blocksMovement": true,
+                "blocksLineOfSight": true,
+                "textureId": "",
+                "properties": {},
+                "start": {
+                    "$typeName": "api.v1alpha1.Position",
+                    "x": 17,
+                    "y": -32,
+                    "z": 15
+                },
+                "end": {
+                    "$typeName": "api.v1alpha1.Position",
+                    "x": 7,
+                    "y": -23,
+                    "z": 16
+                }
+            },
+            {
+                "$typeName": "api.v1alpha1.Wall",
+                "material": "stone",
+                "thickness": 0,
+                "blocksMovement": true,
+                "blocksLineOfSight": true,
+                "textureId": "",
+                "properties": {},
+                "start": {
+                    "$typeName": "api.v1alpha1.Position",
+                    "x": 9,
+                    "y": -23,
+                    "z": 14
+                },
+                "end": {
+                    "$typeName": "api.v1alpha1.Position",
+                    "x": 0,
+                    "y": -15,
+                    "z": 15
+                }
+            },
+            {
+                "$typeName": "api.v1alpha1.Wall",
+                "material": "stone",
+                "thickness": 0,
+                "blocksMovement": true,
+                "blocksLineOfSight": true,
+                "textureId": "",
+                "properties": {},
+                "start": {
+                    "$typeName": "api.v1alpha1.Position",
+                    "x": 0,
+                    "y": -15,
+                    "z": 15
+                },
+                "end": {
+                    "$typeName": "api.v1alpha1.Position",
+                    "x": 0,
+                    "y": 0,
+                    "z": 0
+                }
+            },
+            {
+                "$typeName": "api.v1alpha1.Wall",
+                "material": "stone",
+                "thickness": 0,
+                "blocksMovement": true,
+                "blocksLineOfSight": true,
+                "textureId": "",
+                "properties": {},
+                "start": {
+                    "$typeName": "api.v1alpha1.Position",
+                    "x": 5,
+                    "y": -11,
+                    "z": 6
+                },
+                "end": {
+                    "$typeName": "api.v1alpha1.Position",
+                    "x": 8,
+                    "y": -14,
+                    "z": 6
+                }
+            },
+            {
+                "$typeName": "api.v1alpha1.Wall",
+                "material": "stone",
+                "thickness": 0,
+                "blocksMovement": true,
+                "blocksLineOfSight": true,
+                "textureId": "",
+                "properties": {},
+                "start": {
+                    "$typeName": "api.v1alpha1.Position",
+                    "x": 7,
+                    "y": -12,
+                    "z": 5
+                },
+                "end": {
+                    "$typeName": "api.v1alpha1.Position",
+                    "x": 7,
+                    "y": -15,
+                    "z": 8
+                }
+            },
+            {
+                "$typeName": "api.v1alpha1.Wall",
+                "material": "stone",
+                "thickness": 0,
+                "blocksMovement": true,
+                "blocksLineOfSight": true,
+                "textureId": "",
+                "properties": {},
+                "start": {
+                    "$typeName": "api.v1alpha1.Position",
+                    "x": 9,
+                    "y": -15,
+                    "z": 6
+                },
+                "end": {
+                    "$typeName": "api.v1alpha1.Position",
+                    "x": 12,
+                    "y": -18,
+                    "z": 6
+                }
+            },
+            {
+                "$typeName": "api.v1alpha1.Wall",
+                "material": "stone",
+                "thickness": 0,
+                "blocksMovement": true,
+                "blocksLineOfSight": true,
+                "textureId": "",
+                "properties": {},
+                "start": {
+                    "$typeName": "api.v1alpha1.Position",
+                    "x": 10,
+                    "y": -15,
+                    "z": 5
+                },
+                "end": {
+                    "$typeName": "api.v1alpha1.Position",
+                    "x": 10,
+                    "y": -18,
+                    "z": 8
+                }
+            },
+            {
+                "$typeName": "api.v1alpha1.Wall",
+                "material": "stone",
+                "thickness": 0,
+                "blocksMovement": true,
+                "blocksLineOfSight": true,
+                "textureId": "",
+                "properties": {},
+                "start": {
+                    "$typeName": "api.v1alpha1.Position",
+                    "x": 5,
+                    "y": -14,
+                    "z": 9
+                },
+                "end": {
+                    "$typeName": "api.v1alpha1.Position",
+                    "x": 8,
+                    "y": -17,
+                    "z": 9
+                }
+            },
+            {
+                "$typeName": "api.v1alpha1.Wall",
+                "material": "stone",
+                "thickness": 0,
+                "blocksMovement": true,
+                "blocksLineOfSight": true,
+                "textureId": "",
+                "properties": {},
+                "start": {
+                    "$typeName": "api.v1alpha1.Position",
+                    "x": 7,
+                    "y": -14,
+                    "z": 7
+                },
+                "end": {
+                    "$typeName": "api.v1alpha1.Position",
+                    "x": 7,
+                    "y": -17,
+                    "z": 10
+                }
+            },
+            {
+                "$typeName": "api.v1alpha1.Wall",
+                "material": "stone",
+                "thickness": 0,
+                "blocksMovement": true,
+                "blocksLineOfSight": true,
+                "textureId": "",
+                "properties": {},
+                "start": {
+                    "$typeName": "api.v1alpha1.Position",
+                    "x": 9,
+                    "y": -18,
+                    "z": 9
+                },
+                "end": {
+                    "$typeName": "api.v1alpha1.Position",
+                    "x": 12,
+                    "y": -21,
+                    "z": 9
+                }
+            },
+            {
+                "$typeName": "api.v1alpha1.Wall",
+                "material": "stone",
+                "thickness": 0,
+                "blocksMovement": true,
+                "blocksLineOfSight": true,
+                "textureId": "",
+                "properties": {},
+                "start": {
+                    "$typeName": "api.v1alpha1.Position",
+                    "x": 10,
+                    "y": -17,
+                    "z": 7
+                },
+                "end": {
+                    "$typeName": "api.v1alpha1.Position",
+                    "x": 10,
+                    "y": -20,
+                    "z": 10
+                }
+            }
+        ],
+        "hexOrientation": true
+    }
+}

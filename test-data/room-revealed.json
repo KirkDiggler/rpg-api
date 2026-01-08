@@ -1,0 +1,404 @@
+{
+    "$typeName": "dnd5e.api.v1alpha1.RoomRevealedEvent",
+    "dungeonId": "dng-_1767847369476860622_a12ebc8b",
+    "connectionId": "conn-_1767847369476859730_746501c3",
+    "doors": [
+        {
+            "$typeName": "dnd5e.api.v1alpha1.DoorInfo",
+            "connectionId": "conn-_1767847369476857456_09af98e1",
+            "physicalHint": "stone door",
+            "isOpen": false,
+            "leadsToRoomId": "e06bf87b-424a-4230-af2f-d69a426bfe8e",
+            "position": {
+                "$typeName": "api.v1alpha1.Position",
+                "x": 8,
+                "y": -38,
+                "z": 30
+            }
+        },
+        {
+            "$typeName": "dnd5e.api.v1alpha1.DoorInfo",
+            "connectionId": "conn-_1767847369476859730_746501c3",
+            "physicalHint": "dark entrance",
+            "isOpen": false,
+            "leadsToRoomId": "c80c9c72-82e0-4d91-bfb5-d92d5a8188ad",
+            "position": {
+                "$typeName": "api.v1alpha1.Position",
+                "x": 8,
+                "y": -38,
+                "z": 30
+            }
+        }
+    ],
+    "room": {
+        "$typeName": "dnd5e.api.v1alpha1.Room",
+        "id": "enc-_1767847365958404745_ba9ff17a-b2a36618-9413-4f99-a723-7cd43d65bc54",
+        "type": "dungeon",
+        "width": 18,
+        "height": 16,
+        "gridType": 2,
+        "entities": {
+            "monster-melee-0": {
+                "$typeName": "dnd5e.api.v1alpha1.EntityPlacement",
+                "entityId": "monster-melee-0",
+                "entityType": 2,
+                "size": 1,
+                "blocksMovement": true,
+                "blocksLineOfSight": false,
+                "visualType": {},
+                "position": {
+                    "$typeName": "api.v1alpha1.Position",
+                    "x": 0,
+                    "y": -15,
+                    "z": 15
+                }
+            }
+        },
+        "walls": [
+            {
+                "$typeName": "api.v1alpha1.Wall",
+                "material": "indestructible",
+                "thickness": 0,
+                "blocksMovement": true,
+                "blocksLineOfSight": true,
+                "textureId": "",
+                "properties": {},
+                "start": {
+                    "$typeName": "api.v1alpha1.Position",
+                    "x": 0,
+                    "y": -15,
+                    "z": 15
+                },
+                "end": {
+                    "$typeName": "api.v1alpha1.Position",
+                    "x": 7,
+                    "y": -23,
+                    "z": 16
+                }
+            },
+            {
+                "$typeName": "api.v1alpha1.Wall",
+                "material": "indestructible",
+                "thickness": 0,
+                "blocksMovement": true,
+                "blocksLineOfSight": true,
+                "textureId": "",
+                "properties": {},
+                "start": {
+                    "$typeName": "api.v1alpha1.Position",
+                    "x": 9,
+                    "y": -23,
+                    "z": 14
+                },
+                "end": {
+                    "$typeName": "api.v1alpha1.Position",
+                    "x": 17,
+                    "y": -32,
+                    "z": 15
+                }
+            },
+            {
+                "$typeName": "api.v1alpha1.Wall",
+                "material": "indestructible",
+                "thickness": 0,
+                "blocksMovement": true,
+                "blocksLineOfSight": true,
+                "textureId": "",
+                "properties": {},
+                "start": {
+                    "$typeName": "api.v1alpha1.Position",
+                    "x": 17,
+                    "y": -32,
+                    "z": 15
+                },
+                "end": {
+                    "$typeName": "api.v1alpha1.Position",
+                    "x": 17,
+                    "y": -47,
+                    "z": 30
+                }
+            },
+            {
+                "$typeName": "api.v1alpha1.Wall",
+                "material": "indestructible",
+                "thickness": 0,
+                "blocksMovement": true,
+                "blocksLineOfSight": true,
+                "textureId": "",
+                "properties": {},
+                "start": {
+                    "$typeName": "api.v1alpha1.Position",
+                    "x": 17,
+                    "y": -47,
+                    "z": 30
+                },
+                "end": {
+                    "$typeName": "api.v1alpha1.Position",
+                    "x": 7,
+                    "y": -38,
+                    "z": 31
+                }
+            },
+            {
+                "$typeName": "api.v1alpha1.Wall",
+                "material": "indestructible",
+                "thickness": 0,
+                "blocksMovement": true,
+                "blocksLineOfSight": true,
+                "textureId": "",
+                "properties": {},
+                "start": {
+                    "$typeName": "api.v1alpha1.Position",
+                    "x": 9,
+                    "y": -38,
+                    "z": 29
+                },
+                "end": {
+                    "$typeName": "api.v1alpha1.Position",
+                    "x": 0,
+                    "y": -30,
+                    "z": 30
+                }
+            },
+            {
+                "$typeName": "api.v1alpha1.Wall",
+                "material": "indestructible",
+                "thickness": 0,
+                "blocksMovement": true,
+                "blocksLineOfSight": true,
+                "textureId": "",
+                "properties": {},
+                "start": {
+                    "$typeName": "api.v1alpha1.Position",
+                    "x": 0,
+                    "y": -30,
+                    "z": 30
+                },
+                "end": {
+                    "$typeName": "api.v1alpha1.Position",
+                    "x": 0,
+                    "y": -15,
+                    "z": 15
+                }
+            },
+            {
+                "$typeName": "api.v1alpha1.Wall",
+                "material": "indestructible",
+                "thickness": 0,
+                "blocksMovement": true,
+                "blocksLineOfSight": true,
+                "textureId": "",
+                "properties": {},
+                "start": {
+                    "$typeName": "api.v1alpha1.Position",
+                    "x": 5,
+                    "y": -26,
+                    "z": 21
+                },
+                "end": {
+                    "$typeName": "api.v1alpha1.Position",
+                    "x": 8,
+                    "y": -29,
+                    "z": 21
+                }
+            },
+            {
+                "$typeName": "api.v1alpha1.Wall",
+                "material": "indestructible",
+                "thickness": 0,
+                "blocksMovement": true,
+                "blocksLineOfSight": true,
+                "textureId": "",
+                "properties": {},
+                "start": {
+                    "$typeName": "api.v1alpha1.Position",
+                    "x": 7,
+                    "y": -27,
+                    "z": 20
+                },
+                "end": {
+                    "$typeName": "api.v1alpha1.Position",
+                    "x": 7,
+                    "y": -30,
+                    "z": 23
+                }
+            },
+            {
+                "$typeName": "api.v1alpha1.Wall",
+                "material": "indestructible",
+                "thickness": 0,
+                "blocksMovement": true,
+                "blocksLineOfSight": true,
+                "textureId": "",
+                "properties": {},
+                "start": {
+                    "$typeName": "api.v1alpha1.Position",
+                    "x": 9,
+                    "y": -30,
+                    "z": 21
+                },
+                "end": {
+                    "$typeName": "api.v1alpha1.Position",
+                    "x": 12,
+                    "y": -33,
+                    "z": 21
+                }
+            },
+            {
+                "$typeName": "api.v1alpha1.Wall",
+                "material": "indestructible",
+                "thickness": 0,
+                "blocksMovement": true,
+                "blocksLineOfSight": true,
+                "textureId": "",
+                "properties": {},
+                "start": {
+                    "$typeName": "api.v1alpha1.Position",
+                    "x": 10,
+                    "y": -30,
+                    "z": 20
+                },
+                "end": {
+                    "$typeName": "api.v1alpha1.Position",
+                    "x": 10,
+                    "y": -33,
+                    "z": 23
+                }
+            },
+            {
+                "$typeName": "api.v1alpha1.Wall",
+                "material": "indestructible",
+                "thickness": 0,
+                "blocksMovement": true,
+                "blocksLineOfSight": true,
+                "textureId": "",
+                "properties": {},
+                "start": {
+                    "$typeName": "api.v1alpha1.Position",
+                    "x": 5,
+                    "y": -29,
+                    "z": 24
+                },
+                "end": {
+                    "$typeName": "api.v1alpha1.Position",
+                    "x": 8,
+                    "y": -32,
+                    "z": 24
+                }
+            },
+            {
+                "$typeName": "api.v1alpha1.Wall",
+                "material": "indestructible",
+                "thickness": 0,
+                "blocksMovement": true,
+                "blocksLineOfSight": true,
+                "textureId": "",
+                "properties": {},
+                "start": {
+                    "$typeName": "api.v1alpha1.Position",
+                    "x": 7,
+                    "y": -29,
+                    "z": 22
+                },
+                "end": {
+                    "$typeName": "api.v1alpha1.Position",
+                    "x": 7,
+                    "y": -32,
+                    "z": 25
+                }
+            },
+            {
+                "$typeName": "api.v1alpha1.Wall",
+                "material": "indestructible",
+                "thickness": 0,
+                "blocksMovement": true,
+                "blocksLineOfSight": true,
+                "textureId": "",
+                "properties": {},
+                "start": {
+                    "$typeName": "api.v1alpha1.Position",
+                    "x": 9,
+                    "y": -33,
+                    "z": 24
+                },
+                "end": {
+                    "$typeName": "api.v1alpha1.Position",
+                    "x": 12,
+                    "y": -36,
+                    "z": 24
+                }
+            },
+            {
+                "$typeName": "api.v1alpha1.Wall",
+                "material": "indestructible",
+                "thickness": 0,
+                "blocksMovement": true,
+                "blocksLineOfSight": true,
+                "textureId": "",
+                "properties": {},
+                "start": {
+                    "$typeName": "api.v1alpha1.Position",
+                    "x": 10,
+                    "y": -32,
+                    "z": 22
+                },
+                "end": {
+                    "$typeName": "api.v1alpha1.Position",
+                    "x": 10,
+                    "y": -35,
+                    "z": 25
+                }
+            }
+        ],
+        "hexOrientation": true,
+        "origin": {
+            "$typeName": "api.v1alpha1.Position",
+            "x": 0,
+            "y": -15,
+            "z": 15
+        }
+    },
+    "combatState": {
+        "$typeName": "dnd5e.api.v1alpha1.CombatState",
+        "encounterId": "enc-_1767847365958404745_ba9ff17a",
+        "round": 3,
+        "turnOrder": [
+            {
+                "$typeName": "dnd5e.api.v1alpha1.InitiativeEntry",
+                "entityId": "monster-melee-0",
+                "entityType": "monster",
+                "initiative": 18,
+                "modifier": 0,
+                "hasActed": false
+            },
+            {
+                "$typeName": "dnd5e.api.v1alpha1.InitiativeEntry",
+                "entityId": "char_ef24b0fc-7ad3-4885-947b-5f9b246a35cc",
+                "entityType": "character",
+                "initiative": 0,
+                "modifier": 0,
+                "hasActed": false
+            },
+            {
+                "$typeName": "dnd5e.api.v1alpha1.InitiativeEntry",
+                "entityId": "monster-melee-0",
+                "entityType": "monster",
+                "initiative": 18,
+                "modifier": 0,
+                "hasActed": false
+            }
+        ],
+        "activeIndex": 1,
+        "combatStarted": true,
+        "combatEnded": false,
+        "currentTurn": {
+            "$typeName": "dnd5e.api.v1alpha1.TurnState",
+            "entityId": "char_ef24b0fc-7ad3-4885-947b-5f9b246a35cc",
+            "movementUsed": 30,
+            "movementMax": 30,
+            "actionUsed": false,
+            "bonusActionUsed": false,
+            "reactionAvailable": true
+        }
+    }
+}

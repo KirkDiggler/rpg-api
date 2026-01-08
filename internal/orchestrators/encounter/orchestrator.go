@@ -454,8 +454,9 @@ func (o *Orchestrator) ResolveAttack(ctx context.Context, input *ResolveAttackIn
 		}
 	}
 
-	// 16b. Load dungeon to get walls for the current room
+	// 16b. Load dungeon to get walls and room origin for the current room
 	var dungeonWalls []dungeon.WallSegment
+	var roomOrigin *spatial.CubeCoordinate
 	if o.dungeonRepo != nil {
 		dungeonOutput, dungeonErr := o.dungeonRepo.GetByEncounterID(ctx, &dungeonrepo.GetByEncounterIDInput{
 			EncounterID: input.EncounterID,
@@ -466,8 +467,11 @@ func (o *Orchestrator) ResolveAttack(ctx context.Context, input *ResolveAttackIn
 			if currentRoomID == "" {
 				currentRoomID = dungeonEntity.StartRoomID
 			}
-			if currentRoom := dungeonEntity.GetRoom(currentRoomID); currentRoom != nil {
-				dungeonWalls = currentRoom.Walls
+			// Get walls in absolute coordinates for event
+			dungeonWalls = dungeonEntity.GetAbsoluteWalls(currentRoomID)
+			// Get room origin for coordinate system
+			if origin, ok := dungeonEntity.GetRoomPosition(currentRoomID); ok {
+				roomOrigin = &origin
 			}
 		}
 	}
@@ -480,6 +484,7 @@ func (o *Orchestrator) ResolveAttack(ctx context.Context, input *ResolveAttackIn
 		TargetHP:      newHP,
 		TargetDead:    newHP <= 0,
 		Room:          roomData,
+		RoomOrigin:    roomOrigin,
 		Walls:         dungeonWalls,
 		GrantedAction: grantedActionInfo,
 	})
@@ -576,7 +581,11 @@ func convertDoorsToEntityDoors(doors []DoorInfo) []*entities.DoorInfo {
 }
 
 // convertMonsterTurnsToEntityEvents converts service MonsterTurnResult to entity events
-func convertMonsterTurnsToEntityEvents(turns []*MonsterTurnResult, roomData *spatial.RoomData) []*entities.MonsterTurnCompletedEvent {
+func convertMonsterTurnsToEntityEvents(
+	turns []*MonsterTurnResult,
+	roomData *spatial.RoomData,
+	roomOrigin *spatial.CubeCoordinate,
+) []*entities.MonsterTurnCompletedEvent {
 	if len(turns) == 0 {
 		return nil
 	}
@@ -597,6 +606,7 @@ func convertMonsterTurnsToEntityEvents(turns []*MonsterTurnResult, roomData *spa
 			Actions:           mt.Actions,
 			Movement:          movement,
 			Room:              roomData,
+			RoomOrigin:        roomOrigin,
 			UpdatedCharacters: mt.UpdatedCharacters,
 		}
 	}
@@ -888,6 +898,13 @@ func (o *Orchestrator) convertToDungeonEntity(
 		// Encode direction and physical hint as "direction|hint"
 		// Direction is used for positioning, hint is for player display
 		connType := string(conn.Direction) + "|" + conn.PhysicalHint
+
+		// Get door positions from room shapes
+		fromRoom := rooms[conn.FromRoom]
+		toRoom := rooms[conn.ToRoom]
+		fromPos := getDoorCubePosition(fromRoom, string(conn.Direction))
+		toPos := getDoorCubePosition(toRoom, oppositeDirection(string(conn.Direction)))
+
 		connections[i] = &environments.ConnectionEdge{
 			ID:            o.connectionIDGen.Generate(),
 			FromRoomID:    conn.FromRoom,
@@ -895,6 +912,8 @@ func (o *Orchestrator) convertToDungeonEntity(
 			Bidirectional: true,
 			Required:      conn.IsMainPath, // Main path connections are required
 			Type:          connType,
+			FromPosition:  fromPos,
+			ToPosition:    toPos,
 		}
 	}
 
@@ -922,6 +941,68 @@ func (o *Orchestrator) findRoom(genDungeon *dungeon.Dungeon, roomID string) *dun
 		}
 	}
 	return nil
+}
+
+// getDoorCubePosition finds the door position for a direction in a room's shape.
+// Returns the position in cube coordinates from ConnectionPoints if found, otherwise calculates from room dimensions.
+func getDoorCubePosition(room *dungeon.Room, direction string) spatial.CubeCoordinate {
+	if room == nil || room.Shape == nil {
+		return spatial.CubeCoordinate{}
+	}
+
+	// Look for matching connection point
+	for _, cp := range room.Shape.ConnectionPoints {
+		if cp.Direction == direction || cp.Name == direction {
+			// ConnectionPoints are already in cube coordinates
+			return spatial.CubeCoordinate{
+				X: cp.Position.X,
+				Y: cp.Position.Y,
+				Z: cp.Position.Z,
+			}
+		}
+	}
+
+	// Fallback: calculate from room dimensions
+	// Width/Height are in offset terms (columns/rows)
+	// Convert to cube: X = col, Z = row, Y = -X - Z
+	width := room.Shape.Width
+	height := room.Shape.Height
+	midX := width / 2
+	midZ := height / 2
+
+	switch direction {
+	case "north":
+		x, z := midX, height-1
+		return spatial.CubeCoordinate{X: x, Y: -x - z, Z: z}
+	case "south":
+		x, z := midX, 0
+		return spatial.CubeCoordinate{X: x, Y: -x - z, Z: z}
+	case "east":
+		x, z := width-1, midZ
+		return spatial.CubeCoordinate{X: x, Y: -x - z, Z: z}
+	case "west":
+		x, z := 0, midZ
+		return spatial.CubeCoordinate{X: x, Y: -x - z, Z: z}
+	default:
+		x, z := midX, midZ
+		return spatial.CubeCoordinate{X: x, Y: -x - z, Z: z}
+	}
+}
+
+// oppositeDirection returns the opposite cardinal direction.
+func oppositeDirection(dir string) string {
+	switch dir {
+	case "north":
+		return "south"
+	case "south":
+		return "north"
+	case "east":
+		return "west"
+	case "west":
+		return "east"
+	default:
+		return dir
+	}
 }
 
 // convertToRoomData converts a dungeon.Room to spatial.RoomData with room-local coordinates.
@@ -1218,10 +1299,38 @@ func parseConnectionType(connType string) (direction, physicalHint string) {
 	return "", connType
 }
 
+// getOppositeDirection returns the opposite cardinal direction
+func getOppositeDirection(dir string) string {
+	switch strings.ToLower(dir) {
+	case "north":
+		return "south"
+	case "south":
+		return "north"
+	case "east":
+		return "west"
+	case "west":
+		return "east"
+	case "northeast":
+		return "southwest"
+	case "southwest":
+		return "northeast"
+	case "northwest":
+		return "southeast"
+	case "southeast":
+		return "northwest"
+	default:
+		return dir
+	}
+}
+
 // getDoorInfoForRoom extracts door information for a room using stored entity connections
+// Door positions are returned in dungeon-absolute coordinates
 func (o *Orchestrator) getDoorInfoForRoom(dungeonEntity *entities.Dungeon, roomID string) []DoorInfo {
 	// Get room for position lookup
 	room := dungeonEntity.GetRoom(roomID)
+
+	// Get room origin for offsetting local positions to absolute
+	roomOrigin, hasOrigin := dungeonEntity.GetRoomPosition(roomID)
 
 	// Pre-allocate doors slice based on connection count
 	doors := make([]DoorInfo, 0, len(dungeonEntity.Connections))
@@ -1232,20 +1341,42 @@ func (o *Orchestrator) getDoorInfoForRoom(dungeonEntity *entities.Dungeon, roomI
 		}
 
 		targetRoomID := conn.ToRoomID
-		if conn.ToRoomID == roomID {
+		isFromRoom := conn.FromRoomID == roomID
+		if !isFromRoom {
 			targetRoomID = conn.FromRoomID
 		}
 
+		// Skip connections with empty target room (defensive - shouldn't happen in valid dungeons)
+		if targetRoomID == "" {
+			continue
+		}
+
 		// Parse direction and physical hint from Type field
+		// Direction in Type is from the FROM room's perspective
 		direction, physicalHint := parseConnectionType(conn.Type)
 
-		// Try to get door position from shape's ConnectionPoints first
+		// If current room is the TO room, we need the opposite direction
+		// to find the door position in this room
+		if !isFromRoom {
+			direction = getOppositeDirection(direction)
+		}
+
+		// Try to get door position from shape's ConnectionPoints first (local coordinates)
 		position := getDoorPositionFromShape(room, direction)
 
 		// Fall back to calculated position if no ConnectionPoint found
 		// Use conn.Type for the hint since it contains direction info like "north door"
 		if position == nil && room != nil && room.Shape != nil {
 			position = calculateDoorPosition(conn.Type, room.Shape.Width, room.Shape.Height)
+		}
+
+		// Offset door position to absolute coordinates
+		if position != nil && hasOrigin {
+			position = &Position{
+				X: position.X + float64(roomOrigin.X),
+				Y: position.Y + float64(roomOrigin.Y),
+				Z: position.Z + float64(roomOrigin.Z),
+			}
 		}
 
 		doors = append(doors, DoorInfo{
@@ -1376,7 +1507,8 @@ func (o *Orchestrator) MoveCharacter(ctx context.Context, input *MoveCharacterIn
 
 	// Load dungeon to get walls and room origin for the current room
 	var walls []WallInfo
-	var dungeonWalls []dungeon.WallSegment // Raw walls for event
+	var localWalls []dungeon.WallSegment  // Local walls for collision checking
+	var dungeonWalls []dungeon.WallSegment // Absolute walls for event
 	var roomOrigin spatial.CubeCoordinate  // For converting absolute coords to room-local for wall checks
 	if o.dungeonRepo != nil {
 		dungeonOutput, dungeonErr := o.dungeonRepo.GetByEncounterID(ctx, &dungeonrepo.GetByEncounterIDInput{
@@ -1390,7 +1522,8 @@ func (o *Orchestrator) MoveCharacter(ctx context.Context, input *MoveCharacterIn
 			}
 			if currentRoom := dungeonEntity.GetRoom(currentRoomID); currentRoom != nil {
 				walls = o.convertToWallInfo(currentRoom)
-				dungeonWalls = currentRoom.Walls
+				localWalls = currentRoom.Walls
+				dungeonWalls = dungeonEntity.GetAbsoluteWalls(currentRoomID)
 			}
 			// Get room origin for coordinate conversion; only use walls if found
 			if origin, ok := dungeonEntity.GetRoomPosition(currentRoomID); ok {
@@ -1398,6 +1531,7 @@ func (o *Orchestrator) MoveCharacter(ctx context.Context, input *MoveCharacterIn
 			} else {
 				// If we can't determine the room position, avoid using potentially incorrect wall data
 				walls = nil
+				localWalls = nil
 				dungeonWalls = nil
 			}
 		}
@@ -1498,8 +1632,8 @@ func (o *Orchestrator) MoveCharacter(ctx context.Context, input *MoveCharacterIn
 	}
 
 	// 5c. Check if path crosses any walls
-	// Walls are defined in room-local coords, so convert absolute positions to room-local
-	if len(dungeonWalls) > 0 && exists {
+	// Local walls are in room-local coords, so convert absolute positions to room-local
+	if len(localWalls) > 0 && exists {
 		wallValidator := dungeontoolkit.NewWallValidator()
 		// Convert absolute positions to room-local for wall check
 		localOld := spatial.CubeCoordinate{
@@ -1515,7 +1649,7 @@ func (o *Orchestrator) MoveCharacter(ctx context.Context, input *MoveCharacterIn
 		startPos := dungeon.Position{X: localOld.X, Y: localOld.Y, Z: localOld.Z}
 		endPos := dungeon.Position{X: localTarget.X, Y: localTarget.Y, Z: localTarget.Z}
 
-		if wallValidator.PathCrossesWall(startPos, endPos, dungeonWalls) {
+		if wallValidator.PathCrossesWall(startPos, endPos, localWalls) {
 			return &MoveCharacterOutput{
 				Success: false,
 				FinalPosition: &Position{
@@ -1604,6 +1738,7 @@ func (o *Orchestrator) MoveCharacter(ctx context.Context, input *MoveCharacterIn
 		MovementRemaining: movementRemaining,
 		StopReason:        "completed",
 		UpdatedRoom:       roomData,
+		RoomOrigin:        &roomOrigin,
 		Walls:             dungeonWalls,
 	})
 
@@ -1798,8 +1933,9 @@ func (o *Orchestrator) EndTurn(ctx context.Context, input *EndTurnInput) (*EndTu
 		}
 	}
 
-	// 11b. Load dungeon to get walls for the current room
-	var dungeonWalls []dungeon.WallSegment
+	// 11b. Load dungeon to get walls and room origin for the current room
+	var dungeonWalls []dungeon.WallSegment // Absolute walls for events
+	var roomOrigin *spatial.CubeCoordinate
 	if o.dungeonRepo != nil {
 		dungeonOutput, dungeonErr := o.dungeonRepo.GetByEncounterID(ctx, &dungeonrepo.GetByEncounterIDInput{
 			EncounterID: input.EncounterID,
@@ -1810,8 +1946,10 @@ func (o *Orchestrator) EndTurn(ctx context.Context, input *EndTurnInput) (*EndTu
 			if currentRoomID == "" {
 				currentRoomID = dungeonEntity.StartRoomID
 			}
-			if currentRoom := dungeonEntity.GetRoom(currentRoomID); currentRoom != nil {
-				dungeonWalls = currentRoom.Walls
+			dungeonWalls = dungeonEntity.GetAbsoluteWalls(currentRoomID)
+			// Get room origin for coordinate system
+			if origin, ok := dungeonEntity.GetRoomPosition(currentRoomID); ok {
+				roomOrigin = &origin
 			}
 		}
 	}
@@ -1825,6 +1963,7 @@ func (o *Orchestrator) EndTurn(ctx context.Context, input *EndTurnInput) (*EndTu
 		NewRound:         newRound,
 		CombatState:      combatState,
 		Room:             turnEndedRoomData,
+		RoomOrigin:       roomOrigin,
 		Walls:            dungeonWalls,
 	})
 
@@ -1836,6 +1975,7 @@ func (o *Orchestrator) EndTurn(ctx context.Context, input *EndTurnInput) (*EndTu
 			Actions:           mt.Actions,
 			Movement:          mt.Movement,
 			Room:              turnEndedRoomData,
+			RoomOrigin:        roomOrigin,
 			Walls:             dungeonWalls,
 			UpdatedCharacters: mt.UpdatedCharacters,
 		})
@@ -2537,6 +2677,11 @@ func (o *Orchestrator) OpenDoor(
 		return nil, fmt.Errorf("connection not found: %s", input.ConnectionID)
 	}
 
+	// 3a. Validate connection has valid room IDs (defensive - generator bug)
+	if connection.FromRoomID == "" || connection.ToRoomID == "" {
+		return nil, fmt.Errorf("invalid connection: missing room ID (from=%q, to=%q)", connection.FromRoomID, connection.ToRoomID)
+	}
+
 	// 4. Check if door is already open
 	if dng.IsDoorOpen(input.ConnectionID) {
 		return nil, fmt.Errorf("door is already open")
@@ -2869,7 +3014,7 @@ func (o *Orchestrator) OpenDoor(
 		ConnectionID: input.ConnectionID,
 		RevealedRoom: revealedSpatialRoom,
 		RoomOrigin:   &revealedRoomOrigin,
-		Walls:        revealedRoom.Walls,
+		Walls:        dng.GetAbsoluteWalls(revealedRoom.ID),
 		NewDoors:     convertDoorsToEntityDoors(newDoors),
 		Monsters:     monsterStates,
 		CombatState:  combatState,
@@ -3400,12 +3545,13 @@ func (o *Orchestrator) StartCombat(
 	o.publishEvent(ctx, input.EncounterID, entities.EventTypeCombatStarted, &entities.CombatStartedEvent{
 		CombatState:  combatState,
 		Room:         roomData,
-		Walls:        startRoom.Walls,
+		RoomOrigin:   &roomOrigin,
+		Walls:        dungeonEntity.GetAbsoluteWalls(startRoom.ID),
 		Party:        party,
 		Monsters:     monsterStates,
 		Doors:        convertDoorsToEntityDoors(doors),
 		DungeonID:    dungeonEntity.ID,
-		MonsterTurns: convertMonsterTurnsToEntityEvents(monsterTurns, roomData),
+		MonsterTurns: convertMonsterTurnsToEntityEvents(monsterTurns, roomData, &roomOrigin),
 	})
 
 	// 20. Publish MonsterTurnCompleted events if monsters went first
@@ -3416,7 +3562,8 @@ func (o *Orchestrator) StartCombat(
 			Actions:           mt.Actions,
 			Movement:          mt.Movement,
 			Room:              roomData,
-			Walls:             startRoom.Walls,
+			RoomOrigin:        &roomOrigin,
+			Walls:             dungeonEntity.GetAbsoluteWalls(startRoom.ID),
 			UpdatedCharacters: mt.UpdatedCharacters,
 		})
 	}

@@ -118,6 +118,7 @@ type MonsterState struct {
 type CombatStartedEvent struct {
 	CombatState  *CombatState                 `json:"combat_state"`            // Full combat state including initiative order
 	Room         *spatial.RoomData            `json:"room"`                    // Room with entity positions
+	RoomOrigin   *spatial.CubeCoordinate      `json:"room_origin,omitempty"`   // Room origin in dungeon-absolute coordinates
 	Walls        []dungeon.WallSegment        `json:"walls,omitempty"`         // Walls in the room
 	Party        []*Player                    `json:"party"`                   // Party members at combat start
 	Monsters     []*MonsterState              `json:"monsters"`                // Monster state with types for UI textures
@@ -149,13 +150,14 @@ type CombatResumedEvent struct {
 
 // MovementCompletedEvent is emitted when an entity completes movement
 type MovementCompletedEvent struct {
-	EntityID          string                `json:"entity_id"`
-	EntityType        string                `json:"entity_type"` // "character" or "monster"
-	FinalPosition     *Position             `json:"final_position"`
-	MovementRemaining int32                 `json:"movement_remaining"`
-	StopReason        string                `json:"stop_reason"` // "completed", "position_occupied", etc.
-	UpdatedRoom       *spatial.RoomData     `json:"updated_room,omitempty"`
-	Walls             []dungeon.WallSegment `json:"walls,omitempty"`
+	EntityID          string                  `json:"entity_id"`
+	EntityType        string                  `json:"entity_type"` // "character" or "monster"
+	FinalPosition     *Position               `json:"final_position"`
+	MovementRemaining int32                   `json:"movement_remaining"`
+	StopReason        string                  `json:"stop_reason"` // "completed", "position_occupied", etc.
+	UpdatedRoom       *spatial.RoomData       `json:"updated_room,omitempty"`
+	RoomOrigin        *spatial.CubeCoordinate `json:"room_origin,omitempty"` // Room origin in dungeon-absolute coordinates
+	Walls             []dungeon.WallSegment   `json:"walls,omitempty"`
 }
 
 // AttackResult contains the full details of an attack resolution
@@ -217,14 +219,15 @@ type RerollEvent struct {
 
 // AttackResolvedEvent is emitted when an attack is resolved
 type AttackResolvedEvent struct {
-	AttackerID    string                `json:"attacker_id"`
-	TargetID      string                `json:"target_id"`
-	Result        *AttackResult         `json:"result"`
-	TargetHP      int                   `json:"target_hp"`                // HP after attack
-	TargetDead    bool                  `json:"target_dead"`              // Whether target was killed
-	Room          *spatial.RoomData     `json:"room,omitempty"`           // Updated room with entity positions
-	Walls         []dungeon.WallSegment `json:"walls,omitempty"`          // Walls in the room
-	GrantedAction *GrantedActionInfo    `json:"granted_action,omitempty"` // Action granted from this attack
+	AttackerID    string                  `json:"attacker_id"`
+	TargetID      string                  `json:"target_id"`
+	Result        *AttackResult           `json:"result"`
+	TargetHP      int                     `json:"target_hp"`                // HP after attack
+	TargetDead    bool                    `json:"target_dead"`              // Whether target was killed
+	Room          *spatial.RoomData       `json:"room,omitempty"`           // Updated room with entity positions
+	RoomOrigin    *spatial.CubeCoordinate `json:"room_origin,omitempty"`    // Room origin in dungeon-absolute coordinates
+	Walls         []dungeon.WallSegment   `json:"walls,omitempty"`          // Walls in the room
+	GrantedAction *GrantedActionInfo      `json:"granted_action,omitempty"` // Action granted from this attack
 }
 
 // GrantedActionInfo represents info about an action granted during combat
@@ -247,13 +250,14 @@ type FeatureActivatedEvent struct {
 
 // TurnEndedEvent is emitted when a turn ends
 type TurnEndedEvent struct {
-	PreviousEntityID string                `json:"previous_entity_id"`
-	NextEntityID     string                `json:"next_entity_id"`
-	Round            int                   `json:"round"`
-	NewRound         bool                  `json:"new_round"`
-	CombatState      *CombatState          `json:"combat_state"`   // Full updated combat state
-	Room             *spatial.RoomData     `json:"room,omitempty"` // Updated room with entity positions
-	Walls            []dungeon.WallSegment `json:"walls,omitempty"`
+	PreviousEntityID string                  `json:"previous_entity_id"`
+	NextEntityID     string                  `json:"next_entity_id"`
+	Round            int                     `json:"round"`
+	NewRound         bool                    `json:"new_round"`
+	CombatState      *CombatState            `json:"combat_state"`          // Full updated combat state
+	Room             *spatial.RoomData       `json:"room,omitempty"`        // Updated room with entity positions
+	RoomOrigin       *spatial.CubeCoordinate `json:"room_origin,omitempty"` // Room origin in dungeon-absolute coordinates
+	Walls            []dungeon.WallSegment   `json:"walls,omitempty"`
 }
 
 // MonsterTurnCompletedEvent is emitted when a monster completes its turn
@@ -263,6 +267,7 @@ type MonsterTurnCompletedEvent struct {
 	Actions           []MonsterExecutedAction `json:"actions"`
 	Movement          []Position              `json:"movement"`
 	Room              *spatial.RoomData       `json:"room,omitempty"`               // Updated room with entity positions
+	RoomOrigin        *spatial.CubeCoordinate `json:"room_origin,omitempty"`        // Room origin in dungeon-absolute coordinates
 	Walls             []dungeon.WallSegment   `json:"walls,omitempty"`              // Walls in the current room
 	UpdatedCharacters []*character.Data       `json:"updated_characters,omitempty"` // Characters that took damage
 }

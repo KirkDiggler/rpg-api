@@ -182,6 +182,41 @@ func (d *Dungeon) ToLocal(roomID string, absolute spatial.CubeCoordinate) spatia
 	}
 }
 
+// GetAbsoluteWalls returns the walls for a room in dungeon-absolute coordinates.
+// Returns nil if room not found.
+func (d *Dungeon) GetAbsoluteWalls(roomID string) []dungeon.WallSegment {
+	room := d.Rooms[roomID]
+	if room == nil || len(room.Walls) == 0 {
+		return nil
+	}
+
+	origin, ok := d.GetRoomPosition(roomID)
+	if !ok {
+		return nil
+	}
+
+	walls := make([]dungeon.WallSegment, len(room.Walls))
+	for i, wall := range room.Walls {
+		walls[i] = dungeon.WallSegment{
+			ID:   wall.ID,
+			Type: wall.Type,
+			Start: dungeon.Position{
+				X: wall.Start.X + origin.X,
+				Y: wall.Start.Y + origin.Y,
+				Z: wall.Start.Z + origin.Z,
+			},
+			End: dungeon.Position{
+				X: wall.End.X + origin.X,
+				Y: wall.End.Y + origin.Y,
+				Z: wall.End.Z + origin.Z,
+			},
+			BlocksMovement:    wall.BlocksMovement,
+			BlocksLineOfSight: wall.BlocksLineOfSight,
+		}
+	}
+	return walls
+}
+
 // CalculateRoomPositions computes dungeon-absolute positions for all rooms.
 // Uses BFS from the start room, positioning each room so doors align.
 func (d *Dungeon) CalculateRoomPositions() {
@@ -209,7 +244,7 @@ func (d *Dungeon) CalculateRoomPositions() {
 
 		// Find all connections from this room
 		for _, conn := range d.Connections {
-			neighborID, currentDoorPos, neighborDoorPos, found := d.getUnplacedNeighborDoorPositions(
+			neighborID, currentDoorPos, neighborDoorPos, _, found := d.getUnplacedNeighborDoorPositions(
 				conn, currentID, currentRoom, placed,
 			)
 			if !found {
@@ -221,7 +256,7 @@ func (d *Dungeon) CalculateRoomPositions() {
 				continue
 			}
 
-			// Calculate neighbor's position so doors align
+			// Calculate neighbor's position so doors align (same absolute position)
 			// neighborPos + neighborDoorPos = currentPos + currentDoorPos
 			// neighborPos = currentPos + currentDoorPos - neighborDoorPos
 			d.RoomPositions[neighborID] = spatial.CubeCoordinate{
@@ -246,37 +281,61 @@ func (d *Dungeon) CalculateRoomPositions() {
 }
 
 // getUnplacedNeighborDoorPositions finds an unplaced neighbor and returns door positions.
+// Uses the connection's FromPosition/ToPosition which already contain the door coordinates
+// in each room's local coordinate system. Also returns the direction from current to neighbor.
 func (d *Dungeon) getUnplacedNeighborDoorPositions(
 	conn *environments.ConnectionEdge,
 	currentID string,
-	currentRoom *dungeon.Room,
+	_ *dungeon.Room,
 	placed map[string]bool,
-) (neighborID string, currentDoorPos, neighborDoorPos spatial.CubeCoordinate, found bool) {
-	var neighborRoom *dungeon.Room
-
+) (neighborID string, currentDoorPos, neighborDoorPos spatial.CubeCoordinate, direction string, found bool) {
 	switch {
 	case conn.FromRoomID == currentID && !placed[conn.ToRoomID]:
 		neighborID = conn.ToRoomID
-		neighborRoom = d.Rooms[neighborID]
-		if neighborRoom == nil {
-			return "", spatial.CubeCoordinate{}, spatial.CubeCoordinate{}, false
+		if d.Rooms[neighborID] == nil {
+			return "", spatial.CubeCoordinate{}, spatial.CubeCoordinate{}, "", false
 		}
-		currentDoorPos = d.findDoorPosition(currentRoom, conn.Type, true)
-		neighborDoorPos = d.findDoorPosition(neighborRoom, conn.Type, false)
-		return neighborID, currentDoorPos, neighborDoorPos, true
+		// Current room is "From", neighbor is "To"
+		// Use the pre-computed door positions from the connection
+		// Direction is parsed from connection type
+		return neighborID, conn.FromPosition, conn.ToPosition, parseDirection(conn.Type), true
 
 	case conn.ToRoomID == currentID && !placed[conn.FromRoomID] && conn.Bidirectional:
 		neighborID = conn.FromRoomID
-		neighborRoom = d.Rooms[neighborID]
-		if neighborRoom == nil {
-			return "", spatial.CubeCoordinate{}, spatial.CubeCoordinate{}, false
+		if d.Rooms[neighborID] == nil {
+			return "", spatial.CubeCoordinate{}, spatial.CubeCoordinate{}, "", false
 		}
-		currentDoorPos = d.findDoorPosition(currentRoom, conn.Type, false)
-		neighborDoorPos = d.findDoorPosition(neighborRoom, conn.Type, true)
-		return neighborID, currentDoorPos, neighborDoorPos, true
+		// Current room is "To", neighbor is "From"
+		// Use the pre-computed door positions from the connection (swapped)
+		// Direction is opposite of connection type
+		return neighborID, conn.ToPosition, conn.FromPosition, oppositeDirection(parseDirection(conn.Type)), true
 	}
 
-	return "", spatial.CubeCoordinate{}, spatial.CubeCoordinate{}, false
+	return "", spatial.CubeCoordinate{}, spatial.CubeCoordinate{}, "", false
+}
+
+// oppositeDirection returns the opposite cardinal direction
+func oppositeDirection(dir string) string {
+	switch dir {
+	case "north":
+		return "south"
+	case "south":
+		return "north"
+	case "east":
+		return "west"
+	case "west":
+		return "east"
+	case "northeast":
+		return "southwest"
+	case "southwest":
+		return "northeast"
+	case "northwest":
+		return "southeast"
+	case "southeast":
+		return "northwest"
+	default:
+		return dir
+	}
 }
 
 // findDoorPosition finds the door position for a room based on connection type.
@@ -299,31 +358,86 @@ func (d *Dungeon) findDoorPosition(room *dungeon.Room, connType string, _ bool) 
 	// Find matching connection point by direction
 	for _, cp := range room.Shape.ConnectionPoints {
 		if cp.Direction == direction || cp.Name == direction {
-			// Convert room Position to CubeCoordinate
-			// For hex grids: X = grid x, Z = -grid y, Y = -X - Z
-			x := cp.Position.X
-			z := -cp.Position.Y
-			return spatial.CubeCoordinate{X: x, Y: -x - z, Z: z}
+			// ConnectionPoint.Position is already in cube coordinates (created via offsetToCube)
+			// so we just copy the values directly
+			return spatial.CubeCoordinate{
+				X: cp.Position.X,
+				Y: cp.Position.Y,
+				Z: cp.Position.Z,
+			}
 		}
 	}
 
 	// Fallback: use room center edge based on direction
+	// Width/Height are in offset coordinate terms (columns/rows)
+	// Convert to cube coordinates: X = col, Z = row, Y = -X - Z
 	width := room.Shape.Width
 	height := room.Shape.Height
+	midX := width / 2
+	midZ := height / 2
 
 	switch direction {
 	case "north":
-		return spatial.CubeCoordinate{X: width / 2, Y: -(width / 2), Z: 0}
+		// North edge: middle column, top row (row = height-1)
+		x, z := midX, height-1
+		return spatial.CubeCoordinate{X: x, Y: -x - z, Z: z}
 	case "south":
-		return spatial.CubeCoordinate{X: width / 2, Y: -(width / 2) + height - 1, Z: -(height - 1)}
+		// South edge: middle column, bottom row (row = 0)
+		x, z := midX, 0
+		return spatial.CubeCoordinate{X: x, Y: -x - z, Z: z}
 	case "east":
-		return spatial.CubeCoordinate{X: width - 1, Y: -(width - 1) + (height / 2), Z: -(height / 2)}
+		// East edge: rightmost column (col = width-1), middle row
+		x, z := width-1, midZ
+		return spatial.CubeCoordinate{X: x, Y: -x - z, Z: z}
 	case "west":
-		return spatial.CubeCoordinate{X: 0, Y: height / 2, Z: -(height / 2)}
+		// West edge: leftmost column (col = 0), middle row
+		x, z := 0, midZ
+		return spatial.CubeCoordinate{X: x, Y: -x - z, Z: z}
 	default:
 		// Default to center
-		return spatial.CubeCoordinate{X: width / 2, Y: -(width / 2) + (height / 2), Z: -(height / 2)}
+		x, z := midX, midZ
+		return spatial.CubeCoordinate{X: x, Y: -x - z, Z: z}
 	}
+}
+
+// directionToCubeOffset returns a unit cube coordinate offset for a cardinal direction.
+// This is used to add 1 hex of separation between rooms when positioning them.
+func directionToCubeOffset(direction string) spatial.CubeCoordinate {
+	// Hex cube coordinate offsets for 6 directions (pointy-top orientation)
+	// Reference: https://www.redblobgames.com/grids/hexagons/#neighbors-cube
+	switch direction {
+	case "east":
+		return spatial.CubeCoordinate{X: 1, Y: -1, Z: 0}
+	case "west":
+		return spatial.CubeCoordinate{X: -1, Y: 1, Z: 0}
+	case "northeast":
+		return spatial.CubeCoordinate{X: 1, Y: 0, Z: -1}
+	case "northwest":
+		return spatial.CubeCoordinate{X: 0, Y: 1, Z: -1}
+	case "southeast":
+		return spatial.CubeCoordinate{X: 0, Y: -1, Z: 1}
+	case "southwest":
+		return spatial.CubeCoordinate{X: -1, Y: 0, Z: 1}
+	case "north":
+		// For 4-direction systems, north maps to northwest
+		return spatial.CubeCoordinate{X: 0, Y: 1, Z: -1}
+	case "south":
+		// For 4-direction systems, south maps to southeast
+		return spatial.CubeCoordinate{X: 0, Y: -1, Z: 1}
+	default:
+		// No offset for unknown direction
+		return spatial.CubeCoordinate{}
+	}
+}
+
+// parseDirection extracts direction from connection type (format: "direction|hint")
+func parseDirection(connType string) string {
+	for i, c := range connType {
+		if c == '|' {
+			return connType[:i]
+		}
+	}
+	return connType
 }
 
 // GetRoomAt finds which room contains a dungeon-absolute coordinate.
