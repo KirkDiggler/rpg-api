@@ -2,9 +2,20 @@
   "branch": "feat/action-economy-rpcs",
   "issues": ["rpg-api-protos#127"],
   "goal": "Implement two-level action economy RPCs (ActivateCombatAbility, ExecuteAction) that separate ability activation from action execution",
-  "sessions": [],
+  "sessions": [
+    {
+      "date": "2026-01-08",
+      "task": "Extend ActionEconomyState entity",
+      "commit": "e3aa9e2",
+      "changes": [
+        "Added AttacksRemaining, OffHandAttacksRemaining, FlurryStrikesRemaining fields",
+        "Added DisengageActive, DodgeActive boolean flags",
+        "Added helper methods: HasAttacks/UseAttack, HasOffHandAttacks/UseOffHandAttack, HasFlurryStrikes/UseFlurryStrike"
+      ],
+      "notes": "NewActionEconomyState() defaults unchanged - attacks start at 0 (granted by ATTACK ability). Pre-existing build errors in converters.go (unrelated to this change)."
+    }
+  ],
   "next_steps": [
-    "Extend ActionEconomyState with new fields (AttacksRemaining, OffHandAttacksRemaining, FlurryStrikesRemaining, DisengageActive, DodgeActive)",
     "Add ActivateCombatAbility orchestrator Input/Output types and Service interface method",
     "Add ExecuteAction orchestrator Input/Output types and Service interface method",
     "Implement ActivateCombatAbility orchestrator logic",
