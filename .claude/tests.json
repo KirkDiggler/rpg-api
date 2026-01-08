@@ -4,57 +4,65 @@
       "id": "activate-attack-consumes-action",
       "feature": "ActivateCombatAbility",
       "prompt": "Call ActivateCombatAbility with ATTACK. Verify standard_action_available becomes false and attacks_remaining becomes 1.",
-      "passes": false,
-      "last_checked": null
+      "passes": true,
+      "last_checked": "2026-01-08",
+      "test_file": "orchestrator_test.go::TestActivateCombatAbility_Attack_Success"
     },
     {
       "id": "activate-dash-adds-movement",
       "feature": "ActivateCombatAbility",
       "prompt": "Call ActivateCombatAbility with DASH. Verify standard_action_available becomes false and movement_remaining doubles (30 -> 60).",
-      "passes": false,
-      "last_checked": null
+      "passes": true,
+      "last_checked": "2026-01-08",
+      "test_file": "orchestrator_test.go::TestActivateCombatAbility_Dash_Success"
     },
     {
       "id": "activate-dodge-sets-flag",
       "feature": "ActivateCombatAbility",
       "prompt": "Call ActivateCombatAbility with DODGE. Verify standard_action_available becomes false and dodge_active becomes true.",
-      "passes": false,
-      "last_checked": null
+      "passes": true,
+      "last_checked": "2026-01-08",
+      "test_file": "orchestrator_test.go::TestActivateCombatAbility_Dodge_Success"
     },
     {
       "id": "activate-disengage-sets-flag",
       "feature": "ActivateCombatAbility",
       "prompt": "Call ActivateCombatAbility with DISENGAGE. Verify standard_action_available becomes false and disengage_active becomes true.",
-      "passes": false,
-      "last_checked": null
+      "passes": true,
+      "last_checked": "2026-01-08",
+      "test_file": "orchestrator_test.go::TestActivateCombatAbility_Disengage_Success"
     },
     {
       "id": "execute-strike-consumes-attack",
       "feature": "ExecuteAction",
       "prompt": "After activating ATTACK, call ExecuteAction with STRIKE. Verify attacks_remaining decrements and attack resolves.",
-      "passes": false,
-      "last_checked": null
+      "passes": true,
+      "last_checked": "2026-01-08",
+      "test_file": "orchestrator_test.go::TestExecuteAction_Strike_Success"
     },
     {
       "id": "execute-move-consumes-movement",
       "feature": "ExecuteAction",
       "prompt": "Call ExecuteAction with MOVE and a 2-hex path. Verify movement_remaining decrements by 10 (2 hexes * 5ft).",
-      "passes": false,
-      "last_checked": null
+      "passes": true,
+      "last_checked": "2026-01-08",
+      "test_file": "orchestrator_test.go::TestExecuteAction_Move_Success"
     },
     {
       "id": "strike-without-attacks-fails",
       "feature": "ExecuteAction",
       "prompt": "Without activating ATTACK first, call ExecuteAction with STRIKE. Verify it returns an error about no attacks remaining.",
-      "passes": false,
-      "last_checked": null
+      "passes": true,
+      "last_checked": "2026-01-08",
+      "test_file": "orchestrator_test.go::TestExecuteAction_Strike_NoAttacksRemaining"
     },
     {
       "id": "handler-wired-up",
       "feature": "handlers",
       "prompt": "Call the gRPC ActivateCombatAbility and ExecuteAction endpoints. Verify they don't return Unimplemented.",
-      "passes": false,
-      "last_checked": null
+      "passes": true,
+      "last_checked": "2026-01-08",
+      "test_file": "handler_test.go::TestActivateCombatAbility_Success, TestExecuteAction_Strike_Success"
     }
   ]
 }
