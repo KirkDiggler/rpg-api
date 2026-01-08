@@ -13,11 +13,26 @@
         "Added helper methods: HasAttacks/UseAttack, HasOffHandAttacks/UseOffHandAttack, HasFlurryStrikes/UseFlurryStrike"
       ],
       "notes": "NewActionEconomyState() defaults unchanged - attacks start at 0 (granted by ATTACK ability). Pre-existing build errors in converters.go (unrelated to this change)."
+    },
+    {
+      "date": "2026-01-08",
+      "task": "Add Input/Output types for ActivateCombatAbility and ExecuteAction",
+      "commit": "a5dc8e8",
+      "changes": [
+        "Added ActivateCombatAbilityInput/Output types to service.go",
+        "Added ExecuteActionInput/Output types to service.go",
+        "Added MoveResult type for move action outcomes",
+        "Added ActivateCombatAbility and ExecuteAction method signatures to Service interface",
+        "Added stub implementations to Orchestrator (return 'not yet implemented' error)",
+        "Added stringToEntityType and intToEntitySize converter helpers",
+        "Fixed EntityType/EntitySize enum conversion in converters.go",
+        "Updated golangci.yml to exclude SA1019 deprecated warnings during transition",
+        "Regenerated mocks for updated Service interface"
+      ],
+      "notes": "Updated rpg-api-protos to latest generated branch (includes CombatAbilityId, ActionId enums). Build passes, all tests pass."
     }
   ],
   "next_steps": [
-    "Add ActivateCombatAbility orchestrator Input/Output types and Service interface method",
-    "Add ExecuteAction orchestrator Input/Output types and Service interface method",
     "Implement ActivateCombatAbility orchestrator logic",
     "Implement ExecuteAction orchestrator logic",
     "Add handler methods for ActivateCombatAbility and ExecuteAction",
