@@ -48,10 +48,26 @@
         "Added 7 comprehensive tests covering all action types and edge cases"
       ],
       "notes": "ExecuteAction consumes granted capacity (attacks/movement). Must call ActivateCombatAbility first to grant attacks. Movement doesn't require activation - uses MovementRemaining from encounter."
+    },
+    {
+      "date": "2026-01-08",
+      "task": "Implement ActivateCombatAbility orchestrator logic",
+      "commit": "522ba32",
+      "changes": [
+        "Implemented ActivateCombatAbility method with full ability handling",
+        "ATTACK: Checks HasAction(), consumes action, grants AttacksRemaining = 1",
+        "DASH: Checks HasAction(), consumes action, adds defaultMovementSpeed to MovementRemaining",
+        "DODGE: Checks HasAction(), consumes action, sets DodgeActive = true",
+        "DISENGAGE: Checks HasAction(), consumes action, sets DisengageActive = true",
+        "OFFHAND_ATTACK: Checks HasBonusAction(), consumes bonus action, grants OffHandAttacksRemaining = 1",
+        "Returns GrantedCapacity message describing what was granted",
+        "Added 10 comprehensive tests covering all 5 abilities and error cases",
+        "Tests verify action economy consumption, capacity grants, and turn validation"
+      ],
+      "notes": "Implementation was committed alongside ExecuteAction in same commit (522ba32). Validates entity's turn before allowing activation. Returns business logic failures (Success=false) vs errors for invalid state. All 10 tests pass."
     }
   ],
   "next_steps": [
-    "Implement ActivateCombatAbility orchestrator logic (grant attacks on ATTACK, set flags for DASH/DISENGAGE/DODGE)",
     "Add handler methods for ActivateCombatAbility and ExecuteAction",
     "Add proto converters for ActionEconomy and new types"
   ]
