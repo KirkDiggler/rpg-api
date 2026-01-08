@@ -682,7 +682,7 @@ func (s *ConvertersTestSuite) TestConvertGridTypeToProto() {
 // =============================================================================
 
 func (s *ConvertersTestSuite) TestConvertRoomDataToProto_Nil() {
-	result := convertRoomDataToProto(nil)
+	result := convertRoomDataToProto(nil, nil)
 	s.Nil(result)
 }
 
@@ -703,7 +703,7 @@ func (s *ConvertersTestSuite) TestConvertRoomDataToProto_Pointer() {
 		},
 	}
 
-	result := convertRoomDataToProto(roomData)
+	result := convertRoomDataToProto(roomData, nil)
 
 	s.Require().NotNil(result)
 	s.Equal("room-1", result.Id)
@@ -724,7 +724,7 @@ func (s *ConvertersTestSuite) TestConvertRoomDataToProto_Value() {
 		GridType: spatial.GridTypeHex,
 	}
 
-	result := convertRoomDataToProto(roomData)
+	result := convertRoomDataToProto(roomData, nil)
 
 	s.Require().NotNil(result)
 	s.Equal("room-2", result.Id)
@@ -733,7 +733,7 @@ func (s *ConvertersTestSuite) TestConvertRoomDataToProto_Value() {
 
 func (s *ConvertersTestSuite) TestConvertRoomDataToProto_InvalidType() {
 	// Pass something that's not a RoomData
-	result := convertRoomDataToProto("not a room")
+	result := convertRoomDataToProto("not a room", nil)
 	s.Nil(result)
 }
 

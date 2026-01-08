@@ -2868,6 +2868,7 @@ func (o *Orchestrator) OpenDoor(
 		DungeonID:    dng.ID,
 		ConnectionID: input.ConnectionID,
 		RevealedRoom: revealedSpatialRoom,
+		RoomOrigin:   &revealedRoomOrigin,
 		Walls:        revealedRoom.Walls,
 		NewDoors:     convertDoorsToEntityDoors(newDoors),
 		Monsters:     monsterStates,

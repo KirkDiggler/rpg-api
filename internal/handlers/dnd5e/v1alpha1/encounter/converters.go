@@ -121,9 +121,10 @@ func convertRerollEventToProto(event *encounter.RerollEvent) *dnd5ev1alpha1.Rero
 
 // convertRoomDataToProto converts spatial.RoomData to proto Room
 // For hex grids, uses CubeEntities which already have cube coordinates (no conversion needed)
+// Optional roomOrigin parameter sets the origin for the room in dungeon-absolute coordinates
 //
 //nolint:gosec // G115: Game values are bounded by room size limits, no overflow risk
-func convertRoomDataToProto(roomData interface{}) *dnd5ev1alpha1.Room {
+func convertRoomDataToProto(roomData interface{}, roomOrigin *spatial.CubeCoordinate) *dnd5ev1alpha1.Room {
 	if roomData == nil {
 		return nil
 	}
@@ -173,6 +174,16 @@ func convertRoomDataToProto(roomData interface{}) *dnd5ev1alpha1.Room {
 		hexOrientationPtr = &hexOrientationProto
 	}
 
+	// Convert room origin if provided
+	var origin *apiv1alpha1.Position
+	if roomOrigin != nil {
+		origin = &apiv1alpha1.Position{
+			X: float64(roomOrigin.X),
+			Y: float64(roomOrigin.Y),
+			Z: float64(roomOrigin.Z),
+		}
+	}
+
 	return &dnd5ev1alpha1.Room{
 		Id:             spatialRoom.ID,
 		Type:           spatialRoom.Type,
@@ -181,6 +192,7 @@ func convertRoomDataToProto(roomData interface{}) *dnd5ev1alpha1.Room {
 		GridType:       gridType,
 		HexOrientation: hexOrientationPtr,
 		Entities:       entities,
+		Origin:         origin,
 	}
 }
 
