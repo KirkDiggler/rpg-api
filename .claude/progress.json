@@ -1,38 +1,15 @@
 {
-  "branch": "feat/issue-358-unified-damage-flow",
-  "issues": ["#358"],
-  "goal": "Integrate unified damage flow from toolkit refactor - use CombatantRegistry and ApplyDamage instead of manual HP calculation",
-  "design_decisions": [
-    "CombatantRegistry holds all combat participants for proper context",
-    "ApplyDamage handles traits (vulnerability, resistance, immunity) properly",
-    "Character state must be saved after attacks (like ActivateFeature does)",
-    "Vulnerability multipliers must appear in AttackResolvedEvent breakdown"
-  ],
-  "sessions": [
-    {
-      "id": "2026-01-02-001",
-      "task": "Add CombatantRegistry and event-driven damage flow",
-      "status": "completed",
-      "artifacts": [
-        "internal/orchestrators/encounter/orchestrator.go"
-      ],
-      "commit": "a0850db",
-      "notes": "Added Monster Combatant interface to toolkit, updated ResolveAttack to use CombatantRegistry and event-driven damage flow"
-    },
-    {
-      "id": "2026-01-02-002",
-      "task": "Add vulnerability multiplier integration test",
-      "status": "completed",
-      "artifacts": [
-        "internal/orchestrators/encounter/orchestrator_test.go"
-      ],
-      "commit": "21c07d4",
-      "notes": "Test verifies skeleton bludgeoning vulnerability shows 2.0 multiplier in breakdown"
-    }
-  ],
+  "branch": "feat/action-economy-rpcs",
+  "issues": ["rpg-api-protos#127"],
+  "goal": "Implement two-level action economy RPCs (ActivateCombatAbility, ExecuteAction) that separate ability activation from action execution",
+  "sessions": [],
   "next_steps": [
-    "Verify vulnerability multiplier actually appears in test assertions (test may be failing silently)",
-    "Create PR for toolkit changes (feature/unify-damage-flow branch)",
-    "Create PR for rpg-api changes"
+    "Extend ActionEconomyState with new fields (AttacksRemaining, OffHandAttacksRemaining, FlurryStrikesRemaining, DisengageActive, DodgeActive)",
+    "Add ActivateCombatAbility orchestrator Input/Output types and Service interface method",
+    "Add ExecuteAction orchestrator Input/Output types and Service interface method",
+    "Implement ActivateCombatAbility orchestrator logic",
+    "Implement ExecuteAction orchestrator logic",
+    "Add handler methods for ActivateCombatAbility and ExecuteAction",
+    "Add proto converters for ActionEconomy and new types"
   ]
 }
