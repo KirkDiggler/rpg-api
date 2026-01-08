@@ -16,6 +16,41 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
 )
 
+// stringToEntityType converts a string entity type to the proto enum
+func stringToEntityType(s string) dnd5ev1alpha1.EntityType {
+	switch s {
+	case "character":
+		return dnd5ev1alpha1.EntityType_ENTITY_TYPE_CHARACTER
+	case "monster":
+		return dnd5ev1alpha1.EntityType_ENTITY_TYPE_MONSTER
+	case "obstacle":
+		return dnd5ev1alpha1.EntityType_ENTITY_TYPE_OBSTACLE
+	default:
+		return dnd5ev1alpha1.EntityType_ENTITY_TYPE_UNSPECIFIED
+	}
+}
+
+// intToEntitySize converts an int size to the proto enum
+func intToEntitySize(size int) dnd5ev1alpha1.EntitySize {
+	switch size {
+	case 0:
+		return dnd5ev1alpha1.EntitySize_ENTITY_SIZE_TINY
+	case 1:
+		return dnd5ev1alpha1.EntitySize_ENTITY_SIZE_SMALL
+	case 2:
+		return dnd5ev1alpha1.EntitySize_ENTITY_SIZE_MEDIUM
+	case 3:
+		return dnd5ev1alpha1.EntitySize_ENTITY_SIZE_LARGE
+	case 4:
+		return dnd5ev1alpha1.EntitySize_ENTITY_SIZE_HUGE
+	case 5:
+		return dnd5ev1alpha1.EntitySize_ENTITY_SIZE_GARGANTUAN
+	default:
+		// Default to MEDIUM for standard entities
+		return dnd5ev1alpha1.EntitySize_ENTITY_SIZE_MEDIUM
+	}
+}
+
 // convertAttackResultToProto converts orchestrator's AttackResult to proto
 //
 //nolint:gosec // G115: Game values are bounded by D&D rules, no overflow risk
@@ -191,13 +226,13 @@ func convertRoomDataToProto(roomData interface{}) *dnd5ev1alpha1.Room {
 func convertCubeEntityPlacementToProto(placement spatial.EntityCubePlacement) *dnd5ev1alpha1.EntityPlacement {
 	return &dnd5ev1alpha1.EntityPlacement{
 		EntityId:   placement.EntityID,
-		EntityType: placement.EntityType,
+		EntityType: stringToEntityType(placement.EntityType),
 		Position: &apiv1alpha1.Position{
 			X: float64(placement.CubePosition.X),
 			Y: float64(placement.CubePosition.Y),
 			Z: float64(placement.CubePosition.Z),
 		},
-		Size:              int32(placement.Size),
+		Size:              intToEntitySize(placement.Size),
 		BlocksMovement:    placement.BlocksMovement,
 		BlocksLineOfSight: placement.BlocksLineOfSight,
 	}
@@ -216,9 +251,9 @@ func convertEntityPlacementToProto(
 
 	return &dnd5ev1alpha1.EntityPlacement{
 		EntityId:          placement.EntityID,
-		EntityType:        placement.EntityType,
+		EntityType:        stringToEntityType(placement.EntityType),
 		Position:          position,
-		Size:              int32(placement.Size),
+		Size:              intToEntitySize(placement.Size),
 		BlocksMovement:    placement.BlocksMovement,
 		BlocksLineOfSight: placement.BlocksLineOfSight,
 	}
@@ -974,9 +1009,9 @@ func convertOpenDoorRoomToProto(roomData *encounter.RoomData) *dnd5ev1alpha1.Roo
 		}
 		entities[id] = &dnd5ev1alpha1.EntityPlacement{
 			EntityId:          placement.EntityID,
-			EntityType:        placement.EntityType,
+			EntityType:        stringToEntityType(placement.EntityType),
 			Position:          position,
-			Size:              int32(placement.Size),
+			Size:              intToEntitySize(placement.Size),
 			BlocksMovement:    placement.BlocksMovement,
 			BlocksLineOfSight: placement.BlocksLineOfSight,
 		}

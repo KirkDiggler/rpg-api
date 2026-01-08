@@ -2691,11 +2691,11 @@ func (o *Orchestrator) OpenDoor(
 	allBossIDs = append(allBossIDs, encOutput.Data.BossMonsterIDs...)
 	allBossIDs = append(allBossIDs, newBossMonsterIDs...)
 	_, err = o.encRepo.Update(ctx, &encounterrepo.UpdateInput{
-		EncounterID:    dng.EncounterID,
-		InitiativeData: newInitiativeData,
+		EncounterID:     dng.EncounterID,
+		InitiativeData:  newInitiativeData,
 		InitiativeRolls: allRolls, // Persist merged rolls so EndTurn can re-sort at round start
-		Monsters:       encOutput.Data.Monsters,
-		BossMonsterIDs: allBossIDs,
+		Monsters:        encOutput.Data.Monsters,
+		BossMonsterIDs:  allBossIDs,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to update encounter: %w", err)
@@ -3783,4 +3783,28 @@ func (o *Orchestrator) GetEncounterHistory(ctx context.Context, input *GetEncoun
 		HasMore:     result.HasMore,
 		LastEventID: result.LastEventID,
 	}, nil
+}
+
+// ============================================================================
+// TWO-LEVEL ACTION ECONOMY METHODS
+// ============================================================================
+
+// ActivateCombatAbility activates a combat ability (ATTACK, DASH, DODGE, etc.)
+// This consumes action economy resources and grants capacity to execute actions
+func (o *Orchestrator) ActivateCombatAbility(
+	_ context.Context,
+	_ *ActivateCombatAbilityInput,
+) (*ActivateCombatAbilityOutput, error) {
+	// TODO: Implement ability activation logic
+	return nil, fmt.Errorf("ActivateCombatAbility not yet implemented")
+}
+
+// ExecuteAction executes an action that consumes granted capacity
+// Use after ActivateCombatAbility to perform strikes, moves, etc.
+func (o *Orchestrator) ExecuteAction(
+	_ context.Context,
+	_ *ExecuteActionInput,
+) (*ExecuteActionOutput, error) {
+	// TODO: Implement action execution logic
+	return nil, fmt.Errorf("ExecuteAction not yet implemented")
 }
