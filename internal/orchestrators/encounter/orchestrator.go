@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
 	"github.com/KirkDiggler/rpg-toolkit/core"
 	"github.com/KirkDiggler/rpg-toolkit/dice"
 	"github.com/KirkDiggler/rpg-toolkit/events"
@@ -1813,6 +1814,15 @@ func (o *Orchestrator) EndTurn(ctx context.Context, input *EndTurnInput) (*EndTu
 const (
 	entityTypeCharacter = "character"
 	entityTypeMonster   = "monster"
+)
+
+// Stop reasons for movement
+const (
+	stopReasonCompleted            = "completed"
+	stopReasonPositionOccupied     = "position_occupied"
+	stopReasonInsufficientMovement = "insufficient_movement"
+	stopReasonBlockedByWall        = "blocked_by_wall"
+	stopReasonInvalidCoordinates   = "invalid_coordinates"
 )
 
 // Default movement speed in feet (30 feet = 6 hexes at 5ft/hex)
@@ -3792,19 +3802,642 @@ func (o *Orchestrator) GetEncounterHistory(ctx context.Context, input *GetEncoun
 // ActivateCombatAbility activates a combat ability (ATTACK, DASH, DODGE, etc.)
 // This consumes action economy resources and grants capacity to execute actions
 func (o *Orchestrator) ActivateCombatAbility(
-	_ context.Context,
-	_ *ActivateCombatAbilityInput,
+	ctx context.Context,
+	input *ActivateCombatAbilityInput,
 ) (*ActivateCombatAbilityOutput, error) {
-	// TODO: Implement ability activation logic
-	return nil, fmt.Errorf("ActivateCombatAbility not yet implemented")
+	// 1. Validate input
+	if input == nil {
+		return nil, fmt.Errorf("input is required")
+	}
+	if input.EncounterID == "" {
+		return nil, fmt.Errorf("encounter ID is required")
+	}
+	if input.EntityID == "" {
+		return nil, fmt.Errorf("entity ID is required")
+	}
+
+	// 2. Load encounter data
+	encOutput, err := o.encRepo.Get(ctx, &encounterrepo.GetInput{
+		EncounterID: input.EncounterID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to load encounter: %w", err)
+	}
+	if encOutput.Data == nil {
+		return nil, fmt.Errorf("encounter not found: %s", input.EncounterID)
+	}
+
+	// 3. Validate initiative data exists and check it's the entity's turn
+	if encOutput.Data.InitiativeData == nil {
+		return nil, fmt.Errorf("no initiative data for encounter: %s", input.EncounterID)
+	}
+	if len(encOutput.Data.InitiativeData.Order) == 0 {
+		return nil, fmt.Errorf("empty turn order for encounter: %s", input.EncounterID)
+	}
+
+	currentIndex := encOutput.Data.InitiativeData.Current
+	if currentIndex < 0 || currentIndex >= len(encOutput.Data.InitiativeData.Order) {
+		return nil, fmt.Errorf("invalid active index %d for turn order of length %d",
+			currentIndex, len(encOutput.Data.InitiativeData.Order))
+	}
+
+	activeEntity := encOutput.Data.InitiativeData.Order[currentIndex]
+	if activeEntity.ID != input.EntityID {
+		return nil, fmt.Errorf("not entity's turn: active entity is %s, not %s",
+			activeEntity.ID, input.EntityID)
+	}
+
+	// 4. Get or create ActionEconomy
+	actionEconomy := encOutput.Data.ActionEconomy
+	if actionEconomy == nil {
+		actionEconomy = entities.NewActionEconomyState()
+	}
+
+	// 5. Get current movement remaining for DASH calculation
+	movementRemaining := encOutput.Data.MovementRemaining
+
+	// 6. Process ability based on type
+	var grantedCapacity string
+	switch input.AbilityID {
+	case pb.CombatAbilityId_COMBAT_ABILITY_ID_ATTACK:
+		// Check: action available
+		if !actionEconomy.HasAction() {
+			return &ActivateCombatAbilityOutput{
+				Success:       false,
+				Error:         "no action available: action already used this turn",
+				ActionEconomy: actionEconomy,
+			}, nil
+		}
+		// Consume: action
+		actionEconomy.UseAction()
+		// Grant: attacks (1 for MVP, Extra Attack would grant more)
+		actionEconomy.AttacksRemaining = 1
+		grantedCapacity = "Granted 1 attack"
+
+	case pb.CombatAbilityId_COMBAT_ABILITY_ID_DASH:
+		// Check: action available
+		if !actionEconomy.HasAction() {
+			return &ActivateCombatAbilityOutput{
+				Success:       false,
+				Error:         "no action available: action already used this turn",
+				ActionEconomy: actionEconomy,
+			}, nil
+		}
+		// Consume: action
+		actionEconomy.UseAction()
+		// Grant: double movement (add base movement speed to remaining)
+		movementRemaining += defaultMovementSpeed
+		grantedCapacity = "Movement doubled"
+
+	case pb.CombatAbilityId_COMBAT_ABILITY_ID_DODGE:
+		// Check: action available
+		if !actionEconomy.HasAction() {
+			return &ActivateCombatAbilityOutput{
+				Success:       false,
+				Error:         "no action available: action already used this turn",
+				ActionEconomy: actionEconomy,
+			}, nil
+		}
+		// Consume: action
+		actionEconomy.UseAction()
+		// Grant: dodge status
+		actionEconomy.DodgeActive = true
+		grantedCapacity = "Dodging until next turn"
+
+	case pb.CombatAbilityId_COMBAT_ABILITY_ID_DISENGAGE:
+		// Check: action available
+		if !actionEconomy.HasAction() {
+			return &ActivateCombatAbilityOutput{
+				Success:       false,
+				Error:         "no action available: action already used this turn",
+				ActionEconomy: actionEconomy,
+			}, nil
+		}
+		// Consume: action
+		actionEconomy.UseAction()
+		// Grant: disengage status
+		actionEconomy.DisengageActive = true
+		grantedCapacity = "Free movement without opportunity attacks"
+
+	case pb.CombatAbilityId_COMBAT_ABILITY_ID_OFFHAND_ATTACK:
+		// Check: bonus action available
+		if !actionEconomy.HasBonusAction() {
+			return &ActivateCombatAbilityOutput{
+				Success:       false,
+				Error:         "no bonus action available: bonus action already used this turn",
+				ActionEconomy: actionEconomy,
+			}, nil
+		}
+		// Consume: bonus action
+		actionEconomy.UseBonusAction()
+		// Grant: off-hand attack
+		actionEconomy.OffHandAttacksRemaining = 1
+		grantedCapacity = "Granted off-hand attack"
+
+	default:
+		return &ActivateCombatAbilityOutput{
+			Success:       false,
+			Error:         fmt.Sprintf("unknown or unimplemented ability: %v", input.AbilityID),
+			ActionEconomy: actionEconomy,
+		}, nil
+	}
+
+	// 7. Update encounter in repository
+	_, err = o.encRepo.Update(ctx, &encounterrepo.UpdateInput{
+		EncounterID:       input.EncounterID,
+		ActionEconomy:     actionEconomy,
+		MovementRemaining: &movementRemaining,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to save encounter state: %w", err)
+	}
+
+	// 8. Build CombatState response
+	// Update the encounter data with our changes for building combat state
+	encOutput.Data.ActionEconomy = actionEconomy
+	encOutput.Data.MovementRemaining = movementRemaining
+	combatState := o.buildCombatState(input.EncounterID, encOutput.Data)
+
+	return &ActivateCombatAbilityOutput{
+		Success:         true,
+		ActionEconomy:   actionEconomy,
+		GrantedCapacity: grantedCapacity,
+		CombatState:     combatState,
+	}, nil
 }
 
 // ExecuteAction executes an action that consumes granted capacity
 // Use after ActivateCombatAbility to perform strikes, moves, etc.
 func (o *Orchestrator) ExecuteAction(
-	_ context.Context,
-	_ *ExecuteActionInput,
+	ctx context.Context,
+	input *ExecuteActionInput,
 ) (*ExecuteActionOutput, error) {
-	// TODO: Implement action execution logic
-	return nil, fmt.Errorf("ExecuteAction not yet implemented")
+	// 1. Validate input
+	if input == nil {
+		return nil, fmt.Errorf("input is required")
+	}
+	if input.EncounterID == "" {
+		return nil, fmt.Errorf("encounter ID is required")
+	}
+	if input.EntityID == "" {
+		return nil, fmt.Errorf("entity ID is required")
+	}
+	if input.ActionID == pb.ActionId_ACTION_ID_UNSPECIFIED {
+		return nil, fmt.Errorf("action ID is required")
+	}
+
+	// 2. Load encounter data
+	encOutput, err := o.encRepo.Get(ctx, &encounterrepo.GetInput{
+		EncounterID: input.EncounterID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to load encounter: %w", err)
+	}
+	if encOutput.Data == nil {
+		return nil, fmt.Errorf("encounter not found: %s", input.EncounterID)
+	}
+
+	// 3. Get action economy from encounter data
+	actionEconomy := encOutput.Data.ActionEconomy
+	if actionEconomy == nil {
+		// Initialize if not present (backwards compatibility)
+		actionEconomy = entities.NewActionEconomyState()
+	}
+
+	// 4. Execute based on action type
+	switch input.ActionID {
+	case pb.ActionId_ACTION_ID_STRIKE:
+		return o.executeStrike(ctx, input, encOutput.Data, actionEconomy, combat.AttackHandMain)
+
+	case pb.ActionId_ACTION_ID_OFF_HAND_STRIKE:
+		return o.executeStrike(ctx, input, encOutput.Data, actionEconomy, combat.AttackHandOff)
+
+	case pb.ActionId_ACTION_ID_MOVE:
+		return o.executeMove(ctx, input, encOutput.Data, actionEconomy)
+
+	default:
+		return nil, fmt.Errorf("unsupported action ID: %s", input.ActionID.String())
+	}
+}
+
+// executeStrike handles STRIKE and OFF_HAND_STRIKE actions
+func (o *Orchestrator) executeStrike(
+	ctx context.Context,
+	input *ExecuteActionInput,
+	encData *encounterrepo.EncounterData,
+	actionEconomy *entities.ActionEconomyState,
+	attackHand combat.AttackHand,
+) (*ExecuteActionOutput, error) {
+	// 1. Check if we have attacks remaining based on attack type
+	if attackHand == combat.AttackHandMain {
+		if !actionEconomy.HasAttacks() {
+			return &ExecuteActionOutput{
+				Success:       false,
+				Error:         "no attacks remaining",
+				ActionEconomy: actionEconomy,
+			}, nil
+		}
+	} else {
+		// Off-hand attack
+		if !actionEconomy.HasOffHandAttacks() {
+			return &ExecuteActionOutput{
+				Success:       false,
+				Error:         "no off-hand attacks remaining",
+				ActionEconomy: actionEconomy,
+			}, nil
+		}
+	}
+
+	// 2. Validate target
+	if input.TargetID == "" {
+		return nil, fmt.Errorf("target ID is required for strike actions")
+	}
+
+	// 3. Create EventBus (critical for Rage and other features)
+	bus := events.NewEventBus()
+
+	// 4. Load character data from repository
+	charOutput, err := o.charRepo.Get(ctx, characterrepo.GetInput{
+		ID: input.EntityID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to load character: %w", err)
+	}
+
+	// 5. Load Character from Data (reconstructs features, subscribes to events)
+	char, err := character.LoadFromData(ctx, charOutput.Character.Data, bus)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load character from data: %w", err)
+	}
+
+	// 6. Load monster from encounter data
+	monsterData := o.findMonsterData(encData, input.TargetID)
+	if monsterData == nil {
+		return nil, fmt.Errorf("monster not found: %s", input.TargetID)
+	}
+
+	// Create monster instance from stored data
+	monsterInstance, err := monster.LoadFromData(ctx, monsterData, bus)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load monster from data: %w", err)
+	}
+
+	// Load monster conditions/traits
+	if err = monstertraits.LoadMonsterConditions(ctx, monsterInstance, monsterData.Conditions, bus, o.roller); err != nil {
+		return nil, fmt.Errorf("failed to load monster conditions: %w", err)
+	}
+
+	// 7. Get weapon and equipment slots
+	weapon, equipmentSlots := o.getEquippedWeaponAndSlots(ctx, input.EntityID)
+
+	// Override weapon if specified in input
+	if input.WeaponID != "" {
+		if w, weaponErr := weapons.GetByID(input.WeaponID); weaponErr == nil {
+			weapon = w
+		}
+	}
+
+	// 8. Build GameContext
+	gameCtx := o.buildGameContextFromEquipment(input.EntityID, &weapon, equipmentSlots)
+	ctx = gamectx.WithGameContext(ctx, gameCtx)
+
+	// 9. Create CombatantRegistry for damage chain lookups
+	registry := gamectx.NewCombatantRegistry()
+	registry.Add(char)
+	registry.Add(monsterInstance)
+	ctx = combat.WithCombatantLookup(ctx, registry)
+
+	// 10. Call toolkit combat
+	result, err := combat.ResolveAttack(ctx, &combat.AttackInput{
+		AttackerID: input.EntityID,
+		TargetID:   input.TargetID,
+		Weapon:     &weapon,
+		EventBus:   bus,
+		Roller:     o.roller,
+		AttackHand: attackHand,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("combat resolution failed: %w", err)
+	}
+
+	// 11. Get monster HP after damage
+	newHP := monsterInstance.HP()
+	if result.Hit {
+		monsterData.HitPoints = newHP
+	}
+
+	// 12. Two-weapon fighting: grant off-hand strike after main-hand attack
+	var grantedAction *GrantedAction
+	if attackHand == combat.AttackHandMain && equipmentSlots != nil {
+		var mainWeapon, offWeapon *actions.EquippedWeaponInfo
+		if mainID := equipmentSlots.Get(character.SlotMainHand); mainID != "" {
+			mainWeapon = &actions.EquippedWeaponInfo{WeaponID: mainID}
+		}
+		if offID := equipmentSlots.Get(character.SlotOffHand); offID != "" {
+			offWeapon = &actions.EquippedWeaponInfo{WeaponID: offID}
+		}
+
+		twfResult, _ := actions.CheckAndGrantOffHandStrike(ctx, &actions.TwoWeaponGranterInput{
+			CharacterID:    input.EntityID,
+			AttackHand:     actions.AttackHand(attackHand),
+			MainHandWeapon: mainWeapon,
+			OffHandWeapon:  offWeapon,
+			ActionHolder:   char,
+			EventBus:       bus,
+		})
+		if twfResult != nil && twfResult.Granted {
+			// Grant off-hand attack capacity
+			actionEconomy.OffHandAttacksRemaining++
+			grantedAction = &GrantedAction{
+				ID:       twfResult.Action.GetID(),
+				Type:     "off-hand-strike",
+				Name:     "Off-Hand Strike",
+				Reason:   twfResult.Reason,
+				WeaponID: twfResult.Action.GetWeaponID(),
+			}
+		}
+	}
+
+	// 13. Consume attack
+	if attackHand == combat.AttackHandMain {
+		actionEconomy.UseAttack()
+	} else {
+		actionEconomy.UseOffHandAttack()
+	}
+
+	// 14. Persist updated state
+	_, err = o.encRepo.Update(ctx, &encounterrepo.UpdateInput{
+		EncounterID:   input.EncounterID,
+		ActionEconomy: actionEconomy,
+		Monsters:      encData.Monsters,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to save encounter state: %w", err)
+	}
+
+	// 15. Build attack result
+	attackResult := &AttackResult{
+		AttackRoll:      result.AttackRoll,
+		AttackBonus:     result.AttackBonus,
+		TotalAttack:     result.TotalAttack,
+		TargetAC:        result.TargetAC,
+		Hit:             result.Hit,
+		Critical:        result.Critical,
+		IsNaturalTwenty: result.IsNaturalTwenty,
+		IsNaturalOne:    result.IsNaturalOne,
+		DamageRolls:     result.DamageRolls,
+		DamageBonus:     result.DamageBonus,
+		TotalDamage:     result.TotalDamage,
+		DamageType:      result.DamageType,
+	}
+
+	if result.Breakdown != nil {
+		attackResult.Breakdown = convertToolkitBreakdown(result.Breakdown)
+	}
+
+	// 16. Get room data for response
+	var roomData interface{}
+	if encData.RoomData != nil {
+		roomData = encData.RoomData
+	}
+
+	// 17. Build combat state for response
+	combatState := o.buildCombatState(input.EncounterID, encData)
+
+	// 18. Check for dungeon victory if monster died
+	if newHP <= 0 {
+		o.checkAndHandleVictory(ctx, input.EncounterID, encData, input.TargetID)
+	}
+
+	return &ExecuteActionOutput{
+		Success:       true,
+		ActionEconomy: actionEconomy,
+		AttackResult:  attackResult,
+		CombatState:   combatState,
+		Room:          roomData,
+		GrantedAction: grantedAction,
+	}, nil
+}
+
+// executeMove handles MOVE actions
+func (o *Orchestrator) executeMove(
+	ctx context.Context,
+	input *ExecuteActionInput,
+	encData *encounterrepo.EncounterData,
+	actionEconomy *entities.ActionEconomyState,
+) (*ExecuteActionOutput, error) {
+	// 1. Validate path
+	if len(input.Path) == 0 {
+		return nil, fmt.Errorf("path is required for move actions")
+	}
+
+	// 2. Get movement remaining from encounter data
+	movementRemaining := encData.MovementRemaining
+	if movementRemaining == 0 {
+		movementRemaining = 30 // Default if not set
+	}
+
+	// 3. Load dungeon walls for collision detection
+	var dungeonWalls []dungeon.WallSegment
+	if o.dungeonRepo != nil {
+		dungeonOutput, dungeonErr := o.dungeonRepo.GetByEncounterID(ctx, &dungeonrepo.GetByEncounterIDInput{
+			EncounterID: input.EncounterID,
+		})
+		if dungeonErr == nil && dungeonOutput != nil && dungeonOutput.Dungeon != nil {
+			dungeonEntity := dungeonOutput.Dungeon
+			currentRoomID := dungeonEntity.CurrentRoomID
+			if currentRoomID == "" {
+				currentRoomID = dungeonEntity.StartRoomID
+			}
+			if currentRoom := dungeonEntity.GetRoom(currentRoomID); currentRoom != nil {
+				dungeonWalls = currentRoom.Walls
+			}
+		}
+	}
+
+	// 4. Get or create room data
+	if encData.RoomData == nil {
+		encData.RoomData = &spatial.RoomData{
+			ID:           input.EncounterID + "-room",
+			Type:         "dungeon",
+			Width:        20,
+			Height:       20,
+			GridType:     spatial.GridTypeHex,
+			CubeEntities: make(map[string]spatial.EntityCubePlacement),
+		}
+	}
+
+	roomData, ok := encData.RoomData.(*spatial.RoomData)
+	if !ok {
+		if roomDataVal, ok := encData.RoomData.(spatial.RoomData); ok {
+			roomData = &roomDataVal
+		} else {
+			return nil, fmt.Errorf("invalid room data type in encounter")
+		}
+	}
+
+	// 5. Get current position
+	var oldCube spatial.CubeCoordinate
+	cubePlacement, exists := roomData.CubeEntities[input.EntityID]
+	if exists {
+		oldCube = cubePlacement.CubePosition
+	}
+
+	// 6. Calculate total movement cost for the path
+	totalMovementUsed := 0
+	currentPos := oldCube
+	var finalPosition *Position
+	stopReason := stopReasonCompleted
+
+	for _, targetPos := range input.Path {
+		targetCube := spatial.CubeCoordinate{
+			X: int(targetPos.X),
+			Y: int(targetPos.Y),
+			Z: int(targetPos.Z),
+		}
+
+		// Validate cube coordinates sum to zero
+		if roomData.GridType == spatial.GridTypeHex {
+			if targetCube.X+targetCube.Y+targetCube.Z != 0 {
+				finalPosition = &Position{
+					X: float64(currentPos.X),
+					Y: float64(currentPos.Y),
+					Z: float64(currentPos.Z),
+				}
+				stopReason = stopReasonInvalidCoordinates
+				break
+			}
+		}
+
+		// Check if position is occupied
+		for id, entity := range roomData.CubeEntities {
+			if id != input.EntityID && entity.BlocksMovement {
+				if entity.CubePosition.X == targetCube.X &&
+					entity.CubePosition.Y == targetCube.Y &&
+					entity.CubePosition.Z == targetCube.Z {
+					finalPosition = &Position{
+						X: float64(currentPos.X),
+						Y: float64(currentPos.Y),
+						Z: float64(currentPos.Z),
+					}
+					stopReason = stopReasonPositionOccupied
+					break
+				}
+			}
+		}
+		if stopReason != stopReasonCompleted {
+			break
+		}
+
+		// Check wall collision
+		if len(dungeonWalls) > 0 && exists {
+			wallValidator := dungeontoolkit.NewWallValidator()
+			startPos := dungeon.Position{X: currentPos.X, Y: currentPos.Y, Z: currentPos.Z}
+			endPos := dungeon.Position{X: targetCube.X, Y: targetCube.Y, Z: targetCube.Z}
+
+			if wallValidator.PathCrossesWall(startPos, endPos, dungeonWalls) {
+				finalPosition = &Position{
+					X: float64(currentPos.X),
+					Y: float64(currentPos.Y),
+					Z: float64(currentPos.Z),
+				}
+				stopReason = stopReasonBlockedByWall
+				break
+			}
+		}
+
+		// Calculate distance
+		dx := targetCube.X - currentPos.X
+		dy := targetCube.Y - currentPos.Y
+		dz := targetCube.Z - currentPos.Z
+		if dx < 0 {
+			dx = -dx
+		}
+		if dy < 0 {
+			dy = -dy
+		}
+		if dz < 0 {
+			dz = -dz
+		}
+		distance := (dx + dy + dz) / 2
+		movementCost := distance * 5 // Each hex is 5 feet
+
+		// Check if enough movement
+		//nolint:gosec // G115: Game values bounded by movement limits, no overflow risk
+		if int32(totalMovementUsed+movementCost) > movementRemaining {
+			finalPosition = &Position{
+				X: float64(currentPos.X),
+				Y: float64(currentPos.Y),
+				Z: float64(currentPos.Z),
+			}
+			stopReason = stopReasonInsufficientMovement
+			break
+		}
+
+		// Move succeeded, update position
+		totalMovementUsed += movementCost
+		currentPos = targetCube
+		finalPosition = &Position{
+			X: float64(targetCube.X),
+			Y: float64(targetCube.Y),
+			Z: float64(targetCube.Z),
+		}
+	}
+
+	// 7. Update entity position in room data
+	entityType := "character"
+	if exists {
+		entityType = cubePlacement.EntityType
+	}
+	roomData.CubeEntities[input.EntityID] = spatial.EntityCubePlacement{
+		EntityID:       input.EntityID,
+		EntityType:     entityType,
+		CubePosition:   currentPos,
+		Size:           1,
+		BlocksMovement: true,
+	}
+
+	// 8. Update movement remaining
+	//nolint:gosec // G115: Game values are bounded by room size limits, no overflow risk
+	newMovementRemaining := movementRemaining - int32(totalMovementUsed)
+
+	// 9. Persist updated state
+	_, err := o.encRepo.Update(ctx, &encounterrepo.UpdateInput{
+		EncounterID:       input.EncounterID,
+		RoomData:          roomData,
+		MovementRemaining: &newMovementRemaining,
+		ActionEconomy:     actionEconomy,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to save encounter state: %w", err)
+	}
+
+	// 10. Publish MovementCompleted event
+	o.publishEvent(ctx, input.EncounterID, entities.EventTypeMovementCompleted, &entities.MovementCompletedEvent{
+		EntityID:          input.EntityID,
+		EntityType:        entityType,
+		FinalPosition:     finalPosition,
+		MovementRemaining: newMovementRemaining,
+		StopReason:        stopReason,
+		UpdatedRoom:       roomData,
+		Walls:             dungeonWalls,
+	})
+
+	// 11. Update movement remaining in encounter data for combat state
+	encData.MovementRemaining = newMovementRemaining
+
+	// 12. Build combat state for response
+	combatState := o.buildCombatState(input.EncounterID, encData)
+
+	return &ExecuteActionOutput{
+		Success:       stopReason == stopReasonCompleted || stopReason == stopReasonInsufficientMovement,
+		ActionEconomy: actionEconomy,
+		MoveResult: &MoveResult{
+			FinalPosition: finalPosition,
+			MovementUsed:  totalMovementUsed,
+			StopReason:    stopReason,
+		},
+		CombatState: combatState,
+		Room:        roomData,
+	}, nil
 }

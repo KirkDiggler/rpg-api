@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/suite"
 	"go.uber.org/mock/gomock"
 
+	pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
 	"github.com/KirkDiggler/rpg-toolkit/dice"
 	dicemock "github.com/KirkDiggler/rpg-toolkit/dice/mock"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/abilities"
@@ -2994,4 +2995,574 @@ func (s *OrchestratorTestSuite) TestGetEncounterState_MissingPlayerID() {
 	s.Require().Error(err)
 	s.Assert().Contains(err.Error(), "player ID is required")
 	s.Assert().Nil(output)
+}
+
+// ============================================================================
+// ActivateCombatAbility Tests
+// ============================================================================
+
+func (s *OrchestratorTestSuite) TestActivateCombatAbility_Attack_Success() {
+	// Arrange - Set up encounter with a character whose turn it is
+	initiativeData := &initiative.TrackerData{
+		Order: []initiative.EntityData{
+			{ID: "char-1", Type: "character"},
+			{ID: "goblin-1", Type: "monster"},
+		},
+		Current: 0, // char-1's turn
+		Round:   1,
+	}
+
+	// Fresh action economy at start of turn
+	actionEconomy := entities.NewActionEconomyState()
+
+	s.mockEncRepo.EXPECT().
+		Get(gomock.Any(), &encounterrepo.GetInput{EncounterID: "enc-1"}).
+		Return(&encounterrepo.GetOutput{
+			Data: &encounterrepo.EncounterData{
+				ID:                "enc-1",
+				InitiativeData:    initiativeData,
+				ActionEconomy:     actionEconomy,
+				MovementRemaining: 30,
+			},
+		}, nil)
+
+	s.mockEncRepo.EXPECT().
+		Update(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, input *encounterrepo.UpdateInput) (*encounterrepo.UpdateOutput, error) {
+			s.Assert().Equal("enc-1", input.EncounterID)
+			s.Require().NotNil(input.ActionEconomy)
+			// Action should be consumed
+			s.Assert().Equal(0, input.ActionEconomy.ActionsRemaining, "Action should be consumed")
+			// Attack should be granted
+			s.Assert().Equal(1, input.ActionEconomy.AttacksRemaining, "Should have 1 attack")
+			return &encounterrepo.UpdateOutput{Success: true}, nil
+		})
+
+	// Act
+	output, err := s.orchestrator.ActivateCombatAbility(context.Background(), &ActivateCombatAbilityInput{
+		EncounterID: "enc-1",
+		EntityID:    "char-1",
+		AbilityID:   pb.CombatAbilityId_COMBAT_ABILITY_ID_ATTACK,
+	})
+
+	// Assert
+	s.Require().NoError(err)
+	s.Require().NotNil(output)
+	s.Assert().True(output.Success)
+	s.Assert().Empty(output.Error)
+	s.Assert().Equal("Granted 1 attack", output.GrantedCapacity)
+	s.Require().NotNil(output.ActionEconomy)
+	s.Assert().Equal(0, output.ActionEconomy.ActionsRemaining)
+	s.Assert().Equal(1, output.ActionEconomy.AttacksRemaining)
+}
+
+func (s *OrchestratorTestSuite) TestActivateCombatAbility_Attack_NoActionAvailable() {
+	// Arrange - Action already used
+	initiativeData := &initiative.TrackerData{
+		Order: []initiative.EntityData{
+			{ID: "char-1", Type: "character"},
+		},
+		Current: 0,
+		Round:   1,
+	}
+
+	actionEconomy := entities.NewActionEconomyState()
+	actionEconomy.UseAction() // Already consumed
+
+	s.mockEncRepo.EXPECT().
+		Get(gomock.Any(), &encounterrepo.GetInput{EncounterID: "enc-1"}).
+		Return(&encounterrepo.GetOutput{
+			Data: &encounterrepo.EncounterData{
+				ID:                "enc-1",
+				InitiativeData:    initiativeData,
+				ActionEconomy:     actionEconomy,
+				MovementRemaining: 30,
+			},
+		}, nil)
+
+	// No Update should happen since action is not available
+
+	// Act
+	output, err := s.orchestrator.ActivateCombatAbility(context.Background(), &ActivateCombatAbilityInput{
+		EncounterID: "enc-1",
+		EntityID:    "char-1",
+		AbilityID:   pb.CombatAbilityId_COMBAT_ABILITY_ID_ATTACK,
+	})
+
+	// Assert - Should fail but not error (business logic failure)
+	s.Require().NoError(err)
+	s.Require().NotNil(output)
+	s.Assert().False(output.Success)
+	s.Assert().Contains(output.Error, "no action available")
+}
+
+func (s *OrchestratorTestSuite) TestActivateCombatAbility_Dash_Success() {
+	// Arrange
+	initiativeData := &initiative.TrackerData{
+		Order: []initiative.EntityData{
+			{ID: "char-1", Type: "character"},
+		},
+		Current: 0,
+		Round:   1,
+	}
+
+	actionEconomy := entities.NewActionEconomyState()
+
+	s.mockEncRepo.EXPECT().
+		Get(gomock.Any(), &encounterrepo.GetInput{EncounterID: "enc-1"}).
+		Return(&encounterrepo.GetOutput{
+			Data: &encounterrepo.EncounterData{
+				ID:                "enc-1",
+				InitiativeData:    initiativeData,
+				ActionEconomy:     actionEconomy,
+				MovementRemaining: 30, // Starting movement
+			},
+		}, nil)
+
+	s.mockEncRepo.EXPECT().
+		Update(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, input *encounterrepo.UpdateInput) (*encounterrepo.UpdateOutput, error) {
+			s.Assert().Equal("enc-1", input.EncounterID)
+			s.Require().NotNil(input.MovementRemaining)
+			// Movement should be doubled (30 + 30 = 60)
+			s.Assert().Equal(int32(60), *input.MovementRemaining, "Movement should be doubled")
+			return &encounterrepo.UpdateOutput{Success: true}, nil
+		})
+
+	// Act
+	output, err := s.orchestrator.ActivateCombatAbility(context.Background(), &ActivateCombatAbilityInput{
+		EncounterID: "enc-1",
+		EntityID:    "char-1",
+		AbilityID:   pb.CombatAbilityId_COMBAT_ABILITY_ID_DASH,
+	})
+
+	// Assert
+	s.Require().NoError(err)
+	s.Require().NotNil(output)
+	s.Assert().True(output.Success)
+	s.Assert().Equal("Movement doubled", output.GrantedCapacity)
+}
+
+func (s *OrchestratorTestSuite) TestActivateCombatAbility_Dodge_Success() {
+	// Arrange
+	initiativeData := &initiative.TrackerData{
+		Order: []initiative.EntityData{
+			{ID: "char-1", Type: "character"},
+		},
+		Current: 0,
+		Round:   1,
+	}
+
+	actionEconomy := entities.NewActionEconomyState()
+
+	s.mockEncRepo.EXPECT().
+		Get(gomock.Any(), &encounterrepo.GetInput{EncounterID: "enc-1"}).
+		Return(&encounterrepo.GetOutput{
+			Data: &encounterrepo.EncounterData{
+				ID:                "enc-1",
+				InitiativeData:    initiativeData,
+				ActionEconomy:     actionEconomy,
+				MovementRemaining: 30,
+			},
+		}, nil)
+
+	s.mockEncRepo.EXPECT().
+		Update(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, input *encounterrepo.UpdateInput) (*encounterrepo.UpdateOutput, error) {
+			s.Assert().Equal("enc-1", input.EncounterID)
+			s.Require().NotNil(input.ActionEconomy)
+			s.Assert().True(input.ActionEconomy.DodgeActive, "DodgeActive should be true")
+			return &encounterrepo.UpdateOutput{Success: true}, nil
+		})
+
+	// Act
+	output, err := s.orchestrator.ActivateCombatAbility(context.Background(), &ActivateCombatAbilityInput{
+		EncounterID: "enc-1",
+		EntityID:    "char-1",
+		AbilityID:   pb.CombatAbilityId_COMBAT_ABILITY_ID_DODGE,
+	})
+
+	// Assert
+	s.Require().NoError(err)
+	s.Require().NotNil(output)
+	s.Assert().True(output.Success)
+	s.Assert().Equal("Dodging until next turn", output.GrantedCapacity)
+	s.Assert().True(output.ActionEconomy.DodgeActive)
+}
+
+func (s *OrchestratorTestSuite) TestActivateCombatAbility_Disengage_Success() {
+	// Arrange
+	initiativeData := &initiative.TrackerData{
+		Order: []initiative.EntityData{
+			{ID: "char-1", Type: "character"},
+		},
+		Current: 0,
+		Round:   1,
+	}
+
+	actionEconomy := entities.NewActionEconomyState()
+
+	s.mockEncRepo.EXPECT().
+		Get(gomock.Any(), &encounterrepo.GetInput{EncounterID: "enc-1"}).
+		Return(&encounterrepo.GetOutput{
+			Data: &encounterrepo.EncounterData{
+				ID:                "enc-1",
+				InitiativeData:    initiativeData,
+				ActionEconomy:     actionEconomy,
+				MovementRemaining: 30,
+			},
+		}, nil)
+
+	s.mockEncRepo.EXPECT().
+		Update(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, input *encounterrepo.UpdateInput) (*encounterrepo.UpdateOutput, error) {
+			s.Assert().Equal("enc-1", input.EncounterID)
+			s.Require().NotNil(input.ActionEconomy)
+			s.Assert().True(input.ActionEconomy.DisengageActive, "DisengageActive should be true")
+			return &encounterrepo.UpdateOutput{Success: true}, nil
+		})
+
+	// Act
+	output, err := s.orchestrator.ActivateCombatAbility(context.Background(), &ActivateCombatAbilityInput{
+		EncounterID: "enc-1",
+		EntityID:    "char-1",
+		AbilityID:   pb.CombatAbilityId_COMBAT_ABILITY_ID_DISENGAGE,
+	})
+
+	// Assert
+	s.Require().NoError(err)
+	s.Require().NotNil(output)
+	s.Assert().True(output.Success)
+	s.Assert().Equal("Free movement without opportunity attacks", output.GrantedCapacity)
+	s.Assert().True(output.ActionEconomy.DisengageActive)
+}
+
+func (s *OrchestratorTestSuite) TestActivateCombatAbility_OffhandAttack_Success() {
+	// Arrange
+	initiativeData := &initiative.TrackerData{
+		Order: []initiative.EntityData{
+			{ID: "char-1", Type: "character"},
+		},
+		Current: 0,
+		Round:   1,
+	}
+
+	actionEconomy := entities.NewActionEconomyState()
+
+	s.mockEncRepo.EXPECT().
+		Get(gomock.Any(), &encounterrepo.GetInput{EncounterID: "enc-1"}).
+		Return(&encounterrepo.GetOutput{
+			Data: &encounterrepo.EncounterData{
+				ID:                "enc-1",
+				InitiativeData:    initiativeData,
+				ActionEconomy:     actionEconomy,
+				MovementRemaining: 30,
+			},
+		}, nil)
+
+	s.mockEncRepo.EXPECT().
+		Update(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, input *encounterrepo.UpdateInput) (*encounterrepo.UpdateOutput, error) {
+			s.Assert().Equal("enc-1", input.EncounterID)
+			s.Require().NotNil(input.ActionEconomy)
+			// Bonus action should be consumed
+			s.Assert().Equal(0, input.ActionEconomy.BonusActionsRemaining, "Bonus action should be consumed")
+			// Off-hand attack should be granted
+			s.Assert().Equal(1, input.ActionEconomy.OffHandAttacksRemaining, "Should have 1 off-hand attack")
+			return &encounterrepo.UpdateOutput{Success: true}, nil
+		})
+
+	// Act
+	output, err := s.orchestrator.ActivateCombatAbility(context.Background(), &ActivateCombatAbilityInput{
+		EncounterID: "enc-1",
+		EntityID:    "char-1",
+		AbilityID:   pb.CombatAbilityId_COMBAT_ABILITY_ID_OFFHAND_ATTACK,
+	})
+
+	// Assert
+	s.Require().NoError(err)
+	s.Require().NotNil(output)
+	s.Assert().True(output.Success)
+	s.Assert().Equal("Granted off-hand attack", output.GrantedCapacity)
+	s.Assert().Equal(0, output.ActionEconomy.BonusActionsRemaining)
+	s.Assert().Equal(1, output.ActionEconomy.OffHandAttacksRemaining)
+}
+
+func (s *OrchestratorTestSuite) TestActivateCombatAbility_NotEntityTurn() {
+	// Arrange - char-1 is trying to act but it's goblin-1's turn
+	initiativeData := &initiative.TrackerData{
+		Order: []initiative.EntityData{
+			{ID: "goblin-1", Type: "monster"},
+			{ID: "char-1", Type: "character"},
+		},
+		Current: 0, // goblin-1's turn
+		Round:   1,
+	}
+
+	s.mockEncRepo.EXPECT().
+		Get(gomock.Any(), &encounterrepo.GetInput{EncounterID: "enc-1"}).
+		Return(&encounterrepo.GetOutput{
+			Data: &encounterrepo.EncounterData{
+				ID:                "enc-1",
+				InitiativeData:    initiativeData,
+				MovementRemaining: 30,
+			},
+		}, nil)
+
+	// Act
+	output, err := s.orchestrator.ActivateCombatAbility(context.Background(), &ActivateCombatAbilityInput{
+		EncounterID: "enc-1",
+		EntityID:    "char-1", // Trying to act when it's not their turn
+		AbilityID:   pb.CombatAbilityId_COMBAT_ABILITY_ID_ATTACK,
+	})
+
+	// Assert - Should error since it's not their turn
+	s.Require().Error(err)
+	s.Assert().Contains(err.Error(), "not entity's turn")
+	s.Assert().Nil(output)
+}
+
+func (s *OrchestratorTestSuite) TestActivateCombatAbility_NilInput() {
+	output, err := s.orchestrator.ActivateCombatAbility(context.Background(), nil)
+
+	s.Require().Error(err)
+	s.Assert().Contains(err.Error(), "input is required")
+	s.Assert().Nil(output)
+}
+
+func (s *OrchestratorTestSuite) TestActivateCombatAbility_MissingEncounterID() {
+	output, err := s.orchestrator.ActivateCombatAbility(context.Background(), &ActivateCombatAbilityInput{
+		EntityID:  "char-1",
+		AbilityID: pb.CombatAbilityId_COMBAT_ABILITY_ID_ATTACK,
+	})
+
+	s.Require().Error(err)
+	s.Assert().Contains(err.Error(), "encounter ID is required")
+	s.Assert().Nil(output)
+}
+
+func (s *OrchestratorTestSuite) TestActivateCombatAbility_MissingEntityID() {
+	output, err := s.orchestrator.ActivateCombatAbility(context.Background(), &ActivateCombatAbilityInput{
+		EncounterID: "enc-1",
+		AbilityID:   pb.CombatAbilityId_COMBAT_ABILITY_ID_ATTACK,
+	})
+
+	s.Require().Error(err)
+	s.Assert().Contains(err.Error(), "entity ID is required")
+	s.Assert().Nil(output)
+}
+
+// ============================================================================
+// ExecuteAction Tests
+// ============================================================================
+
+func (s *OrchestratorTestSuite) TestExecuteAction_Strike_Success() {
+	// Arrange - Create test character data with equipment slots
+	charData := createTestCharacterData("char-1", "Grog")
+	s.mockCharRepo.EXPECT().
+		Get(gomock.Any(), characterrepo.GetInput{ID: "char-1"}).
+		Return(&characterrepo.GetOutput{Character: &entities.Character{Data: charData}}, nil).
+		AnyTimes()
+
+	// Create encounter data with initiative and attacks remaining
+	encData := createTestEncounterData("enc-1")
+	encData.InitiativeData = &initiative.TrackerData{
+		Order: []initiative.EntityData{
+			{ID: "char-1", Type: "character"},
+			{ID: "goblin-1", Type: "monster"},
+		},
+		Current: 0,
+		Round:   1,
+	}
+	// Grant attacks (simulating ATTACK ability was activated)
+	encData.ActionEconomy = &entities.ActionEconomyState{
+		ActionsRemaining:      0, // Action consumed by ATTACK activation
+		BonusActionsRemaining: 1,
+		ReactionsRemaining:    1,
+		AttacksRemaining:      1, // ATTACK granted one attack
+	}
+
+	s.mockEncRepo.EXPECT().
+		Get(gomock.Any(), &encounterrepo.GetInput{EncounterID: "enc-1"}).
+		Return(&encounterrepo.GetOutput{Data: encData}, nil)
+
+	// Mock Update for persisting the attack result
+	s.mockEncRepo.EXPECT().
+		Update(gomock.Any(), gomock.Any()).
+		Return(&encounterrepo.UpdateOutput{Success: true}, nil).
+		AnyTimes()
+
+	// Mock dungeon repo for wall loading (optional)
+	s.mockDungeonRepo.EXPECT().
+		GetByEncounterID(gomock.Any(), gomock.Any()).
+		Return(&dungeonrepo.GetOutput{
+			Dungeon: &entities.Dungeon{ID: "test-dungeon"},
+		}, nil).
+		AnyTimes()
+
+	// Act
+	output, err := s.orchestrator.ExecuteAction(context.Background(), &ExecuteActionInput{
+		EncounterID: "enc-1",
+		EntityID:    "char-1",
+		ActionID:    pb.ActionId_ACTION_ID_STRIKE,
+		TargetID:    "goblin-1",
+	})
+
+	// Assert
+	s.Require().NoError(err)
+	s.Require().NotNil(output)
+	s.Assert().True(output.Success)
+	s.Assert().NotNil(output.AttackResult)
+	s.Assert().NotNil(output.ActionEconomy)
+
+	// Verify attack was consumed
+	s.Assert().Equal(0, output.ActionEconomy.AttacksRemaining, "Attack should be consumed")
+
+	// Verify attack result has valid values
+	s.Assert().GreaterOrEqual(output.AttackResult.AttackRoll, 1)
+	s.Assert().LessOrEqual(output.AttackResult.AttackRoll, 20)
+}
+
+func (s *OrchestratorTestSuite) TestExecuteAction_Strike_NoAttacksRemaining() {
+	// Arrange - Create encounter with NO attacks remaining
+	encData := createTestEncounterData("enc-1")
+	encData.InitiativeData = &initiative.TrackerData{
+		Order: []initiative.EntityData{
+			{ID: "char-1", Type: "character"},
+		},
+		Current: 0,
+		Round:   1,
+	}
+	encData.ActionEconomy = &entities.ActionEconomyState{
+		ActionsRemaining:      1,
+		BonusActionsRemaining: 1,
+		ReactionsRemaining:    1,
+		AttacksRemaining:      0, // No attacks!
+	}
+
+	s.mockEncRepo.EXPECT().
+		Get(gomock.Any(), &encounterrepo.GetInput{EncounterID: "enc-1"}).
+		Return(&encounterrepo.GetOutput{Data: encData}, nil)
+
+	// Act
+	output, err := s.orchestrator.ExecuteAction(context.Background(), &ExecuteActionInput{
+		EncounterID: "enc-1",
+		EntityID:    "char-1",
+		ActionID:    pb.ActionId_ACTION_ID_STRIKE,
+		TargetID:    "goblin-1",
+	})
+
+	// Assert
+	s.Require().NoError(err) // Not an error, but Success=false
+	s.Require().NotNil(output)
+	s.Assert().False(output.Success)
+	s.Assert().Equal("no attacks remaining", output.Error)
+}
+
+func (s *OrchestratorTestSuite) TestExecuteAction_Move_Success() {
+	// Arrange - Create encounter with room data
+	encData := createTestEncounterData("enc-1")
+	encData.InitiativeData = &initiative.TrackerData{
+		Order: []initiative.EntityData{
+			{ID: "char-1", Type: "character"},
+		},
+		Current: 0,
+		Round:   1,
+	}
+	encData.MovementRemaining = 30
+	encData.ActionEconomy = entities.NewActionEconomyState()
+
+	// Create room data with entity at position (0, 0, 0)
+	encData.RoomData = &spatial.RoomData{
+		ID:       "room-1",
+		Type:     "dungeon",
+		Width:    20,
+		Height:   20,
+		GridType: spatial.GridTypeHex,
+		CubeEntities: map[string]spatial.EntityCubePlacement{
+			"char-1": {
+				EntityID:       "char-1",
+				EntityType:     "character",
+				CubePosition:   spatial.CubeCoordinate{X: 0, Y: 0, Z: 0},
+				Size:           1,
+				BlocksMovement: true,
+			},
+		},
+	}
+
+	s.mockEncRepo.EXPECT().
+		Get(gomock.Any(), &encounterrepo.GetInput{EncounterID: "enc-1"}).
+		Return(&encounterrepo.GetOutput{Data: encData}, nil)
+
+	s.mockEncRepo.EXPECT().
+		Update(gomock.Any(), gomock.Any()).
+		Return(&encounterrepo.UpdateOutput{Success: true}, nil)
+
+	s.mockDungeonRepo.EXPECT().
+		GetByEncounterID(gomock.Any(), gomock.Any()).
+		Return(&dungeonrepo.GetOutput{}, nil).
+		AnyTimes()
+
+	// Act - Move 2 hexes (10 feet)
+	output, err := s.orchestrator.ExecuteAction(context.Background(), &ExecuteActionInput{
+		EncounterID: "enc-1",
+		EntityID:    "char-1",
+		ActionID:    pb.ActionId_ACTION_ID_MOVE,
+		Path: []Position{
+			{X: 1, Y: -1, Z: 0}, // Move one hex
+			{X: 2, Y: -2, Z: 0}, // Move second hex
+		},
+	})
+
+	// Assert
+	s.Require().NoError(err)
+	s.Require().NotNil(output)
+	s.Assert().True(output.Success)
+	s.Require().NotNil(output.MoveResult)
+	s.Assert().Equal(10, output.MoveResult.MovementUsed)
+	s.Assert().Equal("completed", output.MoveResult.StopReason)
+	s.Assert().Equal(float64(2), output.MoveResult.FinalPosition.X)
+	s.Assert().Equal(float64(-2), output.MoveResult.FinalPosition.Y)
+	s.Assert().Equal(float64(0), output.MoveResult.FinalPosition.Z)
+}
+
+func (s *OrchestratorTestSuite) TestExecuteAction_NilInput() {
+	output, err := s.orchestrator.ExecuteAction(context.Background(), nil)
+
+	s.Require().Error(err)
+	s.Assert().Nil(output)
+	s.Assert().Contains(err.Error(), "input is required")
+}
+
+func (s *OrchestratorTestSuite) TestExecuteAction_MissingEncounterID() {
+	output, err := s.orchestrator.ExecuteAction(context.Background(), &ExecuteActionInput{
+		EntityID: "char-1",
+		ActionID: pb.ActionId_ACTION_ID_STRIKE,
+	})
+
+	s.Require().Error(err)
+	s.Assert().Nil(output)
+	s.Assert().Contains(err.Error(), "encounter ID is required")
+}
+
+func (s *OrchestratorTestSuite) TestExecuteAction_MissingEntityID() {
+	output, err := s.orchestrator.ExecuteAction(context.Background(), &ExecuteActionInput{
+		EncounterID: "enc-1",
+		ActionID:    pb.ActionId_ACTION_ID_STRIKE,
+	})
+
+	s.Require().Error(err)
+	s.Assert().Nil(output)
+	s.Assert().Contains(err.Error(), "entity ID is required")
+}
+
+func (s *OrchestratorTestSuite) TestExecuteAction_MissingActionID() {
+	output, err := s.orchestrator.ExecuteAction(context.Background(), &ExecuteActionInput{
+		EncounterID: "enc-1",
+		EntityID:    "char-1",
+	})
+
+	s.Require().Error(err)
+	s.Assert().Nil(output)
+	s.Assert().Contains(err.Error(), "action ID is required")
 }
