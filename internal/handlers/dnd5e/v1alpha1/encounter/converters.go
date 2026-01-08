@@ -1300,3 +1300,72 @@ func convertDungeonWallsToProto(walls []dungeon.WallSegment) []*apiv1alpha1.Wall
 
 	return result
 }
+
+// convertActionEconomyToProto converts entities.ActionEconomyState to proto ActionEconomy
+// Movement values come from CombatState since ActionEconomyState doesn't track movement
+//
+//nolint:gosec // G115: Game values are bounded by D&D rules, no overflow risk
+func convertActionEconomyToProto(ae *entities.ActionEconomyState, cs *entities.CombatState) *dnd5ev1alpha1.ActionEconomy {
+	if ae == nil {
+		return nil
+	}
+
+	// Get movement values from CombatState
+	var movementRemaining, movementMax int32
+	if cs != nil {
+		movementRemaining = cs.MovementRemaining
+		movementMax = 30 // Default movement - dynamic values coming in Phase 4
+	}
+
+	return &dnd5ev1alpha1.ActionEconomy{
+		MovementRemaining:       movementRemaining,
+		MovementMax:             movementMax,
+		AttacksRemaining:        int32(ae.AttacksRemaining),
+		StandardActionAvailable: ae.ActionsRemaining > 0,
+		BonusActionAvailable:    ae.BonusActionsRemaining > 0,
+		ReactionAvailable:       ae.ReactionsRemaining > 0,
+		OffHandAttacksRemaining: int32(ae.OffHandAttacksRemaining),
+		FlurryStrikesRemaining:  int32(ae.FlurryStrikesRemaining),
+		DisengageActive:         ae.DisengageActive,
+		DodgeActive:             ae.DodgeActive,
+	}
+}
+
+// convertMoveResultToProto converts encounter.MoveResult to proto MoveResult
+//
+//nolint:gosec // G115: Game values are bounded by D&D rules, no overflow risk
+func convertMoveResultToProto(mr *encounter.MoveResult) *dnd5ev1alpha1.MoveResult {
+	if mr == nil {
+		return nil
+	}
+
+	var finalPosition *apiv1alpha1.Position
+	if mr.FinalPosition != nil {
+		finalPosition = &apiv1alpha1.Position{
+			X: mr.FinalPosition.X,
+			Y: mr.FinalPosition.Y,
+			Z: mr.FinalPosition.Z,
+		}
+	}
+
+	return &dnd5ev1alpha1.MoveResult{
+		FinalPosition: finalPosition,
+		MovementUsed:  int32(mr.MovementUsed),
+		StopReason:    mr.StopReason,
+	}
+}
+
+// convertGrantedActionToProto converts encounter.GrantedAction to proto GrantedAction
+func convertGrantedActionToProto(ga *encounter.GrantedAction) *dnd5ev1alpha1.GrantedAction {
+	if ga == nil {
+		return nil
+	}
+
+	return &dnd5ev1alpha1.GrantedAction{
+		Id:       ga.ID,
+		Type:     ga.Type,
+		Name:     ga.Name,
+		Reason:   ga.Reason,
+		WeaponId: ga.WeaponID,
+	}
+}

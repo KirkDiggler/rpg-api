@@ -65,10 +65,24 @@
         "Tests verify action economy consumption, capacity grants, and turn validation"
       ],
       "notes": "Implementation was committed alongside ExecuteAction in same commit (522ba32). Validates entity's turn before allowing activation. Returns business logic failures (Success=false) vs errors for invalid state. All 10 tests pass."
+    },
+    {
+      "date": "2026-01-08",
+      "task": "Wire up gRPC handlers for ActivateCombatAbility and ExecuteAction",
+      "commit": "cd22bd2",
+      "changes": [
+        "Added ActivateCombatAbility handler in handler.go with validation and service call",
+        "Added ExecuteAction handler with oneof input handling for Strike and Move actions",
+        "Added convertActionEconomyToProto converter for ActionEconomy proto conversion",
+        "Added convertMoveResultToProto converter for MoveResult proto conversion",
+        "Added convertGrantedActionToProto converter for GrantedAction proto conversion",
+        "Added 12 handler tests covering success, validation, and error cases"
+      ],
+      "notes": "Handlers follow existing patterns (Attack, MoveCharacter). ActionEconomy converter takes CombatState for movement values. All tests pass, pre-commit passes."
     }
   ],
   "next_steps": [
-    "Add handler methods for ActivateCombatAbility and ExecuteAction",
-    "Add proto converters for ActionEconomy and new types"
+    "Consider adding converter tests for edge cases",
+    "Phase 4: Add dynamic movement speed calculation based on character stats"
   ]
 }
