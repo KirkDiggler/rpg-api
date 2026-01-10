@@ -4,11 +4,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/suite"
+
 	"github.com/KirkDiggler/rpg-api/internal/components/dungeon"
 	"github.com/KirkDiggler/rpg-api/internal/entities"
 	"github.com/KirkDiggler/rpg-toolkit/tools/environments"
 	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
-	"github.com/stretchr/testify/suite"
 )
 
 type DungeonTestSuite struct {

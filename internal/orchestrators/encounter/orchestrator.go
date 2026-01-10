@@ -1507,7 +1507,7 @@ func (o *Orchestrator) MoveCharacter(ctx context.Context, input *MoveCharacterIn
 
 	// Load dungeon to get walls and room origin for the current room
 	var walls []WallInfo
-	var localWalls []dungeon.WallSegment  // Local walls for collision checking
+	var localWalls []dungeon.WallSegment   // Local walls for collision checking
 	var dungeonWalls []dungeon.WallSegment // Absolute walls for event
 	var roomOrigin spatial.CubeCoordinate  // For converting absolute coords to room-local for wall checks
 	if o.dungeonRepo != nil {

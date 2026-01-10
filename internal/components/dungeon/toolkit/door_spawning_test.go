@@ -108,12 +108,13 @@ func (s *DoorSpawningTestSuite) TestPlayerSpawnNearSouthDoor() {
 	}
 	s.Require().NotNil(playerSpawnZone, "entrance room should have player spawn zone")
 
-	// Player spawn positions should be near the south wall (low Z values)
-	// South door is at Z ~= 1 (just inside the south wall)
-	// Spawn positions should be at Z = 1 or Z = 2 (within 2 rows of south wall)
+	// Player spawn positions should be near the south wall (low row values in offset coordinates)
+	// South door is at row ~= 1 (just inside the south wall)
+	// Spawn positions should be at row 1 or 2 (within 2 rows of south wall)
 	for _, pos := range playerSpawnZone.Bounds {
-		s.LessOrEqual(pos.Z, 2, "player spawn position Z=%d should be <= 2 (near south door)", pos.Z)
-		s.GreaterOrEqual(pos.Z, 1, "player spawn position Z=%d should be >= 1 (inside perimeter)", pos.Z)
+		_, row := cubeToOffset(pos)
+		s.LessOrEqual(row, 2, "player spawn position row=%d should be <= 2 (near south door)", row)
+		s.GreaterOrEqual(row, 1, "player spawn position row=%d should be >= 1 (inside perimeter)", row)
 	}
 }
 
@@ -168,17 +169,24 @@ func (s *DoorSpawningTestSuite) TestSymmetricalSpawnOrder() {
 
 	positions := playerSpawnZone.Bounds
 
+	// Use cubeToOffset to get actual row values for assertions
+	_, row0 := cubeToOffset(positions[0])
+	_, row1 := cubeToOffset(positions[1])
+	_, row2 := cubeToOffset(positions[2])
+	_, row3 := cubeToOffset(positions[3])
+	_, row4 := cubeToOffset(positions[4])
+
 	// Position 0 should be center (X = centerX based on grid-to-cube)
 	// Note: X in cube coords corresponds to column offset
-	s.Equal(2, positions[0].Z, "position 0 should be in row 2 (back row)")
+	s.Equal(2, row0, "position 0 should be in row 2 (back row)")
 
 	// Positions 1 and 2 should also be in row 2 (back row)
-	s.Equal(2, positions[1].Z, "position 1 should be in row 2 (back row)")
-	s.Equal(2, positions[2].Z, "position 2 should be in row 2 (back row)")
+	s.Equal(2, row1, "position 1 should be in row 2 (back row)")
+	s.Equal(2, row2, "position 2 should be in row 2 (back row)")
 
 	// Positions 3 and 4 should be in row 1 (beside door, flanking)
-	s.Equal(1, positions[3].Z, "position 3 should be in row 1 (flank)")
-	s.Equal(1, positions[4].Z, "position 4 should be in row 1 (flank)")
+	s.Equal(1, row3, "position 3 should be in row 1 (flank)")
+	s.Equal(1, row4, "position 4 should be in row 1 (flank)")
 
 	// Verify left/right symmetry around center
 	// Position 1 should be left of center, position 2 right of center
@@ -227,15 +235,16 @@ func (s *DoorSpawningTestSuite) TestMonsterSpawnNearNorthDoor() {
 	}
 	s.Require().NotNil(monsterSpawnZone, "entrance room should have monster spawn zone")
 
-	// Monster spawn positions should be near the north wall (high Z values)
-	// North door is at Z ~= height-2 (just inside north wall)
-	// Spawn positions should be at Z >= height-3 (within 2 rows of north wall)
+	// Monster spawn positions should be near the north wall (high row values in offset coordinates)
+	// North door is at row ~= height-2 (just inside north wall)
+	// Spawn positions should be at row >= height-3 (within 2-3 rows of north wall)
 	roomHeight := entranceRoom.Shape.Height
-	minZForNorth := roomHeight - 3 // Allow positions within 2-3 rows of north wall
+	minRowForNorth := roomHeight - 3 // Allow positions within 2-3 rows of north wall
 
 	for _, pos := range monsterSpawnZone.Bounds {
-		s.GreaterOrEqual(pos.Z, minZForNorth,
-			"monster spawn position Z=%d should be >= %d (near north door, room height=%d)",
-			pos.Z, minZForNorth, roomHeight)
+		_, row := cubeToOffset(pos)
+		s.GreaterOrEqual(row, minRowForNorth,
+			"monster spawn position row=%d should be >= %d (near north door, room height=%d)",
+			row, minRowForNorth, roomHeight)
 	}
 }
