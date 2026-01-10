@@ -5,7 +5,16 @@ import "github.com/KirkDiggler/rpg-api/internal/components/dungeon"
 // offsetToCube converts offset grid coordinates (col, row) to cube coordinates.
 // Uses pointy-top hex orientation (odd-q offset coordinates).
 // In cube coordinates: x + y + z = 0 always
-// Formula matches toolkit's spatial.OffsetCoordinateToCubeWithOrientation for pointy-top.
+//
+// IMPORTANT: This formula must stay aligned with:
+//   - rpg-toolkit/tools/spatial/position.go: OffsetCoordinateToCubeWithOrientation
+//   - rpg-dnd5e-web/src/components/hex-grid/InstancedHexTiles.tsx: indexToCubeAbsolute
+//
+// All three use the same pointy-top (odd-q) formula:
+//
+//	x = col
+//	z = row - (col-(col&1))/2
+//	y = -x - z
 func offsetToCube(col, row int) dungeon.Position {
 	x := col
 	z := row - (col-(col&1))/2 // Adjust for odd column stagger
