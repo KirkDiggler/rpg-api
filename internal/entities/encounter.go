@@ -168,3 +168,21 @@ func (a *ActionEconomyState) UseFlurryStrike() {
 		a.FlurryStrikesRemaining--
 	}
 }
+
+// AvailableAbility represents a combat ability with its current availability status
+// Used by UI to render ability buttons with proper enabled/disabled state
+type AvailableAbility struct {
+	AbilityID string `json:"ability_id"` // e.g., "attack", "dash", "dodge"
+	Name      string `json:"name"`       // Display name for UI
+	CanUse    bool   `json:"can_use"`    // Whether the ability can be activated
+	Reason    string `json:"reason"`     // Explanation if can_use is false
+}
+
+// AvailableAction represents an executable action with its current availability status
+// Used by UI to render action buttons based on granted capacity
+type AvailableAction struct {
+	ActionID string `json:"action_id"` // e.g., "strike", "move", "off-hand-strike"
+	Name     string `json:"name"`      // Display name for UI
+	CanUse   bool   `json:"can_use"`   // Whether the action can be executed
+	Reason   string `json:"reason"`    // Explanation if can_use is false
+}

@@ -1369,3 +1369,73 @@ func convertGrantedActionToProto(ga *encounter.GrantedAction) *dnd5ev1alpha1.Gra
 		WeaponId: ga.WeaponID,
 	}
 }
+
+// convertAvailableAbilitiesToProto converts entity AvailableAbility slice to proto
+func convertAvailableAbilitiesToProto(abilities []*entities.AvailableAbility) []*dnd5ev1alpha1.AvailableAbility {
+	if abilities == nil {
+		return nil
+	}
+
+	result := make([]*dnd5ev1alpha1.AvailableAbility, len(abilities))
+	for i, a := range abilities {
+		result[i] = &dnd5ev1alpha1.AvailableAbility{
+			AbilityId: abilityIDToProtoEnum(a.AbilityID),
+			Name:      a.Name,
+			CanUse:    a.CanUse,
+			Reason:    a.Reason,
+		}
+	}
+	return result
+}
+
+// convertAvailableActionsToProto converts entity AvailableAction slice to proto
+func convertAvailableActionsToProto(actions []*entities.AvailableAction) []*dnd5ev1alpha1.AvailableAction {
+	if actions == nil {
+		return nil
+	}
+
+	result := make([]*dnd5ev1alpha1.AvailableAction, len(actions))
+	for i, a := range actions {
+		result[i] = &dnd5ev1alpha1.AvailableAction{
+			ActionId: actionIDToProtoEnum(a.ActionID),
+			Name:     a.Name,
+			CanUse:   a.CanUse,
+			Reason:   a.Reason,
+		}
+	}
+	return result
+}
+
+// abilityIDToProtoEnum converts string ability ID to proto CombatAbilityId enum
+func abilityIDToProtoEnum(id string) dnd5ev1alpha1.CombatAbilityId {
+	switch id {
+	case "attack":
+		return dnd5ev1alpha1.CombatAbilityId_COMBAT_ABILITY_ID_ATTACK
+	case "dash":
+		return dnd5ev1alpha1.CombatAbilityId_COMBAT_ABILITY_ID_DASH
+	case "dodge":
+		return dnd5ev1alpha1.CombatAbilityId_COMBAT_ABILITY_ID_DODGE
+	case "disengage":
+		return dnd5ev1alpha1.CombatAbilityId_COMBAT_ABILITY_ID_DISENGAGE
+	case "offhand_attack":
+		return dnd5ev1alpha1.CombatAbilityId_COMBAT_ABILITY_ID_OFFHAND_ATTACK
+	default:
+		return dnd5ev1alpha1.CombatAbilityId_COMBAT_ABILITY_ID_UNSPECIFIED
+	}
+}
+
+// actionIDToProtoEnum converts string action ID to proto ActionId enum
+func actionIDToProtoEnum(id string) dnd5ev1alpha1.ActionId {
+	switch id {
+	case "strike":
+		return dnd5ev1alpha1.ActionId_ACTION_ID_STRIKE
+	case "off_hand_strike":
+		return dnd5ev1alpha1.ActionId_ACTION_ID_OFF_HAND_STRIKE
+	case "move":
+		return dnd5ev1alpha1.ActionId_ACTION_ID_MOVE
+	case "flurry_strike":
+		return dnd5ev1alpha1.ActionId_ACTION_ID_FLURRY_STRIKE
+	default:
+		return dnd5ev1alpha1.ActionId_ACTION_ID_UNSPECIFIED
+	}
+}

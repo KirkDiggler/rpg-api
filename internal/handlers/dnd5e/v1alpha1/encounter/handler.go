@@ -728,11 +728,13 @@ func (h *Handler) ActivateCombatAbility(
 	hexOrientation := spatial.HexOrientationPointyTop
 
 	return &dnd5ev1alpha1.ActivateCombatAbilityResponse{
-		Success:         output.Success,
-		Error:           output.Error,
-		ActionEconomy:   convertActionEconomyToProto(output.ActionEconomy, output.CombatState),
-		GrantedCapacity: output.GrantedCapacity,
-		CombatState:     convertCombatStateToProto(output.CombatState, gridType, hexOrientation),
+		Success:            output.Success,
+		Error:              output.Error,
+		ActionEconomy:      convertActionEconomyToProto(output.ActionEconomy, output.CombatState),
+		GrantedCapacity:    output.GrantedCapacity,
+		CombatState:        convertCombatStateToProto(output.CombatState, gridType, hexOrientation),
+		AvailableAbilities: convertAvailableAbilitiesToProto(output.AvailableAbilities),
+		AvailableActions:   convertAvailableActionsToProto(output.AvailableActions),
 	}, nil
 }
 
@@ -791,12 +793,14 @@ func (h *Handler) ExecuteAction(
 	hexOrientation := spatial.HexOrientationPointyTop
 
 	response := &dnd5ev1alpha1.ExecuteActionResponse{
-		Success:       output.Success,
-		Error:         output.Error,
-		ActionEconomy: convertActionEconomyToProto(output.ActionEconomy, output.CombatState),
-		CombatState:   convertCombatStateToProto(output.CombatState, gridType, hexOrientation),
-		UpdatedRoom:   convertRoomDataToProto(output.Room),
-		GrantedAction: convertGrantedActionToProto(output.GrantedAction),
+		Success:            output.Success,
+		Error:              output.Error,
+		ActionEconomy:      convertActionEconomyToProto(output.ActionEconomy, output.CombatState),
+		CombatState:        convertCombatStateToProto(output.CombatState, gridType, hexOrientation),
+		UpdatedRoom:        convertRoomDataToProto(output.Room),
+		GrantedAction:      convertGrantedActionToProto(output.GrantedAction),
+		AvailableAbilities: convertAvailableAbilitiesToProto(output.AvailableAbilities),
+		AvailableActions:   convertAvailableActionsToProto(output.AvailableActions),
 	}
 
 	// Set the appropriate result oneof

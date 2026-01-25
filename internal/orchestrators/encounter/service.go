@@ -511,6 +511,10 @@ type ActivateCombatAbilityOutput struct {
 	ActionEconomy   *entities.ActionEconomyState // Updated action economy after activation
 	GrantedCapacity string                       // What was granted (e.g., "Granted 2 attacks")
 	CombatState     *CombatState                 // Full combat state update
+
+	// Available abilities/actions for UI refresh
+	AvailableAbilities []*entities.AvailableAbility // Current availability of all combat abilities
+	AvailableActions   []*entities.AvailableAction  // Current availability of all actions
 }
 
 // ExecuteActionInput contains parameters for executing an action
@@ -540,4 +544,8 @@ type ExecuteActionOutput struct {
 	CombatState   *CombatState                 // Full combat state update
 	Room          interface{}                  // Updated room data
 	GrantedAction *GrantedAction               // Action granted (e.g., off-hand strike for TWF)
+
+	// Available abilities/actions for UI refresh
+	AvailableAbilities []*entities.AvailableAbility // Current availability of all combat abilities
+	AvailableActions   []*entities.AvailableAction  // Current availability of all actions
 }

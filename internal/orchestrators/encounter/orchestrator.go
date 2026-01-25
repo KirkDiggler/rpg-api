@@ -1938,6 +1938,96 @@ func (o *Orchestrator) buildCombatState(encounterID string, enc *encounterrepo.E
 	}
 }
 
+// buildAvailableAbilities returns a list of all combat abilities with their current availability
+func buildAvailableAbilities(actionEconomy *entities.ActionEconomyState) []*entities.AvailableAbility {
+	if actionEconomy == nil {
+		actionEconomy = entities.NewActionEconomyState()
+	}
+
+	abilities := []*entities.AvailableAbility{
+		{
+			AbilityID: "attack",
+			Name:      "Attack",
+			CanUse:    actionEconomy.HasAction(),
+			Reason:    reasonIfFalse(actionEconomy.HasAction(), "no actions remaining"),
+		},
+		{
+			AbilityID: "dash",
+			Name:      "Dash",
+			CanUse:    actionEconomy.HasAction(),
+			Reason:    reasonIfFalse(actionEconomy.HasAction(), "no actions remaining"),
+		},
+		{
+			AbilityID: "dodge",
+			Name:      "Dodge",
+			CanUse:    actionEconomy.HasAction(),
+			Reason:    reasonIfFalse(actionEconomy.HasAction(), "no actions remaining"),
+		},
+		{
+			AbilityID: "disengage",
+			Name:      "Disengage",
+			CanUse:    actionEconomy.HasAction(),
+			Reason:    reasonIfFalse(actionEconomy.HasAction(), "no actions remaining"),
+		},
+		{
+			AbilityID: "offhand_attack",
+			Name:      "Off-hand Attack",
+			CanUse:    actionEconomy.HasBonusAction(),
+			Reason:    reasonIfFalse(actionEconomy.HasBonusAction(), "no bonus actions remaining"),
+		},
+	}
+
+	return abilities
+}
+
+// buildAvailableActions returns a list of all actions with their current availability
+func buildAvailableActions(actionEconomy *entities.ActionEconomyState, movementRemaining int32) []*entities.AvailableAction {
+	if actionEconomy == nil {
+		actionEconomy = entities.NewActionEconomyState()
+	}
+
+	actions := []*entities.AvailableAction{
+		{
+			ActionID: "strike",
+			Name:     "Strike",
+			CanUse:   actionEconomy.HasAttacks(),
+			Reason:   reasonIfFalse(actionEconomy.HasAttacks(), "no attacks remaining (activate Attack ability first)"),
+		},
+		{
+			ActionID: "off_hand_strike",
+			Name:     "Off-hand Strike",
+			CanUse:   actionEconomy.HasOffHandAttacks(),
+			Reason:   reasonIfFalse(actionEconomy.HasOffHandAttacks(), "no off-hand attacks remaining"),
+		},
+		{
+			ActionID: "move",
+			Name:     "Move",
+			CanUse:   movementRemaining > 0,
+			Reason:   reasonIfFalse(movementRemaining > 0, "no movement remaining"),
+		},
+	}
+
+	// Add flurry strikes if any are available
+	if actionEconomy.HasFlurryStrikes() {
+		actions = append(actions, &entities.AvailableAction{
+			ActionID: "flurry_strike",
+			Name:     "Flurry Strike",
+			CanUse:   true,
+			Reason:   "",
+		})
+	}
+
+	return actions
+}
+
+// reasonIfFalse returns the reason if condition is false, empty string otherwise
+func reasonIfFalse(condition bool, reason string) string {
+	if !condition {
+		return reason
+	}
+	return ""
+}
+
 // validateTurnOwnership checks if the requesting player owns the entity whose turn it is.
 // Returns an error if:
 // - The active entity is a monster (players cannot control monsters)
@@ -3958,11 +4048,17 @@ func (o *Orchestrator) ActivateCombatAbility(
 	encOutput.Data.MovementRemaining = movementRemaining
 	combatState := o.buildCombatState(input.EncounterID, encOutput.Data)
 
+	// 9. Compute available abilities and actions for UI
+	availableAbilities := buildAvailableAbilities(actionEconomy)
+	availableActions := buildAvailableActions(actionEconomy, movementRemaining)
+
 	return &ActivateCombatAbilityOutput{
-		Success:         true,
-		ActionEconomy:   actionEconomy,
-		GrantedCapacity: grantedCapacity,
-		CombatState:     combatState,
+		Success:            true,
+		ActionEconomy:      actionEconomy,
+		GrantedCapacity:    grantedCapacity,
+		CombatState:        combatState,
+		AvailableAbilities: availableAbilities,
+		AvailableActions:   availableActions,
 	}, nil
 }
 
@@ -4209,13 +4305,19 @@ func (o *Orchestrator) executeStrike(
 		o.checkAndHandleVictory(ctx, input.EncounterID, encData, input.TargetID)
 	}
 
+	// 19. Compute available abilities and actions for UI
+	availableAbilities := buildAvailableAbilities(actionEconomy)
+	availableActions := buildAvailableActions(actionEconomy, encData.MovementRemaining)
+
 	return &ExecuteActionOutput{
-		Success:       true,
-		ActionEconomy: actionEconomy,
-		AttackResult:  attackResult,
-		CombatState:   combatState,
-		Room:          roomData,
-		GrantedAction: grantedAction,
+		Success:            true,
+		ActionEconomy:      actionEconomy,
+		AttackResult:       attackResult,
+		CombatState:        combatState,
+		Room:               roomData,
+		GrantedAction:      grantedAction,
+		AvailableAbilities: availableAbilities,
+		AvailableActions:   availableActions,
 	}, nil
 }
 
@@ -4429,6 +4531,10 @@ func (o *Orchestrator) executeMove(
 	// 12. Build combat state for response
 	combatState := o.buildCombatState(input.EncounterID, encData)
 
+	// 13. Compute available abilities and actions for UI
+	availableAbilities := buildAvailableAbilities(actionEconomy)
+	availableActions := buildAvailableActions(actionEconomy, newMovementRemaining)
+
 	return &ExecuteActionOutput{
 		Success:       stopReason == stopReasonCompleted || stopReason == stopReasonInsufficientMovement,
 		ActionEconomy: actionEconomy,
@@ -4437,7 +4543,9 @@ func (o *Orchestrator) executeMove(
 			MovementUsed:  totalMovementUsed,
 			StopReason:    stopReason,
 		},
-		CombatState: combatState,
-		Room:        roomData,
+		CombatState:        combatState,
+		Room:               roomData,
+		AvailableAbilities: availableAbilities,
+		AvailableActions:   availableActions,
 	}, nil
 }
