@@ -1643,6 +1643,14 @@ func (s *HandlerTestSuite) TestActivateCombatAbility_Success() {
 				MovementRemaining: 30,
 				CombatStarted:     true,
 			},
+			AvailableAbilities: []*entities.AvailableAbility{
+				{AbilityID: "attack", Name: "Attack", CanUse: false, Reason: "no actions remaining"},
+				{AbilityID: "dash", Name: "Dash", CanUse: false, Reason: "no actions remaining"},
+			},
+			AvailableActions: []*entities.AvailableAction{
+				{ActionID: "strike", Name: "Strike", CanUse: true, Reason: ""},
+				{ActionID: "move", Name: "Move", CanUse: true, Reason: ""},
+			},
 		}, nil)
 
 	// Act
@@ -1665,6 +1673,18 @@ func (s *HandlerTestSuite) TestActivateCombatAbility_Success() {
 	s.Assert().True(resp.ActionEconomy.ReactionAvailable)
 	s.Assert().Equal(int32(1), resp.ActionEconomy.AttacksRemaining)
 	s.Assert().Equal(int32(30), resp.ActionEconomy.MovementRemaining)
+
+	// Verify AvailableAbilities (issue #404)
+	s.Require().NotNil(resp.AvailableAbilities)
+	s.Assert().Len(resp.AvailableAbilities, 2)
+	s.Assert().Equal(dnd5ev1alpha1.CombatAbilityId_COMBAT_ABILITY_ID_ATTACK, resp.AvailableAbilities[0].AbilityId)
+	s.Assert().False(resp.AvailableAbilities[0].CanUse)
+
+	// Verify AvailableActions (issue #404)
+	s.Require().NotNil(resp.AvailableActions)
+	s.Assert().Len(resp.AvailableActions, 2)
+	s.Assert().Equal(dnd5ev1alpha1.ActionId_ACTION_ID_STRIKE, resp.AvailableActions[0].ActionId)
+	s.Assert().True(resp.AvailableActions[0].CanUse)
 }
 
 // TestActivateCombatAbility_NoActionAvailable tests when no action is available
@@ -1807,6 +1827,13 @@ func (s *HandlerTestSuite) TestExecuteAction_Strike_Success() {
 				EncounterID:       "enc-1",
 				MovementRemaining: 30,
 			},
+			AvailableAbilities: []*entities.AvailableAbility{
+				{AbilityID: "attack", Name: "Attack", CanUse: false, Reason: "no actions remaining"},
+			},
+			AvailableActions: []*entities.AvailableAction{
+				{ActionID: "strike", Name: "Strike", CanUse: false, Reason: "no attacks remaining (activate Attack ability first)"},
+				{ActionID: "move", Name: "Move", CanUse: true, Reason: ""},
+			},
 		}, nil)
 
 	// Act
@@ -1836,6 +1863,14 @@ func (s *HandlerTestSuite) TestExecuteAction_Strike_Success() {
 	// Verify action economy
 	s.Require().NotNil(resp.ActionEconomy)
 	s.Assert().Equal(int32(0), resp.ActionEconomy.AttacksRemaining)
+
+	// Verify AvailableAbilities (issue #404)
+	s.Require().NotNil(resp.AvailableAbilities)
+	s.Assert().NotEmpty(resp.AvailableAbilities)
+
+	// Verify AvailableActions (issue #404)
+	s.Require().NotNil(resp.AvailableActions)
+	s.Assert().NotEmpty(resp.AvailableActions)
 }
 
 // TestExecuteAction_Move_Success tests successful move action

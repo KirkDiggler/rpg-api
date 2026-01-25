@@ -2005,16 +2005,12 @@ func buildAvailableActions(actionEconomy *entities.ActionEconomyState, movementR
 			CanUse:   movementRemaining > 0,
 			Reason:   reasonIfFalse(movementRemaining > 0, "no movement remaining"),
 		},
-	}
-
-	// Add flurry strikes if any are available
-	if actionEconomy.HasFlurryStrikes() {
-		actions = append(actions, &entities.AvailableAction{
+		{
 			ActionID: "flurry_strike",
 			Name:     "Flurry Strike",
-			CanUse:   true,
-			Reason:   "",
-		})
+			CanUse:   actionEconomy.HasFlurryStrikes(),
+			Reason:   reasonIfFalse(actionEconomy.HasFlurryStrikes(), "no flurry strikes remaining"),
+		},
 	}
 
 	return actions
@@ -3953,9 +3949,11 @@ func (o *Orchestrator) ActivateCombatAbility(
 		// Check: action available
 		if !actionEconomy.HasAction() {
 			return &ActivateCombatAbilityOutput{
-				Success:       false,
-				Error:         "no action available: action already used this turn",
-				ActionEconomy: actionEconomy,
+				Success:            false,
+				Error:              "no action available: action already used this turn",
+				ActionEconomy:      actionEconomy,
+				AvailableAbilities: buildAvailableAbilities(actionEconomy),
+				AvailableActions:   buildAvailableActions(actionEconomy, movementRemaining),
 			}, nil
 		}
 		// Consume: action
@@ -3968,9 +3966,11 @@ func (o *Orchestrator) ActivateCombatAbility(
 		// Check: action available
 		if !actionEconomy.HasAction() {
 			return &ActivateCombatAbilityOutput{
-				Success:       false,
-				Error:         "no action available: action already used this turn",
-				ActionEconomy: actionEconomy,
+				Success:            false,
+				Error:              "no action available: action already used this turn",
+				ActionEconomy:      actionEconomy,
+				AvailableAbilities: buildAvailableAbilities(actionEconomy),
+				AvailableActions:   buildAvailableActions(actionEconomy, movementRemaining),
 			}, nil
 		}
 		// Consume: action
@@ -3983,9 +3983,11 @@ func (o *Orchestrator) ActivateCombatAbility(
 		// Check: action available
 		if !actionEconomy.HasAction() {
 			return &ActivateCombatAbilityOutput{
-				Success:       false,
-				Error:         "no action available: action already used this turn",
-				ActionEconomy: actionEconomy,
+				Success:            false,
+				Error:              "no action available: action already used this turn",
+				ActionEconomy:      actionEconomy,
+				AvailableAbilities: buildAvailableAbilities(actionEconomy),
+				AvailableActions:   buildAvailableActions(actionEconomy, movementRemaining),
 			}, nil
 		}
 		// Consume: action
@@ -3998,9 +4000,11 @@ func (o *Orchestrator) ActivateCombatAbility(
 		// Check: action available
 		if !actionEconomy.HasAction() {
 			return &ActivateCombatAbilityOutput{
-				Success:       false,
-				Error:         "no action available: action already used this turn",
-				ActionEconomy: actionEconomy,
+				Success:            false,
+				Error:              "no action available: action already used this turn",
+				ActionEconomy:      actionEconomy,
+				AvailableAbilities: buildAvailableAbilities(actionEconomy),
+				AvailableActions:   buildAvailableActions(actionEconomy, movementRemaining),
 			}, nil
 		}
 		// Consume: action
@@ -4013,9 +4017,11 @@ func (o *Orchestrator) ActivateCombatAbility(
 		// Check: bonus action available
 		if !actionEconomy.HasBonusAction() {
 			return &ActivateCombatAbilityOutput{
-				Success:       false,
-				Error:         "no bonus action available: bonus action already used this turn",
-				ActionEconomy: actionEconomy,
+				Success:            false,
+				Error:              "no bonus action available: bonus action already used this turn",
+				ActionEconomy:      actionEconomy,
+				AvailableAbilities: buildAvailableAbilities(actionEconomy),
+				AvailableActions:   buildAvailableActions(actionEconomy, movementRemaining),
 			}, nil
 		}
 		// Consume: bonus action
@@ -4026,9 +4032,11 @@ func (o *Orchestrator) ActivateCombatAbility(
 
 	default:
 		return &ActivateCombatAbilityOutput{
-			Success:       false,
-			Error:         fmt.Sprintf("unknown or unimplemented ability: %v", input.AbilityID),
-			ActionEconomy: actionEconomy,
+			Success:            false,
+			Error:              fmt.Sprintf("unknown or unimplemented ability: %v", input.AbilityID),
+			ActionEconomy:      actionEconomy,
+			AvailableAbilities: buildAvailableAbilities(actionEconomy),
+			AvailableActions:   buildAvailableActions(actionEconomy, movementRemaining),
 		}, nil
 	}
 
@@ -4128,18 +4136,22 @@ func (o *Orchestrator) executeStrike(
 	if attackHand == combat.AttackHandMain {
 		if !actionEconomy.HasAttacks() {
 			return &ExecuteActionOutput{
-				Success:       false,
-				Error:         "no attacks remaining",
-				ActionEconomy: actionEconomy,
+				Success:            false,
+				Error:              "no attacks remaining",
+				ActionEconomy:      actionEconomy,
+				AvailableAbilities: buildAvailableAbilities(actionEconomy),
+				AvailableActions:   buildAvailableActions(actionEconomy, encData.MovementRemaining),
 			}, nil
 		}
 	} else {
 		// Off-hand attack
 		if !actionEconomy.HasOffHandAttacks() {
 			return &ExecuteActionOutput{
-				Success:       false,
-				Error:         "no off-hand attacks remaining",
-				ActionEconomy: actionEconomy,
+				Success:            false,
+				Error:              "no off-hand attacks remaining",
+				ActionEconomy:      actionEconomy,
+				AvailableAbilities: buildAvailableAbilities(actionEconomy),
+				AvailableActions:   buildAvailableActions(actionEconomy, encData.MovementRemaining),
 			}, nil
 		}
 	}
