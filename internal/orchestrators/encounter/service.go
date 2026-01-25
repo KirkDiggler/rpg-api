@@ -106,6 +106,16 @@ type Service interface {
 	// GetEncounterHistory retrieves historical events for an encounter
 	// Used by late joiners to populate event log before streaming new events
 	GetEncounterHistory(ctx context.Context, input *GetEncounterHistoryInput) (*GetEncounterHistoryOutput, error)
+
+	// Two-level action economy methods
+
+	// ActivateCombatAbility activates a combat ability (ATTACK, DASH, DODGE, etc.)
+	// This consumes action economy resources and grants capacity to execute actions
+	ActivateCombatAbility(ctx context.Context, input *ActivateCombatAbilityInput) (*ActivateCombatAbilityOutput, error)
+
+	// ExecuteAction executes an action that consumes granted capacity
+	// Use after ActivateCombatAbility to perform strikes, moves, etc.
+	ExecuteAction(ctx context.Context, input *ExecuteActionInput) (*ExecuteActionOutput, error)
 }
 
 // ResolveAttackInput contains attack parameters
@@ -480,4 +490,62 @@ type GetEncounterHistoryOutput struct {
 	Events      []*entities.EncounterEvent // Events in chronological order
 	HasMore     bool                       // True if more events exist beyond the limit
 	LastEventID string                     // ID of the last event returned (for pagination)
+}
+
+// ============================================================================
+// TWO-LEVEL ACTION ECONOMY TYPES
+// ============================================================================
+
+// ActivateCombatAbilityInput contains parameters for activating a combat ability
+type ActivateCombatAbilityInput struct {
+	EncounterID string             // ID of the encounter
+	EntityID    string             // ID of the entity activating the ability
+	AbilityID   pb.CombatAbilityId // Which ability to activate
+	TargetID    string             // Optional target for abilities like HELP
+}
+
+// ActivateCombatAbilityOutput returns the result of ability activation
+type ActivateCombatAbilityOutput struct {
+	Success         bool                         // Whether activation succeeded
+	Error           string                       // Error message if failed
+	ActionEconomy   *entities.ActionEconomyState // Updated action economy after activation
+	GrantedCapacity string                       // What was granted (e.g., "Granted 2 attacks")
+	CombatState     *CombatState                 // Full combat state update
+
+	// Available abilities/actions for UI refresh
+	AvailableAbilities []*entities.AvailableAbility // Current availability of all combat abilities
+	AvailableActions   []*entities.AvailableAction  // Current availability of all actions
+}
+
+// ExecuteActionInput contains parameters for executing an action
+type ExecuteActionInput struct {
+	EncounterID string      // ID of the encounter
+	EntityID    string      // ID of the entity executing the action
+	ActionID    pb.ActionId // Which action to execute
+	TargetID    string      // Target for strikes
+	WeaponID    string      // Weapon for strikes
+	Path        []Position  // Path for move actions
+}
+
+// MoveResult contains the outcome of a move action
+type MoveResult struct {
+	FinalPosition *Position // Where movement ended
+	MovementUsed  int       // Movement points consumed
+	StopReason    string    // Why movement stopped ("completed", "trap triggered", etc.)
+}
+
+// ExecuteActionOutput returns the result of action execution
+type ExecuteActionOutput struct {
+	Success       bool                         // Whether execution succeeded
+	Error         string                       // Error message if failed
+	ActionEconomy *entities.ActionEconomyState // Updated action economy after execution
+	AttackResult  *AttackResult                // Result for strike actions
+	MoveResult    *MoveResult                  // Result for move actions
+	CombatState   *CombatState                 // Full combat state update
+	Room          interface{}                  // Updated room data
+	GrantedAction *GrantedAction               // Action granted (e.g., off-hand strike for TWF)
+
+	// Available abilities/actions for UI refresh
+	AvailableAbilities []*entities.AvailableAbility // Current availability of all combat abilities
+	AvailableActions   []*entities.AvailableAction  // Current availability of all actions
 }

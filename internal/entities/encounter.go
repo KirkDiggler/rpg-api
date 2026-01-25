@@ -77,6 +77,15 @@ type ActionEconomyState struct {
 	ActionsRemaining      int `json:"actions_remaining"`
 	BonusActionsRemaining int `json:"bonus_actions_remaining"`
 	ReactionsRemaining    int `json:"reactions_remaining"`
+
+	// Attack-related fields (granted by ATTACK ability)
+	AttacksRemaining        int `json:"attacks_remaining"`
+	OffHandAttacksRemaining int `json:"off_hand_attacks_remaining"`
+	FlurryStrikesRemaining  int `json:"flurry_strikes_remaining"`
+
+	// Status flags (set by abilities)
+	DisengageActive bool `json:"disengage_active"`
+	DodgeActive     bool `json:"dodge_active"`
 }
 
 // NewActionEconomyState creates a fresh action economy with default values
@@ -122,4 +131,58 @@ func (a *ActionEconomyState) UseReaction() {
 	if a.HasReaction() {
 		a.ReactionsRemaining--
 	}
+}
+
+// HasAttacks returns true if attacks are available
+func (a *ActionEconomyState) HasAttacks() bool {
+	return a != nil && a.AttacksRemaining > 0
+}
+
+// UseAttack consumes an attack. Call HasAttacks() first to check availability.
+func (a *ActionEconomyState) UseAttack() {
+	if a.HasAttacks() {
+		a.AttacksRemaining--
+	}
+}
+
+// HasOffHandAttacks returns true if off-hand attacks are available
+func (a *ActionEconomyState) HasOffHandAttacks() bool {
+	return a != nil && a.OffHandAttacksRemaining > 0
+}
+
+// UseOffHandAttack consumes an off-hand attack. Call HasOffHandAttacks() first to check availability.
+func (a *ActionEconomyState) UseOffHandAttack() {
+	if a.HasOffHandAttacks() {
+		a.OffHandAttacksRemaining--
+	}
+}
+
+// HasFlurryStrikes returns true if flurry strikes are available
+func (a *ActionEconomyState) HasFlurryStrikes() bool {
+	return a != nil && a.FlurryStrikesRemaining > 0
+}
+
+// UseFlurryStrike consumes a flurry strike. Call HasFlurryStrikes() first to check availability.
+func (a *ActionEconomyState) UseFlurryStrike() {
+	if a.HasFlurryStrikes() {
+		a.FlurryStrikesRemaining--
+	}
+}
+
+// AvailableAbility represents a combat ability with its current availability status
+// Used by UI to render ability buttons with proper enabled/disabled state
+type AvailableAbility struct {
+	AbilityID string `json:"ability_id"` // e.g., "attack", "dash", "dodge"
+	Name      string `json:"name"`       // Display name for UI
+	CanUse    bool   `json:"can_use"`    // Whether the ability can be activated
+	Reason    string `json:"reason"`     // Explanation if can_use is false
+}
+
+// AvailableAction represents an executable action with its current availability status
+// Used by UI to render action buttons based on granted capacity
+type AvailableAction struct {
+	ActionID string `json:"action_id"` // e.g., "strike", "move", "off-hand-strike"
+	Name     string `json:"name"`      // Display name for UI
+	CanUse   bool   `json:"can_use"`   // Whether the action can be executed
+	Reason   string `json:"reason"`    // Explanation if can_use is false
 }

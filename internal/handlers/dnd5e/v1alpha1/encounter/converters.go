@@ -16,6 +16,41 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
 )
 
+// stringToEntityType converts a string entity type to the proto enum
+func stringToEntityType(s string) dnd5ev1alpha1.EntityType {
+	switch s {
+	case "character":
+		return dnd5ev1alpha1.EntityType_ENTITY_TYPE_CHARACTER
+	case "monster":
+		return dnd5ev1alpha1.EntityType_ENTITY_TYPE_MONSTER
+	case "obstacle":
+		return dnd5ev1alpha1.EntityType_ENTITY_TYPE_OBSTACLE
+	default:
+		return dnd5ev1alpha1.EntityType_ENTITY_TYPE_UNSPECIFIED
+	}
+}
+
+// intToEntitySize converts an int size to the proto enum
+func intToEntitySize(size int) dnd5ev1alpha1.EntitySize {
+	switch size {
+	case 0:
+		return dnd5ev1alpha1.EntitySize_ENTITY_SIZE_TINY
+	case 1:
+		return dnd5ev1alpha1.EntitySize_ENTITY_SIZE_SMALL
+	case 2:
+		return dnd5ev1alpha1.EntitySize_ENTITY_SIZE_MEDIUM
+	case 3:
+		return dnd5ev1alpha1.EntitySize_ENTITY_SIZE_LARGE
+	case 4:
+		return dnd5ev1alpha1.EntitySize_ENTITY_SIZE_HUGE
+	case 5:
+		return dnd5ev1alpha1.EntitySize_ENTITY_SIZE_GARGANTUAN
+	default:
+		// Default to MEDIUM for standard entities
+		return dnd5ev1alpha1.EntitySize_ENTITY_SIZE_MEDIUM
+	}
+}
+
 // convertAttackResultToProto converts orchestrator's AttackResult to proto
 //
 //nolint:gosec // G115: Game values are bounded by D&D rules, no overflow risk
@@ -191,13 +226,13 @@ func convertRoomDataToProto(roomData interface{}) *dnd5ev1alpha1.Room {
 func convertCubeEntityPlacementToProto(placement spatial.EntityCubePlacement) *dnd5ev1alpha1.EntityPlacement {
 	return &dnd5ev1alpha1.EntityPlacement{
 		EntityId:   placement.EntityID,
-		EntityType: placement.EntityType,
+		EntityType: stringToEntityType(placement.EntityType),
 		Position: &apiv1alpha1.Position{
 			X: float64(placement.CubePosition.X),
 			Y: float64(placement.CubePosition.Y),
 			Z: float64(placement.CubePosition.Z),
 		},
-		Size:              int32(placement.Size),
+		Size:              intToEntitySize(placement.Size),
 		BlocksMovement:    placement.BlocksMovement,
 		BlocksLineOfSight: placement.BlocksLineOfSight,
 	}
@@ -216,9 +251,9 @@ func convertEntityPlacementToProto(
 
 	return &dnd5ev1alpha1.EntityPlacement{
 		EntityId:          placement.EntityID,
-		EntityType:        placement.EntityType,
+		EntityType:        stringToEntityType(placement.EntityType),
 		Position:          position,
-		Size:              int32(placement.Size),
+		Size:              intToEntitySize(placement.Size),
 		BlocksMovement:    placement.BlocksMovement,
 		BlocksLineOfSight: placement.BlocksLineOfSight,
 	}
@@ -974,9 +1009,9 @@ func convertOpenDoorRoomToProto(roomData *encounter.RoomData) *dnd5ev1alpha1.Roo
 		}
 		entities[id] = &dnd5ev1alpha1.EntityPlacement{
 			EntityId:          placement.EntityID,
-			EntityType:        placement.EntityType,
+			EntityType:        stringToEntityType(placement.EntityType),
 			Position:          position,
-			Size:              int32(placement.Size),
+			Size:              intToEntitySize(placement.Size),
 			BlocksMovement:    placement.BlocksMovement,
 			BlocksLineOfSight: placement.BlocksLineOfSight,
 		}
@@ -1264,4 +1299,143 @@ func convertDungeonWallsToProto(walls []dungeon.WallSegment) []*apiv1alpha1.Wall
 	}
 
 	return result
+}
+
+// convertActionEconomyToProto converts entities.ActionEconomyState to proto ActionEconomy
+// Movement values come from CombatState since ActionEconomyState doesn't track movement
+//
+//nolint:gosec // G115: Game values are bounded by D&D rules, no overflow risk
+func convertActionEconomyToProto(ae *entities.ActionEconomyState, cs *entities.CombatState) *dnd5ev1alpha1.ActionEconomy {
+	if ae == nil {
+		return nil
+	}
+
+	// Get movement values from CombatState
+	var movementRemaining, movementMax int32
+	if cs != nil {
+		movementRemaining = cs.MovementRemaining
+		movementMax = 30 // Default movement - dynamic values coming in Phase 4
+	}
+
+	return &dnd5ev1alpha1.ActionEconomy{
+		MovementRemaining:       movementRemaining,
+		MovementMax:             movementMax,
+		AttacksRemaining:        int32(ae.AttacksRemaining),
+		StandardActionAvailable: ae.ActionsRemaining > 0,
+		BonusActionAvailable:    ae.BonusActionsRemaining > 0,
+		ReactionAvailable:       ae.ReactionsRemaining > 0,
+		OffHandAttacksRemaining: int32(ae.OffHandAttacksRemaining),
+		FlurryStrikesRemaining:  int32(ae.FlurryStrikesRemaining),
+		DisengageActive:         ae.DisengageActive,
+		DodgeActive:             ae.DodgeActive,
+	}
+}
+
+// convertMoveResultToProto converts encounter.MoveResult to proto MoveResult
+//
+//nolint:gosec // G115: Game values are bounded by D&D rules, no overflow risk
+func convertMoveResultToProto(mr *encounter.MoveResult) *dnd5ev1alpha1.MoveResult {
+	if mr == nil {
+		return nil
+	}
+
+	var finalPosition *apiv1alpha1.Position
+	if mr.FinalPosition != nil {
+		finalPosition = &apiv1alpha1.Position{
+			X: mr.FinalPosition.X,
+			Y: mr.FinalPosition.Y,
+			Z: mr.FinalPosition.Z,
+		}
+	}
+
+	return &dnd5ev1alpha1.MoveResult{
+		FinalPosition: finalPosition,
+		MovementUsed:  int32(mr.MovementUsed),
+		StopReason:    mr.StopReason,
+	}
+}
+
+// convertGrantedActionToProto converts encounter.GrantedAction to proto GrantedAction
+func convertGrantedActionToProto(ga *encounter.GrantedAction) *dnd5ev1alpha1.GrantedAction {
+	if ga == nil {
+		return nil
+	}
+
+	return &dnd5ev1alpha1.GrantedAction{
+		Id:       ga.ID,
+		Type:     ga.Type,
+		Name:     ga.Name,
+		Reason:   ga.Reason,
+		WeaponId: ga.WeaponID,
+	}
+}
+
+// convertAvailableAbilitiesToProto converts entity AvailableAbility slice to proto
+func convertAvailableAbilitiesToProto(abilities []*entities.AvailableAbility) []*dnd5ev1alpha1.AvailableAbility {
+	if abilities == nil {
+		return nil
+	}
+
+	result := make([]*dnd5ev1alpha1.AvailableAbility, len(abilities))
+	for i, a := range abilities {
+		result[i] = &dnd5ev1alpha1.AvailableAbility{
+			AbilityId: abilityIDToProtoEnum(a.AbilityID),
+			Name:      a.Name,
+			CanUse:    a.CanUse,
+			Reason:    a.Reason,
+		}
+	}
+	return result
+}
+
+// convertAvailableActionsToProto converts entity AvailableAction slice to proto
+func convertAvailableActionsToProto(actions []*entities.AvailableAction) []*dnd5ev1alpha1.AvailableAction {
+	if actions == nil {
+		return nil
+	}
+
+	result := make([]*dnd5ev1alpha1.AvailableAction, len(actions))
+	for i, a := range actions {
+		result[i] = &dnd5ev1alpha1.AvailableAction{
+			ActionId: actionIDToProtoEnum(a.ActionID),
+			Name:     a.Name,
+			CanUse:   a.CanUse,
+			Reason:   a.Reason,
+		}
+	}
+	return result
+}
+
+// abilityIDToProtoEnum converts string ability ID to proto CombatAbilityId enum
+func abilityIDToProtoEnum(id string) dnd5ev1alpha1.CombatAbilityId {
+	switch id {
+	case "attack":
+		return dnd5ev1alpha1.CombatAbilityId_COMBAT_ABILITY_ID_ATTACK
+	case "dash":
+		return dnd5ev1alpha1.CombatAbilityId_COMBAT_ABILITY_ID_DASH
+	case "dodge":
+		return dnd5ev1alpha1.CombatAbilityId_COMBAT_ABILITY_ID_DODGE
+	case "disengage":
+		return dnd5ev1alpha1.CombatAbilityId_COMBAT_ABILITY_ID_DISENGAGE
+	case "offhand_attack":
+		return dnd5ev1alpha1.CombatAbilityId_COMBAT_ABILITY_ID_OFFHAND_ATTACK
+	default:
+		return dnd5ev1alpha1.CombatAbilityId_COMBAT_ABILITY_ID_UNSPECIFIED
+	}
+}
+
+// actionIDToProtoEnum converts string action ID to proto ActionId enum
+func actionIDToProtoEnum(id string) dnd5ev1alpha1.ActionId {
+	switch id {
+	case "strike":
+		return dnd5ev1alpha1.ActionId_ACTION_ID_STRIKE
+	case "off_hand_strike":
+		return dnd5ev1alpha1.ActionId_ACTION_ID_OFF_HAND_STRIKE
+	case "move":
+		return dnd5ev1alpha1.ActionId_ACTION_ID_MOVE
+	case "flurry_strike":
+		return dnd5ev1alpha1.ActionId_ACTION_ID_FLURRY_STRIKE
+	default:
+		return dnd5ev1alpha1.ActionId_ACTION_ID_UNSPECIFIED
+	}
 }

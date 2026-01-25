@@ -692,6 +692,131 @@ func (h *Handler) StreamEncounterEvents(
 	}
 }
 
+// ActivateCombatAbility activates a combat ability (ATTACK, DASH, DODGE, etc.)
+// This consumes action economy resources and grants capacity to execute actions
+func (h *Handler) ActivateCombatAbility(
+	ctx context.Context,
+	req *dnd5ev1alpha1.ActivateCombatAbilityRequest,
+) (*dnd5ev1alpha1.ActivateCombatAbilityResponse, error) {
+	// 1. Validate request
+	if req.GetEncounterId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "encounter_id is required")
+	}
+	if req.GetEntityId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "entity_id is required")
+	}
+	if req.GetAbilityId() == dnd5ev1alpha1.CombatAbilityId_COMBAT_ABILITY_ID_UNSPECIFIED {
+		return nil, status.Error(codes.InvalidArgument, "ability_id is required")
+	}
+
+	// 2. Build service input
+	input := &encounter.ActivateCombatAbilityInput{
+		EncounterID: req.GetEncounterId(),
+		EntityID:    req.GetEntityId(),
+		AbilityID:   req.GetAbilityId(),
+		TargetID:    req.GetTargetId(), // Optional
+	}
+
+	// 3. Call service
+	output, err := h.encounterService.ActivateCombatAbility(ctx, input)
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	// 4. Convert to proto response
+	gridType := spatial.GridTypeHex
+	hexOrientation := spatial.HexOrientationPointyTop
+
+	return &dnd5ev1alpha1.ActivateCombatAbilityResponse{
+		Success:            output.Success,
+		Error:              output.Error,
+		ActionEconomy:      convertActionEconomyToProto(output.ActionEconomy, output.CombatState),
+		GrantedCapacity:    output.GrantedCapacity,
+		CombatState:        convertCombatStateToProto(output.CombatState, gridType, hexOrientation),
+		AvailableAbilities: convertAvailableAbilitiesToProto(output.AvailableAbilities),
+		AvailableActions:   convertAvailableActionsToProto(output.AvailableActions),
+	}, nil
+}
+
+// ExecuteAction executes an action that consumes granted capacity
+// Use after ActivateCombatAbility to perform strikes, moves, etc.
+func (h *Handler) ExecuteAction(
+	ctx context.Context,
+	req *dnd5ev1alpha1.ExecuteActionRequest,
+) (*dnd5ev1alpha1.ExecuteActionResponse, error) {
+	// 1. Validate request
+	if req.GetEncounterId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "encounter_id is required")
+	}
+	if req.GetEntityId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "entity_id is required")
+	}
+	if req.GetActionId() == dnd5ev1alpha1.ActionId_ACTION_ID_UNSPECIFIED {
+		return nil, status.Error(codes.InvalidArgument, "action_id is required")
+	}
+
+	// 2. Build service input
+	input := &encounter.ExecuteActionInput{
+		EncounterID: req.GetEncounterId(),
+		EntityID:    req.GetEntityId(),
+		ActionID:    req.GetActionId(),
+	}
+
+	// Extract action-specific input from oneof
+	switch actionInput := req.GetInput().(type) {
+	case *dnd5ev1alpha1.ExecuteActionRequest_Strike:
+		if actionInput.Strike != nil {
+			input.TargetID = actionInput.Strike.GetTargetId()
+			input.WeaponID = actionInput.Strike.GetWeaponId()
+		}
+	case *dnd5ev1alpha1.ExecuteActionRequest_Move:
+		if actionInput.Move != nil && len(actionInput.Move.GetPath()) > 0 {
+			input.Path = make([]encounter.Position, len(actionInput.Move.GetPath()))
+			for i, pos := range actionInput.Move.GetPath() {
+				input.Path[i] = encounter.Position{
+					X: pos.GetX(),
+					Y: pos.GetY(),
+					Z: pos.GetZ(),
+				}
+			}
+		}
+	}
+
+	// 3. Call service
+	output, err := h.encounterService.ExecuteAction(ctx, input)
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	// 4. Convert to proto response
+	gridType := spatial.GridTypeHex
+	hexOrientation := spatial.HexOrientationPointyTop
+
+	response := &dnd5ev1alpha1.ExecuteActionResponse{
+		Success:            output.Success,
+		Error:              output.Error,
+		ActionEconomy:      convertActionEconomyToProto(output.ActionEconomy, output.CombatState),
+		CombatState:        convertCombatStateToProto(output.CombatState, gridType, hexOrientation),
+		UpdatedRoom:        convertRoomDataToProto(output.Room),
+		GrantedAction:      convertGrantedActionToProto(output.GrantedAction),
+		AvailableAbilities: convertAvailableAbilitiesToProto(output.AvailableAbilities),
+		AvailableActions:   convertAvailableActionsToProto(output.AvailableActions),
+	}
+
+	// Set the appropriate result oneof
+	if output.AttackResult != nil {
+		response.Result = &dnd5ev1alpha1.ExecuteActionResponse_StrikeResult{
+			StrikeResult: convertAttackResultToProto(output.AttackResult),
+		}
+	} else if output.MoveResult != nil {
+		response.Result = &dnd5ev1alpha1.ExecuteActionResponse_MoveResult{
+			MoveResult: convertMoveResultToProto(output.MoveResult),
+		}
+	}
+
+	return response, nil
+}
+
 // convertToProtoEvent converts an internal EncounterEvent to a proto EncounterEvent
 // Uses typed fields (oneof pattern) for type-safe event data access
 func (h *Handler) convertToProtoEvent(event *entities.EncounterEvent) (*dnd5ev1alpha1.EncounterEvent, error) {

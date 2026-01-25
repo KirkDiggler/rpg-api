@@ -42,6 +42,21 @@ func (m *MockService) EXPECT() *MockServiceMockRecorder {
 	return m.recorder
 }
 
+// ActivateCombatAbility mocks base method.
+func (m *MockService) ActivateCombatAbility(ctx context.Context, input *encounter.ActivateCombatAbilityInput) (*encounter.ActivateCombatAbilityOutput, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ActivateCombatAbility", ctx, input)
+	ret0, _ := ret[0].(*encounter.ActivateCombatAbilityOutput)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ActivateCombatAbility indicates an expected call of ActivateCombatAbility.
+func (mr *MockServiceMockRecorder) ActivateCombatAbility(ctx, input any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ActivateCombatAbility", reflect.TypeOf((*MockService)(nil).ActivateCombatAbility), ctx, input)
+}
+
 // ActivateFeature mocks base method.
 func (m *MockService) ActivateFeature(ctx context.Context, input *encounter.ActivateFeatureInput) (*encounter.ActivateFeatureOutput, error) {
 	m.ctrl.T.Helper()
@@ -100,6 +115,21 @@ func (m *MockService) EndTurn(ctx context.Context, input *encounter.EndTurnInput
 func (mr *MockServiceMockRecorder) EndTurn(ctx, input any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "EndTurn", reflect.TypeOf((*MockService)(nil).EndTurn), ctx, input)
+}
+
+// ExecuteAction mocks base method.
+func (m *MockService) ExecuteAction(ctx context.Context, input *encounter.ExecuteActionInput) (*encounter.ExecuteActionOutput, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ExecuteAction", ctx, input)
+	ret0, _ := ret[0].(*encounter.ExecuteActionOutput)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ExecuteAction indicates an expected call of ExecuteAction.
+func (mr *MockServiceMockRecorder) ExecuteAction(ctx, input any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ExecuteAction", reflect.TypeOf((*MockService)(nil).ExecuteAction), ctx, input)
 }
 
 // GetEncounterHistory mocks base method.

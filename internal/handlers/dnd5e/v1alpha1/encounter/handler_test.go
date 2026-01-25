@@ -1614,3 +1614,434 @@ func (s *HandlerTestSuite) TestConvertToProtoEvent_MonsterTurnCompleted_Includes
 	s.Require().NotEmpty(monsterTurn.UpdatedRoom.Walls, "Walls should NOT be empty")
 	s.Equal(2, len(monsterTurn.UpdatedRoom.Walls), "Should have 2 walls")
 }
+
+// ============================================================================
+// ActivateCombatAbility Tests
+// ============================================================================
+
+// TestActivateCombatAbility_Success tests successful ability activation (ATTACK)
+func (s *HandlerTestSuite) TestActivateCombatAbility_Success() {
+	// Arrange
+	s.mockService.EXPECT().
+		ActivateCombatAbility(gomock.Any(), &encounter.ActivateCombatAbilityInput{
+			EncounterID: "enc-1",
+			EntityID:    "char-1",
+			AbilityID:   dnd5ev1alpha1.CombatAbilityId_COMBAT_ABILITY_ID_ATTACK,
+		}).
+		Return(&encounter.ActivateCombatAbilityOutput{
+			Success:         true,
+			GrantedCapacity: "Granted 1 attack",
+			ActionEconomy: &entities.ActionEconomyState{
+				ActionsRemaining:      0, // Used by ATTACK
+				BonusActionsRemaining: 1,
+				ReactionsRemaining:    1,
+				AttacksRemaining:      1, // Granted by ATTACK
+			},
+			CombatState: &entities.CombatState{
+				EncounterID:       "enc-1",
+				Round:             1,
+				MovementRemaining: 30,
+				CombatStarted:     true,
+			},
+			AvailableAbilities: []*entities.AvailableAbility{
+				{AbilityID: "attack", Name: "Attack", CanUse: false, Reason: "no actions remaining"},
+				{AbilityID: "dash", Name: "Dash", CanUse: false, Reason: "no actions remaining"},
+			},
+			AvailableActions: []*entities.AvailableAction{
+				{ActionID: "strike", Name: "Strike", CanUse: true, Reason: ""},
+				{ActionID: "move", Name: "Move", CanUse: true, Reason: ""},
+			},
+		}, nil)
+
+	// Act
+	resp, err := s.handler.ActivateCombatAbility(context.Background(), &dnd5ev1alpha1.ActivateCombatAbilityRequest{
+		EncounterId: "enc-1",
+		EntityId:    "char-1",
+		AbilityId:   dnd5ev1alpha1.CombatAbilityId_COMBAT_ABILITY_ID_ATTACK,
+	})
+
+	// Assert
+	s.Require().NoError(err)
+	s.Require().NotNil(resp)
+	s.Assert().True(resp.Success)
+	s.Assert().Equal("Granted 1 attack", resp.GrantedCapacity)
+
+	// Verify ActionEconomy
+	s.Require().NotNil(resp.ActionEconomy)
+	s.Assert().False(resp.ActionEconomy.StandardActionAvailable) // Used
+	s.Assert().True(resp.ActionEconomy.BonusActionAvailable)
+	s.Assert().True(resp.ActionEconomy.ReactionAvailable)
+	s.Assert().Equal(int32(1), resp.ActionEconomy.AttacksRemaining)
+	s.Assert().Equal(int32(30), resp.ActionEconomy.MovementRemaining)
+
+	// Verify AvailableAbilities (issue #404)
+	s.Require().NotNil(resp.AvailableAbilities)
+	s.Assert().Len(resp.AvailableAbilities, 2)
+	s.Assert().Equal(dnd5ev1alpha1.CombatAbilityId_COMBAT_ABILITY_ID_ATTACK, resp.AvailableAbilities[0].AbilityId)
+	s.Assert().False(resp.AvailableAbilities[0].CanUse)
+
+	// Verify AvailableActions (issue #404)
+	s.Require().NotNil(resp.AvailableActions)
+	s.Assert().Len(resp.AvailableActions, 2)
+	s.Assert().Equal(dnd5ev1alpha1.ActionId_ACTION_ID_STRIKE, resp.AvailableActions[0].ActionId)
+	s.Assert().True(resp.AvailableActions[0].CanUse)
+}
+
+// TestActivateCombatAbility_NoActionAvailable tests when no action is available
+func (s *HandlerTestSuite) TestActivateCombatAbility_NoActionAvailable() {
+	// Arrange
+	s.mockService.EXPECT().
+		ActivateCombatAbility(gomock.Any(), &encounter.ActivateCombatAbilityInput{
+			EncounterID: "enc-1",
+			EntityID:    "char-1",
+			AbilityID:   dnd5ev1alpha1.CombatAbilityId_COMBAT_ABILITY_ID_ATTACK,
+		}).
+		Return(&encounter.ActivateCombatAbilityOutput{
+			Success: false,
+			Error:   "no action available",
+			ActionEconomy: &entities.ActionEconomyState{
+				ActionsRemaining: 0,
+			},
+		}, nil)
+
+	// Act
+	resp, err := s.handler.ActivateCombatAbility(context.Background(), &dnd5ev1alpha1.ActivateCombatAbilityRequest{
+		EncounterId: "enc-1",
+		EntityId:    "char-1",
+		AbilityId:   dnd5ev1alpha1.CombatAbilityId_COMBAT_ABILITY_ID_ATTACK,
+	})
+
+	// Assert
+	s.Require().NoError(err) // Business logic failure, not an error
+	s.Require().NotNil(resp)
+	s.Assert().False(resp.Success)
+	s.Assert().Equal("no action available", resp.Error)
+}
+
+// TestActivateCombatAbility_MissingEncounterId tests validation
+func (s *HandlerTestSuite) TestActivateCombatAbility_MissingEncounterId() {
+	// Act
+	resp, err := s.handler.ActivateCombatAbility(context.Background(), &dnd5ev1alpha1.ActivateCombatAbilityRequest{
+		EntityId:  "char-1",
+		AbilityId: dnd5ev1alpha1.CombatAbilityId_COMBAT_ABILITY_ID_ATTACK,
+	})
+
+	// Assert
+	s.Require().Error(err)
+	s.Assert().Nil(resp)
+
+	st, ok := status.FromError(err)
+	s.Require().True(ok)
+	s.Assert().Equal(codes.InvalidArgument, st.Code())
+	s.Assert().Contains(st.Message(), "encounter_id is required")
+}
+
+// TestActivateCombatAbility_MissingEntityId tests validation
+func (s *HandlerTestSuite) TestActivateCombatAbility_MissingEntityId() {
+	// Act
+	resp, err := s.handler.ActivateCombatAbility(context.Background(), &dnd5ev1alpha1.ActivateCombatAbilityRequest{
+		EncounterId: "enc-1",
+		AbilityId:   dnd5ev1alpha1.CombatAbilityId_COMBAT_ABILITY_ID_ATTACK,
+	})
+
+	// Assert
+	s.Require().Error(err)
+	s.Assert().Nil(resp)
+
+	st, ok := status.FromError(err)
+	s.Require().True(ok)
+	s.Assert().Equal(codes.InvalidArgument, st.Code())
+	s.Assert().Contains(st.Message(), "entity_id is required")
+}
+
+// TestActivateCombatAbility_MissingAbilityId tests validation
+func (s *HandlerTestSuite) TestActivateCombatAbility_MissingAbilityId() {
+	// Act
+	resp, err := s.handler.ActivateCombatAbility(context.Background(), &dnd5ev1alpha1.ActivateCombatAbilityRequest{
+		EncounterId: "enc-1",
+		EntityId:    "char-1",
+	})
+
+	// Assert
+	s.Require().Error(err)
+	s.Assert().Nil(resp)
+
+	st, ok := status.FromError(err)
+	s.Require().True(ok)
+	s.Assert().Equal(codes.InvalidArgument, st.Code())
+	s.Assert().Contains(st.Message(), "ability_id is required")
+}
+
+// TestActivateCombatAbility_ServiceError tests handling of service errors
+func (s *HandlerTestSuite) TestActivateCombatAbility_ServiceError() {
+	// Arrange
+	s.mockService.EXPECT().
+		ActivateCombatAbility(gomock.Any(), gomock.Any()).
+		Return(nil, fmt.Errorf("database error"))
+
+	// Act
+	resp, err := s.handler.ActivateCombatAbility(context.Background(), &dnd5ev1alpha1.ActivateCombatAbilityRequest{
+		EncounterId: "enc-1",
+		EntityId:    "char-1",
+		AbilityId:   dnd5ev1alpha1.CombatAbilityId_COMBAT_ABILITY_ID_ATTACK,
+	})
+
+	// Assert
+	s.Require().Error(err)
+	s.Assert().Nil(resp)
+
+	st, ok := status.FromError(err)
+	s.Require().True(ok)
+	s.Assert().Equal(codes.Internal, st.Code())
+}
+
+// ============================================================================
+// ExecuteAction Tests
+// ============================================================================
+
+// TestExecuteAction_Strike_Success tests successful strike action
+func (s *HandlerTestSuite) TestExecuteAction_Strike_Success() {
+	// Arrange
+	s.mockService.EXPECT().
+		ExecuteAction(gomock.Any(), &encounter.ExecuteActionInput{
+			EncounterID: "enc-1",
+			EntityID:    "char-1",
+			ActionID:    dnd5ev1alpha1.ActionId_ACTION_ID_STRIKE,
+			TargetID:    "goblin-1",
+			WeaponID:    "longsword",
+		}).
+		Return(&encounter.ExecuteActionOutput{
+			Success: true,
+			ActionEconomy: &entities.ActionEconomyState{
+				ActionsRemaining: 0,
+				AttacksRemaining: 0, // Consumed
+			},
+			AttackResult: &encounter.AttackResult{
+				Hit:         true,
+				AttackRoll:  15,
+				TotalAttack: 20,
+				TotalDamage: 10,
+				DamageType:  "slashing",
+			},
+			CombatState: &entities.CombatState{
+				EncounterID:       "enc-1",
+				MovementRemaining: 30,
+			},
+			AvailableAbilities: []*entities.AvailableAbility{
+				{AbilityID: "attack", Name: "Attack", CanUse: false, Reason: "no actions remaining"},
+			},
+			AvailableActions: []*entities.AvailableAction{
+				{ActionID: "strike", Name: "Strike", CanUse: false, Reason: "no attacks remaining (activate Attack ability first)"},
+				{ActionID: "move", Name: "Move", CanUse: true, Reason: ""},
+			},
+		}, nil)
+
+	// Act
+	resp, err := s.handler.ExecuteAction(context.Background(), &dnd5ev1alpha1.ExecuteActionRequest{
+		EncounterId: "enc-1",
+		EntityId:    "char-1",
+		ActionId:    dnd5ev1alpha1.ActionId_ACTION_ID_STRIKE,
+		Input: &dnd5ev1alpha1.ExecuteActionRequest_Strike{
+			Strike: &dnd5ev1alpha1.StrikeInput{
+				TargetId: "goblin-1",
+				WeaponId: "longsword",
+			},
+		},
+	})
+
+	// Assert
+	s.Require().NoError(err)
+	s.Require().NotNil(resp)
+	s.Assert().True(resp.Success)
+
+	// Verify strike result
+	strikeResult := resp.GetStrikeResult()
+	s.Require().NotNil(strikeResult)
+	s.Assert().True(strikeResult.Hit)
+	s.Assert().Equal(int32(10), strikeResult.Damage)
+
+	// Verify action economy
+	s.Require().NotNil(resp.ActionEconomy)
+	s.Assert().Equal(int32(0), resp.ActionEconomy.AttacksRemaining)
+
+	// Verify AvailableAbilities (issue #404)
+	s.Require().NotNil(resp.AvailableAbilities)
+	s.Assert().NotEmpty(resp.AvailableAbilities)
+
+	// Verify AvailableActions (issue #404)
+	s.Require().NotNil(resp.AvailableActions)
+	s.Assert().NotEmpty(resp.AvailableActions)
+}
+
+// TestExecuteAction_Move_Success tests successful move action
+func (s *HandlerTestSuite) TestExecuteAction_Move_Success() {
+	// Arrange - use cube coordinates (x + y + z = 0)
+	path := []encounter.Position{
+		{X: 1, Y: -2, Z: 1},
+		{X: 2, Y: -4, Z: 2},
+	}
+
+	s.mockService.EXPECT().
+		ExecuteAction(gomock.Any(), &encounter.ExecuteActionInput{
+			EncounterID: "enc-1",
+			EntityID:    "char-1",
+			ActionID:    dnd5ev1alpha1.ActionId_ACTION_ID_MOVE,
+			Path:        path,
+		}).
+		Return(&encounter.ExecuteActionOutput{
+			Success: true,
+			ActionEconomy: &entities.ActionEconomyState{
+				ActionsRemaining: 1,
+			},
+			MoveResult: &encounter.MoveResult{
+				FinalPosition: &encounter.Position{X: 2, Y: -4, Z: 2},
+				MovementUsed:  10,
+				StopReason:    "completed",
+			},
+			CombatState: &entities.CombatState{
+				EncounterID:       "enc-1",
+				MovementRemaining: 20, // 30 - 10
+			},
+		}, nil)
+
+	// Act
+	resp, err := s.handler.ExecuteAction(context.Background(), &dnd5ev1alpha1.ExecuteActionRequest{
+		EncounterId: "enc-1",
+		EntityId:    "char-1",
+		ActionId:    dnd5ev1alpha1.ActionId_ACTION_ID_MOVE,
+		Input: &dnd5ev1alpha1.ExecuteActionRequest_Move{
+			Move: &dnd5ev1alpha1.MoveInput{
+				Path: []*apiv1alpha1.Position{
+					{X: 1, Y: -2, Z: 1},
+					{X: 2, Y: -4, Z: 2},
+				},
+			},
+		},
+	})
+
+	// Assert
+	s.Require().NoError(err)
+	s.Require().NotNil(resp)
+	s.Assert().True(resp.Success)
+
+	// Verify move result
+	moveResult := resp.GetMoveResult()
+	s.Require().NotNil(moveResult)
+	s.Assert().Equal(int32(10), moveResult.MovementUsed)
+	s.Assert().Equal("completed", moveResult.StopReason)
+	s.Require().NotNil(moveResult.FinalPosition)
+	s.Assert().Equal(float64(2), moveResult.FinalPosition.X)
+
+	// Verify action economy shows updated movement
+	s.Require().NotNil(resp.ActionEconomy)
+	s.Assert().Equal(int32(20), resp.ActionEconomy.MovementRemaining)
+}
+
+// TestExecuteAction_NoAttacksRemaining tests strike without attacks
+func (s *HandlerTestSuite) TestExecuteAction_NoAttacksRemaining() {
+	// Arrange
+	s.mockService.EXPECT().
+		ExecuteAction(gomock.Any(), gomock.Any()).
+		Return(&encounter.ExecuteActionOutput{
+			Success: false,
+			Error:   "no attacks remaining",
+			ActionEconomy: &entities.ActionEconomyState{
+				AttacksRemaining: 0,
+			},
+		}, nil)
+
+	// Act
+	resp, err := s.handler.ExecuteAction(context.Background(), &dnd5ev1alpha1.ExecuteActionRequest{
+		EncounterId: "enc-1",
+		EntityId:    "char-1",
+		ActionId:    dnd5ev1alpha1.ActionId_ACTION_ID_STRIKE,
+		Input: &dnd5ev1alpha1.ExecuteActionRequest_Strike{
+			Strike: &dnd5ev1alpha1.StrikeInput{
+				TargetId: "goblin-1",
+			},
+		},
+	})
+
+	// Assert
+	s.Require().NoError(err) // Business logic failure, not an error
+	s.Require().NotNil(resp)
+	s.Assert().False(resp.Success)
+	s.Assert().Equal("no attacks remaining", resp.Error)
+}
+
+// TestExecuteAction_MissingEncounterId tests validation
+func (s *HandlerTestSuite) TestExecuteAction_MissingEncounterId() {
+	// Act
+	resp, err := s.handler.ExecuteAction(context.Background(), &dnd5ev1alpha1.ExecuteActionRequest{
+		EntityId: "char-1",
+		ActionId: dnd5ev1alpha1.ActionId_ACTION_ID_STRIKE,
+	})
+
+	// Assert
+	s.Require().Error(err)
+	s.Assert().Nil(resp)
+
+	st, ok := status.FromError(err)
+	s.Require().True(ok)
+	s.Assert().Equal(codes.InvalidArgument, st.Code())
+	s.Assert().Contains(st.Message(), "encounter_id is required")
+}
+
+// TestExecuteAction_MissingEntityId tests validation
+func (s *HandlerTestSuite) TestExecuteAction_MissingEntityId() {
+	// Act
+	resp, err := s.handler.ExecuteAction(context.Background(), &dnd5ev1alpha1.ExecuteActionRequest{
+		EncounterId: "enc-1",
+		ActionId:    dnd5ev1alpha1.ActionId_ACTION_ID_STRIKE,
+	})
+
+	// Assert
+	s.Require().Error(err)
+	s.Assert().Nil(resp)
+
+	st, ok := status.FromError(err)
+	s.Require().True(ok)
+	s.Assert().Equal(codes.InvalidArgument, st.Code())
+	s.Assert().Contains(st.Message(), "entity_id is required")
+}
+
+// TestExecuteAction_MissingActionId tests validation
+func (s *HandlerTestSuite) TestExecuteAction_MissingActionId() {
+	// Act
+	resp, err := s.handler.ExecuteAction(context.Background(), &dnd5ev1alpha1.ExecuteActionRequest{
+		EncounterId: "enc-1",
+		EntityId:    "char-1",
+	})
+
+	// Assert
+	s.Require().Error(err)
+	s.Assert().Nil(resp)
+
+	st, ok := status.FromError(err)
+	s.Require().True(ok)
+	s.Assert().Equal(codes.InvalidArgument, st.Code())
+	s.Assert().Contains(st.Message(), "action_id is required")
+}
+
+// TestExecuteAction_ServiceError tests handling of service errors
+func (s *HandlerTestSuite) TestExecuteAction_ServiceError() {
+	// Arrange
+	s.mockService.EXPECT().
+		ExecuteAction(gomock.Any(), gomock.Any()).
+		Return(nil, fmt.Errorf("database error"))
+
+	// Act
+	resp, err := s.handler.ExecuteAction(context.Background(), &dnd5ev1alpha1.ExecuteActionRequest{
+		EncounterId: "enc-1",
+		EntityId:    "char-1",
+		ActionId:    dnd5ev1alpha1.ActionId_ACTION_ID_STRIKE,
+	})
+
+	// Assert
+	s.Require().Error(err)
+	s.Assert().Nil(resp)
+
+	st, ok := status.FromError(err)
+	s.Require().True(ok)
+	s.Assert().Equal(codes.Internal, st.Code())
+}

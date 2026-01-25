@@ -141,6 +141,24 @@ linters:
         linters:
           - dupl
 
+      # SA1019: Allow deprecated method usage during transition to new action economy
+      - linters:
+          - staticcheck
+        text: "SA1019:"
+        path: "cmd/client/"
+
+      # SA1019: Allow deprecated field usage in test assertions
+      - linters:
+          - staticcheck
+        text: "SA1019:"
+        path: "_test\\.go"
+
+      # SA1019: Allow deprecated method usage in client for testing/demo purposes
+      - linters:
+          - staticcheck
+        text: "SA1019:"
+        path: "cmd/server/encounter_client\\.go"
+
     paths:
       - gen/go
       - ".*mock.*"

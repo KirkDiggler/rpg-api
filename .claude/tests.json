@@ -1,76 +1,68 @@
 {
   "tests": [
     {
-      "id": "toolkit-dependency-bumped",
-      "feature": "dependency",
-      "prompt": "Verify rpg-toolkit/rulebooks/dnd5e is updated to include unified damage flow (commit dce7d45 or later)",
+      "id": "activate-attack-consumes-action",
+      "feature": "ActivateCombatAbility",
+      "prompt": "Call ActivateCombatAbility with ATTACK. Verify standard_action_available becomes false and attacks_remaining becomes 1.",
       "passes": true,
-      "last_checked": "2026-01-02",
-      "notes": "Updated to feature/unify-damage-flow branch with Monster Combatant implementation (b36d0c5)"
+      "last_checked": "2026-01-08",
+      "test_file": "orchestrator_test.go::TestActivateCombatAbility_Attack_Success"
     },
     {
-      "id": "combatant-registry-created",
-      "feature": "registry",
-      "prompt": "ResolveAttack creates CombatantRegistry and adds attacker + target before combat",
+      "id": "activate-dash-adds-movement",
+      "feature": "ActivateCombatAbility",
+      "prompt": "Call ActivateCombatAbility with DASH. Verify standard_action_available becomes false and movement_remaining doubles (30 -> 60).",
       "passes": true,
-      "last_checked": "2026-01-02",
-      "notes": "Added registry creation at step 9 with registry.Add(char) and registry.Add(goblin)"
+      "last_checked": "2026-01-08",
+      "test_file": "orchestrator_test.go::TestActivateCombatAbility_Dash_Success"
     },
     {
-      "id": "context-has-combatants",
-      "feature": "registry",
-      "prompt": "ResolveAttack uses gamectx.WithCombatants(ctx, registry) before calling combat.ResolveAttack",
+      "id": "activate-dodge-sets-flag",
+      "feature": "ActivateCombatAbility",
+      "prompt": "Call ActivateCombatAbility with DODGE. Verify standard_action_available becomes false and dodge_active becomes true.",
       "passes": true,
-      "last_checked": "2026-01-02",
-      "notes": "Added ctx = gamectx.WithCombatants(ctx, registry) before combat resolution"
+      "last_checked": "2026-01-08",
+      "test_file": "orchestrator_test.go::TestActivateCombatAbility_Dodge_Success"
     },
     {
-      "id": "apply-damage-used",
-      "feature": "damage",
-      "prompt": "ResolveAttack uses target.ApplyDamage() instead of manual HP calculation (no more newHP = goblin.HP() - result.TotalDamage)",
+      "id": "activate-disengage-sets-flag",
+      "feature": "ActivateCombatAbility",
+      "prompt": "Call ActivateCombatAbility with DISENGAGE. Verify standard_action_available becomes false and disengage_active becomes true.",
       "passes": true,
-      "last_checked": "2026-01-02",
-      "notes": "Removed manual calculation. Damage is applied via DamageReceivedEvent -> monster.TakeDamage. Orchestrator now just reads goblin.HP() after combat"
+      "last_checked": "2026-01-08",
+      "test_file": "orchestrator_test.go::TestActivateCombatAbility_Disengage_Success"
     },
     {
-      "id": "character-state-saved",
-      "feature": "persistence",
-      "prompt": "Character state is saved to repository after attack (like ActivateFeature does)",
-      "passes": false,
-      "last_checked": "2026-01-02",
-      "notes": "Not implemented yet - character takes no damage in attack flow, but could be relevant for reactions"
+      "id": "execute-strike-consumes-attack",
+      "feature": "ExecuteAction",
+      "prompt": "After activating ATTACK, call ExecuteAction with STRIKE. Verify attacks_remaining decrements and attack resolves.",
+      "passes": true,
+      "last_checked": "2026-01-08",
+      "test_file": "orchestrator_test.go::TestExecuteAction_Strike_Success"
     },
     {
-      "id": "monster-state-from-registry",
-      "feature": "persistence",
-      "prompt": "Monster state is retrieved from registry and saved after attack",
+      "id": "execute-move-consumes-movement",
+      "feature": "ExecuteAction",
+      "prompt": "Call ExecuteAction with MOVE and a 2-hex path. Verify movement_remaining decrements by 10 (2 hexes * 5ft).",
       "passes": true,
-      "last_checked": "2026-01-02",
-      "notes": "Monster HP is updated via event, then monsterData.HitPoints = goblin.HP() persists the change"
+      "last_checked": "2026-01-08",
+      "test_file": "orchestrator_test.go::TestExecuteAction_Move_Success"
     },
     {
-      "id": "vulnerability-multiplier-in-event",
-      "feature": "events",
-      "prompt": "When skeleton (vulnerable to bludgeoning) takes mace damage, AttackResolvedEvent.Result.Breakdown contains component with Multiplier: 2.0",
+      "id": "strike-without-attacks-fails",
+      "feature": "ExecuteAction",
+      "prompt": "Without activating ATTACK first, call ExecuteAction with STRIKE. Verify it returns an error about no attacks remaining.",
       "passes": true,
-      "last_checked": "2026-01-02",
-      "notes": "Verified via TestResolveAttack_VulnerabilityMultiplier_AppearsInBreakdown - test passes"
+      "last_checked": "2026-01-08",
+      "test_file": "orchestrator_test.go::TestExecuteAction_Strike_NoAttacksRemaining"
     },
     {
-      "id": "fighter-mace-vs-skeleton",
-      "feature": "integration",
-      "prompt": "Fighter with mace attacks skeleton: damage is doubled (vulnerability), event shows multiplier",
+      "id": "handler-wired-up",
+      "feature": "handlers",
+      "prompt": "Call the gRPC ActivateCombatAbility and ExecuteAction endpoints. Verify they don't return Unimplemented.",
       "passes": true,
-      "last_checked": "2026-01-02",
-      "notes": "Verified via integration test - fighter with mace vs skeleton shows 2.0 multiplier"
-    },
-    {
-      "id": "existing-tests-pass",
-      "feature": "regression",
-      "prompt": "All existing encounter tests pass after refactor (go test ./internal/orchestrators/encounter/...)",
-      "passes": true,
-      "last_checked": "2026-01-02",
-      "notes": "All 64 tests pass"
+      "last_checked": "2026-01-08",
+      "test_file": "handler_test.go::TestActivateCombatAbility_Success, TestExecuteAction_Strike_Success"
     }
   ]
 }
