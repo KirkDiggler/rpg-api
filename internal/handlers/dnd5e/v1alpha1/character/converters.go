@@ -1897,6 +1897,11 @@ func convertProtoWeaponToToolkit(weapon dnd5ev1alpha1.Weapon) shared.SelectionID
 		return refs.Weapons.Longbow().ID
 	case dnd5ev1alpha1.Weapon_WEAPON_NET:
 		return refs.Weapons.Net().ID
+	// Ammunition
+	case dnd5ev1alpha1.Weapon_WEAPON_ARROWS_20:
+		return shared.SelectionID(ammunition.Arrows20)
+	case dnd5ev1alpha1.Weapon_WEAPON_BOLTS_20:
+		return shared.SelectionID(ammunition.Bolts20)
 	// Category placeholders
 	case dnd5ev1alpha1.Weapon_WEAPON_ANY_SIMPLE:
 		return refs.Weapons.AnySimpleWeapon().ID
