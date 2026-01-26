@@ -313,11 +313,11 @@ func (h *Handler) UpdateClass(
 							// Extract the ID based on the equipment type
 							switch eq := item.Equipment.(type) {
 							case *dnd5ev1alpha1.EquipmentSelectionItem_Weapon:
-								itemID = string(eq.Weapon)
+								itemID = string(convertProtoWeaponToToolkit(eq.Weapon))
 							case *dnd5ev1alpha1.EquipmentSelectionItem_Armor:
-								itemID = string(eq.Armor)
+								itemID = string(convertProtoArmorToToolkit(eq.Armor))
 							case *dnd5ev1alpha1.EquipmentSelectionItem_Tool:
-								itemID = string(eq.Tool)
+								itemID = string(convertProtoToolToToolkit(eq.Tool))
 							case *dnd5ev1alpha1.EquipmentSelectionItem_OtherEquipmentId:
 								itemID = eq.OtherEquipmentId
 							}
