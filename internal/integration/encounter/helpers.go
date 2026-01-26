@@ -14,13 +14,12 @@ import (
 
 // CharacterBuilder provides a fluent interface for creating test characters.
 type CharacterBuilder struct {
-	server   *harness.TestServer
-	ctx      context.Context
-	draftID  string
-	errors   []error
-	
+	server  *harness.TestServer
+	ctx     context.Context
+	draftID string
+
 	// Configuration
-	name     string
+	name string
 	race     dnd5ev1alpha1.Race
 	subrace  dnd5ev1alpha1.Subrace
 	class    dnd5ev1alpha1.Class
@@ -253,13 +252,10 @@ func (b *CharacterBuilder) handleRemainingChoices(draft *dnd5ev1alpha1.Character
 		return nil
 	}
 
-	// Check validation issues to see what's missing
-	for _, issue := range draft.Validation.Issues {
-		// Log what's missing for debugging
-		_ = issue
-		// TODO: Auto-handle common equipment choices
-		// For now, we'll need to be explicit about equipment in the builder
-	}
+	// Check validation issues to see what's missing.
+	// TODO: Auto-handle common equipment choices based on draft.Validation.Issues.
+	// For now, we'll need to be explicit about equipment in the builder.
+	_ = draft.Validation.Issues
 
 	return nil
 }

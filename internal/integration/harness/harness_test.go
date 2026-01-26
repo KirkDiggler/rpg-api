@@ -24,11 +24,9 @@ func TestHarness_StartsAndConnects(t *testing.T) {
 	require.NoError(t, err, "failed to create test server")
 	defer ts.Close()
 
-	// Verify we can make a gRPC call (character list should return empty)
-	// Add dev auth header
+	// Verify the full stack is wired correctly (server, clients, Redis)
+	// Add dev auth header for Redis operations
 	authCtx := metadata.AppendToOutgoingContext(ctx, "authorization", "Dev test-player-1")
-	
-	// This just verifies the full stack is wired correctly
 	t.Log("✓ Test server started with real Redis")
 	t.Log("✓ gRPC clients connected via bufconn")
 	t.Logf("✓ CharacterClient: %T", ts.CharacterClient)

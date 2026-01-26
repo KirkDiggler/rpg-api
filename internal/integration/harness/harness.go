@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"strings"
 	"time"
 
 	"github.com/testcontainers/testcontainers-go"
@@ -97,9 +98,7 @@ func New(ctx context.Context, cfg *Config) (*TestServer, error) {
 	}
 
 	// Strip redis:// prefix if present (go-redis expects host:port)
-	if len(redisAddr) > 8 && redisAddr[:8] == "redis://" {
-		redisAddr = redisAddr[8:]
-	}
+	redisAddr = strings.TrimPrefix(redisAddr, "redis://")
 
 	log.Printf("Integration test Redis started at: %s", redisAddr)
 
