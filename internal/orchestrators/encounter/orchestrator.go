@@ -16,6 +16,7 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/actions"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/armor"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/classes"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/combat"
 	dnd5eEvents "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/events"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/features"
@@ -399,6 +400,27 @@ func (o *Orchestrator) ResolveAttack(ctx context.Context, input *ResolveAttackIn
 				Name:     "Off-Hand Strike",
 				Reason:   twfResult.Reason,
 				WeaponID: twfResult.Action.GetWeaponID(),
+			}
+		}
+	}
+
+	// 11b. Martial Arts: grant bonus strike after Attack action (Monk only)
+	// Only triggers if no action was already granted (TWF takes priority if both apply)
+	// The granter checks if the weapon is a monk weapon internally
+	if grantedAction == nil && charOutput.Character.Data.ClassID == classes.Monk {
+		maResult, _ := actions.CheckAndGrantMartialArtsBonusStrike(ctx, &actions.MartialArtsGranterInput{
+			CharacterID:   input.AttackerID,
+			WeaponID:      weapon.ID,
+			IsUnarmed:     false, // TODO: Detect unarmed strikes when implemented
+			SourceAbility: "attack", // This is from the Attack action
+			EventBus:      bus,
+		})
+		if maResult != nil && maResult.Granted {
+			grantedAction = &GrantedAction{
+				ID:     maResult.Action.GetID(),
+				Type:   "martial-arts-bonus-strike",
+				Name:   "Martial Arts Bonus Strike",
+				Reason: maResult.Reason,
 			}
 		}
 	}
