@@ -339,6 +339,16 @@ func (h *Handler) UpdateClass(
 						}
 					}
 				}
+			case dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_EXPERTISE:
+				if expertise := choice.GetExpertise(); expertise != nil {
+					for _, skill := range expertise.Skills {
+						if skill == dnd5ev1alpha1.Skill_SKILL_UNSPECIFIED {
+							continue
+						}
+						classChoices.Expertise = append(classChoices.Expertise, convertProtoSkillToToolkit(skill))
+					}
+					// TODO: Add tool expertise support when needed (Bard can choose tool expertise)
+				}
 			}
 		}
 	}

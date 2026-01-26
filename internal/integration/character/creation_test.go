@@ -226,9 +226,6 @@ func (s *CharacterCreationSuite) TestCreateFighter() {
 // =============================================================================
 
 func (s *CharacterCreationSuite) TestCreateRogue() {
-	// TODO: Handler doesn't support CHOICE_CATEGORY_EXPERTISE - see gap below
-	s.T().Skip("SKIP: Handler missing expertise choice support - creates issue")
-	
 	s.T().Log("Creating Rogue character...")
 	ctx := s.authCtx("test-player-rogue")
 
