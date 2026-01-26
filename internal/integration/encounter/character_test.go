@@ -284,14 +284,12 @@ func (s *CharacterCreationSuite) TestInspectBarbarianChoices() {
 	} else {
 		s.T().Log("\n✅ No validation issues - attempting finalize...")
 
-		// Try to finalize
+		// Finalize should succeed when there are no validation issues
 		finalizeResp, err := s.server.CharacterClient.FinalizeDraft(ctx, &dnd5ev1alpha1.FinalizeDraftRequest{
 			DraftId: draftID,
 		})
-		if err != nil {
-			s.T().Logf("❌ Finalize failed: %v", err)
-		} else {
-			s.T().Logf("✅ Character created: %s", finalizeResp.GetCharacter().GetId())
-		}
+		s.Require().NoError(err, "finalize should succeed with no validation issues")
+		s.Require().NotEmpty(finalizeResp.GetCharacter().GetId(), "finalized character should have an ID")
+		s.T().Logf("✅ Character created: %s", finalizeResp.GetCharacter().GetId())
 	}
 }
