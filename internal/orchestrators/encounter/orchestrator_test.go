@@ -16,6 +16,7 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/abilities"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/armor"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/classes"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/damage"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/gamectx"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/initiative"
@@ -3565,4 +3566,142 @@ func (s *OrchestratorTestSuite) TestExecuteAction_MissingActionID() {
 	s.Require().Error(err)
 	s.Assert().Nil(output)
 	s.Assert().Contains(err.Error(), "action ID is required")
+}
+
+func createTestMonkCharacterData(id, name string) *character.Data {
+	return &character.Data{
+		ID:               id,
+		Name:             name,
+		Level:            1,
+		RaceID:           "human",
+		ClassID:          classes.Monk,
+		ProficiencyBonus: 2,
+		AbilityScores: shared.AbilityScores{
+			abilities.STR: 10,
+			abilities.DEX: 16, // Monks use DEX
+			abilities.CON: 14,
+			abilities.INT: 10,
+			abilities.WIS: 14, // Important for Monk AC
+			abilities.CHA: 8,
+		},
+		Features: []json.RawMessage{},
+		EquipmentSlots: character.EquipmentSlots{
+			character.SlotMainHand: "shortsword", // Monk weapon
+		},
+	}
+}
+
+func (s *OrchestratorTestSuite) TestResolveAttack_Monk_GrantsMartialArtsBonusStrike() {
+	// Arrange - Create Monk character with shortsword (monk weapon)
+	charData := createTestMonkCharacterData("monk-1", "Shadow")
+	s.mockCharRepo.EXPECT().
+		Get(gomock.Any(), characterrepo.GetInput{ID: "monk-1"}).
+		Return(&characterrepo.GetOutput{Character: &entities.Character{Data: charData}}, nil).
+		AnyTimes()
+
+	encData := createTestEncounterData("enc-1")
+	s.mockEncRepo.EXPECT().
+		Get(gomock.Any(), &encounterrepo.GetInput{EncounterID: "enc-1"}).
+		Return(&encounterrepo.GetOutput{Data: encData}, nil)
+	s.mockEncRepo.EXPECT().
+		Update(gomock.Any(), gomock.Any()).
+		Return(&encounterrepo.UpdateOutput{Success: true}, nil).
+		AnyTimes()
+	s.mockDungeonRepo.EXPECT().
+		GetByEncounterID(gomock.Any(), gomock.Any()).
+		Return(&dungeonrepo.GetOutput{Dungeon: &entities.Dungeon{ID: "test-dungeon"}}, nil).
+		AnyTimes()
+
+	// Act
+	output, err := s.orchestrator.ResolveAttack(context.Background(), &ResolveAttackInput{
+		EncounterID: "enc-1",
+		AttackerID:  "monk-1",
+		TargetID:    "goblin-1",
+	})
+
+	// Assert
+	s.Require().NoError(err)
+	s.Require().NotNil(output)
+	s.Require().NotNil(output.GrantedAction, "Monk should receive a granted action")
+	s.Assert().Equal("martial-arts-bonus-strike", output.GrantedAction.Type)
+	s.Assert().Equal("Martial Arts Bonus Strike", output.GrantedAction.Name)
+}
+
+func (s *OrchestratorTestSuite) TestResolveAttack_NonMonk_NoMartialArtsBonusStrike() {
+	// Arrange - Create non-Monk character (barbarian with shortsword)
+	charData := createTestCharacterData("barb-1", "Grog")
+	charData.EquipmentSlots[character.SlotMainHand] = "shortsword" // Same weapon, different class
+	s.mockCharRepo.EXPECT().
+		Get(gomock.Any(), characterrepo.GetInput{ID: "barb-1"}).
+		Return(&characterrepo.GetOutput{Character: &entities.Character{Data: charData}}, nil).
+		AnyTimes()
+
+	encData := createTestEncounterData("enc-1")
+	s.mockEncRepo.EXPECT().
+		Get(gomock.Any(), &encounterrepo.GetInput{EncounterID: "enc-1"}).
+		Return(&encounterrepo.GetOutput{Data: encData}, nil)
+	s.mockEncRepo.EXPECT().
+		Update(gomock.Any(), gomock.Any()).
+		Return(&encounterrepo.UpdateOutput{Success: true}, nil).
+		AnyTimes()
+	s.mockDungeonRepo.EXPECT().
+		GetByEncounterID(gomock.Any(), gomock.Any()).
+		Return(&dungeonrepo.GetOutput{Dungeon: &entities.Dungeon{ID: "test-dungeon"}}, nil).
+		AnyTimes()
+
+	// Act
+	output, err := s.orchestrator.ResolveAttack(context.Background(), &ResolveAttackInput{
+		EncounterID: "enc-1",
+		AttackerID:  "barb-1",
+		TargetID:    "goblin-1",
+	})
+
+	// Assert
+	s.Require().NoError(err)
+	s.Require().NotNil(output)
+	// Barbarian with shortsword should NOT get martial arts bonus strike
+	// (might get TWF if dual-wielding, but not MA)
+	if output.GrantedAction != nil {
+		s.Assert().NotEqual("martial-arts-bonus-strike", output.GrantedAction.Type,
+			"Non-Monk should not receive Martial Arts bonus strike")
+	}
+}
+
+func (s *OrchestratorTestSuite) TestResolveAttack_Monk_NonMonkWeapon_NoBonusStrike() {
+	// Arrange - Monk with greataxe (NOT a monk weapon)
+	charData := createTestMonkCharacterData("monk-1", "Shadow")
+	charData.EquipmentSlots[character.SlotMainHand] = "greataxe" // Not a monk weapon
+	s.mockCharRepo.EXPECT().
+		Get(gomock.Any(), characterrepo.GetInput{ID: "monk-1"}).
+		Return(&characterrepo.GetOutput{Character: &entities.Character{Data: charData}}, nil).
+		AnyTimes()
+
+	encData := createTestEncounterData("enc-1")
+	s.mockEncRepo.EXPECT().
+		Get(gomock.Any(), &encounterrepo.GetInput{EncounterID: "enc-1"}).
+		Return(&encounterrepo.GetOutput{Data: encData}, nil)
+	s.mockEncRepo.EXPECT().
+		Update(gomock.Any(), gomock.Any()).
+		Return(&encounterrepo.UpdateOutput{Success: true}, nil).
+		AnyTimes()
+	s.mockDungeonRepo.EXPECT().
+		GetByEncounterID(gomock.Any(), gomock.Any()).
+		Return(&dungeonrepo.GetOutput{Dungeon: &entities.Dungeon{ID: "test-dungeon"}}, nil).
+		AnyTimes()
+
+	// Act
+	output, err := s.orchestrator.ResolveAttack(context.Background(), &ResolveAttackInput{
+		EncounterID: "enc-1",
+		AttackerID:  "monk-1",
+		TargetID:    "goblin-1",
+	})
+
+	// Assert
+	s.Require().NoError(err)
+	s.Require().NotNil(output)
+	// Monk with greataxe should NOT get martial arts bonus strike
+	if output.GrantedAction != nil {
+		s.Assert().NotEqual("martial-arts-bonus-strike", output.GrantedAction.Type,
+			"Monk with non-monk weapon should not receive MA bonus strike")
+	}
 }

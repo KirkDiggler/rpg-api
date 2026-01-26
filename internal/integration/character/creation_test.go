@@ -479,3 +479,130 @@ func (s *CharacterCreationSuite) TestValidation_MissingClass() {
 	s.Assert().Error(err, "should fail without class")
 	s.T().Logf("✅ Correctly rejected: %v", err)
 }
+
+func (s *CharacterCreationSuite) TestCreateMonk() {
+	s.T().Log("Creating Monk character...")
+	ctx := s.authCtx("test-player-monk")
+
+	// Create draft
+	createResp, err := s.server.CharacterClient.CreateDraft(ctx, &dnd5ev1alpha1.CreateDraftRequest{})
+	s.Require().NoError(err)
+	draftID := createResp.GetDraft().GetId()
+
+	// Set name
+	_, err = s.server.CharacterClient.UpdateName(ctx, &dnd5ev1alpha1.UpdateNameRequest{
+		DraftId: draftID,
+		Name:    "Shadow",
+	})
+	s.Require().NoError(err)
+
+	// Set Human with language choice
+	_, err = s.server.CharacterClient.UpdateRace(ctx, &dnd5ev1alpha1.UpdateRaceRequest{
+		DraftId: draftID,
+		Race:    dnd5ev1alpha1.Race_RACE_HUMAN,
+		RaceChoices: []*dnd5ev1alpha1.ChoiceData{
+			{
+				Category: dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_LANGUAGES,
+				Source:   dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_RACE,
+				Selection: &dnd5ev1alpha1.ChoiceData_Languages{
+					Languages: &dnd5ev1alpha1.LanguageSelection{
+						Languages: []dnd5ev1alpha1.Language{dnd5ev1alpha1.Language_LANGUAGE_ELVISH},
+					},
+				},
+			},
+		},
+	})
+	s.Require().NoError(err)
+
+	// Set Monk with required choices:
+	// - 2 skills (from Monk skill list)
+	// - Weapon choice (shortsword or simple weapon)
+	// - Pack choice (dungeoneer's or explorer's)
+	// - Tool choice (artisan's tools or musical instrument)
+	_, err = s.server.CharacterClient.UpdateClass(ctx, &dnd5ev1alpha1.UpdateClassRequest{
+		DraftId: draftID,
+		Class:   dnd5ev1alpha1.Class_CLASS_MONK,
+		ClassChoices: []*dnd5ev1alpha1.ChoiceData{
+			// Skills: Acrobatics and Stealth
+			{
+				Category: dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_SKILLS,
+				Source:   dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_CLASS,
+				Selection: &dnd5ev1alpha1.ChoiceData_Skills{
+					Skills: &dnd5ev1alpha1.SkillSelection{
+						Skills: []dnd5ev1alpha1.Skill{
+							dnd5ev1alpha1.Skill_SKILL_ACROBATICS,
+							dnd5ev1alpha1.Skill_SKILL_STEALTH,
+						},
+					},
+				},
+			},
+			// Weapon: Shortsword
+			{
+				Category: dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_EQUIPMENT,
+				Source:   dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_CLASS,
+				ChoiceId: "monk-weapons-primary",
+				OptionId: "monk-weapon-a", // Shortsword
+				Selection: &dnd5ev1alpha1.ChoiceData_Equipment{
+					Equipment: &dnd5ev1alpha1.EquipmentSelection{},
+				},
+			},
+			// Pack: Dungeoneer's pack
+			{
+				Category: dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_EQUIPMENT,
+				Source:   dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_CLASS,
+				ChoiceId: "monk-pack",
+				OptionId: "monk-pack-a", // Dungeoneer's pack
+				Selection: &dnd5ev1alpha1.ChoiceData_Equipment{
+					Equipment: &dnd5ev1alpha1.EquipmentSelection{},
+				},
+			},
+			// Tools: Calligrapher's supplies (fits the Monk aesthetic)
+			{
+				Category: dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_TOOLS,
+				Source:   dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_CLASS,
+				Selection: &dnd5ev1alpha1.ChoiceData_Tools{
+					Tools: &dnd5ev1alpha1.ToolSelection{
+						Tools: []dnd5ev1alpha1.Tool{dnd5ev1alpha1.Tool_TOOL_CALLIGRAPHER_SUPPLIES},
+					},
+				},
+			},
+		},
+	})
+	s.Require().NoError(err)
+
+	// Set background
+	_, err = s.server.CharacterClient.UpdateBackground(ctx, &dnd5ev1alpha1.UpdateBackgroundRequest{
+		DraftId:    draftID,
+		Background: dnd5ev1alpha1.Background_BACKGROUND_HERMIT,
+	})
+	s.Require().NoError(err)
+
+	// Set ability scores (Monk-optimized: DEX > WIS > CON)
+	_, err = s.server.CharacterClient.UpdateAbilityScores(ctx, &dnd5ev1alpha1.UpdateAbilityScoresRequest{
+		DraftId: draftID,
+		ScoresInput: &dnd5ev1alpha1.UpdateAbilityScoresRequest_AbilityScores{
+			AbilityScores: &dnd5ev1alpha1.AbilityScores{
+				Strength:     10,
+				Dexterity:    15,
+				Constitution: 14,
+				Intelligence: 8,
+				Wisdom:       13,
+				Charisma:     12,
+			},
+		},
+	})
+	s.Require().NoError(err)
+
+	// Finalize
+	finalizeResp, err := s.server.CharacterClient.FinalizeDraft(ctx, &dnd5ev1alpha1.FinalizeDraftRequest{
+		DraftId: draftID,
+	})
+	s.Require().NoError(err, "finalize should succeed")
+	s.Require().NotNil(finalizeResp.GetCharacter())
+
+	char := finalizeResp.GetCharacter()
+	s.Assert().Equal("Shadow", char.GetName())
+	s.Assert().Equal(dnd5ev1alpha1.Class_CLASS_MONK, char.GetClass())
+
+	s.T().Logf("✅ Monk created: %s", char.GetId())
+}
