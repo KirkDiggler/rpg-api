@@ -596,3 +596,72 @@ func (s *ConvertersTestSuite) TestConvertCharacterDataToProto_FeaturesWithAction
 	require.NotNil(s.T(), actionSurge, "Should have Action Surge feature")
 	assert.Equal(s.T(), dnd5ev1alpha1.ActionType_ACTION_TYPE_FREE, actionSurge.ActionType)
 }
+
+func (s *ConvertersTestSuite) TestConvertProtoWeaponToToolkit() {
+	testCases := []struct {
+		name     string
+		weapon   dnd5ev1alpha1.Weapon
+		expected shared.SelectionID
+	}{
+		// Simple Melee
+		{"Club", dnd5ev1alpha1.Weapon_WEAPON_CLUB, "club"},
+		{"Dagger", dnd5ev1alpha1.Weapon_WEAPON_DAGGER, "dagger"},
+		{"Quarterstaff", dnd5ev1alpha1.Weapon_WEAPON_QUARTERSTAFF, "quarterstaff"},
+		// Simple Ranged
+		{"Shortbow", dnd5ev1alpha1.Weapon_WEAPON_SHORTBOW, "shortbow"},
+		{"Light Crossbow", dnd5ev1alpha1.Weapon_WEAPON_LIGHT_CROSSBOW, "light-crossbow"},
+		// Martial Melee
+		{"Longsword", dnd5ev1alpha1.Weapon_WEAPON_LONGSWORD, "longsword"},
+		{"Greataxe", dnd5ev1alpha1.Weapon_WEAPON_GREATAXE, "greataxe"},
+		{"Rapier", dnd5ev1alpha1.Weapon_WEAPON_RAPIER, "rapier"},
+		// Martial Ranged
+		{"Longbow", dnd5ev1alpha1.Weapon_WEAPON_LONGBOW, "longbow"},
+		{"Heavy Crossbow", dnd5ev1alpha1.Weapon_WEAPON_HEAVY_CROSSBOW, "heavy-crossbow"},
+		// Ammunition
+		{"Arrows (20)", dnd5ev1alpha1.Weapon_WEAPON_ARROWS_20, "arrows-20"},
+		{"Bolts (20)", dnd5ev1alpha1.Weapon_WEAPON_BOLTS_20, "bolts-20"},
+		// Category placeholders
+		{"Any Simple", dnd5ev1alpha1.Weapon_WEAPON_ANY_SIMPLE, "simple-weapon"},
+		{"Any Martial", dnd5ev1alpha1.Weapon_WEAPON_ANY_MARTIAL, "martial-weapon"},
+		{"Any Weapon", dnd5ev1alpha1.Weapon_WEAPON_ANY, "any-weapon"},
+		// Unspecified
+		{"Unspecified", dnd5ev1alpha1.Weapon_WEAPON_UNSPECIFIED, ""},
+	}
+
+	for _, tc := range testCases {
+		s.Run(tc.name, func() {
+			result := convertProtoWeaponToToolkit(tc.weapon)
+			assert.Equal(s.T(), tc.expected, result)
+		})
+	}
+}
+
+func (s *ConvertersTestSuite) TestConvertProtoArmorToToolkit() {
+	testCases := []struct {
+		name     string
+		armor    dnd5ev1alpha1.Armor
+		expected shared.SelectionID
+	}{
+		// Light Armor
+		{"Leather", dnd5ev1alpha1.Armor_ARMOR_LEATHER, "leather"},
+		{"Studded Leather", dnd5ev1alpha1.Armor_ARMOR_STUDDED_LEATHER, "studded-leather"},
+		// Medium Armor
+		{"Chain Shirt", dnd5ev1alpha1.Armor_ARMOR_CHAIN_SHIRT, "chain-shirt"},
+		{"Breastplate", dnd5ev1alpha1.Armor_ARMOR_BREASTPLATE, "breastplate"},
+		{"Half Plate", dnd5ev1alpha1.Armor_ARMOR_HALF_PLATE, "half-plate"},
+		// Heavy Armor
+		{"Chain Mail", dnd5ev1alpha1.Armor_ARMOR_CHAIN_MAIL, "chain-mail"},
+		{"Plate", dnd5ev1alpha1.Armor_ARMOR_PLATE, "plate"},
+		// Shield
+		{"Shield", dnd5ev1alpha1.Armor_ARMOR_SHIELD, "shield"},
+		// Unspecified
+		{"Unspecified", dnd5ev1alpha1.Armor_ARMOR_UNSPECIFIED, ""},
+	}
+
+	for _, tc := range testCases {
+		s.Run(tc.name, func() {
+			result := convertProtoArmorToToolkit(tc.armor)
+			assert.Equal(s.T(), tc.expected, result)
+		})
+	}
+}

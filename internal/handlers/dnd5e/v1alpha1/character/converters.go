@@ -1816,6 +1816,142 @@ func convertProtoToolToToolkit(tool dnd5ev1alpha1.Tool) shared.SelectionID {
 	}
 }
 
+// convertProtoWeaponToToolkit converts proto Weapon enum to toolkit weapon ID
+func convertProtoWeaponToToolkit(weapon dnd5ev1alpha1.Weapon) shared.SelectionID {
+	switch weapon {
+	// Simple Melee Weapons
+	case dnd5ev1alpha1.Weapon_WEAPON_CLUB:
+		return refs.Weapons.Club().ID
+	case dnd5ev1alpha1.Weapon_WEAPON_DAGGER:
+		return refs.Weapons.Dagger().ID
+	case dnd5ev1alpha1.Weapon_WEAPON_GREATCLUB:
+		return refs.Weapons.Greatclub().ID
+	case dnd5ev1alpha1.Weapon_WEAPON_HANDAXE:
+		return refs.Weapons.Handaxe().ID
+	case dnd5ev1alpha1.Weapon_WEAPON_JAVELIN:
+		return refs.Weapons.Javelin().ID
+	case dnd5ev1alpha1.Weapon_WEAPON_LIGHT_HAMMER:
+		return refs.Weapons.LightHammer().ID
+	case dnd5ev1alpha1.Weapon_WEAPON_MACE:
+		return refs.Weapons.Mace().ID
+	case dnd5ev1alpha1.Weapon_WEAPON_QUARTERSTAFF:
+		return refs.Weapons.Quarterstaff().ID
+	case dnd5ev1alpha1.Weapon_WEAPON_SICKLE:
+		return refs.Weapons.Sickle().ID
+	case dnd5ev1alpha1.Weapon_WEAPON_SPEAR:
+		return refs.Weapons.Spear().ID
+	// Simple Ranged Weapons
+	case dnd5ev1alpha1.Weapon_WEAPON_LIGHT_CROSSBOW:
+		return refs.Weapons.LightCrossbow().ID
+	case dnd5ev1alpha1.Weapon_WEAPON_DART:
+		return refs.Weapons.Dart().ID
+	case dnd5ev1alpha1.Weapon_WEAPON_SHORTBOW:
+		return refs.Weapons.Shortbow().ID
+	case dnd5ev1alpha1.Weapon_WEAPON_SLING:
+		return refs.Weapons.Sling().ID
+	// Martial Melee Weapons
+	case dnd5ev1alpha1.Weapon_WEAPON_BATTLEAXE:
+		return refs.Weapons.Battleaxe().ID
+	case dnd5ev1alpha1.Weapon_WEAPON_FLAIL:
+		return refs.Weapons.Flail().ID
+	case dnd5ev1alpha1.Weapon_WEAPON_GLAIVE:
+		return refs.Weapons.Glaive().ID
+	case dnd5ev1alpha1.Weapon_WEAPON_GREATAXE:
+		return refs.Weapons.Greataxe().ID
+	case dnd5ev1alpha1.Weapon_WEAPON_GREATSWORD:
+		return refs.Weapons.Greatsword().ID
+	case dnd5ev1alpha1.Weapon_WEAPON_HALBERD:
+		return refs.Weapons.Halberd().ID
+	case dnd5ev1alpha1.Weapon_WEAPON_LANCE:
+		return refs.Weapons.Lance().ID
+	case dnd5ev1alpha1.Weapon_WEAPON_LONGSWORD:
+		return refs.Weapons.Longsword().ID
+	case dnd5ev1alpha1.Weapon_WEAPON_MAUL:
+		return refs.Weapons.Maul().ID
+	case dnd5ev1alpha1.Weapon_WEAPON_MORNINGSTAR:
+		return refs.Weapons.Morningstar().ID
+	case dnd5ev1alpha1.Weapon_WEAPON_PIKE:
+		return refs.Weapons.Pike().ID
+	case dnd5ev1alpha1.Weapon_WEAPON_RAPIER:
+		return refs.Weapons.Rapier().ID
+	case dnd5ev1alpha1.Weapon_WEAPON_SCIMITAR:
+		return refs.Weapons.Scimitar().ID
+	case dnd5ev1alpha1.Weapon_WEAPON_SHORTSWORD:
+		return refs.Weapons.Shortsword().ID
+	case dnd5ev1alpha1.Weapon_WEAPON_TRIDENT:
+		return refs.Weapons.Trident().ID
+	case dnd5ev1alpha1.Weapon_WEAPON_WAR_PICK:
+		return refs.Weapons.WarPick().ID
+	case dnd5ev1alpha1.Weapon_WEAPON_WARHAMMER:
+		return refs.Weapons.Warhammer().ID
+	case dnd5ev1alpha1.Weapon_WEAPON_WHIP:
+		return refs.Weapons.Whip().ID
+	// Martial Ranged Weapons
+	case dnd5ev1alpha1.Weapon_WEAPON_BLOWGUN:
+		return refs.Weapons.Blowgun().ID
+	case dnd5ev1alpha1.Weapon_WEAPON_HAND_CROSSBOW:
+		return refs.Weapons.HandCrossbow().ID
+	case dnd5ev1alpha1.Weapon_WEAPON_HEAVY_CROSSBOW:
+		return refs.Weapons.HeavyCrossbow().ID
+	case dnd5ev1alpha1.Weapon_WEAPON_LONGBOW:
+		return refs.Weapons.Longbow().ID
+	case dnd5ev1alpha1.Weapon_WEAPON_NET:
+		return refs.Weapons.Net().ID
+	// Ammunition
+	case dnd5ev1alpha1.Weapon_WEAPON_ARROWS_20:
+		return shared.SelectionID(ammunition.Arrows20)
+	case dnd5ev1alpha1.Weapon_WEAPON_BOLTS_20:
+		return shared.SelectionID(ammunition.Bolts20)
+	// Category placeholders
+	case dnd5ev1alpha1.Weapon_WEAPON_ANY_SIMPLE:
+		return refs.Weapons.AnySimpleWeapon().ID
+	case dnd5ev1alpha1.Weapon_WEAPON_ANY_MARTIAL:
+		return refs.Weapons.AnyMartialWeapon().ID
+	case dnd5ev1alpha1.Weapon_WEAPON_ANY:
+		return refs.Weapons.AnyWeapon().ID
+	default:
+		return ""
+	}
+}
+
+// convertProtoArmorToToolkit converts proto Armor enum to toolkit armor ID
+func convertProtoArmorToToolkit(a dnd5ev1alpha1.Armor) shared.SelectionID {
+	switch a {
+	// Light Armor
+	case dnd5ev1alpha1.Armor_ARMOR_PADDED:
+		return refs.Armor.Padded().ID
+	case dnd5ev1alpha1.Armor_ARMOR_LEATHER:
+		return refs.Armor.Leather().ID
+	case dnd5ev1alpha1.Armor_ARMOR_STUDDED_LEATHER:
+		return refs.Armor.StuddedLeather().ID
+	// Medium Armor
+	case dnd5ev1alpha1.Armor_ARMOR_HIDE:
+		return refs.Armor.Hide().ID
+	case dnd5ev1alpha1.Armor_ARMOR_CHAIN_SHIRT:
+		return refs.Armor.ChainShirt().ID
+	case dnd5ev1alpha1.Armor_ARMOR_SCALE_MAIL:
+		return refs.Armor.ScaleMail().ID
+	case dnd5ev1alpha1.Armor_ARMOR_BREASTPLATE:
+		return refs.Armor.Breastplate().ID
+	case dnd5ev1alpha1.Armor_ARMOR_HALF_PLATE:
+		return refs.Armor.HalfPlate().ID
+	// Heavy Armor
+	case dnd5ev1alpha1.Armor_ARMOR_RING_MAIL:
+		return refs.Armor.RingMail().ID
+	case dnd5ev1alpha1.Armor_ARMOR_CHAIN_MAIL:
+		return refs.Armor.ChainMail().ID
+	case dnd5ev1alpha1.Armor_ARMOR_SPLINT:
+		return refs.Armor.Splint().ID
+	case dnd5ev1alpha1.Armor_ARMOR_PLATE:
+		return refs.Armor.Plate().ID
+	// Shield
+	case dnd5ev1alpha1.Armor_ARMOR_SHIELD:
+		return refs.Armor.Shield().ID
+	default:
+		return ""
+	}
+}
+
 // convertProtoRaceToToolkit converts proto Race enum to toolkit Race
 func convertProtoRaceToToolkit(race dnd5ev1alpha1.Race) races.Race {
 	switch race {

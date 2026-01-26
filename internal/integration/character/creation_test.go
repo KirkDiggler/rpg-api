@@ -139,7 +139,6 @@ func (s *CharacterCreationSuite) TestCreateFighter() {
 				},
 			},
 			// Primary weapons: Martial + Shield (need to specify which martial weapon)
-			// Note: Using OtherEquipmentId because Weapon enum→string conversion is broken
 			{
 				Category: dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_EQUIPMENT,
 				Source:   dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_CLASS,
@@ -148,7 +147,7 @@ func (s *CharacterCreationSuite) TestCreateFighter() {
 				Selection: &dnd5ev1alpha1.ChoiceData_Equipment{
 					Equipment: &dnd5ev1alpha1.EquipmentSelection{
 						Items: []*dnd5ev1alpha1.EquipmentSelectionItem{
-							{Equipment: &dnd5ev1alpha1.EquipmentSelectionItem_OtherEquipmentId{OtherEquipmentId: "longsword"}},
+							{Equipment: &dnd5ev1alpha1.EquipmentSelectionItem_Weapon{Weapon: dnd5ev1alpha1.Weapon_WEAPON_LONGSWORD}},
 						},
 					},
 				},
