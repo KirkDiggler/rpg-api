@@ -201,6 +201,16 @@ func (s *BarbarianIntegrationSuite) createBarbarianCharacter(playerID string) st
 	return finalizeResp.GetCharacter().GetId()
 }
 
+// findCharacterInState finds a character by ID in the encounter state response
+func (s *BarbarianIntegrationSuite) findCharacterInState(resp *dnd5ev1alpha1.GetEncounterStateResponse, characterID string) *dnd5ev1alpha1.Character {
+	for _, member := range resp.GetParty() {
+		if member.GetCharacter() != nil && member.GetCharacter().GetId() == characterID {
+			return member.GetCharacter()
+		}
+	}
+	return nil
+}
+
 // =============================================================================
 // RAGE TESTS
 // =============================================================================
@@ -393,16 +403,138 @@ func (s *BarbarianIntegrationSuite) TestRage_DamageBonus_AppearsInAttackResult()
 }
 
 func (s *BarbarianIntegrationSuite) TestRage_Resistance_AppliedWhenTakingDamage() {
-	s.T().Skip("TODO: Need monster attack flow - may require separate work")
-
 	s.T().Log("╔══════════════════════════════════════════════════════════════════╗")
 	s.T().Log("║  BARBARIAN RAGE: Resistance Halves B/P/S Damage                  ║")
 	s.T().Log("╚══════════════════════════════════════════════════════════════════╝")
 
-	// TODO:
-	// 1. Create character with Rage ACTIVE
-	// 2. Simulate monster attacking character
-	// 3. Verify damage is halved for B/P/S types
+	playerID := "test-player-barbarian-resist"
+	ctx := s.authCtx(playerID)
+
+	// 1. Create a barbarian character
+	s.T().Log("Step 1: Creating barbarian character...")
+	characterID := s.createBarbarianCharacter(playerID)
+	s.T().Logf("  ✓ Created character: %s", characterID)
+
+	// 2. Create an encounter
+	s.T().Log("Step 2: Creating encounter...")
+	createResp, err := s.server.EncounterClient.CreateEncounter(ctx, &dnd5ev1alpha1.CreateEncounterRequest{
+		CharacterIds: []string{characterID},
+	})
+	s.Require().NoError(err, "failed to create encounter")
+	encounterID := createResp.GetEncounterId()
+	s.T().Logf("  ✓ Created encounter: %s", encounterID)
+
+	// 3. Set ready and start combat
+	s.T().Log("Step 3: Starting combat...")
+	_, err = s.server.EncounterClient.SetReady(ctx, &dnd5ev1alpha1.SetReadyRequest{
+		EncounterId: encounterID,
+		PlayerId:    playerID,
+		IsReady:     true,
+	})
+	s.Require().NoError(err, "failed to set ready")
+
+	_, err = s.server.EncounterClient.StartCombat(ctx, &dnd5ev1alpha1.StartCombatRequest{
+		EncounterId: encounterID,
+		Theme:       dnd5ev1alpha1.DungeonTheme_DUNGEON_THEME_CRYPT,
+		Difficulty:  dnd5ev1alpha1.DungeonDifficulty_DUNGEON_DIFFICULTY_MEDIUM,
+		Length:      dnd5ev1alpha1.DungeonLength_DUNGEON_LENGTH_SHORT,
+	})
+	s.Require().NoError(err, "failed to start combat")
+	s.T().Log("  ✓ Combat started")
+
+	// 4. Activate Rage (grants B/P/S resistance)
+	s.T().Log("Step 4: Activating Rage...")
+	activateResp, err := s.server.EncounterClient.ActivateFeature(ctx, &dnd5ev1alpha1.ActivateFeatureRequest{
+		EncounterId: encounterID,
+		CharacterId: characterID,
+		FeatureId:   dnd5ev1alpha1.FeatureId_FEATURE_ID_RAGE,
+	})
+	s.Require().NoError(err, "failed to activate rage")
+	s.Assert().True(activateResp.GetSuccess(), "rage activation should succeed")
+	s.T().Log("  ✓ Rage activated (B/P/S resistance active)")
+
+	// 5. End turn to trigger monster attack on the raging barbarian
+	s.T().Log("Step 5: Ending turn to trigger monster attacks...")
+	endTurnResp, err := s.server.EncounterClient.EndTurn(ctx, &dnd5ev1alpha1.EndTurnRequest{
+		EncounterId: encounterID,
+		EntityId:    characterID,
+	})
+	s.Require().NoError(err, "failed to end turn")
+
+	// 6. Check monster turn results for attacks on our character
+	monsterAttackedUs := false
+	var attackOnUs *dnd5ev1alpha1.AttackResult
+
+	for _, monsterTurn := range endTurnResp.GetMonsterTurns() {
+		s.T().Logf("  Monster %s took actions:", monsterTurn.GetMonsterName())
+		for _, action := range monsterTurn.GetActions() {
+			s.T().Logf("    - %s targeting %s (success=%v)", 
+				action.GetActionType(), action.GetTargetId(), action.GetSuccess())
+			
+			// Check if this is an attack on our character
+			isAttackAction := action.GetActionType() == dnd5ev1alpha1.MonsterActionType_MONSTER_ACTION_TYPE_MELEE_ATTACK ||
+				action.GetActionType() == dnd5ev1alpha1.MonsterActionType_MONSTER_ACTION_TYPE_RANGED_ATTACK
+			
+			if action.GetTargetId() == characterID && isAttackAction {
+				monsterAttackedUs = true
+				attackOnUs = action.GetAttackResult()
+				if attackOnUs != nil {
+					s.T().Logf("    → Attack on us! Roll=%d, Hit=%v, Damage=%d",
+						attackOnUs.GetAttackRoll(), attackOnUs.GetHit(), attackOnUs.GetDamage())
+				} else {
+					s.T().Log("    → Attack targeted us but no result details")
+				}
+			}
+		}
+	}
+
+	if !monsterAttackedUs {
+		s.T().Log("  ⚠ No monster attacked our character this turn")
+		s.T().Log("  Note: Monster may not have been in range or chose different target")
+		s.T().Skip("Monster did not attack our character - cannot verify resistance")
+		return
+	}
+
+	// 7. Verify resistance was applied (damage should be halved)
+	if attackOnUs == nil {
+		s.T().Log("  ⚠ Attack result details not available")
+		s.T().Log("  Note: Monster turn results may not include full attack breakdown")
+		s.T().Skip("Attack result details not available - cannot verify resistance")
+		return
+	}
+
+	if attackOnUs.GetHit() {
+		breakdown := attackOnUs.GetDamageBreakdown()
+		if breakdown != nil {
+			foundResistance := false
+			for _, comp := range breakdown.GetComponents() {
+				s.T().Logf("    Component: source=%s, type=%s, multiplier=%v",
+					comp.GetSource(), comp.GetDamageType(), comp.GetMultiplier())
+				
+				// Resistance shows as 0.5 multiplier for B/P/S damage
+				if comp.GetMultiplier() == 0.5 {
+					foundResistance = true
+					s.T().Logf("    → Found resistance multiplier (0.5x) on %s damage!", comp.GetDamageType())
+				}
+			}
+			
+			if foundResistance {
+				s.T().Log("╔══════════════════════════════════════════════════════════════════╗")
+				s.T().Log("║  ✓ TEST PASSED: Rage resistance (0.5x) applied to damage         ║")
+				s.T().Log("╚══════════════════════════════════════════════════════════════════╝")
+			} else {
+				s.T().Log("  ⚠ No resistance multiplier found in breakdown")
+				s.T().Log("  Note: Resistance may not be wired in damage calculation yet")
+				s.Fail("Rage resistance (0.5x multiplier) not found in damage breakdown")
+			}
+		} else {
+			s.T().Log("  ⚠ No damage breakdown available on hit")
+			s.T().Skip("Damage breakdown not available - cannot verify resistance multiplier")
+		}
+	} else {
+		s.T().Log("  Monster missed - cannot verify resistance on actual damage")
+		s.T().Skip("Monster attack missed - cannot verify resistance multiplier")
+	}
 }
 
 func (s *BarbarianIntegrationSuite) TestRage_EndsOnTurnEnd_NoCombatActivity() {
@@ -520,14 +652,78 @@ func (s *BarbarianIntegrationSuite) TestRage_EndsOnTurnEnd_NoCombatActivity() {
 // =============================================================================
 
 func (s *BarbarianIntegrationSuite) TestBarbarianUnarmoredDefense_ACCalculation() {
-	s.T().Skip("TODO: Need AC calculation API endpoint or verify through combat")
-
 	s.T().Log("╔══════════════════════════════════════════════════════════════════╗")
 	s.T().Log("║  BARBARIAN UNARMORED DEFENSE: AC = 10 + DEX + CON                ║")
 	s.T().Log("╚══════════════════════════════════════════════════════════════════╝")
 
-	// TODO:
-	// 1. Create unarmored barbarian (DEX 14, CON 16)
-	// 2. Verify AC = 10 + 2 + 3 = 15
-	// Note: May need to verify through monster attack targeting the barbarian
+	playerID := "test-player-barbarian-ac"
+	ctx := s.authCtx(playerID)
+
+	// 1. Create a barbarian character
+	// Standard array: STR 15, DEX 13 (+1), CON 14 (+2), INT 8, WIS 12, CHA 10
+	// Expected AC = 10 + DEX(+1) + CON(+2) = 13
+	s.T().Log("Step 1: Creating barbarian character...")
+	characterID := s.createBarbarianCharacter(playerID)
+	s.T().Logf("  ✓ Created character: %s", characterID)
+	s.T().Log("  Expected: DEX 13 (+1), CON 14 (+2) → AC = 10 + 1 + 2 = 13")
+
+	// 2. Create an encounter to get full character state
+	s.T().Log("Step 2: Creating encounter...")
+	createResp, err := s.server.EncounterClient.CreateEncounter(ctx, &dnd5ev1alpha1.CreateEncounterRequest{
+		CharacterIds: []string{characterID},
+	})
+	s.Require().NoError(err, "failed to create encounter")
+	encounterID := createResp.GetEncounterId()
+
+	// 3. Get encounter state to access character combat stats
+	s.T().Log("Step 3: Getting character combat stats...")
+	stateResp, err := s.server.EncounterClient.GetEncounterState(ctx, &dnd5ev1alpha1.GetEncounterStateRequest{
+		EncounterId: encounterID,
+		PlayerId:    playerID,
+	})
+	s.Require().NoError(err, "failed to get encounter state")
+
+	// 4. Find our character and check AC
+	var armorClass int32
+	for _, member := range stateResp.GetParty() {
+		if member.GetCharacter() != nil && member.GetCharacter().GetId() == characterID {
+			char := member.GetCharacter()
+			if char.GetCombatStats() != nil {
+				armorClass = char.GetCombatStats().GetArmorClass()
+				s.T().Logf("  ✓ Character AC: %d", armorClass)
+				
+				// Also log ability scores for verification
+				if char.GetAbilityScores() != nil {
+					s.T().Logf("  DEX: %d, CON: %d", 
+						char.GetAbilityScores().GetDexterity(),
+						char.GetAbilityScores().GetConstitution())
+				}
+			}
+			break
+		}
+	}
+
+	// 5. Verify AC calculation
+	// Barbarian Unarmored Defense: AC = 10 + DEX mod + CON mod
+	// Calculate expected based on actual scores
+	var expectedAC int32
+	if char := s.findCharacterInState(stateResp, characterID); char != nil && char.GetAbilityScores() != nil {
+		dex := char.GetAbilityScores().GetDexterity()
+		con := char.GetAbilityScores().GetConstitution()
+		dexMod := (dex - 10) / 2
+		conMod := (con - 10) / 2
+		expectedAC = 10 + dexMod + conMod
+		s.T().Logf("  Expected: 10 + DEX(%d) + CON(%d) = %d", dexMod, conMod, expectedAC)
+	} else {
+		expectedAC = 13 // Fallback
+	}
+	
+	s.Assert().Equal(expectedAC, armorClass, 
+		"Barbarian Unarmored Defense should be 10 + DEX mod + CON mod")
+
+	if armorClass == expectedAC {
+		s.T().Log("╔══════════════════════════════════════════════════════════════════╗")
+		s.T().Log("║  ✓ TEST PASSED: Barbarian Unarmored Defense AC correct           ║")
+		s.T().Log("╚══════════════════════════════════════════════════════════════════╝")
+	}
 }
