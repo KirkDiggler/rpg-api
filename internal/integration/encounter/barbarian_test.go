@@ -89,15 +89,34 @@ func (s *BarbarianIntegrationSuite) createBarbarianCharacter(playerID string) st
 
 	draftID := createResp.GetDraft().GetId()
 
-	// Step 2: Set race (Human - no subrace needed)
+	// Step 2: Set name
+	_, err = s.server.CharacterClient.UpdateName(ctx, &dnd5ev1alpha1.UpdateNameRequest{
+		DraftId: draftID,
+		Name:    "Grog the Mighty",
+	})
+	s.Require().NoError(err, "failed to set name")
+
+	// Step 3: Set Human with language choice
 	_, err = s.server.CharacterClient.UpdateRace(ctx, &dnd5ev1alpha1.UpdateRaceRequest{
 		DraftId: draftID,
 		Race:    dnd5ev1alpha1.Race_RACE_HUMAN,
+		RaceChoices: []*dnd5ev1alpha1.ChoiceData{
+			{
+				Category: dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_LANGUAGES,
+				Source:   dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_RACE,
+				Selection: &dnd5ev1alpha1.ChoiceData_Languages{
+					Languages: &dnd5ev1alpha1.LanguageSelection{
+						Languages: []dnd5ev1alpha1.Language{
+							dnd5ev1alpha1.Language_LANGUAGE_ORC,
+						},
+					},
+				},
+			},
+		},
 	})
 	s.Require().NoError(err, "failed to set race")
 
-	// Step 3: Set class (Barbarian) with required skill choices
-	// Barbarians choose 2 skills from: Animal Handling, Athletics, Intimidation, Nature, Perception, Survival
+	// Step 4: Set Barbarian with skills AND equipment choices
 	_, err = s.server.CharacterClient.UpdateClass(ctx, &dnd5ev1alpha1.UpdateClassRequest{
 		DraftId: draftID,
 		Class:   dnd5ev1alpha1.Class_CLASS_BARBARIAN,
@@ -114,33 +133,62 @@ func (s *BarbarianIntegrationSuite) createBarbarianCharacter(playerID string) st
 					},
 				},
 			},
+			// Primary weapon: Greataxe
+			{
+				Category: dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_EQUIPMENT,
+				Source:   dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_CLASS,
+				ChoiceId: "barbarian-weapons-primary",
+				OptionId: "barbarian-weapon-a",
+				Selection: &dnd5ev1alpha1.ChoiceData_Equipment{
+					Equipment: &dnd5ev1alpha1.EquipmentSelection{},
+				},
+			},
+			// Secondary weapon: 2 handaxes
+			{
+				Category: dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_EQUIPMENT,
+				Source:   dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_CLASS,
+				ChoiceId: "barbarian-weapons-secondary",
+				OptionId: "barbarian-secondary-a",
+				Selection: &dnd5ev1alpha1.ChoiceData_Equipment{
+					Equipment: &dnd5ev1alpha1.EquipmentSelection{},
+				},
+			},
+			// Pack: Explorer's pack
+			{
+				Category: dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_EQUIPMENT,
+				Source:   dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_CLASS,
+				ChoiceId: "barbarian-pack",
+				OptionId: "barbarian-pack-a",
+				Selection: &dnd5ev1alpha1.ChoiceData_Equipment{
+					Equipment: &dnd5ev1alpha1.EquipmentSelection{},
+				},
+			},
 		},
 	})
 	s.Require().NoError(err, "failed to set class")
 
-	// Step 4: Set ability scores directly (standard array: 15, 14, 13, 12, 10, 8)
-	// Barbarian optimal: STR 15, CON 14, DEX 13, WIS 12, CHA 10, INT 8
+	// Step 5: Set background
+	_, err = s.server.CharacterClient.UpdateBackground(ctx, &dnd5ev1alpha1.UpdateBackgroundRequest{
+		DraftId:    draftID,
+		Background: dnd5ev1alpha1.Background_BACKGROUND_OUTLANDER,
+	})
+	s.Require().NoError(err, "failed to set background")
+
+	// Step 6: Set ability scores
 	_, err = s.server.CharacterClient.UpdateAbilityScores(ctx, &dnd5ev1alpha1.UpdateAbilityScoresRequest{
 		DraftId: draftID,
 		ScoresInput: &dnd5ev1alpha1.UpdateAbilityScoresRequest_AbilityScores{
 			AbilityScores: &dnd5ev1alpha1.AbilityScores{
 				Strength:     15,
-				Constitution: 14,
 				Dexterity:    13,
+				Constitution: 14,
+				Intelligence: 8,
 				Wisdom:       12,
 				Charisma:     10,
-				Intelligence: 8,
 			},
 		},
 	})
 	s.Require().NoError(err, "failed to set ability scores")
-
-	// Step 6: Set character name
-	_, err = s.server.CharacterClient.UpdateName(ctx, &dnd5ev1alpha1.UpdateNameRequest{
-		DraftId: draftID,
-		Name:    "Grog the Mighty",
-	})
-	s.Require().NoError(err, "failed to set name")
 
 	// Step 7: Finalize character
 	finalizeResp, err := s.server.CharacterClient.FinalizeDraft(ctx, &dnd5ev1alpha1.FinalizeDraftRequest{
