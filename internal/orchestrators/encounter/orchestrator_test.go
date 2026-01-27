@@ -1609,8 +1609,9 @@ func (s *OrchestratorTestSuite) TestEndTurn_UpdateError() {
 		Round:   1,
 	}
 
-	// Expect character turn-end event publishing for char-1 (whose turn is ending)
-	s.expectCharacterTurnEnd("char-1")
+	// NOTE: We don't call expectCharacterTurnEnd here because the character turn-end
+	// event publishing happens AFTER encRepo.Update. When Update fails, we return early
+	// and never reach the publishCharacterTurnEnd call.
 
 	s.mockEncRepo.EXPECT().
 		Get(gomock.Any(), &encounterrepo.GetInput{EncounterID: "enc-1"}).
