@@ -363,6 +363,20 @@ func (o *Orchestrator) resolveMonsterAttack(
 		attackResult.Breakdown = convertToolkitBreakdown(combatResult.Breakdown)
 	}
 
+	// Persist defender's updated condition state (e.g., Rage's WasHitThisTurn flag)
+	// This ensures that when turn-end logic checks for combat activity, it sees the hit.
+	updatedDefenderData := defender.ToData()
+	_, updateErr := o.charRepo.Update(ctx, characterrepo.UpdateInput{
+		Character: &entities.Character{
+			Data:       updatedDefenderData,
+			Appearance: charOutput.Character.Appearance,
+		},
+	})
+	if updateErr != nil {
+		// Log but don't fail - the attack resolved successfully
+		fmt.Printf("warning: failed to persist defender state after attack: %v\n", updateErr)
+	}
+
 	return attackResult, nil
 }
 

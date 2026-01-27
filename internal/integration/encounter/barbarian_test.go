@@ -600,8 +600,9 @@ func (s *BarbarianIntegrationSuite) TestRage_EndsOnTurnEnd_NoCombatActivity() {
 	s.Assert().True(hasRageBefore, "character should have Rage condition after activation")
 	s.T().Log("  ✓ Rage activated and verified")
 
-	// 5. End turn WITHOUT attacking or taking damage
-	s.T().Log("Step 5: Ending turn without combat activity...")
+	// 5. End turn WITHOUT attacking (player didn't attack)
+	// Note: Monsters may attack during their turns - if they hit, Rage correctly stays active
+	s.T().Log("Step 5: Ending turn (player didn't attack)...")
 	endTurnResp, err := s.server.EncounterClient.EndTurn(ctx, &dnd5ev1alpha1.EndTurnRequest{
 		EncounterId: encounterID,
 		EntityId:    characterID,
@@ -609,7 +610,19 @@ func (s *BarbarianIntegrationSuite) TestRage_EndsOnTurnEnd_NoCombatActivity() {
 	s.Require().NoError(err, "failed to end turn")
 	s.T().Logf("  ✓ Turn ended, round: %d", endTurnResp.GetCombatState().GetRound())
 
-	// 6. Get updated character state and verify Rage is removed
+	// Check if monster hit us during their turn
+	monsterHitUs := false
+	for _, monsterTurn := range endTurnResp.GetMonsterTurns() {
+		for _, action := range monsterTurn.GetActions() {
+			if action.GetTargetId() == characterID && action.GetAttackResult() != nil && action.GetAttackResult().GetHit() {
+				monsterHitUs = true
+				s.T().Logf("  ⚠ Monster %s hit us during their turn - Rage should stay active", monsterTurn.GetMonsterName())
+				break
+			}
+		}
+	}
+
+	// 6. Get updated character state
 	stateResp, err := s.server.EncounterClient.GetEncounterState(ctx, &dnd5ev1alpha1.GetEncounterStateRequest{
 		EncounterId: encounterID,
 		PlayerId:    playerID,
@@ -625,7 +638,7 @@ func (s *BarbarianIntegrationSuite) TestRage_EndsOnTurnEnd_NoCombatActivity() {
 		}
 	}
 
-	// Verify Rage is no longer active
+	// Check if Rage is still active
 	hasRageAfter := false
 	for _, cond := range charConditions {
 		if cond.GetId() == dnd5ev1alpha1.ConditionId_CONDITION_ID_RAGING {
@@ -634,16 +647,25 @@ func (s *BarbarianIntegrationSuite) TestRage_EndsOnTurnEnd_NoCombatActivity() {
 		}
 	}
 
-	s.Assert().False(hasRageAfter, "Rage should end when turn ends without attacking/taking damage")
-
-	if !hasRageAfter {
+	// Verify Rage behavior based on whether we took damage
+	if monsterHitUs {
+		// Monster hit us - Rage should stay active (per D&D rules: "taken damage since your last turn")
+		s.Assert().True(hasRageAfter, "Rage should stay active when hit by monster during their turn")
 		s.T().Log("╔══════════════════════════════════════════════════════════════════╗")
-		s.T().Log("║  ✓ TEST PASSED: Rage ends on turn end without combat activity    ║")
+		s.T().Log("║  ✓ TEST PASSED: Rage stays active after taking damage            ║")
 		s.T().Log("╚══════════════════════════════════════════════════════════════════╝")
 	} else {
-		s.T().Log("╔══════════════════════════════════════════════════════════════════╗")
-		s.T().Log("║  ✗ TEST FAILED: Rage did not end (may need turn-end event wiring)║")
-		s.T().Log("╚══════════════════════════════════════════════════════════════════╝")
+		// No damage taken - Rage should end
+		s.Assert().False(hasRageAfter, "Rage should end when turn ends without attacking/taking damage")
+		if !hasRageAfter {
+			s.T().Log("╔══════════════════════════════════════════════════════════════════╗")
+			s.T().Log("║  ✓ TEST PASSED: Rage ends on turn end without combat activity    ║")
+			s.T().Log("╚══════════════════════════════════════════════════════════════════╝")
+		} else {
+			s.T().Log("╔══════════════════════════════════════════════════════════════════╗")
+			s.T().Log("║  ✗ TEST FAILED: Rage did not end despite no combat activity      ║")
+			s.T().Log("╚══════════════════════════════════════════════════════════════════╝")
+		}
 	}
 }
 
