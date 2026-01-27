@@ -197,14 +197,19 @@ func (o *Orchestrator) executeSingleMonsterTurn(
 		}
 
 		// If this was an attack action and it succeeded, resolve it
-		if action.ActionType == monster.TypeMeleeAttack && action.Success {
+		isMeleeAttack := action.ActionType == monster.TypeMeleeAttack
+		isRangedAttack := action.ActionType == monster.TypeRangedAttack
+
+		if (isMeleeAttack || isRangedAttack) && action.Success {
 			// Validate adjacency for melee attacks - skip if target is not adjacent
-			if roomData != nil && !isTargetAdjacent(roomData, monsterData.ID, action.TargetID) {
+			if isMeleeAttack && roomData != nil && !isTargetAdjacent(roomData, monsterData.ID, action.TargetID) {
 				// Target is not adjacent - melee attack cannot hit
 				// Mark as unsuccessful and skip resolution
 				actions[i].Success = false
 				continue
 			}
+
+			// TODO: Add range validation for ranged attacks
 
 			// Resolve the attack
 			attackResult, resolveErr := o.resolveMonsterAttack(ctx, mon, monsterData, action.TargetID)
