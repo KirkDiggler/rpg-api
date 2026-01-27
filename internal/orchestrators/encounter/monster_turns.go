@@ -197,14 +197,19 @@ func (o *Orchestrator) executeSingleMonsterTurn(
 		}
 
 		// If this was an attack action and it succeeded, resolve it
-		if action.ActionType == monster.TypeMeleeAttack && action.Success {
+		isMeleeAttack := action.ActionType == monster.TypeMeleeAttack
+		isRangedAttack := action.ActionType == monster.TypeRangedAttack
+
+		if (isMeleeAttack || isRangedAttack) && action.Success {
 			// Validate adjacency for melee attacks - skip if target is not adjacent
-			if roomData != nil && !isTargetAdjacent(roomData, monsterData.ID, action.TargetID) {
+			if isMeleeAttack && roomData != nil && !isTargetAdjacent(roomData, monsterData.ID, action.TargetID) {
 				// Target is not adjacent - melee attack cannot hit
 				// Mark as unsuccessful and skip resolution
 				actions[i].Success = false
 				continue
 			}
+
+			// TODO: Add range validation for ranged attacks
 
 			// Resolve the attack
 			attackResult, resolveErr := o.resolveMonsterAttack(ctx, mon, monsterData, action.TargetID)
@@ -356,6 +361,20 @@ func (o *Orchestrator) resolveMonsterAttack(
 	// Map breakdown if present
 	if combatResult.Breakdown != nil {
 		attackResult.Breakdown = convertToolkitBreakdown(combatResult.Breakdown)
+	}
+
+	// Persist defender's updated condition state (e.g., Rage's WasHitThisTurn flag)
+	// This ensures that when turn-end logic checks for combat activity, it sees the hit.
+	updatedDefenderData := defender.ToData()
+	_, updateErr := o.charRepo.Update(ctx, characterrepo.UpdateInput{
+		Character: &entities.Character{
+			Data:       updatedDefenderData,
+			Appearance: charOutput.Character.Appearance,
+		},
+	})
+	if updateErr != nil {
+		// Log but don't fail - the attack resolved successfully
+		fmt.Printf("warning: failed to persist defender state after attack: %v\n", updateErr)
 	}
 
 	return attackResult, nil

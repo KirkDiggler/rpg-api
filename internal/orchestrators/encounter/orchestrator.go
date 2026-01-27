@@ -1645,17 +1645,8 @@ func (o *Orchestrator) EndTurn(ctx context.Context, input *EndTurnInput) (*EndTu
 
 	// 5. Store previous state for turn change event
 	previousEntityID := activeEntity.EntityID
+	previousEntityType := activeEntity.EntityType
 	previousRound := initiativeData.Round
-
-	// 5a. Publish TurnEndEvent to character's event bus (for Rage, Sneak Attack, etc.)
-	// This allows conditions to process turn end logic like checking for combat activity.
-	if activeEntity.EntityType == entityTypeCharacter {
-		if publishErr := o.publishCharacterTurnEnd(ctx, previousEntityID, previousRound); publishErr != nil {
-			// Log but don't fail - turn end events are important but not critical
-			// The turn will still advance; conditions just won't update
-			fmt.Printf("warning: failed to publish turn end event for character %s: %v\n", previousEntityID, publishErr)
-		}
-	}
 
 	// 6. Advance to next turn
 	newRound := false
@@ -1738,6 +1729,16 @@ func (o *Orchestrator) EndTurn(ctx context.Context, input *EndTurnInput) (*EndTu
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to save turn state: %w", err)
+	}
+
+	// 9b. Publish TurnEndEvent to character's event bus AFTER monster turns
+	// This allows conditions like Rage to check for combat activity (attacks/damage taken)
+	// that occurred during the monsters' turns before deciding if they should end.
+	if previousEntityType == entityTypeCharacter {
+		if publishErr := o.publishCharacterTurnEnd(ctx, previousEntityID, previousRound); publishErr != nil {
+			// Log but don't fail - turn end events are important but not critical
+			fmt.Printf("warning: failed to publish turn end event for character %s: %v\n", previousEntityID, publishErr)
+		}
 	}
 
 	// 10. Build output
