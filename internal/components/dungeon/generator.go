@@ -606,6 +606,10 @@ func calculateNeighborOrigin(currentRoom, neighborRoom *Room, direction Directio
 		return origin
 	}
 
+	if neighborRoom == nil || neighborRoom.Shape == nil {
+		return origin
+	}
+
 	currentWidth := currentRoom.Shape.Width
 	currentHeight := currentRoom.Shape.Height
 
@@ -627,12 +631,12 @@ func calculateNeighborOrigin(currentRoom, neighborRoom *Room, direction Directio
 		// Neighbor is to the left: move left by the neighbor's width + 1
 		origin.X -= neighborRoom.Shape.Width + 1
 		origin.Y = -origin.X - origin.Z
-	case DirectionUp:
-		// Vertical connection (stairs up): same XZ, different Y level
-		origin.Y += 1
-	case DirectionDown:
-		// Vertical connection (stairs down): same XZ, different Y level
-		origin.Y -= 1
+	case DirectionUp, DirectionDown:
+		// Vertical connections are a no-op for 2D grid origins.
+		// Up/Down cannot adjust X/Z without game-specific context, and adjusting Y
+		// would break the cube coordinate invariant (y = -x - z).
+		// A separate Level field would be needed to represent vertical positioning.
+		// For now, return the current room's origin unchanged.
 	}
 
 	return origin

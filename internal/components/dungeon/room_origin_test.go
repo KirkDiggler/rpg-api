@@ -135,7 +135,7 @@ func (s *RoomOriginTestSuite) TestCalculateNeighborOrigin_Up() {
 	current := &Room{
 		ID:     "room-1",
 		Shape:  &Shape{Width: 10, Height: 8},
-		Origin: Position{X: 0, Y: 0, Z: 0},
+		Origin: Position{X: 5, Y: -8, Z: 3},
 	}
 	neighbor := &Room{
 		ID:    "room-2",
@@ -144,17 +144,16 @@ func (s *RoomOriginTestSuite) TestCalculateNeighborOrigin_Up() {
 
 	result := calculateNeighborOrigin(current, neighbor, DirectionUp)
 
-	// Up: Y increases by 1, XZ unchanged
-	s.Equal(0, result.X)
-	s.Equal(1, result.Y)
-	s.Equal(0, result.Z)
+	// Up is a no-op: returns current room's origin unchanged
+	// Vertical connections would need a separate Level field
+	s.Equal(current.Origin, result)
 }
 
 func (s *RoomOriginTestSuite) TestCalculateNeighborOrigin_Down() {
 	current := &Room{
 		ID:     "room-1",
 		Shape:  &Shape{Width: 10, Height: 8},
-		Origin: Position{X: 0, Y: 0, Z: 0},
+		Origin: Position{X: 5, Y: -8, Z: 3},
 	}
 	neighbor := &Room{
 		ID:    "room-2",
@@ -163,10 +162,39 @@ func (s *RoomOriginTestSuite) TestCalculateNeighborOrigin_Down() {
 
 	result := calculateNeighborOrigin(current, neighbor, DirectionDown)
 
-	// Down: Y decreases by 1, XZ unchanged
-	s.Equal(0, result.X)
-	s.Equal(-1, result.Y)
-	s.Equal(0, result.Z)
+	// Down is a no-op: returns current room's origin unchanged
+	// Vertical connections would need a separate Level field
+	s.Equal(current.Origin, result)
+}
+
+func (s *RoomOriginTestSuite) TestCalculateNeighborOrigin_NilNeighborRoom() {
+	current := &Room{
+		ID:     "room-1",
+		Shape:  &Shape{Width: 10, Height: 8},
+		Origin: Position{X: 5, Y: -5, Z: 0},
+	}
+
+	result := calculateNeighborOrigin(current, nil, DirectionSouth)
+
+	// Nil neighbor room returns current origin unchanged
+	s.Equal(current.Origin, result)
+}
+
+func (s *RoomOriginTestSuite) TestCalculateNeighborOrigin_NilNeighborShape() {
+	current := &Room{
+		ID:     "room-1",
+		Shape:  &Shape{Width: 10, Height: 8},
+		Origin: Position{X: 5, Y: -5, Z: 0},
+	}
+	neighbor := &Room{
+		ID:    "room-2",
+		Shape: nil,
+	}
+
+	result := calculateNeighborOrigin(current, neighbor, DirectionNorth)
+
+	// Nil neighbor shape returns current origin unchanged
+	s.Equal(current.Origin, result)
 }
 
 // =============================================================================
