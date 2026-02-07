@@ -910,3 +910,61 @@ func (s *IntegrationTestSuite) TestPerimeterWallsSplitAtDoors() {
 	s.Assert().Greater(perimeterWallCount, 4,
 		"room with connection should have split perimeter walls (got %d)", perimeterWallCount)
 }
+
+// TestRoomOrigins verifies that room origins are calculated during dungeon generation
+func (s *IntegrationTestSuite) TestRoomOrigins() {
+	output, err := s.generator.Generate(context.Background(), &dungeon.GenerateInput{
+		Theme:     dungeon.ThemeCrypt,
+		Size:      dungeon.RoomSizeMedium,
+		Length:    4,
+		Layout:    dungeon.LayoutLinear,
+		PartySize: 4,
+		TargetCR:  3,
+		Seed:      77777,
+	})
+
+	s.Require().NoError(err)
+	s.Require().NotNil(output.Dungeon)
+	dun := output.Dungeon
+
+	// Start room should have origin (0, 0, 0)
+	var startRoom *dungeon.Room
+	for _, room := range dun.Rooms {
+		if room.ID == dun.StartRoom {
+			startRoom = room
+			break
+		}
+	}
+	s.Require().NotNil(startRoom, "start room should exist")
+	s.Equal(dungeon.Position{X: 0, Y: 0, Z: 0}, startRoom.Origin,
+		"start room should have origin (0,0,0)")
+
+	// All rooms should have origins set (non-default for non-start rooms in linear layout)
+	// In a linear dungeon with 4 rooms, at least some rooms should have non-zero origins
+	nonZeroOrigins := 0
+	for _, room := range dun.Rooms {
+		if room.ID != dun.StartRoom {
+			if room.Origin.X != 0 || room.Origin.Y != 0 || room.Origin.Z != 0 {
+				nonZeroOrigins++
+			}
+		}
+	}
+	s.Assert().Greater(nonZeroOrigins, 0,
+		"non-start rooms should have non-zero origins in a multi-room dungeon")
+
+	// Verify all room origins satisfy the cube coordinate constraint: y = -x - z
+	for _, room := range dun.Rooms {
+		s.Equal(-room.Origin.X-room.Origin.Z, room.Origin.Y,
+			"room %s origin should satisfy y = -x - z (got %+v)", room.ID, room.Origin)
+	}
+
+	// Verify no two rooms have the same origin
+	origins := make(map[dungeon.Position]string)
+	for _, room := range dun.Rooms {
+		if existingID, exists := origins[room.Origin]; exists {
+			s.Fail("duplicate origin", "rooms %s and %s have the same origin %+v",
+				existingID, room.ID, room.Origin)
+		}
+		origins[room.Origin] = room.ID
+	}
+}

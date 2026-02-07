@@ -210,6 +210,22 @@ func (o *Orchestrator) publishEvent(ctx context.Context, encounterID string, eve
 	}
 }
 
+// getCurrentRoomOrigin returns the origin of the current room from the dungeon entity.
+// Returns nil if the dungeon or room origins are not available.
+func getCurrentRoomOrigin(dungeonEntity *entities.Dungeon) *dungeon.Position {
+	if dungeonEntity == nil || dungeonEntity.RoomOrigins == nil {
+		return nil
+	}
+	currentRoomID := dungeonEntity.CurrentRoomID
+	if currentRoomID == "" {
+		currentRoomID = dungeonEntity.StartRoomID
+	}
+	if origin, ok := dungeonEntity.RoomOrigins[currentRoomID]; ok {
+		return &origin
+	}
+	return nil
+}
+
 // publishCharacterTurnEnd publishes a TurnEndEvent to the character's event bus.
 // This allows conditions like Rage and Sneak Attack to process turn-end logic.
 // The character is loaded with their persisted condition state, the event is published,
@@ -477,14 +493,16 @@ func (o *Orchestrator) ResolveAttack(ctx context.Context, input *ResolveAttackIn
 		}
 	}
 
-	// 16b. Load dungeon to get walls for the current room
+	// 16b. Load dungeon to get walls and room origin for the current room
 	var dungeonWalls []dungeon.WallSegment
+	var attackRoomOrigin *dungeon.Position
 	if o.dungeonRepo != nil {
 		dungeonOutput, dungeonErr := o.dungeonRepo.GetByEncounterID(ctx, &dungeonrepo.GetByEncounterIDInput{
 			EncounterID: input.EncounterID,
 		})
 		if dungeonErr == nil && dungeonOutput.Dungeon != nil {
 			dungeonEntity := dungeonOutput.Dungeon
+			attackRoomOrigin = getCurrentRoomOrigin(dungeonEntity)
 			currentRoomID := dungeonEntity.CurrentRoomID
 			if currentRoomID == "" {
 				currentRoomID = dungeonEntity.StartRoomID
@@ -503,6 +521,7 @@ func (o *Orchestrator) ResolveAttack(ctx context.Context, input *ResolveAttackIn
 		TargetHP:      newHP,
 		TargetDead:    newHP <= 0,
 		Room:          roomData,
+		RoomOrigin:    attackRoomOrigin,
 		Walls:         dungeonWalls,
 		GrantedAction: grantedActionInfo,
 	})
@@ -870,6 +889,7 @@ func (o *Orchestrator) createDungeonWithGenerator(
 		EncounterID:  encounterID,
 		DungeonID:    dungeonEntity.ID,
 		Room:         roomData,
+		RoomOrigin:   getCurrentRoomOrigin(dungeonEntity),
 		Doors:        doors,
 		CombatState:  combatState,
 		MonsterTurns: monsterTurns,
@@ -882,10 +902,12 @@ func (o *Orchestrator) convertToDungeonEntity(
 	genDungeon *dungeon.Dungeon,
 	seed int64,
 ) *entities.Dungeon {
-	// Convert rooms to map
+	// Convert rooms to map and extract room origins
 	rooms := make(map[string]*dungeon.Room)
+	roomOrigins := make(map[string]dungeon.Position)
 	for _, room := range genDungeon.Rooms {
 		rooms[room.ID] = room
+		roomOrigins[room.ID] = room.Origin
 	}
 
 	// Convert connections to toolkit format
@@ -913,6 +935,7 @@ func (o *Orchestrator) convertToDungeonEntity(
 		StartRoomID:   genDungeon.StartRoom,
 		BossRoomID:    genDungeon.BossRoom,
 		Rooms:         rooms,
+		RoomOrigins:   roomOrigins,
 		State:         entities.DungeonStateActive,
 		CurrentRoomID: genDungeon.StartRoom,
 		RevealedRooms: map[string]bool{genDungeon.StartRoom: true},
@@ -1369,12 +1392,14 @@ func (o *Orchestrator) MoveCharacter(ctx context.Context, input *MoveCharacterIn
 	// Load dungeon to get walls for the current room
 	var walls []WallInfo
 	var dungeonWalls []dungeon.WallSegment // Raw walls for event
+	var moveRoomOrigin *dungeon.Position
 	if o.dungeonRepo != nil {
 		dungeonOutput, dungeonErr := o.dungeonRepo.GetByEncounterID(ctx, &dungeonrepo.GetByEncounterIDInput{
 			EncounterID: input.EncounterID,
 		})
 		if dungeonErr == nil && dungeonOutput != nil && dungeonOutput.Dungeon != nil {
 			dungeonEntity := dungeonOutput.Dungeon
+			moveRoomOrigin = getCurrentRoomOrigin(dungeonEntity)
 			currentRoomID := dungeonEntity.CurrentRoomID
 			if currentRoomID == "" {
 				currentRoomID = dungeonEntity.StartRoomID
@@ -1575,6 +1600,7 @@ func (o *Orchestrator) MoveCharacter(ctx context.Context, input *MoveCharacterIn
 		MovementRemaining: movementRemaining,
 		StopReason:        "completed",
 		UpdatedRoom:       roomData,
+		RoomOrigin:        moveRoomOrigin,
 		Walls:             dungeonWalls,
 	})
 
@@ -1589,6 +1615,7 @@ func (o *Orchestrator) MoveCharacter(ctx context.Context, input *MoveCharacterIn
 		MovementRemaining: movementRemaining,
 		StopReason:        "completed",
 		UpdatedRoom:       roomData,
+		RoomOrigin:        moveRoomOrigin,
 		Walls:             walls,
 	}, nil
 }
@@ -1770,14 +1797,16 @@ func (o *Orchestrator) EndTurn(ctx context.Context, input *EndTurnInput) (*EndTu
 		}
 	}
 
-	// 11b. Load dungeon to get walls for the current room
+	// 11b. Load dungeon to get walls and room origin for the current room
 	var dungeonWalls []dungeon.WallSegment
+	var turnRoomOrigin *dungeon.Position
 	if o.dungeonRepo != nil {
 		dungeonOutput, dungeonErr := o.dungeonRepo.GetByEncounterID(ctx, &dungeonrepo.GetByEncounterIDInput{
 			EncounterID: input.EncounterID,
 		})
 		if dungeonErr == nil && dungeonOutput.Dungeon != nil {
 			dungeonEntity := dungeonOutput.Dungeon
+			turnRoomOrigin = getCurrentRoomOrigin(dungeonEntity)
 			currentRoomID := dungeonEntity.CurrentRoomID
 			if currentRoomID == "" {
 				currentRoomID = dungeonEntity.StartRoomID
@@ -1797,6 +1826,7 @@ func (o *Orchestrator) EndTurn(ctx context.Context, input *EndTurnInput) (*EndTu
 		NewRound:         newRound,
 		CombatState:      combatState,
 		Room:             turnEndedRoomData,
+		RoomOrigin:       turnRoomOrigin,
 		Walls:            dungeonWalls,
 	})
 
@@ -1808,6 +1838,7 @@ func (o *Orchestrator) EndTurn(ctx context.Context, input *EndTurnInput) (*EndTu
 			Actions:           mt.Actions,
 			Movement:          mt.Movement,
 			Room:              turnEndedRoomData,
+			RoomOrigin:        turnRoomOrigin,
 			Walls:             dungeonWalls,
 			UpdatedCharacters: mt.UpdatedCharacters,
 		})
@@ -2915,10 +2946,19 @@ func (o *Orchestrator) OpenDoor(
 	}
 
 	// 17. Publish RoomRevealed event
+	// Look up room origin from stored room origins for the event
+	var revealedRoomOrigin *dungeon.Position
+	if dng.RoomOrigins != nil {
+		if origin, ok := dng.RoomOrigins[revealedRoomID]; ok {
+			revealedRoomOrigin = &origin
+		}
+	}
+
 	o.publishEvent(ctx, dng.EncounterID, entities.EventTypeRoomRevealed, &entities.RoomRevealedEvent{
 		DungeonID:    dng.ID,
 		ConnectionID: input.ConnectionID,
 		RevealedRoom: revealedSpatialRoom,
+		RoomOrigin:   revealedRoomOrigin,
 		Walls:        revealedRoom.Walls,
 		NewDoors:     convertDoorsToEntityDoors(newDoors),
 		Monsters:     monsterStates,
@@ -2926,10 +2966,22 @@ func (o *Orchestrator) OpenDoor(
 		MonsterTurns: nil, // Monsters don't immediately act; they wait for their turn
 	})
 
+	// Calculate room offset from stored room origins
+	var roomOffset *Position
+	if dng.RoomOrigins != nil {
+		if origin, ok := dng.RoomOrigins[revealedRoomID]; ok {
+			roomOffset = &Position{
+				X: float64(origin.X),
+				Y: float64(origin.Y),
+				Z: float64(origin.Z),
+			}
+		}
+	}
+
 	return &OpenDoorOutput{
 		EncounterID:  dng.EncounterID,
 		RevealedRoom: responseRoomData,
-		RoomOffset:   nil, // TODO: Calculate offset for grid merge when implementing multi-room display
+		RoomOffset:   roomOffset,
 		NewDoors:     newDoors,
 		Monsters:     monsters,
 		CombatState:  combatState,
@@ -3426,10 +3478,14 @@ func (o *Orchestrator) StartCombat(
 	// 18. Extract doors for response and event
 	doors := o.getDoorInfoForRoom(dungeonEntity, generatedDungeon.StartRoom)
 
+	// 18b. Get room origin for the start room
+	startRoomOrigin := getCurrentRoomOrigin(dungeonEntity)
+
 	// 19. Publish CombatStarted event (includes monster turns if monsters won initiative)
 	o.publishEvent(ctx, input.EncounterID, entities.EventTypeCombatStarted, &entities.CombatStartedEvent{
 		CombatState:  combatState,
 		Room:         roomData,
+		RoomOrigin:   startRoomOrigin,
 		Walls:        startRoom.Walls,
 		Party:        party,
 		Monsters:     monsterStates,
@@ -3446,6 +3502,7 @@ func (o *Orchestrator) StartCombat(
 			Actions:           mt.Actions,
 			Movement:          mt.Movement,
 			Room:              roomData,
+			RoomOrigin:        startRoomOrigin,
 			Walls:             startRoom.Walls,
 			UpdatedCharacters: mt.UpdatedCharacters,
 		})
@@ -3454,6 +3511,7 @@ func (o *Orchestrator) StartCombat(
 	return &StartCombatOutput{
 		CombatState:  combatState,
 		Room:         roomData,
+		RoomOrigin:   startRoomOrigin,
 		Walls:        o.convertToWallInfo(startRoom),
 		MonsterTurns: monsterTurns,
 		Doors:        doors,
@@ -3844,7 +3902,7 @@ func (o *Orchestrator) GetEncounterState(ctx context.Context, input *GetEncounte
 			output.Monsters = monsters
 		}
 
-		// Load dungeon to get doors and walls for current room
+		// Load dungeon to get doors, walls, and room origin for current room
 		if o.dungeonRepo != nil {
 			dungeonOutput, dungeonErr := o.dungeonRepo.GetByEncounterID(ctx, &dungeonrepo.GetByEncounterIDInput{
 				EncounterID: input.EncounterID,
@@ -3852,6 +3910,7 @@ func (o *Orchestrator) GetEncounterState(ctx context.Context, input *GetEncounte
 			if dungeonErr == nil && dungeonOutput != nil && dungeonOutput.Dungeon != nil {
 				dungeonEntity := dungeonOutput.Dungeon
 				output.DungeonID = dungeonEntity.ID
+				output.RoomOrigin = getCurrentRoomOrigin(dungeonEntity)
 				// Get doors and walls for current room (start room or current exploration room)
 				currentRoomID := dungeonEntity.CurrentRoomID
 				if currentRoomID == "" {
@@ -4374,14 +4433,16 @@ func (o *Orchestrator) executeMove(
 		movementRemaining = 30 // Default if not set
 	}
 
-	// 3. Load dungeon walls for collision detection
+	// 3. Load dungeon walls and room origin for collision detection
 	var dungeonWalls []dungeon.WallSegment
+	var execActionRoomOrigin *dungeon.Position
 	if o.dungeonRepo != nil {
 		dungeonOutput, dungeonErr := o.dungeonRepo.GetByEncounterID(ctx, &dungeonrepo.GetByEncounterIDInput{
 			EncounterID: input.EncounterID,
 		})
 		if dungeonErr == nil && dungeonOutput != nil && dungeonOutput.Dungeon != nil {
 			dungeonEntity := dungeonOutput.Dungeon
+			execActionRoomOrigin = getCurrentRoomOrigin(dungeonEntity)
 			currentRoomID := dungeonEntity.CurrentRoomID
 			if currentRoomID == "" {
 				currentRoomID = dungeonEntity.StartRoomID
@@ -4557,6 +4618,7 @@ func (o *Orchestrator) executeMove(
 		MovementRemaining: newMovementRemaining,
 		StopReason:        stopReason,
 		UpdatedRoom:       roomData,
+		RoomOrigin:        execActionRoomOrigin,
 		Walls:             dungeonWalls,
 	})
 
@@ -4580,6 +4642,7 @@ func (o *Orchestrator) executeMove(
 		},
 		CombatState:        combatState,
 		Room:               roomData,
+		RoomOrigin:         execActionRoomOrigin,
 		AvailableAbilities: availableAbilities,
 		AvailableActions:   availableActions,
 	}, nil

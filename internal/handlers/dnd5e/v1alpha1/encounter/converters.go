@@ -16,6 +16,39 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
 )
 
+// dungeonPositionToProto converts a dungeon.Position to a proto Position.
+// Returns a zero-origin Position{0,0,0} if the input is nil.
+func dungeonPositionToProto(pos *dungeon.Position) *apiv1alpha1.Position {
+	if pos == nil {
+		return &apiv1alpha1.Position{X: 0, Y: 0, Z: 0}
+	}
+	return &apiv1alpha1.Position{
+		X: float64(pos.X),
+		Y: float64(pos.Y),
+		Z: float64(pos.Z),
+	}
+}
+
+// shiftWallsByOrigin shifts wall Start/End coordinates by the room origin offset.
+// Walls are stored in room-local coordinates; this converts them to dungeon-absolute.
+func shiftWallsByOrigin(walls []*apiv1alpha1.Wall, origin *apiv1alpha1.Position) {
+	if origin == nil || walls == nil {
+		return
+	}
+	for _, w := range walls {
+		if w.Start != nil {
+			w.Start.X += origin.X
+			w.Start.Y += origin.Y
+			w.Start.Z += origin.Z
+		}
+		if w.End != nil {
+			w.End.X += origin.X
+			w.End.Y += origin.Y
+			w.End.Z += origin.Z
+		}
+	}
+}
+
 // stringToEntityType converts a string entity type to the proto enum
 func stringToEntityType(s string) dnd5ev1alpha1.EntityType {
 	switch s {

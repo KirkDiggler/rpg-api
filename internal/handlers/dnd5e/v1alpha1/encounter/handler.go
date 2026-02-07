@@ -113,10 +113,15 @@ func (h *Handler) DungeonStart(
 	gridType, hexOrientation := extractGridInfo(output.Room)
 
 	// 4. Convert to proto response with cube coordinates for hex grids
+	room := convertRoomDataToProto(output.Room)
+	if room != nil {
+		room.Origin = dungeonPositionToProto(output.RoomOrigin)
+	}
+
 	return &dnd5ev1alpha1.DungeonStartResponse{
 		EncounterId:  output.EncounterID,
 		DungeonId:    output.DungeonID,
-		Room:         convertRoomDataToProto(output.Room),
+		Room:         room,
 		CombatState:  convertCombatStateToProto(output.CombatState, gridType, hexOrientation),
 		MonsterTurns: convertMonsterTurnsToProto(output.MonsterTurns, gridType, hexOrientation),
 		Doors:        convertDoorInfoSliceToProto(output.Doors),
@@ -153,10 +158,22 @@ func (h *Handler) OpenDoor(
 	gridType := spatial.GridTypeHex
 	hexOrientation := spatial.HexOrientationPointyTop
 
+	// Convert room and set origin from calculated room position
+	openDoorRoom := convertOpenDoorRoomToProto(output.RevealedRoom)
+	if openDoorRoom != nil && output.RoomOffset != nil {
+		openDoorRoom.Origin = &apiv1alpha1.Position{
+			X: output.RoomOffset.X,
+			Y: output.RoomOffset.Y,
+			Z: output.RoomOffset.Z,
+		}
+		// Shift walls from room-local to dungeon-absolute coordinates
+		shiftWallsByOrigin(openDoorRoom.Walls, openDoorRoom.Origin)
+	}
+
 	return &dnd5ev1alpha1.OpenDoorResponse{
 		Success:      true,
 		EncounterId:  output.EncounterID,
-		Room:         convertOpenDoorRoomToProto(output.RevealedRoom),
+		Room:         openDoorRoom,
 		CombatState:  convertCombatStateToProto(output.CombatState, gridType, hexOrientation),
 		MonsterTurns: convertMonsterTurnsToProto(output.MonsterTurns, gridType, hexOrientation),
 		Doors:        convertDoorInfoSliceToProto(output.NewDoors),
@@ -224,11 +241,13 @@ func (h *Handler) GetEncounterState(
 		response.CombatState = convertCombatStateToProto(output.CombatState, gridType, hexOrientation)
 	}
 
-	// Convert room and add walls (same pattern as StartCombat)
+	// Convert room and add walls + origin (same pattern as StartCombat)
 	if output.Room != nil {
 		response.Room = convertRoomDataToProto(output.Room)
 		if response.Room != nil {
 			response.Room.Walls = convertWallsToProto(output.Walls)
+			response.Room.Origin = dungeonPositionToProto(output.RoomOrigin)
+			shiftWallsByOrigin(response.Room.Walls, response.Room.Origin)
 		}
 	}
 
@@ -296,6 +315,8 @@ func (h *Handler) MoveCharacter(
 		response.UpdatedRoom = convertRoomDataToProto(output.UpdatedRoom)
 		if response.UpdatedRoom != nil {
 			response.UpdatedRoom.Walls = convertWallsToProto(output.Walls)
+			response.UpdatedRoom.Origin = dungeonPositionToProto(output.RoomOrigin)
+			shiftWallsByOrigin(response.UpdatedRoom.Walls, response.UpdatedRoom.Origin)
 		}
 	}
 
@@ -429,10 +450,14 @@ func (h *Handler) CreateEncounter(
 	}
 
 	// 4. Convert response
+	room := convertRoomDataToProto(output.Room)
+	if room != nil {
+		room.Origin = dungeonPositionToProto(output.RoomOrigin)
+	}
 	return &dnd5ev1alpha1.CreateEncounterResponse{
 		EncounterId: output.EncounterID,
 		JoinCode:    output.JoinCode,
-		Room:        convertRoomDataToProto(output.Room),
+		Room:        room,
 	}, nil
 }
 
@@ -466,9 +491,13 @@ func (h *Handler) JoinEncounter(
 	}
 
 	// 4. Convert response
+	joinRoom := convertRoomDataToProto(output.Room)
+	if joinRoom != nil {
+		joinRoom.Origin = dungeonPositionToProto(output.RoomOrigin)
+	}
 	return &dnd5ev1alpha1.JoinEncounterResponse{
 		EncounterId: output.EncounterID,
-		Room:        convertRoomDataToProto(output.Room),
+		Room:        joinRoom,
 		Party:       convertPartyToProto(output.Party),
 		State:       convertEncounterStateToProto(output.State),
 	}, nil
@@ -541,10 +570,12 @@ func (h *Handler) StartCombat(
 	gridType := spatial.GridTypeHex
 	hexOrientation := spatial.HexOrientationPointyTop
 
-	// Convert room and add walls
+	// Convert room and add walls + origin
 	room := convertRoomDataToProto(output.Room)
 	if room != nil {
 		room.Walls = convertWallsToProto(output.Walls)
+		room.Origin = dungeonPositionToProto(output.RoomOrigin)
+		shiftWallsByOrigin(room.Walls, room.Origin)
 	}
 
 	return &dnd5ev1alpha1.StartCombatResponse{
@@ -803,6 +834,11 @@ func (h *Handler) ExecuteAction(
 		AvailableActions:   convertAvailableActionsToProto(output.AvailableActions),
 	}
 
+	// Set room origin on the updated room
+	if response.UpdatedRoom != nil {
+		response.UpdatedRoom.Origin = dungeonPositionToProto(output.RoomOrigin)
+	}
+
 	// Set the appropriate result oneof
 	if output.AttackResult != nil {
 		response.Result = &dnd5ev1alpha1.ExecuteActionResponse_StrikeResult{
@@ -898,10 +934,12 @@ func (h *Handler) convertToProtoEvent(event *entities.EncounterEvent) (*dnd5ev1a
 		// Use default grid settings for event conversion
 		gridType := spatial.GridTypeHex
 		hexOrientation := spatial.HexOrientationPointyTop
-		// Convert room and add walls
+		// Convert room and add walls + origin
 		combatStartedRoom := convertRoomDataToProto(event.CombatStarted.Room)
 		if combatStartedRoom != nil {
 			combatStartedRoom.Walls = convertDungeonWallsToProto(event.CombatStarted.Walls)
+			combatStartedRoom.Origin = dungeonPositionToProto(event.CombatStarted.RoomOrigin)
+			shiftWallsByOrigin(combatStartedRoom.Walls, combatStartedRoom.Origin)
 		}
 		protoEvent.Event = &dnd5ev1alpha1.EncounterEvent_CombatStarted{
 			CombatStarted: &dnd5ev1alpha1.CombatStartedEvent{
@@ -927,10 +965,12 @@ func (h *Handler) convertToProtoEvent(event *entities.EncounterEvent) (*dnd5ev1a
 				Z: event.MovementCompleted.FinalPosition.Z,
 			}
 		}
-		// Convert room and add walls
+		// Convert room and add walls + origin
 		updatedRoom := convertRoomDataToProto(event.MovementCompleted.UpdatedRoom)
 		if updatedRoom != nil {
 			updatedRoom.Walls = convertDungeonWallsToProto(event.MovementCompleted.Walls)
+			updatedRoom.Origin = dungeonPositionToProto(event.MovementCompleted.RoomOrigin)
+			shiftWallsByOrigin(updatedRoom.Walls, updatedRoom.Origin)
 		}
 		protoEvent.Event = &dnd5ev1alpha1.EncounterEvent_MovementCompleted{
 			MovementCompleted: &dnd5ev1alpha1.MovementCompletedEvent{
@@ -951,10 +991,12 @@ func (h *Handler) convertToProtoEvent(event *entities.EncounterEvent) (*dnd5ev1a
 		if event.AttackResolved.Result != nil {
 			attackResult = convertAttackResultToProto(event.AttackResolved.Result)
 		}
-		// Convert room and add walls
+		// Convert room and add walls + origin
 		attackResolvedRoom := convertRoomDataToProto(event.AttackResolved.Room)
 		if attackResolvedRoom != nil {
 			attackResolvedRoom.Walls = convertDungeonWallsToProto(event.AttackResolved.Walls)
+			attackResolvedRoom.Origin = dungeonPositionToProto(event.AttackResolved.RoomOrigin)
+			shiftWallsByOrigin(attackResolvedRoom.Walls, attackResolvedRoom.Origin)
 		}
 		protoEvent.Event = &dnd5ev1alpha1.EncounterEvent_AttackResolved{
 			AttackResolved: &dnd5ev1alpha1.AttackResolvedEvent{
@@ -984,10 +1026,12 @@ func (h *Handler) convertToProtoEvent(event *entities.EncounterEvent) (*dnd5ev1a
 		}
 		// Extract grid info from room data for coordinate conversion
 		gridType, hexOrientation := extractGridInfo(event.TurnEnded.Room)
-		// Convert room and add walls
+		// Convert room and add walls + origin
 		turnEndedRoom := convertRoomDataToProto(event.TurnEnded.Room)
 		if turnEndedRoom != nil {
 			turnEndedRoom.Walls = convertDungeonWallsToProto(event.TurnEnded.Walls)
+			turnEndedRoom.Origin = dungeonPositionToProto(event.TurnEnded.RoomOrigin)
+			shiftWallsByOrigin(turnEndedRoom.Walls, turnEndedRoom.Origin)
 		}
 		protoEvent.Event = &dnd5ev1alpha1.EncounterEvent_TurnEnded{
 			TurnEnded: &dnd5ev1alpha1.TurnEndedEvent{
@@ -1027,10 +1071,12 @@ func (h *Handler) convertToProtoEvent(event *entities.EncounterEvent) (*dnd5ev1a
 				updatedCharacters = append(updatedCharacters, characterhandler.ConvertCharacterDataToProto(charData))
 			}
 		}
-		// Convert room and add walls
+		// Convert room and add walls + origin
 		monsterTurnRoom := convertRoomDataToProto(event.MonsterTurnCompleted.Room)
 		if monsterTurnRoom != nil {
 			monsterTurnRoom.Walls = convertDungeonWallsToProto(event.MonsterTurnCompleted.Walls)
+			monsterTurnRoom.Origin = dungeonPositionToProto(event.MonsterTurnCompleted.RoomOrigin)
+			shiftWallsByOrigin(monsterTurnRoom.Walls, monsterTurnRoom.Origin)
 		}
 		protoEvent.Event = &dnd5ev1alpha1.EncounterEvent_MonsterTurnCompleted{
 			MonsterTurnCompleted: &dnd5ev1alpha1.MonsterTurnCompletedEvent{
@@ -1099,10 +1145,13 @@ func (h *Handler) convertToProtoEvent(event *entities.EncounterEvent) (*dnd5ev1a
 		}
 		// Extract grid info from room data for coordinate conversion
 		gridType, hexOrientation := extractGridInfo(event.RoomRevealed.RevealedRoom)
-		// Convert room data to proto and add walls
+		// Convert room data to proto and add walls + origin
 		room := convertRoomDataToProto(event.RoomRevealed.RevealedRoom)
 		if room != nil {
 			room.Walls = convertDungeonWallsToProto(event.RoomRevealed.Walls)
+			room.Origin = dungeonPositionToProto(event.RoomRevealed.RoomOrigin)
+			// Shift walls from room-local to dungeon-absolute coordinates
+			shiftWallsByOrigin(room.Walls, room.Origin)
 		}
 		protoEvent.Event = &dnd5ev1alpha1.EncounterEvent_RoomRevealed{
 			RoomRevealed: &dnd5ev1alpha1.RoomRevealedEvent{

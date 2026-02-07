@@ -310,6 +310,12 @@ func (s *EventPublishingTestSuite) TestStartCombat_PublishesCombatStartedEvent()
 			}},
 		}, nil).AnyTimes()
 
+	// Mock character update (long rest saves rested character before combat)
+	s.mockCharRepo.EXPECT().
+		Update(gomock.Any(), gomock.Any()).
+		Return(&characterrepo.UpdateOutput{}, nil).
+		AnyTimes()
+
 	// Mock dungeon repo save (dungeon is generated when combat starts)
 	s.mockDungeonRepo.EXPECT().
 		Save(gomock.Any(), gomock.Any()).
