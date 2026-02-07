@@ -288,6 +288,7 @@ type RoomRevealedEvent struct {
 	DungeonID    string                       `json:"dungeon_id"`              // ID of the dungeon
 	ConnectionID string                       `json:"connection_id"`           // ID of the opened door/connection
 	RevealedRoom *spatial.RoomData            `json:"revealed_room"`           // The newly revealed room
+	RoomOrigin   *dungeon.Position            `json:"room_origin,omitempty"`   // Absolute position of the revealed room in dungeon-space
 	Walls        []dungeon.WallSegment        `json:"walls,omitempty"`         // Walls in the revealed room
 	NewDoors     []*DoorInfo                  `json:"new_doors"`               // Doors visible from the newly revealed room
 	Monsters     []*MonsterState              `json:"monsters"`                // Monsters in the revealed room

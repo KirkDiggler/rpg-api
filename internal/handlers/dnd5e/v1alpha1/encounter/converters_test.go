@@ -962,3 +962,78 @@ func (s *ConvertersTestSuite) TestConvertTurnChangeToProto_SameRound() {
 	s.Equal(int32(2), result.Round)
 	s.False(result.NewRound)
 }
+
+// =============================================================================
+// convertRoomDataToProto with Origin Tests
+// =============================================================================
+
+func (s *ConvertersTestSuite) TestConvertRoomDataToProto_OriginCanBeSetAfterConversion() {
+	// Origin is set at the handler level after conversion, not inside convertRoomDataToProto.
+	// This test verifies that the pattern works: convert room, then set origin.
+	roomData := &spatial.RoomData{
+		ID:           "room-1",
+		Type:         "dungeon",
+		Width:        15,
+		Height:       12,
+		GridType:     spatial.GridTypeHex,
+		CubeEntities: make(map[string]spatial.EntityCubePlacement),
+	}
+
+	result := convertRoomDataToProto(roomData)
+	s.Require().NotNil(result)
+	// Origin should be nil by default (convertRoomDataToProto doesn't set it)
+	s.Nil(result.Origin)
+
+	// Set origin (as handler does for start room)
+	result.Origin = &apiv1alpha1.Position{X: 0, Y: 0, Z: 0}
+	s.Require().NotNil(result.Origin)
+	s.Equal(float64(0), result.Origin.X)
+	s.Equal(float64(0), result.Origin.Y)
+	s.Equal(float64(0), result.Origin.Z)
+}
+
+func (s *ConvertersTestSuite) TestConvertRoomDataToProto_OriginSetWithNonZeroValues() {
+	// Test that origin can be set with non-zero values (revealed room scenario)
+	roomData := &spatial.RoomData{
+		ID:           "room-2",
+		Type:         "dungeon",
+		Width:        10,
+		Height:       8,
+		GridType:     spatial.GridTypeHex,
+		CubeEntities: make(map[string]spatial.EntityCubePlacement),
+	}
+
+	result := convertRoomDataToProto(roomData)
+	s.Require().NotNil(result)
+
+	// Simulate handler setting origin from dungeon.RoomOrigins
+	result.Origin = &apiv1alpha1.Position{X: 11, Y: -20, Z: 9}
+	s.Equal(float64(11), result.Origin.X)
+	s.Equal(float64(-20), result.Origin.Y)
+	s.Equal(float64(9), result.Origin.Z)
+}
+
+// =============================================================================
+// convertOpenDoorRoomToProto with Origin Tests
+// =============================================================================
+
+func (s *ConvertersTestSuite) TestConvertOpenDoorRoomToProto_OriginCanBeSetAfterConversion() {
+	roomData := &encounter.RoomData{
+		ID:       "room-2",
+		Width:    12,
+		Height:   10,
+		Entities: make(map[string]*encounter.EntityPlacement),
+	}
+
+	result := convertOpenDoorRoomToProto(roomData)
+	s.Require().NotNil(result)
+	// Origin is nil by default
+	s.Nil(result.Origin)
+
+	// Set origin from room offset (as handler does)
+	result.Origin = &apiv1alpha1.Position{X: 0, Y: -9, Z: 9}
+	s.Require().NotNil(result.Origin)
+	s.Equal(float64(0), result.Origin.X)
+	s.Equal(float64(-9), result.Origin.Y)
+	s.Equal(float64(9), result.Origin.Z)
+}

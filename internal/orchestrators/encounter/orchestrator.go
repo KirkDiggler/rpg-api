@@ -882,10 +882,12 @@ func (o *Orchestrator) convertToDungeonEntity(
 	genDungeon *dungeon.Dungeon,
 	seed int64,
 ) *entities.Dungeon {
-	// Convert rooms to map
+	// Convert rooms to map and extract room origins
 	rooms := make(map[string]*dungeon.Room)
+	roomOrigins := make(map[string]dungeon.Position)
 	for _, room := range genDungeon.Rooms {
 		rooms[room.ID] = room
+		roomOrigins[room.ID] = room.Origin
 	}
 
 	// Convert connections to toolkit format
@@ -913,6 +915,7 @@ func (o *Orchestrator) convertToDungeonEntity(
 		StartRoomID:   genDungeon.StartRoom,
 		BossRoomID:    genDungeon.BossRoom,
 		Rooms:         rooms,
+		RoomOrigins:   roomOrigins,
 		State:         entities.DungeonStateActive,
 		CurrentRoomID: genDungeon.StartRoom,
 		RevealedRooms: map[string]bool{genDungeon.StartRoom: true},
@@ -2915,10 +2918,19 @@ func (o *Orchestrator) OpenDoor(
 	}
 
 	// 17. Publish RoomRevealed event
+	// Look up room origin from stored room origins for the event
+	var revealedRoomOrigin *dungeon.Position
+	if dng.RoomOrigins != nil {
+		if origin, ok := dng.RoomOrigins[revealedRoomID]; ok {
+			revealedRoomOrigin = &origin
+		}
+	}
+
 	o.publishEvent(ctx, dng.EncounterID, entities.EventTypeRoomRevealed, &entities.RoomRevealedEvent{
 		DungeonID:    dng.ID,
 		ConnectionID: input.ConnectionID,
 		RevealedRoom: revealedSpatialRoom,
+		RoomOrigin:   revealedRoomOrigin,
 		Walls:        revealedRoom.Walls,
 		NewDoors:     convertDoorsToEntityDoors(newDoors),
 		Monsters:     monsterStates,
@@ -2926,10 +2938,22 @@ func (o *Orchestrator) OpenDoor(
 		MonsterTurns: nil, // Monsters don't immediately act; they wait for their turn
 	})
 
+	// Calculate room offset from stored room origins
+	var roomOffset *Position
+	if dng.RoomOrigins != nil {
+		if origin, ok := dng.RoomOrigins[revealedRoomID]; ok {
+			roomOffset = &Position{
+				X: float64(origin.X),
+				Y: float64(origin.Y),
+				Z: float64(origin.Z),
+			}
+		}
+	}
+
 	return &OpenDoorOutput{
 		EncounterID:  dng.EncounterID,
 		RevealedRoom: responseRoomData,
-		RoomOffset:   nil, // TODO: Calculate offset for grid merge when implementing multi-room display
+		RoomOffset:   roomOffset,
 		NewDoors:     newDoors,
 		Monsters:     monsters,
 		CombatState:  combatState,

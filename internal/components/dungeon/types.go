@@ -58,6 +58,8 @@ type Room struct {
 	Walls []WallSegment
 	// Encounter contains the monster composition
 	Encounter *Encounter
+	// Origin is the absolute position of this room in dungeon-space
+	Origin Position
 }
 
 // Shape defines the geometric layout of a room

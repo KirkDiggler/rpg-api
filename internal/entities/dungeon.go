@@ -34,6 +34,9 @@ type Dungeon struct {
 	// From component - room content with D&D 5e encounters
 	Rooms map[string]*dungeon.Room `json:"rooms"`
 
+	// Room positions in dungeon-space (calculated during generation)
+	RoomOrigins map[string]dungeon.Position `json:"room_origins"`
+
 	// Exploration state (proving ground - may move to toolkit)
 	State         DungeonState    `json:"state"`
 	CurrentRoomID string          `json:"current_room_id"` // Room players are currently in

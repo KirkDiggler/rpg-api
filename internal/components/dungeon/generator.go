@@ -271,6 +271,9 @@ func (g *Generator) Generate(ctx context.Context, input *GenerateInput) (*Genera
 		g.updateRoomPerimeters(rooms, connections)
 	}
 
+	// Step 4d: Calculate room origins via BFS from start room
+	g.calculateRoomOrigins(rooms, connections, rooms[layoutOutput.StartRoom].ID)
+
 	// Step 5: Apply presentation layer to obscure main path
 	connections = g.applyPresentation(connections, input.Theme, seed)
 
@@ -512,4 +515,125 @@ func (g *Generator) replacePerimeterWalls(existingWalls, newPerimeterWalls []Wal
 // isPerimeterWall checks if a wall ID indicates it's a perimeter wall
 func isPerimeterWall(id string) bool {
 	return len(id) > 10 && id[:10] == "perimeter_"
+}
+
+// calculateRoomOrigins computes absolute positions for each room via BFS from the start room.
+// The start room gets origin (0,0,0). Each connected room's origin is calculated based on the
+// previous room's origin, dimensions, and the connection direction between them.
+func (g *Generator) calculateRoomOrigins(rooms []*Room, connections []*RoomConnection, startRoomID string) {
+	// Build room lookup by ID
+	roomMap := make(map[string]*Room)
+	for _, room := range rooms {
+		roomMap[room.ID] = room
+	}
+
+	// Build adjacency list: roomID -> list of (neighborID, direction from this room)
+	type neighbor struct {
+		roomID    string
+		direction Direction // direction from current room to neighbor
+		fromRoom  string    // the FromRoom of the connection
+	}
+	adjacency := make(map[string][]neighbor)
+	for _, conn := range connections {
+		if conn.FromRoom == "" || conn.ToRoom == "" {
+			continue
+		}
+		// FromRoom -> ToRoom in conn.Direction
+		adjacency[conn.FromRoom] = append(adjacency[conn.FromRoom], neighbor{
+			roomID:    conn.ToRoom,
+			direction: conn.Direction,
+			fromRoom:  conn.FromRoom,
+		})
+		// ToRoom -> FromRoom in opposite direction
+		adjacency[conn.ToRoom] = append(adjacency[conn.ToRoom], neighbor{
+			roomID:    conn.FromRoom,
+			direction: conn.Direction.Opposite(),
+			fromRoom:  conn.ToRoom,
+		})
+	}
+
+	// BFS from start room
+	visited := make(map[string]bool)
+	queue := []string{startRoomID}
+
+	// Start room origin is (0, 0, 0)
+	if startRoom, ok := roomMap[startRoomID]; ok {
+		startRoom.Origin = Position{X: 0, Y: 0, Z: 0}
+	}
+	visited[startRoomID] = true
+
+	for len(queue) > 0 {
+		currentID := queue[0]
+		queue = queue[1:]
+		currentRoom := roomMap[currentID]
+		if currentRoom == nil {
+			continue
+		}
+
+		for _, n := range adjacency[currentID] {
+			if visited[n.roomID] {
+				continue
+			}
+			visited[n.roomID] = true
+
+			neighborRoom := roomMap[n.roomID]
+			if neighborRoom == nil {
+				continue
+			}
+
+			// Calculate neighbor's origin based on current room's origin,
+			// current room's dimensions, and the direction to the neighbor
+			neighborRoom.Origin = calculateNeighborOrigin(currentRoom, neighborRoom, n.direction)
+
+			queue = append(queue, n.roomID)
+		}
+	}
+}
+
+// calculateNeighborOrigin computes the origin of a neighbor room given the current room
+// and the direction from current to neighbor.
+//
+// For hex grids with pointy-top orientation:
+//   - North/South: rooms stack vertically with height offset
+//   - East/West: rooms stack horizontally with width offset
+//
+// The offset places the neighbor's edge adjacent to the current room's edge
+// with a 1-cell gap for the shared wall/door.
+func calculateNeighborOrigin(currentRoom, neighborRoom *Room, direction Direction) Position {
+	origin := currentRoom.Origin
+
+	if currentRoom.Shape == nil {
+		return origin
+	}
+
+	currentWidth := currentRoom.Shape.Width
+	currentHeight := currentRoom.Shape.Height
+
+	switch direction {
+	case DirectionNorth:
+		// Neighbor is above: move up by the neighbor's height + 1 for wall gap
+		origin.Z -= neighborRoom.Shape.Height + 1
+		// Y adjusts to maintain cube coordinate constraint (for hex grids, y = -x - z)
+		origin.Y = -origin.X - origin.Z
+	case DirectionSouth:
+		// Neighbor is below: move down by current room's height + 1
+		origin.Z += currentHeight + 1
+		origin.Y = -origin.X - origin.Z
+	case DirectionEast:
+		// Neighbor is to the right: move right by current room's width + 1
+		origin.X += currentWidth + 1
+		origin.Y = -origin.X - origin.Z
+	case DirectionWest:
+		// Neighbor is to the left: move left by the neighbor's width + 1
+		origin.X -= neighborRoom.Shape.Width + 1
+		origin.Y = -origin.X - origin.Z
+	case DirectionUp:
+		// Vertical connection (stairs up): same XZ, different Y level
+		origin.Y += 1
+	case DirectionDown:
+		// Vertical connection (stairs down): same XZ, different Y level
+		origin.Y -= 1
+	}
+
+	return origin
 }
