@@ -19,17 +19,17 @@ type CharacterBuilder struct {
 	draftID string
 
 	// Configuration
-	name string
-	race     dnd5ev1alpha1.Race
-	subrace  dnd5ev1alpha1.Subrace
-	class    dnd5ev1alpha1.Class
+	name       string
+	race       dnd5ev1alpha1.Race
+	subrace    dnd5ev1alpha1.Subrace
+	class      dnd5ev1alpha1.Class
 	background dnd5ev1alpha1.Background
-	
+
 	// Ability scores (standard array by default)
 	str, dex, con, int_, wis, cha int32
-	
+
 	// Class-specific choices
-	skills       []dnd5ev1alpha1.Skill
+	skills        []dnd5ev1alpha1.Skill
 	fightingStyle dnd5ev1alpha1.FightingStyle
 }
 
