@@ -59,6 +59,7 @@ type TestServer struct {
 
 	// Exposed for test setup (seeding data, etc.)
 	EncounterPublisher encounterpub.Publisher
+	CharacterRepo      characterrepo.Repository
 }
 
 // Config allows customization of the test server.
@@ -158,6 +159,7 @@ func (ts *TestServer) wireServices(cfg *Config) error {
 	if err != nil {
 		return fmt.Errorf("character repo: %w", err)
 	}
+	ts.CharacterRepo = charRepo
 
 	draftRepo, err := characterdraftrepo.NewRedis(&characterdraftrepo.Config{
 		Clock:       clock.New(),

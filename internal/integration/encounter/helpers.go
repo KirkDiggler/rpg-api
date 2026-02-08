@@ -6,11 +6,18 @@ package encounter_integration
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"testing"
 
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
 	"github.com/KirkDiggler/rpg-api/internal/integration/harness"
+	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
+	coreResources "github.com/KirkDiggler/rpg-toolkit/core/resources"
+	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/abilities"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/refs"
+	dnd5eResources "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/resources"
 )
 
 // CharacterBuilder provides a fluent interface for creating test characters.
@@ -336,4 +343,98 @@ func FindCharacterInState(resp *dnd5ev1alpha1.GetEncounterStateResponse, charact
 		}
 	}
 	return nil
+}
+
+// =============================================================================
+// LEVEL-UP HELPERS
+// These patch a level 1 character to a higher level by adding the
+// appropriate features, conditions, and resources via the character repo.
+// The normal creation pipeline builds level 1; these extend it for testing.
+// =============================================================================
+
+// LevelUpMonkToLevel2 patches a level 1 Monk to level 2, adding:
+//   - Ki resource (2 points, short rest recovery)
+//   - Flurry of Blows, Patient Defense, Step of the Wind features
+//   - Martial Arts + Unarmored Movement conditions
+//
+// Uses refs package constants for canonical ref format (string "dnd5e:type:id").
+func LevelUpMonkToLevel2(t *testing.T, server *harness.TestServer, ctx context.Context, characterID string) {
+	t.Helper()
+
+	// 1. Get the character from the repo
+	getOutput, err := server.CharacterRepo.Get(ctx, characterrepo.GetInput{ID: characterID})
+	if err != nil {
+		t.Fatalf("failed to get character for level-up: %v", err)
+	}
+	char := getOutput.Character
+	if char == nil || char.Data == nil {
+		t.Fatal("character or character data is nil")
+	}
+
+	data := char.Data
+
+	// 2. Bump level
+	data.Level = 2
+
+	// 3. Add Ki resource (Monk gets Ki points = Monk level at level 2+)
+	if data.Resources == nil {
+		data.Resources = make(map[coreResources.ResourceKey]toolkitchar.RecoverableResourceData)
+	}
+	data.Resources[dnd5eResources.Ki] = toolkitchar.RecoverableResourceData{
+		Current:   2,
+		Maximum:   2,
+		ResetType: coreResources.ResetShortRest,
+	}
+
+	// 4. Add Ki features using canonical refs (string format: "dnd5e:features:id")
+	kiFeatures := []json.RawMessage{
+		json.RawMessage(fmt.Sprintf(`{
+			"ref": %q,
+			"id": "flurry_of_blows",
+			"name": "Flurry of Blows",
+			"character_id": %q
+		}`, refs.Features.FlurryOfBlows(), characterID)),
+		json.RawMessage(fmt.Sprintf(`{
+			"ref": %q,
+			"id": "patient_defense",
+			"name": "Patient Defense",
+			"character_id": %q
+		}`, refs.Features.PatientDefense(), characterID)),
+		json.RawMessage(fmt.Sprintf(`{
+			"ref": %q,
+			"id": "step_of_the_wind",
+			"name": "Step of the Wind",
+			"character_id": %q
+		}`, refs.Features.StepOfTheWind(), characterID)),
+	}
+	data.Features = append(data.Features, kiFeatures...)
+
+	// 5. Add Martial Arts + Unarmored Movement conditions (Monk level 2)
+	// Martial Arts governs DEX-for-attacks and bonus unarmed strike — required for Flurry of Blows.
+	// Matches toolkit's canonical createLevel2Monk() test setup.
+	martialArts := json.RawMessage(fmt.Sprintf(`{
+		"ref": %q,
+		"character_id": %q,
+		"monk_level": 2
+	}`, refs.Conditions.MartialArts(), characterID))
+	unarmoredMovement := json.RawMessage(fmt.Sprintf(`{
+		"ref": %q,
+		"character_id": %q,
+		"monk_level": 2
+	}`, refs.Conditions.UnarmoredMovement(), characterID))
+	data.Conditions = append(data.Conditions, martialArts, unarmoredMovement)
+
+	// 6. Bump HP for level 2 (average d8 = 5 + CON modifier)
+	conMod := (data.AbilityScores[abilities.CON] - 10) / 2
+	hpGain := 5 + conMod
+	data.HitPoints += hpGain
+	data.MaxHitPoints += hpGain
+
+	// 7. Write back
+	_, err = server.CharacterRepo.Update(ctx, characterrepo.UpdateInput{Character: char})
+	if err != nil {
+		t.Fatalf("failed to update character for level-up: %v", err)
+	}
+
+	t.Logf("  ✓ Leveled up to 2: Ki 2/2, +3 features, +Martial Arts, +Unarmored Movement, +%d HP", hpGain)
 }
