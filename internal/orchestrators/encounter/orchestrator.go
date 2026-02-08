@@ -2003,19 +2003,13 @@ func (o *Orchestrator) buildCombatState(encounterID string, enc *encounterrepo.E
 
 	turnOrder := buildTurnOrderFromData(enc.InitiativeData, enc.InitiativeRolls, enc.RoomData)
 
-	// Default action economy for active combat (backward compat with pre-existing encounters)
-	actionEconomy := enc.ActionEconomy
-	if actionEconomy == nil && (enc.State == encounterrepo.StateActive || enc.State == encounterrepo.StatePaused) {
-		actionEconomy = entities.NewActionEconomyState()
-	}
-
 	return &CombatState{
 		EncounterID:       encounterID,
 		Round:             enc.InitiativeData.Round,
 		TurnOrder:         turnOrder,
 		ActiveIndex:       enc.InitiativeData.Current,
 		MovementRemaining: enc.MovementRemaining,
-		ActionEconomy:     actionEconomy,
+		ActionEconomy:     enc.ActionEconomy,
 		CombatStarted:     enc.State == encounterrepo.StateActive || enc.State == encounterrepo.StatePaused,
 		CombatEnded:       enc.State == encounterrepo.StateCompleted,
 	}
