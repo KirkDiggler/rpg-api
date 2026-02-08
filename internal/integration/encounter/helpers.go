@@ -15,6 +15,8 @@ import (
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	coreResources "github.com/KirkDiggler/rpg-toolkit/core/resources"
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/abilities"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/refs"
 	dnd5eResources "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/resources"
 )
 
@@ -353,7 +355,9 @@ func FindCharacterInState(resp *dnd5ev1alpha1.GetEncounterStateResponse, charact
 // LevelUpMonkToLevel2 patches a level 1 Monk to level 2, adding:
 //   - Ki resource (2 points, short rest recovery)
 //   - Flurry of Blows, Patient Defense, Step of the Wind features
-//   - Unarmored Movement condition (+10 ft at level 2)
+//   - Martial Arts + Unarmored Movement conditions
+//
+// Uses refs package constants for canonical ref format (string "dnd5e:type:id").
 func LevelUpMonkToLevel2(t *testing.T, server *harness.TestServer, ctx context.Context, characterID string) {
 	t.Helper()
 
@@ -382,26 +386,26 @@ func LevelUpMonkToLevel2(t *testing.T, server *harness.TestServer, ctx context.C
 		ResetType: coreResources.ResetShortRest,
 	}
 
-	// 4. Add Ki features (Flurry of Blows, Patient Defense, Step of the Wind)
+	// 4. Add Ki features using canonical refs (string format: "dnd5e:features:id")
 	kiFeatures := []json.RawMessage{
 		json.RawMessage(fmt.Sprintf(`{
-			"ref": {"module": "dnd5e", "type": "features", "id": "flurry_of_blows"},
+			"ref": %q,
 			"id": "flurry_of_blows",
 			"name": "Flurry of Blows",
 			"character_id": %q
-		}`, characterID)),
+		}`, refs.Features.FlurryOfBlows(), characterID)),
 		json.RawMessage(fmt.Sprintf(`{
-			"ref": {"module": "dnd5e", "type": "features", "id": "patient_defense"},
+			"ref": %q,
 			"id": "patient_defense",
 			"name": "Patient Defense",
 			"character_id": %q
-		}`, characterID)),
+		}`, refs.Features.PatientDefense(), characterID)),
 		json.RawMessage(fmt.Sprintf(`{
-			"ref": {"module": "dnd5e", "type": "features", "id": "step_of_the_wind"},
+			"ref": %q,
 			"id": "step_of_the_wind",
 			"name": "Step of the Wind",
 			"character_id": %q
-		}`, characterID)),
+		}`, refs.Features.StepOfTheWind(), characterID)),
 	}
 	data.Features = append(data.Features, kiFeatures...)
 
@@ -409,21 +413,22 @@ func LevelUpMonkToLevel2(t *testing.T, server *harness.TestServer, ctx context.C
 	// Martial Arts governs DEX-for-attacks and bonus unarmed strike — required for Flurry of Blows.
 	// Matches toolkit's canonical createLevel2Monk() test setup.
 	martialArts := json.RawMessage(fmt.Sprintf(`{
-		"ref": {"module": "dnd5e", "type": "conditions", "id": "martial_arts"},
+		"ref": %q,
 		"character_id": %q,
 		"monk_level": 2
-	}`, characterID))
+	}`, refs.Conditions.MartialArts(), characterID))
 	unarmoredMovement := json.RawMessage(fmt.Sprintf(`{
-		"ref": {"module": "dnd5e", "type": "conditions", "id": "unarmored_movement"},
+		"ref": %q,
 		"character_id": %q,
 		"monk_level": 2
-	}`, characterID))
+	}`, refs.Conditions.UnarmoredMovement(), characterID))
 	data.Conditions = append(data.Conditions, martialArts, unarmoredMovement)
 
-	// 6. Bump HP for level 2 (1d8 + CON mod; use average: 5 + CON mod)
-	// We don't know exact CON mod here, so just add 5 (average d8) + 2 (typical CON mod)
-	data.HitPoints += 7
-	data.MaxHitPoints += 7
+	// 6. Bump HP for level 2 (average d8 = 5 + CON modifier)
+	conMod := (data.AbilityScores[abilities.CON] - 10) / 2
+	hpGain := 5 + conMod
+	data.HitPoints += hpGain
+	data.MaxHitPoints += hpGain
 
 	// 7. Write back
 	_, err = server.CharacterRepo.Update(ctx, characterrepo.UpdateInput{Character: char})
@@ -431,5 +436,5 @@ func LevelUpMonkToLevel2(t *testing.T, server *harness.TestServer, ctx context.C
 		t.Fatalf("failed to update character for level-up: %v", err)
 	}
 
-	t.Logf("  ✓ Leveled up to 2: Ki 2/2, +3 features, +Unarmored Movement")
+	t.Logf("  ✓ Leveled up to 2: Ki 2/2, +3 features, +Martial Arts, +Unarmored Movement, +%d HP", hpGain)
 }
