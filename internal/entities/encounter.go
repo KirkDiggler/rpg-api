@@ -169,6 +169,13 @@ func (a *ActionEconomyState) UseFlurryStrike() {
 	}
 }
 
+// GrantFlurryStrikes sets the number of flurry strikes available (typically 2 from Flurry of Blows).
+func (a *ActionEconomyState) GrantFlurryStrikes(count int) {
+	if a != nil {
+		a.FlurryStrikesRemaining = count
+	}
+}
+
 // AvailableAbility represents a combat ability with its current availability status
 // Used by UI to render ability buttons with proper enabled/disabled state
 type AvailableAbility struct {

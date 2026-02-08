@@ -1895,16 +1895,16 @@ const (
 // getFeatureActionCost returns the action cost for a feature.
 // This maps D&D 5e feature activation costs.
 func getFeatureActionCost(featureID string) actionCostType {
-	// D&D 5e feature action costs
+	// D&D 5e feature action costs — IDs use refs package canonical format (underscores)
 	switch featureID {
 	// Bonus action features
-	case "rage", "second-wind", "step-of-the-wind", "patient-defense", "flurry-of-blows":
+	case "rage", "second_wind", "step_of_the_wind", "patient_defense", "flurry_of_blows":
 		return actionCostBonusAction
 
 	// Free abilities (no action economy cost)
 	// Action Surge: Used "on your turn" without requiring action, bonus action, or reaction.
 	// Note: Usage limits (per rest) are tracked separately by the feature itself.
-	case "action-surge":
+	case "action_surge":
 		return actionCostNone
 
 	default:
@@ -1912,6 +1912,23 @@ func getFeatureActionCost(featureID string) actionCostType {
 		// This allows features to be used without action economy enforcement
 		// until they are explicitly mapped. New features should be added above.
 		return actionCostNone
+	}
+}
+
+// applyFeatureSideEffects updates action economy for feature-specific grants.
+// The toolkit handles these via event bus, but the API needs to reflect them
+// in the persisted ActionEconomyState for state snapshots.
+func applyFeatureSideEffects(featureID string, ae *entities.ActionEconomyState) {
+	if ae == nil {
+		return
+	}
+	switch featureID {
+	case "flurry_of_blows":
+		ae.GrantFlurryStrikes(2) // Flurry of Blows grants 2 unarmed strikes
+	case "patient_defense":
+		ae.DodgeActive = true // Patient Defense grants Dodge as bonus action
+	case "step_of_the_wind":
+		ae.DisengageActive = true // Step of the Wind grants Disengage + Dash as bonus action
 	}
 }
 
@@ -1987,6 +2004,7 @@ func (o *Orchestrator) buildCombatState(encounterID string, enc *encounterrepo.E
 		TurnOrder:         turnOrder,
 		ActiveIndex:       enc.InitiativeData.Current,
 		MovementRemaining: enc.MovementRemaining,
+		ActionEconomy:     enc.ActionEconomy,
 		CombatStarted:     enc.State == encounterrepo.StateActive || enc.State == encounterrepo.StatePaused,
 		CombatEnded:       enc.State == encounterrepo.StateCompleted,
 	}
@@ -2238,6 +2256,9 @@ func (o *Orchestrator) ActivateFeature(
 	case actionCostNone:
 		// No action to consume for free abilities
 	}
+
+	// 10b. Apply feature-specific side effects to action economy
+	applyFeatureSideEffects(input.FeatureID, actionEconomy)
 
 	// 11. Convert back to data (includes new condition in Conditions slice)
 	updatedData := char.ToData()
