@@ -227,60 +227,13 @@ func (s *FighterIntegrationSuite) createFighterCharacter(playerID string) string
 	return finalizeResp.GetCharacter().GetId()
 }
 
-// createEncounterAndStartCombat creates an encounter, sets ready, and starts combat.
-// Returns encounterID.
+// Encounter helpers delegate to shared functions in helpers.go.
 func (s *FighterIntegrationSuite) createEncounterAndStartCombat(ctx context.Context, playerID, characterID string) string {
-	createResp, err := s.server.EncounterClient.CreateEncounter(ctx, &dnd5ev1alpha1.CreateEncounterRequest{
-		CharacterIds: []string{characterID},
-	})
-	s.Require().NoError(err, "failed to create encounter")
-	encounterID := createResp.GetEncounterId()
-	s.Require().NotEmpty(encounterID, "encounter ID should not be empty")
-
-	_, err = s.server.EncounterClient.SetReady(ctx, &dnd5ev1alpha1.SetReadyRequest{
-		EncounterId: encounterID,
-		PlayerId:    playerID,
-		IsReady:     true,
-	})
-	s.Require().NoError(err, "failed to set ready")
-
-	_, err = s.server.EncounterClient.StartCombat(ctx, &dnd5ev1alpha1.StartCombatRequest{
-		EncounterId: encounterID,
-		Theme:       dnd5ev1alpha1.DungeonTheme_DUNGEON_THEME_CRYPT,
-		Difficulty:  dnd5ev1alpha1.DungeonDifficulty_DUNGEON_DIFFICULTY_MEDIUM,
-		Length:      dnd5ev1alpha1.DungeonLength_DUNGEON_LENGTH_SHORT,
-	})
-	s.Require().NoError(err, "failed to start combat")
-
-	return encounterID
+	return CreateEncounterAndStartCombat(s.T(), s.server, ctx, playerID, characterID)
 }
 
-// findMonsterTarget finds the first monster in the encounter's turn order.
 func (s *FighterIntegrationSuite) findMonsterTarget(ctx context.Context, playerID, encounterID string) string {
-	stateResp, err := s.server.EncounterClient.GetEncounterState(ctx, &dnd5ev1alpha1.GetEncounterStateRequest{
-		EncounterId: encounterID,
-		PlayerId:    playerID,
-	})
-	s.Require().NoError(err, "failed to get encounter state")
-
-	for _, entry := range stateResp.GetCombatState().GetTurnOrder() {
-		if entry.GetEntityType() == "monster" {
-			return entry.GetEntityId()
-		}
-	}
-
-	s.Require().Fail("no monster found in encounter")
-	return ""
-}
-
-// findCharacterInState finds a character by ID in the encounter state response
-func (s *FighterIntegrationSuite) findCharacterInState(resp *dnd5ev1alpha1.GetEncounterStateResponse, characterID string) *dnd5ev1alpha1.Character {
-	for _, member := range resp.GetParty() {
-		if member.GetCharacter() != nil && member.GetCharacter().GetId() == characterID {
-			return member.GetCharacter()
-		}
-	}
-	return nil
+	return FindMonsterTarget(s.T(), s.server, ctx, playerID, encounterID)
 }
 
 // =============================================================================
@@ -371,7 +324,7 @@ func (s *FighterIntegrationSuite) TestSecondWind_ActivateFeature_Success() {
 	})
 	s.Require().NoError(err, "failed to get encounter state")
 
-	char := s.findCharacterInState(stateResp, characterID)
+	char := FindCharacterInState(stateResp, characterID)
 	s.Require().NotNil(char, "character should be in encounter")
 	maxHP := char.GetCombatStats().GetHitPointMaximum()
 	currentHP := char.GetCurrentHitPoints()
@@ -392,7 +345,7 @@ func (s *FighterIntegrationSuite) TestSecondWind_ActivateFeature_Success() {
 	})
 	s.Require().NoError(err, "failed to get encounter state")
 
-	char = s.findCharacterInState(stateResp, characterID)
+	char = FindCharacterInState(stateResp, characterID)
 	s.Require().NotNil(char, "character should be in encounter")
 	hpAfterMonsters := char.GetCurrentHitPoints()
 	s.T().Logf("  ✓ HP after monsters: %d/%d", hpAfterMonsters, maxHP)
@@ -415,7 +368,7 @@ func (s *FighterIntegrationSuite) TestSecondWind_ActivateFeature_Success() {
 	})
 	s.Require().NoError(err, "failed to get encounter state")
 
-	char = s.findCharacterInState(stateResp, characterID)
+	char = FindCharacterInState(stateResp, characterID)
 	s.Require().NotNil(char, "character should be in encounter")
 	hpAfterSecondWind := char.GetCurrentHitPoints()
 	s.T().Logf("  ✓ HP after Second Wind: %d/%d", hpAfterSecondWind, maxHP)
@@ -521,15 +474,25 @@ func (s *FighterIntegrationSuite) TestFighter_CanAttackInCombat() {
 
 	result := attackResp.GetResult()
 	s.Require().NotNil(result, "attack result should not be nil")
+
+	// Assert response structure is well-formed regardless of hit/miss
+	s.Assert().Greater(result.GetAttackRoll(), int32(0), "attack roll should be positive (1d20)")
+	s.Assert().Greater(result.GetAttackTotal(), int32(0), "attack total should be positive (roll + bonus)")
+	s.Assert().Greater(result.GetTargetAc(), int32(0), "target AC should be positive")
+
 	s.T().Logf("  ✓ Attack roll: %d + bonus = %d vs AC %d → %s",
 		result.GetAttackRoll(), result.GetAttackTotal(), result.GetTargetAc(),
 		map[bool]string{true: "HIT", false: "MISS"}[result.GetHit()])
 
 	if result.GetHit() {
+		s.Assert().Greater(result.GetDamage(), int32(0), "damage should be positive on hit")
+		s.Assert().NotEmpty(result.GetDamageType(), "damage type should be set on hit")
 		s.T().Logf("  ✓ Damage: %d (%s)", result.GetDamage(), result.GetDamageType())
 
 		breakdown := result.GetDamageBreakdown()
+		s.Assert().NotNil(breakdown, "damage breakdown should be present on hit")
 		if breakdown != nil {
+			s.Assert().NotEmpty(breakdown.GetComponents(), "damage breakdown should have components")
 			s.T().Log("  Damage breakdown:")
 			for _, comp := range breakdown.GetComponents() {
 				s.T().Logf("    - Source: %s, Dice: %v, Flat: %d, Type: %s",
