@@ -24,6 +24,7 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/initiative"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/monster"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/monstertraits"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/refs"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/weapons"
 	"github.com/KirkDiggler/rpg-toolkit/tools/environments"
 	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
@@ -1895,16 +1896,20 @@ const (
 // getFeatureActionCost returns the action cost for a feature.
 // This maps D&D 5e feature activation costs.
 func getFeatureActionCost(featureID string) actionCostType {
-	// D&D 5e feature action costs
+	// D&D 5e feature action costs — IDs use refs package canonical constants
 	switch featureID {
 	// Bonus action features
-	case "rage", "second-wind", "step-of-the-wind", "patient-defense", "flurry-of-blows":
+	case refs.Features.Rage().ID,
+		refs.Features.SecondWind().ID,
+		refs.Features.StepOfTheWind().ID,
+		refs.Features.PatientDefense().ID,
+		refs.Features.FlurryOfBlows().ID:
 		return actionCostBonusAction
 
 	// Free abilities (no action economy cost)
 	// Action Surge: Used "on your turn" without requiring action, bonus action, or reaction.
 	// Note: Usage limits (per rest) are tracked separately by the feature itself.
-	case "action-surge":
+	case refs.Features.ActionSurge().ID:
 		return actionCostNone
 
 	default:
@@ -1912,6 +1917,23 @@ func getFeatureActionCost(featureID string) actionCostType {
 		// This allows features to be used without action economy enforcement
 		// until they are explicitly mapped. New features should be added above.
 		return actionCostNone
+	}
+}
+
+// applyFeatureSideEffects updates action economy for feature-specific grants.
+// The toolkit handles these via event bus, but the API needs to reflect them
+// in the persisted ActionEconomyState for state snapshots.
+func applyFeatureSideEffects(featureID string, ae *entities.ActionEconomyState) {
+	if ae == nil {
+		return
+	}
+	switch featureID {
+	case refs.Features.FlurryOfBlows().ID:
+		ae.GrantFlurryStrikes(2) // Flurry of Blows grants 2 unarmed strikes
+	case refs.Features.PatientDefense().ID:
+		ae.DodgeActive = true // Patient Defense grants Dodge as bonus action
+	case refs.Features.StepOfTheWind().ID:
+		ae.DisengageActive = true // Step of the Wind grants Disengage as bonus action
 	}
 }
 
@@ -1987,6 +2009,7 @@ func (o *Orchestrator) buildCombatState(encounterID string, enc *encounterrepo.E
 		TurnOrder:         turnOrder,
 		ActiveIndex:       enc.InitiativeData.Current,
 		MovementRemaining: enc.MovementRemaining,
+		ActionEconomy:     enc.ActionEconomy,
 		CombatStarted:     enc.State == encounterrepo.StateActive || enc.State == encounterrepo.StatePaused,
 		CombatEnded:       enc.State == encounterrepo.StateCompleted,
 	}
@@ -2238,6 +2261,9 @@ func (o *Orchestrator) ActivateFeature(
 	case actionCostNone:
 		// No action to consume for free abilities
 	}
+
+	// 10b. Apply feature-specific side effects to action economy
+	applyFeatureSideEffects(input.FeatureID, actionEconomy)
 
 	// 11. Convert back to data (includes new condition in Conditions slice)
 	updatedData := char.ToData()
@@ -4198,6 +4224,9 @@ func (o *Orchestrator) ExecuteAction(
 	case pb.ActionId_ACTION_ID_OFF_HAND_STRIKE:
 		return o.executeStrike(ctx, input, encOutput.Data, actionEconomy, combat.AttackHandOff)
 
+	case pb.ActionId_ACTION_ID_FLURRY_STRIKE:
+		return o.executeFlurryStrike(ctx, input, encOutput.Data, actionEconomy)
+
 	case pb.ActionId_ACTION_ID_MOVE:
 		return o.executeMove(ctx, input, encOutput.Data, actionEconomy)
 
@@ -4412,6 +4441,145 @@ func (o *Orchestrator) executeStrike(
 		GrantedAction:      grantedAction,
 		AvailableAbilities: availableAbilities,
 		AvailableActions:   availableActions,
+	}, nil
+}
+
+// executeFlurryStrike handles FLURRY_STRIKE actions (Monk's Flurry of Blows unarmed strikes).
+// Mechanically identical to a main-hand unarmed strike but consumes flurry strike capacity.
+func (o *Orchestrator) executeFlurryStrike(
+	ctx context.Context,
+	input *ExecuteActionInput,
+	encData *encounterrepo.EncounterData,
+	actionEconomy *entities.ActionEconomyState,
+) (*ExecuteActionOutput, error) {
+	// 1. Check flurry strike capacity
+	if !actionEconomy.HasFlurryStrikes() {
+		return &ExecuteActionOutput{
+			Success:            false,
+			Error:              "no flurry strikes remaining",
+			ActionEconomy:      actionEconomy,
+			AvailableAbilities: buildAvailableAbilities(actionEconomy),
+			AvailableActions:   buildAvailableActions(actionEconomy, encData.MovementRemaining),
+		}, nil
+	}
+
+	// 2. Validate target
+	if input.TargetID == "" {
+		return nil, fmt.Errorf("target ID is required for flurry strike")
+	}
+
+	// 3. Create EventBus
+	bus := events.NewEventBus()
+
+	// 4. Load character
+	charOutput, err := o.charRepo.Get(ctx, characterrepo.GetInput{ID: input.EntityID})
+	if err != nil {
+		return nil, fmt.Errorf("failed to load character: %w", err)
+	}
+
+	char, err := character.LoadFromData(ctx, charOutput.Character.Data, bus)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load character from data: %w", err)
+	}
+
+	// 5. Load monster
+	monsterData := o.findMonsterData(encData, input.TargetID)
+	if monsterData == nil {
+		return nil, fmt.Errorf("monster not found: %s", input.TargetID)
+	}
+
+	monsterInstance, err := monster.LoadFromData(ctx, monsterData, bus)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load monster from data: %w", err)
+	}
+
+	if err = monstertraits.LoadMonsterConditions(ctx, monsterInstance, monsterData.Conditions, bus, o.roller); err != nil {
+		return nil, fmt.Errorf("failed to load monster conditions: %w", err)
+	}
+
+	// 6. Flurry strikes are always unarmed — use unarmed strike weapon
+	unarmedStrike := weapons.Weapon{
+		ID:         "unarmed-strike",
+		Name:       "Unarmed Strike",
+		Category:   weapons.CategorySimpleMelee,
+		Damage:     "1d1", // Base 1 + STR mod; Martial Arts upgrades this via conditions
+		DamageType: "bludgeoning",
+	}
+
+	// 7. Build GameContext
+	gameCtx := o.buildGameContextFromEquipment(input.EntityID, &unarmedStrike, nil)
+	ctx = gamectx.WithGameContext(ctx, gameCtx)
+
+	// 8. CombatantRegistry
+	registry := gamectx.NewCombatantRegistry()
+	registry.Add(char)
+	registry.Add(monsterInstance)
+	ctx = combat.WithCombatantLookup(ctx, registry)
+
+	// 9. Resolve attack (main hand — flurry uses same attack mechanics)
+	result, err := combat.ResolveAttack(ctx, &combat.AttackInput{
+		AttackerID: input.EntityID,
+		TargetID:   input.TargetID,
+		Weapon:     &unarmedStrike,
+		EventBus:   bus,
+		Roller:     o.roller,
+		AttackHand: combat.AttackHandMain,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("flurry strike resolution failed: %w", err)
+	}
+
+	// 10. Update monster HP
+	if result.Hit {
+		monsterData.HitPoints = monsterInstance.HP()
+	}
+
+	// 11. Consume flurry strike
+	actionEconomy.UseFlurryStrike()
+
+	// 12. Persist
+	_, err = o.encRepo.Update(ctx, &encounterrepo.UpdateInput{
+		EncounterID:   input.EncounterID,
+		ActionEconomy: actionEconomy,
+		Monsters:      encData.Monsters,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to save encounter state: %w", err)
+	}
+
+	// 13. Build result
+	attackResult := &AttackResult{
+		AttackRoll:      result.AttackRoll,
+		AttackBonus:     result.AttackBonus,
+		TotalAttack:     result.TotalAttack,
+		TargetAC:        result.TargetAC,
+		Hit:             result.Hit,
+		Critical:        result.Critical,
+		IsNaturalTwenty: result.IsNaturalTwenty,
+		IsNaturalOne:    result.IsNaturalOne,
+		DamageRolls:     result.DamageRolls,
+		DamageBonus:     result.DamageBonus,
+		TotalDamage:     result.TotalDamage,
+		DamageType:      result.DamageType,
+	}
+	if result.Breakdown != nil {
+		attackResult.Breakdown = convertToolkitBreakdown(result.Breakdown)
+	}
+
+	combatState := o.buildCombatState(input.EncounterID, encData)
+
+	if monsterInstance.HP() <= 0 {
+		o.checkAndHandleVictory(ctx, input.EncounterID, encData, input.TargetID)
+	}
+
+	return &ExecuteActionOutput{
+		Success:            true,
+		ActionEconomy:      actionEconomy,
+		AttackResult:       attackResult,
+		CombatState:        combatState,
+		Room:               encData.RoomData,
+		AvailableAbilities: buildAvailableAbilities(actionEconomy),
+		AvailableActions:   buildAvailableActions(actionEconomy, encData.MovementRemaining),
 	}, nil
 }
 

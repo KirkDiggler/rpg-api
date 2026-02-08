@@ -473,13 +473,7 @@ func (s *MonkIntegrationSuite) TestFlurryOfBlows_ActivateFeature_GrantsStrikes()
 	s.Require().NotNil(turnState, "turn state should not be nil")
 
 	actionEconomy := turnState.GetActionEconomy()
-	if actionEconomy == nil {
-		// GetEncounterState's convertCombatStateToProto doesn't populate ActionEconomy yet.
-		// This is a known API gap — the field exists on the proto and is set in attack/feature
-		// responses, but the state snapshot converter doesn't include it.
-		// Skip instead of false-pass: the gap is visible in test output.
-		s.T().Skip("ActionEconomy not populated in GetEncounterState response (API conversion gap)")
-	}
+	s.Require().NotNil(actionEconomy, "ActionEconomy must be present in GetEncounterState response")
 
 	flurryStrikes := actionEconomy.GetFlurryStrikesRemaining()
 	s.T().Logf("  ✓ Flurry strikes remaining: %d", flurryStrikes)
@@ -514,6 +508,19 @@ func (s *MonkIntegrationSuite) TestPatientDefense_ActivateFeature_Success() {
 	s.Require().NoError(err, "failed to activate patient defense")
 	s.Require().True(activateResp.GetSuccess(), "patient defense should succeed: %s", activateResp.GetMessage())
 	s.T().Logf("  ✓ Patient Defense activated: %s", activateResp.GetMessage())
+
+	// 4. Verify DodgeActive in encounter state
+	s.T().Log("Step 4: Verifying DodgeActive in encounter state...")
+	stateResp, err := s.server.EncounterClient.GetEncounterState(ctx, &dnd5ev1alpha1.GetEncounterStateRequest{
+		EncounterId: encounterID,
+		PlayerId:    playerID,
+	})
+	s.Require().NoError(err, "failed to get encounter state")
+
+	actionEconomy := stateResp.GetCombatState().GetCurrentTurn().GetActionEconomy()
+	s.Require().NotNil(actionEconomy, "ActionEconomy must be present after Patient Defense")
+	s.Require().True(actionEconomy.GetDodgeActive(), "DodgeActive should be true after Patient Defense")
+	s.T().Log("  ✓ DodgeActive confirmed in encounter state")
 }
 
 func (s *MonkIntegrationSuite) TestStepOfTheWind_ActivateFeature_Success() {
@@ -544,6 +551,19 @@ func (s *MonkIntegrationSuite) TestStepOfTheWind_ActivateFeature_Success() {
 	s.Require().NoError(err, "failed to activate step of the wind")
 	s.Require().True(activateResp.GetSuccess(), "step of the wind should succeed: %s", activateResp.GetMessage())
 	s.T().Logf("  ✓ Step of the Wind activated: %s", activateResp.GetMessage())
+
+	// 4. Verify DisengageActive in encounter state
+	s.T().Log("Step 4: Verifying DisengageActive in encounter state...")
+	stateResp, err := s.server.EncounterClient.GetEncounterState(ctx, &dnd5ev1alpha1.GetEncounterStateRequest{
+		EncounterId: encounterID,
+		PlayerId:    playerID,
+	})
+	s.Require().NoError(err, "failed to get encounter state")
+
+	actionEconomy := stateResp.GetCombatState().GetCurrentTurn().GetActionEconomy()
+	s.Require().NotNil(actionEconomy, "ActionEconomy must be present after Step of the Wind")
+	s.Require().True(actionEconomy.GetDisengageActive(), "DisengageActive should be true after Step of the Wind")
+	s.T().Log("  ✓ DisengageActive confirmed in encounter state")
 }
 
 func (s *MonkIntegrationSuite) TestKiExhaustion_CannotActivateWhenDepleted() {
@@ -564,30 +584,48 @@ func (s *MonkIntegrationSuite) TestKiExhaustion_CannotActivateWhenDepleted() {
 	encounterID := CreateEncounterAndStartCombat(s.T(), s.server, ctx, playerID, characterID)
 	s.T().Logf("  ✓ Encounter: %s", encounterID)
 
-	// 3. Activate first Ki feature (1/2 Ki used)
-	s.T().Log("Step 3: First activation (Flurry of Blows — 1 Ki)...")
+	// 3. Turn 1: Activate Flurry of Blows (1/2 Ki used, bonus action consumed)
+	s.T().Log("Step 3: Turn 1 — Flurry of Blows (1 Ki)...")
 	resp1, err := s.server.EncounterClient.ActivateFeature(ctx, &dnd5ev1alpha1.ActivateFeatureRequest{
 		EncounterId: encounterID,
 		CharacterId: characterID,
 		FeatureId:   dnd5ev1alpha1.FeatureId_FEATURE_ID_FLURRY_OF_BLOWS,
 	})
 	s.Require().NoError(err, "first activation should not error")
-	s.Assert().True(resp1.GetSuccess(), "first activation should succeed")
+	s.Require().True(resp1.GetSuccess(), "first activation should succeed")
 	s.T().Log("  ✓ First activation succeeded (1/2 Ki used)")
 
-	// 4. Activate second Ki feature (2/2 Ki used)
-	s.T().Log("Step 4: Second activation (Patient Defense — 1 Ki)...")
+	// 4. End turn — cycles through monster turn(s), comes back to player with fresh action economy
+	s.T().Log("Step 4: Ending turn (monster takes turn, action economy resets)...")
+	_, err = s.server.EncounterClient.EndTurn(ctx, &dnd5ev1alpha1.EndTurnRequest{
+		EncounterId: encounterID,
+		EntityId:    characterID,
+	})
+	s.Require().NoError(err, "end turn should not error")
+	s.T().Log("  ✓ Turn ended, new turn started")
+
+	// 5. Turn 2: Activate Patient Defense (2/2 Ki used, bonus action consumed)
+	s.T().Log("Step 5: Turn 2 — Patient Defense (1 Ki)...")
 	resp2, err := s.server.EncounterClient.ActivateFeature(ctx, &dnd5ev1alpha1.ActivateFeatureRequest{
 		EncounterId: encounterID,
 		CharacterId: characterID,
 		FeatureId:   dnd5ev1alpha1.FeatureId_FEATURE_ID_PATIENT_DEFENSE,
 	})
 	s.Require().NoError(err, "second activation should not error")
-	s.Assert().True(resp2.GetSuccess(), "second activation should succeed")
+	s.Require().True(resp2.GetSuccess(), "second activation should succeed (Ki 2/2 used)")
 	s.T().Log("  ✓ Second activation succeeded (2/2 Ki used)")
 
-	// 5. Try third Ki feature (should fail — no Ki remaining)
-	s.T().Log("Step 5: Third activation (Step of the Wind — should fail)...")
+	// 6. End turn again for fresh action economy
+	s.T().Log("Step 6: Ending turn...")
+	_, err = s.server.EncounterClient.EndTurn(ctx, &dnd5ev1alpha1.EndTurnRequest{
+		EncounterId: encounterID,
+		EntityId:    characterID,
+	})
+	s.Require().NoError(err, "end turn should not error")
+	s.T().Log("  ✓ Turn ended")
+
+	// 7. Turn 3: Try Step of the Wind — should fail (0 Ki remaining, bonus action is available)
+	s.T().Log("Step 7: Turn 3 — Step of the Wind (should fail, no Ki)...")
 	resp3, err := s.server.EncounterClient.ActivateFeature(ctx, &dnd5ev1alpha1.ActivateFeatureRequest{
 		EncounterId: encounterID,
 		CharacterId: characterID,

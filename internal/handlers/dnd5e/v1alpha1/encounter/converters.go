@@ -436,6 +436,7 @@ func convertCombatStateToProto(
 			BonusActionUsed:   false,
 			ReactionAvailable: true,
 			Position:          position,
+			ActionEconomy:     convertActionEconomyToProto(state.ActionEconomy, state),
 		}
 	}
 
