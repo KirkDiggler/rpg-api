@@ -331,6 +331,9 @@ func (s *OrchestratorTestSuite) TestResolveAttack_MultipleAttacks() {
 
 	charData := createTestCharacterData("char-1", "Grog")
 	encData := createTestEncounterData("enc-1")
+	// Give enough actions for 3 attacks (simulating Extra Attack or repeated turns)
+	encData.ActionEconomy.ActionsRemaining = 3
+	encData.ActionEconomy.AttacksRemaining = 3
 
 	// Set up expectations for multiple calls (includes weapon lookup)
 	s.mockCharRepo.EXPECT().
@@ -414,18 +417,25 @@ func (s *OrchestratorTestSuite) TestResolveAttack_VulnerabilityMultiplier_Appear
 		Return(&characterrepo.GetOutput{Character: &entities.Character{Data: charData}}, nil).
 		AnyTimes()
 
-	// Create skeleton - has bludgeoning vulnerability via monstertraits
-	skeleton := monsters.NewSkeleton("skeleton-1")
-	skeletonData := skeleton.ToData()
-
-	encData := &encounterrepo.EncounterData{
-		ID:       "enc-1",
-		Monsters: []*monster.Data{skeletonData},
-	}
-
+	// Return fresh encData each call — ResolveAttack mutates ActionEconomy in-place
 	s.mockEncRepo.EXPECT().
 		Get(gomock.Any(), &encounterrepo.GetInput{EncounterID: "enc-1"}).
-		Return(&encounterrepo.GetOutput{Data: encData}, nil)
+		DoAndReturn(func(_ context.Context, _ *encounterrepo.GetInput) (*encounterrepo.GetOutput, error) {
+			// Re-create skeleton each time since HP may have been modified
+			freshSkeleton := monsters.NewSkeleton("skeleton-1")
+			return &encounterrepo.GetOutput{
+				Data: &encounterrepo.EncounterData{
+					ID:       "enc-1",
+					Monsters: []*monster.Data{freshSkeleton.ToData()},
+					ActionEconomy: &entities.ActionEconomyState{
+						ActionsRemaining:      1,
+						BonusActionsRemaining: 1,
+						ReactionsRemaining:    1,
+						AttacksRemaining:      1,
+					},
+				},
+			}, nil
+		}).AnyTimes()
 
 	s.mockEncRepo.EXPECT().
 		Update(gomock.Any(), gomock.Any()).
@@ -456,16 +466,7 @@ func (s *OrchestratorTestSuite) TestResolveAttack_VulnerabilityMultiplier_Appear
 			break
 		}
 
-		// Reset encounter data for next attempt (skeleton needs full HP)
-		skeleton = monsters.NewSkeleton("skeleton-1")
-		skeletonData = skeleton.ToData()
-		encData = &encounterrepo.EncounterData{
-			ID:       "enc-1",
-			Monsters: []*monster.Data{skeletonData},
-		}
-		s.mockEncRepo.EXPECT().
-			Get(gomock.Any(), &encounterrepo.GetInput{EncounterID: "enc-1"}).
-			Return(&encounterrepo.GetOutput{Data: encData}, nil)
+		// DoAndReturn creates fresh data each call — no manual reset needed
 	}
 
 	s.Require().NotNil(hitOutput, "Should have gotten at least one hit in 20 attempts")
@@ -532,8 +533,9 @@ func createTestEncounterData(id string) *encounterrepo.EncounterData {
 	goblinData := goblin.ToData()
 
 	return &encounterrepo.EncounterData{
-		ID:       id,
-		Monsters: []*monster.Data{goblinData},
+		ID:            id,
+		Monsters:      []*monster.Data{goblinData},
+		ActionEconomy: entities.NewActionEconomyState(),
 	}
 }
 
@@ -2047,7 +2049,7 @@ func (s *OrchestratorTestSuite) TestActivateFeature_CharacterNotFound() {
 	s.mockEncRepo.EXPECT().
 		Get(gomock.Any(), &encounterrepo.GetInput{EncounterID: "enc-1"}).
 		Return(&encounterrepo.GetOutput{
-			Data: &encounterrepo.EncounterData{ID: "enc-1"},
+			Data: &encounterrepo.EncounterData{ID: "enc-1", ActionEconomy: entities.NewActionEconomyState()},
 		}, nil)
 
 	// Character not found
@@ -2073,7 +2075,7 @@ func (s *OrchestratorTestSuite) TestActivateFeature_FeatureNotFound() {
 	s.mockEncRepo.EXPECT().
 		Get(gomock.Any(), &encounterrepo.GetInput{EncounterID: "enc-1"}).
 		Return(&encounterrepo.GetOutput{
-			Data: &encounterrepo.EncounterData{ID: "enc-1"},
+			Data: &encounterrepo.EncounterData{ID: "enc-1", ActionEconomy: entities.NewActionEconomyState()},
 		}, nil)
 
 	// Character has no features (not a barbarian)
@@ -2120,7 +2122,7 @@ func (s *OrchestratorTestSuite) TestActivateFeature_CharacterLoadsSuccessfully()
 	s.mockEncRepo.EXPECT().
 		Get(gomock.Any(), &encounterrepo.GetInput{EncounterID: "enc-1"}).
 		Return(&encounterrepo.GetOutput{
-			Data: &encounterrepo.EncounterData{ID: "enc-1"},
+			Data: &encounterrepo.EncounterData{ID: "enc-1", ActionEconomy: entities.NewActionEconomyState()},
 		}, nil)
 
 	// Create a basic character (features will be loaded from class by toolkit)

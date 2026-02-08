@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/KirkDiggler/rpg-api/internal/apierr"
+	"github.com/KirkDiggler/rpg-api/internal/entities"
 )
 
 // InMemoryRepository implements Repository using in-memory storage
@@ -73,6 +74,12 @@ func (r *InMemoryRepository) Get(_ context.Context, input *GetInput) (*GetOutput
 		return nil, apierr.NotFound("encounter not found")
 	}
 
+	// Ensure ActionEconomy is never nil — callers should not need nil checks
+	actionEconomy := data.ActionEconomy
+	if actionEconomy == nil {
+		actionEconomy = entities.NewActionEconomyState()
+	}
+
 	// Return a copy to prevent external modification
 	return &GetOutput{
 		Data: &EncounterData{
@@ -81,7 +88,7 @@ func (r *InMemoryRepository) Get(_ context.Context, input *GetInput) (*GetOutput
 			InitiativeData:    data.InitiativeData,
 			InitiativeRolls:   data.InitiativeRolls,
 			MovementRemaining: data.MovementRemaining,
-			ActionEconomy:     data.ActionEconomy,
+			ActionEconomy:     actionEconomy,
 			Monsters:          data.Monsters,
 			BossMonsterIDs:    data.BossMonsterIDs,
 			CharacterHP:       data.CharacterHP,
@@ -111,6 +118,10 @@ func (r *InMemoryRepository) GetByJoinCode(_ context.Context, input *GetByJoinCo
 	// Search for encounter with matching join code
 	for _, data := range r.store {
 		if data.JoinCode == input.JoinCode {
+			ae := data.ActionEconomy
+			if ae == nil {
+				ae = entities.NewActionEconomyState()
+			}
 			// Return a copy to prevent external modification
 			return &GetOutput{
 				Data: &EncounterData{
@@ -119,7 +130,7 @@ func (r *InMemoryRepository) GetByJoinCode(_ context.Context, input *GetByJoinCo
 					InitiativeData:    data.InitiativeData,
 					InitiativeRolls:   data.InitiativeRolls,
 					MovementRemaining: data.MovementRemaining,
-					ActionEconomy:     data.ActionEconomy,
+					ActionEconomy:     ae,
 					Monsters:          data.Monsters,
 					BossMonsterIDs:    data.BossMonsterIDs,
 					CharacterHP:       data.CharacterHP,

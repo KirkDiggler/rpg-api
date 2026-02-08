@@ -323,10 +323,6 @@ func (o *Orchestrator) ResolveAttack(ctx context.Context, input *ResolveAttackIn
 
 	// 5. Check action economy - attack requires an action
 	actionEconomy := encOutput.Data.ActionEconomy
-	if actionEconomy == nil {
-		// Initialize if not present (backwards compatibility)
-		actionEconomy = entities.NewActionEconomyState()
-	}
 	if !actionEconomy.HasAction() {
 		return nil, fmt.Errorf("no action available: action already used this turn")
 	}
@@ -2017,10 +2013,6 @@ func (o *Orchestrator) buildCombatState(encounterID string, enc *encounterrepo.E
 
 // buildAvailableAbilities returns a list of all combat abilities with their current availability
 func buildAvailableAbilities(actionEconomy *entities.ActionEconomyState) []*entities.AvailableAbility {
-	if actionEconomy == nil {
-		actionEconomy = entities.NewActionEconomyState()
-	}
-
 	abilities := []*entities.AvailableAbility{
 		{
 			AbilityID: "attack",
@@ -2059,10 +2051,6 @@ func buildAvailableAbilities(actionEconomy *entities.ActionEconomyState) []*enti
 
 // buildAvailableActions returns a list of all actions with their current availability
 func buildAvailableActions(actionEconomy *entities.ActionEconomyState, movementRemaining int32) []*entities.AvailableAction {
-	if actionEconomy == nil {
-		actionEconomy = entities.NewActionEconomyState()
-	}
-
 	actions := []*entities.AvailableAction{
 		{
 			ActionID: "strike",
@@ -2168,11 +2156,8 @@ func (o *Orchestrator) ActivateFeature(
 		return nil, fmt.Errorf("encounter not found: %s", input.EncounterID)
 	}
 
-	// 2a. Load action economy (initialize if not present for backwards compatibility)
+	// 2a. Load action economy (guaranteed non-nil by repo layer)
 	actionEconomy := encOutput.Data.ActionEconomy
-	if actionEconomy == nil {
-		actionEconomy = entities.NewActionEconomyState()
-	}
 
 	// 2b. Check action economy based on feature's action cost
 	actionCost := getFeatureActionCost(input.FeatureID)
@@ -4041,11 +4026,8 @@ func (o *Orchestrator) ActivateCombatAbility(
 			activeEntity.ID, input.EntityID)
 	}
 
-	// 4. Get or create ActionEconomy
+	// 4. Get ActionEconomy (guaranteed non-nil by repo layer)
 	actionEconomy := encOutput.Data.ActionEconomy
-	if actionEconomy == nil {
-		actionEconomy = entities.NewActionEconomyState()
-	}
 
 	// 5. Get current movement remaining for DASH calculation
 	movementRemaining := encOutput.Data.MovementRemaining
@@ -4209,12 +4191,8 @@ func (o *Orchestrator) ExecuteAction(
 		return nil, fmt.Errorf("encounter not found: %s", input.EncounterID)
 	}
 
-	// 3. Get action economy from encounter data
+	// 3. Get action economy (guaranteed non-nil by repo layer)
 	actionEconomy := encOutput.Data.ActionEconomy
-	if actionEconomy == nil {
-		// Initialize if not present (backwards compatibility)
-		actionEconomy = entities.NewActionEconomyState()
-	}
 
 	// 4. Execute based on action type
 	switch input.ActionID {
