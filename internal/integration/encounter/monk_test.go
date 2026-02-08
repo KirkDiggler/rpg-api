@@ -473,17 +473,17 @@ func (s *MonkIntegrationSuite) TestFlurryOfBlows_ActivateFeature_GrantsStrikes()
 	s.Require().NotNil(turnState, "turn state should not be nil")
 
 	actionEconomy := turnState.GetActionEconomy()
-	if actionEconomy != nil {
-		flurryStrikes := actionEconomy.GetFlurryStrikesRemaining()
-		s.T().Logf("  ✓ Flurry strikes remaining: %d", flurryStrikes)
-		s.Assert().Equal(int32(2), flurryStrikes, "Flurry of Blows should grant 2 strikes")
-	} else {
-		s.T().Log("  ⚠ ActionEconomy not available in turn state — checking response only")
+	if actionEconomy == nil {
+		// GetEncounterState's convertCombatStateToProto doesn't populate ActionEconomy yet.
+		// This is a known API gap — the field exists on the proto and is set in attack/feature
+		// responses, but the state snapshot converter doesn't include it.
+		// Skip instead of false-pass: the gap is visible in test output.
+		s.T().Skip("ActionEconomy not populated in GetEncounterState response (API conversion gap)")
 	}
 
-	s.T().Log("╔══════════════════════════════════════════════════════════════════╗")
-	s.T().Log("║  ✓ TEST PASSED: Flurry of Blows activates via API                ║")
-	s.T().Log("╚══════════════════════════════════════════════════════════════════╝")
+	flurryStrikes := actionEconomy.GetFlurryStrikesRemaining()
+	s.T().Logf("  ✓ Flurry strikes remaining: %d", flurryStrikes)
+	s.Require().Equal(int32(2), flurryStrikes, "Flurry of Blows should grant 2 strikes")
 }
 
 func (s *MonkIntegrationSuite) TestPatientDefense_ActivateFeature_Success() {
@@ -512,12 +512,8 @@ func (s *MonkIntegrationSuite) TestPatientDefense_ActivateFeature_Success() {
 		FeatureId:   dnd5ev1alpha1.FeatureId_FEATURE_ID_PATIENT_DEFENSE,
 	})
 	s.Require().NoError(err, "failed to activate patient defense")
-	s.Assert().True(activateResp.GetSuccess(), "patient defense should succeed: %s", activateResp.GetMessage())
+	s.Require().True(activateResp.GetSuccess(), "patient defense should succeed: %s", activateResp.GetMessage())
 	s.T().Logf("  ✓ Patient Defense activated: %s", activateResp.GetMessage())
-
-	s.T().Log("╔══════════════════════════════════════════════════════════════════╗")
-	s.T().Log("║  ✓ TEST PASSED: Patient Defense activates via API                 ║")
-	s.T().Log("╚══════════════════════════════════════════════════════════════════╝")
 }
 
 func (s *MonkIntegrationSuite) TestStepOfTheWind_ActivateFeature_Success() {
@@ -546,12 +542,8 @@ func (s *MonkIntegrationSuite) TestStepOfTheWind_ActivateFeature_Success() {
 		FeatureId:   dnd5ev1alpha1.FeatureId_FEATURE_ID_STEP_OF_THE_WIND,
 	})
 	s.Require().NoError(err, "failed to activate step of the wind")
-	s.Assert().True(activateResp.GetSuccess(), "step of the wind should succeed: %s", activateResp.GetMessage())
+	s.Require().True(activateResp.GetSuccess(), "step of the wind should succeed: %s", activateResp.GetMessage())
 	s.T().Logf("  ✓ Step of the Wind activated: %s", activateResp.GetMessage())
-
-	s.T().Log("╔══════════════════════════════════════════════════════════════════╗")
-	s.T().Log("║  ✓ TEST PASSED: Step of the Wind activates via API                ║")
-	s.T().Log("╚══════════════════════════════════════════════════════════════════╝")
 }
 
 func (s *MonkIntegrationSuite) TestKiExhaustion_CannotActivateWhenDepleted() {
@@ -601,14 +593,14 @@ func (s *MonkIntegrationSuite) TestKiExhaustion_CannotActivateWhenDepleted() {
 		CharacterId: characterID,
 		FeatureId:   dnd5ev1alpha1.FeatureId_FEATURE_ID_STEP_OF_THE_WIND,
 	})
-	if err != nil {
-		s.T().Logf("  ✓ Third activation returned error: %v", err)
-	} else {
-		s.Assert().False(resp3.GetSuccess(), "third activation should fail (no Ki remaining)")
-		s.T().Logf("  ✓ Third activation failed: %s", resp3.GetMessage())
-	}
 
-	s.T().Log("╔══════════════════════════════════════════════════════════════════╗")
-	s.T().Log("║  ✓ TEST PASSED: Ki features fail when Ki is depleted              ║")
-	s.T().Log("╚══════════════════════════════════════════════════════════════════╝")
+	// The API must signal failure: either a gRPC error OR success=false.
+	// Both are acceptable — but silent success is not.
+	if err != nil {
+		s.T().Logf("  ✓ Third activation returned gRPC error (expected): %v", err)
+	} else {
+		s.Require().NotNil(resp3, "response must not be nil when err is nil")
+		s.Require().False(resp3.GetSuccess(), "third activation must fail when Ki is depleted")
+		s.T().Logf("  ✓ Third activation returned success=false: %s", resp3.GetMessage())
+	}
 }

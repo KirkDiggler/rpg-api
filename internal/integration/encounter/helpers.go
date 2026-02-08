@@ -15,6 +15,7 @@ import (
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	coreResources "github.com/KirkDiggler/rpg-toolkit/core/resources"
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
+	dnd5eResources "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/resources"
 )
 
 // CharacterBuilder provides a fluent interface for creating test characters.
@@ -375,7 +376,7 @@ func LevelUpMonkToLevel2(t *testing.T, server *harness.TestServer, ctx context.C
 	if data.Resources == nil {
 		data.Resources = make(map[coreResources.ResourceKey]toolkitchar.RecoverableResourceData)
 	}
-	data.Resources["ki"] = toolkitchar.RecoverableResourceData{
+	data.Resources[dnd5eResources.Ki] = toolkitchar.RecoverableResourceData{
 		Current:   2,
 		Maximum:   2,
 		ResetType: coreResources.ResetShortRest,
@@ -404,13 +405,20 @@ func LevelUpMonkToLevel2(t *testing.T, server *harness.TestServer, ctx context.C
 	}
 	data.Features = append(data.Features, kiFeatures...)
 
-	// 5. Add Unarmored Movement condition (Monk level 2: +10 ft speed)
+	// 5. Add Martial Arts + Unarmored Movement conditions (Monk level 2)
+	// Martial Arts governs DEX-for-attacks and bonus unarmed strike — required for Flurry of Blows.
+	// Matches toolkit's canonical createLevel2Monk() test setup.
+	martialArts := json.RawMessage(fmt.Sprintf(`{
+		"ref": {"module": "dnd5e", "type": "conditions", "id": "martial_arts"},
+		"character_id": %q,
+		"monk_level": 2
+	}`, characterID))
 	unarmoredMovement := json.RawMessage(fmt.Sprintf(`{
 		"ref": {"module": "dnd5e", "type": "conditions", "id": "unarmored_movement"},
 		"character_id": %q,
 		"monk_level": 2
 	}`, characterID))
-	data.Conditions = append(data.Conditions, unarmoredMovement)
+	data.Conditions = append(data.Conditions, martialArts, unarmoredMovement)
 
 	// 6. Bump HP for level 2 (1d8 + CON mod; use average: 5 + CON mod)
 	// We don't know exact CON mod here, so just add 5 (average d8) + 2 (typical CON mod)
