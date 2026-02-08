@@ -6,11 +6,15 @@ package encounter_integration
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"testing"
 
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
 	"github.com/KirkDiggler/rpg-api/internal/integration/harness"
+	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
+	coreResources "github.com/KirkDiggler/rpg-toolkit/core/resources"
+	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 )
 
 // CharacterBuilder provides a fluent interface for creating test characters.
@@ -336,4 +340,88 @@ func FindCharacterInState(resp *dnd5ev1alpha1.GetEncounterStateResponse, charact
 		}
 	}
 	return nil
+}
+
+// =============================================================================
+// LEVEL-UP HELPERS
+// These patch a level 1 character to a higher level by adding the
+// appropriate features, conditions, and resources via the character repo.
+// The normal creation pipeline builds level 1; these extend it for testing.
+// =============================================================================
+
+// LevelUpMonkToLevel2 patches a level 1 Monk to level 2, adding:
+//   - Ki resource (2 points, short rest recovery)
+//   - Flurry of Blows, Patient Defense, Step of the Wind features
+//   - Unarmored Movement condition (+10 ft at level 2)
+func LevelUpMonkToLevel2(t *testing.T, server *harness.TestServer, ctx context.Context, characterID string) {
+	t.Helper()
+
+	// 1. Get the character from the repo
+	getOutput, err := server.CharacterRepo.Get(ctx, characterrepo.GetInput{ID: characterID})
+	if err != nil {
+		t.Fatalf("failed to get character for level-up: %v", err)
+	}
+	char := getOutput.Character
+	if char == nil || char.Data == nil {
+		t.Fatal("character or character data is nil")
+	}
+
+	data := char.Data
+
+	// 2. Bump level
+	data.Level = 2
+
+	// 3. Add Ki resource (Monk gets Ki points = Monk level at level 2+)
+	if data.Resources == nil {
+		data.Resources = make(map[coreResources.ResourceKey]toolkitchar.RecoverableResourceData)
+	}
+	data.Resources["ki"] = toolkitchar.RecoverableResourceData{
+		Current:   2,
+		Maximum:   2,
+		ResetType: coreResources.ResetShortRest,
+	}
+
+	// 4. Add Ki features (Flurry of Blows, Patient Defense, Step of the Wind)
+	kiFeatures := []json.RawMessage{
+		json.RawMessage(fmt.Sprintf(`{
+			"ref": {"module": "dnd5e", "type": "features", "id": "flurry_of_blows"},
+			"id": "flurry_of_blows",
+			"name": "Flurry of Blows",
+			"character_id": %q
+		}`, characterID)),
+		json.RawMessage(fmt.Sprintf(`{
+			"ref": {"module": "dnd5e", "type": "features", "id": "patient_defense"},
+			"id": "patient_defense",
+			"name": "Patient Defense",
+			"character_id": %q
+		}`, characterID)),
+		json.RawMessage(fmt.Sprintf(`{
+			"ref": {"module": "dnd5e", "type": "features", "id": "step_of_the_wind"},
+			"id": "step_of_the_wind",
+			"name": "Step of the Wind",
+			"character_id": %q
+		}`, characterID)),
+	}
+	data.Features = append(data.Features, kiFeatures...)
+
+	// 5. Add Unarmored Movement condition (Monk level 2: +10 ft speed)
+	unarmoredMovement := json.RawMessage(fmt.Sprintf(`{
+		"ref": {"module": "dnd5e", "type": "conditions", "id": "unarmored_movement"},
+		"character_id": %q,
+		"monk_level": 2
+	}`, characterID))
+	data.Conditions = append(data.Conditions, unarmoredMovement)
+
+	// 6. Bump HP for level 2 (1d8 + CON mod; use average: 5 + CON mod)
+	// We don't know exact CON mod here, so just add 5 (average d8) + 2 (typical CON mod)
+	data.HitPoints += 7
+	data.MaxHitPoints += 7
+
+	// 7. Write back
+	_, err = server.CharacterRepo.Update(ctx, characterrepo.UpdateInput{Character: char})
+	if err != nil {
+		t.Fatalf("failed to update character for level-up: %v", err)
+	}
+
+	t.Logf("  ✓ Leveled up to 2: Ki 2/2, +3 features, +Unarmored Movement")
 }
