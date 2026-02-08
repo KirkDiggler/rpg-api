@@ -215,84 +215,57 @@ func (s *MonkIntegrationSuite) TestMartialArts_CanAttackInCombat() {
 	characterID := s.createMonkCharacter(playerID)
 	s.T().Logf("  ✓ Created character: %s", characterID)
 
-	// 2. Create an encounter
-	s.T().Log("Step 2: Creating encounter...")
-	createResp, err := s.server.EncounterClient.CreateEncounter(ctx, &dnd5ev1alpha1.CreateEncounterRequest{
-		CharacterIds: []string{characterID},
-	})
-	s.Require().NoError(err, "failed to create encounter")
-	encounterID := createResp.GetEncounterId()
-	s.T().Logf("  ✓ Created encounter: %s", encounterID)
+	// 2. Create encounter and start combat
+	s.T().Log("Step 2: Starting combat...")
+	encounterID := CreateEncounterAndStartCombat(s.T(), s.server, ctx, playerID, characterID)
+	s.T().Logf("  ✓ Encounter: %s", encounterID)
 
-	// 3. Set ready and start combat
-	s.T().Log("Step 3: Starting combat...")
-	_, err = s.server.EncounterClient.SetReady(ctx, &dnd5ev1alpha1.SetReadyRequest{
-		EncounterId: encounterID,
-		PlayerId:    playerID,
-		IsReady:     true,
-	})
-	s.Require().NoError(err, "failed to set ready")
-
-	_, err = s.server.EncounterClient.StartCombat(ctx, &dnd5ev1alpha1.StartCombatRequest{
-		EncounterId: encounterID,
-		Theme:       dnd5ev1alpha1.DungeonTheme_DUNGEON_THEME_CRYPT,
-		Difficulty:  dnd5ev1alpha1.DungeonDifficulty_DUNGEON_DIFFICULTY_MEDIUM,
-		Length:      dnd5ev1alpha1.DungeonLength_DUNGEON_LENGTH_SHORT,
-	})
-	s.Require().NoError(err, "failed to start combat")
-	s.T().Log("  ✓ Combat started")
-
-	// 4. Get encounter state to find a monster to attack
-	stateResp, err := s.server.EncounterClient.GetEncounterState(ctx, &dnd5ev1alpha1.GetEncounterStateRequest{
-		EncounterId: encounterID,
-		PlayerId:    playerID,
-	})
-	s.Require().NoError(err, "failed to get encounter state")
-
-	// Find a monster in the encounter
-	var targetMonsterID string
-	for _, entry := range stateResp.GetCombatState().GetTurnOrder() {
-		if entry.GetEntityType() == "monster" {
-			targetMonsterID = entry.GetEntityId()
-			break
-		}
-	}
-	s.Require().NotEmpty(targetMonsterID, "should have a monster target")
+	// 3. Find a target monster
+	targetMonsterID := FindMonsterTarget(s.T(), s.server, ctx, playerID, encounterID)
 	s.T().Logf("  ✓ Found monster target: %s", targetMonsterID)
 
-	// 5. Attack with monk weapon
-	s.T().Log("Step 5: Attacking with monk weapon (shortsword)...")
+	// 4. Attack with monk weapon
+	s.T().Log("Step 3: Attacking with monk weapon (shortsword)...")
 	attackResp, err := s.server.EncounterClient.Attack(ctx, &dnd5ev1alpha1.AttackRequest{
 		EncounterId: encounterID,
 		AttackerId:  characterID,
 		TargetId:    targetMonsterID,
 	})
 	s.Require().NoError(err, "failed to resolve attack")
+	s.Assert().True(attackResp.GetSuccess(), "attack request should succeed: %s", attackResp.GetError())
 
 	result := attackResp.GetResult()
-	s.T().Logf("  ✓ Attack resolved: hit=%v, damage=%d", result.GetHit(), result.GetDamage())
+	s.Require().NotNil(result, "attack result should not be nil")
 
-	// 6. Verify attack worked - bonus strike check requires GetAvailableActions API (#404)
-	// For now, we verify the attack was successful and damage breakdown shows monk weapon
+	// Assert response structure regardless of hit/miss
+	s.Assert().Greater(result.GetAttackRoll(), int32(0), "attack roll should be positive (1d20)")
+	s.Assert().Greater(result.GetAttackTotal(), int32(0), "attack total should be positive (roll + bonus)")
+	s.Assert().Greater(result.GetTargetAc(), int32(0), "target AC should be positive")
+
+	s.T().Logf("  ✓ Attack roll: %d + bonus = %d vs AC %d → %s",
+		result.GetAttackRoll(), result.GetAttackTotal(), result.GetTargetAc(),
+		map[bool]string{true: "HIT", false: "MISS"}[result.GetHit()])
+
 	if result.GetHit() {
+		s.Assert().Greater(result.GetDamage(), int32(0), "damage should be positive on hit")
+		s.Assert().NotEmpty(result.GetDamageType(), "damage type should be set on hit")
+		s.T().Logf("  ✓ Damage: %d (%s)", result.GetDamage(), result.GetDamageType())
+
 		breakdown := result.GetDamageBreakdown()
+		s.Assert().NotNil(breakdown, "damage breakdown should be present on hit")
 		if breakdown != nil {
+			s.Assert().NotEmpty(breakdown.GetComponents(), "damage breakdown should have components")
 			s.T().Log("  Damage breakdown:")
 			for _, comp := range breakdown.GetComponents() {
 				s.T().Logf("    - Source: %s, Dice: %v, Flat: %d, Type: %s",
 					comp.GetSource(), comp.GetFinalDiceRolls(), comp.GetFlatBonus(), comp.GetDamageType())
 			}
 		}
-		s.T().Log("╔══════════════════════════════════════════════════════════════════╗")
-		s.T().Log("║  ✓ TEST PASSED: Monk can attack with monk weapon                 ║")
-		s.T().Log("║  Note: Bonus strike verification needs GetAvailableActions (#404)║")
-		s.T().Log("╚══════════════════════════════════════════════════════════════════╝")
-	} else {
-		s.T().Log("  Attack missed - testing attack functionality only")
-		s.T().Log("╔══════════════════════════════════════════════════════════════════╗")
-		s.T().Log("║  ✓ TEST PASSED: Monk attack mechanics work (miss is valid)       ║")
-		s.T().Log("╚══════════════════════════════════════════════════════════════════╝")
 	}
+
+	s.T().Log("╔══════════════════════════════════════════════════════════════════╗")
+	s.T().Log("║  ✓ TEST PASSED: Monk can attack with monk weapon                 ║")
+	s.T().Log("╚══════════════════════════════════════════════════════════════════╝")
 }
 
 func (s *MonkIntegrationSuite) TestMartialArts_DamageUsesMADie() {
@@ -314,43 +287,11 @@ func (s *MonkIntegrationSuite) TestMartialArts_DamageUsesMADie() {
 	s.T().Logf("  ✓ Created character: %s", characterID)
 
 	// 2. Create encounter and start combat
-	createResp, err := s.server.EncounterClient.CreateEncounter(ctx, &dnd5ev1alpha1.CreateEncounterRequest{
-		CharacterIds: []string{characterID},
-	})
-	s.Require().NoError(err)
-	encounterID := createResp.GetEncounterId()
-
-	_, err = s.server.EncounterClient.SetReady(ctx, &dnd5ev1alpha1.SetReadyRequest{
-		EncounterId: encounterID,
-		PlayerId:    playerID,
-		IsReady:     true,
-	})
-	s.Require().NoError(err)
-
-	_, err = s.server.EncounterClient.StartCombat(ctx, &dnd5ev1alpha1.StartCombatRequest{
-		EncounterId: encounterID,
-		Theme:       dnd5ev1alpha1.DungeonTheme_DUNGEON_THEME_CRYPT,
-		Difficulty:  dnd5ev1alpha1.DungeonDifficulty_DUNGEON_DIFFICULTY_MEDIUM,
-		Length:      dnd5ev1alpha1.DungeonLength_DUNGEON_LENGTH_SHORT,
-	})
-	s.Require().NoError(err)
+	encounterID := CreateEncounterAndStartCombat(s.T(), s.server, ctx, playerID, characterID)
 	s.T().Log("  ✓ Combat started")
 
 	// 3. Get monster target
-	stateResp, err := s.server.EncounterClient.GetEncounterState(ctx, &dnd5ev1alpha1.GetEncounterStateRequest{
-		EncounterId: encounterID,
-		PlayerId:    playerID,
-	})
-	s.Require().NoError(err)
-
-	var targetMonsterID string
-	for _, entry := range stateResp.GetCombatState().GetTurnOrder() {
-		if entry.GetEntityType() == "monster" {
-			targetMonsterID = entry.GetEntityId()
-			break
-		}
-	}
-	s.Require().NotEmpty(targetMonsterID)
+	targetMonsterID := FindMonsterTarget(s.T(), s.server, ctx, playerID, encounterID)
 
 	// 4. Attack (will use equipped monk weapon or unarmed)
 	s.T().Log("Step 2: Attacking to verify damage breakdown...")
