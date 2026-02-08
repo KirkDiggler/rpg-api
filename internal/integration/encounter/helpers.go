@@ -7,6 +7,7 @@ package encounter_integration
 import (
 	"context"
 	"fmt"
+	"testing"
 
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
 	"github.com/KirkDiggler/rpg-api/internal/integration/harness"
@@ -19,17 +20,17 @@ type CharacterBuilder struct {
 	draftID string
 
 	// Configuration
-	name string
-	race     dnd5ev1alpha1.Race
-	subrace  dnd5ev1alpha1.Subrace
-	class    dnd5ev1alpha1.Class
+	name       string
+	race       dnd5ev1alpha1.Race
+	subrace    dnd5ev1alpha1.Subrace
+	class      dnd5ev1alpha1.Class
 	background dnd5ev1alpha1.Background
-	
+
 	// Ability scores (standard array by default)
 	str, dex, con, int_, wis, cha int32
-	
+
 	// Class-specific choices
-	skills       []dnd5ev1alpha1.Skill
+	skills        []dnd5ev1alpha1.Skill
 	fightingStyle dnd5ev1alpha1.FightingStyle
 }
 
@@ -257,5 +258,82 @@ func (b *CharacterBuilder) handleRemainingChoices(draft *dnd5ev1alpha1.Character
 	// For now, we'll need to be explicit about equipment in the builder.
 	_ = draft.Validation.Issues
 
+	return nil
+}
+
+// =============================================================================
+// SHARED ENCOUNTER HELPERS
+// These are suite-agnostic: they take a testing.T + TestServer instead of a
+// specific suite receiver. Any class integration suite can use them.
+// =============================================================================
+
+// CreateEncounterAndStartCombat creates an encounter with the given character,
+// sets the player ready, and starts combat. Returns the encounter ID.
+func CreateEncounterAndStartCombat(t *testing.T, server *harness.TestServer, ctx context.Context, playerID, characterID string) string {
+	t.Helper()
+
+	createResp, err := server.EncounterClient.CreateEncounter(ctx, &dnd5ev1alpha1.CreateEncounterRequest{
+		CharacterIds: []string{characterID},
+	})
+	if err != nil {
+		t.Fatalf("failed to create encounter: %v", err)
+	}
+	encounterID := createResp.GetEncounterId()
+	if encounterID == "" {
+		t.Fatal("encounter ID should not be empty")
+	}
+
+	_, err = server.EncounterClient.SetReady(ctx, &dnd5ev1alpha1.SetReadyRequest{
+		EncounterId: encounterID,
+		PlayerId:    playerID,
+		IsReady:     true,
+	})
+	if err != nil {
+		t.Fatalf("failed to set ready: %v", err)
+	}
+
+	_, err = server.EncounterClient.StartCombat(ctx, &dnd5ev1alpha1.StartCombatRequest{
+		EncounterId: encounterID,
+		Theme:       dnd5ev1alpha1.DungeonTheme_DUNGEON_THEME_CRYPT,
+		Difficulty:  dnd5ev1alpha1.DungeonDifficulty_DUNGEON_DIFFICULTY_MEDIUM,
+		Length:      dnd5ev1alpha1.DungeonLength_DUNGEON_LENGTH_SHORT,
+	})
+	if err != nil {
+		t.Fatalf("failed to start combat: %v", err)
+	}
+
+	return encounterID
+}
+
+// FindMonsterTarget finds the first monster in the encounter's turn order.
+func FindMonsterTarget(t *testing.T, server *harness.TestServer, ctx context.Context, playerID, encounterID string) string {
+	t.Helper()
+
+	stateResp, err := server.EncounterClient.GetEncounterState(ctx, &dnd5ev1alpha1.GetEncounterStateRequest{
+		EncounterId: encounterID,
+		PlayerId:    playerID,
+	})
+	if err != nil {
+		t.Fatalf("failed to get encounter state: %v", err)
+	}
+
+	for _, entry := range stateResp.GetCombatState().GetTurnOrder() {
+		if entry.GetEntityType() == "monster" {
+			return entry.GetEntityId()
+		}
+	}
+
+	t.Fatal("no monster found in encounter")
+	return ""
+}
+
+// FindCharacterInState finds a character by ID in the encounter state response.
+// Returns nil if the character is not found.
+func FindCharacterInState(resp *dnd5ev1alpha1.GetEncounterStateResponse, characterID string) *dnd5ev1alpha1.Character {
+	for _, member := range resp.GetParty() {
+		if member.GetCharacter() != nil && member.GetCharacter().GetId() == characterID {
+			return member.GetCharacter()
+		}
+	}
 	return nil
 }

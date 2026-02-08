@@ -468,13 +468,13 @@ func (s *BarbarianIntegrationSuite) TestRage_Resistance_AppliedWhenTakingDamage(
 	for _, monsterTurn := range endTurnResp.GetMonsterTurns() {
 		s.T().Logf("  Monster %s took actions:", monsterTurn.GetMonsterName())
 		for _, action := range monsterTurn.GetActions() {
-			s.T().Logf("    - %s targeting %s (success=%v)", 
+			s.T().Logf("    - %s targeting %s (success=%v)",
 				action.GetActionType(), action.GetTargetId(), action.GetSuccess())
-			
+
 			// Check if this is an attack on our character
 			isAttackAction := action.GetActionType() == dnd5ev1alpha1.MonsterActionType_MONSTER_ACTION_TYPE_MELEE_ATTACK ||
 				action.GetActionType() == dnd5ev1alpha1.MonsterActionType_MONSTER_ACTION_TYPE_RANGED_ATTACK
-			
+
 			if action.GetTargetId() == characterID && isAttackAction {
 				monsterAttackedUs = true
 				attackOnUs = action.GetAttackResult()
@@ -510,14 +510,14 @@ func (s *BarbarianIntegrationSuite) TestRage_Resistance_AppliedWhenTakingDamage(
 			for _, comp := range breakdown.GetComponents() {
 				s.T().Logf("    Component: source=%s, type=%s, multiplier=%v",
 					comp.GetSource(), comp.GetDamageType(), comp.GetMultiplier())
-				
+
 				// Resistance shows as 0.5 multiplier for B/P/S damage
 				if comp.GetMultiplier() == 0.5 {
 					foundResistance = true
 					s.T().Logf("    → Found resistance multiplier (0.5x) on %s damage!", comp.GetDamageType())
 				}
 			}
-			
+
 			if foundResistance {
 				s.T().Log("╔══════════════════════════════════════════════════════════════════╗")
 				s.T().Log("║  ✓ TEST PASSED: Rage resistance (0.5x) applied to damage         ║")
@@ -713,10 +713,10 @@ func (s *BarbarianIntegrationSuite) TestBarbarianUnarmoredDefense_ACCalculation(
 			if char.GetCombatStats() != nil {
 				armorClass = char.GetCombatStats().GetArmorClass()
 				s.T().Logf("  ✓ Character AC: %d", armorClass)
-				
+
 				// Also log ability scores for verification
 				if char.GetAbilityScores() != nil {
-					s.T().Logf("  DEX: %d, CON: %d", 
+					s.T().Logf("  DEX: %d, CON: %d",
 						char.GetAbilityScores().GetDexterity(),
 						char.GetAbilityScores().GetConstitution())
 				}
@@ -739,8 +739,8 @@ func (s *BarbarianIntegrationSuite) TestBarbarianUnarmoredDefense_ACCalculation(
 	} else {
 		expectedAC = 13 // Fallback
 	}
-	
-	s.Assert().Equal(expectedAC, armorClass, 
+
+	s.Assert().Equal(expectedAC, armorClass,
 		"Barbarian Unarmored Defense should be 10 + DEX mod + CON mod")
 
 	if armorClass == expectedAC {

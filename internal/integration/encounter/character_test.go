@@ -268,9 +268,9 @@ func (s *CharacterCreationSuite) TestInspectBarbarianChoices() {
 	// Log all choices to understand what's needed
 	s.T().Logf("\n📋 Draft Choices (%d):", len(draft.GetChoices()))
 	for _, choice := range draft.GetChoices() {
-		s.T().Logf("  • [%s] ID: %s, Source: %s, OptionID: %s", 
-			choice.GetCategory(), 
-			choice.GetChoiceId(), 
+		s.T().Logf("  • [%s] ID: %s, Source: %s, OptionID: %s",
+			choice.GetCategory(),
+			choice.GetChoiceId(),
 			choice.GetSource(),
 			choice.GetOptionId())
 	}
