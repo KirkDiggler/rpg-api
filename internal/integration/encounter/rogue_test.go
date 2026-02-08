@@ -186,7 +186,8 @@ func (s *RogueIntegrationSuite) createRogueCharacter(playerID string) string {
 	s.Require().NoError(err, "failed to set background")
 
 	// Step 6: Set ability scores (Rogue-optimized: DEX > WIS > CON)
-	// Human +1 to all: DEX 16(+3), WIS 15(+2), CON 14(+2), INT 13(+1), STR 11, CHA 9
+	// Base: STR 10, DEX 15, CON 13, INT 12, WIS 14, CHA 8
+	// Human +1 to all → STR 11(+0), DEX 16(+3), CON 14(+2), INT 13(+1), WIS 15(+2), CHA 9(-1)
 	_, err = s.server.CharacterClient.UpdateAbilityScores(ctx, &dnd5ev1alpha1.UpdateAbilityScoresRequest{
 		DraftId: draftID,
 		ScoresInput: &dnd5ev1alpha1.UpdateAbilityScoresRequest_AbilityScores{
@@ -328,22 +329,12 @@ func (s *RogueIntegrationSuite) TestSneakAttack_ExtraDamageOnHit() {
 			s.T().Log("╚══════════════════════════════════════════════════════════════════╝")
 		} else {
 			// Sneak Attack requires advantage OR an ally adjacent to the target.
-			// In a solo encounter (1 character), sneak attack may not trigger
-			// unless the rogue has advantage from another source.
-			s.T().Log("  ⚠ Sneak Attack not in breakdown — may not have qualified")
-			s.T().Log("    (Requires: advantage OR ally within 5ft of target)")
-			s.T().Log("    In solo encounter, Sneak Attack may not trigger without advantage")
-			s.T().Log("╔══════════════════════════════════════════════════════════════════╗")
-			s.T().Log("║  ~ TEST NOTE: Hit confirmed, Sneak Attack didn't trigger          ║")
-			s.T().Log("║    (Expected in solo encounters without advantage source)         ║")
-			s.T().Log("╚══════════════════════════════════════════════════════════════════╝")
+			// In a solo encounter (1 character), qualification isn't guaranteed.
+			s.T().Log("  Sneak Attack not in breakdown (no advantage/ally in solo encounter)")
+			s.T().Skip("Skipping: Sneak Attack qualification requires advantage or adjacent ally")
 		}
 	} else {
-		s.T().Log("  ⚠ Attack missed — cannot verify Sneak Attack damage")
-		s.T().Log("  Note: Dice-dependent; verifies API plumbing even on miss")
-		s.T().Log("╔══════════════════════════════════════════════════════════════════╗")
-		s.T().Log("║  ~ TEST PASSED: Attack resolved correctly (miss is valid)        ║")
-		s.T().Log("╚══════════════════════════════════════════════════════════════════╝")
+		s.T().Skip("Attack missed; skipping Sneak Attack verification (dice-dependent)")
 	}
 }
 
@@ -430,11 +421,11 @@ func (s *RogueIntegrationSuite) TestRogue_CharacterCreation_WithExpertise() {
 	char := charResp.GetCharacter()
 	s.Require().NotNil(char, "character should not be nil")
 
-	// Verify basic stats
-	s.T().Logf("  Class: %s", char.GetClass())
-	s.T().Logf("  Level: %d", char.GetLevel())
-	s.T().Logf("  HP: %d", char.GetCombatStats().GetHitPointMaximum())
-	s.T().Logf("  AC: %d", char.GetCombatStats().GetArmorClass())
+	// Assert core stats
+	s.Assert().Equal(dnd5ev1alpha1.Class_CLASS_ROGUE, char.GetClass(), "Class should be Rogue")
+	s.Assert().Equal(int32(1), char.GetLevel(), "Level should be 1")
+	s.T().Logf("  ✓ Class: %s, Level: %d", char.GetClass(), char.GetLevel())
+	s.T().Logf("  HP: %d, AC: %d", char.GetCombatStats().GetHitPointMaximum(), char.GetCombatStats().GetArmorClass())
 
 	if char.GetAbilityScores() != nil {
 		s.T().Logf("  DEX: %d, WIS: %d, CON: %d",
@@ -443,7 +434,7 @@ func (s *RogueIntegrationSuite) TestRogue_CharacterCreation_WithExpertise() {
 			char.GetAbilityScores().GetConstitution())
 	}
 
-	// Verify rogue has Sneak Attack condition (auto-applied at level 1)
+	// Rogue should have Sneak Attack condition auto-applied at level 1
 	conditions := char.GetActiveConditions()
 	s.T().Logf("  Active conditions: %d", len(conditions))
 	hasSneakAttack := false
@@ -454,13 +445,9 @@ func (s *RogueIntegrationSuite) TestRogue_CharacterCreation_WithExpertise() {
 		}
 	}
 
-	if hasSneakAttack {
-		s.T().Log("  ✓ Sneak Attack condition active")
-	} else {
-		s.T().Log("  ⚠ Sneak Attack condition not listed — may be applied at combat start")
-	}
+	s.Assert().True(hasSneakAttack, "Rogue should have Sneak Attack condition at level 1")
 
 	s.T().Log("╔══════════════════════════════════════════════════════════════════╗")
-	s.T().Log("║  ✓ TEST PASSED: Rogue character created with expertise            ║")
+	s.T().Log("║  ✓ TEST PASSED: Rogue created with expertise + Sneak Attack       ║")
 	s.T().Log("╚══════════════════════════════════════════════════════════════════╝")
 }

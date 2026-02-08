@@ -198,8 +198,9 @@ func (s *FighterIntegrationSuite) createFighterCharacter(playerID string) string
 	})
 	s.Require().NoError(err, "failed to set background")
 
-	// Step 6: Set ability scores (Fighter-optimized: STR > CON > DEX)
-	// Human +1 to all: STR 16(+3), DEX 15(+2), CON 14(+2), INT 9, WIS 13(+1), CHA 11
+	// Step 6: Set ability scores (Fighter-optimized: STR > DEX > CON)
+	// Base: STR 15, DEX 14, CON 13, INT 8, WIS 12, CHA 10
+	// Human +1 to all → STR 16(+3), DEX 15(+2), CON 14(+2), INT 9(-1), WIS 13(+1), CHA 11(+0)
 	_, err = s.server.CharacterClient.UpdateAbilityScores(ctx, &dnd5ev1alpha1.UpdateAbilityScoresRequest{
 		DraftId: draftID,
 		ScoresInput: &dnd5ev1alpha1.UpdateAbilityScoresRequest_AbilityScores{
@@ -322,24 +323,22 @@ func (s *FighterIntegrationSuite) TestFightingStyleDefense_ACBonus() {
 
 	// Chain mail = AC 16 (heavy armor, no DEX), shield = +2, Defense = +1 → 19
 	// OR if no shield: Chain mail 16 + Defense 1 = 17
-	// KNOWN BUG: Equipment from character creation may not populate equipment slots.
-	// When this is fixed, AC should be 17-19 (chain mail + defense + optional shield).
-	// Without equipment: AC = 10 + DEX mod = 12 (which is what we currently see).
+	// KNOWN BUG: Equipment from character creation does not populate equipment slots.
+	// When fixed, AC should be 17-19. Without equipment: AC = 10 + DEX mod.
 	s.T().Logf("  Expected (when equipment slots work): Chain mail(16) + Defense(1) = 17+")
-	s.T().Logf("  Known bug: equipment not populating slots → AC = 10 + DEX mod")
 
-	if actualAC >= 17 {
-		s.T().Log("  ✓ Equipment slots working! Chain mail + Defense style applied")
-	} else {
-		s.T().Logf("  ⚠ AC is %d (equipment slots bug — chain mail not equipped)", actualAC)
-		s.T().Log("  This is a known issue tracked separately from this PR")
+	if actualAC < 17 {
+		s.T().Logf("  ⚠ AC is %d — equipment slots bug (chain mail not equipped)", actualAC)
+		s.T().Skip("Skipping: equipment slot population bug prevents Defense style AC verification")
+		return
 	}
 
-	// At minimum, verify AC is positive and reasonable
-	s.Assert().Greater(actualAC, int32(0), "AC should be positive")
+	// Equipment slots working — verify Defense style bonus
+	s.Assert().GreaterOrEqual(actualAC, int32(17),
+		"Fighter with chain mail + Defense style should have AC >= 17 (16 base + 1 defense)")
 
 	s.T().Log("╔══════════════════════════════════════════════════════════════════╗")
-	s.T().Logf("║  ~ TEST: Fighter AC = %d (equipment slots bug — see known issues)║", actualAC)
+	s.T().Logf("║  ✓ TEST PASSED: Fighter AC = %d (chain mail + Defense style)     ║", actualAC)
 	s.T().Log("╚══════════════════════════════════════════════════════════════════╝")
 }
 
@@ -421,21 +420,25 @@ func (s *FighterIntegrationSuite) TestSecondWind_ActivateFeature_Success() {
 	hpAfterSecondWind := char.GetCurrentHitPoints()
 	s.T().Logf("  ✓ HP after Second Wind: %d/%d", hpAfterSecondWind, maxHP)
 
-	// If we took damage, HP should increase. If not, it stays at max (no overhealing).
-	if hpAfterMonsters < maxHP {
-		s.Assert().Greater(hpAfterSecondWind, hpAfterMonsters,
-			"Second Wind should heal when below max HP")
-		healed := hpAfterSecondWind - hpAfterMonsters
-		s.T().Logf("  ✓ Healed: %d HP", healed)
-		// Second Wind heals 1d10 + fighter level (1) = 2-11 HP
-		s.Assert().GreaterOrEqual(healed, int32(2), "Minimum heal should be 1d10(1) + level(1) = 2")
-		s.Assert().LessOrEqual(healed, int32(11), "Maximum heal should be 1d10(10) + level(1) = 11")
-	} else {
-		s.T().Log("  ⚠ No damage taken — Second Wind still activated (verifies API plumbing)")
+	// Second Wind should never overheal beyond max HP
+	s.Assert().LessOrEqual(hpAfterSecondWind, maxHP, "Second Wind should not increase HP above max HP")
+
+	// If no damage was taken, we can't verify healing behavior — skip
+	if hpAfterMonsters == maxHP {
+		s.T().Skip("No damage taken before Second Wind; skipping heal assertions (dice-dependent)")
+		return
 	}
 
+	s.Assert().Greater(hpAfterSecondWind, hpAfterMonsters,
+		"Second Wind should heal when below max HP")
+	healed := hpAfterSecondWind - hpAfterMonsters
+	s.T().Logf("  ✓ Healed: %d HP", healed)
+	// Second Wind heals 1d10 + fighter level (1) = 2-11 HP
+	s.Assert().GreaterOrEqual(healed, int32(2), "Minimum heal should be 1d10(1) + level(1) = 2")
+	s.Assert().LessOrEqual(healed, int32(11), "Maximum heal should be 1d10(10) + level(1) = 11")
+
 	s.T().Log("╔══════════════════════════════════════════════════════════════════╗")
-	s.T().Log("║  ✓ TEST PASSED: Fighter Second Wind activates via gRPC            ║")
+	s.T().Log("║  ✓ TEST PASSED: Fighter Second Wind heals correctly               ║")
 	s.T().Log("╚══════════════════════════════════════════════════════════════════╝")
 }
 
