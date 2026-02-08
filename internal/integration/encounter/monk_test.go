@@ -508,6 +508,19 @@ func (s *MonkIntegrationSuite) TestPatientDefense_ActivateFeature_Success() {
 	s.Require().NoError(err, "failed to activate patient defense")
 	s.Require().True(activateResp.GetSuccess(), "patient defense should succeed: %s", activateResp.GetMessage())
 	s.T().Logf("  ✓ Patient Defense activated: %s", activateResp.GetMessage())
+
+	// 4. Verify DodgeActive in encounter state
+	s.T().Log("Step 4: Verifying DodgeActive in encounter state...")
+	stateResp, err := s.server.EncounterClient.GetEncounterState(ctx, &dnd5ev1alpha1.GetEncounterStateRequest{
+		EncounterId: encounterID,
+		PlayerId:    playerID,
+	})
+	s.Require().NoError(err, "failed to get encounter state")
+
+	actionEconomy := stateResp.GetCombatState().GetCurrentTurn().GetActionEconomy()
+	s.Require().NotNil(actionEconomy, "ActionEconomy must be present after Patient Defense")
+	s.Require().True(actionEconomy.GetDodgeActive(), "DodgeActive should be true after Patient Defense")
+	s.T().Log("  ✓ DodgeActive confirmed in encounter state")
 }
 
 func (s *MonkIntegrationSuite) TestStepOfTheWind_ActivateFeature_Success() {
@@ -538,6 +551,19 @@ func (s *MonkIntegrationSuite) TestStepOfTheWind_ActivateFeature_Success() {
 	s.Require().NoError(err, "failed to activate step of the wind")
 	s.Require().True(activateResp.GetSuccess(), "step of the wind should succeed: %s", activateResp.GetMessage())
 	s.T().Logf("  ✓ Step of the Wind activated: %s", activateResp.GetMessage())
+
+	// 4. Verify DisengageActive in encounter state
+	s.T().Log("Step 4: Verifying DisengageActive in encounter state...")
+	stateResp, err := s.server.EncounterClient.GetEncounterState(ctx, &dnd5ev1alpha1.GetEncounterStateRequest{
+		EncounterId: encounterID,
+		PlayerId:    playerID,
+	})
+	s.Require().NoError(err, "failed to get encounter state")
+
+	actionEconomy := stateResp.GetCombatState().GetCurrentTurn().GetActionEconomy()
+	s.Require().NotNil(actionEconomy, "ActionEconomy must be present after Step of the Wind")
+	s.Require().True(actionEconomy.GetDisengageActive(), "DisengageActive should be true after Step of the Wind")
+	s.T().Log("  ✓ DisengageActive confirmed in encounter state")
 }
 
 func (s *MonkIntegrationSuite) TestKiExhaustion_CannotActivateWhenDepleted() {
