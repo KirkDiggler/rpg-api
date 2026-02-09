@@ -225,14 +225,14 @@ func (s *MonkIntegrationSuite) TestMartialArts_CanAttackInCombat() {
 	s.T().Logf("  ✓ Found monster target: %s", targetMonsterID)
 
 	// 4. Attack with monk weapon
-	s.T().Log("Step 3: Attacking with monk weapon (shortsword)...")
+	s.T().Log("Step 4: Attacking with monk weapon (shortsword)...")
 	attackResp, err := s.server.EncounterClient.Attack(ctx, &dnd5ev1alpha1.AttackRequest{
 		EncounterId: encounterID,
 		AttackerId:  characterID,
 		TargetId:    targetMonsterID,
 	})
 	s.Require().NoError(err, "failed to resolve attack")
-	s.Assert().True(attackResp.GetSuccess(), "attack request should succeed: %s", attackResp.GetError())
+	s.Require().True(attackResp.GetSuccess(), "attack request should succeed: %s", attackResp.GetError())
 
 	result := attackResp.GetResult()
 	s.Require().NotNil(result, "attack result should not be nil")
