@@ -4396,34 +4396,60 @@ func (o *Orchestrator) executeStrike(
 		monsterData.HitPoints = newHP
 	}
 
-	// 12. Two-weapon fighting: grant off-hand strike after main-hand attack
+	// 12. Grant bonus strike after main-hand attack
+	// Priority: Monks get Martial Arts check first, others get TWF first
 	var grantedAction *GrantedAction
-	if attackHand == combat.AttackHandMain && equipmentSlots != nil {
-		var mainWeapon, offWeapon *actions.EquippedWeaponInfo
-		if mainID := equipmentSlots.Get(character.SlotMainHand); mainID != "" {
-			mainWeapon = &actions.EquippedWeaponInfo{WeaponID: mainID}
-		}
-		if offID := equipmentSlots.Get(character.SlotOffHand); offID != "" {
-			offWeapon = &actions.EquippedWeaponInfo{WeaponID: offID}
+
+	if attackHand == combat.AttackHandMain {
+		isMo := charOutput.Character.Data.ClassID == classes.Monk
+
+		// 12a. Martial Arts: grant bonus strike (Monk only)
+		if isMo {
+			maResult, _ := actions.CheckAndGrantMartialArtsBonusStrike(ctx, &actions.MartialArtsGranterInput{
+				CharacterID:   input.EntityID,
+				WeaponID:      weapon.ID,
+				IsUnarmed:     false,
+				SourceAbility: "attack",
+				EventBus:      bus,
+			})
+			if maResult != nil && maResult.Granted {
+				grantedAction = &GrantedAction{
+					ID:     maResult.Action.GetID(),
+					Type:   "martial-arts-bonus-strike",
+					Name:   "Martial Arts Bonus Strike",
+					Reason: maResult.Reason,
+				}
+			}
 		}
 
-		twfResult, _ := actions.CheckAndGrantOffHandStrike(ctx, &actions.TwoWeaponGranterInput{
-			CharacterID:    input.EntityID,
-			AttackHand:     actions.AttackHand(attackHand),
-			MainHandWeapon: mainWeapon,
-			OffHandWeapon:  offWeapon,
-			ActionHolder:   char,
-			EventBus:       bus,
-		})
-		if twfResult != nil && twfResult.Granted {
-			// Grant off-hand attack capacity
-			actionEconomy.OffHandAttacksRemaining++
-			grantedAction = &GrantedAction{
-				ID:       twfResult.Action.GetID(),
-				Type:     "off-hand-strike",
-				Name:     "Off-Hand Strike",
-				Reason:   twfResult.Reason,
-				WeaponID: twfResult.Action.GetWeaponID(),
+		// 12b. Two-weapon fighting: grant off-hand strike
+		// For Monks, only triggers if Martial Arts didn't grant
+		if grantedAction == nil && equipmentSlots != nil {
+			var mainWeapon, offWeapon *actions.EquippedWeaponInfo
+			if mainID := equipmentSlots.Get(character.SlotMainHand); mainID != "" {
+				mainWeapon = &actions.EquippedWeaponInfo{WeaponID: mainID}
+			}
+			if offID := equipmentSlots.Get(character.SlotOffHand); offID != "" {
+				offWeapon = &actions.EquippedWeaponInfo{WeaponID: offID}
+			}
+
+			twfResult, _ := actions.CheckAndGrantOffHandStrike(ctx, &actions.TwoWeaponGranterInput{
+				CharacterID:    input.EntityID,
+				AttackHand:     actions.AttackHand(attackHand),
+				MainHandWeapon: mainWeapon,
+				OffHandWeapon:  offWeapon,
+				ActionHolder:   char,
+				EventBus:       bus,
+			})
+			if twfResult != nil && twfResult.Granted {
+				actionEconomy.OffHandAttacksRemaining++
+				grantedAction = &GrantedAction{
+					ID:       twfResult.Action.GetID(),
+					Type:     "off-hand-strike",
+					Name:     "Off-Hand Strike",
+					Reason:   twfResult.Reason,
+					WeaponID: twfResult.Action.GetWeaponID(),
+				}
 			}
 		}
 	}

@@ -2475,18 +2475,18 @@ func (s *OrchestratorTestSuite) TestResolveAttack_NoEquippedWeapon_FallsBackToGr
 		TargetID:    "goblin-1",
 	})
 
-	// Assert - Should succeed with fallback to greataxe
+	// Assert - Should succeed with fallback to unarmed strike
 	s.Require().NoError(err)
 	s.Require().NotNil(output)
 	s.Assert().NotNil(output.Result)
 
-	// Greataxe does slashing damage
+	// Unarmed strike does bludgeoning damage
 	if output.Result.Hit {
-		s.Assert().Equal(damage.Slashing, output.Result.DamageType)
+		s.Assert().Equal(damage.Bludgeoning, output.Result.DamageType)
 	}
 }
 
-func (s *OrchestratorTestSuite) TestResolveAttack_UnknownWeaponID_FallsBackToGreataxe() {
+func (s *OrchestratorTestSuite) TestResolveAttack_UnknownWeaponID_FallsBackToUnarmedStrike() {
 	// Arrange - Create test character data with an unknown weapon ID
 	charData := createTestCharacterData("char-1", "Grog")
 	charData.EquipmentSlots = character.EquipmentSlots{
@@ -2524,13 +2524,13 @@ func (s *OrchestratorTestSuite) TestResolveAttack_UnknownWeaponID_FallsBackToGre
 		TargetID:    "goblin-1",
 	})
 
-	// Assert - Should succeed with fallback to greataxe
+	// Assert - Should succeed with fallback to unarmed strike
 	s.Require().NoError(err)
 	s.Require().NotNil(output)
 	s.Assert().NotNil(output.Result)
 }
 
-func (s *OrchestratorTestSuite) TestResolveAttack_NilEquipmentSlots_FallsBackToGreataxe() {
+func (s *OrchestratorTestSuite) TestResolveAttack_NilEquipmentSlots_FallsBackToUnarmedStrike() {
 	// Arrange - Create test character data with nil equipment slots
 	charData := createTestCharacterData("char-1", "Grog")
 	charData.EquipmentSlots = nil // No equipment data at all
