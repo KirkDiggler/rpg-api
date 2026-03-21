@@ -388,11 +388,35 @@ func (o *Orchestrator) ResolveAttack(ctx context.Context, input *ResolveAttackIn
 		monsterData.HitPoints = newHP
 	}
 
-	// 11a. Two-weapon fighting: grant off-hand strike after main-hand attack
-	// API just extracts slot contents and passes to toolkit - toolkit decides if conditions are met
+	// 11. Grant bonus strike after main-hand attack
+	// Priority: Monks get Martial Arts check first, others get TWF first
 	var grantedAction *GrantedAction
-	if equipmentSlots != nil {
-		// Build weapon info from slots - pass nil if slot is empty
+
+	isMo := charOutput.Character.Data.ClassID == classes.Monk
+
+	// 11a. Martial Arts: grant bonus strike after Attack action (Monk only)
+	if isMo {
+		maResult, _ := actions.CheckAndGrantMartialArtsBonusStrike(ctx, &actions.MartialArtsGranterInput{
+			CharacterID:   input.AttackerID,
+			WeaponID:      weapon.ID,
+			IsUnarmed:     false, // TODO: Detect unarmed strikes when implemented
+			SourceAbility: "attack",
+			EventBus:      bus,
+		})
+		if maResult != nil && maResult.Granted {
+			grantedAction = &GrantedAction{
+				ID:     maResult.Action.GetID(),
+				Type:   "martial-arts-bonus-strike",
+				Name:   "Martial Arts Bonus Strike",
+				Reason: maResult.Reason,
+			}
+		}
+	}
+
+	// 11b. Two-weapon fighting: grant off-hand strike after main-hand attack
+	// For Monks, only triggers if Martial Arts didn't grant
+	// For non-Monks, this is the primary bonus strike path
+	if grantedAction == nil && equipmentSlots != nil {
 		var mainWeapon, offWeapon *actions.EquippedWeaponInfo
 		if mainID := equipmentSlots.Get(character.SlotMainHand); mainID != "" {
 			mainWeapon = &actions.EquippedWeaponInfo{WeaponID: mainID}
@@ -401,7 +425,6 @@ func (o *Orchestrator) ResolveAttack(ctx context.Context, input *ResolveAttackIn
 			offWeapon = &actions.EquippedWeaponInfo{WeaponID: offID}
 		}
 
-		// Let toolkit check all conditions (is it a weapon? is it light? etc.)
 		twfResult, _ := actions.CheckAndGrantOffHandStrike(ctx, &actions.TwoWeaponGranterInput{
 			CharacterID:    input.AttackerID,
 			AttackHand:     actions.AttackHand(input.AttackHand),
@@ -417,27 +440,6 @@ func (o *Orchestrator) ResolveAttack(ctx context.Context, input *ResolveAttackIn
 				Name:     "Off-Hand Strike",
 				Reason:   twfResult.Reason,
 				WeaponID: twfResult.Action.GetWeaponID(),
-			}
-		}
-	}
-
-	// 11b. Martial Arts: grant bonus strike after Attack action (Monk only)
-	// Only triggers if no action was already granted (TWF takes priority if both apply)
-	// The granter checks if the weapon is a monk weapon internally
-	if grantedAction == nil && charOutput.Character.Data.ClassID == classes.Monk {
-		maResult, _ := actions.CheckAndGrantMartialArtsBonusStrike(ctx, &actions.MartialArtsGranterInput{
-			CharacterID:   input.AttackerID,
-			WeaponID:      weapon.ID,
-			IsUnarmed:     false,    // TODO: Detect unarmed strikes when implemented
-			SourceAbility: "attack", // This is from the Attack action
-			EventBus:      bus,
-		})
-		if maResult != nil && maResult.Granted {
-			grantedAction = &GrantedAction{
-				ID:     maResult.Action.GetID(),
-				Type:   "martial-arts-bonus-strike",
-				Name:   "Martial Arts Bonus Strike",
-				Reason: maResult.Reason,
 			}
 		}
 	}
