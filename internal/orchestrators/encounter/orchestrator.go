@@ -4275,6 +4275,9 @@ func (o *Orchestrator) ExecuteAction(
 	case pb.ActionId_ACTION_ID_FLURRY_STRIKE:
 		return o.executeFlurryStrike(ctx, input, encOutput.Data, actionEconomy)
 
+	case pb.ActionId_ACTION_ID_UNARMED_STRIKE:
+		return o.executeUnarmedStrike(ctx, input, encOutput.Data, actionEconomy)
+
 	case pb.ActionId_ACTION_ID_MOVE:
 		return o.executeMove(ctx, input, encOutput.Data, actionEconomy)
 
@@ -4618,6 +4621,141 @@ func (o *Orchestrator) executeFlurryStrike(
 		Success:            true,
 		ActionEconomy:      actionEconomy,
 		AttackResult:       attackResult,
+		CombatState:        combatState,
+		Room:               encData.RoomData,
+		AvailableAbilities: buildAvailableAbilities(actionEconomy),
+		AvailableActions:   buildAvailableActions(actionEconomy, encData.MovementRemaining),
+	}, nil
+}
+
+// executeUnarmedStrike handles UNARMED_STRIKE actions (Martial Arts bonus strike).
+// Mirrors executeFlurryStrike but consumes bonus action capacity instead of flurry strikes.
+// Martial Arts conditions upgrade the 1d1 base damage via the damage chain.
+func (o *Orchestrator) executeUnarmedStrike(
+	ctx context.Context,
+	input *ExecuteActionInput,
+	encData *encounterrepo.EncounterData,
+	actionEconomy *entities.ActionEconomyState,
+) (*ExecuteActionOutput, error) {
+	// 1. Check bonus action capacity
+	if !actionEconomy.HasBonusAction() {
+		return &ExecuteActionOutput{
+			Success:            false,
+			Error:              "no bonus action remaining",
+			ActionEconomy:      actionEconomy,
+			AvailableAbilities: buildAvailableAbilities(actionEconomy),
+			AvailableActions:   buildAvailableActions(actionEconomy, encData.MovementRemaining),
+		}, nil
+	}
+
+	// 2. Validate target
+	if input.TargetID == "" {
+		return nil, fmt.Errorf("target ID is required for unarmed strike")
+	}
+
+	// 3. Create EventBus
+	bus := events.NewEventBus()
+
+	// 4. Load character
+	charOutput, err := o.charRepo.Get(ctx, characterrepo.GetInput{ID: input.EntityID})
+	if err != nil {
+		return nil, fmt.Errorf("failed to load character: %w", err)
+	}
+
+	char, err := character.LoadFromData(ctx, charOutput.Character.Data, bus)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load character from data: %w", err)
+	}
+
+	// 5. Load monster
+	monsterData := o.findMonsterData(encData, input.TargetID)
+	if monsterData == nil {
+		return nil, fmt.Errorf("monster not found: %s", input.TargetID)
+	}
+
+	monsterInstance, err := monster.LoadFromData(ctx, monsterData, bus)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load monster from data: %w", err)
+	}
+
+	if err = monstertraits.LoadMonsterConditions(ctx, monsterInstance, monsterData.Conditions, bus, o.roller); err != nil {
+		return nil, fmt.Errorf("failed to load monster conditions: %w", err)
+	}
+
+	// 6. Use shared unarmed strike weapon
+	unarmedStrike := unarmedStrikeWeapon()
+
+	// 7. Build GameContext
+	gameCtx := o.buildGameContextFromEquipment(input.EntityID, &unarmedStrike, nil)
+	ctx = gamectx.WithGameContext(ctx, gameCtx)
+
+	// 8. CombatantRegistry
+	registry := gamectx.NewCombatantRegistry()
+	registry.Add(char)
+	registry.Add(monsterInstance)
+	ctx = combat.WithCombatantLookup(ctx, registry)
+
+	// 9. Resolve attack
+	result, err := combat.ResolveAttack(ctx, &combat.AttackInput{
+		AttackerID: input.EntityID,
+		TargetID:   input.TargetID,
+		Weapon:     &unarmedStrike,
+		EventBus:   bus,
+		Roller:     o.roller,
+		AttackHand: combat.AttackHandMain,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("unarmed strike resolution failed: %w", err)
+	}
+
+	// 10. Update monster HP
+	if result.Hit {
+		monsterData.HitPoints = monsterInstance.HP()
+	}
+
+	// 11. Consume bonus action
+	actionEconomy.UseBonusAction()
+
+	// 12. Check for dungeon victory if monster died
+	if monsterInstance.HP() <= 0 {
+		o.checkAndHandleVictory(ctx, input.EncounterID, encData, input.TargetID)
+	}
+
+	// 13. Persist
+	_, err = o.encRepo.Update(ctx, &encounterrepo.UpdateInput{
+		EncounterID:   input.EncounterID,
+		ActionEconomy: actionEconomy,
+		Monsters:      encData.Monsters,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to save encounter state: %w", err)
+	}
+
+	// 14. Build result
+	attackResult := &AttackResult{
+		AttackRoll:      result.AttackRoll,
+		AttackBonus:     result.AttackBonus,
+		TotalAttack:     result.TotalAttack,
+		TargetAC:        result.TargetAC,
+		Hit:             result.Hit,
+		Critical:        result.Critical,
+		IsNaturalTwenty: result.IsNaturalTwenty,
+		IsNaturalOne:    result.IsNaturalOne,
+		DamageRolls:     result.DamageRolls,
+		DamageBonus:     result.DamageBonus,
+		TotalDamage:     result.TotalDamage,
+		DamageType:      result.DamageType,
+	}
+	if result.Breakdown != nil {
+		attackResult.Breakdown = convertToolkitBreakdown(result.Breakdown)
+	}
+
+	combatState := o.buildCombatState(input.EncounterID, encData)
+
+	return &ExecuteActionOutput{
+		Success:            true,
+		AttackResult:       attackResult,
+		ActionEconomy:      actionEconomy,
 		CombatState:        combatState,
 		Room:               encData.RoomData,
 		AvailableAbilities: buildAvailableAbilities(actionEconomy),
