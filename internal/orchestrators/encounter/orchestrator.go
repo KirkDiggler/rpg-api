@@ -1893,6 +1893,19 @@ const (
 	actionCostReaction                          // Requires reaction
 )
 
+// unarmedStrikeWeapon returns the default unarmed strike weapon definition.
+// Base damage is 1d1 (1 + STR mod); Martial Arts conditions upgrade the die
+// automatically through the damage chain.
+func unarmedStrikeWeapon() weapons.Weapon {
+	return weapons.Weapon{
+		ID:         "unarmed-strike",
+		Name:       "Unarmed Strike",
+		Category:   weapons.CategorySimpleMelee,
+		Damage:     "1d1",
+		DamageType: "bludgeoning",
+	}
+}
+
 // getFeatureActionCost returns the action cost for a feature.
 // This maps D&D 5e feature activation costs.
 func getFeatureActionCost(featureID string) actionCostType {
@@ -2307,14 +2320,14 @@ func (o *Orchestrator) ActivateFeature(
 
 // getEquippedWeaponAndSlots retrieves the weapon equipped in the character's mainhand slot
 // along with the full equipment slots data for GameContext building.
-// If no weapon is equipped or the weapon cannot be found, it falls back to a greataxe.
+// If no weapon is equipped or the weapon cannot be found, it falls back to an unarmed strike.
 // This ensures combat never fails due to missing equipment data.
 func (o *Orchestrator) getEquippedWeaponAndSlots(
 	ctx context.Context,
 	characterID string,
 ) (weapons.Weapon, character.EquipmentSlots) {
 	// Default fallback weapon
-	fallbackWeapon, _ := weapons.GetByID(weapons.Greataxe)
+	fallbackWeapon := unarmedStrikeWeapon()
 
 	// Try to load character data (equipment slots are part of character.Data)
 	charResult, err := o.charRepo.Get(ctx, characterrepo.GetInput{
@@ -4531,13 +4544,7 @@ func (o *Orchestrator) executeFlurryStrike(
 	}
 
 	// 6. Flurry strikes are always unarmed — use unarmed strike weapon
-	unarmedStrike := weapons.Weapon{
-		ID:         "unarmed-strike",
-		Name:       "Unarmed Strike",
-		Category:   weapons.CategorySimpleMelee,
-		Damage:     "1d1", // Base 1 + STR mod; Martial Arts upgrades this via conditions
-		DamageType: "bludgeoning",
-	}
+	unarmedStrike := unarmedStrikeWeapon()
 
 	// 7. Build GameContext
 	gameCtx := o.buildGameContextFromEquipment(input.EntityID, &unarmedStrike, nil)
