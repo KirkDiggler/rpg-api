@@ -428,7 +428,7 @@ func (o *Orchestrator) ResolveAttack(ctx context.Context, input *ResolveAttackIn
 		maResult, _ := actions.CheckAndGrantMartialArtsBonusStrike(ctx, &actions.MartialArtsGranterInput{
 			CharacterID:   input.AttackerID,
 			WeaponID:      weapon.ID,
-			IsUnarmed:     false, // TODO: Detect unarmed strikes when implemented
+			IsUnarmed:     false,    // TODO: Detect unarmed strikes when implemented
 			SourceAbility: "attack", // This is from the Attack action
 			EventBus:      bus,
 		})
@@ -3350,11 +3350,44 @@ func (o *Orchestrator) StartCombat(
 	// 11. Place monsters from the dungeon's encounter
 	monsters := o.placeMonsters(roomData, startRoom)
 
-	// 12. Roll initiative
+	// 12. Perform long rest for all characters before dungeon starts
+	// Restores HP, feature charges (Rage, Second Wind, etc.), and clears conditions
+	restBus := events.NewEventBus()
+	for _, characterID := range characterIDs {
+		charOutput, charErr := o.charRepo.Get(ctx, characterrepo.GetInput{ID: characterID})
+		if charErr != nil {
+			return nil, fmt.Errorf("failed to load character %s: %w", characterID, charErr)
+		}
+
+		loadedChar, charErr := character.LoadFromData(ctx, charOutput.Character.Data, restBus)
+		if charErr != nil {
+			return nil, fmt.Errorf("failed to load character %s for rest: %w", characterID, charErr)
+		}
+
+		if restErr := loadedChar.LongRest(ctx); restErr != nil {
+			_ = loadedChar.Cleanup(ctx)
+			return nil, fmt.Errorf("failed to perform long rest for character %s: %w", characterID, restErr)
+		}
+
+		updatedData := loadedChar.ToData()
+		_, updateErr := o.charRepo.Update(ctx, characterrepo.UpdateInput{
+			Character: &entities.Character{
+				Data:       updatedData,
+				Appearance: charOutput.Character.Appearance,
+			},
+		})
+		if updateErr != nil {
+			_ = loadedChar.Cleanup(ctx)
+			return nil, fmt.Errorf("failed to save rested character %s: %w", characterID, updateErr)
+		}
+		_ = loadedChar.Cleanup(ctx)
+	}
+
+	// 13. Roll initiative
 	combatants := make(map[core.Entity]int)
 	characterHP := make(map[string]int)
 
-	// Add characters with their DEX modifiers
+	// Add characters with their DEX modifiers (re-read after rest to get updated data)
 	for _, characterID := range characterIDs {
 		charOutput, charErr := o.charRepo.Get(ctx, characterrepo.GetInput{ID: characterID})
 		if charErr != nil {
