@@ -39,3 +39,6 @@ go.work.sum
 gen/
 scripts/test-grpc-web.html
 dump.rdb
+
+# Worktrees
+.worktrees/
