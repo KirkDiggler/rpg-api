@@ -708,6 +708,13 @@ func (o *Orchestrator) FinalizeDraft(ctx context.Context, input *FinalizeDraftIn
 	// ToData is now a method on Character
 	charData := char.ToData()
 
+	// Calculate effective AC with equipment and conditions (Unarmored Defense, etc.)
+	// The ToData() AC is unset by default; EffectiveAC computes it dynamically
+	acBreakdown := char.EffectiveAC(ctx)
+	if acBreakdown != nil {
+		charData.ArmorClass = acBreakdown.Total
+	}
+
 	// Create character entity with appearance from draft
 	charEntity := &entities.Character{
 		Data:       charData,
