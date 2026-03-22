@@ -36,8 +36,11 @@ func (g *PerimeterGenerator) Generate(input *PerimeterInput) *PerimeterOutput {
 	var doorPositions []dungeon.Position
 	wallID := 0
 
-	// Direction mapping for rectangular rooms: segment 0=south, 1=east, 2=north, 3=west
-	directions := []string{"south", "east", "north", "west"}
+	// Direction mapping for rectangular rooms: segment 0=north, 1=east, 2=south, 3=west
+	// Bounds are ordered (0,0)→(width,0)→(width,height)→(0,height).
+	// In cube coords (offsetToCube): Z=row, so segment 0 (row=0, low Z) is north,
+	// segment 2 (row=height, high Z) is south. cubeToWorld: higher Z = further south.
+	directions := []string{"north", "east", "south", "west"}
 
 	bounds := input.Shape.Bounds
 	numPoints := len(bounds)
@@ -94,8 +97,8 @@ func (g *PerimeterGenerator) findConnectionOnSegment(
 	connections []*dungeon.RoomConnection,
 	segmentIndex int,
 ) *dungeon.RoomConnection {
-	// Map segment index to direction (assuming rectangular room: 0=south, 1=east, 2=north, 3=west)
-	directions := []string{"south", "east", "north", "west"}
+	// Map segment index to direction (assuming rectangular room: 0=north, 1=east, 2=south, 3=west)
+	directions := []string{"north", "east", "south", "west"}
 	if segmentIndex >= len(directions) {
 		return nil
 	}
