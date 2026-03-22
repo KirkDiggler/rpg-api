@@ -1103,3 +1103,88 @@ func (s *ConvertersTestSuite) TestShiftEntitiesByOrigin_EntityWithNilPosition() 
 	s.Equal(float64(22), entities["monster-with-pos"].Position.Y)
 	s.Equal(float64(33), entities["monster-with-pos"].Position.Z)
 }
+
+// =============================================================================
+// shiftWallsByOrigin Tests
+// =============================================================================
+
+func (s *ConvertersTestSuite) TestShiftWallsByOrigin() {
+	walls := []*apiv1alpha1.Wall{
+		{
+			Start: &apiv1alpha1.Position{X: 0, Y: 0, Z: 0},
+			End:   &apiv1alpha1.Position{X: 5, Y: 0, Z: 0},
+		},
+		{
+			Start: &apiv1alpha1.Position{X: 0, Y: 0, Z: 0},
+			End:   &apiv1alpha1.Position{X: 0, Y: 5, Z: 0},
+		},
+	}
+	origin := &apiv1alpha1.Position{X: 10, Y: 20, Z: 5}
+
+	shiftWallsByOrigin(walls, origin)
+
+	// First wall
+	s.Equal(float64(10), walls[0].Start.X)
+	s.Equal(float64(20), walls[0].Start.Y)
+	s.Equal(float64(5), walls[0].Start.Z)
+	s.Equal(float64(15), walls[0].End.X)
+	s.Equal(float64(20), walls[0].End.Y)
+	s.Equal(float64(5), walls[0].End.Z)
+
+	// Second wall
+	s.Equal(float64(10), walls[1].Start.X)
+	s.Equal(float64(20), walls[1].Start.Y)
+	s.Equal(float64(5), walls[1].Start.Z)
+	s.Equal(float64(10), walls[1].End.X)
+	s.Equal(float64(25), walls[1].End.Y)
+	s.Equal(float64(5), walls[1].End.Z)
+}
+
+func (s *ConvertersTestSuite) TestShiftWallsByOrigin_NilWalls() {
+	// Should not panic
+	shiftWallsByOrigin(nil, &apiv1alpha1.Position{X: 10, Y: 20, Z: 5})
+}
+
+func (s *ConvertersTestSuite) TestShiftWallsByOrigin_NilOrigin() {
+	walls := []*apiv1alpha1.Wall{
+		{
+			Start: &apiv1alpha1.Position{X: 1, Y: 2, Z: 3},
+			End:   &apiv1alpha1.Position{X: 4, Y: 5, Z: 6},
+		},
+	}
+
+	// Should not panic and should not modify walls
+	shiftWallsByOrigin(walls, nil)
+
+	s.Equal(float64(1), walls[0].Start.X)
+	s.Equal(float64(2), walls[0].Start.Y)
+	s.Equal(float64(3), walls[0].Start.Z)
+	s.Equal(float64(4), walls[0].End.X)
+	s.Equal(float64(5), walls[0].End.Y)
+	s.Equal(float64(6), walls[0].End.Z)
+}
+
+func (s *ConvertersTestSuite) TestShiftWallsByOrigin_NilStartOrEnd() {
+	walls := []*apiv1alpha1.Wall{
+		{
+			Start: nil,
+			End:   &apiv1alpha1.Position{X: 5, Y: 5, Z: 0},
+		},
+		{
+			Start: &apiv1alpha1.Position{X: 1, Y: 1, Z: 0},
+			End:   nil,
+		},
+	}
+	origin := &apiv1alpha1.Position{X: 10, Y: 20, Z: 0}
+
+	// Should not panic; only shift non-nil endpoints
+	shiftWallsByOrigin(walls, origin)
+
+	s.Nil(walls[0].Start)
+	s.Equal(float64(15), walls[0].End.X)
+	s.Equal(float64(25), walls[0].End.Y)
+
+	s.Equal(float64(11), walls[1].Start.X)
+	s.Equal(float64(21), walls[1].Start.Y)
+	s.Nil(walls[1].End)
+}
