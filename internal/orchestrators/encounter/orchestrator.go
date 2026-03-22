@@ -2030,90 +2030,160 @@ func (o *Orchestrator) buildCombatState(encounterID string, enc *encounterrepo.E
 	}
 }
 
-// buildAvailableAbilities returns a list of all combat abilities with their current availability
-func buildAvailableAbilities(actionEconomy *entities.ActionEconomyState) []*entities.AvailableAbility {
-	if actionEconomy == nil {
-		actionEconomy = entities.NewActionEconomyState()
+// convertCharAbilitiesToEntities converts toolkit character AvailableAbility slice to entity types.
+// Used by the orchestrator to return entity types that the handler layer converts to proto.
+func convertCharAbilitiesToEntities(abilities []character.AvailableAbility) []*entities.AvailableAbility {
+	result := make([]*entities.AvailableAbility, len(abilities))
+	for i, a := range abilities {
+		abilityID := ""
+		if a.Ref != nil {
+			abilityID = string(a.Ref.ID)
+		}
+		result[i] = &entities.AvailableAbility{
+			AbilityID:       abilityID,
+			Name:            a.Name,
+			CanUse:          a.CanUse,
+			Reason:          a.Reason,
+			ResourceCurrent: a.ResourceCurrent,
+			ResourceMax:     a.ResourceMax,
+		}
 	}
-
-	abilities := []*entities.AvailableAbility{
-		{
-			AbilityID: "attack",
-			Name:      "Attack",
-			CanUse:    actionEconomy.HasAction(),
-			Reason:    reasonIfFalse(actionEconomy.HasAction(), "no actions remaining"),
-		},
-		{
-			AbilityID: "dash",
-			Name:      "Dash",
-			CanUse:    actionEconomy.HasAction(),
-			Reason:    reasonIfFalse(actionEconomy.HasAction(), "no actions remaining"),
-		},
-		{
-			AbilityID: "dodge",
-			Name:      "Dodge",
-			CanUse:    actionEconomy.HasAction(),
-			Reason:    reasonIfFalse(actionEconomy.HasAction(), "no actions remaining"),
-		},
-		{
-			AbilityID: "disengage",
-			Name:      "Disengage",
-			CanUse:    actionEconomy.HasAction(),
-			Reason:    reasonIfFalse(actionEconomy.HasAction(), "no actions remaining"),
-		},
-		{
-			AbilityID: "offhand_attack",
-			Name:      "Off-hand Attack",
-			CanUse:    actionEconomy.HasBonusAction(),
-			Reason:    reasonIfFalse(actionEconomy.HasBonusAction(), "no bonus actions remaining"),
-		},
-	}
-
-	return abilities
+	return result
 }
 
-// buildAvailableActions returns a list of all actions with their current availability
-func buildAvailableActions(actionEconomy *entities.ActionEconomyState, movementRemaining int32) []*entities.AvailableAction {
-	if actionEconomy == nil {
-		actionEconomy = entities.NewActionEconomyState()
+// convertCharActionsToEntities converts toolkit character AvailableAction slice to entity types.
+// Used by the orchestrator to return entity types that the handler layer converts to proto.
+func convertCharActionsToEntities(actions []character.AvailableAction) []*entities.AvailableAction {
+	result := make([]*entities.AvailableAction, len(actions))
+	for i, a := range actions {
+		actionID := ""
+		if a.Ref != nil {
+			actionID = string(a.Ref.ID)
+		}
+		result[i] = &entities.AvailableAction{
+			ActionID: actionID,
+			Name:     a.Name,
+			CanUse:   a.CanUse,
+			Reason:   a.Reason,
+		}
 	}
-
-	actions := []*entities.AvailableAction{
-		{
-			ActionID: "strike",
-			Name:     "Strike",
-			CanUse:   actionEconomy.HasAttacks(),
-			Reason:   reasonIfFalse(actionEconomy.HasAttacks(), "no attacks remaining (activate Attack ability first)"),
-		},
-		{
-			ActionID: "off_hand_strike",
-			Name:     "Off-hand Strike",
-			CanUse:   actionEconomy.HasOffHandAttacks(),
-			Reason:   reasonIfFalse(actionEconomy.HasOffHandAttacks(), "no off-hand attacks remaining"),
-		},
-		{
-			ActionID: "move",
-			Name:     "Move",
-			CanUse:   movementRemaining > 0,
-			Reason:   reasonIfFalse(movementRemaining > 0, "no movement remaining"),
-		},
-		{
-			ActionID: "flurry_strike",
-			Name:     "Flurry Strike",
-			CanUse:   actionEconomy.HasFlurryStrikes(),
-			Reason:   reasonIfFalse(actionEconomy.HasFlurryStrikes(), "no flurry strikes remaining"),
-		},
-	}
-
-	return actions
+	return result
 }
 
-// reasonIfFalse returns the reason if condition is false, empty string otherwise
-func reasonIfFalse(condition bool, reason string) string {
-	if !condition {
-		return reason
+// protoAbilityIDToRef maps a proto CombatAbilityId to a toolkit ref.
+// Used by the orchestrator to convert the proto enum from the handler into a toolkit ref
+// that can be passed to character.ActivateAbility.
+func protoAbilityIDToRef(abilityID pb.CombatAbilityId) *core.Ref {
+	switch abilityID {
+	case pb.CombatAbilityId_COMBAT_ABILITY_ID_ATTACK:
+		return refs.CombatAbilities.Attack()
+	case pb.CombatAbilityId_COMBAT_ABILITY_ID_DASH:
+		return refs.CombatAbilities.Dash()
+	case pb.CombatAbilityId_COMBAT_ABILITY_ID_DODGE:
+		return refs.CombatAbilities.Dodge()
+	case pb.CombatAbilityId_COMBAT_ABILITY_ID_DISENGAGE:
+		return refs.CombatAbilities.Disengage()
+	case pb.CombatAbilityId_COMBAT_ABILITY_ID_OFFHAND_ATTACK:
+		return refs.CombatAbilities.OffHandAttack()
+	case pb.CombatAbilityId_COMBAT_ABILITY_ID_RAGE:
+		return refs.Features.Rage()
+	case pb.CombatAbilityId_COMBAT_ABILITY_ID_SECOND_WIND:
+		return refs.Features.SecondWind()
+	case pb.CombatAbilityId_COMBAT_ABILITY_ID_FLURRY_OF_BLOWS:
+		return refs.Features.FlurryOfBlows()
+	case pb.CombatAbilityId_COMBAT_ABILITY_ID_MARTIAL_ARTS_BONUS:
+		return refs.Actions.UnarmedStrike()
+	default:
+		return nil
 	}
-	return ""
+}
+
+// protoActionIDToRef maps a proto ActionId to a toolkit action ref.
+// Used by the orchestrator to convert the proto enum from the handler into a toolkit ref
+// that can be passed to character.ExecuteAction.
+func protoActionIDToRef(actionID pb.ActionId) *core.Ref {
+	switch actionID {
+	case pb.ActionId_ACTION_ID_MOVE:
+		return refs.Actions.Move()
+	case pb.ActionId_ACTION_ID_STRIKE:
+		return refs.Actions.Strike()
+	case pb.ActionId_ACTION_ID_OFF_HAND_STRIKE:
+		return refs.Actions.OffHandStrike()
+	case pb.ActionId_ACTION_ID_FLURRY_STRIKE:
+		return refs.Actions.FlurryStrike()
+	case pb.ActionId_ACTION_ID_UNARMED_STRIKE:
+		return refs.Actions.UnarmedStrike()
+	default:
+		return nil
+	}
+}
+
+// computeTurnNumber creates a unique turn number from encounter initiative data.
+// Each character gets a unique turn number per round.
+func computeTurnNumber(data *encounterrepo.EncounterData) int {
+	if data == nil || data.InitiativeData == nil {
+		return 1
+	}
+	return data.InitiativeData.Round*100 + data.InitiativeData.Current
+}
+
+// loadCharacterForCombat loads a character from the repository and initializes it for combat.
+// Uses the current turn number to detect stale action economy from a previous turn.
+// Returns the loaded character, the repository output for later persistence, and any error.
+func (o *Orchestrator) loadCharacterForCombat(
+	ctx context.Context,
+	characterID string,
+	currentTurnNumber int,
+) (*character.Character, *characterrepo.GetOutput, events.EventBus, error) {
+	bus := events.NewEventBus()
+
+	charOutput, err := o.charRepo.Get(ctx, characterrepo.GetInput{ID: characterID})
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to load character: %w", err)
+	}
+
+	char, err := character.LoadFromData(ctx, charOutput.Character.Data, bus)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to load character from data: %w", err)
+	}
+
+	// Call StartTurn if:
+	// 1. Character is not in combat yet (first time this encounter)
+	// 2. Character's action economy is from a different turn (stale from previous turn)
+	needsStartTurn := !char.InCombat()
+	if !needsStartTurn {
+		ae := char.GetActionEconomy()
+		if ae != nil && ae.TurnNumber != currentTurnNumber {
+			needsStartTurn = true
+		}
+	}
+
+	if needsStartTurn {
+		speed := char.GetSpeed()
+		if _, startErr := char.StartTurn(ctx, &character.StartTurnInput{
+			Speed:      speed,
+			TurnNumber: currentTurnNumber,
+		}); startErr != nil {
+			return nil, nil, nil, fmt.Errorf("failed to start turn: %w", startErr)
+		}
+	}
+
+	return char, charOutput, bus, nil
+}
+
+// persistCharacterData saves the character's current state back to the repository.
+func (o *Orchestrator) persistCharacterData(
+	ctx context.Context,
+	char *character.Character,
+	charOutput *characterrepo.GetOutput,
+) error {
+	charData := char.ToData()
+	charOutput.Character.Data = charData
+	_, err := o.charRepo.Update(ctx, characterrepo.UpdateInput{Character: charOutput.Character})
+	if err != nil {
+		return fmt.Errorf("failed to persist character: %w", err)
+	}
+	return nil
 }
 
 // validateTurnOwnership checks if the requesting player owns the entity whose turn it is.
@@ -4089,137 +4159,57 @@ func (o *Orchestrator) ActivateCombatAbility(
 			activeEntity.ID, input.EntityID)
 	}
 
-	// 4. Get or create ActionEconomy
-	actionEconomy := encOutput.Data.ActionEconomy
-	if actionEconomy == nil {
-		actionEconomy = entities.NewActionEconomyState()
-	}
-
-	// 5. Get current movement remaining for DASH calculation
-	movementRemaining := encOutput.Data.MovementRemaining
-
-	// 6. Process ability based on type
-	var grantedCapacity string
-	switch input.AbilityID {
-	case pb.CombatAbilityId_COMBAT_ABILITY_ID_ATTACK:
-		// Check: action available
-		if !actionEconomy.HasAction() {
-			return &ActivateCombatAbilityOutput{
-				Success:            false,
-				Error:              "no action available: action already used this turn",
-				ActionEconomy:      actionEconomy,
-				AvailableAbilities: buildAvailableAbilities(actionEconomy),
-				AvailableActions:   buildAvailableActions(actionEconomy, movementRemaining),
-			}, nil
-		}
-		// Consume: action
-		actionEconomy.UseAction()
-		// Grant: attacks (1 for MVP, Extra Attack would grant more)
-		actionEconomy.AttacksRemaining = 1
-		grantedCapacity = "Granted 1 attack"
-
-	case pb.CombatAbilityId_COMBAT_ABILITY_ID_DASH:
-		// Check: action available
-		if !actionEconomy.HasAction() {
-			return &ActivateCombatAbilityOutput{
-				Success:            false,
-				Error:              "no action available: action already used this turn",
-				ActionEconomy:      actionEconomy,
-				AvailableAbilities: buildAvailableAbilities(actionEconomy),
-				AvailableActions:   buildAvailableActions(actionEconomy, movementRemaining),
-			}, nil
-		}
-		// Consume: action
-		actionEconomy.UseAction()
-		// Grant: double movement (add base movement speed to remaining)
-		movementRemaining += defaultMovementSpeed
-		grantedCapacity = "Movement doubled"
-
-	case pb.CombatAbilityId_COMBAT_ABILITY_ID_DODGE:
-		// Check: action available
-		if !actionEconomy.HasAction() {
-			return &ActivateCombatAbilityOutput{
-				Success:            false,
-				Error:              "no action available: action already used this turn",
-				ActionEconomy:      actionEconomy,
-				AvailableAbilities: buildAvailableAbilities(actionEconomy),
-				AvailableActions:   buildAvailableActions(actionEconomy, movementRemaining),
-			}, nil
-		}
-		// Consume: action
-		actionEconomy.UseAction()
-		// Grant: dodge status
-		actionEconomy.DodgeActive = true
-		grantedCapacity = "Dodging until next turn"
-
-	case pb.CombatAbilityId_COMBAT_ABILITY_ID_DISENGAGE:
-		// Check: action available
-		if !actionEconomy.HasAction() {
-			return &ActivateCombatAbilityOutput{
-				Success:            false,
-				Error:              "no action available: action already used this turn",
-				ActionEconomy:      actionEconomy,
-				AvailableAbilities: buildAvailableAbilities(actionEconomy),
-				AvailableActions:   buildAvailableActions(actionEconomy, movementRemaining),
-			}, nil
-		}
-		// Consume: action
-		actionEconomy.UseAction()
-		// Grant: disengage status
-		actionEconomy.DisengageActive = true
-		grantedCapacity = "Free movement without opportunity attacks"
-
-	case pb.CombatAbilityId_COMBAT_ABILITY_ID_OFFHAND_ATTACK:
-		// Check: bonus action available
-		if !actionEconomy.HasBonusAction() {
-			return &ActivateCombatAbilityOutput{
-				Success:            false,
-				Error:              "no bonus action available: bonus action already used this turn",
-				ActionEconomy:      actionEconomy,
-				AvailableAbilities: buildAvailableAbilities(actionEconomy),
-				AvailableActions:   buildAvailableActions(actionEconomy, movementRemaining),
-			}, nil
-		}
-		// Consume: bonus action
-		actionEconomy.UseBonusAction()
-		// Grant: off-hand attack
-		actionEconomy.OffHandAttacksRemaining = 1
-		grantedCapacity = "Granted off-hand attack"
-
-	default:
+	// 4. Map proto ability ID to toolkit ref
+	abilityRef := protoAbilityIDToRef(input.AbilityID)
+	if abilityRef == nil {
 		return &ActivateCombatAbilityOutput{
-			Success:            false,
-			Error:              fmt.Sprintf("unknown or unimplemented ability: %v", input.AbilityID),
-			ActionEconomy:      actionEconomy,
-			AvailableAbilities: buildAvailableAbilities(actionEconomy),
-			AvailableActions:   buildAvailableActions(actionEconomy, movementRemaining),
+			Success: false,
+			Error:   fmt.Sprintf("unknown or unimplemented ability: %v", input.AbilityID),
 		}, nil
 	}
 
-	// 7. Update encounter in repository
-	_, err = o.encRepo.Update(ctx, &encounterrepo.UpdateInput{
-		EncounterID:       input.EncounterID,
-		ActionEconomy:     actionEconomy,
-		MovementRemaining: &movementRemaining,
+	// 5. Load character and ensure in combat
+	turnNum := computeTurnNumber(encOutput.Data)
+	char, charOutput, _, err := o.loadCharacterForCombat(ctx, input.EntityID, turnNum)
+	if err != nil {
+		return nil, err
+	}
+
+	// 6. Delegate to toolkit Character
+	abilityOutput, err := char.ActivateAbility(ctx, &character.ActivateAbilityInput{
+		AbilityRef: abilityRef,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to save encounter state: %w", err)
+		return nil, fmt.Errorf("failed to activate ability: %w", err)
+	}
+
+	// 7. Persist character state (action economy is now on the character)
+	if err = o.persistCharacterData(ctx, char, charOutput); err != nil {
+		return nil, err
 	}
 
 	// 8. Build CombatState response
-	// Update the encounter data with our changes for building combat state
-	encOutput.Data.ActionEconomy = actionEconomy
-	encOutput.Data.MovementRemaining = movementRemaining
 	combatState := o.buildCombatState(input.EncounterID, encOutput.Data)
 
-	// 9. Compute available abilities and actions for UI
-	availableAbilities := buildAvailableAbilities(actionEconomy)
-	availableActions := buildAvailableActions(actionEconomy, movementRemaining)
+	// 9. Convert toolkit ability/action lists to entity types
+	availableAbilities := convertCharAbilitiesToEntities(abilityOutput.Abilities)
+	availableActions := convertCharActionsToEntities(abilityOutput.Actions)
+
+	if !abilityOutput.Success {
+		return &ActivateCombatAbilityOutput{
+			Success:            false,
+			Error:              abilityOutput.Error,
+			ActionEconomy:      encOutput.Data.ActionEconomy,
+			CombatState:        combatState,
+			AvailableAbilities: availableAbilities,
+			AvailableActions:   availableActions,
+		}, nil
+	}
 
 	return &ActivateCombatAbilityOutput{
 		Success:            true,
-		ActionEconomy:      actionEconomy,
-		GrantedCapacity:    grantedCapacity,
+		ActionEconomy:      encOutput.Data.ActionEconomy,
+		GrantedCapacity:    abilityOutput.GrantedCapacity,
 		CombatState:        combatState,
 		AvailableAbilities: availableAbilities,
 		AvailableActions:   availableActions,
@@ -4291,56 +4281,46 @@ func (o *Orchestrator) executeStrike(
 	ctx context.Context,
 	input *ExecuteActionInput,
 	encData *encounterrepo.EncounterData,
-	actionEconomy *entities.ActionEconomyState,
+	_ *entities.ActionEconomyState,
 	attackHand combat.AttackHand,
 ) (*ExecuteActionOutput, error) {
-	// 1. Check if we have attacks remaining based on attack type
-	if attackHand == combat.AttackHandMain {
-		if !actionEconomy.HasAttacks() {
-			return &ExecuteActionOutput{
-				Success:            false,
-				Error:              "no attacks remaining",
-				ActionEconomy:      actionEconomy,
-				AvailableAbilities: buildAvailableAbilities(actionEconomy),
-				AvailableActions:   buildAvailableActions(actionEconomy, encData.MovementRemaining),
-			}, nil
-		}
-	} else {
-		// Off-hand attack
-		if !actionEconomy.HasOffHandAttacks() {
-			return &ExecuteActionOutput{
-				Success:            false,
-				Error:              "no off-hand attacks remaining",
-				ActionEconomy:      actionEconomy,
-				AvailableAbilities: buildAvailableAbilities(actionEconomy),
-				AvailableActions:   buildAvailableActions(actionEconomy, encData.MovementRemaining),
-			}, nil
-		}
-	}
-
-	// 2. Validate target
+	// 1. Validate target
 	if input.TargetID == "" {
 		return nil, fmt.Errorf("target ID is required for strike actions")
 	}
 
-	// 3. Create EventBus (critical for Rage and other features)
-	bus := events.NewEventBus()
+	// 2. Load character and ensure in combat
+	char, charOutput, bus, err := o.loadCharacterForCombat(ctx, input.EntityID, computeTurnNumber(encData))
+	if err != nil {
+		return nil, err
+	}
 
-	// 4. Load character data from repository
-	charOutput, err := o.charRepo.Get(ctx, characterrepo.GetInput{
-		ID: input.EntityID,
+	// 3. Determine action ref based on attack hand
+	actionRef := refs.Actions.Strike()
+	if attackHand == combat.AttackHandOff {
+		actionRef = refs.Actions.OffHandStrike()
+	}
+
+	// 4. Delegate action economy check to toolkit Character
+	execOutput, err := char.ExecuteAction(ctx, &character.ExecuteActionInput{
+		ActionRef: actionRef,
+		TargetID:  input.TargetID,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to load character: %w", err)
+		return nil, fmt.Errorf("failed to execute action: %w", err)
 	}
 
-	// 5. Load Character from Data (reconstructs features, subscribes to events)
-	char, err := character.LoadFromData(ctx, charOutput.Character.Data, bus)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load character from data: %w", err)
+	if !execOutput.Success {
+		return &ExecuteActionOutput{
+			Success:            false,
+			Error:              execOutput.Error,
+			ActionEconomy:      encData.ActionEconomy,
+			AvailableAbilities: convertCharAbilitiesToEntities(execOutput.Abilities),
+			AvailableActions:   convertCharActionsToEntities(execOutput.Actions),
+		}, nil
 	}
 
-	// 6. Load monster from encounter data
+	// 5. Load monster from encounter data
 	monsterData := o.findMonsterData(encData, input.TargetID)
 	if monsterData == nil {
 		return nil, fmt.Errorf("monster not found: %s", input.TargetID)
@@ -4357,7 +4337,7 @@ func (o *Orchestrator) executeStrike(
 		return nil, fmt.Errorf("failed to load monster conditions: %w", err)
 	}
 
-	// 7. Get weapon and equipment slots
+	// 6. Get weapon and equipment slots
 	weapon, equipmentSlots := o.getEquippedWeaponAndSlots(ctx, input.EntityID)
 
 	// Override weapon if specified in input
@@ -4367,17 +4347,17 @@ func (o *Orchestrator) executeStrike(
 		}
 	}
 
-	// 8. Build GameContext
+	// 7. Build GameContext
 	gameCtx := o.buildGameContextFromEquipment(input.EntityID, &weapon, equipmentSlots)
 	ctx = gamectx.WithGameContext(ctx, gameCtx)
 
-	// 9. Create CombatantRegistry for damage chain lookups
+	// 8. Create CombatantRegistry for damage chain lookups
 	registry := gamectx.NewCombatantRegistry()
 	registry.Add(char)
 	registry.Add(monsterInstance)
 	ctx = combat.WithCombatantLookup(ctx, registry)
 
-	// 10. Call toolkit combat
+	// 9. Call toolkit combat
 	result, err := combat.ResolveAttack(ctx, &combat.AttackInput{
 		AttackerID: input.EntityID,
 		TargetID:   input.TargetID,
@@ -4390,88 +4370,27 @@ func (o *Orchestrator) executeStrike(
 		return nil, fmt.Errorf("combat resolution failed: %w", err)
 	}
 
-	// 11. Get monster HP after damage
+	// 10. Get monster HP after damage
 	newHP := monsterInstance.HP()
 	if result.Hit {
 		monsterData.HitPoints = newHP
 	}
 
-	// 12. Grant bonus strike after main-hand attack
-	// Priority: Monks get Martial Arts check first, others get TWF first
-	var grantedAction *GrantedAction
-
-	if attackHand == combat.AttackHandMain {
-		isMo := charOutput.Character.Data.ClassID == classes.Monk
-
-		// 12a. Martial Arts: grant bonus strike (Monk only)
-		if isMo {
-			maResult, _ := actions.CheckAndGrantMartialArtsBonusStrike(ctx, &actions.MartialArtsGranterInput{
-				CharacterID:   input.EntityID,
-				WeaponID:      weapon.ID,
-				IsUnarmed:     false,
-				SourceAbility: "attack",
-				EventBus:      bus,
-			})
-			if maResult != nil && maResult.Granted {
-				grantedAction = &GrantedAction{
-					ID:     maResult.Action.GetID(),
-					Type:   "martial-arts-bonus-strike",
-					Name:   "Martial Arts Bonus Strike",
-					Reason: maResult.Reason,
-				}
-			}
-		}
-
-		// 12b. Two-weapon fighting: grant off-hand strike
-		// For Monks, only triggers if Martial Arts didn't grant
-		if grantedAction == nil && equipmentSlots != nil {
-			var mainWeapon, offWeapon *actions.EquippedWeaponInfo
-			if mainID := equipmentSlots.Get(character.SlotMainHand); mainID != "" {
-				mainWeapon = &actions.EquippedWeaponInfo{WeaponID: mainID}
-			}
-			if offID := equipmentSlots.Get(character.SlotOffHand); offID != "" {
-				offWeapon = &actions.EquippedWeaponInfo{WeaponID: offID}
-			}
-
-			twfResult, _ := actions.CheckAndGrantOffHandStrike(ctx, &actions.TwoWeaponGranterInput{
-				CharacterID:    input.EntityID,
-				AttackHand:     actions.AttackHand(attackHand),
-				MainHandWeapon: mainWeapon,
-				OffHandWeapon:  offWeapon,
-				ActionHolder:   char,
-				EventBus:       bus,
-			})
-			if twfResult != nil && twfResult.Granted {
-				actionEconomy.OffHandAttacksRemaining++
-				grantedAction = &GrantedAction{
-					ID:       twfResult.Action.GetID(),
-					Type:     "off-hand-strike",
-					Name:     "Off-Hand Strike",
-					Reason:   twfResult.Reason,
-					WeaponID: twfResult.Action.GetWeaponID(),
-				}
-			}
-		}
+	// 11. Persist character state (action economy updated by ExecuteAction)
+	if err = o.persistCharacterData(ctx, char, charOutput); err != nil {
+		return nil, err
 	}
 
-	// 13. Consume attack
-	if attackHand == combat.AttackHandMain {
-		actionEconomy.UseAttack()
-	} else {
-		actionEconomy.UseOffHandAttack()
-	}
-
-	// 14. Persist updated state
+	// 12. Persist encounter state (monster HP)
 	_, err = o.encRepo.Update(ctx, &encounterrepo.UpdateInput{
-		EncounterID:   input.EncounterID,
-		ActionEconomy: actionEconomy,
-		Monsters:      encData.Monsters,
+		EncounterID: input.EncounterID,
+		Monsters:    encData.Monsters,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to save encounter state: %w", err)
 	}
 
-	// 15. Build attack result
+	// 13. Build attack result
 	attackResult := &AttackResult{
 		AttackRoll:      result.AttackRoll,
 		AttackBonus:     result.AttackBonus,
@@ -4491,31 +4410,30 @@ func (o *Orchestrator) executeStrike(
 		attackResult.Breakdown = convertToolkitBreakdown(result.Breakdown)
 	}
 
-	// 16. Get room data for response
+	// 14. Get room data for response
 	var roomData interface{}
 	if encData.RoomData != nil {
 		roomData = encData.RoomData
 	}
 
-	// 17. Build combat state for response
+	// 15. Build combat state for response
 	combatState := o.buildCombatState(input.EncounterID, encData)
 
-	// 18. Check for dungeon victory if monster died
+	// 16. Check for dungeon victory if monster died
 	if newHP <= 0 {
 		o.checkAndHandleVictory(ctx, input.EncounterID, encData, input.TargetID)
 	}
 
-	// 19. Compute available abilities and actions for UI
-	availableAbilities := buildAvailableAbilities(actionEconomy)
-	availableActions := buildAvailableActions(actionEconomy, encData.MovementRemaining)
+	// 17. Use toolkit's ability/action lists from ExecuteAction output
+	availableAbilities := convertCharAbilitiesToEntities(execOutput.Abilities)
+	availableActions := convertCharActionsToEntities(execOutput.Actions)
 
 	return &ExecuteActionOutput{
 		Success:            true,
-		ActionEconomy:      actionEconomy,
+		ActionEconomy:      encData.ActionEconomy,
 		AttackResult:       attackResult,
 		CombatState:        combatState,
 		Room:               roomData,
-		GrantedAction:      grantedAction,
 		AvailableAbilities: availableAbilities,
 		AvailableActions:   availableActions,
 	}, nil
@@ -4527,39 +4445,39 @@ func (o *Orchestrator) executeFlurryStrike(
 	ctx context.Context,
 	input *ExecuteActionInput,
 	encData *encounterrepo.EncounterData,
-	actionEconomy *entities.ActionEconomyState,
+	_ *entities.ActionEconomyState,
 ) (*ExecuteActionOutput, error) {
-	// 1. Check flurry strike capacity
-	if !actionEconomy.HasFlurryStrikes() {
-		return &ExecuteActionOutput{
-			Success:            false,
-			Error:              "no flurry strikes remaining",
-			ActionEconomy:      actionEconomy,
-			AvailableAbilities: buildAvailableAbilities(actionEconomy),
-			AvailableActions:   buildAvailableActions(actionEconomy, encData.MovementRemaining),
-		}, nil
-	}
-
-	// 2. Validate target
+	// 1. Validate target
 	if input.TargetID == "" {
 		return nil, fmt.Errorf("target ID is required for flurry strike")
 	}
 
-	// 3. Create EventBus
-	bus := events.NewEventBus()
-
-	// 4. Load character
-	charOutput, err := o.charRepo.Get(ctx, characterrepo.GetInput{ID: input.EntityID})
+	// 2. Load character and ensure in combat
+	char, charOutput, bus, err := o.loadCharacterForCombat(ctx, input.EntityID, computeTurnNumber(encData))
 	if err != nil {
-		return nil, fmt.Errorf("failed to load character: %w", err)
+		return nil, err
 	}
 
-	char, err := character.LoadFromData(ctx, charOutput.Character.Data, bus)
+	// 3. Delegate action economy check to toolkit Character
+	execOutput, err := char.ExecuteAction(ctx, &character.ExecuteActionInput{
+		ActionRef: refs.Actions.FlurryStrike(),
+		TargetID:  input.TargetID,
+	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to load character from data: %w", err)
+		return nil, fmt.Errorf("failed to execute action: %w", err)
 	}
 
-	// 5. Load monster
+	if !execOutput.Success {
+		return &ExecuteActionOutput{
+			Success:            false,
+			Error:              execOutput.Error,
+			ActionEconomy:      encData.ActionEconomy,
+			AvailableAbilities: convertCharAbilitiesToEntities(execOutput.Abilities),
+			AvailableActions:   convertCharActionsToEntities(execOutput.Actions),
+		}, nil
+	}
+
+	// 4. Load monster
 	monsterData := o.findMonsterData(encData, input.TargetID)
 	if monsterData == nil {
 		return nil, fmt.Errorf("monster not found: %s", input.TargetID)
@@ -4574,20 +4492,20 @@ func (o *Orchestrator) executeFlurryStrike(
 		return nil, fmt.Errorf("failed to load monster conditions: %w", err)
 	}
 
-	// 6. Flurry strikes are always unarmed — use unarmed strike weapon
+	// 5. Flurry strikes are always unarmed
 	unarmedStrike := unarmedStrikeWeapon()
 
-	// 7. Build GameContext
+	// 6. Build GameContext
 	gameCtx := o.buildGameContextFromEquipment(input.EntityID, &unarmedStrike, nil)
 	ctx = gamectx.WithGameContext(ctx, gameCtx)
 
-	// 8. CombatantRegistry
+	// 7. CombatantRegistry
 	registry := gamectx.NewCombatantRegistry()
 	registry.Add(char)
 	registry.Add(monsterInstance)
 	ctx = combat.WithCombatantLookup(ctx, registry)
 
-	// 9. Resolve attack (main hand — flurry uses same attack mechanics)
+	// 8. Resolve attack
 	result, err := combat.ResolveAttack(ctx, &combat.AttackInput{
 		AttackerID: input.EntityID,
 		TargetID:   input.TargetID,
@@ -4600,25 +4518,25 @@ func (o *Orchestrator) executeFlurryStrike(
 		return nil, fmt.Errorf("flurry strike resolution failed: %w", err)
 	}
 
-	// 10. Update monster HP
+	// 9. Update monster HP
 	if result.Hit {
 		monsterData.HitPoints = monsterInstance.HP()
 	}
 
-	// 11. Consume flurry strike
-	actionEconomy.UseFlurryStrike()
+	// 10. Persist character and encounter state
+	if err = o.persistCharacterData(ctx, char, charOutput); err != nil {
+		return nil, err
+	}
 
-	// 12. Persist
 	_, err = o.encRepo.Update(ctx, &encounterrepo.UpdateInput{
-		EncounterID:   input.EncounterID,
-		ActionEconomy: actionEconomy,
-		Monsters:      encData.Monsters,
+		EncounterID: input.EncounterID,
+		Monsters:    encData.Monsters,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to save encounter state: %w", err)
 	}
 
-	// 13. Build result
+	// 11. Build result
 	attackResult := &AttackResult{
 		AttackRoll:      result.AttackRoll,
 		AttackBonus:     result.AttackBonus,
@@ -4645,55 +4563,55 @@ func (o *Orchestrator) executeFlurryStrike(
 
 	return &ExecuteActionOutput{
 		Success:            true,
-		ActionEconomy:      actionEconomy,
+		ActionEconomy:      encData.ActionEconomy,
 		AttackResult:       attackResult,
 		CombatState:        combatState,
 		Room:               encData.RoomData,
-		AvailableAbilities: buildAvailableAbilities(actionEconomy),
-		AvailableActions:   buildAvailableActions(actionEconomy, encData.MovementRemaining),
+		AvailableAbilities: convertCharAbilitiesToEntities(execOutput.Abilities),
+		AvailableActions:   convertCharActionsToEntities(execOutput.Actions),
 	}, nil
 }
 
 // executeUnarmedStrike handles UNARMED_STRIKE actions (Martial Arts bonus strike).
-// Mirrors executeFlurryStrike but consumes bonus action capacity instead of flurry strikes.
+// Mirrors executeFlurryStrike but consumes martial arts bonus capacity.
 // Martial Arts conditions upgrade the 1d1 base damage via the damage chain.
 func (o *Orchestrator) executeUnarmedStrike(
 	ctx context.Context,
 	input *ExecuteActionInput,
 	encData *encounterrepo.EncounterData,
-	actionEconomy *entities.ActionEconomyState,
+	_ *entities.ActionEconomyState,
 ) (*ExecuteActionOutput, error) {
-	// 1. Check bonus action capacity
-	if !actionEconomy.HasBonusAction() {
-		return &ExecuteActionOutput{
-			Success:            false,
-			Error:              "no bonus action remaining",
-			ActionEconomy:      actionEconomy,
-			AvailableAbilities: buildAvailableAbilities(actionEconomy),
-			AvailableActions:   buildAvailableActions(actionEconomy, encData.MovementRemaining),
-		}, nil
-	}
-
-	// 2. Validate target
+	// 1. Validate target
 	if input.TargetID == "" {
 		return nil, fmt.Errorf("target ID is required for unarmed strike")
 	}
 
-	// 3. Create EventBus
-	bus := events.NewEventBus()
-
-	// 4. Load character
-	charOutput, err := o.charRepo.Get(ctx, characterrepo.GetInput{ID: input.EntityID})
+	// 2. Load character and ensure in combat
+	char, charOutput, bus, err := o.loadCharacterForCombat(ctx, input.EntityID, computeTurnNumber(encData))
 	if err != nil {
-		return nil, fmt.Errorf("failed to load character: %w", err)
+		return nil, err
 	}
 
-	char, err := character.LoadFromData(ctx, charOutput.Character.Data, bus)
+	// 3. Delegate action economy check to toolkit Character
+	execOutput, err := char.ExecuteAction(ctx, &character.ExecuteActionInput{
+		ActionRef: refs.Actions.UnarmedStrike(),
+		TargetID:  input.TargetID,
+	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to load character from data: %w", err)
+		return nil, fmt.Errorf("failed to execute action: %w", err)
 	}
 
-	// 5. Load monster
+	if !execOutput.Success {
+		return &ExecuteActionOutput{
+			Success:            false,
+			Error:              execOutput.Error,
+			ActionEconomy:      encData.ActionEconomy,
+			AvailableAbilities: convertCharAbilitiesToEntities(execOutput.Abilities),
+			AvailableActions:   convertCharActionsToEntities(execOutput.Actions),
+		}, nil
+	}
+
+	// 4. Load monster
 	monsterData := o.findMonsterData(encData, input.TargetID)
 	if monsterData == nil {
 		return nil, fmt.Errorf("monster not found: %s", input.TargetID)
@@ -4708,20 +4626,20 @@ func (o *Orchestrator) executeUnarmedStrike(
 		return nil, fmt.Errorf("failed to load monster conditions: %w", err)
 	}
 
-	// 6. Use shared unarmed strike weapon
+	// 5. Use shared unarmed strike weapon
 	unarmedStrike := unarmedStrikeWeapon()
 
-	// 7. Build GameContext
+	// 6. Build GameContext
 	gameCtx := o.buildGameContextFromEquipment(input.EntityID, &unarmedStrike, nil)
 	ctx = gamectx.WithGameContext(ctx, gameCtx)
 
-	// 8. CombatantRegistry
+	// 7. CombatantRegistry
 	registry := gamectx.NewCombatantRegistry()
 	registry.Add(char)
 	registry.Add(monsterInstance)
 	ctx = combat.WithCombatantLookup(ctx, registry)
 
-	// 9. Resolve attack
+	// 8. Resolve attack
 	result, err := combat.ResolveAttack(ctx, &combat.AttackInput{
 		AttackerID: input.EntityID,
 		TargetID:   input.TargetID,
@@ -4734,30 +4652,30 @@ func (o *Orchestrator) executeUnarmedStrike(
 		return nil, fmt.Errorf("unarmed strike resolution failed: %w", err)
 	}
 
-	// 10. Update monster HP
+	// 9. Update monster HP
 	if result.Hit {
 		monsterData.HitPoints = monsterInstance.HP()
 	}
 
-	// 11. Consume bonus action
-	actionEconomy.UseBonusAction()
-
-	// 12. Check for dungeon victory if monster died
+	// 10. Check for dungeon victory if monster died
 	if monsterInstance.HP() <= 0 {
 		o.checkAndHandleVictory(ctx, input.EncounterID, encData, input.TargetID)
 	}
 
-	// 13. Persist
+	// 11. Persist character and encounter state
+	if err = o.persistCharacterData(ctx, char, charOutput); err != nil {
+		return nil, err
+	}
+
 	_, err = o.encRepo.Update(ctx, &encounterrepo.UpdateInput{
-		EncounterID:   input.EncounterID,
-		ActionEconomy: actionEconomy,
-		Monsters:      encData.Monsters,
+		EncounterID: input.EncounterID,
+		Monsters:    encData.Monsters,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to save encounter state: %w", err)
 	}
 
-	// 14. Build result
+	// 12. Build result
 	attackResult := &AttackResult{
 		AttackRoll:      result.AttackRoll,
 		AttackBonus:     result.AttackBonus,
@@ -4781,11 +4699,11 @@ func (o *Orchestrator) executeUnarmedStrike(
 	return &ExecuteActionOutput{
 		Success:            true,
 		AttackResult:       attackResult,
-		ActionEconomy:      actionEconomy,
+		ActionEconomy:      encData.ActionEconomy,
 		CombatState:        combatState,
 		Room:               encData.RoomData,
-		AvailableAbilities: buildAvailableAbilities(actionEconomy),
-		AvailableActions:   buildAvailableActions(actionEconomy, encData.MovementRemaining),
+		AvailableAbilities: convertCharAbilitiesToEntities(execOutput.Abilities),
+		AvailableActions:   convertCharActionsToEntities(execOutput.Actions),
 	}, nil
 }
 
@@ -4794,7 +4712,7 @@ func (o *Orchestrator) executeMove(
 	ctx context.Context,
 	input *ExecuteActionInput,
 	encData *encounterrepo.EncounterData,
-	actionEconomy *entities.ActionEconomyState,
+	_ *entities.ActionEconomyState,
 ) (*ExecuteActionOutput, error) {
 	// 1. Validate path
 	if len(input.Path) == 0 {
@@ -4978,7 +4896,6 @@ func (o *Orchestrator) executeMove(
 		EncounterID:       input.EncounterID,
 		RoomData:          roomData,
 		MovementRemaining: &newMovementRemaining,
-		ActionEconomy:     actionEconomy,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to save encounter state: %w", err)
@@ -5002,13 +4919,19 @@ func (o *Orchestrator) executeMove(
 	// 12. Build combat state for response
 	combatState := o.buildCombatState(input.EncounterID, encData)
 
-	// 13. Compute available abilities and actions for UI
-	availableAbilities := buildAvailableAbilities(actionEconomy)
-	availableActions := buildAvailableActions(actionEconomy, newMovementRemaining)
+	// 13. Load character for available abilities/actions from toolkit
+	var availableAbilities []*entities.AvailableAbility
+	var availableActions []*entities.AvailableAction
+
+	char, _, _, loadErr := o.loadCharacterForCombat(ctx, input.EntityID, computeTurnNumber(encData))
+	if loadErr == nil {
+		availableAbilities = convertCharAbilitiesToEntities(char.AvailableAbilities())
+		availableActions = convertCharActionsToEntities(char.AvailableActions())
+	}
 
 	return &ExecuteActionOutput{
 		Success:       stopReason == stopReasonCompleted || stopReason == stopReasonInsufficientMovement,
-		ActionEconomy: actionEconomy,
+		ActionEconomy: encData.ActionEconomy,
 		MoveResult: &MoveResult{
 			FinalPosition: finalPosition,
 			MovementUsed:  totalMovementUsed,

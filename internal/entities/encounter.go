@@ -179,10 +179,12 @@ func (a *ActionEconomyState) GrantFlurryStrikes(count int) {
 // AvailableAbility represents a combat ability with its current availability status
 // Used by UI to render ability buttons with proper enabled/disabled state
 type AvailableAbility struct {
-	AbilityID string `json:"ability_id"` // e.g., "attack", "dash", "dodge"
-	Name      string `json:"name"`       // Display name for UI
-	CanUse    bool   `json:"can_use"`    // Whether the ability can be activated
-	Reason    string `json:"reason"`     // Explanation if can_use is false
+	AbilityID       string `json:"ability_id"`                 // e.g., "attack", "dash", "dodge"
+	Name            string `json:"name"`                       // Display name for UI
+	CanUse          bool   `json:"can_use"`                    // Whether the ability can be activated
+	Reason          string `json:"reason"`                     // Explanation if can_use is false
+	ResourceCurrent int    `json:"resource_current,omitempty"` // Current charges (0 if no resource)
+	ResourceMax     int    `json:"resource_max,omitempty"`     // Max charges (0 if no resource)
 }
 
 // AvailableAction represents an executable action with its current availability status

@@ -460,8 +460,10 @@ func (s *MonkIntegrationSuite) TestPatientDefense_ActivateFeature_Success() {
 
 	actionEconomy := stateResp.GetCombatState().GetCurrentTurn().GetActionEconomy()
 	s.Require().NotNil(actionEconomy, "ActionEconomy must be present after Patient Defense")
-	s.Require().True(actionEconomy.GetDodgeActive(), "DodgeActive should be true after Patient Defense")
-	s.T().Log("  ✓ DodgeActive confirmed in encounter state")
+	// DodgeActive/DisengageActive are now tracked as conditions on the character,
+	// not as flags on the proto ActionEconomy. Verify bonus action was consumed instead.
+	s.Require().False(actionEconomy.GetBonusActionAvailable(), "bonus action should be consumed after Patient Defense")
+	s.T().Log("  ✓ Bonus action consumed confirmed in encounter state")
 }
 
 func (s *MonkIntegrationSuite) TestStepOfTheWind_ActivateFeature_Success() {
@@ -503,8 +505,10 @@ func (s *MonkIntegrationSuite) TestStepOfTheWind_ActivateFeature_Success() {
 
 	actionEconomy := stateResp.GetCombatState().GetCurrentTurn().GetActionEconomy()
 	s.Require().NotNil(actionEconomy, "ActionEconomy must be present after Step of the Wind")
-	s.Require().True(actionEconomy.GetDisengageActive(), "DisengageActive should be true after Step of the Wind")
-	s.T().Log("  ✓ DisengageActive confirmed in encounter state")
+	// DisengageActive is now tracked as a condition on the character,
+	// not as a flag on the proto ActionEconomy. Verify bonus action was consumed instead.
+	s.Require().False(actionEconomy.GetBonusActionAvailable(), "bonus action should be consumed after Step of the Wind")
+	s.T().Log("  ✓ Bonus action consumed confirmed in encounter state")
 }
 
 func (s *MonkIntegrationSuite) TestKiExhaustion_CannotActivateWhenDepleted() {
