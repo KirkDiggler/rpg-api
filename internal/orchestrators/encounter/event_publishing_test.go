@@ -622,29 +622,60 @@ func (s *EventPublishingTestSuite) TestEndTurn_PublishesTurnEndedEvent() {
 	s.Require().NotNil(output)
 }
 
-func (s *EventPublishingTestSuite) TestActivateFeature_NoEventWhenFeatureNotFound() {
-	// This tests the expected behavior: no event is published when feature isn't mapped
-	// Unknown features are rejected by featureIDToRef before any repo calls
+func (s *EventPublishingTestSuite) TestActivateFeature_UnknownFeature_NoEventOnFailure() {
+	// Unknown features are no longer rejected by featureIDToRef.
+	// They pass through as a constructed ref to ActivateAbility,
+	// which validates whether the feature exists on the character.
+	// No event should be published when the toolkit rejects the feature.
 
 	// Arrange
 	encounterID := "enc-123"
 	characterID := "char-1"
 	featureID := "nonexistent-feature"
 
-	// NO repo calls expected - featureIDToRef returns nil for unknown features
+	// Encounter exists
+	s.mockEncRepo.EXPECT().
+		Get(gomock.Any(), &encounterrepo.GetInput{EncounterID: encounterID}).
+		Return(&encounterrepo.GetOutput{
+			Data: &encounterrepo.EncounterData{
+				ID:                encounterID,
+				MovementRemaining: 30,
+			},
+		}, nil)
 
-	// Act
+	// Character loads successfully
+	charData := createTestCharacterData(characterID, "Test Character")
+	s.mockCharRepo.EXPECT().
+		Get(gomock.Any(), characterrepo.GetInput{ID: characterID}).
+		Return(&characterrepo.GetOutput{Character: &entities.Character{Data: charData}}, nil)
+
+	// ActivateAbility may succeed with Success=false, then persist is called
+	s.mockCharRepo.EXPECT().
+		Update(gomock.Any(), gomock.Any()).
+		Return(&characterrepo.UpdateOutput{}, nil).
+		AnyTimes()
+
+	s.mockEncRepo.EXPECT().
+		Update(gomock.Any(), gomock.Any()).
+		Return(&encounterrepo.UpdateOutput{Success: true}, nil).
+		AnyTimes()
+
+	// Act - Toolkit's ActivateAbility will reject the unknown feature
 	output, err := s.orchestrator.ActivateFeature(context.Background(), &ActivateFeatureInput{
 		EncounterID: encounterID,
 		CharacterID: characterID,
 		FeatureID:   featureID,
 	})
 
-	// Assert - should succeed but with Success=false
-	s.Require().NoError(err)
-	s.Require().NotNil(output)
-	s.Assert().False(output.Success)
-	s.Assert().Contains(output.Message, "unknown feature")
+	// Assert - Feature rejected by toolkit, no event published
+	if err != nil {
+		s.Assert().Contains(err.Error(), "activate ability")
+	} else {
+		s.Require().NotNil(output)
+		s.Assert().False(output.Success)
+	}
+
+	// No event processor calls expected for failed activation
 }
 
 // ============================================================================

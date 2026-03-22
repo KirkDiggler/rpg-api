@@ -2060,7 +2060,9 @@ func featureIDToRef(featureID string) *core.Ref {
 	case refs.Features.ActionSurge().ID:
 		return refs.Features.ActionSurge()
 	default:
-		return nil
+		// For features without explicit mapping, construct a ref from the ID.
+		// The toolkit's ActivateAbility will validate whether this feature exists.
+		return &core.Ref{Module: refs.Module, Type: refs.TypeFeatures, ID: featureID}
 	}
 }
 
@@ -2252,12 +2254,6 @@ func (o *Orchestrator) ActivateFeature(
 
 	// 2. Map feature ID to toolkit ref
 	abilityRef := featureIDToRef(input.FeatureID)
-	if abilityRef == nil {
-		return &ActivateFeatureOutput{
-			Success: false,
-			Message: fmt.Sprintf("unknown feature: %s", input.FeatureID),
-		}, nil
-	}
 
 	// 3. Load encounter to get turn number
 	encOutput, err := o.encRepo.Get(ctx, &encounterrepo.GetInput{

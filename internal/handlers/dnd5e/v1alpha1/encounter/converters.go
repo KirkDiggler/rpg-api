@@ -870,7 +870,6 @@ func featureEnumToID(featureID dnd5ev1alpha1.FeatureId) string {
 	}
 }
 
-
 // fightingStyleRefToProto is deprecated - fighting styles are now conditions.
 // Use conditionRefToProto instead. This function is kept for reference.
 // Note: Removed in toolkit PR #485 - refs.FightingStyles no longer exists.
