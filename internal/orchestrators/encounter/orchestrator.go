@@ -2064,28 +2064,6 @@ func featureIDToRef(featureID string) *core.Ref {
 	}
 }
 
-// featureRefToProtoAbilityID maps a toolkit feature ref to a proto CombatAbilityId.
-// Reverse of protoAbilityIDToRef for feature refs.
-func featureRefToProtoAbilityID(ref *core.Ref) pb.CombatAbilityId {
-	if ref == nil {
-		return pb.CombatAbilityId_COMBAT_ABILITY_ID_UNSPECIFIED
-	}
-	switch ref.ID {
-	case refs.Features.Rage().ID:
-		return pb.CombatAbilityId_COMBAT_ABILITY_ID_RAGE
-	case refs.Features.SecondWind().ID:
-		return pb.CombatAbilityId_COMBAT_ABILITY_ID_SECOND_WIND
-	case refs.Features.FlurryOfBlows().ID:
-		return pb.CombatAbilityId_COMBAT_ABILITY_ID_FLURRY_OF_BLOWS
-	case refs.Features.PatientDefense().ID:
-		return pb.CombatAbilityId_COMBAT_ABILITY_ID_DODGE // PatientDefense activates Dodge
-	case refs.Features.StepOfTheWind().ID:
-		return pb.CombatAbilityId_COMBAT_ABILITY_ID_DASH // StepOfTheWind activates Dash
-	default:
-		return pb.CombatAbilityId_COMBAT_ABILITY_ID_UNSPECIFIED
-	}
-}
-
 // protoActionIDToRef maps a proto ActionId to a toolkit action ref.
 // Used by the orchestrator to convert the proto enum from the handler into a toolkit ref
 // that can be passed to character.ExecuteAction.
@@ -2210,8 +2188,9 @@ func (o *Orchestrator) validateTurnOwnership(
 	return nil
 }
 
-// ActivateFeature activates a combat feature (e.g., Rage) for a character.
-// Delegates to ActivateCombatAbility which handles action economy through the toolkit.
+// ActivateFeature activates a combat feature (e.g., Rage, PatientDefense) for a character.
+// Calls char.ActivateAbility directly with the feature ref to preserve feature identity
+// and correct action costs (e.g., PatientDefense costs bonus action + ki, not a standard action).
 func (o *Orchestrator) ActivateFeature(
 	ctx context.Context,
 	input *ActivateFeatureInput,
@@ -2239,35 +2218,50 @@ func (o *Orchestrator) ActivateFeature(
 		}, nil
 	}
 
-	// 3. Delegate to ActivateCombatAbility
-	abilityOutput, err := o.ActivateCombatAbility(ctx, &ActivateCombatAbilityInput{
+	// 3. Load encounter to get turn number
+	encOutput, err := o.encRepo.Get(ctx, &encounterrepo.GetInput{
 		EncounterID: input.EncounterID,
-		EntityID:    input.CharacterID,
-		AbilityID:   featureRefToProtoAbilityID(abilityRef),
 	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to load encounter: %w", err)
+	}
+	if encOutput.Data == nil {
+		return nil, fmt.Errorf("encounter not found: %s", input.EncounterID)
+	}
+
+	// 4. Load character for combat (handles StartTurn if stale)
+	turnNum := computeTurnNumber(encOutput.Data)
+	char, charOutput, _, err := o.loadCharacterForCombat(ctx, input.CharacterID, turnNum)
 	if err != nil {
 		return nil, err
 	}
 
-	// 4. Load character data for the response (old path returned this)
-	charOutput, err := o.charRepo.Get(ctx, characterrepo.GetInput{
-		ID: input.CharacterID,
+	// 5. Call ActivateAbility directly with the feature ref — no proto conversion
+	abilityOutput, err := char.ActivateAbility(ctx, &character.ActivateAbilityInput{
+		AbilityRef: abilityRef,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to load character data after activation: %w", err)
+		return nil, fmt.Errorf("failed to activate ability: %w", err)
 	}
 
-	// 5. Publish FeatureActivatedEvent for multiplayer broadcast
+	// 6. Persist character data
+	if persistErr := o.persistCharacterData(ctx, char, charOutput); persistErr != nil {
+		return nil, persistErr
+	}
+
+	// 7. Publish FeatureActivatedEvent for multiplayer broadcast
+	updatedData := char.ToData()
 	if abilityOutput.Success {
 		o.publishEvent(ctx, input.EncounterID, entities.EventTypeFeatureActivated, &entities.FeatureActivatedEvent{
-			CharacterID: input.CharacterID,
-			FeatureID:   input.FeatureID,
-			Success:     true,
-			Message:     fmt.Sprintf("%s activated successfully", input.FeatureID),
+			CharacterID:   input.CharacterID,
+			FeatureID:     input.FeatureID,
+			Success:       true,
+			Message:       fmt.Sprintf("%s activated successfully", input.FeatureID),
+			CharacterData: updatedData,
 		})
 	}
 
-	// 6. Convert response to ActivateFeatureOutput format
+	// 8. Return response
 	message := fmt.Sprintf("%s activated successfully", input.FeatureID)
 	if !abilityOutput.Success {
 		message = abilityOutput.Error
@@ -2276,7 +2270,7 @@ func (o *Orchestrator) ActivateFeature(
 	return &ActivateFeatureOutput{
 		Success:       abilityOutput.Success,
 		Message:       message,
-		CharacterData: charOutput.Character.Data,
+		CharacterData: updatedData,
 	}, nil
 }
 

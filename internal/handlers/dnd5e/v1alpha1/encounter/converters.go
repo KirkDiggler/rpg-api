@@ -880,10 +880,8 @@ func featureIDToCombatAbilityID(featureID dnd5ev1alpha1.FeatureId) (dnd5ev1alpha
 		return dnd5ev1alpha1.CombatAbilityId_COMBAT_ABILITY_ID_SECOND_WIND, true
 	case dnd5ev1alpha1.FeatureId_FEATURE_ID_FLURRY_OF_BLOWS:
 		return dnd5ev1alpha1.CombatAbilityId_COMBAT_ABILITY_ID_FLURRY_OF_BLOWS, true
-	case dnd5ev1alpha1.FeatureId_FEATURE_ID_PATIENT_DEFENSE:
-		return dnd5ev1alpha1.CombatAbilityId_COMBAT_ABILITY_ID_DODGE, true // PatientDefense activates Dodge
-	case dnd5ev1alpha1.FeatureId_FEATURE_ID_STEP_OF_THE_WIND:
-		return dnd5ev1alpha1.CombatAbilityId_COMBAT_ABILITY_ID_DASH, true // StepOfTheWind activates Dash
+	// PATIENT_DEFENSE and STEP_OF_THE_WIND fall through to ActivateFeature path
+	// because they are features with ki costs, not standard combat abilities.
 	default:
 		return dnd5ev1alpha1.CombatAbilityId_COMBAT_ABILITY_ID_UNSPECIFIED, false
 	}

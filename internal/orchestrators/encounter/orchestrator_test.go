@@ -2025,7 +2025,7 @@ func (s *OrchestratorTestSuite) TestActivateFeature_MissingFeatureID() {
 }
 
 func (s *OrchestratorTestSuite) TestActivateFeature_EncounterNotFound() {
-	// Arrange - ActivateFeature delegates to ActivateCombatAbility, which checks encounter
+	// Arrange
 	s.mockEncRepo.EXPECT().
 		Get(gomock.Any(), &encounterrepo.GetInput{EncounterID: "nonexistent"}).
 		Return(&encounterrepo.GetOutput{Data: nil}, nil)
@@ -2044,19 +2044,11 @@ func (s *OrchestratorTestSuite) TestActivateFeature_EncounterNotFound() {
 }
 
 func (s *OrchestratorTestSuite) TestActivateFeature_CharacterNotFound() {
-	// Arrange - Encounter with initiative data (required by ActivateCombatAbility)
-	initiativeData := &initiative.TrackerData{
-		Order:   []initiative.EntityData{{ID: "char-1", Type: "character"}},
-		Current: 0,
-		Round:   1,
-	}
+	// Arrange - Encounter exists
 	s.mockEncRepo.EXPECT().
 		Get(gomock.Any(), &encounterrepo.GetInput{EncounterID: "enc-1"}).
 		Return(&encounterrepo.GetOutput{
-			Data: &encounterrepo.EncounterData{
-				ID:             "enc-1",
-				InitiativeData: initiativeData,
-			},
+			Data: &encounterrepo.EncounterData{ID: "enc-1"},
 		}, nil)
 
 	// Character not found via loadCharacterForCombat
@@ -2094,42 +2086,31 @@ func (s *OrchestratorTestSuite) TestActivateFeature_UnknownFeature() {
 	s.Assert().Contains(output.Message, "unknown feature")
 }
 
-func (s *OrchestratorTestSuite) TestActivateFeature_DelegatesToActivateCombatAbility() {
-	// This test verifies ActivateFeature delegates to ActivateCombatAbility.
-	// It sets up the same expectations as ActivateCombatAbility tests.
+func (s *OrchestratorTestSuite) TestActivateFeature_CallsCharActivateAbilityDirectly() {
+	// This test verifies ActivateFeature calls char.ActivateAbility directly
+	// (not through ActivateCombatAbility) preserving feature identity.
 
-	// Arrange - Encounter with initiative data (char-1's turn)
-	initiativeData := &initiative.TrackerData{
-		Order:   []initiative.EntityData{{ID: "char-1", Type: "character"}},
-		Current: 0,
-		Round:   1,
-	}
+	// Arrange - Encounter exists
 	s.mockEncRepo.EXPECT().
 		Get(gomock.Any(), &encounterrepo.GetInput{EncounterID: "enc-1"}).
 		Return(&encounterrepo.GetOutput{
 			Data: &encounterrepo.EncounterData{
 				ID:                "enc-1",
-				InitiativeData:    initiativeData,
 				MovementRemaining: 30,
 			},
 		}, nil)
 
 	// Character with barbarian data
 	charData := createTestCharacterData("char-1", "Grog")
-	// ActivateCombatAbility calls loadCharacterForCombat -> charRepo.Get
+	// loadCharacterForCombat -> charRepo.Get
 	s.mockCharRepo.EXPECT().
 		Get(gomock.Any(), characterrepo.GetInput{ID: "char-1"}).
 		Return(&characterrepo.GetOutput{Character: &entities.Character{Data: charData}}, nil)
 
-	// ActivateCombatAbility calls persistCharacterData -> charRepo.Update
+	// persistCharacterData -> charRepo.Update
 	s.mockCharRepo.EXPECT().
 		Update(gomock.Any(), gomock.Any()).
 		Return(&characterrepo.UpdateOutput{}, nil)
-
-	// After ActivateCombatAbility, ActivateFeature loads character data for response
-	s.mockCharRepo.EXPECT().
-		Get(gomock.Any(), characterrepo.GetInput{ID: "char-1"}).
-		Return(&characterrepo.GetOutput{Character: &entities.Character{Data: charData}}, nil)
 
 	// Act
 	output, err := s.orchestrator.ActivateFeature(context.Background(), &ActivateFeatureInput{
@@ -2200,18 +2181,12 @@ func (s *OrchestratorTestSuite) TestResolveAttack_NoActionAvailable_RejectsAttac
 }
 
 func (s *OrchestratorTestSuite) TestActivateFeature_NoBonusActionAvailable_RejectsActivation() {
-	// Arrange - Character already used bonus action (tracked on character action economy)
-	initiativeData := &initiative.TrackerData{
-		Order:   []initiative.EntityData{{ID: "char-1", Type: "character"}},
-		Current: 0,
-		Round:   1,
-	}
+	// Arrange - Encounter exists
 	s.mockEncRepo.EXPECT().
 		Get(gomock.Any(), &encounterrepo.GetInput{EncounterID: "enc-1"}).
 		Return(&encounterrepo.GetOutput{
 			Data: &encounterrepo.EncounterData{
 				ID:                "enc-1",
-				InitiativeData:    initiativeData,
 				MovementRemaining: 30,
 			},
 		}, nil)
@@ -2219,7 +2194,7 @@ func (s *OrchestratorTestSuite) TestActivateFeature_NoBonusActionAvailable_Rejec
 	// Character with action economy showing bonus action used
 	charData := createTestCharacterData("char-1", "Grog")
 	charData.ActionEconomy = &character.ActionEconomyData{
-		TurnNumber:            100, // Matches computeTurnNumber (round=1, current=0)
+		TurnNumber:            1, // Matches computeTurnNumber (no initiative -> 1)
 		ActionsRemaining:      1,
 		BonusActionsRemaining: 0, // Already used
 		ReactionsRemaining:    1,
@@ -2228,15 +2203,10 @@ func (s *OrchestratorTestSuite) TestActivateFeature_NoBonusActionAvailable_Rejec
 		Get(gomock.Any(), characterrepo.GetInput{ID: "char-1"}).
 		Return(&characterrepo.GetOutput{Character: &entities.Character{Data: charData}}, nil)
 
-	// ActivateCombatAbility still persists character after ability rejection
+	// persistCharacterData still called after ability rejection
 	s.mockCharRepo.EXPECT().
 		Update(gomock.Any(), gomock.Any()).
 		Return(&characterrepo.UpdateOutput{}, nil)
-
-	// After delegation, ActivateFeature loads character for response
-	s.mockCharRepo.EXPECT().
-		Get(gomock.Any(), characterrepo.GetInput{ID: "char-1"}).
-		Return(&characterrepo.GetOutput{Character: &entities.Character{Data: charData}}, nil)
 
 	// Act - Try to activate Rage (bonus action)
 	output, err := s.orchestrator.ActivateFeature(context.Background(), &ActivateFeatureInput{
