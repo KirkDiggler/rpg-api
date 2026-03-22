@@ -374,6 +374,57 @@ func (s *OpenDoorTestSuite) TestOpenDoor_RevealsCorrectRoom() {
 	s.Equal("room-1", output.RevealedRoom.ID)
 }
 
+func (s *OpenDoorTestSuite) TestOpenDoor_MonsterIDsIncludeRoomID() {
+	// Monster IDs should include the room ID to be globally unique across rooms.
+	// e.g., "monster-room-2-mp-1" instead of just "monster-mp-1"
+	// Arrange
+	testDungeon := s.createTestDungeon()
+	testEncounter := s.createTestEncounterData()
+
+	s.mockDungeonRepo.EXPECT().
+		Get(gomock.Any(), &dungeonrepo.GetInput{DungeonID: "dng-123"}).
+		Return(&dungeonrepo.GetOutput{Dungeon: testDungeon}, nil)
+
+	s.mockEncRepo.EXPECT().
+		Get(gomock.Any(), &encounterrepo.GetInput{EncounterID: "enc-123"}).
+		Return(&encounterrepo.GetOutput{Data: testEncounter}, nil)
+
+	s.mockDungeonRepo.EXPECT().
+		Update(gomock.Any(), gomock.Any()).
+		Return(&dungeonrepo.UpdateOutput{Success: true}, nil)
+
+	s.mockEncRepo.EXPECT().
+		Update(gomock.Any(), gomock.Any()).
+		Return(&encounterrepo.UpdateOutput{}, nil)
+
+	// Act
+	output, err := s.orchestrator.OpenDoor(s.ctx, &encounter.OpenDoorInput{
+		DungeonID:    "dng-123",
+		ConnectionID: "conn-1",
+	})
+
+	// Assert
+	s.Require().NoError(err)
+	s.Require().NotNil(output)
+	s.Require().Len(output.Monsters, 2)
+
+	// Monster IDs should contain the room ID ("room-2")
+	for _, m := range output.Monsters {
+		s.Contains(m.ID, "room-2", "monster ID %q should contain room ID 'room-2'", m.ID)
+	}
+
+	// Monster IDs should be distinct and include placement ID
+	s.Equal("monster-room-2-mp-1", output.Monsters[0].ID)
+	s.Equal("monster-room-2-mp-2", output.Monsters[1].ID)
+
+	// These IDs should differ from what room-1 monsters would be
+	// (room-1 has no encounter in our test, but the format proves uniqueness)
+	for _, m := range output.Monsters {
+		s.NotEqual("monster-mp-1", m.ID, "monster ID should not be room-scoped")
+		s.NotEqual("monster-mp-2", m.ID, "monster ID should not be room-scoped")
+	}
+}
+
 func (s *OpenDoorTestSuite) TestOpenDoor_BothRoomsRevealed_Error() {
 	// If both rooms connected by the door are already revealed, return error
 	// Arrange
