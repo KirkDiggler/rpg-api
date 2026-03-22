@@ -733,7 +733,7 @@ func (o *Orchestrator) createDungeonWithGenerator(
 	}
 
 	// Place monsters from the encounter
-	monsters := o.placeMonsters(roomData, startRoom, startRoom.ID)
+	monsters := o.placeMonsters(roomData, startRoom)
 
 	// Extract doors for response using entity connections (which have proper IDs)
 	doors := o.getDoorInfoForRoom(dungeonEntity, generatedDungeon.StartRoom)
@@ -1055,7 +1055,7 @@ func (o *Orchestrator) getPlayerSpawnPositions(room *dungeon.Room) []spatial.Cub
 
 // placeMonsters places monsters from the room's encounter into the room data
 // Uses the spawner component for spatial-aware placement that avoids walls and other entities
-func (o *Orchestrator) placeMonsters(roomData *spatial.RoomData, room *dungeon.Room, roomID string) []*monster.Data {
+func (o *Orchestrator) placeMonsters(roomData *spatial.RoomData, room *dungeon.Room) []*monster.Data {
 	if room.Encounter == nil {
 		return nil
 	}
@@ -1063,7 +1063,7 @@ func (o *Orchestrator) placeMonsters(roomData *spatial.RoomData, room *dungeon.R
 	// Build list of monster IDs to spawn
 	monsterIDs := make([]string, 0, len(room.Encounter.Monsters))
 	for _, placement := range room.Encounter.Monsters {
-		monsterIDs = append(monsterIDs, fmt.Sprintf("monster-%s-%s", roomID, placement.ID))
+		monsterIDs = append(monsterIDs, fmt.Sprintf("monster-%s-%s", room.ID, placement.ID))
 	}
 
 	// Get currently occupied positions (characters already in room)
@@ -1094,7 +1094,7 @@ func (o *Orchestrator) placeMonsters(roomData *spatial.RoomData, room *dungeon.R
 	factory := dungeon.NewMonsterFactory()
 	monsters := make([]*monster.Data, 0, len(room.Encounter.Monsters))
 	for _, placement := range room.Encounter.Monsters {
-		monsterID := fmt.Sprintf("monster-%s-%s", roomID, placement.ID)
+		monsterID := fmt.Sprintf("monster-%s-%s", room.ID, placement.ID)
 
 		// Get spawn position from spawner results
 		var spawnPos spatial.CubeCoordinate
@@ -3363,7 +3363,7 @@ func (o *Orchestrator) StartCombat(
 	}
 
 	// 11. Place monsters from the dungeon's encounter
-	monsters := o.placeMonsters(roomData, startRoom, startRoom.ID)
+	monsters := o.placeMonsters(roomData, startRoom)
 
 	// 12. Perform long rest for all characters before dungeon starts
 	// Restores HP, feature charges (Rage, Second Wind, etc.), and clears conditions

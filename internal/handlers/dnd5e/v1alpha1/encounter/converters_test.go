@@ -1188,3 +1188,52 @@ func (s *ConvertersTestSuite) TestShiftWallsByOrigin_NilStartOrEnd() {
 	s.Equal(float64(21), walls[1].Start.Y)
 	s.Nil(walls[1].End)
 }
+
+func (s *ConvertersTestSuite) TestShiftRoomToAbsolute() {
+	room := &dnd5ev1alpha1.Room{
+		Origin: &apiv1alpha1.Position{X: 0, Y: 17, Z: -17},
+		Walls: []*apiv1alpha1.Wall{
+			{
+				Start: &apiv1alpha1.Position{X: 1, Y: 2, Z: -3},
+				End:   &apiv1alpha1.Position{X: 4, Y: -1, Z: -3},
+			},
+		},
+		Entities: map[string]*dnd5ev1alpha1.EntityPlacement{
+			"monster-1": {
+				EntityId: "monster-1",
+				Position: &apiv1alpha1.Position{X: 3, Y: -5, Z: 2},
+			},
+		},
+	}
+
+	shiftRoomToAbsolute(room)
+
+	// Walls shifted
+	s.Equal(float64(1), room.Walls[0].Start.X)
+	s.Equal(float64(19), room.Walls[0].Start.Y)
+	s.Equal(float64(-20), room.Walls[0].Start.Z)
+
+	// Entities shifted
+	s.Equal(float64(3), room.Entities["monster-1"].Position.X)
+	s.Equal(float64(12), room.Entities["monster-1"].Position.Y)
+	s.Equal(float64(-15), room.Entities["monster-1"].Position.Z)
+}
+
+func (s *ConvertersTestSuite) TestShiftRoomToAbsolute_NilRoom() {
+	// Should not panic
+	shiftRoomToAbsolute(nil)
+}
+
+func (s *ConvertersTestSuite) TestShiftRoomToAbsolute_NilOrigin() {
+	room := &dnd5ev1alpha1.Room{
+		Origin: nil,
+		Entities: map[string]*dnd5ev1alpha1.EntityPlacement{
+			"monster-1": {
+				Position: &apiv1alpha1.Position{X: 3, Y: -5, Z: 2},
+			},
+		},
+	}
+	shiftRoomToAbsolute(room)
+	// Position unchanged
+	s.Equal(float64(3), room.Entities["monster-1"].Position.X)
+}

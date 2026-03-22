@@ -3,6 +3,7 @@ package encounter_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/suite"
@@ -410,7 +411,7 @@ func (s *OpenDoorTestSuite) TestOpenDoor_MonsterIDsIncludeRoomID() {
 
 	// Monster IDs should contain the room ID ("room-2")
 	for _, m := range output.Monsters {
-		s.Contains(m.ID, "room-2", "monster ID %q should contain room ID 'room-2'", m.ID)
+		s.Contains(m.ID, "room-2", fmt.Sprintf("monster ID %q should contain room ID 'room-2'", m.ID))
 	}
 
 	// Monster IDs should be distinct and include placement ID
