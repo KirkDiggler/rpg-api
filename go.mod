@@ -7,7 +7,7 @@ require (
 	github.com/KirkDiggler/rpg-toolkit/core v0.10.0
 	github.com/KirkDiggler/rpg-toolkit/dice v0.3.2
 	github.com/KirkDiggler/rpg-toolkit/events v0.6.2
-	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.51.1-0.20260322005300-79d770c8c8ab
+	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.53.0
 	github.com/KirkDiggler/rpg-toolkit/tools/environments v0.4.0
 	github.com/KirkDiggler/rpg-toolkit/tools/spatial v0.4.0
 	github.com/alicebob/miniredis/v2 v2.35.0
@@ -88,5 +88,3 @@ require (
 	google.golang.org/protobuf v1.36.11 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
-
-replace github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e => /home/kirk/personal/rpg-toolkit/.claude/worktrees/agent-afaf6449/rulebooks/dnd5e
