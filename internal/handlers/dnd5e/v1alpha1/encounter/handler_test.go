@@ -908,15 +908,16 @@ func (s *HandlerTestSuite) TestEndTurn_ServiceError() {
 
 // TestActivateFeature_Success tests successful feature activation
 func (s *HandlerTestSuite) TestActivateFeature_Success() {
-	// Arrange - Rage maps to CombatAbilityId, so handler routes through ActivateCombatAbility
+	// Arrange - All features route through ActivateFeature orchestrator
 	s.mockService.EXPECT().
-		ActivateCombatAbility(gomock.Any(), &encounter.ActivateCombatAbilityInput{
+		ActivateFeature(gomock.Any(), &encounter.ActivateFeatureInput{
 			EncounterID: "enc-1",
-			EntityID:    "char-1",
-			AbilityID:   dnd5ev1alpha1.CombatAbilityId_COMBAT_ABILITY_ID_RAGE,
+			CharacterID: "char-1",
+			FeatureID:   refs.Features.Rage().ID,
 		}).
-		Return(&encounter.ActivateCombatAbilityOutput{
+		Return(&encounter.ActivateFeatureOutput{
 			Success: true,
+			Message: "Rage activated successfully",
 		}, nil)
 
 	// Act
@@ -935,16 +936,16 @@ func (s *HandlerTestSuite) TestActivateFeature_Success() {
 
 // TestActivateFeature_FeatureNotFound tests when ability activation fails
 func (s *HandlerTestSuite) TestActivateFeature_FeatureNotFound() {
-	// Arrange - Rage routes through ActivateCombatAbility, which returns failure
+	// Arrange
 	s.mockService.EXPECT().
-		ActivateCombatAbility(gomock.Any(), &encounter.ActivateCombatAbilityInput{
+		ActivateFeature(gomock.Any(), &encounter.ActivateFeatureInput{
 			EncounterID: "enc-1",
-			EntityID:    "char-1",
-			AbilityID:   dnd5ev1alpha1.CombatAbilityId_COMBAT_ABILITY_ID_RAGE,
+			CharacterID: "char-1",
+			FeatureID:   refs.Features.Rage().ID,
 		}).
-		Return(&encounter.ActivateCombatAbilityOutput{
+		Return(&encounter.ActivateFeatureOutput{
 			Success: false,
-			Error:   "feature 'rage' not found on character",
+			Message: "feature 'rage' not found on character",
 		}, nil)
 
 	// Act
@@ -963,16 +964,16 @@ func (s *HandlerTestSuite) TestActivateFeature_FeatureNotFound() {
 
 // TestActivateFeature_CannotActivate tests when feature cannot be activated
 func (s *HandlerTestSuite) TestActivateFeature_CannotActivate() {
-	// Arrange - e.g., already raging - routes through ActivateCombatAbility
+	// Arrange - e.g., already raging
 	s.mockService.EXPECT().
-		ActivateCombatAbility(gomock.Any(), &encounter.ActivateCombatAbilityInput{
+		ActivateFeature(gomock.Any(), &encounter.ActivateFeatureInput{
 			EncounterID: "enc-1",
-			EntityID:    "char-1",
-			AbilityID:   dnd5ev1alpha1.CombatAbilityId_COMBAT_ABILITY_ID_RAGE,
+			CharacterID: "char-1",
+			FeatureID:   refs.Features.Rage().ID,
 		}).
-		Return(&encounter.ActivateCombatAbilityOutput{
+		Return(&encounter.ActivateFeatureOutput{
 			Success: false,
-			Error:   "cannot activate rage: already raging",
+			Message: "cannot activate rage: already raging",
 		}, nil)
 
 	// Act
@@ -1045,12 +1046,12 @@ func (s *HandlerTestSuite) TestActivateFeature_MissingFeatureId() {
 
 // TestActivateFeature_ServiceError tests handling of service errors
 func (s *HandlerTestSuite) TestActivateFeature_ServiceError() {
-	// Arrange - Rage routes through ActivateCombatAbility
+	// Arrange
 	s.mockService.EXPECT().
-		ActivateCombatAbility(gomock.Any(), &encounter.ActivateCombatAbilityInput{
+		ActivateFeature(gomock.Any(), &encounter.ActivateFeatureInput{
 			EncounterID: "enc-1",
-			EntityID:    "char-1",
-			AbilityID:   dnd5ev1alpha1.CombatAbilityId_COMBAT_ABILITY_ID_RAGE,
+			CharacterID: "char-1",
+			FeatureID:   refs.Features.Rage().ID,
 		}).
 		Return(nil, fmt.Errorf("database error"))
 

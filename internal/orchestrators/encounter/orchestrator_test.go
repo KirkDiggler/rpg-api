@@ -2112,6 +2112,11 @@ func (s *OrchestratorTestSuite) TestActivateFeature_CallsCharActivateAbilityDire
 		Update(gomock.Any(), gomock.Any()).
 		Return(&characterrepo.UpdateOutput{}, nil)
 
+	// syncCharActionEconomyToEncounter -> encRepo.Update
+	s.mockEncRepo.EXPECT().
+		Update(gomock.Any(), gomock.Any()).
+		Return(&encounterrepo.UpdateOutput{Success: true}, nil)
+
 	// Act
 	output, err := s.orchestrator.ActivateFeature(context.Background(), &ActivateFeatureInput{
 		EncounterID: "enc-1",
@@ -2207,6 +2212,11 @@ func (s *OrchestratorTestSuite) TestActivateFeature_NoBonusActionAvailable_Rejec
 	s.mockCharRepo.EXPECT().
 		Update(gomock.Any(), gomock.Any()).
 		Return(&characterrepo.UpdateOutput{}, nil)
+
+	// syncCharActionEconomyToEncounter -> encRepo.Update
+	s.mockEncRepo.EXPECT().
+		Update(gomock.Any(), gomock.Any()).
+		Return(&encounterrepo.UpdateOutput{Success: true}, nil)
 
 	// Act - Try to activate Rage (bonus action)
 	output, err := s.orchestrator.ActivateFeature(context.Background(), &ActivateFeatureInput{

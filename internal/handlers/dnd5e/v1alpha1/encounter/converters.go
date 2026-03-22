@@ -870,22 +870,6 @@ func featureEnumToID(featureID dnd5ev1alpha1.FeatureId) string {
 	}
 }
 
-// featureIDToCombatAbilityID maps a FeatureId proto enum to the equivalent CombatAbilityId.
-// Used to route legacy ActivateFeature calls through the ActivateCombatAbility path.
-func featureIDToCombatAbilityID(featureID dnd5ev1alpha1.FeatureId) (dnd5ev1alpha1.CombatAbilityId, bool) {
-	switch featureID {
-	case dnd5ev1alpha1.FeatureId_FEATURE_ID_RAGE:
-		return dnd5ev1alpha1.CombatAbilityId_COMBAT_ABILITY_ID_RAGE, true
-	case dnd5ev1alpha1.FeatureId_FEATURE_ID_SECOND_WIND:
-		return dnd5ev1alpha1.CombatAbilityId_COMBAT_ABILITY_ID_SECOND_WIND, true
-	case dnd5ev1alpha1.FeatureId_FEATURE_ID_FLURRY_OF_BLOWS:
-		return dnd5ev1alpha1.CombatAbilityId_COMBAT_ABILITY_ID_FLURRY_OF_BLOWS, true
-	// PATIENT_DEFENSE and STEP_OF_THE_WIND fall through to ActivateFeature path
-	// because they are features with ki costs, not standard combat abilities.
-	default:
-		return dnd5ev1alpha1.CombatAbilityId_COMBAT_ABILITY_ID_UNSPECIFIED, false
-	}
-}
 
 // fightingStyleRefToProto is deprecated - fighting styles are now conditions.
 // Use conditionRefToProto instead. This function is kept for reference.

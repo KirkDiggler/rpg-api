@@ -393,29 +393,7 @@ func (h *Handler) ActivateFeature(
 		return nil, status.Error(codes.InvalidArgument, "feature_id is required")
 	}
 
-	// 2. Route through ActivateCombatAbility if feature has a combat ability mapping
-	if abilityID, ok := featureIDToCombatAbilityID(req.GetFeatureId()); ok {
-		abilityOutput, err := h.encounterService.ActivateCombatAbility(ctx, &encounter.ActivateCombatAbilityInput{
-			EncounterID: req.GetEncounterId(),
-			EntityID:    req.GetCharacterId(),
-			AbilityID:   abilityID,
-		})
-		if err != nil {
-			return nil, status.Error(codes.Internal, err.Error())
-		}
-
-		message := fmt.Sprintf("%s activated successfully", req.GetFeatureId().String())
-		if !abilityOutput.Success {
-			message = abilityOutput.Error
-		}
-
-		return &dnd5ev1alpha1.ActivateFeatureResponse{
-			Success: abilityOutput.Success,
-			Message: message,
-		}, nil
-	}
-
-	// 3. Fallback: use ActivateFeature for unmapped features
+	// 2. Map feature ID and delegate to orchestrator
 	featureID := featureEnumToID(req.GetFeatureId())
 	if featureID == "" {
 		return nil, status.Error(codes.InvalidArgument, "unsupported feature_id")

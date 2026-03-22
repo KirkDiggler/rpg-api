@@ -2152,6 +2152,47 @@ func (o *Orchestrator) persistCharacterData(
 	return nil
 }
 
+// syncCharActionEconomyToEncounter reads the character's toolkit action economy and
+// writes matching fields to the encounter entity's ActionEconomyState, then persists.
+func (o *Orchestrator) syncCharActionEconomyToEncounter(
+	ctx context.Context,
+	char *character.Character,
+	encounterID string,
+) error {
+	ae := char.GetActionEconomy()
+	if ae == nil {
+		return nil
+	}
+
+	encAE := &entities.ActionEconomyState{
+		ActionsRemaining:        ae.ActionsRemaining,
+		BonusActionsRemaining:   ae.BonusActionsRemaining,
+		ReactionsRemaining:      ae.ReactionsRemaining,
+		AttacksRemaining:        ae.Granted[character.GrantedAttacks],
+		OffHandAttacksRemaining: ae.Granted[character.GrantedOffHandStrikes],
+		FlurryStrikesRemaining:  ae.Granted[character.GrantedFlurryStrikes],
+	}
+
+	// Features like FlurryOfBlows grant actions via event bus rather than updating
+	// the Granted map. Count flurry strike actions on the character directly.
+	if encAE.FlurryStrikesRemaining == 0 {
+		for _, a := range char.GetActions() {
+			if a.CapacityType() == combat.CapacityFlurryStrike {
+				encAE.FlurryStrikesRemaining++
+			}
+		}
+	}
+
+	_, err := o.encRepo.Update(ctx, &encounterrepo.UpdateInput{
+		EncounterID:   encounterID,
+		ActionEconomy: encAE,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to sync action economy to encounter: %w", err)
+	}
+	return nil
+}
+
 // validateTurnOwnership checks if the requesting player owns the entity whose turn it is.
 // Returns an error if:
 // - The active entity is a monster (players cannot control monsters)
@@ -2247,6 +2288,11 @@ func (o *Orchestrator) ActivateFeature(
 	// 6. Persist character data
 	if persistErr := o.persistCharacterData(ctx, char, charOutput); persistErr != nil {
 		return nil, persistErr
+	}
+
+	// 6b. Sync character's action economy to encounter entity for GetEncounterState
+	if syncErr := o.syncCharActionEconomyToEncounter(ctx, char, input.EncounterID); syncErr != nil {
+		return nil, syncErr
 	}
 
 	// 7. Publish FeatureActivatedEvent for multiplayer broadcast
