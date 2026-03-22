@@ -393,20 +393,18 @@ func (h *Handler) ActivateFeature(
 		return nil, status.Error(codes.InvalidArgument, "feature_id is required")
 	}
 
-	// Convert enum to toolkit feature ID string
+	// 2. Map feature ID and delegate to orchestrator
 	featureID := featureEnumToID(req.GetFeatureId())
 	if featureID == "" {
 		return nil, status.Error(codes.InvalidArgument, "unsupported feature_id")
 	}
 
-	// 2. Create service input
 	input := &encounter.ActivateFeatureInput{
 		EncounterID: req.GetEncounterId(),
 		CharacterID: req.GetCharacterId(),
 		FeatureID:   featureID,
 	}
 
-	// 3. Call service
 	output, err := h.encounterService.ActivateFeature(ctx, input)
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
@@ -423,7 +421,6 @@ func (h *Handler) ActivateFeature(
 		Success:          output.Success,
 		Message:          output.Message,
 		UpdatedCharacter: updatedCharacter,
-		// TODO: Add UpdatedCombatState when needed
 	}, nil
 }
 

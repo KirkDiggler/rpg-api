@@ -908,17 +908,16 @@ func (s *HandlerTestSuite) TestEndTurn_ServiceError() {
 
 // TestActivateFeature_Success tests successful feature activation
 func (s *HandlerTestSuite) TestActivateFeature_Success() {
-	// Arrange
+	// Arrange - All features route through ActivateFeature orchestrator
 	s.mockService.EXPECT().
 		ActivateFeature(gomock.Any(), &encounter.ActivateFeatureInput{
 			EncounterID: "enc-1",
 			CharacterID: "char-1",
-			FeatureID:   "rage",
+			FeatureID:   refs.Features.Rage().ID,
 		}).
 		Return(&encounter.ActivateFeatureOutput{
-			Success:       true,
-			Message:       "rage activated successfully",
-			CharacterData: nil, // Character data conversion tested separately
+			Success: true,
+			Message: "Rage activated successfully",
 		}, nil)
 
 	// Act
@@ -935,19 +934,18 @@ func (s *HandlerTestSuite) TestActivateFeature_Success() {
 	s.Assert().Contains(resp.Message, "activated")
 }
 
-// TestActivateFeature_FeatureNotFound tests when feature is not found on character
+// TestActivateFeature_FeatureNotFound tests when ability activation fails
 func (s *HandlerTestSuite) TestActivateFeature_FeatureNotFound() {
 	// Arrange
 	s.mockService.EXPECT().
 		ActivateFeature(gomock.Any(), &encounter.ActivateFeatureInput{
 			EncounterID: "enc-1",
 			CharacterID: "char-1",
-			FeatureID:   "rage",
+			FeatureID:   refs.Features.Rage().ID,
 		}).
 		Return(&encounter.ActivateFeatureOutput{
-			Success:       false,
-			Message:       "feature 'rage' not found on character",
-			CharacterData: nil,
+			Success: false,
+			Message: "feature 'rage' not found on character",
 		}, nil)
 
 	// Act
@@ -971,12 +969,11 @@ func (s *HandlerTestSuite) TestActivateFeature_CannotActivate() {
 		ActivateFeature(gomock.Any(), &encounter.ActivateFeatureInput{
 			EncounterID: "enc-1",
 			CharacterID: "char-1",
-			FeatureID:   "rage",
+			FeatureID:   refs.Features.Rage().ID,
 		}).
 		Return(&encounter.ActivateFeatureOutput{
-			Success:       false,
-			Message:       "cannot activate rage: already raging",
-			CharacterData: nil,
+			Success: false,
+			Message: "cannot activate rage: already raging",
 		}, nil)
 
 	// Act
@@ -1054,7 +1051,7 @@ func (s *HandlerTestSuite) TestActivateFeature_ServiceError() {
 		ActivateFeature(gomock.Any(), &encounter.ActivateFeatureInput{
 			EncounterID: "enc-1",
 			CharacterID: "char-1",
-			FeatureID:   "rage",
+			FeatureID:   refs.Features.Rage().ID,
 		}).
 		Return(nil, fmt.Errorf("database error"))
 

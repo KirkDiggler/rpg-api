@@ -622,66 +622,60 @@ func (s *EventPublishingTestSuite) TestEndTurn_PublishesTurnEndedEvent() {
 	s.Require().NotNil(output)
 }
 
-func (s *EventPublishingTestSuite) TestActivateFeature_NoEventWhenFeatureNotFound() {
-	// This tests the expected behavior: no event is published when feature isn't found
-	// (The feature activation success case requires complex setup with serialized features)
+func (s *EventPublishingTestSuite) TestActivateFeature_UnknownFeature_NoEventOnFailure() {
+	// Unknown features are no longer rejected by featureIDToRef.
+	// They pass through as a constructed ref to ActivateAbility,
+	// which validates whether the feature exists on the character.
+	// No event should be published when the toolkit rejects the feature.
 
 	// Arrange
 	encounterID := "enc-123"
 	characterID := "char-1"
 	featureID := "nonexistent-feature"
 
-	// Create a character without the requested feature
-	charData := &character.Data{
-		ID:               characterID,
-		Name:             "Test Character",
-		PlayerID:         "player-1",
-		Level:            1,
-		RaceID:           "human",
-		ClassID:          "barbarian",
-		ProficiencyBonus: 2,
-		AbilityScores: shared.AbilityScores{
-			abilities.STR: 16,
-			abilities.DEX: 14,
-			abilities.CON: 15,
-			abilities.INT: 10,
-			abilities.WIS: 12,
-			abilities.CHA: 8,
-		},
-		// No features configured
-	}
-
-	// Mock encounter Get
+	// Encounter exists
 	s.mockEncRepo.EXPECT().
 		Get(gomock.Any(), &encounterrepo.GetInput{EncounterID: encounterID}).
 		Return(&encounterrepo.GetOutput{
 			Data: &encounterrepo.EncounterData{
-				ID: encounterID,
+				ID:                encounterID,
+				MovementRemaining: 30,
 			},
 		}, nil)
 
-	// Mock character Get
+	// Character loads successfully
+	charData := createTestCharacterData(characterID, "Test Character")
 	s.mockCharRepo.EXPECT().
 		Get(gomock.Any(), characterrepo.GetInput{ID: characterID}).
-		Return(&characterrepo.GetOutput{
-			Character: &entities.Character{Data: charData},
-		}, nil)
+		Return(&characterrepo.GetOutput{Character: &entities.Character{Data: charData}}, nil)
 
-	// NO character Update expected - we return early when feature not found
-	// NO Publish expected - no event when feature not found
+	// ActivateAbility may succeed with Success=false, then persist is called
+	s.mockCharRepo.EXPECT().
+		Update(gomock.Any(), gomock.Any()).
+		Return(&characterrepo.UpdateOutput{}, nil).
+		AnyTimes()
 
-	// Act
+	s.mockEncRepo.EXPECT().
+		Update(gomock.Any(), gomock.Any()).
+		Return(&encounterrepo.UpdateOutput{Success: true}, nil).
+		AnyTimes()
+
+	// Act - Toolkit's ActivateAbility will reject the unknown feature
 	output, err := s.orchestrator.ActivateFeature(context.Background(), &ActivateFeatureInput{
 		EncounterID: encounterID,
 		CharacterID: characterID,
 		FeatureID:   featureID,
 	})
 
-	// Assert - should succeed but with Success=false
-	s.Require().NoError(err)
-	s.Require().NotNil(output)
-	s.Assert().False(output.Success)
-	s.Assert().Contains(output.Message, "not found")
+	// Assert - Feature rejected by toolkit, no event published
+	if err != nil {
+		s.Assert().Contains(err.Error(), "activate ability")
+	} else {
+		s.Require().NotNil(output)
+		s.Assert().False(output.Success)
+	}
+
+	// No event processor calls expected for failed activation
 }
 
 // ============================================================================
