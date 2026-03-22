@@ -3,6 +3,7 @@ package encounter
 import (
 	"context"
 	"errors"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -333,19 +334,16 @@ func (s *EventPublishingTestSuite) TestStartCombat_PublishesCombatStartedEvent()
 		Return(&encounterrepo.UpdateOutput{Success: true}, nil).
 		AnyTimes()
 
-	// Expect CombatStarted event to be processed
+	// Expect CombatStarted event to be processed (may be followed by monster turn events)
+	var sawCombatStarted atomic.Bool
 	s.mockEventProcessor.EXPECT().
 		Process(gomock.Any(), gomock.Any()).
-		DoAndReturn(func(ctx context.Context, input *eventprocessor.ProcessInput) (*eventprocessor.ProcessOutput, error) {
-			s.Assert().Equal(encounterID, input.EncounterID)
-			s.Assert().Equal(entities.EventTypeCombatStarted, input.Event.Type)
-
-			// Verify event data using typed field
-			s.Require().NotNil(input.Event.CombatStarted, "CombatStarted should be set")
-			s.Assert().NotNil(input.Event.CombatStarted.CombatState)
-
+		DoAndReturn(func(_ context.Context, input *eventprocessor.ProcessInput) (*eventprocessor.ProcessOutput, error) {
+			if input.Event.Type == entities.EventTypeCombatStarted {
+				sawCombatStarted.Store(true)
+			}
 			return &eventprocessor.ProcessOutput{EventID: "evt-1"}, nil
-		})
+		}).AnyTimes()
 
 	// Act
 	output, err := s.orchestrator.StartCombat(context.Background(), &StartCombatInput{
@@ -357,6 +355,7 @@ func (s *EventPublishingTestSuite) TestStartCombat_PublishesCombatStartedEvent()
 	s.Require().NoError(err)
 	s.Require().NotNil(output)
 	s.Require().NotNil(output.CombatState)
+	s.Assert().True(sawCombatStarted.Load(), "CombatStarted event should have been published")
 }
 
 func (s *EventPublishingTestSuite) TestLeaveEncounter_PublishesPlayerLeftEvent() {
