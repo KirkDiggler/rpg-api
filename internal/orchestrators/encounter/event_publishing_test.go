@@ -623,52 +623,15 @@ func (s *EventPublishingTestSuite) TestEndTurn_PublishesTurnEndedEvent() {
 }
 
 func (s *EventPublishingTestSuite) TestActivateFeature_NoEventWhenFeatureNotFound() {
-	// This tests the expected behavior: no event is published when feature isn't found
-	// (The feature activation success case requires complex setup with serialized features)
+	// This tests the expected behavior: no event is published when feature isn't mapped
+	// Unknown features are rejected by featureIDToRef before any repo calls
 
 	// Arrange
 	encounterID := "enc-123"
 	characterID := "char-1"
 	featureID := "nonexistent-feature"
 
-	// Create a character without the requested feature
-	charData := &character.Data{
-		ID:               characterID,
-		Name:             "Test Character",
-		PlayerID:         "player-1",
-		Level:            1,
-		RaceID:           "human",
-		ClassID:          "barbarian",
-		ProficiencyBonus: 2,
-		AbilityScores: shared.AbilityScores{
-			abilities.STR: 16,
-			abilities.DEX: 14,
-			abilities.CON: 15,
-			abilities.INT: 10,
-			abilities.WIS: 12,
-			abilities.CHA: 8,
-		},
-		// No features configured
-	}
-
-	// Mock encounter Get
-	s.mockEncRepo.EXPECT().
-		Get(gomock.Any(), &encounterrepo.GetInput{EncounterID: encounterID}).
-		Return(&encounterrepo.GetOutput{
-			Data: &encounterrepo.EncounterData{
-				ID: encounterID,
-			},
-		}, nil)
-
-	// Mock character Get
-	s.mockCharRepo.EXPECT().
-		Get(gomock.Any(), characterrepo.GetInput{ID: characterID}).
-		Return(&characterrepo.GetOutput{
-			Character: &entities.Character{Data: charData},
-		}, nil)
-
-	// NO character Update expected - we return early when feature not found
-	// NO Publish expected - no event when feature not found
+	// NO repo calls expected - featureIDToRef returns nil for unknown features
 
 	// Act
 	output, err := s.orchestrator.ActivateFeature(context.Background(), &ActivateFeatureInput{
@@ -681,7 +644,7 @@ func (s *EventPublishingTestSuite) TestActivateFeature_NoEventWhenFeatureNotFoun
 	s.Require().NoError(err)
 	s.Require().NotNil(output)
 	s.Assert().False(output.Success)
-	s.Assert().Contains(output.Message, "not found")
+	s.Assert().Contains(output.Message, "unknown feature")
 }
 
 // ============================================================================

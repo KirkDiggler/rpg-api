@@ -870,6 +870,25 @@ func featureEnumToID(featureID dnd5ev1alpha1.FeatureId) string {
 	}
 }
 
+// featureIDToCombatAbilityID maps a FeatureId proto enum to the equivalent CombatAbilityId.
+// Used to route legacy ActivateFeature calls through the ActivateCombatAbility path.
+func featureIDToCombatAbilityID(featureID dnd5ev1alpha1.FeatureId) (dnd5ev1alpha1.CombatAbilityId, bool) {
+	switch featureID {
+	case dnd5ev1alpha1.FeatureId_FEATURE_ID_RAGE:
+		return dnd5ev1alpha1.CombatAbilityId_COMBAT_ABILITY_ID_RAGE, true
+	case dnd5ev1alpha1.FeatureId_FEATURE_ID_SECOND_WIND:
+		return dnd5ev1alpha1.CombatAbilityId_COMBAT_ABILITY_ID_SECOND_WIND, true
+	case dnd5ev1alpha1.FeatureId_FEATURE_ID_FLURRY_OF_BLOWS:
+		return dnd5ev1alpha1.CombatAbilityId_COMBAT_ABILITY_ID_FLURRY_OF_BLOWS, true
+	case dnd5ev1alpha1.FeatureId_FEATURE_ID_PATIENT_DEFENSE:
+		return dnd5ev1alpha1.CombatAbilityId_COMBAT_ABILITY_ID_DODGE, true // PatientDefense activates Dodge
+	case dnd5ev1alpha1.FeatureId_FEATURE_ID_STEP_OF_THE_WIND:
+		return dnd5ev1alpha1.CombatAbilityId_COMBAT_ABILITY_ID_DASH, true // StepOfTheWind activates Dash
+	default:
+		return dnd5ev1alpha1.CombatAbilityId_COMBAT_ABILITY_ID_UNSPECIFIED, false
+	}
+}
+
 // fightingStyleRefToProto is deprecated - fighting styles are now conditions.
 // Use conditionRefToProto instead. This function is kept for reference.
 // Note: Removed in toolkit PR #485 - refs.FightingStyles no longer exists.

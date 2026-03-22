@@ -198,7 +198,7 @@ func (s *CharacterCreationSuite) TestCreateFighter() {
 	// Check validation before finalize
 	getDraftResp, err := s.server.CharacterClient.GetDraft(ctx, &dnd5ev1alpha1.GetDraftRequest{DraftId: draftID})
 	s.Require().NoError(err)
-	
+
 	if issues := getDraftResp.GetDraft().GetValidation().GetIssues(); len(issues) > 0 {
 		s.T().Log("Validation issues:")
 		for _, issue := range issues {
@@ -349,7 +349,7 @@ func (s *CharacterCreationSuite) TestCreateRogue() {
 	// Check validation
 	getDraftResp, err := s.server.CharacterClient.GetDraft(ctx, &dnd5ev1alpha1.GetDraftRequest{DraftId: draftID})
 	s.Require().NoError(err)
-	
+
 	if issues := getDraftResp.GetDraft().GetValidation().GetIssues(); len(issues) > 0 {
 		s.T().Log("Validation issues:")
 		for _, issue := range issues {
@@ -425,7 +425,7 @@ func (s *CharacterCreationSuite) TestCreateBarbarian() {
 
 	finalizeResp, err := s.server.CharacterClient.FinalizeDraft(ctx, &dnd5ev1alpha1.FinalizeDraftRequest{DraftId: draftID})
 	s.Require().NoError(err)
-	
+
 	s.T().Logf("✅ Barbarian created: %s", finalizeResp.GetCharacter().GetId())
 }
 
@@ -443,7 +443,7 @@ func (s *CharacterCreationSuite) TestValidation_MissingName() {
 	// Set everything except name
 	_, _ = s.server.CharacterClient.UpdateRace(ctx, &dnd5ev1alpha1.UpdateRaceRequest{DraftId: draftID, Race: dnd5ev1alpha1.Race_RACE_HUMAN})
 	_, _ = s.server.CharacterClient.UpdateClass(ctx, &dnd5ev1alpha1.UpdateClassRequest{DraftId: draftID, Class: dnd5ev1alpha1.Class_CLASS_FIGHTER})
-	
+
 	// Try to finalize without name
 	_, err = s.server.CharacterClient.FinalizeDraft(ctx, &dnd5ev1alpha1.FinalizeDraftRequest{DraftId: draftID})
 	s.Assert().Error(err, "should fail without name")
@@ -459,7 +459,7 @@ func (s *CharacterCreationSuite) TestValidation_MissingRace() {
 
 	_, _ = s.server.CharacterClient.UpdateName(ctx, &dnd5ev1alpha1.UpdateNameRequest{DraftId: draftID, Name: "Test"})
 	_, _ = s.server.CharacterClient.UpdateClass(ctx, &dnd5ev1alpha1.UpdateClassRequest{DraftId: draftID, Class: dnd5ev1alpha1.Class_CLASS_FIGHTER})
-	
+
 	_, err = s.server.CharacterClient.FinalizeDraft(ctx, &dnd5ev1alpha1.FinalizeDraftRequest{DraftId: draftID})
 	s.Assert().Error(err, "should fail without race")
 	s.T().Logf("✅ Correctly rejected: %v", err)
@@ -474,7 +474,7 @@ func (s *CharacterCreationSuite) TestValidation_MissingClass() {
 
 	_, _ = s.server.CharacterClient.UpdateName(ctx, &dnd5ev1alpha1.UpdateNameRequest{DraftId: draftID, Name: "Test"})
 	_, _ = s.server.CharacterClient.UpdateRace(ctx, &dnd5ev1alpha1.UpdateRaceRequest{DraftId: draftID, Race: dnd5ev1alpha1.Race_RACE_HUMAN})
-	
+
 	_, err = s.server.CharacterClient.FinalizeDraft(ctx, &dnd5ev1alpha1.FinalizeDraftRequest{DraftId: draftID})
 	s.Assert().Error(err, "should fail without class")
 	s.T().Logf("✅ Correctly rejected: %v", err)

@@ -14,8 +14,8 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/integration/harness"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	coreResources "github.com/KirkDiggler/rpg-toolkit/core/resources"
-	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/abilities"
+	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/refs"
 	dnd5eResources "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/resources"
 )

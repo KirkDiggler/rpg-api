@@ -19,7 +19,6 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/classes"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/combat"
 	dnd5eEvents "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/events"
-	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/features"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/gamectx"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/initiative"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/monster"
@@ -1885,16 +1884,6 @@ const (
 // Default movement speed in feet (30 feet = 6 hexes at 5ft/hex)
 const defaultMovementSpeed = 30
 
-// Action cost types for features
-type actionCostType int
-
-const (
-	actionCostNone        actionCostType = iota // No action required (free action)
-	actionCostAction                            // Requires standard action
-	actionCostBonusAction                       // Requires bonus action
-	actionCostReaction                          // Requires reaction
-)
-
 // unarmedStrikeWeapon returns the default unarmed strike weapon definition.
 // Base damage is 1d1 (1 + STR mod); Martial Arts conditions upgrade the die
 // automatically through the damage chain.
@@ -1905,50 +1894,6 @@ func unarmedStrikeWeapon() weapons.Weapon {
 		Category:   weapons.CategorySimpleMelee,
 		Damage:     "1d1",
 		DamageType: "bludgeoning",
-	}
-}
-
-// getFeatureActionCost returns the action cost for a feature.
-// This maps D&D 5e feature activation costs.
-func getFeatureActionCost(featureID string) actionCostType {
-	// D&D 5e feature action costs — IDs use refs package canonical constants
-	switch featureID {
-	// Bonus action features
-	case refs.Features.Rage().ID,
-		refs.Features.SecondWind().ID,
-		refs.Features.StepOfTheWind().ID,
-		refs.Features.PatientDefense().ID,
-		refs.Features.FlurryOfBlows().ID:
-		return actionCostBonusAction
-
-	// Free abilities (no action economy cost)
-	// Action Surge: Used "on your turn" without requiring action, bonus action, or reaction.
-	// Note: Usage limits (per rest) are tracked separately by the feature itself.
-	case refs.Features.ActionSurge().ID:
-		return actionCostNone
-
-	default:
-		// Default to no action cost for unknown features.
-		// This allows features to be used without action economy enforcement
-		// until they are explicitly mapped. New features should be added above.
-		return actionCostNone
-	}
-}
-
-// applyFeatureSideEffects updates action economy for feature-specific grants.
-// The toolkit handles these via event bus, but the API needs to reflect them
-// in the persisted ActionEconomyState for state snapshots.
-func applyFeatureSideEffects(featureID string, ae *entities.ActionEconomyState) {
-	if ae == nil {
-		return
-	}
-	switch featureID {
-	case refs.Features.FlurryOfBlows().ID:
-		ae.GrantFlurryStrikes(2) // Flurry of Blows grants 2 unarmed strikes
-	case refs.Features.PatientDefense().ID:
-		ae.DodgeActive = true // Patient Defense grants Dodge as bonus action
-	case refs.Features.StepOfTheWind().ID:
-		ae.DisengageActive = true // Step of the Wind grants Disengage as bonus action
 	}
 }
 
@@ -2098,6 +2043,49 @@ func protoAbilityIDToRef(abilityID pb.CombatAbilityId) *core.Ref {
 	}
 }
 
+// featureIDToRef maps a feature ID string to a toolkit ref.
+// Used by ActivateFeature to validate the feature ID before delegating.
+func featureIDToRef(featureID string) *core.Ref {
+	switch featureID {
+	case refs.Features.Rage().ID:
+		return refs.Features.Rage()
+	case refs.Features.SecondWind().ID:
+		return refs.Features.SecondWind()
+	case refs.Features.FlurryOfBlows().ID:
+		return refs.Features.FlurryOfBlows()
+	case refs.Features.PatientDefense().ID:
+		return refs.Features.PatientDefense()
+	case refs.Features.StepOfTheWind().ID:
+		return refs.Features.StepOfTheWind()
+	case refs.Features.ActionSurge().ID:
+		return refs.Features.ActionSurge()
+	default:
+		return nil
+	}
+}
+
+// featureRefToProtoAbilityID maps a toolkit feature ref to a proto CombatAbilityId.
+// Reverse of protoAbilityIDToRef for feature refs.
+func featureRefToProtoAbilityID(ref *core.Ref) pb.CombatAbilityId {
+	if ref == nil {
+		return pb.CombatAbilityId_COMBAT_ABILITY_ID_UNSPECIFIED
+	}
+	switch ref.ID {
+	case refs.Features.Rage().ID:
+		return pb.CombatAbilityId_COMBAT_ABILITY_ID_RAGE
+	case refs.Features.SecondWind().ID:
+		return pb.CombatAbilityId_COMBAT_ABILITY_ID_SECOND_WIND
+	case refs.Features.FlurryOfBlows().ID:
+		return pb.CombatAbilityId_COMBAT_ABILITY_ID_FLURRY_OF_BLOWS
+	case refs.Features.PatientDefense().ID:
+		return pb.CombatAbilityId_COMBAT_ABILITY_ID_DODGE // PatientDefense activates Dodge
+	case refs.Features.StepOfTheWind().ID:
+		return pb.CombatAbilityId_COMBAT_ABILITY_ID_DASH // StepOfTheWind activates Dash
+	default:
+		return pb.CombatAbilityId_COMBAT_ABILITY_ID_UNSPECIFIED
+	}
+}
+
 // protoActionIDToRef maps a proto ActionId to a toolkit action ref.
 // Used by the orchestrator to convert the proto enum from the handler into a toolkit ref
 // that can be passed to character.ExecuteAction.
@@ -2223,7 +2211,7 @@ func (o *Orchestrator) validateTurnOwnership(
 }
 
 // ActivateFeature activates a combat feature (e.g., Rage) for a character.
-// The character must have the feature and meet any activation requirements.
+// Delegates to ActivateCombatAbility which handles action economy through the toolkit.
 func (o *Orchestrator) ActivateFeature(
 	ctx context.Context,
 	input *ActivateFeatureInput,
@@ -2242,151 +2230,53 @@ func (o *Orchestrator) ActivateFeature(
 		return nil, fmt.Errorf("feature ID is required")
 	}
 
-	// 2. Load encounter to verify it exists and get action economy
-	encOutput, err := o.encRepo.Get(ctx, &encounterrepo.GetInput{
+	// 2. Map feature ID to toolkit ref
+	abilityRef := featureIDToRef(input.FeatureID)
+	if abilityRef == nil {
+		return &ActivateFeatureOutput{
+			Success: false,
+			Message: fmt.Sprintf("unknown feature: %s", input.FeatureID),
+		}, nil
+	}
+
+	// 3. Delegate to ActivateCombatAbility
+	abilityOutput, err := o.ActivateCombatAbility(ctx, &ActivateCombatAbilityInput{
 		EncounterID: input.EncounterID,
+		EntityID:    input.CharacterID,
+		AbilityID:   featureRefToProtoAbilityID(abilityRef),
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to load encounter: %w", err)
-	}
-	if encOutput.Data == nil {
-		return nil, fmt.Errorf("encounter not found: %s", input.EncounterID)
+		return nil, err
 	}
 
-	// 2a. Load action economy (initialize if not present for backwards compatibility)
-	actionEconomy := encOutput.Data.ActionEconomy
-	if actionEconomy == nil {
-		actionEconomy = entities.NewActionEconomyState()
-	}
-
-	// 2b. Check action economy based on feature's action cost
-	actionCost := getFeatureActionCost(input.FeatureID)
-	switch actionCost {
-	case actionCostAction:
-		if !actionEconomy.HasAction() {
-			return &ActivateFeatureOutput{
-				Success: false,
-				Message: "no action available: action already used this turn",
-			}, nil
-		}
-	case actionCostBonusAction:
-		if !actionEconomy.HasBonusAction() {
-			return &ActivateFeatureOutput{
-				Success: false,
-				Message: "no bonus action available: bonus action already used this turn",
-			}, nil
-		}
-	case actionCostReaction:
-		if !actionEconomy.HasReaction() {
-			return &ActivateFeatureOutput{
-				Success: false,
-				Message: "no reaction available: reaction already used this turn",
-			}, nil
-		}
-	case actionCostNone:
-		// No action economy check required for free abilities
-	}
-
-	// 3. Load character data from repository
+	// 4. Load character data for the response (old path returned this)
 	charOutput, err := o.charRepo.Get(ctx, characterrepo.GetInput{
 		ID: input.CharacterID,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to load character: %w", err)
+		return nil, fmt.Errorf("failed to load character data after activation: %w", err)
 	}
 
-	// 4. Create EventBus (CRITICAL for conditions to work)
-	bus := events.NewEventBus()
-
-	// 5. Load character domain object with EventBus
-	char, err := character.LoadFromData(ctx, charOutput.Character.Data, bus)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load character from data: %w", err)
-	}
-	defer func() {
-		_ = char.Cleanup(ctx)
-	}()
-
-	// 6. Get the feature by ID
-	feature := char.GetFeature(input.FeatureID)
-	if feature == nil {
-		return &ActivateFeatureOutput{
-			Success:       false,
-			Message:       fmt.Sprintf("feature '%s' not found on character", input.FeatureID),
-			CharacterData: charOutput.Character.Data,
-		}, nil
+	// 5. Publish FeatureActivatedEvent for multiplayer broadcast
+	if abilityOutput.Success {
+		o.publishEvent(ctx, input.EncounterID, entities.EventTypeFeatureActivated, &entities.FeatureActivatedEvent{
+			CharacterID: input.CharacterID,
+			FeatureID:   input.FeatureID,
+			Success:     true,
+			Message:     fmt.Sprintf("%s activated successfully", input.FeatureID),
+		})
 	}
 
-	// 7. Feature implements core.Action[FeatureInput], so we can use CanActivate/Activate
-	// Create the feature input with the EventBus
-	featureInput := features.FeatureInput{Bus: bus}
-
-	// 8. Check if the feature can be activated
-	if canErr := feature.CanActivate(ctx, char, featureInput); canErr != nil {
-		return &ActivateFeatureOutput{
-			Success:       false,
-			Message:       fmt.Sprintf("cannot activate %s: %v", input.FeatureID, canErr),
-			CharacterData: charOutput.Character.Data,
-		}, nil
+	// 6. Convert response to ActivateFeatureOutput format
+	message := fmt.Sprintf("%s activated successfully", input.FeatureID)
+	if !abilityOutput.Success {
+		message = abilityOutput.Error
 	}
 
-	// 9. Activate the feature
-	if activateErr := feature.Activate(ctx, char, featureInput); activateErr != nil {
-		return nil, fmt.Errorf("failed to activate feature: %w", activateErr)
-	}
-
-	// 10. Consume the action based on feature's action cost
-	switch actionCost {
-	case actionCostAction:
-		actionEconomy.UseAction()
-	case actionCostBonusAction:
-		actionEconomy.UseBonusAction()
-	case actionCostReaction:
-		actionEconomy.UseReaction()
-	case actionCostNone:
-		// No action to consume for free abilities
-	}
-
-	// 10b. Apply feature-specific side effects to action economy
-	applyFeatureSideEffects(input.FeatureID, actionEconomy)
-
-	// 11. Convert back to data (includes new condition in Conditions slice)
-	updatedData := char.ToData()
-
-	// 12. Persist updated character
-	_, err = o.charRepo.Update(ctx, characterrepo.UpdateInput{
-		Character: &entities.Character{
-			Data:       updatedData,
-			Appearance: charOutput.Character.Appearance,
-		},
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to save character: %w", err)
-	}
-
-	// 13. Persist consumed action economy
-	_, err = o.encRepo.Update(ctx, &encounterrepo.UpdateInput{
-		EncounterID:   input.EncounterID,
-		ActionEconomy: actionEconomy,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to save action economy: %w", err)
-	}
-
-	// 14. Publish FeatureActivated event
-	o.publishEvent(ctx, input.EncounterID, entities.EventTypeFeatureActivated, &entities.FeatureActivatedEvent{
-		CharacterID:   input.CharacterID,
-		FeatureID:     input.FeatureID,
-		Success:       true,
-		Message:       fmt.Sprintf("%s activated successfully", input.FeatureID),
-		CharacterData: updatedData,
-	})
-
-	// 15. Return success with updated data
 	return &ActivateFeatureOutput{
-		Success:       true,
-		Message:       fmt.Sprintf("%s activated successfully", input.FeatureID),
-		CharacterData: updatedData,
+		Success:       abilityOutput.Success,
+		Message:       message,
+		CharacterData: charOutput.Character.Data,
 	}, nil
 }
 
