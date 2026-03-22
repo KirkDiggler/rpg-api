@@ -49,6 +49,30 @@ func shiftWallsByOrigin(walls []*apiv1alpha1.Wall, origin *apiv1alpha1.Position)
 	}
 }
 
+// shiftEntitiesByOrigin shifts entity positions by the room origin offset.
+// Entities are stored in room-local coordinates; this converts them to dungeon-absolute.
+func shiftEntitiesByOrigin(entities map[string]*dnd5ev1alpha1.EntityPlacement, origin *apiv1alpha1.Position) {
+	if origin == nil || entities == nil {
+		return
+	}
+	for _, e := range entities {
+		if e.Position != nil {
+			e.Position.X += origin.X
+			e.Position.Y += origin.Y
+			e.Position.Z += origin.Z
+		}
+	}
+}
+
+// shiftRoomToAbsolute shifts wall and entity positions from room-local to dungeon-absolute coordinates.
+func shiftRoomToAbsolute(room *dnd5ev1alpha1.Room) {
+	if room == nil || room.Origin == nil {
+		return
+	}
+	shiftWallsByOrigin(room.Walls, room.Origin)
+	shiftEntitiesByOrigin(room.Entities, room.Origin)
+}
+
 // stringToEntityType converts a string entity type to the proto enum
 func stringToEntityType(s string) dnd5ev1alpha1.EntityType {
 	switch s {

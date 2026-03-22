@@ -1063,7 +1063,7 @@ func (o *Orchestrator) placeMonsters(roomData *spatial.RoomData, room *dungeon.R
 	// Build list of monster IDs to spawn
 	monsterIDs := make([]string, 0, len(room.Encounter.Monsters))
 	for _, placement := range room.Encounter.Monsters {
-		monsterIDs = append(monsterIDs, fmt.Sprintf("monster-%s", placement.ID))
+		monsterIDs = append(monsterIDs, fmt.Sprintf("monster-%s-%s", room.ID, placement.ID))
 	}
 
 	// Get currently occupied positions (characters already in room)
@@ -1094,7 +1094,7 @@ func (o *Orchestrator) placeMonsters(roomData *spatial.RoomData, room *dungeon.R
 	factory := dungeon.NewMonsterFactory()
 	monsters := make([]*monster.Data, 0, len(room.Encounter.Monsters))
 	for _, placement := range room.Encounter.Monsters {
-		monsterID := fmt.Sprintf("monster-%s", placement.ID)
+		monsterID := fmt.Sprintf("monster-%s-%s", room.ID, placement.ID)
 
 		// Get spawn position from spawner results
 		var spawnPos spatial.CubeCoordinate
@@ -2776,7 +2776,7 @@ func (o *Orchestrator) OpenDoor(
 
 	if revealedRoom.Encounter != nil {
 		for _, placement := range revealedRoom.Encounter.Monsters {
-			monsterID := fmt.Sprintf("monster-%s", placement.ID)
+			monsterID := fmt.Sprintf("monster-%s-%s", revealedRoomID, placement.ID)
 			m := factory.CreateMonster(monsterID, placement.MonsterID)
 			monsterData := m.ToData()
 
