@@ -86,6 +86,7 @@ type EncounterData struct {
 	ActionEconomy     *entities.ActionEconomyState // Action/bonus/reaction tracking for current turn
 	Monsters          []*monster.Data              // Monster state for this encounter
 	BossMonsterIDs    []string                     // IDs of boss monsters (for victory detection)
+	HasBossRoom       bool                         // True if dungeon has a boss room (prevents early victory)
 	CharacterHP       map[string]int               // Character ID -> current HP (for TPK detection)
 
 	// Multiplayer fields
@@ -109,6 +110,7 @@ type SaveInput struct {
 	ActionEconomy     *entities.ActionEconomyState // Action/bonus/reaction tracking for current turn
 	Monsters          []*monster.Data              // Monster state for this encounter
 	BossMonsterIDs    []string                     // IDs of boss monsters (for victory detection)
+	HasBossRoom       bool                         // True if dungeon has a boss room (prevents early victory)
 	CharacterHP       map[string]int               // Character ID -> current HP (for TPK detection)
 
 	// Multiplayer fields

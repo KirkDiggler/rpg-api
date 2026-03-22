@@ -846,6 +846,7 @@ func (o *Orchestrator) createDungeonWithGenerator(
 		MovementRemaining: combatState.MovementRemaining,
 		ActionEconomy:     combatState.ActionEconomy,
 		Monsters:          monsters,
+		HasBossRoom:       dungeonEntity.BossRoomID != "",
 		CharacterHP:       characterHP,
 	})
 	if err != nil {
@@ -2530,6 +2531,11 @@ func (o *Orchestrator) checkCombatEnd(enc *encounterrepo.EncounterData) *Encount
 		if len(enc.BossMonsterIDs) > 0 {
 			// Bosses exist, so victory only happens when boss is killed
 			// Combat continues (player can open doors to find boss)
+			return nil
+		}
+		// If dungeon has a boss room but boss hasn't been revealed yet,
+		// don't declare victory - more rooms to explore
+		if enc.HasBossRoom {
 			return nil
 		}
 		return &EncounterResult{
