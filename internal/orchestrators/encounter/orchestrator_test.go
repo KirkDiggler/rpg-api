@@ -3072,10 +3072,11 @@ func (s *OrchestratorTestSuite) TestActivateCombatAbility_Attack_NoActionAvailab
 			},
 		}, nil)
 
-	// Character with action economy already consumed
+	// Character with action economy already consumed (same turn)
 	charData := createTestCharacterData("char-1", "Grog")
 	charData.ActionEconomy = &character.ActionEconomyData{
-		ActionsRemaining:      0, // Already consumed
+		TurnNumber:            100, // Matches computeTurnNumber(round=1, current=0)
+		ActionsRemaining:      0,   // Already consumed
 		BonusActionsRemaining: 1,
 		ReactionsRemaining:    1,
 		MovementRemaining:     30,
@@ -3361,9 +3362,10 @@ func (s *OrchestratorTestSuite) TestActivateCombatAbility_MissingEntityID() {
 func (s *OrchestratorTestSuite) TestExecuteAction_Strike_Success() {
 	// Arrange - Create test character data with equipment slots and attacks granted
 	charData := createTestCharacterData("char-1", "Grog")
-	// Simulate ATTACK ability was activated: action consumed, 1 attack granted
+	// Simulate ATTACK ability was activated: action consumed, 1 attack granted (same turn)
 	charData.ActionEconomy = &character.ActionEconomyData{
-		ActionsRemaining:      0, // Action consumed by ATTACK activation
+		TurnNumber:            100, // Matches computeTurnNumber(round=1, current=0)
+		ActionsRemaining:      0,   // Action consumed by ATTACK activation
 		BonusActionsRemaining: 1,
 		ReactionsRemaining:    1,
 		MovementRemaining:     30,
