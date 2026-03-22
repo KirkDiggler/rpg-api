@@ -9,6 +9,7 @@ import (
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/encounter"
 	"github.com/KirkDiggler/rpg-toolkit/core"
+	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/damage"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/refs"
 	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
@@ -1036,4 +1037,205 @@ func (s *ConvertersTestSuite) TestConvertOpenDoorRoomToProto_OriginCanBeSetAfter
 	s.Equal(float64(0), result.Origin.X)
 	s.Equal(float64(-9), result.Origin.Y)
 	s.Equal(float64(9), result.Origin.Z)
+}
+
+// =============================================================================
+// Toolkit Ref-based Converter Tests (unified action economy)
+// =============================================================================
+
+func (s *ConvertersTestSuite) TestAbilityRefToProtoEnum() {
+	tests := []struct {
+		name     string
+		ref      *core.Ref
+		expected dnd5ev1alpha1.CombatAbilityId
+	}{
+		{"nil ref", nil, dnd5ev1alpha1.CombatAbilityId_COMBAT_ABILITY_ID_UNSPECIFIED},
+		{"Attack", refs.CombatAbilities.Attack(), dnd5ev1alpha1.CombatAbilityId_COMBAT_ABILITY_ID_ATTACK},
+		{"Dash", refs.CombatAbilities.Dash(), dnd5ev1alpha1.CombatAbilityId_COMBAT_ABILITY_ID_DASH},
+		{"Dodge", refs.CombatAbilities.Dodge(), dnd5ev1alpha1.CombatAbilityId_COMBAT_ABILITY_ID_DODGE},
+		{"Disengage", refs.CombatAbilities.Disengage(), dnd5ev1alpha1.CombatAbilityId_COMBAT_ABILITY_ID_DISENGAGE},
+		{"OffHandAttack", refs.CombatAbilities.OffHandAttack(), dnd5ev1alpha1.CombatAbilityId_COMBAT_ABILITY_ID_OFFHAND_ATTACK},
+		{"Rage", refs.Features.Rage(), dnd5ev1alpha1.CombatAbilityId_COMBAT_ABILITY_ID_RAGE},
+		{"SecondWind", refs.Features.SecondWind(), dnd5ev1alpha1.CombatAbilityId_COMBAT_ABILITY_ID_SECOND_WIND},
+		{"FlurryOfBlows", refs.Features.FlurryOfBlows(), dnd5ev1alpha1.CombatAbilityId_COMBAT_ABILITY_ID_FLURRY_OF_BLOWS},
+		{"Unknown", &core.Ref{Module: "test", Type: "test", ID: "unknown"}, dnd5ev1alpha1.CombatAbilityId_COMBAT_ABILITY_ID_UNSPECIFIED},
+	}
+
+	for _, tt := range tests {
+		s.Run(tt.name, func() {
+			result := abilityRefToProtoEnum(tt.ref)
+			s.Equal(tt.expected, result)
+		})
+	}
+}
+
+func (s *ConvertersTestSuite) TestProtoAbilityToRef() {
+	tests := []struct {
+		name      string
+		abilityID dnd5ev1alpha1.CombatAbilityId
+		expected  *core.Ref
+	}{
+		{"Unspecified", dnd5ev1alpha1.CombatAbilityId_COMBAT_ABILITY_ID_UNSPECIFIED, nil},
+		{"Attack", dnd5ev1alpha1.CombatAbilityId_COMBAT_ABILITY_ID_ATTACK, refs.CombatAbilities.Attack()},
+		{"Dash", dnd5ev1alpha1.CombatAbilityId_COMBAT_ABILITY_ID_DASH, refs.CombatAbilities.Dash()},
+		{"Dodge", dnd5ev1alpha1.CombatAbilityId_COMBAT_ABILITY_ID_DODGE, refs.CombatAbilities.Dodge()},
+		{"Disengage", dnd5ev1alpha1.CombatAbilityId_COMBAT_ABILITY_ID_DISENGAGE, refs.CombatAbilities.Disengage()},
+		{"OffHandAttack", dnd5ev1alpha1.CombatAbilityId_COMBAT_ABILITY_ID_OFFHAND_ATTACK, refs.CombatAbilities.OffHandAttack()},
+		{"Rage", dnd5ev1alpha1.CombatAbilityId_COMBAT_ABILITY_ID_RAGE, refs.Features.Rage()},
+		{"SecondWind", dnd5ev1alpha1.CombatAbilityId_COMBAT_ABILITY_ID_SECOND_WIND, refs.Features.SecondWind()},
+		{"FlurryOfBlows", dnd5ev1alpha1.CombatAbilityId_COMBAT_ABILITY_ID_FLURRY_OF_BLOWS, refs.Features.FlurryOfBlows()},
+		{"MartialArtsBonus", dnd5ev1alpha1.CombatAbilityId_COMBAT_ABILITY_ID_MARTIAL_ARTS_BONUS, refs.Actions.UnarmedStrike()},
+	}
+
+	for _, tt := range tests {
+		s.Run(tt.name, func() {
+			result := protoAbilityToRef(tt.abilityID)
+			if tt.expected == nil {
+				s.Nil(result)
+			} else {
+				s.Require().NotNil(result)
+				s.True(result.Equals(tt.expected), "expected %v, got %v", tt.expected, result)
+			}
+		})
+	}
+}
+
+func (s *ConvertersTestSuite) TestActionRefToProtoEnum() {
+	tests := []struct {
+		name     string
+		ref      *core.Ref
+		expected dnd5ev1alpha1.ActionId
+	}{
+		{"nil ref", nil, dnd5ev1alpha1.ActionId_ACTION_ID_UNSPECIFIED},
+		{"Move", refs.Actions.Move(), dnd5ev1alpha1.ActionId_ACTION_ID_MOVE},
+		{"Strike", refs.Actions.Strike(), dnd5ev1alpha1.ActionId_ACTION_ID_STRIKE},
+		{"OffHandStrike", refs.Actions.OffHandStrike(), dnd5ev1alpha1.ActionId_ACTION_ID_OFF_HAND_STRIKE},
+		{"FlurryStrike", refs.Actions.FlurryStrike(), dnd5ev1alpha1.ActionId_ACTION_ID_FLURRY_STRIKE},
+		{"UnarmedStrike", refs.Actions.UnarmedStrike(), dnd5ev1alpha1.ActionId_ACTION_ID_UNARMED_STRIKE},
+		{"Unknown", &core.Ref{Module: "test", Type: "test", ID: "unknown"}, dnd5ev1alpha1.ActionId_ACTION_ID_UNSPECIFIED},
+	}
+
+	for _, tt := range tests {
+		s.Run(tt.name, func() {
+			result := actionRefToProtoEnum(tt.ref)
+			s.Equal(tt.expected, result)
+		})
+	}
+}
+
+func (s *ConvertersTestSuite) TestProtoActionToRef() {
+	tests := []struct {
+		name     string
+		actionID dnd5ev1alpha1.ActionId
+		expected *core.Ref
+	}{
+		{"Unspecified", dnd5ev1alpha1.ActionId_ACTION_ID_UNSPECIFIED, nil},
+		{"Move", dnd5ev1alpha1.ActionId_ACTION_ID_MOVE, refs.Actions.Move()},
+		{"Strike", dnd5ev1alpha1.ActionId_ACTION_ID_STRIKE, refs.Actions.Strike()},
+		{"OffHandStrike", dnd5ev1alpha1.ActionId_ACTION_ID_OFF_HAND_STRIKE, refs.Actions.OffHandStrike()},
+		{"FlurryStrike", dnd5ev1alpha1.ActionId_ACTION_ID_FLURRY_STRIKE, refs.Actions.FlurryStrike()},
+		{"UnarmedStrike", dnd5ev1alpha1.ActionId_ACTION_ID_UNARMED_STRIKE, refs.Actions.UnarmedStrike()},
+	}
+
+	for _, tt := range tests {
+		s.Run(tt.name, func() {
+			result := protoActionToRef(tt.actionID)
+			if tt.expected == nil {
+				s.Nil(result)
+			} else {
+				s.Require().NotNil(result)
+				s.True(result.Equals(tt.expected), "expected %v, got %v", tt.expected, result)
+			}
+		})
+	}
+}
+
+func (s *ConvertersTestSuite) TestConvertToolkitAbilitiesToProto() {
+	abilities := []toolkitchar.AvailableAbility{
+		{
+			Ref:             refs.CombatAbilities.Attack(),
+			Name:            "Attack",
+			CanUse:          true,
+			ResourceCurrent: 0,
+			ResourceMax:     0,
+		},
+		{
+			Ref:             refs.Features.Rage(),
+			Name:            "Rage",
+			CanUse:          false,
+			Reason:          "already raging",
+			ResourceCurrent: 1,
+			ResourceMax:     2,
+		},
+	}
+
+	result := convertToolkitAbilitiesToProto(abilities)
+	s.Require().Len(result, 2)
+
+	s.Equal(dnd5ev1alpha1.CombatAbilityId_COMBAT_ABILITY_ID_ATTACK, result[0].AbilityId)
+	s.Equal("Attack", result[0].Name)
+	s.True(result[0].CanUse)
+	s.Empty(result[0].Reason)
+	s.Equal(int32(0), result[0].ResourceCurrent)
+	s.Equal(int32(0), result[0].ResourceMax)
+
+	s.Equal(dnd5ev1alpha1.CombatAbilityId_COMBAT_ABILITY_ID_RAGE, result[1].AbilityId)
+	s.Equal("Rage", result[1].Name)
+	s.False(result[1].CanUse)
+	s.Equal("already raging", result[1].Reason)
+	s.Equal(int32(1), result[1].ResourceCurrent)
+	s.Equal(int32(2), result[1].ResourceMax)
+}
+
+func (s *ConvertersTestSuite) TestConvertToolkitActionsToProto() {
+	actions := []toolkitchar.AvailableAction{
+		{
+			Ref:    refs.Actions.Strike(),
+			Name:   "Strike",
+			CanUse: true,
+		},
+		{
+			Ref:    refs.Actions.Move(),
+			Name:   "Move",
+			CanUse: false,
+			Reason: "no movement remaining",
+		},
+	}
+
+	result := convertToolkitActionsToProto(actions)
+	s.Require().Len(result, 2)
+
+	s.Equal(dnd5ev1alpha1.ActionId_ACTION_ID_STRIKE, result[0].ActionId)
+	s.Equal("Strike", result[0].Name)
+	s.True(result[0].CanUse)
+
+	s.Equal(dnd5ev1alpha1.ActionId_ACTION_ID_MOVE, result[1].ActionId)
+	s.Equal("Move", result[1].Name)
+	s.False(result[1].CanUse)
+	s.Equal("no movement remaining", result[1].Reason)
+}
+
+func (s *ConvertersTestSuite) TestAbilityRefToProtoEnum_RoundTrip() {
+	// Verify that ref -> proto -> ref produces the same ref
+	testRefs := []*core.Ref{
+		refs.CombatAbilities.Attack(),
+		refs.CombatAbilities.Dash(),
+		refs.CombatAbilities.Dodge(),
+		refs.CombatAbilities.Disengage(),
+		refs.CombatAbilities.OffHandAttack(),
+		refs.Features.Rage(),
+		refs.Features.SecondWind(),
+		refs.Features.FlurryOfBlows(),
+	}
+
+	for _, ref := range testRefs {
+		protoID := abilityRefToProtoEnum(ref)
+		s.NotEqual(dnd5ev1alpha1.CombatAbilityId_COMBAT_ABILITY_ID_UNSPECIFIED, protoID,
+			"ref %v should map to a specific proto enum", ref)
+
+		roundTripped := protoAbilityToRef(protoID)
+		s.Require().NotNil(roundTripped, "proto enum %v should map back to a ref", protoID)
+		s.True(roundTripped.Equals(ref),
+			"round trip failed: %v -> %v -> %v", ref, protoID, roundTripped)
+	}
 }

@@ -1360,8 +1360,6 @@ func convertActionEconomyToProto(ae *entities.ActionEconomyState, cs *entities.C
 		ReactionAvailable:       ae.ReactionsRemaining > 0,
 		OffHandAttacksRemaining: int32(ae.OffHandAttacksRemaining),
 		FlurryStrikesRemaining:  int32(ae.FlurryStrikesRemaining),
-		DisengageActive:         ae.DisengageActive,
-		DodgeActive:             ae.DodgeActive,
 	}
 }
 
@@ -1474,4 +1472,138 @@ func actionIDToProtoEnum(id string) dnd5ev1alpha1.ActionId {
 	default:
 		return dnd5ev1alpha1.ActionId_ACTION_ID_UNSPECIFIED
 	}
+}
+
+// ============================================================================
+// TOOLKIT REF-BASED CONVERTERS (for unified action economy)
+// ============================================================================
+
+// abilityRefToProtoEnum maps a toolkit ability ref to the proto CombatAbilityId enum.
+// Used when converting toolkit Character's AvailableAbility list to proto responses.
+func abilityRefToProtoEnum(ref *core.Ref) dnd5ev1alpha1.CombatAbilityId {
+	if ref == nil {
+		return dnd5ev1alpha1.CombatAbilityId_COMBAT_ABILITY_ID_UNSPECIFIED
+	}
+	switch {
+	case ref.Equals(refs.CombatAbilities.Attack()):
+		return dnd5ev1alpha1.CombatAbilityId_COMBAT_ABILITY_ID_ATTACK
+	case ref.Equals(refs.CombatAbilities.Dash()):
+		return dnd5ev1alpha1.CombatAbilityId_COMBAT_ABILITY_ID_DASH
+	case ref.Equals(refs.CombatAbilities.Dodge()):
+		return dnd5ev1alpha1.CombatAbilityId_COMBAT_ABILITY_ID_DODGE
+	case ref.Equals(refs.CombatAbilities.Disengage()):
+		return dnd5ev1alpha1.CombatAbilityId_COMBAT_ABILITY_ID_DISENGAGE
+	case ref.Equals(refs.CombatAbilities.OffHandAttack()):
+		return dnd5ev1alpha1.CombatAbilityId_COMBAT_ABILITY_ID_OFFHAND_ATTACK
+	case ref.Equals(refs.Features.Rage()):
+		return dnd5ev1alpha1.CombatAbilityId_COMBAT_ABILITY_ID_RAGE
+	case ref.Equals(refs.Features.SecondWind()):
+		return dnd5ev1alpha1.CombatAbilityId_COMBAT_ABILITY_ID_SECOND_WIND
+	case ref.Equals(refs.Features.FlurryOfBlows()):
+		return dnd5ev1alpha1.CombatAbilityId_COMBAT_ABILITY_ID_FLURRY_OF_BLOWS
+	default:
+		return dnd5ev1alpha1.CombatAbilityId_COMBAT_ABILITY_ID_UNSPECIFIED
+	}
+}
+
+// protoAbilityToRef maps a proto CombatAbilityId to a toolkit ref.
+// Used when the API receives a proto request and needs to call toolkit Character methods.
+func protoAbilityToRef(abilityID dnd5ev1alpha1.CombatAbilityId) *core.Ref {
+	switch abilityID {
+	case dnd5ev1alpha1.CombatAbilityId_COMBAT_ABILITY_ID_ATTACK:
+		return refs.CombatAbilities.Attack()
+	case dnd5ev1alpha1.CombatAbilityId_COMBAT_ABILITY_ID_DASH:
+		return refs.CombatAbilities.Dash()
+	case dnd5ev1alpha1.CombatAbilityId_COMBAT_ABILITY_ID_DODGE:
+		return refs.CombatAbilities.Dodge()
+	case dnd5ev1alpha1.CombatAbilityId_COMBAT_ABILITY_ID_DISENGAGE:
+		return refs.CombatAbilities.Disengage()
+	case dnd5ev1alpha1.CombatAbilityId_COMBAT_ABILITY_ID_OFFHAND_ATTACK:
+		return refs.CombatAbilities.OffHandAttack()
+	case dnd5ev1alpha1.CombatAbilityId_COMBAT_ABILITY_ID_RAGE:
+		return refs.Features.Rage()
+	case dnd5ev1alpha1.CombatAbilityId_COMBAT_ABILITY_ID_SECOND_WIND:
+		return refs.Features.SecondWind()
+	case dnd5ev1alpha1.CombatAbilityId_COMBAT_ABILITY_ID_FLURRY_OF_BLOWS:
+		return refs.Features.FlurryOfBlows()
+	case dnd5ev1alpha1.CombatAbilityId_COMBAT_ABILITY_ID_MARTIAL_ARTS_BONUS:
+		return refs.Actions.UnarmedStrike()
+	default:
+		return nil
+	}
+}
+
+// actionRefToProtoEnum maps a toolkit action ref to the proto ActionId enum.
+// Used when converting toolkit Character's AvailableAction list to proto responses.
+func actionRefToProtoEnum(ref *core.Ref) dnd5ev1alpha1.ActionId {
+	if ref == nil {
+		return dnd5ev1alpha1.ActionId_ACTION_ID_UNSPECIFIED
+	}
+	switch {
+	case ref.Equals(refs.Actions.Move()):
+		return dnd5ev1alpha1.ActionId_ACTION_ID_MOVE
+	case ref.Equals(refs.Actions.Strike()):
+		return dnd5ev1alpha1.ActionId_ACTION_ID_STRIKE
+	case ref.Equals(refs.Actions.OffHandStrike()):
+		return dnd5ev1alpha1.ActionId_ACTION_ID_OFF_HAND_STRIKE
+	case ref.Equals(refs.Actions.FlurryStrike()):
+		return dnd5ev1alpha1.ActionId_ACTION_ID_FLURRY_STRIKE
+	case ref.Equals(refs.Actions.UnarmedStrike()):
+		return dnd5ev1alpha1.ActionId_ACTION_ID_UNARMED_STRIKE
+	default:
+		return dnd5ev1alpha1.ActionId_ACTION_ID_UNSPECIFIED
+	}
+}
+
+// protoActionToRef maps a proto ActionId to a toolkit action ref.
+// Used when the API receives a proto request and needs to call toolkit Character methods.
+func protoActionToRef(actionID dnd5ev1alpha1.ActionId) *core.Ref {
+	switch actionID {
+	case dnd5ev1alpha1.ActionId_ACTION_ID_MOVE:
+		return refs.Actions.Move()
+	case dnd5ev1alpha1.ActionId_ACTION_ID_STRIKE:
+		return refs.Actions.Strike()
+	case dnd5ev1alpha1.ActionId_ACTION_ID_OFF_HAND_STRIKE:
+		return refs.Actions.OffHandStrike()
+	case dnd5ev1alpha1.ActionId_ACTION_ID_FLURRY_STRIKE:
+		return refs.Actions.FlurryStrike()
+	case dnd5ev1alpha1.ActionId_ACTION_ID_UNARMED_STRIKE:
+		return refs.Actions.UnarmedStrike()
+	default:
+		return nil
+	}
+}
+
+// convertToolkitAbilitiesToProto converts toolkit character AvailableAbility slice to proto.
+// This replaces convertAvailableAbilitiesToProto for the unified action system.
+//
+//nolint:gosec // G115: Game values are bounded by D&D rules, no overflow risk
+func convertToolkitAbilitiesToProto(abilities []toolkitchar.AvailableAbility) []*dnd5ev1alpha1.AvailableAbility {
+	result := make([]*dnd5ev1alpha1.AvailableAbility, len(abilities))
+	for i, a := range abilities {
+		result[i] = &dnd5ev1alpha1.AvailableAbility{
+			AbilityId:       abilityRefToProtoEnum(a.Ref),
+			Name:            a.Name,
+			CanUse:          a.CanUse,
+			Reason:          a.Reason,
+			ResourceCurrent: int32(a.ResourceCurrent),
+			ResourceMax:     int32(a.ResourceMax),
+		}
+	}
+	return result
+}
+
+// convertToolkitActionsToProto converts toolkit character AvailableAction slice to proto.
+// This replaces convertAvailableActionsToProto for the unified action system.
+func convertToolkitActionsToProto(actions []toolkitchar.AvailableAction) []*dnd5ev1alpha1.AvailableAction {
+	result := make([]*dnd5ev1alpha1.AvailableAction, len(actions))
+	for i, a := range actions {
+		result[i] = &dnd5ev1alpha1.AvailableAction{
+			ActionId: actionRefToProtoEnum(a.Ref),
+			Name:     a.Name,
+			CanUse:   a.CanUse,
+			Reason:   a.Reason,
+		}
+	}
+	return result
 }
