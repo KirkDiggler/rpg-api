@@ -388,11 +388,35 @@ func (o *Orchestrator) ResolveAttack(ctx context.Context, input *ResolveAttackIn
 		monsterData.HitPoints = newHP
 	}
 
-	// 11a. Two-weapon fighting: grant off-hand strike after main-hand attack
-	// API just extracts slot contents and passes to toolkit - toolkit decides if conditions are met
+	// 11. Grant bonus strike after main-hand attack
+	// Priority: Monks get Martial Arts check first, others get TWF first
 	var grantedAction *GrantedAction
-	if equipmentSlots != nil {
-		// Build weapon info from slots - pass nil if slot is empty
+
+	isMo := charOutput.Character.Data.ClassID == classes.Monk
+
+	// 11a. Martial Arts: grant bonus strike after Attack action (Monk only)
+	if isMo {
+		maResult, _ := actions.CheckAndGrantMartialArtsBonusStrike(ctx, &actions.MartialArtsGranterInput{
+			CharacterID:   input.AttackerID,
+			WeaponID:      weapon.ID,
+			IsUnarmed:     false, // TODO: Detect unarmed strikes when implemented
+			SourceAbility: "attack",
+			EventBus:      bus,
+		})
+		if maResult != nil && maResult.Granted {
+			grantedAction = &GrantedAction{
+				ID:     maResult.Action.GetID(),
+				Type:   "martial-arts-bonus-strike",
+				Name:   "Martial Arts Bonus Strike",
+				Reason: maResult.Reason,
+			}
+		}
+	}
+
+	// 11b. Two-weapon fighting: grant off-hand strike after main-hand attack
+	// For Monks, only triggers if Martial Arts didn't grant
+	// For non-Monks, this is the primary bonus strike path
+	if grantedAction == nil && equipmentSlots != nil {
 		var mainWeapon, offWeapon *actions.EquippedWeaponInfo
 		if mainID := equipmentSlots.Get(character.SlotMainHand); mainID != "" {
 			mainWeapon = &actions.EquippedWeaponInfo{WeaponID: mainID}
@@ -401,7 +425,6 @@ func (o *Orchestrator) ResolveAttack(ctx context.Context, input *ResolveAttackIn
 			offWeapon = &actions.EquippedWeaponInfo{WeaponID: offID}
 		}
 
-		// Let toolkit check all conditions (is it a weapon? is it light? etc.)
 		twfResult, _ := actions.CheckAndGrantOffHandStrike(ctx, &actions.TwoWeaponGranterInput{
 			CharacterID:    input.AttackerID,
 			AttackHand:     actions.AttackHand(input.AttackHand),
@@ -417,27 +440,6 @@ func (o *Orchestrator) ResolveAttack(ctx context.Context, input *ResolveAttackIn
 				Name:     "Off-Hand Strike",
 				Reason:   twfResult.Reason,
 				WeaponID: twfResult.Action.GetWeaponID(),
-			}
-		}
-	}
-
-	// 11b. Martial Arts: grant bonus strike after Attack action (Monk only)
-	// Only triggers if no action was already granted (TWF takes priority if both apply)
-	// The granter checks if the weapon is a monk weapon internally
-	if grantedAction == nil && charOutput.Character.Data.ClassID == classes.Monk {
-		maResult, _ := actions.CheckAndGrantMartialArtsBonusStrike(ctx, &actions.MartialArtsGranterInput{
-			CharacterID:   input.AttackerID,
-			WeaponID:      weapon.ID,
-			IsUnarmed:     false, // TODO: Detect unarmed strikes when implemented
-			SourceAbility: "attack", // This is from the Attack action
-			EventBus:      bus,
-		})
-		if maResult != nil && maResult.Granted {
-			grantedAction = &GrantedAction{
-				ID:     maResult.Action.GetID(),
-				Type:   "martial-arts-bonus-strike",
-				Name:   "Martial Arts Bonus Strike",
-				Reason: maResult.Reason,
 			}
 		}
 	}
@@ -1893,6 +1895,19 @@ const (
 	actionCostReaction                          // Requires reaction
 )
 
+// unarmedStrikeWeapon returns the default unarmed strike weapon definition.
+// Base damage is 1d1 (1 + STR mod); Martial Arts conditions upgrade the die
+// automatically through the damage chain.
+func unarmedStrikeWeapon() weapons.Weapon {
+	return weapons.Weapon{
+		ID:         "unarmed-strike",
+		Name:       "Unarmed Strike",
+		Category:   weapons.CategorySimpleMelee,
+		Damage:     "1d1",
+		DamageType: "bludgeoning",
+	}
+}
+
 // getFeatureActionCost returns the action cost for a feature.
 // This maps D&D 5e feature activation costs.
 func getFeatureActionCost(featureID string) actionCostType {
@@ -2307,14 +2322,14 @@ func (o *Orchestrator) ActivateFeature(
 
 // getEquippedWeaponAndSlots retrieves the weapon equipped in the character's mainhand slot
 // along with the full equipment slots data for GameContext building.
-// If no weapon is equipped or the weapon cannot be found, it falls back to a greataxe.
+// If no weapon is equipped or the weapon cannot be found, it falls back to an unarmed strike.
 // This ensures combat never fails due to missing equipment data.
 func (o *Orchestrator) getEquippedWeaponAndSlots(
 	ctx context.Context,
 	characterID string,
 ) (weapons.Weapon, character.EquipmentSlots) {
 	// Default fallback weapon
-	fallbackWeapon, _ := weapons.GetByID(weapons.Greataxe)
+	fallbackWeapon := unarmedStrikeWeapon()
 
 	// Try to load character data (equipment slots are part of character.Data)
 	charResult, err := o.charRepo.Get(ctx, characterrepo.GetInput{
@@ -3350,11 +3365,44 @@ func (o *Orchestrator) StartCombat(
 	// 11. Place monsters from the dungeon's encounter
 	monsters := o.placeMonsters(roomData, startRoom)
 
-	// 12. Roll initiative
+	// 12. Perform long rest for all characters before dungeon starts
+	// Restores HP, feature charges (Rage, Second Wind, etc.), and clears conditions
+	restBus := events.NewEventBus()
+	for _, characterID := range characterIDs {
+		charOutput, charErr := o.charRepo.Get(ctx, characterrepo.GetInput{ID: characterID})
+		if charErr != nil {
+			return nil, fmt.Errorf("failed to load character %s: %w", characterID, charErr)
+		}
+
+		loadedChar, charErr := character.LoadFromData(ctx, charOutput.Character.Data, restBus)
+		if charErr != nil {
+			return nil, fmt.Errorf("failed to load character %s for rest: %w", characterID, charErr)
+		}
+
+		if restErr := loadedChar.LongRest(ctx); restErr != nil {
+			_ = loadedChar.Cleanup(ctx)
+			return nil, fmt.Errorf("failed to perform long rest for character %s: %w", characterID, restErr)
+		}
+
+		updatedData := loadedChar.ToData()
+		_, updateErr := o.charRepo.Update(ctx, characterrepo.UpdateInput{
+			Character: &entities.Character{
+				Data:       updatedData,
+				Appearance: charOutput.Character.Appearance,
+			},
+		})
+		if updateErr != nil {
+			_ = loadedChar.Cleanup(ctx)
+			return nil, fmt.Errorf("failed to save rested character %s: %w", characterID, updateErr)
+		}
+		_ = loadedChar.Cleanup(ctx)
+	}
+
+	// 13. Roll initiative
 	combatants := make(map[core.Entity]int)
 	characterHP := make(map[string]int)
 
-	// Add characters with their DEX modifiers
+	// Add characters with their DEX modifiers (re-read after rest to get updated data)
 	for _, characterID := range characterIDs {
 		charOutput, charErr := o.charRepo.Get(ctx, characterrepo.GetInput{ID: characterID})
 		if charErr != nil {
@@ -4227,6 +4275,9 @@ func (o *Orchestrator) ExecuteAction(
 	case pb.ActionId_ACTION_ID_FLURRY_STRIKE:
 		return o.executeFlurryStrike(ctx, input, encOutput.Data, actionEconomy)
 
+	case pb.ActionId_ACTION_ID_UNARMED_STRIKE:
+		return o.executeUnarmedStrike(ctx, input, encOutput.Data, actionEconomy)
+
 	case pb.ActionId_ACTION_ID_MOVE:
 		return o.executeMove(ctx, input, encOutput.Data, actionEconomy)
 
@@ -4345,34 +4396,60 @@ func (o *Orchestrator) executeStrike(
 		monsterData.HitPoints = newHP
 	}
 
-	// 12. Two-weapon fighting: grant off-hand strike after main-hand attack
+	// 12. Grant bonus strike after main-hand attack
+	// Priority: Monks get Martial Arts check first, others get TWF first
 	var grantedAction *GrantedAction
-	if attackHand == combat.AttackHandMain && equipmentSlots != nil {
-		var mainWeapon, offWeapon *actions.EquippedWeaponInfo
-		if mainID := equipmentSlots.Get(character.SlotMainHand); mainID != "" {
-			mainWeapon = &actions.EquippedWeaponInfo{WeaponID: mainID}
-		}
-		if offID := equipmentSlots.Get(character.SlotOffHand); offID != "" {
-			offWeapon = &actions.EquippedWeaponInfo{WeaponID: offID}
+
+	if attackHand == combat.AttackHandMain {
+		isMo := charOutput.Character.Data.ClassID == classes.Monk
+
+		// 12a. Martial Arts: grant bonus strike (Monk only)
+		if isMo {
+			maResult, _ := actions.CheckAndGrantMartialArtsBonusStrike(ctx, &actions.MartialArtsGranterInput{
+				CharacterID:   input.EntityID,
+				WeaponID:      weapon.ID,
+				IsUnarmed:     false,
+				SourceAbility: "attack",
+				EventBus:      bus,
+			})
+			if maResult != nil && maResult.Granted {
+				grantedAction = &GrantedAction{
+					ID:     maResult.Action.GetID(),
+					Type:   "martial-arts-bonus-strike",
+					Name:   "Martial Arts Bonus Strike",
+					Reason: maResult.Reason,
+				}
+			}
 		}
 
-		twfResult, _ := actions.CheckAndGrantOffHandStrike(ctx, &actions.TwoWeaponGranterInput{
-			CharacterID:    input.EntityID,
-			AttackHand:     actions.AttackHand(attackHand),
-			MainHandWeapon: mainWeapon,
-			OffHandWeapon:  offWeapon,
-			ActionHolder:   char,
-			EventBus:       bus,
-		})
-		if twfResult != nil && twfResult.Granted {
-			// Grant off-hand attack capacity
-			actionEconomy.OffHandAttacksRemaining++
-			grantedAction = &GrantedAction{
-				ID:       twfResult.Action.GetID(),
-				Type:     "off-hand-strike",
-				Name:     "Off-Hand Strike",
-				Reason:   twfResult.Reason,
-				WeaponID: twfResult.Action.GetWeaponID(),
+		// 12b. Two-weapon fighting: grant off-hand strike
+		// For Monks, only triggers if Martial Arts didn't grant
+		if grantedAction == nil && equipmentSlots != nil {
+			var mainWeapon, offWeapon *actions.EquippedWeaponInfo
+			if mainID := equipmentSlots.Get(character.SlotMainHand); mainID != "" {
+				mainWeapon = &actions.EquippedWeaponInfo{WeaponID: mainID}
+			}
+			if offID := equipmentSlots.Get(character.SlotOffHand); offID != "" {
+				offWeapon = &actions.EquippedWeaponInfo{WeaponID: offID}
+			}
+
+			twfResult, _ := actions.CheckAndGrantOffHandStrike(ctx, &actions.TwoWeaponGranterInput{
+				CharacterID:    input.EntityID,
+				AttackHand:     actions.AttackHand(attackHand),
+				MainHandWeapon: mainWeapon,
+				OffHandWeapon:  offWeapon,
+				ActionHolder:   char,
+				EventBus:       bus,
+			})
+			if twfResult != nil && twfResult.Granted {
+				actionEconomy.OffHandAttacksRemaining++
+				grantedAction = &GrantedAction{
+					ID:       twfResult.Action.GetID(),
+					Type:     "off-hand-strike",
+					Name:     "Off-Hand Strike",
+					Reason:   twfResult.Reason,
+					WeaponID: twfResult.Action.GetWeaponID(),
+				}
 			}
 		}
 	}
@@ -4498,13 +4575,7 @@ func (o *Orchestrator) executeFlurryStrike(
 	}
 
 	// 6. Flurry strikes are always unarmed — use unarmed strike weapon
-	unarmedStrike := weapons.Weapon{
-		ID:         "unarmed-strike",
-		Name:       "Unarmed Strike",
-		Category:   weapons.CategorySimpleMelee,
-		Damage:     "1d1", // Base 1 + STR mod; Martial Arts upgrades this via conditions
-		DamageType: "bludgeoning",
-	}
+	unarmedStrike := unarmedStrikeWeapon()
 
 	// 7. Build GameContext
 	gameCtx := o.buildGameContextFromEquipment(input.EntityID, &unarmedStrike, nil)
@@ -4576,6 +4647,141 @@ func (o *Orchestrator) executeFlurryStrike(
 		Success:            true,
 		ActionEconomy:      actionEconomy,
 		AttackResult:       attackResult,
+		CombatState:        combatState,
+		Room:               encData.RoomData,
+		AvailableAbilities: buildAvailableAbilities(actionEconomy),
+		AvailableActions:   buildAvailableActions(actionEconomy, encData.MovementRemaining),
+	}, nil
+}
+
+// executeUnarmedStrike handles UNARMED_STRIKE actions (Martial Arts bonus strike).
+// Mirrors executeFlurryStrike but consumes bonus action capacity instead of flurry strikes.
+// Martial Arts conditions upgrade the 1d1 base damage via the damage chain.
+func (o *Orchestrator) executeUnarmedStrike(
+	ctx context.Context,
+	input *ExecuteActionInput,
+	encData *encounterrepo.EncounterData,
+	actionEconomy *entities.ActionEconomyState,
+) (*ExecuteActionOutput, error) {
+	// 1. Check bonus action capacity
+	if !actionEconomy.HasBonusAction() {
+		return &ExecuteActionOutput{
+			Success:            false,
+			Error:              "no bonus action remaining",
+			ActionEconomy:      actionEconomy,
+			AvailableAbilities: buildAvailableAbilities(actionEconomy),
+			AvailableActions:   buildAvailableActions(actionEconomy, encData.MovementRemaining),
+		}, nil
+	}
+
+	// 2. Validate target
+	if input.TargetID == "" {
+		return nil, fmt.Errorf("target ID is required for unarmed strike")
+	}
+
+	// 3. Create EventBus
+	bus := events.NewEventBus()
+
+	// 4. Load character
+	charOutput, err := o.charRepo.Get(ctx, characterrepo.GetInput{ID: input.EntityID})
+	if err != nil {
+		return nil, fmt.Errorf("failed to load character: %w", err)
+	}
+
+	char, err := character.LoadFromData(ctx, charOutput.Character.Data, bus)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load character from data: %w", err)
+	}
+
+	// 5. Load monster
+	monsterData := o.findMonsterData(encData, input.TargetID)
+	if monsterData == nil {
+		return nil, fmt.Errorf("monster not found: %s", input.TargetID)
+	}
+
+	monsterInstance, err := monster.LoadFromData(ctx, monsterData, bus)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load monster from data: %w", err)
+	}
+
+	if err = monstertraits.LoadMonsterConditions(ctx, monsterInstance, monsterData.Conditions, bus, o.roller); err != nil {
+		return nil, fmt.Errorf("failed to load monster conditions: %w", err)
+	}
+
+	// 6. Use shared unarmed strike weapon
+	unarmedStrike := unarmedStrikeWeapon()
+
+	// 7. Build GameContext
+	gameCtx := o.buildGameContextFromEquipment(input.EntityID, &unarmedStrike, nil)
+	ctx = gamectx.WithGameContext(ctx, gameCtx)
+
+	// 8. CombatantRegistry
+	registry := gamectx.NewCombatantRegistry()
+	registry.Add(char)
+	registry.Add(monsterInstance)
+	ctx = combat.WithCombatantLookup(ctx, registry)
+
+	// 9. Resolve attack
+	result, err := combat.ResolveAttack(ctx, &combat.AttackInput{
+		AttackerID: input.EntityID,
+		TargetID:   input.TargetID,
+		Weapon:     &unarmedStrike,
+		EventBus:   bus,
+		Roller:     o.roller,
+		AttackHand: combat.AttackHandMain,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("unarmed strike resolution failed: %w", err)
+	}
+
+	// 10. Update monster HP
+	if result.Hit {
+		monsterData.HitPoints = monsterInstance.HP()
+	}
+
+	// 11. Consume bonus action
+	actionEconomy.UseBonusAction()
+
+	// 12. Check for dungeon victory if monster died
+	if monsterInstance.HP() <= 0 {
+		o.checkAndHandleVictory(ctx, input.EncounterID, encData, input.TargetID)
+	}
+
+	// 13. Persist
+	_, err = o.encRepo.Update(ctx, &encounterrepo.UpdateInput{
+		EncounterID:   input.EncounterID,
+		ActionEconomy: actionEconomy,
+		Monsters:      encData.Monsters,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to save encounter state: %w", err)
+	}
+
+	// 14. Build result
+	attackResult := &AttackResult{
+		AttackRoll:      result.AttackRoll,
+		AttackBonus:     result.AttackBonus,
+		TotalAttack:     result.TotalAttack,
+		TargetAC:        result.TargetAC,
+		Hit:             result.Hit,
+		Critical:        result.Critical,
+		IsNaturalTwenty: result.IsNaturalTwenty,
+		IsNaturalOne:    result.IsNaturalOne,
+		DamageRolls:     result.DamageRolls,
+		DamageBonus:     result.DamageBonus,
+		TotalDamage:     result.TotalDamage,
+		DamageType:      result.DamageType,
+	}
+	if result.Breakdown != nil {
+		attackResult.Breakdown = convertToolkitBreakdown(result.Breakdown)
+	}
+
+	combatState := o.buildCombatState(input.EncounterID, encData)
+
+	return &ExecuteActionOutput{
+		Success:            true,
+		AttackResult:       attackResult,
+		ActionEconomy:      actionEconomy,
 		CombatState:        combatState,
 		Room:               encData.RoomData,
 		AvailableAbilities: buildAvailableAbilities(actionEconomy),

@@ -1469,6 +1469,8 @@ func actionIDToProtoEnum(id string) dnd5ev1alpha1.ActionId {
 		return dnd5ev1alpha1.ActionId_ACTION_ID_MOVE
 	case "flurry_strike":
 		return dnd5ev1alpha1.ActionId_ACTION_ID_FLURRY_STRIKE
+	case "unarmed_strike":
+		return dnd5ev1alpha1.ActionId_ACTION_ID_UNARMED_STRIKE
 	default:
 		return dnd5ev1alpha1.ActionId_ACTION_ID_UNSPECIFIED
 	}
