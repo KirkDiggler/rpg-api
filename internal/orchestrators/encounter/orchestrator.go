@@ -1063,7 +1063,7 @@ func (o *Orchestrator) placeMonsters(roomData *spatial.RoomData, room *dungeon.R
 	// Build list of monster IDs to spawn
 	monsterIDs := make([]string, 0, len(room.Encounter.Monsters))
 	for _, placement := range room.Encounter.Monsters {
-		monsterIDs = append(monsterIDs, fmt.Sprintf("monster-%s", placement.ID))
+		monsterIDs = append(monsterIDs, fmt.Sprintf("monster-%s-%s", room.ID, placement.ID))
 	}
 
 	// Get currently occupied positions (characters already in room)
@@ -1094,7 +1094,7 @@ func (o *Orchestrator) placeMonsters(roomData *spatial.RoomData, room *dungeon.R
 	factory := dungeon.NewMonsterFactory()
 	monsters := make([]*monster.Data, 0, len(room.Encounter.Monsters))
 	for _, placement := range room.Encounter.Monsters {
-		monsterID := fmt.Sprintf("monster-%s", placement.ID)
+		monsterID := fmt.Sprintf("monster-%s-%s", room.ID, placement.ID)
 
 		// Get spawn position from spawner results
 		var spawnPos spatial.CubeCoordinate
@@ -2037,7 +2037,7 @@ func convertCharAbilitiesToEntities(abilities []character.AvailableAbility) []*e
 	for i, a := range abilities {
 		abilityID := ""
 		if a.Ref != nil {
-			abilityID = a.Ref.String()
+			abilityID = string(a.Ref.ID)
 		}
 		result[i] = &entities.AvailableAbility{
 			AbilityID:       abilityID,
@@ -2058,7 +2058,7 @@ func convertCharActionsToEntities(actions []character.AvailableAction) []*entiti
 	for i, a := range actions {
 		actionID := ""
 		if a.Ref != nil {
-			actionID = a.Ref.String()
+			actionID = string(a.Ref.ID)
 		}
 		result[i] = &entities.AvailableAction{
 			ActionID: actionID,
@@ -2118,11 +2118,22 @@ func protoActionIDToRef(actionID pb.ActionId) *core.Ref {
 	}
 }
 
+// computeTurnNumber creates a unique turn number from encounter initiative data.
+// Each character gets a unique turn number per round.
+func computeTurnNumber(data *encounterrepo.EncounterData) int {
+	if data == nil || data.InitiativeData == nil {
+		return 1
+	}
+	return data.InitiativeData.Round*100 + data.InitiativeData.Current
+}
+
 // loadCharacterForCombat loads a character from the repository and initializes it for combat.
+// Uses the current turn number to detect stale action economy from a previous turn.
 // Returns the loaded character, the repository output for later persistence, and any error.
 func (o *Orchestrator) loadCharacterForCombat(
 	ctx context.Context,
 	characterID string,
+	currentTurnNumber int,
 ) (*character.Character, *characterrepo.GetOutput, events.EventBus, error) {
 	bus := events.NewEventBus()
 
@@ -2136,10 +2147,23 @@ func (o *Orchestrator) loadCharacterForCombat(
 		return nil, nil, nil, fmt.Errorf("failed to load character from data: %w", err)
 	}
 
-	// Ensure character is in combat
-	if !char.InCombat() {
+	// Call StartTurn if:
+	// 1. Character is not in combat yet (first time this encounter)
+	// 2. Character's action economy is from a different turn (stale from previous turn)
+	needsStartTurn := !char.InCombat()
+	if !needsStartTurn {
+		ae := char.GetActionEconomy()
+		if ae != nil && ae.TurnNumber != currentTurnNumber {
+			needsStartTurn = true
+		}
+	}
+
+	if needsStartTurn {
 		speed := char.GetSpeed()
-		if _, startErr := char.StartTurn(ctx, &character.StartTurnInput{Speed: speed}); startErr != nil {
+		if _, startErr := char.StartTurn(ctx, &character.StartTurnInput{
+			Speed:      speed,
+			TurnNumber: currentTurnNumber,
+		}); startErr != nil {
 			return nil, nil, nil, fmt.Errorf("failed to start turn: %w", startErr)
 		}
 	}
@@ -2822,7 +2846,7 @@ func (o *Orchestrator) OpenDoor(
 
 	if revealedRoom.Encounter != nil {
 		for _, placement := range revealedRoom.Encounter.Monsters {
-			monsterID := fmt.Sprintf("monster-%s", placement.ID)
+			monsterID := fmt.Sprintf("monster-%s-%s", revealedRoomID, placement.ID)
 			m := factory.CreateMonster(monsterID, placement.MonsterID)
 			monsterData := m.ToData()
 
@@ -4145,7 +4169,8 @@ func (o *Orchestrator) ActivateCombatAbility(
 	}
 
 	// 5. Load character and ensure in combat
-	char, charOutput, _, err := o.loadCharacterForCombat(ctx, input.EntityID)
+	turnNum := computeTurnNumber(encOutput.Data)
+	char, charOutput, _, err := o.loadCharacterForCombat(ctx, input.EntityID, turnNum)
 	if err != nil {
 		return nil, err
 	}
@@ -4265,7 +4290,7 @@ func (o *Orchestrator) executeStrike(
 	}
 
 	// 2. Load character and ensure in combat
-	char, charOutput, bus, err := o.loadCharacterForCombat(ctx, input.EntityID)
+	char, charOutput, bus, err := o.loadCharacterForCombat(ctx, input.EntityID, computeTurnNumber(encData))
 	if err != nil {
 		return nil, err
 	}
@@ -4428,7 +4453,7 @@ func (o *Orchestrator) executeFlurryStrike(
 	}
 
 	// 2. Load character and ensure in combat
-	char, charOutput, bus, err := o.loadCharacterForCombat(ctx, input.EntityID)
+	char, charOutput, bus, err := o.loadCharacterForCombat(ctx, input.EntityID, computeTurnNumber(encData))
 	if err != nil {
 		return nil, err
 	}
@@ -4562,7 +4587,7 @@ func (o *Orchestrator) executeUnarmedStrike(
 	}
 
 	// 2. Load character and ensure in combat
-	char, charOutput, bus, err := o.loadCharacterForCombat(ctx, input.EntityID)
+	char, charOutput, bus, err := o.loadCharacterForCombat(ctx, input.EntityID, computeTurnNumber(encData))
 	if err != nil {
 		return nil, err
 	}
@@ -4898,7 +4923,7 @@ func (o *Orchestrator) executeMove(
 	var availableAbilities []*entities.AvailableAbility
 	var availableActions []*entities.AvailableAction
 
-	char, _, _, loadErr := o.loadCharacterForCombat(ctx, input.EntityID)
+	char, _, _, loadErr := o.loadCharacterForCombat(ctx, input.EntityID, computeTurnNumber(encData))
 	if loadErr == nil {
 		availableAbilities = convertCharAbilitiesToEntities(char.AvailableAbilities())
 		availableActions = convertCharActionsToEntities(char.AvailableActions())

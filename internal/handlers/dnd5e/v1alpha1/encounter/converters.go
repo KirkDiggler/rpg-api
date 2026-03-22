@@ -49,6 +49,30 @@ func shiftWallsByOrigin(walls []*apiv1alpha1.Wall, origin *apiv1alpha1.Position)
 	}
 }
 
+// shiftEntitiesByOrigin shifts entity positions by the room origin offset.
+// Entities are stored in room-local coordinates; this converts them to dungeon-absolute.
+func shiftEntitiesByOrigin(entities map[string]*dnd5ev1alpha1.EntityPlacement, origin *apiv1alpha1.Position) {
+	if origin == nil || entities == nil {
+		return
+	}
+	for _, e := range entities {
+		if e.Position != nil {
+			e.Position.X += origin.X
+			e.Position.Y += origin.Y
+			e.Position.Z += origin.Z
+		}
+	}
+}
+
+// shiftRoomToAbsolute shifts wall and entity positions from room-local to dungeon-absolute coordinates.
+func shiftRoomToAbsolute(room *dnd5ev1alpha1.Room) {
+	if room == nil || room.Origin == nil {
+		return
+	}
+	shiftWallsByOrigin(room.Walls, room.Origin)
+	shiftEntitiesByOrigin(room.Entities, room.Origin)
+}
+
 // stringToEntityType converts a string entity type to the proto enum
 func stringToEntityType(s string) dnd5ev1alpha1.EntityType {
 	switch s {
@@ -1505,6 +1529,9 @@ func abilityRefToProtoEnum(ref *core.Ref) dnd5ev1alpha1.CombatAbilityId {
 		return dnd5ev1alpha1.CombatAbilityId_COMBAT_ABILITY_ID_SECOND_WIND
 	case ref.Equals(refs.Features.FlurryOfBlows()):
 		return dnd5ev1alpha1.CombatAbilityId_COMBAT_ABILITY_ID_FLURRY_OF_BLOWS
+	case ref.Equals(refs.Actions.UnarmedStrike()):
+		// Martial Arts Bonus Strike appears as an ability (bonus action) with UnarmedStrike ref
+		return dnd5ev1alpha1.CombatAbilityId_COMBAT_ABILITY_ID_MARTIAL_ARTS_BONUS
 	default:
 		return dnd5ev1alpha1.CombatAbilityId_COMBAT_ABILITY_ID_UNSPECIFIED
 	}
@@ -1583,6 +1610,9 @@ func protoActionToRef(actionID dnd5ev1alpha1.ActionId) *core.Ref {
 //
 //nolint:gosec // G115: Game values are bounded by D&D rules, no overflow risk
 func convertToolkitAbilitiesToProto(abilities []toolkitchar.AvailableAbility) []*dnd5ev1alpha1.AvailableAbility {
+	if abilities == nil {
+		return nil
+	}
 	result := make([]*dnd5ev1alpha1.AvailableAbility, len(abilities))
 	for i, a := range abilities {
 		result[i] = &dnd5ev1alpha1.AvailableAbility{
@@ -1600,6 +1630,9 @@ func convertToolkitAbilitiesToProto(abilities []toolkitchar.AvailableAbility) []
 // convertToolkitActionsToProto converts toolkit character AvailableAction slice to proto.
 // This replaces convertAvailableActionsToProto for the unified action system.
 func convertToolkitActionsToProto(actions []toolkitchar.AvailableAction) []*dnd5ev1alpha1.AvailableAction {
+	if actions == nil {
+		return nil
+	}
 	result := make([]*dnd5ev1alpha1.AvailableAction, len(actions))
 	for i, a := range actions {
 		result[i] = &dnd5ev1alpha1.AvailableAction{
