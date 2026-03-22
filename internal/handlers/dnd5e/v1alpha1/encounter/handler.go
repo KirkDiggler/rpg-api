@@ -168,6 +168,8 @@ func (h *Handler) OpenDoor(
 		}
 		// Shift walls from room-local to dungeon-absolute coordinates
 		shiftWallsByOrigin(openDoorRoom.Walls, openDoorRoom.Origin)
+		// Shift entity positions from room-local to dungeon-absolute coordinates
+		shiftEntitiesByOrigin(openDoorRoom.Entities, openDoorRoom.Origin)
 	}
 
 	return &dnd5ev1alpha1.OpenDoorResponse{
