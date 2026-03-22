@@ -1403,6 +1403,8 @@ func convertGrantedActionToProto(ga *encounter.GrantedAction) *dnd5ev1alpha1.Gra
 }
 
 // convertAvailableAbilitiesToProto converts entity AvailableAbility slice to proto
+//
+//nolint:gosec // G115: Game values are bounded by D&D rules, no overflow risk
 func convertAvailableAbilitiesToProto(abilities []*entities.AvailableAbility) []*dnd5ev1alpha1.AvailableAbility {
 	if abilities == nil {
 		return nil
@@ -1411,10 +1413,12 @@ func convertAvailableAbilitiesToProto(abilities []*entities.AvailableAbility) []
 	result := make([]*dnd5ev1alpha1.AvailableAbility, len(abilities))
 	for i, a := range abilities {
 		result[i] = &dnd5ev1alpha1.AvailableAbility{
-			AbilityId: abilityIDToProtoEnum(a.AbilityID),
-			Name:      a.Name,
-			CanUse:    a.CanUse,
-			Reason:    a.Reason,
+			AbilityId:       abilityIDToProtoEnum(a.AbilityID),
+			Name:            a.Name,
+			CanUse:          a.CanUse,
+			Reason:          a.Reason,
+			ResourceCurrent: int32(a.ResourceCurrent),
+			ResourceMax:     int32(a.ResourceMax),
 		}
 	}
 	return result
