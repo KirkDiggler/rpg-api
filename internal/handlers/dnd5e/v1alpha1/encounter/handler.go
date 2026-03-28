@@ -247,7 +247,7 @@ func (h *Handler) GetEncounterState(
 		if response.Room != nil {
 			response.Room.Walls = convertWallsToProto(output.Walls)
 			response.Room.Origin = dungeonPositionToProto(output.RoomOrigin)
-			shiftWallsByOrigin(response.Room.Walls, response.Room.Origin)
+			shiftRoomToAbsolute(response.Room)
 		}
 	}
 
@@ -316,7 +316,7 @@ func (h *Handler) MoveCharacter(
 		if response.UpdatedRoom != nil {
 			response.UpdatedRoom.Walls = convertWallsToProto(output.Walls)
 			response.UpdatedRoom.Origin = dungeonPositionToProto(output.RoomOrigin)
-			shiftWallsByOrigin(response.UpdatedRoom.Walls, response.UpdatedRoom.Origin)
+			shiftRoomToAbsolute(response.UpdatedRoom)
 		}
 	}
 
@@ -572,7 +572,7 @@ func (h *Handler) StartCombat(
 	if room != nil {
 		room.Walls = convertWallsToProto(output.Walls)
 		room.Origin = dungeonPositionToProto(output.RoomOrigin)
-		shiftWallsByOrigin(room.Walls, room.Origin)
+		shiftRoomToAbsolute(room)
 	}
 
 	return &dnd5ev1alpha1.StartCombatResponse{
@@ -936,7 +936,7 @@ func (h *Handler) convertToProtoEvent(event *entities.EncounterEvent) (*dnd5ev1a
 		if combatStartedRoom != nil {
 			combatStartedRoom.Walls = convertDungeonWallsToProto(event.CombatStarted.Walls)
 			combatStartedRoom.Origin = dungeonPositionToProto(event.CombatStarted.RoomOrigin)
-			shiftWallsByOrigin(combatStartedRoom.Walls, combatStartedRoom.Origin)
+			shiftRoomToAbsolute(combatStartedRoom)
 		}
 		protoEvent.Event = &dnd5ev1alpha1.EncounterEvent_CombatStarted{
 			CombatStarted: &dnd5ev1alpha1.CombatStartedEvent{
@@ -967,7 +967,7 @@ func (h *Handler) convertToProtoEvent(event *entities.EncounterEvent) (*dnd5ev1a
 		if updatedRoom != nil {
 			updatedRoom.Walls = convertDungeonWallsToProto(event.MovementCompleted.Walls)
 			updatedRoom.Origin = dungeonPositionToProto(event.MovementCompleted.RoomOrigin)
-			shiftWallsByOrigin(updatedRoom.Walls, updatedRoom.Origin)
+			shiftRoomToAbsolute(updatedRoom)
 		}
 		protoEvent.Event = &dnd5ev1alpha1.EncounterEvent_MovementCompleted{
 			MovementCompleted: &dnd5ev1alpha1.MovementCompletedEvent{
@@ -993,7 +993,7 @@ func (h *Handler) convertToProtoEvent(event *entities.EncounterEvent) (*dnd5ev1a
 		if attackResolvedRoom != nil {
 			attackResolvedRoom.Walls = convertDungeonWallsToProto(event.AttackResolved.Walls)
 			attackResolvedRoom.Origin = dungeonPositionToProto(event.AttackResolved.RoomOrigin)
-			shiftWallsByOrigin(attackResolvedRoom.Walls, attackResolvedRoom.Origin)
+			shiftRoomToAbsolute(attackResolvedRoom)
 		}
 		protoEvent.Event = &dnd5ev1alpha1.EncounterEvent_AttackResolved{
 			AttackResolved: &dnd5ev1alpha1.AttackResolvedEvent{
@@ -1028,7 +1028,7 @@ func (h *Handler) convertToProtoEvent(event *entities.EncounterEvent) (*dnd5ev1a
 		if turnEndedRoom != nil {
 			turnEndedRoom.Walls = convertDungeonWallsToProto(event.TurnEnded.Walls)
 			turnEndedRoom.Origin = dungeonPositionToProto(event.TurnEnded.RoomOrigin)
-			shiftWallsByOrigin(turnEndedRoom.Walls, turnEndedRoom.Origin)
+			shiftRoomToAbsolute(turnEndedRoom)
 		}
 		protoEvent.Event = &dnd5ev1alpha1.EncounterEvent_TurnEnded{
 			TurnEnded: &dnd5ev1alpha1.TurnEndedEvent{
@@ -1073,7 +1073,7 @@ func (h *Handler) convertToProtoEvent(event *entities.EncounterEvent) (*dnd5ev1a
 		if monsterTurnRoom != nil {
 			monsterTurnRoom.Walls = convertDungeonWallsToProto(event.MonsterTurnCompleted.Walls)
 			monsterTurnRoom.Origin = dungeonPositionToProto(event.MonsterTurnCompleted.RoomOrigin)
-			shiftWallsByOrigin(monsterTurnRoom.Walls, monsterTurnRoom.Origin)
+			shiftRoomToAbsolute(monsterTurnRoom)
 		}
 		protoEvent.Event = &dnd5ev1alpha1.EncounterEvent_MonsterTurnCompleted{
 			MonsterTurnCompleted: &dnd5ev1alpha1.MonsterTurnCompletedEvent{
@@ -1147,8 +1147,8 @@ func (h *Handler) convertToProtoEvent(event *entities.EncounterEvent) (*dnd5ev1a
 		if room != nil {
 			room.Walls = convertDungeonWallsToProto(event.RoomRevealed.Walls)
 			room.Origin = dungeonPositionToProto(event.RoomRevealed.RoomOrigin)
-			// Shift walls from room-local to dungeon-absolute coordinates
-			shiftWallsByOrigin(room.Walls, room.Origin)
+			// Shift walls and entities from room-local to dungeon-absolute coordinates
+			shiftRoomToAbsolute(room)
 		}
 		protoEvent.Event = &dnd5ev1alpha1.EncounterEvent_RoomRevealed{
 			RoomRevealed: &dnd5ev1alpha1.RoomRevealedEvent{

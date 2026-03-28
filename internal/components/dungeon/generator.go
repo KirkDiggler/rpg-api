@@ -615,13 +615,15 @@ func calculateNeighborOrigin(currentRoom, neighborRoom *Room, direction Directio
 
 	switch direction {
 	case DirectionNorth:
-		// Neighbor is above: move up by the neighbor's height + 1 for wall gap
-		origin.Z -= neighborRoom.Shape.Height + 1
+		// In this codebase, "north" = high Z edge (row=height-1).
+		// Neighbor placed beyond the north edge in the positive Z direction.
+		origin.Z += currentHeight + 1
 		// Y adjusts to maintain cube coordinate constraint (for hex grids, y = -x - z)
 		origin.Y = -origin.X - origin.Z
 	case DirectionSouth:
-		// Neighbor is below: move down by current room's height + 1
-		origin.Z += currentHeight + 1
+		// In this codebase, "south" = low Z edge (row=0).
+		// Neighbor placed beyond the south edge in the negative Z direction.
+		origin.Z -= neighborRoom.Shape.Height + 1
 		origin.Y = -origin.X - origin.Z
 	case DirectionEast:
 		// Neighbor is to the right: move right by current room's width + 1

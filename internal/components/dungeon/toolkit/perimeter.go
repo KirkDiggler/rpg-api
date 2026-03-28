@@ -37,6 +37,8 @@ func (g *PerimeterGenerator) Generate(input *PerimeterInput) *PerimeterOutput {
 	wallID := 0
 
 	// Direction mapping for rectangular rooms: segment 0=south, 1=east, 2=north, 3=west
+	// Convention: "south" = row=0/Z=0 edge, "north" = row=height/Z=height edge.
+	// This matches createRectangleShape connection points and toolkit shapes.
 	directions := []string{"south", "east", "north", "west"}
 
 	bounds := input.Shape.Bounds
