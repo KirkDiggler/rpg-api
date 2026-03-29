@@ -48,7 +48,7 @@ func BuildEncounterStateData(input *BuildEncounterStateDataInput) (*BuildEncount
 	state.Entities = buildEntityMap(input.Entities)
 
 	// Convert combat state
-	state.Combat = combatStateToProto(input.Combat)
+	state.Combat = CombatStateToProto(input.Combat)
 
 	// Convert doors
 	state.Doors = buildDoorMap(input.Doors)
@@ -81,12 +81,12 @@ func buildEntityMap(entities map[string]*EntityStateData) map[string]*dnd5ev1alp
 	return result
 }
 
-// combatStateToProto converts an entities.CombatState to the proto CombatState message.
+// CombatStateToProto converts an entities.CombatState to the proto CombatState message.
 // This is a simplified version of the handler layer's convertCombatStateToProto that does
 // not depend on spatial grid conversion (positions are already in cube coordinates).
 //
 //nolint:gosec // G115: Game values are bounded by D&D rules, no overflow risk
-func combatStateToProto(cs *CombatState) *dnd5ev1alpha1.CombatState {
+func CombatStateToProto(cs *CombatState) *dnd5ev1alpha1.CombatState {
 	if cs == nil {
 		return nil
 	}
