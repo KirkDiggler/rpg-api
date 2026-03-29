@@ -154,6 +154,7 @@ type UpdateInput struct {
 	ActionEconomy     *entities.ActionEconomyState // Action/bonus/reaction tracking (optional - only update if provided)
 	Monsters          []*monster.Data              // Monster state updates (optional - only update if provided)
 	BossMonsterIDs    []string                     // IDs of boss monsters (optional - only update if provided)
+	HasBossRoom       *bool                        // True if dungeon has a boss room (optional - only update if provided)
 	CharacterHP       map[string]int               // Character HP updates (optional - only update if provided)
 
 	// Multiplayer fields (optional - only update if provided)

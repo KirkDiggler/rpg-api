@@ -124,6 +124,7 @@ func (r *InMemoryRepository) GetByJoinCode(_ context.Context, input *GetByJoinCo
 					ActionEconomy:     data.ActionEconomy,
 					Monsters:          data.Monsters,
 					BossMonsterIDs:    data.BossMonsterIDs,
+					HasBossRoom:       data.HasBossRoom,
 					CharacterHP:       data.CharacterHP,
 					State:             data.State,
 					JoinCode:          data.JoinCode,
@@ -178,6 +179,9 @@ func (r *InMemoryRepository) Update(_ context.Context, input *UpdateInput) (*Upd
 	}
 	if input.BossMonsterIDs != nil {
 		data.BossMonsterIDs = input.BossMonsterIDs
+	}
+	if input.HasBossRoom != nil {
+		data.HasBossRoom = *input.HasBossRoom
 	}
 	if input.CharacterHP != nil {
 		data.CharacterHP = input.CharacterHP
