@@ -4,6 +4,7 @@ package entities
 import (
 	"errors"
 
+	apiv1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/api/v1alpha1"
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
 )
 
@@ -100,13 +101,69 @@ func combatStateToProto(cs *CombatState) *dnd5ev1alpha1.CombatState {
 		}
 	}
 
+	// Build current turn state if combat is active
+	var currentTurn *dnd5ev1alpha1.TurnState
+	if cs.CombatStarted && !cs.CombatEnded && len(cs.TurnOrder) > 0 {
+		activeEntry := cs.TurnOrder[cs.ActiveIndex]
+
+		// Convert position (already in cube coordinates in entity layer)
+		var position *apiv1alpha1.Position
+		if activeEntry.Position != nil {
+			position = positionToProto(activeEntry.Position)
+		}
+
+		movementUsed := int32(30) - cs.MovementRemaining
+		if movementUsed < 0 {
+			movementUsed = 0
+		}
+
+		currentTurn = &dnd5ev1alpha1.TurnState{
+			EntityId:          activeEntry.EntityID,
+			MovementUsed:      movementUsed,
+			MovementMax:       30, // Default movement - will be dynamic in Phase 4
+			ActionUsed:        false,
+			BonusActionUsed:   false,
+			ReactionAvailable: true,
+			Position:          position,
+			ActionEconomy:     actionEconomyToProto(cs.ActionEconomy, cs),
+		}
+	}
+
 	return &dnd5ev1alpha1.CombatState{
 		EncounterId:   cs.EncounterID,
 		Round:         int32(cs.Round),
 		TurnOrder:     turnOrder,
 		ActiveIndex:   int32(cs.ActiveIndex),
+		CurrentTurn:   currentTurn,
 		CombatStarted: cs.CombatStarted,
 		CombatEnded:   cs.CombatEnded,
+	}
+}
+
+// actionEconomyToProto converts an entities.ActionEconomyState to the proto ActionEconomy message.
+//
+//nolint:gosec // G115: Game values are bounded by D&D rules, no overflow risk
+func actionEconomyToProto(ae *ActionEconomyState, cs *CombatState) *dnd5ev1alpha1.ActionEconomy {
+	if ae == nil {
+		return nil
+	}
+
+	// Get movement values from CombatState
+	var movementRemaining, movementMax int32
+	if cs != nil {
+		movementRemaining = cs.MovementRemaining
+		movementMax = 30 // Default movement - dynamic values coming in Phase 4
+	}
+
+	return &dnd5ev1alpha1.ActionEconomy{
+		MovementRemaining:       movementRemaining,
+		MovementMax:             movementMax,
+		AttacksRemaining:        int32(ae.AttacksRemaining),
+		StandardActionAvailable: ae.ActionsRemaining > 0,
+		BonusActionAvailable:    ae.BonusActionsRemaining > 0,
+		ReactionAvailable:       ae.ReactionsRemaining > 0,
+		OffHandAttacksRemaining: int32(ae.OffHandAttacksRemaining),
+		FlurryStrikesRemaining:  int32(ae.FlurryStrikesRemaining),
 	}
 }
 
