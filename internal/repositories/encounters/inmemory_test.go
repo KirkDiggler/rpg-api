@@ -328,7 +328,7 @@ func (s *InMemoryRepositoryTestSuite) TestUpdate_CanSetMovementToZero() {
 }
 
 func (s *InMemoryRepositoryTestSuite) TestUpdate_HasBossRoom() {
-	// Arrange - Save an encounter without HasBossRoom
+	// Arrange - Save an encounter with HasBossRoom set to false
 	_, err := s.repo.Save(s.ctx, &SaveInput{
 		EncounterID: "enc-1",
 		HasBossRoom: false,
@@ -424,6 +424,27 @@ func (s *InMemoryRepositoryTestSuite) TestDelete_NotFound() {
 	s.Require().Error(err)
 	s.Assert().Nil(output)
 	s.Assert().Contains(err.Error(), "encounter not found")
+}
+
+// GetByJoinCode Tests
+
+func (s *InMemoryRepositoryTestSuite) TestGetByJoinCode_ReturnsBossRoom() {
+	// Arrange - Save an encounter with a JoinCode and HasBossRoom=true
+	_, err := s.repo.Save(s.ctx, &SaveInput{
+		EncounterID: "enc-1",
+		JoinCode:    "ABC123",
+		HasBossRoom: true,
+	})
+	s.Require().NoError(err)
+
+	// Act
+	output, err := s.repo.GetByJoinCode(s.ctx, &GetByJoinCodeInput{JoinCode: "ABC123"})
+
+	// Assert
+	s.Require().NoError(err)
+	s.Require().NotNil(output)
+	s.Require().NotNil(output.Data)
+	s.Assert().True(output.Data.HasBossRoom, "HasBossRoom should be true when retrieved via GetByJoinCode")
 }
 
 // Integration Tests - Full workflow
