@@ -327,6 +327,48 @@ func (s *InMemoryRepositoryTestSuite) TestUpdate_CanSetMovementToZero() {
 	s.Assert().Equal(int32(0), getOutput.Data.MovementRemaining, "MovementRemaining should be set to 0")
 }
 
+func (s *InMemoryRepositoryTestSuite) TestUpdate_HasBossRoom() {
+	// Arrange - Save an encounter with HasBossRoom set to false
+	_, err := s.repo.Save(s.ctx, &SaveInput{
+		EncounterID: "enc-1",
+		HasBossRoom: false,
+	})
+	s.Require().NoError(err)
+
+	// Act - Update HasBossRoom to true
+	hasBossRoom := true
+	_, err = s.repo.Update(s.ctx, &UpdateInput{
+		EncounterID: "enc-1",
+		HasBossRoom: &hasBossRoom,
+	})
+	s.Require().NoError(err)
+
+	// Verify
+	getOutput, err := s.repo.Get(s.ctx, &GetInput{EncounterID: "enc-1"})
+	s.Require().NoError(err)
+	s.Assert().True(getOutput.Data.HasBossRoom, "HasBossRoom should be set to true after update")
+}
+
+func (s *InMemoryRepositoryTestSuite) TestUpdate_HasBossRoom_NilDoesNotOverwrite() {
+	// Arrange - Save an encounter with HasBossRoom = true
+	_, err := s.repo.Save(s.ctx, &SaveInput{
+		EncounterID: "enc-1",
+		HasBossRoom: true,
+	})
+	s.Require().NoError(err)
+
+	// Act - Update without setting HasBossRoom (nil pointer means don't change)
+	_, err = s.repo.Update(s.ctx, &UpdateInput{
+		EncounterID: "enc-1",
+	})
+	s.Require().NoError(err)
+
+	// Verify - HasBossRoom should still be true
+	getOutput, err := s.repo.Get(s.ctx, &GetInput{EncounterID: "enc-1"})
+	s.Require().NoError(err)
+	s.Assert().True(getOutput.Data.HasBossRoom, "HasBossRoom should remain true when update doesn't provide it")
+}
+
 // Delete Tests
 
 func (s *InMemoryRepositoryTestSuite) TestDelete_Success() {
@@ -382,6 +424,27 @@ func (s *InMemoryRepositoryTestSuite) TestDelete_NotFound() {
 	s.Require().Error(err)
 	s.Assert().Nil(output)
 	s.Assert().Contains(err.Error(), "encounter not found")
+}
+
+// GetByJoinCode Tests
+
+func (s *InMemoryRepositoryTestSuite) TestGetByJoinCode_ReturnsBossRoom() {
+	// Arrange - Save an encounter with a JoinCode and HasBossRoom=true
+	_, err := s.repo.Save(s.ctx, &SaveInput{
+		EncounterID: "enc-1",
+		JoinCode:    "ABC123",
+		HasBossRoom: true,
+	})
+	s.Require().NoError(err)
+
+	// Act
+	output, err := s.repo.GetByJoinCode(s.ctx, &GetByJoinCodeInput{JoinCode: "ABC123"})
+
+	// Assert
+	s.Require().NoError(err)
+	s.Require().NotNil(output)
+	s.Require().NotNil(output.Data)
+	s.Assert().True(output.Data.HasBossRoom, "HasBossRoom should be true when retrieved via GetByJoinCode")
 }
 
 // Integration Tests - Full workflow

@@ -2742,6 +2742,83 @@ func (s *OrchestratorTestSuite) TestCheckAllCharactersDead_NilMap() {
 	s.False(s.orchestrator.checkAllCharactersDead(enc), "Nil map should not be TPK")
 }
 
+// ============================================================================
+// checkCombatEnd Tests - HasBossRoom prevents premature victory
+// ============================================================================
+
+func (s *OrchestratorTestSuite) TestCheckCombatEnd_AllMonstersDeadNoBossRoom_ReturnsVictory() {
+	enc := &encounterrepo.EncounterData{
+		InitiativeData: &initiative.TrackerData{
+			Order: []initiative.EntityData{
+				{ID: "char-1", Type: entityTypeCharacter},
+				{ID: "goblin-1", Type: entityTypeMonster},
+			},
+		},
+		Monsters: []*monster.Data{
+			{ID: "goblin-1", Name: "Goblin", HitPoints: 0},
+		},
+		HasBossRoom: false,
+	}
+
+	result := s.orchestrator.checkCombatEnd(enc)
+	s.NotNil(result, "Should return victory when all monsters dead and no boss room")
+	s.Equal("victory", result.Reason)
+}
+
+func (s *OrchestratorTestSuite) TestCheckCombatEnd_AllMonstersDeadWithBossRoom_ReturnsNil() {
+	enc := &encounterrepo.EncounterData{
+		InitiativeData: &initiative.TrackerData{
+			Order: []initiative.EntityData{
+				{ID: "char-1", Type: entityTypeCharacter},
+				{ID: "goblin-1", Type: entityTypeMonster},
+			},
+		},
+		Monsters: []*monster.Data{
+			{ID: "goblin-1", Name: "Goblin", HitPoints: 0},
+		},
+		HasBossRoom: true,
+	}
+
+	result := s.orchestrator.checkCombatEnd(enc)
+	s.Nil(result, "Should NOT return victory when HasBossRoom is true - more rooms to explore")
+}
+
+func (s *OrchestratorTestSuite) TestCheckCombatEnd_AllMonstersDeadWithBossMonsterIDs_ReturnsNil() {
+	enc := &encounterrepo.EncounterData{
+		InitiativeData: &initiative.TrackerData{
+			Order: []initiative.EntityData{
+				{ID: "char-1", Type: entityTypeCharacter},
+				{ID: "goblin-1", Type: entityTypeMonster},
+			},
+		},
+		Monsters: []*monster.Data{
+			{ID: "goblin-1", Name: "Goblin", HitPoints: 0},
+		},
+		BossMonsterIDs: []string{"boss-1"},
+		HasBossRoom:    true,
+	}
+
+	result := s.orchestrator.checkCombatEnd(enc)
+	s.Nil(result, "Should NOT return victory when boss monsters are tracked")
+}
+
+func (s *OrchestratorTestSuite) TestCheckCombatEnd_MonstersStillAlive_ReturnsNil() {
+	enc := &encounterrepo.EncounterData{
+		InitiativeData: &initiative.TrackerData{
+			Order: []initiative.EntityData{
+				{ID: "char-1", Type: entityTypeCharacter},
+				{ID: "goblin-1", Type: entityTypeMonster},
+			},
+		},
+		Monsters: []*monster.Data{
+			{ID: "goblin-1", Name: "Goblin", HitPoints: 10},
+		},
+	}
+
+	result := s.orchestrator.checkCombatEnd(enc)
+	s.Nil(result, "Combat should continue when monsters are alive")
+}
+
 func (s *OrchestratorTestSuite) TestCheckBossesDefeated_AllBossesDead() {
 	enc := &encounterrepo.EncounterData{
 		BossMonsterIDs: []string{"boss-1", "boss-2"},

@@ -1903,6 +1903,11 @@ func ptrInt32(v int32) *int32 {
 	return &v
 }
 
+// ptrBool returns a pointer to the given bool value
+func ptrBool(v bool) *bool {
+	return &v
+}
+
 // buildTurnOrderFromData reconstructs the turn order from stored initiative data
 func buildTurnOrderFromData(
 	initiativeData *initiative.TrackerData,
@@ -3455,6 +3460,7 @@ func (o *Orchestrator) StartCombat(
 	// 13. Update encounter state to active with fresh action economy
 	activeState := encounterrepo.StateActive
 	initialActionEconomy := entities.NewActionEconomyState()
+	hasBossRoom := dungeonEntity.BossRoomID != ""
 	_, err = o.encRepo.Update(ctx, &encounterrepo.UpdateInput{
 		EncounterID:       input.EncounterID,
 		State:             &activeState,
@@ -3463,6 +3469,7 @@ func (o *Orchestrator) StartCombat(
 		MovementRemaining: ptrInt32(defaultMovementSpeed),
 		ActionEconomy:     initialActionEconomy,
 		Monsters:          monsters,
+		HasBossRoom:       ptrBool(hasBossRoom),
 		CharacterHP:       characterHP,
 	})
 	if err != nil {
