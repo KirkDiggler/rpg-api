@@ -33,7 +33,7 @@ type EntityStateData struct {
 
 	// ToolkitData holds character.Data or monster.Data depending on EntityType.
 	// For obstacles, this may be nil.
-	ToolkitData interface{}
+	ToolkitData any
 }
 
 // ToEntityStateProtoInput is the input for ToEntityStateProto.
