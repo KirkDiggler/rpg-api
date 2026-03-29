@@ -81,13 +81,14 @@ type EncounterData struct {
 	ID                string
 	RoomData          interface{} // Temporarily using interface{} until spatial is fixed
 	InitiativeData    *initiative.TrackerData
-	InitiativeRolls   []initiative.Roll            // Store what was rolled for each entity
-	MovementRemaining int32                        // Movement remaining for active turn
-	ActionEconomy     *entities.ActionEconomyState // Action/bonus/reaction tracking for current turn
-	Monsters          []*monster.Data              // Monster state for this encounter
-	BossMonsterIDs    []string                     // IDs of boss monsters (for victory detection)
-	HasBossRoom       bool                         // True if dungeon has a boss room (prevents early victory)
-	CharacterHP       map[string]int               // Character ID -> current HP (for TPK detection)
+	InitiativeRolls   []initiative.Roll                    // Store what was rolled for each entity
+	MovementRemaining int32                                // Movement remaining for active turn
+	ActionEconomy     *entities.ActionEconomyState         // Action/bonus/reaction tracking for current turn
+	Monsters          []*monster.Data                      // Monster state for this encounter (DEPRECATED: migrating to Entities)
+	BossMonsterIDs    []string                             // IDs of boss monsters (for victory detection)
+	HasBossRoom       bool                                 // True if dungeon has a boss room (prevents early victory)
+	CharacterHP       map[string]int                       // Character ID -> current HP (DEPRECATED: migrating to Entities)
+	Entities          map[string]*entities.EntityStateData // Unified entity state map (characters, monsters, obstacles)
 
 	// Multiplayer fields
 	State     EncounterState     // Current state (waiting/active/paused/completed)
@@ -106,12 +107,13 @@ type SaveInput struct {
 	RoomData          interface{} // Temporarily using interface{} until spatial is fixed
 	InitiativeData    *initiative.TrackerData
 	InitiativeRolls   []initiative.Roll
-	MovementRemaining int32                        // Movement remaining for active turn
-	ActionEconomy     *entities.ActionEconomyState // Action/bonus/reaction tracking for current turn
-	Monsters          []*monster.Data              // Monster state for this encounter
-	BossMonsterIDs    []string                     // IDs of boss monsters (for victory detection)
-	HasBossRoom       bool                         // True if dungeon has a boss room (prevents early victory)
-	CharacterHP       map[string]int               // Character ID -> current HP (for TPK detection)
+	MovementRemaining int32                                // Movement remaining for active turn
+	ActionEconomy     *entities.ActionEconomyState         // Action/bonus/reaction tracking for current turn
+	Monsters          []*monster.Data                      // Monster state for this encounter (DEPRECATED: migrating to Entities)
+	BossMonsterIDs    []string                             // IDs of boss monsters (for victory detection)
+	HasBossRoom       bool                                 // True if dungeon has a boss room (prevents early victory)
+	CharacterHP       map[string]int                       // Character ID -> current HP (DEPRECATED: migrating to Entities)
+	Entities          map[string]*entities.EntityStateData // Unified entity state map
 
 	// Multiplayer fields
 	State     EncounterState     // Current state (waiting/active/paused/completed)
@@ -147,15 +149,16 @@ type GetByJoinCodeInput struct {
 // UpdateInput defines the request for updating an encounter
 type UpdateInput struct {
 	EncounterID       string
-	InitiativeData    *initiative.TrackerData      // Turn order changes
-	InitiativeRolls   []initiative.Roll            // Initiative roll data (optional - for mid-round combatant additions)
-	RoomData          interface{}                  // Position changes - temporarily using interface{}
-	MovementRemaining *int32                       // Movement remaining for active turn (optional - only update if provided)
-	ActionEconomy     *entities.ActionEconomyState // Action/bonus/reaction tracking (optional - only update if provided)
-	Monsters          []*monster.Data              // Monster state updates (optional - only update if provided)
-	BossMonsterIDs    []string                     // IDs of boss monsters (optional - only update if provided)
-	HasBossRoom       *bool                        // True if dungeon has a boss room (optional - only update if provided)
-	CharacterHP       map[string]int               // Character HP updates (optional - only update if provided)
+	InitiativeData    *initiative.TrackerData              // Turn order changes
+	InitiativeRolls   []initiative.Roll                    // Initiative roll data (optional - for mid-round combatant additions)
+	RoomData          interface{}                          // Position changes - temporarily using interface{}
+	MovementRemaining *int32                               // Movement remaining for active turn (optional - only update if provided)
+	ActionEconomy     *entities.ActionEconomyState         // Action/bonus/reaction tracking (optional - only update if provided)
+	Monsters          []*monster.Data                      // Monster state updates (DEPRECATED: migrating to Entities)
+	BossMonsterIDs    []string                             // IDs of boss monsters (optional - only update if provided)
+	HasBossRoom       *bool                                // True if dungeon has a boss room (optional - only update if provided)
+	CharacterHP       map[string]int                       // Character HP updates (DEPRECATED: migrating to Entities)
+	Entities          map[string]*entities.EntityStateData // Unified entity state updates (optional - merge into existing)
 
 	// Multiplayer fields (optional - only update if provided)
 	State   *EncounterState    // State transition (waiting->active, etc.)

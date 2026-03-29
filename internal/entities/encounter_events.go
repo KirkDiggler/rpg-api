@@ -4,6 +4,7 @@ package entities
 import (
 	"time"
 
+	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
 	"github.com/KirkDiggler/rpg-api/internal/components/dungeon"
 	"github.com/KirkDiggler/rpg-toolkit/core"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
@@ -103,6 +104,9 @@ type PlayerDisconnectedEvent struct {
 type PlayerReconnectedEvent struct {
 	PlayerID    string `json:"player_id"`
 	CharacterID string `json:"character_id"`
+
+	// New unified entity state (snapshot). When set, handler uses this for full state restore on reconnect.
+	EncounterStateData *dnd5ev1alpha1.EncounterStateData `json:"-"`
 }
 
 // MonsterState represents a monster's combat state for events
@@ -125,6 +129,9 @@ type CombatStartedEvent struct {
 	Doors        []*DoorInfo                  `json:"doors"`                   // Doors/exits from the starting room
 	DungeonID    string                       `json:"dungeon_id"`              // ID of the generated dungeon
 	MonsterTurns []*MonsterTurnCompletedEvent `json:"monster_turns,omitempty"` // Monster turns if monsters won initiative
+
+	// New unified entity state (snapshot). When set, handler uses this instead of building from legacy fields above.
+	EncounterStateData *dnd5ev1alpha1.EncounterStateData `json:"-"` // Proto payload built by orchestrator
 }
 
 // EncounterResult describes the outcome of an encounter
@@ -135,6 +142,9 @@ type EncounterResult struct {
 // CombatEndedEvent is emitted when combat ends
 type CombatEndedEvent struct {
 	EncounterResult *EncounterResult `json:"encounter_result"` // Victory or defeat
+
+	// New unified entity state (snapshot). When set, handler uses this instead of legacy fields.
+	EncounterStateData *dnd5ev1alpha1.EncounterStateData `json:"-"`
 }
 
 // CombatPausedEvent is emitted when combat is paused
@@ -146,6 +156,9 @@ type CombatPausedEvent struct {
 // CombatResumedEvent is emitted when combat is resumed
 type CombatResumedEvent struct {
 	ResumedBy string `json:"resumed_by"` // Player ID who resumed
+
+	// New unified entity state (snapshot). When set, handler uses this for full state restore.
+	EncounterStateData *dnd5ev1alpha1.EncounterStateData `json:"-"`
 }
 
 // MovementCompletedEvent is emitted when an entity completes movement
@@ -158,6 +171,10 @@ type MovementCompletedEvent struct {
 	UpdatedRoom       *spatial.RoomData     `json:"updated_room,omitempty"`
 	RoomOrigin        *dungeon.Position     `json:"room_origin,omitempty"` // Absolute position of the room in dungeon-space
 	Walls             []dungeon.WallSegment `json:"walls,omitempty"`
+
+	// New unified entity state (delta). When set, handler uses these instead of legacy fields.
+	UpdatedEntity    *dnd5ev1alpha1.EntityState `json:"-"` // The moved entity's updated state
+	CombatStateProto *dnd5ev1alpha1.CombatState `json:"-"` // Updated combat state with movement remaining
 }
 
 // AttackResult contains the full details of an attack resolution
@@ -228,6 +245,10 @@ type AttackResolvedEvent struct {
 	RoomOrigin    *dungeon.Position     `json:"room_origin,omitempty"`    // Absolute position of the room in dungeon-space
 	Walls         []dungeon.WallSegment `json:"walls,omitempty"`          // Walls in the room
 	GrantedAction *GrantedActionInfo    `json:"granted_action,omitempty"` // Action granted from this attack
+
+	// New unified entity state (delta). When set, handler uses these instead of legacy fields.
+	AttackerState *dnd5ev1alpha1.EntityState `json:"-"` // Attacker's updated state after attack
+	TargetState   *dnd5ev1alpha1.EntityState `json:"-"` // Target's updated state after attack
 }
 
 // GrantedActionInfo represents info about an action granted during combat
@@ -258,6 +279,10 @@ type TurnEndedEvent struct {
 	Room             *spatial.RoomData     `json:"room,omitempty"`        // Updated room with entity positions
 	RoomOrigin       *dungeon.Position     `json:"room_origin,omitempty"` // Absolute position of the room in dungeon-space
 	Walls            []dungeon.WallSegment `json:"walls,omitempty"`
+
+	// New unified entity state (delta). When set, handler uses these instead of legacy fields.
+	UpdatedEntities  []*dnd5ev1alpha1.EntityState `json:"-"` // Entities whose state changed this turn
+	CombatStateProto *dnd5ev1alpha1.CombatState   `json:"-"` // Updated combat state proto
 }
 
 // MonsterTurnCompletedEvent is emitted when a monster completes its turn
@@ -270,6 +295,10 @@ type MonsterTurnCompletedEvent struct {
 	RoomOrigin        *dungeon.Position       `json:"room_origin,omitempty"`        // Absolute position of the room in dungeon-space
 	Walls             []dungeon.WallSegment   `json:"walls,omitempty"`              // Walls in the current room
 	UpdatedCharacters []*character.Data       `json:"updated_characters,omitempty"` // Characters that took damage
+
+	// New unified entity state (delta). When set, handler uses these instead of legacy fields.
+	UpdatedEntities  []*dnd5ev1alpha1.EntityState `json:"-"` // Entities whose state changed (monster + damaged characters)
+	CombatStateProto *dnd5ev1alpha1.CombatState   `json:"-"` // Updated combat state proto
 }
 
 // DungeonVictoryEvent is emitted when the boss is defeated
@@ -280,12 +309,18 @@ type DungeonVictoryEvent struct {
 	BossName       string `json:"boss_name"`       // Name of the boss for display
 	MonstersKilled int    `json:"monsters_killed"` // Total monsters killed in the dungeon
 	RoomsExplored  int    `json:"rooms_explored"`  // Number of rooms explored
+
+	// New unified entity state (snapshot). When set, handler uses this for full state.
+	EncounterStateData *dnd5ev1alpha1.EncounterStateData `json:"-"`
 }
 
 // DungeonFailureEvent is emitted when all party members are defeated (TPK)
 type DungeonFailureEvent struct {
 	DungeonID string `json:"dungeon_id"`
 	Reason    string `json:"reason"` // "tpk" (total party kill), "abandoned", etc.
+
+	// New unified entity state (snapshot). When set, handler uses this for full state.
+	EncounterStateData *dnd5ev1alpha1.EncounterStateData `json:"-"`
 }
 
 // RoomRevealedEvent is emitted when a door is opened and a new room is revealed
@@ -299,4 +334,7 @@ type RoomRevealedEvent struct {
 	Monsters     []*MonsterState              `json:"monsters"`                // Monsters in the revealed room
 	CombatState  *CombatState                 `json:"combat_state"`            // Updated combat state with new monsters in initiative
 	MonsterTurns []*MonsterTurnCompletedEvent `json:"monster_turns,omitempty"` // Monster turns if new monsters act immediately
+
+	// New unified entity state (snapshot). When set, handler uses this instead of building from legacy fields.
+	EncounterStateData *dnd5ev1alpha1.EncounterStateData `json:"-"`
 }

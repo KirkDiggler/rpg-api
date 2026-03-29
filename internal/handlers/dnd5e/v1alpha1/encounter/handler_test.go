@@ -1491,16 +1491,18 @@ func (s *HandlerTestSuite) TestConvertToProtoEvent_MovementCompleted_IncludesWal
 	movementCompleted := protoEvent.GetMovementCompleted()
 	s.Require().NotNil(movementCompleted, "MovementCompleted should be set")
 
-	// Verify the room has walls
-	s.Require().NotNil(movementCompleted.UpdatedRoom, "UpdatedRoom should be set")
-	s.Require().NotEmpty(movementCompleted.UpdatedRoom.Walls, "Walls should NOT be empty")
-	s.Equal(2, len(movementCompleted.UpdatedRoom.Walls), "Should have 2 walls")
+	// Verify entity ID is passed through
+	s.Equal("char-1", movementCompleted.EntityId)
 
-	// Verify wall properties
-	wall1 := movementCompleted.UpdatedRoom.Walls[0]
-	s.NotNil(wall1.Start, "Wall start position should be set")
-	s.NotNil(wall1.End, "Wall end position should be set")
-	s.True(wall1.BlocksMovement, "Wall should block movement")
+	// Verify path contains the final position
+	s.Require().Len(movementCompleted.Path, 1)
+	s.Equal(float64(5), movementCompleted.Path[0].X)
+	s.Equal(float64(-10), movementCompleted.Path[0].Y)
+	s.Equal(float64(5), movementCompleted.Path[0].Z)
+
+	// UpdatedEntity and CombatState are nil until orchestrator populates them
+	s.Nil(movementCompleted.UpdatedEntity, "UpdatedEntity should be nil until orchestrator wires it")
+	s.Nil(movementCompleted.CombatState, "CombatState should be nil until orchestrator wires it")
 }
 
 func (s *HandlerTestSuite) TestConvertToProtoEvent_TurnEnded_IncludesWalls() {
@@ -1548,10 +1550,13 @@ func (s *HandlerTestSuite) TestConvertToProtoEvent_TurnEnded_IncludesWalls() {
 	turnEnded := protoEvent.GetTurnEnded()
 	s.Require().NotNil(turnEnded, "TurnEnded should be set")
 
-	// Verify the room has walls
-	s.Require().NotNil(turnEnded.UpdatedRoom, "UpdatedRoom should be set")
-	s.Require().NotEmpty(turnEnded.UpdatedRoom.Walls, "Walls should NOT be empty")
-	s.Equal(1, len(turnEnded.UpdatedRoom.Walls), "Should have 1 wall")
+	// CombatState is nil because the internal event's CombatState field was nil (no legacy data set)
+	// and the new CombatStateProto field is also nil. The handler falls back to legacy conversion
+	// which returns nil for nil input.
+	s.Nil(turnEnded.CombatState, "CombatState should be nil when no combat state data is set")
+
+	// UpdatedEntities is nil until orchestrator populates it
+	s.Nil(turnEnded.UpdatedEntities, "UpdatedEntities should be nil until orchestrator wires it")
 }
 
 func (s *HandlerTestSuite) TestConvertToProtoEvent_MonsterTurnCompleted_IncludesWalls() {
@@ -1606,10 +1611,16 @@ func (s *HandlerTestSuite) TestConvertToProtoEvent_MonsterTurnCompleted_Includes
 	monsterTurn := protoEvent.GetMonsterTurnCompleted()
 	s.Require().NotNil(monsterTurn, "MonsterTurnCompleted should be set")
 
-	// Verify the room has walls
-	s.Require().NotNil(monsterTurn.UpdatedRoom, "UpdatedRoom should be set")
-	s.Require().NotEmpty(monsterTurn.UpdatedRoom.Walls, "Walls should NOT be empty")
-	s.Equal(2, len(monsterTurn.UpdatedRoom.Walls), "Should have 2 walls")
+	// Verify monster turn result fields are passed through
+	s.Require().NotNil(monsterTurn.MonsterTurn)
+	s.Equal("monster-1", monsterTurn.MonsterTurn.MonsterId)
+	s.Equal("Skeleton", monsterTurn.MonsterTurn.MonsterName)
+	s.Empty(monsterTurn.MonsterTurn.Actions)
+	s.Empty(monsterTurn.MonsterTurn.MovementPath)
+
+	// UpdatedEntities and CombatState are nil until orchestrator populates them
+	s.Nil(monsterTurn.UpdatedEntities, "UpdatedEntities should be nil until orchestrator wires it")
+	s.Nil(monsterTurn.CombatState, "CombatState should be nil until orchestrator wires it")
 }
 
 // ============================================================================

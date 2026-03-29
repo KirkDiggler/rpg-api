@@ -42,3 +42,4 @@ dump.rdb
 
 # Worktrees
 .worktrees/
+.claude/

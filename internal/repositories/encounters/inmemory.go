@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/KirkDiggler/rpg-api/internal/apierr"
+	"github.com/KirkDiggler/rpg-api/internal/entities"
 )
 
 // InMemoryRepository implements Repository using in-memory storage
@@ -45,6 +46,7 @@ func (r *InMemoryRepository) Save(_ context.Context, input *SaveInput) (*SaveOut
 		BossMonsterIDs:    input.BossMonsterIDs,
 		HasBossRoom:       input.HasBossRoom,
 		CharacterHP:       input.CharacterHP,
+		Entities:          input.Entities,
 		State:             input.State,
 		JoinCode:          input.JoinCode,
 		HostID:            input.HostID,
@@ -76,24 +78,7 @@ func (r *InMemoryRepository) Get(_ context.Context, input *GetInput) (*GetOutput
 
 	// Return a copy to prevent external modification
 	return &GetOutput{
-		Data: &EncounterData{
-			ID:                data.ID,
-			RoomData:          data.RoomData,
-			InitiativeData:    data.InitiativeData,
-			InitiativeRolls:   data.InitiativeRolls,
-			MovementRemaining: data.MovementRemaining,
-			ActionEconomy:     data.ActionEconomy,
-			Monsters:          data.Monsters,
-			BossMonsterIDs:    data.BossMonsterIDs,
-			HasBossRoom:       data.HasBossRoom,
-			CharacterHP:       data.CharacterHP,
-			State:             data.State,
-			JoinCode:          data.JoinCode,
-			HostID:            data.HostID,
-			Players:           data.Players,
-			CreatedAt:         data.CreatedAt,
-			LastEventID:       data.LastEventID,
-		},
+		Data: copyEncounterData(data),
 	}, nil
 }
 
@@ -115,29 +100,59 @@ func (r *InMemoryRepository) GetByJoinCode(_ context.Context, input *GetByJoinCo
 		if data.JoinCode == input.JoinCode {
 			// Return a copy to prevent external modification
 			return &GetOutput{
-				Data: &EncounterData{
-					ID:                data.ID,
-					RoomData:          data.RoomData,
-					InitiativeData:    data.InitiativeData,
-					InitiativeRolls:   data.InitiativeRolls,
-					MovementRemaining: data.MovementRemaining,
-					ActionEconomy:     data.ActionEconomy,
-					Monsters:          data.Monsters,
-					BossMonsterIDs:    data.BossMonsterIDs,
-					HasBossRoom:       data.HasBossRoom,
-					CharacterHP:       data.CharacterHP,
-					State:             data.State,
-					JoinCode:          data.JoinCode,
-					HostID:            data.HostID,
-					Players:           data.Players,
-					CreatedAt:         data.CreatedAt,
-					LastEventID:       data.LastEventID,
-				},
+				Data: copyEncounterData(data),
 			}, nil
 		}
 	}
 
 	return nil, apierr.NotFound("encounter not found")
+}
+
+// copyEncounterData creates a shallow copy of EncounterData with deep-copied map fields
+// to prevent external modification of the stored data.
+func copyEncounterData(data *EncounterData) *EncounterData {
+	result := &EncounterData{
+		ID:                data.ID,
+		RoomData:          data.RoomData,
+		InitiativeData:    data.InitiativeData,
+		InitiativeRolls:   data.InitiativeRolls,
+		MovementRemaining: data.MovementRemaining,
+		ActionEconomy:     data.ActionEconomy,
+		Monsters:          data.Monsters,
+		BossMonsterIDs:    data.BossMonsterIDs,
+		HasBossRoom:       data.HasBossRoom,
+		State:             data.State,
+		JoinCode:          data.JoinCode,
+		HostID:            data.HostID,
+		CreatedAt:         data.CreatedAt,
+		LastEventID:       data.LastEventID,
+	}
+
+	// Deep-copy CharacterHP map
+	if data.CharacterHP != nil {
+		result.CharacterHP = make(map[string]int, len(data.CharacterHP))
+		for k, v := range data.CharacterHP {
+			result.CharacterHP[k] = v
+		}
+	}
+
+	// Deep-copy Entities map
+	if data.Entities != nil {
+		result.Entities = make(map[string]*entities.EntityStateData, len(data.Entities))
+		for k, v := range data.Entities {
+			result.Entities[k] = v
+		}
+	}
+
+	// Deep-copy Players map
+	if data.Players != nil {
+		result.Players = make(map[string]*Player, len(data.Players))
+		for k, v := range data.Players {
+			result.Players[k] = v
+		}
+	}
+
+	return result
 }
 
 // Update modifies an existing encounter
@@ -185,6 +200,15 @@ func (r *InMemoryRepository) Update(_ context.Context, input *UpdateInput) (*Upd
 	}
 	if input.CharacterHP != nil {
 		data.CharacterHP = input.CharacterHP
+	}
+	if input.Entities != nil {
+		// Merge entities: update existing or add new entries
+		if data.Entities == nil {
+			data.Entities = make(map[string]*entities.EntityStateData)
+		}
+		for id, esd := range input.Entities {
+			data.Entities[id] = esd
+		}
 	}
 
 	// Multiplayer fields
