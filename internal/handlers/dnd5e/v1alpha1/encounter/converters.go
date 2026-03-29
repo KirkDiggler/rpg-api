@@ -1644,3 +1644,15 @@ func convertToolkitActionsToProto(actions []toolkitchar.AvailableAction) []*dnd5
 	}
 	return result
 }
+
+// encounterResultReasonToProto converts a string encounter result reason to the proto enum.
+func encounterResultReasonToProto(reason string) dnd5ev1alpha1.EncounterEndReason {
+	switch reason {
+	case "victory":
+		return dnd5ev1alpha1.EncounterEndReason_ENCOUNTER_END_REASON_VICTORY
+	case "defeat":
+		return dnd5ev1alpha1.EncounterEndReason_ENCOUNTER_END_REASON_DEFEAT
+	default:
+		return dnd5ev1alpha1.EncounterEndReason_ENCOUNTER_END_REASON_UNSPECIFIED
+	}
+}

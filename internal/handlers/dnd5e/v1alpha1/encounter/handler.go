@@ -904,9 +904,9 @@ func (h *Handler) convertToProtoEvent(event *entities.EncounterEvent) (*dnd5ev1a
 
 		protoEvent.Event = &dnd5ev1alpha1.EncounterEvent_CombatStarted{
 			CombatStarted: &dnd5ev1alpha1.CombatStartedEvent{
-				DungeonId:    event.CombatStarted.DungeonID,
-				MonsterTurns: convertEntityMonsterTurnsToProto(event.CombatStarted.MonsterTurns, gridType, hexOrientation),
-				// TODO: Populate EncounterStateData from orchestrator once Entities map is wired
+				DungeonId:          event.CombatStarted.DungeonID,
+				MonsterTurns:       convertEntityMonsterTurnsToProto(event.CombatStarted.MonsterTurns, gridType, hexOrientation),
+				EncounterStateData: event.CombatStarted.EncounterStateData, // nil until orchestrator populates it
 			},
 		}
 
@@ -925,9 +925,10 @@ func (h *Handler) convertToProtoEvent(event *entities.EncounterEvent) (*dnd5ev1a
 		}
 		protoEvent.Event = &dnd5ev1alpha1.EncounterEvent_MovementCompleted{
 			MovementCompleted: &dnd5ev1alpha1.MovementCompletedEvent{
-				EntityId: event.MovementCompleted.EntityID,
-				Path:     path,
-				// TODO: Populate UpdatedEntity and CombatState from Entities map
+				EntityId:      event.MovementCompleted.EntityID,
+				Path:          path,
+				UpdatedEntity: event.MovementCompleted.UpdatedEntity,    // nil until orchestrator populates it
+				CombatState:   event.MovementCompleted.CombatStateProto, // nil until orchestrator populates it
 			},
 		}
 
@@ -957,7 +958,8 @@ func (h *Handler) convertToProtoEvent(event *entities.EncounterEvent) (*dnd5ev1a
 				TargetId:      event.AttackResolved.TargetID,
 				Result:        attackResult,
 				GrantedAction: grantedAction,
-				// TODO: Populate AttackerState and TargetState from Entities map
+				AttackerState: event.AttackResolved.AttackerState, // nil until orchestrator populates it
+				TargetState:   event.AttackResolved.TargetState,   // nil until orchestrator populates it
 			},
 		}
 
@@ -978,12 +980,18 @@ func (h *Handler) convertToProtoEvent(event *entities.EncounterEvent) (*dnd5ev1a
 		if event.TurnEnded == nil {
 			return nil, fmt.Errorf("missing TurnEnded data for TurnEndedEvent")
 		}
-		// Extract grid info from room data for coordinate conversion
-		gridType, hexOrientation := extractGridInfo(event.TurnEnded.Room)
+		// Use new proto fields if available, otherwise fall back to legacy conversion
+		var protoCombatState *dnd5ev1alpha1.CombatState
+		if event.TurnEnded.CombatStateProto != nil {
+			protoCombatState = event.TurnEnded.CombatStateProto
+		} else {
+			gridType, hexOrientation := extractGridInfo(event.TurnEnded.Room)
+			protoCombatState = convertCombatStateToProto(event.TurnEnded.CombatState, gridType, hexOrientation)
+		}
 		protoEvent.Event = &dnd5ev1alpha1.EncounterEvent_TurnEnded{
 			TurnEnded: &dnd5ev1alpha1.TurnEndedEvent{
-				CombatState: convertCombatStateToProto(event.TurnEnded.CombatState, gridType, hexOrientation),
-				// TODO: Populate UpdatedEntities from Entities map
+				CombatState:     protoCombatState,
+				UpdatedEntities: event.TurnEnded.UpdatedEntities, // nil until orchestrator populates it
 			},
 		}
 
@@ -1013,14 +1021,26 @@ func (h *Handler) convertToProtoEvent(event *entities.EncounterEvent) (*dnd5ev1a
 					Actions:      actions,
 					MovementPath: movementPath,
 				},
-				// TODO: Populate UpdatedEntities and CombatState from Entities map
+				UpdatedEntities: event.MonsterTurnCompleted.UpdatedEntities,  // nil until orchestrator populates it
+				CombatState:     event.MonsterTurnCompleted.CombatStateProto, // nil until orchestrator populates it
 			},
 		}
 
 	case entities.EventTypeCombatEnded:
+		var result *dnd5ev1alpha1.EncounterResult
+		if event.CombatEnded != nil && event.CombatEnded.EncounterResult != nil {
+			result = &dnd5ev1alpha1.EncounterResult{
+				Reason: encounterResultReasonToProto(event.CombatEnded.EncounterResult.Reason),
+			}
+		}
+		var encounterStateData *dnd5ev1alpha1.EncounterStateData
+		if event.CombatEnded != nil {
+			encounterStateData = event.CombatEnded.EncounterStateData
+		}
 		protoEvent.Event = &dnd5ev1alpha1.EncounterEvent_CombatEnded{
 			CombatEnded: &dnd5ev1alpha1.CombatEndedEvent{
-				// TODO: Convert EncounterResult from event.CombatEnded
+				Result:             result,
+				EncounterStateData: encounterStateData,
 			},
 		}
 
@@ -1041,8 +1061,8 @@ func (h *Handler) convertToProtoEvent(event *entities.EncounterEvent) (*dnd5ev1a
 		}
 		protoEvent.Event = &dnd5ev1alpha1.EncounterEvent_PlayerReconnected{
 			PlayerReconnected: &dnd5ev1alpha1.PlayerReconnectedEvent{
-				PlayerId: event.PlayerReconnected.PlayerID,
-				// Note: Full member state would require loading from repo
+				PlayerId:           event.PlayerReconnected.PlayerID,
+				EncounterStateData: event.PlayerReconnected.EncounterStateData, // nil until orchestrator populates it
 			},
 		}
 
@@ -1059,9 +1079,13 @@ func (h *Handler) convertToProtoEvent(event *entities.EncounterEvent) (*dnd5ev1a
 
 	case entities.EventTypeCombatResumed:
 		// CombatResumed data is optional for basic event
+		var encounterStateData *dnd5ev1alpha1.EncounterStateData
+		if event.CombatResumed != nil {
+			encounterStateData = event.CombatResumed.EncounterStateData
+		}
 		protoEvent.Event = &dnd5ev1alpha1.EncounterEvent_CombatResumed{
 			CombatResumed: &dnd5ev1alpha1.CombatResumedEvent{
-				// TODO: Include full CombatState from event.CombatResumed when resuming
+				EncounterStateData: encounterStateData, // nil until orchestrator populates it
 			},
 		}
 
@@ -1071,9 +1095,9 @@ func (h *Handler) convertToProtoEvent(event *entities.EncounterEvent) (*dnd5ev1a
 		}
 		protoEvent.Event = &dnd5ev1alpha1.EncounterEvent_RoomRevealed{
 			RoomRevealed: &dnd5ev1alpha1.RoomRevealedEvent{
-				DungeonId:    event.RoomRevealed.DungeonID,
-				ConnectionId: event.RoomRevealed.ConnectionID,
-				// TODO: Populate EncounterStateData from orchestrator once Entities map is wired
+				DungeonId:          event.RoomRevealed.DungeonID,
+				ConnectionId:       event.RoomRevealed.ConnectionID,
+				EncounterStateData: event.RoomRevealed.EncounterStateData, // nil until orchestrator populates it
 			},
 		}
 
