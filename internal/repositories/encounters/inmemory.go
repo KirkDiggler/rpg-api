@@ -78,25 +78,7 @@ func (r *InMemoryRepository) Get(_ context.Context, input *GetInput) (*GetOutput
 
 	// Return a copy to prevent external modification
 	return &GetOutput{
-		Data: &EncounterData{
-			ID:                data.ID,
-			RoomData:          data.RoomData,
-			InitiativeData:    data.InitiativeData,
-			InitiativeRolls:   data.InitiativeRolls,
-			MovementRemaining: data.MovementRemaining,
-			ActionEconomy:     data.ActionEconomy,
-			Monsters:          data.Monsters,
-			BossMonsterIDs:    data.BossMonsterIDs,
-			HasBossRoom:       data.HasBossRoom,
-			CharacterHP:       data.CharacterHP,
-			Entities:          data.Entities,
-			State:             data.State,
-			JoinCode:          data.JoinCode,
-			HostID:            data.HostID,
-			Players:           data.Players,
-			CreatedAt:         data.CreatedAt,
-			LastEventID:       data.LastEventID,
-		},
+		Data: copyEncounterData(data),
 	}, nil
 }
 
@@ -118,30 +100,59 @@ func (r *InMemoryRepository) GetByJoinCode(_ context.Context, input *GetByJoinCo
 		if data.JoinCode == input.JoinCode {
 			// Return a copy to prevent external modification
 			return &GetOutput{
-				Data: &EncounterData{
-					ID:                data.ID,
-					RoomData:          data.RoomData,
-					InitiativeData:    data.InitiativeData,
-					InitiativeRolls:   data.InitiativeRolls,
-					MovementRemaining: data.MovementRemaining,
-					ActionEconomy:     data.ActionEconomy,
-					Monsters:          data.Monsters,
-					BossMonsterIDs:    data.BossMonsterIDs,
-					HasBossRoom:       data.HasBossRoom,
-					CharacterHP:       data.CharacterHP,
-					Entities:          data.Entities,
-					State:             data.State,
-					JoinCode:          data.JoinCode,
-					HostID:            data.HostID,
-					Players:           data.Players,
-					CreatedAt:         data.CreatedAt,
-					LastEventID:       data.LastEventID,
-				},
+				Data: copyEncounterData(data),
 			}, nil
 		}
 	}
 
 	return nil, apierr.NotFound("encounter not found")
+}
+
+// copyEncounterData creates a shallow copy of EncounterData with deep-copied map fields
+// to prevent external modification of the stored data.
+func copyEncounterData(data *EncounterData) *EncounterData {
+	result := &EncounterData{
+		ID:                data.ID,
+		RoomData:          data.RoomData,
+		InitiativeData:    data.InitiativeData,
+		InitiativeRolls:   data.InitiativeRolls,
+		MovementRemaining: data.MovementRemaining,
+		ActionEconomy:     data.ActionEconomy,
+		Monsters:          data.Monsters,
+		BossMonsterIDs:    data.BossMonsterIDs,
+		HasBossRoom:       data.HasBossRoom,
+		State:             data.State,
+		JoinCode:          data.JoinCode,
+		HostID:            data.HostID,
+		CreatedAt:         data.CreatedAt,
+		LastEventID:       data.LastEventID,
+	}
+
+	// Deep-copy CharacterHP map
+	if data.CharacterHP != nil {
+		result.CharacterHP = make(map[string]int, len(data.CharacterHP))
+		for k, v := range data.CharacterHP {
+			result.CharacterHP[k] = v
+		}
+	}
+
+	// Deep-copy Entities map
+	if data.Entities != nil {
+		result.Entities = make(map[string]*entities.EntityStateData, len(data.Entities))
+		for k, v := range data.Entities {
+			result.Entities[k] = v
+		}
+	}
+
+	// Deep-copy Players map
+	if data.Players != nil {
+		result.Players = make(map[string]*Player, len(data.Players))
+		for k, v := range data.Players {
+			result.Players[k] = v
+		}
+	}
+
+	return result
 }
 
 // Update modifies an existing encounter
