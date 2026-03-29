@@ -516,7 +516,22 @@ func (o *Orchestrator) ResolveAttack(ctx context.Context, input *ResolveAttackIn
 		}
 	}
 
-	// 17. Publish AttackResolved event
+	// 17. Build entity state protos for attacker and target (if Entities map is populated)
+	var attackerState, targetState *pb.EntityState
+	if encOutput.Data.Entities != nil {
+		if asd, ok := encOutput.Data.Entities[input.AttackerID]; ok && asd != nil {
+			// Update attacker's toolkit data with latest character data
+			asd.ToolkitData = charOutput.Character.Data
+			attackerState = entities.ToEntityStateProto(&entities.ToEntityStateProtoInput{EntityStateData: asd})
+		}
+		if tsd, ok := encOutput.Data.Entities[input.TargetID]; ok && tsd != nil {
+			// Update target's toolkit data with post-damage monster data
+			tsd.ToolkitData = monsterData
+			targetState = entities.ToEntityStateProto(&entities.ToEntityStateProtoInput{EntityStateData: tsd})
+		}
+	}
+
+	// 17b. Publish AttackResolved event
 	o.publishEvent(ctx, input.EncounterID, entities.EventTypeAttackResolved, &entities.AttackResolvedEvent{
 		AttackerID:    input.AttackerID,
 		TargetID:      input.TargetID,
@@ -527,6 +542,8 @@ func (o *Orchestrator) ResolveAttack(ctx context.Context, input *ResolveAttackIn
 		RoomOrigin:    attackRoomOrigin,
 		Walls:         dungeonWalls,
 		GrantedAction: grantedActionInfo,
+		AttackerState: attackerState,
+		TargetState:   targetState,
 	})
 
 	// 18. Check for dungeon victory if monster died
@@ -837,6 +854,9 @@ func (o *Orchestrator) createDungeonWithGenerator(
 		CombatEnded:       false,
 	}
 
+	// Build unified entity map for the encounter
+	entityMap := o.buildEntityMap(ctx, roomData, input.CharacterIDs, monsters, generatedDungeon.StartRoom)
+
 	// Save encounter data
 	_, err = o.encRepo.Save(ctx, &encounterrepo.SaveInput{
 		EncounterID:       encounterID,
@@ -848,6 +868,7 @@ func (o *Orchestrator) createDungeonWithGenerator(
 		Monsters:          monsters,
 		HasBossRoom:       dungeonEntity.BossRoomID != "",
 		CharacterHP:       characterHP,
+		Entities:          entityMap,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to save encounter: %w", err)
@@ -1592,7 +1613,23 @@ func (o *Orchestrator) MoveCharacter(ctx context.Context, input *MoveCharacterIn
 		return nil, fmt.Errorf("failed to save updated room: %w", err)
 	}
 
-	// 9. Publish MovementCompleted event
+	// 9. Build entity state proto for the moved entity (if Entities map is populated)
+	var updatedEntityState *pb.EntityState
+	if encOutput.Data.Entities != nil {
+		if esd, ok := encOutput.Data.Entities[input.EntityID]; ok && esd != nil {
+			// Update position to the new target position
+			esd.Position = cubeToPosition(targetCube)
+			updatedEntityState = entities.ToEntityStateProto(&entities.ToEntityStateProtoInput{EntityStateData: esd})
+
+			// Persist the updated entity position
+			_, _ = o.encRepo.Update(ctx, &encounterrepo.UpdateInput{
+				EncounterID: input.EncounterID,
+				Entities:    map[string]*entities.EntityStateData{input.EntityID: esd},
+			})
+		}
+	}
+
+	// 9b. Publish MovementCompleted event
 	o.publishEvent(ctx, input.EncounterID, entities.EventTypeMovementCompleted, &entities.MovementCompletedEvent{
 		EntityID:   input.EntityID,
 		EntityType: entityType,
@@ -1606,6 +1643,7 @@ func (o *Orchestrator) MoveCharacter(ctx context.Context, input *MoveCharacterIn
 		UpdatedRoom:       roomData,
 		RoomOrigin:        moveRoomOrigin,
 		Walls:             dungeonWalls,
+		UpdatedEntity:     updatedEntityState,
 	})
 
 	// 10. Return success with updated position
@@ -3471,7 +3509,9 @@ func (o *Orchestrator) StartCombat(
 		}
 	}
 
-	// 13. Update encounter state to active with fresh action economy
+	// 13. Build unified entity map and update encounter state to active
+	entityMap := o.buildEntityMap(ctx, roomData, characterIDs, monsters, generatedDungeon.StartRoom)
+
 	activeState := encounterrepo.StateActive
 	initialActionEconomy := entities.NewActionEconomyState()
 	hasBossRoom := dungeonEntity.BossRoomID != ""
@@ -3485,6 +3525,7 @@ func (o *Orchestrator) StartCombat(
 		Monsters:          monsters,
 		HasBossRoom:       ptrBool(hasBossRoom),
 		CharacterHP:       characterHP,
+		Entities:          entityMap,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to update encounter: %w", err)
@@ -3578,17 +3619,35 @@ func (o *Orchestrator) StartCombat(
 	// 18b. Get room origin for the start room
 	startRoomOrigin := getCurrentRoomOrigin(dungeonEntity)
 
-	// 19. Publish CombatStarted event (includes monster turns if monsters won initiative)
+	// 19. Build EncounterStateData proto for the CombatStarted event
+	doorMap := doorsToMap(convertDoorsToEntityDoors(doors))
+	encounterStateOutput, _ := entities.BuildEncounterStateData(&entities.BuildEncounterStateDataInput{
+		EncounterID:     input.EncounterID,
+		DungeonID:       dungeonEntity.ID,
+		Entities:        entityMap,
+		CurrentRoomID:   generatedDungeon.StartRoom,
+		RevealedRoomIDs: []string{generatedDungeon.StartRoom},
+		Combat:          combatState,
+		DungeonState:    entities.DungeonStateActive,
+		Doors:           doorMap,
+	})
+	var encounterStateData *pb.EncounterStateData
+	if encounterStateOutput != nil {
+		encounterStateData = encounterStateOutput.EncounterStateData
+	}
+
+	// 19b. Publish CombatStarted event (includes monster turns if monsters won initiative)
 	o.publishEvent(ctx, input.EncounterID, entities.EventTypeCombatStarted, &entities.CombatStartedEvent{
-		CombatState:  combatState,
-		Room:         roomData,
-		RoomOrigin:   startRoomOrigin,
-		Walls:        startRoom.Walls,
-		Party:        party,
-		Monsters:     monsterStates,
-		Doors:        convertDoorsToEntityDoors(doors),
-		DungeonID:    dungeonEntity.ID,
-		MonsterTurns: convertMonsterTurnsToEntityEvents(monsterTurns, roomData),
+		CombatState:        combatState,
+		Room:               roomData,
+		RoomOrigin:         startRoomOrigin,
+		Walls:              startRoom.Walls,
+		Party:              party,
+		Monsters:           monsterStates,
+		Doors:              convertDoorsToEntityDoors(doors),
+		DungeonID:          dungeonEntity.ID,
+		MonsterTurns:       convertMonsterTurnsToEntityEvents(monsterTurns, roomData),
+		EncounterStateData: encounterStateData,
 	})
 
 	// 20. Publish MonsterTurnCompleted events if monsters went first
@@ -4854,7 +4913,18 @@ func (o *Orchestrator) executeMove(
 		return nil, fmt.Errorf("failed to save encounter state: %w", err)
 	}
 
-	// 10. Publish MovementCompleted event
+	// 10. Build entity state proto for the moved entity (if Entities map is populated)
+	var execMoveEntityState *pb.EntityState
+	if encData.Entities != nil {
+		if esd, ok := encData.Entities[input.EntityID]; ok && esd != nil {
+			if finalPosition != nil {
+				esd.Position = &entities.Position{X: finalPosition.X, Y: finalPosition.Y, Z: finalPosition.Z}
+			}
+			execMoveEntityState = entities.ToEntityStateProto(&entities.ToEntityStateProtoInput{EntityStateData: esd})
+		}
+	}
+
+	// 10b. Publish MovementCompleted event
 	o.publishEvent(ctx, input.EncounterID, entities.EventTypeMovementCompleted, &entities.MovementCompletedEvent{
 		EntityID:          input.EntityID,
 		EntityType:        entityType,
@@ -4864,6 +4934,7 @@ func (o *Orchestrator) executeMove(
 		UpdatedRoom:       roomData,
 		RoomOrigin:        execActionRoomOrigin,
 		Walls:             dungeonWalls,
+		UpdatedEntity:     execMoveEntityState,
 	})
 
 	// 11. Update movement remaining in encounter data for combat state
@@ -4896,4 +4967,75 @@ func (o *Orchestrator) executeMove(
 		AvailableAbilities: availableAbilities,
 		AvailableActions:   availableActions,
 	}, nil
+}
+
+// doorsToMap converts a slice of DoorInfo to a map keyed by ConnectionID.
+// This is used when building EncounterStateData from door info.
+func doorsToMap(doors []*entities.DoorInfo) map[string]*entities.DoorInfo {
+	if len(doors) == 0 {
+		return nil
+	}
+	result := make(map[string]*entities.DoorInfo, len(doors))
+	for _, d := range doors {
+		if d != nil {
+			result[d.ConnectionID] = d
+		}
+	}
+	return result
+}
+
+// cubeToPosition converts a spatial.CubeCoordinate to an entities.Position.
+func cubeToPosition(c spatial.CubeCoordinate) *entities.Position {
+	return &entities.Position{
+		X: float64(c.X),
+		Y: float64(c.Y),
+		Z: float64(c.Z),
+	}
+}
+
+// buildEntityMap builds the unified Entities map from room data, characters, and monsters.
+// It reads character data from the repo to populate ToolkitData and Appearance.
+func (o *Orchestrator) buildEntityMap(
+	ctx context.Context,
+	roomData *spatial.RoomData,
+	characterIDs []string,
+	monsters []*monster.Data,
+	roomID string,
+) map[string]*entities.EntityStateData {
+	entityMap := make(map[string]*entities.EntityStateData)
+
+	// Add characters
+	for _, characterID := range characterIDs {
+		charOutput, charErr := o.charRepo.Get(ctx, characterrepo.GetInput{ID: characterID})
+		if charErr != nil {
+			continue // Skip characters we can't load
+		}
+		if placement, exists := roomData.CubeEntities[characterID]; exists {
+			entityMap[characterID] = &entities.EntityStateData{
+				EntityID:    characterID,
+				EntityType:  entities.EntityTypeCharacter,
+				RoomID:      roomID,
+				ToolkitData: charOutput.Character.Data,
+				Position:    cubeToPosition(placement.CubePosition),
+				Size:        placement.Size,
+				Appearance:  charOutput.Character.Appearance,
+			}
+		}
+	}
+
+	// Add monsters
+	for _, m := range monsters {
+		if placement, exists := roomData.CubeEntities[m.ID]; exists {
+			entityMap[m.ID] = &entities.EntityStateData{
+				EntityID:    m.ID,
+				EntityType:  entities.EntityTypeMonster,
+				RoomID:      roomID,
+				ToolkitData: m,
+				Position:    cubeToPosition(placement.CubePosition),
+				Size:        placement.Size,
+			}
+		}
+	}
+
+	return entityMap
 }
