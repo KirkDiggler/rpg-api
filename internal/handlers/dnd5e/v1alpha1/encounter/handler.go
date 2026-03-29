@@ -265,6 +265,9 @@ func (h *Handler) GetEncounterState(
 	response.Doors = convertDoorInfoSliceToProto(output.Doors)
 	response.DungeonId = output.DungeonID
 
+	// Set unified entity state snapshot
+	response.EncounterStateData = output.EncounterStateData
+
 	return response, nil
 }
 

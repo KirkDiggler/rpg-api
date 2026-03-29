@@ -480,6 +480,9 @@ type GetEncounterStateOutput struct {
 	Doors       []DoorInfo            // Doors/exits from the current room
 	DungeonID   string                // ID of the generated dungeon
 
+	// Unified entity state snapshot (populated when combat is active)
+	EncounterStateData *pb.EncounterStateData
+
 	// Event synchronization
 	// ULID of the most recent event - clients filter events where id > lastEventID
 	LastEventID string

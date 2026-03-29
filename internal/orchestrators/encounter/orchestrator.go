@@ -4171,6 +4171,11 @@ func (o *Orchestrator) GetEncounterState(ctx context.Context, input *GetEncounte
 		}
 	}
 
+	// Build unified entity state snapshot when combat is active
+	if encData.State == encounterrepo.StateActive || encData.State == encounterrepo.StatePaused {
+		output.EncounterStateData = o.buildEncounterStateSnapshot(ctx, encData.ID, encData, output.CombatState)
+	}
+
 	return output, nil
 }
 
