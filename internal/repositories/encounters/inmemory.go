@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/KirkDiggler/rpg-api/internal/apierr"
+	"github.com/KirkDiggler/rpg-api/internal/entities"
 )
 
 // InMemoryRepository implements Repository using in-memory storage
@@ -45,6 +46,7 @@ func (r *InMemoryRepository) Save(_ context.Context, input *SaveInput) (*SaveOut
 		BossMonsterIDs:    input.BossMonsterIDs,
 		HasBossRoom:       input.HasBossRoom,
 		CharacterHP:       input.CharacterHP,
+		Entities:          input.Entities,
 		State:             input.State,
 		JoinCode:          input.JoinCode,
 		HostID:            input.HostID,
@@ -87,6 +89,7 @@ func (r *InMemoryRepository) Get(_ context.Context, input *GetInput) (*GetOutput
 			BossMonsterIDs:    data.BossMonsterIDs,
 			HasBossRoom:       data.HasBossRoom,
 			CharacterHP:       data.CharacterHP,
+			Entities:          data.Entities,
 			State:             data.State,
 			JoinCode:          data.JoinCode,
 			HostID:            data.HostID,
@@ -126,6 +129,7 @@ func (r *InMemoryRepository) GetByJoinCode(_ context.Context, input *GetByJoinCo
 					BossMonsterIDs:    data.BossMonsterIDs,
 					HasBossRoom:       data.HasBossRoom,
 					CharacterHP:       data.CharacterHP,
+					Entities:          data.Entities,
 					State:             data.State,
 					JoinCode:          data.JoinCode,
 					HostID:            data.HostID,
@@ -185,6 +189,15 @@ func (r *InMemoryRepository) Update(_ context.Context, input *UpdateInput) (*Upd
 	}
 	if input.CharacterHP != nil {
 		data.CharacterHP = input.CharacterHP
+	}
+	if input.Entities != nil {
+		// Merge entities: update existing or add new entries
+		if data.Entities == nil {
+			data.Entities = make(map[string]*entities.EntityStateData)
+		}
+		for id, esd := range input.Entities {
+			data.Entities[id] = esd
+		}
 	}
 
 	// Multiplayer fields
