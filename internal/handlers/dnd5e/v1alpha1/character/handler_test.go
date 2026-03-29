@@ -222,15 +222,40 @@ func (s *HandlerTestSuite) TestGetCharacter_IncludesEquipmentSlots() {
 	s.Equal("item-shield", resp.Character.EquipmentSlots.OffHand.ItemId)
 }
 
-func (s *HandlerTestSuite) TestGetCharacter_EmptyCharacterId() {
-	req := &dnd5ev1alpha1.GetCharacterRequest{
-		CharacterId: "",
+func (s *HandlerTestSuite) TestGetCharacter_InvalidRequest() {
+	testCases := []struct {
+		name string
+		req  *dnd5ev1alpha1.GetCharacterRequest
+		code codes.Code
+		msg  string
+	}{
+		{
+			name: "nil request",
+			req:  nil,
+			code: codes.InvalidArgument,
+			msg:  "request is required",
+		},
+		{
+			name: "empty character ID",
+			req:  &dnd5ev1alpha1.GetCharacterRequest{CharacterId: ""},
+			code: codes.InvalidArgument,
+			msg:  "character_id is required",
+		},
 	}
 
-	resp, err := s.handler.GetCharacter(s.ctx, req)
+	for _, tc := range testCases {
+		s.Run(tc.name, func() {
+			resp, err := s.handler.GetCharacter(s.ctx, tc.req)
 
-	s.Error(err)
-	s.Nil(resp)
+			s.Error(err)
+			s.Nil(resp)
+
+			st, ok := status.FromError(err)
+			s.True(ok)
+			s.Equal(tc.code, st.Code())
+			s.Equal(tc.msg, st.Message())
+		})
+	}
 }
 
 func (s *HandlerTestSuite) TestGetCharacter_ServiceError() {
@@ -249,6 +274,11 @@ func (s *HandlerTestSuite) TestGetCharacter_ServiceError() {
 
 	s.Error(err)
 	s.Nil(resp)
+
+	st, ok := status.FromError(err)
+	s.True(ok)
+	s.Equal(codes.NotFound, st.Code())
+	s.Equal("character not found", st.Message())
 }
 
 func TestHandlerSuite(t *testing.T) {
