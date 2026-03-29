@@ -14,7 +14,6 @@ import (
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
 	apierrors "github.com/KirkDiggler/rpg-api/internal/apierr"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
-	"github.com/KirkDiggler/rpg-api/internal/components/dungeon"
 	"github.com/KirkDiggler/rpg-api/internal/entities"
 	characterhandler "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v1alpha1/character"
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/encounter"
@@ -899,54 +898,15 @@ func (h *Handler) convertToProtoEvent(event *entities.EncounterEvent) (*dnd5ev1a
 		if event.CombatStarted == nil {
 			return nil, fmt.Errorf("missing CombatStarted data for CombatStartedEvent")
 		}
-		// Convert party members (including character data)
-		var protoParty []*dnd5ev1alpha1.PartyMember
-		if event.CombatStarted.Party != nil {
-			protoParty = make([]*dnd5ev1alpha1.PartyMember, len(event.CombatStarted.Party))
-			for i, p := range event.CombatStarted.Party {
-				protoParty[i] = &dnd5ev1alpha1.PartyMember{
-					PlayerId:    p.PlayerID,
-					IsHost:      p.IsHost,
-					IsReady:     p.IsReady,
-					IsConnected: p.IsConnected,
-					Character:   characterhandler.ConvertCharacterDataToProto(p.CharacterData),
-				}
-			}
-		}
-		// Convert monsters for event
-		var protoMonsters []*dnd5ev1alpha1.MonsterCombatState
-		if event.CombatStarted.Monsters != nil {
-			protoMonsters = make([]*dnd5ev1alpha1.MonsterCombatState, len(event.CombatStarted.Monsters))
-			for i, m := range event.CombatStarted.Monsters {
-				protoMonsters[i] = &dnd5ev1alpha1.MonsterCombatState{
-					MonsterId:        m.MonsterID,
-					MonsterName:      m.MonsterName,
-					CurrentHitPoints: int32(m.CurrentHitPoints),
-					MaxHitPoints:     int32(m.MaxHitPoints),
-					MonsterType:      dungeon.MonsterTypeFromID(m.MonsterType),
-				}
-			}
-		}
-
 		// Use default grid settings for event conversion
 		gridType := spatial.GridTypeHex
 		hexOrientation := spatial.HexOrientationPointyTop
-		// Convert room and add walls + origin
-		combatStartedRoom := convertRoomDataToProto(event.CombatStarted.Room)
-		if combatStartedRoom != nil {
-			combatStartedRoom.Walls = convertDungeonWallsToProto(event.CombatStarted.Walls)
-			combatStartedRoom.Origin = dungeonPositionToProto(event.CombatStarted.RoomOrigin)
-			shiftRoomToAbsolute(combatStartedRoom)
-		}
+
 		protoEvent.Event = &dnd5ev1alpha1.EncounterEvent_CombatStarted{
 			CombatStarted: &dnd5ev1alpha1.CombatStartedEvent{
-				CombatState:  convertCombatStateToProto(event.CombatStarted.CombatState, gridType, hexOrientation),
-				Room:         combatStartedRoom,
-				Party:        protoParty,
-				Monsters:     protoMonsters,
-				Doors:        convertEntityDoorsToProto(event.CombatStarted.Doors),
 				DungeonId:    event.CombatStarted.DungeonID,
 				MonsterTurns: convertEntityMonsterTurnsToProto(event.CombatStarted.MonsterTurns, gridType, hexOrientation),
+				// TODO: Populate EncounterStateData from orchestrator once Entities map is wired
 			},
 		}
 
@@ -954,28 +914,20 @@ func (h *Handler) convertToProtoEvent(event *entities.EncounterEvent) (*dnd5ev1a
 		if event.MovementCompleted == nil {
 			return nil, fmt.Errorf("missing MovementCompleted data for MovementCompletedEvent")
 		}
-		var finalPos *apiv1alpha1.Position
+		// Build path from final position (single point for now, full path comes later)
+		var path []*apiv1alpha1.Position
 		if event.MovementCompleted.FinalPosition != nil {
-			finalPos = &apiv1alpha1.Position{
+			path = []*apiv1alpha1.Position{{
 				X: event.MovementCompleted.FinalPosition.X,
 				Y: event.MovementCompleted.FinalPosition.Y,
 				Z: event.MovementCompleted.FinalPosition.Z,
-			}
-		}
-		// Convert room and add walls + origin
-		updatedRoom := convertRoomDataToProto(event.MovementCompleted.UpdatedRoom)
-		if updatedRoom != nil {
-			updatedRoom.Walls = convertDungeonWallsToProto(event.MovementCompleted.Walls)
-			updatedRoom.Origin = dungeonPositionToProto(event.MovementCompleted.RoomOrigin)
-			shiftRoomToAbsolute(updatedRoom)
+			}}
 		}
 		protoEvent.Event = &dnd5ev1alpha1.EncounterEvent_MovementCompleted{
 			MovementCompleted: &dnd5ev1alpha1.MovementCompletedEvent{
-				EntityId:          event.MovementCompleted.EntityID,
-				MovementRemaining: event.MovementCompleted.MovementRemaining,
-				StopReason:        event.MovementCompleted.StopReason,
-				FinalPosition:     finalPos,
-				UpdatedRoom:       updatedRoom,
+				EntityId: event.MovementCompleted.EntityID,
+				Path:     path,
+				// TODO: Populate UpdatedEntity and CombatState from Entities map
 			},
 		}
 
@@ -988,19 +940,24 @@ func (h *Handler) convertToProtoEvent(event *entities.EncounterEvent) (*dnd5ev1a
 		if event.AttackResolved.Result != nil {
 			attackResult = convertAttackResultToProto(event.AttackResolved.Result)
 		}
-		// Convert room and add walls + origin
-		attackResolvedRoom := convertRoomDataToProto(event.AttackResolved.Room)
-		if attackResolvedRoom != nil {
-			attackResolvedRoom.Walls = convertDungeonWallsToProto(event.AttackResolved.Walls)
-			attackResolvedRoom.Origin = dungeonPositionToProto(event.AttackResolved.RoomOrigin)
-			shiftRoomToAbsolute(attackResolvedRoom)
+		// Convert granted action if present
+		var grantedAction *dnd5ev1alpha1.GrantedAction
+		if event.AttackResolved.GrantedAction != nil {
+			grantedAction = &dnd5ev1alpha1.GrantedAction{
+				Id:       event.AttackResolved.GrantedAction.ID,
+				Type:     event.AttackResolved.GrantedAction.Type,
+				Name:     event.AttackResolved.GrantedAction.Name,
+				Reason:   event.AttackResolved.GrantedAction.Reason,
+				WeaponId: event.AttackResolved.GrantedAction.WeaponID,
+			}
 		}
 		protoEvent.Event = &dnd5ev1alpha1.EncounterEvent_AttackResolved{
 			AttackResolved: &dnd5ev1alpha1.AttackResolvedEvent{
-				AttackerId:  event.AttackResolved.AttackerID,
-				TargetId:    event.AttackResolved.TargetID,
-				Result:      attackResult,
-				UpdatedRoom: attackResolvedRoom,
+				AttackerId:    event.AttackResolved.AttackerID,
+				TargetId:      event.AttackResolved.TargetID,
+				Result:        attackResult,
+				GrantedAction: grantedAction,
+				// TODO: Populate AttackerState and TargetState from Entities map
 			},
 		}
 
@@ -1023,23 +980,10 @@ func (h *Handler) convertToProtoEvent(event *entities.EncounterEvent) (*dnd5ev1a
 		}
 		// Extract grid info from room data for coordinate conversion
 		gridType, hexOrientation := extractGridInfo(event.TurnEnded.Room)
-		// Convert room and add walls + origin
-		turnEndedRoom := convertRoomDataToProto(event.TurnEnded.Room)
-		if turnEndedRoom != nil {
-			turnEndedRoom.Walls = convertDungeonWallsToProto(event.TurnEnded.Walls)
-			turnEndedRoom.Origin = dungeonPositionToProto(event.TurnEnded.RoomOrigin)
-			shiftRoomToAbsolute(turnEndedRoom)
-		}
 		protoEvent.Event = &dnd5ev1alpha1.EncounterEvent_TurnEnded{
 			TurnEnded: &dnd5ev1alpha1.TurnEndedEvent{
-				TurnChange: &dnd5ev1alpha1.TurnChangeEvent{
-					PreviousEntityId: event.TurnEnded.PreviousEntityID,
-					NextEntityId:     event.TurnEnded.NextEntityID,
-					Round:            int32(event.TurnEnded.Round),
-					NewRound:         event.TurnEnded.NewRound,
-				},
 				CombatState: convertCombatStateToProto(event.TurnEnded.CombatState, gridType, hexOrientation),
-				UpdatedRoom: turnEndedRoom,
+				// TODO: Populate UpdatedEntities from Entities map
 			},
 		}
 
@@ -1061,20 +1005,6 @@ func (h *Handler) convertToProtoEvent(event *entities.EncounterEvent) (*dnd5ev1a
 				Z: pos.Z,
 			}
 		}
-		// Convert updated characters to proto
-		var updatedCharacters []*dnd5ev1alpha1.Character
-		for _, charData := range event.MonsterTurnCompleted.UpdatedCharacters {
-			if charData != nil {
-				updatedCharacters = append(updatedCharacters, characterhandler.ConvertCharacterDataToProto(charData))
-			}
-		}
-		// Convert room and add walls + origin
-		monsterTurnRoom := convertRoomDataToProto(event.MonsterTurnCompleted.Room)
-		if monsterTurnRoom != nil {
-			monsterTurnRoom.Walls = convertDungeonWallsToProto(event.MonsterTurnCompleted.Walls)
-			monsterTurnRoom.Origin = dungeonPositionToProto(event.MonsterTurnCompleted.RoomOrigin)
-			shiftRoomToAbsolute(monsterTurnRoom)
-		}
 		protoEvent.Event = &dnd5ev1alpha1.EncounterEvent_MonsterTurnCompleted{
 			MonsterTurnCompleted: &dnd5ev1alpha1.MonsterTurnCompletedEvent{
 				MonsterTurn: &dnd5ev1alpha1.MonsterTurnResult{
@@ -1083,8 +1013,7 @@ func (h *Handler) convertToProtoEvent(event *entities.EncounterEvent) (*dnd5ev1a
 					Actions:      actions,
 					MovementPath: movementPath,
 				},
-				UpdatedCharacters: updatedCharacters,
-				UpdatedRoom:       monsterTurnRoom,
+				// TODO: Populate UpdatedEntities and CombatState from Entities map
 			},
 		}
 
@@ -1140,23 +1069,11 @@ func (h *Handler) convertToProtoEvent(event *entities.EncounterEvent) (*dnd5ev1a
 		if event.RoomRevealed == nil {
 			return nil, fmt.Errorf("missing RoomRevealed data for RoomRevealedEvent")
 		}
-		// Extract grid info from room data for coordinate conversion
-		gridType, hexOrientation := extractGridInfo(event.RoomRevealed.RevealedRoom)
-		// Convert room data to proto and add walls + origin
-		room := convertRoomDataToProto(event.RoomRevealed.RevealedRoom)
-		if room != nil {
-			room.Walls = convertDungeonWallsToProto(event.RoomRevealed.Walls)
-			room.Origin = dungeonPositionToProto(event.RoomRevealed.RoomOrigin)
-			// Shift walls and entities from room-local to dungeon-absolute coordinates
-			shiftRoomToAbsolute(room)
-		}
 		protoEvent.Event = &dnd5ev1alpha1.EncounterEvent_RoomRevealed{
 			RoomRevealed: &dnd5ev1alpha1.RoomRevealedEvent{
 				DungeonId:    event.RoomRevealed.DungeonID,
 				ConnectionId: event.RoomRevealed.ConnectionID,
-				Room:         room,
-				CombatState:  convertCombatStateToProto(event.RoomRevealed.CombatState, gridType, hexOrientation),
-				Doors:        convertEntityDoorsToProto(event.RoomRevealed.NewDoors),
+				// TODO: Populate EncounterStateData from orchestrator once Entities map is wired
 			},
 		}
 
