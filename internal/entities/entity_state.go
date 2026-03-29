@@ -25,7 +25,7 @@ const (
 // in the API layer. It wraps the toolkit's data and adds spatial/room context.
 type EntityStateData struct {
 	EntityID   string
-	EntityType string      // EntityTypeCharacter, EntityTypeMonster, EntityTypeObstacle
+	EntityType string // EntityTypeCharacter, EntityTypeMonster, EntityTypeObstacle
 	RoomID     string
 	Position   *Position
 	Size       int

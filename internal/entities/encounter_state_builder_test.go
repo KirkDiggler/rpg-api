@@ -3,6 +3,8 @@ package entities_test
 import (
 	"testing"
 
+	"github.com/stretchr/testify/suite"
+
 	apiv1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/api/v1alpha1"
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
 	"github.com/KirkDiggler/rpg-api/internal/entities"
@@ -10,7 +12,6 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/classes"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/monster"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/races"
-	"github.com/stretchr/testify/suite"
 )
 
 type EncounterStateBuilderTestSuite struct {
@@ -128,15 +129,15 @@ func (s *EncounterStateBuilderTestSuite) TestBuildEncounterStateData_FullInput()
 	}
 
 	output, err := entities.BuildEncounterStateData(&entities.BuildEncounterStateDataInput{
-		EncounterID:   "enc-1",
-		DungeonID:     "dun-1",
-		Entities:      entitiesMap,
-		CurrentRoomID: "room-1",
+		EncounterID:     "enc-1",
+		DungeonID:       "dun-1",
+		Entities:        entitiesMap,
+		CurrentRoomID:   "room-1",
 		RevealedRoomIDs: []string{"room-1"},
-		Combat:        combat,
-		DungeonState:  entities.DungeonStateActive,
-		RoomsCleared:  1,
-		Doors:         doors,
+		Combat:          combat,
+		DungeonState:    entities.DungeonStateActive,
+		RoomsCleared:    1,
+		Doors:           doors,
 	})
 
 	s.Require().NoError(err)

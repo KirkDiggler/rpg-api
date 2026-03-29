@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/stretchr/testify/suite"
+
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
 	"github.com/KirkDiggler/rpg-api/internal/entities"
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
@@ -12,7 +14,6 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/races"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/refs"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/saves"
-	"github.com/stretchr/testify/suite"
 )
 
 type EntityStateTestSuite struct {
@@ -584,4 +585,3 @@ func (s *EntityStateTestSuite) TestClassMapping() {
 		s.Equal(tc.expected, details.CharacterClass, "class %q should map to %v", tc.class, tc.expected)
 	}
 }
-
