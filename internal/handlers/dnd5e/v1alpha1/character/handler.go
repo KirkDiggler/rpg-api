@@ -925,9 +925,8 @@ func (h *Handler) EquipItem(
 		return nil, err
 	}
 
-	// Convert character - equipment slots are part of character data
+	// Convert character - equipment slots are included by ConvertCharacterDataToProto
 	protoChar := ConvertCharacterDataToProto(charResult.Character.Data)
-	protoChar.EquipmentSlots = convertEquipmentSlotsToProto(charResult.Character.Data.EquipmentSlots)
 	if charResult.Character.Appearance != nil {
 		protoChar.Appearance = convertEntityAppearanceToProto(charResult.Character.Appearance)
 	}

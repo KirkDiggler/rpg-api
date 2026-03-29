@@ -1266,6 +1266,9 @@ func ConvertCharacterDataToProto(data *toolkitchar.Data) *dnd5ev1alpha1.Characte
 		}
 	}
 
+	// Convert equipment slots
+	char.EquipmentSlots = convertEquipmentSlotsToProto(data.EquipmentSlots)
+
 	// Set metadata
 	if data.CreatedAt.Unix() > 0 || data.UpdatedAt.Unix() > 0 {
 		char.Metadata = &dnd5ev1alpha1.CharacterMetadata{
