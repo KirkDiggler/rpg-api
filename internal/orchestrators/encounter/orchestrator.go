@@ -2360,10 +2360,10 @@ func (o *Orchestrator) getEquippedWeaponAndSlots(
 	return weapon, slots
 }
 
-// buildGameContextFromEquipment creates a GameContext with the character's equipped weapons.
-// This enables fighting style conditions (like Dueling) to query weapon state
-// during combat resolution without bloating event objects.
-// Uses already-loaded equipment slots to avoid duplicate repository calls.
+// buildGameContextFromEquipment creates a GameContext with the character's equipped weapons
+// and ability scores. This enables conditions (like Dueling, Martial Arts, Unarmored Defense)
+// to query weapon state and ability scores during combat resolution.
+// Uses already-loaded equipment slots and ability scores to avoid duplicate repository calls.
 func (o *Orchestrator) buildGameContextFromEquipment(
 	characterID string,
 	mainHandWeapon *weapons.Weapon,
