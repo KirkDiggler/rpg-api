@@ -24,6 +24,7 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/monster"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/monstertraits"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/refs"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/weapons"
 	"github.com/KirkDiggler/rpg-toolkit/tools/environments"
 	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
@@ -351,8 +352,8 @@ func (o *Orchestrator) ResolveAttack(ctx context.Context, input *ResolveAttackIn
 	// 7. Get weapon and equipment slots from equipped items (with fallback to greataxe)
 	weapon, equipmentSlots := o.getEquippedWeaponAndSlots(ctx, input.AttackerID)
 
-	// 8. Build GameContext with character equipment for fighting style checks (e.g., Dueling)
-	gameCtx := o.buildGameContextFromEquipment(input.AttackerID, &weapon, equipmentSlots)
+	// 8. Build GameContext with character equipment and ability scores for combat resolution
+	gameCtx := o.buildGameContextFromEquipment(input.AttackerID, &weapon, equipmentSlots, charOutput.Character.Data.AbilityScores)
 	ctx = gamectx.WithGameContext(ctx, gameCtx)
 
 	// 9. Create CombatantRegistry for damage chain lookups (vulnerability, resistance, etc.)
@@ -2367,6 +2368,7 @@ func (o *Orchestrator) buildGameContextFromEquipment(
 	characterID string,
 	mainHandWeapon *weapons.Weapon,
 	slots character.EquipmentSlots,
+	abilityScores shared.AbilityScores,
 ) *gamectx.GameContext {
 	// Create character registry
 	registry := gamectx.NewBasicCharacterRegistry()
@@ -2419,6 +2421,18 @@ func (o *Orchestrator) buildGameContextFromEquipment(
 	// Add character to registry
 	charWeapons := gamectx.NewCharacterWeapons(equippedWeapons)
 	registry.Add(characterID, charWeapons)
+
+	// Add ability scores so conditions (Martial Arts, Unarmored Defense) can query them
+	if abilityScores != nil {
+		registry.AddAbilityScores(characterID, &gamectx.AbilityScores{
+			Strength:     abilityScores[abilities.STR],
+			Dexterity:    abilityScores[abilities.DEX],
+			Constitution: abilityScores[abilities.CON],
+			Intelligence: abilityScores[abilities.INT],
+			Wisdom:       abilityScores[abilities.WIS],
+			Charisma:     abilityScores[abilities.CHA],
+		})
+	}
 
 	// Create and return GameContext
 	return gamectx.NewGameContext(gamectx.GameContextConfig{
@@ -4286,8 +4300,8 @@ func (o *Orchestrator) executeStrike(
 		}
 	}
 
-	// 7. Build GameContext
-	gameCtx := o.buildGameContextFromEquipment(input.EntityID, &weapon, equipmentSlots)
+	// 7. Build GameContext with ability scores for combat conditions (Martial Arts, etc.)
+	gameCtx := o.buildGameContextFromEquipment(input.EntityID, &weapon, equipmentSlots, charOutput.Character.Data.AbilityScores)
 	ctx = gamectx.WithGameContext(ctx, gameCtx)
 
 	// 8. Create CombatantRegistry for damage chain lookups
@@ -4434,8 +4448,8 @@ func (o *Orchestrator) executeFlurryStrike(
 	// 5. Flurry strikes are always unarmed
 	unarmedStrike := unarmedStrikeWeapon()
 
-	// 6. Build GameContext
-	gameCtx := o.buildGameContextFromEquipment(input.EntityID, &unarmedStrike, nil)
+	// 6. Build GameContext with ability scores for Martial Arts damage
+	gameCtx := o.buildGameContextFromEquipment(input.EntityID, &unarmedStrike, nil, charOutput.Character.Data.AbilityScores)
 	ctx = gamectx.WithGameContext(ctx, gameCtx)
 
 	// 7. CombatantRegistry
@@ -4568,8 +4582,8 @@ func (o *Orchestrator) executeUnarmedStrike(
 	// 5. Use shared unarmed strike weapon
 	unarmedStrike := unarmedStrikeWeapon()
 
-	// 6. Build GameContext
-	gameCtx := o.buildGameContextFromEquipment(input.EntityID, &unarmedStrike, nil)
+	// 6. Build GameContext with ability scores for Martial Arts damage
+	gameCtx := o.buildGameContextFromEquipment(input.EntityID, &unarmedStrike, nil, charOutput.Character.Data.AbilityScores)
 	ctx = gamectx.WithGameContext(ctx, gameCtx)
 
 	// 7. CombatantRegistry

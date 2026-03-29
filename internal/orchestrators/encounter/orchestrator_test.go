@@ -2597,7 +2597,7 @@ func (s *OrchestratorTestSuite) TestBuildGameContext_MainHandOnly() {
 		character.SlotMainHand: weapons.Longsword,
 	}
 
-	gameCtx := s.orchestrator.buildGameContextFromEquipment("char-1", &longsword, slots)
+	gameCtx := s.orchestrator.buildGameContextFromEquipment("char-1", &longsword, slots, nil)
 
 	s.Require().NotNil(gameCtx)
 	registry, ok := gamectx.Characters(gamectx.WithGameContext(context.Background(), gameCtx))
@@ -2618,7 +2618,7 @@ func (s *OrchestratorTestSuite) TestBuildGameContext_MainHandAndOffHandWeapon() 
 		character.SlotOffHand:  weapons.Dagger,
 	}
 
-	gameCtx := s.orchestrator.buildGameContextFromEquipment("char-1", &longsword, slots)
+	gameCtx := s.orchestrator.buildGameContextFromEquipment("char-1", &longsword, slots, nil)
 
 	s.Require().NotNil(gameCtx)
 	registry, ok := gamectx.Characters(gamectx.WithGameContext(context.Background(), gameCtx))
@@ -2641,7 +2641,7 @@ func (s *OrchestratorTestSuite) TestBuildGameContext_MainHandAndShield() {
 		character.SlotOffHand:  armor.Shield,
 	}
 
-	gameCtx := s.orchestrator.buildGameContextFromEquipment("char-1", &longsword, slots)
+	gameCtx := s.orchestrator.buildGameContextFromEquipment("char-1", &longsword, slots, nil)
 
 	s.Require().NotNil(gameCtx)
 	registry, ok := gamectx.Characters(gamectx.WithGameContext(context.Background(), gameCtx))
@@ -2661,7 +2661,7 @@ func (s *OrchestratorTestSuite) TestBuildGameContext_NilMainHandWeapon() {
 		character.SlotOffHand: armor.Shield,
 	}
 
-	gameCtx := s.orchestrator.buildGameContextFromEquipment("char-1", nil, slots)
+	gameCtx := s.orchestrator.buildGameContextFromEquipment("char-1", nil, slots, nil)
 
 	s.Require().NotNil(gameCtx)
 	registry, ok := gamectx.Characters(gamectx.WithGameContext(context.Background(), gameCtx))
@@ -2676,7 +2676,7 @@ func (s *OrchestratorTestSuite) TestBuildGameContext_NilMainHandWeapon() {
 func (s *OrchestratorTestSuite) TestBuildGameContext_NilSlots() {
 	longsword, _ := weapons.GetByID(weapons.Longsword)
 
-	gameCtx := s.orchestrator.buildGameContextFromEquipment("char-1", &longsword, nil)
+	gameCtx := s.orchestrator.buildGameContextFromEquipment("char-1", &longsword, nil, nil)
 
 	s.Require().NotNil(gameCtx)
 	registry, ok := gamectx.Characters(gamectx.WithGameContext(context.Background(), gameCtx))
@@ -2686,6 +2686,48 @@ func (s *OrchestratorTestSuite) TestBuildGameContext_NilSlots() {
 	s.Require().NotNil(charWeapons)
 	s.Assert().NotNil(charWeapons.MainHand(), "Should still have main-hand from weapon param")
 	s.Assert().Nil(charWeapons.OffHand(), "Should have no off-hand with nil slots")
+}
+
+// TestBuildGameContext_WithAbilityScores tests that ability scores are registered in GameContext
+func (s *OrchestratorTestSuite) TestBuildGameContext_WithAbilityScores() {
+	longsword, _ := weapons.GetByID(weapons.Longsword)
+	scores := shared.AbilityScores{
+		abilities.STR: 16,
+		abilities.DEX: 14,
+		abilities.CON: 12,
+		abilities.INT: 10,
+		abilities.WIS: 15,
+		abilities.CHA: 8,
+	}
+
+	gameCtx := s.orchestrator.buildGameContextFromEquipment("char-1", &longsword, nil, scores)
+
+	s.Require().NotNil(gameCtx)
+	registry, ok := gamectx.Characters(gamectx.WithGameContext(context.Background(), gameCtx))
+	s.Require().True(ok)
+
+	abilityScores := registry.GetCharacterAbilityScores("char-1")
+	s.Require().NotNil(abilityScores, "Ability scores should be registered in GameContext")
+	s.Assert().Equal(16, abilityScores.Strength)
+	s.Assert().Equal(14, abilityScores.Dexterity)
+	s.Assert().Equal(12, abilityScores.Constitution)
+	s.Assert().Equal(10, abilityScores.Intelligence)
+	s.Assert().Equal(15, abilityScores.Wisdom)
+	s.Assert().Equal(8, abilityScores.Charisma)
+}
+
+// TestBuildGameContext_NilAbilityScores tests that nil ability scores are handled gracefully
+func (s *OrchestratorTestSuite) TestBuildGameContext_NilAbilityScores() {
+	longsword, _ := weapons.GetByID(weapons.Longsword)
+
+	gameCtx := s.orchestrator.buildGameContextFromEquipment("char-1", &longsword, nil, nil)
+
+	s.Require().NotNil(gameCtx)
+	registry, ok := gamectx.Characters(gamectx.WithGameContext(context.Background(), gameCtx))
+	s.Require().True(ok)
+
+	abilityScores := registry.GetCharacterAbilityScores("char-1")
+	s.Assert().Nil(abilityScores, "Nil ability scores should not crash, just not register")
 }
 
 // Victory/Failure Detection Tests
