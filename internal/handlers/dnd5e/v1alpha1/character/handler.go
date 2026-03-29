@@ -538,8 +538,11 @@ func (h *Handler) GetCharacter(
 	req *dnd5ev1alpha1.GetCharacterRequest,
 ) (*dnd5ev1alpha1.GetCharacterResponse, error) {
 	// Validate request
+	if req == nil {
+		return nil, status.Error(codes.InvalidArgument, "request is required")
+	}
 	if req.CharacterId == "" {
-		return nil, apierr.InvalidArgument("character_id is required")
+		return nil, status.Error(codes.InvalidArgument, "character_id is required")
 	}
 
 	// Get character from orchestrator
@@ -547,7 +550,13 @@ func (h *Handler) GetCharacter(
 		CharacterID: req.CharacterId,
 	})
 	if err != nil {
-		return nil, err
+		if apierr.IsNotFound(err) {
+			return nil, status.Error(codes.NotFound, "character not found")
+		}
+		if apierr.IsInvalidArgument(err) {
+			return nil, status.Error(codes.InvalidArgument, err.Error())
+		}
+		return nil, status.Error(codes.Internal, "failed to get character")
 	}
 
 	// Convert character entity to proto (includes appearance)
@@ -925,9 +934,8 @@ func (h *Handler) EquipItem(
 		return nil, err
 	}
 
-	// Convert character - equipment slots are part of character data
+	// Convert character - equipment slots are included by ConvertCharacterDataToProto
 	protoChar := ConvertCharacterDataToProto(charResult.Character.Data)
-	protoChar.EquipmentSlots = convertEquipmentSlotsToProto(charResult.Character.Data.EquipmentSlots)
 	if charResult.Character.Appearance != nil {
 		protoChar.Appearance = convertEntityAppearanceToProto(charResult.Character.Appearance)
 	}
