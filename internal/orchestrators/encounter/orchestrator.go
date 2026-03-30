@@ -1629,7 +1629,12 @@ func (o *Orchestrator) MoveCharacter(ctx context.Context, input *MoveCharacterIn
 		}
 	}
 
-	// 9b. Publish MovementCompleted event
+	// 9b. Build combat state proto for MovementCompleted event (reflects updated movement remaining)
+	encOutput.Data.MovementRemaining = movementRemaining
+	moveCombatState := o.buildCombatState(input.EncounterID, encOutput.Data)
+	moveCombatStateProto := entities.CombatStateToProto(moveCombatState)
+
+	// 9c. Publish MovementCompleted event
 	o.publishEvent(ctx, input.EncounterID, entities.EventTypeMovementCompleted, &entities.MovementCompletedEvent{
 		EntityID:   input.EntityID,
 		EntityType: entityType,
@@ -1644,6 +1649,7 @@ func (o *Orchestrator) MoveCharacter(ctx context.Context, input *MoveCharacterIn
 		RoomOrigin:        moveRoomOrigin,
 		Walls:             dungeonWalls,
 		UpdatedEntity:     updatedEntityState,
+		CombatStateProto:  moveCombatStateProto,
 	})
 
 	// 10. Return success with updated position
@@ -1899,6 +1905,10 @@ func (o *Orchestrator) EndTurn(ctx context.Context, input *EndTurnInput) (*EndTu
 
 	// Publish MonsterTurnCompleted events for each monster turn
 	for _, mt := range monsterTurns {
+		// Sync monster's updated position from room data into the Entities map before building proto.
+		// executeMonsterTurns updates roomData.CubeEntities but not encOutput.Data.Entities.
+		syncMonsterPositionFromRoom(encOutput.Data.Entities, mt.MonsterID, turnEndedRoomData)
+
 		// Build per-monster updated entities: the monster + any damaged characters
 		var mtUpdatedEntities []*pb.EntityState
 		if encOutput.Data.Entities != nil {
@@ -3721,6 +3731,11 @@ func (o *Orchestrator) StartCombat(
 	// 20. Publish MonsterTurnCompleted events if monsters went first
 	startCombatStateProto := entities.CombatStateToProto(combatState)
 	for _, mt := range monsterTurns {
+		// Sync monster's updated position from room data into the entity map before building proto.
+		// entityMap was built before executeMonsterTurns, so positions may be stale.
+		// roomData.CubeEntities has the authoritative post-movement positions.
+		syncMonsterPositionFromRoom(entityMap, mt.MonsterID, roomData)
+
 		// Build per-monster updated entities from the entity map
 		var mtUpdatedEntities []*pb.EntityState
 		if entityMap != nil {
@@ -5019,7 +5034,14 @@ func (o *Orchestrator) executeMove(
 		}
 	}
 
-	// 10b. Publish MovementCompleted event
+	// 11. Update movement remaining in encounter data for combat state
+	encData.MovementRemaining = newMovementRemaining
+
+	// 12. Build combat state for response
+	combatState := o.buildCombatState(input.EncounterID, encData)
+	execMoveCombatStateProto := entities.CombatStateToProto(combatState)
+
+	// 10b. Publish MovementCompleted event (after building combat state so it reflects updated movement)
 	o.publishEvent(ctx, input.EncounterID, entities.EventTypeMovementCompleted, &entities.MovementCompletedEvent{
 		EntityID:          input.EntityID,
 		EntityType:        entityType,
@@ -5030,13 +5052,8 @@ func (o *Orchestrator) executeMove(
 		RoomOrigin:        execActionRoomOrigin,
 		Walls:             dungeonWalls,
 		UpdatedEntity:     execMoveEntityState,
+		CombatStateProto:  execMoveCombatStateProto,
 	})
-
-	// 11. Update movement remaining in encounter data for combat state
-	encData.MovementRemaining = newMovementRemaining
-
-	// 12. Build combat state for response
-	combatState := o.buildCombatState(input.EncounterID, encData)
 
 	// 13. Load character for available abilities/actions from toolkit
 	var availableAbilities []*entities.AvailableAbility
@@ -5062,6 +5079,23 @@ func (o *Orchestrator) executeMove(
 		AvailableAbilities: availableAbilities,
 		AvailableActions:   availableActions,
 	}, nil
+}
+
+// syncMonsterPositionFromRoom updates the monster's position in an entity map using the
+// authoritative position from room cube entities. executeMonsterTurns updates
+// roomData.CubeEntities but not the entity map, so this sync is needed before building
+// entity state protos for MonsterTurnCompleted events.
+func syncMonsterPositionFromRoom(entityMap map[string]*entities.EntityStateData, monsterID string, roomData *spatial.RoomData) {
+	if entityMap == nil || roomData == nil {
+		return
+	}
+	esd, ok := entityMap[monsterID]
+	if !ok || esd == nil {
+		return
+	}
+	if placement, exists := roomData.CubeEntities[monsterID]; exists {
+		esd.Position = cubeToPosition(placement.CubePosition)
+	}
 }
 
 // doorsToMap converts a slice of DoorInfo to a map keyed by ConnectionID.
