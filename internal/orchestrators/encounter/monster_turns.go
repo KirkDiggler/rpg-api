@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/KirkDiggler/rpg-toolkit/events"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/abilities"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/combat"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/gamectx"
@@ -305,7 +306,7 @@ func (o *Orchestrator) resolveMonsterAttack(
 	// Create a fresh EventBus for attack resolution
 	attackBus := events.NewEventBus()
 
-	// Load character for defense (no need for features to participate in defense yet)
+	// Load character for defense — conditions (Unarmored Defense, etc.) subscribe to event bus
 	defender, err := character.LoadFromData(ctx, charOutput.Character.Data, attackBus)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load defender: %w", err)
@@ -321,6 +322,24 @@ func (o *Orchestrator) resolveMonsterAttack(
 	if err != nil {
 		return nil, fmt.Errorf("failed to get weapon: %w", err)
 	}
+
+	// Build GameContext with defender's ability scores so conditions (e.g., Unarmored Defense)
+	// can query them during AC chain evaluation. Without this, conditions that need ability
+	// scores via gamectx.RequireCharacters will silently fail, producing incorrect AC values.
+	charData := charOutput.Character.Data
+	charRegistry := gamectx.NewBasicCharacterRegistry()
+	charRegistry.AddAbilityScores(targetID, &gamectx.AbilityScores{
+		Strength:     charData.AbilityScores[abilities.STR],
+		Dexterity:    charData.AbilityScores[abilities.DEX],
+		Constitution: charData.AbilityScores[abilities.CON],
+		Intelligence: charData.AbilityScores[abilities.INT],
+		Wisdom:       charData.AbilityScores[abilities.WIS],
+		Charisma:     charData.AbilityScores[abilities.CHA],
+	})
+	gameCtx := gamectx.NewGameContext(gamectx.GameContextConfig{
+		CharacterRegistry: charRegistry,
+	})
+	ctx = gamectx.WithGameContext(ctx, gameCtx)
 
 	// Create CombatantRegistry for ID-based lookup
 	// Both monster and character implement the Combatant interface

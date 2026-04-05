@@ -2,17 +2,27 @@ package encounter
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/suite"
+	"go.uber.org/mock/gomock"
 
 	"github.com/KirkDiggler/rpg-toolkit/core"
+	dicemock "github.com/KirkDiggler/rpg-toolkit/dice/mock"
+	"github.com/KirkDiggler/rpg-toolkit/events"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/abilities"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/classes"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/initiative"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/monster"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/races"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
 	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
 
+	"github.com/KirkDiggler/rpg-api/internal/entities"
+	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
+	charactermock "github.com/KirkDiggler/rpg-api/internal/repositories/character/mock"
 	encounterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/encounters"
 )
 
@@ -448,4 +458,155 @@ func (s *MonsterTurnsTestSuite) TestExecuteMonsterTurns_NilInitiative() {
 	s.Error(err)
 	s.Nil(results)
 	s.Contains(err.Error(), "initiative data is required")
+}
+
+// =============================================================================
+// RESOLVE MONSTER ATTACK TESTS
+// =============================================================================
+
+// ResolveMonsterAttackSuite tests resolveMonsterAttack with mocked dependencies
+type ResolveMonsterAttackSuite struct {
+	suite.Suite
+	ctrl         *gomock.Controller
+	mockCharRepo *charactermock.MockRepository
+	mockRoller   *dicemock.MockRoller
+	orchestrator *Orchestrator
+}
+
+func TestResolveMonsterAttackSuite(t *testing.T) {
+	suite.Run(t, new(ResolveMonsterAttackSuite))
+}
+
+func (s *ResolveMonsterAttackSuite) SetupTest() {
+	s.ctrl = gomock.NewController(s.T())
+	s.mockCharRepo = charactermock.NewMockRepository(s.ctrl)
+	s.mockRoller = dicemock.NewMockRoller(s.ctrl)
+	s.orchestrator = &Orchestrator{
+		charRepo: s.mockCharRepo,
+		roller:   s.mockRoller,
+	}
+}
+
+func (s *ResolveMonsterAttackSuite) TestMonkUnarmoredDefenseAC() {
+	// This test verifies that when a monster attacks a Monk with Unarmored Defense,
+	// the API wires up a GameContext with the defender's ability scores so the
+	// toolkit's AC chain correctly includes the WIS modifier.
+	//
+	// Monk stats: DEX 16 (+3), WIS 15 (+2)
+	// Expected AC: 10 (base) + 3 (DEX) + 2 (WIS via Unarmored Defense) = 15
+	// Bug AC: 10 (base) + 3 (DEX) = 13 (missing GameContext)
+
+	monkCharData := &character.Data{
+		ID:               "monk-defender",
+		PlayerID:         "player-1",
+		Name:             "Test Monk",
+		Level:            1,
+		ProficiencyBonus: 2,
+		RaceID:           races.Human,
+		ClassID:          classes.Monk,
+		HitPoints:        10,
+		MaxHitPoints:     10,
+		ArmorClass:       13, // Base stored AC (10 + DEX), but effective should be 15
+		AbilityScores: shared.AbilityScores{
+			abilities.STR: 10,
+			abilities.DEX: 16, // +3 modifier
+			abilities.CON: 14,
+			abilities.INT: 8,
+			abilities.WIS: 15, // +2 modifier
+			abilities.CHA: 10,
+		},
+		SavingThrows: map[abilities.Ability]shared.ProficiencyLevel{
+			abilities.STR: shared.Proficient,
+			abilities.DEX: shared.Proficient,
+		},
+		Conditions: []json.RawMessage{
+			json.RawMessage(`{
+				"ref": {"module": "dnd5e", "type": "conditions", "id": "unarmored_defense"},
+				"type": "monk",
+				"character_id": "monk-defender",
+				"source": "dnd5e:classes:monk"
+			}`),
+		},
+	}
+
+	// Mock charRepo.Get to return the Monk character
+	s.mockCharRepo.EXPECT().
+		Get(gomock.Any(), characterrepo.GetInput{ID: "monk-defender"}).
+		Return(&characterrepo.GetOutput{
+			Character: &entities.Character{
+				Data: monkCharData,
+			},
+		}, nil)
+
+	// Mock charRepo.Update for persisting defender state after attack
+	s.mockCharRepo.EXPECT().
+		Update(gomock.Any(), gomock.Any()).
+		Return(&characterrepo.UpdateOutput{}, nil)
+
+	// Mock roller: attack roll of 20 (natural 20, guaranteed hit so we can check AC)
+	// ResolveAttack calls Roll for attack d20, then damage dice
+	s.mockRoller.EXPECT().
+		Roll(gomock.Any(), 20).
+		Return(20, nil) // Natural 20
+
+	// Damage rolls - allow any number of damage dice calls
+	s.mockRoller.EXPECT().
+		Roll(gomock.Any(), gomock.Any()).
+		Return(4, nil).
+		AnyTimes()
+
+	s.mockRoller.EXPECT().
+		RollN(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, count, size int) ([]int, error) {
+			rolls := make([]int, count)
+			for i := range rolls {
+				rolls[i] = size / 2 // Use half the die size for predictable damage
+			}
+			return rolls, nil
+		}).
+		AnyTimes()
+
+	// Create a goblin monster for the attacker
+	goblinData := &monster.Data{
+		ID:           "goblin-1",
+		Name:         "Goblin Warrior",
+		HitPoints:    7,
+		MaxHitPoints: 7,
+		ArmorClass:   15,
+		AbilityScores: shared.AbilityScores{
+			abilities.STR: 8,
+			abilities.DEX: 14,
+			abilities.CON: 10,
+			abilities.INT: 10,
+			abilities.WIS: 8,
+			abilities.CHA: 8,
+		},
+		ProficiencyBonus: 2,
+	}
+
+	bus := events.NewEventBus()
+	goblin, err := monster.LoadFromData(context.Background(), goblinData, bus)
+	s.Require().NoError(err)
+	defer func() { _ = goblin.Cleanup(context.Background()) }()
+
+	// Resolve the attack
+	result, err := s.orchestrator.resolveMonsterAttack(
+		context.Background(),
+		goblin,
+		goblinData,
+		"monk-defender",
+	)
+
+	s.Require().NoError(err)
+	s.Require().NotNil(result)
+
+	// THE KEY ASSERTION: TargetAC should be 15 (10 + DEX 3 + WIS 2),
+	// not 13 (10 + DEX 3 without GameContext)
+	s.Equal(15, result.TargetAC,
+		"Monk Unarmored Defense AC should be 15 (10 + DEX +3 + WIS +2), "+
+			"not 13 (missing GameContext means WIS modifier is dropped)")
+
+	// With nat 20, should always be a hit
+	s.True(result.Hit, "Natural 20 should always hit")
+	s.True(result.Critical, "Natural 20 should be a critical hit")
 }
