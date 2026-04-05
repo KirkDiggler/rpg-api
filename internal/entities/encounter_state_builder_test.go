@@ -316,13 +316,57 @@ func (s *EncounterStateBuilderTestSuite) TestBuildEncounterStateData_DoorNilPosi
 	s.Equal("room-2", door.LeadsToRoomId)
 }
 
-func (s *EncounterStateBuilderTestSuite) TestBuildEncounterStateData_RoomsMapEmptyByDesign() {
-	// Rooms map is intentionally empty for now (spatial data handled separately)
+func (s *EncounterStateBuilderTestSuite) TestBuildEncounterStateData_RoomsMapNilWhenNotProvided() {
 	output, err := entities.BuildEncounterStateData(&entities.BuildEncounterStateDataInput{
 		EncounterID: "enc-1",
 		DungeonID:   "dun-1",
 	})
 
 	s.Require().NoError(err)
-	s.Empty(output.EncounterStateData.Rooms, "rooms map should be empty until room layout conversion is implemented")
+	s.Empty(output.EncounterStateData.Rooms)
+}
+
+func (s *EncounterStateBuilderTestSuite) TestBuildEncounterStateData_RoomsMapPassedThrough() {
+	rooms := map[string]*dnd5ev1alpha1.RoomLayout{
+		"room-1": {
+			Id:       "room-1",
+			Type:     "dungeon",
+			Width:    11,
+			Height:   11,
+			GridType: apiv1alpha1.GridType_GRID_TYPE_HEX_POINTY,
+			Origin:   &apiv1alpha1.Position{X: 0, Y: 0, Z: 0},
+			Walls: []*apiv1alpha1.Wall{
+				{
+					Start:             &apiv1alpha1.Position{X: 0, Y: 0, Z: 0},
+					End:               &apiv1alpha1.Position{X: 5, Y: -2, Z: -3},
+					Material:          "stone",
+					BlocksMovement:    true,
+					BlocksLineOfSight: true,
+				},
+			},
+		},
+	}
+
+	output, err := entities.BuildEncounterStateData(&entities.BuildEncounterStateDataInput{
+		EncounterID: "enc-1",
+		DungeonID:   "dun-1",
+		Rooms:       rooms,
+	})
+
+	s.Require().NoError(err)
+	s.Require().NotNil(output)
+	s.Require().Len(output.EncounterStateData.Rooms, 1)
+
+	room := output.EncounterStateData.Rooms["room-1"]
+	s.Require().NotNil(room)
+	s.Equal("room-1", room.Id)
+	s.Equal("dungeon", room.Type)
+	s.Equal(int32(11), room.Width)
+	s.Equal(int32(11), room.Height)
+	s.Equal(apiv1alpha1.GridType_GRID_TYPE_HEX_POINTY, room.GridType)
+	s.Require().NotNil(room.Origin)
+	s.Equal(float64(0), room.Origin.X)
+	s.Require().Len(room.Walls, 1)
+	s.Equal("stone", room.Walls[0].Material)
+	s.True(room.Walls[0].BlocksMovement)
 }

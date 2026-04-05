@@ -19,6 +19,10 @@ type BuildEncounterStateDataInput struct {
 	DungeonState    DungeonState
 	RoomsCleared    int
 	Doors           map[string]*DoorInfo
+	// Rooms holds pre-built RoomLayout protos keyed by room ID.
+	// Callers are responsible for constructing these from spatial/dungeon data
+	// so that the entities package does not depend on those packages.
+	Rooms map[string]*dnd5ev1alpha1.RoomLayout
 }
 
 // BuildEncounterStateDataOutput is the output for BuildEncounterStateData.
@@ -53,9 +57,10 @@ func BuildEncounterStateData(input *BuildEncounterStateDataInput) (*BuildEncount
 	// Convert doors
 	state.Doors = buildDoorMap(input.Doors)
 
-	// TODO: Convert rooms to RoomLayout map. Room layout conversion depends on spatial types
-	// that live in the handler layer. For now the rooms map is empty -- entities are the
-	// critical path. Room layouts are static spatial data sent via RoomRevealed events.
+	// Populate room layout map from caller-supplied pre-built protos.
+	if len(input.Rooms) > 0 {
+		state.Rooms = input.Rooms
+	}
 
 	return &BuildEncounterStateDataOutput{
 		EncounterStateData: state,

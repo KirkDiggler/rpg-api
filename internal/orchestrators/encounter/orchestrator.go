@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	apiv1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/api/v1alpha1"
 	pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
 	"github.com/KirkDiggler/rpg-toolkit/core"
 	"github.com/KirkDiggler/rpg-toolkit/dice"
@@ -885,6 +886,7 @@ func (o *Orchestrator) createDungeonWithGenerator(
 			MovementRemaining: combatState.MovementRemaining,
 			Monsters:          monsters,
 			CharacterHP:       characterHP,
+			Entities:          entityMap,
 		}
 
 		monsterTurns, err = o.executeMonsterTurns(ctx, encData, input.CharacterIDs)
@@ -895,12 +897,18 @@ func (o *Orchestrator) createDungeonWithGenerator(
 		combatState.ActiveIndex = encData.InitiativeData.Current
 		combatState.Round = encData.InitiativeData.Round
 
+		// Sync monster positions from roomData into entity map before persisting
+		for _, mt := range monsterTurns {
+			syncMonsterPositionFromRoom(entityMap, mt.MonsterID, roomData)
+		}
+
 		_, err = o.encRepo.Update(ctx, &encounterrepo.UpdateInput{
 			EncounterID:    encounterID,
 			InitiativeData: encData.InitiativeData,
 			Monsters:       encData.Monsters,
 			RoomData:       encData.RoomData,
 			CharacterHP:    encData.CharacterHP,
+			Entities:       entityMap,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("failed to save initiative after monster turns: %w", err)
@@ -1040,6 +1048,110 @@ func (o *Orchestrator) convertToWallInfo(room *dungeon.Room) []WallInfo {
 	}
 
 	return walls
+}
+
+// buildRoomLayoutProto converts a dungeon.Room and its absolute origin to a proto RoomLayout.
+// The origin is the room's position in dungeon-space; walls are stored in room-local coordinates
+// and are passed through as-is here (the client applies the origin offset for rendering).
+//
+//nolint:gosec // G115: Game values are bounded by room size limits, no overflow risk
+func buildRoomLayoutProto(room *dungeon.Room, origin *dungeon.Position) *pb.RoomLayout {
+	if room == nil {
+		return nil
+	}
+
+	shape := room.Shape
+	if shape == nil {
+		return nil
+	}
+
+	// Convert dungeon GridType to proto GridType.
+	var gridType apiv1alpha1.GridType
+	switch shape.GridType {
+	case dungeon.GridTypeHex:
+		gridType = apiv1alpha1.GridType_GRID_TYPE_HEX_POINTY
+	case dungeon.GridTypeSquare:
+		gridType = apiv1alpha1.GridType_GRID_TYPE_SQUARE
+	default:
+		gridType = apiv1alpha1.GridType_GRID_TYPE_HEX_POINTY // dungeon default
+	}
+
+	// Convert origin to proto Position.
+	var protoOrigin *apiv1alpha1.Position
+	if origin != nil {
+		protoOrigin = &apiv1alpha1.Position{
+			X: float64(origin.X),
+			Y: float64(origin.Y),
+			Z: float64(origin.Z),
+		}
+	}
+
+	// Convert walls.
+	var protoWalls []*apiv1alpha1.Wall
+	if len(room.Walls) > 0 {
+		protoWalls = make([]*apiv1alpha1.Wall, len(room.Walls))
+		for i, w := range room.Walls {
+			material := "stone"
+			if w.Type == dungeon.WallTypeDestructible {
+				material = "wood"
+			}
+			protoWalls[i] = &apiv1alpha1.Wall{
+				Start: &apiv1alpha1.Position{
+					X: float64(w.Start.X),
+					Y: float64(w.Start.Y),
+					Z: float64(w.Start.Z),
+				},
+				End: &apiv1alpha1.Position{
+					X: float64(w.End.X),
+					Y: float64(w.End.Y),
+					Z: float64(w.End.Z),
+				},
+				Material:          material,
+				BlocksMovement:    w.BlocksMovement,
+				BlocksLineOfSight: w.BlocksLineOfSight,
+			}
+		}
+	}
+
+	return &pb.RoomLayout{
+		Id:       room.ID,
+		Type:     "dungeon",
+		Width:    int32(shape.Width),
+		Height:   int32(shape.Height),
+		GridType: gridType,
+		Walls:    protoWalls,
+		Origin:   protoOrigin,
+	}
+}
+
+// buildRoomsMap constructs the RoomLayout proto map for all revealed rooms in a dungeon.
+func buildRoomsMap(dng *entities.Dungeon) map[string]*pb.RoomLayout {
+	if dng == nil || len(dng.RevealedRooms) == 0 {
+		return nil
+	}
+
+	result := make(map[string]*pb.RoomLayout, len(dng.RevealedRooms))
+	for roomID := range dng.RevealedRooms {
+		room := dng.GetRoom(roomID)
+		if room == nil {
+			continue
+		}
+		var originPtr *dungeon.Position
+		if dng.RoomOrigins != nil {
+			if origin, ok := dng.RoomOrigins[roomID]; ok {
+				originPtr = &origin
+			}
+		}
+		layout := buildRoomLayoutProto(room, originPtr)
+		if layout != nil {
+			result[roomID] = layout
+		}
+	}
+
+	if len(result) == 0 {
+		return nil
+	}
+	return result
 }
 
 // getPlayerSpawnPositions extracts player spawn positions from a room as cube coordinates
@@ -1792,7 +1904,18 @@ func (o *Orchestrator) EndTurn(ctx context.Context, input *EndTurnInput) (*EndTu
 		o.checkAndHandleFailure(ctx, input.EncounterID, encOutput.Data)
 	}
 
-	// 9. Persist updated state (including monster state and position changes from their turns)
+	// 9. Sync monster positions from roomData into entity map before persisting
+	var persistRoomData *spatial.RoomData
+	if encOutput.Data.RoomData != nil {
+		if rd, ok := encOutput.Data.RoomData.(*spatial.RoomData); ok {
+			persistRoomData = rd
+		}
+	}
+	for _, mt := range monsterTurns {
+		syncMonsterPositionFromRoom(encOutput.Data.Entities, mt.MonsterID, persistRoomData)
+	}
+
+	// Persist updated state (including monster state and position changes from their turns)
 	_, err = o.encRepo.Update(ctx, &encounterrepo.UpdateInput{
 		EncounterID:       input.EncounterID,
 		InitiativeData:    initiativeData,
@@ -1801,6 +1924,7 @@ func (o *Orchestrator) EndTurn(ctx context.Context, input *EndTurnInput) (*EndTu
 		Monsters:          encOutput.Data.Monsters,          // Persist monster HP/state changes
 		RoomData:          encOutput.Data.RoomData,          // Persist monster position changes
 		CharacterHP:       encOutput.Data.CharacterHP,       // Persist character HP changes from monster attacks
+		Entities:          encOutput.Data.Entities,          // Persist entity state with synced monster positions
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to save turn state: %w", err)
@@ -3632,6 +3756,7 @@ func (o *Orchestrator) StartCombat(
 			MovementRemaining: combatState.MovementRemaining,
 			Monsters:          monsters,
 			CharacterHP:       characterHP,
+			Entities:          entityMap,
 		}
 
 		monsterTurns, err = o.executeMonsterTurns(ctx, encData, characterIDs)
@@ -3642,12 +3767,18 @@ func (o *Orchestrator) StartCombat(
 		combatState.ActiveIndex = encData.InitiativeData.Current
 		combatState.Round = encData.InitiativeData.Round
 
+		// Sync monster positions from roomData into entity map before persisting
+		for _, mt := range monsterTurns {
+			syncMonsterPositionFromRoom(entityMap, mt.MonsterID, roomData)
+		}
+
 		_, err = o.encRepo.Update(ctx, &encounterrepo.UpdateInput{
 			EncounterID:    input.EncounterID,
 			InitiativeData: encData.InitiativeData,
 			Monsters:       encData.Monsters,
 			RoomData:       encData.RoomData,
 			CharacterHP:    encData.CharacterHP,
+			Entities:       entityMap,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("failed to save initiative after monster turns: %w", err)
@@ -3699,6 +3830,13 @@ func (o *Orchestrator) StartCombat(
 
 	// 19. Build EncounterStateData proto for the CombatStarted event
 	doorMap := doorsToMap(convertDoorsToEntityDoors(doors))
+
+	// Build room layout for the start room only (the only revealed room at combat start).
+	startRoomLayouts := map[string]*pb.RoomLayout{}
+	if startRoomLayout := buildRoomLayoutProto(startRoom, startRoomOrigin); startRoomLayout != nil {
+		startRoomLayouts[generatedDungeon.StartRoom] = startRoomLayout
+	}
+
 	encounterStateOutput, _ := entities.BuildEncounterStateData(&entities.BuildEncounterStateDataInput{
 		EncounterID:     input.EncounterID,
 		DungeonID:       dungeonEntity.ID,
@@ -3708,6 +3846,7 @@ func (o *Orchestrator) StartCombat(
 		Combat:          combatState,
 		DungeonState:    entities.DungeonStateActive,
 		Doors:           doorMap,
+		Rooms:           startRoomLayouts,
 	})
 	var encounterStateData *pb.EncounterStateData
 	if encounterStateOutput != nil {
@@ -5188,6 +5327,7 @@ func (o *Orchestrator) buildEncounterStateSnapshot(
 	var dungeonState entities.DungeonState
 	var roomsCleared int
 	var doorMap map[string]*entities.DoorInfo
+	var roomLayoutMap map[string]*pb.RoomLayout
 
 	if o.dungeonRepo != nil {
 		dungeonOutput, err := o.dungeonRepo.GetByEncounterID(ctx, &dungeonrepo.GetByEncounterIDInput{
@@ -5213,6 +5353,9 @@ func (o *Orchestrator) buildEncounterStateSnapshot(
 				allDoors = append(allDoors, convertDoorsToEntityDoors(roomDoors)...)
 			}
 			doorMap = doorsToMap(allDoors)
+
+			// Build room layout map for all revealed rooms
+			roomLayoutMap = buildRoomsMap(dng)
 		}
 	}
 
@@ -5231,6 +5374,7 @@ func (o *Orchestrator) buildEncounterStateSnapshot(
 		DungeonState:    dungeonState,
 		RoomsCleared:    roomsCleared,
 		Doors:           doorMap,
+		Rooms:           roomLayoutMap,
 	})
 	if err != nil || output == nil {
 		return nil
