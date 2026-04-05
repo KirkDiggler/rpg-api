@@ -538,17 +538,17 @@ func (o *Orchestrator) ResolveAttack(ctx context.Context, input *ResolveAttackIn
 	var attackerState, targetState *pb.EntityState
 	if encOutput.Data.Entities != nil {
 		if asd, ok := encOutput.Data.Entities[input.AttackerID]; ok && asd != nil {
-			// Update attacker's toolkit data with latest character data,
-			// then override HP with current combat-tracked value so the
-			// event carries actual HP instead of full-health from the repo.
-			asd.ToolkitData = charOutput.Character.Data
+			// Build from a copy to avoid mutating the repo-loaded struct.
+			asdCopy := *asd
+			asdCopy.ToolkitData = charOutput.Character.Data
 			applyCurrentCombatHP(charOutput.Character.Data, encOutput.Data.CharacterHP)
-			attackerState = entities.ToEntityStateProto(&entities.ToEntityStateProtoInput{EntityStateData: asd})
+			attackerState = entities.ToEntityStateProto(&entities.ToEntityStateProtoInput{EntityStateData: &asdCopy})
 		}
 		if tsd, ok := encOutput.Data.Entities[input.TargetID]; ok && tsd != nil {
-			// Update target's toolkit data with post-damage monster data
-			tsd.ToolkitData = monsterData
-			targetState = entities.ToEntityStateProto(&entities.ToEntityStateProtoInput{EntityStateData: tsd})
+			// Build from a copy to avoid mutating the repo-loaded struct.
+			tsdCopy := *tsd
+			tsdCopy.ToolkitData = monsterData
+			targetState = entities.ToEntityStateProto(&entities.ToEntityStateProtoInput{EntityStateData: &tsdCopy})
 		}
 	}
 
@@ -890,7 +890,10 @@ func (o *Orchestrator) createDungeonWithGenerator(
 	}
 
 	// Build unified entity map for the encounter
-	entityMap := o.buildEntityMap(ctx, roomData, input.CharacterIDs, monsters, generatedDungeon.StartRoom)
+	entityMap, err := o.buildEntityMap(ctx, roomData, input.CharacterIDs, monsters, generatedDungeon.StartRoom)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build entity map: %w", err)
+	}
 
 	// Save encounter data
 	_, err = o.encRepo.Save(ctx, &encounterrepo.SaveInput{
@@ -1770,10 +1773,13 @@ func (o *Orchestrator) MoveCharacter(ctx context.Context, input *MoveCharacterIn
 			updatedEntityState = entities.ToEntityStateProto(&entities.ToEntityStateProtoInput{EntityStateData: esd})
 
 			// Persist the updated entity position
-			_, _ = o.encRepo.Update(ctx, &encounterrepo.UpdateInput{
+			_, err = o.encRepo.Update(ctx, &encounterrepo.UpdateInput{
 				EncounterID: input.EncounterID,
 				Entities:    map[string]*entities.EntityStateData{input.EntityID: esd},
 			})
+			if err != nil {
+				return nil, fmt.Errorf("failed to persist entity position: %w", err)
+			}
 		}
 	}
 
@@ -3583,7 +3589,7 @@ func (o *Orchestrator) SetReady(
 
 // StartCombat begins combat (host only, all players must be ready)
 // Generates a dungeon using the dungeon generator and starts combat in the first room.
-func (o *Orchestrator) StartCombat(
+func (o *Orchestrator) StartCombat( //nolint:gocyclo // Large orchestration function; complexity is inherent
 	ctx context.Context,
 	input *StartCombatInput,
 ) (*StartCombatOutput, error) {
@@ -3781,7 +3787,10 @@ func (o *Orchestrator) StartCombat(
 	}
 
 	// 13. Build unified entity map and update encounter state to active
-	entityMap := o.buildEntityMap(ctx, roomData, characterIDs, monsters, generatedDungeon.StartRoom)
+	entityMap, err := o.buildEntityMap(ctx, roomData, characterIDs, monsters, generatedDungeon.StartRoom)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build entity map: %w", err)
+	}
 
 	activeState := encounterrepo.StateActive
 	initialActionEconomy := entities.NewActionEconomyState()
@@ -3906,7 +3915,7 @@ func (o *Orchestrator) StartCombat(
 		startRoomLayouts[generatedDungeon.StartRoom] = startRoomLayout
 	}
 
-	encounterStateOutput, _ := entities.BuildEncounterStateData(&entities.BuildEncounterStateDataInput{
+	encounterStateOutput, encounterStateErr := entities.BuildEncounterStateData(&entities.BuildEncounterStateDataInput{
 		EncounterID:     input.EncounterID,
 		DungeonID:       dungeonEntity.ID,
 		Entities:        entityMap,
@@ -3918,7 +3927,7 @@ func (o *Orchestrator) StartCombat(
 		Rooms:           startRoomLayouts,
 	})
 	var encounterStateData *pb.EncounterStateData
-	if encounterStateOutput != nil {
+	if encounterStateOutput != nil && encounterStateErr == nil {
 		encounterStateData = encounterStateOutput.EncounterStateData
 	}
 
@@ -4755,13 +4764,15 @@ func (o *Orchestrator) executeStrike(
 	var attackerState, targetState *pb.EntityState
 	if encData.Entities != nil {
 		if asd, ok := encData.Entities[input.EntityID]; ok && asd != nil {
-			asd.ToolkitData = charOutput.Character.Data
+			asdCopy := *asd
+			asdCopy.ToolkitData = charOutput.Character.Data
 			applyCurrentCombatHP(charOutput.Character.Data, encData.CharacterHP)
-			attackerState = entities.ToEntityStateProto(&entities.ToEntityStateProtoInput{EntityStateData: asd})
+			attackerState = entities.ToEntityStateProto(&entities.ToEntityStateProtoInput{EntityStateData: &asdCopy})
 		}
 		if tsd, ok := encData.Entities[input.TargetID]; ok && tsd != nil {
-			tsd.ToolkitData = monsterData
-			targetState = entities.ToEntityStateProto(&entities.ToEntityStateProtoInput{EntityStateData: tsd})
+			tsdCopy := *tsd
+			tsdCopy.ToolkitData = monsterData
+			targetState = entities.ToEntityStateProto(&entities.ToEntityStateProtoInput{EntityStateData: &tsdCopy})
 		}
 	}
 
@@ -4918,13 +4929,15 @@ func (o *Orchestrator) executeFlurryStrike(
 	var flurryAttackerState, flurryTargetState *pb.EntityState
 	if encData.Entities != nil {
 		if asd, ok := encData.Entities[input.EntityID]; ok && asd != nil {
-			asd.ToolkitData = charOutput.Character.Data
+			asdCopy := *asd
+			asdCopy.ToolkitData = charOutput.Character.Data
 			applyCurrentCombatHP(charOutput.Character.Data, encData.CharacterHP)
-			flurryAttackerState = entities.ToEntityStateProto(&entities.ToEntityStateProtoInput{EntityStateData: asd})
+			flurryAttackerState = entities.ToEntityStateProto(&entities.ToEntityStateProtoInput{EntityStateData: &asdCopy})
 		}
 		if tsd, ok := encData.Entities[input.TargetID]; ok && tsd != nil {
-			tsd.ToolkitData = monsterData
-			flurryTargetState = entities.ToEntityStateProto(&entities.ToEntityStateProtoInput{EntityStateData: tsd})
+			tsdCopy := *tsd
+			tsdCopy.ToolkitData = monsterData
+			flurryTargetState = entities.ToEntityStateProto(&entities.ToEntityStateProtoInput{EntityStateData: &tsdCopy})
 		}
 	}
 
@@ -5083,13 +5096,15 @@ func (o *Orchestrator) executeUnarmedStrike(
 	var unarmedAttackerState, unarmedTargetState *pb.EntityState
 	if encData.Entities != nil {
 		if asd, ok := encData.Entities[input.EntityID]; ok && asd != nil {
-			asd.ToolkitData = charOutput.Character.Data
+			asdCopy := *asd
+			asdCopy.ToolkitData = charOutput.Character.Data
 			applyCurrentCombatHP(charOutput.Character.Data, encData.CharacterHP)
-			unarmedAttackerState = entities.ToEntityStateProto(&entities.ToEntityStateProtoInput{EntityStateData: asd})
+			unarmedAttackerState = entities.ToEntityStateProto(&entities.ToEntityStateProtoInput{EntityStateData: &asdCopy})
 		}
 		if tsd, ok := encData.Entities[input.TargetID]; ok && tsd != nil {
-			tsd.ToolkitData = monsterData
-			unarmedTargetState = entities.ToEntityStateProto(&entities.ToEntityStateProtoInput{EntityStateData: tsd})
+			tsdCopy := *tsd
+			tsdCopy.ToolkitData = monsterData
+			unarmedTargetState = entities.ToEntityStateProto(&entities.ToEntityStateProtoInput{EntityStateData: &tsdCopy})
 		}
 	}
 
@@ -5416,14 +5431,14 @@ func (o *Orchestrator) buildEntityMap(
 	characterIDs []string,
 	monsters []*monster.Data,
 	roomID string,
-) map[string]*entities.EntityStateData {
+) (map[string]*entities.EntityStateData, error) {
 	entityMap := make(map[string]*entities.EntityStateData)
 
 	// Add characters
 	for _, characterID := range characterIDs {
 		charOutput, charErr := o.charRepo.Get(ctx, characterrepo.GetInput{ID: characterID})
 		if charErr != nil {
-			continue // Skip characters we can't load
+			return nil, fmt.Errorf("failed to load character %s for entity map: %w", characterID, charErr)
 		}
 		if placement, exists := roomData.CubeEntities[characterID]; exists {
 			entityMap[characterID] = &entities.EntityStateData{
@@ -5452,7 +5467,7 @@ func (o *Orchestrator) buildEntityMap(
 		}
 	}
 
-	return entityMap
+	return entityMap, nil
 }
 
 // buildEncounterStateSnapshot builds a full EncounterStateData proto snapshot from the current
