@@ -2285,7 +2285,47 @@ func (s *OrchestratorTestSuite) TestEndTurn_ResetsActionEconomy() {
 	}
 
 	// Expect character turn-end event publishing for char-1 (whose turn is ending)
-	s.expectCharacterTurnEnd("char-1")
+	// Capture the character update to verify TurnNumber invalidation
+	charData := &character.Data{
+		ID:               "char-1",
+		Name:             "Test Character",
+		PlayerID:         "player-1",
+		Level:            1,
+		RaceID:           "human",
+		ClassID:          "fighter",
+		ProficiencyBonus: 2,
+		AbilityScores: shared.AbilityScores{
+			abilities.STR: 16,
+			abilities.DEX: 14,
+			abilities.CON: 15,
+			abilities.INT: 10,
+			abilities.WIS: 12,
+			abilities.CHA: 8,
+		},
+		HitPoints:    12,
+		MaxHitPoints: 12,
+		ActionEconomy: &character.ActionEconomyData{
+			TurnNumber:            100, // From previous turn
+			ActionsRemaining:      0,
+			BonusActionsRemaining: 0,
+			ReactionsRemaining:    0,
+			MovementRemaining:     0,
+			Granted:               make(map[character.GrantedActionKey]int),
+		},
+	}
+
+	s.mockCharRepo.EXPECT().
+		Get(gomock.Any(), characterrepo.GetInput{ID: "char-1"}).
+		Return(&characterrepo.GetOutput{Character: &entities.Character{Data: charData}}, nil)
+
+	var capturedCharUpdate characterrepo.UpdateInput
+	s.mockCharRepo.EXPECT().
+		Update(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, input characterrepo.UpdateInput) (*characterrepo.UpdateOutput, error) {
+			capturedCharUpdate = input
+			return &characterrepo.UpdateOutput{}, nil
+		})
+
 	s.expectDungeonLookup("enc-1")
 
 	s.mockEncRepo.EXPECT().
@@ -2323,6 +2363,14 @@ func (s *OrchestratorTestSuite) TestEndTurn_ResetsActionEconomy() {
 	s.Assert().Equal(1, output.CombatState.ActionEconomy.ActionsRemaining)
 	s.Assert().Equal(1, output.CombatState.ActionEconomy.BonusActionsRemaining)
 	s.Assert().Equal(1, output.CombatState.ActionEconomy.ReactionsRemaining)
+
+	// Verify character's TurnNumber was invalidated by publishCharacterTurnEnd
+	s.Require().NotNil(capturedCharUpdate.Character)
+	s.Require().NotNil(capturedCharUpdate.Character.Data)
+	s.Require().NotNil(capturedCharUpdate.Character.Data.ActionEconomy,
+		"Character should still be in combat after EndTurn")
+	s.Assert().Equal(-1, capturedCharUpdate.Character.Data.ActionEconomy.TurnNumber,
+		"TurnNumber should be invalidated to -1 so next loadCharacterForCombat triggers StartTurn")
 }
 
 func (s *OrchestratorTestSuite) TestCreateDungeon_InitializesActionEconomy() {
@@ -2457,7 +2505,7 @@ func (s *OrchestratorTestSuite) TestResolveAttack_UsesEquippedWeapon() {
 	}
 }
 
-func (s *OrchestratorTestSuite) TestResolveAttack_NoEquippedWeapon_FallsBackToGreataxe() {
+func (s *OrchestratorTestSuite) TestResolveAttack_NoEquippedWeapon_FallsBackToUnarmedStrike() {
 	// Arrange - Create test character data without equipped weapon
 	charData := createTestCharacterData("char-1", "Grog")
 	charData.EquipmentSlots = character.EquipmentSlots{} // Empty - no weapon equipped
@@ -2584,7 +2632,7 @@ func (s *OrchestratorTestSuite) TestResolveAttack_NilEquipmentSlots_FallsBackToU
 		TargetID:    "goblin-1",
 	})
 
-	// Assert - Should succeed with fallback to greataxe
+	// Assert - Should succeed with fallback to unarmed strike
 	s.Require().NoError(err)
 	s.Require().NotNil(output)
 	s.Assert().NotNil(output.Result)
@@ -3243,6 +3291,123 @@ func (s *OrchestratorTestSuite) TestActivateCombatAbility_Attack_NoActionAvailab
 	s.Assert().NotEmpty(output.Error)
 }
 
+func (s *OrchestratorTestSuite) TestActivateCombatAbility_Attack_AfterEndTurn_ResetsActionEconomy() {
+	// Reproduce bug: after EndTurn → monster turn → TurnChange back to player,
+	// calling ActivateCombatAbility(Attack) should succeed because StartTurn
+	// resets the action economy when the turn number has changed.
+	//
+	// Setup: Round 2, Current=0 → turnNum=200. Character has stale TurnNumber=100.
+	initiativeData := &initiative.TrackerData{
+		Order: []initiative.EntityData{
+			{ID: "char-1", Type: "character"},
+			{ID: "goblin-1", Type: "monster"},
+		},
+		Current: 0,
+		Round:   2, // Round 2 after EndTurn advanced past monster
+	}
+
+	s.mockEncRepo.EXPECT().
+		Get(gomock.Any(), &encounterrepo.GetInput{EncounterID: "enc-1"}).
+		Return(&encounterrepo.GetOutput{
+			Data: &encounterrepo.EncounterData{
+				ID:                "enc-1",
+				InitiativeData:    initiativeData,
+				MovementRemaining: 30,
+				ActionEconomy:     entities.NewActionEconomyState(), // Fresh from EndTurn
+			},
+		}, nil)
+
+	// Character with STALE action economy from turn 1 (all consumed)
+	charData := createTestCharacterData("char-1", "Grog")
+	charData.ActionEconomy = &character.ActionEconomyData{
+		TurnNumber:            100, // Round 1 turn number (stale)
+		ActionsRemaining:      0,   // All consumed in turn 1
+		BonusActionsRemaining: 0,
+		ReactionsRemaining:    0,
+		MovementRemaining:     0,
+		Granted:               make(map[character.GrantedActionKey]int),
+	}
+
+	s.mockCharRepo.EXPECT().
+		Get(gomock.Any(), characterrepo.GetInput{ID: "char-1"}).
+		Return(&characterrepo.GetOutput{Character: &entities.Character{Data: charData}}, nil)
+
+	// persistCharacterData after activation
+	s.mockCharRepo.EXPECT().
+		Update(gomock.Any(), gomock.Any()).
+		Return(&characterrepo.UpdateOutput{}, nil)
+
+	// Act - Should succeed: loadCharacterForCombat detects stale TurnNumber and calls StartTurn
+	output, err := s.orchestrator.ActivateCombatAbility(context.Background(), &ActivateCombatAbilityInput{
+		EncounterID: "enc-1",
+		EntityID:    "char-1",
+		AbilityID:   pb.CombatAbilityId_COMBAT_ABILITY_ID_ATTACK,
+	})
+
+	// Assert - Action economy was reset by StartTurn, so Attack should succeed
+	s.Require().NoError(err)
+	s.Require().NotNil(output)
+	s.Assert().True(output.Success, "Attack should succeed on new turn, got error: %s", output.Error)
+	s.Assert().NotEmpty(output.GrantedCapacity, "Should grant attacks")
+}
+
+func (s *OrchestratorTestSuite) TestActivateCombatAbility_Attack_AfterEndTurn_InvalidatedTurnNumber() {
+	// Reproduce bug: publishCharacterTurnEnd now invalidates TurnNumber to -1.
+	// When the character's next turn starts, loadCharacterForCombat should detect
+	// TurnNumber=-1 != computeTurnNumber() and call StartTurn.
+	initiativeData := &initiative.TrackerData{
+		Order: []initiative.EntityData{
+			{ID: "char-1", Type: "character"},
+			{ID: "goblin-1", Type: "monster"},
+		},
+		Current: 0,
+		Round:   2,
+	}
+
+	s.mockEncRepo.EXPECT().
+		Get(gomock.Any(), &encounterrepo.GetInput{EncounterID: "enc-1"}).
+		Return(&encounterrepo.GetOutput{
+			Data: &encounterrepo.EncounterData{
+				ID:                "enc-1",
+				InitiativeData:    initiativeData,
+				MovementRemaining: 30,
+				ActionEconomy:     entities.NewActionEconomyState(),
+			},
+		}, nil)
+
+	// Character with TurnNumber=-1 (invalidated by publishCharacterTurnEnd)
+	charData := createTestCharacterData("char-1", "Grog")
+	charData.ActionEconomy = &character.ActionEconomyData{
+		TurnNumber:            -1, // Invalidated by publishCharacterTurnEnd
+		ActionsRemaining:      0,  // Zeroed by char.EndTurn()
+		BonusActionsRemaining: 0,
+		ReactionsRemaining:    0,
+		MovementRemaining:     0,
+		Granted:               make(map[character.GrantedActionKey]int),
+	}
+
+	s.mockCharRepo.EXPECT().
+		Get(gomock.Any(), characterrepo.GetInput{ID: "char-1"}).
+		Return(&characterrepo.GetOutput{Character: &entities.Character{Data: charData}}, nil)
+
+	s.mockCharRepo.EXPECT().
+		Update(gomock.Any(), gomock.Any()).
+		Return(&characterrepo.UpdateOutput{}, nil)
+
+	// Act
+	output, err := s.orchestrator.ActivateCombatAbility(context.Background(), &ActivateCombatAbilityInput{
+		EncounterID: "enc-1",
+		EntityID:    "char-1",
+		AbilityID:   pb.CombatAbilityId_COMBAT_ABILITY_ID_ATTACK,
+	})
+
+	// Assert - StartTurn should be called because -1 != 200 (computeTurnNumber)
+	s.Require().NoError(err)
+	s.Require().NotNil(output)
+	s.Assert().True(output.Success, "Attack should succeed after turn invalidation, got error: %s", output.Error)
+	s.Assert().NotEmpty(output.GrantedCapacity)
+}
+
 func (s *OrchestratorTestSuite) TestActivateCombatAbility_Dash_Success() {
 	// Arrange
 	initiativeData := &initiative.TrackerData{
@@ -3866,4 +4031,176 @@ func (s *OrchestratorTestSuite) TestResolveAttack_Monk_NonMonkWeapon_NoBonusStri
 		s.Assert().NotEqual("martial-arts-bonus-strike", output.GrantedAction.Type,
 			"Monk with non-monk weapon should not receive MA bonus strike")
 	}
+}
+
+// --- Issue #437: Unarmed strike option for Monks ---
+
+func (s *OrchestratorTestSuite) TestAddUnarmedStrikeOption_AddsWhenStrikeAvailable() {
+	actions := []*entities.AvailableAction{
+		{ActionID: refs.Actions.Move().ID, Name: "Move", CanUse: true},
+		{ActionID: refs.Actions.Strike().ID, Name: "Strike", CanUse: true},
+	}
+
+	result := addUnarmedStrikeOption(actions)
+
+	s.Require().Len(result, 3)
+	s.Assert().Equal(refs.Actions.UnarmedStrike().ID, result[2].ActionID)
+	s.Assert().Equal("Unarmed Strike", result[2].Name)
+	s.Assert().True(result[2].CanUse)
+}
+
+func (s *OrchestratorTestSuite) TestAddUnarmedStrikeOption_NoopWhenStrikeAbsent() {
+	actions := []*entities.AvailableAction{
+		{ActionID: refs.Actions.Move().ID, Name: "Move", CanUse: true},
+	}
+
+	result := addUnarmedStrikeOption(actions)
+
+	s.Assert().Len(result, 1, "should not add unarmed strike when Strike is not available")
+}
+
+func (s *OrchestratorTestSuite) TestAddUnarmedStrikeOption_NoopWhenAlreadyPresent() {
+	actions := []*entities.AvailableAction{
+		{ActionID: refs.Actions.Strike().ID, Name: "Strike", CanUse: true},
+		{ActionID: refs.Actions.UnarmedStrike().ID, Name: "Unarmed Strike", CanUse: true},
+	}
+
+	result := addUnarmedStrikeOption(actions)
+
+	s.Assert().Len(result, 2, "should not duplicate unarmed strike")
+}
+
+func (s *OrchestratorTestSuite) TestAddUnarmedStrikeOption_InheritsStrikeCanUse() {
+	actions := []*entities.AvailableAction{
+		{ActionID: refs.Actions.Strike().ID, Name: "Strike", CanUse: false, Reason: "no attacks remaining"},
+	}
+
+	result := addUnarmedStrikeOption(actions)
+
+	s.Require().Len(result, 2)
+	s.Assert().False(result[1].CanUse, "unarmed strike should inherit Strike's can_use state")
+}
+
+func (s *OrchestratorTestSuite) TestResolveAttack_IsUnarmed_DetectedFromWeapon() {
+	// Arrange - Monk with no equipped weapon (falls back to unarmed strike)
+	charData := createTestMonkCharacterData("monk-1", "Shadow")
+	charData.EquipmentSlots = character.EquipmentSlots{} // No weapon
+	s.mockCharRepo.EXPECT().
+		Get(gomock.Any(), characterrepo.GetInput{ID: "monk-1"}).
+		Return(&characterrepo.GetOutput{Character: &entities.Character{Data: charData}}, nil).
+		AnyTimes()
+
+	encData := createTestEncounterData("enc-1")
+	s.mockEncRepo.EXPECT().
+		Get(gomock.Any(), &encounterrepo.GetInput{EncounterID: "enc-1"}).
+		Return(&encounterrepo.GetOutput{Data: encData}, nil)
+	s.mockEncRepo.EXPECT().
+		Update(gomock.Any(), gomock.Any()).
+		Return(&encounterrepo.UpdateOutput{Success: true}, nil).
+		AnyTimes()
+	s.mockDungeonRepo.EXPECT().
+		GetByEncounterID(gomock.Any(), gomock.Any()).
+		Return(&dungeonrepo.GetOutput{Dungeon: &entities.Dungeon{ID: "test-dungeon"}}, nil).
+		AnyTimes()
+
+	// Act
+	output, err := s.orchestrator.ResolveAttack(context.Background(), &ResolveAttackInput{
+		EncounterID: "enc-1",
+		AttackerID:  "monk-1",
+		TargetID:    "goblin-1",
+	})
+
+	// Assert - Should succeed with unarmed strike and grant martial arts bonus
+	s.Require().NoError(err)
+	s.Require().NotNil(output)
+	s.Assert().NotNil(output.Result)
+
+	// Unarmed strike does bludgeoning damage
+	if output.Result.Hit {
+		s.Assert().Equal(damage.Bludgeoning, output.Result.DamageType)
+	}
+
+	// Monk with unarmed strike should get martial arts bonus strike
+	s.Assert().NotNil(output.GrantedAction, "Monk using unarmed strike should get martial arts bonus")
+	if output.GrantedAction != nil {
+		s.Assert().Equal("martial-arts-bonus-strike", output.GrantedAction.Type)
+	}
+}
+
+// ============================================================================
+// applyCurrentCombatHP Tests
+// ============================================================================
+
+func (s *OrchestratorTestSuite) TestApplyCurrentCombatHP_OverridesFullHP() {
+	// Character loaded from repo has full HP (as if freshly created / rested)
+	charData := &character.Data{
+		ID:           "char-1",
+		HitPoints:    14, // Full HP from repo
+		MaxHitPoints: 14,
+	}
+
+	// Combat tracker says character has taken damage
+	characterHP := map[string]int{
+		"char-1": 7, // Took 7 damage during combat
+	}
+
+	applyCurrentCombatHP(charData, characterHP)
+
+	s.Equal(7, charData.HitPoints, "HitPoints should reflect combat-tracked HP, not full HP")
+	s.Equal(14, charData.MaxHitPoints, "MaxHitPoints should not be changed")
+}
+
+func (s *OrchestratorTestSuite) TestApplyCurrentCombatHP_NoEntryInMap() {
+	// Character not in the CharacterHP map (e.g., hasn't been damaged yet)
+	charData := &character.Data{
+		ID:           "char-2",
+		HitPoints:    10,
+		MaxHitPoints: 10,
+	}
+
+	characterHP := map[string]int{
+		"char-1": 5, // Different character
+	}
+
+	applyCurrentCombatHP(charData, characterHP)
+
+	s.Equal(10, charData.HitPoints, "HitPoints should be unchanged when character not in map")
+}
+
+func (s *OrchestratorTestSuite) TestApplyCurrentCombatHP_NilMap() {
+	charData := &character.Data{
+		ID:           "char-1",
+		HitPoints:    10,
+		MaxHitPoints: 10,
+	}
+
+	applyCurrentCombatHP(charData, nil)
+
+	s.Equal(10, charData.HitPoints, "HitPoints should be unchanged with nil map")
+}
+
+func (s *OrchestratorTestSuite) TestApplyCurrentCombatHP_NilCharData() {
+	characterHP := map[string]int{"char-1": 5}
+
+	// Should not panic
+	s.NotPanics(func() {
+		applyCurrentCombatHP(nil, characterHP)
+	})
+}
+
+func (s *OrchestratorTestSuite) TestApplyCurrentCombatHP_ZeroHP() {
+	// Character is at 0 HP (unconscious)
+	charData := &character.Data{
+		ID:           "char-1",
+		HitPoints:    14,
+		MaxHitPoints: 14,
+	}
+
+	characterHP := map[string]int{
+		"char-1": 0,
+	}
+
+	applyCurrentCombatHP(charData, characterHP)
+
+	s.Equal(0, charData.HitPoints, "HitPoints should be 0 when combat tracker says 0")
 }

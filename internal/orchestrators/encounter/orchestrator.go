@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	apiv1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/api/v1alpha1"
 	pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
 	"github.com/KirkDiggler/rpg-toolkit/core"
 	"github.com/KirkDiggler/rpg-toolkit/dice"
@@ -261,8 +262,25 @@ func (o *Orchestrator) publishCharacterTurnEnd(ctx context.Context, characterID 
 		return fmt.Errorf("failed to publish turn end event: %w", err)
 	}
 
-	// 4. Persist updated character state (conditions may have changed)
+	// 3b. End the character's turn in the toolkit to zero out the action economy.
+	// This ensures clean state when the character's next turn begins.
+	if _, endErr := char.EndTurn(ctx, &character.EndTurnInput{}); endErr != nil {
+		// Log but don't fail - EndTurn is defensive cleanup
+		fmt.Printf("warning: failed to end character turn for %s: %v\n", characterID, endErr)
+	}
+
+	// 4. Persist updated character state (conditions may have changed, action economy zeroed)
 	updatedData := char.ToData()
+
+	// 4b. Invalidate the turn number so loadCharacterForCombat will always call StartTurn
+	// on the character's next turn. The toolkit's EndTurn zeros actions/bonus/reactions/movement
+	// but doesn't change TurnNumber. We set it to -1 (an impossible computeTurnNumber result)
+	// so that the stale-turn detection in loadCharacterForCombat always triggers StartTurn.
+	// This fixes a bug where the action economy was not reset between turns, causing
+	// "insufficient action" errors when the player's turn came back around.
+	if updatedData.ActionEconomy != nil {
+		updatedData.ActionEconomy.TurnNumber = -1
+	}
 	_, err = o.charRepo.Update(ctx, characterrepo.UpdateInput{
 		Character: &entities.Character{
 			Data:       updatedData,
@@ -349,7 +367,7 @@ func (o *Orchestrator) ResolveAttack(ctx context.Context, input *ResolveAttackIn
 		return nil, fmt.Errorf("failed to load monster conditions: %w", err)
 	}
 
-	// 7. Get weapon and equipment slots from equipped items (with fallback to greataxe)
+	// 7. Get weapon and equipment slots from equipped items (with fallback to unarmed strike)
 	weapon, equipmentSlots := o.getEquippedWeaponAndSlots(ctx, input.AttackerID)
 
 	// 8. Build GameContext with character equipment and ability scores for combat resolution
@@ -399,7 +417,7 @@ func (o *Orchestrator) ResolveAttack(ctx context.Context, input *ResolveAttackIn
 		maResult, _ := actions.CheckAndGrantMartialArtsBonusStrike(ctx, &actions.MartialArtsGranterInput{
 			CharacterID:   input.AttackerID,
 			WeaponID:      weapon.ID,
-			IsUnarmed:     false, // TODO: Detect unarmed strikes when implemented
+			IsUnarmed:     weapon.ID == weapons.UnarmedStrike,
 			SourceAbility: "attack",
 			EventBus:      bus,
 		})
@@ -516,7 +534,25 @@ func (o *Orchestrator) ResolveAttack(ctx context.Context, input *ResolveAttackIn
 		}
 	}
 
-	// 17. Publish AttackResolved event
+	// 17. Build entity state protos for attacker and target (if Entities map is populated)
+	var attackerState, targetState *pb.EntityState
+	if encOutput.Data.Entities != nil {
+		if asd, ok := encOutput.Data.Entities[input.AttackerID]; ok && asd != nil {
+			// Build from a copy to avoid mutating the repo-loaded struct.
+			asdCopy := *asd
+			asdCopy.ToolkitData = charOutput.Character.Data
+			applyCurrentCombatHP(charOutput.Character.Data, encOutput.Data.CharacterHP)
+			attackerState = entities.ToEntityStateProto(&entities.ToEntityStateProtoInput{EntityStateData: &asdCopy})
+		}
+		if tsd, ok := encOutput.Data.Entities[input.TargetID]; ok && tsd != nil {
+			// Build from a copy to avoid mutating the repo-loaded struct.
+			tsdCopy := *tsd
+			tsdCopy.ToolkitData = monsterData
+			targetState = entities.ToEntityStateProto(&entities.ToEntityStateProtoInput{EntityStateData: &tsdCopy})
+		}
+	}
+
+	// 17b. Publish AttackResolved event
 	o.publishEvent(ctx, input.EncounterID, entities.EventTypeAttackResolved, &entities.AttackResolvedEvent{
 		AttackerID:    input.AttackerID,
 		TargetID:      input.TargetID,
@@ -527,6 +563,8 @@ func (o *Orchestrator) ResolveAttack(ctx context.Context, input *ResolveAttackIn
 		RoomOrigin:    attackRoomOrigin,
 		Walls:         dungeonWalls,
 		GrantedAction: grantedActionInfo,
+		AttackerState: attackerState,
+		TargetState:   targetState,
 	})
 
 	// 18. Check for dungeon victory if monster died
@@ -540,6 +578,20 @@ func (o *Orchestrator) ResolveAttack(ctx context.Context, input *ResolveAttackIn
 		MonsterDead:   newHP <= 0,
 		GrantedAction: grantedAction,
 	}, nil
+}
+
+// applyCurrentCombatHP overrides the character Data's HitPoints with the
+// current combat-tracked HP from the encounter's CharacterHP map.
+// Without this, freshly-loaded character data carries full HP (from creation
+// or last rest) instead of the damage-tracked value, causing the UI to show
+// the attacker at full health after they have taken damage.
+func applyCurrentCombatHP(charData *character.Data, characterHP map[string]int) {
+	if charData == nil || characterHP == nil {
+		return
+	}
+	if currentHP, ok := characterHP[charData.ID]; ok {
+		charData.HitPoints = currentHP
+	}
 }
 
 // convertToolkitBreakdown maps toolkit DamageBreakdown to orchestrator type
@@ -837,6 +889,12 @@ func (o *Orchestrator) createDungeonWithGenerator(
 		CombatEnded:       false,
 	}
 
+	// Build unified entity map for the encounter
+	entityMap, err := o.buildEntityMap(ctx, roomData, input.CharacterIDs, monsters, generatedDungeon.StartRoom)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build entity map: %w", err)
+	}
+
 	// Save encounter data
 	_, err = o.encRepo.Save(ctx, &encounterrepo.SaveInput{
 		EncounterID:       encounterID,
@@ -848,6 +906,7 @@ func (o *Orchestrator) createDungeonWithGenerator(
 		Monsters:          monsters,
 		HasBossRoom:       dungeonEntity.BossRoomID != "",
 		CharacterHP:       characterHP,
+		Entities:          entityMap,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to save encounter: %w", err)
@@ -864,6 +923,7 @@ func (o *Orchestrator) createDungeonWithGenerator(
 			MovementRemaining: combatState.MovementRemaining,
 			Monsters:          monsters,
 			CharacterHP:       characterHP,
+			Entities:          entityMap,
 		}
 
 		monsterTurns, err = o.executeMonsterTurns(ctx, encData, input.CharacterIDs)
@@ -874,12 +934,20 @@ func (o *Orchestrator) createDungeonWithGenerator(
 		combatState.ActiveIndex = encData.InitiativeData.Current
 		combatState.Round = encData.InitiativeData.Round
 
+		// Sync monster positions from roomData into entity map before persisting
+		for _, mt := range monsterTurns {
+			syncMonsterPositionFromRoom(entityMap, mt.MonsterID, roomData)
+		}
+		// Sync damaged character HP into entity map so events carry updated HP
+		syncCharacterHPFromMonsterTurns(entityMap, monsterTurns)
+
 		_, err = o.encRepo.Update(ctx, &encounterrepo.UpdateInput{
 			EncounterID:    encounterID,
 			InitiativeData: encData.InitiativeData,
 			Monsters:       encData.Monsters,
 			RoomData:       encData.RoomData,
 			CharacterHP:    encData.CharacterHP,
+			Entities:       entityMap,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("failed to save initiative after monster turns: %w", err)
@@ -1019,6 +1087,110 @@ func (o *Orchestrator) convertToWallInfo(room *dungeon.Room) []WallInfo {
 	}
 
 	return walls
+}
+
+// buildRoomLayoutProto converts a dungeon.Room and its absolute origin to a proto RoomLayout.
+// The origin is the room's position in dungeon-space; walls are stored in room-local coordinates
+// and are passed through as-is here (the client applies the origin offset for rendering).
+//
+//nolint:gosec // G115: Game values are bounded by room size limits, no overflow risk
+func buildRoomLayoutProto(room *dungeon.Room, origin *dungeon.Position) *pb.RoomLayout {
+	if room == nil {
+		return nil
+	}
+
+	shape := room.Shape
+	if shape == nil {
+		return nil
+	}
+
+	// Convert dungeon GridType to proto GridType.
+	var gridType apiv1alpha1.GridType
+	switch shape.GridType {
+	case dungeon.GridTypeHex:
+		gridType = apiv1alpha1.GridType_GRID_TYPE_HEX_POINTY
+	case dungeon.GridTypeSquare:
+		gridType = apiv1alpha1.GridType_GRID_TYPE_SQUARE
+	default:
+		gridType = apiv1alpha1.GridType_GRID_TYPE_HEX_POINTY // dungeon default
+	}
+
+	// Convert origin to proto Position.
+	var protoOrigin *apiv1alpha1.Position
+	if origin != nil {
+		protoOrigin = &apiv1alpha1.Position{
+			X: float64(origin.X),
+			Y: float64(origin.Y),
+			Z: float64(origin.Z),
+		}
+	}
+
+	// Convert walls.
+	var protoWalls []*apiv1alpha1.Wall
+	if len(room.Walls) > 0 {
+		protoWalls = make([]*apiv1alpha1.Wall, len(room.Walls))
+		for i, w := range room.Walls {
+			material := "stone"
+			if w.Type == dungeon.WallTypeDestructible {
+				material = "wood"
+			}
+			protoWalls[i] = &apiv1alpha1.Wall{
+				Start: &apiv1alpha1.Position{
+					X: float64(w.Start.X),
+					Y: float64(w.Start.Y),
+					Z: float64(w.Start.Z),
+				},
+				End: &apiv1alpha1.Position{
+					X: float64(w.End.X),
+					Y: float64(w.End.Y),
+					Z: float64(w.End.Z),
+				},
+				Material:          material,
+				BlocksMovement:    w.BlocksMovement,
+				BlocksLineOfSight: w.BlocksLineOfSight,
+			}
+		}
+	}
+
+	return &pb.RoomLayout{
+		Id:       room.ID,
+		Type:     "dungeon",
+		Width:    int32(shape.Width),
+		Height:   int32(shape.Height),
+		GridType: gridType,
+		Walls:    protoWalls,
+		Origin:   protoOrigin,
+	}
+}
+
+// buildRoomsMap constructs the RoomLayout proto map for all revealed rooms in a dungeon.
+func buildRoomsMap(dng *entities.Dungeon) map[string]*pb.RoomLayout {
+	if dng == nil || len(dng.RevealedRooms) == 0 {
+		return nil
+	}
+
+	result := make(map[string]*pb.RoomLayout, len(dng.RevealedRooms))
+	for roomID := range dng.RevealedRooms {
+		room := dng.GetRoom(roomID)
+		if room == nil {
+			continue
+		}
+		var originPtr *dungeon.Position
+		if dng.RoomOrigins != nil {
+			if origin, ok := dng.RoomOrigins[roomID]; ok {
+				originPtr = &origin
+			}
+		}
+		layout := buildRoomLayoutProto(room, originPtr)
+		if layout != nil {
+			result[roomID] = layout
+		}
+	}
+
+	if len(result) == 0 {
+		return nil
+	}
+	return result
 }
 
 // getPlayerSpawnPositions extracts player spawn positions from a room as cube coordinates
@@ -1592,7 +1764,31 @@ func (o *Orchestrator) MoveCharacter(ctx context.Context, input *MoveCharacterIn
 		return nil, fmt.Errorf("failed to save updated room: %w", err)
 	}
 
-	// 9. Publish MovementCompleted event
+	// 9. Build entity state proto for the moved entity (if Entities map is populated)
+	var updatedEntityState *pb.EntityState
+	if encOutput.Data.Entities != nil {
+		if esd, ok := encOutput.Data.Entities[input.EntityID]; ok && esd != nil {
+			// Update position to the new target position
+			esd.Position = cubeToPosition(targetCube)
+			updatedEntityState = entities.ToEntityStateProto(&entities.ToEntityStateProtoInput{EntityStateData: esd})
+
+			// Persist the updated entity position
+			_, err = o.encRepo.Update(ctx, &encounterrepo.UpdateInput{
+				EncounterID: input.EncounterID,
+				Entities:    map[string]*entities.EntityStateData{input.EntityID: esd},
+			})
+			if err != nil {
+				return nil, fmt.Errorf("failed to persist entity position: %w", err)
+			}
+		}
+	}
+
+	// 9b. Build combat state proto for MovementCompleted event (reflects updated movement remaining)
+	encOutput.Data.MovementRemaining = movementRemaining
+	moveCombatState := o.buildCombatState(input.EncounterID, encOutput.Data)
+	moveCombatStateProto := entities.CombatStateToProto(moveCombatState)
+
+	// 9c. Publish MovementCompleted event
 	o.publishEvent(ctx, input.EncounterID, entities.EventTypeMovementCompleted, &entities.MovementCompletedEvent{
 		EntityID:   input.EntityID,
 		EntityType: entityType,
@@ -1606,6 +1802,8 @@ func (o *Orchestrator) MoveCharacter(ctx context.Context, input *MoveCharacterIn
 		UpdatedRoom:       roomData,
 		RoomOrigin:        moveRoomOrigin,
 		Walls:             dungeonWalls,
+		UpdatedEntity:     updatedEntityState,
+		CombatStateProto:  moveCombatStateProto,
 	})
 
 	// 10. Return success with updated position
@@ -1748,7 +1946,20 @@ func (o *Orchestrator) EndTurn(ctx context.Context, input *EndTurnInput) (*EndTu
 		o.checkAndHandleFailure(ctx, input.EncounterID, encOutput.Data)
 	}
 
-	// 9. Persist updated state (including monster state and position changes from their turns)
+	// 9. Sync monster positions from roomData into entity map before persisting
+	var persistRoomData *spatial.RoomData
+	if encOutput.Data.RoomData != nil {
+		if rd, ok := encOutput.Data.RoomData.(*spatial.RoomData); ok {
+			persistRoomData = rd
+		}
+	}
+	for _, mt := range monsterTurns {
+		syncMonsterPositionFromRoom(encOutput.Data.Entities, mt.MonsterID, persistRoomData)
+	}
+	// Sync damaged character HP into entity map so MonsterTurnCompleted events carry updated HP
+	syncCharacterHPFromMonsterTurns(encOutput.Data.Entities, monsterTurns)
+
+	// Persist updated state (including monster state and position changes from their turns)
 	_, err = o.encRepo.Update(ctx, &encounterrepo.UpdateInput{
 		EncounterID:       input.EncounterID,
 		InitiativeData:    initiativeData,
@@ -1757,6 +1968,7 @@ func (o *Orchestrator) EndTurn(ctx context.Context, input *EndTurnInput) (*EndTu
 		Monsters:          encOutput.Data.Monsters,          // Persist monster HP/state changes
 		RoomData:          encOutput.Data.RoomData,          // Persist monster position changes
 		CharacterHP:       encOutput.Data.CharacterHP,       // Persist character HP changes from monster attacks
+		Entities:          encOutput.Data.Entities,          // Persist entity state with synced monster positions
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to save turn state: %w", err)
@@ -1822,6 +2034,29 @@ func (o *Orchestrator) EndTurn(ctx context.Context, input *EndTurnInput) (*EndTu
 	}
 
 	// 12. Publish events
+	// Build entity state protos for delta events
+	var turnEndedEntities []*pb.EntityState
+	turnCombatStateProto := entities.CombatStateToProto(combatState)
+
+	// Collect all entity IDs that may have changed during the turn
+	if encOutput.Data.Entities != nil {
+		changedIDs := make(map[string]bool)
+		changedIDs[previousEntityID] = true
+		for _, mt := range monsterTurns {
+			changedIDs[mt.MonsterID] = true
+			for _, action := range mt.Actions {
+				if action.TargetID != "" {
+					changedIDs[action.TargetID] = true
+				}
+			}
+		}
+		for id := range changedIDs {
+			if esd, ok := encOutput.Data.Entities[id]; ok && esd != nil {
+				turnEndedEntities = append(turnEndedEntities, entities.ToEntityStateProto(&entities.ToEntityStateProtoInput{EntityStateData: esd}))
+			}
+		}
+	}
+
 	// Publish TurnEnded event
 	o.publishEvent(ctx, input.EncounterID, entities.EventTypeTurnEnded, &entities.TurnEndedEvent{
 		PreviousEntityID: previousEntityID,
@@ -1832,10 +2067,33 @@ func (o *Orchestrator) EndTurn(ctx context.Context, input *EndTurnInput) (*EndTu
 		Room:             turnEndedRoomData,
 		RoomOrigin:       turnRoomOrigin,
 		Walls:            dungeonWalls,
+		UpdatedEntities:  turnEndedEntities,
+		CombatStateProto: turnCombatStateProto,
 	})
 
 	// Publish MonsterTurnCompleted events for each monster turn
 	for _, mt := range monsterTurns {
+		// Sync monster's updated position from room data into the Entities map before building proto.
+		// executeMonsterTurns updates roomData.CubeEntities but not encOutput.Data.Entities.
+		syncMonsterPositionFromRoom(encOutput.Data.Entities, mt.MonsterID, turnEndedRoomData)
+
+		// Build per-monster updated entities: the monster + any damaged characters
+		var mtUpdatedEntities []*pb.EntityState
+		if encOutput.Data.Entities != nil {
+			mtChangedIDs := make(map[string]bool)
+			mtChangedIDs[mt.MonsterID] = true
+			for _, action := range mt.Actions {
+				if action.TargetID != "" {
+					mtChangedIDs[action.TargetID] = true
+				}
+			}
+			for id := range mtChangedIDs {
+				if esd, ok := encOutput.Data.Entities[id]; ok && esd != nil {
+					mtUpdatedEntities = append(mtUpdatedEntities, entities.ToEntityStateProto(&entities.ToEntityStateProtoInput{EntityStateData: esd}))
+				}
+			}
+		}
+
 		o.publishEvent(ctx, input.EncounterID, entities.EventTypeMonsterTurnCompleted, &entities.MonsterTurnCompletedEvent{
 			MonsterID:         mt.MonsterID,
 			MonsterName:       mt.MonsterName,
@@ -1845,13 +2103,17 @@ func (o *Orchestrator) EndTurn(ctx context.Context, input *EndTurnInput) (*EndTu
 			RoomOrigin:        turnRoomOrigin,
 			Walls:             dungeonWalls,
 			UpdatedCharacters: mt.UpdatedCharacters,
+			UpdatedEntities:   mtUpdatedEntities,
+			CombatStateProto:  turnCombatStateProto,
 		})
 	}
 
 	// Publish CombatEnded event if combat ended
 	if combatEnded {
+		combatEndedStateData := o.buildEncounterStateSnapshot(ctx, input.EncounterID, encOutput.Data, combatState)
 		o.publishEvent(ctx, input.EncounterID, entities.EventTypeCombatEnded, &entities.CombatEndedEvent{
-			EncounterResult: encounterResult,
+			EncounterResult:    encounterResult,
+			EncounterStateData: combatEndedStateData,
 		})
 	}
 
@@ -2019,7 +2281,38 @@ func convertCharActionsToEntities(actions []character.AvailableAction) []*entiti
 			Reason:   a.Reason,
 		}
 	}
-	return result
+	return addUnarmedStrikeOption(result)
+}
+
+// addUnarmedStrikeOption ensures Unarmed Strike appears as an available action whenever
+// Strike is available. In D&D 5e every character can make an unarmed strike in place of
+// a weapon attack. The toolkit tracks this as a separate action when granted via Martial
+// Arts bonus, but it should also appear as a primary attack option alongside Strike.
+func addUnarmedStrikeOption(actions []*entities.AvailableAction) []*entities.AvailableAction {
+	hasStrike := false
+	hasUnarmedStrike := false
+	strikeCanUse := false
+
+	for _, a := range actions {
+		if a.ActionID == refs.Actions.Strike().ID {
+			hasStrike = true
+			strikeCanUse = a.CanUse
+		}
+		if a.ActionID == refs.Actions.UnarmedStrike().ID {
+			hasUnarmedStrike = true
+		}
+	}
+
+	// Add Unarmed Strike when Strike is available but Unarmed Strike is not yet listed
+	if hasStrike && !hasUnarmedStrike {
+		actions = append(actions, &entities.AvailableAction{
+			ActionID: refs.Actions.UnarmedStrike().ID,
+			Name:     "Unarmed Strike",
+			CanUse:   strikeCanUse,
+		})
+	}
+
+	return actions
 }
 
 // protoAbilityIDToRef maps a proto CombatAbilityId to a toolkit ref.
@@ -2300,6 +2593,14 @@ func (o *Orchestrator) ActivateFeature(
 
 	// 7. Publish FeatureActivatedEvent for multiplayer broadcast
 	updatedData := char.ToData()
+
+	// Update entity ToolkitData so future snapshot events reflect the change
+	if encOutput.Data.Entities != nil {
+		if esd, ok := encOutput.Data.Entities[input.CharacterID]; ok && esd != nil {
+			esd.ToolkitData = updatedData
+		}
+	}
+
 	if abilityOutput.Success {
 		o.publishEvent(ctx, input.EncounterID, entities.EventTypeFeatureActivated, &entities.FeatureActivatedEvent{
 			CharacterID:   input.CharacterID,
@@ -2583,13 +2884,17 @@ func (o *Orchestrator) checkAndHandleVictory(
 		bossName = bossData.Name
 	}
 
+	// Build snapshot for victory event
+	victoryStateData := o.buildEncounterStateSnapshot(ctx, encounterID, enc, nil)
+
 	// Publish victory event
 	o.publishEvent(ctx, encounterID, entities.EventTypeDungeonVictory, &entities.DungeonVictoryEvent{
-		DungeonID:      dng.ID,
-		BossID:         killedMonsterID,
-		BossName:       bossName,
-		MonstersKilled: dng.MonstersKilled,
-		RoomsExplored:  len(dng.RevealedRooms),
+		DungeonID:          dng.ID,
+		BossID:             killedMonsterID,
+		BossName:           bossName,
+		MonstersKilled:     dng.MonstersKilled,
+		RoomsExplored:      len(dng.RevealedRooms),
+		EncounterStateData: victoryStateData,
 	})
 }
 
@@ -2653,10 +2958,14 @@ func (o *Orchestrator) checkAndHandleFailure(
 		return
 	}
 
+	// Build snapshot for failure event
+	failureStateData := o.buildEncounterStateSnapshot(ctx, encounterID, enc, nil)
+
 	// Publish failure event
 	o.publishEvent(ctx, encounterID, entities.EventTypeDungeonFailure, &entities.DungeonFailureEvent{
-		DungeonID: dng.ID,
-		Reason:    "tpk", // Total party kill
+		DungeonID:          dng.ID,
+		Reason:             "tpk", // Total party kill
+		EncounterStateData: failureStateData,
 	})
 }
 
@@ -3007,7 +3316,12 @@ func (o *Orchestrator) OpenDoor(
 		}
 	}
 
-	// 17. Publish RoomRevealed event
+	// 17. Add new monster entities to encounter Entities map for snapshot
+	o.addMonstersToEntityMap(encOutput.Data, monsters, revealedRoomID)
+
+	// Build snapshot for RoomRevealed event
+	roomRevealedStateData := o.buildEncounterStateSnapshot(ctx, dng.EncounterID, encOutput.Data, combatState)
+
 	// Look up room origin from stored room origins for the event
 	var revealedRoomOrigin *dungeon.Position
 	if dng.RoomOrigins != nil {
@@ -3017,15 +3331,16 @@ func (o *Orchestrator) OpenDoor(
 	}
 
 	o.publishEvent(ctx, dng.EncounterID, entities.EventTypeRoomRevealed, &entities.RoomRevealedEvent{
-		DungeonID:    dng.ID,
-		ConnectionID: input.ConnectionID,
-		RevealedRoom: revealedSpatialRoom,
-		RoomOrigin:   revealedRoomOrigin,
-		Walls:        revealedRoom.Walls,
-		NewDoors:     convertDoorsToEntityDoors(newDoors),
-		Monsters:     monsterStates,
-		CombatState:  combatState,
-		MonsterTurns: nil, // Monsters don't immediately act; they wait for their turn
+		DungeonID:          dng.ID,
+		ConnectionID:       input.ConnectionID,
+		RevealedRoom:       revealedSpatialRoom,
+		RoomOrigin:         revealedRoomOrigin,
+		Walls:              revealedRoom.Walls,
+		NewDoors:           convertDoorsToEntityDoors(newDoors),
+		Monsters:           monsterStates,
+		CombatState:        combatState,
+		MonsterTurns:       nil, // Monsters don't immediately act; they wait for their turn
+		EncounterStateData: roomRevealedStateData,
 	})
 
 	// Calculate room offset from stored room origins
@@ -3274,7 +3589,7 @@ func (o *Orchestrator) SetReady(
 
 // StartCombat begins combat (host only, all players must be ready)
 // Generates a dungeon using the dungeon generator and starts combat in the first room.
-func (o *Orchestrator) StartCombat(
+func (o *Orchestrator) StartCombat( //nolint:gocyclo // Large orchestration function; complexity is inherent
 	ctx context.Context,
 	input *StartCombatInput,
 ) (*StartCombatOutput, error) {
@@ -3471,7 +3786,12 @@ func (o *Orchestrator) StartCombat(
 		}
 	}
 
-	// 13. Update encounter state to active with fresh action economy
+	// 13. Build unified entity map and update encounter state to active
+	entityMap, err := o.buildEntityMap(ctx, roomData, characterIDs, monsters, generatedDungeon.StartRoom)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build entity map: %w", err)
+	}
+
 	activeState := encounterrepo.StateActive
 	initialActionEconomy := entities.NewActionEconomyState()
 	hasBossRoom := dungeonEntity.BossRoomID != ""
@@ -3485,6 +3805,7 @@ func (o *Orchestrator) StartCombat(
 		Monsters:          monsters,
 		HasBossRoom:       ptrBool(hasBossRoom),
 		CharacterHP:       characterHP,
+		Entities:          entityMap,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to update encounter: %w", err)
@@ -3513,6 +3834,7 @@ func (o *Orchestrator) StartCombat(
 			MovementRemaining: combatState.MovementRemaining,
 			Monsters:          monsters,
 			CharacterHP:       characterHP,
+			Entities:          entityMap,
 		}
 
 		monsterTurns, err = o.executeMonsterTurns(ctx, encData, characterIDs)
@@ -3523,12 +3845,18 @@ func (o *Orchestrator) StartCombat(
 		combatState.ActiveIndex = encData.InitiativeData.Current
 		combatState.Round = encData.InitiativeData.Round
 
+		// Sync monster positions from roomData into entity map before persisting
+		for _, mt := range monsterTurns {
+			syncMonsterPositionFromRoom(entityMap, mt.MonsterID, roomData)
+		}
+
 		_, err = o.encRepo.Update(ctx, &encounterrepo.UpdateInput{
 			EncounterID:    input.EncounterID,
 			InitiativeData: encData.InitiativeData,
 			Monsters:       encData.Monsters,
 			RoomData:       encData.RoomData,
 			CharacterHP:    encData.CharacterHP,
+			Entities:       entityMap,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("failed to save initiative after monster turns: %w", err)
@@ -3578,21 +3906,72 @@ func (o *Orchestrator) StartCombat(
 	// 18b. Get room origin for the start room
 	startRoomOrigin := getCurrentRoomOrigin(dungeonEntity)
 
-	// 19. Publish CombatStarted event (includes monster turns if monsters won initiative)
+	// 19. Build EncounterStateData proto for the CombatStarted event
+	doorMap := doorsToMap(convertDoorsToEntityDoors(doors))
+
+	// Build room layout for the start room only (the only revealed room at combat start).
+	startRoomLayouts := map[string]*pb.RoomLayout{}
+	if startRoomLayout := buildRoomLayoutProto(startRoom, startRoomOrigin); startRoomLayout != nil {
+		startRoomLayouts[generatedDungeon.StartRoom] = startRoomLayout
+	}
+
+	encounterStateOutput, encounterStateErr := entities.BuildEncounterStateData(&entities.BuildEncounterStateDataInput{
+		EncounterID:     input.EncounterID,
+		DungeonID:       dungeonEntity.ID,
+		Entities:        entityMap,
+		CurrentRoomID:   generatedDungeon.StartRoom,
+		RevealedRoomIDs: []string{generatedDungeon.StartRoom},
+		Combat:          combatState,
+		DungeonState:    entities.DungeonStateActive,
+		Doors:           doorMap,
+		Rooms:           startRoomLayouts,
+	})
+	var encounterStateData *pb.EncounterStateData
+	if encounterStateOutput != nil && encounterStateErr == nil {
+		encounterStateData = encounterStateOutput.EncounterStateData
+	}
+
+	// 19b. Publish CombatStarted event (includes monster turns if monsters won initiative)
 	o.publishEvent(ctx, input.EncounterID, entities.EventTypeCombatStarted, &entities.CombatStartedEvent{
-		CombatState:  combatState,
-		Room:         roomData,
-		RoomOrigin:   startRoomOrigin,
-		Walls:        startRoom.Walls,
-		Party:        party,
-		Monsters:     monsterStates,
-		Doors:        convertDoorsToEntityDoors(doors),
-		DungeonID:    dungeonEntity.ID,
-		MonsterTurns: convertMonsterTurnsToEntityEvents(monsterTurns, roomData),
+		CombatState:        combatState,
+		Room:               roomData,
+		RoomOrigin:         startRoomOrigin,
+		Walls:              startRoom.Walls,
+		Party:              party,
+		Monsters:           monsterStates,
+		Doors:              convertDoorsToEntityDoors(doors),
+		DungeonID:          dungeonEntity.ID,
+		MonsterTurns:       convertMonsterTurnsToEntityEvents(monsterTurns, roomData),
+		EncounterStateData: encounterStateData,
 	})
 
 	// 20. Publish MonsterTurnCompleted events if monsters went first
+	// Sync damaged character HP into entity map so MonsterTurnCompleted events carry updated HP
+	syncCharacterHPFromMonsterTurns(entityMap, monsterTurns)
+	startCombatStateProto := entities.CombatStateToProto(combatState)
 	for _, mt := range monsterTurns {
+		// Sync monster's updated position from room data into the entity map before building proto.
+		// entityMap was built before executeMonsterTurns, so positions may be stale.
+		// roomData.CubeEntities has the authoritative post-movement positions.
+		syncMonsterPositionFromRoom(entityMap, mt.MonsterID, roomData)
+
+		// Build per-monster updated entities from the entity map
+		var mtUpdatedEntities []*pb.EntityState
+		if entityMap != nil {
+			mtChangedIDs := make(map[string]bool)
+			mtChangedIDs[mt.MonsterID] = true
+			for _, action := range mt.Actions {
+				if action.TargetID != "" {
+					mtChangedIDs[action.TargetID] = true
+				}
+			}
+			for id := range mtChangedIDs {
+				if esd, ok := entityMap[id]; ok && esd != nil {
+					mtUpdatedEntities = append(mtUpdatedEntities, entities.ToEntityStateProto(&entities.ToEntityStateProtoInput{EntityStateData: esd}))
+				}
+			}
+		}
+
 		o.publishEvent(ctx, input.EncounterID, entities.EventTypeMonsterTurnCompleted, &entities.MonsterTurnCompletedEvent{
 			MonsterID:         mt.MonsterID,
 			MonsterName:       mt.MonsterName,
@@ -3602,6 +3981,8 @@ func (o *Orchestrator) StartCombat(
 			RoomOrigin:        startRoomOrigin,
 			Walls:             startRoom.Walls,
 			UpdatedCharacters: mt.UpdatedCharacters,
+			UpdatedEntities:   mtUpdatedEntities,
+			CombatStateProto:  startCombatStateProto,
 		})
 	}
 
@@ -3874,8 +4255,10 @@ func (o *Orchestrator) PlayerReconnected(
 
 	// 9. Publish CombatResumed event if we resumed
 	if shouldResume {
+		resumedStateData := o.buildEncounterStateSnapshot(ctx, input.EncounterID, encOutput.Data, nil)
 		o.publishEvent(ctx, input.EncounterID, entities.EventTypeCombatResumed, &entities.CombatResumedEvent{
-			ResumedBy: input.PlayerID,
+			ResumedBy:          input.PlayerID,
+			EncounterStateData: resumedStateData,
 		})
 	}
 
@@ -4020,6 +4403,11 @@ func (o *Orchestrator) GetEncounterState(ctx context.Context, input *GetEncounte
 				}
 			}
 		}
+	}
+
+	// Build unified entity state snapshot when combat is active
+	if encData.State == encounterrepo.StateActive || encData.State == encounterrepo.StatePaused {
+		output.EncounterStateData = o.buildEncounterStateSnapshot(ctx, encData.ID, encData, output.CombatState)
 	}
 
 	return output, nil
@@ -4372,6 +4760,33 @@ func (o *Orchestrator) executeStrike(
 	// 15. Build combat state for response
 	combatState := o.buildCombatState(input.EncounterID, encData)
 
+	// 15b. Build entity state protos for attacker and target so the event carries updated HP
+	var attackerState, targetState *pb.EntityState
+	if encData.Entities != nil {
+		if asd, ok := encData.Entities[input.EntityID]; ok && asd != nil {
+			asdCopy := *asd
+			asdCopy.ToolkitData = charOutput.Character.Data
+			applyCurrentCombatHP(charOutput.Character.Data, encData.CharacterHP)
+			attackerState = entities.ToEntityStateProto(&entities.ToEntityStateProtoInput{EntityStateData: &asdCopy})
+		}
+		if tsd, ok := encData.Entities[input.TargetID]; ok && tsd != nil {
+			tsdCopy := *tsd
+			tsdCopy.ToolkitData = monsterData
+			targetState = entities.ToEntityStateProto(&entities.ToEntityStateProtoInput{EntityStateData: &tsdCopy})
+		}
+	}
+
+	// 15c. Publish AttackResolved event so streamed clients see updated HP
+	o.publishEvent(ctx, input.EncounterID, entities.EventTypeAttackResolved, &entities.AttackResolvedEvent{
+		AttackerID:    input.EntityID,
+		TargetID:      input.TargetID,
+		Result:        attackResult,
+		TargetHP:      newHP,
+		TargetDead:    newHP <= 0,
+		AttackerState: attackerState,
+		TargetState:   targetState,
+	})
+
 	// 16. Check for dungeon victory if monster died
 	if newHP <= 0 {
 		o.checkAndHandleVictory(ctx, input.EncounterID, encData, input.TargetID)
@@ -4510,6 +4925,33 @@ func (o *Orchestrator) executeFlurryStrike(
 
 	combatState := o.buildCombatState(input.EncounterID, encData)
 
+	// Build entity state protos for attacker and target so the event carries updated HP
+	var flurryAttackerState, flurryTargetState *pb.EntityState
+	if encData.Entities != nil {
+		if asd, ok := encData.Entities[input.EntityID]; ok && asd != nil {
+			asdCopy := *asd
+			asdCopy.ToolkitData = charOutput.Character.Data
+			applyCurrentCombatHP(charOutput.Character.Data, encData.CharacterHP)
+			flurryAttackerState = entities.ToEntityStateProto(&entities.ToEntityStateProtoInput{EntityStateData: &asdCopy})
+		}
+		if tsd, ok := encData.Entities[input.TargetID]; ok && tsd != nil {
+			tsdCopy := *tsd
+			tsdCopy.ToolkitData = monsterData
+			flurryTargetState = entities.ToEntityStateProto(&entities.ToEntityStateProtoInput{EntityStateData: &tsdCopy})
+		}
+	}
+
+	// Publish AttackResolved event so streamed clients see updated HP
+	o.publishEvent(ctx, input.EncounterID, entities.EventTypeAttackResolved, &entities.AttackResolvedEvent{
+		AttackerID:    input.EntityID,
+		TargetID:      input.TargetID,
+		Result:        attackResult,
+		TargetHP:      monsterInstance.HP(),
+		TargetDead:    monsterInstance.HP() <= 0,
+		AttackerState: flurryAttackerState,
+		TargetState:   flurryTargetState,
+	})
+
 	if monsterInstance.HP() <= 0 {
 		o.checkAndHandleVictory(ctx, input.EncounterID, encData, input.TargetID)
 	}
@@ -4525,14 +4967,17 @@ func (o *Orchestrator) executeFlurryStrike(
 	}, nil
 }
 
-// executeUnarmedStrike handles UNARMED_STRIKE actions (Martial Arts bonus strike).
-// Mirrors executeFlurryStrike but consumes martial arts bonus capacity.
+// executeUnarmedStrike handles UNARMED_STRIKE actions.
+// First tries as a martial arts bonus strike (consumes GrantedMartialArtsBonus).
+// If no bonus capacity, falls back to a primary attack with an unarmed strike weapon
+// (consumes GrantedAttacks via the Strike action). This allows any character to use
+// unarmed strike as their primary attack, not just as a Monk bonus action.
 // Martial Arts conditions upgrade the 1d1 base damage via the damage chain.
 func (o *Orchestrator) executeUnarmedStrike(
 	ctx context.Context,
 	input *ExecuteActionInput,
 	encData *encounterrepo.EncounterData,
-	_ *entities.ActionEconomyState,
+	actionEconomy *entities.ActionEconomyState,
 ) (*ExecuteActionOutput, error) {
 	// 1. Validate target
 	if input.TargetID == "" {
@@ -4545,7 +4990,7 @@ func (o *Orchestrator) executeUnarmedStrike(
 		return nil, err
 	}
 
-	// 3. Delegate action economy check to toolkit Character
+	// 3. Try as martial arts bonus strike first (uses GrantedMartialArtsBonus)
 	execOutput, err := char.ExecuteAction(ctx, &character.ExecuteActionInput{
 		ActionRef: refs.Actions.UnarmedStrike(),
 		TargetID:  input.TargetID,
@@ -4554,14 +4999,12 @@ func (o *Orchestrator) executeUnarmedStrike(
 		return nil, fmt.Errorf("failed to execute action: %w", err)
 	}
 
+	// 4. If martial arts bonus is exhausted, fall back to primary attack with unarmed weapon.
+	// This routes through executeStrike which consumes GrantedAttacks.
 	if !execOutput.Success {
-		return &ExecuteActionOutput{
-			Success:            false,
-			Error:              execOutput.Error,
-			ActionEconomy:      encData.ActionEconomy,
-			AvailableAbilities: convertCharAbilitiesToEntities(execOutput.Abilities),
-			AvailableActions:   convertCharActionsToEntities(execOutput.Actions),
-		}, nil
+		unarmedInput := *input
+		unarmedInput.WeaponID = weapons.UnarmedStrike
+		return o.executeStrike(ctx, &unarmedInput, encData, actionEconomy, combat.AttackHandMain)
 	}
 
 	// 4. Load monster
@@ -4648,6 +5091,33 @@ func (o *Orchestrator) executeUnarmedStrike(
 	}
 
 	combatState := o.buildCombatState(input.EncounterID, encData)
+
+	// Build entity state protos for attacker and target so the event carries updated HP
+	var unarmedAttackerState, unarmedTargetState *pb.EntityState
+	if encData.Entities != nil {
+		if asd, ok := encData.Entities[input.EntityID]; ok && asd != nil {
+			asdCopy := *asd
+			asdCopy.ToolkitData = charOutput.Character.Data
+			applyCurrentCombatHP(charOutput.Character.Data, encData.CharacterHP)
+			unarmedAttackerState = entities.ToEntityStateProto(&entities.ToEntityStateProtoInput{EntityStateData: &asdCopy})
+		}
+		if tsd, ok := encData.Entities[input.TargetID]; ok && tsd != nil {
+			tsdCopy := *tsd
+			tsdCopy.ToolkitData = monsterData
+			unarmedTargetState = entities.ToEntityStateProto(&entities.ToEntityStateProtoInput{EntityStateData: &tsdCopy})
+		}
+	}
+
+	// Publish AttackResolved event so streamed clients see updated HP
+	o.publishEvent(ctx, input.EncounterID, entities.EventTypeAttackResolved, &entities.AttackResolvedEvent{
+		AttackerID:    input.EntityID,
+		TargetID:      input.TargetID,
+		Result:        attackResult,
+		TargetHP:      monsterInstance.HP(),
+		TargetDead:    monsterInstance.HP() <= 0,
+		AttackerState: unarmedAttackerState,
+		TargetState:   unarmedTargetState,
+	})
 
 	return &ExecuteActionOutput{
 		Success:            true,
@@ -4854,7 +5324,25 @@ func (o *Orchestrator) executeMove(
 		return nil, fmt.Errorf("failed to save encounter state: %w", err)
 	}
 
-	// 10. Publish MovementCompleted event
+	// 10. Build entity state proto for the moved entity (if Entities map is populated)
+	var execMoveEntityState *pb.EntityState
+	if encData.Entities != nil {
+		if esd, ok := encData.Entities[input.EntityID]; ok && esd != nil {
+			if finalPosition != nil {
+				esd.Position = &entities.Position{X: finalPosition.X, Y: finalPosition.Y, Z: finalPosition.Z}
+			}
+			execMoveEntityState = entities.ToEntityStateProto(&entities.ToEntityStateProtoInput{EntityStateData: esd})
+		}
+	}
+
+	// 11. Update movement remaining in encounter data for combat state
+	encData.MovementRemaining = newMovementRemaining
+
+	// 12. Build combat state for response
+	combatState := o.buildCombatState(input.EncounterID, encData)
+	execMoveCombatStateProto := entities.CombatStateToProto(combatState)
+
+	// 10b. Publish MovementCompleted event (after building combat state so it reflects updated movement)
 	o.publishEvent(ctx, input.EncounterID, entities.EventTypeMovementCompleted, &entities.MovementCompletedEvent{
 		EntityID:          input.EntityID,
 		EntityType:        entityType,
@@ -4864,13 +5352,9 @@ func (o *Orchestrator) executeMove(
 		UpdatedRoom:       roomData,
 		RoomOrigin:        execActionRoomOrigin,
 		Walls:             dungeonWalls,
+		UpdatedEntity:     execMoveEntityState,
+		CombatStateProto:  execMoveCombatStateProto,
 	})
-
-	// 11. Update movement remaining in encounter data for combat state
-	encData.MovementRemaining = newMovementRemaining
-
-	// 12. Build combat state for response
-	combatState := o.buildCombatState(input.EncounterID, encData)
 
 	// 13. Load character for available abilities/actions from toolkit
 	var availableAbilities []*entities.AvailableAbility
@@ -4896,4 +5380,198 @@ func (o *Orchestrator) executeMove(
 		AvailableAbilities: availableAbilities,
 		AvailableActions:   availableActions,
 	}, nil
+}
+
+// syncMonsterPositionFromRoom updates the monster's position in an entity map using the
+// authoritative position from room cube entities. executeMonsterTurns updates
+// roomData.CubeEntities but not the entity map, so this sync is needed before building
+// entity state protos for MonsterTurnCompleted events.
+func syncMonsterPositionFromRoom(entityMap map[string]*entities.EntityStateData, monsterID string, roomData *spatial.RoomData) {
+	if entityMap == nil || roomData == nil {
+		return
+	}
+	esd, ok := entityMap[monsterID]
+	if !ok || esd == nil {
+		return
+	}
+	if placement, exists := roomData.CubeEntities[monsterID]; exists {
+		esd.Position = cubeToPosition(placement.CubePosition)
+	}
+}
+
+// doorsToMap converts a slice of DoorInfo to a map keyed by ConnectionID.
+// This is used when building EncounterStateData from door info.
+func doorsToMap(doors []*entities.DoorInfo) map[string]*entities.DoorInfo {
+	if len(doors) == 0 {
+		return nil
+	}
+	result := make(map[string]*entities.DoorInfo, len(doors))
+	for _, d := range doors {
+		if d != nil {
+			result[d.ConnectionID] = d
+		}
+	}
+	return result
+}
+
+// cubeToPosition converts a spatial.CubeCoordinate to an entities.Position.
+func cubeToPosition(c spatial.CubeCoordinate) *entities.Position {
+	return &entities.Position{
+		X: float64(c.X),
+		Y: float64(c.Y),
+		Z: float64(c.Z),
+	}
+}
+
+// buildEntityMap builds the unified Entities map from room data, characters, and monsters.
+// It reads character data from the repo to populate ToolkitData and Appearance.
+func (o *Orchestrator) buildEntityMap(
+	ctx context.Context,
+	roomData *spatial.RoomData,
+	characterIDs []string,
+	monsters []*monster.Data,
+	roomID string,
+) (map[string]*entities.EntityStateData, error) {
+	entityMap := make(map[string]*entities.EntityStateData)
+
+	// Add characters
+	for _, characterID := range characterIDs {
+		charOutput, charErr := o.charRepo.Get(ctx, characterrepo.GetInput{ID: characterID})
+		if charErr != nil {
+			return nil, fmt.Errorf("failed to load character %s for entity map: %w", characterID, charErr)
+		}
+		if placement, exists := roomData.CubeEntities[characterID]; exists {
+			entityMap[characterID] = &entities.EntityStateData{
+				EntityID:    characterID,
+				EntityType:  entities.EntityTypeCharacter,
+				RoomID:      roomID,
+				ToolkitData: charOutput.Character.Data,
+				Position:    cubeToPosition(placement.CubePosition),
+				Size:        placement.Size,
+				Appearance:  charOutput.Character.Appearance,
+			}
+		}
+	}
+
+	// Add monsters
+	for _, m := range monsters {
+		if placement, exists := roomData.CubeEntities[m.ID]; exists {
+			entityMap[m.ID] = &entities.EntityStateData{
+				EntityID:    m.ID,
+				EntityType:  entities.EntityTypeMonster,
+				RoomID:      roomID,
+				ToolkitData: m,
+				Position:    cubeToPosition(placement.CubePosition),
+				Size:        placement.Size,
+			}
+		}
+	}
+
+	return entityMap, nil
+}
+
+// buildEncounterStateSnapshot builds a full EncounterStateData proto snapshot from the current
+// encounter and dungeon state. Used by snapshot events (CombatEnded, DungeonVictory, etc.).
+// Returns nil if the snapshot cannot be built (missing data is not a fatal error for events).
+func (o *Orchestrator) buildEncounterStateSnapshot(
+	ctx context.Context,
+	encounterID string,
+	enc *encounterrepo.EncounterData,
+	combatState *CombatState,
+) *pb.EncounterStateData {
+	if enc == nil || enc.Entities == nil {
+		return nil
+	}
+
+	// Load dungeon for room/door context
+	var dungeonID, currentRoomID string
+	var revealedRoomIDs []string
+	var dungeonState entities.DungeonState
+	var roomsCleared int
+	var doorMap map[string]*entities.DoorInfo
+	var roomLayoutMap map[string]*pb.RoomLayout
+
+	if o.dungeonRepo != nil {
+		dungeonOutput, err := o.dungeonRepo.GetByEncounterID(ctx, &dungeonrepo.GetByEncounterIDInput{
+			EncounterID: encounterID,
+		})
+		if err == nil && dungeonOutput.Dungeon != nil {
+			dng := dungeonOutput.Dungeon
+			dungeonID = dng.ID
+			currentRoomID = dng.CurrentRoomID
+			if currentRoomID == "" {
+				currentRoomID = dng.StartRoomID
+			}
+			for roomID := range dng.RevealedRooms {
+				revealedRoomIDs = append(revealedRoomIDs, roomID)
+			}
+			dungeonState = dng.State
+			roomsCleared = dng.MonstersKilled // Approximation: rooms cleared ~ monsters killed
+
+			// Build door map from all revealed rooms
+			allDoors := make([]*entities.DoorInfo, 0)
+			for roomID := range dng.RevealedRooms {
+				roomDoors := o.getDoorInfoForRoom(dng, roomID)
+				allDoors = append(allDoors, convertDoorsToEntityDoors(roomDoors)...)
+			}
+			doorMap = doorsToMap(allDoors)
+
+			// Build room layout map for all revealed rooms
+			roomLayoutMap = buildRoomsMap(dng)
+		}
+	}
+
+	// Build combat state if not provided
+	if combatState == nil {
+		combatState = o.buildCombatState(encounterID, enc)
+	}
+
+	output, err := entities.BuildEncounterStateData(&entities.BuildEncounterStateDataInput{
+		EncounterID:     encounterID,
+		DungeonID:       dungeonID,
+		Entities:        enc.Entities,
+		CurrentRoomID:   currentRoomID,
+		RevealedRoomIDs: revealedRoomIDs,
+		Combat:          combatState,
+		DungeonState:    dungeonState,
+		RoomsCleared:    roomsCleared,
+		Doors:           doorMap,
+		Rooms:           roomLayoutMap,
+	})
+	if err != nil || output == nil {
+		return nil
+	}
+
+	return output.EncounterStateData
+}
+
+// addMonstersToEntityMap adds newly spawned monsters (from room reveal) to the encounter's
+// Entities map so that subsequent snapshot events include them.
+func (o *Orchestrator) addMonstersToEntityMap(
+	enc *encounterrepo.EncounterData,
+	monsters []MonsterInfo,
+	roomID string,
+) {
+	if enc == nil || enc.Entities == nil || len(monsters) == 0 {
+		return
+	}
+
+	for _, m := range monsters {
+		cubeX := int(m.Position.X)
+		cubeZ := int(m.Position.Y)
+		cubeY := -cubeX - cubeZ
+		monsterData := o.findMonsterData(enc, m.ID)
+		enc.Entities[m.ID] = &entities.EntityStateData{
+			EntityID:   m.ID,
+			EntityType: entities.EntityTypeMonster,
+			RoomID:     roomID,
+			Position: &entities.Position{
+				X: float64(cubeX),
+				Y: float64(cubeY),
+				Z: float64(cubeZ),
+			},
+			Size:        1,
+			ToolkitData: monsterData,
+		}
+	}
 }

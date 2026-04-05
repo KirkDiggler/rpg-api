@@ -19,6 +19,10 @@ type BuildEncounterStateDataInput struct {
 	DungeonState    DungeonState
 	RoomsCleared    int
 	Doors           map[string]*DoorInfo
+	// Rooms holds pre-built RoomLayout protos keyed by room ID.
+	// Callers are responsible for constructing these from spatial/dungeon data
+	// so that the entities package does not depend on those packages.
+	Rooms map[string]*dnd5ev1alpha1.RoomLayout
 }
 
 // BuildEncounterStateDataOutput is the output for BuildEncounterStateData.
@@ -48,14 +52,15 @@ func BuildEncounterStateData(input *BuildEncounterStateDataInput) (*BuildEncount
 	state.Entities = buildEntityMap(input.Entities)
 
 	// Convert combat state
-	state.Combat = combatStateToProto(input.Combat)
+	state.Combat = CombatStateToProto(input.Combat)
 
 	// Convert doors
 	state.Doors = buildDoorMap(input.Doors)
 
-	// TODO: Convert rooms to RoomLayout map. Room layout conversion depends on spatial types
-	// that live in the handler layer. For now the rooms map is empty -- entities are the
-	// critical path. Room layouts are static spatial data sent via RoomRevealed events.
+	// Populate room layout map from caller-supplied pre-built protos.
+	if len(input.Rooms) > 0 {
+		state.Rooms = input.Rooms
+	}
 
 	return &BuildEncounterStateDataOutput{
 		EncounterStateData: state,
@@ -81,12 +86,12 @@ func buildEntityMap(entities map[string]*EntityStateData) map[string]*dnd5ev1alp
 	return result
 }
 
-// combatStateToProto converts an entities.CombatState to the proto CombatState message.
+// CombatStateToProto converts an entities.CombatState to the proto CombatState message.
 // This is a simplified version of the handler layer's convertCombatStateToProto that does
 // not depend on spatial grid conversion (positions are already in cube coordinates).
 //
 //nolint:gosec // G115: Game values are bounded by D&D rules, no overflow risk
-func combatStateToProto(cs *CombatState) *dnd5ev1alpha1.CombatState {
+func CombatStateToProto(cs *CombatState) *dnd5ev1alpha1.CombatState {
 	if cs == nil {
 		return nil
 	}
