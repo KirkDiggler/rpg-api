@@ -918,6 +918,8 @@ func (o *Orchestrator) createDungeonWithGenerator(
 		for _, mt := range monsterTurns {
 			syncMonsterPositionFromRoom(entityMap, mt.MonsterID, roomData)
 		}
+		// Sync damaged character HP into entity map so events carry updated HP
+		syncCharacterHPFromMonsterTurns(entityMap, monsterTurns)
 
 		_, err = o.encRepo.Update(ctx, &encounterrepo.UpdateInput{
 			EncounterID:    encounterID,
@@ -1931,6 +1933,8 @@ func (o *Orchestrator) EndTurn(ctx context.Context, input *EndTurnInput) (*EndTu
 	for _, mt := range monsterTurns {
 		syncMonsterPositionFromRoom(encOutput.Data.Entities, mt.MonsterID, persistRoomData)
 	}
+	// Sync damaged character HP into entity map so MonsterTurnCompleted events carry updated HP
+	syncCharacterHPFromMonsterTurns(encOutput.Data.Entities, monsterTurns)
 
 	// Persist updated state (including monster state and position changes from their turns)
 	_, err = o.encRepo.Update(ctx, &encounterrepo.UpdateInput{
@@ -3916,6 +3920,8 @@ func (o *Orchestrator) StartCombat(
 	})
 
 	// 20. Publish MonsterTurnCompleted events if monsters went first
+	// Sync damaged character HP into entity map so MonsterTurnCompleted events carry updated HP
+	syncCharacterHPFromMonsterTurns(entityMap, monsterTurns)
 	startCombatStateProto := entities.CombatStateToProto(combatState)
 	for _, mt := range monsterTurns {
 		// Sync monster's updated position from room data into the entity map before building proto.

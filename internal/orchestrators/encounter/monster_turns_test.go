@@ -610,3 +610,301 @@ func (s *ResolveMonsterAttackSuite) TestMonkUnarmoredDefenseAC() {
 	s.True(result.Hit, "Natural 20 should always hit")
 	s.True(result.Critical, "Natural 20 should be a critical hit")
 }
+
+func (s *ResolveMonsterAttackSuite) TestUpdatedCharacterHPAfterDamage() {
+	// This test verifies that after a monster attacks a character and deals damage,
+	// the executeSingleMonsterTurn result includes UpdatedCharacters with reduced HP.
+	// This is critical: the MonsterTurnCompleted event uses UpdatedCharacters to sync
+	// the character's HP into the Entities map for proto serialization.
+
+	startingHP := 20
+	charData := &character.Data{
+		ID:               "fighter-1",
+		PlayerID:         "player-1",
+		Name:             "Test Fighter",
+		Level:            1,
+		ProficiencyBonus: 2,
+		RaceID:           races.Human,
+		ClassID:          classes.Fighter,
+		HitPoints:        startingHP,
+		MaxHitPoints:     20,
+		ArmorClass:       16,
+		AbilityScores: shared.AbilityScores{
+			abilities.STR: 16,
+			abilities.DEX: 14,
+			abilities.CON: 14,
+			abilities.INT: 10,
+			abilities.WIS: 12,
+			abilities.CHA: 8,
+		},
+		SavingThrows: map[abilities.Ability]shared.ProficiencyLevel{
+			abilities.STR: shared.Proficient,
+			abilities.CON: shared.Proficient,
+		},
+	}
+
+	// Mock charRepo.Get to return the fighter character
+	s.mockCharRepo.EXPECT().
+		Get(gomock.Any(), characterrepo.GetInput{ID: "fighter-1"}).
+		Return(&characterrepo.GetOutput{
+			Character: &entities.Character{
+				Data: charData,
+			},
+		}, nil).
+		Times(2) // Once for resolveMonsterAttack target load, once for UpdatedCharacters load
+
+	// Mock charRepo.Update for persisting defender state after attack
+	s.mockCharRepo.EXPECT().
+		Update(gomock.Any(), gomock.Any()).
+		Return(&characterrepo.UpdateOutput{}, nil)
+
+	// Mock roller: attack roll of 20 (natural 20, guaranteed hit)
+	s.mockRoller.EXPECT().
+		Roll(gomock.Any(), 20).
+		Return(20, nil) // Natural 20
+
+	// Damage rolls — return predictable values
+	s.mockRoller.EXPECT().
+		Roll(gomock.Any(), gomock.Any()).
+		Return(4, nil).
+		AnyTimes()
+
+	s.mockRoller.EXPECT().
+		RollN(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, count, size int) ([]int, error) {
+			rolls := make([]int, count)
+			for i := range rolls {
+				rolls[i] = size / 2
+			}
+			return rolls, nil
+		}).
+		AnyTimes()
+
+	// Create goblin monster data with actions
+	goblinData := &monster.Data{
+		ID:           "goblin-1",
+		Name:         "Goblin Warrior",
+		HitPoints:    7,
+		MaxHitPoints: 7,
+		ArmorClass:   15,
+		AbilityScores: shared.AbilityScores{
+			abilities.STR: 8,
+			abilities.DEX: 14,
+			abilities.CON: 10,
+			abilities.INT: 10,
+			abilities.WIS: 8,
+			abilities.CHA: 8,
+		},
+		ProficiencyBonus: 2,
+		Actions: []monster.ActionData{
+			{
+				Ref: core.Ref{
+					Module: "dnd5e",
+					Type:   "monster_actions",
+					ID:     "scimitar",
+				},
+			},
+		},
+	}
+
+	// Set up room data with adjacent positions so melee attack can land
+	roomData := &spatial.RoomData{
+		ID:       "test-room",
+		Type:     "dungeon",
+		Width:    20,
+		Height:   20,
+		GridType: spatial.GridTypeHex,
+		CubeEntities: map[string]spatial.EntityCubePlacement{
+			"goblin-1": {
+				EntityID:   "goblin-1",
+				EntityType: "monster",
+				CubePosition: spatial.CubeCoordinate{
+					X: 0, Y: 0, Z: 0,
+				},
+				Size:           1,
+				BlocksMovement: true,
+			},
+			"fighter-1": {
+				EntityID:   "fighter-1",
+				EntityType: "character",
+				CubePosition: spatial.CubeCoordinate{
+					X: 1, Y: -1, Z: 0,
+				},
+				Size:           1,
+				BlocksMovement: true,
+			},
+		},
+		Entities: map[string]spatial.EntityPlacement{
+			"goblin-1": {
+				EntityID:       "goblin-1",
+				EntityType:     "monster",
+				Position:       spatial.Position{X: 0, Y: 0},
+				Size:           1,
+				BlocksMovement: true,
+			},
+			"fighter-1": {
+				EntityID:       "fighter-1",
+				EntityType:     "character",
+				Position:       spatial.Position{X: 1, Y: 0},
+				Size:           1,
+				BlocksMovement: true,
+			},
+		},
+	}
+
+	enc := &encounterrepo.EncounterData{
+		ID: "test-encounter",
+		InitiativeData: &initiative.TrackerData{
+			Current: 0,
+			Round:   1,
+			Order: []initiative.EntityData{
+				{ID: "goblin-1", Type: "monster"},
+				{ID: "fighter-1", Type: "character"},
+			},
+		},
+		RoomData: roomData,
+		Monsters: []*monster.Data{goblinData},
+		CharacterHP: map[string]int{
+			"fighter-1": startingHP,
+		},
+	}
+
+	// Execute monster turns
+	results, err := s.orchestrator.executeMonsterTurns(
+		context.Background(),
+		enc,
+		[]string{"fighter-1"},
+	)
+
+	s.Require().NoError(err)
+	s.Require().Len(results, 1, "should have one monster turn result")
+
+	result := results[0]
+	s.Equal("goblin-1", result.MonsterID)
+
+	// Find the attack action that hit
+	var hitAction *MonsterExecutedAction
+	for i := range result.Actions {
+		if result.Actions[i].Details != nil && result.Actions[i].Details.AttackResult != nil && result.Actions[i].Details.AttackResult.Hit {
+			hitAction = &result.Actions[i]
+			break
+		}
+	}
+
+	s.Require().NotNil(hitAction, "monster should have a successful attack action (nat 20)")
+	s.Greater(hitAction.Details.AttackResult.TotalDamage, 0, "attack should deal damage")
+
+	// THE KEY ASSERTION: UpdatedCharacters should contain the fighter with reduced HP
+	s.Require().NotEmpty(result.UpdatedCharacters, "UpdatedCharacters should contain the damaged fighter")
+
+	var updatedFighter *character.Data
+	for _, uc := range result.UpdatedCharacters {
+		if uc.ID == "fighter-1" {
+			updatedFighter = uc
+			break
+		}
+	}
+	s.Require().NotNil(updatedFighter, "fighter should be in UpdatedCharacters")
+
+	expectedHP := startingHP - hitAction.Details.AttackResult.TotalDamage
+	s.Equal(expectedHP, updatedFighter.HitPoints,
+		"UpdatedCharacters fighter HP should reflect damage taken (started at %d, took %d damage)",
+		startingHP, hitAction.Details.AttackResult.TotalDamage)
+	s.Less(updatedFighter.HitPoints, startingHP,
+		"character HP in UpdatedCharacters must be lower than starting HP after taking damage")
+
+	// Also verify CharacterHP map was updated
+	s.Equal(expectedHP, enc.CharacterHP["fighter-1"],
+		"CharacterHP map should also reflect damage taken")
+}
+
+// =============================================================================
+// SYNC CHARACTER HP TESTS
+// =============================================================================
+
+func (s *MonsterTurnsTestSuite) TestSyncCharacterHPFromMonsterTurns() {
+	// Verify that syncCharacterHPFromMonsterTurns updates the Entities map ToolkitData
+
+	entityMap := map[string]*entities.EntityStateData{
+		"char-1": {
+			EntityID:   "char-1",
+			EntityType: entities.EntityTypeCharacter,
+			ToolkitData: &character.Data{
+				ID:        "char-1",
+				HitPoints: 20, // Pre-damage HP
+			},
+		},
+		"goblin-1": {
+			EntityID:   "goblin-1",
+			EntityType: entities.EntityTypeMonster,
+		},
+	}
+
+	updatedCharData := &character.Data{
+		ID:           "char-1",
+		HitPoints:    13, // Post-damage HP
+		MaxHitPoints: 20,
+		Name:         "Updated Fighter",
+	}
+
+	turns := []*MonsterTurnResult{
+		{
+			MonsterID: "goblin-1",
+			UpdatedCharacters: []*character.Data{
+				updatedCharData,
+			},
+		},
+	}
+
+	syncCharacterHPFromMonsterTurns(entityMap, turns)
+
+	// Verify the entity map was updated with the new character data
+	esd := entityMap["char-1"]
+	s.Require().NotNil(esd)
+	charData, ok := esd.ToolkitData.(*character.Data)
+	s.Require().True(ok, "ToolkitData should be *character.Data")
+	s.Equal(13, charData.HitPoints, "HP should be updated to post-damage value")
+	s.Equal("Updated Fighter", charData.Name, "ToolkitData should be the full updated character data")
+}
+
+func (s *MonsterTurnsTestSuite) TestSyncCharacterHPFromMonsterTurns_NilEntityMap() {
+	// Should not panic with nil entity map
+	turns := []*MonsterTurnResult{
+		{
+			MonsterID: "goblin-1",
+			UpdatedCharacters: []*character.Data{
+				{ID: "char-1", HitPoints: 10},
+			},
+		},
+	}
+	s.NotPanics(func() {
+		syncCharacterHPFromMonsterTurns(nil, turns)
+	})
+}
+
+func (s *MonsterTurnsTestSuite) TestSyncCharacterHPFromMonsterTurns_NoUpdatedCharacters() {
+	// Should not panic when no characters were damaged
+	entityMap := map[string]*entities.EntityStateData{
+		"char-1": {
+			EntityID:   "char-1",
+			EntityType: entities.EntityTypeCharacter,
+			ToolkitData: &character.Data{
+				ID:        "char-1",
+				HitPoints: 20,
+			},
+		},
+	}
+
+	turns := []*MonsterTurnResult{
+		{
+			MonsterID:         "goblin-1",
+			UpdatedCharacters: nil,
+		},
+	}
+
+	syncCharacterHPFromMonsterTurns(entityMap, turns)
+
+	// HP should remain unchanged
+	charData := entityMap["char-1"].ToolkitData.(*character.Data)
+	s.Equal(20, charData.HitPoints, "HP should remain unchanged when no damage was dealt")
+}

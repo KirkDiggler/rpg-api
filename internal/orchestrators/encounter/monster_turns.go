@@ -399,6 +399,26 @@ func (o *Orchestrator) resolveMonsterAttack(
 	return attackResult, nil
 }
 
+// syncCharacterHPFromMonsterTurns updates the Entities map with post-damage character data
+// from monster turn results. executeMonsterTurns loads fresh character data with updated HP
+// into UpdatedCharacters, but the Entities map still has stale pre-damage ToolkitData.
+// Without this sync, MonsterTurnCompleted events carry stale HP in UpdatedEntities.
+func syncCharacterHPFromMonsterTurns(entityMap map[string]*entities.EntityStateData, turns []*MonsterTurnResult) {
+	if entityMap == nil {
+		return
+	}
+	for _, mt := range turns {
+		for _, charData := range mt.UpdatedCharacters {
+			if charData == nil {
+				continue
+			}
+			if esd, ok := entityMap[charData.ID]; ok && esd != nil {
+				esd.ToolkitData = charData
+			}
+		}
+	}
+}
+
 // isMonsterTurn checks if current entity in initiative is a monster
 func (o *Orchestrator) isMonsterTurn(enc *encounterrepo.EncounterData) bool {
 	if enc == nil || enc.InitiativeData == nil {
