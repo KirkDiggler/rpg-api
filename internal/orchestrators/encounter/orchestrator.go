@@ -538,8 +538,11 @@ func (o *Orchestrator) ResolveAttack(ctx context.Context, input *ResolveAttackIn
 	var attackerState, targetState *pb.EntityState
 	if encOutput.Data.Entities != nil {
 		if asd, ok := encOutput.Data.Entities[input.AttackerID]; ok && asd != nil {
-			// Update attacker's toolkit data with latest character data
+			// Update attacker's toolkit data with latest character data,
+			// then override HP with current combat-tracked value so the
+			// event carries actual HP instead of full-health from the repo.
 			asd.ToolkitData = charOutput.Character.Data
+			applyCurrentCombatHP(charOutput.Character.Data, encOutput.Data.CharacterHP)
 			attackerState = entities.ToEntityStateProto(&entities.ToEntityStateProtoInput{EntityStateData: asd})
 		}
 		if tsd, ok := encOutput.Data.Entities[input.TargetID]; ok && tsd != nil {
@@ -575,6 +578,20 @@ func (o *Orchestrator) ResolveAttack(ctx context.Context, input *ResolveAttackIn
 		MonsterDead:   newHP <= 0,
 		GrantedAction: grantedAction,
 	}, nil
+}
+
+// applyCurrentCombatHP overrides the character Data's HitPoints with the
+// current combat-tracked HP from the encounter's CharacterHP map.
+// Without this, freshly-loaded character data carries full HP (from creation
+// or last rest) instead of the damage-tracked value, causing the UI to show
+// the attacker at full health after they have taken damage.
+func applyCurrentCombatHP(charData *character.Data, characterHP map[string]int) {
+	if charData == nil || characterHP == nil {
+		return
+	}
+	if currentHP, ok := characterHP[charData.ID]; ok {
+		charData.HitPoints = currentHP
+	}
 }
 
 // convertToolkitBreakdown maps toolkit DamageBreakdown to orchestrator type
@@ -4739,6 +4756,7 @@ func (o *Orchestrator) executeStrike(
 	if encData.Entities != nil {
 		if asd, ok := encData.Entities[input.EntityID]; ok && asd != nil {
 			asd.ToolkitData = charOutput.Character.Data
+			applyCurrentCombatHP(charOutput.Character.Data, encData.CharacterHP)
 			attackerState = entities.ToEntityStateProto(&entities.ToEntityStateProtoInput{EntityStateData: asd})
 		}
 		if tsd, ok := encData.Entities[input.TargetID]; ok && tsd != nil {
@@ -4901,6 +4919,7 @@ func (o *Orchestrator) executeFlurryStrike(
 	if encData.Entities != nil {
 		if asd, ok := encData.Entities[input.EntityID]; ok && asd != nil {
 			asd.ToolkitData = charOutput.Character.Data
+			applyCurrentCombatHP(charOutput.Character.Data, encData.CharacterHP)
 			flurryAttackerState = entities.ToEntityStateProto(&entities.ToEntityStateProtoInput{EntityStateData: asd})
 		}
 		if tsd, ok := encData.Entities[input.TargetID]; ok && tsd != nil {
@@ -5065,6 +5084,7 @@ func (o *Orchestrator) executeUnarmedStrike(
 	if encData.Entities != nil {
 		if asd, ok := encData.Entities[input.EntityID]; ok && asd != nil {
 			asd.ToolkitData = charOutput.Character.Data
+			applyCurrentCombatHP(charOutput.Character.Data, encData.CharacterHP)
 			unarmedAttackerState = entities.ToEntityStateProto(&entities.ToEntityStateProtoInput{EntityStateData: asd})
 		}
 		if tsd, ok := encData.Entities[input.TargetID]; ok && tsd != nil {

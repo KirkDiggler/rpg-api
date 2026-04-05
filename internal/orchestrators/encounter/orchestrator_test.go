@@ -4126,3 +4126,81 @@ func (s *OrchestratorTestSuite) TestResolveAttack_IsUnarmed_DetectedFromWeapon()
 		s.Assert().Equal("martial-arts-bonus-strike", output.GrantedAction.Type)
 	}
 }
+
+// ============================================================================
+// applyCurrentCombatHP Tests
+// ============================================================================
+
+func (s *OrchestratorTestSuite) TestApplyCurrentCombatHP_OverridesFullHP() {
+	// Character loaded from repo has full HP (as if freshly created / rested)
+	charData := &character.Data{
+		ID:           "char-1",
+		HitPoints:    14, // Full HP from repo
+		MaxHitPoints: 14,
+	}
+
+	// Combat tracker says character has taken damage
+	characterHP := map[string]int{
+		"char-1": 7, // Took 7 damage during combat
+	}
+
+	applyCurrentCombatHP(charData, characterHP)
+
+	s.Equal(7, charData.HitPoints, "HitPoints should reflect combat-tracked HP, not full HP")
+	s.Equal(14, charData.MaxHitPoints, "MaxHitPoints should not be changed")
+}
+
+func (s *OrchestratorTestSuite) TestApplyCurrentCombatHP_NoEntryInMap() {
+	// Character not in the CharacterHP map (e.g., hasn't been damaged yet)
+	charData := &character.Data{
+		ID:           "char-2",
+		HitPoints:    10,
+		MaxHitPoints: 10,
+	}
+
+	characterHP := map[string]int{
+		"char-1": 5, // Different character
+	}
+
+	applyCurrentCombatHP(charData, characterHP)
+
+	s.Equal(10, charData.HitPoints, "HitPoints should be unchanged when character not in map")
+}
+
+func (s *OrchestratorTestSuite) TestApplyCurrentCombatHP_NilMap() {
+	charData := &character.Data{
+		ID:           "char-1",
+		HitPoints:    10,
+		MaxHitPoints: 10,
+	}
+
+	applyCurrentCombatHP(charData, nil)
+
+	s.Equal(10, charData.HitPoints, "HitPoints should be unchanged with nil map")
+}
+
+func (s *OrchestratorTestSuite) TestApplyCurrentCombatHP_NilCharData() {
+	characterHP := map[string]int{"char-1": 5}
+
+	// Should not panic
+	s.NotPanics(func() {
+		applyCurrentCombatHP(nil, characterHP)
+	})
+}
+
+func (s *OrchestratorTestSuite) TestApplyCurrentCombatHP_ZeroHP() {
+	// Character is at 0 HP (unconscious)
+	charData := &character.Data{
+		ID:           "char-1",
+		HitPoints:    14,
+		MaxHitPoints: 14,
+	}
+
+	characterHP := map[string]int{
+		"char-1": 0,
+	}
+
+	applyCurrentCombatHP(charData, characterHP)
+
+	s.Equal(0, charData.HitPoints, "HitPoints should be 0 when combat tracker says 0")
+}
