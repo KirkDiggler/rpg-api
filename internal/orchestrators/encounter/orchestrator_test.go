@@ -2285,7 +2285,47 @@ func (s *OrchestratorTestSuite) TestEndTurn_ResetsActionEconomy() {
 	}
 
 	// Expect character turn-end event publishing for char-1 (whose turn is ending)
-	s.expectCharacterTurnEnd("char-1")
+	// Capture the character update to verify TurnNumber invalidation
+	charData := &character.Data{
+		ID:               "char-1",
+		Name:             "Test Character",
+		PlayerID:         "player-1",
+		Level:            1,
+		RaceID:           "human",
+		ClassID:          "fighter",
+		ProficiencyBonus: 2,
+		AbilityScores: shared.AbilityScores{
+			abilities.STR: 16,
+			abilities.DEX: 14,
+			abilities.CON: 15,
+			abilities.INT: 10,
+			abilities.WIS: 12,
+			abilities.CHA: 8,
+		},
+		HitPoints:    12,
+		MaxHitPoints: 12,
+		ActionEconomy: &character.ActionEconomyData{
+			TurnNumber:            100, // From previous turn
+			ActionsRemaining:      0,
+			BonusActionsRemaining: 0,
+			ReactionsRemaining:    0,
+			MovementRemaining:     0,
+			Granted:               make(map[character.GrantedActionKey]int),
+		},
+	}
+
+	s.mockCharRepo.EXPECT().
+		Get(gomock.Any(), characterrepo.GetInput{ID: "char-1"}).
+		Return(&characterrepo.GetOutput{Character: &entities.Character{Data: charData}}, nil)
+
+	var capturedCharUpdate characterrepo.UpdateInput
+	s.mockCharRepo.EXPECT().
+		Update(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, input characterrepo.UpdateInput) (*characterrepo.UpdateOutput, error) {
+			capturedCharUpdate = input
+			return &characterrepo.UpdateOutput{}, nil
+		})
+
 	s.expectDungeonLookup("enc-1")
 
 	s.mockEncRepo.EXPECT().
@@ -2323,6 +2363,14 @@ func (s *OrchestratorTestSuite) TestEndTurn_ResetsActionEconomy() {
 	s.Assert().Equal(1, output.CombatState.ActionEconomy.ActionsRemaining)
 	s.Assert().Equal(1, output.CombatState.ActionEconomy.BonusActionsRemaining)
 	s.Assert().Equal(1, output.CombatState.ActionEconomy.ReactionsRemaining)
+
+	// Verify character's TurnNumber was invalidated by publishCharacterTurnEnd
+	s.Require().NotNil(capturedCharUpdate.Character)
+	s.Require().NotNil(capturedCharUpdate.Character.Data)
+	s.Require().NotNil(capturedCharUpdate.Character.Data.ActionEconomy,
+		"Character should still be in combat after EndTurn")
+	s.Assert().Equal(-1, capturedCharUpdate.Character.Data.ActionEconomy.TurnNumber,
+		"TurnNumber should be invalidated to -1 so next loadCharacterForCombat triggers StartTurn")
 }
 
 func (s *OrchestratorTestSuite) TestCreateDungeon_InitializesActionEconomy() {
@@ -3241,6 +3289,123 @@ func (s *OrchestratorTestSuite) TestActivateCombatAbility_Attack_NoActionAvailab
 	s.Require().NotNil(output)
 	s.Assert().False(output.Success)
 	s.Assert().NotEmpty(output.Error)
+}
+
+func (s *OrchestratorTestSuite) TestActivateCombatAbility_Attack_AfterEndTurn_ResetsActionEconomy() {
+	// Reproduce bug: after EndTurn → monster turn → TurnChange back to player,
+	// calling ActivateCombatAbility(Attack) should succeed because StartTurn
+	// resets the action economy when the turn number has changed.
+	//
+	// Setup: Round 2, Current=0 → turnNum=200. Character has stale TurnNumber=100.
+	initiativeData := &initiative.TrackerData{
+		Order: []initiative.EntityData{
+			{ID: "char-1", Type: "character"},
+			{ID: "goblin-1", Type: "monster"},
+		},
+		Current: 0,
+		Round:   2, // Round 2 after EndTurn advanced past monster
+	}
+
+	s.mockEncRepo.EXPECT().
+		Get(gomock.Any(), &encounterrepo.GetInput{EncounterID: "enc-1"}).
+		Return(&encounterrepo.GetOutput{
+			Data: &encounterrepo.EncounterData{
+				ID:                "enc-1",
+				InitiativeData:    initiativeData,
+				MovementRemaining: 30,
+				ActionEconomy:     entities.NewActionEconomyState(), // Fresh from EndTurn
+			},
+		}, nil)
+
+	// Character with STALE action economy from turn 1 (all consumed)
+	charData := createTestCharacterData("char-1", "Grog")
+	charData.ActionEconomy = &character.ActionEconomyData{
+		TurnNumber:            100, // Round 1 turn number (stale)
+		ActionsRemaining:      0,   // All consumed in turn 1
+		BonusActionsRemaining: 0,
+		ReactionsRemaining:    0,
+		MovementRemaining:     0,
+		Granted:               make(map[character.GrantedActionKey]int),
+	}
+
+	s.mockCharRepo.EXPECT().
+		Get(gomock.Any(), characterrepo.GetInput{ID: "char-1"}).
+		Return(&characterrepo.GetOutput{Character: &entities.Character{Data: charData}}, nil)
+
+	// persistCharacterData after activation
+	s.mockCharRepo.EXPECT().
+		Update(gomock.Any(), gomock.Any()).
+		Return(&characterrepo.UpdateOutput{}, nil)
+
+	// Act - Should succeed: loadCharacterForCombat detects stale TurnNumber and calls StartTurn
+	output, err := s.orchestrator.ActivateCombatAbility(context.Background(), &ActivateCombatAbilityInput{
+		EncounterID: "enc-1",
+		EntityID:    "char-1",
+		AbilityID:   pb.CombatAbilityId_COMBAT_ABILITY_ID_ATTACK,
+	})
+
+	// Assert - Action economy was reset by StartTurn, so Attack should succeed
+	s.Require().NoError(err)
+	s.Require().NotNil(output)
+	s.Assert().True(output.Success, "Attack should succeed on new turn, got error: %s", output.Error)
+	s.Assert().NotEmpty(output.GrantedCapacity, "Should grant attacks")
+}
+
+func (s *OrchestratorTestSuite) TestActivateCombatAbility_Attack_AfterEndTurn_InvalidatedTurnNumber() {
+	// Reproduce bug: publishCharacterTurnEnd now invalidates TurnNumber to -1.
+	// When the character's next turn starts, loadCharacterForCombat should detect
+	// TurnNumber=-1 != computeTurnNumber() and call StartTurn.
+	initiativeData := &initiative.TrackerData{
+		Order: []initiative.EntityData{
+			{ID: "char-1", Type: "character"},
+			{ID: "goblin-1", Type: "monster"},
+		},
+		Current: 0,
+		Round:   2,
+	}
+
+	s.mockEncRepo.EXPECT().
+		Get(gomock.Any(), &encounterrepo.GetInput{EncounterID: "enc-1"}).
+		Return(&encounterrepo.GetOutput{
+			Data: &encounterrepo.EncounterData{
+				ID:                "enc-1",
+				InitiativeData:    initiativeData,
+				MovementRemaining: 30,
+				ActionEconomy:     entities.NewActionEconomyState(),
+			},
+		}, nil)
+
+	// Character with TurnNumber=-1 (invalidated by publishCharacterTurnEnd)
+	charData := createTestCharacterData("char-1", "Grog")
+	charData.ActionEconomy = &character.ActionEconomyData{
+		TurnNumber:            -1, // Invalidated by publishCharacterTurnEnd
+		ActionsRemaining:      0,  // Zeroed by char.EndTurn()
+		BonusActionsRemaining: 0,
+		ReactionsRemaining:    0,
+		MovementRemaining:     0,
+		Granted:               make(map[character.GrantedActionKey]int),
+	}
+
+	s.mockCharRepo.EXPECT().
+		Get(gomock.Any(), characterrepo.GetInput{ID: "char-1"}).
+		Return(&characterrepo.GetOutput{Character: &entities.Character{Data: charData}}, nil)
+
+	s.mockCharRepo.EXPECT().
+		Update(gomock.Any(), gomock.Any()).
+		Return(&characterrepo.UpdateOutput{}, nil)
+
+	// Act
+	output, err := s.orchestrator.ActivateCombatAbility(context.Background(), &ActivateCombatAbilityInput{
+		EncounterID: "enc-1",
+		EntityID:    "char-1",
+		AbilityID:   pb.CombatAbilityId_COMBAT_ABILITY_ID_ATTACK,
+	})
+
+	// Assert - StartTurn should be called because -1 != 200 (computeTurnNumber)
+	s.Require().NoError(err)
+	s.Require().NotNil(output)
+	s.Assert().True(output.Success, "Attack should succeed after turn invalidation, got error: %s", output.Error)
+	s.Assert().NotEmpty(output.GrantedCapacity)
 }
 
 func (s *OrchestratorTestSuite) TestActivateCombatAbility_Dash_Success() {

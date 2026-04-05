@@ -262,8 +262,25 @@ func (o *Orchestrator) publishCharacterTurnEnd(ctx context.Context, characterID 
 		return fmt.Errorf("failed to publish turn end event: %w", err)
 	}
 
-	// 4. Persist updated character state (conditions may have changed)
+	// 3b. End the character's turn in the toolkit to zero out the action economy.
+	// This ensures clean state when the character's next turn begins.
+	if _, endErr := char.EndTurn(ctx, &character.EndTurnInput{}); endErr != nil {
+		// Log but don't fail - EndTurn is defensive cleanup
+		fmt.Printf("warning: failed to end character turn for %s: %v\n", characterID, endErr)
+	}
+
+	// 4. Persist updated character state (conditions may have changed, action economy zeroed)
 	updatedData := char.ToData()
+
+	// 4b. Invalidate the turn number so loadCharacterForCombat will always call StartTurn
+	// on the character's next turn. The toolkit's EndTurn zeros actions/bonus/reactions/movement
+	// but doesn't change TurnNumber. We set it to -1 (an impossible computeTurnNumber result)
+	// so that the stale-turn detection in loadCharacterForCombat always triggers StartTurn.
+	// This fixes a bug where the action economy was not reset between turns, causing
+	// "insufficient action" errors when the player's turn came back around.
+	if updatedData.ActionEconomy != nil {
+		updatedData.ActionEconomy.TurnNumber = -1
+	}
 	_, err = o.charRepo.Update(ctx, characterrepo.UpdateInput{
 		Character: &entities.Character{
 			Data:       updatedData,
