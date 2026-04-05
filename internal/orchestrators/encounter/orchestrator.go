@@ -4711,6 +4711,30 @@ func (o *Orchestrator) executeStrike(
 	// 15. Build combat state for response
 	combatState := o.buildCombatState(input.EncounterID, encData)
 
+	// 15b. Build entity state protos for attacker and target so the event carries updated HP
+	var attackerState, targetState *pb.EntityState
+	if encData.Entities != nil {
+		if asd, ok := encData.Entities[input.EntityID]; ok && asd != nil {
+			asd.ToolkitData = charOutput.Character.Data
+			attackerState = entities.ToEntityStateProto(&entities.ToEntityStateProtoInput{EntityStateData: asd})
+		}
+		if tsd, ok := encData.Entities[input.TargetID]; ok && tsd != nil {
+			tsd.ToolkitData = monsterData
+			targetState = entities.ToEntityStateProto(&entities.ToEntityStateProtoInput{EntityStateData: tsd})
+		}
+	}
+
+	// 15c. Publish AttackResolved event so streamed clients see updated HP
+	o.publishEvent(ctx, input.EncounterID, entities.EventTypeAttackResolved, &entities.AttackResolvedEvent{
+		AttackerID:    input.EntityID,
+		TargetID:      input.TargetID,
+		Result:        attackResult,
+		TargetHP:      newHP,
+		TargetDead:    newHP <= 0,
+		AttackerState: attackerState,
+		TargetState:   targetState,
+	})
+
 	// 16. Check for dungeon victory if monster died
 	if newHP <= 0 {
 		o.checkAndHandleVictory(ctx, input.EncounterID, encData, input.TargetID)
@@ -4848,6 +4872,30 @@ func (o *Orchestrator) executeFlurryStrike(
 	}
 
 	combatState := o.buildCombatState(input.EncounterID, encData)
+
+	// Build entity state protos for attacker and target so the event carries updated HP
+	var flurryAttackerState, flurryTargetState *pb.EntityState
+	if encData.Entities != nil {
+		if asd, ok := encData.Entities[input.EntityID]; ok && asd != nil {
+			asd.ToolkitData = charOutput.Character.Data
+			flurryAttackerState = entities.ToEntityStateProto(&entities.ToEntityStateProtoInput{EntityStateData: asd})
+		}
+		if tsd, ok := encData.Entities[input.TargetID]; ok && tsd != nil {
+			tsd.ToolkitData = monsterData
+			flurryTargetState = entities.ToEntityStateProto(&entities.ToEntityStateProtoInput{EntityStateData: tsd})
+		}
+	}
+
+	// Publish AttackResolved event so streamed clients see updated HP
+	o.publishEvent(ctx, input.EncounterID, entities.EventTypeAttackResolved, &entities.AttackResolvedEvent{
+		AttackerID:    input.EntityID,
+		TargetID:      input.TargetID,
+		Result:        attackResult,
+		TargetHP:      monsterInstance.HP(),
+		TargetDead:    monsterInstance.HP() <= 0,
+		AttackerState: flurryAttackerState,
+		TargetState:   flurryTargetState,
+	})
 
 	if monsterInstance.HP() <= 0 {
 		o.checkAndHandleVictory(ctx, input.EncounterID, encData, input.TargetID)
@@ -4988,6 +5036,30 @@ func (o *Orchestrator) executeUnarmedStrike(
 	}
 
 	combatState := o.buildCombatState(input.EncounterID, encData)
+
+	// Build entity state protos for attacker and target so the event carries updated HP
+	var unarmedAttackerState, unarmedTargetState *pb.EntityState
+	if encData.Entities != nil {
+		if asd, ok := encData.Entities[input.EntityID]; ok && asd != nil {
+			asd.ToolkitData = charOutput.Character.Data
+			unarmedAttackerState = entities.ToEntityStateProto(&entities.ToEntityStateProtoInput{EntityStateData: asd})
+		}
+		if tsd, ok := encData.Entities[input.TargetID]; ok && tsd != nil {
+			tsd.ToolkitData = monsterData
+			unarmedTargetState = entities.ToEntityStateProto(&entities.ToEntityStateProtoInput{EntityStateData: tsd})
+		}
+	}
+
+	// Publish AttackResolved event so streamed clients see updated HP
+	o.publishEvent(ctx, input.EncounterID, entities.EventTypeAttackResolved, &entities.AttackResolvedEvent{
+		AttackerID:    input.EntityID,
+		TargetID:      input.TargetID,
+		Result:        attackResult,
+		TargetHP:      monsterInstance.HP(),
+		TargetDead:    monsterInstance.HP() <= 0,
+		AttackerState: unarmedAttackerState,
+		TargetState:   unarmedTargetState,
+	})
 
 	return &ExecuteActionOutput{
 		Success:            true,

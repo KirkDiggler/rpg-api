@@ -10,10 +10,12 @@ import (
 	"github.com/stretchr/testify/suite"
 	"go.uber.org/mock/gomock"
 
+	pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
 	mock_dice "github.com/KirkDiggler/rpg-toolkit/dice/mock"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/abilities"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/initiative"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/monster"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
 	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
 
@@ -1413,4 +1415,140 @@ func (s *EventPublishingTestSuite) TestPlayerDisconnected_PlayerNotInEncounter()
 	s.Require().Error(err)
 	s.Assert().Nil(output)
 	s.Assert().Equal(ErrPlayerNotInEncounter, err)
+}
+
+// TestExecuteAction_Strike_PublishesAttackResolvedWithEntityState verifies that
+// executeStrike publishes an AttackResolved event with AttackerState and TargetState
+// containing updated HP values, so streamed clients see damage applied.
+func (s *EventPublishingTestSuite) TestExecuteAction_Strike_PublishesAttackResolvedWithEntityState() {
+	// Arrange - Create test character data with attacks granted
+	charData := createTestCharacterData("char-1", "Grog")
+	charData.HitPoints = 12
+	charData.MaxHitPoints = 12
+	charData.ActionEconomy = &character.ActionEconomyData{
+		TurnNumber:            100, // Matches computeTurnNumber(round=1, current=0)
+		ActionsRemaining:      0,   // Action consumed by ATTACK activation
+		BonusActionsRemaining: 1,
+		ReactionsRemaining:    1,
+		MovementRemaining:     30,
+		Granted: map[character.GrantedActionKey]int{
+			character.GrantedAttacks: 1, // ATTACK granted one attack
+		},
+	}
+
+	s.mockCharRepo.EXPECT().
+		Get(gomock.Any(), characterrepo.GetInput{ID: "char-1"}).
+		Return(&characterrepo.GetOutput{Character: &entities.Character{Data: charData}}, nil).
+		AnyTimes()
+
+	s.mockCharRepo.EXPECT().
+		Update(gomock.Any(), gomock.Any()).
+		Return(&characterrepo.UpdateOutput{}, nil).
+		AnyTimes()
+
+	// Create goblin with known HP
+	goblin := monster.NewGoblin("goblin-1")
+	goblin.AddAction(monster.NewScimitarAction(monster.ScimitarConfig{
+		AttackBonus: 4,
+		DamageDice:  "1d6+2",
+		DamageBonus: 2,
+	}))
+	goblinData := goblin.ToData()
+
+	// Build encounter data WITH Entities map populated
+	encData := &encounterrepo.EncounterData{
+		ID:       "enc-1",
+		Monsters: []*monster.Data{goblinData},
+		InitiativeData: &initiative.TrackerData{
+			Order: []initiative.EntityData{
+				{ID: "char-1", Type: "character"},
+				{ID: "goblin-1", Type: "monster"},
+			},
+			Current: 0,
+			Round:   1,
+		},
+		// Entities map is the key part of this test: it must be populated
+		// for entity state protos to be built and included in events
+		Entities: map[string]*entities.EntityStateData{
+			"char-1": {
+				EntityID:   "char-1",
+				EntityType: entities.EntityTypeCharacter,
+				RoomID:     "room-1",
+			},
+			"goblin-1": {
+				EntityID:   "goblin-1",
+				EntityType: entities.EntityTypeMonster,
+				RoomID:     "room-1",
+			},
+		},
+	}
+
+	s.mockEncRepo.EXPECT().
+		Get(gomock.Any(), &encounterrepo.GetInput{EncounterID: "enc-1"}).
+		Return(&encounterrepo.GetOutput{Data: encData}, nil)
+
+	s.mockEncRepo.EXPECT().
+		Update(gomock.Any(), gomock.Any()).
+		Return(&encounterrepo.UpdateOutput{Success: true}, nil).
+		AnyTimes()
+
+	s.mockDungeonRepo.EXPECT().
+		GetByEncounterID(gomock.Any(), gomock.Any()).
+		Return(&dungeonrepo.GetOutput{
+			Dungeon: &entities.Dungeon{ID: "test-dungeon"},
+		}, nil).
+		AnyTimes()
+
+	// Track AttackResolved event
+	var capturedEvent *entities.EncounterEvent
+	s.mockEventProcessor.EXPECT().
+		Process(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, input *eventprocessor.ProcessInput) (*eventprocessor.ProcessOutput, error) {
+			if input.Event.Type == entities.EventTypeAttackResolved {
+				capturedEvent = input.Event
+			}
+			return &eventprocessor.ProcessOutput{EventID: "evt-attack"}, nil
+		}).
+		AnyTimes()
+
+	// Act
+	output, err := s.orchestrator.ExecuteAction(context.Background(), &ExecuteActionInput{
+		EncounterID: "enc-1",
+		EntityID:    "char-1",
+		ActionID:    pb.ActionId_ACTION_ID_STRIKE,
+		TargetID:    "goblin-1",
+	})
+
+	// Assert - action succeeded
+	s.Require().NoError(err)
+	s.Require().NotNil(output)
+	s.Assert().True(output.Success)
+	s.Assert().NotNil(output.AttackResult)
+
+	// Assert - AttackResolved event was published
+	s.Require().NotNil(capturedEvent, "AttackResolved event should have been published")
+	s.Require().NotNil(capturedEvent.AttackResolved, "AttackResolved data should be set")
+
+	attackEvent := capturedEvent.AttackResolved
+
+	// Verify attacker and target IDs
+	s.Assert().Equal("char-1", attackEvent.AttackerID)
+	s.Assert().Equal("goblin-1", attackEvent.TargetID)
+
+	// Verify entity state protos are populated with HP
+	s.Require().NotNil(attackEvent.AttackerState, "AttackerState should be populated from Entities map")
+	s.Assert().Equal("char-1", attackEvent.AttackerState.EntityId)
+	s.Assert().Equal(int32(12), attackEvent.AttackerState.MaxHitPoints, "Attacker max HP should come from character data")
+	s.Assert().Greater(attackEvent.AttackerState.MaxHitPoints, int32(0), "Attacker max HP should be set")
+
+	s.Require().NotNil(attackEvent.TargetState, "TargetState should be populated from Entities map")
+	s.Assert().Equal("goblin-1", attackEvent.TargetState.EntityId)
+	s.Assert().Greater(attackEvent.TargetState.MaxHitPoints, int32(0), "Target max HP should be set")
+	// If the attack hit, target current HP should be less than max HP
+	if output.AttackResult.Hit {
+		s.Assert().Less(attackEvent.TargetState.CurrentHitPoints, attackEvent.TargetState.MaxHitPoints,
+			"Target current HP should reflect damage taken")
+		s.Assert().Equal(attackEvent.TargetHP, int(attackEvent.TargetState.CurrentHitPoints),
+			"TargetHP and TargetState.CurrentHitPoints should match")
+	}
 }
