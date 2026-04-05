@@ -7,7 +7,7 @@ require (
 	github.com/KirkDiggler/rpg-toolkit/core v0.10.0
 	github.com/KirkDiggler/rpg-toolkit/dice v0.3.2
 	github.com/KirkDiggler/rpg-toolkit/events v0.6.2
-	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.55.3
+	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.55.5
 	github.com/KirkDiggler/rpg-toolkit/tools/environments v0.4.0
 	github.com/KirkDiggler/rpg-toolkit/tools/spatial v0.4.0
 	github.com/alicebob/miniredis/v2 v2.35.0
