@@ -2457,7 +2457,7 @@ func (s *OrchestratorTestSuite) TestResolveAttack_UsesEquippedWeapon() {
 	}
 }
 
-func (s *OrchestratorTestSuite) TestResolveAttack_NoEquippedWeapon_FallsBackToGreataxe() {
+func (s *OrchestratorTestSuite) TestResolveAttack_NoEquippedWeapon_FallsBackToUnarmedStrike() {
 	// Arrange - Create test character data without equipped weapon
 	charData := createTestCharacterData("char-1", "Grog")
 	charData.EquipmentSlots = character.EquipmentSlots{} // Empty - no weapon equipped
@@ -2584,7 +2584,7 @@ func (s *OrchestratorTestSuite) TestResolveAttack_NilEquipmentSlots_FallsBackToU
 		TargetID:    "goblin-1",
 	})
 
-	// Assert - Should succeed with fallback to greataxe
+	// Assert - Should succeed with fallback to unarmed strike
 	s.Require().NoError(err)
 	s.Require().NotNil(output)
 	s.Assert().NotNil(output.Result)
@@ -3865,5 +3865,99 @@ func (s *OrchestratorTestSuite) TestResolveAttack_Monk_NonMonkWeapon_NoBonusStri
 	if output.GrantedAction != nil {
 		s.Assert().NotEqual("martial-arts-bonus-strike", output.GrantedAction.Type,
 			"Monk with non-monk weapon should not receive MA bonus strike")
+	}
+}
+
+// --- Issue #437: Unarmed strike option for Monks ---
+
+func (s *OrchestratorTestSuite) TestAddUnarmedStrikeOption_AddsWhenStrikeAvailable() {
+	actions := []*entities.AvailableAction{
+		{ActionID: refs.Actions.Move().ID, Name: "Move", CanUse: true},
+		{ActionID: refs.Actions.Strike().ID, Name: "Strike", CanUse: true},
+	}
+
+	result := addUnarmedStrikeOption(actions)
+
+	s.Require().Len(result, 3)
+	s.Assert().Equal(refs.Actions.UnarmedStrike().ID, result[2].ActionID)
+	s.Assert().Equal("Unarmed Strike", result[2].Name)
+	s.Assert().True(result[2].CanUse)
+}
+
+func (s *OrchestratorTestSuite) TestAddUnarmedStrikeOption_NoopWhenStrikeAbsent() {
+	actions := []*entities.AvailableAction{
+		{ActionID: refs.Actions.Move().ID, Name: "Move", CanUse: true},
+	}
+
+	result := addUnarmedStrikeOption(actions)
+
+	s.Assert().Len(result, 1, "should not add unarmed strike when Strike is not available")
+}
+
+func (s *OrchestratorTestSuite) TestAddUnarmedStrikeOption_NoopWhenAlreadyPresent() {
+	actions := []*entities.AvailableAction{
+		{ActionID: refs.Actions.Strike().ID, Name: "Strike", CanUse: true},
+		{ActionID: refs.Actions.UnarmedStrike().ID, Name: "Unarmed Strike", CanUse: true},
+	}
+
+	result := addUnarmedStrikeOption(actions)
+
+	s.Assert().Len(result, 2, "should not duplicate unarmed strike")
+}
+
+func (s *OrchestratorTestSuite) TestAddUnarmedStrikeOption_InheritsStrikeCanUse() {
+	actions := []*entities.AvailableAction{
+		{ActionID: refs.Actions.Strike().ID, Name: "Strike", CanUse: false, Reason: "no attacks remaining"},
+	}
+
+	result := addUnarmedStrikeOption(actions)
+
+	s.Require().Len(result, 2)
+	s.Assert().False(result[1].CanUse, "unarmed strike should inherit Strike's can_use state")
+}
+
+func (s *OrchestratorTestSuite) TestResolveAttack_IsUnarmed_DetectedFromWeapon() {
+	// Arrange - Monk with no equipped weapon (falls back to unarmed strike)
+	charData := createTestMonkCharacterData("monk-1", "Shadow")
+	charData.EquipmentSlots = character.EquipmentSlots{} // No weapon
+	s.mockCharRepo.EXPECT().
+		Get(gomock.Any(), characterrepo.GetInput{ID: "monk-1"}).
+		Return(&characterrepo.GetOutput{Character: &entities.Character{Data: charData}}, nil).
+		AnyTimes()
+
+	encData := createTestEncounterData("enc-1")
+	s.mockEncRepo.EXPECT().
+		Get(gomock.Any(), &encounterrepo.GetInput{EncounterID: "enc-1"}).
+		Return(&encounterrepo.GetOutput{Data: encData}, nil)
+	s.mockEncRepo.EXPECT().
+		Update(gomock.Any(), gomock.Any()).
+		Return(&encounterrepo.UpdateOutput{Success: true}, nil).
+		AnyTimes()
+	s.mockDungeonRepo.EXPECT().
+		GetByEncounterID(gomock.Any(), gomock.Any()).
+		Return(&dungeonrepo.GetOutput{Dungeon: &entities.Dungeon{ID: "test-dungeon"}}, nil).
+		AnyTimes()
+
+	// Act
+	output, err := s.orchestrator.ResolveAttack(context.Background(), &ResolveAttackInput{
+		EncounterID: "enc-1",
+		AttackerID:  "monk-1",
+		TargetID:    "goblin-1",
+	})
+
+	// Assert - Should succeed with unarmed strike and grant martial arts bonus
+	s.Require().NoError(err)
+	s.Require().NotNil(output)
+	s.Assert().NotNil(output.Result)
+
+	// Unarmed strike does bludgeoning damage
+	if output.Result.Hit {
+		s.Assert().Equal(damage.Bludgeoning, output.Result.DamageType)
+	}
+
+	// Monk with unarmed strike should get martial arts bonus strike
+	s.Assert().NotNil(output.GrantedAction, "Monk using unarmed strike should get martial arts bonus")
+	if output.GrantedAction != nil {
+		s.Assert().Equal("martial-arts-bonus-strike", output.GrantedAction.Type)
 	}
 }

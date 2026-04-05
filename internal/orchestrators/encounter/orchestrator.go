@@ -350,7 +350,7 @@ func (o *Orchestrator) ResolveAttack(ctx context.Context, input *ResolveAttackIn
 		return nil, fmt.Errorf("failed to load monster conditions: %w", err)
 	}
 
-	// 7. Get weapon and equipment slots from equipped items (with fallback to greataxe)
+	// 7. Get weapon and equipment slots from equipped items (with fallback to unarmed strike)
 	weapon, equipmentSlots := o.getEquippedWeaponAndSlots(ctx, input.AttackerID)
 
 	// 8. Build GameContext with character equipment and ability scores for combat resolution
@@ -400,7 +400,7 @@ func (o *Orchestrator) ResolveAttack(ctx context.Context, input *ResolveAttackIn
 		maResult, _ := actions.CheckAndGrantMartialArtsBonusStrike(ctx, &actions.MartialArtsGranterInput{
 			CharacterID:   input.AttackerID,
 			WeaponID:      weapon.ID,
-			IsUnarmed:     false, // TODO: Detect unarmed strikes when implemented
+			IsUnarmed:     weapon.ID == weapons.UnarmedStrike,
 			SourceAbility: "attack",
 			EventBus:      bus,
 		})
@@ -2237,7 +2237,38 @@ func convertCharActionsToEntities(actions []character.AvailableAction) []*entiti
 			Reason:   a.Reason,
 		}
 	}
-	return result
+	return addUnarmedStrikeOption(result)
+}
+
+// addUnarmedStrikeOption ensures Unarmed Strike appears as an available action whenever
+// Strike is available. In D&D 5e every character can make an unarmed strike in place of
+// a weapon attack. The toolkit tracks this as a separate action when granted via Martial
+// Arts bonus, but it should also appear as a primary attack option alongside Strike.
+func addUnarmedStrikeOption(actions []*entities.AvailableAction) []*entities.AvailableAction {
+	hasStrike := false
+	hasUnarmedStrike := false
+	strikeCanUse := false
+
+	for _, a := range actions {
+		if a.ActionID == refs.Actions.Strike().ID {
+			hasStrike = true
+			strikeCanUse = a.CanUse
+		}
+		if a.ActionID == refs.Actions.UnarmedStrike().ID {
+			hasUnarmedStrike = true
+		}
+	}
+
+	// Add Unarmed Strike when Strike is available but Unarmed Strike is not yet listed
+	if hasStrike && !hasUnarmedStrike {
+		actions = append(actions, &entities.AvailableAction{
+			ActionID: refs.Actions.UnarmedStrike().ID,
+			Name:     "Unarmed Strike",
+			CanUse:   strikeCanUse,
+		})
+	}
+
+	return actions
 }
 
 // protoAbilityIDToRef maps a proto CombatAbilityId to a toolkit ref.
@@ -4833,14 +4864,17 @@ func (o *Orchestrator) executeFlurryStrike(
 	}, nil
 }
 
-// executeUnarmedStrike handles UNARMED_STRIKE actions (Martial Arts bonus strike).
-// Mirrors executeFlurryStrike but consumes martial arts bonus capacity.
+// executeUnarmedStrike handles UNARMED_STRIKE actions.
+// First tries as a martial arts bonus strike (consumes GrantedMartialArtsBonus).
+// If no bonus capacity, falls back to a primary attack with an unarmed strike weapon
+// (consumes GrantedAttacks via the Strike action). This allows any character to use
+// unarmed strike as their primary attack, not just as a Monk bonus action.
 // Martial Arts conditions upgrade the 1d1 base damage via the damage chain.
 func (o *Orchestrator) executeUnarmedStrike(
 	ctx context.Context,
 	input *ExecuteActionInput,
 	encData *encounterrepo.EncounterData,
-	_ *entities.ActionEconomyState,
+	actionEconomy *entities.ActionEconomyState,
 ) (*ExecuteActionOutput, error) {
 	// 1. Validate target
 	if input.TargetID == "" {
@@ -4853,7 +4887,7 @@ func (o *Orchestrator) executeUnarmedStrike(
 		return nil, err
 	}
 
-	// 3. Delegate action economy check to toolkit Character
+	// 3. Try as martial arts bonus strike first (uses GrantedMartialArtsBonus)
 	execOutput, err := char.ExecuteAction(ctx, &character.ExecuteActionInput{
 		ActionRef: refs.Actions.UnarmedStrike(),
 		TargetID:  input.TargetID,
@@ -4862,14 +4896,12 @@ func (o *Orchestrator) executeUnarmedStrike(
 		return nil, fmt.Errorf("failed to execute action: %w", err)
 	}
 
+	// 4. If martial arts bonus is exhausted, fall back to primary attack with unarmed weapon.
+	// This routes through executeStrike which consumes GrantedAttacks.
 	if !execOutput.Success {
-		return &ExecuteActionOutput{
-			Success:            false,
-			Error:              execOutput.Error,
-			ActionEconomy:      encData.ActionEconomy,
-			AvailableAbilities: convertCharAbilitiesToEntities(execOutput.Abilities),
-			AvailableActions:   convertCharActionsToEntities(execOutput.Actions),
-		}, nil
+		unarmedInput := *input
+		unarmedInput.WeaponID = weapons.UnarmedStrike
+		return o.executeStrike(ctx, &unarmedInput, encData, actionEconomy, combat.AttackHandMain)
 	}
 
 	// 4. Load monster
