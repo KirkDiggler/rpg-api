@@ -1323,7 +1323,7 @@ func (o *Orchestrator) placeMonsters(roomData *spatial.RoomData, room *dungeon.R
 //
 // Existing entries in currentRoomData are never overwritten to preserve character
 // positions that were already there before the door was opened.
-func mergeNewRoomMonsters(monsters []MonsterInfo, revealedRoom *spatial.RoomData, currentRoomData *spatial.RoomData) {
+func mergeNewRoomMonsters(monsters []MonsterInfo, revealedRoom *spatial.RoomData, currentRoomData *spatial.RoomData, roomOrigin dungeon.Position) {
 	if revealedRoom == nil || currentRoomData == nil || len(monsters) == 0 {
 		return
 	}
@@ -1334,9 +1334,10 @@ func mergeNewRoomMonsters(monsters []MonsterInfo, revealedRoom *spatial.RoomData
 		currentRoomData.CubeEntities = make(map[string]spatial.EntityCubePlacement)
 	}
 	for _, m := range monsters {
-		cubeX := int(m.Position.X)
-		cubeZ := int(m.Position.Y) // Y in 2D maps to Z in cube coords
-		cubeY := -cubeX - cubeZ    // y = -x - z for valid cube coordinate
+		// Monster positions are room-local offset coords. Add room origin to get absolute.
+		cubeX := int(m.Position.X) + roomOrigin.X
+		cubeZ := int(m.Position.Y) + roomOrigin.Z // Y in 2D maps to Z in cube coords
+		cubeY := -cubeX - cubeZ                   // y = -x - z for valid cube coordinate
 
 		placement := spatial.EntityCubePlacement{
 			EntityID:          m.ID,
@@ -3272,7 +3273,7 @@ func (o *Orchestrator) OpenDoor(
 	// the existing RoomData. This ensures monsters in the new room are present in the
 	// persisted RoomData so that buildPerception can locate them during EndTurn.
 	revealedSpatialRoom := o.convertToRoomData(dng.EncounterID, revealedRoom)
-	mergeNewRoomMonsters(monsters, revealedSpatialRoom, roomData)
+	mergeNewRoomMonsters(monsters, revealedSpatialRoom, roomData, roomOriginFor(dng, revealedRoomID))
 
 	// Update encounter state with new initiative, boss monster IDs, and merged RoomData.
 	// Merge new boss IDs with any existing ones
