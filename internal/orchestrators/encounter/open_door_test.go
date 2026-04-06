@@ -447,3 +447,101 @@ func (s *OpenDoorTestSuite) TestOpenDoor_BothRoomsRevealed_Error() {
 	s.Nil(output)
 	s.Contains(err.Error(), "both rooms already revealed")
 }
+
+// TestOpenDoor_MonsterPositions_AreAbsolute verifies that when a room with a non-zero origin is
+// revealed, the monster positions stored in the encounter Entities map are absolute dungeon-space
+// coordinates (room-local + origin), not room-local coordinates.
+//
+// Regression test for: bug: OpenDoor monster positions are room-local, not absolute (#460)
+func (s *OpenDoorTestSuite) TestOpenDoor_MonsterPositions_AreAbsolute() {
+	// Room 2 is offset from the dungeon origin: origin (0, -10, 10) in cube coords.
+	// The monster is at room-local position (3, 2) which maps to cube (X=3, Z=2).
+	// After adding the room origin the absolute cube position should be:
+	//   absX = 3 + 0  = 3
+	//   absZ = 2 + 10 = 12
+	//   absY = -absX - absZ = -3 - 12 = -15
+	const (
+		originX = 0
+		originZ = 10
+
+		localMonsterX = 3 // room-local offset X -> cube X
+		localMonsterZ = 2 // room-local offset Y -> cube Z
+
+		wantAbsX = localMonsterX + originX // 3
+		wantAbsZ = localMonsterZ + originZ // 12
+		wantAbsY = -wantAbsX - wantAbsZ   // -15
+	)
+
+	// Arrange: build a dungeon where room-2 has a non-zero origin.
+	testDungeon := s.createTestDungeon()
+	testDungeon.Rooms["room-2"].Encounter = &dungeon.Encounter{
+		Monsters: []dungeon.MonsterPlacement{
+			{
+				ID:        "mp-abs",
+				MonsterID: "skeleton",
+				// Room-local offset coords: X=cube X, Y=cube Z
+				Position: dungeon.Position{X: localMonsterX, Y: localMonsterZ},
+			},
+		},
+	}
+	testDungeon.RoomOrigins = map[string]dungeon.Position{
+		"room-2": {X: originX, Y: -originX - originZ, Z: originZ},
+	}
+
+	// The encounter data must have an Entities map so addMonstersToEntityMap does not skip.
+	var capturedEncData *encounterrepo.EncounterData
+	testEncounter := s.createTestEncounterData()
+	testEncounter.Entities = make(map[string]*entities.EntityStateData)
+
+	s.mockDungeonRepo.EXPECT().
+		Get(gomock.Any(), &dungeonrepo.GetInput{DungeonID: "dng-123"}).
+		Return(&dungeonrepo.GetOutput{Dungeon: testDungeon}, nil)
+
+	s.mockEncRepo.EXPECT().
+		Get(gomock.Any(), &encounterrepo.GetInput{EncounterID: "enc-123"}).
+		DoAndReturn(func(_ context.Context, _ *encounterrepo.GetInput) (*encounterrepo.GetOutput, error) {
+			capturedEncData = testEncounter
+			return &encounterrepo.GetOutput{Data: testEncounter}, nil
+		})
+
+	s.mockDungeonRepo.EXPECT().
+		Update(gomock.Any(), gomock.Any()).
+		Return(&dungeonrepo.UpdateOutput{Success: true}, nil)
+
+	s.mockEncRepo.EXPECT().
+		Update(gomock.Any(), gomock.Any()).
+		Return(&encounterrepo.UpdateOutput{}, nil)
+
+	// buildEncounterStateSnapshot calls GetByEncounterID to load dungeon context for the snapshot.
+	// Return the same dungeon (now updated with room-2 revealed) so the snapshot can be built.
+	s.mockDungeonRepo.EXPECT().
+		GetByEncounterID(gomock.Any(), &dungeonrepo.GetByEncounterIDInput{EncounterID: "enc-123"}).
+		Return(&dungeonrepo.GetOutput{Dungeon: testDungeon}, nil)
+
+	// Act
+	output, err := s.orchestrator.OpenDoor(s.ctx, &encounter.OpenDoorInput{
+		DungeonID:    "dng-123",
+		ConnectionID: "conn-1",
+	})
+
+	// Assert: OpenDoor itself should succeed.
+	s.Require().NoError(err)
+	s.Require().NotNil(output)
+
+	// The captured encounter data has been mutated in-place by addMonstersToEntityMap.
+	// The monster entity must carry absolute dungeon-space cube coordinates.
+	s.Require().NotNil(capturedEncData, "encounter data should have been captured")
+	s.Require().NotEmpty(capturedEncData.Entities, "entities map should not be empty after monster spawn")
+
+	monsterKey := "monster-room-2-mp-abs"
+	entity, ok := capturedEncData.Entities[monsterKey]
+	s.Require().True(ok, "entity %q should be present in Entities map", monsterKey)
+	s.Require().NotNil(entity.Position, "entity position should not be nil")
+
+	s.Equal(float64(wantAbsX), entity.Position.X,
+		"absolute X should be room-local (%d) + origin (%d) = %d", localMonsterX, originX, wantAbsX)
+	s.Equal(float64(wantAbsY), entity.Position.Y,
+		"absolute Y should satisfy cube constraint: -absX - absZ = %d", wantAbsY)
+	s.Equal(float64(wantAbsZ), entity.Position.Z,
+		"absolute Z should be room-local (%d) + origin (%d) = %d", localMonsterZ, originZ, wantAbsZ)
+}

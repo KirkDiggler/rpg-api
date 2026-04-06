@@ -3316,8 +3316,9 @@ func (o *Orchestrator) OpenDoor(
 		}
 	}
 
-	// 17. Add new monster entities to encounter Entities map for snapshot
-	o.addMonstersToEntityMap(encOutput.Data, monsters, revealedRoomID)
+	// 17. Add new monster entities to encounter Entities map for snapshot.
+	// Pass the room origin so entity positions are stored as absolute dungeon-space coordinates.
+	o.addMonstersToEntityMap(encOutput.Data, monsters, revealedRoomID, roomOriginFor(dng, revealedRoomID))
 
 	// Build snapshot for RoomRevealed event
 	roomRevealedStateData := o.buildEncounterStateSnapshot(ctx, dng.EncounterID, encOutput.Data, combatState)
@@ -5545,30 +5546,49 @@ func (o *Orchestrator) buildEncounterStateSnapshot(
 	return output.EncounterStateData
 }
 
+// roomOriginFor returns the absolute dungeon-space cube origin for the given room, or a zero
+// value if the dungeon has no stored origins or the room is not present in the map.
+func roomOriginFor(dng *entities.Dungeon, roomID string) dungeon.Position {
+	if dng.RoomOrigins == nil {
+		return dungeon.Position{}
+	}
+	return dng.RoomOrigins[roomID]
+}
+
 // addMonstersToEntityMap adds newly spawned monsters (from room reveal) to the encounter's
 // Entities map so that subsequent snapshot events include them.
+//
+// roomOrigin is the absolute dungeon-space cube position of the room. Monster placements
+// are stored in room-local offset coordinates (X = cube X, Y = cube Z), so the origin must
+// be added to produce the absolute position that the rest of the system expects.
 func (o *Orchestrator) addMonstersToEntityMap(
 	enc *encounterrepo.EncounterData,
 	monsters []MonsterInfo,
 	roomID string,
+	roomOrigin dungeon.Position,
 ) {
 	if enc == nil || enc.Entities == nil || len(monsters) == 0 {
 		return
 	}
 
 	for _, m := range monsters {
-		cubeX := int(m.Position.X)
-		cubeZ := int(m.Position.Y)
-		cubeY := -cubeX - cubeZ
+		// Monster positions in MonsterInfo use offset (2D) coords:
+		//   Position.X -> cube X axis
+		//   Position.Y -> cube Z axis
+		// Add the room origin (cube coords) to convert to absolute dungeon-space.
+		absX := int(m.Position.X) + roomOrigin.X
+		absZ := int(m.Position.Y) + roomOrigin.Z
+		absY := -absX - absZ // cube constraint: x + y + z = 0
+
 		monsterData := o.findMonsterData(enc, m.ID)
 		enc.Entities[m.ID] = &entities.EntityStateData{
 			EntityID:   m.ID,
 			EntityType: entities.EntityTypeMonster,
 			RoomID:     roomID,
 			Position: &entities.Position{
-				X: float64(cubeX),
-				Y: float64(cubeY),
-				Z: float64(cubeZ),
+				X: float64(absX),
+				Y: float64(absY),
+				Z: float64(absZ),
 			},
 			Size:        1,
 			ToolkitData: monsterData,
