@@ -1312,6 +1312,41 @@ func (o *Orchestrator) placeMonsters(roomData *spatial.RoomData, room *dungeon.R
 	return monsters
 }
 
+// mergeNewRoomMonsters places monsters from a newly-revealed room into both the
+// revealed room's spatial data and the existing (current) RoomData. Merging into
+// the existing RoomData is required so that EndTurn's buildPerception can locate
+// new monsters when they take their turn; without this, monsters see no enemies.
+//
+// The coordinate conversion matches StartCombat: 2D position Y maps to cube Z,
+// and cube Y is derived from the x+y+z=0 constraint.
+//
+// Existing entries in currentRoomData are never overwritten to preserve character
+// positions that were already there before the door was opened.
+func mergeNewRoomMonsters(monsters []MonsterInfo, revealedRoom *spatial.RoomData, currentRoomData *spatial.RoomData) {
+	for _, m := range monsters {
+		cubeX := int(m.Position.X)
+		cubeZ := int(m.Position.Y) // Y in 2D maps to Z in cube coords
+		cubeY := -cubeX - cubeZ    // y = -x - z for valid cube coordinate
+
+		placement := spatial.EntityCubePlacement{
+			EntityID:          m.ID,
+			EntityType:        entityTypeMonster,
+			CubePosition:      spatial.CubeCoordinate{X: cubeX, Y: cubeY, Z: cubeZ},
+			Size:              1,
+			BlocksMovement:    true,
+			BlocksLineOfSight: false,
+		}
+
+		revealedRoom.CubeEntities[m.ID] = placement
+
+		// Only add to current room data if not already present; existing character
+		// positions must not be overwritten.
+		if _, exists := currentRoomData.CubeEntities[m.ID]; !exists {
+			currentRoomData.CubeEntities[m.ID] = placement
+		}
+	}
+}
+
 // findSafeFallbackPosition finds a position that is not on a wall or occupied
 // Searches outward from center until a valid position is found
 func findSafeFallbackPosition(room *dungeon.Room, roomData *spatial.RoomData) spatial.CubeCoordinate {
@@ -3223,7 +3258,13 @@ func (o *Orchestrator) OpenDoor(
 		return nil, fmt.Errorf("failed to update dungeon: %w", err)
 	}
 
-	// 11. Update encounter state with new initiative and boss monster IDs
+	// 11. Build spatial data for the revealed room and merge monster positions into
+	// the existing RoomData. This ensures monsters in the new room are present in the
+	// persisted RoomData so that buildPerception can locate them during EndTurn.
+	revealedSpatialRoom := o.convertToRoomData(dng.EncounterID, revealedRoom)
+	mergeNewRoomMonsters(monsters, revealedSpatialRoom, roomData)
+
+	// Update encounter state with new initiative, boss monster IDs, and merged RoomData.
 	// Merge new boss IDs with any existing ones
 	allBossIDs := make([]string, 0, len(encOutput.Data.BossMonsterIDs)+len(newBossMonsterIDs))
 	allBossIDs = append(allBossIDs, encOutput.Data.BossMonsterIDs...)
@@ -3234,6 +3275,7 @@ func (o *Orchestrator) OpenDoor(
 		InitiativeRolls: allRolls, // Persist merged rolls so EndTurn can re-sort at round start
 		Monsters:        encOutput.Data.Monsters,
 		BossMonsterIDs:  allBossIDs,
+		RoomData:        roomData, // Persist merged positions so monsters can be perceived on EndTurn
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to update encounter: %w", err)
@@ -3313,25 +3355,8 @@ func (o *Orchestrator) OpenDoor(
 		})
 	}
 
-	// 16. Build revealed room spatial data for event (including monsters)
-	revealedSpatialRoom := o.convertToRoomData(dng.EncounterID, revealedRoom)
-
-	// Add monster placements to the spatial room data for the event
-	// This ensures the RoomRevealedEvent includes monsters, matching the OpenDoor response
-	for _, m := range monsters {
-		cubeX := int(m.Position.X)
-		cubeZ := int(m.Position.Y) // Y in 2D maps to Z in cube coords
-		cubeY := -cubeX - cubeZ    // y = -x - z for valid cube coordinate
-
-		revealedSpatialRoom.CubeEntities[m.ID] = spatial.EntityCubePlacement{
-			EntityID:          m.ID,
-			EntityType:        "monster",
-			CubePosition:      spatial.CubeCoordinate{X: cubeX, Y: cubeY, Z: cubeZ},
-			Size:              1,
-			BlocksMovement:    true,
-			BlocksLineOfSight: false,
-		}
-	}
+	// 16. revealedSpatialRoom was already built in step 11 with monsters placed in it.
+	// It is used directly for the RoomRevealedEvent below.
 
 	// 17. Add new monster entities to encounter Entities map for snapshot.
 	// Pass the room origin so entity positions are stored as absolute dungeon-space coordinates.

@@ -307,7 +307,7 @@ func (s *OpenDoorTestSuite) TestOpenDoor_Success_RevealsRoom() {
 			return &dungeonrepo.UpdateOutput{Success: true}, nil
 		})
 
-	// Expect encounter update with new initiative order
+	// Expect encounter update with new initiative order and merged RoomData
 	s.mockEncRepo.EXPECT().
 		Update(gomock.Any(), gomock.Any()).
 		DoAndReturn(func(_ context.Context, input *encounterrepo.UpdateInput) (*encounterrepo.UpdateOutput, error) {
@@ -315,6 +315,17 @@ func (s *OpenDoorTestSuite) TestOpenDoor_Success_RevealsRoom() {
 			s.NotNil(input.InitiativeData, "initiative data should be updated")
 			// Should now have 3 entities (1 char + 2 skeletons)
 			s.Len(input.InitiativeData.Order, 3)
+			// RoomData must be persisted so monsters are visible to buildPerception on EndTurn
+			s.NotNil(input.RoomData, "RoomData must be persisted so new monsters can be perceived")
+			roomData, ok := input.RoomData.(*spatial.RoomData)
+			s.True(ok, "RoomData should be *spatial.RoomData")
+			if ok {
+				// Original character placement is preserved
+				s.Contains(roomData.CubeEntities, "char-1", "character position should be preserved in RoomData")
+				// New monsters are present so buildPerception can locate them
+				s.Contains(roomData.CubeEntities, "monster-room-2-mp-1", "new monster should be in RoomData")
+				s.Contains(roomData.CubeEntities, "monster-room-2-mp-2", "new monster should be in RoomData")
+			}
 			return &encounterrepo.UpdateOutput{}, nil
 		})
 
@@ -331,6 +342,66 @@ func (s *OpenDoorTestSuite) TestOpenDoor_Success_RevealsRoom() {
 	s.Equal("room-2", output.RevealedRoom.ID)
 	s.Len(output.Monsters, 2, "should have 2 monsters")
 	s.NotNil(output.CombatState)
+}
+
+func (s *OpenDoorTestSuite) TestOpenDoor_NewMonstersPersistedInRoomData() {
+	// Regression test: OpenDoor must persist RoomData containing new monster positions
+	// so that EndTurn's executeMonsterTurns -> buildPerception can find targets.
+	// Without this fix, monsters opened into via a door would see no enemies and stand idle.
+
+	// Arrange
+	testDungeon := s.createTestDungeon()
+	testEncounter := s.createTestEncounterData()
+
+	s.mockDungeonRepo.EXPECT().
+		Get(gomock.Any(), &dungeonrepo.GetInput{DungeonID: "dng-123"}).
+		Return(&dungeonrepo.GetOutput{Dungeon: testDungeon}, nil)
+
+	s.mockEncRepo.EXPECT().
+		Get(gomock.Any(), &encounterrepo.GetInput{EncounterID: "enc-123"}).
+		Return(&encounterrepo.GetOutput{Data: testEncounter}, nil)
+
+	s.mockDungeonRepo.EXPECT().
+		Update(gomock.Any(), gomock.Any()).
+		Return(&dungeonrepo.UpdateOutput{Success: true}, nil)
+
+	var capturedRoomData *spatial.RoomData
+	s.mockEncRepo.EXPECT().
+		Update(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, input *encounterrepo.UpdateInput) (*encounterrepo.UpdateOutput, error) {
+			s.Require().NotNil(input.RoomData, "RoomData must not be nil: monsters would be invisible to EndTurn")
+			rd, ok := input.RoomData.(*spatial.RoomData)
+			s.Require().True(ok, "RoomData must be *spatial.RoomData")
+			capturedRoomData = rd
+			return &encounterrepo.UpdateOutput{}, nil
+		})
+
+	// Act
+	output, err := s.orchestrator.OpenDoor(s.ctx, &encounter.OpenDoorInput{
+		DungeonID:    "dng-123",
+		ConnectionID: "conn-1",
+	})
+	s.Require().NoError(err)
+	s.Require().NotNil(output)
+
+	// The persisted RoomData must contain all entities needed for perception:
+	// - The character (so monsters can target them)
+	// - Each new monster (so buildPerception can locate their own position)
+	s.Require().NotNil(capturedRoomData)
+	s.Contains(capturedRoomData.CubeEntities, "char-1",
+		"character must remain in RoomData after OpenDoor so monsters can perceive them")
+
+	for _, m := range output.Monsters {
+		s.Contains(capturedRoomData.CubeEntities, m.ID,
+			"monster %q must be in persisted RoomData so it can perceive targets on EndTurn", m.ID)
+
+		placement := capturedRoomData.CubeEntities[m.ID]
+		s.Equal(m.ID, placement.EntityID)
+		s.Equal("monster", placement.EntityType)
+		// Cube constraint: x + y + z == 0
+		s.Equal(0, placement.CubePosition.X+placement.CubePosition.Y+placement.CubePosition.Z,
+			"cube coordinate must satisfy x+y+z=0 for monster %q", m.ID)
+	}
 }
 
 func (s *OpenDoorTestSuite) TestOpenDoor_RevealsCorrectRoom() {
