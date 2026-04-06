@@ -1317,12 +1317,22 @@ func (o *Orchestrator) placeMonsters(roomData *spatial.RoomData, room *dungeon.R
 // the existing RoomData is required so that EndTurn's buildPerception can locate
 // new monsters when they take their turn; without this, monsters see no enemies.
 //
-// The coordinate conversion matches StartCombat: 2D position Y maps to cube Z,
-// and cube Y is derived from the x+y+z=0 constraint.
+// The coordinate conversion follows the same 2D-to-cube mapping used when adding
+// newly revealed room monsters into the entity map during door-opening: 2D
+// position Y maps to cube Z, and cube Y is derived from the x+y+z=0 constraint.
 //
 // Existing entries in currentRoomData are never overwritten to preserve character
 // positions that were already there before the door was opened.
 func mergeNewRoomMonsters(monsters []MonsterInfo, revealedRoom *spatial.RoomData, currentRoomData *spatial.RoomData) {
+	if revealedRoom == nil || currentRoomData == nil || len(monsters) == 0 {
+		return
+	}
+	if revealedRoom.CubeEntities == nil {
+		revealedRoom.CubeEntities = make(map[string]spatial.EntityCubePlacement)
+	}
+	if currentRoomData.CubeEntities == nil {
+		currentRoomData.CubeEntities = make(map[string]spatial.EntityCubePlacement)
+	}
 	for _, m := range monsters {
 		cubeX := int(m.Position.X)
 		cubeZ := int(m.Position.Y) // Y in 2D maps to Z in cube coords
