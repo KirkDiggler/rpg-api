@@ -523,6 +523,74 @@ func (s *HandlerTestSuite) TestDungeonStart_EmptyRequest() {
 	s.Assert().Equal("enc-456-room", resp.Room.Id)
 }
 
+// TestDungeonStart_ShiftsEntitiesToAbsoluteCoordinates verifies that entity positions in the
+// response are shifted from room-local coordinates to dungeon-absolute coordinates.
+// This mirrors the same shift applied in OpenDoor and StartCombat.
+// For the start room, origin is always (0,0,0), but the handler must call shiftRoomToAbsolute
+// to remain consistent — if origin were ever non-zero (e.g. if dungeon layout changes),
+// the shift ensures correctness.
+func (s *HandlerTestSuite) TestDungeonStart_ShiftsEntitiesToAbsoluteCoordinates() {
+	// Room with a character in room-local hex cube coordinates.
+	// Cube coords: (1, -2, 1) — sum equals 0, so this is a valid cube coordinate.
+	localX, localY, localZ := 1, -2, 1
+	roomWithEntity := &spatial.RoomData{
+		ID:       "room-hex",
+		Type:     "dungeon",
+		Width:    10,
+		Height:   10,
+		GridType: spatial.GridTypeHex,
+		CubeEntities: map[string]spatial.EntityCubePlacement{
+			"char-1": {
+				EntityID:   "char-1",
+				EntityType: "character",
+				CubePosition: spatial.CubeCoordinate{
+					X: localX,
+					Y: localY,
+					Z: localZ,
+				},
+				Size:           1,
+				BlocksMovement: true,
+			},
+		},
+		Entities: make(map[string]spatial.EntityPlacement),
+	}
+
+	// Non-zero origin: the start room is at (5, 0, -5) in dungeon space.
+	// After shift, entity should be at (1+5, -2+0, 1-5) = (6, -2, -4).
+	originX, originY, originZ := 5, 0, -5
+	roomOrigin := &dungeon.Position{X: originX, Y: originY, Z: originZ}
+
+	s.mockService.EXPECT().
+		CreateDungeon(gomock.Any(), gomock.Any()).
+		Return(&encounter.CreateDungeonOutput{
+			EncounterID: "enc-shift-test",
+			Room:        roomWithEntity,
+			RoomOrigin:  roomOrigin,
+		}, nil)
+
+	resp, err := s.handler.DungeonStart(context.Background(), &dnd5ev1alpha1.DungeonStartRequest{
+		CharacterIds: []string{"char-1"},
+	})
+
+	s.Require().NoError(err)
+	s.Require().NotNil(resp)
+	s.Require().NotNil(resp.Room)
+
+	// Verify the origin is set correctly on the proto room.
+	s.Require().NotNil(resp.Room.Origin)
+	s.Assert().Equal(float64(originX), resp.Room.Origin.X)
+	s.Assert().Equal(float64(originY), resp.Room.Origin.Y)
+	s.Assert().Equal(float64(originZ), resp.Room.Origin.Z)
+
+	// Verify entity position has been shifted from room-local to dungeon-absolute.
+	entityPlacement, ok := resp.Room.Entities["char-1"]
+	s.Require().True(ok, "char-1 entity should be present in response room")
+	s.Require().NotNil(entityPlacement.Position)
+	s.Assert().Equal(float64(localX+originX), entityPlacement.Position.X, "entity X should be shifted by origin X")
+	s.Assert().Equal(float64(localY+originY), entityPlacement.Position.Y, "entity Y should be shifted by origin Y")
+	s.Assert().Equal(float64(localZ+originZ), entityPlacement.Position.Z, "entity Z should be shifted by origin Z")
+}
+
 // TestGetCombatState_Unimplemented tests that GetCombatState returns Unimplemented
 func (s *HandlerTestSuite) TestGetCombatState_Unimplemented() {
 	req := &dnd5ev1alpha1.GetCombatStateRequest{

@@ -115,6 +115,10 @@ func (h *Handler) DungeonStart(
 	room := convertRoomDataToProto(output.Room)
 	if room != nil {
 		room.Origin = dungeonPositionToProto(output.RoomOrigin)
+		// Shift walls and entities from room-local to dungeon-absolute coordinates.
+		// For the start room origin is (0,0,0) so this is a no-op, but keeping the
+		// call is required for consistency with OpenDoor and StartCombat.
+		shiftRoomToAbsolute(room)
 	}
 
 	return &dnd5ev1alpha1.DungeonStartResponse{
