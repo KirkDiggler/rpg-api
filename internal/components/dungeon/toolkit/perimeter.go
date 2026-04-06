@@ -147,14 +147,16 @@ func (g *PerimeterGenerator) createWallBeforeDoor(start, doorPos dungeon.Positio
 	doorGap := 1
 	var adjustedEnd dungeon.Position
 	if start.X == doorPos.X {
-		// Vertical wall
+		// Vertical wall: X is fixed, Y changes along the wall, Z follows from cube constraint
 		endX := doorPos.X
 		endY := doorPos.Y - doorGap
 		adjustedEnd = dungeon.Position{X: endX, Y: endY, Z: -endX - endY}
 	} else {
+		// Horizontal wall: Z is fixed (same as start.Z), X changes, Y follows from cube constraint.
+		// Using start.Z preserves the wall's row so the segment stays on the boundary line.
 		endX := doorPos.X - doorGap
-		endY := doorPos.Y
-		adjustedEnd = dungeon.Position{X: endX, Y: endY, Z: -endX - endY}
+		endZ := start.Z
+		adjustedEnd = dungeon.Position{X: endX, Y: -endX - endZ, Z: endZ}
 	}
 
 	return dungeon.WallSegment{
@@ -171,14 +173,16 @@ func (g *PerimeterGenerator) createWallAfterDoor(doorPos, end dungeon.Position, 
 	doorGap := 1
 	var adjustedStart dungeon.Position
 	if doorPos.X == end.X {
-		// Vertical wall
+		// Vertical wall: X is fixed, Y changes along the wall, Z follows from cube constraint
 		startX := doorPos.X
 		startY := doorPos.Y + doorGap
 		adjustedStart = dungeon.Position{X: startX, Y: startY, Z: -startX - startY}
 	} else {
+		// Horizontal wall: Z is fixed (same as end.Z), X changes, Y follows from cube constraint.
+		// Using end.Z preserves the wall's row so the segment stays on the boundary line.
 		startX := doorPos.X + doorGap
-		startY := doorPos.Y
-		adjustedStart = dungeon.Position{X: startX, Y: startY, Z: -startX - startY}
+		startZ := end.Z
+		adjustedStart = dungeon.Position{X: startX, Y: -startX - startZ, Z: startZ}
 	}
 
 	return dungeon.WallSegment{
