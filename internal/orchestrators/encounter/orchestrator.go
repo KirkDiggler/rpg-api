@@ -1091,7 +1091,9 @@ func (o *Orchestrator) convertToWallInfo(room *dungeon.Room) []WallInfo {
 
 // buildRoomLayoutProto converts a dungeon.Room and its absolute origin to a proto RoomLayout.
 // The origin is the room's position in dungeon-space; walls are stored in room-local coordinates
-// and are passed through as-is here (the client applies the origin offset for rendering).
+// and must be translated to absolute dungeon-space by adding the origin offset. The Y coordinate
+// is recomputed from the cube constraint (y = -x - z) after applying the offset, because origin.Y
+// is itself derived from that constraint and must not be added directly.
 //
 //nolint:gosec // G115: Game values are bounded by room size limits, no overflow risk
 func buildRoomLayoutProto(room *dungeon.Room, origin *dungeon.Position) *pb.RoomLayout {
@@ -1125,7 +1127,9 @@ func buildRoomLayoutProto(room *dungeon.Room, origin *dungeon.Position) *pb.Room
 		}
 	}
 
-	// Convert walls.
+	// Convert walls, translating room-local coordinates to absolute dungeon-space by adding the
+	// origin offset. Y is recomputed via the cube constraint (y = -x - z) rather than adding
+	// origin.Y directly, because origin.Y is itself derived from the same constraint.
 	var protoWalls []*apiv1alpha1.Wall
 	if len(room.Walls) > 0 {
 		protoWalls = make([]*apiv1alpha1.Wall, len(room.Walls))
@@ -1134,16 +1138,29 @@ func buildRoomLayoutProto(room *dungeon.Room, origin *dungeon.Position) *pb.Room
 			if w.Type == dungeon.WallTypeDestructible {
 				material = "wood"
 			}
+
+			startX := float64(w.Start.X)
+			startZ := float64(w.Start.Z)
+			endX := float64(w.End.X)
+			endZ := float64(w.End.Z)
+
+			if origin != nil {
+				startX += float64(origin.X)
+				startZ += float64(origin.Z)
+				endX += float64(origin.X)
+				endZ += float64(origin.Z)
+			}
+
 			protoWalls[i] = &apiv1alpha1.Wall{
 				Start: &apiv1alpha1.Position{
-					X: float64(w.Start.X),
-					Y: float64(w.Start.Y),
-					Z: float64(w.Start.Z),
+					X: startX,
+					Y: -startX - startZ,
+					Z: startZ,
 				},
 				End: &apiv1alpha1.Position{
-					X: float64(w.End.X),
-					Y: float64(w.End.Y),
-					Z: float64(w.End.Z),
+					X: endX,
+					Y: -endX - endZ,
+					Z: endZ,
 				},
 				Material:          material,
 				BlocksMovement:    w.BlocksMovement,
