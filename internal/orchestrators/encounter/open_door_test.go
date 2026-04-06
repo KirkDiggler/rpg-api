@@ -540,7 +540,7 @@ func (s *OpenDoorTestSuite) TestOpenDoor_MonsterPositions_AreAbsolute() {
 
 		wantAbsX = localMonsterX + originX // 3
 		wantAbsZ = localMonsterZ + originZ // 12
-		wantAbsY = -wantAbsX - wantAbsZ   // -15
+		wantAbsY = -wantAbsX - wantAbsZ    // -15
 	)
 
 	// Arrange: build a dungeon where room-2 has a non-zero origin.

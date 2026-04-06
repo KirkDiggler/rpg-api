@@ -5,6 +5,7 @@ package event
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/KirkDiggler/rpg-api/internal/apierr"
 	"github.com/KirkDiggler/rpg-api/internal/entities"
@@ -74,11 +75,14 @@ func (p *processor) Process(ctx context.Context, input *ProcessInput) (*ProcessO
 
 	// 2. Publish to subscribers (for real-time updates)
 	// Publish failures don't fail the operation - persistence is source of truth
-	// In production, might want to log, retry, or queue failed publishes
-	_, _ = p.publisher.Publish(ctx, &encounter.PublishInput{
+	_, pubErr := p.publisher.Publish(ctx, &encounter.PublishInput{
 		EncounterID: input.EncounterID,
 		Event:       input.Event,
 	})
+	if pubErr != nil {
+		fmt.Printf("[EventProcessor] PUBLISH FAILED for %s event (encounter %s): %v\n",
+			input.Event.Type, input.EncounterID, pubErr)
+	}
 
 	// Use the EventID from the repository response - repo is source of truth
 	return &ProcessOutput{EventID: appendOutput.EventID}, nil
