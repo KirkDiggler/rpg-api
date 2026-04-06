@@ -60,6 +60,8 @@ type TestServer struct {
 	// Exposed for test setup (seeding data, etc.)
 	EncounterPublisher encounterpub.Publisher
 	CharacterRepo      characterrepo.Repository
+	EncounterRepo      encountersrepo.Repository
+	DungeonRepo        dungeonsrepo.Repository
 }
 
 // Config allows customization of the test server.
@@ -180,6 +182,8 @@ func (ts *TestServer) wireServices(cfg *Config) error {
 
 	encounterRepo := encountersrepo.NewInMemory()
 	dungeonRepo := dungeonsrepo.NewInMemory()
+	ts.EncounterRepo = encounterRepo
+	ts.DungeonRepo = dungeonRepo
 	dungeonGen := dungeontoolkit.CreateGenerator(&dungeontoolkit.ToolkitConfig{})
 	encounterLogRepo := encounterlogrepo.NewInMemory(nil)
 
