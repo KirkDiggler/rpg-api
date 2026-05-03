@@ -64,12 +64,17 @@ merge debt from stacking fixes. None of these should be merged individually.
 
 `internal/orchestrators/encounter/orchestrator.go` imports `pb` (the dnd5e proto
 package) and `apiv1alpha1` directly and uses `*pb.RoomLayout`, `*pb.EntityState`,
-`*pb.CombatStateProto` as return/local types (~50 `pb.` references). This violates
-the handler→orchestrator boundary. The functions `buildRoomLayoutProto` and
-`buildRoomsMap` construct proto messages inside the orchestrator. No lint rule
-catches this today.
+`*pb.CombatStateProto` as return/local types (39 `pb.` references verified by grep).
+This violates the handler→orchestrator boundary. The functions `buildRoomLayoutProto`
+(line 1097) and `buildRoomsMap` (line 1167) construct proto messages inside the
+orchestrator. No lint rule catches this today.
 
-Affected file: `internal/orchestrators/encounter/orchestrator.go`
+The violation also extends to `service.go` (line 7): the Service interface's Input/Output
+types themselves embed `pb.MonsterType` (line 459), `pb.CombatAbilityId` (line 511),
+and `pb.ActionId` (line 535) — meaning any caller of the interface must also import `pb`.
+
+Affected files: `internal/orchestrators/encounter/orchestrator.go`,
+`internal/orchestrators/encounter/service.go`
 
 ### Boundary violation — dungeon component belongs in toolkit
 
@@ -113,7 +118,7 @@ implementations; encounter and dungeon do not.
 
 ### Orchestrator size and complexity
 
-`internal/orchestrators/encounter/orchestrator.go` is 5,650 lines with 70+
+`internal/orchestrators/encounter/orchestrator.go` is 5,577 lines with 70+
 exported and unexported functions. `StartCombat` carries a `//nolint:gocyclo`
 suppression. The file owns dungeon generation, combat resolution, monster turns,
 room navigation, entity-state building, and event publishing. Splitting this into
@@ -128,8 +133,8 @@ may exist elsewhere in the orchestrator.
 ### Handler TODO cluster in character handler/converters
 
 `internal/handlers/dnd5e/v1alpha1/character/handler.go` has 8 TODO comments.
-`internal/handlers/dnd5e/v1alpha1/character/converters.go` has 20 TODO
-comments. Most are about incomplete proto enum mappings (spells, traits, tool
+`internal/handlers/dnd5e/v1alpha1/character/converters.go` has 27 TODO
+comments (verified by grep on docs/honest-status-snapshot branch — original draft said 20). Most are about incomplete proto enum mappings (spells, traits, tool
 proficiencies, subraces, languages). Some responses return stub/zero values
 today.
 
@@ -147,7 +152,7 @@ See [quality.md](quality.md) for grade and rationale.
 |---|---|
 | Encounter handler | Medium — clean RPC shell, but spatial/toolkit types leak in |
 | Character handler | Medium — large converter surface with many TODO stubs |
-| Encounter orchestrator | Medium-low — correct behavior but 5,650 lines, proto leakage, coordinate fragility |
+| Encounter orchestrator | Medium-low — correct behavior but 5,577 lines, proto leakage, coordinate fragility |
 | Character orchestrator | Medium-high — smaller, well-tested |
 | Dungeon component | Medium — good tests, wrong repo; toolkit boundary violation |
 | Spawner component | Medium — thin, functional |
@@ -159,6 +164,23 @@ See [quality.md](quality.md) for grade and rationale.
 | Encounter log repository (in-memory) | Low — append-only design is correct but in-memory means no replay after restart |
 | Integration test harness | Medium-high — good coverage of happy paths, Round 2 open-door test just added |
 | Services layer (sandboxroom) | Low — sparse; most business logic lives in orchestrators |
+
+### Lint — 65 pre-existing violations
+
+`make pre-commit` fails on lint with 65 pre-existing violations as of 2026-05-02. All tests pass (`go test -short -race ./...` — 23 packages). The lint failures are in source code unrelated to the current docs branch. Categories:
+
+- **goconst (42)** — magic string literals repeated 3+ times in dungeon toolkit, character and encounter converters
+- **revive (5)** — `context.Context` not first param in test helpers, underscore in Go names
+- **govet (4)** — error variable shadowing in harness and integration helpers
+- **gocritic (3)** — sloppy reassignment patterns in encounter orchestrator
+- **unconvert (3)** — unnecessary string() conversions in encounter orchestrator and character handler
+- **unused (3)** — `convertEntityDoorsToProto`, `convertDungeonWallsToProto` in encounter converters; `protoActionIDToRef` in encounter orchestrator
+- **staticcheck (1)** — `grpc.DialContext` deprecated in test harness
+- **errcheck (2)** — unchecked errors in harness.Close()
+- **misspell (1)** — "cancelled" → "canceled" in stream_entity_state_test.go
+- **unparam (1)** — `handleRemainingChoices` always returns nil in helpers
+
+The 3 unused functions (`convertEntityDoorsToProto`, `convertDungeonWallsToProto`, `protoActionIDToRef`) are the most interesting — they are dead code. `protoActionIDToRef` at line 2372 of orchestrator.go converts `pb.ActionId` but is never called. This is additional signal that the proto-to-ref conversion was moved inline without cleaning up.
 
 ## Upcoming work
 

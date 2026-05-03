@@ -47,7 +47,7 @@ its size.
 
 ### Encounter orchestrator — C+
 
-`internal/orchestrators/encounter/orchestrator.go` (5,650 lines)
+`internal/orchestrators/encounter/orchestrator.go` (5,577 lines)
 
 The most critical file in the codebase and the most at-risk. Correct behavior
 has been established through Round 1, but the file owns too much: dungeon
@@ -55,9 +55,10 @@ generation, room navigation, combat resolution, monster turns, entity-state
 snapshots, event publishing, and coordinate transforms. The `StartCombat`
 function is large enough to carry a `//nolint:gocyclo` suppression. Proto
 types (`*pb.RoomLayout`, `*pb.EntityState`, `*pb.CombatStateProto`) are
-constructed inside the orchestrator — ~50 `pb.` references — which violates
-the handler→orchestrator boundary and makes the orchestrator untestable without
-proto dependencies. The five coordinate-space bug fixes landed in three days
+constructed inside the orchestrator — 39 `pb.` references (verified by grep) — which
+violates the handler→orchestrator boundary. The service.go Input/Output types also
+embed `pb.MonsterType`, `pb.CombatAbilityId`, and `pb.ActionId` directly, propagating
+proto contamination to all callers of the Service interface. The five coordinate-space bug fixes landed in three days
 (2026-04-04 to 2026-04-06) are a signal that the transform logic needs a
 canonical home. The `dungeon_mapper.go` hardcodes `ThemeDebugWalls` for crypt
 with a TODO to revert.
