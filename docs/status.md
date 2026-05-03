@@ -49,8 +49,9 @@ merge debt from stacking fixes. None of these should be merged individually.
 - **Debug-walls theme** — `dungeon_mapper.go:44` has a hardcoded
   `ThemeDebugWalls` where `ThemeCrypt` should be. Left in during wall-rendering
   UI testing; not reverted yet.
-- **PlayerDisconnected** — `handler.go:695` has a `TODO` calling the orchestrator
-  method; the streaming handler exits but no state cleanup fires.
+- **PlayerDisconnected** — the streaming handler exits but the `PlayerDisconnected`
+  orchestrator method is never called, so no encounter state cleanup fires.
+  (The TODO lives in `handler.go` in the stream-disconnect path.)
 - **Spell/trait enum conversions** — multiple `TODO` comments in
   `handlers/.../character/converters.go` where `SPELL_UNSPECIFIED` and
   `TRAIT_UNSPECIFIED` are returned because proto enums are not yet mapped.
@@ -124,11 +125,14 @@ suppression. The file owns dungeon generation, combat resolution, monster turns,
 room navigation, entity-state building, and event publishing. Splitting this into
 focused sub-orchestrators (combat, dungeon, lobby) would improve testability.
 
-### `fmt.Printf` log calls in production path
+### Publish failures silently swallowed in event processor
 
-`internal/processors/event/processor.go:83` uses `fmt.Printf` to log publish
-failures. No structured logging, no severity, no trace context. The same pattern
-may exist elsewhere in the orchestrator.
+`internal/processors/event/processor.go` discards the publish error entirely with
+`_, _ = p.publisher.Publish(...)`. There is no logging, no alert, and no retry.
+A comment in the code acknowledges this ("In production, might want to log, retry,
+or queue failed publishes") but no instrumentation exists today. Every combat event
+could silently fail to reach connected clients with no observable signal.
+The same pattern may exist elsewhere in the orchestrator.
 
 ### Handler TODO cluster in character handler/converters
 
@@ -156,7 +160,7 @@ See [quality.md](quality.md) for grade and rationale.
 | Character orchestrator | Medium-high — smaller, well-tested |
 | Dungeon component | Medium — good tests, wrong repo; toolkit boundary violation |
 | Spawner component | Medium — thin, functional |
-| Event processor | Medium-high — clean interface, `fmt.Printf` in hot path |
+| Event processor | Medium-high — clean interface, publish failures silently swallowed |
 | Redis publisher | Medium-high — works, serialization tested |
 | Encounter repository (in-memory) | Low-medium — no persistence, data lost on restart |
 | Dungeon repository (in-memory) | Low-medium — no persistence, data lost on restart |
@@ -200,7 +204,7 @@ The 3 unused functions (`convertEntityDoorsToProto`, `convertDungeonWallsToProto
 
 ## Related references
 
-- [rpg-project/CLAUDE.md](../../rpg-project/CLAUDE.md) — cross-repo Boundary Rule
+- [rpg-project/CLAUDE.md](https://github.com/KirkDiggler/rpg-project/blob/main/CLAUDE.md) — cross-repo Boundary Rule
 - [Project board #10](https://github.com/users/KirkDiggler/projects/10)
 - [REFACTOR_PLAN.md](../REFACTOR_PLAN.md) — equipment-choice refactor deferred
 - [docs/architecture/](architecture/) — existing architecture docs

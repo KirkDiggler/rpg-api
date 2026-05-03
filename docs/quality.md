@@ -25,8 +25,8 @@ Auth context extraction works. The drag: `spatial.GridTypeHex` and
 `*toolkitchar.Data` type assertion lives here. Handlers should not import
 toolkit packages — those types belong in the orchestrator output. Removing
 the toolkit imports is a one-PR fix but it requires the orchestrator to stop
-returning toolkit types in `CharacterData`. The `TODO` on `PlayerDisconnected`
-at line 695 means disconnect events do not clean up encounter state.
+returning toolkit types in `CharacterData`. The `PlayerDisconnected` orchestrator method is never called from the
+streaming handler — disconnect events do not clean up encounter state.
 
 ### Character handler — C
 
@@ -106,11 +106,13 @@ it delegates rather than implementing rules.
 `internal/processors/event/processor.go`
 
 Clean two-step: persist to encounter log, then publish to Redis. Correct
-semantics — publish failure is logged but does not fail the operation because
-persistence is the source of truth. Interface is minimal and well-defined with
-Input/Output types. Main drag: `fmt.Printf` on line 83 for publish failure
-logging. No structured logging, no severity level, no trace context — this is
-the hot path for every combat event and deserves a proper logger.
+semantics — publish failure does not fail the operation because persistence
+is the source of truth. Interface is minimal and well-defined with Input/Output
+types. Main drag: publish errors are silently discarded via `_, _ = p.publisher.Publish(...)`.
+There is no logging, no alert, and no retry. The code comment acknowledges this
+as a known gap but no instrumentation exists. This is the hot path for every
+combat event — a silent publish failure means clients miss updates with no
+observable signal.
 
 ### Redis publisher — B
 
