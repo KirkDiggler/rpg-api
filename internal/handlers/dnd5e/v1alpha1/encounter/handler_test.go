@@ -544,8 +544,9 @@ func (s *HandlerTestSuite) TestGetCombatState_Unimplemented() {
 // The test uses hex grid, so input coords (5, -8, 3) cube -> (5, 5) offset after conversion
 func (s *HandlerTestSuite) TestMoveCharacter_Success() {
 	// Arrange - use cube coordinates (x + y + z = 0).
-	// proto Position is int32 (per rpg-api-protos PR #147); the orchestrator-side
-	// encounter.Position is still float64 during the migration window.
+	// proto Position is int32 (per rpg-api-protos PR #147) and the orchestrator-side
+	// encounter.Position is now an alias of dungeon.AbsolutePosition (also int) per
+	// the coord-types refactor in PR #484.
 	const (
 		cubeX int32 = 5
 		cubeY int32 = -10 // y = -x - z

@@ -157,7 +157,14 @@ func (h *Handler) OpenDoor(
 	gridType := spatial.GridTypeHex
 	hexOrientation := spatial.HexOrientationPointyTop
 
-	// Convert room and set origin from calculated room position
+	// Convert room and set origin from calculated room position.
+	// Note: the orchestrator already builds output.RevealedRoom.Entities[*].Position
+	// in dungeon-absolute coordinates (monsters are translated via dungeon.Module
+	// before being placed in EntityPlacement). We must NOT call applyOriginToEntities
+	// here — doing so would add the room origin a second time and double-shift the
+	// revealed-room entities. Origin is set on the proto for client-side reference only.
+	// (Caught by Copilot review on PR #484; aligns with #486's broader move toward
+	// orchestrator-side translation.)
 	openDoorRoom := convertOpenDoorRoomToProto(output.RevealedRoom)
 	if openDoorRoom != nil && output.RoomOffset != nil {
 		//nolint:gosec // G115: Game positions are bounded, no overflow risk.
@@ -166,8 +173,6 @@ func (h *Handler) OpenDoor(
 			Y: int32(output.RoomOffset.Y),
 			Z: int32(output.RoomOffset.Z),
 		}
-		// Shift walls and entities from room-local to dungeon-absolute coordinates
-		applyOriginToEntities(openDoorRoom)
 	}
 
 	return &dnd5ev1alpha1.OpenDoorResponse{

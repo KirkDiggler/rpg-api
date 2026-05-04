@@ -5484,6 +5484,14 @@ func cubeToLocalPosition(c spatial.CubeCoordinate) dungeon.LocalPosition {
 // is nil or the room is not registered it falls back to identity (treats the local
 // coordinate as if the room origin is (0,0,0)). This is the single helper that
 // transform sites use to lift LocalPosition into AbsolutePosition.
+//
+// Fallback semantics (per Copilot review on PR #484): identity is the right
+// answer ONLY when m is nil (single-room start case, no origins yet) or roomID
+// is empty (entity not yet placed in a room). When m is non-nil and roomID is
+// known but LocalToAbsolute fails, that's an invalid-data condition — currently
+// also swallowed and falls back to identity, which can mask corrupt RoomOrigins.
+// Proper error propagation is tracked in #489 (would change this signature to
+// (*AbsolutePosition, error) and update ~15 call sites).
 func localToAbsoluteOrLocal(m *dungeon.Module, roomID string, local dungeon.LocalPosition) *dungeon.AbsolutePosition {
 	if m != nil && roomID != "" {
 		if abs, err := m.LocalToAbsolute(roomID, local); err == nil {
@@ -5496,6 +5504,13 @@ func localToAbsoluteOrLocal(m *dungeon.Module, roomID string, local dungeon.Loca
 
 // moduleFromDungeon constructs a *dungeon.Module from an entities.Dungeon's RoomOrigins map.
 // Returns nil when the dungeon is nil or has no origins (single-room start case).
+//
+// Per Copilot review on PR #484: the LoadFromData failure path silently returns
+// nil, which downstream causes localToAbsoluteOrLocal to fall back to identity
+// transforms — masking invalid RoomOrigins. RoomOrigins values are
+// AbsolutePositions, which by construction satisfy the cube invariant, so
+// LoadFromData should not fail in practice. Proper propagation (returning the
+// error) is tracked in #489.
 func moduleFromDungeon(d *entities.Dungeon) *dungeon.Module {
 	if d == nil || len(d.RoomOrigins) == 0 {
 		return nil
@@ -5506,6 +5521,7 @@ func moduleFromDungeon(d *entities.Dungeon) *dungeon.Module {
 	}
 	mod, err := dungeon.LoadFromData(data)
 	if err != nil {
+		// TODO(#489): propagate error to callers instead of swallowing.
 		return nil
 	}
 	return mod

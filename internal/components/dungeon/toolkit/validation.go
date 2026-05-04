@@ -126,11 +126,14 @@ func (v *WallValidator) hasPathToEdge(start dungeon.LocalPosition, direction [2]
 			return false // Hit a wall
 		}
 
-		// Move to next position
-		current = dungeon.LocalPosition{
-			X: current.X + direction[0],
-			Y: current.Y + direction[1],
-		}
+		// Move to next position. Maintain the X+Y+Z=0 invariant explicitly:
+		// this code path uses X/Y as the planar axes (matching getZoneCenter
+		// and the rest of validation.go), with Z derived. The broader X/Y vs
+		// X/Z convention mismatch with offsetToCube is the 2D-vestige tracked
+		// in the toolkit-internal cleanup follow-up (see #489).
+		nextX := current.X + direction[0]
+		nextY := current.Y + direction[1]
+		current = dungeon.LocalPosition{X: nextX, Y: nextY, Z: -nextX - nextY}
 	}
 }
 
