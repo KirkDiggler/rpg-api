@@ -28,7 +28,7 @@ func (s *RoomOriginTestSuite) TestCalculateNeighborOrigin_South() {
 	current := &Room{
 		ID:     "room-1",
 		Shape:  &Shape{Width: 10, Height: 8},
-		Origin: Position{X: 0, Y: 0, Z: 0},
+		Origin: AbsolutePosition{X: 0, Y: 0, Z: 0},
 	}
 	neighbor := &Room{
 		ID:    "room-2",
@@ -47,7 +47,7 @@ func (s *RoomOriginTestSuite) TestCalculateNeighborOrigin_North() {
 	current := &Room{
 		ID:     "room-1",
 		Shape:  &Shape{Width: 10, Height: 8},
-		Origin: Position{X: 0, Y: 0, Z: 0},
+		Origin: AbsolutePosition{X: 0, Y: 0, Z: 0},
 	}
 	neighbor := &Room{
 		ID:    "room-2",
@@ -66,7 +66,7 @@ func (s *RoomOriginTestSuite) TestCalculateNeighborOrigin_East() {
 	current := &Room{
 		ID:     "room-1",
 		Shape:  &Shape{Width: 10, Height: 8},
-		Origin: Position{X: 0, Y: 0, Z: 0},
+		Origin: AbsolutePosition{X: 0, Y: 0, Z: 0},
 	}
 	neighbor := &Room{
 		ID:    "room-2",
@@ -85,7 +85,7 @@ func (s *RoomOriginTestSuite) TestCalculateNeighborOrigin_West() {
 	current := &Room{
 		ID:     "room-1",
 		Shape:  &Shape{Width: 10, Height: 8},
-		Origin: Position{X: 0, Y: 0, Z: 0},
+		Origin: AbsolutePosition{X: 0, Y: 0, Z: 0},
 	}
 	neighbor := &Room{
 		ID:    "room-2",
@@ -104,7 +104,7 @@ func (s *RoomOriginTestSuite) TestCalculateNeighborOrigin_WithNonZeroOrigin() {
 	current := &Room{
 		ID:     "room-2",
 		Shape:  &Shape{Width: 15, Height: 12},
-		Origin: Position{X: 11, Y: -11, Z: 0},
+		Origin: AbsolutePosition{X: 11, Y: -11, Z: 0},
 	}
 	neighbor := &Room{
 		ID:    "room-3",
@@ -123,7 +123,7 @@ func (s *RoomOriginTestSuite) TestCalculateNeighborOrigin_NilShape() {
 	current := &Room{
 		ID:     "room-1",
 		Shape:  nil,
-		Origin: Position{X: 5, Y: -5, Z: 0},
+		Origin: AbsolutePosition{X: 5, Y: -5, Z: 0},
 	}
 	neighbor := &Room{
 		ID:    "room-2",
@@ -140,7 +140,7 @@ func (s *RoomOriginTestSuite) TestCalculateNeighborOrigin_Up() {
 	current := &Room{
 		ID:     "room-1",
 		Shape:  &Shape{Width: 10, Height: 8},
-		Origin: Position{X: 5, Y: -8, Z: 3},
+		Origin: AbsolutePosition{X: 5, Y: -8, Z: 3},
 	}
 	neighbor := &Room{
 		ID:    "room-2",
@@ -158,7 +158,7 @@ func (s *RoomOriginTestSuite) TestCalculateNeighborOrigin_Down() {
 	current := &Room{
 		ID:     "room-1",
 		Shape:  &Shape{Width: 10, Height: 8},
-		Origin: Position{X: 5, Y: -8, Z: 3},
+		Origin: AbsolutePosition{X: 5, Y: -8, Z: 3},
 	}
 	neighbor := &Room{
 		ID:    "room-2",
@@ -176,7 +176,7 @@ func (s *RoomOriginTestSuite) TestCalculateNeighborOrigin_NilNeighborRoom() {
 	current := &Room{
 		ID:     "room-1",
 		Shape:  &Shape{Width: 10, Height: 8},
-		Origin: Position{X: 5, Y: -5, Z: 0},
+		Origin: AbsolutePosition{X: 5, Y: -5, Z: 0},
 	}
 
 	result := calculateNeighborOrigin(current, nil, DirectionSouth)
@@ -189,7 +189,7 @@ func (s *RoomOriginTestSuite) TestCalculateNeighborOrigin_NilNeighborShape() {
 	current := &Room{
 		ID:     "room-1",
 		Shape:  &Shape{Width: 10, Height: 8},
-		Origin: Position{X: 5, Y: -5, Z: 0},
+		Origin: AbsolutePosition{X: 5, Y: -5, Z: 0},
 	}
 	neighbor := &Room{
 		ID:    "room-2",
@@ -223,7 +223,7 @@ func (s *RoomOriginTestSuite) TestCalculateRoomOrigins_LinearDungeon() {
 	gen.calculateRoomOrigins(rooms, connections, "room-1")
 
 	// Room 1: start at (0, 0, 0)
-	s.Equal(Position{X: 0, Y: 0, Z: 0}, rooms[0].Origin)
+	s.Equal(AbsolutePosition{X: 0, Y: 0, Z: 0}, rooms[0].Origin)
 
 	// Room 2: north of room 1 -> Z = 0 + 8 + 1 = 9
 	s.Equal(0, rooms[1].Origin.X)
@@ -257,7 +257,7 @@ func (s *RoomOriginTestSuite) TestCalculateRoomOrigins_BranchingDungeon() {
 	gen.calculateRoomOrigins(rooms, connections, "room-1")
 
 	// Room 1: start at origin
-	s.Equal(Position{X: 0, Y: 0, Z: 0}, rooms[0].Origin)
+	s.Equal(AbsolutePosition{X: 0, Y: 0, Z: 0}, rooms[0].Origin)
 
 	// Room 4: east of room 1 -> X = 0 + 10 + 1 = 11
 	s.Equal(11, rooms[3].Origin.X)
@@ -274,7 +274,7 @@ func (s *RoomOriginTestSuite) TestCalculateRoomOrigins_EmptyConnections() {
 	gen.calculateRoomOrigins(rooms, nil, "room-1")
 
 	// Single room still gets origin (0,0,0)
-	s.Equal(Position{X: 0, Y: 0, Z: 0}, rooms[0].Origin)
+	s.Equal(AbsolutePosition{X: 0, Y: 0, Z: 0}, rooms[0].Origin)
 }
 
 func (s *RoomOriginTestSuite) TestCalculateRoomOrigins_SkipsEmptyFromRoom() {
@@ -293,7 +293,7 @@ func (s *RoomOriginTestSuite) TestCalculateRoomOrigins_SkipsEmptyFromRoom() {
 	gen.calculateRoomOrigins(rooms, connections, "room-1")
 
 	// Room 1: start at origin
-	s.Equal(Position{X: 0, Y: 0, Z: 0}, rooms[0].Origin)
+	s.Equal(AbsolutePosition{X: 0, Y: 0, Z: 0}, rooms[0].Origin)
 
 	// Room 2: north of room 1
 	s.Equal(9, rooms[1].Origin.Z) // 0 + 8 + 1

@@ -67,7 +67,7 @@ func (g *ToolkitShapeGenerator) convertToDungeonShape(toolkitShape *environments
 	}
 
 	// Scale normalized boundary (0.0-1.0) to actual dimensions
-	bounds := make([]dungeon.Position, len(toolkitShape.Boundary))
+	bounds := make([]dungeon.LocalPosition, len(toolkitShape.Boundary))
 	for i, point := range toolkitShape.Boundary {
 		// Scale normalized coords to grid dimensions
 		scaledX := int(point.X * float64(width-1))
@@ -113,7 +113,7 @@ func (g *ToolkitShapeGenerator) convertConnectionPoints(connections []environmen
 
 // createRectangleShape creates a simple rectangular shape as fallback
 func (g *ToolkitShapeGenerator) createRectangleShape(width, height int) *dungeon.Shape {
-	bounds := []dungeon.Position{
+	bounds := []dungeon.LocalPosition{
 		offsetToCube(0, 0),
 		offsetToCube(width-1, 0),
 		offsetToCube(width-1, height-1),

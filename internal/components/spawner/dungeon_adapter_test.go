@@ -50,7 +50,7 @@ func (s *DungeonAdapterTestSuite) TestSpawnInRoom_SpawnsMonsters() {
 			{
 				ID:   "monster-zone",
 				Type: dungeon.ZoneTypeMonsterSpawn,
-				Bounds: []dungeon.Position{
+				Bounds: []dungeon.LocalPosition{
 					{X: 5, Y: -10, Z: 5},
 					{X: 6, Y: -12, Z: 6},
 				},
@@ -71,8 +71,8 @@ func (s *DungeonAdapterTestSuite) TestSpawnInRoom_SpawnsMonsters() {
 }
 
 func (s *DungeonAdapterTestSuite) TestSpawnInRoom_AvoidsOccupiedPositions() {
-	occupiedPos := dungeon.Position{X: 5, Y: -10, Z: 5}
-	freePos := dungeon.Position{X: 6, Y: -12, Z: 6}
+	occupiedPos := dungeon.LocalPosition{X: 5, Y: -10, Z: 5}
+	freePos := dungeon.LocalPosition{X: 6, Y: -12, Z: 6}
 
 	room := &dungeon.Room{
 		ID: "test-room",
@@ -84,7 +84,7 @@ func (s *DungeonAdapterTestSuite) TestSpawnInRoom_AvoidsOccupiedPositions() {
 			{
 				ID:   "monster-zone",
 				Type: dungeon.ZoneTypeMonsterSpawn,
-				Bounds: []dungeon.Position{
+				Bounds: []dungeon.LocalPosition{
 					occupiedPos,
 					freePos,
 				},
@@ -95,7 +95,7 @@ func (s *DungeonAdapterTestSuite) TestSpawnInRoom_AvoidsOccupiedPositions() {
 
 	output, err := SpawnInRoom(s.spawner, &DungeonSpawnInput{
 		Room: room,
-		OccupiedPositions: []dungeon.Position{
+		OccupiedPositions: []dungeon.LocalPosition{
 			occupiedPos,
 		},
 		EntitiesToSpawn: CreateMonsterSpawnEntities([]string{"monster-1"}),
@@ -122,7 +122,7 @@ func (s *DungeonAdapterTestSuite) TestSpawnInRoom_SpawnsPlayers() {
 			{
 				ID:   "player-zone",
 				Type: dungeon.ZoneTypePlayerSpawn,
-				Bounds: []dungeon.Position{
+				Bounds: []dungeon.LocalPosition{
 					{X: 2, Y: -4, Z: 2},
 					{X: 3, Y: -6, Z: 3},
 					{X: 4, Y: -8, Z: 4},
@@ -145,8 +145,8 @@ func (s *DungeonAdapterTestSuite) TestSpawnInRoom_SpawnsPlayers() {
 }
 
 func (s *DungeonAdapterTestSuite) TestSpawnInRoom_HandlesWalls() {
-	wallPos := dungeon.Position{X: 5, Y: -10, Z: 5}
-	freePos := dungeon.Position{X: 6, Y: -12, Z: 6}
+	wallPos := dungeon.LocalPosition{X: 5, Y: -10, Z: 5}
+	freePos := dungeon.LocalPosition{X: 6, Y: -12, Z: 6}
 
 	room := &dungeon.Room{
 		ID: "test-room",
@@ -158,7 +158,7 @@ func (s *DungeonAdapterTestSuite) TestSpawnInRoom_HandlesWalls() {
 			{
 				ID:   "monster-zone",
 				Type: dungeon.ZoneTypeMonsterSpawn,
-				Bounds: []dungeon.Position{
+				Bounds: []dungeon.LocalPosition{
 					wallPos,
 					freePos,
 				},

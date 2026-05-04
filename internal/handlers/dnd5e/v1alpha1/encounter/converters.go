@@ -16,11 +16,11 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
 )
 
-// dungeonPositionToProto converts a dungeon.Position to a proto Position.
+// dungeonPositionToProto converts a dungeon.AbsolutePosition to a proto Position.
 // Returns a zero-origin Position{0,0,0} if the input is nil.
 //
 //nolint:gosec // G115: Game positions are bounded by dungeon size, no overflow risk.
-func dungeonPositionToProto(pos *dungeon.Position) *apiv1alpha1.Position {
+func dungeonPositionToProto(pos *dungeon.AbsolutePosition) *apiv1alpha1.Position {
 	if pos == nil {
 		return &apiv1alpha1.Position{X: 0, Y: 0, Z: 0}
 	}

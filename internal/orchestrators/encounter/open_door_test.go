@@ -96,12 +96,12 @@ func (s *OpenDoorTestSuite) createTestDungeon() *entities.Dungeon {
 						{
 							ID:        "mp-1",
 							MonsterID: "skeleton",
-							Position:  dungeon.Position{X: 5, Y: 5},
+							Position:  dungeon.LocalPosition{X: 5, Y: 5},
 						},
 						{
 							ID:        "mp-2",
 							MonsterID: "skeleton",
-							Position:  dungeon.Position{X: 7, Y: 5},
+							Position:  dungeon.LocalPosition{X: 7, Y: 5},
 						},
 					},
 				},

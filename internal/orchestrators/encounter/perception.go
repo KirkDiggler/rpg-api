@@ -168,9 +168,10 @@ func wallsToBlockedHexes(walls []dungeon.WallSegment) []spatial.CubeCoordinate {
 	return result
 }
 
-// rasterizeWallSegment returns all hex positions along a wall segment
-// Uses a simple line rasterization for cube coordinates
-func rasterizeWallSegment(start, end dungeon.Position) []spatial.CubeCoordinate {
+// rasterizeWallSegment returns all hex positions along a wall segment.
+// Uses a simple line rasterization for cube coordinates.
+// Walls are room-local; the rasterized hexes are also room-local.
+func rasterizeWallSegment(start, end dungeon.LocalPosition) []spatial.CubeCoordinate {
 	var result []spatial.CubeCoordinate
 
 	// Calculate the number of steps needed

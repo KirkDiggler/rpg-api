@@ -78,7 +78,7 @@ type UpdatePerimeterInput struct {
 // UpdatePerimeterOutput contains the updated perimeter walls
 type UpdatePerimeterOutput struct {
 	Walls         []WallSegment
-	DoorPositions []Position
+	DoorPositions []LocalPosition
 }
 
 // FeatureGenerator places obstacles and spawn zones
@@ -558,7 +558,7 @@ func (g *Generator) calculateRoomOrigins(rooms []*Room, connections []*RoomConne
 
 	// Start room origin is (0, 0, 0)
 	if startRoom, ok := roomMap[startRoomID]; ok {
-		startRoom.Origin = Position{X: 0, Y: 0, Z: 0}
+		startRoom.Origin = NewAbsolutePosition(0, 0)
 	}
 	visited[startRoomID] = true
 
@@ -599,7 +599,7 @@ func (g *Generator) calculateRoomOrigins(rooms []*Room, connections []*RoomConne
 //
 // The offset places the neighbor's edge adjacent to the current room's edge
 // with a 1-cell gap for the shared wall/door.
-func calculateNeighborOrigin(currentRoom, neighborRoom *Room, direction Direction) Position {
+func calculateNeighborOrigin(currentRoom, neighborRoom *Room, direction Direction) AbsolutePosition {
 	origin := currentRoom.Origin
 
 	if currentRoom.Shape == nil {

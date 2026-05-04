@@ -245,7 +245,7 @@ func (g *ToolkitFeatureGenerator) generateTerrain(shape *dungeon.Shape, rules du
 		startY := g.random.Intn(shape.Height - patchSize)
 
 		// Create bounds for the patch
-		bounds := []dungeon.Position{
+		bounds := []dungeon.LocalPosition{
 			{X: startX, Y: startY, Z: 0},
 			{X: startX + patchSize, Y: startY, Z: 0},
 			{X: startX + patchSize, Y: startY + patchSize, Z: 0},
@@ -281,7 +281,7 @@ func getTerrainMovementCost(terrainType dungeon.TerrainType) float64 {
 
 // gridToCube converts a grid position (col, row) to cube coordinates.
 // Uses the same formula as offsetToCube in coords.go for consistency.
-func gridToCube(col, row int) dungeon.Position {
+func gridToCube(col, row int) dungeon.LocalPosition {
 	// Use same formula as offsetToCube for consistency with room bounds
 	return offsetToCube(col, row)
 }
@@ -309,7 +309,7 @@ func clampToPlayableArea(col, row, width, height int) (int, int) {
 }
 
 // safeGridToCube converts a grid position to cube coordinates, clamping to playable area
-func safeGridToCube(col, row, width, height int) dungeon.Position {
+func safeGridToCube(col, row, width, height int) dungeon.LocalPosition {
 	col, row = clampToPlayableArea(col, row, width, height)
 	return gridToCube(col, row)
 }
@@ -341,7 +341,7 @@ func (g *ToolkitFeatureGenerator) filterSpawnZonesFromWalls(zones []dungeon.Zone
 	// Filter each zone's bounds
 	filteredZones := make([]dungeon.Zone, 0, len(zones))
 	for _, zone := range zones {
-		filteredBounds := make([]dungeon.Position, 0, len(zone.Bounds))
+		filteredBounds := make([]dungeon.LocalPosition, 0, len(zone.Bounds))
 		for _, pos := range zone.Bounds {
 			key := positionKey(pos)
 			if !wallPositions[key] {
@@ -364,8 +364,8 @@ func (g *ToolkitFeatureGenerator) filterSpawnZonesFromWalls(zones []dungeon.Zone
 }
 
 // getWallPositions returns all positions along a wall segment
-func getWallPositions(wall dungeon.WallSegment) []dungeon.Position {
-	var positions []dungeon.Position
+func getWallPositions(wall dungeon.WallSegment) []dungeon.LocalPosition {
+	var positions []dungeon.LocalPosition
 
 	dx := wall.End.X - wall.Start.X
 	dz := wall.End.Z - wall.Start.Z
@@ -383,14 +383,14 @@ func getWallPositions(wall dungeon.WallSegment) []dungeon.Position {
 		x := wall.Start.X + int(float64(dx)*t)
 		z := wall.Start.Z + int(float64(dz)*t)
 		y := -x - z // Cube coordinate constraint
-		positions = append(positions, dungeon.Position{X: x, Y: y, Z: z})
+		positions = append(positions, dungeon.LocalPosition{X: x, Y: y, Z: z})
 	}
 
 	return positions
 }
 
 // positionKey creates a unique string key for a position
-func positionKey(pos dungeon.Position) string {
+func positionKey(pos dungeon.LocalPosition) string {
 	return fmt.Sprintf("%d,%d,%d", pos.X, pos.Y, pos.Z)
 }
 
@@ -422,7 +422,7 @@ func (g *ToolkitFeatureGenerator) generateSpawnZones(shape *dungeon.Shape, roomT
 		zones = append(zones, dungeon.Zone{
 			ID:   uuid.New().String(),
 			Type: dungeon.ZoneTypeMonsterSpawn,
-			Bounds: []dungeon.Position{
+			Bounds: []dungeon.LocalPosition{
 				gridToCube(centerCol, centerRow),
 			},
 			Capacity: 1,
@@ -465,7 +465,7 @@ func (g *ToolkitFeatureGenerator) generateSpawnZones(shape *dungeon.Shape, roomT
 			dungeon.Zone{
 				ID:   uuid.New().String(),
 				Type: dungeon.ZoneTypePlayerSpawn,
-				Bounds: []dungeon.Position{
+				Bounds: []dungeon.LocalPosition{
 					safeGridToCube(southDoorCol, 2, shape.Width, shape.Height),   // 0: center back (behind door)
 					safeGridToCube(southDoorCol-1, 2, shape.Width, shape.Height), // 1: left back
 					safeGridToCube(southDoorCol+1, 2, shape.Width, shape.Height), // 2: right back
@@ -478,7 +478,7 @@ func (g *ToolkitFeatureGenerator) generateSpawnZones(shape *dungeon.Shape, roomT
 			dungeon.Zone{
 				ID:   uuid.New().String(),
 				Type: dungeon.ZoneTypeMonsterSpawn,
-				Bounds: []dungeon.Position{
+				Bounds: []dungeon.LocalPosition{
 					safeGridToCube(northDoorCol, northRow, shape.Width, shape.Height),     // center, near door
 					safeGridToCube(northDoorCol-1, northRow, shape.Width, shape.Height),   // left of door
 					safeGridToCube(northDoorCol+1, northRow, shape.Width, shape.Height),   // right of door
@@ -500,7 +500,7 @@ func (g *ToolkitFeatureGenerator) generateSpawnZones(shape *dungeon.Shape, roomT
 			dungeon.Zone{
 				ID:   uuid.New().String(),
 				Type: dungeon.ZoneTypeBoss,
-				Bounds: []dungeon.Position{
+				Bounds: []dungeon.LocalPosition{
 					safeGridToCube(centerCol, centerRow, shape.Width, shape.Height),
 				},
 				Capacity: 1,
@@ -509,7 +509,7 @@ func (g *ToolkitFeatureGenerator) generateSpawnZones(shape *dungeon.Shape, roomT
 			dungeon.Zone{
 				ID:   uuid.New().String(),
 				Type: dungeon.ZoneTypeMonsterSpawn,
-				Bounds: []dungeon.Position{
+				Bounds: []dungeon.LocalPosition{
 					safeGridToCube(centerCol-2, centerRow-2, shape.Width, shape.Height),
 					safeGridToCube(centerCol, centerRow-2, shape.Width, shape.Height),
 					safeGridToCube(centerCol+2, centerRow-2, shape.Width, shape.Height),
@@ -527,7 +527,7 @@ func (g *ToolkitFeatureGenerator) generateSpawnZones(shape *dungeon.Shape, roomT
 		zones = append(zones, dungeon.Zone{
 			ID:   uuid.New().String(),
 			Type: dungeon.ZoneTypeMonsterSpawn,
-			Bounds: []dungeon.Position{
+			Bounds: []dungeon.LocalPosition{
 				safeGridToCube(centerCol-1, centerRow-1, shape.Width, shape.Height),
 				safeGridToCube(centerCol, centerRow-1, shape.Width, shape.Height),
 				safeGridToCube(centerCol+1, centerRow-1, shape.Width, shape.Height),

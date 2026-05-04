@@ -88,9 +88,9 @@ func (v *WallValidator) isZoneBlocked(zone dungeon.Zone, walls []dungeon.WallSeg
 }
 
 // getZoneCenter calculates the center point of a zone
-func (v *WallValidator) getZoneCenter(zone dungeon.Zone) dungeon.Position {
+func (v *WallValidator) getZoneCenter(zone dungeon.Zone) dungeon.LocalPosition {
 	if len(zone.Bounds) == 0 {
-		return dungeon.Position{}
+		return dungeon.LocalPosition{}
 	}
 
 	var sumX, sumY int
@@ -102,7 +102,7 @@ func (v *WallValidator) getZoneCenter(zone dungeon.Zone) dungeon.Position {
 	centerX := sumX / len(zone.Bounds)
 	centerY := sumY / len(zone.Bounds)
 
-	return dungeon.Position{
+	return dungeon.LocalPosition{
 		X: centerX,
 		Y: centerY,
 		Z: -centerX - centerY, // Maintain cube coordinate constraint: x + y + z = 0
@@ -110,7 +110,7 @@ func (v *WallValidator) getZoneCenter(zone dungeon.Zone) dungeon.Position {
 }
 
 // hasPathToEdge checks if there's a clear path from a point to the room edge
-func (v *WallValidator) hasPathToEdge(start dungeon.Position, direction [2]int, walls []dungeon.WallSegment, shape *dungeon.Shape) bool {
+func (v *WallValidator) hasPathToEdge(start dungeon.LocalPosition, direction [2]int, walls []dungeon.WallSegment, shape *dungeon.Shape) bool {
 	current := start
 
 	// Walk in the direction until we hit an edge or wall
@@ -127,7 +127,7 @@ func (v *WallValidator) hasPathToEdge(start dungeon.Position, direction [2]int, 
 		}
 
 		// Move to next position
-		current = dungeon.Position{
+		current = dungeon.LocalPosition{
 			X: current.X + direction[0],
 			Y: current.Y + direction[1],
 		}
@@ -135,7 +135,7 @@ func (v *WallValidator) hasPathToEdge(start dungeon.Position, direction [2]int, 
 }
 
 // intersectsWall checks if a point intersects any wall segment
-func (v *WallValidator) intersectsWall(pos dungeon.Position, walls []dungeon.WallSegment) bool {
+func (v *WallValidator) intersectsWall(pos dungeon.LocalPosition, walls []dungeon.WallSegment) bool {
 	for _, wall := range walls {
 		if v.pointOnSegment(pos, wall.Start, wall.End) {
 			return true
@@ -145,7 +145,7 @@ func (v *WallValidator) intersectsWall(pos dungeon.Position, walls []dungeon.Wal
 }
 
 // pointOnSegment checks if a point lies on a line segment
-func (v *WallValidator) pointOnSegment(p, start, end dungeon.Position) bool {
+func (v *WallValidator) pointOnSegment(p, start, end dungeon.LocalPosition) bool {
 	// Check if point is within bounding box of segment
 	minX := min(start.X, end.X)
 	maxX := max(start.X, end.X)
@@ -208,7 +208,7 @@ func (v *WallValidator) wallBlocksZone(wall dungeon.WallSegment, zone dungeon.Zo
 }
 
 // isAdjacent checks if two positions are adjacent (within 1 unit)
-func (v *WallValidator) isAdjacent(p1, p2 dungeon.Position) bool {
+func (v *WallValidator) isAdjacent(p1, p2 dungeon.LocalPosition) bool {
 	dx := p1.X - p2.X
 	dy := p1.Y - p2.Y
 	if dx < 0 {
@@ -222,7 +222,7 @@ func (v *WallValidator) isAdjacent(p1, p2 dungeon.Position) bool {
 
 // PathCrossesWall checks if a movement path from start to end crosses any wall
 // Returns true if the path is blocked by a wall, false if the path is clear
-func (v *WallValidator) PathCrossesWall(start, end dungeon.Position, walls []dungeon.WallSegment) bool {
+func (v *WallValidator) PathCrossesWall(start, end dungeon.LocalPosition, walls []dungeon.WallSegment) bool {
 	for _, wall := range walls {
 		if !wall.BlocksMovement {
 			continue // Skip walls that don't block movement
@@ -236,7 +236,7 @@ func (v *WallValidator) PathCrossesWall(start, end dungeon.Position, walls []dun
 
 // segmentsIntersect checks if two line segments intersect
 // Uses the standard cross product method for 2D line segment intersection
-func (v *WallValidator) segmentsIntersect(p1, p2, p3, p4 dungeon.Position) bool {
+func (v *WallValidator) segmentsIntersect(p1, p2, p3, p4 dungeon.LocalPosition) bool {
 	// Calculate orientation of triplets
 	d1 := v.orientation(p3, p4, p1)
 	d2 := v.orientation(p3, p4, p2)
@@ -267,7 +267,7 @@ func (v *WallValidator) segmentsIntersect(p1, p2, p3, p4 dungeon.Position) bool 
 
 // orientation returns the orientation of triplet (p, q, r)
 // 0 -> Collinear, 1 -> Clockwise, 2 -> Counter-clockwise
-func (v *WallValidator) orientation(p, q, r dungeon.Position) int {
+func (v *WallValidator) orientation(p, q, r dungeon.LocalPosition) int {
 	val := (q.Y-p.Y)*(r.X-q.X) - (q.X-p.X)*(r.Y-q.Y)
 	if val == 0 {
 		return 0 // Collinear
@@ -279,7 +279,7 @@ func (v *WallValidator) orientation(p, q, r dungeon.Position) int {
 }
 
 // onSegment checks if point q lies on segment pr (given p, q, r are collinear)
-func (v *WallValidator) onSegment(p, q, r dungeon.Position) bool {
+func (v *WallValidator) onSegment(p, q, r dungeon.LocalPosition) bool {
 	return q.X <= max(p.X, r.X) && q.X >= min(p.X, r.X) &&
 		q.Y <= max(p.Y, r.Y) && q.Y >= min(p.Y, r.Y)
 }

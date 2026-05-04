@@ -1455,15 +1455,15 @@ func (s *HandlerTestSuite) TestConvertToProtoEvent_MovementCompleted_IncludesWal
 	walls := []dungeon.WallSegment{
 		{
 			ID:             "wall-1",
-			Start:          dungeon.Position{X: 5, Y: -10, Z: 5},
-			End:            dungeon.Position{X: 6, Y: -12, Z: 6},
+			Start:          dungeon.LocalPosition{X: 5, Y: -10, Z: 5},
+			End:            dungeon.LocalPosition{X: 6, Y: -12, Z: 6},
 			Type:           dungeon.WallTypeIndestructible,
 			BlocksMovement: true,
 		},
 		{
 			ID:             "wall-2",
-			Start:          dungeon.Position{X: 10, Y: -20, Z: 10},
-			End:            dungeon.Position{X: 12, Y: -24, Z: 12},
+			Start:          dungeon.LocalPosition{X: 10, Y: -20, Z: 10},
+			End:            dungeon.LocalPosition{X: 12, Y: -24, Z: 12},
 			Type:           dungeon.WallTypeDestructible,
 			BlocksMovement: true,
 		},
@@ -1526,8 +1526,8 @@ func (s *HandlerTestSuite) TestConvertToProtoEvent_TurnEnded_IncludesWalls() {
 	walls := []dungeon.WallSegment{
 		{
 			ID:             "wall-1",
-			Start:          dungeon.Position{X: 5, Y: -10, Z: 5},
-			End:            dungeon.Position{X: 6, Y: -12, Z: 6},
+			Start:          dungeon.LocalPosition{X: 5, Y: -10, Z: 5},
+			End:            dungeon.LocalPosition{X: 6, Y: -12, Z: 6},
 			Type:           dungeon.WallTypeIndestructible,
 			BlocksMovement: true,
 		},
@@ -1580,15 +1580,15 @@ func (s *HandlerTestSuite) TestConvertToProtoEvent_MonsterTurnCompleted_Includes
 	walls := []dungeon.WallSegment{
 		{
 			ID:             "wall-1",
-			Start:          dungeon.Position{X: 5, Y: -10, Z: 5},
-			End:            dungeon.Position{X: 6, Y: -12, Z: 6},
+			Start:          dungeon.LocalPosition{X: 5, Y: -10, Z: 5},
+			End:            dungeon.LocalPosition{X: 6, Y: -12, Z: 6},
 			Type:           dungeon.WallTypeIndestructible,
 			BlocksMovement: true,
 		},
 		{
 			ID:             "wall-2",
-			Start:          dungeon.Position{X: 10, Y: -20, Z: 10},
-			End:            dungeon.Position{X: 12, Y: -24, Z: 12},
+			Start:          dungeon.LocalPosition{X: 10, Y: -20, Z: 10},
+			End:            dungeon.LocalPosition{X: 12, Y: -24, Z: 12},
 			Type:           dungeon.WallTypeDestructible,
 			BlocksMovement: true,
 		},

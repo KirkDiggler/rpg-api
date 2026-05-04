@@ -192,13 +192,13 @@ type WallInfo struct {
 
 // CreateDungeonOutput returns the created encounter details
 type CreateDungeonOutput struct {
-	EncounterID  string               // ID of the created encounter
-	DungeonID    string               // ID of the generated dungeon
-	Room         interface{}          // Room data (using interface{} to match spatial.RoomData)
-	RoomOrigin   *dungeon.Position    // Absolute position of the room in dungeon-space
-	Doors        []DoorInfo           // Doors/exits from the starting room
-	CombatState  *CombatState         // Combat state with initiative order
-	MonsterTurns []*MonsterTurnResult // Monster turns if monsters go first in initiative
+	EncounterID  string                    // ID of the created encounter
+	DungeonID    string                    // ID of the generated dungeon
+	Room         interface{}               // Room data (using interface{} to match spatial.RoomData)
+	RoomOrigin   *dungeon.AbsolutePosition // Absolute position of the room in dungeon-space
+	Doors        []DoorInfo                // Doors/exits from the starting room
+	CombatState  *CombatState              // Combat state with initiative order
+	MonsterTurns []*MonsterTurnResult      // Monster turns if monsters go first in initiative
 }
 
 // MoveCharacterInput contains movement parameters
@@ -216,9 +216,9 @@ type MoveCharacterOutput struct {
 	MovementRemaining int32     // Movement points remaining (Phase 3)
 	// Why movement stopped: "completed", "position_occupied", "out_of_bounds", "entity_not_found"
 	StopReason  string
-	UpdatedRoom interface{}       // Updated room data (using interface{} until spatial is fixed)
-	RoomOrigin  *dungeon.Position // Absolute position of the room in dungeon-space
-	Walls       []WallInfo        // Wall segments in the current room
+	UpdatedRoom interface{}               // Updated room data (using interface{} until spatial is fixed)
+	RoomOrigin  *dungeon.AbsolutePosition // Absolute position of the room in dungeon-space
+	Walls       []WallInfo                // Wall segments in the current room
 }
 
 // EndTurnInput contains parameters for ending a turn
@@ -287,10 +287,10 @@ type CreateEncounterInput struct {
 
 // CreateEncounterOutput returns the created encounter details
 type CreateEncounterOutput struct {
-	EncounterID string            // ID of the created encounter
-	JoinCode    string            // 6-char code for others to join
-	Room        interface{}       // Generated room data
-	RoomOrigin  *dungeon.Position // Absolute position of the room in dungeon-space
+	EncounterID string                    // ID of the created encounter
+	JoinCode    string                    // 6-char code for others to join
+	Room        interface{}               // Generated room data
+	RoomOrigin  *dungeon.AbsolutePosition // Absolute position of the room in dungeon-space
 }
 
 // PartyMember represents a player and their character in the encounter
@@ -312,11 +312,11 @@ type JoinEncounterInput struct {
 
 // JoinEncounterOutput returns the encounter state after joining
 type JoinEncounterOutput struct {
-	EncounterID string            // ID of the joined encounter
-	Room        interface{}       // Room data
-	RoomOrigin  *dungeon.Position // Absolute position of the room in dungeon-space
-	Party       []*PartyMember    // All players in the encounter
-	State       string            // Current state (waiting, active, etc.)
+	EncounterID string                    // ID of the joined encounter
+	Room        interface{}               // Room data
+	RoomOrigin  *dungeon.AbsolutePosition // Absolute position of the room in dungeon-space
+	Party       []*PartyMember            // All players in the encounter
+	State       string                    // Current state (waiting, active, etc.)
 }
 
 // SetReadyInput contains parameters for setting ready status
@@ -346,13 +346,13 @@ type StartCombatInput struct {
 
 // StartCombatOutput returns the initial combat state
 type StartCombatOutput struct {
-	CombatState  *CombatState         // Combat state with initiative order
-	Room         interface{}          // Room with entity positions
-	RoomOrigin   *dungeon.Position    // Absolute position of the room in dungeon-space
-	Walls        []WallInfo           // Wall segments in the room
-	MonsterTurns []*MonsterTurnResult // Monster turns if monsters go first
-	Doors        []DoorInfo           // Doors/exits from the starting room
-	DungeonID    string               // ID of the generated dungeon
+	CombatState  *CombatState              // Combat state with initiative order
+	Room         interface{}               // Room with entity positions
+	RoomOrigin   *dungeon.AbsolutePosition // Absolute position of the room in dungeon-space
+	Walls        []WallInfo                // Wall segments in the room
+	MonsterTurns []*MonsterTurnResult      // Monster turns if monsters go first
+	Doors        []DoorInfo                // Doors/exits from the starting room
+	DungeonID    string                    // ID of the generated dungeon
 }
 
 // LeaveEncounterInput contains parameters for leaving an encounter
@@ -472,13 +472,13 @@ type GetEncounterStateOutput struct {
 	HostID   string         // Player ID of the host
 
 	// Combat state (populated when state is "active" or "paused")
-	CombatState *CombatState          // Initiative order, current turn, etc.
-	Room        interface{}           // Room data with entity positions
-	RoomOrigin  *dungeon.Position     // Absolute position of the room in dungeon-space
-	Walls       []WallInfo            // Wall segments in the current room
-	Monsters    []*MonsterCombatState // Monster HP for rendering
-	Doors       []DoorInfo            // Doors/exits from the current room
-	DungeonID   string                // ID of the generated dungeon
+	CombatState *CombatState              // Initiative order, current turn, etc.
+	Room        interface{}               // Room data with entity positions
+	RoomOrigin  *dungeon.AbsolutePosition // Absolute position of the room in dungeon-space
+	Walls       []WallInfo                // Wall segments in the current room
+	Monsters    []*MonsterCombatState     // Monster HP for rendering
+	Doors       []DoorInfo                // Doors/exits from the current room
+	DungeonID   string                    // ID of the generated dungeon
 
 	// Unified entity state snapshot (populated when combat is active)
 	EncounterStateData *pb.EncounterStateData
@@ -553,7 +553,7 @@ type ExecuteActionOutput struct {
 	MoveResult    *MoveResult                  // Result for move actions
 	CombatState   *CombatState                 // Full combat state update
 	Room          interface{}                  // Updated room data
-	RoomOrigin    *dungeon.Position            // Absolute position of the room in dungeon-space
+	RoomOrigin    *dungeon.AbsolutePosition    // Absolute position of the room in dungeon-space
 	GrantedAction *GrantedAction               // Action granted (e.g., off-hand strike for TWF)
 
 	// Available abilities/actions for UI refresh

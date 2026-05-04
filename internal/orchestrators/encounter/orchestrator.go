@@ -212,9 +212,9 @@ func (o *Orchestrator) publishEvent(ctx context.Context, encounterID string, eve
 	}
 }
 
-// getCurrentRoomOrigin returns the origin of the current room from the dungeon entity.
-// Returns nil if the dungeon or room origins are not available.
-func getCurrentRoomOrigin(dungeonEntity *entities.Dungeon) *dungeon.Position {
+// getCurrentRoomOrigin returns the absolute origin of the current room from the
+// dungeon entity. Returns nil if the dungeon or room origins are not available.
+func getCurrentRoomOrigin(dungeonEntity *entities.Dungeon) *dungeon.AbsolutePosition {
 	if dungeonEntity == nil || dungeonEntity.RoomOrigins == nil {
 		return nil
 	}
@@ -516,7 +516,7 @@ func (o *Orchestrator) ResolveAttack(ctx context.Context, input *ResolveAttackIn
 
 	// 16b. Load dungeon to get walls and room origin for the current room
 	var dungeonWalls []dungeon.WallSegment
-	var attackRoomOrigin *dungeon.Position
+	var attackRoomOrigin *dungeon.AbsolutePosition
 	if o.dungeonRepo != nil {
 		dungeonOutput, dungeonErr := o.dungeonRepo.GetByEncounterID(ctx, &dungeonrepo.GetByEncounterIDInput{
 			EncounterID: input.EncounterID,
@@ -976,7 +976,7 @@ func (o *Orchestrator) convertToDungeonEntity(
 ) *entities.Dungeon {
 	// Convert rooms to map and extract room origins
 	rooms := make(map[string]*dungeon.Room)
-	roomOrigins := make(map[string]dungeon.Position)
+	roomOrigins := make(map[string]dungeon.AbsolutePosition)
 	for _, room := range genDungeon.Rooms {
 		rooms[room.ID] = room
 		roomOrigins[room.ID] = room.Origin
@@ -1094,7 +1094,7 @@ func (o *Orchestrator) convertToWallInfo(room *dungeon.Room) []WallInfo {
 // and are passed through as-is here (the client applies the origin offset for rendering).
 //
 //nolint:gosec // G115: Game values are bounded by room size limits, no overflow risk
-func buildRoomLayoutProto(room *dungeon.Room, origin *dungeon.Position) *pb.RoomLayout {
+func buildRoomLayoutProto(room *dungeon.Room, origin *dungeon.AbsolutePosition) *pb.RoomLayout {
 	if room == nil {
 		return nil
 	}
@@ -1176,7 +1176,7 @@ func buildRoomsMap(dng *entities.Dungeon) map[string]*pb.RoomLayout {
 		if room == nil {
 			continue
 		}
-		var originPtr *dungeon.Position
+		var originPtr *dungeon.AbsolutePosition
 		if dng.RoomOrigins != nil {
 			if origin, ok := dng.RoomOrigins[roomID]; ok {
 				originPtr = &origin
@@ -1240,10 +1240,11 @@ func (o *Orchestrator) placeMonsters(roomData *spatial.RoomData, room *dungeon.R
 		monsterIDs = append(monsterIDs, fmt.Sprintf("monster-%s-%s", room.ID, placement.ID))
 	}
 
-	// Get currently occupied positions (characters already in room)
-	occupiedPositions := make([]dungeon.Position, 0)
+	// Get currently occupied positions (characters already in room).
+	// Spawner operates within a single room, so positions are room-local.
+	occupiedPositions := make([]dungeon.LocalPosition, 0)
 	for _, entity := range roomData.CubeEntities {
-		occupiedPositions = append(occupiedPositions, dungeon.Position{
+		occupiedPositions = append(occupiedPositions, dungeon.LocalPosition{
 			X: entity.CubePosition.X,
 			Y: entity.CubePosition.Y,
 			Z: entity.CubePosition.Z,
@@ -1569,7 +1570,7 @@ func (o *Orchestrator) MoveCharacter(ctx context.Context, input *MoveCharacterIn
 	// Load dungeon to get walls for the current room
 	var walls []WallInfo
 	var dungeonWalls []dungeon.WallSegment // Raw walls for event
-	var moveRoomOrigin *dungeon.Position
+	var moveRoomOrigin *dungeon.AbsolutePosition
 	if o.dungeonRepo != nil {
 		dungeonOutput, dungeonErr := o.dungeonRepo.GetByEncounterID(ctx, &dungeonrepo.GetByEncounterIDInput{
 			EncounterID: input.EncounterID,
@@ -1682,11 +1683,12 @@ func (o *Orchestrator) MoveCharacter(ctx context.Context, input *MoveCharacterIn
 		oldCube = targetCube
 	}
 
-	// 5c. Check if path crosses any walls
+	// 5c. Check if path crosses any walls.
+	// Walls are room-local; movement here is also expressed in room-local cube coords.
 	if len(dungeonWalls) > 0 && exists {
 		wallValidator := dungeontoolkit.NewWallValidator()
-		startPos := dungeon.Position{X: oldCube.X, Y: oldCube.Y, Z: oldCube.Z}
-		endPos := dungeon.Position{X: targetCube.X, Y: targetCube.Y, Z: targetCube.Z}
+		startPos := dungeon.LocalPosition{X: oldCube.X, Y: oldCube.Y, Z: oldCube.Z}
+		endPos := dungeon.LocalPosition{X: targetCube.X, Y: targetCube.Y, Z: targetCube.Z}
 
 		if wallValidator.PathCrossesWall(startPos, endPos, dungeonWalls) {
 			return &MoveCharacterOutput{
@@ -2016,7 +2018,7 @@ func (o *Orchestrator) EndTurn(ctx context.Context, input *EndTurnInput) (*EndTu
 
 	// 11b. Load dungeon to get walls and room origin for the current room
 	var dungeonWalls []dungeon.WallSegment
-	var turnRoomOrigin *dungeon.Position
+	var turnRoomOrigin *dungeon.AbsolutePosition
 	if o.dungeonRepo != nil {
 		dungeonOutput, dungeonErr := o.dungeonRepo.GetByEncounterID(ctx, &dungeonrepo.GetByEncounterIDInput{
 			EncounterID: input.EncounterID,
@@ -3324,7 +3326,7 @@ func (o *Orchestrator) OpenDoor(
 	roomRevealedStateData := o.buildEncounterStateSnapshot(ctx, dng.EncounterID, encOutput.Data, combatState)
 
 	// Look up room origin from stored room origins for the event
-	var revealedRoomOrigin *dungeon.Position
+	var revealedRoomOrigin *dungeon.AbsolutePosition
 	if dng.RoomOrigins != nil {
 		if origin, ok := dng.RoomOrigins[revealedRoomID]; ok {
 			revealedRoomOrigin = &origin
@@ -5151,7 +5153,7 @@ func (o *Orchestrator) executeMove(
 
 	// 3. Load dungeon walls and room origin for collision detection
 	var dungeonWalls []dungeon.WallSegment
-	var execActionRoomOrigin *dungeon.Position
+	var execActionRoomOrigin *dungeon.AbsolutePosition
 	if o.dungeonRepo != nil {
 		dungeonOutput, dungeonErr := o.dungeonRepo.GetByEncounterID(ctx, &dungeonrepo.GetByEncounterIDInput{
 			EncounterID: input.EncounterID,
@@ -5243,11 +5245,11 @@ func (o *Orchestrator) executeMove(
 			break
 		}
 
-		// Check wall collision
+		// Check wall collision. Walls and movement are room-local cube coords.
 		if len(dungeonWalls) > 0 && exists {
 			wallValidator := dungeontoolkit.NewWallValidator()
-			startPos := dungeon.Position{X: currentPos.X, Y: currentPos.Y, Z: currentPos.Z}
-			endPos := dungeon.Position{X: targetCube.X, Y: targetCube.Y, Z: targetCube.Z}
+			startPos := dungeon.LocalPosition{X: currentPos.X, Y: currentPos.Y, Z: currentPos.Z}
+			endPos := dungeon.LocalPosition{X: targetCube.X, Y: targetCube.Y, Z: targetCube.Z}
 
 			if wallValidator.PathCrossesWall(startPos, endPos, dungeonWalls) {
 				finalPosition = &Position{

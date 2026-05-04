@@ -89,7 +89,7 @@ func SparsePattern(input *PatternInput) *PatternOutput {
 		length := 2.0 + rng.Float64()*2.0
 		horizontal := rng.Float64() < 0.5
 
-		var start, end dungeon.Position
+		var start, end dungeon.LocalPosition
 		if horizontal {
 			start = offsetToCube(int(x-length/2), int(y))
 			end = offsetToCube(int(x+length/2), int(y))
@@ -200,7 +200,7 @@ func ChokepointsPattern(input *PatternInput) *PatternOutput {
 		// Alternate between horizontal and vertical chokepoints
 		horizontal := i%2 == 0
 
-		var start, end dungeon.Position
+		var start, end dungeon.LocalPosition
 		margin := 3.0
 		gapSize := 3.0 // Gap for passage
 
@@ -331,7 +331,7 @@ func PerimeterCoverPattern(input *PatternInput) *PatternOutput {
 		edge := rng.Intn(4)
 		wallLength := 2.0 + rng.Float64()*2.0
 
-		var start, end dungeon.Position
+		var start, end dungeon.LocalPosition
 
 		switch edge {
 		case 0: // Top edge

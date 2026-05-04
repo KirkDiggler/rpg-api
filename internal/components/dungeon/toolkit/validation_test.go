@@ -33,7 +33,7 @@ func (s *WallValidatorTestSuite) TestValidate_EmptyWalls() {
 		SpawnZones: []dungeon.Zone{
 			{
 				ID:     "zone1",
-				Bounds: []dungeon.Position{{X: 5, Y: 5}},
+				Bounds: []dungeon.LocalPosition{{X: 5, Y: 5}},
 			},
 		},
 	}
@@ -48,8 +48,8 @@ func (s *WallValidatorTestSuite) TestValidate_NoSpawnZones() {
 		Walls: []dungeon.WallSegment{
 			{
 				ID:    "wall1",
-				Start: dungeon.Position{X: 5, Y: 0},
-				End:   dungeon.Position{X: 5, Y: 20},
+				Start: dungeon.LocalPosition{X: 5, Y: 0},
+				End:   dungeon.LocalPosition{X: 5, Y: 20},
 			},
 		},
 		SpawnZones: []dungeon.Zone{},
@@ -66,14 +66,14 @@ func (s *WallValidatorTestSuite) TestValidate_WallNotBlockingZone() {
 		Walls: []dungeon.WallSegment{
 			{
 				ID:    "wall1",
-				Start: dungeon.Position{X: 15, Y: 5},
-				End:   dungeon.Position{X: 15, Y: 15},
+				Start: dungeon.LocalPosition{X: 15, Y: 5},
+				End:   dungeon.LocalPosition{X: 15, Y: 15},
 			},
 		},
 		SpawnZones: []dungeon.Zone{
 			{
 				ID:     "zone1",
-				Bounds: []dungeon.Position{{X: 5, Y: 10}},
+				Bounds: []dungeon.LocalPosition{{X: 5, Y: 10}},
 			},
 		},
 	}
@@ -89,14 +89,14 @@ func (s *WallValidatorTestSuite) TestValidate_WallAdjacentToZone() {
 		Walls: []dungeon.WallSegment{
 			{
 				ID:    "wall1",
-				Start: dungeon.Position{X: 6, Y: 5},
-				End:   dungeon.Position{X: 6, Y: 15},
+				Start: dungeon.LocalPosition{X: 6, Y: 5},
+				End:   dungeon.LocalPosition{X: 6, Y: 15},
 			},
 		},
 		SpawnZones: []dungeon.Zone{
 			{
 				ID:     "zone1",
-				Bounds: []dungeon.Position{{X: 5, Y: 10}},
+				Bounds: []dungeon.LocalPosition{{X: 5, Y: 10}},
 			},
 		},
 	}
@@ -110,7 +110,7 @@ func (s *WallValidatorTestSuite) TestValidate_WallAdjacentToZone() {
 func (s *WallValidatorTestSuite) TestGetZoneCenter() {
 	zone := dungeon.Zone{
 		ID: "zone1",
-		Bounds: []dungeon.Position{
+		Bounds: []dungeon.LocalPosition{
 			{X: 0, Y: 0},
 			{X: 10, Y: 0},
 			{X: 10, Y: 10},
@@ -126,7 +126,7 @@ func (s *WallValidatorTestSuite) TestGetZoneCenter() {
 func (s *WallValidatorTestSuite) TestGetZoneCenter_Empty() {
 	zone := dungeon.Zone{
 		ID:     "zone1",
-		Bounds: []dungeon.Position{},
+		Bounds: []dungeon.LocalPosition{},
 	}
 
 	center := s.validator.getZoneCenter(zone)
@@ -135,31 +135,31 @@ func (s *WallValidatorTestSuite) TestGetZoneCenter_Empty() {
 }
 
 func (s *WallValidatorTestSuite) TestPointOnSegment_Horizontal() {
-	start := dungeon.Position{X: 0, Y: 5}
-	end := dungeon.Position{X: 10, Y: 5}
+	start := dungeon.LocalPosition{X: 0, Y: 5}
+	end := dungeon.LocalPosition{X: 10, Y: 5}
 
 	// Point on segment
-	s.True(s.validator.pointOnSegment(dungeon.Position{X: 5, Y: 5}, start, end))
+	s.True(s.validator.pointOnSegment(dungeon.LocalPosition{X: 5, Y: 5}, start, end))
 
 	// Point off segment (different Y)
-	s.False(s.validator.pointOnSegment(dungeon.Position{X: 5, Y: 6}, start, end))
+	s.False(s.validator.pointOnSegment(dungeon.LocalPosition{X: 5, Y: 6}, start, end))
 
 	// Point off segment (X out of range)
-	s.False(s.validator.pointOnSegment(dungeon.Position{X: 15, Y: 5}, start, end))
+	s.False(s.validator.pointOnSegment(dungeon.LocalPosition{X: 15, Y: 5}, start, end))
 }
 
 func (s *WallValidatorTestSuite) TestPointOnSegment_Vertical() {
-	start := dungeon.Position{X: 5, Y: 0}
-	end := dungeon.Position{X: 5, Y: 10}
+	start := dungeon.LocalPosition{X: 5, Y: 0}
+	end := dungeon.LocalPosition{X: 5, Y: 10}
 
 	// Point on segment
-	s.True(s.validator.pointOnSegment(dungeon.Position{X: 5, Y: 5}, start, end))
+	s.True(s.validator.pointOnSegment(dungeon.LocalPosition{X: 5, Y: 5}, start, end))
 
 	// Point off segment (different X)
-	s.False(s.validator.pointOnSegment(dungeon.Position{X: 6, Y: 5}, start, end))
+	s.False(s.validator.pointOnSegment(dungeon.LocalPosition{X: 6, Y: 5}, start, end))
 
 	// Point off segment (Y out of range)
-	s.False(s.validator.pointOnSegment(dungeon.Position{X: 5, Y: 15}, start, end))
+	s.False(s.validator.pointOnSegment(dungeon.LocalPosition{X: 5, Y: 15}, start, end))
 }
 
 func (s *WallValidatorTestSuite) TestGenerateSafeWalls_RemovesBlockingWalls() {
@@ -168,19 +168,19 @@ func (s *WallValidatorTestSuite) TestGenerateSafeWalls_RemovesBlockingWalls() {
 		Walls: []dungeon.WallSegment{
 			{
 				ID:    "safe_wall",
-				Start: dungeon.Position{X: 15, Y: 5},
-				End:   dungeon.Position{X: 15, Y: 15},
+				Start: dungeon.LocalPosition{X: 15, Y: 5},
+				End:   dungeon.LocalPosition{X: 15, Y: 15},
 			},
 			{
 				ID:    "blocking_wall",
-				Start: dungeon.Position{X: 5, Y: 10},
-				End:   dungeon.Position{X: 6, Y: 10},
+				Start: dungeon.LocalPosition{X: 5, Y: 10},
+				End:   dungeon.LocalPosition{X: 6, Y: 10},
 			},
 		},
 		SpawnZones: []dungeon.Zone{
 			{
 				ID:     "zone1",
-				Bounds: []dungeon.Position{{X: 5, Y: 10}},
+				Bounds: []dungeon.LocalPosition{{X: 5, Y: 10}},
 			},
 		},
 	}
@@ -193,37 +193,37 @@ func (s *WallValidatorTestSuite) TestGenerateSafeWalls_RemovesBlockingWalls() {
 }
 
 func (s *WallValidatorTestSuite) TestIsAdjacent() {
-	p1 := dungeon.Position{X: 5, Y: 5}
+	p1 := dungeon.LocalPosition{X: 5, Y: 5}
 
 	// Same position
-	s.True(s.validator.isAdjacent(p1, dungeon.Position{X: 5, Y: 5}))
+	s.True(s.validator.isAdjacent(p1, dungeon.LocalPosition{X: 5, Y: 5}))
 
 	// Adjacent positions
-	s.True(s.validator.isAdjacent(p1, dungeon.Position{X: 6, Y: 5}))
-	s.True(s.validator.isAdjacent(p1, dungeon.Position{X: 4, Y: 5}))
-	s.True(s.validator.isAdjacent(p1, dungeon.Position{X: 5, Y: 6}))
-	s.True(s.validator.isAdjacent(p1, dungeon.Position{X: 5, Y: 4}))
-	s.True(s.validator.isAdjacent(p1, dungeon.Position{X: 6, Y: 6})) // Diagonal
+	s.True(s.validator.isAdjacent(p1, dungeon.LocalPosition{X: 6, Y: 5}))
+	s.True(s.validator.isAdjacent(p1, dungeon.LocalPosition{X: 4, Y: 5}))
+	s.True(s.validator.isAdjacent(p1, dungeon.LocalPosition{X: 5, Y: 6}))
+	s.True(s.validator.isAdjacent(p1, dungeon.LocalPosition{X: 5, Y: 4}))
+	s.True(s.validator.isAdjacent(p1, dungeon.LocalPosition{X: 6, Y: 6})) // Diagonal
 
 	// Not adjacent
-	s.False(s.validator.isAdjacent(p1, dungeon.Position{X: 7, Y: 5}))
-	s.False(s.validator.isAdjacent(p1, dungeon.Position{X: 5, Y: 7}))
+	s.False(s.validator.isAdjacent(p1, dungeon.LocalPosition{X: 7, Y: 5}))
+	s.False(s.validator.isAdjacent(p1, dungeon.LocalPosition{X: 5, Y: 7}))
 }
 
 func (s *WallValidatorTestSuite) TestPathCrossesWall_NoCrossing() {
 	walls := []dungeon.WallSegment{
 		{
 			ID:             "wall1",
-			Start:          dungeon.Position{X: 5, Y: 0},
-			End:            dungeon.Position{X: 5, Y: 10},
+			Start:          dungeon.LocalPosition{X: 5, Y: 0},
+			End:            dungeon.LocalPosition{X: 5, Y: 10},
 			BlocksMovement: true,
 		},
 	}
 
 	// Path that doesn't cross the wall (both points on same side)
 	s.False(s.validator.PathCrossesWall(
-		dungeon.Position{X: 0, Y: 5},
-		dungeon.Position{X: 3, Y: 5},
+		dungeon.LocalPosition{X: 0, Y: 5},
+		dungeon.LocalPosition{X: 3, Y: 5},
 		walls,
 	))
 }
@@ -232,16 +232,16 @@ func (s *WallValidatorTestSuite) TestPathCrossesWall_CrossesVerticalWall() {
 	walls := []dungeon.WallSegment{
 		{
 			ID:             "wall1",
-			Start:          dungeon.Position{X: 5, Y: 0},
-			End:            dungeon.Position{X: 5, Y: 10},
+			Start:          dungeon.LocalPosition{X: 5, Y: 0},
+			End:            dungeon.LocalPosition{X: 5, Y: 10},
 			BlocksMovement: true,
 		},
 	}
 
 	// Path that crosses the wall
 	s.True(s.validator.PathCrossesWall(
-		dungeon.Position{X: 0, Y: 5},
-		dungeon.Position{X: 10, Y: 5},
+		dungeon.LocalPosition{X: 0, Y: 5},
+		dungeon.LocalPosition{X: 10, Y: 5},
 		walls,
 	))
 }
@@ -250,16 +250,16 @@ func (s *WallValidatorTestSuite) TestPathCrossesWall_CrossesHorizontalWall() {
 	walls := []dungeon.WallSegment{
 		{
 			ID:             "wall1",
-			Start:          dungeon.Position{X: 0, Y: 5},
-			End:            dungeon.Position{X: 10, Y: 5},
+			Start:          dungeon.LocalPosition{X: 0, Y: 5},
+			End:            dungeon.LocalPosition{X: 10, Y: 5},
 			BlocksMovement: true,
 		},
 	}
 
 	// Path that crosses the wall
 	s.True(s.validator.PathCrossesWall(
-		dungeon.Position{X: 5, Y: 0},
-		dungeon.Position{X: 5, Y: 10},
+		dungeon.LocalPosition{X: 5, Y: 0},
+		dungeon.LocalPosition{X: 5, Y: 10},
 		walls,
 	))
 }
@@ -268,16 +268,16 @@ func (s *WallValidatorTestSuite) TestPathCrossesWall_NonBlockingWallIgnored() {
 	walls := []dungeon.WallSegment{
 		{
 			ID:             "wall1",
-			Start:          dungeon.Position{X: 5, Y: 0},
-			End:            dungeon.Position{X: 5, Y: 10},
+			Start:          dungeon.LocalPosition{X: 5, Y: 0},
+			End:            dungeon.LocalPosition{X: 5, Y: 10},
 			BlocksMovement: false, // Does not block movement
 		},
 	}
 
 	// Path that would cross the wall but wall doesn't block movement
 	s.False(s.validator.PathCrossesWall(
-		dungeon.Position{X: 0, Y: 5},
-		dungeon.Position{X: 10, Y: 5},
+		dungeon.LocalPosition{X: 0, Y: 5},
+		dungeon.LocalPosition{X: 10, Y: 5},
 		walls,
 	))
 }
@@ -286,16 +286,16 @@ func (s *WallValidatorTestSuite) TestPathCrossesWall_DiagonalPath() {
 	walls := []dungeon.WallSegment{
 		{
 			ID:             "wall1",
-			Start:          dungeon.Position{X: 0, Y: 5},
-			End:            dungeon.Position{X: 10, Y: 5},
+			Start:          dungeon.LocalPosition{X: 0, Y: 5},
+			End:            dungeon.LocalPosition{X: 10, Y: 5},
 			BlocksMovement: true,
 		},
 	}
 
 	// Diagonal path that crosses horizontal wall
 	s.True(s.validator.PathCrossesWall(
-		dungeon.Position{X: 0, Y: 0},
-		dungeon.Position{X: 10, Y: 10},
+		dungeon.LocalPosition{X: 0, Y: 0},
+		dungeon.LocalPosition{X: 10, Y: 10},
 		walls,
 	))
 }
@@ -304,16 +304,16 @@ func (s *WallValidatorTestSuite) TestPathCrossesWall_PathParallelToWall() {
 	walls := []dungeon.WallSegment{
 		{
 			ID:             "wall1",
-			Start:          dungeon.Position{X: 5, Y: 0},
-			End:            dungeon.Position{X: 5, Y: 10},
+			Start:          dungeon.LocalPosition{X: 5, Y: 0},
+			End:            dungeon.LocalPosition{X: 5, Y: 10},
 			BlocksMovement: true,
 		},
 	}
 
 	// Parallel path that doesn't cross
 	s.False(s.validator.PathCrossesWall(
-		dungeon.Position{X: 3, Y: 0},
-		dungeon.Position{X: 3, Y: 10},
+		dungeon.LocalPosition{X: 3, Y: 0},
+		dungeon.LocalPosition{X: 3, Y: 10},
 		walls,
 	))
 }
@@ -321,8 +321,8 @@ func (s *WallValidatorTestSuite) TestPathCrossesWall_PathParallelToWall() {
 func (s *WallValidatorTestSuite) TestPathCrossesWall_EmptyWalls() {
 	// No walls - should not cross
 	s.False(s.validator.PathCrossesWall(
-		dungeon.Position{X: 0, Y: 0},
-		dungeon.Position{X: 10, Y: 10},
+		dungeon.LocalPosition{X: 0, Y: 0},
+		dungeon.LocalPosition{X: 10, Y: 10},
 		nil,
 	))
 }
@@ -331,36 +331,36 @@ func (s *WallValidatorTestSuite) TestPathCrossesWall_MultipleWalls() {
 	walls := []dungeon.WallSegment{
 		{
 			ID:             "wall1",
-			Start:          dungeon.Position{X: 3, Y: 0},
-			End:            dungeon.Position{X: 3, Y: 10},
+			Start:          dungeon.LocalPosition{X: 3, Y: 0},
+			End:            dungeon.LocalPosition{X: 3, Y: 10},
 			BlocksMovement: true,
 		},
 		{
 			ID:             "wall2",
-			Start:          dungeon.Position{X: 7, Y: 0},
-			End:            dungeon.Position{X: 7, Y: 10},
+			Start:          dungeon.LocalPosition{X: 7, Y: 0},
+			End:            dungeon.LocalPosition{X: 7, Y: 10},
 			BlocksMovement: true,
 		},
 	}
 
 	// Path between walls (no crossing)
 	s.False(s.validator.PathCrossesWall(
-		dungeon.Position{X: 4, Y: 5},
-		dungeon.Position{X: 6, Y: 5},
+		dungeon.LocalPosition{X: 4, Y: 5},
+		dungeon.LocalPosition{X: 6, Y: 5},
 		walls,
 	))
 
 	// Path that crosses first wall
 	s.True(s.validator.PathCrossesWall(
-		dungeon.Position{X: 0, Y: 5},
-		dungeon.Position{X: 5, Y: 5},
+		dungeon.LocalPosition{X: 0, Y: 5},
+		dungeon.LocalPosition{X: 5, Y: 5},
 		walls,
 	))
 
 	// Path that crosses second wall
 	s.True(s.validator.PathCrossesWall(
-		dungeon.Position{X: 5, Y: 5},
-		dungeon.Position{X: 10, Y: 5},
+		dungeon.LocalPosition{X: 5, Y: 5},
+		dungeon.LocalPosition{X: 10, Y: 5},
 		walls,
 	))
 }

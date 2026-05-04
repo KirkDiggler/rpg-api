@@ -487,9 +487,10 @@ func validateMovementAgainstWalls(
 			break
 		}
 
-		// Check if the path crosses a wall
-		startDungeon := dungeon.Position{X: currentPos.X, Y: currentPos.Y, Z: currentPos.Z}
-		endDungeon := dungeon.Position{X: nextPos.X, Y: nextPos.Y, Z: nextPos.Z}
+		// Check if the path crosses a wall. Walls are room-local cube coords;
+		// monster movement is computed within a single room, so positions are local.
+		startDungeon := dungeon.LocalPosition{X: currentPos.X, Y: currentPos.Y, Z: currentPos.Z}
+		endDungeon := dungeon.LocalPosition{X: nextPos.X, Y: nextPos.Y, Z: nextPos.Z}
 
 		if wallValidator.PathCrossesWall(startDungeon, endDungeon, walls) {
 			// Path crosses a wall - stop here

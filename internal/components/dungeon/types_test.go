@@ -84,7 +84,7 @@ func (s *TypesTestSuite) TestRoom_Instantiation() {
 	room := &Room{
 		ID: "room-1",
 		Shape: &Shape{
-			Bounds:   []Position{{X: 0, Y: 0, Z: 0}},
+			Bounds:   []LocalPosition{{X: 0, Y: 0, Z: 0}},
 			GridType: GridTypeHex,
 			Width:    20,
 			Height:   15,
@@ -111,7 +111,7 @@ func (s *TypesTestSuite) TestRoom_Instantiation() {
 
 func (s *TypesTestSuite) TestShape_Instantiation() {
 	shape := &Shape{
-		Bounds: []Position{
+		Bounds: []LocalPosition{
 			{X: 0, Y: 0, Z: 0},
 			{X: 10, Y: -10, Z: 0},
 			{X: 10, Y: -10, Z: 0},
@@ -137,7 +137,7 @@ func (s *TypesTestSuite) TestFeatureLayout_Instantiation() {
 			{
 				ID:                "obstacle-1",
 				Type:              ObstacleTypePillar,
-				Position:          Position{X: 5, Y: -5, Z: 0},
+				Position:          LocalPosition{X: 5, Y: -5, Z: 0},
 				BlocksMovement:    true,
 				BlocksLineOfSight: true,
 			},
@@ -146,7 +146,7 @@ func (s *TypesTestSuite) TestFeatureLayout_Instantiation() {
 			{
 				ID:           "terrain-1",
 				Type:         TerrainTypeDifficult,
-				Bounds:       []Position{{X: 0, Y: 0, Z: 0}},
+				Bounds:       []LocalPosition{{X: 0, Y: 0, Z: 0}},
 				MovementCost: 2.0,
 			},
 		},
@@ -163,7 +163,7 @@ func (s *TypesTestSuite) TestZone_Instantiation() {
 	zone := &Zone{
 		ID:   "zone-1",
 		Type: ZoneTypeMonsterSpawn,
-		Bounds: []Position{
+		Bounds: []LocalPosition{
 			{X: 0, Y: 0, Z: 0},
 			{X: 5, Y: -5, Z: 0},
 		},
@@ -184,14 +184,14 @@ func (s *TypesTestSuite) TestEncounter_Instantiation() {
 				ID:        "monster-1",
 				MonsterID: "skeleton",
 				Role:      RoleMelee,
-				Position:  Position{X: 10, Y: -10, Z: 0},
+				Position:  LocalPosition{X: 10, Y: -10, Z: 0},
 				CR:        0.25,
 			},
 			{
 				ID:        "monster-2",
 				MonsterID: "skeleton-archer",
 				Role:      RoleRanged,
-				Position:  Position{X: 12, Y: -12, Z: 0},
+				Position:  LocalPosition{X: 12, Y: -12, Z: 0},
 				CR:        0.25,
 			},
 		},
@@ -210,7 +210,7 @@ func (s *TypesTestSuite) TestMonsterPlacement_Instantiation() {
 		ID:        "monster-1",
 		MonsterID: "goblin",
 		Role:      RoleMelee,
-		Position:  Position{X: 5, Y: -5, Z: 0},
+		Position:  LocalPosition{X: 5, Y: -5, Z: 0},
 		CR:        0.25,
 	}
 
