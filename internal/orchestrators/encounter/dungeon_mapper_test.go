@@ -35,8 +35,7 @@ func TestMapToGeneratorInput_ThemeCrypt(t *testing.T) {
 	result := MapToGeneratorInput(input)
 
 	require.NotNil(t, result)
-	// TODO: swap back to ThemeCrypt after wall UI testing
-	assert.Equal(t, dungeon.ThemeDebugWalls, result.Theme)
+	assert.Equal(t, dungeon.ThemeCrypt, result.Theme)
 }
 
 func TestMapToGeneratorInput_ThemeCave(t *testing.T) {
