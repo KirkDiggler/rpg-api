@@ -128,13 +128,11 @@ At 5,577 lines with 70+ functions, `orchestrator.go` owns too much responsibilit
 
 `StartCombat` carries `//nolint:gocyclo` (line 3592) — this is the most complex function, coordinating dungeon generation, initial entity placement, initiative rolling, monster turns, and event publishing. It is the first candidate for decomposition.
 
-### Coordinate transform — no canonical function
+### Coordinate transform — canonical via `dungeon.Module`
 
-Room-local coordinates (dungeon component types, integer cube coords) must be translated to dungeon-absolute positions. The current approach is five separate inline transform sites. Each is subtly different (some shift walls, some shift entities, some do both). The `shiftRoomToAbsolute` function in the encounter handler's converters.go is the closest to canonical but only operates on proto types.
+Room-local coordinates (dungeon component types, integer cube coords) are translated to dungeon-absolute positions through `dungeon.Module` (see `internal/components/dungeon/module.go`). The Module holds the per-room origin map and provides `LocalToAbsolute(roomID, LocalPosition) AbsolutePosition` and the inverse. Every orchestrator transform site constructs a Module from `entities.Dungeon.RoomOrigins` and routes through it; there is no hand-rolled cube math left in the orchestrator.
 
-The correct fix is:
-1. A `toAbsolute(local entities.Position, origin dungeon.Position) entities.Position` function in `internal/pkg/` or `internal/entities/`.
-2. All transform sites replaced with a single call.
+`LocalPosition` and `AbsolutePosition` are distinct types in `coords.go`, so the compiler enforces the local-vs-absolute distinction at every boundary. The cube invariant `X+Y+Z == 0` is checked centrally in the constructors (`NewLocalPosition`, `NewAbsolutePosition`) and on `Module.LoadFromData`.
 
 ### Debug theme not reverted
 

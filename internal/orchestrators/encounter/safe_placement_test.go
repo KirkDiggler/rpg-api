@@ -29,13 +29,13 @@ func (s *SafePlacementTestSuite) TestFindSafeFallbackPosition_AvoidsWalls() {
 		},
 		Walls: []dungeon.WallSegment{
 			// Perimeter walls
-			{ID: "perimeter_0", Start: dungeon.Position{X: 0, Y: 0, Z: 0}, End: dungeon.Position{X: 9, Y: -9, Z: 0}, BlocksMovement: true},
-			{ID: "perimeter_1", Start: dungeon.Position{X: 9, Y: -9, Z: 0}, End: dungeon.Position{X: 9, Y: -18, Z: 9}, BlocksMovement: true},
-			{ID: "perimeter_2", Start: dungeon.Position{X: 9, Y: -18, Z: 9}, End: dungeon.Position{X: 0, Y: -9, Z: 9}, BlocksMovement: true},
-			{ID: "perimeter_3", Start: dungeon.Position{X: 0, Y: -9, Z: 9}, End: dungeon.Position{X: 0, Y: 0, Z: 0}, BlocksMovement: true},
+			{ID: "perimeter_0", Start: dungeon.LocalPosition{X: 0, Y: 0, Z: 0}, End: dungeon.LocalPosition{X: 9, Y: -9, Z: 0}, BlocksMovement: true},
+			{ID: "perimeter_1", Start: dungeon.LocalPosition{X: 9, Y: -9, Z: 0}, End: dungeon.LocalPosition{X: 9, Y: -18, Z: 9}, BlocksMovement: true},
+			{ID: "perimeter_2", Start: dungeon.LocalPosition{X: 9, Y: -18, Z: 9}, End: dungeon.LocalPosition{X: 0, Y: -9, Z: 9}, BlocksMovement: true},
+			{ID: "perimeter_3", Start: dungeon.LocalPosition{X: 0, Y: -9, Z: 9}, End: dungeon.LocalPosition{X: 0, Y: 0, Z: 0}, BlocksMovement: true},
 			// Center pillar (3x3 block at positions around center)
-			{ID: "pillar_h", Start: dungeon.Position{X: 4, Y: -9, Z: 5}, End: dungeon.Position{X: 6, Y: -11, Z: 5}, BlocksMovement: true},
-			{ID: "pillar_v", Start: dungeon.Position{X: 5, Y: -9, Z: 4}, End: dungeon.Position{X: 5, Y: -11, Z: 6}, BlocksMovement: true},
+			{ID: "pillar_h", Start: dungeon.LocalPosition{X: 4, Y: -9, Z: 5}, End: dungeon.LocalPosition{X: 6, Y: -11, Z: 5}, BlocksMovement: true},
+			{ID: "pillar_v", Start: dungeon.LocalPosition{X: 5, Y: -9, Z: 4}, End: dungeon.LocalPosition{X: 5, Y: -11, Z: 6}, BlocksMovement: true},
 		},
 	}
 
@@ -69,10 +69,10 @@ func (s *SafePlacementTestSuite) TestFindSafeFallbackPosition_AvoidsOccupied() {
 		},
 		Walls: []dungeon.WallSegment{
 			// Just perimeter walls
-			{ID: "perimeter_0", Start: dungeon.Position{X: 0, Y: 0, Z: 0}, End: dungeon.Position{X: 5, Y: -5, Z: 0}, BlocksMovement: true},
-			{ID: "perimeter_1", Start: dungeon.Position{X: 5, Y: -5, Z: 0}, End: dungeon.Position{X: 5, Y: -10, Z: 5}, BlocksMovement: true},
-			{ID: "perimeter_2", Start: dungeon.Position{X: 5, Y: -10, Z: 5}, End: dungeon.Position{X: 0, Y: -5, Z: 5}, BlocksMovement: true},
-			{ID: "perimeter_3", Start: dungeon.Position{X: 0, Y: -5, Z: 5}, End: dungeon.Position{X: 0, Y: 0, Z: 0}, BlocksMovement: true},
+			{ID: "perimeter_0", Start: dungeon.LocalPosition{X: 0, Y: 0, Z: 0}, End: dungeon.LocalPosition{X: 5, Y: -5, Z: 0}, BlocksMovement: true},
+			{ID: "perimeter_1", Start: dungeon.LocalPosition{X: 5, Y: -5, Z: 0}, End: dungeon.LocalPosition{X: 5, Y: -10, Z: 5}, BlocksMovement: true},
+			{ID: "perimeter_2", Start: dungeon.LocalPosition{X: 5, Y: -10, Z: 5}, End: dungeon.LocalPosition{X: 0, Y: -5, Z: 5}, BlocksMovement: true},
+			{ID: "perimeter_3", Start: dungeon.LocalPosition{X: 0, Y: -5, Z: 5}, End: dungeon.LocalPosition{X: 0, Y: 0, Z: 0}, BlocksMovement: true},
 		},
 	}
 
@@ -114,7 +114,7 @@ func (s *SafePlacementTestSuite) TestFindSafeFallbackPosition_EmptyRoom() {
 		},
 		Walls: []dungeon.WallSegment{
 			// Just perimeter walls
-			{ID: "perimeter_0", Start: dungeon.Position{X: 0, Y: 0, Z: 0}, End: dungeon.Position{X: 7, Y: -7, Z: 0}, BlocksMovement: true},
+			{ID: "perimeter_0", Start: dungeon.LocalPosition{X: 0, Y: 0, Z: 0}, End: dungeon.LocalPosition{X: 7, Y: -7, Z: 0}, BlocksMovement: true},
 		},
 	}
 

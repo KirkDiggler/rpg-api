@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/suite"
 
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
+	"github.com/KirkDiggler/rpg-api/internal/components/dungeon"
 	"github.com/KirkDiggler/rpg-api/internal/entities"
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/classes"
@@ -62,7 +63,7 @@ func (s *EntityStateTestSuite) TestToEntityStateProto_Character_AllFields() {
 		EntityID:    "char-1",
 		EntityType:  entities.EntityTypeCharacter,
 		RoomID:      "room-42",
-		Position:    &entities.Position{X: 3, Y: -1, Z: -2},
+		Position:    &dungeon.AbsolutePosition{X: 3, Y: -1, Z: -2},
 		Size:        2, // medium
 		Appearance:  appearance,
 		ToolkitData: charData,
@@ -76,9 +77,9 @@ func (s *EntityStateTestSuite) TestToEntityStateProto_Character_AllFields() {
 	s.Equal("char-1", result.EntityId)
 	s.Equal(dnd5ev1alpha1.EntityType_ENTITY_TYPE_CHARACTER, result.EntityType)
 	s.Equal("room-42", result.RoomId)
-	s.Equal(float64(3), result.Position.X)
-	s.Equal(float64(-1), result.Position.Y)
-	s.Equal(float64(-2), result.Position.Z)
+	s.Equal(int32(3), result.Position.X)
+	s.Equal(int32(-1), result.Position.Y)
+	s.Equal(int32(-2), result.Position.Z)
 	s.Equal(dnd5ev1alpha1.EntitySize_ENTITY_SIZE_MEDIUM, result.Size)
 
 	// HP
@@ -141,7 +142,7 @@ func (s *EntityStateTestSuite) TestToEntityStateProto_Character_NoDeathSaves() {
 		EntityID:    "char-2",
 		EntityType:  entities.EntityTypeCharacter,
 		RoomID:      "room-1",
-		Position:    &entities.Position{X: 0, Y: 0, Z: 0},
+		Position:    &dungeon.AbsolutePosition{X: 0, Y: 0, Z: 0},
 		Size:        2,
 		ToolkitData: charData,
 	}
@@ -180,7 +181,7 @@ func (s *EntityStateTestSuite) TestToEntityStateProto_Monster_AllFields() {
 		EntityID:    "mob-1",
 		EntityType:  entities.EntityTypeMonster,
 		RoomID:      "room-42",
-		Position:    &entities.Position{X: 5, Y: -3, Z: -2},
+		Position:    &dungeon.AbsolutePosition{X: 5, Y: -3, Z: -2},
 		Size:        2,
 		ToolkitData: monsterData,
 	}
@@ -226,7 +227,7 @@ func (s *EntityStateTestSuite) TestToEntityStateProto_Monster_NilRef() {
 		EntityID:    "mob-2",
 		EntityType:  entities.EntityTypeMonster,
 		RoomID:      "room-1",
-		Position:    &entities.Position{},
+		Position:    &dungeon.AbsolutePosition{},
 		Size:        2,
 		ToolkitData: monsterData,
 	}
@@ -248,7 +249,7 @@ func (s *EntityStateTestSuite) TestToEntityStateProto_Obstacle() {
 		EntityID:   "obs-1",
 		EntityType: entities.EntityTypeObstacle,
 		RoomID:     "room-42",
-		Position:   &entities.Position{X: 1, Y: 0, Z: -1},
+		Position:   &dungeon.AbsolutePosition{X: 1, Y: 0, Z: -1},
 		Size:       2,
 	}
 
@@ -289,7 +290,7 @@ func (s *EntityStateTestSuite) TestToEntityStateProto_NilToolkitData() {
 		EntityID:    "ent-1",
 		EntityType:  entities.EntityTypeCharacter,
 		RoomID:      "room-1",
-		Position:    &entities.Position{X: 1, Y: 1, Z: -2},
+		Position:    &dungeon.AbsolutePosition{X: 1, Y: 1, Z: -2},
 		Size:        2,
 		ToolkitData: nil,
 	}
@@ -321,9 +322,9 @@ func (s *EntityStateTestSuite) TestToEntityStateProto_NilPosition() {
 
 	// Should return a zero-origin position, never nil
 	s.Require().NotNil(result.Position)
-	s.Equal(float64(0), result.Position.X)
-	s.Equal(float64(0), result.Position.Y)
-	s.Equal(float64(0), result.Position.Z)
+	s.Equal(int32(0), result.Position.X)
+	s.Equal(int32(0), result.Position.Y)
+	s.Equal(int32(0), result.Position.Z)
 }
 
 // --- Condition JSON parsing ---
@@ -335,7 +336,7 @@ func (s *EntityStateTestSuite) TestConditionsFromJSON_WithRef() {
 		EntityID:   "char-c",
 		EntityType: entities.EntityTypeCharacter,
 		RoomID:     "room-1",
-		Position:   &entities.Position{},
+		Position:   &dungeon.AbsolutePosition{},
 		Size:       2,
 		ToolkitData: &toolkitchar.Data{
 			ID:         "char-c",
@@ -360,7 +361,7 @@ func (s *EntityStateTestSuite) TestConditionsFromJSON_RefOnly_NoName() {
 		EntityID:   "char-d",
 		EntityType: entities.EntityTypeCharacter,
 		RoomID:     "room-1",
-		Position:   &entities.Position{},
+		Position:   &dungeon.AbsolutePosition{},
 		Size:       2,
 		ToolkitData: &toolkitchar.Data{
 			ID:         "char-d",
@@ -384,7 +385,7 @@ func (s *EntityStateTestSuite) TestConditionsFromJSON_InvalidJSON() {
 		EntityID:   "char-e",
 		EntityType: entities.EntityTypeCharacter,
 		RoomID:     "room-1",
-		Position:   &entities.Position{},
+		Position:   &dungeon.AbsolutePosition{},
 		Size:       2,
 		ToolkitData: &toolkitchar.Data{
 			ID:         "char-e",
@@ -409,7 +410,7 @@ func (s *EntityStateTestSuite) TestToEntityStateProtos_BatchConversion() {
 			EntityID:   "char-1",
 			EntityType: entities.EntityTypeCharacter,
 			RoomID:     "room-1",
-			Position:   &entities.Position{X: 1, Y: 0, Z: -1},
+			Position:   &dungeon.AbsolutePosition{X: 1, Y: 0, Z: -1},
 			Size:       2,
 			ToolkitData: &toolkitchar.Data{
 				ID: "char-1", Name: "Hero", HitPoints: 20, MaxHitPoints: 20,
@@ -420,7 +421,7 @@ func (s *EntityStateTestSuite) TestToEntityStateProtos_BatchConversion() {
 			EntityID:   "mob-1",
 			EntityType: entities.EntityTypeMonster,
 			RoomID:     "room-1",
-			Position:   &entities.Position{X: 3, Y: -2, Z: -1},
+			Position:   &dungeon.AbsolutePosition{X: 3, Y: -2, Z: -1},
 			Size:       2,
 			ToolkitData: &monster.Data{
 				ID: "mob-1", Name: "Skeleton", HitPoints: 10, MaxHitPoints: 13,
@@ -445,7 +446,7 @@ func (s *EntityStateTestSuite) TestToEntityStateProtos_SkipsMissing() {
 			EntityID:   "char-1",
 			EntityType: entities.EntityTypeCharacter,
 			RoomID:     "room-1",
-			Position:   &entities.Position{},
+			Position:   &dungeon.AbsolutePosition{},
 			Size:       2,
 			ToolkitData: &toolkitchar.Data{
 				ID: "char-1", Name: "Hero", HitPoints: 20, MaxHitPoints: 20,
@@ -498,7 +499,7 @@ func (s *EntityStateTestSuite) TestIntToEntitySize() {
 			EntityID:    "ent-size",
 			EntityType:  entities.EntityTypeMonster,
 			RoomID:      "room-1",
-			Position:    &entities.Position{},
+			Position:    &dungeon.AbsolutePosition{},
 			Size:        tc.size,
 			ToolkitData: &monster.Data{ID: "m", Name: "M", HitPoints: 1, MaxHitPoints: 1},
 		}
@@ -533,7 +534,7 @@ func (s *EntityStateTestSuite) TestRaceMapping() {
 			EntityID:   "char-race",
 			EntityType: entities.EntityTypeCharacter,
 			RoomID:     "room-1",
-			Position:   &entities.Position{},
+			Position:   &dungeon.AbsolutePosition{},
 			Size:       2,
 			ToolkitData: &toolkitchar.Data{
 				ID: "c", Name: "C", HitPoints: 10, MaxHitPoints: 10,
@@ -572,7 +573,7 @@ func (s *EntityStateTestSuite) TestClassMapping() {
 			EntityID:   "char-class",
 			EntityType: entities.EntityTypeCharacter,
 			RoomID:     "room-1",
-			Position:   &entities.Position{},
+			Position:   &dungeon.AbsolutePosition{},
 			Size:       2,
 			ToolkitData: &toolkitchar.Data{
 				ID: "c", Name: "C", HitPoints: 10, MaxHitPoints: 10,

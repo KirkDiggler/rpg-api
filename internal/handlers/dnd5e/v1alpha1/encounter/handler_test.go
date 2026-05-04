@@ -543,10 +543,15 @@ func (s *HandlerTestSuite) TestGetCombatState_Unimplemented() {
 // Note: The handler converts cube coordinates (from client) to offset coordinates (for service)
 // The test uses hex grid, so input coords (5, -8, 3) cube -> (5, 5) offset after conversion
 func (s *HandlerTestSuite) TestMoveCharacter_Success() {
-	// Arrange - use cube coordinates (x + y + z = 0)
-	cubeX := 5.0
-	cubeY := -10.0 // y = -x - z
-	cubeZ := 5.0
+	// Arrange - use cube coordinates (x + y + z = 0).
+	// proto Position is int32 (per rpg-api-protos PR #147) and the orchestrator-side
+	// encounter.Position is now an alias of dungeon.AbsolutePosition (also int) per
+	// the coord-types refactor in PR #484.
+	const (
+		cubeX int32 = 5
+		cubeY int32 = -10 // y = -x - z
+		cubeZ int32 = 5
+	)
 
 	expectedRoom := &spatial.RoomData{
 		ID:         "enc-1-room",
@@ -572,17 +577,17 @@ func (s *HandlerTestSuite) TestMoveCharacter_Success() {
 			EncounterID: "enc-1",
 			EntityID:    "char-1",
 			TargetPosition: &encounter.Position{
-				X: cubeX,
-				Y: cubeY,
-				Z: cubeZ,
+				X: int(cubeX),
+				Y: int(cubeY),
+				Z: int(cubeZ),
 			},
 		}).
 		Return(&encounter.MoveCharacterOutput{
 			Success: true,
 			FinalPosition: &encounter.Position{
-				X: cubeX,
-				Y: cubeY,
-				Z: cubeZ,
+				X: int(cubeX),
+				Y: int(cubeY),
+				Z: int(cubeZ),
 			},
 			MovementRemaining: 30,
 			StopReason:        "completed",
@@ -698,10 +703,14 @@ func (s *HandlerTestSuite) TestMoveCharacter_ServiceError() {
 // TestMoveCharacter_OutOfBounds tests movement to invalid position
 // The handler passes cube coordinates directly to the service
 func (s *HandlerTestSuite) TestMoveCharacter_OutOfBounds() {
-	// Use out-of-bounds cube coordinates (x + y + z = 0)
-	cubeX := 100.0
-	cubeY := -200.0 // y = -x - z
-	cubeZ := 100.0
+	// Use out-of-bounds cube coordinates (x + y + z = 0).
+	// proto Position is int32 (per rpg-api-protos PR #147); orchestrator-side
+	// encounter.Position is still float64 during the migration window.
+	const (
+		cubeX int32 = 100
+		cubeY int32 = -200 // y = -x - z
+		cubeZ int32 = 100
+	)
 
 	// Arrange
 	s.mockService.EXPECT().
@@ -709,17 +718,17 @@ func (s *HandlerTestSuite) TestMoveCharacter_OutOfBounds() {
 			EncounterID: "enc-1",
 			EntityID:    "char-1",
 			TargetPosition: &encounter.Position{
-				X: cubeX,
-				Y: cubeY,
-				Z: cubeZ,
+				X: int(cubeX),
+				Y: int(cubeY),
+				Z: int(cubeZ),
 			},
 		}).
 		Return(&encounter.MoveCharacterOutput{
 			Success: false,
 			FinalPosition: &encounter.Position{
-				X: cubeX,
-				Y: cubeY,
-				Z: cubeZ,
+				X: int(cubeX),
+				Y: int(cubeY),
+				Z: int(cubeZ),
 			},
 			MovementRemaining: 0,
 			StopReason:        "out_of_bounds",
@@ -1447,15 +1456,15 @@ func (s *HandlerTestSuite) TestConvertToProtoEvent_MovementCompleted_IncludesWal
 	walls := []dungeon.WallSegment{
 		{
 			ID:             "wall-1",
-			Start:          dungeon.Position{X: 5, Y: -10, Z: 5},
-			End:            dungeon.Position{X: 6, Y: -12, Z: 6},
+			Start:          dungeon.LocalPosition{X: 5, Y: -10, Z: 5},
+			End:            dungeon.LocalPosition{X: 6, Y: -12, Z: 6},
 			Type:           dungeon.WallTypeIndestructible,
 			BlocksMovement: true,
 		},
 		{
 			ID:             "wall-2",
-			Start:          dungeon.Position{X: 10, Y: -20, Z: 10},
-			End:            dungeon.Position{X: 12, Y: -24, Z: 12},
+			Start:          dungeon.LocalPosition{X: 10, Y: -20, Z: 10},
+			End:            dungeon.LocalPosition{X: 12, Y: -24, Z: 12},
 			Type:           dungeon.WallTypeDestructible,
 			BlocksMovement: true,
 		},
@@ -1468,7 +1477,7 @@ func (s *HandlerTestSuite) TestConvertToProtoEvent_MovementCompleted_IncludesWal
 		MovementCompleted: &entities.MovementCompletedEvent{
 			EntityID:   "char-1",
 			EntityType: "character",
-			FinalPosition: &entities.Position{
+			FinalPosition: &dungeon.AbsolutePosition{
 				X: 5,
 				Y: -10,
 				Z: 5,
@@ -1496,9 +1505,9 @@ func (s *HandlerTestSuite) TestConvertToProtoEvent_MovementCompleted_IncludesWal
 
 	// Verify path contains the final position
 	s.Require().Len(movementCompleted.Path, 1)
-	s.Equal(float64(5), movementCompleted.Path[0].X)
-	s.Equal(float64(-10), movementCompleted.Path[0].Y)
-	s.Equal(float64(5), movementCompleted.Path[0].Z)
+	s.Equal(int32(5), movementCompleted.Path[0].X)
+	s.Equal(int32(-10), movementCompleted.Path[0].Y)
+	s.Equal(int32(5), movementCompleted.Path[0].Z)
 
 	// UpdatedEntity and CombatState are nil until orchestrator populates them
 	s.Nil(movementCompleted.UpdatedEntity, "UpdatedEntity should be nil until orchestrator wires it")
@@ -1518,8 +1527,8 @@ func (s *HandlerTestSuite) TestConvertToProtoEvent_TurnEnded_IncludesWalls() {
 	walls := []dungeon.WallSegment{
 		{
 			ID:             "wall-1",
-			Start:          dungeon.Position{X: 5, Y: -10, Z: 5},
-			End:            dungeon.Position{X: 6, Y: -12, Z: 6},
+			Start:          dungeon.LocalPosition{X: 5, Y: -10, Z: 5},
+			End:            dungeon.LocalPosition{X: 6, Y: -12, Z: 6},
 			Type:           dungeon.WallTypeIndestructible,
 			BlocksMovement: true,
 		},
@@ -1572,15 +1581,15 @@ func (s *HandlerTestSuite) TestConvertToProtoEvent_MonsterTurnCompleted_Includes
 	walls := []dungeon.WallSegment{
 		{
 			ID:             "wall-1",
-			Start:          dungeon.Position{X: 5, Y: -10, Z: 5},
-			End:            dungeon.Position{X: 6, Y: -12, Z: 6},
+			Start:          dungeon.LocalPosition{X: 5, Y: -10, Z: 5},
+			End:            dungeon.LocalPosition{X: 6, Y: -12, Z: 6},
 			Type:           dungeon.WallTypeIndestructible,
 			BlocksMovement: true,
 		},
 		{
 			ID:             "wall-2",
-			Start:          dungeon.Position{X: 10, Y: -20, Z: 10},
-			End:            dungeon.Position{X: 12, Y: -24, Z: 12},
+			Start:          dungeon.LocalPosition{X: 10, Y: -20, Z: 10},
+			End:            dungeon.LocalPosition{X: 12, Y: -24, Z: 12},
 			Type:           dungeon.WallTypeDestructible,
 			BlocksMovement: true,
 		},
@@ -1594,7 +1603,7 @@ func (s *HandlerTestSuite) TestConvertToProtoEvent_MonsterTurnCompleted_Includes
 			MonsterID:   "monster-1",
 			MonsterName: "Skeleton",
 			Actions:     []entities.MonsterExecutedAction{},
-			Movement:    []entities.Position{},
+			Movement:    []dungeon.AbsolutePosition{},
 			Room:        roomData,
 			Walls:       walls,
 		},
@@ -1938,7 +1947,7 @@ func (s *HandlerTestSuite) TestExecuteAction_Move_Success() {
 	s.Assert().Equal(int32(10), moveResult.MovementUsed)
 	s.Assert().Equal("completed", moveResult.StopReason)
 	s.Require().NotNil(moveResult.FinalPosition)
-	s.Assert().Equal(float64(2), moveResult.FinalPosition.X)
+	s.Assert().Equal(int32(2), moveResult.FinalPosition.X)
 
 	// Verify action economy shows updated movement
 	s.Require().NotNil(resp.ActionEconomy)

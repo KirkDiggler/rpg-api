@@ -122,7 +122,7 @@ type MonsterState struct {
 type CombatStartedEvent struct {
 	CombatState  *CombatState                 `json:"combat_state"`            // Full combat state including initiative order
 	Room         *spatial.RoomData            `json:"room"`                    // Room with entity positions
-	RoomOrigin   *dungeon.Position            `json:"room_origin,omitempty"`   // Absolute position of the room in dungeon-space
+	RoomOrigin   *dungeon.AbsolutePosition    `json:"room_origin,omitempty"`   // Absolute position of the room in dungeon-space
 	Walls        []dungeon.WallSegment        `json:"walls,omitempty"`         // Walls in the room
 	Party        []*Player                    `json:"party"`                   // Party members at combat start
 	Monsters     []*MonsterState              `json:"monsters"`                // Monster state with types for UI textures
@@ -163,14 +163,14 @@ type CombatResumedEvent struct {
 
 // MovementCompletedEvent is emitted when an entity completes movement
 type MovementCompletedEvent struct {
-	EntityID          string                `json:"entity_id"`
-	EntityType        string                `json:"entity_type"` // "character" or "monster"
-	FinalPosition     *Position             `json:"final_position"`
-	MovementRemaining int32                 `json:"movement_remaining"`
-	StopReason        string                `json:"stop_reason"` // "completed", "position_occupied", etc.
-	UpdatedRoom       *spatial.RoomData     `json:"updated_room,omitempty"`
-	RoomOrigin        *dungeon.Position     `json:"room_origin,omitempty"` // Absolute position of the room in dungeon-space
-	Walls             []dungeon.WallSegment `json:"walls,omitempty"`
+	EntityID          string                    `json:"entity_id"`
+	EntityType        string                    `json:"entity_type"` // "character" or "monster"
+	FinalPosition     *dungeon.AbsolutePosition `json:"final_position"`
+	MovementRemaining int32                     `json:"movement_remaining"`
+	StopReason        string                    `json:"stop_reason"` // "completed", "position_occupied", etc.
+	UpdatedRoom       *spatial.RoomData         `json:"updated_room,omitempty"`
+	RoomOrigin        *dungeon.AbsolutePosition `json:"room_origin,omitempty"` // Absolute position of the room in dungeon-space
+	Walls             []dungeon.WallSegment     `json:"walls,omitempty"`
 
 	// New unified entity state (delta). When set, handler uses these instead of legacy fields.
 	UpdatedEntity    *dnd5ev1alpha1.EntityState `json:"-"` // The moved entity's updated state
@@ -236,15 +236,15 @@ type RerollEvent struct {
 
 // AttackResolvedEvent is emitted when an attack is resolved
 type AttackResolvedEvent struct {
-	AttackerID    string                `json:"attacker_id"`
-	TargetID      string                `json:"target_id"`
-	Result        *AttackResult         `json:"result"`
-	TargetHP      int                   `json:"target_hp"`                // HP after attack
-	TargetDead    bool                  `json:"target_dead"`              // Whether target was killed
-	Room          *spatial.RoomData     `json:"room,omitempty"`           // Updated room with entity positions
-	RoomOrigin    *dungeon.Position     `json:"room_origin,omitempty"`    // Absolute position of the room in dungeon-space
-	Walls         []dungeon.WallSegment `json:"walls,omitempty"`          // Walls in the room
-	GrantedAction *GrantedActionInfo    `json:"granted_action,omitempty"` // Action granted from this attack
+	AttackerID    string                    `json:"attacker_id"`
+	TargetID      string                    `json:"target_id"`
+	Result        *AttackResult             `json:"result"`
+	TargetHP      int                       `json:"target_hp"`                // HP after attack
+	TargetDead    bool                      `json:"target_dead"`              // Whether target was killed
+	Room          *spatial.RoomData         `json:"room,omitempty"`           // Updated room with entity positions
+	RoomOrigin    *dungeon.AbsolutePosition `json:"room_origin,omitempty"`    // Absolute position of the room in dungeon-space
+	Walls         []dungeon.WallSegment     `json:"walls,omitempty"`          // Walls in the room
+	GrantedAction *GrantedActionInfo        `json:"granted_action,omitempty"` // Action granted from this attack
 
 	// New unified entity state (delta). When set, handler uses these instead of legacy fields.
 	AttackerState *dnd5ev1alpha1.EntityState `json:"-"` // Attacker's updated state after attack
@@ -271,14 +271,14 @@ type FeatureActivatedEvent struct {
 
 // TurnEndedEvent is emitted when a turn ends
 type TurnEndedEvent struct {
-	PreviousEntityID string                `json:"previous_entity_id"`
-	NextEntityID     string                `json:"next_entity_id"`
-	Round            int                   `json:"round"`
-	NewRound         bool                  `json:"new_round"`
-	CombatState      *CombatState          `json:"combat_state"`          // Full updated combat state
-	Room             *spatial.RoomData     `json:"room,omitempty"`        // Updated room with entity positions
-	RoomOrigin       *dungeon.Position     `json:"room_origin,omitempty"` // Absolute position of the room in dungeon-space
-	Walls            []dungeon.WallSegment `json:"walls,omitempty"`
+	PreviousEntityID string                    `json:"previous_entity_id"`
+	NextEntityID     string                    `json:"next_entity_id"`
+	Round            int                       `json:"round"`
+	NewRound         bool                      `json:"new_round"`
+	CombatState      *CombatState              `json:"combat_state"`          // Full updated combat state
+	Room             *spatial.RoomData         `json:"room,omitempty"`        // Updated room with entity positions
+	RoomOrigin       *dungeon.AbsolutePosition `json:"room_origin,omitempty"` // Absolute position of the room in dungeon-space
+	Walls            []dungeon.WallSegment     `json:"walls,omitempty"`
 
 	// New unified entity state (delta). When set, handler uses these instead of legacy fields.
 	UpdatedEntities  []*dnd5ev1alpha1.EntityState `json:"-"` // Entities whose state changed this turn
@@ -287,14 +287,14 @@ type TurnEndedEvent struct {
 
 // MonsterTurnCompletedEvent is emitted when a monster completes its turn
 type MonsterTurnCompletedEvent struct {
-	MonsterID         string                  `json:"monster_id"`
-	MonsterName       string                  `json:"monster_name"`
-	Actions           []MonsterExecutedAction `json:"actions"`
-	Movement          []Position              `json:"movement"`
-	Room              *spatial.RoomData       `json:"room,omitempty"`               // Updated room with entity positions
-	RoomOrigin        *dungeon.Position       `json:"room_origin,omitempty"`        // Absolute position of the room in dungeon-space
-	Walls             []dungeon.WallSegment   `json:"walls,omitempty"`              // Walls in the current room
-	UpdatedCharacters []*character.Data       `json:"updated_characters,omitempty"` // Characters that took damage
+	MonsterID         string                    `json:"monster_id"`
+	MonsterName       string                    `json:"monster_name"`
+	Actions           []MonsterExecutedAction   `json:"actions"`
+	Movement          []dungeon.AbsolutePosition `json:"movement"`
+	Room              *spatial.RoomData         `json:"room,omitempty"`               // Updated room with entity positions
+	RoomOrigin        *dungeon.AbsolutePosition `json:"room_origin,omitempty"`        // Absolute position of the room in dungeon-space
+	Walls             []dungeon.WallSegment     `json:"walls,omitempty"`              // Walls in the current room
+	UpdatedCharacters []*character.Data         `json:"updated_characters,omitempty"` // Characters that took damage
 
 	// New unified entity state (delta). When set, handler uses these instead of legacy fields.
 	UpdatedEntities  []*dnd5ev1alpha1.EntityState `json:"-"` // Entities whose state changed (monster + damaged characters)
@@ -328,7 +328,7 @@ type RoomRevealedEvent struct {
 	DungeonID    string                       `json:"dungeon_id"`              // ID of the dungeon
 	ConnectionID string                       `json:"connection_id"`           // ID of the opened door/connection
 	RevealedRoom *spatial.RoomData            `json:"revealed_room"`           // The newly revealed room
-	RoomOrigin   *dungeon.Position            `json:"room_origin,omitempty"`   // Absolute position of the revealed room in dungeon-space
+	RoomOrigin   *dungeon.AbsolutePosition    `json:"room_origin,omitempty"`   // Absolute position of the revealed room in dungeon-space
 	Walls        []dungeon.WallSegment        `json:"walls,omitempty"`         // Walls in the revealed room
 	NewDoors     []*DoorInfo                  `json:"new_doors"`               // Doors visible from the newly revealed room
 	Monsters     []*MonsterState              `json:"monsters"`                // Monsters in the revealed room

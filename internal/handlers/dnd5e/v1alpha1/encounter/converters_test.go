@@ -713,7 +713,7 @@ func (s *ConvertersTestSuite) TestConvertRoomDataToProto_Pointer() {
 	s.Equal(int32(10), result.Height)
 	s.Equal(apiv1alpha1.GridType_GRID_TYPE_SQUARE, result.GridType)
 	s.Require().Contains(result.Entities, "hero-1")
-	s.Equal(float64(5), result.Entities["hero-1"].Position.X)
+	s.Equal(int32(5), result.Entities["hero-1"].Position.X)
 }
 
 func (s *ConvertersTestSuite) TestConvertRoomDataToProto_Value() {
@@ -753,7 +753,7 @@ func (s *ConvertersTestSuite) TestConvertPositionToProto_HexGrid_PointyTop() {
 	s.Require().NotNil(result)
 	// For pointy-top hex, (10, 10) offset -> cube coordinates
 	// The sum x + y + z should equal 0 for valid cube coordinates
-	s.Equal(float64(0), result.X+result.Y+result.Z, "cube coordinates must satisfy x+y+z=0")
+	s.Equal(int32(0), result.X+result.Y+result.Z, "cube coordinates must satisfy x+y+z=0")
 }
 
 func (s *ConvertersTestSuite) TestConvertPositionToProto_SquareGrid() {
@@ -765,9 +765,9 @@ func (s *ConvertersTestSuite) TestConvertPositionToProto_SquareGrid() {
 	result := convertPositionToProto(pos, gridType, hexOrientation)
 
 	s.Require().NotNil(result)
-	s.Equal(float64(5), result.X)
-	s.Equal(float64(7), result.Y)
-	s.Equal(float64(0), result.Z)
+	s.Equal(int32(5), result.X)
+	s.Equal(int32(7), result.Y)
+	s.Equal(int32(0), result.Z)
 }
 
 func (s *ConvertersTestSuite) TestConvertProtoPositionToOffset_HexGrid_PointyTop() {
@@ -833,7 +833,7 @@ func (s *ConvertersTestSuite) TestPositionConversion_RoundTrip_MultiplePositions
 
 			// Verify cube coordinate validity (x + y + z = 0)
 			s.Equal(
-				float64(0),
+				int32(0),
 				protoPos.X+protoPos.Y+protoPos.Z,
 				"cube coordinates must satisfy x+y+z=0 for %s", tc.name,
 			)
@@ -905,7 +905,7 @@ func (s *ConvertersTestSuite) TestConvertCombatStateToProto_ActiveCombat() {
 	s.Equal(int32(10), result.CurrentTurn.MovementUsed) // 30 - 20 = 10
 	s.Equal(int32(30), result.CurrentTurn.MovementMax)
 	s.Require().NotNil(result.CurrentTurn.Position)
-	s.Equal(float64(5), result.CurrentTurn.Position.X) // Square grid: offset coords
+	s.Equal(int32(5), result.CurrentTurn.Position.X) // Square grid: offset coords
 }
 
 func (s *ConvertersTestSuite) TestConvertCombatStateToProto_NotStarted() {
@@ -988,9 +988,9 @@ func (s *ConvertersTestSuite) TestConvertRoomDataToProto_OriginCanBeSetAfterConv
 	// Set origin (as handler does for start room)
 	result.Origin = &apiv1alpha1.Position{X: 0, Y: 0, Z: 0}
 	s.Require().NotNil(result.Origin)
-	s.Equal(float64(0), result.Origin.X)
-	s.Equal(float64(0), result.Origin.Y)
-	s.Equal(float64(0), result.Origin.Z)
+	s.Equal(int32(0), result.Origin.X)
+	s.Equal(int32(0), result.Origin.Y)
+	s.Equal(int32(0), result.Origin.Z)
 }
 
 func (s *ConvertersTestSuite) TestConvertRoomDataToProto_OriginSetWithNonZeroValues() {
@@ -1009,9 +1009,9 @@ func (s *ConvertersTestSuite) TestConvertRoomDataToProto_OriginSetWithNonZeroVal
 
 	// Simulate handler setting origin from dungeon.RoomOrigins
 	result.Origin = &apiv1alpha1.Position{X: 11, Y: -20, Z: 9}
-	s.Equal(float64(11), result.Origin.X)
-	s.Equal(float64(-20), result.Origin.Y)
-	s.Equal(float64(9), result.Origin.Z)
+	s.Equal(int32(11), result.Origin.X)
+	s.Equal(int32(-20), result.Origin.Y)
+	s.Equal(int32(9), result.Origin.Z)
 }
 
 // =============================================================================
@@ -1034,9 +1034,9 @@ func (s *ConvertersTestSuite) TestConvertOpenDoorRoomToProto_OriginCanBeSetAfter
 	// Set origin from room offset (as handler does)
 	result.Origin = &apiv1alpha1.Position{X: 0, Y: -9, Z: 9}
 	s.Require().NotNil(result.Origin)
-	s.Equal(float64(0), result.Origin.X)
-	s.Equal(float64(-9), result.Origin.Y)
-	s.Equal(float64(9), result.Origin.Z)
+	s.Equal(int32(0), result.Origin.X)
+	s.Equal(int32(-9), result.Origin.Y)
+	s.Equal(int32(9), result.Origin.Z)
 }
 
 // =============================================================================
@@ -1241,165 +1241,35 @@ func (s *ConvertersTestSuite) TestAbilityRefToProtoEnum_RoundTrip() {
 }
 
 // =============================================================================
-// shiftEntitiesByOrigin Tests
+// applyOriginToEntities Tests
 // =============================================================================
 
-func (s *ConvertersTestSuite) TestShiftEntitiesByOrigin() {
-	entities := map[string]*dnd5ev1alpha1.EntityPlacement{
-		"monster-room2-melee-0": {
-			EntityId: "monster-room2-melee-0",
-			Position: &apiv1alpha1.Position{X: 3, Y: -5, Z: 2},
-		},
-	}
-	origin := &apiv1alpha1.Position{X: 0, Y: 17, Z: -17}
-
-	shiftEntitiesByOrigin(entities, origin)
-
-	s.Equal(float64(3), entities["monster-room2-melee-0"].Position.X)
-	s.Equal(float64(12), entities["monster-room2-melee-0"].Position.Y)
-	s.Equal(float64(-15), entities["monster-room2-melee-0"].Position.Z)
-}
-
-func (s *ConvertersTestSuite) TestShiftEntitiesByOrigin_NilOrigin() {
-	entities := map[string]*dnd5ev1alpha1.EntityPlacement{
-		"monster-1": {
-			EntityId: "monster-1",
-			Position: &apiv1alpha1.Position{X: 3, Y: -5, Z: 2},
-		},
-	}
-
-	// Should not panic with nil origin
-	shiftEntitiesByOrigin(entities, nil)
-
-	// Positions unchanged
-	s.Equal(float64(3), entities["monster-1"].Position.X)
-	s.Equal(float64(-5), entities["monster-1"].Position.Y)
-	s.Equal(float64(2), entities["monster-1"].Position.Z)
-}
-
-func (s *ConvertersTestSuite) TestShiftEntitiesByOrigin_NilEntities() {
-	origin := &apiv1alpha1.Position{X: 10, Y: 20, Z: 30}
-
-	// Should not panic with nil entities
-	shiftEntitiesByOrigin(nil, origin)
-}
-
-func (s *ConvertersTestSuite) TestShiftEntitiesByOrigin_EntityWithNilPosition() {
-	entities := map[string]*dnd5ev1alpha1.EntityPlacement{
-		"monster-no-pos": {
-			EntityId: "monster-no-pos",
-			Position: nil,
-		},
-		"monster-with-pos": {
-			EntityId: "monster-with-pos",
-			Position: &apiv1alpha1.Position{X: 1, Y: 2, Z: 3},
-		},
-	}
-	origin := &apiv1alpha1.Position{X: 10, Y: 20, Z: 30}
-
-	// Should not panic; only shift the entity that has a position
-	shiftEntitiesByOrigin(entities, origin)
-
-	s.Nil(entities["monster-no-pos"].Position)
-	s.Equal(float64(11), entities["monster-with-pos"].Position.X)
-	s.Equal(float64(22), entities["monster-with-pos"].Position.Y)
-	s.Equal(float64(33), entities["monster-with-pos"].Position.Z)
-}
-
-// =============================================================================
-// shiftWallsByOrigin Tests
-// =============================================================================
-
-func (s *ConvertersTestSuite) TestShiftWallsByOrigin() {
-	walls := []*apiv1alpha1.Wall{
-		{
-			Start: &apiv1alpha1.Position{X: 0, Y: 0, Z: 0},
-			End:   &apiv1alpha1.Position{X: 5, Y: 0, Z: 0},
-		},
-		{
-			Start: &apiv1alpha1.Position{X: 0, Y: 0, Z: 0},
-			End:   &apiv1alpha1.Position{X: 0, Y: 5, Z: 0},
-		},
-	}
-	origin := &apiv1alpha1.Position{X: 10, Y: 20, Z: 5}
-
-	shiftWallsByOrigin(walls, origin)
-
-	// First wall
-	s.Equal(float64(10), walls[0].Start.X)
-	s.Equal(float64(20), walls[0].Start.Y)
-	s.Equal(float64(5), walls[0].Start.Z)
-	s.Equal(float64(15), walls[0].End.X)
-	s.Equal(float64(20), walls[0].End.Y)
-	s.Equal(float64(5), walls[0].End.Z)
-
-	// Second wall
-	s.Equal(float64(10), walls[1].Start.X)
-	s.Equal(float64(20), walls[1].Start.Y)
-	s.Equal(float64(5), walls[1].Start.Z)
-	s.Equal(float64(10), walls[1].End.X)
-	s.Equal(float64(25), walls[1].End.Y)
-	s.Equal(float64(5), walls[1].End.Z)
-}
-
-func (s *ConvertersTestSuite) TestShiftWallsByOrigin_NilWalls() {
-	// Should not panic
-	shiftWallsByOrigin(nil, &apiv1alpha1.Position{X: 10, Y: 20, Z: 5})
-}
-
-func (s *ConvertersTestSuite) TestShiftWallsByOrigin_NilOrigin() {
-	walls := []*apiv1alpha1.Wall{
-		{
-			Start: &apiv1alpha1.Position{X: 1, Y: 2, Z: 3},
-			End:   &apiv1alpha1.Position{X: 4, Y: 5, Z: 6},
-		},
-	}
-
-	// Should not panic and should not modify walls
-	shiftWallsByOrigin(walls, nil)
-
-	s.Equal(float64(1), walls[0].Start.X)
-	s.Equal(float64(2), walls[0].Start.Y)
-	s.Equal(float64(3), walls[0].Start.Z)
-	s.Equal(float64(4), walls[0].End.X)
-	s.Equal(float64(5), walls[0].End.Y)
-	s.Equal(float64(6), walls[0].End.Z)
-}
-
-func (s *ConvertersTestSuite) TestShiftWallsByOrigin_NilStartOrEnd() {
-	walls := []*apiv1alpha1.Wall{
-		{
-			Start: nil,
-			End:   &apiv1alpha1.Position{X: 5, Y: 5, Z: 0},
-		},
-		{
-			Start: &apiv1alpha1.Position{X: 1, Y: 1, Z: 0},
-			End:   nil,
-		},
-	}
-	origin := &apiv1alpha1.Position{X: 10, Y: 20, Z: 0}
-
-	// Should not panic; only shift non-nil endpoints
-	shiftWallsByOrigin(walls, origin)
-
-	s.Nil(walls[0].Start)
-	s.Equal(float64(15), walls[0].End.X)
-	s.Equal(float64(25), walls[0].End.Y)
-
-	s.Equal(float64(11), walls[1].Start.X)
-	s.Equal(float64(21), walls[1].Start.Y)
-	s.Nil(walls[1].End)
-}
-
-func (s *ConvertersTestSuite) TestShiftRoomToAbsolute() {
+func (s *ConvertersTestSuite) TestApplyOriginToEntities() {
 	room := &dnd5ev1alpha1.Room{
 		Origin: &apiv1alpha1.Position{X: 0, Y: 17, Z: -17},
-		Walls: []*apiv1alpha1.Wall{
-			{
-				Start: &apiv1alpha1.Position{X: 1, Y: 2, Z: -3},
-				End:   &apiv1alpha1.Position{X: 4, Y: -1, Z: -3},
+		Entities: map[string]*dnd5ev1alpha1.EntityPlacement{
+			"monster-room2-melee-0": {
+				EntityId: "monster-room2-melee-0",
+				Position: &apiv1alpha1.Position{X: 3, Y: -5, Z: 2},
 			},
 		},
+	}
+
+	applyOriginToEntities(room)
+
+	s.Equal(int32(3), room.Entities["monster-room2-melee-0"].Position.X)
+	s.Equal(int32(12), room.Entities["monster-room2-melee-0"].Position.Y)
+	s.Equal(int32(-15), room.Entities["monster-room2-melee-0"].Position.Z)
+}
+
+func (s *ConvertersTestSuite) TestApplyOriginToEntities_NilRoom() {
+	// Should not panic
+	applyOriginToEntities(nil)
+}
+
+func (s *ConvertersTestSuite) TestApplyOriginToEntities_NilOrigin() {
+	room := &dnd5ev1alpha1.Room{
+		Origin: nil,
 		Entities: map[string]*dnd5ev1alpha1.EntityPlacement{
 			"monster-1": {
 				EntityId: "monster-1",
@@ -1408,34 +1278,41 @@ func (s *ConvertersTestSuite) TestShiftRoomToAbsolute() {
 		},
 	}
 
-	shiftRoomToAbsolute(room)
+	applyOriginToEntities(room)
 
-	// Walls shifted
-	s.Equal(float64(1), room.Walls[0].Start.X)
-	s.Equal(float64(19), room.Walls[0].Start.Y)
-	s.Equal(float64(-20), room.Walls[0].Start.Z)
-
-	// Entities shifted
-	s.Equal(float64(3), room.Entities["monster-1"].Position.X)
-	s.Equal(float64(12), room.Entities["monster-1"].Position.Y)
-	s.Equal(float64(-15), room.Entities["monster-1"].Position.Z)
+	s.Equal(int32(3), room.Entities["monster-1"].Position.X)
+	s.Equal(int32(-5), room.Entities["monster-1"].Position.Y)
+	s.Equal(int32(2), room.Entities["monster-1"].Position.Z)
 }
 
-func (s *ConvertersTestSuite) TestShiftRoomToAbsolute_NilRoom() {
-	// Should not panic
-	shiftRoomToAbsolute(nil)
-}
-
-func (s *ConvertersTestSuite) TestShiftRoomToAbsolute_NilOrigin() {
+func (s *ConvertersTestSuite) TestApplyOriginToEntities_NilEntitiesMap() {
 	room := &dnd5ev1alpha1.Room{
-		Origin: nil,
+		Origin:   &apiv1alpha1.Position{X: 10, Y: 20, Z: 30},
+		Entities: nil,
+	}
+
+	applyOriginToEntities(room)
+}
+
+func (s *ConvertersTestSuite) TestApplyOriginToEntities_EntityWithNilPosition() {
+	room := &dnd5ev1alpha1.Room{
+		Origin: &apiv1alpha1.Position{X: 10, Y: 20, Z: 30},
 		Entities: map[string]*dnd5ev1alpha1.EntityPlacement{
-			"monster-1": {
-				Position: &apiv1alpha1.Position{X: 3, Y: -5, Z: 2},
+			"monster-no-pos": {
+				EntityId: "monster-no-pos",
+				Position: nil,
+			},
+			"monster-with-pos": {
+				EntityId: "monster-with-pos",
+				Position: &apiv1alpha1.Position{X: 1, Y: 2, Z: 3},
 			},
 		},
 	}
-	shiftRoomToAbsolute(room)
-	// Position unchanged
-	s.Equal(float64(3), room.Entities["monster-1"].Position.X)
+
+	applyOriginToEntities(room)
+
+	s.Nil(room.Entities["monster-no-pos"].Position)
+	s.Equal(int32(11), room.Entities["monster-with-pos"].Position.X)
+	s.Equal(int32(22), room.Entities["monster-with-pos"].Position.Y)
+	s.Equal(int32(33), room.Entities["monster-with-pos"].Position.Z)
 }

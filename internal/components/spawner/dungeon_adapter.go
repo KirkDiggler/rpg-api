@@ -8,8 +8,9 @@ import (
 type DungeonSpawnInput struct {
 	// Room is the dungeon room to spawn entities in
 	Room *dungeon.Room
-	// OccupiedPositions are positions already occupied by other entities
-	OccupiedPositions []dungeon.Position
+	// OccupiedPositions are positions already occupied by other entities, in
+	// room-local coordinates (the spawner only operates within a single room).
+	OccupiedPositions []dungeon.LocalPosition
 	// EntitiesToSpawn are the entities that need placement
 	EntitiesToSpawn []EntityToSpawn
 }
@@ -101,8 +102,8 @@ func convertWalls(dungeonWalls []dungeon.WallSegment) []WallSegment {
 	return walls
 }
 
-// convertPositions converts dungeon positions to cube positions.
-func convertPositions(positions []dungeon.Position) []CubePosition {
+// convertPositions converts dungeon room-local positions to spawner cube positions.
+func convertPositions(positions []dungeon.LocalPosition) []CubePosition {
 	result := make([]CubePosition, 0, len(positions))
 	for _, p := range positions {
 		result = append(result, CubePosition{
@@ -114,8 +115,8 @@ func convertPositions(positions []dungeon.Position) []CubePosition {
 	return result
 }
 
-// convertPositionsFromZone converts zone bounds to cube positions.
-func convertPositionsFromZone(bounds []dungeon.Position) []CubePosition {
+// convertPositionsFromZone converts zone bounds (room-local) to cube positions.
+func convertPositionsFromZone(bounds []dungeon.LocalPosition) []CubePosition {
 	return convertPositions(bounds)
 }
 

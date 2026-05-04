@@ -24,7 +24,7 @@ EncounterData ─────────────── owned by encounter r
 Dungeon ────────────────────── owned by dungeon repo (in-memory)
     └── Rooms (map[string]*dungeon.Room)
     └── Connections ([]*environments.ConnectionEdge)
-    └── RoomOrigins (map[string]dungeon.Position)
+    └── RoomOrigins (map[string]dungeon.AbsolutePosition)
 
 EncounterEvent ─────────────── owned by encounter log repo (in-memory, append-only)
 
@@ -80,8 +80,8 @@ type Dungeon struct {
     // Component room content (D&D 5e encounters, walls, features)
     Rooms       map[string]*dungeon.Room   // dungeon component type
 
-    // Room positions in dungeon-space
-    RoomOrigins map[string]dungeon.Position   // ← KNOWN GAP: see below
+    // Room positions in dungeon-space (canonical absolute cube coords)
+    RoomOrigins map[string]dungeon.AbsolutePosition
 
     // Exploration state
     State         DungeonState    // Active/Victorious/Failed/Abandoned
@@ -93,7 +93,7 @@ type Dungeon struct {
 }
 ```
 
-**Coordinate space gap:** `dungeon.Position` uses integer `{X, Y, Z}` (cube coordinates), while `entities.Position` uses `float64 {X, Y, Z}`. `RoomOrigins` stores `dungeon.Position` (integer). When the orchestrator needs to pass positions to the spatial layer (which uses float64), an ad-hoc cast is performed inline. There is no canonical conversion function. This is the root cause of the five coordinate-space bugs fixed in PRs #459, #461, #463, #466, #467. A canonical `RoomToAbsolute(local dungeon.Position, origin dungeon.Position) entities.Position` function would prevent future occurrences.
+**Coordinate model (resolved in #471):** `dungeon.LocalPosition` and `dungeon.AbsolutePosition` are distinct integer cube types in `internal/components/dungeon/coords.go`. `dungeon.Module` (`module.go`) holds the per-room origin map and bridges local-to-absolute via `LocalToAbsolute(roomID, LocalPosition) AbsolutePosition`. All five transform sites that previously did inline casts (and produced bugs in PRs #459, #461, #463, #466, #467) now route through Module. The previous `dungeon.Position` (int) and `entities.Position` (float64) types were deleted.
 
 **Storage:** In-memory only via `repositories/dungeons/inmemory.go`. State lost on restart.
 
@@ -219,19 +219,19 @@ type ActionEconomyState struct {
 
 Tracks in-progress ability score rolls for character creation. Redis-backed. Narrow scope; stores the rolls until assigned to a draft.
 
-## The Position type problem
+## Position types (canonical model, post-#471)
 
-There are **three distinct Position types** in the codebase:
+There are now two domain coordinate types, both integer cube coordinates with the invariant `X+Y+Z == 0`:
 
-| Type | Location | Coordinates | Usage |
-|---|---|---|---|
-| `entities.Position` | `entities/encounter.go` | `float64 X, Y, Z` | Initiative entries, movement, entity placement |
-| `dungeon.Position` | `components/dungeon/types.go` | `int X, Y, Z` | Room origins, walls, connection points |
-| `apiv1alpha1.Position` (proto) | generated | `float64 X, Y, Z` | Wire format |
+| Type | Location | Semantics |
+|---|---|---|
+| `dungeon.LocalPosition` | `components/dungeon/coords.go` | Coordinate inside a single room (origin (0,0,0) is the room's local origin) |
+| `dungeon.AbsolutePosition` | `components/dungeon/coords.go` | Coordinate in dungeon-absolute space |
+| `apiv1alpha1.Position` (proto) | generated | Wire format, `int32 X, Y, Z` |
 
-Room data from the dungeon component uses `dungeon.Position` (integer). Entity positions in encounter state use `entities.Position` (float64). Room origins in `entities.Dungeon` use `dungeon.Position`. When computing absolute positions for entities (local room position + room origin), the code must cast between these types. There is no canonical conversion. This is the root cause of the coordinate bugs.
+`dungeon.Module` (`components/dungeon/module.go`) bridges the two via `LocalToAbsolute(roomID, LocalPosition) AbsolutePosition` and `AbsoluteToLocal(roomID, AbsolutePosition) LocalPosition`. Every transform site routes through Module — the local-vs-absolute distinction is enforced at the type level by the compiler. Proto conversion is a single 3-field cast (`int` → `int32`) at the handler boundary.
 
-**Refactor target:** A canonical `ToAbsolute(localPos entities.Position, roomOrigin dungeon.Position) entities.Position` function in a shared package would prevent future drift. This is currently blocked on the coordinate types refactor that was the intent of the paused Round 2 PRs.
+The old `entities.Position` (float64) and `dungeon.Position` (int) types — and the buggy ad-hoc casts between them that caused PRs #459, #461, #463, #466, #467 — were deleted in #471.
 
 ## Redis key schema (character repos)
 

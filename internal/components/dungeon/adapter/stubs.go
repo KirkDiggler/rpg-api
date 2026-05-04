@@ -89,8 +89,10 @@ func (s *StubShapeGenerator) Generate(ctx context.Context, input *dungeon.ShapeI
 		width, height = 20, 15
 	}
 
-	// Create rectangular bounds (4 corners)
-	bounds := []dungeon.Position{
+	// Create rectangular bounds (4 corners). Stub generator targets a square grid,
+	// so the cube Y is set to 0 explicitly here rather than via NewLocalPosition
+	// (which would derive a non-zero Y to satisfy the cube invariant).
+	bounds := []dungeon.LocalPosition{
 		{X: 0, Y: 0, Z: 0},
 		{X: width, Y: 0, Z: 0},
 		{X: width, Y: height, Z: 0},
@@ -131,33 +133,33 @@ func (s *StubFeatureGenerator) Generate(ctx context.Context, input *dungeon.Feat
 	// Add spawn zones based on room type
 	switch input.RoomType {
 	case "entrance":
-		// Player spawn zone in entrance
+		// Player spawn zone in entrance. Square-grid bounds: cube Y stays 0 explicitly.
 		zones = append(zones, dungeon.Zone{
 			ID:   uuid.New().String(),
 			Type: dungeon.ZoneTypePlayerSpawn,
-			Bounds: []dungeon.Position{
+			Bounds: []dungeon.LocalPosition{
 				{X: 1, Y: 1, Z: 0},
 				{X: 3, Y: 3, Z: 0},
 			},
 			Capacity: 4,
 		})
 	case "boss":
-		// Boss zone in boss room
+		// Boss zone in boss room.
 		zones = append(zones, dungeon.Zone{
 			ID:   uuid.New().String(),
 			Type: dungeon.ZoneTypeBoss,
-			Bounds: []dungeon.Position{
+			Bounds: []dungeon.LocalPosition{
 				{X: input.Shape.Width - 5, Y: input.Shape.Height - 5, Z: 0},
 				{X: input.Shape.Width - 1, Y: input.Shape.Height - 1, Z: 0},
 			},
 			Capacity: 6,
 		})
 	default:
-		// Monster spawn zone in regular rooms
+		// Monster spawn zone in regular rooms.
 		zones = append(zones, dungeon.Zone{
 			ID:   uuid.New().String(),
 			Type: dungeon.ZoneTypeMonsterSpawn,
-			Bounds: []dungeon.Position{
+			Bounds: []dungeon.LocalPosition{
 				{X: input.Shape.Width/2 - 2, Y: input.Shape.Height/2 - 2, Z: 0},
 				{X: input.Shape.Width/2 + 2, Y: input.Shape.Height/2 + 2, Z: 0},
 			},

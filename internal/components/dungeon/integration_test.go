@@ -936,7 +936,7 @@ func (s *IntegrationTestSuite) TestRoomOrigins() {
 		}
 	}
 	s.Require().NotNil(startRoom, "start room should exist")
-	s.Equal(dungeon.Position{X: 0, Y: 0, Z: 0}, startRoom.Origin,
+	s.Equal(dungeon.AbsolutePosition{X: 0, Y: 0, Z: 0}, startRoom.Origin,
 		"start room should have origin (0,0,0)")
 
 	// All rooms should have origins set (non-default for non-start rooms in linear layout)
@@ -959,7 +959,7 @@ func (s *IntegrationTestSuite) TestRoomOrigins() {
 	}
 
 	// Verify no two rooms have the same origin
-	origins := make(map[dungeon.Position]string)
+	origins := make(map[dungeon.AbsolutePosition]string)
 	for _, room := range dun.Rooms {
 		if existingID, exists := origins[room.Origin]; exists {
 			s.Fail("duplicate origin", "rooms %s and %s have the same origin %+v",

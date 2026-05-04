@@ -25,7 +25,7 @@ func (s *PerimeterGeneratorTestSuite) SetupTest() {
 
 func (s *PerimeterGeneratorTestSuite) TestGenerate_RectangularRoom() {
 	shape := &dungeon.Shape{
-		Bounds: []dungeon.Position{
+		Bounds: []dungeon.LocalPosition{
 			{X: 0, Y: 0},
 			{X: 10, Y: 0},
 			{X: 10, Y: 10},
@@ -53,7 +53,7 @@ func (s *PerimeterGeneratorTestSuite) TestGenerate_RectangularRoom() {
 
 func (s *PerimeterGeneratorTestSuite) TestGenerate_WithDoorOpening() {
 	shape := &dungeon.Shape{
-		Bounds: []dungeon.Position{
+		Bounds: []dungeon.LocalPosition{
 			{X: 0, Y: 0},
 			{X: 10, Y: 0},
 			{X: 10, Y: 10},
@@ -103,7 +103,7 @@ func (s *PerimeterGeneratorTestSuite) TestGenerate_NilShape() {
 
 func (s *PerimeterGeneratorTestSuite) TestGenerate_TooFewBounds() {
 	shape := &dungeon.Shape{
-		Bounds: []dungeon.Position{
+		Bounds: []dungeon.LocalPosition{
 			{X: 0, Y: 0},
 			{X: 10, Y: 0},
 		},
@@ -122,7 +122,7 @@ func (s *PerimeterGeneratorTestSuite) TestGenerate_TooFewBounds() {
 
 func (s *PerimeterGeneratorTestSuite) TestGenerate_MultipleDoors() {
 	shape := &dungeon.Shape{
-		Bounds: []dungeon.Position{
+		Bounds: []dungeon.LocalPosition{
 			{X: 0, Y: 0},
 			{X: 10, Y: 0},
 			{X: 10, Y: 10},
@@ -158,7 +158,7 @@ func (s *PerimeterGeneratorTestSuite) TestGenerate_MultipleDoors() {
 
 func (s *PerimeterGeneratorTestSuite) TestUpdatePerimeter_WithDoor() {
 	shape := &dungeon.Shape{
-		Bounds: []dungeon.Position{
+		Bounds: []dungeon.LocalPosition{
 			{X: 0, Y: 0},
 			{X: 10, Y: 0},
 			{X: 10, Y: 10},

@@ -930,9 +930,9 @@ func (s *OrchestratorTestSuite) TestMoveCharacter_Success() {
 	s.Require().NoError(err)
 	s.Require().NotNil(output)
 	s.Assert().True(output.Success)
-	s.Assert().Equal(float64(5), output.FinalPosition.X)
-	s.Assert().Equal(float64(-10), output.FinalPosition.Y)
-	s.Assert().Equal(float64(5), output.FinalPosition.Z)
+	s.Assert().Equal(int(5), output.FinalPosition.X)
+	s.Assert().Equal(int(-10), output.FinalPosition.Y)
+	s.Assert().Equal(int(5), output.FinalPosition.Z)
 	s.Assert().Equal("completed", output.StopReason)
 	s.Assert().Equal(int32(10), output.MovementRemaining) // 60 - 50 = 10
 }
@@ -984,9 +984,9 @@ func (s *OrchestratorTestSuite) TestMoveCharacter_InvalidCubeCoordinates() {
 	s.Require().NoError(err)
 	s.Require().NotNil(output)
 	s.Assert().False(output.Success)
-	s.Assert().Equal(float64(100), output.FinalPosition.X)
-	s.Assert().Equal(float64(100), output.FinalPosition.Y)
-	s.Assert().Equal(float64(0), output.FinalPosition.Z)
+	s.Assert().Equal(int(100), output.FinalPosition.X)
+	s.Assert().Equal(int(100), output.FinalPosition.Y)
+	s.Assert().Equal(int(0), output.FinalPosition.Z)
 	s.Assert().Equal("invalid_coordinates", output.StopReason)
 	s.Assert().Equal(int32(0), output.MovementRemaining)
 }
@@ -1053,9 +1053,9 @@ func (s *OrchestratorTestSuite) TestMoveCharacter_PositionOccupied() {
 	s.Require().NoError(err)
 	s.Require().NotNil(output)
 	s.Assert().False(output.Success)
-	s.Assert().Equal(float64(0), output.FinalPosition.X) // Returns current position
-	s.Assert().Equal(float64(0), output.FinalPosition.Y)
-	s.Assert().Equal(float64(0), output.FinalPosition.Z)
+	s.Assert().Equal(int(0), output.FinalPosition.X) // Returns current position
+	s.Assert().Equal(int(0), output.FinalPosition.Y)
+	s.Assert().Equal(int(0), output.FinalPosition.Z)
 	s.Assert().Equal("position_occupied", output.StopReason)
 	s.Assert().Equal(int32(0), output.MovementRemaining)
 }
@@ -1623,6 +1623,13 @@ func (s *OrchestratorTestSuite) TestEndTurn_UpdateError() {
 			},
 		}, nil)
 
+	// EndTurn now consults the dungeon repo to build a Module for monster
+	// position sync; tolerate the lookup returning nothing in this scenario.
+	s.mockDungeonRepo.EXPECT().
+		GetByEncounterID(gomock.Any(), gomock.Any()).
+		Return(nil, fmt.Errorf("not found")).
+		AnyTimes()
+
 	s.mockEncRepo.EXPECT().
 		Update(gomock.Any(), gomock.Any()).
 		Return(nil, fmt.Errorf("database error"))
@@ -1708,13 +1715,19 @@ func (s *OrchestratorTestSuite) TestEndTurn_WithRoomData() {
 
 	// Verify turn order has positions
 	s.Require().Len(output.CombatState.TurnOrder, 2)
+	// Source spatial.Position is {X: 2, Y: 8/10} (2D offset). The orchestrator
+	// builds AbsolutePosition via NewAbsolutePosition(x, z) where Y is derived
+	// to satisfy the cube invariant Y = -X - Z. So char-1 → {X:2, Y:-10, Z:8},
+	// char-2 → {X:2, Y:-12, Z:10}.
 	s.Require().NotNil(output.CombatState.TurnOrder[0].Position)
-	s.Assert().Equal(float64(2), output.CombatState.TurnOrder[0].Position.X)
-	s.Assert().Equal(float64(8), output.CombatState.TurnOrder[0].Position.Y)
+	s.Assert().Equal(int(2), output.CombatState.TurnOrder[0].Position.X)
+	s.Assert().Equal(int(-10), output.CombatState.TurnOrder[0].Position.Y)
+	s.Assert().Equal(int(8), output.CombatState.TurnOrder[0].Position.Z)
 
 	s.Require().NotNil(output.CombatState.TurnOrder[1].Position)
-	s.Assert().Equal(float64(2), output.CombatState.TurnOrder[1].Position.X)
-	s.Assert().Equal(float64(10), output.CombatState.TurnOrder[1].Position.Y)
+	s.Assert().Equal(int(2), output.CombatState.TurnOrder[1].Position.X)
+	s.Assert().Equal(int(-12), output.CombatState.TurnOrder[1].Position.Y)
+	s.Assert().Equal(int(10), output.CombatState.TurnOrder[1].Position.Z)
 }
 
 // ============================================================================
@@ -3849,9 +3862,9 @@ func (s *OrchestratorTestSuite) TestExecuteAction_Move_Success() {
 	s.Require().NotNil(output.MoveResult)
 	s.Assert().Equal(10, output.MoveResult.MovementUsed)
 	s.Assert().Equal("completed", output.MoveResult.StopReason)
-	s.Assert().Equal(float64(2), output.MoveResult.FinalPosition.X)
-	s.Assert().Equal(float64(-2), output.MoveResult.FinalPosition.Y)
-	s.Assert().Equal(float64(0), output.MoveResult.FinalPosition.Z)
+	s.Assert().Equal(int(2), output.MoveResult.FinalPosition.X)
+	s.Assert().Equal(int(-2), output.MoveResult.FinalPosition.Y)
+	s.Assert().Equal(int(0), output.MoveResult.FinalPosition.Z)
 }
 
 func (s *OrchestratorTestSuite) TestExecuteAction_NilInput() {

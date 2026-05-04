@@ -58,14 +58,15 @@ type Room struct {
 	Walls []WallSegment
 	// Encounter contains the monster composition
 	Encounter *Encounter
-	// Origin is the absolute position of this room in dungeon-space
-	Origin Position
+	// Origin is the absolute position of this room in dungeon-space.
+	// Use AbsolutePosition: room origins are dungeon-relative, not room-local.
+	Origin AbsolutePosition
 }
 
 // Shape defines the geometric layout of a room
 type Shape struct {
-	// Bounds defines the polygon vertices
-	Bounds []Position
+	// Bounds defines the polygon vertices in room-local coordinates.
+	Bounds []LocalPosition
 	// ConnectionPoints defines valid door/passage locations
 	ConnectionPoints []ConnectionPoint
 	// GridType specifies hex or square grid
@@ -82,19 +83,12 @@ type Shape struct {
 type ConnectionPoint struct {
 	// Name identifies this connection (e.g., "north", "south")
 	Name string
-	// Position is the grid location of the connection
-	Position Position
+	// Position is the grid location of the connection in room-local coordinates.
+	Position LocalPosition
 	// Direction indicates which wall this is on
 	Direction string
 	// Type specifies the connection kind (e.g., "door", "passage")
 	Type string
-}
-
-// Position represents a coordinate in the grid
-type Position struct {
-	X int
-	Y int
-	Z int
 }
 
 // FeatureLayout contains all placed features in a room
@@ -111,8 +105,8 @@ type Obstacle struct {
 	ID string
 	// Type specifies the kind of obstacle
 	Type ObstacleType
-	// Position is the grid location
-	Position Position
+	// Position is the grid location in room-local coordinates.
+	Position LocalPosition
 	// BlocksMovement indicates if entities can pass through
 	BlocksMovement bool
 	// BlocksLineOfSight indicates if vision is blocked
@@ -125,8 +119,8 @@ type TerrainPatch struct {
 	ID string
 	// Type specifies the terrain kind
 	Type TerrainType
-	// Bounds defines the area covered
-	Bounds []Position
+	// Bounds defines the area covered in room-local coordinates.
+	Bounds []LocalPosition
 	// MovementCost is the multiplier for movement
 	MovementCost float64
 }
@@ -137,8 +131,8 @@ type Zone struct {
 	ID string
 	// Type specifies the zone purpose
 	Type ZoneType
-	// Bounds defines the area
-	Bounds []Position
+	// Bounds defines the area in room-local coordinates.
+	Bounds []LocalPosition
 	// Capacity is the maximum entities that can spawn
 	Capacity int
 }
@@ -159,8 +153,8 @@ type MonsterPlacement struct {
 	MonsterID string
 	// Role defines tactical purpose
 	Role MonsterRole
-	// Position is the spawn location
-	Position Position
+	// Position is the spawn location in room-local coordinates.
+	Position LocalPosition
 	// CR is the challenge rating
 	CR float64
 }
@@ -410,10 +404,10 @@ const (
 type WallSegment struct {
 	// ID uniquely identifies this wall
 	ID string
-	// Start is the wall start position
-	Start Position
-	// End is the wall end position
-	End Position
+	// Start is the wall start position in room-local coordinates.
+	Start LocalPosition
+	// End is the wall end position in room-local coordinates.
+	End LocalPosition
 	// Type is the wall behavior type
 	Type WallType
 	// BlocksMovement indicates if entities can pass through

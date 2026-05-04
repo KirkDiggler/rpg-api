@@ -87,7 +87,7 @@ func (s *PlacementValidationTestSuite) TestValidateMonsterPlacement() {
 			sp := spawner.NewSpawner()
 			spawnOutput, spawnErr := spawner.SpawnInRoom(sp, &spawner.DungeonSpawnInput{
 				Room:              room,
-				OccupiedPositions: []dungeon.Position{}, // No pre-occupied positions
+				OccupiedPositions: []dungeon.LocalPosition{}, // No pre-occupied positions
 				EntitiesToSpawn:   spawner.CreateMonsterSpawnEntities(monsterIDs),
 			})
 

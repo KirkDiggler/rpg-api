@@ -23,7 +23,7 @@ type PerimeterInput struct {
 // PerimeterOutput contains the generated perimeter walls
 type PerimeterOutput struct {
 	Walls         []dungeon.WallSegment
-	DoorPositions []dungeon.Position
+	DoorPositions []dungeon.LocalPosition
 }
 
 // Generate creates perimeter walls around the room shape with door openings
@@ -33,7 +33,7 @@ func (g *PerimeterGenerator) Generate(input *PerimeterInput) *PerimeterOutput {
 	}
 
 	var walls []dungeon.WallSegment
-	var doorPositions []dungeon.Position
+	var doorPositions []dungeon.LocalPosition
 	wallID := 0
 
 	// Direction mapping for rectangular rooms: segment 0=south, 1=east, 2=north, 3=west
@@ -113,7 +113,7 @@ func (g *PerimeterGenerator) findConnectionOnSegment(
 }
 
 // getDoorPositionFromConnectionPoints finds the door position using shape's ConnectionPoints
-func (g *PerimeterGenerator) getDoorPositionFromConnectionPoints(shape *dungeon.Shape, direction string) *dungeon.Position {
+func (g *PerimeterGenerator) getDoorPositionFromConnectionPoints(shape *dungeon.Shape, direction string) *dungeon.LocalPosition {
 	if shape == nil {
 		return nil
 	}
@@ -126,35 +126,39 @@ func (g *PerimeterGenerator) getDoorPositionFromConnectionPoints(shape *dungeon.
 	return nil
 }
 
-func (g *PerimeterGenerator) calculateDoorPosition(shape *dungeon.Shape, direction string, start, end dungeon.Position) dungeon.Position {
+func (g *PerimeterGenerator) calculateDoorPosition(shape *dungeon.Shape, direction string, start, end dungeon.LocalPosition) dungeon.LocalPosition {
 	// First try to use ConnectionPoints from the shape
 	if pos := g.getDoorPositionFromConnectionPoints(shape, direction); pos != nil {
 		return *pos
 	}
 
-	// Fallback: door is placed at midpoint of wall segment
+	// Fallback: door is placed at midpoint of wall segment.
+	// NOTE: this midpoint math reads existing cube X/Y as if they were 2D offset
+	// X/Y. That's a 2D-vestige carried over from the pre-cube perimeter logic;
+	// see issue #471 / design.md. Phase 2 keeps the math intact for behavioral
+	// equivalence; Phase 3 (and #402's perimeter cleanup) will revisit.
 	midX := (start.X + end.X) / 2
 	midY := (start.Y + end.Y) / 2
-	return dungeon.Position{
+	return dungeon.LocalPosition{
 		X: midX,
 		Y: midY,
 		Z: -midX - midY, // Maintain cube coordinate constraint: x + y + z = 0
 	}
 }
 
-func (g *PerimeterGenerator) createWallBeforeDoor(start, doorPos dungeon.Position, id int) dungeon.WallSegment {
+func (g *PerimeterGenerator) createWallBeforeDoor(start, doorPos dungeon.LocalPosition, id int) dungeon.WallSegment {
 	// Leave gap of 2 units for door
 	doorGap := 1
-	var adjustedEnd dungeon.Position
+	var adjustedEnd dungeon.LocalPosition
 	if start.X == doorPos.X {
 		// Vertical wall
 		endX := doorPos.X
 		endY := doorPos.Y - doorGap
-		adjustedEnd = dungeon.Position{X: endX, Y: endY, Z: -endX - endY}
+		adjustedEnd = dungeon.LocalPosition{X: endX, Y: endY, Z: -endX - endY}
 	} else {
 		endX := doorPos.X - doorGap
 		endY := doorPos.Y
-		adjustedEnd = dungeon.Position{X: endX, Y: endY, Z: -endX - endY}
+		adjustedEnd = dungeon.LocalPosition{X: endX, Y: endY, Z: -endX - endY}
 	}
 
 	return dungeon.WallSegment{
@@ -167,18 +171,18 @@ func (g *PerimeterGenerator) createWallBeforeDoor(start, doorPos dungeon.Positio
 	}
 }
 
-func (g *PerimeterGenerator) createWallAfterDoor(doorPos, end dungeon.Position, id int) dungeon.WallSegment {
+func (g *PerimeterGenerator) createWallAfterDoor(doorPos, end dungeon.LocalPosition, id int) dungeon.WallSegment {
 	doorGap := 1
-	var adjustedStart dungeon.Position
+	var adjustedStart dungeon.LocalPosition
 	if doorPos.X == end.X {
 		// Vertical wall
 		startX := doorPos.X
 		startY := doorPos.Y + doorGap
-		adjustedStart = dungeon.Position{X: startX, Y: startY, Z: -startX - startY}
+		adjustedStart = dungeon.LocalPosition{X: startX, Y: startY, Z: -startX - startY}
 	} else {
 		startX := doorPos.X + doorGap
 		startY := doorPos.Y
-		adjustedStart = dungeon.Position{X: startX, Y: startY, Z: -startX - startY}
+		adjustedStart = dungeon.LocalPosition{X: startX, Y: startY, Z: -startX - startY}
 	}
 
 	return dungeon.WallSegment{

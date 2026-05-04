@@ -5,6 +5,8 @@ import (
 	"time"
 
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
+
+	"github.com/KirkDiggler/rpg-api/internal/components/dungeon"
 )
 
 // Player represents a player in an encounter
@@ -18,20 +20,13 @@ type Player struct {
 	JoinedAt      time.Time       `json:"joined_at"`
 }
 
-// Position represents a position using cube coordinates (x + y + z = 0)
-type Position struct {
-	X float64 `json:"x"`
-	Y float64 `json:"y"`
-	Z float64 `json:"z"`
-}
-
 // DoorInfo describes a door or passage connecting the current room to another room
 type DoorInfo struct {
-	ConnectionID string    `json:"connection_id"` // Unique ID of this connection
-	TargetRoomID string    `json:"target_room_id"`
-	Direction    string    `json:"direction"` // Physical description (e.g., "north door", "stairs down")
-	Position     *Position `json:"position,omitempty"`
-	IsOpen       bool      `json:"is_open"`
+	ConnectionID string                     `json:"connection_id"` // Unique ID of this connection
+	TargetRoomID string                     `json:"target_room_id"`
+	Direction    string                     `json:"direction"` // Physical description (e.g., "north door", "stairs down")
+	Position     *dungeon.AbsolutePosition  `json:"position,omitempty"`
+	IsOpen       bool                       `json:"is_open"`
 }
 
 // MonsterActionDetails holds the action-specific result data (oneof-style pattern)
@@ -52,12 +47,12 @@ type MonsterExecutedAction struct {
 
 // InitiativeEntry represents one entity in the initiative order
 type InitiativeEntry struct {
-	EntityID           string    `json:"entity_id"`
-	EntityType         string    `json:"entity_type"` // "character" or "monster"
-	InitiativeRoll     int       `json:"initiative_roll"`
-	InitiativeModifier int       `json:"initiative_modifier"`
-	InitiativeTotal    int       `json:"initiative_total"`
-	Position           *Position `json:"position,omitempty"`
+	EntityID           string                     `json:"entity_id"`
+	EntityType         string                     `json:"entity_type"` // "character" or "monster"
+	InitiativeRoll     int                        `json:"initiative_roll"`
+	InitiativeModifier int                        `json:"initiative_modifier"`
+	InitiativeTotal    int                        `json:"initiative_total"`
+	Position           *dungeon.AbsolutePosition  `json:"position,omitempty"`
 }
 
 // CombatState represents the state of combat in an encounter
