@@ -18,14 +18,16 @@ import (
 
 // dungeonPositionToProto converts a dungeon.Position to a proto Position.
 // Returns a zero-origin Position{0,0,0} if the input is nil.
+//
+//nolint:gosec // G115: Game positions are bounded by dungeon size, no overflow risk.
 func dungeonPositionToProto(pos *dungeon.Position) *apiv1alpha1.Position {
 	if pos == nil {
 		return &apiv1alpha1.Position{X: 0, Y: 0, Z: 0}
 	}
 	return &apiv1alpha1.Position{
-		X: float64(pos.X),
-		Y: float64(pos.Y),
-		Z: float64(pos.Z),
+		X: int32(pos.X),
+		Y: int32(pos.Y),
+		Z: int32(pos.Z),
 	}
 }
 
@@ -285,9 +287,9 @@ func convertCubeEntityPlacementToProto(placement spatial.EntityCubePlacement) *d
 		EntityId:   placement.EntityID,
 		EntityType: stringToEntityType(placement.EntityType),
 		Position: &apiv1alpha1.Position{
-			X: float64(placement.CubePosition.X),
-			Y: float64(placement.CubePosition.Y),
-			Z: float64(placement.CubePosition.Z),
+			X: int32(placement.CubePosition.X),
+			Y: int32(placement.CubePosition.Y),
+			Z: int32(placement.CubePosition.Z),
 		},
 		Size:              intToEntitySize(placement.Size),
 		BlocksMovement:    placement.BlocksMovement,
@@ -319,6 +321,8 @@ func convertEntityPlacementToProto(
 // convertPositionToProto converts a spatial.Position to proto Position
 // For hex grids, converts offset coordinates to cube coordinates (x, y, z)
 // For other grid types, uses offset coordinates (x, y, z=0)
+//
+//nolint:gosec // G115: Game positions are bounded by room/dungeon size, no overflow risk.
 func convertPositionToProto(
 	pos spatial.Position,
 	gridType string,
@@ -328,16 +332,18 @@ func convertPositionToProto(
 		// Convert offset to cube coordinates for hex grids
 		cube := spatial.OffsetCoordinateToCubeWithOrientation(pos, hexOrientation)
 		return &apiv1alpha1.Position{
-			X: float64(cube.X),
-			Y: float64(cube.Y),
-			Z: float64(cube.Z),
+			X: int32(cube.X),
+			Y: int32(cube.Y),
+			Z: int32(cube.Z),
 		}
 	}
 
-	// For square/gridless grids, use offset coordinates
+	// For square/gridless grids, use offset coordinates.
+	// spatial.Position is float64; cube positions are integer-valued, so the squeeze
+	// to int32 is lossless for game positions.
 	return &apiv1alpha1.Position{
-		X: pos.X,
-		Y: pos.Y,
+		X: int32(pos.X),
+		Y: int32(pos.Y),
 		Z: 0,
 	}
 }
@@ -355,7 +361,8 @@ func convertProtoPositionToOffset(
 	}
 
 	if gridType == spatial.GridTypeHex {
-		// Convert cube to offset coordinates for hex grids
+		// Convert cube to offset coordinates for hex grids.
+		// proto Position is int32; spatial.CubeCoordinate is int — direct conversion.
 		cube := spatial.CubeCoordinate{
 			X: int(pos.X),
 			Y: int(pos.Y),
@@ -364,8 +371,9 @@ func convertProtoPositionToOffset(
 		return cube.ToOffsetCoordinateWithOrientation(hexOrientation)
 	}
 
-	// For square/gridless grids, use x, y directly as offset
-	return spatial.Position{X: pos.X, Y: pos.Y}
+	// For square/gridless grids, use x, y directly as offset.
+	// spatial.Position is float64; proto Position is int32 — widening conversion.
+	return spatial.Position{X: float64(pos.X), Y: float64(pos.Y)}
 }
 
 // extractGridInfo extracts grid type and hex orientation from room data
@@ -1059,10 +1067,11 @@ func convertOpenDoorRoomToProto(roomData *encounter.RoomData) *dnd5ev1alpha1.Roo
 		}
 		var position *apiv1alpha1.Position
 		if placement.Position != nil {
+			//nolint:gosec // G115: Game positions are bounded, no overflow risk.
 			position = &apiv1alpha1.Position{
-				X: placement.Position.X,
-				Y: placement.Position.Y,
-				Z: placement.Position.Z,
+				X: int32(placement.Position.X),
+				Y: int32(placement.Position.Y),
+				Z: int32(placement.Position.Z),
 			}
 		}
 		entities[id] = &dnd5ev1alpha1.EntityPlacement{
@@ -1097,10 +1106,11 @@ func convertDoorInfoSliceToProto(doors []encounter.DoorInfo) []*dnd5ev1alpha1.Do
 	for i, door := range doors {
 		var position *apiv1alpha1.Position
 		if door.Position != nil {
+			//nolint:gosec // G115: Game positions are bounded, no overflow risk.
 			position = &apiv1alpha1.Position{
-				X: door.Position.X,
-				Y: door.Position.Y,
-				Z: door.Position.Z,
+				X: int32(door.Position.X),
+				Y: int32(door.Position.Y),
+				Z: int32(door.Position.Z),
 			}
 		}
 
@@ -1182,10 +1192,11 @@ func convertEntityDoorsToProto(doors []*entities.DoorInfo) []*dnd5ev1alpha1.Door
 	for i, d := range doors {
 		var pos *apiv1alpha1.Position
 		if d.Position != nil {
+			//nolint:gosec // G115: Game positions are bounded, no overflow risk.
 			pos = &apiv1alpha1.Position{
-				X: d.Position.X,
-				Y: d.Position.Y,
-				Z: d.Position.Z,
+				X: int32(d.Position.X),
+				Y: int32(d.Position.Y),
+				Z: int32(d.Position.Z),
 			}
 		}
 		result[i] = &dnd5ev1alpha1.DoorInfo{
@@ -1221,10 +1232,11 @@ func convertEntityMonsterTurnsToProto(
 		// Convert movement positions
 		var protoMovement []*apiv1alpha1.Position
 		for _, pos := range t.Movement {
+			//nolint:gosec // G115: Game positions are bounded, no overflow risk.
 			protoMovement = append(protoMovement, &apiv1alpha1.Position{
-				X: pos.X,
-				Y: pos.Y,
-				Z: pos.Z,
+				X: int32(pos.X),
+				Y: int32(pos.Y),
+				Z: int32(pos.Z),
 			})
 		}
 
@@ -1281,6 +1293,8 @@ func convertHealResultToProto(result *entities.HealResult) *dnd5ev1alpha1.HealRe
 }
 
 // convertWallsToProto converts orchestrator WallInfo to proto Wall
+//
+//nolint:gosec // G115: Game positions are bounded, no overflow risk.
 func convertWallsToProto(walls []encounter.WallInfo) []*apiv1alpha1.Wall {
 	if walls == nil {
 		return nil
@@ -1291,16 +1305,16 @@ func convertWallsToProto(walls []encounter.WallInfo) []*apiv1alpha1.Wall {
 		var start, end *apiv1alpha1.Position
 		if w.Start != nil {
 			start = &apiv1alpha1.Position{
-				X: w.Start.X,
-				Y: w.Start.Y,
-				Z: w.Start.Z,
+				X: int32(w.Start.X),
+				Y: int32(w.Start.Y),
+				Z: int32(w.Start.Z),
 			}
 		}
 		if w.End != nil {
 			end = &apiv1alpha1.Position{
-				X: w.End.X,
-				Y: w.End.Y,
-				Z: w.End.Z,
+				X: int32(w.End.X),
+				Y: int32(w.End.Y),
+				Z: int32(w.End.Z),
 			}
 		}
 
@@ -1318,6 +1332,8 @@ func convertWallsToProto(walls []encounter.WallInfo) []*apiv1alpha1.Wall {
 
 // convertDungeonWallsToProto converts dungeon.WallSegment slices to proto Walls
 // Used for event data that comes directly from dungeon entities rather than orchestrator types
+//
+//nolint:gosec // G115: Game positions are bounded, no overflow risk.
 func convertDungeonWallsToProto(walls []dungeon.WallSegment) []*apiv1alpha1.Wall {
 	if walls == nil {
 		return nil
@@ -1326,14 +1342,14 @@ func convertDungeonWallsToProto(walls []dungeon.WallSegment) []*apiv1alpha1.Wall
 	result := make([]*apiv1alpha1.Wall, len(walls))
 	for i, w := range walls {
 		start := &apiv1alpha1.Position{
-			X: float64(w.Start.X),
-			Y: float64(w.Start.Y),
-			Z: float64(w.Start.Z),
+			X: int32(w.Start.X),
+			Y: int32(w.Start.Y),
+			Z: int32(w.Start.Z),
 		}
 		end := &apiv1alpha1.Position{
-			X: float64(w.End.X),
-			Y: float64(w.End.Y),
-			Z: float64(w.End.Z),
+			X: int32(w.End.X),
+			Y: int32(w.End.Y),
+			Z: int32(w.End.Z),
 		}
 
 		// Convert WallType to material string
@@ -1397,10 +1413,11 @@ func convertMoveResultToProto(mr *encounter.MoveResult) *dnd5ev1alpha1.MoveResul
 
 	var finalPosition *apiv1alpha1.Position
 	if mr.FinalPosition != nil {
+		//nolint:gosec // G115: Game positions are bounded, no overflow risk.
 		finalPosition = &apiv1alpha1.Position{
-			X: mr.FinalPosition.X,
-			Y: mr.FinalPosition.Y,
-			Z: mr.FinalPosition.Z,
+			X: int32(mr.FinalPosition.X),
+			Y: int32(mr.FinalPosition.Y),
+			Z: int32(mr.FinalPosition.Z),
 		}
 	}
 

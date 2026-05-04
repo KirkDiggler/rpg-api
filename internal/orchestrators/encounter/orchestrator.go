@@ -1116,12 +1116,13 @@ func buildRoomLayoutProto(room *dungeon.Room, origin *dungeon.Position) *pb.Room
 	}
 
 	// Convert origin to proto Position.
+	// proto Position is int32 (per rpg-api-protos PR #147); origin is dungeon.Position (int).
 	var protoOrigin *apiv1alpha1.Position
 	if origin != nil {
 		protoOrigin = &apiv1alpha1.Position{
-			X: float64(origin.X),
-			Y: float64(origin.Y),
-			Z: float64(origin.Z),
+			X: int32(origin.X),
+			Y: int32(origin.Y),
+			Z: int32(origin.Z),
 		}
 	}
 
@@ -1136,14 +1137,14 @@ func buildRoomLayoutProto(room *dungeon.Room, origin *dungeon.Position) *pb.Room
 			}
 			protoWalls[i] = &apiv1alpha1.Wall{
 				Start: &apiv1alpha1.Position{
-					X: float64(w.Start.X),
-					Y: float64(w.Start.Y),
-					Z: float64(w.Start.Z),
+					X: int32(w.Start.X),
+					Y: int32(w.Start.Y),
+					Z: int32(w.Start.Z),
 				},
 				End: &apiv1alpha1.Position{
-					X: float64(w.End.X),
-					Y: float64(w.End.Y),
-					Z: float64(w.End.Z),
+					X: int32(w.End.X),
+					Y: int32(w.End.Y),
+					Z: int32(w.End.Z),
 				},
 				Material:          material,
 				BlocksMovement:    w.BlocksMovement,

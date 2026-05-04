@@ -76,9 +76,9 @@ func (s *EntityStateTestSuite) TestToEntityStateProto_Character_AllFields() {
 	s.Equal("char-1", result.EntityId)
 	s.Equal(dnd5ev1alpha1.EntityType_ENTITY_TYPE_CHARACTER, result.EntityType)
 	s.Equal("room-42", result.RoomId)
-	s.Equal(float64(3), result.Position.X)
-	s.Equal(float64(-1), result.Position.Y)
-	s.Equal(float64(-2), result.Position.Z)
+	s.Equal(int32(3), result.Position.X)
+	s.Equal(int32(-1), result.Position.Y)
+	s.Equal(int32(-2), result.Position.Z)
 	s.Equal(dnd5ev1alpha1.EntitySize_ENTITY_SIZE_MEDIUM, result.Size)
 
 	// HP
@@ -321,9 +321,9 @@ func (s *EntityStateTestSuite) TestToEntityStateProto_NilPosition() {
 
 	// Should return a zero-origin position, never nil
 	s.Require().NotNil(result.Position)
-	s.Equal(float64(0), result.Position.X)
-	s.Equal(float64(0), result.Position.Y)
-	s.Equal(float64(0), result.Position.Z)
+	s.Equal(int32(0), result.Position.X)
+	s.Equal(int32(0), result.Position.Y)
+	s.Equal(int32(0), result.Position.Z)
 }
 
 // --- Condition JSON parsing ---

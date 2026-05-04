@@ -286,9 +286,9 @@ func (s *EncounterStateBuilderTestSuite) TestBuildEncounterStateData_DoorPositio
 	door := output.EncounterStateData.Doors["conn-1"]
 	s.Require().NotNil(door)
 	s.Require().NotNil(door.Position)
-	s.Equal(float64(2), door.Position.X)
-	s.Equal(float64(-1), door.Position.Y)
-	s.Equal(float64(-1), door.Position.Z)
+	s.Equal(int32(2), door.Position.X)
+	s.Equal(int32(-1), door.Position.Y)
+	s.Equal(int32(-1), door.Position.Z)
 }
 
 func (s *EncounterStateBuilderTestSuite) TestBuildEncounterStateData_DoorNilPosition() {
@@ -365,7 +365,7 @@ func (s *EncounterStateBuilderTestSuite) TestBuildEncounterStateData_RoomsMapPas
 	s.Equal(int32(11), room.Height)
 	s.Equal(apiv1alpha1.GridType_GRID_TYPE_HEX_POINTY, room.GridType)
 	s.Require().NotNil(room.Origin)
-	s.Equal(float64(0), room.Origin.X)
+	s.Equal(int32(0), room.Origin.X)
 	s.Require().Len(room.Walls, 1)
 	s.Equal("stone", room.Walls[0].Material)
 	s.True(room.Walls[0].BlocksMovement)

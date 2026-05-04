@@ -220,14 +220,20 @@ func conditionFromJSON(raw json.RawMessage) *dnd5ev1alpha1.Condition {
 }
 
 // positionToProto converts an entities.Position to a proto Position.
+//
+//nolint:gosec // G115: Game positions are bounded by room/dungeon size, no overflow risk.
 func positionToProto(pos *Position) *apiv1alpha1.Position {
 	if pos == nil {
 		return &apiv1alpha1.Position{}
 	}
+	// proto Position is now int32 (per rpg-api-protos PR #147). Cube positions are
+	// always integer-valued in tile-based gameplay; existing entities.Position carries
+	// float64 only as a legacy artifact. The float→int squeeze here is lossless for
+	// integer values and is removed in Phase 3 once entities.Position is deleted.
 	return &apiv1alpha1.Position{
-		X: pos.X,
-		Y: pos.Y,
-		Z: pos.Z,
+		X: int32(pos.X),
+		Y: int32(pos.Y),
+		Z: int32(pos.Z),
 	}
 }
 

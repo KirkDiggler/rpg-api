@@ -160,10 +160,11 @@ func (h *Handler) OpenDoor(
 	// Convert room and set origin from calculated room position
 	openDoorRoom := convertOpenDoorRoomToProto(output.RevealedRoom)
 	if openDoorRoom != nil && output.RoomOffset != nil {
+		//nolint:gosec // G115: Game positions are bounded, no overflow risk.
 		openDoorRoom.Origin = &apiv1alpha1.Position{
-			X: output.RoomOffset.X,
-			Y: output.RoomOffset.Y,
-			Z: output.RoomOffset.Z,
+			X: int32(output.RoomOffset.X),
+			Y: int32(output.RoomOffset.Y),
+			Z: int32(output.RoomOffset.Z),
 		}
 		// Shift walls and entities from room-local to dungeon-absolute coordinates
 		shiftRoomToAbsolute(openDoorRoom)
@@ -288,15 +289,17 @@ func (h *Handler) MoveCharacter(
 	}
 
 	// 2. Pass cube coordinates directly - the client sends cube coords (X, Y, Z)
-	// and the orchestrator uses CubeEntities for hex grids
+	// and the orchestrator uses CubeEntities for hex grids.
+	// proto Position is int32; encounter.Position (= entities.Position) is float64
+	// during this migration phase. The widening conversion is lossless.
 	lastPos := req.GetPath()[len(req.GetPath())-1]
 	input := &encounter.MoveCharacterInput{
 		EncounterID: req.GetEncounterId(),
 		EntityID:    req.GetEntityId(),
 		TargetPosition: &encounter.Position{
-			X: lastPos.GetX(),
-			Y: lastPos.GetY(),
-			Z: lastPos.GetZ(),
+			X: float64(lastPos.GetX()),
+			Y: float64(lastPos.GetY()),
+			Z: float64(lastPos.GetZ()),
 		},
 	}
 
@@ -803,10 +806,12 @@ func (h *Handler) ExecuteAction(
 		if actionInput.Move != nil && len(actionInput.Move.GetPath()) > 0 {
 			input.Path = make([]encounter.Position, len(actionInput.Move.GetPath()))
 			for i, pos := range actionInput.Move.GetPath() {
+				// proto Position is int32; encounter.Position (= entities.Position) is float64
+				// during this migration phase. The widening conversion is lossless.
 				input.Path[i] = encounter.Position{
-					X: pos.GetX(),
-					Y: pos.GetY(),
-					Z: pos.GetZ(),
+					X: float64(pos.GetX()),
+					Y: float64(pos.GetY()),
+					Z: float64(pos.GetZ()),
 				}
 			}
 		}
@@ -920,10 +925,11 @@ func (h *Handler) convertToProtoEvent(event *entities.EncounterEvent) (*dnd5ev1a
 		// Build path from final position (single point for now, full path comes later)
 		var path []*apiv1alpha1.Position
 		if event.MovementCompleted.FinalPosition != nil {
+			//nolint:gosec // G115: Game positions are bounded, no overflow risk.
 			path = []*apiv1alpha1.Position{{
-				X: event.MovementCompleted.FinalPosition.X,
-				Y: event.MovementCompleted.FinalPosition.Y,
-				Z: event.MovementCompleted.FinalPosition.Z,
+				X: int32(event.MovementCompleted.FinalPosition.X),
+				Y: int32(event.MovementCompleted.FinalPosition.Y),
+				Z: int32(event.MovementCompleted.FinalPosition.Z),
 			}}
 		}
 		protoEvent.Event = &dnd5ev1alpha1.EncounterEvent_MovementCompleted{
@@ -1010,10 +1016,11 @@ func (h *Handler) convertToProtoEvent(event *entities.EncounterEvent) (*dnd5ev1a
 		// Convert movement path (already cube coordinates)
 		movementPath := make([]*apiv1alpha1.Position, len(event.MonsterTurnCompleted.Movement))
 		for i, pos := range event.MonsterTurnCompleted.Movement {
+			//nolint:gosec // G115: Game positions are bounded, no overflow risk.
 			movementPath[i] = &apiv1alpha1.Position{
-				X: pos.X,
-				Y: pos.Y,
-				Z: pos.Z,
+				X: int32(pos.X),
+				Y: int32(pos.Y),
+				Z: int32(pos.Z),
 			}
 		}
 		protoEvent.Event = &dnd5ev1alpha1.EncounterEvent_MonsterTurnCompleted{

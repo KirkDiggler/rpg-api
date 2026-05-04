@@ -445,7 +445,7 @@ func (s *StreamEntityStateIntegrationSuite) TestStream_MovementCompletedEvent_Ha
 	if initialPos == nil {
 		s.T().Log("  EncounterStateData not populated on GetEncounterState; using (0,0,0) as baseline position")
 	} else {
-		s.T().Logf("  Initial character position: (%.1f, %.1f, %.1f)",
+		s.T().Logf("  Initial character position: (%d, %d, %d)",
 			initialPos.GetPosition().GetX(),
 			initialPos.GetPosition().GetY(),
 			initialPos.GetPosition().GetZ())
@@ -457,7 +457,7 @@ func (s *StreamEntityStateIntegrationSuite) TestStream_MovementCompletedEvent_Ha
 	time.Sleep(100 * time.Millisecond)
 
 	// 4. Attempt movement.
-	var targetX, targetY, targetZ float64
+	var targetX, targetY, targetZ int32
 	if initialPos != nil && initialPos.GetPosition() != nil {
 		p := initialPos.GetPosition()
 		targetX = p.GetX() + 1
@@ -523,7 +523,7 @@ func (s *StreamEntityStateIntegrationSuite) TestStream_MovementCompletedEvent_Ha
 	s.Assert().Equal(targetY, pos.GetY(), "UpdatedEntity.Position.Y should match destination")
 	s.Assert().Equal(targetZ, pos.GetZ(), "UpdatedEntity.Position.Z should match destination")
 
-	s.T().Logf("  UpdatedEntity: %s at (%.1f, %.1f, %.1f)",
+	s.T().Logf("  UpdatedEntity: %s at (%d, %d, %d)",
 		updatedEntity.GetEntityId(), pos.GetX(), pos.GetY(), pos.GetZ())
 
 	s.T().Log("=== PASSED: MovementCompletedEvent has UpdatedEntity ===")

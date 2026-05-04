@@ -713,7 +713,7 @@ func (s *ConvertersTestSuite) TestConvertRoomDataToProto_Pointer() {
 	s.Equal(int32(10), result.Height)
 	s.Equal(apiv1alpha1.GridType_GRID_TYPE_SQUARE, result.GridType)
 	s.Require().Contains(result.Entities, "hero-1")
-	s.Equal(float64(5), result.Entities["hero-1"].Position.X)
+	s.Equal(int32(5), result.Entities["hero-1"].Position.X)
 }
 
 func (s *ConvertersTestSuite) TestConvertRoomDataToProto_Value() {
@@ -753,7 +753,7 @@ func (s *ConvertersTestSuite) TestConvertPositionToProto_HexGrid_PointyTop() {
 	s.Require().NotNil(result)
 	// For pointy-top hex, (10, 10) offset -> cube coordinates
 	// The sum x + y + z should equal 0 for valid cube coordinates
-	s.Equal(float64(0), result.X+result.Y+result.Z, "cube coordinates must satisfy x+y+z=0")
+	s.Equal(int32(0), result.X+result.Y+result.Z, "cube coordinates must satisfy x+y+z=0")
 }
 
 func (s *ConvertersTestSuite) TestConvertPositionToProto_SquareGrid() {
@@ -765,9 +765,9 @@ func (s *ConvertersTestSuite) TestConvertPositionToProto_SquareGrid() {
 	result := convertPositionToProto(pos, gridType, hexOrientation)
 
 	s.Require().NotNil(result)
-	s.Equal(float64(5), result.X)
-	s.Equal(float64(7), result.Y)
-	s.Equal(float64(0), result.Z)
+	s.Equal(int32(5), result.X)
+	s.Equal(int32(7), result.Y)
+	s.Equal(int32(0), result.Z)
 }
 
 func (s *ConvertersTestSuite) TestConvertProtoPositionToOffset_HexGrid_PointyTop() {
@@ -833,7 +833,7 @@ func (s *ConvertersTestSuite) TestPositionConversion_RoundTrip_MultiplePositions
 
 			// Verify cube coordinate validity (x + y + z = 0)
 			s.Equal(
-				float64(0),
+				int32(0),
 				protoPos.X+protoPos.Y+protoPos.Z,
 				"cube coordinates must satisfy x+y+z=0 for %s", tc.name,
 			)
@@ -905,7 +905,7 @@ func (s *ConvertersTestSuite) TestConvertCombatStateToProto_ActiveCombat() {
 	s.Equal(int32(10), result.CurrentTurn.MovementUsed) // 30 - 20 = 10
 	s.Equal(int32(30), result.CurrentTurn.MovementMax)
 	s.Require().NotNil(result.CurrentTurn.Position)
-	s.Equal(float64(5), result.CurrentTurn.Position.X) // Square grid: offset coords
+	s.Equal(int32(5), result.CurrentTurn.Position.X) // Square grid: offset coords
 }
 
 func (s *ConvertersTestSuite) TestConvertCombatStateToProto_NotStarted() {
@@ -988,9 +988,9 @@ func (s *ConvertersTestSuite) TestConvertRoomDataToProto_OriginCanBeSetAfterConv
 	// Set origin (as handler does for start room)
 	result.Origin = &apiv1alpha1.Position{X: 0, Y: 0, Z: 0}
 	s.Require().NotNil(result.Origin)
-	s.Equal(float64(0), result.Origin.X)
-	s.Equal(float64(0), result.Origin.Y)
-	s.Equal(float64(0), result.Origin.Z)
+	s.Equal(int32(0), result.Origin.X)
+	s.Equal(int32(0), result.Origin.Y)
+	s.Equal(int32(0), result.Origin.Z)
 }
 
 func (s *ConvertersTestSuite) TestConvertRoomDataToProto_OriginSetWithNonZeroValues() {
@@ -1009,9 +1009,9 @@ func (s *ConvertersTestSuite) TestConvertRoomDataToProto_OriginSetWithNonZeroVal
 
 	// Simulate handler setting origin from dungeon.RoomOrigins
 	result.Origin = &apiv1alpha1.Position{X: 11, Y: -20, Z: 9}
-	s.Equal(float64(11), result.Origin.X)
-	s.Equal(float64(-20), result.Origin.Y)
-	s.Equal(float64(9), result.Origin.Z)
+	s.Equal(int32(11), result.Origin.X)
+	s.Equal(int32(-20), result.Origin.Y)
+	s.Equal(int32(9), result.Origin.Z)
 }
 
 // =============================================================================
@@ -1034,9 +1034,9 @@ func (s *ConvertersTestSuite) TestConvertOpenDoorRoomToProto_OriginCanBeSetAfter
 	// Set origin from room offset (as handler does)
 	result.Origin = &apiv1alpha1.Position{X: 0, Y: -9, Z: 9}
 	s.Require().NotNil(result.Origin)
-	s.Equal(float64(0), result.Origin.X)
-	s.Equal(float64(-9), result.Origin.Y)
-	s.Equal(float64(9), result.Origin.Z)
+	s.Equal(int32(0), result.Origin.X)
+	s.Equal(int32(-9), result.Origin.Y)
+	s.Equal(int32(9), result.Origin.Z)
 }
 
 // =============================================================================
@@ -1255,9 +1255,9 @@ func (s *ConvertersTestSuite) TestShiftEntitiesByOrigin() {
 
 	shiftEntitiesByOrigin(entities, origin)
 
-	s.Equal(float64(3), entities["monster-room2-melee-0"].Position.X)
-	s.Equal(float64(12), entities["monster-room2-melee-0"].Position.Y)
-	s.Equal(float64(-15), entities["monster-room2-melee-0"].Position.Z)
+	s.Equal(int32(3), entities["monster-room2-melee-0"].Position.X)
+	s.Equal(int32(12), entities["monster-room2-melee-0"].Position.Y)
+	s.Equal(int32(-15), entities["monster-room2-melee-0"].Position.Z)
 }
 
 func (s *ConvertersTestSuite) TestShiftEntitiesByOrigin_NilOrigin() {
@@ -1272,9 +1272,9 @@ func (s *ConvertersTestSuite) TestShiftEntitiesByOrigin_NilOrigin() {
 	shiftEntitiesByOrigin(entities, nil)
 
 	// Positions unchanged
-	s.Equal(float64(3), entities["monster-1"].Position.X)
-	s.Equal(float64(-5), entities["monster-1"].Position.Y)
-	s.Equal(float64(2), entities["monster-1"].Position.Z)
+	s.Equal(int32(3), entities["monster-1"].Position.X)
+	s.Equal(int32(-5), entities["monster-1"].Position.Y)
+	s.Equal(int32(2), entities["monster-1"].Position.Z)
 }
 
 func (s *ConvertersTestSuite) TestShiftEntitiesByOrigin_NilEntities() {
@@ -1301,9 +1301,9 @@ func (s *ConvertersTestSuite) TestShiftEntitiesByOrigin_EntityWithNilPosition() 
 	shiftEntitiesByOrigin(entities, origin)
 
 	s.Nil(entities["monster-no-pos"].Position)
-	s.Equal(float64(11), entities["monster-with-pos"].Position.X)
-	s.Equal(float64(22), entities["monster-with-pos"].Position.Y)
-	s.Equal(float64(33), entities["monster-with-pos"].Position.Z)
+	s.Equal(int32(11), entities["monster-with-pos"].Position.X)
+	s.Equal(int32(22), entities["monster-with-pos"].Position.Y)
+	s.Equal(int32(33), entities["monster-with-pos"].Position.Z)
 }
 
 // =============================================================================
@@ -1326,20 +1326,20 @@ func (s *ConvertersTestSuite) TestShiftWallsByOrigin() {
 	shiftWallsByOrigin(walls, origin)
 
 	// First wall
-	s.Equal(float64(10), walls[0].Start.X)
-	s.Equal(float64(20), walls[0].Start.Y)
-	s.Equal(float64(5), walls[0].Start.Z)
-	s.Equal(float64(15), walls[0].End.X)
-	s.Equal(float64(20), walls[0].End.Y)
-	s.Equal(float64(5), walls[0].End.Z)
+	s.Equal(int32(10), walls[0].Start.X)
+	s.Equal(int32(20), walls[0].Start.Y)
+	s.Equal(int32(5), walls[0].Start.Z)
+	s.Equal(int32(15), walls[0].End.X)
+	s.Equal(int32(20), walls[0].End.Y)
+	s.Equal(int32(5), walls[0].End.Z)
 
 	// Second wall
-	s.Equal(float64(10), walls[1].Start.X)
-	s.Equal(float64(20), walls[1].Start.Y)
-	s.Equal(float64(5), walls[1].Start.Z)
-	s.Equal(float64(10), walls[1].End.X)
-	s.Equal(float64(25), walls[1].End.Y)
-	s.Equal(float64(5), walls[1].End.Z)
+	s.Equal(int32(10), walls[1].Start.X)
+	s.Equal(int32(20), walls[1].Start.Y)
+	s.Equal(int32(5), walls[1].Start.Z)
+	s.Equal(int32(10), walls[1].End.X)
+	s.Equal(int32(25), walls[1].End.Y)
+	s.Equal(int32(5), walls[1].End.Z)
 }
 
 func (s *ConvertersTestSuite) TestShiftWallsByOrigin_NilWalls() {
@@ -1358,12 +1358,12 @@ func (s *ConvertersTestSuite) TestShiftWallsByOrigin_NilOrigin() {
 	// Should not panic and should not modify walls
 	shiftWallsByOrigin(walls, nil)
 
-	s.Equal(float64(1), walls[0].Start.X)
-	s.Equal(float64(2), walls[0].Start.Y)
-	s.Equal(float64(3), walls[0].Start.Z)
-	s.Equal(float64(4), walls[0].End.X)
-	s.Equal(float64(5), walls[0].End.Y)
-	s.Equal(float64(6), walls[0].End.Z)
+	s.Equal(int32(1), walls[0].Start.X)
+	s.Equal(int32(2), walls[0].Start.Y)
+	s.Equal(int32(3), walls[0].Start.Z)
+	s.Equal(int32(4), walls[0].End.X)
+	s.Equal(int32(5), walls[0].End.Y)
+	s.Equal(int32(6), walls[0].End.Z)
 }
 
 func (s *ConvertersTestSuite) TestShiftWallsByOrigin_NilStartOrEnd() {
@@ -1383,11 +1383,11 @@ func (s *ConvertersTestSuite) TestShiftWallsByOrigin_NilStartOrEnd() {
 	shiftWallsByOrigin(walls, origin)
 
 	s.Nil(walls[0].Start)
-	s.Equal(float64(15), walls[0].End.X)
-	s.Equal(float64(25), walls[0].End.Y)
+	s.Equal(int32(15), walls[0].End.X)
+	s.Equal(int32(25), walls[0].End.Y)
 
-	s.Equal(float64(11), walls[1].Start.X)
-	s.Equal(float64(21), walls[1].Start.Y)
+	s.Equal(int32(11), walls[1].Start.X)
+	s.Equal(int32(21), walls[1].Start.Y)
 	s.Nil(walls[1].End)
 }
 
@@ -1411,14 +1411,14 @@ func (s *ConvertersTestSuite) TestShiftRoomToAbsolute() {
 	shiftRoomToAbsolute(room)
 
 	// Walls shifted
-	s.Equal(float64(1), room.Walls[0].Start.X)
-	s.Equal(float64(19), room.Walls[0].Start.Y)
-	s.Equal(float64(-20), room.Walls[0].Start.Z)
+	s.Equal(int32(1), room.Walls[0].Start.X)
+	s.Equal(int32(19), room.Walls[0].Start.Y)
+	s.Equal(int32(-20), room.Walls[0].Start.Z)
 
 	// Entities shifted
-	s.Equal(float64(3), room.Entities["monster-1"].Position.X)
-	s.Equal(float64(12), room.Entities["monster-1"].Position.Y)
-	s.Equal(float64(-15), room.Entities["monster-1"].Position.Z)
+	s.Equal(int32(3), room.Entities["monster-1"].Position.X)
+	s.Equal(int32(12), room.Entities["monster-1"].Position.Y)
+	s.Equal(int32(-15), room.Entities["monster-1"].Position.Z)
 }
 
 func (s *ConvertersTestSuite) TestShiftRoomToAbsolute_NilRoom() {
@@ -1437,5 +1437,5 @@ func (s *ConvertersTestSuite) TestShiftRoomToAbsolute_NilOrigin() {
 	}
 	shiftRoomToAbsolute(room)
 	// Position unchanged
-	s.Equal(float64(3), room.Entities["monster-1"].Position.X)
+	s.Equal(int32(3), room.Entities["monster-1"].Position.X)
 }
