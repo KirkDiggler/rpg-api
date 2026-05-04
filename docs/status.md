@@ -18,7 +18,7 @@ merge debt from stacking fixes. None of these should be merged individually.
 
 | PR | Branch | Status | Notes |
 |----|--------|--------|-------|
-| #459 | `fix/458-room-origins-monster-turns` | Open | `shiftRoomToAbsolute` wired to `DungeonStart` handler |
+| #459 | `fix/458-room-origins-monster-turns` | Open | superseded by #471 coordinate-types refactor |
 | #461 | `fix/open-door-monster-absolute-positions` | Open | Monster entity-map origin offset |
 | #463 | `fix/462-room-layout-wall-absolute-positions` | Open | Wall coords translated to dungeon-space |
 | #466 | `fix/open-door-room-data-persist` | Open | `OpenDoor` now persists merged `RoomData` |

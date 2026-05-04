@@ -31,48 +31,24 @@ func dungeonPositionToProto(pos *dungeon.AbsolutePosition) *apiv1alpha1.Position
 	}
 }
 
-// shiftWallsByOrigin shifts wall Start/End coordinates by the room origin offset.
-// Walls are stored in room-local coordinates; this converts them to dungeon-absolute.
-func shiftWallsByOrigin(walls []*apiv1alpha1.Wall, origin *apiv1alpha1.Position) {
-	if origin == nil || walls == nil {
+// applyOriginToEntities translates proto entity positions from room-local to dungeon-absolute
+// by adding the room origin offset. Walls already arrive absolute from the orchestrator
+// (translated via dungeon.Module.LocalToAbsolute), so they are not touched here.
+//
+// This is a thin wrapper around dungeon.Module.LocalToAbsolute that operates on proto types
+// already inside the converter pipeline. It exists because the toolkit's spatial.RoomData
+// holds room-local entity coordinates that the API surfaces in absolute form.
+func applyOriginToEntities(room *dnd5ev1alpha1.Room) {
+	if room == nil || room.Origin == nil || room.Entities == nil {
 		return
 	}
-	for _, w := range walls {
-		if w.Start != nil {
-			w.Start.X += origin.X
-			w.Start.Y += origin.Y
-			w.Start.Z += origin.Z
-		}
-		if w.End != nil {
-			w.End.X += origin.X
-			w.End.Y += origin.Y
-			w.End.Z += origin.Z
-		}
-	}
-}
-
-// shiftEntitiesByOrigin shifts entity positions by the room origin offset.
-// Entities are stored in room-local coordinates; this converts them to dungeon-absolute.
-func shiftEntitiesByOrigin(entities map[string]*dnd5ev1alpha1.EntityPlacement, origin *apiv1alpha1.Position) {
-	if origin == nil || entities == nil {
-		return
-	}
-	for _, e := range entities {
+	for _, e := range room.Entities {
 		if e.Position != nil {
-			e.Position.X += origin.X
-			e.Position.Y += origin.Y
-			e.Position.Z += origin.Z
+			e.Position.X += room.Origin.X
+			e.Position.Y += room.Origin.Y
+			e.Position.Z += room.Origin.Z
 		}
 	}
-}
-
-// shiftRoomToAbsolute shifts wall and entity positions from room-local to dungeon-absolute coordinates.
-func shiftRoomToAbsolute(room *dnd5ev1alpha1.Room) {
-	if room == nil || room.Origin == nil {
-		return
-	}
-	shiftWallsByOrigin(room.Walls, room.Origin)
-	shiftEntitiesByOrigin(room.Entities, room.Origin)
 }
 
 // stringToEntityType converts a string entity type to the proto enum

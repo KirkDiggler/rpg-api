@@ -167,7 +167,7 @@ func (h *Handler) OpenDoor(
 			Z: int32(output.RoomOffset.Z),
 		}
 		// Shift walls and entities from room-local to dungeon-absolute coordinates
-		shiftRoomToAbsolute(openDoorRoom)
+		applyOriginToEntities(openDoorRoom)
 	}
 
 	return &dnd5ev1alpha1.OpenDoorResponse{
@@ -247,7 +247,7 @@ func (h *Handler) GetEncounterState(
 		if response.Room != nil {
 			response.Room.Walls = convertWallsToProto(output.Walls)
 			response.Room.Origin = dungeonPositionToProto(output.RoomOrigin)
-			shiftRoomToAbsolute(response.Room)
+			applyOriginToEntities(response.Room)
 		}
 	}
 
@@ -319,7 +319,7 @@ func (h *Handler) MoveCharacter(
 		if response.UpdatedRoom != nil {
 			response.UpdatedRoom.Walls = convertWallsToProto(output.Walls)
 			response.UpdatedRoom.Origin = dungeonPositionToProto(output.RoomOrigin)
-			shiftRoomToAbsolute(response.UpdatedRoom)
+			applyOriginToEntities(response.UpdatedRoom)
 		}
 	}
 
@@ -575,7 +575,7 @@ func (h *Handler) StartCombat(
 	if room != nil {
 		room.Walls = convertWallsToProto(output.Walls)
 		room.Origin = dungeonPositionToProto(output.RoomOrigin)
-		shiftRoomToAbsolute(room)
+		applyOriginToEntities(room)
 	}
 
 	return &dnd5ev1alpha1.StartCombatResponse{

@@ -1115,7 +1115,7 @@ func buildRoomLayoutProto(room *dungeon.Room, origin *dungeon.AbsolutePosition) 
 	}
 
 	// Convert origin to proto Position.
-	// proto Position is int32 (per rpg-api-protos PR #147); origin is dungeon.Position (int).
+	// proto Position is int32 (per rpg-api-protos PR #147); origin is dungeon.AbsolutePosition (int).
 	var protoOrigin *apiv1alpha1.Position
 	if origin != nil {
 		protoOrigin = &apiv1alpha1.Position{
@@ -1825,6 +1825,8 @@ func (o *Orchestrator) MoveCharacter(ctx context.Context, input *MoveCharacterIn
 }
 
 // EndTurn advances combat to the next entity's turn
+//
+//nolint:gocyclo // Decomposition is tracked separately; #471 only added Module construction.
 func (o *Orchestrator) EndTurn(ctx context.Context, input *EndTurnInput) (*EndTurnOutput, error) {
 	if input == nil {
 		return nil, fmt.Errorf("input is required")
@@ -2993,6 +2995,8 @@ func (o *Orchestrator) checkAndHandleFailure(
 }
 
 // OpenDoor opens a door to reveal the connected room and adds its monsters to combat
+//
+//nolint:gocyclo // Decomposition is tracked separately; #471 only added Module construction.
 func (o *Orchestrator) OpenDoor(
 	ctx context.Context,
 	input *OpenDoorInput,
@@ -3328,17 +3332,32 @@ func (o *Orchestrator) OpenDoor(
 	// 16. Build revealed room spatial data for event (including monsters)
 	revealedSpatialRoom := o.convertToRoomData(dng.EncounterID, revealedRoom)
 
-	// Add monster placements to the spatial room data for the event
-	// This ensures the RoomRevealedEvent includes monsters, matching the OpenDoor response
+	// Add monster placements to the spatial room data for the event.
+	// This ensures the RoomRevealedEvent includes monsters, matching the OpenDoor response.
+	//
+	// spatial.RoomData.CubeEntities uses room-local cube coordinates; m.Position
+	// is dungeon-absolute. Translate via Module.AbsoluteToLocal. The previous
+	// 2D-vestige derivation of Y from X and Z (a hex-2D Y reused as the cube Z)
+	// is gone — Module enforces the cube invariant centrally.
+	revealedSpatialModule := moduleFromDungeon(dng)
 	for _, m := range monsters {
-		cubeX := int(m.Position.X)
-		cubeZ := int(m.Position.Y) // Y in 2D maps to Z in cube coords
-		cubeY := -cubeX - cubeZ    // y = -x - z for valid cube coordinate
+		var localPos dungeon.LocalPosition
+		if m.Position != nil {
+			if revealedSpatialModule != nil {
+				if local, convErr := revealedSpatialModule.AbsoluteToLocal(revealedRoomID, *m.Position); convErr == nil {
+					localPos = local
+				} else {
+					localPos = dungeon.LocalPosition(*m.Position)
+				}
+			} else {
+				localPos = dungeon.LocalPosition(*m.Position)
+			}
+		}
 
 		revealedSpatialRoom.CubeEntities[m.ID] = spatial.EntityCubePlacement{
 			EntityID:          m.ID,
 			EntityType:        "monster",
-			CubePosition:      spatial.CubeCoordinate{X: cubeX, Y: cubeY, Z: cubeZ},
+			CubePosition:      spatial.CubeCoordinate{X: localPos.X, Y: localPos.Y, Z: localPos.Z},
 			Size:              1,
 			BlocksMovement:    true,
 			BlocksLineOfSight: false,
@@ -5421,7 +5440,13 @@ func (o *Orchestrator) executeMove(
 // roomData.CubeEntities holds room-local cube coordinates; module + roomID
 // translate them to dungeon-absolute via Module.LocalToAbsolute. Pass a nil
 // module for the single-room start case (origin (0,0,0)).
-func syncMonsterPositionFromRoom(entityMap map[string]*entities.EntityStateData, monsterID string, roomData *spatial.RoomData, module *dungeon.Module, roomID string) {
+func syncMonsterPositionFromRoom(
+	entityMap map[string]*entities.EntityStateData,
+	monsterID string,
+	roomData *spatial.RoomData,
+	module *dungeon.Module,
+	roomID string,
+) {
 	if entityMap == nil || roomData == nil {
 		return
 	}

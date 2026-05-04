@@ -101,9 +101,17 @@ type Dungeon struct {
 
 Note: this is the component's `Dungeon` type, not `entities.Dungeon`. The entity layer wraps this in `entities.Dungeon` with exploration state and a connection graph from toolkit's `environments.ConnectionEdge`.
 
-## Position type
+## Position types
 
-`dungeon.Position` uses **integer** cube coordinates `{X, Y, Z int}`. This differs from `entities.Position` which uses `float64`. The integer/float64 mismatch is the root cause of the coordinate-space bugs. See [data-model.md](../data-model.md#the-position-type-problem).
+The dungeon component owns the canonical coordinate types (`coords.go`):
+
+- `LocalPosition` — integer cube coordinate inside a single room
+- `AbsolutePosition` — integer cube coordinate in dungeon-absolute space
+- `Module` (`module.go`) — holds the per-room origin map and bridges local to absolute via `LocalToAbsolute(roomID, LocalPosition) AbsolutePosition`
+
+Both position types enforce the cube invariant `X+Y+Z == 0` in their constructors (`NewLocalPosition`, `NewAbsolutePosition`). The local-vs-absolute distinction is enforced at the type level — the compiler rejects code that mixes them. The previous `dungeon.Position` and `entities.Position` (float64) types were removed in #471.
+
+Proto positions (`apiv1alpha1.Position`) are `int32`; the converter pipeline does a 3-field cast at the proto boundary.
 
 ## Integrations
 
@@ -116,7 +124,7 @@ Note: this is the component's `Dungeon` type, not `entities.Dungeon`. The entity
 **Used by:**
 - `orchestrators/encounter` — calls `Generator.Generate`, uses rooms and connections
 - `entities/dungeon.go` — `Dungeon.Rooms` is `map[string]*dungeon.Room`
-- `entities/dungeon.go` — `Dungeon.RoomOrigins` is `map[string]dungeon.Position`
+- `entities/dungeon.go` — `Dungeon.RoomOrigins` is `map[string]dungeon.AbsolutePosition`
 - `entities/encounter_events.go` — `CombatStartedEvent.Walls []dungeon.WallSegment`
 - `handlers/dnd5e/v1alpha1/encounter/converters.go` — converts dungeon types to proto
 
@@ -128,9 +136,9 @@ Procedural dungeon generation is game logic. The theme tables (`theme_tables.go`
 
 The planned migration path: extract to `rpg-toolkit/tools/dungeon` or `rpg-toolkit/rulebooks/dnd5e/dungeon`. The component's internal `toolkit/` subdirectory already wraps rpg-toolkit types, which makes extraction more tractable.
 
-### Coordinate refactor blocked
+### Coordinate refactor — landed
 
-The `dungeon.Position` integer type was intentionally chosen to match the hex-grid integer coordinate system. However, converting to/from `entities.Position` (float64) requires casts that have been buggy. A canonical conversion function is needed before this component can be safely extracted — or the extraction itself is the opportunity to unify the type.
+#471 unified the coordinate model: `LocalPosition` / `AbsolutePosition` / `Module` replaced the old `dungeon.Position` (int) and `entities.Position` (float64). All transform sites now go through `Module.LocalToAbsolute`. The remaining work is the component's broader extraction to rpg-toolkit (see "Wrong repository" above), which is independent of coordinate types.
 
 ### No top-level documentation in README
 

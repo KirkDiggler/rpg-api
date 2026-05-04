@@ -68,15 +68,16 @@ The streaming RPC handler handles client disconnect but does not call `orchestra
 
 ## Converter surface
 
-`converters.go` (1,658 lines) owns all proto ↔ domain entity conversion for encounter types:
-- `shiftRoomToAbsolute` — local → absolute position for rooms (the canonical handler-side transform)
-- `shiftWallsByOrigin` / `shiftEntitiesByOrigin` — per-component shift helpers
+`converters.go` owns all proto ↔ domain entity conversion for encounter types:
+- `applyOriginToEntities` — adds the room origin to each proto entity's local position (a thin wrapper around `dungeon.Module.LocalToAbsolute` operating on proto types in the converter pipeline)
 - Entity type and size conversions
 - Combat state, initiative entry, action economy conversions
 - Monster state, attack result conversions
 - Room data conversion from `spatial.RoomData` → proto `Room`
 
-The `shiftRoomToAbsolute` function (line 68) is the primary coordinate transform in the codebase. It operates on proto `*dnd5ev1alpha1.Room` after the orchestrator returns room data. This is the correct layer for the transform (handler/converter), but the function only exists in proto space — there is no equivalent for entity-space transforms.
+Walls arrive at the handler already in dungeon-absolute coordinates: the orchestrator translates them via `dungeon.Module.LocalToAbsolute` before populating `WallInfo`. Only the toolkit `spatial.RoomData.CubeEntities` map still holds room-local entity coordinates; `applyOriginToEntities` is the single proto-side site that lifts those into absolute coordinates.
+
+The `dungeon.LocalPosition` / `dungeon.AbsolutePosition` / `dungeon.Module` types live in `internal/components/dungeon` and are the source of truth for the local-vs-absolute distinction (see [dungeon-component.md](./dungeon-component.md)).
 
 ## Load-then-stream pattern
 

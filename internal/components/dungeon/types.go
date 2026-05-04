@@ -91,19 +91,6 @@ type ConnectionPoint struct {
 	Type string
 }
 
-// Position represents a coordinate in the grid.
-//
-// New code should use LocalPosition / AbsolutePosition from coords.go and the
-// Module bridge in module.go. Position is being phased out across the
-// dungeon, orchestrator, and handler layers as part of the coordinate-types
-// refactor (rpg-api issue #471). It remains here only while the migration is
-// in progress; do not introduce new call sites.
-type Position struct {
-	X int
-	Y int
-	Z int
-}
-
 // FeatureLayout contains all placed features in a room
 type FeatureLayout struct {
 	// Obstacles are blocking features like pillars
