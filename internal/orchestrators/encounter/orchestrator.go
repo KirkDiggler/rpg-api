@@ -3240,7 +3240,30 @@ func (o *Orchestrator) OpenDoor(
 		return nil, fmt.Errorf("failed to update dungeon: %w", err)
 	}
 
-	// 11. Update encounter state with new initiative and boss monster IDs
+	// 10c. Build a combined RoomData covering entities from ALL revealed rooms.
+	//
+	// Issue #464: previously OpenDoor persisted Monsters and InitiativeData but
+	// not RoomData. The next EndTurn -> executeMonsterTurns -> buildPerception
+	// would read the stale single-room CubeEntities and fail to find the new
+	// monster (let alone any cross-room targets), so the new monster perceived
+	// zero enemies and skipped its turn — appearing AFK.
+	//
+	// We build a unified RoomData whose CubeEntities live in dungeon-absolute
+	// cube coordinates so a monster from room N can perceive a character from
+	// room M. The existing CubeEntities are carried forward as-is: in the
+	// common case the start room is at origin (0,0,0) so start-local equals
+	// absolute, and after the first OpenDoor the persisted CubeEntities are
+	// already in absolute coords so further OpenDoor calls keep merging
+	// correctly.
+	combinedRoomData := buildCombinedRoomDataAfterOpenDoor(
+		encOutput.Data.RoomData,
+		dng.EncounterID,
+		revealedRoom,
+		monsters,
+	)
+
+	// 11. Update encounter state with new initiative, boss monster IDs, and the
+	// combined RoomData so subsequent perception sees all revealed-room entities.
 	// Merge new boss IDs with any existing ones
 	allBossIDs := make([]string, 0, len(encOutput.Data.BossMonsterIDs)+len(newBossMonsterIDs))
 	allBossIDs = append(allBossIDs, encOutput.Data.BossMonsterIDs...)
@@ -3251,10 +3274,16 @@ func (o *Orchestrator) OpenDoor(
 		InitiativeRolls: allRolls, // Persist merged rolls so EndTurn can re-sort at round start
 		Monsters:        encOutput.Data.Monsters,
 		BossMonsterIDs:  allBossIDs,
+		RoomData:        combinedRoomData,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to update encounter: %w", err)
 	}
+
+	// Keep the in-memory encounter data in sync with what we just persisted so
+	// downstream code in this same call (snapshot, events) sees the new
+	// monsters in CubeEntities.
+	encOutput.Data.RoomData = combinedRoomData
 
 	// 12. Build room data for response with entities and walls
 	responseRoomData := &RoomData{
@@ -5681,4 +5710,85 @@ func (o *Orchestrator) addMonstersToEntityMap(
 			ToolkitData: monsterData,
 		}
 	}
+}
+
+// buildCombinedRoomDataAfterOpenDoor builds a *spatial.RoomData that carries
+// CubeEntities for every revealed room in the encounter so that perception
+// (executeMonsterTurns -> buildPerception) can find targets across rooms.
+//
+// Strategy:
+//   - The existing encounter RoomData is carried forward as-is. In production
+//     the start room is at origin (0,0,0) so its CubeEntities are already in
+//     dungeon-absolute coordinates, and after the first OpenDoor merges new
+//     monsters at absolute coordinates the persisted CubeEntities stay in
+//     absolute thereafter. So further OpenDoor calls keep merging correctly.
+//   - The newly revealed room's monsters use MonsterInfo.Position, which was
+//     constructed earlier in OpenDoor via localToAbsoluteOrLocal — i.e.
+//     dungeon-absolute when a Module exists, or room-local fallback otherwise.
+//
+// existingRoomData may be nil or a non-pointer spatial.RoomData (interface{}
+// stored in repo); both cases are handled.
+func buildCombinedRoomDataAfterOpenDoor(
+	existingRoomData interface{},
+	encounterID string,
+	revealedRoom *dungeon.Room,
+	newMonsters []MonsterInfo,
+) *spatial.RoomData {
+	combined := &spatial.RoomData{
+		Type:         "dungeon",
+		GridType:     spatial.GridTypeHex,
+		CubeEntities: make(map[string]spatial.EntityCubePlacement),
+	}
+
+	// Carry forward existing fields (ID, Width, Height) and CubeEntities from
+	// the previous RoomData. ID/Width/Height are descriptive of the original
+	// room and are preserved for backwards compatibility with consumers that
+	// inspect them; the encounter's authoritative geometry now spans multiple
+	// rooms.
+	switch existing := existingRoomData.(type) {
+	case *spatial.RoomData:
+		if existing != nil {
+			combined.ID = existing.ID
+			combined.Width = existing.Width
+			combined.Height = existing.Height
+			combined.HexFlatTop = existing.HexFlatTop
+			for id, placement := range existing.CubeEntities {
+				combined.CubeEntities[id] = placement
+			}
+		}
+	case spatial.RoomData:
+		combined.ID = existing.ID
+		combined.Width = existing.Width
+		combined.Height = existing.Height
+		combined.HexFlatTop = existing.HexFlatTop
+		for id, placement := range existing.CubeEntities {
+			combined.CubeEntities[id] = placement
+		}
+	}
+
+	// Fall back to a deterministic ID when the encounter had no prior RoomData.
+	if combined.ID == "" && revealedRoom != nil {
+		combined.ID = encounterID + "-" + revealedRoom.ID
+		if revealedRoom.Shape != nil {
+			combined.Width = revealedRoom.Shape.Width
+			combined.Height = revealedRoom.Shape.Height
+		}
+	}
+
+	// Add the newly spawned monsters using their already-translated positions.
+	for _, m := range newMonsters {
+		if m.Position == nil {
+			continue
+		}
+		combined.CubeEntities[m.ID] = spatial.EntityCubePlacement{
+			EntityID:          m.ID,
+			EntityType:        entityTypeMonster,
+			CubePosition:      spatial.CubeCoordinate{X: m.Position.X, Y: m.Position.Y, Z: m.Position.Z},
+			Size:              1,
+			BlocksMovement:    true,
+			BlocksLineOfSight: false,
+		}
+	}
+
+	return combined
 }
