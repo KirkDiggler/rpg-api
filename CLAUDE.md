@@ -12,8 +12,7 @@ Active docs — read these to orient before touching code:
 - `docs/architecture/data-model.md` — entities, relationships, storage schemas, known gaps
 - `docs/architecture/components/` — one doc per major component (auth, character-handler, character-orchestrator, dungeon-component, encounter-handler, encounter-orchestrator, entities, event-processor, integration-test-harness, repositories)
 - `docs/how-to/` — task guides: `add-handler-method`, `run-integration-tests`, `run-locally`, `update-proto-dependency`
-- `docs/journey/` — exploration narratives, decisions, and trade-offs from past work
-- `docs/archive/` — pre-PR #470 historical docs; read for context, not current state
+- `docs/archive/` — pre-PR #470 historical docs (old ADRs, journey narratives, plans, design notes, session handoffs); read for context, not current state
 
 ## Dependency Management
 
@@ -340,38 +339,9 @@ Internal stays stable while external evolves.
 
 ## Documentation Philosophy
 
-### Three Types of Documentation
+The current shape is described in **"Where things live"** at the top of this file. Maintain it in the same PR that invalidates a line — `status.md` and `quality.md` are living docs and must reflect the actual code, not stale snapshots. Cite `file:line` when describing code; verify before asserting; surface gaps honestly.
 
-1. **Journey Docs** (`docs/journey/`): Tell the story
-   - Capture exploration, decisions, and trade-offs
-   - Include the "why" - what problems we faced, what we tried
-   - Show the thinking process, not just the outcome
-   - Example: "Why we chose Go 1.24" with performance considerations
-
-2. **ADRs** (`docs/adr/`): Record architectural decisions
-   - Formal decision records with context and consequences
-   - What we chose and why we chose it
-   - Alternatives considered and trade-offs made
-   - Example: "ADR-001: Repository pattern with Input/Output types"
-
-3. **READMEs**: Summarize what's implemented
-   - Concise overview of what exists and how to use it
-   - Avoid lengthy explanations (link to journey docs instead)
-   - Focus on practical usage and current state
-   - Example: "We use the latest Go version" (link to journey for why)
-
-### Documentation Guidelines
-
-- **Journey docs are stories**: Include context, exploration, failed attempts
-- **ADRs are decisions**: Formal structure, clear outcomes
-- **READMEs are summaries**: What exists now, how to use it
-- **Link between them**: READMEs should link to relevant journey docs/ADRs
-- **Avoid assumptions**: Document enough context so readers understand without guessing
-
-This approach ensures:
-- Future developers (human or AI) understand the full context
-- Decisions can be revisited with full historical knowledge
-- READMEs stay readable while preserving important details
+Older guidance (per-repo `journey/` and `adr/` as primary doc types) has been retired in favor of the platform-mcp shape. Historical journey/ADR content lives under `docs/archive/`.
 
 ## Development Workflow
 
@@ -516,8 +486,7 @@ Update it when we discover new CI failure patterns.
 - Simple > Complex (entities are just data)
 - rpg-api orchestrates, rpg-toolkit calculates
 - Test with real dependencies when safe
-- Document the journey, not just destination
-- Tell stories in journey docs, make decisions in ADRs, summarize in READMEs
+- Document the why alongside the what; status.md and quality.md are the living record
 - Tests should be thorough and "set and forget"
 - **ALWAYS question data structures** - No guarantees we did it correctly
 - **Trust your instincts** - If something feels wrong, it probably is
