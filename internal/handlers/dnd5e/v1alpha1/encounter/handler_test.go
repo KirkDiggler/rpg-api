@@ -576,17 +576,17 @@ func (s *HandlerTestSuite) TestMoveCharacter_Success() {
 			EncounterID: "enc-1",
 			EntityID:    "char-1",
 			TargetPosition: &encounter.Position{
-				X: float64(cubeX),
-				Y: float64(cubeY),
-				Z: float64(cubeZ),
+				X: int(cubeX),
+				Y: int(cubeY),
+				Z: int(cubeZ),
 			},
 		}).
 		Return(&encounter.MoveCharacterOutput{
 			Success: true,
 			FinalPosition: &encounter.Position{
-				X: float64(cubeX),
-				Y: float64(cubeY),
-				Z: float64(cubeZ),
+				X: int(cubeX),
+				Y: int(cubeY),
+				Z: int(cubeZ),
 			},
 			MovementRemaining: 30,
 			StopReason:        "completed",
@@ -717,17 +717,17 @@ func (s *HandlerTestSuite) TestMoveCharacter_OutOfBounds() {
 			EncounterID: "enc-1",
 			EntityID:    "char-1",
 			TargetPosition: &encounter.Position{
-				X: float64(cubeX),
-				Y: float64(cubeY),
-				Z: float64(cubeZ),
+				X: int(cubeX),
+				Y: int(cubeY),
+				Z: int(cubeZ),
 			},
 		}).
 		Return(&encounter.MoveCharacterOutput{
 			Success: false,
 			FinalPosition: &encounter.Position{
-				X: float64(cubeX),
-				Y: float64(cubeY),
-				Z: float64(cubeZ),
+				X: int(cubeX),
+				Y: int(cubeY),
+				Z: int(cubeZ),
 			},
 			MovementRemaining: 0,
 			StopReason:        "out_of_bounds",
@@ -1476,7 +1476,7 @@ func (s *HandlerTestSuite) TestConvertToProtoEvent_MovementCompleted_IncludesWal
 		MovementCompleted: &entities.MovementCompletedEvent{
 			EntityID:   "char-1",
 			EntityType: "character",
-			FinalPosition: &entities.Position{
+			FinalPosition: &dungeon.AbsolutePosition{
 				X: 5,
 				Y: -10,
 				Z: 5,
@@ -1602,7 +1602,7 @@ func (s *HandlerTestSuite) TestConvertToProtoEvent_MonsterTurnCompleted_Includes
 			MonsterID:   "monster-1",
 			MonsterName: "Skeleton",
 			Actions:     []entities.MonsterExecutedAction{},
-			Movement:    []entities.Position{},
+			Movement:    []dungeon.AbsolutePosition{},
 			Room:        roomData,
 			Walls:       walls,
 		},

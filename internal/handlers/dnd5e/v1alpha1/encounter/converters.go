@@ -445,11 +445,13 @@ func convertCombatStateToProto(
 	if state.CombatStarted && !state.CombatEnded && len(state.TurnOrder) > 0 {
 		activeEntry := state.TurnOrder[state.ActiveIndex]
 
-		// Convert position from service layer using cube coordinates for hex grids
+		// Convert position from service layer using cube coordinates for hex grids.
+		// activeEntry.Position is dungeon.AbsolutePosition (int); spatial.Position
+		// uses float64 — widening conversion is lossless.
 		var position *apiv1alpha1.Position
 		if activeEntry.Position != nil {
 			position = convertPositionToProto(
-				spatial.Position{X: activeEntry.Position.X, Y: activeEntry.Position.Y},
+				spatial.Position{X: float64(activeEntry.Position.X), Y: float64(activeEntry.Position.Y)},
 				gridType,
 				hexOrientation,
 			)
@@ -903,8 +905,8 @@ func convertMonsterTurnResultToProto(
 	// Convert movement path using cube coordinates for hex grids
 	movementPath := make([]*apiv1alpha1.Position, len(result.Movement))
 	for i, pos := range result.Movement {
-		// Convert encounter.Position to spatial.Position for cube conversion
-		spatialPos := spatial.Position{X: pos.X, Y: pos.Y}
+		// pos is dungeon.AbsolutePosition (int); spatial.Position uses float64.
+		spatialPos := spatial.Position{X: float64(pos.X), Y: float64(pos.Y)}
 		movementPath[i] = convertPositionToProto(spatialPos, gridType, hexOrientation)
 	}
 

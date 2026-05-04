@@ -15,7 +15,7 @@ import (
 type (
 	CombatState           = entities.CombatState
 	InitiativeEntry       = entities.InitiativeEntry
-	Position              = entities.Position
+	Position              = dungeon.AbsolutePosition
 	MonsterExecutedAction = entities.MonsterExecutedAction
 )
 

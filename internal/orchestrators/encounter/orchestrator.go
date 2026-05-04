@@ -653,13 +653,11 @@ func convertDoorsToEntityDoors(doors []DoorInfo) []*entities.DoorInfo {
 	}
 	result := make([]*entities.DoorInfo, len(doors))
 	for i, d := range doors {
-		var pos *entities.Position
+		var pos *dungeon.AbsolutePosition
 		if d.Position != nil {
-			pos = &entities.Position{
-				X: float64(d.Position.X),
-				Y: float64(d.Position.Y),
-				Z: float64(d.Position.Z),
-			}
+			// Defensive copy: both DoorInfo.Position fields are *AbsolutePosition.
+			posCopy := *d.Position
+			pos = &posCopy
 		}
 		result[i] = &entities.DoorInfo{
 			ConnectionID: d.ConnectionID,
@@ -679,14 +677,12 @@ func convertMonsterTurnsToEntityEvents(turns []*MonsterTurnResult, roomData *spa
 	}
 	result := make([]*entities.MonsterTurnCompletedEvent, len(turns))
 	for i, mt := range turns {
-		// Convert positions to entity positions
-		var movement []entities.Position
-		for _, pos := range mt.Movement {
-			movement = append(movement, entities.Position{
-				X: float64(pos.X),
-				Y: float64(pos.Y),
-				Z: float64(pos.Z),
-			})
+		// Movement positions are dungeon-absolute (Position is dungeon.AbsolutePosition).
+		// Copy by value into the event payload.
+		var movement []dungeon.AbsolutePosition
+		if len(mt.Movement) > 0 {
+			movement = make([]dungeon.AbsolutePosition, len(mt.Movement))
+			copy(movement, mt.Movement)
 		}
 		result[i] = &entities.MonsterTurnCompletedEvent{
 			MonsterID:         mt.MonsterID,
@@ -865,7 +861,10 @@ func (o *Orchestrator) createDungeonWithGenerator(
 		entityID := roll.Entity.GetID()
 		var position *Position
 		if placement, exists := roomData.Entities[entityID]; exists {
-			position = &Position{X: placement.Position.X, Y: placement.Position.Y}
+			// spatial.Position is a 2D offset (float64 X, Y); treat X as cube X and
+			// Y as cube Z and let NewAbsolutePosition derive the cube Y.
+			abs := dungeon.NewAbsolutePosition(int(placement.Position.X), int(placement.Position.Y))
+			position = &abs
 		}
 		turnOrder[i] = InitiativeEntry{
 			EntityID:           entityID,
@@ -889,8 +888,9 @@ func (o *Orchestrator) createDungeonWithGenerator(
 		CombatEnded:       false,
 	}
 
-	// Build unified entity map for the encounter
-	entityMap, err := o.buildEntityMap(ctx, roomData, input.CharacterIDs, monsters, generatedDungeon.StartRoom)
+	// Build unified entity map for the encounter. The start room is at origin
+	// (0,0,0) so passing nil Module is safe — local equals absolute.
+	entityMap, err := o.buildEntityMap(ctx, roomData, input.CharacterIDs, monsters, generatedDungeon.StartRoom, moduleFromDungeon(dungeonEntity))
 	if err != nil {
 		return nil, fmt.Errorf("failed to build entity map: %w", err)
 	}
@@ -934,9 +934,11 @@ func (o *Orchestrator) createDungeonWithGenerator(
 		combatState.ActiveIndex = encData.InitiativeData.Current
 		combatState.Round = encData.InitiativeData.Round
 
-		// Sync monster positions from roomData into entity map before persisting
+		// Sync monster positions from roomData into entity map before persisting.
+		// Start room is at origin (0,0,0); construct a Module for forward-compat.
+		startCombatModule := moduleFromDungeon(dungeonEntity)
 		for _, mt := range monsterTurns {
-			syncMonsterPositionFromRoom(entityMap, mt.MonsterID, roomData)
+			syncMonsterPositionFromRoom(entityMap, mt.MonsterID, roomData, startCombatModule, generatedDungeon.StartRoom)
 		}
 		// Sync damaged character HP into entity map so events carry updated HP
 		syncCharacterHPFromMonsterTurns(entityMap, monsterTurns)
@@ -1054,8 +1056,13 @@ func (o *Orchestrator) convertToRoomData(encounterID string, room *dungeon.Room)
 	return roomData
 }
 
-// convertToWallInfo converts dungeon walls to WallInfo for the API response
-func (o *Orchestrator) convertToWallInfo(room *dungeon.Room) []WallInfo {
+// convertToWallInfo converts dungeon walls to WallInfo for the API response.
+//
+// Walls are stored in room-local coordinates; module / roomID translate them
+// to dungeon-absolute via Module.LocalToAbsolute before the WallInfo leaves
+// the orchestrator. Pass nil module for the start-room case (origin (0,0,0))
+// where local equals absolute.
+func (o *Orchestrator) convertToWallInfo(room *dungeon.Room, module *dungeon.Module, roomID string) []WallInfo {
 	if room == nil || len(room.Walls) == 0 {
 		return nil
 	}
@@ -1069,17 +1076,9 @@ func (o *Orchestrator) convertToWallInfo(room *dungeon.Room) []WallInfo {
 		}
 
 		walls[i] = WallInfo{
-			ID: wall.ID,
-			Start: &Position{
-				X: float64(wall.Start.X),
-				Y: float64(wall.Start.Y),
-				Z: float64(wall.Start.Z),
-			},
-			End: &Position{
-				X: float64(wall.End.X),
-				Y: float64(wall.End.Y),
-				Z: float64(wall.End.Z),
-			},
+			ID:                wall.ID,
+			Start:             localToAbsoluteOrLocal(module, roomID, wall.Start),
+			End:               localToAbsoluteOrLocal(module, roomID, wall.End),
 			Material:          material,
 			BlocksMovement:    wall.BlocksMovement,
 			BlocksLineOfSight: wall.BlocksLineOfSight,
@@ -1411,10 +1410,14 @@ func parseConnectionType(connType string) (direction, physicalHint string) {
 	return "", connType
 }
 
-// getDoorInfoForRoom extracts door information for a room using stored entity connections
+// getDoorInfoForRoom extracts door information for a room using stored entity connections.
+// Door positions are translated from room-local to dungeon-absolute via the dungeon's Module.
 func (o *Orchestrator) getDoorInfoForRoom(dungeonEntity *entities.Dungeon, roomID string) []DoorInfo {
 	// Get room for position lookup
 	room := dungeonEntity.GetRoom(roomID)
+
+	// Build a Module for local→absolute translation; nil for single-room start case.
+	module := moduleFromDungeon(dungeonEntity)
 
 	// Pre-allocate doors slice based on connection count
 	doors := make([]DoorInfo, 0, len(dungeonEntity.Connections))
@@ -1432,20 +1435,25 @@ func (o *Orchestrator) getDoorInfoForRoom(dungeonEntity *entities.Dungeon, roomI
 		// Parse direction and physical hint from Type field
 		direction, physicalHint := parseConnectionType(conn.Type)
 
-		// Try to get door position from shape's ConnectionPoints first
-		position := getDoorPositionFromShape(room, direction)
+		// Try to get door position from shape's ConnectionPoints first (room-local)
+		localPos := getDoorPositionFromShape(room, direction)
 
 		// Fall back to calculated position if no ConnectionPoint found
 		// Use conn.Type for the hint since it contains direction info like "north door"
-		if position == nil && room != nil && room.Shape != nil {
-			position = calculateDoorPosition(conn.Type, room.Shape.Width, room.Shape.Height)
+		if localPos == nil && room != nil && room.Shape != nil {
+			localPos = calculateDoorPosition(conn.Type, room.Shape.Width, room.Shape.Height)
+		}
+
+		var absPos *Position
+		if localPos != nil {
+			absPos = localToAbsoluteOrLocal(module, roomID, *localPos)
 		}
 
 		doors = append(doors, DoorInfo{
 			ConnectionID: conn.ID,
 			TargetRoomID: targetRoomID,
 			Direction:    physicalHint, // Show physical hint to players
-			Position:     position,
+			Position:     absPos,
 			IsOpen:       false,
 		})
 	}
@@ -1453,8 +1461,9 @@ func (o *Orchestrator) getDoorInfoForRoom(dungeonEntity *entities.Dungeon, roomI
 	return doors
 }
 
-// getDoorPositionFromShape finds the door position from the shape's ConnectionPoints
-func getDoorPositionFromShape(room *dungeon.Room, direction string) *Position {
+// getDoorPositionFromShape finds the door position from the shape's ConnectionPoints.
+// Returns a room-local position; callers translate to absolute via Module.LocalToAbsolute.
+func getDoorPositionFromShape(room *dungeon.Room, direction string) *dungeon.LocalPosition {
 	if room == nil || room.Shape == nil {
 		return nil
 	}
@@ -1464,11 +1473,8 @@ func getDoorPositionFromShape(room *dungeon.Room, direction string) *Position {
 
 	for _, cp := range room.Shape.ConnectionPoints {
 		if strings.EqualFold(cp.Direction, direction) || strings.Contains(dirLower, strings.ToLower(cp.Direction)) {
-			return &Position{
-				X: float64(cp.Position.X),
-				Y: float64(cp.Position.Y),
-				Z: float64(cp.Position.Z),
-			}
+			pos := cp.Position
+			return &pos
 		}
 	}
 
@@ -1477,7 +1483,7 @@ func getDoorPositionFromShape(room *dungeon.Room, direction string) *Position {
 
 // calculateDoorPosition determines where to place a door based on the physical hint
 // and room dimensions. Uses cube coordinates for hex grid compatibility.
-func calculateDoorPosition(physicalHint string, width, height int) *Position {
+func calculateDoorPosition(physicalHint string, width, height int) *dungeon.LocalPosition {
 	if width == 0 || height == 0 {
 		return nil
 	}
@@ -1530,14 +1536,8 @@ func calculateDoorPosition(physicalHint string, width, height int) *Position {
 		z = height - 1
 	}
 
-	// Calculate y for cube coordinates (x + y + z = 0)
-	y := -x - z
-
-	return &Position{
-		X: float64(x),
-		Y: float64(y),
-		Z: float64(z),
-	}
+	pos := dungeon.NewLocalPosition(x, z)
+	return &pos
 }
 
 // MoveCharacter implements character movement within an encounter
@@ -1571,6 +1571,8 @@ func (o *Orchestrator) MoveCharacter(ctx context.Context, input *MoveCharacterIn
 	var walls []WallInfo
 	var dungeonWalls []dungeon.WallSegment // Raw walls for event
 	var moveRoomOrigin *dungeon.AbsolutePosition
+	var moveModule *dungeon.Module
+	var moveRoomID string
 	if o.dungeonRepo != nil {
 		dungeonOutput, dungeonErr := o.dungeonRepo.GetByEncounterID(ctx, &dungeonrepo.GetByEncounterIDInput{
 			EncounterID: input.EncounterID,
@@ -1578,12 +1580,14 @@ func (o *Orchestrator) MoveCharacter(ctx context.Context, input *MoveCharacterIn
 		if dungeonErr == nil && dungeonOutput != nil && dungeonOutput.Dungeon != nil {
 			dungeonEntity := dungeonOutput.Dungeon
 			moveRoomOrigin = getCurrentRoomOrigin(dungeonEntity)
+			moveModule = moduleFromDungeon(dungeonEntity)
 			currentRoomID := dungeonEntity.CurrentRoomID
 			if currentRoomID == "" {
 				currentRoomID = dungeonEntity.StartRoomID
 			}
+			moveRoomID = currentRoomID
 			if currentRoom := dungeonEntity.GetRoom(currentRoomID); currentRoom != nil {
-				walls = o.convertToWallInfo(currentRoom)
+				walls = o.convertToWallInfo(currentRoom, moveModule, currentRoomID)
 				dungeonWalls = currentRoom.Walls
 			}
 		}
@@ -1620,11 +1624,23 @@ func (o *Orchestrator) MoveCharacter(ctx context.Context, input *MoveCharacterIn
 		}
 	}
 
-	// 4. Target position from input (cube coordinates for hex grids)
+	// 4. Target position from input — client sends dungeon-absolute. Translate
+	// to room-local cube coordinates for adjacency/wall checks against the
+	// toolkit room data (which lives in room-local space).
+	var targetLocal dungeon.LocalPosition
+	if moveModule != nil && moveRoomID != "" {
+		if local, convErr := moveModule.AbsoluteToLocal(moveRoomID, *input.TargetPosition); convErr == nil {
+			targetLocal = local
+		} else {
+			targetLocal = dungeon.LocalPosition(*input.TargetPosition)
+		}
+	} else {
+		targetLocal = dungeon.LocalPosition(*input.TargetPosition)
+	}
 	targetCube := spatial.CubeCoordinate{
-		X: int(input.TargetPosition.X),
-		Y: int(input.TargetPosition.Y),
-		Z: int(input.TargetPosition.Z),
+		X: targetLocal.X,
+		Y: targetLocal.Y,
+		Z: targetLocal.Z,
 	}
 
 	// Validate cube coordinates sum to zero for hex grids
@@ -1651,11 +1667,8 @@ func (o *Orchestrator) MoveCharacter(ctx context.Context, input *MoveCharacterIn
 				var currentPos *Position
 				stopReason := "position_occupied"
 				if currentEntity, exists := roomData.CubeEntities[input.EntityID]; exists {
-					currentPos = &Position{
-						X: float64(currentEntity.CubePosition.X),
-						Y: float64(currentEntity.CubePosition.Y),
-						Z: float64(currentEntity.CubePosition.Z),
-					}
+					localCur := cubeToLocalPosition(currentEntity.CubePosition)
+					currentPos = localToAbsoluteOrLocal(moveModule, moveRoomID, localCur)
 				} else {
 					// Entity does not exist in the room
 					currentPos = nil
@@ -1692,12 +1705,8 @@ func (o *Orchestrator) MoveCharacter(ctx context.Context, input *MoveCharacterIn
 
 		if wallValidator.PathCrossesWall(startPos, endPos, dungeonWalls) {
 			return &MoveCharacterOutput{
-				Success: false,
-				FinalPosition: &Position{
-					X: float64(oldCube.X),
-					Y: float64(oldCube.Y),
-					Z: float64(oldCube.Z),
-				},
+				Success:           false,
+				FinalPosition:     localToAbsoluteOrLocal(moveModule, moveRoomID, cubeToLocalPosition(oldCube)),
 				MovementRemaining: movementRemaining,
 				StopReason:        "blocked_by_wall",
 				UpdatedRoom:       roomData,
@@ -1728,12 +1737,8 @@ func (o *Orchestrator) MoveCharacter(ctx context.Context, input *MoveCharacterIn
 	// Check if enough movement remaining
 	if movementCost > movementRemaining {
 		return &MoveCharacterOutput{
-			Success: false,
-			FinalPosition: &Position{
-				X: float64(oldCube.X),
-				Y: float64(oldCube.Y),
-				Z: float64(oldCube.Z),
-			},
+			Success:           false,
+			FinalPosition:     localToAbsoluteOrLocal(moveModule, moveRoomID, cubeToLocalPosition(oldCube)),
 			MovementRemaining: movementRemaining,
 			StopReason:        "insufficient_movement",
 			UpdatedRoom:       roomData,
@@ -1768,11 +1773,13 @@ func (o *Orchestrator) MoveCharacter(ctx context.Context, input *MoveCharacterIn
 	}
 
 	// 9. Build entity state proto for the moved entity (if Entities map is populated)
+	finalAbs := localToAbsoluteOrLocal(moveModule, moveRoomID, cubeToLocalPosition(targetCube))
 	var updatedEntityState *pb.EntityState
 	if encOutput.Data.Entities != nil {
 		if esd, ok := encOutput.Data.Entities[input.EntityID]; ok && esd != nil {
-			// Update position to the new target position
-			esd.Position = cubeToPosition(targetCube)
+			// Update position to the new target position (dungeon-absolute).
+			posCopy := *finalAbs
+			esd.Position = &posCopy
 			updatedEntityState = entities.ToEntityStateProto(&entities.ToEntityStateProtoInput{EntityStateData: esd})
 
 			// Persist the updated entity position
@@ -1793,13 +1800,9 @@ func (o *Orchestrator) MoveCharacter(ctx context.Context, input *MoveCharacterIn
 
 	// 9c. Publish MovementCompleted event
 	o.publishEvent(ctx, input.EncounterID, entities.EventTypeMovementCompleted, &entities.MovementCompletedEvent{
-		EntityID:   input.EntityID,
-		EntityType: entityType,
-		FinalPosition: &Position{
-			X: float64(targetCube.X),
-			Y: float64(targetCube.Y),
-			Z: float64(targetCube.Z),
-		},
+		EntityID:          input.EntityID,
+		EntityType:        entityType,
+		FinalPosition:     finalAbs,
 		MovementRemaining: movementRemaining,
 		StopReason:        "completed",
 		UpdatedRoom:       roomData,
@@ -1811,12 +1814,8 @@ func (o *Orchestrator) MoveCharacter(ctx context.Context, input *MoveCharacterIn
 
 	// 10. Return success with updated position
 	return &MoveCharacterOutput{
-		Success: true,
-		FinalPosition: &Position{
-			X: float64(targetCube.X),
-			Y: float64(targetCube.Y),
-			Z: float64(targetCube.Z),
-		},
+		Success:           true,
+		FinalPosition:     finalAbs,
 		MovementRemaining: movementRemaining,
 		StopReason:        "completed",
 		UpdatedRoom:       roomData,
@@ -1956,8 +1955,21 @@ func (o *Orchestrator) EndTurn(ctx context.Context, input *EndTurnInput) (*EndTu
 			persistRoomData = rd
 		}
 	}
+	var endTurnSyncModule *dungeon.Module
+	var endTurnSyncRoomID string
+	if o.dungeonRepo != nil {
+		if dungeonOutput, dungeonErr := o.dungeonRepo.GetByEncounterID(ctx, &dungeonrepo.GetByEncounterIDInput{
+			EncounterID: input.EncounterID,
+		}); dungeonErr == nil && dungeonOutput.Dungeon != nil {
+			endTurnSyncModule = moduleFromDungeon(dungeonOutput.Dungeon)
+			endTurnSyncRoomID = dungeonOutput.Dungeon.CurrentRoomID
+			if endTurnSyncRoomID == "" {
+				endTurnSyncRoomID = dungeonOutput.Dungeon.StartRoomID
+			}
+		}
+	}
 	for _, mt := range monsterTurns {
-		syncMonsterPositionFromRoom(encOutput.Data.Entities, mt.MonsterID, persistRoomData)
+		syncMonsterPositionFromRoom(encOutput.Data.Entities, mt.MonsterID, persistRoomData, endTurnSyncModule, endTurnSyncRoomID)
 	}
 	// Sync damaged character HP into entity map so MonsterTurnCompleted events carry updated HP
 	syncCharacterHPFromMonsterTurns(encOutput.Data.Entities, monsterTurns)
@@ -2019,6 +2031,8 @@ func (o *Orchestrator) EndTurn(ctx context.Context, input *EndTurnInput) (*EndTu
 	// 11b. Load dungeon to get walls and room origin for the current room
 	var dungeonWalls []dungeon.WallSegment
 	var turnRoomOrigin *dungeon.AbsolutePosition
+	var turnModule *dungeon.Module
+	var turnRoomID string
 	if o.dungeonRepo != nil {
 		dungeonOutput, dungeonErr := o.dungeonRepo.GetByEncounterID(ctx, &dungeonrepo.GetByEncounterIDInput{
 			EncounterID: input.EncounterID,
@@ -2026,10 +2040,12 @@ func (o *Orchestrator) EndTurn(ctx context.Context, input *EndTurnInput) (*EndTu
 		if dungeonErr == nil && dungeonOutput.Dungeon != nil {
 			dungeonEntity := dungeonOutput.Dungeon
 			turnRoomOrigin = getCurrentRoomOrigin(dungeonEntity)
+			turnModule = moduleFromDungeon(dungeonEntity)
 			currentRoomID := dungeonEntity.CurrentRoomID
 			if currentRoomID == "" {
 				currentRoomID = dungeonEntity.StartRoomID
 			}
+			turnRoomID = currentRoomID
 			if currentRoom := dungeonEntity.GetRoom(currentRoomID); currentRoom != nil {
 				dungeonWalls = currentRoom.Walls
 			}
@@ -2078,7 +2094,7 @@ func (o *Orchestrator) EndTurn(ctx context.Context, input *EndTurnInput) (*EndTu
 	for _, mt := range monsterTurns {
 		// Sync monster's updated position from room data into the Entities map before building proto.
 		// executeMonsterTurns updates roomData.CubeEntities but not encOutput.Data.Entities.
-		syncMonsterPositionFromRoom(encOutput.Data.Entities, mt.MonsterID, turnEndedRoomData)
+		syncMonsterPositionFromRoom(encOutput.Data.Entities, mt.MonsterID, turnEndedRoomData, turnModule, turnRoomID)
 
 		// Build per-monster updated entities: the monster + any damaged characters
 		var mtUpdatedEntities []*pb.EntityState
@@ -2211,13 +2227,17 @@ func buildTurnOrderFromData(
 			entry.InitiativeTotal = roll.Total
 		}
 
-		// Add position if available from room data
+		// Add position if available from room data. spatialRoom.Entities holds
+		// 2D offset positions; treat X as cube X and Y as cube Z (matches the
+		// offset→cube convention used at room construction). At this layer we
+		// don't have the Module to translate to absolute, so the position is
+		// effectively room-local-treated-as-absolute. This matches the previous
+		// behavior; the deeper fix (move proto out of orchestrator, give this
+		// path a Module) is tracked as issue #472.
 		if spatialRoom != nil {
 			if placement, exists := spatialRoom.Entities[entityData.ID]; exists {
-				entry.Position = &Position{
-					X: placement.Position.X,
-					Y: placement.Position.Y,
-				}
+				abs := dungeon.NewAbsolutePosition(int(placement.Position.X), int(placement.Position.Y))
+				entry.Position = &abs
 			}
 		}
 
@@ -3085,11 +3105,13 @@ func (o *Orchestrator) OpenDoor(
 		if placement.EntityType != entityTypeCharacter {
 			continue
 		}
-		// Check adjacency using proper cube distance formula
+		// Check adjacency using proper cube distance formula. doorPos is room-local
+		// LocalPosition; CubeEntities also live in room-local coordinates so we
+		// compare them in local-space directly.
 		doorCube := spatial.CubeCoordinate{
-			X: int(doorPos.X),
-			Y: int(doorPos.Y),
-			Z: int(doorPos.Z),
+			X: doorPos.X,
+			Y: doorPos.Y,
+			Z: doorPos.Z,
 		}
 		if cubeDistance(placement.CubePosition, doorCube) <= 1 {
 			isAdjacent = true
@@ -3106,6 +3128,9 @@ func (o *Orchestrator) OpenDoor(
 	var newBossMonsterIDs []string
 	factory := dungeon.NewMonsterFactory()
 	isBossRoom := dng.IsBossRoom(revealedRoomID)
+
+	// Module for translating placement positions (room-local) into dungeon-absolute.
+	dngModule := moduleFromDungeon(dng)
 
 	if revealedRoom.Encounter != nil {
 		for _, placement := range revealedRoom.Encounter.Monsters {
@@ -3126,11 +3151,13 @@ func (o *Orchestrator) OpenDoor(
 			}
 			total := roll + dexMod
 
+			// placement.Position is room-local; translate to dungeon-absolute via Module.
+			monsterPos := localToAbsoluteOrLocal(dngModule, revealedRoomID, placement.Position)
 			monsters = append(monsters, MonsterInfo{
 				ID:         monsterID,
 				MonsterID:  placement.MonsterID,
 				Name:       monsterData.Name,
-				Position:   &Position{X: float64(placement.Position.X), Y: float64(placement.Position.Y)},
+				Position:   monsterPos,
 				HP:         monsterData.HitPoints,
 				MaxHP:      monsterData.MaxHitPoints,
 				Initiative: total,
@@ -3231,27 +3258,26 @@ func (o *Orchestrator) OpenDoor(
 		Width:    revealedRoom.Shape.Width,
 		Height:   revealedRoom.Shape.Height,
 		Entities: make(map[string]*EntityPlacement),
-		Walls:    o.convertToWallInfo(revealedRoom),
+		Walls:    o.convertToWallInfo(revealedRoom, dngModule, revealedRoomID),
 	}
 
-	// Add monster placements to entities
+	// Add monster placements to entities. m.Position is already dungeon-absolute
+	// cube (translated from local at MonsterInfo construction time), so we copy
+	// it through directly. The previous 2D-vestige derivation of Y from X and Z
+	// is gone — Y is part of the AbsolutePosition value enforced by NewAbsolutePosition.
 	for _, m := range monsters {
-		// Convert 2D position to cube coordinates for hex grid
-		cubeX := int(m.Position.X)
-		cubeZ := int(m.Position.Y) // Y in 2D maps to Z in cube coords
-		cubeY := -cubeX - cubeZ    // y = -x - z for valid cube coordinate
-
+		var pos *Position
+		if m.Position != nil {
+			posCopy := *m.Position
+			pos = &posCopy
+		}
 		responseRoomData.Entities[m.ID] = &EntityPlacement{
 			EntityID:          m.ID,
 			EntityType:        "monster",
 			Size:              1,
 			BlocksMovement:    true,
 			BlocksLineOfSight: false,
-			Position: &Position{
-				X: float64(cubeX),
-				Y: float64(cubeY),
-				Z: float64(cubeZ),
-			},
+			Position:          pos,
 		}
 	}
 
@@ -3350,11 +3376,8 @@ func (o *Orchestrator) OpenDoor(
 	var roomOffset *Position
 	if dng.RoomOrigins != nil {
 		if origin, ok := dng.RoomOrigins[revealedRoomID]; ok {
-			roomOffset = &Position{
-				X: float64(origin.X),
-				Y: float64(origin.Y),
-				Z: float64(origin.Z),
-			}
+			originCopy := origin
+			roomOffset = &originCopy
 		}
 	}
 
@@ -3777,7 +3800,10 @@ func (o *Orchestrator) StartCombat( //nolint:gocyclo // Large orchestration func
 		entityID := roll.Entity.GetID()
 		var position *Position
 		if placement, exists := roomData.Entities[entityID]; exists {
-			position = &Position{X: placement.Position.X, Y: placement.Position.Y}
+			// spatial.Position is a 2D offset (float64 X, Y); treat X as cube X and
+			// Y as cube Z and let NewAbsolutePosition derive the cube Y.
+			abs := dungeon.NewAbsolutePosition(int(placement.Position.X), int(placement.Position.Y))
+			position = &abs
 		}
 		turnOrder[i] = InitiativeEntry{
 			EntityID:           entityID,
@@ -3789,8 +3815,10 @@ func (o *Orchestrator) StartCombat( //nolint:gocyclo // Large orchestration func
 		}
 	}
 
-	// 13. Build unified entity map and update encounter state to active
-	entityMap, err := o.buildEntityMap(ctx, roomData, characterIDs, monsters, generatedDungeon.StartRoom)
+	// 13. Build unified entity map and update encounter state to active.
+	// Start room is at origin (0,0,0) so a nil Module is safe (local equals
+	// absolute), but we still construct one for forward-compat with multi-room.
+	entityMap, err := o.buildEntityMap(ctx, roomData, characterIDs, monsters, generatedDungeon.StartRoom, moduleFromDungeon(dungeonEntity))
 	if err != nil {
 		return nil, fmt.Errorf("failed to build entity map: %w", err)
 	}
@@ -3849,8 +3877,9 @@ func (o *Orchestrator) StartCombat( //nolint:gocyclo // Large orchestration func
 		combatState.Round = encData.InitiativeData.Round
 
 		// Sync monster positions from roomData into entity map before persisting
+		startCombatModule := moduleFromDungeon(dungeonEntity)
 		for _, mt := range monsterTurns {
-			syncMonsterPositionFromRoom(entityMap, mt.MonsterID, roomData)
+			syncMonsterPositionFromRoom(entityMap, mt.MonsterID, roomData, startCombatModule, generatedDungeon.StartRoom)
 		}
 
 		_, err = o.encRepo.Update(ctx, &encounterrepo.UpdateInput{
@@ -3952,11 +3981,12 @@ func (o *Orchestrator) StartCombat( //nolint:gocyclo // Large orchestration func
 	// Sync damaged character HP into entity map so MonsterTurnCompleted events carry updated HP
 	syncCharacterHPFromMonsterTurns(entityMap, monsterTurns)
 	startCombatStateProto := entities.CombatStateToProto(combatState)
+	startCombatPostModule := moduleFromDungeon(dungeonEntity)
 	for _, mt := range monsterTurns {
 		// Sync monster's updated position from room data into the entity map before building proto.
 		// entityMap was built before executeMonsterTurns, so positions may be stale.
 		// roomData.CubeEntities has the authoritative post-movement positions.
-		syncMonsterPositionFromRoom(entityMap, mt.MonsterID, roomData)
+		syncMonsterPositionFromRoom(entityMap, mt.MonsterID, roomData, startCombatPostModule, generatedDungeon.StartRoom)
 
 		// Build per-monster updated entities from the entity map
 		var mtUpdatedEntities []*pb.EntityState
@@ -3993,7 +4023,7 @@ func (o *Orchestrator) StartCombat( //nolint:gocyclo // Large orchestration func
 		CombatState:  combatState,
 		Room:         roomData,
 		RoomOrigin:   startRoomOrigin,
-		Walls:        o.convertToWallInfo(startRoom),
+		Walls:        o.convertToWallInfo(startRoom, moduleFromDungeon(dungeonEntity), generatedDungeon.StartRoom),
 		MonsterTurns: monsterTurns,
 		Doors:        doors,
 		DungeonID:    dungeonEntity.ID,
@@ -4402,7 +4432,7 @@ func (o *Orchestrator) GetEncounterState(ctx context.Context, input *GetEncounte
 				output.Doors = o.getDoorInfoForRoom(dungeonEntity, currentRoomID)
 				// Get walls from dungeon room
 				if currentRoom := dungeonEntity.GetRoom(currentRoomID); currentRoom != nil {
-					output.Walls = o.convertToWallInfo(currentRoom)
+					output.Walls = o.convertToWallInfo(currentRoom, moduleFromDungeon(dungeonEntity), currentRoomID)
 				}
 			}
 		}
@@ -5154,6 +5184,8 @@ func (o *Orchestrator) executeMove(
 	// 3. Load dungeon walls and room origin for collision detection
 	var dungeonWalls []dungeon.WallSegment
 	var execActionRoomOrigin *dungeon.AbsolutePosition
+	var execActionModule *dungeon.Module
+	var execActionRoomID string
 	if o.dungeonRepo != nil {
 		dungeonOutput, dungeonErr := o.dungeonRepo.GetByEncounterID(ctx, &dungeonrepo.GetByEncounterIDInput{
 			EncounterID: input.EncounterID,
@@ -5161,10 +5193,12 @@ func (o *Orchestrator) executeMove(
 		if dungeonErr == nil && dungeonOutput != nil && dungeonOutput.Dungeon != nil {
 			dungeonEntity := dungeonOutput.Dungeon
 			execActionRoomOrigin = getCurrentRoomOrigin(dungeonEntity)
+			execActionModule = moduleFromDungeon(dungeonEntity)
 			currentRoomID := dungeonEntity.CurrentRoomID
 			if currentRoomID == "" {
 				currentRoomID = dungeonEntity.StartRoomID
 			}
+			execActionRoomID = currentRoomID
 			if currentRoom := dungeonEntity.GetRoom(currentRoomID); currentRoom != nil {
 				dungeonWalls = currentRoom.Walls
 			}
@@ -5205,21 +5239,30 @@ func (o *Orchestrator) executeMove(
 	var finalPosition *Position
 	stopReason := stopReasonCompleted
 
+	currentPosToAbsolute := func(p spatial.CubeCoordinate) *Position {
+		return localToAbsoluteOrLocal(execActionModule, execActionRoomID, cubeToLocalPosition(p))
+	}
+
 	for _, targetPos := range input.Path {
-		targetCube := spatial.CubeCoordinate{
-			X: int(targetPos.X),
-			Y: int(targetPos.Y),
-			Z: int(targetPos.Z),
+		// targetPos is dungeon-absolute (from the client); translate to room-local
+		// for adjacency / wall checks.
+		var targetLocal dungeon.LocalPosition
+		if execActionModule != nil && execActionRoomID != "" {
+			if local, convErr := execActionModule.AbsoluteToLocal(execActionRoomID, targetPos); convErr == nil {
+				targetLocal = local
+			} else {
+				// Translation failed (unknown room) — treat as identity.
+				targetLocal = dungeon.LocalPosition(targetPos)
+			}
+		} else {
+			targetLocal = dungeon.LocalPosition(targetPos)
 		}
+		targetCube := spatial.CubeCoordinate{X: targetLocal.X, Y: targetLocal.Y, Z: targetLocal.Z}
 
 		// Validate cube coordinates sum to zero
 		if roomData.GridType == spatial.GridTypeHex {
 			if targetCube.X+targetCube.Y+targetCube.Z != 0 {
-				finalPosition = &Position{
-					X: float64(currentPos.X),
-					Y: float64(currentPos.Y),
-					Z: float64(currentPos.Z),
-				}
+				finalPosition = currentPosToAbsolute(currentPos)
 				stopReason = stopReasonInvalidCoordinates
 				break
 			}
@@ -5231,11 +5274,7 @@ func (o *Orchestrator) executeMove(
 				if entity.CubePosition.X == targetCube.X &&
 					entity.CubePosition.Y == targetCube.Y &&
 					entity.CubePosition.Z == targetCube.Z {
-					finalPosition = &Position{
-						X: float64(currentPos.X),
-						Y: float64(currentPos.Y),
-						Z: float64(currentPos.Z),
-					}
+					finalPosition = currentPosToAbsolute(currentPos)
 					stopReason = stopReasonPositionOccupied
 					break
 				}
@@ -5249,14 +5288,10 @@ func (o *Orchestrator) executeMove(
 		if len(dungeonWalls) > 0 && exists {
 			wallValidator := dungeontoolkit.NewWallValidator()
 			startPos := dungeon.LocalPosition{X: currentPos.X, Y: currentPos.Y, Z: currentPos.Z}
-			endPos := dungeon.LocalPosition{X: targetCube.X, Y: targetCube.Y, Z: targetCube.Z}
+			endPos := targetLocal
 
 			if wallValidator.PathCrossesWall(startPos, endPos, dungeonWalls) {
-				finalPosition = &Position{
-					X: float64(currentPos.X),
-					Y: float64(currentPos.Y),
-					Z: float64(currentPos.Z),
-				}
+				finalPosition = currentPosToAbsolute(currentPos)
 				stopReason = stopReasonBlockedByWall
 				break
 			}
@@ -5281,11 +5316,7 @@ func (o *Orchestrator) executeMove(
 		// Check if enough movement
 		//nolint:gosec // G115: Game values bounded by movement limits, no overflow risk
 		if int32(totalMovementUsed+movementCost) > movementRemaining {
-			finalPosition = &Position{
-				X: float64(currentPos.X),
-				Y: float64(currentPos.Y),
-				Z: float64(currentPos.Z),
-			}
+			finalPosition = currentPosToAbsolute(currentPos)
 			stopReason = stopReasonInsufficientMovement
 			break
 		}
@@ -5293,11 +5324,7 @@ func (o *Orchestrator) executeMove(
 		// Move succeeded, update position
 		totalMovementUsed += movementCost
 		currentPos = targetCube
-		finalPosition = &Position{
-			X: float64(targetCube.X),
-			Y: float64(targetCube.Y),
-			Z: float64(targetCube.Z),
-		}
+		finalPosition = currentPosToAbsolute(currentPos)
 	}
 
 	// 7. Update entity position in room data
@@ -5332,7 +5359,8 @@ func (o *Orchestrator) executeMove(
 	if encData.Entities != nil {
 		if esd, ok := encData.Entities[input.EntityID]; ok && esd != nil {
 			if finalPosition != nil {
-				esd.Position = &entities.Position{X: finalPosition.X, Y: finalPosition.Y, Z: finalPosition.Z}
+				posCopy := *finalPosition
+				esd.Position = &posCopy
 			}
 			execMoveEntityState = entities.ToEntityStateProto(&entities.ToEntityStateProtoInput{EntityStateData: esd})
 		}
@@ -5389,7 +5417,11 @@ func (o *Orchestrator) executeMove(
 // authoritative position from room cube entities. executeMonsterTurns updates
 // roomData.CubeEntities but not the entity map, so this sync is needed before building
 // entity state protos for MonsterTurnCompleted events.
-func syncMonsterPositionFromRoom(entityMap map[string]*entities.EntityStateData, monsterID string, roomData *spatial.RoomData) {
+//
+// roomData.CubeEntities holds room-local cube coordinates; module + roomID
+// translate them to dungeon-absolute via Module.LocalToAbsolute. Pass a nil
+// module for the single-room start case (origin (0,0,0)).
+func syncMonsterPositionFromRoom(entityMap map[string]*entities.EntityStateData, monsterID string, roomData *spatial.RoomData, module *dungeon.Module, roomID string) {
 	if entityMap == nil || roomData == nil {
 		return
 	}
@@ -5398,7 +5430,7 @@ func syncMonsterPositionFromRoom(entityMap map[string]*entities.EntityStateData,
 		return
 	}
 	if placement, exists := roomData.CubeEntities[monsterID]; exists {
-		esd.Position = cubeToPosition(placement.CubePosition)
+		esd.Position = localToAbsoluteOrLocal(module, roomID, cubeToLocalPosition(placement.CubePosition))
 	}
 }
 
@@ -5417,23 +5449,56 @@ func doorsToMap(doors []*entities.DoorInfo) map[string]*entities.DoorInfo {
 	return result
 }
 
-// cubeToPosition converts a spatial.CubeCoordinate to an entities.Position.
-func cubeToPosition(c spatial.CubeCoordinate) *entities.Position {
-	return &entities.Position{
-		X: float64(c.X),
-		Y: float64(c.Y),
-		Z: float64(c.Z),
+// cubeToLocalPosition converts a spatial.CubeCoordinate (room-local) to a dungeon.LocalPosition.
+func cubeToLocalPosition(c spatial.CubeCoordinate) dungeon.LocalPosition {
+	return dungeon.LocalPosition{X: c.X, Y: c.Y, Z: c.Z}
+}
+
+// localToAbsoluteOrLocal returns a heap-allocated AbsolutePosition for the given
+// room-local position, translated through the Module if available. When the Module
+// is nil or the room is not registered it falls back to identity (treats the local
+// coordinate as if the room origin is (0,0,0)). This is the single helper that
+// transform sites use to lift LocalPosition into AbsolutePosition.
+func localToAbsoluteOrLocal(m *dungeon.Module, roomID string, local dungeon.LocalPosition) *dungeon.AbsolutePosition {
+	if m != nil && roomID != "" {
+		if abs, err := m.LocalToAbsolute(roomID, local); err == nil {
+			return &abs
+		}
 	}
+	abs := dungeon.AbsolutePosition(local)
+	return &abs
+}
+
+// moduleFromDungeon constructs a *dungeon.Module from an entities.Dungeon's RoomOrigins map.
+// Returns nil when the dungeon is nil or has no origins (single-room start case).
+func moduleFromDungeon(d *entities.Dungeon) *dungeon.Module {
+	if d == nil || len(d.RoomOrigins) == 0 {
+		return nil
+	}
+	data := &dungeon.Data{RoomOrigins: make(map[string]dungeon.AbsolutePosition, len(d.RoomOrigins))}
+	for id, origin := range d.RoomOrigins {
+		data.RoomOrigins[id] = origin
+	}
+	mod, err := dungeon.LoadFromData(data)
+	if err != nil {
+		return nil
+	}
+	return mod
 }
 
 // buildEntityMap builds the unified Entities map from room data, characters, and monsters.
 // It reads character data from the repo to populate ToolkitData and Appearance.
+//
+// roomData.CubeEntities is room-local; module + roomID translate placements to
+// dungeon-absolute positions. Pass nil module for the single-room start case
+// (origin (0,0,0)).
 func (o *Orchestrator) buildEntityMap(
 	ctx context.Context,
 	roomData *spatial.RoomData,
 	characterIDs []string,
 	monsters []*monster.Data,
 	roomID string,
+	module *dungeon.Module,
 ) (map[string]*entities.EntityStateData, error) {
 	entityMap := make(map[string]*entities.EntityStateData)
 
@@ -5449,7 +5514,7 @@ func (o *Orchestrator) buildEntityMap(
 				EntityType:  entities.EntityTypeCharacter,
 				RoomID:      roomID,
 				ToolkitData: charOutput.Character.Data,
-				Position:    cubeToPosition(placement.CubePosition),
+				Position:    localToAbsoluteOrLocal(module, roomID, cubeToLocalPosition(placement.CubePosition)),
 				Size:        placement.Size,
 				Appearance:  charOutput.Character.Appearance,
 			}
@@ -5464,7 +5529,7 @@ func (o *Orchestrator) buildEntityMap(
 				EntityType:  entities.EntityTypeMonster,
 				RoomID:      roomID,
 				ToolkitData: m,
-				Position:    cubeToPosition(placement.CubePosition),
+				Position:    localToAbsoluteOrLocal(module, roomID, cubeToLocalPosition(placement.CubePosition)),
 				Size:        placement.Size,
 			}
 		}
@@ -5560,19 +5625,17 @@ func (o *Orchestrator) addMonstersToEntityMap(
 	}
 
 	for _, m := range monsters {
-		cubeX := int(m.Position.X)
-		cubeZ := int(m.Position.Y)
-		cubeY := -cubeX - cubeZ
 		monsterData := o.findMonsterData(enc, m.ID)
+		var pos *dungeon.AbsolutePosition
+		if m.Position != nil {
+			posCopy := *m.Position
+			pos = &posCopy
+		}
 		enc.Entities[m.ID] = &entities.EntityStateData{
-			EntityID:   m.ID,
-			EntityType: entities.EntityTypeMonster,
-			RoomID:     roomID,
-			Position: &entities.Position{
-				X: float64(cubeX),
-				Y: float64(cubeY),
-				Z: float64(cubeZ),
-			},
+			EntityID:    m.ID,
+			EntityType:  entities.EntityTypeMonster,
+			RoomID:      roomID,
+			Position:    pos,
 			Size:        1,
 			ToolkitData: monsterData,
 		}

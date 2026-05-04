@@ -444,9 +444,9 @@ func (s *EventPublishingTestSuite) TestMoveCharacter_PublishesMovementCompletedE
 	encounterID := "enc-123"
 	entityID := "char-1"
 	// Use valid cube coordinates (x + y + z = 0)
-	targetX := 5.0
-	targetY := -10.0 // y = -x - z
-	targetZ := 5.0
+	targetX := 5
+	targetY := -10 // y = -x - z
+	targetZ := 5
 
 	roomData := &spatial.RoomData{
 		ID:       encounterID + "-room",
@@ -582,10 +582,12 @@ func (s *EventPublishingTestSuite) TestEndTurn_PublishesTurnEndedEvent() {
 		Update(gomock.Any(), gomock.Any()).
 		Return(&characterrepo.UpdateOutput{}, nil)
 
-	// Mock dungeon lookup for walls (optional - just return empty)
+	// Mock dungeon lookup for walls and Module construction (AnyTimes — EndTurn
+	// may consult the dungeon repo more than once).
 	s.mockDungeonRepo.EXPECT().
 		GetByEncounterID(gomock.Any(), &dungeonrepo.GetByEncounterIDInput{EncounterID: encounterID}).
-		Return(&dungeonrepo.GetOutput{}, nil)
+		Return(&dungeonrepo.GetOutput{}, nil).
+		AnyTimes()
 
 	// Mock Update encounter
 	s.mockEncRepo.EXPECT().
@@ -905,10 +907,12 @@ func (s *EventPublishingTestSuite) TestEndTurn_NewRound_SetsNewRoundFlag() {
 		Update(gomock.Any(), gomock.Any()).
 		Return(&characterrepo.UpdateOutput{}, nil)
 
-	// Mock dungeon lookup for walls (optional - just return empty)
+	// Mock dungeon lookup for walls and Module construction (AnyTimes — EndTurn
+	// may consult the dungeon repo more than once).
 	s.mockDungeonRepo.EXPECT().
 		GetByEncounterID(gomock.Any(), &dungeonrepo.GetByEncounterIDInput{EncounterID: encounterID}).
-		Return(&dungeonrepo.GetOutput{}, nil)
+		Return(&dungeonrepo.GetOutput{}, nil).
+		AnyTimes()
 
 	// Mock Update encounter
 	s.mockEncRepo.EXPECT().

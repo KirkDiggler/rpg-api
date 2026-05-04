@@ -7,6 +7,7 @@ import (
 
 	apiv1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/api/v1alpha1"
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
+	"github.com/KirkDiggler/rpg-api/internal/components/dungeon"
 	"github.com/KirkDiggler/rpg-api/internal/entities"
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/classes"
@@ -75,7 +76,7 @@ func (s *EncounterStateBuilderTestSuite) TestBuildEncounterStateData_FullInput()
 			EntityID:    "char-1",
 			EntityType:  entities.EntityTypeCharacter,
 			RoomID:      "room-1",
-			Position:    &entities.Position{X: 1, Y: -1, Z: 0},
+			Position:    &dungeon.AbsolutePosition{X: 1, Y: -1, Z: 0},
 			Size:        2,
 			ToolkitData: charData,
 		},
@@ -83,7 +84,7 @@ func (s *EncounterStateBuilderTestSuite) TestBuildEncounterStateData_FullInput()
 			EntityID:    "mon-1",
 			EntityType:  entities.EntityTypeMonster,
 			RoomID:      "room-1",
-			Position:    &entities.Position{X: 3, Y: -2, Z: -1},
+			Position:    &dungeon.AbsolutePosition{X: 3, Y: -2, Z: -1},
 			Size:        1,
 			ToolkitData: monsterData,
 		},
@@ -116,14 +117,14 @@ func (s *EncounterStateBuilderTestSuite) TestBuildEncounterStateData_FullInput()
 			ConnectionID: "conn-1",
 			TargetRoomID: "room-2",
 			Direction:    "north door",
-			Position:     &entities.Position{X: 0, Y: 0, Z: 0},
+			Position:     &dungeon.AbsolutePosition{X: 0, Y: 0, Z: 0},
 			IsOpen:       false,
 		},
 		"conn-2": {
 			ConnectionID: "conn-2",
 			TargetRoomID: "room-3",
 			Direction:    "east passage",
-			Position:     &entities.Position{X: 5, Y: -3, Z: -2},
+			Position:     &dungeon.AbsolutePosition{X: 5, Y: -3, Z: -2},
 			IsOpen:       true,
 		},
 	}
@@ -271,7 +272,7 @@ func (s *EncounterStateBuilderTestSuite) TestBuildEncounterStateData_DoorPositio
 			ConnectionID: "conn-1",
 			TargetRoomID: "room-2",
 			Direction:    "north",
-			Position:     &entities.Position{X: 2, Y: -1, Z: -1},
+			Position:     &dungeon.AbsolutePosition{X: 2, Y: -1, Z: -1},
 			IsOpen:       false,
 		},
 	}

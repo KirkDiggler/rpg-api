@@ -165,7 +165,7 @@ type CombatResumedEvent struct {
 type MovementCompletedEvent struct {
 	EntityID          string                    `json:"entity_id"`
 	EntityType        string                    `json:"entity_type"` // "character" or "monster"
-	FinalPosition     *Position                 `json:"final_position"`
+	FinalPosition     *dungeon.AbsolutePosition `json:"final_position"`
 	MovementRemaining int32                     `json:"movement_remaining"`
 	StopReason        string                    `json:"stop_reason"` // "completed", "position_occupied", etc.
 	UpdatedRoom       *spatial.RoomData         `json:"updated_room,omitempty"`
@@ -290,7 +290,7 @@ type MonsterTurnCompletedEvent struct {
 	MonsterID         string                    `json:"monster_id"`
 	MonsterName       string                    `json:"monster_name"`
 	Actions           []MonsterExecutedAction   `json:"actions"`
-	Movement          []Position                `json:"movement"`
+	Movement          []dungeon.AbsolutePosition `json:"movement"`
 	Room              *spatial.RoomData         `json:"room,omitempty"`               // Updated room with entity positions
 	RoomOrigin        *dungeon.AbsolutePosition `json:"room_origin,omitempty"`        // Absolute position of the room in dungeon-space
 	Walls             []dungeon.WallSegment     `json:"walls,omitempty"`              // Walls in the current room

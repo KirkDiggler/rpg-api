@@ -289,17 +289,15 @@ func (h *Handler) MoveCharacter(
 	}
 
 	// 2. Pass cube coordinates directly - the client sends cube coords (X, Y, Z)
-	// and the orchestrator uses CubeEntities for hex grids.
-	// proto Position is int32; encounter.Position (= entities.Position) is float64
-	// during this migration phase. The widening conversion is lossless.
+	// and the orchestrator uses dungeon.AbsolutePosition for inputs and outputs.
 	lastPos := req.GetPath()[len(req.GetPath())-1]
 	input := &encounter.MoveCharacterInput{
 		EncounterID: req.GetEncounterId(),
 		EntityID:    req.GetEntityId(),
 		TargetPosition: &encounter.Position{
-			X: float64(lastPos.GetX()),
-			Y: float64(lastPos.GetY()),
-			Z: float64(lastPos.GetZ()),
+			X: int(lastPos.GetX()),
+			Y: int(lastPos.GetY()),
+			Z: int(lastPos.GetZ()),
 		},
 	}
 
@@ -806,12 +804,11 @@ func (h *Handler) ExecuteAction(
 		if actionInput.Move != nil && len(actionInput.Move.GetPath()) > 0 {
 			input.Path = make([]encounter.Position, len(actionInput.Move.GetPath()))
 			for i, pos := range actionInput.Move.GetPath() {
-				// proto Position is int32; encounter.Position (= entities.Position) is float64
-				// during this migration phase. The widening conversion is lossless.
+				// proto Position is int32; encounter.Position is dungeon.AbsolutePosition (int).
 				input.Path[i] = encounter.Position{
-					X: float64(pos.GetX()),
-					Y: float64(pos.GetY()),
-					Z: float64(pos.GetZ()),
+					X: int(pos.GetX()),
+					Y: int(pos.GetY()),
+					Z: int(pos.GetZ()),
 				}
 			}
 		}

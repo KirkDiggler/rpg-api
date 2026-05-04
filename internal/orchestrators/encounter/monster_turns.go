@@ -37,14 +37,18 @@ func (o *Orchestrator) executeMonsterTurns(
 		return nil, fmt.Errorf("initiative data is required")
 	}
 
-	// Load dungeon walls for wall collision detection
+	// Load dungeon walls for wall collision detection, plus Module + currentRoomID
+	// for translating monster movement (room-local) to dungeon-absolute.
 	var dungeonWalls []dungeon.WallSegment
+	var module *dungeon.Module
+	var currentRoomID string
 	if o.dungeonRepo != nil && enc.ID != "" {
 		dungeonOutput, dungeonErr := o.dungeonRepo.GetByEncounterID(ctx, &dungeonrepo.GetByEncounterIDInput{
 			EncounterID: enc.ID,
 		})
 		if dungeonErr == nil && dungeonOutput.Dungeon != nil {
-			currentRoomID := dungeonOutput.Dungeon.CurrentRoomID
+			module = moduleFromDungeon(dungeonOutput.Dungeon)
+			currentRoomID = dungeonOutput.Dungeon.CurrentRoomID
 			if currentRoomID == "" {
 				currentRoomID = dungeonOutput.Dungeon.StartRoomID
 			}
@@ -93,7 +97,7 @@ func (o *Orchestrator) executeMonsterTurns(
 		}
 
 		// Execute monster's turn
-		result, err := o.executeSingleMonsterTurn(ctx, enc, monsterData, characterIDs, dungeonWalls)
+		result, err := o.executeSingleMonsterTurn(ctx, enc, monsterData, characterIDs, dungeonWalls, module, currentRoomID)
 		if err != nil {
 			return results, fmt.Errorf("failed to execute monster turn for %s: %w", monsterData.ID, err)
 		}
@@ -115,13 +119,19 @@ func (o *Orchestrator) executeMonsterTurns(
 	return results, nil
 }
 
-// executeSingleMonsterTurn runs one monster's turn using the toolkit
+// executeSingleMonsterTurn runs one monster's turn using the toolkit.
+//
+// module + currentRoomID translate monster movement (room-local cube coords)
+// to dungeon-absolute when populating MonsterTurnResult.Movement. Pass nil
+// module / empty roomID for the single-room start case (origin (0,0,0)).
 func (o *Orchestrator) executeSingleMonsterTurn(
 	ctx context.Context,
 	enc *encounterrepo.EncounterData,
 	monsterData *monster.Data,
 	characterIDs []string,
 	walls []dungeon.WallSegment,
+	module *dungeon.Module,
+	currentRoomID string,
 ) (*MonsterTurnResult, error) {
 	if monsterData == nil {
 		return nil, fmt.Errorf("monster data is required")
@@ -238,14 +248,13 @@ func (o *Orchestrator) executeSingleMonsterTurn(
 		}
 	}
 
-	// 10. Convert movement path (cube coordinates) to Position for result
+	// 10. Convert movement path (room-local cube coordinates) to dungeon-absolute
+	// Position values via Module.LocalToAbsolute. Position is dungeon.AbsolutePosition.
 	movement := make([]Position, len(turnResult.Movement))
 	for i, pos := range turnResult.Movement {
-		movement[i] = Position{
-			X: float64(pos.X),
-			Y: float64(pos.Y),
-			Z: float64(pos.Z),
-		}
+		local := dungeon.LocalPosition{X: pos.X, Y: pos.Y, Z: pos.Z}
+		abs := localToAbsoluteOrLocal(module, currentRoomID, local)
+		movement[i] = *abs
 	}
 
 	// Update monster's position in room data if it moved
