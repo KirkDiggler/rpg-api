@@ -1439,6 +1439,74 @@ func (s *HandlerTestSuite) TestGetEncounterState_PlayerNotInEncounter() {
 	s.Assert().Equal(codes.PermissionDenied, st.Code())
 }
 
+// TestGetEncounterState_DoesNotDoubleShiftAbsoluteEntities is the handler-side
+// regression for Copilot review item 3184901652 on PR #491. Per the
+// post-OpenDoor coordinate-space contract established by that PR, encounter
+// RoomData.CubeEntities is dungeon-absolute. The handler previously called
+// applyOriginToEntities here which would shift entity positions by the room
+// origin a SECOND time (visible whenever the room origin is non-zero — the
+// start-room case happened to look correct only because origin is (0,0,0)).
+// This test feeds the handler a room whose entities are already at absolute
+// coords AND a non-zero room origin, then asserts the response entity
+// positions are unchanged from the orchestrator-supplied positions.
+func (s *HandlerTestSuite) TestGetEncounterState_DoesNotDoubleShiftAbsoluteEntities() {
+	encounterID := "enc-491"
+	playerID := "player-1"
+
+	// Orchestrator returns absolute CubeEntities AND a non-zero RoomOrigin.
+	// If the handler still called applyOriginToEntities, the proto position
+	// would become (25+20, 5+0) = (45, 5).
+	const absoluteX, absoluteZ = 25, 5
+	roomData := &spatial.RoomData{
+		ID:       "enc-491-room-1",
+		Type:     "dungeon",
+		Width:    20,
+		Height:   20,
+		GridType: spatial.GridTypeHex,
+		CubeEntities: map[string]spatial.EntityCubePlacement{
+			"monster-room-2-mp-1": {
+				EntityID:   "monster-room-2-mp-1",
+				EntityType: "monster",
+				CubePosition: spatial.CubeCoordinate{
+					X: absoluteX,
+					Y: -absoluteX - absoluteZ,
+					Z: absoluteZ,
+				},
+			},
+		},
+	}
+	roomOrigin := &dungeon.AbsolutePosition{X: 20, Y: -20, Z: 0}
+
+	s.mockService.EXPECT().
+		GetEncounterState(gomock.Any(), &encounter.GetEncounterStateInput{
+			EncounterID: encounterID,
+			PlayerID:    playerID,
+		}).
+		Return(&encounter.GetEncounterStateOutput{
+			EncounterID: encounterID,
+			State:       "active",
+			Room:        roomData,
+			RoomOrigin:  roomOrigin,
+		}, nil)
+
+	resp, err := s.handler.GetEncounterState(context.Background(), &dnd5ev1alpha1.GetEncounterStateRequest{
+		EncounterId: encounterID,
+		PlayerId:    playerID,
+	})
+	s.Require().NoError(err)
+	s.Require().NotNil(resp)
+	s.Require().NotNil(resp.Room)
+	s.Require().NotNil(resp.Room.Origin, "Origin must still be returned for client reference")
+
+	placement, ok := resp.Room.Entities["monster-room-2-mp-1"]
+	s.Require().True(ok, "entity must round-trip through the handler")
+	s.Require().NotNil(placement.Position)
+	s.Equal(int32(absoluteX), placement.Position.X,
+		"entity X must NOT be shifted by room origin — orchestrator returns absolute (#491)")
+	s.Equal(int32(absoluteZ), placement.Position.Z,
+		"entity Z must NOT be shifted by room origin — orchestrator returns absolute (#491)")
+}
+
 // =============================================================================
 // convertToProtoEvent Tests - MovementCompleted with Walls
 // =============================================================================
