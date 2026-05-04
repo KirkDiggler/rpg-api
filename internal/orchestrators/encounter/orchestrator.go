@@ -936,9 +936,11 @@ func (o *Orchestrator) createDungeonWithGenerator(
 
 		// Sync monster positions from roomData into entity map before persisting.
 		// Start room is at origin (0,0,0); construct a Module for forward-compat.
-		startCombatModule := moduleFromDungeon(dungeonEntity)
+		// CubeEntities are dungeon-absolute under the post-OpenDoor contract
+		// (#491); syncMonsterPositionFromRoom passes the cube position
+		// through to EntityStateData.Position without re-translation.
 		for _, mt := range monsterTurns {
-			syncMonsterPositionFromRoom(entityMap, mt.MonsterID, roomData, startCombatModule, generatedDungeon.StartRoom)
+			syncMonsterPositionFromRoom(entityMap, mt.MonsterID, roomData)
 		}
 		// Sync damaged character HP into entity map so events carry updated HP
 		syncCharacterHPFromMonsterTurns(entityMap, monsterTurns)
@@ -1045,7 +1047,7 @@ func (o *Orchestrator) convertToRoomData(encounterID string, room *dungeon.Room)
 		for _, obstacle := range room.Features.Obstacles {
 			roomData.CubeEntities[obstacle.ID] = spatial.EntityCubePlacement{
 				EntityID:       obstacle.ID,
-				EntityType:     "obstacle",
+				EntityType:     entityTypeObstacle,
 				CubePosition:   spatial.CubeCoordinate{X: obstacle.Position.X, Y: obstacle.Position.Y, Z: obstacle.Position.Z},
 				Size:           1,
 				BlocksMovement: obstacle.BlocksMovement,
@@ -1950,28 +1952,18 @@ func (o *Orchestrator) EndTurn(ctx context.Context, input *EndTurnInput) (*EndTu
 		o.checkAndHandleFailure(ctx, input.EncounterID, encOutput.Data)
 	}
 
-	// 9. Sync monster positions from roomData into entity map before persisting
+	// 9. Sync monster positions from roomData into entity map before persisting.
+	// CubeEntities are dungeon-absolute under the post-OpenDoor contract (#491);
+	// syncMonsterPositionFromRoom passes them through to EntityStateData.Position
+	// without re-translation, so we no longer need the Module/roomID lookup.
 	var persistRoomData *spatial.RoomData
 	if encOutput.Data.RoomData != nil {
 		if rd, ok := encOutput.Data.RoomData.(*spatial.RoomData); ok {
 			persistRoomData = rd
 		}
 	}
-	var endTurnSyncModule *dungeon.Module
-	var endTurnSyncRoomID string
-	if o.dungeonRepo != nil {
-		if dungeonOutput, dungeonErr := o.dungeonRepo.GetByEncounterID(ctx, &dungeonrepo.GetByEncounterIDInput{
-			EncounterID: input.EncounterID,
-		}); dungeonErr == nil && dungeonOutput.Dungeon != nil {
-			endTurnSyncModule = moduleFromDungeon(dungeonOutput.Dungeon)
-			endTurnSyncRoomID = dungeonOutput.Dungeon.CurrentRoomID
-			if endTurnSyncRoomID == "" {
-				endTurnSyncRoomID = dungeonOutput.Dungeon.StartRoomID
-			}
-		}
-	}
 	for _, mt := range monsterTurns {
-		syncMonsterPositionFromRoom(encOutput.Data.Entities, mt.MonsterID, persistRoomData, endTurnSyncModule, endTurnSyncRoomID)
+		syncMonsterPositionFromRoom(encOutput.Data.Entities, mt.MonsterID, persistRoomData)
 	}
 	// Sync damaged character HP into entity map so MonsterTurnCompleted events carry updated HP
 	syncCharacterHPFromMonsterTurns(encOutput.Data.Entities, monsterTurns)
@@ -2030,11 +2022,12 @@ func (o *Orchestrator) EndTurn(ctx context.Context, input *EndTurnInput) (*EndTu
 		}
 	}
 
-	// 11b. Load dungeon to get walls and room origin for the current room
+	// 11b. Load dungeon to get walls and room origin for the current room.
+	// Module/roomID are no longer needed for syncMonsterPositionFromRoom (CubeEntities
+	// are dungeon-absolute under the post-OpenDoor contract, see #491), so we only
+	// load what the published events still need.
 	var dungeonWalls []dungeon.WallSegment
 	var turnRoomOrigin *dungeon.AbsolutePosition
-	var turnModule *dungeon.Module
-	var turnRoomID string
 	if o.dungeonRepo != nil {
 		dungeonOutput, dungeonErr := o.dungeonRepo.GetByEncounterID(ctx, &dungeonrepo.GetByEncounterIDInput{
 			EncounterID: input.EncounterID,
@@ -2042,12 +2035,10 @@ func (o *Orchestrator) EndTurn(ctx context.Context, input *EndTurnInput) (*EndTu
 		if dungeonErr == nil && dungeonOutput.Dungeon != nil {
 			dungeonEntity := dungeonOutput.Dungeon
 			turnRoomOrigin = getCurrentRoomOrigin(dungeonEntity)
-			turnModule = moduleFromDungeon(dungeonEntity)
 			currentRoomID := dungeonEntity.CurrentRoomID
 			if currentRoomID == "" {
 				currentRoomID = dungeonEntity.StartRoomID
 			}
-			turnRoomID = currentRoomID
 			if currentRoom := dungeonEntity.GetRoom(currentRoomID); currentRoom != nil {
 				dungeonWalls = currentRoom.Walls
 			}
@@ -2096,7 +2087,8 @@ func (o *Orchestrator) EndTurn(ctx context.Context, input *EndTurnInput) (*EndTu
 	for _, mt := range monsterTurns {
 		// Sync monster's updated position from room data into the Entities map before building proto.
 		// executeMonsterTurns updates roomData.CubeEntities but not encOutput.Data.Entities.
-		syncMonsterPositionFromRoom(encOutput.Data.Entities, mt.MonsterID, turnEndedRoomData, turnModule, turnRoomID)
+		// CubeEntities are dungeon-absolute under the post-OpenDoor contract (#491).
+		syncMonsterPositionFromRoom(encOutput.Data.Entities, mt.MonsterID, turnEndedRoomData)
 
 		// Build per-monster updated entities: the monster + any damaged characters
 		var mtUpdatedEntities []*pb.EntityState
@@ -2155,6 +2147,7 @@ func (o *Orchestrator) EndTurn(ctx context.Context, input *EndTurnInput) (*EndTu
 const (
 	entityTypeCharacter = "character"
 	entityTypeMonster   = "monster"
+	entityTypeObstacle  = "obstacle"
 )
 
 // Stop reasons for movement
@@ -3240,7 +3233,42 @@ func (o *Orchestrator) OpenDoor(
 		return nil, fmt.Errorf("failed to update dungeon: %w", err)
 	}
 
-	// 11. Update encounter state with new initiative and boss monster IDs
+	// 10c. Build a combined RoomData covering entities from ALL revealed rooms.
+	//
+	// Issue #464: previously OpenDoor persisted Monsters and InitiativeData but
+	// not RoomData. The next EndTurn -> executeMonsterTurns -> buildPerception
+	// would read the stale single-room CubeEntities and fail to find the new
+	// monster (let alone any cross-room targets), so the new monster perceived
+	// zero enemies and skipped its turn — appearing AFK.
+	//
+	// Coordinate-space contract established by this PR: post-OpenDoor encounter
+	// RoomData.CubeEntities holds dungeon-absolute cube coordinates. Consumers
+	// MUST NOT re-translate. The existing CubeEntities are carried forward
+	// as-is — pre-OpenDoor we know the start room is at origin so its
+	// CubeEntities are already absolute by construction. After the first
+	// OpenDoor merges new monsters at absolute coordinates, the persisted
+	// CubeEntities stay in absolute thereafter, so further OpenDoor calls keep
+	// merging correctly.
+	combinedRoomData := buildCombinedRoomDataAfterOpenDoor(
+		encOutput.Data.RoomData,
+		dng.EncounterID,
+		revealedRoom,
+		revealedRoomID,
+		dngModule,
+		monsters,
+	)
+
+	// Mutate the in-memory Entities map BEFORE persisting so the Update below
+	// includes the newly-revealed monsters. addMonstersToEntityMap fills in
+	// EntityStateData for each new monster using its dungeon-absolute Position.
+	o.addMonstersToEntityMap(encOutput.Data, monsters, revealedRoomID)
+
+	// 11. Update encounter state with new initiative, boss monster IDs, the
+	// combined RoomData (so perception sees all revealed-room entities), and
+	// the Entities map (so post-reload snapshots via GetEncounterState ->
+	// buildEncounterStateSnapshot include the newly-revealed monsters too —
+	// without this, late-join / refresh would rebuild from a stale Entities
+	// map and miss the revealed-room monsters entirely).
 	// Merge new boss IDs with any existing ones
 	allBossIDs := make([]string, 0, len(encOutput.Data.BossMonsterIDs)+len(newBossMonsterIDs))
 	allBossIDs = append(allBossIDs, encOutput.Data.BossMonsterIDs...)
@@ -3251,10 +3279,17 @@ func (o *Orchestrator) OpenDoor(
 		InitiativeRolls: allRolls, // Persist merged rolls so EndTurn can re-sort at round start
 		Monsters:        encOutput.Data.Monsters,
 		BossMonsterIDs:  allBossIDs,
+		RoomData:        combinedRoomData,
+		Entities:        encOutput.Data.Entities,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to update encounter: %w", err)
 	}
+
+	// Keep the in-memory encounter data in sync with what we just persisted so
+	// downstream code in this same call (snapshot, events) sees the new
+	// monsters in CubeEntities.
+	encOutput.Data.RoomData = combinedRoomData
 
 	// 12. Build room data for response with entities and walls
 	responseRoomData := &RoomData{
@@ -3364,8 +3399,9 @@ func (o *Orchestrator) OpenDoor(
 		}
 	}
 
-	// 17. Add new monster entities to encounter Entities map for snapshot
-	o.addMonstersToEntityMap(encOutput.Data, monsters, revealedRoomID)
+	// 17. (Entities map was mutated earlier, before encRepo.Update at step 11,
+	// so the newly-revealed monsters are persisted and visible to post-reload
+	// snapshots — see comment at step 11.)
 
 	// Build snapshot for RoomRevealed event
 	roomRevealedStateData := o.buildEncounterStateSnapshot(ctx, dng.EncounterID, encOutput.Data, combatState)
@@ -3895,10 +3931,10 @@ func (o *Orchestrator) StartCombat( //nolint:gocyclo // Large orchestration func
 		combatState.ActiveIndex = encData.InitiativeData.Current
 		combatState.Round = encData.InitiativeData.Round
 
-		// Sync monster positions from roomData into entity map before persisting
-		startCombatModule := moduleFromDungeon(dungeonEntity)
+		// Sync monster positions from roomData into entity map before persisting.
+		// CubeEntities are dungeon-absolute under the post-OpenDoor contract (#491).
 		for _, mt := range monsterTurns {
-			syncMonsterPositionFromRoom(entityMap, mt.MonsterID, roomData, startCombatModule, generatedDungeon.StartRoom)
+			syncMonsterPositionFromRoom(entityMap, mt.MonsterID, roomData)
 		}
 
 		_, err = o.encRepo.Update(ctx, &encounterrepo.UpdateInput{
@@ -4000,12 +4036,12 @@ func (o *Orchestrator) StartCombat( //nolint:gocyclo // Large orchestration func
 	// Sync damaged character HP into entity map so MonsterTurnCompleted events carry updated HP
 	syncCharacterHPFromMonsterTurns(entityMap, monsterTurns)
 	startCombatStateProto := entities.CombatStateToProto(combatState)
-	startCombatPostModule := moduleFromDungeon(dungeonEntity)
 	for _, mt := range monsterTurns {
 		// Sync monster's updated position from room data into the entity map before building proto.
 		// entityMap was built before executeMonsterTurns, so positions may be stale.
 		// roomData.CubeEntities has the authoritative post-movement positions.
-		syncMonsterPositionFromRoom(entityMap, mt.MonsterID, roomData, startCombatPostModule, generatedDungeon.StartRoom)
+		// CubeEntities are dungeon-absolute under the post-OpenDoor contract (#491).
+		syncMonsterPositionFromRoom(entityMap, mt.MonsterID, roomData)
 
 		// Build per-monster updated entities from the entity map
 		var mtUpdatedEntities []*pb.EntityState
@@ -5437,15 +5473,17 @@ func (o *Orchestrator) executeMove(
 // roomData.CubeEntities but not the entity map, so this sync is needed before building
 // entity state protos for MonsterTurnCompleted events.
 //
-// roomData.CubeEntities holds room-local cube coordinates; module + roomID
-// translate them to dungeon-absolute via Module.LocalToAbsolute. Pass a nil
-// module for the single-room start case (origin (0,0,0)).
+// Coordinate-space contract: as of #491, encounter RoomData.CubeEntities holds
+// dungeon-absolute cube coordinates. EntityStateData.Position is also stored
+// in dungeon-absolute. We therefore copy the cube position straight through
+// without any LocalToAbsolute translation. The module/roomID parameters were
+// previously used to re-translate from a room-local CubeEntities; doing so
+// under the new contract would shift by the room origin a SECOND time once
+// CurrentRoomID advances to a non-origin room (Copilot review on PR #491).
 func syncMonsterPositionFromRoom(
 	entityMap map[string]*entities.EntityStateData,
 	monsterID string,
 	roomData *spatial.RoomData,
-	module *dungeon.Module,
-	roomID string,
 ) {
 	if entityMap == nil || roomData == nil {
 		return
@@ -5455,7 +5493,15 @@ func syncMonsterPositionFromRoom(
 		return
 	}
 	if placement, exists := roomData.CubeEntities[monsterID]; exists {
-		esd.Position = localToAbsoluteOrLocal(module, roomID, cubeToLocalPosition(placement.CubePosition))
+		// CubeEntities are dungeon-absolute under the post-OpenDoor contract.
+		// EntityStateData.Position is also absolute. Pass the cube coordinate
+		// through directly — no LocalToAbsolute translation.
+		abs := dungeon.AbsolutePosition{
+			X: placement.CubePosition.X,
+			Y: placement.CubePosition.Y,
+			Z: placement.CubePosition.Z,
+		}
+		esd.Position = &abs
 	}
 }
 
@@ -5681,4 +5727,118 @@ func (o *Orchestrator) addMonstersToEntityMap(
 			ToolkitData: monsterData,
 		}
 	}
+}
+
+// buildCombinedRoomDataAfterOpenDoor builds a *spatial.RoomData that carries
+// CubeEntities for every revealed room in the encounter so that perception
+// (executeMonsterTurns -> buildPerception) and movement-collision can find
+// targets and obstacles across rooms.
+//
+// Coordinate-space contract: this PR establishes that post-OpenDoor encounter
+// RoomData.CubeEntities holds dungeon-absolute cube coordinates. Consumers on
+// the read path MUST NOT re-translate (no LocalToAbsolute, no
+// applyOriginToEntities). Pre-OpenDoor we know the start room is at origin
+// (0,0,0) so its existing CubeEntities are already absolute by construction;
+// once OpenDoor merges new monsters and obstacles at absolute coordinates the
+// persisted CubeEntities stay in absolute thereafter, so further OpenDoor
+// calls keep merging correctly.
+//
+// Inputs:
+//   - existingRoomData: the prior encounter RoomData (may be nil, *spatial.RoomData,
+//     or non-pointer spatial.RoomData stored as interface{} in the repo).
+//   - encounterID, revealedRoom: used to fall back to a deterministic RoomData
+//     ID/Width/Height when the encounter had no prior RoomData.
+//   - revealedRoomID, module: used to translate the revealed room's obstacle
+//     positions (room-local) into dungeon-absolute. module may be nil for the
+//     single-room start case (origin (0,0,0)) — in that case room-local equals
+//     absolute and localToAbsoluteOrLocal falls back to identity.
+//   - newMonsters: monsters spawned by OpenDoor; their Position field has
+//     already been translated to dungeon-absolute earlier in OpenDoor via
+//     localToAbsoluteOrLocal, so we copy through directly without further
+//     translation.
+func buildCombinedRoomDataAfterOpenDoor(
+	existingRoomData interface{},
+	encounterID string,
+	revealedRoom *dungeon.Room,
+	revealedRoomID string,
+	module *dungeon.Module,
+	newMonsters []MonsterInfo,
+) *spatial.RoomData {
+	combined := &spatial.RoomData{
+		Type:         "dungeon",
+		GridType:     spatial.GridTypeHex,
+		CubeEntities: make(map[string]spatial.EntityCubePlacement),
+	}
+
+	// Carry forward existing fields (ID, Width, Height) and CubeEntities from
+	// the previous RoomData. ID/Width/Height are descriptive of the original
+	// room and are preserved for backwards compatibility with consumers that
+	// inspect them; the encounter's authoritative geometry now spans multiple
+	// rooms.
+	switch existing := existingRoomData.(type) {
+	case *spatial.RoomData:
+		if existing != nil {
+			combined.ID = existing.ID
+			combined.Width = existing.Width
+			combined.Height = existing.Height
+			combined.HexFlatTop = existing.HexFlatTop
+			for id, placement := range existing.CubeEntities {
+				combined.CubeEntities[id] = placement
+			}
+		}
+	case spatial.RoomData:
+		combined.ID = existing.ID
+		combined.Width = existing.Width
+		combined.Height = existing.Height
+		combined.HexFlatTop = existing.HexFlatTop
+		for id, placement := range existing.CubeEntities {
+			combined.CubeEntities[id] = placement
+		}
+	}
+
+	// Fall back to a deterministic ID when the encounter had no prior RoomData.
+	if combined.ID == "" && revealedRoom != nil {
+		combined.ID = encounterID + "-" + revealedRoom.ID
+		if revealedRoom.Shape != nil {
+			combined.Width = revealedRoom.Shape.Width
+			combined.Height = revealedRoom.Shape.Height
+		}
+	}
+
+	// Add obstacles from the revealed room. convertToRoomData already does this
+	// for the start-room case at StartCombat; we mirror that here for revealed
+	// rooms so movement-collision (executeMove / MoveCharacter) sees blocking
+	// features in newly opened rooms. Obstacle.Position is room-local; we
+	// translate to dungeon-absolute via the same localToAbsoluteOrLocal helper
+	// used for new monsters.
+	if revealedRoom != nil && revealedRoom.Features != nil {
+		for _, obstacle := range revealedRoom.Features.Obstacles {
+			abs := localToAbsoluteOrLocal(module, revealedRoomID, obstacle.Position)
+			combined.CubeEntities[obstacle.ID] = spatial.EntityCubePlacement{
+				EntityID:          obstacle.ID,
+				EntityType:        entityTypeObstacle,
+				CubePosition:      spatial.CubeCoordinate{X: abs.X, Y: abs.Y, Z: abs.Z},
+				Size:              1,
+				BlocksMovement:    obstacle.BlocksMovement,
+				BlocksLineOfSight: obstacle.BlocksLineOfSight,
+			}
+		}
+	}
+
+	// Add the newly spawned monsters using their already-translated positions.
+	for _, m := range newMonsters {
+		if m.Position == nil {
+			continue
+		}
+		combined.CubeEntities[m.ID] = spatial.EntityCubePlacement{
+			EntityID:          m.ID,
+			EntityType:        entityTypeMonster,
+			CubePosition:      spatial.CubeCoordinate{X: m.Position.X, Y: m.Position.Y, Z: m.Position.Z},
+			Size:              1,
+			BlocksMovement:    true,
+			BlocksLineOfSight: false,
+		}
+	}
+
+	return combined
 }

@@ -246,13 +246,24 @@ func (h *Handler) GetEncounterState(
 		response.CombatState = convertCombatStateToProto(output.CombatState, gridType, hexOrientation)
 	}
 
-	// Convert room and add walls + origin (same pattern as StartCombat)
+	// Convert room and add walls + origin.
+	//
+	// We must NOT call applyOriginToEntities here. Per the post-OpenDoor
+	// coordinate-space contract (#491), encounter RoomData.CubeEntities is
+	// stored in dungeon-absolute coordinates, and convertRoomDataToProto for
+	// hex grids passes them through directly. Applying the room origin here
+	// would shift entity positions by the origin a SECOND time, double-shifting
+	// any newly revealed monsters whenever CurrentRoomID is at a non-origin
+	// room (the start-room case looks correct only because origin is (0,0,0)).
+	//
+	// Origin is set on the proto for client-side reference (e.g. rendering the
+	// room frame) but is no longer applied to entity positions on this path.
+	// Same rule the OpenDoor path follows at handler.go:163.
 	if output.Room != nil {
 		response.Room = convertRoomDataToProto(output.Room)
 		if response.Room != nil {
 			response.Room.Walls = convertWallsToProto(output.Walls)
 			response.Room.Origin = dungeonPositionToProto(output.RoomOrigin)
-			applyOriginToEntities(response.Room)
 		}
 	}
 
