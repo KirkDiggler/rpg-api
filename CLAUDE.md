@@ -2,6 +2,19 @@
 
 **Note**: General development guidelines are in `/home/kirk/personal/CLAUDE.md`. This file contains rpg-api specific instructions.
 
+## Where things live
+
+Active docs — read these to orient before touching code:
+
+- `docs/status.md` — current health: active work, paused items, known rough edges, per-subsystem confidence
+- `docs/quality.md` — A-D scorecard with rationale per component
+- `docs/architecture/overview.md` — layer rules (handler → orchestrator → repo), request flow, cross-repo boundaries
+- `docs/architecture/data-model.md` — entities, relationships, storage schemas, known gaps
+- `docs/architecture/components/` — one doc per major component (auth, character-handler, character-orchestrator, dungeon-component, encounter-handler, encounter-orchestrator, entities, event-processor, integration-test-harness, repositories)
+- `docs/how-to/` — task guides: `add-handler-method`, `run-integration-tests`, `run-locally`, `update-proto-dependency`
+- `docs/journey/` — exploration narratives, decisions, and trade-offs from past work
+- `docs/archive/` — pre-PR #470 historical docs; read for context, not current state
+
 ## Dependency Management
 
 ### Proto Updates
