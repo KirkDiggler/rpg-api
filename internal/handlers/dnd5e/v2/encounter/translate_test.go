@@ -125,6 +125,56 @@ func (s *TranslateSuite) TestTranslateEvent_Sequence_SetCorrectly() {
 	s.Require().Equal(int64(42), out.Sequence)
 }
 
+func (s *TranslateSuite) TestTranslateEvent_EntityAppearedEvent_HappyPath() {
+	evt := events.NewEntityAppearedEvent(
+		"enc-1", uint64(7), "char-A",
+		core.Hex{Q: 3, R: -1, S: -2},
+		map[core.PlayerID]struct{}{"player-B": {}},
+	)
+	out, err := v2encounter.TranslateEvent(evt, "player-B", s.now)
+	s.Require().NoError(err)
+	app := out.GetEntityAppeared()
+	s.Require().NotNil(app)
+	s.Require().Equal("char-A", app.Entity.Id)
+	s.Require().Equal(int32(3), app.Entity.Position.X)
+	s.Require().Equal(int32(-1), app.Entity.Position.Y)
+	s.Require().Equal(int32(-2), app.Entity.Position.Z)
+	s.Require().Equal("entered LOS", app.Reason)
+}
+
+func (s *TranslateSuite) TestTranslateEvent_EntityAppearedEvent_ViewerNotInPerPlayerReturnsErrViewerSawNothing() {
+	evt := events.NewEntityAppearedEvent("enc-1", uint64(7), "char-A", core.Hex{}, nil)
+	_, err := v2encounter.TranslateEvent(evt, "player-X", s.now)
+	s.Require().Error(err)
+	s.Require().True(errors.Is(err, v2encounter.ErrViewerSawNothing))
+}
+
+func (s *TranslateSuite) TestTranslateEvent_EntityDisappearedEvent_HappyPath() {
+	evt := events.NewEntityDisappearedEvent(
+		"enc-1", uint64(8), "char-A",
+		map[core.PlayerID]core.Hex{"player-B": {Q: 5, R: -2, S: -3}},
+	)
+	out, err := v2encounter.TranslateEvent(evt, "player-B", s.now)
+	s.Require().NoError(err)
+	dis := out.GetEntityDisappeared()
+	s.Require().NotNil(dis)
+	s.Require().Equal("char-A", dis.EntityId)
+	s.Require().Equal("left LOS", dis.Reason)
+	// Per-viewer last-known position: B's PerPlayer entry was (5,-2,-3),
+	// proves the translator picks the viewer's own last-known hex.
+	s.Require().NotNil(dis.LastKnownPosition)
+	s.Require().Equal(int32(5), dis.LastKnownPosition.X)
+	s.Require().Equal(int32(-2), dis.LastKnownPosition.Y)
+	s.Require().Equal(int32(-3), dis.LastKnownPosition.Z)
+}
+
+func (s *TranslateSuite) TestTranslateEvent_EntityDisappearedEvent_ViewerNotInPerPlayerReturnsErrViewerSawNothing() {
+	evt := events.NewEntityDisappearedEvent("enc-1", uint64(8), "char-A", nil)
+	_, err := v2encounter.TranslateEvent(evt, "player-X", s.now)
+	s.Require().Error(err)
+	s.Require().True(errors.Is(err, v2encounter.ErrViewerSawNothing))
+}
+
 func (s *TranslateSuite) TestTranslateEvent_UnknownEventTypeReturnsErrUnknownEventType() {
 	// DoorOpenedEvent implements events.EncounterEvent but TranslateEvent has no
 	// mapping for it — exercises the default branch (ErrUnknownEventType).

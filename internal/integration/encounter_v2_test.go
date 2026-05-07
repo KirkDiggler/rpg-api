@@ -108,6 +108,156 @@ func (s *EncounterV2IntegrationSuite) TestMovementSliceTwoPlayers() {
 	s.Require().Len(movB.GetEntityMoved().ActualPath, 3, "B should see all 3 path hexes in mutual LoS")
 }
 
+// TestMovementSlicePerViewerProjection_AsymmetricLoS exercises the harder
+// per-viewer-projection case: viewer B has SightRange:1 (sees only adjacent
+// hexes), the mover A walks past B's vision and out the other side.
+//
+// Expected wire shape — A's stream gets the full 7-hex path; B's stream gets
+// EntityAppeared at A's first-visible hex, EntityMoved with B's 2-hex slice,
+// EntityDisappeared at B's last-visible hex. This proves the toolkit's
+// ProjectVisibilityTransition + the v2 wire pipe respect per-viewer reality
+// in the asymmetric / pass-through case (mutual-LoS test alone could pass
+// with broken per-viewer projection).
+//
+// EXPLORATION TEST: requires the toolkit's #629 work (EntityAppeared /
+// EntityDisappeared events). Runs against the local replace directive
+// pointing at rpg-toolkit's feat/629 branch. Findings get reported back.
+func (s *EncounterV2IntegrationSuite) TestMovementSlicePerViewerProjection_AsymmetricLoS() {
+	// B at origin with SightRange:1 — sees only its 6 adjacent hexes + itself.
+	// A starts off B's vision, walks across B's view, exits the other side.
+	enc := tkenc.New("enc-asym", s.srv.BrokerV2)
+	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
+		PlayerID: "player-A", EntityID: "char-A",
+		Position:   core.Hex{Q: 5, R: -2, S: -3},
+		SightRange: 10,
+	}))
+	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
+		PlayerID: "player-B", EntityID: "char-B",
+		Position:   core.Hex{Q: 0, R: 0, S: 0},
+		SightRange: 1,
+	}))
+	s.Require().NoError(s.srv.EncRepoV2.Save(s.ctx, enc.ToData()))
+
+	ctxA := s.authCtx("player-A")
+	ctxB := s.authCtx("player-B")
+
+	streamA, err := s.srv.EncounterClientV2.StreamEncounter(ctxA, &encounterv2pb.StreamEncounterRequest{EncounterId: "enc-asym"})
+	s.Require().NoError(err)
+	streamB, err := s.srv.EncounterClientV2.StreamEncounter(ctxB, &encounterv2pb.StreamEncounterRequest{EncounterId: "enc-asym"})
+	s.Require().NoError(err)
+
+	// Drain snapshots.
+	snapA, err := streamA.Recv()
+	s.Require().NoError(err)
+	s.Require().NotNil(snapA.GetSnapshotDelivered())
+	snapB, err := streamB.Recv()
+	s.Require().NoError(err)
+	s.Require().NotNil(snapB.GetSnapshotDelivered())
+
+	// A walks 7 hexes. Distance from B = max(|Q|,|R|,|S|).
+	// (5,-2,-3) dist 5 — invisible
+	// (4,-2,-2) dist 4 — invisible
+	// (3,-2,-1) dist 3 — invisible
+	// (2,-2,0)  dist 2 — invisible
+	// (1,-1,0)  dist 1 — VISIBLE  ← B's "appeared at"
+	// (0,-1,1)  dist 1 — VISIBLE  ← B's "disappeared at"
+	// (-1,-1,2) dist 2 — invisible
+	_, err = s.srv.EncounterClientV2.MoveEntity(ctxA, &encounterv2pb.MoveEntityRequest{
+		EncounterId: "enc-asym", EntityId: "char-A",
+		ProposedPath: []*encounterv2pb.Position{
+			{X: 5, Y: -2, Z: -3},
+			{X: 4, Y: -2, Z: -2},
+			{X: 3, Y: -2, Z: -1},
+			{X: 2, Y: -2, Z: 0},
+			{X: 1, Y: -1, Z: 0},
+			{X: 0, Y: -1, Z: 1},
+			{X: -1, Y: -1, Z: 2},
+		},
+	})
+	s.Require().NoError(err)
+
+	// A's perspective: A sees its own full path (A's SightRange:10 covers everything).
+	// Per the toolkit semantics A's stream may also receive HexRevealedEvent for newly-
+	// revealed hexes from A's own move. Drain events until we see A's EntityMoved.
+	movA := s.recvUntilEntityMoved(streamA, 500*time.Millisecond)
+	s.Require().NotNil(movA, "A should receive EntityMoved")
+	s.Require().Equal("char-A", movA.EntityId)
+	s.Require().Len(movA.ActualPath, 7, "A should see all 7 hexes of own path")
+
+	// B's perspective: pass-through. Toolkit's ProjectVisibilityTransition for the
+	// (false,false) endpoints + non-empty seenSegments case emits BOTH Appeared and
+	// Disappeared. Plus an EntityMoved with B's 2-hex slice.
+	//
+	// Order is broker-publish-order; we don't assert a specific order, just that all
+	// three event kinds arrive within the window.
+	bEvents := s.collectStreamEvents(streamB, 3, 500*time.Millisecond)
+	var bAppeared *encounterv2pb.EntityAppeared
+	var bMoved *encounterv2pb.EntityMoved
+	var bDisappeared *encounterv2pb.EntityDisappeared
+	for _, ev := range bEvents {
+		if a := ev.GetEntityAppeared(); a != nil {
+			bAppeared = a
+		}
+		if m := ev.GetEntityMoved(); m != nil {
+			bMoved = m
+		}
+		if d := ev.GetEntityDisappeared(); d != nil {
+			bDisappeared = d
+		}
+	}
+
+	s.Require().NotNil(bAppeared, "B should receive EntityAppeared on pass-through")
+	s.Require().Equal("char-A", bAppeared.Entity.Id)
+	s.Require().Equal(int32(1), bAppeared.Entity.Position.X, "B sees A appear at (1,-1,0)")
+	s.Require().Equal(int32(-1), bAppeared.Entity.Position.Y)
+	s.Require().Equal(int32(0), bAppeared.Entity.Position.Z)
+
+	s.Require().NotNil(bMoved, "B should receive EntityMoved with the visible slice")
+	s.Require().Equal("char-A", bMoved.EntityId)
+	s.Require().Len(bMoved.ActualPath, 2, "B's ActualPath should be the 2-hex visible slice, NOT the full 7-hex path")
+
+	s.Require().NotNil(bDisappeared, "B should receive EntityDisappeared on pass-through")
+	s.Require().Equal("char-A", bDisappeared.EntityId)
+	// Per-viewer last-known position: B's last-visible hex on this pass-through
+	// is (0,-1,1). The wire's last_known_position field carries it; web can
+	// render "freeze marker at this hex" without client-side game-state tracking.
+	s.Require().NotNil(bDisappeared.LastKnownPosition, "EntityDisappeared must carry per-viewer last-known position")
+	s.Require().Equal(int32(0), bDisappeared.LastKnownPosition.X)
+	s.Require().Equal(int32(-1), bDisappeared.LastKnownPosition.Y)
+	s.Require().Equal(int32(1), bDisappeared.LastKnownPosition.Z)
+}
+
+// recvUntilEntityMoved pulls events from the stream until an EntityMoved arrives
+// or the timeout expires. Returns nil on timeout.
+func (s *EncounterV2IntegrationSuite) recvUntilEntityMoved(stream encounterv2pb.EncounterService_StreamEncounterClient, timeout time.Duration) *encounterv2pb.EntityMoved {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		ev, err := stream.Recv()
+		if err != nil {
+			return nil
+		}
+		if m := ev.GetEntityMoved(); m != nil {
+			return m
+		}
+	}
+	return nil
+}
+
+// collectStreamEvents pulls up to want events or until the timeout expires.
+// Returns whatever it managed to collect.
+func (s *EncounterV2IntegrationSuite) collectStreamEvents(stream encounterv2pb.EncounterService_StreamEncounterClient, want int, timeout time.Duration) []*encounterv2pb.EncounterEvent {
+	out := make([]*encounterv2pb.EncounterEvent, 0, want)
+	deadline := time.Now().Add(timeout)
+	for len(out) < want && time.Now().Before(deadline) {
+		ev, err := stream.Recv()
+		if err != nil {
+			return out
+		}
+		out = append(out, ev)
+	}
+	return out
+}
+
 func TestEncounterV2IntegrationSuite(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")

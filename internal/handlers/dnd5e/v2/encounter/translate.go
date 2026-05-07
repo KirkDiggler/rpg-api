@@ -44,6 +44,10 @@ func TranslateEvent(evt events.EncounterEvent, viewer core.PlayerID, now time.Ti
 		return translateMoveEvent(e, viewer, now)
 	case *events.HexRevealedEvent:
 		return translateHexRevealedEvent(e, viewer, now)
+	case *events.EntityAppearedEvent:
+		return translateEntityAppearedEvent(e, viewer, now)
+	case *events.EntityDisappearedEvent:
+		return translateEntityDisappearedEvent(e, viewer, now)
 	default:
 		return nil, fmt.Errorf("%w: %T", ErrUnknownEventType, evt)
 	}
@@ -108,6 +112,56 @@ func translateHexRevealedEvent(e *events.HexRevealedEvent, viewer core.PlayerID,
 		Event: &encounterv2pb.EncounterEvent_GeometryRevealed{
 			GeometryRevealed: &encounterv2pb.GeometryRevealed{
 				Hexes: hexes,
+			},
+		},
+	}, nil
+}
+
+// translateEntityAppearedEvent maps the toolkit's EntityAppearedEvent to the
+// v1alpha2 EntityAppeared proto envelope. The proto carries an Entity message
+// (id + position) plus a free-form reason string. The toolkit event provides
+// only EntityID + Position; the wire form populates a minimal Entity{id,
+// position} and leaves richer fields (type, display_name, hp, etc.) for the
+// web to look up from its snapshot. See gap note in EntityDisappeared below.
+func translateEntityAppearedEvent(e *events.EntityAppearedEvent, viewer core.PlayerID, now time.Time) (*encounterv2pb.EncounterEvent, error) {
+	if _, ok := e.PerPlayer[viewer]; !ok {
+		return nil, ErrViewerSawNothing
+	}
+	return &encounterv2pb.EncounterEvent{
+		Sequence:  int64(e.Sequence()),
+		Timestamp: timestamppb.New(now),
+		Event: &encounterv2pb.EncounterEvent_EntityAppeared{
+			EntityAppeared: &encounterv2pb.EntityAppeared{
+				Entity: &encounterv2pb.Entity{
+					Id:       string(e.Entity),
+					Position: HexToPosition(e.Position),
+				},
+				Reason: "entered LOS",
+			},
+		},
+	}, nil
+}
+
+// translateEntityDisappearedEvent maps the toolkit's EntityDisappearedEvent to
+// the v1alpha2 EntityDisappeared proto envelope. The proto's last_known_position
+// field carries the viewer's per-stream last-seen hex (different viewers may
+// have last-seen the entity at different hexes during pass-through), allowing
+// the web to render "freeze marker at last-seen hex" without client-side
+// game-state tracking. Per-viewer correctness comes from picking
+// e.PerPlayer[viewer] inside the handler's per-stream translator call.
+func translateEntityDisappearedEvent(e *events.EntityDisappearedEvent, viewer core.PlayerID, now time.Time) (*encounterv2pb.EncounterEvent, error) {
+	lastKnown, ok := e.PerPlayer[viewer]
+	if !ok {
+		return nil, ErrViewerSawNothing
+	}
+	return &encounterv2pb.EncounterEvent{
+		Sequence:  int64(e.Sequence()),
+		Timestamp: timestamppb.New(now),
+		Event: &encounterv2pb.EncounterEvent_EntityDisappeared{
+			EntityDisappeared: &encounterv2pb.EntityDisappeared{
+				EntityId:          string(e.Entity),
+				Reason:            "left LOS",
+				LastKnownPosition: HexToPosition(lastKnown),
 			},
 		},
 	}, nil
