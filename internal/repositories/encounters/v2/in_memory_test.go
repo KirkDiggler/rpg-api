@@ -45,6 +45,10 @@ func (s *InMemorySuite) TestSaveGet_RoundTrip_PreservesData() {
 	loaded, err := s.repo.Get(s.ctx, string(original.ID))
 	s.Require().NoError(err)
 	s.Require().Equal(original.ID, loaded.ID)
+	// Player-map round-trip: player-A's entry must survive Save/Get.
+	s.Require().Len(loaded.Players, 1)
+	s.Require().Contains(loaded.Players, core.PlayerID("player-A"))
+	s.Require().Equal(core.EntityID("char-A"), loaded.Players["player-A"].EntityID)
 	// Round-trip via the toolkit serializer to prove ToData/LoadFromData survives storage.
 	roundTripped, err := encounter.LoadFromData(loaded, encounter.NewBroker(encounter.NewInMemoryTransport()))
 	s.Require().NoError(err)

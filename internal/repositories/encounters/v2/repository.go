@@ -14,9 +14,9 @@ var ErrNotFound = errors.New("encounter not found")
 
 // Repository persists *encounter.Data keyed by encounter id.
 //
-// Implementations MUST round-trip through encounter.Data's ToData/LoadFromData
-// pattern on each Save/Get so the toolkit's serialization is exercised on
-// every write — catching JSON-level bugs before they reach production.
+// Persistent implementations MUST round-trip through encounter.Data's
+// ToData/LoadFromData pattern on each Save/Get so the toolkit's serialization
+// is exercised on every write — catching JSON-level bugs before they reach production.
 type Repository interface {
 	// Get returns ErrNotFound if id has no stored data.
 	Get(ctx context.Context, id string) (*encounter.Data, error)

@@ -70,7 +70,7 @@ func (h *Handler) MoveEntity(ctx context.Context, req *encounterv2pb.MoveEntityR
 		if errors.Is(err, encountersv2.ErrNotFound) {
 			return nil, status.Error(codes.NotFound, "encounter not found")
 		}
-		return nil, status.Errorf(codes.Internal, "load encounter: %v", err)
+		return nil, status.Errorf(codes.Internal, "load encounter %q: %v", req.GetEncounterId(), err)
 	}
 
 	// entity_id validation: the player's controlled entity must match the
@@ -89,7 +89,7 @@ func (h *Handler) MoveEntity(ctx context.Context, req *encounterv2pb.MoveEntityR
 
 	enc, err := encounter.LoadFromData(data, h.broker)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "load from data: %v", err)
+		return nil, status.Errorf(codes.Internal, "load from data %q: %v", req.GetEncounterId(), err)
 	}
 
 	path := make([]core.Hex, 0, len(req.GetProposedPath()))
@@ -106,7 +106,7 @@ func (h *Handler) MoveEntity(ctx context.Context, req *encounterv2pb.MoveEntityR
 	}
 
 	if err := h.encRepo.Save(ctx, enc.ToData()); err != nil {
-		return nil, status.Errorf(codes.Internal, "save encounter: %v", err)
+		return nil, status.Errorf(codes.Internal, "save encounter %q: %v", req.GetEncounterId(), err)
 	}
 
 	return &encounterv2pb.MoveEntityResponse{}, nil
@@ -135,7 +135,7 @@ func (h *Handler) StreamEncounter(req *encounterv2pb.StreamEncounterRequest, str
 	// loop is captured and delivered after the snapshot send.
 	sub, err := h.broker.Subscribe(encID, core.PlayerID(playerID))
 	if err != nil {
-		return status.Errorf(codes.Internal, "subscribe: %v", err)
+		return status.Errorf(codes.Internal, "subscribe %q: %v", string(encID), err)
 	}
 	defer func() { _ = sub.Close() }()
 
@@ -145,11 +145,11 @@ func (h *Handler) StreamEncounter(req *encounterv2pb.StreamEncounterRequest, str
 		if errors.Is(err, encountersv2.ErrNotFound) {
 			return status.Error(codes.NotFound, "encounter not found")
 		}
-		return status.Errorf(codes.Internal, "load encounter: %v", err)
+		return status.Errorf(codes.Internal, "load encounter %q: %v", string(encID), err)
 	}
 	enc, err := encounter.LoadFromData(data, h.broker)
 	if err != nil {
-		return status.Errorf(codes.Internal, "load from data: %v", err)
+		return status.Errorf(codes.Internal, "load from data %q: %v", string(encID), err)
 	}
 	snap := enc.SnapshotFor(core.PlayerID(playerID))
 	snapEvent := translateSnapshot(snap, h.now())
@@ -174,7 +174,7 @@ func (h *Handler) StreamEncounter(req *encounterv2pb.StreamEncounterRequest, str
 				// TODO(metric): increment translator-gap counter
 				continue
 			case translateErr != nil:
-				return status.Errorf(codes.Internal, "translate: %v", translateErr)
+				return status.Errorf(codes.Internal, "translate %q: %v", string(encID), translateErr)
 			}
 			if err := stream.Send(out); err != nil {
 				return err

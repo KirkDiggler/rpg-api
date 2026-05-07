@@ -76,11 +76,15 @@ func (s *HandlerSuite) TestMoveEntity_HappyPath_LoadsCallsMoveSaves() {
 	})
 	s.Require().NoError(err)
 
-	// Verify the encounter was saved post-move.
+	// Verify the encounter was saved post-move and that player-A's position
+	// reflects the move destination (0,0,0) → (1,-1,0).
 	loaded, err := s.repo.Get(s.ctx, "enc-1")
 	s.Require().NoError(err)
 	s.Require().NotNil(loaded)
 	s.Require().Equal(core.EncounterID("enc-1"), loaded.ID)
+	s.Require().NotNil(loaded.Players)
+	s.Require().Contains(loaded.Players, core.PlayerID("player-A"))
+	s.Require().Equal(core.Hex{Q: 1, R: -1, S: 0}, loaded.Players["player-A"].View.Position)
 }
 
 func (s *HandlerSuite) TestMoveEntity_NoPlayerID_Unauthenticated() {
