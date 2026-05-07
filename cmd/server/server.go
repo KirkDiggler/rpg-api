@@ -13,6 +13,7 @@ import (
 
 	character2 "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v1alpha1/character"
 	encounterhandler "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v1alpha1/encounter"
+	encounterhandlerv2 "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v2/encounter"
 
 	"github.com/spf13/cobra"
 	"google.golang.org/grpc"
@@ -26,6 +27,7 @@ import (
 
 	apiv1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/api/v1alpha1"
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
+	encounterv2pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/encounter"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
 	dungeontoolkit "github.com/KirkDiggler/rpg-api/internal/components/dungeon/toolkit"
 	apiv1alpha1handler "github.com/KirkDiggler/rpg-api/internal/handlers/api/v1alpha1"
@@ -43,6 +45,8 @@ import (
 	dungeonsrepo "github.com/KirkDiggler/rpg-api/internal/repositories/dungeons"
 	encounterlogrepo "github.com/KirkDiggler/rpg-api/internal/repositories/encounterlog"
 	encountersrepo "github.com/KirkDiggler/rpg-api/internal/repositories/encounters"
+	encountersv2 "github.com/KirkDiggler/rpg-api/internal/repositories/encounters/v2"
+	tkenc "github.com/KirkDiggler/rpg-toolkit/encounter"
 )
 
 var (
@@ -218,6 +222,19 @@ func runServer(_ *cobra.Command, _ []string) error {
 	dnd5ev1alpha1.RegisterEncounterServiceServer(srv, encounterHandler)
 	apiv1alpha1.RegisterDiceServiceServer(srv, diceHandler)
 
+	// v1alpha2 encounter wiring (additive, no v1alpha1 disturbance)
+	encV2Transport := tkenc.NewInMemoryTransport()
+	encV2Broker := tkenc.NewBroker(encV2Transport)
+	encV2Repo := encountersv2.NewInMemory()
+	encV2Handler, err := encounterhandlerv2.New(&encounterhandlerv2.HandlerConfig{
+		Broker: encV2Broker,
+		Repo:   encV2Repo,
+	})
+	if err != nil {
+		return fmt.Errorf("encounter v2 handler: %w", err)
+	}
+	encounterv2pb.RegisterEncounterServiceServer(srv, encV2Handler)
+
 	// Register health service
 	healthServer := health.NewServer()
 	grpc_health_v1.RegisterHealthServer(srv, healthServer)
@@ -226,6 +243,7 @@ func runServer(_ *cobra.Command, _ []string) error {
 	healthServer.SetServingStatus("dnd5e.api.v1alpha1.CharacterService", grpc_health_v1.HealthCheckResponse_SERVING)
 	healthServer.SetServingStatus("dnd5e.api.v1alpha1.EncounterService", grpc_health_v1.HealthCheckResponse_SERVING)
 	healthServer.SetServingStatus("api.v1alpha1.DiceService", grpc_health_v1.HealthCheckResponse_SERVING)
+	healthServer.SetServingStatus("dnd5e.api.v1alpha2.encounter.EncounterService", grpc_health_v1.HealthCheckResponse_SERVING)
 
 	reflection.Register(srv)
 
