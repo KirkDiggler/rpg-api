@@ -313,6 +313,12 @@ func (ts *TestServer) Close() {
 	if ts.grpcServer != nil {
 		ts.grpcServer.Stop()
 	}
+	if ts.BrokerV2 != nil {
+		// Releases the broker's per-encounter listen goroutines and the
+		// underlying transport. Without this, each integration test leaks
+		// one listener per Subscribe call.
+		_ = ts.BrokerV2.Close()
+	}
 	if ts.redisClient != nil {
 		ts.redisClient.Close()
 	}

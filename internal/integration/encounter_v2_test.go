@@ -95,11 +95,17 @@ func (s *EncounterV2IntegrationSuite) TestMovementSliceTwoPlayers() {
 	s.Require().NoError(err)
 	s.Require().NotNil(movA.GetEntityMoved(), "player-A stream should receive EntityMoved")
 	s.Require().Equal("char-A", movA.GetEntityMoved().EntityId, "EntityMoved.EntityId should be char-A (seen by A)")
+	// Per-viewer projection check: ActualPath is built from PerPlayer[viewer].SeenSegments,
+	// not the raw event Path. Mutual SightRange:10 + 3-hex path entirely in range → both viewers
+	// see all 3 hexes. Asserting ActualPath length proves the per-viewer slicing pipe is real,
+	// not just that the broker fanned-out an event.
+	s.Require().Len(movA.GetEntityMoved().ActualPath, 3, "A should see all 3 path hexes in mutual LoS")
 
 	movB, err := streamB.Recv()
 	s.Require().NoError(err)
 	s.Require().NotNil(movB.GetEntityMoved(), "player-B stream should receive EntityMoved")
 	s.Require().Equal("char-A", movB.GetEntityMoved().EntityId, "EntityMoved.EntityId should be char-A (seen by B)")
+	s.Require().Len(movB.GetEntityMoved().ActualPath, 3, "B should see all 3 path hexes in mutual LoS")
 }
 
 func TestEncounterV2IntegrationSuite(t *testing.T) {
