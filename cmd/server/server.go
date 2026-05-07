@@ -108,8 +108,10 @@ func runServer(_ *cobra.Command, _ []string) error {
 		),
 	)
 
+	redisClient := mustRedisClient()
+
 	charRepo, err := characterrepo.NewRedis(&characterrepo.RedisConfig{
-		Client: mustRedisClient(),
+		Client: redisClient,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create character repository: %w", err)
@@ -118,7 +120,7 @@ func runServer(_ *cobra.Command, _ []string) error {
 	draftRepo, err := characterdraftrepo.NewRedis(&characterdraftrepo.Config{
 		Clock:       clock.New(),
 		IDGenerator: idgen.NewPrefixed("draft-"),
-		Client:      mustRedisClient(),
+		Client:      redisClient,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create character draft repository: %w", err)
@@ -126,7 +128,7 @@ func runServer(_ *cobra.Command, _ []string) error {
 
 	// Create dice session repository
 	diceSessionRepo, err := dicesessionrepo.NewRedisRepository(&dicesessionrepo.Config{
-		Client: mustRedisClient(),
+		Client: redisClient,
 		Clock:  clock.New(),
 	})
 	if err != nil {
@@ -154,7 +156,7 @@ func runServer(_ *cobra.Command, _ []string) error {
 
 	// Create encounter event publisher
 	encounterPublisher, err := encounterpub.NewRedis(&encounterpub.RedisConfig{
-		Client: mustRedisClient(),
+		Client: redisClient,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create encounter publisher: %w", err)
@@ -222,10 +224,15 @@ func runServer(_ *cobra.Command, _ []string) error {
 	dnd5ev1alpha1.RegisterEncounterServiceServer(srv, encounterHandler)
 	apiv1alpha1.RegisterDiceServiceServer(srv, diceHandler)
 
-	// v1alpha2 encounter wiring (additive, no v1alpha1 disturbance)
+	// v1alpha2 encounter wiring (additive, no v1alpha1 disturbance).
+	// Repo is Redis-backed so encounter state survives rpg-api restarts and is
+	// inspectable via redis-cli during playtest. Broker stays in-memory:
+	// rpg-api is single-process, pub/sub buys nothing here. 24h TTL is long
+	// enough for any single playtest session and short enough that abandoned
+	// encounters don't accumulate forever.
 	encV2Transport := tkenc.NewInMemoryTransport()
 	encV2Broker := tkenc.NewBroker(encV2Transport)
-	encV2Repo := encountersv2.NewInMemory()
+	encV2Repo := encountersv2.NewRedis(redisClient, 24*time.Hour)
 	encV2Handler, err := encounterhandlerv2.New(&encounterhandlerv2.HandlerConfig{
 		Broker: encV2Broker,
 		Repo:   encV2Repo,
