@@ -3,6 +3,7 @@ package encounter
 import (
 	"context"
 	"errors"
+	"log"
 	"time"
 
 	"google.golang.org/grpc/codes"
@@ -171,7 +172,10 @@ func (h *Handler) StreamEncounter(req *encounterv2pb.StreamEncounterRequest, str
 			case errors.Is(translateErr, ErrViewerSawNothing):
 				continue
 			case errors.Is(translateErr, ErrUnknownEventType):
-				// TODO(metric): increment translator-gap counter
+				// Translator has no mapping for this event type — log so
+				// the gap shows up in production rather than silently
+				// dropping. TODO(metric): also increment a gap counter.
+				log.Printf("encounter/v2 translator gap: encounter=%q event=%T", string(encID), evt)
 				continue
 			case translateErr != nil:
 				return status.Errorf(codes.Internal, "translate %q: %v", string(encID), translateErr)

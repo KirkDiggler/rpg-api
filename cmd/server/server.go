@@ -276,6 +276,12 @@ func runServer(_ *cobra.Command, _ []string) error {
 			log.Println("Server stopped gracefully")
 		}
 
+		// Release the v1alpha2 encounter broker — terminates per-encounter
+		// listen goroutines and the underlying in-memory transport.
+		if err := encV2Broker.Close(); err != nil {
+			log.Printf("v1alpha2 encounter broker close: %v", err)
+		}
+
 		return nil
 	case err := <-errChan:
 		return err

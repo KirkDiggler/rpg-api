@@ -6,6 +6,7 @@ package encounter
 import (
 	"errors"
 	"fmt"
+	"sort"
 	"time"
 
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -81,9 +82,24 @@ func translateHexRevealedEvent(e *events.HexRevealedEvent, viewer core.PlayerID,
 		return nil, ErrViewerSawNothing
 	}
 	// HexRevealedSlice.Hexes is core.HexSet which is map[Hex]struct{} —
-	// range over keys (the hex), not values (struct{}).
-	hexes := make([]*encounterv2pb.Hex, 0, len(slice.Hexes))
+	// range over keys (the hex), not values (struct{}). Sort by (Q, R, S)
+	// so wire output is deterministic; map iteration order is randomized
+	// in Go and would otherwise create flaky tests / golden comparisons.
+	keys := make([]core.Hex, 0, len(slice.Hexes))
 	for h := range slice.Hexes {
+		keys = append(keys, h)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		if keys[i].Q != keys[j].Q {
+			return keys[i].Q < keys[j].Q
+		}
+		if keys[i].R != keys[j].R {
+			return keys[i].R < keys[j].R
+		}
+		return keys[i].S < keys[j].S
+	})
+	hexes := make([]*encounterv2pb.Hex, 0, len(keys))
+	for _, h := range keys {
 		hexes = append(hexes, &encounterv2pb.Hex{Position: HexToPosition(h)})
 	}
 	return &encounterv2pb.EncounterEvent{

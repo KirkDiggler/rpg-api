@@ -2,6 +2,7 @@ package encounter_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -216,10 +217,16 @@ func newCapturingStream(ctx context.Context) *capturingStream {
 // Context returns the stream's context; satisfies grpc.ServerStream.
 func (s *capturingStream) Context() context.Context { return s.ctx }
 
-// Send records the event for later assertion.
+// Send records the event for later assertion. Non-blocking: if the
+// 16-slot buffer fills (more events than the test drains), Send returns
+// an error rather than deadlocking the streaming goroutine.
 func (s *capturingStream) Send(evt *encounterv2pb.EncounterEvent) error {
-	s.sent <- evt
-	return nil
+	select {
+	case s.sent <- evt:
+		return nil
+	default:
+		return fmt.Errorf("capturingStream buffer full (16 events undrained); test should drain or grow buffer")
+	}
 }
 
 // WaitForSend blocks until an event arrives or timeout expires.
