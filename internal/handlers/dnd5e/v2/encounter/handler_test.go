@@ -128,6 +128,22 @@ func (s *HandlerSuite) TestMoveEntity_EntityIDMismatch_PermissionDenied() {
 	s.Require().Equal(codes.PermissionDenied, st.Code())
 }
 
+func (s *HandlerSuite) TestMoveEntity_EmptyPath_InvalidArgument() {
+	enc := tkenc.New("enc-3", s.broker)
+	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
+		PlayerID: "player-A", EntityID: "char-A", Position: core.Hex{Q: 0, R: 0, S: 0},
+	}))
+	s.Require().NoError(s.repo.Save(s.ctx, enc.ToData()))
+
+	_, err := s.handler.MoveEntity(s.ctx, &encounterv2pb.MoveEntityRequest{
+		EncounterId: "enc-3", EntityId: "char-A",
+		ProposedPath: nil, // empty path is the one true argument-shaped error
+	})
+	s.Require().Error(err)
+	st, _ := status.FromError(err)
+	s.Require().Equal(codes.InvalidArgument, st.Code())
+}
+
 func (s *HandlerSuite) TestStreamEncounter_SendsSnapshotFirst() {
 	enc := tkenc.New("enc-1", s.broker)
 	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{

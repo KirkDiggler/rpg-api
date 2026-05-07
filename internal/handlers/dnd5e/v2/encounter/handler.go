@@ -83,6 +83,10 @@ func (h *Handler) MoveEntity(ctx context.Context, req *encounterv2pb.MoveEntityR
 		return nil, status.Error(codes.PermissionDenied, "entity_id does not match player's controlled entity")
 	}
 
+	if len(req.GetProposedPath()) == 0 {
+		return nil, status.Error(codes.InvalidArgument, "proposed_path is required")
+	}
+
 	enc, err := encounter.LoadFromData(data, h.broker)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "load from data: %v", err)
@@ -94,9 +98,11 @@ func (h *Handler) MoveEntity(ctx context.Context, req *encounterv2pb.MoveEntityR
 	}
 
 	if err := enc.Move(core.PlayerID(playerID), path); err != nil {
-		// Toolkit-level errors map to InvalidArgument — they're the toolkit
-		// telling us the move violated rules (empty path, player not found, etc.).
-		return nil, status.Errorf(codes.InvalidArgument, "move: %v", err)
+		// Toolkit Move errors are state-dependent (turn order, blocked path,
+		// out-of-range, entity not in encounter, etc.) — these are
+		// FailedPrecondition per gRPC convention. Empty-path is the only
+		// genuinely argument-shaped error and is filtered before we reach Move.
+		return nil, status.Errorf(codes.FailedPrecondition, "move: %v", err)
 	}
 
 	if err := h.encRepo.Save(ctx, enc.ToData()); err != nil {
