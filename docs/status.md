@@ -148,6 +148,18 @@ today.
 theme to `ThemeDebugWalls` with a TODO to revert. This means all crypt dungeons
 render with debug walls in production.
 
+## v1alpha2 encounter service (Wave 2.5 slice 1 — PR forthcoming)
+
+Walking skeleton wired through the rpg-toolkit `encounter` SDK. `MoveEntity` and
+`StreamEncounter` implemented; all other RPCs return `codes.Unimplemented`. Per-viewer
+event projection works end-to-end (verified by `internal/integration/encounter_v2_test.go`).
+v1alpha1 movement path remains the primary path for the web; deletion deferred until
+web migrates (slice 2: rpg-dnd5e-web#387).
+
+Known gaps: rpg-toolkit#629 (LoS-loss events when entity moves out of viewer range — slice
+1 wave goal uses mutual LoS so this doesn't bite). `SnapshotDelivered.encounter` proto
+field is empty for slice 1; toolkit `Snapshot` shape will be mapped when slice 2 needs it.
+
 ## Per-subsystem confidence
 
 See [quality.md](quality.md) for grade and rationale.
