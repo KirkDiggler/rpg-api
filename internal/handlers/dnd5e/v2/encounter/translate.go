@@ -11,6 +11,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	encounterv2pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/encounter"
+	"github.com/KirkDiggler/rpg-toolkit/encounter"
 	"github.com/KirkDiggler/rpg-toolkit/encounter/core"
 	"github.com/KirkDiggler/rpg-toolkit/encounter/events"
 )
@@ -94,4 +95,26 @@ func translateHexRevealedEvent(e *events.HexRevealedEvent, viewer core.PlayerID,
 			},
 		},
 	}, nil
+}
+
+// translateSnapshot wraps a toolkit Snapshot in a synthetic SnapshotDelivered
+// proto event. Sequence 0 marks it as pre-history; delta events start at 1.
+//
+// NOTE (slice 1): The toolkit Snapshot (PlayerID, Position, RevealedHexes) does
+// not map directly to the v1alpha2 SnapshotDelivered.Encounter field, which
+// expects a full *encounter.Encounter proto shape not yet defined. The Encounter
+// field is intentionally left nil here. Slice 2 (web rendering) will exercise
+// snapshot content and surface the missing toolkit → proto bridge as a separate
+// issue.
+func translateSnapshot(snap encounter.Snapshot, now time.Time) *encounterv2pb.EncounterEvent {
+	_ = snap // snap fields unused in slice 1; retained for future translation
+	return &encounterv2pb.EncounterEvent{
+		Sequence:  0,
+		Timestamp: timestamppb.New(now),
+		Event: &encounterv2pb.EncounterEvent_SnapshotDelivered{
+			SnapshotDelivered: &encounterv2pb.SnapshotDelivered{
+				// Encounter field left nil — see NOTE above.
+			},
+		},
+	}
 }

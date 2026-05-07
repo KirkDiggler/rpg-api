@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/suite"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -19,7 +20,9 @@ import (
 
 type HandlerSuite struct {
 	suite.Suite
-	ctx     context.Context
+	ctx    context.Context
+	cancel context.CancelFunc // canceled in TearDownTest to stop streaming goroutines
+
 	broker  *tkenc.Broker
 	repo    encountersv2.Repository
 	handler *v2encounter.Handler
@@ -28,14 +31,26 @@ type HandlerSuite struct {
 
 func (s *HandlerSuite) SetupTest() {
 	s.fixed = time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	s.ctx = auth.WithPlayerID(context.Background(), "player-A")
+	base, cancel := context.WithCancel(context.Background())
+	s.cancel = cancel
+	s.ctx = auth.WithPlayerID(base, "player-A")
 	s.broker = tkenc.NewBroker(tkenc.NewInMemoryTransport())
 	s.repo = encountersv2.NewInMemory()
+	// Capture s.fixed by value (not pointer) to avoid a data race: the streaming
+	// goroutines spawned in tests call h.now() concurrently with the next test's
+	// SetupTest overwriting s.fixed.
+	fixedNow := s.fixed
 	h, err := v2encounter.New(&v2encounter.HandlerConfig{
-		Broker: s.broker, Repo: s.repo, Now: func() time.Time { return s.fixed },
+		Broker: s.broker, Repo: s.repo, Now: func() time.Time { return fixedNow },
 	})
 	s.Require().NoError(err)
 	s.handler = h
+}
+
+// TearDownTest cancels the test context, which causes any streaming goroutines
+// started by the test to exit their select loop and return.
+func (s *HandlerSuite) TearDownTest() {
+	s.cancel()
 }
 
 func (s *HandlerSuite) TestCreateEncounter_ReturnsUnimplemented() {
@@ -113,6 +128,88 @@ func (s *HandlerSuite) TestMoveEntity_EntityIDMismatch_PermissionDenied() {
 	s.Require().Equal(codes.PermissionDenied, st.Code())
 }
 
+func (s *HandlerSuite) TestStreamEncounter_SendsSnapshotFirst() {
+	enc := tkenc.New("enc-1", s.broker)
+	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
+		PlayerID: "player-A", EntityID: "char-A", Position: core.Hex{Q: 0, R: 0, S: 0},
+	}))
+	s.Require().NoError(s.repo.Save(s.ctx, enc.ToData()))
+
+	stream := newCapturingStream(s.ctx)
+	go func() {
+		_ = s.handler.StreamEncounter(&encounterv2pb.StreamEncounterRequest{
+			EncounterId: "enc-1",
+		}, stream)
+	}()
+
+	first := stream.WaitForSend(s.T(), 2*time.Second)
+	s.Require().NotNil(first.GetSnapshotDelivered(), "first event should be SnapshotDelivered")
+}
+
+func (s *HandlerSuite) TestStreamEncounter_ForwardsBrokerEvents() {
+	enc := tkenc.New("enc-1", s.broker)
+	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
+		PlayerID: "player-A", EntityID: "char-A", Position: core.Hex{Q: 0, R: 0, S: 0},
+	}))
+	s.Require().NoError(s.repo.Save(s.ctx, enc.ToData()))
+
+	stream := newCapturingStream(s.ctx)
+	go func() {
+		_ = s.handler.StreamEncounter(&encounterv2pb.StreamEncounterRequest{
+			EncounterId: "enc-1",
+		}, stream)
+	}()
+
+	// Drain the snapshot.
+	_ = stream.WaitForSend(s.T(), 2*time.Second)
+
+	// Move via the handler — broker emits MoveEvent.
+	_, err := s.handler.MoveEntity(s.ctx, &encounterv2pb.MoveEntityRequest{
+		EncounterId:  "enc-1",
+		EntityId:     "char-A",
+		ProposedPath: []*encounterv2pb.Position{{X: 0, Y: 0, Z: 0}, {X: 1, Y: -1, Z: 0}},
+	})
+	s.Require().NoError(err)
+
+	// Stream should receive an EntityMoved.
+	got := stream.WaitForSend(s.T(), 2*time.Second)
+	s.Require().NotNil(got.GetEntityMoved())
+}
+
 func TestHandlerSuite(t *testing.T) {
 	suite.Run(t, new(HandlerSuite))
+}
+
+// capturingStream satisfies grpc.ServerStreamingServer[encounterv2pb.EncounterEvent]
+// (i.e., encounterv2pb.EncounterService_StreamEncounterServer) for unit tests.
+// It records Send calls in a buffered channel so tests can assert on them.
+type capturingStream struct {
+	grpc.ServerStream // embed for unused methods (SetHeader, SendHeader, SetTrailer, etc.)
+	ctx               context.Context
+	sent              chan *encounterv2pb.EncounterEvent
+}
+
+func newCapturingStream(ctx context.Context) *capturingStream {
+	return &capturingStream{ctx: ctx, sent: make(chan *encounterv2pb.EncounterEvent, 16)}
+}
+
+// Context returns the stream's context; satisfies grpc.ServerStream.
+func (s *capturingStream) Context() context.Context { return s.ctx }
+
+// Send records the event for later assertion.
+func (s *capturingStream) Send(evt *encounterv2pb.EncounterEvent) error {
+	s.sent <- evt
+	return nil
+}
+
+// WaitForSend blocks until an event arrives or timeout expires.
+func (s *capturingStream) WaitForSend(t *testing.T, timeout time.Duration) *encounterv2pb.EncounterEvent {
+	t.Helper()
+	select {
+	case evt := <-s.sent:
+		return evt
+	case <-time.After(timeout):
+		t.Fatalf("no event received within %s", timeout)
+		return nil
+	}
 }

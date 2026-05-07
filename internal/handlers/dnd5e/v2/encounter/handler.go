@@ -105,3 +105,74 @@ func (h *Handler) MoveEntity(ctx context.Context, req *encounterv2pb.MoveEntityR
 
 	return &encounterv2pb.MoveEntityResponse{}, nil
 }
+
+// StreamEncounter opens a server-streaming session for the authenticated player.
+// It emits an initial SnapshotDelivered event immediately, then forwards all
+// subsequent broker events for the encounter until the client disconnects.
+//
+// Subscribe-before-snapshot ordering is intentional: subscribing first ensures
+// no events are missed while the snapshot is being built. The broker's buffered
+// channel holds any in-flight events until the forward loop starts.
+func (h *Handler) StreamEncounter(req *encounterv2pb.StreamEncounterRequest, stream encounterv2pb.EncounterService_StreamEncounterServer) error {
+	ctx := stream.Context()
+	playerID := auth.GetPlayerID(ctx)
+	if playerID == "" {
+		return status.Error(codes.Unauthenticated, "no player id in context")
+	}
+	encID := core.EncounterID(req.GetEncounterId())
+	if encID == "" {
+		return status.Error(codes.InvalidArgument, "encounter_id is required")
+	}
+
+	// Subscribe FIRST so the broker holds events in its buffered channel while
+	// we build the snapshot. Any event firing between Subscribe and the forward
+	// loop is captured and delivered after the snapshot send.
+	sub, err := h.broker.Subscribe(encID, core.PlayerID(playerID))
+	if err != nil {
+		return status.Errorf(codes.Internal, "subscribe: %v", err)
+	}
+	defer func() { _ = sub.Close() }()
+
+	// Snapshot the encounter at-time-of-connect.
+	data, err := h.encRepo.Get(ctx, string(encID))
+	if err != nil {
+		if errors.Is(err, encountersv2.ErrNotFound) {
+			return status.Error(codes.NotFound, "encounter not found")
+		}
+		return status.Errorf(codes.Internal, "load encounter: %v", err)
+	}
+	enc, err := encounter.LoadFromData(data, h.broker)
+	if err != nil {
+		return status.Errorf(codes.Internal, "load from data: %v", err)
+	}
+	snap := enc.SnapshotFor(core.PlayerID(playerID))
+	snapEvent := translateSnapshot(snap, h.now())
+	if err := stream.Send(snapEvent); err != nil {
+		return err
+	}
+
+	// Forward broker events until the client disconnects or the subscription closes.
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case evt, ok := <-sub.Events():
+			if !ok {
+				return nil
+			}
+			out, translateErr := TranslateEvent(evt, core.PlayerID(playerID), h.now())
+			switch {
+			case errors.Is(translateErr, ErrViewerSawNothing):
+				continue
+			case errors.Is(translateErr, ErrUnknownEventType):
+				// TODO(metric): increment translator-gap counter
+				continue
+			case translateErr != nil:
+				return status.Errorf(codes.Internal, "translate: %v", translateErr)
+			}
+			if err := stream.Send(out); err != nil {
+				return err
+			}
+		}
+	}
+}
