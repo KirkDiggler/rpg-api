@@ -19,11 +19,13 @@ import (
 
 	apiv1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/api/v1alpha1"
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
+	encounterv2pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/encounter"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
 	dungeontoolkit "github.com/KirkDiggler/rpg-api/internal/components/dungeon/toolkit"
 	apiv1alpha1handler "github.com/KirkDiggler/rpg-api/internal/handlers/api/v1alpha1"
 	character2 "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v1alpha1/character"
 	encounterhandler "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v1alpha1/encounter"
+	encounterhandlerv2 "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v2/encounter"
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
 	diceorc "github.com/KirkDiggler/rpg-api/internal/orchestrators/dice"
 	encounterorc "github.com/KirkDiggler/rpg-api/internal/orchestrators/encounter"
@@ -38,6 +40,8 @@ import (
 	dungeonsrepo "github.com/KirkDiggler/rpg-api/internal/repositories/dungeons"
 	encounterlogrepo "github.com/KirkDiggler/rpg-api/internal/repositories/encounterlog"
 	encountersrepo "github.com/KirkDiggler/rpg-api/internal/repositories/encounters"
+	encountersv2 "github.com/KirkDiggler/rpg-api/internal/repositories/encounters/v2"
+	tkenc "github.com/KirkDiggler/rpg-toolkit/encounter"
 )
 
 const bufSize = 1024 * 1024
@@ -53,13 +57,16 @@ type TestServer struct {
 	redisClient    redis.Client
 
 	// Proto-generated clients for tests to use
-	CharacterClient dnd5ev1alpha1.CharacterServiceClient
-	EncounterClient dnd5ev1alpha1.EncounterServiceClient
-	DiceClient      apiv1alpha1.DiceServiceClient
+	CharacterClient   dnd5ev1alpha1.CharacterServiceClient
+	EncounterClient   dnd5ev1alpha1.EncounterServiceClient
+	DiceClient        apiv1alpha1.DiceServiceClient
+	EncounterClientV2 encounterv2pb.EncounterServiceClient
 
 	// Exposed for test setup (seeding data, etc.)
 	EncounterPublisher encounterpub.Publisher
 	CharacterRepo      characterrepo.Repository
+	BrokerV2           *tkenc.Broker
+	EncRepoV2          encountersv2.Repository
 }
 
 // Config allows customization of the test server.
@@ -147,6 +154,7 @@ func New(ctx context.Context, cfg *Config) (*TestServer, error) {
 	ts.CharacterClient = dnd5ev1alpha1.NewCharacterServiceClient(conn)
 	ts.EncounterClient = dnd5ev1alpha1.NewEncounterServiceClient(conn)
 	ts.DiceClient = apiv1alpha1.NewDiceServiceClient(conn)
+	ts.EncounterClientV2 = encounterv2pb.NewEncounterServiceClient(conn)
 
 	return ts, nil
 }
@@ -273,6 +281,20 @@ func (ts *TestServer) wireServices(cfg *Config) error {
 	dnd5ev1alpha1.RegisterEncounterServiceServer(ts.grpcServer, encounterHandler)
 	apiv1alpha1.RegisterDiceServiceServer(ts.grpcServer, diceHandler)
 
+	// v1alpha2 encounter wiring — broker and repo are stored on ts so tests can
+	// seed data via ts.EncRepoV2.Save(...) and the registered handler sees the
+	// same state (single shared instance).
+	ts.BrokerV2 = tkenc.NewBroker(tkenc.NewInMemoryTransport())
+	ts.EncRepoV2 = encountersv2.NewInMemory()
+	encV2Handler, err := encounterhandlerv2.New(&encounterhandlerv2.HandlerConfig{
+		Broker: ts.BrokerV2,
+		Repo:   ts.EncRepoV2,
+	})
+	if err != nil {
+		return fmt.Errorf("v2 encounter handler: %w", err)
+	}
+	encounterv2pb.RegisterEncounterServiceServer(ts.grpcServer, encV2Handler)
+
 	// Create bufconn listener
 	ts.listener = bufconn.Listen(bufSize)
 
@@ -290,6 +312,12 @@ func (ts *TestServer) Close() {
 	}
 	if ts.grpcServer != nil {
 		ts.grpcServer.Stop()
+	}
+	if ts.BrokerV2 != nil {
+		// Releases the broker's per-encounter listen goroutines and the
+		// underlying transport. Without this, each integration test leaks
+		// one listener per Subscribe call.
+		_ = ts.BrokerV2.Close()
 	}
 	if ts.redisClient != nil {
 		ts.redisClient.Close()

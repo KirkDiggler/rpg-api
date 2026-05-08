@@ -287,14 +287,14 @@ type TurnEndedEvent struct {
 
 // MonsterTurnCompletedEvent is emitted when a monster completes its turn
 type MonsterTurnCompletedEvent struct {
-	MonsterID         string                    `json:"monster_id"`
-	MonsterName       string                    `json:"monster_name"`
-	Actions           []MonsterExecutedAction   `json:"actions"`
+	MonsterID         string                     `json:"monster_id"`
+	MonsterName       string                     `json:"monster_name"`
+	Actions           []MonsterExecutedAction    `json:"actions"`
 	Movement          []dungeon.AbsolutePosition `json:"movement"`
-	Room              *spatial.RoomData         `json:"room,omitempty"`               // Updated room with entity positions
-	RoomOrigin        *dungeon.AbsolutePosition `json:"room_origin,omitempty"`        // Absolute position of the room in dungeon-space
-	Walls             []dungeon.WallSegment     `json:"walls,omitempty"`              // Walls in the current room
-	UpdatedCharacters []*character.Data         `json:"updated_characters,omitempty"` // Characters that took damage
+	Room              *spatial.RoomData          `json:"room,omitempty"`               // Updated room with entity positions
+	RoomOrigin        *dungeon.AbsolutePosition  `json:"room_origin,omitempty"`        // Absolute position of the room in dungeon-space
+	Walls             []dungeon.WallSegment      `json:"walls,omitempty"`              // Walls in the current room
+	UpdatedCharacters []*character.Data          `json:"updated_characters,omitempty"` // Characters that took damage
 
 	// New unified entity state (delta). When set, handler uses these instead of legacy fields.
 	UpdatedEntities  []*dnd5ev1alpha1.EntityState `json:"-"` // Entities whose state changed (monster + damaged characters)
