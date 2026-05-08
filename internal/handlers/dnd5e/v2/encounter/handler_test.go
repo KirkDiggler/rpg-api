@@ -54,12 +54,69 @@ func (s *HandlerSuite) TearDownTest() {
 	s.cancel()
 }
 
-func (s *HandlerSuite) TestCreateEncounter_ReturnsUnimplemented() {
-	_, err := s.handler.CreateEncounter(s.ctx, &encounterv2pb.CreateEncounterRequest{})
+func (s *HandlerSuite) TestCreateEncounter_NoAuth_Unauthenticated() {
+	ctx := context.Background() // no auth
+	_, err := s.handler.CreateEncounter(ctx, &encounterv2pb.CreateEncounterRequest{
+		CampaignId: "campaign-1",
+	})
 	s.Require().Error(err)
-	st, ok := status.FromError(err)
-	s.Require().True(ok)
-	s.Require().Equal(codes.Unimplemented, st.Code())
+	st, _ := status.FromError(err)
+	s.Require().Equal(codes.Unauthenticated, st.Code())
+}
+
+func (s *HandlerSuite) TestCreateEncounter_EmptyCampaignID_InvalidArgument() {
+	_, err := s.handler.CreateEncounter(s.ctx, &encounterv2pb.CreateEncounterRequest{
+		CampaignId: "",
+	})
+	s.Require().Error(err)
+	st, _ := status.FromError(err)
+	s.Require().Equal(codes.InvalidArgument, st.Code())
+}
+
+func (s *HandlerSuite) TestCreateEncounter_TurnBasedMode_InvalidArgument() {
+	_, err := s.handler.CreateEncounter(s.ctx, &encounterv2pb.CreateEncounterRequest{
+		CampaignId:  "campaign-1",
+		InitialMode: encounterv2pb.EncounterMode_ENCOUNTER_MODE_TURN_BASED,
+	})
+	s.Require().Error(err)
+	st, _ := status.FromError(err)
+	s.Require().Equal(codes.InvalidArgument, st.Code())
+}
+
+func (s *HandlerSuite) TestCreateEncounter_UnspecifiedMode_TreatedAsFreeRoam() {
+	resp, err := s.handler.CreateEncounter(s.ctx, &encounterv2pb.CreateEncounterRequest{
+		CampaignId: "campaign-1",
+		// InitialMode omitted -> ENCOUNTER_MODE_UNSPECIFIED
+	})
+	s.Require().NoError(err)
+	s.Require().NotNil(resp.GetEncounter())
+	s.Require().NotEmpty(resp.GetEncounter().GetId())
+}
+
+func (s *HandlerSuite) TestCreateEncounter_Success_ReturnsEncounterWithID() {
+	resp, err := s.handler.CreateEncounter(s.ctx, &encounterv2pb.CreateEncounterRequest{
+		CampaignId:  "campaign-1",
+		InitialMode: encounterv2pb.EncounterMode_ENCOUNTER_MODE_FREE_ROAM,
+	})
+	s.Require().NoError(err)
+	s.Require().NotNil(resp)
+	s.Require().NotNil(resp.GetEncounter())
+	s.Require().NotEmpty(resp.GetEncounter().GetId())
+}
+
+func (s *HandlerSuite) TestCreateEncounter_Success_PersistsToRepo() {
+	resp, err := s.handler.CreateEncounter(s.ctx, &encounterv2pb.CreateEncounterRequest{
+		CampaignId:  "campaign-1",
+		InitialMode: encounterv2pb.EncounterMode_ENCOUNTER_MODE_FREE_ROAM,
+	})
+	s.Require().NoError(err)
+	s.Require().NotNil(resp.GetEncounter())
+
+	encID := resp.GetEncounter().GetId()
+	data, err := s.repo.Get(s.ctx, encID)
+	s.Require().NoError(err)
+	s.Require().NotNil(data)
+	s.Require().Equal(encID, string(data.ID))
 }
 
 func (s *HandlerSuite) TestMoveEntity_HappyPath_LoadsCallsMoveSaves() {

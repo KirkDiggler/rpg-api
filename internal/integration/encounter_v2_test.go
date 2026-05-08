@@ -50,6 +50,21 @@ func (s *EncounterV2IntegrationSuite) authCtx(playerID string) context.Context {
 	return metadata.AppendToOutgoingContext(s.ctx, "authorization", "Dev "+playerID)
 }
 
+func (s *EncounterV2IntegrationSuite) TestCreateEncounter_Basic() {
+	ctxA := s.authCtx("alice")
+	resp, err := s.srv.EncounterClientV2.CreateEncounter(ctxA, &encounterv2pb.CreateEncounterRequest{
+		CampaignId:  "campaign-1",
+		InitialMode: encounterv2pb.EncounterMode_ENCOUNTER_MODE_FREE_ROAM,
+	})
+	s.Require().NoError(err)
+	s.Require().NotNil(resp.GetEncounter())
+	s.Require().NotEmpty(resp.GetEncounter().GetId())
+
+	data, err := s.srv.EncRepoV2.Get(s.ctx, resp.GetEncounter().GetId())
+	s.Require().NoError(err)
+	s.Require().NotNil(data)
+}
+
 func (s *EncounterV2IntegrationSuite) TestMovementSliceTwoPlayers() {
 	// Seed: encounter with players A and B in mutual LoS.
 	// SightRange must be > 0; default 0 means neither player sees anything.
