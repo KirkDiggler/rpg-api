@@ -609,10 +609,14 @@ func (s *EncounterV2IntegrationSuite) TestInteract_OpenDoor_TwoPlayers() {
 	s.Require().Equal("door-east", bDoor.GetDoorEntityId())
 	s.Require().Empty(bDoor.GetRevealedHexes(), "revealed_hexes belongs on the parallel GeometryRevealed event, not DoorOpened")
 
-	// Confirm the door is persisted as open after Interact.
+	// Confirm the door is persisted as open after Interact. Use the ok-check
+	// pattern so a missing entry is distinguishable from a closed door (and
+	// so this won't panic if the map value type ever becomes a pointer).
 	persisted, err := s.srv.EncRepoV2.Get(s.ctx, "enc-door-1")
 	s.Require().NoError(err)
-	s.Require().True(persisted.Doors[core.EntityID("door-east")].Open, "door must be persisted Open after Interact")
+	door, ok := persisted.Doors[core.EntityID("door-east")]
+	s.Require().True(ok, "door-east should be in persisted.Doors")
+	s.Require().True(door.Open, "door must be persisted Open after Interact")
 }
 
 // TestInteract_DoorAlreadyOpen_FailedPrecondition mirrors the unit test at
