@@ -498,24 +498,30 @@ func (s *EncounterV2IntegrationSuite) TestStreamEncounter_LiveEventsDoNotDuplica
 	})
 	s.Require().NoError(err)
 
-	// Use recvUntilEntityMoved to find the live EntityMoved for bob. It drains and
-	// discards any non-EntityMoved events (e.g. HexRevealed from the move) so the
-	// test is tolerant of the broker's exact fanout behavior.
-	liveMoved := s.recvUntilEntityMoved(streamA, 500*time.Millisecond)
-	s.Require().NotNil(liveMoved, "live EntityMoved for bob must arrive after the move")
-	s.Require().Equal("char-bob", liveMoved.GetEntityId())
+	// Collect post-move events from alice's stream. The move triggers at least one
+	// EntityMoved; the broker may also emit HexRevealedEvent for newly-visible hexes.
+	// Collect a bounded window and assert on what actually arrived.
+	postMoveEvents := s.collectStreamEvents(streamA, 5, 500*time.Millisecond)
 
-	// The no-duplication property: recvUntilEntityMoved discards non-EntityMoved events,
-	// but we also need to verify no EntityAppeared for bob appeared in the drain window.
-	// Since we drained exactly 3 replay events and then used recvUntilEntityMoved (which
-	// discards but doesn't count discarded events), we assert on the replay count:
-	// replay produced exactly 1 EntityAppeared for bob (verified above), and the live
-	// move of bob (who was already in LoS) does not trigger a second EntityAppeared.
-	// This property is enforced by the toolkit's ProjectVisibilityTransition — it only
-	// emits EntityAppeared on LoS-crossings (entering from outside), not on moves
-	// within already-visible range.
-	s.Require().Equal(1, replayBobAppearedCount,
-		"bob's EntityAppeared came only from replay, not from the live move (no duplication)")
+	var sawLiveMoved bool
+	extraBobAppeared := 0
+	for _, ev := range postMoveEvents {
+		if m := ev.GetEntityMoved(); m != nil && m.GetEntityId() == "char-bob" {
+			sawLiveMoved = true
+		}
+		if a := ev.GetEntityAppeared(); a != nil && a.GetEntity().GetId() == "char-bob" {
+			extraBobAppeared++
+		}
+	}
+
+	// The live EntityMoved must arrive (proves the live stream is working).
+	s.Require().True(sawLiveMoved, "live EntityMoved for bob must arrive after the move")
+
+	// The no-duplication property: bob was already visible to alice from the replay,
+	// so the toolkit's ProjectVisibilityTransition (LoS-crossing semantics) must NOT
+	// fire another EntityAppeared for bob from a move that stays within LoS.
+	s.Require().Zero(extraBobAppeared,
+		"live stream must not re-emit EntityAppeared for bob who was already visible from replay")
 }
 
 func TestEncounterV2IntegrationSuite(t *testing.T) {
