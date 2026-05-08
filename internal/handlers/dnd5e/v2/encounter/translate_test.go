@@ -176,12 +176,66 @@ func (s *TranslateSuite) TestTranslateEvent_EntityDisappearedEvent_ViewerNotInPe
 }
 
 func (s *TranslateSuite) TestTranslateEvent_UnknownEventTypeReturnsErrUnknownEventType() {
-	// DoorOpenedEvent implements events.EncounterEvent but TranslateEvent has no
-	// mapping for it — exercises the default branch (ErrUnknownEventType).
-	evt := events.NewDoorOpenedEvent("enc-1", uint64(3), "door-1", "char-A", nil)
-	_, err := v2encounter.TranslateEvent(evt, "player-A", s.now)
+	// The events.EncounterEvent interface is sealed (unexported marker method);
+	// external packages cannot implement it, so we cannot synthesize a "novel"
+	// concrete type for the default branch. Wave 2.7 mapped DoorOpenedEvent
+	// (the previous unknown-type fixture), so all current concretes route to
+	// real translators. Passing a nil events.EncounterEvent exercises the
+	// default branch — a future toolkit event lacking a translator case will
+	// reproduce this same shape until its case is added.
+	_, err := v2encounter.TranslateEvent(nil, "player-A", s.now)
 	s.Require().Error(err)
 	s.Require().True(errors.Is(err, v2encounter.ErrUnknownEventType))
+}
+
+func (s *TranslateSuite) TestTranslateEvent_DoorOpenedEvent_HappyPath() {
+	evt := events.NewDoorOpenedEvent(
+		"enc-1", uint64(11), "door-east", "char-alice",
+		map[core.PlayerID]events.DoorOpenedPlayerSlice{
+			"player-A": {Visible: true},
+		},
+	)
+	out, err := v2encounter.TranslateEvent(evt, "player-A", s.now)
+	s.Require().NoError(err)
+	s.Require().NotNil(out)
+
+	door := out.GetDoorOpened()
+	s.Require().NotNil(door)
+	s.Require().Equal("door-east", door.GetDoorEntityId())
+	// Cause/effect split: DoorOpened envelope carries only door identity;
+	// HexRevealedEvent translation (GeometryRevealed) carries the geometry
+	// delta as a parallel event. revealed_hexes / revealed_walls /
+	// removed_walls must be empty here.
+	s.Require().Empty(door.GetRevealedHexes(), "revealed_hexes belongs on the parallel GeometryRevealed event")
+	s.Require().Empty(door.GetRevealedWalls(), "revealed_walls deferred — not modeled in v0.2.0")
+	s.Require().Empty(door.GetRemovedWalls(), "removed_walls deferred — not modeled in v0.2.0")
+	s.Require().Equal(int64(11), out.Sequence)
+}
+
+func (s *TranslateSuite) TestTranslateEvent_DoorOpenedEvent_NotVisible_ReturnsErrViewerSawNothing() {
+	evt := events.NewDoorOpenedEvent(
+		"enc-1", uint64(11), "door-east", "char-alice",
+		map[core.PlayerID]events.DoorOpenedPlayerSlice{
+			// Defensive: even if the toolkit changed to populate Visible:false
+			// for non-visible viewers, the translator must skip them.
+			"player-A": {Visible: false},
+		},
+	)
+	_, err := v2encounter.TranslateEvent(evt, "player-A", s.now)
+	s.Require().Error(err)
+	s.Require().True(errors.Is(err, v2encounter.ErrViewerSawNothing))
+}
+
+func (s *TranslateSuite) TestTranslateEvent_DoorOpenedEvent_ViewerNotInPerPlayer_ReturnsErrViewerSawNothing() {
+	evt := events.NewDoorOpenedEvent(
+		"enc-1", uint64(11), "door-east", "char-alice",
+		map[core.PlayerID]events.DoorOpenedPlayerSlice{
+			"player-A": {Visible: true},
+		},
+	)
+	_, err := v2encounter.TranslateEvent(evt, "player-X", s.now)
+	s.Require().Error(err)
+	s.Require().True(errors.Is(err, v2encounter.ErrViewerSawNothing))
 }
 
 // TestTranslateSnapshot_EmptyEncounter verifies that TranslateSnapshot with a
