@@ -12,7 +12,6 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	encounterv2pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/encounter"
-	"github.com/KirkDiggler/rpg-toolkit/encounter"
 	"github.com/KirkDiggler/rpg-toolkit/encounter/core"
 	"github.com/KirkDiggler/rpg-toolkit/encounter/events"
 )
@@ -190,51 +189,37 @@ func TranslateSnapshot(pbEncounter *encounterv2pb.Encounter, now time.Time) *enc
 // client sees the full current state before any live broker event arrives.
 //
 // Entity replay: one EntityAppeared per entity in pbEncounter.Space.Entities.
-// Geometry replay: one GeometryRevealed carrying all of snap.RevealedHexes,
-// or nothing if RevealedHexes is empty.
+// Geometry replay: one GeometryRevealed carrying pbEncounter.Space.Hexes, or
+// nothing if Hexes is empty. ProjectFor already produced both in deterministic
+// order, so this function is a pure translation — no sorting or projection.
 func BuildReplayEvents(
 	pbEncounter *encounterv2pb.Encounter,
-	snap encounter.Snapshot,
 	now time.Time,
 ) []*encounterv2pb.EncounterEvent {
 	var out []*encounterv2pb.EncounterEvent
 
+	space := pbEncounter.GetSpace()
+	if space == nil {
+		return out
+	}
+
 	// EntityAppeared for each entity visible to the viewer (including the viewer's
 	// own entity so the client can render its initial position).
-	if pbEncounter.GetSpace() != nil {
-		for _, entity := range pbEncounter.GetSpace().GetEntities() {
-			out = append(out, &encounterv2pb.EncounterEvent{
-				Sequence:  0,
-				Timestamp: timestamppb.New(now),
-				Event: &encounterv2pb.EncounterEvent_EntityAppeared{
-					EntityAppeared: &encounterv2pb.EntityAppeared{
-						Entity: entity,
-						Reason: "initial state",
-					},
+	for _, entity := range space.GetEntities() {
+		out = append(out, &encounterv2pb.EncounterEvent{
+			Sequence:  0,
+			Timestamp: timestamppb.New(now),
+			Event: &encounterv2pb.EncounterEvent_EntityAppeared{
+				EntityAppeared: &encounterv2pb.EntityAppeared{
+					Entity: entity,
+					Reason: "initial state",
 				},
-			})
-		}
+			},
+		})
 	}
 
 	// GeometryRevealed for the viewer's revealed hex set.
-	if len(snap.RevealedHexes) > 0 {
-		keys := make([]core.Hex, 0, len(snap.RevealedHexes))
-		for h := range snap.RevealedHexes {
-			keys = append(keys, h)
-		}
-		sort.Slice(keys, func(i, j int) bool {
-			if keys[i].Q != keys[j].Q {
-				return keys[i].Q < keys[j].Q
-			}
-			if keys[i].R != keys[j].R {
-				return keys[i].R < keys[j].R
-			}
-			return keys[i].S < keys[j].S
-		})
-		hexes := make([]*encounterv2pb.Hex, 0, len(keys))
-		for _, h := range keys {
-			hexes = append(hexes, &encounterv2pb.Hex{Position: HexToPosition(h)})
-		}
+	if hexes := space.GetHexes(); len(hexes) > 0 {
 		out = append(out, &encounterv2pb.EncounterEvent{
 			Sequence:  0,
 			Timestamp: timestamppb.New(now),

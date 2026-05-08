@@ -10,7 +10,6 @@ import (
 
 	encounterv2pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/encounter"
 	v2encounter "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v2/encounter"
-	tkenc "github.com/KirkDiggler/rpg-toolkit/encounter"
 	"github.com/KirkDiggler/rpg-toolkit/encounter/core"
 	"github.com/KirkDiggler/rpg-toolkit/encounter/events"
 )
@@ -216,17 +215,17 @@ func (s *TranslateSuite) TestTranslateSnapshot_PopulatedEncounter() {
 	s.Require().Equal(int64(0), out.Sequence)
 }
 
-// TestBuildReplayEvents_EmptySnapshot verifies that an empty Snapshot (no entities,
-// no revealed hexes) and a nil pbEncounter produce an empty replay slice.
-func (s *TranslateSuite) TestBuildReplayEvents_EmptySnapshot() {
-	snap := tkenc.Snapshot{} // zero value: no PlayerID, no Position, nil RevealedHexes
-	out := v2encounter.BuildReplayEvents(nil, snap, s.now)
-	s.Require().Empty(out, "empty snapshot + nil encounter → no replay events")
+// TestBuildReplayEvents_NilEncounter verifies that a nil pbEncounter produces
+// an empty replay slice.
+func (s *TranslateSuite) TestBuildReplayEvents_NilEncounter() {
+	out := v2encounter.BuildReplayEvents(nil, s.now)
+	s.Require().Empty(out, "nil encounter → no replay events")
 }
 
 // TestBuildReplayEvents_EntitiesAndHexes verifies that BuildReplayEvents emits one
-// EntityAppeared per entity in Space.Entities and one GeometryRevealed with all
-// revealed hexes when the snapshot is populated.
+// EntityAppeared per entity in Space.Entities and one GeometryRevealed carrying
+// all of Space.Hexes. ProjectFor is responsible for sorting; BuildReplayEvents
+// is a pure pass-through.
 func (s *TranslateSuite) TestBuildReplayEvents_EntitiesAndHexes() {
 	pbEnc := &encounterv2pb.Encounter{
 		Id: "enc-unit-2",
@@ -235,18 +234,14 @@ func (s *TranslateSuite) TestBuildReplayEvents_EntitiesAndHexes() {
 				{Id: "char-alice", Position: &encounterv2pb.Position{X: 0, Y: 0, Z: 0}},
 				{Id: "char-bob", Position: &encounterv2pb.Position{X: 1, Y: -1, Z: 0}},
 			},
+			Hexes: []*encounterv2pb.Hex{
+				{Position: &encounterv2pb.Position{X: -1, Y: 1, Z: 0}},
+				{Position: &encounterv2pb.Position{X: 0, Y: 0, Z: 0}},
+				{Position: &encounterv2pb.Position{X: 1, Y: -1, Z: 0}},
+			},
 		},
 	}
-	snap := tkenc.Snapshot{
-		PlayerID: "alice",
-		Position: core.Hex{Q: 0, R: 0, S: 0},
-		RevealedHexes: core.HexSet{
-			{Q: 0, R: 0, S: 0}:  {},
-			{Q: 1, R: -1, S: 0}: {},
-			{Q: -1, R: 1, S: 0}: {},
-		},
-	}
-	out := v2encounter.BuildReplayEvents(pbEnc, snap, s.now)
+	out := v2encounter.BuildReplayEvents(pbEnc, s.now)
 
 	// Expect: 2 EntityAppeared + 1 GeometryRevealed = 3 events total.
 	s.Require().Len(out, 3, "2 entities + 1 geometry event")
@@ -266,12 +261,12 @@ func (s *TranslateSuite) TestBuildReplayEvents_EntitiesAndHexes() {
 	s.Require().ElementsMatch([]string{"char-alice", "char-bob"}, appearedIDs,
 		"both entities must appear in replay")
 	s.Require().NotNil(geoRevealed, "GeometryRevealed must be present")
-	s.Require().Len(geoRevealed.GetHexes(), 3, "all 3 revealed hexes must be included")
+	s.Require().Len(geoRevealed.GetHexes(), 3, "all 3 hexes must be included")
 }
 
-// TestBuildReplayEvents_NoRevealedHexes verifies that a snapshot with entities
-// but no revealed hexes emits only EntityAppeared events (no GeometryRevealed).
-func (s *TranslateSuite) TestBuildReplayEvents_NoRevealedHexes() {
+// TestBuildReplayEvents_NoHexes verifies that an encounter with entities but no
+// hexes emits only EntityAppeared events (no GeometryRevealed).
+func (s *TranslateSuite) TestBuildReplayEvents_NoHexes() {
 	pbEnc := &encounterv2pb.Encounter{
 		Space: &encounterv2pb.Space{
 			Entities: []*encounterv2pb.Entity{
@@ -279,50 +274,44 @@ func (s *TranslateSuite) TestBuildReplayEvents_NoRevealedHexes() {
 			},
 		},
 	}
-	snap := tkenc.Snapshot{PlayerID: "alice"} // no RevealedHexes
-	out := v2encounter.BuildReplayEvents(pbEnc, snap, s.now)
+	out := v2encounter.BuildReplayEvents(pbEnc, s.now)
 	s.Require().Len(out, 1, "1 entity → 1 EntityAppeared, no GeometryRevealed")
 	s.Require().NotNil(out[0].GetEntityAppeared())
 }
 
-// TestBuildReplayEvents_NoEntitiesWithHexes verifies that a snapshot with revealed
-// hexes but an empty entity list emits only GeometryRevealed (no EntityAppeared).
+// TestBuildReplayEvents_NoEntitiesWithHexes verifies that an encounter with
+// hexes but no entities emits only GeometryRevealed (no EntityAppeared).
 func (s *TranslateSuite) TestBuildReplayEvents_NoEntitiesWithHexes() {
 	pbEnc := &encounterv2pb.Encounter{
-		Space: &encounterv2pb.Space{},
+		Space: &encounterv2pb.Space{
+			Hexes: []*encounterv2pb.Hex{
+				{Position: &encounterv2pb.Position{X: 0, Y: 0, Z: 0}},
+			},
+		},
 	}
-	snap := tkenc.Snapshot{
-		RevealedHexes: core.HexSet{{Q: 0, R: 0, S: 0}: {}},
-	}
-	out := v2encounter.BuildReplayEvents(pbEnc, snap, s.now)
+	out := v2encounter.BuildReplayEvents(pbEnc, s.now)
 	s.Require().Len(out, 1, "no entities → only GeometryRevealed")
 	s.Require().NotNil(out[0].GetGeometryRevealed())
 }
 
-// TestBuildReplayEvents_HexSortingIsDeterministic verifies that GeometryRevealed
-// hexes are sorted by (Q,R,S) so the wire output is deterministic.
-func (s *TranslateSuite) TestBuildReplayEvents_HexSortingIsDeterministic() {
-	pbEnc := &encounterv2pb.Encounter{Space: &encounterv2pb.Space{}}
-	snap := tkenc.Snapshot{
-		RevealedHexes: core.HexSet{
-			{Q: 2, R: -1, S: -1}: {},
-			{Q: -1, R: 0, S: 1}:  {},
-			{Q: 0, R: 0, S: 0}:   {},
-			{Q: 1, R: -1, S: 0}:  {},
-		},
+// TestBuildReplayEvents_HexesPreserveInputOrder verifies that GeometryRevealed
+// carries pbEncounter.Space.Hexes verbatim. Sort responsibility lives in
+// ProjectFor; BuildReplayEvents must not reorder.
+func (s *TranslateSuite) TestBuildReplayEvents_HexesPreserveInputOrder() {
+	hexes := []*encounterv2pb.Hex{
+		{Position: &encounterv2pb.Position{X: -1, Y: 0, Z: 1}},
+		{Position: &encounterv2pb.Position{X: 0, Y: 0, Z: 0}},
+		{Position: &encounterv2pb.Position{X: 1, Y: -1, Z: 0}},
+		{Position: &encounterv2pb.Position{X: 2, Y: -1, Z: -1}},
 	}
-	out1 := v2encounter.BuildReplayEvents(pbEnc, snap, s.now)
-	out2 := v2encounter.BuildReplayEvents(pbEnc, snap, s.now)
-	s.Require().Len(out1, 1)
-	s.Require().Len(out2, 1)
-	h1 := out1[0].GetGeometryRevealed().GetHexes()
-	h2 := out2[0].GetGeometryRevealed().GetHexes()
-	s.Require().Len(h1, 4)
-	for i := range h1 {
-		s.Require().True(proto.Equal(h1[i], h2[i]), "hex order must be deterministic across calls")
+	pbEnc := &encounterv2pb.Encounter{Space: &encounterv2pb.Space{Hexes: hexes}}
+	out := v2encounter.BuildReplayEvents(pbEnc, s.now)
+	s.Require().Len(out, 1)
+	got := out[0].GetGeometryRevealed().GetHexes()
+	s.Require().Len(got, 4)
+	for i := range got {
+		s.Require().True(proto.Equal(got[i], hexes[i]), "hex %d must match input", i)
 	}
-	// Verify sort order: first hex must be (-1,0,1) because Q=-1 is smallest.
-	s.Require().Equal(int32(-1), h1[0].GetPosition().GetX())
 }
 
 // Compile-time check: ensure the package exports used below are accessible.
