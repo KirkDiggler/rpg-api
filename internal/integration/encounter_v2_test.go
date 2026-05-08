@@ -9,7 +9,9 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/suite"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 
 	encounterv2pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/encounter"
 	"github.com/KirkDiggler/rpg-api/internal/integration/harness"
@@ -240,6 +242,96 @@ func (s *EncounterV2IntegrationSuite) TestMovementSlicePerViewerProjection_Asymm
 	s.Require().Equal(int32(0), bDisappeared.LastKnownPosition.X)
 	s.Require().Equal(int32(-1), bDisappeared.LastKnownPosition.Y)
 	s.Require().Equal(int32(1), bDisappeared.LastKnownPosition.Z)
+}
+
+// TestGetEncounter_ProjectsView verifies that GetEncounter returns the encounter
+// with the caller's own entity visible, and that other players within mutual LoS
+// also appear in the projected snapshot.
+func (s *EncounterV2IntegrationSuite) TestGetEncounter_ProjectsView() {
+	enc := tkenc.New("enc-get-1", s.srv.BrokerV2)
+	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
+		PlayerID: "alice", EntityID: "char-alice",
+		Position:   core.Hex{Q: 0, R: 0, S: 0},
+		SightRange: 10,
+	}))
+	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
+		PlayerID: "bob", EntityID: "char-bob",
+		Position:   core.Hex{Q: 1, R: -1, S: 0},
+		SightRange: 10,
+	}))
+	s.Require().NoError(s.srv.EncRepoV2.Save(s.ctx, enc.ToData()))
+
+	ctxA := s.authCtx("alice")
+	resp, err := s.srv.EncounterClientV2.GetEncounter(ctxA, &encounterv2pb.GetEncounterRequest{
+		EncounterId: "enc-get-1",
+	})
+	s.Require().NoError(err)
+	s.Require().NotNil(resp.GetEncounter())
+	s.Require().Equal("enc-get-1", resp.GetEncounter().GetId())
+
+	// Both alice and bob should appear in alice's projected snapshot because
+	// they are within mutual SightRange:10.
+	entities := resp.GetEncounter().GetSpace().GetEntities()
+	s.Require().Len(entities, 2, "alice's snapshot should include both alice and bob")
+
+	entityIDs := make(map[string]bool, len(entities))
+	for _, e := range entities {
+		entityIDs[e.GetId()] = true
+	}
+	s.Require().True(entityIDs["char-alice"], "alice's own entity should be in the snapshot")
+	s.Require().True(entityIDs["char-bob"], "bob should be visible to alice (mutual LoS, SightRange 10)")
+}
+
+// TestGetEncounter_AsymmetricLoS_ExcludesHidden verifies that players outside
+// the viewer's current sight range are excluded from the projected snapshot.
+func (s *EncounterV2IntegrationSuite) TestGetEncounter_AsymmetricLoS_ExcludesHidden() {
+	enc := tkenc.New("enc-get-asym", s.srv.BrokerV2)
+	// alice at origin with SightRange:1 — can only see adjacent hexes.
+	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
+		PlayerID: "alice", EntityID: "char-alice",
+		Position:   core.Hex{Q: 0, R: 0, S: 0},
+		SightRange: 1,
+	}))
+	// bob is far away (distance 5) — invisible to alice.
+	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
+		PlayerID: "bob", EntityID: "char-bob",
+		Position:   core.Hex{Q: 5, R: -2, S: -3},
+		SightRange: 10,
+	}))
+	s.Require().NoError(s.srv.EncRepoV2.Save(s.ctx, enc.ToData()))
+
+	ctxA := s.authCtx("alice")
+	resp, err := s.srv.EncounterClientV2.GetEncounter(ctxA, &encounterv2pb.GetEncounterRequest{
+		EncounterId: "enc-get-asym",
+	})
+	s.Require().NoError(err)
+	s.Require().NotNil(resp.GetEncounter())
+
+	// Only alice's own entity — bob is outside alice's SightRange:1.
+	entities := resp.GetEncounter().GetSpace().GetEntities()
+	s.Require().Len(entities, 1, "alice should only see herself, not bob (out of sight range)")
+	s.Require().Equal("char-alice", entities[0].GetId())
+}
+
+// TestGetEncounter_NonMember_PermissionDenied verifies that a player not in the
+// encounter receives PermissionDenied.
+func (s *EncounterV2IntegrationSuite) TestGetEncounter_NonMember_PermissionDenied() {
+	enc := tkenc.New("enc-get-perm", s.srv.BrokerV2)
+	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
+		PlayerID: "alice", EntityID: "char-alice",
+		Position: core.Hex{Q: 0, R: 0, S: 0},
+	}))
+	s.Require().NoError(s.srv.EncRepoV2.Save(s.ctx, enc.ToData()))
+
+	// charlie is not in this encounter.
+	ctxC := s.authCtx("charlie")
+	_, err := s.srv.EncounterClientV2.GetEncounter(ctxC, &encounterv2pb.GetEncounterRequest{
+		EncounterId: "enc-get-perm",
+	})
+	s.Require().Error(err)
+	st, ok := status.FromError(err)
+	s.Require().True(ok)
+	s.Require().Equal(codes.PermissionDenied, st.Code())
 }
 
 // recvUntilEntityMoved pulls events from the stream until an EntityMoved arrives
