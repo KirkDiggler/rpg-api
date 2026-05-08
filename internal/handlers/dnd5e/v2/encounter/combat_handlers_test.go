@@ -48,8 +48,9 @@ func (s *HandlerSuite) seedCombatEncounter() {
 	s.Require().NoError(s.repo.Save(s.ctx, enc.ToData()))
 }
 
-// makeAttackTargetMonster constructs the standard "alice attacks goblin-1"
-// request body. Tests override fields as needed.
+// makeAttackRequest constructs the standard "alice attacks goblin-1" attack
+// request body, parameterized so tests can swap actor/target ids. The
+// action_ref is hardwired to the wave-2.8 supported {dnd5e:action:attack}.
 func makeAttackRequest(actorEntityID, targetEntityID string) *encounterv2pb.TakeActionRequest {
 	return &encounterv2pb.TakeActionRequest{
 		EncounterId:   combatEncID,

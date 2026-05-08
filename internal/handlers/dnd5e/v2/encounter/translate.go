@@ -353,7 +353,8 @@ func conditionRefFor(toolkitConditionRef string) *encounterv2pb.Ref {
 }
 
 // splitRef splits a "module:type:id" string into its three parts. Returns
-// an empty slice if the input doesn't have exactly two colons.
+// nil when the input doesn't have exactly two colons. Callers should treat
+// the nil return as "not a fully-qualified ref" and fall back to defaults.
 func splitRef(s string) []string {
 	parts := []string{}
 	start := 0

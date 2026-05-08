@@ -14,11 +14,25 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/encounter/core"
 )
 
-// maxNPCChainDepth caps the NPC dispatch loop to avoid runaway cycles when
-// initiative is unexpectedly all-NPCs (shouldn't happen with at least one
-// player, but defensive). After hitting the cap, the handler stops the loop
-// and returns; the next manual EndTurn from any player picks up.
-const maxNPCChainDepth = 16
+// npcChainSafetyMargin is added to the initiative roster size to derive the
+// per-call NPC dispatch cap. The cap (initiative_len + margin) lets the loop
+// cycle past every combatant once and absorb a few extra rounds of pure-NPC
+// initiative without deadlocking, while still bounding the worst case.
+//
+// Why "len(Initiative) + margin" instead of a fixed value: with a fixed cap
+// of N, an all-NPC encounter (initiative larger than N — degenerate but
+// possible if a future scenario seeds 20 monsters and 0 players) would exit
+// the loop with an NPC still active. Since EndTurn requires a player-owned
+// entity_id, the RPC would deadlock — players couldn't progress past the
+// NPC chain.
+//
+// With the size-derived cap, the loop is guaranteed to either reach a player
+// or exhaust the entire roster (in which case the encounter genuinely has no
+// players and the deadlock is the encounter's own design, not the handler's).
+// We still surface a defensive error if the cap is hit while isNPC is true
+// (see the post-loop check below) so operators can spot misconfigured
+// encounters rather than seeing them silently freeze.
+const npcChainSafetyMargin = 4
 
 // EndTurn ends the active actor's turn, advances initiative, and — when the
 // new active actor is an NPC — dispatches the toolkit's NPCAct verb on
@@ -78,9 +92,10 @@ func (h *Handler) EndTurn(ctx context.Context, req *encounterv2pb.EndTurnRequest
 
 	// NPC dispatch loop. After the toolkit's EndTurn advances initiative, if
 	// the new active actor is an NPC the handler runs its turn server-side
-	// and ends it, then re-checks. The cap protects against the pathological
-	// all-NPC initiative case.
-	for depth := 0; isNPC && depth < maxNPCChainDepth; depth++ {
+	// and ends it, then re-checks. The cap is initiative-size + margin so an
+	// all-NPC roster cycles all the way through rather than freezing the RPC.
+	npcChainCap := len(data.Initiative) + npcChainSafetyMargin
+	for depth := 0; isNPC && depth < npcChainCap; depth++ {
 		if actErr := enc.NPCAct(ctx, newActive); actErr != nil {
 			// NPCAct errors are surfaced as Internal — they indicate either a
 			// rehydration / bus / publish failure (system-shaped) or an
@@ -98,6 +113,22 @@ func (h *Handler) EndTurn(ctx context.Context, req *encounterv2pb.EndTurnRequest
 		if endErr != nil {
 			return nil, endTurnStatusError(endErr)
 		}
+	}
+
+	// Defensive: if the cap was reached while isNPC is still true, the
+	// encounter has more consecutive NPCs than the cap allows. Save what we
+	// have and surface FailedPrecondition so the caller (and any operator
+	// watching logs) sees the misconfiguration rather than a silent freeze.
+	// This shouldn't happen with valid encounter setups; the cap-by-roster
+	// math above guarantees the loop reaches a player whenever one exists.
+	if isNPC {
+		if saveErr := h.encRepo.Save(ctx, enc.ToData()); saveErr != nil {
+			return nil, status.Errorf(codes.Internal,
+				"npc dispatch loop exhausted and save failed: %v", saveErr)
+		}
+		return nil, status.Errorf(codes.FailedPrecondition,
+			"npc dispatch loop exhausted with NPC %q still active; encounter may have no players in initiative",
+			string(newActive))
 	}
 
 	if err := h.encRepo.Save(ctx, enc.ToData()); err != nil {

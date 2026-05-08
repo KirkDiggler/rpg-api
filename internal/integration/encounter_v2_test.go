@@ -531,8 +531,12 @@ func (s *EncounterV2IntegrationSuite) TestStreamEncounter_LiveEventsDoNotDuplica
 //   - Two players + one monster, all in mutual LoS, mode set to TURN_BASED on
 //     seed (initiative is rolled by the toolkit).
 //   - Both players subscribe via StreamEncounter and drain replay events.
-//   - The active player attacks goblin-1; both streams must observe an
-//     EntityDamaged event (per-viewer projection routes them based on LoS).
+//   - The active player attacks goblin-1; the toolkit resolves the attack
+//     with a real d20, so EntityDamaged is published only on hit. The test
+//     asserts that IF EntityDamaged arrives, it is shaped correctly
+//     (target=goblin-1, source=attacker); a miss-only run is still a valid
+//     pass. AttackResolvedEvent is suppressed at the translator and must
+//     not appear on either stream.
 //   - The active player ends turn; the orchestrator's NPC dispatch loop runs
 //     NPCAct + EndTurn for the goblin server-side until the next active actor
 //     is a player. Both streams observe TurnEnded → (NPC events) → TurnStarted.
@@ -596,8 +600,16 @@ func (s *EncounterV2IntegrationSuite) TestCombatSlice_TakeActionAndEndTurn_NPCDi
 	go aSink.drain(streamA)
 	go bSink.drain(streamB)
 
-	// Wait briefly for replay to land on both sinks.
-	time.Sleep(300 * time.Millisecond)
+	// Wait until both sinks have observed the full replay set: SnapshotDelivered
+	// + at least one EntityAppeared (the viewer's own entity) + GeometryRevealed
+	// (the viewer's revealed-hexes set). All replay events ship with Sequence==0
+	// (pre-history); live events start at Sequence>=1. The replay-complete
+	// signal is robust against slow CI without timing assumptions — we only
+	// watermark once both viewers have received their replay envelopes.
+	s.Require().Eventually(func() bool {
+		return aSink.hasReplayComplete() && bSink.hasReplayComplete()
+	}, 2*time.Second, 25*time.Millisecond,
+		"both streams must complete replay (snapshot + entity-appeared + geometry-revealed) before the test fires the active RPC")
 	aSink.snapshot() // capture replay watermark; subsequent reads start AFTER this
 	bSink.snapshot()
 
@@ -747,6 +759,30 @@ func (s *eventSink) hasTurnEndedFor(entityID string) bool {
 		}
 	}
 	return false
+}
+
+// hasReplayComplete reports whether the sink has observed all expected
+// replay events: SnapshotDelivered + at least one EntityAppeared + at least
+// one GeometryRevealed. Replay events are sent synchronously by the handler
+// before it enters the live forward loop; once all three kinds are present
+// the replay phase is guaranteed complete (per the BuildReplayEvents output
+// shape — see translate.go). Used by tests as the watermark signal.
+func (s *eventSink) hasReplayComplete() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var sawSnap, sawAppeared, sawGeo bool
+	for _, ev := range s.events {
+		if ev.GetSnapshotDelivered() != nil {
+			sawSnap = true
+		}
+		if ev.GetEntityAppeared() != nil {
+			sawAppeared = true
+		}
+		if ev.GetGeometryRevealed() != nil {
+			sawGeo = true
+		}
+	}
+	return sawSnap && sawAppeared && sawGeo
 }
 
 // findEntityDamaged returns the first EntityDamaged event in the slice, or
