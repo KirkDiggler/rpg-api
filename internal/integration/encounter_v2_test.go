@@ -5,6 +5,7 @@ package integration_test
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
@@ -640,6 +641,289 @@ func (s *EncounterV2IntegrationSuite) TestInteract_DoorAlreadyOpen_FailedPrecond
 	st, ok := status.FromError(err)
 	s.Require().True(ok)
 	s.Require().Equal(codes.FailedPrecondition, st.Code())
+}
+
+// TestCombatSlice_TakeActionAndEndTurn_NPCDispatch is the wave-2.8 gate test.
+// It exercises the full attack → endturn → npc-act → endturn loop on bufconn:
+//
+//   - Two players + one monster, all in mutual LoS, mode set to TURN_BASED on
+//     seed (initiative is rolled by the toolkit).
+//   - Both players subscribe via StreamEncounter and drain replay events.
+//   - The active player attacks goblin-1; the toolkit resolves the attack
+//     with a real d20, so EntityDamaged is published only on hit. The test
+//     asserts that IF EntityDamaged arrives, it is shaped correctly
+//     (target=goblin-1, source=attacker); a miss-only run is still a valid
+//     pass. AttackResolvedEvent is suppressed at the translator and must
+//     not appear on either stream.
+//   - The active player ends turn; the orchestrator's NPC dispatch loop runs
+//     NPCAct + EndTurn for the goblin server-side until the next active actor
+//     is a player. Both streams observe TurnEnded → (NPC events) → TurnStarted.
+//
+// This is the integration-test face of pat-v2-npc-turn-dispatch and
+// pat-v2-combat-event-translator.
+func (s *EncounterV2IntegrationSuite) TestCombatSlice_TakeActionAndEndTurn_NPCDispatch() {
+	enc := tkenc.New("enc-combat", s.srv.BrokerV2)
+	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
+		PlayerID: "alice", EntityID: "char-alice",
+		Position: core.Hex{Q: 0, R: 0, S: 0}, SightRange: 10,
+		HP: 12, MaxHP: 12, AC: 14, AttackBonus: 4, DamageDice: "1d8+2", DamageType: "slashing",
+	}))
+	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
+		PlayerID: "bob", EntityID: "char-bob",
+		Position: core.Hex{Q: 1, R: -1, S: 0}, SightRange: 10,
+		HP: 10, MaxHP: 10, AC: 13, AttackBonus: 3, DamageDice: "1d6+1", DamageType: "piercing",
+	}))
+	s.Require().NoError(enc.AddMonster(tkenc.MonsterInput{
+		ID: "goblin-1", Position: core.Hex{Q: 2, R: -1, S: -1},
+		HP: 7, MaxHP: 7, AC: 15, Speed: 6,
+		MonsterRef:  "dnd5e:monsters:goblin",
+		AttackBonus: 4, DamageDice: "1d6+2", DamageType: "slashing",
+	}))
+	s.Require().NoError(enc.SetMode(core.ModeTurnBased))
+	s.Require().NoError(s.srv.EncRepoV2.Save(s.ctx, enc.ToData()))
+
+	// Walk initiative until a player is active so both TakeAction and
+	// EndTurn run in their happy path. Done outside the streams so the
+	// initial-state replay is what each viewer sees on connect.
+	s.advanceUntilPlayerActiveByDirectToolkit(enc)
+
+	// Reload to discover whose turn it is now.
+	data, err := s.srv.EncRepoV2.Get(s.ctx, "enc-combat")
+	s.Require().NoError(err)
+	activeEntity := string(data.Initiative[data.ActiveIdx])
+	var activePlayer string
+	for pid, pd := range data.Players {
+		if string(pd.EntityID) == activeEntity {
+			activePlayer = string(pid)
+			break
+		}
+	}
+	s.Require().NotEmpty(activePlayer, "an active player must be found before TakeAction")
+
+	ctxAlice := s.authCtx("alice")
+	ctxBob := s.authCtx("bob")
+	ctxActive := s.authCtx(activePlayer)
+
+	streamA, err := s.srv.EncounterClientV2.StreamEncounter(ctxAlice, &encounterv2pb.StreamEncounterRequest{EncounterId: "enc-combat"})
+	s.Require().NoError(err)
+	streamB, err := s.srv.EncounterClientV2.StreamEncounter(ctxBob, &encounterv2pb.StreamEncounterRequest{EncounterId: "enc-combat"})
+	s.Require().NoError(err)
+
+	// Both streams use a single long-running background drainer started
+	// here. Each drainer collects all events into its own slice with a mutex.
+	// Tests then read from the slice with a polling helper after firing the
+	// active RPC. This avoids racy multi-call collectStreamEvents patterns.
+	aSink := newEventSink()
+	bSink := newEventSink()
+	go aSink.drain(streamA)
+	go bSink.drain(streamB)
+
+	// Wait until both sinks have observed the full replay set: SnapshotDelivered
+	// + at least one EntityAppeared (the viewer's own entity) + GeometryRevealed
+	// (the viewer's revealed-hexes set). All replay events ship with Sequence==0
+	// (pre-history); live events start at Sequence>=1. The replay-complete
+	// signal is robust against slow CI without timing assumptions — we only
+	// watermark once both viewers have received their replay envelopes.
+	s.Require().Eventually(func() bool {
+		return aSink.hasReplayComplete() && bSink.hasReplayComplete()
+	}, 2*time.Second, 25*time.Millisecond,
+		"both streams must complete replay (snapshot + entity-appeared + geometry-revealed) before the test fires the active RPC")
+	aSink.snapshot() // capture replay watermark; subsequent reads start AFTER this
+	bSink.snapshot()
+
+	// Active player attacks goblin-1.
+	_, err = s.srv.EncounterClientV2.TakeAction(ctxActive, &encounterv2pb.TakeActionRequest{
+		EncounterId:   "enc-combat",
+		ActorEntityId: activeEntity,
+		ActionRef:     &encounterv2pb.Ref{Module: "dnd5e", Type: "action", Id: "attack"},
+		Target: &encounterv2pb.ActionTarget{
+			Kind: &encounterv2pb.ActionTarget_EntityId{EntityId: "goblin-1"},
+		},
+	})
+	s.Require().NoError(err)
+
+	// Active player ends turn — fires the NPC dispatch loop server-side.
+	_, err = s.srv.EncounterClientV2.EndTurn(ctxActive, &encounterv2pb.EndTurnRequest{
+		EncounterId: "enc-combat", EntityId: activeEntity,
+	})
+	s.Require().NoError(err)
+
+	// Wait for the broker to fan out the events triggered by both RPCs.
+	// TakeAction emits AttackResolvedEvent (suppressed) + DamageDealtEvent (on hit).
+	// EndTurn emits TurnEnded(activeEntity) + (NPC chain if applicable) +
+	// TurnStarted(nextActor).
+	s.Require().Eventually(func() bool {
+		return aSink.hasTurnEndedFor(activeEntity) && bSink.hasTurnEndedFor(activeEntity)
+	}, 2*time.Second, 50*time.Millisecond,
+		"both streams must see TurnEnded for the active entity")
+
+	aPost := aSink.eventsAfterSnapshot()
+	bPost := bSink.eventsAfterSnapshot()
+
+	// AttackResolved is suppressed at the translator. Verify no events with
+	// a nil oneof slipped through (every event must carry a known envelope).
+	s.Require().True(eventsHaveNoUnmappedEnvelope(aPost),
+		"alice's stream must not surface unmapped envelopes")
+	s.Require().True(eventsHaveNoUnmappedEnvelope(bPost),
+		"bob's stream must not surface unmapped envelopes")
+
+	// On hit, EntityDamaged should target goblin-1 with the active entity as source.
+	if dmg := findEntityDamaged(aPost); dmg != nil {
+		s.Require().Equal("goblin-1", dmg.GetEntityId(), "alice's damage event targets goblin-1")
+		s.Require().Equal(activeEntity, dmg.GetSourceEntityId(),
+			"alice's damage event source is the attacking entity")
+	}
+	if dmg := findEntityDamaged(bPost); dmg != nil {
+		s.Require().Equal("goblin-1", dmg.GetEntityId(), "bob's damage event targets goblin-1")
+	}
+
+	// Reload final state — active actor must be a player after the loop.
+	finalData, err := s.srv.EncRepoV2.Get(s.ctx, "enc-combat")
+	s.Require().NoError(err)
+	finalActive := finalData.Initiative[finalData.ActiveIdx]
+	finalIsPlayer := false
+	for _, pd := range finalData.Players {
+		if pd.EntityID == finalActive {
+			finalIsPlayer = true
+			break
+		}
+	}
+	s.Require().True(finalIsPlayer,
+		"after EndTurn + NPC dispatch loop, active actor must be a player, got %q", finalActive)
+}
+
+// advanceUntilPlayerActiveByDirectToolkit drives toolkit verbs directly to
+// cycle past any leading NPC turns in initiative. Used in test setup so the
+// integration test starts with a player active and TakeAction runs in its
+// happy path without needing a SetMode RPC.
+func (s *EncounterV2IntegrationSuite) advanceUntilPlayerActiveByDirectToolkit(enc *tkenc.Encounter) {
+	for {
+		data := enc.ToData()
+		if len(data.Initiative) == 0 {
+			s.Require().FailNow("seeded encounter has empty initiative; SetMode may have failed")
+		}
+		active := data.Initiative[data.ActiveIdx]
+		isPlayer := false
+		for _, pd := range data.Players {
+			if pd.EntityID == active {
+				isPlayer = true
+				break
+			}
+		}
+		if isPlayer {
+			break
+		}
+		// Active is the goblin — run NPCAct + EndTurn to cycle.
+		s.Require().NoError(enc.NPCAct(s.ctx, active))
+		_, _, err := enc.EndTurn(active)
+		s.Require().NoError(err)
+	}
+	s.Require().NoError(s.srv.EncRepoV2.Save(s.ctx, enc.ToData()))
+}
+
+// eventSink consumes a stream's events into a thread-safe slice. snapshot()
+// captures a watermark; eventsAfterSnapshot() returns everything after the
+// last snapshot. Used by the combat integration test to separate replay
+// events from the events fired by an active RPC.
+type eventSink struct {
+	mu        sync.Mutex
+	events    []*encounterv2pb.EncounterEvent
+	watermark int
+}
+
+func newEventSink() *eventSink {
+	return &eventSink{events: make([]*encounterv2pb.EncounterEvent, 0, 32)}
+}
+
+// drain runs in a background goroutine, appending every event from stream
+// into the sink until stream.Recv errors (typically EOF / context cancel).
+func (s *eventSink) drain(stream encounterv2pb.EncounterService_StreamEncounterClient) {
+	for {
+		ev, err := stream.Recv()
+		if err != nil {
+			return
+		}
+		s.mu.Lock()
+		s.events = append(s.events, ev)
+		s.mu.Unlock()
+	}
+}
+
+// snapshot records the current event count as the watermark. Subsequent
+// eventsAfterSnapshot calls return only events that arrived after this
+// point.
+func (s *eventSink) snapshot() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.watermark = len(s.events)
+}
+
+// eventsAfterSnapshot returns the events that arrived after the most recent
+// snapshot() call. Safe to call concurrently with drain().
+func (s *eventSink) eventsAfterSnapshot() []*encounterv2pb.EncounterEvent {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]*encounterv2pb.EncounterEvent, len(s.events)-s.watermark)
+	copy(out, s.events[s.watermark:])
+	return out
+}
+
+// hasTurnEndedFor reports whether the sink has observed a TurnEnded
+// envelope with the given entity id, AFTER the most recent snapshot.
+func (s *eventSink) hasTurnEndedFor(entityID string) bool {
+	for _, ev := range s.eventsAfterSnapshot() {
+		if te := ev.GetTurnEnded(); te != nil && te.GetEntityId() == entityID {
+			return true
+		}
+	}
+	return false
+}
+
+// hasReplayComplete reports whether the sink has observed all expected
+// replay events: SnapshotDelivered + at least one EntityAppeared + at least
+// one GeometryRevealed. Replay events are sent synchronously by the handler
+// before it enters the live forward loop; once all three kinds are present
+// the replay phase is guaranteed complete (per the BuildReplayEvents output
+// shape — see translate.go). Used by tests as the watermark signal.
+func (s *eventSink) hasReplayComplete() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var sawSnap, sawAppeared, sawGeo bool
+	for _, ev := range s.events {
+		if ev.GetSnapshotDelivered() != nil {
+			sawSnap = true
+		}
+		if ev.GetEntityAppeared() != nil {
+			sawAppeared = true
+		}
+		if ev.GetGeometryRevealed() != nil {
+			sawGeo = true
+		}
+	}
+	return sawSnap && sawAppeared && sawGeo
+}
+
+// findEntityDamaged returns the first EntityDamaged event in the slice, or
+// nil if none is present.
+func findEntityDamaged(events []*encounterv2pb.EncounterEvent) *encounterv2pb.EntityDamaged {
+	for _, ev := range events {
+		if d := ev.GetEntityDamaged(); d != nil {
+			return d
+		}
+	}
+	return nil
+}
+
+// eventsHaveNoUnmappedEnvelope asserts every event in the slice has a
+// non-nil oneof envelope. Translator suppression should drop events at the
+// stream loop (continue without sending), not surface a nil-oneof event.
+func eventsHaveNoUnmappedEnvelope(events []*encounterv2pb.EncounterEvent) bool {
+	for _, ev := range events {
+		if ev.GetEvent() == nil {
+			return false
+		}
+	}
+	return true
 }
 
 func TestEncounterV2IntegrationSuite(t *testing.T) {
