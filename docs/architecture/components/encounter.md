@@ -1,8 +1,8 @@
 ---
 name: encounter (v1alpha2)
 description: v1alpha2 encounter service — lightweight toolkit adapter, no orchestrator
-updated: 2026-05-07
-confidence: high — verified by reading handler.go, create.go, project.go, translate.go
+updated: 2026-05-08
+confidence: high — verified by reading handler.go, create.go, get.go, project.go, translate.go
 ---
 
 # encounter (v1alpha2)
@@ -15,6 +15,7 @@ The v1alpha2 encounter service is the second-generation encounter handler. Unlik
 |---|---|
 | `internal/handlers/dnd5e/v2/encounter/handler.go` | Handler struct, constructor, MoveEntity, StreamEncounter |
 | `internal/handlers/dnd5e/v2/encounter/create.go` | CreateEncounter RPC |
+| `internal/handlers/dnd5e/v2/encounter/get.go` | GetEncounter RPC |
 | `internal/handlers/dnd5e/v2/encounter/project.go` | ProjectFor helper — toolkit Data → proto Encounter |
 | `internal/handlers/dnd5e/v2/encounter/translate.go` | Event translator — toolkit events → proto EncounterEvent |
 | `internal/repositories/encounters/v2/repository.go` | Repository interface (Get, Save) |
@@ -26,7 +27,7 @@ The v1alpha2 encounter service is the second-generation encounter handler. Unlik
 | RPC | Status | Wave |
 |---|---|---|
 | `CreateEncounter` | Implemented (#499) | 2.6 |
-| `GetEncounter` | Unimplemented | 2.6 (#500) |
+| `GetEncounter` | Implemented (#500) | 2.6 |
 | `StreamEncounter` | Implemented (#496) | 2.5 |
 | `MoveEntity` | Implemented (#496) | 2.5 |
 
@@ -36,6 +37,14 @@ The v1alpha2 encounter service is the second-generation encounter handler. Unlik
 2. Validate request — `campaign_id` empty → `InvalidArgument`.
 3. Construct `tkenc.New(uuid, broker)`, add creator as first player via `enc.AddPlayer`.
 4. Persist via `h.encRepo.Save(ctx, enc.ToData())`.
+5. Build proto response via `ProjectFor(data, viewer, broker, now)`.
+
+## GetEncounter flow
+
+1. Validate auth — `auth.GetPlayerID(ctx)` empty → `Unauthenticated`.
+2. Validate request — `encounter_id` empty → `InvalidArgument`.
+3. Load encounter via `h.encRepo.Get`; `ErrNotFound` → `NotFound`.
+4. Authority check — `data.Players[core.PlayerID(playerID)]` lookup; not present → `PermissionDenied`. Mirrors `MoveEntity` exactly.
 5. Build proto response via `ProjectFor(data, viewer, broker, now)`.
 
 ## ProjectFor helper
@@ -51,7 +60,11 @@ func ProjectFor(
 ) (*encounterv2pb.Encounter, error)
 ```
 
-It is the single source of truth for toolkit Snapshot → proto Encounter translation. Called by `CreateEncounter` today; `GetEncounter` (#500) and snapshot replay (#497) will reuse it without duplicating the projection logic.
+It is the single source of truth for toolkit Snapshot → proto Encounter translation. Called by `CreateEncounter` and `GetEncounter`; snapshot replay (#497) will reuse it without duplicating the projection logic.
+
+### Entity visibility in ProjectFor (#500 broadening)
+
+As of #500, `ProjectFor` includes all entities currently visible to the viewer — not just the viewer's own entity. Visibility is computed using `perception.VisibleHexesAt(viewer.Position, viewer.SightRange)` against each other player's current position in `data.Players`. Entities are sorted by player ID for deterministic wire output. This gives clients a real point-in-time snapshot of what the viewer can see.
 
 ## Architecture notes
 

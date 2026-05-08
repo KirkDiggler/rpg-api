@@ -10,6 +10,7 @@ import (
 	encounterv2pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/encounter"
 	tkenc "github.com/KirkDiggler/rpg-toolkit/encounter"
 	"github.com/KirkDiggler/rpg-toolkit/encounter/core"
+	"github.com/KirkDiggler/rpg-toolkit/encounter/perception"
 )
 
 // ProjectFor builds a proto *encounterv2pb.Encounter for the given viewer from
@@ -54,13 +55,46 @@ func ProjectFor(
 		hexes = append(hexes, &encounterv2pb.Hex{Position: HexToPosition(h)})
 	}
 
-	// The viewer's own entity is visible at their position.
+	// Build the set of hexes currently visible to the viewer so we can
+	// include other players who are visible right now (not just ever-revealed).
+	// This requires the viewer's sight range from the persisted view.
+	var visibleNow core.HexSet
+	if vp, ok := data.Players[viewer]; ok && vp.View != nil {
+		visibleNow = perception.VisibleHexesAt(snap.Position, vp.View.SightRange)
+	}
+
+	// Collect entities visible to the viewer. Start with the viewer's own
+	// entity (always visible), then add other players whose current position
+	// falls within the viewer's sight range. Sorted by entity ID so wire
+	// output is deterministic across Go map iterations.
+	entityKeys := make([]core.PlayerID, 0, len(data.Players))
+	for pid := range data.Players {
+		entityKeys = append(entityKeys, pid)
+	}
+	sort.Slice(entityKeys, func(i, j int) bool {
+		return string(entityKeys[i]) < string(entityKeys[j])
+	})
+
 	var entities []*encounterv2pb.Entity
-	if snap.PlayerID != "" {
-		entities = append(entities, &encounterv2pb.Entity{
-			Id:       string(snap.PlayerID),
-			Position: HexToPosition(snap.Position),
-		})
+	for _, pid := range entityKeys {
+		pd := data.Players[pid]
+		if pid == viewer {
+			// Viewer always sees their own entity.
+			entities = append(entities, &encounterv2pb.Entity{
+				Id:       string(pd.EntityID),
+				Position: HexToPosition(snap.Position),
+			})
+			continue
+		}
+		if pd.View == nil {
+			continue
+		}
+		if visibleNow != nil && visibleNow.Has(pd.View.Position) {
+			entities = append(entities, &encounterv2pb.Entity{
+				Id:       string(pd.EntityID),
+				Position: HexToPosition(pd.View.Position),
+			})
+		}
 	}
 
 	return &encounterv2pb.Encounter{

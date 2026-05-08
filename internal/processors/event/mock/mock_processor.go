@@ -13,8 +13,9 @@ import (
 	context "context"
 	reflect "reflect"
 
-	event "github.com/KirkDiggler/rpg-api/internal/processors/event"
 	gomock "go.uber.org/mock/gomock"
+
+	event "github.com/KirkDiggler/rpg-api/internal/processors/event"
 )
 
 // MockProcessor is a mock of Processor interface.

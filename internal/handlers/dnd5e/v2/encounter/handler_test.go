@@ -254,6 +254,65 @@ func (s *HandlerSuite) TestStreamEncounter_ForwardsBrokerEvents() {
 	s.Require().NotNil(got.GetEntityMoved())
 }
 
+func (s *HandlerSuite) TestGetEncounter_NoAuth_Unauthenticated() {
+	ctx := context.Background() // no auth
+	_, err := s.handler.GetEncounter(ctx, &encounterv2pb.GetEncounterRequest{
+		EncounterId: "enc-1",
+	})
+	s.Require().Error(err)
+	st, _ := status.FromError(err)
+	s.Require().Equal(codes.Unauthenticated, st.Code())
+}
+
+func (s *HandlerSuite) TestGetEncounter_EmptyEncounterID_InvalidArgument() {
+	_, err := s.handler.GetEncounter(s.ctx, &encounterv2pb.GetEncounterRequest{
+		EncounterId: "",
+	})
+	s.Require().Error(err)
+	st, _ := status.FromError(err)
+	s.Require().Equal(codes.InvalidArgument, st.Code())
+}
+
+func (s *HandlerSuite) TestGetEncounter_UnknownID_NotFound() {
+	_, err := s.handler.GetEncounter(s.ctx, &encounterv2pb.GetEncounterRequest{
+		EncounterId: "does-not-exist",
+	})
+	s.Require().Error(err)
+	st, _ := status.FromError(err)
+	s.Require().Equal(codes.NotFound, st.Code())
+}
+
+func (s *HandlerSuite) TestGetEncounter_NonMember_PermissionDenied() {
+	// Encounter seeded with player-B only; auth context is player-A.
+	enc := tkenc.New("enc-nonmember", s.broker)
+	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
+		PlayerID: "player-B", EntityID: "char-B", Position: core.Hex{Q: 0, R: 0, S: 0},
+	}))
+	s.Require().NoError(s.repo.Save(s.ctx, enc.ToData()))
+
+	_, err := s.handler.GetEncounter(s.ctx, &encounterv2pb.GetEncounterRequest{
+		EncounterId: "enc-nonmember",
+	})
+	s.Require().Error(err)
+	st, _ := status.FromError(err)
+	s.Require().Equal(codes.PermissionDenied, st.Code())
+}
+
+func (s *HandlerSuite) TestGetEncounter_Success_ReturnsEncounterWithID() {
+	enc := tkenc.New("enc-get-1", s.broker)
+	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
+		PlayerID: "player-A", EntityID: "char-A", Position: core.Hex{Q: 0, R: 0, S: 0},
+	}))
+	s.Require().NoError(s.repo.Save(s.ctx, enc.ToData()))
+
+	resp, err := s.handler.GetEncounter(s.ctx, &encounterv2pb.GetEncounterRequest{
+		EncounterId: "enc-get-1",
+	})
+	s.Require().NoError(err)
+	s.Require().NotNil(resp.GetEncounter())
+	s.Require().Equal("enc-get-1", resp.GetEncounter().GetId())
+}
+
 func TestHandlerSuite(t *testing.T) {
 	suite.Run(t, new(HandlerSuite))
 }
