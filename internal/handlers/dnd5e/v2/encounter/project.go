@@ -65,18 +65,18 @@ func ProjectFor(
 
 	// Collect entities visible to the viewer. Start with the viewer's own
 	// entity (always visible), then add other players whose current position
-	// falls within the viewer's sight range. Sorted by entity ID so wire
-	// output is deterministic across Go map iterations.
-	entityKeys := make([]core.PlayerID, 0, len(data.Players))
+	// falls within the viewer's sight range. Iterate data.Players in player-ID
+	// order so wire output is deterministic across Go map iterations.
+	playerIDs := make([]core.PlayerID, 0, len(data.Players))
 	for pid := range data.Players {
-		entityKeys = append(entityKeys, pid)
+		playerIDs = append(playerIDs, pid)
 	}
-	sort.Slice(entityKeys, func(i, j int) bool {
-		return string(entityKeys[i]) < string(entityKeys[j])
+	sort.Slice(playerIDs, func(i, j int) bool {
+		return string(playerIDs[i]) < string(playerIDs[j])
 	})
 
 	var entities []*encounterv2pb.Entity
-	for _, pid := range entityKeys {
+	for _, pid := range playerIDs {
 		pd := data.Players[pid]
 		if pid == viewer {
 			// Viewer always sees their own entity.
