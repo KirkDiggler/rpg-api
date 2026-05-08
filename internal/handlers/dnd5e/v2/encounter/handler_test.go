@@ -73,6 +73,26 @@ func (s *HandlerSuite) TestCreateEncounter_EmptyCampaignID_InvalidArgument() {
 	s.Require().Equal(codes.InvalidArgument, st.Code())
 }
 
+func (s *HandlerSuite) TestCreateEncounter_TurnBasedMode_InvalidArgument() {
+	_, err := s.handler.CreateEncounter(s.ctx, &encounterv2pb.CreateEncounterRequest{
+		CampaignId:  "campaign-1",
+		InitialMode: encounterv2pb.EncounterMode_ENCOUNTER_MODE_TURN_BASED,
+	})
+	s.Require().Error(err)
+	st, _ := status.FromError(err)
+	s.Require().Equal(codes.InvalidArgument, st.Code())
+}
+
+func (s *HandlerSuite) TestCreateEncounter_UnspecifiedMode_TreatedAsFreeRoam() {
+	resp, err := s.handler.CreateEncounter(s.ctx, &encounterv2pb.CreateEncounterRequest{
+		CampaignId: "campaign-1",
+		// InitialMode omitted -> ENCOUNTER_MODE_UNSPECIFIED
+	})
+	s.Require().NoError(err)
+	s.Require().NotNil(resp.GetEncounter())
+	s.Require().NotEmpty(resp.GetEncounter().GetId())
+}
+
 func (s *HandlerSuite) TestCreateEncounter_Success_ReturnsEncounterWithID() {
 	resp, err := s.handler.CreateEncounter(s.ctx, &encounterv2pb.CreateEncounterRequest{
 		CampaignId:  "campaign-1",

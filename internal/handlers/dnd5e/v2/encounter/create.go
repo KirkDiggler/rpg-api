@@ -25,6 +25,16 @@ func (h *Handler) CreateEncounter(ctx context.Context, req *encounterv2pb.Create
 	if req.GetCampaignId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "campaign_id is required")
 	}
+	// Wave 2.6 only supports FREE_ROAM. UNSPECIFIED is treated as FREE_ROAM
+	// for forward compatibility with older clients. TURN_BASED lands in Wave 2.8.
+	switch req.GetInitialMode() {
+	case encounterv2pb.EncounterMode_ENCOUNTER_MODE_UNSPECIFIED,
+		encounterv2pb.EncounterMode_ENCOUNTER_MODE_FREE_ROAM:
+	default:
+		return nil, status.Errorf(codes.InvalidArgument,
+			"initial_mode %s is not supported (only FREE_ROAM is implemented)",
+			req.GetInitialMode())
+	}
 
 	encID := core.EncounterID(uuid.NewString())
 	enc := tkenc.New(encID, h.broker)
