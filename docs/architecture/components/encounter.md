@@ -1,8 +1,8 @@
 ---
 name: encounter (v1alpha2)
 description: v1alpha2 encounter service — lightweight toolkit adapter, no orchestrator
-updated: 2026-05-08
-confidence: high — verified by reading handler.go, create.go, get.go, project.go, translate.go, translate_test.go, encounter_v2_test.go
+updated: 2026-05-09
+confidence: high — verified by reading handler.go, create.go, get.go, interact.go, project.go, translate.go, translate_test.go, encounter_v2_test.go
 ---
 
 # encounter (v1alpha2)
@@ -16,6 +16,7 @@ The v1alpha2 encounter service is the second-generation encounter handler. Unlik
 | `internal/handlers/dnd5e/v2/encounter/handler.go` | Handler struct, constructor, MoveEntity, StreamEncounter |
 | `internal/handlers/dnd5e/v2/encounter/create.go` | CreateEncounter RPC |
 | `internal/handlers/dnd5e/v2/encounter/get.go` | GetEncounter RPC |
+| `internal/handlers/dnd5e/v2/encounter/interact.go` | Interact RPC (Wave 2.7 — door interactions) |
 | `internal/handlers/dnd5e/v2/encounter/project.go` | ProjectFor helper — toolkit Data → proto Encounter |
 | `internal/handlers/dnd5e/v2/encounter/translate.go` | Event translator — toolkit events → proto EncounterEvent |
 | `internal/repositories/encounters/v2/repository.go` | Repository interface (Get, Save) |
@@ -30,6 +31,7 @@ The v1alpha2 encounter service is the second-generation encounter handler. Unlik
 | `GetEncounter` | Implemented (#500) | 2.6 |
 | `StreamEncounter` | Implemented (#496, replay #497) | 2.5 / 2.7 |
 | `MoveEntity` | Implemented (#496) | 2.5 |
+| `Interact` | Implemented for doors (#504) | 2.7 |
 
 ## CreateEncounter flow
 
@@ -46,6 +48,23 @@ The v1alpha2 encounter service is the second-generation encounter handler. Unlik
 3. Load encounter via `h.encRepo.Get`; `ErrNotFound` → `NotFound`.
 4. Authority check — `data.Players[core.PlayerID(playerID)]` lookup; not present → `PermissionDenied`. Mirrors `MoveEntity` exactly.
 5. Build proto response via `ProjectFor(data, viewer, broker, now)`.
+
+## Interact flow (Wave 2.7)
+
+1. Validate auth — `auth.GetPlayerID(ctx)` empty → `Unauthenticated`.
+2. Validate request — `encounter_id` or `target_entity_id` empty → `InvalidArgument`.
+3. Load encounter via `h.encRepo.Get`; `ErrNotFound` → `NotFound`.
+4. Dispatch by target — Wave 2.7 only wires doors. `data.Doors[targetID]` lookup; not present → `NotFound` ("target entity is not a door, or door does not exist").
+5. `encounter.LoadFromData(data, h.broker)` → rehydrate; error → `Internal`.
+6. `enc.OpenDoor(playerID, doorID)` — toolkit publishes `DoorOpenedEvent` plus a parallel `HexRevealedEvent` for any viewer whose vision grew. Toolkit errors (player not in encounter, door already open) → `FailedPrecondition` per `pat-v2-status-code-mapping`.
+7. `h.encRepo.Save(ctx, enc.ToData())` → `Internal` on error.
+8. Return `&InteractResponse{}` (empty — door world changes flow as events). `InputRequired` is reserved for Wave 2.10 locked-door skill checks.
+
+`interaction_kind` is plumbed through the proto for future routing (`examine`, `loot`, `disarm`) but unused in Wave 2.7. Future waves extend the dispatch with chests, levers, NPCs, traps.
+
+### Cause/effect event split
+
+The translator emits BOTH `DoorOpened` and `GeometryRevealed` as separate proto envelopes. The `DoorOpened.revealed_hexes`, `revealed_walls`, `removed_walls` fields are deliberately empty — the parallel `HexRevealedEvent` (translated to `GeometryRevealed`) carries the geometry delta. This mirrors the toolkit's cause/effect decomposition (see `rpg-toolkit/encounter/events/hex_revealed.go` for the rationale). Web composes the visual response from the two envelopes.
 
 ## ProjectFor helper
 

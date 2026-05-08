@@ -524,6 +524,120 @@ func (s *EncounterV2IntegrationSuite) TestStreamEncounter_LiveEventsDoNotDuplica
 		"live stream must not re-emit EntityAppeared for bob who was already visible from replay")
 }
 
+// TestInteract_OpenDoor_TwoPlayers exercises the Wave 2.7 OpenDoor flow
+// end-to-end through the v2 service. Two players in mutual LoS see a closed
+// door; alice opens it via Interact; both streams receive the cause event
+// (DoorOpened) and the parallel effect event (GeometryRevealed) for any
+// newly-revealed hexes around the door.
+//
+// Mirrors the toolkit's TestSlice_OpenDoor fixture (rpg-toolkit/encounter
+// integration_test.go:71) so the projection layer is exercised against the
+// same shape that the toolkit-level test proved.
+func (s *EncounterV2IntegrationSuite) TestInteract_OpenDoor_TwoPlayers() {
+	enc := tkenc.New("enc-door-1", s.srv.BrokerV2)
+	// SightRange:10 ensures both alice and bob can perceive a door at
+	// distance 4 (per ProjectDoorOpen's visibility check).
+	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
+		PlayerID: "alice", EntityID: "char-alice",
+		Position: core.Hex{Q: 0, R: 0, S: 0}, SightRange: 10,
+	}))
+	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
+		PlayerID: "bob", EntityID: "char-bob",
+		Position: core.Hex{Q: 1, R: -1, S: 0}, SightRange: 10,
+	}))
+	enc.AddDoor("door-east", core.Hex{Q: 4, R: 0, S: -4}, false)
+	s.Require().NoError(s.srv.EncRepoV2.Save(s.ctx, enc.ToData()))
+
+	ctxA := s.authCtx("alice")
+	ctxB := s.authCtx("bob")
+
+	streamA, err := s.srv.EncounterClientV2.StreamEncounter(ctxA, &encounterv2pb.StreamEncounterRequest{EncounterId: "enc-door-1"})
+	s.Require().NoError(err)
+	streamB, err := s.srv.EncounterClientV2.StreamEncounter(ctxB, &encounterv2pb.StreamEncounterRequest{EncounterId: "enc-door-1"})
+	s.Require().NoError(err)
+
+	// Drain the snapshot + replay events on each stream before firing Interact.
+	// Replay shape per pat-v2-snapshot-replay-builder-pair: SnapshotDelivered +
+	// EntityAppeared per visible entity + GeometryRevealed for revealed hexes.
+	// Two visible entities (alice + bob) = 4 events total per stream.
+	for i := 0; i < 4; i++ {
+		_, recvErr := streamA.Recv()
+		s.Require().NoError(recvErr, "alice replay event %d", i+1)
+		_, recvErr = streamB.Recv()
+		s.Require().NoError(recvErr, "bob replay event %d", i+1)
+	}
+
+	// Alice opens the door.
+	resp, err := s.srv.EncounterClientV2.Interact(ctxA, &encounterv2pb.InteractRequest{
+		EncounterId:    "enc-door-1",
+		TargetEntityId: "door-east",
+	})
+	s.Require().NoError(err)
+	s.Require().NotNil(resp)
+	s.Require().Nil(resp.GetInputRequired(), "Wave 2.7 doors do not prompt for input")
+
+	// Both alice and bob must see the DoorOpened event (toolkit emits a
+	// per-viewer slice for every player that can see the door's hex). The
+	// HexRevealedEvent rides as a parallel envelope (GeometryRevealed) — we
+	// don't require its arrival here because some viewers may already have
+	// seen the door's neighbors and have an empty reveal slice. Cause is
+	// load-bearing; effect is opportunistic per viewer.
+	postA := s.collectStreamEvents(streamA, 3, 500*time.Millisecond)
+	postB := s.collectStreamEvents(streamB, 3, 500*time.Millisecond)
+
+	var aDoor *encounterv2pb.DoorOpened
+	for _, ev := range postA {
+		if d := ev.GetDoorOpened(); d != nil {
+			aDoor = d
+			break
+		}
+	}
+	s.Require().NotNil(aDoor, "alice should receive DoorOpened (she opened it)")
+	s.Require().Equal("door-east", aDoor.GetDoorEntityId())
+	// Cause/effect split: revealed_hexes/walls ride on the parallel
+	// GeometryRevealed event, NOT on this envelope.
+	s.Require().Empty(aDoor.GetRevealedHexes(), "revealed_hexes belongs on the parallel GeometryRevealed event, not DoorOpened")
+
+	var bDoor *encounterv2pb.DoorOpened
+	for _, ev := range postB {
+		if d := ev.GetDoorOpened(); d != nil {
+			bDoor = d
+			break
+		}
+	}
+	s.Require().NotNil(bDoor, "bob should receive DoorOpened (door is in his LoS)")
+	s.Require().Equal("door-east", bDoor.GetDoorEntityId())
+	s.Require().Empty(bDoor.GetRevealedHexes(), "revealed_hexes belongs on the parallel GeometryRevealed event, not DoorOpened")
+
+	// Confirm the door is persisted as open after Interact.
+	persisted, err := s.srv.EncRepoV2.Get(s.ctx, "enc-door-1")
+	s.Require().NoError(err)
+	s.Require().True(persisted.Doors[core.EntityID("door-east")].Open, "door must be persisted Open after Interact")
+}
+
+// TestInteract_DoorAlreadyOpen_FailedPrecondition mirrors the unit test at
+// the integration level: a second Interact on an already-open door must be
+// rejected by the toolkit with FailedPrecondition.
+func (s *EncounterV2IntegrationSuite) TestInteract_DoorAlreadyOpen_FailedPrecondition() {
+	enc := tkenc.New("enc-door-twice", s.srv.BrokerV2)
+	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
+		PlayerID: "alice", EntityID: "char-alice",
+		Position: core.Hex{Q: 0, R: 0, S: 0}, SightRange: 10,
+	}))
+	enc.AddDoor("door-east", core.Hex{Q: 1, R: 0, S: -1}, true) // pre-open
+	s.Require().NoError(s.srv.EncRepoV2.Save(s.ctx, enc.ToData()))
+
+	ctxA := s.authCtx("alice")
+	_, err := s.srv.EncounterClientV2.Interact(ctxA, &encounterv2pb.InteractRequest{
+		EncounterId:    "enc-door-twice",
+		TargetEntityId: "door-east",
+	})
+	s.Require().Error(err)
+	st, ok := status.FromError(err)
+	s.Require().True(ok)
+	s.Require().Equal(codes.FailedPrecondition, st.Code())
+}
+
 func TestEncounterV2IntegrationSuite(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
