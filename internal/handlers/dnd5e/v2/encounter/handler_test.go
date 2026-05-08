@@ -238,8 +238,13 @@ func (s *HandlerSuite) TestStreamEncounter_ForwardsBrokerEvents() {
 		}, stream)
 	}()
 
-	// Drain the snapshot.
-	_ = stream.WaitForSend(s.T(), 2*time.Second)
+	// Drain the snapshot and all replay events (EntityAppeared + GeometryRevealed)
+	// before firing the live move. Replay event count is implementation-defined;
+	// drain until we've seen everything that isn't EntityMoved, then fire the move.
+	// WaitForSend is used repeatedly; the goroutine runs until the context is canceled.
+	_ = stream.WaitForSend(s.T(), 2*time.Second) // SnapshotDelivered
+	_ = stream.WaitForSend(s.T(), 2*time.Second) // EntityAppeared (char-A, self)
+	_ = stream.WaitForSend(s.T(), 2*time.Second) // GeometryRevealed (origin hex)
 
 	// Move via the handler — broker emits MoveEvent.
 	_, err := s.handler.MoveEntity(s.ctx, &encounterv2pb.MoveEntityRequest{

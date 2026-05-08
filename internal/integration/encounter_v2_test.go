@@ -108,21 +108,21 @@ func (s *EncounterV2IntegrationSuite) TestMovementSliceTwoPlayers() {
 	s.Require().NoError(err)
 
 	// Both A and B receive EntityMoved (small encounter; mutual LoS with SightRange 10).
-	movA, err := streamA.Recv()
-	s.Require().NoError(err)
-	s.Require().NotNil(movA.GetEntityMoved(), "player-A stream should receive EntityMoved")
-	s.Require().Equal("char-A", movA.GetEntityMoved().EntityId, "EntityMoved.EntityId should be char-A (seen by A)")
+	// Use recvUntilEntityMoved to skip over replay events (EntityAppeared + GeometryRevealed)
+	// that arrive before the live EntityMoved event.
+	movA := s.recvUntilEntityMoved(streamA, 500*time.Millisecond)
+	s.Require().NotNil(movA, "player-A stream should receive EntityMoved")
+	s.Require().Equal("char-A", movA.EntityId, "EntityMoved.EntityId should be char-A (seen by A)")
 	// Per-viewer projection check: ActualPath is built from PerPlayer[viewer].SeenSegments,
 	// not the raw event Path. Mutual SightRange:10 + 3-hex path entirely in range → both viewers
 	// see all 3 hexes. Asserting ActualPath length proves the per-viewer slicing pipe is real,
 	// not just that the broker fanned-out an event.
-	s.Require().Len(movA.GetEntityMoved().ActualPath, 3, "A should see all 3 path hexes in mutual LoS")
+	s.Require().Len(movA.ActualPath, 3, "A should see all 3 path hexes in mutual LoS")
 
-	movB, err := streamB.Recv()
-	s.Require().NoError(err)
-	s.Require().NotNil(movB.GetEntityMoved(), "player-B stream should receive EntityMoved")
-	s.Require().Equal("char-A", movB.GetEntityMoved().EntityId, "EntityMoved.EntityId should be char-A (seen by B)")
-	s.Require().Len(movB.GetEntityMoved().ActualPath, 3, "B should see all 3 path hexes in mutual LoS")
+	movB := s.recvUntilEntityMoved(streamB, 500*time.Millisecond)
+	s.Require().NotNil(movB, "player-B stream should receive EntityMoved")
+	s.Require().Equal("char-A", movB.EntityId, "EntityMoved.EntityId should be char-A (seen by B)")
+	s.Require().Len(movB.ActualPath, 3, "B should see all 3 path hexes in mutual LoS")
 }
 
 // TestMovementSlicePerViewerProjection_AsymmetricLoS exercises the harder
@@ -207,7 +207,11 @@ func (s *EncounterV2IntegrationSuite) TestMovementSlicePerViewerProjection_Asymm
 	//
 	// Order is broker-publish-order; we don't assert a specific order, just that all
 	// three event kinds arrive within the window.
-	bEvents := s.collectStreamEvents(streamB, 3, 500*time.Millisecond)
+	//
+	// Collect enough events to cover both the replay burst (EntityAppeared for char-B
+	// itself + GeometryRevealed) and the 3 live broker events (EntityAppeared for
+	// char-A, EntityMoved with 2-hex slice, EntityDisappeared for char-A).
+	bEvents := s.collectStreamEvents(streamB, 5, 500*time.Millisecond)
 	var bAppeared *encounterv2pb.EntityAppeared
 	var bMoved *encounterv2pb.EntityMoved
 	var bDisappeared *encounterv2pb.EntityDisappeared
@@ -352,17 +356,172 @@ func (s *EncounterV2IntegrationSuite) recvUntilEntityMoved(stream encounterv2pb.
 
 // collectStreamEvents pulls up to want events or until the timeout expires.
 // Returns whatever it managed to collect.
+//
+// NOTE: gRPC's stream.Recv() is blocking — this function launches a background
+// goroutine to drain the stream so the timeout is honored correctly. The
+// goroutine exits when the parent test context is canceled (TearDownTest).
 func (s *EncounterV2IntegrationSuite) collectStreamEvents(stream encounterv2pb.EncounterService_StreamEncounterClient, want int, timeout time.Duration) []*encounterv2pb.EncounterEvent {
+	ch := make(chan *encounterv2pb.EncounterEvent, want+4)
+	go func() {
+		for {
+			ev, err := stream.Recv()
+			if err != nil {
+				close(ch)
+				return
+			}
+			ch <- ev
+		}
+	}()
+
 	out := make([]*encounterv2pb.EncounterEvent, 0, want)
-	deadline := time.Now().Add(timeout)
-	for len(out) < want && time.Now().Before(deadline) {
-		ev, err := stream.Recv()
-		if err != nil {
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	for len(out) < want {
+		select {
+		case ev, ok := <-ch:
+			if !ok {
+				return out
+			}
+			out = append(out, ev)
+		case <-timer.C:
 			return out
 		}
-		out = append(out, ev)
 	}
 	return out
+}
+
+// TestStreamEncounter_ReplaysInitialState verifies that on connect, StreamEncounter
+// emits a populated SnapshotDelivered (with Encounter.Id set) followed by one
+// EntityAppeared per entity visible to the connecting player, and at least one
+// GeometryRevealed event for the player's revealed hex set — all BEFORE any live
+// broker event.
+//
+// Seeding: alice and bob in mutual LoS (SightRange:10). Alice's replay delivers:
+// EntityAppeared(char-alice), EntityAppeared(char-bob), GeometryRevealed — 3 events.
+func (s *EncounterV2IntegrationSuite) TestStreamEncounter_ReplaysInitialState() {
+	enc := tkenc.New("enc-replay-1", s.srv.BrokerV2)
+	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
+		PlayerID: "alice", EntityID: "char-alice",
+		Position:   core.Hex{Q: 0, R: 0, S: 0},
+		SightRange: 10,
+	}))
+	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
+		PlayerID: "bob", EntityID: "char-bob",
+		Position:   core.Hex{Q: 1, R: -1, S: 0},
+		SightRange: 10,
+	}))
+	s.Require().NoError(s.srv.EncRepoV2.Save(s.ctx, enc.ToData()))
+
+	ctxA := s.authCtx("alice")
+	streamA, err := s.srv.EncounterClientV2.StreamEncounter(ctxA, &encounterv2pb.StreamEncounterRequest{EncounterId: "enc-replay-1"})
+	s.Require().NoError(err)
+
+	// First event MUST be SnapshotDelivered with a populated Encounter.
+	snap, err := streamA.Recv()
+	s.Require().NoError(err)
+	s.Require().NotNil(snap.GetSnapshotDelivered(), "first event must be SnapshotDelivered")
+	sd := snap.GetSnapshotDelivered()
+	s.Require().NotNil(sd.GetEncounter(), "SnapshotDelivered.Encounter must be non-nil")
+	s.Require().Equal("enc-replay-1", sd.GetEncounter().GetId(), "SnapshotDelivered.Encounter.Id must be set")
+
+	// Replay events follow immediately: 2 EntityAppeared (alice + bob) + 1 GeometryRevealed.
+	// Drain all 3 explicitly — they are queued server-side before any live event fires.
+	var sawBobAppeared bool
+	var sawGeometryRevealed bool
+	for i := 0; i < 3; i++ {
+		ev, recvErr := streamA.Recv()
+		s.Require().NoError(recvErr, "expected replay event %d", i+1)
+		if a := ev.GetEntityAppeared(); a != nil {
+			if a.GetEntity().GetId() == "char-bob" {
+				sawBobAppeared = true
+			}
+		}
+		if g := ev.GetGeometryRevealed(); g != nil {
+			s.Require().NotEmpty(g.GetHexes(), "GeometryRevealed must carry non-empty hex set")
+			sawGeometryRevealed = true
+		}
+	}
+
+	s.Require().True(sawBobAppeared, "replay must include EntityAppeared for bob (visible to alice at SightRange:10)")
+	s.Require().True(sawGeometryRevealed, "replay must include GeometryRevealed for alice's revealed hexes")
+}
+
+// TestStreamEncounter_LiveEventsDoNotDuplicateReplay verifies that a live MoveEntity
+// from another player after replay completes does NOT re-emit any EntityAppeared
+// for an entity already delivered by the replay. The broker's per-viewer projection
+// uses LoS-crossings (not every event) so an already-visible entity should not
+// fire EntityAppeared again from a move that stays within the viewer's LoS.
+func (s *EncounterV2IntegrationSuite) TestStreamEncounter_LiveEventsDoNotDuplicateReplay() {
+	enc := tkenc.New("enc-replay-2", s.srv.BrokerV2)
+	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
+		PlayerID: "alice", EntityID: "char-alice",
+		Position:   core.Hex{Q: 0, R: 0, S: 0},
+		SightRange: 10,
+	}))
+	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
+		PlayerID: "bob", EntityID: "char-bob",
+		Position:   core.Hex{Q: 1, R: -1, S: 0},
+		SightRange: 10,
+	}))
+	s.Require().NoError(s.srv.EncRepoV2.Save(s.ctx, enc.ToData()))
+
+	ctxA := s.authCtx("alice")
+	ctxB := s.authCtx("bob")
+
+	streamA, err := s.srv.EncounterClientV2.StreamEncounter(ctxA, &encounterv2pb.StreamEncounterRequest{EncounterId: "enc-replay-2"})
+	s.Require().NoError(err)
+
+	// Drain alice's snapshot first.
+	snap, err := streamA.Recv()
+	s.Require().NoError(err)
+	s.Require().NotNil(snap.GetSnapshotDelivered())
+
+	// Drain exactly 3 replay events (EntityAppeared alice, EntityAppeared bob, GeometryRevealed).
+	// Count EntityAppeared for bob to verify the replay includes exactly one.
+	replayBobAppearedCount := 0
+	for i := 0; i < 3; i++ {
+		ev, recvErr := streamA.Recv()
+		s.Require().NoError(recvErr, "expected replay event %d", i+1)
+		if a := ev.GetEntityAppeared(); a != nil && a.GetEntity().GetId() == "char-bob" {
+			replayBobAppearedCount++
+		}
+	}
+	s.Require().Equal(1, replayBobAppearedCount, "replay should deliver exactly one EntityAppeared for bob")
+
+	// Bob moves one hex. Both A and B are within mutual LoS (SightRange:10).
+	// Bob was already visible to alice from replay, so this move should NOT
+	// produce another EntityAppeared for bob on alice's stream.
+	_, err = s.srv.EncounterClientV2.MoveEntity(ctxB, &encounterv2pb.MoveEntityRequest{
+		EncounterId:  "enc-replay-2",
+		EntityId:     "char-bob",
+		ProposedPath: []*encounterv2pb.Position{{X: 1, Y: -1, Z: 0}, {X: 2, Y: -2, Z: 0}},
+	})
+	s.Require().NoError(err)
+
+	// Collect post-move events from alice's stream. The move triggers at least one
+	// EntityMoved; the broker may also emit HexRevealedEvent for newly-visible hexes.
+	// Collect a bounded window and assert on what actually arrived.
+	postMoveEvents := s.collectStreamEvents(streamA, 5, 500*time.Millisecond)
+
+	var sawLiveMoved bool
+	extraBobAppeared := 0
+	for _, ev := range postMoveEvents {
+		if m := ev.GetEntityMoved(); m != nil && m.GetEntityId() == "char-bob" {
+			sawLiveMoved = true
+		}
+		if a := ev.GetEntityAppeared(); a != nil && a.GetEntity().GetId() == "char-bob" {
+			extraBobAppeared++
+		}
+	}
+
+	// The live EntityMoved must arrive (proves the live stream is working).
+	s.Require().True(sawLiveMoved, "live EntityMoved for bob must arrive after the move")
+
+	// The no-duplication property: bob was already visible to alice from the replay,
+	// so the toolkit's ProjectVisibilityTransition (LoS-crossing semantics) must NOT
+	// fire another EntityAppeared for bob from a move that stays within LoS.
+	s.Require().Zero(extraBobAppeared,
+		"live stream must not re-emit EntityAppeared for bob who was already visible from replay")
 }
 
 func TestEncounterV2IntegrationSuite(t *testing.T) {

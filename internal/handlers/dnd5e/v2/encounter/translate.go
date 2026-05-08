@@ -12,7 +12,6 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	encounterv2pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/encounter"
-	"github.com/KirkDiggler/rpg-toolkit/encounter"
 	"github.com/KirkDiggler/rpg-toolkit/encounter/core"
 	"github.com/KirkDiggler/rpg-toolkit/encounter/events"
 )
@@ -167,24 +166,70 @@ func translateEntityDisappearedEvent(e *events.EntityDisappearedEvent, viewer co
 	}, nil
 }
 
-// translateSnapshot wraps a toolkit Snapshot in a synthetic SnapshotDelivered
-// proto event. Sequence 0 marks it as pre-history; delta events start at 1.
-//
-// NOTE (slice 1): The toolkit Snapshot (PlayerID, Position, RevealedHexes) does
-// not map directly to the v1alpha2 SnapshotDelivered.Encounter field, which
-// expects a full *encounter.Encounter proto shape not yet defined. The Encounter
-// field is intentionally left nil here. Slice 2 (web rendering) will exercise
-// snapshot content and surface the missing toolkit → proto bridge as a separate
-// issue.
-func translateSnapshot(snap encounter.Snapshot, now time.Time) *encounterv2pb.EncounterEvent {
-	_ = snap // snap fields unused in slice 1; retained for future translation
+// TranslateSnapshot wraps a projected proto Encounter in a synthetic
+// SnapshotDelivered proto event. Sequence 0 marks it as pre-history; delta
+// events start at 1. The Encounter field is populated via ProjectFor before
+// this call — the handler owns that call so it can reuse the result for
+// BuildReplayEvents without a second projection.
+func TranslateSnapshot(pbEncounter *encounterv2pb.Encounter, now time.Time) *encounterv2pb.EncounterEvent {
 	return &encounterv2pb.EncounterEvent{
 		Sequence:  0,
 		Timestamp: timestamppb.New(now),
 		Event: &encounterv2pb.EncounterEvent_SnapshotDelivered{
 			SnapshotDelivered: &encounterv2pb.SnapshotDelivered{
-				// Encounter field left nil — see NOTE above.
+				Encounter: pbEncounter,
 			},
 		},
 	}
+}
+
+// BuildReplayEvents synthesizes the initial EntityAppeared and GeometryRevealed
+// events from the already-projected proto Encounter and the viewer's Snapshot.
+// These are sent immediately after SnapshotDelivered so a freshly-connected
+// client sees the full current state before any live broker event arrives.
+//
+// Entity replay: one EntityAppeared per entity in pbEncounter.Space.Entities.
+// Geometry replay: one GeometryRevealed carrying pbEncounter.Space.Hexes, or
+// nothing if Hexes is empty. ProjectFor already produced both in deterministic
+// order, so this function is a pure translation — no sorting or projection.
+func BuildReplayEvents(
+	pbEncounter *encounterv2pb.Encounter,
+	now time.Time,
+) []*encounterv2pb.EncounterEvent {
+	var out []*encounterv2pb.EncounterEvent
+
+	space := pbEncounter.GetSpace()
+	if space == nil {
+		return out
+	}
+
+	// EntityAppeared for each entity visible to the viewer (including the viewer's
+	// own entity so the client can render its initial position).
+	for _, entity := range space.GetEntities() {
+		out = append(out, &encounterv2pb.EncounterEvent{
+			Sequence:  0,
+			Timestamp: timestamppb.New(now),
+			Event: &encounterv2pb.EncounterEvent_EntityAppeared{
+				EntityAppeared: &encounterv2pb.EntityAppeared{
+					Entity: entity,
+					Reason: "initial state",
+				},
+			},
+		})
+	}
+
+	// GeometryRevealed for the viewer's revealed hex set.
+	if hexes := space.GetHexes(); len(hexes) > 0 {
+		out = append(out, &encounterv2pb.EncounterEvent{
+			Sequence:  0,
+			Timestamp: timestamppb.New(now),
+			Event: &encounterv2pb.EncounterEvent_GeometryRevealed{
+				GeometryRevealed: &encounterv2pb.GeometryRevealed{
+					Hexes: hexes,
+				},
+			},
+		})
+	}
+
+	return out
 }

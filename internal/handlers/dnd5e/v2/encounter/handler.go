@@ -148,14 +148,28 @@ func (h *Handler) StreamEncounter(req *encounterv2pb.StreamEncounterRequest, str
 		}
 		return status.Errorf(codes.Internal, "load encounter %q: %v", string(encID), err)
 	}
-	enc, err := encounter.LoadFromData(data, h.broker)
+	// Build the projected encounter once; reuse for both the snapshot envelope and
+	// the replay events so ProjectFor's broadening logic runs exactly once.
+	// ProjectFor internally rehydrates the encounter and computes the per-viewer
+	// snapshot, so we don't need a separate LoadFromData/SnapshotFor here.
+	now := h.now()
+	pbEncounter, err := ProjectFor(data, core.PlayerID(playerID), h.broker, now)
 	if err != nil {
-		return status.Errorf(codes.Internal, "load from data %q: %v", string(encID), err)
+		return status.Errorf(codes.Internal, "project encounter %q: %v", string(encID), err)
 	}
-	snap := enc.SnapshotFor(core.PlayerID(playerID))
-	snapEvent := translateSnapshot(snap, h.now())
+
+	snapEvent := TranslateSnapshot(pbEncounter, now)
 	if err := stream.Send(snapEvent); err != nil {
 		return err
+	}
+
+	// Send per-entity and geometry replay events before entering the live forward
+	// loop. The broker's buffered channel holds any in-flight events that fired
+	// between Subscribe and here; those will be drained after the replay completes.
+	for _, replayEvt := range BuildReplayEvents(pbEncounter, now) {
+		if err := stream.Send(replayEvt); err != nil {
+			return err
+		}
 	}
 
 	// Forward broker events until the client disconnects or the subscription closes.
