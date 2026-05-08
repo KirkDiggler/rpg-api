@@ -47,6 +47,8 @@ func TranslateEvent(evt events.EncounterEvent, viewer core.PlayerID, now time.Ti
 		return translateEntityAppearedEvent(e, viewer, now)
 	case *events.EntityDisappearedEvent:
 		return translateEntityDisappearedEvent(e, viewer, now)
+	case *events.DoorOpenedEvent:
+		return translateDoorOpenedEvent(e, viewer, now)
 	default:
 		return nil, fmt.Errorf("%w: %T", ErrUnknownEventType, evt)
 	}
@@ -161,6 +163,38 @@ func translateEntityDisappearedEvent(e *events.EntityDisappearedEvent, viewer co
 				EntityId:          string(e.Entity),
 				Reason:            "left LOS",
 				LastKnownPosition: HexToPosition(lastKnown),
+			},
+		},
+	}, nil
+}
+
+// translateDoorOpenedEvent maps the toolkit's DoorOpenedEvent to the
+// v1alpha2 DoorOpened proto envelope. Wave 2.7 deliberately splits the
+// cause/effect events: this envelope carries only the door identity (the
+// "what happened"); the parallel HexRevealedEvent published alongside
+// OpenDoor delivers the geometry deltas through GeometryRevealed (the
+// "what changed"). See rpg-toolkit/encounter/events/hex_revealed.go for
+// the rationale and Wave 2.7 plan for the API-side decision to mirror
+// that split — do NOT combine them here.
+//
+// revealed_walls / removed_walls are left empty: walls are not modeled in
+// the v0.2.0 toolkit. The proto carries them for forward compatibility
+// when the toolkit grows wall geometry.
+func translateDoorOpenedEvent(e *events.DoorOpenedEvent, viewer core.PlayerID, now time.Time) (*encounterv2pb.EncounterEvent, error) {
+	slice, ok := e.PerPlayer[viewer]
+	if !ok || !slice.Visible {
+		return nil, ErrViewerSawNothing
+	}
+	return &encounterv2pb.EncounterEvent{
+		Sequence:  int64(e.Sequence()),
+		Timestamp: timestamppb.New(now),
+		Event: &encounterv2pb.EncounterEvent_DoorOpened{
+			DoorOpened: &encounterv2pb.DoorOpened{
+				DoorEntityId: string(e.DoorID),
+				// revealed_hexes / revealed_walls / removed_walls are
+				// intentionally empty: the parallel HexRevealedEvent
+				// (translated to GeometryRevealed) carries the geometry
+				// delta. Cause/effect events stay separate on the wire.
 			},
 		},
 	}, nil

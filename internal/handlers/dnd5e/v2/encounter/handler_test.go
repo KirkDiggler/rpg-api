@@ -318,6 +318,132 @@ func (s *HandlerSuite) TestGetEncounter_Success_ReturnsEncounterWithID() {
 	s.Require().Equal("enc-get-1", resp.GetEncounter().GetId())
 }
 
+// --- Interact (Wave 2.7) -----------------------------------------------------
+
+func (s *HandlerSuite) TestInteract_NoPlayerID_Unauthenticated() {
+	ctx := context.Background() // no auth
+	_, err := s.handler.Interact(ctx, &encounterv2pb.InteractRequest{
+		EncounterId:    "enc-1",
+		TargetEntityId: "door-east",
+	})
+	s.Require().Error(err)
+	st, _ := status.FromError(err)
+	s.Require().Equal(codes.Unauthenticated, st.Code())
+}
+
+func (s *HandlerSuite) TestInteract_EmptyEncounterID_InvalidArgument() {
+	_, err := s.handler.Interact(s.ctx, &encounterv2pb.InteractRequest{
+		EncounterId:    "",
+		TargetEntityId: "door-east",
+	})
+	s.Require().Error(err)
+	st, _ := status.FromError(err)
+	s.Require().Equal(codes.InvalidArgument, st.Code())
+}
+
+func (s *HandlerSuite) TestInteract_EmptyTargetEntityID_InvalidArgument() {
+	_, err := s.handler.Interact(s.ctx, &encounterv2pb.InteractRequest{
+		EncounterId:    "enc-1",
+		TargetEntityId: "",
+	})
+	s.Require().Error(err)
+	st, _ := status.FromError(err)
+	s.Require().Equal(codes.InvalidArgument, st.Code())
+}
+
+func (s *HandlerSuite) TestInteract_MissingEncounter_NotFound() {
+	_, err := s.handler.Interact(s.ctx, &encounterv2pb.InteractRequest{
+		EncounterId:    "missing",
+		TargetEntityId: "door-east",
+	})
+	s.Require().Error(err)
+	st, _ := status.FromError(err)
+	s.Require().Equal(codes.NotFound, st.Code())
+}
+
+func (s *HandlerSuite) TestInteract_MissingDoorTarget_NotFound() {
+	enc := tkenc.New("enc-no-door", s.broker)
+	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
+		PlayerID: "player-A", EntityID: "char-A", Position: core.Hex{Q: 0, R: 0, S: 0}, SightRange: 4,
+	}))
+	s.Require().NoError(s.repo.Save(s.ctx, enc.ToData()))
+
+	// Wave 2.7 only supports door interactions; a target not in data.Doors
+	// must be NotFound (not InvalidArgument — the request was syntactically
+	// fine, the world just doesn't have an interactable target by that id).
+	_, err := s.handler.Interact(s.ctx, &encounterv2pb.InteractRequest{
+		EncounterId:    "enc-no-door",
+		TargetEntityId: "not-a-door",
+	})
+	s.Require().Error(err)
+	st, _ := status.FromError(err)
+	s.Require().Equal(codes.NotFound, st.Code())
+}
+
+func (s *HandlerSuite) TestInteract_DoorAlreadyOpen_FailedPrecondition() {
+	enc := tkenc.New("enc-open-door", s.broker)
+	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
+		PlayerID: "player-A", EntityID: "char-A", Position: core.Hex{Q: 0, R: 0, S: 0}, SightRange: 4,
+	}))
+	// Pre-seed the door as already open.
+	enc.AddDoor("door-east", core.Hex{Q: 1, R: 0, S: -1}, true)
+	s.Require().NoError(s.repo.Save(s.ctx, enc.ToData()))
+
+	_, err := s.handler.Interact(s.ctx, &encounterv2pb.InteractRequest{
+		EncounterId:    "enc-open-door",
+		TargetEntityId: "door-east",
+	})
+	s.Require().Error(err)
+	st, _ := status.FromError(err)
+	// Toolkit OpenDoor refuses an already-open door — state-dependent
+	// failure, FailedPrecondition per pat-v2-status-code-mapping.
+	s.Require().Equal(codes.FailedPrecondition, st.Code())
+}
+
+func (s *HandlerSuite) TestInteract_PlayerNotInEncounter_FailedPrecondition() {
+	// Encounter has a door but no player-A. Toolkit OpenDoor refuses the
+	// player-not-in-encounter case as a state-dependent error.
+	enc := tkenc.New("enc-no-player", s.broker)
+	enc.AddDoor("door-east", core.Hex{Q: 1, R: 0, S: -1}, false)
+	s.Require().NoError(s.repo.Save(s.ctx, enc.ToData()))
+
+	_, err := s.handler.Interact(s.ctx, &encounterv2pb.InteractRequest{
+		EncounterId:    "enc-no-player",
+		TargetEntityId: "door-east",
+	})
+	s.Require().Error(err)
+	st, _ := status.FromError(err)
+	s.Require().Equal(codes.FailedPrecondition, st.Code())
+}
+
+func (s *HandlerSuite) TestInteract_OpenDoor_HappyPath() {
+	enc := tkenc.New("enc-interact-1", s.broker)
+	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
+		PlayerID: "player-A", EntityID: "char-A", Position: core.Hex{Q: 0, R: 0, S: 0}, SightRange: 4,
+	}))
+	// Door at adjacent hex so player-A's SightRange:4 can perceive it
+	// (toolkit ProjectDoorOpen requires the viewer to see the door's hex
+	// before publishing a per-viewer slice).
+	enc.AddDoor("door-east", core.Hex{Q: 1, R: 0, S: -1}, false)
+	s.Require().NoError(s.repo.Save(s.ctx, enc.ToData()))
+
+	resp, err := s.handler.Interact(s.ctx, &encounterv2pb.InteractRequest{
+		EncounterId:    "enc-interact-1",
+		TargetEntityId: "door-east",
+	})
+	s.Require().NoError(err)
+	s.Require().NotNil(resp, "response is empty by proto design but must be non-nil")
+	s.Require().Nil(resp.GetInputRequired(), "Wave 2.7 doors don't prompt; InputRequired is for Wave 2.10 locked doors")
+
+	// Verify the door is now open in the persisted data.
+	loaded, err := s.repo.Get(s.ctx, "enc-interact-1")
+	s.Require().NoError(err)
+	s.Require().NotNil(loaded)
+	door, ok := loaded.Doors[core.EntityID("door-east")]
+	s.Require().True(ok, "door-east must remain in persisted Doors map")
+	s.Require().True(door.Open, "door-east must be persisted as Open after Interact")
+}
+
 func TestHandlerSuite(t *testing.T) {
 	suite.Run(t, new(HandlerSuite))
 }
