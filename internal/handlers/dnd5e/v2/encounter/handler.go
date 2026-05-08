@@ -185,6 +185,10 @@ func (h *Handler) StreamEncounter(req *encounterv2pb.StreamEncounterRequest, str
 			switch {
 			case errors.Is(translateErr, ErrViewerSawNothing):
 				continue
+			case errors.Is(translateErr, ErrEventSuppressed):
+				// Translator deliberately drops this event — no wire shape,
+				// expected behavior. Continue without log or send.
+				continue
 			case errors.Is(translateErr, ErrUnknownEventType):
 				// Translator has no mapping for this event type — log so
 				// the gap shows up in production rather than silently

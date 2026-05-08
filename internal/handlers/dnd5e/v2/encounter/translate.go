@@ -25,6 +25,17 @@ var ErrViewerSawNothing = errors.New("viewer saw nothing in this event")
 // the given toolkit event type. The stream loop should log + continue.
 var ErrUnknownEventType = errors.New("translator has no mapping for this event type")
 
+// ErrEventSuppressed is returned when the translator deliberately drops a
+// toolkit event that has no proto wire shape. Used for cause-stage combat
+// events (AttackResolvedEvent) where the proto only carries the effect
+// (EntityDamaged). The stream loop must errors.Is-check and continue
+// silently — neither logging (it's expected) nor sending.
+//
+// This differs from ErrViewerSawNothing (per-viewer empty slice) and
+// ErrUnknownEventType (translator gap to log) — it's a deliberate design
+// choice baked in per pat-v2-combat-event-translator.
+var ErrEventSuppressed = errors.New("event deliberately suppressed by translator")
+
 // HexToPosition maps a toolkit cube hex (Q,R,S) to a proto Position (x,y,z).
 // The proto invariant x+y+z=0 is preserved by construction.
 func HexToPosition(h core.Hex) *encounterv2pb.Position {
@@ -47,6 +58,22 @@ func TranslateEvent(evt events.EncounterEvent, viewer core.PlayerID, now time.Ti
 		return translateEntityAppearedEvent(e, viewer, now)
 	case *events.EntityDisappearedEvent:
 		return translateEntityDisappearedEvent(e, viewer, now)
+	case *events.AttackResolvedEvent:
+		// Cause-stage event with no proto wire shape (proto designers chose
+		// EntityDamaged as the canonical wire shape; AttackResolved is
+		// narration/animation hooks the web doesn't render in this wave).
+		// Suppress so the stream loop neither logs nor sends.
+		return nil, ErrEventSuppressed
+	case *events.DamageDealtEvent:
+		return translateDamageDealtEvent(e, viewer, now)
+	case *events.ConditionAppliedEvent:
+		return translateConditionAppliedEvent(e, viewer, now)
+	case *events.ModeChangedEvent:
+		return translateModeChangedEvent(e, viewer, now)
+	case *events.TurnStartedEvent:
+		return translateTurnStartedEvent(e, viewer, now)
+	case *events.TurnEndedEvent:
+		return translateTurnEndedEvent(e, viewer, now)
 	default:
 		return nil, fmt.Errorf("%w: %T", ErrUnknownEventType, evt)
 	}
@@ -164,6 +191,198 @@ func translateEntityDisappearedEvent(e *events.EntityDisappearedEvent, viewer co
 			},
 		},
 	}, nil
+}
+
+// translateDamageDealtEvent maps the toolkit's DamageDealtEvent (effect of
+// an attack) to the proto EntityDamaged envelope. Per
+// pat-v2-combat-event-translator, this is the canonical wire shape for HP
+// outcomes — the cause-stage AttackResolvedEvent is suppressed.
+//
+// Per-viewer projection: viewers absent from PerPlayer don't see the event;
+// viewers with Visible:false return ErrViewerSawNothing for stream-loop
+// silent skip. The toolkit's publish-side already gated audience by LoS to
+// attacker OR target so a Visible:true entry means the viewer should see
+// the wire-shape event.
+func translateDamageDealtEvent(e *events.DamageDealtEvent, viewer core.PlayerID, now time.Time) (*encounterv2pb.EncounterEvent, error) {
+	slice, ok := e.PerPlayer[viewer]
+	if !ok || !slice.Visible {
+		return nil, ErrViewerSawNothing
+	}
+	out := &encounterv2pb.EntityDamaged{
+		EntityId: string(e.TargetID),
+		Amount:   int32(e.Amount),
+		HpAfter: &encounterv2pb.HitPoints{
+			Current: int32(e.HPAfter),
+			Max:     int32(e.MaxHP),
+		},
+	}
+	if e.DamageType != "" {
+		out.DamageType = damageRefFor(e.DamageType)
+	}
+	if e.SourceID != "" {
+		s := string(e.SourceID)
+		out.SourceEntityId = &s
+	}
+	return &encounterv2pb.EncounterEvent{
+		Sequence:  int64(e.Sequence()),
+		Timestamp: timestamppb.New(now),
+		Event: &encounterv2pb.EncounterEvent_EntityDamaged{
+			EntityDamaged: out,
+		},
+	}, nil
+}
+
+// translateConditionAppliedEvent maps the toolkit's ConditionAppliedEvent
+// (effect of an action that applies a status — e.g., "poisoned" from a
+// poisoned-attack) to the proto StatusApplied envelope.
+//
+// The toolkit publishes ConditionRef as the toolkit's three-part-ref string
+// (e.g. "dnd5e:conditions:poisoned"). For Wave 2.8, the rpg-api translator
+// emits the StatusEffect.Source as a Ref with the same id portion; the web
+// resolves display_name / icon_hint from its own lookup table. Future waves
+// can plumb richer status metadata when toolkit ships it.
+func translateConditionAppliedEvent(e *events.ConditionAppliedEvent, viewer core.PlayerID, now time.Time) (*encounterv2pb.EncounterEvent, error) {
+	slice, ok := e.PerPlayer[viewer]
+	if !ok || !slice.Visible {
+		return nil, ErrViewerSawNothing
+	}
+	status := &encounterv2pb.StatusEffect{
+		Source: conditionRefFor(e.ConditionRef),
+	}
+	if e.DurationRounds > 0 {
+		d := int32(e.DurationRounds)
+		status.DurationRounds = &d
+	}
+	out := &encounterv2pb.StatusApplied{
+		EntityId: string(e.TargetID),
+		Status:   status,
+	}
+	if e.SourceID != "" {
+		s := string(e.SourceID)
+		out.SourceEntityId = &s
+	}
+	return &encounterv2pb.EncounterEvent{
+		Sequence:  int64(e.Sequence()),
+		Timestamp: timestamppb.New(now),
+		Event: &encounterv2pb.EncounterEvent_StatusApplied{
+			StatusApplied: out,
+		},
+	}, nil
+}
+
+// translateModeChangedEvent maps the toolkit's ModeChangedEvent to the
+// proto ModeChanged envelope. Audience is implicit (every player sees mode
+// flips), so we only check viewer-presence; Visible flag is always true on
+// the toolkit side.
+func translateModeChangedEvent(e *events.ModeChangedEvent, viewer core.PlayerID, now time.Time) (*encounterv2pb.EncounterEvent, error) {
+	if _, ok := e.PerPlayer[viewer]; !ok {
+		return nil, ErrViewerSawNothing
+	}
+	return &encounterv2pb.EncounterEvent{
+		Sequence:  int64(e.Sequence()),
+		Timestamp: timestamppb.New(now),
+		Event: &encounterv2pb.EncounterEvent_ModeChanged{
+			ModeChanged: &encounterv2pb.ModeChanged{
+				From:   encounterModeToProto(e.From),
+				To:     encounterModeToProto(e.To),
+				Reason: e.Reason,
+			},
+		},
+	}, nil
+}
+
+// translateTurnStartedEvent maps the toolkit's TurnStartedEvent to the proto
+// TurnStarted envelope. Round is 1-indexed in both shapes.
+func translateTurnStartedEvent(e *events.TurnStartedEvent, viewer core.PlayerID, now time.Time) (*encounterv2pb.EncounterEvent, error) {
+	if _, ok := e.PerPlayer[viewer]; !ok {
+		return nil, ErrViewerSawNothing
+	}
+	return &encounterv2pb.EncounterEvent{
+		Sequence:  int64(e.Sequence()),
+		Timestamp: timestamppb.New(now),
+		Event: &encounterv2pb.EncounterEvent_TurnStarted{
+			TurnStarted: &encounterv2pb.TurnStarted{
+				EntityId: string(e.ActorID),
+				Round:    int32(e.Round),
+			},
+		},
+	}, nil
+}
+
+// translateTurnEndedEvent maps the toolkit's TurnEndedEvent to the proto
+// TurnEnded envelope. Audience is implicit (every player sees turn
+// transitions); viewer must be in PerPlayer.
+func translateTurnEndedEvent(e *events.TurnEndedEvent, viewer core.PlayerID, now time.Time) (*encounterv2pb.EncounterEvent, error) {
+	if _, ok := e.PerPlayer[viewer]; !ok {
+		return nil, ErrViewerSawNothing
+	}
+	return &encounterv2pb.EncounterEvent{
+		Sequence:  int64(e.Sequence()),
+		Timestamp: timestamppb.New(now),
+		Event: &encounterv2pb.EncounterEvent_TurnEnded{
+			TurnEnded: &encounterv2pb.TurnEnded{
+				EntityId: string(e.ActorID),
+			},
+		},
+	}, nil
+}
+
+// damageRefFor builds a proto Ref for a toolkit damage-type string. The
+// toolkit emits bare strings (e.g. "slashing", "fire", "untyped"); the proto
+// wire shape uses a Ref triple. For Wave 2.8 we hardwire module=dnd5e and
+// type=damage; future modules can route off the toolkit string when they
+// ship.
+func damageRefFor(toolkitDamageType string) *encounterv2pb.Ref {
+	return &encounterv2pb.Ref{
+		Module: "dnd5e",
+		Type:   "damage",
+		Id:     toolkitDamageType,
+	}
+}
+
+// conditionRefFor builds a proto Ref for a toolkit condition-ref string.
+// The toolkit ships a fully-qualified ref (e.g. "dnd5e:conditions:poisoned");
+// we parse it back into module/type/id. Bare strings are treated as ids
+// under module=dnd5e, type=condition.
+func conditionRefFor(toolkitConditionRef string) *encounterv2pb.Ref {
+	parts := splitRef(toolkitConditionRef)
+	if len(parts) == 3 {
+		return &encounterv2pb.Ref{Module: parts[0], Type: parts[1], Id: parts[2]}
+	}
+	return &encounterv2pb.Ref{Module: "dnd5e", Type: "condition", Id: toolkitConditionRef}
+}
+
+// splitRef splits a "module:type:id" string into its three parts. Returns
+// an empty slice if the input doesn't have exactly two colons.
+func splitRef(s string) []string {
+	parts := []string{}
+	start := 0
+	colons := 0
+	for i := 0; i < len(s); i++ {
+		if s[i] == ':' {
+			parts = append(parts, s[start:i])
+			start = i + 1
+			colons++
+		}
+	}
+	if colons != 2 {
+		return nil
+	}
+	parts = append(parts, s[start:])
+	return parts
+}
+
+// encounterModeToProto maps the toolkit's core.EncounterMode enum to the
+// proto EncounterMode enum. The toolkit's ModeUnspecified maps to
+// ENCOUNTER_MODE_UNSPECIFIED; FreeRoam → FREE_ROAM; TurnBased → TURN_BASED.
+func encounterModeToProto(m core.EncounterMode) encounterv2pb.EncounterMode {
+	switch m {
+	case core.ModeFreeRoam:
+		return encounterv2pb.EncounterMode_ENCOUNTER_MODE_FREE_ROAM
+	case core.ModeTurnBased:
+		return encounterv2pb.EncounterMode_ENCOUNTER_MODE_TURN_BASED
+	}
+	return encounterv2pb.EncounterMode_ENCOUNTER_MODE_UNSPECIFIED
 }
 
 // TranslateSnapshot wraps a projected proto Encounter in a synthetic

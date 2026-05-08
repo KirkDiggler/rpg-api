@@ -73,14 +73,23 @@ func (s *HandlerSuite) TestCreateEncounter_EmptyCampaignID_InvalidArgument() {
 	s.Require().Equal(codes.InvalidArgument, st.Code())
 }
 
-func (s *HandlerSuite) TestCreateEncounter_TurnBasedMode_InvalidArgument() {
-	_, err := s.handler.CreateEncounter(s.ctx, &encounterv2pb.CreateEncounterRequest{
+func (s *HandlerSuite) TestCreateEncounter_TurnBasedMode_RollsInitiative() {
+	// Wave 2.8 enables TURN_BASED on create. The handler delegates to the
+	// toolkit's SetMode verb which rolls initiative across the encounter's
+	// players + monsters. With only the creator seated, initiative contains
+	// exactly one entry and the encounter saves with Mode = ModeTurnBased.
+	resp, err := s.handler.CreateEncounter(s.ctx, &encounterv2pb.CreateEncounterRequest{
 		CampaignId:  "campaign-1",
 		InitialMode: encounterv2pb.EncounterMode_ENCOUNTER_MODE_TURN_BASED,
 	})
-	s.Require().Error(err)
-	st, _ := status.FromError(err)
-	s.Require().Equal(codes.InvalidArgument, st.Code())
+	s.Require().NoError(err)
+	s.Require().NotNil(resp.GetEncounter())
+
+	data, err := s.repo.Get(s.ctx, resp.GetEncounter().GetId())
+	s.Require().NoError(err)
+	s.Require().Equal(core.ModeTurnBased, data.Mode)
+	s.Require().Len(data.Initiative, 1, "creator should be the sole combatant in initiative")
+	s.Require().Equal(1, data.Round)
 }
 
 func (s *HandlerSuite) TestCreateEncounter_UnspecifiedMode_TreatedAsFreeRoam() {

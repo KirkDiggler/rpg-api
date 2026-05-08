@@ -25,14 +25,17 @@ func (h *Handler) CreateEncounter(ctx context.Context, req *encounterv2pb.Create
 	if req.GetCampaignId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "campaign_id is required")
 	}
-	// Wave 2.6 only supports FREE_ROAM. UNSPECIFIED is treated as FREE_ROAM
-	// for forward compatibility with older clients. TURN_BASED lands in Wave 2.8.
+	// Wave 2.6 supported FREE_ROAM only. Wave 2.8 adds TURN_BASED via the
+	// toolkit's Encounter.SetMode verb, which rolls initiative on flip.
+	// UNSPECIFIED is treated as FREE_ROAM for forward compatibility with
+	// older clients.
 	switch req.GetInitialMode() {
 	case encounterv2pb.EncounterMode_ENCOUNTER_MODE_UNSPECIFIED,
-		encounterv2pb.EncounterMode_ENCOUNTER_MODE_FREE_ROAM:
+		encounterv2pb.EncounterMode_ENCOUNTER_MODE_FREE_ROAM,
+		encounterv2pb.EncounterMode_ENCOUNTER_MODE_TURN_BASED:
 	default:
 		return nil, status.Errorf(codes.InvalidArgument,
-			"initial_mode %s is not supported (only FREE_ROAM is implemented)",
+			"initial_mode %s is not a recognized mode",
 			req.GetInitialMode())
 	}
 
@@ -48,6 +51,17 @@ func (h *Handler) CreateEncounter(ctx context.Context, req *encounterv2pb.Create
 		Position: core.Hex{Q: 0, R: 0, S: 0},
 	}); err != nil {
 		return nil, status.Errorf(codes.Internal, "add creator to encounter: %v", err)
+	}
+
+	// Flip into TURN_BASED if requested. Mode flip publishes ModeChangedEvent +
+	// initial TurnStartedEvent, but no subscribers exist at construction time so
+	// these are dropped (the broker is fanout-only; events fire iff a viewer is
+	// subscribed). Subsequent connect-time ProjectFor reads Mode/Initiative from
+	// data so client state is correct on first stream.
+	if req.GetInitialMode() == encounterv2pb.EncounterMode_ENCOUNTER_MODE_TURN_BASED {
+		if err := enc.SetMode(core.ModeTurnBased); err != nil {
+			return nil, status.Errorf(codes.Internal, "set turn-based mode: %v", err)
+		}
 	}
 
 	data := enc.ToData()
