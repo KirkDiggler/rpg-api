@@ -14,11 +14,13 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/encounter/core"
 )
 
-// Interact handles the Interact RPC. Wave 2.7 wires only door interactions:
-// when target_entity_id matches a known door, the toolkit's
-// Encounter.OpenDoor() verb is dispatched. The toolkit publishes the cause
-// event (DoorOpenedEvent) and the parallel effect event (HexRevealedEvent)
-// to the broker for delivery on StreamEncounter.
+// Interact handles the Interact RPC. Wave 2.7 wired the unlocked-door path
+// (toolkit OpenDoor verb dispatched directly). Wave 2.9 adds the locked-door
+// path: when the target door has Locked: true, the handler issues a
+// per-player skill-check prompt via the toolkit's AttemptUnlock verb and
+// returns the prompt to the caller as InputRequired{skill_check} on the
+// response. The caller then resolves the prompt by calling SubmitCheck with
+// a d20 roll.
 //
 // Future waves extend the dispatch to chests, levers, NPCs, and traps; the
 // optional interaction_kind field is plumbed through the proto for that
@@ -29,13 +31,15 @@ import (
 //   - empty encounter_id / target_entity_id → InvalidArgument
 //   - encounter not in repo → NotFound
 //   - target is not a known door in this encounter → NotFound
-//   - toolkit OpenDoor refuses (player not in encounter, door already open,
-//     etc.) → FailedPrecondition (per pat-v2-status-code-mapping)
+//   - door is locked → AttemptUnlock issues a prompt; response carries
+//     InputRequired{skill_check}; persistence captures PendingPrompts so
+//     the prompt survives reconnect. Stream sees no event (caller-private).
+//   - door is unlocked → OpenDoor publishes per-viewer DoorOpened +
+//     GeometryRevealed; response is empty by proto design.
+//   - toolkit OpenDoor / AttemptUnlock refuses (player not in encounter,
+//     door already open, prompt already pending, etc.) → FailedPrecondition
+//     per pat-v2-status-code-mapping.
 //   - save failure → Internal
-//
-// The empty InteractResponse is by proto design — door world changes flow as
-// events on StreamEncounter, not as response payload. Future locked-door
-// flow (Wave 2.10) will populate InputRequired for skill-check prompts.
 func (h *Handler) Interact(ctx context.Context, req *encounterv2pb.InteractRequest) (*encounterv2pb.InteractResponse, error) {
 	playerID := auth.GetPlayerID(ctx)
 	if playerID == "" {
@@ -56,18 +60,57 @@ func (h *Handler) Interact(ctx context.Context, req *encounterv2pb.InteractReque
 		return nil, status.Errorf(codes.Internal, "load encounter %q: %v", req.GetEncounterId(), err)
 	}
 
-	// Wave 2.7 dispatch: only door interactions are wired. Future waves add
-	// chests, levers, NPCs, traps via additional lookups + dispatch arms.
+	// Wave 2.7/2.9 dispatch: only door interactions are wired. Future waves
+	// add chests, levers, NPCs, traps via additional lookups + dispatch arms.
 	targetID := core.EntityID(req.GetTargetEntityId())
-	if _, ok := data.Doors[targetID]; !ok {
+	door, ok := data.Doors[targetID]
+	if !ok {
 		return nil, status.Error(codes.NotFound, "target entity is not a door, or door does not exist")
 	}
 
-	enc, err := encounter.LoadFromData(data, h.broker)
+	enc, err := encounter.LoadFromData(data, h.broker, encounter.WithCharacterResolver(h.resolver))
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "load from data %q: %v", req.GetEncounterId(), err)
 	}
 
+	// Locked-door branch (Wave 2.9): issue a per-player skill-check prompt
+	// via the toolkit's AttemptUnlock verb. The prompt is persisted to
+	// data.PendingPrompts so the caller can resolve it later via SubmitCheck;
+	// no broker event is emitted (prompts are caller-private).
+	if door.Locked {
+		issued, unlockErr := enc.AttemptUnlock(core.PlayerID(playerID), targetID)
+		if unlockErr != nil {
+			switch {
+			case errors.Is(unlockErr, encounter.ErrPromptAlreadyPending):
+				return nil, status.Error(codes.FailedPrecondition,
+					"resolve the pending prompt before issuing another action")
+			case errors.Is(unlockErr, encounter.ErrDoorNotLocked):
+				// Defensive: we just checked door.Locked. If toolkit reports
+				// unlocked the persisted snapshot is inconsistent with the
+				// loaded encounter — surface as Internal.
+				return nil, status.Errorf(codes.Internal,
+					"locked-door dispatch refused as not-locked: %v", unlockErr)
+			default:
+				// Player not in encounter, door not in encounter, etc. — these
+				// are state-dependent and map to FailedPrecondition per
+				// pat-v2-status-code-mapping. AttemptUnlock wraps these with
+				// fmt.Errorf rather than sentinels, so the default arm covers
+				// the long tail.
+				return nil, status.Errorf(codes.FailedPrecondition, "attempt unlock: %v", unlockErr)
+			}
+		}
+
+		if err := h.encRepo.Save(ctx, enc.ToData()); err != nil {
+			return nil, status.Errorf(codes.Internal,
+				"save encounter %q after attempt unlock: %v", req.GetEncounterId(), err)
+		}
+
+		return &encounterv2pb.InteractResponse{
+			InputRequired: buildSkillCheckPrompt(issued),
+		}, nil
+	}
+
+	// Unlocked-door branch (Wave 2.7): dispatch directly to OpenDoor.
 	if err := enc.OpenDoor(core.PlayerID(playerID), targetID); err != nil {
 		// Toolkit OpenDoor errors are state-dependent (player not in
 		// encounter, door already open) — these are gRPC FailedPrecondition
@@ -81,4 +124,37 @@ func (h *Handler) Interact(ctx context.Context, req *encounterv2pb.InteractReque
 	}
 
 	return &encounterv2pb.InteractResponse{}, nil
+}
+
+// buildSkillCheckPrompt translates the toolkit's PromptIssued verb-return
+// into the proto wire shape InputRequired{skill_check}. The tool ref is
+// optional (empty when no tool proficiency applies); we surface it as a
+// nullable Ref so the client can render thieves'-tools-or-not without a
+// separate flag.
+func buildSkillCheckPrompt(issued encounter.PromptIssued) *encounterv2pb.InputRequired {
+	prompt := &encounterv2pb.SkillCheckPrompt{
+		Dc:      int32(issued.DC), //nolint:gosec // DC is bounded by ruleset, never overflows int32
+		Ability: issued.Ability,
+	}
+	if issued.Tool != "" {
+		prompt.Tool = parseToolkitRef(issued.Tool)
+	}
+	return &encounterv2pb.InputRequired{
+		Kind: &encounterv2pb.InputRequired_SkillCheck{SkillCheck: prompt},
+	}
+}
+
+// parseToolkitRef converts a toolkit ref string (e.g.
+// "dnd5e:item:thieves-tools") into a proto Ref. Reuses the package's
+// existing splitRef helper (translate.go) so ref parsing semantics stay
+// consistent across projection / translation / prompt translation —
+// splitRef requires exactly two colons and returns nil otherwise. Falls
+// back to a generic {dnd5e, item, raw} encoding if the ref isn't in the
+// canonical "module:type:id" shape so unknown refs still round-trip
+// something the client can display.
+func parseToolkitRef(ref string) *encounterv2pb.Ref {
+	if parts := splitRef(ref); parts != nil {
+		return &encounterv2pb.Ref{Module: parts[0], Type: parts[1], Id: parts[2]}
+	}
+	return &encounterv2pb.Ref{Module: refModuleDnd5e, Type: "item", Id: ref}
 }

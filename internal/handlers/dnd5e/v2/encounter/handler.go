@@ -18,9 +18,10 @@ import (
 
 // HandlerConfig configures a v2 encounter Handler.
 type HandlerConfig struct {
-	Broker *encounter.Broker
-	Repo   encountersv2.Repository
-	Now    func() time.Time // optional; defaults to time.Now
+	Broker   *encounter.Broker
+	Repo     encountersv2.Repository
+	Resolver CharacterResolver // optional; defaults to StubCharacterResolver
+	Now      func() time.Time  // optional; defaults to time.Now
 }
 
 // Handler implements dnd5e.api.v1alpha2.encounter.EncounterServiceServer.
@@ -29,9 +30,10 @@ type HandlerConfig struct {
 // returns codes.Unimplemented via the embedded server.
 type Handler struct {
 	encounterv2pb.UnimplementedEncounterServiceServer
-	broker  *encounter.Broker
-	encRepo encountersv2.Repository
-	now     func() time.Time
+	broker   *encounter.Broker
+	encRepo  encountersv2.Repository
+	resolver CharacterResolver
+	now      func() time.Time
 }
 
 // New constructs a Handler. Returns error on missing required deps.
@@ -49,7 +51,15 @@ func New(cfg *HandlerConfig) (*Handler, error) {
 	if now == nil {
 		now = time.Now
 	}
-	return &Handler{broker: cfg.Broker, encRepo: cfg.Repo, now: now}, nil
+	resolver := cfg.Resolver
+	if resolver == nil {
+		// Wave 2.9 default: zero-modifier stub. SubmitCheck can resolve rolls
+		// (total = roll + 0 + 0) without an explicit character lookup. Replace
+		// with a real bridge to the character store once player→character
+		// resolution lands on the encounter (follow-up to #514).
+		resolver = StubCharacterResolver{}
+	}
+	return &Handler{broker: cfg.Broker, encRepo: cfg.Repo, resolver: resolver, now: now}, nil
 }
 
 // MoveEntity loads the encounter, validates that the request's entity_id matches
@@ -88,7 +98,7 @@ func (h *Handler) MoveEntity(ctx context.Context, req *encounterv2pb.MoveEntityR
 		return nil, status.Error(codes.InvalidArgument, "proposed_path is required")
 	}
 
-	enc, err := encounter.LoadFromData(data, h.broker)
+	enc, err := encounter.LoadFromData(data, h.broker, encounter.WithCharacterResolver(h.resolver))
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "load from data %q: %v", req.GetEncounterId(), err)
 	}
