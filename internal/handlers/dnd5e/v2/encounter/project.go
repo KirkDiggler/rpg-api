@@ -97,12 +97,85 @@ func ProjectFor(
 		}
 	}
 
+	// Append visible monster entities. Iterate data.Monsters in entity-ID order
+	// so wire output is deterministic across Go map iterations. LOS-filter:
+	// only include monsters whose position is currently visible to the viewer.
+	monsterIDs := make([]core.EntityID, 0, len(data.Monsters))
+	for mid := range data.Monsters {
+		monsterIDs = append(monsterIDs, mid)
+	}
+	sort.Slice(monsterIDs, func(i, j int) bool {
+		return string(monsterIDs[i]) < string(monsterIDs[j])
+	})
+	for _, mid := range monsterIDs {
+		m := data.Monsters[mid]
+		if visibleNow == nil || !visibleNow.Has(m.Position) {
+			continue
+		}
+		entities = append(entities, &encounterv2pb.Entity{
+			Id:       string(m.ID),
+			Position: HexToPosition(m.Position),
+			Type:     encounterv2pb.EntityType_ENTITY_TYPE_MONSTER,
+			Hp: &encounterv2pb.HitPoints{
+				Current: int32(m.HP),
+				Max:     int32(m.MaxHP),
+			},
+			Data: &encounterv2pb.Entity_Monster{
+				Monster: &encounterv2pb.MonsterData{
+					MonsterRef: monsterRefFor(m.MonsterRef),
+				},
+			},
+		})
+	}
+
 	return &encounterv2pb.Encounter{
-		Id:   string(data.ID),
-		Mode: encounterv2pb.EncounterMode_ENCOUNTER_MODE_FREE_ROAM,
+		Id:        string(data.ID),
+		Mode:      encounterModeToProto(data.Mode),
+		TurnState: buildTurnState(data),
 		Space: &encounterv2pb.Space{
 			Hexes:    hexes,
 			Entities: entities,
 		},
 	}, nil
+}
+
+// buildTurnState returns a populated TurnState only when the encounter is in
+// turn-based mode. ActionEconomy and AvailableActions are server-only state
+// for this PR; emitting them is tracked as a follow-up.
+//
+// Initiative IDs (and the active entity ID) are emitted verbatim — clients
+// need them as opaque tokens to render "whose turn" even when the active
+// entity is currently outside the viewer's LOS. Per-entity rich data
+// (position, hp, monster ref) is still LOS-gated via Space.Entities; the
+// initiative roster only exposes ids, which carry no spatial information.
+func buildTurnState(data *tkenc.Data) *encounterv2pb.TurnState {
+	if data.Mode != core.ModeTurnBased {
+		return nil
+	}
+	order := make([]string, 0, len(data.Initiative))
+	for _, eid := range data.Initiative {
+		order = append(order, string(eid))
+	}
+	var active string
+	if data.ActiveIdx >= 0 && data.ActiveIdx < len(data.Initiative) {
+		active = string(data.Initiative[data.ActiveIdx])
+	}
+	return &encounterv2pb.TurnState{
+		InitiativeOrder: order,
+		ActiveEntityId:  active,
+		Round:           int32(data.Round),
+	}
+}
+
+// monsterRefFor builds a proto Ref for a toolkit monster-ref string.
+// The toolkit ships a fully-qualified ref (e.g. "dnd5e:monsters:goblin");
+// we reuse splitRef from translate.go so the parsing contract is identical
+// across the v2 encounter wire (snapshot + live events). Bare strings are
+// treated as ids under module=dnd5e, type=monster, mirroring conditionRefFor.
+func monsterRefFor(toolkitMonsterRef string) *encounterv2pb.Ref {
+	parts := splitRef(toolkitMonsterRef)
+	if len(parts) == 3 {
+		return &encounterv2pb.Ref{Module: parts[0], Type: parts[1], Id: parts[2]}
+	}
+	return &encounterv2pb.Ref{Module: refModuleDnd5e, Type: "monster", Id: toolkitMonsterRef}
 }

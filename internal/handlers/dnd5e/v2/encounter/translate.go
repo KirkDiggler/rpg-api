@@ -36,6 +36,12 @@ var ErrUnknownEventType = errors.New("translator has no mapping for this event t
 // choice baked in per pat-v2-combat-event-translator.
 var ErrEventSuppressed = errors.New("event deliberately suppressed by translator")
 
+// refModuleDnd5e is the canonical module string for the dnd5e rulebook. Used
+// as the Module field of proto Refs when the toolkit emits bare strings (no
+// fully-qualified module:type:id) and the v2 encounter wire needs to attribute
+// the ref to a specific rulebook. Future rulebooks would add their own const.
+const refModuleDnd5e = "dnd5e"
+
 // HexToPosition maps a toolkit cube hex (Q,R,S) to a proto Position (x,y,z).
 // The proto invariant x+y+z=0 is preserved by construction.
 func HexToPosition(h core.Hex) *encounterv2pb.Position {
@@ -368,7 +374,7 @@ func translateTurnEndedEvent(e *events.TurnEndedEvent, viewer core.PlayerID, now
 // ship.
 func damageRefFor(toolkitDamageType string) *encounterv2pb.Ref {
 	return &encounterv2pb.Ref{
-		Module: "dnd5e",
+		Module: refModuleDnd5e,
 		Type:   "damage",
 		Id:     toolkitDamageType,
 	}
@@ -383,7 +389,7 @@ func conditionRefFor(toolkitConditionRef string) *encounterv2pb.Ref {
 	if len(parts) == 3 {
 		return &encounterv2pb.Ref{Module: parts[0], Type: parts[1], Id: parts[2]}
 	}
-	return &encounterv2pb.Ref{Module: "dnd5e", Type: "condition", Id: toolkitConditionRef}
+	return &encounterv2pb.Ref{Module: refModuleDnd5e, Type: "condition", Id: toolkitConditionRef}
 }
 
 // splitRef splits a "module:type:id" string into its three parts. Returns
@@ -408,14 +414,18 @@ func splitRef(s string) []string {
 }
 
 // encounterModeToProto maps the toolkit's core.EncounterMode enum to the
-// proto EncounterMode enum. The toolkit's ModeUnspecified maps to
-// ENCOUNTER_MODE_UNSPECIFIED; FreeRoam → FREE_ROAM; TurnBased → TURN_BASED.
+// proto EncounterMode enum. ModeUnspecified is treated as FREE_ROAM per
+// the toolkit's documented convention (see encounter/core/mode.go: "the
+// zero value; treat as ModeFreeRoam unless explicitly set"). Both the
+// snapshot projector (ProjectFor) and the ModeChanged event translator
+// share this helper so the wire is consistent across snapshot vs.
+// live-event paths.
 func encounterModeToProto(m core.EncounterMode) encounterv2pb.EncounterMode {
 	switch m {
-	case core.ModeFreeRoam:
-		return encounterv2pb.EncounterMode_ENCOUNTER_MODE_FREE_ROAM
 	case core.ModeTurnBased:
 		return encounterv2pb.EncounterMode_ENCOUNTER_MODE_TURN_BASED
+	case core.ModeFreeRoam, core.ModeUnspecified:
+		return encounterv2pb.EncounterMode_ENCOUNTER_MODE_FREE_ROAM
 	}
 	return encounterv2pb.EncounterMode_ENCOUNTER_MODE_UNSPECIFIED
 }
