@@ -5,7 +5,6 @@ package encounter
 
 import (
 	"sort"
-	"strings"
 	"time"
 
 	encounterv2pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/encounter"
@@ -123,7 +122,7 @@ func ProjectFor(
 			},
 			Data: &encounterv2pb.Entity_Monster{
 				Monster: &encounterv2pb.MonsterData{
-					MonsterRef: parseMonsterRef(m.MonsterRef),
+					MonsterRef: monsterRefFor(m.MonsterRef),
 				},
 			},
 		})
@@ -131,7 +130,7 @@ func ProjectFor(
 
 	return &encounterv2pb.Encounter{
 		Id:        string(data.ID),
-		Mode:      mapMode(data.Mode),
+		Mode:      encounterModeToProto(data.Mode),
 		TurnState: buildTurnState(data),
 		Space: &encounterv2pb.Space{
 			Hexes:    hexes,
@@ -140,28 +139,15 @@ func ProjectFor(
 	}, nil
 }
 
-// mapMode converts a toolkit core.EncounterMode to the v1alpha2 wire enum.
-// ModeUnspecified (the zero value) is treated as FREE_ROAM per the toolkit's
-// documented convention (see encounter/core/mode.go).
-func mapMode(m core.EncounterMode) encounterv2pb.EncounterMode {
-	switch m {
-	case core.ModeTurnBased:
-		return encounterv2pb.EncounterMode_ENCOUNTER_MODE_TURN_BASED
-	case core.ModeFreeRoam:
-		return encounterv2pb.EncounterMode_ENCOUNTER_MODE_FREE_ROAM
-	case core.ModeUnspecified:
-		// Toolkit convention: treat unspecified as free-roam on the wire so
-		// late-joining clients don't see UNSPECIFIED for an exploration session
-		// that simply never set Mode explicitly.
-		return encounterv2pb.EncounterMode_ENCOUNTER_MODE_FREE_ROAM
-	default:
-		return encounterv2pb.EncounterMode_ENCOUNTER_MODE_UNSPECIFIED
-	}
-}
-
 // buildTurnState returns a populated TurnState only when the encounter is in
 // turn-based mode. ActionEconomy and AvailableActions are server-only state
 // for this PR; emitting them is tracked as a follow-up.
+//
+// Initiative IDs (and the active entity ID) are emitted verbatim — clients
+// need them as opaque tokens to render "whose turn" even when the active
+// entity is currently outside the viewer's LOS. Per-entity rich data
+// (position, hp, monster ref) is still LOS-gated via Space.Entities; the
+// initiative roster only exposes ids, which carry no spatial information.
 func buildTurnState(data *tkenc.Data) *encounterv2pb.TurnState {
 	if data.Mode != core.ModeTurnBased {
 		return nil
@@ -181,18 +167,15 @@ func buildTurnState(data *tkenc.Data) *encounterv2pb.TurnState {
 	}
 }
 
-// parseMonsterRef splits a toolkit monster ref string like
-// "dnd5e:monsters:goblin" into a proto Ref{Module, Type, Id}. If the string
-// is malformed (fewer than 3 colon-separated parts), the whole value is
-// passed through as Id so the wire still carries something identifying.
-func parseMonsterRef(ref string) *encounterv2pb.Ref {
-	parts := strings.SplitN(ref, ":", 3)
-	if len(parts) < 3 {
-		return &encounterv2pb.Ref{Id: ref}
+// monsterRefFor builds a proto Ref for a toolkit monster-ref string.
+// The toolkit ships a fully-qualified ref (e.g. "dnd5e:monsters:goblin");
+// we reuse splitRef from translate.go so the parsing contract is identical
+// across the v2 encounter wire (snapshot + live events). Bare strings are
+// treated as ids under module=dnd5e, type=monster, mirroring conditionRefFor.
+func monsterRefFor(toolkitMonsterRef string) *encounterv2pb.Ref {
+	parts := splitRef(toolkitMonsterRef)
+	if len(parts) == 3 {
+		return &encounterv2pb.Ref{Module: parts[0], Type: parts[1], Id: parts[2]}
 	}
-	return &encounterv2pb.Ref{
-		Module: parts[0],
-		Type:   parts[1],
-		Id:     parts[2],
-	}
+	return &encounterv2pb.Ref{Module: refModuleDnd5e, Type: "monster", Id: toolkitMonsterRef}
 }

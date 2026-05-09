@@ -214,9 +214,11 @@ func (s *ProjectSuite) TestProjectFor_TurnBased_ActiveIdxOutOfRange_NoActive() {
 	s.Require().Equal("", ts.GetActiveEntityId(), "out-of-range ActiveIdx -> empty active id")
 }
 
-func (s *ProjectSuite) TestProjectFor_MonsterRef_MalformedFallsBackToIdOnly() {
-	// A non-colon-separated MonsterRef must not blow up the projection — the
-	// raw string lands in the Id field so the wire still carries something.
+func (s *ProjectSuite) TestProjectFor_MonsterRef_MalformedFallsBackToDefaults() {
+	// A bare-string MonsterRef (not a fully-qualified module:type:id) must
+	// not blow up the projection. We mirror conditionRefFor's fallback in
+	// translate.go — default module=dnd5e, type=monster, id=raw — so the
+	// parsing contract is consistent across the v2 encounter wire.
 	data := tkenc.NewData("enc-bad-ref")
 	data.Mode = core.ModeTurnBased
 	data.Round = 1
@@ -234,15 +236,51 @@ func (s *ProjectSuite) TestProjectFor_MonsterRef_MalformedFallsBackToIdOnly() {
 
 	pb, err := v2encounter.ProjectFor(data, "player-alice", s.broker, s.now)
 	s.Require().NoError(err)
+	var found bool
 	for _, e := range pb.GetSpace().GetEntities() {
 		if e.GetId() != "weird-1" {
 			continue
 		}
+		found = true
 		ref := e.GetMonster().GetMonsterRef()
 		s.Require().NotNil(ref)
-		s.Require().Equal("", ref.GetModule())
-		s.Require().Equal("", ref.GetType())
+		s.Require().Equal("dnd5e", ref.GetModule())
+		s.Require().Equal("monster", ref.GetType())
 		s.Require().Equal("no-colons-here", ref.GetId())
+	}
+	s.Require().True(found, "weird-1 must be projected (in alice's LOS)")
+}
+
+func (s *ProjectSuite) TestProjectFor_MonsterRef_TooManyColonsTreatedAsMalformed() {
+	// splitRef requires exactly two colons. A four-part ref (three colons)
+	// must fall back to the default rather than misparse, since we share
+	// splitRef's strict contract with the rest of the v2 encounter wire.
+	data := tkenc.NewData("enc-3colon-ref")
+	data.Mode = core.ModeTurnBased
+	data.Round = 1
+	data.ActiveIdx = 0
+	data.Initiative = []core.EntityID{"char-alice", "long-1"}
+
+	alice := newPlayerData("player-alice", "char-alice", originHex, 3)
+	data.Players = map[core.PlayerID]*tkenc.PlayerData{"player-alice": alice}
+	data.Monsters = map[core.EntityID]*tkenc.MonsterData{
+		"long-1": {
+			ID: "long-1", Position: core.Hex{Q: 1, R: -1, S: 0},
+			HP: 1, MaxHP: 1, MonsterRef: "dnd5e:monsters:goblin:variant",
+		},
+	}
+
+	pb, err := v2encounter.ProjectFor(data, "player-alice", s.broker, s.now)
+	s.Require().NoError(err)
+	for _, e := range pb.GetSpace().GetEntities() {
+		if e.GetId() != "long-1" {
+			continue
+		}
+		ref := e.GetMonster().GetMonsterRef()
+		s.Require().Equal("dnd5e", ref.GetModule())
+		s.Require().Equal("monster", ref.GetType())
+		s.Require().Equal("dnd5e:monsters:goblin:variant", ref.GetId(),
+			"3+ colons -> fallback (raw lands in Id), per splitRef's strict contract")
 	}
 }
 
