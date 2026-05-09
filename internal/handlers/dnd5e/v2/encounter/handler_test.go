@@ -3,6 +3,7 @@ package encounter_test
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -451,6 +452,265 @@ func (s *HandlerSuite) TestInteract_OpenDoor_HappyPath() {
 	door, ok := loaded.Doors[core.EntityID("door-east")]
 	s.Require().True(ok, "door-east must remain in persisted Doors map")
 	s.Require().True(door.Open, "door-east must be persisted as Open after Interact")
+}
+
+// --------------------------------------------------------------------
+// Wave 2.9: locked-door Interact + SubmitCheck
+// --------------------------------------------------------------------
+
+// seedLockedDoorEncounter persists an encounter with player-A near a locked
+// door. Callers can override the door's lock fields by mutating the data
+// before re-saving. Returns the encounter ID for convenience.
+func (s *HandlerSuite) seedLockedDoorEncounter(encID, doorID string, dc int, ability, tool string) {
+	enc := tkenc.New(core.EncounterID(encID), s.broker)
+	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
+		PlayerID:   "player-A",
+		EntityID:   "char-A",
+		Position:   core.Hex{Q: 0, R: 0, S: 0},
+		SightRange: 4,
+	}))
+	enc.AddDoor(core.EntityID(doorID), core.Hex{Q: 1, R: 0, S: -1}, false)
+	data := enc.ToData()
+	door := data.Doors[core.EntityID(doorID)]
+	door.Locked = true
+	door.LockDC = dc
+	door.LockAbility = ability
+	door.LockTool = tool
+	s.Require().NoError(s.repo.Save(s.ctx, data))
+}
+
+func (s *HandlerSuite) TestInteract_LockedDoor_ReturnsSkillCheckPrompt() {
+	s.seedLockedDoorEncounter("enc-locked-1", "door-east", 15, "DEX", "dnd5e:item:thieves-tools")
+
+	resp, err := s.handler.Interact(s.ctx, &encounterv2pb.InteractRequest{
+		EncounterId:    "enc-locked-1",
+		TargetEntityId: "door-east",
+	})
+	s.Require().NoError(err)
+	s.Require().NotNil(resp)
+
+	prompt := resp.GetInputRequired().GetSkillCheck()
+	s.Require().NotNil(prompt, "InputRequired{skill_check} must be populated for locked door")
+	s.Require().Equal(int32(15), prompt.GetDc())
+	s.Require().Equal("DEX", prompt.GetAbility())
+	s.Require().NotNil(prompt.GetTool())
+	s.Require().Equal("dnd5e", prompt.GetTool().GetModule())
+	s.Require().Equal("item", prompt.GetTool().GetType())
+	s.Require().Equal("thieves-tools", prompt.GetTool().GetId())
+
+	// Persisted prompt survives the call so SubmitCheck can resolve it.
+	loaded, err := s.repo.Get(s.ctx, "enc-locked-1")
+	s.Require().NoError(err)
+	s.Require().NotNil(loaded.PendingPrompts)
+	s.Require().Contains(loaded.PendingPrompts, core.PlayerID("player-A"))
+
+	// Door state remains locked + closed until SubmitCheck resolves the prompt.
+	door, ok := loaded.Doors[core.EntityID("door-east")]
+	s.Require().True(ok)
+	s.Require().True(door.Locked)
+	s.Require().False(door.Open)
+}
+
+func (s *HandlerSuite) TestInteract_LockedDoor_OmitsToolWhenEmpty() {
+	// LockTool is empty (no tool proficiency required) — proto Tool field
+	// must be nil rather than a zero-valued Ref.
+	s.seedLockedDoorEncounter("enc-locked-no-tool", "door-east", 12, "STR", "")
+
+	resp, err := s.handler.Interact(s.ctx, &encounterv2pb.InteractRequest{
+		EncounterId:    "enc-locked-no-tool",
+		TargetEntityId: "door-east",
+	})
+	s.Require().NoError(err)
+	prompt := resp.GetInputRequired().GetSkillCheck()
+	s.Require().NotNil(prompt)
+	s.Require().Equal(int32(12), prompt.GetDc())
+	s.Require().Equal("STR", prompt.GetAbility())
+	s.Require().Nil(prompt.GetTool(), "tool ref must be nil when LockTool is empty")
+}
+
+func (s *HandlerSuite) TestInteract_LockedDoor_PendingPromptCollision_FailedPrecondition() {
+	s.seedLockedDoorEncounter("enc-locked-collide", "door-east", 15, "DEX", "")
+
+	// First call issues the prompt.
+	_, err := s.handler.Interact(s.ctx, &encounterv2pb.InteractRequest{
+		EncounterId:    "enc-locked-collide",
+		TargetEntityId: "door-east",
+	})
+	s.Require().NoError(err)
+
+	// Second call (same player, prompt outstanding) must be rejected — the
+	// "at most one pending prompt per player" invariant is enforced server
+	// side, never gated in the web client.
+	_, err = s.handler.Interact(s.ctx, &encounterv2pb.InteractRequest{
+		EncounterId:    "enc-locked-collide",
+		TargetEntityId: "door-east",
+	})
+	s.Require().Error(err)
+	st, _ := status.FromError(err)
+	s.Require().Equal(codes.FailedPrecondition, st.Code())
+}
+
+func (s *HandlerSuite) TestSubmitCheck_NoAuth_Unauthenticated() {
+	ctx := context.Background()
+	_, err := s.handler.SubmitCheck(ctx, &encounterv2pb.SubmitCheckRequest{
+		EncounterId: "enc-1", EntityId: "char-A", Roll: 10,
+	})
+	s.Require().Error(err)
+	st, _ := status.FromError(err)
+	s.Require().Equal(codes.Unauthenticated, st.Code())
+}
+
+func (s *HandlerSuite) TestSubmitCheck_EmptyEncounterID_InvalidArgument() {
+	_, err := s.handler.SubmitCheck(s.ctx, &encounterv2pb.SubmitCheckRequest{
+		EncounterId: "", EntityId: "char-A", Roll: 10,
+	})
+	s.Require().Error(err)
+	st, _ := status.FromError(err)
+	s.Require().Equal(codes.InvalidArgument, st.Code())
+}
+
+func (s *HandlerSuite) TestSubmitCheck_EmptyEntityID_InvalidArgument() {
+	_, err := s.handler.SubmitCheck(s.ctx, &encounterv2pb.SubmitCheckRequest{
+		EncounterId: "enc-1", EntityId: "", Roll: 10,
+	})
+	s.Require().Error(err)
+	st, _ := status.FromError(err)
+	s.Require().Equal(codes.InvalidArgument, st.Code())
+}
+
+func (s *HandlerSuite) TestSubmitCheck_RollOutOfRange_InvalidArgument() {
+	tests := []int32{0, 21, -1, 100}
+	for _, roll := range tests {
+		_, err := s.handler.SubmitCheck(s.ctx, &encounterv2pb.SubmitCheckRequest{
+			EncounterId: "enc-1", EntityId: "char-A", Roll: roll,
+		})
+		s.Require().Error(err, "roll=%d", roll)
+		st, _ := status.FromError(err)
+		s.Require().Equal(codes.InvalidArgument, st.Code(), "roll=%d", roll)
+	}
+}
+
+func (s *HandlerSuite) TestSubmitCheck_MissingEncounter_NotFound() {
+	_, err := s.handler.SubmitCheck(s.ctx, &encounterv2pb.SubmitCheckRequest{
+		EncounterId: "missing", EntityId: "char-A", Roll: 10,
+	})
+	s.Require().Error(err)
+	st, _ := status.FromError(err)
+	s.Require().Equal(codes.NotFound, st.Code())
+}
+
+func (s *HandlerSuite) TestSubmitCheck_NoPendingPrompt_FailedPrecondition() {
+	// Encounter exists with player-A but no prompt outstanding.
+	enc := tkenc.New("enc-no-prompt", s.broker)
+	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
+		PlayerID: "player-A", EntityID: "char-A", Position: core.Hex{Q: 0, R: 0, S: 0}, SightRange: 4,
+	}))
+	s.Require().NoError(s.repo.Save(s.ctx, enc.ToData()))
+
+	_, err := s.handler.SubmitCheck(s.ctx, &encounterv2pb.SubmitCheckRequest{
+		EncounterId: "enc-no-prompt", EntityId: "char-A", Roll: 15,
+	})
+	s.Require().Error(err)
+	st, _ := status.FromError(err)
+	s.Require().Equal(codes.FailedPrecondition, st.Code())
+}
+
+func (s *HandlerSuite) TestSubmitCheck_SuccessPath_OpensDoorAndEmitsEvents() {
+	s.seedLockedDoorEncounter("enc-resolve-1", "door-east", 10, "DEX", "")
+
+	// Issue the prompt first via Interact (puts a PendingPrompt on the encounter).
+	_, err := s.handler.Interact(s.ctx, &encounterv2pb.InteractRequest{
+		EncounterId:    "enc-resolve-1",
+		TargetEntityId: "door-east",
+	})
+	s.Require().NoError(err)
+
+	// Subscribe before resolving so we capture the DoorOpened event.
+	sub, err := s.broker.Subscribe(core.EncounterID("enc-resolve-1"), core.PlayerID("player-A"))
+	s.Require().NoError(err)
+	defer func() { _ = sub.Close() }()
+
+	// Roll 20 — well above DC 10 even with stub resolver returning zero mods.
+	resp, err := s.handler.SubmitCheck(s.ctx, &encounterv2pb.SubmitCheckRequest{
+		EncounterId: "enc-resolve-1", EntityId: "char-A", Roll: 20,
+	})
+	s.Require().NoError(err)
+	s.Require().True(resp.GetSuccess())
+	s.Require().Equal(int32(20), resp.GetTotal())
+
+	// Drain broker events with a short timeout. We expect at least one
+	// DoorOpenedEvent emitted by the toolkit's OpenDoor dispatch.
+	var sawDoorOpened bool
+	timer := time.After(200 * time.Millisecond)
+	for !sawDoorOpened {
+		select {
+		case evt, ok := <-sub.Events():
+			if !ok {
+				s.FailNow("subscription closed before DoorOpened arrived")
+			}
+			// We don't import the toolkit event types here; reflect on the
+			// concrete type name to keep this test free of new imports. The
+			// integration test below verifies the wire shape end-to-end.
+			if evt != nil {
+				if t := fmt.Sprintf("%T", evt); strings.Contains(t, "DoorOpened") {
+					sawDoorOpened = true
+				}
+			}
+		case <-timer:
+			s.FailNow("timed out waiting for DoorOpenedEvent on success path")
+		}
+	}
+
+	// Door is now open + unlocked, prompt cleared.
+	loaded, err := s.repo.Get(s.ctx, "enc-resolve-1")
+	s.Require().NoError(err)
+	door, ok := loaded.Doors[core.EntityID("door-east")]
+	s.Require().True(ok)
+	s.Require().True(door.Open)
+	s.Require().False(door.Locked, "successful unlock clears Locked")
+	s.Require().Empty(loaded.PendingPrompts, "prompt cleared after successful SubmitCheck")
+}
+
+func (s *HandlerSuite) TestSubmitCheck_FailurePath_NoEventsPromptCleared() {
+	s.seedLockedDoorEncounter("enc-resolve-fail", "door-east", 30, "DEX", "")
+
+	_, err := s.handler.Interact(s.ctx, &encounterv2pb.InteractRequest{
+		EncounterId:    "enc-resolve-fail",
+		TargetEntityId: "door-east",
+	})
+	s.Require().NoError(err)
+
+	sub, err := s.broker.Subscribe(core.EncounterID("enc-resolve-fail"), core.PlayerID("player-A"))
+	s.Require().NoError(err)
+	defer func() { _ = sub.Close() }()
+
+	// Roll 1 against DC 30 — guaranteed failure.
+	resp, err := s.handler.SubmitCheck(s.ctx, &encounterv2pb.SubmitCheckRequest{
+		EncounterId: "enc-resolve-fail", EntityId: "char-A", Roll: 1,
+	})
+	s.Require().NoError(err)
+	s.Require().False(resp.GetSuccess())
+	s.Require().Equal(int32(1), resp.GetTotal())
+
+	// No DoorOpened/HexRevealed events should fire on failure. Wait briefly
+	// to give a misbehaving toolkit a chance to publish; absence is the assertion.
+	select {
+	case evt := <-sub.Events():
+		if evt != nil {
+			s.Failf("unexpected event on failure path", "%T", evt)
+		}
+	case <-time.After(100 * time.Millisecond):
+		// expected: no events
+	}
+
+	// Door remains closed + locked (failure doesn't unlock), prompt cleared.
+	loaded, err := s.repo.Get(s.ctx, "enc-resolve-fail")
+	s.Require().NoError(err)
+	door, ok := loaded.Doors[core.EntityID("door-east")]
+	s.Require().True(ok)
+	s.Require().False(door.Open)
+	s.Require().True(door.Locked, "failed unlock leaves door locked")
+	s.Require().Empty(loaded.PendingPrompts, "prompt cleared even on failure")
 }
 
 func TestHandlerSuite(t *testing.T) {

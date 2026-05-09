@@ -643,6 +643,205 @@ func (s *EncounterV2IntegrationSuite) TestInteract_DoorAlreadyOpen_FailedPrecond
 	s.Require().Equal(codes.FailedPrecondition, st.Code())
 }
 
+// TestInteract_LockedDoor_PromptAndResolve_TwoPlayers is the Wave 2.9 gate
+// test. It exercises the full locked-door flow end-to-end:
+//
+//   - Two players in mutual LoS see a locked door.
+//   - alice calls Interact on the locked door — the response carries
+//     InputRequired{skill_check} (caller-private); bob's stream sees nothing
+//     for the prompt itself.
+//   - alice calls SubmitCheck with a passing roll — both alice and bob
+//     receive DoorOpened; the door is persisted as open + unlocked.
+//
+// The failure-path subtest exercises the same flow with a roll guaranteed to
+// fall short of the DC: the prompt clears, no events fire, and the door
+// stays closed + locked.
+func (s *EncounterV2IntegrationSuite) TestInteract_LockedDoor_PromptAndResolve_TwoPlayers() {
+	encID := "enc-locked-1"
+
+	// Seed: alice + bob in mutual LoS; one locked door at distance 4 from
+	// both (matches the unlocked-door test fixture so projection logic is
+	// the same).
+	enc := tkenc.New(core.EncounterID(encID), s.srv.BrokerV2)
+	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
+		PlayerID: "alice", EntityID: "char-alice",
+		Position: core.Hex{Q: 0, R: 0, S: 0}, SightRange: 10,
+	}))
+	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
+		PlayerID: "bob", EntityID: "char-bob",
+		Position: core.Hex{Q: 1, R: -1, S: 0}, SightRange: 10,
+	}))
+	enc.AddDoor("door-east", core.Hex{Q: 4, R: 0, S: -4}, false)
+	data := enc.ToData()
+	door := data.Doors[core.EntityID("door-east")]
+	door.Locked = true
+	door.LockDC = 10
+	door.LockAbility = "DEX"
+	door.LockTool = "dnd5e:item:thieves-tools"
+	s.Require().NoError(s.srv.EncRepoV2.Save(s.ctx, data))
+
+	ctxA := s.authCtx("alice")
+	ctxB := s.authCtx("bob")
+
+	streamA, err := s.srv.EncounterClientV2.StreamEncounter(ctxA,
+		&encounterv2pb.StreamEncounterRequest{EncounterId: encID})
+	s.Require().NoError(err)
+	streamB, err := s.srv.EncounterClientV2.StreamEncounter(ctxB,
+		&encounterv2pb.StreamEncounterRequest{EncounterId: encID})
+	s.Require().NoError(err)
+
+	// Drain replay (Snapshot + 2 EntityAppeared + 1 GeometryRevealed = 4 events
+	// per stream, matching TestInteract_OpenDoor_TwoPlayers).
+	for i := 0; i < 4; i++ {
+		_, recvErr := streamA.Recv()
+		s.Require().NoError(recvErr, "alice replay event %d", i+1)
+		_, recvErr = streamB.Recv()
+		s.Require().NoError(recvErr, "bob replay event %d", i+1)
+	}
+
+	// --- Step 1: alice attempts to open the locked door. ---
+	resp, err := s.srv.EncounterClientV2.Interact(ctxA, &encounterv2pb.InteractRequest{
+		EncounterId:    encID,
+		TargetEntityId: "door-east",
+	})
+	s.Require().NoError(err)
+	s.Require().NotNil(resp)
+	prompt := resp.GetInputRequired().GetSkillCheck()
+	s.Require().NotNil(prompt, "locked door must return InputRequired{skill_check}")
+	s.Require().Equal(int32(10), prompt.GetDc())
+	s.Require().Equal("DEX", prompt.GetAbility())
+	s.Require().NotNil(prompt.GetTool())
+	s.Require().Equal("dnd5e", prompt.GetTool().GetModule())
+	s.Require().Equal("thieves-tools", prompt.GetTool().GetId())
+
+	// --- Step 2: alice submits a passing roll (20 vs DC 10). ---
+	// We drain bob's stream once after the SubmitCheck below; the cumulative
+	// window covers both Step 1 (which must be silent for bob since the
+	// prompt is caller-private) and Step 2 (which must publish DoorOpened
+	// to both viewers since the door is in their shared LoS). Two
+	// collectStreamEvents calls on the same stream would race on Recv.
+	subResp, err := s.srv.EncounterClientV2.SubmitCheck(ctxA, &encounterv2pb.SubmitCheckRequest{
+		EncounterId: encID,
+		EntityId:    "char-alice",
+		Roll:        20,
+	})
+	s.Require().NoError(err)
+	s.Require().True(subResp.GetSuccess())
+	s.Require().Equal(int32(20), subResp.GetTotal())
+
+	// Both alice and bob now receive DoorOpened (door is in both LoS).
+	postA := s.collectStreamEvents(streamA, 3, 500*time.Millisecond)
+	postB := s.collectStreamEvents(streamB, 3, 500*time.Millisecond)
+
+	var aDoor, bDoor *encounterv2pb.DoorOpened
+	for _, ev := range postA {
+		if d := ev.GetDoorOpened(); d != nil {
+			aDoor = d
+			break
+		}
+	}
+	for _, ev := range postB {
+		if d := ev.GetDoorOpened(); d != nil {
+			bDoor = d
+			break
+		}
+	}
+	s.Require().NotNil(aDoor, "alice should receive DoorOpened (she resolved the prompt)")
+	s.Require().Equal("door-east", aDoor.GetDoorEntityId())
+	s.Require().NotNil(bDoor, "bob should receive DoorOpened (door is in his LoS)")
+	s.Require().Equal("door-east", bDoor.GetDoorEntityId())
+
+	// The prompt was caller-private: walk bob's drained event list and
+	// confirm no extra envelopes arrived ahead of DoorOpened (geometry
+	// events trail DoorOpened in the toolkit's emit order).
+	for _, ev := range postB {
+		if d := ev.GetDoorOpened(); d != nil {
+			break
+		}
+		s.Failf("bob received an unexpected event before DoorOpened",
+			"event %s arrived ahead of DoorOpened", ev.String())
+	}
+
+	// Door is persisted as open + unlocked, prompt cleared.
+	persisted, err := s.srv.EncRepoV2.Get(s.ctx, encID)
+	s.Require().NoError(err)
+	pdoor, ok := persisted.Doors[core.EntityID("door-east")]
+	s.Require().True(ok)
+	s.Require().True(pdoor.Open)
+	s.Require().False(pdoor.Locked, "successful unlock clears Locked")
+	s.Require().Empty(persisted.PendingPrompts, "prompt cleared after successful resolve")
+}
+
+// TestInteract_LockedDoor_FailedRoll_NoEvents covers the failure path of the
+// Wave 2.9 flow: alice issues the prompt, submits a roll that can't beat the
+// DC, and bob's stream sees nothing while alice's response reports failure.
+// The door remains closed + locked; the prompt is cleared so alice can try
+// again from scratch.
+func (s *EncounterV2IntegrationSuite) TestInteract_LockedDoor_FailedRoll_NoEvents() {
+	encID := "enc-locked-fail"
+
+	enc := tkenc.New(core.EncounterID(encID), s.srv.BrokerV2)
+	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
+		PlayerID: "alice", EntityID: "char-alice",
+		Position: core.Hex{Q: 0, R: 0, S: 0}, SightRange: 10,
+	}))
+	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
+		PlayerID: "bob", EntityID: "char-bob",
+		Position: core.Hex{Q: 1, R: -1, S: 0}, SightRange: 10,
+	}))
+	enc.AddDoor("door-east", core.Hex{Q: 4, R: 0, S: -4}, false)
+	data := enc.ToData()
+	door := data.Doors[core.EntityID("door-east")]
+	door.Locked = true
+	door.LockDC = 30 // unbeatable with d20 + zero modifiers
+	door.LockAbility = "DEX"
+	s.Require().NoError(s.srv.EncRepoV2.Save(s.ctx, data))
+
+	ctxA := s.authCtx("alice")
+	ctxB := s.authCtx("bob")
+
+	streamA, err := s.srv.EncounterClientV2.StreamEncounter(ctxA,
+		&encounterv2pb.StreamEncounterRequest{EncounterId: encID})
+	s.Require().NoError(err)
+	streamB, err := s.srv.EncounterClientV2.StreamEncounter(ctxB,
+		&encounterv2pb.StreamEncounterRequest{EncounterId: encID})
+	s.Require().NoError(err)
+	for i := 0; i < 4; i++ {
+		_, _ = streamA.Recv()
+		_, _ = streamB.Recv()
+	}
+
+	_, err = s.srv.EncounterClientV2.Interact(ctxA, &encounterv2pb.InteractRequest{
+		EncounterId:    encID,
+		TargetEntityId: "door-east",
+	})
+	s.Require().NoError(err)
+
+	subResp, err := s.srv.EncounterClientV2.SubmitCheck(ctxA, &encounterv2pb.SubmitCheckRequest{
+		EncounterId: encID,
+		EntityId:    "char-alice",
+		Roll:        1, // guaranteed failure vs DC 30
+	})
+	s.Require().NoError(err)
+	s.Require().False(subResp.GetSuccess(), "roll 1 vs DC 30 must fail")
+	s.Require().Equal(int32(1), subResp.GetTotal())
+
+	// Drain each stream once with a settle window. Failure path must not
+	// publish any post-replay events on either stream.
+	silentA := s.collectStreamEvents(streamA, 1, 250*time.Millisecond)
+	s.Require().Empty(silentA, "alice must not see DoorOpened on failed unlock")
+	silentB := s.collectStreamEvents(streamB, 1, 250*time.Millisecond)
+	s.Require().Empty(silentB, "bob must not see anything on failed unlock")
+
+	persisted, err := s.srv.EncRepoV2.Get(s.ctx, encID)
+	s.Require().NoError(err)
+	pdoor, ok := persisted.Doors[core.EntityID("door-east")]
+	s.Require().True(ok)
+	s.Require().False(pdoor.Open, "door stays closed on failed unlock")
+	s.Require().True(pdoor.Locked, "door stays locked on failed unlock")
+	s.Require().Empty(persisted.PendingPrompts, "prompt cleared even on failure")
+}
+
 // TestCombatSlice_TakeActionAndEndTurn_NPCDispatch is the wave-2.8 gate test.
 // It exercises the full attack → endturn → npc-act → endturn loop on bufconn:
 //

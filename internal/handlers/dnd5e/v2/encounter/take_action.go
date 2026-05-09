@@ -75,7 +75,7 @@ func (h *Handler) TakeAction(ctx context.Context, req *encounterv2pb.TakeActionR
 		return nil, status.Error(codes.PermissionDenied, "actor_entity_id does not match player's controlled entity")
 	}
 
-	enc, err := tkenc.LoadFromData(data, h.broker)
+	enc, err := tkenc.LoadFromData(data, h.broker, tkenc.WithCharacterResolver(h.resolver))
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "load from data %q: %v", req.GetEncounterId(), err)
 	}
