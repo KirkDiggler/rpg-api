@@ -3,7 +3,6 @@ package encounter
 import (
 	"context"
 	"errors"
-	"strings"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -146,13 +145,15 @@ func buildSkillCheckPrompt(issued encounter.PromptIssued) *encounterv2pb.InputRe
 }
 
 // parseToolkitRef converts a toolkit ref string (e.g.
-// "dnd5e:item:thieves-tools") into a proto Ref. Falls back to a generic
-// {dnd5e, item, raw} encoding if the ref isn't in the canonical
-// "module:type:id" shape so unknown refs still round-trip something the
-// client can display.
+// "dnd5e:item:thieves-tools") into a proto Ref. Reuses the package's
+// existing splitRef helper (translate.go) so ref parsing semantics stay
+// consistent across projection / translation / prompt translation —
+// splitRef requires exactly two colons and returns nil otherwise. Falls
+// back to a generic {dnd5e, item, raw} encoding if the ref isn't in the
+// canonical "module:type:id" shape so unknown refs still round-trip
+// something the client can display.
 func parseToolkitRef(ref string) *encounterv2pb.Ref {
-	parts := strings.SplitN(ref, ":", 3)
-	if len(parts) == 3 {
+	if parts := splitRef(ref); parts != nil {
 		return &encounterv2pb.Ref{Module: parts[0], Type: parts[1], Id: parts[2]}
 	}
 	return &encounterv2pb.Ref{Module: refModuleDnd5e, Type: "item", Id: ref}

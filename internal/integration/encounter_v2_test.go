@@ -807,8 +807,10 @@ func (s *EncounterV2IntegrationSuite) TestInteract_LockedDoor_FailedRoll_NoEvent
 		&encounterv2pb.StreamEncounterRequest{EncounterId: encID})
 	s.Require().NoError(err)
 	for i := 0; i < 4; i++ {
-		_, _ = streamA.Recv()
-		_, _ = streamB.Recv()
+		_, recvErr := streamA.Recv()
+		s.Require().NoError(recvErr, "alice replay event %d", i+1)
+		_, recvErr = streamB.Recv()
+		s.Require().NoError(recvErr, "bob replay event %d", i+1)
 	}
 
 	_, err = s.srv.EncounterClientV2.Interact(ctxA, &encounterv2pb.InteractRequest{

@@ -458,9 +458,11 @@ func (s *HandlerSuite) TestInteract_OpenDoor_HappyPath() {
 // Wave 2.9: locked-door Interact + SubmitCheck
 // --------------------------------------------------------------------
 
-// seedLockedDoorEncounter persists an encounter with player-A near a locked
-// door. Callers can override the door's lock fields by mutating the data
-// before re-saving. Returns the encounter ID for convenience.
+// seedLockedDoorEncounter persists an encounter with player-A standing
+// adjacent to a locked door whose lock parameters are taken from the
+// (dc, ability, tool) arguments. Tests that need finer control over the
+// fixture should construct the Data themselves rather than extending this
+// helper — it intentionally takes no extra knobs to keep call sites readable.
 func (s *HandlerSuite) seedLockedDoorEncounter(encID, doorID string, dc int, ability, tool string) {
 	enc := tkenc.New(core.EncounterID(encID), s.broker)
 	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
@@ -597,6 +599,42 @@ func (s *HandlerSuite) TestSubmitCheck_MissingEncounter_NotFound() {
 	s.Require().Error(err)
 	st, _ := status.FromError(err)
 	s.Require().Equal(codes.NotFound, st.Code())
+}
+
+func (s *HandlerSuite) TestSubmitCheck_NonMember_PermissionDenied() {
+	// Encounter exists with a different player (not the caller).
+	enc := tkenc.New("enc-non-member", s.broker)
+	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
+		PlayerID: "other-player", EntityID: "other-char",
+		Position: core.Hex{Q: 0, R: 0, S: 0}, SightRange: 4,
+	}))
+	s.Require().NoError(s.repo.Save(s.ctx, enc.ToData()))
+
+	// player-A (the auth context's player) is not a member.
+	_, err := s.handler.SubmitCheck(s.ctx, &encounterv2pb.SubmitCheckRequest{
+		EncounterId: "enc-non-member", EntityId: "char-A", Roll: 10,
+	})
+	s.Require().Error(err)
+	st, _ := status.FromError(err)
+	s.Require().Equal(codes.PermissionDenied, st.Code())
+}
+
+func (s *HandlerSuite) TestSubmitCheck_EntityIDMismatch_PermissionDenied() {
+	// Caller is in the encounter but the request's entity_id does not match
+	// their controlled entity (player-A controls char-A).
+	enc := tkenc.New("enc-wrong-entity", s.broker)
+	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
+		PlayerID: "player-A", EntityID: "char-A",
+		Position: core.Hex{Q: 0, R: 0, S: 0}, SightRange: 4,
+	}))
+	s.Require().NoError(s.repo.Save(s.ctx, enc.ToData()))
+
+	_, err := s.handler.SubmitCheck(s.ctx, &encounterv2pb.SubmitCheckRequest{
+		EncounterId: "enc-wrong-entity", EntityId: "char-someone-else", Roll: 10,
+	})
+	s.Require().Error(err)
+	st, _ := status.FromError(err)
+	s.Require().Equal(codes.PermissionDenied, st.Code())
 }
 
 func (s *HandlerSuite) TestSubmitCheck_NoPendingPrompt_FailedPrecondition() {

@@ -35,6 +35,9 @@ const (
 //   - roll outside [1, 20] → InvalidArgument (defense in depth before
 //     the toolkit also checks; surfaces a clearer error to the client)
 //   - encounter not in repo → NotFound
+//   - caller is not a member of the encounter → PermissionDenied
+//   - entity_id does not match caller's controlled entity →
+//     PermissionDenied (mirrors MoveEntity / EndTurn / TakeAction)
 //   - no pending prompt → FailedPrecondition
 //   - prompt is not a skill check → FailedPrecondition (other prompt
 //     kinds resolve via different verbs in future waves)
@@ -72,6 +75,23 @@ func (h *Handler) SubmitCheck(ctx context.Context, req *encounterv2pb.SubmitChec
 		}
 		return nil, status.Errorf(codes.Internal,
 			"load encounter %q: %v", req.GetEncounterId(), err)
+	}
+
+	// Authorization: the caller must be a member of this encounter and the
+	// supplied entity_id must match their controlled entity. Mirrors the
+	// pattern used by MoveEntity / EndTurn / TakeAction so a caller cannot
+	// resolve a prompt that doesn't belong to them (defense in depth — the
+	// toolkit already keys PendingPrompts by playerID, so a non-member would
+	// hit ErrNoPendingPrompt anyway, but PermissionDenied is the clearer
+	// signal and prevents leaking encounter membership through the FailedPrecondition
+	// vs PermissionDenied distinction).
+	pd, ok := data.Players[core.PlayerID(playerID)]
+	if !ok {
+		return nil, status.Error(codes.PermissionDenied, "player is not in this encounter")
+	}
+	if string(pd.EntityID) != req.GetEntityId() {
+		return nil, status.Error(codes.PermissionDenied,
+			"entity_id does not match player's controlled entity")
 	}
 
 	enc, err := tkenc.LoadFromData(data, h.broker, tkenc.WithCharacterResolver(h.resolver))
