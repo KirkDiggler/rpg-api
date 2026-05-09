@@ -7,10 +7,11 @@ import (
 	"sort"
 	"time"
 
-	encounterv2pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/encounter"
 	tkenc "github.com/KirkDiggler/rpg-toolkit/encounter"
 	"github.com/KirkDiggler/rpg-toolkit/encounter/core"
 	"github.com/KirkDiggler/rpg-toolkit/encounter/perception"
+
+	encounterv2pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/encounter"
 )
 
 // ProjectFor builds a proto *encounterv2pb.Encounter for the given viewer from
@@ -80,20 +81,14 @@ func ProjectFor(
 		pd := data.Players[pid]
 		if pid == viewer {
 			// Viewer always sees their own entity.
-			entities = append(entities, &encounterv2pb.Entity{
-				Id:       string(pd.EntityID),
-				Position: HexToPosition(snap.Position),
-			})
+			entities = append(entities, playerEntity(pd, snap.Position))
 			continue
 		}
 		if pd.View == nil {
 			continue
 		}
 		if visibleNow != nil && visibleNow.Has(pd.View.Position) {
-			entities = append(entities, &encounterv2pb.Entity{
-				Id:       string(pd.EntityID),
-				Position: HexToPosition(pd.View.Position),
-			})
+			entities = append(entities, playerEntity(pd, pd.View.Position))
 		}
 	}
 
@@ -164,6 +159,32 @@ func buildTurnState(data *tkenc.Data) *encounterv2pb.TurnState {
 		InitiativeOrder: order,
 		ActiveEntityId:  active,
 		Round:           int32(data.Round),
+	}
+}
+
+// playerEntity builds the wire-shape proto Entity for a player seat. The
+// viewer's-own and visible-other-player branches differ only in which position
+// the caller supplies (snap.Position vs pd.View.Position), so the rest of the
+// emit lives here to keep them symmetric and to mirror the monster emit shape.
+//
+// CharacterData currently sets only PlayerId. ClassRef/RaceRef are deferred
+// until toolkit PlayerData carries class/race info; see issue #511 for the
+// rationale (we don't want to couple ProjectFor to the character orchestrator
+// for a thin enrichment).
+func playerEntity(pd *tkenc.PlayerData, pos core.Hex) *encounterv2pb.Entity {
+	return &encounterv2pb.Entity{
+		Id:       string(pd.EntityID),
+		Position: HexToPosition(pos),
+		Type:     encounterv2pb.EntityType_ENTITY_TYPE_CHARACTER,
+		Hp: &encounterv2pb.HitPoints{
+			Current: int32(pd.HP),
+			Max:     int32(pd.MaxHP),
+		},
+		Data: &encounterv2pb.Entity_Character{
+			Character: &encounterv2pb.CharacterData{
+				PlayerId: string(pd.ID),
+			},
+		},
 	}
 }
 

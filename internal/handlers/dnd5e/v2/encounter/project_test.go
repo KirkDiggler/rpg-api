@@ -6,11 +6,12 @@ import (
 
 	"github.com/stretchr/testify/suite"
 
-	encounterv2pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/encounter"
-	v2encounter "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v2/encounter"
 	tkenc "github.com/KirkDiggler/rpg-toolkit/encounter"
 	"github.com/KirkDiggler/rpg-toolkit/encounter/core"
 	"github.com/KirkDiggler/rpg-toolkit/encounter/perception"
+
+	encounterv2pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/encounter"
+	v2encounter "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v2/encounter"
 )
 
 // ProjectSuite covers ProjectFor's per-viewer projection of toolkit
@@ -249,6 +250,72 @@ func (s *ProjectSuite) TestProjectFor_MonsterRef_MalformedFallsBackToDefaults() 
 		s.Require().Equal("no-colons-here", ref.GetId())
 	}
 	s.Require().True(found, "weird-1 must be projected (in alice's LOS)")
+}
+
+func (s *ProjectSuite) TestProjectFor_PlayerEntitiesCarryTypeHpAndCharacterData() {
+	// Symmetric to monster emission: both the viewer's own entity and visible
+	// other-player entities must carry Type=CHARACTER, HP, and CharacterData
+	// with PlayerId populated. Previously these emit paths produced bare
+	// {id, position} entities which rendered as UNSPECIFIED with no HP on the
+	// client (issue #511).
+	data := tkenc.NewData("enc-players")
+	data.Mode = core.ModeTurnBased
+	data.Round = 1
+	data.ActiveIdx = 0
+	data.Initiative = []core.EntityID{"char-alice", "char-bob"}
+
+	alice := newPlayerData("player-alice", "char-alice", originHex, 3)
+	alice.HP = 12
+	alice.MaxHP = 15
+
+	bob := newPlayerData("player-bob", "char-bob", core.Hex{Q: 1, R: -1, S: 0}, 3)
+	bob.HP = 8
+	bob.MaxHP = 10
+
+	data.Players = map[core.PlayerID]*tkenc.PlayerData{
+		"player-alice": alice,
+		"player-bob":   bob,
+	}
+
+	pb, err := v2encounter.ProjectFor(data, "player-alice", s.broker, s.now)
+	s.Require().NoError(err)
+
+	byID := make(map[string]*encounterv2pb.Entity)
+	for _, e := range pb.GetSpace().GetEntities() {
+		byID[e.GetId()] = e
+	}
+
+	// Viewer's own entity (alice).
+	a := byID["char-alice"]
+	s.Require().NotNil(a, "viewer's own entity must be emitted")
+	s.Require().Equal(
+		encounterv2pb.EntityType_ENTITY_TYPE_CHARACTER, a.GetType(),
+		"viewer's own entity must carry ENTITY_TYPE_CHARACTER",
+	)
+	s.Require().NotNil(a.GetHp(), "viewer's own entity must carry HP")
+	s.Require().Equal(int32(12), a.GetHp().GetCurrent())
+	s.Require().Equal(int32(15), a.GetHp().GetMax())
+	ac := a.GetCharacter()
+	s.Require().NotNil(ac, "viewer's own entity must carry CharacterData oneof")
+	s.Require().Equal("player-alice", ac.GetPlayerId(),
+		"CharacterData.PlayerId must equal the toolkit PlayerData.ID")
+	// ClassRef / RaceRef intentionally deferred — see issue #511 deferred section.
+	s.Require().Nil(ac.GetClassRef(), "ClassRef deferred until PlayerData carries it")
+	s.Require().Nil(ac.GetRaceRef(), "RaceRef deferred until PlayerData carries it")
+
+	// Visible other-player (bob, in alice's sight).
+	b := byID["char-bob"]
+	s.Require().NotNil(b, "visible other-player must be emitted")
+	s.Require().Equal(
+		encounterv2pb.EntityType_ENTITY_TYPE_CHARACTER, b.GetType(),
+		"visible other-player must carry ENTITY_TYPE_CHARACTER",
+	)
+	s.Require().NotNil(b.GetHp(), "visible other-player must carry HP")
+	s.Require().Equal(int32(8), b.GetHp().GetCurrent())
+	s.Require().Equal(int32(10), b.GetHp().GetMax())
+	bc := b.GetCharacter()
+	s.Require().NotNil(bc, "visible other-player must carry CharacterData oneof")
+	s.Require().Equal("player-bob", bc.GetPlayerId())
 }
 
 func (s *ProjectSuite) TestProjectFor_MonsterRef_TooManyColonsTreatedAsMalformed() {
