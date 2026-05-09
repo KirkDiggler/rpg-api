@@ -993,6 +993,372 @@ func (s *EncounterV2IntegrationSuite) TestCombatSlice_TakeActionAndEndTurn_NPCDi
 		"after EndTurn + NPC dispatch loop, active actor must be a player, got %q", finalActive)
 }
 
+// Wave 2.10 integration tests: death + encounter end ----------------------
+//
+// Two scenarios verify the full death-resolution slice end-to-end:
+//
+//   1. Last-hostile kill: 2 players + 1 goblin. Active player attacks the
+//      goblin to HP=0; both streams must receive EntityDied + EntityRemoved
+//      + EncounterEnded. A subsequent TakeAction must return
+//      FailedPrecondition (mapped from tkenc.ErrEncounterEnded).
+//
+//   2. Mid-fight kill (no end): 2 players + 2 goblins. Active player kills
+//      goblin-1; both streams must receive EntityDied + EntityRemoved for
+//      goblin-1 only — no EncounterEnded. The active player ends turn; the
+//      NPC dispatch loop skips dead goblin-1 (now spliced out of
+//      initiative) and brings combat back around. Active player kills
+//      goblin-2; EncounterEnded fires.
+//
+// Determinism: monsters are seeded with HP=1 and the killing player has
+// AttackBonus=20 (so any d20 roll except nat-1 hits AC=10). Damage dice
+// "1d6" guarantees >=1 dmg on hit, killing HP=1 monster. Tests loop
+// TakeAction up to maxKillAttempts to absorb the rare nat-1 miss without
+// flakiness.
+
+// maxKillAttempts caps the number of TakeAction calls used to drive a
+// goblin (HP=1, AC=10) to zero HP from a player with AttackBonus=20.
+// Each attack misses only on nat-1 (5% chance), so 20 attempts give a
+// failure probability of (1/20)^20 ≈ 9.5e-27 — well below CI flakiness
+// floors.
+const maxKillAttempts = 20
+
+// killGoblinFixturePlayerInput returns a PlayerInput tuned for the death
+// integration tests: AttackBonus=20 + DamageDice "1d6" makes the player a
+// reliable HP=1 monster killer (assuming AC=10 monsters).
+func killGoblinFixturePlayerInput(playerID core.PlayerID, entityID core.EntityID, pos core.Hex) tkenc.PlayerInput {
+	return tkenc.PlayerInput{
+		PlayerID: playerID, EntityID: entityID,
+		Position: pos, SightRange: 10,
+		HP: 12, MaxHP: 12, AC: 14,
+		AttackBonus: 20,
+		DamageDice:  "1d6",
+		DamageType:  "slashing",
+	}
+}
+
+// killGoblinFixtureMonsterInput returns a MonsterInput tuned for the death
+// integration tests: HP=1 + AC=10 goes down to any d20-roll-except-nat-1
+// + 1+ damage attack from the killGoblinFixturePlayerInput player.
+func killGoblinFixtureMonsterInput(id core.EntityID, pos core.Hex) tkenc.MonsterInput {
+	return tkenc.MonsterInput{
+		ID: id, Position: pos,
+		HP: 1, MaxHP: 1, AC: 10, Speed: 6,
+		MonsterRef:  "dnd5e:monsters:goblin",
+		AttackBonus: 4, DamageDice: "1d6+2", DamageType: "slashing",
+	}
+}
+
+// killMonsterViaTakeActionLoop calls TakeAction up to maxKillAttempts times
+// against monsterID using the active player's context. Returns when the
+// goblin HP reaches 0 (verified via repo read after each call) or after the
+// cap. Stops early if TakeAction errors with FailedPrecondition (e.g., the
+// encounter ended).
+func (s *EncounterV2IntegrationSuite) killMonsterViaTakeActionLoop(
+	ctx context.Context,
+	encID, actorEntityID, monsterID string,
+) {
+	for attempt := 0; attempt < maxKillAttempts; attempt++ {
+		_, err := s.srv.EncounterClientV2.TakeAction(ctx, &encounterv2pb.TakeActionRequest{
+			EncounterId:   encID,
+			ActorEntityId: actorEntityID,
+			ActionRef:     &encounterv2pb.Ref{Module: "dnd5e", Type: "action", Id: "attack"},
+			Target: &encounterv2pb.ActionTarget{
+				Kind: &encounterv2pb.ActionTarget_EntityId{EntityId: monsterID},
+			},
+		})
+		if err != nil {
+			// FailedPrecondition surfaces when the encounter ended (last
+			// hostile dropped). That's the success exit for the last-monster
+			// case — the kill landed on the prior call and this attempt
+			// raced past the terminal-state gate.
+			if st, ok := status.FromError(err); ok && st.Code() == codes.FailedPrecondition {
+				return
+			}
+			s.Require().NoError(err, "TakeAction attempt %d failed unexpectedly", attempt+1)
+		}
+		// Read state to see if the monster's gone (killEntity removes it
+		// from data.Monsters once HP hits zero).
+		data, err := s.srv.EncRepoV2.Get(s.ctx, encID)
+		s.Require().NoError(err)
+		if _, stillAlive := data.Monsters[core.EntityID(monsterID)]; !stillAlive {
+			return
+		}
+	}
+	s.Require().Failf("kill loop exhausted",
+		"failed to kill %q in %d attempts", monsterID, maxKillAttempts)
+}
+
+// TestCombatSlice_KillLastHostile_FiresDeathChainAndEnds verifies the
+// Wave 2.10 happy path: 2 players + 1 goblin, active player kills the
+// goblin via attack loop. Both streams must receive EntityDied (with
+// killer attribution) + EntityRemoved (broadcast) + EncounterEnded
+// (broadcast). A follow-up TakeAction returns FailedPrecondition.
+func (s *EncounterV2IntegrationSuite) TestCombatSlice_KillLastHostile_FiresDeathChainAndEnds() {
+	encID := "enc-kill-last"
+
+	enc := tkenc.New(core.EncounterID(encID), s.srv.BrokerV2)
+	s.Require().NoError(enc.AddPlayer(killGoblinFixturePlayerInput(
+		"alice", "char-alice", core.Hex{Q: 0, R: 0, S: 0})))
+	s.Require().NoError(enc.AddPlayer(killGoblinFixturePlayerInput(
+		"bob", "char-bob", core.Hex{Q: 1, R: -1, S: 0})))
+	s.Require().NoError(enc.AddMonster(killGoblinFixtureMonsterInput(
+		"goblin-1", core.Hex{Q: 2, R: -1, S: -1})))
+	s.Require().NoError(enc.SetMode(core.ModeTurnBased))
+	s.Require().NoError(s.srv.EncRepoV2.Save(s.ctx, enc.ToData()))
+
+	// Cycle past any leading NPC turn so a player is active and TakeAction
+	// runs in the happy path.
+	s.advanceUntilPlayerActiveByDirectToolkit(enc)
+
+	// Discover the active player (initiative is rolled randomly).
+	data, err := s.srv.EncRepoV2.Get(s.ctx, encID)
+	s.Require().NoError(err)
+	activeEntity := string(data.Initiative[data.ActiveIdx])
+	var activePlayer string
+	for pid, pd := range data.Players {
+		if string(pd.EntityID) == activeEntity {
+			activePlayer = string(pid)
+			break
+		}
+	}
+	s.Require().NotEmpty(activePlayer)
+
+	ctxAlice := s.authCtx("alice")
+	ctxBob := s.authCtx("bob")
+	ctxActive := s.authCtx(activePlayer)
+
+	streamA, err := s.srv.EncounterClientV2.StreamEncounter(ctxAlice,
+		&encounterv2pb.StreamEncounterRequest{EncounterId: encID})
+	s.Require().NoError(err)
+	streamB, err := s.srv.EncounterClientV2.StreamEncounter(ctxBob,
+		&encounterv2pb.StreamEncounterRequest{EncounterId: encID})
+	s.Require().NoError(err)
+
+	aSink := newEventSink()
+	bSink := newEventSink()
+	go aSink.drain(streamA)
+	go bSink.drain(streamB)
+
+	// Wait for replay to complete on both streams; watermark.
+	s.Require().Eventually(func() bool {
+		return aSink.hasReplayComplete() && bSink.hasReplayComplete()
+	}, 2*time.Second, 25*time.Millisecond,
+		"both streams must complete replay before the kill chain begins")
+	aSink.snapshot()
+	bSink.snapshot()
+
+	// Kill the goblin. The loop bounds the rare-nat-1 miss case.
+	s.killMonsterViaTakeActionLoop(ctxActive, encID, activeEntity, "goblin-1")
+
+	// Wait for the death chain to fan out to both streams.
+	// The toolkit publishes Died → Removed → Ended in that order; the
+	// broker queue preserves it per-stream.
+	s.Require().Eventually(func() bool {
+		return aSink.hasEncounterEnded() && bSink.hasEncounterEnded()
+	}, 2*time.Second, 50*time.Millisecond,
+		"both streams must receive EncounterEnded after the last hostile dies")
+
+	// Both streams must have seen the full chain.
+	s.Require().True(aSink.hasEntityDiedFor("goblin-1"),
+		"alice's stream must include EntityDied for goblin-1")
+	s.Require().True(aSink.hasEntityRemovedFor("goblin-1"),
+		"alice's stream must include EntityRemoved for goblin-1")
+	s.Require().True(aSink.hasEncounterEnded(),
+		"alice's stream must include EncounterEnded")
+
+	s.Require().True(bSink.hasEntityDiedFor("goblin-1"),
+		"bob's stream must include EntityDied for goblin-1")
+	s.Require().True(bSink.hasEntityRemovedFor("goblin-1"),
+		"bob's stream must include EntityRemoved for goblin-1")
+	s.Require().True(bSink.hasEncounterEnded(),
+		"bob's stream must include EncounterEnded")
+
+	// Killer attribution: EntityDied for goblin-1 should carry the killer
+	// entity id. The killer is whichever player landed the last attack —
+	// both players in the fixture use identical kill-tuned stats, so the
+	// killer is the active player.
+	died := aSink.findEntityDied("goblin-1")
+	s.Require().NotNil(died)
+	s.Require().Equal(activeEntity, died.GetKillerEntityId(),
+		"EntityDied.KillerEntityId must be the active attacker")
+
+	// EncounterEnded reason must be the toolkit's documented value for
+	// "all hostiles defeated."
+	end := aSink.findEncounterEnded()
+	s.Require().NotNil(end)
+	s.Require().Equal("all_hostiles_defeated", end.GetReason(),
+		"EncounterEnded.Reason should attribute to all-hostiles-defeated")
+
+	// Persisted state: monsters table empty, mode is ModeEnded.
+	finalData, err := s.srv.EncRepoV2.Get(s.ctx, encID)
+	s.Require().NoError(err)
+	s.Require().Empty(finalData.Monsters,
+		"persisted monsters table must be empty post-kill")
+	s.Require().Equal(core.ModeEnded, finalData.Mode,
+		"persisted Mode must be ModeEnded")
+
+	// A follow-up TakeAction must return FailedPrecondition (terminal state).
+	_, err = s.srv.EncounterClientV2.TakeAction(ctxActive, &encounterv2pb.TakeActionRequest{
+		EncounterId:   encID,
+		ActorEntityId: activeEntity,
+		ActionRef:     &encounterv2pb.Ref{Module: "dnd5e", Type: "action", Id: "attack"},
+		Target: &encounterv2pb.ActionTarget{
+			Kind: &encounterv2pb.ActionTarget_EntityId{EntityId: "goblin-1"},
+		},
+	})
+	s.Require().Error(err)
+	st, ok := status.FromError(err)
+	s.Require().True(ok)
+	s.Require().Equal(codes.FailedPrecondition, st.Code(),
+		"TakeAction post-end must return FailedPrecondition, got: %v", err)
+
+	// Same for EndTurn.
+	_, err = s.srv.EncounterClientV2.EndTurn(ctxActive, &encounterv2pb.EndTurnRequest{
+		EncounterId: encID, EntityId: activeEntity,
+	})
+	s.Require().Error(err)
+	st, ok = status.FromError(err)
+	s.Require().True(ok)
+	s.Require().Equal(codes.FailedPrecondition, st.Code(),
+		"EndTurn post-end must return FailedPrecondition, got: %v", err)
+}
+
+// TestCombatSlice_KillOneOfTwoHostiles_NoEncounterEnd verifies the
+// Wave 2.10 mid-fight slice: 2 players + 2 goblins. Active player kills
+// goblin-1 only; both streams receive EntityDied + EntityRemoved for
+// goblin-1, but NOT EncounterEnded. After EndTurn, the NPC dispatch
+// loop runs goblin-2's turn (skipping the dead goblin-1, which is now
+// spliced out of initiative) and lands turn back on a player. A second
+// kill targeting goblin-2 finally fires EncounterEnded.
+func (s *EncounterV2IntegrationSuite) TestCombatSlice_KillOneOfTwoHostiles_NoEncounterEnd() {
+	encID := "enc-kill-one-of-two"
+
+	enc := tkenc.New(core.EncounterID(encID), s.srv.BrokerV2)
+	s.Require().NoError(enc.AddPlayer(killGoblinFixturePlayerInput(
+		"alice", "char-alice", core.Hex{Q: 0, R: 0, S: 0})))
+	s.Require().NoError(enc.AddPlayer(killGoblinFixturePlayerInput(
+		"bob", "char-bob", core.Hex{Q: 1, R: -1, S: 0})))
+	s.Require().NoError(enc.AddMonster(killGoblinFixtureMonsterInput(
+		"goblin-1", core.Hex{Q: 2, R: -1, S: -1})))
+	s.Require().NoError(enc.AddMonster(killGoblinFixtureMonsterInput(
+		"goblin-2", core.Hex{Q: 3, R: -2, S: -1})))
+	s.Require().NoError(enc.SetMode(core.ModeTurnBased))
+	s.Require().NoError(s.srv.EncRepoV2.Save(s.ctx, enc.ToData()))
+
+	s.advanceUntilPlayerActiveByDirectToolkit(enc)
+
+	data, err := s.srv.EncRepoV2.Get(s.ctx, encID)
+	s.Require().NoError(err)
+	activeEntity := string(data.Initiative[data.ActiveIdx])
+	var activePlayer string
+	for pid, pd := range data.Players {
+		if string(pd.EntityID) == activeEntity {
+			activePlayer = string(pid)
+			break
+		}
+	}
+	s.Require().NotEmpty(activePlayer)
+
+	ctxAlice := s.authCtx("alice")
+	ctxBob := s.authCtx("bob")
+	ctxActive := s.authCtx(activePlayer)
+
+	streamA, err := s.srv.EncounterClientV2.StreamEncounter(ctxAlice,
+		&encounterv2pb.StreamEncounterRequest{EncounterId: encID})
+	s.Require().NoError(err)
+	streamB, err := s.srv.EncounterClientV2.StreamEncounter(ctxBob,
+		&encounterv2pb.StreamEncounterRequest{EncounterId: encID})
+	s.Require().NoError(err)
+
+	aSink := newEventSink()
+	bSink := newEventSink()
+	go aSink.drain(streamA)
+	go bSink.drain(streamB)
+
+	s.Require().Eventually(func() bool {
+		return aSink.hasReplayComplete() && bSink.hasReplayComplete()
+	}, 2*time.Second, 25*time.Millisecond, "replay must complete on both streams")
+	aSink.snapshot()
+	bSink.snapshot()
+
+	// --- Step 1: kill goblin-1 only. ---
+	s.killMonsterViaTakeActionLoop(ctxActive, encID, activeEntity, "goblin-1")
+
+	// Wait for goblin-1's death chain on both streams. We do NOT expect
+	// EncounterEnded here — goblin-2 is still alive.
+	s.Require().Eventually(func() bool {
+		return aSink.hasEntityRemovedFor("goblin-1") && bSink.hasEntityRemovedFor("goblin-1")
+	}, 2*time.Second, 50*time.Millisecond,
+		"both streams must receive EntityRemoved for goblin-1")
+
+	// Verify EntityDied + EntityRemoved fired only for goblin-1 (not
+	// goblin-2). And NOT EncounterEnded.
+	s.Require().True(aSink.hasEntityDiedFor("goblin-1"))
+	s.Require().False(aSink.hasEntityDiedFor("goblin-2"),
+		"goblin-2 is still alive; EntityDied must NOT fire for it")
+	s.Require().False(aSink.hasEncounterEnded(),
+		"EncounterEnded must NOT fire while goblin-2 is alive")
+	s.Require().False(bSink.hasEncounterEnded(),
+		"EncounterEnded must NOT fire (bob's view) while goblin-2 is alive")
+
+	// Persisted: goblin-1 gone, goblin-2 still present, mode unchanged.
+	midData, err := s.srv.EncRepoV2.Get(s.ctx, encID)
+	s.Require().NoError(err)
+	_, goblin1Gone := midData.Monsters[core.EntityID("goblin-1")]
+	s.Require().False(goblin1Gone, "goblin-1 must be removed from monsters table")
+	_, goblin2Alive := midData.Monsters[core.EntityID("goblin-2")]
+	s.Require().True(goblin2Alive, "goblin-2 must still be in monsters table")
+	s.Require().Equal(core.ModeTurnBased, midData.Mode,
+		"Mode must remain TurnBased — encounter is not over")
+
+	// --- Step 2: end the active player's turn. The NPC dispatch loop
+	// must skip the dead goblin-1 (no longer in initiative) and run
+	// goblin-2's turn server-side. After the loop, control should land
+	// back on a player. ---
+	_, err = s.srv.EncounterClientV2.EndTurn(ctxActive, &encounterv2pb.EndTurnRequest{
+		EncounterId: encID, EntityId: activeEntity,
+	})
+	s.Require().NoError(err)
+
+	// Reload to find whoever's active now (likely a player after the
+	// dispatch loop).
+	postEndData, err := s.srv.EncRepoV2.Get(s.ctx, encID)
+	s.Require().NoError(err)
+	postEndActive := string(postEndData.Initiative[postEndData.ActiveIdx])
+	// Initiative must NOT contain goblin-1 (it was spliced out).
+	for _, id := range postEndData.Initiative {
+		s.Require().NotEqual(core.EntityID("goblin-1"), id,
+			"dead goblin-1 must be spliced out of initiative")
+	}
+	// Active should be a player (NPC dispatch loop runs goblin-2 then
+	// lands on a player). With 2 players + 1 NPC, this is guaranteed
+	// per the loop's roster cap.
+	var nextActivePlayer string
+	for pid, pd := range postEndData.Players {
+		if string(pd.EntityID) == postEndActive {
+			nextActivePlayer = string(pid)
+			break
+		}
+	}
+	s.Require().NotEmpty(nextActivePlayer,
+		"after EndTurn + NPC dispatch loop, active actor must be a player")
+
+	// --- Step 3: kill goblin-2. EncounterEnded must now fire on both
+	// streams. ---
+	ctxNextActive := s.authCtx(nextActivePlayer)
+	s.killMonsterViaTakeActionLoop(ctxNextActive, encID, postEndActive, "goblin-2")
+
+	s.Require().Eventually(func() bool {
+		return aSink.hasEncounterEnded() && bSink.hasEncounterEnded()
+	}, 2*time.Second, 50*time.Millisecond,
+		"both streams must receive EncounterEnded after goblin-2 dies")
+
+	s.Require().True(aSink.hasEntityDiedFor("goblin-2"),
+		"alice's stream must include EntityDied for goblin-2")
+	s.Require().True(aSink.hasEntityRemovedFor("goblin-2"),
+		"alice's stream must include EntityRemoved for goblin-2")
+}
+
 // advanceUntilPlayerActiveByDirectToolkit drives toolkit verbs directly to
 // cycle past any leading NPC turns in initiative. Used in test setup so the
 // integration test starts with a player active and TakeAction runs in its
@@ -1102,6 +1468,62 @@ func (s *eventSink) hasReplayComplete() bool {
 		}
 	}
 	return sawSnap && sawAppeared && sawGeo
+}
+
+// hasEntityDiedFor reports whether the sink has observed an EntityDied
+// envelope with the given entity id, AFTER the most recent snapshot.
+func (s *eventSink) hasEntityDiedFor(entityID string) bool {
+	for _, ev := range s.eventsAfterSnapshot() {
+		if d := ev.GetEntityDied(); d != nil && d.GetEntityId() == entityID {
+			return true
+		}
+	}
+	return false
+}
+
+// hasEntityRemovedFor reports whether the sink has observed an
+// EntityRemoved envelope with the given entity id, AFTER the most recent
+// snapshot.
+func (s *eventSink) hasEntityRemovedFor(entityID string) bool {
+	for _, ev := range s.eventsAfterSnapshot() {
+		if r := ev.GetEntityRemoved(); r != nil && r.GetEntityId() == entityID {
+			return true
+		}
+	}
+	return false
+}
+
+// hasEncounterEnded reports whether the sink has observed any
+// EncounterEnded envelope AFTER the most recent snapshot.
+func (s *eventSink) hasEncounterEnded() bool {
+	for _, ev := range s.eventsAfterSnapshot() {
+		if ev.GetEncounterEnded() != nil {
+			return true
+		}
+	}
+	return false
+}
+
+// findEntityDied returns the first EntityDied event in the sink's events
+// after snapshot with a matching entity id, or nil.
+func (s *eventSink) findEntityDied(entityID string) *encounterv2pb.EntityDied {
+	for _, ev := range s.eventsAfterSnapshot() {
+		if d := ev.GetEntityDied(); d != nil && d.GetEntityId() == entityID {
+			return d
+		}
+	}
+	return nil
+}
+
+// findEncounterEnded returns the first EncounterEnded event in the
+// sink's events after snapshot, or nil.
+func (s *eventSink) findEncounterEnded() *encounterv2pb.EncounterEnded {
+	for _, ev := range s.eventsAfterSnapshot() {
+		if e := ev.GetEncounterEnded(); e != nil {
+			return e
+		}
+	}
+	return nil
 }
 
 // findEntityDamaged returns the first EntityDamaged event in the slice, or

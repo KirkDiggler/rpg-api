@@ -177,6 +177,55 @@ func (s *ProjectSuite) TestProjectFor_FreeRoam_NoTurnState() {
 	s.Require().Nil(pb.GetTurnState(), "TurnState must be omitted outside TURN_BASED mode")
 }
 
+// TestProjectFor_ModeEnded_NoTurnStateAndOmitsRemovedMonsters verifies the
+// Wave 2.10 snapshot replay contract for terminal-state encounters: a player
+// who reconnects after the encounter ended must see (a) no TurnState (so the
+// UI doesn't render "your turn" / "alice acting" stale prompts), and (b) no
+// trace of monsters removed by the kill chain (the toolkit's killEntity
+// deletes them from data.Monsters before publishing EntityRemoved). The
+// dedicated EncounterEndedEvent — replayed via the broker's per-stream queue
+// — carries the "this is over" wire signal; the snapshot's Mode field is
+// mapped to FREE_ROAM since the proto has no _ENDED variant.
+func (s *ProjectSuite) TestProjectFor_ModeEnded_NoTurnStateAndOmitsRemovedMonsters() {
+	data := tkenc.NewData("enc-ended")
+	data.Mode = core.ModeEnded
+	// Surviving fields that ModeEnded clears in the toolkit kill path:
+	// Initiative, ActiveIdx, Round are reset by checkEncounterEnd. Mirror
+	// that here so the fixture reflects post-end persisted state.
+	data.Initiative = nil
+	data.ActiveIdx = 0
+	data.Round = 0
+
+	alice := newPlayerData("player-alice", "char-alice", originHex, 5)
+	data.Players = map[core.PlayerID]*tkenc.PlayerData{"player-alice": alice}
+	// data.Monsters intentionally empty — killEntity removed the last hostile
+	// before flipping mode to ModeEnded. Snapshot must not synthesize one.
+
+	pb, err := v2encounter.ProjectFor(data, "player-alice", s.broker, s.now)
+	s.Require().NoError(err)
+
+	// Mode maps to FREE_ROAM because the proto has no _ENDED variant; the
+	// dedicated EncounterEndedEvent is the canonical wire signal that the
+	// encounter has terminated.
+	s.Require().Equal(
+		encounterv2pb.EncounterMode_ENCOUNTER_MODE_FREE_ROAM,
+		pb.GetMode(),
+		"ModeEnded must map to FREE_ROAM (proto has no _ENDED variant); EncounterEndedEvent carries the terminal-state signal",
+	)
+	// No TurnState — buildTurnState gates on ModeTurnBased and ModeEnded
+	// is neither, so the UI doesn't render stale "your turn" prompts.
+	s.Require().Nil(pb.GetTurnState(), "TurnState must be omitted post-end")
+	// Space remains populated for the viewer's revealed hexes + their own
+	// entity, but no monster entities should appear (data.Monsters is empty).
+	s.Require().NotNil(pb.GetSpace())
+	for _, e := range pb.GetSpace().GetEntities() {
+		s.Require().NotEqual(
+			encounterv2pb.EntityType_ENTITY_TYPE_MONSTER, e.GetType(),
+			"removed monster %q must not appear in post-end snapshot", e.GetId(),
+		)
+	}
+}
+
 func (s *ProjectSuite) TestProjectFor_Unspecified_TreatedAsFreeRoam() {
 	// Toolkit doc convention: ModeUnspecified is treated as ModeFreeRoam. Make
 	// sure ProjectFor reflects that on the wire so late-joining clients don't
