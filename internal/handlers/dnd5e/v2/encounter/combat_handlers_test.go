@@ -312,12 +312,23 @@ func (s *HandlerSuite) TestTakeAction_AttackHappyPath_PersistsMonsterHP() {
 	s.Require().NotNil(resp)
 
 	// Reload — toolkit may or may not have hit (random d20). The contract is
-	// that the encounter is saved post-attack. HP <= preHP regardless of
-	// hit/miss; on hit it's strictly less.
+	// that the encounter is saved post-attack. Three valid post-states:
+	//   - miss: goblin still in map, HP unchanged
+	//   - hit (non-lethal): goblin still in map, HP strictly less than preHP
+	//   - hit (lethal): goblin removed from map by Wave 2.10 killEntity chain
+	// Wave 2.10 guarantees the lethal path: the seed fixture has goblin HP=7
+	// and alice deals 1d8+2 (3-10), so a single hit can kill. Don't index the
+	// monsters map blindly — check membership first to differentiate the
+	// surviving from the killed branch.
 	postData, err := s.repo.Get(s.ctx, combatEncID)
 	s.Require().NoError(err)
-	s.Require().LessOrEqual(postData.Monsters[monsterGoblin1].HP, preHP,
-		"goblin HP must not increase after attack")
+	if postGob, alive := postData.Monsters[monsterGoblin1]; alive {
+		s.Require().LessOrEqual(postGob.HP, preHP,
+			"goblin HP must not increase after attack")
+	}
+	// Lethal-hit branch: goblin absent from map. Implicit pass — the kill
+	// chain (toolkit's killEntity) already covers the post-state in
+	// Wave 2.10's TestCombatSlice_KillLastHostile_FiresDeathChainAndEnds.
 }
 
 // EndTurn tests -----------------------------------------------------------
