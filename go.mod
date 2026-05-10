@@ -8,6 +8,7 @@ require (
 	github.com/KirkDiggler/rpg-toolkit/dice v0.3.2
 	github.com/KirkDiggler/rpg-toolkit/encounter v0.6.0
 	github.com/KirkDiggler/rpg-toolkit/events v0.6.2
+	github.com/KirkDiggler/rpg-toolkit/rpgerr v0.1.2
 	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.55.5
 	github.com/KirkDiggler/rpg-toolkit/tools/environments v0.4.0
 	github.com/KirkDiggler/rpg-toolkit/tools/spatial v0.4.0
@@ -30,7 +31,6 @@ require (
 	github.com/Azure/go-ansiterm v0.0.0-20210617225240-d185dfc1b5a1 // indirect
 	github.com/KirkDiggler/rpg-toolkit/game v0.1.0 // indirect
 	github.com/KirkDiggler/rpg-toolkit/mechanics/resources v0.3.1 // indirect
-	github.com/KirkDiggler/rpg-toolkit/rpgerr v0.1.2 // indirect
 	github.com/KirkDiggler/rpg-toolkit/tools/selectables v0.1.2 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
