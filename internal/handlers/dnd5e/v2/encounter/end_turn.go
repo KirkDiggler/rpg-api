@@ -94,6 +94,15 @@ func (h *Handler) EndTurn(ctx context.Context, req *encounterv2pb.EndTurnRequest
 	// the new active actor is an NPC the handler runs its turn server-side
 	// and ends it, then re-checks. The cap is initiative-size + margin so an
 	// all-NPC roster cycles all the way through rather than freezing the RPC.
+	//
+	// Wave 2.10: after each NPCAct / EndTurn cycle, if the encounter has
+	// transitioned to ModeEnded (e.g., NPC's attack killed the last hostile
+	// — not possible today since killEntity only runs in TakeAction's
+	// player-attack path, but cheap insurance for future paths like
+	// faction-on-faction NPC kills, environmental damage, etc.), break out
+	// of the loop. The post-loop save persists the terminal state and the
+	// RPC returns success — the EncounterEnded event already fired through
+	// the broker, and the next combat verb will get ErrEncounterEnded.
 	npcChainCap := len(data.Initiative) + npcChainSafetyMargin
 	for depth := 0; isNPC && depth < npcChainCap; depth++ {
 		if actErr := enc.NPCAct(ctx, newActive); actErr != nil {
@@ -108,10 +117,31 @@ func (h *Handler) EndTurn(ctx context.Context, req *encounterv2pb.EndTurnRequest
 			}
 			return nil, status.Errorf(codes.Internal, "npc act %q: %v", string(newActive), actErr)
 		}
+		// Post-NPCAct end-of-encounter check (Wave 2.10 guard).
+		if enc.Mode() == core.ModeEnded {
+			isNPC = false
+			break
+		}
 		var endErr error
 		newActive, isNPC, endErr = enc.EndTurn(newActive)
 		if endErr != nil {
+			// ErrEncounterEnded here means the NPC's action ended the
+			// encounter and the subsequent EndTurn rejected the call.
+			// Treat as success — the encounter has terminated, the events
+			// already fired, and we just need to persist the terminal
+			// state. Fall through to the post-loop save by clearing isNPC.
+			if errors.Is(endErr, tkenc.ErrEncounterEnded) {
+				isNPC = false
+				break
+			}
 			return nil, endTurnStatusError(endErr)
+		}
+		// Post-EndTurn end-of-encounter check (Wave 2.10 guard, defensive
+		// — EndTurn doesn't mutate liveness today, but stays robust to
+		// future paths that fold post-turn cleanup into EndTurn).
+		if enc.Mode() == core.ModeEnded {
+			isNPC = false
+			break
 		}
 	}
 
@@ -141,8 +171,14 @@ func (h *Handler) EndTurn(ctx context.Context, req *encounterv2pb.EndTurnRequest
 // endTurnStatusError maps toolkit EndTurn sentinel errors onto gRPC status
 // codes. All EndTurn errors are state-dependent → FailedPrecondition,
 // except wrapping/internal failures which surface as Internal.
+//
+// Wave 2.10: ErrEncounterEnded is the terminal-state sentinel returned
+// when EndTurn is called against an encounter whose mode is ModeEnded.
+// State-dependent → FailedPrecondition.
 func endTurnStatusError(err error) error {
 	switch {
+	case errors.Is(err, tkenc.ErrEncounterEnded):
+		return status.Error(codes.FailedPrecondition, err.Error())
 	case errors.Is(err, tkenc.ErrNotTurnBased):
 		return status.Error(codes.FailedPrecondition, err.Error())
 	case errors.Is(err, tkenc.ErrNotYourTurn):

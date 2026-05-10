@@ -82,6 +82,12 @@ func TranslateEvent(evt events.EncounterEvent, viewer core.PlayerID, now time.Ti
 		return translateTurnStartedEvent(e, viewer, now)
 	case *events.TurnEndedEvent:
 		return translateTurnEndedEvent(e, viewer, now)
+	case *events.EntityDiedEvent:
+		return translateEntityDiedEvent(e, viewer, now)
+	case *events.EntityRemovedEvent:
+		return translateEntityRemovedEvent(e, viewer, now)
+	case *events.EncounterEndedEvent:
+		return translateEncounterEndedEvent(e, viewer, now)
 	default:
 		return nil, fmt.Errorf("%w: %T", ErrUnknownEventType, evt)
 	}
@@ -367,6 +373,84 @@ func translateTurnEndedEvent(e *events.TurnEndedEvent, viewer core.PlayerID, now
 	}, nil
 }
 
+// translateEntityDiedEvent maps the toolkit's EntityDiedEvent (cause /
+// narrative) to the proto EntityDied envelope. Per-viewer projection: the
+// toolkit publishes a Visible:false slice for viewers who lack LoS to both
+// the dying entity and the killer; the stream loop must drop those via
+// ErrViewerSawNothing rather than send a Visible:false event downstream
+// (no wire shape carries visibility metadata for death).
+//
+// KillerEntityId is a proto optional field (oneof). The toolkit emits
+// KillerID="" when the cause has no single attributable attacker
+// (environmental damage, future indirect-kill paths); leave the proto
+// field unset in that case so clients can distinguish "killed by X" from
+// "killed by something".
+func translateEntityDiedEvent(e *events.EntityDiedEvent, viewer core.PlayerID, now time.Time) (*encounterv2pb.EncounterEvent, error) {
+	slice, ok := e.PerPlayer[viewer]
+	if !ok || !slice.Visible {
+		return nil, ErrViewerSawNothing
+	}
+	out := &encounterv2pb.EntityDied{
+		EntityId: string(e.EntityID),
+	}
+	if e.KillerID != "" {
+		k := string(e.KillerID)
+		out.KillerEntityId = &k
+	}
+	return &encounterv2pb.EncounterEvent{
+		Sequence:  int64(e.Sequence()),
+		Timestamp: timestamppb.New(now),
+		Event: &encounterv2pb.EncounterEvent_EntityDied{
+			EntityDied: out,
+		},
+	}, nil
+}
+
+// translateEntityRemovedEvent maps the toolkit's EntityRemovedEvent
+// (effect / state mutation) to the proto EntityRemoved envelope. The
+// toolkit's audience for this event is BROADCAST: every viewer in the
+// encounter is in PerPlayer with Visible:true so even out-of-LoS clients
+// drop the entity from their local mirror. The translator therefore only
+// gates on viewer-presence, not Visible — a missing PerPlayer entry would
+// indicate a toolkit-side audience bug (the contract is broadcast), and
+// returning ErrViewerSawNothing in that defensive case is the safest
+// stream-loop behavior.
+func translateEntityRemovedEvent(e *events.EntityRemovedEvent, viewer core.PlayerID, now time.Time) (*encounterv2pb.EncounterEvent, error) {
+	if _, ok := e.PerPlayer[viewer]; !ok {
+		return nil, ErrViewerSawNothing
+	}
+	return &encounterv2pb.EncounterEvent{
+		Sequence:  int64(e.Sequence()),
+		Timestamp: timestamppb.New(now),
+		Event: &encounterv2pb.EncounterEvent_EntityRemoved{
+			EntityRemoved: &encounterv2pb.EntityRemoved{
+				EntityId: string(e.EntityID),
+				Reason:   e.Reason,
+			},
+		},
+	}, nil
+}
+
+// translateEncounterEndedEvent maps the toolkit's EncounterEndedEvent
+// (terminal-state transition) to the proto EncounterEnded envelope. Like
+// EntityRemoved, the toolkit's audience is BROADCAST — every viewer must
+// observe the end so subsequent verbs are gated client-side. Gate only on
+// viewer-presence per the broadcast-contract reasoning above.
+func translateEncounterEndedEvent(e *events.EncounterEndedEvent, viewer core.PlayerID, now time.Time) (*encounterv2pb.EncounterEvent, error) {
+	if _, ok := e.PerPlayer[viewer]; !ok {
+		return nil, ErrViewerSawNothing
+	}
+	return &encounterv2pb.EncounterEvent{
+		Sequence:  int64(e.Sequence()),
+		Timestamp: timestamppb.New(now),
+		Event: &encounterv2pb.EncounterEvent_EncounterEnded{
+			EncounterEnded: &encounterv2pb.EncounterEnded{
+				Reason: e.Reason,
+			},
+		},
+	}, nil
+}
+
 // damageRefFor builds a proto Ref for a toolkit damage-type string. The
 // toolkit emits bare strings (e.g. "slashing", "fire", "untyped"); the proto
 // wire shape uses a Ref triple. For Wave 2.8 we hardwire module=dnd5e and
@@ -420,11 +504,19 @@ func splitRef(s string) []string {
 // snapshot projector (ProjectFor) and the ModeChanged event translator
 // share this helper so the wire is consistent across snapshot vs.
 // live-event paths.
+//
+// Wave 2.10: core.ModeEnded is the terminal-state value, but the
+// v1alpha2 proto has no _ENDED enum variant (the wire signal is the
+// dedicated EncounterEnded event, not the mode enum). Map ModeEnded to
+// FREE_ROAM so a snapshot of a terminal encounter renders without turn
+// structure (no active actor, no initiative) rather than UNSPECIFIED
+// which clients would treat as "never set". The EncounterEndedEvent
+// remains the canonical signal that combat verbs are now gated.
 func encounterModeToProto(m core.EncounterMode) encounterv2pb.EncounterMode {
 	switch m {
 	case core.ModeTurnBased:
 		return encounterv2pb.EncounterMode_ENCOUNTER_MODE_TURN_BASED
-	case core.ModeFreeRoam, core.ModeUnspecified:
+	case core.ModeFreeRoam, core.ModeUnspecified, core.ModeEnded:
 		return encounterv2pb.EncounterMode_ENCOUNTER_MODE_FREE_ROAM
 	}
 	return encounterv2pb.EncounterMode_ENCOUNTER_MODE_UNSPECIFIED

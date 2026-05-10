@@ -312,12 +312,23 @@ func (s *HandlerSuite) TestTakeAction_AttackHappyPath_PersistsMonsterHP() {
 	s.Require().NotNil(resp)
 
 	// Reload — toolkit may or may not have hit (random d20). The contract is
-	// that the encounter is saved post-attack. HP <= preHP regardless of
-	// hit/miss; on hit it's strictly less.
+	// that the encounter is saved post-attack. Three valid post-states:
+	//   - miss: goblin still in map, HP unchanged
+	//   - hit (non-lethal): goblin still in map, HP strictly less than preHP
+	//   - hit (lethal): goblin removed from map by Wave 2.10 killEntity chain
+	// Wave 2.10 guarantees the lethal path: the seed fixture has goblin HP=7
+	// and alice deals 1d8+2 (3-10), so a single hit can kill. Don't index the
+	// monsters map blindly — check membership first to differentiate the
+	// surviving from the killed branch.
 	postData, err := s.repo.Get(s.ctx, combatEncID)
 	s.Require().NoError(err)
-	s.Require().LessOrEqual(postData.Monsters[monsterGoblin1].HP, preHP,
-		"goblin HP must not increase after attack")
+	if postGob, alive := postData.Monsters[monsterGoblin1]; alive {
+		s.Require().LessOrEqual(postGob.HP, preHP,
+			"goblin HP must not increase after attack")
+	}
+	// Lethal-hit branch: goblin absent from map. Implicit pass — the kill
+	// chain (toolkit's killEntity) already covers the post-state in
+	// Wave 2.10's TestCombatSlice_KillLastHostile_FiresDeathChainAndEnds.
 }
 
 // EndTurn tests -----------------------------------------------------------
@@ -482,4 +493,53 @@ func (s *HandlerSuite) TestEndTurn_NPCDispatchLoop_CyclesPastNPC() {
 	// post-state active actor must be a player.
 	_, postIsPlayer := s.findPlayerByEntity(postData, postActive)
 	s.Require().True(postIsPlayer, "after EndTurn, active actor must be a player (not goblin)")
+}
+
+// Wave 2.10: terminal-state guard tests --------------------------------
+//
+// These verify the handler maps tkenc.ErrEncounterEnded → FailedPrecondition.
+// Direct-mutation seeding (set data.Mode = ModeEnded after Save) keeps the
+// fixture deterministic — we don't depend on running an attack chain to
+// drive the encounter to ModeEnded; the toolkit's own death tests cover the
+// transition.
+
+// seedEndedEncounter saves a turn-based encounter with Mode rewritten to
+// ModeEnded so combat verbs return ErrEncounterEnded on the next call.
+// Returns the entity id of whichever player is in the (now-ignored)
+// initiative roster — handler tests need a syntactically valid actor /
+// entity id to exercise the post-validation, post-load gate.
+func (s *HandlerSuite) seedEndedEncounter() string {
+	s.seedCombatEncounter()
+	data, err := s.repo.Get(s.ctx, combatEncID)
+	s.Require().NoError(err)
+	// Pick alice if she's in the roster (always is, per fixture); fallback
+	// to whatever active actor was seeded.
+	actorEntity := entityAliceID
+	// Flip to terminal state — the combat verbs check this gate first
+	// (before turn-violation / non-combatant checks).
+	data.Mode = core.ModeEnded
+	s.Require().NoError(s.repo.Save(s.ctx, data))
+	return actorEntity
+}
+
+func (s *HandlerSuite) TestTakeAction_EncounterEnded_FailedPrecondition() {
+	actorEntity := s.seedEndedEncounter()
+	ctx := contextWithPlayer(s.ctx, playerAliceID)
+	_, err := s.handler.TakeAction(ctx, makeAttackRequest(actorEntity, monsterGoblin1))
+	s.Require().Error(err)
+	st, _ := status.FromError(err)
+	s.Require().Equal(codes.FailedPrecondition, st.Code(),
+		"TakeAction against an ended encounter must return FailedPrecondition, got: %v", err)
+}
+
+func (s *HandlerSuite) TestEndTurn_EncounterEnded_FailedPrecondition() {
+	actorEntity := s.seedEndedEncounter()
+	ctx := contextWithPlayer(s.ctx, playerAliceID)
+	_, err := s.handler.EndTurn(ctx, &encounterv2pb.EndTurnRequest{
+		EncounterId: combatEncID, EntityId: actorEntity,
+	})
+	s.Require().Error(err)
+	st, _ := status.FromError(err)
+	s.Require().Equal(codes.FailedPrecondition, st.Code(),
+		"EndTurn against an ended encounter must return FailedPrecondition, got: %v", err)
 }

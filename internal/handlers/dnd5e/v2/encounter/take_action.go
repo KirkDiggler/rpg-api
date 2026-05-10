@@ -105,8 +105,14 @@ func (h *Handler) TakeAction(ctx context.Context, req *encounterv2pb.TakeActionR
 // don't exist in the encounter — though the toolkit overloads
 // ErrUnknownTarget to also mean state-dependent missing-monster, so we
 // map it to FailedPrecondition).
+//
+// Wave 2.10: ErrEncounterEnded is the terminal-state sentinel returned
+// when verbs are called against an encounter whose mode is ModeEnded.
+// State-dependent → FailedPrecondition.
 func takeActionStatusError(err error) error {
 	switch {
+	case errors.Is(err, tkenc.ErrEncounterEnded):
+		return status.Error(codes.FailedPrecondition, err.Error())
 	case errors.Is(err, tkenc.ErrNotTurnBased):
 		return status.Error(codes.FailedPrecondition, err.Error())
 	case errors.Is(err, tkenc.ErrNotYourTurn):

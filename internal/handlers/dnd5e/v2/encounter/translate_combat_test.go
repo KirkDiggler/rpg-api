@@ -255,3 +255,195 @@ func (s *TranslateSuite) TestTranslateEvent_TurnEndedEvent_ViewerNotInPerPlayer_
 	s.Require().Error(err)
 	s.Require().True(errors.Is(err, v2encounter.ErrViewerSawNothing))
 }
+
+// EntityDied translator tests --------------------------------------------
+
+func (s *TranslateSuite) TestTranslateEvent_EntityDiedEvent_HappyPath_WithKiller() {
+	evt := events.NewEntityDiedEvent(
+		"enc-1", uint64(60),
+		"goblin-1", "char-A",
+		map[core.PlayerID]events.EntityDiedSlice{
+			"player-A": {Visible: true},
+		},
+	)
+	out, err := v2encounter.TranslateEvent(evt, "player-A", s.now)
+	s.Require().NoError(err)
+
+	died := out.GetEntityDied()
+	s.Require().NotNil(died, "expected EntityDied envelope")
+	s.Require().Equal("goblin-1", died.GetEntityId())
+	s.Require().Equal("char-A", died.GetKillerEntityId())
+	s.Require().Equal(int64(60), out.Sequence)
+}
+
+func (s *TranslateSuite) TestTranslateEvent_EntityDiedEvent_EmptyKiller_OmitsKillerField() {
+	// KillerID="" represents environmental damage / indirect kill — the
+	// proto optional field should remain unset so clients can distinguish
+	// "killed by X" from "killed by something untracked".
+	evt := events.NewEntityDiedEvent(
+		"enc-1", uint64(61),
+		"goblin-1", "",
+		map[core.PlayerID]events.EntityDiedSlice{
+			"player-A": {Visible: true},
+		},
+	)
+	out, err := v2encounter.TranslateEvent(evt, "player-A", s.now)
+	s.Require().NoError(err)
+
+	died := out.GetEntityDied()
+	s.Require().NotNil(died)
+	s.Require().Equal("goblin-1", died.GetEntityId())
+	s.Require().Nil(died.KillerEntityId, "empty killer must leave proto field unset (oneof)")
+}
+
+func (s *TranslateSuite) TestTranslateEvent_EntityDiedEvent_NotVisible_ReturnsErrViewerSawNothing() {
+	// Per-viewer projection: viewer has no LoS to dying entity OR killer →
+	// Visible:false → drop on the floor (stream-loop continues silently).
+	evt := events.NewEntityDiedEvent(
+		"enc-1", uint64(62),
+		"goblin-1", "char-A",
+		map[core.PlayerID]events.EntityDiedSlice{
+			"player-A": {Visible: false},
+		},
+	)
+	_, err := v2encounter.TranslateEvent(evt, "player-A", s.now)
+	s.Require().Error(err)
+	s.Require().True(errors.Is(err, v2encounter.ErrViewerSawNothing))
+}
+
+func (s *TranslateSuite) TestTranslateEvent_EntityDiedEvent_ViewerNotInPerPlayer_ReturnsErrViewerSawNothing() {
+	evt := events.NewEntityDiedEvent(
+		"enc-1", uint64(63),
+		"goblin-1", "char-A",
+		map[core.PlayerID]events.EntityDiedSlice{
+			"player-X": {Visible: true},
+		},
+	)
+	_, err := v2encounter.TranslateEvent(evt, "player-A", s.now)
+	s.Require().Error(err)
+	s.Require().True(errors.Is(err, v2encounter.ErrViewerSawNothing))
+}
+
+// EntityRemoved translator tests -----------------------------------------
+
+func (s *TranslateSuite) TestTranslateEvent_EntityRemovedEvent_HappyPath_BroadcastAudience() {
+	// Audience is broadcast: every viewer is in PerPlayer with Visible:true.
+	evt := events.NewEntityRemovedEvent(
+		"enc-1", uint64(70),
+		"goblin-1", "destroyed",
+		map[core.PlayerID]events.EntityRemovedSlice{
+			"player-A": {Visible: true},
+			"player-B": {Visible: true},
+		},
+	)
+	out, err := v2encounter.TranslateEvent(evt, "player-A", s.now)
+	s.Require().NoError(err)
+
+	rem := out.GetEntityRemoved()
+	s.Require().NotNil(rem, "expected EntityRemoved envelope")
+	s.Require().Equal("goblin-1", rem.GetEntityId())
+	s.Require().Equal("destroyed", rem.GetReason())
+	s.Require().Equal(int64(70), out.Sequence)
+}
+
+func (s *TranslateSuite) TestTranslateEvent_EntityRemovedEvent_BothViewersGetEvent() {
+	// Same event, two viewers — both must receive a populated envelope.
+	evt := events.NewEntityRemovedEvent(
+		"enc-1", uint64(71),
+		"goblin-1", "destroyed",
+		map[core.PlayerID]events.EntityRemovedSlice{
+			"player-A": {Visible: true},
+			"player-B": {Visible: true},
+		},
+	)
+	outA, err := v2encounter.TranslateEvent(evt, "player-A", s.now)
+	s.Require().NoError(err)
+	s.Require().NotNil(outA.GetEntityRemoved())
+
+	outB, err := v2encounter.TranslateEvent(evt, "player-B", s.now)
+	s.Require().NoError(err)
+	s.Require().NotNil(outB.GetEntityRemoved())
+}
+
+func (s *TranslateSuite) TestTranslateEvent_EntityRemovedEvent_ViewerNotInPerPlayer_ReturnsErrViewerSawNothing() {
+	// Defensive case: toolkit contract is broadcast, so a missing entry
+	// would be a toolkit bug. Translator returns ErrViewerSawNothing so the
+	// stream loop drops it silently rather than emitting a malformed event.
+	evt := events.NewEntityRemovedEvent(
+		"enc-1", uint64(72),
+		"goblin-1", "destroyed",
+		map[core.PlayerID]events.EntityRemovedSlice{
+			"player-X": {Visible: true},
+		},
+	)
+	_, err := v2encounter.TranslateEvent(evt, "player-A", s.now)
+	s.Require().Error(err)
+	s.Require().True(errors.Is(err, v2encounter.ErrViewerSawNothing))
+}
+
+// EncounterEnded translator tests ---------------------------------------
+
+func (s *TranslateSuite) TestTranslateEvent_EncounterEndedEvent_HappyPath() {
+	evt := events.NewEncounterEndedEvent(
+		"enc-1", uint64(80),
+		"all_hostiles_defeated",
+		map[core.PlayerID]events.EncounterEndedSlice{
+			"player-A": {Visible: true},
+			"player-B": {Visible: true},
+		},
+	)
+	out, err := v2encounter.TranslateEvent(evt, "player-A", s.now)
+	s.Require().NoError(err)
+
+	end := out.GetEncounterEnded()
+	s.Require().NotNil(end, "expected EncounterEnded envelope")
+	s.Require().Equal("all_hostiles_defeated", end.GetReason())
+	s.Require().Equal(int64(80), out.Sequence)
+}
+
+func (s *TranslateSuite) TestTranslateEvent_EncounterEndedEvent_BothViewersGetEvent() {
+	// Broadcast audience — same event reaches every viewer.
+	evt := events.NewEncounterEndedEvent(
+		"enc-1", uint64(81),
+		"all_hostiles_defeated",
+		map[core.PlayerID]events.EncounterEndedSlice{
+			"player-A": {Visible: true},
+			"player-B": {Visible: true},
+		},
+	)
+	outA, err := v2encounter.TranslateEvent(evt, "player-A", s.now)
+	s.Require().NoError(err)
+	s.Require().NotNil(outA.GetEncounterEnded())
+	outB, err := v2encounter.TranslateEvent(evt, "player-B", s.now)
+	s.Require().NoError(err)
+	s.Require().NotNil(outB.GetEncounterEnded())
+}
+
+func (s *TranslateSuite) TestTranslateEvent_EncounterEndedEvent_EmptyReason_PassesThrough() {
+	// Reason is documented as a free-form string — empty is valid, the
+	// proto field stays empty.
+	evt := events.NewEncounterEndedEvent(
+		"enc-1", uint64(82),
+		"",
+		map[core.PlayerID]events.EncounterEndedSlice{
+			"player-A": {Visible: true},
+		},
+	)
+	out, err := v2encounter.TranslateEvent(evt, "player-A", s.now)
+	s.Require().NoError(err)
+	s.Require().NotNil(out.GetEncounterEnded())
+	s.Require().Equal("", out.GetEncounterEnded().GetReason())
+}
+
+func (s *TranslateSuite) TestTranslateEvent_EncounterEndedEvent_ViewerNotInPerPlayer_ReturnsErrViewerSawNothing() {
+	evt := events.NewEncounterEndedEvent(
+		"enc-1", uint64(83),
+		"all_hostiles_defeated",
+		map[core.PlayerID]events.EncounterEndedSlice{
+			"player-X": {Visible: true},
+		},
+	)
+	_, err := v2encounter.TranslateEvent(evt, "player-A", s.now)
+	s.Require().Error(err)
+	s.Require().True(errors.Is(err, v2encounter.ErrViewerSawNothing))
+}
