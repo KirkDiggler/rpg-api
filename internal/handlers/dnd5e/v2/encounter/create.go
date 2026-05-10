@@ -44,7 +44,10 @@ func (h *Handler) CreateEncounter(ctx context.Context, req *encounterv2pb.Create
 	// future SubmitCheck against this encounter. CreateEncounter doesn't
 	// itself issue prompts, but persisting a resolver-less New encounter
 	// would leave subsequent SubmitCheck calls with ErrNoCharacterResolver.
-	enc := tkenc.New(encID, h.broker, tkenc.WithCharacterResolver(h.resolver), tkenc.WithCombatResolver(h.combatResolver))
+	// CreateEncounter builds a fresh encounter with no monsters yet. Pass nil
+	// data to buildCombatResolver — the Dnd5eCombatResolver handles nil data
+	// gracefully (no monster map means all entities fall back to stand-in).
+	enc := tkenc.New(encID, h.broker, tkenc.WithCharacterResolver(h.resolver), tkenc.WithCombatResolver(h.buildCombatResolver(nil)))
 	// The creator is automatically added as the encounter's first player.
 	// Entity ID mirrors the player ID for the initial seat; future PRs can
 	// wire in a character-selection step that replaces this with the

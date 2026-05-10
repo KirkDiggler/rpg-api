@@ -94,7 +94,7 @@ func (h *Handler) SubmitCheck(ctx context.Context, req *encounterv2pb.SubmitChec
 			"entity_id does not match player's controlled entity")
 	}
 
-	enc, err := tkenc.LoadFromData(data, h.broker, tkenc.WithCharacterResolver(h.resolver), tkenc.WithCombatResolver(h.combatResolver))
+	enc, err := tkenc.LoadFromData(data, h.broker, tkenc.WithCharacterResolver(h.resolver), tkenc.WithCombatResolver(h.buildCombatResolver(data)))
 	if err != nil {
 		return nil, status.Errorf(codes.Internal,
 			"load from data %q: %v", req.GetEncounterId(), err)
