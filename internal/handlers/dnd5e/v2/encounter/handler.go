@@ -18,10 +18,11 @@ import (
 
 // HandlerConfig configures a v2 encounter Handler.
 type HandlerConfig struct {
-	Broker   *encounter.Broker
-	Repo     encountersv2.Repository
-	Resolver CharacterResolver // optional; defaults to StubCharacterResolver
-	Now      func() time.Time  // optional; defaults to time.Now
+	Broker         *encounter.Broker
+	Repo           encountersv2.Repository
+	Resolver       CharacterResolver // optional; defaults to StubCharacterResolver
+	CombatResolver CombatResolver    // optional; defaults to StandInCombatResolver
+	Now            func() time.Time  // optional; defaults to time.Now
 }
 
 // Handler implements dnd5e.api.v1alpha2.encounter.EncounterServiceServer.
@@ -30,10 +31,11 @@ type HandlerConfig struct {
 // returns codes.Unimplemented via the embedded server.
 type Handler struct {
 	encounterv2pb.UnimplementedEncounterServiceServer
-	broker   *encounter.Broker
-	encRepo  encountersv2.Repository
-	resolver CharacterResolver
-	now      func() time.Time
+	broker         *encounter.Broker
+	encRepo        encountersv2.Repository
+	resolver       CharacterResolver
+	combatResolver CombatResolver
+	now            func() time.Time
 }
 
 // New constructs a Handler. Returns error on missing required deps.
@@ -59,7 +61,21 @@ func New(cfg *HandlerConfig) (*Handler, error) {
 		// resolution lands on the encounter (follow-up to #514).
 		resolver = StubCharacterResolver{}
 	}
-	return &Handler{broker: cfg.Broker, encRepo: cfg.Repo, resolver: resolver, now: now}, nil
+	combatResolver := cfg.CombatResolver
+	if combatResolver == nil {
+		// Wave 2.11a default: ports the toolkit's pre-2.11a stand-in math
+		// (d20+bonus vs AC; damage from attacker's stored damage dice). Real
+		// dnd5e/combat.ResolveAttack integration ships in a follow-up wave
+		// once character store + weapon equipping land in the v2 stack.
+		combatResolver = NewStandInCombatResolver(nil)
+	}
+	return &Handler{
+		broker:         cfg.Broker,
+		encRepo:        cfg.Repo,
+		resolver:       resolver,
+		combatResolver: combatResolver,
+		now:            now,
+	}, nil
 }
 
 // MoveEntity loads the encounter, validates that the request's entity_id matches
@@ -98,7 +114,7 @@ func (h *Handler) MoveEntity(ctx context.Context, req *encounterv2pb.MoveEntityR
 		return nil, status.Error(codes.InvalidArgument, "proposed_path is required")
 	}
 
-	enc, err := encounter.LoadFromData(data, h.broker, encounter.WithCharacterResolver(h.resolver))
+	enc, err := encounter.LoadFromData(data, h.broker, encounter.WithCharacterResolver(h.resolver), encounter.WithCombatResolver(h.combatResolver))
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "load from data %q: %v", req.GetEncounterId(), err)
 	}

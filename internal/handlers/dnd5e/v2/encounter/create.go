@@ -44,7 +44,7 @@ func (h *Handler) CreateEncounter(ctx context.Context, req *encounterv2pb.Create
 	// future SubmitCheck against this encounter. CreateEncounter doesn't
 	// itself issue prompts, but persisting a resolver-less New encounter
 	// would leave subsequent SubmitCheck calls with ErrNoCharacterResolver.
-	enc := tkenc.New(encID, h.broker, tkenc.WithCharacterResolver(h.resolver))
+	enc := tkenc.New(encID, h.broker, tkenc.WithCharacterResolver(h.resolver), tkenc.WithCombatResolver(h.combatResolver))
 	// The creator is automatically added as the encounter's first player.
 	// Entity ID mirrors the player ID for the initial seat; future PRs can
 	// wire in a character-selection step that replaces this with the
