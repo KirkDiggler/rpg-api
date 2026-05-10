@@ -90,26 +90,24 @@ func (r *StandInCombatResolver) ResolveAttack(input tkenc.AttackInput) (*tkenc.A
 	if dice == "" {
 		dice = "1d4"
 	}
-	dmg, err := rollDamage(r.Roller, dice, out.Critical)
-	if err != nil {
-		return nil, fmt.Errorf("stand-in combat resolver: roll damage %q: %w", dice, err)
-	}
-	out.Damage = dmg
+	out.Damage = rollDamage(r.Roller, dice, out.Critical)
 	return out, nil
 }
 
 // rollDamage parses dice notation, rolls it, and applies the crit
 // doubling approximation matching the toolkit's pre-2.11a stand-in
 // (total*2 - modifier on a crit, so only the dice portion doubles).
-// On parse / roll failure, returns 1 to keep the verb non-blocking.
-func rollDamage(roller tkdice.Roller, notation string, critical bool) (int, error) {
+// Parse / roll failures fall back to 1 — the resolver keeps the verb
+// non-blocking rather than aborting an attack on a malformed dice
+// notation, matching the toolkit's old internal behavior.
+func rollDamage(roller tkdice.Roller, notation string, critical bool) int {
 	pool, err := tkdice.ParseNotation(notation)
 	if err != nil {
-		return 1, nil
+		return 1
 	}
 	rolled := pool.RollContext(context.Background(), roller)
 	if rolled.Error() != nil {
-		return 1, nil
+		return 1
 	}
 	dmg := rolled.Total()
 	if critical {
@@ -118,5 +116,5 @@ func rollDamage(roller tkdice.Roller, notation string, critical bool) (int, erro
 	if dmg < 0 {
 		dmg = 0
 	}
-	return dmg, nil
+	return dmg
 }
