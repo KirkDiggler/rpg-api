@@ -23,6 +23,10 @@ var (
 // injected onto the resolve context via combat.WithCombatantLookup before
 // calling combat.ResolveAttack.
 //
+// Zero value: a zero-value CombatantRegistry is usable — Register
+// lazy-initialises the internal map on first call. NewCombatantRegistry is
+// provided as a convenience but is not required.
+//
 // Scope: per-attack. Build one registry for the attacker + target of a single
 // attack, thread it onto context, call ResolveAttack, then discard it. The
 // rulebook only looks up two IDs per attack (attacker and target), so
@@ -45,7 +49,13 @@ func NewCombatantRegistry() *CombatantRegistry {
 // Register adds a Combatant under the given id. Overwrites any existing entry
 // for that id, which is intentional: tests may register a replacement combatant
 // to simulate mid-combat HP changes.
+//
+// Register lazy-initialises the internal map so that the zero value of
+// CombatantRegistry is usable without calling NewCombatantRegistry first.
 func (r *CombatantRegistry) Register(id string, c combat.Combatant) {
+	if r.entries == nil {
+		r.entries = make(map[string]combat.Combatant)
+	}
 	r.entries[id] = c
 }
 

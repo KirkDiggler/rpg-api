@@ -223,3 +223,18 @@ func (s *CombatantRegistryTestSuite) TestRegistry_SatisfiesCombatantLookupInterf
 	var _ combat.CombatantLookup = reg
 	// If this compiles, the interface is satisfied.
 }
+
+// TestRegistry_ZeroValueUsable verifies that a zero-value CombatantRegistry
+// (not constructed via NewCombatantRegistry) is safe to use. Register must
+// lazy-initialise the internal map rather than panic on a nil-map write.
+func (s *CombatantRegistryTestSuite) TestRegistry_ZeroValueUsable() {
+	var reg v2encounter.CombatantRegistry
+
+	goblin := monster.NewGoblin("goblin-1")
+	// Must not panic — Register lazy-inits the nil map.
+	reg.Register("goblin-1", goblin)
+
+	got, err := reg.Get("goblin-1")
+	s.Require().NoError(err)
+	s.Equal("goblin-1", got.GetID())
+}
