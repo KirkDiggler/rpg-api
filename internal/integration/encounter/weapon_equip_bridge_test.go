@@ -319,6 +319,7 @@ func (s *WeaponEquipBridgeSuite) TestWeaponEquipBridge_LongswordSurvivesLoadFrom
 	rehydrated, err := character.LoadFromData(s.ctx, charData, bus)
 	s.Require().NoError(err, "character.LoadFromData must succeed on persisted data")
 	s.Require().NotNil(rehydrated, "rehydrated character must not be nil")
+	defer func() { _ = rehydrated.Cleanup(s.ctx) }()
 
 	// Step 5: Assert the equipped slot resolves to an EquippedItem.
 	// GetEquippedSlot scans the in-memory inventory (rebuilt by LoadFromData
@@ -374,6 +375,8 @@ func (s *WeaponEquipBridgeSuite) TestWeaponEquipBridge_NoEquipItem_SlotIsEmpty()
 	bus := events.NewEventBus()
 	rehydrated, err := character.LoadFromData(s.ctx, charData, bus)
 	s.Require().NoError(err)
+	s.Require().NotNil(rehydrated)
+	defer func() { _ = rehydrated.Cleanup(s.ctx) }()
 
 	// Without EquipItem, SlotMainHand should be empty.
 	equipped := rehydrated.GetEquippedSlot(character.SlotMainHand)
