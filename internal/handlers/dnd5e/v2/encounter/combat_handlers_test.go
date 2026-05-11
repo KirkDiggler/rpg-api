@@ -8,6 +8,7 @@ import (
 
 	encounterv2pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/encounter"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
+	v2encounter "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v2/encounter"
 	tkenc "github.com/KirkDiggler/rpg-toolkit/encounter"
 	core "github.com/KirkDiggler/rpg-toolkit/encounter/core"
 )
@@ -119,7 +120,13 @@ func (s *HandlerSuite) advanceToActivePlayer() {
 		// save. We bypass the handler here because the handler's EndTurn auth
 		// check requires the caller's controlled entity = active actor; the
 		// goblin has no controlling player.
-		enc, err := tkenc.LoadFromData(data, s.broker)
+		//
+		// WithCombatResolver is required since encounter v0.7.0: NPCAct routes
+		// through the wired resolver. The stand-in is sufficient for test setup
+		// because we only need initiative to advance past the NPC — the attack
+		// outcome itself is not asserted in advanceToActivePlayer.
+		enc, err := tkenc.LoadFromData(data, s.broker,
+			tkenc.WithCombatResolver(v2encounter.NewStandInCombatResolver(nil)))
 		s.Require().NoError(err)
 		s.Require().NoError(enc.NPCAct(s.ctx, active))
 		_, _, err = enc.EndTurn(active)
