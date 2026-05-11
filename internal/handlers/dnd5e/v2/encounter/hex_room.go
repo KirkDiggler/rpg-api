@@ -1,6 +1,7 @@
 package encounter
 
 import (
+	"fmt"
 	"math"
 
 	"github.com/KirkDiggler/rpg-toolkit/core"
@@ -153,17 +154,19 @@ func (r *encounterHexRoom) GetGrid() spatial.Grid { return nil }
 // PlaceEntity is unsupported on the read-only adapter. Mutation must go
 // through the encounter SDK.
 func (r *encounterHexRoom) PlaceEntity(_ core.Entity, _ spatial.Position) error {
-	return nil // no-op: caller should not mutate through this adapter
+	return fmt.Errorf("PlaceEntity unsupported on read-only encounter spatial adapter")
 }
 
-// MoveEntity is unsupported on the read-only adapter.
+// MoveEntity is unsupported on the read-only adapter. Mutation must go
+// through the encounter SDK.
 func (r *encounterHexRoom) MoveEntity(_ string, _ spatial.Position) error {
-	return nil // no-op
+	return fmt.Errorf("MoveEntity unsupported on read-only encounter spatial adapter")
 }
 
-// RemoveEntity is unsupported on the read-only adapter.
+// RemoveEntity is unsupported on the read-only adapter. Mutation must go
+// through the encounter SDK.
 func (r *encounterHexRoom) RemoveEntity(_ string) error {
-	return nil // no-op
+	return fmt.Errorf("RemoveEntity unsupported on read-only encounter spatial adapter")
 }
 
 // GetEntitiesAt returns all entities at a specific position.
@@ -195,8 +198,9 @@ func (r *encounterHexRoom) IsPositionOccupied(pos spatial.Position) bool {
 	return len(r.GetEntitiesAt(pos)) > 0
 }
 
-// CanPlaceEntity always returns true for the read-only adapter.
-func (r *encounterHexRoom) CanPlaceEntity(_ core.Entity, _ spatial.Position) bool { return true }
+// CanPlaceEntity always returns false for the read-only adapter. Callers
+// should not attempt PlaceEntity — it will return an error.
+func (r *encounterHexRoom) CanPlaceEntity(_ core.Entity, _ spatial.Position) bool { return false }
 
 // GetPositionsInRange returns an empty slice — position enumeration is not
 // needed by current condition handlers.

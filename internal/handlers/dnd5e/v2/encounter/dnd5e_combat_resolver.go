@@ -189,11 +189,10 @@ func (r *Dnd5eCombatResolver) ResolveAttack(input tkenc.AttackInput) (*tkenc.Att
 	// state succeed regardless of who is attacker vs target.
 	//
 	// We seed the registry from the already-resolved combatants (attacker and
-	// target) so we don't need additional character-repo calls beyond what the
-	// attack resolution itself already makes. A follow-up pass rehydrates
-	// remaining encounter members from the repo when available, but those
-	// extra calls are skipped silently on error so existing tests (which only
-	// expect one repo call per entity) continue to pass.
+	// target), using data already loaded during resolveEntity calls. No
+	// additional character-repo calls are made. Remaining encounter members
+	// are registered with empty weapon data (gamectx.NewCharacterWeapons(nil))
+	// — sufficient for ally-lookup queries that don't need weapon details.
 	charReg := r.buildEncounterCharacterRegistryFromResolved(attackerChar, targetChar)
 
 	// -- Resolve weapon for the attacker ------------------------------------
@@ -211,7 +210,7 @@ func (r *Dnd5eCombatResolver) ResolveAttack(input tkenc.AttackInput) (*tkenc.Att
 
 	// -- Wire gamectx onto the resolve context (Wave 2.11c fix #2) ----------
 	//
-	// The resolve context layers three context values:
+	// The resolve context layers four context values:
 	//   1. combat.WithCombatantLookup — rulebook chain's Combatant lookup
 	//   2. gamectx.WithGameContext   — CharacterRegistry for condition queries
 	//   3. gamectx.WithRoom          — spatial Room for adjacency checks
