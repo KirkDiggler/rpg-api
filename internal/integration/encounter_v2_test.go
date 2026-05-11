@@ -1381,11 +1381,38 @@ func (s *EncounterV2IntegrationSuite) advanceUntilPlayerActiveByDirectToolkit(en
 			break
 		}
 		// Active is the goblin — run NPCAct + EndTurn to cycle.
+		//
+		// Reload with a StandIn resolver: encounter v0.7.0 requires WithCombatResolver
+		// before NPCAct. The stand-in is sufficient here because we only need to
+		// advance past the NPC turn — the attack outcome is not asserted.
+		var reloadErr error
+		enc, reloadErr = tkenc.LoadFromData(data, s.srv.BrokerV2,
+			tkenc.WithCombatResolver(testStandInResolver{}))
+		s.Require().NoError(reloadErr)
 		s.Require().NoError(enc.NPCAct(s.ctx, active))
 		_, _, err := enc.EndTurn(active)
 		s.Require().NoError(err)
 	}
 	s.Require().NoError(s.srv.EncRepoV2.Save(s.ctx, enc.ToData()))
+}
+
+// testStandInResolver is a minimal CombatResolver for test setup helpers that
+// need to call NPCAct (which requires a wired resolver since encounter v0.7.0)
+// without asserting on specific attack outcomes. It mirrors the snapshot-based
+// math of the handler's StandInCombatResolver without importing handler packages.
+type testStandInResolver struct{}
+
+func (testStandInResolver) ResolveAttack(input tkenc.AttackInput) (*tkenc.AttackOutcome, error) {
+	// Deterministic: always hit with AttackBonus+10 (well above any AC in
+	// test fixtures) so NPC turns advance reliably without random d20 misses.
+	return &tkenc.AttackOutcome{
+		Hit:         true,
+		AttackRoll:  15,
+		AttackBonus: input.AttackerAttackBonus,
+		TargetAC:    input.TargetAC,
+		Damage:      1,
+		DamageType:  input.AttackerDamageType,
+	}, nil
 }
 
 // eventSink consumes a stream's events into a thread-safe slice. snapshot()
