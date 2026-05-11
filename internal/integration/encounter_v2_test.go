@@ -875,14 +875,16 @@ func (s *EncounterV2IntegrationSuite) TestCombatSlice_TakeActionAndEndTurn_NPCDi
 		HP: 10, MaxHP: 10, AC: 13, AttackBonus: 3, DamageDice: "1d6+1", DamageType: "piercing",
 	}))
 	// Goblin HP intentionally bumped to 30 (vs canonical 7) so the one-shot
-	// path is statistically impossible (player damage caps at 1d8+2 = 10,
-	// 1d6+1 = 7). Pre-Wave-2.10 a kill here was harmless — the encounter
-	// just had no monsters and EndTurn still worked. Wave 2.10 added the
-	// ErrEncounterEnded terminal-state guard, so a kill here now flips
-	// EndTurn to FailedPrecondition mid-test. The test was never trying
-	// to exercise lethality (Wave 2.10's death suite covers that with
-	// killGoblinFixture); bumping HP keeps the attack/endturn/npc-dispatch
-	// loop the actual subject under test. Closes #520.
+	// path is statistically impossible. Player damage including crits caps
+	// at 1d8+2 → 18 max (alice, nat-20 doubles the d8) and 1d6+1 → 13 max
+	// (bob, nat-20 doubles the d6) — both well under 30. Pre-Wave-2.10 a
+	// kill here was harmless — the encounter just had no monsters and
+	// EndTurn still worked. Wave 2.10 added the ErrEncounterEnded
+	// terminal-state guard, so a kill here now flips EndTurn to
+	// FailedPrecondition mid-test. The test was never trying to exercise
+	// lethality (Wave 2.10's death suite covers that with killGoblinFixture);
+	// bumping HP keeps the attack/endturn/npc-dispatch loop the actual
+	// subject under test. Closes #520.
 	s.Require().NoError(enc.AddMonster(tkenc.MonsterInput{
 		ID: "goblin-1", Position: core.Hex{Q: 2, R: -1, S: -1},
 		HP: 30, MaxHP: 30, AC: 15, Speed: 6,
