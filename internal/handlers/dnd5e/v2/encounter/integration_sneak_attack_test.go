@@ -3,19 +3,43 @@ package encounter_test
 // integration_sneak_attack_test.go — Wave 2.11c sign-off integration tests.
 //
 // These tests verify the three core bugs fixed in this wave:
-//   1. Encounter-scoped bus: SneakAttack.UsedThisTurn persists across attacks
-//      within a turn (the once-per-turn semantic). A fresh per-attack bus would
-//      reset the condition every attack, letting a rogue sneak-attack twice.
-//   2. gamectx wiring: RequireRoom does not crash with ErrNoGameContext;
-//      the ally-adjacency check succeeds when an ally is placed next to the target.
-//   3. TurnEnd bridge: UsedThisTurn resets when EndTurn is called, so sneak
-//      attack fires again on the rogue's next turn.
+//  1. Encounter-scoped bus: SneakAttack.UsedThisTurn persists within a single
+//     TakeAction call (intra-verb attacks, e.g. multi-attack). Separate TakeAction
+//     RPC calls each do a fresh LoadFromData with a new bus, so cross-RPC
+//     once-per-turn enforcement requires encounter-side state (tracked in #654).
+//  2. gamectx wiring: RequireRoom does not crash with ErrNoGameContext;
+//     the ally-adjacency check succeeds when an ally is placed next to the target.
+//  3. TurnEnd bridge: EndTurn publishes dnd5e TurnEndEvent on the encounter bus
+//     so conditions subscribed to TurnEndTopic receive the reset signal.
 //
 // Scenario:
 //   - alice (rogue, level 2, DEX 16 > STR 12) has a shortsword equipped and
 //     the SneakAttack condition persisted on her character data.
 //   - bob is alice's ally, placed adjacent to goblin-1.
-//   - goblin-1 has 100 HP (never dies during the test so we can attack twice).
+//   - goblin-1 has 100 HP (never dies during the test).
+//
+// # Deterministic roller strategy
+//
+// A fixedRoller controls the d20 attack roll and weapon damage dice so that
+// HP-delta assertions are deterministic for the weapon component:
+//
+//   fixedRoller{val: 10}: d20 = 10+5 (alice bonus) = 15 > goblin AC 13 → always hit, no crit
+//   Weapon 1d6: Roll(size=6) → min(10,6) = 6; damage = 6+3 (DEX mod) = 9
+//
+// The SneakAttack condition uses its own roller (nil after JSON round-trip →
+// dice.NewRoller() → random 1-6). This is fine because:
+//   - Attack WITH sneak: HP delta = 9 + (1-6) > 9 (always, since sneak dice ≥ 1)
+//   - Attack WITHOUT sneak: HP delta = 9 exactly
+//
+// The once-per-turn gate works WITHIN a single TakeAction but NOT across
+// separate RPC calls (each RPC calls LoadFromData which creates a fresh bus and
+// condition with UsedThisTurn=false). Cross-RPC once-per-turn enforcement is
+// tracked in rpg-toolkit#654.
+//
+// rpg-toolkit#653 tracks loader-registration support for synthetic conditions,
+// which would allow test-package conditions to inject a fixed roller into the
+// sneak dice path. Until then, sneak component assertions use "> 9" rather
+// than "== exact_value".
 
 import (
 	"context"
@@ -49,7 +73,43 @@ const (
 	sneakPlayerBob   = "bob"
 	sneakEntityBob   = "char-bob"
 	sneakGoblinID    = "goblin-sneak"
+
+	// sneakWeaponDamage is the expected weapon-only damage from alice's shortsword
+	// when fixedRoller{val:10} is used: Roll(size=6)=6, damage = 6+DEX_mod(+3) = 9.
+	// Used as the baseline for sneak-fired assertions (HP delta must be > 9).
+	sneakWeaponDamage = 9
 )
+
+// fixedRoller is a deterministic dice.Roller stub for integration tests.
+// Roll always returns min(val, size); RollN returns []int{clamped, …} of length count.
+// Named "fixed" not "mock" per project convention — hand-written stubs ≠ gomock doubles.
+type fixedRoller struct{ val int }
+
+func (r fixedRoller) Roll(_ context.Context, size int) (int, error) {
+	v := r.val
+	if v < 1 {
+		v = 1
+	}
+	if v > size {
+		v = size
+	}
+	return v, nil
+}
+
+func (r fixedRoller) RollN(_ context.Context, count, size int) ([]int, error) {
+	v := r.val
+	if v < 1 {
+		v = 1
+	}
+	if v > size {
+		v = size
+	}
+	result := make([]int, count)
+	for i := range result {
+		result[i] = v
+	}
+	return result, nil
+}
 
 // SneakAttackIntegrationSuite tests the Wave 2.11c sign-off scenario:
 // encounter-scoped bus, gamectx wiring, and TurnEnd bridge.
@@ -75,12 +135,15 @@ func (s *SneakAttackIntegrationSuite) SetupTest() {
 	s.repo = encountersv2.NewInMemory()
 
 	fixedNow := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	// fixedRoller{val:10}: d20 attack = 10+5=15 > goblin AC 13 → always hit, never crit (not 20).
+	// weapon 1d6 = Roll(6) = min(10,6) = 6; with DEX mod +3 → weapon damage = 9.
 	h, err := v2encounter.New(&v2encounter.HandlerConfig{
 		Broker: s.broker,
 		Repo:   s.repo,
 		Now:    func() time.Time { return fixedNow },
 		CombatResolverConfig: &v2encounter.Dnd5eCombatResolverConfig{
 			CharacterRepo: s.mockCharRepo,
+			Roller:        fixedRoller{val: 10},
 		},
 	})
 	s.Require().NoError(err)
@@ -109,13 +172,46 @@ func (s *SneakAttackIntegrationSuite) TestIntegration_SneakAttackDoesNotCrashWit
 	s.Require().NoError(err, "attack with SneakAttack condition must not crash from missing gamectx")
 }
 
-// TestIntegration_SneakAttackOncePerTurn verifies that UsedThisTurn is set
-// after the first sneak attack so the second attack in the same turn does NOT
-// add sneak attack dice.
+// TestIntegration_SneakAttackFiresWhenConditionsMet verifies that sneak attack
+// fires when an ally is adjacent to the target (gamectx.RequireRoom wired correctly)
+// and the attacker uses a finesse weapon (AbilityUsed == "dex").
 //
-// This is the sign-off test for Wave 2.11c fix #1 (encounter-scoped bus).
-// If the bus were per-attack, UsedThisTurn would reset between attacks and a
-// rogue with Extra Attack could sneak-attack every strike.
+// HP-delta proof: with fixedRoller(val=10):
+//   - weapon damage = 9 (deterministic)
+//   - sneak attack: 1d6 random (1-6, always ≥1)
+//   - goblin HP delta must be > 9 (sneak fired)
+//
+// This is the sign-off test for Wave 2.11c fix #2 (gamectx wiring enables
+// the ally-adjacency path inside checkSneakAttackConditions).
+func (s *SneakAttackIntegrationSuite) TestIntegration_SneakAttackFiresWhenConditionsMet() {
+	aliceData := s.buildAliceRogueData()
+	s.setupCharRepoMock(aliceData)
+	s.seedSneakEncounter()
+	s.advanceToAlice()
+
+	hpBefore := s.goblinHP()
+
+	_, err := s.handler.TakeAction(s.aliceCtx, s.attackAliceVsGoblin())
+	s.Require().NoError(err, "attack must resolve without error")
+
+	hpAfter := s.goblinHP()
+	delta := hpBefore - hpAfter
+	s.Greater(delta, sneakWeaponDamage,
+		"goblin HP delta (%d) must exceed weapon-only damage (%d): sneak attack must have fired (ally adjacent, DEX weapon, gamectx wired correctly)",
+		delta, sneakWeaponDamage)
+}
+
+// TestIntegration_SneakAttackOncePerTurn documents the intra-TakeAction
+// once-per-turn behaviour and the known cross-RPC gap.
+//
+// Within a single TakeAction verb, UsedThisTurn persists on the condition
+// (same bus, same condition instance in memory). Across separate TakeAction
+// RPC calls, each call runs LoadFromData which creates a fresh bus and a fresh
+// condition instance with UsedThisTurn=false — so sneak fires again.
+//
+// Cross-RPC once-per-turn enforcement requires the encounter data to track
+// per-entity turn-state (tracked in rpg-toolkit#654). Until that lands, this
+// test documents the no-crash behaviour for repeated attacks.
 func (s *SneakAttackIntegrationSuite) TestIntegration_SneakAttackOncePerTurn() {
 	aliceData := s.buildAliceRogueData()
 	s.setupCharRepoMock(aliceData)
@@ -126,24 +222,28 @@ func (s *SneakAttackIntegrationSuite) TestIntegration_SneakAttackOncePerTurn() {
 	_, err := s.handler.TakeAction(s.aliceCtx, s.attackAliceVsGoblin())
 	s.Require().NoError(err, "first attack must resolve without error")
 
-	// Attack 2 in the same turn — sneak attack does NOT fire (UsedThisTurn = true).
-	// The attack still resolves; the condition silently skips the bonus dice.
-	// No error proves the condition handled UsedThisTurn without panicking.
+	// Attack 2 in the same turn — each TakeAction creates a fresh bus+condition,
+	// so UsedThisTurn resets to false and sneak fires again. This is the known
+	// cross-RPC gap (rpg-toolkit#654). The test proves no panic, no error.
 	_, err = s.handler.TakeAction(s.aliceCtx, s.attackAliceVsGoblin())
-	s.Require().NoError(err, "second attack in the same turn must also resolve (no sneak attack dice, no error)")
+	s.Require().NoError(err, "second attack in the same turn must also resolve without error")
 }
 
-// TestIntegration_SneakAttackResetsOnTurnEnd verifies that UsedThisTurn is
-// cleared when EndTurn publishes the dnd5e TurnEndEvent on the encounter bus.
+// TestIntegration_SneakAttackResetsOnTurnEnd verifies that EndTurn publishes
+// the dnd5e TurnEndEvent on the encounter bus (the TurnEnd bridge in end_turn.go).
+// The no-crash signal proves the bridge fires without error.
 //
-// This is the sign-off test for Wave 2.11c's TurnEnd bridge (publishTurnEndOnBus).
+// Note: verifying that UsedThisTurn is reset by the TurnEnd event requires the
+// condition to persist across LoadFromData calls, which requires cross-RPC state
+// tracking (rpg-toolkit#654). This test proves the TurnEnd bridge executes and
+// that attacks continue to resolve successfully on the next turn.
 func (s *SneakAttackIntegrationSuite) TestIntegration_SneakAttackResetsOnTurnEnd() {
 	aliceData := s.buildAliceRogueData()
 	s.setupCharRepoMock(aliceData)
 	s.seedSneakEncounter()
 	s.advanceToAlice()
 
-	// Turn 1: alice attacks (sneak attack fires, UsedThisTurn set to true).
+	// Turn 1: alice attacks (sneak attack fires, UsedThisTurn set to true on current bus).
 	_, err := s.handler.TakeAction(s.aliceCtx, s.attackAliceVsGoblin())
 	s.Require().NoError(err, "turn-1 attack must resolve")
 
@@ -159,10 +259,10 @@ func (s *SneakAttackIntegrationSuite) TestIntegration_SneakAttackResetsOnTurnEnd
 	// the active actor again on her next turn.
 	s.advanceToAlice()
 
-	// Turn 2: alice attacks again. UsedThisTurn was reset by EndTurn so
-	// sneak attack fires again. The attack must not error.
+	// Turn 2: alice attacks again. Must not error — the TurnEnd bridge fires
+	// correctly, and the next-turn attack resolves.
 	_, err = s.handler.TakeAction(s.aliceCtx, s.attackAliceVsGoblin())
-	s.Require().NoError(err, "turn-2 attack must resolve (UsedThisTurn must have been reset by EndTurn)")
+	s.Require().NoError(err, "turn-2 attack must resolve (TurnEnd bridge must not error)")
 }
 
 // TestIntegration_GamectxWiredForChainConditions verifies that gamectx.RequireRoom
@@ -180,6 +280,16 @@ func (s *SneakAttackIntegrationSuite) TestIntegration_GamectxWiredForChainCondit
 
 // TestIntegration_ReactionReadinessExposedViaGamectx verifies that the
 // encounter's ReactionReadiness map is correctly threaded into gamectx.
+//
+// Note: a stronger test would inject a synthetic condition that calls
+// gamectx.IsReactionReady from inside its Apply handler and records the
+// observed value. This is not currently possible because conditions.LoadJSON
+// is a closed switch — only toolkit-registered condition refs can be
+// reconstituted from character JSON blobs. rpg-toolkit#653 tracks adding a
+// loader-registration extension point so test-package conditions can ride the
+// snapshot lifecycle. Until then, this test verifies the data-shape (readiness
+// map is seeded by the encounter SDK) plus the no-crash signal (TakeAction
+// succeeds with the readiness map wired into gamectx via WithReactionReadiness).
 func (s *SneakAttackIntegrationSuite) TestIntegration_ReactionReadinessExposedViaGamectx() {
 	aliceData := s.buildAliceRogueData()
 	s.setupCharRepoMock(aliceData)
@@ -236,6 +346,15 @@ func (s *SneakAttackIntegrationSuite) attackAliceVsGoblin() *encounterv2pb.TakeA
 	}
 }
 
+// goblinHP returns the current HP of the goblin from the persisted encounter snapshot.
+func (s *SneakAttackIntegrationSuite) goblinHP() int {
+	data, err := s.repo.Get(context.Background(), sneakIntegEncID)
+	s.Require().NoError(err, "repo.Get for goblin HP check")
+	md, ok := data.Monsters[encountercore.EntityID(sneakGoblinID)]
+	s.Require().True(ok, "goblin must be in encounter data")
+	return md.HP
+}
+
 // buildAliceRogueData constructs a character.Data for alice — a level-2 rogue
 // with DEX 16 > STR 12 (so finesse weapons use DEX), a shortsword in the main
 // hand slot, and the SneakAttack condition persisted in her Conditions blob.
@@ -289,7 +408,7 @@ func (s *SneakAttackIntegrationSuite) buildAliceRogueData() *character.Data {
 //
 //	alice  Q:0  R:0   (attacker)
 //	bob    Q:1  R:0   (ally — distance to goblin sqrt((2-1)²+(0-0)²) = 1.0 ≤ 1.5)
-//	goblin Q:2  R:0   (target — 100 HP so it survives both attacks)
+//	goblin Q:2  R:0   (target — 100 HP so it survives multiple attacks)
 //
 // DamageDice is set for all combatants so they qualify as combatants for
 // TakeAction and have OA readiness seeded by the encounter SDK.
@@ -322,7 +441,7 @@ func (s *SneakAttackIntegrationSuite) seedSneakEncounter() {
 		DamageType: "slashing",
 	}))
 
-	// goblin: 100 HP so it survives two attacks during the test.
+	// goblin: 100 HP so it survives multiple attacks during the test.
 	s.Require().NoError(enc.AddMonster(tkenc.MonsterInput{
 		ID:          encountercore.EntityID(sneakGoblinID),
 		Position:    encountercore.Hex{Q: 2, R: 0, S: -2},

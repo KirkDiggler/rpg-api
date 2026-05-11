@@ -45,6 +45,7 @@ import (
 	"strings"
 
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
+	tkdice "github.com/KirkDiggler/rpg-toolkit/dice"
 	tkenc "github.com/KirkDiggler/rpg-toolkit/encounter"
 	encountercore "github.com/KirkDiggler/rpg-toolkit/encounter/core"
 	"github.com/KirkDiggler/rpg-toolkit/events"
@@ -70,10 +71,18 @@ const fallbackDamageDice = "1d4"
 // wire a character repo to continue passing — the fixture uses the snapshot
 // fields, which the stand-in already handles. Tests that want the real chain
 // should supply a CharacterRepo populated with the fixture character.
+//
+// Roller is optional: if nil, the rulebook combat chain uses its own default
+// roller (crypto-random). Tests can supply a deterministic roller to control
+// attack-roll and weapon-damage dice for HP-delta assertions.
 type Dnd5eCombatResolverConfig struct {
 	// CharacterRepo provides character lookup by ID. When nil, player-side
 	// attacks fall back to the snapshot-based stand-in math.
 	CharacterRepo characterrepo.Repository
+
+	// Roller is the dice roller for attack and weapon damage rolls. When nil,
+	// the rulebook combat chain uses its own default roller.
+	Roller tkdice.Roller
 }
 
 // Dnd5eCombatResolver implements tkenc.CombatResolver against the dnd5e
@@ -94,7 +103,7 @@ func NewDnd5eCombatResolverForData(cfg Dnd5eCombatResolverConfig, data *tkenc.Da
 	return &Dnd5eCombatResolver{
 		cfg:           cfg,
 		encounterData: data,
-		standIn:       NewStandInCombatResolver(nil),
+		standIn:       NewStandInCombatResolver(cfg.Roller),
 	}
 }
 
@@ -240,6 +249,7 @@ func (r *Dnd5eCombatResolver) ResolveAttack(input tkenc.AttackInput) (*tkenc.Att
 		Weapon:     weapon,
 		EventBus:   bus,
 		AttackHand: attackHand,
+		Roller:     r.cfg.Roller, // nil = rulebook default (crypto-random)
 	})
 	if err != nil {
 		return nil, fmt.Errorf("dnd5e combat resolver: %w", err)
