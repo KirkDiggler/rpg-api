@@ -12,6 +12,7 @@ import (
 	encountersv2 "github.com/KirkDiggler/rpg-api/internal/repositories/encounters/v2"
 	tkenc "github.com/KirkDiggler/rpg-toolkit/encounter"
 	"github.com/KirkDiggler/rpg-toolkit/encounter/core"
+	dnd5eEvents "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/events"
 )
 
 // npcChainSafetyMargin is added to the initiative roster size to derive the
@@ -85,10 +86,21 @@ func (h *Handler) EndTurn(ctx context.Context, req *encounterv2pb.EndTurnRequest
 		return nil, status.Errorf(codes.Internal, "load from data %q: %v", req.GetEncounterId(), err)
 	}
 
-	newActive, isNPC, err := enc.EndTurn(core.EntityID(req.GetEntityId()))
+	endingEntityID := req.GetEntityId()
+	newActive, isNPC, err := enc.EndTurn(core.EntityID(endingEntityID))
 	if err != nil {
 		return nil, endTurnStatusError(err)
 	}
+
+	// Wave 2.11c: publish dnd5e TurnEndEvent on the encounter-scoped dnd5e
+	// bus so conditions that subscribe to TurnEndTopic (e.g. SneakAttack)
+	// can reset their per-turn state. The encounter SDK's EndTurn publishes
+	// to its own broker (per-viewer event stream), but conditions subscribe
+	// to the dnd5e event bus, not the broker — so this is the bridge.
+	//
+	// Published synchronously before the NPC dispatch loop so condition state
+	// resets before any subsequent NPC attacks on the same request.
+	publishTurnEndOnBus(ctx, enc, endingEntityID)
 
 	// NPC dispatch loop. After the toolkit's EndTurn advances initiative, if
 	// the new active actor is an NPC the handler runs its turn server-side
@@ -122,8 +134,13 @@ func (h *Handler) EndTurn(ctx context.Context, req *encounterv2pb.EndTurnRequest
 			isNPC = false
 			break
 		}
+		prevNPC := newActive
 		var endErr error
 		newActive, isNPC, endErr = enc.EndTurn(newActive)
+		if endErr == nil {
+			// Publish dnd5e TurnEndEvent for the NPC's turn ending.
+			publishTurnEndOnBus(ctx, enc, string(prevNPC))
+		}
 		if endErr != nil {
 			// ErrEncounterEnded here means the NPC's action ended the
 			// encounter and the subsequent EndTurn rejected the call.
@@ -166,6 +183,24 @@ func (h *Handler) EndTurn(ctx context.Context, req *encounterv2pb.EndTurnRequest
 	}
 
 	return &encounterv2pb.EndTurnResponse{}, nil
+}
+
+// publishTurnEndOnBus publishes a dnd5eEvents.TurnEndEvent on the
+// encounter-scoped dnd5e bus for the given entity. This bridges the encounter
+// SDK's turn-lifecycle (published to the per-viewer broker) to the rulebook's
+// condition-reset mechanism (conditions subscribe to TurnEndTopic on the
+// dnd5e bus). Errors are silently swallowed — a turn-end publish failure
+// should not abort the EndTurn response; condition state resets on the next
+// natural rehydration.
+func publishTurnEndOnBus(ctx context.Context, enc *tkenc.Encounter, entityID string) {
+	bus := enc.EventBus()
+	if bus == nil {
+		return
+	}
+	evt := dnd5eEvents.TurnEndEvent{CharacterID: entityID}
+	// Publish is best-effort; log nothing — no logger available here, and
+	// condition state reset is not critical-path for the RPC response.
+	_ = dnd5eEvents.TurnEndTopic.On(bus).Publish(ctx, evt)
 }
 
 // endTurnStatusError maps toolkit EndTurn sentinel errors onto gRPC status
