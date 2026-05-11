@@ -199,6 +199,11 @@ func (s *Dnd5eCombatResolverTestSuite) TestResolveAttack_PlayerAttacker_CharRepo
 		Return(&characterrepo.GetOutput{
 			Character: &entities.Character{Data: aliceData},
 		}, nil)
+	// saveAttackerConditionState calls Update after the attack resolves to persist
+	// updated condition state (e.g. SneakAttack.UsedThisTurn). Allow any Update.
+	s.mockCharRepo.EXPECT().
+		Update(gomock.Any(), gomock.Any()).
+		Return(&characterrepo.UpdateOutput{}, nil).AnyTimes()
 
 	encounterData := s.buildEncounterDataWithPlayer("char-alice", "goblin-1")
 
@@ -326,6 +331,11 @@ func (s *Dnd5eCombatResolverTestSuite) TestResolveAttack_OutcomeTranslation_HitS
 		Return(&characterrepo.GetOutput{
 			Character: &entities.Character{Data: aliceData},
 		}, nil)
+	// saveAttackerConditionState calls Update after the attack resolves to persist
+	// updated condition state (e.g. SneakAttack.UsedThisTurn). Allow any Update.
+	s.mockCharRepo.EXPECT().
+		Update(gomock.Any(), gomock.Any()).
+		Return(&characterrepo.UpdateOutput{}, nil).AnyTimes()
 
 	encounterData := s.buildEncounterDataWithPlayer("char-alice", "goblin-1")
 

@@ -44,6 +44,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/KirkDiggler/rpg-api/internal/entities"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	tkdice "github.com/KirkDiggler/rpg-toolkit/dice"
 	tkenc "github.com/KirkDiggler/rpg-toolkit/encounter"
@@ -255,6 +256,22 @@ func (r *Dnd5eCombatResolver) ResolveAttack(input tkenc.AttackInput) (*tkenc.Att
 		return nil, fmt.Errorf("dnd5e combat resolver: %w", err)
 	}
 
+	// -- Persist updated attacker condition state (Wave 2.11c fix #1 follow-through) --
+	//
+	// Conditions like SneakAttack update runtime state (UsedThisTurn) during the
+	// attack chain. Because TakeAction creates a fresh Encounter per RPC call via
+	// LoadFromData, this in-memory state would be lost before the next attack.
+	// With UsedThisTurn now persisted in SneakAttackData (rpg-toolkit#654 / PR #655),
+	// we save the attacker's updated character data back to the repo so the next
+	// TakeAction RPC sees UsedThisTurn=true when it loads the condition from JSON.
+	//
+	// Errors are logged-and-ignored: if the save fails the attack still succeeded;
+	// the consequence is that once-per-turn is not enforced on the next RPC (which
+	// was the status quo before this fix). This avoids rolling back a successful attack.
+	if attackerChar != nil && r.cfg.CharacterRepo != nil {
+		r.saveAttackerConditionState(ctx, attackerChar)
+	}
+
 	// -- Translate *combat.AttackResult → *tkenc.AttackOutcome --------------
 
 	return &tkenc.AttackOutcome{
@@ -352,6 +369,29 @@ func characterToGamectxWeapons(char *character.Character) *gamectx.CharacterWeap
 		}
 	}
 	return gamectx.NewCharacterWeapons(equipped)
+}
+
+// saveAttackerConditionState persists the attacker's updated condition JSON
+// back to the character repository after an attack resolves.
+//
+// This is the write-back step for Wave 2.11c fix #1 cross-RPC persistence:
+// conditions like SneakAttack update runtime state (UsedThisTurn) during the
+// attack chain. With UsedThisTurn now included in SneakAttackData JSON
+// (rpg-toolkit PR #655), calling ToData() on the post-attack character
+// captures the new state. The next TakeAction RPC will then load the updated
+// JSON and find UsedThisTurn=true, enforcing the once-per-turn gate.
+//
+// Errors are intentionally swallowed: the attack itself succeeded; failing
+// to write back means once-per-turn is not enforced on the next RPC (the
+// status-quo before this feature), which is safer than failing a completed attack.
+func (r *Dnd5eCombatResolver) saveAttackerConditionState(ctx context.Context, char *character.Character) {
+	updatedData := char.ToData()
+	if updatedData == nil {
+		return
+	}
+	_, _ = r.cfg.CharacterRepo.Update(ctx, characterrepo.UpdateInput{
+		Character: &entities.Character{Data: updatedData},
+	})
 }
 
 // buildReactionReadinessMap converts the encounter Data's ReactionReadiness
