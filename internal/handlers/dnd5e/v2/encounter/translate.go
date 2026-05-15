@@ -12,6 +12,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	encounterv2pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/encounter"
+	"github.com/KirkDiggler/rpg-toolkit/encounter"
 	"github.com/KirkDiggler/rpg-toolkit/encounter/core"
 	"github.com/KirkDiggler/rpg-toolkit/encounter/events"
 )
@@ -88,9 +89,100 @@ func TranslateEvent(evt events.EncounterEvent, viewer core.PlayerID, now time.Ti
 		return translateEntityRemovedEvent(e, viewer, now)
 	case *events.EncounterEndedEvent:
 		return translateEncounterEndedEvent(e, viewer, now)
+	case *events.InputRequiredDeliveredEvent:
+		// Wave 2.11d: prompt content lives on encounter Data, not on the
+		// event payload. The stream loop calls TranslateInputRequiredDelivered
+		// directly with the encounter snapshot loaded; reaching this case
+		// from TranslateEvent (which has no data lookup) means the caller
+		// should be using the data-aware translator path instead.
+		return nil, fmt.Errorf("%w: InputRequiredDeliveredEvent requires data lookup; "+
+			"use TranslateInputRequiredDelivered from the stream loop", ErrUnknownEventType)
 	default:
 		return nil, fmt.Errorf("%w: %T", ErrUnknownEventType, evt)
 	}
+}
+
+// TranslateInputRequiredDelivered is the data-aware translator for
+// InputRequiredDeliveredEvent. The stream loop calls this when it sees the
+// event so the prompt content (currently on encounter Data, not the event)
+// can be loaded and packaged into the wire shape.
+//
+// Returns ErrViewerSawNothing when the event's audience does not include
+// viewer. Returns ErrEventSuppressed when no pending prompt exists for the
+// reactor (a benign race: the prompt cleared between event publish and
+// translation).
+func TranslateInputRequiredDelivered(
+	evt *events.InputRequiredDeliveredEvent,
+	viewer core.PlayerID,
+	now time.Time,
+	pendingPrompt *encounter.PendingReactionPrompt,
+) (*encounterv2pb.EncounterEvent, error) {
+	if evt.ReactorID != viewer {
+		return nil, ErrViewerSawNothing
+	}
+	if pendingPrompt == nil {
+		// Benign race: prompt cleared between publish and translation, OR
+		// wrong reactor. Suppress so the stream loop continues quietly.
+		return nil, ErrEventSuppressed
+	}
+
+	// Build the InputRequired oneof variant for the prompt kind. Wave 2.11d
+	// only emits PromptKindReaction; future kinds branch here.
+	switch evt.PromptKind {
+	case events.PromptKindReaction:
+		ref := refStringToProto(pendingPrompt.ConditionRef)
+		return &encounterv2pb.EncounterEvent{
+			Sequence:  int64(evt.Sequence()), //nolint:gosec // sequence is monotonic; fits int64
+			Timestamp: timestamppb.New(now),
+			Event: &encounterv2pb.EncounterEvent_InputRequiredDelivered{
+				InputRequiredDelivered: &encounterv2pb.InputRequiredDelivered{
+					InputRequired: &encounterv2pb.InputRequired{
+						Kind: &encounterv2pb.InputRequired_ReactionPrompt{
+							ReactionPrompt: &encounterv2pb.ReactionPrompt{
+								ReactionRef:           ref,
+								TriggerKind:           pendingPrompt.TriggerKind,
+								TriggerSourceEntityId: string(pendingPrompt.SourceEntity),
+								TargetEntityId:        string(pendingPrompt.ReactorEntityID),
+							},
+						},
+					},
+				},
+			},
+		}, nil
+	default:
+		return nil, fmt.Errorf("%w: unknown PromptKind %q", ErrUnknownEventType, evt.PromptKind)
+	}
+}
+
+// refStringToProto parses a "module:type:id" canonical ref string into the
+// proto Ref shape. Returns a Ref with the parsed parts; if parsing fails
+// (malformed input), returns a Ref carrying the raw id and the dnd5e module
+// fallback so the wire never carries an empty ref.
+func refStringToProto(s string) *encounterv2pb.Ref {
+	module, typ, id := refModuleDnd5e, "", s
+	// canonical shape: module:type:id
+	first := indexByte(s, ':')
+	if first >= 0 {
+		module = s[:first]
+		rest := s[first+1:]
+		second := indexByte(rest, ':')
+		if second >= 0 {
+			typ = rest[:second]
+			id = rest[second+1:]
+		}
+	}
+	return &encounterv2pb.Ref{Module: module, Type: typ, Id: id}
+}
+
+// indexByte mirrors strings.IndexByte without pulling the strings package
+// just for one helper. Returns -1 if not found.
+func indexByte(s string, b byte) int {
+	for i := 0; i < len(s); i++ {
+		if s[i] == b {
+			return i
+		}
+	}
+	return -1
 }
 
 func translateMoveEvent(e *events.MoveEvent, viewer core.PlayerID, now time.Time) (*encounterv2pb.EncounterEvent, error) {

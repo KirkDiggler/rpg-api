@@ -95,6 +95,11 @@ type Dnd5eCombatResolver struct {
 	// standIn is used as fallback when the character repo is absent or a
 	// character lookup fails. This preserves existing test behavior.
 	standIn *StandInCombatResolver
+	// pendingPhased caches the in-flight phase-1 prep so ApplyAttackOutcome
+	// can reuse the same attackerChar + resolveCtx without re-loading the
+	// character (which would create duplicate condition subscribers). See
+	// dnd5e_combat_resolver_phased.go for the caching contract.
+	pendingPhased *pendingPhasedAttack
 }
 
 // NewDnd5eCombatResolverForData constructs a resolver bound to the given
@@ -244,6 +249,10 @@ func (r *Dnd5eCombatResolver) ResolveAttack(input tkenc.AttackInput) (*tkenc.Att
 
 	// -- Call the rulebook chain --------------------------------------------
 
+	// Wave 2.11d: legacy single-phase ResolveAttack is intentionally retained
+	// for the legacy ResolveAttack interface method. New phased callers route
+	// through ResolveAttackHit + ApplyAttackOutcome on the same struct.
+	//nolint:staticcheck // SA1019: legacy single-phase wrapper retained for CombatResolver interface
 	result, err := combat.ResolveAttack(resolveCtx, &combat.AttackInput{
 		AttackerID: attackerID,
 		TargetID:   targetID,
@@ -491,6 +500,10 @@ func (r *Dnd5eCombatResolver) loadCharacterWithBus(ctx context.Context, characte
 	if err != nil {
 		return nil, fmt.Errorf("load character %q from data: %w", characterID, err)
 	}
+	// Wave 2.11d: apply universal reaction conditions (OA + Shield-if-spellcaster).
+	// Errors are non-fatal — log and continue so a condition-Apply failure does
+	// not block the attack chain that the resolver was about to run.
+	_ = applyReactionConditions(ctx, char, bus)
 	return char, nil
 }
 

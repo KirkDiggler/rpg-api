@@ -3,6 +3,7 @@ package encounter
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 	encountersv2 "github.com/KirkDiggler/rpg-api/internal/repositories/encounters/v2"
 	"github.com/KirkDiggler/rpg-toolkit/encounter"
 	"github.com/KirkDiggler/rpg-toolkit/encounter/core"
+	tkevents "github.com/KirkDiggler/rpg-toolkit/encounter/events"
 )
 
 // HandlerConfig configures a v2 encounter Handler.
@@ -232,7 +234,7 @@ func (h *Handler) StreamEncounter(req *encounterv2pb.StreamEncounterRequest, str
 			if !ok {
 				return nil
 			}
-			out, translateErr := TranslateEvent(evt, core.PlayerID(playerID), h.now())
+			out, translateErr := h.translateForStream(ctx, encID, evt, core.PlayerID(playerID))
 			switch {
 			case errors.Is(translateErr, ErrViewerSawNothing):
 				continue
@@ -254,4 +256,33 @@ func (h *Handler) StreamEncounter(req *encounterv2pb.StreamEncounterRequest, str
 			}
 		}
 	}
+}
+
+// translateForStream wraps TranslateEvent with the data-aware path for
+// InputRequiredDeliveredEvent (Wave 2.11d). Wave 2.11d's reaction prompts
+// store their content on Encounter.Data.PendingReactionPrompts (rather than
+// on the event payload), so the translator needs the encounter snapshot to
+// look up the prompt content. Other event types continue to use
+// TranslateEvent unchanged.
+func (h *Handler) translateForStream(
+	ctx context.Context,
+	encID core.EncounterID,
+	evt tkevents.EncounterEvent,
+	viewer core.PlayerID,
+) (*encounterv2pb.EncounterEvent, error) {
+	if irEvt, ok := evt.(*tkevents.InputRequiredDeliveredEvent); ok {
+		// Load the encounter to read the pending prompt content. The prompt
+		// lives on Data.PendingReactionPrompts and is the canonical source
+		// of truth for content (the event itself is metadata-only).
+		data, err := h.encRepo.Get(ctx, string(encID))
+		if err != nil {
+			return nil, fmt.Errorf("load encounter for prompt translation: %w", err)
+		}
+		var prompt *encounter.PendingReactionPrompt
+		if data != nil {
+			prompt = data.PendingReactionPrompts[irEvt.ReactorID]
+		}
+		return TranslateInputRequiredDelivered(irEvt, viewer, h.now(), prompt)
+	}
+	return TranslateEvent(evt, viewer, h.now())
 }

@@ -62,6 +62,12 @@ func (h *Handler) SubmitCheck(ctx context.Context, req *encounterv2pb.SubmitChec
 	if req.GetEntityId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "entity_id is required")
 	}
+	// Wave 2.11d: take_reaction is the reaction-prompt response semantic.
+	// When set, route to the phased completion path; the roll field is
+	// ignored (reaction prompts don't carry a d20 roll).
+	if req.TakeReaction != nil {
+		return h.submitReactionCheck(ctx, req, playerID)
+	}
 	if req.GetRoll() < minD20Roll || req.GetRoll() > maxD20Roll {
 		return nil, status.Errorf(codes.InvalidArgument,
 			"roll %d is outside the d20 range [%d, %d]",
