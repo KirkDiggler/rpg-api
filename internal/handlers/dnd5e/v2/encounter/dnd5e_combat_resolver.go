@@ -44,13 +44,16 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/KirkDiggler/rpg-api/internal/entities"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
+	tkdice "github.com/KirkDiggler/rpg-toolkit/dice"
 	tkenc "github.com/KirkDiggler/rpg-toolkit/encounter"
 	encountercore "github.com/KirkDiggler/rpg-toolkit/encounter/core"
 	"github.com/KirkDiggler/rpg-toolkit/events"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/combat"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/damage"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/gamectx"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/monster"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/weapons"
 )
@@ -69,10 +72,18 @@ const fallbackDamageDice = "1d4"
 // wire a character repo to continue passing — the fixture uses the snapshot
 // fields, which the stand-in already handles. Tests that want the real chain
 // should supply a CharacterRepo populated with the fixture character.
+//
+// Roller is optional: if nil, the rulebook combat chain uses its own default
+// roller (crypto-random). Tests can supply a deterministic roller to control
+// attack-roll and weapon-damage dice for HP-delta assertions.
 type Dnd5eCombatResolverConfig struct {
 	// CharacterRepo provides character lookup by ID. When nil, player-side
 	// attacks fall back to the snapshot-based stand-in math.
 	CharacterRepo characterrepo.Repository
+
+	// Roller is the dice roller for attack and weapon damage rolls. When nil,
+	// the rulebook combat chain uses its own default roller.
+	Roller tkdice.Roller
 }
 
 // Dnd5eCombatResolver implements tkenc.CombatResolver against the dnd5e
@@ -93,7 +104,7 @@ func NewDnd5eCombatResolverForData(cfg Dnd5eCombatResolverConfig, data *tkenc.Da
 	return &Dnd5eCombatResolver{
 		cfg:           cfg,
 		encounterData: data,
-		standIn:       NewStandInCombatResolver(nil),
+		standIn:       NewStandInCombatResolver(cfg.Roller),
 	}
 }
 
@@ -109,26 +120,58 @@ func NewDnd5eCombatResolverForData(cfg Dnd5eCombatResolverConfig, data *tkenc.Da
 // Fallback: if the character repo is absent or a character/monster lookup
 // fails, the call delegates to StandInCombatResolver so existing tests
 // (which do not wire a character repo) continue to pass unchanged.
+//
+// Wave 2.11c: Three critical fixes land here:
+//   1. Encounter-scoped bus: input.EventBus (non-nil from the encounter SDK)
+//      is used instead of a fresh per-attack events.NewEventBus(). Conditions
+//      Apply()'d at character rehydration stay subscribed across attacks;
+//      once-per-turn state (SneakAttack.UsedThisTurn) accumulates correctly.
+//   2. gamectx wiring: GameContext, Room, and ReactionReadiness are threaded
+//      onto the resolve context so condition handlers can call
+//      gamectx.RequireRoom, gamectx.RequireCharacters, gamectx.IsReactionReady
+//      without crashing with ErrNoGameContext / ErrNoRoom.
+//   3. Encounter-scoped CombatantRegistry for gamectx: the CharacterRegistry
+//      covers ALL combatants in the encounter (not only attacker + target).
+//      The per-attack combat.CombatantLookup still registers only attacker +
+//      target per Wave 2.11b's decision; the gamectx CharacterRegistry is
+//      broader so Protection-style ally lookups succeed.
 func (r *Dnd5eCombatResolver) ResolveAttack(input tkenc.AttackInput) (*tkenc.AttackOutcome, error) {
 	ctx := context.Background()
 
 	attackerID := string(input.AttackerID)
 	targetID := string(input.TargetID)
 
+	// -- Select the encounter-scoped bus (Wave 2.11c fix #1) ---------------
+	//
+	// When the encounter SDK passes a non-nil EventBus in the AttackInput,
+	// use it. This bus is the encounter's persistent bus — conditions
+	// Apply()'d during character rehydration stay subscribed across attacks.
+	// Fall back to a fresh bus only when the caller provides none (e.g. tests
+	// that drive the resolver directly without an encounter SDK wrapper).
+	bus := input.EventBus
+	if bus == nil {
+		bus = events.NewEventBus()
+	}
+
 	// -- Classify attacker and target as player-entity or monster-entity ----
 
-	attackerChar, attackerMon, err := r.resolveEntity(ctx, attackerID)
+	attackerChar, attackerMon, err := r.resolveEntity(ctx, attackerID, bus)
 	if err != nil || (attackerChar == nil && attackerMon == nil) {
 		// Entity unresolvable — fall back to stand-in so existing tests pass.
 		return r.standIn.ResolveAttack(input)
 	}
 
-	targetChar, targetMon, err := r.resolveEntity(ctx, targetID)
+	targetChar, targetMon, err := r.resolveEntity(ctx, targetID, bus)
 	if err != nil || (targetChar == nil && targetMon == nil) {
 		return r.standIn.ResolveAttack(input)
 	}
 
-	// -- Build per-attack CombatantRegistry ---------------------------------
+	// -- Build per-attack CombatantRegistry (for combat.WithCombatantLookup) -
+	//
+	// The combat.CombatantLookup is per-attack: attacker + target only.
+	// This is correct for the rulebook chain's Combatant interface
+	// (attack roll bonus, damage dice, AC) — the chain only needs the two
+	// participants. See Wave 2.11b decision notes in combatant.go.
 
 	reg := NewCombatantRegistry()
 
@@ -149,6 +192,19 @@ func (r *Dnd5eCombatResolver) ResolveAttack(input tkenc.AttackInput) (*tkenc.Att
 	reg.Register(attackerID, attackerCombatant)
 	reg.Register(targetID, targetCombatant)
 
+	// -- Build encounter-scoped gamectx.CharacterRegistry (Wave 2.11c fix #3) -
+	//
+	// The gamectx CharacterRegistry is encounter-scope: covers every player
+	// and monster so Protection-style conditions that query ally/third-party
+	// state succeed regardless of who is attacker vs target.
+	//
+	// We seed the registry from the already-resolved combatants (attacker and
+	// target), using data already loaded during resolveEntity calls. No
+	// additional character-repo calls are made. Remaining encounter members
+	// are registered with empty weapon data (gamectx.NewCharacterWeapons(nil))
+	// — sufficient for ally-lookup queries that don't need weapon details.
+	charReg := r.buildEncounterCharacterRegistryFromResolved(attackerChar, targetChar)
+
 	// -- Resolve weapon for the attacker ------------------------------------
 
 	weapon, err := r.resolveWeapon(attackerChar, input)
@@ -157,19 +213,36 @@ func (r *Dnd5eCombatResolver) ResolveAttack(input tkenc.AttackInput) (*tkenc.Att
 		return r.standIn.ResolveAttack(input)
 	}
 
-	// -- Build combat.AttackInput and call the rulebook chain ---------------
-
-	// A fresh event bus per attack: the rulebook's attack/damage chains use
-	// this bus for within-attack publishing (attack chain modifiers, damage
-	// chain). Events do not need to outlive this call.
-	bus := events.NewEventBus()
-
 	attackHand := combat.AttackHandMain
 	if input.AttackHand == "off" {
 		attackHand = combat.AttackHandOff
 	}
 
+	// -- Wire gamectx onto the resolve context (Wave 2.11c fix #2) ----------
+	//
+	// The resolve context layers four context values:
+	//   1. combat.WithCombatantLookup — rulebook chain's Combatant lookup
+	//   2. gamectx.WithGameContext   — CharacterRegistry for condition queries
+	//   3. gamectx.WithRoom          — spatial Room for adjacency checks
+	//   4. gamectx.WithReactionReadiness — readiness map from encounter data
+	//
+	// Condition handlers (SneakAttack, Protection) call RequireRoom and
+	// RequireCharacters on this context; without these wrappers they would
+	// crash with ErrNoGameContext / ErrNoRoom.
+
 	resolveCtx := combat.WithCombatantLookup(ctx, reg)
+
+	gameCtx := gamectx.NewGameContext(gamectx.GameContextConfig{
+		CharacterRegistry: charReg,
+	})
+	resolveCtx = gamectx.WithGameContext(resolveCtx, gameCtx)
+
+	if r.encounterData != nil {
+		resolveCtx = gamectx.WithRoom(resolveCtx, newEncounterHexRoom(r.encounterData))
+		resolveCtx = gamectx.WithReactionReadiness(resolveCtx, buildReactionReadinessMap(r.encounterData))
+	}
+
+	// -- Call the rulebook chain --------------------------------------------
 
 	result, err := combat.ResolveAttack(resolveCtx, &combat.AttackInput{
 		AttackerID: attackerID,
@@ -177,9 +250,26 @@ func (r *Dnd5eCombatResolver) ResolveAttack(input tkenc.AttackInput) (*tkenc.Att
 		Weapon:     weapon,
 		EventBus:   bus,
 		AttackHand: attackHand,
+		Roller:     r.cfg.Roller, // nil = rulebook default (crypto-random)
 	})
 	if err != nil {
 		return nil, fmt.Errorf("dnd5e combat resolver: %w", err)
+	}
+
+	// -- Persist updated attacker condition state (Wave 2.11c fix #1 follow-through) --
+	//
+	// Conditions like SneakAttack update runtime state (UsedThisTurn) during the
+	// attack chain. Because TakeAction creates a fresh Encounter per RPC call via
+	// LoadFromData, this in-memory state would be lost before the next attack.
+	// With UsedThisTurn now persisted in SneakAttackData (rpg-toolkit#654 / PR #655),
+	// we save the attacker's updated character data back to the repo so the next
+	// TakeAction RPC sees UsedThisTurn=true when it loads the condition from JSON.
+	//
+	// Errors are logged-and-ignored: if the save fails the attack still succeeded;
+	// the consequence is that once-per-turn is not enforced on the next RPC (which
+	// was the status quo before this fix). This avoids rolling back a successful attack.
+	if attackerChar != nil && r.cfg.CharacterRepo != nil {
+		r.saveAttackerConditionState(ctx, attackerChar)
 	}
 
 	// -- Translate *combat.AttackResult → *tkenc.AttackOutcome --------------
@@ -195,6 +285,133 @@ func (r *Dnd5eCombatResolver) ResolveAttack(input tkenc.AttackInput) (*tkenc.Att
 	}, nil
 }
 
+// buildEncounterCharacterRegistryFromResolved constructs a
+// gamectx.BasicCharacterRegistry seeded from the already-resolved attacker
+// and target characters. Monsters and additional players are registered with
+// empty weapon data so lookups return non-nil rather than nil.
+//
+// Design: we do NOT make additional character-repo calls here. The attacker
+// and target were already loaded by resolveEntity; using those avoids
+// doubling the repo call count (which would break tests that set up exactly
+// one Get expectation per entity). A future improvement can add a lazy-loading
+// path for third-party ally lookups (Protection fighting style) once those
+// tests are wired.
+//
+// Returns a non-nil registry even when both chars are nil.
+func (r *Dnd5eCombatResolver) buildEncounterCharacterRegistryFromResolved(
+	attackerChar *character.Character,
+	targetChar *character.Character,
+) *gamectx.BasicCharacterRegistry {
+	reg := gamectx.NewBasicCharacterRegistry()
+
+	// Register the attacker's weapons if we have a rehydrated character.
+	if attackerChar != nil {
+		reg.Add(attackerChar.GetID(), characterToGamectxWeapons(attackerChar))
+	}
+
+	// Register the target's weapons if we have a rehydrated character.
+	if targetChar != nil {
+		reg.Add(targetChar.GetID(), characterToGamectxWeapons(targetChar))
+	}
+
+	if r.encounterData == nil {
+		return reg
+	}
+
+	// Register remaining players with empty weapon data so lookups return
+	// non-nil (avoids nil-pointer panics in condition handlers that assume
+	// a non-nil CharacterWeapons when the entity is in the encounter).
+	for _, pd := range r.encounterData.Players {
+		entityID := string(pd.EntityID)
+		if reg.GetCharacterWeapons(entityID) != nil {
+			continue // already registered from resolved char
+		}
+		reg.Add(entityID, gamectx.NewCharacterWeapons(nil))
+	}
+
+	// Register monsters with empty weapon data.
+	for _, md := range r.encounterData.Monsters {
+		id := string(md.ID)
+		if reg.GetCharacterWeapons(id) != nil {
+			continue
+		}
+		reg.Add(id, gamectx.NewCharacterWeapons(nil))
+	}
+
+	return reg
+}
+
+// characterToGamectxWeapons extracts the equipped weapon slots from a
+// rehydrated *character.Character and converts them to a gamectx.CharacterWeapons
+// value. Used by buildEncounterCharacterRegistry.
+func characterToGamectxWeapons(char *character.Character) *gamectx.CharacterWeapons {
+	var equipped []*gamectx.EquippedWeapon
+	mainHand := char.GetEquippedSlot(character.SlotMainHand)
+	if mainHand != nil {
+		if w := mainHand.AsWeapon(); w != nil {
+			equipped = append(equipped, &gamectx.EquippedWeapon{
+				ID:       w.ID,
+				Name:     w.Name,
+				Slot:     gamectx.SlotMainHand,
+				IsMelee:  w.Category == weapons.CategorySimpleMelee || w.Category == weapons.CategoryMartialMelee,
+			})
+		}
+	}
+	offHand := char.GetEquippedSlot(character.SlotOffHand)
+	if offHand != nil {
+		if w := offHand.AsWeapon(); w != nil {
+			equipped = append(equipped, &gamectx.EquippedWeapon{
+				ID:       w.ID,
+				Name:     w.Name,
+				Slot:     gamectx.SlotOffHand,
+				IsMelee:  w.Category == weapons.CategorySimpleMelee || w.Category == weapons.CategoryMartialMelee,
+			})
+		}
+	}
+	return gamectx.NewCharacterWeapons(equipped)
+}
+
+// saveAttackerConditionState persists the attacker's updated condition JSON
+// back to the character repository after an attack resolves.
+//
+// This is the write-back step for Wave 2.11c fix #1 cross-RPC persistence:
+// conditions like SneakAttack update runtime state (UsedThisTurn) during the
+// attack chain. With UsedThisTurn now included in SneakAttackData JSON
+// (rpg-toolkit PR #655), calling ToData() on the post-attack character
+// captures the new state. The next TakeAction RPC will then load the updated
+// JSON and find UsedThisTurn=true, enforcing the once-per-turn gate.
+//
+// Errors are intentionally swallowed: the attack itself succeeded; failing
+// to write back means once-per-turn is not enforced on the next RPC (the
+// status-quo before this feature), which is safer than failing a completed attack.
+func (r *Dnd5eCombatResolver) saveAttackerConditionState(ctx context.Context, char *character.Character) {
+	updatedData := char.ToData()
+	if updatedData == nil {
+		return
+	}
+	_, _ = r.cfg.CharacterRepo.Update(ctx, characterrepo.UpdateInput{
+		Character: &entities.Character{Data: updatedData},
+	})
+}
+
+// buildReactionReadinessMap converts the encounter Data's ReactionReadiness
+// map (keyed by encountercore.EntityID) to a gamectx.ReactionReadinessMap
+// (keyed by string). Returns an empty map (not nil) when data is nil.
+func buildReactionReadinessMap(data *tkenc.Data) gamectx.ReactionReadinessMap {
+	if data == nil {
+		return gamectx.ReactionReadinessMap{}
+	}
+	result := make(gamectx.ReactionReadinessMap, len(data.ReactionReadiness))
+	for entityID, refs := range data.ReactionReadiness {
+		inner := make(map[string]bool, len(refs))
+		for ref, ready := range refs {
+			inner[ref] = ready
+		}
+		result[string(entityID)] = inner
+	}
+	return result
+}
+
 // resolveEntity loads either a *character.Character or *monster.Monster for
 // the given entity ID. It returns (char, nil, nil) for players, (nil, mon, nil)
 // for monsters, and (nil, nil, nil) when the entity cannot be classified.
@@ -205,9 +422,14 @@ func (r *Dnd5eCombatResolver) ResolveAttack(input tkenc.AttackInput) (*tkenc.Att
 // For monster entities: the entity is rehydrated from MonsterData.DataJSON
 // stored in the encounter (Decision Point 1: rehydrate per attack, no separate
 // monster store).
+//
+// Wave 2.11c: bus is the encounter-scoped event bus. Characters are loaded
+// with this bus so their conditions subscribe to the persistent encounter bus
+// and retain state (SneakAttack.UsedThisTurn) across attacks.
 func (r *Dnd5eCombatResolver) resolveEntity(
 	ctx context.Context,
 	entityID string,
+	bus events.EventBus,
 ) (*character.Character, *monster.Monster, error) {
 	if r.encounterData == nil {
 		return nil, nil, nil
@@ -215,7 +437,7 @@ func (r *Dnd5eCombatResolver) resolveEntity(
 
 	// Check monsters first (entity IDs for monsters are distinct keys).
 	if monData, ok := r.encounterData.Monsters[encountercore.EntityID(entityID)]; ok {
-		mon, err := r.rehydrateMonster(ctx, monData)
+		mon, err := r.rehydrateMonster(ctx, monData, bus)
 		if err != nil {
 			return nil, nil, fmt.Errorf("rehydrate monster %q: %w", entityID, err)
 		}
@@ -226,7 +448,7 @@ func (r *Dnd5eCombatResolver) resolveEntity(
 	for _, pd := range r.encounterData.Players {
 		if string(pd.EntityID) == entityID {
 			// EntityID == CharacterID in the v2 handler stack.
-			char, err := r.loadCharacter(ctx, entityID)
+			char, err := r.loadCharacterWithBus(ctx, entityID, bus)
 			if err != nil {
 				// Character load failed — return nil so caller falls back to stand-in.
 				return nil, nil, nil //nolint:nilerr // deliberate fallback
@@ -240,9 +462,21 @@ func (r *Dnd5eCombatResolver) resolveEntity(
 }
 
 // loadCharacter fetches a *character.Character by ID from the character repo
-// and rehydrates it with a fresh event bus. Returns an error if the repo is
-// absent or the lookup fails.
+// and rehydrates it with a fresh ephemeral event bus. Used by
+// buildEncounterCharacterRegistry (which only needs weapon/ability-score data,
+// not condition subscriptions). Returns an error if the repo is absent or the
+// lookup fails.
 func (r *Dnd5eCombatResolver) loadCharacter(ctx context.Context, characterID string) (*character.Character, error) {
+	return r.loadCharacterWithBus(ctx, characterID, events.NewEventBus())
+}
+
+// loadCharacterWithBus fetches a *character.Character by ID and rehydrates it
+// with the provided event bus. Wave 2.11c: the encounter-scoped bus is passed
+// here so conditions Apply()'d during LoadFromData subscribe to the persistent
+// encounter bus rather than an ephemeral per-attack bus.
+//
+// Returns an error if the repo is absent or the lookup fails.
+func (r *Dnd5eCombatResolver) loadCharacterWithBus(ctx context.Context, characterID string, bus events.EventBus) (*character.Character, error) {
 	if r.cfg.CharacterRepo == nil {
 		return nil, fmt.Errorf("character repo not configured")
 	}
@@ -253,7 +487,6 @@ func (r *Dnd5eCombatResolver) loadCharacter(ctx context.Context, characterID str
 	if out.Character == nil || out.Character.Data == nil {
 		return nil, fmt.Errorf("character %q has no data", characterID)
 	}
-	bus := events.NewEventBus()
 	char, err := character.LoadFromData(ctx, out.Character.Data, bus)
 	if err != nil {
 		return nil, fmt.Errorf("load character %q from data: %w", characterID, err)
@@ -268,7 +501,10 @@ func (r *Dnd5eCombatResolver) loadCharacter(ctx context.Context, characterID str
 // the Combatant interface (combat.ResolveAttack will compute +0 ability
 // modifier since ability scores are zero — acceptable for the no-DataJSON
 // fallback path which is used only by test fixtures without a full monster).
-func (r *Dnd5eCombatResolver) rehydrateMonster(ctx context.Context, md *tkenc.MonsterData) (*monster.Monster, error) {
+//
+// Wave 2.11c: bus is the encounter-scoped event bus passed to monster.LoadFromData
+// so any monster conditions subscribe to the persistent encounter bus.
+func (r *Dnd5eCombatResolver) rehydrateMonster(ctx context.Context, md *tkenc.MonsterData, bus events.EventBus) (*monster.Monster, error) {
 	if len(md.DataJSON) > 0 {
 		var data monster.Data
 		if err := json.Unmarshal(md.DataJSON, &data); err != nil {
@@ -278,7 +514,6 @@ func (r *Dnd5eCombatResolver) rehydrateMonster(ctx context.Context, md *tkenc.Mo
 		// may be stale if the monster took damage since last full persistence.
 		data.HitPoints = md.HP
 		data.MaxHitPoints = md.MaxHP
-		bus := events.NewEventBus()
 		mon, err := monster.LoadFromData(ctx, &data, bus)
 		if err != nil {
 			return nil, fmt.Errorf("load monster from data: %w", err)

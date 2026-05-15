@@ -9,9 +9,13 @@ import (
 
 	encounterv2pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/encounter"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
+	"github.com/KirkDiggler/rpg-api/internal/entities"
+	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	encountersv2 "github.com/KirkDiggler/rpg-api/internal/repositories/encounters/v2"
 	tkenc "github.com/KirkDiggler/rpg-toolkit/encounter"
 	"github.com/KirkDiggler/rpg-toolkit/encounter/core"
+	dnd5eEvents "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/events"
+	tkcharacter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 )
 
 // npcChainSafetyMargin is added to the initiative roster size to derive the
@@ -85,10 +89,31 @@ func (h *Handler) EndTurn(ctx context.Context, req *encounterv2pb.EndTurnRequest
 		return nil, status.Errorf(codes.Internal, "load from data %q: %v", req.GetEncounterId(), err)
 	}
 
-	newActive, isNPC, err := enc.EndTurn(core.EntityID(req.GetEntityId()))
+	endingEntityID := req.GetEntityId()
+	newActive, isNPC, err := enc.EndTurn(core.EntityID(endingEntityID))
 	if err != nil {
 		return nil, endTurnStatusError(err)
 	}
+
+	// Wave 2.11c: publish dnd5e TurnEndEvent on the encounter-scoped dnd5e
+	// bus so conditions that subscribe to TurnEndTopic (e.g. SneakAttack)
+	// can reset their per-turn state. The encounter SDK's EndTurn publishes
+	// to its own broker (per-viewer event stream), but conditions subscribe
+	// to the dnd5e event bus, not the broker — so this is the bridge.
+	//
+	// For cross-RPC once-per-turn enforcement, this helper:
+	//   1. Loads the ending entity's character from the repo with the encounter bus
+	//      (subscribing its conditions, e.g. SneakAttack, to the encounter bus).
+	//   2. Publishes the TurnEndEvent on the bus (conditions now receive the
+	//      reset signal and set UsedThisTurn=false in-memory).
+	//   3. Saves the character back to the repo (persisting UsedThisTurn=false
+	//      so the next TakeAction RPC loads the reset state).
+	//
+	// Errors are swallowed: a turn-end write-back failure must not abort the
+	// EndTurn response. The consequence is that UsedThisTurn may not reset in
+	// the repo (status-quo before this fix), which is safer than failing a
+	// player's turn-end action.
+	h.publishTurnEndAndPersistReset(ctx, enc, endingEntityID)
 
 	// NPC dispatch loop. After the toolkit's EndTurn advances initiative, if
 	// the new active actor is an NPC the handler runs its turn server-side
@@ -122,8 +147,13 @@ func (h *Handler) EndTurn(ctx context.Context, req *encounterv2pb.EndTurnRequest
 			isNPC = false
 			break
 		}
+		prevNPC := newActive
 		var endErr error
 		newActive, isNPC, endErr = enc.EndTurn(newActive)
+		if endErr == nil {
+			// Publish dnd5e TurnEndEvent for the NPC's turn ending.
+			publishTurnEndOnBus(ctx, enc, string(prevNPC))
+		}
 		if endErr != nil {
 			// ErrEncounterEnded here means the NPC's action ended the
 			// encounter and the subsequent EndTurn rejected the call.
@@ -166,6 +196,75 @@ func (h *Handler) EndTurn(ctx context.Context, req *encounterv2pb.EndTurnRequest
 	}
 
 	return &encounterv2pb.EndTurnResponse{}, nil
+}
+
+// publishTurnEndOnBus publishes a dnd5eEvents.TurnEndEvent on the
+// encounter-scoped dnd5e bus for the given entity. This bridges the encounter
+// SDK's turn-lifecycle (published to the per-viewer broker) to the rulebook's
+// condition-reset mechanism (conditions subscribe to TurnEndTopic on the
+// dnd5e bus). Errors are silently swallowed — a turn-end publish failure
+// should not abort the EndTurn response; condition state resets on the next
+// natural rehydration.
+func publishTurnEndOnBus(ctx context.Context, enc *tkenc.Encounter, entityID string) {
+	bus := enc.EventBus()
+	if bus == nil {
+		return
+	}
+	evt := dnd5eEvents.TurnEndEvent{CharacterID: entityID}
+	// Publish is best-effort; log nothing — no logger available here, and
+	// condition state reset is not critical-path for the RPC response.
+	_ = dnd5eEvents.TurnEndTopic.On(bus).Publish(ctx, evt)
+}
+
+// publishTurnEndAndPersistReset is the three-step helper for cross-RPC
+// once-per-turn condition state persistence:
+//
+//  1. Load the ending entity's character from the repo with the encounter bus
+//     (subscribes conditions like SneakAttack to the bus).
+//  2. Publish TurnEndEvent on the bus (subscribed conditions reset UsedThisTurn=false).
+//  3. Save the character back to the repo (persists UsedThisTurn=false across RPCs).
+//
+// All errors are swallowed — a failure here must not abort EndTurn. The
+// consequence is that once-per-turn may not reset in the repo (status-quo
+// before this fix). Callers still get a successful EndTurn response.
+func (h *Handler) publishTurnEndAndPersistReset(ctx context.Context, enc *tkenc.Encounter, entityID string) {
+	if h.combatResolverConfig.CharacterRepo == nil {
+		// No character repo configured — fall back to publish-only (no write-back).
+		publishTurnEndOnBus(ctx, enc, entityID)
+		return
+	}
+
+	bus := enc.EventBus()
+	if bus == nil {
+		return
+	}
+
+	// Step 1: fetch character data from the repo.
+	out, repoErr := h.combatResolverConfig.CharacterRepo.Get(ctx, characterrepo.GetInput{ID: entityID})
+	if repoErr != nil || out == nil || out.Character == nil || out.Character.Data == nil {
+		// Character not found — publish-only fallback.
+		publishTurnEndOnBus(ctx, enc, entityID)
+		return
+	}
+
+	// Rehydrate the character with the encounter bus (subscribes conditions).
+	char, loadErr := tkcharacter.LoadFromData(ctx, out.Character.Data, bus)
+	if loadErr != nil {
+		publishTurnEndOnBus(ctx, enc, entityID)
+		return
+	}
+
+	// Step 2: publish TurnEndEvent — subscribed conditions receive the reset signal.
+	publishTurnEndOnBus(ctx, enc, entityID)
+
+	// Step 3: save updated character data back to the repo.
+	updatedData := char.ToData()
+	if updatedData == nil {
+		return
+	}
+	_, _ = h.combatResolverConfig.CharacterRepo.Update(ctx, characterrepo.UpdateInput{
+		Character: &entities.Character{Data: updatedData},
+	})
 }
 
 // endTurnStatusError maps toolkit EndTurn sentinel errors onto gRPC status
