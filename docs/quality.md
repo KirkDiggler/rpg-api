@@ -1,8 +1,8 @@
 ---
 name: rpg-api quality scorecard
 description: Per-component grade with rationale — a graded scorecard to update as the codebase evolves
-updated: 2026-05-02
-confidence: low-medium — first draft grades from code read-through and git history; needs Kirk's correction pass
+updated: 2026-05-18
+confidence: medium — Wave 2.11d encounter v2 graded from shipped-code verification; older entries reflect 2026-05-02 snapshot pending refresh
 ---
 
 # Quality Scorecard
@@ -27,6 +27,58 @@ toolkit packages — those types belong in the orchestrator output. Removing
 the toolkit imports is a one-PR fix but it requires the orchestrator to stop
 returning toolkit types in `CharacterData`. The `PlayerDisconnected` orchestrator method is never called from the
 streaming handler — disconnect events do not clean up encounter state.
+
+### Encounter v2 handler — B (Wave 2.11d, new entry)
+
+`internal/handlers/dnd5e/v2/encounter/` — the v1alpha2 encounter stack
+that orchestrates against the toolkit encounter SDK directly (no
+intermediate orchestrator layer). Wave 2.11d brings the surface up to
+**opt-in player reactions end-to-end**.
+
+What's here as of Wave 2.11d:
+
+- `Dnd5eCombatResolver` (`dnd5e_combat_resolver.go`, `dnd5e_combat_resolver_phased.go`)
+  — implements both `tkenc.CombatResolver` and `tkenc.PhasedCombatResolver`.
+  Cached attacker prep map (`pendingPhased`) lets phase 2 reuse the same
+  loaded character + resolveCtx without creating duplicate condition
+  subscribers.
+- `TakeAction` (`take_action.go`) — drives `Encounter.TakeActionPhased`;
+  persists `PendingReactionPrompts` when phase 1 surfaces a player reactor.
+- `SubmitCheck` (`submit_check.go` + `submit_check_reaction.go`) — dispatches
+  to the reaction branch when the caller's pending prompt is a reaction;
+  unmarshals the persisted `AttackContextJSON` back into `combat.AttackContext`
+  and feeds it into `CompleteTakeAction` with the chosen modifiers.
+- `SetReactionReady` (`set_reaction_ready.go`) — RPC for per-character
+  per-condition readiness toggle.
+- `EndTurn` (`end_turn.go`) — handles `IsNPCPausedForReaction(err)`;
+  `serializePendingPhasedAttacks` marshals the live `*PhasedAttackContext`
+  into `AttackContextJSON` before snapshot (honors the encounter SDK's
+  HOST CONTRACT documented in `persistNPCPendingReactions`).
+- `applyReactionConditions` (`reaction_conditions.go`) — wires OA on every
+  character + Shield on spellcasters with 1st-level slots, on every
+  character/monster load. Idempotent.
+- Translator (`translate.go`) — the new `ReactionPrompt` oneof variant on
+  `InputRequired` + `InputRequiredDelivered` event publication.
+
+Test coverage:
+
+- 5 Wave 2.11c sneak-attack regression tests pass on the new tags
+  (`integration_sneak_attack_test.go`): cross-RPC bus, gamectx wiring,
+  TurnEnd reset, once-per-turn enforcement.
+- Full integration suites pass (`internal/integration` 160s,
+  `internal/integration/encounter` 95s,
+  `internal/integration/character` 11s, `internal/integration/harness` 11s).
+- Player Shield + OA end-to-end integration tests deferred to follow-up
+  [#536](https://github.com/KirkDiggler/rpg-api/issues/536) (5 tests
+  covering Shield ready+prompted/skipped/not-ready and OA default-ready/
+  toggled-off scenarios).
+
+Grade B because the surface is well-shaped, lint-clean, and the
+Wave 2.11c invariants are protected by canaries — but the dedicated
+player-reaction integration test layer hasn't landed yet (#536), and
+the HOST CONTRACT around `AttackContextJSON` serialization
+([rpg-toolkit#657](https://github.com/KirkDiggler/rpg-toolkit/issues/657))
+is documented but not yet structurally enforced from the SDK side.
 
 ### Character handler — C
 
