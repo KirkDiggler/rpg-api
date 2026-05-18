@@ -136,11 +136,38 @@ func (h *Handler) EndTurn(ctx context.Context, req *encounterv2pb.EndTurnRequest
 		if actErr := enc.NPCAct(ctx, newActive); actErr != nil {
 			// Wave 2.11d: NPC turn paused for a player reaction. The encounter
 			// has the pending reaction prompt + the InputRequiredDelivered event
-			// already published. Marshal the cached PhasedAttackContext into
-			// the prompt's AttackContextJSON so SubmitCheck can rebuild it on
-			// resume, then save and return success — the player must respond
+			// already published BY THE SDK from inside NPCAct (encounter/npc.go
+			// at the player-trigger loop). Marshal the cached PhasedAttackContext
+			// into the prompt's AttackContextJSON so SubmitCheck can rebuild it
+			// on resume, then save and return success — the player must respond
 			// before the NPC's turn (and the rest of the dispatch loop) continues.
+			//
+			// Wave 2.11d closeout (#538 B): the SDK-side publish-then-host-
+			// serialize ordering creates a race window where a fast stream
+			// subscriber reloads from repo BEFORE the host's
+			// serializePendingPhasedAttacks call + Save below. The subscriber
+			// could see either the old snapshot (no prompt at all) or a
+			// snapshot with a prompt but AttackContextJSON=nil. The proper
+			// fix lives in the SDK: a resolver-supplied serializer callback
+			// that lets the SDK populate AttackContextJSON itself BEFORE
+			// publishing the event. Tracked in
+			// https://github.com/KirkDiggler/rpg-toolkit/issues/657 (implicit
+			// in https://github.com/KirkDiggler/rpg-toolkit/issues/658 for
+			// movement-paused reactions). We cannot fix this at the rpg-api
+			// layer without changing the SDK contract — the publish happens
+			// inside NPCAct, before we return here.
 			if tkenc.IsNPCPausedForReaction(actErr) {
+				// Single-reactor enforcement (Wave 2.11d closeout #538 C,
+				// Option 1): if the SDK persisted multiple prompts for this
+				// pause, drop all but the first. Orphan InputRequiredDelivered
+				// events already went out from inside NPCAct; subscribers
+				// reloading from repo will find no matching prompt and drop
+				// silently — acceptable behavior under single-reactor
+				// semantics. See take_action.go's persistPendingReactions for
+				// the design rationale + Wave 2.11e follow-up
+				// https://github.com/KirkDiggler/rpg-api/issues/540 for the
+				// proper aggregate-then-complete fix.
+				enforceSingleReactor(enc)
 				if err := h.serializePendingPhasedAttacks(enc); err != nil {
 					return nil, status.Errorf(codes.Internal, "serialize npc pending reactions: %v", err)
 				}
@@ -216,6 +243,39 @@ func (h *Handler) EndTurn(ctx context.Context, req *encounterv2pb.EndTurnRequest
 	}
 
 	return &encounterv2pb.EndTurnResponse{}, nil
+}
+
+// enforceSingleReactor drops all but the first PendingReactionPrompt on the
+// encounter. Used after the SDK's NPCAct path persists multiple reactor
+// prompts during a single paused attack (npc.go's playerTriggers loop) —
+// CompleteTakeAction is destructive per call, so multiple persisted prompts
+// risk double-resolution.
+//
+// Wave 2.11d closeout (#538 C, Option 1): single-reactor enforcement.
+// Wave 2.11e (https://github.com/KirkDiggler/rpg-api/issues/540) replaces
+// this with aggregate-then-complete once a second post-hit reaction ships
+// (Counterspell, etc.). Until then, first-eligible-wins.
+//
+// Map iteration order in Go is unspecified, so "first" here means "any one"
+// — acceptable for the Wave 2.11d Shield-only scope where the only
+// multi-reactor case is two wizards both having Shield ready against the
+// same target (1-target-per-attack scenario; both wouldn't both be the
+// target of the same attack).
+func enforceSingleReactor(enc *tkenc.Encounter) {
+	prompts := enc.ToData().PendingReactionPrompts
+	if len(prompts) <= 1 {
+		return
+	}
+	var kept core.PlayerID
+	for pid := range prompts {
+		kept = pid
+		break
+	}
+	for pid := range prompts {
+		if pid != kept {
+			enc.ClearPendingReactionPrompt(pid)
+		}
+	}
 }
 
 // serializePendingPhasedAttacks marshals each in-process PhasedAttackContext

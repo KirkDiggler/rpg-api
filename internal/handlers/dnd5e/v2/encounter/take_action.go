@@ -101,48 +101,90 @@ func (h *Handler) TakeAction(ctx context.Context, req *encounterv2pb.TakeActionR
 		return nil, takeActionStatusError(takeErr)
 	}
 
+	// Wave 2.11d closeout (#538 A): split persist from publish so the save
+	// lands BEFORE InputRequiredDelivered fires. The stream translator
+	// reloads PendingReactionPrompts from the repo when it receives the
+	// event; if we published first, a fast subscriber could see the
+	// pre-prompt snapshot and drop the event as "no matching prompt."
+	var promptsToPublish []core.PlayerID
 	if outcome != nil && len(outcome.Reactions) > 0 {
-		if err := h.persistPendingReactions(enc, outcome); err != nil {
+		pids, err := h.persistPendingReactions(enc, outcome)
+		if err != nil {
 			return nil, status.Errorf(codes.Internal, "persist pending reactions: %v", err)
 		}
+		promptsToPublish = pids
 	}
 
 	if err := h.encRepo.Save(ctx, enc.ToData()); err != nil {
 		return nil, status.Errorf(codes.Internal, "save encounter %q: %v", req.GetEncounterId(), err)
 	}
 
+	// Save committed — now safe to publish prompt events. Stream subscribers
+	// that reload from repo will see the persisted prompts.
+	for _, pid := range promptsToPublish {
+		if err := enc.PublishInputRequiredDelivered(pid, tkevents.PromptKindReaction); err != nil {
+			return nil, status.Errorf(codes.Internal, "publish reaction prompt event: %v", err)
+		}
+	}
+
 	return &encounterv2pb.TakeActionResponse{}, nil
 }
 
-// persistPendingReactions records each player-reaction trigger from the
-// phased outcome as a PendingReactionPrompt on the encounter Data and
-// emits an InputRequiredDelivered event to each reactor's per-viewer
-// stream.
+// persistPendingReactions records the first eligible player-reaction trigger
+// from the phased outcome as a PendingReactionPrompt on the encounter Data.
+// Returns the list of reactor PlayerIDs whose prompts were persisted (0 or
+// 1 entries — see single-reactor enforcement note below); the caller
+// publishes InputRequiredDelivered for each AFTER the snapshot save commits
+// (Wave 2.11d closeout #538 A: save-before-publish ordering).
 //
 // The PhasedAttackContext (opaque to the SDK; *combat.AttackContext under
 // the hood) is JSON-marshaled and stored on the prompt so SubmitCheck +
 // CompleteTakeAction can rehydrate it on the resume path. This is the
 // load-bearing reason combat.AttackContext was refactored to be pure data
 // in Wave 2.11d (no eventBus/roller fields).
-func (h *Handler) persistPendingReactions(enc *tkenc.Encounter, outcome *tkenc.TakeActionOutcome) error {
+//
+// Single-reactor enforcement (Wave 2.11d closeout #538 C, Option 1):
+// CompleteTakeAction is destructive — it publishes the AttackResolvedEvent +
+// applies damage once per call. Persisting multiple reactor prompts on the
+// same paused attack risks double-resolution when the second SubmitCheck
+// arrives (each would call CompleteTakeAction with its own modifier list,
+// double-applying damage). For Wave 2.11d's shipped scope (Shield is the
+// only post-hit modifier; OA is fan-out as separate attacks, not modifier
+// stacking) this is correct: the only realistic multi-reactor case in
+// 2.11d would be two wizards both having Shield ready against the same
+// attack, which is a 1-target-per-attack scenario (only the attack target
+// can Shield-self).
+//
+// TODO(wave-2.11e): multi-reactor aggregation for stacked post-hit
+// modifiers (Shield + Counterspell + Lucky reroll). Replace the first-
+// trigger pick with: persist all eligible triggers + gate
+// CompleteTakeAction on all-reactors-responded (or deadline). See
+// https://github.com/KirkDiggler/rpg-api/issues/540 for the design.
+func (h *Handler) persistPendingReactions(
+	enc *tkenc.Encounter,
+	outcome *tkenc.TakeActionOutcome,
+) ([]core.PlayerID, error) {
 	if outcome.AttackContext == nil {
-		return errors.New("phased outcome has reactions but no attack context")
+		return nil, errors.New("phased outcome has reactions but no attack context")
 	}
 	rulebookCtx, ok := outcome.AttackContext.Rulebook.(*combat.AttackContext)
 	if !ok {
-		return fmt.Errorf("AttackContext.Rulebook is %T, expected *combat.AttackContext", outcome.AttackContext.Rulebook)
+		return nil, fmt.Errorf("AttackContext.Rulebook is %T, expected *combat.AttackContext", outcome.AttackContext.Rulebook)
 	}
 	ctxJSON, err := json.Marshal(rulebookCtx)
 	if err != nil {
-		return fmt.Errorf("marshal attack context: %w", err)
+		return nil, fmt.Errorf("marshal attack context: %w", err)
 	}
 
+	// Single-reactor enforcement: pick the first trigger whose reactor we
+	// can resolve to a player. Subsequent triggers are dropped (see TODO
+	// above for the Wave 2.11e aggregation design).
 	for _, trig := range outcome.Reactions {
 		reactorPlayerID, ok := h.reactorPlayerID(enc, trig.ReactorID)
 		if !ok {
 			// SDK contract: only player reactors are surfaced (NPC triggers
 			// auto-resolve inside TakeActionPhased). Missing playerID means
-			// data inconsistency; skip rather than fail the attack.
+			// data inconsistency; skip and try the next trigger.
 			continue
 		}
 
@@ -153,12 +195,11 @@ func (h *Handler) persistPendingReactions(enc *tkenc.Encounter, outcome *tkenc.T
 			SourceEntity:      trig.SourceEntity,
 			AttackContextJSON: ctxJSON,
 		})
-
-		if err := enc.PublishInputRequiredDelivered(reactorPlayerID, tkevents.PromptKindReaction); err != nil {
-			return fmt.Errorf("publish reaction prompt event: %w", err)
-		}
+		return []core.PlayerID{reactorPlayerID}, nil
 	}
-	return nil
+
+	// No eligible player-reactor trigger found.
+	return []core.PlayerID{}, nil
 }
 
 // reactorPlayerID resolves the controlling player ID for a reactor entity.
