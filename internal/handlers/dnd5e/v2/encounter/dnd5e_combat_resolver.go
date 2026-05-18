@@ -63,6 +63,11 @@ import (
 // empty MonsterData.DamageDice). "1d4" is the D&D 5e unarmed-strike damage.
 const fallbackDamageDice = "1d4"
 
+// attackHandOffLabel is the wire-side string representation of
+// combat.AttackHandOff. Wire callers (translators) send the lowercase
+// label; the resolver maps it to the toolkit's typed value once.
+const attackHandOffLabel = "off"
+
 // Dnd5eCombatResolverConfig holds the dependencies needed to construct a
 // Dnd5eCombatResolver. Stored on the handler; a new resolver is built per
 // request via NewDnd5eCombatResolverForData.
@@ -95,6 +100,11 @@ type Dnd5eCombatResolver struct {
 	// standIn is used as fallback when the character repo is absent or a
 	// character lookup fails. This preserves existing test behavior.
 	standIn *StandInCombatResolver
+	// pendingPhased caches the in-flight phase-1 prep so ApplyAttackOutcome
+	// can reuse the same attackerChar + resolveCtx without re-loading the
+	// character (which would create duplicate condition subscribers). See
+	// dnd5e_combat_resolver_phased.go for the caching contract.
+	pendingPhased *pendingPhasedAttack
 }
 
 // NewDnd5eCombatResolverForData constructs a resolver bound to the given
@@ -122,19 +132,19 @@ func NewDnd5eCombatResolverForData(cfg Dnd5eCombatResolverConfig, data *tkenc.Da
 // (which do not wire a character repo) continue to pass unchanged.
 //
 // Wave 2.11c: Three critical fixes land here:
-//   1. Encounter-scoped bus: input.EventBus (non-nil from the encounter SDK)
-//      is used instead of a fresh per-attack events.NewEventBus(). Conditions
-//      Apply()'d at character rehydration stay subscribed across attacks;
-//      once-per-turn state (SneakAttack.UsedThisTurn) accumulates correctly.
-//   2. gamectx wiring: GameContext, Room, and ReactionReadiness are threaded
-//      onto the resolve context so condition handlers can call
-//      gamectx.RequireRoom, gamectx.RequireCharacters, gamectx.IsReactionReady
-//      without crashing with ErrNoGameContext / ErrNoRoom.
-//   3. Encounter-scoped CombatantRegistry for gamectx: the CharacterRegistry
-//      covers ALL combatants in the encounter (not only attacker + target).
-//      The per-attack combat.CombatantLookup still registers only attacker +
-//      target per Wave 2.11b's decision; the gamectx CharacterRegistry is
-//      broader so Protection-style ally lookups succeed.
+//  1. Encounter-scoped bus: input.EventBus (non-nil from the encounter SDK)
+//     is used instead of a fresh per-attack events.NewEventBus(). Conditions
+//     Apply()'d at character rehydration stay subscribed across attacks;
+//     once-per-turn state (SneakAttack.UsedThisTurn) accumulates correctly.
+//  2. gamectx wiring: GameContext, Room, and ReactionReadiness are threaded
+//     onto the resolve context so condition handlers can call
+//     gamectx.RequireRoom, gamectx.RequireCharacters, gamectx.IsReactionReady
+//     without crashing with ErrNoGameContext / ErrNoRoom.
+//  3. Encounter-scoped CombatantRegistry for gamectx: the CharacterRegistry
+//     covers ALL combatants in the encounter (not only attacker + target).
+//     The per-attack combat.CombatantLookup still registers only attacker +
+//     target per Wave 2.11b's decision; the gamectx CharacterRegistry is
+//     broader so Protection-style ally lookups succeed.
 func (r *Dnd5eCombatResolver) ResolveAttack(input tkenc.AttackInput) (*tkenc.AttackOutcome, error) {
 	ctx := context.Background()
 
@@ -214,7 +224,7 @@ func (r *Dnd5eCombatResolver) ResolveAttack(input tkenc.AttackInput) (*tkenc.Att
 	}
 
 	attackHand := combat.AttackHandMain
-	if input.AttackHand == "off" {
+	if input.AttackHand == attackHandOffLabel {
 		attackHand = combat.AttackHandOff
 	}
 
@@ -244,6 +254,10 @@ func (r *Dnd5eCombatResolver) ResolveAttack(input tkenc.AttackInput) (*tkenc.Att
 
 	// -- Call the rulebook chain --------------------------------------------
 
+	// Wave 2.11d: legacy single-phase ResolveAttack is intentionally retained
+	// for the legacy ResolveAttack interface method. New phased callers route
+	// through ResolveAttackHit + ApplyAttackOutcome on the same struct.
+	//nolint:staticcheck // SA1019: legacy single-phase wrapper retained for CombatResolver interface
 	result, err := combat.ResolveAttack(resolveCtx, &combat.AttackInput{
 		AttackerID: attackerID,
 		TargetID:   targetID,
@@ -350,10 +364,10 @@ func characterToGamectxWeapons(char *character.Character) *gamectx.CharacterWeap
 	if mainHand != nil {
 		if w := mainHand.AsWeapon(); w != nil {
 			equipped = append(equipped, &gamectx.EquippedWeapon{
-				ID:       w.ID,
-				Name:     w.Name,
-				Slot:     gamectx.SlotMainHand,
-				IsMelee:  w.Category == weapons.CategorySimpleMelee || w.Category == weapons.CategoryMartialMelee,
+				ID:      w.ID,
+				Name:    w.Name,
+				Slot:    gamectx.SlotMainHand,
+				IsMelee: w.Category == weapons.CategorySimpleMelee || w.Category == weapons.CategoryMartialMelee,
 			})
 		}
 	}
@@ -361,10 +375,10 @@ func characterToGamectxWeapons(char *character.Character) *gamectx.CharacterWeap
 	if offHand != nil {
 		if w := offHand.AsWeapon(); w != nil {
 			equipped = append(equipped, &gamectx.EquippedWeapon{
-				ID:       w.ID,
-				Name:     w.Name,
-				Slot:     gamectx.SlotOffHand,
-				IsMelee:  w.Category == weapons.CategorySimpleMelee || w.Category == weapons.CategoryMartialMelee,
+				ID:      w.ID,
+				Name:    w.Name,
+				Slot:    gamectx.SlotOffHand,
+				IsMelee: w.Category == weapons.CategorySimpleMelee || w.Category == weapons.CategoryMartialMelee,
 			})
 		}
 	}
@@ -461,15 +475,6 @@ func (r *Dnd5eCombatResolver) resolveEntity(
 	return nil, nil, nil
 }
 
-// loadCharacter fetches a *character.Character by ID from the character repo
-// and rehydrates it with a fresh ephemeral event bus. Used by
-// buildEncounterCharacterRegistry (which only needs weapon/ability-score data,
-// not condition subscriptions). Returns an error if the repo is absent or the
-// lookup fails.
-func (r *Dnd5eCombatResolver) loadCharacter(ctx context.Context, characterID string) (*character.Character, error) {
-	return r.loadCharacterWithBus(ctx, characterID, events.NewEventBus())
-}
-
 // loadCharacterWithBus fetches a *character.Character by ID and rehydrates it
 // with the provided event bus. Wave 2.11c: the encounter-scoped bus is passed
 // here so conditions Apply()'d during LoadFromData subscribe to the persistent
@@ -491,6 +496,10 @@ func (r *Dnd5eCombatResolver) loadCharacterWithBus(ctx context.Context, characte
 	if err != nil {
 		return nil, fmt.Errorf("load character %q from data: %w", characterID, err)
 	}
+	// Wave 2.11d: apply universal reaction conditions (OA + Shield-if-spellcaster).
+	// Errors are non-fatal — log and continue so a condition-Apply failure does
+	// not block the attack chain that the resolver was about to run.
+	_ = applyReactionConditions(ctx, char, bus)
 	return char, nil
 }
 
@@ -565,7 +574,7 @@ func (r *Dnd5eCombatResolver) resolveWeapon(
 // Falls back to a stub "unarmed" weapon if no weapon is equipped.
 func (r *Dnd5eCombatResolver) characterWeapon(char *character.Character, attackHand string) (*weapons.Weapon, error) {
 	slot := character.SlotMainHand
-	if attackHand == "off" {
+	if attackHand == attackHandOffLabel {
 		slot = character.SlotOffHand
 	}
 	equipped := char.GetEquippedSlot(slot)

@@ -2,7 +2,9 @@ package encounter
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -12,6 +14,8 @@ import (
 	encountersv2 "github.com/KirkDiggler/rpg-api/internal/repositories/encounters/v2"
 	tkenc "github.com/KirkDiggler/rpg-toolkit/encounter"
 	"github.com/KirkDiggler/rpg-toolkit/encounter/core"
+	tkevents "github.com/KirkDiggler/rpg-toolkit/encounter/events"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/combat"
 )
 
 // TakeAction dispatches a player-initiated action against the encounter's
@@ -87,8 +91,20 @@ func (h *Handler) TakeAction(ctx context.Context, req *encounterv2pb.TakeActionR
 	}
 	target := tkenc.ActionTarget{EntityID: core.EntityID(entityID)}
 
-	if err := enc.TakeAction(core.PlayerID(playerID), actionRef, target); err != nil {
-		return nil, takeActionStatusError(err)
+	// Wave 2.11d: use the phased verb so reaction prompts can surface to
+	// player reactors. Resolved=true → no readied reactions matched, behaves
+	// as the legacy single-phase path. Reactions populated → persist the
+	// in-flight phase-1 state as a pending prompt + push prompt event onto
+	// the reactor's per-viewer stream.
+	outcome, takeErr := enc.TakeActionPhased(core.PlayerID(playerID), actionRef, target)
+	if takeErr != nil {
+		return nil, takeActionStatusError(takeErr)
+	}
+
+	if outcome != nil && len(outcome.Reactions) > 0 {
+		if err := h.persistPendingReactions(enc, outcome); err != nil {
+			return nil, status.Errorf(codes.Internal, "persist pending reactions: %v", err)
+		}
 	}
 
 	if err := h.encRepo.Save(ctx, enc.ToData()); err != nil {
@@ -96,6 +112,66 @@ func (h *Handler) TakeAction(ctx context.Context, req *encounterv2pb.TakeActionR
 	}
 
 	return &encounterv2pb.TakeActionResponse{}, nil
+}
+
+// persistPendingReactions records each player-reaction trigger from the
+// phased outcome as a PendingReactionPrompt on the encounter Data and
+// emits an InputRequiredDelivered event to each reactor's per-viewer
+// stream.
+//
+// The PhasedAttackContext (opaque to the SDK; *combat.AttackContext under
+// the hood) is JSON-marshaled and stored on the prompt so SubmitCheck +
+// CompleteTakeAction can rehydrate it on the resume path. This is the
+// load-bearing reason combat.AttackContext was refactored to be pure data
+// in Wave 2.11d (no eventBus/roller fields).
+func (h *Handler) persistPendingReactions(enc *tkenc.Encounter, outcome *tkenc.TakeActionOutcome) error {
+	if outcome.AttackContext == nil {
+		return errors.New("phased outcome has reactions but no attack context")
+	}
+	rulebookCtx, ok := outcome.AttackContext.Rulebook.(*combat.AttackContext)
+	if !ok {
+		return fmt.Errorf("AttackContext.Rulebook is %T, expected *combat.AttackContext", outcome.AttackContext.Rulebook)
+	}
+	ctxJSON, err := json.Marshal(rulebookCtx)
+	if err != nil {
+		return fmt.Errorf("marshal attack context: %w", err)
+	}
+
+	for _, trig := range outcome.Reactions {
+		reactorPlayerID, ok := h.reactorPlayerID(enc, trig.ReactorID)
+		if !ok {
+			// SDK contract: only player reactors are surfaced (NPC triggers
+			// auto-resolve inside TakeActionPhased). Missing playerID means
+			// data inconsistency; skip rather than fail the attack.
+			continue
+		}
+
+		enc.SetPendingReactionPrompt(reactorPlayerID, &tkenc.PendingReactionPrompt{
+			ReactorEntityID:   trig.ReactorID,
+			ConditionRef:      trig.ConditionRef,
+			TriggerKind:       trig.TriggerKind,
+			SourceEntity:      trig.SourceEntity,
+			AttackContextJSON: ctxJSON,
+		})
+
+		if err := enc.PublishInputRequiredDelivered(reactorPlayerID, tkevents.PromptKindReaction); err != nil {
+			return fmt.Errorf("publish reaction prompt event: %w", err)
+		}
+	}
+	return nil
+}
+
+// reactorPlayerID resolves the controlling player ID for a reactor entity.
+// Returns false when the entity is not a player-controlled entity (e.g.
+// monster — should never happen on a surfaced reaction since NPC triggers
+// auto-resolve inside TakeActionPhased, but checked defensively).
+func (h *Handler) reactorPlayerID(enc *tkenc.Encounter, reactorID core.EntityID) (core.PlayerID, bool) {
+	for pid, pd := range enc.ToData().Players {
+		if pd.EntityID == reactorID {
+			return pid, true
+		}
+	}
+	return "", false
 }
 
 // takeActionStatusError maps toolkit TakeAction sentinel errors onto gRPC

@@ -1,15 +1,15 @@
 module github.com/KirkDiggler/rpg-api
 
-go 1.25.0
+go 1.25.3
 
 require (
-	github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20260507051118-0443dec90664
+	github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20260518182430-cdd9e0e3945d
 	github.com/KirkDiggler/rpg-toolkit/core v0.10.0
 	github.com/KirkDiggler/rpg-toolkit/dice v0.3.2
-	github.com/KirkDiggler/rpg-toolkit/encounter v0.8.0
+	github.com/KirkDiggler/rpg-toolkit/encounter v0.9.0
 	github.com/KirkDiggler/rpg-toolkit/events v0.6.2
 	github.com/KirkDiggler/rpg-toolkit/rpgerr v0.1.2
-	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.56.1
+	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.58.0
 	github.com/KirkDiggler/rpg-toolkit/tools/environments v0.4.0
 	github.com/KirkDiggler/rpg-toolkit/tools/spatial v0.4.0
 	github.com/alicebob/miniredis/v2 v2.35.0
@@ -22,7 +22,7 @@ require (
 	github.com/testcontainers/testcontainers-go v0.40.0
 	github.com/testcontainers/testcontainers-go/modules/redis v0.40.0
 	go.uber.org/mock v0.6.0
-	google.golang.org/grpc v1.81.0
+	google.golang.org/grpc v1.81.1
 	google.golang.org/protobuf v1.36.11
 )
 

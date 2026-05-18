@@ -1,8 +1,8 @@
 ---
 name: rpg-api status
 description: Where we are with rpg-api — active work, paused, known rough edges, per-subsystem confidence
-updated: 2026-05-02
-confidence: medium — first draft seeded from full code read-through, git history, and PR audit; needs Kirk's correction pass
+updated: 2026-05-18
+confidence: medium — Wave 2.11d entries verified against shipped code; older entries still reflect 2026-05-02 snapshot pending refresh
 ---
 
 # rpg-api: Where We Are
@@ -10,6 +10,44 @@ confidence: medium — first draft seeded from full code read-through, git histo
 This is a living doc. Edit it in the same PR that invalidates a line. Don't let it rot.
 
 ## Active work
+
+**Wave 2.11d rpg-api half — PR #535 (2026-05-18)** — opt-in player reactions
+end-to-end through the v2 encounter stack. Depends on rpg-toolkit Wave 2.11d
+(merged, tagged `rulebooks/dnd5e/v0.58.0` + `encounter/v0.9.0`) and
+rpg-api-protos Wave 2.11d (merged).
+
+What landed on the rpg-api side:
+
+- `Dnd5eCombatResolver` implements `tkenc.PhasedCombatResolver` (phase 1
+  `ResolveAttackHit` + phase 2 `ApplyAttackOutcome`); cached attacker prep
+  avoids double-load between phases.
+- `TakeAction` RPC drives `Encounter.TakeActionPhased`; persists
+  `PendingReactionPrompts` to encounter data when a player reactor has a
+  ready reaction.
+- `SubmitCheck` RPC gains a `take_reaction` branch
+  (`submit_check_reaction.go`) that builds `ReactionModifier`s from
+  take/skip choice and calls `Encounter.CompleteTakeAction` for phase 2.
+- `SetReactionReady` RPC (`set_reaction_ready.go`) — per-character
+  per-condition readiness toggle (wizard arms Shield, etc.).
+- `EndTurn` handles `IsNPCPausedForReaction(err)` — when an NPC pauses for a
+  player reaction, the handler serializes the live `*PhasedAttackContext`
+  into `PendingReactionPrompt.AttackContextJSON` before snapshot (honors
+  the HOST CONTRACT documented in encounter SDK; follow-up
+  [rpg-toolkit#657](https://github.com/KirkDiggler/rpg-toolkit/issues/657)
+  tracks the resolver-callback fix that would remove this dance).
+- `applyReactionConditions` wires OA on every character (universal melee
+  predicate) and Shield on characters with `SpellSlots[1].Max > 0`
+  (heuristic stand-in for "spell prepared" tracking).
+- Translator (`translate.go`) handles the new `ReactionPrompt` oneof
+  variant on `InputRequired` and the `InputRequiredDelivered` event
+  publication.
+- Wave 2.11c sneak-attack canary tests (5 tests, cross-RPC bus + gamectx
+  + TurnEnd reset) all still pass against the new tags.
+- Known follow-up: [#536](https://github.com/KirkDiggler/rpg-api/issues/536)
+  tracks the 5 end-to-end player Shield + OA integration tests (deferred
+  from #535 to keep that PR focused on the dep bump + handler shape).
+
+**Earlier active state (still relevant):**
 
 All six open PRs are coordinate-space fix branches feeding into the consolidated
 Round 2 branch (#468). #468 itself is **failing CI** (test step, build passes) and

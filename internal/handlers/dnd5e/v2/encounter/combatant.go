@@ -24,7 +24,7 @@ var (
 // calling combat.ResolveAttack.
 //
 // Zero value: a zero-value CombatantRegistry is usable — Register
-// lazy-initialises the internal map on first call. NewCombatantRegistry is
+// lazy-initializes the internal map on first call. NewCombatantRegistry is
 // provided as a convenience but is not required.
 //
 // Scope: per-attack. Build one registry for the attacker + target of a single
@@ -50,7 +50,7 @@ func NewCombatantRegistry() *CombatantRegistry {
 // for that id, which is intentional: tests may register a replacement combatant
 // to simulate mid-combat HP changes.
 //
-// Register lazy-initialises the internal map so that the zero value of
+// Register lazy-initializes the internal map so that the zero value of
 // CombatantRegistry is usable without calling NewCombatantRegistry first.
 func (r *CombatantRegistry) Register(id string, c combat.Combatant) {
 	if r.entries == nil {

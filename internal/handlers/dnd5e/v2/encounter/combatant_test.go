@@ -226,7 +226,7 @@ func (s *CombatantRegistryTestSuite) TestRegistry_SatisfiesCombatantLookupInterf
 
 // TestRegistry_ZeroValueUsable verifies that a zero-value CombatantRegistry
 // (not constructed via NewCombatantRegistry) is safe to use. Register must
-// lazy-initialise the internal map rather than panic on a nil-map write.
+// lazy-initialize the internal map rather than panic on a nil-map write.
 func (s *CombatantRegistryTestSuite) TestRegistry_ZeroValueUsable() {
 	var reg v2encounter.CombatantRegistry
 

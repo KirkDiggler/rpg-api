@@ -2,7 +2,9 @@ package encounter
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -14,8 +16,9 @@ import (
 	encountersv2 "github.com/KirkDiggler/rpg-api/internal/repositories/encounters/v2"
 	tkenc "github.com/KirkDiggler/rpg-toolkit/encounter"
 	"github.com/KirkDiggler/rpg-toolkit/encounter/core"
-	dnd5eEvents "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/events"
 	tkcharacter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/combat"
+	dnd5eEvents "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/events"
 )
 
 // npcChainSafetyMargin is added to the initiative roster size to derive the
@@ -131,6 +134,23 @@ func (h *Handler) EndTurn(ctx context.Context, req *encounterv2pb.EndTurnRequest
 	npcChainCap := len(data.Initiative) + npcChainSafetyMargin
 	for depth := 0; isNPC && depth < npcChainCap; depth++ {
 		if actErr := enc.NPCAct(ctx, newActive); actErr != nil {
+			// Wave 2.11d: NPC turn paused for a player reaction. The encounter
+			// has the pending reaction prompt + the InputRequiredDelivered event
+			// already published. Marshal the cached PhasedAttackContext into
+			// the prompt's AttackContextJSON so SubmitCheck can rebuild it on
+			// resume, then save and return success — the player must respond
+			// before the NPC's turn (and the rest of the dispatch loop) continues.
+			if tkenc.IsNPCPausedForReaction(actErr) {
+				if err := h.serializePendingPhasedAttacks(enc); err != nil {
+					return nil, status.Errorf(codes.Internal, "serialize npc pending reactions: %v", err)
+				}
+				if saveErr := h.encRepo.Save(ctx, enc.ToData()); saveErr != nil {
+					return nil, status.Errorf(codes.Internal,
+						"save encounter %q after npc reaction pause: %v",
+						req.GetEncounterId(), saveErr)
+				}
+				return &encounterv2pb.EndTurnResponse{}, nil
+			}
 			// NPCAct errors are surfaced as Internal — they indicate either a
 			// rehydration / bus / publish failure (system-shaped) or an
 			// unexpected state mismatch. Save what state we have first so the
@@ -196,6 +216,38 @@ func (h *Handler) EndTurn(ctx context.Context, req *encounterv2pb.EndTurnRequest
 	}
 
 	return &encounterv2pb.EndTurnResponse{}, nil
+}
+
+// serializePendingPhasedAttacks marshals each in-process PhasedAttackContext
+// (from NPC attacks that paused for a player reaction) into the corresponding
+// PendingReactionPrompt.AttackContextJSON. Without this, the encounter
+// snapshot would persist the prompt metadata but not the rulebook-specific
+// AttackContext, so SubmitCheck on the resume path could not rebuild phase 2.
+//
+// Wave 2.11d: NPC pause-for-reaction is mediated by the SDK keeping the
+// AttackContext in-memory only (the SDK is rulebook-agnostic; it can't
+// marshal the rulebook-side context itself). The orchestrator does the
+// marshaling because it knows the *combat.AttackContext shape.
+func (h *Handler) serializePendingPhasedAttacks(enc *tkenc.Encounter) error {
+	for pid, prompt := range enc.ToData().PendingReactionPrompts {
+		if len(prompt.AttackContextJSON) > 0 {
+			continue // already serialized (player-attack path filled this in)
+		}
+		phasedCtx := enc.PendingPhasedAttackContext(pid)
+		if phasedCtx == nil {
+			continue
+		}
+		rulebookCtx, ok := phasedCtx.Rulebook.(*combat.AttackContext)
+		if !ok {
+			return fmt.Errorf("pending phased attack rulebook is %T, expected *combat.AttackContext", phasedCtx.Rulebook)
+		}
+		ctxJSON, err := json.Marshal(rulebookCtx)
+		if err != nil {
+			return fmt.Errorf("marshal pending attack context: %w", err)
+		}
+		prompt.AttackContextJSON = ctxJSON
+	}
+	return nil
 }
 
 // publishTurnEndOnBus publishes a dnd5eEvents.TurnEndEvent on the
