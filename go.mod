@@ -3,13 +3,13 @@ module github.com/KirkDiggler/rpg-api
 go 1.25.3
 
 require (
-	github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20260507051118-0443dec90664
+	github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20260518182430-cdd9e0e3945d
 	github.com/KirkDiggler/rpg-toolkit/core v0.10.0
 	github.com/KirkDiggler/rpg-toolkit/dice v0.3.2
-	github.com/KirkDiggler/rpg-toolkit/encounter v0.8.0
+	github.com/KirkDiggler/rpg-toolkit/encounter v0.9.0
 	github.com/KirkDiggler/rpg-toolkit/events v0.6.2
 	github.com/KirkDiggler/rpg-toolkit/rpgerr v0.1.2
-	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.57.0
+	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.58.0
 	github.com/KirkDiggler/rpg-toolkit/tools/environments v0.4.0
 	github.com/KirkDiggler/rpg-toolkit/tools/spatial v0.4.0
 	github.com/alicebob/miniredis/v2 v2.35.0
@@ -88,13 +88,4 @@ require (
 	golang.org/x/text v0.34.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260226221140-a57be14db171 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
-)
-
-// Wave 2.11d local-replace directives — MUST be stripped before PR push.
-// See rpg-project memory: feedback_local_override_until_unit_done.
-replace (
-	github.com/KirkDiggler/rpg-api-protos/gen/go => /home/kirk/personal/rpg-api-protos/.worktrees/feat-2.11d-reaction-prompt-156/gen/go
-	github.com/KirkDiggler/rpg-toolkit/encounter => /home/kirk/personal/rpg-toolkit/.worktrees/feat-2.11d-conditions-649-650/encounter
-	github.com/KirkDiggler/rpg-toolkit/events => /home/kirk/personal/rpg-toolkit/.worktrees/feat-2.11d-conditions-649-650/events
-	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e => /home/kirk/personal/rpg-toolkit/.worktrees/feat-2.11d-conditions-649-650/rulebooks/dnd5e
 )

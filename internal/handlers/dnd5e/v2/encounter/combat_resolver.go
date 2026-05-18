@@ -71,11 +71,11 @@ func (r *StandInCombatResolver) ResolveAttack(input tkenc.AttackInput) (*tkenc.A
 		DamageType:  input.AttackerDamageType,
 	}
 
-	switch {
-	case roll == 20:
+	switch roll {
+	case 20:
 		out.Hit = true
 		out.Critical = true
-	case roll == 1:
+	case 1:
 		// Auto-miss; outcome is already zero.
 		return out, nil
 	default:

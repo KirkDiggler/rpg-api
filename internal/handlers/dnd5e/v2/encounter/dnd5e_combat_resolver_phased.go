@@ -293,7 +293,7 @@ func (r *Dnd5eCombatResolver) prepareAttack(input tkenc.AttackInput) (*phasedPre
 	}
 
 	attackHand := combat.AttackHandMain
-	if input.AttackHand == "off" {
+	if input.AttackHand == attackHandOffLabel {
 		attackHand = combat.AttackHandOff
 	}
 

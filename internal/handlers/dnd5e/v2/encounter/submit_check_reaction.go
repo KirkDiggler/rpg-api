@@ -133,9 +133,12 @@ func (h *Handler) submitReactionCheck(
 // buildReactionModifiers translates a pending prompt into the rulebook
 // ReactionModifier slice for phase 2. Centralizes the per-condition modifier
 // shape so future reactions add a case here.
+//
+// Today only Shield contributes a modifier (OA is a separate attack, not a
+// modifier on the in-flight attack). When the second modifier-style reaction
+// lands, convert this back to a switch.
 func buildReactionModifiers(prompt *tkenc.PendingReactionPrompt) []tkenc.ReactionModifier {
-	switch prompt.ConditionRef {
-	case shieldRef:
+	if prompt.ConditionRef == shieldRef {
 		return []tkenc.ReactionModifier{
 			{ConditionRef: prompt.ConditionRef, ACBonus: shieldACBonus},
 		}
