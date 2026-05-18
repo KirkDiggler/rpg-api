@@ -157,6 +157,17 @@ func (h *Handler) EndTurn(ctx context.Context, req *encounterv2pb.EndTurnRequest
 			// layer without changing the SDK contract — the publish happens
 			// inside NPCAct, before we return here.
 			if tkenc.IsNPCPausedForReaction(actErr) {
+				// Single-reactor enforcement (Wave 2.11d closeout #538 C,
+				// Option 1): if the SDK persisted multiple prompts for this
+				// pause, drop all but the first. Orphan InputRequiredDelivered
+				// events already went out from inside NPCAct; subscribers
+				// reloading from repo will find no matching prompt and drop
+				// silently — acceptable behavior under single-reactor
+				// semantics. See take_action.go's persistPendingReactions for
+				// the design rationale + Wave 2.11e follow-up
+				// https://github.com/KirkDiggler/rpg-api/issues/540 for the
+				// proper aggregate-then-complete fix.
+				enforceSingleReactor(enc)
 				if err := h.serializePendingPhasedAttacks(enc); err != nil {
 					return nil, status.Errorf(codes.Internal, "serialize npc pending reactions: %v", err)
 				}
@@ -232,6 +243,39 @@ func (h *Handler) EndTurn(ctx context.Context, req *encounterv2pb.EndTurnRequest
 	}
 
 	return &encounterv2pb.EndTurnResponse{}, nil
+}
+
+// enforceSingleReactor drops all but the first PendingReactionPrompt on the
+// encounter. Used after the SDK's NPCAct path persists multiple reactor
+// prompts during a single paused attack (npc.go's playerTriggers loop) —
+// CompleteTakeAction is destructive per call, so multiple persisted prompts
+// risk double-resolution.
+//
+// Wave 2.11d closeout (#538 C, Option 1): single-reactor enforcement.
+// Wave 2.11e (https://github.com/KirkDiggler/rpg-api/issues/540) replaces
+// this with aggregate-then-complete once a second post-hit reaction ships
+// (Counterspell, etc.). Until then, first-eligible-wins.
+//
+// Map iteration order in Go is unspecified, so "first" here means "any one"
+// — acceptable for the Wave 2.11d Shield-only scope where the only
+// multi-reactor case is two wizards both having Shield ready against the
+// same target (1-target-per-attack scenario; both wouldn't both be the
+// target of the same attack).
+func enforceSingleReactor(enc *tkenc.Encounter) {
+	prompts := enc.ToData().PendingReactionPrompts
+	if len(prompts) <= 1 {
+		return
+	}
+	var kept core.PlayerID
+	for pid := range prompts {
+		kept = pid
+		break
+	}
+	for pid := range prompts {
+		if pid != kept {
+			enc.ClearPendingReactionPrompt(pid)
+		}
+	}
 }
 
 // serializePendingPhasedAttacks marshals each in-process PhasedAttackContext
