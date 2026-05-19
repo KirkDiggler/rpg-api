@@ -17,9 +17,14 @@
 // so handlers/dnd5e/v2/encounter can Load it without translation.
 //
 // Wave 2.11d wires conditions at load:
-//   - applyReactionConditions Apply()s OpportunityAttack on every melee
-//     combatant (alice, bob) and Shield on characters with a 1st-level
-//     spell slot (wendy). Default readiness: OA on, Shield off.
+//   - applyReactionConditions Apply()s OpportunityAttack on EVERY character
+//     unconditionally (alice, bob, wendy) — the OA predicate gates whether
+//     it actually publishes a trigger event (e.g. by checking weapon reach
+//     and gamectx.IsReactionReady), so it's a silent no-op for characters
+//     with no melee threat range. Shield is Apply()'d only when
+//     hasFirstLevelSpellSlot returns true (wendy). Default readiness: OA on
+//     (seeded by the encounter SDK's AddPlayer for combatants with
+//     DamageDice), Shield off.
 //   - SneakAttack is persisted in alice's Conditions JSON so LoadFromData
 //     re-Apply()s it on every rehydration (the once-per-turn gate persists
 //     via SneakAttackData.UsedThisTurn → rpg-toolkit#655).
@@ -75,6 +80,11 @@ const (
 	// Kept as a literal so devseed doesn't depend on the (currently
 	// unexported) constant in the repository package.
 	charKeyPrefix = "character:"
+
+	// playerIndexPrefix mirrors the same constant in the character repo;
+	// SADD'd here so ListByPlayerID returns seeded characters (per Copilot
+	// review feedback on PR #543).
+	playerIndexPrefix = "character:player:"
 
 	// encKeyPrefix matches internal/repositories/encounters/v2/redis.go.
 	encKeyPrefix = "enc:v2:"
@@ -179,9 +189,13 @@ func run() error {
 		return fmt.Errorf("write encounter: %w", writeErr)
 	}
 
+	// encMode is a core.EncounterMode (int with a String() method); use %v
+	// so the formatter resolves to .String() unambiguously (Copilot review
+	// nit on PR #543 — %s also works via fmt.Stringer dispatch, but %v is
+	// more idiomatic for non-string types).
 	fmt.Fprintf(
 		os.Stderr,
-		"seeded %s%s: mode=%s players=%d monsters=%d ttl=%s\n",
+		"seeded %s%s: mode=%v players=%d monsters=%d ttl=%s\n",
 		encKeyPrefix, encData.ID, encMode, len(encData.Players), len(encData.Monsters), encTTL,
 	)
 	return nil
@@ -202,7 +216,10 @@ func parseMode(s string) (encountercore.EncounterMode, error) {
 
 // writeCharacter serializes the character via the same envelope shape the
 // production character repo uses (entities.Character{Data: ...}) and SETs
-// it under character:<id> with no TTL.
+// it under character:<id> with no TTL. Also SADDs the character ID into
+// the player-index set so ListByPlayerID returns seeded characters — matches
+// the production Create flow in internal/repositories/character/redis.go
+// (Copilot review feedback on PR #543).
 func writeCharacter(ctx context.Context, client redisclient.Client, data *toolkitchar.Data) error {
 	if data == nil || data.ID == "" {
 		return errors.New("character data nil or missing ID")
@@ -215,8 +232,18 @@ func writeCharacter(ctx context.Context, client redisclient.Client, data *toolki
 	if err != nil {
 		return fmt.Errorf("marshal: %w", err)
 	}
-	if err := client.Set(ctx, charKeyPrefix+data.ID, blob, 0).Err(); err != nil {
-		return fmt.Errorf("redis SET: %w", err)
+
+	// Atomic write: character blob + player-index SADD in a single
+	// TxPipeline, matching the production repo's Create implementation
+	// (internal/repositories/character/redis.go:99-114). Session index is
+	// intentionally skipped — devseed never seeds session membership.
+	pipe := client.TxPipeline()
+	pipe.Set(ctx, charKeyPrefix+data.ID, blob, 0)
+	if data.PlayerID != "" {
+		pipe.SAdd(ctx, playerIndexPrefix+data.PlayerID, data.ID)
+	}
+	if _, err := pipe.Exec(ctx); err != nil {
+		return fmt.Errorf("redis pipeline exec: %w", err)
 	}
 	return nil
 }

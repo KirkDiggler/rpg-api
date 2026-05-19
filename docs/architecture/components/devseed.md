@@ -43,7 +43,7 @@ devseed is intentionally narrow about what it persists vs what gets reattached a
 | Reaction | Persisted in character JSON? | Apply()'d at load? |
 |---|---|---|
 | **SneakAttack** (alice) | yes — in `Conditions: []json.RawMessage{...}` | by `character.LoadFromData` for every condition in the blob |
-| **OpportunityAttack** (alice, bob, wendy) | no | by `applyReactionConditions` for every melee combatant |
+| **OpportunityAttack** (every character) | no | by `applyReactionConditions` on EVERY character unconditionally; the OA predicate (weapon reach + `gamectx.IsReactionReady`) gates whether it actually publishes a trigger, so it's a silent no-op for characters with no melee threat range |
 | **Shield** (wendy) | no | by `applyReactionConditions` when `hasFirstLevelSpellSlot(char) == true` |
 | **Rage** (bob) | as a feature, not a condition — Rage isn't reactive, it's activatable | not auto-Apply()'d; player activates via the Rage feature, which then creates the RagingCondition |
 
