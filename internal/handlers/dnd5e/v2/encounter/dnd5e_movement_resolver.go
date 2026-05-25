@@ -146,10 +146,7 @@ func (r *Dnd5eMovementResolver) ResolveStep(input tkenc.MovementStepInput) (*tke
 	// combat.MoveEntity's triggerOpportunityAttack calls
 	// combat.GetCombatantFromContext(ctx, attackerID) to resolve the OA
 	// attacker — needs every potential threatener registered.
-	combReg, err := r.buildCombatantRegistry(ctx, input.EventBus)
-	if err != nil {
-		return nil, fmt.Errorf("build combatant registry: %w", err)
-	}
+	combReg := r.buildCombatantRegistry(ctx, input.EventBus)
 	ctx = combat.WithCombatantLookup(ctx, combReg)
 
 	// Empty CharacterRegistry — chain subscribers that need character lookup
@@ -235,7 +232,7 @@ func (r *Dnd5eMovementResolver) classifyEntityType(entityID string) string {
 // and calling its resolveEntity per ID. Future refactor (out of #539
 // scope): extract a shared "encounter combatant loader" helper that both
 // resolvers can use directly.
-func (r *Dnd5eMovementResolver) buildCombatantRegistry(ctx context.Context, bus events.EventBus) (*CombatantRegistry, error) {
+func (r *Dnd5eMovementResolver) buildCombatantRegistry(ctx context.Context, bus events.EventBus) *CombatantRegistry {
 	reg := NewCombatantRegistry()
 
 	// Reuse the combat resolver's entity loading. Construct a transient
@@ -266,7 +263,7 @@ func (r *Dnd5eMovementResolver) buildCombatantRegistry(ctx context.Context, bus 
 		}
 	}
 
-	return reg, nil
+	return reg
 }
 
 // Compile-time check that Dnd5eMovementResolver implements the SDK
