@@ -308,20 +308,35 @@ func (s *MovementOAIntegrationSuite) TestRogueDisengage_NoOAFiresOnMovement() {
 
 	// Alice retreats from (0,0,0) → (-1,0,1), leaving goblin's reach.
 	// With Disengage active, goblin's OA predicate should NOT publish a trigger.
-	if err := enc.Move(encountercore.PlayerID(movPlayerAlice), []encountercore.Hex{
-		{Q: -1, R: 0, S: 1},
-	}); err != nil {
-		// enc.Move may return FailedPrecondition (no active turn) — that's
-		// fine for this test since we only need the MovementChain to fire.
-		// If it's a resolver error, fail explicitly.
-		s.T().Logf("enc.Move returned: %v (checking if OA fired regardless)", err)
-	}
+	// Require no error: enc.Move only errors on empty path or unknown player;
+	// both would mean movement never happened and the "no OA" assertion below
+	// would be vacuous.
+	s.Require().NoError(
+		enc.Move(encountercore.PlayerID(movPlayerAlice), []encountercore.Hex{
+			{Q: -1, R: 0, S: 1},
+		}),
+		"enc.Move must succeed — a failure here means movement never ran and the suppression assertion proves nothing",
+	)
+
+	// Positive proof: save + reload, then assert alice's position advanced to the
+	// retreat hex. Without this, a silently-prevented move would let the "no OA"
+	// assertion below pass vacuously.
+	s.Require().NoError(s.repo.Save(context.Background(), enc.ToData()))
+	movedData, err := s.repo.Get(context.Background(), movEncID)
+	s.Require().NoError(err)
+	aliceAfter := movedData.Players[encountercore.PlayerID(movPlayerAlice)]
+	s.Require().NotNil(aliceAfter)
+	s.Require().NotNil(aliceAfter.View)
+	s.Equal(encountercore.Hex{Q: -1, R: 0, S: 1}, aliceAfter.View.Position,
+		"alice must have reached the retreat hex — proves movement actually executed")
 
 	time.Sleep(50 * time.Millisecond)
 	_ = sub.Close()
 	<-doneCh
 
 	// Verify no OA damage fired against alice from goblin.
+	// This assertion is only load-bearing because the position check above
+	// confirmed movement executed — a goblin OA here means suppression failed.
 	for _, de := range damageEvents {
 		if de.TargetID == encountercore.EntityID(movEntityAlice) &&
 			de.SourceID == encountercore.EntityID(movGoblinID) {
