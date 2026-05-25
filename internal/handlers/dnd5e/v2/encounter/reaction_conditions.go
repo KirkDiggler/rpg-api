@@ -14,6 +14,15 @@ package encounter
 //     (have at least one 1st-level spell slot — heuristic stand-in for a real
 //     "spell prepared" check). Default-off readiness; player toggles via
 //     SetReactionReady.
+//
+// NOT applied here (Wave 2.11e #539 finding):
+//   - DisengagingCondition. The condition's onMovementChain predicate has NO
+//     "activated this turn" gate — it adds OAPreventionSources whenever the
+//     bearer moves. Applying universally would suppress OAs for everyone all
+//     the time. Disengage activation must go through combatabilities.Disengage
+//     (which calls condition.Apply itself); cross-RPC persistence of the
+//     activation state is a separate concern (filed as follow-up — see
+//     rpg-api#NEW).
 
 import (
 	"context"
@@ -22,6 +31,7 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/events"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/conditions"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/monster"
 )
 
 // applyReactionConditions applies the OA and Shield conditions to a freshly-
@@ -64,6 +74,27 @@ func applyReactionConditions(ctx context.Context, char *character.Character, bus
 		}
 	}
 
+	return nil
+}
+
+// applyMonsterReactionConditions applies dnd5e reaction conditions to a
+// rehydrated monster. Currently only OpportunityAttackCondition — monsters
+// don't cast Shield. Same idempotency + non-fatal-error contract as
+// applyReactionConditions for characters.
+//
+// Wave 2.11e #539: without this, NPC-OA-on-player-fleeing flows do not
+// fire because the monster's OpportunityAttackCondition never subscribes
+// to the MovementChain. seedOAReadiness only seeds the readiness bitmap;
+// the bus subscription that publishes ReactionTriggerEvent comes from
+// the condition's Apply() — which only runs if we explicitly call it.
+func applyMonsterReactionConditions(ctx context.Context, mon *monster.Monster, bus events.EventBus) error {
+	if mon == nil || bus == nil {
+		return nil
+	}
+	oa := conditions.NewOpportunityAttackCondition(mon.GetID())
+	if err := oa.Apply(ctx, bus); err != nil {
+		return fmt.Errorf("apply OA condition for monster %q: %w", mon.GetID(), err)
+	}
 	return nil
 }
 

@@ -68,7 +68,10 @@ func (h *Handler) Interact(ctx context.Context, req *encounterv2pb.InteractReque
 		return nil, status.Error(codes.NotFound, "target entity is not a door, or door does not exist")
 	}
 
-	enc, err := encounter.LoadFromData(data, h.broker, encounter.WithCharacterResolver(h.resolver), encounter.WithCombatResolver(h.buildCombatResolver(data)))
+	enc, err := encounter.LoadFromData(data, h.broker,
+		encounter.WithCharacterResolver(h.resolver),
+		encounter.WithCombatResolver(h.buildCombatResolver(data)),
+		encounter.WithMovementResolver(h.buildMovementResolver(data)))
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "load from data %q: %v", req.GetEncounterId(), err)
 	}

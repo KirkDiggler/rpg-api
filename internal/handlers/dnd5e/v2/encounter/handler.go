@@ -20,12 +20,13 @@ import (
 
 // HandlerConfig configures a v2 encounter Handler.
 type HandlerConfig struct {
-	Broker               *encounter.Broker
-	Repo                 encountersv2.Repository
-	Resolver             CharacterResolver          // optional; defaults to StubCharacterResolver
-	CombatResolver       CombatResolver             // optional; overrides CombatResolverConfig when set
-	CombatResolverConfig *Dnd5eCombatResolverConfig // optional; used to build Dnd5eCombatResolver per-request
-	Now                  func() time.Time           // optional; defaults to time.Now
+	Broker                 *encounter.Broker
+	Repo                   encountersv2.Repository
+	Resolver               CharacterResolver            // optional; defaults to StubCharacterResolver
+	CombatResolver         CombatResolver               // optional; overrides CombatResolverConfig when set
+	CombatResolverConfig   *Dnd5eCombatResolverConfig   // optional; used to build Dnd5eCombatResolver per-request
+	MovementResolverConfig *Dnd5eMovementResolverConfig // optional; used to build Dnd5eMovementResolver per-request (Wave 2.11e #539)
+	Now                    func() time.Time             // optional; defaults to time.Now
 }
 
 // Handler implements dnd5e.api.v1alpha2.encounter.EncounterServiceServer.
@@ -40,9 +41,10 @@ type Handler struct {
 	// combatResolver is non-nil when a fixed resolver is wired (e.g. tests that
 	// use StandInCombatResolver for deterministic outcomes). When nil,
 	// buildCombatResolver creates a per-request Dnd5eCombatResolver.
-	combatResolver       CombatResolver
-	combatResolverConfig Dnd5eCombatResolverConfig
-	now                  func() time.Time
+	combatResolver         CombatResolver
+	combatResolverConfig   Dnd5eCombatResolverConfig
+	movementResolverConfig Dnd5eMovementResolverConfig
+	now                    func() time.Time
 }
 
 // New constructs a Handler. Returns error on missing required deps.
@@ -82,13 +84,23 @@ func New(cfg *HandlerConfig) (*Handler, error) {
 		combatResolverConfig = *cfg.CombatResolverConfig
 	}
 
+	// Wave 2.11e #539: MovementResolver wired alongside CombatResolver. Optional
+	// — when nil, the encounter falls back to single-jump movement (no OAs)
+	// preserving non-combat-encounter behavior. Production handlers always
+	// supply the config so player and NPC movement both trigger OAs.
+	movementResolverConfig := Dnd5eMovementResolverConfig{}
+	if cfg.MovementResolverConfig != nil {
+		movementResolverConfig = *cfg.MovementResolverConfig
+	}
+
 	return &Handler{
-		broker:               cfg.Broker,
-		encRepo:              cfg.Repo,
-		resolver:             resolver,
-		combatResolver:       cfg.CombatResolver, // nil unless caller provides a fixed resolver
-		combatResolverConfig: combatResolverConfig,
-		now:                  now,
+		broker:                 cfg.Broker,
+		encRepo:                cfg.Repo,
+		resolver:               resolver,
+		combatResolver:         cfg.CombatResolver, // nil unless caller provides a fixed resolver
+		combatResolverConfig:   combatResolverConfig,
+		movementResolverConfig: movementResolverConfig,
+		now:                    now,
 	}, nil
 }
 
@@ -103,6 +115,14 @@ func (h *Handler) buildCombatResolver(data *encounter.Data) CombatResolver {
 		return h.combatResolver
 	}
 	return NewDnd5eCombatResolverForData(h.combatResolverConfig, data)
+}
+
+// buildMovementResolver returns the movement resolver for a given request.
+// Constructed fresh per LoadFromData / New site so the resolver has access
+// to the current encounter data for spatial Room construction. Wave 2.11e
+// #539 — wired alongside buildCombatResolver via WithMovementResolver.
+func (h *Handler) buildMovementResolver(data *encounter.Data) *Dnd5eMovementResolver {
+	return NewDnd5eMovementResolverForData(h.movementResolverConfig, data)
 }
 
 // MoveEntity loads the encounter, validates that the request's entity_id matches
@@ -141,7 +161,10 @@ func (h *Handler) MoveEntity(ctx context.Context, req *encounterv2pb.MoveEntityR
 		return nil, status.Error(codes.InvalidArgument, "proposed_path is required")
 	}
 
-	enc, err := encounter.LoadFromData(data, h.broker, encounter.WithCharacterResolver(h.resolver), encounter.WithCombatResolver(h.buildCombatResolver(data)))
+	enc, err := encounter.LoadFromData(data, h.broker,
+		encounter.WithCharacterResolver(h.resolver),
+		encounter.WithCombatResolver(h.buildCombatResolver(data)),
+		encounter.WithMovementResolver(h.buildMovementResolver(data)))
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "load from data %q: %v", req.GetEncounterId(), err)
 	}

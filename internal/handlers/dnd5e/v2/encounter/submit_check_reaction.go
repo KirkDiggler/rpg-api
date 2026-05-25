@@ -71,7 +71,8 @@ func (h *Handler) submitReactionCheck(
 
 	enc, err := tkenc.LoadFromData(data, h.broker,
 		tkenc.WithCharacterResolver(h.resolver),
-		tkenc.WithCombatResolver(h.buildCombatResolver(data)))
+		tkenc.WithCombatResolver(h.buildCombatResolver(data)),
+		tkenc.WithMovementResolver(h.buildMovementResolver(data)))
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "load from data %q: %v", req.GetEncounterId(), err)
 	}
