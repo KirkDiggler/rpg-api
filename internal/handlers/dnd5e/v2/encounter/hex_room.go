@@ -2,7 +2,6 @@ package encounter
 
 import (
 	"fmt"
-	"math"
 
 	"github.com/KirkDiggler/rpg-toolkit/core"
 	tkenc "github.com/KirkDiggler/rpg-toolkit/encounter"
@@ -109,38 +108,35 @@ func (r *encounterHexRoom) GetEntityPosition(entityID string) (spatial.Position,
 
 // GetEntitiesInRange returns all encounter entities whose hex positions fall
 // within the given Euclidean radius from center. Both players and monsters
-// are included. The radius is compared against the Euclidean distance between
-// hexToPos(entity) and center, matching how spatial.BasicRoom implements it.
+// are included. The radius is compared using the axial hex cube-distance
+// formula (|ΔQ|+|ΔR|+|ΔS|)/2 via AxialHexGrid, so all 6 hex neighbors
+// are correctly treated as distance 1. The previous Euclidean check
+// rejected 2 of the 6 neighbors (those with XY-Euclidean distance √2),
+// suppressing Opportunity Attacks for entities at those positions (#549).
 //
 // The caller (SneakAttack) uses this to find allies adjacent to a target.
 func (r *encounterHexRoom) GetEntitiesInRange(center spatial.Position, radius float64) []core.Entity {
 	if r.data == nil {
 		return nil
 	}
+	grid := r.GetGrid()
 	var result []core.Entity
 	for _, pd := range r.data.Players {
 		if pd.View == nil {
 			continue
 		}
 		pos := hexToPos(pd.View.Position)
-		if euclidean(pos, center) <= radius {
+		if grid.Distance(pos, center) <= radius {
 			result = append(result, &hexEntity{id: string(pd.EntityID), entityType: entityTypeCharacter})
 		}
 	}
 	for _, md := range r.data.Monsters {
 		pos := hexToPos(md.Position)
-		if euclidean(pos, center) <= radius {
+		if grid.Distance(pos, center) <= radius {
 			result = append(result, &hexEntity{id: string(md.ID), entityType: entityTypeMonster})
 		}
 	}
 	return result
-}
-
-// euclidean returns the Euclidean distance between two positions.
-func euclidean(a, b spatial.Position) float64 {
-	dx := a.X - b.X
-	dy := a.Y - b.Y
-	return math.Sqrt(dx*dx + dy*dy)
 }
 
 // GetAllEntities returns all entities in the room as a map of ID to Entity.
@@ -166,29 +162,21 @@ func (r *encounterHexRoom) GetID() string { return "encounter-hex-room" }
 // read-only adapters; present for interface compliance.
 func (r *encounterHexRoom) GetType() core.EntityType { return "encounter-hex-room" }
 
-// GetGrid returns a square grid for distance/adjacency calculations.
-// Wave 2.11e #539: OpportunityAttackCondition.isLeavingMyThreatRange
-// (toolkit conditions/opportunity_attack.go:215) calls
-// room.GetGrid().Distance(...), so this MUST be non-nil for the
-// MovementResolver chain to fire OAs.
+// GetGrid returns an AxialHexGrid for distance/adjacency calculations.
 //
-// We use SquareGrid (Chebyshev distance) rather than HexGrid because
-// HexGrid expects offset coordinates while our Position carries axial
-// values (Q→X, R→Y from encountercore.Hex). With SquareGrid + adjacent
-// hexes (axial distance 1), Chebyshev(|q1-q2|, |r1-r2|) returns the
-// correct adjacency for D&D 5e melee reach (1 unit = adjacent).
+// Positions in this adapter are axial cube coordinates (Q→X, R→Y from
+// encountercore.Hex). AxialHexGrid uses the cube-distance formula
+// (|ΔQ|+|ΔR|+|ΔS|)/2 so all six adjacent hexes are distance 1, including
+// the 2 neighbors whose XY-Euclidean distance is √2 — the positions the
+// old SquareGrid/Euclidean path incorrectly excluded (bug #549).
 //
-// This matches the toolkit's own OA tests
-// (rulebooks/dnd5e/conditions/opportunity_attack_test.go uses
-// SquareGrid for the same predicate).
-//
-// Dimensions are large enough that any encounter position falls
-// within bounds; distance calculations are coordinate-driven, not
-// bounded by grid size.
+// Dimensions are large enough that any encounter position falls within
+// bounds; distance calculations are coordinate-driven, not bounded by grid
+// size.
 func (r *encounterHexRoom) GetGrid() spatial.Grid {
-	return spatial.NewSquareGrid(spatial.SquareGridConfig{
-		Width:  1000,
-		Height: 1000,
+	return spatial.NewAxialHexGrid(spatial.AxialHexGridConfig{
+		SpanWidth:  1000,
+		SpanHeight: 1000,
 	})
 }
 

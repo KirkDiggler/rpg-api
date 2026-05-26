@@ -253,6 +253,60 @@ func (s *MovementOAIntegrationSuite) TestNPCOA_OnPlayerFleeing() {
 		"alice should land at the retreat hex after the chain runs")
 }
 
+// TestNPCOA_OnPlayerFleeing_DiagonalAdjacency is a regression test for the
+// XY-Euclidean distance bug (rpg-api#549). GetEntitiesInRange previously used
+// Euclidean distance; 2 of the 6 axial hex neighbors have XY-Euclidean
+// distance √2≈1.414 > 1.0 and were not returned as threatening, so no OA fired
+// for entities at those positions.
+//
+// With AxialHexGrid the cube-distance formula gives exactly 1 for all six
+// adjacent hexes. Goblin is placed at (1,-1,0) — a neighbor with
+// XY-Euclidean √2 but axial hex distance 1. Alice retreats; OA must fire.
+func (s *MovementOAIntegrationSuite) TestNPCOA_OnPlayerFleeing_DiagonalAdjacency() {
+	aliceData := s.buildAliceFighterData()
+	s.setupCharRepoMock(aliceData)
+	s.seedMovementEncounterDiagonal()
+
+	sub, subErr := s.broker.Subscribe(movEncID, encountercore.PlayerID(movPlayerAlice))
+	s.Require().NoError(subErr)
+	defer func() { _ = sub.Close() }()
+	var damageEvents []*tkencevents.DamageDealtEvent
+	doneCh := make(chan struct{})
+	go func() {
+		defer close(doneCh)
+		for evt := range sub.Events() {
+			if de, ok := evt.(*tkencevents.DamageDealtEvent); ok {
+				damageEvents = append(damageEvents, de)
+			}
+		}
+	}()
+
+	// Alice retreats from (0,0,0) → (-1,0,1), leaving goblin-diagonal's reach.
+	_, err := s.handler.MoveEntity(s.aliceCtx, &encounterv2pb.MoveEntityRequest{
+		EncounterId: movEncID,
+		EntityId:    movEntityAlice,
+		ProposedPath: []*encounterv2pb.Position{
+			{X: -1, Y: 0, Z: 1},
+		},
+	})
+	s.Require().NoError(err, "MoveEntity RPC must succeed")
+
+	time.Sleep(50 * time.Millisecond)
+	_ = sub.Close()
+	<-doneCh
+
+	var oaDamage *tkencevents.DamageDealtEvent
+	for _, de := range damageEvents {
+		if de.TargetID == encountercore.EntityID(movEntityAlice) &&
+			de.SourceID == encountercore.EntityID(movGoblinID) {
+			oaDamage = de
+			break
+		}
+	}
+	s.Require().NotNil(oaDamage,
+		"OA DamageDealtEvent must fire when goblin is at a √2-Euclidean hex neighbor (axial distance=1) — proves AxialHexGrid replaced Euclidean distance check (#549)")
+}
+
 // TestRogueDisengage_NoOAFiresOnMovement proves that a rogue (alice) who has
 // activated Disengage via Cunning Action (BonusDisengage) does NOT trigger the
 // goblin's Opportunity Attack when she retreats past it.
@@ -460,6 +514,50 @@ func (s *MovementOAIntegrationSuite) seedMovementEncounter() {
 	s.Require().NoError(enc.AddMonster(tkenc.MonsterInput{
 		ID:       encountercore.EntityID(movGoblinID),
 		Position: encountercore.Hex{Q: 1, R: 0, S: -1},
+		HP:       movGoblinStartHP, MaxHP: movGoblinStartHP, AC: 15,
+		Speed:       6,
+		MonsterRef:  "dnd5e:monsters:goblin",
+		AttackBonus: 4,
+		DamageDice:  "1d6+2",
+		DamageType:  "slashing",
+		DataJSON:    goblinDataJSON,
+	}))
+
+	s.Require().NoError(enc.SetMode(encountercore.ModeTurnBased))
+	s.Require().NoError(s.repo.Save(context.Background(), enc.ToData()))
+}
+
+// seedMovementEncounterDiagonal seeds the encounter with goblin at (1,-1,0) —
+// a hex neighbor whose XY-Euclidean distance from alice (0,0,0) is √2≈1.414
+// but whose axial hex distance is 1. Used by
+// TestNPCOA_OnPlayerFleeing_DiagonalAdjacency to prove AxialHexGrid is used
+// (the old Euclidean check would have returned 1.414 > 1.0 and excluded the
+// goblin from threat range, suppressing the OA).
+func (s *MovementOAIntegrationSuite) seedMovementEncounterDiagonal() {
+	enc := tkenc.New(movEncID, s.broker)
+
+	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
+		PlayerID:   encountercore.PlayerID(movPlayerAlice),
+		EntityID:   encountercore.EntityID(movEntityAlice),
+		Position:   encountercore.Hex{Q: 0, R: 0, S: 0},
+		SightRange: 10,
+		HP:         movPlayerStartHP, MaxHP: movPlayerStartHP, AC: 16,
+		AttackBonus: 4,
+		DamageDice:  "1d8+2",
+		DamageType:  "slashing",
+	}))
+
+	goblin := monster.NewGoblin(movGoblinID)
+	goblinData := goblin.ToData()
+	goblinData.HitPoints = movGoblinStartHP
+	goblinData.MaxHitPoints = movGoblinStartHP
+	goblinDataJSON, err := json.Marshal(goblinData)
+	s.Require().NoError(err, "marshal goblin data")
+
+	// Goblin at (1,-1,0): axial hex distance from alice=1, XY-Euclidean=√2≈1.414.
+	s.Require().NoError(enc.AddMonster(tkenc.MonsterInput{
+		ID:       encountercore.EntityID(movGoblinID),
+		Position: encountercore.Hex{Q: 1, R: -1, S: 0},
 		HP:       movGoblinStartHP, MaxHP: movGoblinStartHP, AC: 15,
 		Speed:       6,
 		MonsterRef:  "dnd5e:monsters:goblin",
