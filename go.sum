@@ -26,8 +26,8 @@ github.com/KirkDiggler/rpg-toolkit/tools/environments v0.4.0 h1:fyNqBWKRn98giYFA
 github.com/KirkDiggler/rpg-toolkit/tools/environments v0.4.0/go.mod h1:tchpvtZ7MTh7P5J1efr2Wigw108VzQBQEojlVFbw8rM=
 github.com/KirkDiggler/rpg-toolkit/tools/selectables v0.1.2 h1:81iz712+EXhitPNgcf0tMDqvqI/0u9k26Hbdph62QZU=
 github.com/KirkDiggler/rpg-toolkit/tools/selectables v0.1.2/go.mod h1:tnhhn+fRcklWqwIu5lOtBA2uCn1amkp5ZAARsqAgJqI=
-github.com/KirkDiggler/rpg-toolkit/tools/spatial v0.4.0 h1:vlraS3uAcQ5N2+UxZ0l61CoCe6LtZhLIlxuGUnA+2NE=
-github.com/KirkDiggler/rpg-toolkit/tools/spatial v0.4.0/go.mod h1:z5WFtaT46GCz4lmDOKzeuFbSk8SRuZbKCf441M0yDa8=
+github.com/KirkDiggler/rpg-toolkit/tools/spatial v0.5.0 h1:weKsLlsRV9kgoD/y68VWy0lpsu5zhwCmbnr5MUkLpsA=
+github.com/KirkDiggler/rpg-toolkit/tools/spatial v0.5.0/go.mod h1:z5WFtaT46GCz4lmDOKzeuFbSk8SRuZbKCf441M0yDa8=
 github.com/Microsoft/go-winio v0.6.2 h1:F2VQgta7ecxGYO8k3ZZz3RS8fVIXVxONVUPlNERoyfY=
 github.com/Microsoft/go-winio v0.6.2/go.mod h1:yd8OoFMLzJbo9gZq8j5qaps8bJ9aShtEA8Ipt1oGCvU=
 github.com/alicebob/miniredis/v2 v2.35.0 h1:QwLphYqCEAo1eu1TqPRN2jgVMPBweeQcR21jeqDCONI=
