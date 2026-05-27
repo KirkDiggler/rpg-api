@@ -233,9 +233,19 @@ func runServer(_ *cobra.Command, _ []string) error {
 	encV2Transport := tkenc.NewInMemoryTransport()
 	encV2Broker := tkenc.NewBroker(encV2Transport)
 	encV2Repo := encountersv2.NewRedis(redisClient, 24*time.Hour)
+	// Combat + Movement resolvers are wired here so OA-class reactions fire
+	// end-to-end on the production RPC path. Roller is left nil so the rulebook
+	// uses its crypto-random default; tests pass deterministic rollers via
+	// the same fields. CharacterRepo is shared with the rest of the stack.
 	encV2Handler, err := encounterhandlerv2.New(&encounterhandlerv2.HandlerConfig{
 		Broker: encV2Broker,
 		Repo:   encV2Repo,
+		CombatResolverConfig: &encounterhandlerv2.Dnd5eCombatResolverConfig{
+			CharacterRepo: charRepo,
+		},
+		MovementResolverConfig: &encounterhandlerv2.Dnd5eMovementResolverConfig{
+			CharacterRepo: charRepo,
+		},
 	})
 	if err != nil {
 		return fmt.Errorf("encounter v2 handler: %w", err)

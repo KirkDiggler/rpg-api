@@ -1,8 +1,8 @@
 ---
 name: encounter (v1alpha2)
 description: v1alpha2 encounter service — lightweight toolkit adapter, no orchestrator
-updated: 2026-05-09
-confidence: high — verified by reading handler.go, create.go, get.go, interact.go, project.go, translate.go, translate_test.go, encounter_v2_test.go
+updated: 2026-05-25
+confidence: high — verified by reading handler.go, dnd5e_movement_resolver.go, dnd5e_combat_resolver.go, hex_room.go, reaction_conditions.go, integration_movement_oa_test.go
 ---
 
 # encounter (v1alpha2)
@@ -103,6 +103,52 @@ The broker's per-viewer projection (LoS-crossing semantics) guarantees no duplic
 ### Replay builder location
 
 `BuildReplayEvents` and `TranslateSnapshot` live in `translate.go` alongside the live-event translators. Both are exported so unit tests in the external `encounter_test` package can exercise them without an integration harness. `ProjectFor` is called once in `StreamEncounter` and its result is passed to both, keeping the projection logic in a single place.
+
+## MovementResolver wiring (Wave 2.11e #539)
+
+`Dnd5eMovementResolver` implements the encounter SDK's `tkenc.MovementResolver` interface. It is wired into every `LoadFromData` + `New` call site via `encounter.WithMovementResolver(h.buildMovementResolver(data))`.
+
+### Per-request lifecycle
+
+`buildMovementResolver(data)` constructs a fresh `Dnd5eMovementResolver` bound to the current encounter's `*tkenc.Data`. This is intentional: the resolver needs the live entity positions to construct the spatial room for each step, and the encounter data is already loaded at each LoadFromData site.
+
+### ResolveStep chain
+
+For each atomic hex step the encounter SDK invokes `ResolveStep(input)`:
+
+1. Classify the mover: `classifyEntityType(entityID)` checks `data.Players` and `data.Monsters` maps — "character" for players, "monster" for NPCs.
+2. Build `encounterHexRoom` from current data positions. This room is both the read source for current positions and the write target for per-step mutations (`MoveEntity` on the room updates `data.Players[*].View.Position` or `data.Monsters[*].Position` in-place).
+3. Build `CombatantRegistry` covering all players (loaded via `CharacterRepo`) and monsters (rehydrated from `DataJSON` via the combat resolver). Registered in context via `combat.WithCombatantLookup`.
+4. Build `gamectx` context: `combat.WithRoom`, `gamectx.WithGameContext`, `gamectx.WithRoom`, `gamectx.WithReactionReadiness` (reaction readiness map from encounter data).
+5. Call `combat.MoveEntity` with a single-hex path. The toolkit publishes `MovementChain`; condition subscribers fire:
+   - `DisengagingCondition` (if Activate'd this turn) adds `OAPreventionSources`, suppressing the OA trigger.
+   - `OpportunityAttackCondition` checks `isLeavingMyThreatRange` + `IsReactionReady` — if both match, publishes `ReactionTriggerEvent` and fires `triggerOpportunityAttack` inline → `combat.ResolveAttack` → damage applied.
+6. Translate `MoveEntityResult → MovementStepResult`: `MovementStopped` → `Prevented`; `StopReason` → `PreventReason`.
+
+### `encounterHexRoom` (`hex_room.go`)
+
+Implements `spatial.Room` over the encounter's `*tkenc.Data`. Key methods:
+
+- `GetEntityPosition` / `GetEntitiesInRange` / `GetAllEntities` — read current positions from `data.Players[*].View.Position` and `data.Monsters[*].Position`.
+- `MoveEntity` — mutates positions in-place so successive `ResolveStep` calls see updated state within the same RPC.
+- `GetGrid()` returns `SquareGrid` (Chebyshev distance). This is required because `OpportunityAttackCondition.isLeavingMyThreatRange` calls `room.GetGrid().Distance(...)`, and `HexGrid` expects offset coordinates while our positions carry axial values (Q→X, R→Y). SquareGrid + adjacent hexes (axial distance 1) gives correct D&D 5e adjacency.
+
+### Reaction conditions (`reaction_conditions.go`)
+
+`applyReactionConditions` and `applyMonsterReactionConditions` are called on every character/monster rehydration (inside the combat resolver at entity-load time). They wire:
+
+- `OpportunityAttackCondition` on every melee combatant (character + monster). The condition's predicate gates on `IsReactionReady` — the encounter SDK's `seedOAReadiness` seeds this to `true` for every combatant with `DamageDice` set at `AddPlayer`/`AddMonster`.
+- `ShieldSpellCondition` on characters with at least one 1st-level spell slot (heuristic gate).
+- **Not applied**: `DisengagingCondition`. Its predicate has no "activated this turn" gate — applying universally would suppress OAs for everyone. Disengage must go through `combatabilities.Disengage.Activate` on the encounter's bus, which applies the condition itself. Cross-RPC persistence (condition applied in TakeAction, needed in MoveEntity) is a follow-up.
+
+### Known gaps / deferred scope
+
+| Gap | Filed as |
+|---|---|
+| Disengage cross-RPC persistence — condition applied in TakeAction evaporates when MoveEntity calls `LoadFromData` with a fresh bus | Future follow-up |
+| Player-pause reactions (Sentinel, reactions-during-movement) | rpg-toolkit#665 |
+| Weapon-aware OA attacker — `triggerOpportunityAttack` uses `weapons.UnarmedStrike` placeholder | toolkit#NEW (file separately) |
+| `v2 ActivateCombatAbility` RPC for Disengage | Future wave |
 
 ## Architecture notes
 

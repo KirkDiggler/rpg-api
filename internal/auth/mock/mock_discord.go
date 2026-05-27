@@ -13,9 +13,8 @@ import (
 	context "context"
 	reflect "reflect"
 
-	gomock "go.uber.org/mock/gomock"
-
 	auth "github.com/KirkDiggler/rpg-api/internal/auth"
+	gomock "go.uber.org/mock/gomock"
 )
 
 // MockTokenValidator is a mock of TokenValidator interface.

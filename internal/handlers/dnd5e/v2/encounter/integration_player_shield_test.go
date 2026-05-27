@@ -290,9 +290,9 @@ func (s *PlayerShieldIntegrationSuite) seedShieldEncounter() {
 	s.Require().NoError(err, "marshal goblin data")
 
 	s.Require().NoError(enc.AddMonster(tkenc.MonsterInput{
-		ID:          encountercore.EntityID(shieldGoblinID),
-		Position:    encountercore.Hex{Q: 2, R: 0, S: -2},
-		HP:          100, MaxHP: 100, AC: 15,
+		ID:       encountercore.EntityID(shieldGoblinID),
+		Position: encountercore.Hex{Q: 2, R: 0, S: -2},
+		HP:       100, MaxHP: 100, AC: 15,
 		Speed:       6,
 		MonsterRef:  "dnd5e:monsters:goblin",
 		AttackBonus: 4, // matches scimitar action

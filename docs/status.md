@@ -1,8 +1,8 @@
 ---
 name: rpg-api status
 description: Where we are with rpg-api — active work, paused, known rough edges, per-subsystem confidence
-updated: 2026-05-18
-confidence: medium — Wave 2.11d entries verified against shipped code; older entries still reflect 2026-05-02 snapshot pending refresh
+updated: 2026-05-25
+confidence: high — Wave 2.11e entries verified against shipped code and passing integration tests
 ---
 
 # rpg-api: Where We Are
@@ -11,41 +11,38 @@ This is a living doc. Edit it in the same PR that invalidates a line. Don't let 
 
 ## Active work
 
-**Wave 2.11d rpg-api half — PR #535 (2026-05-18)** — opt-in player reactions
-end-to-end through the v2 encounter stack. Depends on rpg-toolkit Wave 2.11d
-(merged, tagged `rulebooks/dnd5e/v0.58.0` + `encounter/v0.9.0`) and
-rpg-api-protos Wave 2.11d (merged).
+**Wave 2.11e rpg-api — PR open (2026-05-25)** — MovementResolver wiring: OA-class
+reactions end-to-end in both movement directions (player retreats past NPC → NPC OA;
+NPC retreats past player → player OA) plus Disengage suppression. Pins
+`encounter@v0.14.0` + `rulebooks/dnd5e@v0.59.0`.
 
-What landed on the rpg-api side:
+What landed on the rpg-api side (issue #539):
 
-- `Dnd5eCombatResolver` implements `tkenc.PhasedCombatResolver` (phase 1
-  `ResolveAttackHit` + phase 2 `ApplyAttackOutcome`); cached attacker prep
-  avoids double-load between phases.
-- `TakeAction` RPC drives `Encounter.TakeActionPhased`; persists
-  `PendingReactionPrompts` to encounter data when a player reactor has a
-  ready reaction.
-- `SubmitCheck` RPC gains a `take_reaction` branch
-  (`submit_check_reaction.go`) that builds `ReactionModifier`s from
-  take/skip choice and calls `Encounter.CompleteTakeAction` for phase 2.
-- `SetReactionReady` RPC (`set_reaction_ready.go`) — per-character
-  per-condition readiness toggle (wizard arms Shield, etc.).
-- `EndTurn` handles `IsNPCPausedForReaction(err)` — when an NPC pauses for a
-  player reaction, the handler serializes the live `*PhasedAttackContext`
-  into `PendingReactionPrompt.AttackContextJSON` before snapshot (honors
-  the HOST CONTRACT documented in encounter SDK; follow-up
-  [rpg-toolkit#657](https://github.com/KirkDiggler/rpg-toolkit/issues/657)
-  tracks the resolver-callback fix that would remove this dance).
-- `applyReactionConditions` wires OA on every character (universal melee
-  predicate) and Shield on characters with `SpellSlots[1].Max > 0`
-  (heuristic stand-in for "spell prepared" tracking).
-- Translator (`translate.go`) handles the new `ReactionPrompt` oneof
-  variant on `InputRequired` and the `InputRequiredDelivered` event
-  publication.
-- Wave 2.11c sneak-attack canary tests (5 tests, cross-RPC bus + gamectx
-  + TurnEnd reset) all still pass against the new tags.
-- Known follow-up: [#536](https://github.com/KirkDiggler/rpg-api/issues/536)
-  tracks the 5 end-to-end player Shield + OA integration tests (deferred
-  from #535 to keep that PR focused on the dep bump + handler shape).
+- `Dnd5eMovementResolver` (`dnd5e_movement_resolver.go`) — implements
+  `tkenc.MovementResolver` via `combat.MoveEntity` per step. Builds
+  `encounterHexRoom` + `CombatantRegistry` + `gamectx` per step so the OA
+  chain (MovementChain → OpportunityAttackCondition → triggerOpportunityAttack →
+  combat.ResolveAttack) runs with correct spatial + readiness context.
+- `encounterHexRoom.MoveEntity` (`hex_room.go`) — write path added; mutates
+  `data.Players[*].View.Position` / `data.Monsters[*].Position` per step so
+  successive ResolveStep calls see updated positions.
+- `encounterHexRoom.GetGrid()` returns `SquareGrid` (required by
+  `OpportunityAttackCondition.isLeavingMyThreatRange`).
+- `applyMonsterReactionConditions` (`reaction_conditions.go`) — wires OA
+  condition on monsters at rehydration time (without this, NPC-direction OA
+  never fires because the condition's bus subscription never installs).
+- `HandlerConfig.MovementResolverConfig` + `buildMovementResolver` — wires the
+  resolver at all 7 `LoadFromData` / `New` sites in the handler.
+- 3 integration tests (`integration_movement_oa_test.go`):
+  - `TestPlayerOA_OnNPCFleeing` — goblin retreats via `MoveNPCSteps`, alice's OA fires, goblin HP drops.
+  - `TestNPCOA_OnPlayerFleeing` — alice retreats via `MoveEntity` RPC, goblin's OA fires, `DamageDealtEvent` verified.
+  - `TestRogueDisengage_NoOAFiresOnMovement` — alice activates `BonusDisengage` on the encounter's bus, retreats, no OA fires. Documents cross-RPC persistence gap.
+
+Known follow-ups (filed separately, out of Wave 2.11e scope):
+- Disengage cross-RPC persistence (condition evaporates on LoadFromData per-RPC bus reconstruction).
+- Player-pause reactions / Sentinel (rpg-toolkit#665).
+- `v2 ActivateCombatAbility` RPC for Disengage.
+- Weapon-aware OA attacker (`triggerOpportunityAttack` uses unarmed strike placeholder).
 
 **Earlier active state (still relevant):**
 
@@ -219,22 +216,22 @@ See [quality.md](quality.md) for grade and rationale.
 | Integration test harness | Medium-high — good coverage of happy paths, Round 2 open-door test just added |
 | Services layer (sandboxroom) | Low — sparse; most business logic lives in orchestrators |
 
-### Lint — 65 pre-existing violations
+### Lint — 70 pre-existing violations
 
-`make pre-commit` fails on lint with 65 pre-existing violations as of 2026-05-02. All tests pass (`go test -short -race ./...` — 23 packages). The lint failures are in source code unrelated to the current docs branch. Categories:
+`make pre-commit` fails on lint with 70 pre-existing violations as of 2026-05-25. All tests pass. Wave 2.11e fixed 1 new violation introduced by the WIP (`buildCombatantRegistry` unparam). Categories:
 
-- **goconst (42)** — magic string literals repeated 3+ times in dungeon toolkit, character and encounter converters
+- **goconst (44)** — magic string literals repeated 3+ times in dungeon toolkit, character and encounter converters
 - **revive (5)** — `context.Context` not first param in test helpers, underscore in Go names
 - **govet (4)** — error variable shadowing in harness and integration helpers
 - **gocritic (3)** — sloppy reassignment patterns in encounter orchestrator
 - **unconvert (3)** — unnecessary string() conversions in encounter orchestrator and character handler
 - **unused (3)** — `convertEntityDoorsToProto`, `convertDungeonWallsToProto` in encounter converters; `protoActionIDToRef` in encounter orchestrator
-- **staticcheck (1)** — `grpc.DialContext` deprecated in test harness
+- **staticcheck (4)** — `grpc.DialContext` deprecated in test harness; `combat.ResolveAttack` deprecated in two orchestrator sites
 - **errcheck (2)** — unchecked errors in harness.Close()
-- **misspell (1)** — "cancelled" → "canceled" in stream_entity_state_test.go
+- **misspell (1)** — "cancelled" → "canceled"
 - **unparam (1)** — `handleRemainingChoices` always returns nil in helpers
 
-The 3 unused functions (`convertEntityDoorsToProto`, `convertDungeonWallsToProto`, `protoActionIDToRef`) are the most interesting — they are dead code. `protoActionIDToRef` at line 2372 of orchestrator.go converts `pb.ActionId` but is never called. This is additional signal that the proto-to-ref conversion was moved inline without cleaning up.
+The 3 unused functions (`convertEntityDoorsToProto`, `convertDungeonWallsToProto`, `protoActionIDToRef`) are dead code. `protoActionIDToRef` at line 2372 of orchestrator.go converts `pb.ActionId` but is never called. This is additional signal that the proto-to-ref conversion was moved inline without cleaning up.
 
 ## Upcoming work
 

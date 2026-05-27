@@ -1,8 +1,8 @@
 ---
 name: rpg-api quality scorecard
 description: Per-component grade with rationale — a graded scorecard to update as the codebase evolves
-updated: 2026-05-18
-confidence: medium — Wave 2.11d encounter v2 graded from shipped-code verification; older entries reflect 2026-05-02 snapshot pending refresh
+updated: 2026-05-25
+confidence: medium — Wave 2.11e encounter v2 graded from shipped-code + integration test verification; older entries reflect 2026-05-02 snapshot pending refresh
 ---
 
 # Quality Scorecard
@@ -28,20 +28,24 @@ the toolkit imports is a one-PR fix but it requires the orchestrator to stop
 returning toolkit types in `CharacterData`. The `PlayerDisconnected` orchestrator method is never called from the
 streaming handler — disconnect events do not clean up encounter state.
 
-### Encounter v2 handler — B (Wave 2.11d, new entry)
+### Encounter v2 handler — B (Wave 2.11e update)
 
 `internal/handlers/dnd5e/v2/encounter/` — the v1alpha2 encounter stack
 that orchestrates against the toolkit encounter SDK directly (no
-intermediate orchestrator layer). Wave 2.11d brings the surface up to
-**opt-in player reactions end-to-end**.
+intermediate orchestrator layer). Wave 2.11e adds the MovementResolver
+wiring, bringing OA-class reactions end-to-end for both movement directions.
 
-What's here as of Wave 2.11d:
+What's here as of Wave 2.11e:
 
 - `Dnd5eCombatResolver` (`dnd5e_combat_resolver.go`, `dnd5e_combat_resolver_phased.go`)
   — implements both `tkenc.CombatResolver` and `tkenc.PhasedCombatResolver`.
   Cached attacker prep map (`pendingPhased`) lets phase 2 reuse the same
   loaded character + resolveCtx without creating duplicate condition
   subscribers.
+- `Dnd5eMovementResolver` (`dnd5e_movement_resolver.go`) — implements
+  `tkenc.MovementResolver`; delegates to `combat.MoveEntity` per hex step.
+  Builds spatial room + combatant registry + gamectx per step so OA chain
+  fires correctly (see `encounter.md` MovementResolver wiring section).
 - `TakeAction` (`take_action.go`) — drives `Encounter.TakeActionPhased`;
   persists `PendingReactionPrompts` when phase 1 surfaces a player reactor.
 - `SubmitCheck` (`submit_check.go` + `submit_check_reaction.go`) — dispatches
@@ -54,31 +58,31 @@ What's here as of Wave 2.11d:
   `serializePendingPhasedAttacks` marshals the live `*PhasedAttackContext`
   into `AttackContextJSON` before snapshot (honors the encounter SDK's
   HOST CONTRACT documented in `persistNPCPendingReactions`).
-- `applyReactionConditions` (`reaction_conditions.go`) — wires OA on every
-  character + Shield on spellcasters with 1st-level slots, on every
-  character/monster load. Idempotent.
-- Translator (`translate.go`) — the new `ReactionPrompt` oneof variant on
+- `applyReactionConditions` + `applyMonsterReactionConditions`
+  (`reaction_conditions.go`) — wires OA on every character and monster +
+  Shield on spellcasters. Both applied at every rehydration; idempotent.
+- Translator (`translate.go`) — the `ReactionPrompt` oneof variant on
   `InputRequired` + `InputRequiredDelivered` event publication.
+- `encounterHexRoom` (`hex_room.go`) — `spatial.Room` adapter over
+  encounter data; `MoveEntity` write path added for per-step position mutation.
 
 Test coverage:
 
-- 5 Wave 2.11c sneak-attack regression tests pass on the new tags
-  (`integration_sneak_attack_test.go`): cross-RPC bus, gamectx wiring,
-  TurnEnd reset, once-per-turn enforcement.
-- Full integration suites pass (`internal/integration` 160s,
-  `internal/integration/encounter` 95s,
-  `internal/integration/character` 11s, `internal/integration/harness` 11s).
-- Player Shield + OA end-to-end integration tests deferred to follow-up
-  [#536](https://github.com/KirkDiggler/rpg-api/issues/536) (5 tests
-  covering Shield ready+prompted/skipped/not-ready and OA default-ready/
-  toggled-off scenarios).
+- 5 Wave 2.11c sneak-attack regression tests (cross-RPC bus, gamectx,
+  TurnEnd reset, once-per-turn enforcement).
+- 3 Wave 2.11e movement OA integration tests (`integration_movement_oa_test.go`):
+  player OA on NPC fleeing (via `MoveNPCSteps`); NPC OA on player fleeing
+  (via `MoveEntity` RPC); Disengage suppression (on same bus).
+- Full integration suites pass.
+- Dedicated player Shield + OA tests: `integration_player_shield_test.go`
+  (Wave 2.11d #536 partial — wired in same wave).
 
-Grade B because the surface is well-shaped, lint-clean, and the
-Wave 2.11c invariants are protected by canaries — but the dedicated
-player-reaction integration test layer hasn't landed yet (#536), and
-the HOST CONTRACT around `AttackContextJSON` serialization
-([rpg-toolkit#657](https://github.com/KirkDiggler/rpg-toolkit/issues/657))
-is documented but not yet structurally enforced from the SDK side.
+Grade remains B: surface is well-shaped, resolver wiring is tested end-to-end.
+Gaps keeping it below A: Disengage cross-RPC persistence (condition evaporates
+between TakeAction and MoveEntity due to per-LoadFromData bus reconstruction),
+player-pause reactions (toolkit#665 future), and the HOST CONTRACT around
+`AttackContextJSON` serialization is documented but not yet structurally
+enforced from the SDK side (rpg-toolkit#657).
 
 ### Character handler — C
 

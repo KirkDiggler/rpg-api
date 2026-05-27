@@ -527,6 +527,11 @@ func (r *Dnd5eCombatResolver) rehydrateMonster(ctx context.Context, md *tkenc.Mo
 		if err != nil {
 			return nil, fmt.Errorf("load monster from data: %w", err)
 		}
+		// Wave 2.11e #539: apply OA condition to the monster so its
+		// onMovementChain subscriber fires for NPC-OA-on-player-fleeing.
+		// Non-fatal — log and continue (errors here would block combat
+		// resolution for a recoverable condition-state issue).
+		_ = applyMonsterReactionConditions(ctx, mon, bus)
 		return mon, nil
 	}
 
@@ -541,6 +546,7 @@ func (r *Dnd5eCombatResolver) rehydrateMonster(ctx context.Context, md *tkenc.Mo
 		AC:               md.AC,
 		ProficiencyBonus: 2, // CR-appropriate default; snapshot doesn't carry proficiency
 	})
+	_ = applyMonsterReactionConditions(ctx, mon, bus)
 	return mon, nil
 }
 
