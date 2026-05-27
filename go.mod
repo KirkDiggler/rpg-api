@@ -89,3 +89,9 @@ require (
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260226221140-a57be14db171 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
+
+// LOCAL REPLACES — strip before opening PRs; see feedback_local_override_until_unit_done
+replace (
+	github.com/KirkDiggler/rpg-api-protos/gen/go => /home/kirk/personal/rpg-api-protos/gen/go
+	github.com/KirkDiggler/rpg-toolkit/encounter => /home/kirk/personal/rpg-toolkit/encounter
+)
