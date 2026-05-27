@@ -620,11 +620,11 @@ func buildWave1RogueEncounterData(encounterID string, mode encountercore.Encount
 		return nil, fmt.Errorf("add alice: %w", err)
 	}
 
-	// bob (barbarian) — adjacent to alice so ally-adjacency sneak attack triggers.
+	// bob (barbarian) — adjacent to goblin so ally-adjacency sneak attack triggers.
 	if err := enc.AddPlayer(tkenc.PlayerInput{
 		PlayerID:    playerBob,
 		EntityID:    entityBob,
-		Position:    encountercore.Hex{Q: 1, R: -1, S: 0},
+		Position:    encountercore.Hex{Q: 2, R: -1, S: -1},
 		SightRange:  10,
 		HP:          14,
 		MaxHP:       14,
