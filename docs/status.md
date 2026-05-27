@@ -11,6 +11,10 @@ This is a living doc. Edit it in the same PR that invalidates a line. Don't let 
 
 ## Active work
 
+**Chapter 2 Wave 1 (rogue) — devseed fixture landed (2026-05-27)** — `--fixture=wave-1-rogue`
+seeds alice (L1 rogue, 1d6 SneakAttack, HP 10) + bob (L1 barbarian) + goblin into
+`enc:v2:dev-encounter`. No wendy in this fixture. Closes issue #551.
+
 **Wave 2.11e rpg-api — PR open (2026-05-25)** — MovementResolver wiring: OA-class
 reactions end-to-end in both movement directions (player retreats past NPC → NPC OA;
 NPC retreats past player → player OA) plus Disengage suppression. Pins

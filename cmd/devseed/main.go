@@ -1,14 +1,14 @@
-// devseed populates Redis with a ready-to-play v2 encounter plus the three
-// canonical playtest characters (alice-rogue, bob-barbarian, wendy-wizard)
-// and a goblin, so the rpg-dnd5e-web playtest harness can verify reaction
-// flows end-to-end without going through CreateDraft/FinalizeDraft.
+// devseed populates Redis with a ready-to-play v2 encounter plus the
+// canonical playtest characters and a goblin, so the rpg-dnd5e-web playtest
+// harness can verify reaction flows end-to-end without going through
+// CreateDraft/FinalizeDraft.
 //
 // What it writes
 //
-//	character:char-alice    — level-2 rogue with SneakAttack condition pre-applied
+//	character:char-alice    — rogue with SneakAttack condition pre-applied
 //	character:char-bob      — level-1 barbarian with Rage feature + RageCharges resource
-//	character:char-wendy    — level-1 wizard with 1st-level spell slots (Shield-eligible)
-//	enc:v2:<encounter-id>   — encounter referencing all three by EntityID,
+//	character:char-wendy    — level-1 wizard with 1st-level spell slots (Shield-eligible, default fixture only)
+//	enc:v2:<encounter-id>   — encounter referencing characters by EntityID,
 //	                          plus a single goblin (monster.NewGoblin DataJSON)
 //
 // The character keys use the same schema as the production character repo
@@ -18,13 +18,10 @@
 //
 // Wave 2.11d wires conditions at load:
 //   - applyReactionConditions Apply()s OpportunityAttack on EVERY character
-//     unconditionally (alice, bob, wendy) — the OA predicate gates whether
-//     it actually publishes a trigger event (e.g. by checking weapon reach
-//     and gamectx.IsReactionReady), so it's a silent no-op for characters
-//     with no melee threat range. Shield is Apply()'d only when
-//     hasFirstLevelSpellSlot returns true (wendy). Default readiness: OA on
-//     (seeded by the encounter SDK's AddPlayer for combatants with
-//     DamageDice), Shield off.
+//     unconditionally — the OA predicate gates whether it actually publishes
+//     a trigger event. Shield is Apply()'d only when hasFirstLevelSpellSlot
+//     returns true (wendy). Default readiness: OA on (seeded by the encounter
+//     SDK's AddPlayer for combatants with DamageDice), Shield off.
 //   - SneakAttack is persisted in alice's Conditions JSON so LoadFromData
 //     re-Apply()s it on every rehydration (the once-per-turn gate persists
 //     via SneakAttackData.UsedThisTurn → rpg-toolkit#655).
@@ -35,6 +32,9 @@
 //
 //	# Seed against local Redis with default encounter id and TURN_BASED mode
 //	go run ./cmd/devseed
+//
+//	# Seed the wave-1-rogue fixture (L1 alice, L1 bob, goblin — no wendy)
+//	go run ./cmd/devseed --fixture=wave-1-rogue
 //
 //	# Override encounter id (matches the harness URL ?encounterId=…)
 //	go run ./cmd/devseed --encounter-id=dev-encounter
@@ -99,6 +99,17 @@ const (
 
 	modeTurnBased = "turn_based"
 	modeFreeRoam  = "free_roam"
+
+	fixtureDefault    = ""
+	fixtureWave1Rogue = "wave-1-rogue"
+
+	weaponShortsword    = "shortsword"
+	weaponGreataxe      = "greataxe"
+	inventoryTypeWeapon = "weapon"
+
+	damageTypePiercing = "piercing"
+	damageTypeSlashing = "slashing"
+	damageTypeFire     = "fire"
 )
 
 var (
@@ -129,6 +140,7 @@ func run() error {
 		redisAddr   = flag.String("redis-addr", "", "Redis address (default: $REDIS_ADDR or "+defaultRedisAddr+")")
 		encounterID = flag.String("encounter-id", defaultEncounterID, "Encounter ID to seed under enc:v2:<id>")
 		mode        = flag.String("mode", modeTurnBased, "Encounter mode: turn_based or free_roam")
+		fixture     = flag.String("fixture", fixtureDefault, "Named fixture to seed (e.g. wave-1-rogue). Default seeds alice L2 + bob + wendy.")
 	)
 	flag.Parse()
 
@@ -150,7 +162,7 @@ func run() error {
 
 	// Log the target before connecting so an error that swallows addr (per
 	// the gosec G706 fix below) still leaves a clear breadcrumb.
-	fmt.Fprintf(os.Stderr, "devseed: target redis=%s\n", addr)
+	fmt.Fprintf(os.Stderr, "devseed: target redis=%s fixture=%q\n", addr, *fixture)
 
 	client, err := redisclient.NewClient(addr, nil)
 	if err != nil {
@@ -166,13 +178,34 @@ func run() error {
 		return fmt.Errorf("ping redis: %w", pingErr)
 	}
 
+	var chars []*toolkitchar.Data
+	var encData *tkenc.Data
+
+	switch *fixture {
+	case fixtureWave1Rogue:
+		chars = []*toolkitchar.Data{
+			buildAliceRogueL1Data(),
+			buildBobBarbarianData(),
+		}
+		encData, err = buildWave1RogueEncounterData(*encounterID, encMode)
+		if err != nil {
+			return fmt.Errorf("build encounter: %w", err)
+		}
+	default:
+		// Default: alice L2 + bob + wendy (original behavior).
+		chars = []*toolkitchar.Data{
+			buildAliceRogueData(),
+			buildBobBarbarianData(),
+			buildWendyWizardData(),
+		}
+		encData, err = buildEncounterData(*encounterID, encMode)
+		if err != nil {
+			return fmt.Errorf("build encounter: %w", err)
+		}
+	}
+
 	// 1. Seed characters first so they exist when the harness or handler
 	//    loads them via the character repo.
-	chars := []*toolkitchar.Data{
-		buildAliceRogueData(),
-		buildBobBarbarianData(),
-		buildWendyWizardData(),
-	}
 	for _, cd := range chars {
 		if writeErr := writeCharacter(ctx, client, cd); writeErr != nil {
 			return fmt.Errorf("write character %s: %w", cd.ID, writeErr)
@@ -181,10 +214,6 @@ func run() error {
 	}
 
 	// 2. Seed encounter referencing the characters by EntityID.
-	encData, err := buildEncounterData(*encounterID, encMode)
-	if err != nil {
-		return fmt.Errorf("build encounter: %w", err)
-	}
 	if writeErr := writeEncounter(ctx, client, encData); writeErr != nil {
 		return fmt.Errorf("write encounter: %w", writeErr)
 	}
@@ -300,10 +329,10 @@ func buildAliceRogueData() *toolkitchar.Data {
 			abilities.CHA: 10,
 		},
 		EquipmentSlots: toolkitchar.EquipmentSlots{
-			toolkitchar.SlotMainHand: "shortsword",
+			toolkitchar.SlotMainHand: weaponShortsword,
 		},
 		Inventory: []toolkitchar.InventoryItemData{
-			{Type: "weapon", ID: "shortsword", Quantity: 1},
+			{Type: inventoryTypeWeapon, ID: weaponShortsword, Quantity: 1},
 		},
 		Conditions: []json.RawMessage{sneakJSON},
 		CreatedAt:  now,
@@ -348,10 +377,10 @@ func buildBobBarbarianData() *toolkitchar.Data {
 			abilities.CHA: 10,
 		},
 		EquipmentSlots: toolkitchar.EquipmentSlots{
-			toolkitchar.SlotMainHand: "greataxe", // two-handed; off hand stays empty
+			toolkitchar.SlotMainHand: weaponGreataxe, // two-handed; off hand stays empty
 		},
 		Inventory: []toolkitchar.InventoryItemData{
-			{Type: "weapon", ID: "greataxe", Quantity: 1},
+			{Type: inventoryTypeWeapon, ID: weaponGreataxe, Quantity: 1},
 		},
 		Features: []json.RawMessage{rageFeatureJSON},
 		Resources: map[coreResources.ResourceKey]toolkitchar.RecoverableResourceData{
@@ -437,7 +466,7 @@ func buildEncounterData(encounterID string, mode encountercore.EncounterMode) (*
 		AC:          14,
 		AttackBonus: 5,
 		DamageDice:  "1d6+3",
-		DamageType:  "piercing",
+		DamageType:  damageTypePiercing,
 	}); err != nil {
 		return nil, fmt.Errorf("add alice: %w", err)
 	}
@@ -455,7 +484,7 @@ func buildEncounterData(encounterID string, mode encountercore.EncounterMode) (*
 		AC:          14,
 		AttackBonus: 5,
 		DamageDice:  "1d12+3",
-		DamageType:  "slashing",
+		DamageType:  damageTypeSlashing,
 	}); err != nil {
 		return nil, fmt.Errorf("add bob: %w", err)
 	}
@@ -473,7 +502,7 @@ func buildEncounterData(encounterID string, mode encountercore.EncounterMode) (*
 		AC:          12,
 		AttackBonus: 5,
 		DamageDice:  "1d10",
-		DamageType:  "fire",
+		DamageType:  damageTypeFire,
 	}); err != nil {
 		return nil, fmt.Errorf("add wendy: %w", err)
 	}
@@ -498,7 +527,7 @@ func buildEncounterData(encounterID string, mode encountercore.EncounterMode) (*
 		MonsterRef:  "dnd5e:monsters:goblin",
 		AttackBonus: 4, // matches goblin's NewScimitarAction
 		DamageDice:  "1d6+2",
-		DamageType:  "slashing",
+		DamageType:  damageTypeSlashing,
 		DataJSON:    goblinDataJSON,
 	}); err != nil {
 		return nil, fmt.Errorf("add goblin: %w", err)
@@ -507,6 +536,126 @@ func buildEncounterData(encounterID string, mode encountercore.EncounterMode) (*
 	// SetMode is a no-op for FreeRoam-from-fresh-create (the SDK's NewData
 	// already defaults to FreeRoam); only call it for TurnBased so the SDK
 	// rolls initiative and seeds ActiveIdx/Round.
+	if mode == encountercore.ModeTurnBased {
+		if err := enc.SetMode(encountercore.ModeTurnBased); err != nil {
+			return nil, fmt.Errorf("set mode turn_based: %w", err)
+		}
+	}
+
+	return enc.ToData(), nil
+}
+
+// buildAliceRogueL1Data is the wave-1-rogue variant of buildAliceRogueData:
+// level 1, HP 10. AbilityScores and equipment are identical to the L2 version;
+// only Level, HitPoints/MaxHitPoints, and the SneakAttackInput.Level differ
+// (L1 = 1d6, same as L2 per (level+1)/2).
+func buildAliceRogueL1Data() *toolkitchar.Data {
+	sneakCond := conditions.NewSneakAttackCondition(conditions.SneakAttackInput{
+		CharacterID: string(entityAlice),
+		Level:       1,
+	})
+	sneakJSON, err := sneakCond.ToJSON()
+	if err != nil {
+		panic(fmt.Errorf("alice L1 sneak attack ToJSON: %w", err))
+	}
+
+	now := time.Now().UTC()
+	return &toolkitchar.Data{
+		ID:               string(entityAlice),
+		PlayerID:         string(playerAlice),
+		Name:             "Alice the Rogue",
+		Level:            1,
+		ProficiencyBonus: 2,
+		ClassID:          classes.Rogue,
+		HitPoints:        10,
+		MaxHitPoints:     10,
+		ArmorClass:       14,
+		AbilityScores: shared.AbilityScores{
+			abilities.STR: 12, // +1
+			abilities.DEX: 16, // +3 — finesse weapons use DEX
+			abilities.CON: 12,
+			abilities.INT: 12,
+			abilities.WIS: 10,
+			abilities.CHA: 10,
+		},
+		EquipmentSlots: toolkitchar.EquipmentSlots{
+			toolkitchar.SlotMainHand: weaponShortsword,
+		},
+		Inventory: []toolkitchar.InventoryItemData{
+			{Type: inventoryTypeWeapon, ID: weaponShortsword, Quantity: 1},
+		},
+		Conditions: []json.RawMessage{sneakJSON},
+		CreatedAt:  now,
+		UpdatedAt:  now,
+	}
+}
+
+// buildWave1RogueEncounterData seeds the wave-1-rogue encounter: alice + bob +
+// goblin only (no wendy). Positions match the default fixture so the harness
+// SEEDED_FALLBACK still aligns.
+func buildWave1RogueEncounterData(encounterID string, mode encountercore.EncounterMode) (*tkenc.Data, error) {
+	transport := tkenc.NewInMemoryTransport()
+	defer func() { _ = transport.Close() }()
+	broker := tkenc.NewBroker(transport)
+	defer func() { _ = broker.Close() }()
+
+	enc := tkenc.New(encountercore.EncounterID(encounterID), broker)
+
+	// alice L1 rogue — DEX +3, shortsword 1d6+3.
+	if err := enc.AddPlayer(tkenc.PlayerInput{
+		PlayerID:    playerAlice,
+		EntityID:    entityAlice,
+		Position:    encountercore.Hex{Q: 0, R: 0, S: 0},
+		SightRange:  10,
+		HP:          10,
+		MaxHP:       10,
+		AC:          14,
+		AttackBonus: 5,
+		DamageDice:  "1d6+3",
+		DamageType:  damageTypePiercing,
+	}); err != nil {
+		return nil, fmt.Errorf("add alice: %w", err)
+	}
+
+	// bob (barbarian) — adjacent to alice so ally-adjacency sneak attack triggers.
+	if err := enc.AddPlayer(tkenc.PlayerInput{
+		PlayerID:    playerBob,
+		EntityID:    entityBob,
+		Position:    encountercore.Hex{Q: 1, R: -1, S: 0},
+		SightRange:  10,
+		HP:          14,
+		MaxHP:       14,
+		AC:          14,
+		AttackBonus: 5,
+		DamageDice:  "1d12+3",
+		DamageType:  damageTypeSlashing,
+	}); err != nil {
+		return nil, fmt.Errorf("add bob: %w", err)
+	}
+
+	goblin := monster.NewGoblin(string(entityGoblin))
+	goblinData := goblin.ToData()
+	goblinDataJSON, err := json.Marshal(goblinData)
+	if err != nil {
+		return nil, fmt.Errorf("marshal goblin data: %w", err)
+	}
+
+	if err := enc.AddMonster(tkenc.MonsterInput{
+		ID:          entityGoblin,
+		Position:    encountercore.Hex{Q: 3, R: -1, S: -2},
+		HP:          goblinData.HitPoints,
+		MaxHP:       goblinData.MaxHitPoints,
+		AC:          goblinData.ArmorClass,
+		Speed:       6,
+		MonsterRef:  "dnd5e:monsters:goblin",
+		AttackBonus: 4,
+		DamageDice:  "1d6+2",
+		DamageType:  damageTypeSlashing,
+		DataJSON:    goblinDataJSON,
+	}); err != nil {
+		return nil, fmt.Errorf("add goblin: %w", err)
+	}
+
 	if mode == encountercore.ModeTurnBased {
 		if err := enc.SetMode(encountercore.ModeTurnBased); err != nil {
 			return nil, fmt.Errorf("set mode turn_based: %w", err)
