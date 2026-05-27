@@ -3,10 +3,10 @@ module github.com/KirkDiggler/rpg-api
 go 1.25.3
 
 require (
-	github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20260518182430-cdd9e0e3945d
+	github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20260527223626-3a5e2bc47447
 	github.com/KirkDiggler/rpg-toolkit/core v0.10.0
 	github.com/KirkDiggler/rpg-toolkit/dice v0.3.2
-	github.com/KirkDiggler/rpg-toolkit/encounter v0.14.0
+	github.com/KirkDiggler/rpg-toolkit/encounter v0.15.0
 	github.com/KirkDiggler/rpg-toolkit/events v0.6.2
 	github.com/KirkDiggler/rpg-toolkit/rpgerr v0.1.2
 	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.59.0
@@ -88,10 +88,4 @@ require (
 	golang.org/x/text v0.34.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260226221140-a57be14db171 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
-)
-
-// LOCAL REPLACES — strip before opening PRs; see feedback_local_override_until_unit_done
-replace (
-	github.com/KirkDiggler/rpg-api-protos/gen/go => /home/kirk/personal/rpg-api-protos/gen/go
-	github.com/KirkDiggler/rpg-toolkit/encounter => /home/kirk/personal/rpg-toolkit/encounter
 )
