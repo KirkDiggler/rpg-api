@@ -980,12 +980,14 @@ func (s *EncounterV2IntegrationSuite) TestCombatSlice_TakeActionAndEndTurn_NPCDi
 		"bob's stream must not surface unmapped envelopes")
 
 	// On hit, EntityDamaged should target goblin-1 with the active entity as source.
-	if dmg := findEntityDamaged(aPost); dmg != nil {
+	// Use findEntityDamagedBySource to identify the player's attack specifically —
+	// the goblin's NPC-turn attack on bob also produces EntityDamaged events in
+	// alice's stream (alice has LoS to both bob and the goblin), so using
+	// findEntityDamaged (first-seen) would pick up the wrong event on a player miss.
+	if dmg := findEntityDamagedBySource(aPost, activeEntity); dmg != nil {
 		s.Require().Equal("goblin-1", dmg.GetEntityId(), "alice's damage event targets goblin-1")
-		s.Require().Equal(activeEntity, dmg.GetSourceEntityId(),
-			"alice's damage event source is the attacking entity")
 	}
-	if dmg := findEntityDamaged(bPost); dmg != nil {
+	if dmg := findEntityDamagedBySource(bPost, activeEntity); dmg != nil {
 		s.Require().Equal("goblin-1", dmg.GetEntityId(), "bob's damage event targets goblin-1")
 	}
 
@@ -1569,6 +1571,20 @@ func (s *eventSink) findEncounterEnded() *encounterv2pb.EncounterEnded {
 func findEntityDamaged(events []*encounterv2pb.EncounterEvent) *encounterv2pb.EntityDamaged {
 	for _, ev := range events {
 		if d := ev.GetEntityDamaged(); d != nil {
+			return d
+		}
+	}
+	return nil
+}
+
+// findEntityDamagedBySource returns the first EntityDamaged event whose
+// SourceEntityId matches sourceID, or nil if no such event is present.
+// Use this instead of findEntityDamaged when multiple EntityDamaged events may
+// appear on a viewer's stream (e.g. the player's attack and the NPC's
+// retaliatory attack both deliver EntityDamaged to all LoS viewers).
+func findEntityDamagedBySource(events []*encounterv2pb.EncounterEvent, sourceID string) *encounterv2pb.EntityDamaged {
+	for _, ev := range events {
+		if d := ev.GetEntityDamaged(); d != nil && d.GetSourceEntityId() == sourceID {
 			return d
 		}
 	}
