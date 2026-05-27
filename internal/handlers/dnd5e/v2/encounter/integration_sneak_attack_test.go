@@ -140,10 +140,12 @@ func (s *inMemoryCharStore) update(data *character.Data) {
 	s.chars[data.ID] = data
 }
 
-// SneakAttackIntegrationSuite tests the Wave 2.11c sign-off scenario:
-// encounter-scoped bus, gamectx wiring, and TurnEnd bridge.
+// SneakAttackIntegrationSuite tests the sign-off scenario for Sneak Attack across
+// rogue levels: encounter-scoped bus, gamectx wiring, and TurnEnd bridge.
+// rogueLevel controls the character level for alice (1 or 2); both yield 1d6 SA dice.
 type SneakAttackIntegrationSuite struct {
 	suite.Suite
+	rogueLevel   int
 	ctrl         *gomock.Controller
 	mockCharRepo *charactermock.MockRepository
 	charStore    *inMemoryCharStore
@@ -155,7 +157,14 @@ type SneakAttackIntegrationSuite struct {
 }
 
 func TestSneakAttackIntegrationSuite(t *testing.T) {
-	suite.Run(t, new(SneakAttackIntegrationSuite))
+	suite.Run(t, &SneakAttackIntegrationSuite{rogueLevel: 2})
+}
+
+// TestSneakAttackIntegrationL1Suite proves Sneak Attack works end-to-end for a
+// level-1 rogue (Chapter 2 Wave 1 #552). calculateSneakAttackDice(1) = 1d6,
+// same as L2, so all assertions are identical — only alice's Level and HP differ.
+func TestSneakAttackIntegrationL1Suite(t *testing.T) {
+	suite.Run(t, &SneakAttackIntegrationSuite{rogueLevel: 1})
 }
 
 func (s *SneakAttackIntegrationSuite) SetupTest() {
@@ -416,26 +425,38 @@ func (s *SneakAttackIntegrationSuite) goblinHP() int {
 	return md.HP
 }
 
-// buildAliceRogueData constructs a character.Data for alice — a level-2 rogue
-// with DEX 16 > STR 12 (so finesse weapons use DEX), a shortsword in the main
+// aliceHP returns the HP for alice based on s.rogueLevel.
+// L1: 10 (8 base + CON mod 2), L2+: 16 (8+5+CON mod 2+1).
+func (s *SneakAttackIntegrationSuite) aliceHP() int {
+	if s.rogueLevel == 1 {
+		return 10
+	}
+	return 16
+}
+
+// buildAliceRogueData constructs a character.Data for alice — a rogue with
+// DEX 16 > STR 12 (so finesse weapons use DEX), a shortsword in the main
 // hand slot, and the SneakAttack condition persisted in her Conditions blob.
+// Level and HP are driven by s.rogueLevel so L1 and L2 share this builder.
+// calculateSneakAttackDice(level) = (level+1)/2: L1 → 1d6, L2 → 1d6.
 func (s *SneakAttackIntegrationSuite) buildAliceRogueData() *character.Data {
-	// Build the SneakAttack condition JSON (level 2 rogue → 1d6 sneak attack).
 	sneakCond := conditions.NewSneakAttackCondition(conditions.SneakAttackInput{
 		CharacterID: sneakEntityAlice,
-		Level:       2, // 1d6 at level 2
+		Level:       s.rogueLevel,
 	})
 	sneakJSON, err := sneakCond.ToJSON()
 	s.Require().NoError(err, "marshal SneakAttack condition")
 
+	hp := s.aliceHP()
+
 	return &character.Data{
 		ID:               sneakEntityAlice,
 		Name:             "Alice the Rogue",
-		Level:            2,
+		Level:            s.rogueLevel,
 		ClassID:          "rogue",
 		ProficiencyBonus: 2,
-		HitPoints:        16,
-		MaxHitPoints:     16,
+		HitPoints:        hp,
+		MaxHitPoints:     hp,
 		ArmorClass:       14,
 		AbilityScores: shared.AbilityScores{
 			abilities.STR: 12, // +1 modifier
@@ -476,13 +497,14 @@ func (s *SneakAttackIntegrationSuite) buildAliceRogueData() *character.Data {
 func (s *SneakAttackIntegrationSuite) seedSneakEncounter() {
 	enc := tkenc.New(sneakIntegEncID, s.broker)
 
+	aliceHP := s.aliceHP()
 	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
 		PlayerID:    encountercore.PlayerID(sneakPlayerAlice),
 		EntityID:    encountercore.EntityID(sneakEntityAlice),
 		Position:    encountercore.Hex{Q: 0, R: 0, S: 0},
 		SightRange:  10,
-		HP:          16,
-		MaxHP:       16,
+		HP:          aliceHP,
+		MaxHP:       aliceHP,
 		AC:          14,
 		AttackBonus: 5, // DEX +3 + proficiency +2
 		DamageDice:  "1d6+3",
