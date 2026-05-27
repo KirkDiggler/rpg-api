@@ -1,7 +1,7 @@
 ---
 name: rpg-api status
 description: Where we are with rpg-api — active work, paused, known rough edges, per-subsystem confidence
-updated: 2026-05-25
+updated: 2026-05-27
 confidence: high — Wave 2.11e entries verified against shipped code and passing integration tests
 ---
 
@@ -10,6 +10,13 @@ confidence: high — Wave 2.11e entries verified against shipped code and passin
 This is a living doc. Edit it in the same PR that invalidates a line. Don't let it rot.
 
 ## Active work
+
+**Chapter 2 Wave 1 (rogue) — devseed fixture + L1 SA integration test (2026-05-27)** —
+`--fixture=wave-1-rogue` seeds alice (L1 rogue, 1d6 SneakAttack, HP 10) + bob (L1 barbarian) +
+goblin into `enc:v2:dev-encounter` (closes #551). `TestSneakAttackIntegrationL1Suite` proves the
+full SA chain (gamectx wiring, once-per-turn enforcement, turn-end reset) end-to-end via the real
+`TakeAction` RPC for L1 alice with ally-adjacent bob — same 5-test scenario as the existing L2 suite,
+parameterized by `rogueLevel` (closes #552).
 
 **Wave 2.11e rpg-api — PR open (2026-05-25)** — MovementResolver wiring: OA-class
 reactions end-to-end in both movement directions (player retreats past NPC → NPC OA;
