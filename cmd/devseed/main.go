@@ -191,7 +191,7 @@ func run() error {
 		if err != nil {
 			return fmt.Errorf("build encounter: %w", err)
 		}
-	default:
+	case fixtureDefault:
 		// Default: alice L2 + bob + wendy (original behavior).
 		chars = []*toolkitchar.Data{
 			buildAliceRogueData(),
@@ -202,6 +202,9 @@ func run() error {
 		if err != nil {
 			return fmt.Errorf("build encounter: %w", err)
 		}
+	default:
+		return fmt.Errorf("unknown fixture %q: supported values are %q and %q",
+			*fixture, fixtureDefault, fixtureWave1Rogue)
 	}
 
 	// 1. Seed characters first so they exist when the harness or handler
@@ -571,7 +574,7 @@ func buildAliceRogueL1Data() *toolkitchar.Data {
 		MaxHitPoints:     10,
 		ArmorClass:       14,
 		AbilityScores: shared.AbilityScores{
-			abilities.STR: 12, // +1
+			abilities.STR: 12,
 			abilities.DEX: 16, // +3 — finesse weapons use DEX
 			abilities.CON: 12,
 			abilities.INT: 12,

@@ -421,8 +421,8 @@ func (s *SneakAttackIntegrationSuite) goblinHP() int {
 	return md.HP
 }
 
-// aliceHP returns the HP for alice based on s.rogueLevel.
-// L1: 10 (8 base + CON mod 2), L2+: 16 (8+5+CON mod 2+1).
+// aliceHP returns hardcoded HP for alice based on s.rogueLevel.
+// Values are test-fixture numbers, not strict 5e math.
 func (s *SneakAttackIntegrationSuite) aliceHP() int {
 	if s.rogueLevel == 1 {
 		return 10
