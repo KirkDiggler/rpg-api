@@ -86,9 +86,7 @@ func (r fixedRoller) Roll(_ context.Context, size int) (int, error) {
 	if v < 1 {
 		v = 1
 	}
-	if v > size {
-		v = size
-	}
+	v = min(v, size)
 	return v, nil
 }
 
@@ -97,9 +95,7 @@ func (r fixedRoller) RollN(_ context.Context, count, size int) ([]int, error) {
 	if v < 1 {
 		v = 1
 	}
-	if v > size {
-		v = size
-	}
+	v = min(v, size)
 	result := make([]int, count)
 	for i := range result {
 		result[i] = v
@@ -551,7 +547,7 @@ func (s *SneakAttackIntegrationSuite) seedSneakEncounter() {
 // up alice or bob as targets, requiring additional mock setup). Bob's turns
 // are ended via the handler using bob's auth context.
 func (s *SneakAttackIntegrationSuite) advanceToAlice() {
-	for i := 0; i < 20; i++ {
+	for range 20 {
 		data, err := s.repo.Get(context.Background(), sneakIntegEncID)
 		s.Require().NoError(err)
 		s.Require().NotEmpty(data.Initiative, "initiative must be rolled")
