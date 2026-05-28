@@ -1,8 +1,8 @@
 ---
 name: rpg-api status
 description: Where we are with rpg-api — active work, paused, known rough edges, per-subsystem confidence
-updated: 2026-05-27
-confidence: high — Wave 2.11e entries verified against shipped code and passing integration tests
+updated: 2026-05-28
+confidence: high — Wave 2 Monk entries verified against passing integration tests
 ---
 
 # rpg-api: Where We Are
@@ -10,6 +10,18 @@ confidence: high — Wave 2.11e entries verified against shipped code and passin
 This is a living doc. Edit it in the same PR that invalidates a line. Don't let it rot.
 
 ## Active work
+
+**Chapter 2 Wave 2 (monk) — devseed fixture + v2 unarmed-strike integration test (2026-05-28)** —
+`--fixture=wave-2-monk` seeds charli (L1 monk, DEX 16/WIS 14/CON 14, HP 10, AC 15, no weapon,
+MartialArts + UnarmoredDefense conditions persisted) + goblin adjacent into `enc:v2:dev-encounter`
+(closes #559). `TestMonkUnarmedIntegrationSuite` proves the full MartialArts chain via the real
+`TakeAction` RPC: unarmed strike uses DEX mod (+3) not STR (+0), 1d4 damage die applies, and
+the `dnd5e:abilities:dex` source appears in `DamageDealtEvent.Components` (closes #560).
+
+Root bug fixed: `buildEncounterCharacterRegistryFromResolved` was calling `reg.Add` (weapons)
+but never `reg.AddAbilityScores`. Without ability scores in the registry, `MartialArtsCondition`
+silently no-ops on `onDamageChain`. Fix adds `characterToGamectxAbilityScores` helper and two
+`AddAbilityScores` calls (attacker + target). No toolkit changes needed.
 
 **Chapter 2 Wave 1 (rogue) — devseed fixture + L1 SA integration test (2026-05-27)** —
 `--fixture=wave-1-rogue` seeds alice (L1 rogue, 1d6 SneakAttack, HP 10) + bob (L1 barbarian) +

@@ -13,8 +13,9 @@ import (
 	context "context"
 	reflect "reflect"
 
-	dungeons "github.com/KirkDiggler/rpg-api/internal/repositories/dungeons"
 	gomock "go.uber.org/mock/gomock"
+
+	dungeons "github.com/KirkDiggler/rpg-api/internal/repositories/dungeons"
 )
 
 // MockRepository is a mock of Repository interface.

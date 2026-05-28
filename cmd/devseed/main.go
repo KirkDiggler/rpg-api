@@ -102,28 +102,35 @@ const (
 
 	fixtureDefault    = ""
 	fixtureWave1Rogue = "wave-1-rogue"
+	fixtureWave2Monk  = "wave-2-monk"
 
 	weaponShortsword    = "shortsword"
 	weaponGreataxe      = "greataxe"
 	inventoryTypeWeapon = "weapon"
 
-	damageTypePiercing = "piercing"
-	damageTypeSlashing = "slashing"
-	damageTypeFire     = "fire"
+	damageTypePiercing    = "piercing"
+	damageTypeSlashing    = "slashing"
+	damageTypeFire        = "fire"
+	damageTypeBludgeoning = "bludgeoning"
+
+	monsterRefGoblin     = "dnd5e:monsters:goblin"
+	goblinBaseDamageDice = "1d6+2"
 )
 
 var (
 	// Entity IDs are stable across runs so the harness can deep-link to a
 	// specific player and the existing integration tests' EntityID constants
 	// stay aligned.
-	playerAlice = encountercore.PlayerID("alice")
-	playerBob   = encountercore.PlayerID("bob")
-	playerWendy = encountercore.PlayerID("wendy")
+	playerAlice  = encountercore.PlayerID("alice")
+	playerBob    = encountercore.PlayerID("bob")
+	playerWendy  = encountercore.PlayerID("wendy")
+	playerCharli = encountercore.PlayerID("charli")
 
 	entityAlice  = encountercore.EntityID("char-alice")
 	entityBob    = encountercore.EntityID("char-bob")
 	entityWendy  = encountercore.EntityID("char-wendy")
 	entityGoblin = encountercore.EntityID("goblin-1")
+	entityCharli = encountercore.EntityID("char-charli")
 )
 
 func main() {
@@ -182,6 +189,14 @@ func run() error {
 	var encData *tkenc.Data
 
 	switch *fixture {
+	case fixtureWave2Monk:
+		chars = []*toolkitchar.Data{
+			buildCharliMonkData(),
+		}
+		encData, err = buildWave2MonkEncounterData(*encounterID, encMode)
+		if err != nil {
+			return fmt.Errorf("build encounter: %w", err)
+		}
 	case fixtureWave1Rogue:
 		chars = []*toolkitchar.Data{
 			buildAliceRogueL1Data(),
@@ -203,8 +218,8 @@ func run() error {
 			return fmt.Errorf("build encounter: %w", err)
 		}
 	default:
-		return fmt.Errorf("unknown fixture %q: supported values are %q and %q",
-			*fixture, fixtureDefault, fixtureWave1Rogue)
+		return fmt.Errorf("unknown fixture %q: supported values are %q, %q, and %q",
+			*fixture, fixtureDefault, fixtureWave1Rogue, fixtureWave2Monk)
 	}
 
 	// 1. Seed characters first so they exist when the harness or handler
@@ -527,9 +542,9 @@ func buildEncounterData(encounterID string, mode encountercore.EncounterMode) (*
 		MaxHP:       goblinData.MaxHitPoints,
 		AC:          goblinData.ArmorClass,
 		Speed:       6, // 30ft / 5ft per hex
-		MonsterRef:  "dnd5e:monsters:goblin",
+		MonsterRef:  monsterRefGoblin,
 		AttackBonus: 4, // matches goblin's NewScimitarAction
-		DamageDice:  "1d6+2",
+		DamageDice:  goblinBaseDamageDice,
 		DamageType:  damageTypeSlashing,
 		DataJSON:    goblinDataJSON,
 	}); err != nil {
@@ -539,6 +554,116 @@ func buildEncounterData(encounterID string, mode encountercore.EncounterMode) (*
 	// SetMode is a no-op for FreeRoam-from-fresh-create (the SDK's NewData
 	// already defaults to FreeRoam); only call it for TurnBased so the SDK
 	// rolls initiative and seeds ActiveIdx/Round.
+	if mode == encountercore.ModeTurnBased {
+		if err := enc.SetMode(encountercore.ModeTurnBased); err != nil {
+			return nil, fmt.Errorf("set mode turn_based: %w", err)
+		}
+	}
+
+	return enc.ToData(), nil
+}
+
+// buildCharliMonkData returns a level-1 monk fixture for the wave-2-monk scenario.
+// Charli: DEX 16 (+3) / WIS 14 (+2) / CON 14 (+2), HP 10, AC 15, ProficiencyBonus 2.
+// No weapon equipped (unarmed strike via Martial Arts). No armor (Unarmored Defense active).
+// Conditions: MartialArts + UnarmoredDefense(Monk) persisted so they rehydrate on LoadFromData.
+func buildCharliMonkData() *toolkitchar.Data {
+	martialArtsCond := conditions.NewMartialArtsCondition(conditions.MartialArtsInput{
+		CharacterID: string(entityCharli),
+		MonkLevel:   1,
+	})
+	martialArtsJSON, err := martialArtsCond.ToJSON()
+	if err != nil {
+		panic(fmt.Errorf("charli martial arts ToJSON: %w", err))
+	}
+
+	unarmoredDefenseCond := conditions.NewUnarmoredDefenseCondition(conditions.UnarmoredDefenseInput{
+		CharacterID: string(entityCharli),
+		Type:        conditions.UnarmoredDefenseMonk,
+		Source:      "dnd5e:classes:monk",
+	})
+	unarmoredDefenseJSON, err := unarmoredDefenseCond.ToJSON()
+	if err != nil {
+		panic(fmt.Errorf("charli unarmored defense ToJSON: %w", err))
+	}
+
+	now := time.Now().UTC()
+	return &toolkitchar.Data{
+		ID:               string(entityCharli),
+		PlayerID:         string(playerCharli),
+		Name:             "Charli the Monk",
+		Level:            1,
+		ProficiencyBonus: 2,
+		ClassID:          classes.Monk,
+		HitPoints:        10,
+		MaxHitPoints:     10,
+		ArmorClass:       15, // 10 + DEX(+3) + WIS(+2) via Unarmored Defense
+		AbilityScores: shared.AbilityScores{
+			abilities.STR: 10, // +0 — low STR forces Martial Arts DEX swap visible in test
+			abilities.DEX: 16, // +3
+			abilities.CON: 14, // +2
+			abilities.INT: 10,
+			abilities.WIS: 14, // +2 — AC = 10 + 3 + 2 = 15
+			abilities.CHA: 10,
+		},
+		// No weapon equipped: unarmed strike path triggers Martial Arts condition
+		Conditions: []json.RawMessage{martialArtsJSON, unarmoredDefenseJSON},
+		CreatedAt:  now,
+		UpdatedAt:  now,
+	}
+}
+
+// buildWave2MonkEncounterData seeds the wave-2-monk encounter: charli (monk, unarmed) adjacent
+// to a standard goblin. No other players. Charli uses 1d4+DEX via Martial Arts.
+func buildWave2MonkEncounterData(encounterID string, mode encountercore.EncounterMode) (*tkenc.Data, error) {
+	transport := tkenc.NewInMemoryTransport()
+	defer func() { _ = transport.Close() }()
+	broker := tkenc.NewBroker(transport)
+	defer func() { _ = broker.Close() }()
+
+	enc := tkenc.New(encountercore.EncounterID(encounterID), broker)
+
+	// charli (monk, unarmed) — placed at origin, adjacent to goblin at Q:1.
+	// AttackBonus: DEX +3 + proficiency +2 = 5.
+	if err := enc.AddPlayer(tkenc.PlayerInput{
+		PlayerID:    playerCharli,
+		EntityID:    entityCharli,
+		Position:    encountercore.Hex{Q: 0, R: 0, S: 0},
+		SightRange:  10,
+		HP:          10,
+		MaxHP:       10,
+		AC:          15,
+		AttackBonus: 5,
+		DamageDice:  "1d4+3",
+		DamageType:  damageTypeBludgeoning,
+	}); err != nil {
+		return nil, fmt.Errorf("add charli: %w", err)
+	}
+
+	goblin := monster.NewGoblin(string(entityGoblin))
+	goblinData := goblin.ToData()
+	goblinDataJSON, err := json.Marshal(goblinData)
+	if err != nil {
+		return nil, fmt.Errorf("marshal goblin data: %w", err)
+	}
+
+	// Goblin adjacent to charli (Q:1 R:0 — euclidean distance 1.0 ≤ 1.5).
+	if err := enc.AddMonster(tkenc.MonsterInput{
+		ID:          entityGoblin,
+		Position:    encountercore.Hex{Q: 1, R: 0, S: -1},
+		HP:          goblinData.HitPoints,
+		MaxHP:       goblinData.MaxHitPoints,
+		AC:          goblinData.ArmorClass,
+		Speed:       6,
+		MonsterRef:  monsterRefGoblin,
+		AttackBonus: 4,
+		DamageDice:  goblinBaseDamageDice,
+		DamageType:  damageTypeSlashing,
+		DataJSON:    goblinDataJSON,
+	}); err != nil {
+		return nil, fmt.Errorf("add goblin: %w", err)
+	}
+
 	if mode == encountercore.ModeTurnBased {
 		if err := enc.SetMode(encountercore.ModeTurnBased); err != nil {
 			return nil, fmt.Errorf("set mode turn_based: %w", err)
@@ -650,9 +775,9 @@ func buildWave1RogueEncounterData(encounterID string, mode encountercore.Encount
 		MaxHP:       goblinData.MaxHitPoints,
 		AC:          goblinData.ArmorClass,
 		Speed:       6,
-		MonsterRef:  "dnd5e:monsters:goblin",
+		MonsterRef:  monsterRefGoblin,
 		AttackBonus: 4,
-		DamageDice:  "1d6+2",
+		DamageDice:  goblinBaseDamageDice,
 		DamageType:  damageTypeSlashing,
 		DataJSON:    goblinDataJSON,
 	}); err != nil {
