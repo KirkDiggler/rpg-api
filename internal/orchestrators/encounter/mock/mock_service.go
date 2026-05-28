@@ -13,8 +13,9 @@ import (
 	context "context"
 	reflect "reflect"
 
-	encounter "github.com/KirkDiggler/rpg-api/internal/orchestrators/encounter"
 	gomock "go.uber.org/mock/gomock"
+
+	encounter "github.com/KirkDiggler/rpg-api/internal/orchestrators/encounter"
 )
 
 // MockService is a mock of Service interface.

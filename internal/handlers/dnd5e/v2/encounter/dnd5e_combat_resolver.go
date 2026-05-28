@@ -50,6 +50,7 @@ import (
 	tkenc "github.com/KirkDiggler/rpg-toolkit/encounter"
 	encountercore "github.com/KirkDiggler/rpg-toolkit/encounter/core"
 	"github.com/KirkDiggler/rpg-toolkit/events"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/abilities"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/combat"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/damage"
@@ -318,14 +319,18 @@ func (r *Dnd5eCombatResolver) buildEncounterCharacterRegistryFromResolved(
 ) *gamectx.BasicCharacterRegistry {
 	reg := gamectx.NewBasicCharacterRegistry()
 
-	// Register the attacker's weapons if we have a rehydrated character.
+	// Register the attacker's weapons and ability scores if we have a rehydrated character.
+	// Ability scores are required by conditions like MartialArts that call
+	// registry.GetCharacterAbilityScores to determine DEX vs STR modifier.
 	if attackerChar != nil {
 		reg.Add(attackerChar.GetID(), characterToGamectxWeapons(attackerChar))
+		reg.AddAbilityScores(attackerChar.GetID(), characterToGamectxAbilityScores(attackerChar))
 	}
 
-	// Register the target's weapons if we have a rehydrated character.
+	// Register the target's weapons and ability scores if we have a rehydrated character.
 	if targetChar != nil {
 		reg.Add(targetChar.GetID(), characterToGamectxWeapons(targetChar))
+		reg.AddAbilityScores(targetChar.GetID(), characterToGamectxAbilityScores(targetChar))
 	}
 
 	if r.encounterData == nil {
@@ -353,6 +358,21 @@ func (r *Dnd5eCombatResolver) buildEncounterCharacterRegistryFromResolved(
 	}
 
 	return reg
+}
+
+// characterToGamectxAbilityScores converts a character's ability scores to the
+// gamectx.AbilityScores type so conditions like MartialArts can read DEX/STR
+// scores via registry.GetCharacterAbilityScores during the damage chain.
+func characterToGamectxAbilityScores(char *character.Character) *gamectx.AbilityScores {
+	scores := char.AbilityScores()
+	return &gamectx.AbilityScores{
+		Strength:     scores[abilities.STR],
+		Dexterity:    scores[abilities.DEX],
+		Constitution: scores[abilities.CON],
+		Intelligence: scores[abilities.INT],
+		Wisdom:       scores[abilities.WIS],
+		Charisma:     scores[abilities.CHA],
+	}
 }
 
 // characterToGamectxWeapons extracts the equipped weapon slots from a

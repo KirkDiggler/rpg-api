@@ -13,8 +13,9 @@ import (
 	context "context"
 	reflect "reflect"
 
-	sandboxroom "github.com/KirkDiggler/rpg-api/internal/services/sandboxroom"
 	gomock "go.uber.org/mock/gomock"
+
+	sandboxroom "github.com/KirkDiggler/rpg-api/internal/services/sandboxroom"
 )
 
 // MockService is a mock of Service interface.
