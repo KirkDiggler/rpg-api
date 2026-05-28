@@ -56,6 +56,7 @@ import (
 	encountersv2 "github.com/KirkDiggler/rpg-api/internal/repositories/encounters/v2"
 	tkenc "github.com/KirkDiggler/rpg-toolkit/encounter"
 	encountercore "github.com/KirkDiggler/rpg-toolkit/encounter/core"
+	tkencevents "github.com/KirkDiggler/rpg-toolkit/encounter/events"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/abilities"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/conditions"
@@ -352,6 +353,72 @@ func (s *SneakAttackIntegrationSuite) TestIntegration_ReactionReadinessExposedVi
 	s.advanceToAlice()
 	_, err = s.handler.TakeAction(s.aliceCtx, s.attackAliceVsGoblin())
 	s.Require().NoError(err, "attack must resolve with readiness map wired into gamectx")
+}
+
+// TestIntegration_SneakAttackDamageBreakdown_HasWeaponAndSneakComponents verifies
+// that when alice (rogue) fires a sneak attack, the DamageDealtEvent published on
+// the broker carries two Components: a "dnd5e:weapons:shortsword" component and a
+// "dnd5e:features:sneak_attack" component. This proves the breakdown survives
+// the full chain: combat resolver → AttackOutcome.Components → DamageDealtEvent.Components
+// → broker JSON round-trip.
+func (s *SneakAttackIntegrationSuite) TestIntegration_SneakAttackDamageBreakdown_HasWeaponAndSneakComponents() {
+	aliceData := s.buildAliceRogueData()
+	s.setupCharRepoMock(aliceData)
+	s.seedSneakEncounter()
+	s.advanceToAlice()
+
+	// Subscribe for alice before the attack so we capture the DamageDealtEvent.
+	sub, err := s.broker.Subscribe(encountercore.EncounterID(sneakIntegEncID), encountercore.PlayerID(sneakPlayerAlice))
+	s.Require().NoError(err, "broker subscribe must succeed")
+	defer sub.Close() //nolint:errcheck
+
+	_, err = s.handler.TakeAction(s.aliceCtx, s.attackAliceVsGoblin())
+	s.Require().NoError(err, "attack must resolve without error")
+
+	// Drain events until we find the DamageDealtEvent (or timeout).
+	var damageEvt *tkencevents.DamageDealtEvent
+	timeout := time.After(2 * time.Second)
+drain:
+	for {
+		select {
+		case evt, ok := <-sub.Events():
+			if !ok {
+				break drain
+			}
+			if d, ok := evt.(*tkencevents.DamageDealtEvent); ok {
+				damageEvt = d
+				break drain
+			}
+		case <-timeout:
+			break drain
+		}
+	}
+
+	s.Require().NotNil(damageEvt, "DamageDealtEvent must be published on the broker for alice's attack")
+	s.Require().NotEmpty(damageEvt.Components,
+		"DamageDealtEvent.Components must be non-empty when sneak attack fires")
+
+	// Verify component sources. The dnd5e rulebook uses SourceRef.String() which
+	// produces "dnd5e:weapons:<id>" for the weapon, "dnd5e:abilities:<id>" for the
+	// ability modifier, and "dnd5e:features:sneak_attack" for the sneak attack dice.
+	sources := make([]string, 0, len(damageEvt.Components))
+	for _, c := range damageEvt.Components {
+		sources = append(sources, c.Source)
+	}
+	s.Contains(sources, "dnd5e:weapons:shortsword",
+		"damage breakdown must include a weapon component; got %v", sources)
+	s.Contains(sources, "dnd5e:features:sneak_attack",
+		"damage breakdown must include a sneak attack feature component; got %v", sources)
+
+	// The weapon component carries only dice (6 from fixedRoller). The DEX modifier
+	// is emitted as a separate "dnd5e:abilities:dex" component (amount=3).
+	const weaponDiceOnly = 6 // fixedRoller{10}.Roll(6) = min(10,6) = 6
+	for _, c := range damageEvt.Components {
+		if c.Source == "dnd5e:weapons:shortsword" {
+			s.Equal(weaponDiceOnly, c.Amount,
+				"weapon component amount must equal %d (fixed dice roll)", weaponDiceOnly)
+		}
+	}
 }
 
 // ---------------------------------------------------------------------------

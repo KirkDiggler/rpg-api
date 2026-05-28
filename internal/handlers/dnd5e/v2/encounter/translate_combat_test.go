@@ -61,6 +61,86 @@ func (s *TranslateSuite) TestTranslateEvent_DamageDealtEvent_HappyPath() {
 	s.Require().Equal(int64(11), out.Sequence)
 }
 
+func (s *TranslateSuite) TestTranslateEvent_DamageDealtEvent_WithBreakdown_PopulatesProto() {
+	// Verify that DamageDealtEvent.Components are forwarded into the proto's
+	// damage_breakdown field. Two components: weapon + sneak attack.
+	evt := events.NewDamageDealtEvent(
+		"enc-1", uint64(15),
+		"goblin-1", "char-A",
+		14, "slashing",
+		6, 20,
+		map[core.PlayerID]events.DamageDealtSlice{
+			"player-A": {Visible: true},
+		},
+	)
+	evt.Components = []core.DamageComponent{
+		{Source: "weapon", Amount: 9, DamageType: "slashing", IsCritical: false},
+		{Source: "dnd5e:conditions:sneak_attack", Amount: 5, DamageType: "slashing", IsCritical: false},
+	}
+
+	out, err := v2encounter.TranslateEvent(evt, "player-A", s.now)
+	s.Require().NoError(err)
+	s.Require().NotNil(out)
+
+	dmg := out.GetEntityDamaged()
+	s.Require().NotNil(dmg, "expected EntityDamaged envelope")
+	s.Require().Len(dmg.GetDamageBreakdown(), 2, "expected 2 damage components")
+
+	weapon := dmg.GetDamageBreakdown()[0]
+	s.Require().Equal("weapon", weapon.GetSource())
+	s.Require().Equal(int32(9), weapon.GetAmount())
+	s.Require().Equal("slashing", weapon.GetDamageType().GetId())
+	s.Require().False(weapon.GetIsCritical())
+
+	sneak := dmg.GetDamageBreakdown()[1]
+	s.Require().Equal("dnd5e:conditions:sneak_attack", sneak.GetSource())
+	s.Require().Equal(int32(5), sneak.GetAmount())
+	s.Require().Equal("slashing", sneak.GetDamageType().GetId())
+	s.Require().False(sneak.GetIsCritical())
+}
+
+func (s *TranslateSuite) TestTranslateEvent_DamageDealtEvent_NoComponents_EmptyBreakdown() {
+	// When Components is nil (stand-in resolver), damage_breakdown must be empty.
+	evt := events.NewDamageDealtEvent(
+		"enc-1", uint64(16),
+		"goblin-1", "char-A",
+		5, "slashing",
+		2, 7,
+		map[core.PlayerID]events.DamageDealtSlice{
+			"player-A": {Visible: true},
+		},
+	)
+	// Components is nil by default.
+
+	out, err := v2encounter.TranslateEvent(evt, "player-A", s.now)
+	s.Require().NoError(err)
+	dmg := out.GetEntityDamaged()
+	s.Require().NotNil(dmg)
+	s.Require().Empty(dmg.GetDamageBreakdown(), "no components → empty breakdown")
+}
+
+func (s *TranslateSuite) TestTranslateEvent_DamageDealtEvent_CritBreakdown_SetsCritFlag() {
+	// IsCritical on a component must pass through to the proto.
+	evt := events.NewDamageDealtEvent(
+		"enc-1", uint64(17),
+		"goblin-1", "char-A",
+		18, "slashing",
+		2, 20,
+		map[core.PlayerID]events.DamageDealtSlice{
+			"player-A": {Visible: true},
+		},
+	)
+	evt.Components = []core.DamageComponent{
+		{Source: "weapon", Amount: 18, DamageType: "slashing", IsCritical: true},
+	}
+
+	out, err := v2encounter.TranslateEvent(evt, "player-A", s.now)
+	s.Require().NoError(err)
+	dmg := out.GetEntityDamaged()
+	s.Require().Len(dmg.GetDamageBreakdown(), 1)
+	s.Require().True(dmg.GetDamageBreakdown()[0].GetIsCritical(), "critical component flag must propagate")
+}
+
 func (s *TranslateSuite) TestTranslateEvent_DamageDealtEvent_EmptyDamageTypeSkipsRef() {
 	evt := events.NewDamageDealtEvent(
 		"enc-1", uint64(12),

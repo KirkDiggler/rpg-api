@@ -24,9 +24,11 @@ import (
 	"fmt"
 
 	tkenc "github.com/KirkDiggler/rpg-toolkit/encounter"
+	encountercore "github.com/KirkDiggler/rpg-toolkit/encounter/core"
 	"github.com/KirkDiggler/rpg-toolkit/events"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/combat"
+	dnd5eEvents "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/events"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/gamectx"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/weapons"
 )
@@ -232,7 +234,37 @@ func (r *Dnd5eCombatResolver) ApplyAttackOutcome(
 		TargetAC:    result.TargetAC,
 		Damage:      result.TotalDamage,
 		DamageType:  string(result.DamageType),
+		Components:  translateDamageComponents(result.Breakdown),
 	}, nil
+}
+
+// translateDamageComponents converts a dnd5e DamageBreakdown into the
+// encounter SDK's generic []core.DamageComponent slice. Returns nil when
+// breakdown is nil or empty (stand-in resolver, NPC attack).
+func translateDamageComponents(breakdown *combat.DamageBreakdown) []encountercore.DamageComponent {
+	if breakdown == nil || len(breakdown.Components) == 0 {
+		return nil
+	}
+	out := make([]encountercore.DamageComponent, 0, len(breakdown.Components))
+	for _, c := range breakdown.Components {
+		out = append(out, encountercore.DamageComponent{
+			Source:     damageComponentSource(c),
+			Amount:     c.Total(),
+			DamageType: string(c.DamageType),
+			IsCritical: c.IsCritical,
+		})
+	}
+	return out
+}
+
+// damageComponentSource derives the opaque source string for a DamageComponent.
+// Uses SourceRef.String() when a ref is available (e.g. "dnd5e:features:sneak_attack"),
+// falls back to the category string (e.g. "weapon", "ability") otherwise.
+func damageComponentSource(c dnd5eEvents.DamageComponent) string {
+	if c.SourceRef != nil {
+		return c.SourceRef.String()
+	}
+	return string(c.Source)
 }
 
 // prepareAttack centralizes the shared "resolve entities + build registry +

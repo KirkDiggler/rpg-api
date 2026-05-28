@@ -361,6 +361,20 @@ func translateDamageDealtEvent(e *events.DamageDealtEvent, viewer core.PlayerID,
 		s := string(e.SourceID)
 		out.SourceEntityId = &s
 	}
+	if len(e.Components) > 0 {
+		out.DamageBreakdown = make([]*encounterv2pb.DamageComponent, 0, len(e.Components))
+		for _, c := range e.Components {
+			pb := &encounterv2pb.DamageComponent{
+				Source:     c.Source,
+				Amount:     int32(c.Amount), //nolint:gosec // damage amounts are bounded game values that fit int32
+				IsCritical: c.IsCritical,
+			}
+			if c.DamageType != "" {
+				pb.DamageType = damageRefFor(c.DamageType)
+			}
+			out.DamageBreakdown = append(out.DamageBreakdown, pb)
+		}
+	}
 	return &encounterv2pb.EncounterEvent{
 		Sequence:  int64(e.Sequence()),
 		Timestamp: timestamppb.New(now),
