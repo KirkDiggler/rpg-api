@@ -107,7 +107,7 @@ func ProjectFor(
 		if visibleNow == nil || !visibleNow.Has(m.Position) {
 			continue
 		}
-		entities = append(entities, &encounterv2pb.Entity{
+		me := &encounterv2pb.Entity{
 			Id:       string(m.ID),
 			Position: HexToPosition(m.Position),
 			Type:     encounterv2pb.EntityType_ENTITY_TYPE_MONSTER,
@@ -120,7 +120,12 @@ func ProjectFor(
 					MonsterRef: monsterRefFor(m.MonsterRef),
 				},
 			},
-		})
+		}
+		if m.AC > 0 {
+			ac := int32(m.AC)
+			me.ArmorClass = &ac
+		}
+		entities = append(entities, me)
 	}
 
 	return &encounterv2pb.Encounter{
@@ -172,7 +177,7 @@ func buildTurnState(data *tkenc.Data) *encounterv2pb.TurnState {
 // rationale (we don't want to couple ProjectFor to the character orchestrator
 // for a thin enrichment).
 func playerEntity(pd *tkenc.PlayerData, pos core.Hex) *encounterv2pb.Entity {
-	return &encounterv2pb.Entity{
+	e := &encounterv2pb.Entity{
 		Id:       string(pd.EntityID),
 		Position: HexToPosition(pos),
 		Type:     encounterv2pb.EntityType_ENTITY_TYPE_CHARACTER,
@@ -186,6 +191,11 @@ func playerEntity(pd *tkenc.PlayerData, pos core.Hex) *encounterv2pb.Entity {
 			},
 		},
 	}
+	if pd.AC > 0 {
+		ac := int32(pd.AC)
+		e.ArmorClass = &ac
+	}
+	return e
 }
 
 // monsterRefFor builds a proto Ref for a toolkit monster-ref string.
