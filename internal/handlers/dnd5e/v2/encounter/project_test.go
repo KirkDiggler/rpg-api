@@ -132,6 +132,10 @@ func (s *ProjectSuite) TestProjectFor_TurnBased_EmitsModeTurnStateAndMonsters() 
 	s.Require().Equal("dnd5e", ref.GetModule())
 	s.Require().Equal("monsters", ref.GetType())
 	s.Require().Equal("goblin", ref.GetId())
+
+	// ArmorClass is populated from MonsterData.AC (#562).
+	s.Require().NotNil(gob.ArmorClass, "monster entity must carry armor_class when MonsterData.AC > 0")
+	s.Require().Equal(int32(15), gob.GetArmorClass(), "armor_class must match MonsterData.AC")
 }
 
 func (s *ProjectSuite) TestProjectFor_TurnBased_SkipsMonsterOutsideLOS() {
@@ -365,6 +369,36 @@ func (s *ProjectSuite) TestProjectFor_PlayerEntitiesCarryTypeHpAndCharacterData(
 	bc := b.GetCharacter()
 	s.Require().NotNil(bc, "visible other-player must carry CharacterData oneof")
 	s.Require().Equal("player-bob", bc.GetPlayerId())
+}
+
+func (s *ProjectSuite) TestProjectFor_PlayerEntityCarriesArmorClass() {
+	// Charli is a L1 monk with AC=15 (UnarmoredDefense). The v2 Entity envelope
+	// must carry armor_class=15 so the playtest harness can render it (#562).
+	data := tkenc.NewData("enc-ac")
+	data.Mode = core.ModeTurnBased
+	data.Round = 1
+	data.ActiveIdx = 0
+	data.Initiative = []core.EntityID{"char-charli"}
+
+	charli := newPlayerData("player-charli", "char-charli", originHex, 3)
+	charli.HP = 10
+	charli.MaxHP = 10
+	charli.AC = 15
+	data.Players = map[core.PlayerID]*tkenc.PlayerData{"player-charli": charli}
+
+	pb, err := v2encounter.ProjectFor(data, "player-charli", s.broker, s.now)
+	s.Require().NoError(err)
+
+	var found *encounterv2pb.Entity
+	for _, e := range pb.GetSpace().GetEntities() {
+		if e.GetId() == "char-charli" {
+			found = e
+			break
+		}
+	}
+	s.Require().NotNil(found, "charli must be in the snapshot")
+	s.Require().NotNil(found.ArmorClass, "player entity must carry armor_class when PlayerData.AC > 0")
+	s.Require().Equal(int32(15), found.GetArmorClass(), "armor_class must equal PlayerData.AC")
 }
 
 func (s *ProjectSuite) TestProjectFor_MonsterRef_TooManyColonsTreatedAsMalformed() {

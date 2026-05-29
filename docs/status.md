@@ -1,7 +1,7 @@
 ---
 name: rpg-api status
 description: Where we are with rpg-api — active work, paused, known rough edges, per-subsystem confidence
-updated: 2026-05-28
+updated: 2026-05-29
 confidence: high — Wave 2 Monk entries verified against passing integration tests
 ---
 
@@ -10,6 +10,13 @@ confidence: high — Wave 2 Monk entries verified against passing integration te
 This is a living doc. Edit it in the same PR that invalidates a line. Don't let it rot.
 
 ## Active work
+
+**Chapter 2 Wave 2 (monk) — Entity.armor_class populated in v2 snapshot (2026-05-29)** —
+`ProjectFor` now sets `Entity.armor_class` for both players (`PlayerData.AC`) and monsters
+(`MonsterData.AC`) when the value is non-zero. Charli's AC=15 (UnarmoredDefense) and the
+goblin's AC=15 flow through the snapshot wire so the playtest harness can render them (closes #562).
+Two new `ProjectSuite` tests: `TestProjectFor_PlayerEntityCarriesArmorClass` (charli AC=15)
+and an assertion on `TestProjectFor_TurnBased_EmitsModeTurnStateAndMonsters` (goblin AC=15).
 
 **Chapter 2 Wave 2 (monk) — devseed fixture + v2 unarmed-strike integration test (2026-05-28)** —
 `--fixture=wave-2-monk` seeds charli (L1 monk, DEX 16/WIS 14/CON 14, HP 10, AC 15, no weapon,
