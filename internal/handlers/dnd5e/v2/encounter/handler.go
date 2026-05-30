@@ -45,6 +45,10 @@ type Handler struct {
 	combatResolverConfig   Dnd5eCombatResolverConfig
 	movementResolverConfig Dnd5eMovementResolverConfig
 	now                    func() time.Time
+	// runner is the single load path for action verbs. It ensures exactly one
+	// LoadFromData per RPC so the "modifier ID already exists" double-subscribe
+	// class is structurally impossible. Used by ActivateFeature.
+	runner *Runner
 }
 
 // New constructs a Handler. Returns error on missing required deps.
@@ -93,6 +97,14 @@ func New(cfg *HandlerConfig) (*Handler, error) {
 		movementResolverConfig = *cfg.MovementResolverConfig
 	}
 
+	runner := newRunner(runnerConfig{
+		Broker:                 cfg.Broker,
+		Repo:                   cfg.Repo,
+		Resolver:               resolver,
+		CombatResolverConfig:   combatResolverConfig,
+		MovementResolverConfig: movementResolverConfig,
+	})
+
 	return &Handler{
 		broker:                 cfg.Broker,
 		encRepo:                cfg.Repo,
@@ -101,6 +113,7 @@ func New(cfg *HandlerConfig) (*Handler, error) {
 		combatResolverConfig:   combatResolverConfig,
 		movementResolverConfig: movementResolverConfig,
 		now:                    now,
+		runner:                 runner,
 	}, nil
 }
 

@@ -362,12 +362,24 @@ func (h *Handler) publishTurnEndAndPersistReset(ctx context.Context, enc *tkenc.
 		return
 	}
 
-	// Rehydrate the character with the encounter bus (subscribes conditions).
+	// Rehydrate the character with the encounter bus (subscribes conditions
+	// like SneakAttack so they can receive the TurnEndEvent reset signal).
+	//
+	// IMPORTANT: Cleanup must be called before this function returns.
+	// This load is a scattered loader — NPCAct (which runs after
+	// publishTurnEndAndPersistReset returns) also loads the character via
+	// the combat resolver. Without Cleanup, both LoadFromData calls leave
+	// conditions subscribed to the same enc.bus, causing the "modifier ID
+	// already exists" double-subscribe in the damage chain.
 	char, loadErr := tkcharacter.LoadFromData(ctx, out.Character.Data, bus)
 	if loadErr != nil {
 		publishTurnEndOnBus(ctx, enc, entityID)
 		return
 	}
+	// Always clean up the character's bus subscriptions before returning.
+	// Cleanup is safe even if Save fails below — it only removes the
+	// subscriptions this rehydration added, not persisted state.
+	defer func() { _ = char.Cleanup(ctx) }()
 
 	// Step 2: publish TurnEndEvent — subscribed conditions receive the reset signal.
 	publishTurnEndOnBus(ctx, enc, entityID)
