@@ -25,13 +25,6 @@ const (
 	featureModuleDnd5e  = "dnd5e"
 	featureTypeFeatures = "features"
 	featureIDRage       = "rage"
-
-	// rageDamageBonusL1 is the flat damage bonus for a level-1 barbarian while
-	// raging. Higher levels get more (Level 9 → +3, Level 16 → +4) but Wave 3
-	// only wires L1 barbarians. The level stored on the character data is the
-	// authoritative source; this constant is the L1 default used during the
-	// ActivateFeature handler for first-wave Rage wiring.
-	rageDamageBonusL1 = 2
 )
 
 // ActivateFeature applies a character feature (e.g. Rage) as an in-encounter
@@ -97,9 +90,15 @@ func (h *Handler) activateRage(ctx context.Context, encounterID, characterID, pl
 		return nil, status.Errorf(codes.Internal, "load encounter %q: %v", encounterID, err)
 	}
 
-	// Verify player is in the encounter.
-	if _, ok := data.Players[core.PlayerID(playerID)]; !ok {
+	// Verify player is in the encounter and owns the requested character. Matches
+	// the ownership check in TakeAction and EndTurn — a player may only activate
+	// features on their own controlled entity.
+	pd, ok := data.Players[core.PlayerID(playerID)]
+	if !ok {
 		return nil, status.Error(codes.PermissionDenied, "player is not in this encounter")
+	}
+	if string(pd.EntityID) != characterID {
+		return nil, status.Error(codes.PermissionDenied, "character_id does not match player's controlled entity")
 	}
 
 	// Load encounter with bus so RagingCondition's Apply() can subscribe.
@@ -142,7 +141,7 @@ func (h *Handler) activateRage(ctx context.Context, encounterID, characterID, pl
 		Ref:         "dnd5e:conditions:raging",
 		CharacterID: characterID,
 		SourceRef:   "dnd5e:features:rage",
-		Config:      json.RawMessage(fmt.Sprintf(`{"damage_bonus":%d,"level":%d}`, rageDamageBonusL1, charData.Level)),
+		Config:      json.RawMessage(fmt.Sprintf(`{"damage_bonus":%d,"level":%d}`, rageDamageBonusForLevel(charData.Level), charData.Level)),
 	})
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "create raging condition: %v", err)
@@ -175,6 +174,23 @@ func (h *Handler) activateRage(ctx context.Context, encounterID, characterID, pl
 	}
 
 	return &encounterv2pb.ActivateFeatureResponse{}, nil
+}
+
+// rageDamageBonusForLevel returns the flat Rage damage bonus for a D&D 5e barbarian
+// at the given character level, following the SRD tier table:
+//
+//	Level 1–8:  +2
+//	Level 9–15: +3
+//	Level 16+:  +4
+func rageDamageBonusForLevel(level int) int {
+	switch {
+	case level >= 16:
+		return 4
+	case level >= 9:
+		return 3
+	default:
+		return 2
+	}
 }
 
 // isAlreadyRaging checks character.Data.Conditions for a persisted RagingCondition.
