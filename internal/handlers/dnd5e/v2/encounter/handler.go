@@ -101,6 +101,7 @@ func New(cfg *HandlerConfig) (*Handler, error) {
 		Broker:                 cfg.Broker,
 		Repo:                   cfg.Repo,
 		Resolver:               resolver,
+		CombatResolver:         cfg.CombatResolver, // propagate the fixed override so runner-based verbs honor it
 		CombatResolverConfig:   combatResolverConfig,
 		MovementResolverConfig: movementResolverConfig,
 	})

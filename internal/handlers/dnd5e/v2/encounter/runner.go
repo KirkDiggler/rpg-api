@@ -38,6 +38,10 @@ type Runner struct {
 	broker                 *tkenc.Broker
 	repo                   encountersv2.Repository
 	resolver               CharacterResolver
+	// combatResolver is the fixed resolver override (non-nil in tests that wire
+	// HandlerConfig.CombatResolver e.g. StandInCombatResolver). Mirrors the same
+	// override field on Handler so verbs executed through the runner respect it.
+	combatResolver         CombatResolver
 	combatResolverConfig   Dnd5eCombatResolverConfig
 	movementResolverConfig Dnd5eMovementResolverConfig
 }
@@ -48,6 +52,11 @@ type runnerConfig struct {
 	Broker                 *tkenc.Broker
 	Repo                   encountersv2.Repository
 	Resolver               CharacterResolver
+	// CombatResolver is the fixed override (mirrors HandlerConfig.CombatResolver).
+	// When non-nil, buildCombatResolver returns it directly instead of constructing
+	// a fresh Dnd5eCombatResolver. Ensures test fixtures that wire StandInCombatResolver
+	// are honored by runner-based verbs exactly as they are by the inline handler verbs.
+	CombatResolver         CombatResolver
 	CombatResolverConfig   Dnd5eCombatResolverConfig
 	MovementResolverConfig Dnd5eMovementResolverConfig
 }
@@ -65,6 +74,7 @@ func newRunner(cfg runnerConfig) *Runner {
 		broker:                 cfg.Broker,
 		repo:                   cfg.Repo,
 		resolver:               cfg.Resolver,
+		combatResolver:         cfg.CombatResolver,
 		combatResolverConfig:   cfg.CombatResolverConfig,
 		movementResolverConfig: cfg.MovementResolverConfig,
 	}
@@ -144,9 +154,14 @@ func (r *Runner) Run(
 	return nil
 }
 
-// buildCombatResolver returns a per-request combat resolver, following the
-// same selection logic as Handler.buildCombatResolver.
+// buildCombatResolver returns a per-request combat resolver.
+// Mirrors Handler.buildCombatResolver: if a fixed combatResolver was wired
+// (e.g. StandInCombatResolver in tests), it is returned directly; otherwise
+// a fresh Dnd5eCombatResolver is constructed from the config.
 func (r *Runner) buildCombatResolver(data *tkenc.Data) CombatResolver {
+	if r.combatResolver != nil {
+		return r.combatResolver
+	}
 	return NewDnd5eCombatResolverForData(r.combatResolverConfig, data)
 }
 

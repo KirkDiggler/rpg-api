@@ -20,7 +20,6 @@ package encounter
 import (
 	"context"
 	"encoding/json"
-	"errors"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -29,7 +28,6 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/auth"
 	"github.com/KirkDiggler/rpg-api/internal/entities"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
-	encountersv2 "github.com/KirkDiggler/rpg-api/internal/repositories/encounters/v2"
 	tkenc "github.com/KirkDiggler/rpg-toolkit/encounter"
 	encountercore "github.com/KirkDiggler/rpg-toolkit/encounter/core"
 	tkcharacter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
@@ -117,7 +115,7 @@ func (h *Handler) ActivateFeature(ctx context.Context, req *encounterv2pb.Activa
 	// load path is the fix: no scattered loaders means the modifier-ID
 	// double-subscribe class is structurally impossible.
 	var out *tkenc.ActivateFeatureOutput
-	if err := h.runner.Run(ctx, &EncounterRunnerInput{
+	if runErr := h.runner.Run(ctx, &EncounterRunnerInput{
 		EncounterID: req.GetEncounterId(),
 		PlayerID:    encountercore.PlayerID(playerID),
 		EntityID:    req.GetCharacterId(),
@@ -129,16 +127,26 @@ func (h *Handler) ActivateFeature(ctx context.Context, req *encounterv2pb.Activa
 			CharDataJSON: json.RawMessage(charJSON),
 		})
 		return verbErr
-	}); err != nil {
-		if errors.Is(err, encountersv2.ErrNotFound) {
-			return nil, status.Error(codes.NotFound, "encounter not found")
-		}
-		return nil, status.Errorf(codes.Internal, "activate feature %q: %v", featureRef, err)
+	}); runErr != nil {
+		// Runner.Run returns gRPC status errors for all non-verb failures
+		// (NotFound, PermissionDenied, Internal). Propagate them unchanged
+		// so clients receive the correct code. errors.Is against the raw
+		// ErrNotFound sentinel is intentionally omitted — the runner already
+		// converts it to status.Error(codes.NotFound) before returning.
+		return nil, runErr
 	}
 
 	// Persist the updated character data returned by the toolkit verb.
 	// The verb owns the rule mutations (resource decrement, condition append);
 	// rpg-api stores the result.
+	//
+	// Defensive nil check: enc.ActivateFeature must return non-nil output on
+	// success (project rule: never return (nil, nil)), but guard here so a
+	// future toolkit regression produces a clean codes.Internal rather than
+	// a nil-pointer panic.
+	if out == nil {
+		return nil, status.Error(codes.Internal, "toolkit ActivateFeature returned nil output with nil error")
+	}
 	var updatedData tkcharacter.Data
 	if err := json.Unmarshal(out.UpdatedCharData, &updatedData); err != nil {
 		return nil, status.Errorf(codes.Internal, "unmarshal updated character data: %v", err)
