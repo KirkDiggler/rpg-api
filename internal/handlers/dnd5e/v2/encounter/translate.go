@@ -77,6 +77,8 @@ func TranslateEvent(evt events.EncounterEvent, viewer core.PlayerID, now time.Ti
 		return translateDamageDealtEvent(e, viewer, now)
 	case *events.ConditionAppliedEvent:
 		return translateConditionAppliedEvent(e, viewer, now)
+	case *events.ResourceChangedEvent:
+		return translateResourceChangedEvent(e, viewer, now)
 	case *events.ModeChangedEvent:
 		return translateModeChangedEvent(e, viewer, now)
 	case *events.TurnStartedEvent:
@@ -601,6 +603,33 @@ func splitRef(s string) []string {
 	}
 	parts = append(parts, s[start:])
 	return parts
+}
+
+// translateResourceChangedEvent maps the toolkit's ResourceChangedEvent to the
+// proto ResourceChanged envelope.
+//
+// Per-viewer projection: viewers absent from PerPlayer or whose Visible is
+// false get ErrViewerSawNothing so the stream loop skips them silently.
+// The resource_ref is parsed from the canonical "module:type:id" string —
+// same pattern as conditionRefFor (e.g. "dnd5e:resources:rage_charges" →
+// {module:"dnd5e", type:"resources", id:"rage_charges"}).
+func translateResourceChangedEvent(e *events.ResourceChangedEvent, viewer core.PlayerID, now time.Time) (*encounterv2pb.EncounterEvent, error) {
+	slice, ok := e.PerPlayer[viewer]
+	if !ok || !slice.Visible {
+		return nil, ErrViewerSawNothing
+	}
+	return &encounterv2pb.EncounterEvent{
+		Sequence:  int64(e.Sequence()), //nolint:gosec // sequence is monotonic; fits int64
+		Timestamp: timestamppb.New(now),
+		Event: &encounterv2pb.EncounterEvent_ResourceChanged{
+			ResourceChanged: &encounterv2pb.ResourceChanged{
+				EntityId:    string(e.EntityID),
+				ResourceRef: refStringToProto(e.ResourceRef),
+				NewCurrent:  int32(e.NewCurrent), //nolint:gosec // resource values fit int32
+				Max:         int32(e.Max),        //nolint:gosec // resource values fit int32
+			},
+		},
+	}, nil
 }
 
 // encounterModeToProto maps the toolkit's core.EncounterMode enum to the

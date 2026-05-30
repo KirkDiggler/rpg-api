@@ -368,6 +368,105 @@ func (s *TranslateSuite) TestBuildReplayEvents_HexesPreserveInputOrder() {
 	}
 }
 
+// TestTranslateEvent_ResourceChangedEvent_HappyPath verifies that a
+// ResourceChangedEvent translates to the proto EncounterEvent_ResourceChanged
+// envelope with entity/ref/current/max populated. (Task 6)
+func (s *TranslateSuite) TestTranslateEvent_ResourceChangedEvent_HappyPath() {
+	evt := events.NewResourceChangedEvent(
+		"enc-1", uint64(20),
+		"char-bob",
+		"dnd5e:resources:rage_charges",
+		1, 2,
+		map[core.PlayerID]events.ResourceChangedSlice{
+			"player-bob": {Visible: true},
+		},
+	)
+
+	out, err := v2encounter.TranslateEvent(evt, "player-bob", s.now)
+	s.Require().NoError(err)
+	s.Require().NotNil(out)
+	s.Equal(int64(20), out.Sequence)
+
+	rc := out.GetResourceChanged()
+	s.Require().NotNil(rc, "ResourceChanged oneof must be populated")
+	s.Equal("char-bob", rc.GetEntityId())
+	s.Equal(int32(1), rc.GetNewCurrent())
+	s.Equal(int32(2), rc.GetMax())
+
+	ref := rc.GetResourceRef()
+	s.Require().NotNil(ref, "resource_ref must be set")
+	s.Equal("dnd5e", ref.GetModule())
+	s.Equal("resources", ref.GetType())
+	s.Equal("rage_charges", ref.GetId())
+}
+
+// TestTranslateEvent_ResourceChangedEvent_ViewerNotVisible_ReturnsErrViewerSawNothing
+// verifies that a viewer whose Visible is false gets ErrViewerSawNothing.
+func (s *TranslateSuite) TestTranslateEvent_ResourceChangedEvent_ViewerNotVisible_ReturnsErrViewerSawNothing() {
+	evt := events.NewResourceChangedEvent(
+		"enc-1", uint64(21),
+		"char-bob",
+		"dnd5e:resources:rage_charges",
+		1, 2,
+		map[core.PlayerID]events.ResourceChangedSlice{
+			"player-bob": {Visible: false},
+		},
+	)
+
+	_, err := v2encounter.TranslateEvent(evt, "player-bob", s.now)
+	s.Require().Error(err)
+	s.True(errors.Is(err, v2encounter.ErrViewerSawNothing))
+}
+
+// TestTranslateEvent_ResourceChangedEvent_ViewerNotInPerPlayer_ReturnsErrViewerSawNothing
+// verifies that a viewer absent from PerPlayer gets ErrViewerSawNothing.
+func (s *TranslateSuite) TestTranslateEvent_ResourceChangedEvent_ViewerNotInPerPlayer_ReturnsErrViewerSawNothing() {
+	evt := events.NewResourceChangedEvent(
+		"enc-1", uint64(22),
+		"char-bob",
+		"dnd5e:resources:rage_charges",
+		1, 2,
+		map[core.PlayerID]events.ResourceChangedSlice{
+			"player-alice": {Visible: true},
+		},
+	)
+
+	_, err := v2encounter.TranslateEvent(evt, "player-stranger", s.now)
+	s.Require().Error(err)
+	s.True(errors.Is(err, v2encounter.ErrViewerSawNothing))
+}
+
+// TestTranslateEvent_ConditionAppliedEvent_MapsToStatusApplied verifies
+// regression: ConditionAppliedEvent still translates to StatusApplied.
+// (Task 6 regression guard)
+func (s *TranslateSuite) TestTranslateEvent_ConditionAppliedEvent_MapsToStatusApplied() {
+	evt := events.NewConditionAppliedEvent(
+		"enc-1", uint64(30),
+		"char-bob",     // targetID
+		"char-bob",     // sourceID (self-applied for Rage)
+		"dnd5e:conditions:raging",
+		0, // durationRounds
+		map[core.PlayerID]events.ConditionAppliedSlice{
+			"player-bob": {Visible: true},
+		},
+	)
+
+	out, err := v2encounter.TranslateEvent(evt, "player-bob", s.now)
+	s.Require().NoError(err)
+	s.Require().NotNil(out)
+
+	sa := out.GetStatusApplied()
+	s.Require().NotNil(sa, "ConditionAppliedEvent must translate to StatusApplied")
+	s.Equal("char-bob", sa.GetEntityId())
+	s.Require().NotNil(sa.GetStatus())
+
+	ref := sa.GetStatus().GetSource()
+	s.Require().NotNil(ref, "status source ref must be set")
+	s.Equal("dnd5e", ref.GetModule())
+	s.Equal("conditions", ref.GetType())
+	s.Equal("raging", ref.GetId())
+}
+
 // Compile-time check: ensure the package exports used below are accessible.
 var _ = (*encounterv2pb.EncounterEvent)(nil)
 
