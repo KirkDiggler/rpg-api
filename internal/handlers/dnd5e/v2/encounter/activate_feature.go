@@ -25,6 +25,14 @@ const (
 	featureModuleDnd5e  = "dnd5e"
 	featureTypeFeatures = "features"
 	featureIDRage       = "rage"
+
+	// featureRefRagingCondition is the canonical ref string for the RagingCondition.
+	// Composed from the module/type/id constants so callers don't diverge on the prefix.
+	featureRefRagingCondition = featureModuleDnd5e + ":conditions:raging"
+
+	// featureRefRageSource is the source ref recorded on the RagingCondition,
+	// identifying the Rage feature as the trigger.
+	featureRefRageSource = featureModuleDnd5e + ":" + featureTypeFeatures + ":" + featureIDRage
 )
 
 // ActivateFeature applies a character feature (e.g. Rage) as an in-encounter
@@ -138,9 +146,9 @@ func (h *Handler) activateRage(ctx context.Context, encounterID, characterID, pl
 	// now would cause a "modifier ID already exists" error on that next Load
 	// because the condition would be applied twice to the same bus.
 	condOut, err := conditions.CreateFromRef(&conditions.CreateFromRefInput{
-		Ref:         "dnd5e:conditions:raging",
+		Ref:         featureRefRagingCondition,
 		CharacterID: characterID,
-		SourceRef:   "dnd5e:features:rage",
+		SourceRef:   featureRefRageSource,
 		Config:      json.RawMessage(fmt.Sprintf(`{"damage_bonus":%d,"level":%d}`, rageDamageBonusForLevel(charData.Level), charData.Level)),
 	})
 	if err != nil {
@@ -205,7 +213,7 @@ func isAlreadyRaging(data *tkcharacter.Data) bool {
 		if err := json.Unmarshal(blob, &peek); err != nil {
 			continue
 		}
-		if peek.Ref == "dnd5e:conditions:raging" {
+		if peek.Ref == featureRefRagingCondition {
 			return true
 		}
 	}
