@@ -106,6 +106,15 @@ type Dnd5eCombatResolver struct {
 	// character (which would create duplicate condition subscribers). See
 	// dnd5e_combat_resolver_phased.go for the caching contract.
 	pendingPhased *pendingPhasedAttack
+	// charCache prevents double-applying conditions within a single RPC. When
+	// a character is loaded via loadCharacterWithBus, its conditions are
+	// applied to the encounter bus. If the same character appears as both
+	// attacker and target across successive attacks (e.g. TakeAction followed
+	// by NPC dispatch in EndTurn), a second loadCharacterWithBus call would
+	// create a new condition instance and subscribe it again, causing "modifier
+	// ID already exists" on the damage chain. The cache returns the already-
+	// loaded instance so conditions are applied exactly once per RPC.
+	charCache map[string]*character.Character
 }
 
 // NewDnd5eCombatResolverForData constructs a resolver bound to the given
@@ -116,6 +125,7 @@ func NewDnd5eCombatResolverForData(cfg Dnd5eCombatResolverConfig, data *tkenc.Da
 		cfg:           cfg,
 		encounterData: data,
 		standIn:       NewStandInCombatResolver(cfg.Roller),
+		charCache:     make(map[string]*character.Character),
 	}
 }
 
@@ -500,8 +510,18 @@ func (r *Dnd5eCombatResolver) resolveEntity(
 // here so conditions Apply()'d during LoadFromData subscribe to the persistent
 // encounter bus rather than an ephemeral per-attack bus.
 //
+// Wave 3: results are cached in r.charCache so the same character is not loaded
+// twice within a single resolver instance (= single RPC). Without the cache, a
+// character with active conditions (e.g. RagingCondition) would be loaded once
+// as an attacker and again as a target, subscribing two condition instances to
+// the encounter bus. When the damage chain fires, both try to add the same
+// modifier ID and the second fails with "modifier ID already exists".
+//
 // Returns an error if the repo is absent or the lookup fails.
 func (r *Dnd5eCombatResolver) loadCharacterWithBus(ctx context.Context, characterID string, bus events.EventBus) (*character.Character, error) {
+	if cached, ok := r.charCache[characterID]; ok {
+		return cached, nil
+	}
 	if r.cfg.CharacterRepo == nil {
 		return nil, fmt.Errorf("character repo not configured")
 	}
@@ -520,6 +540,7 @@ func (r *Dnd5eCombatResolver) loadCharacterWithBus(ctx context.Context, characte
 	// Errors are non-fatal — log and continue so a condition-Apply failure does
 	// not block the attack chain that the resolver was about to run.
 	_ = applyReactionConditions(ctx, char, bus)
+	r.charCache[characterID] = char
 	return char, nil
 }
 

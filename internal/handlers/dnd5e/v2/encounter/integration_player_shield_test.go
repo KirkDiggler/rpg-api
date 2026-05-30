@@ -39,7 +39,14 @@ package encounter_test
 // WOULD deflect if ready). Squarely in the Shield-eligible band — so this
 // test proves the readiness gate is the only thing stopping the prompt.
 //
-// Damage 1d6+2: Roll(6) = min(12,6) = 6; +2 = 8. Drops wendy 8 → 0.
+// Damage: goblin's ScimitarConfig.DamageDice = "1d6+2". Dnd5eCombatResolver
+// strips the "+2" suffix via syntheticMonsterWeapon (extracts base "1d6") and
+// then adds the goblin's STR modifier (+2 DEX would apply to finesse, but the
+// scimitar synthetic weapon uses the first registered ability — STR 8 → mod -1).
+// Roll(6) = min(12,6) = 6; net = 6 + (-1) = 5. The old comment claimed "+2 = 8"
+// which was wrong — the "+2" in the dice string is stripped by the resolver and
+// replaced by the actual ability mod. The "8" delta was a latent side effect of
+// the #684 double-apply bug (5+5=10, HP clamped 8→0, delta=8). Fixed with #684.
 
 import (
 	"context"
@@ -72,16 +79,20 @@ const (
 	shieldEntityWendy = "char-wendy"
 	shieldGoblinID    = "goblin-shield"
 
-	// shieldFullHP is wendy's HP — chosen so unblocked = 0 (clear signal).
+	// shieldFullHP is wendy's starting HP — chosen larger than shieldExpectedDamage
+	// so the test can verify a non-zero delta. After #684 fix, the goblin deals 5
+	// damage (single application), so wendy ends at 3 HP rather than 0.
 	shieldFullHP = 8
 
 	// shieldRollVal: fixedRoller{val:12} → goblin d20=12 + AB 4 = 16.
 	// Wendy AC 12: 16 >= 12 hits; 16 < 17 = AC + Shield's +5 — in-band.
 	shieldRollVal = 12
 
-	// shieldExpectedDamage: weapon 1d6+2 → Roll(6) = min(12,6)=6; +2 = 8.
-	// Drops wendy from 8 → 0 if Shield doesn't block.
-	shieldExpectedDamage = 8
+	// shieldExpectedDamage: goblin scimitar base "1d6" (resolver strips "+2"),
+	// Roll(6) = min(12,6)=6; STR mod = (8-10)/2 = -1; net = 6 + (-1) = 5.
+	// The prior value of 8 was wrong — it relied on the #684 double-apply bug
+	// (5+5=10, HP clamped 8→0, delta=8). Single-application correct value is 5.
+	shieldExpectedDamage = 5
 )
 
 // PlayerShieldIntegrationSuite tests the Shield readiness gate end-to-end

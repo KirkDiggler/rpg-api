@@ -40,6 +40,10 @@ gen/
 scripts/test-grpc-web.html
 dump.rdb
 
+# CLI tool binaries built by `go build ./cmd/...` at repo root (not the cmd/ source dirs)
+/devseed
+/server
+
 # Worktrees
 .worktrees/
 .claude/

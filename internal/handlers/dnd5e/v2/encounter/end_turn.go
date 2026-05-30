@@ -16,6 +16,7 @@ import (
 	encountersv2 "github.com/KirkDiggler/rpg-api/internal/repositories/encounters/v2"
 	tkenc "github.com/KirkDiggler/rpg-toolkit/encounter"
 	"github.com/KirkDiggler/rpg-toolkit/encounter/core"
+	"github.com/KirkDiggler/rpg-toolkit/events"
 	tkcharacter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/combat"
 	dnd5eEvents "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/events"
@@ -334,14 +335,20 @@ func publishTurnEndOnBus(ctx context.Context, enc *tkenc.Encounter, entityID str
 // publishTurnEndAndPersistReset is the three-step helper for cross-RPC
 // once-per-turn condition state persistence:
 //
-//  1. Load the ending entity's character from the repo with the encounter bus
-//     (subscribes conditions like SneakAttack to the bus).
-//  2. Publish TurnEndEvent on the bus (subscribed conditions reset UsedThisTurn=false).
-//  3. Save the character back to the repo (persists UsedThisTurn=false across RPCs).
+//  1. Load the ending entity's character from the repo with a FRESH event bus
+//     (subscribes conditions like SneakAttack and RagingCondition to that bus).
+//  2. Publish TurnEndEvent on both the fresh bus (so conditions reset their
+//     per-turn flags) and the encounter bus (so the broker stream sees it).
+//  3. Save the character back to the repo (persists reset state across RPCs).
 //
-// All errors are swallowed — a failure here must not abort EndTurn. The
-// consequence is that once-per-turn may not reset in the repo (status-quo
-// before this fix). Callers still get a successful EndTurn response.
+// A fresh bus is used for character loading — not the encounter bus — to avoid
+// double-applying conditions when the subsequent NPC dispatch calls
+// loadCharacterWithBus for the same character as a target. If both used the
+// encounter bus, two instances of the same condition (e.g. RagingCondition)
+// would be subscribed to the DamageChain topic and both would try to add the
+// same modifier ID, causing a "modifier ID already exists" error.
+//
+// All errors are swallowed — a failure here must not abort EndTurn.
 func (h *Handler) publishTurnEndAndPersistReset(ctx context.Context, enc *tkenc.Encounter, entityID string) {
 	if h.combatResolverConfig.CharacterRepo == nil {
 		// No character repo configured — fall back to publish-only (no write-back).
@@ -349,8 +356,7 @@ func (h *Handler) publishTurnEndAndPersistReset(ctx context.Context, enc *tkenc.
 		return
 	}
 
-	bus := enc.EventBus()
-	if bus == nil {
+	if enc.EventBus() == nil {
 		return
 	}
 
@@ -362,14 +368,21 @@ func (h *Handler) publishTurnEndAndPersistReset(ctx context.Context, enc *tkenc.
 		return
 	}
 
-	// Rehydrate the character with the encounter bus (subscribes conditions).
-	char, loadErr := tkcharacter.LoadFromData(ctx, out.Character.Data, bus)
+	// Use a fresh bus so condition subscriptions don't pollute the encounter bus.
+	// The encounter bus is used by the combat resolver's NPC dispatch; subscribing
+	// conditions here would cause a double-apply when NPC dispatch loads the same
+	// character as a target via loadCharacterWithBus.
+	freshBus := events.NewEventBus()
+	char, loadErr := tkcharacter.LoadFromData(ctx, out.Character.Data, freshBus)
 	if loadErr != nil {
 		publishTurnEndOnBus(ctx, enc, entityID)
 		return
 	}
 
-	// Step 2: publish TurnEndEvent — subscribed conditions receive the reset signal.
+	// Step 2: publish TurnEndEvent on the fresh bus so conditions receive the
+	// reset signal. Also publish on the encounter bus for the broker stream.
+	evt := dnd5eEvents.TurnEndEvent{CharacterID: entityID}
+	_ = dnd5eEvents.TurnEndTopic.On(freshBus).Publish(ctx, evt)
 	publishTurnEndOnBus(ctx, enc, entityID)
 
 	// Step 3: save updated character data back to the repo.
