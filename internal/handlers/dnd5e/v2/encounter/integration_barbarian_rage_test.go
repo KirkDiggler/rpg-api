@@ -19,8 +19,8 @@ package encounter_test
 //	bob attacks: d20 = min(10,20)=10 + attackBonus(5) = 15 ≥ goblin AC 15 → always hit, no crit.
 //	Weapon 1d12: Roll(12) = min(10,12) = 10; damage = 10 + STR(+3) = 13, plus Rage +2 = 15.
 //	Goblin attacks: d20=10, STR(-1)+prof(2)=1 → total=11 ≥ bob EffectiveAC(11) → hit.
-//	Goblin damage (synthetic "1d6"): Roll(6)=6, STR mod=-1 → per-hit base=5.
-//	The encounter applies damage twice per NPC turn; non-raging total=10, raging total=4.
+//	Goblin damage ("1d6" stripped from "1d6+2", STR mod=-1): Roll(6)=6-1 → 5 per hit.
+//	Non-raging bob: 5 damage. Raging bob: floor(5/2)=2 (Rage halves physical damage).
 
 import (
 	"context"
@@ -199,16 +199,14 @@ func (s *BarbarianRageIntegrationSuite) TestIntegration_RagingBobAttack_HasRageD
 // # Damage mechanics with fixedRoller{10}
 //
 // The goblin rehydrates from DataJSON (full monster.Monster path). The combat
-// resolver builds a synthetic simple-melee weapon (1d6 stripped from "1d6+2")
-// and combat.ResolveAttack adds the goblin's STR modifier (-1 for STR=8).
-// Per-hit base damage: Roll(6)=6, STR mod=-1 → 5.
+// resolver builds a synthetic simple-melee weapon ("1d6" stripped from "1d6+2" by
+// syntheticMonsterWeapon) and combat.ResolveAttack adds the goblin's STR modifier
+// (-1 for STR=8). Per-hit base damage: Roll(6)=6, STR mod=-1 → 5.
 // Bob's EffectiveAC uses the unarmored formula (10+DEX mod=11) rather than the
 // ArmorClass field; roll=10, bonus=STR(-1)+prof(2)=1 → total=11 ≥ 11 → hit.
-// The encounter applies damage twice per NPC turn (rpg-toolkit#684/686), so
-// total damage = 5*2 = 10 non-raging and floor(5*0.5)*2 = 2*2 = 4 raging.
 //
-// Non-raging bob: 10 total. Raging bob: 4 total.
-// Key invariant: raging delta < baseline delta (resistance is active).
+// After rpg-toolkit#686 (single-application fix): non-raging bob takes 5 per
+// goblin turn; raging bob takes floor(5/2)=2 (Rage halves physical damage).
 func (s *BarbarianRageIntegrationSuite) TestIntegration_RageResistance_HalvesGoblinDamage() {
 	// --- Scenario 1: non-raging baseline ---
 	baselineStore := newInMemoryCharStore()
@@ -224,8 +222,8 @@ func (s *BarbarianRageIntegrationSuite) TestIntegration_RageResistance_HalvesGob
 
 	ragingBobHP := s.goblinAttackBobHP(ragingStore, ragingBob, true)
 
-	// With fixedRoller{10}: see damage mechanics comment above.
-	// Non-raging: 10. Raging: 4. Both are deterministic with fixedRoller.
+	// With fixedRoller{10} + rpg-toolkit#686 (single-application): per-hit base=5,
+	// raging floor(5/2)=2. Both values are deterministic with the fixed roller.
 	baselineDelta := baselineBob.MaxHitPoints - baselineBobHP
 	ragingDelta := ragingBob.MaxHitPoints - ragingBobHP
 
@@ -234,21 +232,19 @@ func (s *BarbarianRageIntegrationSuite) TestIntegration_RageResistance_HalvesGob
 	s.Greater(ragingDelta, 0,
 		"raging: goblin must deal damage to raging bob (delta=%d)", ragingDelta)
 
-	// Rage resistance: raging bob takes strictly less damage than non-raging bob.
+	// Deterministic expected values post toolkit#686 fix.
+	// Baseline: per-hit base=5, single application. Raging: floor(5/2)=2.
+	const expectedBaselineDelta = 5
+	const expectedRagingDelta = 2
+	s.Equal(expectedBaselineDelta, baselineDelta,
+		"non-raging baseline delta must be 5 (single goblin hit, per-hit base=5) with fixedRoller{10}")
+	s.Equal(expectedRagingDelta, ragingDelta,
+		"raging delta must be floor(5/2)=2 (Rage halves physical damage) with fixedRoller{10}")
+
+	// Rage resistance invariant: raging bob always takes less than non-raging.
 	s.Less(ragingDelta, baselineDelta,
 		"raging bob (delta=%d) must take less damage than non-raging bob (delta=%d); Rage resistance expected",
 		ragingDelta, baselineDelta)
-
-	// Hard-coded expected values from the deterministic fixedRoller{10}.
-	// Per-hit base=5; raging per-hit=floor(5*0.5)=2; 2 hits (rpg-toolkit#684) → total=4.
-	// These values will change when rpg-toolkit#686 fixes the double-apply bug:
-	// non-raging will become 5 (single hit), raging will become 2 (floor(5*0.5)=2).
-	const expectedBaselineDelta = 10
-	const expectedRagingDelta = 4
-	s.Equal(expectedBaselineDelta, baselineDelta,
-		"non-raging baseline delta must be deterministic with fixedRoller{10}")
-	s.Equal(expectedRagingDelta, ragingDelta,
-		"raging delta must equal floor(per-hit-base/2)*hit-count with fixedRoller{10}; Rage resistance verified")
 }
 
 // ---------------------------------------------------------------------------
