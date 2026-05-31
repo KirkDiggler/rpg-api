@@ -22,8 +22,8 @@ package encounter_test
 //	bob attacks: d20 = min(10,20)=10 + attackBonus(5) = 15 ≥ goblin AC 15 → always hit, no crit.
 //	Weapon 1d12: Roll(12) = min(10,12) = 10; damage = 10 + STR(+3) = 13, plus Rage +2 = 15.
 //	Goblin attacks: d20=10, STR(-1)+prof(2)=1 → total=11 ≥ bob EffectiveAC(11) → hit.
-//	Goblin damage ("1d6" stripped from "1d6+2", STR mod=-1): Roll(6)=6-1 → 5 per hit.
-//	Non-raging bob: 5 damage. Raging bob: floor(5/2)=2 (Rage halves physical damage).
+//	Goblin damage (scimitar 1d6, Finesse → DEX +2): Roll(6)=min(10,6)=6; +2 → 8 per hit.
+//	Non-raging bob: 8 damage. Raging bob: floor(8/2)=4 (Rage halves physical damage).
 
 import (
 	"context"
@@ -243,10 +243,10 @@ func (s *BarbarianRageIntegrationSuite) TestIntegration_RagingBobAttack_HasRageD
 // Compare the HP delta from the goblin's attack in each scenario.
 //
 // Damage mechanics with fixedRoller{10}:
-// Goblin per-hit base = Roll(6)=6, STR mod=-1 → 5.
+// Goblin scimitar (Finesse): Roll(6)=min(10,6)=6; DEX(+2) > STR(-1) → DEX used → 6+2=8.
 // Bob's EffectiveAC: unarmored formula 10+DEX(+1)=11; roll=10, goblin bonus=1 → total=11 ≥ 11 → hit.
-// Non-raging bob: 5 per goblin hit.
-// Raging bob: floor(5/2) = 2 (Rage halves physical damage).
+// Non-raging bob: 8 per goblin hit.
+// Raging bob: floor(8/2) = 4 (Rage halves physical damage).
 func (s *BarbarianRageIntegrationSuite) TestIntegration_RageResistance_HalvesGoblinDamage() {
 	// --- Scenario 1: non-raging baseline ---
 	baselineStore := newInMemoryCharStore()
@@ -271,14 +271,14 @@ func (s *BarbarianRageIntegrationSuite) TestIntegration_RageResistance_HalvesGob
 		"raging: goblin must deal damage to raging bob (delta=%d)", ragingDelta)
 
 	// Deterministic expected values with fixedRoller{10}.
-	// Baseline: per-hit base=5, single application.
-	// Raging: floor(5/2)=2 (Rage halves physical damage).
-	const expectedBaselineDelta = 5
-	const expectedRagingDelta = 2
+	// Scimitar (Finesse): Roll(6)=min(10,6)=6; DEX(+2) > STR(-1) → DEX used → 6+2=8 per hit.
+	// Raging: floor(8/2)=4 (Rage halves physical damage).
+	const expectedBaselineDelta = 8
+	const expectedRagingDelta = 4
 	s.Equal(expectedBaselineDelta, baselineDelta,
-		"non-raging baseline delta must be 5 (single goblin hit) with fixedRoller{10}")
+		"non-raging baseline delta must be 8 (scimitar 1d6 + DEX +2) with fixedRoller{10}")
 	s.Equal(expectedRagingDelta, ragingDelta,
-		"raging delta must be floor(5/2)=2 (Rage halves physical damage) with fixedRoller{10}")
+		"raging delta must be floor(8/2)=4 (Rage halves physical damage) with fixedRoller{10}")
 
 	// Rage resistance invariant: raging bob always takes less than non-raging.
 	s.Less(ragingDelta, baselineDelta,
