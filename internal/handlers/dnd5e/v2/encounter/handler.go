@@ -46,13 +46,11 @@ type Handler struct {
 	combatResolverConfig   Dnd5eCombatResolverConfig
 	movementResolverConfig Dnd5eMovementResolverConfig
 	now                    func() time.Time
-	// runner is the single load path for action verbs. It ensures exactly one
-	// LoadFromData per RPC so the "modifier ID already exists" double-subscribe
-	// class is structurally impossible. Used by ActivateFeature.
-	runner *Runner
-	// orch is the v2 encounter orchestrator (rpg-api#582 carve-out). Verbs move
-	// onto it one at a time (Sequencing B); the handler method becomes a thin
-	// proto↔input map + sentinel→gRPC status mapping. Interact is carved first.
+	// orch is the v2 encounter orchestrator (rpg-api#582 carve-out): the single
+	// load → toolkit-verb → persist core for every action verb. The handler
+	// method is a thin proto↔input map + sentinel→gRPC status mapping. As of
+	// #582 step 4 the handler-package Runner is retired — ActivateFeature was its
+	// last caller and now dispatches through orch.ActivateFeature.
 	orch *encounterorch.Orchestrator
 }
 
@@ -102,15 +100,6 @@ func New(cfg *HandlerConfig) (*Handler, error) {
 		movementResolverConfig = *cfg.MovementResolverConfig
 	}
 
-	runner := newRunner(runnerConfig{
-		Broker:                 cfg.Broker,
-		Repo:                   cfg.Repo,
-		Resolver:               resolver,
-		CombatResolver:         cfg.CombatResolver, // propagate the fixed override so runner-based verbs honor it
-		CombatResolverConfig:   combatResolverConfig,
-		MovementResolverConfig: movementResolverConfig,
-	})
-
 	h := &Handler{
 		broker:                 cfg.Broker,
 		encRepo:                cfg.Repo,
@@ -119,7 +108,6 @@ func New(cfg *HandlerConfig) (*Handler, error) {
 		combatResolverConfig:   combatResolverConfig,
 		movementResolverConfig: movementResolverConfig,
 		now:                    now,
-		runner:                 runner,
 	}
 
 	// v2 encounter orchestrator (#582). The handler supplies its existing

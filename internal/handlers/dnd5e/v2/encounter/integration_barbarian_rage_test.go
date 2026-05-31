@@ -13,7 +13,8 @@ package encounter_test
 //
 // The Phase 1 proof (rpg-api#577): the resistance test (3) was SKIPPED on PR #576
 // because of the "modifier ID already exists" double-subscribe bug. The single
-// load path (Runner.Run) makes this class of bug impossible. This test must PASS.
+// load path (the v2 orchestrator's ActivateFeature → one LoadFromData) makes this
+// class of bug impossible. This test must PASS.
 //
 // Deterministic roller strategy
 //
@@ -236,8 +237,9 @@ func (s *BarbarianRageIntegrationSuite) TestIntegration_RagingBobAttack_HasRageD
 // resistance halves the damage raging-bob takes from the goblin's attack.
 //
 // This test was SKIPPED in PR #576 due to the "modifier ID already exists"
-// double-subscribe bug. The single load path (Runner.Run → one LoadFromData)
-// makes that class of bug impossible. This test MUST PASS.
+// double-subscribe bug. The single load path (the v2 orchestrator's
+// ActivateFeature → one LoadFromData) makes that class of bug impossible. This
+// test MUST PASS.
 //
 // Strategy: run two separate encounters — one with Rage active, one without.
 // Compare the HP delta from the goblin's attack in each scenario.
