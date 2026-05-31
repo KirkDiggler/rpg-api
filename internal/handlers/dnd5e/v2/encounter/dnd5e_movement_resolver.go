@@ -210,17 +210,17 @@ func (r *Dnd5eMovementResolver) ResolveStep(input tkenc.MovementStepInput) (*tke
 // the classification.
 func (r *Dnd5eMovementResolver) classifyEntityType(entityID string) string {
 	if r.encounterData == nil {
-		return "character"
+		return string(entityTypeCharacter)
 	}
 	for _, pd := range r.encounterData.Players {
 		if string(pd.EntityID) == entityID {
-			return "character"
+			return string(entityTypeCharacter)
 		}
 	}
 	if _, ok := r.encounterData.Monsters[encountercore.EntityID(entityID)]; ok {
-		return "monster"
+		return string(entityTypeMonster)
 	}
-	return "character"
+	return string(entityTypeCharacter)
 }
 
 // buildCombatantRegistry constructs a CombatantRegistry seeded with every

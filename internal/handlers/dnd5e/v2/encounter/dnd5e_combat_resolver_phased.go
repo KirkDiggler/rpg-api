@@ -31,9 +31,11 @@ package encounter
 // without re-loading (the very thing #689 removes). See errPhase2NeedsHeldEntity
 // and resolveResumePrep. Tracked as a toolkit gap (the design, plan/10 §92/§97,
 // intends the SDK to plumb e.combatants[phasedCtx.AttackerID] into
-// ApplyAttackOutcome; the shipped #689 SDK plumbs it only for phase 1). The
-// in-scope playtest (rage + combat) does not exercise the cross-RPC resume; the
-// prompted Shield-resume is separately gated on toolkit#662.
+// ApplyAttackOutcome; v0.17.0's ApplyAttackOutcome(ctx, modifiers) still plumbs
+// held entities only for phase 1 — verified against the released tag). The
+// in-scope playtest (rage + combat) does not exercise the cross-RPC resume.
+// Note: toolkit#662 (NPC-attacker resume host lookup) is now closed, but it did
+// not add a held-entity accessor to ApplyAttackOutcome, so this gap stands.
 
 import (
 	"errors"

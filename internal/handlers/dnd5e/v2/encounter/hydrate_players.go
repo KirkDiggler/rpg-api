@@ -26,7 +26,6 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/KirkDiggler/rpg-api/internal/entities"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	tkenc "github.com/KirkDiggler/rpg-toolkit/encounter"
 	tkcharacter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
@@ -111,8 +110,20 @@ func persistPlayerCharacterData(
 		if err := json.Unmarshal(pd.DataJSON, &charData); err != nil {
 			return fmt.Errorf("unmarshal cascaded character data for %q: %w", pd.EntityID, err)
 		}
+		// Fetch the existing record and replace ONLY its Data: the character
+		// repo's Update marshals the whole entities.Character (including
+		// API-owned fields like Appearance) over the record, so writing a
+		// fresh {Data: ...} with everything else zero would silently drop those
+		// fields on every combat-capable RPC. The cascade only owns Data; the
+		// rest of the character entity stays as the store last saw it.
+		existing, err := charRepo.Get(ctx, characterrepo.GetInput{ID: string(pd.EntityID)})
+		if err != nil || existing == nil || existing.Character == nil {
+			return fmt.Errorf("load character for write-back %q: %w", pd.EntityID, err)
+		}
+		updated := existing.Character
+		updated.Data = &charData
 		if _, err := charRepo.Update(ctx, characterrepo.UpdateInput{
-			Character: &entities.Character{Data: &charData},
+			Character: updated,
 		}); err != nil {
 			return fmt.Errorf("persist character data for %q: %w", pd.EntityID, err)
 		}

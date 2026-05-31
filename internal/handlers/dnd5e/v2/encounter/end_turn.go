@@ -232,6 +232,14 @@ func (h *Handler) EndTurn(ctx context.Context, req *encounterv2pb.EndTurnRequest
 		if syncErr := enc.SyncErr(); syncErr != nil {
 			return nil, status.Errorf(codes.Internal, "sync encounter state %q: %v", req.GetEncounterId(), syncErr)
 		}
+		// Flush cascaded player state back to the authoritative character store
+		// and clear the transient DataJSON before saving — same as the normal
+		// and pause exits. Without this, cascaded player DataJSON would persist
+		// onto the encounter snapshot (violating the transient-blob invariant)
+		// and the character store would be left stale on this error exit.
+		if persistErr := persistPlayerCharacterData(ctx, out, h.combatResolverConfig.CharacterRepo); persistErr != nil {
+			return nil, status.Errorf(codes.Internal, "persist character data %q: %v", req.GetEncounterId(), persistErr)
+		}
 		if saveErr := h.encRepo.Save(ctx, out); saveErr != nil {
 			return nil, status.Errorf(codes.Internal,
 				"npc dispatch loop exhausted and save failed: %v", saveErr)
