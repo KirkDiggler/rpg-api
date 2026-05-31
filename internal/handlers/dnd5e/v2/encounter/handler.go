@@ -12,6 +12,7 @@ import (
 
 	encounterv2pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/encounter"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
+	encounterorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/encounter/v2"
 	encountersv2 "github.com/KirkDiggler/rpg-api/internal/repositories/encounters/v2"
 	"github.com/KirkDiggler/rpg-toolkit/encounter"
 	"github.com/KirkDiggler/rpg-toolkit/encounter/core"
@@ -49,6 +50,10 @@ type Handler struct {
 	// LoadFromData per RPC so the "modifier ID already exists" double-subscribe
 	// class is structurally impossible. Used by ActivateFeature.
 	runner *Runner
+	// orch is the v2 encounter orchestrator (rpg-api#582 carve-out). Verbs move
+	// onto it one at a time (Sequencing B); the handler method becomes a thin
+	// proto↔input map + sentinel→gRPC status mapping. Interact is carved first.
+	orch *encounterorch.Orchestrator
 }
 
 // New constructs a Handler. Returns error on missing required deps.
@@ -106,7 +111,7 @@ func New(cfg *HandlerConfig) (*Handler, error) {
 		MovementResolverConfig: movementResolverConfig,
 	})
 
-	return &Handler{
+	h := &Handler{
 		broker:                 cfg.Broker,
 		encRepo:                cfg.Repo,
 		resolver:               resolver,
@@ -115,7 +120,29 @@ func New(cfg *HandlerConfig) (*Handler, error) {
 		movementResolverConfig: movementResolverConfig,
 		now:                    now,
 		runner:                 runner,
-	}, nil
+	}
+
+	// v2 encounter orchestrator (#582). The handler supplies its existing
+	// per-request resolver builders so the orchestrator stays free of rulebook
+	// imports — the rulebook-importing Dnd5eCombatResolver / Dnd5eMovementResolver
+	// adapters are built here and handed in behind interface-typed builders.
+	orch, err := encounterorch.New(&encounterorch.Config{
+		Broker:              cfg.Broker,
+		EncounterRepo:       cfg.Repo,
+		CharacterRepo:       combatResolverConfig.CharacterRepo,
+		Resolver:            resolver,
+		BuildCombatResolver: h.buildCombatResolver,
+		BuildMovementResolver: func(data *encounter.Data) encounter.MovementResolver {
+			return h.buildMovementResolver(data)
+		},
+		Now: now,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("build encounter orchestrator: %w", err)
+	}
+	h.orch = orch
+
+	return h, nil
 }
 
 // buildCombatResolver returns the combat resolver for a given request.
