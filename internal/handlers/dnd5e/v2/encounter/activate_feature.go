@@ -2,24 +2,30 @@ package encounter
 
 // activate_feature.go — ActivateFeature handler.
 //
-// The handler is a thin envelope over the toolkit's Encounter.ActivateFeature
-// verb. It owns exactly four things:
+// The handler is a thin envelope over the v2 orchestrator's ActivateFeature
+// method (#582 step 4, retiring the Runner). It owns exactly four things:
 //  1. Validate the request envelope (encounter_id, character_id, feature_ref).
-//  2. Load the character from the repo + prepare CharDataJSON for the toolkit.
-//  3. Load the encounter via the Runner (load→verb→persist pattern).
-//  4. Persist the UpdatedCharData returned by the verb.
+//  2. Load the character from the repo + prepare CharDataJSON for the toolkit
+//     (the rule-ish serialization + in-combat ActionEconomy injection stays
+//     handler-side, off the rulebook-free orchestrator).
+//  3. Delegate the load → ActivateFeature verb → persist cycle to the
+//     orchestrator, mapping its sentinel errors onto gRPC status codes.
+//  4. Persist the UpdatedCharData the orchestrator returns from the verb.
 //
 // NO rule logic lives here. The toolkit's Encounter.ActivateFeature owns all
 // rule meaning (resource cost, condition construction, tier table).
 // rpg-api passes the ref through and stores the result.
 //
-// The Runner is the load path: each call to Runner.Run calls repo.Get +
-// tkenc.LoadFromData + verb + repo.Save exactly once. The single load path
-// makes the "modifier ID already exists" double-subscribe class impossible.
+// #691 (toolkit, OPEN): the orchestrator deliberately runs ActivateFeature's
+// load WITHOUT the #689 hydration cascade, because the toolkit verb self-loads
+// the actor from CharDataJSON; attaching the same character via the cascade
+// would collide with that self-load. See the orchestrator's ActivateFeature
+// doc comment. This handler keeps building CharDataJSON for that self-load.
 
 import (
 	"context"
 	"encoding/json"
+	"errors"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -27,8 +33,8 @@ import (
 	encounterv2pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/encounter"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
 	"github.com/KirkDiggler/rpg-api/internal/entities"
+	encounterorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/encounter/v2"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
-	tkenc "github.com/KirkDiggler/rpg-toolkit/encounter"
 	encountercore "github.com/KirkDiggler/rpg-toolkit/encounter/core"
 	tkcharacter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 )
@@ -51,8 +57,10 @@ var combatActionEconomy = &tkcharacter.ActionEconomyData{
 
 // ActivateFeature applies a character feature (e.g. Rage) as an in-encounter
 // action. All rule logic — resource cost, condition construction, tier table —
-// lives in the toolkit's Encounter.ActivateFeature verb. This handler passes
-// the feature ref through and persists the updated character data.
+// lives in the toolkit's Encounter.ActivateFeature verb, dispatched by the v2
+// orchestrator. This handler validates the envelope, prepares the actor's
+// CharDataJSON, delegates the load → verb → persist cycle to the orchestrator,
+// and persists the updated character data the verb returns.
 //
 // State changes (ConditionApplied, ResourceChanged) flow to clients via the
 // EncounterEvent stream through the broker; the empty response is intentional.
@@ -83,7 +91,8 @@ func (h *Handler) ActivateFeature(ctx context.Context, req *encounterv2pb.Activa
 	}
 
 	// Load the character from the repo. The character data is needed to build
-	// the CharDataJSON the toolkit verb requires.
+	// the CharDataJSON the toolkit verb self-loads from (#691: the verb manages
+	// the actor's character itself rather than via the #689 cascade).
 	charOut, err := h.combatResolverConfig.CharacterRepo.Get(ctx, characterrepo.GetInput{ID: req.GetCharacterId()})
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "load character %q: %v", req.GetCharacterId(), err)
@@ -110,43 +119,25 @@ func (h *Handler) ActivateFeature(ctx context.Context, req *encounterv2pb.Activa
 
 	featureRef := fr.GetModule() + ":" + fr.GetType() + ":" + fr.GetId()
 
-	// Use the Runner for the load→verb→persist cycle. The Runner calls
-	// repo.Get + LoadFromData + verb + repo.Save exactly once. This single
-	// load path is the fix: no scattered loaders means the modifier-ID
-	// double-subscribe class is structurally impossible.
-	var out *tkenc.ActivateFeatureOutput
-	if runErr := h.runner.Run(ctx, &EncounterRunnerInput{
-		EncounterID: req.GetEncounterId(),
-		PlayerID:    encountercore.PlayerID(playerID),
-		EntityID:    req.GetCharacterId(),
-	}, func(enc *tkenc.Encounter, _ *tkenc.Data) error {
-		var verbErr error
-		out, verbErr = enc.ActivateFeature(ctx, &tkenc.ActivateFeatureInput{
-			ActorID:      encountercore.EntityID(req.GetCharacterId()),
-			FeatureRef:   featureRef,
-			CharDataJSON: json.RawMessage(charJSON),
-		})
-		return verbErr
-	}); runErr != nil {
-		// Runner.Run returns gRPC status errors for all non-verb failures
-		// (NotFound, PermissionDenied, Internal). Propagate them unchanged
-		// so clients receive the correct code. errors.Is against the raw
-		// ErrNotFound sentinel is intentionally omitted — the runner already
-		// converts it to status.Error(codes.NotFound) before returning.
-		return nil, runErr
+	// Delegate the load → ActivateFeature verb → persist cycle to the
+	// orchestrator. The orchestrator does exactly one repo.Get + LoadFromData +
+	// verb + repo.Save (the single-load guarantee that makes the modifier-ID
+	// double-subscribe class structurally impossible), and returns the verb's
+	// UpdatedCharData for this handler to flush to the character store.
+	out, err := h.orch.ActivateFeature(ctx, &encounterorch.ActivateFeatureInput{
+		EncounterID:  req.GetEncounterId(),
+		PlayerID:     encountercore.PlayerID(playerID),
+		ActorID:      encountercore.EntityID(req.GetCharacterId()),
+		FeatureRef:   featureRef,
+		CharDataJSON: json.RawMessage(charJSON),
+	})
+	if err != nil {
+		return nil, activateFeatureStatusError(err)
 	}
 
 	// Persist the updated character data returned by the toolkit verb.
 	// The verb owns the rule mutations (resource decrement, condition append);
 	// rpg-api stores the result.
-	//
-	// Defensive nil check: enc.ActivateFeature must return non-nil output on
-	// success (project rule: never return (nil, nil)), but guard here so a
-	// future toolkit regression produces a clean codes.Internal rather than
-	// a nil-pointer panic.
-	if out == nil {
-		return nil, status.Error(codes.Internal, "toolkit ActivateFeature returned nil output with nil error")
-	}
 	var updatedData tkcharacter.Data
 	if err := json.Unmarshal(out.UpdatedCharData, &updatedData); err != nil {
 		return nil, status.Errorf(codes.Internal, "unmarshal updated character data: %v", err)
@@ -159,4 +150,28 @@ func (h *Handler) ActivateFeature(ctx context.Context, req *encounterv2pb.Activa
 	}
 
 	return &encounterv2pb.ActivateFeatureResponse{}, nil
+}
+
+// activateFeatureStatusError maps the orchestrator's ActivateFeature errors onto
+// gRPC status codes per pat-v2-status-code-mapping. Orchestrator load sentinels
+// carry the auth classification; the ErrActivateFeatureRefused wrapper carries
+// the state-dependent verb refusal.
+//
+//   - ErrEncounterNotFound → NotFound
+//   - ErrPlayerNotInEncounter / ErrEntityOwnershipMismatch → PermissionDenied
+//   - ErrActivateFeatureRefused (toolkit verb refuses) → FailedPrecondition
+//   - load / save / unclassified failures → Internal
+func activateFeatureStatusError(err error) error {
+	switch {
+	case errors.Is(err, encounterorch.ErrEncounterNotFound):
+		return status.Error(codes.NotFound, "encounter not found")
+	case errors.Is(err, encounterorch.ErrPlayerNotInEncounter):
+		return status.Error(codes.PermissionDenied, "player is not in this encounter")
+	case errors.Is(err, encounterorch.ErrEntityOwnershipMismatch):
+		return status.Error(codes.PermissionDenied,
+			"character_id does not match player's controlled entity")
+	case errors.Is(err, encounterorch.ErrActivateFeatureRefused):
+		return status.Errorf(codes.FailedPrecondition, "%v", err)
+	}
+	return status.Errorf(codes.Internal, "activate feature: %v", err)
 }

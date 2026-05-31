@@ -58,6 +58,20 @@ What's here as of Wave 2.11e:
   the handler is now proto↔input + sentinel→status mapping; the orchestrator
   owns load → `enc.SetReactionReady` → persist. Joins `Interact` (#582 step 1)
   and `SubmitCheck` (#582 step 2) on the orchestrator's single-`load` core.
+- `ActivateFeature` (`activate_feature.go`) — RPC for in-encounter feature
+  activation (Rage et al.). Carved onto the v2 orchestrator
+  (`internal/orchestrators/encounter/v2/activate_feature.go`, #582 step 4): the
+  handler keeps building `CharDataJSON` (the rule-ish character serialization +
+  in-combat `ActionEconomy` injection stays handler-side) and persists the
+  verb's `UpdatedCharData`; the orchestrator owns load → `enc.ActivateFeature` →
+  persist. This step also **retired the handler-package `Runner`** — it was the
+  Runner's only caller, so `runner.go` (and its `buildCombatResolver` /
+  `buildMovementResolver`, duplicates of the orchestrator's `load` resolver
+  wiring) was deleted. The orchestrator's `load` is now the single load core for
+  every carved verb. #691 (toolkit, OPEN): ActivateFeature's load deliberately
+  does NOT use the #689 hydration cascade (`WithCharacterData` stays false) — the
+  toolkit verb self-loads the actor from `CharDataJSON`; attaching it via the
+  cascade would reintroduce the #684-class double-subscribe collision.
 - `EndTurn` (`end_turn.go`) — handles `IsNPCPausedForReaction(err)`;
   `serializePendingPhasedAttacks` marshals the live `*PhasedAttackContext`
   into `AttackContextJSON` before snapshot (honors the encounter SDK's
