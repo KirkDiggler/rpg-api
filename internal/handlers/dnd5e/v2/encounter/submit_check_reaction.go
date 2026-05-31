@@ -1,175 +1,84 @@
 package encounter
 
-// Wave 2.11d — SubmitCheck{take_reaction} branch.
+// submit_check_reaction.go — the SubmitCheck{take_reaction} branch.
 //
-// When the caller's pending prompt is a ReactionPrompt (set by TakeAction's
-// phased path), SubmitCheck routes here instead of the skill-check verb.
-// Builds ReactionModifiers from the take/skip choice, calls
-// Encounter.CompleteTakeAction to run phase 2, clears the pending prompt,
-// and persists the snapshot.
+// When the caller's pending prompt is a reaction prompt (set by TakeAction's
+// phased path / an NPCAct pause), SubmitCheck routes here. This handler is thin:
+// validate the take/skip choice, delegate the phase-2 reaction completion to the
+// v2 orchestrator (#582 carve-out), and map the result + sentinel errors back to
+// proto. The rule-ish pieces (the opaque AttackContext decode, the per-condition
+// ReactionModifier magnitudes such as Shield +5 AC) live in the injected
+// ReactionResume funcs wired in handler.New — see reaction_resume.go.
+//
+// INTERNAL single-RPC: this resolves a reaction prompt already persisted on the
+// snapshot; there is no cross-RPC wire-pause here (that is the deferred EndTurn
+// concern).
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
-	"fmt"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
 	encounterv2pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/encounter"
-	encountersv2 "github.com/KirkDiggler/rpg-api/internal/repositories/encounters/v2"
-	tkenc "github.com/KirkDiggler/rpg-toolkit/encounter"
+	encounterorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/encounter/v2"
 	"github.com/KirkDiggler/rpg-toolkit/encounter/core"
-	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/combat"
 )
 
-// shieldACBonus is the AC bonus the Shield spell applies in phase 2 when
-// taken. Mirrors combat.ShieldACBonus from the rulebook to keep the
-// orchestrator's modifier construction self-contained.
-const shieldACBonus = 5
-
-// canonical condition refs for which Wave 2.11d builds reaction modifiers.
-const (
-	shieldRef = "dnd5e:spells:shield"
-)
-
-// submitReactionCheck handles the SubmitCheck{take_reaction} branch.
-//
-// Looks up the caller's pending reaction prompt; if take_reaction is true,
-// builds the corresponding ReactionModifier set; if false, runs phase 2
-// with no modifiers (skip). Either way, the prompt is cleared and the
-// snapshot persists.
+// submitReactionCheck handles the SubmitCheck{take_reaction} branch. The roll
+// is ignored on this path. On success the response carries Success=true (phase 2
+// ran) and Total = the reactor's choice (1 = took, 0 = skipped) for client
+// telemetry; the attack outcome flows as broker events.
 func (h *Handler) submitReactionCheck(
 	ctx context.Context,
 	req *encounterv2pb.SubmitCheckRequest,
 	playerID string,
 ) (*encounterv2pb.SubmitCheckResponse, error) {
-	data, err := h.encRepo.Get(ctx, req.GetEncounterId())
+	out, err := h.orch.SubmitReactionCheck(ctx, &encounterorch.SubmitReactionCheckInput{
+		EncounterID: req.GetEncounterId(),
+		PlayerID:    core.PlayerID(playerID),
+		EntityID:    req.GetEntityId(),
+		Take:        req.GetTakeReaction(),
+	})
 	if err != nil {
-		if errors.Is(err, encountersv2.ErrNotFound) {
-			return nil, status.Error(codes.NotFound, "encounter not found")
-		}
-		return nil, status.Errorf(codes.Internal,
-			"load encounter %q: %v", req.GetEncounterId(), err)
+		return nil, submitReactionCheckStatusError(err)
 	}
 
-	pd, ok := data.Players[core.PlayerID(playerID)]
-	if !ok {
-		return nil, status.Error(codes.PermissionDenied, "player is not in this encounter")
-	}
-	if string(pd.EntityID) != req.GetEntityId() {
-		return nil, status.Error(codes.PermissionDenied,
-			"entity_id does not match player's controlled entity")
-	}
-
-	prompt, ok := data.PendingReactionPrompts[core.PlayerID(playerID)]
-	if !ok || prompt == nil {
-		return nil, status.Error(codes.FailedPrecondition,
-			"no pending reaction prompt to resolve for caller")
-	}
-
-	// #689: attach player character blobs (transient) so the hydration cascade
-	// holds the combatants for the phase-2 resume.
-	if attachErr := attachPlayerCharacterData(ctx, data, h.combatResolverConfig.CharacterRepo); attachErr != nil {
-		return nil, status.Errorf(codes.Internal, "attach character data %q: %v", req.GetEncounterId(), attachErr)
-	}
-
-	enc, err := tkenc.LoadFromData(ctx, data, h.broker,
-		tkenc.WithCharacterResolver(h.resolver),
-		tkenc.WithCombatResolver(h.buildCombatResolver(data)),
-		tkenc.WithMovementResolver(h.buildMovementResolver(data)))
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "load from data %q: %v", req.GetEncounterId(), err)
-	}
-
-	// Unmarshal the persisted AttackContext back into the rulebook shape.
-	rulebookCtx := &combat.AttackContext{}
-	if err := json.Unmarshal(prompt.AttackContextJSON, rulebookCtx); err != nil {
-		return nil, status.Errorf(codes.Internal, "unmarshal attack context: %v", err)
-	}
-	phasedCtx := &tkenc.PhasedAttackContext{
-		Rulebook:   rulebookCtx,
-		AttackerID: core.EntityID(rulebookCtx.AttackerID),
-		TargetID:   core.EntityID(rulebookCtx.TargetID),
-	}
-
-	// Build modifiers from take/skip choice. Today only Shield is supported
-	// as a player-take reaction; OA is also a possible future ref but for
-	// 2.11d Wave OA auto-fires (NPC reactor inline) — player OA prompts
-	// land in this same code path once #650's OA-as-condition variant
-	// targets player reactors that can choose to skip. The switch is
-	// extensible for those follow-ups.
-	var modifiers []tkenc.ReactionModifier
-	if req.TakeReaction != nil && *req.TakeReaction {
-		modifiers = buildReactionModifiers(prompt)
-	}
-
-	// Run phase 2 with the chosen modifiers (or none if skipped).
-	if err := enc.CompleteTakeAction(phasedCtx, modifiers); err != nil {
-		return nil, status.Errorf(codes.Internal, "complete take action: %v", err)
-	}
-
-	// One-shot Shield: when the player takes a Shield reaction, clear the
-	// readiness flag so the wizard must re-ready before the next attack.
-	// Free reactions (OA) stay ready until explicitly toggled off.
-	if req.TakeReaction != nil && *req.TakeReaction && prompt.ConditionRef == shieldRef {
-		if setErr := enc.SetReactionReady(prompt.ReactorEntityID, prompt.ConditionRef, false); setErr != nil {
-			// Non-fatal — readiness state is best-effort housekeeping.
-			// The reaction already fired; logging-and-continuing is safer.
-			_ = setErr
-		}
-	}
-
-	enc.ClearPendingReactionPrompt(core.PlayerID(playerID))
-
-	out := enc.ToData()
-	if syncErr := enc.SyncErr(); syncErr != nil {
-		return nil, status.Errorf(codes.Internal, "sync encounter state %q: %v", req.GetEncounterId(), syncErr)
-	}
-	if persistErr := persistPlayerCharacterData(ctx, out, h.combatResolverConfig.CharacterRepo); persistErr != nil {
-		return nil, status.Errorf(codes.Internal, "persist character data %q: %v", req.GetEncounterId(), persistErr)
-	}
-	if err := h.encRepo.Save(ctx, out); err != nil {
-		return nil, status.Errorf(codes.Internal,
-			"save encounter %q after reaction: %v", req.GetEncounterId(), err)
-	}
-
-	// Reaction responses don't carry a roll/total in the Wave 2.11d shape;
-	// the response Success indicates "phase 2 ran" and Total carries the
-	// reactor's choice (1 = took, 0 = skipped) for client telemetry.
 	return &encounterv2pb.SubmitCheckResponse{
 		Success: true,
-		Total:   reactionResponseTotal(req.TakeReaction),
+		Total:   reactionResponseTotal(out.TookReaction),
 	}, nil
 }
 
-// buildReactionModifiers translates a pending prompt into the rulebook
-// ReactionModifier slice for phase 2. Centralizes the per-condition modifier
-// shape so future reactions add a case here.
+// submitReactionCheckStatusError maps the orchestrator's SubmitReactionCheck
+// errors onto gRPC status codes per pat-v2-status-code-mapping.
 //
-// Today only Shield contributes a modifier (OA is a separate attack, not a
-// modifier on the in-flight attack). When the second modifier-style reaction
-// lands, convert this back to a switch.
-func buildReactionModifiers(prompt *tkenc.PendingReactionPrompt) []tkenc.ReactionModifier {
-	if prompt.ConditionRef == shieldRef {
-		return []tkenc.ReactionModifier{
-			{ConditionRef: prompt.ConditionRef, ACBonus: shieldACBonus},
-		}
+//   - ErrEncounterNotFound → NotFound
+//   - ErrPlayerNotInEncounter / ErrEntityOwnershipMismatch → PermissionDenied
+//   - ErrNoPendingReactionPrompt → FailedPrecondition
+//   - decode / CompleteTakeAction / cascade / save failures → Internal
+func submitReactionCheckStatusError(err error) error {
+	switch {
+	case errors.Is(err, encounterorch.ErrEncounterNotFound):
+		return status.Error(codes.NotFound, "encounter not found")
+	case errors.Is(err, encounterorch.ErrPlayerNotInEncounter):
+		return status.Error(codes.PermissionDenied, "player is not in this encounter")
+	case errors.Is(err, encounterorch.ErrEntityOwnershipMismatch):
+		return status.Error(codes.PermissionDenied,
+			"entity_id does not match player's controlled entity")
+	case errors.Is(err, encounterorch.ErrNoPendingReactionPrompt):
+		return status.Error(codes.FailedPrecondition,
+			"no pending reaction prompt to resolve for caller")
 	}
-	return nil
+	return status.Errorf(codes.Internal, "submit reaction check: %v", err)
 }
 
-// reactionResponseTotal maps a take/skip choice to a small int the client
-// can read for telemetry. take=1, skip=0. Helper exists so the take_reaction
-// nil-check is not duplicated at the callsite.
-func reactionResponseTotal(takeReaction *bool) int32 {
-	if takeReaction != nil && *takeReaction {
+// reactionResponseTotal maps a take/skip choice to a small int the client can
+// read for telemetry. take=1, skip=0.
+func reactionResponseTotal(took bool) int32 {
+	if took {
 		return 1
 	}
 	return 0
 }
-
-// compile-time check for fmt usage so unused-import doesn't trip if a
-// future change drops one of the formatted error sites.
-var _ = fmt.Sprintf

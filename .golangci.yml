@@ -51,11 +51,15 @@ linters:
         #   - action-verb handler files (activate_feature, take_action, end_turn,
         #     interact, submit_check, handler, create, get)
         #   - the v2 encounter orchestrator method files (orchestrator, load,
-        #     interact) under internal/orchestrators/encounter/v2 (rpg-api#582):
+        #     interact, submit_check, submit_check_reaction) under
+        #     internal/orchestrators/encounter/v2 (rpg-api#582):
         #     load → toolkit-verb → persist, by reference only.
         # Excludes: combat/movement resolver files (translate held entities → the
         # rulebook chain; legitimately import combat/character/monster/weapons),
         # hydrate_players.go (marshals the character blob for the SDK cascade),
+        # reaction_resume.go (the SubmitCheck take_reaction adapter seam: decodes
+        # the opaque combat.AttackContext blob + carries the Shield +5 AC
+        # magnitude — kept handler-side so the orchestrator stays rulebook-free),
         # tests. reaction_conditions.go is gone: OA now rides the toolkit's #689
         # hydration cascade, so rpg-api no longer constructs conditions.New* and
         # that depguard exclusion is retired.
@@ -79,6 +83,8 @@ linters:
             - "**/internal/orchestrators/encounter/v2/orchestrator.go"
             - "**/internal/orchestrators/encounter/v2/load.go"
             - "**/internal/orchestrators/encounter/v2/interact.go"
+            - "**/internal/orchestrators/encounter/v2/submit_check.go"
+            - "**/internal/orchestrators/encounter/v2/submit_check_reaction.go"
           deny:
             - pkg: "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/conditions"
               desc: "game logic belongs in the toolkit — do not import dnd5e conditions in action handler files"
