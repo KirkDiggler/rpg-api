@@ -10,8 +10,8 @@ github.com/KirkDiggler/rpg-toolkit/core v0.10.0 h1:LLsvsYsukE26BlRS0wL1o3UjjmP5Q
 github.com/KirkDiggler/rpg-toolkit/core v0.10.0/go.mod h1:XFQXYViPZUTYu/a8jdRadI3rGnKk4r7tRtPm++vSUV0=
 github.com/KirkDiggler/rpg-toolkit/dice v0.3.2 h1:cLLP4Z+4VYSxeRkNbmI5gym6dC/xBOw6kDIylWDK/z0=
 github.com/KirkDiggler/rpg-toolkit/dice v0.3.2/go.mod h1:JEWKuYBi+h9f8jFAcE2MI2yVDFV6ldOVx36y5fbc6p4=
-github.com/KirkDiggler/rpg-toolkit/encounter v0.16.0 h1:LI3rDJTHnghmgyXaOHSu8vk4TQVG04oWxCM6Bo0+Qsg=
-github.com/KirkDiggler/rpg-toolkit/encounter v0.16.0/go.mod h1:oeo/6WNu7Z8+lQ3vGEC/qvZilTbmCUabglbuEiL0tQM=
+github.com/KirkDiggler/rpg-toolkit/encounter v0.17.0 h1:B+svI14zINoPDGlJlb/2GzMUdOULCSw1Gc4SlAOozD8=
+github.com/KirkDiggler/rpg-toolkit/encounter v0.17.0/go.mod h1:tVSoPUqPjGsgmvMLyWeR9lXGdgpWP6AXrYrs19pE7h0=
 github.com/KirkDiggler/rpg-toolkit/events v0.6.2 h1:lRtKXko35bGw/l2TKYsN7JKOODUi6u66J8QcnQavm3s=
 github.com/KirkDiggler/rpg-toolkit/events v0.6.2/go.mod h1:JNzyCw1l/RL4nyoCpx3tSko8Dsocwye9eFg33Ot6mUw=
 github.com/KirkDiggler/rpg-toolkit/game v0.1.0 h1:jXYlCqkqK0LCHquu+1vgTEbedhgQbspR6748sO/KYqE=
