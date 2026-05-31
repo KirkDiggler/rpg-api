@@ -53,7 +53,11 @@ What's here as of Wave 2.11e:
   unmarshals the persisted `AttackContextJSON` back into `combat.AttackContext`
   and feeds it into `CompleteTakeAction` with the chosen modifiers.
 - `SetReactionReady` (`set_reaction_ready.go`) — RPC for per-character
-  per-condition readiness toggle.
+  per-condition readiness toggle. Carved onto the v2 orchestrator
+  (`internal/orchestrators/encounter/v2/set_reaction_ready.go`, #582 step 3):
+  the handler is now proto↔input + sentinel→status mapping; the orchestrator
+  owns load → `enc.SetReactionReady` → persist. Joins `Interact` (#582 step 1)
+  and `SubmitCheck` (#582 step 2) on the orchestrator's single-`load` core.
 - `EndTurn` (`end_turn.go`) — handles `IsNPCPausedForReaction(err)`;
   `serializePendingPhasedAttacks` marshals the live `*PhasedAttackContext`
   into `AttackContextJSON` before snapshot (honors the encounter SDK's

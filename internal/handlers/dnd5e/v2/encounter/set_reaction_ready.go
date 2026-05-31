@@ -1,6 +1,6 @@
 package encounter
 
-// Wave 2.11d — SetReactionReady RPC handler.
+// SetReactionReady RPC handler.
 //
 // Toggles per-character readiness for a specific reaction. Players opt in
 // to spell-cost reactions (Shield) by setting ready=true; conditions only
@@ -10,6 +10,10 @@ package encounter
 // Free-cost reactions (OA) are seeded ready=true at AddPlayer time
 // (encounter SDK Wave 2.11c); players use this RPC to override the default
 // (e.g. "hold OA this turn").
+//
+// The v2 orchestrator owns the load → SetReactionReady verb → persist flow
+// (#582 step 3). This handler stays thin: proto↔input mapping plus
+// setReactionReadyStatusError for the sentinel→gRPC code mapping.
 
 import (
 	"context"
@@ -20,16 +24,15 @@ import (
 
 	encounterv2pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/encounter"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
-	encountersv2 "github.com/KirkDiggler/rpg-api/internal/repositories/encounters/v2"
-	tkenc "github.com/KirkDiggler/rpg-toolkit/encounter"
+	encounterorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/encounter/v2"
 	"github.com/KirkDiggler/rpg-toolkit/encounter/core"
 )
 
-// SetReactionReady handles the SetReactionReady RPC: validates the request,
-// updates the encounter's reaction-readiness map for the named character,
-// and persists the snapshot.
+// SetReactionReady handles the SetReactionReady RPC: validates the request
+// envelope, delegates the readiness toggle to the v2 orchestrator, and maps
+// the orchestrator's sentinel errors back to gRPC status codes.
 //
-// Behavior contract:
+// Behavior contract (preserved across the carve):
 //   - missing auth → Unauthenticated
 //   - empty encounter_id / character_id / reaction_ref → InvalidArgument
 //   - encounter not in repo → NotFound
@@ -63,48 +66,42 @@ func (h *Handler) SetReactionReady(
 			"reaction_ref must have module, type, and id set")
 	}
 
-	data, err := h.encRepo.Get(ctx, req.GetEncounterId())
+	_, err := h.orch.SetReactionReady(ctx, &encounterorch.SetReactionReadyInput{
+		EncounterID: req.GetEncounterId(),
+		PlayerID:    core.PlayerID(playerID),
+		EntityID:    core.EntityID(req.GetCharacterId()),
+		ReactionRef: refProtoToString(req.GetReactionRef()),
+		Ready:       req.GetReady(),
+	})
 	if err != nil {
-		if errors.Is(err, encountersv2.ErrNotFound) {
-			return nil, status.Error(codes.NotFound, "encounter not found")
-		}
-		return nil, status.Errorf(codes.Internal,
-			"load encounter %q: %v", req.GetEncounterId(), err)
-	}
-
-	pd, ok := data.Players[core.PlayerID(playerID)]
-	if !ok {
-		return nil, status.Error(codes.PermissionDenied, "player is not in this encounter")
-	}
-	if string(pd.EntityID) != req.GetCharacterId() {
-		return nil, status.Error(codes.PermissionDenied,
-			"character_id does not match player's controlled entity")
-	}
-
-	// #689: readiness toggle doesn't touch combatant state; no player DataJSON
-	// attached, so the cascade skips hydration. ctx threaded for the new
-	// LoadFromData signature.
-	enc, err := tkenc.LoadFromData(ctx, data, h.broker,
-		tkenc.WithCharacterResolver(h.resolver),
-		tkenc.WithCombatResolver(h.buildCombatResolver(data)),
-		tkenc.WithMovementResolver(h.buildMovementResolver(data)))
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "load from data %q: %v", req.GetEncounterId(), err)
-	}
-
-	refStr := refProtoToString(req.GetReactionRef())
-	if err := enc.SetReactionReady(core.EntityID(req.GetCharacterId()), refStr, req.GetReady()); err != nil {
-		// The SDK rejects unknown entities — surface as state-dependent.
-		return nil, status.Errorf(codes.FailedPrecondition,
-			"set reaction ready: %v", err)
-	}
-
-	if err := h.encRepo.Save(ctx, enc.ToData()); err != nil {
-		return nil, status.Errorf(codes.Internal,
-			"save encounter %q after set-reaction-ready: %v", req.GetEncounterId(), err)
+		return nil, setReactionReadyStatusError(err)
 	}
 
 	return &encounterv2pb.SetReactionReadyResponse{}, nil
+}
+
+// setReactionReadyStatusError maps the orchestrator's SetReactionReady errors
+// onto gRPC status codes per pat-v2-status-code-mapping. Orchestrator load
+// sentinels carry the auth classification; the ErrSetReactionReadyRefused
+// wrapper carries the state-dependent verb refusal.
+//
+//   - ErrEncounterNotFound → NotFound
+//   - ErrPlayerNotInEncounter / ErrEntityOwnershipMismatch → PermissionDenied
+//   - ErrSetReactionReadyRefused (SDK rejects the entity) → FailedPrecondition
+//   - load / save / unclassified failures → Internal
+func setReactionReadyStatusError(err error) error {
+	switch {
+	case errors.Is(err, encounterorch.ErrEncounterNotFound):
+		return status.Error(codes.NotFound, "encounter not found")
+	case errors.Is(err, encounterorch.ErrPlayerNotInEncounter):
+		return status.Error(codes.PermissionDenied, "player is not in this encounter")
+	case errors.Is(err, encounterorch.ErrEntityOwnershipMismatch):
+		return status.Error(codes.PermissionDenied,
+			"character_id does not match player's controlled entity")
+	case errors.Is(err, encounterorch.ErrSetReactionReadyRefused):
+		return status.Errorf(codes.FailedPrecondition, "%v", err)
+	}
+	return status.Errorf(codes.Internal, "set reaction ready: %v", err)
 }
 
 // refProtoToString joins a proto Ref into the canonical "module:type:id"
