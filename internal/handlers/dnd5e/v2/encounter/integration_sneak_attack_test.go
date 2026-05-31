@@ -558,7 +558,7 @@ func (s *SneakAttackIntegrationSuite) buildAliceRogueData() *character.Data {
 // DamageDice is set for all combatants so they qualify as combatants for
 // TakeAction and have OA readiness seeded by the encounter SDK.
 func (s *SneakAttackIntegrationSuite) seedSneakEncounter() {
-	enc := tkenc.New(sneakIntegEncID, s.broker)
+	enc := tkenc.New(context.Background(), sneakIntegEncID, s.broker)
 
 	aliceHP := s.aliceHP()
 	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
@@ -632,9 +632,9 @@ func (s *SneakAttackIntegrationSuite) advanceToAlice() {
 			// End the NPC's turn directly via the encounter SDK to avoid
 			// triggering NPCAct (which would require additional mock setup for
 			// the goblin's attack target character loading).
-			enc, loadErr := tkenc.LoadFromData(data, s.broker)
+			enc, loadErr := tkenc.LoadFromData(context.Background(), data, s.broker)
 			s.Require().NoError(loadErr)
-			_, _, err = enc.EndTurn(encountercore.EntityID(activeID))
+			_, _, err = enc.EndTurn(context.Background(), encountercore.EntityID(activeID))
 			s.Require().NoError(err)
 			s.Require().NoError(s.repo.Save(context.Background(), enc.ToData()))
 			continue

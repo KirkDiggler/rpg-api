@@ -17,9 +17,10 @@ package encounter
 //
 // The single-load guarantee: because every call to Run does exactly ONE
 // repo.Get + LoadFromData + repo.Save, there is no opportunity for the
-// "modifier ID already exists" double-subscribe class. Scattered loaders
-// (lazy loadCharacterWithBus, applyReactionConditions, charCache) created
-// that class; the runner makes it structurally impossible.
+// "modifier ID already exists" double-subscribe class. #689 moved entity
+// hydration into the toolkit's LoadFromData cascade (one subscribe point),
+// retiring the scattered host-side loaders (loadCharacterWithBus,
+// applyReactionConditions) that created that class.
 
 import (
 	"context"
@@ -35,9 +36,9 @@ import (
 
 // Runner is the encounter bus-execution core. Construct via newRunner.
 type Runner struct {
-	broker                 *tkenc.Broker
-	repo                   encountersv2.Repository
-	resolver               CharacterResolver
+	broker   *tkenc.Broker
+	repo     encountersv2.Repository
+	resolver CharacterResolver
 	// combatResolver is the fixed resolver override (non-nil in tests that wire
 	// HandlerConfig.CombatResolver e.g. StandInCombatResolver). Mirrors the same
 	// override field on Handler so verbs executed through the runner respect it.
@@ -49,9 +50,9 @@ type Runner struct {
 // runnerConfig holds the dependencies for the Runner. Internal to this
 // package — callers use HandlerConfig; New builds the runner from it.
 type runnerConfig struct {
-	Broker                 *tkenc.Broker
-	Repo                   encountersv2.Repository
-	Resolver               CharacterResolver
+	Broker   *tkenc.Broker
+	Repo     encountersv2.Repository
+	Resolver CharacterResolver
 	// CombatResolver is the fixed override (mirrors HandlerConfig.CombatResolver).
 	// When non-nil, buildCombatResolver returns it directly instead of constructing
 	// a fresh Dnd5eCombatResolver. Ensures test fixtures that wire StandInCombatResolver
@@ -131,7 +132,16 @@ func (r *Runner) Run(
 		return status.Error(codes.PermissionDenied, "entity_id does not match player's controlled entity")
 	}
 
-	enc, err := tkenc.LoadFromData(data, r.broker,
+	// #689: the Runner is used only by ActivateFeature today, which manages its
+	// actor's character itself via CharDataJSON (the toolkit ActivateFeature verb
+	// loads + applies the ability + Cleanup). We deliberately do NOT attach
+	// PlayerData.DataJSON here: doing so would make the cascade ALSO hydrate a
+	// held instance of the same character onto e.bus, colliding with
+	// ActivateFeature's own load ("condition already applied"). Folding
+	// ActivateFeature's self-load onto the held combatant is tracked as the
+	// #689 follow-up (toolkit#691); until then the ActivateFeature path stays on
+	// its CharDataJSON self-load and the cascade skips its players (no DataJSON).
+	enc, err := tkenc.LoadFromData(ctx, data, r.broker,
 		tkenc.WithCharacterResolver(r.resolver),
 		tkenc.WithCombatResolver(r.buildCombatResolver(data)),
 		tkenc.WithMovementResolver(r.buildMovementResolver(data)))
@@ -147,7 +157,15 @@ func (r *Runner) Run(
 		return status.Errorf(codes.Internal, "encounter verb: %v", verbErr)
 	}
 
-	if err := r.repo.Save(ctx, enc.ToData()); err != nil {
+	out := enc.ToData()
+	// #689: ToData cascades held-entity state back into PlayerData/MonsterData
+	// DataJSON. A marshal failure means an entity's mutated state (e.g.
+	// SneakAttack.UsedThisTurn) was NOT persisted — surface it rather than
+	// silently saving a stale snapshot.
+	if syncErr := enc.SyncErr(); syncErr != nil {
+		return status.Errorf(codes.Internal, "sync encounter state %q: %v", in.EncounterID, syncErr)
+	}
+	if err := r.repo.Save(ctx, out); err != nil {
 		return status.Errorf(codes.Internal, "save encounter %q: %v", in.EncounterID, err)
 	}
 

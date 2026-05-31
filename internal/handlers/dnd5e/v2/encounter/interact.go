@@ -68,7 +68,11 @@ func (h *Handler) Interact(ctx context.Context, req *encounterv2pb.InteractReque
 		return nil, status.Error(codes.NotFound, "target entity is not a door, or door does not exist")
 	}
 
-	enc, err := encounter.LoadFromData(data, h.broker,
+	// #689: LoadFromData now takes ctx and owns the hydration cascade. The
+	// door verbs don't touch combatant state, so no player DataJSON is attached
+	// here — the cascade skips hydration (seats without DataJSON) and the door
+	// verbs operate on the Data snapshot directly.
+	enc, err := encounter.LoadFromData(ctx, data, h.broker,
 		encounter.WithCharacterResolver(h.resolver),
 		encounter.WithCombatResolver(h.buildCombatResolver(data)),
 		encounter.WithMovementResolver(h.buildMovementResolver(data)))

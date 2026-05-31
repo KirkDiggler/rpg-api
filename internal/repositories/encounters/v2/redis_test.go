@@ -48,7 +48,7 @@ func (s *RedisSuite) TestGet_ReturnsErrNotFound_ForMissingID() {
 }
 
 func (s *RedisSuite) TestSaveGet_RoundTrip_PreservesData() {
-	enc := encounter.New("enc-1", encounter.NewBroker(encounter.NewInMemoryTransport()))
+	enc := encounter.New(context.Background(), "enc-1", encounter.NewBroker(encounter.NewInMemoryTransport()))
 	s.Require().NoError(enc.AddPlayer(encounter.PlayerInput{
 		PlayerID:   "player-A",
 		EntityID:   "char-A",
@@ -68,16 +68,16 @@ func (s *RedisSuite) TestSaveGet_RoundTrip_PreservesData() {
 	s.Require().Equal(core.EntityID("char-A"), loaded.Players["player-A"].EntityID)
 
 	// Round-trip via the toolkit serializer to prove ToData/LoadFromData survives storage.
-	roundTripped, err := encounter.LoadFromData(loaded, encounter.NewBroker(encounter.NewInMemoryTransport()))
+	roundTripped, err := encounter.LoadFromData(context.Background(), loaded, encounter.NewBroker(encounter.NewInMemoryTransport()))
 	s.Require().NoError(err)
 	s.Require().Equal(original.ID, roundTripped.ID())
 }
 
 func (s *RedisSuite) TestSave_Overwrites_ExistingValue() {
-	first := encounter.New("enc-overwrite", encounter.NewBroker(encounter.NewInMemoryTransport())).ToData()
+	first := encounter.New(context.Background(), "enc-overwrite", encounter.NewBroker(encounter.NewInMemoryTransport())).ToData()
 	s.Require().NoError(s.repo.Save(s.ctx, first))
 
-	second := encounter.New("enc-overwrite", encounter.NewBroker(encounter.NewInMemoryTransport()))
+	second := encounter.New(context.Background(), "enc-overwrite", encounter.NewBroker(encounter.NewInMemoryTransport()))
 	s.Require().NoError(second.AddPlayer(encounter.PlayerInput{
 		PlayerID:   "player-Z",
 		EntityID:   "char-Z",
@@ -93,7 +93,7 @@ func (s *RedisSuite) TestSave_Overwrites_ExistingValue() {
 }
 
 func (s *RedisSuite) TestSave_AppliesTTL() {
-	enc := encounter.New("enc-ttl", encounter.NewBroker(encounter.NewInMemoryTransport())).ToData()
+	enc := encounter.New(context.Background(), "enc-ttl", encounter.NewBroker(encounter.NewInMemoryTransport())).ToData()
 	s.Require().NoError(s.repo.Save(s.ctx, enc))
 
 	// miniredis exposes the per-key TTL set by SET with EXPIRE; assert it matches.

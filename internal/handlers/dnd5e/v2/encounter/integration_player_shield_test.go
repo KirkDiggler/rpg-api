@@ -268,7 +268,7 @@ func (s *PlayerShieldIntegrationSuite) buildWendyWizardData() *character.Data {
 // monster.New with zero AbilityScores produces a STR -5 modifier and can
 // never hit anything).
 func (s *PlayerShieldIntegrationSuite) seedShieldEncounter() {
-	enc := tkenc.New(shieldIntegEncID, s.broker)
+	enc := tkenc.New(context.Background(), shieldIntegEncID, s.broker)
 
 	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
 		PlayerID:   encountercore.PlayerID(shieldPlayerWendy),
@@ -327,9 +327,9 @@ func (s *PlayerShieldIntegrationSuite) advanceToWendyActiveTurn() {
 		}
 		// Active is the goblin — end its turn directly via SDK so we can
 		// loop back to wendy first.
-		enc, loadErr := tkenc.LoadFromData(data, s.broker)
+		enc, loadErr := tkenc.LoadFromData(context.Background(), data, s.broker)
 		s.Require().NoError(loadErr)
-		_, _, err = enc.EndTurn(encountercore.EntityID(active))
+		_, _, err = enc.EndTurn(context.Background(), encountercore.EntityID(active))
 		s.Require().NoError(err)
 		s.Require().NoError(s.repo.Save(context.Background(), enc.ToData()))
 	}

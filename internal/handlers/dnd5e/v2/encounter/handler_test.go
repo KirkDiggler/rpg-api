@@ -131,7 +131,7 @@ func (s *HandlerSuite) TestCreateEncounter_Success_PersistsToRepo() {
 
 func (s *HandlerSuite) TestMoveEntity_HappyPath_LoadsCallsMoveSaves() {
 	// Seed encounter with player-A controlling char-A at (0,0,0).
-	enc := tkenc.New("enc-1", s.broker)
+	enc := tkenc.New(context.Background(), "enc-1", s.broker)
 	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
 		PlayerID: "player-A", EntityID: "char-A", Position: core.Hex{Q: 0, R: 0, S: 0},
 	}))
@@ -174,7 +174,7 @@ func (s *HandlerSuite) TestMoveEntity_MissingEncounter_NotFound() {
 
 func (s *HandlerSuite) TestMoveEntity_PlayerNotInEncounter_PermissionDenied() {
 	// Seed encounter with no players; auth as player-A (the suite default).
-	enc := tkenc.New("enc-noplayer", s.broker)
+	enc := tkenc.New(context.Background(), "enc-noplayer", s.broker)
 	s.Require().NoError(s.repo.Save(s.ctx, enc.ToData()))
 
 	_, err := s.handler.MoveEntity(s.ctx, &encounterv2pb.MoveEntityRequest{
@@ -186,7 +186,7 @@ func (s *HandlerSuite) TestMoveEntity_PlayerNotInEncounter_PermissionDenied() {
 }
 
 func (s *HandlerSuite) TestMoveEntity_EntityIDMismatch_PermissionDenied() {
-	enc := tkenc.New("enc-2", s.broker)
+	enc := tkenc.New(context.Background(), "enc-2", s.broker)
 	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
 		PlayerID: "player-A", EntityID: "char-A", Position: core.Hex{Q: 0, R: 0, S: 0},
 	}))
@@ -201,7 +201,7 @@ func (s *HandlerSuite) TestMoveEntity_EntityIDMismatch_PermissionDenied() {
 }
 
 func (s *HandlerSuite) TestMoveEntity_EmptyPath_InvalidArgument() {
-	enc := tkenc.New("enc-3", s.broker)
+	enc := tkenc.New(context.Background(), "enc-3", s.broker)
 	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
 		PlayerID: "player-A", EntityID: "char-A", Position: core.Hex{Q: 0, R: 0, S: 0},
 	}))
@@ -217,7 +217,7 @@ func (s *HandlerSuite) TestMoveEntity_EmptyPath_InvalidArgument() {
 }
 
 func (s *HandlerSuite) TestStreamEncounter_SendsSnapshotFirst() {
-	enc := tkenc.New("enc-1", s.broker)
+	enc := tkenc.New(context.Background(), "enc-1", s.broker)
 	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
 		PlayerID: "player-A", EntityID: "char-A", Position: core.Hex{Q: 0, R: 0, S: 0},
 	}))
@@ -235,7 +235,7 @@ func (s *HandlerSuite) TestStreamEncounter_SendsSnapshotFirst() {
 }
 
 func (s *HandlerSuite) TestStreamEncounter_ForwardsBrokerEvents() {
-	enc := tkenc.New("enc-1", s.broker)
+	enc := tkenc.New(context.Background(), "enc-1", s.broker)
 	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
 		PlayerID: "player-A", EntityID: "char-A", Position: core.Hex{Q: 0, R: 0, S: 0},
 	}))
@@ -299,7 +299,7 @@ func (s *HandlerSuite) TestGetEncounter_UnknownID_NotFound() {
 
 func (s *HandlerSuite) TestGetEncounter_NonMember_PermissionDenied() {
 	// Encounter seeded with player-B only; auth context is player-A.
-	enc := tkenc.New("enc-nonmember", s.broker)
+	enc := tkenc.New(context.Background(), "enc-nonmember", s.broker)
 	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
 		PlayerID: "player-B", EntityID: "char-B", Position: core.Hex{Q: 0, R: 0, S: 0},
 	}))
@@ -314,7 +314,7 @@ func (s *HandlerSuite) TestGetEncounter_NonMember_PermissionDenied() {
 }
 
 func (s *HandlerSuite) TestGetEncounter_Success_ReturnsEncounterWithID() {
-	enc := tkenc.New("enc-get-1", s.broker)
+	enc := tkenc.New(context.Background(), "enc-get-1", s.broker)
 	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
 		PlayerID: "player-A", EntityID: "char-A", Position: core.Hex{Q: 0, R: 0, S: 0},
 	}))
@@ -372,7 +372,7 @@ func (s *HandlerSuite) TestInteract_MissingEncounter_NotFound() {
 }
 
 func (s *HandlerSuite) TestInteract_MissingDoorTarget_NotFound() {
-	enc := tkenc.New("enc-no-door", s.broker)
+	enc := tkenc.New(context.Background(), "enc-no-door", s.broker)
 	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
 		PlayerID: "player-A", EntityID: "char-A", Position: core.Hex{Q: 0, R: 0, S: 0}, SightRange: 4,
 	}))
@@ -391,7 +391,7 @@ func (s *HandlerSuite) TestInteract_MissingDoorTarget_NotFound() {
 }
 
 func (s *HandlerSuite) TestInteract_DoorAlreadyOpen_FailedPrecondition() {
-	enc := tkenc.New("enc-open-door", s.broker)
+	enc := tkenc.New(context.Background(), "enc-open-door", s.broker)
 	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
 		PlayerID: "player-A", EntityID: "char-A", Position: core.Hex{Q: 0, R: 0, S: 0}, SightRange: 4,
 	}))
@@ -413,7 +413,7 @@ func (s *HandlerSuite) TestInteract_DoorAlreadyOpen_FailedPrecondition() {
 func (s *HandlerSuite) TestInteract_PlayerNotInEncounter_FailedPrecondition() {
 	// Encounter has a door but no player-A. Toolkit OpenDoor refuses the
 	// player-not-in-encounter case as a state-dependent error.
-	enc := tkenc.New("enc-no-player", s.broker)
+	enc := tkenc.New(context.Background(), "enc-no-player", s.broker)
 	enc.AddDoor("door-east", core.Hex{Q: 1, R: 0, S: -1}, false)
 	s.Require().NoError(s.repo.Save(s.ctx, enc.ToData()))
 
@@ -427,7 +427,7 @@ func (s *HandlerSuite) TestInteract_PlayerNotInEncounter_FailedPrecondition() {
 }
 
 func (s *HandlerSuite) TestInteract_OpenDoor_HappyPath() {
-	enc := tkenc.New("enc-interact-1", s.broker)
+	enc := tkenc.New(context.Background(), "enc-interact-1", s.broker)
 	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
 		PlayerID: "player-A", EntityID: "char-A", Position: core.Hex{Q: 0, R: 0, S: 0}, SightRange: 4,
 	}))
@@ -464,7 +464,7 @@ func (s *HandlerSuite) TestInteract_OpenDoor_HappyPath() {
 // fixture should construct the Data themselves rather than extending this
 // helper — it intentionally takes no extra knobs to keep call sites readable.
 func (s *HandlerSuite) seedLockedDoorEncounter(encID, doorID string, dc int, ability, tool string) {
-	enc := tkenc.New(core.EncounterID(encID), s.broker)
+	enc := tkenc.New(context.Background(), core.EncounterID(encID), s.broker)
 	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
 		PlayerID:   "player-A",
 		EntityID:   "char-A",
@@ -603,7 +603,7 @@ func (s *HandlerSuite) TestSubmitCheck_MissingEncounter_NotFound() {
 
 func (s *HandlerSuite) TestSubmitCheck_NonMember_PermissionDenied() {
 	// Encounter exists with a different player (not the caller).
-	enc := tkenc.New("enc-non-member", s.broker)
+	enc := tkenc.New(context.Background(), "enc-non-member", s.broker)
 	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
 		PlayerID: "other-player", EntityID: "other-char",
 		Position: core.Hex{Q: 0, R: 0, S: 0}, SightRange: 4,
@@ -622,7 +622,7 @@ func (s *HandlerSuite) TestSubmitCheck_NonMember_PermissionDenied() {
 func (s *HandlerSuite) TestSubmitCheck_EntityIDMismatch_PermissionDenied() {
 	// Caller is in the encounter but the request's entity_id does not match
 	// their controlled entity (player-A controls char-A).
-	enc := tkenc.New("enc-wrong-entity", s.broker)
+	enc := tkenc.New(context.Background(), "enc-wrong-entity", s.broker)
 	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
 		PlayerID: "player-A", EntityID: "char-A",
 		Position: core.Hex{Q: 0, R: 0, S: 0}, SightRange: 4,
@@ -639,7 +639,7 @@ func (s *HandlerSuite) TestSubmitCheck_EntityIDMismatch_PermissionDenied() {
 
 func (s *HandlerSuite) TestSubmitCheck_NoPendingPrompt_FailedPrecondition() {
 	// Encounter exists with player-A but no prompt outstanding.
-	enc := tkenc.New("enc-no-prompt", s.broker)
+	enc := tkenc.New(context.Background(), "enc-no-prompt", s.broker)
 	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
 		PlayerID: "player-A", EntityID: "char-A", Position: core.Hex{Q: 0, R: 0, S: 0}, SightRange: 4,
 	}))

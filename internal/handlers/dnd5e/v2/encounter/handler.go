@@ -175,7 +175,13 @@ func (h *Handler) MoveEntity(ctx context.Context, req *encounterv2pb.MoveEntityR
 		return nil, status.Error(codes.InvalidArgument, "proposed_path is required")
 	}
 
-	enc, err := encounter.LoadFromData(data, h.broker,
+	// #689: attach player character blobs (transient) so the hydration cascade
+	// holds the mover; the movement resolver reads the held mover (no re-load).
+	if attachErr := attachPlayerCharacterData(ctx, data, h.combatResolverConfig.CharacterRepo); attachErr != nil {
+		return nil, status.Errorf(codes.Internal, "attach character data %q: %v", req.GetEncounterId(), attachErr)
+	}
+
+	enc, err := encounter.LoadFromData(ctx, data, h.broker,
 		encounter.WithCharacterResolver(h.resolver),
 		encounter.WithCombatResolver(h.buildCombatResolver(data)),
 		encounter.WithMovementResolver(h.buildMovementResolver(data)))
@@ -196,7 +202,14 @@ func (h *Handler) MoveEntity(ctx context.Context, req *encounterv2pb.MoveEntityR
 		return nil, status.Errorf(codes.FailedPrecondition, "move: %v", err)
 	}
 
-	if err := h.encRepo.Save(ctx, enc.ToData()); err != nil {
+	out := enc.ToData()
+	if syncErr := enc.SyncErr(); syncErr != nil {
+		return nil, status.Errorf(codes.Internal, "sync encounter state %q: %v", req.GetEncounterId(), syncErr)
+	}
+	if err := persistPlayerCharacterData(ctx, out, h.combatResolverConfig.CharacterRepo); err != nil {
+		return nil, status.Errorf(codes.Internal, "persist character data %q: %v", req.GetEncounterId(), err)
+	}
+	if err := h.encRepo.Save(ctx, out); err != nil {
 		return nil, status.Errorf(codes.Internal, "save encounter %q: %v", req.GetEncounterId(), err)
 	}
 
@@ -243,7 +256,7 @@ func (h *Handler) StreamEncounter(req *encounterv2pb.StreamEncounterRequest, str
 	// ProjectFor internally rehydrates the encounter and computes the per-viewer
 	// snapshot, so we don't need a separate LoadFromData/SnapshotFor here.
 	now := h.now()
-	pbEncounter, err := ProjectFor(data, core.PlayerID(playerID), h.broker, now)
+	pbEncounter, err := ProjectFor(ctx, data, core.PlayerID(playerID), h.broker, now)
 	if err != nil {
 		return status.Errorf(codes.Internal, "project encounter %q: %v", string(encID), err)
 	}

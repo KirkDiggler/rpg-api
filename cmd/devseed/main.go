@@ -486,7 +486,7 @@ func buildEncounterData(encounterID string, mode encountercore.EncounterMode) (*
 	broker := tkenc.NewBroker(transport)
 	defer func() { _ = broker.Close() }()
 
-	enc := tkenc.New(encountercore.EncounterID(encounterID), broker)
+	enc := tkenc.New(context.Background(), encountercore.EncounterID(encounterID), broker)
 
 	// alice (rogue) — finesse, DEX +3, shortsword 1d6+3. Adjacent to bob so
 	// bob can be the sneak-eligibility ally check pivot.
@@ -637,7 +637,7 @@ func buildWave2MonkEncounterData(encounterID string, mode encountercore.Encounte
 	broker := tkenc.NewBroker(transport)
 	defer func() { _ = broker.Close() }()
 
-	enc := tkenc.New(encountercore.EncounterID(encounterID), broker)
+	enc := tkenc.New(context.Background(), encountercore.EncounterID(encounterID), broker)
 
 	// charli (monk, unarmed) — placed at origin, adjacent to goblin at Q:1.
 	// AttackBonus: DEX +3 + proficiency +2 = 5.
@@ -743,7 +743,7 @@ func buildWave1RogueEncounterData(encounterID string, mode encountercore.Encount
 	broker := tkenc.NewBroker(transport)
 	defer func() { _ = broker.Close() }()
 
-	enc := tkenc.New(encountercore.EncounterID(encounterID), broker)
+	enc := tkenc.New(context.Background(), encountercore.EncounterID(encounterID), broker)
 
 	// alice L1 rogue — DEX +3, shortsword 1d6+3.
 	if err := enc.AddPlayer(tkenc.PlayerInput{
@@ -820,7 +820,7 @@ func buildWave3BarbarianEncounterData(encounterID string, mode encountercore.Enc
 	broker := tkenc.NewBroker(transport)
 	defer func() { _ = broker.Close() }()
 
-	enc := tkenc.New(encountercore.EncounterID(encounterID), broker)
+	enc := tkenc.New(context.Background(), encountercore.EncounterID(encounterID), broker)
 
 	// bob (barbarian) — greataxe 1d12+3. Adjacent to goblin at Q:1.
 	// AttackBonus: STR +3 + proficiency +2 = 5.

@@ -48,8 +48,12 @@ linters:
         #
         # Scope: action-verb handler files only (activate_feature, take_action,
         # end_turn, interact, submit_check, handler, create, get, project).
-        # Excludes: combat resolver files (need weapons for attack resolution),
-        # reaction_conditions.go (applies OA/Shield programmatically), tests.
+        # Excludes: combat/movement resolver files (translate held entities → the
+        # rulebook chain; legitimately import combat/character/monster/weapons),
+        # hydrate_players.go (marshals the character blob for the SDK cascade),
+        # tests. reaction_conditions.go is gone: OA now rides the toolkit's #689
+        # hydration cascade, so rpg-api no longer constructs conditions.New* and
+        # that depguard exclusion is retired.
         #
         # This rule fires CI so drift is caught by the pipeline, not reviewer memory.
         no-rulebook-internals-in-action-handlers:

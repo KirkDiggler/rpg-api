@@ -6,38 +6,36 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/suite"
-	"go.uber.org/mock/gomock"
 
-	"github.com/KirkDiggler/rpg-api/internal/apierr"
-	"github.com/KirkDiggler/rpg-api/internal/entities"
 	v2encounter "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v2/encounter"
-	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
-	charactermock "github.com/KirkDiggler/rpg-api/internal/repositories/character/mock"
 	tkenc "github.com/KirkDiggler/rpg-toolkit/encounter"
 	encountercore "github.com/KirkDiggler/rpg-toolkit/encounter/core"
+	"github.com/KirkDiggler/rpg-toolkit/events"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/abilities"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/combat"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/monster"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
 )
 
 // Dnd5eCombatResolverTestSuite tests the Dnd5eCombatResolver — the real
-// rulebook-backed CombatResolver that replaces StandInCombatResolver.
+// rulebook-backed CombatResolver.
 //
-// These tests use gomock for the character repo and pre-built monster fixtures.
+// #689: the resolver reads the SDK-held attacker/defender from
+// AttackInput.Attacker/Defender and MUST NOT re-load from a character store. So
+// these tests hydrate the held entities themselves (mirroring what the SDK's
+// LoadFromData cascade does) and pass them on the AttackInput. There is no
+// character-repo mock anymore — the resolver never touches it on the attack path.
+//
 // They verify:
-//   - Player-side attacks load the character, build the CombatantLookup,
-//     call combat.ResolveAttack, and translate the result correctly.
-//   - Monster-side attacks rehydrate from DataJSON, build the lookup, and
-//     translate.
-//   - The fallback to StandInCombatResolver fires when the char repo is absent
-//     or an entity cannot be found.
-//   - extractBaseDice strips modifiers correctly.
+//   - Held attacker + held defender → the real combat.ResolveAttack chain runs
+//     and the outcome translates (AttackRoll in [1,20], TargetAC reflected).
+//   - A nil held attacker → fall back to StandInCombatResolver (stat snapshots).
+//   - A nil held defender but held attacker → the attacker's chain still runs
+//     against a snapshot defender stub (no all-or-nothing stand-in degrade).
 type Dnd5eCombatResolverTestSuite struct {
 	suite.Suite
-	ctx          context.Context
-	ctrl         *gomock.Controller
-	mockCharRepo *charactermock.MockRepository
+	ctx context.Context
 }
 
 func TestDnd5eCombatResolverTestSuite(t *testing.T) {
@@ -46,25 +44,19 @@ func TestDnd5eCombatResolverTestSuite(t *testing.T) {
 
 func (s *Dnd5eCombatResolverTestSuite) SetupTest() {
 	s.ctx = context.Background()
-	s.ctrl = gomock.NewController(s.T())
-	s.mockCharRepo = charactermock.NewMockRepository(s.ctrl)
-}
-
-func (s *Dnd5eCombatResolverTestSuite) TearDownTest() {
-	s.ctrl.Finish()
 }
 
 // ---------------------------------------------------------------------------
-// Fallback behavior — no char repo, no encounter data
+// Fallback behavior — no held attacker
 // ---------------------------------------------------------------------------
 
-// TestResolveAttack_NilEncounterData_FallsBackToStandIn verifies that when
-// encounterData is nil (e.g. CreateEncounter path), the resolver falls through
-// to StandInCombatResolver and still returns a valid AttackOutcome.
+// TestResolveAttack_NilEncounterData_FallsBackToStandIn verifies that with no
+// held entities (e.g. CreateEncounter path), the resolver falls through to
+// StandInCombatResolver and still returns a valid AttackOutcome.
 func (s *Dnd5eCombatResolverTestSuite) TestResolveAttack_NilEncounterData_FallsBackToStandIn() {
 	resolver := v2encounter.NewDnd5eCombatResolverForData(
 		v2encounter.Dnd5eCombatResolverConfig{},
-		nil, // nil data — fallback path
+		nil, // nil data — stand-in path
 	)
 
 	outcome, err := resolver.ResolveAttack(tkenc.AttackInput{
@@ -74,19 +66,21 @@ func (s *Dnd5eCombatResolverTestSuite) TestResolveAttack_NilEncounterData_FallsB
 		AttackerDamageDice:  "1d6+2",
 		AttackerDamageType:  "slashing",
 		TargetAC:            10,
+		// No held Attacker/Defender → stand-in.
 	})
 
 	s.Require().NoError(err)
-	s.Require().NotNil(outcome, "nil encounter data must still return a valid outcome via stand-in")
+	s.Require().NotNil(outcome, "no held entities must still return a valid outcome via stand-in")
 }
 
-// TestResolveAttack_NoCharRepo_FallsBackToStandIn verifies that when the
-// character repo is absent, player-side attacks degrade to stand-in math.
-func (s *Dnd5eCombatResolverTestSuite) TestResolveAttack_NoCharRepo_FallsBackToStandIn() {
-	data := s.buildEncounterDataWithPlayer("char-alice", "goblin-1")
+// TestResolveAttack_NilHeldAttacker_FallsBackToStandIn verifies that a nil held
+// attacker degrades to stand-in math (the attacker's chain cannot run without
+// its hydrated conditions).
+func (s *Dnd5eCombatResolverTestSuite) TestResolveAttack_NilHeldAttacker_FallsBackToStandIn() {
+	data := s.buildEncounterData("char-alice", "goblin-1")
 
 	resolver := v2encounter.NewDnd5eCombatResolverForData(
-		v2encounter.Dnd5eCombatResolverConfig{}, // no CharacterRepo
+		v2encounter.Dnd5eCombatResolverConfig{},
 		data,
 	)
 
@@ -97,39 +91,28 @@ func (s *Dnd5eCombatResolverTestSuite) TestResolveAttack_NoCharRepo_FallsBackToS
 		AttackerDamageDice:  "1d6+2",
 		AttackerDamageType:  "slashing",
 		TargetAC:            15,
+		// Attacker nil → stand-in.
 	})
 
 	s.Require().NoError(err)
-	s.Require().NotNil(outcome, "absent char repo must degrade to stand-in, not error")
+	s.Require().NotNil(outcome, "nil held attacker must degrade to stand-in, not error")
 }
 
 // ---------------------------------------------------------------------------
-// Monster-side attacks (rehydrate from DataJSON)
+// Monster-side attacks (held monster attacker)
 // ---------------------------------------------------------------------------
 
-// TestResolveAttack_MonsterAttacker_DataJSON_UsesRealChain verifies that when
-// the attacker is a monster with a full DataJSON blob, the resolver rehydrates
-// it, builds the CombatantLookup, and calls combat.ResolveAttack. The outcome
-// must be non-nil and carry a valid AttackRoll.
-func (s *Dnd5eCombatResolverTestSuite) TestResolveAttack_MonsterAttacker_DataJSON_UsesRealChain() {
-	// Build a goblin monster with known ability scores and embed its DataJSON.
-	goblin := monster.NewGoblin("goblin-1")
-	goblinData := goblin.ToData()
-	dataJSON, err := json.Marshal(goblinData)
-	s.Require().NoError(err)
+// TestResolveAttack_HeldMonsterAttacker_UsesRealChain verifies that with a held
+// monster attacker (as the SDK cascade would hand it) and a held character
+// defender, the resolver runs the real combat chain and translates the outcome.
+func (s *Dnd5eCombatResolverTestSuite) TestResolveAttack_HeldMonsterAttacker_UsesRealChain() {
+	goblin := s.heldGoblin("goblin-1")
+	alice := s.heldCharacter("char-alice")
 
-	// Build a player target as a character entity.
-	aliceData := s.buildCharacterData("char-alice")
-	s.mockCharRepo.EXPECT().
-		Get(gomock.Any(), characterrepo.GetInput{ID: "char-alice"}).
-		Return(&characterrepo.GetOutput{
-			Character: &entities.Character{Data: aliceData},
-		}, nil)
-
-	encounterData := s.buildEncounterDataWithMonsterDataJSON("goblin-1", dataJSON, "char-alice")
+	encounterData := s.buildEncounterDataWithMonsterDataJSON("goblin-1", s.goblinDataJSON("goblin-1"), "char-alice")
 
 	resolver := v2encounter.NewDnd5eCombatResolverForData(
-		v2encounter.Dnd5eCombatResolverConfig{CharacterRepo: s.mockCharRepo},
+		v2encounter.Dnd5eCombatResolverConfig{},
 		encounterData,
 	)
 
@@ -140,42 +123,8 @@ func (s *Dnd5eCombatResolverTestSuite) TestResolveAttack_MonsterAttacker_DataJSO
 		AttackerDamageDice:  "1d6+2",
 		AttackerDamageType:  "slashing",
 		TargetAC:            14,
-	})
-
-	s.Require().NoError(err)
-	s.Require().NotNil(outcome)
-	// AttackRoll must be in [1, 20] — the real d20 roll from the rulebook chain.
-	s.GreaterOrEqual(outcome.AttackRoll, 1)
-	s.LessOrEqual(outcome.AttackRoll, 20)
-}
-
-// TestResolveAttack_MonsterAttacker_NoDataJSON_FallsBackToSnapshotWeapon
-// verifies that a monster without DataJSON (test-fixture path) still resolves
-// via the real chain using a synthetic weapon built from the snapshot fields.
-func (s *Dnd5eCombatResolverTestSuite) TestResolveAttack_MonsterAttacker_NoDataJSON_FallsBackToSnapshotWeapon() {
-	aliceData := s.buildCharacterData("char-alice")
-	s.mockCharRepo.EXPECT().
-		Get(gomock.Any(), characterrepo.GetInput{ID: "char-alice"}).
-		Return(&characterrepo.GetOutput{
-			Character: &entities.Character{Data: aliceData},
-		}, nil)
-
-	// Monster with no DataJSON (typical unit-test fixture seeded via AddMonster
-	// without a DataJSON blob).
-	encounterData := s.buildEncounterDataWithPlayer("char-alice", "goblin-1")
-
-	resolver := v2encounter.NewDnd5eCombatResolverForData(
-		v2encounter.Dnd5eCombatResolverConfig{CharacterRepo: s.mockCharRepo},
-		encounterData,
-	)
-
-	outcome, err := resolver.ResolveAttack(tkenc.AttackInput{
-		AttackerID:          "goblin-1",
-		TargetID:            "char-alice",
-		AttackerAttackBonus: 4,
-		AttackerDamageDice:  "1d6+2",
-		AttackerDamageType:  "slashing",
-		TargetAC:            14,
+		Attacker:            goblin,
+		Defender:            alice,
 	})
 
 	s.Require().NoError(err)
@@ -185,30 +134,20 @@ func (s *Dnd5eCombatResolverTestSuite) TestResolveAttack_MonsterAttacker_NoDataJ
 }
 
 // ---------------------------------------------------------------------------
-// Player-side attacks (character repo lookup)
+// Player-side attacks (held character attacker)
 // ---------------------------------------------------------------------------
 
-// TestResolveAttack_PlayerAttacker_CharRepoUsed verifies that a player-side
-// attack loads the character from the repo and produces a valid outcome.
-// The monster target has no DataJSON; a synthetic target is built from
-// snapshot fields.
-func (s *Dnd5eCombatResolverTestSuite) TestResolveAttack_PlayerAttacker_CharRepoUsed() {
-	aliceData := s.buildCharacterData("char-alice")
-	s.mockCharRepo.EXPECT().
-		Get(gomock.Any(), characterrepo.GetInput{ID: "char-alice"}).
-		Return(&characterrepo.GetOutput{
-			Character: &entities.Character{Data: aliceData},
-		}, nil)
-	// saveAttackerConditionState calls Update after the attack resolves to persist
-	// updated condition state (e.g. SneakAttack.UsedThisTurn). Allow any Update.
-	s.mockCharRepo.EXPECT().
-		Update(gomock.Any(), gomock.Any()).
-		Return(&characterrepo.UpdateOutput{}, nil).AnyTimes()
+// TestResolveAttack_HeldPlayerAttacker_UsesRealChain verifies that a held
+// character attacker runs the real chain and produces a valid outcome. The
+// defender is a held monster.
+func (s *Dnd5eCombatResolverTestSuite) TestResolveAttack_HeldPlayerAttacker_UsesRealChain() {
+	alice := s.heldCharacter("char-alice")
+	goblin := s.heldGoblin("goblin-1")
 
-	encounterData := s.buildEncounterDataWithPlayer("char-alice", "goblin-1")
+	encounterData := s.buildEncounterData("char-alice", "goblin-1")
 
 	resolver := v2encounter.NewDnd5eCombatResolverForData(
-		v2encounter.Dnd5eCombatResolverConfig{CharacterRepo: s.mockCharRepo},
+		v2encounter.Dnd5eCombatResolverConfig{},
 		encounterData,
 	)
 
@@ -219,29 +158,27 @@ func (s *Dnd5eCombatResolverTestSuite) TestResolveAttack_PlayerAttacker_CharRepo
 		AttackerDamageDice:  "1d8+2",
 		AttackerDamageType:  "slashing",
 		TargetAC:            15,
+		Attacker:            alice,
+		Defender:            goblin,
 	})
 
 	s.Require().NoError(err)
 	s.Require().NotNil(outcome)
-	// AttackRoll is [1, 20] from the rulebook chain.
 	s.GreaterOrEqual(outcome.AttackRoll, 1)
 	s.LessOrEqual(outcome.AttackRoll, 20)
-	// TargetAC should reflect the monster's AC.
-	s.Equal(15, outcome.TargetAC)
 }
 
-// TestResolveAttack_PlayerAttacker_CharRepoError_FallsBackToStandIn verifies
-// that a character-repo error degrades gracefully to stand-in math rather than
-// returning an error that would abort the attack verb.
-func (s *Dnd5eCombatResolverTestSuite) TestResolveAttack_PlayerAttacker_CharRepoError_FallsBackToStandIn() {
-	s.mockCharRepo.EXPECT().
-		Get(gomock.Any(), characterrepo.GetInput{ID: "char-alice"}).
-		Return(nil, apierr.NotFound("character not found"))
+// TestResolveAttack_HeldAttacker_NilDefender_RunsAgainstSnapshotStub verifies
+// that a held attacker still runs the real chain when the defender is NOT held
+// (no DataJSON) — the resolver builds a snapshot stub for the defender from
+// TargetAC rather than degrading the whole attack to the stand-in.
+func (s *Dnd5eCombatResolverTestSuite) TestResolveAttack_HeldAttacker_NilDefender_RunsAgainstSnapshotStub() {
+	alice := s.heldCharacter("char-alice")
 
-	encounterData := s.buildEncounterDataWithPlayer("char-alice", "goblin-1")
+	encounterData := s.buildEncounterData("char-alice", "goblin-1")
 
 	resolver := v2encounter.NewDnd5eCombatResolverForData(
-		v2encounter.Dnd5eCombatResolverConfig{CharacterRepo: s.mockCharRepo},
+		v2encounter.Dnd5eCombatResolverConfig{},
 		encounterData,
 	)
 
@@ -252,25 +189,23 @@ func (s *Dnd5eCombatResolverTestSuite) TestResolveAttack_PlayerAttacker_CharRepo
 		AttackerDamageDice:  "1d8+2",
 		AttackerDamageType:  "slashing",
 		TargetAC:            15,
+		Attacker:            alice,
+		// Defender nil — resolver builds a snapshot stub from TargetAC.
 	})
 
-	// Must degrade to stand-in: outcome non-nil, no error.
 	s.Require().NoError(err)
 	s.Require().NotNil(outcome)
+	s.GreaterOrEqual(outcome.AttackRoll, 1)
+	s.LessOrEqual(outcome.AttackRoll, 20)
+	s.Equal(15, outcome.TargetAC, "snapshot-stub defender must carry the AttackInput TargetAC")
 }
 
 // ---------------------------------------------------------------------------
-// extractBaseDice — pure function table-driven
+// Dice-notation robustness
 // ---------------------------------------------------------------------------
 
-// TestExtractBaseDice exercises the internal dice-notation parser by invoking
-// it indirectly through syntheticMonsterWeapon via a monster-attacker attack.
-// The "1d6+2" → "1d6" parsing is critical: if it double-counts the modifier,
-// the outcome damage will be inflated.
-//
-// We can't call extractBaseDice directly (unexported), but we CAN verify that
-// a monster-attacker attack with "1d6+2" DamageDice resolves without error
-// (which would happen if the base-dice parse produced invalid notation).
+// TestResolveAttack_DamageDiceVariants_ParseWithoutError exercises a held
+// monster attacker across several damage-dice notations; none must error.
 func (s *Dnd5eCombatResolverTestSuite) TestResolveAttack_DamageDiceVariants_ParseWithoutError() {
 	cases := []struct {
 		name       string
@@ -283,20 +218,14 @@ func (s *Dnd5eCombatResolverTestSuite) TestResolveAttack_DamageDiceVariants_Pars
 		{"multi-die", "3d6+3"},
 	}
 
-	aliceData := s.buildCharacterData("char-alice")
-
 	for _, tc := range cases {
 		s.Run(tc.name, func() {
-			s.mockCharRepo.EXPECT().
-				Get(gomock.Any(), characterrepo.GetInput{ID: "char-alice"}).
-				Return(&characterrepo.GetOutput{
-					Character: &entities.Character{Data: aliceData},
-				}, nil)
-
-			encounterData := s.buildEncounterDataWithPlayer("char-alice", "goblin-1")
+			goblin := s.heldGoblin("goblin-1")
+			alice := s.heldCharacter("char-alice")
+			encounterData := s.buildEncounterDataWithMonsterDataJSON("goblin-1", s.goblinDataJSON("goblin-1"), "char-alice")
 
 			resolver := v2encounter.NewDnd5eCombatResolverForData(
-				v2encounter.Dnd5eCombatResolverConfig{CharacterRepo: s.mockCharRepo},
+				v2encounter.Dnd5eCombatResolverConfig{},
 				encounterData,
 			)
 
@@ -306,10 +235,10 @@ func (s *Dnd5eCombatResolverTestSuite) TestResolveAttack_DamageDiceVariants_Pars
 				AttackerDamageDice: tc.damageDice,
 				AttackerDamageType: "slashing",
 				TargetAC:           14,
+				Attacker:           goblin,
+				Defender:           alice,
 			})
 
-			// Even empty/malformed dice must not error — the rulebook falls back
-			// or the stand-in covers it.
 			s.Require().NoError(err, "dice notation %q must not cause an error", tc.damageDice)
 			s.Require().NotNil(outcome)
 		})
@@ -320,27 +249,16 @@ func (s *Dnd5eCombatResolverTestSuite) TestResolveAttack_DamageDiceVariants_Pars
 // Outcome translation
 // ---------------------------------------------------------------------------
 
-// TestResolveAttack_OutcomeTranslation_HitSetCorrectly verifies that the
-// tkenc.AttackOutcome fields are populated from combat.AttackResult. We can
-// assert on TargetAC since it reflects the monster's AC from the Combatant
-// interface (not the snapshot value).
+// TestResolveAttack_OutcomeTranslation_HitSetCorrectly verifies the
+// tkenc.AttackOutcome fields are populated from combat.AttackResult.
 func (s *Dnd5eCombatResolverTestSuite) TestResolveAttack_OutcomeTranslation_HitSetCorrectly() {
-	aliceData := s.buildCharacterData("char-alice")
-	s.mockCharRepo.EXPECT().
-		Get(gomock.Any(), characterrepo.GetInput{ID: "char-alice"}).
-		Return(&characterrepo.GetOutput{
-			Character: &entities.Character{Data: aliceData},
-		}, nil)
-	// saveAttackerConditionState calls Update after the attack resolves to persist
-	// updated condition state (e.g. SneakAttack.UsedThisTurn). Allow any Update.
-	s.mockCharRepo.EXPECT().
-		Update(gomock.Any(), gomock.Any()).
-		Return(&characterrepo.UpdateOutput{}, nil).AnyTimes()
+	alice := s.heldCharacter("char-alice")
+	goblin := s.heldGoblin("goblin-1")
 
-	encounterData := s.buildEncounterDataWithPlayer("char-alice", "goblin-1")
+	encounterData := s.buildEncounterData("char-alice", "goblin-1")
 
 	resolver := v2encounter.NewDnd5eCombatResolverForData(
-		v2encounter.Dnd5eCombatResolverConfig{CharacterRepo: s.mockCharRepo},
+		v2encounter.Dnd5eCombatResolverConfig{},
 		encounterData,
 	)
 
@@ -351,33 +269,53 @@ func (s *Dnd5eCombatResolverTestSuite) TestResolveAttack_OutcomeTranslation_HitS
 		AttackerDamageDice:  "1d8+2",
 		AttackerDamageType:  "slashing",
 		TargetAC:            15,
+		Attacker:            alice,
+		Defender:            goblin,
 	})
 
 	s.Require().NoError(err)
 	s.Require().NotNil(outcome)
 
-	// AttackRoll must be in the d20 range.
 	s.GreaterOrEqual(outcome.AttackRoll, 1)
 	s.LessOrEqual(outcome.AttackRoll, 20)
 
-	// If hit, damage must be non-negative.
 	if outcome.Hit {
 		s.GreaterOrEqual(outcome.Damage, 0)
+		s.NotEmpty(outcome.DamageType)
 	} else {
 		s.Equal(0, outcome.Damage, "no damage on a miss")
-	}
-
-	// DamageType from the (unarmed stub) weapon — Bludgeoning for unarmed.
-	// Alice has no weapon equipped in the test fixture, so she uses the stub.
-	// We just assert it's non-empty on a hit.
-	if outcome.Hit {
-		s.NotEmpty(outcome.DamageType)
 	}
 }
 
 // ---------------------------------------------------------------------------
 // helpers
 // ---------------------------------------------------------------------------
+
+// heldCharacter hydrates a *character.Character on a throwaway bus, mirroring
+// what the SDK's LoadFromData cascade hands the resolver as AttackInput.Attacker
+// / Defender. A throwaway bus is fine for unit tests: we assert outcome shape,
+// not cross-attack condition persistence.
+func (s *Dnd5eCombatResolverTestSuite) heldCharacter(id string) *character.Character {
+	char, err := character.LoadFromData(s.ctx, s.buildCharacterData(id), events.NewEventBus())
+	s.Require().NoError(err)
+	return char
+}
+
+// heldGoblin hydrates a *monster.Monster from a goblin blob on a throwaway bus.
+func (s *Dnd5eCombatResolverTestSuite) heldGoblin(id string) *monster.Monster {
+	var data monster.Data
+	s.Require().NoError(json.Unmarshal(s.goblinDataJSON(id), &data))
+	mon, err := monster.LoadFromData(s.ctx, &data, events.NewEventBus())
+	s.Require().NoError(err)
+	return mon
+}
+
+func (s *Dnd5eCombatResolverTestSuite) goblinDataJSON(id string) []byte {
+	g := monster.NewGoblin(id)
+	blob, err := json.Marshal(g.ToData())
+	s.Require().NoError(err)
+	return blob
+}
 
 // buildCharacterData returns a minimal character.Data suitable for LoadFromData.
 func (s *Dnd5eCombatResolverTestSuite) buildCharacterData(id string) *character.Data {
@@ -400,9 +338,9 @@ func (s *Dnd5eCombatResolverTestSuite) buildCharacterData(id string) *character.
 	}
 }
 
-// buildEncounterDataWithPlayer returns encounter data containing one player
+// buildEncounterData returns encounter data containing one player
 // (playerEntityID) and one monster (monsterID, no DataJSON).
-func (s *Dnd5eCombatResolverTestSuite) buildEncounterDataWithPlayer(playerEntityID, monsterID string) *tkenc.Data {
+func (s *Dnd5eCombatResolverTestSuite) buildEncounterData(playerEntityID, monsterID string) *tkenc.Data {
 	data := tkenc.NewData("enc-test")
 	data.Players[encountercore.PlayerID(playerEntityID)] = &tkenc.PlayerData{
 		ID:       encountercore.PlayerID(playerEntityID),
@@ -431,7 +369,11 @@ func (s *Dnd5eCombatResolverTestSuite) buildEncounterDataWithMonsterDataJSON(
 	dataJSON []byte,
 	playerEntityID string,
 ) *tkenc.Data {
-	data := s.buildEncounterDataWithPlayer(playerEntityID, monsterID)
+	data := s.buildEncounterData(playerEntityID, monsterID)
 	data.Monsters[encountercore.EntityID(monsterID)].DataJSON = dataJSON
 	return data
 }
+
+// compile guard: keep combat import referenced if a future assertion drops the
+// only use (the suite asserts via tkenc types today).
+var _ = combat.AttackHandMain

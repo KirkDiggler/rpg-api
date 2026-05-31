@@ -71,7 +71,7 @@ func (s *EncounterV2IntegrationSuite) TestCreateEncounter_Basic() {
 func (s *EncounterV2IntegrationSuite) TestMovementSliceTwoPlayers() {
 	// Seed: encounter with players A and B in mutual LoS.
 	// SightRange must be > 0; default 0 means neither player sees anything.
-	enc := tkenc.New("enc-1", s.srv.BrokerV2)
+	enc := tkenc.New(context.Background(), "enc-1", s.srv.BrokerV2)
 	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
 		PlayerID: "player-A", EntityID: "char-A",
 		Position:   core.Hex{Q: 0, R: 0, S: 0},
@@ -143,7 +143,7 @@ func (s *EncounterV2IntegrationSuite) TestMovementSliceTwoPlayers() {
 func (s *EncounterV2IntegrationSuite) TestMovementSlicePerViewerProjection_AsymmetricLoS() {
 	// B at origin with SightRange:1 — sees only its 6 adjacent hexes + itself.
 	// A starts off B's vision, walks across B's view, exits the other side.
-	enc := tkenc.New("enc-asym", s.srv.BrokerV2)
+	enc := tkenc.New(context.Background(), "enc-asym", s.srv.BrokerV2)
 	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
 		PlayerID: "player-A", EntityID: "char-A",
 		Position:   core.Hex{Q: 5, R: -2, S: -3},
@@ -253,7 +253,7 @@ func (s *EncounterV2IntegrationSuite) TestMovementSlicePerViewerProjection_Asymm
 // with the caller's own entity visible, and that other players within mutual LoS
 // also appear in the projected snapshot.
 func (s *EncounterV2IntegrationSuite) TestGetEncounter_ProjectsView() {
-	enc := tkenc.New("enc-get-1", s.srv.BrokerV2)
+	enc := tkenc.New(context.Background(), "enc-get-1", s.srv.BrokerV2)
 	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
 		PlayerID: "alice", EntityID: "char-alice",
 		Position:   core.Hex{Q: 0, R: 0, S: 0},
@@ -290,7 +290,7 @@ func (s *EncounterV2IntegrationSuite) TestGetEncounter_ProjectsView() {
 // TestGetEncounter_AsymmetricLoS_ExcludesHidden verifies that players outside
 // the viewer's current sight range are excluded from the projected snapshot.
 func (s *EncounterV2IntegrationSuite) TestGetEncounter_AsymmetricLoS_ExcludesHidden() {
-	enc := tkenc.New("enc-get-asym", s.srv.BrokerV2)
+	enc := tkenc.New(context.Background(), "enc-get-asym", s.srv.BrokerV2)
 	// alice at origin with SightRange:1 — can only see adjacent hexes.
 	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
 		PlayerID: "alice", EntityID: "char-alice",
@@ -321,7 +321,7 @@ func (s *EncounterV2IntegrationSuite) TestGetEncounter_AsymmetricLoS_ExcludesHid
 // TestGetEncounter_NonMember_PermissionDenied verifies that a player not in the
 // encounter receives PermissionDenied.
 func (s *EncounterV2IntegrationSuite) TestGetEncounter_NonMember_PermissionDenied() {
-	enc := tkenc.New("enc-get-perm", s.srv.BrokerV2)
+	enc := tkenc.New(context.Background(), "enc-get-perm", s.srv.BrokerV2)
 	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
 		PlayerID: "alice", EntityID: "char-alice",
 		Position: core.Hex{Q: 0, R: 0, S: 0},
@@ -400,7 +400,7 @@ func (s *EncounterV2IntegrationSuite) collectStreamEvents(stream encounterv2pb.E
 // Seeding: alice and bob in mutual LoS (SightRange:10). Alice's replay delivers:
 // EntityAppeared(char-alice), EntityAppeared(char-bob), GeometryRevealed — 3 events.
 func (s *EncounterV2IntegrationSuite) TestStreamEncounter_ReplaysInitialState() {
-	enc := tkenc.New("enc-replay-1", s.srv.BrokerV2)
+	enc := tkenc.New(context.Background(), "enc-replay-1", s.srv.BrokerV2)
 	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
 		PlayerID: "alice", EntityID: "char-alice",
 		Position:   core.Hex{Q: 0, R: 0, S: 0},
@@ -453,7 +453,7 @@ func (s *EncounterV2IntegrationSuite) TestStreamEncounter_ReplaysInitialState() 
 // uses LoS-crossings (not every event) so an already-visible entity should not
 // fire EntityAppeared again from a move that stays within the viewer's LoS.
 func (s *EncounterV2IntegrationSuite) TestStreamEncounter_LiveEventsDoNotDuplicateReplay() {
-	enc := tkenc.New("enc-replay-2", s.srv.BrokerV2)
+	enc := tkenc.New(context.Background(), "enc-replay-2", s.srv.BrokerV2)
 	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
 		PlayerID: "alice", EntityID: "char-alice",
 		Position:   core.Hex{Q: 0, R: 0, S: 0},
@@ -535,7 +535,7 @@ func (s *EncounterV2IntegrationSuite) TestStreamEncounter_LiveEventsDoNotDuplica
 // integration_test.go:71) so the projection layer is exercised against the
 // same shape that the toolkit-level test proved.
 func (s *EncounterV2IntegrationSuite) TestInteract_OpenDoor_TwoPlayers() {
-	enc := tkenc.New("enc-door-1", s.srv.BrokerV2)
+	enc := tkenc.New(context.Background(), "enc-door-1", s.srv.BrokerV2)
 	// SightRange:10 ensures both alice and bob can perceive a door at
 	// distance 4 (per ProjectDoorOpen's visibility check).
 	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
@@ -624,7 +624,7 @@ func (s *EncounterV2IntegrationSuite) TestInteract_OpenDoor_TwoPlayers() {
 // the integration level: a second Interact on an already-open door must be
 // rejected by the toolkit with FailedPrecondition.
 func (s *EncounterV2IntegrationSuite) TestInteract_DoorAlreadyOpen_FailedPrecondition() {
-	enc := tkenc.New("enc-door-twice", s.srv.BrokerV2)
+	enc := tkenc.New(context.Background(), "enc-door-twice", s.srv.BrokerV2)
 	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
 		PlayerID: "alice", EntityID: "char-alice",
 		Position: core.Hex{Q: 0, R: 0, S: 0}, SightRange: 10,
@@ -662,7 +662,7 @@ func (s *EncounterV2IntegrationSuite) TestInteract_LockedDoor_PromptAndResolve_T
 	// Seed: alice + bob in mutual LoS; one locked door at distance 4 from
 	// both (matches the unlocked-door test fixture so projection logic is
 	// the same).
-	enc := tkenc.New(core.EncounterID(encID), s.srv.BrokerV2)
+	enc := tkenc.New(context.Background(), core.EncounterID(encID), s.srv.BrokerV2)
 	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
 		PlayerID: "alice", EntityID: "char-alice",
 		Position: core.Hex{Q: 0, R: 0, S: 0}, SightRange: 10,
@@ -780,7 +780,7 @@ func (s *EncounterV2IntegrationSuite) TestInteract_LockedDoor_PromptAndResolve_T
 func (s *EncounterV2IntegrationSuite) TestInteract_LockedDoor_FailedRoll_NoEvents() {
 	encID := "enc-locked-fail"
 
-	enc := tkenc.New(core.EncounterID(encID), s.srv.BrokerV2)
+	enc := tkenc.New(context.Background(), core.EncounterID(encID), s.srv.BrokerV2)
 	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
 		PlayerID: "alice", EntityID: "char-alice",
 		Position: core.Hex{Q: 0, R: 0, S: 0}, SightRange: 10,
@@ -863,7 +863,7 @@ func (s *EncounterV2IntegrationSuite) TestInteract_LockedDoor_FailedRoll_NoEvent
 // This is the integration-test face of pat-v2-npc-turn-dispatch and
 // pat-v2-combat-event-translator.
 func (s *EncounterV2IntegrationSuite) TestCombatSlice_TakeActionAndEndTurn_NPCDispatch() {
-	enc := tkenc.New("enc-combat", s.srv.BrokerV2)
+	enc := tkenc.New(context.Background(), "enc-combat", s.srv.BrokerV2)
 	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
 		PlayerID: "alice", EntityID: "char-alice",
 		Position: core.Hex{Q: 0, R: 0, S: 0}, SightRange: 10,
@@ -1109,7 +1109,7 @@ func (s *EncounterV2IntegrationSuite) killMonsterViaTakeActionLoop(
 func (s *EncounterV2IntegrationSuite) TestCombatSlice_KillLastHostile_FiresDeathChainAndEnds() {
 	encID := "enc-kill-last"
 
-	enc := tkenc.New(core.EncounterID(encID), s.srv.BrokerV2)
+	enc := tkenc.New(context.Background(), core.EncounterID(encID), s.srv.BrokerV2)
 	s.Require().NoError(enc.AddPlayer(killGoblinFixturePlayerInput(
 		"alice", "char-alice", core.Hex{Q: 0, R: 0, S: 0})))
 	s.Require().NoError(enc.AddPlayer(killGoblinFixturePlayerInput(
@@ -1246,7 +1246,7 @@ func (s *EncounterV2IntegrationSuite) TestCombatSlice_KillLastHostile_FiresDeath
 func (s *EncounterV2IntegrationSuite) TestCombatSlice_KillOneOfTwoHostiles_NoEncounterEnd() {
 	encID := "enc-kill-one-of-two"
 
-	enc := tkenc.New(core.EncounterID(encID), s.srv.BrokerV2)
+	enc := tkenc.New(context.Background(), core.EncounterID(encID), s.srv.BrokerV2)
 	s.Require().NoError(enc.AddPlayer(killGoblinFixturePlayerInput(
 		"alice", "char-alice", core.Hex{Q: 0, R: 0, S: 0})))
 	s.Require().NoError(enc.AddPlayer(killGoblinFixturePlayerInput(
@@ -1399,11 +1399,11 @@ func (s *EncounterV2IntegrationSuite) advanceUntilPlayerActiveByDirectToolkit(en
 		// before NPCAct. The stand-in is sufficient here because we only need to
 		// advance past the NPC turn — the attack outcome is not asserted.
 		var reloadErr error
-		enc, reloadErr = tkenc.LoadFromData(data, s.srv.BrokerV2,
+		enc, reloadErr = tkenc.LoadFromData(context.Background(), data, s.srv.BrokerV2,
 			tkenc.WithCombatResolver(testStandInResolver{}))
 		s.Require().NoError(reloadErr)
 		s.Require().NoError(enc.NPCAct(s.ctx, active))
-		_, _, err := enc.EndTurn(active)
+		_, _, err := enc.EndTurn(context.Background(), active)
 		s.Require().NoError(err)
 	}
 	s.Require().NoError(s.srv.EncRepoV2.Save(s.ctx, enc.ToData()))

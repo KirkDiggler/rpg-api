@@ -81,7 +81,10 @@ func (h *Handler) SetReactionReady(
 			"character_id does not match player's controlled entity")
 	}
 
-	enc, err := tkenc.LoadFromData(data, h.broker,
+	// #689: readiness toggle doesn't touch combatant state; no player DataJSON
+	// attached, so the cascade skips hydration. ctx threaded for the new
+	// LoadFromData signature.
+	enc, err := tkenc.LoadFromData(ctx, data, h.broker,
 		tkenc.WithCharacterResolver(h.resolver),
 		tkenc.WithCombatResolver(h.buildCombatResolver(data)),
 		tkenc.WithMovementResolver(h.buildMovementResolver(data)))

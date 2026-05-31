@@ -4,6 +4,7 @@
 package encounter
 
 import (
+	"context"
 	"sort"
 	"time"
 
@@ -24,12 +25,16 @@ import (
 //
 // now is passed explicitly so callers in tests can inject a fixed clock.
 func ProjectFor(
+	ctx context.Context,
 	data *tkenc.Data,
 	viewer core.PlayerID,
 	broker *tkenc.Broker,
 	now time.Time,
 ) (*encounterv2pb.Encounter, error) {
-	enc, err := tkenc.LoadFromData(data, broker)
+	// Read-only projection: no player DataJSON is attached here, so the SDK's
+	// #689 hydration cascade skips combatant hydration (seats without DataJSON).
+	// The snapshot reads positions/HP/mode from Data directly, not held entities.
+	enc, err := tkenc.LoadFromData(ctx, data, broker)
 	if err != nil {
 		return nil, err
 	}

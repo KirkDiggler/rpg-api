@@ -40,6 +40,7 @@ package encounter
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
@@ -47,8 +48,11 @@ import (
 	tkenc "github.com/KirkDiggler/rpg-toolkit/encounter"
 	encountercore "github.com/KirkDiggler/rpg-toolkit/encounter/core"
 	"github.com/KirkDiggler/rpg-toolkit/events"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/combat"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/gamectx"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/monster"
+	monsteractions "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/monster/actions"
 	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
 )
 
@@ -145,8 +149,10 @@ func (r *Dnd5eMovementResolver) ResolveStep(input tkenc.MovementStepInput) (*tke
 	// Build per-step CombatantRegistry covering all encounter participants.
 	// combat.MoveEntity's triggerOpportunityAttack calls
 	// combat.GetCombatantFromContext(ctx, attackerID) to resolve the OA
-	// attacker — needs every potential threatener registered.
-	combReg := r.buildCombatantRegistry(ctx, input.EventBus)
+	// attacker — needs every potential threatener registered. The held mover
+	// (#689) is registered directly; threateners are loaded lookup-only (see
+	// buildCombatantRegistry).
+	combReg := r.buildCombatantRegistry(ctx, input)
 	ctx = combat.WithCombatantLookup(ctx, combReg)
 
 	// Empty CharacterRegistry — chain subscribers that need character lookup
@@ -204,66 +210,120 @@ func (r *Dnd5eMovementResolver) ResolveStep(input tkenc.MovementStepInput) (*tke
 // the classification.
 func (r *Dnd5eMovementResolver) classifyEntityType(entityID string) string {
 	if r.encounterData == nil {
-		return "character"
+		return string(entityTypeCharacter)
 	}
 	for _, pd := range r.encounterData.Players {
 		if string(pd.EntityID) == entityID {
-			return "character"
+			return string(entityTypeCharacter)
 		}
 	}
 	if _, ok := r.encounterData.Monsters[encountercore.EntityID(entityID)]; ok {
-		return "monster"
+		return string(entityTypeMonster)
 	}
-	return "character"
+	return string(entityTypeCharacter)
 }
 
 // buildCombatantRegistry constructs a CombatantRegistry seeded with every
 // player + monster in the encounter. combat.MoveEntity's
-// triggerOpportunityAttack relies on this lookup to fetch the OA
-// attacker (any threatening combatant of the mover); registering all
-// participants avoids the chicken-and-egg of "who's threatening?" being
-// resolved by combat.MoveEntity itself.
+// triggerOpportunityAttack relies on this lookup to fetch the OA attacker (any
+// threatening combatant of the mover); registering all participants avoids the
+// chicken-and-egg of "who's threatening?" being resolved by combat.MoveEntity
+// itself.
 //
-// Players are loaded from CharacterRepo (returns the rehydrated
-// *character.Character, which implements combat.Combatant). Monsters
-// are rehydrated from DataJSON via the existing helpers on
-// Dnd5eCombatResolver — to keep #539 narrow, we reuse the same
-// rehydration code path by constructing a transient Dnd5eCombatResolver
-// and calling its resolveEntity per ID. Future refactor (out of #539
-// scope): extract a shared "encounter combatant loader" helper that both
-// resolvers can use directly.
-func (r *Dnd5eMovementResolver) buildCombatantRegistry(ctx context.Context, bus events.EventBus) *CombatantRegistry {
+// #689 + held entities: the SDK hands the mover on input.Mover (already
+// hydrated, conditions on the encounter bus) — register it directly, no load.
+// The THREATENERS (the other combatants, one of which is the OA attacker) are
+// not exposed by the SDK per step (only Mover is), so they are loaded
+// lookup-only on a THROWAWAY bus — NOT the encounter bus. The registry
+// combatant is consumed only for attack stats/AC/weapon by
+// GetCombatantFromContext; the OA condition that actually FIRES is the held
+// instance the SDK cascade subscribed to the encounter bus. Loading the
+// lookup-only copy on a throwaway bus therefore does NOT re-subscribe conditions
+// to the encounter bus and cannot recur the #684 double-subscribe.
+//
+// Known limitation (toolkit gap, surfaced for the orchestrator-restructure
+// chunk): the SDK should expose all held combatants to the movement resolver
+// (as it does for the combat resolver via AttackInput.Attacker/Defender) so
+// this lookup-only load can be dropped entirely. Until then this is the minimal
+// safe path that keeps movement-OA working without re-subscribing.
+func (r *Dnd5eMovementResolver) buildCombatantRegistry(ctx context.Context, input tkenc.MovementStepInput) *CombatantRegistry {
 	reg := NewCombatantRegistry()
 
-	// Reuse the combat resolver's entity loading. Construct a transient
-	// instance bound to the same encounter data + character repo + roller.
-	combResolver := NewDnd5eCombatResolverForData(
-		Dnd5eCombatResolverConfig{
-			CharacterRepo: r.cfg.CharacterRepo,
-			Roller:        r.cfg.Roller,
-		},
-		r.encounterData,
-	)
+	moverID := string(input.EntityID)
+	if input.Mover != nil {
+		// Held mover (no load): registered directly.
+		reg.Register(moverID, input.Mover)
+	}
 
-	// Register every player by entity ID.
+	// Throwaway bus for lookup-only threatener loads. Conditions these copies
+	// Apply() subscribe to THIS bus, which is discarded after the step — they
+	// never touch the encounter bus, so no double-subscribe.
+	lookupBus := events.NewEventBus()
+
 	for _, pd := range r.encounterData.Players {
 		entityID := string(pd.EntityID)
-		char, _, _ := combResolver.resolveEntity(ctx, entityID, bus)
-		if char != nil {
+		if entityID == moverID {
+			continue // mover already registered from input.Mover
+		}
+		if char := r.loadCharacterForLookup(ctx, entityID, lookupBus); char != nil {
 			reg.Register(entityID, char)
 		}
 	}
 
-	// Register every monster by entity ID.
 	for _, md := range r.encounterData.Monsters {
 		entityID := string(md.ID)
-		_, mon, _ := combResolver.resolveEntity(ctx, entityID, bus)
-		if mon != nil {
+		if entityID == moverID {
+			continue
+		}
+		if mon := r.loadMonsterForLookup(ctx, md, lookupBus); mon != nil {
 			reg.Register(entityID, mon)
 		}
 	}
 
 	return reg
+}
+
+// loadCharacterForLookup loads a *character.Character by ID purely so the OA
+// chain's GetCombatantFromContext can read its attack stats/weapon. Loaded on a
+// throwaway bus (never the encounter bus) — see buildCombatantRegistry. Returns
+// nil when the repo is absent or the lookup fails (the OA simply won't resolve
+// that threatener, which is the pre-existing behavior for unloadable entities).
+func (r *Dnd5eMovementResolver) loadCharacterForLookup(ctx context.Context, characterID string, bus events.EventBus) *character.Character {
+	if r.cfg.CharacterRepo == nil {
+		return nil
+	}
+	out, err := r.cfg.CharacterRepo.Get(ctx, characterrepo.GetInput{ID: characterID})
+	if err != nil || out == nil || out.Character == nil || out.Character.Data == nil {
+		return nil
+	}
+	char, err := character.LoadFromData(ctx, out.Character.Data, bus)
+	if err != nil {
+		return nil
+	}
+	return char
+}
+
+// loadMonsterForLookup loads a *monster.Monster from MonsterData.DataJSON purely
+// for the OA-chain lookup, on a throwaway bus. Returns nil when the blob is
+// absent or unloadable.
+func (r *Dnd5eMovementResolver) loadMonsterForLookup(ctx context.Context, md *tkenc.MonsterData, bus events.EventBus) *monster.Monster {
+	if md == nil || len(md.DataJSON) == 0 {
+		return nil
+	}
+	var data monster.Data
+	if err := json.Unmarshal(md.DataJSON, &data); err != nil {
+		return nil
+	}
+	data.HitPoints = md.HP
+	data.MaxHitPoints = md.MaxHP
+	mon, err := monster.LoadFromData(ctx, &data, bus)
+	if err != nil {
+		return nil
+	}
+	if err := monsteractions.LoadMonsterActions(mon, data.Actions); err != nil {
+		return nil
+	}
+	return mon
 }
 
 // Compile-time check that Dnd5eMovementResolver implements the SDK

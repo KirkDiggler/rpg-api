@@ -1,36 +1,50 @@
 package encounter
 
-// Wave 2.11d — Dnd5eCombatResolver phased combat methods.
+// Dnd5eCombatResolver phased combat methods.
 //
 // Implements the encounter SDK's optional PhasedCombatResolver interface:
 //   - ResolveAttackHit runs phase 1 (combat.ResolveAttackHit) and returns the
-//     opaque PhasedAttackContext + any ReactionTriggerEvents already emitted.
+//     opaque PhasedAttackContext.
 //   - ApplyAttackOutcome runs phase 2 (combat.ApplyAttackOutcome) with the
 //     reactor-chosen ReactionModifiers baked in.
 //
 // The encounter SDK type-asserts CombatResolver → PhasedCombatResolver and
-// dispatches through these methods when available. Tests exercise the path
-// end-to-end through Encounter.TakeActionPhased.
+// dispatches through these methods when available.
 //
-// AttackContext is pure data (Wave 2.11d B6 refactor): the EventBus + Roller
-// the damage chain needs come from ApplyAttackOutcomeInput, supplied by this
-// resolver from the encounter-scoped bus + cfg.Roller. This keeps the
-// AttackContext serializable across the player-reaction RPC gap (TakeAction →
-// SubmitCheck{take_reaction} → CompleteTakeAction).
+// #689: both phases build their context from the SDK-held attacker/defender
+// (AttackInput.Attacker/Defender) — no character re-load.
+//
+// Same-RPC path (the common attack path — no player reaction, or all reactions
+// resolved inline): the SDK calls ResolveAttackHit then ApplyAttackOutcome on
+// the SAME resolver instance. We cache the phase-1 heldAttackPrep and reuse it
+// for phase 2. This is NOT a re-load — it reuses the same already-hydrated,
+// already-subscribed entities the SDK handed us in phase 1, so the #684
+// double-subscribe class cannot recur. The cache replaces the old
+// pendingPhasedAttack cache, which existed to avoid a re-LOAD; here there is no
+// re-load to avoid, only a prep (combatant lookup + gamectx) to reuse.
+//
+// Cross-RPC resume (CompleteTakeAction in a new RPC after a player reaction
+// prompt): a fresh resolver with an empty cache. combat.ApplyAttackOutcome
+// needs the held attacker via GetCombatantFromContext, but the SDK's
+// ApplyAttackOutcome(attackCtx, modifiers) does not pass the held entities and
+// exposes no accessor for e.combatants. This path therefore cannot be served
+// without re-loading (the very thing #689 removes). See errPhase2NeedsHeldEntity
+// and resolveResumePrep. Tracked as a toolkit gap (the design, plan/10 §92/§97,
+// intends the SDK to plumb e.combatants[phasedCtx.AttackerID] into
+// ApplyAttackOutcome; v0.17.0's ApplyAttackOutcome(ctx, modifiers) still plumbs
+// held entities only for phase 1 — verified against the released tag). The
+// in-scope playtest (rage + combat) does not exercise the cross-RPC resume.
+// Note: toolkit#662 (NPC-attacker resume host lookup) is now closed, but it did
+// not add a held-entity accessor to ApplyAttackOutcome, so this gap stands.
 
 import (
-	"context"
 	"errors"
 	"fmt"
 
 	tkenc "github.com/KirkDiggler/rpg-toolkit/encounter"
 	encountercore "github.com/KirkDiggler/rpg-toolkit/encounter/core"
-	"github.com/KirkDiggler/rpg-toolkit/events"
-	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/combat"
 	dnd5eEvents "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/events"
-	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/gamectx"
-	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/weapons"
 )
 
 // Compile-time witness: Dnd5eCombatResolver implements the encounter SDK's
@@ -38,60 +52,31 @@ import (
 // flows.
 var _ tkenc.PhasedCombatResolver = (*Dnd5eCombatResolver)(nil)
 
-// phasedPrep holds the shared state produced by prepareAttack and consumed
-// by ResolveAttackHit / ApplyAttackOutcome.
-type phasedPrep struct {
-	attackerChar *character.Character
-	weapon       *weapons.Weapon
-	resolveCtx   context.Context
-	bus          events.EventBus
-	attackHand   combat.AttackHand
-}
+// errPhase2NeedsHeldEntity is returned by ApplyAttackOutcome on the cross-RPC
+// resume path when the phase-1 prep is not cached (fresh resolver) and the SDK
+// did not hand the held entities. Surfacing the gap loudly beats silently
+// re-loading (which would reintroduce the #684 double-subscribe).
+var errPhase2NeedsHeldEntity = errors.New(
+	"phase-2 resume needs the SDK to supply the held attacker/defender to ApplyAttackOutcome " +
+		"(toolkit gap: e.combatants not plumbed into the resume path)")
 
-// pendingPhasedAttack caches the in-flight phase-1 prep so phase 2 can reuse
-// the same attackerChar + resolveCtx (avoiding a duplicate character load
-// that would re-Apply SneakAttack and similar conditions to the encounter
-// bus, creating duplicate subscribers and breaking the once-per-turn
-// write-back).
+// ResolveAttackHit implements tkenc.PhasedCombatResolver. Runs the dnd5e combat
+// phase-1 verb against the held entities + encounter-scoped bus, then translates
+// the rulebook AttackContext into the SDK's opaque PhasedAttackContext shape.
 //
-// Single-call assumption: each Dnd5eCombatResolver instance handles one
-// attack at a time (the encounter SDK calls ResolveAttackHit immediately
-// followed by either inline ApplyAttackOutcome or a CompleteTakeAction
-// after a player reaction prompt). The cache is cleared at the end of
-// ApplyAttackOutcome.
-//
-// For the player-reactions branch (where phase 2 runs in a separate RPC
-// after SubmitCheck), the orchestrator constructs a fresh resolver per
-// request and re-runs prepareAttack from the saved AttackContext's IDs.
-// In that case the cache is empty and phase 2 falls back to a fresh prep
-// (same path as today's no-reactions path with a single character load).
-type pendingPhasedAttack struct {
-	attackerID string
-	targetID   string
-	prep       *phasedPrep
-}
-
-// ResolveAttackHit implements tkenc.PhasedCombatResolver. Runs the dnd5e
-// combat phase-1 verb against the encounter-scoped bus + gamectx context,
-// then translates the rulebook AttackContext into the SDK's opaque
-// PhasedAttackContext shape.
-//
-// The encounter SDK installs a buffered subscriber on ReactionTriggerTopic
-// before calling this method, so the second return value (resolverTriggers)
-// is normally empty — the SDK reads its own buffer. The slot exists so a
-// resolver implementation may pre-collect triggers if it wants to.
-//
-// Falls back to the stand-in path (single-phase, no chain) when the
-// attacker or target cannot be resolved as a real character/monster — keeps
-// existing tests that don't wire a character repo green. The fallback
-// stuffs the stand-in's AttackOutcome into the phased context's Rulebook
-// slot; ApplyAttackOutcome unwraps and returns it directly.
+// Falls back to the stand-in path (single-phase, no chain) when the held
+// attacker is absent — keeps fixtures without a character store green. The
+// fallback stuffs the stand-in's AttackOutcome into the phased context's
+// Rulebook slot; ApplyAttackOutcome unwraps and returns it directly.
 func (r *Dnd5eCombatResolver) ResolveAttackHit(
 	input tkenc.AttackInput,
 ) (*tkenc.PhasedAttackContext, []tkenc.ReactionTrigger, error) {
-	prep, err := r.prepareAttack(input)
+	prep, ok, err := r.prepareHeldAttack(input)
 	if err != nil {
-		// Entity unresolvable — fall back to single-phase stand-in path.
+		return nil, nil, err
+	}
+	if !ok {
+		// Held attacker unavailable — fall back to single-phase stand-in path.
 		// Wrap the stand-in's outcome so phase 2 can return it directly.
 		standInOutcome, sErr := r.standIn.ResolveAttack(input)
 		if sErr != nil {
@@ -105,8 +90,8 @@ func (r *Dnd5eCombatResolver) ResolveAttackHit(
 	}
 
 	hitResult, err := combat.ResolveAttackHit(prep.resolveCtx, &combat.ResolveAttackHitInput{
-		AttackerID: string(input.AttackerID),
-		TargetID:   string(input.TargetID),
+		AttackerID: prep.attackerID,
+		TargetID:   prep.targetID,
 		Weapon:     prep.weapon,
 		EventBus:   prep.bus,
 		Roller:     r.cfg.Roller,
@@ -116,19 +101,10 @@ func (r *Dnd5eCombatResolver) ResolveAttackHit(
 		return nil, nil, fmt.Errorf("dnd5e resolve attack hit: %w", err)
 	}
 
-	// Cache the prep for ApplyAttackOutcome to reuse — avoids re-loading the
-	// character (which would re-Apply SneakAttack to the encounter bus and
-	// create duplicate subscribers). See pendingPhasedAttack docs.
-	r.pendingPhased = &pendingPhasedAttack{
-		attackerID: string(input.AttackerID),
-		targetID:   string(input.TargetID),
-		prep:       prep,
-	}
-
-	// Note: write-back of attacker condition state happens in ApplyAttackOutcome,
-	// not here. SneakAttack flips UsedThisTurn during the DAMAGE chain (which
-	// runs in ApplyAttackOutcome), not the attack chain. Saving here would
-	// persist a stale UsedThisTurn=false snapshot.
+	// Cache the phase-1 prep for the same-RPC ApplyAttackOutcome to reuse — it
+	// reuses the already-held entities, not a re-load. Keyed by IDs so a
+	// cross-RPC fresh resolver (empty cache) does not silently mis-serve.
+	r.phasedPrep = prep
 
 	return &tkenc.PhasedAttackContext{
 		Rulebook:   hitResult,
@@ -137,19 +113,13 @@ func (r *Dnd5eCombatResolver) ResolveAttackHit(
 	}, nil, nil
 }
 
-// ApplyAttackOutcome implements tkenc.PhasedCombatResolver. Translates the
-// SDK's ReactionModifiers into rulebook combat.ReactionModifier values and
-// runs phase 2 against the dnd5e combat verbs.
+// ApplyAttackOutcome implements tkenc.PhasedCombatResolver. Translates the SDK's
+// ReactionModifiers into rulebook combat.ReactionModifier values and runs phase
+// 2 against the dnd5e combat verbs.
 //
-// On a hit, publishes DamageReceivedEvent on the encounter bus (handled
-// inside combat.ApplyAttackOutcome). On a miss (e.g. Shield deflected),
-// returns Hit=false; the encounter SDK's wrapper converts that to a
-// no-damage AttackOutcome that publishes only AttackResolvedEvent.
-//
-// The EventBus + Roller passed to combat.ApplyAttackOutcome come from the
-// cached prep when present (same RPC as ResolveAttackHit) or from a fresh
-// prepareAttack call (player-reactions resume path). The AttackContext
-// itself is pure data and does not carry these references.
+// #689: phase 2 reuses the held-entity prep cached in phase 1 (same-RPC path).
+// No re-load. The cross-RPC resume path is a known toolkit gap — see the file
+// header and errPhase2NeedsHeldEntity.
 func (r *Dnd5eCombatResolver) ApplyAttackOutcome(
 	phasedCtx *tkenc.PhasedAttackContext,
 	modifiers []tkenc.ReactionModifier,
@@ -168,6 +138,11 @@ func (r *Dnd5eCombatResolver) ApplyAttackOutcome(
 			phasedCtx.Rulebook)
 	}
 
+	prep, err := r.resolveResumePrep(phasedCtx)
+	if err != nil {
+		return nil, err
+	}
+
 	// Translate SDK modifiers → rulebook modifiers.
 	rulebookMods := make([]combat.ReactionModifier, 0, len(modifiers))
 	for _, m := range modifiers {
@@ -175,37 +150,6 @@ func (r *Dnd5eCombatResolver) ApplyAttackOutcome(
 			ConditionRef: m.ConditionRef,
 			ACBonus:      m.ACBonus,
 		})
-	}
-
-	// Phase 2 needs the same gamectx (room + character registry + reaction
-	// readiness) as phase 1. Prefer the cached prep from ResolveAttackHit if
-	// we're in the same TakeAction call window — this avoids re-loading the
-	// character, which would re-Apply SneakAttack to the encounter bus and
-	// create duplicate subscribers (each instance of SneakAttack tries to
-	// add to the damage chain; only one wins, and the loser persists
-	// UsedThisTurn=false).
-	//
-	// On the player-reactions branch (CompleteTakeAction in a separate RPC),
-	// the resolver was constructed fresh and the cache is empty. Fall back
-	// to a fresh prepareAttack — that path has the same single-character-load
-	// shape as today's legacy ResolveAttack and the duplicate-subscriber
-	// issue does not apply.
-	var prep *phasedPrep
-	if r.pendingPhased != nil &&
-		r.pendingPhased.attackerID == string(phasedCtx.AttackerID) &&
-		r.pendingPhased.targetID == string(phasedCtx.TargetID) {
-		prep = r.pendingPhased.prep
-		r.pendingPhased = nil // single-call cache; clear before phase 2 runs
-	} else {
-		freshPrep, err := r.prepareAttack(tkenc.AttackInput{
-			AttackerID: phasedCtx.AttackerID,
-			TargetID:   phasedCtx.TargetID,
-			EventBus:   nil, // re-derived from prep
-		})
-		if err != nil {
-			return nil, fmt.Errorf("rebuild phase-2 context: %w", err)
-		}
-		prep = freshPrep
 	}
 
 	result, err := combat.ApplyAttackOutcome(prep.resolveCtx, &combat.ApplyAttackOutcomeInput{
@@ -218,13 +162,9 @@ func (r *Dnd5eCombatResolver) ApplyAttackOutcome(
 		return nil, fmt.Errorf("dnd5e apply attack outcome: %w", err)
 	}
 
-	// Persist updated attacker condition state (Wave 2.11c write-back). The
-	// damage chain just ran in combat.ApplyAttackOutcome — SneakAttack's
-	// UsedThisTurn flip is captured here. Saving earlier (after phase 1)
-	// would persist a stale snapshot from before the damage chain mutation.
-	if prep.attackerChar != nil && r.cfg.CharacterRepo != nil {
-		r.saveAttackerConditionState(context.Background(), prep.attackerChar)
-	}
+	// No write-back here: the SDK's ToData cascade (#689) re-serializes the held
+	// attacker's mutated condition state (SneakAttack.UsedThisTurn) when the host
+	// persists the encounter. The resolver no longer touches the character store.
 
 	return &tkenc.AttackOutcome{
 		Hit:         result.Hit,
@@ -236,6 +176,22 @@ func (r *Dnd5eCombatResolver) ApplyAttackOutcome(
 		DamageType:  string(result.DamageType),
 		Components:  translateDamageComponents(result.Breakdown),
 	}, nil
+}
+
+// resolveResumePrep returns the phase-2 prep. On the same-RPC path it reuses the
+// prep cached by ResolveAttackHit (held entities, no re-load). On the cross-RPC
+// resume path the cache is empty and the SDK does not supply the held entities,
+// so we surface errPhase2NeedsHeldEntity rather than re-loading (which would
+// reintroduce #684). See the file header.
+func (r *Dnd5eCombatResolver) resolveResumePrep(phasedCtx *tkenc.PhasedAttackContext) (*heldAttackPrep, error) {
+	if r.phasedPrep != nil &&
+		r.phasedPrep.attackerID == string(phasedCtx.AttackerID) &&
+		r.phasedPrep.targetID == string(phasedCtx.TargetID) {
+		prep := r.phasedPrep
+		r.phasedPrep = nil // single-call cache; clear before phase 2 runs
+		return prep, nil
+	}
+	return nil, errPhase2NeedsHeldEntity
 }
 
 // translateDamageComponents converts a dnd5e DamageBreakdown into the
@@ -265,85 +221,4 @@ func damageComponentSource(c dnd5eEvents.DamageComponent) string {
 		return c.SourceRef.String()
 	}
 	return string(c.Source)
-}
-
-// prepareAttack centralizes the shared "resolve entities + build registry +
-// build resolve context" steps used by ResolveAttackHit (and the phase-2
-// resume path in ApplyAttackOutcome). The path mirrors the legacy
-// ResolveAttack flow in dnd5e_combat_resolver.go.
-//
-// Returns nil prep + err if the entities cannot be resolved (caller should
-// fall back to the stand-in resolver in that case).
-//
-//nolint:gocyclo // shared setup spans multiple gates, mirroring the legacy resolver
-func (r *Dnd5eCombatResolver) prepareAttack(input tkenc.AttackInput) (*phasedPrep, error) {
-	ctx := context.Background()
-	attackerID := string(input.AttackerID)
-	targetID := string(input.TargetID)
-
-	bus := input.EventBus
-	if bus == nil {
-		bus = events.NewEventBus()
-	}
-
-	attackerChar, attackerMon, err := r.resolveEntity(ctx, attackerID, bus)
-	if err != nil || (attackerChar == nil && attackerMon == nil) {
-		if err != nil {
-			return nil, fmt.Errorf("resolve attacker %q: %w", attackerID, err)
-		}
-		return nil, fmt.Errorf("resolve attacker %q: not found in encounter", attackerID)
-	}
-	targetChar, targetMon, err := r.resolveEntity(ctx, targetID, bus)
-	if err != nil || (targetChar == nil && targetMon == nil) {
-		if err != nil {
-			return nil, fmt.Errorf("resolve target %q: %w", targetID, err)
-		}
-		return nil, fmt.Errorf("resolve target %q: not found in encounter", targetID)
-	}
-
-	reg := NewCombatantRegistry()
-	var attackerCombatant combat.Combatant
-	if attackerChar != nil {
-		attackerCombatant = attackerChar
-	} else {
-		attackerCombatant = attackerMon
-	}
-	var targetCombatant combat.Combatant
-	if targetChar != nil {
-		targetCombatant = targetChar
-	} else {
-		targetCombatant = targetMon
-	}
-	reg.Register(attackerID, attackerCombatant)
-	reg.Register(targetID, targetCombatant)
-
-	charReg := r.buildEncounterCharacterRegistryFromResolved(attackerChar, targetChar)
-
-	weapon, err := r.resolveWeapon(attackerChar, input)
-	if err != nil {
-		return nil, fmt.Errorf("resolve weapon: %w", err)
-	}
-
-	attackHand := combat.AttackHandMain
-	if input.AttackHand == attackHandOffLabel {
-		attackHand = combat.AttackHandOff
-	}
-
-	resolveCtx := combat.WithCombatantLookup(ctx, reg)
-	gameCtx := gamectx.NewGameContext(gamectx.GameContextConfig{
-		CharacterRegistry: charReg,
-	})
-	resolveCtx = gamectx.WithGameContext(resolveCtx, gameCtx)
-	if r.encounterData != nil {
-		resolveCtx = gamectx.WithRoom(resolveCtx, newEncounterHexRoom(r.encounterData))
-		resolveCtx = gamectx.WithReactionReadiness(resolveCtx, buildReactionReadinessMap(r.encounterData))
-	}
-
-	return &phasedPrep{
-		attackerChar: attackerChar,
-		weapon:       weapon,
-		resolveCtx:   resolveCtx,
-		bus:          bus,
-		attackHand:   attackHand,
-	}, nil
 }
