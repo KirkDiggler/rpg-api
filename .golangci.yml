@@ -40,14 +40,19 @@ linters:
     depguard:
       rules:
         # Architecture invariant: the core action-verb handler files in the v2
-        # encounter package must never import rpg-toolkit rulebook internals
-        # (conditions, resources, classes, weapons, armor). All rule logic belongs
-        # in the toolkit; rpg-api is a thin shuttle. If you need one of these types
-        # in a handler file, you are about to add business logic — stop and push
+        # encounter package AND the v2 encounter orchestrator method files must
+        # never import rpg-toolkit rulebook internals (conditions, resources,
+        # classes, weapons, armor). All rule logic belongs in the toolkit; rpg-api
+        # is a thin shuttle. If you need one of these types in a handler or
+        # orchestrator file, you are about to add business logic — stop and push
         # the logic into the toolkit instead.
         #
-        # Scope: action-verb handler files only (activate_feature, take_action,
-        # end_turn, interact, submit_check, handler, create, get, project).
+        # Scope:
+        #   - action-verb handler files (activate_feature, take_action, end_turn,
+        #     interact, submit_check, handler, create, get)
+        #   - the v2 encounter orchestrator method files (orchestrator, load,
+        #     interact) under internal/orchestrators/encounter/v2 (rpg-api#582):
+        #     load → toolkit-verb → persist, by reference only.
         # Excludes: combat/movement resolver files (translate held entities → the
         # rulebook chain; legitimately import combat/character/monster/weapons),
         # hydrate_players.go (marshals the character blob for the SDK cascade),
@@ -68,6 +73,12 @@ linters:
             - "**/internal/handlers/dnd5e/v2/encounter/handler.go"
             - "**/internal/handlers/dnd5e/v2/encounter/create.go"
             - "**/internal/handlers/dnd5e/v2/encounter/get.go"
+            # v2 encounter orchestrator method files (#582). NOT the resolver
+            # adapters — those live in the handler package and legitimately
+            # import the rulebook as a translation seam.
+            - "**/internal/orchestrators/encounter/v2/orchestrator.go"
+            - "**/internal/orchestrators/encounter/v2/load.go"
+            - "**/internal/orchestrators/encounter/v2/interact.go"
           deny:
             - pkg: "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/conditions"
               desc: "game logic belongs in the toolkit — do not import dnd5e conditions in action handler files"

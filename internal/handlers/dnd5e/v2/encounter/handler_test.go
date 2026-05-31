@@ -410,9 +410,12 @@ func (s *HandlerSuite) TestInteract_DoorAlreadyOpen_FailedPrecondition() {
 	s.Require().Equal(codes.FailedPrecondition, st.Code())
 }
 
-func (s *HandlerSuite) TestInteract_PlayerNotInEncounter_FailedPrecondition() {
-	// Encounter has a door but no player-A. Toolkit OpenDoor refuses the
-	// player-not-in-encounter case as a state-dependent error.
+func (s *HandlerSuite) TestInteract_PlayerNotInEncounter_PermissionDenied() {
+	// Encounter has a door but no player-A. The #582 orchestrator carve added
+	// the upfront membership check to the shared load path, so Interact now maps
+	// player-not-in-encounter to PermissionDenied — consistent with MoveEntity,
+	// EndTurn, and the Runner (all of which already do this). Previously Interact
+	// was the outlier, falling through to the toolkit's FailedPrecondition.
 	enc := tkenc.New(context.Background(), "enc-no-player", s.broker)
 	enc.AddDoor("door-east", core.Hex{Q: 1, R: 0, S: -1}, false)
 	s.Require().NoError(s.repo.Save(s.ctx, enc.ToData()))
@@ -423,7 +426,7 @@ func (s *HandlerSuite) TestInteract_PlayerNotInEncounter_FailedPrecondition() {
 	})
 	s.Require().Error(err)
 	st, _ := status.FromError(err)
-	s.Require().Equal(codes.FailedPrecondition, st.Code())
+	s.Require().Equal(codes.PermissionDenied, st.Code())
 }
 
 func (s *HandlerSuite) TestInteract_OpenDoor_HappyPath() {

@@ -1,0 +1,139 @@
+// Package encounter is the v1alpha2 encounter orchestrator: the single
+// load → toolkit-verb → persist core for the v2 encounter vertical.
+//
+// It is the clean replacement for the handler-package Runner + the inline
+// verb bodies (rpg-api#582). The orchestrator speaks entity / toolkit types
+// only — it NEVER imports proto (pb.*). The thin v2 encounter handler converts
+// proto ↔ these Input/Output types and maps the orchestrator's sentinel errors
+// onto gRPC status codes; the orchestrator owns load, the toolkit verb call,
+// and persistence.
+//
+// Boundary: NO rules logic lives here. The orchestrator routes by reference and
+// orchestrates load/verb/save; all game mechanics live in the rpg-toolkit
+// encounter SDK and the dnd5e rulebook (reached only through the combat /
+// movement resolver adapters). If something here starts to feel rule-ish (a
+// tier table, an AC computation, a "can this fire" decision), it belongs in the
+// toolkit or a resolver adapter — surface it, do not inline it.
+package encounter
+
+import (
+	"errors"
+	"time"
+
+	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
+	encountersv2 "github.com/KirkDiggler/rpg-api/internal/repositories/encounters/v2"
+	tkenc "github.com/KirkDiggler/rpg-toolkit/encounter"
+)
+
+// CombatResolver is the toolkit's combat resolver interface. The orchestrator
+// wires an implementation onto every LoadFromData so attack-resolving verbs can
+// dispatch through it. Aliased here so the orchestrator package references a
+// single name regardless of which implementation is supplied.
+type CombatResolver = tkenc.CombatResolver
+
+// CharacterResolver is the toolkit's character resolver interface (ability
+// modifier / tool-proficiency lookups for skill checks). Aliased for the same
+// reason as CombatResolver.
+type CharacterResolver = tkenc.CharacterResolver
+
+// CombatResolverBuilder builds a per-request CombatResolver from the encounter
+// data. The handler supplies this so the orchestrator stays free of rulebook
+// imports: the concrete Dnd5eCombatResolver (which legitimately imports the
+// dnd5e rulebook as a translation adapter) is constructed handler-side and
+// handed in as a builder. When a fixed resolver override is present (tests),
+// the builder returns it directly.
+type CombatResolverBuilder func(data *tkenc.Data) CombatResolver
+
+// MovementResolverBuilder builds a per-request movement resolver from the
+// encounter data. Same rationale as CombatResolverBuilder — the concrete
+// Dnd5eMovementResolver is a rulebook-importing adapter built handler-side.
+//
+// The return type is the toolkit MovementResolver interface so the orchestrator
+// never imports the dnd5e rulebook movement adapter.
+type MovementResolverBuilder func(data *tkenc.Data) tkenc.MovementResolver
+
+// Config holds the dependencies for an Orchestrator.
+type Config struct {
+	// Broker is the encounter event broker. Required.
+	Broker *tkenc.Broker
+
+	// EncounterRepo persists encounter snapshots. Required.
+	EncounterRepo encountersv2.Repository
+
+	// CharacterRepo provides player character lookup for the hydration cascade
+	// (attach/persist of transient PlayerData.DataJSON on combat-capable verbs).
+	// Optional — when nil, combat-capable verbs fall back to the resolver
+	// stand-in path. The door verbs (Interact) do not use it.
+	CharacterRepo characterrepo.Repository
+
+	// Resolver bridges the toolkit's CharacterResolver to the character store
+	// for skill-check totals. Required (the handler supplies a stub default).
+	Resolver CharacterResolver
+
+	// BuildCombatResolver builds the per-request combat resolver. Required.
+	BuildCombatResolver CombatResolverBuilder
+
+	// BuildMovementResolver builds the per-request movement resolver. Required.
+	BuildMovementResolver MovementResolverBuilder
+
+	// Now supplies the current time. Optional — defaults to time.Now.
+	//
+	// Not used by the door verbs (Interact); reserved for the projection /
+	// snapshot read path carved in later steps of #582.
+	Now func() time.Time
+}
+
+// Orchestrator is the v2 encounter load → verb → persist core. Construct via
+// New. One method per encounter RPC; each does exactly one load + one
+// toolkit-verb dispatch + one persist (the single-load guarantee that makes the
+// #684 double-subscribe class structurally impossible).
+type Orchestrator struct {
+	broker  *tkenc.Broker
+	encRepo encountersv2.Repository
+	// charRepo and now are wired now but unused by the door verbs (Interact).
+	// They are required by the combat-capable verbs (attach/persist of transient
+	// PlayerData.DataJSON) and the projection/snapshot read path carved in later
+	// steps of #582 — held here so the Config surface and ctor are stable as
+	// those verbs land, rather than re-threading per verb.
+	charRepo              characterrepo.Repository
+	resolver              CharacterResolver
+	buildCombatResolver   CombatResolverBuilder
+	buildMovementResolver MovementResolverBuilder
+	now                   func() time.Time
+}
+
+// New constructs an Orchestrator from cfg. Returns an error (never a nil
+// Orchestrator) when a required dependency is missing.
+func New(cfg *Config) (*Orchestrator, error) {
+	if cfg == nil {
+		return nil, errors.New("encounter orchestrator: Config is required")
+	}
+	if cfg.Broker == nil {
+		return nil, errors.New("encounter orchestrator: Config.Broker is required")
+	}
+	if cfg.EncounterRepo == nil {
+		return nil, errors.New("encounter orchestrator: Config.EncounterRepo is required")
+	}
+	if cfg.Resolver == nil {
+		return nil, errors.New("encounter orchestrator: Config.Resolver is required")
+	}
+	if cfg.BuildCombatResolver == nil {
+		return nil, errors.New("encounter orchestrator: Config.BuildCombatResolver is required")
+	}
+	if cfg.BuildMovementResolver == nil {
+		return nil, errors.New("encounter orchestrator: Config.BuildMovementResolver is required")
+	}
+	now := cfg.Now
+	if now == nil {
+		now = time.Now
+	}
+	return &Orchestrator{
+		broker:                cfg.Broker,
+		encRepo:               cfg.EncounterRepo,
+		charRepo:              cfg.CharacterRepo,
+		resolver:              cfg.Resolver,
+		buildCombatResolver:   cfg.BuildCombatResolver,
+		buildMovementResolver: cfg.BuildMovementResolver,
+		now:                   now,
+	}, nil
+}
