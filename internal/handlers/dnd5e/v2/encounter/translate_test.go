@@ -368,6 +368,48 @@ func (s *TranslateSuite) TestBuildReplayEvents_HexesPreserveInputOrder() {
 	}
 }
 
+// TestTranslateEvent_ResourceChangedEvent verifies that a ResourceChangedEvent
+// translates to a proto ResourceChanged envelope for a viewer with visibility.
+func (s *TranslateSuite) TestTranslateEvent_ResourceChangedEvent_VisibleViewer() {
+	viewerID := core.PlayerID("player-A")
+	evt := events.NewResourceChangedEvent(
+		"enc-1", 3,
+		core.EntityID("char-bob"),
+		"rage_charges",
+		1, 2,
+		map[core.PlayerID]events.ResourceChangedSlice{
+			viewerID: {Visible: true},
+		},
+	)
+	out, err := v2encounter.TranslateEvent(evt, viewerID, s.now)
+	s.Require().NoError(err)
+	rc := out.GetResourceChanged()
+	s.Require().NotNil(rc)
+	s.Equal("char-bob", rc.GetEntityId())
+	s.Equal(int32(1), rc.GetNewCurrent())
+	s.Equal(int32(2), rc.GetMax())
+	s.NotNil(rc.GetResourceRef())
+}
+
+// TestTranslateEvent_ResourceChangedEvent_ViewerSawNothing verifies that a viewer
+// absent from the audience gets ErrViewerSawNothing.
+func (s *TranslateSuite) TestTranslateEvent_ResourceChangedEvent_ViewerSawNothing() {
+	viewerID := core.PlayerID("player-A")
+	other := core.PlayerID("player-B")
+	evt := events.NewResourceChangedEvent(
+		"enc-1", 4,
+		core.EntityID("char-bob"),
+		"rage_charges",
+		1, 2,
+		map[core.PlayerID]events.ResourceChangedSlice{
+			other: {Visible: true},
+		},
+	)
+	_, err := v2encounter.TranslateEvent(evt, viewerID, s.now)
+	s.Require().Error(err)
+	s.True(errors.Is(err, v2encounter.ErrViewerSawNothing))
+}
+
 // Compile-time check: ensure the package exports used below are accessible.
 var _ = (*encounterv2pb.EncounterEvent)(nil)
 

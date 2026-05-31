@@ -32,17 +32,18 @@ package encounter
 // combat chain uses it only for publishing within-attack events (attack chain,
 // damage chain); these do not need to outlive the ResolveAttack call.
 //
-// Monster weapon: for monster attackers the resolver builds a synthetic melee
-// weapon from the encounter's MonsterData snapshot (DamageDice / DamageType).
-// The base dice are extracted from the DamageDice string (e.g. "1d6+2" → "1d6")
-// so that combat.ResolveAttack can add the ability modifier from the
-// rehydrated monster's Combatant.AbilityScores() without double-counting.
+// Monster weapon: for monster attackers the resolver maps the monster's first
+// melee action ref to the real toolkit weapon definition (e.g. ScimitarAction →
+// weapons.GetByID(weapons.Scimitar)). The real weapon carries the correct
+// properties (Finesse, Light, etc.) so combat.ResolveAttack picks the right
+// ability modifier (DEX for finesse) from the monster's Combatant.AbilityScores().
+// This is the same single model used for character weapon resolution — no
+// monster-vs-character branch, no modifier stripping.
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strings"
 
 	"github.com/KirkDiggler/rpg-api/internal/entities"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
@@ -56,12 +57,12 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/damage"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/gamectx"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/monster"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/refs"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/weapons"
 )
 
 // fallbackDamageDice is the default dice notation used when no weapon is
-// equipped or the damage dice string is empty (e.g. unarmed strike stub,
-// empty MonsterData.DamageDice). "1d4" is the D&D 5e unarmed-strike damage.
+// equipped (e.g. unarmed strike stub). "1d4" is the D&D 5e unarmed-strike damage.
 const fallbackDamageDice = "1d4"
 
 // attackHandOffLabel is the wire-side string representation of
@@ -575,10 +576,10 @@ func (r *Dnd5eCombatResolver) rehydrateMonster(ctx context.Context, md *tkenc.Mo
 // For character attackers: reads the equipped main-hand (or off-hand) weapon
 // from the character's inventory slot via character.GetEquippedSlot.
 //
-// For monster attackers: builds a synthetic melee weapon from the encounter
-// SDK's MonsterData snapshot (AttackerDamageDice / AttackerDamageType). The
-// base dice are extracted from the dice notation to avoid double-counting the
-// ability modifier that combat.ResolveAttack adds from the Combatant interface.
+// For monster attackers: maps the monster's first melee action ref to the real
+// toolkit weapon definition so that combat.ResolveAttack picks the correct
+// ability modifier from the monster's Combatant.AbilityScores() — the same
+// single model used for characters. No modifier stripping; no synthetic weapons.
 //
 // Fallback: if the character has no weapon equipped, a minimal stub weapon is
 // returned so the attack can still resolve (using unarmed-strike stats as a
@@ -592,8 +593,8 @@ func (r *Dnd5eCombatResolver) resolveWeapon(
 	if attackerChar != nil {
 		return r.characterWeapon(attackerChar, input.AttackHand)
 	}
-	// Monster attacker: build synthetic weapon from snapshot.
-	return syntheticMonsterWeapon(input.AttackerDamageDice, input.AttackerDamageType), nil
+	// Monster attacker: resolve weapon from the monster's action data.
+	return r.monsterWeapon(string(input.AttackerID), input.AttackerDamageType)
 }
 
 // characterWeapon retrieves the equipped weapon for a character attacker.
@@ -616,35 +617,93 @@ func (r *Dnd5eCombatResolver) characterWeapon(char *character.Character, attackH
 	return unarmedStubWeapon(), nil
 }
 
-// syntheticMonsterWeapon constructs a minimal *weapons.Weapon from the
-// MonsterData snapshot fields. The Damage field is set to the BASE dice
-// only (the "+N" suffix is stripped) so that combat.ResolveAttack can add
-// the ability modifier from the monster's Combatant.AbilityScores() without
-// double-counting.
+// monsterWeapon resolves the real weapon for a monster attacker by reading the
+// monster's ActionData from the encounter's DataJSON snapshot and mapping the
+// action ref to the corresponding toolkit weapon definition.
 //
-// Examples:
+// This is the single-model path: monsters use the same dice + ability-modifier
+// resolution as characters. The correct weapon (e.g. the real scimitar with
+// PropertyFinesse) ensures combat.ResolveAttack picks the right ability
+// (DEX for finesse) from the monster's Combatant.AbilityScores(). No modifier
+// stripping, no synthetic weapon construction.
 //
-//	"1d6+2" → Damage: "1d6"
-//	"2d4"   → Damage: "2d4"
-//	""      → Damage: "1d4" (stub fallback)
-func syntheticMonsterWeapon(damageDice, damageTypeStr string) *weapons.Weapon {
-	baseDice := extractBaseDice(damageDice)
+// actionRefToWeaponID maps known monster action refs to their toolkit WeaponID.
+// The scimitar is the canonical case: goblin ScimitarAction → weapons.Scimitar
+// (Damage: "1d6", PropertyFinesse, PropertyLight) → DEX +2 for a DEX-14 goblin.
+//
+// When the DataJSON is absent or the action ref is unknown, falls back to the
+// unarmed stub so the attack resolves with the monster's ability modifier via
+// the normal path (+0 for missing data, which is acceptable for no-DataJSON fixtures).
+//
+// Note: the actionRef → WeaponID mapping must be extended as new named monster
+// actions are added (see refs.MonsterActions for the full list). Generic melee
+// and ranged actions (ref.ID = "melee" / "ranged") need the toolkit's MeleeConfig
+// to separate the dice from the bonus before they can use this path cleanly.
+func (r *Dnd5eCombatResolver) monsterWeapon(attackerID, damageTypeStr string) (*weapons.Weapon, error) {
 	dmgType := damage.Type(damageTypeStr)
 	if dmgType == "" {
 		dmgType = damage.Bludgeoning
 	}
-	return &weapons.Weapon{
-		ID:         "monster-natural-attack",
-		Name:       "Natural Attack",
-		Category:   weapons.CategorySimpleMelee,
-		Damage:     baseDice,
-		DamageType: dmgType,
+
+	if r.encounterData == nil {
+		return unarmedStubWeapon(), nil
+	}
+
+	md, ok := r.encounterData.Monsters[encountercore.EntityID(attackerID)]
+	if !ok || md == nil || len(md.DataJSON) == 0 {
+		// No DataJSON — fall back to unarmed stub; the no-DataJSON path has
+		// zero ability scores so any modifier addition is +0 either way.
+		return unarmedStubWeapon(), nil
+	}
+
+	var data monster.Data
+	if err := json.Unmarshal(md.DataJSON, &data); err != nil {
+		return unarmedStubWeapon(), nil
+	}
+
+	// Find the first melee attack action and map its ref to a real weapon.
+	for _, actionData := range data.Actions {
+		weaponID, known := monsterActionRefToWeaponID(actionData.Ref.ID)
+		if !known {
+			continue
+		}
+		w, err := weapons.GetByID(weaponID)
+		if err != nil {
+			continue
+		}
+		// Override damage type from the encounter snapshot if the weapon
+		// definition doesn't specify one.
+		if w.DamageType == "" {
+			w.DamageType = dmgType
+		}
+		return &w, nil
+	}
+
+	// No known-ref action found — fall back to unarmed stub so the attack
+	// resolves with the monster's ability modifier via the normal path.
+	return unarmedStubWeapon(), nil
+}
+
+// monsterActionRefToWeaponID maps a monster action ref ID to its toolkit
+// WeaponID. Returns the weapon ID and true when the ref is known, or the
+// zero value and false when not.
+//
+// Only refs with direct toolkit weapon equivalents are listed here. Generic
+// "melee" and "ranged" actions are excluded until MeleeConfig separates the
+// dice notation from the flat bonus so the ability-modifier model is clean.
+func monsterActionRefToWeaponID(refID string) (weapons.WeaponID, bool) {
+	switch refID {
+	case refs.MonsterActions.Scimitar().ID:
+		return weapons.Scimitar, true
+	default:
+		return "", false
 	}
 }
 
 // unarmedStubWeapon returns a minimal melee weapon representing an unarmed
 // strike (1d4 bludgeoning, no special properties). Used when a character has
-// no weapon equipped on the active attack hand.
+// no weapon equipped on the active attack hand, or as a fallback for monster
+// attackers whose action ref has no direct toolkit weapon mapping.
 func unarmedStubWeapon() *weapons.Weapon {
 	return &weapons.Weapon{
 		ID:         "unarmed",
@@ -653,34 +712,4 @@ func unarmedStubWeapon() *weapons.Weapon {
 		Damage:     fallbackDamageDice,
 		DamageType: damage.Bludgeoning,
 	}
-}
-
-// extractBaseDice strips a modifier suffix from a dice notation string,
-// returning the bare dice portion.
-//
-//	"1d6+2"  → "1d6"
-//	"2d4+1"  → "2d4"
-//	"2d4"    → "2d4"
-//	""       → "1d4"
-func extractBaseDice(notation string) string {
-	if notation == "" {
-		return fallbackDamageDice
-	}
-	// Trim whitespace before parsing.
-	notation = strings.TrimSpace(notation)
-	// Find the first '+' or '-' after the dice spec. Everything before that
-	// is the base dice. We locate 'd' first to skip modifiers that appear
-	// before the dice (rare but safe).
-	dIdx := strings.IndexByte(notation, 'd')
-	if dIdx < 0 {
-		// Not a standard dice notation — return as-is and let the rulebook
-		// parser surface any error.
-		return notation
-	}
-	// Look for +/- after the 'd'.
-	rest := notation[dIdx+1:]
-	if plusIdx := strings.IndexAny(rest, "+-"); plusIdx >= 0 {
-		return notation[:dIdx+1+plusIdx]
-	}
-	return notation
 }

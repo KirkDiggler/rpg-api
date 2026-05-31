@@ -14,6 +14,8 @@ linters:
     - ineffassign
     - staticcheck
     - unused
+    # Import guard: ban rulebook-internal imports from the v2 encounter action handlers
+    - depguard
     # Additional valuable linters
     - bodyclose      # Check HTTP response body is closed
     - copyloopvar    # Detect places where loop variables are copied
@@ -35,6 +37,45 @@ linters:
     - whitespace     # Check unnecessary newlines
 
   settings:
+    depguard:
+      rules:
+        # Architecture invariant: the core action-verb handler files in the v2
+        # encounter package must never import rpg-toolkit rulebook internals
+        # (conditions, resources, classes, weapons, armor). All rule logic belongs
+        # in the toolkit; rpg-api is a thin shuttle. If you need one of these types
+        # in a handler file, you are about to add business logic — stop and push
+        # the logic into the toolkit instead.
+        #
+        # Scope: action-verb handler files only (activate_feature, take_action,
+        # end_turn, interact, submit_check, handler, create, get, project).
+        # Excludes: combat resolver files (need weapons for attack resolution),
+        # reaction_conditions.go (applies OA/Shield programmatically), tests.
+        #
+        # This rule fires CI so drift is caught by the pipeline, not reviewer memory.
+        no-rulebook-internals-in-action-handlers:
+          files:
+            - "**/internal/handlers/dnd5e/v2/encounter/activate_feature.go"
+            - "**/internal/handlers/dnd5e/v2/encounter/take_action.go"
+            - "**/internal/handlers/dnd5e/v2/encounter/end_turn.go"
+            - "**/internal/handlers/dnd5e/v2/encounter/interact.go"
+            - "**/internal/handlers/dnd5e/v2/encounter/submit_check.go"
+            - "**/internal/handlers/dnd5e/v2/encounter/submit_check_reaction.go"
+            - "**/internal/handlers/dnd5e/v2/encounter/set_reaction_ready.go"
+            - "**/internal/handlers/dnd5e/v2/encounter/handler.go"
+            - "**/internal/handlers/dnd5e/v2/encounter/create.go"
+            - "**/internal/handlers/dnd5e/v2/encounter/get.go"
+          deny:
+            - pkg: "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/conditions"
+              desc: "game logic belongs in the toolkit — do not import dnd5e conditions in action handler files"
+            - pkg: "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/resources"
+              desc: "game logic belongs in the toolkit — do not import dnd5e resources in action handler files"
+            - pkg: "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/classes"
+              desc: "game logic belongs in the toolkit — do not import dnd5e classes in action handler files"
+            - pkg: "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/weapons"
+              desc: "game logic belongs in the toolkit — do not import dnd5e weapons in action handler files"
+            - pkg: "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/armor"
+              desc: "game logic belongs in the toolkit — do not import dnd5e armor in action handler files"
+
     dupl:
       threshold: 300  # Allow duplication for bidirectional converters (tool enums are ~90 lines)
 

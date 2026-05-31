@@ -100,9 +100,16 @@ const (
 	modeTurnBased = "turn_based"
 	modeFreeRoam  = "free_roam"
 
-	fixtureDefault    = ""
-	fixtureWave1Rogue = "wave-1-rogue"
-	fixtureWave2Monk  = "wave-2-monk"
+	fixtureDefault        = ""
+	fixtureWave1Rogue     = "wave-1-rogue"
+	fixtureWave2Monk      = "wave-2-monk"
+	fixtureWave3Barbarian = "wave-3-barbarian"
+
+	// wave3GoblinHP is bumped from the standard 7 so raging-bob's greataxe
+	// (1d12 + STR3 + Rage2 = 6-17) doesn't one-shot the goblin. The playtest
+	// needs to observe BOTH (a) raging-bob's attack AND (b) goblin's attack
+	// on raging-bob (Rage resistance halves it).
+	wave3GoblinHP = 30
 
 	weaponShortsword    = "shortsword"
 	weaponGreataxe      = "greataxe"
@@ -113,8 +120,9 @@ const (
 	damageTypeFire        = "fire"
 	damageTypeBludgeoning = "bludgeoning"
 
-	monsterRefGoblin     = "dnd5e:monsters:goblin"
-	goblinBaseDamageDice = "1d6+2"
+	monsterRefGoblin      = "dnd5e:monsters:goblin"
+	goblinBaseDamageDice  = "1d6+2"
+	barbarianGreataxeDice = "1d12+3"
 )
 
 var (
@@ -147,7 +155,7 @@ func run() error {
 		redisAddr   = flag.String("redis-addr", "", "Redis address (default: $REDIS_ADDR or "+defaultRedisAddr+")")
 		encounterID = flag.String("encounter-id", defaultEncounterID, "Encounter ID to seed under enc:v2:<id>")
 		mode        = flag.String("mode", modeTurnBased, "Encounter mode: turn_based or free_roam")
-		fixture     = flag.String("fixture", fixtureDefault, "Named fixture to seed (e.g. wave-1-rogue). Default seeds alice L2 + bob + wendy.")
+		fixture     = flag.String("fixture", fixtureDefault, "Fixture to seed: wave-1-rogue, wave-2-monk, wave-3-barbarian. Default: alice L2 + bob + wendy.")
 	)
 	flag.Parse()
 
@@ -197,6 +205,14 @@ func run() error {
 		if err != nil {
 			return fmt.Errorf("build encounter: %w", err)
 		}
+	case fixtureWave3Barbarian:
+		chars = []*toolkitchar.Data{
+			buildBobBarbarianData(),
+		}
+		encData, err = buildWave3BarbarianEncounterData(*encounterID, encMode)
+		if err != nil {
+			return fmt.Errorf("build encounter: %w", err)
+		}
 	case fixtureWave1Rogue:
 		chars = []*toolkitchar.Data{
 			buildAliceRogueL1Data(),
@@ -218,8 +234,8 @@ func run() error {
 			return fmt.Errorf("build encounter: %w", err)
 		}
 	default:
-		return fmt.Errorf("unknown fixture %q: supported values are %q, %q, and %q",
-			*fixture, fixtureDefault, fixtureWave1Rogue, fixtureWave2Monk)
+		return fmt.Errorf("unknown fixture %q: supported values are %q, %q, %q, and %q",
+			*fixture, fixtureDefault, fixtureWave1Rogue, fixtureWave2Monk, fixtureWave3Barbarian)
 	}
 
 	// 1. Seed characters first so they exist when the harness or handler
@@ -787,6 +803,70 @@ func buildWave1RogueEncounterData(encounterID string, mode encountercore.Encount
 	if mode == encountercore.ModeTurnBased {
 		if err := enc.SetMode(encountercore.ModeTurnBased); err != nil {
 			return nil, fmt.Errorf("set mode turn_based: %w", err)
+		}
+	}
+
+	return enc.ToData(), nil
+}
+
+// buildWave3BarbarianEncounterData seeds the wave-3-barbarian encounter: bob (L1
+// barbarian, not raging) adjacent to a goblin with bumped HP. HP is set to
+// wave3GoblinHP (30) so raging-bob's greataxe doesn't one-shot it — the
+// playtest needs to see BOTH bob's raging attack AND the goblin's attack on
+// raging-bob (Rage resistance halves the incoming damage).
+func buildWave3BarbarianEncounterData(encounterID string, mode encountercore.EncounterMode) (*tkenc.Data, error) {
+	transport := tkenc.NewInMemoryTransport()
+	defer func() { _ = transport.Close() }()
+	broker := tkenc.NewBroker(transport)
+	defer func() { _ = broker.Close() }()
+
+	enc := tkenc.New(encountercore.EncounterID(encounterID), broker)
+
+	// bob (barbarian) — greataxe 1d12+3. Adjacent to goblin at Q:1.
+	// AttackBonus: STR +3 + proficiency +2 = 5.
+	if err := enc.AddPlayer(tkenc.PlayerInput{
+		PlayerID:    playerBob,
+		EntityID:    entityBob,
+		Position:    encountercore.Hex{Q: 0, R: 0, S: 0},
+		SightRange:  10,
+		HP:          14,
+		MaxHP:       14,
+		AC:          14,
+		AttackBonus: 5,
+		DamageDice:  barbarianGreataxeDice,
+		DamageType:  damageTypeSlashing,
+	}); err != nil {
+		return nil, fmt.Errorf("add bob: %w", err)
+	}
+
+	goblin := monster.NewGoblin(string(entityGoblin))
+	goblinData := goblin.ToData()
+	goblinDataJSON, err := json.Marshal(goblinData)
+	if err != nil {
+		return nil, fmt.Errorf("marshal goblin data for wave-3-barbarian: %w", err)
+	}
+
+	// Goblin adjacent to bob (Q:1 R:0 — euclidean distance 1.0 ≤ 1.5).
+	// HP bumped to wave3GoblinHP so raging-bob's greataxe doesn't one-shot it.
+	if err := enc.AddMonster(tkenc.MonsterInput{
+		ID:          entityGoblin,
+		Position:    encountercore.Hex{Q: 1, R: 0, S: -1},
+		HP:          wave3GoblinHP,
+		MaxHP:       wave3GoblinHP,
+		AC:          goblinData.ArmorClass,
+		Speed:       6,
+		MonsterRef:  monsterRefGoblin,
+		AttackBonus: 4,
+		DamageDice:  goblinBaseDamageDice,
+		DamageType:  damageTypeSlashing,
+		DataJSON:    goblinDataJSON,
+	}); err != nil {
+		return nil, fmt.Errorf("add goblin (wave-3-barbarian): %w", err)
+	}
+
+	if mode == encountercore.ModeTurnBased {
+		if err := enc.SetMode(encountercore.ModeTurnBased); err != nil {
+			return nil, fmt.Errorf("set mode turn_based (wave-3-barbarian): %w", err)
 		}
 	}
 
