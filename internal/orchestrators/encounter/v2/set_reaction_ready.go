@@ -8,12 +8,15 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/encounter/core"
 )
 
-// ErrSetReactionReadyRefused wraps a state-dependent refusal from the toolkit's
-// SetReactionReady verb — today the only case is "entity not in encounter" (the
-// SDK validates the charID against player + monster seats). The toolkit returns
-// these as plain fmt.Errorf rather than a sentinel, so the orchestrator joins
-// them with this sentinel and the handler maps it to codes.FailedPrecondition
-// per pat-v2-status-code-mapping (mirrors ErrDoorVerbRefused on Interact).
+// ErrSetReactionReadyRefused wraps a refusal from the toolkit's
+// SetReactionReady verb. The verb rejects an empty charID, an empty reactionRef,
+// or an entity not in the encounter (the SDK validates the charID against player
+// + monster seats); in normal operation the handler pre-validates the envelope,
+// so the entity-not-in-encounter case is the one that reaches here through the
+// RPC path. The toolkit returns all of these as plain errors rather than a
+// sentinel, so the orchestrator joins them with this sentinel and the handler
+// maps it to codes.FailedPrecondition per pat-v2-status-code-mapping (mirrors
+// ErrDoorVerbRefused on Interact).
 var ErrSetReactionReadyRefused = errors.New("set reaction ready refused")
 
 // SetReactionReadyInput carries the entity-typed SetReactionReady request. The
