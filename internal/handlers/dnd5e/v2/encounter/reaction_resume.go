@@ -1,12 +1,16 @@
 package encounter
 
-// reaction_resume.go — the rulebook-touching adapter seam for the SubmitCheck
-// take_reaction branch.
+// reaction_resume.go — the rulebook-touching adapter seam for the two-phase
+// attack (TakeAction phase-1 pause + SubmitCheck take_reaction phase-2 resume).
 //
-// The v2 orchestrator runs phase-2 reaction completion (CompleteTakeAction) but
-// stays free of the dnd5e combat rulebook import. The two rule-ish pieces it
-// needs are supplied here as funcs and wired into encounterorch.Config:
+// The v2 orchestrator runs both halves but stays free of the dnd5e combat
+// rulebook import. The rule-ish pieces it needs are supplied here as funcs and
+// wired into encounterorch.Config:
 //
+//   - marshalReactionAttackContext: serializes the in-flight phase-1
+//     PhasedAttackContext (Rulebook slot = the resolver's native
+//     *combat.AttackContext) into the opaque AttackContextJSON persisted on the
+//     pending prompt. The phase-1 counterpart to decodeReactionAttackContext.
 //   - decodeReactionAttackContext: unmarshals the persisted opaque
 //     AttackContextJSON back into the toolkit's PhasedAttackContext, whose
 //     Rulebook slot holds the resolver's native *combat.AttackContext.
@@ -36,6 +40,28 @@ const shieldACBonus = 5
 // reactionShieldRef is the canonical Shield spell condition ref used to select
 // the Shield modifier band.
 const reactionShieldRef = "dnd5e:spells:shield"
+
+// marshalReactionAttackContext serializes the in-flight phase-1
+// PhasedAttackContext returned by TakeActionPhased into the opaque
+// AttackContextJSON the orchestrator persists on the pending reaction prompt.
+// The Rulebook slot holds the resolver's native *combat.AttackContext (made pure
+// data in Wave 2.11d so it round-trips through JSON); this adapter type-asserts
+// it so the orchestrator never touches the rulebook shape. The phase-1
+// counterpart to decodeReactionAttackContext.
+func marshalReactionAttackContext(ctx *tkenc.PhasedAttackContext) ([]byte, error) {
+	if ctx == nil {
+		return nil, fmt.Errorf("nil attack context")
+	}
+	rulebookCtx, ok := ctx.Rulebook.(*combat.AttackContext)
+	if !ok {
+		return nil, fmt.Errorf("AttackContext.Rulebook is %T, expected *combat.AttackContext", ctx.Rulebook)
+	}
+	raw, err := json.Marshal(rulebookCtx)
+	if err != nil {
+		return nil, fmt.Errorf("marshal attack context: %w", err)
+	}
+	return raw, nil
+}
 
 // decodeReactionAttackContext unmarshals the persisted opaque AttackContextJSON
 // (written by the phased combat resolver in phase 1) into the toolkit's

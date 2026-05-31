@@ -157,8 +157,8 @@ func (h *Handler) EndTurn(ctx context.Context, req *encounterv2pb.EndTurnRequest
 				// events already went out from inside NPCAct; subscribers
 				// reloading from repo will find no matching prompt and drop
 				// silently — acceptable behavior under single-reactor
-				// semantics. See take_action.go's persistPendingReactions for
-				// the design rationale + Wave 2.11e follow-up
+				// semantics. See the v2 orchestrator's TakeAction
+				// persistPendingReactions for the design rationale + Wave 2.11e follow-up
 				// https://github.com/KirkDiggler/rpg-api/issues/540 for the
 				// proper aggregate-then-complete fix.
 				enforceSingleReactor(enc)
