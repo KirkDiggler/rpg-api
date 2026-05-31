@@ -312,7 +312,7 @@ func (s *MonkUnarmedIntegrationSuite) goblinHP() int {
 // Positions: charli at Q:0, goblin at Q:1 (adjacent, euclidean distance 1.0 ≤ 1.5).
 // Goblin has 100 HP so it survives multiple strikes during the test.
 func (s *MonkUnarmedIntegrationSuite) seedMonkEncounter() {
-	enc := tkenc.New(monkIntegEncID, s.broker)
+	enc := tkenc.New(context.Background(), monkIntegEncID, s.broker)
 
 	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
 		PlayerID:    encountercore.PlayerID(monkPlayerCharli),
@@ -361,9 +361,9 @@ func (s *MonkUnarmedIntegrationSuite) advanceToCharli() {
 		}
 
 		if activeID == monkGoblinID {
-			enc, loadErr := tkenc.LoadFromData(data, s.broker)
+			enc, loadErr := tkenc.LoadFromData(context.Background(), data, s.broker)
 			s.Require().NoError(loadErr)
-			_, _, err = enc.EndTurn(encountercore.EntityID(activeID))
+			_, _, err = enc.EndTurn(context.Background(), encountercore.EntityID(activeID))
 			s.Require().NoError(err)
 			s.Require().NoError(s.repo.Save(context.Background(), enc.ToData()))
 			continue

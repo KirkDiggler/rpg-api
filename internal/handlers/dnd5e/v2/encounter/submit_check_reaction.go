@@ -69,7 +69,13 @@ func (h *Handler) submitReactionCheck(
 			"no pending reaction prompt to resolve for caller")
 	}
 
-	enc, err := tkenc.LoadFromData(data, h.broker,
+	// #689: attach player character blobs (transient) so the hydration cascade
+	// holds the combatants for the phase-2 resume.
+	if attachErr := attachPlayerCharacterData(ctx, data, h.combatResolverConfig.CharacterRepo); attachErr != nil {
+		return nil, status.Errorf(codes.Internal, "attach character data %q: %v", req.GetEncounterId(), attachErr)
+	}
+
+	enc, err := tkenc.LoadFromData(ctx, data, h.broker,
 		tkenc.WithCharacterResolver(h.resolver),
 		tkenc.WithCombatResolver(h.buildCombatResolver(data)),
 		tkenc.WithMovementResolver(h.buildMovementResolver(data)))
@@ -117,7 +123,14 @@ func (h *Handler) submitReactionCheck(
 
 	enc.ClearPendingReactionPrompt(core.PlayerID(playerID))
 
-	if err := h.encRepo.Save(ctx, enc.ToData()); err != nil {
+	out := enc.ToData()
+	if syncErr := enc.SyncErr(); syncErr != nil {
+		return nil, status.Errorf(codes.Internal, "sync encounter state %q: %v", req.GetEncounterId(), syncErr)
+	}
+	if persistErr := persistPlayerCharacterData(ctx, out, h.combatResolverConfig.CharacterRepo); persistErr != nil {
+		return nil, status.Errorf(codes.Internal, "persist character data %q: %v", req.GetEncounterId(), persistErr)
+	}
+	if err := h.encRepo.Save(ctx, out); err != nil {
 		return nil, status.Errorf(codes.Internal,
 			"save encounter %q after reaction: %v", req.GetEncounterId(), err)
 	}

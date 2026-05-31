@@ -421,7 +421,7 @@ func (s *MovementOAIntegrationSuite) loadEncForMovementTest(data *tkenc.Data) *t
 		},
 		data,
 	)
-	enc, err := tkenc.LoadFromData(data, s.broker,
+	enc, err := tkenc.LoadFromData(context.Background(), data, s.broker,
 		tkenc.WithCombatResolver(combResolver),
 		tkenc.WithMovementResolver(movResolver))
 	s.Require().NoError(err)
@@ -491,7 +491,7 @@ func (s *MovementOAIntegrationSuite) buildAliceFighterData() *character.Data {
 // blob — though TestPlayerOA_OnNPCFleeing uses MoveNPCSteps directly
 // (not NPCAct) per file-level docstring rationale.
 func (s *MovementOAIntegrationSuite) seedMovementEncounter() {
-	enc := tkenc.New(movEncID, s.broker)
+	enc := tkenc.New(context.Background(), movEncID, s.broker)
 
 	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
 		PlayerID:   encountercore.PlayerID(movPlayerAlice),
@@ -534,7 +534,7 @@ func (s *MovementOAIntegrationSuite) seedMovementEncounter() {
 // (the old Euclidean check would have returned 1.414 > 1.0 and excluded the
 // goblin from threat range, suppressing the OA).
 func (s *MovementOAIntegrationSuite) seedMovementEncounterDiagonal() {
-	enc := tkenc.New(movEncID, s.broker)
+	enc := tkenc.New(context.Background(), movEncID, s.broker)
 
 	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
 		PlayerID:   encountercore.PlayerID(movPlayerAlice),

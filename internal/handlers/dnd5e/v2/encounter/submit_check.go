@@ -100,7 +100,10 @@ func (h *Handler) SubmitCheck(ctx context.Context, req *encounterv2pb.SubmitChec
 			"entity_id does not match player's controlled entity")
 	}
 
-	enc, err := tkenc.LoadFromData(data, h.broker,
+	// #689: skill-check resolution doesn't touch combatant state; no player
+	// DataJSON is attached, so the cascade skips hydration. ctx threaded for
+	// the new LoadFromData signature.
+	enc, err := tkenc.LoadFromData(ctx, data, h.broker,
 		tkenc.WithCharacterResolver(h.resolver),
 		tkenc.WithCombatResolver(h.buildCombatResolver(data)),
 		tkenc.WithMovementResolver(h.buildMovementResolver(data)))

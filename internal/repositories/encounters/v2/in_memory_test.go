@@ -31,7 +31,7 @@ func (s *InMemorySuite) TestGet_ReturnsErrNotFound_ForMissingID() {
 }
 
 func (s *InMemorySuite) TestSaveGet_RoundTrip_PreservesData() {
-	enc := encounter.New("enc-1", encounter.NewBroker(encounter.NewInMemoryTransport()))
+	enc := encounter.New(context.Background(), "enc-1", encounter.NewBroker(encounter.NewInMemoryTransport()))
 	// AddPlayer + minimal setup so ToData has something interesting.
 	s.Require().NoError(enc.AddPlayer(encounter.PlayerInput{
 		PlayerID: "player-A",
@@ -50,7 +50,7 @@ func (s *InMemorySuite) TestSaveGet_RoundTrip_PreservesData() {
 	s.Require().Contains(loaded.Players, core.PlayerID("player-A"))
 	s.Require().Equal(core.EntityID("char-A"), loaded.Players["player-A"].EntityID)
 	// Round-trip via the toolkit serializer to prove ToData/LoadFromData survives storage.
-	roundTripped, err := encounter.LoadFromData(loaded, encounter.NewBroker(encounter.NewInMemoryTransport()))
+	roundTripped, err := encounter.LoadFromData(context.Background(), loaded, encounter.NewBroker(encounter.NewInMemoryTransport()))
 	s.Require().NoError(err)
 	s.Require().Equal(original.ID, roundTripped.ID())
 }

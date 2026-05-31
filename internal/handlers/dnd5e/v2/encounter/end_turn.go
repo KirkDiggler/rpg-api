@@ -11,14 +11,10 @@ import (
 
 	encounterv2pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/encounter"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
-	"github.com/KirkDiggler/rpg-api/internal/entities"
-	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	encountersv2 "github.com/KirkDiggler/rpg-api/internal/repositories/encounters/v2"
 	tkenc "github.com/KirkDiggler/rpg-toolkit/encounter"
 	"github.com/KirkDiggler/rpg-toolkit/encounter/core"
-	tkcharacter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/combat"
-	dnd5eEvents "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/events"
 )
 
 // npcChainSafetyMargin is added to the initiative roster size to derive the
@@ -87,7 +83,14 @@ func (h *Handler) EndTurn(ctx context.Context, req *encounterv2pb.EndTurnRequest
 		return nil, status.Error(codes.PermissionDenied, "entity_id does not match player's controlled entity")
 	}
 
-	enc, err := tkenc.LoadFromData(data, h.broker,
+	// #689: attach player character blobs (transient) so the hydration cascade
+	// holds each combatant; the held conditions reset on the SDK's TurnEndTopic
+	// publish below — no separate character re-load.
+	if attachErr := attachPlayerCharacterData(ctx, data, h.combatResolverConfig.CharacterRepo); attachErr != nil {
+		return nil, status.Errorf(codes.Internal, "attach character data %q: %v", req.GetEncounterId(), attachErr)
+	}
+
+	enc, err := tkenc.LoadFromData(ctx, data, h.broker,
 		tkenc.WithCharacterResolver(h.resolver),
 		tkenc.WithCombatResolver(h.buildCombatResolver(data)),
 		tkenc.WithMovementResolver(h.buildMovementResolver(data)))
@@ -96,30 +99,18 @@ func (h *Handler) EndTurn(ctx context.Context, req *encounterv2pb.EndTurnRequest
 	}
 
 	endingEntityID := req.GetEntityId()
-	newActive, isNPC, err := enc.EndTurn(core.EntityID(endingEntityID))
+	// #689: EndTurn(ctx, ...) now emits dnd5eEvents.TurnEndTopic on the
+	// encounter bus itself, so held conditions (e.g. SneakAttack) reset their
+	// per-turn state in place with no re-load. The old host-side
+	// publishTurnEndAndPersistReset (a scattered character re-load guarded by
+	// defer Cleanup) is gone — the SDK owns the turn-boundary publish, and
+	// ToData persists the reset state back. The TurnEndTopic publish error is
+	// now propagated by the SDK (it is the ONLY thing that resets per-turn
+	// state), so a failure surfaces here rather than being swallowed.
+	newActive, isNPC, err := enc.EndTurn(ctx, core.EntityID(endingEntityID))
 	if err != nil {
 		return nil, endTurnStatusError(err)
 	}
-
-	// Wave 2.11c: publish dnd5e TurnEndEvent on the encounter-scoped dnd5e
-	// bus so conditions that subscribe to TurnEndTopic (e.g. SneakAttack)
-	// can reset their per-turn state. The encounter SDK's EndTurn publishes
-	// to its own broker (per-viewer event stream), but conditions subscribe
-	// to the dnd5e event bus, not the broker — so this is the bridge.
-	//
-	// For cross-RPC once-per-turn enforcement, this helper:
-	//   1. Loads the ending entity's character from the repo with the encounter bus
-	//      (subscribing its conditions, e.g. SneakAttack, to the encounter bus).
-	//   2. Publishes the TurnEndEvent on the bus (conditions now receive the
-	//      reset signal and set UsedThisTurn=false in-memory).
-	//   3. Saves the character back to the repo (persisting UsedThisTurn=false
-	//      so the next TakeAction RPC loads the reset state).
-	//
-	// Errors are swallowed: a turn-end write-back failure must not abort the
-	// EndTurn response. The consequence is that UsedThisTurn may not reset in
-	// the repo (status-quo before this fix), which is safer than failing a
-	// player's turn-end action.
-	h.publishTurnEndAndPersistReset(ctx, enc, endingEntityID)
 
 	// NPC dispatch loop. After the toolkit's EndTurn advances initiative, if
 	// the new active actor is an NPC the handler runs its turn server-side
@@ -174,7 +165,14 @@ func (h *Handler) EndTurn(ctx context.Context, req *encounterv2pb.EndTurnRequest
 				if err := h.serializePendingPhasedAttacks(enc); err != nil {
 					return nil, status.Errorf(codes.Internal, "serialize npc pending reactions: %v", err)
 				}
-				if saveErr := h.encRepo.Save(ctx, enc.ToData()); saveErr != nil {
+				pauseData := enc.ToData()
+				if syncErr := enc.SyncErr(); syncErr != nil {
+					return nil, status.Errorf(codes.Internal, "sync encounter state %q: %v", req.GetEncounterId(), syncErr)
+				}
+				if persistErr := persistPlayerCharacterData(ctx, pauseData, h.combatResolverConfig.CharacterRepo); persistErr != nil {
+					return nil, status.Errorf(codes.Internal, "persist character data %q: %v", req.GetEncounterId(), persistErr)
+				}
+				if saveErr := h.encRepo.Save(ctx, pauseData); saveErr != nil {
 					return nil, status.Errorf(codes.Internal,
 						"save encounter %q after npc reaction pause: %v",
 						req.GetEncounterId(), saveErr)
@@ -197,13 +195,11 @@ func (h *Handler) EndTurn(ctx context.Context, req *encounterv2pb.EndTurnRequest
 			isNPC = false
 			break
 		}
-		prevNPC := newActive
 		var endErr error
-		newActive, isNPC, endErr = enc.EndTurn(newActive)
-		if endErr == nil {
-			// Publish dnd5e TurnEndEvent for the NPC's turn ending.
-			publishTurnEndOnBus(ctx, enc, string(prevNPC))
-		}
+		// #689: enc.EndTurn(ctx, ...) emits the dnd5e TurnEndTopic on the
+		// encounter bus itself for the NPC whose turn is ending — held
+		// conditions reset in place, no host-side publish needed.
+		newActive, isNPC, endErr = enc.EndTurn(ctx, newActive)
 		if endErr != nil {
 			// ErrEncounterEnded here means the NPC's action ended the
 			// encounter and the subsequent EndTurn rejected the call.
@@ -232,7 +228,11 @@ func (h *Handler) EndTurn(ctx context.Context, req *encounterv2pb.EndTurnRequest
 	// This shouldn't happen with valid encounter setups; the cap-by-roster
 	// math above guarantees the loop reaches a player whenever one exists.
 	if isNPC {
-		if saveErr := h.encRepo.Save(ctx, enc.ToData()); saveErr != nil {
+		out := enc.ToData()
+		if syncErr := enc.SyncErr(); syncErr != nil {
+			return nil, status.Errorf(codes.Internal, "sync encounter state %q: %v", req.GetEncounterId(), syncErr)
+		}
+		if saveErr := h.encRepo.Save(ctx, out); saveErr != nil {
 			return nil, status.Errorf(codes.Internal,
 				"npc dispatch loop exhausted and save failed: %v", saveErr)
 		}
@@ -241,7 +241,16 @@ func (h *Handler) EndTurn(ctx context.Context, req *encounterv2pb.EndTurnRequest
 			string(newActive))
 	}
 
-	if err := h.encRepo.Save(ctx, enc.ToData()); err != nil {
+	out := enc.ToData()
+	if syncErr := enc.SyncErr(); syncErr != nil {
+		return nil, status.Errorf(codes.Internal, "sync encounter state %q: %v", req.GetEncounterId(), syncErr)
+	}
+	// Flush cascaded player state (turn-end condition resets, NPC-attack damage
+	// flags) back to the authoritative character store.
+	if err := persistPlayerCharacterData(ctx, out, h.combatResolverConfig.CharacterRepo); err != nil {
+		return nil, status.Errorf(codes.Internal, "persist character data %q: %v", req.GetEncounterId(), err)
+	}
+	if err := h.encRepo.Save(ctx, out); err != nil {
 		return nil, status.Errorf(codes.Internal, "save encounter %q: %v", req.GetEncounterId(), err)
 	}
 
@@ -311,87 +320,6 @@ func (h *Handler) serializePendingPhasedAttacks(enc *tkenc.Encounter) error {
 		prompt.AttackContextJSON = ctxJSON
 	}
 	return nil
-}
-
-// publishTurnEndOnBus publishes a dnd5eEvents.TurnEndEvent on the
-// encounter-scoped dnd5e bus for the given entity. This bridges the encounter
-// SDK's turn-lifecycle (published to the per-viewer broker) to the rulebook's
-// condition-reset mechanism (conditions subscribe to TurnEndTopic on the
-// dnd5e bus). Errors are silently swallowed — a turn-end publish failure
-// should not abort the EndTurn response; condition state resets on the next
-// natural rehydration.
-func publishTurnEndOnBus(ctx context.Context, enc *tkenc.Encounter, entityID string) {
-	bus := enc.EventBus()
-	if bus == nil {
-		return
-	}
-	evt := dnd5eEvents.TurnEndEvent{CharacterID: entityID}
-	// Publish is best-effort; log nothing — no logger available here, and
-	// condition state reset is not critical-path for the RPC response.
-	_ = dnd5eEvents.TurnEndTopic.On(bus).Publish(ctx, evt)
-}
-
-// publishTurnEndAndPersistReset is the three-step helper for cross-RPC
-// once-per-turn condition state persistence:
-//
-//  1. Load the ending entity's character from the repo with the encounter bus
-//     (subscribes conditions like SneakAttack to the bus).
-//  2. Publish TurnEndEvent on the bus (subscribed conditions reset UsedThisTurn=false).
-//  3. Save the character back to the repo (persists UsedThisTurn=false across RPCs).
-//
-// All errors are swallowed — a failure here must not abort EndTurn. The
-// consequence is that once-per-turn may not reset in the repo (status-quo
-// before this fix). Callers still get a successful EndTurn response.
-func (h *Handler) publishTurnEndAndPersistReset(ctx context.Context, enc *tkenc.Encounter, entityID string) {
-	if h.combatResolverConfig.CharacterRepo == nil {
-		// No character repo configured — fall back to publish-only (no write-back).
-		publishTurnEndOnBus(ctx, enc, entityID)
-		return
-	}
-
-	bus := enc.EventBus()
-	if bus == nil {
-		return
-	}
-
-	// Step 1: fetch character data from the repo.
-	out, repoErr := h.combatResolverConfig.CharacterRepo.Get(ctx, characterrepo.GetInput{ID: entityID})
-	if repoErr != nil || out == nil || out.Character == nil || out.Character.Data == nil {
-		// Character not found — publish-only fallback.
-		publishTurnEndOnBus(ctx, enc, entityID)
-		return
-	}
-
-	// Rehydrate the character with the encounter bus (subscribes conditions
-	// like SneakAttack so they can receive the TurnEndEvent reset signal).
-	//
-	// IMPORTANT: Cleanup must be called before this function returns.
-	// This load is a scattered loader — NPCAct (which runs after
-	// publishTurnEndAndPersistReset returns) also loads the character via
-	// the combat resolver. Without Cleanup, both LoadFromData calls leave
-	// conditions subscribed to the same enc.bus, causing the "modifier ID
-	// already exists" double-subscribe in the damage chain.
-	char, loadErr := tkcharacter.LoadFromData(ctx, out.Character.Data, bus)
-	if loadErr != nil {
-		publishTurnEndOnBus(ctx, enc, entityID)
-		return
-	}
-	// Always clean up the character's bus subscriptions before returning.
-	// Cleanup is safe even if Save fails below — it only removes the
-	// subscriptions this rehydration added, not persisted state.
-	defer func() { _ = char.Cleanup(ctx) }()
-
-	// Step 2: publish TurnEndEvent — subscribed conditions receive the reset signal.
-	publishTurnEndOnBus(ctx, enc, entityID)
-
-	// Step 3: save updated character data back to the repo.
-	updatedData := char.ToData()
-	if updatedData == nil {
-		return
-	}
-	_, _ = h.combatResolverConfig.CharacterRepo.Update(ctx, characterrepo.UpdateInput{
-		Character: &entities.Character{Data: updatedData},
-	})
 }
 
 // endTurnStatusError maps toolkit EndTurn sentinel errors onto gRPC status

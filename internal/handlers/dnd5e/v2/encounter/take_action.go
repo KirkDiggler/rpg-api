@@ -79,7 +79,14 @@ func (h *Handler) TakeAction(ctx context.Context, req *encounterv2pb.TakeActionR
 		return nil, status.Error(codes.PermissionDenied, "actor_entity_id does not match player's controlled entity")
 	}
 
-	enc, err := tkenc.LoadFromData(data, h.broker,
+	// #689: attach player character blobs (transient) so the hydration cascade
+	// holds the attacker/defender; the combat resolver reads the held entities
+	// (no per-attack re-load — the #684 double-subscribe cure).
+	if attachErr := attachPlayerCharacterData(ctx, data, h.combatResolverConfig.CharacterRepo); attachErr != nil {
+		return nil, status.Errorf(codes.Internal, "attach character data %q: %v", req.GetEncounterId(), attachErr)
+	}
+
+	enc, err := tkenc.LoadFromData(ctx, data, h.broker,
 		tkenc.WithCharacterResolver(h.resolver),
 		tkenc.WithCombatResolver(h.buildCombatResolver(data)),
 		tkenc.WithMovementResolver(h.buildMovementResolver(data)))
@@ -118,7 +125,19 @@ func (h *Handler) TakeAction(ctx context.Context, req *encounterv2pb.TakeActionR
 		promptsToPublish = pids
 	}
 
-	if err := h.encRepo.Save(ctx, enc.ToData()); err != nil {
+	out := enc.ToData()
+	// #689: ToData cascades held-entity state (e.g. SneakAttack.UsedThisTurn,
+	// RagingCondition.DidAttackThisTurn) back into PlayerData/MonsterData.DataJSON.
+	// Surface a sync failure rather than persisting a stale snapshot.
+	if syncErr := enc.SyncErr(); syncErr != nil {
+		return nil, status.Errorf(codes.Internal, "sync encounter state %q: %v", req.GetEncounterId(), syncErr)
+	}
+	// Flush the cascaded player state back to the authoritative character store
+	// so the next RPC sees it (cross-RPC once-per-turn / rage activity tracking).
+	if err := persistPlayerCharacterData(ctx, out, h.combatResolverConfig.CharacterRepo); err != nil {
+		return nil, status.Errorf(codes.Internal, "persist character data %q: %v", req.GetEncounterId(), err)
+	}
+	if err := h.encRepo.Save(ctx, out); err != nil {
 		return nil, status.Errorf(codes.Internal, "save encounter %q: %v", req.GetEncounterId(), err)
 	}
 

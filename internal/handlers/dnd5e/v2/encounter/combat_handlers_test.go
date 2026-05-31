@@ -28,7 +28,7 @@ const (
 // loaded data so callers can inspect Initiative ordering for tests that need
 // to know whose turn is active first.
 func (s *HandlerSuite) seedCombatEncounter() {
-	enc := tkenc.New(combatEncID, s.broker)
+	enc := tkenc.New(context.Background(), combatEncID, s.broker)
 	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
 		PlayerID: playerAliceID, EntityID: entityAliceID,
 		Position: core.Hex{Q: 0, R: 0, S: 0}, SightRange: 10,
@@ -125,11 +125,11 @@ func (s *HandlerSuite) advanceToActivePlayer() {
 		// through the wired resolver. The stand-in is sufficient for test setup
 		// because we only need initiative to advance past the NPC — the attack
 		// outcome itself is not asserted in advanceToActivePlayer.
-		enc, err := tkenc.LoadFromData(data, s.broker,
+		enc, err := tkenc.LoadFromData(context.Background(), data, s.broker,
 			tkenc.WithCombatResolver(v2encounter.NewStandInCombatResolver(nil)))
 		s.Require().NoError(err)
 		s.Require().NoError(enc.NPCAct(s.ctx, active))
-		_, _, err = enc.EndTurn(active)
+		_, _, err = enc.EndTurn(context.Background(), active)
 		s.Require().NoError(err)
 		s.Require().NoError(s.repo.Save(s.ctx, enc.ToData()))
 	}
@@ -232,7 +232,7 @@ func (s *HandlerSuite) TestTakeAction_ActorIDMismatch_PermissionDenied() {
 func (s *HandlerSuite) TestTakeAction_NotTurnBased_FailedPrecondition() {
 	// Seed a free-roam encounter (no SetMode). The toolkit's combat verb
 	// returns ErrNotTurnBased which the handler maps to FailedPrecondition.
-	enc := tkenc.New(combatEncID, s.broker)
+	enc := tkenc.New(context.Background(), combatEncID, s.broker)
 	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
 		PlayerID: playerAliceID, EntityID: entityAliceID,
 		Position: core.Hex{Q: 0, R: 0, S: 0}, SightRange: 10,
@@ -402,7 +402,7 @@ func (s *HandlerSuite) TestEndTurn_EntityIDMismatch_PermissionDenied() {
 
 func (s *HandlerSuite) TestEndTurn_NotTurnBased_FailedPrecondition() {
 	// Seed FreeRoam — EndTurn requires TURN_BASED.
-	enc := tkenc.New(combatEncID, s.broker)
+	enc := tkenc.New(context.Background(), combatEncID, s.broker)
 	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
 		PlayerID: playerAliceID, EntityID: entityAliceID,
 		Position: core.Hex{}, SightRange: 10,

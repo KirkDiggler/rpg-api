@@ -343,7 +343,7 @@ func (s *BarbarianRageIntegrationSuite) goblinAttackBobHP(
 
 	// Seed encounter (unique ID per call to avoid cross-test contamination).
 	encID := fmt.Sprintf("enc-rage-resistance-%v", withRage)
-	enc := tkenc.New(encountercore.EncounterID(encID), broker)
+	enc := tkenc.New(context.Background(), encountercore.EncounterID(encID), broker)
 	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
 		PlayerID:    encountercore.PlayerID(ragePlayerBob),
 		EntityID:    encountercore.EntityID(rageEntityBob),
@@ -441,9 +441,9 @@ func (s *BarbarianRageIntegrationSuite) advanceToActor(
 		}
 
 		if activeID == npcEntityID {
-			enc, loadErr := tkenc.LoadFromData(data, broker)
+			enc, loadErr := tkenc.LoadFromData(context.Background(), data, broker)
 			s.Require().NoError(loadErr)
-			_, _, err = enc.EndTurn(encountercore.EntityID(activeID))
+			_, _, err = enc.EndTurn(context.Background(), encountercore.EntityID(activeID))
 			s.Require().NoError(err)
 			s.Require().NoError(repo.Save(context.Background(), enc.ToData()))
 			continue
@@ -545,7 +545,7 @@ func (s *BarbarianRageIntegrationSuite) attackBobVsGoblin() *encounterv2pb.TakeA
 
 // seedRageEncounter creates the wave-3-barbarian fixture encounter and saves it.
 func (s *BarbarianRageIntegrationSuite) seedRageEncounter() {
-	enc := tkenc.New(rageIntegEncID, s.broker)
+	enc := tkenc.New(context.Background(), rageIntegEncID, s.broker)
 
 	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
 		PlayerID:    encountercore.PlayerID(ragePlayerBob),
