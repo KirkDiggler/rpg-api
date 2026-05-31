@@ -9,48 +9,49 @@ import (
 
 	encounterv2pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/encounter"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
-	encountersv2 "github.com/KirkDiggler/rpg-api/internal/repositories/encounters/v2"
-	tkenc "github.com/KirkDiggler/rpg-toolkit/encounter"
+	encounterorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/encounter/v2"
+	"github.com/KirkDiggler/rpg-toolkit/encounter"
 	"github.com/KirkDiggler/rpg-toolkit/encounter/core"
 )
 
-// d20 roll bounds — defense-in-depth alongside the toolkit's
-// ErrInvalidRoll, so we surface InvalidArgument before reaching the verb.
+// d20 roll bounds — defense-in-depth alongside the toolkit's ErrInvalidRoll, so
+// we surface InvalidArgument before reaching the verb.
 const (
 	minD20Roll = 1
 	maxD20Roll = 20
 )
 
-// SubmitCheck handles the SubmitCheck RPC: it resolves the caller's currently
-// pending InputRequired prompt against a supplied d20 roll. The toolkit owns
-// modifier resolution (via the wired CharacterResolver) and any side-effect
-// dispatch on success — for Wave 2.9 the only wired action is "open" on a
-// locked door, which the toolkit dispatches to OpenDoor internally; that
-// publishes DoorOpened + GeometryRevealed through the broker the same way
-// Wave 2.7 did.
+// SubmitCheck handles the SubmitCheck RPC. It validates the request envelope,
+// delegates skill-check resolution (or the take_reaction branch) to the v2
+// orchestrator, and translates the result (and sentinel errors) back to proto.
 //
-// Behavior contract:
+// The orchestrator owns the load → SubmitCheck verb → persist flow (#582
+// carve-out). The toolkit owns modifier resolution (via the wired
+// CharacterResolver) and any success side-effect dispatch — for the locked-door
+// case the wired action is "open", which the toolkit dispatches to OpenDoor
+// internally (publishing DoorOpened + GeometryRevealed through the broker). This
+// handler stays thin: proto↔input mapping plus submitCheckStatusError.
+//
+// Behavior contract (preserved across the carve):
 //   - missing auth → Unauthenticated
 //   - empty encounter_id / entity_id → InvalidArgument
-//   - roll outside [1, 20] → InvalidArgument (defense in depth before
-//     the toolkit also checks; surfaces a clearer error to the client)
+//   - take_reaction set → routes to the reaction branch (the roll is ignored;
+//     reaction prompts don't carry a d20 roll)
+//   - roll outside [1, 20] → InvalidArgument (defense in depth before the
+//     toolkit also checks; clearer error to the client)
 //   - encounter not in repo → NotFound
-//   - caller is not a member of the encounter → PermissionDenied
-//   - entity_id does not match caller's controlled entity →
-//     PermissionDenied (mirrors MoveEntity / EndTurn / TakeAction)
+//   - caller not a member / entity_id mismatch → PermissionDenied
 //   - no pending prompt → FailedPrecondition
-//   - prompt is not a skill check → FailedPrecondition (other prompt
-//     kinds resolve via different verbs in future waves)
-//   - prompt's TriggeredAction is not wired in this toolkit version →
-//     Unimplemented
-//   - encounter has no character resolver → Internal (the orchestrator
+//   - prompt is not a skill check → FailedPrecondition
+//   - prompt's TriggeredAction not wired → Unimplemented
+//   - encounter has no character resolver → Internal (orchestrator
 //     misconfigured itself; the resolver is wired by HandlerConfig)
-//   - save failure → Internal
+//   - roll rejected by toolkit (range disagreement) → InvalidArgument
+//   - dispatch / save failure → Internal
 //
-// On success the response carries the resolved total (roll + ability
-// modifier + tool-proficiency bonus) and a boolean indicating whether
-// total >= prompt DC. World effects flow as broker events on the existing
-// StreamEncounter session — the response itself does not include them.
+// On success the response carries the resolved total (roll + ability modifier +
+// tool-proficiency bonus) and a boolean for total ≥ DC. World effects flow as
+// broker events on the existing StreamEncounter session.
 func (h *Handler) SubmitCheck(ctx context.Context, req *encounterv2pb.SubmitCheckRequest) (*encounterv2pb.SubmitCheckResponse, error) {
 	playerID := auth.GetPlayerID(ctx)
 	if playerID == "" {
@@ -62,9 +63,9 @@ func (h *Handler) SubmitCheck(ctx context.Context, req *encounterv2pb.SubmitChec
 	if req.GetEntityId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "entity_id is required")
 	}
-	// Wave 2.11d: take_reaction is the reaction-prompt response semantic.
-	// When set, route to the phased completion path; the roll field is
-	// ignored (reaction prompts don't carry a d20 roll).
+	// take_reaction is the reaction-prompt response semantic. When set, route to
+	// the reaction branch; the roll field is ignored (reaction prompts don't
+	// carry a d20 roll).
 	if req.TakeReaction != nil {
 		return h.submitReactionCheck(ctx, req, playerID)
 	}
@@ -74,88 +75,65 @@ func (h *Handler) SubmitCheck(ctx context.Context, req *encounterv2pb.SubmitChec
 			req.GetRoll(), minD20Roll, maxD20Roll)
 	}
 
-	data, err := h.encRepo.Get(ctx, req.GetEncounterId())
+	out, err := h.orch.SubmitCheck(ctx, &encounterorch.SubmitCheckInput{
+		EncounterID: req.GetEncounterId(),
+		PlayerID:    core.PlayerID(playerID),
+		EntityID:    req.GetEntityId(),
+		Roll:        int(req.GetRoll()),
+	})
 	if err != nil {
-		if errors.Is(err, encountersv2.ErrNotFound) {
-			return nil, status.Error(codes.NotFound, "encounter not found")
-		}
-		return nil, status.Errorf(codes.Internal,
-			"load encounter %q: %v", req.GetEncounterId(), err)
-	}
-
-	// Authorization: the caller must be a member of this encounter and the
-	// supplied entity_id must match their controlled entity. Mirrors the
-	// pattern used by MoveEntity / EndTurn / TakeAction so a caller cannot
-	// resolve a prompt that doesn't belong to them (defense in depth — the
-	// toolkit already keys PendingPrompts by playerID, so a non-member would
-	// hit ErrNoPendingPrompt anyway, but PermissionDenied is the clearer
-	// signal and prevents leaking encounter membership through the FailedPrecondition
-	// vs PermissionDenied distinction).
-	pd, ok := data.Players[core.PlayerID(playerID)]
-	if !ok {
-		return nil, status.Error(codes.PermissionDenied, "player is not in this encounter")
-	}
-	if string(pd.EntityID) != req.GetEntityId() {
-		return nil, status.Error(codes.PermissionDenied,
-			"entity_id does not match player's controlled entity")
-	}
-
-	// #689: skill-check resolution doesn't touch combatant state; no player
-	// DataJSON is attached, so the cascade skips hydration. ctx threaded for
-	// the new LoadFromData signature.
-	enc, err := tkenc.LoadFromData(ctx, data, h.broker,
-		tkenc.WithCharacterResolver(h.resolver),
-		tkenc.WithCombatResolver(h.buildCombatResolver(data)),
-		tkenc.WithMovementResolver(h.buildMovementResolver(data)))
-	if err != nil {
-		return nil, status.Errorf(codes.Internal,
-			"load from data %q: %v", req.GetEncounterId(), err)
-	}
-
-	result, submitErr := enc.SubmitCheck(core.PlayerID(playerID), int(req.GetRoll()))
-	if submitErr != nil {
-		switch {
-		case errors.Is(submitErr, tkenc.ErrNoPendingPrompt):
-			return nil, status.Error(codes.FailedPrecondition,
-				"no pending prompt to resolve for caller")
-		case errors.Is(submitErr, tkenc.ErrPromptKindMismatch):
-			return nil, status.Error(codes.FailedPrecondition,
-				"pending prompt is not a skill check")
-		case errors.Is(submitErr, tkenc.ErrInvalidRoll):
-			// Defense in depth: handler-side bounds check above should have
-			// caught this. If it didn't, the toolkit's range disagrees with
-			// ours — still InvalidArgument from the client's perspective.
-			return nil, status.Errorf(codes.InvalidArgument,
-				"roll rejected by toolkit: %v", submitErr)
-		case errors.Is(submitErr, tkenc.ErrUnsupportedPromptAction):
-			return nil, status.Errorf(codes.Unimplemented,
-				"prompt action not supported in this server version: %v", submitErr)
-		case errors.Is(submitErr, tkenc.ErrNoCharacterResolver):
-			// The handler always wires a resolver (StubCharacterResolver as
-			// default). Reaching this means the orchestrator rebuilt the
-			// encounter without going through HandlerConfig — surface as
-			// Internal.
-			return nil, status.Errorf(codes.Internal,
-				"encounter has no character resolver wired: %v", submitErr)
-		default:
-			// Resolution-proceeded-but-dispatch-failed cases (downstream
-			// OpenDoor failures) wrap with fmt.Errorf rather than sentinels.
-			// The check itself succeeded (Success=true is reported in result)
-			// but the side effect failed; the prompt has been cleared by the
-			// toolkit. Surface as Internal so the client knows the world
-			// state may be inconsistent.
-			return nil, status.Errorf(codes.Internal,
-				"submit check dispatch: %v", submitErr)
-		}
-	}
-
-	if err := h.encRepo.Save(ctx, enc.ToData()); err != nil {
-		return nil, status.Errorf(codes.Internal,
-			"save encounter %q after submit check: %v", req.GetEncounterId(), err)
+		return nil, submitCheckStatusError(err)
 	}
 
 	return &encounterv2pb.SubmitCheckResponse{
-		Success: result.Success,
-		Total:   int32(result.Total), //nolint:gosec // total is roll(1-20)+small mods, fits int32
+		Success: out.Success,
+		Total:   int32(out.Total), //nolint:gosec // total is roll(1-20)+small mods, fits int32
 	}, nil
+}
+
+// submitCheckStatusError maps the orchestrator's SubmitCheck errors onto gRPC
+// status codes per pat-v2-status-code-mapping. Orchestrator load sentinels and
+// the toolkit verb sentinels (surfaced unwrapped by the orchestrator) carry the
+// classification; this proto-layer mapper assigns the code.
+//
+//   - ErrEncounterNotFound → NotFound
+//   - ErrPlayerNotInEncounter / ErrEntityOwnershipMismatch → PermissionDenied
+//   - ErrNoPendingPrompt / ErrPromptKindMismatch → FailedPrecondition
+//   - ErrInvalidRoll → InvalidArgument (range disagreement vs the handler bound)
+//   - ErrUnsupportedPromptAction → Unimplemented
+//   - ErrNoCharacterResolver / ErrSubmitCheckDispatch / load+save failures →
+//     Internal
+func submitCheckStatusError(err error) error {
+	switch {
+	case errors.Is(err, encounterorch.ErrEncounterNotFound):
+		return status.Error(codes.NotFound, "encounter not found")
+	case errors.Is(err, encounterorch.ErrPlayerNotInEncounter):
+		return status.Error(codes.PermissionDenied, "player is not in this encounter")
+	case errors.Is(err, encounterorch.ErrEntityOwnershipMismatch):
+		return status.Error(codes.PermissionDenied,
+			"entity_id does not match player's controlled entity")
+	case errors.Is(err, encounter.ErrNoPendingPrompt):
+		return status.Error(codes.FailedPrecondition,
+			"no pending prompt to resolve for caller")
+	case errors.Is(err, encounter.ErrPromptKindMismatch):
+		return status.Error(codes.FailedPrecondition,
+			"pending prompt is not a skill check")
+	case errors.Is(err, encounter.ErrInvalidRoll):
+		// Defense in depth: the handler-side bounds check should have caught
+		// this. Reaching it means the toolkit's range disagrees with ours —
+		// still InvalidArgument from the client's perspective.
+		return status.Errorf(codes.InvalidArgument, "roll rejected by toolkit: %v", err)
+	case errors.Is(err, encounter.ErrUnsupportedPromptAction):
+		return status.Errorf(codes.Unimplemented,
+			"prompt action not supported in this server version: %v", err)
+	case errors.Is(err, encounter.ErrNoCharacterResolver):
+		// The handler always wires a resolver (StubCharacterResolver default).
+		// Reaching this means the orchestrator rebuilt the encounter without the
+		// resolver — surface as Internal.
+		return status.Errorf(codes.Internal,
+			"encounter has no character resolver wired: %v", err)
+	}
+	// ErrSubmitCheckDispatch (resolution succeeded, side effect failed) + load /
+	// save / unclassified failures.
+	return status.Errorf(codes.Internal, "submit check: %v", err)
 }

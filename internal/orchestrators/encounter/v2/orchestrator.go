@@ -17,10 +17,10 @@
 package encounter
 
 import (
+	"context"
 	"errors"
 	"time"
 
-	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	encountersv2 "github.com/KirkDiggler/rpg-api/internal/repositories/encounters/v2"
 	tkenc "github.com/KirkDiggler/rpg-toolkit/encounter"
 )
@@ -52,6 +52,55 @@ type CombatResolverBuilder func(data *tkenc.Data) CombatResolver
 // never imports the dnd5e rulebook movement adapter.
 type MovementResolverBuilder func(data *tkenc.Data) tkenc.MovementResolver
 
+// CharacterDataCascade attaches/persists the transient PlayerData.DataJSON for
+// the #689 hydration cascade on combat-capable verbs. The orchestrator calls
+// AttachCharacterData (before LoadFromData) and PersistCharacterData (after
+// ToData, before Save). The concrete implementations marshal the dnd5e
+// character blob, so they are supplied handler-side as funcs — the orchestrator
+// stays free of the rulebooks/dnd5e/character import (rule-ish serialization is
+// the handler/adapter's job, not the orchestrator's).
+//
+// Both funcs are no-ops when the handler has no character store wired (tests):
+// the door verbs never set loadInput.WithCharacterData, so the cascade is never
+// invoked on those paths.
+type CharacterDataCascade struct {
+	// Attach sets transient PlayerData.DataJSON on data from the character store,
+	// before LoadFromData hydrates the held *character.Character per seat.
+	Attach func(ctx context.Context, data *tkenc.Data) error
+
+	// Persist flushes each player's post-verb DataJSON back to the character
+	// store (the authoritative source) and clears it so it does not persist onto
+	// the encounter snapshot.
+	Persist func(ctx context.Context, data *tkenc.Data) error
+}
+
+// ReactionResume carries the rulebook-touching pieces of the SubmitCheck
+// take_reaction branch as injected funcs, so the orchestrator runs phase-2
+// reaction completion without importing the dnd5e combat rulebook. Both the
+// AttackContext decode (combat.AttackContext is the resolver's native opaque
+// shape) and the take/skip -> ReactionModifier mapping (which carries the
+// rule-ish Shield +5 AC magnitude) are supplied handler-side.
+type ReactionResume struct {
+	// DecodeAttackContext unmarshals the persisted opaque AttackContextJSON back
+	// into the toolkit's PhasedAttackContext (Rulebook = the resolver's native
+	// *combat.AttackContext). Returns an error on a corrupt blob.
+	DecodeAttackContext func(raw []byte) (*tkenc.PhasedAttackContext, error)
+
+	// BuildReactionModifiers maps a pending reaction prompt + take/skip choice
+	// to the ReactionModifier set for phase 2. When take is false (skip), it
+	// returns no modifiers. The rule-ish per-condition modifier magnitudes
+	// (Shield = +5 AC) live here, handler-side.
+	BuildReactionModifiers func(prompt *tkenc.PendingReactionPrompt, take bool) []tkenc.ReactionModifier
+
+	// IsOneShotReaction decides whether a taken reaction consumes its readiness
+	// (so the reactor must re-ready before the next window) vs. stays ready
+	// (free reactions like an opportunity attack). This is a rulebook decision —
+	// which reactions are one-shot — so it lives handler-side. The orchestrator
+	// only performs the readiness reset (a toolkit-flag bookkeeping call) when
+	// this returns true, keeping it free of any per-condition ref knowledge.
+	IsOneShotReaction func(conditionRef string) bool
+}
+
 // Config holds the dependencies for an Orchestrator.
 type Config struct {
 	// Broker is the encounter event broker. Required.
@@ -59,12 +108,6 @@ type Config struct {
 
 	// EncounterRepo persists encounter snapshots. Required.
 	EncounterRepo encountersv2.Repository
-
-	// CharacterRepo provides player character lookup for the hydration cascade
-	// (attach/persist of transient PlayerData.DataJSON on combat-capable verbs).
-	// Optional — when nil, combat-capable verbs fall back to the resolver
-	// stand-in path. The door verbs (Interact) do not use it.
-	CharacterRepo characterrepo.Repository
 
 	// Resolver bridges the toolkit's CharacterResolver to the character store
 	// for skill-check totals. Required (the handler supplies a stub default).
@@ -75,6 +118,18 @@ type Config struct {
 
 	// BuildMovementResolver builds the per-request movement resolver. Required.
 	BuildMovementResolver MovementResolverBuilder
+
+	// CharacterData attaches/persists the transient #689 cascade DataJSON on
+	// combat-capable verbs. Optional — when the funcs are nil, combat-capable
+	// verbs run without the cascade (the resolver stand-in path), which keeps
+	// tests that don't wire a character store green. The door verbs (Interact)
+	// never invoke it.
+	CharacterData CharacterDataCascade
+
+	// ReactionResume carries the rulebook-touching funcs for the SubmitCheck
+	// take_reaction branch (AttackContext decode + modifier-building). Required
+	// for SubmitReactionCheck; the skill-check and door verbs do not use it.
+	ReactionResume ReactionResume
 
 	// Now supplies the current time. Optional — defaults to time.Now.
 	//
@@ -90,16 +145,18 @@ type Config struct {
 type Orchestrator struct {
 	broker  *tkenc.Broker
 	encRepo encountersv2.Repository
-	// charRepo and now are wired now but unused by the door verbs (Interact).
-	// They are required by the combat-capable verbs (attach/persist of transient
-	// PlayerData.DataJSON) and the projection/snapshot read path carved in later
-	// steps of #582 — held here so the Config surface and ctor are stable as
-	// those verbs land, rather than re-threading per verb.
-	charRepo              characterrepo.Repository
+	// now is wired now but unused by the door verbs (Interact); reserved for the
+	// projection / snapshot read path carved in later steps of #582.
 	resolver              CharacterResolver
 	buildCombatResolver   CombatResolverBuilder
 	buildMovementResolver MovementResolverBuilder
-	now                   func() time.Time
+	// characterData carries the #689 hydration cascade (attach/persist of
+	// transient PlayerData.DataJSON) for combat-capable verbs. The injected funcs
+	// hold the character store handler-side, so the orchestrator needs no direct
+	// character-repo handle of its own.
+	characterData  CharacterDataCascade
+	reactionResume ReactionResume
+	now            func() time.Time
 }
 
 // New constructs an Orchestrator from cfg. Returns an error (never a nil
@@ -130,10 +187,11 @@ func New(cfg *Config) (*Orchestrator, error) {
 	return &Orchestrator{
 		broker:                cfg.Broker,
 		encRepo:               cfg.EncounterRepo,
-		charRepo:              cfg.CharacterRepo,
 		resolver:              cfg.Resolver,
 		buildCombatResolver:   cfg.BuildCombatResolver,
 		buildMovementResolver: cfg.BuildMovementResolver,
+		characterData:         cfg.CharacterData,
+		reactionResume:        cfg.ReactionResume,
 		now:                   now,
 	}, nil
 }

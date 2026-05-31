@@ -42,6 +42,14 @@ type loadInput struct {
 	// ErrEntityOwnershipMismatch otherwise. Empty skips the ownership check
 	// (read-path / door verbs that act on a target rather than the actor).
 	EntityID string
+
+	// WithCharacterData requests the #689 hydration cascade: load attaches the
+	// transient PlayerData.DataJSON (via the injected CharacterData.Attach)
+	// BEFORE LoadFromData, so the held *character.Character is hydrated for each
+	// seat. Combat-capable verbs (the reaction-resume path) set this; the
+	// skill-check and door verbs leave it false (skill checks don't touch
+	// combatant state). No-op when no Attach func is wired.
+	WithCharacterData bool
 }
 
 // load is the single load core: Get the snapshot → verify membership (and
@@ -70,6 +78,17 @@ func (o *Orchestrator) load(ctx context.Context, in loadInput) (*tkenc.Encounter
 	}
 	if in.EntityID != "" && string(pd.EntityID) != in.EntityID {
 		return nil, ErrEntityOwnershipMismatch
+	}
+
+	// #689 hydration cascade: combat-capable verbs attach the transient
+	// PlayerData.DataJSON from the character store before LoadFromData rehydrates
+	// the held combatants. Runs after auth (no rehydration cost on the auth-fail
+	// path) and before LoadFromData (which consumes the DataJSON). No-op when no
+	// Attach func is wired (tests / non-combat verbs).
+	if in.WithCharacterData && o.characterData.Attach != nil {
+		if attachErr := o.characterData.Attach(ctx, data); attachErr != nil {
+			return nil, fmt.Errorf("attach character data %q: %w", in.EncounterID, attachErr)
+		}
 	}
 
 	// Resolvers are wired uniformly on every load, mirroring the handler today.

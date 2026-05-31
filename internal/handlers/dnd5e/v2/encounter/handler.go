@@ -126,14 +126,32 @@ func New(cfg *HandlerConfig) (*Handler, error) {
 	// per-request resolver builders so the orchestrator stays free of rulebook
 	// imports — the rulebook-importing Dnd5eCombatResolver / Dnd5eMovementResolver
 	// adapters are built here and handed in behind interface-typed builders.
+	// The #689 hydration cascade and the reaction-resume rulebook decode/
+	// modifier-build are supplied as funcs so the orchestrator stays free of the
+	// rulebooks/dnd5e/{character,combat} imports — the marshaling + rule
+	// magnitudes (Shield +5 AC) live in this handler package's adapter seam
+	// (hydrate_players.go, reaction_resume.go).
+	charRepo := combatResolverConfig.CharacterRepo
 	orch, err := encounterorch.New(&encounterorch.Config{
 		Broker:              cfg.Broker,
 		EncounterRepo:       cfg.Repo,
-		CharacterRepo:       combatResolverConfig.CharacterRepo,
 		Resolver:            resolver,
 		BuildCombatResolver: h.buildCombatResolver,
 		BuildMovementResolver: func(data *encounter.Data) encounter.MovementResolver {
 			return h.buildMovementResolver(data)
+		},
+		CharacterData: encounterorch.CharacterDataCascade{
+			Attach: func(ctx context.Context, data *encounter.Data) error {
+				return attachPlayerCharacterData(ctx, data, charRepo)
+			},
+			Persist: func(ctx context.Context, data *encounter.Data) error {
+				return persistPlayerCharacterData(ctx, data, charRepo)
+			},
+		},
+		ReactionResume: encounterorch.ReactionResume{
+			DecodeAttackContext:    decodeReactionAttackContext,
+			BuildReactionModifiers: buildReactionModifiers,
+			IsOneShotReaction:      isOneShotReaction,
 		},
 		Now: now,
 	})
