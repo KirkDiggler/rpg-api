@@ -73,3 +73,13 @@ func buildReactionModifiers(prompt *tkenc.PendingReactionPrompt, take bool) []tk
 	}
 	return nil
 }
+
+// isOneShotReaction decides whether a taken reaction consumes its readiness (the
+// reactor must re-ready before the next window) vs. stays ready. This is a
+// rulebook decision — Shield is a spell that costs a reaction + slot, so a taken
+// Shield is one-shot; an opportunity attack is a free reaction that stays ready.
+// Kept handler-side so the orchestrator stays free of per-condition ref
+// knowledge (the orchestrator only performs the toolkit readiness-reset call).
+func isOneShotReaction(conditionRef string) bool {
+	return conditionRef == reactionShieldRef
+}

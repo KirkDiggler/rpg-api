@@ -44,13 +44,6 @@ type SubmitReactionCheckOutput struct {
 	TookReaction bool
 }
 
-// shieldRef is the canonical Shield spell condition ref. Used only to apply the
-// one-shot Shield readiness reset after a taken Shield reaction — this is
-// orchestration of readiness state (a flag the toolkit exposes), NOT a rules
-// computation: the AC magnitude lives in the injected BuildReactionModifiers,
-// handler-side.
-const shieldRef = "dnd5e:spells:shield"
-
 // SubmitReactionCheck resolves the caller's pending reaction prompt: load the
 // encounter with the #689 cascade, decode the persisted phase-1 attack context,
 // run the toolkit's CompleteTakeAction (phase 2) with the take/skip modifiers,
@@ -74,7 +67,9 @@ func (o *Orchestrator) SubmitReactionCheck(
 	if in == nil {
 		return nil, errors.New("encounter orchestrator: SubmitReactionCheckInput is required")
 	}
-	if o.reactionResume.DecodeAttackContext == nil || o.reactionResume.BuildReactionModifiers == nil {
+	if o.reactionResume.DecodeAttackContext == nil ||
+		o.reactionResume.BuildReactionModifiers == nil ||
+		o.reactionResume.IsOneShotReaction == nil {
 		return nil, errors.New("encounter orchestrator: ReactionResume funcs are required for SubmitReactionCheck")
 	}
 
@@ -106,12 +101,13 @@ func (o *Orchestrator) SubmitReactionCheck(
 		return nil, fmt.Errorf("complete take action %q: %w", in.EncounterID, err)
 	}
 
-	// One-shot Shield: when the player takes a Shield reaction, clear the
-	// readiness flag so the caster must re-ready before the next attack. Free
-	// reactions (OA) stay ready until explicitly toggled off. This is readiness
-	// bookkeeping (a toolkit-exposed flag), not a rules computation. Non-fatal —
-	// the reaction already fired.
-	if in.Take && prompt.ConditionRef == shieldRef {
+	// One-shot reactions: when the player takes a one-shot reaction (e.g. Shield),
+	// clear the readiness flag so the reactor must re-ready before the next
+	// window. Free reactions (OA) stay ready until explicitly toggled off. The
+	// rulebook decision — which refs are one-shot — is the injected predicate's;
+	// the orchestrator only performs the readiness reset (toolkit-flag
+	// bookkeeping). Non-fatal — the reaction already fired.
+	if in.Take && o.reactionResume.IsOneShotReaction(prompt.ConditionRef) {
 		_ = enc.SetReactionReady(prompt.ReactorEntityID, prompt.ConditionRef, false)
 	}
 

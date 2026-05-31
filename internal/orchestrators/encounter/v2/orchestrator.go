@@ -91,6 +91,14 @@ type ReactionResume struct {
 	// returns no modifiers. The rule-ish per-condition modifier magnitudes
 	// (Shield = +5 AC) live here, handler-side.
 	BuildReactionModifiers func(prompt *tkenc.PendingReactionPrompt, take bool) []tkenc.ReactionModifier
+
+	// IsOneShotReaction decides whether a taken reaction consumes its readiness
+	// (so the reactor must re-ready before the next window) vs. stays ready
+	// (free reactions like an opportunity attack). This is a rulebook decision —
+	// which reactions are one-shot — so it lives handler-side. The orchestrator
+	// only performs the readiness reset (a toolkit-flag bookkeeping call) when
+	// this returns true, keeping it free of any per-condition ref knowledge.
+	IsOneShotReaction func(conditionRef string) bool
 }
 
 // Config holds the dependencies for an Orchestrator.

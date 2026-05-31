@@ -151,6 +151,7 @@ func New(cfg *HandlerConfig) (*Handler, error) {
 		ReactionResume: encounterorch.ReactionResume{
 			DecodeAttackContext:    decodeReactionAttackContext,
 			BuildReactionModifiers: buildReactionModifiers,
+			IsOneShotReaction:      isOneShotReaction,
 		},
 		Now: now,
 	})

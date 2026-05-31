@@ -47,6 +47,7 @@ func (s *SubmitCheckSuite) SetupTest() {
 			BuildReactionModifiers: func(_ *tkenc.PendingReactionPrompt, _ bool) []tkenc.ReactionModifier {
 				return nil
 			},
+			IsOneShotReaction: func(_ string) bool { return false },
 		},
 		Now: func() time.Time { return time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC) },
 	})
