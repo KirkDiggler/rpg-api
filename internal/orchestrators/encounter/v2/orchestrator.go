@@ -86,8 +86,9 @@ type ReactionResume struct {
 	// by TakeActionPhased (Rulebook = the resolver's native *combat.AttackContext)
 	// into the opaque AttackContextJSON persisted on the pending reaction prompt.
 	// The phase-1 counterpart to DecodeAttackContext; both live handler-side so
-	// the orchestrator never type-asserts the rulebook payload. Required for
-	// TakeAction (only used when a player reaction pauses the attack).
+	// the orchestrator never type-asserts the rulebook payload. Required only on
+	// the TakeAction reaction-pause path (when a player reaction pauses the
+	// attack); checked lazily there, so non-phased callers need not wire it.
 	MarshalAttackContext func(ctx *tkenc.PhasedAttackContext) ([]byte, error)
 
 	// DecodeAttackContext unmarshals the persisted opaque AttackContextJSON back

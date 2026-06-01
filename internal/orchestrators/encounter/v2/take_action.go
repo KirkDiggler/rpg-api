@@ -78,9 +78,6 @@ func (o *Orchestrator) TakeAction(ctx context.Context, in *TakeActionInput) (*Ta
 	if in == nil {
 		return nil, errors.New("encounter orchestrator: TakeActionInput is required")
 	}
-	if o.reactionResume.MarshalAttackContext == nil {
-		return nil, errors.New("encounter orchestrator: ReactionResume.MarshalAttackContext is required for TakeAction")
-	}
 
 	enc, err := o.load(ctx, loadInput{
 		EncounterID: in.EncounterID,
@@ -162,6 +159,13 @@ func (o *Orchestrator) persistPendingReactions(
 ) ([]core.PlayerID, error) {
 	if outcome.AttackContext == nil {
 		return nil, errors.New("phased outcome has reactions but no attack context")
+	}
+	// The marshal seam is only needed on this pause path, so it is required
+	// lazily here (not up-front in TakeAction) — non-phased callers that can
+	// never produce reactions need not wire it. A clear error if we reach the
+	// pause path without it beats a nil dereference.
+	if o.reactionResume.MarshalAttackContext == nil {
+		return nil, errors.New("encounter orchestrator: ReactionResume.MarshalAttackContext is required to persist a reaction prompt")
 	}
 	ctxJSON, err := o.reactionResume.MarshalAttackContext(outcome.AttackContext)
 	if err != nil {
