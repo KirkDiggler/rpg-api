@@ -173,11 +173,19 @@ func (h *Handler) buildMovementResolver(data *encounter.Data) *Dnd5eMovementReso
 	return NewDnd5eMovementResolverForData(h.movementResolverConfig, data)
 }
 
-// MoveEntity loads the encounter, validates that the request's entity_id matches
-// the auth player's controlled entity, dispatches to the toolkit's Encounter.Move
-// verb (which publishes per-viewer events to the broker), and saves the updated
-// state. The empty MoveEntityResponse is by proto design — world changes flow as
-// events on StreamEncounter.
+// MoveEntity moves the auth player's controlled entity along a proposed path.
+// The handler validates the envelope (auth, encounter_id), converts the proto
+// path positions to core.Hex, delegates the load → Move verb → persist cycle to
+// the v2 orchestrator (#582 step 6, retiring the inline body), and maps the
+// orchestrator's sentinel errors onto gRPC status codes. The empty
+// MoveEntityResponse is by proto design — world changes (the mover landing,
+// opportunity attacks resolving) flow as events on StreamEncounter.
+//
+// NO rule logic lives here. The toolkit's Encounter.Move owns all movement rules
+// (per-step MovementChain, opportunity-attack triggers, path truncation); the
+// movement resolver (the rulebook-importing tkenc↔dnd5e seam) is injected into
+// the orchestrator via BuildMovementResolver, so the orchestrator stays
+// rulebook-free.
 func (h *Handler) MoveEntity(ctx context.Context, req *encounterv2pb.MoveEntityRequest) (*encounterv2pb.MoveEntityResponse, error) {
 	playerID := auth.GetPlayerID(ctx)
 	if playerID == "" {
@@ -187,67 +195,53 @@ func (h *Handler) MoveEntity(ctx context.Context, req *encounterv2pb.MoveEntityR
 		return nil, status.Error(codes.InvalidArgument, "encounter_id is required")
 	}
 
-	data, err := h.encRepo.Get(ctx, req.GetEncounterId())
-	if err != nil {
-		if errors.Is(err, encountersv2.ErrNotFound) {
-			return nil, status.Error(codes.NotFound, "encounter not found")
-		}
-		return nil, status.Errorf(codes.Internal, "load encounter %q: %v", req.GetEncounterId(), err)
-	}
-
-	// entity_id validation: the player's controlled entity must match the
-	// request's entity_id. Read from data BEFORE LoadFromData consumes it.
-	pd, ok := data.Players[core.PlayerID(playerID)]
-	if !ok {
-		return nil, status.Error(codes.PermissionDenied, "player is not in this encounter")
-	}
-	if string(pd.EntityID) != req.GetEntityId() {
-		return nil, status.Error(codes.PermissionDenied, "entity_id does not match player's controlled entity")
-	}
-
-	if len(req.GetProposedPath()) == 0 {
-		return nil, status.Error(codes.InvalidArgument, "proposed_path is required")
-	}
-
-	// #689: attach player character blobs (transient) so the hydration cascade
-	// holds the mover; the movement resolver reads the held mover (no re-load).
-	if attachErr := attachPlayerCharacterData(ctx, data, h.combatResolverConfig.CharacterRepo); attachErr != nil {
-		return nil, status.Errorf(codes.Internal, "attach character data %q: %v", req.GetEncounterId(), attachErr)
-	}
-
-	enc, err := encounter.LoadFromData(ctx, data, h.broker,
-		encounter.WithCharacterResolver(h.resolver),
-		encounter.WithCombatResolver(h.buildCombatResolver(data)),
-		encounter.WithMovementResolver(h.buildMovementResolver(data)))
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "load from data %q: %v", req.GetEncounterId(), err)
-	}
-
+	// Proto → entity conversion: the path positions become toolkit hexes. Empty
+	// path is classified by the orchestrator (ErrEmptyPath) AFTER load so the auth
+	// sentinels keep precedence over the argument-shaped error.
 	path := make([]core.Hex, 0, len(req.GetProposedPath()))
 	for _, p := range req.GetProposedPath() {
 		path = append(path, core.Hex{Q: int(p.X), R: int(p.Y), S: int(p.Z)})
 	}
 
-	if err := enc.Move(core.PlayerID(playerID), path); err != nil {
-		// Toolkit Move errors are state-dependent (turn order, blocked path,
-		// out-of-range, entity not in encounter, etc.) — these are
-		// FailedPrecondition per gRPC convention. Empty-path is the only
-		// genuinely argument-shaped error and is filtered before we reach Move.
-		return nil, status.Errorf(codes.FailedPrecondition, "move: %v", err)
-	}
-
-	out := enc.ToData()
-	if syncErr := enc.SyncErr(); syncErr != nil {
-		return nil, status.Errorf(codes.Internal, "sync encounter state %q: %v", req.GetEncounterId(), syncErr)
-	}
-	if err := persistPlayerCharacterData(ctx, out, h.combatResolverConfig.CharacterRepo); err != nil {
-		return nil, status.Errorf(codes.Internal, "persist character data %q: %v", req.GetEncounterId(), err)
-	}
-	if err := h.encRepo.Save(ctx, out); err != nil {
-		return nil, status.Errorf(codes.Internal, "save encounter %q: %v", req.GetEncounterId(), err)
+	_, err := h.orch.MoveEntity(ctx, &encounterorch.MoveEntityInput{
+		EncounterID: req.GetEncounterId(),
+		PlayerID:    core.PlayerID(playerID),
+		EntityID:    core.EntityID(req.GetEntityId()),
+		Path:        path,
+	})
+	if err != nil {
+		return nil, moveEntityStatusError(err)
 	}
 
 	return &encounterv2pb.MoveEntityResponse{}, nil
+}
+
+// moveEntityStatusError maps the orchestrator's MoveEntity errors onto gRPC
+// status codes per pat-v2-status-code-mapping. The orchestrator's load sentinels
+// carry the auth classification; ErrEmptyPath is the argument-shaped error; the
+// toolkit Move refusals (joined with ErrMoveRefused) carry the state-dependent
+// classification.
+//
+//   - ErrEncounterNotFound → NotFound
+//   - ErrPlayerNotInEncounter / ErrEntityOwnershipMismatch → PermissionDenied
+//   - ErrEmptyPath → InvalidArgument (the request shape is wrong, not the state)
+//   - ErrMoveRefused → FailedPrecondition (turn order, blocked path, out-of-range)
+//   - load / save / unclassified failures → Internal
+func moveEntityStatusError(err error) error {
+	switch {
+	case errors.Is(err, encounterorch.ErrEncounterNotFound):
+		return status.Error(codes.NotFound, "encounter not found")
+	case errors.Is(err, encounterorch.ErrPlayerNotInEncounter):
+		return status.Error(codes.PermissionDenied, "player is not in this encounter")
+	case errors.Is(err, encounterorch.ErrEntityOwnershipMismatch):
+		return status.Error(codes.PermissionDenied,
+			"entity_id does not match player's controlled entity")
+	case errors.Is(err, encounterorch.ErrEmptyPath):
+		return status.Error(codes.InvalidArgument, "proposed_path is required")
+	case errors.Is(err, encounterorch.ErrMoveRefused):
+		return status.Error(codes.FailedPrecondition, err.Error())
+	}
+	return status.Errorf(codes.Internal, "move entity: %v", err)
 }
 
 // StreamEncounter opens a server-streaming session for the authenticated player.

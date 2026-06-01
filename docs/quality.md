@@ -60,6 +60,20 @@ What's here as of Wave 2.11e:
   SubmitCheck-side decode), kept in `reaction_resume.go` so the orchestrator
   stays rulebook-free. Joins `Interact`/`SubmitCheck`/`SetReactionReady`/
   `ActivateFeature` on the orchestrator's single-`load` core.
+- `MoveEntity` (`handler.go`) — RPC for moving a player's controlled entity
+  along a proposed path. Carved onto the v2 orchestrator
+  (`internal/orchestrators/encounter/v2/move_entity.go`, #582 step 6): the
+  handler is now proto↔input (proto positions → `core.Hex`) + sentinel→status
+  mapping; the orchestrator owns load (with the #689 hydration cascade so the
+  movement resolver reads the held mover — the #684 double-subscribe cure) →
+  `enc.Move` → `persistWithCharacterData`. Empty-path is classified as
+  `ErrEmptyPath` after load so the auth sentinels keep precedence; toolkit Move
+  refusals join `ErrMoveRefused` → `FailedPrecondition`. The opportunity-attack
+  resolution rides the injected `BuildMovementResolver` (the rulebook-importing
+  `Dnd5eMovementResolver` translation seam stays handler-side); its lookup-only
+  threatener load runs on a throwaway bus (not the encounter bus), so it is not a
+  #684 source and is carried as-is. Joins the rest of the verbs on the
+  orchestrator's single-`load` core.
 - `SubmitCheck` (`submit_check.go` + `submit_check_reaction.go`) — dispatches
   to the reaction branch when the caller's pending prompt is a reaction;
   unmarshals the persisted `AttackContextJSON` back into `combat.AttackContext`

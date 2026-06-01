@@ -13,7 +13,7 @@ The v1alpha2 encounter service is the second-generation encounter handler. Unlik
 
 | File | Purpose |
 |---|---|
-| `internal/handlers/dnd5e/v2/encounter/handler.go` | Handler struct, constructor, MoveEntity, StreamEncounter |
+| `internal/handlers/dnd5e/v2/encounter/handler.go` | Handler struct, constructor, MoveEntity (thin delegate → v2 orchestrator `move_entity.go`, #582 step 6), StreamEncounter |
 | `internal/handlers/dnd5e/v2/encounter/create.go` | CreateEncounter RPC |
 | `internal/handlers/dnd5e/v2/encounter/get.go` | GetEncounter RPC |
 | `internal/handlers/dnd5e/v2/encounter/interact.go` | Interact RPC (Wave 2.7 — door interactions) |
