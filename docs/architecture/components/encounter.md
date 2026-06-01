@@ -1,24 +1,32 @@
 ---
 name: encounter (v1alpha2)
-description: v1alpha2 encounter service — lightweight toolkit adapter, no orchestrator
-updated: 2026-05-25
-confidence: high — verified by reading handler.go, dnd5e_movement_resolver.go, dnd5e_combat_resolver.go, hex_room.go, reaction_conditions.go, integration_movement_oa_test.go
+description: v1alpha2 encounter service — thin handlers over a clean load→verb→persist orchestrator
+updated: 2026-05-31
+confidence: high — verified by reading handler.go, end_turn.go, orchestrators/encounter/v2/{orchestrator,load,end_turn,take_action,move_entity,submit_check_reaction}.go, reaction_resume.go, .golangci.yml, combat_handlers_test.go
 ---
 
 # encounter (v1alpha2)
 
-The v1alpha2 encounter service is the second-generation encounter handler. Unlike the v1alpha1 handler which delegates through a full orchestrator stack, v2 talks directly to the rpg-toolkit encounter SDK and a v2 repository. The handler is a thin wire adapter — no business logic, no orchestrator.
+The v1alpha2 encounter service is the second-generation encounter vertical. As of the #582 carve (Chapter 1, Architecture Honesty) it is split into two layers:
+
+- **Handlers** (`internal/handlers/dnd5e/v2/encounter/`) do proto ↔ entity conversion only: validate the envelope (auth, required ids), build the orchestrator's entity-typed Input, delegate, and map the orchestrator's sentinel errors onto gRPC status codes. No business logic, no load/persist.
+- **Orchestrator** (`internal/orchestrators/encounter/v2/`) is the single `load → toolkit-verb → persist` core — one method per RPC, each doing exactly one load + one toolkit-verb dispatch + one persist. It speaks entity / toolkit types only and NEVER imports proto (`pb.*`). This replaced the retired handler-package `Runner` + the scattered inline verb bodies.
+
+The orchestrator stays **rulebook-free**. All game complexity lives in the rpg-toolkit encounter SDK + the dnd5e rulebook, reached only through injected adapters (the combat / movement resolver builders and the `ReactionResume` seam) built handler-side. A depguard lint rule (`no-rulebook-internals-in-action-handlers`) denies `rulebooks/dnd5e/{conditions,resources,classes,weapons,armor,combat}` in both the guarded handler verb files and the orchestrator method files; the resolver-adapter files (which legitimately translate held entities through the rulebook) are excluded and not in the guarded set.
 
 ## Files
 
 | File | Purpose |
 |---|---|
-| `internal/handlers/dnd5e/v2/encounter/handler.go` | Handler struct, constructor, MoveEntity (thin delegate → v2 orchestrator `move_entity.go`, #582 step 6), StreamEncounter |
-| `internal/handlers/dnd5e/v2/encounter/create.go` | CreateEncounter RPC |
-| `internal/handlers/dnd5e/v2/encounter/get.go` | GetEncounter RPC |
-| `internal/handlers/dnd5e/v2/encounter/interact.go` | Interact RPC (Wave 2.7 — door interactions) |
+| `internal/handlers/dnd5e/v2/encounter/handler.go` | Handler struct + constructor (wires the orchestrator with the injected resolver builders, `CharacterDataCascade`, and `ReactionResume` funcs), MoveEntity, StreamEncounter |
+| `internal/handlers/dnd5e/v2/encounter/{create,get,interact,take_action,submit_check,submit_check_reaction,set_reaction_ready,activate_feature,end_turn}.go` | Thin verb handlers — proto↔entity + delegate to the orchestrator + sentinel→gRPC mapping |
+| `internal/handlers/dnd5e/v2/encounter/reaction_resume.go` | Rulebook-touching adapter seam (excluded from depguard): marshal/decode the opaque `*combat.AttackContext`, build reaction modifiers (Shield +5 AC), one-shot-reaction predicate — injected into the orchestrator's `ReactionResume` |
+| `internal/handlers/dnd5e/v2/encounter/{dnd5e_combat_resolver,dnd5e_combat_resolver_phased,dnd5e_movement_resolver,combatant,hydrate_players}.go` | Resolver / cascade adapters (excluded from depguard) — translate held entities through the rulebook |
 | `internal/handlers/dnd5e/v2/encounter/project.go` | ProjectFor helper — toolkit Data → proto Encounter |
 | `internal/handlers/dnd5e/v2/encounter/translate.go` | Event translator — toolkit events → proto EncounterEvent |
+| `internal/orchestrators/encounter/v2/orchestrator.go` | Orchestrator struct + `Config` (Broker, repo, resolver builders, `CharacterDataCascade`, `ReactionResume`) + `New` |
+| `internal/orchestrators/encounter/v2/load.go` | The single load core: Get → auth (membership + optional entity-ownership) → #689 character-data attach → `LoadFromData` with resolvers wired uniformly. Defines `ErrEncounterNotFound` / `ErrPlayerNotInEncounter` / `ErrEntityOwnershipMismatch` |
+| `internal/orchestrators/encounter/v2/{interact,take_action,move_entity,submit_check,submit_check_reaction,set_reaction_ready,activate_feature,end_turn}.go` | One orchestrator method per RPC |
 | `internal/repositories/encounters/v2/repository.go` | Repository interface (Get, Save) |
 | `internal/repositories/encounters/v2/in_memory.go` | In-memory implementation (JSON round-trip) |
 | `internal/repositories/encounters/v2/redis.go` | Redis implementation |
@@ -30,8 +38,38 @@ The v1alpha2 encounter service is the second-generation encounter handler. Unlik
 | `CreateEncounter` | Implemented (#499) | 2.6 |
 | `GetEncounter` | Implemented (#500) | 2.6 |
 | `StreamEncounter` | Implemented (#496, replay #497) | 2.5 / 2.7 |
-| `MoveEntity` | Implemented (#496) | 2.5 |
-| `Interact` | Implemented for doors (#504) | 2.7 |
+| `MoveEntity` | Implemented; orchestrator carve #582 step 6 | 2.5 |
+| `Interact` | Implemented for doors (#504); orchestrator carve #582 | 2.7 |
+| `TakeAction` | Implemented (two-phase); orchestrator carve #582 step 5 | 2.8 / 2.11d |
+| `SubmitCheck` | Implemented (skill check + take_reaction branch); orchestrator carve #582 | 2.9 / 2.11d |
+| `SetReactionReady` | Implemented; orchestrator carve #582 | 2.11d |
+| `ActivateFeature` | Implemented; orchestrator carve #582 step 4 | 2.x |
+| `EndTurn` | Implemented; orchestrator carve #582 step 7 (final verb) | 2.10 / 2.11d |
+
+## Orchestrator method anatomy (the `load → verb → persist` shape)
+
+Every orchestrator method follows the same skeleton (see `move_entity.go`, `take_action.go`, `end_turn.go`):
+
+1. Nil-guard the `*Input` (never `(nil, nil)`).
+2. `o.load(ctx, loadInput{...})` — Get + auth + (combat-capable verbs) the #689 character-data attach + `LoadFromData`. Auth runs before rehydration so the auth-fail path pays no rehydration cost. Returns ONLY the encounter (the synced state); there is no parallel `*Data` handle to drift.
+3. Invoke the toolkit verb on the encounter. Toolkit gate sentinels (`ErrEncounterEnded`, `ErrNotTurnBased`, `ErrNotYourTurn`, `ErrNoCombatants`, `ErrUnsupportedAction`, `ErrUnknownTarget`, …) surface **unwrapped** so the handler maps each distinctly via `errors.Is`. State-dependent refusals that the toolkit returns as plain errors are joined with a verb-specific sentinel (e.g. `ErrMoveRefused`).
+4. `o.persistWithCharacterData(ctx, enc, encID)` — `ToData` + `SyncErr` check + (combat-capable) flush the cascaded player `DataJSON` back to the character store + `Save`.
+
+### EndTurn specifics (#582 step 7)
+
+`Orchestrator.EndTurn` carries three concerns, all kept rulebook-free:
+
+1. **NPC-dispatch loop** — after the toolkit `enc.EndTurn` advances initiative, if the new active actor is an NPC the orchestrator runs `enc.NPCAct` + `enc.EndTurn`-the-NPC server-side until a player is active, the encounter ends (`enc.Mode() == ModeEnded`), or the roster-derived cap (`len(enc.ToData().Initiative) + npcChainSafetyMargin`) is hit. The cap is read from the synced snapshot, not a side `*Data`.
+2. **Turn-end reset** — clean post-#689: `enc.EndTurn(ctx, …)` emits the dnd5e `TurnEndTopic` on the encounter bus itself, so held conditions (SneakAttack, etc.) reset their per-turn state in place — no host-side publish, no character re-load.
+3. **Pause-for-reaction bookkeeping** — when a dispatched NPC attack pauses (`IsNPCPausedForReaction`), the SDK has already persisted the pending prompt + published `InputRequiredDelivered` from inside `NPCAct`. The orchestrator drops all-but-one prompt (`enforceSingleReactor`, single-reactor enforcement per #538 C) and marshals the cached `*combat.AttackContext` into the prompt's `AttackContextJSON` via the **injected `ReactionResume.MarshalAttackContext`** (`serializeNPCPendingReactions`) — the SAME seam TakeAction phase-1 uses — then persists and returns success.
+
+`ErrNPCChainExhausted` (no players in initiative) and `ErrNPCAct` (system-shaped NPCAct failure) are the orchestrator-specific sentinels; the handler maps the former to `FailedPrecondition` and the latter to `Internal`. `ErrNPCChainExhausted` is a defensive guard — unreachable through the player-gated entrypoint (the first `EndTurn` requires the player to be active, so the player is always in initiative and the loop re-reaches them on wrap).
+
+### Reaction resume seam (`reaction_resume.go`)
+
+The two-phase attack (TakeAction phase-1 pause → SubmitReactionCheck phase-2 resume, and the NPC-pause serialization) needs the rulebook's opaque `*combat.AttackContext` marshaled/decoded and the rule-ish reaction magnitudes (Shield = +5 AC). These live in `reaction_resume.go` (handler-side, depguard-excluded) and are injected into the orchestrator as the `ReactionResume` struct: `MarshalAttackContext`, `DecodeAttackContext`, `BuildReactionModifiers`, `IsOneShotReaction`. The orchestrator never type-asserts the rulebook payload — it calls the injected funcs.
+
+**Deferred:** the cross-RPC reaction *wire-pause* is NOT built. NPC reaction pauses resolve through the existing single-RPC `SubmitReactionCheck`; the reaction step stays internal.
 
 ## CreateEncounter flow
 
@@ -133,13 +171,13 @@ Implements `spatial.Room` over the encounter's `*tkenc.Data`. Key methods:
 - `MoveEntity` — mutates positions in-place so successive `ResolveStep` calls see updated state within the same RPC.
 - `GetGrid()` returns `SquareGrid` (Chebyshev distance). This is required because `OpportunityAttackCondition.isLeavingMyThreatRange` calls `room.GetGrid().Distance(...)`, and `HexGrid` expects offset coordinates while our positions carry axial values (Q→X, R→Y). SquareGrid + adjacent hexes (axial distance 1) gives correct D&D 5e adjacency.
 
-### Reaction conditions (`reaction_conditions.go`)
+### Reaction conditions (post-#689: toolkit-cascade owned)
 
-`applyReactionConditions` and `applyMonsterReactionConditions` are called on every character/monster rehydration (inside the combat resolver at entity-load time). They wire:
+The standalone `reaction_conditions.go` is **gone**. rpg-api no longer constructs `conditions.New*` for player OA/Shield: the #689 hydration cascade holds each combatant's `*character.Character` (with its conditions already applied) on the encounter bus exactly once per RPC, so player reaction conditions ride that held instance rather than being re-applied handler-side. This was the cure for the #684 double-subscribe class. The cascade is plumbed via `CharacterDataCascade` (attach before `LoadFromData`, persist after `ToData`), injected into the orchestrator handler-side.
 
-- `OpportunityAttackCondition` on every melee combatant (character + monster). The condition's predicate gates on `IsReactionReady` — the encounter SDK's `seedOAReadiness` seeds this to `true` for every combatant with `DamageDice` set at `AddPlayer`/`AddMonster`.
-- `ShieldSpellCondition` on characters with at least one 1st-level spell slot (heuristic gate).
-- **Not applied**: `DisengagingCondition`. Its predicate has no "activated this turn" gate — applying universally would suppress OAs for everyone. Disengage must go through `combatabilities.Disengage.Activate` on the encounter's bus, which applies the condition itself. Cross-RPC persistence (condition applied in TakeAction, needed in MoveEntity) is a follow-up.
+The one survivor is `applyMonsterReactionConditions` (in `dnd5e_movement_resolver.go`, a depguard-excluded adapter), which wires `OpportunityAttackCondition` on monsters at rehydration time — without it, NPC-direction OA never fires because the condition's bus subscription never installs. Its predicate gates on `IsReactionReady`, which the encounter SDK's `seedOAReadiness` seeds to `true` for every combatant with `DamageDice` set at `AddPlayer`/`AddMonster`.
+
+**Not applied**: `DisengagingCondition`. Its predicate has no "activated this turn" gate — applying universally would suppress OAs for everyone. Disengage must go through `combatabilities.Disengage.Activate` on the encounter's bus, which applies the condition itself. Cross-RPC persistence (condition applied in TakeAction, needed in MoveEntity) is a follow-up.
 
 ### Known gaps / deferred scope
 
@@ -152,7 +190,8 @@ Implements `spatial.Room` over the encounter's `*tkenc.Data`. Key methods:
 
 ## Architecture notes
 
-- Handler imports no orchestrator — direct toolkit dependency is intentional for v2.
+- As of #582 the action-verb handlers delegate to the `internal/orchestrators/encounter/v2` orchestrator (one `load → verb → persist` method per RPC); the handler-package `Runner` + inline verb bodies are retired. `CreateEncounter` / `GetEncounter` / `StreamEncounter` still touch the repo + `ProjectFor` directly (read/projection paths, not action verbs). The orchestrator imports the toolkit but NEVER proto; the handlers own all proto↔entity conversion.
+- The orchestrator stays rulebook-free — rulebook-touching work (resolver translation, the `*combat.AttackContext` marshal/decode, reaction magnitudes, the #689 character-blob cascade) lives in handler-side adapter funcs injected via `Config`, and depguard enforces no `rulebooks/dnd5e/{conditions,resources,classes,weapons,armor,combat}` import in the guarded handler + orchestrator files.
 - `encounter.Broker` is process-scoped (one broker per server process, shared across all v2 RPCs).
 - Repository follows the standard Input/Output interface pattern but `Get` returns `*encounter.Data` directly (toolkit's native type is the domain entity here).
 - Entity ID in CreateEncounter defaults to player ID for the initial seat; future PRs will wire in character selection.

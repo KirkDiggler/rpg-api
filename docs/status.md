@@ -11,6 +11,24 @@ This is a living doc. Edit it in the same PR that invalidates a line. Don't let 
 
 ## Active work
 
+**Chapter 1 (Architecture Honesty) — v2 encounter orchestrator carve COMPLETE (#582, 2026-05-31)** —
+The v2 encounter vertical now runs through a clean `internal/orchestrators/encounter/v2`
+orchestrator: one method per RPC, each doing exactly one `load → toolkit-verb → persist`.
+The handler-package `Runner` + scattered inline verb bodies are retired. EndTurn was the
+final verb (step 7): `Orchestrator.EndTurn` owns the NPC-dispatch loop, the (post-#689 clean)
+turn-end reset via `enc.EndTurn`, and the pause-for-reaction prompt bookkeeping. The handler
+`end_turn.go` is now the ~25-line canonical shape (auth + envelope + `EndTurnInput` + delegate
++ `endTurnStatusError`). The orchestrator stays rulebook-free: the one rulebook-touching piece
+on the NPC pause path — marshaling the opaque `*combat.AttackContext` — reuses the existing
+injected `ReactionResume.MarshalAttackContext` adapter (the same seam TakeAction phase-1 uses).
+Depguard now denies `rulebooks/dnd5e/combat` in the guarded handler + orchestrator files (the
+last `combat` import left those files with the EndTurn carve), locking the boundary shut.
+Behavior parity is proven by the unchanged handler `TestEndTurn_*` suite; new orchestrator-level
+`EndTurnSuite` + `EndTurnPauseSuite` cover load/verb/persist + the prompt-bookkeeping helpers.
+**Note:** the cross-RPC reaction wire-pause remains DEFERRED — the NPC reaction step stays
+internal (resolved via the already-carved `SubmitReactionCheck` single-RPC). #582 closes after
+the playtest sign-off.
+
 **Chapter 2 Wave 2 (monk) — Entity.armor_class populated in v2 snapshot (2026-05-29)** —
 `ProjectFor` now sets `Entity.armor_class` for both players (`PlayerData.AC`) and monsters
 (`MonsterData.AC`) when the value is non-zero. Charli's AC=15 (UnarmoredDefense) and the
