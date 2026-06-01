@@ -52,7 +52,7 @@ linters:
         #     interact, submit_check, handler, create, get)
         #   - the v2 encounter orchestrator method files (orchestrator, load,
         #     interact, submit_check, submit_check_reaction, set_reaction_ready,
-        #     activate_feature) under internal/orchestrators/encounter/v2
+        #     activate_feature, take_action) under internal/orchestrators/encounter/v2
         #     (rpg-api#582): load → toolkit-verb → persist, by reference only.
         # Excludes: combat/movement resolver files (translate held entities → the
         # rulebook chain; legitimately import combat/character/monster/weapons),
@@ -87,6 +87,7 @@ linters:
             - "**/internal/orchestrators/encounter/v2/submit_check_reaction.go"
             - "**/internal/orchestrators/encounter/v2/set_reaction_ready.go"
             - "**/internal/orchestrators/encounter/v2/activate_feature.go"
+            - "**/internal/orchestrators/encounter/v2/take_action.go"
           deny:
             - pkg: "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/conditions"
               desc: "game logic belongs in the toolkit — do not import dnd5e conditions in action handler files"

@@ -137,6 +137,7 @@ func New(cfg *HandlerConfig) (*Handler, error) {
 			},
 		},
 		ReactionResume: encounterorch.ReactionResume{
+			MarshalAttackContext:   marshalReactionAttackContext,
 			DecodeAttackContext:    decodeReactionAttackContext,
 			BuildReactionModifiers: buildReactionModifiers,
 			IsOneShotReaction:      isOneShotReaction,

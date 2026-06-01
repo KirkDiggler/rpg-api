@@ -46,8 +46,20 @@ What's here as of Wave 2.11e:
   `tkenc.MovementResolver`; delegates to `combat.MoveEntity` per hex step.
   Builds spatial room + combatant registry + gamectx per step so OA chain
   fires correctly (see `encounter.md` MovementResolver wiring section).
-- `TakeAction` (`take_action.go`) — drives `Encounter.TakeActionPhased`;
-  persists `PendingReactionPrompts` when phase 1 surfaces a player reactor.
+- `TakeAction` (`take_action.go`) — RPC for player-initiated combat actions
+  (Wave 2.8: only the "attack" action ref). Carved onto the v2 orchestrator
+  (`internal/orchestrators/encounter/v2/take_action.go`, #582 step 5): the
+  handler is now proto↔input + sentinel→status mapping; the orchestrator owns
+  load (with the #689 hydration cascade so the resolver reads the held
+  attacker/defender — the #684 double-subscribe cure) → `enc.TakeActionPhased`
+  → persist, and persists `PendingReactionPrompts` + publishes
+  `InputRequiredDelivered` (save-before-publish, #538 A) when phase 1 surfaces a
+  player reactor. The single rulebook-touching piece — marshaling the resolver's
+  native `*combat.AttackContext` into the opaque `AttackContextJSON` — is the
+  injected `ReactionResume.MarshalAttackContext` (the phase-1 counterpart to the
+  SubmitCheck-side decode), kept in `reaction_resume.go` so the orchestrator
+  stays rulebook-free. Joins `Interact`/`SubmitCheck`/`SetReactionReady`/
+  `ActivateFeature` on the orchestrator's single-`load` core.
 - `SubmitCheck` (`submit_check.go` + `submit_check_reaction.go`) — dispatches
   to the reaction branch when the caller's pending prompt is a reaction;
   unmarshals the persisted `AttackContextJSON` back into `combat.AttackContext`

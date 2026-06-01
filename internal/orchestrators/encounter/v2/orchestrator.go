@@ -74,13 +74,23 @@ type CharacterDataCascade struct {
 	Persist func(ctx context.Context, data *tkenc.Data) error
 }
 
-// ReactionResume carries the rulebook-touching pieces of the SubmitCheck
-// take_reaction branch as injected funcs, so the orchestrator runs phase-2
-// reaction completion without importing the dnd5e combat rulebook. Both the
-// AttackContext decode (combat.AttackContext is the resolver's native opaque
-// shape) and the take/skip -> ReactionModifier mapping (which carries the
-// rule-ish Shield +5 AC magnitude) are supplied handler-side.
+// ReactionResume carries the rulebook-touching pieces of the two-phase attack
+// (TakeAction phase-1 pause + SubmitCheck take_reaction phase-2 resume) as
+// injected funcs, so the orchestrator runs both halves without importing the
+// dnd5e combat rulebook. The AttackContext marshal/decode (combat.AttackContext
+// is the resolver's native opaque shape) and the take/skip -> ReactionModifier
+// mapping (which carries the rule-ish Shield +5 AC magnitude) are supplied
+// handler-side.
 type ReactionResume struct {
+	// MarshalAttackContext serializes the in-flight PhasedAttackContext returned
+	// by TakeActionPhased (Rulebook = the resolver's native *combat.AttackContext)
+	// into the opaque AttackContextJSON persisted on the pending reaction prompt.
+	// The phase-1 counterpart to DecodeAttackContext; both live handler-side so
+	// the orchestrator never type-asserts the rulebook payload. Required only on
+	// the TakeAction reaction-pause path (when a player reaction pauses the
+	// attack); checked lazily there, so non-phased callers need not wire it.
+	MarshalAttackContext func(ctx *tkenc.PhasedAttackContext) ([]byte, error)
+
 	// DecodeAttackContext unmarshals the persisted opaque AttackContextJSON back
 	// into the toolkit's PhasedAttackContext (Rulebook = the resolver's native
 	// *combat.AttackContext). Returns an error on a corrupt blob.
