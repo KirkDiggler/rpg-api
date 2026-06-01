@@ -42,8 +42,8 @@ linters:
         # Architecture invariant: the core action-verb handler files in the v2
         # encounter package AND the v2 encounter orchestrator method files must
         # never import rpg-toolkit rulebook internals (conditions, resources,
-        # classes, weapons, armor). All rule logic belongs in the toolkit; rpg-api
-        # is a thin shuttle. If you need one of these types in a handler or
+        # classes, weapons, armor, combat). All rule logic belongs in the toolkit;
+        # rpg-api is a thin shuttle. If you need one of these types in a handler or
         # orchestrator file, you are about to add business logic — stop and push
         # the logic into the toolkit instead.
         #
@@ -52,7 +52,7 @@ linters:
         #     interact, submit_check, handler, create, get)
         #   - the v2 encounter orchestrator method files (orchestrator, load,
         #     interact, submit_check, submit_check_reaction, set_reaction_ready,
-        #     activate_feature, take_action, move_entity) under
+        #     activate_feature, take_action, move_entity, end_turn) under
         #     internal/orchestrators/encounter/v2 (rpg-api#582): load →
         #     toolkit-verb → persist, by reference only.
         # Excludes: combat/movement resolver files (translate held entities → the
@@ -61,9 +61,16 @@ linters:
         # reaction_resume.go (the SubmitCheck take_reaction adapter seam: decodes
         # the opaque combat.AttackContext blob + carries the Shield +5 AC
         # magnitude — kept handler-side so the orchestrator stays rulebook-free),
-        # tests. reaction_conditions.go is gone: OA now rides the toolkit's #689
-        # hydration cascade, so rpg-api no longer constructs conditions.New* and
-        # that depguard exclusion is retired.
+        # tests. These excluded files are NOT in the guarded set below, so denying
+        # combat does not affect them. reaction_conditions.go is gone: OA now rides
+        # the toolkit's #689 hydration cascade, so rpg-api no longer constructs
+        # conditions.New* and that depguard exclusion is retired.
+        #
+        # combat is denied (rpg-api#582 step 7): the EndTurn carve moved the last
+        # combat.AttackContext marshal out of the guarded handler end_turn.go into
+        # the injected ReactionResume.MarshalAttackContext adapter (reaction_resume.go,
+        # excluded). No guarded file imports combat any more, so the boundary is
+        # locked shut here to stop future re-introduction.
         #
         # This rule fires CI so drift is caught by the pipeline, not reviewer memory.
         no-rulebook-internals-in-action-handlers:
@@ -90,6 +97,7 @@ linters:
             - "**/internal/orchestrators/encounter/v2/activate_feature.go"
             - "**/internal/orchestrators/encounter/v2/take_action.go"
             - "**/internal/orchestrators/encounter/v2/move_entity.go"
+            - "**/internal/orchestrators/encounter/v2/end_turn.go"
           deny:
             - pkg: "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/conditions"
               desc: "game logic belongs in the toolkit — do not import dnd5e conditions in action handler files"
@@ -101,6 +109,8 @@ linters:
               desc: "game logic belongs in the toolkit — do not import dnd5e weapons in action handler files"
             - pkg: "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/armor"
               desc: "game logic belongs in the toolkit — do not import dnd5e armor in action handler files"
+            - pkg: "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/combat"
+              desc: "game logic belongs in the toolkit — do not import dnd5e combat in action handler / orchestrator files; the opaque AttackContext marshal/decode lives in the injected ReactionResume adapter (reaction_resume.go, excluded)"
 
     dupl:
       threshold: 300  # Allow duplication for bidirectional converters (tool enums are ~90 lines)
