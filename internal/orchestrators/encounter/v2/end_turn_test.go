@@ -32,13 +32,13 @@ import (
 // only hit by a corrupt no-player snapshot, so it is documented (see its godoc)
 // rather than unit-tested through a fabricated invalid fixture.
 //
-// The NPC pause-for-reaction handling (enforceSingleReactor +
-// serializeNPCPendingReactions via the injected MarshalAttackContext) is
-// white-box unit-tested in end_turn_pause_test.go (same package) because driving
-// a genuine SDK NPC pause needs full rulebook monster DataJSON rehydration — the
-// heavy machinery these load/verb/persist unit tests deliberately avoid (mirrors
-// take_action_test.go's reaction-pause note). The NPC-attack reaction path is
-// exercised end-to-end through the handler by the Shield integration suite.
+// The NPC pause-for-reaction handling is covered in two places: the
+// prompt-bookkeeping helper branches (enforceSingleReactor + the skip paths of
+// serializeNPCPendingReactions) are white-box unit-tested in
+// end_turn_pause_test.go, and the full pause path — a genuine SDK pause that
+// consults the injected MarshalAttackContext and persists AttackContextJSON — is
+// driven end-to-end through Orchestrator.EndTurn in end_turn_npc_pause_test.go
+// (rehydratable goblin + fake phased resolver).
 
 const (
 	etEncID     = "enc-end-turn"

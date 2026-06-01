@@ -13,10 +13,11 @@ package encounter
 //     enforcement) — fully exercisable via the public SetPendingReactionPrompt;
 //   - serializeNPCPendingReactions's skip branches: it skips prompts that are
 //     already serialized (player-attack path filled them in) or carry no cached
-//     phased context — neither consults the injected marshal seam. The
-//     consult-the-marshal branch needs a cached phased context (set only by the
-//     SDK's unexported cachePhasedAttackContext on a genuine pause), so it is
-//     covered by the Shield integration suite, not here.
+//     phased context — neither consults the injected marshal seam.
+//
+// The consult-the-marshal branch (a genuine SDK pause that caches a phased
+// context, then the injected marshal fills AttackContextJSON) is driven
+// end-to-end through Orchestrator.EndTurn in end_turn_npc_pause_test.go.
 //
 // The end-to-end NPC-attack reaction path (a genuine SDK pause populating the
 // phased context, then the injected marshal filling AttackContextJSON) is
