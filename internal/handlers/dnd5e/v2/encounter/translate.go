@@ -738,12 +738,15 @@ func splitRef(s string) []string {
 // be an Invariant-2 violation; rpg-api copies the triple through).
 //
 // Defensive against degenerate input (protos disc-014): a malformed ref with
-// short/empty parts (e.g. "::attack") must not index-panic. splitRef returns
-// nil unless the string has exactly two colons, so the fallback handles
-// anything that isn't a clean triple — including "", "attack", and "::attack"
-// — by treating the whole input as the id under the dnd5e module. No real
-// caller produces a degenerate ref (the web sends full triples), so this is
-// purely a guard, mirroring conditionRefFor / monsterRefFor.
+// short/empty parts (e.g. "::attack") must not produce a bad wire ref. splitRef
+// returns nil when the string does NOT have exactly two colons (e.g. "" or
+// "attack"); for a string that DOES have two colons but empty parts (e.g.
+// "::attack") it returns a 3-element slice with empty members. The guard below
+// covers both: it requires len==3 AND all three parts non-empty, so any input
+// that isn't a clean triple falls back to treating the whole raw string as the
+// id under the dnd5e module. No real caller produces a degenerate ref (the web
+// sends full triples), so this is purely a guard, mirroring conditionRefFor /
+// monsterRefFor.
 func actionRefToProto(toolkitActionRef string) *encounterv2pb.Ref {
 	parts := splitRef(toolkitActionRef)
 	if len(parts) == 3 && parts[0] != "" && parts[1] != "" && parts[2] != "" {
@@ -779,10 +782,11 @@ func economyConsumedToProto(c events.EconomyConsumed) *encounterv2pb.EconomyCons
 //
 // The flattened toolkit menu (abilities then granted-capacity actions, already
 // ordered by the engine) becomes proto AvailableActions. The economy maps onto
-// proto ActionEconomy. InitiativeOrder / ActiveEntityId / Round are NOT part of
-// this per-actor delta — the snapshot path (buildTurnState) owns those — so they
-// are left unset on this push; a TurnStateChanged carries the actor's menu +
-// economy refresh, not the initiative roster.
+// proto ActionEconomy. ActiveEntityId is set to this actor (the push names whose
+// menu/economy refreshed) and Round to the snapshot's TurnNumber. InitiativeOrder
+// is NOT part of this per-actor delta — it's the full-encounter roster the
+// snapshot path (buildTurnState) owns — so it is left empty on this push; a
+// TurnStateChanged carries the actor's menu + economy refresh, not the roster.
 func turnStateSnapshotToProto(snap events.TurnStateSnapshot, actorID core.EntityID) *encounterv2pb.TurnState {
 	ts := &encounterv2pb.TurnState{
 		ActiveEntityId: string(actorID),
