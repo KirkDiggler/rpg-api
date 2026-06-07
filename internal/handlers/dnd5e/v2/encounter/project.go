@@ -47,9 +47,18 @@ func ProjectFor(
 	// actor, or no char store (then the snapshot carries no menu, as before).
 	// Other seats stay un-hydrated, so Space.Entities still reads positions/HP
 	// from Data directly (not held entities) exactly as before.
+	//
+	// Audience gate (Copilot #602): the menu/economy is the active actor's PRIVATE
+	// view — the same audience-seam the live TurnStateChanged push uses (its
+	// audience is the controlling player only). So project it ONLY when this
+	// viewer controls the active actor; every other viewer gets the menu-less
+	// initiative-only TurnState, so we never leak one player's options/economy to
+	// another. The controlling player's own connect/stream is what seeds + shows
+	// the menu.
 	activeActor := activeActorID(data)
+	viewerControlsActiveActor := activeActor != "" && playerSeatForEntity(data, activeActor) == viewer
 	var actorHydrated bool
-	if charRepo != nil && activeActor != "" {
+	if charRepo != nil && viewerControlsActiveActor {
 		// Ensure the active actor's economy is seeded before reading its menu, so
 		// the turn-start snapshot carries economy too — not just the menu. The
 		// connect-time snapshot path (StreamEncounter/GetEncounter) does NOT go
