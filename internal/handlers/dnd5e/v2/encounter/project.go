@@ -13,15 +13,23 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/encounter/perception"
 
 	encounterv2pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/encounter"
+	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 )
 
 // ProjectFor builds a proto *encounterv2pb.Encounter for the given viewer from
 // the encounter's persisted data. CreateEncounter calls it today; GetEncounter
-// (#500) and StreamEncounter snapshot replay (#497) will reuse it so the
-// projection logic lives in exactly one place.
+// (#500) and StreamEncounter snapshot replay (#497) reuse it so the projection
+// logic lives in exactly one place.
 //
 // The broker is required to rehydrate a live Encounter via LoadFromData
 // (needed for SnapshotFor).
+//
+// charRepo is used ONLY to hydrate the turn's ACTIVE actor so the snapshot's
+// TurnState can carry that actor's economy + available_actions menu at turn
+// start (#601: the client needs the menu to take its FIRST action, before any
+// TurnStateChanged push fires). nil disables menu hydration (tests / non-combat
+// callers): the snapshot then carries initiative/active/round only, as before.
+// The toolkit computes the menu (ActorTurnState); rpg-api projects it.
 //
 // now is passed explicitly so callers in tests can inject a fixed clock.
 func ProjectFor(
@@ -29,14 +37,50 @@ func ProjectFor(
 	data *tkenc.Data,
 	viewer core.PlayerID,
 	broker *tkenc.Broker,
+	charRepo characterrepo.Repository,
 	now time.Time,
 ) (*encounterv2pb.Encounter, error) {
-	// Read-only projection: no player DataJSON is attached here, so the SDK's
-	// #689 hydration cascade skips combatant hydration (seats without DataJSON).
-	// The snapshot reads positions/HP/mode from Data directly, not held entities.
+	// #601 turn-start menu: attach the ACTIVE actor's character blob before
+	// LoadFromData so the SDK holds that one character and ActorTurnState below
+	// returns its menu + economy. Only the active actor is hydrated — the menu is
+	// that actor's private view (Inv 6). No-op when not turn-based, no active
+	// actor, or no char store (then the snapshot carries no menu, as before).
+	// Other seats stay un-hydrated, so Space.Entities still reads positions/HP
+	// from Data directly (not held entities) exactly as before.
+	activeActor := activeActorID(data)
+	var actorHydrated bool
+	if charRepo != nil && activeActor != "" {
+		// Ensure the active actor's economy is seeded before reading its menu, so
+		// the turn-start snapshot carries economy too — not just the menu. The
+		// connect-time snapshot path (StreamEncounter/GetEncounter) does NOT go
+		// through the orchestrator's combat-load #598 seeding, so a freshly-
+		// entered turn-based encounter's first actor would otherwise be unseeded
+		// (nil economy) here. SeedTurnEconomyForData runs the toolkit's own
+		// StartTurn (idempotent; no-op once in combat) and persists it — rpg-api
+		// authors no economy values, the toolkit owns them (Invariant 2/3).
+		if seedErr := SeedTurnEconomyForData(ctx, data, charRepo); seedErr != nil {
+			return nil, seedErr
+		}
+		var attachErr error
+		actorHydrated, attachErr = attachActorCharacterData(ctx, data, activeActor, charRepo)
+		if attachErr != nil {
+			return nil, attachErr
+		}
+	}
+
 	enc, err := tkenc.LoadFromData(ctx, data, broker)
 	if err != nil {
 		return nil, err
+	}
+
+	// Compute the active actor's turn state (menu + economy) from the held
+	// character the toolkit just hydrated. Only when we actually attached the
+	// actor's blob: ActorTurnState returns a zero value for an un-held actor, and
+	// we want buildTurnState to fall back to the menu-less shape in that case.
+	var actorTurnState *tkenc.ActorTurnState
+	if actorHydrated {
+		ts := enc.ActorTurnState(activeActor)
+		actorTurnState = &ts
 	}
 
 	snap := enc.SnapshotFor(viewer)
@@ -136,7 +180,7 @@ func ProjectFor(
 	return &encounterv2pb.Encounter{
 		Id:        string(data.ID),
 		Mode:      encounterModeToProto(data.Mode),
-		TurnState: buildTurnState(data),
+		TurnState: buildTurnState(data, actorTurnState),
 		Space: &encounterv2pb.Space{
 			Hexes:    hexes,
 			Entities: entities,
@@ -144,16 +188,35 @@ func ProjectFor(
 	}, nil
 }
 
+// activeActorID returns the entity id of the actor whose turn it is, or "" when
+// the encounter is not turn-based or the active index is out of range.
+func activeActorID(data *tkenc.Data) core.EntityID {
+	if data.Mode != core.ModeTurnBased {
+		return ""
+	}
+	if data.ActiveIdx < 0 || data.ActiveIdx >= len(data.Initiative) {
+		return ""
+	}
+	return data.Initiative[data.ActiveIdx]
+}
+
 // buildTurnState returns a populated TurnState only when the encounter is in
-// turn-based mode. ActionEconomy and AvailableActions are server-only state
-// for this PR; emitting them is tracked as a follow-up.
+// turn-based mode.
 //
 // Initiative IDs (and the active entity ID) are emitted verbatim — clients
 // need them as opaque tokens to render "whose turn" even when the active
 // entity is currently outside the viewer's LOS. Per-entity rich data
 // (position, hp, monster ref) is still LOS-gated via Space.Entities; the
 // initiative roster only exposes ids, which carry no spatial information.
-func buildTurnState(data *tkenc.Data) *encounterv2pb.TurnState {
+//
+// actorTurnState is the active actor's toolkit-computed menu + economy (#601),
+// supplied by ProjectFor when it hydrated the active actor. When non-nil it
+// populates Economy + AvailableActions field-for-field so the snapshot carries
+// the menu at turn start (the client needs it to take its FIRST action, before
+// any TurnStateChanged push). nil (NPC turn / no char store / not hydrated)
+// leaves them empty — the menu-less initiative-only shape, as before. The
+// toolkit computed the menu; rpg-api only projects it.
+func buildTurnState(data *tkenc.Data, actorTurnState *tkenc.ActorTurnState) *encounterv2pb.TurnState {
 	if data.Mode != core.ModeTurnBased {
 		return nil
 	}
@@ -165,11 +228,19 @@ func buildTurnState(data *tkenc.Data) *encounterv2pb.TurnState {
 	if data.ActiveIdx >= 0 && data.ActiveIdx < len(data.Initiative) {
 		active = string(data.Initiative[data.ActiveIdx])
 	}
-	return &encounterv2pb.TurnState{
+	ts := &encounterv2pb.TurnState{
 		InitiativeOrder: order,
 		ActiveEntityId:  active,
 		Round:           int32(data.Round),
 	}
+	// #601: project the active actor's economy + menu when available. The
+	// rulebook-touching projection lives in turn_state_project.go (the toolkit
+	// computes ActorTurnState; this only maps its fields onto the wire).
+	if actorTurnState != nil {
+		ts.Economy = actorEconomyToProto(actorTurnState.Economy)
+		ts.AvailableActions = actorMenuToProto(actorTurnState)
+	}
+	return ts
 }
 
 // playerEntity builds the wire-shape proto Entity for a player seat. The

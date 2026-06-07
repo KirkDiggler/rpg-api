@@ -378,3 +378,64 @@ func (s *MonkUnarmedIntegrationSuite) advanceToCharli() {
 	}
 	s.Fail("advanceToCharli: charli did not become active within 20 initiative steps")
 }
+
+// TestIntegration_TurnStartSnapshot_CarriesEconomyAndMenu proves the #601 fix:
+// the GetEncounter snapshot's TurnState carries the ACTIVE actor's economy +
+// available_actions at turn start — before any TakeAction / TurnStateChanged
+// push — so the client can render the menu to take its FIRST action.
+//
+// Before #601, buildTurnState emitted only initiative/active/round; economy +
+// available_actions were absent until the first action. This drives the real
+// production path: handler.GetEncounter → ProjectFor (with the char repo) →
+// active-actor hydration + ActorTurnState projection.
+func (s *MonkUnarmedIntegrationSuite) TestIntegration_TurnStartSnapshot_CarriesEconomyAndMenu() {
+	charliData := s.buildCharliMonkData()
+	s.setupCharRepoMock(charliData)
+	s.seedMonkEncounter()
+	s.advanceToCharli()
+
+	// Connect-time snapshot via the production handler path (no TakeAction yet).
+	resp, err := s.handler.GetEncounter(s.charliCtx, &encounterv2pb.GetEncounterRequest{
+		EncounterId: monkIntegEncID,
+	})
+	s.Require().NoError(err, "GetEncounter must succeed at turn start")
+	s.Require().NotNil(resp.GetEncounter())
+
+	ts := resp.GetEncounter().GetTurnState()
+	s.Require().NotNil(ts, "turn-based snapshot must carry a TurnState")
+	s.Require().Equal(monkEntityCharli, ts.GetActiveEntityId(), "charli must be the active actor")
+
+	// #601 core assertion 1: economy is present at turn start (seeded for the
+	// first actor by ProjectFor's idempotent StartTurn). A fresh L1 turn has its
+	// standard action available.
+	econ := ts.GetEconomy()
+	s.Require().NotNil(econ, "snapshot TurnState must carry the active actor's economy at turn start")
+	s.Require().Equal(int32(1), econ.GetActionsRemaining(), "fresh turn: one standard action")
+	s.Require().Equal(int32(1), econ.GetReactionsRemaining(), "fresh turn: one reaction")
+	s.Require().Positive(econ.GetMovementRemaining(), "fresh turn: movement seeded from speed")
+
+	// #601 core assertion 2: the menu is present and toolkit-computed. The monk's
+	// menu must include an Attack ability (the actor can attack at turn start) and
+	// the beat-deferred Move marker (D17: available=false + "lands in Beat 2").
+	actions := ts.GetAvailableActions()
+	s.Require().NotEmpty(actions, "snapshot TurnState must carry available_actions at turn start")
+
+	var sawAttack, sawDeferredMove bool
+	for _, a := range actions {
+		ref := a.GetRef()
+		s.Require().NotNil(ref, "every available action carries a ref triple")
+		switch ref.GetId() {
+		case "attack":
+			sawAttack = true
+			s.True(a.GetAvailable(), "attack must be available at turn start (action economy fresh)")
+			s.Equal(encounterv2pb.EconomySlot_ECONOMY_SLOT_ACTION, a.GetEconomySlot(),
+				"attack draws from the standard action slot")
+		case "move":
+			sawDeferredMove = true
+			s.False(a.GetAvailable(), "Move is beat-deferred (D17): available=false at turn start")
+			s.NotEmpty(a.GetUnavailableReason(), "Move carries the deferral reason")
+		}
+	}
+	s.True(sawAttack, "menu must surface the Attack ability at turn start")
+	s.True(sawDeferredMove, "menu must surface the beat-deferred Move marker (D17)")
+}

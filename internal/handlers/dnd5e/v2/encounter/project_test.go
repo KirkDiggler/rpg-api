@@ -78,7 +78,7 @@ func (s *ProjectSuite) TestProjectFor_TurnBased_EmitsModeTurnStateAndMonsters() 
 		},
 	}
 
-	pb, err := v2encounter.ProjectFor(context.Background(), data, "player-alice", s.broker, s.now)
+	pb, err := v2encounter.ProjectFor(context.Background(), data, "player-alice", s.broker, nil, s.now)
 	s.Require().NoError(err)
 	s.Require().NotNil(pb)
 	s.Require().Equal("enc-turnbased", pb.GetId())
@@ -156,7 +156,7 @@ func (s *ProjectSuite) TestProjectFor_TurnBased_SkipsMonsterOutsideLOS() {
 		},
 	}
 
-	pb, err := v2encounter.ProjectFor(context.Background(), data, "player-alice", s.broker, s.now)
+	pb, err := v2encounter.ProjectFor(context.Background(), data, "player-alice", s.broker, nil, s.now)
 	s.Require().NoError(err)
 	for _, e := range pb.GetSpace().GetEntities() {
 		s.Require().NotEqual("goblin-far", e.GetId(), "out-of-sight monster must not be emitted")
@@ -173,7 +173,7 @@ func (s *ProjectSuite) TestProjectFor_FreeRoam_NoTurnState() {
 	alice := newPlayerData("player-alice", "char-alice", originHex, 2)
 	data.Players = map[core.PlayerID]*tkenc.PlayerData{"player-alice": alice}
 
-	pb, err := v2encounter.ProjectFor(context.Background(), data, "player-alice", s.broker, s.now)
+	pb, err := v2encounter.ProjectFor(context.Background(), data, "player-alice", s.broker, nil, s.now)
 	s.Require().NoError(err)
 	s.Require().Equal(
 		encounterv2pb.EncounterMode_ENCOUNTER_MODE_FREE_ROAM,
@@ -206,7 +206,7 @@ func (s *ProjectSuite) TestProjectFor_ModeEnded_NoTurnStateAndOmitsRemovedMonste
 	// data.Monsters intentionally empty — killEntity removed the last hostile
 	// before flipping mode to ModeEnded. Snapshot must not synthesize one.
 
-	pb, err := v2encounter.ProjectFor(context.Background(), data, "player-alice", s.broker, s.now)
+	pb, err := v2encounter.ProjectFor(context.Background(), data, "player-alice", s.broker, nil, s.now)
 	s.Require().NoError(err)
 
 	// Mode maps to FREE_ROAM because the proto has no _ENDED variant; the
@@ -241,7 +241,7 @@ func (s *ProjectSuite) TestProjectFor_Unspecified_TreatedAsFreeRoam() {
 	alice := newPlayerData("player-alice", "char-alice", originHex, 2)
 	data.Players = map[core.PlayerID]*tkenc.PlayerData{"player-alice": alice}
 
-	pb, err := v2encounter.ProjectFor(context.Background(), data, "player-alice", s.broker, s.now)
+	pb, err := v2encounter.ProjectFor(context.Background(), data, "player-alice", s.broker, nil, s.now)
 	s.Require().NoError(err)
 	s.Require().Equal(
 		encounterv2pb.EncounterMode_ENCOUNTER_MODE_FREE_ROAM,
@@ -262,7 +262,7 @@ func (s *ProjectSuite) TestProjectFor_TurnBased_ActiveIdxOutOfRange_NoActive() {
 	alice := newPlayerData("player-alice", "char-alice", originHex, 2)
 	data.Players = map[core.PlayerID]*tkenc.PlayerData{"player-alice": alice}
 
-	pb, err := v2encounter.ProjectFor(context.Background(), data, "player-alice", s.broker, s.now)
+	pb, err := v2encounter.ProjectFor(context.Background(), data, "player-alice", s.broker, nil, s.now)
 	s.Require().NoError(err)
 	ts := pb.GetTurnState()
 	s.Require().NotNil(ts)
@@ -289,7 +289,7 @@ func (s *ProjectSuite) TestProjectFor_MonsterRef_MalformedFallsBackToDefaults() 
 		},
 	}
 
-	pb, err := v2encounter.ProjectFor(context.Background(), data, "player-alice", s.broker, s.now)
+	pb, err := v2encounter.ProjectFor(context.Background(), data, "player-alice", s.broker, nil, s.now)
 	s.Require().NoError(err)
 	var found bool
 	for _, e := range pb.GetSpace().GetEntities() {
@@ -331,7 +331,7 @@ func (s *ProjectSuite) TestProjectFor_PlayerEntitiesCarryTypeHpAndCharacterData(
 		"player-bob":   bob,
 	}
 
-	pb, err := v2encounter.ProjectFor(context.Background(), data, "player-alice", s.broker, s.now)
+	pb, err := v2encounter.ProjectFor(context.Background(), data, "player-alice", s.broker, nil, s.now)
 	s.Require().NoError(err)
 
 	byID := make(map[string]*encounterv2pb.Entity)
@@ -387,7 +387,7 @@ func (s *ProjectSuite) TestProjectFor_PlayerEntityCarriesArmorClass() {
 	charli.AC = 15
 	data.Players = map[core.PlayerID]*tkenc.PlayerData{"player-charli": charli}
 
-	pb, err := v2encounter.ProjectFor(context.Background(), data, "player-charli", s.broker, s.now)
+	pb, err := v2encounter.ProjectFor(context.Background(), data, "player-charli", s.broker, nil, s.now)
 	s.Require().NoError(err)
 
 	var found *encounterv2pb.Entity
@@ -421,7 +421,7 @@ func (s *ProjectSuite) TestProjectFor_MonsterRef_TooManyColonsTreatedAsMalformed
 		},
 	}
 
-	pb, err := v2encounter.ProjectFor(context.Background(), data, "player-alice", s.broker, s.now)
+	pb, err := v2encounter.ProjectFor(context.Background(), data, "player-alice", s.broker, nil, s.now)
 	s.Require().NoError(err)
 	for _, e := range pb.GetSpace().GetEntities() {
 		if e.GetId() != "long-1" {
