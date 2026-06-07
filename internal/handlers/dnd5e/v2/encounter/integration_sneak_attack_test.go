@@ -649,3 +649,41 @@ func (s *SneakAttackIntegrationSuite) advanceToAlice() {
 	}
 	s.Fail("advanceToAlice: alice did not become active within 20 initiative steps")
 }
+
+// TestIntegration_TurnStartSnapshot_MenuIsPrivateToActiveActor proves the #601
+// audience gate (Copilot #602): the turn-start snapshot projects the active
+// actor's economy + menu ONLY into the controlling player's snapshot, never into
+// another player's view. During alice's turn, alice sees her menu; bob (a
+// non-controlling viewer) gets the menu-less initiative-only TurnState, so one
+// player's action options/economy never leak to another (Inv 6 audience-seam,
+// matching the live TurnStateChanged push).
+func (s *SneakAttackIntegrationSuite) TestIntegration_TurnStartSnapshot_MenuIsPrivateToActiveActor() {
+	aliceData := s.buildAliceRogueData()
+	s.setupCharRepoMock(aliceData)
+	s.seedSneakEncounter()
+	s.advanceToAlice()
+
+	// Alice (the active actor's controller) sees her own menu + economy.
+	aliceResp, err := s.handler.GetEncounter(s.aliceCtx, &encounterv2pb.GetEncounterRequest{
+		EncounterId: sneakIntegEncID,
+	})
+	s.Require().NoError(err)
+	aliceTS := aliceResp.GetEncounter().GetTurnState()
+	s.Require().NotNil(aliceTS)
+	s.Require().Equal(sneakEntityAlice, aliceTS.GetActiveEntityId())
+	s.Require().NotNil(aliceTS.GetEconomy(), "alice (active actor) must see her own economy")
+	s.Require().NotEmpty(aliceTS.GetAvailableActions(), "alice must see her own menu")
+
+	// Bob (a non-controlling viewer) gets the same turn structure (initiative /
+	// active / round) but NOT alice's private menu/economy.
+	bobResp, err := s.handler.GetEncounter(s.bobCtx, &encounterv2pb.GetEncounterRequest{
+		EncounterId: sneakIntegEncID,
+	})
+	s.Require().NoError(err)
+	bobTS := bobResp.GetEncounter().GetTurnState()
+	s.Require().NotNil(bobTS, "bob still sees the turn structure")
+	s.Require().Equal(sneakEntityAlice, bobTS.GetActiveEntityId(), "bob sees whose turn it is")
+	s.Require().NotEmpty(bobTS.GetInitiativeOrder(), "bob sees the initiative roster")
+	s.Require().Nil(bobTS.GetEconomy(), "bob must NOT see alice's economy (private to active actor)")
+	s.Require().Empty(bobTS.GetAvailableActions(), "bob must NOT see alice's menu (private to active actor)")
+}

@@ -76,7 +76,7 @@ func (h *Handler) CreateEncounter(ctx context.Context, req *encounterv2pb.Create
 		return nil, status.Errorf(codes.Internal, "save encounter: %v", err)
 	}
 
-	pbEncounter, err := ProjectFor(ctx, data, core.PlayerID(playerID), h.broker, h.now())
+	pbEncounter, err := ProjectFor(ctx, data, core.PlayerID(playerID), h.broker, h.combatResolverConfig.CharacterRepo, h.now())
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "project encounter: %v", err)
 	}

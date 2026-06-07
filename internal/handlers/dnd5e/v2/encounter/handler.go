@@ -287,7 +287,7 @@ func (h *Handler) StreamEncounter(req *encounterv2pb.StreamEncounterRequest, str
 	// ProjectFor internally rehydrates the encounter and computes the per-viewer
 	// snapshot, so we don't need a separate LoadFromData/SnapshotFor here.
 	now := h.now()
-	pbEncounter, err := ProjectFor(ctx, data, core.PlayerID(playerID), h.broker, now)
+	pbEncounter, err := ProjectFor(ctx, data, core.PlayerID(playerID), h.broker, h.combatResolverConfig.CharacterRepo, now)
 	if err != nil {
 		return status.Errorf(codes.Internal, "project encounter %q: %v", string(encID), err)
 	}

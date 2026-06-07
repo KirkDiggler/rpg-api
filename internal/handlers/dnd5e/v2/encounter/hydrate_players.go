@@ -80,6 +80,69 @@ func attachPlayerCharacterData(
 	return nil
 }
 
+// attachActorCharacterData attaches the transient PlayerData.DataJSON for a
+// SINGLE named actor (the snapshot's active actor) so the subsequent
+// tkenc.LoadFromData holds that one *character.Character — enough for ProjectFor
+// to compute the actor's ActorTurnState (menu + economy) for the turn-start
+// snapshot (#601). Only the active actor is hydrated: the turn-state menu is
+// that actor's private "what can I do now" view (Invariant 6), so the read-only
+// snapshot projector needs no other seat held.
+//
+// Returns true when the actor's character blob was attached (so the caller knows
+// the held character will exist after LoadFromData and ActorTurnState will be
+// populated), false when there is no stored character to attach (NPC / stand-in
+// seat — the snapshot simply carries no menu for that actor's turn, as before).
+//
+// apierr.NotFound is the stand-in/NPC case (not fatal); any other Get error is a
+// real character-store failure and surfaces (mirrors the seeding path's
+// NotFound-vs-real-error distinction). A marshal failure surfaces — a corrupt
+// blob is a real bug, not something to hide.
+func attachActorCharacterData(
+	ctx context.Context,
+	data *tkenc.Data,
+	actorID tkenccore.EntityID,
+	charRepo characterrepo.Repository,
+) (bool, error) {
+	if data == nil || charRepo == nil || actorID == "" {
+		return false, nil
+	}
+	pd, ok := data.Players[playerSeatForEntity(data, actorID)]
+	if !ok || pd == nil || pd.EntityID != actorID {
+		// Active actor is not a player seat (NPC / monster turn) — no character
+		// menu to project. Not an error.
+		return false, nil
+	}
+	out, err := charRepo.Get(ctx, characterrepo.GetInput{ID: string(actorID)})
+	if err != nil {
+		if apierr.IsNotFound(err) {
+			return false, nil // stand-in seat — no character menu to project.
+		}
+		return false, fmt.Errorf("load character %q for turn-state snapshot: %w", actorID, err)
+	}
+	if out == nil || out.Character == nil || out.Character.Data == nil {
+		return false, nil
+	}
+	blob, err := json.Marshal(out.Character.Data)
+	if err != nil {
+		return false, fmt.Errorf("marshal character data for %q: %w", actorID, err)
+	}
+	pd.DataJSON = blob
+	return true, nil
+}
+
+// playerSeatForEntity returns the player-map key whose seat has EntityID ==
+// actorID, or "" when no player seat matches (an NPC / monster actor). Player
+// seats are keyed by PlayerID, which is not necessarily the EntityID, so a
+// lookup by value is required.
+func playerSeatForEntity(data *tkenc.Data, actorID tkenccore.EntityID) tkenccore.PlayerID {
+	for pid, pd := range data.Players {
+		if pd != nil && pd.EntityID == actorID {
+			return pid
+		}
+	}
+	return ""
+}
+
 // SeedTurnEconomyForData seeds the active actor's turn-start action economy in
 // the authoritative character store for a turn-based encounter, closing the
 // "first actor is never in combat" gap (rpg-api#598).

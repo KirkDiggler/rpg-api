@@ -39,7 +39,7 @@ func (h *Handler) GetEncounter(ctx context.Context, req *encounterv2pb.GetEncoun
 		return nil, status.Error(codes.PermissionDenied, "player is not in this encounter")
 	}
 
-	pbEncounter, err := ProjectFor(ctx, data, core.PlayerID(playerID), h.broker, h.now())
+	pbEncounter, err := ProjectFor(ctx, data, core.PlayerID(playerID), h.broker, h.combatResolverConfig.CharacterRepo, h.now())
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "project encounter: %v", err)
 	}
