@@ -290,7 +290,19 @@ func (s *HandlerSuite) TestTakeAction_UnknownTarget_FailedPrecondition() {
 	s.Require().Equal(codes.FailedPrecondition, st.Code())
 }
 
-func (s *HandlerSuite) TestTakeAction_UnsupportedAction_Unimplemented() {
+// TestTakeAction_NonAttackRef_NonCombatantSeat verifies that a non-attack action
+// ref on a flat stat-snapshot seat (no hydrated character) is refused with
+// FailedPrecondition.
+//
+// Behavior change (rpg-toolkit#697, encounter v0.20.0): the toolkit dropped the
+// hardcoded attack-only gate — any non-attack ref now routes to the held
+// character's rules engine (takeCharacterAction). A seat with no hydrated
+// character (this suite uses flat stat-snapshot seats, no character store) has
+// no menu/economy, so the toolkit returns ErrNonCombatant → FailedPrecondition.
+// This used to return Unimplemented when the attack-only gate rejected every
+// non-attack ref before dispatch. The full routing of supported non-attack
+// actions (Dodge/Dash/...) through hydrated characters is rpg-api#597.
+func (s *HandlerSuite) TestTakeAction_NonAttackRef_NonCombatantSeat() {
 	s.seedCombatEncounter()
 	s.advanceToActivePlayer()
 	ctx := s.activePlayerCtx()
@@ -300,7 +312,7 @@ func (s *HandlerSuite) TestTakeAction_UnsupportedAction_Unimplemented() {
 	_, err := s.handler.TakeAction(ctx, req)
 	s.Require().Error(err)
 	st, _ := status.FromError(err)
-	s.Require().Equal(codes.Unimplemented, st.Code())
+	s.Require().Equal(codes.FailedPrecondition, st.Code())
 }
 
 func (s *HandlerSuite) TestTakeAction_AttackHappyPath_PersistsMonsterHP() {

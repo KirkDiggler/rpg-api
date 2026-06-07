@@ -120,7 +120,15 @@ func takeActionStatusError(err error) error {
 		errors.Is(err, tkenc.ErrNotYourTurn),
 		errors.Is(err, tkenc.ErrNonCombatant),
 		errors.Is(err, tkenc.ErrUnknownTarget),
-		errors.Is(err, tkenc.ErrNoCombatants):
+		errors.Is(err, tkenc.ErrNoCombatants),
+		// ErrActionUnaffordable: the toolkit enforces the action economy
+		// server-side (rpg-api#598) — a character with no action/bonus-action
+		// left is refused. State-dependent (the turn's economy), so
+		// FailedPrecondition, not InvalidArgument.
+		errors.Is(err, tkenc.ErrActionUnaffordable),
+		// ErrActionDeferred: a ref the build surfaces in the menu but does not
+		// resolve yet (e.g. move in Beat 1). State/scope-dependent refusal.
+		errors.Is(err, tkenc.ErrActionDeferred):
 		return status.Error(codes.FailedPrecondition, err.Error())
 	}
 	return status.Errorf(codes.Internal, "take action: %v", err)

@@ -80,6 +80,22 @@ func (o *Orchestrator) load(ctx context.Context, in loadInput) (*tkenc.Encounter
 		return nil, ErrEntityOwnershipMismatch
 	}
 
+	// #598 turn-start seeding: before attaching character blobs, seed the active
+	// actor's economy if the encounter is turn-based and that actor has not been
+	// seeded yet. The toolkit enforces the economy server-side but only seeds a
+	// HELD character at SetMode/EndTurn; the v2 turn-based-entry sites flip to
+	// turn-based before any character is held, leaving the FIRST actor unseeded
+	// ("not in combat"). This runs the toolkit's StartTurn for that actor and
+	// writes the seeded economy to the character store, so the Attach below reads
+	// it back onto the seat. Idempotent (no-op once in combat) and runs only on
+	// combat-capable loads. EndTurn already seeds every subsequent actor, so this
+	// effectively heals the first actor of a freshly-entered turn-based encounter.
+	if in.WithCharacterData && o.characterData.SeedActorTurn != nil {
+		if seedErr := o.characterData.SeedActorTurn(ctx, data); seedErr != nil {
+			return nil, fmt.Errorf("seed active actor turn economy %q: %w", in.EncounterID, seedErr)
+		}
+	}
+
 	// #689 hydration cascade: combat-capable verbs attach the transient
 	// PlayerData.DataJSON from the character store before LoadFromData rehydrates
 	// the held combatants. Runs after auth (no rehydration cost on the auth-fail

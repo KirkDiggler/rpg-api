@@ -72,6 +72,19 @@ type CharacterDataCascade struct {
 	// store (the authoritative source) and clears it so it does not persist onto
 	// the encounter snapshot.
 	Persist func(ctx context.Context, data *tkenc.Data) error
+
+	// SeedActorTurn seeds the active actor's turn-start action economy in the
+	// character store when the encounter is turn-based and that actor has not yet
+	// been seeded (rpg-api#598). The toolkit enforces the economy server-side and
+	// seeds it only on a held character at SetMode/EndTurn; the v2 turn-based-entry
+	// sites flip to turn-based before any character is held, so the FIRST actor is
+	// never seeded and its TakeAction is rejected "not in combat". This runs the
+	// toolkit's own StartTurn verb for that actor — the orchestrator invokes it by
+	// reference (like EndTurn), authoring no economy values. Idempotent: a no-op
+	// once the active actor is in combat. Supplied handler-side so the orchestrator
+	// stays free of the rulebooks/dnd5e/character import; nil = no-op (tests
+	// without a character store). Called in the combat-capable load path.
+	SeedActorTurn func(ctx context.Context, data *tkenc.Data) error
 }
 
 // ReactionResume carries the rulebook-touching pieces of the two-phase attack
