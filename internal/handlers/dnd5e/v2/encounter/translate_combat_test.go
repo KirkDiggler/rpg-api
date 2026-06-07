@@ -2,6 +2,7 @@ package encounter_test
 
 import (
 	"errors"
+	"time"
 
 	encounterv2pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/encounter"
 	v2encounter "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v2/encounter"
@@ -10,13 +11,15 @@ import (
 )
 
 // Combat event translator tests — covers the Wave 2.8 additions:
-// AttackResolvedEvent (suppressed), DamageDealtEvent, ConditionAppliedEvent,
-// ModeChangedEvent, TurnStartedEvent, TurnEndedEvent.
+// DamageDealtEvent, ConditionAppliedEvent, ModeChangedEvent, TurnStartedEvent,
+// TurnEndedEvent — plus the TakeAction wave (#597) additions: the un-suppressed
+// AttackResolvedEvent (fires on hit AND miss — the #594 fix), the first-class
+// ActionResolvedEvent, and the pushed TurnStateChangedEvent.
 
-func (s *TranslateSuite) TestTranslateEvent_AttackResolvedEvent_Suppressed() {
-	// AttackResolvedEvent is the cause-stage event; the proto wire shape uses
-	// EntityDamaged (effect) as the canonical attack-result event. The
-	// translator deliberately drops AttackResolved to avoid double-emitting.
+func (s *TranslateSuite) TestTranslateEvent_AttackResolvedEvent_Hit_Translated() {
+	// TakeAction wave (#597): AttackResolved is no longer suppressed — protos
+	// v0.1.100 added the variant, so the cause/roll-detail event is translated
+	// and sent. Timestamp + correlation_id come from the event (Inv 5, 8).
 	evt := events.NewAttackResolvedEvent(
 		"enc-1", uint64(10),
 		"char-A", "goblin-1",
@@ -25,10 +28,275 @@ func (s *TranslateSuite) TestTranslateEvent_AttackResolvedEvent_Suppressed() {
 			"player-A": {Visible: true},
 		},
 	)
+	gameTime := time.Date(2026, 6, 7, 12, 0, 0, 0, time.UTC)
+	evt.Stamp(gameTime, "corr-attack-1")
+
+	out, err := v2encounter.TranslateEvent(evt, "player-A", s.now)
+	s.Require().NoError(err)
+	s.Require().NotNil(out)
+
+	atk := out.GetAttackResolved()
+	s.Require().NotNil(atk, "expected AttackResolved envelope")
+	s.Require().Equal("char-A", atk.GetAttackerEntityId())
+	s.Require().Equal("goblin-1", atk.GetTargetEntityId())
+	s.Require().True(atk.GetHit())
+	s.Require().False(atk.GetCritical())
+	s.Require().Equal(int32(18), atk.GetAttackRoll())
+	s.Require().Equal(int32(4), atk.GetAttackBonus())
+	s.Require().Equal(int32(15), atk.GetTargetAc())
+	s.Require().Equal(int64(10), out.Sequence)
+	// Invariant 5: envelope timestamp is the event's game-time, not s.now.
+	s.Require().Equal(gameTime.Unix(), out.GetTimestamp().GetSeconds())
+	// Invariant 8: correlation_id copied through verbatim.
+	s.Require().Equal("corr-attack-1", out.GetCorrelationId())
+}
+
+func (s *TranslateSuite) TestTranslateEvent_AttackResolvedEvent_Miss_Translated() {
+	// The #594 fix: a miss must be visible on the wire. AttackResolved fires on
+	// miss (no parallel DamageDealt), so this is the only event carrying the
+	// swing — it must translate, not be dropped.
+	evt := events.NewAttackResolvedEvent(
+		"enc-1", uint64(11),
+		"char-A", "goblin-1",
+		false, false, 3, 4, 15,
+		map[core.PlayerID]events.AttackResolvedSlice{
+			"player-A": {Visible: true},
+		},
+	)
+	out, err := v2encounter.TranslateEvent(evt, "player-A", s.now)
+	s.Require().NoError(err)
+	s.Require().NotNil(out)
+
+	atk := out.GetAttackResolved()
+	s.Require().NotNil(atk, "a miss must still produce an AttackResolved envelope")
+	s.Require().False(atk.GetHit(), "hit=false is the whole point of the #594 fix")
+	s.Require().Equal(int32(3), atk.GetAttackRoll())
+}
+
+func (s *TranslateSuite) TestTranslateEvent_AttackResolvedEvent_NotVisible_SawNothing() {
+	evt := events.NewAttackResolvedEvent(
+		"enc-1", uint64(10),
+		"char-A", "goblin-1",
+		true, false, 18, 4, 15,
+		map[core.PlayerID]events.AttackResolvedSlice{
+			"player-A": {Visible: false},
+		},
+	)
 	out, err := v2encounter.TranslateEvent(evt, "player-A", s.now)
 	s.Require().Error(err)
-	s.Require().True(errors.Is(err, v2encounter.ErrEventSuppressed),
-		"AttackResolvedEvent must return ErrEventSuppressed, got: %v", err)
+	s.Require().True(errors.Is(err, v2encounter.ErrViewerSawNothing))
+	s.Require().Nil(out)
+}
+
+func (s *TranslateSuite) TestTranslateEvent_ActionResolvedEvent_HappyPath() {
+	evt := events.NewActionResolvedEvent(
+		"enc-1", uint64(20),
+		"char-A",
+		"dnd5e:combat_abilities:attack",
+		"goblin-1",
+		events.EconomyConsumed{
+			Actions:         1,
+			GrantedConsumed: map[string]int{"attacks": 1},
+		},
+		map[core.PlayerID]events.ActionResolvedSlice{
+			"player-A": {Visible: true},
+		},
+	)
+	gameTime := time.Date(2026, 6, 7, 12, 0, 1, 0, time.UTC)
+	evt.Stamp(gameTime, "corr-action-1")
+
+	out, err := v2encounter.TranslateEvent(evt, "player-A", s.now)
+	s.Require().NoError(err)
+	s.Require().NotNil(out)
+
+	act := out.GetActionResolved()
+	s.Require().NotNil(act, "expected ActionResolved envelope")
+	s.Require().Equal("char-A", act.GetActorEntityId())
+	s.Require().Equal("goblin-1", act.GetTargetEntityId())
+	// action_ref split verbatim into the proto triple — both toolkit namespaces
+	// preserved (combat_abilities here), no flattening (D13).
+	s.Require().NotNil(act.GetActionRef())
+	s.Require().Equal("dnd5e", act.GetActionRef().GetModule())
+	s.Require().Equal("combat_abilities", act.GetActionRef().GetType())
+	s.Require().Equal("attack", act.GetActionRef().GetId())
+	// economy_consumed projected field-for-field.
+	s.Require().NotNil(act.GetEconomyConsumed())
+	s.Require().Equal(int32(1), act.GetEconomyConsumed().GetActions())
+	s.Require().Equal(int32(1), act.GetEconomyConsumed().GetGrantedConsumed()["attacks"])
+	s.Require().Equal(gameTime.Unix(), out.GetTimestamp().GetSeconds())
+	s.Require().Equal("corr-action-1", out.GetCorrelationId())
+}
+
+func (s *TranslateSuite) TestTranslateEvent_ActionResolvedEvent_ActionsNamespace_NotFlattened() {
+	// The "actions:*" (doing) namespace must survive verbatim too, distinct from
+	// "combat_abilities:*" — rpg-api copies the triple through, never remaps.
+	evt := events.NewActionResolvedEvent(
+		"enc-1", uint64(21),
+		"char-A",
+		"dnd5e:actions:strike",
+		"goblin-1",
+		events.EconomyConsumed{GrantedConsumed: map[string]int{"attacks": 1}},
+		map[core.PlayerID]events.ActionResolvedSlice{
+			"player-A": {Visible: true},
+		},
+	)
+	out, err := v2encounter.TranslateEvent(evt, "player-A", s.now)
+	s.Require().NoError(err)
+	s.Require().Equal("actions", out.GetActionResolved().GetActionRef().GetType())
+	s.Require().Equal("strike", out.GetActionResolved().GetActionRef().GetId())
+}
+
+func (s *TranslateSuite) TestTranslateEvent_ActionResolvedEvent_DegenerateRef_NoPanic() {
+	// protos disc-014: a degenerate ref ("::attack") must not index-panic; it
+	// falls back to {dnd5e, action, "::attack"} rather than crashing. No real
+	// caller produces this — purely defensive.
+	evt := events.NewActionResolvedEvent(
+		"enc-1", uint64(22),
+		"char-A",
+		"::attack",
+		"",
+		events.EconomyConsumed{Actions: 1},
+		map[core.PlayerID]events.ActionResolvedSlice{
+			"player-A": {Visible: true},
+		},
+	)
+	s.Require().NotPanics(func() {
+		out, err := v2encounter.TranslateEvent(evt, "player-A", s.now)
+		s.Require().NoError(err)
+		s.Require().NotNil(out.GetActionResolved().GetActionRef())
+		// Degenerate input has empty parts → falls back to id=raw, not a panic.
+		s.Require().Equal("dnd5e", out.GetActionResolved().GetActionRef().GetModule())
+		s.Require().Equal("action", out.GetActionResolved().GetActionRef().GetType())
+		s.Require().Equal("::attack", out.GetActionResolved().GetActionRef().GetId())
+	})
+}
+
+func (s *TranslateSuite) TestTranslateEvent_ActionResolvedEvent_NotVisible_SawNothing() {
+	evt := events.NewActionResolvedEvent(
+		"enc-1", uint64(20),
+		"char-A", "dnd5e:combat_abilities:attack", "goblin-1",
+		events.EconomyConsumed{Actions: 1},
+		map[core.PlayerID]events.ActionResolvedSlice{
+			"player-A": {Visible: false},
+		},
+	)
+	out, err := v2encounter.TranslateEvent(evt, "player-A", s.now)
+	s.Require().True(errors.Is(err, v2encounter.ErrViewerSawNothing))
+	s.Require().Nil(out)
+}
+
+func (s *TranslateSuite) TestTranslateEvent_TurnStateChangedEvent_HappyPath() {
+	snap := events.TurnStateSnapshot{
+		InCombat:              true,
+		TurnNumber:            2,
+		ActionsRemaining:      0,
+		BonusActionsRemaining: 1,
+		ReactionsRemaining:    1,
+		MovementRemaining:     30,
+		Menu: []events.MenuEntry{
+			{
+				Ref:         "dnd5e:combat_abilities:attack",
+				Name:        "Attack",
+				EconomySlot: "action",
+				TargetKind:  "single_entity",
+				Available:   false,
+				Reason:      "no actions remaining",
+			},
+			{
+				Ref:         "dnd5e:actions:move",
+				Name:        "Move",
+				EconomySlot: "movement",
+				TargetKind:  "position",
+				Available:   false,
+				Reason:      "movement lands in Beat 2",
+			},
+			{
+				Ref:         "dnd5e:combat_abilities:dodge",
+				Name:        "Dodge",
+				EconomySlot: "action",
+				TargetKind:  "self",
+				Available:   false,
+				Reason:      "no actions remaining",
+			},
+		},
+	}
+	evt := events.NewTurnStateChangedEvent(
+		"enc-1", uint64(30),
+		"char-A",
+		snap,
+		map[core.PlayerID]events.TurnStateChangedSlice{
+			"player-A": {Visible: true},
+		},
+	)
+	evt.Stamp(s.now, "corr-action-1")
+
+	out, err := v2encounter.TranslateEvent(evt, "player-A", s.now)
+	s.Require().NoError(err)
+	s.Require().NotNil(out)
+
+	tsc := out.GetTurnStateChanged()
+	s.Require().NotNil(tsc, "expected TurnStateChanged envelope")
+	ts := tsc.GetTurnState()
+	s.Require().NotNil(ts)
+	s.Require().Equal("char-A", ts.GetActiveEntityId())
+
+	// economy projected field-for-field.
+	s.Require().NotNil(ts.GetEconomy())
+	s.Require().Equal(int32(0), ts.GetEconomy().GetActionsRemaining())
+	s.Require().Equal(int32(1), ts.GetEconomy().GetBonusActionsRemaining())
+	s.Require().Equal(int32(1), ts.GetEconomy().GetReactionsRemaining())
+	s.Require().Equal(int32(30), ts.GetEconomy().GetMovementRemaining())
+
+	// menu projected verbatim: ref, name, availability+reason, slot enum, target enum.
+	s.Require().Len(ts.GetAvailableActions(), 3)
+	attack := ts.GetAvailableActions()[0]
+	s.Require().Equal("Attack", attack.GetDisplayName())
+	s.Require().Equal("combat_abilities", attack.GetRef().GetType())
+	s.Require().False(attack.GetAvailable())
+	s.Require().Equal("no actions remaining", attack.GetUnavailableReason())
+	s.Require().Equal(encounterv2pb.EconomySlot_ECONOMY_SLOT_ACTION, attack.GetEconomySlot())
+	s.Require().Equal(encounterv2pb.TargetKind_TARGET_KIND_SINGLE_ENTITY, attack.GetTargetKind())
+
+	move := ts.GetAvailableActions()[1]
+	s.Require().Equal("movement lands in Beat 2", move.GetUnavailableReason())
+	s.Require().Equal(encounterv2pb.EconomySlot_ECONOMY_SLOT_MOVEMENT, move.GetEconomySlot())
+	s.Require().Equal(encounterv2pb.TargetKind_TARGET_KIND_POSITION, move.GetTargetKind())
+
+	// D15: SELF must survive as its own kind (not collapsed to NONE).
+	dodge := ts.GetAvailableActions()[2]
+	s.Require().Equal(encounterv2pb.TargetKind_TARGET_KIND_SELF, dodge.GetTargetKind())
+
+	s.Require().Equal("corr-action-1", out.GetCorrelationId())
+}
+
+func (s *TranslateSuite) TestTranslateEvent_TurnStateChangedEvent_NotInCombat_NoEconomy() {
+	// A snapshot for an actor not in combat carries no economy and an empty menu.
+	evt := events.NewTurnStateChangedEvent(
+		"enc-1", uint64(31),
+		"char-A",
+		events.TurnStateSnapshot{InCombat: false},
+		map[core.PlayerID]events.TurnStateChangedSlice{
+			"player-A": {Visible: true},
+		},
+	)
+	out, err := v2encounter.TranslateEvent(evt, "player-A", s.now)
+	s.Require().NoError(err)
+	ts := out.GetTurnStateChanged().GetTurnState()
+	s.Require().Nil(ts.GetEconomy(), "no economy when not in combat")
+	s.Require().Empty(ts.GetAvailableActions())
+}
+
+func (s *TranslateSuite) TestTranslateEvent_TurnStateChangedEvent_NotVisible_SawNothing() {
+	evt := events.NewTurnStateChangedEvent(
+		"enc-1", uint64(30),
+		"char-A",
+		events.TurnStateSnapshot{InCombat: true},
+		map[core.PlayerID]events.TurnStateChangedSlice{
+			"player-A": {Visible: false},
+		},
+	)
+	out, err := v2encounter.TranslateEvent(evt, "player-A", s.now)
+	s.Require().True(errors.Is(err, v2encounter.ErrViewerSawNothing))
 	s.Require().Nil(out)
 }
 
