@@ -67,12 +67,16 @@ func TranslateEvent(evt events.EncounterEvent, viewer core.PlayerID, now time.Ti
 		return translateEntityDisappearedEvent(e, viewer, now)
 	case *events.DoorOpenedEvent:
 		return translateDoorOpenedEvent(e, viewer, now)
+	case *events.ActionResolvedEvent:
+		return translateActionResolvedEvent(e, viewer)
 	case *events.AttackResolvedEvent:
-		// Cause-stage event with no proto wire shape (proto designers chose
-		// EntityDamaged as the canonical wire shape; AttackResolved is
-		// narration/animation hooks the web doesn't render in this wave).
-		// Suppress so the stream loop neither logs nor sends.
-		return nil, ErrEventSuppressed
+		// TakeAction wave (#597): the proto now has an AttackResolved variant
+		// (protos v0.1.100), so the cause-stage attack event is no longer
+		// suppressed — it is translated and sent, carrying hit/miss/crit/roll
+		// detail. This is the #594 fix: misses become visible on the wire.
+		return translateAttackResolvedEvent(e, viewer)
+	case *events.TurnStateChangedEvent:
+		return translateTurnStateChangedEvent(e, viewer)
 	case *events.DamageDealtEvent:
 		return translateDamageDealtEvent(e, viewer, now)
 	case *events.ConditionAppliedEvent:
@@ -328,6 +332,101 @@ func translateDoorOpenedEvent(e *events.DoorOpenedEvent, viewer core.PlayerID, n
 				// intentionally empty: the parallel HexRevealedEvent
 				// (translated to GeometryRevealed) carries the geometry
 				// delta. Cause/effect events stay separate on the wire.
+			},
+		},
+	}, nil
+}
+
+// translateActionResolvedEvent maps the toolkit's ActionResolvedEvent — the
+// first-class "an action was taken" umbrella beat (North-Star Invariant 9) — to
+// the proto ActionResolved envelope. Every player-facing action (attack, Dodge,
+// Dash, the Monk bonus strike) emits one. rpg-api projects it field-for-field:
+// actor, action_ref, target, economy_consumed; it authors nothing and computes
+// nothing (Invariant 2).
+//
+// The envelope timestamp is the event's game-time OccurredAt (Invariant 5, NOT
+// rpg-api's wall clock) and the correlation_id is the event's CorrelationID
+// (Invariant 8) so the web reassembles "this damage came from that action" —
+// the AttackResolved / EntityDamaged / StatusApplied events the action caused
+// all carry the same id.
+//
+// Per-viewer projection: viewers absent from PerPlayer or with Visible:false
+// return ErrViewerSawNothing for the stream loop's silent skip.
+func translateActionResolvedEvent(e *events.ActionResolvedEvent, viewer core.PlayerID) (*encounterv2pb.EncounterEvent, error) {
+	slice, ok := e.PerPlayer[viewer]
+	if !ok || !slice.Visible {
+		return nil, ErrViewerSawNothing
+	}
+	return &encounterv2pb.EncounterEvent{
+		Sequence:      int64(e.Sequence()), //nolint:gosec // sequence is monotonic; fits int64
+		Timestamp:     timestamppb.New(e.OccurredAt()),
+		CorrelationId: string(e.CorrelationID()),
+		Event: &encounterv2pb.EncounterEvent_ActionResolved{
+			ActionResolved: &encounterv2pb.ActionResolved{
+				ActorEntityId:   string(e.ActorID),
+				ActionRef:       actionRefToProto(e.ActionRef),
+				TargetEntityId:  string(e.TargetID),
+				EconomyConsumed: economyConsumedToProto(e.EconomyConsumed),
+			},
+		},
+	}, nil
+}
+
+// translateAttackResolvedEvent maps the toolkit's AttackResolvedEvent (the
+// cause/roll-detail event) to the proto AttackResolved envelope. TakeAction
+// wave (#597): no longer suppressed — it fires on hit AND miss (the #594 fix),
+// so the web can render a swing-and-miss. The HP outcome still lives on the
+// parallel DamageDealtEvent → EntityDamaged (published on hit only); this event
+// carries the to-hit story (hit/crit/roll/bonus/AC).
+//
+// Timestamp + correlation_id come from the event (Invariants 5, 8) so this
+// attack ties to its ActionResolved umbrella and the EntityDamaged it causes.
+func translateAttackResolvedEvent(e *events.AttackResolvedEvent, viewer core.PlayerID) (*encounterv2pb.EncounterEvent, error) {
+	slice, ok := e.PerPlayer[viewer]
+	if !ok || !slice.Visible {
+		return nil, ErrViewerSawNothing
+	}
+	return &encounterv2pb.EncounterEvent{
+		Sequence:      int64(e.Sequence()), //nolint:gosec // sequence is monotonic; fits int64
+		Timestamp:     timestamppb.New(e.OccurredAt()),
+		CorrelationId: string(e.CorrelationID()),
+		Event: &encounterv2pb.EncounterEvent_AttackResolved{
+			AttackResolved: &encounterv2pb.AttackResolved{
+				AttackerEntityId: string(e.AttackerID),
+				TargetEntityId:   string(e.TargetID),
+				Hit:              e.Hit,
+				Critical:         e.Critical,
+				AttackRoll:       int32(e.AttackRoll),  //nolint:gosec // a d20 roll fits int32
+				AttackBonus:      int32(e.AttackBonus), //nolint:gosec // a to-hit modifier fits int32
+				TargetAc:         int32(e.TargetAC),    //nolint:gosec // an AC value fits int32
+			},
+		},
+	}, nil
+}
+
+// translateTurnStateChangedEvent maps the toolkit's TurnStateChangedEvent — the
+// pushed menu/economy refresh (North-Star Invariant 12) — to the proto
+// TurnStateChanged envelope. The engine computes the snapshot (economy +
+// available menu) from the actor's own rules engine; rpg-api projects it
+// field-for-field onto the wire TurnState (Invariant 11). No menu logic, no
+// availability decision, no reason string is authored here.
+//
+// Audience is the actor's own controlling player (turn state is that player's
+// private "what can I do now" view); viewers absent or Visible:false return
+// ErrViewerSawNothing. correlation_id ties a post-action refresh to the action
+// that caused it (empty for turn-start refreshes — Invariant 8).
+func translateTurnStateChangedEvent(e *events.TurnStateChangedEvent, viewer core.PlayerID) (*encounterv2pb.EncounterEvent, error) {
+	slice, ok := e.PerPlayer[viewer]
+	if !ok || !slice.Visible {
+		return nil, ErrViewerSawNothing
+	}
+	return &encounterv2pb.EncounterEvent{
+		Sequence:      int64(e.Sequence()), //nolint:gosec // sequence is monotonic; fits int64
+		Timestamp:     timestamppb.New(e.OccurredAt()),
+		CorrelationId: string(e.CorrelationID()),
+		Event: &encounterv2pb.EncounterEvent_TurnStateChanged{
+			TurnStateChanged: &encounterv2pb.TurnStateChanged{
+				TurnState: turnStateSnapshotToProto(e.State, e.ActorID),
 			},
 		},
 	}, nil
@@ -630,6 +729,143 @@ func splitRef(s string) []string {
 	}
 	parts = append(parts, s[start:])
 	return parts
+}
+
+// actionRefToProto parses a toolkit action ref string ("module:type:id") into
+// the proto Ref triple for the resolved-action events. It carries the toolkit's
+// two native namespaces verbatim — "combat_abilities:*" (intent) and
+// "actions:*" (doing) — never flattening or remapping them (D13: a remap would
+// be an Invariant-2 violation; rpg-api copies the triple through).
+//
+// Defensive against degenerate input (protos disc-014): a malformed ref with
+// short/empty parts (e.g. "::attack") must not produce a bad wire ref. splitRef
+// returns nil when the string does NOT have exactly two colons (e.g. "" or
+// "attack"); for a string that DOES have two colons but empty parts (e.g.
+// "::attack") it returns a 3-element slice with empty members. The guard below
+// covers both: it requires len==3 AND all three parts non-empty, so any input
+// that isn't a clean triple falls back to treating the whole raw string as the
+// id under the dnd5e module. No real caller produces a degenerate ref (the web
+// sends full triples), so this is purely a guard, mirroring conditionRefFor /
+// monsterRefFor.
+func actionRefToProto(toolkitActionRef string) *encounterv2pb.Ref {
+	parts := splitRef(toolkitActionRef)
+	if len(parts) == 3 && parts[0] != "" && parts[1] != "" && parts[2] != "" {
+		return &encounterv2pb.Ref{Module: parts[0], Type: parts[1], Id: parts[2]}
+	}
+	return &encounterv2pb.Ref{Module: refModuleDnd5e, Type: "action", Id: toolkitActionRef}
+}
+
+// economyConsumedToProto projects the toolkit's EconomyConsumed (what an action
+// spent off the turn economy) field-for-field onto the proto EconomyConsumed.
+// The toolkit owns the deduction (Invariants 2/3); this is a faithful copy —
+// no math, no defaulting.
+func economyConsumedToProto(c events.EconomyConsumed) *encounterv2pb.EconomyConsumed {
+	out := &encounterv2pb.EconomyConsumed{
+		Actions:      int32(c.Actions),      //nolint:gosec // bounded turn-economy counters fit int32
+		BonusActions: int32(c.BonusActions), //nolint:gosec // bounded turn-economy counters fit int32
+		Reactions:    int32(c.Reactions),    //nolint:gosec // bounded turn-economy counters fit int32
+		Movement:     int32(c.Movement),     //nolint:gosec // movement in feet fits int32
+	}
+	if len(c.GrantedConsumed) > 0 {
+		out.GrantedConsumed = make(map[string]int32, len(c.GrantedConsumed))
+		for k, v := range c.GrantedConsumed {
+			out.GrantedConsumed[k] = int32(v) //nolint:gosec // granted-capacity counts fit int32
+		}
+	}
+	return out
+}
+
+// turnStateSnapshotToProto projects the toolkit's engine-computed
+// TurnStateSnapshot (economy + available menu) onto the proto TurnState. The
+// engine authored the snapshot from the actor's own rules engine (Invariant
+// 11); rpg-api copies every field through and authors nothing.
+//
+// The flattened toolkit menu (abilities then granted-capacity actions, already
+// ordered by the engine) becomes proto AvailableActions. The economy maps onto
+// proto ActionEconomy. ActiveEntityId is set to this actor (the push names whose
+// menu/economy refreshed) and Round to the snapshot's TurnNumber. InitiativeOrder
+// is NOT part of this per-actor delta — it's the full-encounter roster the
+// snapshot path (buildTurnState) owns — so it is left empty on this push; a
+// TurnStateChanged carries the actor's menu + economy refresh, not the roster.
+func turnStateSnapshotToProto(snap events.TurnStateSnapshot, actorID core.EntityID) *encounterv2pb.TurnState {
+	ts := &encounterv2pb.TurnState{
+		ActiveEntityId: string(actorID),
+		Round:          int32(snap.TurnNumber), //nolint:gosec // a turn counter fits int32
+	}
+	if snap.InCombat {
+		ts.Economy = &encounterv2pb.ActionEconomy{
+			ActionsRemaining:      int32(snap.ActionsRemaining),      //nolint:gosec // bounded counters fit int32
+			BonusActionsRemaining: int32(snap.BonusActionsRemaining), //nolint:gosec // bounded counters fit int32
+			ReactionsRemaining:    int32(snap.ReactionsRemaining),    //nolint:gosec // bounded counters fit int32
+			MovementRemaining:     int32(snap.MovementRemaining),     //nolint:gosec // movement in feet fits int32
+		}
+	}
+	if len(snap.Menu) > 0 {
+		ts.AvailableActions = make([]*encounterv2pb.AvailableAction, 0, len(snap.Menu))
+		for _, m := range snap.Menu {
+			ts.AvailableActions = append(ts.AvailableActions, menuEntryToProto(m))
+		}
+	}
+	return ts
+}
+
+// menuEntryToProto projects one toolkit MenuEntry onto the proto
+// AvailableAction field-for-field: ref, display name, availability + reason,
+// economy slot, target kind. The engine authored every field (including the
+// effective `Available` flag and the reason string); rpg-api never recomputes
+// availability or authors a reason (Invariants 2, 11).
+func menuEntryToProto(m events.MenuEntry) *encounterv2pb.AvailableAction {
+	return &encounterv2pb.AvailableAction{
+		Ref:               actionRefToProto(m.Ref),
+		DisplayName:       m.Name,
+		Available:         m.Available,
+		UnavailableReason: m.Reason,
+		EconomySlot:       economySlotToProto(m.EconomySlot),
+		TargetKind:        targetKindToProto(m.TargetKind),
+	}
+}
+
+// economySlotToProto maps the toolkit's economy-slot string (the engine's
+// EconomySlot enum, serialized to its string form on the spine) onto the proto
+// EconomySlot enum 1:1. Unknown / empty maps to UNSPECIFIED. This is a pure
+// enum translation at the wire boundary — not a rules decision.
+func economySlotToProto(slot string) encounterv2pb.EconomySlot {
+	switch slot {
+	case "action":
+		return encounterv2pb.EconomySlot_ECONOMY_SLOT_ACTION
+	case "bonus_action":
+		return encounterv2pb.EconomySlot_ECONOMY_SLOT_BONUS_ACTION
+	case "reaction":
+		return encounterv2pb.EconomySlot_ECONOMY_SLOT_REACTION
+	case "movement":
+		return encounterv2pb.EconomySlot_ECONOMY_SLOT_MOVEMENT
+	case "free":
+		return encounterv2pb.EconomySlot_ECONOMY_SLOT_FREE
+	default:
+		return encounterv2pb.EconomySlot_ECONOMY_SLOT_UNSPECIFIED
+	}
+}
+
+// targetKindToProto maps the toolkit's target-kind string (the engine's
+// TargetKind enum serialized to its string form) onto the proto TargetKind enum
+// 1:1. The proto mirrors the toolkit enum exactly — SELF ≠ NONE is a real
+// semantic distinction the toolkit owns (D15), so both are preserved. Unknown /
+// empty maps to UNSPECIFIED. Pure enum translation, no rules.
+func targetKindToProto(kind string) encounterv2pb.TargetKind {
+	switch kind {
+	case "self":
+		return encounterv2pb.TargetKind_TARGET_KIND_SELF
+	case "single_entity":
+		return encounterv2pb.TargetKind_TARGET_KIND_SINGLE_ENTITY
+	case "position":
+		return encounterv2pb.TargetKind_TARGET_KIND_POSITION
+	case "area":
+		return encounterv2pb.TargetKind_TARGET_KIND_AREA
+	case "none":
+		return encounterv2pb.TargetKind_TARGET_KIND_NONE
+	default:
+		return encounterv2pb.TargetKind_TARGET_KIND_UNSPECIFIED
+	}
 }
 
 // encounterModeToProto maps the toolkit's core.EncounterMode enum to the
