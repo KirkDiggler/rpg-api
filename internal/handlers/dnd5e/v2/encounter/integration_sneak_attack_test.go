@@ -46,6 +46,8 @@ import (
 
 	"github.com/stretchr/testify/suite"
 	"go.uber.org/mock/gomock"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	encounterv2pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/encounter"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
@@ -209,86 +211,73 @@ func (s *SneakAttackIntegrationSuite) TestIntegration_SneakAttackDoesNotCrashWit
 	s.Require().NoError(err, "attack with SneakAttack condition must not crash from missing gamectx")
 }
 
-// TestIntegration_SneakAttackOncePerTurn verifies the cross-RPC once-per-turn
-// enforcement via the inMemoryCharStore write-back:
+// TestIntegration_SneakAttackFiresOnTurnAttack verifies that alice's single
+// turn attack fires sneak attack (ally adjacent, DEX finesse weapon, gamectx
+// wired): HP delta > weapon-only damage.
 //
-//   - Attack 1: sneak fires (ally adjacent, DEX weapon) → HP delta > 9 (weapon 9 + sneak ≥ 1).
-//   - Attack 2 (same turn, separate TakeAction RPC): UsedThisTurn=true persisted to
-//     charStore by saveAttackerConditionState; next LoadFromData restores true →
-//     sneak blocked → HP delta == 9 exactly (weapon-only).
-//
-// This proves cross-RPC once-per-turn enforcement works end-to-end with the
-// toolkit PR #655 JSON persistence + saveAttackerConditionState write-back.
-func (s *SneakAttackIntegrationSuite) TestIntegration_SneakAttackOncePerTurn() {
+// Note (rpg-api#598): the toolkit now enforces the action economy server-side —
+// one action per turn — so a SECOND same-turn attack is rejected
+// "insufficient action", not silently sneak-blocked. The pre-#598 version of
+// this test fired two attacks in one turn to exercise the UsedThisTurn gate;
+// that is no longer reachable for a single-attack rogue. The cross-turn
+// UsedThisTurn reset is covered by TestIntegration_SneakAttackResetsOnTurnEnd.
+func (s *SneakAttackIntegrationSuite) TestIntegration_SneakAttackFiresOnTurnAttack() {
 	aliceData := s.buildAliceRogueData()
 	s.setupCharRepoMock(aliceData)
 	s.seedSneakEncounter()
 	s.advanceToAlice()
 
-	// Attack 1: sneak attack fires (ally adjacent, DEX weapon, UsedThisTurn=false).
+	// The turn's one attack: sneak fires (ally adjacent, DEX weapon, UsedThisTurn=false).
 	hp0 := s.goblinHP()
 	_, err := s.handler.TakeAction(s.aliceCtx, s.attackAliceVsGoblin())
-	s.Require().NoError(err, "first attack must resolve without error")
+	s.Require().NoError(err, "attack must resolve without error")
 	hp1 := s.goblinHP()
 
 	delta1 := hp0 - hp1
 	s.Greater(delta1, sneakWeaponDamage,
-		"attack 1: HP delta (%d) must exceed weapon-only damage (%d) — sneak attack must fire "+
+		"HP delta (%d) must exceed weapon-only damage (%d) — sneak attack must fire "+
 			"(ally adjacent, DEX finesse weapon, gamectx wired correctly)",
 		delta1, sneakWeaponDamage)
 
-	// Attack 2: sneak must be blocked by UsedThisTurn=true persisted across RPCs.
-	// saveAttackerConditionState wrote UsedThisTurn=true to charStore after attack 1;
-	// the next LoadFromData restores it from JSON (rpg-toolkit PR #655) → gate closed.
+	// A second attack in the same turn is now rejected by the economy (one action
+	// per turn) — proving the server-side enforcement (rpg-api#598).
 	_, err = s.handler.TakeAction(s.aliceCtx, s.attackAliceVsGoblin())
-	s.Require().NoError(err, "second attack must resolve without error")
-	hp2 := s.goblinHP()
-
-	delta2 := hp1 - hp2
-	s.Equal(sneakWeaponDamage, delta2,
-		"attack 2: HP delta (%d) must equal weapon-only damage (%d) — sneak must be blocked "+
-			"(UsedThisTurn=true persisted to charStore across RPCs)",
-		delta2, sneakWeaponDamage)
+	s.Require().Error(err, "second same-turn attack must be rejected — one action per turn")
+	st, _ := status.FromError(err)
+	s.Equal(codes.FailedPrecondition, st.Code(),
+		"second same-turn attack must fail FailedPrecondition (insufficient action), got %v", st.Code())
 }
 
-// TestIntegration_SneakAttackResetsOnTurnEnd verifies the full once-per-turn
+// TestIntegration_SneakAttackResetsOnTurnEnd verifies the once-per-turn
 // lifecycle across turn boundaries:
 //
-//   - Attack 1 (turn 1): sneak fires → HP delta > 9.
-//   - Attack 2 (turn 1, same turn, separate RPC): sneak blocked (UsedThisTurn=true) → delta == 9.
-//   - EndTurn + advance + Attack 3 (turn 2): sneak fires again → delta > 9.
+//   - Attack 1 (turn 1): sneak fires → HP delta > weapon-only.
+//   - EndTurn + advance + Attack 2 (turn 2): sneak fires again → HP delta > weapon-only.
 //
-// The EndTurn path: publishTurnEndAndPersistReset loads alice with the encounter
-// bus (subscribing SneakAttack to the bus), fires TurnEndEvent (UsedThisTurn=false),
-// and saves the updated character back to charStore.
+// The EndTurn path loads alice with the encounter bus (subscribing SneakAttack
+// to the bus), fires TurnEndEvent (UsedThisTurn=false), re-seeds the next actor's
+// economy, and saves the updated character back to charStore. A second attack
+// WITHIN a turn is no longer possible (one action per turn — rpg-api#598), so the
+// cross-turn reset is the lifecycle this test exercises.
 func (s *SneakAttackIntegrationSuite) TestIntegration_SneakAttackResetsOnTurnEnd() {
 	aliceData := s.buildAliceRogueData()
 	s.setupCharRepoMock(aliceData)
 	s.seedSneakEncounter()
 	s.advanceToAlice()
 
-	// Turn 1, Attack 1: sneak attack fires.
+	// Turn 1 attack: sneak attack fires.
 	hp0 := s.goblinHP()
 	_, err := s.handler.TakeAction(s.aliceCtx, s.attackAliceVsGoblin())
-	s.Require().NoError(err, "turn-1 attack-1 must resolve")
+	s.Require().NoError(err, "turn-1 attack must resolve")
 	hp1 := s.goblinHP()
 
 	delta1 := hp0 - hp1
 	s.Greater(delta1, sneakWeaponDamage,
-		"turn-1 attack-1: sneak must fire (delta=%d, weapon=%d)", delta1, sneakWeaponDamage)
+		"turn-1 attack: sneak must fire (delta=%d, weapon=%d)", delta1, sneakWeaponDamage)
 
-	// Turn 1, Attack 2: sneak blocked (cross-RPC UsedThisTurn=true).
-	_, err = s.handler.TakeAction(s.aliceCtx, s.attackAliceVsGoblin())
-	s.Require().NoError(err, "turn-1 attack-2 must resolve")
-	hp2 := s.goblinHP()
-
-	delta2 := hp1 - hp2
-	s.Equal(sneakWeaponDamage, delta2,
-		"turn-1 attack-2: sneak must be blocked (delta=%d, weapon=%d)", delta2, sneakWeaponDamage)
-
-	// End alice's turn. publishTurnEndAndPersistReset loads alice with the
-	// encounter bus, fires TurnEndEvent (SneakAttack.onTurnEnd sets UsedThisTurn=false),
-	// and saves back to charStore.
+	// End alice's turn. EndTurn loads alice with the encounter bus, fires
+	// TurnEndEvent (SneakAttack.onTurnEnd sets UsedThisTurn=false), and saves back
+	// to charStore.
 	_, err = s.handler.EndTurn(s.aliceCtx, &encounterv2pb.EndTurnRequest{
 		EncounterId: sneakIntegEncID,
 		EntityId:    sneakEntityAlice,
@@ -298,16 +287,16 @@ func (s *SneakAttackIntegrationSuite) TestIntegration_SneakAttackResetsOnTurnEnd
 	// Cycle through remaining combatants until alice is active again on turn 2.
 	s.advanceToAlice()
 
-	// Turn 2, Attack 3: UsedThisTurn=false was persisted by EndTurn write-back;
-	// next LoadFromData restores false → sneak fires again.
+	// Turn 2 attack: UsedThisTurn=false was persisted by EndTurn write-back, and
+	// the new turn re-seeds the economy → sneak fires again.
 	_, err = s.handler.TakeAction(s.aliceCtx, s.attackAliceVsGoblin())
 	s.Require().NoError(err, "turn-2 attack must resolve")
-	hp3 := s.goblinHP()
+	hp2 := s.goblinHP()
 
-	delta3 := hp2 - hp3
-	s.Greater(delta3, sneakWeaponDamage,
+	delta2 := hp1 - hp2
+	s.Greater(delta2, sneakWeaponDamage,
 		"turn-2 attack: sneak must fire again after EndTurn reset (delta=%d, weapon=%d)",
-		delta3, sneakWeaponDamage)
+		delta2, sneakWeaponDamage)
 }
 
 // TestIntegration_GamectxWiredForChainConditions verifies that gamectx.RequireRoom

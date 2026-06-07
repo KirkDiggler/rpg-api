@@ -175,7 +175,18 @@ func (s *TakeActionSuite) TestTakeAction_EntityMismatch_ErrEntityOwnershipMismat
 
 // --- toolkit gate sentinels surface UNWRAPPED so the handler maps distinctly ---
 
-func (s *TakeActionSuite) TestTakeAction_UnsupportedAction_ErrUnsupportedAction() {
+// TestTakeAction_NonAttackRef_NonCombatantSeat: a non-attack ref on a seat with
+// no hydrated character surfaces ErrNonCombatant UNWRAPPED.
+//
+// Behavior change (rpg-toolkit#697, encounter v0.20.0): the toolkit dropped the
+// hardcoded attack-only gate; a non-attack ref ("dodge") now routes to the held
+// character's rules engine instead of being rejected with ErrUnsupportedAction
+// up front. This suite's seats are flat stat-snapshots (no character store), so
+// the toolkit has no hydrated character to dispatch on and returns
+// ErrNonCombatant. The handler maps it to FailedPrecondition (same group as the
+// other turn/combatant gates). Routing supported non-attack actions through
+// hydrated characters is rpg-api#597.
+func (s *TakeActionSuite) TestTakeAction_NonAttackRef_NonCombatantSeat() {
 	s.seedCombat("enc-unsupported", 100)
 	_, err := s.orch.TakeAction(s.ctx, &encounterorch.TakeActionInput{
 		EncounterID:    "enc-unsupported",
@@ -184,7 +195,7 @@ func (s *TakeActionSuite) TestTakeAction_UnsupportedAction_ErrUnsupportedAction(
 		ActionRef:      tkenc.ActionRef{Module: "dnd5e", Type: "action", ID: "dodge"},
 		TargetEntityID: taGoblinID,
 	})
-	s.Require().ErrorIs(err, tkenc.ErrUnsupportedAction)
+	s.Require().ErrorIs(err, tkenc.ErrNonCombatant)
 }
 
 func (s *TakeActionSuite) TestTakeAction_UnknownTarget_ErrUnknownTarget() {

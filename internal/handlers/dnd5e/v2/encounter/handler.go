@@ -135,6 +135,9 @@ func New(cfg *HandlerConfig) (*Handler, error) {
 			Persist: func(ctx context.Context, data *encounter.Data) error {
 				return persistPlayerCharacterData(ctx, data, charRepo)
 			},
+			SeedActorTurn: func(ctx context.Context, data *encounter.Data) error {
+				return SeedTurnEconomyForData(ctx, data, charRepo)
+			},
 		},
 		ReactionResume: encounterorch.ReactionResume{
 			MarshalAttackContext:   marshalReactionAttackContext,

@@ -28,6 +28,8 @@ import (
 
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	tkenc "github.com/KirkDiggler/rpg-toolkit/encounter"
+	tkenccore "github.com/KirkDiggler/rpg-toolkit/encounter/core"
+	tkevents "github.com/KirkDiggler/rpg-toolkit/events"
 	tkcharacter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 )
 
@@ -73,6 +75,136 @@ func attachPlayerCharacterData(
 			return fmt.Errorf("marshal character data for %q: %w", pd.EntityID, err)
 		}
 		pd.DataJSON = blob
+	}
+	return nil
+}
+
+// SeedTurnEconomyForData seeds the active actor's turn-start action economy in
+// the authoritative character store for a turn-based encounter, closing the
+// "first actor is never in combat" gap (rpg-api#598).
+//
+// Why this is needed: the toolkit (encounter v0.20.0, rpg-toolkit#697) now
+// enforces the action economy server-side and seeds it via character.StartTurn,
+// triggered by the encounter's SetMode(TurnBased) (first actor) and EndTurn
+// (next actor) — but ONLY on a HELD *character.Character. The v2 turn-based-entry
+// sites build the encounter via tkenc.New + AddPlayer + SetMode; New never
+// hydrates combatants (only LoadFromData does), so at SetMode time no character
+// is held and the first-actor seeding no-ops. The character store therefore
+// keeps ActionEconomy == nil, the held character rehydrates with InCombat() ==
+// false, and the first actor's TakeAction is rejected "not in combat". EndTurn
+// correctly seeds every SUBSEQUENT actor (it loads with character data), so only
+// the first actor of a freshly-entered turn-based encounter needs this.
+//
+// What it does: load the active actor's character from the store, run the
+// toolkit's OWN StartTurn verb (the same one SetMode/EndTurn call — rpg-api
+// invokes a turn-boundary verb by reference, exactly as it invokes EndTurn; it
+// authors no economy values, the toolkit owns them — Invariant 2/3), and write
+// the seeded character.Data back to the store. The next combat-verb load then
+// rehydrates an in-combat character.
+//
+// No-op when charRepo is nil (tests without a store), the encounter is not
+// turn-based, the active index is out of range, the active actor is not a player
+// seat, or the active character is already in combat (idempotent guard so a
+// re-entry does not reset a turn already underway). NPCs / flat stat-snapshot
+// seats carry no stored character and are skipped by the not-found path; they
+// take the attack resolver's stand-in cost.
+func SeedTurnEconomyForData(
+	ctx context.Context,
+	data *tkenc.Data,
+	charRepo characterrepo.Repository,
+) error {
+	if data == nil || charRepo == nil {
+		return nil
+	}
+	if data.Mode != tkenccore.ModeTurnBased || len(data.Initiative) == 0 {
+		return nil
+	}
+	if data.ActiveIdx < 0 || data.ActiveIdx >= len(data.Initiative) {
+		return nil
+	}
+	return seedActorTurnEconomy(ctx, data, data.Initiative[data.ActiveIdx], charRepo)
+}
+
+// SeedActorTurnEconomyForData seeds a NAMED actor's turn-start economy (vs. the
+// active actor). ActivateFeature uses this: the toolkit's ActivateFeature verb
+// requires the supplied CharDataJSON to already be InCombat (carry an
+// ActionEconomy) and does NOT itself gate on whose turn it is, so the host seeds
+// the activating actor's economy here regardless of active-index. This replaces
+// the former rpg-api-authored ActionEconomy{1,1,1,30} injection (Invariant 2):
+// the values now come from the toolkit's StartTurn, not from rpg-api.
+//
+// No-op when the encounter is not turn-based, the actor is not a player seat /
+// has no stored character, or the actor is already in combat.
+func SeedActorTurnEconomyForData(
+	ctx context.Context,
+	data *tkenc.Data,
+	actorID tkenccore.EntityID,
+	charRepo characterrepo.Repository,
+) error {
+	if data == nil || charRepo == nil || actorID == "" {
+		return nil
+	}
+	if data.Mode != tkenccore.ModeTurnBased {
+		return nil
+	}
+	return seedActorTurnEconomy(ctx, data, actorID, charRepo)
+}
+
+// seedActorTurnEconomy is the shared core: load the actor's stored character,
+// run the toolkit's StartTurn verb (the same one SetMode/EndTurn call — rpg-api
+// invokes a turn-boundary verb by reference; it authors no economy values, the
+// toolkit owns them — Invariant 2/3), and write the seeded character.Data back
+// to the store so the next load rehydrates an in-combat character.
+func seedActorTurnEconomy(
+	ctx context.Context,
+	data *tkenc.Data,
+	actorID tkenccore.EntityID,
+	charRepo characterrepo.Repository,
+) error {
+	// The actor must be a player seat to carry a character economy.
+	isPlayer := false
+	for _, pd := range data.Players {
+		if pd != nil && pd.EntityID == actorID {
+			isPlayer = true
+			break
+		}
+	}
+	if !isPlayer {
+		return nil // NPC / monster — no character economy to seed.
+	}
+
+	out, err := charRepo.Get(ctx, characterrepo.GetInput{ID: string(actorID)})
+	if err != nil || out == nil || out.Character == nil || out.Character.Data == nil {
+		// No stored character (stand-in seat) — nothing to seed. Not fatal:
+		// the attack resolver falls back to the flat-stat one-action cost.
+		return nil
+	}
+	charData := out.Character.Data
+
+	// Already seeded (in combat) — do not reset a turn already underway.
+	if charData.ActionEconomy != nil {
+		return nil
+	}
+
+	// Run the toolkit's own turn-start seeding verb on the loaded character.
+	char, err := tkcharacter.LoadFromData(ctx, charData, tkevents.NewEventBus())
+	if err != nil {
+		return fmt.Errorf("load character %q for turn-economy seeding: %w", actorID, err)
+	}
+	if _, err := char.StartTurn(ctx, &tkcharacter.StartTurnInput{
+		Speed:      char.GetSpeed(),
+		TurnNumber: data.Round,
+	}); err != nil {
+		return fmt.Errorf("seed turn economy for actor %q: %w", actorID, err)
+	}
+
+	// Persist the seeded character.Data back to the authoritative store, owning
+	// ONLY Data (mirrors persistPlayerCharacterData: the rest of the entity stays
+	// as the store last saw it).
+	updated := out.Character
+	updated.Data = char.ToData()
+	if _, err := charRepo.Update(ctx, characterrepo.UpdateInput{Character: updated}); err != nil {
+		return fmt.Errorf("persist seeded turn economy for %q: %w", actorID, err)
 	}
 	return nil
 }
