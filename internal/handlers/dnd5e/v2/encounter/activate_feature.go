@@ -39,22 +39,6 @@ import (
 	tkcharacter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 )
 
-// combatActionEconomy is the minimal in-combat action economy injected when the
-// character's stored data does not have ActionEconomy set. The toolkit's
-// character.ActivateAbility requires InCombat()==true; since an ActivateFeature
-// RPC by definition occurs during an active encounter, the character IS in combat
-// even if the serialized data predates the current turn's StartTurn call.
-//
-// Values: 1 action + 1 bonus action (both available so Rage's bonus-action cost
-// does not block activation). Turn 0 keeps this neutral.
-var combatActionEconomy = &tkcharacter.ActionEconomyData{
-	TurnNumber:            0,
-	ActionsRemaining:      1,
-	BonusActionsRemaining: 1,
-	ReactionsRemaining:    1,
-	MovementRemaining:     30,
-}
-
 // ActivateFeature applies a character feature (e.g. Rage) as an in-encounter
 // action. All rule logic — resource cost, condition construction, tier table —
 // lives in the toolkit's Encounter.ActivateFeature verb, dispatched by the v2
@@ -90,6 +74,25 @@ func (h *Handler) ActivateFeature(ctx context.Context, req *encounterv2pb.Activa
 		return nil, status.Error(codes.Internal, "character repo not configured")
 	}
 
+	// Seed the actor's turn economy in the character store if the encounter is
+	// turn-based and the actor is the (unseeded) active actor (rpg-api#598). The
+	// toolkit enforces the economy server-side and ActivateAbility requires
+	// InCombat(); the v2 turn-based-entry sites flip to turn-based before any
+	// character is held, so the first actor's stored ActionEconomy is nil. This
+	// runs the toolkit's StartTurn for that actor and writes the seeded economy
+	// to the store, so the Get below reads it back — replacing the former
+	// rpg-api-authored ActionEconomy{1,1,1,30} injection (a North-Star Invariant 2
+	// violation). ActivateFeature uses the #691 CharDataJSON self-load (not the
+	// #689 cascade), so it seeds explicitly here rather than via the orchestrator
+	// load path. No-op when not turn-based / not the active actor / already seeded.
+	if encData, encErr := h.encRepo.Get(ctx, req.GetEncounterId()); encErr == nil && encData != nil {
+		if seedErr := SeedActorTurnEconomyForData(
+			ctx, encData, encountercore.EntityID(req.GetCharacterId()), h.combatResolverConfig.CharacterRepo,
+		); seedErr != nil {
+			return nil, status.Errorf(codes.Internal, "seed turn economy %q: %v", req.GetEncounterId(), seedErr)
+		}
+	}
+
 	// Load the character from the repo. The character data is needed to build
 	// the CharDataJSON the toolkit verb self-loads from (#691: the verb manages
 	// the actor's character itself rather than via the #689 cascade).
@@ -101,16 +104,6 @@ func (h *Handler) ActivateFeature(ctx context.Context, req *encounterv2pb.Activa
 		return nil, status.Errorf(codes.NotFound, "character %q not found", req.GetCharacterId())
 	}
 	charData := charOut.Character.Data
-
-	// Ensure InCombat() == true when passing charData to the toolkit verb.
-	// ActivateAbility requires the character to be in combat, but the stored
-	// character data may not have ActionEconomy set. Injecting a minimal
-	// combat economy here is correct: this RPC is by definition called during
-	// an active encounter.
-	if charData.ActionEconomy == nil {
-		aeCopy := *combatActionEconomy
-		charData.ActionEconomy = &aeCopy
-	}
 
 	charJSON, err := json.Marshal(charData)
 	if err != nil {
