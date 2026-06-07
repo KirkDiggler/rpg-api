@@ -40,7 +40,6 @@ package encounter_test
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"testing"
 	"time"
 
@@ -50,6 +49,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	encounterv2pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/encounter"
+	"github.com/KirkDiggler/rpg-api/internal/apierr"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
 	"github.com/KirkDiggler/rpg-api/internal/entities"
 	v2encounter "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v2/encounter"
@@ -432,7 +432,7 @@ func (s *SneakAttackIntegrationSuite) setupCharRepoMock(aliceData *character.Dat
 		DoAndReturn(func(_ context.Context, _ characterrepo.GetInput) (*characterrepo.GetOutput, error) {
 			d := s.charStore.get(sneakEntityAlice)
 			if d == nil {
-				return nil, fmt.Errorf("alice not found in charStore")
+				return nil, apierr.NotFound("alice not found in charStore")
 			}
 			return &characterrepo.GetOutput{
 				Character: &entities.Character{Data: d},
@@ -449,10 +449,14 @@ func (s *SneakAttackIntegrationSuite) setupCharRepoMock(aliceData *character.Dat
 			return &characterrepo.UpdateOutput{Character: input.Character}, nil
 		}).AnyTimes()
 
-	// Non-alice lookups fall back to stand-in (no rulebook chain, but no error).
+	// Non-alice lookups fall back to stand-in: the real character repo returns
+	// apierr.NotFound for an unknown id, which the seeding/attach paths treat as
+	// "no stored character → stand-in seat" (NOT a fatal error). Using a generic
+	// error here would mismatch the real contract and trip the NotFound-vs-real-
+	// error distinction the seeding code relies on (Copilot review on #599).
 	s.mockCharRepo.EXPECT().
 		Get(gomock.Any(), gomock.Not(characterrepo.GetInput{ID: sneakEntityAlice})).
-		Return(nil, fmt.Errorf("character not configured in integration test mock")).
+		Return(nil, apierr.NotFound("character not configured in integration test mock")).
 		AnyTimes()
 }
 

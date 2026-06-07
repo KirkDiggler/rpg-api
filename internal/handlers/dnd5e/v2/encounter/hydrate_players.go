@@ -26,6 +26,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/KirkDiggler/rpg-api/internal/apierr"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	tkenc "github.com/KirkDiggler/rpg-toolkit/encounter"
 	tkenccore "github.com/KirkDiggler/rpg-toolkit/encounter/core"
@@ -174,14 +175,35 @@ func seedActorTurnEconomy(
 	}
 
 	out, err := charRepo.Get(ctx, characterrepo.GetInput{ID: string(actorID)})
-	if err != nil || out == nil || out.Character == nil || out.Character.Data == nil {
-		// No stored character (stand-in seat) — nothing to seed. Not fatal:
-		// the attack resolver falls back to the flat-stat one-action cost.
+	if err != nil {
+		// NotFound = a stand-in / NPC seat with no stored character: nothing to
+		// seed, not fatal (the attack resolver falls back to the flat-stat
+		// one-action cost). Any OTHER error (timeout, Internal, ...) is a real
+		// character-store failure and must surface — swallowing it would leave
+		// the actor unseeded and mask the failure as a confusing downstream
+		// "not in combat" rejection (Copilot review).
+		if apierr.IsNotFound(err) {
+			return nil
+		}
+		return fmt.Errorf("load character %q for turn-economy seeding: %w", actorID, err)
+	}
+	if out == nil || out.Character == nil || out.Character.Data == nil {
+		// Repo returned no error but no usable character — treat as a stand-in
+		// seat (no character economy to seed).
 		return nil
 	}
 	charData := out.Character.Data
 
-	// Already seeded (in combat) — do not reset a turn already underway.
+	// Already seeded (in combat) — do not reset a turn already underway. The
+	// guard is deliberately nil-only (NOT a TurnNumber check): this runs on
+	// EVERY combat-capable load, including mid-turn loads where the active
+	// actor's economy is legitimately non-nil and partially depleted. The
+	// toolkit owns turn-BOUNDARY re-seeding — EndTurn calls StartTurn, which
+	// resets the economy and advances TurnNumber for the next actor. rpg-api's
+	// only job here is to heal the FIRST actor, who is never seeded (nil) because
+	// SetMode flipped to turn-based before any character was held. Re-seeding on
+	// a stale-TurnNumber check would risk stomping an in-progress turn's economy
+	// on a mid-turn load (Copilot review).
 	if charData.ActionEconomy != nil {
 		return nil
 	}
