@@ -30,10 +30,13 @@ streaming handler — disconnect events do not clean up encounter state.
 
 ### Encounter v2 handler — B (Wave 2.11e update)
 
-`internal/handlers/dnd5e/v2/encounter/` — the v1alpha2 encounter stack
-that orchestrates against the toolkit encounter SDK directly (no
-intermediate orchestrator layer). Wave 2.11e adds the MovementResolver
-wiring, bringing OA-class reactions end-to-end for both movement directions.
+`internal/handlers/dnd5e/v2/encounter/` — the v1alpha2 encounter stack.
+Since the #582 carve-out the RPCs delegate load → verb → persist to the v2
+orchestrator (`internal/orchestrators/encounter/v2`), leaving the handler as
+proto↔input + sentinel→status mapping; the resolvers below stay handler-side
+(depguard-excluded) because they touch the rulebook. Wave 2.11e adds the
+MovementResolver wiring, bringing OA-class reactions end-to-end for both
+movement directions.
 
 What's here as of Wave 2.11e:
 
