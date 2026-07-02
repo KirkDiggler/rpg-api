@@ -16,10 +16,12 @@ package encounter
 // +2 + physical resistance, Sneak Attack, the reaction-trigger pause). rpg-api
 // passes the action ref + target through by reference and persists the result.
 //
-// Wave 2.8 only wires the "attack" action ref; other refs the toolkit refuses
-// with ErrUnsupportedAction (→ Unimplemented). Only entity-id targeting is wired
-// (position / area / self oneofs are reserved for future waves and rejected here
-// with InvalidArgument because the request shape is wrong, not the world state).
+// Targeting mirrors the pushed menu's TargetKind contract (rpg-api#605):
+// entity-id, self (translated to the actor's own entity id), and untargeted
+// NONE (oneof unset) are accepted; position / area oneofs are reserved for
+// future waves and rejected with InvalidArgument because the request shape is
+// wrong, not the world state. Which refs require a target is the toolkit's
+// call, never the handler's.
 
 import (
 	"context"
@@ -60,20 +62,16 @@ func (h *Handler) TakeAction(ctx context.Context, req *encounterv2pb.TakeActionR
 	if req.GetActionRef() == nil {
 		return nil, status.Error(codes.InvalidArgument, "action_ref is required")
 	}
-	if req.GetTarget() == nil || req.GetTarget().GetKind() == nil {
+	if req.GetTarget() == nil {
 		return nil, status.Error(codes.InvalidArgument, "target is required")
 	}
 
-	// Wave 2.8 only supports entity-id targeting. Other oneof variants are
-	// reserved for future waves (position for AoEs, area for spells, self
-	// for buffs). InvalidArgument because the request shape is wrong, not
-	// the world state.
-	entityID := req.GetTarget().GetEntityId()
-	if entityID == "" {
-		return nil, status.Error(codes.InvalidArgument, "target.entity_id is required (only entity-id targeting is supported in this wave)")
+	entityID, err := translateActionTarget(req.GetTarget(), req.GetActorEntityId())
+	if err != nil {
+		return nil, err
 	}
 
-	_, err := h.orch.TakeAction(ctx, &encounterorch.TakeActionInput{
+	_, err = h.orch.TakeAction(ctx, &encounterorch.TakeActionInput{
 		EncounterID: req.GetEncounterId(),
 		PlayerID:    core.PlayerID(playerID),
 		ActorID:     core.EntityID(req.GetActorEntityId()),
@@ -89,6 +87,39 @@ func (h *Handler) TakeAction(ctx context.Context, req *encounterv2pb.TakeActionR
 	}
 
 	return &encounterv2pb.TakeActionResponse{}, nil
+}
+
+// translateActionTarget maps the proto ActionTarget oneof onto the toolkit's
+// entity-id target representation (encounter.ActionTarget carries only an
+// EntityID). Pure shape translation — the handler never knows which refs need
+// a target; the toolkit enforces that (e.g. an untargeted attack fails with
+// ErrUnknownTarget → FailedPrecondition).
+//
+// The advertised TargetKind contract (rpg-api#605):
+//   - entity_id arm → that entity (empty string is a malformed request)
+//   - self arm (TARGET_KIND_SELF: Dodge/Hide/Disengage) → the actor's own
+//     entity id
+//   - oneof unset (TARGET_KIND_NONE: Dash — deliberately has no arm) → empty
+//     id, the action is untargeted
+//   - position / area arms → reserved for future waves (AoEs, spells), never
+//     advertised, rejected request-shaped with InvalidArgument
+func translateActionTarget(target *encounterv2pb.ActionTarget, actorEntityID string) (string, error) {
+	switch kind := target.GetKind().(type) {
+	case *encounterv2pb.ActionTarget_EntityId:
+		if kind.EntityId == "" {
+			return "", status.Error(codes.InvalidArgument, "target.entity_id must not be empty")
+		}
+		return kind.EntityId, nil
+	case *encounterv2pb.ActionTarget_Self:
+		return actorEntityID, nil
+	case nil:
+		// TARGET_KIND_NONE: an untargeted action sends an ActionTarget with
+		// the oneof unset.
+		return "", nil
+	default:
+		return "", status.Error(codes.InvalidArgument,
+			"target kind is not supported (position/area targeting is reserved for future waves)")
+	}
 }
 
 // takeActionStatusError maps the orchestrator's TakeAction errors onto gRPC

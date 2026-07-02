@@ -46,8 +46,11 @@ What's here as of Wave 2.11e:
   `tkenc.MovementResolver`; delegates to `combat.MoveEntity` per hex step.
   Builds spatial room + combatant registry + gamectx per step so OA chain
   fires correctly (see `encounter.md` MovementResolver wiring section).
-- `TakeAction` (`take_action.go`) — RPC for player-initiated combat actions
-  (Wave 2.8: only the "attack" action ref). Carved onto the v2 orchestrator
+- `TakeAction` (`take_action.go`) — RPC for player-initiated combat actions.
+  Any menu ref routes through the toolkit dispatch (encounter v0.20+); the
+  handler translates the target oneof per the advertised TargetKind contract —
+  entity_id, self (→ actor's own id), unset oneof (untargeted NONE) — and
+  rejects reserved position/area (#605). Carved onto the v2 orchestrator
   (`internal/orchestrators/encounter/v2/take_action.go`, #582 step 5): the
   handler is now proto↔input + sentinel→status mapping; the orchestrator owns
   load (with the #689 hydration cascade so the resolver reads the held
