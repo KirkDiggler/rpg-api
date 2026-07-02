@@ -31,11 +31,12 @@ func (s *TranslateSuite) TestHexToPosition_CubeMapping() {
 }
 
 func (s *TranslateSuite) TestTranslateEvent_MoveEvent_FullPath() {
-	// NewMoveEvent signature (events/move.go:34): (encID, seq, mover, path, perPlayer)
+	// NewMoveEvent signature (events/move.go:43): (encID, seq, mover, from, path, perPlayer)
 	evt := events.NewMoveEvent(
 		"enc-1",
 		uint64(1),
 		"char-A",
+		core.Hex{Q: 0, R: 0, S: 0},
 		[]core.Hex{{Q: 0, R: 0, S: 0}, {Q: 1, R: -1, S: 0}, {Q: 2, R: -2, S: 0}},
 		map[core.PlayerID]events.MovePlayerSlice{
 			"player-B": {SeenSegments: []core.Hex{{Q: 0, R: 0, S: 0}, {Q: 1, R: -1, S: 0}, {Q: 2, R: -2, S: 0}}},
@@ -56,6 +57,7 @@ func (s *TranslateSuite) TestTranslateEvent_MoveEvent_FullPath() {
 func (s *TranslateSuite) TestTranslateEvent_MoveEvent_EmptySliceReturnsErrViewerSawNothing() {
 	evt := events.NewMoveEvent(
 		"enc-1", uint64(1), "char-A",
+		core.Hex{Q: 0, R: 0, S: 0},
 		[]core.Hex{{Q: 0, R: 0, S: 0}},
 		map[core.PlayerID]events.MovePlayerSlice{
 			"player-B": {SeenSegments: nil},
@@ -67,7 +69,7 @@ func (s *TranslateSuite) TestTranslateEvent_MoveEvent_EmptySliceReturnsErrViewer
 }
 
 func (s *TranslateSuite) TestTranslateEvent_MoveEvent_ViewerNotInPerPlayerReturnsErrViewerSawNothing() {
-	evt := events.NewMoveEvent("enc-1", uint64(1), "char-A", nil, nil)
+	evt := events.NewMoveEvent("enc-1", uint64(1), "char-A", core.Hex{}, nil, nil)
 	_, err := v2encounter.TranslateEvent(evt, "player-X", s.now)
 	s.Require().Error(err)
 	s.Require().True(errors.Is(err, v2encounter.ErrViewerSawNothing))
@@ -115,6 +117,7 @@ func (s *TranslateSuite) TestTranslateEvent_Sequence_SetCorrectly() {
 		"enc-1",
 		uint64(42),
 		"char-A",
+		core.Hex{Q: 0, R: 0, S: 0},
 		[]core.Hex{{Q: 0, R: 0, S: 0}},
 		map[core.PlayerID]events.MovePlayerSlice{
 			"player-B": {SeenSegments: []core.Hex{{Q: 0, R: 0, S: 0}}},
