@@ -34,6 +34,13 @@ package encounter
 // Monster weapon: for monster attackers the resolver maps the monster's first
 // melee action ref to the real toolkit weapon definition so combat.ResolveAttack
 // picks the right ability modifier — the same single model used for characters.
+//
+// Character weapon (rpg-toolkit#712): for character attackers the resolver
+// delegates the strike-ActionRef-to-weapon mapping to the toolkit-owned
+// Character.WeaponForActionRef instead of switching on the equipped slot /
+// AttackHand itself. This is what makes unarmed_strike/flurry_strike resolve
+// unarmed even when a weapon is equipped, and off_hand_strike resolve with a
+// working combat.TwoWeaponContext instead of hard-failing.
 
 import (
 	"context"
@@ -269,12 +276,30 @@ func asMonster(c combat.Combatant) *monster.Monster {
 	return m
 }
 
-// resolveWeapon returns the weapon to use for combat.AttackInput.
+// weaponResolution is the resolver's unified per-attack weapon pick: the
+// weapon to swing, the attack hand, and (for character off-hand strikes) the
+// TwoWeaponContext the rulebook's off-hand validation requires.
+type weaponResolution struct {
+	weapon     *weapons.Weapon
+	attackHand combat.AttackHand
+	twoWeapon  combat.TwoWeaponContext
+}
+
+// resolveWeapon returns the weapon (+ hand + optional two-weapon context) to
+// use for combat.AttackInput.
 //
-// For character attackers: reads the equipped main-hand (or off-hand) weapon.
+// For character attackers: delegates to the toolkit-owned
+// Character.WeaponForActionRef (rpg-toolkit#712) — "which weapon does this
+// strike ActionRef swing" is rules knowledge the toolkit owns, not something
+// the resolver switches on. This replaces the old equipped-slot/AttackHand
+// lookup: unarmed_strike/flurry_strike now always resolve unarmed even when a
+// weapon is equipped, and off_hand_strike installs a working TwoWeaponContext
+// instead of hard-failing.
+//
 // For monster attackers: maps the monster's first melee action ref to the real
 // toolkit weapon definition so combat.ResolveAttack picks the correct ability
-// modifier — the same single model used for characters.
+// modifier — the same single model used for characters. Monsters have no
+// ActionRef-driven hand selection, so AttackHand comes from the wire label.
 //
 // Fallback: if the character has no weapon equipped, a minimal unarmed stub is
 // returned so the attack can still resolve.
@@ -282,30 +307,42 @@ func (r *Dnd5eCombatResolver) resolveWeapon(
 	attackerChar *character.Character,
 	attackerMon *monster.Monster,
 	input tkenc.AttackInput,
-) (*weapons.Weapon, error) {
+) (*weaponResolution, error) {
 	if attackerChar != nil {
-		return r.characterWeapon(attackerChar, input.AttackHand)
+		return r.characterWeapon(attackerChar, input)
 	}
 	if attackerMon != nil {
-		return r.monsterWeapon(attackerMon, input.AttackerDamageType)
+		return &weaponResolution{
+			weapon:     r.monsterWeapon(attackerMon, input.AttackerDamageType),
+			attackHand: attackHandFromWire(input.AttackHand),
+		}, nil
 	}
-	return unarmedStubWeapon(), nil
+	return &weaponResolution{weapon: unarmedStubWeapon(), attackHand: attackHandFromWire(input.AttackHand)}, nil
 }
 
-// characterWeapon retrieves the equipped weapon for a character attacker.
-// Falls back to a stub "unarmed" weapon if no weapon is equipped.
-func (r *Dnd5eCombatResolver) characterWeapon(char *character.Character, attackHand string) (*weapons.Weapon, error) {
-	slot := character.SlotMainHand
-	if attackHand == attackHandOffLabel {
-		slot = character.SlotOffHand
+// characterWeapon delegates the strike-ActionRef-to-weapon mapping to the
+// toolkit (rpg-toolkit#712, Character.WeaponForActionRef) instead of picking
+// the weapon by equipped slot / AttackHand itself.
+func (r *Dnd5eCombatResolver) characterWeapon(char *character.Character, input tkenc.AttackInput) (*weaponResolution, error) {
+	sel, err := char.WeaponForActionRef(&input.ActionRef)
+	if err != nil {
+		return nil, fmt.Errorf("weapon for action ref: %w", err)
 	}
-	equipped := char.GetEquippedSlot(slot)
-	if equipped != nil {
-		if w := equipped.AsWeapon(); w != nil {
-			return w, nil
-		}
+	return &weaponResolution{
+		weapon:     sel.Weapon,
+		attackHand: sel.AttackHand,
+		twoWeapon:  sel.TwoWeapon,
+	}, nil
+}
+
+// attackHandFromWire maps the wire-side AttackHand label ("off" vs
+// main/empty) to the toolkit's typed combat.AttackHand. Used for monster and
+// no-attacker paths, which have no ActionRef-driven weapon/hand selection.
+func attackHandFromWire(wire string) combat.AttackHand {
+	if wire == attackHandOffLabel {
+		return combat.AttackHandOff
 	}
-	return unarmedStubWeapon(), nil
+	return combat.AttackHandMain
 }
 
 // monsterWeapon resolves the real weapon for a held monster attacker by reading
@@ -315,7 +352,8 @@ func (r *Dnd5eCombatResolver) characterWeapon(char *character.Character, attackH
 //
 // When no known-ref action is found, falls back to the unarmed stub so the
 // attack resolves with the monster's ability modifier via the normal path.
-func (r *Dnd5eCombatResolver) monsterWeapon(mon *monster.Monster, damageTypeStr string) (*weapons.Weapon, error) {
+// Always returns a valid weapon (never nil).
+func (r *Dnd5eCombatResolver) monsterWeapon(mon *monster.Monster, damageTypeStr string) *weapons.Weapon {
 	dmgType := damage.Type(damageTypeStr)
 	if dmgType == "" {
 		dmgType = damage.Bludgeoning
@@ -333,10 +371,10 @@ func (r *Dnd5eCombatResolver) monsterWeapon(mon *monster.Monster, damageTypeStr 
 		if w.DamageType == "" {
 			w.DamageType = dmgType
 		}
-		return &w, nil
+		return &w
 	}
 
-	return unarmedStubWeapon(), nil
+	return unarmedStubWeapon()
 }
 
 // monsterActionRefToWeaponID maps a monster action ref ID to its toolkit
@@ -444,20 +482,21 @@ func (r *Dnd5eCombatResolver) prepareHeldAttack(input tkenc.AttackInput) (*heldA
 
 	charReg := r.buildEncounterCharacterRegistryFromResolved(attackerChar, targetChar)
 
-	weapon, err := r.resolveWeapon(attackerChar, asMonster(input.Attacker), input)
+	weaponSel, err := r.resolveWeapon(attackerChar, asMonster(input.Attacker), input)
 	if err != nil {
 		return nil, false, fmt.Errorf("resolve weapon: %w", err)
-	}
-
-	attackHand := combat.AttackHandMain
-	if input.AttackHand == attackHandOffLabel {
-		attackHand = combat.AttackHandOff
 	}
 
 	ctx := context.Background()
 	resolveCtx := combat.WithCombatantLookup(ctx, reg)
 	gameCtx := gamectx.NewGameContext(gamectx.GameContextConfig{CharacterRegistry: charReg})
 	resolveCtx = gamectx.WithGameContext(resolveCtx, gameCtx)
+	if weaponSel.twoWeapon != nil {
+		// off_hand_strike: install the toolkit-built TwoWeaponContext so the
+		// rulebook's off-hand validation (light-weapon check + bonus-action
+		// gate) doesn't hard-fail (rpg-toolkit#712).
+		resolveCtx = combat.WithTwoWeaponContext(resolveCtx, weaponSel.twoWeapon)
+	}
 	if r.encounterData != nil {
 		resolveCtx = gamectx.WithRoom(resolveCtx, newEncounterHexRoom(r.encounterData))
 		resolveCtx = gamectx.WithReactionReadiness(resolveCtx, buildReactionReadinessMap(r.encounterData))
@@ -466,9 +505,9 @@ func (r *Dnd5eCombatResolver) prepareHeldAttack(input tkenc.AttackInput) (*heldA
 	return &heldAttackPrep{
 		attackerID: attackerID,
 		targetID:   targetID,
-		weapon:     weapon,
+		weapon:     weaponSel.weapon,
 		resolveCtx: resolveCtx,
 		bus:        bus,
-		attackHand: attackHand,
+		attackHand: weaponSel.attackHand,
 	}, true, nil
 }

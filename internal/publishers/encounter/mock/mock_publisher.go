@@ -13,9 +13,8 @@ import (
 	context "context"
 	reflect "reflect"
 
-	gomock "go.uber.org/mock/gomock"
-
 	encounter "github.com/KirkDiggler/rpg-api/internal/publishers/encounter"
+	gomock "go.uber.org/mock/gomock"
 )
 
 // MockPublisher is a mock of Publisher interface.
