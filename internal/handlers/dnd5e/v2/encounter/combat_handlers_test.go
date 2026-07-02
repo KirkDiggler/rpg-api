@@ -191,9 +191,92 @@ func (s *HandlerSuite) TestTakeAction_NilTarget_InvalidArgument() {
 	s.Require().Equal(codes.InvalidArgument, st.Code())
 }
 
-func (s *HandlerSuite) TestTakeAction_TargetMissingKind_InvalidArgument() {
+// TestTakeAction_NoneTarget_EmptyKind_Forwarded verifies that an ActionTarget
+// with the oneof UNSET — the wire shape the web sends for a TARGET_KIND_NONE
+// action (Dash), per the TargetKind enum contract ("NONE has no oneof arm; fire
+// with an empty ActionTarget") — is no longer rejected as InvalidArgument
+// (rpg-api#605). It must be forwarded to the toolkit untargeted. This suite's
+// flat stat-snapshot seats have no hydrated character, so the toolkit refuses
+// the non-attack ref with ErrNonCombatant → FailedPrecondition; the assertion
+// that matters is that the refusal is state-shaped, not request-shaped.
+func (s *HandlerSuite) TestTakeAction_NoneTarget_EmptyKind_Forwarded() {
+	s.seedCombatEncounter()
+	s.advanceToActivePlayer()
+	ctx := s.activePlayerCtx()
+	req := &encounterv2pb.TakeActionRequest{
+		EncounterId:   combatEncID,
+		ActorEntityId: string(s.activeEntityID()),
+		ActionRef:     &encounterv2pb.Ref{Module: "dnd5e", Type: "combat_abilities", Id: "dash"},
+		Target:        &encounterv2pb.ActionTarget{}, // NONE: oneof deliberately unset
+	}
+	_, err := s.handler.TakeAction(ctx, req)
+	s.Require().Error(err)
+	st, _ := status.FromError(err)
+	s.Require().NotEqual(codes.InvalidArgument, st.Code(),
+		"untargeted (NONE) shape must not be rejected at the envelope — the menu advertises it")
+	s.Require().Equal(codes.FailedPrecondition, st.Code(),
+		"flat seat has no hydrated character; toolkit refuses with ErrNonCombatant")
+}
+
+// TestTakeAction_SelfTarget_Forwarded verifies that the self oneof arm — the
+// wire shape the web sends for a TARGET_KIND_SELF action (Dodge/Hide/
+// Disengage) — is no longer rejected as InvalidArgument (rpg-api#605). The
+// handler translates self → the actor's own entity id and forwards; the flat
+// seat then fails state-shaped (ErrNonCombatant → FailedPrecondition).
+func (s *HandlerSuite) TestTakeAction_SelfTarget_Forwarded() {
+	s.seedCombatEncounter()
+	s.advanceToActivePlayer()
+	ctx := s.activePlayerCtx()
+	req := &encounterv2pb.TakeActionRequest{
+		EncounterId:   combatEncID,
+		ActorEntityId: string(s.activeEntityID()),
+		ActionRef:     &encounterv2pb.Ref{Module: "dnd5e", Type: "combat_abilities", Id: "dodge"},
+		Target: &encounterv2pb.ActionTarget{
+			Kind: &encounterv2pb.ActionTarget_Self{Self: &encounterv2pb.SelfTarget{}},
+		},
+	}
+	_, err := s.handler.TakeAction(ctx, req)
+	s.Require().Error(err)
+	st, _ := status.FromError(err)
+	s.Require().NotEqual(codes.InvalidArgument, st.Code(),
+		"self-targeted shape must not be rejected at the envelope — the menu advertises it")
+	s.Require().Equal(codes.FailedPrecondition, st.Code(),
+		"flat seat has no hydrated character; toolkit refuses with ErrNonCombatant")
+}
+
+// TestTakeAction_EmptyEntityID_InvalidArgument: the entity_id oneof arm SET but
+// carrying an empty string is a malformed request (a defect, distinct from the
+// unset-oneof NONE shape) and stays InvalidArgument.
+func (s *HandlerSuite) TestTakeAction_EmptyEntityID_InvalidArgument() {
+	req := makeAttackRequest(entityAliceID, "")
+	_, err := s.handler.TakeAction(s.ctx, req)
+	s.Require().Error(err)
+	st, _ := status.FromError(err)
+	s.Require().Equal(codes.InvalidArgument, st.Code())
+}
+
+// TestTakeAction_PositionTarget_InvalidArgument: position targeting is reserved
+// for future waves and never advertised — still rejected request-shaped.
+func (s *HandlerSuite) TestTakeAction_PositionTarget_InvalidArgument() {
 	req := makeAttackRequest(entityAliceID, monsterGoblin1)
-	req.Target = &encounterv2pb.ActionTarget{} // no oneof set
+	req.Target = &encounterv2pb.ActionTarget{
+		Kind: &encounterv2pb.ActionTarget_Position{Position: &encounterv2pb.Position{X: 1, Y: 0, Z: -1}},
+	}
+	_, err := s.handler.TakeAction(s.ctx, req)
+	s.Require().Error(err)
+	st, _ := status.FromError(err)
+	s.Require().Equal(codes.InvalidArgument, st.Code())
+}
+
+// TestTakeAction_AreaTarget_InvalidArgument: area targeting is reserved for
+// future waves and never advertised — still rejected request-shaped.
+func (s *HandlerSuite) TestTakeAction_AreaTarget_InvalidArgument() {
+	req := makeAttackRequest(entityAliceID, monsterGoblin1)
+	req.Target = &encounterv2pb.ActionTarget{
+		Kind: &encounterv2pb.ActionTarget_Area{Area: &encounterv2pb.AreaTarget{
+			Center: &encounterv2pb.Position{X: 1, Y: 0, Z: -1},
+		}},
+	}
 	_, err := s.handler.TakeAction(s.ctx, req)
 	s.Require().Error(err)
 	st, _ := status.FromError(err)

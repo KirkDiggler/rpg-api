@@ -206,9 +206,72 @@ func (s *MonkUnarmedIntegrationSuite) TestIntegration_MartialArts_DoesNotCrashWi
 		"unarmed strike with Martial Arts condition must not crash from missing ability scores in gamectx registry")
 }
 
+// TestIntegration_TakeAction_DodgeSelfTarget_Resolves is the rpg-api#605 live
+// repro: the pushed menu advertises Dodge with TARGET_KIND_SELF and the web
+// dispatches `target:{self:{}}`; the handler must accept the advertised shape,
+// translate self → the actor's own entity id, and let the toolkit resolve it.
+// Success is observable as consumed action economy (Dodge draws the standard
+// action) via the production GetEncounter snapshot path.
+func (s *MonkUnarmedIntegrationSuite) TestIntegration_TakeAction_DodgeSelfTarget_Resolves() {
+	charliData := s.buildCharliMonkData()
+	s.setupCharRepoMock(charliData)
+	s.seedMonkEncounter()
+	s.advanceToCharli()
+
+	_, err := s.handler.TakeAction(s.charliCtx, &encounterv2pb.TakeActionRequest{
+		EncounterId:   monkIntegEncID,
+		ActorEntityId: monkEntityCharli,
+		ActionRef:     &encounterv2pb.Ref{Module: "dnd5e", Type: "combat_abilities", Id: "dodge"},
+		Target: &encounterv2pb.ActionTarget{
+			Kind: &encounterv2pb.ActionTarget_Self{Self: &encounterv2pb.SelfTarget{}},
+		},
+	})
+	s.Require().NoError(err, "Dodge with the advertised self target shape must resolve")
+
+	s.Require().Equal(int32(0), s.charliActionsRemaining(),
+		"Dodge must consume charli's standard action")
+}
+
+// TestIntegration_TakeAction_DashNoneTarget_Resolves is the rpg-api#605 live
+// repro for TARGET_KIND_NONE: Dash is advertised untargeted; NONE has no
+// ActionTarget oneof arm, so the web sends an ActionTarget with the oneof
+// unset. The handler must accept that shape and forward the action untargeted.
+func (s *MonkUnarmedIntegrationSuite) TestIntegration_TakeAction_DashNoneTarget_Resolves() {
+	charliData := s.buildCharliMonkData()
+	s.setupCharRepoMock(charliData)
+	s.seedMonkEncounter()
+	s.advanceToCharli()
+
+	_, err := s.handler.TakeAction(s.charliCtx, &encounterv2pb.TakeActionRequest{
+		EncounterId:   monkIntegEncID,
+		ActorEntityId: monkEntityCharli,
+		ActionRef:     &encounterv2pb.Ref{Module: "dnd5e", Type: "combat_abilities", Id: "dash"},
+		Target:        &encounterv2pb.ActionTarget{}, // NONE: oneof deliberately unset
+	})
+	s.Require().NoError(err, "Dash with the advertised untargeted (NONE) shape must resolve")
+
+	s.Require().Equal(int32(0), s.charliActionsRemaining(),
+		"Dash must consume charli's standard action")
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+// charliActionsRemaining reads the active actor's standard-actions-remaining
+// through the production GetEncounter snapshot path (charli must be active).
+func (s *MonkUnarmedIntegrationSuite) charliActionsRemaining() int32 {
+	resp, err := s.handler.GetEncounter(s.charliCtx, &encounterv2pb.GetEncounterRequest{
+		EncounterId: monkIntegEncID,
+	})
+	s.Require().NoError(err, "GetEncounter must succeed")
+	ts := resp.GetEncounter().GetTurnState()
+	s.Require().NotNil(ts, "turn-based snapshot must carry a TurnState")
+	s.Require().Equal(monkEntityCharli, ts.GetActiveEntityId(), "charli must still be the active actor")
+	econ := ts.GetEconomy()
+	s.Require().NotNil(econ, "snapshot TurnState must carry the active actor's economy")
+	return econ.GetActionsRemaining()
+}
 
 // buildCharliMonkData constructs character.Data for charli — a L1 monk with
 // DEX 16 > STR 10, no weapon equipped, and MartialArts + UnarmoredDefense conditions

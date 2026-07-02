@@ -34,10 +34,13 @@ type TakeActionInput struct {
 	// through by reference, never inspecting which action it is.
 	ActionRef tkenc.ActionRef
 
-	// TargetEntityID is the entity-id target of the action (Wave 2.8: only
-	// entity-id targeting is wired; position / area / self oneofs are reserved
-	// for future waves and validated handler-side). The orchestrator passes it
-	// through to the toolkit verb.
+	// TargetEntityID is the entity-id target of the action. The handler
+	// translates the proto oneof onto it (rpg-api#605): entity_id arm → that
+	// entity; self arm → the actor's own entity id; unset oneof (untargeted
+	// NONE, e.g. Dash) → empty. position / area arms are reserved for future
+	// waves and rejected handler-side. The orchestrator passes it through to
+	// the toolkit verb; whether the action requires a target is the toolkit's
+	// call (an untargeted attack fails with ErrUnknownTarget).
 	TargetEntityID core.EntityID
 }
 

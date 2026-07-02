@@ -30,10 +30,13 @@ streaming handler — disconnect events do not clean up encounter state.
 
 ### Encounter v2 handler — B (Wave 2.11e update)
 
-`internal/handlers/dnd5e/v2/encounter/` — the v1alpha2 encounter stack
-that orchestrates against the toolkit encounter SDK directly (no
-intermediate orchestrator layer). Wave 2.11e adds the MovementResolver
-wiring, bringing OA-class reactions end-to-end for both movement directions.
+`internal/handlers/dnd5e/v2/encounter/` — the v1alpha2 encounter stack.
+Since the #582 carve-out the RPCs delegate load → verb → persist to the v2
+orchestrator (`internal/orchestrators/encounter/v2`), leaving the handler as
+proto↔input + sentinel→status mapping; the resolvers below stay handler-side
+(depguard-excluded) because they touch the rulebook. Wave 2.11e adds the
+MovementResolver wiring, bringing OA-class reactions end-to-end for both
+movement directions.
 
 What's here as of Wave 2.11e:
 
@@ -46,8 +49,11 @@ What's here as of Wave 2.11e:
   `tkenc.MovementResolver`; delegates to `combat.MoveEntity` per hex step.
   Builds spatial room + combatant registry + gamectx per step so OA chain
   fires correctly (see `encounter.md` MovementResolver wiring section).
-- `TakeAction` (`take_action.go`) — RPC for player-initiated combat actions
-  (Wave 2.8: only the "attack" action ref). Carved onto the v2 orchestrator
+- `TakeAction` (`take_action.go`) — RPC for player-initiated combat actions.
+  Any menu ref routes through the toolkit dispatch (encounter v0.20+); the
+  handler translates the target oneof per the advertised TargetKind contract —
+  entity_id, self (→ actor's own id), unset oneof (untargeted NONE) — and
+  rejects reserved position/area (#605). Carved onto the v2 orchestrator
   (`internal/orchestrators/encounter/v2/take_action.go`, #582 step 5): the
   handler is now proto↔input + sentinel→status mapping; the orchestrator owns
   load (with the #689 hydration cascade so the resolver reads the held
