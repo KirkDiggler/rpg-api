@@ -167,14 +167,18 @@ func (r *Dnd5eCombatResolver) ApplyAttackOutcome(
 	// persists the encounter. The resolver no longer touches the character store.
 
 	return &tkenc.AttackOutcome{
-		Hit:         result.Hit,
-		Critical:    result.Critical,
-		AttackRoll:  result.AttackRoll,
-		AttackBonus: result.AttackBonus,
-		TargetAC:    result.TargetAC,
-		Damage:      result.TotalDamage,
-		DamageType:  string(result.DamageType),
-		Components:  translateDamageComponents(result.Breakdown),
+		Hit:                 result.Hit,
+		Critical:            result.Critical,
+		AttackRoll:          result.AttackRoll,
+		AttackBonus:         result.AttackBonus,
+		TargetAC:            result.TargetAC,
+		Damage:              result.TotalDamage,
+		DamageType:          string(result.DamageType),
+		Components:          translateDamageComponents(result.Breakdown),
+		HasAdvantage:        result.HasAdvantage,
+		HasDisadvantage:     result.HasDisadvantage,
+		AdvantageSources:    result.AdvantageSources,
+		DisadvantageSources: result.DisadvantageSources,
 	}, nil
 }
 

@@ -147,13 +147,17 @@ func (r *Dnd5eCombatResolver) ResolveAttack(input tkenc.AttackInput) (*tkenc.Att
 	}
 
 	return &tkenc.AttackOutcome{
-		Hit:         result.Hit,
-		Critical:    result.Critical,
-		AttackRoll:  result.AttackRoll,
-		AttackBonus: result.AttackBonus,
-		TargetAC:    result.TargetAC,
-		Damage:      result.TotalDamage,
-		DamageType:  string(result.DamageType),
+		Hit:                 result.Hit,
+		Critical:            result.Critical,
+		AttackRoll:          result.AttackRoll,
+		AttackBonus:         result.AttackBonus,
+		TargetAC:            result.TargetAC,
+		Damage:              result.TotalDamage,
+		DamageType:          string(result.DamageType),
+		HasAdvantage:        result.HasAdvantage,
+		HasDisadvantage:     result.HasDisadvantage,
+		AdvantageSources:    result.AdvantageSources,
+		DisadvantageSources: result.DisadvantageSources,
 	}, nil
 }
 

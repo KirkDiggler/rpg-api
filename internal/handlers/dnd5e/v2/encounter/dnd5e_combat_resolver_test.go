@@ -14,6 +14,7 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/abilities"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/combat"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/conditions"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/monster"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
 )
@@ -131,6 +132,57 @@ func (s *Dnd5eCombatResolverTestSuite) TestResolveAttack_HeldMonsterAttacker_Use
 	s.Require().NotNil(outcome)
 	s.GreaterOrEqual(outcome.AttackRoll, 1)
 	s.LessOrEqual(outcome.AttackRoll, 20)
+}
+
+// TestResolveAttack_DefenderDodging_DisadvantageCopiedToOutcome proves the
+// Beat 2 (rpg-api#613) fix end to end through the REAL rulebook chain, not
+// just a field-copy shape check: a live DodgingCondition subscribed to the
+// shared attack bus grants disadvantage to attacks against the dodging
+// character, and the resolver must surface that on AttackOutcome rather than
+// silently dropping it (the bug this PR fixes).
+func (s *Dnd5eCombatResolverTestSuite) TestResolveAttack_DefenderDodging_DisadvantageCopiedToOutcome() {
+	bus := events.NewEventBus()
+	alice, err := character.LoadFromData(s.ctx, s.buildCharacterData("char-alice"), bus)
+	s.Require().NoError(err)
+	goblin := s.heldGoblin("goblin-1")
+
+	// Alice is Dodging: attacks against her carry disadvantage until her next
+	// turn. Applied on the SAME bus the attack chain runs on below — this is
+	// what makes the condition's AttackChain subscription actually fire.
+	dodging := conditions.NewDodgingCondition("char-alice")
+	s.Require().NoError(dodging.Apply(s.ctx, bus))
+
+	encounterData := s.buildEncounterDataWithMonsterDataJSON("goblin-1", s.goblinDataJSON("goblin-1"), "char-alice")
+
+	resolver := v2encounter.NewDnd5eCombatResolverForData(
+		v2encounter.Dnd5eCombatResolverConfig{},
+		encounterData,
+	)
+
+	outcome, err := resolver.ResolveAttack(tkenc.AttackInput{
+		AttackerID:          "goblin-1",
+		TargetID:            "char-alice",
+		AttackerAttackBonus: 4,
+		AttackerDamageDice:  "1d6+2",
+		AttackerDamageType:  "slashing",
+		TargetAC:            14,
+		Attacker:            goblin,
+		Defender:            alice,
+		EventBus:            bus,
+	})
+
+	s.Require().NoError(err)
+	s.Require().NotNil(outcome)
+	s.True(outcome.HasDisadvantage, "attack against a Dodging target must carry disadvantage")
+	s.False(outcome.HasAdvantage)
+	s.Require().NotEmpty(outcome.DisadvantageSources, "the granting condition must be named for narration")
+	found := false
+	for _, ref := range outcome.DisadvantageSources {
+		if ref != nil && ref.ID == "dodging" {
+			found = true
+		}
+	}
+	s.True(found, "disadvantage source should name the Dodging condition, got %+v", outcome.DisadvantageSources)
 }
 
 // ---------------------------------------------------------------------------
@@ -285,6 +337,16 @@ func (s *Dnd5eCombatResolverTestSuite) TestResolveAttack_OutcomeTranslation_HitS
 	} else {
 		s.Equal(0, outcome.Damage, "no damage on a miss")
 	}
+
+	// Beat 2 (rpg-api#613): no condition is active on either side of this
+	// attack, so the advantage/disadvantage fields the resolver now copies
+	// from combat.AttackResult must reflect that — not silently hardcoded
+	// true, and not left as a stale zero-value that happens to match by
+	// coincidence.
+	s.False(outcome.HasAdvantage, "no Dodging/Hidden condition is active — no advantage expected")
+	s.False(outcome.HasDisadvantage, "no Dodging/Hidden condition is active — no disadvantage expected")
+	s.Empty(outcome.AdvantageSources)
+	s.Empty(outcome.DisadvantageSources)
 }
 
 // ---------------------------------------------------------------------------
