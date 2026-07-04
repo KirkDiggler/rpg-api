@@ -103,7 +103,17 @@ const (
 	fixtureDefault        = ""
 	fixtureWave1Rogue     = "wave-1-rogue"
 	fixtureWave2Monk      = "wave-2-monk"
+	fixtureWave2Beat2     = "wave-2-beat2"
 	fixtureWave3Barbarian = "wave-3-barbarian"
+
+	// beat2GoblinPassivePerception is deliberately set well below a typical
+	// goblin's real SRD passive Perception (9, from WIS 8) so the Hide beat
+	// of the wave-2-beat2 playtest script succeeds reliably rather than
+	// probabilistically: charli's Stealth modifier is DEX +3 with no
+	// proficiency, so even a worst-case roll of 1 (total 4) beats this.
+	// Per the design doc's own R6 scope decision, only the Hide-SUCCESS path
+	// is exercised live; failure is covered by a toolkit unit test instead.
+	beat2GoblinPassivePerception = 5
 
 	// wave3GoblinHP is bumped from the standard 7 so raging-bob's greataxe
 	// (1d12 + STR3 + Rage2 = 6-17) doesn't one-shot the goblin. The playtest
@@ -113,6 +123,7 @@ const (
 
 	weaponShortsword    = "shortsword"
 	weaponGreataxe      = "greataxe"
+	weaponLongsword     = "longsword"
 	inventoryTypeWeapon = "weapon"
 
 	damageTypePiercing    = "piercing"
@@ -133,12 +144,14 @@ var (
 	playerBob    = encountercore.PlayerID("bob")
 	playerWendy  = encountercore.PlayerID("wendy")
 	playerCharli = encountercore.PlayerID("charli")
+	playerFinn   = encountercore.PlayerID("finn")
 
 	entityAlice  = encountercore.EntityID("char-alice")
 	entityBob    = encountercore.EntityID("char-bob")
 	entityWendy  = encountercore.EntityID("char-wendy")
 	entityGoblin = encountercore.EntityID("goblin-1")
 	entityCharli = encountercore.EntityID("char-charli")
+	entityFinn   = encountercore.EntityID("char-finn")
 )
 
 func main() {
@@ -155,7 +168,8 @@ func run() error {
 		redisAddr   = flag.String("redis-addr", "", "Redis address (default: $REDIS_ADDR or "+defaultRedisAddr+")")
 		encounterID = flag.String("encounter-id", defaultEncounterID, "Encounter ID to seed under enc:v2:<id>")
 		mode        = flag.String("mode", modeTurnBased, "Encounter mode: turn_based or free_roam")
-		fixture     = flag.String("fixture", fixtureDefault, "Fixture to seed: wave-1-rogue, wave-2-monk, wave-3-barbarian. Default: alice L2 + bob + wendy.")
+		fixture     = flag.String("fixture", fixtureDefault,
+			"Fixture to seed: wave-1-rogue, wave-2-monk, wave-2-beat2, wave-3-barbarian. Default: alice L2 + bob + wendy.")
 	)
 	flag.Parse()
 
@@ -205,6 +219,15 @@ func run() error {
 		if err != nil {
 			return fmt.Errorf("build encounter: %w", err)
 		}
+	case fixtureWave2Beat2:
+		chars = []*toolkitchar.Data{
+			buildCharliMonkData(),
+			buildFinnFighterData(),
+		}
+		encData, err = buildWave2Beat2EncounterData(*encounterID, encMode)
+		if err != nil {
+			return fmt.Errorf("build encounter: %w", err)
+		}
 	case fixtureWave3Barbarian:
 		chars = []*toolkitchar.Data{
 			buildBobBarbarianData(),
@@ -234,8 +257,8 @@ func run() error {
 			return fmt.Errorf("build encounter: %w", err)
 		}
 	default:
-		return fmt.Errorf("unknown fixture %q: supported values are %q, %q, %q, and %q",
-			*fixture, fixtureDefault, fixtureWave1Rogue, fixtureWave2Monk, fixtureWave3Barbarian)
+		return fmt.Errorf("unknown fixture %q: supported values are %q, %q, %q, %q, and %q",
+			*fixture, fixtureDefault, fixtureWave1Rogue, fixtureWave2Monk, fixtureWave2Beat2, fixtureWave3Barbarian)
 	}
 
 	// 1. Seed characters first so they exist when the harness or handler
@@ -664,6 +687,133 @@ func buildWave2MonkEncounterData(encounterID string, mode encountercore.Encounte
 	}
 
 	// Goblin adjacent to charli (Q:1 R:0 — euclidean distance 1.0 ≤ 1.5).
+	if err := enc.AddMonster(tkenc.MonsterInput{
+		ID:          entityGoblin,
+		Position:    encountercore.Hex{Q: 1, R: 0, S: -1},
+		HP:          goblinData.HitPoints,
+		MaxHP:       goblinData.MaxHitPoints,
+		AC:          goblinData.ArmorClass,
+		Speed:       6,
+		MonsterRef:  monsterRefGoblin,
+		AttackBonus: 4,
+		DamageDice:  goblinBaseDamageDice,
+		DamageType:  damageTypeSlashing,
+		DataJSON:    goblinDataJSON,
+	}); err != nil {
+		return nil, fmt.Errorf("add goblin: %w", err)
+	}
+
+	if mode == encountercore.ModeTurnBased {
+		if err := enc.SetMode(encountercore.ModeTurnBased); err != nil {
+			return nil, fmt.Errorf("set mode turn_based: %w", err)
+		}
+	}
+
+	return enc.ToData(), nil
+}
+
+// buildFinnFighterData returns a level-1 fighter fixture for the
+// wave-2-beat2 scenario (design doc: "the other three brothers — Fighter
+// recommended, simplest to read a 'gets hit' beat off"). Chain mail (no
+// shield) + longsword, STR-based. HP is deliberately modest (12) so a
+// couple of goblin hits plausibly drive it to 0 for the death-gate beat.
+func buildFinnFighterData() *toolkitchar.Data {
+	now := time.Now().UTC()
+	return &toolkitchar.Data{
+		ID:               string(entityFinn),
+		PlayerID:         string(playerFinn),
+		Name:             "Finn the Fighter",
+		Level:            1,
+		ProficiencyBonus: 2,
+		ClassID:          classes.Fighter,
+		HitPoints:        12,
+		MaxHitPoints:     12,
+		ArmorClass:       16, // chain mail, no shield
+		AbilityScores: shared.AbilityScores{
+			abilities.STR: 16, // +3 — fighter primary, longsword
+			abilities.DEX: 12,
+			abilities.CON: 14, // +2
+			abilities.INT: 10,
+			abilities.WIS: 10,
+			abilities.CHA: 8,
+		},
+		EquipmentSlots: toolkitchar.EquipmentSlots{
+			toolkitchar.SlotMainHand: weaponLongsword,
+		},
+		Inventory: []toolkitchar.InventoryItemData{
+			{Type: inventoryTypeWeapon, ID: weaponLongsword, Quantity: 1},
+		},
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+}
+
+// buildWave2Beat2EncounterData seeds the wave-2-beat2 encounter (Beat 2 —
+// mechanical effects: Dodge/Help/Hide, rpg-project#75): charli (monk) +
+// finn (fighter) + one goblin, per the design doc's devseed-fixture section.
+//
+// Positions: charli and finn start adjacent to each other; the goblin starts
+// two hexes from finn — well within its 6-hex (30ft) move speed, satisfying
+// "positioned so the goblin can reach the Fighter in one move" — and close
+// enough to also observe charli for the Hide beat (perception.CanSeeAt is
+// currently a range-only stub, so exact LOS geometry isn't required).
+//
+// The goblin's PassivePerception is overridden to beat2GoblinPassivePerception
+// (well below its real SRD value) so the Hide beat's Stealth check succeeds
+// reliably rather than probabilistically, per the design doc's R6 scope
+// decision (only Hide-success is exercised live).
+func buildWave2Beat2EncounterData(encounterID string, mode encountercore.EncounterMode) (*tkenc.Data, error) {
+	transport := tkenc.NewInMemoryTransport()
+	defer func() { _ = transport.Close() }()
+	broker := tkenc.NewBroker(transport)
+	defer func() { _ = broker.Close() }()
+
+	enc := tkenc.New(context.Background(), encountercore.EncounterID(encounterID), broker)
+
+	// charli (monk, unarmed) — same stat line as wave-2-monk.
+	if err := enc.AddPlayer(tkenc.PlayerInput{
+		PlayerID:    playerCharli,
+		EntityID:    entityCharli,
+		Position:    encountercore.Hex{Q: 0, R: 0, S: 0},
+		SightRange:  10,
+		HP:          10,
+		MaxHP:       10,
+		AC:          15,
+		AttackBonus: 5,
+		DamageDice:  "1d4+3",
+		DamageType:  damageTypeBludgeoning,
+	}); err != nil {
+		return nil, fmt.Errorf("add charli: %w", err)
+	}
+
+	// finn (fighter, longsword) — adjacent to charli. AttackBonus: STR +3 +
+	// proficiency +2 = 5.
+	if err := enc.AddPlayer(tkenc.PlayerInput{
+		PlayerID:    playerFinn,
+		EntityID:    entityFinn,
+		Position:    encountercore.Hex{Q: -1, R: 0, S: 1},
+		SightRange:  10,
+		HP:          12,
+		MaxHP:       12,
+		AC:          16,
+		AttackBonus: 5,
+		DamageDice:  "1d8+3",
+		DamageType:  damageTypeSlashing,
+	}); err != nil {
+		return nil, fmt.Errorf("add finn: %w", err)
+	}
+
+	goblin := monster.NewGoblin(string(entityGoblin))
+	goblinData := goblin.ToData()
+	goblinData.Senses.PassivePerception = beat2GoblinPassivePerception
+	goblinDataJSON, err := json.Marshal(goblinData)
+	if err != nil {
+		return nil, fmt.Errorf("marshal goblin data: %w", err)
+	}
+
+	// Two hexes from finn — within the goblin's 6-hex move speed ("reach the
+	// Fighter in one move"), and close enough to observe charli for the Hide
+	// beat.
 	if err := enc.AddMonster(tkenc.MonsterInput{
 		ID:          entityGoblin,
 		Position:    encountercore.Hex{Q: 1, R: 0, S: -1},
