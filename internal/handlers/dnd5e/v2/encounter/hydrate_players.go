@@ -71,13 +71,45 @@ func attachPlayerCharacterData(
 			// stat-snapshot stand-in. Not fatal to the RPC.
 			continue
 		}
-		blob, err := json.Marshal(out.Character.Data)
+		charData := reconciledCharacterHP(out.Character.Data, pd)
+		blob, err := json.Marshal(charData)
 		if err != nil {
 			return fmt.Errorf("marshal character data for %q: %w", pd.EntityID, err)
 		}
 		pd.DataJSON = blob
 	}
 	return nil
+}
+
+// reconciledCharacterHP returns a copy of charData with HitPoints/MaxHitPoints
+// overridden from the encounter's own PlayerData snapshot (rpg-api#612),
+// mirroring syncMonsterDataFromSnapshot's role for monsters (rpg-toolkit
+// encounter/npc.go): once PlayerData.HP/MaxHP is seeded (seedPlayerHP at
+// AddPlayer time), the ENCOUNTER's snapshot is the single authoritative
+// combat-facing HP, not the character-store blob. Without this, a store
+// value that has drifted from the snapshot (e.g. a non-combat write like
+// the ActivateFeature self-load bypass, rpg-toolkit#691, still open) would
+// silently override combat-tracked HP on every load.
+//
+// Only overrides when the snapshot has actually been seeded (pd.MaxHP > 0)
+// — an unseeded snapshot (a pre-#612 encounter, or a seat added before any
+// character existed) leaves the store's value alone rather than zeroing it
+// out, matching syncMonsterDataFromSnapshot's own "override only when the
+// snapshot means something" guard.
+//
+// Returns a shallow copy: HitPoints/MaxHitPoints are plain ints, so the copy
+// does not alias the original struct for those fields, and this function
+// never mutates charData in place — doing so would leak the transient
+// snapshot HP back into the char-store's own record on the next call that
+// reuses the same *character.Data pointer.
+func reconciledCharacterHP(charData *tkcharacter.Data, pd *tkenc.PlayerData) *tkcharacter.Data {
+	if charData == nil || pd == nil || pd.MaxHP <= 0 {
+		return charData
+	}
+	reconciled := *charData
+	reconciled.HitPoints = pd.HP
+	reconciled.MaxHitPoints = pd.MaxHP
+	return &reconciled
 }
 
 // attachActorCharacterData attaches the transient PlayerData.DataJSON for a
@@ -122,7 +154,8 @@ func attachActorCharacterData(
 	if out == nil || out.Character == nil || out.Character.Data == nil {
 		return false, nil
 	}
-	blob, err := json.Marshal(out.Character.Data)
+	charData := reconciledCharacterHP(out.Character.Data, pd)
+	blob, err := json.Marshal(charData)
 	if err != nil {
 		return false, fmt.Errorf("marshal character data for %q: %w", actorID, err)
 	}
