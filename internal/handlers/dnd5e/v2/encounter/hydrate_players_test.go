@@ -21,6 +21,8 @@ import (
 
 	"github.com/stretchr/testify/suite"
 
+	"go.uber.org/mock/gomock"
+
 	"github.com/KirkDiggler/rpg-api/internal/entities"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	charactermock "github.com/KirkDiggler/rpg-api/internal/repositories/character/mock"
@@ -28,7 +30,6 @@ import (
 	tkenccore "github.com/KirkDiggler/rpg-toolkit/encounter/core"
 	"github.com/KirkDiggler/rpg-toolkit/events"
 	tkcharacter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
-	"go.uber.org/mock/gomock"
 )
 
 // ---------------------------------------------------------------------------
