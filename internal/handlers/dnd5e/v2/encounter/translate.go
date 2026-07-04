@@ -12,6 +12,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	encounterv2pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/encounter"
+	toolkitcore "github.com/KirkDiggler/rpg-toolkit/core"
 	"github.com/KirkDiggler/rpg-toolkit/encounter"
 	"github.com/KirkDiggler/rpg-toolkit/encounter/core"
 	"github.com/KirkDiggler/rpg-toolkit/encounter/events"
@@ -392,16 +393,48 @@ func translateAttackResolvedEvent(e *events.AttackResolvedEvent, viewer core.Pla
 		CorrelationId: string(e.CorrelationID()),
 		Event: &encounterv2pb.EncounterEvent_AttackResolved{
 			AttackResolved: &encounterv2pb.AttackResolved{
-				AttackerEntityId: string(e.AttackerID),
-				TargetEntityId:   string(e.TargetID),
-				Hit:              e.Hit,
-				Critical:         e.Critical,
-				AttackRoll:       int32(e.AttackRoll),  //nolint:gosec // a d20 roll fits int32
-				AttackBonus:      int32(e.AttackBonus), //nolint:gosec // a to-hit modifier fits int32
-				TargetAc:         int32(e.TargetAC),    //nolint:gosec // an AC value fits int32
+				AttackerEntityId:    string(e.AttackerID),
+				TargetEntityId:      string(e.TargetID),
+				Hit:                 e.Hit,
+				Critical:            e.Critical,
+				AttackRoll:          int32(e.AttackRoll),  //nolint:gosec // a d20 roll fits int32
+				AttackBonus:         int32(e.AttackBonus), //nolint:gosec // a to-hit modifier fits int32
+				TargetAc:            int32(e.TargetAC),    //nolint:gosec // an AC value fits int32
+				HasAdvantage:        e.HasAdvantage,
+				HasDisadvantage:     e.HasDisadvantage,
+				AdvantageSources:    toolkitRefsToProto(e.AdvantageSources),
+				DisadvantageSources: toolkitRefsToProto(e.DisadvantageSources),
 			},
 		},
 	}, nil
+}
+
+// toolkitRefsToProto projects a slice of the toolkit's structured core.Ref
+// (module/type/id) onto the proto Ref triple, verbatim — no rules
+// conditionals, no remapping (Invariant 2). Used for AttackResolved's
+// advantage/disadvantage source refs, which the rulebook already resolved
+// (e.g. refs.Conditions.Dodging()); rpg-api only forwards them. Returns nil
+// for an empty/nil input, AND when every entry is nil, so the proto field
+// stays unset rather than an allocated-but-empty slice on the wire.
+func toolkitRefsToProto(refs []*toolkitcore.Ref) []*encounterv2pb.Ref {
+	if len(refs) == 0 {
+		return nil
+	}
+	out := make([]*encounterv2pb.Ref, 0, len(refs))
+	for _, r := range refs {
+		if r == nil {
+			continue
+		}
+		out = append(out, &encounterv2pb.Ref{
+			Module: r.Module,
+			Type:   r.Type,
+			Id:     r.ID,
+		})
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 // translateTurnStateChangedEvent maps the toolkit's TurnStateChangedEvent — the

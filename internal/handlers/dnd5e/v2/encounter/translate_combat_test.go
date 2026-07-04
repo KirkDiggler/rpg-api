@@ -6,6 +6,7 @@ import (
 
 	encounterv2pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/encounter"
 	v2encounter "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v2/encounter"
+	toolkitcore "github.com/KirkDiggler/rpg-toolkit/core"
 	"github.com/KirkDiggler/rpg-toolkit/encounter/core"
 	"github.com/KirkDiggler/rpg-toolkit/encounter/events"
 )
@@ -24,6 +25,7 @@ func (s *TranslateSuite) TestTranslateEvent_AttackResolvedEvent_Hit_Translated()
 		"enc-1", uint64(10),
 		"char-A", "goblin-1",
 		true, false, 18, 4, 15,
+		false, false, nil, nil,
 		map[core.PlayerID]events.AttackResolvedSlice{
 			"player-A": {Visible: true},
 		},
@@ -51,6 +53,85 @@ func (s *TranslateSuite) TestTranslateEvent_AttackResolvedEvent_Hit_Translated()
 	s.Require().Equal("corr-attack-1", out.GetCorrelationId())
 }
 
+func (s *TranslateSuite) TestTranslateEvent_AttackResolvedEvent_Advantage_SourcesTranslated() {
+	// Beat 2 (rpg-api#613): has_advantage/has_disadvantage + source refs are
+	// copied verbatim from the toolkit event onto the proto — the fields the
+	// resolver call sites used to silently drop.
+	evt := events.NewAttackResolvedEvent(
+		"enc-1", uint64(12),
+		"char-A", "goblin-1",
+		true, false, 18, 4, 15,
+		true, false,
+		[]*toolkitcore.Ref{{Module: "dnd5e", Type: "conditions", ID: "dodging"}},
+		nil,
+		map[core.PlayerID]events.AttackResolvedSlice{
+			"player-A": {Visible: true},
+		},
+	)
+	out, err := v2encounter.TranslateEvent(evt, "player-A", s.now)
+	s.Require().NoError(err)
+
+	atk := out.GetAttackResolved()
+	s.Require().NotNil(atk)
+	s.Require().True(atk.GetHasAdvantage())
+	s.Require().False(atk.GetHasDisadvantage())
+	s.Require().Empty(atk.GetDisadvantageSources())
+	s.Require().Len(atk.GetAdvantageSources(), 1)
+	s.Require().Equal("dnd5e", atk.GetAdvantageSources()[0].GetModule())
+	s.Require().Equal("conditions", atk.GetAdvantageSources()[0].GetType())
+	s.Require().Equal("dodging", atk.GetAdvantageSources()[0].GetId())
+}
+
+func (s *TranslateSuite) TestTranslateEvent_AttackResolvedEvent_Disadvantage_SourcesTranslated() {
+	evt := events.NewAttackResolvedEvent(
+		"enc-1", uint64(13),
+		"char-A", "goblin-1",
+		false, false, 6, 4, 15,
+		false, true,
+		nil,
+		[]*toolkitcore.Ref{{Module: "dnd5e", Type: "conditions", ID: "hidden"}},
+		map[core.PlayerID]events.AttackResolvedSlice{
+			"player-A": {Visible: true},
+		},
+	)
+	out, err := v2encounter.TranslateEvent(evt, "player-A", s.now)
+	s.Require().NoError(err)
+
+	atk := out.GetAttackResolved()
+	s.Require().NotNil(atk)
+	s.Require().False(atk.GetHasAdvantage())
+	s.Require().True(atk.GetHasDisadvantage())
+	s.Require().Empty(atk.GetAdvantageSources())
+	s.Require().Len(atk.GetDisadvantageSources(), 1)
+	s.Require().Equal("hidden", atk.GetDisadvantageSources()[0].GetId())
+}
+
+// TestTranslateEvent_AttackResolvedEvent_AllNilSources_EmptySlice_NotAllocated
+// is a Copilot-review regression test (rpg-api#613 PR review): a non-empty
+// input slice whose entries are all nil must still produce a nil proto
+// field, not an allocated-but-empty []*Ref — toolkitRefsToProto's doc
+// comment promises nil for "nothing to send," and this is the one input
+// shape (len>0, all nil) that a naive len-check-only guard would miss.
+func (s *TranslateSuite) TestTranslateEvent_AttackResolvedEvent_AllNilSources_EmptySlice_NotAllocated() {
+	evt := events.NewAttackResolvedEvent(
+		"enc-1", uint64(14),
+		"char-A", "goblin-1",
+		true, false, 18, 4, 15,
+		true, false,
+		[]*toolkitcore.Ref{nil, nil},
+		nil,
+		map[core.PlayerID]events.AttackResolvedSlice{
+			"player-A": {Visible: true},
+		},
+	)
+	out, err := v2encounter.TranslateEvent(evt, "player-A", s.now)
+	s.Require().NoError(err)
+
+	atk := out.GetAttackResolved()
+	s.Require().NotNil(atk)
+	s.Require().Nil(atk.AdvantageSources, "all-nil input must yield a nil proto field, not an allocated empty slice")
+}
+
 func (s *TranslateSuite) TestTranslateEvent_AttackResolvedEvent_Miss_Translated() {
 	// The #594 fix: a miss must be visible on the wire. AttackResolved fires on
 	// miss (no parallel DamageDealt), so this is the only event carrying the
@@ -59,6 +140,7 @@ func (s *TranslateSuite) TestTranslateEvent_AttackResolvedEvent_Miss_Translated(
 		"enc-1", uint64(11),
 		"char-A", "goblin-1",
 		false, false, 3, 4, 15,
+		false, false, nil, nil,
 		map[core.PlayerID]events.AttackResolvedSlice{
 			"player-A": {Visible: true},
 		},
@@ -78,6 +160,7 @@ func (s *TranslateSuite) TestTranslateEvent_AttackResolvedEvent_NotVisible_SawNo
 		"enc-1", uint64(10),
 		"char-A", "goblin-1",
 		true, false, 18, 4, 15,
+		false, false, nil, nil,
 		map[core.PlayerID]events.AttackResolvedSlice{
 			"player-A": {Visible: false},
 		},
