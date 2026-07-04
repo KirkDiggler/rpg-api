@@ -3,13 +3,13 @@ module github.com/KirkDiggler/rpg-api
 go 1.25.3
 
 require (
-	github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20260601231022-a92fb6b11f91
+	github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20260704152519-f224488c38b4
 	github.com/KirkDiggler/rpg-toolkit/core v0.10.0
 	github.com/KirkDiggler/rpg-toolkit/dice v0.3.2
-	github.com/KirkDiggler/rpg-toolkit/encounter v0.21.4
+	github.com/KirkDiggler/rpg-toolkit/encounter v0.24.0
 	github.com/KirkDiggler/rpg-toolkit/events v0.6.2
 	github.com/KirkDiggler/rpg-toolkit/rpgerr v0.1.2
-	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.61.4
+	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.64.0
 	github.com/KirkDiggler/rpg-toolkit/tools/environments v0.4.0
 	github.com/KirkDiggler/rpg-toolkit/tools/spatial v0.5.0
 	github.com/alicebob/miniredis/v2 v2.35.0
@@ -22,7 +22,7 @@ require (
 	github.com/testcontainers/testcontainers-go v0.40.0
 	github.com/testcontainers/testcontainers-go/modules/redis v0.40.0
 	go.uber.org/mock v0.6.0
-	google.golang.org/grpc v1.81.1
+	google.golang.org/grpc v1.82.0
 	google.golang.org/protobuf v1.36.11
 )
 
@@ -82,10 +82,10 @@ require (
 	go.opentelemetry.io/otel v1.43.0 // indirect
 	go.opentelemetry.io/otel/metric v1.43.0 // indirect
 	go.opentelemetry.io/otel/trace v1.43.0 // indirect
-	golang.org/x/crypto v0.48.0 // indirect
-	golang.org/x/net v0.51.0 // indirect
-	golang.org/x/sys v0.42.0 // indirect
-	golang.org/x/text v0.34.0 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20260226221140-a57be14db171 // indirect
+	golang.org/x/crypto v0.50.0 // indirect
+	golang.org/x/net v0.53.0 // indirect
+	golang.org/x/sys v0.43.0 // indirect
+	golang.org/x/text v0.36.0 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20260414002931-afd174a4e478 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
