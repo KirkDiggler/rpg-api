@@ -414,8 +414,8 @@ func translateAttackResolvedEvent(e *events.AttackResolvedEvent, viewer core.Pla
 // conditionals, no remapping (Invariant 2). Used for AttackResolved's
 // advantage/disadvantage source refs, which the rulebook already resolved
 // (e.g. refs.Conditions.Dodging()); rpg-api only forwards them. Returns nil
-// for an empty/nil input so the proto field stays unset rather than an
-// allocated empty slice.
+// for an empty/nil input, AND when every entry is nil, so the proto field
+// stays unset rather than an allocated-but-empty slice on the wire.
 func toolkitRefsToProto(refs []*toolkitcore.Ref) []*encounterv2pb.Ref {
 	if len(refs) == 0 {
 		return nil
@@ -430,6 +430,9 @@ func toolkitRefsToProto(refs []*toolkitcore.Ref) []*encounterv2pb.Ref {
 			Type:   r.Type,
 			Id:     r.ID,
 		})
+	}
+	if len(out) == 0 {
+		return nil
 	}
 	return out
 }

@@ -106,6 +106,32 @@ func (s *TranslateSuite) TestTranslateEvent_AttackResolvedEvent_Disadvantage_Sou
 	s.Require().Equal("hidden", atk.GetDisadvantageSources()[0].GetId())
 }
 
+// TestTranslateEvent_AttackResolvedEvent_AllNilSources_EmptySlice_NotAllocated
+// is a Copilot-review regression test (rpg-api#613 PR review): a non-empty
+// input slice whose entries are all nil must still produce a nil proto
+// field, not an allocated-but-empty []*Ref — toolkitRefsToProto's doc
+// comment promises nil for "nothing to send," and this is the one input
+// shape (len>0, all nil) that a naive len-check-only guard would miss.
+func (s *TranslateSuite) TestTranslateEvent_AttackResolvedEvent_AllNilSources_EmptySlice_NotAllocated() {
+	evt := events.NewAttackResolvedEvent(
+		"enc-1", uint64(14),
+		"char-A", "goblin-1",
+		true, false, 18, 4, 15,
+		true, false,
+		[]*toolkitcore.Ref{nil, nil},
+		nil,
+		map[core.PlayerID]events.AttackResolvedSlice{
+			"player-A": {Visible: true},
+		},
+	)
+	out, err := v2encounter.TranslateEvent(evt, "player-A", s.now)
+	s.Require().NoError(err)
+
+	atk := out.GetAttackResolved()
+	s.Require().NotNil(atk)
+	s.Require().Nil(atk.AdvantageSources, "all-nil input must yield a nil proto field, not an allocated empty slice")
+}
+
 func (s *TranslateSuite) TestTranslateEvent_AttackResolvedEvent_Miss_Translated() {
 	// The #594 fix: a miss must be visible on the wire. AttackResolved fires on
 	// miss (no parallel DamageDealt), so this is the only event carrying the
