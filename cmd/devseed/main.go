@@ -126,6 +126,17 @@ const (
 	weaponLongsword     = "longsword"
 	inventoryTypeWeapon = "weapon"
 
+	// armorLeather / armorChainMail match the toolkit's armor.Leather /
+	// armor.ChainMail IDs ("leather" / "chain-mail") — see
+	// rpg-toolkit/rulebooks/dnd5e/armor. Leather is base AC 11 + unlimited
+	// DEX bonus (Alice: 11+3=14). Chain mail is base AC 16 with MaxDexBonus 0
+	// (Finn: 16+0=16). Kept as local string literals (mirrors weaponLongsword
+	// above) rather than importing the armor package, since devseed only
+	// needs the item ID, not the toolkit's AC-calculation types.
+	armorLeather       = "leather"
+	armorChainMail     = "chain-mail"
+	inventoryTypeArmor = "armor"
+
 	damageTypePiercing    = "piercing"
 	damageTypeSlashing    = "slashing"
 	damageTypeFire        = "fire"
@@ -376,7 +387,7 @@ func buildAliceRogueData() *toolkitchar.Data {
 		ClassID:          classes.Rogue,
 		HitPoints:        16,
 		MaxHitPoints:     16,
-		ArmorClass:       14,
+		ArmorClass:       14, // 11 (leather) + DEX(+3)
 		AbilityScores: shared.AbilityScores{
 			abilities.STR: 12, // +1
 			abilities.DEX: 16, // +3 — finesse weapons use DEX
@@ -387,9 +398,11 @@ func buildAliceRogueData() *toolkitchar.Data {
 		},
 		EquipmentSlots: toolkitchar.EquipmentSlots{
 			toolkitchar.SlotMainHand: weaponShortsword,
+			toolkitchar.SlotArmor:    armorLeather,
 		},
 		Inventory: []toolkitchar.InventoryItemData{
 			{Type: inventoryTypeWeapon, ID: weaponShortsword, Quantity: 1},
+			{Type: inventoryTypeArmor, ID: armorLeather, Quantity: 1},
 		},
 		Conditions: []json.RawMessage{sneakJSON},
 		CreatedAt:  now,
@@ -728,7 +741,7 @@ func buildFinnFighterData() *toolkitchar.Data {
 		ClassID:          classes.Fighter,
 		HitPoints:        12,
 		MaxHitPoints:     12,
-		ArmorClass:       16, // chain mail, no shield
+		ArmorClass:       16, // chain mail (16), MaxDexBonus 0 — no shield
 		AbilityScores: shared.AbilityScores{
 			abilities.STR: 16, // +3 — fighter primary, longsword
 			abilities.DEX: 12,
@@ -739,9 +752,11 @@ func buildFinnFighterData() *toolkitchar.Data {
 		},
 		EquipmentSlots: toolkitchar.EquipmentSlots{
 			toolkitchar.SlotMainHand: weaponLongsword,
+			toolkitchar.SlotArmor:    armorChainMail,
 		},
 		Inventory: []toolkitchar.InventoryItemData{
 			{Type: inventoryTypeWeapon, ID: weaponLongsword, Quantity: 1},
+			{Type: inventoryTypeArmor, ID: armorChainMail, Quantity: 1},
 		},
 		CreatedAt: now,
 		UpdatedAt: now,
@@ -863,7 +878,7 @@ func buildAliceRogueL1Data() *toolkitchar.Data {
 		ClassID:          classes.Rogue,
 		HitPoints:        10,
 		MaxHitPoints:     10,
-		ArmorClass:       14,
+		ArmorClass:       14, // 11 (leather) + DEX(+3)
 		AbilityScores: shared.AbilityScores{
 			abilities.STR: 12,
 			abilities.DEX: 16, // +3 — finesse weapons use DEX
@@ -874,9 +889,11 @@ func buildAliceRogueL1Data() *toolkitchar.Data {
 		},
 		EquipmentSlots: toolkitchar.EquipmentSlots{
 			toolkitchar.SlotMainHand: weaponShortsword,
+			toolkitchar.SlotArmor:    armorLeather,
 		},
 		Inventory: []toolkitchar.InventoryItemData{
 			{Type: inventoryTypeWeapon, ID: weaponShortsword, Quantity: 1},
+			{Type: inventoryTypeArmor, ID: armorLeather, Quantity: 1},
 		},
 		Conditions: []json.RawMessage{sneakJSON},
 		CreatedAt:  now,
