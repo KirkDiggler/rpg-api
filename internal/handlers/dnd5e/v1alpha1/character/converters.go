@@ -540,6 +540,10 @@ func convertChoiceCategoryToProto(category shared.ChoiceCategory) dnd5ev1alpha1.
 		return dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_EQUIPMENT
 	case shared.ChoiceFightingStyle:
 		return dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_FIGHTING_STYLE
+	case shared.ChoiceToolProficiency:
+		return dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_TOOLS
+	case shared.ChoiceExpertise:
+		return dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_EXPERTISE
 	case shared.ChoiceRace:
 		return dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_RACE
 	case shared.ChoiceClass:
@@ -2272,9 +2276,16 @@ func loadAllClassChoices(classID classes.Class) []*dnd5ev1alpha1.Choice {
 		}
 	}
 
+	// Add expertise choice if present (e.g., Rogue, Bard)
+	if requirements.Expertise != nil && requirements.Expertise.Count > 0 {
+		expertiseChoice := createExpertiseChoice(requirements.Expertise)
+		if expertiseChoice != nil {
+			result = append(result, expertiseChoice)
+		}
+	}
+
 	// TODO: Add other choice types as needed:
 	// - Language choices (requirements.Languages)
-	// - Expertise (requirements.Expertise)
 
 	return result
 }
@@ -2646,6 +2657,42 @@ func createToolChoice(req *choices.ToolRequirement) *dnd5ev1alpha1.Choice {
 		Options: &dnd5ev1alpha1.Choice_ToolOptions{
 			ToolOptions: &dnd5ev1alpha1.ToolOptions{
 				Available: toolOptions,
+			},
+		},
+	}
+}
+
+// createExpertiseChoice converts an expertise requirement to a proto Choice.
+//
+// ExpertiseRequirement has no fixed option list: expertise can apply to any
+// skill the character ends up proficient in (class, race, or background), and
+// that set isn't known until the draft's other choices are recorded. So this
+// advertises the full skill universe here; the toolkit enforces the real
+// subset (proficient skills only) when the choice is submitted and again at
+// ValidateChoices.
+//
+// Tool-based expertise (e.g. thieves' tools) isn't advertised: the toolkit's
+// class-choice write path only records skill selections for expertise today
+// (see handler.go's CHOICE_CATEGORY_EXPERTISE case).
+func createExpertiseChoice(req *choices.ExpertiseRequirement) *dnd5ev1alpha1.Choice {
+	if req == nil || req.Count <= 0 {
+		return nil
+	}
+
+	allSkills := skills.List()
+	skillOptions := make([]dnd5ev1alpha1.Skill, 0, len(allSkills))
+	for _, skill := range allSkills {
+		skillOptions = append(skillOptions, convertSkillToProtoEnum(skill))
+	}
+
+	return &dnd5ev1alpha1.Choice{
+		Id:          string(req.ID),
+		Description: req.Label,
+		ChooseCount: int32(req.Count),
+		ChoiceType:  dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_EXPERTISE,
+		Options: &dnd5ev1alpha1.Choice_ExpertiseOptions{
+			ExpertiseOptions: &dnd5ev1alpha1.ExpertiseOptions{
+				AvailableSkills: skillOptions,
 			},
 		},
 	}
