@@ -687,7 +687,7 @@ func (o *Orchestrator) FinalizeDraft(ctx context.Context, input *FinalizeDraftIn
 
 	// Validate all choices
 	if err = draft.ValidateChoices(); err != nil {
-		return nil, fmt.Errorf("draft validation failed: %w", err)
+		return nil, apierr.InvalidArgumentf("draft validation failed: %v", err)
 	}
 
 	// Convert to character with generated ID
