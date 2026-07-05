@@ -815,6 +815,194 @@ func (s *TranslateSuite) TestTranslateEvent_EntityDiedEvent_ViewerNotInPerPlayer
 	s.Require().True(errors.Is(err, v2encounter.ErrViewerSawNothing))
 }
 
+// DeathSaveRolled / EntityStabilized translator tests (part 2 of #622) ---
+// rpg-toolkit#741 added these broker events; rpg-api-protos#175 added the
+// wire messages (oneof tags 62/63). Before this, both fell to the unknown
+// branch (ErrUnknownEventType) — the death-save arc was invisible on the
+// wire even though the toolkit resolved it correctly.
+
+func (s *TranslateSuite) TestTranslateEvent_DeathSaveRolledEvent_HappyPath_AllFieldsCopiedVerbatim() {
+	evt := events.NewDeathSaveRolledEvent(&events.NewDeathSaveRolledEventInput{
+		EncID:                 "enc-1",
+		Seq:                   uint64(70),
+		EntityID:              "char-A",
+		Roll:                  14,
+		Successes:             2,
+		Failures:              1,
+		IsCriticalFail:        false,
+		IsCriticalSuccess:     false,
+		Stabilized:            false,
+		Dead:                  false,
+		RegainedConsciousness: false,
+		HPRestored:            0,
+		PerPlayer: map[core.PlayerID]events.DeathSaveRolledSlice{
+			"player-A": {Visible: true},
+		},
+	})
+	out, err := v2encounter.TranslateEvent(evt, "player-A", s.now)
+	s.Require().NoError(err)
+	s.Require().False(errors.Is(err, v2encounter.ErrUnknownEventType),
+		"DeathSaveRolledEvent must not fall to the translator-gap branch")
+
+	roll := out.GetDeathSaveRolled()
+	s.Require().NotNil(roll, "expected DeathSaveRolled envelope")
+	s.Require().Equal("char-A", roll.GetEntityId())
+	s.Require().Equal(int32(14), roll.GetRoll())
+	s.Require().Equal(int32(2), roll.GetSuccesses())
+	s.Require().Equal(int32(1), roll.GetFailures())
+	s.Require().False(roll.GetIsCriticalFail())
+	s.Require().False(roll.GetIsCriticalSuccess())
+	s.Require().False(roll.GetStabilized())
+	s.Require().False(roll.GetDead())
+	s.Require().False(roll.GetRegainedConsciousness())
+	s.Require().Equal(int32(0), roll.GetHpRestored())
+	s.Require().Equal(int64(70), out.Sequence)
+}
+
+func (s *TranslateSuite) TestTranslateEvent_DeathSaveRolledEvent_CriticalSuccess_RegainsConsciousness() {
+	// Natural 20: back up with 1 HP mid-combat — HpRestored must carry the
+	// toolkit's computed value verbatim, not be recomputed here.
+	evt := events.NewDeathSaveRolledEvent(&events.NewDeathSaveRolledEventInput{
+		EncID:                 "enc-1",
+		Seq:                   uint64(71),
+		EntityID:              "char-A",
+		Roll:                  20,
+		Successes:             2,
+		Failures:              1,
+		IsCriticalSuccess:     true,
+		RegainedConsciousness: true,
+		HPRestored:            1,
+		PerPlayer: map[core.PlayerID]events.DeathSaveRolledSlice{
+			"player-A": {Visible: true},
+		},
+	})
+	out, err := v2encounter.TranslateEvent(evt, "player-A", s.now)
+	s.Require().NoError(err)
+
+	roll := out.GetDeathSaveRolled()
+	s.Require().True(roll.GetIsCriticalSuccess())
+	s.Require().True(roll.GetRegainedConsciousness())
+	s.Require().Equal(int32(1), roll.GetHpRestored())
+}
+
+func (s *TranslateSuite) TestTranslateEvent_DeathSaveRolledEvent_DamageWhileUnconscious_RollZeroCriticalFail() {
+	// Roll==0 is the toolkit's convention for an automatic failure from
+	// taking damage while unconscious, rather than an actual d20 roll —
+	// this must pass through as-is (0), not be treated as missing data.
+	evt := events.NewDeathSaveRolledEvent(&events.NewDeathSaveRolledEventInput{
+		EncID:          "enc-1",
+		Seq:            uint64(72),
+		EntityID:       "char-A",
+		Roll:           0,
+		Successes:      0,
+		Failures:       2,
+		IsCriticalFail: true,
+		PerPlayer: map[core.PlayerID]events.DeathSaveRolledSlice{
+			"player-A": {Visible: true},
+		},
+	})
+	out, err := v2encounter.TranslateEvent(evt, "player-A", s.now)
+	s.Require().NoError(err)
+
+	roll := out.GetDeathSaveRolled()
+	s.Require().Equal(int32(0), roll.GetRoll())
+	s.Require().Equal(int32(2), roll.GetFailures())
+	s.Require().True(roll.GetIsCriticalFail())
+}
+
+func (s *TranslateSuite) TestTranslateEvent_DeathSaveRolledEvent_ThirdFailure_Dead() {
+	evt := events.NewDeathSaveRolledEvent(&events.NewDeathSaveRolledEventInput{
+		EncID:     "enc-1",
+		Seq:       uint64(73),
+		EntityID:  "char-A",
+		Roll:      4,
+		Successes: 0,
+		Failures:  3,
+		Dead:      true,
+		PerPlayer: map[core.PlayerID]events.DeathSaveRolledSlice{
+			"player-A": {Visible: true},
+		},
+	})
+	out, err := v2encounter.TranslateEvent(evt, "player-A", s.now)
+	s.Require().NoError(err)
+	s.Require().True(out.GetDeathSaveRolled().GetDead())
+}
+
+func (s *TranslateSuite) TestTranslateEvent_DeathSaveRolledEvent_NotVisible_ReturnsErrViewerSawNothing() {
+	evt := events.NewDeathSaveRolledEvent(&events.NewDeathSaveRolledEventInput{
+		EncID:    "enc-1",
+		Seq:      uint64(74),
+		EntityID: "char-A",
+		Roll:     10,
+		PerPlayer: map[core.PlayerID]events.DeathSaveRolledSlice{
+			"player-A": {Visible: false},
+		},
+	})
+	_, err := v2encounter.TranslateEvent(evt, "player-A", s.now)
+	s.Require().Error(err)
+	s.Require().True(errors.Is(err, v2encounter.ErrViewerSawNothing))
+}
+
+func (s *TranslateSuite) TestTranslateEvent_DeathSaveRolledEvent_ViewerNotInPerPlayer_ReturnsErrViewerSawNothing() {
+	evt := events.NewDeathSaveRolledEvent(&events.NewDeathSaveRolledEventInput{
+		EncID:    "enc-1",
+		Seq:      uint64(75),
+		EntityID: "char-A",
+		Roll:     10,
+		PerPlayer: map[core.PlayerID]events.DeathSaveRolledSlice{
+			"player-X": {Visible: true},
+		},
+	})
+	_, err := v2encounter.TranslateEvent(evt, "player-A", s.now)
+	s.Require().Error(err)
+	s.Require().True(errors.Is(err, v2encounter.ErrViewerSawNothing))
+}
+
+func (s *TranslateSuite) TestTranslateEvent_EntityStabilizedEvent_HappyPath() {
+	evt := events.NewEntityStabilizedEvent(
+		"enc-1", uint64(80),
+		"char-A",
+		map[core.PlayerID]events.EntityStabilizedSlice{
+			"player-A": {Visible: true},
+		},
+	)
+	out, err := v2encounter.TranslateEvent(evt, "player-A", s.now)
+	s.Require().NoError(err)
+	s.Require().False(errors.Is(err, v2encounter.ErrUnknownEventType),
+		"EntityStabilizedEvent must not fall to the translator-gap branch")
+
+	stab := out.GetEntityStabilized()
+	s.Require().NotNil(stab, "expected EntityStabilized envelope")
+	s.Require().Equal("char-A", stab.GetEntityId())
+	s.Require().Equal(int64(80), out.Sequence)
+}
+
+func (s *TranslateSuite) TestTranslateEvent_EntityStabilizedEvent_NotVisible_ReturnsErrViewerSawNothing() {
+	evt := events.NewEntityStabilizedEvent(
+		"enc-1", uint64(81),
+		"char-A",
+		map[core.PlayerID]events.EntityStabilizedSlice{
+			"player-A": {Visible: false},
+		},
+	)
+	_, err := v2encounter.TranslateEvent(evt, "player-A", s.now)
+	s.Require().Error(err)
+	s.Require().True(errors.Is(err, v2encounter.ErrViewerSawNothing))
+}
+
+func (s *TranslateSuite) TestTranslateEvent_EntityStabilizedEvent_ViewerNotInPerPlayer_ReturnsErrViewerSawNothing() {
+	evt := events.NewEntityStabilizedEvent(
+		"enc-1", uint64(82),
+		"char-A",
+		map[core.PlayerID]events.EntityStabilizedSlice{
+			"player-X": {Visible: true},
+		},
+	)
+	_, err := v2encounter.TranslateEvent(evt, "player-A", s.now)
+	s.Require().Error(err)
+	s.Require().True(errors.Is(err, v2encounter.ErrViewerSawNothing))
+}
+
 // EntityRemoved translator tests -----------------------------------------
 
 func (s *TranslateSuite) TestTranslateEvent_EntityRemovedEvent_HappyPath_BroadcastAudience() {

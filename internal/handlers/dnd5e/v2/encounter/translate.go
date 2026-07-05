@@ -94,6 +94,10 @@ func TranslateEvent(evt events.EncounterEvent, viewer core.PlayerID, now time.Ti
 		return translateTurnEndedEvent(e, viewer, now)
 	case *events.EntityDiedEvent:
 		return translateEntityDiedEvent(e, viewer, now)
+	case *events.DeathSaveRolledEvent:
+		return translateDeathSaveRolledEvent(e, viewer, now)
+	case *events.EntityStabilizedEvent:
+		return translateEntityStabilizedEvent(e, viewer, now)
 	case *events.EntityRemovedEvent:
 		return translateEntityRemovedEvent(e, viewer, now)
 	case *events.EncounterEndedEvent:
@@ -667,6 +671,61 @@ func translateEntityDiedEvent(e *events.EntityDiedEvent, viewer core.PlayerID, n
 		Timestamp: timestamppb.New(now),
 		Event: &encounterv2pb.EncounterEvent_EntityDied{
 			EntityDied: out,
+		},
+	}, nil
+}
+
+// translateDeathSaveRolledEvent maps the toolkit's DeathSaveRolledEvent
+// (rpg-toolkit#741) to the proto DeathSaveRolled envelope. Fires on EVERY
+// death save roll (or automatic damage-while-unconscious failure — Roll==0)
+// so clients can show death saves resolving in real time, not just the
+// terminal Stabilized/Dead transition. Same per-viewer projection template
+// as translateEntityDiedEvent (LoS to the rolling entity) — no
+// killer/causer concept. Every field is copied verbatim per the boundary
+// rule; the toolkit has already computed successes/failures/crit state.
+func translateDeathSaveRolledEvent(e *events.DeathSaveRolledEvent, viewer core.PlayerID, now time.Time) (*encounterv2pb.EncounterEvent, error) {
+	slice, ok := e.PerPlayer[viewer]
+	if !ok || !slice.Visible {
+		return nil, ErrViewerSawNothing
+	}
+	return &encounterv2pb.EncounterEvent{
+		Sequence:  int64(e.Sequence()),
+		Timestamp: timestamppb.New(now),
+		Event: &encounterv2pb.EncounterEvent_DeathSaveRolled{
+			DeathSaveRolled: &encounterv2pb.DeathSaveRolled{
+				EntityId:              string(e.EntityID),
+				Roll:                  int32(e.Roll),
+				Successes:             int32(e.Successes),
+				Failures:              int32(e.Failures),
+				IsCriticalFail:        e.IsCriticalFail,
+				IsCriticalSuccess:     e.IsCriticalSuccess,
+				Stabilized:            e.Stabilized,
+				Dead:                  e.Dead,
+				RegainedConsciousness: e.RegainedConsciousness,
+				HpRestored:            int32(e.HPRestored),
+			},
+		},
+	}, nil
+}
+
+// translateEntityStabilizedEvent maps the toolkit's EntityStabilizedEvent
+// (rpg-toolkit#741) to the proto EntityStabilized envelope. Fires once, at
+// the terminal transition when an unconscious entity accumulates 3
+// successful death saves. Mirrors translateEntityDiedEvent's shape — same
+// per-viewer projection template, no killer/causer concept since
+// stabilization has no attacker.
+func translateEntityStabilizedEvent(e *events.EntityStabilizedEvent, viewer core.PlayerID, now time.Time) (*encounterv2pb.EncounterEvent, error) {
+	slice, ok := e.PerPlayer[viewer]
+	if !ok || !slice.Visible {
+		return nil, ErrViewerSawNothing
+	}
+	return &encounterv2pb.EncounterEvent{
+		Sequence:  int64(e.Sequence()),
+		Timestamp: timestamppb.New(now),
+		Event: &encounterv2pb.EncounterEvent_EntityStabilized{
+			EntityStabilized: &encounterv2pb.EntityStabilized{
+				EntityId: string(e.EntityID),
+			},
 		},
 	}, nil
 }
