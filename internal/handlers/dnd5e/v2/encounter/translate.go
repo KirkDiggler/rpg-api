@@ -82,6 +82,8 @@ func TranslateEvent(evt events.EncounterEvent, viewer core.PlayerID, now time.Ti
 		return translateDamageDealtEvent(e, viewer, now)
 	case *events.ConditionAppliedEvent:
 		return translateConditionAppliedEvent(e, viewer, now)
+	case *events.ConditionRemovedEvent:
+		return translateConditionRemovedEvent(e, viewer, now)
 	case *events.ResourceChangedEvent:
 		return translateResourceChangedEvent(e, viewer, now)
 	case *events.ModeChangedEvent:
@@ -552,6 +554,29 @@ func translateConditionAppliedEvent(e *events.ConditionAppliedEvent, viewer core
 		Timestamp: timestamppb.New(now),
 		Event: &encounterv2pb.EncounterEvent_StatusApplied{
 			StatusApplied: out,
+		},
+	}, nil
+}
+
+// translateConditionRemovedEvent maps the toolkit's ConditionRemovedEvent
+// (a status clearing — e.g., "dodging" wearing off at the dodger's next
+// turn start) to the proto StatusRemoved envelope. Mirrors
+// translateConditionAppliedEvent's shape (rpg-api#622): same per-viewer
+// visibility check and the same conditionRefFor parsing for ConditionRef.
+func translateConditionRemovedEvent(e *events.ConditionRemovedEvent, viewer core.PlayerID, now time.Time) (*encounterv2pb.EncounterEvent, error) {
+	slice, ok := e.PerPlayer[viewer]
+	if !ok || !slice.Visible {
+		return nil, ErrViewerSawNothing
+	}
+	out := &encounterv2pb.StatusRemoved{
+		EntityId:     string(e.TargetID),
+		StatusSource: conditionRefFor(e.ConditionRef),
+	}
+	return &encounterv2pb.EncounterEvent{
+		Sequence:  int64(e.Sequence()),
+		Timestamp: timestamppb.New(now),
+		Event: &encounterv2pb.EncounterEvent_StatusRemoved{
+			StatusRemoved: out,
 		},
 	}, nil
 }
