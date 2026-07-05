@@ -229,6 +229,30 @@ func (s *CharacterCreationSuite) TestCreateRogue() {
 	s.T().Log("Creating Rogue character...")
 	ctx := s.authCtx("test-player-rogue")
 
+	// ListClasses must advertise Rogue's Expertise requirement - the client
+	// otherwise never learns a Rogue needs this choice (rpg-api#625).
+	listResp, err := s.server.CharacterClient.ListClasses(ctx, &dnd5ev1alpha1.ListClassesRequest{})
+	s.Require().NoError(err)
+	var rogueInfo *dnd5ev1alpha1.ClassInfo
+	for _, classInfo := range listResp.GetClasses() {
+		if classInfo.GetClassId() == dnd5ev1alpha1.Class_CLASS_ROGUE {
+			rogueInfo = classInfo
+			break
+		}
+	}
+	s.Require().NotNil(rogueInfo, "ListClasses should include Rogue")
+	var expertiseChoice *dnd5ev1alpha1.Choice
+	for _, choice := range rogueInfo.GetChoices() {
+		if choice.GetChoiceType() == dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_EXPERTISE {
+			expertiseChoice = choice
+			break
+		}
+	}
+	s.Require().NotNil(expertiseChoice, "Rogue ClassInfo should advertise an Expertise choice")
+	s.Assert().Equal(int32(2), expertiseChoice.GetChooseCount())
+	s.Assert().NotEmpty(expertiseChoice.GetExpertiseOptions().GetAvailableSkills(),
+		"Expertise choice should advertise available skills")
+
 	// Create draft
 	createResp, err := s.server.CharacterClient.CreateDraft(ctx, &dnd5ev1alpha1.CreateDraftRequest{})
 	s.Require().NoError(err)
