@@ -595,6 +595,66 @@ func (s *TranslateSuite) TestTranslateEvent_ConditionAppliedEvent_NotVisible_Ret
 	s.Require().True(errors.Is(err, v2encounter.ErrViewerSawNothing))
 }
 
+func (s *TranslateSuite) TestTranslateEvent_ConditionRemovedEvent_HappyPath_FullyQualifiedRef() {
+	// rpg-api#622: no case existed for ConditionRemovedEvent, so the event
+	// fell to the unknown branch (ErrUnknownEventType) and the stream loop
+	// logged a "translator gap" instead of sending StatusRemoved — the Dodge
+	// badge could never clear live. This asserts the happy path AND that the
+	// gap path is not taken.
+	evt := events.NewConditionRemovedEvent(
+		"enc-1", uint64(23),
+		"char-A",
+		"dnd5e:conditions:dodging", "turn_start",
+		map[core.PlayerID]events.ConditionRemovedSlice{
+			"player-A": {Visible: true},
+		},
+	)
+	out, err := v2encounter.TranslateEvent(evt, "player-A", s.now)
+	s.Require().NoError(err)
+	s.Require().False(errors.Is(err, v2encounter.ErrUnknownEventType),
+		"ConditionRemovedEvent must not fall to the translator-gap branch")
+
+	rem := out.GetStatusRemoved()
+	s.Require().NotNil(rem, "expected StatusRemoved envelope")
+	s.Require().Equal("char-A", rem.GetEntityId())
+	s.Require().NotNil(rem.GetStatusSource())
+	s.Require().Equal("dnd5e", rem.GetStatusSource().GetModule())
+	s.Require().Equal("conditions", rem.GetStatusSource().GetType())
+	s.Require().Equal("dodging", rem.GetStatusSource().GetId())
+	s.Require().Equal(int64(23), out.Sequence)
+}
+
+func (s *TranslateSuite) TestTranslateEvent_ConditionRemovedEvent_BareIDFallsBackToDefaults() {
+	evt := events.NewConditionRemovedEvent(
+		"enc-1", uint64(24),
+		"char-A",
+		"prone", "stood_up",
+		map[core.PlayerID]events.ConditionRemovedSlice{
+			"player-A": {Visible: true},
+		},
+	)
+	out, err := v2encounter.TranslateEvent(evt, "player-A", s.now)
+	s.Require().NoError(err)
+	src := out.GetStatusRemoved().GetStatusSource()
+	s.Require().Equal("dnd5e", src.GetModule())
+	s.Require().Equal("condition", src.GetType())
+	s.Require().Equal("prone", src.GetId())
+}
+
+func (s *TranslateSuite) TestTranslateEvent_ConditionRemovedEvent_NotVisible_ReturnsErrViewerSawNothing() {
+	evt := events.NewConditionRemovedEvent(
+		"enc-1", uint64(25),
+		"char-A",
+		"dnd5e:conditions:dodging", "turn_start",
+		map[core.PlayerID]events.ConditionRemovedSlice{
+			"player-A": {Visible: false},
+		},
+	)
+	_, err := v2encounter.TranslateEvent(evt, "player-A", s.now)
+	s.Require().Error(err)
+	s.Require().True(errors.Is(err, v2encounter.ErrViewerSawNothing))
+}
+
 func (s *TranslateSuite) TestTranslateEvent_ModeChangedEvent_FreeRoamToTurnBased() {
 	evt := events.NewModeChangedEvent(
 		"enc-1", uint64(30),
