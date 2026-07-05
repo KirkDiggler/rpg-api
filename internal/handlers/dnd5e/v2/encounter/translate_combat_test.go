@@ -943,6 +943,21 @@ func (s *TranslateSuite) TestTranslateEvent_DeathSaveRolledEvent_NotVisible_Retu
 	s.Require().True(errors.Is(err, v2encounter.ErrViewerSawNothing))
 }
 
+func (s *TranslateSuite) TestTranslateEvent_DeathSaveRolledEvent_ViewerNotInPerPlayer_ReturnsErrViewerSawNothing() {
+	evt := events.NewDeathSaveRolledEvent(&events.NewDeathSaveRolledEventInput{
+		EncID:    "enc-1",
+		Seq:      uint64(75),
+		EntityID: "char-A",
+		Roll:     10,
+		PerPlayer: map[core.PlayerID]events.DeathSaveRolledSlice{
+			"player-X": {Visible: true},
+		},
+	})
+	_, err := v2encounter.TranslateEvent(evt, "player-A", s.now)
+	s.Require().Error(err)
+	s.Require().True(errors.Is(err, v2encounter.ErrViewerSawNothing))
+}
+
 func (s *TranslateSuite) TestTranslateEvent_EntityStabilizedEvent_HappyPath() {
 	evt := events.NewEntityStabilizedEvent(
 		"enc-1", uint64(80),
@@ -968,6 +983,19 @@ func (s *TranslateSuite) TestTranslateEvent_EntityStabilizedEvent_NotVisible_Ret
 		"char-A",
 		map[core.PlayerID]events.EntityStabilizedSlice{
 			"player-A": {Visible: false},
+		},
+	)
+	_, err := v2encounter.TranslateEvent(evt, "player-A", s.now)
+	s.Require().Error(err)
+	s.Require().True(errors.Is(err, v2encounter.ErrViewerSawNothing))
+}
+
+func (s *TranslateSuite) TestTranslateEvent_EntityStabilizedEvent_ViewerNotInPerPlayer_ReturnsErrViewerSawNothing() {
+	evt := events.NewEntityStabilizedEvent(
+		"enc-1", uint64(82),
+		"char-A",
+		map[core.PlayerID]events.EntityStabilizedSlice{
+			"player-X": {Visible: true},
 		},
 	)
 	_, err := v2encounter.TranslateEvent(evt, "player-A", s.now)
