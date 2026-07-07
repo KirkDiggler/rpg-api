@@ -11,6 +11,37 @@ This is a living doc. Edit it in the same PR that invalidates a line. Don't let 
 
 ## Active work
 
+**LobbyService v1alpha1 — party assembly + sole encounter construction path (rpg-api#629, 2026-07-07)** —
+New `internal/handlers/dnd5e/lobby/v1alpha1` → `internal/orchestrators/lobby` →
+`internal/repositories/lobby` vertical, layered from day one (Chapter-1 discipline, not
+the handler-package shape #616 flags). Six RPCs: `CreateLobby`, `JoinLobby` (idempotent,
+rebinds `character_id`), `SetReady`, `LeaveLobby` (host migrates to oldest remaining
+member), `StartEncounter` (host-only, all-ready gated, atomic member snapshot via a
+per-lobby `sync.Mutex`), `StreamLobby` (snapshot-first, presence keyed off subscribe/
+disconnect — a dropped stream is NOT `LeaveLobby`). Redis-backed repo (`lobby:` prefix
++ `lobby:joinref:` secondary index, 24h TTL) plus an in-memory variant for tests. A
+small lobby-scoped `Broker` (`internal/orchestrators/lobby/broker.go`) fans out
+`StreamLobby` events — deliberately simpler than the toolkit's per-viewer encounter
+broker since a lobby roster has no line-of-sight concept.
+
+**`StartEncounter` subsumes the deleted `EncounterService.CreateEncounter` RPC**
+(v1alpha2, `dnd5e/api/v1alpha2/encounter`): it is now the SOLE path an encounter comes
+into existence. It builds the toolkit encounter, seeds each ready member's HP from the
+character store (generalizing the old handler-layer `seedPlayerHP` — rpg-api#612 — to
+N members), persists once to `enc:v2:<id>`, transitions the lobby to STARTED, and only
+then publishes `EncounterStarted` (persist-then-emit is load-bearing). The old
+`internal/handlers/dnd5e/v2/encounter/create.go` + its HP-seed test are deleted;
+`internal/integration/encounter_v2_test.go`'s old `TestCreateEncounter_Basic` is
+replaced by the new `internal/integration/lobby_v1alpha1_test.go`'s 4-player
+create/join/ready/start flow (the boarded "Party Assembles" gate test, umbrella
+KirkDiggler/rpg-project#81). devseed is unaffected — it always wrote straight to Redis,
+bypassing the RPC surface.
+
+Known gap: `StartEncounter`'s proto contract carries no `initial_mode` field (the old
+`CreateEncounter` could start TURN_BASED directly) — every lobby-constructed encounter
+starts FREE_ROAM. No production caller depended on the old field; flagged as a design
+gap, not fixed here.
+
 **Chapter 1 (Architecture Honesty) — v2 encounter orchestrator carve COMPLETE (#582, 2026-05-31)** —
 The v2 encounter vertical now runs through a clean `internal/orchestrators/encounter/v2`
 orchestrator: one method per RPC, each doing exactly one `load → toolkit-verb → persist`.
@@ -234,6 +265,13 @@ Walking skeleton wired through the rpg-toolkit `encounter` SDK. `MoveEntity` and
 event projection works end-to-end (verified by `internal/integration/encounter_v2_test.go`).
 v1alpha1 movement path remains the primary path for the web; deletion deferred until
 web migrates (slice 2: rpg-dnd5e-web#387).
+
+**Stale note (2026-07-07):** this section predates the many verbs that shipped since
+(TakeAction, EndTurn, Interact, SubmitCheck, SetReactionReady, ActivateFeature all exist
+now — see `internal/orchestrators/encounter/v2/`) and the removal of `CreateEncounter`
+(see the LobbyService entry above — `StartEncounter` on the new `LobbyService v1alpha1`
+is the sole construction path now). A full refresh of this section is a separate
+cleanup, not done in this PR.
 
 Known gaps: rpg-toolkit#629 (LoS-loss events when entity moves out of viewer range — slice
 1 wave goal uses mutual LoS so this doesn't bite). `SnapshotDelivered.encounter` proto

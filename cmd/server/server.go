@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	lobbyhandler "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/lobby/v1alpha1"
 	character2 "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v1alpha1/character"
 	encounterhandler "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v1alpha1/encounter"
 	encounterhandlerv2 "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v2/encounter"
@@ -26,6 +27,7 @@ import (
 	grpc_recovery "github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/recovery"
 
 	apiv1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/api/v1alpha1"
+	lobbyv1alpha1pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/lobby/v1alpha1"
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
 	encounterv2pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/encounter"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
@@ -34,6 +36,7 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
 	diceorc "github.com/KirkDiggler/rpg-api/internal/orchestrators/dice"
 	encounterorc "github.com/KirkDiggler/rpg-api/internal/orchestrators/encounter"
+	lobbyorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/lobby"
 	"github.com/KirkDiggler/rpg-api/internal/pkg/clock"
 	"github.com/KirkDiggler/rpg-api/internal/pkg/idgen"
 	eventprocessor "github.com/KirkDiggler/rpg-api/internal/processors/event"
@@ -46,8 +49,14 @@ import (
 	encounterlogrepo "github.com/KirkDiggler/rpg-api/internal/repositories/encounterlog"
 	encountersrepo "github.com/KirkDiggler/rpg-api/internal/repositories/encounters"
 	encountersv2 "github.com/KirkDiggler/rpg-api/internal/repositories/encounters/v2"
+	lobbyrepo "github.com/KirkDiggler/rpg-api/internal/repositories/lobby"
 	tkenc "github.com/KirkDiggler/rpg-toolkit/encounter"
 )
+
+// lobbyTTL mirrors the v2 encounter repo's 24h TTL (encV2Repo below): long
+// enough for any single playtest session, short enough that abandoned
+// WAITING lobbies don't accumulate forever (lobby-surface.md "Abandonment").
+const lobbyTTL = 24 * time.Hour
 
 var (
 	grpcPort int
@@ -252,6 +261,37 @@ func runServer(_ *cobra.Command, _ []string) error {
 	}
 	encounterv2pb.RegisterEncounterServiceServer(srv, encV2Handler)
 
+	// LobbyService v1alpha1 (rpg-api#629): party assembly + the sole encounter
+	// construction path. StartEncounter builds onto the SAME encV2Broker/
+	// encV2Repo the v1alpha2 encounter service reads from, so a freshly
+	// started encounter is immediately live for StreamEncounter callers.
+	lobbyBroker := lobbyorch.NewBroker()
+	lobbyRepo := lobbyrepo.NewRedis(redisClient, lobbyTTL)
+	lobbyOrch, err := lobbyorch.New(&lobbyorch.Config{
+		LobbyRepo:             lobbyRepo,
+		LobbyBroker:           lobbyBroker,
+		CharacterRepo:         charRepo,
+		EncounterRepo:         encV2Repo,
+		EncounterBroker:       encV2Broker,
+		CharacterResolver:     encounterhandlerv2.StubCharacterResolver{},
+		BuildCombatResolver:   lobbyhandler.BuildCombatResolver(encounterhandlerv2.Dnd5eCombatResolverConfig{CharacterRepo: charRepo}),
+		BuildMovementResolver: lobbyhandler.BuildMovementResolver(encounterhandlerv2.Dnd5eMovementResolverConfig{CharacterRepo: charRepo}),
+		LobbyIDGenerator:      idgen.NewUUID("lobby"),
+		JoinRefGenerator:      idgen.NewUUID("join"),
+		EncounterIDGenerator:  idgen.NewUUID(""),
+	})
+	if err != nil {
+		return fmt.Errorf("lobby orchestrator: %w", err)
+	}
+	lobbyHandlerImpl, err := lobbyhandler.New(&lobbyhandler.HandlerConfig{
+		Orchestrator: lobbyOrch,
+		Broker:       lobbyBroker,
+	})
+	if err != nil {
+		return fmt.Errorf("lobby handler: %w", err)
+	}
+	lobbyv1alpha1pb.RegisterLobbyServiceServer(srv, lobbyHandlerImpl)
+
 	// Register health service
 	healthServer := health.NewServer()
 	grpc_health_v1.RegisterHealthServer(srv, healthServer)
@@ -261,6 +301,7 @@ func runServer(_ *cobra.Command, _ []string) error {
 	healthServer.SetServingStatus("dnd5e.api.v1alpha1.EncounterService", grpc_health_v1.HealthCheckResponse_SERVING)
 	healthServer.SetServingStatus("api.v1alpha1.DiceService", grpc_health_v1.HealthCheckResponse_SERVING)
 	healthServer.SetServingStatus("dnd5e.api.v1alpha2.encounter.EncounterService", grpc_health_v1.HealthCheckResponse_SERVING)
+	healthServer.SetServingStatus("dnd5e.api.lobby.v1alpha1.LobbyService", grpc_health_v1.HealthCheckResponse_SERVING)
 
 	reflection.Register(srv)
 
@@ -297,6 +338,9 @@ func runServer(_ *cobra.Command, _ []string) error {
 		// listen goroutines and the underlying in-memory transport.
 		if err := encV2Broker.Close(); err != nil {
 			log.Printf("v1alpha2 encounter broker close: %v", err)
+		}
+		if err := lobbyBroker.Close(); err != nil {
+			log.Printf("lobby broker close: %v", err)
 		}
 
 		return nil

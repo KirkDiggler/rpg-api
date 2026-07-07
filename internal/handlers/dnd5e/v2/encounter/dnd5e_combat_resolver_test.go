@@ -52,8 +52,9 @@ func (s *Dnd5eCombatResolverTestSuite) SetupTest() {
 // ---------------------------------------------------------------------------
 
 // TestResolveAttack_NilEncounterData_FallsBackToStandIn verifies that with no
-// held entities (e.g. CreateEncounter path), the resolver falls through to
-// StandInCombatResolver and still returns a valid AttackOutcome.
+// held entities (e.g. a freshly StartEncounter-constructed encounter with no
+// monsters yet), the resolver falls through to StandInCombatResolver and
+// still returns a valid AttackOutcome.
 func (s *Dnd5eCombatResolverTestSuite) TestResolveAttack_NilEncounterData_FallsBackToStandIn() {
 	resolver := v2encounter.NewDnd5eCombatResolverForData(
 		v2encounter.Dnd5eCombatResolverConfig{},

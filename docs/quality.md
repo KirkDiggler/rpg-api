@@ -134,6 +134,19 @@ player-pause reactions (toolkit#665 future), and the HOST CONTRACT around
 `AttackContextJSON` serialization is documented but not yet structurally
 enforced from the SDK side (rpg-toolkit#657).
 
+### Lobby handler — B+ (new, 2026-07-07)
+
+`internal/handlers/dnd5e/lobby/v1alpha1/` — the LobbyService v1alpha1 stack
+(rpg-api#629). Layered from day one: handler files are proto↔input translation
++ `lobbyStatusError` sentinel→status mapping only, one file per RPC, mirroring
+the v2 encounter handler's post-#582 shape. `StreamLobby` mirrors
+`StreamEncounter`'s subscribe-first/snapshot-first pattern. Grade held at B+
+rather than A because the integration coverage is one gate test (4-player
+create/join/ready/start) plus one edge case (late join) — the full edge-case
+matrix (party cap, host migration on disconnect-vs-leave, idempotent rebind)
+is unit-tested at the orchestrator layer but not yet re-proven at the wire
+level.
+
 ### Character handler — C
 
 `internal/handlers/dnd5e/v1alpha1/character/handler.go` (1,070 lines),
@@ -180,6 +193,21 @@ The `service.go` / `orchestrator.go` split within the package follows the
 defined pattern. Grade would be higher with better alive-state handling and
 completing the TODO at line 3352 (monster turns for entities acting before
 current entity).
+
+### Lobby orchestrator — B+ (new, 2026-07-07)
+
+`internal/orchestrators/lobby/` — party assembly (join refs, membership,
+ready flags, lifecycle) plus `StartEncounter`, the sole encounter-construction
+path (subsumes the deleted v1alpha2 `CreateEncounter`). Never imports proto;
+sentinel errors mirror `internal/orchestrators/encounter/v2`'s pattern. Atomic
+member-set snapshot is a per-lobby `sync.Mutex` (`keyed_mutex.go`) — a
+deliberate, documented tradeoff: rpg-api is single-process (same assumption
+the v2 encounter broker wiring makes), so a Go-level lock is sufficient
+without a Redis WATCH/MULTI transaction. One known leak: the mutex map never
+evicts per-lobby entries — slow and usage-bounded (one UUID per lobby ever
+created), not a hot-loop concern, called out as a follow-up rather than fixed
+here. Full RPC-level unit coverage (create/join/rebind/ready/leave incl. host
+migration/start incl. HP seeding and persist-then-emit ordering).
 
 ## Components
 
@@ -257,6 +285,16 @@ Append-only event log is the right design for event sourcing. But in-memory
 means no replay, no late-join recovery after a server restart, and no audit
 trail beyond the current process lifetime. The interface is correct; the
 implementation is a stub.
+
+### Lobby repository — B (new, 2026-07-07)
+
+`internal/repositories/lobby/` — Redis-backed (`lobby:` prefix + a
+`lobby:joinref:` secondary index for `GetByJoinRef`, 24h TTL refreshed on
+every `Save`, mirroring `internal/repositories/encounters/v2/redis.go`'s
+pattern) plus an in-memory variant for tests. Both round-trip through JSON on
+every Save/Get like the v2 encounter repo. Grade held at B rather than higher
+because it's brand new with no production traffic yet — the pattern is proven
+but unexercised at scale.
 
 ### Character repository — B
 

@@ -18,17 +18,20 @@ import (
 	"google.golang.org/grpc/test/bufconn"
 
 	apiv1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/api/v1alpha1"
+	lobbyv1alpha1pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/lobby/v1alpha1"
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
 	encounterv2pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/encounter"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
 	dungeontoolkit "github.com/KirkDiggler/rpg-api/internal/components/dungeon/toolkit"
 	apiv1alpha1handler "github.com/KirkDiggler/rpg-api/internal/handlers/api/v1alpha1"
+	lobbyhandler "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/lobby/v1alpha1"
 	character2 "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v1alpha1/character"
 	encounterhandler "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v1alpha1/encounter"
 	encounterhandlerv2 "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v2/encounter"
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
 	diceorc "github.com/KirkDiggler/rpg-api/internal/orchestrators/dice"
 	encounterorc "github.com/KirkDiggler/rpg-api/internal/orchestrators/encounter"
+	lobbyorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/lobby"
 	"github.com/KirkDiggler/rpg-api/internal/pkg/clock"
 	"github.com/KirkDiggler/rpg-api/internal/pkg/idgen"
 	eventprocessor "github.com/KirkDiggler/rpg-api/internal/processors/event"
@@ -41,6 +44,7 @@ import (
 	encounterlogrepo "github.com/KirkDiggler/rpg-api/internal/repositories/encounterlog"
 	encountersrepo "github.com/KirkDiggler/rpg-api/internal/repositories/encounters"
 	encountersv2 "github.com/KirkDiggler/rpg-api/internal/repositories/encounters/v2"
+	lobbyrepo "github.com/KirkDiggler/rpg-api/internal/repositories/lobby"
 	tkenc "github.com/KirkDiggler/rpg-toolkit/encounter"
 )
 
@@ -61,12 +65,15 @@ type TestServer struct {
 	EncounterClient   dnd5ev1alpha1.EncounterServiceClient
 	DiceClient        apiv1alpha1.DiceServiceClient
 	EncounterClientV2 encounterv2pb.EncounterServiceClient
+	LobbyClient       lobbyv1alpha1pb.LobbyServiceClient
 
 	// Exposed for test setup (seeding data, etc.)
 	EncounterPublisher encounterpub.Publisher
 	CharacterRepo      characterrepo.Repository
 	BrokerV2           *tkenc.Broker
 	EncRepoV2          encountersv2.Repository
+	LobbyBroker        *lobbyorch.Broker
+	LobbyRepo          lobbyrepo.Repository
 }
 
 // Config allows customization of the test server.
@@ -155,6 +162,7 @@ func New(ctx context.Context, cfg *Config) (*TestServer, error) {
 	ts.EncounterClient = dnd5ev1alpha1.NewEncounterServiceClient(conn)
 	ts.DiceClient = apiv1alpha1.NewDiceServiceClient(conn)
 	ts.EncounterClientV2 = encounterv2pb.NewEncounterServiceClient(conn)
+	ts.LobbyClient = lobbyv1alpha1pb.NewLobbyServiceClient(conn)
 
 	return ts, nil
 }
@@ -295,6 +303,37 @@ func (ts *TestServer) wireServices(cfg *Config) error {
 	}
 	encounterv2pb.RegisterEncounterServiceServer(ts.grpcServer, encV2Handler)
 
+	// LobbyService v1alpha1 — broker and repo are stored on ts so tests can
+	// seed/inspect lobby state directly, mirroring BrokerV2/EncRepoV2 above.
+	// StartEncounter builds onto the SAME BrokerV2/EncRepoV2 the v1alpha2
+	// encounter service reads from.
+	ts.LobbyBroker = lobbyorch.NewBroker()
+	ts.LobbyRepo = lobbyrepo.NewInMemory()
+	lobbyOrch, err := lobbyorch.New(&lobbyorch.Config{
+		LobbyRepo:             ts.LobbyRepo,
+		LobbyBroker:           ts.LobbyBroker,
+		CharacterRepo:         charRepo,
+		EncounterRepo:         ts.EncRepoV2,
+		EncounterBroker:       ts.BrokerV2,
+		CharacterResolver:     encounterhandlerv2.StubCharacterResolver{},
+		BuildCombatResolver:   lobbyhandler.BuildCombatResolver(encounterhandlerv2.Dnd5eCombatResolverConfig{CharacterRepo: charRepo}),
+		BuildMovementResolver: lobbyhandler.BuildMovementResolver(encounterhandlerv2.Dnd5eMovementResolverConfig{CharacterRepo: charRepo}),
+		LobbyIDGenerator:      idgen.NewUUID("lobby"),
+		JoinRefGenerator:      idgen.NewUUID("join"),
+		EncounterIDGenerator:  idgen.NewUUID(""),
+	})
+	if err != nil {
+		return fmt.Errorf("lobby orchestrator: %w", err)
+	}
+	lobbyHandlerImpl, err := lobbyhandler.New(&lobbyhandler.HandlerConfig{
+		Orchestrator: lobbyOrch,
+		Broker:       ts.LobbyBroker,
+	})
+	if err != nil {
+		return fmt.Errorf("lobby handler: %w", err)
+	}
+	lobbyv1alpha1pb.RegisterLobbyServiceServer(ts.grpcServer, lobbyHandlerImpl)
+
 	// Create bufconn listener
 	ts.listener = bufconn.Listen(bufSize)
 
@@ -318,6 +357,9 @@ func (ts *TestServer) Close() {
 		// underlying transport. Without this, each integration test leaks
 		// one listener per Subscribe call.
 		_ = ts.BrokerV2.Close()
+	}
+	if ts.LobbyBroker != nil {
+		_ = ts.LobbyBroker.Close()
 	}
 	if ts.redisClient != nil {
 		ts.redisClient.Close()

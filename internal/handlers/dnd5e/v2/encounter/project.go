@@ -17,9 +17,9 @@ import (
 )
 
 // ProjectFor builds a proto *encounterv2pb.Encounter for the given viewer from
-// the encounter's persisted data. CreateEncounter calls it today; GetEncounter
-// (#500) and StreamEncounter snapshot replay (#497) reuse it so the projection
-// logic lives in exactly one place.
+// the encounter's persisted data. GetEncounter (#500) and StreamEncounter
+// snapshot replay (#497) call it so the projection logic lives in exactly one
+// place.
 //
 // The broker is required to rehydrate a live Encounter via LoadFromData
 // (needed for SnapshotFor).

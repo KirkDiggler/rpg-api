@@ -107,6 +107,9 @@ Components are local prototypes pending graduation to rpg-toolkit. They implemen
 | Dice session repo | `internal/repositories/dice_session/` | Dice roll sessions | Redis |
 | SandboxRoom service | `internal/services/sandboxroom/` | Room generation interface | Interface only; no implementation wired |
 | Integration test harness | `internal/integration/harness/` | Full-stack test server with real Redis | Most valuable test asset |
+| Lobby handler | `internal/handlers/dnd5e/lobby/v1alpha1/` | gRPC ↔ lobby orchestrator | New 2026-07-07 (rpg-api#629); layered from day one |
+| Lobby orchestrator | `internal/orchestrators/lobby/` | Party assembly + sole encounter construction (`StartEncounter`) | New; see `docs/architecture/components/lobby-service.md` |
+| Lobby repo | `internal/repositories/lobby/` | Lobby persistence | Redis + in-memory |
 
 ## Cross-repo boundaries
 
@@ -136,8 +139,14 @@ Components are local prototypes pending graduation to rpg-toolkit. They implemen
 
 - `dnd5e.api.v1alpha1` — CharacterService + EncounterService (primary services)
 - `api.v1alpha1` — DiceService
+- `dnd5e.api.v1alpha2.encounter` — EncounterService (v2, `MoveEntity`/`StreamEncounter`/
+  combat verbs). `CreateEncounter` is deleted from this service — construction now
+  happens exclusively through `LobbyService.StartEncounter` (below).
+- `dnd5e.api.lobby.v1alpha1` — LobbyService (new 2026-07-07, rpg-api#629). Own version
+  clock, deliberately not tied to the encounter service's — see
+  `docs/architecture/components/lobby-service.md`.
 
-Proto definitions are in `rpg-api-protos` (separate repo). Compiled Go code pinned via `@generated` branch. Current version: `v0.0.0-20260329063233-e78908772cad`.
+Proto definitions are in `rpg-api-protos` (separate repo). Compiled Go code pinned via `@generated` branch. This doc's service-version list otherwise predates the v2 encounter stack (last full refresh 2026-05-02) — treat the table above as current, the rest of this file as historical context pending a fuller refresh.
 
 ## Known architectural debt (in priority order)
 

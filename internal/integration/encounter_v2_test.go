@@ -53,20 +53,14 @@ func (s *EncounterV2IntegrationSuite) authCtx(playerID string) context.Context {
 	return metadata.AppendToOutgoingContext(s.ctx, "authorization", "Dev "+playerID)
 }
 
-func (s *EncounterV2IntegrationSuite) TestCreateEncounter_Basic() {
-	ctxA := s.authCtx("alice")
-	resp, err := s.srv.EncounterClientV2.CreateEncounter(ctxA, &encounterv2pb.CreateEncounterRequest{
-		CampaignId:  "campaign-1",
-		InitialMode: encounterv2pb.EncounterMode_ENCOUNTER_MODE_FREE_ROAM,
-	})
-	s.Require().NoError(err)
-	s.Require().NotNil(resp.GetEncounter())
-	s.Require().NotEmpty(resp.GetEncounter().GetId())
-
-	data, err := s.srv.EncRepoV2.Get(s.ctx, resp.GetEncounter().GetId())
-	s.Require().NoError(err)
-	s.Require().NotNil(data)
-}
+// Note: the old TestCreateEncounter_Basic lived here, exercising the v2
+// EncounterService.CreateEncounter RPC. That RPC is deleted (subsumed by
+// LobbyService.StartEncounter — rpg-project's lobby-surface.md design);
+// the equivalent "fresh encounter gets constructed and persisted" coverage
+// now lives in internal/integration/lobby_v1alpha1_test.go's 4-player
+// create/join/ready/start flow. Every other test in this file seeds its
+// encounter directly via tkenc.New + AddPlayer + EncRepoV2.Save (bypassing
+// the RPC surface entirely), so this file needed no other changes.
 
 func (s *EncounterV2IntegrationSuite) TestMovementSliceTwoPlayers() {
 	// Seed: encounter with players A and B in mutual LoS.

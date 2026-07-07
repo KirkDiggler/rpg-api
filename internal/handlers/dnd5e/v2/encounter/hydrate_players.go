@@ -38,8 +38,9 @@ import (
 // character store and sets it as transient PlayerData.DataJSON on the encounter
 // Data, so the subsequent tkenc.LoadFromData cascade hydrates the held
 // *character.Character. The player's EntityID is the character ID in the v2
-// handler stack (confirmed by CreateEncounter seeding EntityID = the character
-// ID and the fixtures using EntityID as the character ID directly).
+// handler stack (confirmed by the lobby orchestrator's StartEncounter seeding
+// EntityID = the bound character ID, and the fixtures using EntityID as the
+// character ID directly).
 //
 // Called immediately before every tkenc.LoadFromData on a combat-capable path.
 // When charRepo is nil (handler tests that don't wire a character store), this
