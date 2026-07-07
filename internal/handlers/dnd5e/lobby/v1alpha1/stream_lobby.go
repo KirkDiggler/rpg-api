@@ -3,6 +3,7 @@ package lobby
 import (
 	"context"
 	"log"
+	"time"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -11,6 +12,11 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/auth"
 	lobbyorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/lobby"
 )
+
+// disconnectPresenceTimeout bounds the best-effort presence flip on stream
+// teardown so a stalled repository call (e.g. a Redis network stall) cannot
+// hang the teardown goroutine indefinitely.
+const disconnectPresenceTimeout = 5 * time.Second
 
 // StreamLobby opens a server-streaming session for the authenticated player.
 // Snapshot-first, mirroring StreamEncounter
@@ -53,13 +59,17 @@ func (h *Handler) StreamLobby(
 		return lobbyStatusError(err)
 	}
 
-	// Flip presence back off on disconnect, best-effort on a detached
-	// context (stream.Context() is already canceled by the time this defer
-	// fires). A failure here is not surfaced — the RPC's real work is
-	// already done; the seat simply keeps a stale is_connected until the
-	// next SetConnected success (e.g. a fresh reconnect).
+	// Flip presence back off on disconnect, best-effort on a detached but
+	// bounded context (stream.Context() is already canceled by the time this
+	// defer fires; the bound keeps a stalled repository call — e.g. a Redis
+	// network stall — from hanging this teardown goroutine indefinitely). A
+	// failure here is not surfaced — the RPC's real work is already done;
+	// the seat simply keeps a stale is_connected until the next SetConnected
+	// success (e.g. a fresh reconnect).
 	defer func() {
-		if _, connErr := h.orch.SetConnected(context.Background(), &lobbyorch.SetConnectedInput{
+		disconnectCtx, cancel := context.WithTimeout(context.Background(), disconnectPresenceTimeout)
+		defer cancel()
+		if _, connErr := h.orch.SetConnected(disconnectCtx, &lobbyorch.SetConnectedInput{
 			PlayerID: playerID, LobbyID: lobbyID, Connected: false,
 		}); connErr != nil {
 			log.Printf("lobby/v1alpha1 StreamLobby: disconnect presence flip for %q/%q: %v", lobbyID, playerID, connErr)

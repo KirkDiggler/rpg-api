@@ -127,8 +127,17 @@ JSON-round-trip-on-every-call contract.
 
 `internal/integration/lobby_v1alpha1_test.go`'s
 `TestPartyAssembles_FourPlayers_CreateJoinReadyStart` is the boarded "Party Assembles"
-gate test: four dev-authenticated players create/join/ready/start against a real Redis
-container (testcontainers) and land in one `v2` encounter, each with HP seeded from
-their bound character, verified both via direct `EncRepoV2` inspection and via the
-pre-existing `StreamEncounter` snapshot path. `TestJoinLobby_LateJoin_FailedPrecondition`
-covers the late-join edge case end-to-end.
+gate test: four dev-authenticated players create/join/ready/start and land in one `v2`
+encounter, each with HP seeded from their bound character, verified both via direct
+`EncRepoV2` inspection and via the pre-existing `StreamEncounter` snapshot path.
+`TestJoinLobby_LateJoin_FailedPrecondition` covers the late-join edge case end-to-end.
+
+The integration harness (`internal/integration/harness/harness.go`) does spin up a real
+Redis container (testcontainers) for the suite, but `LobbyRepo` and `EncRepoV2` are
+wired to their **in-memory** variants there — mirroring how `BrokerV2`/`EncRepoV2`
+were already in-memory in this harness before this PR. Only `CharacterRepo` (and the
+other pre-existing Redis-backed repos: draft, dice session) exercise the real Redis
+container in this test. The lobby repo's OWN Redis-backed persistence (the two-key
+`lobby:`/`lobby:joinref:` write, TTL behavior) is covered separately by
+`internal/repositories/lobby/redis_test.go` (via miniredis), not by this integration
+suite.

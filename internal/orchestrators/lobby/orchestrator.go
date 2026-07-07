@@ -158,6 +158,9 @@ func New(cfg *Config) (*Orchestrator, error) {
 	if cfg.EncounterIDGenerator == nil {
 		return nil, errors.New("lobby orchestrator: Config.EncounterIDGenerator is required")
 	}
+	if cfg.PartyCap < 0 {
+		return nil, errors.New("lobby orchestrator: Config.PartyCap must not be negative")
+	}
 	partyCap := cfg.PartyCap
 	if partyCap == 0 {
 		partyCap = defaultPartyCap

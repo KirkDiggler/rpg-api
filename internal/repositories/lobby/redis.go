@@ -60,6 +60,10 @@ func (r *redisRepo) GetByJoinRef(ctx context.Context, joinRef string) (*Data, er
 	return r.Get(ctx, id)
 }
 
+// Save writes the primary record and the join_ref index in one MULTI/EXEC
+// pipeline, so the two keys never observe a partially-updated state (a crash
+// or network failure between two independent SETs could otherwise leave a
+// record with no working join_ref index, or vice versa).
 func (r *redisRepo) Save(ctx context.Context, data *Data) error {
 	if data == nil {
 		return errors.New("data is required")
@@ -71,13 +75,13 @@ func (r *redisRepo) Save(ctx context.Context, data *Data) error {
 	if err != nil {
 		return fmt.Errorf("marshal lobby %q: %w", data.ID, err)
 	}
-	if err := r.client.Set(ctx, redisKey(data.ID), b, r.ttl).Err(); err != nil {
-		return fmt.Errorf("set lobby %q: %w", data.ID, err)
-	}
+	pipe := r.client.TxPipeline()
+	pipe.Set(ctx, redisKey(data.ID), b, r.ttl)
 	if data.JoinRef != "" {
-		if err := r.client.Set(ctx, redisJoinRefKey(data.JoinRef), data.ID, r.ttl).Err(); err != nil {
-			return fmt.Errorf("set lobby join_ref index %q: %w", data.JoinRef, err)
-		}
+		pipe.Set(ctx, redisJoinRefKey(data.JoinRef), data.ID, r.ttl)
+	}
+	if _, err := pipe.Exec(ctx); err != nil {
+		return fmt.Errorf("save lobby %q: %w", data.ID, err)
 	}
 	return nil
 }

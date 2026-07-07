@@ -1,7 +1,7 @@
 // Package lobby is the party-assembly store: join refs, membership, ready
 // flags, and lifecycle for a v1alpha1 LobbyService lobby.
 //
-// This is pure API state (rpg-api#629 / rpg-project#79 lobby-surface design).
+// This is pure API state (rpg-api#629 / rpg-project#81 lobby-surface design).
 // The toolkit has zero lobby concept and this package must keep it that way —
 // Data and Member are rpg-api-owned entities, not a toolkit mirror.
 package lobby
