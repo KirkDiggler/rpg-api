@@ -160,7 +160,11 @@ func New(cfg *HandlerConfig) (*Handler, error) {
 // directly. Otherwise, a fresh Dnd5eCombatResolver is constructed with the
 // encounter data so the resolver can access the monster map for rehydration.
 //
-// data may be nil for the CreateEncounter path (new encounter, no monsters).
+// data comes from the orchestrator's load() (internal/orchestrators/encounter/v2)
+// and is always the existing encounter's snapshot — never nil in production.
+// (The lobby orchestrator's StartEncounter builds its own resolver the same
+// way for a fresh, monster-less encounter; that is a separate Handler
+// instance's construction, not this one.)
 func (h *Handler) buildCombatResolver(data *encounter.Data) CombatResolver {
 	if h.combatResolver != nil {
 		return h.combatResolver
