@@ -45,6 +45,16 @@ func (s *LobbySuite) TestStartEncounter_Success_ConstructsAndPersistsEncounter()
 	s.Require().Equal(12, encData.Players[core.PlayerID("alice")].HP, "HP must be seeded from the character store")
 	s.Require().Equal(10, encData.Players[core.PlayerID("bob")].HP)
 
+	// rpg-api#632: an unseeded SightRange (0) reveals exactly one hex per
+	// player, so nobody can see anybody else — the diagnosed bug. Assert each
+	// member's cumulative reveal actually covers the other member's spawn hex,
+	// not just their own.
+	alice := encData.Players[core.PlayerID("alice")]
+	bob := encData.Players[core.PlayerID("bob")]
+	s.Require().NotZero(alice.View.SightRange, "SightRange must be seeded — a zero value reveals only the player's own hex")
+	s.Require().True(alice.View.RevealedHexes.Has(bob.View.Position), "alice must be able to see bob's spawn hex")
+	s.Require().True(bob.View.RevealedHexes.Has(alice.View.Position), "bob must be able to see alice's spawn hex")
+
 	lobbyData, err := s.lobbyRepo.Get(s.ctx, "lobby-s1")
 	s.Require().NoError(err)
 	s.Require().Equal(lobbyrepo.StatusStarted, lobbyData.Status)

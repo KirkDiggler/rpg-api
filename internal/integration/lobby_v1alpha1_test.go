@@ -143,6 +143,24 @@ func (s *LobbyV1alpha1IntegrationSuite) TestPartyAssembles_FourPlayers_CreateJoi
 		s.Require().Equal(p.hp, pd.MaxHP)
 	}
 
+	// rpg-api#632: an unseeded SightRange leaves every member able to see only
+	// their own spawn hex — the party never actually sees each other despite
+	// spawning adjacent. Assert every member's cumulative reveal covers every
+	// OTHER member's spawn hex, so this regression can't pass silently again.
+	for _, viewer := range players {
+		viewerPD := encData.Players[core.PlayerID(viewer.id)]
+		s.Require().NotZero(viewerPD.View.SightRange,
+			"player %q must have a seeded SightRange", viewer.id)
+		for _, other := range players {
+			if other.id == viewer.id {
+				continue
+			}
+			otherPD := encData.Players[core.PlayerID(other.id)]
+			s.Require().True(viewerPD.View.RevealedHexes.Has(otherPD.View.Position),
+				"player %q must be able to see player %q's spawn hex", viewer.id, other.id)
+		}
+	}
+
 	// All four land in the SAME encounter via the pre-existing v2
 	// StreamEncounter path — the already-proven snapshot-first flow
 	// (lobby-surface.md "Verify").

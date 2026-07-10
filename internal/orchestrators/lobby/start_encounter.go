@@ -32,6 +32,16 @@ type StartEncounterOutput struct {
 // selection is future work once room integration lands.
 const spawnPositionSpacing = 1
 
+// memberSightRange is the initial perception radius seeded for every member
+// added to a freshly-started encounter (rpg-api#632). Without it,
+// tkenc.PlayerInput.SightRange defaults to 0 and AddPlayer's initial reveal
+// (encounter.go's VisibleHexesAt(pos, 0)) shows each player exactly one hex,
+// so party members can never see each other. 10 matches the devseed fixture
+// (cmd/devseed/main.go) for parity between the harness and real lobby-started
+// encounters; character-derived vision is future work (deferred per
+// rpg-api#632's correction comment).
+const memberSightRange = 10
+
 // StartEncounter is the lobby -> encounter seam. Host-only, all-ready
 // gated, atomic member-set snapshot (guarded by the per-lobby lock so a
 // racing LeaveLobby lands either before this snapshot — member excluded —
@@ -88,11 +98,12 @@ func (o *Orchestrator) StartEncounter(ctx context.Context, in *StartEncounterInp
 		}
 		q := i * spawnPositionSpacing
 		if addErr := enc.AddPlayer(tkenc.PlayerInput{
-			PlayerID: core.PlayerID(m.PlayerID),
-			EntityID: core.EntityID(m.CharacterID),
-			Position: core.Hex{Q: q, R: 0, S: -q},
-			HP:       hp,
-			MaxHP:    maxHP,
+			PlayerID:   core.PlayerID(m.PlayerID),
+			EntityID:   core.EntityID(m.CharacterID),
+			Position:   core.Hex{Q: q, R: 0, S: -q},
+			SightRange: memberSightRange,
+			HP:         hp,
+			MaxHP:      maxHP,
 		}); addErr != nil {
 			return nil, fmt.Errorf("add member %q to encounter: %w", m.PlayerID, addErr)
 		}
