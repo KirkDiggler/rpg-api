@@ -143,10 +143,8 @@ encounter, each with HP seeded from their bound character, verified both via dir
 `TestPartyAssembles_FourPlayers_ThenCombatEntry_AttackResolves` (same file, rpg-api#634)
 builds on the same party-assembly flow and proves a lobby-created player can actually
 fight: `devcombat.Inject` adds a goblin + flips TURN_BASED, and the active player's real
-`TakeAction` RPC must not return `ErrNonCombatant`. The `TakeAction` assertion itself is
-`t.Skip()`'d pending a rpg-toolkit release past v0.24.3 (see status.md) — everything
-before it (injection, mode flip, initiative containing every player + the goblin) runs
-unconditionally.
+`TakeAction` RPC does not return `ErrNonCombatant` (fixed by rpg-toolkit encounter
+v0.24.4, see status.md).
 
 The integration harness (`internal/integration/harness/harness.go`) does spin up a real
 Redis container (testcontainers) for the suite, but `LobbyRepo` and `EncRepoV2` are

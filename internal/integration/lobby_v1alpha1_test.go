@@ -274,21 +274,11 @@ func (s *LobbyV1alpha1IntegrationSuite) TestPartyAssembles_FourPlayers_ThenComba
 	// The headline #634 proof: TakeAction against the lobby-created,
 	// characterData.Attach-hydrated player must NOT return ErrNonCombatant.
 	// Pre-#634, isPlayerCombatant rejected EVERY lobby-created player because
-	// StartEncounter had no honest AC/DamageDice snapshot to seed.
-	//
-	// BLOCKED on a rpg-toolkit encounter release past v0.24.3: the gate
-	// relaxation (isPlayerCombatant treats a hydrated seat — DataJSON present
-	// — as combat-ready, since the real Dnd5eCombatResolver ignores the flat
-	// AC/DamageDice snapshot once hydrated anyway) lives on rpg-toolkit branch
-	// fix/combat-gate-hydration — pushed, not yet released (batched per the
-	// standing local-override-until-unit-done pattern rather than rushed out
-	// as its own PR). Verified locally against a replace directive pointing
-	// at that branch: with it, this assertion passes; against the currently
-	// published v0.24.3 it fails with ErrNonCombatant ("missing HP/AC/
-	// DamageDice"). Un-skip once go.mod bumps past the toolkit release that
-	// includes the fix.
-	s.T().Skip("blocked on rpg-toolkit encounter isPlayerCombatant relaxation (branch fix/combat-gate-hydration) — rpg-api#634")
-
+	// StartEncounter had no honest AC/DamageDice snapshot to seed. The gate
+	// relaxation (isPlayerCombatant treats an actually-held seat as
+	// combat-ready, since the real Dnd5eCombatResolver ignores the flat
+	// AC/DamageDice snapshot once hydrated anyway) shipped in rpg-toolkit
+	// encounter v0.24.4 (rpg-toolkit#750/#751).
 	_, err = s.srv.EncounterClientV2.TakeAction(s.authCtx(activePlayer), &encounterv2pb.TakeActionRequest{
 		EncounterId:   encounterID,
 		ActorEntityId: string(activeEntity),

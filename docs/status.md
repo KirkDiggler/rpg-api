@@ -60,15 +60,15 @@ rehydrates every lobby-created player from the character store — keyed off
 ignores the flat AC/DamageDice snapshot entirely once a seat is hydrated (it drives
 damage off the held `*character.Character`'s real weapon via
 `Character.WeaponForActionRef`); the flat snapshot only feeds the stand-in fallback for
-an un-hydrated seat. **Fix landed in rpg-toolkit** (branch `fix/combat-gate-hydration`,
-pushed — not yet released; batched per the standing local-override-until-unit-done
-pattern rather than a rushed standalone toolkit PR): `isPlayerCombatant` now also passes
-when the seat carries `DataJSON` (hydrated), independent of the flat snapshot. Until
-rpg-api's `go.mod` bumps past the toolkit release containing that fix, the integration
-test proving the full path (`TestPartyAssembles_FourPlayers_ThenCombatEntry_
-AttackResolves` in `internal/integration/lobby_v1alpha1_test.go`) is `t.Skip()`'d at the
-`TakeAction` assertion — verified locally against a replace directive; un-skip once the
-toolkit dependency updates.
+an un-hydrated seat. **Fixed in rpg-toolkit encounter v0.24.4** (rpg-toolkit#750/#751,
+merged 2026-07-11): `isPlayerCombatant` (now an `*Encounter` method) treats an actually
+HELD seat (`e.heldCharacter(...) != nil`) as combat-ready, independent of the flat
+snapshot — deliberately not `len(DataJSON) > 0`, since DataJSON being set doesn't mean a
+seat has been hydrated (only a `LoadFromData` round-trip's cascade does that; a Copilot
+review catch on the toolkit PR). `go.mod` bumped to `v0.24.4`; the integration test
+proving the full path end-to-end (`TestPartyAssembles_FourPlayers_ThenCombatEntry_
+AttackResolves` in `internal/integration/lobby_v1alpha1_test.go`) now passes for real, no
+skip, no replace directive.
 
 `cmd/devseed` gains `--inject-combat --encounter-id=<id>`: loads the EXISTING encounter
 (does not rebuild it), adds a goblin (`monster.NewGoblin`, same DataJSON pattern every
