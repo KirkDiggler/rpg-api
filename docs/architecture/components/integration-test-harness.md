@@ -67,6 +67,23 @@ Because encounter and dungeon repos are in-memory, the harness cannot test persi
 
 Each test suite that creates a new `TestServer` starts a fresh Redis container. Container startup adds ~2-5 seconds per test suite. Tests sharing a harness via `SetupSuite` amortize this cost; tests that create a harness per test case do not.
 
+### v1alpha2 EncounterService character-store wiring (fixed rpg-api#634, 2026-07-11)
+
+The v1alpha2 `EncounterService` handler (`ts.EncounterClientV2`, registered via
+`encounterhandlerv2.New` in `wireServices`) was constructed with no
+`CombatResolverConfig`/`MovementResolverConfig` — unlike `cmd/server/server.go`'s
+production wiring, which passes `charRepo` through both. Without it, the v2 encounter
+orchestrator's `characterData.Attach` hydration cascade (`#689`) silently never ran:
+every combat-capable RPC (`TakeAction`, `EndTurn`, `MoveEntity`, `SubmitCheckReaction`)
+fell back to the stat-snapshot stand-in resolver path regardless of what a test seeded.
+This was invisible for years of tests because every existing combat fixture seeds
+explicit `AttackBonus`/`DamageDice`/`DamageType` on `PlayerInput` directly (the
+devseed-fixture pattern) — none needed real hydration. It became a real blocker for
+testing a lobby-created player (which, by design, carries no flat combat snapshot — see
+`internal/orchestrators/lobby/character.go`'s `seedMemberCombatSnapshot`), so it's fixed
+now: `wireServices` passes `charRepo` through `CombatResolverConfig`/
+`MovementResolverConfig` exactly as production does.
+
 ## Value
 
 The harness is what proves the full system works end-to-end. Unit tests with mocks verify orchestrator logic in isolation. The harness verifies:

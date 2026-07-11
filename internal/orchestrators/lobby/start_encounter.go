@@ -50,12 +50,13 @@ const memberSightRange = 10
 // This subsumes the deleted v1alpha2 CreateEncounter RPC (lobby-surface.md
 // "StartEncounter subsumes CreateEncounter"): it is now the ONLY way an
 // encounter comes into existence. It builds a fresh toolkit encounter, adds
-// one player per ready member (HP seeded from the character store,
+// one player per ready member (HP and AC seeded from the character store,
 // generalizing the single-caller seedPlayerHP the old handler-layer
-// CreateEncounter used), persists it ONCE to the encounter repo, transitions
-// the lobby to STARTED, and only then publishes EncounterStarted.
-// Persist-then-emit ordering is load-bearing: a client reacting to
-// EncounterStarted must find the encounter already in the encounter repo.
+// CreateEncounter used — see seedMemberCombatSnapshot in character.go),
+// persists it ONCE to the encounter repo, transitions the lobby to STARTED,
+// and only then publishes EncounterStarted. Persist-then-emit ordering is
+// load-bearing: a client reacting to EncounterStarted must find the
+// encounter already in the encounter repo.
 func (o *Orchestrator) StartEncounter(ctx context.Context, in *StartEncounterInput) (*StartEncounterOutput, error) {
 	if in == nil {
 		return nil, errors.New("lobby orchestrator: StartEncounterInput is required")
@@ -92,9 +93,9 @@ func (o *Orchestrator) StartEncounter(ctx context.Context, in *StartEncounterInp
 	)
 
 	for i, m := range members {
-		hp, maxHP, hpErr := o.seedMemberHP(ctx, m.CharacterID)
-		if hpErr != nil {
-			return nil, fmt.Errorf("seed HP for character %q: %w", m.CharacterID, hpErr)
+		snap, snapErr := o.seedMemberCombatSnapshot(ctx, m.CharacterID)
+		if snapErr != nil {
+			return nil, fmt.Errorf("seed combat snapshot for character %q: %w", m.CharacterID, snapErr)
 		}
 		q := i * spawnPositionSpacing
 		if addErr := enc.AddPlayer(tkenc.PlayerInput{
@@ -102,8 +103,19 @@ func (o *Orchestrator) StartEncounter(ctx context.Context, in *StartEncounterInp
 			EntityID:   core.EntityID(m.CharacterID),
 			Position:   core.Hex{Q: q, R: 0, S: -q},
 			SightRange: memberSightRange,
-			HP:         hp,
-			MaxHP:      maxHP,
+			HP:         snap.hp,
+			MaxHP:      snap.maxHP,
+			AC:         snap.ac,
+			// AttackBonus/DamageDice/DamageType stay zero: a stored character
+			// carries no precomputed field for them (real rules math, derived
+			// at attack time from equipped weapon + ability scores +
+			// proficiency bonus — see memberCombatSnapshot's doc comment in
+			// character.go). isPlayerCombatant (rpg-toolkit combat.go) treats
+			// a hydrated seat as combat-ready instead of gating on these flat
+			// fields; the v2 encounter orchestrator's characterData.Attach
+			// cascade rehydrates this player from EntityID on every
+			// combat-capable RPC (hydrate_players.go), independent of what
+			// StartEncounter seeds here.
 		}); addErr != nil {
 			return nil, fmt.Errorf("add member %q to encounter: %w", m.PlayerID, addErr)
 		}

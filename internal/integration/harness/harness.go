@@ -292,11 +292,28 @@ func (ts *TestServer) wireServices(cfg *Config) error {
 	// v1alpha2 encounter wiring — broker and repo are stored on ts so tests can
 	// seed data via ts.EncRepoV2.Save(...) and the registered handler sees the
 	// same state (single shared instance).
+	//
+	// CombatResolverConfig/MovementResolverConfig carry charRepo (mirrors
+	// cmd/server/server.go's production wiring) so the #689 characterData
+	// cascade actually hydrates players from DataJSON on combat-capable RPCs.
+	// Without this, EVERY player attack in this harness fell back to the
+	// stat-snapshot stand-in path regardless of what a test seeds — harmless
+	// for tests that seed explicit AttackBonus/DamageDice (the pre-#634
+	// pattern), but it silently defeated any test of a HYDRATED player (a
+	// lobby-created character, which by design carries no flat combat
+	// snapshot — rpg-api#634 Part 1). Roller is left nil so the rulebook uses
+	// its crypto-random default, matching production.
 	ts.BrokerV2 = tkenc.NewBroker(tkenc.NewInMemoryTransport())
 	ts.EncRepoV2 = encountersv2.NewInMemory()
 	encV2Handler, err := encounterhandlerv2.New(&encounterhandlerv2.HandlerConfig{
 		Broker: ts.BrokerV2,
 		Repo:   ts.EncRepoV2,
+		CombatResolverConfig: &encounterhandlerv2.Dnd5eCombatResolverConfig{
+			CharacterRepo: charRepo,
+		},
+		MovementResolverConfig: &encounterhandlerv2.Dnd5eMovementResolverConfig{
+			CharacterRepo: charRepo,
+		},
 	})
 	if err != nil {
 		return fmt.Errorf("v2 encounter handler: %w", err)

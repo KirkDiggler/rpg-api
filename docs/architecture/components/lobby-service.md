@@ -72,18 +72,23 @@ not this package.
   line-of-sight concept), so every subscriber for a lobby ID gets an identical event
   stream.
 - **`character.go`** — `resolveCharacter` (ownership validation + name enrichment for
-  `CreateLobby`/`JoinLobby`) and `seedMemberHP` (generalizes the old
+  `CreateLobby`/`JoinLobby`) and `seedMemberCombatSnapshot` (generalizes the old
   handler-layer `seedPlayerHP`, rpg-api#612, from one caller to N ready members at
-  `StartEncounter`).
+  `StartEncounter`; renamed + extended by rpg-api#634 to also seed AC honestly from the
+  stored character — see the `memberCombatSnapshot` doc comment for why AttackBonus/
+  DamageDice/DamageType are deliberately NOT seeded here).
 - **`start_encounter.go`** — the lobby -> encounter seam. Builds a fresh
   `tkenc.Encounter` on the SAME broker/repo the v2 encounter service reads from, adds
-  one player per ready member (HP seeded, positions spread along a line — a
+  one player per ready member (HP + AC seeded, positions spread along a line — a
   placeholder; no spawn-point system exists yet), persists ONCE, flips the lobby to
   STARTED, and only then publishes `EncounterStarted`. **Persist-then-emit ordering is
   load-bearing**: a client reacting to the event must find the encounter already in the
   encounter repo — enforced by construction (the `Publish` call is textually after both
   `Save` calls), and proven by
-  `TestStartEncounter_PublishesEncounterStarted_AfterPersist`.
+  `TestStartEncounter_PublishesEncounterStarted_AfterPersist`. A lobby-created member's
+  combat-readiness for TakeAction comes from hydration (the v2 encounter orchestrator's
+  `characterData.Attach` cascade, keyed off the `EntityID` set here), not from a flat
+  AttackBonus/DamageDice snapshot — see status.md's rpg-api#634 entry.
 
 ### Repository (`internal/repositories/lobby/`)
 
@@ -113,7 +118,10 @@ JSON-round-trip-on-every-call contract.
   start an encounter directly in `TURN_BASED` mode; the new contract has no equivalent
   field, so every lobby-constructed encounter starts `FREE_ROAM`. No production caller
   depended on the old behavior (devseed writes straight to Redis); flagged as a design
-  gap for a future RPC revision, not fixed here.
+  gap for a future RPC revision, not fixed here. `devseed --inject-combat`
+  (`internal/pkg/devcombat`) fills this gap for local/MCP playtesting only — it loads an
+  EXISTING lobby-started encounter, adds a monster, and flips TURN_BASED without a proto
+  change (rpg-api#634).
 - **Spawn positions are a placeholder** — `StartEncounter` spreads members along a
   straight line (`Q += index`) since no room/spawn-point system exists yet for a
   freshly-created lobby encounter. Real spawn selection is future work once room
@@ -131,6 +139,14 @@ gate test: four dev-authenticated players create/join/ready/start and land in on
 encounter, each with HP seeded from their bound character, verified both via direct
 `EncRepoV2` inspection and via the pre-existing `StreamEncounter` snapshot path.
 `TestJoinLobby_LateJoin_FailedPrecondition` covers the late-join edge case end-to-end.
+
+`TestPartyAssembles_FourPlayers_ThenCombatEntry_AttackResolves` (same file, rpg-api#634)
+builds on the same party-assembly flow and proves a lobby-created player can actually
+fight: `devcombat.Inject` adds a goblin + flips TURN_BASED, and the active player's real
+`TakeAction` RPC must not return `ErrNonCombatant`. The `TakeAction` assertion itself is
+`t.Skip()`'d pending a rpg-toolkit release past v0.24.3 (see status.md) — everything
+before it (injection, mode flip, initiative containing every player + the goblin) runs
+unconditionally.
 
 The integration harness (`internal/integration/harness/harness.go`) does spin up a real
 Redis container (testcontainers) for the suite, but `LobbyRepo` and `EncRepoV2` are

@@ -61,6 +61,33 @@ func (s *LobbySuite) TestStartEncounter_Success_ConstructsAndPersistsEncounter()
 	s.Require().Equal(out.EncounterID, lobbyData.EncounterID)
 }
 
+// TestStartEncounter_SeedsHonestCombatSnapshot proves the rpg-api#634 fix:
+// AC is seeded from the stored character (a real field, copied verbatim),
+// while AttackBonus/DamageDice/DamageType stay zero — a character carries no
+// precomputed value for them, and rpg-api must not compute one (that's rules
+// math the toolkit owns). isPlayerCombatant instead treats a hydrated seat
+// as combat-ready; that hydration comes from the v2 encounter orchestrator's
+// characterData.Attach cascade on the first combat-capable RPC, not from
+// StartEncounter, so DataJSON is correctly absent here.
+func (s *LobbySuite) TestStartEncounter_SeedsHonestCombatSnapshot() {
+	s.seedReadyLobby("lobby-s7", "alice")
+	s.expectCharacterWithAC("char-alice", "alice", "Alice", 12, 12, 15)
+
+	out, err := s.orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		PlayerID: "alice", LobbyID: "lobby-s7",
+	})
+	s.Require().NoError(err)
+
+	encData, err := s.encRepo.Get(s.ctx, out.EncounterID)
+	s.Require().NoError(err)
+	alice := encData.Players[core.PlayerID("alice")]
+	s.Require().Equal(15, alice.AC, "AC must be seeded honestly from the stored character")
+	s.Require().Zero(alice.AttackBonus, "no stored field to honestly derive an attack bonus from")
+	s.Require().Empty(alice.DamageDice, "no stored field to honestly derive damage dice from")
+	s.Require().Empty(alice.DamageType, "no stored field to honestly derive a damage type from")
+	s.Require().Empty(alice.DataJSON, "hydration is the v2 orchestrator's characterData.Attach cascade's job, not StartEncounter's")
+}
+
 func (s *LobbySuite) TestStartEncounter_CharacterNotFound_SeedsZeroHP_NotFatal() {
 	s.seedReadyLobby("lobby-s2", "alice")
 	s.charRepo.EXPECT().

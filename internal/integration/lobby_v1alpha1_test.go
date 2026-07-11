@@ -20,7 +20,9 @@ import (
 	encounterv2pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/encounter"
 	"github.com/KirkDiggler/rpg-api/internal/entities"
 	"github.com/KirkDiggler/rpg-api/internal/integration/harness"
+	"github.com/KirkDiggler/rpg-api/internal/pkg/devcombat"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
+	tkenc "github.com/KirkDiggler/rpg-toolkit/encounter"
 	core "github.com/KirkDiggler/rpg-toolkit/encounter/core"
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 )
@@ -173,6 +175,161 @@ func (s *LobbyV1alpha1IntegrationSuite) TestPartyAssembles_FourPlayers_CreateJoi
 		s.Require().NotNil(snap.GetSnapshotDelivered())
 		s.Require().Equal(encounterID, snap.GetSnapshotDelivered().GetEncounter().GetId())
 	}
+}
+
+// TestPartyAssembles_FourPlayers_ThenCombatEntry_AttackResolves builds on the
+// same create/join/ready/start party-assembly flow as
+// TestPartyAssembles_FourPlayers_CreateJoinReadyStart and adds rpg-api#634's
+// combat-entry proof: once the party is seated in a v2 encounter,
+// devcombat.Inject (the SAME code path cmd/devseed's --inject-combat flag
+// uses) adds a goblin and flips the encounter to TURN_BASED, and the active
+// player's real attack via the production TakeAction RPC actually resolves
+// — NOT ErrNonCombatant, which is what every lobby-created player hit before
+// #634 (isPlayerCombatant gated on a flat AC/DamageDice snapshot
+// StartEncounter had no honest way to populate for an arbitrary character).
+//
+// A miss is still a valid pass: the toolkit resolves the attack with a real
+// d20, matching TestCombatSlice_TakeActionAndEndTurn_NPCDispatch's
+// established pattern in encounter_v2_test.go. What this test proves is that
+// the attack RESOLVES at all instead of being rejected at the combatant gate
+// — that rejection is the bug #634 fixes, not the coin-flip of hit vs. miss.
+func (s *LobbyV1alpha1IntegrationSuite) TestPartyAssembles_FourPlayers_ThenCombatEntry_AttackResolves() {
+	players := []struct {
+		id, character, name string
+		hp                  int
+	}{
+		{"alice", "char-alice", "Alice", 12},
+		{"bob", "char-bob", "Bob", 10},
+		{"carol", "char-carol", "Carol", 14},
+		{"dave", "char-dave", "Dave", 8},
+	}
+	for _, p := range players {
+		s.seedCharacter(p.character, p.id, p.name, p.hp)
+	}
+
+	createResp, err := s.srv.LobbyClient.CreateLobby(s.authCtx("alice"), &lobbyv1alpha1.CreateLobbyRequest{
+		CampaignId: "campaign-1", CharacterId: "char-alice",
+	})
+	s.Require().NoError(err)
+	lobbyID := createResp.GetLobbyId()
+	joinRef := createResp.GetJoinRef()
+
+	for _, p := range players[1:] {
+		_, joinErr := s.srv.LobbyClient.JoinLobby(s.authCtx(p.id), &lobbyv1alpha1.JoinLobbyRequest{
+			JoinRef: joinRef, CharacterId: p.character,
+		})
+		s.Require().NoError(joinErr)
+	}
+	for _, p := range players {
+		_, readyErr := s.srv.LobbyClient.SetReady(s.authCtx(p.id), &lobbyv1alpha1.SetReadyRequest{
+			LobbyId: lobbyID, Ready: true,
+		})
+		s.Require().NoError(readyErr)
+	}
+
+	startResp, err := s.srv.LobbyClient.StartEncounter(s.authCtx("alice"), &lobbyv1alpha1.StartEncounterRequest{
+		LobbyId: lobbyID,
+	})
+	s.Require().NoError(err)
+	encounterID := startResp.GetEncounterId()
+	s.Require().NotEmpty(encounterID)
+
+	// rpg-api#634 Part 2: inject a goblin into the lobby-started encounter and
+	// flip it to TURN_BASED — the same code path cmd/devseed's --inject-combat
+	// uses.
+	injectOut, err := devcombat.Inject(s.ctx, s.srv.EncRepoV2, devcombat.InjectInput{EncounterID: encounterID})
+	s.Require().NoError(err)
+	s.Require().Equal(core.ModeTurnBased, injectOut.Mode)
+
+	encData, err := s.srv.EncRepoV2.Get(s.ctx, encounterID)
+	s.Require().NoError(err)
+	s.Require().Contains(encData.Monsters, injectOut.GoblinID, "injected goblin must be in the encounter")
+	s.Require().Contains(encData.Initiative, injectOut.GoblinID, "goblin must be included in the rolled initiative order")
+	for _, p := range players {
+		pd, ok := encData.Players[core.PlayerID(p.id)]
+		s.Require().True(ok, "player %q must survive combat injection", p.id)
+		s.Require().Contains(encData.Initiative, pd.EntityID, "player %q must be included in the rolled initiative order", p.id)
+	}
+
+	// Advance to a player's own turn (initiative is roll-dependent — the
+	// goblin may go first) via direct toolkit manipulation. This is setup for
+	// the assertion below, not the assertion itself — mirrors
+	// EncounterV2IntegrationSuite.advanceUntilPlayerActiveByDirectToolkit in
+	// encounter_v2_test.go (duplicated rather than shared across suite types
+	// for a ~15-line helper).
+	s.advanceUntilPlayerActive(encData)
+
+	data, err := s.srv.EncRepoV2.Get(s.ctx, encounterID)
+	s.Require().NoError(err)
+	activeEntity := data.Initiative[data.ActiveIdx]
+	var activePlayer string
+	for pid, pd := range data.Players {
+		if pd.EntityID == activeEntity {
+			activePlayer = string(pid)
+			break
+		}
+	}
+	s.Require().NotEmpty(activePlayer, "an active player must be found before TakeAction")
+
+	// The headline #634 proof: TakeAction against the lobby-created,
+	// characterData.Attach-hydrated player must NOT return ErrNonCombatant.
+	// Pre-#634, isPlayerCombatant rejected EVERY lobby-created player because
+	// StartEncounter had no honest AC/DamageDice snapshot to seed.
+	//
+	// BLOCKED on a rpg-toolkit encounter release past v0.24.3: the gate
+	// relaxation (isPlayerCombatant treats a hydrated seat — DataJSON present
+	// — as combat-ready, since the real Dnd5eCombatResolver ignores the flat
+	// AC/DamageDice snapshot once hydrated anyway) lives on rpg-toolkit branch
+	// fix/combat-gate-hydration — pushed, not yet released (batched per the
+	// standing local-override-until-unit-done pattern rather than rushed out
+	// as its own PR). Verified locally against a replace directive pointing
+	// at that branch: with it, this assertion passes; against the currently
+	// published v0.24.3 it fails with ErrNonCombatant ("missing HP/AC/
+	// DamageDice"). Un-skip once go.mod bumps past the toolkit release that
+	// includes the fix.
+	s.T().Skip("blocked on rpg-toolkit encounter isPlayerCombatant relaxation (branch fix/combat-gate-hydration) — rpg-api#634")
+
+	_, err = s.srv.EncounterClientV2.TakeAction(s.authCtx(activePlayer), &encounterv2pb.TakeActionRequest{
+		EncounterId:   encounterID,
+		ActorEntityId: string(activeEntity),
+		ActionRef:     &encounterv2pb.Ref{Module: "dnd5e", Type: "action", Id: "attack"},
+		Target: &encounterv2pb.ActionTarget{
+			Kind: &encounterv2pb.ActionTarget_EntityId{EntityId: string(injectOut.GoblinID)},
+		},
+	})
+	s.Require().NoError(err, "attack must resolve — a lobby-created player must pass the combatant gate")
+}
+
+// advanceUntilPlayerActive cycles NPC (goblin) turns via direct toolkit
+// calls + a deterministic stand-in resolver until the active actor is a
+// player, then persists the advanced state. Mirrors
+// EncounterV2IntegrationSuite.advanceUntilPlayerActiveByDirectToolkit in
+// encounter_v2_test.go.
+func (s *LobbyV1alpha1IntegrationSuite) advanceUntilPlayerActive(data *tkenc.Data) {
+	for {
+		s.Require().NotEmpty(data.Initiative, "encounter has empty initiative; SetMode/inject may have failed")
+		active := data.Initiative[data.ActiveIdx]
+		isPlayer := false
+		for _, pd := range data.Players {
+			if pd.EntityID == active {
+				isPlayer = true
+				break
+			}
+		}
+		if isPlayer {
+			break
+		}
+		// Active is the goblin — run NPCAct + EndTurn to cycle, via a
+		// deterministic stand-in resolver (always hits) so this setup step
+		// doesn't depend on a real d20.
+		enc, reloadErr := tkenc.LoadFromData(s.ctx, data, s.srv.BrokerV2, tkenc.WithCombatResolver(testStandInResolver{}))
+		s.Require().NoError(reloadErr)
+		s.Require().NoError(enc.NPCAct(s.ctx, active))
+		_, _, endErr := enc.EndTurn(context.Background(), active)
+		s.Require().NoError(endErr)
+		data = enc.ToData()
+	}
+	s.Require().NoError(s.srv.EncRepoV2.Save(s.ctx, data))
 }
 
 // TestJoinLobby_LateJoin_FailedPrecondition proves the "late join" edge

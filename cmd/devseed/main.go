@@ -42,6 +42,12 @@
 //	# Seed for free-roam (no initiative). Default is turn_based.
 //	go run ./cmd/devseed --mode=free_roam
 //
+//	# Inject a goblin into an EXISTING encounter (e.g. one created via the
+//	# lobby StartEncounter RPC) and flip it to TURN_BASED, WITHOUT rebuilding
+//	# it or touching its existing players (rpg-api#634 — "a real fight on
+//	# GameView"). --encounter-id must reference an already-persisted encounter.
+//	go run ./cmd/devseed --inject-combat --encounter-id=<id>
+//
 //	# Custom Redis target
 //	REDIS_ADDR=redis.example.com:6379 go run ./cmd/devseed
 //
@@ -61,7 +67,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/KirkDiggler/rpg-api/internal/pkg/devcombat"
 	redisclient "github.com/KirkDiggler/rpg-api/internal/redis"
+	encountersv2 "github.com/KirkDiggler/rpg-api/internal/repositories/encounters/v2"
 	coreResources "github.com/KirkDiggler/rpg-toolkit/core/resources"
 	tkenc "github.com/KirkDiggler/rpg-toolkit/encounter"
 	encountercore "github.com/KirkDiggler/rpg-toolkit/encounter/core"
@@ -181,6 +189,10 @@ func run() error {
 		mode        = flag.String("mode", modeTurnBased, "Encounter mode: turn_based or free_roam")
 		fixture     = flag.String("fixture", fixtureDefault,
 			"Fixture to seed: wave-1-rogue, wave-2-monk, wave-2-beat2, wave-3-barbarian. Default: alice L2 + bob + wendy.")
+		injectCombat = flag.Bool("inject-combat", false,
+			"Load the EXISTING encounter at --encounter-id, add a goblin, and flip it to TURN_BASED, "+
+				"instead of seeding a fresh fixture. Requires an already-persisted encounter (e.g. one "+
+				"created via the lobby StartEncounter RPC). Ignores --mode and --fixture.")
 	)
 	flag.Parse()
 
@@ -192,9 +204,13 @@ func run() error {
 		addr = defaultRedisAddr
 	}
 
-	encMode, err := parseMode(*mode)
-	if err != nil {
-		return fmt.Errorf("invalid --mode: %w", err)
+	var encMode encountercore.EncounterMode
+	if !*injectCombat {
+		var modeErr error
+		encMode, modeErr = parseMode(*mode)
+		if modeErr != nil {
+			return fmt.Errorf("invalid --mode: %w", modeErr)
+		}
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -202,7 +218,7 @@ func run() error {
 
 	// Log the target before connecting so an error that swallows addr (per
 	// the gosec G706 fix below) still leaves a clear breadcrumb.
-	fmt.Fprintf(os.Stderr, "devseed: target redis=%s fixture=%q\n", addr, *fixture)
+	fmt.Fprintf(os.Stderr, "devseed: target redis=%s fixture=%q inject-combat=%v\n", addr, *fixture, *injectCombat)
 
 	client, err := redisclient.NewClient(addr, nil)
 	if err != nil {
@@ -216,6 +232,10 @@ func run() error {
 	if pingErr := client.Ping(ctx).Err(); pingErr != nil {
 		// gosec/G706: same rationale as the NewClient error path.
 		return fmt.Errorf("ping redis: %w", pingErr)
+	}
+
+	if *injectCombat {
+		return runInjectCombat(ctx, client, *encounterID)
 	}
 
 	var chars []*toolkitchar.Data
@@ -294,6 +314,40 @@ func run() error {
 		os.Stderr,
 		"seeded %s%s: mode=%v players=%d monsters=%d ttl=%s\n",
 		encKeyPrefix, encData.ID, encMode, len(encData.Players), len(encData.Monsters), encTTL,
+	)
+	return nil
+}
+
+// runInjectCombat implements --inject-combat: a thin CLI wrapper over
+// devcombat.Inject (internal/pkg/devcombat), the shared code path
+// cmd/devseed and the integration-test suite both call so the CLI mode and
+// the test coverage exercise identical logic (package main cannot be
+// imported by other packages, so the actual load/AddMonster/SetMode/save
+// logic — including its known-gap documentation — lives in that package, not
+// here). See devcombat.Inject's doc comment for what it does and why.
+func runInjectCombat(ctx context.Context, client redisclient.Client, encounterID string) error {
+	repo := encountersv2.NewRedis(client, encTTL)
+
+	out, err := devcombat.Inject(ctx, repo, devcombat.InjectInput{EncounterID: encounterID})
+	if err != nil {
+		if errors.Is(err, encountersv2.ErrNotFound) {
+			return fmt.Errorf(
+				"encounter %q not found: --inject-combat requires an EXISTING encounter "+
+					"(e.g. one created via the lobby StartEncounter RPC, or a prior devseed run)",
+				encounterID,
+			)
+		}
+		return err
+	}
+
+	if out.AlreadySetTurnBased {
+		fmt.Fprintf(os.Stderr, "devseed --inject-combat: encounter %s already TURN_BASED, leaving mode as-is\n", encounterID)
+	}
+	fmt.Fprintf(
+		os.Stderr,
+		"devseed --inject-combat: encounter=%s%s goblin=%s pos=(%d,%d,%d) mode=%v players=%d monsters=%d\n",
+		encKeyPrefix, encounterID, out.GoblinID, out.Position.Q, out.Position.R, out.Position.S,
+		out.Mode, out.PlayerCount, out.MonsterCount,
 	)
 	return nil
 }
