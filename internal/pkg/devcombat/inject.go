@@ -73,8 +73,14 @@ type InjectOutput struct {
 // one, and this is that something for dev/playtest purposes.
 //
 // If the encounter is already TURN_BASED (e.g. a second goblin is being
-// injected mid-fight), SetMode is skipped rather than erroring — the toolkit
-// rejects a redundant SetMode call ("mode is already turn_based").
+// injected mid-fight), the toolkit rejects a redundant SetMode call ("mode is
+// already turn_based") — and AddMonster alone never touches Initiative (only
+// SetMode's rollInitiative does), so a monster added while already
+// turn-based would otherwise sit in the encounter forever without ever
+// getting a turn. Inject instead round-trips FREE_ROAM -> TURN_BASED to force
+// a fresh roll that includes the new monster, accepting the reset to
+// Round=1/ActiveIdx=0 as the honest cost of adding a combatant mid-fight in a
+// dev tool (not a live production interrupt).
 //
 // Known acceptable gap: a monster added here does NOT go through
 // monstertraits.LoadMonsterConditions / the OA reaction-readiness wiring that
@@ -115,11 +121,13 @@ func Inject(ctx context.Context, repo encountersv2.Repository, input InjectInput
 		return nil, fmt.Errorf("marshal goblin data: %w", err)
 	}
 
-	// StartEncounter spaces lobby members along Q=0..N-1, R=0
-	// (spawnPositionSpacing, internal/orchestrators/lobby/start_encounter.go)
-	// — one hex past the last member puts the goblin adjacent to the party
-	// instead of stacked on a player.
-	goblinQ := len(data.Players) + 1
+	// Placed one hex past the party's leading edge — the highest Q among
+	// existing players AND monsters — so the goblin starts adjacent to the
+	// party instead of stacked on an occupied hex. Computed from actual
+	// positions (not assumed from StartEncounter's current Q=0..N-1 layout)
+	// so this stays correct if spawn placement ever changes, and so a SECOND
+	// injected goblin doesn't stack on the first.
+	goblinQ := maxOccupiedQ(data) + 1
 	goblinPos := core.Hex{Q: goblinQ, R: 0, S: -goblinQ}
 	if addErr := enc.AddMonster(tkenc.MonsterInput{
 		ID:          goblinID,
@@ -138,10 +146,15 @@ func Inject(ctx context.Context, repo encountersv2.Repository, input InjectInput
 	}
 
 	alreadyTurnBased := data.Mode == core.ModeTurnBased
-	if !alreadyTurnBased {
-		if setErr := enc.SetMode(core.ModeTurnBased); setErr != nil {
-			return nil, fmt.Errorf("set mode turn_based on encounter %q: %w", input.EncounterID, setErr)
+	if alreadyTurnBased {
+		// Round-trip to force rollInitiative to include the just-added
+		// monster — see the doc comment above.
+		if setErr := enc.SetMode(core.ModeFreeRoam); setErr != nil {
+			return nil, fmt.Errorf("reset encounter %q to free_roam before re-rolling initiative: %w", input.EncounterID, setErr)
 		}
+	}
+	if setErr := enc.SetMode(core.ModeTurnBased); setErr != nil {
+		return nil, fmt.Errorf("set mode turn_based on encounter %q: %w", input.EncounterID, setErr)
 	}
 
 	updated := enc.ToData()
@@ -157,4 +170,23 @@ func Inject(ctx context.Context, repo encountersv2.Repository, input InjectInput
 		PlayerCount:         len(updated.Players),
 		MonsterCount:        len(updated.Monsters),
 	}, nil
+}
+
+// maxOccupiedQ returns the highest Q coordinate occupied by any player or
+// monster in data, or -1 if the encounter is empty. Used to place a newly
+// injected monster one hex past the party's leading edge, computed from
+// actual positions rather than assumed from any particular spawn layout.
+func maxOccupiedQ(data *tkenc.Data) int {
+	maxQ := -1
+	for _, pd := range data.Players {
+		if pd.View != nil && pd.View.Position.Q > maxQ {
+			maxQ = pd.View.Position.Q
+		}
+	}
+	for _, md := range data.Monsters {
+		if md.Position.Q > maxQ {
+			maxQ = md.Position.Q
+		}
+	}
+	return maxQ
 }

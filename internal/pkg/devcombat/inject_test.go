@@ -74,13 +74,19 @@ func (s *InjectSuite) TestInject_AddsGoblinAndFlipsToTurnBased() {
 	data, err := s.repo.Get(s.ctx, encID)
 	s.Require().NoError(err)
 	s.Require().Equal(core.ModeTurnBased, data.Mode)
-	s.Require().NotEmpty(data.Initiative, "SetMode(TurnBased) must roll initiative")
+	s.Require().Contains(data.Initiative, out.GoblinID, "the goblin must be in the rolled initiative order, or it can never take a turn")
+	s.Require().Contains(data.Initiative, core.EntityID("char-alice"))
+	s.Require().Contains(data.Initiative, core.EntityID("char-bob"))
 
 	goblin, ok := data.Monsters["goblin-1"]
 	s.Require().True(ok)
 	s.Require().Positive(goblin.HP)
 	s.Require().Positive(goblin.AC)
 	s.Require().NotEmpty(goblin.DataJSON, "goblin must carry DataJSON — monster.NewGoblin, not a hand-rolled stub")
+	// alice (Q:0) and bob (Q:1) are the party's leading edge; the goblin must
+	// land one hex past it (Q:2), not two (the off-1 bug Copilot review
+	// caught on rpg-api#635), and not stacked on either player.
+	s.Require().Equal(2, goblin.Position.Q, "goblin must spawn adjacent to the party's leading edge, not two hexes past it")
 
 	alice, ok := data.Players["alice"]
 	s.Require().True(ok, "existing player must survive injection")
@@ -90,11 +96,15 @@ func (s *InjectSuite) TestInject_AddsGoblinAndFlipsToTurnBased() {
 	s.Require().Empty(alice.DamageDice)
 }
 
-// TestInject_AlreadyTurnBased_SkipsRedundantSetMode proves a second injection
-// against an in-progress fight doesn't hit the toolkit's "mode is already
-// turn_based" SetMode rejection — it adds another goblin (goblin-2, keyed off
-// the current monster count) and leaves the mode/initiative alone.
-func (s *InjectSuite) TestInject_AlreadyTurnBased_SkipsRedundantSetMode() {
+// TestInject_AlreadyTurnBased_ReRollsInitiativeForNewMonster proves a second
+// injection against an in-progress fight doesn't hit the toolkit's "mode is
+// already turn_based" SetMode rejection — Inject round-trips FREE_ROAM ->
+// TURN_BASED to force a fresh roll — and, critically, that the added goblin
+// (goblin-2, keyed off the current monster count) actually lands in the
+// re-rolled Initiative order. AddMonster alone never touches Initiative, so
+// without the round-trip a mid-fight monster would sit in the encounter
+// forever without ever getting a turn.
+func (s *InjectSuite) TestInject_AlreadyTurnBased_ReRollsInitiativeForNewMonster() {
 	const encID = "lobby-enc-2"
 	s.seedLobbyLikeEncounter(encID)
 
@@ -110,6 +120,9 @@ func (s *InjectSuite) TestInject_AlreadyTurnBased_SkipsRedundantSetMode() {
 	data, err := s.repo.Get(s.ctx, encID)
 	s.Require().NoError(err)
 	s.Require().Len(data.Monsters, 2)
+	s.Require().Equal(core.ModeTurnBased, data.Mode)
+	s.Require().Contains(data.Initiative, out.GoblinID, "the newly injected goblin must be in the re-rolled initiative order, or it can never take a turn")
+	s.Require().Contains(data.Initiative, core.EntityID("goblin-1"), "the first goblin must still be in the re-rolled initiative order")
 }
 
 // TestInject_MissingEncounter_ReturnsErrNotFound proves --inject-combat

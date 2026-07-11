@@ -341,7 +341,7 @@ func runInjectCombat(ctx context.Context, client redisclient.Client, encounterID
 	}
 
 	if out.AlreadySetTurnBased {
-		fmt.Fprintf(os.Stderr, "devseed --inject-combat: encounter %s already TURN_BASED, leaving mode as-is\n", encounterID)
+		fmt.Fprintf(os.Stderr, "devseed --inject-combat: encounter %s was already TURN_BASED, re-rolled initiative to include the new monster\n", encounterID)
 	}
 	fmt.Fprintf(
 		os.Stderr,
