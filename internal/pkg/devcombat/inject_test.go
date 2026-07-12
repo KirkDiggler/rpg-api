@@ -133,3 +133,29 @@ func (s *InjectSuite) TestInject_MissingEncounter_ReturnsErrNotFound() {
 	s.Require().Error(err)
 	s.Require().True(errors.Is(err, encountersv2.ErrNotFound))
 }
+
+// TestInject_ForceNPCFirst_GoblinLeadsInitiative proves the rpg-api#636 repro
+// knob: with ForceNPCFirst, the injected goblin deterministically leads the
+// persisted Initiative (ActiveIdx=0), regardless of what the toolkit's real
+// roll would have produced — this is what lets both the lobby integration
+// test and manual `devseed --inject-combat --inject-combat-npc-first`
+// playtest repro reproduce the "NPC first in initiative stalls the encounter"
+// bug on demand instead of waiting for an unlucky roll.
+func (s *InjectSuite) TestInject_ForceNPCFirst_GoblinLeadsInitiative() {
+	const encID = "lobby-enc-npc-first"
+	s.seedLobbyLikeEncounter(encID)
+
+	out, err := devcombat.Inject(s.ctx, s.repo, devcombat.InjectInput{
+		EncounterID:   encID,
+		ForceNPCFirst: true,
+	})
+	s.Require().NoError(err)
+
+	data, err := s.repo.Get(s.ctx, encID)
+	s.Require().NoError(err)
+	s.Require().Equal(0, data.ActiveIdx)
+	s.Require().Equal(out.GoblinID, data.Initiative[0], "the goblin must lead initiative")
+	s.Require().Len(data.Initiative, 3, "alice, bob, and the goblin must all still be in initiative")
+	s.Require().Contains(data.Initiative, core.EntityID("char-alice"))
+	s.Require().Contains(data.Initiative, core.EntityID("char-bob"))
+}
