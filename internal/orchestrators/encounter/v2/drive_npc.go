@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 
+	encountersv2 "github.com/KirkDiggler/rpg-api/internal/repositories/encounters/v2"
+	tkenc "github.com/KirkDiggler/rpg-toolkit/encounter"
 	"github.com/KirkDiggler/rpg-toolkit/encounter/core"
 )
 
@@ -73,6 +75,16 @@ type DriveStalledNPCTurnOutput struct {
 // does not call driveNPCChain and does not persist — so a connect-time kick on
 // every StreamEncounter/GetEncounter never costs an extra write on the common
 // case (it's already a player's turn).
+//
+// Cheap pre-check (Copilot review #638): StreamEncounter/GetEncounter call
+// this on EVERY connect-time read, and the common case is "already a
+// player's turn" — the full o.load(WithCharacterData: true) pays for a
+// character-store fetch + #598 economy seeding per player seat, which would
+// otherwise run on every single connect regardless of whether there is
+// anything to drive. A plain encRepo.Get + membership + raw-snapshot IsNPC
+// check (cheapActiveIsNPC) happens first, INSIDE the per-encounter lock so
+// the decision and the real work stay atomic; only when the raw snapshot's
+// active actor is genuinely an NPC does this pay for the expensive load.
 func (o *Orchestrator) DriveStalledNPCTurn(
 	ctx context.Context,
 	in *DriveStalledNPCTurnInput,
@@ -83,6 +95,20 @@ func (o *Orchestrator) DriveStalledNPCTurn(
 
 	unlock := o.npcDriveLocks.Lock(in.EncounterID)
 	defer unlock()
+
+	data, err := o.encRepo.Get(ctx, in.EncounterID)
+	if err != nil {
+		if errors.Is(err, encountersv2.ErrNotFound) {
+			return nil, ErrEncounterNotFound
+		}
+		return nil, fmt.Errorf("check stalled npc turn %q: %w", in.EncounterID, err)
+	}
+	if _, ok := data.Players[in.PlayerID]; !ok {
+		return nil, ErrPlayerNotInEncounter
+	}
+	if !cheapActiveIsNPC(data) {
+		return &DriveStalledNPCTurnOutput{Kicked: false}, nil
+	}
 
 	enc, err := o.load(ctx, loadInput{
 		EncounterID: in.EncounterID,
@@ -98,6 +124,9 @@ func (o *Orchestrator) DriveStalledNPCTurn(
 
 	active := enc.ActiveActor()
 	if active == "" || !enc.IsNPC(active) {
+		// Raced with something else that advanced past the NPC between the
+		// cheap check above and this real load (e.g. a concurrent EndTurn
+		// outside this kick's own lock) — nothing left to drive.
 		return &DriveStalledNPCTurnOutput{Kicked: false}, nil
 	}
 
@@ -106,4 +135,23 @@ func (o *Orchestrator) DriveStalledNPCTurn(
 	}
 
 	return &DriveStalledNPCTurnOutput{Kicked: true}, nil
+}
+
+// cheapActiveIsNPC reports whether data's active actor is an NPC (a monster
+// seat), using only the raw persisted snapshot — no character-store fetch, no
+// hydration. Mirrors tkenc.Encounter's ActiveActor()/IsNPC() logic exactly
+// (rpg-toolkit encounter/encounter.go), just against *Data instead of a
+// loaded *Encounter, so DriveStalledNPCTurn's connect-time pre-check can skip
+// the expensive o.load(WithCharacterData: true) call on the common
+// "already a player's turn" case.
+func cheapActiveIsNPC(data *tkenc.Data) bool {
+	if data.Mode != core.ModeTurnBased || len(data.Initiative) == 0 {
+		return false
+	}
+	if data.ActiveIdx < 0 || data.ActiveIdx >= len(data.Initiative) {
+		return false
+	}
+	active := data.Initiative[data.ActiveIdx]
+	_, isMonster := data.Monsters[active]
+	return isMonster
 }

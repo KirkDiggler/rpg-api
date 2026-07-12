@@ -248,6 +248,16 @@ func (o *Orchestrator) driveNPCChain(
 				isNPC = false
 				break
 			}
+			// Copilot review (rpg-api#638): any other EndTurn failure here must
+			// still persist whatever NPCAct already mutated (damage, position,
+			// etc.) before returning — otherwise a retry re-loads the SAME
+			// NPC-active snapshot and re-stalls. endErr stays the %w-wrapped
+			// primary error so the handler's errors.Is classification is
+			// unaffected; a persist failure on top is folded in as non-fatal
+			// context rather than silently dropped.
+			if persistErr := o.persistWithCharacterData(ctx, enc, encounterID); persistErr != nil {
+				return fmt.Errorf("%w (persist failed: %v)", endErr, persistErr)
+			}
 			return endErr
 		}
 		// Post-EndTurn end-of-encounter check (Wave 2.10 guard, defensive — EndTurn

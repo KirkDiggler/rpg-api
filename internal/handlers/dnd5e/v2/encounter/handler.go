@@ -255,9 +255,12 @@ func moveEntityStatusError(err error) error {
 // It emits an initial SnapshotDelivered event immediately, then forwards all
 // subsequent broker events for the encounter until the client disconnects.
 //
-// Subscribe-before-snapshot ordering is intentional: subscribing first ensures
-// no events are missed while the snapshot is being built. The broker's buffered
-// channel holds any in-flight events until the forward loop starts.
+// Subscribe-before-snapshot ordering is intentional for everything AFTER the
+// #636 kick below: once subscribed, no POST-subscribe event is missed while
+// the snapshot is being built — the broker's buffered channel holds any
+// in-flight event until the forward loop starts. This guarantee deliberately
+// does NOT cover the kick's own events (see the #636 paragraph immediately
+// below for why those are excluded on purpose, not a gap in this guarantee).
 //
 // rpg-api#636 combat-entry kick: run BEFORE Subscribe, not after. A TURN_BASED
 // encounter whose active actor is an NPC never gets driven by anything if
@@ -297,9 +300,10 @@ func (h *Handler) StreamEncounter(req *encounterv2pb.StreamEncounterRequest, str
 		log.Printf("encounter/v2 StreamEncounter: combat-entry kick failed for %q: %v", string(encID), kickErr)
 	}
 
-	// Subscribe FIRST so the broker holds events in its buffered channel while
-	// we build the snapshot. Any event firing between Subscribe and the forward
-	// loop is captured and delivered after the snapshot send.
+	// Subscribe (now that the #636 kick above has already run) so the broker
+	// holds events in its buffered channel while we build the snapshot. Any
+	// event firing between THIS Subscribe call and the forward loop is
+	// captured and delivered after the snapshot send.
 	sub, err := h.broker.Subscribe(encID, core.PlayerID(playerID))
 	if err != nil {
 		return status.Errorf(codes.Internal, "subscribe %q: %v", string(encID), err)
