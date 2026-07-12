@@ -322,6 +322,108 @@ func (s *LobbyV1alpha1IntegrationSuite) advanceUntilPlayerActive(data *tkenc.Dat
 	s.Require().NoError(s.srv.EncRepoV2.Save(s.ctx, data))
 }
 
+// TestPartyAssembles_FourPlayers_ThenCombatEntry_NPCFirstInitiative_StreamDrivesNPCTurn
+// is the rpg-api#636 regression: it repeats the same
+// create/join/ready/start/inject flow as
+// TestPartyAssembles_FourPlayers_ThenCombatEntry_AttackResolves, but forces
+// the injected goblin to lead initiative via devcombat.Inject's
+// ForceNPCFirst knob — the SAME deterministic reorder `devseed --inject-combat
+// --inject-combat-npc-first` uses for manual repro — instead of relying on a
+// lucky roll. Pre-#636, nothing ever drove the goblin's turn in this
+// state: EndTurn's NPC dispatch loop only ran as a tail of an EndTurn call,
+// and there was none to chain off of (every player is correctly locked out
+// since it isn't their turn), so the encounter stalled forever.
+//
+// The proof is StreamEncounter itself: connecting via the production RPC (not
+// a direct toolkit/repo manipulation, unlike advanceUntilPlayerActive's setup
+// helper) must come back with a player active, not the goblin — proving the
+// handler's combat-entry kick (DriveStalledNPCTurn, called before Subscribe)
+// actually drove the stalled NPC turn as a side effect of the very first
+// connect.
+func (s *LobbyV1alpha1IntegrationSuite) TestPartyAssembles_FourPlayers_ThenCombatEntry_NPCFirstInitiative_StreamDrivesNPCTurn() {
+	players := []struct {
+		id, character, name string
+		hp                  int
+	}{
+		{"alice", "char-alice", "Alice", 12},
+		{"bob", "char-bob", "Bob", 10},
+		{"carol", "char-carol", "Carol", 14},
+		{"dave", "char-dave", "Dave", 8},
+	}
+	for _, p := range players {
+		s.seedCharacter(p.character, p.id, p.name, p.hp)
+	}
+
+	createResp, err := s.srv.LobbyClient.CreateLobby(s.authCtx("alice"), &lobbyv1alpha1.CreateLobbyRequest{
+		CampaignId: "campaign-1", CharacterId: "char-alice",
+	})
+	s.Require().NoError(err)
+	lobbyID := createResp.GetLobbyId()
+	joinRef := createResp.GetJoinRef()
+
+	for _, p := range players[1:] {
+		_, joinErr := s.srv.LobbyClient.JoinLobby(s.authCtx(p.id), &lobbyv1alpha1.JoinLobbyRequest{
+			JoinRef: joinRef, CharacterId: p.character,
+		})
+		s.Require().NoError(joinErr)
+	}
+	for _, p := range players {
+		_, readyErr := s.srv.LobbyClient.SetReady(s.authCtx(p.id), &lobbyv1alpha1.SetReadyRequest{
+			LobbyId: lobbyID, Ready: true,
+		})
+		s.Require().NoError(readyErr)
+	}
+
+	startResp, err := s.srv.LobbyClient.StartEncounter(s.authCtx("alice"), &lobbyv1alpha1.StartEncounterRequest{
+		LobbyId: lobbyID,
+	})
+	s.Require().NoError(err)
+	encounterID := startResp.GetEncounterId()
+	s.Require().NotEmpty(encounterID)
+
+	// rpg-api#636 repro: force the goblin to lead initiative instead of
+	// leaving it to the real roll.
+	injectOut, err := devcombat.Inject(s.ctx, s.srv.EncRepoV2, devcombat.InjectInput{
+		EncounterID:   encounterID,
+		ForceNPCFirst: true,
+	})
+	s.Require().NoError(err)
+	s.Require().Equal(core.ModeTurnBased, injectOut.Mode)
+
+	preKickData, err := s.srv.EncRepoV2.Get(s.ctx, encounterID)
+	s.Require().NoError(err)
+	s.Require().Equal(injectOut.GoblinID, preKickData.Initiative[preKickData.ActiveIdx],
+		"setup must confirm the goblin is active before the stream connects — otherwise this isn't testing the stall")
+
+	// The headline #636 proof: connecting via the production StreamEncounter
+	// RPC — the only "first touch" available for an out-of-process injection —
+	// must itself drive the stalled NPC turn. No EndTurn call precedes this;
+	// nothing else has touched the encounter since injection.
+	stream, streamErr := s.srv.EncounterClientV2.StreamEncounter(s.authCtx("alice"),
+		&encounterv2pb.StreamEncounterRequest{EncounterId: encounterID})
+	s.Require().NoError(streamErr)
+	snap, recvErr := stream.Recv()
+	s.Require().NoError(recvErr)
+	s.Require().NotNil(snap.GetSnapshotDelivered())
+
+	turnState := snap.GetSnapshotDelivered().GetEncounter().GetTurnState()
+	s.Require().NotNil(turnState, "a turn-based encounter's snapshot must carry TurnState")
+	s.NotEqual(string(injectOut.GoblinID), turnState.GetActiveEntityId(),
+		"the goblin must no longer be active by the time the snapshot is built — StreamEncounter's combat-entry kick must have driven its turn")
+
+	postKickData, err := s.srv.EncRepoV2.Get(s.ctx, encounterID)
+	s.Require().NoError(err)
+	activeEntity := postKickData.Initiative[postKickData.ActiveIdx]
+	var activeIsPlayer bool
+	for _, p := range players {
+		if activeEntity == core.EntityID(p.character) {
+			activeIsPlayer = true
+			break
+		}
+	}
+	s.Require().True(activeIsPlayer, "the active actor after the kick must be a player, not another NPC")
+}
+
 // TestJoinLobby_LateJoin_FailedPrecondition proves the "late join" edge
 // policy end-to-end: JoinLobby on a STARTED lobby is rejected, not silently
 // admitted into a mid-encounter party.
