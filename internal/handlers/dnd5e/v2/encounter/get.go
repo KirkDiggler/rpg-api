@@ -3,12 +3,14 @@ package encounter
 import (
 	"context"
 	"errors"
+	"log"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
 	encounterv2pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/encounter"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
+	encounterorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/encounter/v2"
 	encountersv2 "github.com/KirkDiggler/rpg-api/internal/repositories/encounters/v2"
 	"github.com/KirkDiggler/rpg-toolkit/encounter/core"
 )
@@ -23,6 +25,21 @@ func (h *Handler) GetEncounter(ctx context.Context, req *encounterv2pb.GetEncoun
 	}
 	if req.GetEncounterId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "encounter_id is required")
+	}
+
+	// rpg-api#636 combat-entry kick: GetEncounter is a connect-time read path
+	// (project.go pairs it with StreamEncounter's snapshot as the two callers
+	// of ProjectFor), so it gets the same best-effort self-heal — see
+	// StreamEncounter's doc comment below for the full rationale. Errors are
+	// logged and swallowed: a kick failure must never turn a read into a
+	// failed RPC, and DriveStalledNPCTurn's own membership check is stricter
+	// than what GetEncounter enforces below, so a non-member's read must not
+	// be gated by the kick's internal load.
+	if _, kickErr := h.orch.DriveStalledNPCTurn(ctx, &encounterorch.DriveStalledNPCTurnInput{
+		EncounterID: req.GetEncounterId(),
+		PlayerID:    core.PlayerID(playerID),
+	}); kickErr != nil {
+		log.Printf("encounter/v2 GetEncounter: combat-entry kick failed for %q: %v", req.GetEncounterId(), kickErr)
 	}
 
 	data, err := h.encRepo.Get(ctx, req.GetEncounterId())

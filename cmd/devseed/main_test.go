@@ -95,7 +95,7 @@ func TestRunInjectCombat_DelegatesToDevcombat(t *testing.T) {
 		t.Fatalf("Save seeded encounter: %v", err)
 	}
 
-	if err := runInjectCombat(ctx, client, encID); err != nil {
+	if err := runInjectCombat(ctx, client, encID, false); err != nil {
 		t.Fatalf("runInjectCombat: %v", err)
 	}
 	data, err := repo.Get(ctx, encID)
@@ -106,11 +106,49 @@ func TestRunInjectCombat_DelegatesToDevcombat(t *testing.T) {
 		t.Fatalf("runInjectCombat did not apply devcombat.Inject's effect: mode=%v monsters=%d", data.Mode, len(data.Monsters))
 	}
 
-	err = runInjectCombat(ctx, client, "no-such-encounter")
+	err = runInjectCombat(ctx, client, "no-such-encounter", false)
 	if err == nil {
 		t.Fatal("expected an error for a missing encounter")
 	}
 	if !strings.Contains(err.Error(), "StartEncounter RPC") {
 		t.Fatalf("expected an actionable devseed error message, got: %v", err)
+	}
+}
+
+// TestRunInjectCombat_ForceNPCFirst_DelegatesToDevcombat proves the
+// --inject-combat-npc-first wiring: runInjectCombat forwards forceNPCFirst to
+// devcombat.Inject's ForceNPCFirst input, which is where the deterministic
+// reorder actually happens (see devcombat's own TestInject_ForceNPCFirst_
+// GoblinLeadsInitiative for that behavior's coverage) — this test only proves
+// the CLI wrapper passes the flag through.
+func TestRunInjectCombat_ForceNPCFirst_DelegatesToDevcombat(t *testing.T) {
+	ctx := context.Background()
+	mr := miniredis.RunT(t)
+	client := goredis.NewClient(&goredis.Options{Addr: mr.Addr()})
+	defer func() { _ = client.Close() }()
+	repo := encountersv2.NewRedis(client, time.Hour)
+
+	const encID = "lobby-enc-npc-first"
+	enc := tkenc.New(ctx, encountercore.EncounterID(encID), tkenc.NewBroker(tkenc.NewInMemoryTransport()))
+	if err := enc.AddPlayer(tkenc.PlayerInput{
+		PlayerID: "alice", EntityID: "char-alice",
+		Position: encountercore.Hex{Q: 0, R: 0, S: 0}, SightRange: 10,
+		HP: 12, MaxHP: 12, AC: 14,
+	}); err != nil {
+		t.Fatalf("AddPlayer alice: %v", err)
+	}
+	if err := repo.Save(ctx, enc.ToData()); err != nil {
+		t.Fatalf("Save seeded encounter: %v", err)
+	}
+
+	if err := runInjectCombat(ctx, client, encID, true); err != nil {
+		t.Fatalf("runInjectCombat: %v", err)
+	}
+	data, err := repo.Get(ctx, encID)
+	if err != nil {
+		t.Fatalf("Get after inject: %v", err)
+	}
+	if data.ActiveIdx != 0 || len(data.Initiative) == 0 || data.Initiative[0] != "goblin-1" {
+		t.Fatalf("runInjectCombat did not forward ForceNPCFirst: active_idx=%d initiative=%v", data.ActiveIdx, data.Initiative)
 	}
 }

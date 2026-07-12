@@ -51,6 +51,18 @@ type InjectInput struct {
 	// EncounterID identifies the EXISTING encounter to load. Inject returns
 	// encountersv2.ErrNotFound if no encounter is persisted under this ID.
 	EncounterID string
+
+	// ForceNPCFirst deterministically reorders the freshly-rolled Initiative so
+	// the just-injected goblin leads it (ActiveIdx=0), instead of leaving the
+	// toolkit's real initiative roll to decide who goes first. This exists to
+	// reproduce rpg-api#636 ("NPC first in initiative stalls the encounter") on
+	// demand — the bug was originally found by a lucky/unlucky roll, not
+	// something every --inject-combat run hits, so playtest repro and the
+	// regression test both need a deterministic knob rather than looping
+	// --inject-combat until the dice cooperate. Dev-tool-only: production
+	// combat-entry paths must never set this — a real encounter's first actor
+	// should stay whatever the toolkit's own roll decides.
+	ForceNPCFirst bool
 }
 
 // InjectOutput reports what Inject did, for callers that want to print or
@@ -158,6 +170,9 @@ func Inject(ctx context.Context, repo encountersv2.Repository, input InjectInput
 	}
 
 	updated := enc.ToData()
+	if input.ForceNPCFirst {
+		forceEntityFirst(updated, goblinID)
+	}
 	if saveErr := repo.Save(ctx, updated); saveErr != nil {
 		return nil, fmt.Errorf("save encounter %q: %w", input.EncounterID, saveErr)
 	}
@@ -170,6 +185,22 @@ func Inject(ctx context.Context, repo encountersv2.Repository, input InjectInput
 		PlayerCount:         len(updated.Players),
 		MonsterCount:        len(updated.Monsters),
 	}, nil
+}
+
+// forceEntityFirst reorders data.Initiative so id leads it (index 0) and sets
+// ActiveIdx to 0, preserving the relative order of every other entity. Used
+// only by ForceNPCFirst — see its doc comment for why a deterministic reorder
+// beats reseeding the toolkit's own initiative roll.
+func forceEntityFirst(data *tkenc.Data, id core.EntityID) {
+	reordered := make([]core.EntityID, 0, len(data.Initiative))
+	reordered = append(reordered, id)
+	for _, existing := range data.Initiative {
+		if existing != id {
+			reordered = append(reordered, existing)
+		}
+	}
+	data.Initiative = reordered
+	data.ActiveIdx = 0
 }
 
 // maxOccupiedQ returns the highest Q coordinate occupied by any player or

@@ -132,24 +132,59 @@ func (o *Orchestrator) EndTurn(ctx context.Context, in *EndTurnInput) (*EndTurnO
 		return nil, err
 	}
 
-	// NPC dispatch loop. After the toolkit's EndTurn advances initiative, if the
-	// new active actor is an NPC the orchestrator runs its turn server-side and
-	// ends it, then re-checks. The cap is initiative-size + margin so an all-NPC
-	// roster cycles all the way through rather than freezing the RPC. The roster
-	// is read from the synced snapshot (enc.ToData().Initiative) — no parallel
-	// *Data handle, consistent with load's single-state rule.
-	//
-	// Wave 2.10: after each NPCAct / EndTurn cycle, if the encounter has
-	// transitioned to ModeEnded (e.g., an NPC attack killed the last hostile —
-	// not possible today since killEntity only runs in TakeAction's player-attack
-	// path, but cheap insurance for future paths like faction-on-faction NPC
-	// kills, environmental damage, etc.), break out of the loop. The post-loop
-	// persist saves the terminal state and the RPC returns success — the
-	// EncounterEnded event already fired through the broker, and the next combat
-	// verb will get ErrEncounterEnded.
+	// NPC dispatch loop, factored out as driveNPCChain (rpg-api#636) so the
+	// combat-entry kick (drive_npc.go) can run the identical cycle from a
+	// freshly loaded encounter instead of only after an EndTurn call. It owns
+	// every persist on every exit path, including the final "loop completed,
+	// player active or encounter ended" persist — mirroring EndTurn's own
+	// terminal persist pre-#636, so this call is EndTurn's only persist too.
+	if err := o.driveNPCChain(ctx, enc, in.EncounterID, newActive, isNPC); err != nil {
+		return nil, err
+	}
+
+	return &EndTurnOutput{}, nil
+}
+
+// driveNPCChain runs the toolkit's NPCAct + EndTurn cycle while the active
+// actor is an NPC, until a player is active, the encounter ends, or the
+// roster-derived chain cap is reached. active/isNPC are the CURRENT active
+// actor and whether it is an NPC — EndTurn passes its own EndTurn call's
+// result; the combat-entry kick (drive_npc.go) passes enc.ActiveActor() /
+// enc.IsNPC(...) from a freshly loaded encounter that has not (yet) had any
+// verb called on it this request.
+//
+// It persists on EVERY exit path — including the terminal "loop finished
+// cleanly" path — so a zero-iteration call (isNPC false on entry) still
+// persists. That is correct for EndTurn (whose own enc.EndTurn call above
+// already mutated state and must be saved regardless of NPC follow-on) but
+// would be a wasted write for the kick's "active actor is already a player"
+// no-op case — so the kick only calls this when enc.IsNPC(active) is true to
+// begin with, never unconditionally, and treats a successful call as having
+// driven a turn (there is nothing else driveNPCChain would have been asked to
+// do in that case).
+//
+// Wave 2.10: after each NPCAct / EndTurn cycle, if the encounter has
+// transitioned to ModeEnded (e.g., an NPC attack killed the last hostile —
+// not possible today since killEntity only runs in TakeAction's player-attack
+// path, but cheap insurance for future paths like faction-on-faction NPC
+// kills, environmental damage, etc.), break out of the loop. The post-loop
+// persist saves the terminal state and the caller returns success — the
+// EncounterEnded event already fired through the broker, and the next combat
+// verb will get ErrEncounterEnded.
+func (o *Orchestrator) driveNPCChain(
+	ctx context.Context,
+	enc *tkenc.Encounter,
+	encounterID string,
+	active core.EntityID,
+	isNPC bool,
+) error {
+	// The cap is initiative-size + margin so an all-NPC roster cycles all the
+	// way through rather than freezing the caller. The roster is read from the
+	// synced snapshot (enc.ToData().Initiative) — no parallel *Data handle,
+	// consistent with load's single-state rule.
 	npcChainCap := len(enc.ToData().Initiative) + npcChainSafetyMargin
 	for depth := 0; isNPC && depth < npcChainCap; depth++ {
-		if actErr := enc.NPCAct(ctx, newActive); actErr != nil {
+		if actErr := enc.NPCAct(ctx, active); actErr != nil {
 			// Wave 2.11d: NPC turn paused for a player reaction. The encounter has
 			// the pending reaction prompt + the InputRequiredDelivered event already
 			// published BY THE SDK from inside NPCAct (encounter/npc.go at the
@@ -180,21 +215,18 @@ func (o *Orchestrator) EndTurn(ctx context.Context, in *EndTurnInput) (*EndTurnO
 				// rationale + rpg-api#540 for the proper aggregate-then-complete fix.
 				o.enforceSingleReactor(enc)
 				if serErr := o.serializeNPCPendingReactions(enc); serErr != nil {
-					return nil, fmt.Errorf("serialize npc pending reactions %q: %w", in.EncounterID, serErr)
+					return fmt.Errorf("serialize npc pending reactions %q: %w", encounterID, serErr)
 				}
-				if persistErr := o.persistWithCharacterData(ctx, enc, in.EncounterID); persistErr != nil {
-					return nil, persistErr
-				}
-				return &EndTurnOutput{}, nil
+				return o.persistWithCharacterData(ctx, enc, encounterID)
 			}
 			// NPCAct errors are system-shaped (rehydration / bus / publish failure
 			// or unexpected state mismatch). Save what state we have first so the
 			// player isn't stuck on the NPC's turn forever; the next manual EndTurn
 			// picks up. Surface the wrapped sentinel so the handler maps to Internal.
-			if persistErr := o.persistWithCharacterData(ctx, enc, in.EncounterID); persistErr != nil {
-				return nil, fmt.Errorf("%w (%v) and persist failed: %w", ErrNPCAct, actErr, persistErr)
+			if persistErr := o.persistWithCharacterData(ctx, enc, encounterID); persistErr != nil {
+				return fmt.Errorf("%w (%v) and persist failed: %w", ErrNPCAct, actErr, persistErr)
 			}
-			return nil, fmt.Errorf("%w %q: %w", ErrNPCAct, string(newActive), actErr)
+			return fmt.Errorf("%w %q: %w", ErrNPCAct, string(active), actErr)
 		}
 		// Post-NPCAct end-of-encounter check (Wave 2.10 guard).
 		if enc.Mode() == core.ModeEnded {
@@ -205,7 +237,7 @@ func (o *Orchestrator) EndTurn(ctx context.Context, in *EndTurnInput) (*EndTurnO
 		// #689: enc.EndTurn(ctx, ...) emits the dnd5e TurnEndTopic on the encounter
 		// bus itself for the NPC whose turn is ending — held conditions reset in
 		// place, no host-side publish needed.
-		newActive, isNPC, endErr = enc.EndTurn(ctx, newActive)
+		active, isNPC, endErr = enc.EndTurn(ctx, active)
 		if endErr != nil {
 			// ErrEncounterEnded here means the NPC's action ended the encounter and
 			// the subsequent EndTurn rejected the call. Treat as success — the
@@ -216,7 +248,17 @@ func (o *Orchestrator) EndTurn(ctx context.Context, in *EndTurnInput) (*EndTurnO
 				isNPC = false
 				break
 			}
-			return nil, endErr
+			// Copilot review (rpg-api#638): any other EndTurn failure here must
+			// still persist whatever NPCAct already mutated (damage, position,
+			// etc.) before returning — otherwise a retry re-loads the SAME
+			// NPC-active snapshot and re-stalls. endErr stays the %w-wrapped
+			// primary error so the handler's errors.Is classification is
+			// unaffected; a persist failure on top is folded in as non-fatal
+			// context rather than silently dropped.
+			if persistErr := o.persistWithCharacterData(ctx, enc, encounterID); persistErr != nil {
+				return fmt.Errorf("%w (persist failed: %v)", endErr, persistErr)
+			}
+			return endErr
 		}
 		// Post-EndTurn end-of-encounter check (Wave 2.10 guard, defensive — EndTurn
 		// doesn't mutate liveness today, but stays robust to future paths that fold
@@ -234,18 +276,14 @@ func (o *Orchestrator) EndTurn(ctx context.Context, in *EndTurnInput) (*EndTurnO
 	// with valid encounter setups; the cap-by-roster math above guarantees the
 	// loop reaches a player whenever one exists.
 	if isNPC {
-		if persistErr := o.persistWithCharacterData(ctx, enc, in.EncounterID); persistErr != nil {
-			return nil, persistErr
+		if persistErr := o.persistWithCharacterData(ctx, enc, encounterID); persistErr != nil {
+			return persistErr
 		}
-		return nil, fmt.Errorf("%w: npc %q still active; encounter may have no players in initiative",
-			ErrNPCChainExhausted, string(newActive))
+		return fmt.Errorf("%w: npc %q still active; encounter may have no players in initiative",
+			ErrNPCChainExhausted, string(active))
 	}
 
-	if err := o.persistWithCharacterData(ctx, enc, in.EncounterID); err != nil {
-		return nil, err
-	}
-
-	return &EndTurnOutput{}, nil
+	return o.persistWithCharacterData(ctx, enc, encounterID)
 }
 
 // enforceSingleReactor drops all but the first PendingReactionPrompt on the

@@ -180,6 +180,10 @@ type Orchestrator struct {
 	characterData  CharacterDataCascade
 	reactionResume ReactionResume
 	now            func() time.Time
+	// npcDriveLocks single-flights DriveStalledNPCTurn per encounter ID
+	// (rpg-api#636) so concurrent connect-time kicks for the same encounter
+	// don't each load the same NPC-active snapshot and double-dispatch.
+	npcDriveLocks *keyedMutex
 }
 
 // New constructs an Orchestrator from cfg. Returns an error (never a nil
@@ -216,5 +220,6 @@ func New(cfg *Config) (*Orchestrator, error) {
 		characterData:         cfg.CharacterData,
 		reactionResume:        cfg.ReactionResume,
 		now:                   now,
+		npcDriveLocks:         newKeyedMutex(),
 	}, nil
 }

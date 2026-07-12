@@ -255,9 +255,33 @@ func moveEntityStatusError(err error) error {
 // It emits an initial SnapshotDelivered event immediately, then forwards all
 // subsequent broker events for the encounter until the client disconnects.
 //
-// Subscribe-before-snapshot ordering is intentional: subscribing first ensures
-// no events are missed while the snapshot is being built. The broker's buffered
-// channel holds any in-flight events until the forward loop starts.
+// Subscribe-before-snapshot ordering is intentional for everything AFTER the
+// #636 kick below: once subscribed, no POST-subscribe event is missed while
+// the snapshot is being built — the broker's buffered channel holds any
+// in-flight event until the forward loop starts. This guarantee deliberately
+// does NOT cover the kick's own events (see the #636 paragraph immediately
+// below for why those are excluded on purpose, not a gap in this guarantee).
+//
+// rpg-api#636 combat-entry kick: run BEFORE Subscribe, not after. A TURN_BASED
+// encounter whose active actor is an NPC never gets driven by anything if
+// nothing preceded this connect with an EndTurn (today: devseed
+// --inject-combat writes Redis out-of-process, so the server never otherwise
+// observes combat starting; the same gap applies to any future reconnect into
+// an NPC-active encounter). DriveStalledNPCTurn is the same NPCAct+EndTurn
+// dispatch loop EndTurn's own NPC chain uses (see
+// orchestrators/encounter/v2/drive_npc.go); calling it here makes
+// StreamEncounter/GetEncounter self-healing for that stall without special-
+// casing the dev tool. Kicking BEFORE Subscribe (rather than after, per the
+// brief's other candidate ordering) means the kick's own NPCAct/EndTurn broker
+// events do NOT land in THIS connection's buffered channel — they fan out live
+// to any OTHER already-subscribed viewers (who correctly see the goblin's turn
+// resolve in real time), while this connecting client's snapshot (built after,
+// from freshly re-read post-kick data) simply reflects the already-current
+// state instead of replaying its own kick as a redundant post-snapshot event.
+// Errors are logged and swallowed — a kick failure (or a caller who isn't a
+// member, which DriveStalledNPCTurn's load enforces more strictly than this
+// handler ever has) must never block the read; the subsequent membership-blind
+// snapshot flow below is unchanged from pre-#636 behavior on any kick failure.
 func (h *Handler) StreamEncounter(req *encounterv2pb.StreamEncounterRequest, stream encounterv2pb.EncounterService_StreamEncounterServer) error {
 	ctx := stream.Context()
 	playerID := auth.GetPlayerID(ctx)
@@ -269,9 +293,17 @@ func (h *Handler) StreamEncounter(req *encounterv2pb.StreamEncounterRequest, str
 		return status.Error(codes.InvalidArgument, "encounter_id is required")
 	}
 
-	// Subscribe FIRST so the broker holds events in its buffered channel while
-	// we build the snapshot. Any event firing between Subscribe and the forward
-	// loop is captured and delivered after the snapshot send.
+	if _, kickErr := h.orch.DriveStalledNPCTurn(ctx, &encounterorch.DriveStalledNPCTurnInput{
+		EncounterID: string(encID),
+		PlayerID:    core.PlayerID(playerID),
+	}); kickErr != nil {
+		log.Printf("encounter/v2 StreamEncounter: combat-entry kick failed for %q: %v", string(encID), kickErr)
+	}
+
+	// Subscribe (now that the #636 kick above has already run) so the broker
+	// holds events in its buffered channel while we build the snapshot. Any
+	// event firing between THIS Subscribe call and the forward loop is
+	// captured and delivered after the snapshot send.
 	sub, err := h.broker.Subscribe(encID, core.PlayerID(playerID))
 	if err != nil {
 		return status.Errorf(codes.Internal, "subscribe %q: %v", string(encID), err)
