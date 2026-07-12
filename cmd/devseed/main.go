@@ -193,6 +193,9 @@ func run() error {
 			"Load the EXISTING encounter at --encounter-id, add a goblin, and flip it to TURN_BASED, "+
 				"instead of seeding a fresh fixture. Requires an already-persisted encounter (e.g. one "+
 				"created via the lobby StartEncounter RPC). Ignores --mode and --fixture.")
+		injectCombatNPCFirst = flag.Bool("inject-combat-npc-first", false,
+			"With --inject-combat, force the injected goblin to lead initiative (rpg-api#636 repro) "+
+				"instead of leaving turn order to the real roll. No effect without --inject-combat.")
 	)
 	flag.Parse()
 
@@ -235,7 +238,7 @@ func run() error {
 	}
 
 	if *injectCombat {
-		return runInjectCombat(ctx, client, *encounterID)
+		return runInjectCombat(ctx, client, *encounterID, *injectCombatNPCFirst)
 	}
 
 	var chars []*toolkitchar.Data
@@ -325,10 +328,13 @@ func run() error {
 // imported by other packages, so the actual load/AddMonster/SetMode/save
 // logic — including its known-gap documentation — lives in that package, not
 // here). See devcombat.Inject's doc comment for what it does and why.
-func runInjectCombat(ctx context.Context, client redisclient.Client, encounterID string) error {
+func runInjectCombat(ctx context.Context, client redisclient.Client, encounterID string, forceNPCFirst bool) error {
 	repo := encountersv2.NewRedis(client, encTTL)
 
-	out, err := devcombat.Inject(ctx, repo, devcombat.InjectInput{EncounterID: encounterID})
+	out, err := devcombat.Inject(ctx, repo, devcombat.InjectInput{
+		EncounterID:   encounterID,
+		ForceNPCFirst: forceNPCFirst,
+	})
 	if err != nil {
 		if errors.Is(err, encountersv2.ErrNotFound) {
 			return fmt.Errorf(
@@ -342,6 +348,9 @@ func runInjectCombat(ctx context.Context, client redisclient.Client, encounterID
 
 	if out.AlreadySetTurnBased {
 		fmt.Fprintf(os.Stderr, "devseed --inject-combat: encounter %s was already TURN_BASED, re-rolled initiative to include the new monster\n", encounterID)
+	}
+	if forceNPCFirst {
+		fmt.Fprintf(os.Stderr, "devseed --inject-combat-npc-first: goblin %s forced to lead initiative (rpg-api#636 repro)\n", out.GoblinID)
 	}
 	fmt.Fprintf(
 		os.Stderr,
