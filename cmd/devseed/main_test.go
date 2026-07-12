@@ -15,8 +15,16 @@ package main
 
 import (
 	"context"
+	"strings"
 	"testing"
+	"time"
 
+	"github.com/alicebob/miniredis/v2"
+	goredis "github.com/redis/go-redis/v9"
+
+	encountersv2 "github.com/KirkDiggler/rpg-api/internal/repositories/encounters/v2"
+	tkenc "github.com/KirkDiggler/rpg-toolkit/encounter"
+	encountercore "github.com/KirkDiggler/rpg-toolkit/encounter/core"
 	"github.com/KirkDiggler/rpg-toolkit/events"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 )
@@ -56,5 +64,53 @@ func TestDevseedFixtures_EffectiveACMatchesStatedArmorClass(t *testing.T) {
 					got.Total, data.ArmorClass, got.Components)
 			}
 		})
+	}
+}
+
+// TestRunInjectCombat_DelegatesToDevcombat is a smoke test for the --inject-
+// combat CLI wrapper: it proves runInjectCombat actually calls through to
+// devcombat.Inject (internal/pkg/devcombat) against a real Redis-backed
+// repository, and that a missing encounter surfaces a devseed-flavored,
+// actionable error message. devcombat's own test suite
+// (internal/pkg/devcombat/inject_test.go) covers the injection logic
+// itself (goblin seeding, redundant-SetMode handling, existing players
+// left untouched) — this test only needs to prove the wrapper wiring.
+func TestRunInjectCombat_DelegatesToDevcombat(t *testing.T) {
+	ctx := context.Background()
+	mr := miniredis.RunT(t)
+	client := goredis.NewClient(&goredis.Options{Addr: mr.Addr()})
+	defer func() { _ = client.Close() }()
+	repo := encountersv2.NewRedis(client, time.Hour)
+
+	const encID = "lobby-enc-1"
+	enc := tkenc.New(ctx, encountercore.EncounterID(encID), tkenc.NewBroker(tkenc.NewInMemoryTransport()))
+	if err := enc.AddPlayer(tkenc.PlayerInput{
+		PlayerID: "alice", EntityID: "char-alice",
+		Position: encountercore.Hex{Q: 0, R: 0, S: 0}, SightRange: 10,
+		HP: 12, MaxHP: 12, AC: 14,
+	}); err != nil {
+		t.Fatalf("AddPlayer alice: %v", err)
+	}
+	if err := repo.Save(ctx, enc.ToData()); err != nil {
+		t.Fatalf("Save seeded encounter: %v", err)
+	}
+
+	if err := runInjectCombat(ctx, client, encID); err != nil {
+		t.Fatalf("runInjectCombat: %v", err)
+	}
+	data, err := repo.Get(ctx, encID)
+	if err != nil {
+		t.Fatalf("Get after inject: %v", err)
+	}
+	if data.Mode != encountercore.ModeTurnBased || len(data.Monsters) != 1 {
+		t.Fatalf("runInjectCombat did not apply devcombat.Inject's effect: mode=%v monsters=%d", data.Mode, len(data.Monsters))
+	}
+
+	err = runInjectCombat(ctx, client, "no-such-encounter")
+	if err == nil {
+		t.Fatal("expected an error for a missing encounter")
+	}
+	if !strings.Contains(err.Error(), "StartEncounter RPC") {
+		t.Fatalf("expected an actionable devseed error message, got: %v", err)
 	}
 }

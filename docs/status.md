@@ -40,7 +40,57 @@ bypassing the RPC surface.
 Known gap: `StartEncounter`'s proto contract carries no `initial_mode` field (the old
 `CreateEncounter` could start TURN_BASED directly) — every lobby-constructed encounter
 starts FREE_ROAM. No production caller depended on the old field; flagged as a design
-gap, not fixed here.
+gap, not fixed here. `devseed --inject-combat` (below) gives local/MCP playtesting a way
+to add a monster and flip TURN_BASED on a lobby-started encounter without a proto change;
+the real combat-entry trigger is future room/encounter-design work.
+
+**A real fight on GameView — combat-ready lobby members + devseed injection (rpg-api#634, 2026-07-11)** —
+`StartEncounter` now seeds each member's `tkenc.PlayerInput.AC` honestly from
+`character.Data.ArmorClass` (`seedMemberCombatSnapshot`, `internal/orchestrators/lobby/
+character.go`) — the character is already fetched for HP. `AttackBonus`/`DamageDice`/
+`DamageType` stay zero-value: a stored character carries no precomputed field for them
+(they're derived at attack time from equipped weapon + ability scores + proficiency
+bonus — real rules math rpg-api must not duplicate). This used to be a hard block: the
+toolkit's `isPlayerCombatant` gate rejected TakeAction for every lobby-created player
+(`ErrNonCombatant: missing HP/AC/DamageDice`) even though the v2 encounter
+orchestrator's existing `characterData.Attach` cascade (`hydrate_players.go`) already
+rehydrates every lobby-created player from the character store — keyed off
+`PlayerData.EntityID`, which `StartEncounter` already sets — on every combat-capable RPC
+(TakeAction/EndTurn/MoveEntity/SubmitCheckReaction). The real `Dnd5eCombatResolver`
+ignores the flat AC/DamageDice snapshot entirely once a seat is hydrated (it drives
+damage off the held `*character.Character`'s real weapon via
+`Character.WeaponForActionRef`); the flat snapshot only feeds the stand-in fallback for
+an un-hydrated seat. **Fixed in rpg-toolkit encounter v0.24.4** (rpg-toolkit#750/#751,
+merged 2026-07-11): `isPlayerCombatant` (now an `*Encounter` method) treats an actually
+HELD seat (`e.heldCharacter(...) != nil`) as combat-ready, independent of the flat
+snapshot — deliberately not `len(DataJSON) > 0`, since DataJSON being set doesn't mean a
+seat has been hydrated (only a `LoadFromData` round-trip's cascade does that; a Copilot
+review catch on the toolkit PR). `go.mod` bumped to `v0.24.4`; the integration test
+proving the full path end-to-end (`TestPartyAssembles_FourPlayers_ThenCombatEntry_
+AttackResolves` in `internal/integration/lobby_v1alpha1_test.go`) now passes for real, no
+skip, no replace directive.
+
+`cmd/devseed` gains `--inject-combat --encounter-id=<id>`: loads the EXISTING encounter
+(does not rebuild it), adds a goblin (`monster.NewGoblin`, same DataJSON pattern every
+other devseed fixture uses), flips to TURN_BASED (skipped if already turn-based, so
+re-running mid-fight just adds another goblin rather than erroring on the toolkit's
+redundant-`SetMode` rejection), and saves. The actual load/AddMonster/SetMode/save logic
+lives in `internal/pkg/devcombat` (`Inject`, Input/Output-typed) rather than in
+`cmd/devseed/main.go` directly — `package main` can't be imported, and both the CLI flag
+and `internal/integration/lobby_v1alpha1_test.go`'s combat-entry test call the identical
+code path. Known acceptable gap, documented in `devcombat.Inject`'s doc comment: a
+monster added this way doesn't get the `monstertraits.LoadMonsterConditions`/OA-reaction
+wiring the toolkit's `LoadFromData` cascade applies to monsters present at load time —
+cosmetic for a first fight; the goblin is fully rehydrated (OA included) on the next
+combat-capable RPC's own load.
+
+**Test harness gap fixed alongside #634**: `internal/integration/harness`'s v1alpha2
+`EncounterService` handler was wired with no `CombatResolverConfig`/`CharacterRepo` at
+all (unlike `cmd/server/server.go`'s production wiring), so the `characterData.Attach`
+hydration cascade silently never ran in ANY existing integration test — every prior
+combat test worked only because it seeded explicit `AttackBonus`/`DamageDice` snapshot
+fields directly, never needing hydration. Fixed to mirror production; verified the full
+`internal/integration/...` suite still passes.
 
 **Chapter 1 (Architecture Honesty) — v2 encounter orchestrator carve COMPLETE (#582, 2026-05-31)** —
 The v2 encounter vertical now runs through a clean `internal/orchestrators/encounter/v2`

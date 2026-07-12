@@ -87,6 +87,23 @@ func (s *LobbySuite) expectCharacter(characterID, playerID, name string, hp, max
 		}, nil)
 }
 
+// expectCharacterWithAC is expectCharacter plus a stored ArmorClass, for
+// tests that assert StartEncounter's honest combat-snapshot seeding
+// (rpg-api#634): AC is a real stored field, copied verbatim onto
+// tkenc.PlayerInput.AC.
+func (s *LobbySuite) expectCharacterWithAC(characterID, playerID, name string, hp, maxHP, ac int) {
+	s.charRepo.EXPECT().
+		Get(gomock.Any(), characterrepo.GetInput{ID: characterID}).
+		Return(&characterrepo.GetOutput{
+			Character: &entities.Character{
+				Data: &toolkitchar.Data{
+					PlayerID: playerID, Name: name,
+					HitPoints: hp, MaxHitPoints: maxHP, ArmorClass: ac,
+				},
+			},
+		}, nil)
+}
+
 // expectCharacterNotFound arms s.charRepo to return NotFound for characterID.
 func (s *LobbySuite) expectCharacterNotFound(characterID string) {
 	s.charRepo.EXPECT().
