@@ -1,8 +1,8 @@
 ---
 name: rpg-api quality scorecard
 description: Per-component grade with rationale — a graded scorecard to update as the codebase evolves
-updated: 2026-05-25
-confidence: medium — Wave 2.11e encounter v2 graded from shipped-code + integration test verification; older entries reflect 2026-05-02 snapshot pending refresh
+updated: 2026-07-11
+confidence: medium — Wave 2.11e encounter v2 graded from shipped-code + integration test verification; older entries reflect 2026-05-02 snapshot pending refresh; rpg-api#636 note verified against passing tests
 ---
 
 # Quality Scorecard
@@ -107,7 +107,13 @@ What's here as of Wave 2.11e:
 - `EndTurn` (`end_turn.go`) — handles `IsNPCPausedForReaction(err)`;
   `serializePendingPhasedAttacks` marshals the live `*PhasedAttackContext`
   into `AttackContextJSON` before snapshot (honors the encounter SDK's
-  HOST CONTRACT documented in `persistNPCPendingReactions`).
+  HOST CONTRACT documented in `persistNPCPendingReactions`). rpg-api#636: its
+  NPC dispatch loop is now the shared `driveNPCChain`, also used by
+  `DriveStalledNPCTurn` (`drive_npc.go`) — the "combat-entry kick" that
+  `StreamEncounter`/`GetEncounter` call (best-effort, error-swallowed) at every
+  connect so a TURN_BASED encounter that starts with an NPC active (no
+  preceding `EndTurn` to chain off of) doesn't stall forever. Single-flighted
+  per encounter ID (`keyed_mutex.go`) against concurrent connects.
 - `applyReactionConditions` + `applyMonsterReactionConditions`
   (`reaction_conditions.go`) — wires OA on every character and monster +
   Shield on spellcasters. Both applied at every rehydration; idempotent.

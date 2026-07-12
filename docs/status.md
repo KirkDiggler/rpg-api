@@ -1,8 +1,8 @@
 ---
 name: rpg-api status
 description: Where we are with rpg-api — active work, paused, known rough edges, per-subsystem confidence
-updated: 2026-05-29
-confidence: high — Wave 2 Monk entries verified against passing integration tests
+updated: 2026-07-11
+confidence: high — Wave 2 Monk entries verified against passing integration tests; #636 entry verified against passing unit + integration tests
 ---
 
 # rpg-api: Where We Are
@@ -10,6 +10,55 @@ confidence: high — Wave 2 Monk entries verified against passing integration te
 This is a living doc. Edit it in the same PR that invalidates a line. Don't let it rot.
 
 ## Active work
+
+**NPC-first initiative no longer stalls the encounter (rpg-api#636, 2026-07-11)** —
+`Orchestrator.EndTurn`'s NPC dispatch loop only ever ran as the tail of an `EndTurn`
+call — but when a TURN_BASED encounter's very FIRST active actor is an NPC (today:
+`devseed --inject-combat` rolling the goblin first; the future real combat-entry
+trigger doing the same), there is no preceding `EndTurn` to chain off of: every player
+is correctly locked out (not their turn) and nothing ever calls `NPCAct`. The
+encounter stalled forever.
+
+Fix: the NPC dispatch loop is factored out of `EndTurn` into a shared
+`Orchestrator.driveNPCChain` (`internal/orchestrators/encounter/v2/end_turn.go`) that
+owns every persist on every exit path, so both `EndTurn` and a new
+`Orchestrator.DriveStalledNPCTurn` (`drive_npc.go`) can run the identical
+NPCAct+EndTurn cycle. `DriveStalledNPCTurn` is the "combat-entry kick": it loads the
+encounter and, if the active actor is an NPC, drives it (and any chained NPC turns
+after it) until a player is active, the encounter ends, or the chain cap is reached.
+`StreamEncounter` and `GetEncounter` (`handler.go`, `get.go`) both call it — as
+best-effort, error-swallowing self-heals — at the top of every connect-time read,
+since those are the only "first touch" available for an out-of-process write like
+today's devseed injection (the server never otherwise observes combat starting).
+`StreamEncounter` kicks BEFORE `Subscribe` (not after) so the kick's own NPCAct/
+EndTurn broker events fan out live to already-connected viewers without also
+replaying as a redundant post-snapshot event for the connecting client itself — see
+the handler's doc comment for the full ordering rationale.
+
+Concurrency: up to N clients can hit `StreamEncounter`/`GetEncounter` for the same
+encounter at once (e.g. four players reconnecting together), and the toolkit's own
+"am I still the active actor" guard inside `NPCAct` only protects the in-memory copy
+the CALLER loaded — it does not protect across independently loaded snapshots. A new
+per-encounter `keyedMutex` (`keyed_mutex.go`, duplicated from the lobby
+orchestrator's identical single-process pattern rather than shared across packages)
+single-flights `DriveStalledNPCTurn` per encounter ID: only the first caller does
+real work; every other concurrent caller blocks, then re-loads the
+already-persisted post-drive state and no-ops.
+
+The future real (server-side, in-process) combat-entry trigger does NOT need the
+`StreamEncounter`/`GetEncounter` kick at all — it can (and should) call
+`driveNPCChain` directly right after its own `SetMode`, since it IS the server
+observing combat start. The kick exists specifically for paths that bypass normal
+server verbs, today's devseed injection being the only one.
+
+`devcombat.Inject` gained a `ForceNPCFirst` input (`internal/pkg/devcombat/inject.go`)
+that deterministically reorders the freshly-rolled Initiative so the injected goblin
+leads it, instead of depending on a lucky roll to reproduce the stall — exposed as
+`devseed --inject-combat --inject-combat-npc-first` for manual playtest repro, and
+used by the new `TestPartyAssembles_FourPlayers_ThenCombatEntry_
+NPCFirstInitiative_StreamDrivesNPCTurn` integration test
+(`internal/integration/lobby_v1alpha1_test.go`), which drives the fix through the
+real `StreamEncounter` RPC end-to-end (not a direct toolkit/repo manipulation).
 
 **LobbyService v1alpha1 — party assembly + sole encounter construction path (rpg-api#629, 2026-07-07)** —
 New `internal/handlers/dnd5e/lobby/v1alpha1` → `internal/orchestrators/lobby` →
