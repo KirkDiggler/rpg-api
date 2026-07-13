@@ -22,27 +22,19 @@ import (
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
 	encounterv2pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/encounter"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
-	dungeontoolkit "github.com/KirkDiggler/rpg-api/internal/components/dungeon/toolkit"
 	apiv1alpha1handler "github.com/KirkDiggler/rpg-api/internal/handlers/api/v1alpha1"
 	lobbyhandler "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/lobby/v1alpha1"
 	character2 "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v1alpha1/character"
-	encounterhandler "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v1alpha1/encounter"
 	encounterhandlerv2 "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v2/encounter"
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
 	diceorc "github.com/KirkDiggler/rpg-api/internal/orchestrators/dice"
-	encounterorc "github.com/KirkDiggler/rpg-api/internal/orchestrators/encounter"
 	lobbyorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/lobby"
 	"github.com/KirkDiggler/rpg-api/internal/pkg/clock"
 	"github.com/KirkDiggler/rpg-api/internal/pkg/idgen"
-	eventprocessor "github.com/KirkDiggler/rpg-api/internal/processors/event"
-	encounterpub "github.com/KirkDiggler/rpg-api/internal/publishers/encounter"
 	"github.com/KirkDiggler/rpg-api/internal/redis"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	characterdraftrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft"
 	dicesessionrepo "github.com/KirkDiggler/rpg-api/internal/repositories/dice_session"
-	dungeonsrepo "github.com/KirkDiggler/rpg-api/internal/repositories/dungeons"
-	encounterlogrepo "github.com/KirkDiggler/rpg-api/internal/repositories/encounterlog"
-	encountersrepo "github.com/KirkDiggler/rpg-api/internal/repositories/encounters"
 	encountersv2 "github.com/KirkDiggler/rpg-api/internal/repositories/encounters/v2"
 	lobbyrepo "github.com/KirkDiggler/rpg-api/internal/repositories/lobby"
 	tkenc "github.com/KirkDiggler/rpg-toolkit/encounter"
@@ -62,18 +54,16 @@ type TestServer struct {
 
 	// Proto-generated clients for tests to use
 	CharacterClient   dnd5ev1alpha1.CharacterServiceClient
-	EncounterClient   dnd5ev1alpha1.EncounterServiceClient
 	DiceClient        apiv1alpha1.DiceServiceClient
 	EncounterClientV2 encounterv2pb.EncounterServiceClient
 	LobbyClient       lobbyv1alpha1pb.LobbyServiceClient
 
 	// Exposed for test setup (seeding data, etc.)
-	EncounterPublisher encounterpub.Publisher
-	CharacterRepo      characterrepo.Repository
-	BrokerV2           *tkenc.Broker
-	EncRepoV2          encountersv2.Repository
-	LobbyBroker        *lobbyorch.Broker
-	LobbyRepo          lobbyrepo.Repository
+	CharacterRepo characterrepo.Repository
+	BrokerV2      *tkenc.Broker
+	EncRepoV2     encountersv2.Repository
+	LobbyBroker   *lobbyorch.Broker
+	LobbyRepo     lobbyrepo.Repository
 }
 
 // Config allows customization of the test server.
@@ -159,7 +149,6 @@ func New(ctx context.Context, cfg *Config) (*TestServer, error) {
 
 	// Create typed clients
 	ts.CharacterClient = dnd5ev1alpha1.NewCharacterServiceClient(conn)
-	ts.EncounterClient = dnd5ev1alpha1.NewEncounterServiceClient(conn)
 	ts.DiceClient = apiv1alpha1.NewDiceServiceClient(conn)
 	ts.EncounterClientV2 = encounterv2pb.NewEncounterServiceClient(conn)
 	ts.LobbyClient = lobbyv1alpha1pb.NewLobbyServiceClient(conn)
@@ -194,27 +183,6 @@ func (ts *TestServer) wireServices(cfg *Config) error {
 		return fmt.Errorf("dice session repo: %w", err)
 	}
 
-	encounterRepo := encountersrepo.NewInMemory()
-	dungeonRepo := dungeonsrepo.NewInMemory()
-	dungeonGen := dungeontoolkit.CreateGenerator(&dungeontoolkit.ToolkitConfig{})
-	encounterLogRepo := encounterlogrepo.NewInMemory(nil)
-
-	encounterPublisher, err := encounterpub.NewRedis(&encounterpub.RedisConfig{
-		Client: ts.redisClient,
-	})
-	if err != nil {
-		return fmt.Errorf("encounter publisher: %w", err)
-	}
-	ts.EncounterPublisher = encounterPublisher
-
-	eventProc, err := eventprocessor.New(&eventprocessor.Config{
-		EncounterLogRepo: encounterLogRepo,
-		Publisher:        encounterPublisher,
-	})
-	if err != nil {
-		return fmt.Errorf("event processor: %w", err)
-	}
-
 	// Create orchestrators
 	diceService, err := diceorc.NewOrchestrator(&diceorc.Config{
 		DiceSessionRepo: diceSessionRepo,
@@ -222,18 +190,6 @@ func (ts *TestServer) wireServices(cfg *Config) error {
 	})
 	if err != nil {
 		return fmt.Errorf("dice service: %w", err)
-	}
-
-	encounterService, err := encounterorc.New(&encounterorc.Config{
-		CharacterRepo:    charRepo,
-		EncounterRepo:    encounterRepo,
-		DungeonRepo:      dungeonRepo,
-		DungeonGen:       dungeonGen,
-		EventProcessor:   eventProc,
-		EncounterLogRepo: encounterLogRepo,
-	})
-	if err != nil {
-		return fmt.Errorf("encounter service: %w", err)
 	}
 
 	characterService, err := character.New(&character.Config{
@@ -262,14 +218,6 @@ func (ts *TestServer) wireServices(cfg *Config) error {
 		return fmt.Errorf("dice handler: %w", err)
 	}
 
-	encounterHandler, err := encounterhandler.New(&encounterhandler.HandlerConfig{
-		EncounterService: encounterService,
-		Publisher:        encounterPublisher,
-	})
-	if err != nil {
-		return fmt.Errorf("encounter handler: %w", err)
-	}
-
 	// Create gRPC server with auth interceptor
 	discordClient := auth.NewDiscordClient()
 	tokenCache := auth.NewTokenCache(5 * time.Minute)
@@ -286,7 +234,6 @@ func (ts *TestServer) wireServices(cfg *Config) error {
 
 	// Register services
 	dnd5ev1alpha1.RegisterCharacterServiceServer(ts.grpcServer, characterHandler)
-	dnd5ev1alpha1.RegisterEncounterServiceServer(ts.grpcServer, encounterHandler)
 	apiv1alpha1.RegisterDiceServiceServer(ts.grpcServer, diceHandler)
 
 	// v1alpha2 encounter wiring — broker and repo are stored on ts so tests can
