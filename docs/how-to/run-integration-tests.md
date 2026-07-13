@@ -1,7 +1,7 @@
 ---
 name: run integration tests
 description: How to run the integration test harness — requires Docker for testcontainers
-updated: 2026-05-02
+updated: 2026-07-13
 ---
 
 # How to run integration tests
@@ -25,38 +25,39 @@ This runs everything. Integration tests are not build-tagged, so they run with t
 ## Run integration tests only
 
 ```bash
-# Encounter integration tests
-go test -v -race ./internal/integration/encounter/...
+# v1alpha2 encounter service tests
+go test -v -race ./internal/integration/ -run TestEncounterV2
+
+# LobbyService tests (incl. combat-entry flows)
+go test -v -race ./internal/integration/ -run TestLobby
 
 # Character integration tests
 go test -v -race ./internal/integration/character/...
 ```
 
-## Run a specific test
-
-```bash
-# Run the open door test
-go test -v -race -run TestOpenDoor ./internal/integration/encounter/...
-
-# Run the monk combat scenario
-go test -v -race -run TestMonkKillsMonster ./internal/integration/encounter/...
-```
+**Updated 2026-07-13 (rpg-api#642):** the v1-only `internal/integration/encounter/`
+suite (which this section used to point at, including `TestOpenDoor` and
+`TestMonkKillsMonster`) is deleted along with the v1alpha1 EncounterService it
+exercised. Encounter coverage now lives in `internal/integration/
+encounter_v2_test.go` and `internal/integration/lobby_v1alpha1_test.go`.
 
 ## What the harness wires
 
 `internal/integration/harness/harness.go` builds a `TestServer` with:
 - Real Redis container (via testcontainers)
 - In-process gRPC server via `bufconn` (no network overhead)
-- Real orchestrators, real repositories
-- Real event processor + Redis publisher
+- Real orchestrators (character, lobby), real repositories
+- The v2 encounter path's `tkenc.Broker` for live event fan-out
 - `DevMode: true` — uses `Dev <player_id>` auth
 
-Exported on `TestServer`:
+Exported on `TestServer` (updated 2026-07-13, rpg-api#642 — `EncounterClient`
+and `EncounterPublisher` are gone with the v1alpha1 stack):
 - `CharacterClient dnd5ev1alpha1.CharacterServiceClient`
-- `EncounterClient dnd5ev1alpha1.EncounterServiceClient`
+- `EncounterClientV2 encounterv2pb.EncounterServiceClient`
+- `LobbyClient lobbyv1alpha1pb.LobbyServiceClient`
 - `DiceClient apiv1alpha1.DiceServiceClient`
 - `CharacterRepo characterrepo.Repository` — for seeding test data
-- `EncounterPublisher encounterpub.Publisher` — for subscribing to events in tests
+- `BrokerV2` / `EncRepoV2` — for seeding/inspecting v2 encounter state directly
 
 ## Writing new integration tests
 
@@ -70,13 +71,15 @@ func TestMyScenario(t *testing.T) {
     // Seed a character
     charResp, err := server.CharacterClient.GetCharacter(ctx, &proto.GetCharacterRequest{...})
 
-    // Drive the encounter
-    resp, err := server.EncounterClient.CreateEncounter(ctx, ...)
+    // Drive the v2 encounter
+    resp, err := server.EncounterClientV2.CreateEncounter(ctx, ...)
     require.NoError(t, err)
 }
 ```
 
-See `internal/integration/encounter/helpers.go` for shared setup helpers (create character, create encounter, etc.).
+See `internal/integration/lobby_v1alpha1_test.go` for the current pattern of
+seeding a party and driving a fight end-to-end via `LobbyClient` +
+`EncounterClientV2`.
 
 ## Test timing
 
@@ -84,4 +87,7 @@ Container startup is the bottleneck — typically 2–5 seconds per test suite. 
 
 ## Known gaps
 
-- Round 2 open-door and stream entity state tests (`open_door_test.go`, `stream_entity_state_test.go`) were added during the failing #468 branch and have not been verified green on main. They should be green after the coordinate refactor lands.
+~~Round 2 open-door and stream entity state tests...~~ MOOT (rpg-api#642,
+2026-07-13): these tests belonged to the deleted v1-only
+`internal/integration/encounter/` suite. See `docs/status.md` "Paused / on
+hold" for the moot #459–#468 PR record.

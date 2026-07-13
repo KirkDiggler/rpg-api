@@ -20,7 +20,7 @@ go mod tidy
 
 ## Step 2 — Add the handler stub
 
-In the appropriate handler file (e.g., `internal/handlers/dnd5e/v1alpha1/encounter/handler.go`):
+In the appropriate handler file (e.g., `internal/handlers/dnd5e/v2/encounter/handler.go` — the v1alpha1 encounter handler this example used to name was deleted in rpg-api#642, 2026-07-13):
 
 ```go
 func (h *Handler) MyNewRPC(ctx context.Context, req *pb.MyNewRequest) (*pb.MyNewResponse, error) {

@@ -13,7 +13,6 @@ import (
 
 	lobbyhandler "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/lobby/v1alpha1"
 	character2 "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v1alpha1/character"
-	encounterhandler "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v1alpha1/encounter"
 	encounterhandlerv2 "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v2/encounter"
 
 	"github.com/spf13/cobra"
@@ -31,23 +30,16 @@ import (
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
 	encounterv2pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/encounter"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
-	dungeontoolkit "github.com/KirkDiggler/rpg-api/internal/components/dungeon/toolkit"
 	apiv1alpha1handler "github.com/KirkDiggler/rpg-api/internal/handlers/api/v1alpha1"
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
 	diceorc "github.com/KirkDiggler/rpg-api/internal/orchestrators/dice"
-	encounterorc "github.com/KirkDiggler/rpg-api/internal/orchestrators/encounter"
 	lobbyorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/lobby"
 	"github.com/KirkDiggler/rpg-api/internal/pkg/clock"
 	"github.com/KirkDiggler/rpg-api/internal/pkg/idgen"
-	eventprocessor "github.com/KirkDiggler/rpg-api/internal/processors/event"
-	encounterpub "github.com/KirkDiggler/rpg-api/internal/publishers/encounter"
 	"github.com/KirkDiggler/rpg-api/internal/redis"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	characterdraftrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft"
 	dicesessionrepo "github.com/KirkDiggler/rpg-api/internal/repositories/dice_session"
-	dungeonsrepo "github.com/KirkDiggler/rpg-api/internal/repositories/dungeons"
-	encounterlogrepo "github.com/KirkDiggler/rpg-api/internal/repositories/encounterlog"
-	encountersrepo "github.com/KirkDiggler/rpg-api/internal/repositories/encounters"
 	encountersv2 "github.com/KirkDiggler/rpg-api/internal/repositories/encounters/v2"
 	lobbyrepo "github.com/KirkDiggler/rpg-api/internal/repositories/lobby"
 	tkenc "github.com/KirkDiggler/rpg-toolkit/encounter"
@@ -153,46 +145,6 @@ func runServer(_ *cobra.Command, _ []string) error {
 		return fmt.Errorf("failed to create dice service: %w", err)
 	}
 
-	// Create encounter repository (in-memory for now)
-	encounterRepo := encountersrepo.NewInMemory()
-
-	// Create dungeon repository and generator
-	dungeonRepo := dungeonsrepo.NewInMemory()
-	dungeonGen := dungeontoolkit.CreateGenerator(&dungeontoolkit.ToolkitConfig{})
-
-	// Create encounter log repository (in-memory for now)
-	encounterLogRepo := encounterlogrepo.NewInMemory(nil)
-
-	// Create encounter event publisher
-	encounterPublisher, err := encounterpub.NewRedis(&encounterpub.RedisConfig{
-		Client: redisClient,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to create encounter publisher: %w", err)
-	}
-
-	// Create event processor for persisting and publishing events
-	eventProc, err := eventprocessor.New(&eventprocessor.Config{
-		EncounterLogRepo: encounterLogRepo,
-		Publisher:        encounterPublisher,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to create event processor: %w", err)
-	}
-
-	// Create encounter orchestrator with dungeon support
-	encounterService, err := encounterorc.New(&encounterorc.Config{
-		CharacterRepo:    charRepo,
-		EncounterRepo:    encounterRepo,
-		DungeonRepo:      dungeonRepo,
-		DungeonGen:       dungeonGen,
-		EventProcessor:   eventProc,
-		EncounterLogRepo: encounterLogRepo,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to create encounter service: %w", err)
-	}
-
 	// Initialize services
 	characterService, err := character.New(&character.Config{
 		DraftRepo:        draftRepo,
@@ -220,17 +172,8 @@ func runServer(_ *cobra.Command, _ []string) error {
 		return fmt.Errorf("failed to create dice handler: %w", err)
 	}
 
-	encounterHandler, err := encounterhandler.New(&encounterhandler.HandlerConfig{
-		EncounterService: encounterService,
-		Publisher:        encounterPublisher,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to create encounter handler: %w", err)
-	}
-
 	// Register services
 	dnd5ev1alpha1.RegisterCharacterServiceServer(srv, characterHandler)
-	dnd5ev1alpha1.RegisterEncounterServiceServer(srv, encounterHandler)
 	apiv1alpha1.RegisterDiceServiceServer(srv, diceHandler)
 
 	// v1alpha2 encounter wiring (additive, no v1alpha1 disturbance).
@@ -298,7 +241,6 @@ func runServer(_ *cobra.Command, _ []string) error {
 
 	healthServer.SetServingStatus("", grpc_health_v1.HealthCheckResponse_SERVING)
 	healthServer.SetServingStatus("dnd5e.api.v1alpha1.CharacterService", grpc_health_v1.HealthCheckResponse_SERVING)
-	healthServer.SetServingStatus("dnd5e.api.v1alpha1.EncounterService", grpc_health_v1.HealthCheckResponse_SERVING)
 	healthServer.SetServingStatus("api.v1alpha1.DiceService", grpc_health_v1.HealthCheckResponse_SERVING)
 	healthServer.SetServingStatus("dnd5e.api.v1alpha2.encounter.EncounterService", grpc_health_v1.HealthCheckResponse_SERVING)
 	healthServer.SetServingStatus("dnd5e.api.lobby.v1alpha1.LobbyService", grpc_health_v1.HealthCheckResponse_SERVING)

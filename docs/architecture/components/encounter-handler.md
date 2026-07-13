@@ -1,92 +1,29 @@
 ---
 name: encounter handler
-description: gRPC handler for the EncounterService — validates, converts, delegates, streams events
-updated: 2026-05-02
-confidence: high — verified by reading handler.go and converters.go
+description: DELETED — v1alpha1 EncounterService handler, removed in rpg-api#642
+updated: 2026-07-13
+confidence: high — verified by grep (zero remaining references) before deletion
 ---
 
-# encounter handler
+# encounter handler — DELETED (rpg-api#642, 2026-07-13)
 
-The encounter handler is the gRPC adapter for `EncounterService`. It translates proto requests to orchestrator inputs, delegates to the encounter orchestrator, and converts outputs back to proto responses. It also owns the server-streaming `StreamEncounterEvents` RPC that delivers real-time encounter events to clients.
+`internal/handlers/dnd5e/v1alpha1/encounter/handler.go` and `converters.go` are
+deleted. This was the gRPC adapter for the `dnd5e.api.v1alpha1.EncounterService`
+— the audit-flagged live-but-legacy path (rpg-api's twin of rpg-dnd5e-web#448's
+clean slate). Verified before deletion that the web made zero calls to this
+service; only the v1alpha2 `EncounterClient` was ever exercised.
 
-## Files
+Every gRPC method this doc used to list (`CreateEncounter`, `JoinEncounter`,
+`SetReady`/`LeaveEncounter`, `StartCombat`, `CreateDungeon`,
+`GetEncounterState`, `StreamEncounterEvents`, `ResolveAttack`,
+`MoveCharacter`, `ActivateFeature`, `ActivateCombatAbility`, `ExecuteAction`,
+`EndTurn`, `OpenDoor`, `PlayerDisconnected`, `GetEncounterHistory`) is gone
+along with the service registration in `cmd/server/server.go`.
 
-| File | Lines | Purpose |
-|---|---|---|
-| `handlers/dnd5e/v1alpha1/encounter/handler.go` | 1,112 | gRPC handler |
-| `handlers/dnd5e/v1alpha1/encounter/converters.go` | 1,658 | Proto ↔ domain entity conversion |
+**Current encounter handler:** see [`encounter.md`](./encounter.md) — the
+v1alpha2 encounter service, the only encounter handler remaining. It never had
+the boundary violations this doc used to describe (toolkit spatial types
+hardcoded, `*toolkitchar.Data` type assertions) — it was designed load→verb→
+persist from the start.
 
-## gRPC methods handled
-
-- `CreateEncounter` — creates multiplayer lobby
-- `JoinEncounter` — joins by join code
-- `SetReady` / `LeaveEncounter` — lobby management
-- `StartCombat` — begins combat (host only)
-- `CreateDungeon` — solo dungeon (legacy/test path)
-- `GetEncounterState` — full snapshot for load-then-stream pattern
-- `StreamEncounterEvents` — server streaming: subscribes, sends events as stream
-- `ResolveAttack` — legacy single-step attack (pre-action economy)
-- `MoveCharacter` — legacy movement
-- `ActivateFeature` — activates class features (rage, second wind, etc.)
-- `ActivateCombatAbility` — new action economy: activate ATTACK, DASH, DODGE, etc.
-- `ExecuteAction` — new action economy: execute STRIKE, MOVE, etc.
-- `EndTurn` — advances to next initiative turn
-- `OpenDoor` — opens door and reveals new room
-- `PlayerDisconnected` — TODO: not fully wired (see below)
-- `GetEncounterHistory` — retrieves past events for replay
-
-## Known boundary violations
-
-### Toolkit spatial types hardcoded in handler (6 sites)
-
-`handler.go` imports `github.com/KirkDiggler/rpg-toolkit/tools/spatial` and hardcodes:
-```go
-gridType := spatial.GridTypeHex              // lines 157, 359, 569, 757, 822, 905
-hexOrientation := spatial.HexOrientationPointyTop  // lines 158, 360, 570, 758, 823, 906
-```
-
-These appear in `CreateEncounter`, `JoinEncounter`, `StartCombat`, `GetEncounterState`, `OpenDoor`, and `StreamEncounterEvents`. Handlers should not import toolkit spatial packages — the grid type is a domain concept that should come from the orchestrator's output (or be a constant in the dungeon component).
-
-### Type assertion on `*toolkitchar.Data` in handler
-
-`handler.go:765` contains:
-```go
-//TODO: handler should not interact with toolkit, this belongs in the orchestrator
-if charData, ok := member.CharacterData.(*toolkitchar.Data); ok {
-```
-
-This is a type assertion against a toolkit type in the handler layer — a direct handler→toolkit dependency that violates the pattern. The orchestrator's `PartyMember.CharacterData` is typed as `interface{}`, which is why the handler must assert. The fix: the orchestrator should return a typed wrapper or character summary struct instead of `interface{}`.
-
-### `PlayerDisconnected` TODO
-
-`handler.go:691`:
-```go
-// TODO: Call PlayerDisconnected on the orchestrator
-```
-
-The streaming RPC handler handles client disconnect but does not call `orchestrator.PlayerDisconnected`. This means encounter state is not updated when a player's stream closes. The `PlayerDisconnected` orchestrator method exists and is implemented — the hook in the handler was never wired.
-
-## Converter surface
-
-`converters.go` owns all proto ↔ domain entity conversion for encounter types:
-- `applyOriginToEntities` — adds the room origin to each proto entity's local position (a thin wrapper around `dungeon.Module.LocalToAbsolute` operating on proto types in the converter pipeline)
-- Entity type and size conversions
-- Combat state, initiative entry, action economy conversions
-- Monster state, attack result conversions
-- Room data conversion from `spatial.RoomData` → proto `Room`
-
-Walls arrive at the handler already in dungeon-absolute coordinates: the orchestrator translates them via `dungeon.Module.LocalToAbsolute` before populating `WallInfo`. Only the toolkit `spatial.RoomData.CubeEntities` map still holds room-local entity coordinates; `applyOriginToEntities` is the single proto-side site that lifts those into absolute coordinates.
-
-The `dungeon.LocalPosition` / `dungeon.AbsolutePosition` / `dungeon.Module` types live in `internal/components/dungeon` and are the source of truth for the local-vs-absolute distinction (see [dungeon-component.md](./dungeon-component.md)).
-
-## Load-then-stream pattern
-
-The encounter handler implements load-then-stream for new/reconnecting clients:
-1. Client calls `GetEncounterState` — receives full snapshot with `LastEventID`.
-2. Client calls `StreamEncounterEvents` — receives events where `id > LastEventID`.
-
-`StreamEncounterEvents` subscribes to the Redis publisher, converts each `entities.EncounterEvent` to a proto `EncounterEvent`, and sends it on the stream. The conversion includes populating the proto-typed entity states from the event's `json:"-"` proto fields when available (the fast path), or reconstructing from entity data otherwise.
-
-## Auth pattern
-
-All handlers extract `playerID` via `auth.PlayerIDFromContext(ctx)` and pass it as a field in the orchestrator's input struct. No business logic in handlers.
+See `docs/status.md` "Active work" for the full deletion tally.

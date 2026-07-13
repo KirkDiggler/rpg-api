@@ -11,6 +11,22 @@ confidence: high — verified by reading types.go, generator.go, and toolkit/ su
 
 **This component is in the wrong repository.** Procedural dungeon generation — including room shapes, wall placement, monster CR budgets, hex-grid coordinate calculation, and theme tables — is game logic. The Boundary Rule (rpg-api CLAUDE.md, rpg-project CLAUDE.md) is explicit: game mechanics belong in rpg-toolkit. Moving this component is a known planned task that has not been executed.
 
+**Updated 2026-07-13 (rpg-api#642), load-bearing finding:** this component was
+deliberately left untouched by the v1alpha1 encounter stack deletion — it is
+audit debt #5, tracked separately, and Kirk decides its relocation timing, not
+this PR. It is **not fully dead** (its own `integration_test.go` still calls
+`toolkit.CreateGenerator`, and it cross-references `internal/components/spawner`,
+which cross-references it back — both packages compile and pass their own
+tests). But it now has **zero production callers**: `cmd/server/server.go` and
+`internal/integration/harness/harness.go` both dropped their `dungeontoolkit.
+CreateGenerator` call sites when their v1 wiring was removed, and the v1
+orchestrator that was this component's only real caller is deleted. No
+handler or orchestrator anywhere in the current codebase constructs a
+`Generator` or reaches `internal/components/spawner`. Procedural dungeon
+generation is currently unreachable from any live RPC path — worth factoring
+into the relocation-timing decision, since "used by legacy path, wrong repo"
+and "built and tested but wired to nothing" are different priorities.
+
 ## Structure
 
 ```
@@ -121,12 +137,16 @@ Proto positions (`apiv1alpha1.Position`) are `int32`; the converter pipeline doe
 - `rpg-toolkit/rulebooks/dnd5e/monster` — `monster.Data` type for placement
 - `rpg-toolkit/rulebooks/dnd5e/combat` — XP budget thresholds per encounter difficulty
 
-**Used by:**
-- `orchestrators/encounter` — calls `Generator.Generate`, uses rooms and connections
-- `entities/dungeon.go` — `Dungeon.Rooms` is `map[string]*dungeon.Room`
-- `entities/dungeon.go` — `Dungeon.RoomOrigins` is `map[string]dungeon.AbsolutePosition`
-- `entities/encounter_events.go` — `CombatStartedEvent.Walls []dungeon.WallSegment`
-- `handlers/dnd5e/v1alpha1/encounter/converters.go` — converts dungeon types to proto
+**Used by (historical — all deleted 2026-07-13, rpg-api#642):**
+- ~~`orchestrators/encounter` — calls `Generator.Generate`, uses rooms and connections~~
+- ~~`entities/dungeon.go` — `Dungeon.Rooms` is `map[string]*dungeon.Room`~~
+- ~~`entities/dungeon.go` — `Dungeon.RoomOrigins` is `map[string]dungeon.AbsolutePosition`~~
+- ~~`entities/encounter_events.go` — `CombatStartedEvent.Walls []dungeon.WallSegment`~~
+- ~~`handlers/dnd5e/v1alpha1/encounter/converters.go` — converts dungeon types to proto~~
+
+**Currently used by:** only `internal/components/spawner` (production code) and
+its own `toolkit/` subpackage's tests — see the load-bearing finding above.
+No production caller outside the `components/` tree remains.
 
 ## Known issues
 

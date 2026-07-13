@@ -1,7 +1,7 @@
 ---
 name: run locally
 description: How to start the rpg-api gRPC server locally with dev auth enabled
-updated: 2026-05-02
+updated: 2026-07-13
 ---
 
 # How to run rpg-api locally
@@ -51,18 +51,17 @@ With `AUTH_DEV_MODE=true`, all gRPC calls must include the header:
 Authorization: Dev <your-player-id>
 ```
 
-Example with `grpcurl`:
+Example with `grpcurl`, using `LobbyService.CreateLobby` (updated 2026-07-13,
+rpg-api#642 — the v1alpha1 `EncounterService` this example used to call is
+deleted; `CreateLobby` is the current sole encounter-construction entry
+point, per `docs/architecture/components/lobby-service.md`):
 ```bash
 grpcurl -plaintext \
   -H "Authorization: Dev player-1" \
-  -d '{"player_id": "player-1"}' \
+  -d '{"campaign_id": "campaign-1", "character_id": "char-1"}' \
   localhost:50051 \
-  dnd5e.api.v1alpha1.EncounterService/CreateEncounter
+  dnd5e.api.lobby.v1alpha1.LobbyService/CreateLobby
 ```
-
-## Using the encounter test client
-
-`cmd/server/encounter_client.go` provides a simple test client. Check that file for usage examples.
 
 ## Health check
 
@@ -79,4 +78,8 @@ Health and gRPC reflection endpoints bypass auth.
 grpcurl -plaintext localhost:50051 list
 ```
 
-Expected output includes `dnd5e.api.v1alpha1.CharacterService` and `dnd5e.api.v1alpha1.EncounterService`.
+Expected output includes `dnd5e.api.v1alpha1.CharacterService`,
+`api.v1alpha1.DiceService`, `dnd5e.api.v1alpha2.encounter.EncounterService`,
+and `dnd5e.api.lobby.v1alpha1.LobbyService`. **Updated 2026-07-13
+(rpg-api#642):** `dnd5e.api.v1alpha1.EncounterService` is no longer
+registered — the v1alpha1 encounter stack is deleted.
