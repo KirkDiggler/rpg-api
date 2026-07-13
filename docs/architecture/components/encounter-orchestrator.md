@@ -1,151 +1,29 @@
 ---
 name: encounter orchestrator
-description: Central combat orchestrator — combat resolution, dungeon navigation, monster turns, entity state, event publishing
-updated: 2026-05-02
-confidence: high — verified by reading orchestrator.go, service.go, monster_turns.go, perception.go, dungeon_mapper.go
+description: DELETED — the 5,844-line v1 encounter orchestrator, removed in rpg-api#642
+updated: 2026-07-13
+confidence: high — verified by grep (zero remaining references) before deletion
 ---
 
-# encounter orchestrator
+# encounter orchestrator — DELETED (rpg-api#642, 2026-07-13)
 
-The encounter orchestrator is the largest and most critical component in rpg-api. It coordinates the full lifecycle of a multiplayer dungeon encounter: lobby creation, dungeon generation, combat resolution, monster turns, room navigation, entity state snapshots, and event publishing.
+`internal/orchestrators/encounter/orchestrator.go` (5,844 lines) and its
+v1-only siblings — `service.go`, `monster_turns.go`, `perception.go`,
+`dungeon_mapper.go`, and their tests/mocks — are deleted. This was the most
+critical and most at-risk file in the repo: proto types constructed inline
+(39 `pb.` references), an `interface{}`-typed room-data field, a hardcoded
+debug theme, and coordinate-space bugs that took five separate fix commits.
+All of it is gone rather than incrementally fixed — the file had no live
+production consumer once the v1alpha1 EncounterService it backed was
+unregistered (verified: the web made zero calls to it).
 
-## Files
+Six open PRs (#459, #461, #463, #466, #467, #468) targeted this file's
+coordinate-space bugs. They are now moot — see `docs/status.md` "Paused / on
+hold" for the record.
 
-| File | Lines | Purpose |
-|---|---|---|
-| `orchestrators/encounter/orchestrator.go` | 5,577 | All orchestration logic |
-| `orchestrators/encounter/service.go` | 563 | Service interface + Input/Output types |
-| `orchestrators/encounter/monster_turns.go` | 521 | Monster turn execution |
-| `orchestrators/encounter/perception.go` | 250 | Passive perception / monster AI targeting |
-| `orchestrators/encounter/dungeon_mapper.go` | 90 | Maps orchestrator params → dungeon generator input |
+**Current encounter orchestrator:** see [`encounter.md`](./encounter.md) — the
+v1alpha2 orchestrator (`internal/orchestrators/encounter/v2/`), a materially
+different and better shape: one file per RPC, each doing exactly one
+`load → toolkit-verb → persist`, never importing proto.
 
-**Total: ~7,001 lines across the encounter orchestrator package.**
-
-## Purpose
-
-Coordinates the full encounter lifecycle:
-1. **Lobby** — create encounter, join by code, set ready, start combat
-2. **Dungeon generation** — generate multi-room dungeon via component, place entities
-3. **Combat** — initiative, action economy, attack resolution, feature activation, movement
-4. **Monster turns** — AI-driven monster action selection and execution
-5. **Room navigation** — open doors, reveal rooms, merge new monsters into initiative
-6. **State snapshots** — build `EncounterStateData` proto for load-then-stream pattern
-7. **Event publishing** — emit `EncounterEvent` per action via the event processor
-
-## Public interface (`service.go`)
-
-```go
-type Service interface {
-    ResolveAttack(ctx, *ResolveAttackInput) (*ResolveAttackOutput, error)
-    CreateDungeon(ctx, *CreateDungeonInput) (*CreateDungeonOutput, error)
-    MoveCharacter(ctx, *MoveCharacterInput) (*MoveCharacterOutput, error)
-    EndTurn(ctx, *EndTurnInput) (*EndTurnOutput, error)
-    ActivateFeature(ctx, *ActivateFeatureInput) (*ActivateFeatureOutput, error)
-    OpenDoor(ctx, *OpenDoorInput) (*OpenDoorOutput, error)
-    CreateEncounter(ctx, *CreateEncounterInput) (*CreateEncounterOutput, error)
-    JoinEncounter(ctx, *JoinEncounterInput) (*JoinEncounterOutput, error)
-    SetReady(ctx, *SetReadyInput) (*SetReadyOutput, error)
-    StartCombat(ctx, *StartCombatInput) (*StartCombatOutput, error)
-    LeaveEncounter(ctx, *LeaveEncounterInput) (*LeaveEncounterOutput, error)
-    PlayerDisconnected(ctx, *PlayerDisconnectedInput) (*PlayerDisconnectedOutput, error)
-    PlayerReconnected(ctx, *PlayerReconnectedInput) (*PlayerReconnectedOutput, error)
-    GetEncounterState(ctx, *GetEncounterStateInput) (*GetEncounterStateOutput, error)
-    GetEncounterHistory(ctx, *GetEncounterHistoryInput) (*GetEncounterHistoryOutput, error)
-    ActivateCombatAbility(ctx, *ActivateCombatAbilityInput) (*ActivateCombatAbilityOutput, error)
-    ExecuteAction(ctx, *ExecuteActionInput) (*ExecuteActionOutput, error)
-}
-```
-
-## Internal data model
-
-The orchestrator works with the following types:
-- `entities.Dungeon` — dungeon graph + room origins + exploration state
-- `encounterrepo.EncounterData` — full encounter state including entity map
-- `entities.EntityStateData` — per-entity state (position, HP, toolkit data)
-- `entities.CombatState` — initiative order, active turn, action economy
-- `entities.EncounterEvent` — event envelope (emitted via event processor)
-
-## Dependencies
-
-```
-Orchestrator
-    ├── characterrepo.Repository     — loads character.Data for encounter entrants
-    ├── encounterrepo.Repository     — reads/writes EncounterData (in-memory)
-    ├── dungeonrepo.Repository       — reads/writes Dungeon entity (in-memory)
-    ├── dungeon.Generator            — procedural dungeon generation (local component)
-    ├── eventprocessor.Processor     — persist + publish encounter events
-    ├── encounterlogrepo.Repository  — read event history for GetEncounterHistory
-    ├── dice.Roller                  — dice rolls (optional, defaults to random)
-    ├── spawner.Spawner              — entity placement in rooms (optional)
-    ├── idgen.Generator (×3)         — encounter/dungeon/connection ID generation
-    └── rpg-toolkit packages:
-         ├── initiative              — roll and track initiative order
-         ├── combat                  — attack resolution, damage, armor class
-         ├── actions                 — ability activation (rage, second wind, etc.)
-         ├── monster                 — monster stats, turn execution
-         ├── monstertraits          — special monster abilities
-         ├── environments            — connection graph (dungeon layout)
-         ├── spatial                 — room data, entity placement, movement
-         └── gamectx                 — game context for toolkit rule calls
-```
-
-## Known issues and debt
-
-### CRITICAL: Proto types in orchestrator (architectural violation)
-
-`orchestrator.go` imports:
-```go
-apiv1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/api/v1alpha1"
-pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
-```
-
-There are **39 `pb.` references** including:
-- `buildRoomLayoutProto` (line 1097) — constructs `*pb.RoomLayout` inside the orchestrator
-- `buildRoomsMap` (line 1167) — builds `map[string]*pb.RoomLayout`
-- `protoAbilityIDToRef` (line 2321) — converts `pb.CombatAbilityId` to toolkit `core.Ref`
-- `protoActionIDToRef` (line 2372) — converts `pb.ActionId` to toolkit `core.Ref`
-- Local variables `var attackerState, targetState *pb.EntityState` (line 538, 4764, 4929, 5096)
-- `startRoomLayouts := map[string]*pb.RoomLayout{}` (line 3913)
-
-The functions `buildRoomLayoutProto` and `buildRoomsMap` belong in the encounter handler's converter layer. The `protoAbilityIDToRef` and `protoActionIDToRef` functions map from proto enums to toolkit refs — they could be replaced by passing string refs from the handler instead of proto enums.
-
-### CRITICAL: Proto types in service interface types
-
-`service.go` line 7 imports `pb` and uses proto types directly in Input/Output structs:
-- `MonsterCombatState.MonsterType pb.MonsterType` (line 459)
-- `ActivateCombatAbilityInput.AbilityID pb.CombatAbilityId` (line 511)
-- `ExecuteActionInput.ActionID pb.ActionId` (line 535)
-
-This means callers of the `Service` interface (i.e., the handler) must also import `pb`, and any consumer of `ActivateCombatAbilityOutput` receives proto-typed fields. The fix is to use string IDs or local enum types in the service interface.
-
-### Orchestrator size
-
-At 5,577 lines with 70+ functions, `orchestrator.go` owns too much responsibility. Suggested decomposition:
-- `combat.go` — `ResolveAttack`, `ActivateCombatAbility`, `ExecuteAction` (attack subtypes)
-- `dungeon_nav.go` — `OpenDoor`, room reveal, entity map merging
-- `lobby.go` — `CreateEncounter`, `JoinEncounter`, `SetReady`, `StartCombat`, player connect/disconnect
-- `state.go` — `GetEncounterState`, `GetEncounterHistory`, entity state snapshot building
-
-`StartCombat` carries `//nolint:gocyclo` (line 3592) — this is the most complex function, coordinating dungeon generation, initial entity placement, initiative rolling, monster turns, and event publishing. It is the first candidate for decomposition.
-
-### Coordinate transform — canonical via `dungeon.Module`
-
-Room-local coordinates (dungeon component types, integer cube coords) are translated to dungeon-absolute positions through `dungeon.Module` (see `internal/components/dungeon/module.go`). The Module holds the per-room origin map and provides `LocalToAbsolute(roomID, LocalPosition) AbsolutePosition` and the inverse. Every orchestrator transform site constructs a Module from `entities.Dungeon.RoomOrigins` and routes through it; there is no hand-rolled cube math left in the orchestrator.
-
-`LocalPosition` and `AbsolutePosition` are distinct types in `coords.go`, so the compiler enforces the local-vs-absolute distinction at every boundary. The cube invariant `X+Y+Z == 0` is checked centrally in the constructors (`NewLocalPosition`, `NewAbsolutePosition`) and on `Module.LoadFromData`.
-
-### Debug theme not reverted
-
-`dungeon_mapper.go:44` maps the `"crypt"` theme to `ThemeDebugWalls` with a TODO comment. All crypt dungeons currently render with debug walls. The fix is a one-line change but has not been reverted from wall UI testing.
-
-### TODO: monster turns before current entity
-
-`orchestrator.go:3282` has a TODO: "Implement monster turns for monsters that act before the current entity." When monsters are added to initiative mid-round (via `OpenDoor`), any monsters that rolled higher initiative than the current player should act immediately. This is currently not implemented.
-
-### PlayerDisconnected not fully wired
-
-`handlers/dnd5e/v1alpha1/encounter/handler.go:691` has a TODO: "Call PlayerDisconnected on the orchestrator." The streaming handler's disconnect path exits but does not notify the orchestrator. Encounter state is not cleaned up on disconnect.
-
-### `interface{}` for room data
-
-`EncounterData.RoomData interface{}` is explicitly documented as temporary. The orchestrator uses type assertions to access `*spatial.RoomData`. This makes the code brittle and disables type checking.
+See `docs/status.md` "Active work" for the full deletion tally.

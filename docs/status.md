@@ -1,8 +1,8 @@
 ---
 name: rpg-api status
 description: Where we are with rpg-api — active work, paused, known rough edges, per-subsystem confidence
-updated: 2026-07-11
-confidence: high — Wave 2 Monk entries verified against passing integration tests; #636 entry verified against passing unit + integration tests
+updated: 2026-07-13
+confidence: high — Wave 2 Monk entries verified against passing integration tests; #636 entry verified against passing unit + integration tests; #642 v1alpha1 encounter stack deletion verified against passing build/vet/test/lint
 ---
 
 # rpg-api: Where We Are
@@ -10,6 +10,26 @@ confidence: high — Wave 2 Monk entries verified against passing integration te
 This is a living doc. Edit it in the same PR that invalidates a line. Don't let it rot.
 
 ## Active work
+
+**The live v1alpha1 encounter stack is DELETED (rpg-api#642, 2026-07-13)** —
+the audit-flagged registered-and-serving `dnd5e.api.v1alpha1.EncounterService`
+(`cmd/server/server.go:233`), its 5,844-line `internal/orchestrators/encounter/
+orchestrator.go`, the v1-only entities (`entities.Dungeon`, the v1 combat
+domain model, `entity_state.go`/`encounter_state_builder.go` proto converters),
+and the v1-only repos/publisher/processor (`repositories/dungeons`,
+`repositories/encounterlog`, the v1 root of `repositories/encounters`,
+`publishers/encounter`, `processors/event`) are all gone — rpg-api's twin of
+rpg-dnd5e-web#448's clean slate. The web made zero v1alpha1 encounter RPC
+calls (confirmed before deletion), so this was pure dead-weight removal, not a
+behavior change. `internal/components/dungeon` (audit debt #5 — belongs in
+rpg-toolkit under the Boundary Rule) was explicitly left untouched: it still
+has a live consumer in `internal/components/spawner` and its own toolkit
+tests, so it did not become fully dead as a side effect.
+**This retires every "Known rough edge" and "Upcoming work" item below that
+named the deleted orchestrator, handler, or repos** — see the strikethrough
+notes in those sections rather than assuming they still apply. It also moots
+the six open Round 2 coordinate-space PRs (#459–#468, see "Paused / on
+hold"): they all patched a file that no longer exists.
 
 **NPC-first initiative no longer stalls the encounter (rpg-api#636, 2026-07-11)** —
 `Orchestrator.EndTurn`'s NPC dispatch loop only ever ran as the tail of an `EndTurn`
@@ -220,19 +240,23 @@ Known follow-ups (filed separately, out of Wave 2.11e scope):
 
 **Earlier active state (still relevant):**
 
-All six open PRs are coordinate-space fix branches feeding into the consolidated
-Round 2 branch (#468). #468 itself is **failing CI** (test step, build passes) and
-the current plan is to **abandon it and start fresh from main** — it picked up
-merge debt from stacking fixes. None of these should be merged individually.
+**MOOT as of #642 (2026-07-13):** all six PRs below patch
+`internal/orchestrators/encounter/orchestrator.go`, `dungeon_mapper.go`, and
+related v1-only files, all of which are now deleted. None of these branches
+apply cleanly against current main and none should be merged — the fixes they
+carry either need to be re-derived against the v2 stack (if the underlying bug
+still exists there) or are simply moot. Left listed here for the historical
+record rather than silently dropped; closing them is a follow-up action, not
+done in this PR.
 
 | PR | Branch | Status | Notes |
 |----|--------|--------|-------|
-| #459 | `fix/458-room-origins-monster-turns` | Open | superseded by #471 coordinate-types refactor |
-| #461 | `fix/open-door-monster-absolute-positions` | Open | Monster entity-map origin offset |
-| #463 | `fix/462-room-layout-wall-absolute-positions` | Open | Wall coords translated to dungeon-space |
-| #466 | `fix/open-door-room-data-persist` | Open | `OpenDoor` now persists merged `RoomData` |
-| #467 | `fix/room2-missing-perimeter-walls-465` | Open | Horizontal perimeter wall Z-coord fix |
-| #468 | `round2/multi-room-dungeon` | Open — CI FAILING | Consolidated branch; do not merge; start fresh |
+| #459 | `fix/458-room-origins-monster-turns` | Open — MOOT | targeted the deleted orchestrator.go |
+| #461 | `fix/open-door-monster-absolute-positions` | Open — MOOT | targeted the deleted orchestrator.go |
+| #463 | `fix/462-room-layout-wall-absolute-positions` | Open — MOOT | targeted the deleted orchestrator.go |
+| #466 | `fix/open-door-room-data-persist` | Open — MOOT | targeted the deleted orchestrator.go |
+| #467 | `fix/room2-missing-perimeter-walls-465` | Open — MOOT | targeted the deleted dungeon_mapper.go |
+| #468 | `round2/multi-room-dungeon` | Open — MOOT, was CI FAILING | Consolidated branch; targeted deleted files |
 
 ## Recently landed (since Round 1, highlights)
 
@@ -253,14 +277,15 @@ merge debt from stacking fixes. None of these should be merged individually.
 
 ## Paused / on hold
 
-- **Round 2 consolidated branch (#468)** — failing CI; plan is to cherry-pick
-  or re-apply the six fix PRs onto a fresh branch from main.
-- **Debug-walls theme** — `dungeon_mapper.go:44` has a hardcoded
-  `ThemeDebugWalls` where `ThemeCrypt` should be. Left in during wall-rendering
-  UI testing; not reverted yet.
-- **PlayerDisconnected** — the streaming handler exits but the `PlayerDisconnected`
-  orchestrator method is never called, so no encounter state cleanup fires.
-  (The TODO lives in `handler.go` in the stream-disconnect path.)
+- **Round 2 consolidated branch (#468)** — MOOT as of #642: targeted the now-deleted
+  v1 orchestrator. See the PR table above.
+- ~~**Debug-walls theme** — `dungeon_mapper.go:44` had a hardcoded
+  `ThemeDebugWalls` where `ThemeCrypt` should be.~~ Moot: `dungeon_mapper.go` was
+  deleted with the v1 orchestrator (#642).
+- ~~**PlayerDisconnected** — the streaming handler exits but the `PlayerDisconnected`
+  orchestrator method is never called, so no encounter state cleanup fires.~~
+  Moot: the v1 handler and orchestrator that owned this method are deleted (#642).
+  If the v2 path needs equivalent cleanup, it's a fresh gap, not a carried-over one.
 - **Spell/trait enum conversions** — multiple `TODO` comments in
   `handlers/.../character/converters.go` where `SPELL_UNSPECIFIED` and
   `TRAIT_UNSPECIFIED` are returned because proto enums are not yet mapped.
@@ -270,21 +295,12 @@ merge debt from stacking fixes. None of these should be merged individually.
 
 ## Known rough edges
 
-### Boundary violations — proto types in the orchestrator
+### ~~Boundary violations — proto types in the orchestrator~~ RESOLVED by deletion (#642)
 
-`internal/orchestrators/encounter/orchestrator.go` imports `pb` (the dnd5e proto
-package) and `apiv1alpha1` directly and uses `*pb.RoomLayout`, `*pb.EntityState`,
-`*pb.CombatStateProto` as return/local types (39 `pb.` references verified by grep).
-This violates the handler→orchestrator boundary. The functions `buildRoomLayoutProto`
-(line 1097) and `buildRoomsMap` (line 1167) construct proto messages inside the
-orchestrator. No lint rule catches this today.
-
-The violation also extends to `service.go` (line 7): the Service interface's Input/Output
-types themselves embed `pb.MonsterType` (line 459), `pb.CombatAbilityId` (line 511),
-and `pb.ActionId` (line 535) — meaning any caller of the interface must also import `pb`.
-
-Affected files: `internal/orchestrators/encounter/orchestrator.go`,
-`internal/orchestrators/encounter/service.go`
+`internal/orchestrators/encounter/orchestrator.go` and `service.go` — the files
+this section described — are deleted. The proto-contaminated Input/Output types
+died with them. The v2 orchestrator (`internal/orchestrators/encounter/v2/`)
+never imported proto in the first place.
 
 ### Boundary violation — dungeon component belongs in toolkit
 
@@ -296,52 +312,42 @@ identified as toolkit-bound in project memory but has not moved.
 
 Affected path: `internal/components/dungeon/`
 
-### Boundary violation — toolkit types leak into encounter handler
+### ~~Boundary violation — toolkit types leak into encounter handler~~ RESOLVED by deletion (#642)
 
-`internal/handlers/dnd5e/v1alpha1/encounter/handler.go` imports
-`github.com/KirkDiggler/rpg-toolkit/tools/spatial` and
-`github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character` directly.
-`spatial.GridTypeHex` and `spatial.HexOrientationPointyTop` are hardcoded six
-times in the handler. A type assertion on `*toolkitchar.Data` also lives there.
-Handler should convert proto to domain types only.
+`internal/handlers/dnd5e/v1alpha1/encounter/handler.go` — the file this
+section described — is deleted along with the rest of the v1alpha1
+EncounterService.
 
-Affected file: `internal/handlers/dnd5e/v1alpha1/encounter/handler.go`
+### ~~Coordinate-space fragility~~ RESOLVED by deletion (#642)
 
-### Coordinate-space fragility
+The bug class (room-local coordinates treated as absolute dungeon-space
+coordinates) lived entirely in the now-deleted `DungeonStart`, `OpenDoor`,
+`buildRoomLayoutProto`, entity map, and `mergeNewRoomMonsters` functions of the
+v1 orchestrator. Related PRs #459, #461, #463, #466, #467 are moot — see
+"Paused / on hold" above. If the v2 path develops an equivalent bug class, it's
+a fresh problem against fresh code, not a continuation of this one.
 
-Five separate fix commits between 2026-04-04 and 2026-04-06 all corrected the
-same class of bug: room-local coordinates being treated as absolute dungeon-space
-coordinates. The fixes are in `DungeonStart`, `OpenDoor`, `buildRoomLayoutProto`,
-the entity map, and `mergeNewRoomMonsters`. The root problem is that coordinate
-transformation is not enforced at a boundary — it's done ad-hoc in each call
-site. Expect more of these until a single canonical transform function is
-established and enforced.
+### ~~Encounter + dungeon repositories are in-memory only~~ RESOLVED by deletion (#642)
 
-Related PRs: #459, #461, #463, #466, #467
+`internal/repositories/encounters/inmemory.go` (v1 root) and
+`internal/repositories/dungeons/inmemory.go` are deleted. The surviving
+`internal/repositories/encounters/v2/` has both Redis and in-memory
+implementations, and is the one wired into production (`cmd/server/server.go`,
+24h TTL).
 
-### Encounter + dungeon repositories are in-memory only
+### ~~Orchestrator size and complexity~~ RESOLVED by deletion (#642)
 
-`internal/repositories/encounters/inmemory.go` and
-`internal/repositories/dungeons/inmemory.go` are the only implementations.
-State does not survive process restart. Character and draft repos have Redis
-implementations; encounter and dungeon do not.
+`internal/orchestrators/encounter/orchestrator.go` (5,844 lines) is deleted.
+The v2 orchestrator (`internal/orchestrators/encounter/v2/`) is one file per
+RPC, each doing exactly one `load → toolkit-verb → persist` — the opposite
+shape of the file this section described.
 
-### Orchestrator size and complexity
+### ~~Publish failures silently swallowed in event processor~~ RESOLVED by deletion (#642)
 
-`internal/orchestrators/encounter/orchestrator.go` is 5,577 lines with 70+
-exported and unexported functions. `StartCombat` carries a `//nolint:gocyclo`
-suppression. The file owns dungeon generation, combat resolution, monster turns,
-room navigation, entity-state building, and event publishing. Splitting this into
-focused sub-orchestrators (combat, dungeon, lobby) would improve testability.
-
-### Publish failures silently swallowed in event processor
-
-`internal/processors/event/processor.go` discards the publish error entirely with
-`_, _ = p.publisher.Publish(...)`. There is no logging, no alert, and no retry.
-A comment in the code acknowledges this ("In production, might want to log, retry,
-or queue failed publishes") but no instrumentation exists today. Every combat event
-could silently fail to reach connected clients with no observable signal.
-The same pattern may exist elsewhere in the orchestrator.
+`internal/processors/event/processor.go` is deleted — it had zero consumers
+left once the v1 orchestrator and handler were gone. The v2 path publishes
+through the toolkit's own `tkenc.Broker`, a different mechanism not affected
+by this gap.
 
 ### Handler TODO cluster in character handler/converters
 
@@ -351,26 +357,26 @@ comments (verified by grep on docs/honest-status-snapshot branch — original dr
 proficiencies, subraces, languages). Some responses return stub/zero values
 today.
 
-### Debug theme not restored
+### ~~Debug theme not restored~~ RESOLVED by deletion (#642)
 
-`internal/orchestrators/encounter/dungeon_mapper.go:44` routes the `"crypt"`
-theme to `ThemeDebugWalls` with a TODO to revert. This means all crypt dungeons
-render with debug walls in production.
+`internal/orchestrators/encounter/dungeon_mapper.go` is deleted with the rest
+of the v1 orchestrator.
 
-## v1alpha2 encounter service (Wave 2.5 slice 1 — PR forthcoming)
+## v1alpha2 encounter service (Wave 2.5 slice 1 — superseded)
 
 Walking skeleton wired through the rpg-toolkit `encounter` SDK. `MoveEntity` and
 `StreamEncounter` implemented; all other RPCs return `codes.Unimplemented`. Per-viewer
 event projection works end-to-end (verified by `internal/integration/encounter_v2_test.go`).
-v1alpha1 movement path remains the primary path for the web; deletion deferred until
-web migrates (slice 2: rpg-dnd5e-web#387).
 
-**Stale note (2026-07-07):** this section predates the many verbs that shipped since
-(TakeAction, EndTurn, Interact, SubmitCheck, SetReactionReady, ActivateFeature all exist
-now — see `internal/orchestrators/encounter/v2/`) and the removal of `CreateEncounter`
-(see the LobbyService entry above — `StartEncounter` on the new `LobbyService v1alpha1`
-is the sole construction path now). A full refresh of this section is a separate
-cleanup, not done in this PR.
+**Stale note (2026-07-07), now resolved (2026-07-13):** this section predated the many
+verbs that shipped since (TakeAction, EndTurn, Interact, SubmitCheck, SetReactionReady,
+ActivateFeature all exist now — see `internal/orchestrators/encounter/v2/`) and the
+removal of `CreateEncounter` (see the LobbyService entry above — `StartEncounter` on
+`LobbyService v1alpha1` is the sole construction path now). The "deletion deferred until
+web migrates" note below is also resolved: #642 deleted the v1alpha1 encounter path
+outright, confirmed via grep that the web made zero v1alpha1 encounter RPC calls. A full
+content refresh of this section (it still describes a walking-skeleton state years out of
+date) remains a separate cleanup, not done in this PR.
 
 Known gaps: rpg-toolkit#629 (LoS-loss events when entity moves out of viewer range — slice
 1 wave goal uses mutual LoS so this doesn't bite). `SnapshotDelivered.encounter` proto
@@ -382,53 +388,57 @@ See [quality.md](quality.md) for grade and rationale.
 
 | Subsystem | Confidence |
 |---|---|
-| Encounter handler | Medium — clean RPC shell, but spatial/toolkit types leak in |
 | Character handler | Medium — large converter surface with many TODO stubs |
-| Encounter orchestrator | Medium-low — correct behavior but 5,577 lines, proto leakage, coordinate fragility |
+| Encounter v2 handler/orchestrator | Medium-high — one file per RPC, load→verb→persist, no proto leakage; see quality.md |
 | Character orchestrator | Medium-high — smaller, well-tested |
 | Dungeon component | Medium — good tests, wrong repo; toolkit boundary violation |
 | Spawner component | Medium — thin, functional |
-| Event processor | Medium-high — clean interface, publish failures silently swallowed |
-| Redis publisher | Medium-high — works, serialization tested |
-| Encounter repository (in-memory) | Low-medium — no persistence, data lost on restart |
-| Dungeon repository (in-memory) | Low-medium — no persistence, data lost on restart |
-| Character repository (Redis) | Medium-high — only persistent game-state store |
-| Encounter log repository (in-memory) | Low — append-only design is correct but in-memory means no replay after restart |
-| Integration test harness | Medium-high — good coverage of happy paths, Round 2 open-door test just added |
+| Encounter repository v2 (Redis + in-memory) | Medium-high — persistent backend, tested, production-wired |
+| Character repository (Redis) | Medium-high — only persistent game-state store predating the v2 vertical |
+| Integration test harness | Medium-high — good coverage of happy paths across character/lobby/v2 encounter |
 | Services layer (sandboxroom) | Low — sparse; most business logic lives in orchestrators |
 
-### Lint — 70 pre-existing violations
+~~Encounter handler | Encounter orchestrator | Event processor | Redis publisher |
+Encounter repository (in-memory) | Dungeon repository (in-memory) | Encounter log
+repository (in-memory)~~ — all deleted with the v1alpha1 stack (#642).
 
-`make pre-commit` fails on lint with 70 pre-existing violations as of 2026-05-25. All tests pass. Wave 2.11e fixed 1 new violation introduced by the WIP (`buildCombatantRegistry` unparam). Categories:
+### Lint — 29 pre-existing violations (was 70, before #642)
 
-- **goconst (44)** — magic string literals repeated 3+ times in dungeon toolkit, character and encounter converters
-- **revive (5)** — `context.Context` not first param in test helpers, underscore in Go names
-- **govet (4)** — error variable shadowing in harness and integration helpers
-- **gocritic (3)** — sloppy reassignment patterns in encounter orchestrator
-- **unconvert (3)** — unnecessary string() conversions in encounter orchestrator and character handler
-- **unused (3)** — `convertEntityDoorsToProto`, `convertDungeonWallsToProto` in encounter converters; `protoActionIDToRef` in encounter orchestrator
-- **staticcheck (4)** — `grpc.DialContext` deprecated in test harness; `combat.ResolveAttack` deprecated in two orchestrator sites
+`make pre-commit` fails on lint with 29 pre-existing violations as of 2026-07-13,
+down from 70 before the v1alpha1 encounter stack deletion (#642) — 41 fewer, mostly
+`goconst` (44→19, duplicated proto/action-id string literals lived almost entirely
+in the deleted orchestrator) plus a handful of `unused`/`gocritic`/`revive` findings
+that died with their files. All tests pass. Every remaining issue was verified
+present (same description, shifted line number) in the pre-deletion baseline — this
+PR introduced zero new lint issues. Categories:
+
+- **goconst (19)** — magic string literals repeated 3+ times in dungeon toolkit and character converters
+- **govet (3)** — error variable shadowing in harness and integration helpers
+- **unconvert (3)** — unnecessary string() conversions in character handler
+- **staticcheck (1)** — `grpc.DialContext` deprecated in test harness
 - **errcheck (2)** — unchecked errors in harness.Close()
-- **misspell (1)** — "cancelled" → "canceled"
-- **unparam (1)** — `handleRemainingChoices` always returns nil in helpers
-
-The 3 unused functions (`convertEntityDoorsToProto`, `convertDungeonWallsToProto`, `protoActionIDToRef`) are dead code. `protoActionIDToRef` at line 2372 of orchestrator.go converts `pb.ActionId` but is never called. This is additional signal that the proto-to-ref conversion was moved inline without cleaning up.
+- **unused (1)** — dead helper in `internal/integration/encounter_v2_test.go`
 
 ## Upcoming work
 
-- **Start fresh from main for Round 2** — cherry-pick or re-implement the
-  six coordinate fixes; get CI green before merging.
+- ~~**Start fresh from main for Round 2**~~ — moot: the six coordinate fixes
+  targeted the deleted v1 orchestrator (#642). See "Paused / on hold."
 - **Move dungeon component to rpg-toolkit** — tracked decision, not yet an
-  open issue.
-- **Redis implementations for encounter + dungeon repos** — required before
-  any durability story.
-- **Eliminate proto types from orchestrator** — introduce internal room/entity
-  value types; move `buildRoomLayoutProto` and `buildRoomsMap` to the handler layer.
+  open issue. Unaffected by #642 — `internal/components/dungeon` was
+  deliberately left untouched (still has a live consumer in
+  `internal/components/spawner`).
+- ~~**Redis implementations for encounter + dungeon repos**~~ — moot: the
+  in-memory-only v1 repos are deleted; `repositories/encounters/v2` already
+  has a Redis implementation and is what's wired into production.
+- ~~**Eliminate proto types from orchestrator**~~ — moot: the orchestrator
+  that had this problem is deleted; the v2 orchestrator never imported proto.
 - **Character proto enum gaps** — spells, traits, subraces, languages all
-  return stub values today.
-- **PlayerDisconnected orchestrator hookup** — streaming handler exits cleanly
-  but encounter state is not cleaned up.
-- **Revert `ThemeDebugWalls` to `ThemeCrypt`** in `dungeon_mapper.go`.
+  return stub values today. Unaffected by #642 (v1alpha1 CharacterService
+  was never in scope for this deletion).
+- ~~**PlayerDisconnected orchestrator hookup**~~ — moot: the handler/orchestrator
+  pair that had this gap is deleted.
+- ~~**Revert `ThemeDebugWalls` to `ThemeCrypt`**~~ — moot: `dungeon_mapper.go`
+  is deleted.
 
 ## Related references
 

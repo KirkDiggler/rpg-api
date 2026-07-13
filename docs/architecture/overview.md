@@ -1,8 +1,8 @@
 ---
 name: rpg-api architecture overview
 description: Request flow, layer rules, component map, and cross-repo boundaries for rpg-api
-updated: 2026-05-02
-confidence: high — verified by full code read-through of key files
+updated: 2026-07-13
+confidence: medium — request-flow diagram and component map updated for rpg-api#642's v1alpha1 encounter stack deletion; remaining sections (character handler, cross-repo boundaries) predate #642 and were not re-verified in this pass
 ---
 
 # rpg-api architecture overview
@@ -10,6 +10,14 @@ confidence: high — verified by full code read-through of key files
 rpg-api is a Go gRPC server that orchestrates game state for a multiplayer D&D 5e dungeon crawler. Its single mandate is *data orchestration*: load entities from repositories, pass them to rpg-toolkit for rule execution, persist the results, and publish events to connected clients. rpg-api never knows what Rage does, never calculates attack modifiers on its own, and never implements D&D rules. If game logic appears here, that is a defect — the missing helper belongs in rpg-toolkit.
 
 ## Request flow
+
+**Updated 2026-07-13 (rpg-api#642):** this diagram describes the character/dice
+path, which is unaffected by the v1alpha1 encounter stack deletion. The
+v1alpha2 encounter path has a different, already-documented shape — see
+[`components/encounter.md`](./components/encounter.md)'s "load → verb →
+persist" orchestrator anatomy, which never routes through an event processor
+(that package is deleted; the v2 path publishes via the toolkit's own
+`tkenc.Broker`).
 
 ```
 gRPC client (rpg-dnd5e-web or Discord Activity)
@@ -31,19 +39,14 @@ Handler  (internal/handlers/dnd5e/v1alpha1/<domain>/handler.go)
 Orchestrator  (internal/orchestrators/<domain>/orchestrator.go)
     business logic coordination using internal entity types ONLY
     composes repos + toolkit calls
-    publishes encounter events via event processor
     │
     ├─→ Repository  (internal/repositories/<domain>/)
     │       Input/Output types on every method
     │       returns domain entities, never DB models
     │
-    ├─→ rpg-toolkit  (github.com/KirkDiggler/rpg-toolkit/...)
-    │       rule engine: combat resolution, initiative, abilities,
-    │       monster turns, spatial placement, dungeon room generation
-    │
-    └─→ Event processor  (internal/processors/event/)
-            persist to encounter log repo
-            publish to Redis pub/sub channel
+    └─→ rpg-toolkit  (github.com/KirkDiggler/rpg-toolkit/...)
+            rule engine: combat resolution, initiative, abilities,
+            character rules
 ```
 
 ## Layer rules
@@ -54,20 +57,24 @@ Orchestrator  (internal/orchestrators/<domain>/orchestrator.go)
 - One handler file per service version, one converter file per service.
 - Accept proto request → call `auth.PlayerIDFromContext` → build input struct → call orchestrator → convert output → return proto response.
 
-**Current violation in encounter handler:** `internal/handlers/dnd5e/v1alpha1/encounter/handler.go` imports `github.com/KirkDiggler/rpg-toolkit/tools/spatial` and hardcodes `spatial.GridTypeHex` and `spatial.HexOrientationPointyTop` at six call sites (lines 157–158, 359–360, 569–570, 757–758, 822–823, 905–906). A type assertion against `*toolkitchar.Data` also lives at line 765 with a TODO comment acknowledging it belongs in the orchestrator. These spatial values should come from the orchestrator's output, not be constructed in the handler.
+~~**Current violation in encounter handler**~~ RESOLVED by deletion (rpg-api#642,
+2026-07-13): `internal/handlers/dnd5e/v1alpha1/encounter/handler.go` — the file
+this violation described — is deleted along with the rest of the v1alpha1
+EncounterService.
 
 ### Orchestrators
 - **Do:** coordinate data: load from repos, call toolkit, persist results, emit events.
 - **Do not:** import or construct proto types. No `pb.` references. Speak internal entity types exclusively.
 - Input/Output structs on every method (defined in `service.go` alongside the interface).
 
-**Current violation in encounter orchestrator:** `internal/orchestrators/encounter/orchestrator.go` imports `pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"` and `apiv1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/api/v1alpha1"` at lines 11–12. There are 39 `pb.` references across the file including functions `buildRoomLayoutProto` (line 1097) and `buildRoomsMap` (line 1167) that construct proto messages inside the orchestrator, and `protoAbilityIDToRef` (line 2321) that converts `pb.CombatAbilityId` enums. These proto types contaminate the orchestrator's output structs. Fixing this requires moving `buildRoomLayoutProto` / `buildRoomsMap` to the encounter handler's converter layer and introducing internal `RoomLayout` entity types.
-
-**Current violation in encounter service types:** `internal/orchestrators/encounter/service.go` imports `pb` at line 7 and uses `pb.MonsterType` in `MonsterCombatState` (line 459), `pb.CombatAbilityId` in `ActivateCombatAbilityInput` (line 511), and `pb.ActionId` in `ExecuteActionInput` (line 535). The Input/Output types themselves are polluted with proto enum types, meaning callers of the service interface must also import `pb` — the contamination propagates outward.
-
-**Current violation in entities package:** `internal/entities/entity_state.go` and `internal/entities/encounter_state_builder.go` import proto packages and contain full proto construction logic (`ToEntityStateProto`, `BuildEncounterStateData`, `CombatStateToProto`). The `entities` package should hold plain Go structs with no proto dependencies.
-
-**Current violation in encounter_events.go:** `internal/entities/encounter_events.go` imports `dnd5ev1alpha1` at line 7 and embeds `*dnd5ev1alpha1.EncounterStateData`, `*dnd5ev1alpha1.EntityState`, and `*dnd5ev1alpha1.CombatState` as `json:"-"` fields in event structs (lines 109, 134, 147, 161, 177–178, 284–285, 300–301, 314, 323, 339). This is a layered contamination: proto types embedded in entity layer event structs.
+~~**Current violation in encounter orchestrator**~~ / ~~**encounter service
+types**~~ / ~~**entities package**~~ / ~~**encounter_events.go**~~ ALL RESOLVED
+by deletion (rpg-api#642, 2026-07-13): `internal/orchestrators/encounter/
+orchestrator.go`, `service.go`, `internal/entities/entity_state.go`,
+`internal/entities/encounter_state_builder.go`, and `internal/entities/
+encounter_events.go` — every file these four violations named — are deleted.
+The v2 orchestrator (`internal/orchestrators/encounter/v2/`) never imports
+proto; see [`components/encounter.md`](./components/encounter.md).
 
 ### Repositories
 - **Do:** data access abstraction with Input/Output types on every method.
@@ -75,34 +82,35 @@ Orchestrator  (internal/orchestrators/<domain>/orchestrator.go)
 - Interfaces defined in `repository.go` alongside Input/Output types.
 - Implementations in same package (`redis.go`, `inmemory.go`).
 
-**Current state:** Character, character_draft, and dice_session repositories have Redis implementations. **Encounter, dungeon, and encounter-log repositories are in-memory only** — state is lost on process restart. See `internal/repositories/encounters/inmemory.go`, `internal/repositories/dungeons/inmemory.go`, `internal/repositories/encounterlog/inmemory.go`.
+**Updated 2026-07-13 (rpg-api#642):** Character, character_draft, and
+dice_session repositories have Redis implementations, and so does
+`internal/repositories/encounters/v2/` (24h TTL) and `internal/repositories/
+lobby/`. The v1-only in-memory-only repositories this section used to flag —
+`internal/repositories/encounters` (v1 root), `internal/repositories/dungeons`,
+`internal/repositories/encounterlog` — are all deleted.
 
 ### Components (`internal/components/`)
 Components are local prototypes pending graduation to rpg-toolkit. They implement game logic that rightfully belongs in the rules engine but has not yet been extracted.
 
-- `internal/components/dungeon/` — procedural dungeon generation (room shapes, wall perimeters, door spawning, hex-grid layouts, monster CR budgets, theme tables). **This is game logic in the wrong repository.** The Boundary Rule is explicit: game mechanics belong in rpg-toolkit.
-- `internal/components/spawner/` — thin adapter around toolkit placement logic. Delegates rather than implements rules; lower risk.
+- `internal/components/dungeon/` — procedural dungeon generation (room shapes, wall perimeters, door spawning, hex-grid layouts, monster CR budgets, theme tables). **This is game logic in the wrong repository.** The Boundary Rule is explicit: game mechanics belong in rpg-toolkit. **Updated 2026-07-13:** deliberately left untouched by #642 (Kirk decides relocation timing), but its only remaining caller anywhere in the codebase is `internal/components/spawner` — see the load-bearing finding in [`components/dungeon-component.md`](./components/dungeon-component.md): it now has zero production (handler/orchestrator) callers.
+- `internal/components/spawner/` — thin adapter around toolkit placement logic. Delegates rather than implements rules; lower risk. Same "zero production callers" note applies.
 
 ## Component map
 
 | Component | Path | Purpose | Notes |
 |---|---|---|---|
-| Encounter handler | `internal/handlers/dnd5e/v1alpha1/encounter/` | gRPC ↔ encounter orchestrator | toolkit spatial imports leak in |
+| Encounter v2 handler | `internal/handlers/dnd5e/v2/encounter/` | gRPC ↔ v2 encounter orchestrator | Proto↔entity only; see `components/encounter.md` |
 | Character handler | `internal/handlers/dnd5e/v1alpha1/character/` | gRPC ↔ character orchestrator | 20 TODO stubs in converters |
 | Dice handler | `internal/handlers/api/v1alpha1/dice_handler.go` | gRPC ↔ dice orchestrator | Simple; no known issues |
-| Encounter orchestrator | `internal/orchestrators/encounter/` | Combat, dungeon, lobby, room nav | 5,577 lines; proto leakage |
+| Encounter v2 orchestrator | `internal/orchestrators/encounter/v2/` | Combat, movement, doors — load→verb→persist | One file per RPC; never imports proto |
 | Character orchestrator | `internal/orchestrators/character/` | Character creation, equipment | Smaller, well-tested |
 | Dice orchestrator | `internal/orchestrators/dice/` | Dice rolling sessions | Thin; low risk |
-| Dungeon component | `internal/components/dungeon/` | Procedural dungeon generation | Wrong repo; toolkit boundary violation |
-| Spawner component | `internal/components/spawner/` | Entity placement adapter | Thin; delegates to toolkit |
-| Event processor | `internal/processors/event/` | Persist + publish encounter events | `fmt.Printf` in hot path |
-| Redis publisher | `internal/publishers/encounter/` | Redis pub/sub for encounter events | Tested; no retry logic |
+| Dungeon component | `internal/components/dungeon/` | Procedural dungeon generation | Wrong repo (audit debt #5, untouched by #642); zero production callers as of #642 |
+| Spawner component | `internal/components/spawner/` | Entity placement adapter | Thin; delegates to toolkit; zero production callers as of #642 |
 | Auth | `internal/auth/` | Discord token validation + caching | Dev mode for local/tests |
-| Entities | `internal/entities/` | Domain structs | Proto leakage in entity_state.go |
-| Encounter repo | `internal/repositories/encounters/` | Encounter persistence | In-memory only |
-| Dungeon repo | `internal/repositories/dungeons/` | Dungeon persistence | In-memory only |
-| Encounter log repo | `internal/repositories/encounterlog/` | Event log (append-only) | In-memory only |
-| Character repo | `internal/repositories/character/` | Character persistence | Redis — only durable store |
+| Entities | `internal/entities/` | Domain structs (Character, CharacterDraft, Appearance) | Proto-free as of #642 |
+| Encounter repo v2 | `internal/repositories/encounters/v2/` | Encounter persistence | Redis (24h TTL) + in-memory |
+| Character repo | `internal/repositories/character/` | Character persistence | Redis — only durable store predating the v2 vertical |
 | Character draft repo | `internal/repositories/character_draft/` | Draft character state | Redis |
 | Dice session repo | `internal/repositories/dice_session/` | Dice roll sessions | Redis |
 | SandboxRoom service | `internal/services/sandboxroom/` | Room generation interface | Interface only; no implementation wired |
@@ -110,6 +118,10 @@ Components are local prototypes pending graduation to rpg-toolkit. They implemen
 | Lobby handler | `internal/handlers/dnd5e/lobby/v1alpha1/` | gRPC ↔ lobby orchestrator | New 2026-07-07 (rpg-api#629); layered from day one |
 | Lobby orchestrator | `internal/orchestrators/lobby/` | Party assembly + sole encounter construction (`StartEncounter`) | New; see `docs/architecture/components/lobby-service.md` |
 | Lobby repo | `internal/repositories/lobby/` | Lobby persistence | Redis + in-memory |
+
+~~Encounter handler (v1alpha1)~~ / ~~Encounter orchestrator (v1alpha1)~~ /
+~~Event processor~~ / ~~Redis publisher~~ / ~~Encounter repo (v1)~~ / ~~Dungeon
+repo~~ / ~~Encounter log repo~~ — all DELETED (rpg-api#642, 2026-07-13).
 
 ## Cross-repo boundaries
 
@@ -119,25 +131,26 @@ Components are local prototypes pending graduation to rpg-toolkit. They implemen
 - Auth: Discord JWT tokens validated via Discord API.
 
 **What rpg-api asks rpg-toolkit:**
-- Combat resolution: `actions.CheckAndGrantOffHandStrike`, `combat.ResolveAttack`, monster turns.
-- Initiative: `initiative.Roll`, `initiative.Tracker`.
+- Combat resolution, initiative, monster turns, movement/opportunity attacks — via the `encounter` SDK's toolkit verbs, reached only through the v2 orchestrator's `load → toolkit-verb → persist` methods.
 - Character rules: ability score calculation, proficiency bonuses, spell slots — these come from toolkit types.
 - Spatial: entity placement, movement validation, line-of-sight via `tools/spatial` and `tools/environments`.
-- Dungeon room generation: room shapes, perimeter walls, feature layouts via `components/dungeon` (pending move to toolkit).
+- ~~Dungeon room generation: room shapes, perimeter walls, feature layouts via `components/dungeon`~~ — component still exists (untouched by #642) but has zero production callers as of this PR; see `components/dungeon-component.md`.
 
 **What rpg-api persists:**
 - `character.Data` (toolkit type) serialized to Redis — character state is owned by the toolkit type.
-- `EncounterData` (local type) in memory — initiative, room data, entity map, player roster, combat state.
-- `Dungeon` (local entity) in memory — connection graph, room origins, revealed rooms, open doors.
-- `EncounterEvent` (local entity) in memory — append-only event log per encounter.
+- The v2 encounter path's `*encounter.Data` (toolkit type) — Redis-backed via `internal/repositories/encounters/v2`, 24h TTL.
+- Lobby state — Redis-backed via `internal/repositories/lobby`.
+- ~~`EncounterData` (local type)~~ / ~~`Dungeon` (local entity)~~ / ~~`EncounterEvent` (local entity)~~ — all DELETED (rpg-api#642); these were the v1alpha1 encounter stack's storage types.
 
 **What rpg-api publishes:**
-- Redis pub/sub channel `encounter:{id}:events` — JSON-serialized `EncounterEvent` structs.
-- One channel per active encounter; clients subscribe for real-time state updates.
+- The v2 encounter path fans out live events via the rpg-toolkit `encounter` SDK's own `tkenc.Broker` (in-process, per-viewer projection) — not documented in detail here yet.
+- ~~Redis pub/sub channel `encounter:{id}:events`~~ — DELETED (rpg-api#642); this was the v1alpha1 `EncounterEvent` publisher.
 
 ## gRPC service versions
 
-- `dnd5e.api.v1alpha1` — CharacterService + EncounterService (primary services)
+- `dnd5e.api.v1alpha1` — CharacterService only as of rpg-api#642 (2026-07-13):
+  the v1alpha1 EncounterService is unregistered and deleted — see
+  `docs/status.md` "Active work".
 - `api.v1alpha1` — DiceService
 - `dnd5e.api.v1alpha2.encounter` — EncounterService (v2, `MoveEntity`/`StreamEncounter`/
   combat verbs). `CreateEncounter` is deleted from this service — construction now
@@ -150,9 +163,13 @@ Proto definitions are in `rpg-api-protos` (separate repo). Compiled Go code pinn
 
 ## Known architectural debt (in priority order)
 
-1. **Proto types in service interface** (`orchestrators/encounter/service.go` lines 459, 511, 535) — the Input/Output types themselves embed `pb.MonsterType`, `pb.CombatAbilityId`, `pb.ActionId`.
-2. **Proto types in orchestrator** (`orchestrators/encounter/orchestrator.go`, 39 `pb.` refs) — builds proto messages inside the orchestrator.
-3. **Proto types in entities** (`entities/entity_state.go`, `entities/encounter_state_builder.go`, `entities/encounter_events.go`) — proto construction and proto-typed fields in the domain entity layer.
-4. **Coordinate transform fragility** — no canonical local-to-absolute transform function; five ad-hoc fix sites across orchestrator and handler converters.
-5. **In-memory repositories** — encounter, dungeon, and encounter-log repos lose state on restart.
-6. **Dungeon component in wrong repo** — `components/dungeon/` implements game logic that belongs in rpg-toolkit.
+Items 1–5 below (the entire v1alpha1 encounter stack's boundary debt) are
+**RESOLVED by deletion, rpg-api#642, 2026-07-13** — the files that carried
+these violations no longer exist. Left listed for the historical record.
+
+1. ~~**Proto types in service interface**~~ (`orchestrators/encounter/service.go`) — DELETED.
+2. ~~**Proto types in orchestrator**~~ (`orchestrators/encounter/orchestrator.go`) — DELETED.
+3. ~~**Proto types in entities**~~ (`entities/entity_state.go`, `entities/encounter_state_builder.go`, `entities/encounter_events.go`) — DELETED.
+4. ~~**Coordinate transform fragility**~~ — the orchestrator and handler converters with the ad-hoc fix sites are DELETED. If the v2 path develops coordinate bugs, that's fresh debt, not a continuation.
+5. ~~**In-memory repositories**~~ — the v1 encounter/dungeon/encounter-log repos are DELETED; the surviving `encounters/v2` repo is Redis-backed from day one.
+6. **Dungeon component in wrong repo** — `components/dungeon/` implements game logic that belongs in rpg-toolkit. Still open, deliberately untouched by #642 (Kirk decides relocation timing) — but now has zero production callers; see `components/dungeon-component.md`.

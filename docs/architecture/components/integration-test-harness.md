@@ -1,29 +1,31 @@
 ---
 name: integration test harness
 description: Full-stack test server wiring real Redis, in-process gRPC, and testcontainers
-updated: 2026-05-02
-confidence: high — verified by reading harness.go and integration test files
+updated: 2026-07-13
+confidence: high — verified by reading harness.go and remaining integration test files
 ---
 
 # integration test harness
 
 The integration test harness (`internal/integration/harness/`) is the most valuable test asset in rpg-api. It wires the full stack — real Redis via testcontainers, real orchestrators and repositories, in-process gRPC via bufconn — and exercises complete game flows via proto-level client calls.
 
+**Updated 2026-07-13 (rpg-api#642):** the v1-only `internal/integration/encounter/`
+suite (10 files: class-specific combat tests, `open_door_test.go`,
+`stream_entity_state_test.go`, `helpers.go`, and siblings) is deleted along with
+the v1alpha1 EncounterService it exercised. The harness's `EncounterClient`
+field and matching v1 wiring (v1 orchestrator/repo/publisher/processor
+construction) are removed. Encounter coverage now lives entirely in
+`internal/integration/encounter_v2_test.go` and
+`internal/integration/lobby_v1alpha1_test.go`.
+
 ## Files
 
 | File | Purpose |
 |---|---|
 | `integration/harness/harness.go` | TestServer setup and teardown |
-| `integration/encounter/helpers.go` | Test helpers (create character, start encounter, etc.) |
 | `integration/character/` | Character integration tests |
-| `integration/encounter/` | Encounter integration tests |
-
-Key encounter test files:
-- `orchestrator_test.go` — full combat flow (Round 1: monk kills monster)
-- `monster_turns_test.go` — monster AI turn execution
-- `open_door_test.go` — door opening + room reveal mechanics
-- `stream_entity_state_test.go` — entity state streaming via events
-- `barbarian_test.go`, `fighter_test.go`, `monk_test.go`, `rogue_test.go` — class-specific combat paths
+| `integration/encounter_v2_test.go` | v1alpha2 encounter service tests |
+| `integration/lobby_v1alpha1_test.go` | LobbyService tests, incl. combat-entry flows |
 
 ## Architecture
 
@@ -31,13 +33,12 @@ Key encounter test files:
 TestServer (harness.go)
     ├── testcontainers Redis  ← real Redis process in Docker
     ├── bufconn               ← in-process gRPC (no network)
-    ├── real orchestrators    ← same code as production
-    ├── real repositories     ← character (Redis), encounter/dungeon (in-memory)
-    ├── real event processor  ← same processor as production
-    └── real Redis publisher  ← publishes/subscribes via real Redis
+    ├── real orchestrators    ← same code as production (character, lobby)
+    ├── real repositories     ← character (Redis), encounters/v2 (in-memory), lobby (in-memory)
+    └── real v2 encounter broker ← rpg-toolkit's tkenc.Broker, in-memory transport
 ```
 
-`TestServer.CharacterClient`, `.EncounterClient`, `.DiceClient` — proto-generated gRPC clients that connect to the in-process server. Tests call these clients exactly as the web client would.
+`TestServer.CharacterClient`, `.EncounterClientV2`, `.DiceClient`, `.LobbyClient` — proto-generated gRPC clients that connect to the in-process server. Tests call these clients exactly as the web client would.
 
 ## TestServer lifecycle
 
@@ -55,13 +56,11 @@ resp, err := server.EncounterClient.CreateEncounter(ctx, &proto.CreateEncounterR
 
 ## Known gaps
 
-### Round 2 tests not yet green on main
+### ~~Round 2 tests not yet green on main~~ MOOT (rpg-api#642, 2026-07-13)
 
-The `open_door_test.go` and `stream_entity_state_test.go` were added as part of the Round 2 coordinate fix work. These tests are in the failing CI branch (#468). They have not been verified green on main. When the coordinate refactor lands on a fresh branch, these tests should be the acceptance criteria.
-
-### Encounter and dungeon state lost on restart
-
-Because encounter and dungeon repos are in-memory, the harness cannot test persistence or recovery scenarios. Every test starts with a fresh empty state. This matches production behavior (same limitation) but means there is no test coverage for restart recovery.
+The `open_door_test.go` and `stream_entity_state_test.go` this section
+described were part of the deleted v1-only `internal/integration/encounter/`
+suite. #468 and its stacked PRs are moot — see `docs/status.md`.
 
 ### testcontainers startup time
 

@@ -1,8 +1,8 @@
 ---
 name: rpg-api quality scorecard
 description: Per-component grade with rationale — a graded scorecard to update as the codebase evolves
-updated: 2026-07-11
-confidence: medium — Wave 2.11e encounter v2 graded from shipped-code + integration test verification; older entries reflect 2026-05-02 snapshot pending refresh; rpg-api#636 note verified against passing tests
+updated: 2026-07-13
+confidence: medium — Wave 2.11e encounter v2 graded from shipped-code + integration test verification; older entries reflect 2026-05-02 snapshot pending refresh; rpg-api#636 note verified against passing tests; rpg-api#642 deletions verified against passing build/vet/test/lint
 ---
 
 # Quality Scorecard
@@ -15,18 +15,14 @@ as work lands and as the boundary violations are addressed.
 
 ## Handlers
 
-### Encounter handler — C+
+### ~~Encounter handler — C+~~ DELETED (rpg-api#642, 2026-07-13)
 
-`internal/handlers/dnd5e/v1alpha1/encounter/handler.go` (1,116 lines)
-
-The RPC shell is correctly structured: validate → call service → convert.
-Auth context extraction works. The drag: `spatial.GridTypeHex` and
-`spatial.HexOrientationPointyTop` are hardcoded six times, and a
-`*toolkitchar.Data` type assertion lives here. Handlers should not import
-toolkit packages — those types belong in the orchestrator output. Removing
-the toolkit imports is a one-PR fix but it requires the orchestrator to stop
-returning toolkit types in `CharacterData`. The `PlayerDisconnected` orchestrator method is never called from the
-streaming handler — disconnect events do not clean up encounter state.
+`internal/handlers/dnd5e/v1alpha1/encounter/handler.go` — this file, its
+converters, and the v1alpha1 EncounterService registration that served it are
+gone. It was the audit-flagged live-but-legacy path (rpg-api's twin of
+rpg-dnd5e-web#448's clean slate); the web made zero calls to it. See
+`docs/status.md` "Active work" for the full deletion tally. The grade below
+for the v2 encounter handler is now the only encounter handler grade.
 
 ### Encounter v2 handler — B (Wave 2.11e update)
 
@@ -170,23 +166,15 @@ its size.
 
 ## Orchestrators
 
-### Encounter orchestrator — C+
+### ~~Encounter orchestrator — C+~~ DELETED (rpg-api#642, 2026-07-13)
 
-`internal/orchestrators/encounter/orchestrator.go` (5,577 lines)
-
-The most critical file in the codebase and the most at-risk. Correct behavior
-has been established through Round 1, but the file owns too much: dungeon
-generation, room navigation, combat resolution, monster turns, entity-state
-snapshots, event publishing, and coordinate transforms. The `StartCombat`
-function is large enough to carry a `//nolint:gocyclo` suppression. Proto
-types (`*pb.RoomLayout`, `*pb.EntityState`, `*pb.CombatStateProto`) are
-constructed inside the orchestrator — 39 `pb.` references (verified by grep) — which
-violates the handler→orchestrator boundary. The service.go Input/Output types also
-embed `pb.MonsterType`, `pb.CombatAbilityId`, and `pb.ActionId` directly, propagating
-proto contamination to all callers of the Service interface. The five coordinate-space bug fixes landed in three days
-(2026-04-04 to 2026-04-06) are a signal that the transform logic needs a
-canonical home. The `dungeon_mapper.go` hardcodes `ThemeDebugWalls` for crypt
-with a TODO to revert.
+`internal/orchestrators/encounter/orchestrator.go` — the 5,844-line file this
+grade described, plus its v1-only siblings (`dungeon_mapper.go`,
+`monster_turns.go`, `perception.go`, `service.go`) — is deleted in full. This
+was the most-flagged component in the repo: proto contamination (39 `pb.`
+references), coordinate-space bugs, and a hardcoded debug theme all died with
+it. The v2 orchestrator below is the only encounter orchestrator remaining and
+was already graded on a materially different (and better) shape.
 
 ### Character orchestrator — B-
 
@@ -241,56 +229,49 @@ it delegates rather than implementing rules.
 
 ## Infrastructure
 
-### Event processor — B+
+### ~~Event processor — B+~~ DELETED (rpg-api#642, 2026-07-13)
 
-`internal/processors/event/processor.go`
+`internal/processors/event/processor.go` is deleted. It had zero consumers
+left once the v1 orchestrator and handler were gone — verified by grep before
+deletion. The v2 path publishes through the toolkit's own `tkenc.Broker`
+instead, a different mechanism with its own (untracked-here) grade.
 
-Clean two-step: persist to encounter log, then publish to Redis. Correct
-semantics — publish failure does not fail the operation because persistence
-is the source of truth. Interface is minimal and well-defined with Input/Output
-types. Main drag: publish errors are silently discarded via `_, _ = p.publisher.Publish(...)`.
-There is no logging, no alert, and no retry. The code comment acknowledges this
-as a known gap but no instrumentation exists. This is the hot path for every
-combat event — a silent publish failure means clients miss updates with no
-observable signal.
+### ~~Redis publisher — B~~ DELETED (rpg-api#642, 2026-07-13)
 
-### Redis publisher — B
-
-`internal/publishers/encounter/redis.go`
-
-Proto serialization tested in `redis_test.go`. Interface is clean. No retry
-on publish failure (consistent with processor's best-effort semantic, but
-worth documenting). Works correctly for the current in-process use case.
+`internal/publishers/encounter/redis.go` is deleted alongside the event
+processor that was its only real consumer.
 
 ## Repositories
 
-### Encounter repository — D
+### ~~Encounter repository (v1) — D~~ DELETED (rpg-api#642, 2026-07-13)
 
-`internal/repositories/encounters/inmemory.go`
+`internal/repositories/encounters/inmemory.go` (the v1 root, not the
+`v2/` subdirectory) is deleted. See "Encounter repository v2" below for
+its replacement, which is already Redis-backed.
 
-In-memory only. No Redis implementation. All encounter state is lost on
-process restart. The interface is correct and well-designed (Input/Output types,
-proper mock), but without a persistent backend this is a development scaffold,
-not a production store. The `copyEncounterData` deep-copy helper (added via
-PR #453 fix) is a positive sign of data-integrity awareness, but it does not
-address the durability gap.
+### Encounter repository v2 — B
 
-### Dungeon repository — D
+`internal/repositories/encounters/v2/` (`redis.go`, `in_memory.go`)
 
-`internal/repositories/dungeons/inmemory.go`
+Unlike the deleted v1 repo, this one has both a Redis implementation (wired
+into production in `cmd/server/server.go` with a 24h TTL) and an in-memory
+variant for tests, both covered by their own test files. This is the
+repository the v2 encounter path and the lobby orchestrator's `StartEncounter`
+actually use. Held at B rather than A pending a closer read of TTL/eviction
+behavior under real traffic — not graded from a fresh deep read in this pass,
+just confirmed to exist, compile, and pass its own tests.
 
-Same situation as the encounter repository. In-memory only. Dungeon state
-(room layouts, revealed rooms, open doors, monster positions) is lost on
-restart. Redis implementation needed alongside the encounter repo.
+### ~~Dungeon repository — D~~ DELETED (rpg-api#642, 2026-07-13)
 
-### Encounter log repository — D
+`internal/repositories/dungeons/inmemory.go` is deleted. Dungeon state
+(room layouts, revealed rooms, open doors, monster positions) was v1-only —
+the v2 encounter path doesn't have a dungeon-state concept at this layer.
 
-`internal/repositories/encounterlog/inmemory.go`
+### ~~Encounter log repository — D~~ DELETED (rpg-api#642, 2026-07-13)
 
-Append-only event log is the right design for event sourcing. But in-memory
-means no replay, no late-join recovery after a server restart, and no audit
-trail beyond the current process lifetime. The interface is correct; the
-implementation is a stub.
+`internal/repositories/encounterlog/inmemory.go` is deleted. It had zero
+consumers left once the v1 orchestrator, handler, and event processor were
+gone.
 
 ### Lobby repository — B (new, 2026-07-07)
 
@@ -329,29 +310,31 @@ Redis-backed. Narrow scope. No observed gaps. Low risk.
 
 ### Integration test harness — B+
 
-`internal/integration/harness/harness.go` and
-`internal/integration/encounter/`
+`internal/integration/harness/harness.go`
 
-The harness wires the full stack (real orchestrator, real repos, real toolkit)
-and drives scenarios through the encounter flow. Class-specific test files
-(barbarian, fighter, monk, rogue) cover class-specific combat paths. The
-`open_door_test.go` and `stream_entity_state_test.go` were recently added to
-cover Round 2 flows. The harness is the most valuable test asset in the repo —
-it catches integration regressions that unit tests with mocks cannot. Gap:
-Round 2 multi-room flows are partially covered but the failing CI on #468 means
-the most recent additions have not been verified green on main yet.
+**Updated 2026-07-13 (#642):** the v1-only `internal/integration/encounter/`
+suite (barbarian/fighter/monk/rogue class tests, `open_door_test.go`,
+`stream_entity_state_test.go`, and siblings — 10 files) that exercised the now-deleted
+v1alpha1 EncounterService is deleted along with it. The harness itself is trimmed
+of matching v1 wiring (no more `EncounterClient`, v1 orchestrator/repo/publisher
+construction) but keeps registering CharacterService, DiceService, the v1alpha2
+EncounterService, and LobbyService. Coverage for the encounter flow now lives in
+`internal/integration/encounter_v2_test.go` and `internal/integration/
+lobby_v1alpha1_test.go`, both unaffected by this deletion and already passing.
+Grade held at B+: the harness remains the most valuable test asset in the repo,
+now scoped to the paths that are actually live.
 
 ### Unit tests — B-
 
-66 test files for 101 source files (~65% file coverage by count). Test suites
-use gomock correctly at interface boundaries. The encounter orchestrator test
-files (`orchestrator_test.go`, `monster_turns_test.go`, `perception_test.go`,
-`safe_placement_test.go`, `open_door_test.go`) cover key orchestration paths.
-Main gap: the converter files (3,132 lines and 1,658 lines) have limited
-dedicated unit tests relative to their size. The `build_room_layout_proto_test.go`
-was added as a direct response to the coordinate-space bug cluster — good reflex,
-but the pattern of writing tests after finding bugs rather than before is a risk
-signal.
+**Updated 2026-07-13 (#642):** the v1 orchestrator test files this section
+named (`orchestrator_test.go`, `monster_turns_test.go`, `perception_test.go`,
+`safe_placement_test.go`, `open_door_test.go`) are deleted along with the
+5,844-line file they tested. File-count coverage numbers here predate the
+deletion and need a fresh count in a future pass; not recomputed here since
+`go test ./...` and `go vet ./...` both stayed green through every deletion
+commit, which is the load-bearing signal for this PR. Main gap unaffected by
+this deletion: the character converter files (3,132 lines and 1,658 lines)
+have limited dedicated unit tests relative to their size.
 
 ## Grade legend
 

@@ -1,13 +1,16 @@
 ---
 name: repositories
 description: All data access components — interface definitions, implementations, and storage schemas
-updated: 2026-05-02
-confidence: high — verified by reading all repository interface and implementation files
+updated: 2026-07-13
+confidence: high — verified by reading all remaining repository interface and implementation files
 ---
 
 # repositories
 
-rpg-api has six repositories. Three are Redis-backed (persistent); three are in-memory only (state lost on restart). All follow the Input/Output type pattern with generated mocks.
+**Updated 2026-07-13 (rpg-api#642):** the three in-memory-only, D-graded
+repositories this doc used to describe (`encounters` v1 root, `dungeons`,
+`encounterlog`) are deleted along with the v1alpha1 encounter stack they
+served. See "Encounter repository (v2)" below for the replacement.
 
 ## Overview
 
@@ -16,9 +19,11 @@ rpg-api has six repositories. Three are Redis-backed (persistent); three are in-
 | `character` | `repository.go` | `redis.go` | Redis | B |
 | `character_draft` | `repository.go` | `redis.go` | Redis | B- |
 | `dice_session` | `repository.go` | `redis.go` | Redis | B- |
-| `encounters` | `repository.go` | `inmemory.go` | In-memory | D |
-| `dungeons` | `repository.go` | `inmemory.go` | In-memory | D |
-| `encounterlog` | `repository.go` | `inmemory.go` | In-memory | D |
+| `encounters/v2` | `repository.go` | `redis.go` + `in_memory.go` | Redis + in-memory | B |
+| `lobby` | `repository.go` | `redis.go` + `in_memory.go` | Redis + in-memory | B |
+
+~~`encounters` (v1 root)~~ / ~~`dungeons`~~ / ~~`encounterlog`~~ — all DELETED
+(rpg-api#642).
 
 ## Character repository
 
@@ -33,9 +38,11 @@ Interface methods:
 
 **Storage:** `character:{id}` — JSON-serialized `character.Data` + `Appearance` (stored together).
 
-Used by: character orchestrator, encounter orchestrator (to load characters for dungeon entry).
+Used by: character orchestrator, the v1alpha2 encounter path (character-data
+hydration cascade), the lobby orchestrator.
 
-The only repository exercised by integration tests with real Redis.
+The only repository exercised by integration tests with real Redis alongside
+the v2 encounter and lobby repos.
 
 ## Character draft repository
 
@@ -51,59 +58,18 @@ Interface methods: `Create`, `Get`, `List`, `Update`, `Delete`.
 
 Narrow scope: tracks ability score dice rolls during character creation before they are assigned to a draft. Redis-backed, simple interface.
 
-## Encounter repository (in-memory)
+## Encounter repository (v2)
 
-**Path:** `repositories/encounters/`
+**Path:** `repositories/encounters/v2/`
 
-Interface methods:
-- `Save(ctx, *SaveInput) (*SaveOutput, error)` — full encounter save
-- `Get(ctx, *GetInput) (*GetOutput, error)` — by ID
-- `GetByJoinCode(ctx, *GetByJoinCodeInput) (*GetOutput, error)` — by lobby join code
-- `Update(ctx, *UpdateInput) (*UpdateOutput, error)` — partial update (nil = no change)
-- `Delete(ctx, *DeleteInput) (*DeleteOutput, error)`
+Interface: `Get(ctx, *GetInput) (*GetOutput, error)`, `Save(ctx, *SaveInput) (*SaveOutput, error)` — operating on the rpg-toolkit encounter SDK's own `*encounter.Data` type directly (the repository does not define its own storage struct the way the deleted v1 repo did).
 
-`EncounterData` stores:
-- Room data as `interface{}` (type fix pending)
-- `*initiative.TrackerData` (toolkit type)
-- `map[string]*entities.EntityStateData` — unified entity map
-- DEPRECATED: `[]*monster.Data`, `map[string]int` (CharacterHP) — both still present during migration
-- Multiplayer fields: State, JoinCode, HostID, Players map
+Two implementations: `in_memory.go` (JSON round-trip, used by tests and the
+integration harness) and `redis.go` (24h TTL, wired into `cmd/server/server.go`
+production wiring and the lobby orchestrator's `StartEncounter`). Unlike the
+deleted v1 encounter repo, this one has a persistent backend from day one.
 
-`UpdateInput` uses pointer fields for optional updates — `nil` means "don't change this field." This is the correct pattern for partial updates.
-
-**`copyEncounterData` deep copy** (inmemory.go): Added after PR #453 fix for data integrity — the in-memory store returns a deep copy to prevent callers from mutating stored state via the returned pointer.
-
-**Gap:** No Redis implementation. All encounter state is process-local. A Redis implementation requires solving the `interface{}` RoomData serialization problem first.
-
-## Dungeon repository (in-memory)
-
-**Path:** `repositories/dungeons/`
-
-Interface methods:
-- `Save(ctx, *SaveInput) (*SaveOutput, error)`
-- `Get(ctx, *GetInput) (*GetOutput, error)` — by dungeon ID
-- `GetByEncounterID(ctx, *GetByEncounterIDInput) (*GetOutput, error)`
-- `Update(ctx, *UpdateInput) (*UpdateOutput, error)`
-- `Delete(ctx, *DeleteInput) (*DeleteOutput, error)`
-
-`DungeonData` stores the full `entities.Dungeon`, including the toolkit-typed `Connections []*environments.ConnectionEdge` and component-typed `Rooms map[string]*dungeon.Room`.
-
-**Gap:** No Redis implementation. Serializing `entities.Dungeon` to Redis requires solving the mixed type problem (dungeon.Room contains spatial.RoomData which contains an interface graph).
-
-## Encounter log repository (in-memory)
-
-**Path:** `repositories/encounterlog/`
-
-Interface methods:
-- `Append(ctx, *AppendInput) (*AppendOutput, error)` — appends event, assigns ULID
-- `GetHistory(ctx, *GetHistoryInput) (*GetHistoryOutput, error)` — retrieves events in order
-
-Append-only event log. The `AppendOutput.EventID` is a ULID — sortable by time, globally unique. The ULID becomes the `EncounterEvent.ID` and the encounter's `LastEventID` for load-then-stream sync.
-
-**Gap:** No Redis implementation. Events are lost on restart. This means:
-- No replay for clients that join after a restart.
-- No audit trail beyond the current process.
-- Late joiners who call `GetEncounterHistory` after a restart get an empty log.
+See [`encounter.md`](./encounter.md) for the v1alpha2 vertical this repo serves.
 
 ## Common patterns
 
