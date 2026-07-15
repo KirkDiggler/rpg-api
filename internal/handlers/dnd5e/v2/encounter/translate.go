@@ -606,6 +606,45 @@ func translateModeChangedEvent(e *events.ModeChangedEvent, viewer core.PlayerID,
 	}, nil
 }
 
+// translateInitiativeRolledEvent builds the proto InitiativeRolled envelope
+// carrying the encounter's freshly-rolled turn order (rpg-api#644 playtest
+// follow-up). Unlike every other translator in this file, it has no
+// corresponding toolkit event to translate FROM: rollInitiative (inside
+// SetMode, rpg-toolkit encounter/combat.go) mutates data.Initiative in place
+// but publishes no dedicated roster event — only ModeChangedEvent and
+// TurnStartedEvent fire at the FREE_ROAM->TURN_BASED transition, and neither
+// proto carries a roster field (ModeChanged: from/to/reason; TurnStarted:
+// entity_id/round — see events.proto). InitiativeRolled{order} is a separate
+// message already defined on the wire (events.proto's EncounterEvent oneof,
+// field 41) that no rpg-api code populated until now — zero proto changes
+// needed.
+//
+// The stream loop (handler.go's translateForStream) calls this once,
+// alongside the normal ModeChanged translation, when it observes the
+// transition to TURN_BASED — not on every TurnStartedEvent, which also
+// fires on every later per-turn advance and would otherwise resend the same
+// static roster every turn. seq is shared with the paired ModeChangedEvent:
+// this envelope is that transition's effect, not an independently-caused
+// event of its own (mirrors the DoorOpened/parallel-HexRevealedEvent
+// cause/effect split elsewhere in this file, except here one toolkit cause
+// produces two wire envelopes instead of two toolkit events each producing
+// one).
+func translateInitiativeRolledEvent(seq uint64, initiative []core.EntityID, now time.Time) *encounterv2pb.EncounterEvent {
+	order := make([]string, 0, len(initiative))
+	for _, eid := range initiative {
+		order = append(order, string(eid))
+	}
+	return &encounterv2pb.EncounterEvent{
+		Sequence:  int64(seq), //nolint:gosec // sequence is monotonic; fits int64
+		Timestamp: timestamppb.New(now),
+		Event: &encounterv2pb.EncounterEvent_InitiativeRolled{
+			InitiativeRolled: &encounterv2pb.InitiativeRolled{
+				Order: order,
+			},
+		},
+	}
+}
+
 // translateTurnStartedEvent maps the toolkit's TurnStartedEvent to the proto
 // TurnStarted envelope. Round is 1-indexed in both shapes.
 func translateTurnStartedEvent(e *events.TurnStartedEvent, viewer core.PlayerID, now time.Time) (*encounterv2pb.EncounterEvent, error) {

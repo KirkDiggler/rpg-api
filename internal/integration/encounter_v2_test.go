@@ -120,6 +120,106 @@ func (s *EncounterV2IntegrationSuite) TestMovementSliceTwoPlayers() {
 	s.Require().Len(movB.ActualPath, 3, "B should see all 3 path hexes in mutual LoS")
 }
 
+// TestModeChangedToTurnBased_StreamCarriesInitiativeRoster is the rpg-api#644
+// playtest follow-up gate test: the toolkit's rollInitiative (inside SetMode,
+// called from the inline checkCombatEntry a Move can trigger) rolls
+// data.Initiative but publishes no dedicated roster event — ModeChangedEvent
+// and TurnStartedEvent carry no initiative field. Before this fix, a
+// mid-stream FREE_ROAM -> TURN_BASED transition left the client's
+// initiativeOrder empty until the next full snapshot (only the connect-time
+// snapshot's TurnState.InitiativeOrder was ever populated). This proves the
+// LIVE transition itself now broadcasts an InitiativeRolled envelope
+// (events.proto field 41, already on the wire, unused until now) carrying
+// the full roster, to every connected viewer — not just the one who moved.
+func (s *EncounterV2IntegrationSuite) TestModeChangedToTurnBased_StreamCarriesInitiativeRoster() {
+	encID := "enc-initiative-roster"
+
+	// alice: SightRange 3, well short of the goblin's starting distance (4)
+	// so the encounter starts FREE_ROAM. bob: a second viewer, also out of
+	// the goblin's initial sight, proving the roster reaches every stream —
+	// not just alice's, who caused the transition.
+	enc := tkenc.New(context.Background(), core.EncounterID(encID), s.srv.BrokerV2)
+	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
+		PlayerID: "alice", EntityID: "char-alice",
+		Position: core.Hex{Q: 0, R: 0, S: 0}, SightRange: 3,
+	}))
+	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
+		PlayerID: "bob", EntityID: "char-bob",
+		Position: core.Hex{Q: -1, R: 0, S: 1}, SightRange: 3,
+	}))
+	s.Require().NoError(enc.AddMonster(tkenc.MonsterInput{
+		ID: "goblin-1", Position: core.Hex{Q: 4, R: -4, S: 0},
+		HP: 7, MaxHP: 7, AC: 15, Speed: 6,
+		MonsterRef:  "dnd5e:monsters:goblin",
+		AttackBonus: 4, DamageDice: "1d6+2", DamageType: "slashing",
+	}))
+	s.Require().Equal(core.ModeFreeRoam, enc.Mode(), "goblin starts outside every player's sight")
+	s.Require().NoError(s.srv.EncRepoV2.Save(s.ctx, enc.ToData()))
+
+	ctxA := s.authCtx("alice")
+	ctxB := s.authCtx("bob")
+
+	streamA, err := s.srv.EncounterClientV2.StreamEncounter(ctxA, &encounterv2pb.StreamEncounterRequest{EncounterId: encID})
+	s.Require().NoError(err)
+	streamB, err := s.srv.EncounterClientV2.StreamEncounter(ctxB, &encounterv2pb.StreamEncounterRequest{EncounterId: encID})
+	s.Require().NoError(err)
+
+	// Drain snapshots (mode still FREE_ROAM at connect).
+	snapA, err := streamA.Recv()
+	s.Require().NoError(err)
+	s.Require().NotNil(snapA.GetSnapshotDelivered())
+	s.Require().Empty(snapA.GetSnapshotDelivered().GetEncounter().GetTurnState().GetInitiativeOrder())
+	snapB, err := streamB.Recv()
+	s.Require().NoError(err)
+	s.Require().NotNil(snapB.GetSnapshotDelivered())
+
+	// alice walks onto the goblin's hex — a Move that forms sight, triggering
+	// the toolkit's inline checkCombatEntry -> SetMode(TURN_BASED).
+	_, err = s.srv.EncounterClientV2.MoveEntity(ctxA, &encounterv2pb.MoveEntityRequest{
+		EncounterId: encID,
+		EntityId:    "char-alice",
+		ProposedPath: []*encounterv2pb.Position{
+			{X: 0, Y: 0, Z: 0}, {X: 1, Y: -1, Z: 0}, {X: 2, Y: -2, Z: 0},
+			{X: 3, Y: -3, Z: 0}, {X: 4, Y: -4, Z: 0},
+		},
+	})
+	s.Require().NoError(err)
+
+	// Persisted state confirms the transition and the rolled roster.
+	loaded, err := s.srv.EncRepoV2.Get(s.ctx, encID)
+	s.Require().NoError(err)
+	s.Require().Equal(core.ModeTurnBased, loaded.Mode, "the move must have formed sight and flipped the mode by rule")
+	s.Require().ElementsMatch(
+		[]core.EntityID{"char-alice", "char-bob", "goblin-1"},
+		loaded.Initiative,
+		"initiative must include every combatant",
+	)
+
+	// Both alice's and bob's streams receive InitiativeRolled — the roster
+	// broadcast is not limited to the player whose Move caused the transition.
+	eventsA := s.collectStreamEvents(streamA, 20, 3*time.Second)
+	var rosterA *encounterv2pb.InitiativeRolled
+	for _, ev := range eventsA {
+		if r := ev.GetInitiativeRolled(); r != nil {
+			rosterA = r
+			break
+		}
+	}
+	s.Require().NotNil(rosterA, "alice's stream must receive InitiativeRolled on the FREE_ROAM->TURN_BASED transition")
+	s.Require().ElementsMatch([]string{"char-alice", "char-bob", "goblin-1"}, rosterA.GetOrder())
+
+	eventsB := s.collectStreamEvents(streamB, 20, 3*time.Second)
+	var rosterB *encounterv2pb.InitiativeRolled
+	for _, ev := range eventsB {
+		if r := ev.GetInitiativeRolled(); r != nil {
+			rosterB = r
+			break
+		}
+	}
+	s.Require().NotNil(rosterB, "bob's stream must ALSO receive InitiativeRolled — it is broadcast, not private to the mover")
+	s.Require().ElementsMatch([]string{"char-alice", "char-bob", "goblin-1"}, rosterB.GetOrder())
+}
+
 // TestMovementSlicePerViewerProjection_AsymmetricLoS exercises the harder
 // per-viewer-projection case: viewer B has SightRange:1 (sees only adjacent
 // hexes), the mover A walks past B's vision and out the other side.

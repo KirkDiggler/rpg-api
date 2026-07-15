@@ -569,6 +569,28 @@ func buildWendyWizardData() *toolkitchar.Data {
 	}
 }
 
+// setModeIfRequested flips enc to mode when the caller asked for
+// ModeTurnBased — a no-op for any other requested mode (FreeRoam-from-fresh
+// -create is already the SDK's NewData default).
+//
+// Every fixture in this file places its goblin well within the seeded
+// players' SightRange, so AddMonster's inline combat-entry check
+// (rpg-toolkit#759's checkCombatEntry, which runs on every AddPlayer/
+// AddMonster call) may have ALREADY flipped FREE_ROAM -> TURN_BASED and
+// rolled initiative by the time this is called — an explicit SetMode would
+// then be redundant and error ("mode is already TURN_BASED"). Checking
+// enc.Mode() first makes this idempotent regardless of which path got the
+// encounter into TURN_BASED.
+func setModeIfRequested(enc *tkenc.Encounter, mode encountercore.EncounterMode) error {
+	if mode != encountercore.ModeTurnBased || enc.Mode() == encountercore.ModeTurnBased {
+		return nil
+	}
+	if err := enc.SetMode(mode); err != nil {
+		return fmt.Errorf("set mode turn_based: %w", err)
+	}
+	return nil
+}
+
 // buildEncounterData seeds the encounter with all three players + the
 // goblin, then flips it into the requested mode. Positions match the
 // rpg-dnd5e-web PlaytestHarness SEEDED_FALLBACK so the harness renders
@@ -669,10 +691,8 @@ func buildEncounterData(encounterID string, mode encountercore.EncounterMode) (*
 	// SetMode is a no-op for FreeRoam-from-fresh-create (the SDK's NewData
 	// already defaults to FreeRoam); only call it for TurnBased so the SDK
 	// rolls initiative and seeds ActiveIdx/Round.
-	if mode == encountercore.ModeTurnBased {
-		if err := enc.SetMode(encountercore.ModeTurnBased); err != nil {
-			return nil, fmt.Errorf("set mode turn_based: %w", err)
-		}
+	if err := setModeIfRequested(enc, mode); err != nil {
+		return nil, err
 	}
 
 	return enc.ToData(), nil
@@ -779,10 +799,8 @@ func buildWave2MonkEncounterData(encounterID string, mode encountercore.Encounte
 		return nil, fmt.Errorf("add goblin: %w", err)
 	}
 
-	if mode == encountercore.ModeTurnBased {
-		if err := enc.SetMode(encountercore.ModeTurnBased); err != nil {
-			return nil, fmt.Errorf("set mode turn_based: %w", err)
-		}
+	if err := setModeIfRequested(enc, mode); err != nil {
+		return nil, err
 	}
 
 	return enc.ToData(), nil
@@ -908,10 +926,8 @@ func buildWave2Beat2EncounterData(encounterID string, mode encountercore.Encount
 		return nil, fmt.Errorf("add goblin: %w", err)
 	}
 
-	if mode == encountercore.ModeTurnBased {
-		if err := enc.SetMode(encountercore.ModeTurnBased); err != nil {
-			return nil, fmt.Errorf("set mode turn_based: %w", err)
-		}
+	if err := setModeIfRequested(enc, mode); err != nil {
+		return nil, err
 	}
 
 	return enc.ToData(), nil
@@ -1030,10 +1046,8 @@ func buildWave1RogueEncounterData(encounterID string, mode encountercore.Encount
 		return nil, fmt.Errorf("add goblin: %w", err)
 	}
 
-	if mode == encountercore.ModeTurnBased {
-		if err := enc.SetMode(encountercore.ModeTurnBased); err != nil {
-			return nil, fmt.Errorf("set mode turn_based: %w", err)
-		}
+	if err := setModeIfRequested(enc, mode); err != nil {
+		return nil, err
 	}
 
 	return enc.ToData(), nil
@@ -1094,10 +1108,8 @@ func buildWave3BarbarianEncounterData(encounterID string, mode encountercore.Enc
 		return nil, fmt.Errorf("add goblin (wave-3-barbarian): %w", err)
 	}
 
-	if mode == encountercore.ModeTurnBased {
-		if err := enc.SetMode(encountercore.ModeTurnBased); err != nil {
-			return nil, fmt.Errorf("set mode turn_based (wave-3-barbarian): %w", err)
-		}
+	if err := setModeIfRequested(enc, mode); err != nil {
+		return nil, fmt.Errorf("(wave-3-barbarian): %w", err)
 	}
 
 	return enc.ToData(), nil
