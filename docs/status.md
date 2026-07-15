@@ -54,6 +54,35 @@ design work" — see the correction inline. The full MCP playtest (web step 9, w
 9 in `ideas/the-dungeon/design.md`) still closes the wave; this PR is the api half only
 (design doc steps 7-8).
 
+**Playtest follow-up: live initiative roster broadcast on combat entry (rpg-api#644,
+2026-07-15)** — the connect-time snapshot's `TurnState.InitiativeOrder` was the only
+place a client ever learned the turn order; a mid-stream `FREE_ROAM` → `TURN_BASED`
+transition (the toolkit's `rollInitiative`, inside `SetMode`) published no roster of its
+own, so a client watching the fight start live saw an empty initiative list until its
+next full snapshot. `internal/handlers/dnd5e/v2/encounter/handler.go`'s stream loop now
+synthesizes a proto `InitiativeRolled` envelope (`order=[]string`, `EncounterEvent` oneof
+field 41 — already defined on the wire, unused until now, zero proto changes) and sends
+it right after the `ModeChanged` translation whenever a `ModeChangedEvent` transitions
+`To==TURN_BASED`; `translateForStream` returns a slice so one broker event can produce
+two wire envelopes. Broadcast to every connected viewer, not just whoever moved.
+
+**Known rough edge: the roster read races the orchestrator's save (rpg-api#647)** — every
+combat-capable orchestrator verb follows a mutate-then-persist pattern where the toolkit
+SDK call (e.g. `MoveEntity`'s `enc.Move(...)`) mutates state AND synchronously publishes
+its broker events *before returning*, and only once it returns does the orchestrator
+`Save` the result. The stream goroutine that wakes on the just-published `ModeChangedEvent`
+can therefore call `h.encRepo.Get` before that `Save` lands, reading the pre-transition
+(empty-`Initiative`) snapshot — reproduced reliably under `go test -race -count=10` before
+the fix, intermittent without `-race`. Worked around with a bounded retry
+(`loadRolledInitiative`, up to 15 attempts / 10ms apart / ~150ms worst case) rather than a
+longer fixed delay, since the real `Save` is the very next thing the orchestrator does.
+This is an interim workaround, not the fix: rpg-api#647 tracks both the general race class
+(the same pattern already exists in the `InputRequiredDeliveredEvent` prompt-lookup path,
+untested under sustained `-race` load) and the toolkit-side seam that would delete the
+retry outright — e.g. the SDK deferring its publish until after an explicit persist
+callback, or exposing the freshly-rolled `Initiative` directly on the event instead of
+requiring a repo round-trip at all.
+
 **The live v1alpha1 encounter stack is DELETED (rpg-api#642, 2026-07-13)** —
 the audit-flagged registered-and-serving `dnd5e.api.v1alpha1.EncounterService`
 (`cmd/server/server.go:233`), its 5,844-line `internal/orchestrators/encounter/
