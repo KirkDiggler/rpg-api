@@ -119,7 +119,10 @@ func (s *EndTurnSuite) seedTurnBased(encID string, initiative []core.EntityID, a
 		DamageDice:  "1d6+2",
 		DamageType:  "slashing",
 	}))
-	s.Require().NoError(enc.SetMode(core.ModeTurnBased))
+	// AddMonster inline-checks combat entry (rpg-toolkit#759): bob (sight
+	// range 10, no room) already sees the goblin at (1,0,-1), so the
+	// encounter self-transitions to TURN_BASED here. An explicit SetMode
+	// would now be redundant and error ("mode is already TURN_BASED").
 	data := enc.ToData()
 	data.Initiative = initiative
 	data.ActiveIdx = activeIdx
@@ -242,7 +245,9 @@ func (s *EndTurnSuite) TestEndTurn_NPCDispatchLoop_CyclesPastConsecutiveNPCs() {
 		ID: goblin2, Position: core.Hex{Q: 2, R: 0, S: -2}, HP: 7, MaxHP: 7, AC: 15, Speed: 6,
 		MonsterRef: "dnd5e:monsters:goblin", AttackBonus: 4, DamageDice: "1d6+2", DamageType: "slashing",
 	}))
-	s.Require().NoError(enc.SetMode(core.ModeTurnBased))
+	// AddMonster inline-checks combat entry (rpg-toolkit#759): the first
+	// goblin add already self-transitions to TURN_BASED, so an explicit
+	// SetMode here would be redundant and error.
 	data := enc.ToData()
 	data.Initiative = []core.EntityID{etEntityBob, etGoblinID, goblin2}
 	data.ActiveIdx = 0

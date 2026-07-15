@@ -7,6 +7,7 @@ import (
 	lobbyorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/lobby"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	lobbyrepo "github.com/KirkDiggler/rpg-api/internal/repositories/lobby"
+	tkenc "github.com/KirkDiggler/rpg-toolkit/encounter"
 	"github.com/KirkDiggler/rpg-toolkit/encounter/core"
 )
 
@@ -176,4 +177,60 @@ func (s *LobbySuite) TestStartEncounter_PublishesEncounterStarted_AfterPersist()
 	// observable — that ordering is what makes the event safe to act on.
 	_, err = s.encRepo.Get(s.ctx, out.EncounterID)
 	s.Require().NoError(err)
+}
+
+// TestStartEncounter_WalledRoomAndGoblins_CombatStartsOnSightedMove is the
+// rpg-api#644 headline proof (The Dungeon wave 1, design doc "Done when"
+// bar): StartEncounter creates the encounter WITH a walled room and 2
+// goblins, combat does NOT start at spawn (the goblins are placed outside
+// alice's initial sight), and a Move that brings a goblin into sight flips
+// the encounter to TURN_BASED BY RULE — the toolkit's own inline
+// checkCombatEntry, not anything rpg-api triggers directly. No devseed
+// --inject-combat involved.
+func (s *LobbySuite) TestStartEncounter_WalledRoomAndGoblins_CombatStartsOnSightedMove() {
+	s.seedReadyLobby("lobby-dungeon", "alice")
+	s.expectCharacter("char-alice", "alice", "Alice", 12, 12)
+
+	out, err := s.orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		PlayerID: "alice", LobbyID: "lobby-dungeon",
+	})
+	s.Require().NoError(err)
+
+	encData, err := s.encRepo.Get(s.ctx, out.EncounterID)
+	s.Require().NoError(err)
+
+	// Walls on the wire: the encounter was created with a real room snapshot.
+	s.Require().NotNil(encData.Space, "StartEncounter must create the encounter with a room (rpg-toolkit#757 SpaceData)")
+	s.Require().Equal(20, encData.Space.Width)
+	s.Require().Equal(20, encData.Space.Height)
+
+	// 2 goblins seeded.
+	s.Require().Len(encData.Monsters, 2, "StartEncounter must seed exactly 2 goblins")
+	for id, m := range encData.Monsters {
+		s.Require().Positive(m.HP, "goblin %q must have positive HP", id)
+		s.Require().NotEmpty(m.DataJSON, "goblin %q must carry DataJSON (monster.NewGoblin, not a hand-rolled stub)", id)
+	}
+
+	// Combat must NOT have started at spawn: the goblins were placed outside
+	// alice's initial sight, so AddMonster's inline combat-entry check
+	// (rpg-toolkit#759) must not have fired.
+	s.Require().Equal(core.ModeFreeRoam, encData.Mode, "combat must not start at spawn — goblins are placed outside initial LOS")
+
+	// Rehydrate the live encounter (same broker StartEncounter used) and move
+	// alice directly onto one goblin's hex — a Move that forms sight. This
+	// must flip the encounter to TURN_BASED BY RULE (the toolkit's own inline
+	// checkCombatEntry), not via any rpg-api-side trigger.
+	enc, err := tkenc.LoadFromData(s.ctx, encData, s.encBroker)
+	s.Require().NoError(err)
+	s.Require().Equal(core.ModeFreeRoam, enc.Mode(), "rehydration must not itself flip mode")
+
+	var targetGoblin core.Hex
+	for _, m := range encData.Monsters {
+		targetGoblin = m.Position
+		break
+	}
+	s.Require().NoError(enc.Move("alice", []core.Hex{targetGoblin}),
+		"moving onto a pre-vetted (non-wall) goblin hex must not be blocked")
+	s.Require().Equal(core.ModeTurnBased, enc.Mode(),
+		"a Move that brings a goblin into sight must flip the encounter to TURN_BASED by rule")
 }

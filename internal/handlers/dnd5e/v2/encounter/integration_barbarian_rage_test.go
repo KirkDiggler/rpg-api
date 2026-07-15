@@ -378,7 +378,10 @@ func (s *BarbarianRageIntegrationSuite) goblinAttackBobHP(
 		DamageType:  "slashing",
 		DataJSON:    gDataJSON,
 	}))
-	s.Require().NoError(enc.SetMode(encountercore.ModeTurnBased))
+	// AddMonster inline-checks combat entry (rpg-toolkit#759): bob (sight
+	// range 10, no room) already sees the goblin, so the encounter
+	// self-transitions to TURN_BASED here. An explicit SetMode would now be
+	// redundant and error ("mode is already TURN_BASED").
 	s.Require().NoError(repo.Save(context.Background(), enc.ToData()))
 
 	// Advance to bob's turn.
@@ -563,7 +566,10 @@ func (s *BarbarianRageIntegrationSuite) seedRageEncounter() {
 	}))
 
 	s.Require().NoError(enc.AddMonster(s.goblinMonsterInput(rageGoblinID, encountercore.Hex{Q: 1, R: 0, S: -1}, rageGoblinHP)))
-	s.Require().NoError(enc.SetMode(encountercore.ModeTurnBased))
+	// AddMonster inline-checks combat entry (rpg-toolkit#759): bob (sight
+	// range 10, no room) already sees the goblin, so the encounter
+	// self-transitions to TURN_BASED here. An explicit SetMode would now be
+	// redundant and error ("mode is already TURN_BASED").
 	s.Require().NoError(s.repo.Save(context.Background(), enc.ToData()))
 }
 

@@ -10,6 +10,7 @@ import (
 	tkenc "github.com/KirkDiggler/rpg-toolkit/encounter"
 	"github.com/KirkDiggler/rpg-toolkit/encounter/core"
 	"github.com/KirkDiggler/rpg-toolkit/encounter/perception"
+	"github.com/KirkDiggler/rpg-toolkit/tools/environments"
 
 	encounterv2pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/encounter"
 	v2encounter "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v2/encounter"
@@ -39,7 +40,10 @@ var originHex = core.Hex{Q: 0, R: 0, S: 0}
 // stub LoS at sightRange returns from pos.
 func newPlayerData(pid core.PlayerID, eid core.EntityID, pos core.Hex, sightRange int) *tkenc.PlayerData {
 	view := perception.NewView(pid, pos, sightRange)
-	view.ApplyReveal(perception.VisibleHexesAt(pos, sightRange))
+	// nil room: these fixtures never call InitRoom, matching the pre-wave-1
+	// pure-radius LoS behavior (perception.VisibleHexesAt's documented nil-room
+	// fallback).
+	view.ApplyReveal(perception.VisibleHexesAt(pos, sightRange, nil))
 	return &tkenc.PlayerData{
 		ID:       pid,
 		EntityID: eid,
@@ -433,6 +437,72 @@ func (s *ProjectSuite) TestProjectFor_MonsterRef_TooManyColonsTreatedAsMalformed
 		s.Require().Equal("dnd5e:monsters:goblin:variant", ref.GetId(),
 			"3+ colons -> fallback (raw lands in Id), per splitRef's strict contract")
 	}
+}
+
+// TestProjectFor_PopulatesWalls_WholeRoomVisibility covers rpg-api#644 step
+// 7: Space.Walls must be populated from the encounter's persisted room
+// snapshot (rpg-toolkit#757's SpaceData), converting each WallSegmentData's
+// cube-coordinate Start/End into wire Positions and mapping
+// BlocksMovement/BlocksLoS onto WallKind. Wave 1 wall visibility is
+// whole-room (design doc) — unlike Hexes/Entities, walls are NOT gated by
+// the viewer's RevealedHexes/visibleNow, so even a wall alice has never
+// stood near must still appear.
+func (s *ProjectSuite) TestProjectFor_PopulatesWalls_WholeRoomVisibility() {
+	data := tkenc.NewData("enc-walls")
+	data.Mode = core.ModeFreeRoam
+
+	alice := newPlayerData("player-alice", "char-alice", originHex, 2)
+	data.Players = map[core.PlayerID]*tkenc.PlayerData{"player-alice": alice}
+
+	// solidHex sits well outside alice's sight range (2) so this test also
+	// proves wall projection is whole-room, not LOS-gated like Hexes/Entities.
+	solidHex := core.Hex{Q: 8, R: -8, S: 0}
+	windowHex := core.Hex{Q: 1, R: -1, S: 0}
+	data.Space = &tkenc.SpaceData{
+		Width:  10,
+		Height: 10,
+		Walls: []environments.WallSegmentData{
+			{Start: solidHex.ToCube(), End: solidHex.ToCube(), BlocksMovement: true, BlocksLoS: true},
+			{Start: windowHex.ToCube(), End: windowHex.ToCube(), BlocksMovement: true, BlocksLoS: false},
+		},
+	}
+
+	pb, err := v2encounter.ProjectFor(context.Background(), data, "player-alice", s.broker, nil, s.now)
+	s.Require().NoError(err)
+
+	walls := pb.GetSpace().GetWalls()
+	s.Require().Len(walls, 2, "both walls must be emitted regardless of alice's sight range")
+
+	byKind := make(map[encounterv2pb.WallKind]*encounterv2pb.Wall, 2)
+	for _, w := range walls {
+		byKind[w.GetKind()] = w
+	}
+
+	solid := byKind[encounterv2pb.WallKind_WALL_KIND_SOLID]
+	s.Require().NotNil(solid, "BlocksMovement+BlocksLoS must map to WALL_KIND_SOLID")
+	s.Require().Equal(int32(8), solid.GetFrom().GetX())
+	s.Require().Equal(int32(-8), solid.GetFrom().GetY())
+	s.Require().Equal(int32(0), solid.GetFrom().GetZ())
+	s.Require().Equal(solid.GetFrom(), solid.GetTo(), "wave 1 walls are degenerate Start==End segments")
+
+	window := byKind[encounterv2pb.WallKind_WALL_KIND_WINDOW]
+	s.Require().NotNil(window, "BlocksMovement without BlocksLoS must map to WALL_KIND_WINDOW")
+	s.Require().Equal(int32(1), window.GetFrom().GetX())
+	s.Require().Equal(int32(-1), window.GetFrom().GetY())
+}
+
+// TestProjectFor_NilSpace_EmptyWalls covers the pre-wave-1 fallback: an
+// encounter with no room (InitRoom never called, data.Space == nil) must
+// project an empty Walls list, not panic.
+func (s *ProjectSuite) TestProjectFor_NilSpace_EmptyWalls() {
+	data := tkenc.NewData("enc-no-room")
+	data.Mode = core.ModeFreeRoam
+	alice := newPlayerData("player-alice", "char-alice", originHex, 2)
+	data.Players = map[core.PlayerID]*tkenc.PlayerData{"player-alice": alice}
+
+	pb, err := v2encounter.ProjectFor(context.Background(), data, "player-alice", s.broker, nil, s.now)
+	s.Require().NoError(err)
+	s.Require().Empty(pb.GetSpace().GetWalls())
 }
 
 func TestProjectSuite(t *testing.T) {

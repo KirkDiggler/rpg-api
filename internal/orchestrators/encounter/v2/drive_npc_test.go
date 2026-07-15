@@ -112,7 +112,10 @@ func (s *DriveStalledNPCTurnSuite) seedTurnBased(encID string, monsterIDs []core
 			DamageType:  "slashing",
 		}))
 	}
-	s.Require().NoError(enc.SetMode(core.ModeTurnBased))
+	// AddMonster inline-checks combat entry (rpg-toolkit#759): bob (sight
+	// range 10, no room) already sees the first monster added, so the
+	// encounter self-transitions to TURN_BASED here. An explicit SetMode
+	// would now be redundant and error ("mode is already TURN_BASED").
 	data := enc.ToData()
 	data.Initiative = initiative
 	data.ActiveIdx = activeIdx

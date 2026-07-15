@@ -1,8 +1,8 @@
 ---
 name: rpg-api status
 description: Where we are with rpg-api — active work, paused, known rough edges, per-subsystem confidence
-updated: 2026-07-13
-confidence: high — Wave 2 Monk entries verified against passing integration tests; #636 entry verified against passing unit + integration tests; #642 v1alpha1 encounter stack deletion verified against passing build/vet/test/lint
+updated: 2026-07-15
+confidence: high — Wave 2 Monk entries verified against passing integration tests; #636 entry verified against passing unit + integration tests; #642 v1alpha1 encounter stack deletion verified against passing build/vet/test/lint; #644 The Dungeon wave 1 (api) verified against passing unit + stress-run (50x) integration tests
 ---
 
 # rpg-api: Where We Are
@@ -10,6 +10,49 @@ confidence: high — Wave 2 Monk entries verified against passing integration te
 This is a living doc. Edit it in the same PR that invalidates a line. Don't let it rot.
 
 ## Active work
+
+**The Dungeon wave 1 (api half) — walls on the wire + real goblins seeded at StartEncounter (rpg-api#644, 2026-07-15)** —
+`StartEncounter` (`internal/orchestrators/lobby/start_encounter.go`) now calls
+`enc.InitRoom(20, 20, environments.PatternRandom)` right after `tkenc.New` (before any
+`AddPlayer`/`AddMonster`, both of which consult `e.room` internally) and seeds
+`goblinCount` (2) real goblins (`monster.NewGoblin`, DataJSON-carrying, identical shape
+to the devseed/`devcombat.Inject` goblins) before persisting. Bumped
+`rpg-toolkit/encounter` to v0.25.0 and added `rpg-toolkit/tools/spawn` v0.2.0
+(rpg-toolkit#759). The projector (`internal/handlers/dnd5e/v2/encounter/project.go`'s
+`ProjectFor`) now populates `Space.Walls` from the encounter's persisted room snapshot —
+whole-room visibility for wave 1 (not LOS-gated like `Hexes`/`Entities`); zero proto
+changes (`Wall`/`WallKind` already existed on the wire, unpopulated).
+
+Goblin placement is verified NOT visible to any player at spawn — `AddMonster`
+inline-checks combat entry (rpg-toolkit#759's `checkCombatEntry`), so a goblin seeded
+within sight would flip the encounter to `TURN_BASED` immediately, violating the design
+bar ("walk into a room, the fight starts" — combat starts on a `Move` that forms sight,
+never at spawn). **Known toolkit gap, not fixed here:** `tools/spawn`'s own
+`BasicSpawnEngine` position search (`findValidPosition`, and the constraint-aware
+`ConstraintSolver.FindValidPositions`) never consults the real `spatial.Room` this wave
+introduced — no `room.CanPlaceEntity`/`room.IsLineOfSightBlocked` calls anywhere in that
+path — and its optional `LineOfSight` constraint is a Euclidean-distance stub
+(`constraints.go`'s `hasLineOfSight`, doc-flagged as a Phase-3 placeholder). `SpawnConfig`
+also has no fixed/target-position injection point. `StartEncounter` still constructs and
+calls `spawn.BasicSpawnEngine.PopulateRoom` (wired to `enc.RoomOrchestrator()`, exercising
+rpg-toolkit#757/#759's `getRoomFromSpatial`/`placeEntityInRoom` fix from a real caller),
+but discards its returned position in favor of one computed from the toolkit's own
+wall-aware `perception.CanSeeAt` — see `seedGoblins`'/`safeGoblinHexes`' doc comments in
+`start_encounter.go` for the full reasoning. A toolkit follow-up issue for
+fixed-position spawn support is recommended before wave 2 needs dynamic (non-fixed-2)
+monster placement through this engine.
+
+Verified via `internal/orchestrators/lobby/start_encounter_test.go`'s
+`TestStartEncounter_WalledRoomAndGoblins_CombatStartsOnSightedMove`: real `StartEncounter`
+call → walled room + 2 goblins persisted, `Mode == FREE_ROAM` at spawn (not
+`TURN_BASED`), then a rehydrated `enc.Move` onto a goblin's hex flips `Mode ==
+TURN_BASED` **by rule** (the toolkit's own inline `checkCombatEntry`, not anything
+rpg-api triggers) — no `devseed --inject-combat` involved. Stress-run 50x clean (room
+generation and goblin placement are both randomized). This retires this doc's
+"Known gap" note below about the combat-entry trigger being "future room/encounter-
+design work" — see the correction inline. The full MCP playtest (web step 9, wave-1 step
+9 in `ideas/the-dungeon/design.md`) still closes the wave; this PR is the api half only
+(design doc steps 7-8).
 
 **The live v1alpha1 encounter stack is DELETED (rpg-api#642, 2026-07-13)** —
 the audit-flagged registered-and-serving `dnd5e.api.v1alpha1.EncounterService`
@@ -110,8 +153,12 @@ Known gap: `StartEncounter`'s proto contract carries no `initial_mode` field (th
 `CreateEncounter` could start TURN_BASED directly) — every lobby-constructed encounter
 starts FREE_ROAM. No production caller depended on the old field; flagged as a design
 gap, not fixed here. `devseed --inject-combat` (below) gives local/MCP playtesting a way
-to add a monster and flip TURN_BASED on a lobby-started encounter without a proto change;
-the real combat-entry trigger is future room/encounter-design work.
+to add a monster and flip TURN_BASED on a lobby-started encounter without a proto change.
+**Correction (rpg-api#644, 2026-07-15): the real combat-entry trigger has landed** — see
+"The Dungeon wave 1" entry above. `StartEncounter` now seeds real goblins into a real
+walled room and combat starts by rule (a `Move` that forms sight), not just via
+`devseed --inject-combat`; the dev-inject tool remains for playtest control (design doc:
+"the inject tool stays for playtest control"), not as the only path anymore.
 
 **A real fight on GameView — combat-ready lobby members + devseed injection (rpg-api#634, 2026-07-11)** —
 `StartEncounter` now seeds each member's `tkenc.PlayerInput.AC` honestly from

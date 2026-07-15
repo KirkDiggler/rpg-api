@@ -885,7 +885,10 @@ func (s *EncounterV2IntegrationSuite) TestCombatSlice_TakeActionAndEndTurn_NPCDi
 		MonsterRef:  "dnd5e:monsters:goblin",
 		AttackBonus: 4, DamageDice: "1d6+2", DamageType: "slashing",
 	}))
-	s.Require().NoError(enc.SetMode(core.ModeTurnBased))
+	// AddMonster inline-checks combat entry (rpg-toolkit#759): alice/bob
+	// (sight range 10, no room) already see the goblin(s) just added, so the
+	// encounter self-transitions to TURN_BASED here. An explicit SetMode
+	// would now be redundant and error ("mode is already TURN_BASED").
 	s.Require().NoError(s.srv.EncRepoV2.Save(s.ctx, enc.ToData()))
 
 	// Walk initiative until a player is active so both TakeAction and
@@ -1110,7 +1113,10 @@ func (s *EncounterV2IntegrationSuite) TestCombatSlice_KillLastHostile_FiresDeath
 		"bob", "char-bob", core.Hex{Q: 1, R: -1, S: 0})))
 	s.Require().NoError(enc.AddMonster(killGoblinFixtureMonsterInput(
 		"goblin-1", core.Hex{Q: 2, R: -1, S: -1})))
-	s.Require().NoError(enc.SetMode(core.ModeTurnBased))
+	// AddMonster inline-checks combat entry (rpg-toolkit#759): alice/bob
+	// (sight range 10, no room) already see the goblin(s) just added, so the
+	// encounter self-transitions to TURN_BASED here. An explicit SetMode
+	// would now be redundant and error ("mode is already TURN_BASED").
 	s.Require().NoError(s.srv.EncRepoV2.Save(s.ctx, enc.ToData()))
 
 	// Cycle past any leading NPC turn so a player is active and TakeAction
@@ -1249,7 +1255,10 @@ func (s *EncounterV2IntegrationSuite) TestCombatSlice_KillOneOfTwoHostiles_NoEnc
 		"goblin-1", core.Hex{Q: 2, R: -1, S: -1})))
 	s.Require().NoError(enc.AddMonster(killGoblinFixtureMonsterInput(
 		"goblin-2", core.Hex{Q: 3, R: -2, S: -1})))
-	s.Require().NoError(enc.SetMode(core.ModeTurnBased))
+	// AddMonster inline-checks combat entry (rpg-toolkit#759): alice/bob
+	// (sight range 10, no room) already see the goblin(s) just added, so the
+	// encounter self-transitions to TURN_BASED here. An explicit SetMode
+	// would now be redundant and error ("mode is already TURN_BASED").
 	s.Require().NoError(s.srv.EncRepoV2.Save(s.ctx, enc.ToData()))
 
 	s.advanceUntilPlayerActiveByDirectToolkit(enc)
