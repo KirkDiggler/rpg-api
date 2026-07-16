@@ -165,25 +165,7 @@ func ProjectFor(
 		if visibleNow == nil || !visibleNow.Has(m.Position) {
 			continue
 		}
-		me := &encounterv2pb.Entity{
-			Id:       string(m.ID),
-			Position: HexToPosition(m.Position),
-			Type:     encounterv2pb.EntityType_ENTITY_TYPE_MONSTER,
-			Hp: &encounterv2pb.HitPoints{
-				Current: int32(m.HP),
-				Max:     int32(m.MaxHP),
-			},
-			Data: &encounterv2pb.Entity_Monster{
-				Monster: &encounterv2pb.MonsterData{
-					MonsterRef: monsterRefFor(m.MonsterRef),
-				},
-			},
-		}
-		if m.AC > 0 {
-			ac := int32(m.AC)
-			me.ArmorClass = &ac
-		}
-		entities = append(entities, me)
+		entities = append(entities, monsterEntity(m))
 	}
 
 	return &encounterv2pb.Encounter{
@@ -332,6 +314,42 @@ func playerEntity(pd *tkenc.PlayerData, pos core.Hex) *encounterv2pb.Entity {
 		e.ArmorClass = &ac
 	}
 	return e
+}
+
+// monsterEntity builds the wire-shape proto Entity for a monster, mirroring
+// playerEntity's shape (type + hp + armor_class + a Data oneof variant).
+// Unlike playerEntity, position is not a separate parameter — a monster's
+// current position always lives on its own MonsterData.Position (there is
+// no "viewer's own entity uses a different position source" case the way
+// players have snap.Position vs pd.View.Position).
+//
+// This is the SAME builder ProjectFor's snapshot path uses AND (rpg-api#644
+// playtest follow-up) the live EntityAppearedEvent translation path uses via
+// entityForID — one authoritative place for "how does a MonsterData become a
+// wire Entity" prevents the two paths from drifting the way they did before
+// this fix (the live path used to hand-build a bare {id, position} Entity
+// with no type, HP, or monster ref — see translateEntityAppearedEventWithData's
+// doc for the full story).
+func monsterEntity(m *tkenc.MonsterData) *encounterv2pb.Entity {
+	me := &encounterv2pb.Entity{
+		Id:       string(m.ID),
+		Position: HexToPosition(m.Position),
+		Type:     encounterv2pb.EntityType_ENTITY_TYPE_MONSTER,
+		Hp: &encounterv2pb.HitPoints{
+			Current: int32(m.HP),
+			Max:     int32(m.MaxHP),
+		},
+		Data: &encounterv2pb.Entity_Monster{
+			Monster: &encounterv2pb.MonsterData{
+				MonsterRef: monsterRefFor(m.MonsterRef),
+			},
+		},
+	}
+	if m.AC > 0 {
+		ac := int32(m.AC)
+		me.ArmorClass = &ac
+	}
+	return me
 }
 
 // monsterRefFor builds a proto Ref for a toolkit monster-ref string.

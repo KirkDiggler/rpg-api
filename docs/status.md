@@ -83,6 +83,35 @@ retry outright — e.g. the SDK deferring its publish until after an explicit pe
 callback, or exposing the freshly-rolled `Initiative` directly on the event instead of
 requiring a repo round-trip at all.
 
+**Playtest follow-up: live EntityAppeared carries entity type (rpg-api#644, 2026-07-15)** —
+a monster (or player) becoming visible via a live `Move` (rpg-toolkit#762's monster
+`EntityAppeared` emission) projected on the wire as `type=UNSPECIFIED` — a goblin rendered
+as a generic capsule instead of its model. The toolkit's `EntityAppearedEvent` deliberately
+carries only an entity ID + position (same minimal cause-event shape as the
+DoorOpened/HexRevealed split already in this file), so the live translator built a bare
+`{id, position}` Entity, leaving `type`/`hp`/`armor_class`/the character-or-monster oneof
+unset. `handler.go`'s stream loop now branches on `EntityAppearedEvent` and calls the new
+`translateEntityAppearedEventWithData`, which looks the entity up in freshly-loaded data
+and builds the full Entity via `playerEntity`/`monsterEntity` — the monster-entity-building
+code that used to live inline in `ProjectFor` is now `monsterEntity`, extracted so the
+snapshot and live paths share one authoritative builder instead of drifting the way they
+did before this fix (existing `TestProjectSuite` snapshot tests pin the extraction as
+behavior-preserving). Unlike the `InitiativeRolled` read above, this one is NOT exposed to
+the rpg-api#647 race class — the appearing entity's identity was always persisted by an
+earlier, separate, already-completed request (`AddPlayer`/`AddMonster` inside
+`StartEncounter` or `devcombat.Inject`); no retry needed. One subtlety caught by
+`TestMovementSlicePerViewerProjection_AsymmetricLoS` while building this: the Entity's
+`Position` must stay the EVENT's own reported position, not the entity's current stored
+position — `ProjectVisibilityTransition` can report "appeared" at an intermediate hex of a
+multi-hex pass-through move, not the mover's final resting position. **Same rough-edge
+family as #647, worth flagging next to it:** unlike `ModeChanged` (once per fight),
+`EntityAppeared` can now fire on every LOS-changing move during active combat
+(rpg-toolkit#762's own scope includes "a player rounding a corner mid-fight") — if the
+per-event repo read ever shows up as a real cost, the natural follow-up is caching the
+connect-time snapshot's Players/Monsters in the stream goroutine's own state instead of
+round-tripping Redis per appearance; not built now, flagged here so it's discoverable
+rather than re-derived.
+
 **The live v1alpha1 encounter stack is DELETED (rpg-api#642, 2026-07-13)** —
 the audit-flagged registered-and-serving `dnd5e.api.v1alpha1.EncounterService`
 (`cmd/server/server.go:233`), its 5,844-line `internal/orchestrators/encounter/

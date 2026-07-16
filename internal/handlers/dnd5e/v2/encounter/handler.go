@@ -399,6 +399,21 @@ func (h *Handler) StreamEncounter(req *encounterv2pb.StreamEncounterRequest, str
 //     established pattern here (mirrors the InputRequiredDeliveredEvent
 //     branch immediately above), and a mode-transition event is rare enough
 //     (once per fight) that the extra repo round-trip is not a concern.
+//   - EntityAppearedEvent (rpg-api#644 playtest follow-up): the toolkit
+//     event carries only an entity ID + position — no type, HP, or monster
+//     ref — so the wire Entity would otherwise project as type=UNSPECIFIED
+//     (a real playtest finding: a newly-visible goblin rendered as a
+//     generic capsule instead of its model). Looks the entity up in the
+//     freshly-loaded data and builds the full Entity via the same
+//     playerEntity/monsterEntity builders ProjectFor's snapshot path uses —
+//     see translateEntityAppearedEventWithData's doc for why this read,
+//     unlike the InitiativeRolled one above, is not exposed to the
+//     rpg-api#647 race class and needs no retry. This fires far more often
+//     than ModeChanged during active combat (any LOS-changing move, not
+//     just combat entry); if the extra per-event repo round-trip ever shows
+//     up as a real cost, the natural follow-up is caching the connect-time
+//     snapshot's Players/Monsters in this stream goroutine's own state
+//     instead (see docs/status.md's rough edges).
 //
 // Every other event type continues to use TranslateEvent unchanged.
 func (h *Handler) translateForStream(
@@ -420,6 +435,18 @@ func (h *Handler) translateForStream(
 			prompt = data.PendingReactionPrompts[irEvt.ReactorID]
 		}
 		out, err := TranslateInputRequiredDelivered(irEvt, viewer, h.now(), prompt)
+		if err != nil {
+			return nil, err
+		}
+		return []*encounterv2pb.EncounterEvent{out}, nil
+	}
+
+	if appearEvt, ok := evt.(*tkevents.EntityAppearedEvent); ok {
+		data, err := h.encRepo.Get(ctx, string(encID))
+		if err != nil {
+			return nil, fmt.Errorf("load encounter for entity-appeared enrichment: %w", err)
+		}
+		out, err := translateEntityAppearedEventWithData(appearEvt, viewer, h.now(), data)
 		if err != nil {
 			return nil, err
 		}
