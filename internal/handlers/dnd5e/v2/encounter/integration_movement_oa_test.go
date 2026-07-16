@@ -523,7 +523,10 @@ func (s *MovementOAIntegrationSuite) seedMovementEncounter() {
 		DataJSON:    goblinDataJSON,
 	}))
 
-	s.Require().NoError(enc.SetMode(encountercore.ModeTurnBased))
+	// AddMonster inline-checks combat entry (rpg-toolkit#759): alice (sight
+	// range 10, no room) already sees the goblin, so the encounter
+	// self-transitions to TURN_BASED here. An explicit SetMode would now be
+	// redundant and error ("mode is already TURN_BASED").
 	s.Require().NoError(s.repo.Save(context.Background(), enc.ToData()))
 }
 
@@ -567,7 +570,10 @@ func (s *MovementOAIntegrationSuite) seedMovementEncounterDiagonal() {
 		DataJSON:    goblinDataJSON,
 	}))
 
-	s.Require().NoError(enc.SetMode(encountercore.ModeTurnBased))
+	// AddMonster inline-checks combat entry (rpg-toolkit#759): alice (sight
+	// range 10, no room) already sees the goblin, so the encounter
+	// self-transitions to TURN_BASED here. An explicit SetMode would now be
+	// redundant and error ("mode is already TURN_BASED").
 	s.Require().NoError(s.repo.Save(context.Background(), enc.ToData()))
 }
 

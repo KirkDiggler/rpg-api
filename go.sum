@@ -10,8 +10,8 @@ github.com/KirkDiggler/rpg-toolkit/core v0.10.0 h1:LLsvsYsukE26BlRS0wL1o3UjjmP5Q
 github.com/KirkDiggler/rpg-toolkit/core v0.10.0/go.mod h1:XFQXYViPZUTYu/a8jdRadI3rGnKk4r7tRtPm++vSUV0=
 github.com/KirkDiggler/rpg-toolkit/dice v0.3.2 h1:cLLP4Z+4VYSxeRkNbmI5gym6dC/xBOw6kDIylWDK/z0=
 github.com/KirkDiggler/rpg-toolkit/dice v0.3.2/go.mod h1:JEWKuYBi+h9f8jFAcE2MI2yVDFV6ldOVx36y5fbc6p4=
-github.com/KirkDiggler/rpg-toolkit/encounter v0.24.5 h1:oWxo4ivzDvGIW5t35Qe9AgFvrwZF4ml8l1iFDm7lYgY=
-github.com/KirkDiggler/rpg-toolkit/encounter v0.24.5/go.mod h1:huvD72keDai4f699qeE+oJR8fqsK1k+sn17RcLAV0Sc=
+github.com/KirkDiggler/rpg-toolkit/encounter v0.26.0 h1:rwAMVBvWyzUIQfCGI6Hs4JxrwdYfEkOz3plDiy31uZU=
+github.com/KirkDiggler/rpg-toolkit/encounter v0.26.0/go.mod h1:1VpHeNNexAMdHxI1SRRhs/5F+/Rr90hqKrt6m5U523o=
 github.com/KirkDiggler/rpg-toolkit/events v0.6.2 h1:lRtKXko35bGw/l2TKYsN7JKOODUi6u66J8QcnQavm3s=
 github.com/KirkDiggler/rpg-toolkit/events v0.6.2/go.mod h1:JNzyCw1l/RL4nyoCpx3tSko8Dsocwye9eFg33Ot6mUw=
 github.com/KirkDiggler/rpg-toolkit/game v0.1.0 h1:jXYlCqkqK0LCHquu+1vgTEbedhgQbspR6748sO/KYqE=
@@ -22,12 +22,14 @@ github.com/KirkDiggler/rpg-toolkit/rpgerr v0.1.2 h1:B7IrROe3GcPrzMeV0EQryA194Y7Y
 github.com/KirkDiggler/rpg-toolkit/rpgerr v0.1.2/go.mod h1:wsyJmmf1X0iLFGy5Iyy5sUoZhXZQvuYVsKdXfc4b/T4=
 github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.65.2 h1:lxFfE5hShIkvQrR/SPM04uUYf1WnO3Uh/283rZlNS5c=
 github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.65.2/go.mod h1:vx1sByl/MceFEzfdmi+HP5hGotGJ8u5uR5T1RVQMqn4=
-github.com/KirkDiggler/rpg-toolkit/tools/environments v0.4.0 h1:fyNqBWKRn98giYFAP7oY+e9ygHFMGjeHlF6k68FhOy0=
-github.com/KirkDiggler/rpg-toolkit/tools/environments v0.4.0/go.mod h1:tchpvtZ7MTh7P5J1efr2Wigw108VzQBQEojlVFbw8rM=
+github.com/KirkDiggler/rpg-toolkit/tools/environments v0.4.2 h1:kPc3FZSRAB/gIzTBvlOYxzqp9mdL0akkeRW/8EZcI9A=
+github.com/KirkDiggler/rpg-toolkit/tools/environments v0.4.2/go.mod h1:tchpvtZ7MTh7P5J1efr2Wigw108VzQBQEojlVFbw8rM=
 github.com/KirkDiggler/rpg-toolkit/tools/selectables v0.1.2 h1:81iz712+EXhitPNgcf0tMDqvqI/0u9k26Hbdph62QZU=
 github.com/KirkDiggler/rpg-toolkit/tools/selectables v0.1.2/go.mod h1:tnhhn+fRcklWqwIu5lOtBA2uCn1amkp5ZAARsqAgJqI=
 github.com/KirkDiggler/rpg-toolkit/tools/spatial v0.5.0 h1:weKsLlsRV9kgoD/y68VWy0lpsu5zhwCmbnr5MUkLpsA=
 github.com/KirkDiggler/rpg-toolkit/tools/spatial v0.5.0/go.mod h1:z5WFtaT46GCz4lmDOKzeuFbSk8SRuZbKCf441M0yDa8=
+github.com/KirkDiggler/rpg-toolkit/tools/spawn v0.2.0 h1:YowWFv+oL49f7aRt8O3krJ6BrpA3CrYaLEqInu92SZs=
+github.com/KirkDiggler/rpg-toolkit/tools/spawn v0.2.0/go.mod h1:vRkHHvBU1hXvlPyOySMfXov4S4Tj/bTWJ7lUGSwgVmI=
 github.com/Microsoft/go-winio v0.6.2 h1:F2VQgta7ecxGYO8k3ZZz3RS8fVIXVxONVUPlNERoyfY=
 github.com/Microsoft/go-winio v0.6.2/go.mod h1:yd8OoFMLzJbo9gZq8j5qaps8bJ9aShtEA8Ipt1oGCvU=
 github.com/alicebob/miniredis/v2 v2.35.0 h1:QwLphYqCEAo1eu1TqPRN2jgVMPBweeQcR21jeqDCONI=

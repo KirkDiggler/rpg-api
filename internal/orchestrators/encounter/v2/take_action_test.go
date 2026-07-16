@@ -124,7 +124,10 @@ func (s *TakeActionSuite) seedCombat(encID string, goblinHP int) {
 		DamageDice:  "1d6+2",
 		DamageType:  "slashing",
 	}))
-	s.Require().NoError(enc.SetMode(core.ModeTurnBased))
+	// AddMonster inline-checks combat entry (rpg-toolkit#759): bob (sight
+	// range 10, no room) already sees the goblin at (1,0,-1), so the
+	// encounter self-transitions to TURN_BASED here. An explicit SetMode
+	// would now be redundant and error ("mode is already TURN_BASED").
 	data := enc.ToData()
 	// Force bob active so the active-actor gate passes deterministically.
 	data.Initiative = []core.EntityID{taEntityBob, taGoblinID}
@@ -205,14 +208,16 @@ func (s *TakeActionSuite) TestTakeAction_UnknownTarget_ErrUnknownTarget() {
 }
 
 func (s *TakeActionSuite) TestTakeAction_NotTurnBased_ErrNotTurnBased() {
-	// Free-roam encounter: TakeActionPhased gates on ModeTurnBased.
+	// Free-roam encounter: TakeActionPhased gates on ModeTurnBased. The
+	// goblin sits outside bob's sight range (rpg-toolkit#759 combat-entry
+	// check runs inline on AddMonster) so the encounter stays FREE_ROAM.
 	enc := tkenc.New(s.ctx, "enc-free-roam", s.broker)
 	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
 		PlayerID: taPlayerBob, EntityID: taEntityBob, Position: core.Hex{Q: 0, R: 0, S: 0}, SightRange: 4,
 		HP: 14, MaxHP: 14, AC: 14, AttackBonus: 5, DamageDice: "1d12+3", DamageType: "slashing",
 	}))
 	s.Require().NoError(enc.AddMonster(tkenc.MonsterInput{
-		ID: taGoblinID, Position: core.Hex{Q: 1, R: 0, S: -1}, HP: 100, MaxHP: 100, AC: 15, Speed: 6,
+		ID: taGoblinID, Position: core.Hex{Q: 10, R: 0, S: -10}, HP: 100, MaxHP: 100, AC: 15, Speed: 6,
 		MonsterRef: "dnd5e:monsters:goblin", AttackBonus: 4, DamageDice: "1d6+2", DamageType: "slashing",
 	}))
 	s.Require().NoError(s.repo.Save(s.ctx, enc.ToData()))

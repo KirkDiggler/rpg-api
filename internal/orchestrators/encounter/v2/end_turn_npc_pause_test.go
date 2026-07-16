@@ -161,7 +161,10 @@ func (s *EndTurnNPCPauseSuite) seedGoblinAdjacentToWizard() {
 		DamageType:  "slashing",
 		DataJSON:    rawData,
 	}))
-	s.Require().NoError(enc.SetMode(core.ModeTurnBased))
+	// AddMonster inline-checks combat entry (rpg-toolkit#759): wendy (sight
+	// range 10, no room) already sees the goblin at (1,0,-1), so the
+	// encounter self-transitions to TURN_BASED here. An explicit SetMode
+	// would now be redundant and error ("mode is already TURN_BASED").
 	data := enc.ToData()
 	// wendy active (idx 0), goblin next (idx 1): ending wendy's turn advances to
 	// the goblin and the NPC dispatch loop runs the goblin's turn.

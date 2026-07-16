@@ -125,6 +125,14 @@ func Inject(ctx context.Context, repo encountersv2.Repository, input InjectInput
 		return nil, fmt.Errorf("load encounter %q from data: %w", input.EncounterID, err)
 	}
 
+	// Captured BEFORE AddMonster: LoadFromData aliases the *Data pointer
+	// (e.data = data, encounter.go), so AddMonster's inline combat-entry
+	// check (rpg-toolkit#759) can flip data.Mode to TURN_BASED in place —
+	// e.g. the goblin lands within an existing player's sight range. Reading
+	// data.Mode AFTER AddMonster would then report "already turn-based" even
+	// when this call is the one that started the fight.
+	alreadyTurnBased := data.Mode == core.ModeTurnBased
+
 	goblinID := core.EntityID(fmt.Sprintf("goblin-%d", len(data.Monsters)+1))
 	goblin := monster.NewGoblin(string(goblinID))
 	goblinData := goblin.ToData()
@@ -157,16 +165,28 @@ func Inject(ctx context.Context, repo encountersv2.Repository, input InjectInput
 		return nil, fmt.Errorf("add goblin to encounter %q: %w", input.EncounterID, addErr)
 	}
 
-	alreadyTurnBased := data.Mode == core.ModeTurnBased
-	if alreadyTurnBased {
-		// Round-trip to force rollInitiative to include the just-added
-		// monster — see the doc comment above.
+	switch {
+	case alreadyTurnBased:
+		// Mid-fight injection: round-trip to force rollInitiative to include
+		// the just-added monster — see the doc comment above.
 		if setErr := enc.SetMode(core.ModeFreeRoam); setErr != nil {
 			return nil, fmt.Errorf("reset encounter %q to free_roam before re-rolling initiative: %w", input.EncounterID, setErr)
 		}
-	}
-	if setErr := enc.SetMode(core.ModeTurnBased); setErr != nil {
-		return nil, fmt.Errorf("set mode turn_based on encounter %q: %w", input.EncounterID, setErr)
+		if setErr := enc.SetMode(core.ModeTurnBased); setErr != nil {
+			return nil, fmt.Errorf("set mode turn_based on encounter %q: %w", input.EncounterID, setErr)
+		}
+	case enc.Mode() == core.ModeTurnBased:
+		// AddMonster's inline combat-entry check (rpg-toolkit#759) already
+		// flipped FREE_ROAM -> TURN_BASED and rolled initiative INCLUDING
+		// this goblin (checkCombatEntry runs after the monster is added to
+		// e.data.Monsters) — nothing left to do.
+	default:
+		// The goblin landed outside every player's current sight range, so
+		// the inline check didn't fire. Inject is dev tooling for forcing a
+		// fight on demand regardless of a real sightline, so force it here.
+		if setErr := enc.SetMode(core.ModeTurnBased); setErr != nil {
+			return nil, fmt.Errorf("set mode turn_based on encounter %q: %w", input.EncounterID, setErr)
+		}
 	}
 
 	updated := enc.ToData()

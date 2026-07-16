@@ -119,7 +119,7 @@ func ProjectFor(
 	// This requires the viewer's sight range from the persisted view.
 	var visibleNow core.HexSet
 	if vp, ok := data.Players[viewer]; ok && vp.View != nil {
-		visibleNow = perception.VisibleHexesAt(snap.Position, vp.View.SightRange)
+		visibleNow = perception.VisibleHexesAt(snap.Position, vp.View.SightRange, enc.Room())
 	}
 
 	// Collect entities visible to the viewer. Start with the viewer's own
@@ -165,25 +165,7 @@ func ProjectFor(
 		if visibleNow == nil || !visibleNow.Has(m.Position) {
 			continue
 		}
-		me := &encounterv2pb.Entity{
-			Id:       string(m.ID),
-			Position: HexToPosition(m.Position),
-			Type:     encounterv2pb.EntityType_ENTITY_TYPE_MONSTER,
-			Hp: &encounterv2pb.HitPoints{
-				Current: int32(m.HP),
-				Max:     int32(m.MaxHP),
-			},
-			Data: &encounterv2pb.Entity_Monster{
-				Monster: &encounterv2pb.MonsterData{
-					MonsterRef: monsterRefFor(m.MonsterRef),
-				},
-			},
-		}
-		if m.AC > 0 {
-			ac := int32(m.AC)
-			me.ArmorClass = &ac
-		}
-		entities = append(entities, me)
+		entities = append(entities, monsterEntity(m))
 	}
 
 	return &encounterv2pb.Encounter{
@@ -192,9 +174,60 @@ func ProjectFor(
 		TurnState: buildTurnState(data, actorTurnState),
 		Space: &encounterv2pb.Space{
 			Hexes:    hexes,
+			Walls:    wallsToProto(data.Space),
 			Entities: entities,
 		},
 	}, nil
+}
+
+// wallsToProto converts an encounter's persisted room snapshot (rpg-toolkit
+// #757/#759's SpaceData) into the wire Wall list. Wave 1 wall visibility is
+// whole-room (design doc: "no per-viewer wall reveal yet"), so every viewer's
+// snapshot carries every wall unconditionally — unlike Hexes/Entities above,
+// this is NOT gated by RevealedHexes/visibleNow. space is nil for encounters
+// with no room (InitRoom never called — pre-wave-1 fixtures, non-spatial
+// encounters), which projects to an empty Walls list.
+func wallsToProto(space *tkenc.SpaceData) []*encounterv2pb.Wall {
+	if space == nil {
+		return nil
+	}
+	walls := make([]*encounterv2pb.Wall, 0, len(space.Walls))
+	for _, w := range space.Walls {
+		kind, ok := wallKindFor(w.BlocksMovement, w.BlocksLoS)
+		if !ok {
+			continue
+		}
+		// Wave 1 persists one degenerate (Start == End) segment per
+		// discretized wall hex (SpaceData.Walls doc) — From/To both convert
+		// the same cube coordinate.
+		from := HexToPosition(core.HexFromCube(w.Start))
+		to := HexToPosition(core.HexFromCube(w.End))
+		walls = append(walls, &encounterv2pb.Wall{From: from, To: to, Kind: kind})
+	}
+	return walls
+}
+
+// wallKindFor maps a wall segment's persisted BlocksMovement/BlocksLoS flags
+// (environments.WallSegmentData; wave 1 does not persist a WallType — see
+// rebuildRoomFromData's doc in rpg-toolkit/encounter/space.go) onto the
+// proto WallKind enum:
+//   - blocks both: SOLID (the common case for an interior wall)
+//   - blocks movement only: WINDOW (see through, can't walk through)
+//   - blocks LoS only: SOLID as a conservative fallback — wave 1's generator
+//     (environments.QuickRoom) never produces this combination, but a
+//     LoS-blocking segment shouldn't be silently dropped if one ever exists
+//   - blocks neither: not a wall worth putting on the wire (ok=false)
+func wallKindFor(blocksMovement, blocksLoS bool) (kind encounterv2pb.WallKind, ok bool) {
+	switch {
+	case blocksMovement && blocksLoS:
+		return encounterv2pb.WallKind_WALL_KIND_SOLID, true
+	case blocksMovement && !blocksLoS:
+		return encounterv2pb.WallKind_WALL_KIND_WINDOW, true
+	case !blocksMovement && blocksLoS:
+		return encounterv2pb.WallKind_WALL_KIND_SOLID, true
+	default:
+		return encounterv2pb.WallKind_WALL_KIND_UNSPECIFIED, false
+	}
 }
 
 // activeActorID returns the entity id of the actor whose turn it is, or "" when
@@ -281,6 +314,42 @@ func playerEntity(pd *tkenc.PlayerData, pos core.Hex) *encounterv2pb.Entity {
 		e.ArmorClass = &ac
 	}
 	return e
+}
+
+// monsterEntity builds the wire-shape proto Entity for a monster, mirroring
+// playerEntity's shape (type + hp + armor_class + a Data oneof variant).
+// Unlike playerEntity, position is not a separate parameter — a monster's
+// current position always lives on its own MonsterData.Position (there is
+// no "viewer's own entity uses a different position source" case the way
+// players have snap.Position vs pd.View.Position).
+//
+// This is the SAME builder ProjectFor's snapshot path uses AND (rpg-api#644
+// playtest follow-up) the live EntityAppearedEvent translation path uses via
+// entityForID — one authoritative place for "how does a MonsterData become a
+// wire Entity" prevents the two paths from drifting the way they did before
+// this fix (the live path used to hand-build a bare {id, position} Entity
+// with no type, HP, or monster ref — see translateEntityAppearedEventWithData's
+// doc for the full story).
+func monsterEntity(m *tkenc.MonsterData) *encounterv2pb.Entity {
+	me := &encounterv2pb.Entity{
+		Id:       string(m.ID),
+		Position: HexToPosition(m.Position),
+		Type:     encounterv2pb.EntityType_ENTITY_TYPE_MONSTER,
+		Hp: &encounterv2pb.HitPoints{
+			Current: int32(m.HP),
+			Max:     int32(m.MaxHP),
+		},
+		Data: &encounterv2pb.Entity_Monster{
+			Monster: &encounterv2pb.MonsterData{
+				MonsterRef: monsterRefFor(m.MonsterRef),
+			},
+		},
+	}
+	if m.AC > 0 {
+		ac := int32(m.AC)
+		me.ArmorClass = &ac
+	}
+	return me
 }
 
 // monsterRefFor builds a proto Ref for a toolkit monster-ref string.

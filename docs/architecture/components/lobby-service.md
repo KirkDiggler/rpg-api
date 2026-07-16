@@ -122,10 +122,14 @@ JSON-round-trip-on-every-call contract.
   (`internal/pkg/devcombat`) fills this gap for local/MCP playtesting only — it loads an
   EXISTING lobby-started encounter, adds a monster, and flips TURN_BASED without a proto
   change (rpg-api#634).
-- **Spawn positions are a placeholder** — `StartEncounter` spreads members along a
-  straight line (`Q += index`) since no room/spawn-point system exists yet for a
-  freshly-created lobby encounter. Real spawn selection is future work once room
-  integration lands.
+- **Player spawn positions are still a placeholder** — `StartEncounter` spreads members
+  along a straight line (`Q += index`) rather than a real spawn-point selection within
+  the room. **The room itself now exists** (rpg-api#644, The Dungeon wave 1:
+  `enc.InitRoom(20, 20, environments.PatternRandom)` runs before the member loop, and 2
+  goblins are seeded at verified-unseen positions within it — see `docs/status.md`'s "The
+  Dungeon wave 1" entry) — only the PLAYER placement within that room is still the
+  pre-wave-1 line placeholder. Real player spawn-point selection (e.g. clustering near a
+  room entrance) is future work.
 - **`keyedMutex` never evicts** — see the orchestrator section above.
 - **Discord-instance join_ref carrier is out of scope** — only the dev/playtest carrier
   (an opaque `join_ref` passed explicitly) ships here. The Discord Activity carrier

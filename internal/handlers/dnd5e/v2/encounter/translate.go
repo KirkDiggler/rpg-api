@@ -263,11 +263,19 @@ func translateHexRevealedEvent(e *events.HexRevealedEvent, viewer core.PlayerID,
 }
 
 // translateEntityAppearedEvent maps the toolkit's EntityAppearedEvent to the
-// v1alpha2 EntityAppeared proto envelope. The proto carries an Entity message
-// (id + position) plus a free-form reason string. The toolkit event provides
-// only EntityID + Position; the wire form populates a minimal Entity{id,
-// position} and leaves richer fields (type, display_name, hp, etc.) for the
-// web to look up from its snapshot. See gap note in EntityDisappeared below.
+// v1alpha2 EntityAppeared proto envelope, carrying only what the toolkit
+// event itself provides (EntityID + Position) — a bare Entity{id, position}
+// with Type/Hp/ArmorClass/the Character-or-Monster oneof all left unset.
+//
+// The live stream (handler.go's translateForStream) does NOT call this —
+// rpg-api#644's playtest follow-up replaced that call site with
+// translateEntityAppearedEventWithData, which looks the entity up in the
+// already-loaded encounter data to populate the fields this function leaves
+// bare (that gap — a monster appearing over the wire as type=UNSPECIFIED,
+// rendering as a generic capsule instead of its model — was the playtest
+// finding). This function remains the TranslateEvent dispatch's fallback for
+// any caller with only the bare toolkit event and no data to enrich it with
+// (see TestTranslateEvent_EntityAppearedEvent_HappyPath).
 func translateEntityAppearedEvent(e *events.EntityAppearedEvent, viewer core.PlayerID, now time.Time) (*encounterv2pb.EncounterEvent, error) {
 	if _, ok := e.PerPlayer[viewer]; !ok {
 		return nil, ErrViewerSawNothing
@@ -285,6 +293,107 @@ func translateEntityAppearedEvent(e *events.EntityAppearedEvent, viewer core.Pla
 			},
 		},
 	}, nil
+}
+
+// translateEntityAppearedEventWithData is the data-aware translator for
+// EntityAppearedEvent (rpg-api#644 playtest follow-up). The toolkit event
+// carries only an entity ID + position — see translateEntityAppearedEvent's
+// doc for why: a deliberate minimal cause-event shape the toolkit uses for
+// BOTH "a player becomes visible to another player" (encounter.go's
+// applyAndPublishMove) and, since rpg-toolkit#762, "a monster becomes
+// visible to the mover" (monsterVisibilityTransitions) — in the monster
+// case the toolkit has the full *MonsterData in hand at the publish site but
+// deliberately narrows to just ID+Position before constructing the event,
+// mirroring the DoorOpened/parallel-HexRevealedEvent cause/effect split
+// already established in this file: the toolkit's cause event carries
+// identity, the consumer enriches.
+//
+// entityForID looks the entity up in the already-loaded data to build the
+// FULL wire Entity (type + hp + armor_class + character/monster data),
+// reusing the exact same playerEntity/monsterEntity builders ProjectFor's
+// snapshot path uses — one authoritative place for "how does a
+// PlayerData/MonsterData become a wire Entity" so the live and snapshot
+// paths cannot drift the way they did before this fix.
+//
+// data is loaded fresh by the caller (translateForStream) rather than
+// threaded through TranslateEvent's generic signature — mirrors the
+// InputRequiredDeliveredEvent / InitiativeRolled data-aware branches already
+// in this file. Unlike InitiativeRolled (rpg-api#647: the roster value
+// doesn't exist anywhere until the SAME in-flight request rolls it), this
+// read is NOT racy: the appearing entity's identity was always persisted by
+// an earlier, separate, already-completed request (AddPlayer/AddMonster
+// inside StartEncounter or devcombat.Inject) — the only call site that can
+// ever produce this event is enc.Move(), which always runs against an
+// encounter MoveEntity's orchestrator already loaded from the repo. No
+// retry needed (contrast loadRolledInitiative below).
+func translateEntityAppearedEventWithData(
+	e *events.EntityAppearedEvent, viewer core.PlayerID, now time.Time, data *encounter.Data,
+) (*encounterv2pb.EncounterEvent, error) {
+	if _, ok := e.PerPlayer[viewer]; !ok {
+		return nil, ErrViewerSawNothing
+	}
+
+	entity := entityForID(data, e.Entity)
+	if entity == nil {
+		// Defensive: the entity is gone from data between publish and this
+		// read (e.g. killed the same tick) — fall back to the bare shape
+		// rather than dropping the event outright; the client still learns
+		// something appeared, just without enrichment.
+		entity = &encounterv2pb.Entity{Id: string(e.Entity), Position: HexToPosition(e.Position)}
+	} else {
+		// Position must be the EVENT's own reported position, not the
+		// entity's current/final stored position from data — these can
+		// legitimately differ. The toolkit's ProjectVisibilityTransition can
+		// report "appeared" at an INTERMEDIATE hex of a multi-hex
+		// pass-through move, not the mover's final resting position (a real
+		// case this fix regressed against
+		// TestMovementSlicePerViewerProjection_AsymmetricLoS until caught:
+		// viewer B, SightRange 1, sees mover A only at the one hex A passes
+		// through B's vision, which is not where A ends up after their full
+		// move). entityForID's builders (playerEntity/monsterEntity) get
+		// every OTHER field right from the authoritative stored data — type,
+		// hp, armor_class, character/monster data are not position-scoped
+		// the way this is — only Position needs the event's own value.
+		entity.Position = HexToPosition(e.Position)
+	}
+
+	return &encounterv2pb.EncounterEvent{
+		Sequence:  int64(e.Sequence()),
+		Timestamp: timestamppb.New(now),
+		Event: &encounterv2pb.EncounterEvent_EntityAppeared{
+			EntityAppeared: &encounterv2pb.EntityAppeared{
+				Entity: entity,
+				Reason: "entered LOS",
+			},
+		},
+	}, nil
+}
+
+// entityForID looks up id in data's players/monsters and builds the wire
+// Entity for it via the same playerEntity/monsterEntity builders ProjectFor
+// uses, or nil if id belongs to neither (should not happen for a live
+// EntityAppearedEvent, whose Entity always names a combatant already in
+// this encounter's Players/Monsters at publish time — see
+// translateEntityAppearedEventWithData's doc on why that read isn't racy).
+//
+// The position passed into playerEntity here is a placeholder — the caller
+// (translateEntityAppearedEventWithData) always overwrites .Position with
+// the event's own reported position afterward (see its doc for why), so
+// this does not need pd.View to be populated to enrich the rest of the
+// entity's fields.
+func entityForID(data *encounter.Data, id core.EntityID) *encounterv2pb.Entity {
+	if data == nil {
+		return nil
+	}
+	if m, ok := data.Monsters[id]; ok {
+		return monsterEntity(m)
+	}
+	if pid := playerSeatForEntity(data, id); pid != "" {
+		if pd := data.Players[pid]; pd != nil {
+			return playerEntity(pd, core.Hex{})
+		}
+	}
+	return nil
 }
 
 // translateEntityDisappearedEvent maps the toolkit's EntityDisappearedEvent to
@@ -604,6 +713,45 @@ func translateModeChangedEvent(e *events.ModeChangedEvent, viewer core.PlayerID,
 			},
 		},
 	}, nil
+}
+
+// translateInitiativeRolledEvent builds the proto InitiativeRolled envelope
+// carrying the encounter's freshly-rolled turn order (rpg-api#644 playtest
+// follow-up). Unlike every other translator in this file, it has no
+// corresponding toolkit event to translate FROM: rollInitiative (inside
+// SetMode, rpg-toolkit encounter/combat.go) mutates data.Initiative in place
+// but publishes no dedicated roster event — only ModeChangedEvent and
+// TurnStartedEvent fire at the FREE_ROAM->TURN_BASED transition, and neither
+// proto carries a roster field (ModeChanged: from/to/reason; TurnStarted:
+// entity_id/round — see events.proto). InitiativeRolled{order} is a separate
+// message already defined on the wire (events.proto's EncounterEvent oneof,
+// field 41) that no rpg-api code populated until now — zero proto changes
+// needed.
+//
+// The stream loop (handler.go's translateForStream) calls this once,
+// alongside the normal ModeChanged translation, when it observes the
+// transition to TURN_BASED — not on every TurnStartedEvent, which also
+// fires on every later per-turn advance and would otherwise resend the same
+// static roster every turn. seq is shared with the paired ModeChangedEvent:
+// this envelope is that transition's effect, not an independently-caused
+// event of its own (mirrors the DoorOpened/parallel-HexRevealedEvent
+// cause/effect split elsewhere in this file, except here one toolkit cause
+// produces two wire envelopes instead of two toolkit events each producing
+// one).
+func translateInitiativeRolledEvent(seq uint64, initiative []core.EntityID, now time.Time) *encounterv2pb.EncounterEvent {
+	order := make([]string, 0, len(initiative))
+	for _, eid := range initiative {
+		order = append(order, string(eid))
+	}
+	return &encounterv2pb.EncounterEvent{
+		Sequence:  int64(seq), //nolint:gosec // sequence is monotonic; fits int64
+		Timestamp: timestamppb.New(now),
+		Event: &encounterv2pb.EncounterEvent_InitiativeRolled{
+			InitiativeRolled: &encounterv2pb.InitiativeRolled{
+				Order: order,
+			},
+		},
+	}
 }
 
 // translateTurnStartedEvent maps the toolkit's TurnStartedEvent to the proto

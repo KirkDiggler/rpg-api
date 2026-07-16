@@ -45,7 +45,10 @@ func (s *HandlerSuite) seedCombatEncounter() {
 		MonsterRef:  "dnd5e:monsters:goblin",
 		AttackBonus: 4, DamageDice: "1d6+2", DamageType: "slashing",
 	}))
-	s.Require().NoError(enc.SetMode(core.ModeTurnBased))
+	// AddMonster inline-checks combat entry (rpg-toolkit#759): alice/bob
+	// (sight range 10, no room) already see the goblin, so the encounter
+	// self-transitions to TURN_BASED here. An explicit SetMode would now be
+	// redundant and error ("mode is already TURN_BASED").
 	s.Require().NoError(s.repo.Save(s.ctx, enc.ToData()))
 }
 
@@ -313,7 +316,9 @@ func (s *HandlerSuite) TestTakeAction_ActorIDMismatch_PermissionDenied() {
 }
 
 func (s *HandlerSuite) TestTakeAction_NotTurnBased_FailedPrecondition() {
-	// Seed a free-roam encounter (no SetMode). The toolkit's combat verb
+	// Seed a free-roam encounter (no SetMode). The goblin sits outside
+	// alice's sight range (rpg-toolkit#759 combat-entry check runs inline on
+	// AddMonster) so the encounter stays FREE_ROAM. The toolkit's combat verb
 	// returns ErrNotTurnBased which the handler maps to FailedPrecondition.
 	enc := tkenc.New(context.Background(), combatEncID, s.broker)
 	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
@@ -322,7 +327,7 @@ func (s *HandlerSuite) TestTakeAction_NotTurnBased_FailedPrecondition() {
 		HP: 12, MaxHP: 12, AC: 14, AttackBonus: 4, DamageDice: "1d8+2",
 	}))
 	s.Require().NoError(enc.AddMonster(tkenc.MonsterInput{
-		ID: monsterGoblin1, Position: core.Hex{Q: 1, R: 0, S: -1},
+		ID: monsterGoblin1, Position: core.Hex{Q: 20, R: 0, S: -20},
 		HP: 7, MaxHP: 7, AC: 15, Speed: 6, MonsterRef: "dnd5e:monsters:goblin",
 		AttackBonus: 4, DamageDice: "1d6+2",
 	}))
