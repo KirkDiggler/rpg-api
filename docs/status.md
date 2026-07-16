@@ -11,6 +11,33 @@ This is a living doc. Edit it in the same PR that invalidates a line. Don't let 
 
 ## Active work
 
+**Wave-close blocker: stale character combat economy blocked all movement on fresh
+encounters (rpg-api#644, 2026-07-15)** — found live on the dev stack: every `MoveEntity`
+on a brand-new `FREE_ROAM` encounter failed `insufficient movement remaining: Nft, 0ft
+remaining`, even on the very first move. Root cause was NOT a code regression in this
+wave's commits (confirmed: none of them touch `MoveEntity`, the orchestrator, or
+character hydration) — `character.Character.ActionEconomy`
+(`rpg-toolkit/rulebooks/dnd5e/character`) has no encounter scoping; it is a flat field on
+the character record. rpg-toolkit's `Move()` budget gate treats any non-nil
+`ActionEconomy` as "in combat, enforce the budget" (`InCombat() == ActionEconomy != nil`),
+and `ExitCombat()` — the toolkit's own API for clearing it, whose doc literally says "call
+this when the encounter ends" — was never called anywhere: not in rpg-api, not even
+inside rpg-toolkit's own encounter package (which owns `EncounterEndedEvent` but never
+wires `ExitCombat` to it). A character that ever finished a combat (e.g. an earlier
+playtest session) carries its depleted economy — `movement_remaining: 0` — into every
+SUBSEQUENT encounter it's added to, forever, until something explicitly clears it.
+`seedMemberCombatSnapshot`'s new `clearStaleActionEconomy`
+(`internal/orchestrators/lobby/character.go`) fixes this at `StartEncounter` — the sole
+path a new encounter comes into existence, so at that exact moment no member's character
+can legitimately be mid-turn in the encounter about to exist, making it safe to
+unconditionally clear. `SeedTurnEconomyForData` (`hydrate_players.go`) could not have
+fixed this instead — it deliberately treats any non-nil economy as "already legitimately
+seeded, leave it alone" (correct for its own mid-encounter job, unable to distinguish
+live-and-depleted from stale-and-abandoned). **This is a defensive backstop, not the
+complete fix — genuinely open follow-up**: rpg-api's encounter-end handling (or the
+toolkit) should call `ExitCombat()` when an encounter properly ends, so a character never
+carries stale economy into the next one in the first place.
+
 **The Dungeon wave 1 (api half) — walls on the wire + real goblins seeded at StartEncounter (rpg-api#644, 2026-07-15)** —
 `StartEncounter` (`internal/orchestrators/lobby/start_encounter.go`) now calls
 `enc.InitRoom(20, 20, environments.PatternRandom)` right after `tkenc.New` (before any

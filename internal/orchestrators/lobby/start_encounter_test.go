@@ -4,11 +4,13 @@ import (
 	"go.uber.org/mock/gomock"
 
 	"github.com/KirkDiggler/rpg-api/internal/apierr"
+	"github.com/KirkDiggler/rpg-api/internal/entities"
 	lobbyorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/lobby"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	lobbyrepo "github.com/KirkDiggler/rpg-api/internal/repositories/lobby"
 	tkenc "github.com/KirkDiggler/rpg-toolkit/encounter"
 	"github.com/KirkDiggler/rpg-toolkit/encounter/core"
+	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 )
 
 func (s *LobbySuite) seedReadyLobby(id, host string, others ...string) {
@@ -87,6 +89,58 @@ func (s *LobbySuite) TestStartEncounter_SeedsHonestCombatSnapshot() {
 	s.Require().Empty(alice.DamageDice, "no stored field to honestly derive damage dice from")
 	s.Require().Empty(alice.DamageType, "no stored field to honestly derive a damage type from")
 	s.Require().Empty(alice.DataJSON, "hydration is the v2 orchestrator's characterData.Attach cascade's job, not StartEncounter's")
+}
+
+// TestStartEncounter_ClearsStaleActionEconomy is the wave-close playtest
+// blocker regression test (rpg-api#644): a character carrying a non-nil
+// ActionEconomy left over from a PRIOR encounter (character.ActionEconomy
+// has no encounter scoping — see clearStaleActionEconomy's doc) must have
+// it cleared by StartEncounter, or the toolkit's Move() budget gate
+// (InCombat() == ActionEconomy != nil) rejects every move on the brand-new
+// FREE_ROAM encounter with "insufficient movement remaining", even though
+// nothing about the new encounter has happened yet — reproduced live on the
+// dev stack with alice's real character data (movement_remaining: 0,
+// turn_number: 1, carried over from an earlier playtest's combat).
+func (s *LobbySuite) TestStartEncounter_ClearsStaleActionEconomy() {
+	s.seedReadyLobby("lobby-stale-economy", "alice")
+
+	staleEconomy := &toolkitchar.ActionEconomyData{
+		TurnNumber: 1, ActionsRemaining: 0, BonusActionsRemaining: 0,
+		ReactionsRemaining: 0, MovementRemaining: 0,
+	}
+	s.charRepo.EXPECT().
+		Get(gomock.Any(), characterrepo.GetInput{ID: "char-alice"}).
+		Return(&characterrepo.GetOutput{
+			Character: &entities.Character{
+				Data: &toolkitchar.Data{
+					ID: "char-alice", PlayerID: "alice", Name: "Alice",
+					HitPoints: 12, MaxHitPoints: 12,
+					ActionEconomy: staleEconomy,
+				},
+			},
+		}, nil)
+	var persisted *toolkitchar.Data
+	s.charRepo.EXPECT().
+		Update(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ interface{}, input characterrepo.UpdateInput) (*characterrepo.UpdateOutput, error) {
+			persisted = input.Character.Data
+			return &characterrepo.UpdateOutput{Character: input.Character}, nil
+		})
+
+	out, err := s.orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		PlayerID: "alice", LobbyID: "lobby-stale-economy",
+	})
+	s.Require().NoError(err, "a stale action economy must not block StartEncounter")
+	s.Require().NotEmpty(out.EncounterID)
+
+	s.Require().NotNil(persisted, "the cleared character must be persisted back to the character store")
+	s.Require().Nil(persisted.ActionEconomy, "ActionEconomy must be cleared (ExitCombat) so the fresh encounter's Move() is not budget-gated")
+
+	// HP/MaxHP still seed correctly onto the new encounter — clearing the
+	// stale economy must not disturb the honest combat-snapshot seed.
+	encData, err := s.encRepo.Get(s.ctx, out.EncounterID)
+	s.Require().NoError(err)
+	s.Require().Equal(12, encData.Players[core.PlayerID("alice")].HP)
 }
 
 func (s *LobbySuite) TestStartEncounter_CharacterNotFound_SeedsZeroHP_NotFatal() {

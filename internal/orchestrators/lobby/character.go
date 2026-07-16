@@ -5,7 +5,10 @@ import (
 	"fmt"
 
 	"github.com/KirkDiggler/rpg-api/internal/apierr"
+	"github.com/KirkDiggler/rpg-api/internal/entities"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
+	tkevents "github.com/KirkDiggler/rpg-toolkit/events"
+	tkcharacter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 )
 
 // resolveCharacter loads characterID and validates it belongs to playerID
@@ -73,9 +76,66 @@ func (o *Orchestrator) seedMemberCombatSnapshot(ctx context.Context, characterID
 	if out == nil || out.Character == nil || out.Character.Data == nil {
 		return memberCombatSnapshot{}, nil
 	}
+
+	if err := o.clearStaleActionEconomy(ctx, out.Character); err != nil {
+		return memberCombatSnapshot{}, err
+	}
+
 	return memberCombatSnapshot{
 		hp:    out.Character.Data.HitPoints,
 		maxHP: out.Character.Data.MaxHitPoints,
 		ac:    out.Character.Data.ArmorClass,
 	}, nil
+}
+
+// clearStaleActionEconomy resets char's toolkit action economy back to nil
+// (out of combat) and persists that reset, if it's carrying one forward
+// from a PRIOR encounter — a wave-close playtest blocker found live on the
+// dev stack (rpg-api#644): alice's persisted action_economy carried
+// movement_remaining=0 from an earlier session's combat into a brand-new
+// StartEncounter call, and every MoveEntity on that fresh FREE_ROAM
+// encounter failed "insufficient movement remaining: Nft, 0ft remaining" —
+// even though nothing about the NEW encounter had happened yet.
+//
+// Root cause: character.Character.ActionEconomy has no encounter scoping —
+// it is a flat field on the character record, not keyed by which encounter
+// set it. rpg-toolkit's own Move() budget gate (encounter/combat.go's
+// ErrInsufficientMovement) checks InCombat() as "does this character have a
+// non-nil action economy right now", with no way to tell "mid-turn in the
+// encounter I'm currently in" apart from "leftover from a different,
+// already-ended encounter". ExitCombat() exists specifically to clear this
+// ("Call this when the encounter ends, not between turns" — its own doc),
+// but nothing in rpg-api or rpg-toolkit's own encounter package ever calls
+// it (verified: zero call sites for either). SeedTurnEconomyForData
+// (hydrate_players.go) can't fix this either — it deliberately treats ANY
+// non-nil economy as "already legitimately seeded, don't touch it", because
+// mid-encounter it can't tell live-and-depleted apart from stale-and-
+// abandoned; that guard is correct for its own job and cannot double as
+// this one.
+//
+// StartEncounter is the correct, narrowly-scoped place for this: it is the
+// SOLE path a new encounter comes into existence (lobby-service.md), so at
+// this exact moment every member's character is, by definition, not
+// mid-turn in the encounter about to exist — clearing action economy here
+// can never stomp a real in-progress turn. This is a defensive backstop,
+// not the complete fix: the toolkit or rpg-api's encounter-end handling
+// should still call ExitCombat() when an encounter properly ends, so a
+// character never carries stale economy into the NEXT encounter in the
+// first place; that gap remains open (see docs/status.md).
+func (o *Orchestrator) clearStaleActionEconomy(ctx context.Context, char *entities.Character) error {
+	if char.Data == nil || char.Data.ActionEconomy == nil {
+		return nil
+	}
+	live, err := tkcharacter.LoadFromData(ctx, char.Data, tkevents.NewEventBus())
+	if err != nil {
+		return fmt.Errorf("load character %q to clear stale combat economy: %w", char.Data.ID, err)
+	}
+	if _, exitErr := live.ExitCombat(ctx, &tkcharacter.ExitCombatInput{}); exitErr != nil {
+		return fmt.Errorf("clear stale combat economy for character %q: %w", char.Data.ID, exitErr)
+	}
+	char.Data = live.ToData()
+	if _, updErr := o.characterRepo.Update(ctx, characterrepo.UpdateInput{Character: char}); updErr != nil {
+		return fmt.Errorf("persist cleared combat economy for character %q: %w", char.Data.ID, updErr)
+	}
+	return nil
 }
