@@ -40,10 +40,18 @@ shape rpg-api#616 flags on the old v2 encounter create/hydrate path.
 ### Handler (`internal/handlers/dnd5e/lobby/v1alpha1/`)
 
 One file per RPC (`create_lobby.go`, `join_lobby.go`, `set_ready.go`,
-`leave_lobby.go`, `start_encounter.go`, `stream_lobby.go`), plus `handler.go`
-(Config/New only), `translate.go` (entity <-> proto), and `status.go` (one shared
-`lobbyStatusError` switch covering every sentinel — each RPC only ever returns a
-subset, so one exhaustive mapper beats six near-duplicates).
+`leave_lobby.go`, `start_encounter.go`, `stream_lobby.go`, `get_my_active_lobby.go`),
+plus `handler.go` (Config/New only), `translate.go` (entity <-> proto), and
+`status.go` (one shared `lobbyStatusError` switch covering every sentinel — each RPC
+only ever returns a subset, so one exhaustive mapper beats six near-duplicates).
+
+`get_my_active_lobby.go` (rpg-api#653) is the resume-after-refresh lookup
+(rpg-dnd5e-web#444): unlike every other RPC here, it takes no request fields —
+identity comes entirely from `auth.GetPlayerID(ctx)`, matching `StreamLobby`'s
+pattern (a client-supplied `player_id` would let a caller query another player's
+lobby). "No active lobby" is a valid empty response, not an error — see the
+Repository section below for the index it reads and the orchestrator's
+`GetMyActiveLobby` doc comment for the STARTED-lobby liveness cross-check.
 
 `StartEncounter` needs the SAME production combat/movement resolvers the v2
 encounter handler builds (`Dnd5eCombatResolver` / `Dnd5eMovementResolver` —
@@ -99,6 +107,16 @@ secondary index (`JoinLobby` is the only RPC that addresses a lobby by ref inste
 ID), both refreshed with the same TTL on every `Save`, mirroring
 `internal/repositories/encounters/v2/redis.go`. In-memory variant for tests, same
 JSON-round-trip-on-every-call contract.
+
+A third index, `player:<playerID>:lobby` (rpg-api#653), backs `GetByPlayerID` —
+`GetMyActiveLobby`'s resume-after-refresh lookup. `Save` writes/refreshes this entry,
+same TTL, same transaction, for every player currently in `data.Members` — one
+active lobby per player, last write wins, no dual-membership tracking (nothing stops
+a player being a member of two lobbies at once; the index just points at whichever
+was `Save`d most recently). Because `Save` can only add or refresh entries from a
+`Data` snapshot — it has no way to see who was removed — `LeaveLobby` calls the
+repository's `ClearPlayerIndex` explicitly for the departing player; no other RPC
+needs to.
 
 ## Contract edge cases (decided in the design, implemented here)
 
