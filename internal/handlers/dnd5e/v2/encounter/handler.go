@@ -351,7 +351,7 @@ func (h *Handler) StreamEncounter(req *encounterv2pb.StreamEncounterRequest, str
 			if !ok {
 				return nil
 			}
-			outs, translateErr := h.translateForStream(ctx, encID, evt, core.PlayerID(playerID))
+			out, translateErr := h.translateForStream(ctx, encID, evt, core.PlayerID(playerID))
 			switch {
 			case errors.Is(translateErr, ErrViewerSawNothing):
 				continue
@@ -368,7 +368,7 @@ func (h *Handler) StreamEncounter(req *encounterv2pb.StreamEncounterRequest, str
 			case translateErr != nil:
 				return status.Errorf(codes.Internal, "translate %q: %v", string(encID), translateErr)
 			}
-			for _, out := range outs {
+			if out != nil {
 				if err := stream.Send(out); err != nil {
 					return err
 				}
@@ -378,27 +378,15 @@ func (h *Handler) StreamEncounter(req *encounterv2pb.StreamEncounterRequest, str
 }
 
 // translateForStream wraps TranslateEvent with the data-aware paths this
-// stream loop needs. Returns a slice (usually one envelope) so a single
-// broker event can translate to more than one wire envelope when needed —
-// see the InitiativeRolled case below.
+// stream loop needs — every broker event maps to exactly one wire envelope
+// (previously a slice, back when the now-deleted InitiativeRolled synthesis
+// made one broker event produce two; simplified to a single return per the
+// gate review on rpg-api#650's PR now that nothing does that anymore).
 //
 //   - InputRequiredDeliveredEvent (Wave 2.11d): reaction prompts store their
 //     content on Encounter.Data.PendingReactionPrompts (rather than on the
 //     event payload), so the translator needs the encounter snapshot to
 //     look up the prompt content.
-//   - ModeChangedEvent transitioning to TURN_BASED (rpg-api#644 playtest
-//     follow-up): the toolkit's rollInitiative (inside SetMode) rolls
-//     data.Initiative but publishes no dedicated roster event — the client's
-//     initiativeOrder otherwise stays empty until the NEXT full snapshot
-//     (only buildTurnState populates it, and that only runs at connect
-//     time). Broadcasting a synthesized InitiativeRolled envelope alongside
-//     the normal ModeChanged translation closes that gap without a proto
-//     change (InitiativeRolled already exists on the wire, unused — see
-//     translateInitiativeRolledEvent's doc). Loads data fresh rather than
-//     threading it through from elsewhere in the loop: this is the
-//     established pattern here (mirrors the InputRequiredDeliveredEvent
-//     branch immediately above), and a mode-transition event is rare enough
-//     (once per fight) that the extra repo round-trip is not a concern.
 //   - EntityAppearedEvent (rpg-api#644 playtest follow-up): the toolkit
 //     event carries only an entity ID + position — no type, HP, or monster
 //     ref — so the wire Entity would otherwise project as type=UNSPECIFIED
@@ -406,14 +394,20 @@ func (h *Handler) StreamEncounter(req *encounterv2pb.StreamEncounterRequest, str
 //     generic capsule instead of its model). Looks the entity up in the
 //     freshly-loaded data and builds the full Entity via the same
 //     playerEntity/monsterEntity builders ProjectFor's snapshot path uses —
-//     see translateEntityAppearedEventWithData's doc for why this read,
-//     unlike the InitiativeRolled one above, is not exposed to the
-//     rpg-api#647 race class and needs no retry. This fires far more often
-//     than ModeChanged during active combat (any LOS-changing move, not
-//     just combat entry); if the extra per-event repo round-trip ever shows
-//     up as a real cost, the natural follow-up is caching the connect-time
-//     snapshot's Players/Monsters in this stream goroutine's own state
-//     instead (see docs/status.md's rough edges).
+//     see translateEntityAppearedEventWithData's doc for why this read is
+//     not exposed to the rpg-api#647 race class and needs no retry. This
+//     fires far more often than ModeChanged during active combat (any
+//     LOS-changing move, not just combat entry); if the extra per-event repo
+//     round-trip ever shows up as a real cost, the natural follow-up is
+//     caching the connect-time snapshot's Players/Monsters in this stream
+//     goroutine's own state instead (see docs/status.md's rough edges).
+//
+// InitiativeRolled no longer needs a data-aware branch here: rpg-toolkit#765
+// (encounter v0.28.0 introduced the seam; this repo pins whatever is current —
+// see go.mod) publishes it directly, sequenced between ModeChanged and
+// TurnStarted with its own real sequence number, so the plain TranslateEvent
+// case in translate.go handles it like any other broadcast event — no
+// synthesis, no repo read-back, no retry.
 //
 // Every other event type continues to use TranslateEvent unchanged.
 func (h *Handler) translateForStream(
@@ -421,7 +415,7 @@ func (h *Handler) translateForStream(
 	encID core.EncounterID,
 	evt tkevents.EncounterEvent,
 	viewer core.PlayerID,
-) ([]*encounterv2pb.EncounterEvent, error) {
+) (*encounterv2pb.EncounterEvent, error) {
 	if irEvt, ok := evt.(*tkevents.InputRequiredDeliveredEvent); ok {
 		// Load the encounter to read the pending prompt content. The prompt
 		// lives on Data.PendingReactionPrompts and is the canonical source
@@ -434,11 +428,7 @@ func (h *Handler) translateForStream(
 		if data != nil {
 			prompt = data.PendingReactionPrompts[irEvt.ReactorID]
 		}
-		out, err := TranslateInputRequiredDelivered(irEvt, viewer, h.now(), prompt)
-		if err != nil {
-			return nil, err
-		}
-		return []*encounterv2pb.EncounterEvent{out}, nil
+		return TranslateInputRequiredDelivered(irEvt, viewer, h.now(), prompt)
 	}
 
 	if appearEvt, ok := evt.(*tkevents.EntityAppearedEvent); ok {
@@ -446,68 +436,8 @@ func (h *Handler) translateForStream(
 		if err != nil {
 			return nil, fmt.Errorf("load encounter for entity-appeared enrichment: %w", err)
 		}
-		out, err := translateEntityAppearedEventWithData(appearEvt, viewer, h.now(), data)
-		if err != nil {
-			return nil, err
-		}
-		return []*encounterv2pb.EncounterEvent{out}, nil
+		return translateEntityAppearedEventWithData(appearEvt, viewer, h.now(), data)
 	}
 
-	out, err := TranslateEvent(evt, viewer, h.now())
-	if err != nil {
-		return nil, err
-	}
-	envelopes := []*encounterv2pb.EncounterEvent{out}
-
-	if modeEvt, ok := evt.(*tkevents.ModeChangedEvent); ok && modeEvt.To == core.ModeTurnBased {
-		initiative, err := h.loadRolledInitiative(ctx, encID)
-		if err != nil {
-			return nil, err
-		}
-		envelopes = append(envelopes, translateInitiativeRolledEvent(modeEvt.Sequence(), initiative, h.now()))
-	}
-
-	return envelopes, nil
-}
-
-// loadRolledInitiative reads the encounter's Initiative back from the repo
-// for the InitiativeRolled synthesis above. This races against the
-// verb-then-persist pattern every combat-capable orchestrator method uses
-// (e.g. MoveEntity: enc.Move(...) — which mutates + PUBLISHES the
-// ModeChangedEvent this function is reacting to, synchronously, INSIDE the
-// call — THEN, only once Move returns, the orchestrator calls Save). So the
-// very broker event that wakes this stream goroutine can arrive before the
-// orchestrator's Save lands, and a single h.encRepo.Get can read the
-// pre-transition (empty-Initiative) snapshot. Bounded retry converts that
-// race into a short, harmless wait — Save is already the very next thing
-// the orchestrator does after Move returns, so this resolves in one or two
-// iterations in practice; initiativePollAttempts/initiativePollInterval
-// bound the worst case at ~150ms so a genuinely stuck load still returns
-// (with whatever — possibly empty — Initiative it last read) rather than
-// hanging the stream.
-const (
-	initiativePollAttempts = 15
-	initiativePollInterval = 10 * time.Millisecond
-)
-
-func (h *Handler) loadRolledInitiative(ctx context.Context, encID core.EncounterID) ([]core.EntityID, error) {
-	var initiative []core.EntityID
-	for attempt := 0; attempt < initiativePollAttempts; attempt++ {
-		data, err := h.encRepo.Get(ctx, string(encID))
-		if err != nil {
-			return nil, fmt.Errorf("load encounter for initiative roster: %w", err)
-		}
-		if data != nil {
-			initiative = data.Initiative
-			if data.Mode == core.ModeTurnBased && len(initiative) > 0 {
-				return initiative, nil
-			}
-		}
-		select {
-		case <-ctx.Done():
-			return initiative, nil
-		case <-time.After(initiativePollInterval):
-		}
-	}
-	return initiative, nil
+	return TranslateEvent(evt, viewer, h.now())
 }
