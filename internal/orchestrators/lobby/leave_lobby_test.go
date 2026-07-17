@@ -80,3 +80,25 @@ func (s *LobbySuite) TestLeaveLobby_LobbyStarted_FailedPrecondition() {
 	_, err := s.orch.LeaveLobby(s.ctx, &lobbyorch.LeaveLobbyInput{PlayerID: "alice", LobbyID: "lobby-l5"})
 	s.Require().ErrorIs(err, lobbyorch.ErrLobbyAlreadyStarted)
 }
+
+func (s *LobbySuite) TestLeaveLobby_ClearsPlayerActiveLobbyIndex() {
+	s.seedLobby(&lobbyrepo.Data{
+		ID: "lobby-l6", HostPlayerID: "alice", Status: lobbyrepo.StatusWaiting,
+		Members: map[string]*lobbyrepo.Member{
+			"alice": {PlayerID: "alice", IsHost: true},
+			"bob":   {PlayerID: "bob"},
+		},
+		MemberOrder: []string{"alice", "bob"},
+	})
+
+	_, err := s.orch.LeaveLobby(s.ctx, &lobbyorch.LeaveLobbyInput{PlayerID: "bob", LobbyID: "lobby-l6"})
+	s.Require().NoError(err)
+
+	_, err = s.lobbyRepo.GetByPlayerID(s.ctx, "bob")
+	s.Require().Error(err, "a departed member's active-lobby index entry must be cleared, not left stale")
+	s.Require().ErrorIs(err, lobbyrepo.ErrNotFound)
+
+	stillActive, err := s.lobbyRepo.GetByPlayerID(s.ctx, "alice")
+	s.Require().NoError(err, "the remaining member's index entry must be untouched")
+	s.Require().Equal("lobby-l6", stillActive.ID)
+}

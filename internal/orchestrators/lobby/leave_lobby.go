@@ -67,6 +67,14 @@ func (o *Orchestrator) LeaveLobby(ctx context.Context, in *LeaveLobbyInput) (*Le
 	if err := o.lobbyRepo.Save(ctx, data); err != nil {
 		return nil, fmt.Errorf("save lobby %q: %w", in.LobbyID, err)
 	}
+	// Save only adds/refreshes index entries for members still present in
+	// data.Members — it cannot infer removal from a single Data value (see
+	// Repository.Save's doc comment). The departing player's stale entry
+	// must be cleared explicitly, or GetMyActiveLobby would keep resolving
+	// them to a lobby they already left.
+	if err := o.lobbyRepo.ClearPlayerIndex(ctx, in.PlayerID); err != nil {
+		return nil, fmt.Errorf("clear player index for %q: %w", in.PlayerID, err)
+	}
 
 	o.lobbyBroker.Publish(in.LobbyID, &Event{
 		Kind:       EventKindMemberLeft,

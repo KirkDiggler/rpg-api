@@ -17,8 +17,9 @@ import (
 // write.
 func NewInMemory() Repository {
 	return &inMemory{
-		byID:    make(map[string][]byte),
-		idByRef: make(map[string]string),
+		byID:       make(map[string][]byte),
+		idByRef:    make(map[string]string),
+		idByPlayer: make(map[string]string),
 	}
 }
 
@@ -27,6 +28,10 @@ type inMemory struct {
 	byID map[string][]byte
 	// idByRef maps join_ref -> lobby id, the secondary index GetByJoinRef reads.
 	idByRef map[string]string
+	// idByPlayer maps player id -> lobby id, the secondary index
+	// GetByPlayerID reads. Save keeps this in lockstep with data.Members on
+	// every write; ClearPlayerIndex is the only way an entry is removed.
+	idByPlayer map[string]string
 }
 
 func (r *inMemory) Get(_ context.Context, id string) (*Data, error) {
@@ -42,6 +47,20 @@ func (r *inMemory) Get(_ context.Context, id string) (*Data, error) {
 func (r *inMemory) GetByJoinRef(_ context.Context, joinRef string) (*Data, error) {
 	r.mu.Lock()
 	id, ok := r.idByRef[joinRef]
+	var b []byte
+	if ok {
+		b, ok = r.byID[id]
+	}
+	r.mu.Unlock()
+	if !ok {
+		return nil, ErrNotFound
+	}
+	return decode(b, id)
+}
+
+func (r *inMemory) GetByPlayerID(_ context.Context, playerID string) (*Data, error) {
+	r.mu.Lock()
+	id, ok := r.idByPlayer[playerID]
 	var b []byte
 	if ok {
 		b, ok = r.byID[id]
@@ -70,6 +89,16 @@ func (r *inMemory) Save(_ context.Context, data *Data) error {
 	if data.JoinRef != "" {
 		r.idByRef[data.JoinRef] = data.ID
 	}
+	for playerID := range data.Members {
+		r.idByPlayer[playerID] = data.ID
+	}
+	return nil
+}
+
+func (r *inMemory) ClearPlayerIndex(_ context.Context, playerID string) error {
+	r.mu.Lock()
+	delete(r.idByPlayer, playerID)
+	r.mu.Unlock()
 	return nil
 }
 

@@ -64,8 +64,9 @@ type Data struct {
 }
 
 // Repository persists lobby Data. Implementations MUST support lookup by
-// both ID (every RPC except JoinLobby) and JoinRef (JoinLobby's only
-// membership key, per the CreateLobby -> {lobby_id, join_ref} split).
+// ID (every RPC except JoinLobby), JoinRef (JoinLobby's only membership key,
+// per the CreateLobby -> {lobby_id, join_ref} split), and PlayerID (the
+// resume-after-refresh lookup, GetMyActiveLobby — rpg-dnd5e-web#444).
 type Repository interface {
 	// Get returns ErrNotFound if id has no stored data.
 	Get(ctx context.Context, id string) (*Data, error)
@@ -73,7 +74,28 @@ type Repository interface {
 	// GetByJoinRef returns ErrNotFound if joinRef has no stored data.
 	GetByJoinRef(ctx context.Context, joinRef string) (*Data, error)
 
-	// Save replaces the stored data for data.ID, indexed by both ID and
-	// JoinRef.
+	// GetByPlayerID returns the lobby playerID is currently indexed against,
+	// or ErrNotFound if playerID has no active index entry. One active lobby
+	// per player: Save re-indexes every member present in data.Members on
+	// every call, so a player who is (or becomes) a member of a second lobby
+	// has their entry silently overwritten to point at whichever lobby was
+	// Saved most recently — last write wins, no error, no dual-membership
+	// tracking. Callers needing liveness (is the STARTED lobby's encounter
+	// still running) must check separately; this method returns raw stored
+	// Data with no cross-check.
+	GetByPlayerID(ctx context.Context, playerID string) (*Data, error)
+
+	// Save replaces the stored data for data.ID, indexed by ID, JoinRef, and
+	// PlayerID for every member currently in data.Members. Save only ever
+	// ADDS/refreshes player index entries for members present in data — it
+	// never removes an entry for a player who is no longer a member (a
+	// removed member's stale entry would otherwise keep resolving to this
+	// lobby). Callers that remove a member (LeaveLobby) MUST pair their Save
+	// with an explicit ClearPlayerIndex for that player.
 	Save(ctx context.Context, data *Data) error
+
+	// ClearPlayerIndex removes playerID's active-lobby index entry. No-op
+	// (nil error) if playerID has no entry. LeaveLobby calls this for the
+	// departing player; nothing else needs to.
+	ClearPlayerIndex(ctx context.Context, playerID string) error
 }
