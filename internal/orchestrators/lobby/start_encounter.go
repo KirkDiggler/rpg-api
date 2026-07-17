@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math/rand"
 
 	lobbyrepo "github.com/KirkDiggler/rpg-api/internal/repositories/lobby"
 	rpgcore "github.com/KirkDiggler/rpg-toolkit/core"
@@ -212,66 +211,113 @@ func (o *Orchestrator) StartEncounter(ctx context.Context, in *StartEncounterInp
 // would flip the encounter to TURN_BASED immediately, so placement has to be
 // pre-verified before AddMonster runs, not after.
 //
-// KNOWN TOOLKIT GAP (flag for a follow-up rpg-toolkit issue): the spawn
-// engine's own position search — BasicSpawnEngine.findValidPosition (a raw
-// random X,Y in [0,10), zero room awareness) and, when SpatialRules are
-// configured, ConstraintSolver.FindValidPositions (a hardcoded 1.0-10.0
-// grid sweep) — never calls room.CanPlaceEntity or room.IsLineOfSightBlocked
-// against the actual spatial.Room this wave built. Its optional LineOfSight
-// constraint is a Euclidean-distance stub (tools/spawn/constraints.go's
-// hasLineOfSight: "Real implementation would use spatial room queries for
-// wall intersections" — distance <= 8.0, walls not considered at all).
-// SpawnConfig also has no fixed/target-position injection point for a
-// caller that already knows where it wants an entity. So PopulateRoom's own
-// SpawnedEntity.Position is unusable for this wave's correctness bar and is
-// deliberately discarded below in favor of a position computed from real
-// toolkit predicates (safeGoblinHexes). PopulateRoom is still called (not
-// bypassed) so the RoomOrchestrator wiring is genuinely exercised end to
-// end; this does leave each goblin also registered as a room occupant at
-// that discarded scattered position, a side effect that's inert for wave 1
-// (monsters aren't otherwise tracked in the spatial room — only walls
-// occupy it, see rpg-toolkit encounter/space.go's wallCheckEntity doc — and
-// nothing in this flow queries room occupancy for monster positions).
+// rpg-toolkit#760 (tools/spawn v0.3.0) made the position search itself
+// room-aware (Room.CanPlaceEntity/bounds are consulted by the search, not
+// just by a post-hoc discard-and-recompute) and added EntityGroup's
+// PositionOracle: a caller predicate ANDed into that search. The
+// out-of-sight requirement is expressed here as a PositionOracle closing
+// over the toolkit's own perception.CanSeeAt — the same predicate this
+// function's doc above already required, just handed to the engine instead
+// of re-derived by a manual grid walk afterward. The engine's returned
+// SpawnedEntity.Position is now used directly; there is no discarded
+// position and no separate double-registration side effect (previously
+// noted as inert — see PR #645 gate note N1 — now gone because there is
+// only one placement per goblin, not a scattered one PopulateRoom picks
+// plus a recomputed one this function used to override it with).
+//
+// Each goblin gets its OWN single-entity selection table and its own
+// EntityGroup (Quantity.Fixed=1), rather than one shared "goblins" table
+// with Quantity.Fixed=goblinCount. This is deliberate, not cosmetic:
+// BasicSelectablesRegistry.GetEntities samples WITH replacement
+// (selectables_registry.go: `index := r.random.Intn(len(table))` per pick,
+// independently each iteration, no dedup) — a 2-entity table asked for 2
+// entities can return the same *monster.Monster pointer twice. That was
+// invisible to the OLD seedGoblins (it discarded the selection's identity
+// entirely and matched by slice index against its own separately-tracked
+// goblinIDs), but this function now correlates each SpawnedEntity back to a
+// specific pre-built goblin via Entity.GetID() (see the position-matching
+// loop below), so a duplicate selection would silently place one goblin
+// twice and drop the other. A 1-entity table can never return a duplicate
+// (there is nothing else to duplicate against), which sidesteps the gap
+// entirely without depending on a toolkit-side sampling fix — these are
+// individually pre-identified fixed entities (monster.NewGoblin per ID), not
+// a random pick from a shared pool, so one-group-per-entity is the more
+// honest modeling anyway, not a workaround bolted onto the wrong tool.
 func (o *Orchestrator) seedGoblins(ctx context.Context, enc *tkenc.Encounter, encID core.EncounterID) error {
+	room := enc.Room()
+	if room == nil {
+		return errors.New("lobby orchestrator: encounter has no room to place goblins in (InitRoom not called)")
+	}
+
 	goblinIDs := make([]core.EntityID, goblinCount)
 	goblins := make([]*monster.Monster, goblinCount)
-	entities := make([]rpgcore.Entity, goblinCount)
+	registry := spawn.NewBasicSelectablesRegistry()
+	groups := make([]spawn.EntityGroup, goblinCount)
+
+	// The oracle re-derives the players' view each call rather than
+	// snapshotting once: the search may probe many candidates per entity, and
+	// re-reading enc.ToData() per candidate keeps this in lockstep with
+	// whatever the engine has placed so far in this same call (no player
+	// positions change mid-seed, so this is for safety against future
+	// reordering, not a currently-observed staleness risk).
+	outOfSight := func(pos spatial.Position) bool {
+		hex := core.HexFromPosition(pos)
+		for _, p := range enc.ToData().Players {
+			if p.View != nil && perception.CanSeeAt(p.View, hex, room) {
+				return false
+			}
+		}
+		return true
+	}
+
+	one := 1
 	for i := 0; i < goblinCount; i++ {
 		id := core.EntityID(fmt.Sprintf("goblin-%d", i+1))
 		g := monster.NewGoblin(string(id))
 		goblinIDs[i] = id
 		goblins[i] = g
-		entities[i] = g
+
+		tableID := string(id)
+		if err := registry.RegisterTable(tableID, []rpgcore.Entity{g}); err != nil {
+			return fmt.Errorf("register goblin selection table %q: %w", tableID, err)
+		}
+		groups[i] = spawn.EntityGroup{
+			ID:             tableID,
+			Type:           "monster",
+			SelectionTable: tableID,
+			Quantity:       spawn.QuantitySpec{Fixed: &one},
+			PositionOracle: outOfSight,
+		}
 	}
 
-	registry := spawn.NewBasicSelectablesRegistry()
-	if err := registry.RegisterTable("goblins", entities); err != nil {
-		return fmt.Errorf("register goblin selection table: %w", err)
-	}
 	engine := spawn.NewBasicSpawnEngine(spawn.BasicSpawnEngineConfig{
 		ID:               "startencounter-goblins",
 		SelectablesReg:   registry,
 		RoomOrchestrator: enc.RoomOrchestrator(),
 	})
-	quantity := goblinCount
-	if _, err := engine.PopulateRoom(ctx, string(encID), spawn.SpawnConfig{
-		EntityGroups: []spawn.EntityGroup{{
-			ID:             "goblins",
-			Type:           "monster",
-			SelectionTable: "goblins",
-			Quantity:       spawn.QuantitySpec{Fixed: &quantity},
-		}},
-		Pattern: spawn.PatternScattered,
-	}); err != nil {
+
+	result, err := engine.PopulateRoom(ctx, string(encID), spawn.SpawnConfig{
+		EntityGroups: groups,
+		Pattern:      spawn.PatternScattered,
+	})
+	if err != nil {
 		return fmt.Errorf("spawn engine populate room: %w", err)
 	}
+	if len(result.Failures) > 0 {
+		return fmt.Errorf("lobby orchestrator: spawn engine failed to place %d of %d goblin(s): %+v",
+			len(result.Failures), goblinCount, result.Failures)
+	}
 
-	safeHexes, err := safeGoblinHexes(enc, goblinCount)
-	if err != nil {
-		return err
+	positions := make(map[core.EntityID]core.Hex, len(result.SpawnedEntities))
+	for _, spawned := range result.SpawnedEntities {
+		positions[core.EntityID(spawned.Entity.GetID())] = core.HexFromPosition(spawned.Position)
 	}
 
 	for i, id := range goblinIDs {
+		pos, ok := positions[id]
+		if !ok {
+			return fmt.Errorf("lobby orchestrator: spawn engine reported no position for goblin %q", id)
+		}
 		goblinData := goblins[i].ToData()
 		goblinDataJSON, marshalErr := json.Marshal(goblinData)
 		if marshalErr != nil {
@@ -279,7 +325,7 @@ func (o *Orchestrator) seedGoblins(ctx context.Context, enc *tkenc.Encounter, en
 		}
 		if addErr := enc.AddMonster(tkenc.MonsterInput{
 			ID:          id,
-			Position:    safeHexes[i],
+			Position:    pos,
 			HP:          goblinData.HitPoints,
 			MaxHP:       goblinData.MaxHitPoints,
 			AC:          goblinData.ArmorClass,
@@ -295,60 +341,3 @@ func (o *Orchestrator) seedGoblins(ctx context.Context, enc *tkenc.Encounter, en
 	}
 	return nil
 }
-
-// safeGoblinHexes returns n distinct hexes within the encounter's room that
-// are (a) not wall-occupied (room.CanPlaceEntity) and (b) not currently
-// visible to ANY player in the encounter, verified via the toolkit's own
-// wall-aware perception.CanSeeAt. Enumerates every offset-coordinate cell in
-// the room's bounds — core.HexFromPosition is the same offset<->cube bridge
-// rpg-toolkit's rebuildRoomFromData uses to place walls, so this walks
-// exactly the grid the room's wall placements are snapped to.
-func safeGoblinHexes(enc *tkenc.Encounter, n int) ([]core.Hex, error) {
-	room := enc.Room()
-	if room == nil {
-		return nil, errors.New("lobby orchestrator: encounter has no room to place goblins in (InitRoom not called)")
-	}
-	data := enc.ToData()
-
-	var candidates []core.Hex
-	for x := 0; x < roomWidth; x++ {
-		for y := 0; y < roomHeight; y++ {
-			hex := core.HexFromPosition(spatial.Position{X: float64(x), Y: float64(y)})
-			if !room.CanPlaceEntity(placementProbe{}, hex.ToPosition()) {
-				continue // wall-occupied
-			}
-			visibleToSomeone := false
-			for _, p := range data.Players {
-				if p.View != nil && perception.CanSeeAt(p.View, hex, room) {
-					visibleToSomeone = true
-					break
-				}
-			}
-			if !visibleToSomeone {
-				candidates = append(candidates, hex)
-			}
-		}
-	}
-	if len(candidates) < n {
-		return nil, fmt.Errorf(
-			"lobby orchestrator: found only %d safe (unwalled, unseen) hex(es) for %d goblins in a %dx%d room",
-			len(candidates), n, roomWidth, roomHeight)
-	}
-
-	// Random, distinct pick from the safe set so goblins scatter rather than
-	// always landing in the same corner. #nosec G404: game placement, not
-	// security-sensitive.
-	rand.Shuffle(len(candidates), func(i, j int) { candidates[i], candidates[j] = candidates[j], candidates[i] })
-	return candidates[:n], nil
-}
-
-// placementProbe is a throwaway core.Entity used only to query
-// room.CanPlaceEntity for wall-occupancy. Mirrors rpg-toolkit's own
-// wallCheckEntity (encounter/space.go), which is unexported: goblins
-// themselves are never placed into the spatial room (only walls occupy it —
-// see that same doc), so this identity is never compared against a real
-// occupant.
-type placementProbe struct{}
-
-func (placementProbe) GetID() string               { return "placement-probe" }
-func (placementProbe) GetType() rpgcore.EntityType { return "placement-probe" }
