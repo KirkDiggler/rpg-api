@@ -70,11 +70,20 @@ func (o *Orchestrator) LeaveLobby(ctx context.Context, in *LeaveLobbyInput) (*Le
 	// Save only adds/refreshes index entries for members still present in
 	// data.Members — it cannot infer removal from a single Data value (see
 	// Repository.Save's doc comment). The departing player's stale entry
-	// must be cleared explicitly, or GetMyActiveLobby would keep resolving
-	// them to a lobby they already left.
-	if err := o.lobbyRepo.ClearPlayerIndex(ctx, in.PlayerID); err != nil {
-		return nil, fmt.Errorf("clear player index for %q: %w", in.PlayerID, err)
-	}
+	// should be cleared explicitly, or GetMyActiveLobby could keep resolving
+	// them to a lobby they already left (until the entry's TTL expires).
+	//
+	// Best-effort, deliberately non-fatal: by this line the membership
+	// mutation above is already durable — that Save succeeding is what
+	// "the leave happened" means. Failing the RPC here would report an
+	// error for a leave that actually went through, skip the MemberLeft/
+	// HostChanged broadcast other connected clients depend on, and make a
+	// caller's retry hit ErrPlayerNotInLobby (the member is already gone)
+	// even though they saw a failure — non-idempotent from the caller's
+	// point of view. No logger exists in this package to record the
+	// failure; the narrow cost of swallowing it is a stale index entry
+	// bounded by the same TTL every other index entry already relies on.
+	_ = o.lobbyRepo.ClearPlayerIndex(ctx, in.PlayerID)
 
 	o.lobbyBroker.Publish(in.LobbyID, &Event{
 		Kind:       EventKindMemberLeft,

@@ -46,6 +46,9 @@ func (o *Orchestrator) GetMyActiveLobby(ctx context.Context, in *GetMyActiveLobb
 	if in == nil {
 		return nil, errors.New("lobby orchestrator: GetMyActiveLobbyInput is required")
 	}
+	if in.PlayerID == "" {
+		return nil, errors.New("lobby orchestrator: GetMyActiveLobbyInput.PlayerID is required")
+	}
 
 	data, err := o.lobbyRepo.GetByPlayerID(ctx, in.PlayerID)
 	if err != nil {

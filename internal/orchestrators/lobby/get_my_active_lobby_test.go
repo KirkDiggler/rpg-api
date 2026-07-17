@@ -77,3 +77,11 @@ func (s *LobbySuite) TestGetMyActiveLobby_NilInput_Errors() {
 	_, err := s.orch.GetMyActiveLobby(s.ctx, nil)
 	s.Require().Error(err)
 }
+
+func (s *LobbySuite) TestGetMyActiveLobby_EmptyPlayerID_Errors() {
+	// An empty PlayerID must fail loudly, not silently resolve to "no active
+	// lobby" — that would mask a caller bug (e.g. an auth-context wiring
+	// mistake upstream) as a legitimate empty result.
+	_, err := s.orch.GetMyActiveLobby(s.ctx, &lobbyorch.GetMyActiveLobbyInput{PlayerID: ""})
+	s.Require().Error(err)
+}

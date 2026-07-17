@@ -1,9 +1,27 @@
 package lobby_test
 
 import (
+	"context"
+	"errors"
+
 	lobbyorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/lobby"
 	lobbyrepo "github.com/KirkDiggler/rpg-api/internal/repositories/lobby"
 )
+
+// clearIndexFailingRepo wraps a real Repository and forces every
+// ClearPlayerIndex call to fail, so tests can pin LeaveLobby's behavior when
+// the index-cleanup step hits an infra error after the membership mutation
+// (Save) has already durably succeeded. Not a gomock double — a small
+// hand-rolled wrapper is simpler than a full interface mock for one
+// overridden method (feedback_test_double_naming: reserve "mock" for
+// gomock-generated types).
+type clearIndexFailingRepo struct {
+	lobbyrepo.Repository
+}
+
+func (r *clearIndexFailingRepo) ClearPlayerIndex(context.Context, string) error {
+	return errors.New("clearIndexFailingRepo: simulated infra failure")
+}
 
 func (s *LobbySuite) TestLeaveLobby_NonHostLeaves_RemovesSeat() {
 	s.seedLobby(&lobbyrepo.Data{
@@ -101,4 +119,40 @@ func (s *LobbySuite) TestLeaveLobby_ClearsPlayerActiveLobbyIndex() {
 	stillActive, err := s.lobbyRepo.GetByPlayerID(s.ctx, "alice")
 	s.Require().NoError(err, "the remaining member's index entry must be untouched")
 	s.Require().Equal("lobby-l6", stillActive.ID)
+}
+
+// TestLeaveLobby_ClearPlayerIndexFails_StillSucceedsAndBroadcasts pins the
+// Copilot-flagged correctness fix on rpg-api#654: the membership mutation
+// (Save) is the durable, authoritative "did the leave happen" — a failure in
+// the secondary index cleanup that follows it must NOT turn a real leave
+// into a reported error (that would make the RPC non-idempotent: a retry
+// would immediately hit ErrPlayerNotInLobby since the member is already
+// gone) and must NOT suppress the MemberLeft broadcast other connected
+// clients depend on.
+func (s *LobbySuite) TestLeaveLobby_ClearPlayerIndexFails_StillSucceedsAndBroadcasts() {
+	s.seedLobby(&lobbyrepo.Data{
+		ID: "lobby-l7", HostPlayerID: "alice", Status: lobbyrepo.StatusWaiting,
+		Members: map[string]*lobbyrepo.Member{
+			"alice": {PlayerID: "alice", IsHost: true},
+			"bob":   {PlayerID: "bob"},
+		},
+		MemberOrder: []string{"alice", "bob"},
+	})
+
+	sub, err := s.broker.Subscribe("lobby-l7")
+	s.Require().NoError(err)
+	defer func() { _ = sub.Close() }()
+
+	failingOrch := s.newOrchestratorWithLobbyRepo(&clearIndexFailingRepo{Repository: s.lobbyRepo})
+
+	_, err = failingOrch.LeaveLobby(s.ctx, &lobbyorch.LeaveLobbyInput{PlayerID: "bob", LobbyID: "lobby-l7"})
+	s.Require().NoError(err, "a ClearPlayerIndex failure must not fail the leave itself")
+
+	data, err := s.lobbyRepo.Get(s.ctx, "lobby-l7")
+	s.Require().NoError(err)
+	s.Require().NotContains(data.Members, "bob", "the membership mutation must still have happened")
+
+	evt := <-sub.Events()
+	s.Require().Equal(lobbyorch.EventKindMemberLeft, evt.Kind, "the broadcast must still fire despite the index-cleanup failure")
+	s.Require().Equal("bob", evt.MemberLeft.PlayerID)
 }
