@@ -73,6 +73,10 @@ const (
 // dynamic SpawnConfig-driven counts are wave 2+).
 const goblinCount = 2
 
+// entityGroupTypeMonster is the spawn.EntityGroup.Type tag for goblin
+// placement groups in seedGoblins below.
+const entityGroupTypeMonster = "monster"
+
 // Goblin combat-snapshot constants, matching every other goblin fixture in
 // this codebase (cmd/devseed/main.go, internal/pkg/devcombat/inject.go) so
 // StartEncounter's real goblins behave identically to the dev-tooling ones.
@@ -283,7 +287,7 @@ func (o *Orchestrator) seedGoblins(ctx context.Context, enc *tkenc.Encounter, en
 		}
 		groups[i] = spawn.EntityGroup{
 			ID:             tableID,
-			Type:           "monster",
+			Type:           entityGroupTypeMonster,
 			SelectionTable: tableID,
 			Quantity:       spawn.QuantitySpec{Fixed: &one},
 			PositionOracle: outOfSight,
