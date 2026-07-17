@@ -260,10 +260,22 @@ func (s *LobbySuite) TestStartEncounter_WalledRoomAndGoblins_CombatStartsOnSight
 
 	// 2 goblins seeded.
 	s.Require().Len(encData.Monsters, 2, "StartEncounter must seed exactly 2 goblins")
+	goblinPositions := make([]core.Hex, 0, len(encData.Monsters))
 	for id, m := range encData.Monsters {
 		s.Require().Positive(m.HP, "goblin %q must have positive HP", id)
 		s.Require().NotEmpty(m.DataJSON, "goblin %q must carry DataJSON (monster.NewGoblin, not a hand-rolled stub)", id)
+		goblinPositions = append(goblinPositions, m.Position)
 	}
+	// Distinct positions: monster.Monster doesn't implement spatial.Placeable,
+	// so the spawn engine's baseline CanPlaceEntity occupancy check silently
+	// no-ops for goblin-on-goblin placement (it only blocks when the existing
+	// occupant type-asserts to Placeable and BlocksMovement() is true).
+	// seedGoblins' PositionOracle explicitly rejects already-occupied cells
+	// (room.GetEntitiesInRange(pos, 0)) to restore the distinctness guarantee
+	// the deleted safeGoblinHexes gave for free by construction — this pins
+	// that guarantee so a future regression here is caught, not silently
+	// probable-but-unverified (gate finding on rpg-api#650's PR).
+	s.Require().NotEqual(goblinPositions[0], goblinPositions[1], "goblins must not be placed on the same hex")
 
 	// Combat must NOT have started at spawn: the goblins were placed outside
 	// alice's initial sight, so AddMonster's inline combat-entry check

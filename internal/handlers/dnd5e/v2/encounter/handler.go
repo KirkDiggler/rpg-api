@@ -351,7 +351,7 @@ func (h *Handler) StreamEncounter(req *encounterv2pb.StreamEncounterRequest, str
 			if !ok {
 				return nil
 			}
-			outs, translateErr := h.translateForStream(ctx, encID, evt, core.PlayerID(playerID))
+			out, translateErr := h.translateForStream(ctx, encID, evt, core.PlayerID(playerID))
 			switch {
 			case errors.Is(translateErr, ErrViewerSawNothing):
 				continue
@@ -368,7 +368,7 @@ func (h *Handler) StreamEncounter(req *encounterv2pb.StreamEncounterRequest, str
 			case translateErr != nil:
 				return status.Errorf(codes.Internal, "translate %q: %v", string(encID), translateErr)
 			}
-			for _, out := range outs {
+			if out != nil {
 				if err := stream.Send(out); err != nil {
 					return err
 				}
@@ -378,8 +378,10 @@ func (h *Handler) StreamEncounter(req *encounterv2pb.StreamEncounterRequest, str
 }
 
 // translateForStream wraps TranslateEvent with the data-aware paths this
-// stream loop needs. Returns a slice (usually one envelope) so a single
-// broker event can translate to more than one wire envelope when needed.
+// stream loop needs — every broker event maps to exactly one wire envelope
+// (previously a slice, back when the now-deleted InitiativeRolled synthesis
+// made one broker event produce two; simplified to a single return per the
+// gate review on rpg-api#650's PR now that nothing does that anymore).
 //
 //   - InputRequiredDeliveredEvent (Wave 2.11d): reaction prompts store their
 //     content on Encounter.Data.PendingReactionPrompts (rather than on the
@@ -413,7 +415,7 @@ func (h *Handler) translateForStream(
 	encID core.EncounterID,
 	evt tkevents.EncounterEvent,
 	viewer core.PlayerID,
-) ([]*encounterv2pb.EncounterEvent, error) {
+) (*encounterv2pb.EncounterEvent, error) {
 	if irEvt, ok := evt.(*tkevents.InputRequiredDeliveredEvent); ok {
 		// Load the encounter to read the pending prompt content. The prompt
 		// lives on Data.PendingReactionPrompts and is the canonical source
@@ -426,11 +428,7 @@ func (h *Handler) translateForStream(
 		if data != nil {
 			prompt = data.PendingReactionPrompts[irEvt.ReactorID]
 		}
-		out, err := TranslateInputRequiredDelivered(irEvt, viewer, h.now(), prompt)
-		if err != nil {
-			return nil, err
-		}
-		return []*encounterv2pb.EncounterEvent{out}, nil
+		return TranslateInputRequiredDelivered(irEvt, viewer, h.now(), prompt)
 	}
 
 	if appearEvt, ok := evt.(*tkevents.EntityAppearedEvent); ok {
@@ -438,16 +436,8 @@ func (h *Handler) translateForStream(
 		if err != nil {
 			return nil, fmt.Errorf("load encounter for entity-appeared enrichment: %w", err)
 		}
-		out, err := translateEntityAppearedEventWithData(appearEvt, viewer, h.now(), data)
-		if err != nil {
-			return nil, err
-		}
-		return []*encounterv2pb.EncounterEvent{out}, nil
+		return translateEntityAppearedEventWithData(appearEvt, viewer, h.now(), data)
 	}
 
-	out, err := TranslateEvent(evt, viewer, h.now())
-	if err != nil {
-		return nil, err
-	}
-	return []*encounterv2pb.EncounterEvent{out}, nil
+	return TranslateEvent(evt, viewer, h.now())
 }

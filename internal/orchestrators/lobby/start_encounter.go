@@ -55,12 +55,12 @@ const memberSightRange = 10
 // (~1 wall per 10 sq units — see environments.RandomPattern) and not
 // reliably enough on its own to hide a monster from a party spawned near
 // the room's origin. A 20x20 room guarantees floor beyond hex-distance 10
-// from a near-origin party purely by distance, so safeGoblinHexes always
-// has a hiding spot regardless of the random wall roll; walls create
-// additional closer-in pockets on top of that. roomPattern is the only
-// pattern besides "empty" the toolkit ships (environments.PatternRandom /
-// PatternEmpty — see tools/environments/wall_patterns.go's WallPatterns
-// registry).
+// from a near-origin party purely by distance, so seedGoblins' PositionOracle
+// (out-of-sight requirement) always has a hiding spot regardless of the
+// random wall roll; walls create additional closer-in pockets on top of
+// that. roomPattern is the only pattern besides "empty" the toolkit ships
+// (environments.PatternRandom / PatternEmpty — see
+// tools/environments/wall_patterns.go's WallPatterns registry).
 const (
 	roomWidth   = 20
 	roomHeight  = 20
@@ -264,7 +264,23 @@ func (o *Orchestrator) seedGoblins(ctx context.Context, enc *tkenc.Encounter, en
 	// whatever the engine has placed so far in this same call (no player
 	// positions change mid-seed, so this is for safety against future
 	// reordering, not a currently-observed staleness risk).
-	outOfSight := func(pos spatial.Position) bool {
+	//
+	// Also rejects positions already occupied by an entity placed earlier in
+	// THIS SAME PopulateRoom call (i.e. an already-seeded goblin): room's
+	// baseline CanPlaceEntity (which the engine's search already runs)
+	// type-asserts the occupant to spatial.Placeable and only blocks if
+	// BlocksMovement() is true — monster.Monster implements neither, so two
+	// goblins could otherwise land on the exact same hex with only
+	// probability (not a guarantee) preventing it. This restores the
+	// distinctness the old safeGoblinHexes gave for free by construction
+	// (picking N distinct cells from one candidate set) — flagged by the gate
+	// review on rpg-api#650's PR. GetEntitiesInRange(pos, 0) is an exact-cell
+	// occupancy check (Distance(...) <= 0), type-agnostic, so it catches
+	// players too, not just other goblins.
+	validGoblinPosition := func(pos spatial.Position) bool {
+		if len(room.GetEntitiesInRange(pos, 0)) > 0 {
+			return false
+		}
 		hex := core.HexFromPosition(pos)
 		for _, p := range enc.ToData().Players {
 			if p.View != nil && perception.CanSeeAt(p.View, hex, room) {
@@ -290,7 +306,7 @@ func (o *Orchestrator) seedGoblins(ctx context.Context, enc *tkenc.Encounter, en
 			Type:           entityGroupTypeMonster,
 			SelectionTable: tableID,
 			Quantity:       spawn.QuantitySpec{Fixed: &one},
-			PositionOracle: outOfSight,
+			PositionOracle: validGoblinPosition,
 		}
 	}
 
