@@ -1,8 +1,8 @@
 ---
 name: rpg-api status
 description: Where we are with rpg-api — active work, paused, known rough edges, per-subsystem confidence
-updated: 2026-07-15
-confidence: high — Wave 2 Monk entries verified against passing integration tests; #636 entry verified against passing unit + integration tests; #642 v1alpha1 encounter stack deletion verified against passing build/vet/test/lint; #644 The Dungeon wave 1 (api) verified against passing unit + stress-run (50x) integration tests
+updated: 2026-07-17
+confidence: high — Wave 2 Monk entries verified against passing integration tests; #636 entry verified against passing unit + integration tests; #642 v1alpha1 encounter stack deletion verified against passing build/vet/test/lint; #644 The Dungeon wave 1 (api) verified against passing unit + stress-run (50x) integration tests; #650 toolkit seam adoption (InitiativeRolled event + room-aware spawn) verified against passing unit/integration/-race full suite
 ---
 
 # rpg-api: Where We Are
@@ -54,7 +54,7 @@ Goblin placement is verified NOT visible to any player at spawn — `AddMonster`
 inline-checks combat entry (rpg-toolkit#759's `checkCombatEntry`), so a goblin seeded
 within sight would flip the encounter to `TURN_BASED` immediately, violating the design
 bar ("walk into a room, the fight starts" — combat starts on a `Move` that forms sight,
-never at spawn). **Known toolkit gap, not fixed here:** `tools/spawn`'s own
+never at spawn). ~~**Known toolkit gap, not fixed here:** `tools/spawn`'s own
 `BasicSpawnEngine` position search (`findValidPosition`, and the constraint-aware
 `ConstraintSolver.FindValidPositions`) never consults the real `spatial.Room` this wave
 introduced — no `room.CanPlaceEntity`/`room.IsLineOfSightBlocked` calls anywhere in that
@@ -67,7 +67,21 @@ but discards its returned position in favor of one computed from the toolkit's o
 wall-aware `perception.CanSeeAt` — see `seedGoblins`'/`safeGoblinHexes`' doc comments in
 `start_encounter.go` for the full reasoning. A toolkit follow-up issue for
 fixed-position spawn support is recommended before wave 2 needs dynamic (non-fixed-2)
-monster placement through this engine.
+monster placement through this engine.~~ **RESOLVED by rpg-api#650 (2026-07-17):**
+rpg-toolkit#760 (`tools/spawn` v0.3.0) made the position search itself room-aware and
+added `EntityGroup.PositionOracle` — a caller predicate ANDed into the search.
+`seedGoblins` now expresses the out-of-sight requirement as a `PositionOracle` built on
+`perception.CanSeeAt` and uses the engine's own returned position directly; `safeGoblinHexes`
+and `placementProbe` are deleted. One new toolkit gap found and routed around while
+migrating: `BasicSelectablesRegistry.GetEntities` samples WITH replacement
+(`selectables_registry.go`), so a single 2-entity table asked for 2 could return the same
+goblin twice — invisible to the old discard-and-recompute code, a real bug once positions
+are correlated back to specific goblins by ID. Fixed in rpg-api by giving each goblin its
+own single-entity table/`EntityGroup` (these are individually pre-identified fixed
+entities, not a random pick from a pool, so this is the more honest modeling, not a
+workaround) — no toolkit issue filed for the sampling-with-replacement behavior itself
+since rpg-api no longer depends on it, but any future caller wanting N>1 *distinct* random
+picks from a shared table would hit the same gap.
 
 Verified via `internal/orchestrators/lobby/start_encounter_test.go`'s
 `TestStartEncounter_WalledRoomAndGoblins_CombatStartsOnSightedMove`: real `StartEncounter`
@@ -81,16 +95,16 @@ design work" — see the correction inline. The full MCP playtest (web step 9, w
 9 in `ideas/the-dungeon/design.md`) still closes the wave; this PR is the api half only
 (design doc steps 7-8).
 
-**Playtest follow-up: live initiative roster broadcast on combat entry (rpg-api#644,
+~~**Playtest follow-up: live initiative roster broadcast on combat entry (rpg-api#644,
 2026-07-15)** — the connect-time snapshot's `TurnState.InitiativeOrder` was the only
 place a client ever learned the turn order; a mid-stream `FREE_ROAM` → `TURN_BASED`
 transition (the toolkit's `rollInitiative`, inside `SetMode`) published no roster of its
 own, so a client watching the fight start live saw an empty initiative list until its
-next full snapshot. `internal/handlers/dnd5e/v2/encounter/handler.go`'s stream loop now
-synthesizes a proto `InitiativeRolled` envelope (`order=[]string`, `EncounterEvent` oneof
-field 41 — already defined on the wire, unused until now, zero proto changes) and sends
-it right after the `ModeChanged` translation whenever a `ModeChangedEvent` transitions
-`To==TURN_BASED`; `translateForStream` returns a slice so one broker event can produce
+next full snapshot. `internal/handlers/dnd5e/v2/encounter/handler.go`'s stream loop
+synthesized a proto `InitiativeRolled` envelope (`order=[]string`, `EncounterEvent` oneof
+field 41 — already defined on the wire, unused until now, zero proto changes) and sent
+it right after the `ModeChanged` translation whenever a `ModeChangedEvent` transitioned
+`To==TURN_BASED`; `translateForStream` returned a slice so one broker event could produce
 two wire envelopes. Broadcast to every connected viewer, not just whoever moved.
 
 **Known rough edge: the roster read races the orchestrator's save (rpg-api#647)** — every
@@ -98,17 +112,21 @@ combat-capable orchestrator verb follows a mutate-then-persist pattern where the
 SDK call (e.g. `MoveEntity`'s `enc.Move(...)`) mutates state AND synchronously publishes
 its broker events *before returning*, and only once it returns does the orchestrator
 `Save` the result. The stream goroutine that wakes on the just-published `ModeChangedEvent`
-can therefore call `h.encRepo.Get` before that `Save` lands, reading the pre-transition
+could therefore call `h.encRepo.Get` before that `Save` landed, reading the pre-transition
 (empty-`Initiative`) snapshot — reproduced reliably under `go test -race -count=10` before
 the fix, intermittent without `-race`. Worked around with a bounded retry
 (`loadRolledInitiative`, up to 15 attempts / 10ms apart / ~150ms worst case) rather than a
-longer fixed delay, since the real `Save` is the very next thing the orchestrator does.
-This is an interim workaround, not the fix: rpg-api#647 tracks both the general race class
-(the same pattern already exists in the `InputRequiredDeliveredEvent` prompt-lookup path,
-untested under sustained `-race` load) and the toolkit-side seam that would delete the
-retry outright — e.g. the SDK deferring its publish until after an explicit persist
-callback, or exposing the freshly-rolled `Initiative` directly on the event instead of
-requiring a repo round-trip at all.
+longer fixed delay, since the real `Save` was the very next thing the orchestrator did.~~
+**RESOLVED by rpg-api#650 (2026-07-17): the toolkit publishes `InitiativeRolledEvent`
+directly now (rpg-toolkit#765, encounter v0.28.0), sequenced between `ModeChanged` and
+`TurnStarted` with its own real sequence number, broadcast to all players — no read-back,
+no synthesis, no retry. Both the synthesis branch and `loadRolledInitiative` are deleted;
+`translateInitiativeRolledEvent` is now a plain `TranslateEvent` case.** This closes ONE of
+rpg-api#647's two known manifestations, not the issue itself: #647 still tracks the general
+mutate-then-persist race class (the `InputRequiredDeliveredEvent` prompt-lookup path still
+has it, untested under sustained `-race` load) and a related, distinct gap found during the
+reconnect-fidelity wave investigation — `persistWithCharacterData`'s two sequential,
+non-atomic Redis writes (character store, then encounter snapshot) — both still open.
 
 **Playtest follow-up: live EntityAppeared carries entity type (rpg-api#644, 2026-07-15)** —
 a monster (or player) becoming visible via a live `Move` (rpg-toolkit#762's monster
