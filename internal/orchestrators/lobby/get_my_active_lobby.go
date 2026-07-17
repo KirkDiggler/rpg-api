@@ -58,6 +58,23 @@ func (o *Orchestrator) GetMyActiveLobby(ctx context.Context, in *GetMyActiveLobb
 		return nil, fmt.Errorf("load active lobby for player %q: %w", in.PlayerID, err)
 	}
 
+	// The index is a pointer, not a source of truth — verify the player is
+	// actually still in the lobby it points at before trusting it. Save only
+	// adds/refreshes an index entry for players CURRENTLY in data.Members
+	// (see Repository.Save's doc comment) and never removes a departed
+	// player's entry itself; LeaveLobby's ClearPlayerIndex call is what's
+	// supposed to do that, and it's deliberately best-effort (leave_lobby.go)
+	// so an infra hiccup there can leave a stale entry pointing at a lobby
+	// the player already left. Catching that here, not just at write time,
+	// means the discarded-error path in LeaveLobby is fully safe: the write
+	// side stays best-effort, this read side is authoritative. Self-heals
+	// the stale entry so it doesn't keep costing a lookup until its TTL
+	// expires.
+	if _, isMember := data.Members[in.PlayerID]; !isMember {
+		_ = o.lobbyRepo.ClearPlayerIndex(ctx, in.PlayerID)
+		return &GetMyActiveLobbyOutput{}, nil
+	}
+
 	if data.Status != lobbyrepo.StatusStarted {
 		return &GetMyActiveLobbyOutput{LobbyID: data.ID, Status: data.Status}, nil
 	}
