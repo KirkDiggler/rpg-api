@@ -73,6 +73,67 @@ func (s *InMemorySuite) TestSave_EmptyID_ReturnsError() {
 	s.Require().Error(err)
 }
 
+func (s *InMemorySuite) TestGetByPlayerID_ReturnsErrNotFound_ForMissingPlayer() {
+	_, err := s.repo.GetByPlayerID(s.ctx, "missing-player")
+	s.Require().Error(err)
+	s.Require().True(errors.Is(err, lobbyrepo.ErrNotFound))
+}
+
+func (s *InMemorySuite) TestSave_IndexesMembersByPlayerID() {
+	s.Require().NoError(s.repo.Save(s.ctx, &lobbyrepo.Data{
+		ID: "lobby-3", JoinRef: "ref-3", Status: lobbyrepo.StatusWaiting,
+		Members: map[string]*lobbyrepo.Member{
+			"alice": {PlayerID: "alice", IsHost: true},
+			"bob":   {PlayerID: "bob"},
+		},
+		MemberOrder: []string{"alice", "bob"},
+	}))
+
+	loadedAlice, err := s.repo.GetByPlayerID(s.ctx, "alice")
+	s.Require().NoError(err)
+	s.Require().Equal("lobby-3", loadedAlice.ID)
+
+	loadedBob, err := s.repo.GetByPlayerID(s.ctx, "bob")
+	s.Require().NoError(err)
+	s.Require().Equal("lobby-3", loadedBob.ID)
+}
+
+func (s *InMemorySuite) TestSave_PlayerIndex_SecondLobbyOverwrites() {
+	// A player who is (or was) a member of two different lobbies has their
+	// index entry point at whichever lobby was Saved most recently — the
+	// documented one-active-lobby-per-player, last-write-wins semantic.
+	s.Require().NoError(s.repo.Save(s.ctx, &lobbyrepo.Data{
+		ID: "lobby-a", Status: lobbyrepo.StatusWaiting,
+		Members: map[string]*lobbyrepo.Member{"alice": {PlayerID: "alice"}},
+	}))
+	s.Require().NoError(s.repo.Save(s.ctx, &lobbyrepo.Data{
+		ID: "lobby-b", Status: lobbyrepo.StatusWaiting,
+		Members: map[string]*lobbyrepo.Member{"alice": {PlayerID: "alice"}},
+	}))
+
+	loaded, err := s.repo.GetByPlayerID(s.ctx, "alice")
+	s.Require().NoError(err)
+	s.Require().Equal("lobby-b", loaded.ID)
+}
+
+func (s *InMemorySuite) TestClearPlayerIndex_RemovesEntry() {
+	s.Require().NoError(s.repo.Save(s.ctx, &lobbyrepo.Data{
+		ID: "lobby-4", Status: lobbyrepo.StatusWaiting,
+		Members: map[string]*lobbyrepo.Member{"alice": {PlayerID: "alice"}},
+	}))
+
+	s.Require().NoError(s.repo.ClearPlayerIndex(s.ctx, "alice"))
+
+	_, err := s.repo.GetByPlayerID(s.ctx, "alice")
+	s.Require().Error(err)
+	s.Require().True(errors.Is(err, lobbyrepo.ErrNotFound))
+}
+
+func (s *InMemorySuite) TestClearPlayerIndex_NoOpForAbsentPlayer() {
+	err := s.repo.ClearPlayerIndex(s.ctx, "nobody")
+	s.Require().NoError(err)
+}
+
 func TestInMemorySuite(t *testing.T) {
 	suite.Run(t, new(InMemorySuite))
 }

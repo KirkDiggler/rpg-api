@@ -22,6 +22,17 @@ const redisKeyPrefix = "lobby:"
 // index is the only way to serve it in O(1).
 const redisJoinRefPrefix = "lobby:joinref:"
 
+// redisPlayerPrefix namespaces the player id -> lobby id secondary index
+// GetByPlayerID reads (GetMyActiveLobby / resume-after-refresh,
+// rpg-dnd5e-web#444). Deliberately its own top-level prefix ("player:...",
+// not "lobby:player:...") since this index is conceptually owned by the
+// player, not the lobby — a future non-lobby feature keyed by player id
+// would want the same namespace root.
+const redisPlayerPrefix = "player:"
+
+// redisPlayerSuffix closes the player key: player:{playerID}:lobby.
+const redisPlayerSuffix = ":lobby"
+
 // NewRedis returns a Redis-backed Repository.
 //
 // ttl is refreshed on every Save (both the primary record and the join_ref
@@ -60,10 +71,27 @@ func (r *redisRepo) GetByJoinRef(ctx context.Context, joinRef string) (*Data, er
 	return r.Get(ctx, id)
 }
 
-// Save writes the primary record and the join_ref index in one MULTI/EXEC
-// pipeline, so the two keys never observe a partially-updated state (a crash
-// or network failure between two independent SETs could otherwise leave a
-// record with no working join_ref index, or vice versa).
+func (r *redisRepo) GetByPlayerID(ctx context.Context, playerID string) (*Data, error) {
+	id, err := r.client.Get(ctx, redisPlayerKey(playerID)).Result()
+	if err != nil {
+		if errors.Is(err, goredis.Nil) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("get lobby by player %q: %w", playerID, err)
+	}
+	return r.Get(ctx, id)
+}
+
+// Save writes the primary record, the join_ref index, and a player index
+// entry per current member in one MULTI/EXEC pipeline, so no reader ever
+// observes a partially-updated state (a crash or network failure between
+// independent SETs could otherwise leave a record with a stale or missing
+// secondary index).
+//
+// Save only ever adds/refreshes player index entries for members present in
+// data.Members — see the Repository.Save doc comment for why a removed
+// member's stale entry is a caller responsibility (ClearPlayerIndex), not
+// something Save can infer from a single Data value.
 func (r *redisRepo) Save(ctx context.Context, data *Data) error {
 	if data == nil {
 		return errors.New("data is required")
@@ -80,8 +108,18 @@ func (r *redisRepo) Save(ctx context.Context, data *Data) error {
 	if data.JoinRef != "" {
 		pipe.Set(ctx, redisJoinRefKey(data.JoinRef), data.ID, r.ttl)
 	}
+	for playerID := range data.Members {
+		pipe.Set(ctx, redisPlayerKey(playerID), data.ID, r.ttl)
+	}
 	if _, err := pipe.Exec(ctx); err != nil {
 		return fmt.Errorf("save lobby %q: %w", data.ID, err)
+	}
+	return nil
+}
+
+func (r *redisRepo) ClearPlayerIndex(ctx context.Context, playerID string) error {
+	if err := r.client.Del(ctx, redisPlayerKey(playerID)).Err(); err != nil {
+		return fmt.Errorf("clear player index %q: %w", playerID, err)
 	}
 	return nil
 }
@@ -92,4 +130,8 @@ func redisKey(id string) string {
 
 func redisJoinRefKey(joinRef string) string {
 	return redisJoinRefPrefix + joinRef
+}
+
+func redisPlayerKey(playerID string) string {
+	return redisPlayerPrefix + playerID + redisPlayerSuffix
 }

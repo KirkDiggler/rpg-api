@@ -111,6 +111,34 @@ func (s *LobbySuite) expectCharacterNotFound(characterID string) {
 		Return(nil, apierr.NotFound("character not found"))
 }
 
+// newOrchestratorWithLobbyRepo builds a second Orchestrator sharing every
+// other suite dependency (broker, character repo, encounter repo/broker,
+// generators) but backed by repo instead of s.lobbyRepo — for tests that
+// need to observe behavior when the lobby repository itself misbehaves
+// (e.g. a wrapped repo that forces one method to fail).
+func (s *LobbySuite) newOrchestratorWithLobbyRepo(repo lobbyrepo.Repository) *lobbyorch.Orchestrator {
+	orch, err := lobbyorch.New(&lobbyorch.Config{
+		LobbyRepo:         repo,
+		LobbyBroker:       s.broker,
+		CharacterRepo:     s.charRepo,
+		EncounterRepo:     s.encRepo,
+		EncounterBroker:   s.encBroker,
+		CharacterResolver: encounterhandlerv2.StubCharacterResolver{},
+		BuildCombatResolver: func(_ *tkenc.Data) tkenc.CombatResolver {
+			return nil
+		},
+		BuildMovementResolver: func(_ *tkenc.Data) tkenc.MovementResolver {
+			return nil
+		},
+		LobbyIDGenerator:     idgen.NewSequential("lobby"),
+		JoinRefGenerator:     idgen.NewSequential("ref"),
+		EncounterIDGenerator: idgen.NewSequential("enc"),
+		Now:                  func() time.Time { return time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC) },
+	})
+	s.Require().NoError(err)
+	return orch
+}
+
 // seedLobby writes data directly to s.lobbyRepo, bypassing CreateLobby /
 // JoinLobby (and their character-repo lookups) so tests that exercise a
 // LATER RPC (SetReady, LeaveLobby, StartEncounter, SetConnected) can set up

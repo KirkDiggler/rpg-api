@@ -3,7 +3,7 @@ module github.com/KirkDiggler/rpg-api
 go 1.25.3
 
 require (
-	github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20260706205140-e1dbc19e7274
+	github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20260717223548-c887cd37224a
 	github.com/KirkDiggler/rpg-toolkit/core v0.10.0
 	github.com/KirkDiggler/rpg-toolkit/dice v0.3.2
 	github.com/KirkDiggler/rpg-toolkit/encounter v0.29.0
@@ -23,7 +23,7 @@ require (
 	github.com/testcontainers/testcontainers-go v0.40.0
 	github.com/testcontainers/testcontainers-go/modules/redis v0.40.0
 	go.uber.org/mock v0.6.0
-	google.golang.org/grpc v1.82.0
+	google.golang.org/grpc v1.82.1
 	google.golang.org/protobuf v1.36.11
 )
 

@@ -123,6 +123,64 @@ func (s *RedisSuite) TestSave_EmptyID_ReturnsError() {
 	s.Require().Error(err)
 }
 
+func (s *RedisSuite) TestGetByPlayerID_ReturnsErrNotFound_ForMissingPlayer() {
+	_, err := s.repo.GetByPlayerID(s.ctx, "missing-player")
+	s.Require().Error(err)
+	s.Require().True(errors.Is(err, lobbyrepo.ErrNotFound))
+}
+
+func (s *RedisSuite) TestSave_IndexesMembersByPlayerID() {
+	s.Require().NoError(s.repo.Save(s.ctx, &lobbyrepo.Data{
+		ID: "lobby-3", JoinRef: "ref-3", Status: lobbyrepo.StatusWaiting,
+		Members: map[string]*lobbyrepo.Member{
+			"alice": {PlayerID: "alice", IsHost: true},
+			"bob":   {PlayerID: "bob"},
+		},
+		MemberOrder: []string{"alice", "bob"},
+	}))
+
+	loadedAlice, err := s.repo.GetByPlayerID(s.ctx, "alice")
+	s.Require().NoError(err)
+	s.Require().Equal("lobby-3", loadedAlice.ID)
+
+	loadedBob, err := s.repo.GetByPlayerID(s.ctx, "bob")
+	s.Require().NoError(err)
+	s.Require().Equal("lobby-3", loadedBob.ID)
+}
+
+func (s *RedisSuite) TestSave_PlayerIndex_AppliesTTL() {
+	s.Require().NoError(s.repo.Save(s.ctx, &lobbyrepo.Data{
+		ID: "lobby-ttl-player", Status: lobbyrepo.StatusWaiting,
+		Members: map[string]*lobbyrepo.Member{"alice": {PlayerID: "alice"}},
+	}))
+
+	ttl := s.miniredis.TTL("player:alice:lobby")
+	s.Require().Equal(24*time.Hour, ttl, "Save must apply the configured TTL to the player index")
+
+	s.miniredis.FastForward(25 * time.Hour)
+	_, err := s.repo.GetByPlayerID(s.ctx, "alice")
+	s.Require().Error(err)
+	s.Require().True(errors.Is(err, lobbyrepo.ErrNotFound))
+}
+
+func (s *RedisSuite) TestClearPlayerIndex_RemovesEntry() {
+	s.Require().NoError(s.repo.Save(s.ctx, &lobbyrepo.Data{
+		ID: "lobby-4", Status: lobbyrepo.StatusWaiting,
+		Members: map[string]*lobbyrepo.Member{"alice": {PlayerID: "alice"}},
+	}))
+
+	s.Require().NoError(s.repo.ClearPlayerIndex(s.ctx, "alice"))
+
+	_, err := s.repo.GetByPlayerID(s.ctx, "alice")
+	s.Require().Error(err)
+	s.Require().True(errors.Is(err, lobbyrepo.ErrNotFound))
+}
+
+func (s *RedisSuite) TestClearPlayerIndex_NoOpForAbsentPlayer() {
+	err := s.repo.ClearPlayerIndex(s.ctx, "nobody")
+	s.Require().NoError(err)
+}
+
 func TestRedisSuite(t *testing.T) {
 	suite.Run(t, new(RedisSuite))
 }

@@ -8,6 +8,22 @@ import (
 	lobbyrepo "github.com/KirkDiggler/rpg-api/internal/repositories/lobby"
 )
 
+// translateLobbyStatus converts the entity-layer lobby Status to its proto
+// mirror. lobbyrepo.StatusUnspecified (the zero value, used by
+// GetMyActiveLobbyOutput's "no active lobby" empty response) maps to
+// LOBBY_STATUS_UNSPECIFIED, proto3's own zero value — no explicit case
+// needed, the switch's default covers it.
+func translateLobbyStatus(s lobbyrepo.Status) lobbyv1alpha1.LobbyStatus {
+	switch s {
+	case lobbyrepo.StatusWaiting:
+		return lobbyv1alpha1.LobbyStatus_LOBBY_STATUS_WAITING
+	case lobbyrepo.StatusStarted:
+		return lobbyv1alpha1.LobbyStatus_LOBBY_STATUS_STARTED
+	default:
+		return lobbyv1alpha1.LobbyStatus_LOBBY_STATUS_UNSPECIFIED
+	}
+}
+
 // translateMember converts one entity-layer Member to its proto mirror.
 func translateMember(m *lobbyrepo.Member) *lobbyv1alpha1.LobbyMember {
 	if m == nil {
