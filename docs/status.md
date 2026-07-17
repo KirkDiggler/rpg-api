@@ -118,7 +118,8 @@ the fix, intermittent without `-race`. Worked around with a bounded retry
 (`loadRolledInitiative`, up to 15 attempts / 10ms apart / ~150ms worst case) rather than a
 longer fixed delay, since the real `Save` was the very next thing the orchestrator did.~~
 **RESOLVED by rpg-api#650 (2026-07-17): the toolkit publishes `InitiativeRolledEvent`
-directly now (rpg-toolkit#765, encounter v0.28.0), sequenced between `ModeChanged` and
+directly now (rpg-toolkit#765, PR #771 — the seam was introduced in encounter v0.28.0;
+this repo pins whatever is current, see go.mod), sequenced between `ModeChanged` and
 `TurnStarted` with its own real sequence number, broadcast to all players — no read-back,
 no synthesis, no retry. Both the synthesis branch and `loadRolledInitiative` are deleted;
 `translateInitiativeRolledEvent` is now a plain `TranslateEvent` case.** This closes ONE of

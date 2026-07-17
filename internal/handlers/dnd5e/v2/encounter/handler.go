@@ -401,10 +401,11 @@ func (h *Handler) StreamEncounter(req *encounterv2pb.StreamEncounterRequest, str
 //     goroutine's own state instead (see docs/status.md's rough edges).
 //
 // InitiativeRolled no longer needs a data-aware branch here: rpg-toolkit#765
-// (encounter v0.28.0) publishes it directly, sequenced between ModeChanged
-// and TurnStarted with its own real sequence number, so the plain
-// TranslateEvent case in translate.go handles it like any other broadcast
-// event — no synthesis, no repo read-back, no retry.
+// (encounter v0.28.0 introduced the seam; this repo pins whatever is current —
+// see go.mod) publishes it directly, sequenced between ModeChanged and
+// TurnStarted with its own real sequence number, so the plain TranslateEvent
+// case in translate.go handles it like any other broadcast event — no
+// synthesis, no repo read-back, no retry.
 //
 // Every other event type continues to use TranslateEvent unchanged.
 func (h *Handler) translateForStream(
