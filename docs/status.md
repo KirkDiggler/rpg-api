@@ -1,8 +1,8 @@
 ---
 name: rpg-api status
 description: Where we are with rpg-api — active work, paused, known rough edges, per-subsystem confidence
-updated: 2026-07-17
-confidence: high — Wave 2 Monk entries verified against passing integration tests; #636 entry verified against passing unit + integration tests; #642 v1alpha1 encounter stack deletion verified against passing build/vet/test/lint; #644 The Dungeon wave 1 (api) verified against passing unit + stress-run (50x) integration tests; #650 toolkit seam adoption (InitiativeRolled event + room-aware spawn) verified against passing unit/integration/-race full suite; #651 ActiveConditions projection verified against passing unit + integration (10x -race) + full suite
+updated: 2026-07-18
+confidence: high — Wave 2 Monk entries verified against passing integration tests; #636 entry verified against passing unit + integration tests; #642 v1alpha1 encounter stack deletion verified against passing build/vet/test/lint; #644 The Dungeon wave 1 (api) verified against passing unit + stress-run (50x) integration tests; #650 toolkit seam adoption (InitiativeRolled event + room-aware spawn) verified against passing unit/integration/-race full suite; #651 ActiveConditions projection verified against passing unit + integration (10x -race) + full suite; #656 movement-truncation fix verified against an isolated toolkit-level repro, a new RPC-level regression test (10x -race), and the full suite
 ---
 
 # rpg-api: Where We Are
@@ -212,6 +212,49 @@ then read a snapshot with zero combat-capable verb calls in between" — connect
 does not itself sync, so there is no self-heal via reconnect alone. Not fixed
 here — out of scope for #651, which is the projection layer; the fix belongs in
 toolkit#691.
+
+**Wave-close blocker: MoveEntity silently no-op'd in StartEncounter-created
+encounters (rpg-api#656, 2026-07-18)** — found by the reconnect-fidelity wave's
+closing playtest: a `MoveEntity` RPC on a fresh, wall-free-nearby, lobby-started
+encounter returned success but the entity never moved (`actualPath` a single
+zero-length step). Root cause, confirmed by an isolated reproduction (no gRPC,
+no Redis — a standalone Go program calling the toolkit directly) then verified
+against the exact bug-report hex: `StartEncounter` spawns the party at raw cube
+coordinate `{0,0,0}`. `core.Hex.ToPosition()` maps that DIRECTLY to the room's
+offset-coordinate origin `(0,0)` — `InitRoom`'s room (`environments.QuickRoom`)
+spans offset `[0,roomWidth) x [0,roomHeight)` with no auto-centering, so the
+party spawns at the room's CORNER, not its center. The toolkit's `Move()`
+unconditionally truncates the requested path the instant a step's offset
+position falls outside those bounds (`space.go`'s `truncateAtWall`,
+indistinguishable from hitting a real wall — rpg-toolkit#757), and roughly half
+of the six hex movement directions from a corner spawn immediately do. This
+predates #650/#655 entirely — it has existed since `InitRoom`'s introduction in
+wave-1 (rpg-api#644) and was never triggered because earlier playtests happened
+to move in one of the safe directions; the coverage hole is that every existing
+integration test seeds encounters directly via `tkenc.New`/`AddPlayer`
+(bypassing `StartEncounter`'s `InitRoom` + corner-spawn combination entirely),
+so none of them could have caught a movement-direction-specific bug. Fixed by
+spawning the party at the room's geometric center (`roomCenterHex()`,
+`start_encounter.go`) instead of raw cube-origin — verified the fix directly in
+the same isolated reproduction before touching production code. Closing the
+loop required a NEW integration test exercising the actual failing path
+(`LobbyService.StartEncounter` RPC → `EncounterService.MoveEntity` RPC,
+`lobby_start_then_move_test.go`) — the class of test #656 asked for by name.
+Fixing the corner-to-center spawn move also exposed a second, pre-existing,
+narrower issue: `TestPartyAssembles_FourPlayers_CreateJoinReadyStart`'s mutual-
+visibility assertion (every party member must see every OTHER member's exact
+spawn hex) happened to hold at the room's corner for this room's random wall
+layout but not at the center, where one wall sits between two spawn hexes.
+That assertion was always stronger than its own stated purpose (guarding
+rpg-api#632 — SightRange never being seeded) requires; wall-free line-of-sight
+between every pair of spawn positions was never actually guaranteed by the
+room generator, at the corner or anywhere else. Loosened to check SightRange
+is seeded and RevealedHexes covers a real radius (rather than the mover's own
+single hex), which is what #632 needs guarded, without re-introducing
+wall-placement fragility. Not pursued: a wall-aware, verified-safe party
+spawn search (mirroring `seedGoblins`' `perception.CanSeeAt`-verified
+placement) — out of scope for this fix; flagged here if mutual spawn
+visibility ever becomes a real product requirement.
 
 **The live v1alpha1 encounter stack is DELETED (rpg-api#642, 2026-07-13)** —
 the audit-flagged registered-and-serving `dnd5e.api.v1alpha1.EncounterService`
