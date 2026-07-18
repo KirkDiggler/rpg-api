@@ -11,6 +11,7 @@ package integration_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -57,18 +58,46 @@ func (s *LobbyStartThenMoveSuite) authCtx(playerID string) context.Context {
 	return metadata.AppendToOutgoingContext(s.ctx, "authorization", "Dev "+playerID)
 }
 
+// sixHexDirections is every unit step in cube-hex space (Q+R+S=0 preserved).
+// rpg-api#656's own bug report only exercised ONE of these (Q+1,S-1) — "one
+// direction green was exactly how this bug hid for three days" (gate note on
+// PR #657). A corner-anchored spawn breaks roughly half of these (any
+// direction that decreases offset X or Y); a center-anchored spawn must
+// clear all six, so this test asserts all six rather than re-pinning just
+// the one direction the original report happened to catch.
+var sixHexDirections = []core.Hex{
+	{Q: 1, R: -1, S: 0},
+	{Q: 1, R: 0, S: -1},
+	{Q: 0, R: 1, S: -1},
+	{Q: -1, R: 1, S: 0},
+	{Q: -1, R: 0, S: 1},
+	{Q: 0, R: -1, S: 1},
+}
+
 // TestMoveEntity_AfterStartEncounter_ActuallyMoves is the #656 regression
 // gate: StartEncounter's InitRoom + player-seeding combination must produce
 // an encounter where every movement direction works, not just the ones a
-// prior playtest happened to exercise. Reproduces the exact bug report
-// (rpg-api#656): a fresh StartEncounter-created FREE_ROAM encounter, one
-// player, a single-hex move in the +Q/-S direction (offset Y-1 from the
-// player's spawn hex) — this is the direction that silently no-opped
-// (truncated at the room's offset-coordinate bound) when the player spawned
-// at the room's OFFSET CORNER (cube-origin) rather than its center.
+// prior playtest happened to exercise. Each direction gets its own fresh
+// lobby/character/encounter (via s.Run sub-tests) rather than chaining moves
+// on one encounter, so a failure in one direction is independently visible
+// in test output and isn't masked by, or dependent on, any other direction's
+// outcome.
 func (s *LobbyStartThenMoveSuite) TestMoveEntity_AfterStartEncounter_ActuallyMoves() {
-	const playerID = "alice"
-	const characterID = "char-alice"
+	for i, dir := range sixHexDirections {
+		s.Run(fmt.Sprintf("direction_%d_%+v", i, dir), func() {
+			s.assertMoveSucceedsInDirection(fmt.Sprintf("656-%d", i), dir)
+		})
+	}
+}
+
+// assertMoveSucceedsInDirection creates a fresh lobby, starts an encounter
+// via the real RPC path, reads the player's actual spawn position (no
+// hardcoded hex — this pins "movement works from wherever StartEncounter
+// spawns the party," not a specific fix shape), moves one step in dir via
+// the real MoveEntity RPC, and asserts the entity actually arrived.
+func (s *LobbyStartThenMoveSuite) assertMoveSucceedsInDirection(suffix string, dir core.Hex) {
+	playerID := "alice-" + suffix
+	characterID := "char-alice-" + suffix
 
 	_, err := s.srv.CharacterRepo.Create(s.ctx, characterrepo.CreateInput{
 		Character: &entities.Character{
@@ -81,7 +110,7 @@ func (s *LobbyStartThenMoveSuite) TestMoveEntity_AfterStartEncounter_ActuallyMov
 	s.Require().NoError(err)
 
 	createResp, err := s.srv.LobbyClient.CreateLobby(s.authCtx(playerID), &lobbyv1alpha1.CreateLobbyRequest{
-		CampaignId: "campaign-656", CharacterId: characterID,
+		CampaignId: "campaign-" + suffix, CharacterId: characterID,
 	})
 	s.Require().NoError(err)
 	lobbyID := createResp.GetLobbyId()
@@ -98,21 +127,14 @@ func (s *LobbyStartThenMoveSuite) TestMoveEntity_AfterStartEncounter_ActuallyMov
 	encounterID := startResp.GetEncounterId()
 	s.Require().NotEmpty(encounterID)
 
-	// Read the player's actual spawn position from the persisted encounter —
-	// do not assume a specific hex, so this test pins "movement works from
-	// wherever StartEncounter spawns the party" rather than a specific fix
-	// shape.
 	before, err := s.srv.EncRepoV2.Get(s.ctx, encounterID)
 	s.Require().NoError(err)
 	pd, ok := before.Players[core.PlayerID(playerID)]
-	s.Require().True(ok, "alice must be seated in the encounter")
-	s.Require().NotNil(pd.View, "alice's view must be set")
+	s.Require().True(ok, "%q must be seated in the encounter", playerID)
+	s.Require().NotNil(pd.View, "%q's view must be set", playerID)
 	startHex := pd.View.Position
 
-	// The exact relative direction from rpg-api#656's bug report: Q+1, S-1
-	// (offset Y-1 from the spawn hex) — the direction that silently no-opped
-	// when the party spawned at the room's offset-coordinate corner.
-	destHex := core.Hex{Q: startHex.Q + 1, R: startHex.R, S: startHex.S - 1}
+	destHex := core.Hex{Q: startHex.Q + dir.Q, R: startHex.R + dir.R, S: startHex.S + dir.S}
 
 	_, err = s.srv.EncounterClientV2.MoveEntity(s.authCtx(playerID), &encounterv2pb.MoveEntityRequest{
 		EncounterId: encounterID,
@@ -129,6 +151,6 @@ func (s *LobbyStartThenMoveSuite) TestMoveEntity_AfterStartEncounter_ActuallyMov
 	afterPD, ok := after.Players[core.PlayerID(playerID)]
 	s.Require().True(ok)
 	s.Require().Equal(destHex, afterPD.View.Position,
-		"alice must actually be at the destination hex after MoveEntity — "+
-			"a silently-truncated (no-op) move is the #656 regression")
+		"%q must actually be at the destination hex after moving in direction %+v — "+
+			"a silently-truncated (no-op) move is the #656 regression", playerID, dir)
 }

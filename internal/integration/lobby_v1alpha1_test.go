@@ -147,22 +147,22 @@ func (s *LobbyV1alpha1IntegrationSuite) TestPartyAssembles_FourPlayers_CreateJoi
 
 	// rpg-api#632: an unseeded SightRange leaves every member able to see only
 	// their own spawn hex — the party never actually sees each other despite
-	// spawning adjacent. Assert every member's cumulative reveal covers every
-	// OTHER member's spawn hex, so this regression can't pass silently again.
-	// rpg-api#656 note: this used to also assert every viewer's RevealedHexes
-	// contains every OTHER member's exact spawn hex. That's a stronger claim
-	// than #632 needs and turned out to be positionally fragile: it happened
-	// to hold when the party spawned at the room's offset-coordinate corner
-	// (rare wall coverage there for a sparse random pattern) but is not
-	// actually guaranteed anywhere in the room — a wall can sit on the
-	// direct line between two adjacent party members regardless of where
-	// they spawn. #656's fix moved the party to the room's center (fixing a
-	// real movement-truncation bug), which — for this room's random wall
-	// layout — puts exactly one wall between two of the four spawn hexes,
-	// deterministically failing the old assertion. The reveal-radius
-	// assertion below (SightRange seeded, RevealedHexes is a real radius,
-	// not a single hex) is what #632 actually needs guarded; wall-free LOS
-	// between every possible pair of spawn positions was never a real
+	// spawning adjacent. Assert every member has a seeded SightRange and a
+	// RevealedHexes set covering a real radius (not just their own hex), so
+	// this regression can't pass silently again.
+	//
+	// rpg-api#656 note (why this ISN'T "every viewer sees every other
+	// member's exact spawn hex"): an earlier version of this test asserted
+	// that stronger claim. It happened to hold when the party spawned at the
+	// room's offset-coordinate corner, but was never actually guaranteed
+	// anywhere in the room — a wall can sit on the direct line between two
+	// adjacent party members regardless of where they spawn. #656's fix
+	// (spawning the party at the room's center instead of its corner, fixing
+	// a real movement-truncation bug) happens to put exactly one wall
+	// between two of these four spawn hexes for this room's random wall
+	// layout, which deterministically failed the old, stronger assertion.
+	// The radius check below is what #632 actually needs guarded; wall-free
+	// LOS between every possible pair of spawn positions was never a real
 	// requirement and is not worth chasing with a placement-search here.
 	for _, viewer := range players {
 		viewerPD := encData.Players[core.PlayerID(viewer.id)]
