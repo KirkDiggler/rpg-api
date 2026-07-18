@@ -67,6 +67,32 @@ const (
 	roomPattern = environments.PatternRandom
 )
 
+// roomCenterHex returns the cube hex at the room's geometric center —
+// offset (roomWidth/2, roomHeight/2) converted back to cube coordinates via
+// the same core.HexFromPosition bridge seedGoblins/wallsToProto already use.
+//
+// rpg-api#656: the party used to spawn at raw cube-origin {0,0,0}, which
+// Hex.ToPosition() maps DIRECTLY to the room's offset-coordinate origin
+// (0,0) — the room's CORNER, not its center. InitRoom's room
+// (environments.QuickRoom) spans offset [0,roomWidth) x [0,roomHeight)
+// with no auto-centering around wherever entities get added, and the
+// toolkit's Move() truncates a path the instant a step's offset position
+// falls outside those bounds (space.go's truncateAtWall, indistinguishable
+// from hitting a real wall — rpg-toolkit#757). A corner-spawned party has
+// roughly half of the six hex directions leave the room on the very first
+// step, silently no-opping the move (RPC succeeds, position unchanged) —
+// reproduced and root-caused live (grpcurl repro, offset-position tracing)
+// during the reconnect-fidelity wave's closing playtest. This was NOT
+// introduced by #650/#655: it has existed since InitRoom's introduction in
+// wave-1 (rpg-api#644) and simply was never triggered by the specific
+// movement directions earlier playtests happened to exercise. Spawning the
+// party at the room's center instead gives every direction roomWidth/2 (10)
+// hexes of clearance — matching this file's own "near-origin party" comment
+// above, which already assumed a centered party.
+func roomCenterHex() core.Hex {
+	return core.HexFromPosition(spatial.Position{X: float64(roomWidth) / 2, Y: float64(roomHeight) / 2})
+}
+
 // goblinCount is the fixed number of goblins StartEncounter seeds into the
 // freshly-walled room (design doc fork 2, Kirk 2026-07-13: "fixed placement
 // of 2 goblins via monster.NewGoblin through the fixed spawn engine";
@@ -146,6 +172,7 @@ func (o *Orchestrator) StartEncounter(ctx context.Context, in *StartEncounterInp
 		return nil, fmt.Errorf("init room for encounter %q: %w", encID, err)
 	}
 
+	partyBase := roomCenterHex()
 	for i, m := range members {
 		snap, snapErr := o.seedMemberCombatSnapshot(ctx, m.CharacterID)
 		if snapErr != nil {
@@ -155,7 +182,7 @@ func (o *Orchestrator) StartEncounter(ctx context.Context, in *StartEncounterInp
 		if addErr := enc.AddPlayer(tkenc.PlayerInput{
 			PlayerID:   core.PlayerID(m.PlayerID),
 			EntityID:   core.EntityID(m.CharacterID),
-			Position:   core.Hex{Q: q, R: 0, S: -q},
+			Position:   core.Hex{Q: partyBase.Q + q, R: partyBase.R, S: partyBase.S - q},
 			SightRange: memberSightRange,
 			HP:         snap.hp,
 			MaxHP:      snap.maxHP,
