@@ -107,11 +107,36 @@ func (o *Orchestrator) MoveEntity(ctx context.Context, in *MoveEntityInput) (*Mo
 		return nil, fmt.Errorf("%w: %w", ErrMoveRefused, moveErr)
 	}
 
-	// persistWithCharacterData flushes the cascaded player DataJSON back to the
-	// character store (so the next RPC re-attaches fresh state and the snapshot
-	// does not carry a soon-stale char blob) after the SyncErr check, then saves —
-	// mirroring the inline handler's persistPlayerCharacterData + Save.
-	if err := o.persistWithCharacterData(ctx, enc, in.EncounterID); err != nil {
+	// rpg-api#659: enc.Move can trigger the toolkit's own FREE_ROAM->TURN_BASED
+	// combat entry (checkCombatEntry, called inline at the end of Move) when the
+	// mover's updated view newly sights a monster. SetMode rolls initiative and
+	// announces the first turn (TurnStartedEvent) but never dispatches it — only
+	// the orchestrator drives NPC turns (driveNPCChain, the same cycle EndTurn
+	// uses below its own toolkit verb call). Without this, a monster winning
+	// initiative on a sighted Move stalls forever: EndTurn requires the CURRENT
+	// active actor's owning player to call it, and there is no such player.
+	// Before this fix, the only thing that ever drove that first NPC turn was
+	// the #636 connect-time self-heal (DriveStalledNPCTurn, called from
+	// StreamEncounter/GetEncounter) — i.e. the encounter only advanced once some
+	// client (re)connected. Mirroring EndTurn's call exactly makes the kick
+	// deterministic on the mode transition itself, matching driveNPCChain's own
+	// doc comment ("a future in-process combat-entry trigger can (and should)
+	// call this... right after its own SetMode").
+	//
+	// active/isNPC are read AFTER Move so they reflect whatever Move actually
+	// did: a non-combat-entry move (still FREE_ROAM, or TURN_BASED with a player
+	// active) yields ActiveActor()=="" or a player id, so IsNPC is false and
+	// driveNPCChain zero-iterates — behavior-preserving for every case except
+	// the one this fixes. This also covers the encounter ending mid-Move (a
+	// synchronous instant-death via an opportunity attack): ActiveActor()
+	// returns "" whenever Mode != ModeTurnBased, which includes ModeEnded, so
+	// driveNPCChain still zero-iterates and simply persists.
+	//
+	// driveNPCChain persists on every exit path (including zero-iteration), so
+	// it replaces the direct persistWithCharacterData call below rather than
+	// running alongside it — the same structure EndTurn uses.
+	active := enc.ActiveActor()
+	if err := o.driveNPCChain(ctx, enc, in.EncounterID, active, enc.IsNPC(active)); err != nil {
 		return nil, err
 	}
 

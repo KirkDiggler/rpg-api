@@ -22,6 +22,7 @@ import (
 	"time"
 
 	encountersv2 "github.com/KirkDiggler/rpg-api/internal/repositories/encounters/v2"
+	"github.com/KirkDiggler/rpg-toolkit/dice"
 	tkenc "github.com/KirkDiggler/rpg-toolkit/encounter"
 )
 
@@ -159,6 +160,15 @@ type Config struct {
 	// Not used by the door verbs (Interact); reserved for the projection /
 	// snapshot read path carved in later steps of #582.
 	Now func() time.Time
+
+	// Roller overrides the dice.Roller every LoadFromData wires via
+	// tkenc.WithRoller (rpg-api#659). Optional — nil leaves the toolkit's own
+	// default (dice.NewRoller(), a real crypto/rand-backed roller) in place, so
+	// production behavior is unchanged. Exists solely so tests can force a
+	// deterministic initiative roll on the REAL combat-entry path (Move ->
+	// checkCombatEntry -> SetMode -> rollInitiative) instead of hand-seeding
+	// post-roll Initiative/ActiveIdx, which cannot exercise Move's own roll.
+	Roller dice.Roller
 }
 
 // Orchestrator is the v2 encounter load → verb → persist core. Construct via
@@ -180,6 +190,9 @@ type Orchestrator struct {
 	characterData  CharacterDataCascade
 	reactionResume ReactionResume
 	now            func() time.Time
+	// roller overrides LoadFromData's dice.Roller when non-nil (rpg-api#659,
+	// test-only determinism seam — see Config.Roller).
+	roller dice.Roller
 	// npcDriveLocks single-flights DriveStalledNPCTurn per encounter ID
 	// (rpg-api#636) so concurrent connect-time kicks for the same encounter
 	// don't each load the same NPC-active snapshot and double-dispatch.
@@ -220,6 +233,7 @@ func New(cfg *Config) (*Orchestrator, error) {
 		characterData:         cfg.CharacterData,
 		reactionResume:        cfg.ReactionResume,
 		now:                   now,
+		roller:                cfg.Roller,
 		npcDriveLocks:         newKeyedMutex(),
 	}, nil
 }
