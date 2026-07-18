@@ -189,21 +189,29 @@ not a synthetic monster-removal shortcut) sweeps the rage badge from the
 post-end snapshot, pinning the `checkEncounterEnd`/`endCombatForPlayers`
 (rpg-toolkit#767/#752) sweep-before-persist ordering.
 
-**Known rough edge, rpg-api-side only, not a toolkit gap:** `Encounter.ActivateFeature`
-deliberately does not use the shared #689 hydration cascade
+**Known rough edge: `ActiveConditions` can lag a just-activated feature until the
+next combat-capable verb — root cause is toolkit#691, rpg-api's projection is
+faithful to what's persisted:** `Encounter.ActivateFeature` deliberately does not
+use the shared #689 hydration cascade
 (`internal/orchestrators/encounter/v2/activate_feature.go`'s doc comment; tracked as
-the OPEN toolkit#691) — a character who activates a feature (e.g. Rage) via
-`ActivateFeature` does NOT immediately show that condition in `ActiveConditions`,
-because the toolkit's `syncCombatantsToData` (which computes `ActiveConditions`) only
-runs for entities currently held in `e.combatants`, and `ActivateFeature`'s
-self-load path never adds the actor there (by design, to avoid a double-subscribe
-collision — the #684 class). The condition IS correctly persisted to the character
-store immediately; it only becomes visible in a SNAPSHOT once some OTHER
-combat-capable verb (e.g. `MoveEntity`, `TakeAction`) that DOES use the #689 cascade
-touches the same actor and, as a side effect of its own hold-then-persist cycle,
-backfills `ActiveConditions` from the character's current (already-correct)
-condition state. Not fixed here — out of scope for #651, which is the projection
-layer; the fix belongs in toolkit#691.
+the OPEN toolkit#691, to avoid a double-subscribe collision with `ActivateFeature`'s
+own `CharDataJSON` self-load — the #684 class). `ProjectFor` — the function behind
+both `StreamEncounter`'s connect snapshot and `GetEncounter` — never calls
+`enc.ToData()` itself (confirmed by direct read: zero `ToData()`/`Save()` calls in
+`project.go`); it projects `PlayerData.ActiveConditions` exactly as last persisted,
+for every viewer including the active actor. So a feature activated via
+`ActivateFeature` IS correctly persisted to the character store immediately, but
+does NOT appear on any snapshot — not even the activating character's own
+reconnect — until some OTHER combat-capable verb (`MoveEntity`, `TakeAction`,
+anything using the #689 `WithCharacterData: true` cascade) runs: that cascade
+attaches and holds EVERY player's fresh character blob, not just the acting one
+(`attachPlayerCharacterData` loops `data.Players` unconditionally), so its own
+persist backfills `ActiveConditions` for every held player as a side effect, not
+just whoever the verb targeted. The precise trigger map is "activate a feature,
+then read a snapshot with zero combat-capable verb calls in between" — connecting
+does not itself sync, so there is no self-heal via reconnect alone. Not fixed
+here — out of scope for #651, which is the projection layer; the fix belongs in
+toolkit#691.
 
 **The live v1alpha1 encounter stack is DELETED (rpg-api#642, 2026-07-13)** —
 the audit-flagged registered-and-serving `dnd5e.api.v1alpha1.EncounterService`
