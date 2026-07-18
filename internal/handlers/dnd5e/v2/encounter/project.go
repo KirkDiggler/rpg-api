@@ -308,12 +308,49 @@ func playerEntity(pd *tkenc.PlayerData, pos core.Hex) *encounterv2pb.Entity {
 				PlayerId: string(pd.ID),
 			},
 		},
+		StatusEffects: statusEffectsFrom(pd.ActiveConditions),
 	}
 	if pd.AC > 0 {
 		ac := int32(pd.AC)
 		e.ArmorClass = &ac
 	}
 	return e
+}
+
+// statusEffectsFrom projects a toolkit ActiveConditions ref list
+// (PlayerData.ActiveConditions / MonsterData.ActiveConditions,
+// rpg-toolkit#754) onto the wire, matching the live
+// translateConditionAppliedEvent's StatusEffect shape (Source: the same
+// conditionRefFor parse translate.go's live path already uses) so a
+// reconnecting client's snapshot and a continuously-connected client's
+// stream agree on shape (rpg-api#651).
+//
+// ActiveConditions is already filtered toolkit-side (rpg-toolkit#778): it
+// excludes conditions attached permanently at character/monster construction
+// (class-grant passives, monster traits), since those never fire the live
+// ConditionApplied event either — a naive unfiltered projection would badge
+// every Monk with "MartialArts" and every goblin with "PackTactics" forever.
+// rpg-api does no filtering of its own here; the boundary rule places that
+// judgment in the toolkit, which has the rules knowledge to make it (see
+// rpg-toolkit#778's investigation trail for why a ref-namespace filter in
+// rpg-api specifically does NOT work).
+//
+// DurationRounds is left unset: ActiveConditions carries only ref strings,
+// no duration — the live path's DurationRounds comes from the
+// ConditionAppliedEvent's own payload, which snapshot projection has no
+// equivalent of. A future toolkit enrichment could add it; nothing here
+// depends on that happening.
+func statusEffectsFrom(activeConditions []string) []*encounterv2pb.StatusEffect {
+	if len(activeConditions) == 0 {
+		return nil
+	}
+	effects := make([]*encounterv2pb.StatusEffect, 0, len(activeConditions))
+	for _, ref := range activeConditions {
+		effects = append(effects, &encounterv2pb.StatusEffect{
+			Source: conditionRefFor(ref),
+		})
+	}
+	return effects
 }
 
 // monsterEntity builds the wire-shape proto Entity for a monster, mirroring
@@ -344,6 +381,7 @@ func monsterEntity(m *tkenc.MonsterData) *encounterv2pb.Entity {
 				MonsterRef: monsterRefFor(m.MonsterRef),
 			},
 		},
+		StatusEffects: statusEffectsFrom(m.ActiveConditions),
 	}
 	if m.AC > 0 {
 		ac := int32(m.AC)

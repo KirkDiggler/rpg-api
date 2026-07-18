@@ -406,6 +406,115 @@ func (s *ProjectSuite) TestProjectFor_PlayerEntityCarriesArmorClass() {
 	s.Require().Equal(int32(15), found.GetArmorClass(), "armor_class must equal PlayerData.AC")
 }
 
+func (s *ProjectSuite) TestProjectFor_PlayerEntityCarriesActiveConditionsAsStatusEffects() {
+	// Rurik is mid-rage. rpg-toolkit#754/#778 (encounter v0.29.1): a hydrated
+	// combatant's PlayerData.ActiveConditions carries the ref of every
+	// condition that survives the toolkit's structurally-permanent filter —
+	// i.e. exactly the set a continuously-connected client would have seen
+	// live via ConditionApplied. rpg-api#651: project that onto the wire the
+	// same shape the live path already uses (translateConditionAppliedEvent's
+	// StatusEffect{Source: conditionRefFor(...)}), so a reconnecting client
+	// sees the rage badge instead of nothing until the next live event.
+	data := tkenc.NewData("enc-conditions")
+	data.Mode = core.ModeTurnBased
+	data.Round = 1
+	data.ActiveIdx = 0
+	data.Initiative = []core.EntityID{"char-rurik"}
+
+	rurik := newPlayerData("player-rurik", "char-rurik", originHex, 3)
+	rurik.HP = 20
+	rurik.MaxHP = 20
+	rurik.ActiveConditions = []string{"dnd5e:conditions:raging"}
+	data.Players = map[core.PlayerID]*tkenc.PlayerData{"player-rurik": rurik}
+
+	pb, err := v2encounter.ProjectFor(context.Background(), data, "player-rurik", s.broker, nil, s.now)
+	s.Require().NoError(err)
+
+	var found *encounterv2pb.Entity
+	for _, e := range pb.GetSpace().GetEntities() {
+		if e.GetId() == "char-rurik" {
+			found = e
+			break
+		}
+	}
+	s.Require().NotNil(found, "rurik must be in the snapshot")
+	s.Require().Len(found.GetStatusEffects(), 1, "one ActiveConditions ref must become one status_effects entry")
+	effect := found.GetStatusEffects()[0]
+	s.Require().NotNil(effect.GetSource(), "status effect must carry a Source ref")
+	s.Require().Equal("dnd5e", effect.GetSource().GetModule())
+	s.Require().Equal("conditions", effect.GetSource().GetType())
+	s.Require().Equal("raging", effect.GetSource().GetId())
+}
+
+func (s *ProjectSuite) TestProjectFor_PlayerEntityNoActiveConditions_NoStatusEffects() {
+	// Negative case: a player with no ActiveConditions must get an empty (not
+	// nil-panicking, not spuriously populated) status_effects list.
+	data := tkenc.NewData("enc-no-conditions")
+	data.Mode = core.ModeTurnBased
+	data.Round = 1
+	data.ActiveIdx = 0
+	data.Initiative = []core.EntityID{"char-plain"}
+
+	plain := newPlayerData("player-plain", "char-plain", originHex, 3)
+	plain.HP = 10
+	plain.MaxHP = 10
+	data.Players = map[core.PlayerID]*tkenc.PlayerData{"player-plain": plain}
+
+	pb, err := v2encounter.ProjectFor(context.Background(), data, "player-plain", s.broker, nil, s.now)
+	s.Require().NoError(err)
+
+	var found *encounterv2pb.Entity
+	for _, e := range pb.GetSpace().GetEntities() {
+		if e.GetId() == "char-plain" {
+			found = e
+			break
+		}
+	}
+	s.Require().NotNil(found, "plain must be in the snapshot")
+	s.Require().Empty(found.GetStatusEffects(), "no ActiveConditions must mean no status_effects")
+}
+
+func (s *ProjectSuite) TestProjectFor_MonsterEntityCarriesActiveConditionsAsStatusEffects() {
+	// Same projection, monster side. A monster's own condition namespace
+	// (e.g. a spell-applied dnd5e:conditions:poisoned, not a permanent trait —
+	// those are filtered toolkit-side per rpg-toolkit#778) must project the
+	// same way as a player's.
+	data := tkenc.NewData("enc-monster-conditions")
+	data.Mode = core.ModeTurnBased
+	data.Round = 1
+	data.ActiveIdx = 0
+	data.Initiative = []core.EntityID{"goblin-1"}
+
+	alice := newPlayerData("player-alice", "char-alice", originHex, 10)
+	data.Players = map[core.PlayerID]*tkenc.PlayerData{"player-alice": alice}
+	data.Monsters = map[core.EntityID]*tkenc.MonsterData{
+		"goblin-1": {
+			ID:               "goblin-1",
+			Position:         originHex,
+			HP:               7,
+			MaxHP:            7,
+			ActiveConditions: []string{"dnd5e:conditions:poisoned"},
+		},
+	}
+
+	pb, err := v2encounter.ProjectFor(context.Background(), data, "player-alice", s.broker, nil, s.now)
+	s.Require().NoError(err)
+
+	var found *encounterv2pb.Entity
+	for _, e := range pb.GetSpace().GetEntities() {
+		if e.GetId() == "goblin-1" {
+			found = e
+			break
+		}
+	}
+	s.Require().NotNil(found, "goblin-1 must be in the snapshot")
+	s.Require().Len(found.GetStatusEffects(), 1)
+	effect := found.GetStatusEffects()[0]
+	s.Require().Equal("dnd5e", effect.GetSource().GetModule())
+	s.Require().Equal("conditions", effect.GetSource().GetType())
+	s.Require().Equal("poisoned", effect.GetSource().GetId())
+}
+
 func (s *ProjectSuite) TestProjectFor_MonsterRef_TooManyColonsTreatedAsMalformed() {
 	// splitRef requires exactly two colons. A four-part ref (three colons)
 	// must fall back to the default rather than misparse, since we share

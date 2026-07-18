@@ -2,7 +2,7 @@
 name: rpg-api status
 description: Where we are with rpg-api — active work, paused, known rough edges, per-subsystem confidence
 updated: 2026-07-17
-confidence: high — Wave 2 Monk entries verified against passing integration tests; #636 entry verified against passing unit + integration tests; #642 v1alpha1 encounter stack deletion verified against passing build/vet/test/lint; #644 The Dungeon wave 1 (api) verified against passing unit + stress-run (50x) integration tests; #650 toolkit seam adoption (InitiativeRolled event + room-aware spawn) verified against passing unit/integration/-race full suite
+confidence: high — Wave 2 Monk entries verified against passing integration tests; #636 entry verified against passing unit + integration tests; #642 v1alpha1 encounter stack deletion verified against passing build/vet/test/lint; #644 The Dungeon wave 1 (api) verified against passing unit + stress-run (50x) integration tests; #650 toolkit seam adoption (InitiativeRolled event + room-aware spawn) verified against passing unit/integration/-race full suite; #651 ActiveConditions projection verified against passing unit + integration (10x -race) + full suite
 ---
 
 # rpg-api: Where We Are
@@ -157,6 +157,61 @@ per-event repo read ever shows up as a real cost, the natural follow-up is cachi
 connect-time snapshot's Players/Monsters in the stream goroutine's own state instead of
 round-tripping Redis per appearance; not built now, flagged here so it's discoverable
 rather than re-derived.
+
+**Active battlefield conditions survive reconnect (rpg-api#651, 2026-07-17)** —
+`PlayerData.ActiveConditions` / `MonsterData.ActiveConditions` (rpg-toolkit#754,
+encounter v0.29.0+) are now projected into `Entity.status_effects` at snapshot time,
+in the shared `playerEntity`/`monsterEntity` builders (`project.go`'s
+`statusEffectsFrom`), matching the live `translateConditionAppliedEvent`'s
+`StatusEffect{Source: conditionRefFor(...)}` shape exactly (via the same
+`conditionRefFor` helper) so a reconnecting client's snapshot and a
+continuously-connected client's stream agree on wire shape. `ActiveConditions`
+itself needed no filtering on the rpg-api side: it's already narrowed toolkit-side
+(rpg-toolkit#778, encounter v0.29.1) to exclude conditions attached permanently at
+character/monster construction (class-grant passives like a Monk's `MartialArts`,
+monster traits like `PackTactics`) — a namespace filter (`dnd5e:conditions:*` vs
+`dnd5e:monster_traits:*`) provably could not make this distinction (`MartialArts`
+and `Raging` are both `dnd5e:conditions:*`; see rpg-toolkit#778's investigation
+trail), so rpg-api trusts the toolkit's attachment-provenance-aware filter
+completely rather than re-deriving it.
+
+Verified end to end via `integration_conditions_projection_test.go`
+(`ConditionsProjectionIntegrationSuite`): a raging character's connect snapshot
+carries the rage status effect with zero live events involved (no verb called in
+the test — the character fixture starts already-raging, mirroring
+rpg-toolkit's own `active_conditions_test.go` "NoVerbCalled" pattern, which is
+the honest shape of "hydrated after a restart"); a Monk fixture with a real,
+round-tripped `MartialArts` condition proves the provenance-chain filter holds
+end to end (confirmed as a true positive, not an empty pipe — verified the
+condition genuinely round-trips into `character.Data.Conditions` while
+`ActiveConditions` still excludes it); and ending an encounter (via a real kill,
+not a synthetic monster-removal shortcut) sweeps the rage badge from the
+post-end snapshot, pinning the `checkEncounterEnd`/`endCombatForPlayers`
+(rpg-toolkit#767/#752) sweep-before-persist ordering.
+
+**Known rough edge: `ActiveConditions` can lag a just-activated feature until the
+next combat-capable verb — root cause is toolkit#691, rpg-api's projection is
+faithful to what's persisted:** `Encounter.ActivateFeature` deliberately does not
+use the shared #689 hydration cascade
+(`internal/orchestrators/encounter/v2/activate_feature.go`'s doc comment; tracked as
+the OPEN toolkit#691, to avoid a double-subscribe collision with `ActivateFeature`'s
+own `CharDataJSON` self-load — the #684 class). `ProjectFor` — the function behind
+both `StreamEncounter`'s connect snapshot and `GetEncounter` — never calls
+`enc.ToData()` itself (confirmed by direct read: zero `ToData()`/`Save()` calls in
+`project.go`); it projects `PlayerData.ActiveConditions` exactly as last persisted,
+for every viewer including the active actor. So a feature activated via
+`ActivateFeature` IS correctly persisted to the character store immediately, but
+does NOT appear on any snapshot — not even the activating character's own
+reconnect — until some OTHER combat-capable verb (`MoveEntity`, `TakeAction`,
+anything using the #689 `WithCharacterData: true` cascade) runs: that cascade
+attaches and holds EVERY player's fresh character blob, not just the acting one
+(`attachPlayerCharacterData` loops `data.Players` unconditionally), so its own
+persist backfills `ActiveConditions` for every held player as a side effect, not
+just whoever the verb targeted. The precise trigger map is "activate a feature,
+then read a snapshot with zero combat-capable verb calls in between" — connecting
+does not itself sync, so there is no self-heal via reconnect alone. Not fixed
+here — out of scope for #651, which is the projection layer; the fix belongs in
+toolkit#691.
 
 **The live v1alpha1 encounter stack is DELETED (rpg-api#642, 2026-07-13)** —
 the audit-flagged registered-and-serving `dnd5e.api.v1alpha1.EncounterService`
