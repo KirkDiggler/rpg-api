@@ -96,12 +96,18 @@ func (s *EndTurnSuite) SetupTest() {
 func (s *EndTurnSuite) seedTurnBased(encID string, initiative []core.EntityID, activeIdx int) {
 	enc := tkenc.New(s.ctx, core.EncounterID(encID), s.broker)
 	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
-		PlayerID:    etPlayerBob,
-		EntityID:    etEntityBob,
-		Position:    core.Hex{Q: 0, R: 0, S: 0},
-		SightRange:  10,
-		HP:          14,
-		MaxHP:       14,
+		PlayerID:   etPlayerBob,
+		EntityID:   etEntityBob,
+		Position:   core.Hex{Q: 0, R: 0, S: 0},
+		SightRange: 10,
+		// HP=50: comfortably above a goblin crit-max hit (1d6+2 -> 2d6+2=14 on
+		// a nat 20), so the NPC dispatch loop below can never TPK bob mid-chain
+		// (rpg-api#659: the v0.29.2 toolkit bump added TPK detection to
+		// checkEncounterEnd, which clears Initiative on ModeEnded — this
+		// suite's real-dice StandInCombatResolver occasionally hit that at the
+		// old HP=14, flaking the NPC-dispatch assertions below).
+		HP:          50,
+		MaxHP:       50,
 		AC:          14,
 		AttackBonus: 5,
 		DamageDice:  "1d12+3",
@@ -235,7 +241,10 @@ func (s *EndTurnSuite) TestEndTurn_NPCDispatchLoop_CyclesPastConsecutiveNPCs() {
 	enc := tkenc.New(s.ctx, "enc-npc-chain", s.broker)
 	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
 		PlayerID: etPlayerBob, EntityID: etEntityBob, Position: core.Hex{Q: 0, R: 0, S: 0}, SightRange: 10,
-		HP: 14, MaxHP: 14, AC: 14, AttackBonus: 5, DamageDice: "1d12+3", DamageType: "slashing",
+		// HP=50, not 14: TWO goblins chain their scripted attacks below; see
+		// seedTurnBased's doc comment above for why (rpg-api#659, v0.29.2 TPK
+		// detection).
+		HP: 50, MaxHP: 50, AC: 14, AttackBonus: 5, DamageDice: "1d12+3", DamageType: "slashing",
 	}))
 	s.Require().NoError(enc.AddMonster(tkenc.MonsterInput{
 		ID: etGoblinID, Position: core.Hex{Q: 1, R: 0, S: -1}, HP: 7, MaxHP: 7, AC: 15, Speed: 6,

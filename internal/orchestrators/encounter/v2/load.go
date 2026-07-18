@@ -108,13 +108,24 @@ func (o *Orchestrator) load(ctx context.Context, in loadInput) (*tkenc.Encounter
 	}
 
 	// Resolvers are wired uniformly on every load, mirroring the handler today.
-	// The dice roller is carried inside the resolver configs (the builders), not
-	// passed as a separate WithRoller option — keeping a single roller source per
-	// the "one representation" rule rather than a parallel encounter-level roller.
-	enc, err := tkenc.LoadFromData(ctx, data, o.broker,
+	// The dice roller LoadFromData uses is the toolkit's own default
+	// (dice.NewRoller()) in production — Config.Roller is unset, so o.roller is
+	// nil and the WithRoller option below is never appended, meaning combat
+	// rolls (attack, damage, initiative) are carried inside the resolver
+	// configs (the builders) exactly as before, with a single production
+	// roller source. rpg-api#659 added the one exception: a test that needs a
+	// deterministic initiative roll on the real Move -> checkCombatEntry ->
+	// SetMode -> rollInitiative path sets Config.Roller, which conditionally
+	// appends WithRoller here to override just that call's roller.
+	opts := []tkenc.Option{
 		tkenc.WithCharacterResolver(o.resolver),
 		tkenc.WithCombatResolver(o.buildCombatResolver(data)),
-		tkenc.WithMovementResolver(o.buildMovementResolver(data)))
+		tkenc.WithMovementResolver(o.buildMovementResolver(data)),
+	}
+	if o.roller != nil {
+		opts = append(opts, tkenc.WithRoller(o.roller))
+	}
+	enc, err := tkenc.LoadFromData(ctx, data, o.broker, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("load encounter from data %q: %w", in.EncounterID, err)
 	}

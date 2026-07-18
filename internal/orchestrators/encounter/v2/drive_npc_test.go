@@ -87,12 +87,21 @@ func (s *DriveStalledNPCTurnSuite) SetupTest() {
 func (s *DriveStalledNPCTurnSuite) seedTurnBased(encID string, monsterIDs []core.EntityID, initiative []core.EntityID, activeIdx int) {
 	enc := tkenc.New(s.ctx, core.EncounterID(encID), s.broker)
 	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
-		PlayerID:    dnPlayerBob,
-		EntityID:    dnEntityBob,
-		Position:    core.Hex{Q: 0, R: 0, S: 0},
-		SightRange:  10,
-		HP:          14,
-		MaxHP:       14,
+		PlayerID:   dnPlayerBob,
+		EntityID:   dnEntityBob,
+		Position:   core.Hex{Q: 0, R: 0, S: 0},
+		SightRange: 10,
+		// HP=50: comfortably above any realistic damage a chained goblin
+		// NPCAct dispatch can deal here (rpg-api#659 toolkit bump to
+		// v0.29.2 added TPK detection to checkEncounterEnd, which clears
+		// Initiative on transition to ModeEnded — a real crit-max 1d6+2
+		// goblin hit is 2d6+2=14, exactly lethal at the old HP=14 and
+		// occasionally flaked this suite's real-dice StandInCombatResolver
+		// into a TPK mid-chain). This margin makes every test below
+		// structurally immune to that outcome regardless of roll luck, for
+		// up to several chained goblins.
+		HP:          50,
+		MaxHP:       50,
 		AC:          14,
 		AttackBonus: 5,
 		DamageDice:  "1d12+3",
