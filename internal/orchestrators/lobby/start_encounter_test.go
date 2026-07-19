@@ -1,6 +1,8 @@
 package lobby_test
 
 import (
+	"encoding/json"
+
 	"go.uber.org/mock/gomock"
 
 	"github.com/KirkDiggler/rpg-api/internal/apierr"
@@ -8,9 +10,12 @@ import (
 	lobbyorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/lobby"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	lobbyrepo "github.com/KirkDiggler/rpg-api/internal/repositories/lobby"
+	rpgcore "github.com/KirkDiggler/rpg-toolkit/core"
 	tkenc "github.com/KirkDiggler/rpg-toolkit/encounter"
 	"github.com/KirkDiggler/rpg-toolkit/encounter/core"
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/refs"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/saves"
 )
 
 func (s *LobbySuite) seedReadyLobby(id, host string, others ...string) {
@@ -141,6 +146,90 @@ func (s *LobbySuite) TestStartEncounter_ClearsStaleActionEconomy() {
 	encData, err := s.encRepo.Get(s.ctx, out.EncounterID)
 	s.Require().NoError(err)
 	s.Require().Equal(12, encData.Players[core.PlayerID("alice")].HP)
+}
+
+// TestStartEncounter_DeadCharacter_ArcadeRecoveryRestoresAndPersists is the
+// rpg-api#670 regression: a character carrying 0 HP from a PRIOR encounter
+// (a confirmed death or an unresolved TPK snapshot) must be seated ALIVE at
+// full HP in a BRAND NEW encounter — rpg-toolkit's arcade recovery
+// (character.RestoreForNewEncounter, toolkit#785/#786) exists for exactly
+// this, but only fires where a caller actually invokes it. StartEncounter's
+// AddPlayer call deliberately carries no DataJSON (hydration is the v2
+// orchestrator's job — see TestStartEncounter_SeedsHonestCombatSnapshot
+// above), so the toolkit's OWN DataJSON-gated restoreForNewSeat path inside
+// AddPlayer never fires for a real lobby-started encounter. character.go's
+// restoreForNewEncounter step is what actually triggers the toolkit's
+// restore rule here, and must persist the result back to the character
+// store — otherwise the NEXT StartEncounter for this character would read
+// the same pre-restore hp=0 record right back out of the store.
+func (s *LobbySuite) TestStartEncounter_DeadCharacter_ArcadeRecoveryRestoresAndPersists() {
+	s.seedReadyLobby("lobby-dead-alice", "alice")
+
+	unconsciousBlob, err := json.Marshal(struct {
+		Ref *rpgcore.Ref `json:"ref"`
+	}{Ref: refs.Conditions.Unconscious()})
+	s.Require().NoError(err)
+
+	s.charRepo.EXPECT().
+		Get(gomock.Any(), characterrepo.GetInput{ID: "char-alice"}).
+		Return(&characterrepo.GetOutput{
+			Character: &entities.Character{
+				Data: &toolkitchar.Data{
+					ID: "char-alice", PlayerID: "alice", Name: "Alice",
+					HitPoints: 0, MaxHitPoints: 20,
+					DeathSaveState: &saves.DeathSaveState{Failures: 3},
+					Conditions:     []json.RawMessage{unconsciousBlob},
+				},
+			},
+		}, nil)
+
+	var persisted *toolkitchar.Data
+	s.charRepo.EXPECT().
+		Update(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ interface{}, input characterrepo.UpdateInput) (*characterrepo.UpdateOutput, error) {
+			persisted = input.Character.Data
+			return &characterrepo.UpdateOutput{Character: input.Character}, nil
+		})
+
+	out, err := s.orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		PlayerID: "alice", LobbyID: "lobby-dead-alice",
+	})
+	s.Require().NoError(err)
+
+	// Alive on the encounter wire: full HP, not the dead hp=0 the store had.
+	encData, err := s.encRepo.Get(s.ctx, out.EncounterID)
+	s.Require().NoError(err)
+	s.Require().Equal(20, encData.Players[core.PlayerID("alice")].HP,
+		"a dead character must be seated at full HP in a NEW encounter (arcade recovery)")
+	s.Require().Equal(20, encData.Players[core.PlayerID("alice")].MaxHP)
+
+	// Persisted back to the character store: the NEXT StartEncounter must not
+	// read the same pre-restore hp=0 record again.
+	s.Require().NotNil(persisted, "the restored character must be persisted back to the character store")
+	s.Require().Equal(20, persisted.HitPoints, "persisted record must carry the restored HP")
+	s.Require().Nil(persisted.DeathSaveState, "death-save state must be cleared")
+	s.Require().Empty(persisted.Conditions, "the Unconscious condition must be stripped")
+}
+
+// TestStartEncounter_LivingCharacter_ArcadeRecoveryDoesNotFire proves the
+// restore is death-scoped, not a free heal: a character already above 0 HP
+// must be seated unchanged, with no extra Update call to the character
+// store beyond StartEncounter's other necessary writes.
+func (s *LobbySuite) TestStartEncounter_LivingCharacter_ArcadeRecoveryDoesNotFire() {
+	s.seedReadyLobby("lobby-alive-alice", "alice")
+	s.expectCharacter("char-alice", "alice", "Alice", 7, 20)
+	// No Update EXPECT() is armed: gomock fails the test if StartEncounter
+	// calls charRepo.Update for a character that never needed restoring.
+
+	out, err := s.orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		PlayerID: "alice", LobbyID: "lobby-alive-alice",
+	})
+	s.Require().NoError(err)
+
+	encData, err := s.encRepo.Get(s.ctx, out.EncounterID)
+	s.Require().NoError(err)
+	s.Require().Equal(7, encData.Players[core.PlayerID("alice")].HP,
+		"a living character's HP must not be touched by arcade recovery")
 }
 
 func (s *LobbySuite) TestStartEncounter_CharacterNotFound_SeedsZeroHP_NotFatal() {

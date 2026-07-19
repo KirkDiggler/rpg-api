@@ -80,12 +80,47 @@ func (o *Orchestrator) seedMemberCombatSnapshot(ctx context.Context, characterID
 	if err := o.clearStaleActionEconomy(ctx, out.Character); err != nil {
 		return memberCombatSnapshot{}, err
 	}
+	if err := o.restoreForNewEncounter(ctx, out.Character); err != nil {
+		return memberCombatSnapshot{}, err
+	}
 
 	return memberCombatSnapshot{
 		hp:    out.Character.Data.HitPoints,
 		maxHP: out.Character.Data.MaxHitPoints,
 		ac:    out.Character.Data.ArmorClass,
 	}, nil
+}
+
+// restoreForNewEncounter applies rpg-toolkit's arcade recovery
+// (tkcharacter.RestoreForNewEncounter, rpg-toolkit#785/#786) to char's
+// persisted data before it is seated in a BRAND NEW encounter: death is an
+// encounter-scoped outcome, not a persistent character state. A character
+// carrying 0 HP or less is restored to full HP with death-save state cleared
+// and the Unconscious condition stripped; a character already above 0 HP is
+// untouched (see RestoreForNewEncounter's own doc for the full contract).
+//
+// rpg-api#670: StartEncounter's AddPlayer call deliberately does not carry
+// DataJSON (hydration is the v2 orchestrator's characterData.Attach
+// cascade's job — see TestStartEncounter_SeedsHonestCombatSnapshot), so the
+// toolkit's own restoreForNewSeat (encounter.go, DataJSON-gated) never fires
+// for a real StartEncounter-seeded seat. Calling RestoreForNewEncounter
+// directly here — on the same character.Data this function already loads —
+// gets the identical toolkit-owned restore rule applied without requiring
+// StartEncounter to plumb a full character blob through AddPlayer's
+// PlayerInput just to trigger it.
+//
+// This must run BEFORE the memberCombatSnapshot is built below, and its
+// result (when it fires) must be persisted back to the character store:
+// otherwise the very next StartEncounter for this character would read the
+// same pre-restore hp=0 record straight out of the store again.
+func (o *Orchestrator) restoreForNewEncounter(ctx context.Context, char *entities.Character) error {
+	if char.Data == nil || !tkcharacter.RestoreForNewEncounter(char.Data) {
+		return nil
+	}
+	if _, err := o.characterRepo.Update(ctx, characterrepo.UpdateInput{Character: char}); err != nil {
+		return fmt.Errorf("persist arcade-recovery restore for character %q: %w", char.Data.ID, err)
+	}
+	return nil
 }
 
 // clearStaleActionEconomy resets char's toolkit action economy back to nil
