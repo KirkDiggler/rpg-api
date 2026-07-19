@@ -74,8 +74,7 @@ jobs:
         cache-to: type=gha,mode=max
 
     - name: Trigger deployment
-      if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-      continue-on-error: true
+      if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
       uses: benc-uk/workflow-dispatch@e2e5e9a103e331dad343f381a29e654aea3cf8fc # v1.2.4
       with:
         workflow: deploy.yml

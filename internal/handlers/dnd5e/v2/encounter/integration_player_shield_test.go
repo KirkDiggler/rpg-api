@@ -120,6 +120,15 @@ func (s *PlayerShieldIntegrationSuite) SetupTest() {
 			CharacterRepo: s.mockCharRepo,
 			Roller:        fixedRoller{val: shieldRollVal},
 		},
+		// The encounter's own roller (distinct from CombatResolverConfig.Roller
+		// above) drives non-combat-resolver dice consumers — notably the
+		// Unconscious condition's automatic death save, which fires the instant
+		// wendy's HP hits 0 and her next turn starts (immediate in this 2-combatant
+		// encounter, same RPC). Left unwired, that death save rolled a real
+		// crypto/rand d20; ~1-in-20 runs rolled a natural 20, regaining 1 HP and
+		// flipping wendy's persisted HP from 0 to 1 out from under this test's
+		// exact-damage assertion. See rpg-deployment#50.
+		Roller: fixedRoller{val: shieldRollVal},
 	})
 	s.Require().NoError(err)
 	s.handler = h
