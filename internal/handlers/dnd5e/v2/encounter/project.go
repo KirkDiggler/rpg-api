@@ -139,14 +139,16 @@ func ProjectFor(
 		pd := data.Players[pid]
 		if pid == viewer {
 			// Viewer always sees their own entity.
-			entities = append(entities, playerEntity(pd, snap.Position))
+			name, classRef := characterIdentityFor(ctx, charRepo, string(pd.EntityID))
+			entities = append(entities, playerEntity(pd, snap.Position, name, classRef))
 			continue
 		}
 		if pd.View == nil {
 			continue
 		}
 		if visibleNow != nil && visibleNow.Has(pd.View.Position) {
-			entities = append(entities, playerEntity(pd, pd.View.Position))
+			name, classRef := characterIdentityFor(ctx, charRepo, string(pd.EntityID))
+			entities = append(entities, playerEntity(pd, pd.View.Position, name, classRef))
 		}
 	}
 
@@ -290,15 +292,24 @@ func buildTurnState(data *tkenc.Data, actorTurnState *tkenc.ActorTurnState) *enc
 // the caller supplies (snap.Position vs pd.View.Position), so the rest of the
 // emit lives here to keep them symmetric and to mirror the monster emit shape.
 //
-// CharacterData currently sets only PlayerId. ClassRef/RaceRef are deferred
-// until toolkit PlayerData carries class/race info; see issue #511 for the
-// rationale (we don't want to couple ProjectFor to the character orchestrator
-// for a thin enrichment).
-func playerEntity(pd *tkenc.PlayerData, pos core.Hex) *encounterv2pb.Entity {
+// displayName/classRef are resolved by the caller (characterIdentityFor) and
+// passed in rather than looked up here — playerEntity stays a pure builder,
+// matching monsterEntity's shape, and both call sites (ProjectFor's snapshot
+// loop, entityForID's live-event enrichment) share the exact same resolution
+// path (rpg-api#664).
+//
+// CharacterData.RaceRef remains unset: issue #664 only asked for
+// display_name/class_ref (the identity dock's actual read, rpg-dnd5e-web#491)
+// — race has no client reader yet, so resolving it now would be speculative
+// enrichment with nothing to verify it against. Add it the same way
+// (characterIdentityFor already holds the full character record) once a
+// caller needs it.
+func playerEntity(pd *tkenc.PlayerData, pos core.Hex, displayName string, classRef *encounterv2pb.Ref) *encounterv2pb.Entity {
 	e := &encounterv2pb.Entity{
-		Id:       string(pd.EntityID),
-		Position: HexToPosition(pos),
-		Type:     encounterv2pb.EntityType_ENTITY_TYPE_CHARACTER,
+		Id:          string(pd.EntityID),
+		Position:    HexToPosition(pos),
+		Type:        encounterv2pb.EntityType_ENTITY_TYPE_CHARACTER,
+		DisplayName: displayName,
 		Hp: &encounterv2pb.HitPoints{
 			Current: int32(pd.HP),
 			Max:     int32(pd.MaxHP),
@@ -306,6 +317,7 @@ func playerEntity(pd *tkenc.PlayerData, pos core.Hex) *encounterv2pb.Entity {
 		Data: &encounterv2pb.Entity_Character{
 			Character: &encounterv2pb.CharacterData{
 				PlayerId: string(pd.ID),
+				ClassRef: classRef,
 			},
 		},
 		StatusEffects: statusEffectsFrom(pd.ActiveConditions),
@@ -315,6 +327,49 @@ func playerEntity(pd *tkenc.PlayerData, pos core.Hex) *encounterv2pb.Entity {
 		e.ArmorClass = &ac
 	}
 	return e
+}
+
+// characterClassRefType is the proto Ref.Type value for a class identity ref
+// (mirrors monsterEntity's "monster" / conditionRefFor's "condition" —
+// established Ref-tagging convention in this file, see monsterRefFor).
+const characterClassRefType = "class"
+
+// characterIdentityFor resolves a player seat's display name and class ref
+// for wire projection (rpg-api#664: real StartEncounter players showed the
+// raw entity id instead of "Alice"/"Rogue" because playerEntity never
+// populated these fields — issue #511 deferred it "until toolkit PlayerData
+// carries class/race info"). That toolkit change never happened and isn't
+// needed: a player seat's EntityID IS the character ID
+// (start_encounter.go's AddPlayer sets EntityID: core.EntityID(m.CharacterID)),
+// so this is a plain by-key lookup against the character store already
+// wired into ProjectFor for turn-menu hydration — no rules math, pure
+// projection of data rpg-api already owns.
+//
+// characterID intentionally comes in as a plain string, not core.EntityID —
+// the character store's key space is characterrepo's, independent of the
+// toolkit's entity-ID type.
+//
+// Any resolution failure (nil charRepo — tests and any caller that hasn't
+// wired one, a NotFound character, or a genuine store error) returns zero
+// values rather than propagating an error: display_name/class_ref are
+// optional-by-design on the wire (rpg-dnd5e-web#491's dock already falls
+// back to the raw entity id with no crash), so a missing/erroring character
+// record should degrade the label, not the snapshot or the live event
+// carrying it.
+func characterIdentityFor(ctx context.Context, charRepo characterrepo.Repository, characterID string) (string, *encounterv2pb.Ref) {
+	if charRepo == nil {
+		return "", nil
+	}
+	out, err := charRepo.Get(ctx, characterrepo.GetInput{ID: characterID})
+	if err != nil || out == nil || out.Character == nil || out.Character.Data == nil {
+		return "", nil
+	}
+	data := out.Character.Data
+	var classRef *encounterv2pb.Ref
+	if data.ClassID != "" {
+		classRef = &encounterv2pb.Ref{Module: refModuleDnd5e, Type: characterClassRefType, Id: data.ClassID}
+	}
+	return data.Name, classRef
 }
 
 // statusEffectsFrom projects a toolkit ActiveConditions ref list
@@ -367,6 +422,15 @@ func statusEffectsFrom(activeConditions []string) []*encounterv2pb.StatusEffect 
 // this fix (the live path used to hand-build a bare {id, position} Entity
 // with no type, HP, or monster ref — see translateEntityAppearedEventWithData's
 // doc for the full story).
+//
+// Entity.DisplayName is deliberately left unset here (rpg-api#664
+// scope-decision): unlike a character's Name, "goblin" -> "Goblin" is
+// content knowledge, not stored data — resolving it would mean rpg-api
+// owning a monster-ref-to-label table, the same content the client already
+// resolves for condition refs (see translateConditionAppliedEvent's doc:
+// "the web resolves display_name/icon_hint from its own lookup table").
+// MonsterData.MonsterRef already carries the structured {module,type,id} the
+// client needs to do that lookup itself.
 func monsterEntity(m *tkenc.MonsterData) *encounterv2pb.Entity {
 	me := &encounterv2pb.Entity{
 		Id:       string(m.ID),

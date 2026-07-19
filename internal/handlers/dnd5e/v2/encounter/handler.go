@@ -451,7 +451,7 @@ func (h *Handler) translateForStream(
 		if err != nil {
 			return nil, fmt.Errorf("load encounter for entity-appeared enrichment: %w", err)
 		}
-		return translateEntityAppearedEventWithData(appearEvt, viewer, h.now(), data)
+		return translateEntityAppearedEventWithData(ctx, h.combatResolverConfig.CharacterRepo, appearEvt, viewer, h.now(), data)
 	}
 
 	return TranslateEvent(evt, viewer, h.now())
