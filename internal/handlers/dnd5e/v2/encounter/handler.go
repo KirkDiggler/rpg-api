@@ -14,6 +14,7 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/auth"
 	encounterorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/encounter/v2"
 	encountersv2 "github.com/KirkDiggler/rpg-api/internal/repositories/encounters/v2"
+	tkdice "github.com/KirkDiggler/rpg-toolkit/dice"
 	"github.com/KirkDiggler/rpg-toolkit/encounter"
 	"github.com/KirkDiggler/rpg-toolkit/encounter/core"
 	tkevents "github.com/KirkDiggler/rpg-toolkit/encounter/events"
@@ -28,6 +29,19 @@ type HandlerConfig struct {
 	CombatResolverConfig   *Dnd5eCombatResolverConfig   // optional; used to build Dnd5eCombatResolver per-request
 	MovementResolverConfig *Dnd5eMovementResolverConfig // optional; used to build Dnd5eMovementResolver per-request (Wave 2.11e #539)
 	Now                    func() time.Time             // optional; defaults to time.Now
+
+	// Roller overrides the dice.Roller every orchestrator LoadFromData wires
+	// via tkenc.WithRoller (rpg-api#659's Config.Roller seam, threaded here).
+	// Optional — nil leaves the toolkit's own default (dice.NewRoller(), a real
+	// crypto/rand-backed roller) in place, so production behavior is unchanged.
+	//
+	// CombatResolverConfig.Roller only reaches the combat resolver (attack/
+	// damage rolls); it does NOT reach the encounter's own roller field, which
+	// separately drives non-combat-resolver dice consumers like the Unconscious
+	// condition's automatic death saves (rpg-toolkit's conditions.NewUnconsciousCondition,
+	// wired from tkenc's e.roller). A test that wants full determinism on a path
+	// that can knock a player to 0 HP must set both fields to the same roller.
+	Roller tkdice.Roller
 }
 
 // Handler implements dnd5e.api.v1alpha2.encounter.EncounterServiceServer.
@@ -145,7 +159,8 @@ func New(cfg *HandlerConfig) (*Handler, error) {
 			BuildReactionModifiers: buildReactionModifiers,
 			IsOneShotReaction:      isOneShotReaction,
 		},
-		Now: now,
+		Now:    now,
+		Roller: cfg.Roller,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("build encounter orchestrator: %w", err)

@@ -1,10 +1,11 @@
-name: Build and Push Docker Image
+name: Build Docker Image
 
 on:
   push:
     branches: [ main ]
   pull_request:
     branches: [ main ]
+  workflow_dispatch:
 
 env:
   REGISTRY: ghcr.io
@@ -63,7 +64,7 @@ jobs:
           type=sha
           type=raw,value=latest,enable={{is_default_branch}}
           
-    - name: Build and push Docker image
+    - name: Build Docker image (push on main)
       uses: docker/build-push-action@v5
       with:
         context: .
@@ -74,8 +75,7 @@ jobs:
         cache-to: type=gha,mode=max
 
     - name: Trigger deployment
-      if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-      continue-on-error: true
+      if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
       uses: benc-uk/workflow-dispatch@e2e5e9a103e331dad343f381a29e654aea3cf8fc # v1.2.4
       with:
         workflow: deploy.yml
