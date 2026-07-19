@@ -18,16 +18,19 @@ import (
 	"context"
 	"encoding/json"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/suite"
 
 	"go.uber.org/mock/gomock"
 
+	encounterv2pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/encounter"
 	"github.com/KirkDiggler/rpg-api/internal/entities"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	charactermock "github.com/KirkDiggler/rpg-api/internal/repositories/character/mock"
 	tkenc "github.com/KirkDiggler/rpg-toolkit/encounter"
 	tkenccore "github.com/KirkDiggler/rpg-toolkit/encounter/core"
+	tkencevents "github.com/KirkDiggler/rpg-toolkit/encounter/events"
 	"github.com/KirkDiggler/rpg-toolkit/events"
 	tkcharacter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 )
@@ -206,4 +209,78 @@ func (s *HydratePlayersReconcileSuite) TestAttachActorCharacterData_ReconcilesFr
 	var loaded tkcharacter.Data
 	s.Require().NoError(json.Unmarshal(data.Players["player-A"].DataJSON, &loaded))
 	s.Equal(3, loaded.HitPoints, "the actor-menu hydration path must reconcile HP too")
+}
+
+// ---------------------------------------------------------------------------
+// translateEntityAppearedEventWithData / entityForID — live-path identity
+// enrichment (rpg-api#664)
+// ---------------------------------------------------------------------------
+
+// TestTranslateEntityAppearedEventWithData_PopulatesIdentity proves the live
+// EntityAppeared path (a party member who was out of the viewer's sight at
+// connect time and later moves into view) gets the same
+// display_name/class_ref enrichment ProjectFor's connect-time snapshot gets
+// (see project_test.go's TestProjectFor_PlayerEntityCarriesDisplayNameAndClassRef)
+// — otherwise this second entity-building path would relocate rpg-api#664's
+// bug into a rarer trigger instead of fixing it.
+func (s *HydratePlayersReconcileSuite) TestTranslateEntityAppearedEventWithData_PopulatesIdentity() {
+	s.mockCharRepo.EXPECT().
+		Get(gomock.Any(), characterrepo.GetInput{ID: "char-A"}).
+		Return(&characterrepo.GetOutput{
+			Character: &entities.Character{
+				Data: &tkcharacter.Data{ID: "char-A", Name: "Alice", ClassID: "rogue"},
+			},
+		}, nil)
+
+	data := tkenc.NewData("enc-1")
+	data.Players[tkenccore.PlayerID("player-A")] = &tkenc.PlayerData{
+		ID:       tkenccore.PlayerID("player-A"),
+		EntityID: tkenccore.EntityID("char-A"),
+		HP:       10,
+		MaxHP:    10,
+	}
+
+	evt := tkencevents.NewEntityAppearedEvent(
+		"enc-1", uint64(1), tkenccore.EntityID("char-A"),
+		tkenccore.Hex{Q: 1, R: -1, S: 0},
+		map[tkenccore.PlayerID]struct{}{"player-B": {}},
+	)
+
+	out, err := translateEntityAppearedEventWithData(s.ctx, s.mockCharRepo, evt, "player-B", time.Now(), data)
+	s.Require().NoError(err)
+
+	app := out.GetEvent().(*encounterv2pb.EncounterEvent_EntityAppeared).EntityAppeared
+	s.Require().Equal("Alice", app.GetEntity().GetDisplayName())
+	classRef := app.GetEntity().GetCharacter().GetClassRef()
+	s.Require().NotNil(classRef)
+	s.Require().Equal("dnd5e", classRef.GetModule())
+	s.Require().Equal("class", classRef.GetType())
+	s.Require().Equal("rogue", classRef.GetId())
+}
+
+// TestTranslateEntityAppearedEventWithData_NilCharRepo_LeavesIdentityBlank
+// proves the live path degrades gracefully (same contract as ProjectFor's
+// absent-data fallback) rather than panicking or failing the event when no
+// character store is wired.
+func (s *HydratePlayersReconcileSuite) TestTranslateEntityAppearedEventWithData_NilCharRepo_LeavesIdentityBlank() {
+	data := tkenc.NewData("enc-1")
+	data.Players[tkenccore.PlayerID("player-A")] = &tkenc.PlayerData{
+		ID:       tkenccore.PlayerID("player-A"),
+		EntityID: tkenccore.EntityID("char-A"),
+		HP:       10,
+		MaxHP:    10,
+	}
+
+	evt := tkencevents.NewEntityAppearedEvent(
+		"enc-1", uint64(1), tkenccore.EntityID("char-A"),
+		tkenccore.Hex{Q: 1, R: -1, S: 0},
+		map[tkenccore.PlayerID]struct{}{"player-B": {}},
+	)
+
+	out, err := translateEntityAppearedEventWithData(s.ctx, nil, evt, "player-B", time.Now(), data)
+	s.Require().NoError(err)
+
+	app := out.GetEvent().(*encounterv2pb.EncounterEvent_EntityAppeared).EntityAppeared
+	s.Require().Empty(app.GetEntity().GetDisplayName())
+	s.Require().Nil(app.GetEntity().GetCharacter().GetClassRef())
 }

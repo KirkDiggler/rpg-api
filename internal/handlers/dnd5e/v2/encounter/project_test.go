@@ -6,14 +6,20 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/suite"
+	"go.uber.org/mock/gomock"
 
 	tkenc "github.com/KirkDiggler/rpg-toolkit/encounter"
 	"github.com/KirkDiggler/rpg-toolkit/encounter/core"
 	"github.com/KirkDiggler/rpg-toolkit/encounter/perception"
+	tkcharacter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/tools/environments"
 
 	encounterv2pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/encounter"
+	"github.com/KirkDiggler/rpg-api/internal/apierr"
+	"github.com/KirkDiggler/rpg-api/internal/entities"
 	v2encounter "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v2/encounter"
+	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
+	charactermock "github.com/KirkDiggler/rpg-api/internal/repositories/character/mock"
 )
 
 // ProjectSuite covers ProjectFor's per-viewer projection of toolkit
@@ -22,13 +28,21 @@ import (
 // FREE_ROAM and only emitted player entities.
 type ProjectSuite struct {
 	suite.Suite
-	now    time.Time
-	broker *tkenc.Broker
+	now          time.Time
+	broker       *tkenc.Broker
+	ctrl         *gomock.Controller
+	mockCharRepo *charactermock.MockRepository
 }
 
 func (s *ProjectSuite) SetupTest() {
 	s.now = time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	s.broker = tkenc.NewBroker(tkenc.NewInMemoryTransport())
+	s.ctrl = gomock.NewController(s.T())
+	s.mockCharRepo = charactermock.NewMockRepository(s.ctrl)
+}
+
+func (s *ProjectSuite) TearDownTest() {
+	s.ctrl.Finish()
 }
 
 // originHex is the cube origin (0,0,0); used everywhere viewers stand at
@@ -357,9 +371,14 @@ func (s *ProjectSuite) TestProjectFor_PlayerEntitiesCarryTypeHpAndCharacterData(
 	s.Require().NotNil(ac, "viewer's own entity must carry CharacterData oneof")
 	s.Require().Equal("player-alice", ac.GetPlayerId(),
 		"CharacterData.PlayerId must equal the toolkit PlayerData.ID")
-	// ClassRef / RaceRef intentionally deferred — see issue #511 deferred section.
-	s.Require().Nil(ac.GetClassRef(), "ClassRef deferred until PlayerData carries it")
-	s.Require().Nil(ac.GetRaceRef(), "RaceRef deferred until PlayerData carries it")
+	// This test passes a nil charRepo (see the ProjectFor call below), so
+	// characterIdentityFor has nothing to resolve display_name/class_ref
+	// from — see TestProjectFor_PlayerEntityCarriesDisplayNameAndClassRef for
+	// the populated case (rpg-api#664). RaceRef stays nil regardless — see
+	// playerEntity's doc: unlike class, nothing reads it yet.
+	s.Require().Empty(a.GetDisplayName(), "no charRepo wired in this test")
+	s.Require().Nil(ac.GetClassRef(), "no charRepo wired in this test")
+	s.Require().Nil(ac.GetRaceRef(), "RaceRef has no reader yet — see playerEntity's doc")
 
 	// Visible other-player (bob, in alice's sight).
 	b := byID["char-bob"]
@@ -612,6 +631,93 @@ func (s *ProjectSuite) TestProjectFor_NilSpace_EmptyWalls() {
 	pb, err := v2encounter.ProjectFor(context.Background(), data, "player-alice", s.broker, nil, s.now)
 	s.Require().NoError(err)
 	s.Require().Empty(pb.GetSpace().GetWalls())
+}
+
+// TestProjectFor_PlayerEntityCarriesDisplayNameAndClassRef proves rpg-api#664:
+// once a charRepo is wired, both the viewer's own entity and a visible
+// other-player entity carry display_name (from the character record's Name)
+// and CharacterData.class_ref (from ClassID) — the real StartEncounter path
+// (which does wire a charRepo, unlike this suite's other nil-charRepo tests)
+// no longer falls back to the raw entity id on the web's identity dock.
+func (s *ProjectSuite) TestProjectFor_PlayerEntityCarriesDisplayNameAndClassRef() {
+	// FreeRoam (no active actor) deliberately: turn-based mode would also
+	// exercise ProjectFor's #601 active-actor menu hydration (a SEPARATE
+	// charRepo.Get/Update pair for whichever seat is active), which is
+	// orthogonal to what this test verifies and would need its own mock
+	// expectations to avoid an unrelated gomock failure.
+	data := tkenc.NewData("enc-identity")
+	data.Mode = core.ModeFreeRoam
+
+	alice := newPlayerData("player-alice", "char-alice", originHex, 3)
+	bob := newPlayerData("player-bob", "char-bob", core.Hex{Q: 1, R: -1, S: 0}, 3)
+	data.Players = map[core.PlayerID]*tkenc.PlayerData{
+		"player-alice": alice,
+		"player-bob":   bob,
+	}
+
+	s.mockCharRepo.EXPECT().
+		Get(gomock.Any(), characterrepo.GetInput{ID: "char-alice"}).
+		Return(&characterrepo.GetOutput{
+			Character: &entities.Character{Data: &tkcharacter.Data{ID: "char-alice", Name: "Alice", ClassID: "rogue"}},
+		}, nil)
+	s.mockCharRepo.EXPECT().
+		Get(gomock.Any(), characterrepo.GetInput{ID: "char-bob"}).
+		Return(&characterrepo.GetOutput{
+			Character: &entities.Character{Data: &tkcharacter.Data{ID: "char-bob", Name: "Bob", ClassID: "fighter"}},
+		}, nil)
+
+	pb, err := v2encounter.ProjectFor(context.Background(), data, "player-alice", s.broker, s.mockCharRepo, s.now)
+	s.Require().NoError(err)
+
+	byID := make(map[string]*encounterv2pb.Entity)
+	for _, e := range pb.GetSpace().GetEntities() {
+		byID[e.GetId()] = e
+	}
+
+	a := byID["char-alice"]
+	s.Require().NotNil(a, "viewer's own entity must be emitted")
+	s.Require().Equal("Alice", a.GetDisplayName())
+	aClassRef := a.GetCharacter().GetClassRef()
+	s.Require().NotNil(aClassRef)
+	s.Require().Equal("dnd5e", aClassRef.GetModule())
+	s.Require().Equal("class", aClassRef.GetType())
+	s.Require().Equal("rogue", aClassRef.GetId())
+
+	b := byID["char-bob"]
+	s.Require().NotNil(b, "visible other-player must be emitted")
+	s.Require().Equal("Bob", b.GetDisplayName())
+	bClassRef := b.GetCharacter().GetClassRef()
+	s.Require().NotNil(bClassRef)
+	s.Require().Equal("fighter", bClassRef.GetId())
+}
+
+// TestProjectFor_PlayerEntity_CharacterNotFound_LeavesIdentityBlank proves
+// the absent-data fallback (rpg-api#664): a character store miss (or any
+// other lookup error) must not fail the whole snapshot — it degrades to the
+// pre-fix blank display_name/class_ref, exactly like the nil-charRepo case,
+// so a data-consistency gap elsewhere never blocks viewing the encounter.
+func (s *ProjectSuite) TestProjectFor_PlayerEntity_CharacterNotFound_LeavesIdentityBlank() {
+	data := tkenc.NewData("enc-missing-char")
+	data.Mode = core.ModeFreeRoam
+	alice := newPlayerData("player-alice", "char-alice", originHex, 3)
+	data.Players = map[core.PlayerID]*tkenc.PlayerData{"player-alice": alice}
+
+	s.mockCharRepo.EXPECT().
+		Get(gomock.Any(), characterrepo.GetInput{ID: "char-alice"}).
+		Return(nil, apierr.NotFoundf("character with ID %s not found", "char-alice"))
+
+	pb, err := v2encounter.ProjectFor(context.Background(), data, "player-alice", s.broker, s.mockCharRepo, s.now)
+	s.Require().NoError(err, "a missing character record must not fail the snapshot")
+
+	var a *encounterv2pb.Entity
+	for _, e := range pb.GetSpace().GetEntities() {
+		if e.GetId() == "char-alice" {
+			a = e
+		}
+	}
+	s.Require().NotNil(a)
+	s.Require().Empty(a.GetDisplayName())
+	s.Require().Nil(a.GetCharacter().GetClassRef())
 }
 
 func TestProjectSuite(t *testing.T) {

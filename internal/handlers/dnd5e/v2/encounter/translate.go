@@ -4,6 +4,7 @@
 package encounter
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"sort"
@@ -12,6 +13,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	encounterv2pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/encounter"
+	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	toolkitcore "github.com/KirkDiggler/rpg-toolkit/core"
 	"github.com/KirkDiggler/rpg-toolkit/encounter"
 	"github.com/KirkDiggler/rpg-toolkit/encounter/core"
@@ -326,14 +328,25 @@ func translateEntityAppearedEvent(e *events.EntityAppearedEvent, viewer core.Pla
 // ever produce this event is enc.Move(), which always runs against an
 // encounter MoveEntity's orchestrator already loaded from the repo. No
 // retry needed.
+//
+// ctx/charRepo (rpg-api#664) thread through to entityForID -> playerEntity's
+// characterIdentityFor so a player appearing mid-encounter (e.g. stepping
+// into another party member's sight) gets the same display_name/class_ref
+// enrichment ProjectFor's connect-time snapshot gets — otherwise this live
+// path would relocate the #664 bug rather than fix it: correct identity on
+// first connect, blank again the moment a not-yet-visible party member
+// walks into view. charRepo may be nil (tests, or a caller with no char
+// store wired) — characterIdentityFor already degrades to empty/nil rather
+// than erroring.
 func translateEntityAppearedEventWithData(
+	ctx context.Context, charRepo characterrepo.Repository,
 	e *events.EntityAppearedEvent, viewer core.PlayerID, now time.Time, data *encounter.Data,
 ) (*encounterv2pb.EncounterEvent, error) {
 	if _, ok := e.PerPlayer[viewer]; !ok {
 		return nil, ErrViewerSawNothing
 	}
 
-	entity := entityForID(data, e.Entity)
+	entity := entityForID(ctx, charRepo, data, e.Entity)
 	if entity == nil {
 		// Defensive: the entity is gone from data between publish and this
 		// read (e.g. killed the same tick) — fall back to the bare shape
@@ -381,7 +394,10 @@ func translateEntityAppearedEventWithData(
 // the event's own reported position afterward (see its doc for why), so
 // this does not need pd.View to be populated to enrich the rest of the
 // entity's fields.
-func entityForID(data *encounter.Data, id core.EntityID) *encounterv2pb.Entity {
+//
+// ctx/charRepo (rpg-api#664) are forwarded to characterIdentityFor for the
+// player branch only — monsterEntity never needed a character lookup.
+func entityForID(ctx context.Context, charRepo characterrepo.Repository, data *encounter.Data, id core.EntityID) *encounterv2pb.Entity {
 	if data == nil {
 		return nil
 	}
@@ -390,7 +406,8 @@ func entityForID(data *encounter.Data, id core.EntityID) *encounterv2pb.Entity {
 	}
 	if pid := playerSeatForEntity(data, id); pid != "" {
 		if pd := data.Players[pid]; pd != nil {
-			return playerEntity(pd, core.Hex{})
+			name, classRef := characterIdentityFor(ctx, charRepo, string(pd.EntityID))
+			return playerEntity(pd, core.Hex{}, name, classRef)
 		}
 	}
 	return nil
