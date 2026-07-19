@@ -24,12 +24,19 @@ import (
 // The broker is required to rehydrate a live Encounter via LoadFromData
 // (needed for SnapshotFor).
 //
-// charRepo is used ONLY to hydrate the turn's ACTIVE actor so the snapshot's
-// TurnState can carry that actor's economy + available_actions menu at turn
-// start (#601: the client needs the menu to take its FIRST action, before any
-// TurnStateChanged push fires). nil disables menu hydration (tests / non-combat
-// callers): the snapshot then carries initiative/active/round only, as before.
-// The toolkit computes the menu (ActorTurnState); rpg-api projects it.
+// charRepo serves two purposes, both by-key lookups against the character
+// store rather than anything rules-touching:
+//  1. Hydrates the turn's ACTIVE actor so the snapshot's TurnState can carry
+//     that actor's economy + available_actions menu at turn start (#601: the
+//     client needs the menu to take its FIRST action, before any
+//     TurnStateChanged push fires). The toolkit computes the menu
+//     (ActorTurnState); rpg-api projects it.
+//  2. Resolves EVERY projected player entity's display_name/class_ref
+//     (rpg-api#664) via characterIdentityFor — not just the active actor.
+//
+// nil disables both (tests / non-combat callers): the snapshot then carries
+// initiative/active/round only and player entities carry no
+// display_name/class_ref, as before #664.
 //
 // now is passed explicitly so callers in tests can inject a fixed clock.
 func ProjectFor(
@@ -356,6 +363,9 @@ const characterClassRefType = "class"
 // back to the raw entity id with no crash), so a missing/erroring character
 // record should degrade the label, not the snapshot or the live event
 // carrying it.
+//
+// One charRepo.Get per projected player per call, no batching — batch seam:
+// see rpg-api#666.
 func characterIdentityFor(ctx context.Context, charRepo characterrepo.Repository, characterID string) (string, *encounterv2pb.Ref) {
 	if charRepo == nil {
 		return "", nil
