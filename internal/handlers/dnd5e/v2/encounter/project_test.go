@@ -633,6 +633,128 @@ func (s *ProjectSuite) TestProjectFor_NilSpace_EmptyWalls() {
 	s.Require().Empty(pb.GetSpace().GetWalls())
 }
 
+// TestProjectFor_DoorWall_ProjectsIdKindAndPassageEdge covers The Dungeon
+// wave 2 Slice 2 (rpg-api#676): a door in data.Doors must project onto the
+// wire as a Wall carrying its entity id (rpg-api-protos#186's additive
+// Wall.id) and a DOOR_CLOSED/DOOR_OPEN kind derived from DoorData.Open —
+// not the door's own degenerate Start==End segment, but From=the door's
+// cell and To=its passage-edge neighbor (design doc §Q2's 6-door-pair
+// multiplicity fix), found via SpaceData.RegionAt over the door's six
+// neighbors. Like solid walls, door walls are whole-room (unconditional),
+// not LOS-gated.
+func (s *ProjectSuite) TestProjectFor_DoorWall_ProjectsIdKindAndPassageEdge() {
+	data := tkenc.NewData("enc-door")
+	data.Mode = core.ModeFreeRoam
+	alice := newPlayerData("player-alice", "char-alice", originHex, 2)
+	data.Players = map[core.PlayerID]*tkenc.PlayerData{"player-alice": alice}
+
+	doorHex := core.Hex{Q: 0, R: 0, S: 0}
+	// Exactly one of the door's six neighbors (perception.HexNeighbors) is
+	// tagged into a region — chamber-1's — so the passage-edge pick is
+	// unambiguous. The door's OWN cell is deliberately left untagged: it
+	// belongs to neither region (rpg-toolkit#806's gate note, mirrored in
+	// start_encounter.go's chamberEntryAnchor KNOWN TRAP).
+	passageNeighbor := core.Hex{Q: -1, R: 0, S: 1}
+	data.Space = &tkenc.SpaceData{
+		Width:  10,
+		Height: 10,
+		Regions: []tkenc.RegionData{
+			{ID: tkenc.RegionChamber1, Hexes: core.NewHexSet(passageNeighbor)},
+		},
+	}
+	data.Doors = map[core.EntityID]*tkenc.DoorData{
+		"door-1": {ID: "door-1", Position: doorHex, Open: false},
+	}
+
+	pb, err := v2encounter.ProjectFor(context.Background(), data, "player-alice", s.broker, nil, s.now)
+	s.Require().NoError(err)
+
+	walls := pb.GetSpace().GetWalls()
+	s.Require().Len(walls, 1)
+	w := walls[0]
+	s.Require().Equal("door-1", w.GetId(), "the wire wall must carry the door's entity id (the click->Interact bridge)")
+	s.Require().Equal(encounterv2pb.WallKind_WALL_KIND_DOOR_CLOSED, w.GetKind())
+	s.Require().Equal(int32(0), w.GetFrom().GetX())
+	s.Require().Equal(int32(0), w.GetFrom().GetY())
+	s.Require().Equal(int32(0), w.GetFrom().GetZ())
+	s.Require().NotEqual(w.GetFrom(), w.GetTo(),
+		"a door wall must NOT be a degenerate Start==End segment — that's the 6-door-pair multiplicity bug")
+	s.Require().Equal(int32(-1), w.GetTo().GetX())
+	s.Require().Equal(int32(0), w.GetTo().GetY())
+	s.Require().Equal(int32(1), w.GetTo().GetZ())
+
+	// Open the door and re-project: same id/edge, kind flips to DOOR_OPEN.
+	data.Doors["door-1"].Open = true
+	pbOpen, err := v2encounter.ProjectFor(context.Background(), data, "player-alice", s.broker, nil, s.now)
+	s.Require().NoError(err)
+	openWalls := pbOpen.GetSpace().GetWalls()
+	s.Require().Len(openWalls, 1)
+	s.Require().Equal(encounterv2pb.WallKind_WALL_KIND_DOOR_OPEN, openWalls[0].GetKind())
+	s.Require().Equal("door-1", openWalls[0].GetId())
+}
+
+// TestProjectFor_DoorWall_NoRegionNeighbor_FallsBackToDegenerateSegment
+// covers doorPassageNeighbor's defensive fallback: a door whose neighbors
+// are all untagged (a data shape the current two-chamber generator never
+// produces) must still project — as a degenerate Start==To segment,
+// matching a solid wall's shape — rather than being dropped from the wire
+// or panicking.
+func (s *ProjectSuite) TestProjectFor_DoorWall_NoRegionNeighbor_FallsBackToDegenerateSegment() {
+	data := tkenc.NewData("enc-door-no-region")
+	data.Mode = core.ModeFreeRoam
+	alice := newPlayerData("player-alice", "char-alice", originHex, 2)
+	data.Players = map[core.PlayerID]*tkenc.PlayerData{"player-alice": alice}
+
+	data.Space = &tkenc.SpaceData{Width: 10, Height: 10} // no Regions at all
+	data.Doors = map[core.EntityID]*tkenc.DoorData{
+		"door-1": {ID: "door-1", Position: core.Hex{Q: 0, R: 0, S: 0}, Open: false},
+	}
+
+	pb, err := v2encounter.ProjectFor(context.Background(), data, "player-alice", s.broker, nil, s.now)
+	s.Require().NoError(err)
+
+	walls := pb.GetSpace().GetWalls()
+	s.Require().Len(walls, 1)
+	s.Require().Equal(walls[0].GetFrom(), walls[0].GetTo(), "no tagged neighbor falls back to a degenerate Start==End segment")
+}
+
+// TestProjectFor_DoorWall_NilSpace_NoPanic_DegenerateSegment is the
+// Copilot-review regression pin (PR #677): other integration/unit fixtures
+// build a door via enc.AddDoor without ever calling InitRoom/
+// InitTwoChamberRoom (e.g. encounter_v2_test.go's TestInteract_OpenDoor_
+// TwoPlayers), which leaves Data.Space nil while Data.Doors is non-empty —
+// AddDoor's toolkit implementation only touches Space when it is already
+// set. ProjectFor must still project such a door deterministically (a
+// degenerate Start==To segment, matching a solid wall's shape) instead of
+// panicking. SpaceData.RegionAt is itself nil-receiver safe (rpg-
+// toolkit#806), and doorPassageNeighbor now also nil-checks space
+// explicitly — this test proves the combination end to end through the
+// public ProjectFor entry point, not just the unexported helper.
+func (s *ProjectSuite) TestProjectFor_DoorWall_NilSpace_NoPanic_DegenerateSegment() {
+	data := tkenc.NewData("enc-door-nil-space")
+	data.Mode = core.ModeFreeRoam
+	alice := newPlayerData("player-alice", "char-alice", originHex, 2)
+	data.Players = map[core.PlayerID]*tkenc.PlayerData{"player-alice": alice}
+
+	// data.Space is left nil — no InitRoom/InitTwoChamberRoom call.
+	data.Doors = map[core.EntityID]*tkenc.DoorData{
+		"door-1": {ID: "door-1", Position: core.Hex{Q: 3, R: -3, S: 0}, Open: false},
+	}
+
+	var pb *encounterv2pb.Encounter
+	var err error
+	s.Require().NotPanics(func() {
+		pb, err = v2encounter.ProjectFor(context.Background(), data, "player-alice", s.broker, nil, s.now)
+	}, "ProjectFor must not panic on a door-only encounter with nil Data.Space")
+	s.Require().NoError(err)
+
+	walls := pb.GetSpace().GetWalls()
+	s.Require().Len(walls, 1)
+	s.Require().Equal("door-1", walls[0].GetId())
+	s.Require().Equal(walls[0].GetFrom(), walls[0].GetTo(),
+		"nil space falls back to a degenerate Start==End segment, same as the no-tagged-neighbor case")
+}
+
 // TestProjectFor_PlayerEntityCarriesDisplayNameAndClassRef proves rpg-api#664:
 // once a charRepo is wired, both the viewer's own entity and a visible
 // other-player entity carry display_name (from the character record's Name)

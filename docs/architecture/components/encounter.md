@@ -110,9 +110,11 @@ The translator emits BOTH `DoorOpened` and `GeometryRevealed` as separate proto 
 
 ```go
 func ProjectFor(
+    ctx context.Context,
     data *tkenc.Data,
     viewer core.PlayerID,
     broker *tkenc.Broker,
+    charRepo characterrepo.Repository,
     now time.Time,
 ) (*encounterv2pb.Encounter, error)
 ```
@@ -122,6 +124,10 @@ It is the single source of truth for toolkit Snapshot → proto Encounter transl
 ### Entity visibility in ProjectFor (#500 broadening)
 
 As of #500, `ProjectFor` includes all entities currently visible to the viewer — not just the viewer's own entity. Visibility is computed using `perception.VisibleHexesAt(viewer.Position, viewer.SightRange)` against each other player's current position in `data.Players`. Entities are sorted by player ID for deterministic wire output. This gives clients a real point-in-time snapshot of what the viewer can see.
+
+### Wall + door projection (The Dungeon wave 2 Slice 2, rpg-api#676)
+
+`Space.Walls` carries TWO shapes now, both whole-room/unconditional (not LoS-gated like `Hexes`/`Entities` — wave 1's "no per-viewer wall reveal yet" still holds): `wallsToProto(data.Space)` projects persisted solid/window segments (`Start == End` degenerate hexes), and `doorWallsToProto(data)` separately projects every entry in `data.Doors` as a `WALL_KIND_DOOR_CLOSED`/`WALL_KIND_DOOR_OPEN` `Wall` carrying its entity id (`rpg-api-protos#186`'s additive `Wall.id` — the web's click→`Interact(id)` bridge). A door's `From` is its own cell; `To` is its passage-edge neighbor (`doorPassageNeighbor`, found via `perception.HexNeighbors` + `SpaceData.RegionAt` — never `Start == End` for a door, which is the 6-door-pair render-multiplicity bug the design doc's §Q2 calls out). `DoorData` stays the single source of door truth (position, open/locked state); the wall is purely its projected geometry.
 
 ## StreamEncounter flow (#497)
 

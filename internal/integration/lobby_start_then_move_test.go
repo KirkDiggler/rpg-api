@@ -4,9 +4,10 @@
 // tkenc.New/AddPlayer seed). This is exactly the class of coverage hole
 // named in #656 — every existing integration test seeds encounters directly
 // via the toolkit SDK (tkenc.New + AddPlayer + repo.Save), never through
-// StartEncounter's InitRoom + corner-anchored spawn combination, so none of
-// them could have caught a movement-direction bug specific to that spawn
-// position.
+// StartEncounter's own room-init + spawn combination (originally InitRoom's
+// corner anchor; as of rpg-api#676, InitTwoChamberRoom's entrance anchor —
+// see hexOutOfBounds' doc below), so none of them could have caught a
+// movement-direction bug specific to that spawn position.
 package integration_test
 
 import (
@@ -113,6 +114,17 @@ var sixHexDirections = []core.Hex{
 // a toolkit-provided, necessarily-clear spawn cell. Until then, this test
 // asserts honesty (moved, or blocked by a real wall on the path) rather than
 // universal success.
+//
+// Slice 2 update (rpg-api#676): roomCenterHex() is now gone — StartEncounter
+// spawns the party at SpaceData.Entrance, InitTwoChamberRoom's designated
+// anchor. Unlike the old room-center placeholder, the entrance sits at
+// chamber 1's own EDGE column (offset X=0 — see two_chamber.go's
+// generateTwoChamberLayout doc: "entrance sits at chamber 1's far edge,
+// column 0"), by design, not by accident: a dungeon entrance has nothing
+// behind it. So roughly half the six directions now walk directly off the
+// room's grid, not into a wall — assertMoveHonestOutcome's "honest outcome"
+// check below (hexBlocksMovement) needed a matching hexOutOfBounds check, or
+// it would wrongly expect a wall-free out-of-bounds hex to be reachable.
 func (s *LobbyStartThenMoveSuite) TestMoveEntity_AfterStartEncounter_ActuallyMoves() {
 	anyMoved := false
 	for i, dir := range sixHexDirections {
@@ -179,12 +191,14 @@ func (s *LobbyStartThenMoveSuite) assertMoveHonestOutcome(suffix string, dir cor
 
 	destHex := core.Hex{Q: startHex.Q + dir.Q, R: startHex.R + dir.R, S: startHex.S + dir.S}
 	// truncateAtWall walks [start, dest] in order and stops at the first
-	// blocked hex — so a wall at EITHER position truncates movement to
-	// nothing. Checking only destHex would miss the case where the spawn
-	// cell itself is walled (see the parent test's doc for how that
-	// happens), which blocks every direction identically, not just moves
-	// toward a walled neighbor.
-	pathBlocked := hexBlocksMovement(before.Space, startHex) || hexBlocksMovement(before.Space, destHex)
+	// blocked hex — so a wall (or the grid boundary, rpg-api#676's
+	// entrance-edge case — see hexOutOfBounds) at EITHER position truncates
+	// movement to nothing. Checking only destHex would miss the case where
+	// the spawn cell itself is walled (see the parent test's doc for how
+	// that happens), which blocks every direction identically, not just
+	// moves toward a walled neighbor or off the map.
+	pathBlocked := hexBlocksMovement(before.Space, startHex) || hexBlocksMovement(before.Space, destHex) ||
+		hexOutOfBounds(before.Space, startHex) || hexOutOfBounds(before.Space, destHex)
 
 	_, err = s.srv.EncounterClientV2.MoveEntity(s.authCtx(playerID), &encounterv2pb.MoveEntityRequest{
 		EncounterId: encounterID,
@@ -205,16 +219,39 @@ func (s *LobbyStartThenMoveSuite) assertMoveHonestOutcome(suffix string, dir cor
 	if pathBlocked {
 		s.Equal(startHex, finalPos,
 			"%q must stay at spawn moving in direction %+v — startHex %+v or destHex %+v is a real "+
-				"movement-blocking wall cell in the persisted room snapshot, so a truncated move here is "+
+				"movement-blocking wall cell (or outside the room's grid entirely — rpg-api#676's "+
+				"entrance-edge case) in the persisted room snapshot, so a truncated move here is "+
 				"correct dungeon behavior, not the #656 regression", playerID, dir, startHex, destHex)
 		return false
 	}
 
 	s.Equal(destHex, finalPos,
 		"%q must actually be at the destination hex after moving in direction %+v — neither startHex %+v "+
-			"nor destHex %+v is a wall cell in the persisted room snapshot, so a silently-truncated "+
-			"(no-op) move here IS the #656 regression", playerID, dir, startHex, destHex)
+			"nor destHex %+v is a wall cell or out of the room's bounds in the persisted room snapshot, "+
+			"so a silently-truncated (no-op) move here IS the #656 regression", playerID, dir, startHex, destHex)
 	return finalPos == destHex
+}
+
+// hexOutOfBounds reports whether hex falls outside the persisted room's
+// offset-coordinate grid (SpaceData.Width/Height's doc: "offset-coordinate
+// bounds... without these, a reconstructed room would... silently accepting
+// or rejecting edge positions wrong"). rpg-toolkit's truncateAtWall
+// (encounter/space.go) rejects an out-of-bounds hex via room.CanPlaceEntity
+// -> the grid's own IsValidPosition — exactly like a movement-blocking wall
+// cell, just for a different reason — so a step that would leave the grid
+// must be treated the same way hexBlocksMovement treats a wall: expected to
+// truncate, not a silent-no-op bug.
+//
+// This matters for Slice 2's entrance-anchored spawn (rpg-api#676):
+// InitTwoChamberRoom's entrance sits at chamber 1's own edge column (offset
+// X=0 — two_chamber.go's generateTwoChamberLayout doc), so roughly half the
+// six unit directions from spawn are genuinely off the map, not walled.
+func hexOutOfBounds(space *tkenc.SpaceData, hex core.Hex) bool {
+	if space == nil {
+		return false
+	}
+	pos := hex.ToPosition()
+	return pos.X < 0 || pos.X >= float64(space.Width) || pos.Y < 0 || pos.Y >= float64(space.Height)
 }
 
 // hexBlocksMovement reports whether hex is a movement-blocking wall cell in
