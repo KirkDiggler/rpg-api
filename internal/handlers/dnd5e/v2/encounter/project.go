@@ -183,7 +183,7 @@ func ProjectFor(
 		TurnState: buildTurnState(data, actorTurnState),
 		Space: &encounterv2pb.Space{
 			Hexes:    hexes,
-			Walls:    wallsToProto(data.Space),
+			Walls:    append(wallsToProto(data.Space), doorWallsToProto(data)...),
 			Entities: entities,
 		},
 	}, nil
@@ -214,6 +214,74 @@ func wallsToProto(space *tkenc.SpaceData) []*encounterv2pb.Wall {
 		walls = append(walls, &encounterv2pb.Wall{From: from, To: to, Kind: kind})
 	}
 	return walls
+}
+
+// doorWallsToProto projects every door in the encounter onto the wire as a
+// Wall carrying its entity id (rpg-api-protos#186's additive Wall.id — The
+// Dungeon wave 2 Slice 2, rpg-api#676): the design doc's crux resolution
+// (§Crux) makes DoorData the single source of door truth, with the wall
+// kind/edge as its PROJECTED geometry, never a second source of truth.
+// Like wallsToProto, this is unconditional (whole-room wall visibility,
+// wave 1's "no per-viewer wall reveal yet") — every viewer's snapshot
+// carries every door regardless of RevealedHexes/visibleNow.
+//
+// The passage edge (design doc §Q2, the web-confirmed 6-door-pair
+// multiplicity constraint on an isolated degenerate wall cell): From is
+// the door's own cell; To is doorPassageNeighbor's pick — the one
+// designated passage edge, so the renderer draws a single door frame on
+// that edge instead of an ambiguous isolated-hex wall.
+//
+// Doors are sorted by id for deterministic wire output across Go map
+// iterations (data.Doors is a map), matching this file's Players/Monsters
+// sort convention above.
+func doorWallsToProto(data *tkenc.Data) []*encounterv2pb.Wall {
+	if len(data.Doors) == 0 {
+		return nil
+	}
+	ids := make([]core.EntityID, 0, len(data.Doors))
+	for id := range data.Doors {
+		ids = append(ids, id)
+	}
+	sort.Slice(ids, func(i, j int) bool { return string(ids[i]) < string(ids[j]) })
+
+	walls := make([]*encounterv2pb.Wall, 0, len(ids))
+	for _, id := range ids {
+		door := data.Doors[id]
+
+		kind := encounterv2pb.WallKind_WALL_KIND_DOOR_CLOSED
+		if door.Open {
+			kind = encounterv2pb.WallKind_WALL_KIND_DOOR_OPEN
+		}
+		doorID := string(id)
+		walls = append(walls, &encounterv2pb.Wall{
+			From: HexToPosition(door.Position),
+			To:   HexToPosition(doorPassageNeighbor(data.Space, door)),
+			Kind: kind,
+			Id:   &doorID,
+		})
+	}
+	return walls
+}
+
+// doorPassageNeighbor returns the door's designated passage-edge neighbor
+// (see doorWallsToProto's doc): the door's own cell belongs to NEITHER
+// region (KNOWN TRAP flagged by rpg-toolkit#806's gate note and mirrored
+// in start_encounter.go's chamberEntryAnchor — RegionAt(door.Position) is
+// always ("", false)), so this walks perception.HexNeighbors (the
+// toolkit's canonical six-neighbor set) and returns the first neighbor
+// SpaceData.RegionAt tags into ANY region — for Slice 2's single door that
+// is always the chamber-1 or chamber-2 side. Never hand-rolled hex-grid
+// geometry: HexNeighbors + RegionAt are both toolkit-exposed surface.
+// Falls back to the door's own position (a degenerate Start==To segment,
+// matching a solid wall's shape) when no tagged neighbor exists, rather
+// than dropping the door from the wire.
+func doorPassageNeighbor(space *tkenc.SpaceData, door *tkenc.DoorData) core.Hex {
+	for _, n := range perception.HexNeighbors(door.Position) {
+		if _, ok := space.RegionAt(n); ok {
+			return n
+		}
+	}
+	return door.Position
 }
 
 // wallKindFor maps a wall segment's persisted BlocksMovement/BlocksLoS flags

@@ -33,10 +33,14 @@ type StartEncounterOutput struct {
 
 // spawnPositionSpacing is the per-member hex offset StartEncounter uses to
 // seed distinct starting positions along one axis (Q increases, S mirrors it
-// to keep the cube coordinate valid). This is a placeholder: no room/spawn-point
-// system exists yet for a freshly-created lobby encounter, so members are
-// spread along a line rather than stacked on a single hex. Real spawn-point
-// selection is future work once room integration lands.
+// to keep the cube coordinate valid). This is a placeholder: no per-member
+// spawn-point system exists yet, so members are spread along a line rather
+// than stacked on a single hex. The line runs from the chamber-1 entrance
+// toward the chamber's interior (core.Hex{Q+1,R,S-1} per step — verified
+// against tools/spatial's pointy-top offset conversion to move away from the
+// entrance's edge column, not off the grid), so it stays safe regardless of
+// where in the chamber the entrance sits. Real spawn-point selection is
+// future work once room integration lands further.
 const spawnPositionSpacing = 1
 
 // memberSightRange is the initial perception radius seeded for every member
@@ -49,55 +53,38 @@ const spawnPositionSpacing = 1
 // rpg-api#632's correction comment).
 const memberSightRange = 10
 
-// roomWidth/roomHeight are the freshly-created encounter's room dimensions
-// (rpg-api#644, The Dungeon wave 1). Deliberately large relative to
-// memberSightRange (10): PatternRandom's default wall density is sparse
-// (~1 wall per 10 sq units — see environments.RandomPattern) and not
-// reliably enough on its own to hide a monster from a party spawned near
-// the room's origin. A 20x20 room guarantees floor beyond hex-distance 10
-// from a near-origin party purely by distance, so seedGoblins' PositionOracle
-// (out-of-sight requirement) always has a hiding spot regardless of the
-// random wall roll; walls create additional closer-in pockets on top of
-// that. roomPattern is the only pattern besides "empty" the toolkit ships
-// (environments.PatternRandom / PatternEmpty — see
-// tools/environments/wall_patterns.go's WallPatterns registry).
+// chamberWidth/chamberHeight size EACH chamber of the two-chamber dungeon
+// (The Dungeon wave 2 Slice 2, rpg-api#676) — not the combined space, which
+// InitTwoChamberRoom computes as 2*chamberWidth+1 wide. Deliberately large
+// relative to memberSightRange (10), same rationale wave 1's single room
+// carried forward: PatternRandom's default wall density is sparse enough
+// that raw chamber size, not just walls, needs to give seedGoblins'
+// out-of-sight PositionOracle room to find a hiding spot. chamberPattern is
+// the only pattern besides "empty" the toolkit ships (environments.
+// PatternRandom / PatternEmpty — tools/environments/wall_patterns.go's
+// WallPatterns registry).
 const (
-	roomWidth   = 20
-	roomHeight  = 20
-	roomPattern = environments.PatternRandom
+	chamberWidth   = 20
+	chamberHeight  = 20
+	chamberPattern = environments.PatternRandom
 )
 
-// roomCenterHex returns the cube hex at the room's geometric center —
-// offset (roomWidth/2, roomHeight/2) converted back to cube coordinates via
-// the same core.HexFromPosition bridge seedGoblins/wallsToProto already use.
-//
-// rpg-api#656: the party used to spawn at raw cube-origin {0,0,0}, which
-// Hex.ToPosition() maps DIRECTLY to the room's offset-coordinate origin
-// (0,0) — the room's CORNER, not its center. InitRoom's room
-// (environments.QuickRoom) spans offset [0,roomWidth) x [0,roomHeight)
-// with no auto-centering around wherever entities get added, and the
-// toolkit's Move() truncates a path the instant a step's offset position
-// falls outside those bounds (space.go's truncateAtWall, indistinguishable
-// from hitting a real wall — rpg-toolkit#757). A corner-spawned party has
-// roughly half of the six hex directions leave the room on the very first
-// step, silently no-opping the move (RPC succeeds, position unchanged) —
-// reproduced and root-caused live (grpcurl repro, offset-position tracing)
-// during the reconnect-fidelity wave's closing playtest. This was NOT
-// introduced by #650/#655: it has existed since InitRoom's introduction in
-// wave-1 (rpg-api#644) and simply was never triggered by the specific
-// movement directions earlier playtests happened to exercise. Spawning the
-// party at the room's center instead gives every direction roomWidth/2 (10)
-// hexes of clearance — matching this file's own "near-origin party" comment
-// above, which already assumed a centered party.
-func roomCenterHex() core.Hex {
-	return core.HexFromPosition(spatial.Position{X: float64(roomWidth) / 2, Y: float64(roomHeight) / 2})
-}
+// chamberDoorID is the entity id of the single door connecting chamber 1
+// and chamber 2 (Slice 2 — one plain door; Slice 3 adds a second, locked
+// door to a boss chamber). Interact(chamberDoorID) is how a client opens
+// it; project.go's wallsToProto projects it onto the wire as a
+// DOOR_CLOSED/DOOR_OPEN Wall carrying this same id (types.proto's Wall.id
+// bridge, rpg-api-protos#186).
+const chamberDoorID core.EntityID = "door-chamber1-chamber2"
 
-// goblinCount is the fixed number of goblins StartEncounter seeds into the
-// freshly-walled room (design doc fork 2, Kirk 2026-07-13: "fixed placement
-// of 2 goblins via monster.NewGoblin through the fixed spawn engine";
-// dynamic SpawnConfig-driven counts are wave 2+).
-const goblinCount = 2
+// goblinsPerChamber is the fixed number of goblins StartEncounter seeds
+// into EACH chamber (The Dungeon wave 2 Slice 2 design doc §Q5/closing
+// playtest script: "chamber-1 goblins" / "chamber-2 goblins" — both
+// plural). This doubles wave 1's single-room goblinCount (2) across the two
+// chambers rather than splitting it, so each chamber is a real fight once
+// found, not a lone straggler; dynamic SpawnConfig-driven counts remain
+// future work.
+const goblinsPerChamber = 2
 
 // entityGroupTypeMonster is the spawn.EntityGroup.Type tag for goblin
 // placement groups in seedGoblins below.
@@ -164,15 +151,33 @@ func (o *Orchestrator) StartEncounter(ctx context.Context, in *StartEncounterInp
 		tkenc.WithMovementResolver(o.buildMovementResolver(nil)),
 	)
 
-	// InitRoom must run before any AddPlayer/AddMonster call: AddPlayer's
-	// initial reveal (perception.VisibleHexesAt) and AddMonster's inline
-	// combat-entry check (perception.CanSeeAt) both consult e.room, and
-	// InitRoom is what sets it (rpg-toolkit encounter/space.go's doc).
-	if err := enc.InitRoom(roomWidth, roomHeight, roomPattern); err != nil {
-		return nil, fmt.Errorf("init room for encounter %q: %w", encID, err)
+	// InitTwoChamberRoom must run before any AddPlayer/AddMonster call:
+	// AddPlayer's initial reveal (perception.VisibleHexesAt) and AddMonster's
+	// inline combat-entry check (perception.CanSeeAt) both consult e.room, and
+	// InitTwoChamberRoom is what sets it (via AddDoor's internal
+	// rebuildRoomFromData — rpg-toolkit encounter/space.go's doc). Building the
+	// two-chamber dungeon (2 chambers + 1 plain door + entrance + per-chamber
+	// region tags) is entirely the toolkit's call — rpg-api only supplies
+	// sizing/pattern/door-id by key (The Dungeon wave 2 Slice 2, rpg-api#676).
+	// RandomSeed stays zero (entropy-seeded), matching InitRoom's own default
+	// (rpg-toolkit#787) — no devseed fixture needs a fixed dungeon layout yet.
+	if err := enc.InitTwoChamberRoom(tkenc.TwoChamberRoomParams{
+		ChamberWidth:  chamberWidth,
+		ChamberHeight: chamberHeight,
+		Pattern:       chamberPattern,
+		DoorID:        chamberDoorID,
+	}); err != nil {
+		return nil, fmt.Errorf("init two-chamber room for encounter %q: %w", encID, err)
 	}
 
-	partyBase := roomCenterHex()
+	// Entrance-anchored spawn (rpg-api#648, rpg-api#676): the party drops just
+	// inside chamber 1's entrance, not the room's geometric center —
+	// SpaceData.Entrance is the toolkit's designated spawn-anchor cell for
+	// exactly this purpose (InitTwoChamberRoom's doc). This retires
+	// roomCenterHex() and the wall-adjacent-spawn debt it carried (wave 1,
+	// rpg-api#656) — the two-chamber generator's own required-path guarantee
+	// (entrance-to-door corridor) makes a center placeholder unnecessary.
+	partyBase := enc.ToData().Space.Entrance
 	for i, m := range members {
 		snap, snapErr := o.seedMemberCombatSnapshot(ctx, m.CharacterID)
 		if snapErr != nil {
@@ -202,10 +207,10 @@ func (o *Orchestrator) StartEncounter(ctx context.Context, in *StartEncounterInp
 		}
 	}
 
-	// Seed 2 goblins into the walled room (rpg-api#644, The Dungeon wave 1).
-	// See seedGoblins' doc for why placement is verified via the toolkit's
-	// real perception.CanSeeAt rather than the spawn engine's own (stubbed)
-	// position search.
+	// Seed goblinsPerChamber goblins into EACH chamber, out of sight, region-
+	// tag-scoped (The Dungeon wave 2 Slice 2). See seedGoblins' doc for why
+	// placement is verified via the toolkit's real perception.CanSeeAt rather
+	// than the spawn engine's own (stubbed) position search.
 	if err := o.seedGoblins(ctx, enc, encID); err != nil {
 		return nil, fmt.Errorf("seed goblins for encounter %q: %w", encID, err)
 	}
@@ -230,85 +235,65 @@ func (o *Orchestrator) StartEncounter(ctx context.Context, in *StartEncounterInp
 	return &StartEncounterOutput{EncounterID: string(encID)}, nil
 }
 
-// seedGoblins selects goblinCount goblins via the tools/spawn engine (wired
-// to the encounter's own RoomOrchestrator, exercising rpg-toolkit#757/#759's
-// getRoomFromSpatial/placeEntityInRoom fix from a real caller) and adds them
-// to enc at positions verified to be outside every current player's sight —
-// via the toolkit's own wall-aware perception.CanSeeAt, the SAME predicate
-// checkCombatEntry uses internally, never hand-rolled LOS math. This is the
-// design doc's hard requirement (ideas/the-dungeon/design.md fork 2):
-// combat must not start at spawn. AddMonster inline-checks combat entry
-// (rpg-toolkit#759) on every call — a goblin added within a player's sight
-// would flip the encounter to TURN_BASED immediately, so placement has to be
-// pre-verified before AddMonster runs, not after.
+// chamberSpawnSpec pairs a two-chamber region with the out-of-sight anchor
+// its goblins are seeded against (see chamberEntryAnchor) and the id prefix
+// its goblins get, so seedGoblins can drive both chambers through one
+// shared path instead of duplicating the loop.
+type chamberSpawnSpec struct {
+	regionID string
+	anchor   core.Hex
+	idPrefix string
+}
+
+// chamberEntryAnchor returns the hex a player first stands at when arriving
+// in the named region — chamber 1's designated Entrance, or chamber 2's
+// approach point just outside the connecting door (the door's chamber-1-
+// side neighbor). This generalizes wave 1's single room-center out-of-sight
+// anchor (The Dungeon wave 2 design doc §Q5: "the same perception.CanSeeAt
+// oracle wave-1 uses from the room center — generalized to the door") to
+// each chamber's own entry point, using only toolkit-exposed surface —
+// perception.HexNeighbors (the canonical six-neighbor set) filtered by
+// SpaceData.RegionAt — never hand-rolled hex-grid geometry.
 //
-// rpg-toolkit#760 (tools/spawn v0.3.0) made the position search itself
-// room-aware (Room.CanPlaceEntity/bounds are consulted by the search, not
-// just by a post-hoc discard-and-recompute) and added EntityGroup's
-// PositionOracle: a caller predicate ANDed into that search. The
-// out-of-sight requirement is expressed here as a PositionOracle closing
-// over the toolkit's own perception.CanSeeAt — the same predicate this
-// function's doc above already required, just handed to the engine instead
-// of re-derived by a manual grid walk afterward. The engine's returned
-// SpawnedEntity.Position is now used directly; there is no discarded
-// position and no separate double-registration side effect (previously
-// noted as inert — see PR #645 gate note N1 — now gone because there is
-// only one placement per goblin, not a scattered one PopulateRoom picks
-// plus a recomputed one this function used to override it with).
-//
-// Each goblin gets its OWN single-entity selection table and its own
-// EntityGroup (Quantity.Fixed=1), rather than one shared "goblins" table
-// with Quantity.Fixed=goblinCount. This is deliberate, not cosmetic:
-// BasicSelectablesRegistry.GetEntities samples WITH replacement
-// (selectables_registry.go: `index := r.random.Intn(len(table))` per pick,
-// independently each iteration, no dedup) — a 2-entity table asked for 2
-// entities can return the same *monster.Monster pointer twice. That was
-// invisible to the OLD seedGoblins (it discarded the selection's identity
-// entirely and matched by slice index against its own separately-tracked
-// goblinIDs), but this function now correlates each SpawnedEntity back to a
-// specific pre-built goblin via Entity.GetID() (see the position-matching
-// loop below), so a duplicate selection would silently place one goblin
-// twice and drop the other. A 1-entity table can never return a duplicate
-// (there is nothing else to duplicate against), which sidesteps the gap
-// entirely without depending on a toolkit-side sampling fix — these are
-// individually pre-identified fixed entities (monster.NewGoblin per ID), not
-// a random pick from a shared pool, so one-group-per-entity is the more
-// honest modeling anyway, not a workaround bolted onto the wrong tool.
-func (o *Orchestrator) seedGoblins(ctx context.Context, enc *tkenc.Encounter, encID core.EncounterID) error {
-	room := enc.Room()
-	if room == nil {
-		return errors.New("lobby orchestrator: encounter has no room to place goblins in (InitRoom not called)")
+// KNOWN TRAP (rpg-api#676, from #675's devcombat gate note): the door cell
+// itself belongs to NEITHER region (RegionAt(door.Position) is ("", false))
+// — it is not a valid anchor on its own, hence walking its neighbors here
+// rather than using door.Position directly.
+func chamberEntryAnchor(space *tkenc.SpaceData, door *tkenc.DoorData, regionID string) (core.Hex, error) {
+	if regionID == tkenc.RegionChamber1 {
+		return space.Entrance, nil
 	}
+	for _, n := range perception.HexNeighbors(door.Position) {
+		if id, ok := space.RegionAt(n); ok && id == tkenc.RegionChamber1 {
+			return n, nil
+		}
+	}
+	return core.Hex{}, fmt.Errorf(
+		"lobby orchestrator: door %q has no chamber-1-side neighbor to anchor %q's out-of-sight seeding",
+		door.ID, regionID)
+}
 
-	goblinIDs := make([]core.EntityID, goblinCount)
-	goblins := make([]*monster.Monster, goblinCount)
-	registry := spawn.NewBasicSelectablesRegistry()
-	groups := make([]spawn.EntityGroup, goblinCount)
-
-	// The oracle re-derives the players' view each call rather than
-	// snapshotting once: the search may probe many candidates per entity, and
-	// re-reading enc.ToData() per candidate keeps this in lockstep with
-	// whatever the engine has placed so far in this same call (no player
-	// positions change mid-seed, so this is for safety against future
-	// reordering, not a currently-observed staleness risk).
-	//
-	// Also rejects positions already occupied by an entity placed earlier in
-	// THIS SAME PopulateRoom call (i.e. an already-seeded goblin): room's
-	// baseline CanPlaceEntity (which the engine's search already runs)
-	// type-asserts the occupant to spatial.Placeable and only blocks if
-	// BlocksMovement() is true — monster.Monster implements neither, so two
-	// goblins could otherwise land on the exact same hex with only
-	// probability (not a guarantee) preventing it. This restores the
-	// distinctness the old safeGoblinHexes gave for free by construction
-	// (picking N distinct cells from one candidate set) — flagged by the gate
-	// review on rpg-api#650's PR. GetEntitiesInRange(pos, 0) is an exact-cell
-	// occupancy check (Distance(...) <= 0), type-agnostic, so it catches
-	// players too, not just other goblins.
-	validGoblinPosition := func(pos spatial.Position) bool {
+// chamberOutOfSight builds a spawn.PositionOracle that accepts only
+// candidate hexes tagged into regionID (SpaceData.RegionAt) which are (a)
+// unoccupied — room.GetEntitiesInRange(pos, 0), an exact-cell occupancy
+// check, NOT a player-visibility one; see the KNOWN TRAP note on
+// seedGoblins below for why that distinction matters — and (b) not
+// currently visible from anchor, nor from any already-seated player's real
+// View, via the toolkit's own wall-aware perception.CanSeeAt — the SAME
+// predicate checkCombatEntry uses internally, never hand-rolled LOS math.
+func chamberOutOfSight(enc *tkenc.Encounter, room spatial.Room, regionID string, anchor core.Hex) spawn.PositionOracle {
+	anchorView := &perception.View{Position: anchor, SightRange: memberSightRange}
+	return func(pos spatial.Position) bool {
 		if len(room.GetEntitiesInRange(pos, 0)) > 0 {
 			return false
 		}
 		hex := core.HexFromPosition(pos)
+		if id, ok := enc.ToData().Space.RegionAt(hex); !ok || id != regionID {
+			return false
+		}
+		if perception.CanSeeAt(anchorView, hex, room) {
+			return false
+		}
 		for _, p := range enc.ToData().Players {
 			if p.View != nil && perception.CanSeeAt(p.View, hex, room) {
 				return false
@@ -316,24 +301,101 @@ func (o *Orchestrator) seedGoblins(ctx context.Context, enc *tkenc.Encounter, en
 		}
 		return true
 	}
+}
 
-	one := 1
-	for i := 0; i < goblinCount; i++ {
-		id := core.EntityID(fmt.Sprintf("goblin-%d", i+1))
-		g := monster.NewGoblin(string(id))
-		goblinIDs[i] = id
-		goblins[i] = g
+// seedGoblins selects goblinsPerChamber goblins PER CHAMBER (region-tag-
+// scoped, The Dungeon wave 2 Slice 2) via the tools/spawn engine (wired to
+// the encounter's own RoomOrchestrator, exercising rpg-toolkit#757/#759's
+// getRoomFromSpatial/placeEntityInRoom fix from a real caller) and adds
+// them to enc at positions verified to be outside every current player's
+// sight and outside that chamber's own entry point — via
+// chamberOutOfSight/chamberEntryAnchor above. This is the design doc's hard
+// requirement (ideas/the-dungeon/design.md fork 2, carried into wave 2):
+// combat must not start at spawn, in EITHER chamber. AddMonster
+// inline-checks combat entry (rpg-toolkit#759) on every call — a goblin
+// added within a player's sight would flip the encounter to TURN_BASED
+// immediately, so placement has to be pre-verified before AddMonster runs,
+// not after.
+//
+// KNOWN TRAP (rpg-api#676, carried over from #675's devcombat work):
+// room.GetEntitiesInRange is BLIND to players — it only sees spatial-grid
+// entities (walls, other monsters), never the player seats this package
+// tracks separately in PlayerData. It is used above ONLY for exact-cell
+// occupancy dedup between already-placed goblins (mirroring wave 1's
+// safeGoblinHexes distinctness guarantee), never to validate a candidate
+// against player positions — that job belongs to perception.CanSeeAt
+// (chamberOutOfSight), the only predicate that actually sees players.
+//
+// rpg-toolkit#760 (tools/spawn v0.3.0) made the position search itself
+// room-aware (Room.CanPlaceEntity/bounds are consulted by the search, not
+// just by a post-hoc discard-and-recompute) and added EntityGroup's
+// PositionOracle: a caller predicate ANDed into that search. The engine's
+// returned SpawnedEntity.Position is used directly; there is no discarded
+// position and no separate double-registration side effect.
+//
+// Each goblin gets its OWN single-entity selection table and its own
+// EntityGroup (Quantity.Fixed=1), rather than one shared table with
+// Quantity.Fixed=goblinsPerChamber. This is deliberate, not cosmetic:
+// BasicSelectablesRegistry.GetEntities samples WITH replacement
+// (selectables_registry.go: `index := r.random.Intn(len(table))` per pick,
+// independently each iteration, no dedup) — a multi-entity table asked for
+// N entities can return the same *monster.Monster pointer twice. This
+// function correlates each SpawnedEntity back to a specific pre-built
+// goblin via Entity.GetID() (see the position-matching loop below), so a
+// duplicate selection would silently place one goblin twice and drop
+// another. A 1-entity table can never return a duplicate (there is nothing
+// else to duplicate against) — these are individually pre-identified fixed
+// entities (monster.NewGoblin per ID), not a random pick from a shared
+// pool, so one-group-per-entity is the more honest modeling anyway.
+func (o *Orchestrator) seedGoblins(ctx context.Context, enc *tkenc.Encounter, encID core.EncounterID) error {
+	room := enc.Room()
+	if room == nil {
+		return errors.New("lobby orchestrator: encounter has no room to place goblins in (InitTwoChamberRoom not called)")
+	}
+	space := enc.ToData().Space
+	if space == nil {
+		return errors.New("lobby orchestrator: encounter has no space snapshot to seed goblins into")
+	}
+	door, ok := enc.ToData().Doors[chamberDoorID]
+	if !ok {
+		return fmt.Errorf("lobby orchestrator: door %q not found (InitTwoChamberRoom must add it)", chamberDoorID)
+	}
 
-		tableID := string(id)
-		if err := registry.RegisterTable(tableID, []rpgcore.Entity{g}); err != nil {
-			return fmt.Errorf("register goblin selection table %q: %w", tableID, err)
+	specs := make([]chamberSpawnSpec, 0, 2)
+	for _, regionID := range []string{tkenc.RegionChamber1, tkenc.RegionChamber2} {
+		anchor, anchorErr := chamberEntryAnchor(space, door, regionID)
+		if anchorErr != nil {
+			return anchorErr
 		}
-		groups[i] = spawn.EntityGroup{
-			ID:             tableID,
-			Type:           entityGroupTypeMonster,
-			SelectionTable: tableID,
-			Quantity:       spawn.QuantitySpec{Fixed: &one},
-			PositionOracle: validGoblinPosition,
+		specs = append(specs, chamberSpawnSpec{regionID: regionID, anchor: anchor, idPrefix: regionID})
+	}
+
+	totalGoblins := goblinsPerChamber * len(specs)
+	goblinIDs := make([]core.EntityID, 0, totalGoblins)
+	goblins := make([]*monster.Monster, 0, totalGoblins)
+	registry := spawn.NewBasicSelectablesRegistry()
+	groups := make([]spawn.EntityGroup, 0, totalGoblins)
+	one := 1
+
+	for _, spec := range specs {
+		oracle := chamberOutOfSight(enc, room, spec.regionID, spec.anchor)
+		for i := 0; i < goblinsPerChamber; i++ {
+			id := core.EntityID(fmt.Sprintf("goblin-%s-%d", spec.idPrefix, i+1))
+			g := monster.NewGoblin(string(id))
+			goblinIDs = append(goblinIDs, id)
+			goblins = append(goblins, g)
+
+			tableID := string(id)
+			if err := registry.RegisterTable(tableID, []rpgcore.Entity{g}); err != nil {
+				return fmt.Errorf("register goblin selection table %q: %w", tableID, err)
+			}
+			groups = append(groups, spawn.EntityGroup{
+				ID:             tableID,
+				Type:           entityGroupTypeMonster,
+				SelectionTable: tableID,
+				Quantity:       spawn.QuantitySpec{Fixed: &one},
+				PositionOracle: oracle,
+			})
 		}
 	}
 
@@ -352,7 +414,7 @@ func (o *Orchestrator) seedGoblins(ctx context.Context, enc *tkenc.Encounter, en
 	}
 	if len(result.Failures) > 0 {
 		return fmt.Errorf("lobby orchestrator: spawn engine failed to place %d of %d goblin(s): %+v",
-			len(result.Failures), goblinCount, result.Failures)
+			len(result.Failures), totalGoblins, result.Failures)
 	}
 
 	positions := make(map[core.EntityID]core.Hex, len(result.SpawnedEntities))
@@ -361,8 +423,8 @@ func (o *Orchestrator) seedGoblins(ctx context.Context, enc *tkenc.Encounter, en
 	}
 
 	for i, id := range goblinIDs {
-		pos, ok := positions[id]
-		if !ok {
+		pos, posOK := positions[id]
+		if !posOK {
 			return fmt.Errorf("lobby orchestrator: spawn engine reported no position for goblin %q", id)
 		}
 		goblinData := goblins[i].ToData()

@@ -322,70 +322,106 @@ func (s *LobbySuite) TestStartEncounter_PublishesEncounterStarted_AfterPersist()
 	s.Require().NoError(err)
 }
 
-// TestStartEncounter_WalledRoomAndGoblins_CombatStartsOnSightedMove is the
-// rpg-api#644 headline proof (The Dungeon wave 1, design doc "Done when"
-// bar): StartEncounter creates the encounter WITH a walled room and 2
-// goblins, combat does NOT start at spawn (the goblins are placed outside
-// alice's initial sight), and a Move that brings a goblin into sight flips
-// the encounter to TURN_BASED BY RULE — the toolkit's own inline
-// checkCombatEntry, not anything rpg-api triggers directly. No devseed
-// --inject-combat involved.
-func (s *LobbySuite) TestStartEncounter_WalledRoomAndGoblins_CombatStartsOnSightedMove() {
-	s.seedReadyLobby("lobby-dungeon", "alice")
+// TestStartEncounter_TwoChamberDungeonAndGoblins_CombatStartsOnSightedMove is
+// the rpg-api#676 headline proof (The Dungeon wave 2 Slice 2, umbrella
+// rpg-project#96): StartEncounter creates the encounter with a TWO-CHAMBER
+// dungeon (not wave 1's single room), the party spawns at the chamber-1
+// ENTRANCE (not a room-center placeholder — roomCenterHex() is gone), a
+// single closed door connects the chambers, goblins are seeded 2-per-chamber
+// out of sight (region-tag-scoped), and a Move that brings a chamber-1
+// goblin into sight still flips the encounter to TURN_BASED BY RULE — the
+// toolkit's own inline checkCombatEntry, not anything rpg-api triggers
+// directly. No devseed --inject-combat involved.
+func (s *LobbySuite) TestStartEncounter_TwoChamberDungeonAndGoblins_CombatStartsOnSightedMove() {
+	s.seedReadyLobby("lobby-dungeon2", "alice")
 	s.expectCharacter("char-alice", "alice", "Alice", 12, 12)
 
 	out, err := s.orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
-		PlayerID: "alice", LobbyID: "lobby-dungeon",
+		PlayerID: "alice", LobbyID: "lobby-dungeon2",
 	})
 	s.Require().NoError(err)
 
 	encData, err := s.encRepo.Get(s.ctx, out.EncounterID)
 	s.Require().NoError(err)
 
-	// Walls on the wire: the encounter was created with a real room snapshot.
-	s.Require().NotNil(encData.Space, "StartEncounter must create the encounter with a room (rpg-toolkit#757 SpaceData)")
-	s.Require().Equal(20, encData.Space.Width)
+	// Two-chamber space on the wire: combined width is 2*chamberWidth+1 (the
+	// shared boundary column carrying the door), not a single 20-wide room.
+	s.Require().NotNil(encData.Space, "StartEncounter must create the encounter with a two-chamber room")
+	s.Require().Equal(41, encData.Space.Width, "combined width is 2*chamberWidth+1 (boundary column + door)")
 	s.Require().Equal(20, encData.Space.Height)
+	s.Require().NotEmpty(encData.Space.Regions, "InitTwoChamberRoom must tag chamber-1/chamber-2 regions")
 
-	// 2 goblins seeded.
-	s.Require().Len(encData.Monsters, 2, "StartEncounter must seed exactly 2 goblins")
-	goblinPositions := make([]core.Hex, 0, len(encData.Monsters))
+	// Entrance-anchored spawn (rpg-api#648/#676): alice spawns AT the
+	// designated entrance, not a room-center placeholder.
+	alice := encData.Players[core.PlayerID("alice")]
+	s.Require().NotNil(alice)
+	s.Require().Equal(encData.Space.Entrance, alice.View.Position,
+		"the party must spawn at chamber 1's entrance, not a room center")
+	entranceRegion, entranceOK := encData.Space.RegionAt(alice.View.Position)
+	s.Require().True(entranceOK, "the entrance must be tagged into a region")
+	s.Require().Equal(tkenc.RegionChamber1, entranceRegion, "the entrance is chamber 1's")
+
+	// Exactly one door connects the two chambers, closed (and unlocked) by
+	// default — Interact/OpenDoor is what opens it; StartEncounter never
+	// does so itself.
+	s.Require().Len(encData.Doors, 1, "Slice 2 has exactly one plain door between the two chambers")
+	var door *tkenc.DoorData
+	for _, d := range encData.Doors {
+		door = d
+	}
+	s.Require().False(door.Open, "the door must start closed")
+	s.Require().False(door.Locked, "Slice 2's door is plain, not locked (locked doors are Slice 3)")
+
+	// 4 goblins seeded: 2 per chamber (goblinsPerChamber), region-tag-scoped.
+	s.Require().Len(encData.Monsters, 4, "StartEncounter must seed 2 goblins per chamber")
+	chamberCounts := map[string]int{}
+	seenPositions := make(map[core.Hex]bool, len(encData.Monsters))
 	for id, m := range encData.Monsters {
 		s.Require().Positive(m.HP, "goblin %q must have positive HP", id)
 		s.Require().NotEmpty(m.DataJSON, "goblin %q must carry DataJSON (monster.NewGoblin, not a hand-rolled stub)", id)
-		goblinPositions = append(goblinPositions, m.Position)
+		region, regionOK := encData.Space.RegionAt(m.Position)
+		s.Require().True(regionOK, "goblin %q must be placed inside a chamber region", id)
+		chamberCounts[region]++
+		// Distinct positions: monster.Monster doesn't implement
+		// spatial.Placeable, so the spawn engine's baseline CanPlaceEntity
+		// occupancy check silently no-ops for goblin-on-goblin placement.
+		// seedGoblins' PositionOracle explicitly rejects already-occupied
+		// cells (room.GetEntitiesInRange(pos, 0)) to restore the
+		// distinctness guarantee the deleted safeGoblinHexes gave for free
+		// by construction — this pins that guarantee (gate finding on
+		// rpg-api#650's PR).
+		s.Require().False(seenPositions[m.Position], "goblins must not be placed on the same hex")
+		seenPositions[m.Position] = true
 	}
-	// Distinct positions: monster.Monster doesn't implement spatial.Placeable,
-	// so the spawn engine's baseline CanPlaceEntity occupancy check silently
-	// no-ops for goblin-on-goblin placement (it only blocks when the existing
-	// occupant type-asserts to Placeable and BlocksMovement() is true).
-	// seedGoblins' PositionOracle explicitly rejects already-occupied cells
-	// (room.GetEntitiesInRange(pos, 0)) to restore the distinctness guarantee
-	// the deleted safeGoblinHexes gave for free by construction — this pins
-	// that guarantee so a future regression here is caught, not silently
-	// probable-but-unverified (gate finding on rpg-api#650's PR).
-	s.Require().NotEqual(goblinPositions[0], goblinPositions[1], "goblins must not be placed on the same hex")
+	s.Require().Equal(2, chamberCounts[tkenc.RegionChamber1], "chamber 1 must get exactly 2 goblins")
+	s.Require().Equal(2, chamberCounts[tkenc.RegionChamber2], "chamber 2 must get exactly 2 goblins")
 
-	// Combat must NOT have started at spawn: the goblins were placed outside
-	// alice's initial sight, so AddMonster's inline combat-entry check
-	// (rpg-toolkit#759) must not have fired.
+	// Combat must NOT have started at spawn: every goblin (both chambers) was
+	// placed outside alice's initial sight, so AddMonster's inline
+	// combat-entry check (rpg-toolkit#759) must not have fired.
 	s.Require().Equal(core.ModeFreeRoam, encData.Mode, "combat must not start at spawn — goblins are placed outside initial LOS")
 
 	// Rehydrate the live encounter (same broker StartEncounter used) and move
-	// alice directly onto one goblin's hex — a Move that forms sight. This
-	// must flip the encounter to TURN_BASED BY RULE (the toolkit's own inline
-	// checkCombatEntry), not via any rpg-api-side trigger.
+	// alice directly onto a CHAMBER-1 goblin's hex (chamber 2 is unreachable
+	// while the door is closed — rpg-toolkit#790) — a Move that forms sight.
+	// This must flip the encounter to TURN_BASED BY RULE (the toolkit's own
+	// inline checkCombatEntry), not via any rpg-api-side trigger.
 	enc, err := tkenc.LoadFromData(s.ctx, encData, s.encBroker)
 	s.Require().NoError(err)
 	s.Require().Equal(core.ModeFreeRoam, enc.Mode(), "rehydration must not itself flip mode")
 
 	var targetGoblin core.Hex
+	var foundChamber1Goblin bool
 	for _, m := range encData.Monsters {
-		targetGoblin = m.Position
-		break
+		if region, _ := encData.Space.RegionAt(m.Position); region == tkenc.RegionChamber1 {
+			targetGoblin = m.Position
+			foundChamber1Goblin = true
+			break
+		}
 	}
+	s.Require().True(foundChamber1Goblin, "must find at least one chamber-1 goblin to move onto")
 	s.Require().NoError(enc.Move("alice", []core.Hex{targetGoblin}),
-		"moving onto a pre-vetted (non-wall) goblin hex must not be blocked")
+		"moving onto a pre-vetted (non-wall) chamber-1 goblin hex must not be blocked")
 	s.Require().Equal(core.ModeTurnBased, enc.Mode(),
-		"a Move that brings a goblin into sight must flip the encounter to TURN_BASED by rule")
+		"a Move that brings a chamber-1 goblin into sight must flip the encounter to TURN_BASED by rule")
 }
