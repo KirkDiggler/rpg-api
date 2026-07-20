@@ -27,6 +27,7 @@ import (
 	encountercore "github.com/KirkDiggler/rpg-toolkit/encounter/core"
 	"github.com/KirkDiggler/rpg-toolkit/events"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
+	"github.com/KirkDiggler/rpg-toolkit/tools/environments"
 )
 
 func TestDevseedFixtures_EffectiveACMatchesStatedArmorClass(t *testing.T) {
@@ -84,6 +85,14 @@ func TestRunInjectCombat_DelegatesToDevcombat(t *testing.T) {
 
 	const encID = "lobby-enc-1"
 	enc := tkenc.New(ctx, encountercore.EncounterID(encID), tkenc.NewBroker(tkenc.NewInMemoryTransport()))
+	// InitRoom before AddPlayer (rpg-toolkit encounter/space.go's doc — the
+	// initial reveal consults e.room) — devcombat.Inject now verifies LoS
+	// before placing the injected goblin (rpg-toolkit#796), which requires a
+	// real room. PatternEmpty keeps this smoke test deterministic; it isn't
+	// exercising wall behavior.
+	if err := enc.InitRoom(20, 20, environments.PatternEmpty); err != nil {
+		t.Fatalf("InitRoom: %v", err)
+	}
 	if err := enc.AddPlayer(tkenc.PlayerInput{
 		PlayerID: "alice", EntityID: "char-alice",
 		Position: encountercore.Hex{Q: 0, R: 0, S: 0}, SightRange: 10,
@@ -130,6 +139,9 @@ func TestRunInjectCombat_ForceNPCFirst_DelegatesToDevcombat(t *testing.T) {
 
 	const encID = "lobby-enc-npc-first"
 	enc := tkenc.New(ctx, encountercore.EncounterID(encID), tkenc.NewBroker(tkenc.NewInMemoryTransport()))
+	if err := enc.InitRoom(20, 20, environments.PatternEmpty); err != nil {
+		t.Fatalf("InitRoom: %v", err)
+	}
 	if err := enc.AddPlayer(tkenc.PlayerInput{
 		PlayerID: "alice", EntityID: "char-alice",
 		Position: encountercore.Hex{Q: 0, R: 0, S: 0}, SightRange: 10,

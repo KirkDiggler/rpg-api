@@ -19,7 +19,8 @@ import (
 //   - ErrNotHost → PermissionDenied
 //   - ErrCharacterOwnershipMismatch → PermissionDenied
 //   - ErrCharacterNotFound → NotFound
-//   - ErrLobbyAlreadyStarted / ErrLobbyFull / ErrNotAllReady → FailedPrecondition
+//   - ErrLobbyAlreadyStarted / ErrLobbyFull / ErrNotAllReady / ErrLobbyNotStarted /
+//     ErrEncounterAlreadyEnded → FailedPrecondition
 //   - unclassified → Internal
 func lobbyStatusError(err error) error {
 	switch {
@@ -39,6 +40,10 @@ func lobbyStatusError(err error) error {
 		return status.Error(codes.FailedPrecondition, "lobby is full")
 	case errors.Is(err, lobbyorch.ErrNotAllReady):
 		return status.Error(codes.FailedPrecondition, "not all members are ready")
+	case errors.Is(err, lobbyorch.ErrLobbyNotStarted):
+		return status.Error(codes.FailedPrecondition, "lobby has not started an encounter")
+	case errors.Is(err, lobbyorch.ErrEncounterAlreadyEnded):
+		return status.Error(codes.FailedPrecondition, "encounter has already ended")
 	}
 	return status.Errorf(codes.Internal, "lobby: %v", err)
 }

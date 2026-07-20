@@ -11,6 +11,7 @@ import (
 	encountersv2 "github.com/KirkDiggler/rpg-api/internal/repositories/encounters/v2"
 	tkenc "github.com/KirkDiggler/rpg-toolkit/encounter"
 	core "github.com/KirkDiggler/rpg-toolkit/encounter/core"
+	"github.com/KirkDiggler/rpg-toolkit/tools/environments"
 )
 
 // InjectSuite covers devcombat.Inject: the shared load/AddMonster/SetMode/save
@@ -34,6 +35,13 @@ func (s *InjectSuite) SetupTest() {
 // seedLobbyLikeEncounter writes a two-player encounter matching what the
 // lobby StartEncounter RPC produces post-#634 Part 1: real HP/AC, FreeRoam
 // mode, no monsters, no AttackBonus/DamageDice/DamageType/DataJSON.
+//
+// InitRoom uses PatternEmpty (no walls) rather than StartEncounter's real
+// PatternRandom: these tests exercise Inject's own placement/round-trip
+// logic, not wall-avoidance, so a deterministic open room keeps them stable
+// without depending on a fixed random seed. InitRoom must run before
+// AddPlayer (rpg-toolkit encounter/space.go's doc) — AddPlayer's initial
+// reveal consults e.room.
 func (s *InjectSuite) seedLobbyLikeEncounter(encID string) {
 	transport := tkenc.NewInMemoryTransport()
 	defer func() { _ = transport.Close() }()
@@ -41,6 +49,7 @@ func (s *InjectSuite) seedLobbyLikeEncounter(encID string) {
 	defer func() { _ = broker.Close() }()
 
 	enc := tkenc.New(s.ctx, core.EncounterID(encID), broker)
+	s.Require().NoError(enc.InitRoom(20, 20, environments.PatternEmpty))
 	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
 		PlayerID: "alice", EntityID: "char-alice",
 		Position: core.Hex{Q: 0, R: 0, S: 0}, SightRange: 10,
@@ -83,17 +92,24 @@ func (s *InjectSuite) TestInject_AddsGoblinAndFlipsToTurnBased() {
 	s.Require().Positive(goblin.HP)
 	s.Require().Positive(goblin.AC)
 	s.Require().NotEmpty(goblin.DataJSON, "goblin must carry DataJSON — monster.NewGoblin, not a hand-rolled stub")
-	// alice (Q:0) and bob (Q:1) are the party's leading edge; the goblin must
-	// land one hex past it (Q:2), not two (the off-1 bug Copilot review
-	// caught on rpg-api#635), and not stacked on either player.
-	s.Require().Equal(2, goblin.Position.Q, "goblin must spawn adjacent to the party's leading edge, not two hexes past it")
-
 	alice, ok := data.Players["alice"]
 	s.Require().True(ok, "existing player must survive injection")
 	s.Require().Equal(14, alice.AC)
 	s.Require().Equal(12, alice.HP)
 	s.Require().Zero(alice.AttackBonus, "injection must not mutate the existing honest #634 Part 1 snapshot")
 	s.Require().Empty(alice.DamageDice)
+
+	// rpg-toolkit#796 changed the contract this used to assert an exact
+	// coordinate for: Inject no longer guesses "one hex past the party's
+	// leading edge" and hopes it's visible, it VERIFIES visibility
+	// (findVisiblePosition, inject.go) before placing the goblin at all — so
+	// the only positional guarantee worth pinning here is "not stacked on an
+	// existing player." The goblin's actual visibility is proven more
+	// directly above: it landed in the rolled Initiative order at all
+	// (line ~86), which #796's engagedMonsters() scoping makes possible ONLY
+	// for a monster at least one player had LoS to at roll time.
+	s.Require().NotEqual(alice.View.Position, goblin.Position, "goblin must not stack on alice")
+	s.Require().NotEqual(data.Players["bob"].View.Position, goblin.Position, "goblin must not stack on bob")
 }
 
 // TestInject_AlreadyTurnBased_ReRollsInitiativeForNewMonster proves a second
