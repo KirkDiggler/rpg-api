@@ -273,9 +273,19 @@ func doorWallsToProto(data *tkenc.Data) []*encounterv2pb.Wall {
 // is always the chamber-1 or chamber-2 side. Never hand-rolled hex-grid
 // geometry: HexNeighbors + RegionAt are both toolkit-exposed surface.
 // Falls back to the door's own position (a degenerate Start==To segment,
-// matching a solid wall's shape) when no tagged neighbor exists, rather
-// than dropping the door from the wire.
+// matching a solid wall's shape) when no tagged neighbor exists — which
+// includes a nil space (Copilot review, PR #677: fixtures that AddDoor
+// without ever calling InitRoom/InitTwoChamberRoom leave Data.Space nil,
+// so a door-only encounter must still project deterministically instead of
+// dropping the door from the wire or panicking). SpaceData.RegionAt is
+// itself nil-receiver safe (rpg-toolkit#806), so this guard is
+// belt-and-suspenders documentation as much as a runtime necessity — it
+// makes the nil-space contract explicit here rather than resting on a
+// transitive safety property of a function this package doesn't own.
 func doorPassageNeighbor(space *tkenc.SpaceData, door *tkenc.DoorData) core.Hex {
+	if space == nil {
+		return door.Position
+	}
 	for _, n := range perception.HexNeighbors(door.Position) {
 		if _, ok := space.RegionAt(n); ok {
 			return n

@@ -246,14 +246,28 @@ type chamberSpawnSpec struct {
 }
 
 // chamberEntryAnchor returns the hex a player first stands at when arriving
-// in the named region — chamber 1's designated Entrance, or chamber 2's
-// approach point just outside the connecting door (the door's chamber-1-
-// side neighbor). This generalizes wave 1's single room-center out-of-sight
-// anchor (The Dungeon wave 2 design doc §Q5: "the same perception.CanSeeAt
-// oracle wave-1 uses from the room center — generalized to the door") to
-// each chamber's own entry point, using only toolkit-exposed surface —
-// perception.HexNeighbors (the canonical six-neighbor set) filtered by
-// SpaceData.RegionAt — never hand-rolled hex-grid geometry.
+// IN the named region — chamber 1's designated Entrance, or (for any other
+// region) the door's neighbor cell that RegionAt itself tags into that same
+// region: the first hex actually inside it once stepped through. This
+// generalizes wave 1's single room-center out-of-sight anchor (The Dungeon
+// wave 2 design doc §Q5: "the same perception.CanSeeAt oracle wave-1 uses
+// from the room center — generalized to the door") to each chamber's own
+// entry point, using only toolkit-exposed surface — perception.HexNeighbors
+// (the canonical six-neighbor set) filtered by SpaceData.RegionAt — never
+// hand-rolled hex-grid geometry.
+//
+// Fixed (Copilot review, PR #677): this used to hardcode the neighbor match
+// to tkenc.RegionChamber1 regardless of which regionID was asked for, so
+// chamber 2's anchor was silently a chamber-1 hex — violating the "entry
+// hex FOR THE NAMED region" contract this doc promises. It happened to be
+// harmless today only because the door is always closed at seed time (a
+// closed door fully blocks LoS at its own cell — rpg-toolkit#790 — so
+// virtually nothing in chamber 2 is visible from EITHER side of it,
+// masking the wrong anchor); it stops being harmless the moment any caller
+// reuses this helper somewhere that assumption doesn't hold. Matching
+// against regionID itself (not a hardcoded chamber-1 constant) is also the
+// only way this generalizes to a 3rd region (Slice 3's boss chamber)
+// without another hardcoded case.
 //
 // KNOWN TRAP (rpg-api#676, from #675's devcombat gate note): the door cell
 // itself belongs to NEITHER region (RegionAt(door.Position) is ("", false))
@@ -264,12 +278,12 @@ func chamberEntryAnchor(space *tkenc.SpaceData, door *tkenc.DoorData, regionID s
 		return space.Entrance, nil
 	}
 	for _, n := range perception.HexNeighbors(door.Position) {
-		if id, ok := space.RegionAt(n); ok && id == tkenc.RegionChamber1 {
+		if id, ok := space.RegionAt(n); ok && id == regionID {
 			return n, nil
 		}
 	}
 	return core.Hex{}, fmt.Errorf(
-		"lobby orchestrator: door %q has no chamber-1-side neighbor to anchor %q's out-of-sight seeding",
+		"lobby orchestrator: door %q has no %q-side neighbor to anchor its out-of-sight seeding",
 		door.ID, regionID)
 }
 

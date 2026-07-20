@@ -718,6 +718,43 @@ func (s *ProjectSuite) TestProjectFor_DoorWall_NoRegionNeighbor_FallsBackToDegen
 	s.Require().Equal(walls[0].GetFrom(), walls[0].GetTo(), "no tagged neighbor falls back to a degenerate Start==End segment")
 }
 
+// TestProjectFor_DoorWall_NilSpace_NoPanic_DegenerateSegment is the
+// Copilot-review regression pin (PR #677): other integration/unit fixtures
+// build a door via enc.AddDoor without ever calling InitRoom/
+// InitTwoChamberRoom (e.g. encounter_v2_test.go's TestInteract_OpenDoor_
+// TwoPlayers), which leaves Data.Space nil while Data.Doors is non-empty —
+// AddDoor's toolkit implementation only touches Space when it is already
+// set. ProjectFor must still project such a door deterministically (a
+// degenerate Start==To segment, matching a solid wall's shape) instead of
+// panicking. SpaceData.RegionAt is itself nil-receiver safe (rpg-
+// toolkit#806), and doorPassageNeighbor now also nil-checks space
+// explicitly — this test proves the combination end to end through the
+// public ProjectFor entry point, not just the unexported helper.
+func (s *ProjectSuite) TestProjectFor_DoorWall_NilSpace_NoPanic_DegenerateSegment() {
+	data := tkenc.NewData("enc-door-nil-space")
+	data.Mode = core.ModeFreeRoam
+	alice := newPlayerData("player-alice", "char-alice", originHex, 2)
+	data.Players = map[core.PlayerID]*tkenc.PlayerData{"player-alice": alice}
+
+	// data.Space is left nil — no InitRoom/InitTwoChamberRoom call.
+	data.Doors = map[core.EntityID]*tkenc.DoorData{
+		"door-1": {ID: "door-1", Position: core.Hex{Q: 3, R: -3, S: 0}, Open: false},
+	}
+
+	var pb *encounterv2pb.Encounter
+	var err error
+	s.Require().NotPanics(func() {
+		pb, err = v2encounter.ProjectFor(context.Background(), data, "player-alice", s.broker, nil, s.now)
+	}, "ProjectFor must not panic on a door-only encounter with nil Data.Space")
+	s.Require().NoError(err)
+
+	walls := pb.GetSpace().GetWalls()
+	s.Require().Len(walls, 1)
+	s.Require().Equal("door-1", walls[0].GetId())
+	s.Require().Equal(walls[0].GetFrom(), walls[0].GetTo(),
+		"nil space falls back to a degenerate Start==End segment, same as the no-tagged-neighbor case")
+}
+
 // TestProjectFor_PlayerEntityCarriesDisplayNameAndClassRef proves rpg-api#664:
 // once a charRepo is wired, both the viewer's own entity and a visible
 // other-player entity carry display_name (from the character record's Name)
