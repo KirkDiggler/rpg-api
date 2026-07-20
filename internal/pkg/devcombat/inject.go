@@ -21,6 +21,7 @@ import (
 	"fmt"
 
 	encountersv2 "github.com/KirkDiggler/rpg-api/internal/repositories/encounters/v2"
+	rpgcore "github.com/KirkDiggler/rpg-toolkit/core"
 	tkenc "github.com/KirkDiggler/rpg-toolkit/encounter"
 	core "github.com/KirkDiggler/rpg-toolkit/encounter/core"
 	"github.com/KirkDiggler/rpg-toolkit/encounter/perception"
@@ -160,7 +161,7 @@ func Inject(ctx context.Context, repo encountersv2.Repository, input InjectInput
 	if room == nil {
 		return nil, fmt.Errorf("inject: encounter %q has no room (InitRoom not called) — cannot verify LoS", input.EncounterID)
 	}
-	goblinPos, found := findVisiblePosition(data, room)
+	goblinPos, found := findVisiblePosition(data, room, goblin)
 	if !found {
 		return nil, fmt.Errorf(
 			"inject: no unoccupied, in-sight position found in encounter %q's room — every player is boxed off from the rest of it",
@@ -251,17 +252,27 @@ func forceEntityFirst(data *tkenc.Data, id core.EntityID) {
 // let a candidate land exactly on a player's hex (caught by
 // TestInject_AddsGoblinAndFlipsToTurnBased's stacking assertion).
 //
+// entity is passed to room.CanPlaceEntity to reject candidates the room
+// itself would refuse — walls and other blocked terrain (Copilot review,
+// PR #675): CanSeeAt only proves a cell is perceivable, not that it's
+// walkable/placeable ground; a wall hex is legitimately "visible" (you can
+// see a wall) but is not somewhere a monster can stand. The direct
+// data.Players/data.Monsters occupancy check above stays alongside this —
+// CanPlaceEntity's own occupancy half only sees entities the room's spatial
+// grid actually tracks (spawn-placed monsters), not players, exactly the
+// gap the comment above already documents.
+//
 // The room is small (StartEncounter's fixed 20x20) and rarely occupied by
 // more than a handful of entities, so a full sweep is cheap and simple —
 // deliberately not a spiral-out-from-a-player search, which would need extra
 // bookkeeping to stay deterministic across multiple player anchors for no
 // real benefit at this scale.
 //
-// Returns ok=false if the room has no unoccupied in-sight cell at all (every
-// player boxed off from the rest of it) — Inject surfaces that as an error
-// rather than silently falling back to a blind, possibly-invisible
-// placement, which is exactly the bug this replaces.
-func findVisiblePosition(data *tkenc.Data, room spatial.Room) (core.Hex, bool) {
+// Returns ok=false if the room has no unoccupied, placeable, in-sight cell
+// at all (every player boxed off from the rest of it) — Inject surfaces
+// that as an error rather than silently falling back to a blind,
+// possibly-invisible placement, which is exactly the bug this replaces.
+func findVisiblePosition(data *tkenc.Data, room spatial.Room, entity rpgcore.Entity) (core.Hex, bool) {
 	if data.Space == nil {
 		return core.Hex{}, false
 	}
@@ -280,6 +291,9 @@ func findVisiblePosition(data *tkenc.Data, room spatial.Room) (core.Hex, bool) {
 			pos := spatial.Position{X: float64(x), Y: float64(y)}
 			hex := core.HexFromPosition(pos)
 			if _, taken := occupied[hex]; taken {
+				continue
+			}
+			if !room.CanPlaceEntity(entity, pos) {
 				continue
 			}
 			for _, pd := range data.Players {

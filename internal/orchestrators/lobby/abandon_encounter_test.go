@@ -2,6 +2,8 @@ package lobby_test
 
 import (
 	"encoding/json"
+	"testing"
+	"time"
 
 	"go.uber.org/mock/gomock"
 
@@ -73,13 +75,7 @@ func (s *LobbySuite) TestAbandonEncounter_PublishesEncounterEndedReasonAbandoned
 	})
 	s.Require().NoError(err)
 
-	var ended *encevents.EncounterEndedEvent
-	for evt := range sub.Events() {
-		if e, ok := evt.(*encevents.EncounterEndedEvent); ok {
-			ended = e
-			break
-		}
-	}
+	ended := waitForEncounterEndedEvent(s.T(), sub, time.Second)
 	s.Require().NotNil(ended, "AbandonEncounter must publish EncounterEndedEvent")
 	s.Require().Equal(tkenc.EncounterEndedReasonAbandoned, ended.Reason)
 }
@@ -240,4 +236,31 @@ func (s *LobbySuite) TestAbandonEncounter_ThenGetMyActiveLobby_ReturnsEmpty_Then
 	s.Require().True(ok, "rage charges resource must survive the restore, not be dropped")
 	s.Require().Equal(2, rage.Maximum)
 	s.Require().Equal(rage.Maximum, rage.Current, "rage charges must be fully restored, not just HP — rpg-toolkit#795")
+}
+
+// waitForEncounterEndedEvent reads sub's channel until an
+// *encevents.EncounterEndedEvent arrives or timeout elapses, whichever
+// first — a bounded alternative to `for evt := range sub.Events()`, which
+// blocks the whole suite forever on a genuine regression (no event ever
+// published) instead of failing this one test fast (Copilot review, PR
+// #675). Returns nil on timeout; callers assert non-nil themselves so the
+// failure message stays test-specific.
+func waitForEncounterEndedEvent(
+	t *testing.T, sub *tkenc.Subscription, timeout time.Duration,
+) *encevents.EncounterEndedEvent {
+	t.Helper()
+	deadline := time.After(timeout)
+	for {
+		select {
+		case evt, ok := <-sub.Events():
+			if !ok {
+				return nil
+			}
+			if e, ok := evt.(*encevents.EncounterEndedEvent); ok {
+				return e
+			}
+		case <-deadline:
+			return nil
+		}
+	}
 }
