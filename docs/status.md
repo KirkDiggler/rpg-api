@@ -1,8 +1,8 @@
 ---
 name: rpg-api status
 description: Where we are with rpg-api — active work, paused, known rough edges, per-subsystem confidence
-updated: 2026-07-18
-confidence: high — Wave 2 Monk entries verified against passing integration tests; #636 entry verified against passing unit + integration tests; #642 v1alpha1 encounter stack deletion verified against passing build/vet/test/lint; #644 The Dungeon wave 1 (api) verified against passing unit + stress-run (50x) integration tests; #650 toolkit seam adoption (InitiativeRolled event + room-aware spawn) verified against passing unit/integration/-race full suite; #651 ActiveConditions projection verified against passing unit + integration (10x -race) + full suite; #656 movement-truncation fix verified against an isolated toolkit-level repro, a new RPC-level regression test (10x -race), and the full suite
+updated: 2026-07-20
+confidence: high — Wave 2 Monk entries verified against passing integration tests; #636 entry verified against passing unit + integration tests; #642 v1alpha1 encounter stack deletion verified against passing build/vet/test/lint; #644 The Dungeon wave 1 (api) verified against passing unit + stress-run (50x) integration tests; #650 toolkit seam adoption (InitiativeRolled event + room-aware spawn) verified against passing unit/integration/-race full suite; #651 ActiveConditions projection verified against passing unit + integration (10x -race) + full suite; #656 movement-truncation fix verified against an isolated toolkit-level repro, a new RPC-level regression test (10x -race), and the full suite; #663 AbandonEncounter + combat pockets + rage-at-seating verified against passing unit/integration/-race full suite plus a live playtest against the real game route
 ---
 
 # rpg-api: Where We Are
@@ -10,6 +10,62 @@ confidence: high — Wave 2 Monk entries verified against passing integration te
 This is a living doc. Edit it in the same PR that invalidates a line. Don't let it rot.
 
 ## Active work
+
+**AbandonEncounter — host-only escape hatch for stuck encounters; first production
+activation of combat pockets + rage-at-seating (rpg-api#663, 2026-07-20)** —
+`LobbyService.AbandonEncounter` (rpg-api-protos#184) lets the host administratively
+end a lobby's STARTED encounter via `Encounter.End(reason)` (rpg-toolkit#797/#798) —
+the SAME terminal transition victory/TPK already use, not a parallel path. Fixes the
+exact bug Kirk hit live: a `FREE_ROAM` encounter stuck by rpg-toolkit#483's movement
+deadlock had no way to end, and the resume-after-refresh liveness check
+(`GetMyActiveLobby`) faithfully re-imprisoned him into it on every reload.
+`AbandonEncounter` never mutates the lobby record itself — `GetMyActiveLobby`'s
+existing liveness check already zeroes its whole Output the moment the encounter's
+`Mode` reads `ModeEnded`, and `CreateLobby` already unconditionally refreshes the
+player→lobby index on every call — both halves of "abandon then start fresh" fell
+out of existing code with no new lobby-side plumbing. See
+`docs/architecture/components/lobby-service.md` for the RPC's full contract.
+
+This merge also pins `rpg-toolkit/encounter` to v0.33.0 and `rpg-toolkit/rulebooks/dnd5e`
+to v0.66.0 — the first production activation of two toolkit features that had shipped
+ahead of any rpg-api consumer:
+
+- **Combat pockets (rpg-toolkit#796)** — `rollInitiative` now scopes to
+  `engagedMonsters()` (LoS-having monsters only) instead of every monster anywhere in
+  the space, and a non-terminal `TURN_BASED -> FREE_ROAM` exit fires when the current
+  pocket clears while monsters remain elsewhere (`checkPocketCleared`) — closes the
+  "boss behind a locked door = un-endable fight" gap. Required a same-PR fix to
+  `devcombat.Inject` (dev-only tooling): its old blind "one hex past the party's
+  leading edge, force `SetMode` regardless of sightline" goblin placement could
+  manufacture a `TURN_BASED` encounter with an empty initiative pocket — a state real
+  play can no longer produce under the new scoping. Replaced with `findVisiblePosition`
+  (verifies LoS via `perception.CanSeeAt` AND placeability via `room.CanPlaceEntity`,
+  a Copilot review catch — a wall hex is legitimately "visible" but not placeable);
+  the forced-`SetMode` escape hatch is deleted entirely, not patched.
+- **Resource-pool arcade recovery (rpg-toolkit#795)** — `RestoreForNewEncounter` now
+  also refreshes tracked resource pools (rage charges, ki, hit dice) to maximum on
+  every fresh seating, ungated by HP — closes rpg-api#671's remaining gap (HP/death-
+  save recovery landed with rpg-toolkit#786; rage charges stayed spent until now).
+
+Both landed on the API side unplanned — discovered mid-implementation while bumping
+the toolkit dependency #663 needed anyway, folded into the same PR per house rule
+("the PR that carries the bump fixes what the bump breaks") rather than deferred.
+
+Verified live against the real game route (Chrome DevTools MCP + grpcurl against an
+isolated stack built from the exact PR commit — no shared state with any other
+session), evidence on rpg-api#675: kill one goblin → bounce to `FREE_ROAM` (not
+encounter-ended, goblin-2 still out there) → move into the second goblin's sight →
+fresh pocket (round reset to 1, only goblin-2 engaged) → kill it → real whole-dungeon
+`ModeEnded`. Separately: a genuinely stuck `FREE_ROAM` encounter (no monster ever
+added — the exact reported bug shape) ends live over `StreamEncounter` with zero
+client interaction on `AbandonEncounter`, `GetMyActiveLobby` returns fully empty
+afterward, and a fresh `CreateLobby`->`StartEncounter` immediately reseats the
+player — and, via the orchestrator test suite's capstone, a dead-and-drained
+character (0 HP, 3 failed death saves, 0/2 rage charges) seated fresh comes back
+alive at full HP with full rage.
+
+Known cosmetic, not a regression: rpg-dnd5e-web#516 (open) — `EconomyBar` shows
+stale turn-economy digits during the `FREE_ROAM` interval between pockets.
 
 **Wave-close blocker: stale character combat economy blocked all movement on fresh
 encounters (rpg-api#644, 2026-07-15)** — found live on the dev stack: every `MoveEntity`

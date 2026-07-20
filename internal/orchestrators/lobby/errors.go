@@ -45,4 +45,21 @@ var (
 	// player — the v1 lobby never validated this"). Handler maps to
 	// codes.PermissionDenied.
 	ErrCharacterOwnershipMismatch = errors.New("character does not belong to the authenticated player")
+
+	// ErrLobbyNotStarted means AbandonEncounter was called against a lobby
+	// that never reached STARTED (WAITING, or STARTED with no EncounterID —
+	// the latter would be a StartEncounter bug, treated identically since the
+	// caller-visible outcome is the same: nothing to abandon). Handler maps
+	// to codes.FailedPrecondition.
+	ErrLobbyNotStarted = errors.New("lobby has not started an encounter")
+
+	// ErrEncounterAlreadyEnded means AbandonEncounter's target encounter has
+	// already reached a terminal state — naturally (victory/TPK) or via a
+	// prior AbandonEncounter call — before this call ran. Kept distinct from
+	// ErrLobbyNotStarted (which means no encounter was ever started) even
+	// though both map to the same gRPC code: the caller-visible outcome
+	// ("nothing to abandon") is identical, but the message tells a more
+	// honest story about which case actually happened. Handler maps to
+	// codes.FailedPrecondition.
+	ErrEncounterAlreadyEnded = errors.New("encounter has already ended")
 )

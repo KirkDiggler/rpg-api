@@ -1,8 +1,8 @@
 ---
 name: lobby service
 description: LobbyService v1alpha1 — party assembly (join refs, membership, ready flags, lifecycle) and the sole encounter-construction path
-updated: 2026-07-07
-confidence: high — verified by reading the implementation and running the full RPC-level + orchestrator-level + repository-level test suites plus a real-Redis 4-player integration test
+updated: 2026-07-20
+confidence: high — verified by reading the implementation and running the full RPC-level + orchestrator-level + repository-level test suites plus a real-Redis 4-player integration test; AbandonEncounter (rpg-api#663) additionally verified via a live playtest against the real game route (Chrome DevTools MCP + grpcurl, evidence on rpg-api#675)
 ---
 
 # lobby service
@@ -40,10 +40,11 @@ shape rpg-api#616 flags on the old v2 encounter create/hydrate path.
 ### Handler (`internal/handlers/dnd5e/lobby/v1alpha1/`)
 
 One file per RPC (`create_lobby.go`, `join_lobby.go`, `set_ready.go`,
-`leave_lobby.go`, `start_encounter.go`, `stream_lobby.go`, `get_my_active_lobby.go`),
-plus `handler.go` (Config/New only), `translate.go` (entity <-> proto), and
-`status.go` (one shared `lobbyStatusError` switch covering every sentinel — each RPC
-only ever returns a subset, so one exhaustive mapper beats six near-duplicates).
+`leave_lobby.go`, `start_encounter.go`, `stream_lobby.go`, `get_my_active_lobby.go`,
+`abandon_encounter.go`), plus `handler.go` (Config/New only), `translate.go` (entity
+<-> proto), and `status.go` (one shared `lobbyStatusError` switch covering every
+sentinel — each RPC only ever returns a subset, so one exhaustive mapper beats six
+near-duplicates).
 
 `get_my_active_lobby.go` (rpg-api#653) is the resume-after-refresh lookup
 (rpg-dnd5e-web#444): unlike every other RPC here, it takes no request fields —
@@ -52,6 +53,17 @@ pattern (a client-supplied `player_id` would let a caller query another player's
 lobby). "No active lobby" is a valid empty response, not an error — see the
 Repository section below for the index it reads and the orchestrator's
 `GetMyActiveLobby` doc comment for the STARTED-lobby liveness cross-check.
+
+`abandon_encounter.go` (rpg-api#663) is the host-only escape hatch for a stuck or
+unwanted STARTED encounter — Kirk's live `FREE_ROAM` deadlock (rpg-toolkit#483) with
+no other way to end. Host-only (`ErrNotHost`, matching `StartEncounter`'s check via
+`HostPlayerID`); `FailedPrecondition` (`ErrLobbyNotStarted`) if the lobby is still
+`WAITING`; delegates entirely to `Encounter.End(EncounterEndedReasonAbandoned)`
+(rpg-toolkit#797/#798) — the SAME terminal transition victory/TPK already use, not a
+parallel end path. Resume-refusal after an abandon needs no cooperating write here:
+`GetMyActiveLobby`'s existing liveness check (below) already zeroes its whole Output
+the moment the encounter's persisted `Mode` reads `ModeEnded`, so a stuck encounter
+just... stops being resumable, the instant `End` persists.
 
 `StartEncounter` needs the SAME production combat/movement resolvers the v2
 encounter handler builds (`Dnd5eCombatResolver` / `Dnd5eMovementResolver` —
@@ -97,6 +109,17 @@ not this package.
   combat-readiness for TakeAction comes from hydration (the v2 encounter orchestrator's
   `characterData.Attach` cascade, keyed off the `EntityID` set here), not from a flat
   AttackBonus/DamageDice snapshot — see status.md's rpg-api#634 entry.
+- **`abandon_encounter.go`** (rpg-api#663) — mirrors `start_encounter.go`'s shape in
+  reverse: load lobby (host check), resolve `EncounterID`, `LoadFromData` on the SAME
+  broker/resolvers, `enc.End(tkenc.EncounterEndedReasonAbandoned)`, persist. Unlike
+  every other mutating RPC in this package, it never writes the lobby record itself —
+  `CreateLobby` already unconditionally refreshes the caller's player->lobby index for
+  the NEW lobby's own member set on every call, so a stale index entry pointing at an
+  abandoned lobby is simply overwritten on the next `CreateLobby`, no explicit cleanup
+  needed. No per-lobby or per-encounter lock: it never mutates the lobby (no lock
+  needed there), and no per-encounter lock exists anywhere in this codebase today for
+  the load-mutate-save cycle (the v2 encounter orchestrator's own combat verbs share
+  the same unguarded exposure against each other) — not a new gap introduced here.
 
 ### Repository (`internal/repositories/lobby/`)
 
@@ -129,6 +152,8 @@ needs to.
 | Party cap (default 4) | `join_lobby.go`, `Config.PartyCap` |
 | Abandoned `WAITING` lobbies expire, no reaper | Redis TTL on the repo, refreshed on every `Save` |
 | `WAITING -> STARTED` terminal | Every mutating orchestrator method checks `Status == StatusStarted` first |
+| `AbandonEncounter` host-only, `WAITING` lobby → `FailedPrecondition` | `abandon_encounter.go`'s `HostPlayerID` check + `ErrLobbyNotStarted` |
+| Resumed encounter refuses further verbs after abandon | `GetMyActiveLobby`'s existing `Mode == ModeEnded` liveness check — no new code needed, see the RPC's own doc above |
 
 ## Known gaps
 

@@ -21,9 +21,12 @@ import (
 	"fmt"
 
 	encountersv2 "github.com/KirkDiggler/rpg-api/internal/repositories/encounters/v2"
+	rpgcore "github.com/KirkDiggler/rpg-toolkit/core"
 	tkenc "github.com/KirkDiggler/rpg-toolkit/encounter"
 	core "github.com/KirkDiggler/rpg-toolkit/encounter/core"
+	"github.com/KirkDiggler/rpg-toolkit/encounter/perception"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/monster"
+	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
 )
 
 // monsterRefGoblin identifies the injected monster's type, matching
@@ -84,15 +87,28 @@ type InjectOutput struct {
 // started encounter has no monster and stays FreeRoam until something adds
 // one, and this is that something for dev/playtest purposes.
 //
+// rpg-toolkit#796 ("combat pockets") scoped rollInitiative to
+// engagedMonsters() — monsters at least one player currently has LoS to —
+// rather than every monster anywhere in the space. Inject now places the
+// goblin at a position it VERIFIES is in-sight (findVisiblePosition, below)
+// instead of guessing "one hex past the party's leading edge" and hoping.
+// This is what makes AddMonster's own inline combat-entry check
+// (checkCombatEntry, rpg-toolkit#759) reliably fire and roll the goblin into
+// Initiative by the SAME rule real play uses — Inject no longer needs (and
+// no longer has) a forced-SetMode escape hatch for "goblin landed outside
+// sight": that state is structurally unreachable now, not just avoided.
+//
 // If the encounter is already TURN_BASED (e.g. a second goblin is being
 // injected mid-fight), the toolkit rejects a redundant SetMode call ("mode is
 // already turn_based") — and AddMonster alone never touches Initiative (only
-// SetMode's rollInitiative does), so a monster added while already
-// turn-based would otherwise sit in the encounter forever without ever
-// getting a turn. Inject instead round-trips FREE_ROAM -> TURN_BASED to force
-// a fresh roll that includes the new monster, accepting the reset to
-// Round=1/ActiveIdx=0 as the honest cost of adding a combatant mid-fight in a
-// dev tool (not a live production interrupt).
+// SetMode's rollInitiative does) once the mode isn't changing, so a monster
+// added while already turn-based would otherwise sit in the encounter
+// forever without ever getting a turn. Inject instead round-trips FREE_ROAM
+// -> TURN_BASED to force a fresh roll that includes the new monster,
+// accepting the reset to Round=1/ActiveIdx=0 as the honest cost of adding a
+// combatant mid-fight in a dev tool (not a live production interrupt). This
+// case is unrelated to the sight-guarantee above (it's about a mode
+// transition not firing, not about placement) and is unchanged by it.
 //
 // Known acceptable gap: a monster added here does NOT go through
 // monstertraits.LoadMonsterConditions / the OA reaction-readiness wiring that
@@ -141,14 +157,16 @@ func Inject(ctx context.Context, repo encountersv2.Repository, input InjectInput
 		return nil, fmt.Errorf("marshal goblin data: %w", err)
 	}
 
-	// Placed one hex past the party's leading edge — the highest Q among
-	// existing players AND monsters — so the goblin starts adjacent to the
-	// party instead of stacked on an occupied hex. Computed from actual
-	// positions (not assumed from StartEncounter's current Q=0..N-1 layout)
-	// so this stays correct if spawn placement ever changes, and so a SECOND
-	// injected goblin doesn't stack on the first.
-	goblinQ := maxOccupiedQ(data) + 1
-	goblinPos := core.Hex{Q: goblinQ, R: 0, S: -goblinQ}
+	room := enc.Room()
+	if room == nil {
+		return nil, fmt.Errorf("inject: encounter %q has no room (InitRoom not called) — cannot verify LoS", input.EncounterID)
+	}
+	goblinPos, found := findVisiblePosition(data, room, goblin)
+	if !found {
+		return nil, fmt.Errorf(
+			"inject: no unoccupied, in-sight position found in encounter %q's room — every player is boxed off from the rest of it",
+			input.EncounterID)
+	}
 	if addErr := enc.AddMonster(tkenc.MonsterInput{
 		ID:          goblinID,
 		Position:    goblinPos,
@@ -165,8 +183,7 @@ func Inject(ctx context.Context, repo encountersv2.Repository, input InjectInput
 		return nil, fmt.Errorf("add goblin to encounter %q: %w", input.EncounterID, addErr)
 	}
 
-	switch {
-	case alreadyTurnBased:
+	if alreadyTurnBased {
 		// Mid-fight injection: round-trip to force rollInitiative to include
 		// the just-added monster — see the doc comment above.
 		if setErr := enc.SetMode(core.ModeFreeRoam); setErr != nil {
@@ -175,19 +192,12 @@ func Inject(ctx context.Context, repo encountersv2.Repository, input InjectInput
 		if setErr := enc.SetMode(core.ModeTurnBased); setErr != nil {
 			return nil, fmt.Errorf("set mode turn_based on encounter %q: %w", input.EncounterID, setErr)
 		}
-	case enc.Mode() == core.ModeTurnBased:
-		// AddMonster's inline combat-entry check (rpg-toolkit#759) already
-		// flipped FREE_ROAM -> TURN_BASED and rolled initiative INCLUDING
-		// this goblin (checkCombatEntry runs after the monster is added to
-		// e.data.Monsters) — nothing left to do.
-	default:
-		// The goblin landed outside every player's current sight range, so
-		// the inline check didn't fire. Inject is dev tooling for forcing a
-		// fight on demand regardless of a real sightline, so force it here.
-		if setErr := enc.SetMode(core.ModeTurnBased); setErr != nil {
-			return nil, fmt.Errorf("set mode turn_based on encounter %q: %w", input.EncounterID, setErr)
-		}
 	}
+	// else: AddMonster's inline combat-entry check (rpg-toolkit#759) already
+	// flipped FREE_ROAM -> TURN_BASED and rolled initiative INCLUDING this
+	// goblin (checkCombatEntry runs after the monster is added to
+	// e.data.Monsters) — guaranteed, since findVisiblePosition only ever
+	// returns a position at least one player has LoS to. Nothing left to do.
 
 	updated := enc.ToData()
 	if input.ForceNPCFirst {
@@ -223,21 +233,75 @@ func forceEntityFirst(data *tkenc.Data, id core.EntityID) {
 	data.ActiveIdx = 0
 }
 
-// maxOccupiedQ returns the highest Q coordinate occupied by any player or
-// monster in data, or -1 if the encounter is empty. Used to place a newly
-// injected monster one hex past the party's leading edge, computed from
-// actual positions rather than assumed from any particular spawn layout.
-func maxOccupiedQ(data *tkenc.Data) int {
-	maxQ := -1
+// findVisiblePosition walks every cell in the room, in stable row-major
+// order, and returns the first unoccupied cell at least one player currently
+// has LoS to — the same wall-aware perception.CanSeeAt predicate
+// checkCombatEntry itself uses to decide whether a newly added monster
+// starts a fight, not a hand-rolled distance check. Mirrors seedGoblins'
+// validGoblinPosition (start_encounter.go), inverted: that predicate rejects
+// any in-sight cell (goblins must NOT start visible, so combat doesn't begin
+// at spawn); this one REQUIRES it (Inject exists specifically to force a
+// visible fight on demand for dev/playtest purposes).
+//
+// Occupancy is checked directly against data.Players/data.Monsters rather
+// than room.GetEntitiesInRange: that query only reflects entities placed
+// into the room's OWN spatial occupancy grid (e.g. via the spawn engine's
+// PlaceEntity, as seedGoblins relies on for its already-seeded siblings) —
+// AddPlayer does not register a player there, it only sets
+// PlayerData.View.Position, so relying on GetEntitiesInRange here silently
+// let a candidate land exactly on a player's hex (caught by
+// TestInject_AddsGoblinAndFlipsToTurnBased's stacking assertion).
+//
+// entity is passed to room.CanPlaceEntity to reject candidates the room
+// itself would refuse — walls and other blocked terrain (Copilot review,
+// PR #675): CanSeeAt only proves a cell is perceivable, not that it's
+// walkable/placeable ground; a wall hex is legitimately "visible" (you can
+// see a wall) but is not somewhere a monster can stand. The direct
+// data.Players/data.Monsters occupancy check above stays alongside this —
+// CanPlaceEntity's own occupancy half only sees entities the room's spatial
+// grid actually tracks (spawn-placed monsters), not players, exactly the
+// gap the comment above already documents.
+//
+// The room is small (StartEncounter's fixed 20x20) and rarely occupied by
+// more than a handful of entities, so a full sweep is cheap and simple —
+// deliberately not a spiral-out-from-a-player search, which would need extra
+// bookkeeping to stay deterministic across multiple player anchors for no
+// real benefit at this scale.
+//
+// Returns ok=false if the room has no unoccupied, placeable, in-sight cell
+// at all (every player boxed off from the rest of it) — Inject surfaces
+// that as an error rather than silently falling back to a blind,
+// possibly-invisible placement, which is exactly the bug this replaces.
+func findVisiblePosition(data *tkenc.Data, room spatial.Room, entity rpgcore.Entity) (core.Hex, bool) {
+	if data.Space == nil {
+		return core.Hex{}, false
+	}
+	occupied := make(map[core.Hex]struct{}, len(data.Players)+len(data.Monsters))
 	for _, pd := range data.Players {
-		if pd.View != nil && pd.View.Position.Q > maxQ {
-			maxQ = pd.View.Position.Q
+		if pd.View != nil {
+			occupied[pd.View.Position] = struct{}{}
 		}
 	}
 	for _, md := range data.Monsters {
-		if md.Position.Q > maxQ {
-			maxQ = md.Position.Q
+		occupied[md.Position] = struct{}{}
+	}
+
+	for y := 0; y < data.Space.Height; y++ {
+		for x := 0; x < data.Space.Width; x++ {
+			pos := spatial.Position{X: float64(x), Y: float64(y)}
+			hex := core.HexFromPosition(pos)
+			if _, taken := occupied[hex]; taken {
+				continue
+			}
+			if !room.CanPlaceEntity(entity, pos) {
+				continue
+			}
+			for _, pd := range data.Players {
+				if pd.View != nil && perception.CanSeeAt(pd.View, hex, room) {
+					return hex, true
+				}
+			}
 		}
 	}
-	return maxQ
+	return core.Hex{}, false
 }
