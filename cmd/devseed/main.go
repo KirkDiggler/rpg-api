@@ -1151,7 +1151,7 @@ func buildWave3BarbarianEncounterData(encounterID string, mode encountercore.Enc
 // changes from "18 chain mail + shield" to "16 chain mail") and equip the
 // greatsword while the shield is still on (two-handed occupancy clears
 // off_hand automatically, main-hand damage steps from the longsword's "1d8
-// slashing" to the greatsword's "2d6 slashing"). Name/id ("Aldric"/
+// slashing" to the greatsword's "2d6 slashing"). Name/id ("Sir Aldric"/
 // "char-aldric") deliberately match the sword+board-vs-two-hander cast in
 // rpg-dnd5e-web#557 src/concepts/equipment/fixtures.ts.
 func buildAldricFighterData() *toolkitchar.Data {
