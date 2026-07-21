@@ -72,7 +72,7 @@ func (h *Handler) EquipItem(
 		return nil, apierr.ToGRPCError(apierr.InvalidArgument("character_id is required"))
 	}
 	if req.GetItem().GetId() == "" {
-		return nil, apierr.ToGRPCError(apierr.InvalidArgument("item is required"))
+		return nil, apierr.ToGRPCError(apierr.InvalidArgument("item.id is required"))
 	}
 	if req.GetSlotKey() == "" {
 		return nil, apierr.ToGRPCError(apierr.InvalidArgument("slot_key is required"))
