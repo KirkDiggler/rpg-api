@@ -36,6 +36,11 @@
 //	# Seed the wave-1-rogue fixture (L1 alice, L1 bob, goblin — no wendy)
 //	go run ./cmd/devseed --fixture=wave-1-rogue
 //
+//	# Seed the equip-demo fixture (rpg-dnd5e-web#571): aldric, a fighter
+//	# with longsword+shield+chain-mail equipped and a spare greatsword
+//	# carried — swap material for the live equipment popover playtest.
+//	go run ./cmd/devseed --fixture=equip-demo
+//
 //	# Override encounter id (matches the harness URL ?encounterId=…)
 //	go run ./cmd/devseed --encounter-id=dev-encounter
 //
@@ -113,6 +118,7 @@ const (
 	fixtureWave2Monk      = "wave-2-monk"
 	fixtureWave2Beat2     = "wave-2-beat2"
 	fixtureWave3Barbarian = "wave-3-barbarian"
+	fixtureEquipDemo      = "equip-demo"
 
 	// beat2GoblinPassivePerception is deliberately set well below a typical
 	// goblin's real SRD passive Perception (9, from WIS 8) so the Hide beat
@@ -129,9 +135,13 @@ const (
 	// on raging-bob (Rage resistance halves it).
 	wave3GoblinHP = 30
 
-	weaponShortsword    = "shortsword"
-	weaponGreataxe      = "greataxe"
-	weaponLongsword     = "longsword"
+	weaponShortsword = "shortsword"
+	weaponGreataxe   = "greataxe"
+	weaponLongsword  = "longsword"
+	// weaponGreatsword matches the toolkit's weapons.Greatsword ID
+	// ("greatsword") — two-handed, so equipping it exercises the
+	// equip-demo fixture's off-hand-clear occupancy check (rpg-toolkit#812).
+	weaponGreatsword    = "greatsword"
 	inventoryTypeWeapon = "weapon"
 
 	// armorLeather / armorChainMail match the toolkit's armor.Leather /
@@ -141,8 +151,11 @@ const (
 	// (Finn: 16+0=16). Kept as local string literals (mirrors weaponLongsword
 	// above) rather than importing the armor package, since devseed only
 	// needs the item ID, not the toolkit's AC-calculation types.
-	armorLeather       = "leather"
-	armorChainMail     = "chain-mail"
+	armorLeather   = "leather"
+	armorChainMail = "chain-mail"
+	// armorShield matches the toolkit's armor.Shield ID ("shield") —
+	// CategoryShield, so it occupies off_hand and contributes +2 AC.
+	armorShield        = "shield"
 	inventoryTypeArmor = "armor"
 
 	damageTypePiercing    = "piercing"
@@ -164,6 +177,11 @@ var (
 	playerWendy  = encountercore.PlayerID("wendy")
 	playerCharli = encountercore.PlayerID("charli")
 	playerFinn   = encountercore.PlayerID("finn")
+	// playerAldric/entityAldric ("aldric"/"char-aldric") match the
+	// sword+board-vs-two-hander cast id in rpg-dnd5e-web#557
+	// src/concepts/equipment/fixtures.ts, so the equip-demo fixture and the
+	// /concepts equipment bench read as the same character.
+	playerAldric = encountercore.PlayerID("aldric")
 
 	entityAlice  = encountercore.EntityID("char-alice")
 	entityBob    = encountercore.EntityID("char-bob")
@@ -171,6 +189,7 @@ var (
 	entityGoblin = encountercore.EntityID("goblin-1")
 	entityCharli = encountercore.EntityID("char-charli")
 	entityFinn   = encountercore.EntityID("char-finn")
+	entityAldric = encountercore.EntityID("char-aldric")
 )
 
 func main() {
@@ -279,6 +298,14 @@ func run() error {
 		if err != nil {
 			return fmt.Errorf("build encounter: %w", err)
 		}
+	case fixtureEquipDemo:
+		chars = []*toolkitchar.Data{
+			buildAldricFighterData(),
+		}
+		encData, err = buildEquipDemoEncounterData(*encounterID, encMode)
+		if err != nil {
+			return fmt.Errorf("build encounter: %w", err)
+		}
 	case fixtureDefault:
 		// Default: alice L2 + bob + wendy (original behavior).
 		chars = []*toolkitchar.Data{
@@ -291,8 +318,9 @@ func run() error {
 			return fmt.Errorf("build encounter: %w", err)
 		}
 	default:
-		return fmt.Errorf("unknown fixture %q: supported values are %q, %q, %q, %q, and %q",
-			*fixture, fixtureDefault, fixtureWave1Rogue, fixtureWave2Monk, fixtureWave2Beat2, fixtureWave3Barbarian)
+		return fmt.Errorf("unknown fixture %q: supported values are %q, %q, %q, %q, %q, and %q",
+			*fixture, fixtureDefault, fixtureWave1Rogue, fixtureWave2Monk, fixtureWave2Beat2,
+			fixtureWave3Barbarian, fixtureEquipDemo)
 	}
 
 	// 1. Seed characters first so they exist when the harness or handler
@@ -1110,6 +1138,116 @@ func buildWave3BarbarianEncounterData(encounterID string, mode encountercore.Enc
 
 	if err := setModeIfRequested(enc, mode); err != nil {
 		return nil, fmt.Errorf("(wave-3-barbarian): %w", err)
+	}
+
+	return enc.ToData(), nil
+}
+
+// buildAldricFighterData returns a level-1 fighter fixture for rpg-dnd5e-web#571
+// (equipment live on the game screen): sword+board equipped (longsword +
+// shield + chain mail) with a spare greatsword carried but not equipped, so
+// the playtest can exercise both directions of rpg-toolkit#812's equip
+// rules on a real running server — unequip the shield (AC drops, note
+// changes from "18 chain mail + shield" to "16 chain mail") and equip the
+// greatsword while the shield is still on (two-handed occupancy clears
+// off_hand automatically, main-hand damage steps from the longsword's "1d8
+// slashing" to the greatsword's "2d6 slashing"). Name/id ("Aldric"/
+// "char-aldric") deliberately match the sword+board-vs-two-hander cast in
+// rpg-dnd5e-web#557 src/concepts/equipment/fixtures.ts.
+func buildAldricFighterData() *toolkitchar.Data {
+	now := time.Now().UTC()
+	return &toolkitchar.Data{
+		ID:               string(entityAldric),
+		PlayerID:         string(playerAldric),
+		Name:             "Sir Aldric",
+		Level:            1,
+		ProficiencyBonus: 2,
+		ClassID:          classes.Fighter,
+		HitPoints:        13,
+		MaxHitPoints:     13,
+		ArmorClass:       18, // chain mail (16) + shield (+2), MaxDexBonus 0 — legacy static mirror of EquipmentView.ACTotal
+		AbilityScores: shared.AbilityScores{
+			abilities.STR: 16, // +3 — fighter primary, longsword/greatsword
+			abilities.DEX: 12,
+			abilities.CON: 14, // +2
+			abilities.INT: 10,
+			abilities.WIS: 10,
+			abilities.CHA: 8,
+		},
+		EquipmentSlots: toolkitchar.EquipmentSlots{
+			toolkitchar.SlotMainHand: weaponLongsword,
+			toolkitchar.SlotOffHand:  armorShield,
+			toolkitchar.SlotArmor:    armorChainMail,
+		},
+		Inventory: []toolkitchar.InventoryItemData{
+			{Type: inventoryTypeWeapon, ID: weaponLongsword, Quantity: 1},
+			{Type: inventoryTypeArmor, ID: armorShield, Quantity: 1},
+			{Type: inventoryTypeArmor, ID: armorChainMail, Quantity: 1},
+			// Carried, not equipped — the equip-demo's swap target.
+			{Type: inventoryTypeWeapon, ID: weaponGreatsword, Quantity: 1},
+		},
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+}
+
+// buildEquipDemoEncounterData seeds the equip-demo encounter (rpg-dnd5e-web#571):
+// aldric (fighter, sword+board) alone with one goblin, so the live game
+// screen's equipment popover has an encounter to render inside — the
+// EquipItem/UnequipItem RPCs this fixture is FOR are character-scoped
+// (out of combat, dnd5e.api.v1alpha2.character.CharacterService), not
+// gated on turn state, so the goblin/positions/mode here are only
+// dressing for a real encounter to exist, not exercised by the demo script.
+func buildEquipDemoEncounterData(encounterID string, mode encountercore.EncounterMode) (*tkenc.Data, error) {
+	transport := tkenc.NewInMemoryTransport()
+	defer func() { _ = transport.Close() }()
+	broker := tkenc.NewBroker(transport)
+	defer func() { _ = broker.Close() }()
+
+	enc := tkenc.New(context.Background(), encountercore.EncounterID(encounterID), broker)
+
+	// aldric (fighter) — AttackBonus: STR +3 + proficiency +2 = 5.
+	if err := enc.AddPlayer(tkenc.PlayerInput{
+		PlayerID:    playerAldric,
+		EntityID:    entityAldric,
+		Position:    encountercore.Hex{Q: 0, R: 0, S: 0},
+		SightRange:  10,
+		HP:          13,
+		MaxHP:       13,
+		AC:          18,
+		AttackBonus: 5,
+		DamageDice:  "1d8+3",
+		DamageType:  damageTypeSlashing,
+	}); err != nil {
+		return nil, fmt.Errorf("add aldric: %w", err)
+	}
+
+	goblin := monster.NewGoblin(string(entityGoblin))
+	goblinData := goblin.ToData()
+	goblinDataJSON, err := json.Marshal(goblinData)
+	if err != nil {
+		return nil, fmt.Errorf("marshal goblin data for equip-demo: %w", err)
+	}
+
+	// Goblin adjacent to aldric (Q:1 R:0 — euclidean distance 1.0 ≤ 1.5).
+	if err := enc.AddMonster(tkenc.MonsterInput{
+		ID:          entityGoblin,
+		Position:    encountercore.Hex{Q: 1, R: 0, S: -1},
+		HP:          goblinData.HitPoints,
+		MaxHP:       goblinData.MaxHitPoints,
+		AC:          goblinData.ArmorClass,
+		Speed:       6,
+		MonsterRef:  monsterRefGoblin,
+		AttackBonus: 4,
+		DamageDice:  goblinBaseDamageDice,
+		DamageType:  damageTypeSlashing,
+		DataJSON:    goblinDataJSON,
+	}); err != nil {
+		return nil, fmt.Errorf("add goblin (equip-demo): %w", err)
+	}
+
+	if err := setModeIfRequested(enc, mode); err != nil {
+		return nil, fmt.Errorf("(equip-demo): %w", err)
 	}
 
 	return enc.ToData(), nil
