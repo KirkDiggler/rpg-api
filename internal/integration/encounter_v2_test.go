@@ -14,6 +14,7 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
+	corepb "github.com/KirkDiggler/rpg-api-protos/gen/go/api/v1alpha2/core"
 	encounterv2pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/encounter"
 	"github.com/KirkDiggler/rpg-api/internal/integration/harness"
 	tkenc "github.com/KirkDiggler/rpg-toolkit/encounter"
@@ -1161,7 +1162,7 @@ func (s *EncounterV2IntegrationSuite) TestCombatSlice_TakeActionAndEndTurn_NPCDi
 	_, err = s.srv.EncounterClientV2.TakeAction(ctxActive, &encounterv2pb.TakeActionRequest{
 		EncounterId:   "enc-combat",
 		ActorEntityId: activeEntity,
-		ActionRef:     &encounterv2pb.Ref{Module: "dnd5e", Type: "action", Id: "attack"},
+		ActionRef:     &corepb.Ref{Module: "dnd5e", Type: "action", Id: "attack"},
 		Target: &encounterv2pb.ActionTarget{
 			Kind: &encounterv2pb.ActionTarget_EntityId{EntityId: "goblin-1"},
 		},
@@ -1288,7 +1289,7 @@ func (s *EncounterV2IntegrationSuite) killMonsterViaTakeActionLoop(
 		_, err := s.srv.EncounterClientV2.TakeAction(ctx, &encounterv2pb.TakeActionRequest{
 			EncounterId:   encID,
 			ActorEntityId: actorEntityID,
-			ActionRef:     &encounterv2pb.Ref{Module: "dnd5e", Type: "action", Id: "attack"},
+			ActionRef:     &corepb.Ref{Module: "dnd5e", Type: "action", Id: "attack"},
 			Target: &encounterv2pb.ActionTarget{
 				Kind: &encounterv2pb.ActionTarget_EntityId{EntityId: monsterID},
 			},
@@ -1431,7 +1432,7 @@ func (s *EncounterV2IntegrationSuite) TestCombatSlice_KillLastHostile_FiresDeath
 	_, err = s.srv.EncounterClientV2.TakeAction(ctxActive, &encounterv2pb.TakeActionRequest{
 		EncounterId:   encID,
 		ActorEntityId: activeEntity,
-		ActionRef:     &encounterv2pb.Ref{Module: "dnd5e", Type: "action", Id: "attack"},
+		ActionRef:     &corepb.Ref{Module: "dnd5e", Type: "action", Id: "attack"},
 		Target: &encounterv2pb.ActionTarget{
 			Kind: &encounterv2pb.ActionTarget_EntityId{EntityId: "goblin-1"},
 		},

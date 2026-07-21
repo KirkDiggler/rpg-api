@@ -7,6 +7,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	corepb "github.com/KirkDiggler/rpg-api-protos/gen/go/api/v1alpha2/core"
 	encounterv2pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/encounter"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
 	encounterorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/encounter/v2"
@@ -125,9 +126,9 @@ func buildSkillCheckPrompt(issued encounter.PromptIssued) *encounterv2pb.InputRe
 // back to a generic {dnd5e, item, raw} encoding if the ref isn't in the
 // canonical "module:type:id" shape so unknown refs still round-trip
 // something the client can display.
-func parseToolkitRef(ref string) *encounterv2pb.Ref {
+func parseToolkitRef(ref string) *corepb.Ref {
 	if parts := splitRef(ref); parts != nil {
-		return &encounterv2pb.Ref{Module: parts[0], Type: parts[1], Id: parts[2]}
+		return &corepb.Ref{Module: parts[0], Type: parts[1], Id: parts[2]}
 	}
-	return &encounterv2pb.Ref{Module: refModuleDnd5e, Type: "item", Id: ref}
+	return &corepb.Ref{Module: refModuleDnd5e, Type: "item", Id: ref}
 }

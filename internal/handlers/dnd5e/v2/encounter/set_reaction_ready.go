@@ -22,6 +22,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	corepb "github.com/KirkDiggler/rpg-api-protos/gen/go/api/v1alpha2/core"
 	encounterv2pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/encounter"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
 	encounterorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/encounter/v2"
@@ -106,6 +107,6 @@ func setReactionReadyStatusError(err error) error {
 
 // refProtoToString joins a proto Ref into the canonical "module:type:id"
 // string the toolkit uses as the readiness-map key.
-func refProtoToString(r *encounterv2pb.Ref) string {
+func refProtoToString(r *corepb.Ref) string {
 	return r.GetModule() + ":" + r.GetType() + ":" + r.GetId()
 }

@@ -40,6 +40,7 @@ import (
 	"github.com/stretchr/testify/suite"
 	"go.uber.org/mock/gomock"
 
+	corepb "github.com/KirkDiggler/rpg-api-protos/gen/go/api/v1alpha2/core"
 	encounterv2pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/encounter"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
 	"github.com/KirkDiggler/rpg-api/internal/entities"
@@ -221,7 +222,7 @@ func (s *MonkUnarmedIntegrationSuite) TestIntegration_TakeAction_DodgeSelfTarget
 	_, err := s.handler.TakeAction(s.charliCtx, &encounterv2pb.TakeActionRequest{
 		EncounterId:   monkIntegEncID,
 		ActorEntityId: monkEntityCharli,
-		ActionRef:     &encounterv2pb.Ref{Module: "dnd5e", Type: "combat_abilities", Id: "dodge"},
+		ActionRef:     &corepb.Ref{Module: "dnd5e", Type: "combat_abilities", Id: "dodge"},
 		Target: &encounterv2pb.ActionTarget{
 			Kind: &encounterv2pb.ActionTarget_Self{Self: &encounterv2pb.SelfTarget{}},
 		},
@@ -245,7 +246,7 @@ func (s *MonkUnarmedIntegrationSuite) TestIntegration_TakeAction_DashNoneTarget_
 	_, err := s.handler.TakeAction(s.charliCtx, &encounterv2pb.TakeActionRequest{
 		EncounterId:   monkIntegEncID,
 		ActorEntityId: monkEntityCharli,
-		ActionRef:     &encounterv2pb.Ref{Module: "dnd5e", Type: "combat_abilities", Id: "dash"},
+		ActionRef:     &corepb.Ref{Module: "dnd5e", Type: "combat_abilities", Id: "dash"},
 		Target:        &encounterv2pb.ActionTarget{}, // NONE: oneof deliberately unset
 	})
 	s.Require().NoError(err, "Dash with the advertised untargeted (NONE) shape must resolve")
@@ -354,7 +355,7 @@ func (s *MonkUnarmedIntegrationSuite) attackCharliVsGoblin() *encounterv2pb.Take
 	return &encounterv2pb.TakeActionRequest{
 		EncounterId:   monkIntegEncID,
 		ActorEntityId: monkEntityCharli,
-		ActionRef:     &encounterv2pb.Ref{Module: "dnd5e", Type: "action", Id: "attack"},
+		ActionRef:     &corepb.Ref{Module: "dnd5e", Type: "action", Id: "attack"},
 		Target: &encounterv2pb.ActionTarget{
 			Kind: &encounterv2pb.ActionTarget_EntityId{EntityId: monkGoblinID},
 		},

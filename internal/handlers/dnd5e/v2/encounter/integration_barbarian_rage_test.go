@@ -36,6 +36,7 @@ import (
 	"github.com/stretchr/testify/suite"
 	"go.uber.org/mock/gomock"
 
+	corepb "github.com/KirkDiggler/rpg-api-protos/gen/go/api/v1alpha2/core"
 	encounterv2pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/encounter"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
 	"github.com/KirkDiggler/rpg-api/internal/entities"
@@ -139,7 +140,7 @@ func (s *BarbarianRageIntegrationSuite) TestIntegration_ActivateRage_BrokerEmits
 	_, err = s.handler.ActivateFeature(s.bobCtx, &encounterv2pb.ActivateFeatureRequest{
 		EncounterId: rageIntegEncID,
 		CharacterId: rageEntityBob,
-		FeatureRef:  &encounterv2pb.Ref{Module: "dnd5e", Type: "features", Id: "rage"},
+		FeatureRef:  &corepb.Ref{Module: "dnd5e", Type: "features", Id: "rage"},
 	})
 	s.Require().NoError(err, "ActivateFeature(Rage) must succeed via toolkit verb")
 
@@ -173,7 +174,7 @@ func (s *BarbarianRageIntegrationSuite) TestIntegration_ActivateRage_PersistsCon
 	_, err := s.handler.ActivateFeature(s.bobCtx, &encounterv2pb.ActivateFeatureRequest{
 		EncounterId: rageIntegEncID,
 		CharacterId: rageEntityBob,
-		FeatureRef:  &encounterv2pb.Ref{Module: "dnd5e", Type: "features", Id: "rage"},
+		FeatureRef:  &corepb.Ref{Module: "dnd5e", Type: "features", Id: "rage"},
 	})
 	s.Require().NoError(err, "ActivateFeature(Rage) must succeed")
 
@@ -205,7 +206,7 @@ func (s *BarbarianRageIntegrationSuite) TestIntegration_RagingBobAttack_HasRageD
 	_, err := s.handler.ActivateFeature(s.bobCtx, &encounterv2pb.ActivateFeatureRequest{
 		EncounterId: rageIntegEncID,
 		CharacterId: rageEntityBob,
-		FeatureRef:  &encounterv2pb.Ref{Module: "dnd5e", Type: "features", Id: "rage"},
+		FeatureRef:  &corepb.Ref{Module: "dnd5e", Type: "features", Id: "rage"},
 	})
 	s.Require().NoError(err, "ActivateFeature(Rage) must succeed before attack")
 
@@ -391,7 +392,7 @@ func (s *BarbarianRageIntegrationSuite) goblinAttackBobHP(
 		_, err = h.ActivateFeature(bobCtx, &encounterv2pb.ActivateFeatureRequest{
 			EncounterId: encID,
 			CharacterId: rageEntityBob,
-			FeatureRef:  &encounterv2pb.Ref{Module: "dnd5e", Type: "features", Id: "rage"},
+			FeatureRef:  &corepb.Ref{Module: "dnd5e", Type: "features", Id: "rage"},
 		})
 		s.Require().NoError(err, "ActivateFeature(Rage) must succeed")
 	}
@@ -400,7 +401,7 @@ func (s *BarbarianRageIntegrationSuite) goblinAttackBobHP(
 	_, err = h.TakeAction(bobCtx, &encounterv2pb.TakeActionRequest{
 		EncounterId:   encID,
 		ActorEntityId: rageEntityBob,
-		ActionRef:     &encounterv2pb.Ref{Module: "dnd5e", Type: "action", Id: "attack"},
+		ActionRef:     &corepb.Ref{Module: "dnd5e", Type: "action", Id: "attack"},
 		Target: &encounterv2pb.ActionTarget{
 			Kind: &encounterv2pb.ActionTarget_EntityId{EntityId: rageGoblinID},
 		},
@@ -541,7 +542,7 @@ func (s *BarbarianRageIntegrationSuite) attackBobVsGoblin() *encounterv2pb.TakeA
 	return &encounterv2pb.TakeActionRequest{
 		EncounterId:   rageIntegEncID,
 		ActorEntityId: rageEntityBob,
-		ActionRef:     &encounterv2pb.Ref{Module: "dnd5e", Type: "action", Id: "attack"},
+		ActionRef:     &corepb.Ref{Module: "dnd5e", Type: "action", Id: "attack"},
 		Target: &encounterv2pb.ActionTarget{
 			Kind: &encounterv2pb.ActionTarget_EntityId{EntityId: rageGoblinID},
 		},

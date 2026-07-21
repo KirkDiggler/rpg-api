@@ -23,6 +23,7 @@ import (
 	"github.com/stretchr/testify/suite"
 	"go.uber.org/mock/gomock"
 
+	corepb "github.com/KirkDiggler/rpg-api-protos/gen/go/api/v1alpha2/core"
 	characterpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/character"
 	encounterv2pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/encounter"
 	"github.com/KirkDiggler/rpg-api/internal/apierr"
@@ -266,7 +267,7 @@ func (s *EquipmentIntegrationSuite) TestIntegration_EquipItem_RealAC() {
 
 			equipResp, err := s.characterHandler.EquipItem(ctx, &characterpb.EquipItemRequest{
 				CharacterId: tc.characterID,
-				Item:        &encounterv2pb.Ref{Module: "dnd5e", Type: "item", Id: tc.itemID},
+				Item:        &corepb.Ref{Module: "dnd5e", Type: "item", Id: tc.itemID},
 				SlotKey:     "armor",
 			})
 			s.Require().NoError(err)
@@ -350,7 +351,7 @@ func (s *EquipmentIntegrationSuite) TestIntegration_EquipItem_TwoHanded_ClearsOf
 
 	equipResp, err := s.characterHandler.EquipItem(ctx, &characterpb.EquipItemRequest{
 		CharacterId: characterID,
-		Item:        &encounterv2pb.Ref{Module: "dnd5e", Type: "item", Id: "greataxe"},
+		Item:        &corepb.Ref{Module: "dnd5e", Type: "item", Id: "greataxe"},
 		SlotKey:     "main_hand",
 	})
 	s.Require().NoError(err)
