@@ -924,10 +924,11 @@ func (o *Orchestrator) EquipItem(ctx context.Context, input *EquipItemInput) (*E
 		return nil, mapEquipError(err)
 	}
 
-	// Update character (preserve appearance)
+	// Update character (preserve appearance) — merge, don't overwrite with
+	// a full char.ToData(); see mergedEquipmentData's doc for why.
 	_, err = o.characterRepo.Update(ctx, characterrepo.UpdateInput{
 		Character: &entities.Character{
-			Data:       char.ToData(),
+			Data:       mergedEquipmentData(ctx, result.Character.Data, char),
 			Appearance: result.Character.Appearance,
 		},
 	})
@@ -974,10 +975,11 @@ func (o *Orchestrator) UnequipItem(ctx context.Context, input *UnequipItemInput)
 
 	char.UnequipItem(input.Slot)
 
-	// Update character (preserve appearance)
+	// Update character (preserve appearance) — merge, don't overwrite with
+	// a full char.ToData(); see mergedEquipmentData's doc for why.
 	_, err = o.characterRepo.Update(ctx, characterrepo.UpdateInput{
 		Character: &entities.Character{
-			Data:       char.ToData(),
+			Data:       mergedEquipmentData(ctx, result.Character.Data, char),
 			Appearance: result.Character.Appearance,
 		},
 	})
@@ -988,6 +990,49 @@ func (o *Orchestrator) UnequipItem(ctx context.Context, input *UnequipItemInput)
 	return &UnequipItemOutput{
 		UnequippedItemID: unequippedItemID,
 	}, nil
+}
+
+// mergedEquipmentData returns a copy of original with ONLY the two fields
+// an equip/unequip call can legitimately change refreshed from the
+// post-mutation runtime character:
+//
+//   - EquipmentSlots — the toolkit's rules-computed occupancy (two-handed
+//     claims/clears, swap-on-occupied). Round-trips correctly through
+//     ToData()/LoadFromData (it's a plain slot->itemID map, no registry
+//     resolution involved).
+//   - ArmorClass — set to EffectiveAC(ctx).Total so the STORED int stays
+//     truthful for any reader that hasn't been updated to call
+//     EffectiveAC itself (rpg-api#680 gate finding 1): the encounter
+//     seat's AC (lobby's AddPlayer seeding) is seeded from this stored
+//     int, so leaving it stale would desync combat AC from the display AC
+//     this slice just made real. Safe to bake in out-of-combat: this
+//     orchestrator method only runs on the out-of-encounter character
+//     sheet, where Conditions/ActionEconomy carry no live combat buffs
+//     (Shield/Mage Armor) — only permanent sources (armor, DEX, features
+//     like Unarmored Defense) are ever on EffectiveAC's breakdown here.
+//     Full mid-combat live-recompute on an out-of-combat equip is
+//     rpg-api#681 (deferred); replacing the stored int with a direct
+//     EffectiveAC read everywhere (removing the cache entirely) is
+//     rpg-api#684 (deferred). This keeps the two consistent for the
+//     primary flow in the meantime.
+//
+// Every OTHER field is left exactly as loaded — deliberately NOT
+// round-tripped through char.ToData(), which silently drops data the
+// toolkit runtime doesn't model on a load/save cycle: BackgroundID and
+// CreatedAt are never populated by ToData() (confirmed by reading
+// character.go's ToData — no assignment exists for either), and any
+// inventory item whose ID isn't in the toolkit's built-in equipment
+// registry (a loot/quest item like "potion-of-healing") is silently
+// skipped by LoadFromData's `equipment.GetByID` resolution loop, so it
+// would vanish from Data.Inventory on the next ToData() call. Equip/
+// Unequip never touch Inventory or these identity/metadata fields at the
+// toolkit level, so merging just the two fields above is complete — not
+// a partial workaround (rpg-api#680 gate finding 2).
+func mergedEquipmentData(ctx context.Context, original *character.Data, char *character.Character) *character.Data {
+	merged := *original
+	merged.EquipmentSlots = char.ToData().EquipmentSlots
+	merged.ArmorClass = char.EffectiveAC(ctx).Total
+	return &merged
 }
 
 // mapEquipError translates the toolkit's rpgerr equip-rule errors (item not

@@ -3,6 +3,7 @@ package character
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/suite"
 	"go.uber.org/mock/gomock"
@@ -15,6 +16,7 @@ import (
 	charactermock "github.com/KirkDiggler/rpg-api/internal/repositories/character/mock"
 	draftmock "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft/mock"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/abilities"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/backgrounds"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
 )
@@ -232,4 +234,99 @@ func (s *EquipItemTestSuite) TestUnequipItem_Success() {
 	})
 	s.Require().NoError(err)
 	s.Assert().Equal("longsword", out.UnequippedItemID)
+}
+
+// TestEquipItem_PreservesNonEquipmentFields is the gate-finding-2 regression:
+// a naive persist of char.ToData() after LoadFromData is lossy for fields
+// the toolkit runtime doesn't model (BackgroundID, CreatedAt) and for any
+// inventory item outside the toolkit's built-in equipment registry (a
+// loot/quest item like a potion) — LoadFromData silently drops unresolvable
+// inventory entries. The fix (mergedEquipmentData) must persist a copy of
+// the ORIGINALLY loaded Data with only EquipmentSlots/ArmorClass refreshed,
+// so everything else — including data the toolkit round trip would have
+// destroyed — survives an equip call unchanged.
+func (s *EquipItemTestSuite) TestEquipItem_PreservesNonEquipmentFields() {
+	charEntity := s.fighterWithLongswordAndShield()
+	fixedCreatedAt := time.Date(2025, 3, 1, 12, 0, 0, 0, time.UTC)
+	charEntity.Data.BackgroundID = backgrounds.Soldier
+	charEntity.Data.CreatedAt = fixedCreatedAt
+	// "potion-of-healing" is not a weapon/armor/tool/pack/ammunition ID in
+	// any toolkit registry — equipment.GetByID errors on it, and
+	// LoadFromData's resolution loop silently skips (drops) anything it
+	// can't resolve. A lossy write-back would permanently destroy this item.
+	charEntity.Data.Inventory = append(charEntity.Data.Inventory,
+		character.InventoryItemData{Type: "item", ID: "potion-of-healing", Quantity: 3})
+
+	s.mockCharacterRepo.EXPECT().
+		Get(s.ctx, characterrepo.GetInput{ID: s.testCharacterID}).
+		Return(&characterrepo.GetOutput{Character: charEntity}, nil)
+
+	var persisted *character.Data
+	s.mockCharacterRepo.EXPECT().
+		Update(s.ctx, gomock.Any()).
+		DoAndReturn(func(_ context.Context, input characterrepo.UpdateInput) (*characterrepo.UpdateOutput, error) {
+			persisted = input.Character.Data
+			return &characterrepo.UpdateOutput{Character: input.Character}, nil
+		})
+
+	_, err := s.orchestrator.EquipItem(s.ctx, &EquipItemInput{
+		CharacterID: s.testCharacterID,
+		ItemID:      "longsword",
+		Slot:        character.SlotMainHand,
+	})
+	s.Require().NoError(err)
+	s.Require().NotNil(persisted)
+
+	s.Assert().Equal(backgrounds.Soldier, persisted.BackgroundID, "BackgroundID must survive an equip call")
+	s.Assert().True(fixedCreatedAt.Equal(persisted.CreatedAt), "CreatedAt must survive an equip call")
+
+	var potionQty int
+	var potionFound bool
+	for _, item := range persisted.Inventory {
+		if item.ID == "potion-of-healing" {
+			potionFound = true
+			potionQty = item.Quantity
+		}
+	}
+	s.Assert().True(potionFound, "non-registry inventory item must survive an equip call, not be silently dropped")
+	s.Assert().Equal(3, potionQty)
+
+	// The actual equip must still have applied — this isn't a no-op merge.
+	s.Assert().Equal("longsword", persisted.EquipmentSlots.Get(character.SlotMainHand))
+}
+
+// TestEquipItem_SyncsStoredArmorClass is the gate-finding-1 regression: the
+// stored ArmorClass int must be refreshed to the toolkit's real
+// EffectiveAC total on every equip, not left at whatever stale value was
+// last written — the encounter seat's combat AC (lobby AddPlayer) seeds
+// from this stored int, so a stale value would desync combat AC from the
+// display AC this slice made real.
+func (s *EquipItemTestSuite) TestEquipItem_SyncsStoredArmorClass() {
+	charEntity := s.fighterWithLongswordAndShield()
+	charEntity.Data.ArmorClass = 10 // deliberately stale/wrong stored value
+	charEntity.Data.Inventory = append(charEntity.Data.Inventory,
+		character.InventoryItemData{Type: "armor", ID: "chain-mail", Quantity: 1})
+
+	s.mockCharacterRepo.EXPECT().
+		Get(s.ctx, characterrepo.GetInput{ID: s.testCharacterID}).
+		Return(&characterrepo.GetOutput{Character: charEntity}, nil)
+
+	var persisted *character.Data
+	s.mockCharacterRepo.EXPECT().
+		Update(s.ctx, gomock.Any()).
+		DoAndReturn(func(_ context.Context, input characterrepo.UpdateInput) (*characterrepo.UpdateOutput, error) {
+			persisted = input.Character.Data
+			return &characterrepo.UpdateOutput{Character: input.Character}, nil
+		})
+
+	// chain-mail is a fixed-AC-16 heavy armor (no DEX bonus) — a
+	// hand-computable, non-tautological expectation.
+	_, err := s.orchestrator.EquipItem(s.ctx, &EquipItemInput{
+		CharacterID: s.testCharacterID,
+		ItemID:      "chain-mail",
+		Slot:        character.SlotArmor,
+	})
+	s.Require().NoError(err)
+	s.Require().NotNil(persisted)
+	s.Assert().Equal(16, persisted.ArmorClass, "stored ArmorClass must be refreshed to the real EffectiveAC total")
 }

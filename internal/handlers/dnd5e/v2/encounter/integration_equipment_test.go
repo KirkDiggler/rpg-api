@@ -39,7 +39,6 @@ import (
 	encountersv2 "github.com/KirkDiggler/rpg-api/internal/repositories/encounters/v2"
 	tkenc "github.com/KirkDiggler/rpg-toolkit/encounter"
 	encountercore "github.com/KirkDiggler/rpg-toolkit/encounter/core"
-	"github.com/KirkDiggler/rpg-toolkit/events"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/abilities"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
@@ -178,23 +177,15 @@ func (s *EquipmentIntegrationSuite) viewerCharacterData(
 	return nil
 }
 
-// realAC computes the toolkit's own EffectiveAC total for the character's
-// CURRENT stored data — this is the independent oracle the test compares
-// the wire's armor_class_detail.total against, proving it's the real
-// toolkit computation and not a stored/cached int (rpg-api#680's whole
-// point: converters.go used to ship int32(data.ArmorClass) verbatim).
-func (s *EquipmentIntegrationSuite) realAC(characterID string) int32 {
-	data := s.charStore.get(characterID)
-	s.Require().NotNil(data)
-	char, err := character.LoadFromData(context.Background(), data, events.NewEventBus())
-	s.Require().NoError(err)
-	return int32(char.EffectiveAC(context.Background()).Total)
-}
-
-func fighterAbilityScores() shared.AbilityScores {
+// abilityScoresWithDex builds a fixed ability-score block with only DEX
+// varying — the AC cases below need distinct DEX values (chain mail caps
+// its DEX bonus at 0, so DEX is irrelevant there; leather has an unlimited
+// DEX bonus, so DEX drives the total) without dragging every other score
+// into the table.
+func abilityScoresWithDex(dex int) shared.AbilityScores {
 	return shared.AbilityScores{
-		abilities.STR: 16,
-		abilities.DEX: 12,
+		abilities.STR: 14,
+		abilities.DEX: dex,
 		abilities.CON: 14,
 		abilities.INT: 10,
 		abilities.WIS: 10,
@@ -202,49 +193,51 @@ func fighterAbilityScores() shared.AbilityScores {
 	}
 }
 
-// TestIntegration_EquipItem_RealACAndStatLine covers the fighter and rogue
-// casts: equip through the v1alpha2 character service, then confirm the
-// SAME snapshot the encounter HUD serves carries the real toolkit AC (not
-// a stored int) and a toolkit-composed stat_line/name/kind per item.
-func (s *EquipmentIntegrationSuite) TestIntegration_EquipItem_RealACAndStatLine() {
+// TestIntegration_EquipItem_RealAC is gate-finding-3's fix: the fighter and
+// rogue cases equip ARMOR (not a weapon — a weapon equip never changes AC
+// at all, which was the flaw in the prior version of this test) and assert
+// against a HAND-COMPUTED expected AC from the D&D armor tables
+// (armor.go's ChainMail/Leather base AC + DEX-bonus rule), never by calling
+// EffectiveAC a second time — that would just be EffectiveAC-vs-EffectiveAC,
+// proving nothing. Both rows seed a deliberately stale ArmorClass: 10 and
+// confirm the wire never serves it, and the two rows land on genuinely
+// different totals (16 vs 14), not two reskins of the same case.
+func (s *EquipmentIntegrationSuite) TestIntegration_EquipItem_RealAC() {
 	tests := []struct {
 		name        string
 		characterID string
 		playerID    string
 		className   string
-		inventory   []character.InventoryItemData
+		dex         int
 		itemID      string
-		slotKey     string
 		wantKind    string
+		wantAC      int32 // hand-computed from the D&D armor table, independent of EffectiveAC
 		statLineHas string
 	}{
 		{
-			name:        "fighter equips longsword into main_hand",
+			// Chain mail: base AC 16, MaxDexBonus 0 (armor.go) — DEX is
+			// irrelevant here, so the fixed 16 is the whole expectation.
+			name:        "fighter equips chain mail (heavy, no DEX bonus) -> fixed AC 16",
 			characterID: "char-equip-fighter",
 			playerID:    "player-equip-fighter",
 			className:   "fighter",
-			inventory: []character.InventoryItemData{
-				{Type: "weapon", ID: "longsword", Quantity: 1},
-				{Type: "armor", ID: "shield", Quantity: 1},
-			},
-			itemID:      "longsword",
-			slotKey:     "main_hand",
-			wantKind:    "weapon",
-			statLineHas: "slashing",
+			dex:         12,
+			itemID:      "chain-mail",
+			wantKind:    "armor",
+			wantAC:      16,
+			statLineHas: "AC 16",
 		},
 		{
-			name:        "rogue equips dagger into main_hand",
+			// Leather: base AC 11, unlimited DEX bonus (armor.go) -> 11 + 3 (DEX 16 = +3 mod) = 14.
+			name:        "rogue equips leather (light, unlimited DEX bonus) -> AC 11+DEX",
 			characterID: "char-equip-rogue",
 			playerID:    "player-equip-rogue",
 			className:   "rogue",
-			inventory: []character.InventoryItemData{
-				{Type: "weapon", ID: "dagger", Quantity: 1},
-				{Type: "weapon", ID: "handaxe", Quantity: 1},
-			},
-			itemID:      "dagger",
-			slotKey:     "main_hand",
-			wantKind:    "weapon",
-			statLineHas: "piercing",
+			dex:         16,
+			itemID:      "leather",
+			wantKind:    "armor",
+			wantAC:      14,
+			statLineHas: "AC 11",
 		},
 	}
 
@@ -259,9 +252,11 @@ func (s *EquipmentIntegrationSuite) TestIntegration_EquipItem_RealACAndStatLine(
 				HitPoints:        10,
 				MaxHitPoints:     10,
 				ArmorClass:       10, // stale stored int — the whole point is the wire must NOT serve this.
-				AbilityScores:    fighterAbilityScores(),
-				Inventory:        tc.inventory,
-				EquipmentSlots:   character.EquipmentSlots{},
+				AbilityScores:    abilityScoresWithDex(tc.dex),
+				Inventory: []character.InventoryItemData{
+					{Type: "armor", ID: tc.itemID, Quantity: 1},
+				},
+				EquipmentSlots: character.EquipmentSlots{},
 			}
 			s.seedCharRepoMock(data)
 
@@ -272,26 +267,25 @@ func (s *EquipmentIntegrationSuite) TestIntegration_EquipItem_RealACAndStatLine(
 			equipResp, err := s.characterHandler.EquipItem(ctx, &characterpb.EquipItemRequest{
 				CharacterId: tc.characterID,
 				Item:        &encounterv2pb.Ref{Module: "dnd5e", Type: "item", Id: tc.itemID},
-				SlotKey:     tc.slotKey,
+				SlotKey:     "armor",
 			})
 			s.Require().NoError(err)
 
-			wantAC := s.realAC(tc.characterID)
-
-			// Assertion pasted to 'main': AC on the wire matches the toolkit's own
-			// EffectiveAC, not a stored int (converters.go's #680 sin, now killed).
-			s.Assert().Equal(wantAC, equipResp.GetCharacter().GetArmorClassDetail().GetTotal(),
-				"EquipItemResponse AC must equal the toolkit's EffectiveAC total, not the stale stored ArmorClass")
+			// Assertion pasted to 'main': AC on the wire matches the hand-computed
+			// D&D armor-table value, not a stored int (converters.go's #680 sin,
+			// now killed) — and not just EffectiveAC compared against itself.
+			s.Assert().Equal(tc.wantAC, equipResp.GetCharacter().GetArmorClassDetail().GetTotal(),
+				"EquipItemResponse AC must equal the hand-computed armor-table total, not the stale stored ArmorClass")
 			s.Assert().NotEqual(int32(10), equipResp.GetCharacter().GetArmorClassDetail().GetTotal(),
 				"AC must have moved off the stale seeded stored int (10) once equipment is real")
 
 			// Same assertion again against the encounter snapshot: one composition,
 			// two callers, never drifting (rpg-api#680's shared BuildEquipmentCharacterData).
 			snapCD := s.viewerCharacterData(ctx, encID, tc.characterID)
-			s.Assert().Equal(wantAC, snapCD.GetArmorClassDetail().GetTotal())
+			s.Assert().Equal(tc.wantAC, snapCD.GetArmorClassDetail().GetTotal())
 
-			s.Require().Contains(snapCD.GetEquipped(), tc.slotKey)
-			s.Assert().Equal(tc.itemID, snapCD.GetEquipped()[tc.slotKey].GetId())
+			s.Require().Contains(snapCD.GetEquipped(), "armor")
+			s.Assert().Equal(tc.itemID, snapCD.GetEquipped()["armor"].GetId())
 
 			var found *encounterv2pb.Item
 			for _, item := range snapCD.GetInventory() {
@@ -375,12 +369,25 @@ func (s *EquipmentIntegrationSuite) TestIntegration_EquipItem_TwoHanded_ClearsOf
 	// Shield stays in inventory, just unequipped — never dropped (toolkit
 	// swap-on-occupied semantics, rpg-toolkit#812).
 	var shieldStillOwned bool
+	var greataxeItem *encounterv2pb.Item
 	for _, item := range snapCD.GetInventory() {
 		if item.GetRef().GetId() == "shield" {
 			shieldStillOwned = true
 		}
+		if item.GetRef().GetId() == "greataxe" {
+			greataxeItem = item
+		}
 	}
 	s.Assert().True(shieldStillOwned, "unequipped shield must remain in inventory, not be dropped")
+
+	// Weapon display-field coverage (stat_line/kind/slot_keys), the
+	// counterpart to the armor-focused AC test above.
+	s.Require().NotNil(greataxeItem)
+	s.Assert().Equal("weapon", greataxeItem.GetKind())
+	s.Assert().Contains(greataxeItem.GetStatLine(), "slashing")
+	s.Assert().Contains(greataxeItem.GetSlotKeys(), "main_hand")
+	s.Assert().NotContains(greataxeItem.GetSlotKeys(), "off_hand",
+		"a two-handed weapon's SlotKeys must not list off_hand as independently valid")
 }
 
 // TestIntegration_UnequipItem_RemovesFromSnapshot proves UnequipItem's
