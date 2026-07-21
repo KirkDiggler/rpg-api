@@ -1,8 +1,8 @@
 ---
 name: character orchestrator
 description: Character creation, management, equipment, and data-loading orchestrator
-updated: 2026-05-02
-confidence: medium-high — verified by reading service.go and orchestrator.go
+updated: 2026-07-21
+confidence: medium-high — verified by reading service.go and orchestrator.go; rpg-api#680 equipment section verified against passing unit tests + an adversarial-gate-driven fix
 ---
 
 # character orchestrator
@@ -19,7 +19,7 @@ The character orchestrator handles character creation (draft lifecycle), charact
 ## Purpose
 
 - **Draft lifecycle:** create → update (name, race, class, background, ability scores, appearance) → validate → finalize → `character.Data` in Redis.
-- **Character management:** equip/unequip items in toolkit equipment slots; get/list/delete characters.
+- **Character management:** equip/unequip through the toolkit's rules engine (rpg-api#680 — see "Equipment" below, this used to be a bare data write); get/list/delete characters.
 - **Data loading:** list races, classes, backgrounds, equipment by type, spells, ability scores — delegates to rpg-toolkit for actual data.
 
 ## Public interface
@@ -70,6 +70,75 @@ The orchestrator works with:
 - `*character.Data` (toolkit type) — stored and loaded from Redis directly
 - `*entities.CharacterDraft` — in-progress creation state in Redis
 - `*entities.Appearance` — cosmetic character data, stored alongside `character.Data`
+
+## Equipment (rpg-api#680)
+
+`EquipItem`/`UnequipItem` are the ONE rules-correct equip path — the v1alpha1
+`CharacterService` and the new v1alpha2 `CharacterService`
+(`internal/handlers/dnd5e/v2/character/`) both call these same two methods. Previously
+they were a bare `charData.EquipmentSlots.Set/Clear(...)` — no rules, no occupancy, no
+validation, no recompute. That's gone.
+
+The method shape:
+
+1. `characterRepo.Get` — load the persisted `*character.Data`.
+2. `character.LoadFromData(ctx, data, events.NewEventBus())` — build the runtime
+   `*character.Character` so the toolkit's rules run for real.
+3. `char.EquipItem(slot, itemID)` / `char.UnequipItem(slot)` — the toolkit enforces
+   occupancy here (rpg-toolkit#812, v0.67.0): a two-handed weapon claims `main_hand` and
+   clears `off_hand`; equipping an occupied slot swaps the previous occupant back to
+   inventory (never dropped); an incompatible slot now returns an `rpgerr` (mapped to
+   `apierr.InvalidArgument` by `mapEquipError`) instead of silently succeeding.
+4. `mergedEquipmentData(ctx, original, char)` — persist. See below for why this is a
+   merge, not `Data: char.ToData()`.
+
+### Why persistence merges instead of overwriting (a real footgun)
+
+`mergedEquipmentData` copies the `*character.Data` loaded in step 1 and refreshes only
+two fields from the post-mutation runtime character:
+
+- **`EquipmentSlots`** — read via `char.ToData().EquipmentSlots`. Safe: it's a plain
+  `map[InventorySlot]string`, no registry resolution involved, round-trips correctly.
+- **`ArmorClass`** — set to `char.EffectiveAC(ctx).Total`, so the STORED int stays
+  truthful. This matters because the encounter seat's combat AC (`lobby`'s
+  `AddPlayer` seeding, `internal/orchestrators/lobby/character.go`) is seeded from this
+  same stored int — leaving it stale after an equip would desync combat AC from the
+  real display AC the wire now serves (see `docs/architecture/components/encounter.md`'s
+  CharacterData projection). Baking `EffectiveAC` into the stored int here is safe
+  specifically because this orchestrator method only ever runs on the out-of-encounter
+  character sheet, where `Conditions`/`ActionEconomy` carry no live combat buffs
+  (Shield, Mage Armor) to accidentally bake in — only permanent sources (armor, DEX,
+  features like Unarmored Defense) are ever on the breakdown at that point. Deferred:
+  rpg-api#684 (replace the cache with a direct `EffectiveAC` read everywhere, removing
+  the desync risk this manages rather than eliminates) and rpg-api#681 (push a live
+  update to an already-connected `StreamEncounter` client on an out-of-combat equip —
+  no toolkit broker event supports this today).
+
+Every OTHER field is deliberately left exactly as loaded, NOT persisted via a full
+`char.ToData()` overwrite. `ToData()`/`LoadFromData()` is lossy for data the toolkit
+runtime doesn't model on a round trip:
+
+- `BackgroundID` and `CreatedAt` are never populated by `ToData()` — confirmed by
+  reading `character.go`'s `ToData()`: no assignment exists for either. A full
+  overwrite silently zeros them.
+- Any inventory item whose ID isn't in the toolkit's built-in weapon/armor/tool/pack/
+  ammunition registry — a loot/quest item like `"potion-of-healing"` — is silently
+  skipped by `LoadFromData`'s `equipment.GetByID` resolution loop
+  (`if err != nil { continue }`). A full overwrite permanently deletes it from
+  `Data.Inventory`.
+
+An adversarial gate on rpg-api#680 caught this before merge: the original
+implementation persisted `char.ToData()` directly, and a regression test proved it
+destroyed a character's background, creation timestamp, and a non-registry inventory
+item on a single `EquipItem` call. `Character.EquipItem`/`UnequipItem` never touch
+`Inventory` at the toolkit level (only `EquipmentSlots`), so merging just those two
+fields onto the originally-loaded `Data` is a complete fix, not a partial workaround.
+Regression coverage: `TestEquipItem_PreservesNonEquipmentFields` and
+`TestEquipItem_SyncsStoredArmorClass` (`internal/orchestrators/character/equip_item_test.go`).
+
+**If this ever gets "simplified" back to `Data: char.ToData()`, the data loss returns
+silently** — there's no compiler error, just a character quietly missing fields the
+next time someone equips something.
 
 ## Known issues
 

@@ -1,8 +1,8 @@
 ---
 name: encounter (v1alpha2)
 description: v1alpha2 encounter service — thin handlers over a clean load→verb→persist orchestrator
-updated: 2026-05-31
-confidence: high — verified by reading handler.go, end_turn.go, orchestrators/encounter/v2/{orchestrator,load,end_turn,take_action,move_entity,submit_check_reaction}.go, reaction_resume.go, .golangci.yml, combat_handlers_test.go
+updated: 2026-07-21
+confidence: high — verified by reading handler.go, end_turn.go, orchestrators/encounter/v2/{orchestrator,load,end_turn,take_action,move_entity,submit_check_reaction}.go, reaction_resume.go, .golangci.yml, combat_handlers_test.go; rpg-api#680 CharacterData equipment projection section verified against passing integration tests
 ---
 
 # encounter (v1alpha2)
@@ -23,6 +23,7 @@ The orchestrator stays **rulebook-free**. All game complexity lives in the rpg-t
 | `internal/handlers/dnd5e/v2/encounter/reaction_resume.go` | Rulebook-touching adapter seam (excluded from depguard): marshal/decode the opaque `*combat.AttackContext`, build reaction modifiers (Shield +5 AC), one-shot-reaction predicate — injected into the orchestrator's `ReactionResume` |
 | `internal/handlers/dnd5e/v2/encounter/{dnd5e_combat_resolver,dnd5e_combat_resolver_phased,dnd5e_movement_resolver,combatant,hydrate_players}.go` | Resolver / cascade adapters (excluded from depguard) — translate held entities through the rulebook |
 | `internal/handlers/dnd5e/v2/encounter/project.go` | ProjectFor helper — toolkit Data → proto Encounter |
+| `internal/handlers/dnd5e/v2/encounter/character_data.go` | `BuildEquipmentCharacterData` — toolkit EquipmentView → proto CharacterData equipment fields (rpg-api#680), shared with the v1alpha2 character handler |
 | `internal/handlers/dnd5e/v2/encounter/translate.go` | Event translator — toolkit events → proto EncounterEvent |
 | `internal/orchestrators/encounter/v2/orchestrator.go` | Orchestrator struct + `Config` (Broker, repo, resolver builders, `CharacterDataCascade`, `ReactionResume`) + `New` |
 | `internal/orchestrators/encounter/v2/load.go` | The single load core: Get → auth (membership + optional entity-ownership) → #689 character-data attach → `LoadFromData` with resolvers wired uniformly. Defines `ErrEncounterNotFound` / `ErrPlayerNotInEncounter` / `ErrEntityOwnershipMismatch` |
@@ -128,6 +129,52 @@ As of #500, `ProjectFor` includes all entities currently visible to the viewer �
 ### Wall + door projection (The Dungeon wave 2 Slice 2, rpg-api#676)
 
 `Space.Walls` carries TWO shapes now, both whole-room/unconditional (not LoS-gated like `Hexes`/`Entities` — wave 1's "no per-viewer wall reveal yet" still holds): `wallsToProto(data.Space)` projects persisted solid/window segments (`Start == End` degenerate hexes), and `doorWallsToProto(data)` separately projects every entry in `data.Doors` as a `WALL_KIND_DOOR_CLOSED`/`WALL_KIND_DOOR_OPEN` `Wall` carrying its entity id (`rpg-api-protos#186`'s additive `Wall.id` — the web's click→`Interact(id)` bridge). A door's `From` is its own cell; `To` is its passage-edge neighbor (`doorPassageNeighbor`, found via `perception.HexNeighbors` + `SpaceData.RegionAt` — never `Start == End` for a door, which is the 6-door-pair render-multiplicity bug the design doc's §Q2 calls out). `DoorData` stays the single source of door truth (position, open/locked state); the wall is purely its projected geometry.
+
+### CharacterData equipment projection (rpg-api#680)
+
+`playerEntity`'s `CharacterData` carries `equipped`/`inventory`/`slots`/
+`armor_class_detail`/`main_hand_damage`, populated from the toolkit's `EquipmentView`
+display projection (rpg-toolkit#812) — this is the fix for board #11's other named
+equipment sin: AC on the wire used to be `converters.go`'s `int32(data.ArmorClass)`
+(v1alpha1), a straight copy of a stored int, never `EffectiveAC`.
+
+`characterDataFor` (`project.go`, née `characterIdentityFor` — merged with the #664
+identity lookup so this slice doesn't add a second per-player `charRepo.Get`) does ONE
+character-store lookup per projected player: `charRepo.Get` → `character.LoadFromData`
+→ `char.EquipmentView(ctx)` → `BuildEquipmentCharacterData` (`character_data.go`), a
+pure field-for-field map (`Items[].Name/Kind/SlotKeys/StatLine` → `Item`, `Slots` →
+`SlotDef`, `ACTotal`/`ACNote` → `ArmorClassDisplay`, `MainHandDamage` → the sibling
+field) — no rules computed in rpg-api, everything is toolkit-composed pass-through.
+`BuildEquipmentCharacterData` is exported and shared with the out-of-encounter
+`v1alpha2 character` handler (`character-v2-handler.md`), so the character sheet and the
+encounter HUD never independently drift from two compositions of the same data.
+
+**AC-sync invariant.** `Entity.armor_class` (the flat cross-entity-type field every
+`Entity`, including monsters, carries) is kept equal to
+`CharacterData.armor_class_detail.total` in `playerEntity`: the real,
+toolkit-computed `EquipmentView.ACTotal` wins over the encounter snapshot's own cached
+`pd.AC` whenever equipment data is available; `pd.AC` is only a fallback for when the
+character store wasn't reachable (nil `charRepo`, a lookup/load failure — degrades the
+snapshot the same way identity resolution already did pre-#680, never fails it). The
+underlying `character.Data.ArmorClass` stored int is separately kept truthful by the
+orchestrator on every equip/unequip call (`character-orchestrator.md`'s
+`mergedEquipmentData`), so the SAME total is what a fresh encounter seat gets seeded
+with (`lobby`'s `AddPlayer`) too — two independent sync points converging on one real
+number rather than one authoritative source, tracked as a simplification opportunity
+under rpg-api#684.
+
+**`icon_key` is deliberately empty.** No toolkit/asset-manifest source exists yet for a
+bare sprite key — composing one in rpg-api would be exactly the kind of display-field
+invention this slice exists to stop. Asset-manifest mapping is a follow-up, not started.
+
+**Live-push deferred (rpg-api#681).** An out-of-combat equip (via the v1alpha2
+character service) does NOT push an update to an already-connected `StreamEncounter`
+client — there is no existing toolkit broker event for "entity data changed," and the
+character orchestrator has no dependency on the encounter broker today. A NEW snapshot
+build (a fresh `StreamEncounter` connect, or `GetEncounter`) picks up the change for
+free, since `characterDataFor` re-reads the character store on every call — but a
+client that stays connected through someone else's out-of-band equip won't see it
+update live. True live-push rides with encounter-scoped equip (rpg-project#94).
 
 ## StreamEncounter flow (#497)
 
