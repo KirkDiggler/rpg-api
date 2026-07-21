@@ -1016,8 +1016,8 @@ func (o *Orchestrator) UnequipItem(ctx context.Context, input *UnequipItemInput)
 //     rpg-api#684 (deferred). This keeps the two consistent for the
 //     primary flow in the meantime.
 //
-// Every OTHER field is left exactly as loaded — deliberately NOT
-// round-tripped through char.ToData(), which silently drops data the
+// Every OTHER field is left exactly as loaded — deliberately NOT persisted via a full
+// `char.ToData()` overwrite, which would silently drop data the toolkit runtime doesn't model on a load/save cycle:
 // toolkit runtime doesn't model on a load/save cycle: BackgroundID and
 // CreatedAt are never populated by ToData() (confirmed by reading
 // character.go's ToData — no assignment exists for either), and any
