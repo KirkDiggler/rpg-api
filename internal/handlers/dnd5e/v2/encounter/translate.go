@@ -12,7 +12,6 @@ import (
 
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	corepb "github.com/KirkDiggler/rpg-api-protos/gen/go/api/v1alpha2/core"
 	encounterv2pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/encounter"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	toolkitcore "github.com/KirkDiggler/rpg-toolkit/core"
@@ -176,7 +175,7 @@ func TranslateInputRequiredDelivered(
 // proto Ref shape. Returns a Ref with the parsed parts; if parsing fails
 // (malformed input), returns a Ref carrying the raw id and the dnd5e module
 // fallback so the wire never carries an empty ref.
-func refStringToProto(s string) *corepb.Ref {
+func refStringToProto(s string) *encounterv2pb.Ref {
 	module, typ, id := refModuleDnd5e, "", s
 	// canonical shape: module:type:id
 	first := indexByte(s, ':')
@@ -189,7 +188,7 @@ func refStringToProto(s string) *corepb.Ref {
 			id = rest[second+1:]
 		}
 	}
-	return &corepb.Ref{Module: module, Type: typ, Id: id}
+	return &encounterv2pb.Ref{Module: module, Type: typ, Id: id}
 }
 
 // indexByte mirrors strings.IndexByte without pulling the strings package
@@ -550,16 +549,16 @@ func translateAttackResolvedEvent(e *events.AttackResolvedEvent, viewer core.Pla
 // (e.g. refs.Conditions.Dodging()); rpg-api only forwards them. Returns nil
 // for an empty/nil input, AND when every entry is nil, so the proto field
 // stays unset rather than an allocated-but-empty slice on the wire.
-func toolkitRefsToProto(refs []*toolkitcore.Ref) []*corepb.Ref {
+func toolkitRefsToProto(refs []*toolkitcore.Ref) []*encounterv2pb.Ref {
 	if len(refs) == 0 {
 		return nil
 	}
-	out := make([]*corepb.Ref, 0, len(refs))
+	out := make([]*encounterv2pb.Ref, 0, len(refs))
 	for _, r := range refs {
 		if r == nil {
 			continue
 		}
-		out = append(out, &corepb.Ref{
+		out = append(out, &encounterv2pb.Ref{
 			Module: r.Module,
 			Type:   r.Type,
 			Id:     r.ID,
@@ -937,8 +936,8 @@ func translateEncounterEndedEvent(e *events.EncounterEndedEvent, viewer core.Pla
 // wire shape uses a Ref triple. For Wave 2.8 we hardwire module=dnd5e and
 // type=damage; future modules can route off the toolkit string when they
 // ship.
-func damageRefFor(toolkitDamageType string) *corepb.Ref {
-	return &corepb.Ref{
+func damageRefFor(toolkitDamageType string) *encounterv2pb.Ref {
+	return &encounterv2pb.Ref{
 		Module: refModuleDnd5e,
 		Type:   "damage",
 		Id:     toolkitDamageType,
@@ -949,12 +948,12 @@ func damageRefFor(toolkitDamageType string) *corepb.Ref {
 // The toolkit ships a fully-qualified ref (e.g. "dnd5e:conditions:poisoned");
 // we parse it back into module/type/id. Bare strings are treated as ids
 // under module=dnd5e, type=condition.
-func conditionRefFor(toolkitConditionRef string) *corepb.Ref {
+func conditionRefFor(toolkitConditionRef string) *encounterv2pb.Ref {
 	parts := splitRef(toolkitConditionRef)
 	if len(parts) == 3 {
-		return &corepb.Ref{Module: parts[0], Type: parts[1], Id: parts[2]}
+		return &encounterv2pb.Ref{Module: parts[0], Type: parts[1], Id: parts[2]}
 	}
-	return &corepb.Ref{Module: refModuleDnd5e, Type: "condition", Id: toolkitConditionRef}
+	return &encounterv2pb.Ref{Module: refModuleDnd5e, Type: "condition", Id: toolkitConditionRef}
 }
 
 // translateResourceChangedEvent maps the toolkit's ResourceChangedEvent to the
@@ -1021,12 +1020,12 @@ func splitRef(s string) []string {
 // id under the dnd5e module. No real caller produces a degenerate ref (the web
 // sends full triples), so this is purely a guard, mirroring conditionRefFor /
 // monsterRefFor.
-func actionRefToProto(toolkitActionRef string) *corepb.Ref {
+func actionRefToProto(toolkitActionRef string) *encounterv2pb.Ref {
 	parts := splitRef(toolkitActionRef)
 	if len(parts) == 3 && parts[0] != "" && parts[1] != "" && parts[2] != "" {
-		return &corepb.Ref{Module: parts[0], Type: parts[1], Id: parts[2]}
+		return &encounterv2pb.Ref{Module: parts[0], Type: parts[1], Id: parts[2]}
 	}
-	return &corepb.Ref{Module: refModuleDnd5e, Type: "action", Id: toolkitActionRef}
+	return &encounterv2pb.Ref{Module: refModuleDnd5e, Type: "action", Id: toolkitActionRef}
 }
 
 // economyConsumedToProto projects the toolkit's EconomyConsumed (what an action

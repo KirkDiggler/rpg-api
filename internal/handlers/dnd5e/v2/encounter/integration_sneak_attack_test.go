@@ -48,7 +48,6 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	corepb "github.com/KirkDiggler/rpg-api-protos/gen/go/api/v1alpha2/core"
 	encounterv2pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/encounter"
 	"github.com/KirkDiggler/rpg-api/internal/apierr"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
@@ -466,7 +465,7 @@ func (s *SneakAttackIntegrationSuite) attackAliceVsGoblin() *encounterv2pb.TakeA
 	return &encounterv2pb.TakeActionRequest{
 		EncounterId:   sneakIntegEncID,
 		ActorEntityId: sneakEntityAlice,
-		ActionRef:     &corepb.Ref{Module: "dnd5e", Type: "action", Id: "attack"},
+		ActionRef:     &encounterv2pb.Ref{Module: "dnd5e", Type: "action", Id: "attack"},
 		Target: &encounterv2pb.ActionTarget{
 			Kind: &encounterv2pb.ActionTarget_EntityId{EntityId: sneakGoblinID},
 		},

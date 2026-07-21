@@ -14,7 +14,6 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/events"
 	tkcharacter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 
-	corepb "github.com/KirkDiggler/rpg-api-protos/gen/go/api/v1alpha2/core"
 	encounterv2pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/encounter"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 )
@@ -403,7 +402,7 @@ func playerEntity(
 	pd *tkenc.PlayerData,
 	pos core.Hex,
 	displayName string,
-	classRef *corepb.Ref,
+	classRef *encounterv2pb.Ref,
 	equip *encounterv2pb.CharacterData,
 ) *encounterv2pb.Entity {
 	cd := &encounterv2pb.CharacterData{
@@ -485,7 +484,7 @@ func characterDataFor(
 	ctx context.Context,
 	charRepo characterrepo.Repository,
 	characterID string,
-) (name string, classRef *corepb.Ref, equip *encounterv2pb.CharacterData) {
+) (name string, classRef *encounterv2pb.Ref, equip *encounterv2pb.CharacterData) {
 	if charRepo == nil {
 		return "", nil, nil
 	}
@@ -495,7 +494,7 @@ func characterDataFor(
 	}
 	data := out.Character.Data
 	if data.ClassID != "" {
-		classRef = &corepb.Ref{Module: refModuleDnd5e, Type: characterClassRefType, Id: data.ClassID}
+		classRef = &encounterv2pb.Ref{Module: refModuleDnd5e, Type: characterClassRefType, Id: data.ClassID}
 	}
 
 	char, err := tkcharacter.LoadFromData(ctx, data, events.NewEventBus())
@@ -592,10 +591,10 @@ func monsterEntity(m *tkenc.MonsterData) *encounterv2pb.Entity {
 // we reuse splitRef from translate.go so the parsing contract is identical
 // across the v2 encounter wire (snapshot + live events). Bare strings are
 // treated as ids under module=dnd5e, type=monster, mirroring conditionRefFor.
-func monsterRefFor(toolkitMonsterRef string) *corepb.Ref {
+func monsterRefFor(toolkitMonsterRef string) *encounterv2pb.Ref {
 	parts := splitRef(toolkitMonsterRef)
 	if len(parts) == 3 {
-		return &corepb.Ref{Module: parts[0], Type: parts[1], Id: parts[2]}
+		return &encounterv2pb.Ref{Module: parts[0], Type: parts[1], Id: parts[2]}
 	}
-	return &corepb.Ref{Module: refModuleDnd5e, Type: "monster", Id: toolkitMonsterRef}
+	return &encounterv2pb.Ref{Module: refModuleDnd5e, Type: "monster", Id: toolkitMonsterRef}
 }

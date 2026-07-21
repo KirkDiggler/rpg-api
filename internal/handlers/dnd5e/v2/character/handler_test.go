@@ -10,8 +10,8 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	corepb "github.com/KirkDiggler/rpg-api-protos/gen/go/api/v1alpha2/core"
 	characterpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/character"
+	encounterv2pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/encounter"
 	"github.com/KirkDiggler/rpg-api/internal/apierr"
 	"github.com/KirkDiggler/rpg-api/internal/entities"
 	orchcharacter "github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
@@ -103,7 +103,7 @@ func (s *HandlerTestSuite) TestEquipItem_ValidationErrors() {
 		{
 			name: "missing character_id",
 			req: &characterpb.EquipItemRequest{
-				Item:    &corepb.Ref{Id: "longsword"},
+				Item:    &encounterv2pb.Ref{Id: "longsword"},
 				SlotKey: "main_hand",
 			},
 		},
@@ -118,7 +118,7 @@ func (s *HandlerTestSuite) TestEquipItem_ValidationErrors() {
 			name: "missing slot_key",
 			req: &characterpb.EquipItemRequest{
 				CharacterId: s.testCharacterID,
-				Item:        &corepb.Ref{Id: "longsword"},
+				Item:        &encounterv2pb.Ref{Id: "longsword"},
 			},
 		},
 	}
@@ -149,7 +149,7 @@ func (s *HandlerTestSuite) TestEquipItem_Success() {
 
 	resp, err := s.handler.EquipItem(s.ctx, &characterpb.EquipItemRequest{
 		CharacterId: s.testCharacterID,
-		Item:        &corepb.Ref{Module: "dnd5e", Type: "item", Id: "longsword"},
+		Item:        &encounterv2pb.Ref{Module: "dnd5e", Type: "item", Id: "longsword"},
 		SlotKey:     "main_hand",
 	})
 	s.Require().NoError(err)
@@ -170,7 +170,7 @@ func (s *HandlerTestSuite) TestEquipItem_OrchestratorError_PropagatesAsNotFound(
 
 	_, err := s.handler.EquipItem(s.ctx, &characterpb.EquipItemRequest{
 		CharacterId: s.testCharacterID,
-		Item:        &corepb.Ref{Id: "not-owned"},
+		Item:        &encounterv2pb.Ref{Id: "not-owned"},
 		SlotKey:     "main_hand",
 	})
 	s.Require().Error(err)
@@ -184,7 +184,7 @@ func (s *HandlerTestSuite) TestEquipItem_OrchestratorGenericError_PropagatesAsIn
 
 	_, err := s.handler.EquipItem(s.ctx, &characterpb.EquipItemRequest{
 		CharacterId: s.testCharacterID,
-		Item:        &corepb.Ref{Id: "longsword"},
+		Item:        &encounterv2pb.Ref{Id: "longsword"},
 		SlotKey:     "main_hand",
 	})
 	s.Require().Error(err)

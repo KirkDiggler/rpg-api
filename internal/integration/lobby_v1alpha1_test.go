@@ -16,7 +16,6 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
-	corepb "github.com/KirkDiggler/rpg-api-protos/gen/go/api/v1alpha2/core"
 	lobbyv1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/lobby/v1alpha1"
 	encounterv2pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/encounter"
 	"github.com/KirkDiggler/rpg-api/internal/entities"
@@ -293,7 +292,7 @@ func (s *LobbyV1alpha1IntegrationSuite) TestPartyAssembles_FourPlayers_ThenComba
 	_, err = s.srv.EncounterClientV2.TakeAction(s.authCtx(activePlayer), &encounterv2pb.TakeActionRequest{
 		EncounterId:   encounterID,
 		ActorEntityId: string(activeEntity),
-		ActionRef:     &corepb.Ref{Module: "dnd5e", Type: "action", Id: "attack"},
+		ActionRef:     &encounterv2pb.Ref{Module: "dnd5e", Type: "action", Id: "attack"},
 		Target: &encounterv2pb.ActionTarget{
 			Kind: &encounterv2pb.ActionTarget_EntityId{EntityId: string(injectOut.GoblinID)},
 		},

@@ -6,7 +6,6 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	corepb "github.com/KirkDiggler/rpg-api-protos/gen/go/api/v1alpha2/core"
 	encounterv2pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/encounter"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
 	v2encounter "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v2/encounter"
@@ -60,7 +59,7 @@ func makeAttackRequest(actorEntityID, targetEntityID string) *encounterv2pb.Take
 	return &encounterv2pb.TakeActionRequest{
 		EncounterId:   combatEncID,
 		ActorEntityId: actorEntityID,
-		ActionRef:     &corepb.Ref{Module: "dnd5e", Type: "action", Id: "attack"},
+		ActionRef:     &encounterv2pb.Ref{Module: "dnd5e", Type: "action", Id: "attack"},
 		Target: &encounterv2pb.ActionTarget{
 			Kind: &encounterv2pb.ActionTarget_EntityId{EntityId: targetEntityID},
 		},
@@ -210,7 +209,7 @@ func (s *HandlerSuite) TestTakeAction_NoneTarget_EmptyKind_Forwarded() {
 	req := &encounterv2pb.TakeActionRequest{
 		EncounterId:   combatEncID,
 		ActorEntityId: string(s.activeEntityID()),
-		ActionRef:     &corepb.Ref{Module: "dnd5e", Type: "combat_abilities", Id: "dash"},
+		ActionRef:     &encounterv2pb.Ref{Module: "dnd5e", Type: "combat_abilities", Id: "dash"},
 		Target:        &encounterv2pb.ActionTarget{}, // NONE: oneof deliberately unset
 	}
 	_, err := s.handler.TakeAction(ctx, req)
@@ -234,7 +233,7 @@ func (s *HandlerSuite) TestTakeAction_SelfTarget_Forwarded() {
 	req := &encounterv2pb.TakeActionRequest{
 		EncounterId:   combatEncID,
 		ActorEntityId: string(s.activeEntityID()),
-		ActionRef:     &corepb.Ref{Module: "dnd5e", Type: "combat_abilities", Id: "dodge"},
+		ActionRef:     &encounterv2pb.Ref{Module: "dnd5e", Type: "combat_abilities", Id: "dodge"},
 		Target: &encounterv2pb.ActionTarget{
 			Kind: &encounterv2pb.ActionTarget_Self{Self: &encounterv2pb.SelfTarget{}},
 		},
@@ -397,7 +396,7 @@ func (s *HandlerSuite) TestTakeAction_NonAttackRef_NonCombatantSeat() {
 	ctx := s.activePlayerCtx()
 	actorEntity := s.activeEntityID()
 	req := makeAttackRequest(string(actorEntity), monsterGoblin1)
-	req.ActionRef = &corepb.Ref{Module: "dnd5e", Type: "action", Id: "fireball"}
+	req.ActionRef = &encounterv2pb.Ref{Module: "dnd5e", Type: "action", Id: "fireball"}
 	_, err := s.handler.TakeAction(ctx, req)
 	s.Require().Error(err)
 	st, _ := status.FromError(err)

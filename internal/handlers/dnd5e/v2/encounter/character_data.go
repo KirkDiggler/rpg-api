@@ -19,7 +19,6 @@ package encounter
 // runtime Character from the orchestrator call — shares it too.
 
 import (
-	corepb "github.com/KirkDiggler/rpg-api-protos/gen/go/api/v1alpha2/core"
 	encounterv2pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/encounter"
 	tkcharacter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 )
@@ -37,10 +36,10 @@ func BuildEquipmentCharacterData(view *tkcharacter.EquipmentView) *encounterv2pb
 		return cd
 	}
 
-	equipped := make(map[string]*corepb.Ref, len(view.Items))
+	equipped := make(map[string]*encounterv2pb.Ref, len(view.Items))
 	inventory := make([]*encounterv2pb.Item, 0, len(view.Items))
 	for _, item := range view.Items {
-		ref := &corepb.Ref{Module: refModuleDnd5e, Type: "item", Id: item.ItemID}
+		ref := &encounterv2pb.Ref{Module: refModuleDnd5e, Type: "item", Id: item.ItemID}
 		inventory = append(inventory, &encounterv2pb.Item{
 			Ref:      ref,
 			Name:     item.Name,

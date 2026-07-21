@@ -50,7 +50,6 @@ import (
 	"github.com/stretchr/testify/suite"
 	"go.uber.org/mock/gomock"
 
-	corepb "github.com/KirkDiggler/rpg-api-protos/gen/go/api/v1alpha2/core"
 	encounterv2pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/encounter"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
 	"github.com/KirkDiggler/rpg-api/internal/entities"
@@ -264,7 +263,7 @@ func (s *ConditionsProjectionIntegrationSuite) TestIntegration_EncounterEnd_Swee
 	_, err = s.handler.TakeAction(s.rurikCtx, &encounterv2pb.TakeActionRequest{
 		EncounterId:   condProjEncID,
 		ActorEntityId: condProjEntityRurik,
-		ActionRef:     &corepb.Ref{Module: "dnd5e", Type: "action", Id: "attack"},
+		ActionRef:     &encounterv2pb.Ref{Module: "dnd5e", Type: "action", Id: "attack"},
 		Target: &encounterv2pb.ActionTarget{
 			Kind: &encounterv2pb.ActionTarget_EntityId{EntityId: condProjGoblinID},
 		},
