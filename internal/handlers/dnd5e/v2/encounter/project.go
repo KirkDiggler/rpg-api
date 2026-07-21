@@ -11,6 +11,8 @@ import (
 	tkenc "github.com/KirkDiggler/rpg-toolkit/encounter"
 	"github.com/KirkDiggler/rpg-toolkit/encounter/core"
 	"github.com/KirkDiggler/rpg-toolkit/encounter/perception"
+	"github.com/KirkDiggler/rpg-toolkit/events"
+	tkcharacter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 
 	encounterv2pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/encounter"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
@@ -32,7 +34,8 @@ import (
 //     TurnStateChanged push fires). The toolkit computes the menu
 //     (ActorTurnState); rpg-api projects it.
 //  2. Resolves EVERY projected player entity's display_name/class_ref
-//     (rpg-api#664) via characterIdentityFor — not just the active actor.
+//     (rpg-api#664) and equipment display fields (rpg-api#680) via
+//     characterDataFor — not just the active actor.
 //
 // nil disables both (tests / non-combat callers): the snapshot then carries
 // initiative/active/round only and player entities carry no
@@ -146,16 +149,16 @@ func ProjectFor(
 		pd := data.Players[pid]
 		if pid == viewer {
 			// Viewer always sees their own entity.
-			name, classRef := characterIdentityFor(ctx, charRepo, string(pd.EntityID))
-			entities = append(entities, playerEntity(pd, snap.Position, name, classRef))
+			name, classRef, equip := characterDataFor(ctx, charRepo, string(pd.EntityID))
+			entities = append(entities, playerEntity(pd, snap.Position, name, classRef, equip))
 			continue
 		}
 		if pd.View == nil {
 			continue
 		}
 		if visibleNow != nil && visibleNow.Has(pd.View.Position) {
-			name, classRef := characterIdentityFor(ctx, charRepo, string(pd.EntityID))
-			entities = append(entities, playerEntity(pd, pd.View.Position, name, classRef))
+			name, classRef, equip := characterDataFor(ctx, charRepo, string(pd.EntityID))
+			entities = append(entities, playerEntity(pd, pd.View.Position, name, classRef, equip))
 		}
 	}
 
@@ -377,19 +380,42 @@ func buildTurnState(data *tkenc.Data, actorTurnState *tkenc.ActorTurnState) *enc
 // the caller supplies (snap.Position vs pd.View.Position), so the rest of the
 // emit lives here to keep them symmetric and to mirror the monster emit shape.
 //
-// displayName/classRef are resolved by the caller (characterIdentityFor) and
-// passed in rather than looked up here — playerEntity stays a pure builder,
-// matching monsterEntity's shape, and both call sites (ProjectFor's snapshot
-// loop, entityForID's live-event enrichment) share the exact same resolution
-// path (rpg-api#664).
+// displayName/classRef/equip are all resolved by the caller (characterDataFor)
+// and passed in rather than looked up here — playerEntity stays a pure
+// builder, matching monsterEntity's shape, and both call sites (ProjectFor's
+// snapshot loop, entityForID's live-event enrichment) share the exact same
+// resolution path (rpg-api#664, rpg-api#680).
+//
+// equip carries the equipped/inventory/slots/armor_class_detail/
+// main_hand_damage fields, all sourced from the toolkit's EquipmentView,
+// never computed here. nil (no character store wired, or the lookup/load
+// failed) leaves those fields unset — degrade the snapshot, don't fail it,
+// matching identity's fallback.
 //
 // CharacterData.RaceRef remains unset: issue #664 only asked for
 // display_name/class_ref (the identity dock's actual read, rpg-dnd5e-web#491)
 // — race has no client reader yet, so resolving it now would be speculative
 // enrichment with nothing to verify it against. Add it the same way
-// (characterIdentityFor already holds the full character record) once a
+// (characterDataFor already holds the full character record) once a
 // caller needs it.
-func playerEntity(pd *tkenc.PlayerData, pos core.Hex, displayName string, classRef *encounterv2pb.Ref) *encounterv2pb.Entity {
+func playerEntity(
+	pd *tkenc.PlayerData,
+	pos core.Hex,
+	displayName string,
+	classRef *encounterv2pb.Ref,
+	equip *encounterv2pb.CharacterData,
+) *encounterv2pb.Entity {
+	cd := &encounterv2pb.CharacterData{
+		PlayerId: string(pd.ID),
+		ClassRef: classRef,
+	}
+	if equip != nil {
+		cd.Equipped = equip.Equipped
+		cd.Inventory = equip.Inventory
+		cd.Slots = equip.Slots
+		cd.ArmorClassDetail = equip.ArmorClassDetail
+		cd.MainHandDamage = equip.MainHandDamage
+	}
 	e := &encounterv2pb.Entity{
 		Id:          string(pd.EntityID),
 		Position:    HexToPosition(pos),
@@ -399,15 +425,21 @@ func playerEntity(pd *tkenc.PlayerData, pos core.Hex, displayName string, classR
 			Current: int32(pd.HP),
 			Max:     int32(pd.MaxHP),
 		},
-		Data: &encounterv2pb.Entity_Character{
-			Character: &encounterv2pb.CharacterData{
-				PlayerId: string(pd.ID),
-				ClassRef: classRef,
-			},
-		},
+		Data:          &encounterv2pb.Entity_Character{Character: cd},
 		StatusEffects: statusEffectsFrom(pd.ActiveConditions),
 	}
-	if pd.AC > 0 {
+	// Entity.armor_class must stay in sync with armor_class_detail.total
+	// (rpg-api#680 gate: the two duplicate the same total by design — see
+	// CharacterData.armor_class_detail's doc comment in types.proto). The
+	// EquipmentView total is the real toolkit-computed EffectiveAC(), so it
+	// wins over the encounter snapshot's own cached pd.AC whenever it's
+	// available — pd.AC is only a fallback for when the character store
+	// wasn't reachable (see equip's doc above).
+	switch {
+	case cd.ArmorClassDetail != nil:
+		ac := cd.ArmorClassDetail.Total
+		e.ArmorClass = &ac
+	case pd.AC > 0:
 		ac := int32(pd.AC)
 		e.ArmorClass = &ac
 	}
@@ -419,45 +451,57 @@ func playerEntity(pd *tkenc.PlayerData, pos core.Hex, displayName string, classR
 // established Ref-tagging convention in this file, see monsterRefFor).
 const characterClassRefType = "class"
 
-// characterIdentityFor resolves a player seat's display name and class ref
-// for wire projection (rpg-api#664: real StartEncounter players showed the
-// raw entity id instead of "Alice"/"Rogue" because playerEntity never
-// populated these fields — issue #511 deferred it "until toolkit PlayerData
-// carries class/race info"). That toolkit change never happened and isn't
-// needed: a player seat's EntityID IS the character ID
-// (start_encounter.go's AddPlayer sets EntityID: core.EntityID(m.CharacterID)),
-// so this is a plain by-key lookup against the character store already
-// wired into ProjectFor for turn-menu hydration — no rules math, pure
-// projection of data rpg-api already owns.
+// characterDataFor resolves a player seat's full wire-projected character
+// data with a single character-store lookup: display name + class ref
+// (rpg-api#664: real StartEncounter players showed the raw entity id
+// instead of "Alice"/"Rogue" because playerEntity never populated these
+// fields — issue #511 deferred it "until toolkit PlayerData carries
+// class/race info"; that toolkit change never happened and isn't needed —
+// a player seat's EntityID IS the character ID, start_encounter.go's
+// AddPlayer sets EntityID: core.EntityID(m.CharacterID)) plus the
+// equipment display fields (rpg-api#680: equipped/inventory/slots/
+// armor_class_detail/main_hand_damage, composed from the toolkit's
+// EquipmentView — a display projection, not rules math run in rpg-api).
+// Both were originally separate lookups (characterIdentityFor +
+// characterEquipmentFor); merged into one Get so adding the equipment
+// projection didn't double the per-player query count.
 //
 // characterID intentionally comes in as a plain string, not core.EntityID —
 // the character store's key space is characterrepo's, independent of the
 // toolkit's entity-ID type.
 //
 // Any resolution failure (nil charRepo — tests and any caller that hasn't
-// wired one, a NotFound character, or a genuine store error) returns zero
-// values rather than propagating an error: display_name/class_ref are
-// optional-by-design on the wire (rpg-dnd5e-web#491's dock already falls
-// back to the raw entity id with no crash), so a missing/erroring character
-// record should degrade the label, not the snapshot or the live event
-// carrying it.
+// wired one, a NotFound character, a genuine store error, or a toolkit
+// load failure) returns zero values rather than propagating an error:
+// every field here is optional-by-design on the wire (rpg-dnd5e-web#491's
+// identity dock already falls back to the raw entity id with no crash),
+// so a missing/erroring character record should degrade the projection,
+// not fail the snapshot or the live event carrying it.
 //
 // One charRepo.Get per projected player per call, no batching — batch seam:
 // see rpg-api#666.
-func characterIdentityFor(ctx context.Context, charRepo characterrepo.Repository, characterID string) (string, *encounterv2pb.Ref) {
+func characterDataFor(
+	ctx context.Context,
+	charRepo characterrepo.Repository,
+	characterID string,
+) (name string, classRef *encounterv2pb.Ref, equip *encounterv2pb.CharacterData) {
 	if charRepo == nil {
-		return "", nil
+		return "", nil, nil
 	}
 	out, err := charRepo.Get(ctx, characterrepo.GetInput{ID: characterID})
 	if err != nil || out == nil || out.Character == nil || out.Character.Data == nil {
-		return "", nil
+		return "", nil, nil
 	}
 	data := out.Character.Data
-	var classRef *encounterv2pb.Ref
 	if data.ClassID != "" {
 		classRef = &encounterv2pb.Ref{Module: refModuleDnd5e, Type: characterClassRefType, Id: data.ClassID}
 	}
-	return data.Name, classRef
+
+	char, err := tkcharacter.LoadFromData(ctx, data, events.NewEventBus())
+	if err != nil {
+		return data.Name, classRef, nil
+	}
+	return data.Name, classRef, BuildEquipmentCharacterData(char.EquipmentView(ctx))
 }
 
 // statusEffectsFrom projects a toolkit ActiveConditions ref list

@@ -372,7 +372,7 @@ func (s *ProjectSuite) TestProjectFor_PlayerEntitiesCarryTypeHpAndCharacterData(
 	s.Require().Equal("player-alice", ac.GetPlayerId(),
 		"CharacterData.PlayerId must equal the toolkit PlayerData.ID")
 	// This test passes a nil charRepo (see the ProjectFor call below), so
-	// characterIdentityFor has nothing to resolve display_name/class_ref
+	// characterDataFor has nothing to resolve display_name/class_ref/equipment
 	// from — see TestProjectFor_PlayerEntityCarriesDisplayNameAndClassRef for
 	// the populated case (rpg-api#664). RaceRef stays nil regardless — see
 	// playerEntity's doc: unlike class, nothing reads it yet.

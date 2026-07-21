@@ -2,6 +2,7 @@ package character
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -12,6 +13,7 @@ import (
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	characterdraft "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft"
 	"github.com/KirkDiggler/rpg-toolkit/events"
+	"github.com/KirkDiggler/rpg-toolkit/rpgerr"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/backgrounds"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character/choices"
@@ -875,7 +877,13 @@ func (o *Orchestrator) GetCharacter(ctx context.Context, input *GetCharacterInpu
 	}, nil
 }
 
-// EquipItem equips an item to a specific slot
+// EquipItem equips an item to a specific slot through the toolkit's rules
+// engine, not a bare data write. It is the SINGLE equip path: the v1alpha1
+// handler and the v1alpha2 character service both call this method, so
+// occupancy (two-handed weapons claiming/clearing off_hand, swap-on-occupied)
+// is enforced exactly once, in the toolkit, for every caller (rpg-api#680 —
+// board #11: this used to be a bare EquipmentSlots.Set with no rules,
+// validation, or recompute).
 func (o *Orchestrator) EquipItem(ctx context.Context, input *EquipItemInput) (*EquipItemOutput, error) {
 	if input == nil {
 		return nil, apierr.InvalidArgument("input is required")
@@ -898,23 +906,28 @@ func (o *Orchestrator) EquipItem(ctx context.Context, input *EquipItemInput) (*E
 		return nil, fmt.Errorf("failed to get character: %w", err)
 	}
 
-	charData := result.Character.Data
-
-	// Initialize equipment slots if nil
-	if charData.EquipmentSlots == nil {
-		charData.EquipmentSlots = make(character.EquipmentSlots)
+	// Load the runtime character so EquipItem runs through the toolkit's
+	// rules (occupancy, slot-compatibility) instead of touching the data
+	// map directly. A fresh bus is fine here: equip/unequip does not
+	// depend on any feature having previously subscribed to it.
+	char, err := character.LoadFromData(ctx, result.Character.Data, events.NewEventBus())
+	if err != nil {
+		return nil, fmt.Errorf("failed to load character: %w", err)
 	}
 
-	// Get previous item ID for response
-	previousItemID := charData.EquipmentSlots.Get(input.Slot)
+	previousItemID := ""
+	if previous := char.GetEquippedSlot(input.Slot); previous != nil {
+		previousItemID = previous.Item.EquipmentID()
+	}
 
-	// Set the new item
-	charData.EquipmentSlots.Set(input.Slot, input.ItemID)
+	if err = char.EquipItem(input.Slot, input.ItemID); err != nil {
+		return nil, mapEquipError(err)
+	}
 
 	// Update character (preserve appearance)
 	_, err = o.characterRepo.Update(ctx, characterrepo.UpdateInput{
 		Character: &entities.Character{
-			Data:       charData,
+			Data:       char.ToData(),
 			Appearance: result.Character.Appearance,
 		},
 	})
@@ -927,7 +940,9 @@ func (o *Orchestrator) EquipItem(ctx context.Context, input *EquipItemInput) (*E
 	}, nil
 }
 
-// UnequipItem removes an item from a slot
+// UnequipItem removes an item from a slot through the toolkit's rules
+// engine — see EquipItem's doc comment for why this is the single path
+// both API surfaces share.
 func (o *Orchestrator) UnequipItem(ctx context.Context, input *UnequipItemInput) (*UnequipItemOutput, error) {
 	if input == nil {
 		return nil, apierr.InvalidArgument("input is required")
@@ -947,18 +962,22 @@ func (o *Orchestrator) UnequipItem(ctx context.Context, input *UnequipItemInput)
 		return nil, fmt.Errorf("failed to get character: %w", err)
 	}
 
-	charData := result.Character.Data
+	char, err := character.LoadFromData(ctx, result.Character.Data, events.NewEventBus())
+	if err != nil {
+		return nil, fmt.Errorf("failed to load character: %w", err)
+	}
 
-	// Get the item being unequipped for response
-	unequippedItemID := charData.EquipmentSlots.Get(input.Slot)
+	unequippedItemID := ""
+	if equipped := char.GetEquippedSlot(input.Slot); equipped != nil {
+		unequippedItemID = equipped.Item.EquipmentID()
+	}
 
-	// Clear the slot
-	charData.EquipmentSlots.Clear(input.Slot)
+	char.UnequipItem(input.Slot)
 
 	// Update character (preserve appearance)
 	_, err = o.characterRepo.Update(ctx, characterrepo.UpdateInput{
 		Character: &entities.Character{
-			Data:       charData,
+			Data:       char.ToData(),
 			Appearance: result.Character.Appearance,
 		},
 	})
@@ -969,6 +988,23 @@ func (o *Orchestrator) UnequipItem(ctx context.Context, input *UnequipItemInput)
 	return &UnequipItemOutput{
 		UnequippedItemID: unequippedItemID,
 	}, nil
+}
+
+// mapEquipError translates the toolkit's rpgerr equip-rule errors (item not
+// in inventory, item incompatible with the requested slot) into apierr codes
+// the handler layer already knows how to turn into gRPC status codes. Any
+// other error (a genuine toolkit bug) is wrapped rather than swallowed.
+func mapEquipError(err error) error {
+	var rpgErr *rpgerr.Error
+	if errors.As(err, &rpgErr) {
+		switch rpgErr.Code {
+		case rpgerr.CodeNotFound:
+			return apierr.NotFound(rpgErr.Message)
+		case rpgerr.CodeInvalidArgument:
+			return apierr.InvalidArgument(rpgErr.Message)
+		}
+	}
+	return fmt.Errorf("failed to equip item: %w", err)
 }
 
 // ListCharacters returns characters for a player or session

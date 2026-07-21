@@ -20,11 +20,13 @@ import (
 	apiv1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/api/v1alpha1"
 	lobbyv1alpha1pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/lobby/v1alpha1"
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
+	characterv2pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/character"
 	encounterv2pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/encounter"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
 	apiv1alpha1handler "github.com/KirkDiggler/rpg-api/internal/handlers/api/v1alpha1"
 	lobbyhandler "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/lobby/v1alpha1"
 	character2 "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v1alpha1/character"
+	characterhandlerv2 "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v2/character"
 	encounterhandlerv2 "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v2/encounter"
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
 	diceorc "github.com/KirkDiggler/rpg-api/internal/orchestrators/dice"
@@ -232,8 +234,19 @@ func (ts *TestServer) wireServices(cfg *Config) error {
 		),
 	)
 
+	// v1alpha2 character wiring (rpg-api#680): out-of-encounter sheet Equip/
+	// UnequipItem, sharing the same characterService as the v1alpha1 handler
+	// above — one rules-correct equip path for both surfaces.
+	characterHandlerV2, err := characterhandlerv2.New(&characterhandlerv2.HandlerConfig{
+		CharacterService: characterService,
+	})
+	if err != nil {
+		return fmt.Errorf("character v2 handler: %w", err)
+	}
+
 	// Register services
 	dnd5ev1alpha1.RegisterCharacterServiceServer(ts.grpcServer, characterHandler)
+	characterv2pb.RegisterCharacterServiceServer(ts.grpcServer, characterHandlerV2)
 	apiv1alpha1.RegisterDiceServiceServer(ts.grpcServer, diceHandler)
 
 	// v1alpha2 encounter wiring — broker and repo are stored on ts so tests can
