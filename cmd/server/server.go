@@ -13,6 +13,7 @@ import (
 
 	lobbyhandler "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/lobby/v1alpha1"
 	character2 "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v1alpha1/character"
+	characterhandlerv2 "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v2/character"
 	encounterhandlerv2 "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v2/encounter"
 
 	"github.com/spf13/cobra"
@@ -28,6 +29,7 @@ import (
 	apiv1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/api/v1alpha1"
 	lobbyv1alpha1pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/lobby/v1alpha1"
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
+	characterv2pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/character"
 	encounterv2pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/encounter"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
 	apiv1alpha1handler "github.com/KirkDiggler/rpg-api/internal/handlers/api/v1alpha1"
@@ -172,8 +174,21 @@ func runServer(_ *cobra.Command, _ []string) error {
 		return fmt.Errorf("failed to create dice handler: %w", err)
 	}
 
+	// v1alpha2 character wiring (rpg-api#680): out-of-encounter sheet Equip/
+	// UnequipItem. Shares the SAME characterService the v1alpha1 handler
+	// uses — one rules-correct equip path (internal/orchestrators/character's
+	// EquipItem/UnequipItem call the toolkit, not a bare Set) for both API
+	// surfaces.
+	characterHandlerV2, err := characterhandlerv2.New(&characterhandlerv2.HandlerConfig{
+		CharacterService: characterService,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create character v2 handler: %w", err)
+	}
+
 	// Register services
 	dnd5ev1alpha1.RegisterCharacterServiceServer(srv, characterHandler)
+	characterv2pb.RegisterCharacterServiceServer(srv, characterHandlerV2)
 	apiv1alpha1.RegisterDiceServiceServer(srv, diceHandler)
 
 	// v1alpha2 encounter wiring (additive, no v1alpha1 disturbance).

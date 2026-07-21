@@ -330,14 +330,14 @@ func translateEntityAppearedEvent(e *events.EntityAppearedEvent, viewer core.Pla
 // retry needed.
 //
 // ctx/charRepo (rpg-api#664) thread through to entityForID -> playerEntity's
-// characterIdentityFor so a player appearing mid-encounter (e.g. stepping
+// characterDataFor so a player appearing mid-encounter (e.g. stepping
 // into another party member's sight) gets the same display_name/class_ref
-// enrichment ProjectFor's connect-time snapshot gets — otherwise this live
-// path would relocate the #664 bug rather than fix it: correct identity on
-// first connect, blank again the moment a not-yet-visible party member
-// walks into view. charRepo may be nil (tests, or a caller with no char
-// store wired) — characterIdentityFor already degrades to empty/nil rather
-// than erroring.
+// (and, rpg-api#680, equipment) enrichment ProjectFor's connect-time
+// snapshot gets — otherwise this live path would relocate the #664 bug
+// rather than fix it: correct identity on first connect, blank again the
+// moment a not-yet-visible party member walks into view. charRepo may be
+// nil (tests, or a caller with no char store wired) — characterDataFor
+// already degrades to empty/nil rather than erroring.
 func translateEntityAppearedEventWithData(
 	ctx context.Context, charRepo characterrepo.Repository,
 	e *events.EntityAppearedEvent, viewer core.PlayerID, now time.Time, data *encounter.Data,
@@ -395,8 +395,9 @@ func translateEntityAppearedEventWithData(
 // this does not need pd.View to be populated to enrich the rest of the
 // entity's fields.
 //
-// ctx/charRepo (rpg-api#664) are forwarded to characterIdentityFor for the
-// player branch only — monsterEntity never needed a character lookup.
+// ctx/charRepo (rpg-api#664, rpg-api#680) are forwarded to characterDataFor
+// for the player branch only — monsterEntity never needed a character
+// lookup.
 func entityForID(ctx context.Context, charRepo characterrepo.Repository, data *encounter.Data, id core.EntityID) *encounterv2pb.Entity {
 	if data == nil {
 		return nil
@@ -406,8 +407,8 @@ func entityForID(ctx context.Context, charRepo characterrepo.Repository, data *e
 	}
 	if pid := playerSeatForEntity(data, id); pid != "" {
 		if pd := data.Players[pid]; pd != nil {
-			name, classRef := characterIdentityFor(ctx, charRepo, string(pd.EntityID))
-			return playerEntity(pd, core.Hex{}, name, classRef)
+			name, classRef, equip := characterDataFor(ctx, charRepo, string(pd.EntityID))
+			return playerEntity(pd, core.Hex{}, name, classRef, equip)
 		}
 	}
 	return nil
