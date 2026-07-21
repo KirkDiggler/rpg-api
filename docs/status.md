@@ -1,8 +1,8 @@
 ---
 name: rpg-api status
 description: Where we are with rpg-api — active work, paused, known rough edges, per-subsystem confidence
-updated: 2026-07-20
-confidence: high — Wave 2 Monk entries verified against passing integration tests; #636 entry verified against passing unit + integration tests; #642 v1alpha1 encounter stack deletion verified against passing build/vet/test/lint; #644 The Dungeon wave 1 (api) verified against passing unit + stress-run (50x) integration tests; #650 toolkit seam adoption (InitiativeRolled event + room-aware spawn) verified against passing unit/integration/-race full suite; #651 ActiveConditions projection verified against passing unit + integration (10x -race) + full suite; #656 movement-truncation fix verified against an isolated toolkit-level repro, a new RPC-level regression test (10x -race), and the full suite; #663 AbandonEncounter + combat pockets + rage-at-seating verified against passing unit/integration/-race full suite plus a live playtest against the real game route; #676 The Dungeon wave 2 Slice 2 (api leg) verified against passing unit tests + a new 3-test integration gate suite (8x stress-run, entropy-seeded layouts)
+updated: 2026-07-21
+confidence: high — Wave 2 Monk entries verified against passing integration tests; #636 entry verified against passing unit + integration tests; #642 v1alpha1 encounter stack deletion verified against passing build/vet/test/lint; #644 The Dungeon wave 1 (api) verified against passing unit + stress-run (50x) integration tests; #650 toolkit seam adoption (InitiativeRolled event + room-aware spawn) verified against passing unit/integration/-race full suite; #651 ActiveConditions projection verified against passing unit + integration (10x -race) + full suite; #656 movement-truncation fix verified against an isolated toolkit-level repro, a new RPC-level regression test (10x -race), and the full suite; #663 AbandonEncounter + combat pockets + rage-at-seating verified against passing unit/integration/-race full suite plus a live playtest against the real game route; #676 The Dungeon wave 2 Slice 2 (api leg) verified against passing unit tests + a new 3-test integration gate suite (8x stress-run, entropy-seeded layouts); #680 equipment on the wire verified against passing unit + integration suite (real AC, occupancy, non-equipment-field preservation) + adversarial-gate fixes + full CI green against published deps
 ---
 
 # rpg-api: Where We Are
@@ -10,6 +10,85 @@ confidence: high — Wave 2 Monk entries verified against passing integration te
 This is a living doc. Edit it in the same PR that invalidates a line. Don't let it rot.
 
 ## Active work
+
+**Equipment on the wire — real AC, one rules-correct equip path (rpg-api#680, 2026-07-21)** —
+board #11's two named equipment sins are both fixed. AC on the wire used to be
+`converters.go`'s `int32(data.ArmorClass)` — a straight copy of a stored int, never
+computed. Equip used to be `internal/orchestrators/character/orchestrator.go`'s bare
+`EquipmentSlots.Set/Clear` — no rules, no occupancy, no recompute. Both are gone.
+
+**The single equip path.** `Orchestrator.EquipItem`/`UnequipItem` now load the runtime
+`*character.Character` via `character.LoadFromData`, call the toolkit's rules-aware
+`Character.EquipItem`/`UnequipItem` (rpg-toolkit#812, v0.67.0 — two-handed weapons
+claim/clear `off_hand`, equipping an occupied slot swaps the previous occupant back to
+inventory, an incompatible slot is a real error now instead of a silent no-op), and
+persist the result. Both the existing v1alpha1 `CharacterService.EquipItem`/`UnequipItem`
+and the new v1alpha2 `CharacterService` (below) call this ONE orchestrator method — no
+dual logic, occupancy enforced exactly once, in the toolkit.
+
+**New v1alpha2 `dnd5e.api.v1alpha2.character.CharacterService`**
+(`internal/handlers/dnd5e/v2/character/`, rpg-api-protos#188) — `EquipItem`/`UnequipItem`,
+the out-of-encounter character-sheet surface (equip/unequip between encounters; the
+in-encounter equivalent, when it exists, rides the encounter stream instead —
+rpg-api#681 below). Both RPCs return the recomputed `CharacterData`: real AC, composed
+`stat_line`/`main_hand_damage`, current `equipped`/`inventory`/`slots` — that response IS
+this slice's delivery mechanism, not a follow-up read.
+
+**Real AC.** `CharacterData.armor_class_detail`/`Entity.armor_class` (the v1alpha2
+encounter snapshot, `internal/handlers/dnd5e/v2/encounter/project.go`'s `playerEntity`)
+now come from the toolkit's `EquipmentView` (`EffectiveAC(ctx).Total`), not a stored int.
+See `docs/architecture/components/encounter.md`'s "CharacterData equipment projection"
+section for the AC-sync invariant this introduces.
+
+**Why persistence merges instead of overwriting — a real footgun, worth remembering.**
+`Orchestrator`'s `mergedEquipmentData` copies the ORIGINALLY loaded `character.Data` and
+refreshes only `EquipmentSlots` + `ArmorClass` from the post-mutation runtime character —
+it does NOT persist a full `char.ToData()` round-trip. The toolkit's `ToData()`/
+`LoadFromData()` pair is lossy: `BackgroundID` and `CreatedAt` are never populated by
+`ToData()` at all, and any inventory item whose ID isn't in the toolkit's built-in
+weapon/armor/tool/pack/ammo registry (a loot/quest item) is silently dropped by
+`LoadFromData`'s `equipment.GetByID` resolution loop. An adversarial gate caught this
+before merge — the naive full-overwrite version destroyed a test character's background,
+creation timestamp, and a non-registry inventory item on a single equip call. If this
+ever gets "simplified" back to `Data: char.ToData()`, that data loss returns silently.
+See `docs/architecture/components/character-orchestrator.md`'s Equipment section.
+
+**Boundary discipline.** rpg-api composes no display strings, computes no AC, enforces
+no occupancy anywhere in this slice — `BuildEquipmentCharacterData`
+(`internal/handlers/dnd5e/v2/encounter/character_data.go`) is a pure field-for-field map
+from the toolkit's `EquipmentView` (`Items[].Name/Kind/SlotKeys/StatLine`, `Slots`,
+`ACTotal`/`ACNote`, `MainHandDamage`) onto the wire `CharacterData`, Ref-translation only.
+One composition, shared by the character-sheet RPC response and the encounter snapshot
+path, so the two surfaces never independently drift.
+
+**Known deferrals, all filed:**
+- **rpg-api#681** — live-push of a recomputed snapshot to an already-open
+  `StreamEncounter` connection when an out-of-combat equip happens. No existing toolkit
+  broker event supports "entity data changed," and the character orchestrator has no
+  dependency on the encounter broker today; building one is new cross-orchestrator
+  wiring, out of scope for this slice. A NEW snapshot build (`GetEncounter`, or a fresh
+  `StreamEncounter` connect) already reflects a persisted equip change for free.
+- **rpg-api#683** — `make ci-check` (`scripts/ci-checks.sh`)'s mock-regeneration check
+  runs `go generate ./...` then unconditionally `git checkout -- .` on ANY diff,
+  including tool-version-drift cosmetic diffs unrelated to real interface changes. It
+  fired a false positive mid-implementation and wiped every uncommitted tracked-file
+  edit in the working tree back to `HEAD` (new untracked files survived). Commit before
+  running `make ci-check` until this is fixed.
+- **rpg-api#684** — replace the stored `ArmorClass` int with a direct `EffectiveAC` read
+  everywhere (eliminating the cache/desync risk `mergedEquipmentData` currently manages
+  by keeping the int refreshed on every equip) — a larger, separately-scoped change.
+
+Verified: orchestrator unit suite (occupancy, slot-swap, non-registry-field preservation,
+stored-AC sync, error mapping) + a table-driven integration suite wiring both the
+v1alpha2 character service and the v1alpha2 encounter service against the same character
+store (`internal/handlers/dnd5e/v2/encounter/integration_equipment_test.go`) — fighter
+equips chain mail for a hand-computed AC of 16 (heavy armor, no DEX bonus), rogue equips
+leather for a hand-computed AC of 14 (11 base + DEX 16's +3 mod), barbarian's two-handed
+greataxe equip clears `off_hand` on both the RPC response and the encounter snapshot, and
+unequip returns an item to inventory without dropping it. Full `go test ./...` and
+`golangci-lint` (0 new issues) green against the published `rpg-toolkit/rulebooks/dnd5e
+v0.67.0` + `rpg-api-protos/gen/go` (post rpg-api-protos#188) — no replace directives in
+the merged commit. CI green on rpg-api#682.
 
 **The Dungeon wave 2 Slice 2 (api leg) — two-chamber dungeon, door projection,
 per-chamber goblin seeding (rpg-api#676, 2026-07-20)** — `StartEncounter`

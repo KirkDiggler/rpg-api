@@ -1,8 +1,8 @@
 ---
 name: rpg-api quality scorecard
 description: Per-component grade with rationale — a graded scorecard to update as the codebase evolves
-updated: 2026-07-13
-confidence: medium — Wave 2.11e encounter v2 graded from shipped-code + integration test verification; older entries reflect 2026-05-02 snapshot pending refresh; rpg-api#636 note verified against passing tests; rpg-api#642 deletions verified against passing build/vet/test/lint
+updated: 2026-07-21
+confidence: medium — Wave 2.11e encounter v2 graded from shipped-code + integration test verification; older entries reflect 2026-05-02 snapshot pending refresh; rpg-api#636 note verified against passing tests; rpg-api#642 deletions verified against passing build/vet/test/lint; rpg-api#680 entries verified against passing unit + integration suite
 ---
 
 # Quality Scorecard
@@ -162,7 +162,24 @@ character API silently returns stub data for real fields. One TODO in
 interact with toolkit, this belongs in the orchestrator." That smell is present
 but not yet addressed. Test coverage exists via `list_equipment_test.go` and
 `list_spells_test.go` but the converter surface is sparsely tested relative to
-its size.
+its size. Its `EquipItem`/`UnequipItem` RPCs now delegate to the rules-correct
+orchestrator method (rpg-api#680, see "Character orchestrator" below) — that
+specific gap is closed even though the surrounding stub/TODO debt isn't.
+
+### Character v2 handler — B (new, 2026-07-21)
+
+`internal/handlers/dnd5e/v2/character/` (rpg-api#680) — the v1alpha2
+`CharacterService`, out-of-encounter `EquipItem`/`UnequipItem` only. Deliberately
+narrow: no `converters.go`, proto↔domain translation is small enough to stay
+inline in `handler.go`. Delegates to the SAME orchestrator method the v1alpha1
+handler uses and shares `BuildEquipmentCharacterData`
+(`internal/handlers/dnd5e/v2/encounter/character_data.go`) with the encounter
+snapshot path for its response composition — no independent logic to drift.
+Gomock unit suite covers validation, delegation, and error→status mapping; the
+end-to-end proof (real AC, occupancy visible across both surfaces) is the
+integration suite in the encounter package (`encounter.md`). Held at B rather
+than A pending production traffic and a genuine in-encounter equip path
+(rpg-project#94) to prove the boundary holds under a second consumer.
 
 ## Orchestrators
 
@@ -187,6 +204,15 @@ The `service.go` / `orchestrator.go` split within the package follows the
 defined pattern. Grade would be higher with better alive-state handling and
 completing the TODO at line 3352 (monster turns for entities acting before
 current entity).
+
+**Update (rpg-api#680, 2026-07-21):** `EquipItem`/`UnequipItem` are rules-correct
+now — load the runtime character, call the toolkit's `EquipItem`/`UnequipItem`
+(occupancy, slot-compatibility), persist via a merge that deliberately avoids a
+full `char.ToData()` overwrite (which is lossy for `BackgroundID`/`CreatedAt`/
+non-registry inventory — see `character-orchestrator.md`'s Equipment section).
+Grade held at B- rather than raised: the fix is real and well-tested, but the
+alive-check and monster-turns TODOs that capped this grade are unrelated and
+still open.
 
 ### Lobby orchestrator — B+ (new, 2026-07-07)
 
