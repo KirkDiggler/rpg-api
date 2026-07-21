@@ -4,8 +4,8 @@ github.com/AdaLogics/go-fuzz-headers v0.0.0-20240806141605-e8a1dd7889d6 h1:He8af
 github.com/AdaLogics/go-fuzz-headers v0.0.0-20240806141605-e8a1dd7889d6/go.mod h1:8o94RPi1/7XTJvwPpRSzSUedZrtlirdB3r9Z20bi2f8=
 github.com/Azure/go-ansiterm v0.0.0-20210617225240-d185dfc1b5a1 h1:UQHMgLO+TxOElx5B5HZ4hJQsoJ/PvUvKRhJHDQXO8P8=
 github.com/Azure/go-ansiterm v0.0.0-20210617225240-d185dfc1b5a1/go.mod h1:xomTg63KZ2rFqZQzSB4Vz2SUXa1BpHTVz9L5PTmPC4E=
-github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20260720043951-c3059bc89397 h1:Gv+vu01ODvuTnca1hEg/36YCIXiESX5J9aeP7VH/3K0=
-github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20260720043951-c3059bc89397/go.mod h1:CiSz9niTulIpKnOnHNwbwjhgWDAhR90YM6xmZcqS16c=
+github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20260721173744-7212a2d922f3 h1:tkiGWktd9Uo4oYg9FoYhhfwF8SR5fnHLnapszBSH1d0=
+github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20260721173744-7212a2d922f3/go.mod h1:CiSz9niTulIpKnOnHNwbwjhgWDAhR90YM6xmZcqS16c=
 github.com/KirkDiggler/rpg-toolkit/core v0.10.0 h1:LLsvsYsukE26BlRS0wL1o3UjjmP5Qm2Bq5Hb6yFdxzs=
 github.com/KirkDiggler/rpg-toolkit/core v0.10.0/go.mod h1:XFQXYViPZUTYu/a8jdRadI3rGnKk4r7tRtPm++vSUV0=
 github.com/KirkDiggler/rpg-toolkit/dice v0.3.2 h1:cLLP4Z+4VYSxeRkNbmI5gym6dC/xBOw6kDIylWDK/z0=
@@ -20,8 +20,8 @@ github.com/KirkDiggler/rpg-toolkit/mechanics/resources v0.3.1 h1:wRshHQZfLnEh03/
 github.com/KirkDiggler/rpg-toolkit/mechanics/resources v0.3.1/go.mod h1:LzyZd5OAAic1UnyPwCx6HnmWcOQ/jZvqMSc+Q0k7fH8=
 github.com/KirkDiggler/rpg-toolkit/rpgerr v0.1.2 h1:B7IrROe3GcPrzMeV0EQryA194Y7Yjl3E4kw/OBx4Ucc=
 github.com/KirkDiggler/rpg-toolkit/rpgerr v0.1.2/go.mod h1:wsyJmmf1X0iLFGy5Iyy5sUoZhXZQvuYVsKdXfc4b/T4=
-github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.66.0 h1:p2MiKPF5tr35HhBe+o28/FBF1EXRQXh5w1l/ZtP5pAU=
-github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.66.0/go.mod h1:vx1sByl/MceFEzfdmi+HP5hGotGJ8u5uR5T1RVQMqn4=
+github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.67.0 h1:1GOYI0tIuaIij80poBSRIcgf3C+MELzl72ClPrV7GsA=
+github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.67.0/go.mod h1:vx1sByl/MceFEzfdmi+HP5hGotGJ8u5uR5T1RVQMqn4=
 github.com/KirkDiggler/rpg-toolkit/tools/environments v0.4.4 h1:v7Imq00j5KrQ/PLOR3sOuaxBf3h5ERmHePpQuhGJr9g=
 github.com/KirkDiggler/rpg-toolkit/tools/environments v0.4.4/go.mod h1:tchpvtZ7MTh7P5J1efr2Wigw108VzQBQEojlVFbw8rM=
 github.com/KirkDiggler/rpg-toolkit/tools/selectables v0.1.2 h1:81iz712+EXhitPNgcf0tMDqvqI/0u9k26Hbdph62QZU=
