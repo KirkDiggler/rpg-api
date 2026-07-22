@@ -61,10 +61,17 @@
       "artifacts": ["docs/status.md", "docs/architecture/components/lobby-service.md"],
       "commit": "0e4ae1f",
       "notes": "New Active-work entry for #688; #676's entry gets a superseded-by pointer, left intact as historical record per this file's own documentation philosophy."
+    },
+    {
+      "id": "2026-07-22-008",
+      "task": "Push branch, open PR #693, address Copilot review comment",
+      "status": "completed",
+      "artifacts": ["internal/orchestrators/lobby/start_encounter_test.go"],
+      "commit": "f53bcbd",
+      "notes": "PR https://github.com/KirkDiggler/rpg-api/pull/693 opened (not draft), linked to #688. CI green (build+test). Copilot left 1 inline comment: regionByArchetype's doc claimed 'single region' but the implementation returned the first match and reported ok=true even with duplicates. Verified the catch was correct, fixed to count matches and require exactly 1, added 3 direct unit tests pinning it, replied on the thread with the fixing commit SHA (signed), resolved the thread via GraphQL resolveReviewThread. Re-ran make pre-commit + full lobby package green after the fix; CI green on the fix commit."
     }
   ],
   "next_steps": [
-    "Push branch, open PR linked to #688",
-    "Poll for automated review (Copilot) and address comments individually with signed replies"
+    "Awaiting Kirk's merge decision -- do not merge"
   ]
 }
