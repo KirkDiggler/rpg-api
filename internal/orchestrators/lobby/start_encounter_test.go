@@ -3,7 +3,9 @@ package lobby_test
 import (
 	"encoding/json"
 	"math"
+	"testing"
 
+	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
 	"github.com/KirkDiggler/rpg-api/internal/apierr"
@@ -324,16 +326,53 @@ func (s *LobbySuite) TestStartEncounter_PublishesEncounterStarted_AfterPersist()
 }
 
 // regionByArchetype finds the single region tagged with the given
-// archetype in space.Regions. Fails the caller's own assertions (via the
-// returned ok) rather than panicking — every crypt-spec test below asserts
-// ok itself so a missing/duplicate archetype fails loudly with context.
+// archetype in space.Regions. Returns ok=false for BOTH zero matches and
+// more than one match — a duplicate archetype is exactly as wrong as a
+// missing one for the crypt spec's "exactly one entrance/corridor/boss"
+// invariant, and silently returning the first of several duplicates would
+// let that invariant break without any test noticing (Copilot review
+// catch on this PR).
 func regionByArchetype(space *tkenc.SpaceData, archetype tkenc.RegionArchetype) (tkenc.RegionData, bool) {
+	var found tkenc.RegionData
+	count := 0
 	for _, r := range space.Regions {
 		if r.Archetype == archetype {
-			return r, true
+			found = r
+			count++
 		}
 	}
-	return tkenc.RegionData{}, false
+	return found, count == 1
+}
+
+// TestRegionByArchetype_DuplicateArchetype_ReturnsNotOK is the Copilot
+// review regression pin (PR #693): a naive first-match implementation
+// would report ok=true even with two regions sharing an archetype,
+// silently masking the exact "InitDungeon accidentally produced two boss
+// regions" failure mode the crypt-spec tests above rely on this helper to
+// catch.
+func TestRegionByArchetype_DuplicateArchetype_ReturnsNotOK(t *testing.T) {
+	space := &tkenc.SpaceData{
+		Regions: []tkenc.RegionData{
+			{ID: "boss-1", Archetype: tkenc.ArchetypeBoss},
+			{ID: "boss-2", Archetype: tkenc.ArchetypeBoss},
+		},
+	}
+	_, ok := regionByArchetype(space, tkenc.ArchetypeBoss)
+	require.False(t, ok, "two regions sharing an archetype must not resolve as a single match")
+}
+
+func TestRegionByArchetype_NoMatch_ReturnsNotOK(t *testing.T) {
+	space := &tkenc.SpaceData{Regions: []tkenc.RegionData{{ID: "entrance", Archetype: tkenc.ArchetypeEntrance}}}
+	_, ok := regionByArchetype(space, tkenc.ArchetypeBoss)
+	require.False(t, ok)
+}
+
+func TestRegionByArchetype_ExactlyOneMatch_ReturnsIt(t *testing.T) {
+	boss := tkenc.RegionData{ID: "boss", Archetype: tkenc.ArchetypeBoss}
+	space := &tkenc.SpaceData{Regions: []tkenc.RegionData{{ID: "entrance", Archetype: tkenc.ArchetypeEntrance}, boss}}
+	got, ok := regionByArchetype(space, tkenc.ArchetypeBoss)
+	require.True(t, ok)
+	require.Equal(t, boss, got)
 }
 
 // regionArchetypeAt returns the RegionArchetype of the region containing
