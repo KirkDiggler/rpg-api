@@ -1,8 +1,8 @@
 ---
 name: rpg-api status
 description: Where we are with rpg-api — active work, paused, known rough edges, per-subsystem confidence
-updated: 2026-07-21
-confidence: high — Wave 2 Monk entries verified against passing integration tests; #636 entry verified against passing unit + integration tests; #642 v1alpha1 encounter stack deletion verified against passing build/vet/test/lint; #644 The Dungeon wave 1 (api) verified against passing unit + stress-run (50x) integration tests; #650 toolkit seam adoption (InitiativeRolled event + room-aware spawn) verified against passing unit/integration/-race full suite; #651 ActiveConditions projection verified against passing unit + integration (10x -race) + full suite; #656 movement-truncation fix verified against an isolated toolkit-level repro, a new RPC-level regression test (10x -race), and the full suite; #663 AbandonEncounter + combat pockets + rage-at-seating verified against passing unit/integration/-race full suite plus a live playtest against the real game route; #676 The Dungeon wave 2 Slice 2 (api leg) verified against passing unit tests + a new 3-test integration gate suite (8x stress-run, entropy-seeded layouts); #680 equipment on the wire verified against passing unit + integration suite (real AC, occupancy, non-equipment-field preservation) + adversarial-gate fixes + full CI green against published deps
+updated: 2026-07-22
+confidence: high — Wave 2 Monk entries verified against passing integration tests; #636 entry verified against passing unit + integration tests; #642 v1alpha1 encounter stack deletion verified against passing build/vet/test/lint; #644 The Dungeon wave 1 (api) verified against passing unit + stress-run (50x) integration tests; #650 toolkit seam adoption (InitiativeRolled event + room-aware spawn) verified against passing unit/integration/-race full suite; #651 ActiveConditions projection verified against passing unit + integration (10x -race) + full suite; #656 movement-truncation fix verified against an isolated toolkit-level repro, a new RPC-level regression test (10x -race), and the full suite; #663 AbandonEncounter + combat pockets + rage-at-seating verified against passing unit/integration/-race full suite plus a live playtest against the real game route; #676 The Dungeon wave 2 Slice 2 (api leg) verified against passing unit tests + a new 3-test integration gate suite (8x stress-run, entropy-seeded layouts); #680 equipment on the wire verified against passing unit + integration suite (real AC, occupancy, non-equipment-field preservation) + adversarial-gate fixes + full CI green against published deps; #688 N-region dungeon by key verified against passing unit (-race, 15x stress-run) + a rewritten 3-test integration gate suite against the real Redis harness, full `go test`/`golangci-lint` green against published `rpg-toolkit/encounter v0.35.0`
 ---
 
 # rpg-api: Where We Are
@@ -11,8 +11,67 @@ This is a living doc. Edit it in the same PR that invalidates a line. Don't let 
 
 ## Active work
 
-**Equipment on the wire — real AC, one rules-correct equip path (rpg-api#680, 2026-07-21)** —
-board #11's two named equipment sins are both fixed. AC on the wire used to be
+**N-region dungeon by key — retires the two-chamber constants (rpg-api#688, 2026-07-22)** —
+`StartEncounter` (`internal/orchestrators/lobby/start_encounter.go`) now calls the
+toolkit's generic `enc.InitDungeon(tkenc.DungeonParams{...})` instead of
+`enc.InitTwoChamberRoom(...)`, selected via a new `resolveDungeonSpec(in.DungeonKey)`
+(`dungeon_spec.go`) — a literal, hand-authored mapping from an opaque `DungeonKey` to the
+toolkit's params. `chamberWidth`/`chamberHeight`/`chamberPattern`/`chamberDoorID` are
+gone; no geometry constants remain in the orchestrator (rpg-toolkit#814's Approved Slice
+3 corrections: "rpg-api still does no geometry math, no room sizing heuristics, and no
+theme-conditional branching").
+
+**The crypt spec** (`DungeonKeyCrypt`, the resolved default when `StartEncounterInput.
+DungeonKey` is the zero value — no proto field carries a caller-supplied key yet; lobby-
+settings-driven selection is future work per the issue's own Scope section) is a
+3-region linear chain — entrance → corridor → boss — theme `"crypt"` (an opaque string
+InitDungeon carries through unbranched onto `SpaceData.Theme`), explicit dimensions
+(height 20; entrance/corridor/boss widths 20/6/14) giving the boss region a primary
+playable axis of 14, comfortably past the toolkit's own >6-hex-step scale invariant
+(enforced by `validateDungeonParams` at generation time, not eyeballed here), and 2
+connector door IDs.
+
+**Goblin seeding, generalized by chain position, not archetype.** The chamber-scoped
+helpers (`chamberEntryAnchor`/`chamberOutOfSight`/`chamberSpawnSpec`, hardcoded to
+`tkenc.RegionChamber1`/`RegionChamber2`) are renamed and generalized
+(`regionEntryAnchor`/`regionOutOfSight`/`regionSpawnSpec`) to work against any named
+region. `seedGoblins` (renamed constant: `goblinsPerRegion`) seeds goblins into exactly
+the dungeon's two ENDPOINTS — `spec.regions[0]` (entrance) and `spec.regions[len-1]`
+(terminal/boss) — leaving interior connector regions (the corridor, for N=3) unpopulated.
+This is the exact pre-#688 "both occupied regions get monsters" rule, generalized by
+chain POSITION rather than hardcoded region IDs — deliberately NOT rpg-api#689's
+per-archetype seeding intelligence (deciding how many/which monsters populate an
+ARBITRARY region by its archetype stays out of scope here).
+
+**Boundary discipline, proven by a dedicated test, not just asserted.**
+`TestStartEncounter_DungeonGeometryIndependentOfPartySize` starts two encounters with the
+same key+seed but different party sizes (1 member vs 2) and asserts the persisted
+`Space`/door positions are byte-identical — `InitDungeon` runs before any `AddPlayer`
+call and takes no party information as input, so this is a real, automated proof that
+rpg-api never derives geometry from runtime request shape, not just a boundary-note
+comment.
+
+**Toolkit dependency.** Bumped `rpg-toolkit/encounter` v0.34.1 → v0.35.0 (rpg-toolkit#821,
+merged 2026-07-22, carrying `InitDungeon`/`DungeonParams`/`RegionData.Archetype`/
+`SpaceData.Theme`) — verified published and consumable on the real Go module proxy
+(a direct `proxy.golang.org` `.info` fetch plus an isolated `go build` against the new
+symbols) before the bump; no replace directive.
+
+**Verified:** `internal/orchestrators/lobby`'s full test package green (`-race
+-count=5`, 15x stress-run against entropy-seeded default-key runs); the retired
+`dungeon_two_chamber_test.go` gate suite is rewritten as `dungeon_crypt_test.go`
+(`DungeonCryptSuite`) proving the same four facts (entrance spawn + door-wire
+projection, entrance-region sighting starts a combat pocket excluding boss-region
+monsters from initiative, boss-region goblins stay hidden until BOTH connector doors
+open AND a sightline forms) against the crypt topology's 2 doors instead of the retired
+generator's 1; both pass against the real Redis integration harness. `go test ./...`
+and `golangci-lint` show zero new issues versus `main` (29 pre-existing issues in
+untouched files, identical count before/after). Every pre-existing `StartEncounter` test
+not specific to two-chamber geometry (HP seeding, honest combat snapshot, stale
+action-economy clearing, arcade recovery, not-host/not-ready/already-started/not-found,
+persist-then-emit ordering) is unmodified and still green.
+
+
 `converters.go`'s `int32(data.ArmorClass)` — a straight copy of a stored int, never
 computed. Equip used to be `internal/orchestrators/character/orchestrator.go`'s bare
 `EquipmentSlots.Set/Clear` — no rules, no occupancy, no recompute. Both are gone.
@@ -91,7 +150,12 @@ v0.67.0` + `rpg-api-protos/gen/go` (post rpg-api-protos#188) — no replace dire
 the merged commit. CI green on rpg-api#682.
 
 **The Dungeon wave 2 Slice 2 (api leg) — two-chamber dungeon, door projection,
-per-chamber goblin seeding (rpg-api#676, 2026-07-20)** — `StartEncounter`
+per-chamber goblin seeding (rpg-api#676, 2026-07-20)** — **superseded by rpg-api#688
+(2026-07-22, above): `InitTwoChamberRoom`/`chamberEntryAnchor`/`chamberOutOfSight`/
+`goblinsPerChamber` are gone, generalized into the N-region `InitDungeon`/
+`regionEntryAnchor`/`regionOutOfSight`/`goblinsPerRegion` path.** Left below for the
+historical record of what shipped in this PR; read the #688 entry for current behavior.
+`StartEncounter`
 (`internal/orchestrators/lobby/start_encounter.go`) now calls
 `enc.InitTwoChamberRoom(...)` instead of `enc.InitRoom(20, 20, ...)` — 2 chambers + 1
 plain door + a designated entrance cell + per-chamber region tags, entirely
@@ -123,14 +187,17 @@ is `perception.CanSeeAt`, unchanged from wave 1).
 
 Gate: `internal/integration/dungeon_two_chamber_test.go` (`DungeonTwoChamberSuite`,
 3 tests, real `LobbyService.StartEncounter` + v1alpha2 RPC path, no hand-seeded
-fixtures) proves all four issue-#676 facts: the party spawns at the chamber-1
+fixtures) proved all four issue-#676 facts: the party spawns at the chamber-1
 entrance, not a room center; the door projects `DOOR_CLOSED` carrying an id; a
 Move that sights a chamber-1 goblin starts a pocket-scoped combat (chamber-2
 monsters absent from initiative — design doc gap 5/Fork 2, delivered by
 rpg-toolkit#796); chamber-2 goblins emit no `EntityAppeared` until the door opens
 AND a sightline actually forms (opening alone is not enough — Slice 1's
 progressive through-the-doorway reveal, not a whole-chamber one). Stress-run 8x
-clean against entropy-seeded layouts.
+clean against entropy-seeded layouts. **Retired and rewritten as
+`dungeon_crypt_test.go`/`DungeonCryptSuite` by rpg-api#688** (above) once the
+default dungeon stopped being two chambers — the four facts carry over unchanged,
+generalized to the crypt spec's 3 regions/2 doors.
 
 **AbandonEncounter — host-only escape hatch for stuck encounters; first production
 activation of combat pockets + rage-at-seating (rpg-api#663, 2026-07-20)** —
