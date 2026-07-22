@@ -1,88 +1,27 @@
 {
-  "branch": "feat/action-economy-rpcs",
-  "issues": ["rpg-api-protos#127"],
-  "goal": "Implement two-level action economy RPCs (ActivateCombatAbility, ExecuteAction) that separate ability activation from action execution",
+  "branch": "feat/688-n-region-dungeon-key",
+  "issues": ["rpg-api#688"],
+  "goal": "Replace StartEncounter's hardcoded two-chamber InitTwoChamberRoom construction with the toolkit's generic InitDungeon, selected by a named dungeon-spec key (default: crypt, a 3-region entrance->corridor->boss linear chain). rpg-api maps an opaque key to literal toolkit config only -- no geometry math, no region derivation, no archetype-conditional branching.",
+  "dependencies": {
+    "rpg-toolkit#821": "merged 2026-07-22T18:16:26Z (commit e1f98403), published as encounter/v0.35.0 on the real Go module proxy -- verified via proxy.golang.org .info fetch + isolated `go build` against InitDungeon/DungeonParams/RegionData.Archetype/SpaceData.Theme before any dependency bump in this branch."
+  },
   "sessions": [
     {
-      "date": "2026-01-08",
-      "task": "Extend ActionEconomyState entity",
-      "commit": "e3aa9e2",
-      "changes": [
-        "Added AttacksRemaining, OffHandAttacksRemaining, FlurryStrikesRemaining fields",
-        "Added DisengageActive, DodgeActive boolean flags",
-        "Added helper methods: HasAttacks/UseAttack, HasOffHandAttacks/UseOffHandAttack, HasFlurryStrikes/UseFlurryStrike"
-      ],
-      "notes": "NewActionEconomyState() defaults unchanged - attacks start at 0 (granted by ATTACK ability). Pre-existing build errors in converters.go (unrelated to this change)."
-    },
-    {
-      "date": "2026-01-08",
-      "task": "Add Input/Output types for ActivateCombatAbility and ExecuteAction",
-      "commit": "a5dc8e8",
-      "changes": [
-        "Added ActivateCombatAbilityInput/Output types to service.go",
-        "Added ExecuteActionInput/Output types to service.go",
-        "Added MoveResult type for move action outcomes",
-        "Added ActivateCombatAbility and ExecuteAction method signatures to Service interface",
-        "Added stub implementations to Orchestrator (return 'not yet implemented' error)",
-        "Added stringToEntityType and intToEntitySize converter helpers",
-        "Fixed EntityType/EntitySize enum conversion in converters.go",
-        "Updated golangci.yml to exclude SA1019 deprecated warnings during transition",
-        "Regenerated mocks for updated Service interface"
-      ],
-      "notes": "Updated rpg-api-protos to latest generated branch (includes CombatAbilityId, ActionId enums). Build passes, all tests pass."
-    },
-    {
-      "date": "2026-01-08",
-      "task": "Implement ExecuteAction orchestrator logic",
-      "commit": "522ba32",
-      "changes": [
-        "Implemented ExecuteAction method supporting STRIKE, OFF_HAND_STRIKE, and MOVE actions",
-        "STRIKE: Validates AttacksRemaining, resolves attack via toolkit, consumes attack, handles TWF off-hand grants",
-        "OFF_HAND_STRIKE: Validates OffHandAttacksRemaining, same attack resolution as main-hand",
-        "MOVE: Validates path cube coordinates, checks movement costs (5ft/hex), wall/entity collisions",
-        "Added stop reason constants (completed, position_occupied, insufficient_movement, blocked_by_wall, invalid_coordinates)",
-        "Added executeStrike and executeMove helper methods",
-        "Uses existing buildCombatState helper for response building",
-        "Publishes MovementCompleted events for move actions",
-        "Added pb import for ActionId enum usage",
-        "Added 7 comprehensive tests covering all action types and edge cases"
-      ],
-      "notes": "ExecuteAction consumes granted capacity (attacks/movement). Must call ActivateCombatAbility first to grant attacks. Movement doesn't require activation - uses MovementRemaining from encounter."
-    },
-    {
-      "date": "2026-01-08",
-      "task": "Implement ActivateCombatAbility orchestrator logic",
-      "commit": "522ba32",
-      "changes": [
-        "Implemented ActivateCombatAbility method with full ability handling",
-        "ATTACK: Checks HasAction(), consumes action, grants AttacksRemaining = 1",
-        "DASH: Checks HasAction(), consumes action, adds defaultMovementSpeed to MovementRemaining",
-        "DODGE: Checks HasAction(), consumes action, sets DodgeActive = true",
-        "DISENGAGE: Checks HasAction(), consumes action, sets DisengageActive = true",
-        "OFFHAND_ATTACK: Checks HasBonusAction(), consumes bonus action, grants OffHandAttacksRemaining = 1",
-        "Returns GrantedCapacity message describing what was granted",
-        "Added 10 comprehensive tests covering all 5 abilities and error cases",
-        "Tests verify action economy consumption, capacity grants, and turn validation"
-      ],
-      "notes": "Implementation was committed alongside ExecuteAction in same commit (522ba32). Validates entity's turn before allowing activation. Returns business logic failures (Success=false) vs errors for invalid state. All 10 tests pass."
-    },
-    {
-      "date": "2026-01-08",
-      "task": "Wire up gRPC handlers for ActivateCombatAbility and ExecuteAction",
-      "commit": "cd22bd2",
-      "changes": [
-        "Added ActivateCombatAbility handler in handler.go with validation and service call",
-        "Added ExecuteAction handler with oneof input handling for Strike and Move actions",
-        "Added convertActionEconomyToProto converter for ActionEconomy proto conversion",
-        "Added convertMoveResultToProto converter for MoveResult proto conversion",
-        "Added convertGrantedActionToProto converter for GrantedAction proto conversion",
-        "Added 12 handler tests covering success, validation, and error cases"
-      ],
-      "notes": "Handlers follow existing patterns (Attack, MoveCharacter). ActionEconomy converter takes CombatState for movement values. All tests pass, pre-commit passes."
+      "id": "2026-07-22-001",
+      "task": "Preflight: verify toolkit publication, check for duplicate branch/PR, create isolated worktree, baseline tests, reset progress artifacts",
+      "status": "completed",
+      "artifacts": [".claude/progress.json", ".claude/tests.json"],
+      "commit": null,
+      "notes": "encounter/v0.35.0 confirmed published (proxy.golang.org .info + go build in isolated tmp module). No existing feat/688-* branch or open PR referencing #688. Worktree at .worktrees/feat-688-n-region-dungeon-key. Baseline: go build ./... clean, go test ./internal/orchestrators/lobby/... passing pre-change."
     }
   ],
   "next_steps": [
-    "Consider adding converter tests for edge cases",
-    "Phase 4: Add dynamic movement speed calculation based on character stats"
+    "Bump rpg-toolkit/encounter to v0.35.0 in go.mod (no replace directive)",
+    "Write failing tests for dungeon-spec key selection, crypt 3-region template/scale/theme, entrance anchoring, deterministic seed, unknown-key error, and geometry-independent-of-party-size boundary proof",
+    "Implement dungeonSpec registry + resolveDungeonSpec + rewritten StartEncounter/seedGoblins in internal/orchestrators/lobby/start_encounter.go",
+    "Update internal/integration/dungeon_two_chamber_test.go to the crypt 3-region topology (entrance/boss archetype-based, two connector doors)",
+    "make pre-commit / make ci-check, full unit + integration suites",
+    "Update docs/status.md and docs/architecture/components/lobby-service.md",
+    "Push branch, open PR linked to #688"
   ]
 }
