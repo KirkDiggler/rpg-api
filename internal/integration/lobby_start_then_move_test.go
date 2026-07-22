@@ -5,9 +5,10 @@
 // named in #656 — every existing integration test seeds encounters directly
 // via the toolkit SDK (tkenc.New + AddPlayer + repo.Save), never through
 // StartEncounter's own room-init + spawn combination (originally InitRoom's
-// corner anchor; as of rpg-api#676, InitTwoChamberRoom's entrance anchor —
-// see hexOutOfBounds' doc below), so none of them could have caught a
-// movement-direction bug specific to that spawn position.
+// corner anchor; as of rpg-api#676, InitTwoChamberRoom's entrance anchor,
+// and rpg-api#688, InitDungeon's — see hexOutOfBounds' doc below), so none
+// of them could have caught a movement-direction bug specific to that
+// spawn position.
 package integration_test
 
 import (
@@ -125,6 +126,15 @@ var sixHexDirections = []core.Hex{
 // room's grid, not into a wall — assertMoveHonestOutcome's "honest outcome"
 // check below (hexBlocksMovement) needed a matching hexOutOfBounds check, or
 // it would wrongly expect a wall-free out-of-bounds hex to be reachable.
+//
+// rpg-api#688 update: StartEncounter now calls the generalized InitDungeon
+// (selected by DungeonKey, default "crypt") instead of InitTwoChamberRoom
+// directly, but the entrance-edge-column property this test depends on is
+// unchanged — InitDungeon's own generateDungeonLayout places the entrance
+// at region 0's far edge (column 0), exactly like the retired two-chamber
+// generator it generalizes. This test reads the spawn position dynamically
+// (pd.View.Position) rather than assuming any specific region shape, so it
+// needed no logic change, only this doc update.
 func (s *LobbyStartThenMoveSuite) TestMoveEntity_AfterStartEncounter_ActuallyMoves() {
 	anyMoved := false
 	for i, dir := range sixHexDirections {
