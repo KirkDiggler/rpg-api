@@ -2,6 +2,7 @@ package lobby_test
 
 import (
 	"encoding/json"
+	"math"
 
 	"go.uber.org/mock/gomock"
 
@@ -322,88 +323,183 @@ func (s *LobbySuite) TestStartEncounter_PublishesEncounterStarted_AfterPersist()
 	s.Require().NoError(err)
 }
 
-// TestStartEncounter_TwoChamberDungeonAndGoblins_CombatStartsOnSightedMove is
-// the rpg-api#676 headline proof (The Dungeon wave 2 Slice 2, umbrella
-// rpg-project#96): StartEncounter creates the encounter with a TWO-CHAMBER
-// dungeon (not wave 1's single room), the party spawns at the chamber-1
-// ENTRANCE (not a room-center placeholder — roomCenterHex() is gone), a
-// single closed door connects the chambers, goblins are seeded 2-per-chamber
-// out of sight (region-tag-scoped), and a Move that brings a chamber-1
-// goblin into sight still flips the encounter to TURN_BASED BY RULE — the
-// toolkit's own inline checkCombatEntry, not anything rpg-api triggers
-// directly. No devseed --inject-combat involved.
-func (s *LobbySuite) TestStartEncounter_TwoChamberDungeonAndGoblins_CombatStartsOnSightedMove() {
-	s.seedReadyLobby("lobby-dungeon2", "alice")
+// regionByArchetype finds the single region tagged with the given
+// archetype in space.Regions. Fails the caller's own assertions (via the
+// returned ok) rather than panicking — every crypt-spec test below asserts
+// ok itself so a missing/duplicate archetype fails loudly with context.
+func regionByArchetype(space *tkenc.SpaceData, archetype tkenc.RegionArchetype) (tkenc.RegionData, bool) {
+	for _, r := range space.Regions {
+		if r.Archetype == archetype {
+			return r, true
+		}
+	}
+	return tkenc.RegionData{}, false
+}
+
+// regionArchetypeAt returns the RegionArchetype of the region containing
+// hex, and whether one was found — the archetype-keyed sibling of
+// SpaceData.RegionAt (which only returns the region ID), used throughout
+// these tests so assertions key off the toolkit's fixed generic-role
+// vocabulary instead of this package's own spec-specific region ID
+// strings (cryptRegionIDEntrance etc. are unexported — these tests are
+// black-box, package lobby_test).
+func regionArchetypeAt(space *tkenc.SpaceData, hex core.Hex) (tkenc.RegionArchetype, bool) {
+	for _, r := range space.Regions {
+		if r.Hexes.Has(hex) {
+			return r.Archetype, true
+		}
+	}
+	return "", false
+}
+
+// regionBoundingWidth returns a region's offset-coordinate column span
+// (max X - min X + 1) — the same "width" tkenc.DungeonRegionParams.Width
+// configures, read back purely from the persisted hex membership rather
+// than any rpg-api-side constant, so assertions using this pin the
+// toolkit's OWN generated geometry, not a duplicated expectation.
+func regionBoundingWidth(region tkenc.RegionData) int {
+	minX, maxX := math.MaxInt, math.MinInt
+	for h := range region.Hexes {
+		x := int(h.ToPosition().X)
+		if x < minX {
+			minX = x
+		}
+		if x > maxX {
+			maxX = x
+		}
+	}
+	return maxX - minX + 1
+}
+
+// TestStartEncounter_CryptDungeon_ThreeRegionsArchetypesThemeScaleAndEntrance
+// is the rpg-api#688 headline proof: StartEncounter now builds the
+// toolkit's generic InitDungeon N-region linear chain selected by the
+// crypt key (rpg-toolkit#814's Approved Slice 3 corrections) instead of
+// the retired two-chamber constants — exactly 3 regions (entrance ->
+// corridor -> boss), each carrying its own RegionArchetype,
+// Space.Theme == "crypt" passed through opaque and unbranched, the boss
+// region's scale invariant (primary playable axis > 6 hex steps, enforced
+// by the toolkit's own validateDungeonParams at generation time — not
+// eyeballed here), and the party spawning inside the entrance region at
+// its designated anchor.
+func (s *LobbySuite) TestStartEncounter_CryptDungeon_ThreeRegionsArchetypesThemeScaleAndEntrance() {
+	s.seedReadyLobby("lobby-crypt1", "alice", "bob")
+	s.expectCharacter("char-alice", "alice", "Alice", 12, 12)
+	s.expectCharacter("char-bob", "bob", "Bob", 10, 10)
+
+	out, err := s.orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		PlayerID: "alice", LobbyID: "lobby-crypt1",
+		DungeonKey: lobbyorch.DungeonKeyCrypt, RandomSeed: 42,
+	})
+	s.Require().NoError(err)
+
+	encData, err := s.encRepo.Get(s.ctx, out.EncounterID)
+	s.Require().NoError(err)
+	s.Require().NotNil(encData.Space, "StartEncounter must create the encounter with an InitDungeon space")
+	s.Require().Equal("crypt", encData.Space.Theme, "the crypt spec's opaque theme must pass through verbatim")
+	s.Require().Equal(20, encData.Space.Height)
+	s.Require().Equal(42, encData.Space.Width, "42 = entrance(20) + door-column(1) + corridor(6) + door-column(1) + boss(14)")
+	s.Require().Len(encData.Space.Regions, 3, "the crypt spec is a 3-region linear chain: entrance -> corridor -> boss")
+
+	entrance, entranceOK := regionByArchetype(encData.Space, tkenc.ArchetypeEntrance)
+	s.Require().True(entranceOK, "exactly one entrance-archetype region")
+	corridor, corridorOK := regionByArchetype(encData.Space, tkenc.ArchetypeCorridor)
+	s.Require().True(corridorOK, "exactly one corridor-archetype region")
+	boss, bossOK := regionByArchetype(encData.Space, tkenc.ArchetypeBoss)
+	s.Require().True(bossOK, "exactly one boss-archetype region")
+
+	s.Require().Equal(20, regionBoundingWidth(entrance))
+	s.Require().Equal(6, regionBoundingWidth(corridor))
+	s.Require().Equal(14, regionBoundingWidth(boss))
+
+	// rpg-toolkit#814's Approved Slice 3 corrections' scale invariant: the
+	// boss region's primary playable axis (min(width, shared height)) must
+	// exceed 6 hex steps — enforced by the toolkit's own
+	// validateDungeonParams at generation time, not eyeballed here.
+	bossAxis := regionBoundingWidth(boss)
+	if encData.Space.Height < bossAxis {
+		bossAxis = encData.Space.Height
+	}
+	s.Require().Greater(bossAxis, 6, "boss chamber primary playable axis must exceed 6 hex steps")
+
+	// Exactly 2 connector doors join the 3-region chain, closed and
+	// unlocked by default — Interact/OpenDoor is what opens them;
+	// StartEncounter never does so itself.
+	s.Require().Len(encData.Doors, 2, "a 3-region chain has exactly 2 connectors")
+	for id, door := range encData.Doors {
+		s.Require().False(door.Open, "connector door %q must start closed", id)
+		s.Require().False(door.Locked, "the crypt spec's connectors are plain, not locked")
+	}
+
+	// Entrance-anchored spawn (rpg-api#648/#676, preserved): every seated
+	// member lands inside the entrance region, and the first member sits
+	// exactly at the designated Space.Entrance.
+	alice := encData.Players[core.PlayerID("alice")]
+	bob := encData.Players[core.PlayerID("bob")]
+	s.Require().NotNil(alice)
+	s.Require().Equal(encData.Space.Entrance, alice.View.Position,
+		"the first member must spawn exactly at the designated entrance")
+	aliceArchetype, aliceOK := regionArchetypeAt(encData.Space, alice.View.Position)
+	s.Require().True(aliceOK)
+	s.Require().Equal(tkenc.ArchetypeEntrance, aliceArchetype)
+	bobArchetype, bobOK := regionArchetypeAt(encData.Space, bob.View.Position)
+	s.Require().True(bobOK)
+	s.Require().Equal(tkenc.ArchetypeEntrance, bobArchetype, "every member must spawn inside the entrance region")
+
+	s.Require().Equal(core.ModeFreeRoam, encData.Mode, "combat must not start at spawn")
+}
+
+// TestStartEncounter_CryptGoblins_SeededAtEntranceAndBossNotCorridor_CombatEntersByRule
+// generalizes the pre-#688 "both occupied regions get monsters" rule
+// (rpg-api#676) from two hardcoded chamber IDs to an N-region chain's two
+// ENDPOINTS by chain POSITION — the entrance (index 0) and the terminal
+// region (index len-1, here "boss") — with the interior corridor region
+// getting none. This is deliberately NOT rpg-api#689's per-archetype
+// seeding intelligence: every populated region still gets the exact same
+// goblinsPerRegion count, keyed by chain position, not by Archetype value
+// — a behavior-preserving generalization, not new seeding logic.
+func (s *LobbySuite) TestStartEncounter_CryptGoblins_SeededAtEntranceAndBossNotCorridor_CombatEntersByRule() {
+	s.seedReadyLobby("lobby-crypt2", "alice")
 	s.expectCharacter("char-alice", "alice", "Alice", 12, 12)
 
 	out, err := s.orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
-		PlayerID: "alice", LobbyID: "lobby-dungeon2",
+		PlayerID: "alice", LobbyID: "lobby-crypt2",
 	})
 	s.Require().NoError(err)
 
 	encData, err := s.encRepo.Get(s.ctx, out.EncounterID)
 	s.Require().NoError(err)
 
-	// Two-chamber space on the wire: combined width is 2*chamberWidth+1 (the
-	// shared boundary column carrying the door), not a single 20-wide room.
-	s.Require().NotNil(encData.Space, "StartEncounter must create the encounter with a two-chamber room")
-	s.Require().Equal(41, encData.Space.Width, "combined width is 2*chamberWidth+1 (boundary column + door)")
-	s.Require().Equal(20, encData.Space.Height)
-	s.Require().NotEmpty(encData.Space.Regions, "InitTwoChamberRoom must tag chamber-1/chamber-2 regions")
-
-	// Entrance-anchored spawn (rpg-api#648/#676): alice spawns AT the
-	// designated entrance, not a room-center placeholder.
-	alice := encData.Players[core.PlayerID("alice")]
-	s.Require().NotNil(alice)
-	s.Require().Equal(encData.Space.Entrance, alice.View.Position,
-		"the party must spawn at chamber 1's entrance, not a room center")
-	entranceRegion, entranceOK := encData.Space.RegionAt(alice.View.Position)
-	s.Require().True(entranceOK, "the entrance must be tagged into a region")
-	s.Require().Equal(tkenc.RegionChamber1, entranceRegion, "the entrance is chamber 1's")
-
-	// Exactly one door connects the two chambers, closed (and unlocked) by
-	// default — Interact/OpenDoor is what opens it; StartEncounter never
-	// does so itself.
-	s.Require().Len(encData.Doors, 1, "Slice 2 has exactly one plain door between the two chambers")
-	var door *tkenc.DoorData
-	for _, d := range encData.Doors {
-		door = d
-	}
-	s.Require().False(door.Open, "the door must start closed")
-	s.Require().False(door.Locked, "Slice 2's door is plain, not locked (locked doors are Slice 3)")
-
-	// 4 goblins seeded: 2 per chamber (goblinsPerChamber), region-tag-scoped.
-	s.Require().Len(encData.Monsters, 4, "StartEncounter must seed 2 goblins per chamber")
-	chamberCounts := map[string]int{}
+	s.Require().Len(encData.Monsters, 4, "2 goblins each in the entrance and boss regions, none in the corridor")
+	archetypeCounts := map[tkenc.RegionArchetype]int{}
 	seenPositions := make(map[core.Hex]bool, len(encData.Monsters))
 	for id, m := range encData.Monsters {
 		s.Require().Positive(m.HP, "goblin %q must have positive HP", id)
 		s.Require().NotEmpty(m.DataJSON, "goblin %q must carry DataJSON (monster.NewGoblin, not a hand-rolled stub)", id)
-		region, regionOK := encData.Space.RegionAt(m.Position)
-		s.Require().True(regionOK, "goblin %q must be placed inside a chamber region", id)
-		chamberCounts[region]++
+		archetype, ok := regionArchetypeAt(encData.Space, m.Position)
+		s.Require().True(ok, "goblin %q must be placed inside a tagged region", id)
+		archetypeCounts[archetype]++
 		// Distinct positions: monster.Monster doesn't implement
 		// spatial.Placeable, so the spawn engine's baseline CanPlaceEntity
 		// occupancy check silently no-ops for goblin-on-goblin placement.
 		// seedGoblins' PositionOracle explicitly rejects already-occupied
-		// cells (room.GetEntitiesInRange(pos, 0)) to restore the
-		// distinctness guarantee the deleted safeGoblinHexes gave for free
-		// by construction — this pins that guarantee (gate finding on
+		// cells to restore the distinctness guarantee (gate finding on
 		// rpg-api#650's PR).
 		s.Require().False(seenPositions[m.Position], "goblins must not be placed on the same hex")
 		seenPositions[m.Position] = true
 	}
-	s.Require().Equal(2, chamberCounts[tkenc.RegionChamber1], "chamber 1 must get exactly 2 goblins")
-	s.Require().Equal(2, chamberCounts[tkenc.RegionChamber2], "chamber 2 must get exactly 2 goblins")
+	s.Require().Equal(2, archetypeCounts[tkenc.ArchetypeEntrance], "the entrance region must get exactly 2 goblins")
+	s.Require().Equal(2, archetypeCounts[tkenc.ArchetypeBoss], "the boss (terminal) region must get exactly 2 goblins")
+	s.Require().Zero(archetypeCounts[tkenc.ArchetypeCorridor], "the interior corridor region must get no goblins")
 
-	// Combat must NOT have started at spawn: every goblin (both chambers) was
-	// placed outside alice's initial sight, so AddMonster's inline
-	// combat-entry check (rpg-toolkit#759) must not have fired.
+	// Combat must NOT have started at spawn: every goblin was placed
+	// outside alice's initial sight, so AddMonster's inline combat-entry
+	// check (rpg-toolkit#759) must not have fired.
 	s.Require().Equal(core.ModeFreeRoam, encData.Mode, "combat must not start at spawn — goblins are placed outside initial LOS")
 
-	// Rehydrate the live encounter (same broker StartEncounter used) and move
-	// alice directly onto a CHAMBER-1 goblin's hex (chamber 2 is unreachable
-	// while the door is closed — rpg-toolkit#790) — a Move that forms sight.
+	// Rehydrate the live encounter and move alice directly onto an
+	// ENTRANCE-region goblin's hex (reachable without opening any door,
+	// exactly like the pre-#688 chamber-1 proof) — a Move that forms sight.
 	// This must flip the encounter to TURN_BASED BY RULE (the toolkit's own
 	// inline checkCombatEntry), not via any rpg-api-side trigger.
 	enc, err := tkenc.LoadFromData(s.ctx, encData, s.encBroker)
@@ -411,17 +507,137 @@ func (s *LobbySuite) TestStartEncounter_TwoChamberDungeonAndGoblins_CombatStarts
 	s.Require().Equal(core.ModeFreeRoam, enc.Mode(), "rehydration must not itself flip mode")
 
 	var targetGoblin core.Hex
-	var foundChamber1Goblin bool
+	var foundEntranceGoblin bool
 	for _, m := range encData.Monsters {
-		if region, _ := encData.Space.RegionAt(m.Position); region == tkenc.RegionChamber1 {
+		if archetype, _ := regionArchetypeAt(encData.Space, m.Position); archetype == tkenc.ArchetypeEntrance {
 			targetGoblin = m.Position
-			foundChamber1Goblin = true
+			foundEntranceGoblin = true
 			break
 		}
 	}
-	s.Require().True(foundChamber1Goblin, "must find at least one chamber-1 goblin to move onto")
+	s.Require().True(foundEntranceGoblin, "must find at least one entrance-region goblin to move onto")
 	s.Require().NoError(enc.Move("alice", []core.Hex{targetGoblin}),
-		"moving onto a pre-vetted (non-wall) chamber-1 goblin hex must not be blocked")
+		"moving onto a pre-vetted (non-wall) entrance-region goblin hex must not be blocked")
 	s.Require().Equal(core.ModeTurnBased, enc.Mode(),
-		"a Move that brings a chamber-1 goblin into sight must flip the encounter to TURN_BASED by rule")
+		"a Move that brings an entrance-region goblin into sight must flip the encounter to TURN_BASED by rule")
+}
+
+// TestStartEncounter_DefaultDungeonKey_MatchesExplicitCryptKey proves
+// rpg-api#688's Scope-section default: StartEncounterInput.DungeonKey's
+// zero value must resolve to the exact same spec as explicitly passing
+// DungeonKeyCrypt — not merely "some dungeon," the same literal geometry
+// given the same seed.
+func (s *LobbySuite) TestStartEncounter_DefaultDungeonKey_MatchesExplicitCryptKey() {
+	s.seedReadyLobby("lobby-crypt3a", "alice")
+	s.expectCharacter("char-alice", "alice", "Alice", 12, 12)
+	outDefault, err := s.orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		PlayerID: "alice", LobbyID: "lobby-crypt3a", RandomSeed: 7,
+	})
+	s.Require().NoError(err)
+	defaultData, err := s.encRepo.Get(s.ctx, outDefault.EncounterID)
+	s.Require().NoError(err)
+
+	s.seedReadyLobby("lobby-crypt3b", "carol")
+	s.expectCharacter("char-carol", "carol", "Carol", 12, 12)
+	outExplicit, err := s.orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		PlayerID: "carol", LobbyID: "lobby-crypt3b", RandomSeed: 7, DungeonKey: lobbyorch.DungeonKeyCrypt,
+	})
+	s.Require().NoError(err)
+	explicitData, err := s.encRepo.Get(s.ctx, outExplicit.EncounterID)
+	s.Require().NoError(err)
+
+	s.Require().Equal(defaultData.Space, explicitData.Space,
+		"the zero-value DungeonKey must resolve to the same spec as an explicit DungeonKeyCrypt")
+}
+
+// TestStartEncounter_UnknownDungeonKey_ErrorsAndLobbyStaysWaiting proves
+// rpg-api#688's boundary: an unrecognized key fails LOUDLY — rpg-api never
+// invents geometry for a key it doesn't recognize — and fails BEFORE any
+// state transition (no encounter persisted, lobby stays WAITING).
+func (s *LobbySuite) TestStartEncounter_UnknownDungeonKey_ErrorsAndLobbyStaysWaiting() {
+	s.seedReadyLobby("lobby-crypt4", "alice")
+	// No expectCharacter armed: resolving the dungeon key fails before
+	// StartEncounter ever reaches character-snapshot seeding — gomock would
+	// fail this test outright if that assumption were wrong.
+
+	_, err := s.orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		PlayerID: "alice", LobbyID: "lobby-crypt4", DungeonKey: lobbyorch.DungeonKey("no-such-key"),
+	})
+	s.Require().Error(err)
+	s.Require().ErrorIs(err, lobbyorch.ErrUnknownDungeonKey)
+
+	lobbyData, err := s.lobbyRepo.Get(s.ctx, "lobby-crypt4")
+	s.Require().NoError(err)
+	s.Require().Equal(lobbyrepo.StatusWaiting, lobbyData.Status, "an unknown dungeon key must fail before any state transition")
+	s.Require().Empty(lobbyData.EncounterID)
+}
+
+// TestStartEncounter_ExplicitSeed_ReproducibleDungeonLayout proves seed
+// semantics survive the InitDungeon migration: the same explicit
+// RandomSeed passed through tkenc.DungeonParams.RandomSeed must reproduce
+// byte-identical dungeon geometry across two entirely independent
+// encounters.
+func (s *LobbySuite) TestStartEncounter_ExplicitSeed_ReproducibleDungeonLayout() {
+	s.seedReadyLobby("lobby-crypt5a", "alice")
+	s.expectCharacter("char-alice", "alice", "Alice", 12, 12)
+	out1, err := s.orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		PlayerID: "alice", LobbyID: "lobby-crypt5a", RandomSeed: 999,
+	})
+	s.Require().NoError(err)
+	data1, err := s.encRepo.Get(s.ctx, out1.EncounterID)
+	s.Require().NoError(err)
+
+	s.seedReadyLobby("lobby-crypt5b", "bob")
+	s.expectCharacter("char-bob", "bob", "Bob", 10, 10)
+	out2, err := s.orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		PlayerID: "bob", LobbyID: "lobby-crypt5b", RandomSeed: 999,
+	})
+	s.Require().NoError(err)
+	data2, err := s.encRepo.Get(s.ctx, out2.EncounterID)
+	s.Require().NoError(err)
+
+	s.Require().Equal(data1.Space, data2.Space, "the same explicit RandomSeed must reproduce the identical dungeon layout")
+}
+
+// TestStartEncounter_DungeonGeometryIndependentOfPartySize is the API-
+// boundary proof: given the SAME key+seed, dungeon geometry (Space and
+// connector door positions) must be IDENTICAL regardless of party size —
+// InitDungeon runs before any AddPlayer call and takes no party
+// information as input, so a runtime request shape difference (1 member
+// vs 2) can never leak into rpg-api-side geometry derivation. Monster
+// placement is deliberately NOT compared here — it legitimately depends
+// on which players are seated (out-of-sight-of-every-player-view), a
+// separate, pre-existing mechanism this issue doesn't touch.
+func (s *LobbySuite) TestStartEncounter_DungeonGeometryIndependentOfPartySize() {
+	s.seedReadyLobby("lobby-crypt6a", "alice")
+	s.expectCharacter("char-alice", "alice", "Alice", 12, 12)
+	out1, err := s.orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		PlayerID: "alice", LobbyID: "lobby-crypt6a", RandomSeed: 555,
+	})
+	s.Require().NoError(err)
+	data1, err := s.encRepo.Get(s.ctx, out1.EncounterID)
+	s.Require().NoError(err)
+
+	s.seedReadyLobby("lobby-crypt6b", "carol", "dave")
+	s.expectCharacter("char-carol", "carol", "Carol", 14, 14)
+	s.expectCharacter("char-dave", "dave", "Dave", 11, 11)
+	out2, err := s.orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		PlayerID: "carol", LobbyID: "lobby-crypt6b", RandomSeed: 555,
+	})
+	s.Require().NoError(err)
+	data2, err := s.encRepo.Get(s.ctx, out2.EncounterID)
+	s.Require().NoError(err)
+
+	s.Require().Equal(data1.Space, data2.Space,
+		"dungeon geometry must be identical regardless of party size — rpg-api never derives geometry "+
+			"from runtime request shape, only the (key, seed) pair passed verbatim to the toolkit")
+
+	doorPositions := func(d *tkenc.Data) map[core.EntityID]core.Hex {
+		out := make(map[core.EntityID]core.Hex, len(d.Doors))
+		for id, door := range d.Doors {
+			out[id] = door.Position
+		}
+		return out
+	}
+	s.Require().Equal(doorPositions(data1), doorPositions(data2), "connector door positions are geometry too")
 }
