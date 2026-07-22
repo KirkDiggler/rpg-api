@@ -11,17 +11,60 @@
       "task": "Preflight: verify toolkit publication, check for duplicate branch/PR, create isolated worktree, baseline tests, reset progress artifacts",
       "status": "completed",
       "artifacts": [".claude/progress.json", ".claude/tests.json"],
-      "commit": null,
+      "commit": "a3070d8",
       "notes": "encounter/v0.35.0 confirmed published (proxy.golang.org .info + go build in isolated tmp module). No existing feat/688-* branch or open PR referencing #688. Worktree at .worktrees/feat-688-n-region-dungeon-key. Baseline: go build ./... clean, go test ./internal/orchestrators/lobby/... passing pre-change."
+    },
+    {
+      "id": "2026-07-22-002",
+      "task": "Bump rpg-toolkit/encounter to v0.35.0",
+      "status": "completed",
+      "artifacts": ["go.mod", "go.sum"],
+      "commit": "6a63ac2",
+      "notes": "go get github.com/KirkDiggler/rpg-toolkit/encounter@v0.35.0 + go mod tidy; single line diff in go.mod/go.sum, no replace directive."
+    },
+    {
+      "id": "2026-07-22-003",
+      "task": "Add dungeon-spec registry (DungeonKey/dungeonSpec/resolveDungeonSpec) + white-box unit tests",
+      "status": "completed",
+      "artifacts": ["internal/orchestrators/lobby/dungeon_spec.go", "internal/orchestrators/lobby/dungeon_spec_internal_test.go"],
+      "commit": "2338576",
+      "notes": "Standalone/additive -- not yet wired into StartEncounter. Crypt spec: 3 regions (entrance/corridor/boss), theme=crypt, height=20, widths 20/6/14, 2 connector doors. resolveDungeonSpec defaults zero-value key to crypt, errors ErrUnknownDungeonKey otherwise."
+    },
+    {
+      "id": "2026-07-22-004",
+      "task": "RED: write failing start_encounter_test.go + region_entry_anchor_internal_test.go against not-yet-updated production code; GREEN: rewrite start_encounter.go to call InitDungeon via resolveDungeonSpec, generalize goblin-seeding helpers to chain endpoints",
+      "status": "completed",
+      "artifacts": ["internal/orchestrators/lobby/start_encounter.go", "internal/orchestrators/lobby/start_encounter_test.go", "internal/orchestrators/lobby/region_entry_anchor_internal_test.go"],
+      "commit": "825ccdc",
+      "notes": "RED observed: go vet failed with 'undefined: regionEntryAnchor' (region_entry_anchor_internal_test.go, renamed/generalized from chamber_entry_anchor_internal_test.go) before start_encounter.go was touched. After rewrite: go test ./internal/orchestrators/lobby/... green, -race -count=5 green, 15x stress-run (entropy-seeded default-key runs) clean. 6 new discriminating tests added; every other pre-existing StartEncounter test unmodified and still green."
+    },
+    {
+      "id": "2026-07-22-005",
+      "task": "Update integration tests to the crypt topology (real Redis harness)",
+      "status": "completed",
+      "artifacts": ["internal/integration/dungeon_crypt_test.go", "internal/integration/dungeon_two_chamber_test.go", "internal/integration/lobby_start_then_move_test.go"],
+      "commit": "b64e510",
+      "notes": "dungeon_two_chamber_test.go -> dungeon_crypt_test.go (DungeonTwoChamberSuite -> DungeonCryptSuite), archetype-keyed instead of region-ID-keyed, both connector doors opened before the boss-region sightline proof. lobby_start_then_move_test.go: doc-only update, no logic change (entrance-edge-column property unchanged by InitDungeon)."
+    },
+    {
+      "id": "2026-07-22-006",
+      "task": "Full verification: make pre-commit, make ci-check (real Redis via testcontainers), lint diff against origin/main baseline",
+      "status": "completed",
+      "artifacts": [],
+      "commit": null,
+      "notes": "make pre-commit green. make ci-check: all go test (-race, unit + integration, 269.9s for internal/integration) green including new DungeonCryptSuite and full TestLobbySuite; 2 reported failures are BOTH pre-existing repo debt confirmed identical on origin/main -- mock-regeneration false positive (documented rpg-api#683, mockgen tool-version drift, reproduced on a clean main checkout) and golangci-lint (29 issues, byte-identical count on main, zero in files this branch touches)."
+    },
+    {
+      "id": "2026-07-22-007",
+      "task": "Update docs/status.md and docs/architecture/components/lobby-service.md",
+      "status": "completed",
+      "artifacts": ["docs/status.md", "docs/architecture/components/lobby-service.md"],
+      "commit": "0e4ae1f",
+      "notes": "New Active-work entry for #688; #676's entry gets a superseded-by pointer, left intact as historical record per this file's own documentation philosophy."
     }
   ],
   "next_steps": [
-    "Bump rpg-toolkit/encounter to v0.35.0 in go.mod (no replace directive)",
-    "Write failing tests for dungeon-spec key selection, crypt 3-region template/scale/theme, entrance anchoring, deterministic seed, unknown-key error, and geometry-independent-of-party-size boundary proof",
-    "Implement dungeonSpec registry + resolveDungeonSpec + rewritten StartEncounter/seedGoblins in internal/orchestrators/lobby/start_encounter.go",
-    "Update internal/integration/dungeon_two_chamber_test.go to the crypt 3-region topology (entrance/boss archetype-based, two connector doors)",
-    "make pre-commit / make ci-check, full unit + integration suites",
-    "Update docs/status.md and docs/architecture/components/lobby-service.md",
-    "Push branch, open PR linked to #688"
+    "Push branch, open PR linked to #688",
+    "Poll for automated review (Copilot) and address comments individually with signed replies"
   ]
 }

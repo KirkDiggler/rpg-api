@@ -4,78 +4,78 @@
       "id": "default-key-resolves-to-crypt",
       "feature": "dungeon-key-selection",
       "prompt": "Call StartEncounter with no DungeonKey set (zero value). Verify it builds the same dungeon as an explicit DungeonKeyCrypt call -- the zero value falls back to the named default per #688's Scope ('a named default for now').",
-      "passes": false,
-      "last_checked": null
+      "passes": true,
+      "last_checked": "2026-07-22"
     },
     {
       "id": "crypt-spec-three-regions-archetypes-theme-scale",
       "feature": "dungeon-key-selection",
       "prompt": "StartEncounter with the crypt key. Verify the persisted Space has exactly 3 regions tagged entrance/corridor/boss (RegionData.Archetype), Space.Theme == 'crypt', and the boss region's primary playable axis (min(width, height)) exceeds 6 hex steps.",
-      "passes": false,
-      "last_checked": null
+      "passes": true,
+      "last_checked": "2026-07-22"
     },
     {
       "id": "party-spawns-at-entrance",
       "feature": "dungeon-key-selection",
       "prompt": "StartEncounter with the crypt key. Verify every seated party member's spawn hex is tagged into the entrance-archetype region, and the first member spawns exactly at Space.Entrance.",
-      "passes": false,
-      "last_checked": null
+      "passes": true,
+      "last_checked": "2026-07-22"
     },
     {
       "id": "deterministic-explicit-seed-reproducible-layout",
       "feature": "dungeon-key-selection",
       "prompt": "Start two independent encounters with the same explicit RandomSeed and the crypt key. Verify their persisted Space.Walls (and Width/Height/Entrance) are byte-identical.",
-      "passes": false,
-      "last_checked": null
+      "passes": true,
+      "last_checked": "2026-07-22"
     },
     {
       "id": "unknown-dungeon-key-errors",
       "feature": "dungeon-key-selection",
       "prompt": "Call StartEncounter with a DungeonKey that has no registered spec. Verify it returns an error (ErrUnknownDungeonKey) and does not create or persist an encounter.",
-      "passes": false,
-      "last_checked": null
+      "passes": true,
+      "last_checked": "2026-07-22"
     },
     {
       "id": "geometry-independent-of-party-size",
       "feature": "api-boundary",
       "prompt": "Start two encounters with the same key+seed but different party sizes (1 member vs 2 members). Verify the persisted dungeon geometry (Space.Walls/Width/Height/Regions/Entrance) is identical between them -- proving rpg-api passes the key/seed through verbatim and never varies geometry based on runtime request shape.",
-      "passes": false,
-      "last_checked": null
+      "passes": true,
+      "last_checked": "2026-07-22"
     },
     {
       "id": "existing-start-encounter-tests-remain-green",
       "feature": "regression",
       "prompt": "Run the full internal/orchestrators/lobby test package. Verify every pre-existing StartEncounter test not specific to two-chamber geometry (HP seeding, honest combat snapshot, stale action-economy clearing, arcade recovery, not-host/not-ready/already-started/not-found, persist-then-emit ordering) still passes unmodified.",
-      "passes": false,
-      "last_checked": null
+      "passes": true,
+      "last_checked": "2026-07-22"
     },
     {
       "id": "region-entry-anchor-generalized",
       "feature": "dungeon-key-selection",
       "prompt": "White-box test the generalized entry-anchor helper against synthetic regions with arbitrary (non chamber-1/chamber-2) IDs. Verify it returns the door-neighbor hex tagged into the NAMED region, and errors when no matching neighbor exists.",
-      "passes": false,
-      "last_checked": null
+      "passes": true,
+      "last_checked": "2026-07-22"
     },
     {
       "id": "goblins-seeded-entrance-and-boss-not-corridor",
       "feature": "monster-seeding-compat",
       "prompt": "StartEncounter with the crypt key. Verify goblinsPerRegion goblins are seeded into the entrance region and the boss (terminal) region, and zero goblins are seeded into the corridor region -- preserving the pre-#688 'both occupied endpoints' placement rule generalized by chain position, not by archetype-specific new seeding logic (rpg-api#689 stays out of scope).",
-      "passes": false,
-      "last_checked": null
+      "passes": true,
+      "last_checked": "2026-07-22"
     },
     {
       "id": "integration-real-rpc-path-crypt-topology",
       "feature": "integration",
       "prompt": "Via the real LobbyService.StartEncounter + v1alpha2 EncounterService RPC surface (harness, real Redis container): party spawns at the entrance, a connector door projects DOOR_CLOSED with an id, sighting an entrance-region goblin starts a combat pocket excluding boss-region goblins from initiative, and boss-region goblins emit no EntityAppeared until both connector doors are opened and a sightline actually forms.",
-      "passes": false,
-      "last_checked": null
+      "passes": true,
+      "last_checked": "2026-07-22"
     },
     {
       "id": "no-geometry-math-in-api",
       "feature": "api-boundary",
       "prompt": "Review internal/orchestrators/lobby/start_encounter.go and any new dungeon-spec file: confirm every DungeonRegionParams/DungeonConnectorParams value is a literal constant or a direct pass-through of caller input (key, seed) -- no computed width/height/archetype based on lobby state, member count, or theme value.",
-      "passes": false,
-      "last_checked": null
+      "passes": true,
+      "last_checked": "2026-07-22"
     }
   ]
 }
