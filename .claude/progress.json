@@ -1,88 +1,13 @@
 {
-  "branch": "feat/action-economy-rpcs",
-  "issues": ["rpg-api-protos#127"],
-  "goal": "Implement two-level action economy RPCs (ActivateCombatAbility, ExecuteAction) that separate ability activation from action execution",
-  "sessions": [
-    {
-      "date": "2026-01-08",
-      "task": "Extend ActionEconomyState entity",
-      "commit": "e3aa9e2",
-      "changes": [
-        "Added AttacksRemaining, OffHandAttacksRemaining, FlurryStrikesRemaining fields",
-        "Added DisengageActive, DodgeActive boolean flags",
-        "Added helper methods: HasAttacks/UseAttack, HasOffHandAttacks/UseOffHandAttack, HasFlurryStrikes/UseFlurryStrike"
-      ],
-      "notes": "NewActionEconomyState() defaults unchanged - attacks start at 0 (granted by ATTACK ability). Pre-existing build errors in converters.go (unrelated to this change)."
-    },
-    {
-      "date": "2026-01-08",
-      "task": "Add Input/Output types for ActivateCombatAbility and ExecuteAction",
-      "commit": "a5dc8e8",
-      "changes": [
-        "Added ActivateCombatAbilityInput/Output types to service.go",
-        "Added ExecuteActionInput/Output types to service.go",
-        "Added MoveResult type for move action outcomes",
-        "Added ActivateCombatAbility and ExecuteAction method signatures to Service interface",
-        "Added stub implementations to Orchestrator (return 'not yet implemented' error)",
-        "Added stringToEntityType and intToEntitySize converter helpers",
-        "Fixed EntityType/EntitySize enum conversion in converters.go",
-        "Updated golangci.yml to exclude SA1019 deprecated warnings during transition",
-        "Regenerated mocks for updated Service interface"
-      ],
-      "notes": "Updated rpg-api-protos to latest generated branch (includes CombatAbilityId, ActionId enums). Build passes, all tests pass."
-    },
-    {
-      "date": "2026-01-08",
-      "task": "Implement ExecuteAction orchestrator logic",
-      "commit": "522ba32",
-      "changes": [
-        "Implemented ExecuteAction method supporting STRIKE, OFF_HAND_STRIKE, and MOVE actions",
-        "STRIKE: Validates AttacksRemaining, resolves attack via toolkit, consumes attack, handles TWF off-hand grants",
-        "OFF_HAND_STRIKE: Validates OffHandAttacksRemaining, same attack resolution as main-hand",
-        "MOVE: Validates path cube coordinates, checks movement costs (5ft/hex), wall/entity collisions",
-        "Added stop reason constants (completed, position_occupied, insufficient_movement, blocked_by_wall, invalid_coordinates)",
-        "Added executeStrike and executeMove helper methods",
-        "Uses existing buildCombatState helper for response building",
-        "Publishes MovementCompleted events for move actions",
-        "Added pb import for ActionId enum usage",
-        "Added 7 comprehensive tests covering all action types and edge cases"
-      ],
-      "notes": "ExecuteAction consumes granted capacity (attacks/movement). Must call ActivateCombatAbility first to grant attacks. Movement doesn't require activation - uses MovementRemaining from encounter."
-    },
-    {
-      "date": "2026-01-08",
-      "task": "Implement ActivateCombatAbility orchestrator logic",
-      "commit": "522ba32",
-      "changes": [
-        "Implemented ActivateCombatAbility method with full ability handling",
-        "ATTACK: Checks HasAction(), consumes action, grants AttacksRemaining = 1",
-        "DASH: Checks HasAction(), consumes action, adds defaultMovementSpeed to MovementRemaining",
-        "DODGE: Checks HasAction(), consumes action, sets DodgeActive = true",
-        "DISENGAGE: Checks HasAction(), consumes action, sets DisengageActive = true",
-        "OFFHAND_ATTACK: Checks HasBonusAction(), consumes bonus action, grants OffHandAttacksRemaining = 1",
-        "Returns GrantedCapacity message describing what was granted",
-        "Added 10 comprehensive tests covering all 5 abilities and error cases",
-        "Tests verify action economy consumption, capacity grants, and turn validation"
-      ],
-      "notes": "Implementation was committed alongside ExecuteAction in same commit (522ba32). Validates entity's turn before allowing activation. Returns business logic failures (Success=false) vs errors for invalid state. All 10 tests pass."
-    },
-    {
-      "date": "2026-01-08",
-      "task": "Wire up gRPC handlers for ActivateCombatAbility and ExecuteAction",
-      "commit": "cd22bd2",
-      "changes": [
-        "Added ActivateCombatAbility handler in handler.go with validation and service call",
-        "Added ExecuteAction handler with oneof input handling for Strike and Move actions",
-        "Added convertActionEconomyToProto converter for ActionEconomy proto conversion",
-        "Added convertMoveResultToProto converter for MoveResult proto conversion",
-        "Added convertGrantedActionToProto converter for GrantedAction proto conversion",
-        "Added 12 handler tests covering success, validation, and error cases"
-      ],
-      "notes": "Handlers follow existing patterns (Attack, MoveCharacter). ActionEconomy converter takes CombatState for movement values. All tests pass, pre-commit passes."
-    }
-  ],
-  "next_steps": [
-    "Consider adding converter tests for edge cases",
-    "Phase 4: Add dynamic movement speed calculation based on character stats"
-  ]
+  "branch": "feat/687-project-region-theme",
+  "issues": ["rpg-api#687"],
+  "goal": "Project the toolkit's canonical region/theme metadata (SpaceData.Theme, SpaceData.Regions, RegionData.Archetype, per-hex region membership via RegionAt) onto the v1alpha2 wire as Space.theme, Space.zones, and Hex.zone_id. Pure passthrough only -- no derivation of regions/archetypes/theme from geometry, no default invention. Covers both the connect-time snapshot (ProjectFor) and the incremental live GeometryRevealed event, so a hex revealed after connect also carries its zone_id.",
+  "dependencies": {
+    "rpg-api-protos#196": "merged 2026-07-23T02:48:20Z (commit bb80c98), published on the generated branch (HEAD 0e4e2d7) -- verified consumable via an isolated `go get .../gen/go@generated` (GOPRIVATE=github.com/KirkDiggler, no replace/go.work) before any dependency bump in this branch. Adds Hex.zone_id, Zone{id,name,archetype}, Space.zones, Space.theme.",
+    "rpg-toolkit#814/#821": "PR #821 merged 2026-07-22T18:16:26Z (commit e1f98403), published as encounter/v0.35.0+ on the real Go module proxy -- verified via proxy.golang.org version list + isolated `go get .../encounter@v0.37.0` before any dependency bump. RegionData.Archetype / SpaceData.Theme / SpaceData.RegionAt confirmed present in encounter/data.go at that version."
+  },
+  "open_pr_coordination": {
+    "rpg-api#693": "OPEN (feat/688-n-region-dungeon-key), explicitly lists rpg-api#687 as out of scope for itself. It independently bumps rpg-toolkit/encounter v0.34.1->v0.35.0 in its own unmerged branch. This branch bumps to the same target (matching, not downgrading) to minimize merge friction; does not consume #693's unmerged branch or duplicate its dungeon-key work."
+  },
+  "sessions": []
 }
