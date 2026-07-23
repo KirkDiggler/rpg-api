@@ -264,16 +264,31 @@ func hexOutOfBounds(space *tkenc.SpaceData, hex core.Hex) bool {
 	return pos.X < 0 || pos.X >= float64(space.Width) || pos.Y < 0 || pos.Y >= float64(space.Height)
 }
 
-// hexBlocksMovement reports whether hex is a movement-blocking wall cell in
-// the persisted room snapshot (tkenc.SpaceData.Walls doc: one degenerate
-// Start==End segment per discretized wall hex — see rpg-toolkit
-// encounter/data.go and tools/environments' WallSegmentData).
+// hexBlocksMovement reports whether hex is a movement-blocking cell in the
+// persisted room snapshot — either a wall (tkenc.SpaceData.Walls doc: one
+// degenerate Start==End segment per discretized wall hex — see rpg-toolkit
+// encounter/data.go and tools/environments' WallSegmentData) OR, as of
+// rpg-api#694 (the crypt key now asks the toolkit for CryptDungeonParams'
+// physical set-piece obstacles — entrance: obelisk + 2 pillars — instead of
+// leaving every region's Obstacles unset), a placed ObstacleData whose own
+// BlocksMovement is true. Before #694 this function only needed to check
+// Walls: SpaceData.Obstacles was always empty for every dungeon key, so a
+// destHex landing on one was never possible. It is now a real, legitimate
+// truncation cause this suite's own truncateAtWall-mirroring logic must
+// account for, or a party stepping onto a pillar/obelisk/coffin/altar/statue
+// would be misclassified as the #656 regression instead of correct
+// obstacle-blocking behavior.
 func hexBlocksMovement(space *tkenc.SpaceData, hex core.Hex) bool {
 	if space == nil {
 		return false
 	}
 	for _, w := range space.Walls {
 		if w.BlocksMovement && core.HexFromCube(w.Start) == hex {
+			return true
+		}
+	}
+	for _, o := range space.Obstacles {
+		if o.BlocksMovement && o.Position == hex {
 			return true
 		}
 	}
