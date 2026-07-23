@@ -363,10 +363,10 @@ func (ts *TestServer) bufDialer(ctx context.Context, _ string) (net.Conn, error)
 // package-level fixture (e.g. TestMain) owns. Close is idempotent — safe
 // to call more than once (e.g. an explicit call plus a deferred one).
 func (ts *TestServer) Close() {
-	ts.closeOnce.Do(ts.closeLocked)
+	ts.closeOnce.Do(ts.closeAll)
 }
 
-func (ts *TestServer) closeLocked() {
+func (ts *TestServer) closeAll() {
 	if ts.conn != nil {
 		ts.conn.Close()
 	}
