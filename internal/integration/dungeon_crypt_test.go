@@ -337,6 +337,124 @@ func (s *DungeonCryptSuite) TestBossGoblins_NoEntityAppeared_UntilBothDoorsOpenA
 		"a sightline that actually forms (alice standing on the goblin's hex) must emit EntityAppeared")
 }
 
+// TestSpaceZonesAndHexZoneId_ProjectRegionsOnTheWire is rpg-api#687's Done
+// bar verified end to end through the REAL RPC surface (not a hand-seeded
+// project_test.go fixture), ported here after rpg-api#693 retired the
+// two-chamber generator/suite this test originally lived against
+// (dungeon_two_chamber_test.go's TestSpaceZonesAndHexZoneId_
+// ProjectRegionsOnTheWire): "a [dungeon] encounter arrives at the client
+// with every revealed hex carrying the right zone_id, and Space.zones
+// naming [every region]." Adapted to the crypt spec's 3 regions (entrance/
+// corridor/boss) and 2 connector doors instead of the retired 2-region/1-
+// door topology — region IDs are looked up by ARCHETYPE (regionArchetypeAt/
+// archetypeGoblins' pattern, this file's established convention) rather
+// than by literal ID string, since the crypt spec's region IDs are
+// unexported lobby-package constants by design.
+//
+// Unlike the retired two-chamber suite's version of this test (which
+// exercised the missing-Theme fallback — InitTwoChamberRoom never set
+// Theme), the crypt spec DOES set Theme="crypt" (DungeonParams.Theme,
+// rpg-toolkit#814's Approved Slice 3 corrections), so this version proves
+// verbatim theme passthrough instead. The absent-metadata Theme/zones
+// fallback remains covered by project_test.go's unit tests
+// (TestProjectFor_NoSpace_ThemeEmpty_ZonesNil_NoError /
+// TestProjectFor_SpaceWithNoRegions_ZonesNilThemeEmpty).
+func (s *DungeonCryptSuite) TestSpaceZonesAndHexZoneId_ProjectRegionsOnTheWire() {
+	encounterID, characterID, encData := s.startCryptDungeon("zones1", "alice")
+	entranceIDs, bossIDs := archetypeGoblins(encData)
+	s.Require().NotEmpty(entranceIDs, "the entrance region must have goblins seeded")
+	s.Require().NotEmpty(bossIDs, "the boss region must have goblins seeded")
+
+	resp, err := s.srv.EncounterClientV2.GetEncounter(s.authCtx("alice"), &encounterv2pb.GetEncounterRequest{
+		EncounterId: encounterID,
+	})
+	s.Require().NoError(err)
+	space := resp.GetEncounter().GetSpace()
+
+	// Space.zones names all 3 crypt regions with their toolkit-assigned
+	// archetype.
+	zones := space.GetZones()
+	s.Require().Len(zones, 3, "all 3 crypt regions must be named as zones")
+	byArchetype := make(map[string]string, 3) // archetype -> zone id
+	for _, z := range zones {
+		byArchetype[z.GetArchetype()] = z.GetId()
+	}
+	s.Require().Contains(byArchetype, "entrance")
+	s.Require().Contains(byArchetype, "corridor")
+	s.Require().Contains(byArchetype, "boss")
+
+	// Verbatim theme passthrough: the crypt spec sets Theme="crypt".
+	s.Require().Equal("crypt", space.GetTheme(),
+		"InitDungeon's crypt spec sets Theme=\"crypt\"; the wire must carry it verbatim")
+
+	// Alice spawns at the entrance — her own revealed hex set must include
+	// that hex tagged with the entrance region's zone id.
+	entranceZoneID := byArchetype["entrance"]
+	var spawnHex *encounterv2pb.Hex
+	for _, h := range space.GetHexes() {
+		if h.GetPosition().GetX() == int32(encData.Space.Entrance.Q) &&
+			h.GetPosition().GetY() == int32(encData.Space.Entrance.R) &&
+			h.GetPosition().GetZ() == int32(encData.Space.Entrance.S) {
+			spawnHex = h
+			break
+		}
+	}
+	s.Require().NotNil(spawnHex, "alice's entrance spawn hex must be in her revealed set")
+	s.Require().Equal(entranceZoneID, spawnHex.GetZoneId(),
+		"the entrance hex must carry the entrance region's zone id")
+
+	// Now form a sightline into the boss region via the live stream and
+	// prove the INCREMENTAL GeometryRevealed event (not just the connect-
+	// time snapshot above) also carries the right zone_id — #687's Done bar
+	// covers hexes revealed mid-session, not only ones present at connect.
+	stream, err := s.srv.EncounterClientV2.StreamEncounter(s.authCtx("alice"),
+		&encounterv2pb.StreamEncounterRequest{EncounterId: encounterID})
+	s.Require().NoError(err)
+	events := s.streamEvents(stream)
+	_ = drainAvailable(events, 500*time.Millisecond) // drain connect-time replay
+
+	s.Require().Len(encData.Doors, 2, "the crypt spec's 3-region chain has exactly 2 connector doors")
+	doorIDs := make([]string, 0, 2)
+	for id := range encData.Doors {
+		doorIDs = append(doorIDs, string(id))
+	}
+	s.openDoor(encounterID, doorIDs[0])
+	_ = drainAvailable(events, 500*time.Millisecond)
+	s.openDoor(encounterID, doorIDs[1])
+	_ = drainAvailable(events, 500*time.Millisecond)
+
+	bossGoblin := bossIDs[0]
+	afterOpen, err := s.srv.EncRepoV2.Get(s.ctx, encounterID)
+	s.Require().NoError(err)
+	alicePD := afterOpen.Players[core.PlayerID("alice")]
+	target := afterOpen.Monsters[bossGoblin].Position
+
+	err = s.moveOnto(encounterID, characterID, alicePD.View.Position, target)
+	s.Require().NoError(err, "moving onto the boss-region goblin's hex must not be blocked once both doors are open")
+
+	postMove := drainAvailable(events, 1500*time.Millisecond)
+	bossZoneID := byArchetype["boss"]
+	var sawAny bool
+	var sawZoneID string
+	for _, ev := range postMove {
+		gr := ev.GetGeometryRevealed()
+		if gr == nil {
+			continue
+		}
+		for _, h := range gr.GetHexes() {
+			if h.GetPosition().GetX() == int32(target.Q) &&
+				h.GetPosition().GetY() == int32(target.R) &&
+				h.GetPosition().GetZ() == int32(target.S) {
+				sawAny = true
+				sawZoneID = h.GetZoneId()
+			}
+		}
+	}
+	s.Require().True(sawAny, "the boss-region goblin's hex must appear in a live GeometryRevealed event")
+	s.Require().Equal(bossZoneID, sawZoneID,
+		"a hex revealed mid-session via the live stream must carry its zone_id too, not just connect-time hexes")
+}
+
 // streamEvents starts the ONE background reader for stream's entire
 // lifetime, forwarding every received event onto the returned channel until
 // the stream closes. Deliberately NOT re-spun per checkpoint (unlike
