@@ -3,11 +3,68 @@
   "issues": ["rpg-api#687"],
   "goal": "Project the toolkit's canonical region/theme metadata (SpaceData.Theme, SpaceData.Regions, RegionData.Archetype, per-hex region membership via RegionAt) onto the v1alpha2 wire as Space.theme, Space.zones, and Hex.zone_id. Pure passthrough only -- no derivation of regions/archetypes/theme from geometry, no default invention. Covers both the connect-time snapshot (ProjectFor) and the incremental live GeometryRevealed event, so a hex revealed after connect also carries its zone_id.",
   "dependencies": {
-    "rpg-api-protos#196": "merged 2026-07-23T02:48:20Z (commit bb80c98), published on the generated branch (HEAD 0e4e2d7) -- verified consumable via an isolated `go get .../gen/go@generated` (GOPRIVATE=github.com/KirkDiggler, no replace/go.work) before any dependency bump in this branch. Adds Hex.zone_id, Zone{id,name,archetype}, Space.zones, Space.theme.",
-    "rpg-toolkit#814/#821": "PR #821 merged 2026-07-22T18:16:26Z (commit e1f98403), published as encounter/v0.35.0+ on the real Go module proxy -- verified via proxy.golang.org version list + isolated `go get .../encounter@v0.37.0` before any dependency bump. RegionData.Archetype / SpaceData.Theme / SpaceData.RegionAt confirmed present in encounter/data.go at that version."
+    "rpg-api-protos#196": "merged 2026-07-23T02:48:20Z (commit bb80c98), published on the generated branch (HEAD 0e4e2d7). Verified consumable via an isolated `go get github.com/KirkDiggler/rpg-api-protos/gen/go@generated` (GOPRIVATE=github.com/KirkDiggler, GOPROXY=direct, no replace/go.work, fresh scratch module) before any dependency bump in this branch. Adds Hex.zone_id, Zone{id,name,archetype}, Space.zones, Space.theme -- confirmed present in the generated .pb.go by direct grep before bumping.",
+    "rpg-toolkit#814/#821": "PR #821 merged 2026-07-22T18:16:26Z (commit e1f98403), published as encounter/v0.35.0 through v0.37.0 on the real Go module proxy (proxy.golang.org version list). Verified via an isolated `go get github.com/KirkDiggler/rpg-toolkit/encounter@v0.35.0`/@v0.37.0 in a fresh scratch module before any dependency bump. RegionData.Archetype / SpaceData.Theme / SpaceData.RegionAt confirmed present in encounter/data.go at that version by direct read."
   },
   "open_pr_coordination": {
-    "rpg-api#693": "OPEN (feat/688-n-region-dungeon-key), explicitly lists rpg-api#687 as out of scope for itself. It independently bumps rpg-toolkit/encounter v0.34.1->v0.35.0 in its own unmerged branch. This branch bumps to the same target (matching, not downgrading) to minimize merge friction; does not consume #693's unmerged branch or duplicate its dungeon-key work."
+    "rpg-api#693": "OPEN (feat/688-n-region-dungeon-key) at the time of this work. Its own PR body explicitly lists 'region/theme wire projection (#687)' as out of scope for itself. It independently bumps rpg-toolkit/encounter v0.34.1 -> v0.35.0 in its own unmerged branch (go.mod diff verified via `gh pr diff 693 -- go.mod`). This branch bumps to the exact same target version to avoid downgrading or creating merge friction; does not consume #693's unmerged branch content or duplicate its DungeonKey/dungeon_spec.go work. Whichever of #687/#693 merges second will see a no-op/trivial diff on the shared go.mod encounter line."
   },
-  "sessions": []
+  "sessions": [
+    {
+      "id": "2026-07-22-001",
+      "task": "Preflight: verify rpg-api-protos#196 and rpg-toolkit#814/#821 are merged AND published/consumable (not just merged) via isolated go get in a scratch module; check for duplicate feat/687-* branch or open PR; check open PR #693 for scope overlap; create isolated worktree from origin/main; reset progress/tests artifacts; baseline build+test",
+      "status": "completed",
+      "artifacts": [".claude/progress.json", ".claude/tests.json"],
+      "commit": "ded5efb",
+      "notes": "Both dependencies confirmed merged, published, and go-get-consumable (real GOPROXY, not just git history) before any go.mod touch. No feat/687-* branch or open PR found. #693 explicitly out-of-scopes #687 for itself in its own PR body. Worktree at .worktrees/feat-687-project-region-theme. Baseline: go build ./... clean, go test (all non-integration packages) green on origin/main HEAD before any change."
+    },
+    {
+      "id": "2026-07-22-002",
+      "task": "Bump go.mod dependencies to versions containing #196/#814",
+      "status": "completed",
+      "artifacts": ["go.mod", "go.sum"],
+      "commit": "4d4115f",
+      "notes": "rpg-api-protos/gen/go -> @generated HEAD (0e4e2d7). rpg-toolkit/encounter v0.34.1 -> v0.35.0 (matches #693's own unmerged bump target exactly -- no downgrade). go build ./... and full non-integration test suite green after the bump, before any production code change."
+    },
+    {
+      "id": "2026-07-22-003",
+      "task": "RED: write failing project_test.go tests for Space.theme passthrough, Space.zones (multi-region, declared-order, not sorted), and Hex.zone_id (exact-membership, not geometry/adjacency); GREEN: add zonesToProto/themeToProto helpers + zone_id line in project.go's existing hex loop",
+      "status": "completed",
+      "artifacts": ["internal/handlers/dnd5e/v2/encounter/project.go", "internal/handlers/dnd5e/v2/encounter/project_test.go"],
+      "commit": "82a66ba",
+      "notes": "RED observed: 3 new tests failed against unmodified project.go (empty theme, 0 zones) while 3 sibling fallback tests (nil-space, empty-regions) already passed -- proving the RED was for the right reason, not a broken fixture. GREEN after the minimal addition. Full package (incl. -race) green, no regressions in the 22 pre-existing ProjectFor tests."
+    },
+    {
+      "id": "2026-07-22-004",
+      "task": "RED: white-box test (package encounter) for translateHexRevealedEventWithData against the not-yet-written function; GREEN: add the data-aware translator + wire handler.go's translateForStream to load Data and call it for *tkevents.HexRevealedEvent, mirroring the established translateEntityAppearedEventWithData split",
+      "status": "completed",
+      "artifacts": ["internal/handlers/dnd5e/v2/encounter/translate.go", "internal/handlers/dnd5e/v2/encounter/handler.go", "internal/handlers/dnd5e/v2/encounter/translate_hex_revealed_internal_test.go"],
+      "commit": "1196248",
+      "notes": "Closes the gap ProjectFor's snapshot fix alone leaves open: the LIVE incremental GeometryRevealed event only has the bare toolkit event in hand (no persisted Data), so a hex a player reveals mid-session via Move would carry zone_id='' forever without this. RED: test file didn't compile (function undefined). GREEN after adding translateHexRevealedEventWithData (same data.Space.RegionAt(h) lookup, nil-safe) + the handler.go branch. Full package (incl. -race) green."
+    },
+    {
+      "id": "2026-07-22-005",
+      "task": "Add real-RPC integration gate (DungeonTwoChamberSuite) proving #687's Done bar end to end -- Space.zones naming both chambers, Space.theme absent-metadata fallback in the SAME live response, connect-time Hex.zone_id, AND incremental live GeometryRevealed zone_id after opening the door and moving into chamber 2. Mutation/revert discrimination: reverted project.go/translate.go/handler.go to their pre-#687 commit state with the test unchanged, confirmed RED, restored, confirmed GREEN",
+      "status": "completed",
+      "artifacts": ["internal/integration/dungeon_two_chamber_test.go"],
+      "commit": "cd7ffc4",
+      "notes": "Mutation RED observed: '[] should have 2 item(s), but has 0' on Space.zones with pre-#687 code + this test. GREEN restored: full DungeonTwoChamberSuite (4/4) green, real Redis via testcontainers, ~48s. Full internal/integration + internal/integration/character + internal/integration/harness suite also run green separately (~282s)."
+    },
+    {
+      "id": "2026-07-22-006",
+      "task": "Update docs/status.md (Active Work entry) and docs/architecture/components/encounter.md (new 'Zone/theme projection' subsection) per the repo's living-docs convention",
+      "status": "completed",
+      "artifacts": ["docs/status.md", "docs/architecture/components/encounter.md"],
+      "commit": "1db1f34",
+      "notes": "Matches the existing entry format/detail level for recent slices (#680's equipment-on-the-wire entry, #676's wall/door projection subsection)."
+    },
+    {
+      "id": "2026-07-22-007",
+      "task": "Full verification: go build/vet/fmt/tidy clean; golangci-lint run (29 pre-existing issues, byte-identical to a clean origin/main checkout, zero in files this branch touches); go generate mock-regen false positive (byte-identical file set on main vs this branch -- documented rpg-api#683 tool-version drift, not a real regen need); make ci-check; full unit suite -race; full internal/integration suite -race (real Redis via testcontainers, ~282s)",
+      "status": "completed",
+      "artifacts": [],
+      "commit": null,
+      "notes": "All green except the two documented pre-existing failures (mock regen #683, lint 29) which reproduce byte-for-byte identically on a clean origin/main checkout with zero interface/file changes involved -- confirmed by running `go generate ./...` and `golangci-lint run` on main directly and diffing the file/issue lists against this branch's."
+    }
+  ]
 }

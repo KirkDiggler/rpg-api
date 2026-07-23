@@ -1,3 +1,74 @@
 {
-  "tests": []
+  "tests": [
+    {
+      "id": "space-theme-verbatim-passthrough",
+      "feature": "zone-theme-projection",
+      "prompt": "Build a *tkenc.Data with data.Space.Theme = 'crypt' and call ProjectFor. Verify the returned proto's Space.theme equals 'crypt' exactly -- no interpretation, no default substitution.",
+      "passes": true,
+      "last_checked": "2026-07-22"
+    },
+    {
+      "id": "no-space-theme-empty-zones-nil-no-error",
+      "feature": "zone-theme-projection",
+      "prompt": "Call ProjectFor with data.Space left nil (pre-wave-1 fixture / non-spatial encounter). Verify Space.theme is empty, Space.zones is empty/nil, and ProjectFor returns no error -- the absent-metadata fallback, not an invented default.",
+      "passes": true,
+      "last_checked": "2026-07-22"
+    },
+    {
+      "id": "space-with-no-regions-zones-nil-theme-empty",
+      "feature": "zone-theme-projection",
+      "prompt": "Call ProjectFor with a real data.Space (dimensions set) but an empty Regions slice and unset Theme (e.g. single-room InitRoom). Verify Space.theme is empty, Space.zones is empty, and every projected Hex.zone_id is empty.",
+      "passes": true,
+      "last_checked": "2026-07-22"
+    },
+    {
+      "id": "space-zones-multi-region-declared-order-not-sorted",
+      "feature": "zone-theme-projection",
+      "prompt": "Build data.Space.Regions with 3 entries in a deliberately non-alphabetical id order (e.g. region-c, region-a, region-b) with distinct archetypes. Call ProjectFor. Verify Space.zones has exactly 3 entries in the SAME order as declared (not alphabetically sorted), each with id+archetype copied verbatim, and no name (RegionData has no Name field to invent from).",
+      "passes": true,
+      "last_checked": "2026-07-22"
+    },
+    {
+      "id": "hex-zone-id-exact-membership-not-geometry",
+      "feature": "zone-theme-projection",
+      "prompt": "Build two regions, each tagging exactly one hex, with a third 'door' hex sitting geometrically between/adjacent to both but tagged into NEITHER region's Hexes set. Call ProjectFor with a viewer whose revealed set includes all three hexes. Verify the two tagged hexes carry their respective region ids, and the door hex's zone_id is empty -- proving the lookup is exact set membership, not adjacency/geometric derivation.",
+      "passes": true,
+      "last_checked": "2026-07-22"
+    },
+    {
+      "id": "live-hex-revealed-carries-zone-id",
+      "feature": "zone-theme-projection",
+      "prompt": "White-box test translateHexRevealedEventWithData directly: build a *tkenc.Data with one region tagging one hex, and a HexRevealedEvent revealing that hex plus an untagged hex. Verify the resulting GeometryRevealed event's Hex for the tagged position carries the region id, and the untagged position carries empty zone_id. Also verify a nil *encounter.Data falls back to empty zone_id without panicking, and the pre-existing ErrViewerSawNothing contract (viewer not in PerPlayer) is preserved.",
+      "passes": true,
+      "last_checked": "2026-07-22"
+    },
+    {
+      "id": "real-rpc-zones-theme-and-incremental-reveal-e2e",
+      "feature": "zone-theme-projection",
+      "prompt": "Through the real LobbyService.StartEncounter + v1alpha2 EncounterService RPC surface (real Redis, DungeonTwoChamberSuite): start a two-chamber encounter, GetEncounter and verify Space.zones names both chambers with their toolkit archetype (entrance/chamber) AND Space.theme is empty in the same response (InitTwoChamberRoom sets no Theme -- real absent-metadata path, not a fixture). Verify the connect-time entrance hex carries chamber-1's zone_id. Then open the door and Move onto a chamber-2 goblin's hex over a live StreamEncounter connection; verify the resulting live GeometryRevealed event's hex for that position also carries chamber-2's zone_id -- proving the incremental-reveal fix, not just the connect-time snapshot.",
+      "passes": true,
+      "last_checked": "2026-07-22"
+    },
+    {
+      "id": "mutation-revert-discrimination",
+      "feature": "zone-theme-projection",
+      "prompt": "Revert project.go/translate.go/handler.go to their pre-#687 commit content (git show <parent-commit>:<path>) while leaving the real-rpc-zones-theme-and-incremental-reveal-e2e test unchanged. Verify the test fails (Space.zones has 0 items instead of 2). Restore the real implementation and verify the test passes again.",
+      "passes": true,
+      "last_checked": "2026-07-22"
+    },
+    {
+      "id": "existing-projectfor-tests-remain-green",
+      "feature": "regression",
+      "prompt": "Run the full internal/handlers/dnd5e/v2/encounter test package with -race. Verify every pre-existing ProjectFor/TranslateEvent test (turn state, monster/player entity projection, walls, doors, conditions, character identity/equipment, HexRevealedEvent's plain TranslateEvent dispatch path) still passes unmodified.",
+      "passes": true,
+      "last_checked": "2026-07-22"
+    },
+    {
+      "id": "full-integration-suite-remains-green",
+      "feature": "regression",
+      "prompt": "Run the full internal/integration/... suite with -race and real Redis (testcontainers). Verify every pre-existing suite (LobbyService, EncounterV2, character creation, harness, DungeonTwoChamberSuite's original 2 gate tests) still passes unmodified alongside the new zone/theme gate test.",
+      "passes": true,
+      "last_checked": "2026-07-22"
+    }
+  ]
 }
