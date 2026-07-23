@@ -68,11 +68,38 @@
       ],
       "commit": "935cbb7",
       "notes": "Exactly one full run: exit 0, 37.4s wall clock (/usr/bin/time -v), exactly 3 redis:7-alpine containers created/terminated total (one per Go test process: internal/integration, internal/integration/character, internal/integration/harness — confirmed via TestMain STARTED/TERMINATED log lines and 3x 'Creating container for image redis:7-alpine'). docker ps confirmed zero leaked containers afterward. Goroutine-count spot check after 8 tests in internal/integration: 3 (stable, no broker/gRPC leak). Compares to the accepted ~283s/33-container baseline; this branch's own actual pre-#699 count would have measured 30 (character suite already amortized 7 tests onto 1 container via SetupSuite pre-#699 — noted honestly in docs/status.md rather than repeating the issue's 33 uncritically)."
+    },
+    {
+      "id": "2026-07-23-006",
+      "task": "PR #700 opened; addressed 4 Copilot review comments (fresh cleanup ctx, idempotency docstring, misleading 'Shared' log wording, success/failure Terminate logging); replied individually and resolved all 4 threads",
+      "status": "completed",
+      "artifacts": [
+        "internal/integration/harness/harness.go",
+        "internal/integration/harness/redis_container.go"
+      ],
+      "commit": "9daa277",
+      "notes": "CI (build, test) green; mergeStateStatus CLEAN. PR intentionally left open, not merged."
+    },
+    {
+      "id": "2026-07-23-007",
+      "task": "Close an independent-review gap: add durable regression coverage for (1) per-test application freshness across two NewWithRedis instances and (2) shared-Redis state isolation via the exact FlushRedis sequence SetupTest uses, with a fixed key immune to ID-collision false negatives",
+      "status": "completed",
+      "artifacts": [
+        "internal/integration/shared_fixture_regression_test.go",
+        "internal/integration/harness/harness.go",
+        "docs/how-to/run-integration-tests.md",
+        "docs/status.md",
+        "docs/architecture/components/integration-test-harness.md",
+        ".claude/tests.json"
+      ],
+      "commit": "PENDING",
+      "notes": "New TestSharedRedisFixture_PerTestFreshnessAndStateIsolation in internal/integration (primary package, so a targeted -run starts only that package's one container). per_test_application_freshness is a characterization test (passed immediately, pinning NewWithRedis's existing fresh-wiring behavior) — added TestServer.GRPCServer(), a minimal test-only seam on the harness package (test-support code, never imported by production), to make gRPC server identity assertable alongside the existing exported BrokerV2/LobbyBroker/EncRepoV2/LobbyRepo/CharacterRepo fields. shared_redis_state_isolation_via_flush is mutation-tested: temporarily skipping the second cycle's FlushRedis call reproduced 'Should be zero, but was 1' (RED), reverted to GREEN. Targeted run: 1 container, ~13-14s wall (mostly container start/teardown; test body 0.02-0.03s), race-clean. Also fixed docs/how-to/run-integration-tests.md's inaccurate '36 containers before #699' wording to the verified actual 30 (36 remains correct as the total TEST METHOD count, kept separately). Did NOT re-run go test ./internal/integration/... locally per instructions — full-package confirmation deferred to CI."
     }
   ],
   "next_steps": [
-    "Push branch, open PR linking #699 (ready, not draft)",
-    "Self-review diff, address any automated (Copilot) comments individually",
+    "Push branch, update PR #700 body with the new regression coverage + docs correction",
+    "Inspect CI's full-package run log/container count on the new push (do not re-run locally)",
+    "Address any new automated comments individually",
     "Do not merge — awaiting explicit approval per repo workflow"
   ]
 }

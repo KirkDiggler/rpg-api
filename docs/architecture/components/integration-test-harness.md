@@ -37,6 +37,7 @@ construction) are removed. Encounter coverage now lives entirely in
 | `integration/harness/harness.go` | TestServer wiring (`New`, `NewWithRedis`, `Close`) |
 | `integration/harness/redis_container.go` | `RedisContainer` shared-fixture: `StartRedis`, `Terminate`, `Lease` (rpg-api#699) |
 | `integration/main_test.go` | `TestMain` owning the one shared container for this package's process |
+| `integration/shared_fixture_regression_test.go` | Regression coverage that the shared fixture actually delivers per-test freshness + Redis state isolation (rpg-api#699) |
 | `integration/character/main_test.go` | Same, for the separate `internal/integration/character` process |
 | `integration/character/` | Character integration tests |
 | `integration/encounter_v2_test.go` | v1alpha2 encounter service tests |

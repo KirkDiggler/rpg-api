@@ -410,3 +410,13 @@ func (ts *TestServer) FlushRedis(ctx context.Context) error {
 func (ts *TestServer) RedisClient() redis.Client {
 	return ts.redisClient
 }
+
+// GRPCServer returns the underlying gRPC server. This package is
+// test-support code only (never imported by production), so this is a
+// minimal test-only seam — not a production API — exposed so tests can
+// assert that two TestServers built against the same shared Redis
+// container (see RedisContainer/NewWithRedis, rpg-api#699) are wired to
+// distinct gRPC servers, not just distinct Go struct pointers.
+func (ts *TestServer) GRPCServer() *grpc.Server {
+	return ts.grpcServer
+}

@@ -47,6 +47,24 @@ against was 30, still reduced to 3). `golangci-lint run`: 29 issues,
 byte-for-byte identical categories/counts versus a clean `origin/main`
 worktree — zero new lint debt.
 
+**Closing an independent-review gap (2026-07-23):** the original lifecycle
+tests proved container ownership in isolation but had no durable coverage
+that the two properties every converted suite actually depends on at
+runtime hold: (1) two `NewWithRedis` `TestServer`s against the same shared
+container are wired to distinct gRPC servers/repos/brokers, and (2) the
+shared container's Redis state is actually isolated between tests by
+`FlushRedis`. Added `TestSharedRedisFixture_PerTestFreshnessAndStateIsolation`
+in `internal/integration` (the primary package, so a targeted `-run` of
+just this test starts only that package's one container). Freshness is a
+characterization test — it passed immediately, pinning behavior
+`NewWithRedis`'s `wireServices` path has had since #699 introduced it, not
+a bug fix. Isolation is mutation-tested: temporarily skipping the second
+cycle's `FlushRedis` call reproduced the exact failure (`Should be zero,
+but was 1`) the assertion exists to catch, then was reverted. Exposed one
+minimal test-only seam, `TestServer.GRPCServer()`, on the harness package
+(test-support code only, never imported by production) to make gRPC
+server identity assertable — no production API changed.
+
 **Deterministic crypt monster composition — retires goblin out-of-sight search (rpg-api#689, 2026-07-23)** —
 The approved first-swing simplification: `StartEncounter` now seeds exactly 1
 deterministic-anchor skeleton (`monsters.NewSkeleton`) in the entrance region, 0 monsters

@@ -79,8 +79,18 @@ these suites are still expected to run serially.
 Because these are three separate processes, `go test ./internal/integration/...`
 starts and terminates **3** Redis containers total (one per process), not
 1 — a single container object cannot be shared across OS process
-boundaries. This is down from one container **per test method** (36
-across all three packages) before #699.
+boundaries.
+
+There are 36 test methods total across the three packages (28 in
+`internal/integration`, 7 in `internal/integration/character`, 1 in
+`internal/integration/harness`), but the pre-#699 container count was
+**not** "one per test method" uniformly: `internal/integration`'s 28 test
+methods each started/terminated their own container (28 containers), but
+`internal/integration/character`'s `CharacterCreationSuite` already used
+`SetupSuite` (one `TestServer` shared across its 7 tests, 1 container) and
+`internal/integration/harness` has always had exactly 1 test (1
+container). The actual pre-#699 total was **30** containers, not 36 — down
+to the 3 above after this change.
 
 ## What the harness wires
 
