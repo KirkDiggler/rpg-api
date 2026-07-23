@@ -154,6 +154,110 @@ func (s *DungeonTwoChamberSuite) moveOnto(encounterID, characterID string, from,
 	return err
 }
 
+// TestSpaceZonesAndHexZoneId_ProjectRegionsOnTheWire is rpg-api#687's Done
+// bar verified end to end through the REAL RPC surface (not a hand-seeded
+// project_test.go fixture): "a two-chamber encounter arrives at the client
+// with every revealed hex carrying the right zone_id, and Space.zones
+// naming both chambers." Also covers the missing-metadata fallback in the
+// same real path: InitTwoChamberRoom (still the live generator on main,
+// pre-rpg-api#688) never sets DungeonParams.Theme, so Space.theme must be
+// "" — an absent-metadata fallback, not an invented default — right next
+// to the populated zones/archetypes in the SAME response.
+func (s *DungeonTwoChamberSuite) TestSpaceZonesAndHexZoneId_ProjectRegionsOnTheWire() {
+	encounterID, characterID, encData := s.startTwoChamberDungeon("zones1", "alice")
+	chamber1IDs, chamber2IDs := chamberGoblins(encData)
+	s.Require().NotEmpty(chamber1IDs, "chamber 1 must have goblins seeded")
+	s.Require().NotEmpty(chamber2IDs, "chamber 2 must have goblins seeded")
+
+	resp, err := s.srv.EncounterClientV2.GetEncounter(s.authCtx("alice"), &encounterv2pb.GetEncounterRequest{
+		EncounterId: encounterID,
+	})
+	s.Require().NoError(err)
+	space := resp.GetEncounter().GetSpace()
+
+	// Space.zones names both chambers with their toolkit-assigned archetype
+	// (InitTwoChamberRoom tags chamber-1 entrance, chamber-2 chamber — see
+	// rpg-toolkit's two_chamber.go).
+	zones := space.GetZones()
+	s.Require().Len(zones, 2, "both chambers must be named as zones")
+	byID := make(map[string]string, 2) // zone id -> archetype
+	for _, z := range zones {
+		byID[z.GetId()] = z.GetArchetype()
+	}
+	s.Require().Equal("entrance", byID[tkenc.RegionChamber1])
+	s.Require().Equal("chamber", byID[tkenc.RegionChamber2])
+
+	// Missing-metadata fallback, same response: InitTwoChamberRoom never
+	// sets Theme, so it must come across as "" — not invented.
+	s.Require().Empty(space.GetTheme(), "InitTwoChamberRoom sets no Theme; the wire must not invent one")
+
+	// Alice spawns at the entrance (chamber-1) — her own revealed hex set
+	// must include that hex tagged with chamber-1's zone id.
+	var spawnHex *encounterv2pb.Hex
+	for _, h := range space.GetHexes() {
+		if h.GetPosition().GetX() == int32(encData.Space.Entrance.Q) &&
+			h.GetPosition().GetY() == int32(encData.Space.Entrance.R) &&
+			h.GetPosition().GetZ() == int32(encData.Space.Entrance.S) {
+			spawnHex = h
+			break
+		}
+	}
+	s.Require().NotNil(spawnHex, "alice's entrance spawn hex must be in her revealed set")
+	s.Require().Equal(string(tkenc.RegionChamber1), spawnHex.GetZoneId(),
+		"the entrance hex must carry chamber-1's zone id")
+
+	// Now form a sightline into chamber 2 via the live stream and prove the
+	// INCREMENTAL GeometryRevealed event (not just the connect-time
+	// snapshot above) also carries the right zone_id — #687's Done bar
+	// covers hexes revealed mid-session, not only ones present at connect.
+	stream, err := s.srv.EncounterClientV2.StreamEncounter(s.authCtx("alice"),
+		&encounterv2pb.StreamEncounterRequest{EncounterId: encounterID})
+	s.Require().NoError(err)
+	events := s.streamEvents(stream)
+	_ = drainAvailable(events, 500*time.Millisecond) // drain connect-time replay
+
+	var doorID core.EntityID
+	for id := range encData.Doors {
+		doorID = id
+	}
+	s.Require().NotEmpty(doorID, "exactly one door must connect the two chambers")
+	_, err = s.srv.EncounterClientV2.Interact(s.authCtx("alice"), &encounterv2pb.InteractRequest{
+		EncounterId: encounterID, TargetEntityId: string(doorID),
+	})
+	s.Require().NoError(err)
+	_ = drainAvailable(events, 500*time.Millisecond) // drain door-opened effects
+
+	chamber2Goblin := chamber2IDs[0]
+	afterOpen, err := s.srv.EncRepoV2.Get(s.ctx, encounterID)
+	s.Require().NoError(err)
+	alicePD := afterOpen.Players[core.PlayerID("alice")]
+	target := afterOpen.Monsters[chamber2Goblin].Position
+
+	err = s.moveOnto(encounterID, characterID, alicePD.View.Position, target)
+	s.Require().NoError(err, "moving onto the chamber-2 goblin's hex must not be blocked once the door is open")
+
+	postMove := drainAvailable(events, 1500*time.Millisecond)
+	var sawChamber2ZoneID string
+	var sawAny bool
+	for _, ev := range postMove {
+		gr := ev.GetGeometryRevealed()
+		if gr == nil {
+			continue
+		}
+		for _, h := range gr.GetHexes() {
+			if h.GetPosition().GetX() == int32(target.Q) &&
+				h.GetPosition().GetY() == int32(target.R) &&
+				h.GetPosition().GetZ() == int32(target.S) {
+				sawAny = true
+				sawChamber2ZoneID = h.GetZoneId()
+			}
+		}
+	}
+	s.Require().True(sawAny, "the chamber-2 goblin's hex must appear in a live GeometryRevealed event")
+	s.Require().Equal(string(tkenc.RegionChamber2), sawChamber2ZoneID,
+		"a hex revealed mid-session via the live stream must carry its zone_id too, not just connect-time hexes")
+}
+
 // TestStartEncounter_SpawnsAtEntrance_DoorProjectsClosedWithId is gate facts
 // (1) and (2): the party spawns at SpaceData.Entrance (chamber 1's
 // designated anchor, NOT a room-center placeholder — roomCenterHex() is
