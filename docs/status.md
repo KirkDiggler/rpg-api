@@ -2,7 +2,7 @@
 name: rpg-api status
 description: Where we are with rpg-api — active work, paused, known rough edges, per-subsystem confidence
 updated: 2026-07-23
-confidence: high — Wave 2 Monk entries verified against passing integration tests; #636 entry verified against passing unit + integration tests; #642 v1alpha1 encounter stack deletion verified against passing build/vet/test/lint; #644 The Dungeon wave 1 (api) verified against passing unit + stress-run (50x) integration tests; #650 toolkit seam adoption (InitiativeRolled event + room-aware spawn) verified against passing unit/integration/-race full suite; #651 ActiveConditions projection verified against passing unit + integration (10x -race) + full suite; #656 movement-truncation fix verified against an isolated toolkit-level repro, a new RPC-level regression test (10x -race), and the full suite; #663 AbandonEncounter + combat pockets + rage-at-seating verified against passing unit/integration/-race full suite plus a live playtest against the real game route; #676 The Dungeon wave 2 Slice 2 (api leg) verified against passing unit tests + a new 3-test integration gate suite (8x stress-run, entropy-seeded layouts); #680 equipment on the wire verified against passing unit + integration suite (real AC, occupancy, non-equipment-field preservation) + adversarial-gate fixes + full CI green against published deps; #687 region/theme wire projection verified against passing unit (-race) + a real-RPC integration gate proving connect-time AND incremental-reveal zone_id/zones/theme projection against the real Redis harness, full `go test`/`golangci-lint` green against the published `rpg-api-protos` generated branch + `rpg-toolkit/encounter v0.35.0`; #688 N-region dungeon by key verified against passing unit (-race, 15x stress-run) + a rewritten 3-test integration gate suite against the real Redis harness, full `go test`/`golangci-lint` green against published `rpg-toolkit/encounter v0.35.0`; #689 deterministic crypt monster composition verified against passing unit (-race, 1000-seed x 4-party-size zero-error matrix, against BOTH this package's dungeonSpec and the toolkit's own CryptDungeonParams dimensions) + real-Redis integration (composition + seed-determinism + party-size-invariance) + the updated dungeon_crypt_test.go gate, full `go test`/`golangci-lint` green against published `rpg-toolkit/encounter v0.38.0` + `rulebooks/dnd5e v0.68.0`, zero new lint issues versus main
+confidence: high — Wave 2 Monk entries verified against passing integration tests; #636 entry verified against passing unit + integration tests; #642 v1alpha1 encounter stack deletion verified against passing build/vet/test/lint; #644 The Dungeon wave 1 (api) verified against passing unit + stress-run (50x) integration tests; #650 toolkit seam adoption (InitiativeRolled event + room-aware spawn) verified against passing unit/integration/-race full suite; #651 ActiveConditions projection verified against passing unit + integration (10x -race) + full suite; #656 movement-truncation fix verified against an isolated toolkit-level repro, a new RPC-level regression test (10x -race), and the full suite; #663 AbandonEncounter + combat pockets + rage-at-seating verified against passing unit/integration/-race full suite plus a live playtest against the real game route; #676 The Dungeon wave 2 Slice 2 (api leg) verified against passing unit tests + a new 3-test integration gate suite (8x stress-run, entropy-seeded layouts); #680 equipment on the wire verified against passing unit + integration suite (real AC, occupancy, non-equipment-field preservation) + adversarial-gate fixes + full CI green against published deps; #687 region/theme wire projection verified against passing unit (-race) + a real-RPC integration gate proving connect-time AND incremental-reveal zone_id/zones/theme projection against the real Redis harness, full `go test`/`golangci-lint` green against the published `rpg-api-protos` generated branch + `rpg-toolkit/encounter v0.35.0`; #688 N-region dungeon by key verified against passing unit (-race, 15x stress-run) + a rewritten 3-test integration gate suite against the real Redis harness, full `go test`/`golangci-lint` green against published `rpg-toolkit/encounter v0.35.0`; #689 deterministic crypt monster composition verified against passing unit (-race, 1000-seed x 4-party-size zero-error matrix, against BOTH this package's dungeonSpec and the toolkit's own CryptDungeonParams dimensions) + real-Redis integration (composition + seed-determinism + party-size-invariance) + the updated dungeon_crypt_test.go gate, full `go test`/`golangci-lint` green against published `rpg-toolkit/encounter v0.38.0` + `rulebooks/dnd5e v0.68.0`, zero new lint issues versus main; #699 shared-Redis integration harness verified against docker-free RED/GREEN/mutation lifecycle-ownership tests + a single post-fix `go test -race ./internal/integration/...` full run (37.4s, 3 containers total vs. the ~283s/33-container accepted baseline), zero new lint issues versus main
 ---
 
 # rpg-api: Where We Are
@@ -10,6 +10,60 @@ confidence: high — Wave 2 Monk entries verified against passing integration te
 This is a living doc. Edit it in the same PR that invalidates a line. Don't let it rot.
 
 ## Active work
+
+**Shared Redis integration-harness container (rpg-api#699, 2026-07-23)** —
+Split Redis testcontainer **ownership** from per-test **service wiring** in
+`internal/integration/harness`: `harness.New` still starts and owns its own
+container (unchanged for standalone callers); a new `harness.NewWithRedis`
+wires the identical gRPC server/repos/brokers/clients against an
+already-running Redis address without owning a container. Each of the
+three `internal/integration/...` Go test processes now owns exactly one
+shared `harness.RedisContainer`, started/terminated once in that package's
+`TestMain` (`internal/integration/main_test.go`,
+`internal/integration/character/main_test.go`) — `internal/integration/
+harness`'s own 1-test smoke suite was already minimal (1 container) and is
+unchanged. Every suite (`DungeonCryptSuite`, `EncounterV2IntegrationSuite`,
+`CryptMonsterSeedRedisSuite`, `LobbyStartThenMoveSuite`,
+`LobbyV1alpha1IntegrationSuite`, `CharacterCreationSuite`) still gets a
+fresh `TestServer` per test method via `NewWithRedis` + `FlushRedis`; a
+`RedisContainer.Lease()`/`release()` pair around each `SetupTest`/
+`TearDownTest` is a belt-and-suspenders serialization guard (suites stay
+serial, no `t.Parallel()` added). `CharacterCreationSuite` additionally
+moved off `SetupSuite`-shared-everything onto the same per-test-fresh
+pattern as the other suites, improving isolation beyond its prior state.
+Verified: docker-free RED→GREEN→mutation-caught evidence for the ownership
+split (owned-Close-terminates-once, borrowed-Close-never-terminates,
+shared-fixture-idempotent-Terminate, Lease-serializes-access), plus one
+single post-fix `go test -v -race ./internal/integration/...` run: **37.4s
+wall clock**, **3** Redis containers started/terminated total (one per
+process — a container object cannot cross process boundaries, so 1 truly
+global container was never achievable; 3 is the honest minimum), all 36
+integration test methods green, race-clean. Compares to the accepted
+~283s/33-container-lifecycle baseline in the issue (that baseline's count
+undercounts `internal/integration/lobby_crypt_monster_seed_test.go`'s 3
+tests and didn't note `CharacterCreationSuite` already amortized its
+container via `SetupSuite`; the actual pre-#699 count this branch measured
+against was 30, still reduced to 3). `golangci-lint run`: 29 issues,
+byte-for-byte identical categories/counts versus a clean `origin/main`
+worktree — zero new lint debt.
+
+**Closing an independent-review gap (2026-07-23):** the original lifecycle
+tests proved container ownership in isolation but had no durable coverage
+that the two properties every converted suite actually depends on at
+runtime hold: (1) two `NewWithRedis` `TestServer`s against the same shared
+container are wired to distinct gRPC servers/repos/brokers, and (2) the
+shared container's Redis state is actually isolated between tests by
+`FlushRedis`. Added `TestSharedRedisFixture_PerTestFreshnessAndStateIsolation`
+in `internal/integration` (the primary package, so a targeted `-run` of
+just this test starts only that package's one container). Freshness is a
+characterization test — it passed immediately, pinning behavior
+`NewWithRedis`'s `wireServices` path has had since #699 introduced it, not
+a bug fix. Isolation is mutation-tested: temporarily skipping the second
+cycle's `FlushRedis` call reproduced the exact failure (`Should be zero,
+but was 1`) the assertion exists to catch, then was reverted. Exposed one
+minimal test-only seam, `TestServer.GRPCServer()`, on the harness package
+(test-support code only, never imported by production) to make gRPC
+server identity assertable — no production API changed.
 
 **Deterministic crypt monster composition — retires goblin out-of-sight search (rpg-api#689, 2026-07-23)** —
 The approved first-swing simplification: `StartEncounter` now seeds exactly 1
