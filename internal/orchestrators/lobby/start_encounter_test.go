@@ -531,18 +531,30 @@ func (s *LobbySuite) TestStartEncounter_CryptDungeon_ThreeRegionsArchetypesTheme
 // obstaclesByRef tallies a region's placed tkenc.ObstacleData by Ref, and
 // records the (BlocksMovement, BlocksLoS) pair seen for each Ref — used by
 // the obstacle tests below to assert exact counts and blocking flags
-// without hardcoding a region's full obstacle list inline per test.
+// without hardcoding a region's full obstacle list inline per test. Fails
+// fast (via require.Equal) if the SAME Ref ever shows two different
+// blocking-flag pairs across its placed instances — Copilot review catch
+// on this PR: a naive last-one-wins map assignment would silently accept
+// inconsistent data and still pass every per-ref blocking assertion below,
+// masking exactly the kind of bad data these tests exist to catch.
 type obstacleBlocking struct {
 	blocksMovement bool
 	blocksLoS      bool
 }
 
-func obstaclesByRef(obstacles []tkenc.ObstacleData) (counts map[string]int, blocking map[string]obstacleBlocking) {
+func obstaclesByRef(
+	t require.TestingT, obstacles []tkenc.ObstacleData,
+) (counts map[string]int, blocking map[string]obstacleBlocking) {
 	counts = map[string]int{}
 	blocking = map[string]obstacleBlocking{}
 	for _, o := range obstacles {
 		counts[o.Ref]++
-		blocking[o.Ref] = obstacleBlocking{blocksMovement: o.BlocksMovement, blocksLoS: o.BlocksLoS}
+		got := obstacleBlocking{blocksMovement: o.BlocksMovement, blocksLoS: o.BlocksLoS}
+		if existing, seen := blocking[o.Ref]; seen {
+			require.Equal(t, existing, got,
+				"obstacle ref %q must carry consistent blocking flags across every placed instance", o.Ref)
+		}
+		blocking[o.Ref] = got
 	}
 	return counts, blocking
 }
@@ -581,7 +593,7 @@ func (s *LobbySuite) TestStartEncounter_CryptObstacles_ExactRefsCountsAndBlockin
 		byRegion[archetype] = append(byRegion[archetype], o)
 	}
 
-	entranceCounts, entranceBlocking := obstaclesByRef(byRegion[tkenc.ArchetypeEntrance])
+	entranceCounts, entranceBlocking := obstaclesByRef(s.T(), byRegion[tkenc.ArchetypeEntrance])
 	s.Require().Equal(map[string]int{
 		tkenc.CryptObstacleRefObelisk: 1,
 		tkenc.CryptObstacleRefPillar:  2,
@@ -589,12 +601,12 @@ func (s *LobbySuite) TestStartEncounter_CryptObstacles_ExactRefsCountsAndBlockin
 	s.Require().Equal(obstacleBlocking{blocksMovement: true, blocksLoS: true}, entranceBlocking[tkenc.CryptObstacleRefObelisk])
 	s.Require().Equal(obstacleBlocking{blocksMovement: true, blocksLoS: true}, entranceBlocking[tkenc.CryptObstacleRefPillar])
 
-	corridorCounts, _ := obstaclesByRef(byRegion[tkenc.ArchetypeCorridor])
+	corridorCounts, _ := obstaclesByRef(s.T(), byRegion[tkenc.ArchetypeCorridor])
 	s.Require().Equal(map[string]int{
 		tkenc.CryptObstacleRefPillar: 1,
 	}, corridorCounts, "corridor region: exactly 1 sparse pillar, no others")
 
-	bossCounts, bossBlocking := obstaclesByRef(byRegion[tkenc.ArchetypeBoss])
+	bossCounts, bossBlocking := obstaclesByRef(s.T(), byRegion[tkenc.ArchetypeBoss])
 	s.Require().Equal(map[string]int{
 		tkenc.CryptObstacleRefCoffin:             1,
 		tkenc.CryptObstacleRefAltar:              1,
