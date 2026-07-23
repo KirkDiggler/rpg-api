@@ -4,78 +4,78 @@
       "id": "entrance-exactly-one-skeleton",
       "feature": "crypt-monster-composition",
       "prompt": "Start a crypt encounter. Verify exactly one monster (ref dnd5e:monsters:skeleton) is seeded in the entrance region.",
-      "passes": false,
-      "last_checked": null
+      "passes": true,
+      "last_checked": "2026-07-23"
     },
     {
       "id": "corridor-zero-monsters",
       "feature": "crypt-monster-composition",
       "prompt": "Start a crypt encounter. Verify zero monsters are seeded in the corridor region.",
-      "passes": false,
-      "last_checked": null
+      "passes": true,
+      "last_checked": "2026-07-23"
     },
     {
       "id": "boss-exactly-one-skeleton-captain",
       "feature": "crypt-monster-composition",
       "prompt": "Start a crypt encounter. Verify exactly one monster (ref dnd5e:monsters:skeleton-captain, non-wight rpg-toolkit#816) is seeded in the boss region.",
-      "passes": false,
-      "last_checked": null
+      "passes": true,
+      "last_checked": "2026-07-23"
     },
     {
       "id": "deterministic-seed-byte-identical",
       "feature": "crypt-monster-determinism",
       "prompt": "Start two crypt encounters with the same explicit RandomSeed. Verify monster positions are byte-identical.",
-      "passes": false,
-      "last_checked": null
+      "passes": true,
+      "last_checked": "2026-07-23"
     },
     {
       "id": "party-size-invariant",
       "feature": "crypt-monster-determinism",
       "prompt": "Start crypt encounters with the same seed and party sizes 1, 2, 3, 4. Verify monster positions are identical regardless of party size.",
-      "passes": false,
-      "last_checked": null
+      "passes": true,
+      "last_checked": "2026-07-23"
     },
     {
       "id": "seed-sweep-zero-errors",
       "feature": "crypt-monster-determinism",
       "prompt": "Sweep seeds 1..1000 x party sizes 1..4. Verify zero placement errors across the full matrix.",
-      "passes": false,
-      "last_checked": null
+      "passes": true,
+      "last_checked": "2026-07-23"
     },
     {
       "id": "no-position-oracle-no-search",
       "feature": "crypt-monster-no-search",
-      "prompt": "Verify the crypt monster seeding EntityGroups carry FixedPositions with len==Quantity and PositionOracle==nil — no out-of-sight search/retry path is exercised.",
-      "passes": false,
-      "last_checked": null
+      "prompt": "Verify the crypt monster seeding EntityGroups carry FixedPositions with len==Quantity and PositionOracle==nil \u2014 no out-of-sight search/retry path is exercised.",
+      "passes": true,
+      "last_checked": "2026-07-23"
     },
     {
       "id": "anchors-walkable-non-obstacle",
       "feature": "crypt-monster-anchors",
       "prompt": "Verify both the entrance and boss anchors resolve to positions Room.CanPlaceEntity accepts (not walls, not out of bounds) and are tagged into their expected region via RegionAt.",
-      "passes": false,
-      "last_checked": null
+      "passes": true,
+      "last_checked": "2026-07-23"
     },
     {
       "id": "boss-concealed-by-door-not-search",
       "feature": "crypt-monster-concealment",
-      "prompt": "Verify the boss anchor is not visible (perception.CanSeeAt) from the entrance anchor while the boss door is closed, using real LoS/wall geometry — not a placement-search predicate.",
-      "passes": false,
-      "last_checked": null
+      "prompt": "Verify the boss anchor is not visible (perception.CanSeeAt) from the entrance anchor while the boss door is closed, using real LoS/wall geometry \u2014 not a placement-search predicate.",
+      "passes": true,
+      "last_checked": "2026-07-23"
     },
     {
       "id": "compact-cryptdungeonparams-fixture",
       "feature": "crypt-monster-anchors",
       "prompt": "Call tkenc.CryptDungeonParams directly (not through rpg-api's dungeonSpec) and apply the same production anchor-resolution helper. Verify it composes correctly against the toolkit's own canonical region/door/path shape, independent of PR #697.",
-      "passes": false,
-      "last_checked": null
+      "passes": true,
+      "last_checked": "2026-07-23"
     },
     {
       "id": "real-redis-integration-determinism",
       "feature": "crypt-monster-determinism",
       "prompt": "Against a real Redis-backed lobby+encounter repo (testcontainers), call StartEncounter twice with the same explicit seed. Verify byte-identical monster positions end to end.",
-      "passes": false,
-      "last_checked": null
+      "passes": true,
+      "last_checked": "2026-07-23"
     }
   ]
 }

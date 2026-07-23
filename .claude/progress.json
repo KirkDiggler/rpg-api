@@ -16,15 +16,45 @@
       "task": "Verify toolkit dependency publication (encounter v0.38.0, rulebooks/dnd5e v0.68.0, tools/spawn v0.3.0) and bump go.mod with no local replace",
       "status": "completed",
       "artifacts": ["go.mod", "go.sum"],
-      "commit": null,
+      "commit": "6812532",
       "notes": "Confirmed via git merge-base --is-ancestor that PR #770 (spawn FixedPositions), PR #820 (#816 skeleton-captain), PR #826 (#819 CryptDungeonParams) are all ancestors of their respective published tags."
+    },
+    {
+      "id": "2026-07-23-002",
+      "task": "RED then GREEN: regionMonsterAnchor/buildMonsterSeedGroups/seedRegionMonsters; retire seedGoblins/regionOutOfSight/regionSpawnSpec; harden regionEntryAnchor after the CryptDungeonParams fixture's 1000-seed sweep caught a real 40/1000 wall-collision gap",
+      "status": "completed",
+      "artifacts": [
+        "internal/orchestrators/lobby/crypt_monster_seed.go",
+        "internal/orchestrators/lobby/crypt_monster_seed_internal_test.go",
+        "internal/orchestrators/lobby/crypt_dungeon_params_fixture_internal_test.go",
+        "internal/orchestrators/lobby/start_encounter.go",
+        "internal/orchestrators/lobby/start_encounter_test.go",
+        "internal/orchestrators/lobby/region_entry_anchor_internal_test.go"
+      ],
+      "commit": "58270a6",
+      "notes": "Anchor-safety finding: regionEntryAnchor generalized to the entrance's own outgoing door landed on a real interior wall 40/1000 seeds against rpg-toolkit's own CryptDungeonParams dimensions (perception.HexNeighbors' fixed direction order doesn't prioritize the required-path row). Hardened with a room.CanPlaceEntity check per candidate (existing toolkit-exposed validity query, not new geometry) rather than filing a NEEDS_CONTEXT toolkit-seam issue — re-verified 0/1000 (CryptDungeonParams dims) and 0/4000 (dungeonSpec dims x party 1..4) after the fix. CAUTION for future sessions: scripts/ci-checks.sh runs `git checkout -- .` on ANY uncommitted diff when go generate reports drift (even unrelated mock drift) — commit work before running it."
+    },
+    {
+      "id": "2026-07-23-003",
+      "task": "Real-Redis integration coverage + update the existing dungeon_crypt_test.go gate for the new composition",
+      "status": "completed",
+      "artifacts": [
+        "internal/integration/lobby_crypt_monster_seed_test.go",
+        "internal/integration/dungeon_crypt_test.go"
+      ],
+      "commit": "fcb2bea",
+      "notes": "TestCryptMonsterSeedRedisSuite (3/3), TestDungeonCryptSuite (4/4), TestLobbyV1alpha1IntegrationSuite (4/4), TestLobbyStartThenMoveSuite (1/1) all pass against real Redis + Docker testcontainers. Full-repo `go test ./internal/integration/...` (every suite) times out in this sandbox purely from serial Docker container teardown latency (~10-20s/container, environmental, reproduces identically on unrelated pre-existing suites) — verified the #689-relevant suites individually instead."
+    },
+    {
+      "id": "2026-07-23-004",
+      "task": "Full verification (build/vet/race/lint-vs-main-baseline/fmt/tidy) + docs update",
+      "status": "completed",
+      "artifacts": ["docs/status.md", "docs/architecture/components/lobby-service.md"],
+      "commit": "0761399",
+      "notes": "golangci-lint: 29 issues, IDENTICAL categories/counts on this branch and on a fresh origin/main worktree — zero new issues. go generate ./... surfaces pre-existing mockgen-version import-ordering drift in 7 unrelated mock files, reproduced identically on origin/main — reverted (out of scope, not introduced here)."
     }
   ],
   "next_steps": [
-    "RED: failing tests for archetype-driven anchor resolution, composition, determinism, no-search",
-    "GREEN: seedRegionMonsters + regionMonsterAnchor implementation, retire seedGoblins",
-    "Compact CryptDungeonParams fixture test",
-    "Real Redis integration determinism test",
-    "Full verification suite, docs update, PR"
+    "PR open, not merged — awaiting review per task instructions"
   ]
 }
