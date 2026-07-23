@@ -11,6 +11,21 @@ This is a living doc. Edit it in the same PR that invalidates a line. Don't let 
 
 ## Active work
 
+**Static obstacles on the v1alpha2 wire (rpg-api#692, 2026-07-23)** —
+`ProjectFor` projects only `SpaceData.Obstacles` whose positions belong to the
+viewer's persisted `RevealedHexes`, ordered by stable obstacle ID. Each becomes
+an `ENTITY_TYPE_OBSTACLE` with its toolkit ID, position, opaque ref, and both
+blocking flags copied verbatim. The stream's existing data-aware
+`EntityAppeared` translation now resolves obstacle IDs from `SpaceData.Obstacles`
+through the same builder, consuming toolkit encounter v0.39.0's one-time reveal
+event. Obstacles have sticky explored-map semantics: no hidden-region leak, no
+disappearance event after visibility changes, and reconnect snapshots retain
+previously revealed obstacles. No placement, collision, rendering, theme, or
+proto behavior lives here. `DungeonCryptSuite` proves the real Redis
+`StartEncounter` path persists crypt obstacles, keeps boss obstacles hidden,
+emits exactly one enriched event upon a real reveal, and retains it on a later
+snapshot.
+
 **Shared Redis integration fixture (rpg-api#699, merged via PR #700)** —
 `internal/integration` and `internal/integration/character` each own one
 process-scoped Redis container through `TestMain`. Every suite leases that

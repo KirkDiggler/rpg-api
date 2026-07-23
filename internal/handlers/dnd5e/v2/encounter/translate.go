@@ -467,6 +467,13 @@ func entityForID(ctx context.Context, charRepo characterrepo.Repository, data *e
 	if m, ok := data.Monsters[id]; ok {
 		return monsterEntity(m)
 	}
+	if data.Space != nil {
+		for _, obstacle := range data.Space.Obstacles {
+			if obstacle.ID == id {
+				return obstacleEntity(obstacle)
+			}
+		}
+	}
 	if pid := playerSeatForEntity(data, id); pid != "" {
 		if pd := data.Players[pid]; pd != nil {
 			name, classRef, equip := characterDataFor(ctx, charRepo, string(pd.EntityID))

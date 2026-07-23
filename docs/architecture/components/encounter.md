@@ -163,6 +163,21 @@ for `*tkevents.HexRevealedEvent`, so a hex a player reveals mid-session via
 `Move` carries its `zone_id` immediately — not only after their next
 reconnect re-projects the whole snapshot via `ProjectFor`.
 
+### Static obstacle projection (rpg-api#692)
+
+`SpaceData.Obstacles` is toolkit-owned static instance data. `ProjectFor`
+includes an obstacle only when its position is in the viewer's persisted
+`RevealedHexes`, then orders the selected instances by stable ID and copies its
+ID, position, opaque ref, `BlocksMovement`, and `BlocksLoS` into the existing
+`ENTITY_TYPE_OBSTACLE`/`ObstacleData` wire shape. This is explored-map state,
+not current-LoS state: a revealed obstacle remains in later snapshots.
+
+Toolkit encounter v0.39.0 emits its existing `EntityAppeared` once when a
+static obstacle's hex is newly revealed. The stream's existing data-aware
+translator looks up that ID in `SpaceData.Obstacles` and uses the same obstacle
+builder as snapshots. Static obstacles never produce `EntityDisappeared`; the
+API creates no alternative event or visibility policy.
+
 ### CharacterData equipment projection (rpg-api#680)
 
 `playerEntity`'s `CharacterData` carries `equipped`/`inventory`/`slots`/

@@ -157,6 +157,71 @@ func (s *ProjectSuite) TestProjectFor_TurnBased_EmitsModeTurnStateAndMonsters() 
 	s.Require().Equal(int32(15), gob.GetArmorClass(), "armor_class must match MonsterData.AC")
 }
 
+func (s *ProjectSuite) TestProjectFor_ProjectsOnlyRevealedObstaclesInStableIDOrder() {
+	enc := tkenc.New(context.Background(), "enc-obstacles", s.broker)
+	s.Require().NoError(enc.InitRoom(20, 20, environments.PatternEmpty))
+	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
+		PlayerID: "player-alice", EntityID: "char-alice", Position: originHex, SightRange: 2,
+	}))
+	s.Require().NoError(enc.AddObstacle("obstacle-z", "dnd5e:props:altar", core.Hex{Q: 1, R: -1, S: 0}, true, false))
+	s.Require().NoError(enc.AddObstacle("obstacle-hidden", "dnd5e:props:coffin", core.Hex{Q: 5, R: -5, S: 0}, true, true))
+	s.Require().NoError(enc.AddObstacle("obstacle-a", "dnd5e:props:obelisk", core.Hex{Q: 2, R: -2, S: 0}, false, true))
+	data := enc.ToData()
+
+	pb, err := v2encounter.ProjectFor(context.Background(), data, "player-alice", s.broker, nil, s.now)
+	s.Require().NoError(err)
+
+	var obstacles []*encounterv2pb.Entity
+	for _, entity := range pb.GetSpace().GetEntities() {
+		if entity.GetType() == encounterv2pb.EntityType_ENTITY_TYPE_OBSTACLE {
+			obstacles = append(obstacles, entity)
+		}
+	}
+	s.Require().Len(obstacles, 2, "unrevealed obstacles must not leak into a snapshot")
+	s.Require().Equal([]string{"obstacle-a", "obstacle-z"}, []string{obstacles[0].GetId(), obstacles[1].GetId()})
+	s.Require().Equal(int32(2), obstacles[0].GetPosition().GetX())
+	s.Require().Equal(int32(-2), obstacles[0].GetPosition().GetY())
+	s.Require().Equal(int32(0), obstacles[0].GetPosition().GetZ())
+	s.Require().Equal("dnd5e", obstacles[0].GetObstacle().GetObstacleRef().GetModule())
+	s.Require().Equal("props", obstacles[0].GetObstacle().GetObstacleRef().GetType())
+	s.Require().Equal("obelisk", obstacles[0].GetObstacle().GetObstacleRef().GetId())
+	s.Require().False(obstacles[0].GetObstacle().GetBlocksMovement())
+	s.Require().True(obstacles[0].GetObstacle().GetBlocksLineOfSight())
+	s.Require().True(obstacles[1].GetObstacle().GetBlocksMovement())
+	s.Require().False(obstacles[1].GetObstacle().GetBlocksLineOfSight())
+}
+
+func (s *ProjectSuite) TestProjectFor_ObstacleMalformedRefAndEmptyFallback() {
+	enc := tkenc.New(context.Background(), "enc-obstacles-fallback", s.broker)
+	s.Require().NoError(enc.InitRoom(20, 20, environments.PatternEmpty))
+	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
+		PlayerID: "player-alice", EntityID: "char-alice", Position: originHex, SightRange: 1,
+	}))
+	s.Require().NoError(enc.AddObstacle("obstacle-bad", "unqualified-prop", core.Hex{Q: 1, R: -1, S: 0}, false, false))
+	data := enc.ToData()
+
+	pb, err := v2encounter.ProjectFor(context.Background(), data, "player-alice", s.broker, nil, s.now)
+	s.Require().NoError(err)
+	s.Require().Len(pb.GetSpace().GetEntities(), 2)
+	var obstacle *encounterv2pb.Entity
+	for _, entity := range pb.GetSpace().GetEntities() {
+		if entity.GetId() == "obstacle-bad" {
+			obstacle = entity
+			break
+		}
+	}
+	s.Require().NotNil(obstacle)
+	s.Require().Equal(encounterv2pb.EntityType_ENTITY_TYPE_OBSTACLE, obstacle.GetType())
+	s.Require().Equal("dnd5e", obstacle.GetObstacle().GetObstacleRef().GetModule())
+	s.Require().Equal("obstacle", obstacle.GetObstacle().GetObstacleRef().GetType())
+	s.Require().Equal("unqualified-prop", obstacle.GetObstacle().GetObstacleRef().GetId())
+
+	data.Space.Obstacles = nil
+	pb, err = v2encounter.ProjectFor(context.Background(), data, "player-alice", s.broker, nil, s.now)
+	s.Require().NoError(err)
+	s.Require().Len(pb.GetSpace().GetEntities(), 1, "empty obstacles must preserve the prior snapshot shape")
+}
+
 func (s *ProjectSuite) TestProjectFor_TurnBased_SkipsMonsterOutsideLOS() {
 	// Goblin parked far outside alice's sight — must NOT appear on the wire.
 	data := tkenc.NewData("enc-los")
