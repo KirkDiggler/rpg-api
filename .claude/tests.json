@@ -1,72 +1,107 @@
 {
   "tests": [
     {
-      "id": "space-theme-verbatim-passthrough",
-      "feature": "zone-theme-projection",
-      "prompt": "Build a *tkenc.Data with data.Space.Theme = 'crypt' and call ProjectFor. Verify the returned proto's Space.theme equals 'crypt' exactly -- no interpretation, no default substitution.",
+      "id": "crypt-key-resolves-through-toolkit-constructor-verbatim",
+      "feature": "dungeon-key-selection",
+      "prompt": "Call resolveDungeonSpec(DungeonKeyCrypt, seed) directly (white-box). Verify the returned tkenc.DungeonParams equals calling tkenc.CryptDungeonParams(seed, cryptDoorEntranceToCorridor, cryptDoorCorridorToBoss) directly -- rpg-api owns no region width/height/theme/obstacle literal of its own for the crypt key any more.",
       "passes": true,
-      "last_checked": "2026-07-22"
+      "last_checked": "2026-07-23"
     },
     {
-      "id": "no-space-theme-empty-zones-nil-no-error",
-      "feature": "zone-theme-projection",
-      "prompt": "Call ProjectFor with data.Space left nil (pre-wave-1 fixture / non-spatial encounter). Verify Space.theme is empty, Space.zones is empty/nil, and ProjectFor returns no error -- the absent-metadata fallback, not an invented default.",
+      "id": "zero-value-key-resolves-to-default-crypt-same-toolkit-params",
+      "feature": "dungeon-key-selection",
+      "prompt": "Call resolveDungeonSpec with the zero-value DungeonKey and a given seed. Verify it resolves to DungeonKeyCrypt and returns the exact same tkenc.DungeonParams as an explicit DungeonKeyCrypt call with the same seed.",
       "passes": true,
-      "last_checked": "2026-07-22"
+      "last_checked": "2026-07-23"
     },
     {
-      "id": "space-with-no-regions-zones-nil-theme-empty",
-      "feature": "zone-theme-projection",
-      "prompt": "Call ProjectFor with a real data.Space (dimensions set) but an empty Regions slice and unset Theme (e.g. single-room InitRoom). Verify Space.theme is empty, Space.zones is empty, and every projected Hex.zone_id is empty.",
+      "id": "seed-argument-actually-threaded-into-toolkit-params",
+      "feature": "dungeon-key-selection",
+      "prompt": "Call resolveDungeonSpec(DungeonKeyCrypt, seed) with two different seeds. Verify the returned params.RandomSeed matches each input seed and the two results differ -- a builder that silently ignored its seed argument would fail this.",
       "passes": true,
-      "last_checked": "2026-07-22"
+      "last_checked": "2026-07-23"
     },
     {
-      "id": "space-zones-multi-region-declared-order-not-sorted",
-      "feature": "zone-theme-projection",
-      "prompt": "Build data.Space.Regions with 3 entries in a deliberately non-alphabetical id order (e.g. region-c, region-a, region-b) with distinct archetypes. Call ProjectFor. Verify Space.zones has exactly 3 entries in the SAME order as declared (not alphabetically sorted), each with id+archetype copied verbatim, and no name (RegionData has no Name field to invent from).",
+      "id": "crypt-spec-three-regions-archetypes-theme-scale",
+      "feature": "dungeon-key-selection",
+      "prompt": "StartEncounter with the crypt key and an explicit seed. Verify the persisted Space has exactly 3 regions tagged entrance/corridor/boss (RegionData.Archetype), Space.Theme == 'crypt', Space.Height and each region's bounding width match a live tkenc.CryptDungeonParams call with the same seed (never a hardcoded literal), and the boss region's primary playable axis (min(width, height)) exceeds 6 hex steps.",
       "passes": true,
-      "last_checked": "2026-07-22"
+      "last_checked": "2026-07-23"
     },
     {
-      "id": "hex-zone-id-exact-membership-not-geometry",
-      "feature": "zone-theme-projection",
-      "prompt": "Build two regions, each tagging exactly one hex, with a third 'door' hex sitting geometrically between/adjacent to both but tagged into NEITHER region's Hexes set. Call ProjectFor with a viewer whose revealed set includes all three hexes. Verify the two tagged hexes carry their respective region ids, and the door hex's zone_id is empty -- proving the lookup is exact set membership, not adjacency/geometric derivation.",
+      "id": "party-spawns-at-entrance",
+      "feature": "dungeon-key-selection",
+      "prompt": "StartEncounter with the crypt key. Verify every seated party member's spawn hex is tagged into the entrance-archetype region, and the first member spawns exactly at Space.Entrance.",
       "passes": true,
-      "last_checked": "2026-07-22"
+      "last_checked": "2026-07-23"
     },
     {
-      "id": "live-hex-revealed-carries-zone-id",
-      "feature": "zone-theme-projection",
-      "prompt": "White-box test translateHexRevealedEventWithData directly: build a *tkenc.Data with one region tagging one hex, and a HexRevealedEvent revealing that hex plus an untagged hex. Verify the resulting GeometryRevealed event's Hex for the tagged position carries the region id, and the untagged position carries empty zone_id. Also verify a nil *encounter.Data falls back to empty zone_id without panicking, and the pre-existing ErrViewerSawNothing contract (viewer not in PerPlayer) is preserved.",
+      "id": "crypt-obstacles-exact-refs-counts-and-blocking-by-region",
+      "feature": "crypt-obstacle-consumption",
+      "prompt": "A real StartEncounter call with the crypt key and an explicit (known-good) seed. Verify SpaceData.Obstacles is non-empty, every obstacle ID is unique, and grouped by the region archetype it's placed in: entrance has exactly 1 obelisk + 2 pillars, corridor has exactly 1 pillar, boss has exactly 1 coffin + 1 altar + 1 statue-reaper + 1 statue-knight-hooded -- refs read off the toolkit's exported CryptObstacleRef* constants, never a string this package invents. Also verify the blocking-flag table (every ref BlocksMovement=true; every ref BlocksLoS=true EXCEPT the coffin, which is false).",
       "passes": true,
-      "last_checked": "2026-07-22"
+      "last_checked": "2026-07-23"
     },
     {
-      "id": "real-rpc-zones-theme-and-incremental-reveal-e2e",
-      "feature": "zone-theme-projection",
-      "prompt": "Through the real LobbyService.StartEncounter + v1alpha2 EncounterService RPC surface (real Redis, DungeonCryptSuite, ported post-#693-merge from the retired DungeonTwoChamberSuite): start a crypt encounter, GetEncounter and verify Space.zones names all 3 regions with their toolkit archetype (entrance/corridor/boss) AND Space.theme == 'crypt' in the same response. Verify the connect-time entrance hex carries the entrance region's zone_id. Then open both connector doors and Move onto a boss-region goblin's hex over a live StreamEncounter connection; verify the resulting live GeometryRevealed event's hex for that position also carries the boss region's zone_id -- proving the incremental-reveal fix, not just the connect-time snapshot.",
+      "id": "crypt-obstacles-deterministic-under-explicit-seed",
+      "feature": "crypt-obstacle-consumption",
+      "prompt": "Start two independent encounters with the crypt key and the same explicit seed (different lobbies/players). Verify their persisted SpaceData.Obstacles lists are non-empty and byte-identical.",
+      "passes": true,
+      "last_checked": "2026-07-23"
+    },
+    {
+      "id": "deterministic-explicit-seed-reproducible-layout",
+      "feature": "dungeon-key-selection",
+      "prompt": "Start two independent encounters with the same explicit RandomSeed and the crypt key. Verify their persisted Space (walls, width/height, entrance, regions, obstacles) and connector door positions are byte-identical.",
+      "passes": true,
+      "last_checked": "2026-07-23"
+    },
+    {
+      "id": "unknown-dungeon-key-errors",
+      "feature": "dungeon-key-selection",
+      "prompt": "Call StartEncounter with a DungeonKey that has no registered spec. Verify it returns an error (ErrUnknownDungeonKey), wraps a resolveDungeonSpec(key, seed) call that also errors directly, and does not create or persist an encounter or transition the lobby out of WAITING.",
+      "passes": true,
+      "last_checked": "2026-07-23"
+    },
+    {
+      "id": "geometry-independent-of-party-size",
+      "feature": "api-boundary",
+      "prompt": "Start two encounters with the same key+seed but different party sizes (1 vs 2 members). Verify persisted Space and connector door positions are byte-identical -- InitDungeon runs before any AddPlayer call and takes no party information as input.",
+      "passes": true,
+      "last_checked": "2026-07-23"
+    },
+    {
+      "id": "crypt-goblins-seeded-at-entrance-and-boss-not-corridor",
+      "feature": "regression",
+      "prompt": "StartEncounter with the crypt key and a known-good seed. Verify exactly 2 goblins land in the entrance region and 2 in the boss region, none in the corridor, at distinct positions, combat does not start at spawn, and moving a player onto an entrance-region goblin's hex flips the encounter to TURN_BASED by the toolkit's own rule.",
+      "passes": true,
+      "last_checked": "2026-07-23"
+    },
+    {
+      "id": "toolkit-dependency-bump-clean",
+      "feature": "dependency-management",
+      "prompt": "Bump go.mod's rpg-toolkit/encounter requirement to the published v0.38.0 tag (verified on the real Go module proxy, containing rpg-toolkit#826's CryptDungeonParams) via `go get` + `go mod tidy`. Verify the resulting go.mod/go.sum diff is a single version-line change with no replace directive, no go.work, and no unrelated transitive version drift.",
       "passes": true,
       "last_checked": "2026-07-23"
     },
     {
       "id": "mutation-revert-discrimination",
-      "feature": "zone-theme-projection",
-      "prompt": "Revert project.go/translate.go/handler.go to their pre-#687 commit content (git show <parent-commit>:<path>) while leaving the real-rpc-zones-theme-and-incremental-reveal-e2e test unchanged. Verify the test fails (Space.zones has 0 items instead of the expected count). Restore the real implementation and verify the test passes again. Re-run post-#693-merge against the ported DungeonCryptSuite version to confirm the discrimination still holds after the port.",
+      "feature": "crypt-obstacle-consumption",
+      "prompt": "Revert dungeon_spec.go's DungeonKeyCrypt builder to a version that forces every region's Obstacles field to nil (simulating the pre-#694 API-owned-literal shape) while leaving the new obstacle tests unchanged. Verify TestStartEncounter_CryptObstacles_ExactRefsCountsAndBlockingByRegion fails (SpaceData.Obstacles is empty). Restore the real tkenc.CryptDungeonParams-backed builder and verify the test passes again.",
       "passes": true,
       "last_checked": "2026-07-23"
     },
     {
-      "id": "existing-projectfor-tests-remain-green",
+      "id": "existing-region-theme-projection-remains-green",
       "feature": "regression",
-      "prompt": "Run the full internal/handlers/dnd5e/v2/encounter test package with -race. Verify every pre-existing ProjectFor/TranslateEvent test (turn state, monster/player entity projection, walls, doors, conditions, character identity/equipment, HexRevealedEvent's plain TranslateEvent dispatch path) still passes unmodified.",
+      "prompt": "Run the full internal/handlers/dnd5e/v2/encounter test package and the real-Redis DungeonCryptSuite (rpg-api#687/#695's zone/theme wire projection). Verify every pre-existing test still passes unmodified -- Space.zones/theme/Hex.zone_id projection reads off Space.Regions/Theme however InitDungeon populates them, independent of whether Obstacles is set.",
       "passes": true,
-      "last_checked": "2026-07-22"
+      "last_checked": "2026-07-23"
     },
     {
-      "id": "full-integration-suite-remains-green",
-      "feature": "regression",
-      "prompt": "Run the full internal/integration/... suite with -race and real Redis (testcontainers). Verify every pre-existing suite (LobbyService, EncounterV2, character creation, harness, DungeonCryptSuite's own 4 gate tests post-#693-merge) still passes unmodified alongside the ported zone/theme gate test.",
+      "id": "known-gap-out-of-sight-goblin-placement-capacity",
+      "feature": "known-gap",
+      "prompt": "Sweep StartEncounter with the crypt key across many explicit RandomSeed values (1..1000) for party sizes 1/2/3/4, using the real spatial/spawn/perception packages (no test doubles). Measure and record the failure rate ('spawn engine failed to place N of 4 goblin(s)') by party size. Confirm the failure is deterministic per seed (repeated sweeps produce identical results), and confirm it is NOT present on origin/main (0/30 baseline runs of a pre-existing entropy-seeded test). File the finding as a new rpg-api issue with full evidence; do not attempt to fix it in this branch (out of #694's stated scope).",
       "passes": true,
       "last_checked": "2026-07-23"
     }

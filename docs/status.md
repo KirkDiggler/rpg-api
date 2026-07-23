@@ -1,8 +1,8 @@
 ---
 name: rpg-api status
 description: Where we are with rpg-api — active work, paused, known rough edges, per-subsystem confidence
-updated: 2026-07-22
-confidence: high — Wave 2 Monk entries verified against passing integration tests; #636 entry verified against passing unit + integration tests; #642 v1alpha1 encounter stack deletion verified against passing build/vet/test/lint; #644 The Dungeon wave 1 (api) verified against passing unit + stress-run (50x) integration tests; #650 toolkit seam adoption (InitiativeRolled event + room-aware spawn) verified against passing unit/integration/-race full suite; #651 ActiveConditions projection verified against passing unit + integration (10x -race) + full suite; #656 movement-truncation fix verified against an isolated toolkit-level repro, a new RPC-level regression test (10x -race), and the full suite; #663 AbandonEncounter + combat pockets + rage-at-seating verified against passing unit/integration/-race full suite plus a live playtest against the real game route; #676 The Dungeon wave 2 Slice 2 (api leg) verified against passing unit tests + a new 3-test integration gate suite (8x stress-run, entropy-seeded layouts); #680 equipment on the wire verified against passing unit + integration suite (real AC, occupancy, non-equipment-field preservation) + adversarial-gate fixes + full CI green against published deps; #687 region/theme wire projection verified against passing unit (-race) + a real-RPC integration gate proving connect-time AND incremental-reveal zone_id/zones/theme projection against the real Redis harness, full `go test`/`golangci-lint` green against the published `rpg-api-protos` generated branch + `rpg-toolkit/encounter v0.35.0`; #688 N-region dungeon by key verified against passing unit (-race, 15x stress-run) + a rewritten 3-test integration gate suite against the real Redis harness, full `go test`/`golangci-lint` green against published `rpg-toolkit/encounter v0.35.0`
+updated: 2026-07-23
+confidence: high, with one flagged concern (rpg-api#696, see below) — Wave 2 Monk entries verified against passing integration tests; #636 entry verified against passing unit + integration tests; #642 v1alpha1 encounter stack deletion verified against passing build/vet/test/lint; #644 The Dungeon wave 1 (api) verified against passing unit + stress-run (50x) integration tests; #650 toolkit seam adoption (InitiativeRolled event + room-aware spawn) verified against passing unit/integration/-race full suite; #651 ActiveConditions projection verified against passing unit + integration (10x -race) + full suite; #656 movement-truncation fix verified against an isolated toolkit-level repro, a new RPC-level regression test (10x -race), and the full suite; #663 AbandonEncounter + combat pockets + rage-at-seating verified against passing unit/integration/-race full suite plus a live playtest against the real game route; #676 The Dungeon wave 2 Slice 2 (api leg) verified against passing unit tests + a new 3-test integration gate suite (8x stress-run, entropy-seeded layouts); #680 equipment on the wire verified against passing unit + integration suite (real AC, occupancy, non-equipment-field preservation) + adversarial-gate fixes + full CI green against published deps; #687 region/theme wire projection verified against passing unit (-race) + a real-RPC integration gate proving connect-time AND incremental-reveal zone_id/zones/theme projection against the real Redis harness, full `go test`/`golangci-lint` green against the published `rpg-api-protos` generated branch + `rpg-toolkit/encounter v0.35.0`; #688 N-region dungeon by key verified against passing unit (-race, 15x stress-run) + a rewritten 3-test integration gate suite against the real Redis harness, full `go test`/`golangci-lint` green against published `rpg-toolkit/encounter v0.35.0`; #694 crypt dungeon-key consumes the toolkit's own `CryptDungeonParams` (obstacles included) verified against passing unit (-race) against published `rpg-toolkit/encounter v0.38.0` — **with a flagged, unresolved concern**: the toolkit's now-canonical (smaller) crypt dimensions collide with rpg-api's own pre-existing out-of-sight goblin-placement constants, measured up to ~33% `StartEncounter` failure for a full party on the real entropy-seeded path (rpg-api#696, filed, not fixed by #694 — out of its scope per the issue's own boundary)
 ---
 
 # rpg-api: Where We Are
@@ -10,6 +10,70 @@ confidence: high — Wave 2 Monk entries verified against passing integration te
 This is a living doc. Edit it in the same PR that invalidates a line. Don't let it rot.
 
 ## Active work
+
+**Crypt dungeon-key consumes the toolkit's own `CryptDungeonParams` — no more
+API-owned crypt dimensions (rpg-api#694, 2026-07-23)** —
+`resolveDungeonSpec`'s `DungeonKeyCrypt` builder (`dungeon_spec.go`) now returns
+`tkenc.CryptDungeonParams(seed, cryptDoorEntranceToCorridor, cryptDoorCorridorToBoss)`
+**verbatim** instead of a hand-authored `dungeonSpec{theme, height, regions,
+connectors}` literal (rpg-api#688's original shape). rpg-toolkit#826 (published
+`encounter/v0.38.0`) is now the single source of the crypt's region widths/height,
+theme, archetypes, AND its physical set-piece obstacles (entrance: 1 obelisk + 2
+pillars; corridor: 1 sparse pillar; boss: 1 coffin + 1 altar + 1 `statue-reaper` +
+1 `statue-knight-hooded`, all exact canonical `dnd5e:props:*` refs) — rpg-api keeps
+only its own two connector door IDs (`cryptDoorEntranceToCorridor`/
+`cryptDoorCorridorToBoss`, caller-assigned entity IDs, not geometry) and the seed
+threading (`StartEncounterInput.RandomSeed` -> `resolveDungeonSpec`'s second
+argument -> the toolkit constructor's `seed` parameter). `dungeonSpecs`' value
+type changed from a literal struct to a `dungeonSpecBuilder` closure
+(`func(seed int64) tkenc.DungeonParams`) so a future second key can call
+whatever toolkit constructor owns ITS content, the same way. `seedGoblins`
+now takes the resolved `tkenc.DungeonParams` directly (`.Regions`/`.Connectors`)
+instead of the retired `dungeonSpec` wrapper — no behavior change, pure rename.
+
+**A real `StartEncounter` call now persists non-empty `SpaceData.Obstacles`.**
+Previously every region's `Obstacles` field was left unset (rpg-api#688 never
+populated it — rpg-api#692's own wire-projection work had nothing to project).
+`TestStartEncounter_CryptObstacles_ExactRefsCountsAndBlockingByRegion` proves the
+exact canonical refs/counts/blocking flags land in persisted `SpaceData.Obstacles`
+by region archetype, read off the toolkit's own exported `CryptObstacleRef*`
+constants — never a string this package invents.
+`TestStartEncounter_CryptObstacles_ExplicitSeed_DeterministicPositions` proves
+obstacle placement (not just refs/counts) is byte-identical across two
+independent `StartEncounter` calls given the same explicit seed.
+
+**Toolkit dependency.** Bumped `rpg-toolkit/encounter` v0.35.0 → v0.38.0
+(rpg-toolkit#826, merged 2026-07-23, carrying `CryptDungeonParams`/
+`ObstacleSpec`/`DungeonRegionParams.Obstacles`) — verified published on the real
+Go module proxy (`go list -m -versions` + an isolated `go build` against
+`CryptDungeonParams`) before the bump; no replace directive, no `go.work`; single
+version-line diff in `go.mod`/`go.sum`, `go mod tidy` produced no further drift.
+
+**Verified:** `internal/orchestrators/lobby`'s full test package green
+(`-race -count=5`); every pre-#694 crypt/goblin/seed/party-size/unknown-key/
+default-key test passes unmodified in behavior (only the hardcoded expected
+width/height numbers in `TestStartEncounter_CryptDungeon_
+ThreeRegionsArchetypesThemeScaleAndEntrance` changed, from rpg-api's old,
+oversized literal 20/6/14/20 to values now READ DIRECTLY off a
+`tkenc.CryptDungeonParams` call in the test itself — never hardcoded again).
+`TestResolveDungeonSpec_ExplicitCryptKey_MatchesToolkitConstructorVerbatim`
+is the headline unit-level pin: `resolveDungeonSpec(DungeonKeyCrypt, seed)`
+must equal calling `tkenc.CryptDungeonParams` directly — any reintroduced
+API-owned dimension literal fails this first. rpg-api#687/#695's zone/theme
+wire projection (`DungeonCryptSuite`) is unaffected and still green — it reads
+`Space.Regions`/`Theme` however InitDungeon populates them, obstacles or not.
+
+**Known gap surfaced while verifying this (not fixed here — see rpg-api#696):**
+the toolkit's canonical crypt dimensions (rpg-toolkit#826: height 8,
+entrance/boss width 10) are small enough, relative to rpg-api's own
+`memberSightRange`/`goblinsPerRegion` constants (unrelated pre-existing tuning,
+last calibrated against rpg-api's OLD oversized 20/6/14 literal), that
+`seedGoblins`' out-of-sight placement now fails outright for a measurable
+fraction of `RandomSeed` values — up to ~33% for a full 4-player party, on the
+REAL entropy-seeded path every production caller uses (no proto field carries
+a seed). See rpg-api#696 for full measurements/repro/remedy options; needs a
+decision before this is comfortable to ship broadly, independent of #694's own
+obstacle-consumption work being correct and fully verified.
 
 **N-region dungeon by key — retires the two-chamber constants (rpg-api#688, 2026-07-22)** —
 `StartEncounter` (`internal/orchestrators/lobby/start_encounter.go`) now calls the
@@ -25,11 +89,10 @@ theme-conditional branching").
 DungeonKey` is the zero value — no proto field carries a caller-supplied key yet; lobby-
 settings-driven selection is future work per the issue's own Scope section) is a
 3-region linear chain — entrance → corridor → boss — theme `"crypt"` (an opaque string
-InitDungeon carries through unbranched onto `SpaceData.Theme`), explicit dimensions
-(height 20; entrance/corridor/boss widths 20/6/14) giving the boss region a primary
-playable axis of 14, comfortably past the toolkit's own >6-hex-step scale invariant
-(enforced by `validateDungeonParams` at generation time, not eyeballed here), and 2
-connector door IDs.
+InitDungeon carries through unbranched onto `SpaceData.Theme`). **Superseded by
+rpg-api#694 (above): dimensions/obstacles now come from `tkenc.CryptDungeonParams`, not
+an API-owned literal** — this paragraph is kept as the historical record of what #688
+originally shipped.
 
 **Goblin seeding, generalized by chain position, not archetype.** The chamber-scoped
 helpers (`chamberEntryAnchor`/`chamberOutOfSight`/`chamberSpawnSpec`, hardcoded to
@@ -811,6 +874,32 @@ done in this PR.
   deferred since early in the project.
 
 ## Known rough edges
+
+### Out-of-sight goblin placement can fail against the toolkit's canonical crypt dimensions (rpg-api#696, filed 2026-07-23)
+
+`seedGoblins`' out-of-sight placement (`internal/orchestrators/lobby/start_encounter.go`)
+requires `goblinsPerRegion` (2) hidden cells in both the entrance and boss regions,
+checked against `memberSightRange` (10). rpg-api#694 switched the crypt key's
+dimensions from an oversized, API-owned literal (entrance/boss width 20/14) to
+rpg-toolkit#826's canonical, much smaller ones (entrance/boss width 10/10) — nobody
+coordinated the two independently-evolved constraints, and for a measurable fraction
+of `RandomSeed` values (deterministic per seed, not run-to-run flake) the region is
+now too small to hide 2 goblins: **~10% for a solo party, ~33% for a full 4-player
+party** — measured against the real `spatial`/`spawn`/`perception` packages, no test
+doubles. No proto field carries a seed, so **every real production `StartEncounter`
+call is exposed** — there is no caller-side workaround. `StartEncounter` fails loudly
+(no encounter persisted, lobby stays `WAITING`) rather than corrupting state, but a
+~1-in-3 hard failure for the game's default full-party dungeon start is not
+acceptable long-term. See rpg-api#696 for full measurements, root cause, and
+candidate remedies (widen the toolkit's crypt template; retune rpg-api's own
+`memberSightRange`/`goblinsPerRegion`; or a bounded deterministic placement retry) —
+deliberately not decided or fixed by #694 itself, whose scope was obstacle
+consumption only (rpg-toolkit#826 itself lists "monster seeding" as out of scope
+for its own issue, #689).
+
+Affected path: `internal/orchestrators/lobby/start_encounter.go`'s `seedGoblins`/
+`regionOutOfSight`, in combination with `dungeon_spec.go`'s toolkit-sourced crypt
+dimensions.
 
 ### ~~Boundary violations — proto types in the orchestrator~~ RESOLVED by deletion (#642)
 
