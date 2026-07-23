@@ -144,9 +144,14 @@ membership, never adjacency/geometry (a door hex adjacent to two regions
 but tagged into neither stays `""`, matching `doorPassageNeighbor`'s
 documented "belongs to NEITHER region" contract). `RegionAt` is
 nil-receiver safe, so a nil `data.Space` or an empty `Regions` slice
-(single-room `InitRoom`, or the still-live `InitTwoChamberRoom`'s untouched
-`Theme`) falls back to `""`/no zones with no invented default — the same
-convention `wallsToProto`'s nil-space case already established.
+(single-room `InitRoom`) falls back to `""`/no zones with no invented
+default — the same convention `wallsToProto`'s nil-space case already
+established. (Production `StartEncounter` now builds its dungeon via the
+by-key `InitDungeon` crypt spec, rpg-api#688, which always sets
+`Theme: "crypt"` — `InitTwoChamberRoom`'s untouched `Theme` is no longer a
+live rpg-api example of this fallback; it remains only as a toolkit-side
+compatibility wrapper over `InitDungeon`, with zero call sites left in
+this repo.)
 
 The live incremental `GeometryRevealed` event (`translateHexRevealedEvent`
 in `translate.go`) is a SEPARATE hex-projection path from `ProjectFor` — it
