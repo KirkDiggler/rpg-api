@@ -1,88 +1,77 @@
 {
-  "branch": "feat/action-economy-rpcs",
-  "issues": ["rpg-api-protos#127"],
-  "goal": "Implement two-level action economy RPCs (ActivateCombatAbility, ExecuteAction) that separate ability activation from action execution",
+  "branch": "feat/688-n-region-dungeon-key",
+  "issues": ["rpg-api#688"],
+  "goal": "Replace StartEncounter's hardcoded two-chamber InitTwoChamberRoom construction with the toolkit's generic InitDungeon, selected by a named dungeon-spec key (default: crypt, a 3-region entrance->corridor->boss linear chain). rpg-api maps an opaque key to literal toolkit config only -- no geometry math, no region derivation, no archetype-conditional branching.",
+  "dependencies": {
+    "rpg-toolkit#821": "merged 2026-07-22T18:16:26Z (commit e1f98403), published as encounter/v0.35.0 on the real Go module proxy -- verified via proxy.golang.org .info fetch + isolated `go build` against InitDungeon/DungeonParams/RegionData.Archetype/SpaceData.Theme before any dependency bump in this branch."
+  },
   "sessions": [
     {
-      "date": "2026-01-08",
-      "task": "Extend ActionEconomyState entity",
-      "commit": "e3aa9e2",
-      "changes": [
-        "Added AttacksRemaining, OffHandAttacksRemaining, FlurryStrikesRemaining fields",
-        "Added DisengageActive, DodgeActive boolean flags",
-        "Added helper methods: HasAttacks/UseAttack, HasOffHandAttacks/UseOffHandAttack, HasFlurryStrikes/UseFlurryStrike"
-      ],
-      "notes": "NewActionEconomyState() defaults unchanged - attacks start at 0 (granted by ATTACK ability). Pre-existing build errors in converters.go (unrelated to this change)."
+      "id": "2026-07-22-001",
+      "task": "Preflight: verify toolkit publication, check for duplicate branch/PR, create isolated worktree, baseline tests, reset progress artifacts",
+      "status": "completed",
+      "artifacts": [".claude/progress.json", ".claude/tests.json"],
+      "commit": "a3070d8",
+      "notes": "encounter/v0.35.0 confirmed published (proxy.golang.org .info + go build in isolated tmp module). No existing feat/688-* branch or open PR referencing #688. Worktree at .worktrees/feat-688-n-region-dungeon-key. Baseline: go build ./... clean, go test ./internal/orchestrators/lobby/... passing pre-change."
     },
     {
-      "date": "2026-01-08",
-      "task": "Add Input/Output types for ActivateCombatAbility and ExecuteAction",
-      "commit": "a5dc8e8",
-      "changes": [
-        "Added ActivateCombatAbilityInput/Output types to service.go",
-        "Added ExecuteActionInput/Output types to service.go",
-        "Added MoveResult type for move action outcomes",
-        "Added ActivateCombatAbility and ExecuteAction method signatures to Service interface",
-        "Added stub implementations to Orchestrator (return 'not yet implemented' error)",
-        "Added stringToEntityType and intToEntitySize converter helpers",
-        "Fixed EntityType/EntitySize enum conversion in converters.go",
-        "Updated golangci.yml to exclude SA1019 deprecated warnings during transition",
-        "Regenerated mocks for updated Service interface"
-      ],
-      "notes": "Updated rpg-api-protos to latest generated branch (includes CombatAbilityId, ActionId enums). Build passes, all tests pass."
+      "id": "2026-07-22-002",
+      "task": "Bump rpg-toolkit/encounter to v0.35.0",
+      "status": "completed",
+      "artifacts": ["go.mod", "go.sum"],
+      "commit": "6a63ac2",
+      "notes": "go get github.com/KirkDiggler/rpg-toolkit/encounter@v0.35.0 + go mod tidy; single line diff in go.mod/go.sum, no replace directive."
     },
     {
-      "date": "2026-01-08",
-      "task": "Implement ExecuteAction orchestrator logic",
-      "commit": "522ba32",
-      "changes": [
-        "Implemented ExecuteAction method supporting STRIKE, OFF_HAND_STRIKE, and MOVE actions",
-        "STRIKE: Validates AttacksRemaining, resolves attack via toolkit, consumes attack, handles TWF off-hand grants",
-        "OFF_HAND_STRIKE: Validates OffHandAttacksRemaining, same attack resolution as main-hand",
-        "MOVE: Validates path cube coordinates, checks movement costs (5ft/hex), wall/entity collisions",
-        "Added stop reason constants (completed, position_occupied, insufficient_movement, blocked_by_wall, invalid_coordinates)",
-        "Added executeStrike and executeMove helper methods",
-        "Uses existing buildCombatState helper for response building",
-        "Publishes MovementCompleted events for move actions",
-        "Added pb import for ActionId enum usage",
-        "Added 7 comprehensive tests covering all action types and edge cases"
-      ],
-      "notes": "ExecuteAction consumes granted capacity (attacks/movement). Must call ActivateCombatAbility first to grant attacks. Movement doesn't require activation - uses MovementRemaining from encounter."
+      "id": "2026-07-22-003",
+      "task": "Add dungeon-spec registry (DungeonKey/dungeonSpec/resolveDungeonSpec) + white-box unit tests",
+      "status": "completed",
+      "artifacts": ["internal/orchestrators/lobby/dungeon_spec.go", "internal/orchestrators/lobby/dungeon_spec_internal_test.go"],
+      "commit": "2338576",
+      "notes": "Standalone/additive -- not yet wired into StartEncounter. Crypt spec: 3 regions (entrance/corridor/boss), theme=crypt, height=20, widths 20/6/14, 2 connector doors. resolveDungeonSpec defaults zero-value key to crypt, errors ErrUnknownDungeonKey otherwise."
     },
     {
-      "date": "2026-01-08",
-      "task": "Implement ActivateCombatAbility orchestrator logic",
-      "commit": "522ba32",
-      "changes": [
-        "Implemented ActivateCombatAbility method with full ability handling",
-        "ATTACK: Checks HasAction(), consumes action, grants AttacksRemaining = 1",
-        "DASH: Checks HasAction(), consumes action, adds defaultMovementSpeed to MovementRemaining",
-        "DODGE: Checks HasAction(), consumes action, sets DodgeActive = true",
-        "DISENGAGE: Checks HasAction(), consumes action, sets DisengageActive = true",
-        "OFFHAND_ATTACK: Checks HasBonusAction(), consumes bonus action, grants OffHandAttacksRemaining = 1",
-        "Returns GrantedCapacity message describing what was granted",
-        "Added 10 comprehensive tests covering all 5 abilities and error cases",
-        "Tests verify action economy consumption, capacity grants, and turn validation"
-      ],
-      "notes": "Implementation was committed alongside ExecuteAction in same commit (522ba32). Validates entity's turn before allowing activation. Returns business logic failures (Success=false) vs errors for invalid state. All 10 tests pass."
+      "id": "2026-07-22-004",
+      "task": "RED: write failing start_encounter_test.go + region_entry_anchor_internal_test.go against not-yet-updated production code; GREEN: rewrite start_encounter.go to call InitDungeon via resolveDungeonSpec, generalize goblin-seeding helpers to chain endpoints",
+      "status": "completed",
+      "artifacts": ["internal/orchestrators/lobby/start_encounter.go", "internal/orchestrators/lobby/start_encounter_test.go", "internal/orchestrators/lobby/region_entry_anchor_internal_test.go"],
+      "commit": "825ccdc",
+      "notes": "RED observed: go vet failed with 'undefined: regionEntryAnchor' (region_entry_anchor_internal_test.go, renamed/generalized from chamber_entry_anchor_internal_test.go) before start_encounter.go was touched. After rewrite: go test ./internal/orchestrators/lobby/... green, -race -count=5 green, 15x stress-run (entropy-seeded default-key runs) clean. 6 new discriminating tests added; every other pre-existing StartEncounter test unmodified and still green."
     },
     {
-      "date": "2026-01-08",
-      "task": "Wire up gRPC handlers for ActivateCombatAbility and ExecuteAction",
-      "commit": "cd22bd2",
-      "changes": [
-        "Added ActivateCombatAbility handler in handler.go with validation and service call",
-        "Added ExecuteAction handler with oneof input handling for Strike and Move actions",
-        "Added convertActionEconomyToProto converter for ActionEconomy proto conversion",
-        "Added convertMoveResultToProto converter for MoveResult proto conversion",
-        "Added convertGrantedActionToProto converter for GrantedAction proto conversion",
-        "Added 12 handler tests covering success, validation, and error cases"
-      ],
-      "notes": "Handlers follow existing patterns (Attack, MoveCharacter). ActionEconomy converter takes CombatState for movement values. All tests pass, pre-commit passes."
+      "id": "2026-07-22-005",
+      "task": "Update integration tests to the crypt topology (real Redis harness)",
+      "status": "completed",
+      "artifacts": ["internal/integration/dungeon_crypt_test.go", "internal/integration/dungeon_two_chamber_test.go", "internal/integration/lobby_start_then_move_test.go"],
+      "commit": "b64e510",
+      "notes": "dungeon_two_chamber_test.go -> dungeon_crypt_test.go (DungeonTwoChamberSuite -> DungeonCryptSuite), archetype-keyed instead of region-ID-keyed, both connector doors opened before the boss-region sightline proof. lobby_start_then_move_test.go: doc-only update, no logic change (entrance-edge-column property unchanged by InitDungeon)."
+    },
+    {
+      "id": "2026-07-22-006",
+      "task": "Full verification: make pre-commit, make ci-check (real Redis via testcontainers), lint diff against origin/main baseline",
+      "status": "completed",
+      "artifacts": [],
+      "commit": null,
+      "notes": "make pre-commit green. make ci-check: all go test (-race, unit + integration, 269.9s for internal/integration) green including new DungeonCryptSuite and full TestLobbySuite; 2 reported failures are BOTH pre-existing repo debt confirmed identical on origin/main -- mock-regeneration false positive (documented rpg-api#683, mockgen tool-version drift, reproduced on a clean main checkout) and golangci-lint (29 issues, byte-identical count on main, zero in files this branch touches)."
+    },
+    {
+      "id": "2026-07-22-007",
+      "task": "Update docs/status.md and docs/architecture/components/lobby-service.md",
+      "status": "completed",
+      "artifacts": ["docs/status.md", "docs/architecture/components/lobby-service.md"],
+      "commit": "0e4ae1f",
+      "notes": "New Active-work entry for #688; #676's entry gets a superseded-by pointer, left intact as historical record per this file's own documentation philosophy."
+    },
+    {
+      "id": "2026-07-22-008",
+      "task": "Push branch, open PR #693, address Copilot review comment",
+      "status": "completed",
+      "artifacts": ["internal/orchestrators/lobby/start_encounter_test.go"],
+      "commit": "f53bcbd",
+      "notes": "PR https://github.com/KirkDiggler/rpg-api/pull/693 opened (not draft), linked to #688. CI green (build+test). Copilot left 1 inline comment: regionByArchetype's doc claimed 'single region' but the implementation returned the first match and reported ok=true even with duplicates. Verified the catch was correct, fixed to count matches and require exactly 1, added 3 direct unit tests pinning it, replied on the thread with the fixing commit SHA (signed), resolved the thread via GraphQL resolveReviewThread. Re-ran make pre-commit + full lobby package green after the fix; CI green on the fix commit."
     }
   ],
   "next_steps": [
-    "Consider adding converter tests for edge cases",
-    "Phase 4: Add dynamic movement speed calculation based on character stats"
+    "Awaiting Kirk's merge decision -- do not merge"
   ]
 }
