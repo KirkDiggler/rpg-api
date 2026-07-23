@@ -3,17 +3,76 @@
   "issues": ["#699"],
   "goal": "Split Redis container lifecycle ownership from per-test TestServer/service wiring in internal/integration/harness. One shared Redis testcontainer per test process (internal/integration and internal/integration/character each own one), started once and terminated once, while every test still gets fresh gRPC/repos/brokers/clients and a FlushRedis before it runs. Preserve standalone harness.New owning behavior for callers outside the package fixture.",
   "dependencies": {},
-  "open_pr_coordination": {},
-  "sessions": [],
+  "open_pr_coordination": {
+    "pr-698": "feat/689-deterministic-crypt-monsters — already merged into main before this branch was cut from origin/main; no rebase/merge needed."
+  },
+  "sessions": [
+    {
+      "id": "2026-07-23-001",
+      "task": "RED then GREEN: split Redis container ownership from TestServer wiring in internal/integration/harness (RedisContainer/StartRedis/Terminate/Lease, NewWithRedis, idempotent Close)",
+      "status": "completed",
+      "artifacts": [
+        "internal/integration/harness/redis_container.go",
+        "internal/integration/harness/lifecycle_internal_test.go",
+        "internal/integration/harness/harness.go"
+      ],
+      "commit": "745578d",
+      "notes": "Docker-free whitebox tests using a fakeContainer (embeds nil testcontainers.Container, overrides only Terminate) and a redismocks.MockClient. Each of the 3 lifecycle invariants (closeOnce guard, leaseMu lock, termOnce guard) was mutated out individually and reproduced the exact failure its test exists to catch, then reverted."
+    },
+    {
+      "id": "2026-07-23-002",
+      "task": "Convert every suite in internal/integration (DungeonCryptSuite first, then EncounterV2IntegrationSuite, CryptMonsterSeedRedisSuite, LobbyStartThenMoveSuite, LobbyV1alpha1IntegrationSuite) to a shared package-level RedisContainer via a new TestMain",
+      "status": "completed",
+      "artifacts": [
+        "internal/integration/main_test.go",
+        "internal/integration/dungeon_crypt_test.go",
+        "internal/integration/encounter_v2_test.go",
+        "internal/integration/lobby_crypt_monster_seed_test.go",
+        "internal/integration/lobby_start_then_move_test.go",
+        "internal/integration/lobby_v1alpha1_test.go"
+      ],
+      "commit": "4c3b519",
+      "notes": "go test ./internal/integration/ -v starts/terminates exactly 1 redis:7-alpine container for all 28 test methods across 5 suites (previously 1 per test method). All pass."
+    },
+    {
+      "id": "2026-07-23-003",
+      "task": "Convert internal/integration/character (separate Go test process) to its own shared RedisContainer + TestMain; move CharacterCreationSuite off SetupSuite-shared-everything onto per-test-fresh NewWithRedis",
+      "status": "completed",
+      "artifacts": [
+        "internal/integration/character/main_test.go",
+        "internal/integration/character/creation_test.go"
+      ],
+      "commit": "8289f52",
+      "notes": "This package's suite previously shared one full TestServer (gRPC server/repos/brokers) across all 7 tests via SetupSuite, relying solely on FlushRedis for isolation. Now every test gets its own fresh TestServer via NewWithRedis against the process's one shared container, matching the discipline used in internal/integration."
+    },
+    {
+      "id": "2026-07-23-004",
+      "task": "fmt/lint clean-up + full non-Docker verification (build/vet/fmt/imports/tidy/lint vs origin/main baseline, non-integration unit tests -race)",
+      "status": "completed",
+      "artifacts": [
+        "internal/integration/main_test.go",
+        "internal/integration/character/main_test.go",
+        "internal/integration/harness/lifecycle_internal_test.go"
+      ],
+      "commit": "531c380",
+      "notes": "golangci-lint run: 29 issues, byte-for-byte identical categories/counts vs a clean origin/main worktree (verified side by side) — zero new lint debt. go generate ./... mock drift (7 files) reproduced identically on origin/main, reverted as out-of-scope (same precedent as #689/PR#698). go test -race on all non-internal/integration packages: green."
+    },
+    {
+      "id": "2026-07-23-005",
+      "task": "Single authorized full run: go test -v -race ./internal/integration/...; docs update with measured before/after",
+      "status": "completed",
+      "artifacts": [
+        "docs/status.md",
+        "docs/how-to/run-integration-tests.md",
+        "docs/architecture/components/integration-test-harness.md"
+      ],
+      "commit": "935cbb7",
+      "notes": "Exactly one full run: exit 0, 37.4s wall clock (/usr/bin/time -v), exactly 3 redis:7-alpine containers created/terminated total (one per Go test process: internal/integration, internal/integration/character, internal/integration/harness — confirmed via TestMain STARTED/TERMINATED log lines and 3x 'Creating container for image redis:7-alpine'). docker ps confirmed zero leaked containers afterward. Goroutine-count spot check after 8 tests in internal/integration: 3 (stable, no broker/gRPC leak). Compares to the accepted ~283s/33-container baseline; this branch's own actual pre-#699 count would have measured 30 (character suite already amortized 7 tests onto 1 container via SetupSuite pre-#699 — noted honestly in docs/status.md rather than repeating the issue's 33 uncritically)."
+    }
+  ],
   "next_steps": [
-    "Write failing lifecycle ownership tests in internal/integration/harness (docker-free, injectable terminator seam)",
-    "Implement RedisContainer/StartRedis + NewWithRedis in harness package, keep New's owning behavior",
-    "Add TestMain to internal/integration (integration_test package) owning one shared container + lease guard",
-    "Convert DungeonCryptSuite first, verify targeted green, then EncounterV2/LobbyV1alpha1/LobbyStartThenMove",
-    "Add TestMain to internal/integration/character (separate process) owning its own shared container, convert CharacterCreationSuite",
-    "Full verification: build/vet/fmt/imports/tidy/lint/pre-commit/ci-check",
-    "Exactly one timed full go test ./internal/integration/... run, capture wall time + container count, compare to ~283s/33 baseline",
-    "Update docs/how-to/run-integration-tests.md and docs/architecture/components/integration-test-harness.md with new pattern + serialized-integration-runner rule",
-    "Push branch, open PR linking #699, self-review, address automated comments individually"
+    "Push branch, open PR linking #699 (ready, not draft)",
+    "Self-review diff, address any automated (Copilot) comments individually",
+    "Do not merge — awaiting explicit approval per repo workflow"
   ]
 }

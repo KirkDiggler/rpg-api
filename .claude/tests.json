@@ -4,71 +4,71 @@
       "id": "owned-close-terminates-once",
       "feature": "redis-container-lifecycle-ownership",
       "prompt": "Construct a TestServer via harness.New (or the underlying ownership seam) with a fake Redis container terminator. Call Close(). Verify Terminate was called exactly once.",
-      "passes": false,
-      "last_checked": null
+      "passes": true,
+      "last_checked": "2026-07-23"
     },
     {
       "id": "borrowed-close-never-terminates",
       "feature": "redis-container-lifecycle-ownership",
       "prompt": "Construct a TestServer via harness.NewWithRedis against an already-running Redis address (non-owning). Call Close(). Verify the shared container's Terminate is never called.",
-      "passes": false,
-      "last_checked": null
+      "passes": true,
+      "last_checked": "2026-07-23"
     },
     {
       "id": "shared-fixture-starts-terminates-once",
       "feature": "redis-container-lifecycle-ownership",
       "prompt": "Call harness.StartRedis once, then Terminate it twice. Verify the underlying container Terminate is invoked exactly once (idempotent double-terminate guard).",
-      "passes": false,
-      "last_checked": null
+      "passes": true,
+      "last_checked": "2026-07-23"
     },
     {
       "id": "per-test-resources-fresh",
       "feature": "shared-redis-integration-fixture",
       "prompt": "Call harness.NewWithRedis twice against the same shared Redis address. Verify the two TestServer instances have distinct gRPC servers, bufconn listeners, repos, and brokers (not shared).",
-      "passes": false,
-      "last_checked": null
+      "passes": true,
+      "last_checked": "2026-07-23"
     },
     {
       "id": "state-isolation-flush-between-tests",
       "feature": "shared-redis-integration-fixture",
       "prompt": "Run two sequential tests against the shared container in internal/integration (e.g. DungeonCryptSuite methods). Verify no leftover Redis keys/state from the prior test are visible in the next.",
-      "passes": false,
-      "last_checked": null
+      "passes": true,
+      "last_checked": "2026-07-23"
     },
     {
       "id": "broker-grpc-cleanup-preserved",
       "feature": "shared-redis-integration-fixture",
       "prompt": "After each converted suite's TearDownTest runs, verify BrokerV2/LobbyBroker Close() still executes for that test's per-test resources (no goroutine/listener leak), independent of the shared Redis container's lifetime.",
-      "passes": false,
-      "last_checked": null
+      "passes": true,
+      "last_checked": "2026-07-23"
     },
     {
       "id": "lease-guard-serializes-flush",
       "feature": "shared-redis-integration-fixture",
       "prompt": "Acquire the shared fixture's lease from two goroutines concurrently. Verify the second acquisition blocks until the first releases (no concurrent FlushRedis race is possible even if a suite method were mistakenly parallelized).",
-      "passes": false,
-      "last_checked": null
+      "passes": true,
+      "last_checked": "2026-07-23"
     },
     {
       "id": "targeted-suites-green",
       "feature": "shared-redis-integration-fixture",
       "prompt": "Run -run targeted subtests for DungeonCryptSuite, EncounterV2IntegrationSuite, LobbyV1alpha1IntegrationSuite, LobbyStartThenMoveSuite, and CharacterCreationSuite after conversion. Verify all pass.",
-      "passes": false,
-      "last_checked": null
+      "passes": true,
+      "last_checked": "2026-07-23"
     },
     {
       "id": "race-clean",
       "feature": "shared-redis-integration-fixture",
       "prompt": "Run go test -race ./internal/integration/... (or targeted -race per suite during development). Verify no race detected around the shared container/client/lease.",
-      "passes": false,
-      "last_checked": null
+      "passes": true,
+      "last_checked": "2026-07-23"
     },
     {
       "id": "full-run-container-count-and-timing",
       "feature": "shared-redis-integration-fixture",
       "prompt": "Run go test ./internal/integration/... exactly once post-fix. Verify (via instrumentation/log evidence) the exact number of Redis containers started/terminated across all test processes under this path, and record wall-clock time against the ~283s/33-container baseline.",
-      "passes": false,
-      "last_checked": null
+      "passes": true,
+      "last_checked": "2026-07-23"
     }
   ]
 }
