@@ -68,11 +68,13 @@ const spawnPositionSpacing = 1
 const memberSightRange = 10
 
 // chamberWidth/chamberHeight sized EACH chamber of the retired two-chamber
-// dungeon (The Dungeon wave 2 Slice 2, rpg-api#676) — replaced by the
-// crypt dungeonSpec's own cryptEntranceWidth/cryptCorridorWidth/
-// cryptBossWidth/cryptHeight (dungeon_spec.go), keyed and selected via
-// resolveDungeonSpec instead of hardcoded per-call constants
-// (rpg-api#688). No geometry constants remain in this file.
+// dungeon (The Dungeon wave 2 Slice 2, rpg-api#676) — replaced by
+// resolveDungeonSpec (dungeon_spec.go), keyed by DungeonKey instead of
+// hardcoded per-call constants (rpg-api#688). rpg-api#694 goes further for
+// the crypt key: resolveDungeonSpec forwards to the toolkit's own
+// tkenc.CryptDungeonParams constructor rather than holding an API-owned
+// literal region/height/obstacle spec — no geometry constants remain in
+// this file.
 
 // goblinsPerRegion is the fixed number of goblins StartEncounter seeds
 // into EACH of the dungeon's two OCCUPIED regions — the entrance region
@@ -123,8 +125,12 @@ func (o *Orchestrator) StartEncounter(ctx context.Context, in *StartEncounterInp
 	// Resolve the dungeon spec BEFORE touching the lobby lock or building
 	// anything — an unknown key must fail loudly with zero side effects
 	// (rpg-api#688's boundary note: rpg-api never invents geometry for a
-	// key it doesn't recognize).
-	dungeonKey, spec, specErr := resolveDungeonSpec(in.DungeonKey)
+	// key it doesn't recognize). in.RandomSeed threads straight through to
+	// the resolved tkenc.DungeonParams.RandomSeed (rpg-api#694: the crypt
+	// key's builder calls tkenc.CryptDungeonParams(seed, ...), which sets
+	// it) — entropy-seeded when zero, same as every other InitRoom/
+	// InitDungeon caller.
+	dungeonKey, dungeonParams, specErr := resolveDungeonSpec(in.DungeonKey, in.RandomSeed)
 	if specErr != nil {
 		return nil, specErr
 	}
@@ -165,18 +171,12 @@ func (o *Orchestrator) StartEncounter(ctx context.Context, in *StartEncounterInp
 	// InitDungeon is what sets it (via AddDoor's internal
 	// rebuildRoomFromData — rpg-toolkit encounter/space.go's doc). Building
 	// the dungeon (N regions + N-1 plain doors + entrance + per-region
-	// archetype tags + opaque theme) is entirely the toolkit's call —
-	// rpg-api only supplies the resolved spec's literal config by key
-	// (rpg-api#688). RandomSeed defaults to zero (entropy-seeded) unless the
-	// caller supplies one — no proto field carries a seed yet, so every real
-	// handler call leaves this at the zero value.
-	if err := enc.InitDungeon(tkenc.DungeonParams{
-		Regions:    spec.regions,
-		Connectors: spec.connectors,
-		Height:     spec.height,
-		RandomSeed: in.RandomSeed,
-		Theme:      spec.theme,
-	}); err != nil {
+	// archetype tags + opaque theme + physical set-piece obstacles) is
+	// entirely the toolkit's call — rpg-api only supplies the resolved
+	// key's toolkit-constructed params verbatim (rpg-api#688, rpg-api#694).
+	// dungeonParams.RandomSeed is already in.RandomSeed, threaded in by
+	// resolveDungeonSpec above.
+	if err := enc.InitDungeon(dungeonParams); err != nil {
 		return nil, fmt.Errorf("init dungeon (key=%q) for encounter %q: %w", dungeonKey, encID, err)
 	}
 
@@ -220,7 +220,7 @@ func (o *Orchestrator) StartEncounter(ctx context.Context, in *StartEncounterInp
 	// wave 2 Slice 2, generalized by rpg-api#688). See seedGoblins' doc for
 	// why placement is verified via the toolkit's real perception.CanSeeAt
 	// rather than the spawn engine's own (stubbed) position search.
-	if err := o.seedGoblins(ctx, enc, encID, spec); err != nil {
+	if err := o.seedGoblins(ctx, enc, encID, dungeonParams); err != nil {
 		return nil, fmt.Errorf("seed goblins for encounter %q: %w", encID, err)
 	}
 
@@ -318,8 +318,8 @@ func regionOutOfSight(enc *tkenc.Encounter, room spatial.Room, regionID string, 
 }
 
 // seedGoblins seeds goblinsPerRegion goblins into the dungeon's two
-// OCCUPIED regions — the entrance region (spec.regions[0]) and the
-// terminal region (spec.regions[len-1]) — out of sight, region-tag-scoped
+// OCCUPIED regions — the entrance region (params.Regions[0]) and the
+// terminal region (params.Regions[len-1]) — out of sight, region-tag-scoped
 // (The Dungeon wave 2 Slice 2, generalized to an N-region chain's two
 // ENDPOINTS by rpg-api#688). Interior connector regions (a corridor, for
 // the crypt spec's N=3) get none: deciding how many/which monsters
@@ -370,7 +370,9 @@ func regionOutOfSight(enc *tkenc.Encounter, room spatial.Room, regionID string, 
 // else to duplicate against) — these are individually pre-identified fixed
 // entities (monster.NewGoblin per ID), not a random pick from a shared
 // pool, so one-group-per-entity is the more honest modeling anyway.
-func (o *Orchestrator) seedGoblins(ctx context.Context, enc *tkenc.Encounter, encID core.EncounterID, spec dungeonSpec) error {
+func (o *Orchestrator) seedGoblins(
+	ctx context.Context, enc *tkenc.Encounter, encID core.EncounterID, params tkenc.DungeonParams,
+) error {
 	room := enc.Room()
 	if room == nil {
 		return errors.New("lobby orchestrator: encounter has no room to place goblins in (InitDungeon not called)")
@@ -379,15 +381,15 @@ func (o *Orchestrator) seedGoblins(ctx context.Context, enc *tkenc.Encounter, en
 	if space == nil {
 		return errors.New("lobby orchestrator: encounter has no space snapshot to seed goblins into")
 	}
-	if len(spec.regions) < 2 || len(spec.connectors) != len(spec.regions)-1 {
+	if len(params.Regions) < 2 || len(params.Connectors) != len(params.Regions)-1 {
 		return fmt.Errorf(
 			"lobby orchestrator: dungeon spec needs at least 2 regions and len(regions)-1 connectors to seed goblins (got %d regions, %d connectors)",
-			len(spec.regions), len(spec.connectors))
+			len(params.Regions), len(params.Connectors))
 	}
 
-	entranceRegion := spec.regions[0]
-	terminalRegion := spec.regions[len(spec.regions)-1]
-	terminalDoorID := spec.connectors[len(spec.connectors)-1].DoorID
+	entranceRegion := params.Regions[0]
+	terminalRegion := params.Regions[len(params.Regions)-1]
+	terminalDoorID := params.Connectors[len(params.Connectors)-1].DoorID
 	terminalDoor, ok := enc.ToData().Doors[terminalDoorID]
 	if !ok {
 		return fmt.Errorf("lobby orchestrator: connector door %q not found (InitDungeon must add it)", terminalDoorID)

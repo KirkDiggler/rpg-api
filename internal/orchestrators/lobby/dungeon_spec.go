@@ -6,22 +6,26 @@ import (
 
 	tkenc "github.com/KirkDiggler/rpg-toolkit/encounter"
 	"github.com/KirkDiggler/rpg-toolkit/encounter/core"
-	"github.com/KirkDiggler/rpg-toolkit/tools/environments"
 )
 
 // DungeonKey selects a named dungeon specification passed to the
 // toolkit's generic tkenc.Encounter.InitDungeon generator (rpg-api#688).
 // rpg-api never computes dungeon geometry itself — a key maps to a
-// literal, hand-authored tkenc.DungeonParams; only the toolkit turns that
-// spec into an actual Space. Retires the fixed two-chamber constants
-// StartEncounter used to hardcode directly (chamberWidth/chamberHeight/
-// chamberPattern/chamberDoorID) — two chambers becomes just another spec
-// this registry could hold, not a separate code path.
+// tkenc.DungeonParams builder, and only the toolkit turns that spec into
+// an actual Space. rpg-api#694 goes one step further for the crypt key:
+// the builder doesn't even hold its OWN region widths/heights/connectors/
+// obstacle specs — it calls the toolkit's tkenc.CryptDungeonParams
+// constructor, which is the single source of the crypt's shape, theme,
+// archetypes, and physical set-piece specs. rpg-api's only remaining job
+// is key/config orchestration: which key maps to which toolkit
+// constructor, and which caller-assigned door IDs that constructor's
+// connectors get.
 type DungeonKey string
 
 // DungeonKeyCrypt is the first authored dungeon spec (rpg-toolkit#814's
-// Approved Slice 3 corrections): one continuous 3-region linear chain —
-// entrance -> corridor -> boss chamber — themed "crypt".
+// Approved Slice 3 corrections; rpg-toolkit#826 for its physical set
+// pieces): one continuous 3-region linear chain — entrance -> corridor ->
+// boss chamber — themed "crypt".
 const DungeonKeyCrypt DungeonKey = "crypt"
 
 // defaultDungeonKey is used when StartEncounterInput.DungeonKey is the
@@ -32,76 +36,35 @@ const DungeonKeyCrypt DungeonKey = "crypt"
 // carries a key today, so every real caller gets this default.
 const defaultDungeonKey = DungeonKeyCrypt
 
-// Crypt spec region identifiers — named constants (this repo's CLAUDE.md:
-// "avoid magic strings") rather than inline literals. These are the IDs
-// InitDungeon tags SpaceData.Regions with for THIS spec specifically —
-// distinct from tkenc.RegionArchetype, the toolkit's fixed generic-role
-// vocabulary each region also carries.
-const (
-	cryptRegionIDEntrance = "entrance"
-	cryptRegionIDCorridor = "corridor"
-	cryptRegionIDBoss     = "boss"
-)
-
-// Crypt spec connector door identifiers.
+// Crypt spec connector door identifiers — the two caller-assigned entity
+// IDs threaded into tkenc.CryptDungeonParams' entranceDoorID/bossDoorID
+// parameters below. This is the one piece of "shape" rpg-api still owns
+// for the crypt key: naming its own connector doors, not sizing or
+// placing anything inside the regions they join.
 const (
 	cryptDoorEntranceToCorridor core.EntityID = "crypt-door-entrance-corridor"
 	cryptDoorCorridorToBoss     core.EntityID = "crypt-door-corridor-boss"
 )
 
-// Crypt spec dimensions — explicit, hand-authored, passed to InitDungeon
-// verbatim (rpg-toolkit#814's Approved Slice 3 corrections: "the template
-// shape and the scale invariant are supplied BY THE KEY"). Height is
-// shared by every region in the chain (tkenc.DungeonParams.Height's own
-// doc). cryptEntranceWidth matches the retired two-chamber generator's
-// per-chamber size — proven safe: large enough relative to
-// memberSightRange for out-of-sight goblin placement to find room, and
-// for party members spread along spawnPositionSpacing to stay inside the
-// region. cryptCorridorWidth is deliberately narrow — "a corridor is a
-// long thin region for now" (rpg-toolkit#814's own Scope note) — and gets
-// no goblins (see seedGoblins), so it never needs to satisfy an
-// out-of-sight placement search itself. cryptBossWidth gives a primary
-// playable axis (min(width, height)) of 14 — comfortably past the
-// toolkit's own >6-hex-step scale invariant, enforced by
-// validateDungeonParams at generation time, not eyeballed here.
-const (
-	cryptHeight        = 20
-	cryptEntranceWidth = 20
-	cryptCorridorWidth = 6
-	cryptBossWidth     = 14
-)
+// dungeonSpecBuilder produces a toolkit tkenc.DungeonParams for a given
+// seed. rpg-api#694: this replaces the retired literal dungeonSpec struct
+// (theme/height/regions/connectors hand-authored per key) — a builder
+// closure lets each key call whatever toolkit constructor owns its
+// content (CryptDungeonParams for the crypt key today) instead of rpg-api
+// duplicating that constructor's output as its own literal.
+type dungeonSpecBuilder func(seed int64) tkenc.DungeonParams
 
-// dungeonSpec is a literal, hand-authored toolkit dungeon configuration
-// keyed by DungeonKey. rpg-api's only job for a spec is to hold this
-// config and hand it to tkenc.Encounter.InitDungeon verbatim — no region
-// derivation, no sizing heuristics, no archetype- or theme-conditional
-// branching (rpg-api#688's boundary note; rpg-toolkit#814's Approved
-// Slice 3 corrections: "rpg-api still does no geometry math, no room
-// sizing heuristics, and no theme-conditional branching").
-type dungeonSpec struct {
-	theme      string
-	height     int
-	regions    []tkenc.DungeonRegionParams
-	connectors []tkenc.DungeonConnectorParams
-}
-
-// dungeonSpecs is the registry of named dungeon specs StartEncounter can
-// select by DungeonKey. Exactly one entry today (crypt); adding a second
-// named template is additive here — never a change to StartEncounter's
-// call site or to seedGoblins' endpoint-seeding rule.
-var dungeonSpecs = map[DungeonKey]dungeonSpec{
-	DungeonKeyCrypt: {
-		theme:  "crypt",
-		height: cryptHeight,
-		regions: []tkenc.DungeonRegionParams{
-			{ID: cryptRegionIDEntrance, Archetype: tkenc.ArchetypeEntrance, Width: cryptEntranceWidth, Pattern: environments.PatternRandom},
-			{ID: cryptRegionIDCorridor, Archetype: tkenc.ArchetypeCorridor, Width: cryptCorridorWidth, Pattern: environments.PatternRandom},
-			{ID: cryptRegionIDBoss, Archetype: tkenc.ArchetypeBoss, Width: cryptBossWidth, Pattern: environments.PatternRandom},
-		},
-		connectors: []tkenc.DungeonConnectorParams{
-			{DoorID: cryptDoorEntranceToCorridor},
-			{DoorID: cryptDoorCorridorToBoss},
-		},
+// dungeonSpecs is the registry of named dungeon builders StartEncounter
+// can select by DungeonKey. Exactly one entry today (crypt), forwarding
+// verbatim to tkenc.CryptDungeonParams — rpg-api supplies only the seed
+// (threaded through from StartEncounterInput.RandomSeed) and its own two
+// connector door IDs; every region width/height/archetype/theme/obstacle
+// spec is the toolkit's, not rpg-api's. Adding a second named template is
+// additive here — never a change to StartEncounter's call site or to
+// seedGoblins' endpoint-seeding rule.
+var dungeonSpecs = map[DungeonKey]dungeonSpecBuilder{
+	DungeonKeyCrypt: func(seed int64) tkenc.DungeonParams {
+		return tkenc.CryptDungeonParams(seed, cryptDoorEntranceToCorridor, cryptDoorCorridorToBoss)
 	},
 }
 
@@ -115,21 +78,22 @@ var dungeonSpecs = map[DungeonKey]dungeonSpec{
 // client can trigger yet.
 var ErrUnknownDungeonKey = errors.New("lobby orchestrator: unknown dungeon key")
 
-// resolveDungeonSpec maps a DungeonKey to its literal dungeonSpec,
-// falling back to defaultDungeonKey for the zero value ("a named default
-// for now" — rpg-api#688's Scope section). Returns ErrUnknownDungeonKey
-// for any other unregistered key — rpg-api surfaces the lookup failure;
-// it never invents geometry for a key it doesn't recognize. Returns the
-// EFFECTIVE key alongside the spec so callers building error messages
-// after a successful resolution don't need to re-run the zero-value
-// fallback themselves.
-func resolveDungeonSpec(key DungeonKey) (DungeonKey, dungeonSpec, error) {
+// resolveDungeonSpec maps a DungeonKey to its toolkit-constructed
+// tkenc.DungeonParams for the given seed, falling back to
+// defaultDungeonKey for the zero value ("a named default for now" —
+// rpg-api#688's Scope section). Returns ErrUnknownDungeonKey for any
+// other unregistered key — rpg-api surfaces the lookup failure; it never
+// invents geometry for a key it doesn't recognize. Returns the EFFECTIVE
+// key alongside the params so callers building error messages after a
+// successful resolution don't need to re-run the zero-value fallback
+// themselves.
+func resolveDungeonSpec(key DungeonKey, seed int64) (DungeonKey, tkenc.DungeonParams, error) {
 	if key == "" {
 		key = defaultDungeonKey
 	}
-	spec, ok := dungeonSpecs[key]
+	build, ok := dungeonSpecs[key]
 	if !ok {
-		return key, dungeonSpec{}, fmt.Errorf("%w: %q", ErrUnknownDungeonKey, key)
+		return key, tkenc.DungeonParams{}, fmt.Errorf("%w: %q", ErrUnknownDungeonKey, key)
 	}
-	return key, spec, nil
+	return key, build(seed), nil
 }
