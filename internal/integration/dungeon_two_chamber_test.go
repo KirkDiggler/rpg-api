@@ -220,7 +220,7 @@ func (s *DungeonTwoChamberSuite) TestSpaceZonesAndHexZoneId_ProjectRegionsOnTheW
 	for id := range encData.Doors {
 		doorID = id
 	}
-	s.Require().NotEmpty(doorID, "exactly one door must connect the two chambers")
+	s.Require().Len(encData.Doors, 1, "exactly one door must connect the two chambers")
 	_, err = s.srv.EncounterClientV2.Interact(s.authCtx("alice"), &encounterv2pb.InteractRequest{
 		EncounterId: encounterID, TargetEntityId: string(doorID),
 	})
