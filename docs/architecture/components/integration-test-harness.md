@@ -1,13 +1,25 @@
 ---
 name: integration test harness
 description: Full-stack test server wiring real Redis, in-process gRPC, and testcontainers
-updated: 2026-07-13
+updated: 2026-07-23
 confidence: high — verified by reading harness.go and remaining integration test files
 ---
 
 # integration test harness
 
 The integration test harness (`internal/integration/harness/`) is the most valuable test asset in rpg-api. It wires the full stack — real Redis via testcontainers, real orchestrators and repositories, in-process gRPC via bufconn — and exercises complete game flows via proto-level client calls.
+
+**Updated 2026-07-23 (rpg-api#699):** container **ownership** is now split
+from per-test **service wiring**. `harness.New` still starts and owns its
+own dedicated Redis container (unchanged behavior for standalone callers).
+`harness.NewWithRedis` wires the identical gRPC server/repos/brokers/
+clients against an already-running Redis address without starting or
+owning a container. Every suite in `internal/integration` and
+`internal/integration/character` now shares one `harness.RedisContainer`
+per test process (started/terminated once in that package's `TestMain`)
+instead of starting a fresh container per test method — see
+`docs/how-to/run-integration-tests.md` for the full pattern and the
+one-Docker-runner-at-a-time rule this depends on.
 
 **Updated 2026-07-13 (rpg-api#642):** the v1-only `internal/integration/encounter/`
 suite (10 files: class-specific combat tests, `open_door_test.go`,
@@ -22,7 +34,10 @@ construction) are removed. Encounter coverage now lives entirely in
 
 | File | Purpose |
 |---|---|
-| `integration/harness/harness.go` | TestServer setup and teardown |
+| `integration/harness/harness.go` | TestServer wiring (`New`, `NewWithRedis`, `Close`) |
+| `integration/harness/redis_container.go` | `RedisContainer` shared-fixture: `StartRedis`, `Terminate`, `Lease` (rpg-api#699) |
+| `integration/main_test.go` | `TestMain` owning the one shared container for this package's process |
+| `integration/character/main_test.go` | Same, for the separate `internal/integration/character` process |
 | `integration/character/` | Character integration tests |
 | `integration/encounter_v2_test.go` | v1alpha2 encounter service tests |
 | `integration/lobby_v1alpha1_test.go` | LobbyService tests, incl. combat-entry flows |
@@ -30,8 +45,14 @@ construction) are removed. Encounter coverage now lives entirely in
 ## Architecture
 
 ```
-TestServer (harness.go)
-    ├── testcontainers Redis  ← real Redis process in Docker
+RedisContainer (redis_container.go)         ← package/process-level fixture
+    └── testcontainers Redis                 ← one real Redis process in Docker,
+                                                started once by TestMain, terminated once
+
+TestServer (harness.go), one fresh instance per test
+    ├── Redis client (New: owns a container it started itself;
+    │                 NewWithRedis: borrows a RedisContainer's Addr,
+    │                 owns only its own client connection)
     ├── bufconn               ← in-process gRPC (no network)
     ├── real orchestrators    ← same code as production (character, lobby)
     ├── real repositories     ← character (Redis), encounters/v2 (in-memory), lobby (in-memory)
@@ -42,29 +63,59 @@ TestServer (harness.go)
 
 ## TestServer lifecycle
 
+Standalone (owns its own container):
+
 ```go
-// Setup (per test file or suite)
 ctx := context.Background()
 server, err := harness.New(ctx, harness.DefaultConfig())
 defer server.Close()
 
-// Use clients
-resp, err := server.EncounterClient.CreateEncounter(ctx, &proto.CreateEncounterRequest{...})
+resp, err := server.EncounterClientV2.CreateEncounter(ctx, &proto.CreateEncounterRequest{...})
 ```
 
-`Close()` terminates the gRPC server and the Redis container.
+`Close()` terminates the gRPC server and, because this `TestServer` owns
+one, its Redis container.
+
+Shared-fixture (the pattern every suite in `internal/integration` and
+`internal/integration/character` uses — see that package's `TestMain`):
+
+```go
+// TestMain, once per process:
+sharedRedis, _ = harness.StartRedis(ctx)
+defer sharedRedis.Terminate(ctx) // or an explicit call after m.Run()
+
+// SetupTest, once per test:
+release := sharedRedis.Lease()
+srv, _ := harness.NewWithRedis(ctx, cfg, sharedRedis.Addr)
+srv.FlushRedis(ctx)
+
+// TearDownTest, once per test:
+srv.Close()   // closes gRPC server, brokers, this test's own Redis client —
+              // never terminates sharedRedis's container
+release()
+```
 
 ## Known gaps
+
+### ~~testcontainers startup time~~ FIXED (rpg-api#699, 2026-07-23)
+
+Previously: each test suite that created a new `TestServer` via `harness.
+New` started a fresh Redis container, adding ~2-5s of container create/
+health-check/teardown churn per test *method* (not just per suite) for
+every suite using `SetupTest` rather than `SetupSuite`. A full `go test ./internal/integration/...` run measured ~283s this way
+(accepted baseline, 33 container lifecycles). Fixed by splitting
+container ownership (`RedisContainer`) from per-test service wiring
+(`NewWithRedis`): a post-fix `go test -v -race ./internal/integration/...`
+run measured 37.4s wall clock and started/terminated exactly 3 containers
+total (one per Go test process) — see
+`docs/how-to/run-integration-tests.md` for the measured before/after and
+the exact per-process container count.
 
 ### ~~Round 2 tests not yet green on main~~ MOOT (rpg-api#642, 2026-07-13)
 
 The `open_door_test.go` and `stream_entity_state_test.go` this section
 described were part of the deleted v1-only `internal/integration/encounter/`
 suite. #468 and its stacked PRs are moot — see `docs/status.md`.
-
-### testcontainers startup time
-
-Each test suite that creates a new `TestServer` starts a fresh Redis container. Container startup adds ~2-5 seconds per test suite. Tests sharing a harness via `SetupSuite` amortize this cost; tests that create a harness per test case do not.
 
 ### v1alpha2 EncounterService character-store wiring (fixed rpg-api#634, 2026-07-11)
 
