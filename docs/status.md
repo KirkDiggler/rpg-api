@@ -11,6 +11,15 @@ This is a living doc. Edit it in the same PR that invalidates a line. Don't let 
 
 ## Active work
 
+**Shared Redis integration fixture (rpg-api#699, merged via PR #700)** —
+`internal/integration` and `internal/integration/character` each own one
+process-scoped Redis container through `TestMain`. Every suite leases that
+fixture, creates a fresh `harness.NewWithRedis` TestServer, and flushes Redis
+before its test. `harness.New` retains standalone owning behavior. Lifecycle,
+fresh-resource, and flush-isolation regression tests remain in place; this
+branch's crypt suites use the same shared fixture rather than per-test
+`harness.New` containers.
+
 **Crypt dungeon-key consumes the toolkit's own `CryptDungeonParams`, AND seeds a
 deterministic monster composition — no more API-owned crypt dimensions or
 out-of-sight placement search (rpg-api#694 + rpg-api#689, merged 2026-07-23)** —

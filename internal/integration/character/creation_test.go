@@ -20,9 +20,10 @@ import (
 // CharacterCreationSuite tests character creation for all classes.
 type CharacterCreationSuite struct {
 	suite.Suite
-	ctx    context.Context
-	cancel context.CancelFunc
-	server *harness.TestServer
+	ctx     context.Context
+	cancel  context.CancelFunc
+	server  *harness.TestServer
+	release func()
 }
 
 func TestCharacterCreationSuite(t *testing.T) {
@@ -32,30 +33,31 @@ func TestCharacterCreationSuite(t *testing.T) {
 	suite.Run(t, new(CharacterCreationSuite))
 }
 
-func (s *CharacterCreationSuite) SetupSuite() {
+func (s *CharacterCreationSuite) SetupTest() {
 	s.ctx, s.cancel = context.WithTimeout(context.Background(), 3*time.Minute)
 
-	var err error
-	s.server, err = harness.New(s.ctx, nil)
-	s.Require().NoError(err, "failed to create test server")
+	// Lease this package's shared Redis container (rpg-api#699) — see
+	// main_test.go. Released in TearDownTest. Each test still gets its
+	// own fresh TestServer (gRPC server, repos, brokers, clients); only
+	// the Redis container/connection is shared across tests.
+	s.release = sharedRedis.Lease()
 
-	s.T().Log("╔══════════════════════════════════════════════════════════════════╗")
-	s.T().Log("║  Character Creation Integration Tests                            ║")
-	s.T().Log("╚══════════════════════════════════════════════════════════════════╝")
+	var err error
+	s.server, err = harness.NewWithRedis(s.ctx, nil, sharedRedis.Addr)
+	s.Require().NoError(err, "failed to create test server")
+	s.Require().NoError(s.server.FlushRedis(s.ctx), "failed to flush redis")
 }
 
-func (s *CharacterCreationSuite) TearDownSuite() {
+func (s *CharacterCreationSuite) TearDownTest() {
 	if s.server != nil {
 		s.server.Close()
 	}
 	if s.cancel != nil {
 		s.cancel()
 	}
-}
-
-func (s *CharacterCreationSuite) SetupTest() {
-	err := s.server.FlushRedis(s.ctx)
-	s.Require().NoError(err, "failed to flush redis")
+	if s.release != nil {
+		s.release()
+	}
 }
 
 func (s *CharacterCreationSuite) authCtx(playerID string) context.Context {
