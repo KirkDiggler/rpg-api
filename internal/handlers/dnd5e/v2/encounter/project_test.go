@@ -203,7 +203,14 @@ func (s *ProjectSuite) TestProjectFor_ObstacleMalformedRefAndEmptyFallback() {
 	pb, err := v2encounter.ProjectFor(context.Background(), data, "player-alice", s.broker, nil, s.now)
 	s.Require().NoError(err)
 	s.Require().Len(pb.GetSpace().GetEntities(), 2)
-	obstacle := pb.GetSpace().GetEntities()[1]
+	var obstacle *encounterv2pb.Entity
+	for _, entity := range pb.GetSpace().GetEntities() {
+		if entity.GetId() == "obstacle-bad" {
+			obstacle = entity
+			break
+		}
+	}
+	s.Require().NotNil(obstacle)
 	s.Require().Equal(encounterv2pb.EntityType_ENTITY_TYPE_OBSTACLE, obstacle.GetType())
 	s.Require().Equal("dnd5e", obstacle.GetObstacle().GetObstacleRef().GetModule())
 	s.Require().Equal("obstacle", obstacle.GetObstacle().GetObstacleRef().GetType())

@@ -577,7 +577,11 @@ func (s *DungeonCryptSuite) TestStaticObstacles_ProjectOnlyWhenRevealedAndRemain
 	postReveal := drainAvailable(events, 1500*time.Millisecond)
 	appeared := 0
 	for _, event := range postReveal {
-		entity := event.GetEntityAppeared().GetEntity()
+		appearance := event.GetEntityAppeared()
+		if appearance == nil {
+			continue
+		}
+		entity := appearance.GetEntity()
 		if entity.GetId() != string(revealed.ID) {
 			continue
 		}
