@@ -281,12 +281,15 @@ func TestSeedRegionMonsters_BossConcealedByClosedDoor_NotByPlacementSearch(t *te
 	require.NoError(t, err)
 
 	var bossPos core.Hex
+	var foundBoss bool
 	for _, m := range data.Monsters {
 		if archetype, _ := regionArchetypeAt(data.Space, m.Position); archetype == tkenc.ArchetypeBoss {
 			bossPos = m.Position
+			foundBoss = true
+			break
 		}
 	}
-	require.NotZero(t, bossPos)
+	require.True(t, foundBoss, "must find the boss monster to check its concealment")
 
 	room := enc.Room()
 	require.NotNil(t, room)
