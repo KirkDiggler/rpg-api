@@ -45,7 +45,7 @@ func TestRegionEntryAnchor_ReturnsNamedRegionsDoorNeighbor(t *testing.T) {
 		},
 	}
 
-	got, err := regionEntryAnchor(space, door, "region-b")
+	got, err := regionEntryAnchor(space, door, "region-b", nil)
 	require.NoError(t, err)
 	require.Equal(t, regionBNeighbor, got,
 		"region-b's anchor must be the hex tagged INTO region-b, not region-a's neighbor")
@@ -66,6 +66,6 @@ func TestRegionEntryAnchor_NoMatchingNeighbor_Errors(t *testing.T) {
 	door := &tkenc.DoorData{ID: "door-1", Position: core.Hex{Q: 0, R: 0, S: 0}}
 	space := &tkenc.SpaceData{} // no Regions at all
 
-	_, err := regionEntryAnchor(space, door, "region-b")
+	_, err := regionEntryAnchor(space, door, "region-b", nil)
 	require.Error(t, err)
 }

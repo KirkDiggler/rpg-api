@@ -1,11 +1,13 @@
 {
   "branch": "feat/694-consume-crypt-dungeon-params",
-  "issues": ["rpg-api#694"],
-  "goal": "Refactor DungeonKeyCrypt's resolveDungeonSpec builder to resolve through the toolkit's tkenc.CryptDungeonParams(seed, entranceDoorID, bossDoorID) instead of rpg-api's own duplicate region widths/heights/connectors/obstacle-free specs. rpg-toolkit becomes the single source of the crypt's shape/theme/archetypes/physical set-piece obstacles; rpg-api keeps only key/config orchestration (which key maps to which toolkit constructor, its own connector door IDs, and seed threading). A real StartEncounter call must persist non-empty SpaceData.Obstacles with the exact canonical dnd5e:props:* refs/counts, deterministic under an explicit seed.",
+  "issues": ["rpg-api#694", "rpg-api#689 (merged via PR #698, integrated here)"],
+  "goal": "Refactor DungeonKeyCrypt's resolveDungeonSpec builder to resolve through the toolkit's tkenc.CryptDungeonParams(seed, entranceDoorID, bossDoorID) instead of rpg-api's own duplicate region widths/heights/connectors/obstacle-free specs, AND integrate PR #698's deterministic crypt monster composition (1 entrance skeleton, 0 corridor, 1 skeleton-captain boss via spawn.FixedPositions, no out-of-sight search) so the combined production StartEncounter path uses the toolkit's compact canonical dimensions/obstacles with a placement scheme that never needs to search for hidden ground. rpg-toolkit is now the single source of the crypt's shape/theme/archetypes/physical set-piece obstacles AND its monster composition/anchors; rpg-api keeps only key/config orchestration (which key maps to which toolkit constructor, its own connector door IDs, seed threading, and the archetype->monster-factory table). This combination is what retroactively closes rpg-api#696 (the out-of-sight goblin-placement capacity collision #694 alone surfaced) as not-planned: deterministic FixedPositions placement structurally cannot suffer a 'no valid position found' search failure the way the retired out-of-sight PositionOracle search could.",
   "dependencies": {
-    "rpg-api#693": "merged 2026-07-23T04:08:41Z (commit c916e82) -- present on origin/main HEAD at preflight, no extra observability commit between it and #695.",
-    "rpg-api#695": "merged 2026-07-23T06:27:49Z (commit f092923) -- present on origin/main HEAD at preflight (HEAD itself).",
-    "rpg-toolkit#826": "merged 2026-07-23T04:07:08Z (commit 9d44d231), published as encounter/v0.38.0 on the real Go module proxy -- verified via `go list -m -versions github.com/KirkDiggler/rpg-toolkit/encounter` (v0.38.0 present) + `git merge-base --is-ancestor` confirming the tag contains the merge commit + a direct read of encounter/crypt_dungeon.go at that tag confirming CryptDungeonParams(seed int64, entranceDoorID, bossDoorID core.EntityID) DungeonParams exists with the expected signature, before any dependency bump in this branch."
+    "rpg-api#693": "merged 2026-07-23T04:08:41Z (commit c916e82) -- N-region dungeon by key.",
+    "rpg-api#695": "merged 2026-07-23T06:27:49Z (commit f092923) -- region/theme wire projection.",
+    "rpg-api#698": "merged 2026-07-23T16:05:20Z (commit 5b90d2f) -- deterministic crypt monster composition (closes #689); integrated into this branch via a real `git merge origin/main` (merge commit, no rebase/amend/force-push).",
+    "rpg-toolkit#826": "merged 2026-07-23T04:07:08Z (commit 9d44d231), published as encounter/v0.38.0 on the real Go module proxy -- CryptDungeonParams(seed, entranceDoorID, bossDoorID). Verified again post-merge: go.mod still pins encounter v0.38.0 (union of this branch's own bump and #698's identical bump -- go.mod/go.sum merged with ZERO conflicts, confirming both branches converged on the same version).",
+    "rpg-toolkit/rulebooks/dnd5e": "v0.68.0 (brought in by #698's merge, not previously on this branch) -- monsters.NewSkeleton/NewSkeletonCaptain (rpg-toolkit#816)."
   },
   "sessions": [
     {
@@ -14,61 +16,64 @@
       "status": "completed",
       "artifacts": [".claude/progress.json", ".claude/tests.json"],
       "commit": null,
-      "notes": "gh pr view 693/695 --json mergedAt,mergeCommit confirmed both MERGED, mergeCommit SHAs present in `git log origin/main --oneline` with #695's commit (f092923) as HEAD -- no additional commit after it. gh pr view 826 (rpg-toolkit) confirmed MERGED; `git tag -l encounter/v0.38.0` + `git merge-base --is-ancestor <826-merge-sha> encounter/v0.38.0` confirmed; `go list -m -versions` against the real proxy confirmed v0.38.0 published and fetchable. `gh pr list --search 694 --state all` empty; no local/remote feat/694-* branch existed. Local main was 1 commit behind origin/main (missing #695) -- fast-forwarded before creating the worktree. Baseline (pre-change): `go build ./...` clean, `go test ./internal/orchestrators/lobby/...` green."
+      "notes": "See git history for full detail (superseded by the merge session below, which carries the current combined state forward)."
     },
     {
-      "id": "2026-07-23-002",
-      "task": "RED: rewrite dungeon_spec_internal_test.go and start_encounter_test.go against tkenc.CryptDungeonParams/an updated resolveDungeonSpec(key, seed) signature and new obstacle assertions, BEFORE touching go.mod or production code",
+      "id": "2026-07-23-002-through-007",
+      "task": "RED->GREEN: DungeonKeyCrypt resolves through tkenc.CryptDungeonParams verbatim; exact obstacle refs/counts/blocking tests; mutation-verified; docs updated; PR #697 opened",
       "status": "completed",
-      "artifacts": ["internal/orchestrators/lobby/dungeon_spec_internal_test.go", "internal/orchestrators/lobby/start_encounter_test.go"],
-      "commit": null,
-      "notes": "RED observed via `go vet ./internal/orchestrators/lobby/...`: `undefined: tkenc.CryptDungeonParams` (go.mod still v0.35.0) plus `too many arguments in call to resolveDungeonSpec` / missing struct fields (dungeonSpec has no RandomSeed/Theme/Regions field) against the not-yet-refactored production dungeon_spec.go. Compile-time RED, as expected for a dependency-gated refactor."
+      "artifacts": [
+        "internal/orchestrators/lobby/dungeon_spec.go",
+        "internal/orchestrators/lobby/dungeon_spec_internal_test.go",
+        "internal/orchestrators/lobby/start_encounter.go",
+        "internal/orchestrators/lobby/start_encounter_test.go",
+        "go.mod", "go.sum", "docs/status.md", "docs/architecture/components/lobby-service.md"
+      ],
+      "commit": "846fa0d..e26e408 (PR #697, 5 commits)",
+      "notes": "Discovered and measured a real capacity collision while verifying: seedGoblins' retired out-of-sight placement failed against the toolkit's smaller canonical crypt dimensions for a material, fully-deterministic-per-seed fraction of RandomSeed values (9.7%/11.9%/18.6%/33.2% by party size 1-4). Filed rpg-api#696 with full evidence, deliberately not fixed in PR #697 (out of its stated scope: obstacle consumption only)."
     },
     {
-      "id": "2026-07-23-003",
-      "task": "Bump rpg-toolkit/encounter to v0.38.0",
-      "status": "completed",
-      "artifacts": ["go.mod", "go.sum"],
-      "commit": null,
-      "notes": "GOPROXY=direct go get github.com/KirkDiggler/rpg-toolkit/encounter@v0.38.0 + go mod tidy; single line diff in go.mod/go.sum, no replace directive, no go.work, zero transitive drift. `go vet` still RED after the bump (tkenc.CryptDungeonParams now resolves; resolveDungeonSpec's signature/dungeonSpec struct still the old shape) -- confirms the RED was gated on BOTH the dependency and the production refactor, not just one."
-    },
-    {
-      "id": "2026-07-23-004",
-      "task": "GREEN: refactor dungeon_spec.go's DungeonKeyCrypt builder to forward to tkenc.CryptDungeonParams verbatim; update start_encounter.go's InitDungeon/seedGoblins call sites to consume the resolved tkenc.DungeonParams directly",
-      "status": "completed",
-      "artifacts": ["internal/orchestrators/lobby/dungeon_spec.go", "internal/orchestrators/lobby/start_encounter.go"],
-      "commit": null,
-      "notes": "dungeonSpecs' value type changed from a literal dungeonSpec{theme,height,regions,connectors} struct to a dungeonSpecBuilder closure (func(seed int64) tkenc.DungeonParams); DungeonKeyCrypt's entry is `func(seed int64) tkenc.DungeonParams { return tkenc.CryptDungeonParams(seed, cryptDoorEntranceToCorridor, cryptDoorCorridorToBoss) }` -- the only remaining rpg-api-owned crypt config is its two connector door ID constants. resolveDungeonSpec gained a seed parameter, threaded from StartEncounterInput.RandomSeed. seedGoblins' `spec dungeonSpec` parameter became `params tkenc.DungeonParams`, reading `.Regions`/`.Connectors` directly -- no other behavior change. `go build ./...` clean; full lobby test package green."
-    },
-    {
-      "id": "2026-07-23-005",
-      "task": "Discovered + measured a real capacity collision: seedGoblins' out-of-sight placement fails against the toolkit's smaller canonical crypt dimensions for a material fraction of RandomSeed values (deterministic per seed) -- up to ~33% for a full 4-player party, on the real entropy-seeded path every production caller uses (no proto field carries a seed)",
+      "id": "2026-07-23-008",
+      "task": "Resume: verify rpg-api#698 (closes #689) merged on latest origin/main, confirm rpg-api#696 closed not-planned",
       "status": "completed",
       "artifacts": [],
       "commit": null,
-      "notes": "Sweep evidence (real spatial/spawn/perception packages, no test doubles): party=1 9.7%/1000, party=2 11.9%/1000, party=3 18.6%/1000, party=4 33.2%/1000. Fully deterministic per seed (confirmed by re-running the identical sweep multiple times with identical results). Isolated whether toolkit obstacles (BlocksLoS=true for 5/6 refs) help or hurt: a same-seed sweep with Regions[].Obstacles forced nil failed MUCH more often (282/300) than with the real obstacles left in place (20/300) -- obstacles create extra hiding geometry the empty floor lacks, so #694's obstacle consumption is a net IMPROVEMENT over toolkit-dimensions-with-no-obstacles, just not a full fix versus rpg-api's OLD oversized 20/6/14 literal (0/300 over the same trials). Filed rpg-api#696 with full measurements/root-cause/remedy options -- deliberately NOT fixed in this branch: the fix requires either a rpg-toolkit dimension change (out of #694's 'no toolkit source changes' boundary) or a deliberate rpg-api product-tuning decision (memberSightRange/goblinsPerRegion recalibration, or a placement-retry mechanism) beyond #694's stated scope (obstacle consumption only) and rpg-toolkit#826's own issue explicitly lists monster seeding (#689) as out of scope. Chose known-good explicit seeds (verified against the measured bad-seed set) for every new/modified test in this branch that needs an explicit seed, so this branch's OWN test suite is deterministic-green; pre-existing entropy-seeded tests elsewhere in the repo (abandon_encounter_test.go, integration suite, handler-level tests) are unaffected by any file this branch touches but are newly exposed to this same collision -- documented, not silently patched."
+      "notes": "gh pr view 698 --json mergedAt,mergeCommit confirmed MERGED 2026-07-23T16:05:20Z, commit 5b90d2f -- `git log origin/main --oneline` confirms 5b90d2f is origin/main HEAD. gh issue view 696 confirmed closed (closedAt 2026-07-23T08:05:26Z) -- #698's deterministic FixedPositions composition retired the out-of-sight PositionOracle search entirely, structurally eliminating the 'no valid position found' failure mode #696 documented; accepted as the closing remedy rather than a toolkit-dimension change or a memberSightRange/goblinsPerRegion retune."
     },
     {
-      "id": "2026-07-23-006",
-      "task": "Add the exact-refs/counts/blocking-by-region obstacle test and the explicit-seed obstacle-determinism test; update the pre-existing 3-region/theme/scale/entrance test to read expected width/height off a live tkenc.CryptDungeonParams call instead of a hardcoded literal",
+      "id": "2026-07-23-009",
+      "task": "Integrate origin/main (PR #698) into this branch via a real `git merge origin/main` (merge commit, no rebase/amend/force-push) and resolve every conflict deliberately",
       "status": "completed",
-      "artifacts": ["internal/orchestrators/lobby/start_encounter_test.go", "internal/orchestrators/lobby/dungeon_spec_internal_test.go"],
+      "artifacts": [
+        "internal/orchestrators/lobby/start_encounter.go",
+        "internal/orchestrators/lobby/crypt_monster_seed.go",
+        "internal/orchestrators/lobby/crypt_monster_seed_internal_test.go",
+        "internal/orchestrators/lobby/start_encounter_test.go",
+        "internal/orchestrators/lobby/dungeon_spec_internal_test.go"
+      ],
       "commit": null,
-      "notes": "TestResolveDungeonSpec_ExplicitCryptKey_MatchesToolkitConstructorVerbatim is the headline unit-level pin (resolveDungeonSpec(DungeonKeyCrypt, seed) must equal tkenc.CryptDungeonParams(seed, ...) exactly). TestStartEncounter_CryptObstacles_ExactRefsCountsAndBlockingByRegion pins entrance/corridor/boss obstacle refs+counts+BlocksMovement/BlocksLoS against tkenc.CryptObstacleRef* constants. TestStartEncounter_CryptObstacles_ExplicitSeed_DeterministicPositions proves byte-identical obstacle placement across two independent StartEncounter calls given the same seed. Mutation-verified: reverting dungeon_spec.go to its pre-#694 literal (or forcing Obstacles=nil) fails these new tests immediately; every pre-existing crypt/goblin/seed/party-size/unknown-key/default-key test still passes with its behavior unmodified (only the previously-hardcoded 20/6/14/20 width/height literals in the 3-region test now read off a live toolkit call)."
+      "notes": "go.mod/go.sum merged with ZERO conflicts (both branches independently converged on encounter v0.38.0; #698 additionally brought rulebooks/dnd5e v0.68.0, kept as-is -- union, not a revert). start_encounter.go: kept #694's resolveDungeonSpec(key,seed)->tkenc.DungeonParams call site + InitDungeon(dungeonParams), replaced the retired seedGoblins call with #698's seedRegionMonsters(ctx, enc, encID, dungeonParams, dungeonKey) (adapted its 4th-arg type from the retired dungeonSpec to tkenc.DungeonParams -- a mechanical, behavior-preserving signature change, not new logic); deleted the retired seedGoblins function body entirely (superseded), kept #698's hardened regionEntryAnchor(...,room) and anchorProbeEntity. crypt_monster_seed.go: buildMonsterSeedGroups/seedRegionMonsters signatures changed from `spec dungeonSpec` to `params tkenc.DungeonParams`, reading params.Regions/params.Connectors -- zero behavior change, same mechanical adaptation. Deleted crypt_dungeon_params_fixture_internal_test.go entirely: its whole purpose (proving the anchor/seeding logic works against tkenc.CryptDungeonParams's real output BEFORE PR #697 wired it into production) is now strictly redundant -- resolveDungeonSpec(DungeonKeyCrypt, seed) IS tkenc.CryptDungeonParams(seed, ...) verbatim (PR #697's own mutation-verified pin), so its sweep/composition/anchor tests were a subset of what the updated crypt_monster_seed_internal_test.go (now driven through the real registry) already proves. Rewrote crypt_monster_seed_internal_test.go's resolveDungeonSpec calls for the new (key,seed) signature and tkenc.DungeonParams field names; replaced the retired cryptRegionIDEntrance/cryptRegionIDBoss literal constants (deleted along with the old dungeonSpec literal) with a new regionIDForArchetype(params, archetype) helper that reads the toolkit's own region ID back off params.Regions instead of hardcoding it. start_encounter_test.go: kept both new obstacle tests (#697) and #698's renamed monster-composition tests (goblin test retired, replaced by TestStartEncounter_CryptMonsters_OneEntranceSkeletonZeroCorridorOneBoss + the same-seed byte-identical-positions test) side by side -- both sets of assertions now exercise the SAME merged production path. internal/integration/dungeon_crypt_test.go, lobby_crypt_monster_seed_test.go, region_entry_anchor_internal_test.go: no conflict (only #698 touched them); merged automatically, now exercising the combined dimensions+obstacles+deterministic-composition path with zero changes needed."
     },
     {
-      "id": "2026-07-23-007",
-      "task": "Update docs/status.md (new #694 Active-work entry, #688's entry gets a superseded-by pointer, new Known-rough-edges entry for rpg-api#696) and docs/architecture/components/lobby-service.md",
+      "id": "2026-07-23-010",
+      "task": "Post-merge verification: full production StartEncounter matrix (seeds 1..1000 x party 1..4) on the COMBINED path, mutation-discrimination re-proof, full build/vet/unit/-race/real-Redis integration/fmt/imports/tidy, lint-vs-main classification, entropy-seeded flake re-check",
       "status": "completed",
-      "artifacts": ["docs/status.md", "docs/architecture/components/lobby-service.md"],
+      "artifacts": [],
       "commit": null,
-      "notes": "Historical #688 entry left intact per this file's own documentation philosophy, same pattern #676's entry used."
+      "notes": "See tests.json for the full discriminating-test/evidence log. Headline result: the rpg-api#696 collision is gone -- 0/1000 x 4 party sizes = 0 errors on the combined path (verified twice: once via crypt_monster_seed_internal_test.go's existing seed-sweep test re-run against the merged registry, once via a fresh ad hoc sweep through the real orchestrator.StartEncounter, both 0 failures)."
+    },
+    {
+      "id": "2026-07-23-011",
+      "task": "Update docs/status.md, docs/architecture/components/lobby-service.md, .claude/tests.json to remove #696 hold/retry language, record the merge, and reflect the combined implementation as the current truth",
+      "status": "completed",
+      "artifacts": ["docs/status.md", "docs/architecture/components/lobby-service.md", ".claude/tests.json"],
+      "commit": null,
+      "notes": "Removed the #696 'Known rough edges' entry's open-concern framing (issue closed not-planned) and replaced with a short historical note pointing at the #698 remedy. No retry/search/room-resize logic added anywhere -- deterministic FixedPositions placement (#698) is the accepted remedy, per instructions."
     }
   ],
   "next_steps": [
-    "Full verification pass (build/vet/unit/-race/real-Redis integration/fmt/imports/tidy/pre-commit/ci-check), classify pre-existing lint/mock issues honestly against main",
-    "Atomic commits, push, open a ready (not draft) PR linked to #694, referencing rpg-api#696 prominently as a flagged concern",
-    "Address any automated review comments individually, signed, resolve threads after fixing",
-    "Do not merge -- awaiting Kirk's decision, especially on rpg-api#696"
+    "Push the merge commit + any follow-up fix commits separately; verify PR #697 is CLEAN/MERGEABLE with green checks",
+    "Address any new automated review comments individually, signed, resolve threads after fixing",
+    "Do not merge -- awaiting Kirk's decision"
   ]
 }

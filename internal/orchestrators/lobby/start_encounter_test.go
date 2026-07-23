@@ -16,6 +16,7 @@ import (
 	rpgcore "github.com/KirkDiggler/rpg-toolkit/core"
 	tkenc "github.com/KirkDiggler/rpg-toolkit/encounter"
 	"github.com/KirkDiggler/rpg-toolkit/encounter/core"
+	"github.com/KirkDiggler/rpg-toolkit/encounter/perception"
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/refs"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/saves"
@@ -525,7 +526,15 @@ func (s *LobbySuite) TestStartEncounter_CryptDungeon_ThreeRegionsArchetypesTheme
 	s.Require().True(bobOK)
 	s.Require().Equal(tkenc.ArchetypeEntrance, bobArchetype, "every member must spawn inside the entrance region")
 
-	s.Require().Equal(core.ModeFreeRoam, encData.Mode, "combat must not start at spawn")
+	// No FreeRoam/TurnBased assertion here (rpg-api#689, 2026-07-23): this
+	// test predates the deterministic-anchor monster composition merged in
+	// alongside rpg-api#694. The retired out-of-sight goblin search
+	// guaranteed FreeRoam at spawn; #689's FixedPositions anchors carry no
+	// such guarantee and the revised issue explicitly allows the entrance
+	// monster to be visible and trigger combat immediately — see
+	// TestStartEncounter_CryptMonsters_OneEntranceSkeletonZeroCorridorOneBoss's
+	// own doc for the same reasoning. Whatever the real toolkit LoS produces
+	// is what StartEncounter must honor, not an rpg-api-side guarantee.
 }
 
 // obstaclesByRef tallies a region's placed tkenc.ObstacleData by Ref, and
@@ -650,16 +659,18 @@ func (s *LobbySuite) TestStartEncounter_CryptObstacles_ExplicitSeed_Deterministi
 		"the same explicit RandomSeed must reproduce byte-identical obstacle placement")
 }
 
-// TestStartEncounter_CryptGoblins_SeededAtEntranceAndBossNotCorridor_CombatEntersByRule
-// generalizes the pre-#688 "both occupied regions get monsters" rule
-// (rpg-api#676) from two hardcoded chamber IDs to an N-region chain's two
-// ENDPOINTS by chain POSITION — the entrance (index 0) and the terminal
-// region (index len-1, here "boss") — with the interior corridor region
-// getting none. This is deliberately NOT rpg-api#689's per-archetype
-// seeding intelligence: every populated region still gets the exact same
-// goblinsPerRegion count, keyed by chain position, not by Archetype value
-// — a behavior-preserving generalization, not new seeding logic.
-func (s *LobbySuite) TestStartEncounter_CryptGoblins_SeededAtEntranceAndBossNotCorridor_CombatEntersByRule() {
+// TestStartEncounter_CryptMonsters_OneEntranceSkeletonZeroCorridorOneBoss
+// is the rpg-api#689 headline proof, superseding the retired goblin test of
+// the same rough shape (2026-07-23 approved first-swing simplification):
+// exactly ONE skeleton in the entrance region, ZERO in the corridor, and
+// exactly ONE non-wight skeleton-captain boss (rpg-toolkit#816) in the
+// boss region — no goblins, no PositionOracle search. Concealment (if any)
+// comes from real door/wall LoS geometry, not a placement predicate — this
+// test does not assert either FreeRoam or TurnBased at spawn, since the
+// revised issue explicitly allows the entrance monster to be visible and
+// trigger combat immediately; whatever the real toolkit LoS produces here
+// is what StartEncounter must honor, not an rpg-api-side guarantee.
+func (s *LobbySuite) TestStartEncounter_CryptMonsters_OneEntranceSkeletonZeroCorridorOneBoss() {
 	s.seedReadyLobby("lobby-crypt2", "alice")
 	s.expectCharacter("char-alice", "alice", "Alice", 12, 12)
 
@@ -671,56 +682,83 @@ func (s *LobbySuite) TestStartEncounter_CryptGoblins_SeededAtEntranceAndBossNotC
 	encData, err := s.encRepo.Get(s.ctx, out.EncounterID)
 	s.Require().NoError(err)
 
-	s.Require().Len(encData.Monsters, 4, "2 goblins each in the entrance and boss regions, none in the corridor")
+	s.Require().Len(encData.Monsters, 2, "exactly one entrance skeleton + one boss skeleton-captain, no goblins")
 	archetypeCounts := map[tkenc.RegionArchetype]int{}
-	seenPositions := make(map[core.Hex]bool, len(encData.Monsters))
 	for id, m := range encData.Monsters {
-		s.Require().Positive(m.HP, "goblin %q must have positive HP", id)
-		s.Require().NotEmpty(m.DataJSON, "goblin %q must carry DataJSON (monster.NewGoblin, not a hand-rolled stub)", id)
 		archetype, ok := regionArchetypeAt(encData.Space, m.Position)
-		s.Require().True(ok, "goblin %q must be placed inside a tagged region", id)
+		s.Require().True(ok, "monster %q must be placed inside a tagged region", id)
 		archetypeCounts[archetype]++
-		// Distinct positions: monster.Monster doesn't implement
-		// spatial.Placeable, so the spawn engine's baseline CanPlaceEntity
-		// occupancy check silently no-ops for goblin-on-goblin placement.
-		// seedGoblins' PositionOracle explicitly rejects already-occupied
-		// cells to restore the distinctness guarantee (gate finding on
-		// rpg-api#650's PR).
-		s.Require().False(seenPositions[m.Position], "goblins must not be placed on the same hex")
-		seenPositions[m.Position] = true
-	}
-	s.Require().Equal(2, archetypeCounts[tkenc.ArchetypeEntrance], "the entrance region must get exactly 2 goblins")
-	s.Require().Equal(2, archetypeCounts[tkenc.ArchetypeBoss], "the boss (terminal) region must get exactly 2 goblins")
-	s.Require().Zero(archetypeCounts[tkenc.ArchetypeCorridor], "the interior corridor region must get no goblins")
-
-	// Combat must NOT have started at spawn: every goblin was placed
-	// outside alice's initial sight, so AddMonster's inline combat-entry
-	// check (rpg-toolkit#759) must not have fired.
-	s.Require().Equal(core.ModeFreeRoam, encData.Mode, "combat must not start at spawn — goblins are placed outside initial LOS")
-
-	// Rehydrate the live encounter and move alice directly onto an
-	// ENTRANCE-region goblin's hex (reachable without opening any door,
-	// exactly like the pre-#688 chamber-1 proof) — a Move that forms sight.
-	// This must flip the encounter to TURN_BASED BY RULE (the toolkit's own
-	// inline checkCombatEntry), not via any rpg-api-side trigger.
-	enc, err := tkenc.LoadFromData(s.ctx, encData, s.encBroker)
-	s.Require().NoError(err)
-	s.Require().Equal(core.ModeFreeRoam, enc.Mode(), "rehydration must not itself flip mode")
-
-	var targetGoblin core.Hex
-	var foundEntranceGoblin bool
-	for _, m := range encData.Monsters {
-		if archetype, _ := regionArchetypeAt(encData.Space, m.Position); archetype == tkenc.ArchetypeEntrance {
-			targetGoblin = m.Position
-			foundEntranceGoblin = true
-			break
+		s.Require().Positive(m.HP, "monster %q must have positive HP", id)
+		s.Require().NotEmpty(m.DataJSON, "monster %q must carry hydration DataJSON", id)
+		switch archetype {
+		case tkenc.ArchetypeEntrance:
+			s.Require().Equal(refs.Monsters.Skeleton().String(), m.MonsterRef,
+				"the entrance monster must be the plain skeleton, never a goblin")
+		case tkenc.ArchetypeBoss:
+			s.Require().Equal(refs.Monsters.SkeletonCaptain().String(), m.MonsterRef,
+				"the boss must be rpg-toolkit#816's non-wight skeleton captain")
+		default:
+			s.Fail("unexpected monster region archetype", "archetype=%q", archetype)
 		}
 	}
-	s.Require().True(foundEntranceGoblin, "must find at least one entrance-region goblin to move onto")
-	s.Require().NoError(enc.Move("alice", []core.Hex{targetGoblin}),
-		"moving onto a pre-vetted (non-wall) entrance-region goblin hex must not be blocked")
-	s.Require().Equal(core.ModeTurnBased, enc.Mode(),
-		"a Move that brings an entrance-region goblin into sight must flip the encounter to TURN_BASED by rule")
+	s.Require().Equal(1, archetypeCounts[tkenc.ArchetypeEntrance], "exactly one entrance monster")
+	s.Require().Equal(1, archetypeCounts[tkenc.ArchetypeBoss], "exactly one boss monster")
+	s.Require().Zero(archetypeCounts[tkenc.ArchetypeCorridor], "the interior corridor region must get no monsters")
+
+	// The boss must be concealed by the closed connector door's LoS
+	// blocking, not by a placement search: rehydrate and directly verify
+	// no seated player can currently see the boss.
+	enc, err := tkenc.LoadFromData(s.ctx, encData, s.encBroker)
+	s.Require().NoError(err)
+	var bossPos core.Hex
+	for _, m := range encData.Monsters {
+		if archetype, _ := regionArchetypeAt(encData.Space, m.Position); archetype == tkenc.ArchetypeBoss {
+			bossPos = m.Position
+		}
+	}
+	for _, p := range enc.ToData().Players {
+		s.Require().False(p.View != nil && perception.CanSeeAt(p.View, bossPos, enc.Room()),
+			"the boss must stay concealed behind its closed connector door at spawn")
+	}
+}
+
+// TestStartEncounter_CryptMonsters_SameSeedByteIdenticalPositions proves
+// rpg-api#689's determinism done bar end-to-end through the real
+// StartEncounter/repo path (in-memory here; real-Redis coverage lives in
+// internal/integration/lobby_crypt_monster_seed_test.go): the same
+// explicit seed on two independent encounters produces byte-identical
+// monster positions.
+func (s *LobbySuite) TestStartEncounter_CryptMonsters_SameSeedByteIdenticalPositions() {
+	s.seedReadyLobby("lobby-crypt-seed-a", "alice")
+	s.expectCharacter("char-alice", "alice", "Alice", 12, 12)
+	s.seedReadyLobby("lobby-crypt-seed-b", "bob")
+	s.expectCharacter("char-bob", "bob", "Bob", 10, 10)
+
+	outA, err := s.orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		PlayerID: "alice", LobbyID: "lobby-crypt-seed-a", RandomSeed: 2026,
+	})
+	s.Require().NoError(err)
+	outB, err := s.orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		PlayerID: "bob", LobbyID: "lobby-crypt-seed-b", RandomSeed: 2026,
+	})
+	s.Require().NoError(err)
+
+	dataA, err := s.encRepo.Get(s.ctx, outA.EncounterID)
+	s.Require().NoError(err)
+	dataB, err := s.encRepo.Get(s.ctx, outB.EncounterID)
+	s.Require().NoError(err)
+
+	positionsByArchetype := func(data *tkenc.Data) map[tkenc.RegionArchetype]core.Hex {
+		out := map[tkenc.RegionArchetype]core.Hex{}
+		for _, m := range data.Monsters {
+			archetype, ok := regionArchetypeAt(data.Space, m.Position)
+			s.Require().True(ok)
+			out[archetype] = m.Position
+		}
+		return out
+	}
+	s.Require().Equal(positionsByArchetype(dataA), positionsByArchetype(dataB),
+		"the same explicit seed must produce byte-identical monster positions across independent encounters")
 }
 
 // TestStartEncounter_DefaultDungeonKey_MatchesExplicitCryptKey proves

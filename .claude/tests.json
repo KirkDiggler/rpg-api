@@ -17,14 +17,14 @@
     {
       "id": "seed-argument-actually-threaded-into-toolkit-params",
       "feature": "dungeon-key-selection",
-      "prompt": "Call resolveDungeonSpec(DungeonKeyCrypt, seed) with two different seeds. Verify the returned params.RandomSeed matches each input seed and the two results differ -- a builder that silently ignored its seed argument would fail this.",
+      "prompt": "Call resolveDungeonSpec(DungeonKeyCrypt, seed) with two different seeds. Verify the returned params.RandomSeed matches each input seed and the two results differ.",
       "passes": true,
       "last_checked": "2026-07-23"
     },
     {
       "id": "crypt-spec-three-regions-archetypes-theme-scale",
       "feature": "dungeon-key-selection",
-      "prompt": "StartEncounter with the crypt key and an explicit seed. Verify the persisted Space has exactly 3 regions tagged entrance/corridor/boss (RegionData.Archetype), Space.Theme == 'crypt', Space.Height and each region's bounding width match a live tkenc.CryptDungeonParams call with the same seed (never a hardcoded literal), and the boss region's primary playable axis (min(width, height)) exceeds 6 hex steps.",
+      "prompt": "StartEncounter with the crypt key and an explicit seed. Verify the persisted Space has exactly 3 regions tagged entrance/corridor/boss (RegionData.Archetype), Space.Theme == 'crypt', Space.Height and each region's bounding width match a live tkenc.CryptDungeonParams call with the same seed (never a hardcoded literal), and the boss region's primary playable axis exceeds 6 hex steps.",
       "passes": true,
       "last_checked": "2026-07-23"
     },
@@ -38,7 +38,7 @@
     {
       "id": "crypt-obstacles-exact-refs-counts-and-blocking-by-region",
       "feature": "crypt-obstacle-consumption",
-      "prompt": "A real StartEncounter call with the crypt key and an explicit (known-good) seed. Verify SpaceData.Obstacles is non-empty, every obstacle ID is unique, and grouped by the region archetype it's placed in: entrance has exactly 1 obelisk + 2 pillars, corridor has exactly 1 pillar, boss has exactly 1 coffin + 1 altar + 1 statue-reaper + 1 statue-knight-hooded -- refs read off the toolkit's exported CryptObstacleRef* constants, never a string this package invents. Also verify the blocking-flag table (every ref BlocksMovement=true; every ref BlocksLoS=true EXCEPT the coffin, which is false).",
+      "prompt": "A real StartEncounter call with the crypt key and an explicit (known-good) seed. Verify SpaceData.Obstacles is non-empty, every obstacle ID is unique, and grouped by region archetype: entrance has exactly 1 obelisk + 2 pillars, corridor has exactly 1 pillar, boss has exactly 1 coffin + 1 altar + 1 statue-reaper + 1 statue-knight-hooded -- refs read off the toolkit's exported CryptObstacleRef* constants. Also verify the blocking-flag table (every ref BlocksMovement=true; every ref BlocksLoS=true EXCEPT the coffin, which is false), failing fast (not silently overwriting) if any ref shows inconsistent flags across instances.",
       "passes": true,
       "last_checked": "2026-07-23"
     },
@@ -59,49 +59,119 @@
     {
       "id": "unknown-dungeon-key-errors",
       "feature": "dungeon-key-selection",
-      "prompt": "Call StartEncounter with a DungeonKey that has no registered spec. Verify it returns an error (ErrUnknownDungeonKey), wraps a resolveDungeonSpec(key, seed) call that also errors directly, and does not create or persist an encounter or transition the lobby out of WAITING.",
+      "prompt": "Call StartEncounter with a DungeonKey that has no registered spec. Verify it returns an error (ErrUnknownDungeonKey), a direct resolveDungeonSpec(key, seed) call also errors, and no encounter/state transition occurs.",
       "passes": true,
       "last_checked": "2026-07-23"
     },
     {
       "id": "geometry-independent-of-party-size",
       "feature": "api-boundary",
-      "prompt": "Start two encounters with the same key+seed but different party sizes (1 vs 2 members). Verify persisted Space and connector door positions are byte-identical -- InitDungeon runs before any AddPlayer call and takes no party information as input.",
+      "prompt": "Start two encounters with the same key+seed but different party sizes (1 vs 2 members). Verify persisted Space and connector door positions are byte-identical.",
       "passes": true,
       "last_checked": "2026-07-23"
     },
     {
-      "id": "crypt-goblins-seeded-at-entrance-and-boss-not-corridor",
+      "id": "entrance-exactly-one-skeleton",
+      "feature": "crypt-monster-composition",
+      "prompt": "Start a crypt encounter on the COMBINED production path (toolkit CryptDungeonParams dimensions/obstacles + deterministic monster composition). Verify exactly one monster (ref dnd5e:monsters:skeleton) is seeded in the entrance region.",
+      "passes": true,
+      "last_checked": "2026-07-23"
+    },
+    {
+      "id": "corridor-zero-monsters",
+      "feature": "crypt-monster-composition",
+      "prompt": "Start a crypt encounter on the combined path. Verify zero monsters are seeded in the corridor region (which does carry a sparse pillar obstacle from #694, but no monster spec from #689).",
+      "passes": true,
+      "last_checked": "2026-07-23"
+    },
+    {
+      "id": "boss-exactly-one-skeleton-captain",
+      "feature": "crypt-monster-composition",
+      "prompt": "Start a crypt encounter on the combined path. Verify exactly one monster (ref dnd5e:monsters:skeleton-captain, non-wight rpg-toolkit#816) is seeded in the boss region, alongside its coffin/altar/statue obstacles.",
+      "passes": true,
+      "last_checked": "2026-07-23"
+    },
+    {
+      "id": "deterministic-seed-byte-identical-monsters",
+      "feature": "crypt-monster-determinism",
+      "prompt": "Start two crypt encounters with the same explicit RandomSeed on the combined path. Verify monster positions are byte-identical.",
+      "passes": true,
+      "last_checked": "2026-07-23"
+    },
+    {
+      "id": "party-size-invariant-monsters",
+      "feature": "crypt-monster-determinism",
+      "prompt": "Start crypt encounters with the same seed and party sizes 1, 2, 3, 4 on the combined path. Verify monster positions are identical regardless of party size.",
+      "passes": true,
+      "last_checked": "2026-07-23"
+    },
+    {
+      "id": "seed-sweep-zero-errors-combined-path",
+      "feature": "crypt-monster-determinism",
+      "prompt": "Sweep seeds 1..1000 x party sizes 1..4 through the REAL production dungeon-key registry (resolveDungeonSpec -> tkenc.CryptDungeonParams, #694) and the deterministic monster seeder (#689) together -- not the separate fixture helper this test used before the #694/#689 merge (crypt_dungeon_params_fixture_internal_test.go, now deleted as redundant). Verify zero placement errors across the full matrix, and that this also structurally resolves rpg-api#696 (no out-of-sight search exists to fail).",
+      "passes": true,
+      "last_checked": "2026-07-23"
+    },
+    {
+      "id": "no-position-oracle-no-search",
+      "feature": "crypt-monster-no-search",
+      "prompt": "Verify the crypt monster seeding EntityGroups carry FixedPositions with len==Quantity and PositionOracle==nil -- no out-of-sight search/retry path is exercised, on the combined production path.",
+      "passes": true,
+      "last_checked": "2026-07-23"
+    },
+    {
+      "id": "anchors-walkable-non-obstacle",
+      "feature": "crypt-monster-anchors",
+      "prompt": "Verify both the entrance and boss anchors resolve to positions Room.CanPlaceEntity accepts (not walls, not out of bounds, and distinct from placed obstacle cells) and are tagged into their expected region via RegionAt, with the region ID read back from the toolkit's own params.Regions rather than a hardcoded literal.",
+      "passes": true,
+      "last_checked": "2026-07-23"
+    },
+    {
+      "id": "boss-concealed-by-door-not-search",
+      "feature": "crypt-monster-concealment",
+      "prompt": "Verify the boss anchor is not visible (perception.CanSeeAt) from the entrance anchor while the boss door is closed, using real LoS/wall/obstacle geometry -- not a placement-search predicate.",
+      "passes": true,
+      "last_checked": "2026-07-23"
+    },
+    {
+      "id": "real-redis-integration-determinism",
+      "feature": "crypt-monster-determinism",
+      "prompt": "Against a real Redis-backed lobby+encounter repo (testcontainers, CryptMonsterSeedRedisSuite), call StartEncounter twice with the same explicit seed on the combined production path. Verify byte-identical monster positions end to end, and (separately, DungeonCryptSuite) that the four pre-existing door/region/zone gate facts plus the new composition/obstacle facts all hold through the real gRPC surface.",
+      "passes": true,
+      "last_checked": "2026-07-23"
+    },
+    {
+      "id": "mutation-discriminate-toolkit-constructor-call",
       "feature": "regression",
-      "prompt": "StartEncounter with the crypt key and a known-good seed. Verify exactly 2 goblins land in the entrance region and 2 in the boss region, none in the corridor, at distinct positions, combat does not start at spawn, and moving a player onto an entrance-region goblin's hex flips the encounter to TURN_BASED by the toolkit's own rule.",
+      "prompt": "Reintroduce a literal dimension override (e.g. p.Height = 20) into DungeonKeyCrypt's builder. Verify TestResolveDungeonSpec_ExplicitCryptKey_MatchesToolkitConstructorVerbatim fails with an exact diff. Restore and verify it passes again.",
       "passes": true,
       "last_checked": "2026-07-23"
     },
     {
-      "id": "toolkit-dependency-bump-clean",
-      "feature": "dependency-management",
-      "prompt": "Bump go.mod's rpg-toolkit/encounter requirement to the published v0.38.0 tag (verified on the real Go module proxy, containing rpg-toolkit#826's CryptDungeonParams) via `go get` + `go mod tidy`. Verify the resulting go.mod/go.sum diff is a single version-line change with no replace directive, no go.work, and no unrelated transitive version drift.",
+      "id": "mutation-discriminate-obstacle-consumption",
+      "feature": "regression",
+      "prompt": "Force every region's Obstacles field to nil in the crypt builder (simulating pre-#694). Verify the obstacle refs/counts/blocking test and the obstacle-determinism test both fail. Restore and verify both pass again.",
       "passes": true,
       "last_checked": "2026-07-23"
     },
     {
-      "id": "mutation-revert-discrimination",
-      "feature": "crypt-obstacle-consumption",
-      "prompt": "Revert dungeon_spec.go's DungeonKeyCrypt builder to a version that forces every region's Obstacles field to nil (simulating the pre-#694 API-owned-literal shape) while leaving the new obstacle tests unchanged. Verify TestStartEncounter_CryptObstacles_ExactRefsCountsAndBlockingByRegion fails (SpaceData.Obstacles is empty). Restore the real tkenc.CryptDungeonParams-backed builder and verify the test passes again.",
+      "id": "mutation-discriminate-deterministic-spawn-path",
+      "feature": "regression",
+      "prompt": "Verify (structurally, via TestBuildMonsterSeedGroups_NoSearch_FixedPositionsOnlyNoOracle) that removing FixedPositions or introducing a PositionOracle into a monster seed group would be caught -- every group must carry FixedPositions with len==Quantity.Fixed and a nil PositionOracle.",
       "passes": true,
       "last_checked": "2026-07-23"
     },
     {
       "id": "existing-region-theme-projection-remains-green",
       "feature": "regression",
-      "prompt": "Run the full internal/handlers/dnd5e/v2/encounter test package and the real-Redis DungeonCryptSuite (rpg-api#687/#695's zone/theme wire projection). Verify every pre-existing test still passes unmodified -- Space.zones/theme/Hex.zone_id projection reads off Space.Regions/Theme however InitDungeon populates them, independent of whether Obstacles is set.",
+      "prompt": "Run the full internal/handlers/dnd5e/v2/encounter test package and the real-Redis DungeonCryptSuite (rpg-api#687/#695's zone/theme wire projection, now also proving #689's composition + #694's obstacles in the same suite). Verify every pre-existing test still passes.",
       "passes": true,
       "last_checked": "2026-07-23"
     },
     {
-      "id": "known-gap-out-of-sight-goblin-placement-capacity",
-      "feature": "known-gap",
-      "prompt": "Sweep StartEncounter with the crypt key across many explicit RandomSeed values (1..1000) for party sizes 1/2/3/4, using the real spatial/spawn/perception packages (no test doubles). Measure and record the failure rate ('spawn engine failed to place N of 4 goblin(s)') by party size. Confirm the failure is deterministic per seed (repeated sweeps produce identical results), and confirm it is NOT present on origin/main (0/30 baseline runs of a pre-existing entropy-seeded test). File the finding as a new rpg-api issue with full evidence; do not attempt to fix it in this branch (out of #694's stated scope).",
+      "id": "entropy-seeded-flake-recheck-post-deterministic-placement",
+      "feature": "regression",
+      "prompt": "Re-run the previously-flaky entropy-seeded tests (TestStartEncounter_Success_ConstructsAndPersistsEncounter, TestAbandonEncounter_ThenGetMyActiveLobby_ReturnsEmpty_ThenFreshLobbySeatsAlive, handler-level TestStartEncounter_Success_ReturnsEncounterID, integration TestLobbyV1alpha1IntegrationSuite) repeatedly with no explicit seed. Verify the rpg-api#696 'spawn engine failed to place N of 4 goblin(s)' failure signature no longer occurs -- the deterministic FixedPositions composition has no search path left to fail.",
       "passes": true,
       "last_checked": "2026-07-23"
     }
