@@ -1,8 +1,8 @@
 ---
 name: rpg-api status
 description: Where we are with rpg-api — active work, paused, known rough edges, per-subsystem confidence
-updated: 2026-07-22
-confidence: high — Wave 2 Monk entries verified against passing integration tests; #636 entry verified against passing unit + integration tests; #642 v1alpha1 encounter stack deletion verified against passing build/vet/test/lint; #644 The Dungeon wave 1 (api) verified against passing unit + stress-run (50x) integration tests; #650 toolkit seam adoption (InitiativeRolled event + room-aware spawn) verified against passing unit/integration/-race full suite; #651 ActiveConditions projection verified against passing unit + integration (10x -race) + full suite; #656 movement-truncation fix verified against an isolated toolkit-level repro, a new RPC-level regression test (10x -race), and the full suite; #663 AbandonEncounter + combat pockets + rage-at-seating verified against passing unit/integration/-race full suite plus a live playtest against the real game route; #676 The Dungeon wave 2 Slice 2 (api leg) verified against passing unit tests + a new 3-test integration gate suite (8x stress-run, entropy-seeded layouts); #680 equipment on the wire verified against passing unit + integration suite (real AC, occupancy, non-equipment-field preservation) + adversarial-gate fixes + full CI green against published deps; #687 region/theme wire projection verified against passing unit (-race) + a real-RPC integration gate proving connect-time AND incremental-reveal zone_id/zones/theme projection against the real Redis harness, full `go test`/`golangci-lint` green against the published `rpg-api-protos` generated branch + `rpg-toolkit/encounter v0.35.0`; #688 N-region dungeon by key verified against passing unit (-race, 15x stress-run) + a rewritten 3-test integration gate suite against the real Redis harness, full `go test`/`golangci-lint` green against published `rpg-toolkit/encounter v0.35.0`
+updated: 2026-07-23
+confidence: high — Wave 2 Monk entries verified against passing integration tests; #636 entry verified against passing unit + integration tests; #642 v1alpha1 encounter stack deletion verified against passing build/vet/test/lint; #644 The Dungeon wave 1 (api) verified against passing unit + stress-run (50x) integration tests; #650 toolkit seam adoption (InitiativeRolled event + room-aware spawn) verified against passing unit/integration/-race full suite; #651 ActiveConditions projection verified against passing unit + integration (10x -race) + full suite; #656 movement-truncation fix verified against an isolated toolkit-level repro, a new RPC-level regression test (10x -race), and the full suite; #663 AbandonEncounter + combat pockets + rage-at-seating verified against passing unit/integration/-race full suite plus a live playtest against the real game route; #676 The Dungeon wave 2 Slice 2 (api leg) verified against passing unit tests + a new 3-test integration gate suite (8x stress-run, entropy-seeded layouts); #680 equipment on the wire verified against passing unit + integration suite (real AC, occupancy, non-equipment-field preservation) + adversarial-gate fixes + full CI green against published deps; #687 region/theme wire projection verified against passing unit (-race) + a real-RPC integration gate proving connect-time AND incremental-reveal zone_id/zones/theme projection against the real Redis harness, full `go test`/`golangci-lint` green against the published `rpg-api-protos` generated branch + `rpg-toolkit/encounter v0.35.0`; #688 N-region dungeon by key verified against passing unit (-race, 15x stress-run) + a rewritten 3-test integration gate suite against the real Redis harness, full `go test`/`golangci-lint` green against published `rpg-toolkit/encounter v0.35.0`; #689 deterministic crypt monster composition verified against passing unit (-race, 1000-seed x 4-party-size zero-error matrix, against BOTH this package's dungeonSpec and the toolkit's own CryptDungeonParams dimensions) + real-Redis integration (composition + seed-determinism + party-size-invariance) + the updated dungeon_crypt_test.go gate, full `go test`/`golangci-lint` green against published `rpg-toolkit/encounter v0.38.0` + `rulebooks/dnd5e v0.68.0`, zero new lint issues versus main
 ---
 
 # rpg-api: Where We Are
@@ -10,6 +10,69 @@ confidence: high — Wave 2 Monk entries verified against passing integration te
 This is a living doc. Edit it in the same PR that invalidates a line. Don't let it rot.
 
 ## Active work
+
+**Deterministic crypt monster composition — retires goblin out-of-sight search (rpg-api#689, 2026-07-23)** —
+The approved first-swing simplification: `StartEncounter` now seeds exactly 1
+deterministic-anchor skeleton (`monsters.NewSkeleton`) in the entrance region, 0 monsters
+in the corridor, and exactly 1 deterministic-anchor non-wight skeleton-captain boss
+(`monsters.NewSkeletonCaptain`, rpg-toolkit#816) in the boss region — no goblins, no
+`PositionOracle` search/retry anywhere in this path.
+
+**Anchor resolution (`crypt_monster_seed.go`, new file).** `regionMonsterAnchor` is a
+pure function over `[]tkenc.DungeonRegionParams`/`[]tkenc.DungeonConnectorParams`/
+`*tkenc.SpaceData` — not tied to this package's own `dungeonSpec` type, so the identical
+function also runs directly against `tkenc.CryptDungeonParams`'s own output
+(`crypt_dungeon_params_fixture_internal_test.go`), independent of whether #694/PR#697
+ever wires that constructor into `dungeonSpec` itself (that switch, plus `Obstacles`
+projection, stays #694/#697's job — not touched here). It reuses `regionEntryAnchor`
+(existing, tested since #688) for **both** the entrance and boss anchors now, via
+whichever connector door borders each region (`regionAnchorDoor`): the entrance uses its
+own **outgoing** door (avoiding a position collision with the party's spawn line at
+`SpaceData.Entrance`), the boss uses its **incoming** door. `monsterSeedSpecsByKey` is
+the archetype table (entrance → skeleton, boss → skeleton-captain, corridor
+deliberately absent — not a zero-count entry); an unknown dungeon key, a missing/
+duplicate archetype match, or an unresolvable door is always an error, never a silent
+fallback. `buildMonsterSeedGroups` builds `spawn.EntityGroup`s with `FixedPositions`
+only (`len(FixedPositions) == Quantity.Fixed`), so the spawn engine's search path is
+structurally unreachable for this composition.
+
+**Evidence-backed hardening to `regionEntryAnchor`.** A 1000-seed sweep against
+rpg-toolkit's own `CryptDungeonParams` dimensions (height 8, entrance/corridor/boss
+widths 10/5/10 — much tighter than this package's own dungeonSpec) found
+`regionEntryAnchor`'s door-neighbor search — generalized from its original single call
+site (the boss's incoming door) to the entrance's own outgoing door — landed on a real
+interior wall 40/1000 seeds: `perception.HexNeighbors`' fixed six-direction iteration
+order doesn't guarantee checking the required-path-row neighbor before an off-path
+diagonal one, and which direction is "safe" depends on which side of the chain the door
+sits on — an orientation detail this package must not reason about. Hardened by
+additionally checking each region-tagged candidate against `room.CanPlaceEntity` (the
+SAME toolkit-exposed validity check `spawn.FixedPositions` itself already performs)
+before accepting it — a bounded, deterministic disambiguation among an already-known
+six-candidate set, not a search (no relaxed constraints, no retries beyond these six, no
+randomness); `room` may still be `nil` for the original pure region-tag-matching
+contract. Re-verified after the fix: 0/1000 seeds fail against `CryptDungeonParams`'
+dimensions and 0/(1000×4) against this package's own `dungeonSpec` × party sizes 1..4.
+
+**Toolkit dependency.** Bumped `rpg-toolkit/encounter` v0.35.0 → v0.38.0
+(`CryptDungeonParams`, rpg-toolkit#826) and `rulebooks/dnd5e` v0.67.0 → v0.68.0
+(`monsters.NewSkeletonCaptain`, rpg-toolkit#816) — both verified published and merged
+via `git merge-base --is-ancestor` against the tagged commits before the bump; `tools/
+spawn` stays at v0.3.0 (already carries `FixedPositions` from PR #770, verified the same
+way). No replace directive anywhere.
+
+**Verified:** `internal/orchestrators/lobby`'s full test package green (`-race`,
+including the 1000-seed × 4-party-size zero-placement-error matrix against both this
+package's `dungeonSpec` and the toolkit's own `CryptDungeonParams`); real-Redis
+integration coverage (`internal/integration/lobby_crypt_monster_seed_test.go`, a second
+`lobbyorch.Orchestrator` wired directly onto `lobbyrepo.NewRedis`/`encountersv2.NewRedis`
+sharing the harness's Redis container) proves composition + same-seed byte-identical
+positions + party-size invariance against real Redis, not an in-memory cache; the
+existing `dungeon_crypt_test.go` gate (4 tests) updated in place — the four gate facts
+(entrance-anchored spawn, door-as-wall-with-id, pocket-scoped combat-entry, boss
+concealment until both doors open AND a sightline forms) are unchanged, only the
+monster-composition assertions and identifier names ("goblin" → "monster") changed.
+`go test ./...` and `golangci-lint` show **zero new issues** versus `main` (29
+pre-existing issues in untouched files, identical count/category before and after).
 
 **N-region dungeon by key — retires the two-chamber constants (rpg-api#688, 2026-07-22)** —
 `StartEncounter` (`internal/orchestrators/lobby/start_encounter.go`) now calls the
@@ -31,17 +94,17 @@ playable axis of 14, comfortably past the toolkit's own >6-hex-step scale invari
 (enforced by `validateDungeonParams` at generation time, not eyeballed here), and 2
 connector door IDs.
 
-**Goblin seeding, generalized by chain position, not archetype.** The chamber-scoped
-helpers (`chamberEntryAnchor`/`chamberOutOfSight`/`chamberSpawnSpec`, hardcoded to
-`tkenc.RegionChamber1`/`RegionChamber2`) are renamed and generalized
+**Goblin seeding, generalized by chain position, not archetype — superseded by
+rpg-api#689 (2026-07-23, above).** The chamber-scoped helpers
+(`chamberEntryAnchor`/`chamberOutOfSight`/`chamberSpawnSpec`, hardcoded to
+`tkenc.RegionChamber1`/`RegionChamber2`) were renamed and generalized
 (`regionEntryAnchor`/`regionOutOfSight`/`regionSpawnSpec`) to work against any named
-region. `seedGoblins` (renamed constant: `goblinsPerRegion`) seeds goblins into exactly
-the dungeon's two ENDPOINTS — `spec.regions[0]` (entrance) and `spec.regions[len-1]`
-(terminal/boss) — leaving interior connector regions (the corridor, for N=3) unpopulated.
-This is the exact pre-#688 "both occupied regions get monsters" rule, generalized by
-chain POSITION rather than hardcoded region IDs — deliberately NOT rpg-api#689's
-per-archetype seeding intelligence (deciding how many/which monsters populate an
-ARBITRARY region by its archetype stays out of scope here).
+region; `seedGoblins` seeded goblins into exactly the dungeon's two ENDPOINTS by chain
+POSITION. **`seedGoblins`/`regionOutOfSight`/`regionSpawnSpec` are now retired** —
+#689's `crypt_monster_seed.go` replaces this with the archetype-driven table above.
+`regionEntryAnchor` itself survives (hardened, see #689's entry) and is now called for
+BOTH the entrance and boss anchors. Left below for the historical record of what shipped
+in #688; read the #689 entry above for current behavior.
 
 **Boundary discipline, proven by a dedicated test, not just asserted.**
 `TestStartEncounter_DungeonGeometryIndependentOfPartySize` starts two encounters with the
