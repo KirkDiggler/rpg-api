@@ -38,9 +38,8 @@ var sharedRedis *harness.RedisContainer
 // per-process container count this achieves.
 func TestMain(m *testing.M) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	defer cancel()
-
 	rc, err := harness.StartRedis(ctx)
+	cancel()
 	if err != nil {
 		log.Fatalf("integration_test TestMain: failed to start shared redis container: %v", err)
 	}
@@ -50,12 +49,12 @@ func TestMain(m *testing.M) {
 	code := m.Run()
 
 	termCtx, termCancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer termCancel()
 	if err := rc.Terminate(termCtx); err != nil {
 		log.Printf("integration_test TestMain: failed to terminate shared redis container: %v", err)
 	} else {
 		log.Printf("integration_test TestMain: shared redis container TERMINATED (addr=%s)", rc.Addr)
 	}
+	termCancel()
 
 	os.Exit(code)
 }

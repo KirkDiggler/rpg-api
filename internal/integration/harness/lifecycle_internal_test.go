@@ -13,8 +13,9 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
 
-	redismocks "github.com/KirkDiggler/rpg-api/internal/redis/mocks"
 	"go.uber.org/mock/gomock"
+
+	redismocks "github.com/KirkDiggler/rpg-api/internal/redis/mocks"
 )
 
 // fakeContainer satisfies testcontainers.Container by embedding a nil

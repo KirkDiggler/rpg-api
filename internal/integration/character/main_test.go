@@ -32,9 +32,8 @@ var sharedRedis *harness.RedisContainer
 
 func TestMain(m *testing.M) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	defer cancel()
-
 	rc, err := harness.StartRedis(ctx)
+	cancel()
 	if err != nil {
 		log.Fatalf("character_integration TestMain: failed to start shared redis container: %v", err)
 	}
@@ -44,12 +43,12 @@ func TestMain(m *testing.M) {
 	code := m.Run()
 
 	termCtx, termCancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer termCancel()
 	if err := rc.Terminate(termCtx); err != nil {
 		log.Printf("character_integration TestMain: failed to terminate shared redis container: %v", err)
 	} else {
 		log.Printf("character_integration TestMain: shared redis container TERMINATED (addr=%s)", rc.Addr)
 	}
+	termCancel()
 
 	os.Exit(code)
 }
