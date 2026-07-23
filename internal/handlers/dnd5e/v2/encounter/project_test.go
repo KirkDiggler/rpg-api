@@ -842,6 +842,143 @@ func (s *ProjectSuite) TestProjectFor_PlayerEntity_CharacterNotFound_LeavesIdent
 	s.Require().Nil(a.GetCharacter().GetClassRef())
 }
 
+// TestProjectFor_SpaceTheme_PassesThroughVerbatim proves rpg-api#687's
+// theme passthrough: Space.theme must equal SpaceData.Theme verbatim, with
+// no interpretation, default substitution, or inference — the same "opaque
+// metadata, never branched on" contract SpaceData.Theme's own doc
+// describes (rpg-toolkit#814 Approved Slice 3 corrections).
+func (s *ProjectSuite) TestProjectFor_SpaceTheme_PassesThroughVerbatim() {
+	data := tkenc.NewData("enc-theme")
+	data.Mode = core.ModeFreeRoam
+	alice := newPlayerData("player-alice", "char-alice", originHex, 2)
+	data.Players = map[core.PlayerID]*tkenc.PlayerData{"player-alice": alice}
+	data.Space = &tkenc.SpaceData{Width: 10, Height: 10, Theme: "crypt"}
+
+	pb, err := v2encounter.ProjectFor(context.Background(), data, "player-alice", s.broker, nil, s.now)
+	s.Require().NoError(err)
+	s.Require().Equal("crypt", pb.GetSpace().GetTheme(),
+		"Space.theme must equal SpaceData.Theme verbatim")
+}
+
+// TestProjectFor_NoSpace_ThemeEmpty_ZonesNil_NoError covers the absent-
+// metadata fallback: an encounter with no room at all (data.Space == nil,
+// pre-wave-1 fixtures / non-spatial encounters) must project the existing
+// undifferentiated shape — empty theme, no zones, no error — never
+// inventing a default.
+func (s *ProjectSuite) TestProjectFor_NoSpace_ThemeEmpty_ZonesNil_NoError() {
+	data := tkenc.NewData("enc-no-space")
+	data.Mode = core.ModeFreeRoam
+	alice := newPlayerData("player-alice", "char-alice", originHex, 2)
+	data.Players = map[core.PlayerID]*tkenc.PlayerData{"player-alice": alice}
+	// data.Space intentionally left nil.
+
+	pb, err := v2encounter.ProjectFor(context.Background(), data, "player-alice", s.broker, nil, s.now)
+	s.Require().NoError(err)
+	s.Require().Empty(pb.GetSpace().GetTheme(), "nil Space must fall back to empty theme, not a default")
+	s.Require().Empty(pb.GetSpace().GetZones(), "nil Space must fall back to no zones")
+}
+
+// TestProjectFor_SpaceWithNoRegions_ZonesNilThemeEmpty covers the other
+// absent-metadata shape: a real Space (walls/dimensions present, e.g.
+// single-room InitRoom) with an empty Regions slice and unset Theme. Same
+// fallback contract as nil Space — no invented zone, no invented theme.
+func (s *ProjectSuite) TestProjectFor_SpaceWithNoRegions_ZonesNilThemeEmpty() {
+	data := tkenc.NewData("enc-empty-regions")
+	data.Mode = core.ModeFreeRoam
+	alice := newPlayerData("player-alice", "char-alice", originHex, 2)
+	data.Players = map[core.PlayerID]*tkenc.PlayerData{"player-alice": alice}
+	data.Space = &tkenc.SpaceData{Width: 10, Height: 10} // no Regions, no Theme
+
+	pb, err := v2encounter.ProjectFor(context.Background(), data, "player-alice", s.broker, nil, s.now)
+	s.Require().NoError(err)
+	s.Require().Empty(pb.GetSpace().GetTheme())
+	s.Require().Empty(pb.GetSpace().GetZones())
+	for _, h := range pb.GetSpace().GetHexes() {
+		s.Require().Empty(h.GetZoneId(), "no regions defined -> every hex must have empty zone_id")
+	}
+}
+
+// TestProjectFor_SpaceZones_ProjectsMultipleRegionsInDeclaredOrder proves
+// rpg-api#687's zones/archetypes projection: Space.zones must carry one
+// Zone per SpaceData.Regions entry, with id/archetype copied verbatim, IN
+// THE SAME ORDER SpaceData.Regions declares them — deliberately NOT
+// alphabetical ("region-c" < "region-a" would fail an accidental-sort
+// bug) so this discriminates a passthrough from a sort.
+func (s *ProjectSuite) TestProjectFor_SpaceZones_ProjectsMultipleRegionsInDeclaredOrder() {
+	data := tkenc.NewData("enc-multi-region")
+	data.Mode = core.ModeFreeRoam
+	alice := newPlayerData("player-alice", "char-alice", originHex, 2)
+	data.Players = map[core.PlayerID]*tkenc.PlayerData{"player-alice": alice}
+	data.Space = &tkenc.SpaceData{
+		Width: 20, Height: 10,
+		Theme: "crypt",
+		Regions: []tkenc.RegionData{
+			{ID: "region-c", Archetype: tkenc.ArchetypeEntrance, Hexes: core.NewHexSet(originHex)},
+			{ID: "region-a", Archetype: tkenc.ArchetypeCorridor, Hexes: core.NewHexSet(core.Hex{Q: 1, R: -1, S: 0})},
+			{ID: "region-b", Archetype: tkenc.ArchetypeBoss, Hexes: core.NewHexSet(core.Hex{Q: 2, R: -2, S: 0})},
+		},
+	}
+
+	pb, err := v2encounter.ProjectFor(context.Background(), data, "player-alice", s.broker, nil, s.now)
+	s.Require().NoError(err)
+
+	zones := pb.GetSpace().GetZones()
+	s.Require().Len(zones, 3)
+	s.Require().Equal("region-c", zones[0].GetId())
+	s.Require().Equal("entrance", zones[0].GetArchetype())
+	s.Require().Equal("region-a", zones[1].GetId())
+	s.Require().Equal("corridor", zones[1].GetArchetype())
+	s.Require().Equal("region-b", zones[2].GetId())
+	s.Require().Equal("boss", zones[2].GetArchetype())
+}
+
+// TestProjectFor_HexZoneId_SetViaRegionMembership_NotGeometry proves
+// rpg-api#687's per-hex zone_id projection is a pure RegionAt lookup, not a
+// geometric derivation: the door hex sits literally BETWEEN chamber-1's and
+// chamber-2's tagged hexes (adjacent to both) but belongs to NEITHER
+// region's Hexes set — mirroring doorPassageNeighbor's documented "the
+// door's own cell belongs to NEITHER region" contract. If zone_id were
+// derived from proximity/geometry instead of exact set membership, this
+// hex would wrongly pick up a neighbor's zone.
+func (s *ProjectSuite) TestProjectFor_HexZoneId_SetViaRegionMembership_NotGeometry() {
+	data := tkenc.NewData("enc-zoneid")
+	data.Mode = core.ModeFreeRoam
+	chamber1Hex := core.Hex{Q: -1, R: 0, S: 1}
+	doorHex := core.Hex{Q: 0, R: 0, S: 0} // adjacent to both, tagged into neither
+	chamber2Hex := core.Hex{Q: 1, R: 0, S: -1}
+
+	alice := newPlayerData("player-alice", "char-alice", doorHex, 2)
+	data.Players = map[core.PlayerID]*tkenc.PlayerData{"player-alice": alice}
+	data.Space = &tkenc.SpaceData{
+		Width: 10, Height: 10,
+		Regions: []tkenc.RegionData{
+			{ID: "chamber-1", Archetype: tkenc.ArchetypeEntrance, Hexes: core.NewHexSet(chamber1Hex)},
+			{ID: "chamber-2", Archetype: tkenc.ArchetypeChamber, Hexes: core.NewHexSet(chamber2Hex)},
+		},
+	}
+
+	pb, err := v2encounter.ProjectFor(context.Background(), data, "player-alice", s.broker, nil, s.now)
+	s.Require().NoError(err)
+
+	byPos := make(map[[3]int32]*encounterv2pb.Hex)
+	for _, h := range pb.GetSpace().GetHexes() {
+		byPos[[3]int32{h.GetPosition().GetX(), h.GetPosition().GetY(), h.GetPosition().GetZ()}] = h
+	}
+
+	c1 := byPos[[3]int32{-1, 0, 1}]
+	s.Require().NotNil(c1, "chamber-1's hex must be revealed (alice's sight range 2 from the door)")
+	s.Require().Equal("chamber-1", c1.GetZoneId())
+
+	c2 := byPos[[3]int32{1, 0, -1}]
+	s.Require().NotNil(c2, "chamber-2's hex must be revealed")
+	s.Require().Equal("chamber-2", c2.GetZoneId())
+
+	door := byPos[[3]int32{0, 0, 0}]
+	s.Require().NotNil(door, "the door hex itself must be revealed")
+	s.Require().Empty(door.GetZoneId(),
+		"the door hex is adjacent to both regions but tagged into neither — zone_id must stay empty, not inherit a neighbor's zone")
+}
+
 func TestProjectSuite(t *testing.T) {
 	suite.Run(t, new(ProjectSuite))
 }

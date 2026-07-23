@@ -121,7 +121,13 @@ func ProjectFor(
 	})
 	hexes := make([]*encounterv2pb.Hex, 0, len(keys))
 	for _, h := range keys {
-		hexes = append(hexes, &encounterv2pb.Hex{Position: HexToPosition(h)})
+		// zoneID is a pure SpaceData.RegionAt lookup (rpg-api#687) — exact
+		// Hexes-set membership, never derived from adjacency/geometry.
+		// RegionAt is nil-receiver safe, so this is correct whether
+		// data.Space is nil (no room) or has an empty Regions slice (no
+		// regions tagged): both fall back to "" with no invented default.
+		zoneID, _ := data.Space.RegionAt(h)
+		hexes = append(hexes, &encounterv2pb.Hex{Position: HexToPosition(h), ZoneId: zoneID})
 	}
 
 	// Build the set of hexes currently visible to the viewer so we can
@@ -188,8 +194,48 @@ func ProjectFor(
 			Hexes:    hexes,
 			Walls:    append(wallsToProto(data.Space), doorWallsToProto(data)...),
 			Entities: entities,
+			Zones:    zonesToProto(data.Space),
+			Theme:    themeToProto(data.Space),
 		},
 	}, nil
+}
+
+// zonesToProto projects SpaceData.Regions onto the wire Zone list (rpg-
+// api#687) — a pure passthrough, one Zone per RegionData entry, in the
+// SAME ORDER the toolkit declares them (never sorted/re-derived). Id and
+// Archetype are copied verbatim; RegionData carries no Name field, so
+// Zone.name is deliberately left unset rather than inventing one — the
+// issue's "no default invention" boundary applies to every field, not
+// just the ones that happen to have an obvious source.
+//
+// nil space or an empty Regions slice (single-room InitRoom spaces, or any
+// InitDungeon call that never tags regions) returns nil — the existing
+// undifferentiated fallback, not an empty-but-non-nil slice, matching
+// wallsToProto's nil-space convention just above.
+func zonesToProto(space *tkenc.SpaceData) []*encounterv2pb.Zone {
+	if space == nil || len(space.Regions) == 0 {
+		return nil
+	}
+	zones := make([]*encounterv2pb.Zone, 0, len(space.Regions))
+	for _, r := range space.Regions {
+		zones = append(zones, &encounterv2pb.Zone{
+			Id:        r.ID,
+			Archetype: string(r.Archetype),
+		})
+	}
+	return zones
+}
+
+// themeToProto projects SpaceData.Theme onto the wire verbatim (rpg-
+// api#687) — opaque cosmetic metadata the toolkit documents as "never
+// interpreted here" (SpaceData.Theme's doc); rpg-api mirrors that boundary
+// and never interprets or defaults it either. nil space (no room) falls
+// back to "", the same absent-metadata shape as an explicit empty Theme.
+func themeToProto(space *tkenc.SpaceData) string {
+	if space == nil {
+		return ""
+	}
+	return space.Theme
 }
 
 // wallsToProto converts an encounter's persisted room snapshot (rpg-toolkit

@@ -2,7 +2,7 @@
 name: rpg-api status
 description: Where we are with rpg-api — active work, paused, known rough edges, per-subsystem confidence
 updated: 2026-07-22
-confidence: high — Wave 2 Monk entries verified against passing integration tests; #636 entry verified against passing unit + integration tests; #642 v1alpha1 encounter stack deletion verified against passing build/vet/test/lint; #644 The Dungeon wave 1 (api) verified against passing unit + stress-run (50x) integration tests; #650 toolkit seam adoption (InitiativeRolled event + room-aware spawn) verified against passing unit/integration/-race full suite; #651 ActiveConditions projection verified against passing unit + integration (10x -race) + full suite; #656 movement-truncation fix verified against an isolated toolkit-level repro, a new RPC-level regression test (10x -race), and the full suite; #663 AbandonEncounter + combat pockets + rage-at-seating verified against passing unit/integration/-race full suite plus a live playtest against the real game route; #676 The Dungeon wave 2 Slice 2 (api leg) verified against passing unit tests + a new 3-test integration gate suite (8x stress-run, entropy-seeded layouts); #680 equipment on the wire verified against passing unit + integration suite (real AC, occupancy, non-equipment-field preservation) + adversarial-gate fixes + full CI green against published deps; #688 N-region dungeon by key verified against passing unit (-race, 15x stress-run) + a rewritten 3-test integration gate suite against the real Redis harness, full `go test`/`golangci-lint` green against published `rpg-toolkit/encounter v0.35.0`
+confidence: high — Wave 2 Monk entries verified against passing integration tests; #636 entry verified against passing unit + integration tests; #642 v1alpha1 encounter stack deletion verified against passing build/vet/test/lint; #644 The Dungeon wave 1 (api) verified against passing unit + stress-run (50x) integration tests; #650 toolkit seam adoption (InitiativeRolled event + room-aware spawn) verified against passing unit/integration/-race full suite; #651 ActiveConditions projection verified against passing unit + integration (10x -race) + full suite; #656 movement-truncation fix verified against an isolated toolkit-level repro, a new RPC-level regression test (10x -race), and the full suite; #663 AbandonEncounter + combat pockets + rage-at-seating verified against passing unit/integration/-race full suite plus a live playtest against the real game route; #676 The Dungeon wave 2 Slice 2 (api leg) verified against passing unit tests + a new 3-test integration gate suite (8x stress-run, entropy-seeded layouts); #680 equipment on the wire verified against passing unit + integration suite (real AC, occupancy, non-equipment-field preservation) + adversarial-gate fixes + full CI green against published deps; #687 region/theme wire projection verified against passing unit (-race) + a real-RPC integration gate proving connect-time AND incremental-reveal zone_id/zones/theme projection against the real Redis harness, full `go test`/`golangci-lint` green against the published `rpg-api-protos` generated branch + `rpg-toolkit/encounter v0.35.0`; #688 N-region dungeon by key verified against passing unit (-race, 15x stress-run) + a rewritten 3-test integration gate suite against the real Redis harness, full `go test`/`golangci-lint` green against published `rpg-toolkit/encounter v0.35.0`
 ---
 
 # rpg-api: Where We Are
@@ -71,7 +71,31 @@ not specific to two-chamber geometry (HP seeding, honest combat snapshot, stale
 action-economy clearing, arcade recovery, not-host/not-ready/already-started/not-found,
 persist-then-emit ordering) is unmodified and still green.
 
+**Region/theme projected onto the wire (rpg-api#687, 2026-07-22)** — the toolkit's
+`SpaceData.Theme`/`Regions`/`RegionData.Archetype` were populated in production
+(The Dungeon wave 2 Slice 2, rpg-api#676/#677) but never left the API: `Space.zones`,
+`Space.theme`, and `Hex.zone_id` were absent from `project.go`'s hex-building loop
+entirely. Now a pure passthrough (`zonesToProto`/`themeToProto` in `project.go`,
+per-hex `data.Space.RegionAt(h)`) — no derivation, no default invention; a hex not
+in any region's `Hexes` set (e.g. a door's own cell, adjacent to two regions but
+tagged into neither) stays `zone_id: ""`. The live incremental `GeometryRevealed`
+event (`translateHexRevealedEventWithData`, mirroring the established
+`translateEntityAppearedEventWithData` split) got the same fix — a hex revealed
+mid-session via `Move` carries `zone_id` immediately, not only after a reconnect
+re-projects the whole snapshot. See `docs/architecture/components/encounter.md`'s
+"Zone/theme projection" section. Dependency bumps: `rpg-api-protos/gen/go` to the
+`generated` branch HEAD (rpg-api-protos#196: `Hex.zone_id`/`Zone`/`Space.zones`/
+`Space.theme`), `rpg-toolkit/encounter` v0.34.1 → v0.35.0 (rpg-toolkit#814/#821).
+**Post-#693-merge note:** this branch's real-RPC gate for #687 originally lived in
+`internal/integration/dungeon_two_chamber_test.go` (`DungeonTwoChamberSuite`), which
+#688/#693 retired in favor of the crypt topology's `dungeon_crypt_test.go`
+(`DungeonCryptSuite`, immediately above). The zone/theme/zone_id assertions were
+ported into `DungeonCryptSuite` as `TestSpaceZonesAndHexZoneId_ProjectRegionsOnTheWire`
+against the crypt's 3 regions (entrance/corridor/boss) and 2 doors — the old suite was
+not resurrected.
 
+**Equipment on the wire — real AC, one rules-correct equip path (rpg-api#680, 2026-07-21)** —
+board #11's two named equipment sins are both fixed. AC on the wire used to be
 `converters.go`'s `int32(data.ArmorClass)` — a straight copy of a stored int, never
 computed. Equip used to be `internal/orchestrators/character/orchestrator.go`'s bare
 `EquipmentSlots.Set/Clear` — no rules, no occupancy, no recompute. Both are gone.

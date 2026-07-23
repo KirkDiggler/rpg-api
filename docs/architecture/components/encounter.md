@@ -130,6 +130,39 @@ As of #500, `ProjectFor` includes all entities currently visible to the viewer �
 
 `Space.Walls` carries TWO shapes now, both whole-room/unconditional (not LoS-gated like `Hexes`/`Entities` — wave 1's "no per-viewer wall reveal yet" still holds): `wallsToProto(data.Space)` projects persisted solid/window segments (`Start == End` degenerate hexes), and `doorWallsToProto(data)` separately projects every entry in `data.Doors` as a `WALL_KIND_DOOR_CLOSED`/`WALL_KIND_DOOR_OPEN` `Wall` carrying its entity id (`rpg-api-protos#186`'s additive `Wall.id` — the web's click→`Interact(id)` bridge). A door's `From` is its own cell; `To` is its passage-edge neighbor (`doorPassageNeighbor`, found via `perception.HexNeighbors` + `SpaceData.RegionAt` — never `Start == End` for a door, which is the 6-door-pair render-multiplicity bug the design doc's §Q2 calls out). `DoorData` stays the single source of door truth (position, open/locked state); the wall is purely its projected geometry.
 
+### Zone/theme projection (rpg-api#687)
+
+`Space.zones`, `Space.theme`, and per-hex `Hex.zone_id` are a **pure
+passthrough** of the toolkit's canonical region/theme metadata — no
+derivation, no default invention. `zonesToProto(data.Space)` builds one
+`Zone{id, archetype}` per `SpaceData.Regions` entry, in the same order the
+toolkit declares them (`RegionData` has no `Name` field, so `Zone.name`
+stays unset rather than inventing one). `themeToProto(data.Space)` copies
+`SpaceData.Theme` verbatim. Each hex's `zone_id` in the existing hex-
+building loop comes from `data.Space.RegionAt(h)` — exact `Hexes`-set
+membership, never adjacency/geometry (a door hex adjacent to two regions
+but tagged into neither stays `""`, matching `doorPassageNeighbor`'s
+documented "belongs to NEITHER region" contract). `RegionAt` is
+nil-receiver safe, so a nil `data.Space` or an empty `Regions` slice
+(single-room `InitRoom`) falls back to `""`/no zones with no invented
+default — the same convention `wallsToProto`'s nil-space case already
+established. (Production `StartEncounter` now builds its dungeon via the
+by-key `InitDungeon` crypt spec, rpg-api#688, which always sets
+`Theme: "crypt"` — `InitTwoChamberRoom`'s untouched `Theme` is no longer a
+live rpg-api example of this fallback; it remains only as a toolkit-side
+compatibility wrapper over `InitDungeon`, with zero call sites left in
+this repo.)
+
+The live incremental `GeometryRevealed` event (`translateHexRevealedEvent`
+in `translate.go`) is a SEPARATE hex-projection path from `ProjectFor` — it
+only has the bare toolkit `HexRevealedEvent` in hand (a hex set, no region
+knowledge). `translateHexRevealedEventWithData` mirrors the established
+`translateEntityAppearedEventWithData` split: `handler.go`'s
+`translateForStream` loads `Data` fresh and calls the data-aware variant
+for `*tkevents.HexRevealedEvent`, so a hex a player reveals mid-session via
+`Move` carries its `zone_id` immediately — not only after their next
+reconnect re-projects the whole snapshot via `ProjectFor`.
+
 ### CharacterData equipment projection (rpg-api#680)
 
 `playerEntity`'s `CharacterData` carries `equipped`/`inventory`/`slots`/
