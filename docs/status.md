@@ -11,6 +11,22 @@ This is a living doc. Edit it in the same PR that invalidates a line. Don't let 
 
 ## Active work
 
+**Region/theme projected onto the wire (rpg-api#687, 2026-07-22)** — the toolkit's
+`SpaceData.Theme`/`Regions`/`RegionData.Archetype` were populated in production
+(The Dungeon wave 2 Slice 2, rpg-api#676/#677) but never left the API: `Space.zones`,
+`Space.theme`, and `Hex.zone_id` were absent from `project.go`'s hex-building loop
+entirely. Now a pure passthrough (`zonesToProto`/`themeToProto` in `project.go`,
+per-hex `data.Space.RegionAt(h)`) — no derivation, no default invention; a hex not
+in any region's `Hexes` set (e.g. a door's own cell, adjacent to two regions but
+tagged into neither) stays `zone_id: ""`. The live incremental `GeometryRevealed`
+event (`translateHexRevealedEventWithData`, mirroring the established
+`translateEntityAppearedEventWithData` split) got the same fix — a hex revealed
+mid-session via `Move` carries `zone_id` immediately, not only after a reconnect
+re-projects the whole snapshot. See `docs/architecture/components/encounter.md`'s
+"Zone/theme projection" section. Dependency bumps: `rpg-api-protos/gen/go` to the
+`generated` branch HEAD (rpg-api-protos#196: `Hex.zone_id`/`Zone`/`Space.zones`/
+`Space.theme`), `rpg-toolkit/encounter` v0.34.1 → v0.35.0 (rpg-toolkit#814/#821).
+
 **Equipment on the wire — real AC, one rules-correct equip path (rpg-api#680, 2026-07-21)** —
 board #11's two named equipment sins are both fixed. AC on the wire used to be
 `converters.go`'s `int32(data.ArmorClass)` — a straight copy of a stored int, never
