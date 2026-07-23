@@ -393,9 +393,9 @@ func (s *DungeonCryptSuite) TestStartEncounter_SpawnsAtEntrance_DoorProjectsClos
 // dimensions, the entrance monster's deterministic anchor (near its own
 // outgoing door — regionMonsterAnchor's doc) sits close enough to spawn
 // that reaching it can need more than one turn's movement budget once
-// combat is active — moveOntoAcrossTurns (see its own doc) plays out
-// however many real turns that takes, exactly like a live client session
-// would, rather than assuming a single unrestricted jump.
+// combat is active — moveAlongPath replans persisted-geometry BFS routes
+// after each real MoveEntity chunk (at most six adjacent destinations) and
+// ends turns only when the turn-based movement budget requires it.
 func (s *DungeonCryptSuite) TestEntranceSighting_StartsPocketScopedCombat() {
 	encounterID, characterID, encData := s.startCryptDungeon("gate2", "alice")
 	entranceIDs, bossIDs := archetypeMonsters(encData)
@@ -608,10 +608,10 @@ func (s *DungeonCryptSuite) TestSpaceZonesAndHexZoneId_ProjectRegionsOnTheWire()
 	// TestEntranceSighting_StartsPocketScopedCombat's doc) — once that
 	// happens, alice's movement is budget-gated per real turn, and this
 	// target is far enough away (potentially multiple regions) that it can
-	// take more than one turn to reach. moveOntoAcrossTurns plays out
-	// however many real turns that takes (driving the entrance monster's
-	// own NPC turn via the real EndTurn RPC each time), never adjusting the
-	// target itself.
+	// take more than one turn to reach. moveAlongPath replans persisted-geometry
+	// BFS routes after each real MoveEntity chunk (at most six adjacent
+	// destinations) and uses the real EndTurn RPC when turn-based movement
+	// requires another turn, never adjusting the target itself.
 	err = s.moveAlongPath(encounterID, characterID, target, 10)
 	s.Require().NoError(err, "moving onto the boss-region monster's hex must not be blocked once both doors are open")
 
