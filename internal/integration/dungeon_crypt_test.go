@@ -511,6 +511,99 @@ func (s *DungeonCryptSuite) TestBossMonster_NoEntityAppeared_UntilBothDoorsOpenA
 		"a sightline that actually forms (alice standing on the boss monster's hex) must emit EntityAppeared")
 }
 
+func (s *DungeonCryptSuite) TestStaticObstacles_ProjectOnlyWhenRevealedAndRemainExplored() {
+	encounterID, characterID, encData := s.startCryptDungeon("obstacles", "alice")
+	s.Require().NotEmpty(encData.Space.Obstacles, "#697 must persist canonical crypt obstacles")
+
+	bossObstacleIDs := make(map[string]bool)
+	for _, obstacle := range encData.Space.Obstacles {
+		archetype, ok := regionArchetypeAt(encData.Space, obstacle.Position)
+		if ok && archetype == tkenc.ArchetypeBoss {
+			bossObstacleIDs[string(obstacle.ID)] = true
+		}
+	}
+	s.Require().NotEmpty(bossObstacleIDs, "crypt must persist boss-region obstacle instances")
+
+	initial, err := s.srv.EncounterClientV2.GetEncounter(s.authCtx("alice"), &encounterv2pb.GetEncounterRequest{EncounterId: encounterID})
+	s.Require().NoError(err)
+	initialObstacleIDs := map[string]bool{}
+	for _, entity := range initial.GetEncounter().GetSpace().GetEntities() {
+		if entity.GetType() == encounterv2pb.EntityType_ENTITY_TYPE_OBSTACLE {
+			initialObstacleIDs[entity.GetId()] = true
+		}
+	}
+	for id := range bossObstacleIDs {
+		s.Require().False(initialObstacleIDs[id], "hidden boss obstacle %q must not leak in the initial snapshot", id)
+	}
+
+	stream, err := s.srv.EncounterClientV2.StreamEncounter(s.authCtx("alice"), &encounterv2pb.StreamEncounterRequest{EncounterId: encounterID})
+	s.Require().NoError(err)
+	events := s.streamEvents(stream)
+	_ = drainAvailable(events, 500*time.Millisecond)
+
+	doorIDs := make([]string, 0, len(encData.Doors))
+	for id := range encData.Doors {
+		doorIDs = append(doorIDs, string(id))
+	}
+	sort.Strings(doorIDs)
+	s.Require().Len(doorIDs, 2)
+	s.openDoor(encounterID, doorIDs[0])
+	_ = drainAvailable(events, 500*time.Millisecond)
+	s.openDoor(encounterID, doorIDs[1])
+	_ = drainAvailable(events, 500*time.Millisecond)
+
+	current, err := s.srv.EncRepoV2.Get(s.ctx, encounterID)
+	s.Require().NoError(err)
+	var revealed tkenc.ObstacleData
+	var target core.Hex
+	for _, obstacle := range current.Space.Obstacles {
+		if !bossObstacleIDs[string(obstacle.ID)] || obstacle.BlocksLoS {
+			continue
+		}
+		for _, neighbor := range perception.HexNeighbors(obstacle.Position) {
+			if _, pathErr := planWalk(current.Space, current.Doors, current.Players["alice"].View.Position, neighbor); pathErr == nil {
+				revealed = obstacle
+				target = neighbor
+				break
+			}
+		}
+		if revealed.ID != "" {
+			break
+		}
+	}
+	s.Require().NotEmpty(revealed.ID, "a boss obstacle with an adjacent walkable reveal target must exist")
+
+	s.Require().NoError(s.moveAlongPath(encounterID, characterID, target, 10))
+	postReveal := drainAvailable(events, 1500*time.Millisecond)
+	appeared := 0
+	for _, event := range postReveal {
+		entity := event.GetEntityAppeared().GetEntity()
+		if entity.GetId() != string(revealed.ID) {
+			continue
+		}
+		appeared++
+		s.Require().Equal(encounterv2pb.EntityType_ENTITY_TYPE_OBSTACLE, entity.GetType())
+		s.Require().Equal(string(revealed.ID), entity.GetId())
+		s.Require().Equal(int32(revealed.Position.Q), entity.GetPosition().GetX())
+		s.Require().Equal(int32(revealed.Position.R), entity.GetPosition().GetY())
+		s.Require().Equal(int32(revealed.Position.S), entity.GetPosition().GetZ())
+		s.Require().Equal(revealed.Ref, entity.GetObstacle().GetObstacleRef().GetModule()+":"+entity.GetObstacle().GetObstacleRef().GetType()+":"+entity.GetObstacle().GetObstacleRef().GetId())
+		s.Require().Equal(revealed.BlocksMovement, entity.GetObstacle().GetBlocksMovement())
+		s.Require().Equal(revealed.BlocksLoS, entity.GetObstacle().GetBlocksLineOfSight())
+	}
+	s.Require().Equal(1, appeared, "one toolkit EntityAppeared must become one wire envelope")
+
+	reconnect, err := s.srv.EncounterClientV2.GetEncounter(s.authCtx("alice"), &encounterv2pb.GetEncounterRequest{EncounterId: encounterID})
+	s.Require().NoError(err)
+	var found bool
+	for _, entity := range reconnect.GetEncounter().GetSpace().GetEntities() {
+		if entity.GetId() == string(revealed.ID) {
+			found = true
+		}
+	}
+	s.Require().True(found, "a revealed static obstacle must remain in reconnect snapshots")
+}
+
 // TestSpaceZonesAndHexZoneId_ProjectRegionsOnTheWire is rpg-api#687's Done
 // bar verified end to end through the REAL RPC surface (not a hand-seeded
 // project_test.go fixture), ported here after rpg-api#693 retired the

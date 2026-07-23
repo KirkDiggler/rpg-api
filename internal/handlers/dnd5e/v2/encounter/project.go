@@ -186,6 +186,25 @@ func ProjectFor(
 		entities = append(entities, monsterEntity(m))
 	}
 
+	// Static obstacles are sticky exploration data, not currently-visible
+	// combatants: once their hex is revealed, include them on snapshots even
+	// when it is outside the viewer's current line of sight. Their stable IDs
+	// provide deterministic ordering across the toolkit's placement slice.
+	if data.Space != nil {
+		obstacles := make([]tkenc.ObstacleData, 0, len(data.Space.Obstacles))
+		for _, obstacle := range data.Space.Obstacles {
+			if snap.RevealedHexes.Has(obstacle.Position) {
+				obstacles = append(obstacles, obstacle)
+			}
+		}
+		sort.Slice(obstacles, func(i, j int) bool {
+			return string(obstacles[i].ID) < string(obstacles[j].ID)
+		})
+		for _, obstacle := range obstacles {
+			entities = append(entities, obstacleEntity(obstacle))
+		}
+	}
+
 	return &encounterv2pb.Encounter{
 		Id:        string(data.ID),
 		Mode:      encounterModeToProto(data.Mode),
@@ -643,4 +662,27 @@ func monsterRefFor(toolkitMonsterRef string) *encounterv2pb.Ref {
 		return &encounterv2pb.Ref{Module: parts[0], Type: parts[1], Id: parts[2]}
 	}
 	return &encounterv2pb.Ref{Module: refModuleDnd5e, Type: "monster", Id: toolkitMonsterRef}
+}
+
+func obstacleEntity(obstacle tkenc.ObstacleData) *encounterv2pb.Entity {
+	return &encounterv2pb.Entity{
+		Id:       string(obstacle.ID),
+		Position: HexToPosition(obstacle.Position),
+		Type:     encounterv2pb.EntityType_ENTITY_TYPE_OBSTACLE,
+		Data: &encounterv2pb.Entity_Obstacle{
+			Obstacle: &encounterv2pb.ObstacleData{
+				ObstacleRef:       obstacleRefFor(obstacle.Ref),
+				BlocksMovement:    obstacle.BlocksMovement,
+				BlocksLineOfSight: obstacle.BlocksLoS,
+			},
+		},
+	}
+}
+
+func obstacleRefFor(toolkitObstacleRef string) *encounterv2pb.Ref {
+	parts := splitRef(toolkitObstacleRef)
+	if len(parts) == 3 {
+		return &encounterv2pb.Ref{Module: parts[0], Type: parts[1], Id: parts[2]}
+	}
+	return &encounterv2pb.Ref{Module: refModuleDnd5e, Type: "obstacle", Id: toolkitObstacleRef}
 }

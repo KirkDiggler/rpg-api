@@ -284,3 +284,28 @@ func (s *HydratePlayersReconcileSuite) TestTranslateEntityAppearedEventWithData_
 	s.Require().Empty(app.GetEntity().GetDisplayName())
 	s.Require().Nil(app.GetEntity().GetCharacter().GetClassRef())
 }
+
+func (s *HydratePlayersReconcileSuite) TestTranslateEntityAppearedEventWithData_ProjectsObstacle() {
+	data := tkenc.NewData("enc-1")
+	data.Space = &tkenc.SpaceData{Obstacles: []tkenc.ObstacleData{{
+		ID: "obstacle-altar", Ref: "dnd5e:props:altar", Position: tkenccore.Hex{Q: 2, R: -1, S: -1}, BlocksMovement: true, BlocksLoS: true,
+	}}}
+	evt := tkencevents.NewEntityAppearedEvent(
+		"enc-1", uint64(1), "obstacle-altar", tkenccore.Hex{Q: 2, R: -1, S: -1},
+		map[tkenccore.PlayerID]struct{}{"player-A": {}},
+	)
+
+	out, err := translateEntityAppearedEventWithData(s.ctx, nil, evt, "player-A", time.Now(), data)
+	s.Require().NoError(err)
+	appeared := out.GetEntityAppeared().GetEntity()
+	s.Require().Equal("obstacle-altar", appeared.GetId())
+	s.Require().Equal(encounterv2pb.EntityType_ENTITY_TYPE_OBSTACLE, appeared.GetType())
+	s.Require().Equal(int32(2), appeared.GetPosition().GetX())
+	s.Require().Equal(int32(-1), appeared.GetPosition().GetY())
+	s.Require().Equal(int32(-1), appeared.GetPosition().GetZ())
+	s.Require().Equal("dnd5e", appeared.GetObstacle().GetObstacleRef().GetModule())
+	s.Require().Equal("props", appeared.GetObstacle().GetObstacleRef().GetType())
+	s.Require().Equal("altar", appeared.GetObstacle().GetObstacleRef().GetId())
+	s.Require().True(appeared.GetObstacle().GetBlocksMovement())
+	s.Require().True(appeared.GetObstacle().GetBlocksLineOfSight())
+}
