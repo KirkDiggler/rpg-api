@@ -28,8 +28,7 @@ package integration_test
 import (
 	"context"
 	"fmt"
-	"math"
-	"strings"
+	"sort"
 	"testing"
 	"time"
 
@@ -43,8 +42,10 @@ import (
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	tkenc "github.com/KirkDiggler/rpg-toolkit/encounter"
 	"github.com/KirkDiggler/rpg-toolkit/encounter/core"
+	"github.com/KirkDiggler/rpg-toolkit/encounter/perception"
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/refs"
+	"github.com/KirkDiggler/rpg-toolkit/tools/environments"
 )
 
 // dungeonGateHP is deliberately generous (not the usual 12 HP other
@@ -175,55 +176,107 @@ func archetypeMonsters(encData *tkenc.Data) (entrance, boss []core.EntityID) {
 	return entrance, boss
 }
 
-// moveOnto issues the real MoveEntity RPC with a two-waypoint path (current
-// position, target) — a coarse [from, to] jump is immune to tripping over
-// an interior RandomPattern wall that a naively-interpolated multi-hex line
-// might cross — load-bearing for a target many hexes away in an
-// entropy-seeded region, which a full step-by-step path is not safe
-// against. The orchestrator passes the path straight through to the
-// toolkit's Move verb with no rpg-api-side pathing/budget logic
-// (move_entity.go's doc), so this direct jump onto a pre-vetted non-wall
-// floor hex (a monster's own cell — monster.Monster carries no
-// spatial.Placeable blocking) is a valid move, UNLESS a closed door still
-// sits on the path — closed doors block movement (rpg-toolkit's
-// TestClosedDoor_BlocksMovement), so callers reaching through a connector
-// must open it first.
-func (s *DungeonCryptSuite) moveOnto(encounterID, characterID string, from, to core.Hex) error {
-	_, err := s.srv.EncounterClientV2.MoveEntity(s.authCtx("alice"), &encounterv2pb.MoveEntityRequest{
-		EncounterId: encounterID,
-		EntityId:    characterID,
-		ProposedPath: []*encounterv2pb.Position{
-			{X: int32(from.Q), Y: int32(from.R), Z: int32(from.S)},
-			{X: int32(to.Q), Y: int32(to.R), Z: int32(to.S)},
-		},
-	})
-	return err
+func TestPlanWalk_UsesAlternateRouteAndRespectsClosedDoor(t *testing.T) {
+	a := core.Hex{Q: 0, R: 0, S: 0}
+	b := core.Hex{Q: 1, R: 0, S: -1}
+	c := core.Hex{Q: 0, R: 1, S: -1}
+	d := core.Hex{Q: 1, R: 1, S: -2}
+	e := core.Hex{Q: 2, R: 0, S: -2}
+	space := &tkenc.SpaceData{
+		Regions:   []tkenc.RegionData{{Hexes: core.NewHexSet(a, b, c, e)}},
+		Walls:     []environments.WallSegmentData{{Start: b.ToCube(), BlocksMovement: true}},
+		Obstacles: []tkenc.ObstacleData{{Position: b, BlocksMovement: true}},
+	}
+	doors := map[core.EntityID]*tkenc.DoorData{"door": {Position: d}}
+
+	path, err := planWalk(space, doors, a, e)
+	if err == nil {
+		t.Fatalf("closed door path unexpectedly succeeded: %#v", path)
+	}
+	doors["door"].Open = true
+	path, err = planWalk(space, doors, a, e)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(path) != 3 || path[0] != c || path[1] != d || path[2] != e {
+		t.Fatalf("got %#v, want alternate route [%+v %+v %+v]", path, c, d, e)
+	}
+	previous := a
+	for _, step := range path {
+		if !isHexNeighbor(previous, step) {
+			t.Fatalf("non-adjacent step %+v -> %+v", previous, step)
+		}
+		if step == b {
+			t.Fatalf("path used movement blocker %+v", b)
+		}
+		previous = step
+	}
 }
 
-// moveOntoAcrossTurns is moveOnto's turn-aware sibling for a target that
-// may sit farther away than a single turn's movement budget allows
-// (rpg-api#694/#689 merge finding, 2026-07-23): once the entrance
-// monster's sightline starts a combat pocket (common now — see
-// TestEntranceSighting_StartsPocketScopedCombat's doc — the compact
-// crypt's entrance region alone can span more than one turn's walk), a
-// single long jump toward a target several regions away legitimately
-// exceeds the per-turn budget and MoveEntity correctly rejects the WHOLE
-// request outright (ErrInsufficientMovement's own doc: "no partial move")
-// — real D&D-accurate pacing, not a bug. This helper plays out however
-// many real turns a party member actually needs, stepping toward target
-// by at most turnBudgetHexes each turn (hexLerp/cubeRound below — the
-// standard hex-grid line-interpolation algorithm, never a hand-rolled
-// approximation) rather than resubmitting the same over-budget jump. On a
-// budget rejection it shrinks THIS turn's waypoint (not the final target)
-// and, once genuinely at the limit of what a fresh turn's budget allows,
-// calls the real EndTurn RPC (which drives the engaged monster's own NPC
-// turn internally, exactly like a live client session would experience)
-// before continuing toward the SAME unmodified final target. Bounded by
-// turnCap so a genuine failure (e.g. actually blocked by a wall) still
-// fails loudly instead of looping forever.
-func (s *DungeonCryptSuite) moveOntoAcrossTurns(encounterID, characterID string, target core.Hex, turnCap int) error {
-	const turnBudgetHexes = 6 // 30ft / 5ft-per-hex — the standard per-turn walk budget this suite has observed.
-	for i := 0; i < turnCap; i++ {
+// planWalk is test-only BFS over persisted encounter geometry. It deliberately
+// emits adjacent destinations so this suite never relies on the toolkit's
+// current acceptance of non-contiguous submitted Move paths.
+func planWalk(space *tkenc.SpaceData, doors map[core.EntityID]*tkenc.DoorData, from, target core.Hex) ([]core.Hex, error) {
+	legal := make(map[core.Hex]bool)
+	for _, region := range space.Regions {
+		for _, h := range region.Hexes.Slice() {
+			legal[h] = true
+		}
+	}
+	blocked := make(map[core.Hex]bool)
+	for _, door := range doors {
+		if door.Open {
+			// Connector cells sit between RegionData hex sets, so an open door
+			// is the sole legal-cell exception needed to join adjacent regions.
+			legal[door.Position] = true
+		} else {
+			blocked[door.Position] = true
+		}
+	}
+	for _, wall := range space.Walls {
+		if wall.BlocksMovement {
+			blocked[core.HexFromCube(wall.Start)] = true
+		}
+	}
+	for _, o := range space.Obstacles {
+		if o.BlocksMovement {
+			blocked[o.Position] = true
+		}
+	}
+	if !legal[from] || !legal[target] || blocked[target] {
+		return nil, fmt.Errorf("no walkable route from %+v to %+v", from, target)
+	}
+	previous := map[core.Hex]core.Hex{}
+	seen := map[core.Hex]bool{from: true}
+	queue := []core.Hex{from}
+	for len(queue) > 0 {
+		current := queue[0]
+		queue = queue[1:]
+		if current == target {
+			path := make([]core.Hex, 0)
+			for current != from {
+				path = append([]core.Hex{current}, path...)
+				current = previous[current]
+			}
+			return path, nil
+		}
+		for _, next := range perception.HexNeighbors(current) {
+			if legal[next] && !blocked[next] && !seen[next] {
+				seen[next] = true
+				previous[next] = current
+				queue = append(queue, next)
+			}
+		}
+	}
+	return nil, fmt.Errorf("no walkable route from %+v to %+v", from, target)
+}
+
+// moveAlongPath reloads persisted geometry and replans after every real RPC.
+// Each submitted destination is adjacent and chunks contain at most one turn's
+// six 5ft steps; closed doors and all persisted blockers are avoided locally.
+func (s *DungeonCryptSuite) moveAlongPath(encounterID, characterID string, target core.Hex, turnCap int) error {
+	turns := 0
+	for {
 		data, err := s.srv.EncRepoV2.Get(s.ctx, encounterID)
 		if err != nil {
 			return err
@@ -233,90 +286,56 @@ func (s *DungeonCryptSuite) moveOntoAcrossTurns(encounterID, characterID string,
 		if from == target {
 			return nil
 		}
-
-		dist := hexDistance(from, target)
-		waypoint := target
-		if dist > turnBudgetHexes {
-			waypoint = hexLerp(from, target, float64(turnBudgetHexes)/float64(dist))
+		path, err := planWalk(data.Space, data.Doors, from, target)
+		if err != nil {
+			return err
 		}
-
-		moveErr := s.moveOnto(encounterID, characterID, from, waypoint)
+		if len(path) > 6 {
+			path = path[:6]
+		}
+		proposed := make([]*encounterv2pb.Position, len(path))
+		previous := from
+		for i, step := range path {
+			if !isHexNeighbor(previous, step) {
+				return fmt.Errorf("planned non-adjacent step %+v -> %+v", previous, step)
+			}
+			proposed[i] = &encounterv2pb.Position{X: int32(step.Q), Y: int32(step.R), Z: int32(step.S)}
+			previous = step
+		}
+		_, moveErr := s.srv.EncounterClientV2.MoveEntity(s.authCtx("alice"), &encounterv2pb.MoveEntityRequest{
+			EncounterId: encounterID, EntityId: characterID, ProposedPath: proposed,
+		})
 		if moveErr == nil {
-			continue // keep going next iteration — either arrived, or ready for the next waypoint.
+			after, err := s.srv.EncRepoV2.Get(s.ctx, encounterID)
+			if err != nil {
+				return err
+			}
+			if after.Players[core.PlayerID("alice")].View.Position == from {
+				return fmt.Errorf("move toward %+v made no progress from %+v", target, from)
+			}
+			continue
 		}
-		if !strings.Contains(moveErr.Error(), "insufficient movement remaining") {
+		if data.Mode != core.ModeTurnBased || turns == turnCap {
 			return moveErr
 		}
-		// Even this turn-budget-sized waypoint didn't fit (e.g. the very
-		// first turn already had partial movement spent some other way) —
-		// end the turn for a fresh budget and retry the SAME waypoint
-		// calculation next iteration.
 		if _, endErr := s.srv.EncounterClientV2.EndTurn(s.authCtx("alice"), &encounterv2pb.EndTurnRequest{
 			EncounterId: encounterID, EntityId: characterID,
 		}); endErr != nil {
 			return fmt.Errorf("end turn while walking to %+v: %w", target, endErr)
 		}
+		turns++
 	}
-	data, err := s.srv.EncRepoV2.Get(s.ctx, encounterID)
-	if err != nil {
-		return err
-	}
-	if data.Players[core.PlayerID("alice")].View.Position != target {
-		return fmt.Errorf("did not reach %+v within %d turns", target, turnCap)
-	}
-	return nil
 }
 
-// hexDistance returns the cube-coordinate distance (in hexes) between a
-// and b — the same formula perception.HexDistance/pathCostFeet use
-// internally, reimplemented here only because those are unexported
-// toolkit internals; this file never invents its own geometry, only reads
-// back the standard cube-distance formula for waypoint sizing.
-func hexDistance(a, b core.Hex) int {
-	dq := a.Q - b.Q
-	dr := a.R - b.R
-	ds := a.S - b.S
-	return (absInt(dq) + absInt(dr) + absInt(ds)) / 2
-}
-
-func absInt(x int) int {
-	if x < 0 {
-		return -x
+func isHexNeighbor(from, to core.Hex) bool {
+	for _, neighbor := range perception.HexNeighbors(from) {
+		if neighbor == to {
+			return true
+		}
 	}
-	return x
+	return false
 }
 
-// hexLerp returns the hex at fraction t along the straight cube-coordinate
-// line from a to b, via the standard cube-lerp + cube-round algorithm
-// (Amit Patel's hex-grid reference, "Line Drawing") — never a hand-rolled
-// approximation. Used only to size a within-budget waypoint toward a
-// farther target; the actual required-path safety guarantee comes from
-// rpg-toolkit's own InitDungeon invariants (entrance-to-door/door-to-door
-// stay clear), not from anything computed here.
-func hexLerp(a, b core.Hex, t float64) core.Hex {
-	q := float64(a.Q) + float64(b.Q-a.Q)*t
-	r := float64(a.R) + float64(b.R-a.R)*t
-	s := float64(a.S) + float64(b.S-a.S)*t
-	return cubeRound(q, r, s)
-}
-
-func cubeRound(q, r, s float64) core.Hex {
-	rq := math.Round(q)
-	rr := math.Round(r)
-	rs := math.Round(s)
-	dq := math.Abs(rq - q)
-	dr := math.Abs(rr - r)
-	ds := math.Abs(rs - s)
-	switch {
-	case dq > dr && dq > ds:
-		rq = -rr - rs
-	case dr > ds:
-		rr = -rq - rs
-	default:
-		rs = -rq - rr
-	}
-	return core.Hex{Q: int(rq), R: int(rr), S: int(rs)}
-}
 // openDoor issues the real Interact RPC against doorID.
 func (s *DungeonCryptSuite) openDoor(encounterID, doorID string) {
 	_, err := s.srv.EncounterClientV2.Interact(s.authCtx("alice"), &encounterv2pb.InteractRequest{
@@ -390,7 +409,7 @@ func (s *DungeonCryptSuite) TestEntranceSighting_StartsPocketScopedCombat() {
 	sightedMonster := entranceIDs[0]
 	target := encData.Monsters[sightedMonster].Position
 
-	err := s.moveOntoAcrossTurns(encounterID, characterID, target, 10)
+	err := s.moveAlongPath(encounterID, characterID, target, 10)
 	s.Require().NoError(err, "moving onto a pre-vetted entrance-region monster hex must not be blocked")
 
 	after, err := s.srv.EncRepoV2.Get(s.ctx, encounterID)
@@ -434,6 +453,7 @@ func (s *DungeonCryptSuite) TestBossMonster_NoEntityAppeared_UntilBothDoorsOpenA
 	for id := range encData.Doors {
 		doorIDs = append(doorIDs, string(id))
 	}
+	sort.Strings(doorIDs)
 
 	stream, err := s.srv.EncounterClientV2.StreamEncounter(s.authCtx("alice"),
 		&encounterv2pb.StreamEncounterRequest{EncounterId: encounterID})
@@ -476,14 +496,14 @@ func (s *DungeonCryptSuite) TestBossMonster_NoEntityAppeared_UntilBothDoorsOpenA
 	s.Require().False(sawBossMonster(afterSecondDoor),
 		"opening both connector doors alone must not reveal the boss-region monster — a sightline must still form")
 
-	// Now form a sightline: move alice directly onto the boss monster's hex
-	// (neither door blocks movement/LoS once open — rpg-toolkit#790).
+	// Now form a sightline using only adjacent destinations over the real
+	// MoveEntity RPC path. Both open doors are traversable; no test state is
+	// mutated to get through the dungeon.
 	after, err := s.srv.EncRepoV2.Get(s.ctx, encounterID)
 	s.Require().NoError(err)
-	alicePD := after.Players[core.PlayerID("alice")]
 	target := after.Monsters[bossMonster].Position
 
-	err = s.moveOnto(encounterID, characterID, alicePD.View.Position, target)
+	err = s.moveAlongPath(encounterID, characterID, target, 10)
 	s.Require().NoError(err, "moving through both open connector doors onto the boss monster's hex must not be blocked")
 
 	postMove := drainAvailable(events, 1500*time.Millisecond)
@@ -572,6 +592,7 @@ func (s *DungeonCryptSuite) TestSpaceZonesAndHexZoneId_ProjectRegionsOnTheWire()
 	for id := range encData.Doors {
 		doorIDs = append(doorIDs, string(id))
 	}
+	sort.Strings(doorIDs)
 	s.openDoor(encounterID, doorIDs[0])
 	_ = drainAvailable(events, 500*time.Millisecond)
 	s.openDoor(encounterID, doorIDs[1])
@@ -591,7 +612,7 @@ func (s *DungeonCryptSuite) TestSpaceZonesAndHexZoneId_ProjectRegionsOnTheWire()
 	// however many real turns that takes (driving the entrance monster's
 	// own NPC turn via the real EndTurn RPC each time), never adjusting the
 	// target itself.
-	err = s.moveOntoAcrossTurns(encounterID, characterID, target, 10)
+	err = s.moveAlongPath(encounterID, characterID, target, 10)
 	s.Require().NoError(err, "moving onto the boss-region monster's hex must not be blocked once both doors are open")
 
 	postMove := drainAvailable(events, 1500*time.Millisecond)

@@ -36,7 +36,7 @@
       "id": "targeted-real-redis-suites",
       "feature": "integration",
       "prompt": "DungeonCryptSuite and CryptMonsterSeedRedisSuite run under internal/integration TestMain, using one shared Redis container for the process.",
-      "passes": false
+      "passes": true
     }
   ]
 }

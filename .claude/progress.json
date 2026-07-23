@@ -26,14 +26,19 @@
     {
       "id": "2026-07-23-700-merge",
       "task": "Merge #700 shared Redis fixture and retain its lifecycle, freshness, and isolation regression coverage.",
-      "status": "in_progress",
+      "status": "completed",
+      "commit": "053b000",
+      "notes": "Merged main includes #700. Targeted integration suites use the package TestMain fixture and one Redis container per test process."
+    },
+    {
+      "id": "2026-07-23-697-path-driver",
+      "task": "Replace crypt integration-test teleport paths with persisted-geometry BFS and bounded adjacent MoveEntity chunks.",
+      "status": "completed",
       "commit": null,
-      "notes": "Normal origin/main merge in progress; targeted integration suites must use the package TestMain fixture."
+      "notes": "BFS reads region cells, wall starts, obstacle positions, and door state; open connector cells join regions, closed doors remain blocked."
     }
   ],
   "next_steps": [
-    "Resolve documentation conflicts and commit the normal merge.",
-    "Run focused shared-fixture Redis suites and non-Docker verification.",
-    "Update PR #697 through the verified REST API, push, inspect CI logs and review threads, and do not merge the PR."
+    "Push the path-driver test commit, inspect current-head CI and new review threads, and do not merge the PR."
   ]
 }
