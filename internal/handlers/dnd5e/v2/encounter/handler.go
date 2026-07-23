@@ -454,5 +454,18 @@ func (h *Handler) translateForStream(
 		return translateEntityAppearedEventWithData(ctx, h.combatResolverConfig.CharacterRepo, appearEvt, viewer, h.now(), data)
 	}
 
+	if revealedEvt, ok := evt.(*tkevents.HexRevealedEvent); ok {
+		// rpg-api#687: load the encounter so newly-revealed hexes carry their
+		// zone_id immediately (data.Space.RegionAt), the same identity a
+		// reconnect's ProjectFor snapshot would give them — see
+		// translateHexRevealedEventWithData's doc for why this read isn't
+		// racy (mirrors the EntityAppearedEvent branch just above).
+		data, err := h.encRepo.Get(ctx, string(encID))
+		if err != nil {
+			return nil, fmt.Errorf("load encounter for hex-revealed zone enrichment: %w", err)
+		}
+		return translateHexRevealedEventWithData(revealedEvt, viewer, h.now(), data)
+	}
+
 	return TranslateEvent(evt, viewer, h.now())
 }

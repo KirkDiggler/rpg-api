@@ -266,6 +266,68 @@ func translateHexRevealedEvent(e *events.HexRevealedEvent, viewer core.PlayerID,
 	}, nil
 }
 
+// translateHexRevealedEventWithData is the data-aware translator for
+// HexRevealedEvent (rpg-api#687), mirroring
+// translateEntityAppearedEventWithData's split: translateHexRevealedEvent
+// above has only the bare toolkit event (a hex set, no region knowledge) —
+// TranslateEvent's generic dispatch keeps using it for callers with no
+// data in hand. This variant additionally sets each wire Hex's zone_id via
+// data.Space.RegionAt(h), the SAME pure lookup ProjectFor's connect-time
+// snapshot uses (project.go's hex-building loop) — so a hex a player
+// reveals mid-session (via Move) carries its zone identity immediately,
+// not only after their next reconnect re-projects the whole snapshot.
+//
+// data is loaded fresh by the caller (translateForStream), mirroring the
+// EntityAppearedEvent data-aware branch's doc on why that read isn't
+// racy: HexRevealedEvent only ever publishes from inside an already-loaded
+// encounter's Move, so data.Space (set once at InitRoom/InitDungeon time,
+// mutated only by wall/door state, never by regions) is safe to read here.
+//
+// nil data (defensive — should not occur; translateForStream always loads
+// data before calling this) falls back to RegionAt's own nil-receiver-safe
+// ("", false) result via a nil *encounter.SpaceData, matching
+// wallsToProto/zonesToProto's nil-space convention elsewhere in this
+// package — never a panic, never an invented zone.
+func translateHexRevealedEventWithData(
+	e *events.HexRevealedEvent, viewer core.PlayerID, now time.Time, data *encounter.Data,
+) (*encounterv2pb.EncounterEvent, error) {
+	slice, ok := e.PerPlayer[viewer]
+	if !ok || len(slice.Hexes) == 0 {
+		return nil, ErrViewerSawNothing
+	}
+	var space *encounter.SpaceData
+	if data != nil {
+		space = data.Space
+	}
+	keys := make([]core.Hex, 0, len(slice.Hexes))
+	for h := range slice.Hexes {
+		keys = append(keys, h)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		if keys[i].Q != keys[j].Q {
+			return keys[i].Q < keys[j].Q
+		}
+		if keys[i].R != keys[j].R {
+			return keys[i].R < keys[j].R
+		}
+		return keys[i].S < keys[j].S
+	})
+	hexes := make([]*encounterv2pb.Hex, 0, len(keys))
+	for _, h := range keys {
+		zoneID, _ := space.RegionAt(h)
+		hexes = append(hexes, &encounterv2pb.Hex{Position: HexToPosition(h), ZoneId: zoneID})
+	}
+	return &encounterv2pb.EncounterEvent{
+		Sequence:  int64(e.Sequence()),
+		Timestamp: timestamppb.New(now),
+		Event: &encounterv2pb.EncounterEvent_GeometryRevealed{
+			GeometryRevealed: &encounterv2pb.GeometryRevealed{
+				Hexes: hexes,
+			},
+		},
+	}, nil
+}
+
 // translateEntityAppearedEvent maps the toolkit's EntityAppearedEvent to the
 // v1alpha2 EntityAppeared proto envelope, carrying only what the toolkit
 // event itself provides (EntityID + Position) — a bare Entity{id, position}
