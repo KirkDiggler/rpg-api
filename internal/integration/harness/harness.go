@@ -8,11 +8,10 @@ import (
 	"fmt"
 	"log"
 	"net"
-	"strings"
+	"sync"
 	"time"
 
 	"github.com/testcontainers/testcontainers-go"
-	tcredis "github.com/testcontainers/testcontainers-go/modules/redis"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/test/bufconn"
@@ -50,9 +49,15 @@ type TestServer struct {
 	listener   *bufconn.Listener
 	conn       *grpc.ClientConn
 
-	// Container management
+	// Container management. redisContainer is non-nil only when this
+	// TestServer owns its Redis container (constructed via New) — it is
+	// nil when constructed via NewWithRedis against a shared fixture
+	// another owner (e.g. a package TestMain) is responsible for
+	// terminating. Close() must only ever terminate a non-nil
+	// redisContainer; see TestServer.Close.
 	redisContainer testcontainers.Container
 	redisClient    redis.Client
+	closeOnce      sync.Once
 
 	// Proto-generated clients for tests to use
 	CharacterClient   dnd5ev1alpha1.CharacterServiceClient
@@ -81,38 +86,66 @@ func DefaultConfig() *Config {
 	}
 }
 
-// New creates a new TestServer with real Redis and in-process gRPC.
-// Call Close() when done to clean up containers.
+// New creates a new TestServer with its own dedicated Redis container and
+// in-process gRPC. Call Close() when done to clean up containers.
+//
+// This is the standalone, container-owning path: each call to New starts a
+// fresh Redis testcontainer. Callers running many tests against the same
+// process (e.g. an `internal/integration` test package) should prefer
+// starting one shared *RedisContainer via StartRedis (typically from
+// TestMain) and calling NewWithRedis per test instead — New here remains
+// for standalone callers (smoke tests, other packages, ad-hoc scripts)
+// that want a fully self-contained, disposable server.
 func New(ctx context.Context, cfg *Config) (*TestServer, error) {
+	rc, err := StartRedis(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	ts, err := newWithClientSource(ctx, cfg, rc.Addr)
+	if err != nil {
+		// Nothing wired successfully owns rc yet, so terminate it directly.
+		_ = rc.Terminate(ctx)
+		return nil, err
+	}
+
+	// From this point Close() owns rc's lifetime.
+	ts.redisContainer = rc.container
+
+	return ts, nil
+}
+
+// NewWithRedis creates a new TestServer wired against an already-running
+// Redis instance (e.g. a *RedisContainer started once by a package
+// TestMain and shared across many tests) instead of starting its own
+// container. Every other piece of per-test state — the gRPC server,
+// bufconn listener, repositories, brokers, and proto clients — is fresh,
+// matching New. The returned TestServer does not own the Redis container
+// backing redisAddr: Close() closes this TestServer's own Redis client
+// connection but never attempts to terminate the shared container.
+//
+// Callers are responsible for calling FlushRedis before (or after) each
+// test to keep the shared instance's state isolated between tests.
+func NewWithRedis(ctx context.Context, cfg *Config, redisAddr string) (*TestServer, error) {
+	return newWithClientSource(ctx, cfg, redisAddr)
+}
+
+// newWithClientSource wires a TestServer against redisAddr. It never sets
+// redisContainer — ownership of the container backing redisAddr is the
+// caller's concern (New sets it afterward for the owning path).
+func newWithClientSource(ctx context.Context, cfg *Config, redisAddr string) (*TestServer, error) {
 	if cfg == nil {
 		cfg = DefaultConfig()
 	}
 
 	ts := &TestServer{}
 
-	// Start Redis container
-	redisC, err := tcredis.Run(ctx, "redis:7-alpine")
-	if err != nil {
-		return nil, fmt.Errorf("failed to start redis container: %w", err)
-	}
-	ts.redisContainer = redisC
-
-	// Get Redis connection string
-	redisAddr, err := redisC.ConnectionString(ctx)
-	if err != nil {
-		ts.Close()
-		return nil, fmt.Errorf("failed to get redis connection string: %w", err)
-	}
-
-	// Strip redis:// prefix if present (go-redis expects host:port)
-	redisAddr = strings.TrimPrefix(redisAddr, "redis://")
-
-	log.Printf("Integration test Redis started at: %s", redisAddr)
-
-	// Create Redis client
+	// Each TestServer gets its own Redis client connection, even when
+	// several TestServers share the same underlying container/address.
+	// This keeps Close() simple and safe: closing this connection can
+	// never affect another TestServer's connection to the same container.
 	redisClient, err := redis.NewClient(redisAddr, nil)
 	if err != nil {
-		ts.Close()
 		return nil, fmt.Errorf("failed to create redis client: %w", err)
 	}
 	ts.redisClient = redisClient
@@ -321,8 +354,19 @@ func (ts *TestServer) bufDialer(ctx context.Context, _ string) (net.Conn, error)
 	return ts.listener.DialContext(ctx)
 }
 
-// Close cleans up all resources.
+// Close cleans up everything this TestServer owns: the gRPC server,
+// bufconn listener, brokers, and its own Redis client connection. It only
+// terminates a Redis container when ts.redisContainer is set — that is
+// only true for TestServers constructed via New. TestServers constructed
+// via NewWithRedis leave redisContainer nil, so Close() closes their
+// per-instance Redis client but never terminates the shared container a
+// package-level fixture (e.g. TestMain) owns. Close is idempotent — safe
+// to call more than once (e.g. an explicit call plus a deferred one).
 func (ts *TestServer) Close() {
+	ts.closeOnce.Do(ts.closeLocked)
+}
+
+func (ts *TestServer) closeLocked() {
 	if ts.conn != nil {
 		ts.conn.Close()
 	}
