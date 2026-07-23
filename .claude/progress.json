@@ -7,7 +7,7 @@
     "rpg-toolkit#814/#821": "PR #821 merged 2026-07-22T18:16:26Z (commit e1f98403), published as encounter/v0.35.0 through v0.37.0 on the real Go module proxy (proxy.golang.org version list). Verified via an isolated `go get github.com/KirkDiggler/rpg-toolkit/encounter@v0.35.0`/@v0.37.0 in a fresh scratch module before any dependency bump. RegionData.Archetype / SpaceData.Theme / SpaceData.RegionAt confirmed present in encounter/data.go at that version by direct read."
   },
   "open_pr_coordination": {
-    "rpg-api#693": "OPEN (feat/688-n-region-dungeon-key) at the time of this work. Its own PR body explicitly lists 'region/theme wire projection (#687)' as out of scope for itself. It independently bumps rpg-toolkit/encounter v0.34.1 -> v0.35.0 in its own unmerged branch (go.mod diff verified via `gh pr diff 693 -- go.mod`). This branch bumps to the exact same target version to avoid downgrading or creating merge friction; does not consume #693's unmerged branch content or duplicate its DungeonKey/dungeon_spec.go work. Whichever of #687/#693 merges second will see a no-op/trivial diff on the shared go.mod encounter line."
+    "rpg-api#693": "MERGED to origin/main 2026-07-23T04:08:41Z (commit c916e82), after having been OPEN (feat/688-n-region-dungeon-key) at the start of this work. Its own PR body explicitly listed 'region/theme wire projection (#687)' as out of scope for itself. It bumped rpg-toolkit/encounter v0.34.1 -> v0.35.0 -- the exact same target version this branch already bumped to, so the merge of origin/main produced no downgrade and no go.mod conflict. See session 2026-07-23-008 below for the full merge-conflict resolution record."
   },
   "sessions": [
     {
@@ -48,7 +48,7 @@
       "status": "completed",
       "artifacts": ["internal/integration/dungeon_two_chamber_test.go"],
       "commit": "cd7ffc4",
-      "notes": "Mutation RED observed: '[] should have 2 item(s), but has 0' on Space.zones with pre-#687 code + this test. GREEN restored: full DungeonTwoChamberSuite (4/4) green, real Redis via testcontainers, ~48s. Full internal/integration + internal/integration/character + internal/integration/harness suite also run green separately (~282s)."
+      "notes": "Mutation RED observed: '[] should have 2 item(s), but has 0' on Space.zones with pre-#687 code + this test. GREEN restored: full DungeonTwoChamberSuite (4/4) green, real Redis via testcontainers, ~48s. Full internal/integration + internal/integration/character + internal/integration/harness suite also run green separately (~282s). NOTE: this suite/file was retired by #693's merge -- see session 2026-07-23-008."
     },
     {
       "id": "2026-07-22-006",
@@ -65,6 +65,22 @@
       "artifacts": [],
       "commit": null,
       "notes": "All green except the two documented pre-existing failures (mock regen #683, lint 29) which reproduce byte-for-byte identically on a clean origin/main checkout with zero interface/file changes involved -- confirmed by running `go generate ./...` and `golangci-lint run` on main directly and diffing the file/issue lists against this branch's."
+    },
+    {
+      "id": "2026-07-22-009",
+      "task": "PR #695 opened, reviewed by Copilot, review feedback addressed",
+      "status": "completed",
+      "artifacts": ["internal/integration/dungeon_two_chamber_test.go", "docs/status.md"],
+      "commit": "ad6269f",
+      "notes": "PR https://github.com/KirkDiggler/rpg-api/pull/695 opened (not draft), linked to #687, CI green. Copilot left 4 inline comments: (1) door-count assertion strengthened from NotEmpty to Len==1 -- fixed; (2) docs/status.md frontmatter updated date synced -- fixed; (3)/(4) .claude/tests.json and progress.json 'overwrites prior state' concerns -- pushed back with git-history evidence that these files are established per-branch agent state (both #687 and the still-open #693 reset them the same way), not a cumulative repo inventory; no change. All 4 threads replied to individually (signed) and resolved via GraphQL resolveReviewThread."
+    },
+    {
+      "id": "2026-07-23-008",
+      "task": "Resume after rpg-api#693 merged to origin/main (c916e82): merge origin/main into feat/687-project-region-theme with a normal merge commit (no rebase/amend/force-push)",
+      "status": "completed",
+      "artifacts": [".claude/progress.json", ".claude/tests.json", "docs/status.md", "internal/integration/dungeon_crypt_test.go", "internal/integration/dungeon_two_chamber_test.go"],
+      "commit": null,
+      "notes": "4 real conflicts. go.mod/go.sum auto-merged clean -- rpg-toolkit/encounter stays v0.35.0 on both sides (no downgrade); rpg-api-protos/gen/go kept at this branch's #196 generated-branch bump since #693 never touched that line. Resolutions: (1) .claude/progress.json -- kept this branch's #687-scoped content, added this session note rather than concatenating #688's contradictory goal/issue/dependencies fields (matches the established per-branch-reset convention both #687 and #693 already followed -- confirmed via `git log --all --oneline -- .claude/progress.json`, which shows full replacement on every feature branch for years, never append/rotate across branches). (2) .claude/tests.json -- same: kept #687's 10 entries, did not merge in #688's 11 (different branch-scoped artifact, not a cumulative inventory). (3) docs/status.md -- content conflict (both branches inserted a new Active Work entry above #680's unchanged entry, plus both touched the frontmatter confidence line): kept BOTH the #688 and #687 confidence-line clauses merged into one combined tally string, and kept BOTH full Active Work entries (#688's dungeon-key entry first, then #687's projection entry with a new 'Post-#693-merge note' paragraph documenting the test-file port below), preserving the pre-existing #680 entry text without duplicating it. (4) internal/integration/dungeon_two_chamber_test.go -- modify/delete conflict (#693 renamed+rewrote the whole file to dungeon_crypt_test.go; this branch had added a new test method to the old file). Accepted the delete; ported #687's real-RPC zone/theme/zone_id assertions (connect-time Space.zones/Space.theme + door-open + live-stream incremental-reveal Hex.zone_id) into a new TestSpaceZonesAndHexZoneId_ProjectRegionsOnTheWire method on DungeonCryptSuite in dungeon_crypt_test.go, adapted to the crypt's 3 regions (entrance/corridor/boss) and 2 connector doors instead of the retired 2-region/1-door topology. All 4 of #693's own DungeonCryptSuite tests preserved untouched, no fixture duplication. Mutation-discriminated the ported test again post-merge: reverted project.go/translate.go/handler.go to pre-#687 content with the ported test unchanged -> RED (same '0 zones' failure signature); restored -> GREEN. Full build/vet/fmt/imports/tidy clean; full unit -race green; full internal/integration/... -race green (real Redis)."
     }
   ]
 }

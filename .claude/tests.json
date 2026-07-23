@@ -45,16 +45,16 @@
     {
       "id": "real-rpc-zones-theme-and-incremental-reveal-e2e",
       "feature": "zone-theme-projection",
-      "prompt": "Through the real LobbyService.StartEncounter + v1alpha2 EncounterService RPC surface (real Redis, DungeonTwoChamberSuite): start a two-chamber encounter, GetEncounter and verify Space.zones names both chambers with their toolkit archetype (entrance/chamber) AND Space.theme is empty in the same response (InitTwoChamberRoom sets no Theme -- real absent-metadata path, not a fixture). Verify the connect-time entrance hex carries chamber-1's zone_id. Then open the door and Move onto a chamber-2 goblin's hex over a live StreamEncounter connection; verify the resulting live GeometryRevealed event's hex for that position also carries chamber-2's zone_id -- proving the incremental-reveal fix, not just the connect-time snapshot.",
+      "prompt": "Through the real LobbyService.StartEncounter + v1alpha2 EncounterService RPC surface (real Redis, DungeonCryptSuite, ported post-#693-merge from the retired DungeonTwoChamberSuite): start a crypt encounter, GetEncounter and verify Space.zones names all 3 regions with their toolkit archetype (entrance/corridor/boss) AND Space.theme == 'crypt' in the same response. Verify the connect-time entrance hex carries the entrance region's zone_id. Then open both connector doors and Move onto a boss-region goblin's hex over a live StreamEncounter connection; verify the resulting live GeometryRevealed event's hex for that position also carries the boss region's zone_id -- proving the incremental-reveal fix, not just the connect-time snapshot.",
       "passes": true,
-      "last_checked": "2026-07-22"
+      "last_checked": "2026-07-23"
     },
     {
       "id": "mutation-revert-discrimination",
       "feature": "zone-theme-projection",
-      "prompt": "Revert project.go/translate.go/handler.go to their pre-#687 commit content (git show <parent-commit>:<path>) while leaving the real-rpc-zones-theme-and-incremental-reveal-e2e test unchanged. Verify the test fails (Space.zones has 0 items instead of 2). Restore the real implementation and verify the test passes again.",
+      "prompt": "Revert project.go/translate.go/handler.go to their pre-#687 commit content (git show <parent-commit>:<path>) while leaving the real-rpc-zones-theme-and-incremental-reveal-e2e test unchanged. Verify the test fails (Space.zones has 0 items instead of the expected count). Restore the real implementation and verify the test passes again. Re-run post-#693-merge against the ported DungeonCryptSuite version to confirm the discrimination still holds after the port.",
       "passes": true,
-      "last_checked": "2026-07-22"
+      "last_checked": "2026-07-23"
     },
     {
       "id": "existing-projectfor-tests-remain-green",
@@ -66,9 +66,9 @@
     {
       "id": "full-integration-suite-remains-green",
       "feature": "regression",
-      "prompt": "Run the full internal/integration/... suite with -race and real Redis (testcontainers). Verify every pre-existing suite (LobbyService, EncounterV2, character creation, harness, DungeonTwoChamberSuite's original 2 gate tests) still passes unmodified alongside the new zone/theme gate test.",
+      "prompt": "Run the full internal/integration/... suite with -race and real Redis (testcontainers). Verify every pre-existing suite (LobbyService, EncounterV2, character creation, harness, DungeonCryptSuite's own 4 gate tests post-#693-merge) still passes unmodified alongside the ported zone/theme gate test.",
       "passes": true,
-      "last_checked": "2026-07-22"
+      "last_checked": "2026-07-23"
     }
   ]
 }
