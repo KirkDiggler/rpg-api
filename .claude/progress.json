@@ -1,102 +1,30 @@
 {
-  "branch": "feat/687-project-region-theme",
-  "issues": ["rpg-api#687"],
-  "goal": "Project the toolkit's canonical region/theme metadata (SpaceData.Theme, SpaceData.Regions, RegionData.Archetype, per-hex region membership via RegionAt) onto the v1alpha2 wire as Space.theme, Space.zones, and Hex.zone_id. Pure passthrough only -- no derivation of regions/archetypes/theme from geometry, no default invention. Covers both the connect-time snapshot (ProjectFor) and the incremental live GeometryRevealed event, so a hex revealed after connect also carries its zone_id.",
+  "branch": "feat/689-deterministic-crypt-monsters",
+  "issues": ["#689"],
+  "goal": "First crypt learning-slice monster composition: exactly 1 deterministic entrance skeleton, 0 corridor monsters, exactly 1 deterministic non-wight skeleton-captain boss (rpg-toolkit#816), placed via toolkit spawn.FixedPositions and the existing tested regionEntryAnchor door-neighbor helper. Removes out-of-sight PositionOracle/search from this path. No goblins, no obstacle projection, no #694/#697 compact-spec consumption.",
   "dependencies": {
-    "rpg-api-protos#196": "merged 2026-07-23T02:48:20Z (commit bb80c98), published on the generated branch (HEAD 0e4e2d7). Verified consumable via an isolated `go get github.com/KirkDiggler/rpg-api-protos/gen/go@generated` (GOPRIVATE=github.com/KirkDiggler, GOPROXY=direct, no replace/go.work, fresh scratch module) before any dependency bump in this branch. Adds Hex.zone_id, Zone{id,name,archetype}, Space.zones, Space.theme -- confirmed present in the generated .pb.go by direct grep before bumping.",
-    "rpg-toolkit#814/#821": "PR #821 merged 2026-07-22T18:16:26Z (commit e1f98403), published as encounter/v0.35.0 through v0.37.0 on the real Go module proxy (proxy.golang.org version list). Verified via an isolated `go get github.com/KirkDiggler/rpg-toolkit/encounter@v0.35.0`/@v0.37.0 in a fresh scratch module before any dependency bump. RegionData.Archetype / SpaceData.Theme / SpaceData.RegionAt confirmed present in encounter/data.go at that version by direct read."
+    "rpg-toolkit/encounter": "v0.38.0 (bumped from v0.35.0) - CryptDungeonParams (#826), RegionData.Hexes/RegionAt, SpaceData.Entrance",
+    "rpg-toolkit/rulebooks/dnd5e": "v0.68.0 (bumped from v0.67.0) - monsters.NewSkeleton, monsters.NewSkeletonCaptain (#816, non-wight)",
+    "rpg-toolkit/tools/spawn": "v0.3.0 (unchanged, already has FixedPositions from PR #770)"
   },
   "open_pr_coordination": {
-    "rpg-api#693": "MERGED to origin/main 2026-07-23T04:08:41Z (commit c916e82), after having been OPEN (feat/688-n-region-dungeon-key) at the start of this work. Its own PR body explicitly listed 'region/theme wire projection (#687)' as out of scope for itself. It bumped rpg-toolkit/encounter v0.34.1 -> v0.35.0 -- the exact same target version this branch already bumped to, so the merge of origin/main produced no downgrade and no go.mod conflict. See session 2026-07-23-008 below for the full merge-conflict resolution record."
+    "pr-697": "feat/694-consume-crypt-dungeon-params — do NOT base on or consume; #689 does not depend on #694 per the 2026-07-23 dependency-cycle correction. Anchor-resolution helper is written generically over []tkenc.DungeonRegionParams/[]tkenc.DungeonConnectorParams so it also works directly against tkenc.CryptDungeonParams's output as a forward-compat fixture, without importing anything from PR #697's branch."
   },
   "sessions": [
     {
-      "id": "2026-07-22-001",
-      "task": "Preflight: verify rpg-api-protos#196 and rpg-toolkit#814/#821 are merged AND published/consumable (not just merged) via isolated go get in a scratch module; check for duplicate feat/687-* branch or open PR; check open PR #693 for scope overlap; create isolated worktree from origin/main; reset progress/tests artifacts; baseline build+test",
-      "status": "completed",
-      "artifacts": [".claude/progress.json", ".claude/tests.json"],
-      "commit": "ded5efb",
-      "notes": "Both dependencies confirmed merged, published, and go-get-consumable (real GOPROXY, not just git history) before any go.mod touch. No feat/687-* branch or open PR found. #693 explicitly out-of-scopes #687 for itself in its own PR body. Worktree at .worktrees/feat-687-project-region-theme. Baseline: go build ./... clean, go test (all non-integration packages) green on origin/main HEAD before any change."
-    },
-    {
-      "id": "2026-07-22-002",
-      "task": "Bump go.mod dependencies to versions containing #196/#814",
+      "id": "2026-07-23-001",
+      "task": "Verify toolkit dependency publication (encounter v0.38.0, rulebooks/dnd5e v0.68.0, tools/spawn v0.3.0) and bump go.mod with no local replace",
       "status": "completed",
       "artifacts": ["go.mod", "go.sum"],
-      "commit": "4d4115f",
-      "notes": "rpg-api-protos/gen/go -> @generated HEAD (0e4e2d7). rpg-toolkit/encounter v0.34.1 -> v0.35.0 (matches #693's own unmerged bump target exactly -- no downgrade). go build ./... and full non-integration test suite green after the bump, before any production code change."
-    },
-    {
-      "id": "2026-07-22-003",
-      "task": "RED: write failing project_test.go tests for Space.theme passthrough, Space.zones (multi-region, declared-order, not sorted), and Hex.zone_id (exact-membership, not geometry/adjacency); GREEN: add zonesToProto/themeToProto helpers + zone_id line in project.go's existing hex loop",
-      "status": "completed",
-      "artifacts": ["internal/handlers/dnd5e/v2/encounter/project.go", "internal/handlers/dnd5e/v2/encounter/project_test.go"],
-      "commit": "82a66ba",
-      "notes": "RED observed: 3 new tests failed against unmodified project.go (empty theme, 0 zones) while 3 sibling fallback tests (nil-space, empty-regions) already passed -- proving the RED was for the right reason, not a broken fixture. GREEN after the minimal addition. Full package (incl. -race) green, no regressions in the 22 pre-existing ProjectFor tests."
-    },
-    {
-      "id": "2026-07-22-004",
-      "task": "RED: white-box test (package encounter) for translateHexRevealedEventWithData against the not-yet-written function; GREEN: add the data-aware translator + wire handler.go's translateForStream to load Data and call it for *tkevents.HexRevealedEvent, mirroring the established translateEntityAppearedEventWithData split",
-      "status": "completed",
-      "artifacts": ["internal/handlers/dnd5e/v2/encounter/translate.go", "internal/handlers/dnd5e/v2/encounter/handler.go", "internal/handlers/dnd5e/v2/encounter/translate_hex_revealed_internal_test.go"],
-      "commit": "1196248",
-      "notes": "Closes the gap ProjectFor's snapshot fix alone leaves open: the LIVE incremental GeometryRevealed event only has the bare toolkit event in hand (no persisted Data), so a hex a player reveals mid-session via Move would carry zone_id='' forever without this. RED: test file didn't compile (function undefined). GREEN after adding translateHexRevealedEventWithData (same data.Space.RegionAt(h) lookup, nil-safe) + the handler.go branch. Full package (incl. -race) green."
-    },
-    {
-      "id": "2026-07-22-005",
-      "task": "Add real-RPC integration gate (DungeonTwoChamberSuite) proving #687's Done bar end to end -- Space.zones naming both chambers, Space.theme absent-metadata fallback in the SAME live response, connect-time Hex.zone_id, AND incremental live GeometryRevealed zone_id after opening the door and moving into chamber 2. Mutation/revert discrimination: reverted project.go/translate.go/handler.go to their pre-#687 commit state with the test unchanged, confirmed RED, restored, confirmed GREEN",
-      "status": "completed",
-      "artifacts": ["internal/integration/dungeon_two_chamber_test.go"],
-      "commit": "cd7ffc4",
-      "notes": "Mutation RED observed: '[] should have 2 item(s), but has 0' on Space.zones with pre-#687 code + this test. GREEN restored: full DungeonTwoChamberSuite (4/4) green, real Redis via testcontainers, ~48s. Full internal/integration + internal/integration/character + internal/integration/harness suite also run green separately (~282s). NOTE: this suite/file was retired by #693's merge -- see session 2026-07-23-008."
-    },
-    {
-      "id": "2026-07-22-006",
-      "task": "Update docs/status.md (Active Work entry) and docs/architecture/components/encounter.md (new 'Zone/theme projection' subsection) per the repo's living-docs convention",
-      "status": "completed",
-      "artifacts": ["docs/status.md", "docs/architecture/components/encounter.md"],
-      "commit": "1db1f34",
-      "notes": "Matches the existing entry format/detail level for recent slices (#680's equipment-on-the-wire entry, #676's wall/door projection subsection)."
-    },
-    {
-      "id": "2026-07-22-007",
-      "task": "Full verification: go build/vet/fmt/tidy clean; golangci-lint run (29 pre-existing issues, byte-identical to a clean origin/main checkout, zero in files this branch touches); go generate mock-regen false positive (byte-identical file set on main vs this branch -- documented rpg-api#683 tool-version drift, not a real regen need); make ci-check; full unit suite -race; full internal/integration suite -race (real Redis via testcontainers, ~282s)",
-      "status": "completed",
-      "artifacts": [],
       "commit": null,
-      "notes": "All green except the two documented pre-existing failures (mock regen #683, lint 29) which reproduce byte-for-byte identically on a clean origin/main checkout with zero interface/file changes involved -- confirmed by running `go generate ./...` and `golangci-lint run` on main directly and diffing the file/issue lists against this branch's."
-    },
-    {
-      "id": "2026-07-22-009",
-      "task": "PR #695 opened, reviewed by Copilot, review feedback addressed",
-      "status": "completed",
-      "artifacts": ["internal/integration/dungeon_two_chamber_test.go", "docs/status.md"],
-      "commit": "ad6269f",
-      "notes": "PR https://github.com/KirkDiggler/rpg-api/pull/695 opened (not draft), linked to #687, CI green. Copilot left 4 inline comments: (1) door-count assertion strengthened from NotEmpty to Len==1 -- fixed; (2) docs/status.md frontmatter updated date synced -- fixed; (3)/(4) .claude/tests.json and progress.json 'overwrites prior state' concerns -- pushed back with git-history evidence that these files are established per-branch agent state (both #687 and the still-open #693 reset them the same way), not a cumulative repo inventory; no change. All 4 threads replied to individually (signed) and resolved via GraphQL resolveReviewThread."
-    },
-    {
-      "id": "2026-07-23-008",
-      "task": "Resume after rpg-api#693 merged to origin/main (c916e82): merge origin/main into feat/687-project-region-theme with a normal merge commit (no rebase/amend/force-push)",
-      "status": "completed",
-      "artifacts": [".claude/progress.json", ".claude/tests.json", "docs/status.md", "internal/integration/dungeon_crypt_test.go", "internal/integration/dungeon_two_chamber_test.go"],
-      "commit": "af1db9e",
-      "notes": "4 real conflicts. go.mod/go.sum auto-merged clean -- rpg-toolkit/encounter stays v0.35.0 on both sides (no downgrade); rpg-api-protos/gen/go kept at this branch's #196 generated-branch bump since #693 never touched that line. Resolutions: (1) .claude/progress.json -- kept this branch's #687-scoped content, added this session note rather than concatenating #688's contradictory goal/issue/dependencies fields (matches the established per-branch-reset convention both #687 and #693 already followed -- confirmed via `git log --all --oneline -- .claude/progress.json`, which shows full replacement on every feature branch for years, never append/rotate across branches). (2) .claude/tests.json -- same: kept #687's 10 entries, did not merge in #688's 11 (different branch-scoped artifact, not a cumulative inventory). (3) docs/status.md -- content conflict (both branches inserted a new Active Work entry above #680's unchanged entry, plus both touched the frontmatter confidence line): kept BOTH the #688 and #687 confidence-line clauses merged into one combined tally string, and kept BOTH full Active Work entries (#688's dungeon-key entry first, then #687's projection entry with a new 'Post-#693-merge note' paragraph documenting the test-file port below), preserving the pre-existing #680 entry text without duplicating it. (4) internal/integration/dungeon_two_chamber_test.go -- modify/delete conflict (#693 renamed+rewrote the whole file to dungeon_crypt_test.go; this branch had added a new test method to the old file). Accepted the delete; ported #687's real-RPC zone/theme/zone_id assertions (connect-time Space.zones/Space.theme + door-open + live-stream incremental-reveal Hex.zone_id) into a new TestSpaceZonesAndHexZoneId_ProjectRegionsOnTheWire method on DungeonCryptSuite in dungeon_crypt_test.go, adapted to the crypt's 3 regions (entrance/corridor/boss) and 2 connector doors instead of the retired 2-region/1-door topology. All 4 of #693's own DungeonCryptSuite tests preserved untouched, no fixture duplication. Mutation-discriminated the ported test again post-merge: reverted project.go/translate.go/handler.go to pre-#687 content with the ported test unchanged -> RED (same '0 zones' failure signature); restored -> GREEN. Full build/vet/fmt/imports/tidy clean; full unit -race green; full internal/integration/... -race green (real Redis)."
-    },
-    {
-      "id": "2026-07-23-009",
-      "task": "Follow-up fix: the merge commit (af1db9e) was missing the ported dungeon_crypt_test.go content -- the edit had been applied to the working tree but never re-staged after the initial git add during conflict resolution, so `git commit` for the merge picked up the pre-edit index content. Committed the missing content separately (no amend, per instructions).",
-      "status": "completed",
-      "artifacts": ["internal/integration/dungeon_crypt_test.go"],
-      "commit": "772fb86",
-      "notes": "Caught by diffing `git show HEAD:<path>` against the working tree after the merge push -- HEAD had 390 lines (pre-port), working tree had 508 (post-port). Every post-merge verification command in session 008 had actually run against the working tree (which is what go build/test always read), so those PASS/RED/GREEN results were real and valid for the final content -- only the git history was momentarily behind. Re-verified after staging: go build/vet clean, go mod tidy no drift, full non-integration unit suite -race green, full internal/integration/... suite -race green (real Redis, ~284s, all 4 DungeonCryptSuite tests). Pushed as a separate commit on top of the merge commit."
-    },
-    {
-      "id": "2026-07-23-010",
-      "task": "CI 'build' check failed on push of 772fb86 (unrelated test: TestLobbyStartThenMoveSuite/TestMoveEntity_AfterStartEncounter_ActuallyMoves/direction_1). Investigated and classified as a pre-existing entropy-seeded flake in #693's own lobby_start_then_move_test.go, not caused by this branch.",
-      "status": "completed",
-      "artifacts": [],
-      "commit": null,
-      "notes": "Failure: 'environments: RandomPattern emergency fallback to empty room after 10 attempts ... required path entrance-to-door is blocked' followed by 'entity goblin-entrance-2 not found in room' during an NPC move. lobby_start_then_move_test.go is byte-identical between origin/main and this branch (confirmed via git diff -- zero diff), uses no explicit RandomSeed (entropy-seeded per its own doc comment), and go.mod's rpg-toolkit/encounter is v0.35.0 on both sides -- nothing in this PR's diff touches the dungeon generator, the movement resolver, or that test file. Reproduced 10x locally against this branch and 20x against a clean origin/main checkout directly (`go test -race -run TestLobbyStartThenMoveSuite -count=N`) -- 30/30 green, zero repro of the fallback path even under repetition, consistent with a rare probabilistic edge case in the toolkit's entropy-seeded RandomPattern generator, inherited unchanged from #693, not introduced by this merge. Re-ran the failed GitHub Actions job via `gh run rerun --failed` -- both build and test checks passed on rerun. No code change made; this is pre-existing repo/toolkit flakiness, documented in the PR body for the human's awareness (candidate for a future toolkit-side or start_encounter.go-side fix: an explicit fallback retry or a wider default corridor, out of #687's scope)."
+      "notes": "Confirmed via git merge-base --is-ancestor that PR #770 (spawn FixedPositions), PR #820 (#816 skeleton-captain), PR #826 (#819 CryptDungeonParams) are all ancestors of their respective published tags."
     }
+  ],
+  "next_steps": [
+    "RED: failing tests for archetype-driven anchor resolution, composition, determinism, no-search",
+    "GREEN: seedRegionMonsters + regionMonsterAnchor implementation, retire seedGoblins",
+    "Compact CryptDungeonParams fixture test",
+    "Real Redis integration determinism test",
+    "Full verification suite, docs update, PR"
   ]
 }
