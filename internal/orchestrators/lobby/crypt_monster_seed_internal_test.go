@@ -12,6 +12,20 @@ package lobby
 // PositionOracle==nil / FixedPositions structural proof) can only be made
 // by inspecting the built spawn.EntityGroup directly — the black-box
 // StartEncounter tests in start_encounter_test.go never observe this.
+//
+// rpg-api#694 merge note: every resolveDungeonSpec call below now takes a
+// seed (resolveDungeonSpec(key, seed) -> tkenc.DungeonParams, forwarding
+// to the toolkit's own tkenc.CryptDungeonParams verbatim) instead of the
+// retired dungeonSpec{theme,height,regions,connectors} literal — this
+// file reads params.Regions/params.Connectors directly. The seed passed
+// to resolveDungeonSpec here is cosmetic (Regions/Connectors/Theme/Height
+// never depend on it, only RandomSeed does) but matches each test's own
+// newTestCryptEncounter seed for readability. cryptRegionIDEntrance/
+// cryptRegionIDBoss (this package's OWN pre-#694 region-ID constants) are
+// gone along with the rest of the retired literal spec; region IDs are
+// now read back off params.Regions itself (regionIDForArchetype below),
+// never hardcoded, since the toolkit's CryptDungeonParams — not this
+// package — owns them.
 
 import (
 	"context"
@@ -39,24 +53,33 @@ func regionArchetypeAt(space *tkenc.SpaceData, hex core.Hex) (tkenc.RegionArchet
 	return "", false
 }
 
+// regionIDForArchetype returns the ID of the single region in params
+// matching archetype — used by tests below to pin regionMonsterAnchor's
+// returned region ID against the toolkit's OWN region ID for that
+// archetype (read back from params itself), never a hardcoded literal.
+func regionIDForArchetype(params tkenc.DungeonParams, archetype tkenc.RegionArchetype) (string, bool) {
+	for _, r := range params.Regions {
+		if r.Archetype == archetype {
+			return r.ID, true
+		}
+	}
+	return "", false
+}
+
 // newTestCryptEncounter builds a fresh, in-memory *tkenc.Encounter with the
-// crypt dungeonSpec's InitDungeon already run for the given seed — the same
-// call StartEncounter itself makes, exercised directly so these tests don't
-// need a full Orchestrator/lobby/character-repo stack.
+// crypt key's toolkit-constructed InitDungeon already run for the given
+// seed (rpg-api#694: resolveDungeonSpec forwards to tkenc.CryptDungeonParams
+// verbatim) — the same call StartEncounter itself makes, exercised
+// directly so these tests don't need a full Orchestrator/lobby/character-
+// repo stack.
 func newTestCryptEncounter(t *testing.T, seed int64) *tkenc.Encounter {
 	t.Helper()
 	ctx := context.Background()
 	broker := tkenc.NewBroker(tkenc.NewInMemoryTransport())
 	enc := tkenc.New(ctx, core.EncounterID("test-enc"), broker)
-	_, spec, err := resolveDungeonSpec(DungeonKeyCrypt)
+	_, params, err := resolveDungeonSpec(DungeonKeyCrypt, seed)
 	require.NoError(t, err)
-	require.NoError(t, enc.InitDungeon(tkenc.DungeonParams{
-		Regions:    spec.regions,
-		Connectors: spec.connectors,
-		Height:     spec.height,
-		RandomSeed: seed,
-		Theme:      spec.theme,
-	}))
+	require.NoError(t, enc.InitDungeon(params))
 	return enc
 }
 
@@ -87,37 +110,42 @@ func addPartyLine(t *testing.T, enc *tkenc.Encounter, partySize int) {
 func TestRegionMonsterAnchor_EntranceAndBoss_ResolveDistinctInRegionAnchors(t *testing.T) {
 	enc := newTestCryptEncounter(t, 42)
 	space := enc.ToData().Space
-	_, spec, err := resolveDungeonSpec(DungeonKeyCrypt)
+	_, params, err := resolveDungeonSpec(DungeonKeyCrypt, 42)
 	require.NoError(t, err)
 
-	entranceAnchor, entranceRegionID, err := regionMonsterAnchor(space, spec.regions, spec.connectors, enc.ToData().Doors, enc.Room(), tkenc.ArchetypeEntrance)
+	wantEntranceID, ok := regionIDForArchetype(params, tkenc.ArchetypeEntrance)
+	require.True(t, ok)
+	wantBossID, ok := regionIDForArchetype(params, tkenc.ArchetypeBoss)
+	require.True(t, ok)
+
+	entranceAnchor, entranceRegionID, err := regionMonsterAnchor(space, params.Regions, params.Connectors, enc.ToData().Doors, enc.Room(), tkenc.ArchetypeEntrance)
 	require.NoError(t, err)
-	bossAnchor, bossRegionID, err := regionMonsterAnchor(space, spec.regions, spec.connectors, enc.ToData().Doors, enc.Room(), tkenc.ArchetypeBoss)
+	bossAnchor, bossRegionID, err := regionMonsterAnchor(space, params.Regions, params.Connectors, enc.ToData().Doors, enc.Room(), tkenc.ArchetypeBoss)
 	require.NoError(t, err)
 
-	require.Equal(t, cryptRegionIDEntrance, entranceRegionID)
-	require.Equal(t, cryptRegionIDBoss, bossRegionID)
+	require.Equal(t, wantEntranceID, entranceRegionID)
+	require.Equal(t, wantBossID, bossRegionID)
 	require.NotEqual(t, entranceAnchor, bossAnchor)
 
 	region, ok := space.RegionAt(entranceAnchor)
 	require.True(t, ok)
-	require.Equal(t, cryptRegionIDEntrance, region)
+	require.Equal(t, wantEntranceID, region)
 
 	region, ok = space.RegionAt(bossAnchor)
 	require.True(t, ok)
-	require.Equal(t, cryptRegionIDBoss, region)
+	require.Equal(t, wantBossID, region)
 }
 
-// TestRegionMonsterAnchor_CorridorArchetype_NotInTable proves the corridor
+// TestBuildMonsterSeedGroups_CorridorGetsNoGroup proves the corridor
 // region intentionally has no monster spec — regionMonsterAnchor itself is
 // archetype-driven and would resolve a corridor anchor if asked, but the
 // crypt monster-seed table (buildMonsterSeedGroups) must never ask for one.
 func TestBuildMonsterSeedGroups_CorridorGetsNoGroup(t *testing.T) {
 	enc := newTestCryptEncounter(t, 7)
-	_, spec, err := resolveDungeonSpec(DungeonKeyCrypt)
+	_, params, err := resolveDungeonSpec(DungeonKeyCrypt, 7)
 	require.NoError(t, err)
 
-	_, plans, groups, err := buildMonsterSeedGroups(enc.ToData().Space, enc.ToData().Doors, enc.Room(), spec, DungeonKeyCrypt)
+	_, plans, groups, err := buildMonsterSeedGroups(enc.ToData().Space, enc.ToData().Doors, enc.Room(), params, DungeonKeyCrypt)
 	require.NoError(t, err)
 	require.Len(t, groups, 2, "exactly entrance + boss groups, none for the corridor")
 	require.Len(t, plans, 2)
@@ -129,10 +157,10 @@ func TestBuildMonsterSeedGroups_CorridorGetsNoGroup(t *testing.T) {
 // a nil PositionOracle.
 func TestBuildMonsterSeedGroups_NoSearch_FixedPositionsOnlyNoOracle(t *testing.T) {
 	enc := newTestCryptEncounter(t, 7)
-	_, spec, err := resolveDungeonSpec(DungeonKeyCrypt)
+	_, params, err := resolveDungeonSpec(DungeonKeyCrypt, 7)
 	require.NoError(t, err)
 
-	_, _, groups, err := buildMonsterSeedGroups(enc.ToData().Space, enc.ToData().Doors, enc.Room(), spec, DungeonKeyCrypt)
+	_, _, groups, err := buildMonsterSeedGroups(enc.ToData().Space, enc.ToData().Doors, enc.Room(), params, DungeonKeyCrypt)
 	require.NoError(t, err)
 	for _, g := range groups {
 		require.Nil(t, g.PositionOracle, "group %q must not carry a search predicate", g.ID)
@@ -147,10 +175,10 @@ func TestBuildMonsterSeedGroups_NoSearch_FixedPositionsOnlyNoOracle(t *testing.T
 // seed zero monsters or substitute a default table.
 func TestBuildMonsterSeedGroups_UnknownDungeonKey_Errors(t *testing.T) {
 	enc := newTestCryptEncounter(t, 7)
-	_, spec, err := resolveDungeonSpec(DungeonKeyCrypt)
+	_, params, err := resolveDungeonSpec(DungeonKeyCrypt, 7)
 	require.NoError(t, err)
 
-	_, _, _, err = buildMonsterSeedGroups(enc.ToData().Space, enc.ToData().Doors, enc.Room(), spec, DungeonKey("no-such-key"))
+	_, _, _, err = buildMonsterSeedGroups(enc.ToData().Space, enc.ToData().Doors, enc.Room(), params, DungeonKey("no-such-key"))
 	require.Error(t, err)
 }
 
@@ -161,11 +189,11 @@ func TestBuildMonsterSeedGroups_UnknownDungeonKey_Errors(t *testing.T) {
 func TestSeedRegionMonsters_Composition_OneEntranceZeroCorridorOneBoss(t *testing.T) {
 	enc := newTestCryptEncounter(t, 99)
 	addPartyLine(t, enc, 4) // worst case: full party occupies the spawn line first.
-	_, spec, err := resolveDungeonSpec(DungeonKeyCrypt)
+	_, params, err := resolveDungeonSpec(DungeonKeyCrypt, 99)
 	require.NoError(t, err)
 
 	o := &Orchestrator{}
-	require.NoError(t, o.seedRegionMonsters(context.Background(), enc, core.EncounterID("test-enc"), spec, DungeonKeyCrypt))
+	require.NoError(t, o.seedRegionMonsters(context.Background(), enc, core.EncounterID("test-enc"), params, DungeonKeyCrypt))
 
 	data := enc.ToData()
 	require.Len(t, data.Monsters, 2, "exactly one entrance minion + one boss, nothing else")
@@ -197,10 +225,10 @@ func TestSeedRegionMonsters_Composition_OneEntranceZeroCorridorOneBoss(t *testin
 func TestSeedRegionMonsters_Deterministic_SameSeedSamePositions(t *testing.T) {
 	positionsFor := func(seed int64) map[tkenc.RegionArchetype]core.Hex {
 		enc := newTestCryptEncounter(t, seed)
-		_, spec, err := resolveDungeonSpec(DungeonKeyCrypt)
+		_, params, err := resolveDungeonSpec(DungeonKeyCrypt, seed)
 		require.NoError(t, err)
 		o := &Orchestrator{}
-		require.NoError(t, o.seedRegionMonsters(context.Background(), enc, core.EncounterID("test-enc"), spec, DungeonKeyCrypt))
+		require.NoError(t, o.seedRegionMonsters(context.Background(), enc, core.EncounterID("test-enc"), params, DungeonKeyCrypt))
 		out := map[tkenc.RegionArchetype]core.Hex{}
 		for _, m := range enc.ToData().Monsters {
 			archetype, ok := regionArchetypeAt(enc.ToData().Space, m.Position)
@@ -222,10 +250,10 @@ func TestSeedRegionMonsters_PartySizeInvariant_1Through4(t *testing.T) {
 	for partySize := 1; partySize <= 4; partySize++ {
 		enc := newTestCryptEncounter(t, 555)
 		addPartyLine(t, enc, partySize)
-		_, spec, err := resolveDungeonSpec(DungeonKeyCrypt)
+		_, params, err := resolveDungeonSpec(DungeonKeyCrypt, 555)
 		require.NoError(t, err)
 		o := &Orchestrator{}
-		require.NoError(t, o.seedRegionMonsters(context.Background(), enc, core.EncounterID("test-enc"), spec, DungeonKeyCrypt),
+		require.NoError(t, o.seedRegionMonsters(context.Background(), enc, core.EncounterID("test-enc"), params, DungeonKeyCrypt),
 			"party size %d must place monsters with zero errors", partySize)
 
 		got := map[tkenc.RegionArchetype]core.Hex{}
@@ -244,21 +272,23 @@ func TestSeedRegionMonsters_PartySizeInvariant_1Through4(t *testing.T) {
 
 // TestSeedRegionMonsters_SeedSweep_1To1000_PartySizes1To4_ZeroErrors is the
 // revised done-bar's exact matrix: seeds 1..1000 x party sizes 1..4, zero
-// placement errors. This is the empirical proof that regionEntryAnchor's
-// door-neighbor resolution always lands on a toolkit-guaranteed-safe
-// (required-path) cell for every seed the crypt template can generate —
-// not something asserted by static analysis, but swept directly against
-// the real toolkit generator.
+// placement errors, run against the REAL production dungeon-key registry
+// (resolveDungeonSpec -> tkenc.CryptDungeonParams, rpg-api#694) — not a
+// separate fixture-only helper. This is the empirical proof that
+// regionEntryAnchor's door-neighbor resolution always lands on a
+// toolkit-guaranteed-safe (required-path) cell for every seed the crypt
+// template can generate, at the toolkit's real (compact) dimensions — not
+// something asserted by static analysis, but swept directly against the
+// real toolkit generator through the same call StartEncounter itself makes.
 func TestSeedRegionMonsters_SeedSweep_1To1000_PartySizes1To4_ZeroErrors(t *testing.T) {
-	_, spec, err := resolveDungeonSpec(DungeonKeyCrypt)
-	require.NoError(t, err)
-
 	for seed := int64(1); seed <= 1000; seed++ {
 		for partySize := 1; partySize <= 4; partySize++ {
 			enc := newTestCryptEncounter(t, seed)
 			addPartyLine(t, enc, partySize)
+			_, params, err := resolveDungeonSpec(DungeonKeyCrypt, seed)
+			require.NoError(t, err)
 			o := &Orchestrator{}
-			err := o.seedRegionMonsters(context.Background(), enc, core.EncounterID("test-enc"), spec, DungeonKeyCrypt)
+			err = o.seedRegionMonsters(context.Background(), enc, core.EncounterID("test-enc"), params, DungeonKeyCrypt)
 			require.NoError(t, err, "seed=%d partySize=%d must place both monsters with zero errors", seed, partySize)
 			require.Len(t, enc.ToData().Monsters, 2, "seed=%d partySize=%d must seed exactly 2 monsters", seed, partySize)
 		}
@@ -271,13 +301,13 @@ func TestSeedRegionMonsters_SeedSweep_1To1000_PartySizes1To4_ZeroErrors(t *testi
 // any out-of-sight placement predicate — there is none left in this path.
 func TestSeedRegionMonsters_BossConcealedByClosedDoor_NotByPlacementSearch(t *testing.T) {
 	enc := newTestCryptEncounter(t, 314)
-	_, spec, err := resolveDungeonSpec(DungeonKeyCrypt)
+	_, params, err := resolveDungeonSpec(DungeonKeyCrypt, 314)
 	require.NoError(t, err)
 	o := &Orchestrator{}
-	require.NoError(t, o.seedRegionMonsters(context.Background(), enc, core.EncounterID("test-enc"), spec, DungeonKeyCrypt))
+	require.NoError(t, o.seedRegionMonsters(context.Background(), enc, core.EncounterID("test-enc"), params, DungeonKeyCrypt))
 
 	data := enc.ToData()
-	entranceAnchor, _, err := regionMonsterAnchor(data.Space, spec.regions, spec.connectors, data.Doors, enc.Room(), tkenc.ArchetypeEntrance)
+	entranceAnchor, _, err := regionMonsterAnchor(data.Space, params.Regions, params.Connectors, data.Doors, enc.Room(), tkenc.ArchetypeEntrance)
 	require.NoError(t, err)
 
 	var bossPos core.Hex

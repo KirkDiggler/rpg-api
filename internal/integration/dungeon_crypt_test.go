@@ -27,6 +27,8 @@ package integration_test
 
 import (
 	"context"
+	"fmt"
+	"sort"
 	"testing"
 	"time"
 
@@ -40,8 +42,10 @@ import (
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	tkenc "github.com/KirkDiggler/rpg-toolkit/encounter"
 	"github.com/KirkDiggler/rpg-toolkit/encounter/core"
+	"github.com/KirkDiggler/rpg-toolkit/encounter/perception"
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/refs"
+	"github.com/KirkDiggler/rpg-toolkit/tools/environments"
 )
 
 // dungeonGateHP is deliberately generous (not the usual 12 HP other
@@ -172,29 +176,164 @@ func archetypeMonsters(encData *tkenc.Data) (entrance, boss []core.EntityID) {
 	return entrance, boss
 }
 
-// moveOnto issues the real MoveEntity RPC with a two-waypoint path (current
-// position, target) — a coarse [from, to] jump is immune to tripping over
-// an interior RandomPattern wall that a naively-interpolated multi-hex line
-// might cross — load-bearing for a target many hexes away in an
-// entropy-seeded region, which a full step-by-step path is not safe
-// against. The orchestrator passes the path straight through to the
-// toolkit's Move verb with no rpg-api-side pathing/budget logic
-// (move_entity.go's doc), so this direct jump onto a pre-vetted non-wall
-// floor hex (a monster's own cell — monster.Monster carries no
-// spatial.Placeable blocking) is a valid move, UNLESS a closed door still
-// sits on the path — closed doors block movement (rpg-toolkit's
-// TestClosedDoor_BlocksMovement), so callers reaching through a connector
-// must open it first.
-func (s *DungeonCryptSuite) moveOnto(encounterID, characterID string, from, to core.Hex) error {
-	_, err := s.srv.EncounterClientV2.MoveEntity(s.authCtx("alice"), &encounterv2pb.MoveEntityRequest{
-		EncounterId: encounterID,
-		EntityId:    characterID,
-		ProposedPath: []*encounterv2pb.Position{
-			{X: int32(from.Q), Y: int32(from.R), Z: int32(from.S)},
-			{X: int32(to.Q), Y: int32(to.R), Z: int32(to.S)},
-		},
-	})
-	return err
+func TestPlanWalk_UsesAlternateRouteAndRespectsClosedDoor(t *testing.T) {
+	a := core.Hex{Q: 0, R: 0, S: 0}
+	b := core.Hex{Q: 1, R: 0, S: -1}
+	c := core.Hex{Q: 0, R: 1, S: -1}
+	d := core.Hex{Q: 1, R: 1, S: -2}
+	e := core.Hex{Q: 2, R: 0, S: -2}
+	space := &tkenc.SpaceData{
+		Regions:   []tkenc.RegionData{{Hexes: core.NewHexSet(a, b, c, e)}},
+		Walls:     []environments.WallSegmentData{{Start: b.ToCube(), BlocksMovement: true}},
+		Obstacles: []tkenc.ObstacleData{{Position: b, BlocksMovement: true}},
+	}
+	doors := map[core.EntityID]*tkenc.DoorData{"door": {Position: d}}
+
+	path, err := planWalk(space, doors, a, e)
+	if err == nil {
+		t.Fatalf("closed door path unexpectedly succeeded: %#v", path)
+	}
+	doors["door"].Open = true
+	path, err = planWalk(space, doors, a, e)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(path) != 3 || path[0] != c || path[1] != d || path[2] != e {
+		t.Fatalf("got %#v, want alternate route [%+v %+v %+v]", path, c, d, e)
+	}
+	previous := a
+	for _, step := range path {
+		if !isHexNeighbor(previous, step) {
+			t.Fatalf("non-adjacent step %+v -> %+v", previous, step)
+		}
+		if step == b {
+			t.Fatalf("path used movement blocker %+v", b)
+		}
+		previous = step
+	}
+}
+
+// planWalk is test-only BFS over persisted encounter geometry. It deliberately
+// emits adjacent destinations so this suite never relies on the toolkit's
+// current acceptance of non-contiguous submitted Move paths.
+func planWalk(space *tkenc.SpaceData, doors map[core.EntityID]*tkenc.DoorData, from, target core.Hex) ([]core.Hex, error) {
+	legal := make(map[core.Hex]bool)
+	for _, region := range space.Regions {
+		for _, h := range region.Hexes.Slice() {
+			legal[h] = true
+		}
+	}
+	blocked := make(map[core.Hex]bool)
+	for _, door := range doors {
+		if door.Open {
+			// Connector cells sit between RegionData hex sets, so an open door
+			// is the sole legal-cell exception needed to join adjacent regions.
+			legal[door.Position] = true
+		} else {
+			blocked[door.Position] = true
+		}
+	}
+	for _, wall := range space.Walls {
+		if wall.BlocksMovement {
+			blocked[core.HexFromCube(wall.Start)] = true
+		}
+	}
+	for _, o := range space.Obstacles {
+		if o.BlocksMovement {
+			blocked[o.Position] = true
+		}
+	}
+	if !legal[from] || !legal[target] || blocked[target] {
+		return nil, fmt.Errorf("no walkable route from %+v to %+v", from, target)
+	}
+	previous := map[core.Hex]core.Hex{}
+	seen := map[core.Hex]bool{from: true}
+	queue := []core.Hex{from}
+	for len(queue) > 0 {
+		current := queue[0]
+		queue = queue[1:]
+		if current == target {
+			path := make([]core.Hex, 0)
+			for current != from {
+				path = append([]core.Hex{current}, path...)
+				current = previous[current]
+			}
+			return path, nil
+		}
+		for _, next := range perception.HexNeighbors(current) {
+			if legal[next] && !blocked[next] && !seen[next] {
+				seen[next] = true
+				previous[next] = current
+				queue = append(queue, next)
+			}
+		}
+	}
+	return nil, fmt.Errorf("no walkable route from %+v to %+v", from, target)
+}
+
+// moveAlongPath reloads persisted geometry and replans after every real RPC.
+// Each submitted destination is adjacent and chunks contain at most one turn's
+// six 5ft steps; closed doors and all persisted blockers are avoided locally.
+func (s *DungeonCryptSuite) moveAlongPath(encounterID, characterID string, target core.Hex, turnCap int) error {
+	turns := 0
+	for {
+		data, err := s.srv.EncRepoV2.Get(s.ctx, encounterID)
+		if err != nil {
+			return err
+		}
+		alicePD := data.Players[core.PlayerID("alice")]
+		from := alicePD.View.Position
+		if from == target {
+			return nil
+		}
+		path, err := planWalk(data.Space, data.Doors, from, target)
+		if err != nil {
+			return err
+		}
+		if len(path) > 6 {
+			path = path[:6]
+		}
+		proposed := make([]*encounterv2pb.Position, len(path))
+		previous := from
+		for i, step := range path {
+			if !isHexNeighbor(previous, step) {
+				return fmt.Errorf("planned non-adjacent step %+v -> %+v", previous, step)
+			}
+			proposed[i] = &encounterv2pb.Position{X: int32(step.Q), Y: int32(step.R), Z: int32(step.S)}
+			previous = step
+		}
+		_, moveErr := s.srv.EncounterClientV2.MoveEntity(s.authCtx("alice"), &encounterv2pb.MoveEntityRequest{
+			EncounterId: encounterID, EntityId: characterID, ProposedPath: proposed,
+		})
+		if moveErr == nil {
+			after, err := s.srv.EncRepoV2.Get(s.ctx, encounterID)
+			if err != nil {
+				return err
+			}
+			if after.Players[core.PlayerID("alice")].View.Position == from {
+				return fmt.Errorf("move toward %+v made no progress from %+v", target, from)
+			}
+			continue
+		}
+		if data.Mode != core.ModeTurnBased || turns == turnCap {
+			return moveErr
+		}
+		if _, endErr := s.srv.EncounterClientV2.EndTurn(s.authCtx("alice"), &encounterv2pb.EndTurnRequest{
+			EncounterId: encounterID, EntityId: characterID,
+		}); endErr != nil {
+			return fmt.Errorf("end turn while walking to %+v: %w", target, endErr)
+		}
+		turns++
+	}
+}
+
+func isHexNeighbor(from, to core.Hex) bool {
+	for _, neighbor := range perception.HexNeighbors(from) {
+		if neighbor == to {
+			return true
+		}
+	}
+	return false
 }
 
 // openDoor issues the real Interact RPC against doorID.
@@ -243,6 +382,20 @@ func (s *DungeonCryptSuite) TestStartEncounter_SpawnsAtEntrance_DoorProjectsClos
 // (rpg-toolkit#796, Slice 1b) must NOT drag the still-unsighted boss (two
 // closed connector doors away) into the same initiative roster, or the
 // whole dungeon rolls into one un-endable fight (design doc gap 5).
+// TestEntranceSighting_StartsPocketScopedCombat is gate fact (3): sighting
+// an entrance-region monster starts a combat pocket scoped to the entrance
+// region — the toolkit's LoS-scoped rollInitiative (rpg-toolkit#796, Slice
+// 1b) must NOT drag the still-unsighted boss (two closed connector doors
+// away) into the same initiative roster, or the whole dungeon rolls into
+// one un-endable fight (design doc gap 5).
+//
+// rpg-api#694/#689 merge finding (2026-07-23): with the compact crypt
+// dimensions, the entrance monster's deterministic anchor (near its own
+// outgoing door — regionMonsterAnchor's doc) sits close enough to spawn
+// that reaching it can need more than one turn's movement budget once
+// combat is active — moveAlongPath replans persisted-geometry BFS routes
+// after each real MoveEntity chunk (at most six adjacent destinations) and
+// ends turns only when the turn-based movement budget requires it.
 func (s *DungeonCryptSuite) TestEntranceSighting_StartsPocketScopedCombat() {
 	encounterID, characterID, encData := s.startCryptDungeon("gate2", "alice")
 	entranceIDs, bossIDs := archetypeMonsters(encData)
@@ -253,17 +406,16 @@ func (s *DungeonCryptSuite) TestEntranceSighting_StartsPocketScopedCombat() {
 	s.Require().Equal(refs.Monsters.SkeletonCaptain().String(), encData.Monsters[bossIDs[0]].MonsterRef,
 		"the boss must be rpg-toolkit#816's non-wight skeleton captain")
 
-	alicePD := encData.Players[core.PlayerID("alice")]
 	sightedMonster := entranceIDs[0]
 	target := encData.Monsters[sightedMonster].Position
 
-	err := s.moveOnto(encounterID, characterID, alicePD.View.Position, target)
+	err := s.moveAlongPath(encounterID, characterID, target, 10)
 	s.Require().NoError(err, "moving onto a pre-vetted entrance-region monster hex must not be blocked")
 
 	after, err := s.srv.EncRepoV2.Get(s.ctx, encounterID)
 	s.Require().NoError(err)
 	s.Require().Equal(core.ModeTurnBased, after.Mode,
-		"a Move that sights an entrance-region monster must start a combat pocket (TURN_BASED)")
+		"sighting an entrance-region monster (at spawn or via an explicit Move) must start a combat pocket (TURN_BASED)")
 
 	// Pocket-scoping (design doc: "initiative scoped to engaged (LoS-having)
 	// monsters") means only the sighted monster joins initiative — the boss
@@ -301,6 +453,7 @@ func (s *DungeonCryptSuite) TestBossMonster_NoEntityAppeared_UntilBothDoorsOpenA
 	for id := range encData.Doors {
 		doorIDs = append(doorIDs, string(id))
 	}
+	sort.Strings(doorIDs)
 
 	stream, err := s.srv.EncounterClientV2.StreamEncounter(s.authCtx("alice"),
 		&encounterv2pb.StreamEncounterRequest{EncounterId: encounterID})
@@ -343,14 +496,14 @@ func (s *DungeonCryptSuite) TestBossMonster_NoEntityAppeared_UntilBothDoorsOpenA
 	s.Require().False(sawBossMonster(afterSecondDoor),
 		"opening both connector doors alone must not reveal the boss-region monster — a sightline must still form")
 
-	// Now form a sightline: move alice directly onto the boss monster's hex
-	// (neither door blocks movement/LoS once open — rpg-toolkit#790).
+	// Now form a sightline using only adjacent destinations over the real
+	// MoveEntity RPC path. Both open doors are traversable; no test state is
+	// mutated to get through the dungeon.
 	after, err := s.srv.EncRepoV2.Get(s.ctx, encounterID)
 	s.Require().NoError(err)
-	alicePD := after.Players[core.PlayerID("alice")]
 	target := after.Monsters[bossMonster].Position
 
-	err = s.moveOnto(encounterID, characterID, alicePD.View.Position, target)
+	err = s.moveAlongPath(encounterID, characterID, target, 10)
 	s.Require().NoError(err, "moving through both open connector doors onto the boss monster's hex must not be blocked")
 
 	postMove := drainAvailable(events, 1500*time.Millisecond)
@@ -439,6 +592,7 @@ func (s *DungeonCryptSuite) TestSpaceZonesAndHexZoneId_ProjectRegionsOnTheWire()
 	for id := range encData.Doors {
 		doorIDs = append(doorIDs, string(id))
 	}
+	sort.Strings(doorIDs)
 	s.openDoor(encounterID, doorIDs[0])
 	_ = drainAvailable(events, 500*time.Millisecond)
 	s.openDoor(encounterID, doorIDs[1])
@@ -447,10 +601,18 @@ func (s *DungeonCryptSuite) TestSpaceZonesAndHexZoneId_ProjectRegionsOnTheWire()
 	bossMonster := bossIDs[0]
 	afterOpen, err := s.srv.EncRepoV2.Get(s.ctx, encounterID)
 	s.Require().NoError(err)
-	alicePD := afterOpen.Players[core.PlayerID("alice")]
 	target := afterOpen.Monsters[bossMonster].Position
 
-	err = s.moveOnto(encounterID, characterID, alicePD.View.Position, target)
+	// rpg-api#694/#689 merge finding: the entrance monster's own sightline
+	// commonly starts a combat pocket before this point (see
+	// TestEntranceSighting_StartsPocketScopedCombat's doc) — once that
+	// happens, alice's movement is budget-gated per real turn, and this
+	// target is far enough away (potentially multiple regions) that it can
+	// take more than one turn to reach. moveAlongPath replans persisted-geometry
+	// BFS routes after each real MoveEntity chunk (at most six adjacent
+	// destinations) and uses the real EndTurn RPC when turn-based movement
+	// requires another turn, never adjusting the target itself.
+	err = s.moveAlongPath(encounterID, characterID, target, 10)
 	s.Require().NoError(err, "moving onto the boss-region monster's hex must not be blocked once both doors are open")
 
 	postMove := drainAvailable(events, 1500*time.Millisecond)

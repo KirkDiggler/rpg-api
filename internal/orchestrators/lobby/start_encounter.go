@@ -65,11 +65,13 @@ const spawnPositionSpacing = 1
 const memberSightRange = 10
 
 // chamberWidth/chamberHeight sized EACH chamber of the retired two-chamber
-// dungeon (The Dungeon wave 2 Slice 2, rpg-api#676) — replaced by the
-// crypt dungeonSpec's own cryptEntranceWidth/cryptCorridorWidth/
-// cryptBossWidth/cryptHeight (dungeon_spec.go), keyed and selected via
-// resolveDungeonSpec instead of hardcoded per-call constants
-// (rpg-api#688). No geometry constants remain in this file.
+// dungeon (The Dungeon wave 2 Slice 2, rpg-api#676) — replaced by
+// resolveDungeonSpec (dungeon_spec.go), keyed by DungeonKey instead of
+// hardcoded per-call constants (rpg-api#688). rpg-api#694 goes further for
+// the crypt key: resolveDungeonSpec forwards to the toolkit's own
+// tkenc.CryptDungeonParams constructor rather than holding an API-owned
+// literal region/height/obstacle spec — no geometry constants remain in
+// this file.
 
 // entityGroupTypeMonster is the spawn.EntityGroup.Type tag for monster
 // placement groups (crypt_monster_seed.go's seedRegionMonsters).
@@ -107,8 +109,12 @@ func (o *Orchestrator) StartEncounter(ctx context.Context, in *StartEncounterInp
 	// Resolve the dungeon spec BEFORE touching the lobby lock or building
 	// anything — an unknown key must fail loudly with zero side effects
 	// (rpg-api#688's boundary note: rpg-api never invents geometry for a
-	// key it doesn't recognize).
-	dungeonKey, spec, specErr := resolveDungeonSpec(in.DungeonKey)
+	// key it doesn't recognize). in.RandomSeed threads straight through to
+	// the resolved tkenc.DungeonParams.RandomSeed (rpg-api#694: the crypt
+	// key's builder calls tkenc.CryptDungeonParams(seed, ...), which sets
+	// it) — entropy-seeded when zero, same as every other InitRoom/
+	// InitDungeon caller.
+	dungeonKey, dungeonParams, specErr := resolveDungeonSpec(in.DungeonKey, in.RandomSeed)
 	if specErr != nil {
 		return nil, specErr
 	}
@@ -149,18 +155,12 @@ func (o *Orchestrator) StartEncounter(ctx context.Context, in *StartEncounterInp
 	// InitDungeon is what sets it (via AddDoor's internal
 	// rebuildRoomFromData — rpg-toolkit encounter/space.go's doc). Building
 	// the dungeon (N regions + N-1 plain doors + entrance + per-region
-	// archetype tags + opaque theme) is entirely the toolkit's call —
-	// rpg-api only supplies the resolved spec's literal config by key
-	// (rpg-api#688). RandomSeed defaults to zero (entropy-seeded) unless the
-	// caller supplies one — no proto field carries a seed yet, so every real
-	// handler call leaves this at the zero value.
-	if err := enc.InitDungeon(tkenc.DungeonParams{
-		Regions:    spec.regions,
-		Connectors: spec.connectors,
-		Height:     spec.height,
-		RandomSeed: in.RandomSeed,
-		Theme:      spec.theme,
-	}); err != nil {
+	// archetype tags + opaque theme + physical set-piece obstacles) is
+	// entirely the toolkit's call — rpg-api only supplies the resolved
+	// key's toolkit-constructed params verbatim (rpg-api#688, rpg-api#694).
+	// dungeonParams.RandomSeed is already in.RandomSeed, threaded in by
+	// resolveDungeonSpec above.
+	if err := enc.InitDungeon(dungeonParams); err != nil {
 		return nil, fmt.Errorf("init dungeon (key=%q) for encounter %q: %w", dungeonKey, encID, err)
 	}
 
@@ -206,7 +206,11 @@ func (o *Orchestrator) StartEncounter(ctx context.Context, in *StartEncounterInp
 	// seedRegionMonsters/buildMonsterSeedGroups/regionMonsterAnchor), no
 	// PositionOracle search/retry. Concealment (when it happens) comes
 	// from real door/wall LoS geometry, not a placement predicate.
-	if err := o.seedRegionMonsters(ctx, enc, encID, spec, dungeonKey); err != nil {
+	// dungeonParams is the same toolkit-constructed params InitDungeon was
+	// just given above (rpg-api#694: CryptDungeonParams' own Regions/
+	// Connectors, not an API-owned literal) — seedRegionMonsters is generic
+	// over that shape regardless of which key produced it.
+	if err := o.seedRegionMonsters(ctx, enc, encID, dungeonParams, dungeonKey); err != nil {
 		return nil, fmt.Errorf("seed monsters for encounter %q: %w", encID, err)
 	}
 

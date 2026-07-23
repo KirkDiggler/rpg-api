@@ -368,6 +368,25 @@ func TestRegionByArchetype_NoMatch_ReturnsNotOK(t *testing.T) {
 	require.False(t, ok)
 }
 
+// regionParamsByArchetype is regionByArchetype's sibling over
+// tkenc.DungeonParams.Regions (the toolkit CONSTRUCTOR's input params,
+// pre-generation) rather than over a persisted tkenc.SpaceData.Regions
+// (post-generation output) — used by rpg-api#694's tests to read expected
+// per-region Width/Obstacles directly off a fresh tkenc.CryptDungeonParams
+// call instead of hardcoding a number that could silently drift from the
+// toolkit's own crypt template.
+func regionParamsByArchetype(params tkenc.DungeonParams, archetype tkenc.RegionArchetype) (tkenc.DungeonRegionParams, bool) {
+	var found tkenc.DungeonRegionParams
+	count := 0
+	for _, r := range params.Regions {
+		if r.Archetype == archetype {
+			found = r
+			count++
+		}
+	}
+	return found, count == 1
+}
+
 func TestRegionByArchetype_ExactlyOneMatch_ReturnsIt(t *testing.T) {
 	boss := tkenc.RegionData{ID: "boss", Archetype: tkenc.ArchetypeBoss}
 	space := &tkenc.SpaceData{Regions: []tkenc.RegionData{{ID: "entrance", Archetype: tkenc.ArchetypeEntrance}, boss}}
@@ -412,33 +431,51 @@ func regionBoundingWidth(region tkenc.RegionData) int {
 }
 
 // TestStartEncounter_CryptDungeon_ThreeRegionsArchetypesThemeScaleAndEntrance
-// is the rpg-api#688 headline proof: StartEncounter now builds the
-// toolkit's generic InitDungeon N-region linear chain selected by the
-// crypt key (rpg-toolkit#814's Approved Slice 3 corrections) instead of
-// the retired two-chamber constants — exactly 3 regions (entrance ->
-// corridor -> boss), each carrying its own RegionArchetype,
-// Space.Theme == "crypt" passed through opaque and unbranched, the boss
-// region's scale invariant (primary playable axis > 6 hex steps, enforced
-// by the toolkit's own validateDungeonParams at generation time — not
-// eyeballed here), and the party spawning inside the entrance region at
-// its designated anchor.
+// is the rpg-api#688 headline proof (updated by rpg-api#694 to read
+// expected dimensions off the toolkit constructor itself, never a
+// hardcoded literal): StartEncounter now builds the toolkit's generic
+// InitDungeon N-region linear chain selected by the crypt key
+// (rpg-toolkit#814's Approved Slice 3 corrections, rpg-toolkit#826's
+// CryptDungeonParams) instead of the retired two-chamber constants —
+// exactly 3 regions (entrance -> corridor -> boss), each carrying its own
+// RegionArchetype, Space.Theme == "crypt" passed through opaque and
+// unbranched, the boss region's scale invariant (primary playable axis >
+// 6 hex steps, enforced by the toolkit's own validateDungeonParams at
+// generation time — not eyeballed here), and the party spawning inside
+// the entrance region at its designated anchor.
+//
+// wantParams is built by calling tkenc.CryptDungeonParams directly with
+// the SAME seed StartEncounter is given below — the door IDs passed here
+// are throwaway placeholders (rpg-api#694: Width/Height/Theme/Regions/
+// Obstacles never depend on which door ID string a caller picks), used
+// only so this black-box test never hardcodes a region width/height that
+// could silently drift from the toolkit's own crypt template.
 func (s *LobbySuite) TestStartEncounter_CryptDungeon_ThreeRegionsArchetypesThemeScaleAndEntrance() {
+	const seed = 42
+	wantParams := tkenc.CryptDungeonParams(seed, "want-door-1", "want-door-2")
+
 	s.seedReadyLobby("lobby-crypt1", "alice", "bob")
 	s.expectCharacter("char-alice", "alice", "Alice", 12, 12)
 	s.expectCharacter("char-bob", "bob", "Bob", 10, 10)
 
 	out, err := s.orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
 		PlayerID: "alice", LobbyID: "lobby-crypt1",
-		DungeonKey: lobbyorch.DungeonKeyCrypt, RandomSeed: 42,
+		DungeonKey: lobbyorch.DungeonKeyCrypt, RandomSeed: seed,
 	})
 	s.Require().NoError(err)
 
 	encData, err := s.encRepo.Get(s.ctx, out.EncounterID)
 	s.Require().NoError(err)
 	s.Require().NotNil(encData.Space, "StartEncounter must create the encounter with an InitDungeon space")
-	s.Require().Equal("crypt", encData.Space.Theme, "the crypt spec's opaque theme must pass through verbatim")
-	s.Require().Equal(20, encData.Space.Height)
-	s.Require().Equal(42, encData.Space.Width, "42 = entrance(20) + door-column(1) + corridor(6) + door-column(1) + boss(14)")
+	s.Require().Equal(wantParams.Theme, encData.Space.Theme, "the crypt spec's opaque theme must pass through verbatim")
+	s.Require().Equal(wantParams.Height, encData.Space.Height)
+	wantWidth := 0
+	for _, r := range wantParams.Regions {
+		wantWidth += r.Width + 1
+	}
+	wantWidth-- // no trailing boundary column after the last region
+	s.Require().Equal(wantWidth, encData.Space.Width,
+		"total width = sum(region width + 1 door-column) - 1 trailing column, entirely toolkit-derived")
 	s.Require().Len(encData.Space.Regions, 3, "the crypt spec is a 3-region linear chain: entrance -> corridor -> boss")
 
 	entrance, entranceOK := regionByArchetype(encData.Space, tkenc.ArchetypeEntrance)
@@ -448,9 +485,12 @@ func (s *LobbySuite) TestStartEncounter_CryptDungeon_ThreeRegionsArchetypesTheme
 	boss, bossOK := regionByArchetype(encData.Space, tkenc.ArchetypeBoss)
 	s.Require().True(bossOK, "exactly one boss-archetype region")
 
-	s.Require().Equal(20, regionBoundingWidth(entrance))
-	s.Require().Equal(6, regionBoundingWidth(corridor))
-	s.Require().Equal(14, regionBoundingWidth(boss))
+	entranceParams, _ := regionParamsByArchetype(wantParams, tkenc.ArchetypeEntrance)
+	corridorParams, _ := regionParamsByArchetype(wantParams, tkenc.ArchetypeCorridor)
+	bossParams, _ := regionParamsByArchetype(wantParams, tkenc.ArchetypeBoss)
+	s.Require().Equal(entranceParams.Width, regionBoundingWidth(entrance))
+	s.Require().Equal(corridorParams.Width, regionBoundingWidth(corridor))
+	s.Require().Equal(bossParams.Width, regionBoundingWidth(boss))
 
 	// rpg-toolkit#814's Approved Slice 3 corrections' scale invariant: the
 	// boss region's primary playable axis (min(width, shared height)) must
@@ -486,7 +526,137 @@ func (s *LobbySuite) TestStartEncounter_CryptDungeon_ThreeRegionsArchetypesTheme
 	s.Require().True(bobOK)
 	s.Require().Equal(tkenc.ArchetypeEntrance, bobArchetype, "every member must spawn inside the entrance region")
 
-	s.Require().Equal(core.ModeFreeRoam, encData.Mode, "combat must not start at spawn")
+	// No FreeRoam/TurnBased assertion here (rpg-api#689, 2026-07-23): this
+	// test predates the deterministic-anchor monster composition merged in
+	// alongside rpg-api#694. The retired out-of-sight goblin search
+	// guaranteed FreeRoam at spawn; #689's FixedPositions anchors carry no
+	// such guarantee and the revised issue explicitly allows the entrance
+	// monster to be visible and trigger combat immediately — see
+	// TestStartEncounter_CryptMonsters_OneEntranceSkeletonZeroCorridorOneBoss's
+	// own doc for the same reasoning. Whatever the real toolkit LoS produces
+	// is what StartEncounter must honor, not an rpg-api-side guarantee.
+}
+
+// obstaclesByRef tallies a region's placed tkenc.ObstacleData by Ref, and
+// records the (BlocksMovement, BlocksLoS) pair seen for each Ref — used by
+// the obstacle tests below to assert exact counts and blocking flags
+// without hardcoding a region's full obstacle list inline per test. Fails
+// fast (via require.Equal) if the SAME Ref ever shows two different
+// blocking-flag pairs across its placed instances — Copilot review catch
+// on this PR: a naive last-one-wins map assignment would silently accept
+// inconsistent data and still pass every per-ref blocking assertion below,
+// masking exactly the kind of bad data these tests exist to catch.
+type obstacleBlocking struct {
+	blocksMovement bool
+	blocksLoS      bool
+}
+
+func obstaclesByRef(
+	t require.TestingT, obstacles []tkenc.ObstacleData,
+) (counts map[string]int, blocking map[string]obstacleBlocking) {
+	counts = map[string]int{}
+	blocking = map[string]obstacleBlocking{}
+	for _, o := range obstacles {
+		counts[o.Ref]++
+		got := obstacleBlocking{blocksMovement: o.BlocksMovement, blocksLoS: o.BlocksLoS}
+		if existing, seen := blocking[o.Ref]; seen {
+			require.Equal(t, existing, got,
+				"obstacle ref %q must carry consistent blocking flags across every placed instance", o.Ref)
+		}
+		blocking[o.Ref] = got
+	}
+	return counts, blocking
+}
+
+// TestStartEncounter_CryptObstacles_ExactRefsCountsAndBlockingByRegion is
+// rpg-api#694's headline proof: a REAL StartEncounter call persists a
+// non-empty SpaceData.Obstacles list whose refs/counts/blocking flags are
+// the EXACT canonical set rpg-toolkit#826's CryptDungeonParams places —
+// entrance (1 obelisk + 2 pillars), corridor (1 pillar), boss (1 coffin +
+// 1 altar + 1 statue-reaper + 1 statue-knight-hooded) — read off the
+// toolkit's own exported Ref constants, never a string this package
+// invents. rpg-api never computed this list itself; it is entirely the
+// toolkit constructor's output, InitDungeon's placement, and this
+// package's job is only to have asked for it via CryptDungeonParams.
+func (s *LobbySuite) TestStartEncounter_CryptObstacles_ExactRefsCountsAndBlockingByRegion() {
+	s.seedReadyLobby("lobby-crypt-obstacles1", "alice")
+	s.expectCharacter("char-alice", "alice", "Alice", 12, 12)
+
+	out, err := s.orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		PlayerID: "alice", LobbyID: "lobby-crypt-obstacles1",
+		DungeonKey: lobbyorch.DungeonKeyCrypt, RandomSeed: 300,
+	})
+	s.Require().NoError(err)
+
+	encData, err := s.encRepo.Get(s.ctx, out.EncounterID)
+	s.Require().NoError(err)
+	s.Require().NotEmpty(encData.Space.Obstacles, "a real StartEncounter call must persist a non-empty obstacle list")
+
+	byRegion := map[tkenc.RegionArchetype][]tkenc.ObstacleData{}
+	seenIDs := make(map[core.EntityID]bool, len(encData.Space.Obstacles))
+	for _, o := range encData.Space.Obstacles {
+		s.Require().False(seenIDs[o.ID], "obstacle IDs must be unique: %q", o.ID)
+		seenIDs[o.ID] = true
+		archetype, ok := regionArchetypeAt(encData.Space, o.Position)
+		s.Require().True(ok, "obstacle %q must be placed inside a tagged region", o.ID)
+		byRegion[archetype] = append(byRegion[archetype], o)
+	}
+
+	entranceCounts, entranceBlocking := obstaclesByRef(s.T(), byRegion[tkenc.ArchetypeEntrance])
+	s.Require().Equal(map[string]int{
+		tkenc.CryptObstacleRefObelisk: 1,
+		tkenc.CryptObstacleRefPillar:  2,
+	}, entranceCounts, "entrance region: exactly 1 obelisk + 2 pillars")
+	s.Require().Equal(obstacleBlocking{blocksMovement: true, blocksLoS: true}, entranceBlocking[tkenc.CryptObstacleRefObelisk])
+	s.Require().Equal(obstacleBlocking{blocksMovement: true, blocksLoS: true}, entranceBlocking[tkenc.CryptObstacleRefPillar])
+
+	corridorCounts, _ := obstaclesByRef(s.T(), byRegion[tkenc.ArchetypeCorridor])
+	s.Require().Equal(map[string]int{
+		tkenc.CryptObstacleRefPillar: 1,
+	}, corridorCounts, "corridor region: exactly 1 sparse pillar, no others")
+
+	bossCounts, bossBlocking := obstaclesByRef(s.T(), byRegion[tkenc.ArchetypeBoss])
+	s.Require().Equal(map[string]int{
+		tkenc.CryptObstacleRefCoffin:             1,
+		tkenc.CryptObstacleRefAltar:              1,
+		tkenc.CryptObstacleRefStatueReaper:       1,
+		tkenc.CryptObstacleRefStatueKnightHooded: 1,
+	}, bossCounts, "boss region: coffin + altar + one of each statue variant")
+	s.Require().Equal(obstacleBlocking{blocksMovement: true, blocksLoS: false}, bossBlocking[tkenc.CryptObstacleRefCoffin],
+		"the coffin/tomb blocks movement but not line of sight -- walk around, see over")
+	s.Require().Equal(obstacleBlocking{blocksMovement: true, blocksLoS: true}, bossBlocking[tkenc.CryptObstacleRefAltar])
+	s.Require().Equal(obstacleBlocking{blocksMovement: true, blocksLoS: true}, bossBlocking[tkenc.CryptObstacleRefStatueReaper])
+	s.Require().Equal(obstacleBlocking{blocksMovement: true, blocksLoS: true},
+		bossBlocking[tkenc.CryptObstacleRefStatueKnightHooded])
+}
+
+// TestStartEncounter_CryptObstacles_ExplicitSeed_DeterministicPositions
+// proves obstacle PLACEMENT (not just refs/counts) is deterministic under
+// an explicit seed, mirroring TestStartEncounter_ExplicitSeed_
+// ReproducibleDungeonLayout's whole-Space proof but calling out obstacles
+// specifically since they are this issue's headline addition.
+func (s *LobbySuite) TestStartEncounter_CryptObstacles_ExplicitSeed_DeterministicPositions() {
+	s.seedReadyLobby("lobby-crypt-obstacles2a", "alice")
+	s.expectCharacter("char-alice", "alice", "Alice", 12, 12)
+	out1, err := s.orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		PlayerID: "alice", LobbyID: "lobby-crypt-obstacles2a", RandomSeed: 271,
+	})
+	s.Require().NoError(err)
+	data1, err := s.encRepo.Get(s.ctx, out1.EncounterID)
+	s.Require().NoError(err)
+
+	s.seedReadyLobby("lobby-crypt-obstacles2b", "bob")
+	s.expectCharacter("char-bob", "bob", "Bob", 10, 10)
+	out2, err := s.orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		PlayerID: "bob", LobbyID: "lobby-crypt-obstacles2b", RandomSeed: 271,
+	})
+	s.Require().NoError(err)
+	data2, err := s.encRepo.Get(s.ctx, out2.EncounterID)
+	s.Require().NoError(err)
+
+	s.Require().NotEmpty(data1.Space.Obstacles)
+	s.Require().Equal(data1.Space.Obstacles, data2.Space.Obstacles,
+		"the same explicit RandomSeed must reproduce byte-identical obstacle placement")
 }
 
 // TestStartEncounter_CryptMonsters_OneEntranceSkeletonZeroCorridorOneBoss

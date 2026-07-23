@@ -1,105 +1,44 @@
 {
-  "branch": "infra/699-shared-integration-redis",
-  "issues": ["#699"],
-  "goal": "Split Redis container lifecycle ownership from per-test TestServer/service wiring in internal/integration/harness. One shared Redis testcontainer per test process (internal/integration and internal/integration/character each own one), started once and terminated once, while every test still gets fresh gRPC/repos/brokers/clients and a FlushRedis before it runs. Preserve standalone harness.New owning behavior for callers outside the package fixture.",
-  "dependencies": {},
-  "open_pr_coordination": {
-    "pr-698": "feat/689-deterministic-crypt-monsters — already merged into main before this branch was cut from origin/main; no rebase/merge needed."
+  "branch": "feat/694-consume-crypt-dungeon-params",
+  "issues": ["rpg-api#694", "rpg-api#689 via PR #698", "rpg-api#699 via PR #700"],
+  "goal": "Use toolkit CryptDungeonParams for the crypt, retain its canonical obstacles, seed the approved deterministic 1 entrance skeleton / 0 corridor / 1 skeleton-captain composition through FixedPositions, and retain the shared Redis integration-fixture lifecycle.",
+  "dependencies": {
+    "rpg-api#698": "merged as 5b90d2f; deterministic crypt monster composition",
+    "rpg-api#700": "merged as 36902ee; one Redis container per integration test process with fresh leased and flushed TestServers",
+    "rpg-toolkit/encounter": "v0.38.0; CryptDungeonParams",
+    "rpg-toolkit/rulebooks/dnd5e": "v0.68.0; SkeletonCaptain"
   },
   "sessions": [
     {
-      "id": "2026-07-23-001",
-      "task": "RED then GREEN: split Redis container ownership from TestServer wiring in internal/integration/harness (RedisContainer/StartRedis/Terminate/Lease, NewWithRedis, idempotent Close)",
+      "id": "2026-07-23-694",
+      "task": "Resolve DungeonKeyCrypt through tkenc.CryptDungeonParams and persist canonical obstacles.",
       "status": "completed",
-      "artifacts": [
-        "internal/integration/harness/redis_container.go",
-        "internal/integration/harness/lifecycle_internal_test.go",
-        "internal/integration/harness/harness.go"
-      ],
-      "commit": "745578d",
-      "notes": "Docker-free whitebox tests using a fakeContainer (embeds nil testcontainers.Container, overrides only Terminate) and a redismocks.MockClient. Each of the 3 lifecycle invariants (closeOnce guard, leaseMu lock, termOnce guard) was mutated out individually and reproduced the exact failure its test exists to catch, then reverted."
+      "commit": "846fa0d..e26e408",
+      "notes": "#696's retired out-of-sight goblin placement issue is closed, not planned; no retry, search, or room resize is retained."
     },
     {
-      "id": "2026-07-23-002",
-      "task": "Convert every suite in internal/integration (DungeonCryptSuite first, then EncounterV2IntegrationSuite, CryptMonsterSeedRedisSuite, LobbyStartThenMoveSuite, LobbyV1alpha1IntegrationSuite) to a shared package-level RedisContainer via a new TestMain",
+      "id": "2026-07-23-697-premerge",
+      "task": "Integrate #698 deterministic placement with #694 toolkit parameters and obstacle-aware compact-crypt tests.",
       "status": "completed",
-      "artifacts": [
-        "internal/integration/main_test.go",
-        "internal/integration/dungeon_crypt_test.go",
-        "internal/integration/encounter_v2_test.go",
-        "internal/integration/lobby_crypt_monster_seed_test.go",
-        "internal/integration/lobby_start_then_move_test.go",
-        "internal/integration/lobby_v1alpha1_test.go"
-      ],
-      "commit": "4c3b519",
-      "notes": "go test ./internal/integration/ -v starts/terminates exactly 1 redis:7-alpine container for all 28 test methods across 5 suites (previously 1 per test method). All pass."
+      "commit": "ad31e28",
+      "notes": "Production path uses FixedPositions only and preserves the exact 1/0/1 composition."
     },
     {
-      "id": "2026-07-23-003",
-      "task": "Convert internal/integration/character (separate Go test process) to its own shared RedisContainer + TestMain; move CharacterCreationSuite off SetupSuite-shared-everything onto per-test-fresh NewWithRedis",
+      "id": "2026-07-23-700-merge",
+      "task": "Merge #700 shared Redis fixture and retain its lifecycle, freshness, and isolation regression coverage.",
       "status": "completed",
-      "artifacts": [
-        "internal/integration/character/main_test.go",
-        "internal/integration/character/creation_test.go"
-      ],
-      "commit": "8289f52",
-      "notes": "This package's suite previously shared one full TestServer (gRPC server/repos/brokers) across all 7 tests via SetupSuite, relying solely on FlushRedis for isolation. Now every test gets its own fresh TestServer via NewWithRedis against the process's one shared container, matching the discipline used in internal/integration."
+      "commit": "053b000",
+      "notes": "Merged main includes #700. Targeted integration suites use the package TestMain fixture and one Redis container per test process."
     },
     {
-      "id": "2026-07-23-004",
-      "task": "fmt/lint clean-up + full non-Docker verification (build/vet/fmt/imports/tidy/lint vs origin/main baseline, non-integration unit tests -race)",
+      "id": "2026-07-23-697-path-driver",
+      "task": "Replace crypt integration-test teleport paths with persisted-geometry BFS and bounded adjacent MoveEntity chunks.",
       "status": "completed",
-      "artifacts": [
-        "internal/integration/main_test.go",
-        "internal/integration/character/main_test.go",
-        "internal/integration/harness/lifecycle_internal_test.go"
-      ],
-      "commit": "531c380",
-      "notes": "golangci-lint run: 29 issues, byte-for-byte identical categories/counts vs a clean origin/main worktree (verified side by side) — zero new lint debt. go generate ./... mock drift (7 files) reproduced identically on origin/main, reverted as out-of-scope (same precedent as #689/PR#698). go test -race on all non-internal/integration packages: green."
-    },
-    {
-      "id": "2026-07-23-005",
-      "task": "Single authorized full run: go test -v -race ./internal/integration/...; docs update with measured before/after",
-      "status": "completed",
-      "artifacts": [
-        "docs/status.md",
-        "docs/how-to/run-integration-tests.md",
-        "docs/architecture/components/integration-test-harness.md"
-      ],
-      "commit": "935cbb7",
-      "notes": "Exactly one full run: exit 0, 37.4s wall clock (/usr/bin/time -v), exactly 3 redis:7-alpine containers created/terminated total (one per Go test process: internal/integration, internal/integration/character, internal/integration/harness — confirmed via TestMain STARTED/TERMINATED log lines and 3x 'Creating container for image redis:7-alpine'). docker ps confirmed zero leaked containers afterward. Goroutine-count spot check after 8 tests in internal/integration: 3 (stable, no broker/gRPC leak). Compares to the accepted ~283s/33-container baseline; this branch's own actual pre-#699 count would have measured 30 (character suite already amortized 7 tests onto 1 container via SetupSuite pre-#699 — noted honestly in docs/status.md rather than repeating the issue's 33 uncritically)."
-    },
-    {
-      "id": "2026-07-23-006",
-      "task": "PR #700 opened; addressed 4 Copilot review comments (fresh cleanup ctx, idempotency docstring, misleading 'Shared' log wording, success/failure Terminate logging); replied individually and resolved all 4 threads",
-      "status": "completed",
-      "artifacts": [
-        "internal/integration/harness/harness.go",
-        "internal/integration/harness/redis_container.go"
-      ],
-      "commit": "9daa277",
-      "notes": "CI (build, test) green; mergeStateStatus CLEAN. PR intentionally left open, not merged."
-    },
-    {
-      "id": "2026-07-23-007",
-      "task": "Close an independent-review gap: add durable regression coverage for (1) per-test application freshness across two NewWithRedis instances and (2) shared-Redis state isolation via the exact FlushRedis sequence SetupTest uses, with a fixed key immune to ID-collision false negatives",
-      "status": "completed",
-      "artifacts": [
-        "internal/integration/shared_fixture_regression_test.go",
-        "internal/integration/harness/harness.go",
-        "docs/how-to/run-integration-tests.md",
-        "docs/status.md",
-        "docs/architecture/components/integration-test-harness.md",
-        ".claude/tests.json"
-      ],
-      "commit": "PENDING",
-      "notes": "New TestSharedRedisFixture_PerTestFreshnessAndStateIsolation in internal/integration (primary package, so a targeted -run starts only that package's one container). per_test_application_freshness is a characterization test (passed immediately, pinning NewWithRedis's existing fresh-wiring behavior) — added TestServer.GRPCServer(), a minimal test-only seam on the harness package (test-support code, never imported by production), to make gRPC server identity assertable alongside the existing exported BrokerV2/LobbyBroker/EncRepoV2/LobbyRepo/CharacterRepo fields. shared_redis_state_isolation_via_flush is mutation-tested: temporarily skipping the second cycle's FlushRedis call reproduced 'Should be zero, but was 1' (RED), reverted to GREEN. Targeted run: 1 container, ~13-14s wall (mostly container start/teardown; test body 0.02-0.03s), race-clean. Also fixed docs/how-to/run-integration-tests.md's inaccurate '36 containers before #699' wording to the verified actual 30 (36 remains correct as the total TEST METHOD count, kept separately). Did NOT re-run go test ./internal/integration/... locally per instructions — full-package confirmation deferred to CI."
+      "commit": null,
+      "notes": "BFS reads region cells, wall starts, obstacle positions, and door state; open connector cells join regions, closed doors remain blocked."
     }
   ],
   "next_steps": [
-    "Push branch, update PR #700 body with the new regression coverage + docs correction",
-    "Inspect CI's full-package run log/container count on the new push (do not re-run locally)",
-    "Address any new automated comments individually",
-    "Do not merge — awaiting explicit approval per repo workflow"
+    "Push the path-driver test commit, inspect current-head CI and new review threads, and do not merge the PR."
   ]
 }

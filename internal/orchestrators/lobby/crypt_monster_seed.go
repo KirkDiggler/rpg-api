@@ -88,17 +88,44 @@ type monsterSeedSpec struct {
 // first crypt learning slice's exact composition (rpg-api#689's 2026-07-23
 // correction): one entrance minion, one boss, and — by deliberate omission,
 // not a zero-count entry — no spec for ArchetypeCorridor at all.
+//
+// ORDER IS LOAD-BEARING (rpg-api#694/#689 merge finding, 2026-07-23): the
+// boss spec MUST come before the entrance spec here. seedRegionMonsters
+// below calls enc.AddMonster once per spec, in this slice's order.
+// rpg-toolkit's AddMonster has a documented "reinforcement" behavior
+// (encounter/encounter.go: "A monster added while combat is already
+// running joins the initiative order — appended to the end") that fires
+// unconditionally, with NO visibility check, for any monster added AFTER
+// the encounter has already flipped to TURN_BASED. Under #694's compact
+// crypt dimensions the entrance monster's deterministic anchor (near its
+// own outgoing door, by design — see regionMonsterAnchor's doc) is
+// frequently within a fresh party's SightRange, so entrance's own
+// AddMonster call alone can trigger TURN_BASED before the boss is even
+// added. If entrance were added FIRST here, the boss's later AddMonster
+// call would hit that reinforcement path and join initiative completely
+// unconditionally — provably wrong (verified directly via
+// perception.CanSeeAt on the final persisted state: the boss is NOT
+// visible) but toolkit-correct BY DESIGN for genuine mid-combat
+// reinforcements, which this initial-seeding call is not. Adding the boss
+// FIRST (while the encounter is still guaranteed FREE_ROAM — nothing has
+// been added yet to see) means the boss is already present in
+// e.data.Monsters by the time entrance's own AddMonster call triggers the
+// FIRST real combat-entry roll; that roll's rollInitiative->
+// engagedMonsters() scan is a genuine, current perception.CanSeeAt check
+// against every already-added monster, correctly excluding the
+// still-unseen boss. No toolkit change, no new search/retry logic — pure
+// call-order sequencing, entirely within rpg-api's own orchestration.
 func cryptMonsterSeedSpecs() []monsterSeedSpec {
 	return []monsterSeedSpec{
-		{
-			archetype: tkenc.ArchetypeEntrance, newMonster: monsters.NewSkeleton,
-			speed: cryptMinionSpeed, attackBonus: cryptMinionAttackBonus,
-			damageDice: cryptMinionDamageDice, damageType: cryptMinionDamageType,
-		},
 		{
 			archetype: tkenc.ArchetypeBoss, newMonster: monsters.NewSkeletonCaptain,
 			speed: cryptBossSpeed, attackBonus: cryptBossAttackBonus,
 			damageDice: cryptBossDamageDice, damageType: cryptBossDamageType,
+		},
+		{
+			archetype: tkenc.ArchetypeEntrance, newMonster: monsters.NewSkeleton,
+			speed: cryptMinionSpeed, attackBonus: cryptMinionAttackBonus,
+			damageDice: cryptMinionDamageDice, damageType: cryptMinionDamageType,
 		},
 	}
 }
@@ -202,13 +229,21 @@ type monsterSeedPlan struct {
 // the real room (spawn's own Room.CanPlaceEntity contract) before use, so
 // an invalid anchor is a SpawnFailure, never a silent bad placement.
 //
+// params is the resolved tkenc.DungeonParams for this encounter (rpg-api#694:
+// resolveDungeonSpec's own toolkit-constructed output — CryptDungeonParams'
+// Regions/Connectors for the crypt key, not an API-owned literal) — this
+// function only ever reads params.Regions/params.Connectors, so it is
+// generic over whichever key produced them, exactly like
+// crypt_dungeon_params_fixture_internal_test.go proved directly against
+// tkenc.CryptDungeonParams's own output before this switch landed.
+//
 // Returns an error (no silent fallback) for an unregistered dungeonKey or
 // any archetype whose anchor can't be resolved.
 func buildMonsterSeedGroups(
 	space *tkenc.SpaceData,
 	doors map[core.EntityID]*tkenc.DoorData,
 	room spatial.Room,
-	spec dungeonSpec,
+	params tkenc.DungeonParams,
 	dungeonKey DungeonKey,
 ) (*spawn.BasicSelectablesRegistry, []monsterSeedPlan, []spawn.EntityGroup, error) {
 	specsFn, ok := monsterSeedSpecsByKey[dungeonKey]
@@ -223,7 +258,7 @@ func buildMonsterSeedGroups(
 	registry := spawn.NewBasicSelectablesRegistry()
 
 	for _, ms := range specs {
-		anchor, regionID, err := regionMonsterAnchor(space, spec.regions, spec.connectors, doors, room, ms.archetype)
+		anchor, regionID, err := regionMonsterAnchor(space, params.Regions, params.Connectors, doors, room, ms.archetype)
 		if err != nil {
 			return nil, nil, nil, fmt.Errorf("resolve anchor for archetype %q: %w", ms.archetype, err)
 		}
@@ -254,12 +289,14 @@ func buildMonsterSeedGroups(
 // via spawn.FixedPositions only, never a PositionOracle search. Retires
 // seedGoblins for this call site entirely; regionEntryAnchor (still used by
 // regionMonsterAnchor above) is the only piece of the old goblin path this
-// keeps.
+// keeps. params is StartEncounter's already-resolved tkenc.DungeonParams
+// (rpg-api#694: resolveDungeonSpec's toolkit-constructed output) — the
+// SAME value InitDungeon was just called with, never re-derived here.
 func (o *Orchestrator) seedRegionMonsters(
 	ctx context.Context,
 	enc *tkenc.Encounter,
 	encID core.EncounterID,
-	spec dungeonSpec,
+	params tkenc.DungeonParams,
 	dungeonKey DungeonKey,
 ) error {
 	room := enc.Room()
@@ -272,7 +309,7 @@ func (o *Orchestrator) seedRegionMonsters(
 	}
 	doors := enc.ToData().Doors
 
-	registry, plans, groups, err := buildMonsterSeedGroups(space, doors, room, spec, dungeonKey)
+	registry, plans, groups, err := buildMonsterSeedGroups(space, doors, room, params, dungeonKey)
 	if err != nil {
 		return err
 	}

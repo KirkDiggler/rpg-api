@@ -1,86 +1,42 @@
 {
   "tests": [
     {
-      "id": "owned-close-terminates-once",
-      "feature": "redis-container-lifecycle-ownership",
-      "prompt": "Construct a TestServer via harness.New (or the underlying ownership seam) with a fake Redis container terminator. Call Close(). Verify Terminate was called exactly once.",
-      "test_ref": "internal/integration/harness/lifecycle_internal_test.go:TestServer_Close_OwnedContainer_TerminatesOnce",
-      "passes": true,
-      "last_checked": "2026-07-23"
+      "id": "crypt-toolkit-constructor-and-obstacles",
+      "feature": "rpg-api#694",
+      "prompt": "resolveDungeonSpec(DungeonKeyCrypt, seed) must match tkenc.CryptDungeonParams exactly; StartEncounter must persist its non-empty canonical obstacle refs, counts, blocking flags, and deterministic geometry.",
+      "passes": true
     },
     {
-      "id": "borrowed-close-never-terminates",
-      "feature": "redis-container-lifecycle-ownership",
-      "prompt": "Construct a TestServer via harness.NewWithRedis against an already-running Redis address (non-owning). Call Close(). Verify the shared container's Terminate is never called.",
-      "test_ref": "internal/integration/harness/lifecycle_internal_test.go:TestServer_Close_BorrowedContainer_NeverTerminates",
-      "passes": true,
-      "last_checked": "2026-07-23"
+      "id": "deterministic-crypt-composition",
+      "feature": "rpg-api#689",
+      "prompt": "For seeds 1..1000 and party sizes 1..4, the combined production path has zero errors, exactly one entrance skeleton, zero corridor monsters, one boss skeleton-captain, byte-identical same-seed positions, and no PositionOracle search.",
+      "passes": true
     },
     {
-      "id": "shared-fixture-starts-terminates-once",
-      "feature": "redis-container-lifecycle-ownership",
-      "prompt": "Call harness.StartRedis once, then Terminate it twice. Verify the underlying container Terminate is invoked exactly once (idempotent double-terminate guard).",
-      "test_ref": "internal/integration/harness/lifecycle_internal_test.go:TestRedisContainer_TerminateIsIdempotent",
-      "passes": true,
-      "last_checked": "2026-07-23"
+      "id": "closed-door-boss-concealment",
+      "feature": "rpg-api#689",
+      "prompt": "The boss remains hidden by closed-door LoS; no retry, search, or room resize is used.",
+      "passes": true
     },
     {
-      "id": "per-test-resources-fresh",
-      "feature": "shared-redis-integration-fixture",
-      "prompt": "Call harness.NewWithRedis twice against the same shared Redis address. Verify the two TestServer instances have distinct gRPC servers, in-memory encounter/lobby repos, and brokers (not shared).",
-      "test_ref": "internal/integration/shared_fixture_regression_test.go:TestSharedRedisFixture_PerTestFreshnessAndStateIsolation/per_test_application_freshness",
-      "passes": true,
-      "last_checked": "2026-07-23",
-      "notes": "Added 2026-07-23 to close an independent-review gap: prior evidence for this was manual/inline reasoning, not a durable test. Characterization test (passed immediately) — pins NewWithRedis's existing fresh-wiring behavior rather than fixing a bug. Asserts distinct gRPC server (new TestServer.GRPCServer() test-only seam), BrokerV2, LobbyBroker, EncRepoV2, LobbyRepo, CharacterRepo via pointer-address comparison."
+      "id": "shared-redis-fixture-lifecycle",
+      "feature": "rpg-api#699",
+      "prompt": "Owned TestServers terminate their container once, borrowed NewWithRedis servers never terminate the shared container, and lease serialization prevents concurrent flushes.",
+      "test_ref": "internal/integration/harness/lifecycle_internal_test.go",
+      "passes": true
     },
     {
-      "id": "state-isolation-flush-between-tests",
-      "feature": "shared-redis-integration-fixture",
-      "prompt": "Write a fixed key through a first NewWithRedis instance against the shared container, close it, run the exact FlushRedis sequence SetupTest uses when creating a second instance, and verify the same fixed key is absent.",
-      "test_ref": "internal/integration/shared_fixture_regression_test.go:TestSharedRedisFixture_PerTestFreshnessAndStateIsolation/shared_redis_state_isolation_via_flush",
-      "passes": true,
-      "last_checked": "2026-07-23",
-      "notes": "Added 2026-07-23 to close an independent-review gap: prior evidence for this was manual/inline reasoning (DungeonCryptSuite passing), not a durable test with a fixed key immune to ID-collision false negatives. Mutation-tested: temporarily skipping the second cycle's FlushRedis call reproduced 'Should be zero, but was 1' (RED), then was reverted (GREEN)."
+      "id": "shared-redis-freshness-and-isolation",
+      "feature": "rpg-api#699",
+      "prompt": "NewWithRedis creates fresh application resources and FlushRedis removes a fixed key between test instances.",
+      "test_ref": "internal/integration/shared_fixture_regression_test.go",
+      "passes": true
     },
     {
-      "id": "broker-grpc-cleanup-preserved",
-      "feature": "shared-redis-integration-fixture",
-      "prompt": "After each converted suite's TearDownTest runs, verify BrokerV2/LobbyBroker Close() still executes for that test's per-test resources (no goroutine/listener leak), independent of the shared Redis container's lifetime.",
-      "test_ref": "manual: goroutine-count spot check (runtime.NumGoroutine, stable at 3 after 8 tests in internal/integration)",
-      "passes": true,
-      "last_checked": "2026-07-23"
-    },
-    {
-      "id": "lease-guard-serializes-flush",
-      "feature": "shared-redis-integration-fixture",
-      "prompt": "Acquire the shared fixture's lease from two goroutines concurrently. Verify the second acquisition blocks until the first releases (no concurrent FlushRedis race is possible even if a suite method were mistakenly parallelized).",
-      "test_ref": "internal/integration/harness/lifecycle_internal_test.go:TestRedisContainer_LeaseSerializesAccess",
-      "passes": true,
-      "last_checked": "2026-07-23"
-    },
-    {
-      "id": "targeted-suites-green",
-      "feature": "shared-redis-integration-fixture",
-      "prompt": "Run -run targeted subtests for DungeonCryptSuite, EncounterV2IntegrationSuite, LobbyV1alpha1IntegrationSuite, LobbyStartThenMoveSuite, and CharacterCreationSuite after conversion. Verify all pass.",
-      "test_ref": "internal/integration/*_test.go, internal/integration/character/creation_test.go (existing suites)",
-      "passes": true,
-      "last_checked": "2026-07-23"
-    },
-    {
-      "id": "race-clean",
-      "feature": "shared-redis-integration-fixture",
-      "prompt": "Run go test -race ./internal/integration/... (or targeted -race per suite during development). Verify no race detected around the shared container/client/lease.",
-      "test_ref": "targeted -race runs per package during development; full-package -race left to CI (see full-run-container-count-and-timing)",
-      "passes": true,
-      "last_checked": "2026-07-23"
-    },
-    {
-      "id": "full-run-container-count-and-timing",
-      "feature": "shared-redis-integration-fixture",
-      "prompt": "Run go test ./internal/integration/... exactly once post-fix. Verify (via instrumentation/log evidence) the exact number of Redis containers started/terminated across all test processes under this path, and record wall-clock time against the ~283s/33-container baseline.",
-      "test_ref": "one local run (37.4s, 3 containers, PR #700 initial evidence); subsequent full-package confirmation deferred to CI per 2026-07-23 follow-up instructions (no repeated local full runs)",
-      "passes": true,
-      "last_checked": "2026-07-23"
+      "id": "targeted-real-redis-suites",
+      "feature": "integration",
+      "prompt": "DungeonCryptSuite and CryptMonsterSeedRedisSuite run under internal/integration TestMain, using one shared Redis container for the process.",
+      "passes": true
     }
   ]
 }
