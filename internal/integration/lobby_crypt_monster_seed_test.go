@@ -6,8 +6,9 @@
 // against REAL Redis-backed lobby + encounter repositories, not the
 // in-memory LobbySuite (internal/orchestrators/lobby's unit tests) or the
 // shared harness.TestServer (whose LobbyRepo/EncRepoV2 are in-memory by
-// design — see harness.go's own comment). Reuses harness.New purely for
-// Redis container lifecycle + a real Redis-backed CharacterRepo
+// design — see harness.go's own comment). Reuses harness.NewWithRedis
+// against this package's shared Redis container (rpg-api#699, see
+// main_test.go) purely for a real Redis-backed CharacterRepo
 // (srv.RedisClient()), then wires a SECOND, independent lobbyorch.
 // Orchestrator directly onto Redis-backed lobbyrepo.NewRedis/encountersv2.
 // NewRedis — real production repository constructors, no test-only
@@ -42,9 +43,10 @@ const cryptMonsterSeedTestTTL = time.Hour
 // CryptMonsterSeedRedisSuite is rpg-api#689's real-Redis integration gate.
 type CryptMonsterSeedRedisSuite struct {
 	suite.Suite
-	ctx    context.Context
-	cancel context.CancelFunc
-	srv    *harness.TestServer
+	ctx     context.Context
+	cancel  context.CancelFunc
+	srv     *harness.TestServer
+	release func()
 
 	lobbyRepo lobbyrepo.Repository
 	encRepo   encountersv2.Repository
@@ -54,9 +56,14 @@ type CryptMonsterSeedRedisSuite struct {
 func (s *CryptMonsterSeedRedisSuite) SetupTest() {
 	s.ctx, s.cancel = context.WithTimeout(context.Background(), 2*time.Minute)
 
+	// Lease the package's shared Redis container (rpg-api#699) — see
+	// main_test.go. Released in TearDownTest.
+	s.release = sharedRedis.Lease()
+
 	var err error
-	s.srv, err = harness.New(s.ctx, nil)
-	s.Require().NoError(err, "failed to create test server (real Redis container)")
+	s.srv, err = harness.NewWithRedis(s.ctx, nil, sharedRedis.Addr)
+	s.Require().NoError(err, "failed to create test server against shared redis container")
+	s.Require().NoError(s.srv.FlushRedis(s.ctx), "failed to flush shared redis")
 
 	// Real Redis-backed lobby + encounter repositories — production
 	// constructors, sharing the harness's own Redis container/client.
@@ -90,6 +97,9 @@ func (s *CryptMonsterSeedRedisSuite) TearDownTest() {
 	}
 	if s.cancel != nil {
 		s.cancel()
+	}
+	if s.release != nil {
+		s.release()
 	}
 }
 

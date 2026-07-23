@@ -30,17 +30,23 @@ import (
 // LobbyV1alpha1IntegrationSuite is the Party Assembles gate test suite.
 type LobbyV1alpha1IntegrationSuite struct {
 	suite.Suite
-	ctx    context.Context
-	cancel context.CancelFunc
-	srv    *harness.TestServer
+	ctx     context.Context
+	cancel  context.CancelFunc
+	srv     *harness.TestServer
+	release func()
 }
 
 func (s *LobbyV1alpha1IntegrationSuite) SetupTest() {
 	s.ctx, s.cancel = context.WithTimeout(context.Background(), 2*time.Minute)
 
+	// Lease the package's shared Redis container (rpg-api#699) — see
+	// main_test.go. Released in TearDownTest.
+	s.release = sharedRedis.Lease()
+
 	var err error
-	s.srv, err = harness.New(s.ctx, nil)
+	s.srv, err = harness.NewWithRedis(s.ctx, nil, sharedRedis.Addr)
 	s.Require().NoError(err, "failed to create test server")
+	s.Require().NoError(s.srv.FlushRedis(s.ctx), "failed to flush shared redis")
 }
 
 func (s *LobbyV1alpha1IntegrationSuite) TearDownTest() {
@@ -49,6 +55,9 @@ func (s *LobbyV1alpha1IntegrationSuite) TearDownTest() {
 	}
 	if s.cancel != nil {
 		s.cancel()
+	}
+	if s.release != nil {
+		s.release()
 	}
 }
 
