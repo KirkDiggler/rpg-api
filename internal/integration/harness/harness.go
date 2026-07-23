@@ -104,8 +104,15 @@ func New(ctx context.Context, cfg *Config) (*TestServer, error) {
 
 	ts, err := newWithClientSource(ctx, cfg, rc.Addr)
 	if err != nil {
-		// Nothing wired successfully owns rc yet, so terminate it directly.
-		_ = rc.Terminate(ctx)
+		// Nothing wired successfully owns rc yet, so terminate it
+		// directly. Use a fresh background context with its own timeout
+		// rather than ctx: ctx is a common reason newWithClientSource
+		// just failed (e.g. already canceled/deadline-exceeded), and
+		// reusing it here for best-effort cleanup could fail immediately
+		// and leak the container.
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		_ = rc.Terminate(cleanupCtx)
+		cancel()
 		return nil, err
 	}
 

@@ -39,9 +39,10 @@ type RedisContainer struct {
 }
 
 // StartRedis starts a single redis:7-alpine testcontainer and returns a
-// handle to it. The caller owns the returned *RedisContainer and must call
-// Terminate exactly once (typically from TestMain, after m.Run() returns)
-// to tear it down.
+// handle to it. The caller owns the returned *RedisContainer and is
+// responsible for cleaning it up — typically a single call to Terminate
+// (from TestMain, after m.Run() returns) — though Terminate is idempotent,
+// so an explicit call plus a deferred one is also safe.
 func StartRedis(ctx context.Context) (*RedisContainer, error) {
 	redisC, err := tcredis.Run(ctx, "redis:7-alpine")
 	if err != nil {
@@ -56,7 +57,7 @@ func StartRedis(ctx context.Context) (*RedisContainer, error) {
 	// Strip redis:// prefix if present (go-redis expects host:port).
 	addr = strings.TrimPrefix(addr, "redis://")
 
-	log.Printf("Shared integration-test Redis container started at: %s", addr)
+	log.Printf("harness: redis container started at %s", addr)
 
 	return &RedisContainer{Addr: addr, container: redisC}, nil
 }
@@ -69,7 +70,11 @@ func StartRedis(ctx context.Context) (*RedisContainer, error) {
 func (rc *RedisContainer) Terminate(ctx context.Context) error {
 	rc.termOnce.Do(func() {
 		rc.termErr = rc.container.Terminate(ctx)
-		log.Printf("Shared integration-test Redis container terminated (addr=%s)", rc.Addr)
+		if rc.termErr != nil {
+			log.Printf("harness: failed to terminate redis container (addr=%s): %v", rc.Addr, rc.termErr)
+		} else {
+			log.Printf("harness: redis container terminated (addr=%s)", rc.Addr)
+		}
 	})
 	return rc.termErr
 }
