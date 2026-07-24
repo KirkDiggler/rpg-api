@@ -57,7 +57,11 @@ import (
 // (ModeEnded instead of the TURN_BASED pocket this suite asserts) purely
 // from unlucky dice; 100 HP absorbs worst-case skeleton-captain multiattack
 // damage (2x 1d8+3, at most a couple of rounds) with room to spare.
-const dungeonGateHP = 100
+const (
+	dungeonGateHP              = 100
+	cryptEntranceDoorID string = "crypt-door-entrance-corridor"
+	cryptBossDoorID     string = "crypt-door-corridor-boss"
+)
 
 type DungeonCryptSuite struct {
 	suite.Suite
@@ -336,21 +340,28 @@ func isHexNeighbor(from, to core.Hex) bool {
 	return false
 }
 
-// openDoor issues the real Interact RPC against doorID.
-func (s *DungeonCryptSuite) openDoor(encounterID, doorID string) {
-	_, err := s.srv.EncounterClientV2.Interact(s.authCtx("alice"), &encounterv2pb.InteractRequest{
+// openCryptDoor uses the existing Interact -> SubmitCheck path when the
+// toolkit-owned crypt connector is locked. It supplies only the d20 roll; the
+// toolkit owns the configured DC, ability, tool, and success side effect.
+func (s *DungeonCryptSuite) openCryptDoor(encounterID, characterID, doorID string) {
+	resp, err := s.srv.EncounterClientV2.Interact(s.authCtx("alice"), &encounterv2pb.InteractRequest{
 		EncounterId: encounterID, TargetEntityId: doorID,
 	})
 	s.Require().NoError(err, "opening door %q must succeed", doorID)
+	if resp.GetInputRequired() == nil {
+		return
+	}
+	resolved, err := s.srv.EncounterClientV2.SubmitCheck(s.authCtx("alice"), &encounterv2pb.SubmitCheckRequest{
+		EncounterId: encounterID, EntityId: characterID, Roll: 20,
+	})
+	s.Require().NoError(err, "unlocking door %q must succeed", doorID)
+	s.Require().True(resolved.GetSuccess(), "roll 20 must resolve the production boss lock")
 }
 
-// TestStartEncounter_SpawnsAtEntrance_DoorProjectsClosedWithId is gate facts
-// (1) and (2): the party spawns at SpaceData.Entrance (the entrance
-// region's designated anchor, NOT a room-center placeholder —
-// roomCenterHex() is gone, rpg-api#648/#676/#688), and a connector door
-// projects on the wire as a WALL_KIND_DOOR_CLOSED Wall carrying a
-// non-empty id (rpg-api-protos#186's Wall.id — the click->Interact bridge).
-func (s *DungeonCryptSuite) TestStartEncounter_SpawnsAtEntrance_DoorProjectsClosedWithId() {
+// TestStartEncounter_SpawnsAtEntrance_ProjectsCanonicalCryptDoors verifies
+// the production crypt's toolkit-owned connector contract: the entrance stays
+// plain and closed, while the boss connector starts locked and closed.
+func (s *DungeonCryptSuite) TestStartEncounter_SpawnsAtEntrance_ProjectsCanonicalCryptDoors() {
 	encounterID, _, encData := s.startCryptDungeon("gate1", "alice")
 
 	alicePD, ok := encData.Players[core.PlayerID("alice")]
@@ -364,16 +375,78 @@ func (s *DungeonCryptSuite) TestStartEncounter_SpawnsAtEntrance_DoorProjectsClos
 	})
 	s.Require().NoError(err)
 
-	var doorWall *encounterv2pb.Wall
+	doorWalls := make(map[string]*encounterv2pb.Wall)
 	for _, w := range resp.GetEncounter().GetSpace().GetWalls() {
 		if w.GetId() != "" {
-			doorWall = w
-			break
+			doorWalls[w.GetId()] = w
 		}
 	}
-	s.Require().NotNil(doorWall, "a connector door must project onto the wire as a Wall carrying an id")
-	s.Require().Equal(encounterv2pb.WallKind_WALL_KIND_DOOR_CLOSED, doorWall.GetKind(),
-		"the door must start closed on the wire")
+	entrance := encData.Doors[core.EntityID(cryptEntranceDoorID)]
+	boss := encData.Doors[core.EntityID(cryptBossDoorID)]
+	s.Require().NotNil(entrance)
+	s.Require().NotNil(boss)
+	s.Require().False(entrance.Locked)
+	s.Require().False(entrance.Open)
+	s.Require().True(boss.Locked)
+	s.Require().False(boss.Open)
+	s.Require().Equal(12, boss.LockDC)
+	s.Require().Equal("dex", boss.LockAbility)
+	s.Require().Empty(boss.LockTool)
+	s.Require().Equal(encounterv2pb.WallKind_WALL_KIND_DOOR_CLOSED, doorWalls[cryptEntranceDoorID].GetKind())
+	s.Require().Equal(encounterv2pb.WallKind_WALL_KIND_DOOR_LOCKED, doorWalls[cryptBossDoorID].GetKind())
+}
+
+// TestBossLock_FailedThenSuccessfulCheck_ProjectsPersistedDoorState proves the
+// production crypt reuses the established unlock flow. The API supplies only
+// the d20 roll; all lock configuration and resolution remain toolkit-owned.
+func (s *DungeonCryptSuite) TestBossLock_FailedThenSuccessfulCheck_ProjectsPersistedDoorState() {
+	encounterID, characterID, _ := s.startCryptDungeon("boss-lock", "alice")
+
+	prompt, err := s.srv.EncounterClientV2.Interact(s.authCtx("alice"), &encounterv2pb.InteractRequest{
+		EncounterId: encounterID, TargetEntityId: cryptBossDoorID,
+	})
+	s.Require().NoError(err)
+	s.Require().NotNil(prompt.GetInputRequired().GetSkillCheck())
+	s.Require().Equal(int32(12), prompt.GetInputRequired().GetSkillCheck().GetDc())
+	s.Require().Equal("dex", prompt.GetInputRequired().GetSkillCheck().GetAbility())
+	s.Require().Nil(prompt.GetInputRequired().GetSkillCheck().GetTool())
+
+	failed, err := s.srv.EncounterClientV2.SubmitCheck(s.authCtx("alice"), &encounterv2pb.SubmitCheckRequest{
+		EncounterId: encounterID, EntityId: characterID, Roll: 1,
+	})
+	s.Require().NoError(err)
+	s.Require().False(failed.GetSuccess())
+
+	afterFailure, err := s.srv.EncRepoV2.Get(s.ctx, encounterID)
+	s.Require().NoError(err)
+	s.Require().True(afterFailure.Doors[core.EntityID(cryptBossDoorID)].Locked)
+	s.Require().False(afterFailure.Doors[core.EntityID(cryptBossDoorID)].Open)
+
+	failedProjection, err := s.srv.EncounterClientV2.GetEncounter(s.authCtx("alice"), &encounterv2pb.GetEncounterRequest{EncounterId: encounterID})
+	s.Require().NoError(err)
+	lockedBossDoorProjected := false
+	for _, wall := range failedProjection.GetEncounter().GetSpace().GetWalls() {
+		if wall.GetId() == cryptBossDoorID {
+			lockedBossDoorProjected = true
+			s.Require().Equal(encounterv2pb.WallKind_WALL_KIND_DOOR_LOCKED, wall.GetKind())
+		}
+	}
+	s.Require().True(lockedBossDoorProjected, "the locked boss door must project onto the wire")
+
+	_, err = s.srv.EncounterClientV2.Interact(s.authCtx("alice"), &encounterv2pb.InteractRequest{
+		EncounterId: encounterID, TargetEntityId: cryptBossDoorID,
+	})
+	s.Require().NoError(err)
+	succeeded, err := s.srv.EncounterClientV2.SubmitCheck(s.authCtx("alice"), &encounterv2pb.SubmitCheckRequest{
+		EncounterId: encounterID, EntityId: characterID, Roll: 20,
+	})
+	s.Require().NoError(err)
+	s.Require().True(succeeded.GetSuccess())
+
+	afterSuccess, err := s.srv.EncRepoV2.Get(s.ctx, encounterID)
+	s.Require().NoError(err)
+	s.Require().False(afterSuccess.Doors[core.EntityID(cryptBossDoorID)].Locked)
+	s.Require().True(afterSuccess.Doors[core.EntityID(cryptBossDoorID)].Open)
 }
 
 // TestEntranceSighting_StartsPocketScopedCombat is gate fact (3): a Move
@@ -483,7 +556,7 @@ func (s *DungeonCryptSuite) TestBossMonster_NoEntityAppeared_UntilBothDoorsOpenA
 
 	// Open the first connector door. This alone must NOT reveal the boss
 	// — it is still one closed door and a whole corridor away.
-	s.openDoor(encounterID, doorIDs[0])
+	s.openCryptDoor(encounterID, characterID, doorIDs[0])
 	afterFirstDoor := drainAvailable(events, 500*time.Millisecond)
 	s.Require().False(sawBossMonster(afterFirstDoor),
 		"opening one connector door alone must not reveal the boss-region monster")
@@ -491,7 +564,7 @@ func (s *DungeonCryptSuite) TestBossMonster_NoEntityAppeared_UntilBothDoorsOpenA
 	// Open the second connector door too. Both doors open STILL must not
 	// reveal the boss by itself — only the doorway's own progressive
 	// reveal (Slice 1), not a whole-region one; a sightline must still form.
-	s.openDoor(encounterID, doorIDs[1])
+	s.openCryptDoor(encounterID, characterID, doorIDs[1])
 	afterSecondDoor := drainAvailable(events, 500*time.Millisecond)
 	s.Require().False(sawBossMonster(afterSecondDoor),
 		"opening both connector doors alone must not reveal the boss-region monster — a sightline must still form")
@@ -547,9 +620,9 @@ func (s *DungeonCryptSuite) TestStaticObstacles_ProjectOnlyWhenRevealedAndRemain
 	}
 	sort.Strings(doorIDs)
 	s.Require().Len(doorIDs, 2)
-	s.openDoor(encounterID, doorIDs[0])
+	s.openCryptDoor(encounterID, characterID, doorIDs[0])
 	_ = drainAvailable(events, 500*time.Millisecond)
-	s.openDoor(encounterID, doorIDs[1])
+	s.openCryptDoor(encounterID, characterID, doorIDs[1])
 	_ = drainAvailable(events, 500*time.Millisecond)
 
 	current, err := s.srv.EncRepoV2.Get(s.ctx, encounterID)
@@ -690,9 +763,9 @@ func (s *DungeonCryptSuite) TestSpaceZonesAndHexZoneId_ProjectRegionsOnTheWire()
 		doorIDs = append(doorIDs, string(id))
 	}
 	sort.Strings(doorIDs)
-	s.openDoor(encounterID, doorIDs[0])
+	s.openCryptDoor(encounterID, characterID, doorIDs[0])
 	_ = drainAvailable(events, 500*time.Millisecond)
-	s.openDoor(encounterID, doorIDs[1])
+	s.openCryptDoor(encounterID, characterID, doorIDs[1])
 	_ = drainAvailable(events, 500*time.Millisecond)
 
 	bossMonster := bossIDs[0]

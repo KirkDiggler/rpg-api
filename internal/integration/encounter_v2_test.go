@@ -1462,6 +1462,76 @@ func (s *EncounterV2IntegrationSuite) TestCombatSlice_KillLastHostile_FiresDeath
 		"EndTurn post-end must return FailedPrecondition, got: %v", err)
 }
 
+// TestCombatSlice_TPK_FiresCanonicalEndReasonAndPersists verifies the defeat
+// half of the terminal contract through the runtime stream path. A flat
+// snapshot player at 1 HP uses the toolkit's immediate-death fallback; the
+// production EndTurn handler dispatches the NPC command, while the toolkit
+// owns both the "tpk" reason and ModeEnded transition.
+func (s *EncounterV2IntegrationSuite) TestCombatSlice_TPK_FiresCanonicalEndReasonAndPersists() {
+	const (
+		encounterID    = "enc-tpk"
+		playerID       = "alice"
+		playerEntityID = "char-alice"
+		monsterID      = "goblin-tpk"
+	)
+
+	enc := tkenc.New(context.Background(), core.EncounterID(encounterID), s.srv.BrokerV2)
+	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
+		PlayerID: playerID, EntityID: playerEntityID,
+		Position: core.Hex{}, SightRange: 10,
+		HP: 1, MaxHP: 1, AC: 10, AttackBonus: 1,
+		DamageDice: "1d4", DamageType: "slashing",
+	}))
+	s.Require().NoError(enc.AddMonster(tkenc.MonsterInput{
+		ID: monsterID, Position: core.Hex{Q: 1, R: 0, S: -1},
+		HP: 99, MaxHP: 99, AC: 10, Speed: 6,
+		MonsterRef:  "dnd5e:monsters:goblin",
+		AttackBonus: 20, DamageDice: "1d6+2", DamageType: "slashing",
+	}))
+
+	// Make the player active without running an NPC action in test setup; the
+	// first actual NPC action must be the handler-dispatched production path.
+	for enc.ActiveActor() != core.EntityID(playerEntityID) {
+		_, _, err := enc.EndTurn(s.ctx, enc.ActiveActor())
+		s.Require().NoError(err)
+	}
+	s.Require().NoError(s.srv.EncRepoV2.Save(s.ctx, enc.ToData()))
+
+	stream, err := s.srv.EncounterClientV2.StreamEncounter(s.authCtx(playerID),
+		&encounterv2pb.StreamEncounterRequest{EncounterId: encounterID})
+	s.Require().NoError(err)
+	sink := newEventSink()
+	go sink.drain(stream)
+	s.Require().Eventually(sink.hasReplayComplete, 2*time.Second, 25*time.Millisecond)
+	sink.snapshot()
+
+	for attempt := 0; attempt < maxKillAttempts; attempt++ {
+		_, err = s.srv.EncounterClientV2.EndTurn(s.authCtx(playerID),
+			&encounterv2pb.EndTurnRequest{EncounterId: encounterID, EntityId: playerEntityID})
+		if err != nil {
+			st, ok := status.FromError(err)
+			s.Require().True(ok)
+			s.Require().Equal(codes.FailedPrecondition, st.Code())
+		}
+
+		data, getErr := s.srv.EncRepoV2.Get(s.ctx, encounterID)
+		s.Require().NoError(getErr)
+		if data.Mode == core.ModeEnded {
+			break
+		}
+	}
+
+	s.Require().Eventually(sink.hasEncounterEnded, 2*time.Second, 25*time.Millisecond)
+	ended := sink.findEncounterEnded()
+	s.Require().NotNil(ended)
+	s.Require().Equal("tpk", ended.GetReason())
+
+	persisted, err := s.srv.EncRepoV2.Get(s.ctx, encounterID)
+	s.Require().NoError(err)
+	s.Require().Equal(core.ModeEnded, persisted.Mode)
+	s.Require().True(persisted.Players[core.PlayerID(playerID)].Dead)
+}
+
 // TestCombatSlice_KillOneOfTwoHostiles_NoEncounterEnd verifies the
 // Wave 2.10 mid-fight slice: 2 players + 2 goblins. Active player kills
 // goblin-1 only; both streams receive EntityDied + EntityRemoved for

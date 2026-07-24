@@ -1,6 +1,20 @@
 {
   "tests": [
     {
+      "id": "locked-door-projection-and-production-crypt-flow",
+      "feature": "rpg-api#690",
+      "prompt": "DoorData projects locked closed, unlocked closed, and open kinds without changing ID or edge; compact crypt retains a plain entrance and toolkit-configured locked boss door; failed unlock remains recoverable and success opens/unlocks.",
+      "test_ref": "internal/handlers/dnd5e/v2/encounter/project_test.go; internal/integration/dungeon_crypt_test.go",
+      "passes": true
+    },
+    {
+      "id": "terminal-liveness-characterization",
+      "feature": "rpg-api#690",
+      "prompt": "The production API stream projects toolkit-owned all-hostiles-defeated and TPK EncounterEnded reasons; both terminal paths persist ModeEnded, and GetMyActiveLobby refuses resume without API reason synthesis.",
+      "test_ref": "internal/integration/encounter_v2_test.go; internal/orchestrators/lobby/get_my_active_lobby_test.go",
+      "passes": true
+    },
+    {
       "id": "crypt-toolkit-constructor-and-obstacles",
       "feature": "rpg-api#694",
       "prompt": "resolveDungeonSpec(DungeonKeyCrypt, seed) must match tkenc.CryptDungeonParams exactly; StartEncounter must persist its non-empty canonical obstacle refs, counts, blocking flags, and deterministic geometry.",

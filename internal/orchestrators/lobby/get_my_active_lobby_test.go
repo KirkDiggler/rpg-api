@@ -44,18 +44,22 @@ func (s *LobbySuite) TestGetMyActiveLobby_StartedWithLiveEncounter_ReturnsBothID
 	s.Require().Equal(lobbyrepo.StatusStarted, out.Status)
 }
 
-func (s *LobbySuite) TestGetMyActiveLobby_StartedWithEndedEncounter_ReturnsEmptyOutput() {
-	s.seedLobby(&lobbyrepo.Data{
-		ID: "lobby-g3", HostPlayerID: "alice", Status: lobbyrepo.StatusStarted, EncounterID: "enc-ended",
-		Members:     map[string]*lobbyrepo.Member{"alice": {PlayerID: "alice", IsHost: true}},
-		MemberOrder: []string{"alice"},
-	})
-	s.Require().NoError(s.encRepo.Save(s.ctx, &tkenc.Data{ID: core.EncounterID("enc-ended"), Mode: core.ModeEnded}))
+func (s *LobbySuite) TestGetMyActiveLobby_StartedWithTerminalEncounter_ReturnsEmptyOutput() {
+	for _, terminal := range []string{"all-hostiles-defeated victory", "tpk defeat"} {
+		s.Run(terminal, func() {
+			s.seedLobby(&lobbyrepo.Data{
+				ID: "lobby-g3-" + terminal, HostPlayerID: "alice", Status: lobbyrepo.StatusStarted, EncounterID: "enc-ended-" + terminal,
+				Members:     map[string]*lobbyrepo.Member{"alice": {PlayerID: "alice", IsHost: true}},
+				MemberOrder: []string{"alice"},
+			})
+			s.Require().NoError(s.encRepo.Save(s.ctx, &tkenc.Data{ID: core.EncounterID("enc-ended-" + terminal), Mode: core.ModeEnded}))
 
-	out, err := s.orch.GetMyActiveLobby(s.ctx, &lobbyorch.GetMyActiveLobbyInput{PlayerID: "alice"})
-	s.Require().NoError(err)
-	s.Require().Empty(out.LobbyID, "a STARTED lobby whose encounter has ended has nothing to resume")
-	s.Require().Empty(out.EncounterID)
+			out, err := s.orch.GetMyActiveLobby(s.ctx, &lobbyorch.GetMyActiveLobbyInput{PlayerID: "alice"})
+			s.Require().NoError(err)
+			s.Require().Empty(out.LobbyID, "a STARTED lobby whose encounter has ended has nothing to resume")
+			s.Require().Empty(out.EncounterID)
+		})
+	}
 }
 
 func (s *LobbySuite) TestGetMyActiveLobby_StartedWithMissingEncounter_ReturnsEmptyOutput() {

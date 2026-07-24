@@ -1,44 +1,22 @@
 {
-  "branch": "feat/694-consume-crypt-dungeon-params",
-  "issues": ["rpg-api#694", "rpg-api#689 via PR #698", "rpg-api#699 via PR #700"],
-  "goal": "Use toolkit CryptDungeonParams for the crypt, retain its canonical obstacles, seed the approved deterministic 1 entrance skeleton / 0 corridor / 1 skeleton-captain composition through FixedPositions, and retain the shared Redis integration-fixture lifecycle.",
+  "branch": "feat/690-locked-door-terminal-projection",
+  "issues": ["rpg-api#690"],
+  "goal": "Project toolkit-owned locked crypt doors and characterize existing terminal encounter behavior without adding API rules.",
   "dependencies": {
-    "rpg-api#698": "merged as 5b90d2f; deterministic crypt monster composition",
-    "rpg-api#700": "merged as 36902ee; one Redis container per integration test process with fresh leased and flushed TestServers",
-    "rpg-toolkit/encounter": "v0.38.0; CryptDungeonParams",
-    "rpg-toolkit/rulebooks/dnd5e": "v0.68.0; SkeletonCaptain"
+    "rpg-api-protos#195": "merged WALL_KIND_DOOR_LOCKED",
+    "rpg-api#700": "merged as 36902ee; one Redis container per integration test process",
+    "rpg-toolkit#832": "encounter/v0.40.0; CryptDungeonParams configures boss locked/DC12/dex/no-tool"
   },
   "sessions": [
     {
-      "id": "2026-07-23-694",
-      "task": "Resolve DungeonKeyCrypt through tkenc.CryptDungeonParams and persist canonical obstacles.",
-      "status": "completed",
-      "commit": "846fa0d..e26e408",
-      "notes": "#696's retired out-of-sight goblin placement issue is closed, not planned; no retry, search, or room resize is retained."
-    },
-    {
-      "id": "2026-07-23-697-premerge",
-      "task": "Integrate #698 deterministic placement with #694 toolkit parameters and obstacle-aware compact-crypt tests.",
-      "status": "completed",
-      "commit": "ad31e28",
-      "notes": "Production path uses FixedPositions only and preserves the exact 1/0/1 composition."
-    },
-    {
-      "id": "2026-07-23-700-merge",
-      "task": "Merge #700 shared Redis fixture and retain its lifecycle, freshness, and isolation regression coverage.",
-      "status": "completed",
-      "commit": "053b000",
-      "notes": "Merged main includes #700. Targeted integration suites use the package TestMain fixture and one Redis container per test process."
-    },
-    {
-      "id": "2026-07-23-697-path-driver",
-      "task": "Replace crypt integration-test teleport paths with persisted-geometry BFS and bounded adjacent MoveEntity chunks.",
+      "id": "2026-07-24-690",
+      "task": "Project DoorData locked/closed/open truth table and characterize production crypt unlock flow.",
       "status": "completed",
       "commit": null,
-      "notes": "BFS reads region cells, wall starts, obstacle positions, and door state; open connector cells join regions, closed doors remain blocked."
+      "notes": "Pure projection only; Interact/AttemptUnlock/SubmitCheck and terminal reasons remain toolkit-owned."
     }
   ],
   "next_steps": [
-    "Push the path-driver test commit, inspect current-head CI and new review threads, and do not merge the PR."
+    "Run final checks, publish the #690 PR, inspect CI and resolve review comments without merging."
   ]
 }

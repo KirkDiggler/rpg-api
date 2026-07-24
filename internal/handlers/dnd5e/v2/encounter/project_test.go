@@ -758,6 +758,61 @@ func (s *ProjectSuite) TestProjectFor_DoorWall_ProjectsIdKindAndPassageEdge() {
 	s.Require().Equal("door-1", openWalls[0].GetId())
 }
 
+// TestProjectFor_DoorWall_ProjectsLockedClosedKind verifies the locked-door
+// projection truth table's locked+closed state. DoorData remains the sole
+// source of truth; this test also guards that the existing addressable edge is
+// preserved while only the wire kind changes.
+func (s *ProjectSuite) TestProjectFor_DoorWall_ProjectsLockedClosedKind() {
+	data := tkenc.NewData("enc-locked-door")
+	data.Mode = core.ModeFreeRoam
+	alice := newPlayerData("player-alice", "char-alice", originHex, 2)
+	data.Players = map[core.PlayerID]*tkenc.PlayerData{"player-alice": alice}
+
+	doorHex := core.Hex{Q: 0, R: 0, S: 0}
+	passageNeighbor := core.Hex{Q: -1, R: 0, S: 1}
+	data.Space = &tkenc.SpaceData{
+		Width:  10,
+		Height: 10,
+		Regions: []tkenc.RegionData{
+			{ID: tkenc.RegionChamber1, Hexes: core.NewHexSet(passageNeighbor)},
+		},
+	}
+	data.Doors = map[core.EntityID]*tkenc.DoorData{
+		"door-locked": {ID: "door-locked", Position: doorHex, Locked: true},
+	}
+
+	pb, err := v2encounter.ProjectFor(context.Background(), data, "player-alice", s.broker, nil, s.now)
+	s.Require().NoError(err)
+
+	walls := pb.GetSpace().GetWalls()
+	s.Require().Len(walls, 1)
+	w := walls[0]
+	s.Require().Equal(encounterv2pb.WallKind_WALL_KIND_DOOR_LOCKED, w.GetKind())
+	s.Require().Equal("door-locked", w.GetId())
+	s.Require().Equal(int32(0), w.GetFrom().GetX())
+	s.Require().Equal(int32(0), w.GetFrom().GetY())
+	s.Require().Equal(int32(0), w.GetFrom().GetZ())
+	s.Require().Equal(int32(-1), w.GetTo().GetX())
+	s.Require().Equal(int32(0), w.GetTo().GetY())
+	s.Require().Equal(int32(1), w.GetTo().GetZ())
+
+	// Canonical data can temporarily retain Locked while Open becomes true.
+	// Open must win on the wire without changing the addressable door geometry.
+	data.Doors["door-locked"].Open = true
+	pbOpen, err := v2encounter.ProjectFor(context.Background(), data, "player-alice", s.broker, nil, s.now)
+	s.Require().NoError(err)
+	openWalls := pbOpen.GetSpace().GetWalls()
+	s.Require().Len(openWalls, 1)
+	s.Require().Equal(encounterv2pb.WallKind_WALL_KIND_DOOR_OPEN, openWalls[0].GetKind())
+	s.Require().Equal("door-locked", openWalls[0].GetId())
+	s.Require().Equal(int32(0), openWalls[0].GetFrom().GetX())
+	s.Require().Equal(int32(0), openWalls[0].GetFrom().GetY())
+	s.Require().Equal(int32(0), openWalls[0].GetFrom().GetZ())
+	s.Require().Equal(int32(-1), openWalls[0].GetTo().GetX())
+	s.Require().Equal(int32(0), openWalls[0].GetTo().GetY())
+	s.Require().Equal(int32(1), openWalls[0].GetTo().GetZ())
+}
+
 // TestProjectFor_DoorWall_NoRegionNeighbor_FallsBackToDegenerateSegment
 // covers doorPassageNeighbor's defensive fallback: a door whose neighbors
 // are all untagged (a data shape the current two-chamber generator never
