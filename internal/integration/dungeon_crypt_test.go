@@ -238,7 +238,11 @@ func planWalk(space *tkenc.SpaceData, doors map[core.EntityID]*tkenc.DoorData, f
 		}
 	}
 	for _, wall := range space.Walls {
-		if wall.BlocksMovement {
+		// isDegenerateBlockingWall (lobby_start_then_move_test.go, same
+		// package) is the shared rpg-api#704 filter: a boundary-edge
+		// perimeter segment (Start != End) is real walkable floor with a
+		// render-only wall on one edge, never an actual blocker cell.
+		if isDegenerateBlockingWall(wall) {
 			blocked[core.HexFromCube(wall.Start)] = true
 		}
 	}

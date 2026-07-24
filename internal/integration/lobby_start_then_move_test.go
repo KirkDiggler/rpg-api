@@ -28,6 +28,7 @@ import (
 	tkenc "github.com/KirkDiggler/rpg-toolkit/encounter"
 	core "github.com/KirkDiggler/rpg-toolkit/encounter/core"
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
+	"github.com/KirkDiggler/rpg-toolkit/tools/environments"
 )
 
 type LobbyStartThenMoveSuite struct {
@@ -293,21 +294,7 @@ func hexBlocksMovement(space *tkenc.SpaceData, hex core.Hex) bool {
 		return false
 	}
 	for _, w := range space.Walls {
-		// rpg-api#704 (rpg-toolkit#834): SpaceData.Walls now also carries
-		// boundary-edge perimeter segments (Start != End) -- real walkable
-		// floor hexes with a render-only wall on one outward-facing edge,
-		// never an actual spatial.Room blocker (rpg-toolkit's
-		// rebuildRoomFromData skips placing an entity for these). The
-		// crypt's entrance sits at the room's own column-0 edge, so the
-		// ENTIRE spawn column now carries one of these -- without this
-		// filter, every entrance spawn would misclassify as blocked (a
-		// false #656-regression report: the entity actually moves, but
-		// this helper predicted it wouldn't). Only a degenerate
-		// (Start == End) wall entry is ever a real movement blocker.
-		if w.Start != w.End {
-			continue
-		}
-		if w.BlocksMovement && core.HexFromCube(w.Start) == hex {
+		if isDegenerateBlockingWall(w) && core.HexFromCube(w.Start) == hex {
 			return true
 		}
 	}
@@ -317,4 +304,27 @@ func hexBlocksMovement(space *tkenc.SpaceData, hex core.Hex) bool {
 		}
 	}
 	return false
+}
+
+// isDegenerateBlockingWall reports whether w marks its OWN Start hex as a
+// blocked cell -- rpg-api#704 (rpg-toolkit#834): SpaceData.Walls now
+// carries two shapes. A degenerate entry (Start == End) is a real,
+// walkable-cell-sized blocker: interior pattern walls, connector boundary
+// columns. A boundary-edge entry (Start != End) is a render-only
+// perimeter segment -- Start is real walkable floor with a wall drawn on
+// one outward-facing edge, never an actual spatial.Room blocker
+// (rpg-toolkit's rebuildRoomFromData skips placing an entity for these).
+// Its BlocksMovement is true too (Copilot review, PR #705) -- that flag
+// describes the WALL, not the hex; it says nothing about whether Start
+// itself is impassable. The crypt's entrance sits at the room's own
+// column-0 edge, so the ENTIRE spawn column carries one of these --
+// without this filter, every entrance spawn would misclassify as blocked
+// (a false #656-regression report: the entity actually moves, but the
+// caller predicted it wouldn't).
+//
+// Shared by hexBlocksMovement (this file) and planWalk
+// (dungeon_crypt_test.go, same package) so this filter can't be
+// reintroduced independently, wrong, a third time.
+func isDegenerateBlockingWall(w environments.WallSegmentData) bool {
+	return w.Start == w.End && w.BlocksMovement
 }

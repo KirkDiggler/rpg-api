@@ -1141,10 +1141,10 @@ func (s *ProjectSuite) TestProjectFor_CryptFixture_ProjectsPerimeterEdgesAsSolid
 	s.Require().NotEmpty(walls)
 
 	var degenerateCount, perimeterEdgeCount int
-	doorWalls := make(map[string]*encounterv2pb.Wall, 2)
+	var doorWallList []*encounterv2pb.Wall
 	for _, w := range walls {
 		if w.GetId() != "" {
-			doorWalls[w.GetId()] = w
+			doorWallList = append(doorWallList, w)
 			continue // door walls are covered separately below
 		}
 		from, to := w.GetFrom(), w.GetTo()
@@ -1168,7 +1168,19 @@ func (s *ProjectSuite) TestProjectFor_CryptFixture_ProjectsPerimeterEdgesAsSolid
 	// doors (entrance plain, boss locked) must still each project exactly
 	// one wall, carrying their entity id and passage edge, unaffected by
 	// the much larger Walls list the new perimeter segments add.
-	s.Require().Len(doorWalls, 2)
+	//
+	// Asserted by COUNT first (Copilot review, PR #705), not just by
+	// distinct-id map membership: a map keyed by id would silently
+	// collapse an accidental duplicate id emission (e.g. 3 door walls
+	// where 2 share an id) down to 2 entries, hiding exactly the
+	// regression this test exists to catch.
+	s.Require().Len(doorWallList, 2, "expected exactly one wall per connector door, by count not merely by distinct id")
+	doorWalls := make(map[string]*encounterv2pb.Wall, len(doorWallList))
+	for _, w := range doorWallList {
+		_, dup := doorWalls[w.GetId()]
+		s.Require().False(dup, "duplicate door wall id %q -- ProjectFor must emit exactly one wall per door", w.GetId())
+		doorWalls[w.GetId()] = w
+	}
 	entranceWall := doorWalls[string(entranceDoorID)]
 	bossWall := doorWalls[string(bossDoorID)]
 	s.Require().NotNil(entranceWall)
