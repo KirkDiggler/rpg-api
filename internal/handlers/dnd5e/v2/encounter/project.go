@@ -274,9 +274,14 @@ func wallsToProto(space *tkenc.SpaceData) []*encounterv2pb.Wall {
 		if !ok {
 			continue
 		}
-		// Wave 1 persists one degenerate (Start == End) segment per
-		// discretized wall hex (SpaceData.Walls doc) — From/To both convert
-		// the same cube coordinate.
+		// Two shapes coexist on the wire (SpaceData.Walls doc, rpg-toolkit#834):
+		// wave-1 interior/connector walls persist one degenerate (Start == End)
+		// segment per discretized wall hex, so From/To convert the same cube
+		// coordinate; InitDungeon's outer-perimeter segments (rpg-toolkit#834)
+		// persist Start != End (exactly one hex step apart, Start real floor,
+		// End just outside the room), which this passthrough projects as a
+		// distinct non-degenerate From/To pair with no extra handling needed —
+		// see TestProjectFor_CryptFixture_ProjectsPerimeterEdgesAsSolidAndDoorsUnchanged.
 		from := HexToPosition(core.HexFromCube(w.Start))
 		to := HexToPosition(core.HexFromCube(w.End))
 		walls = append(walls, &encounterv2pb.Wall{From: from, To: to, Kind: kind})
