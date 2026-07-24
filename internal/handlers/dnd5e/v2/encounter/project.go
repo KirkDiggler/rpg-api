@@ -317,8 +317,11 @@ func doorWallsToProto(data *tkenc.Data) []*encounterv2pb.Wall {
 		door := data.Doors[id]
 
 		kind := encounterv2pb.WallKind_WALL_KIND_DOOR_CLOSED
-		if door.Open {
+		switch {
+		case door.Open:
 			kind = encounterv2pb.WallKind_WALL_KIND_DOOR_OPEN
+		case door.Locked:
+			kind = encounterv2pb.WallKind_WALL_KIND_DOOR_LOCKED
 		}
 		doorID := string(id)
 		walls = append(walls, &encounterv2pb.Wall{

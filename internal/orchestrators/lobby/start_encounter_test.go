@@ -502,14 +502,27 @@ func (s *LobbySuite) TestStartEncounter_CryptDungeon_ThreeRegionsArchetypesTheme
 	}
 	s.Require().Greater(bossAxis, 6, "boss chamber primary playable axis must exceed 6 hex steps")
 
-	// Exactly 2 connector doors join the 3-region chain, closed and
-	// unlocked by default — Interact/OpenDoor is what opens them;
-	// StartEncounter never does so itself.
+	// Exactly 2 toolkit-configured connector doors join the 3-region chain.
+	// The entrance remains plain; the canonical crypt constructor owns the
+	// locked boss connector's DC/ability/tool configuration.
 	s.Require().Len(encData.Doors, 2, "a 3-region chain has exactly 2 connectors")
-	for id, door := range encData.Doors {
-		s.Require().False(door.Open, "connector door %q must start closed", id)
-		s.Require().False(door.Locked, "the crypt spec's connectors are plain, not locked")
+	var entranceDoor, bossDoor *tkenc.DoorData
+	for _, door := range encData.Doors {
+		if door.Locked {
+			bossDoor = door
+		} else {
+			entranceDoor = door
+		}
 	}
+	s.Require().NotNil(entranceDoor)
+	s.Require().NotNil(bossDoor)
+	s.Require().False(entranceDoor.Open)
+	s.Require().False(entranceDoor.Locked)
+	s.Require().False(bossDoor.Open)
+	s.Require().True(bossDoor.Locked)
+	s.Require().Equal(12, bossDoor.LockDC)
+	s.Require().Equal("dex", bossDoor.LockAbility)
+	s.Require().Empty(bossDoor.LockTool)
 
 	// Entrance-anchored spawn (rpg-api#648/#676, preserved): every seated
 	// member lands inside the entrance region, and the first member sits
