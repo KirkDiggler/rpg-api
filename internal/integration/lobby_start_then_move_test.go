@@ -293,6 +293,20 @@ func hexBlocksMovement(space *tkenc.SpaceData, hex core.Hex) bool {
 		return false
 	}
 	for _, w := range space.Walls {
+		// rpg-api#704 (rpg-toolkit#834): SpaceData.Walls now also carries
+		// boundary-edge perimeter segments (Start != End) -- real walkable
+		// floor hexes with a render-only wall on one outward-facing edge,
+		// never an actual spatial.Room blocker (rpg-toolkit's
+		// rebuildRoomFromData skips placing an entity for these). The
+		// crypt's entrance sits at the room's own column-0 edge, so the
+		// ENTIRE spawn column now carries one of these -- without this
+		// filter, every entrance spawn would misclassify as blocked (a
+		// false #656-regression report: the entity actually moves, but
+		// this helper predicted it wouldn't). Only a degenerate
+		// (Start == End) wall entry is ever a real movement blocker.
+		if w.Start != w.End {
+			continue
+		}
 		if w.BlocksMovement && core.HexFromCube(w.Start) == hex {
 			return true
 		}
