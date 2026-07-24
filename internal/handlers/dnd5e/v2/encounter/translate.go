@@ -712,7 +712,7 @@ func translateDamageDealtEvent(e *events.DamageDealtEvent, viewer core.PlayerID)
 		}
 	}
 	return &encounterv2pb.EncounterEvent{
-		Sequence:      int64(e.Sequence()),
+		Sequence:      int64(e.Sequence()), //nolint:gosec // sequence is monotonic; fits int64
 		Timestamp:     timestamppb.New(e.OccurredAt()),
 		CorrelationId: string(e.CorrelationID()),
 		Event: &encounterv2pb.EncounterEvent_EntityDamaged{
@@ -751,7 +751,7 @@ func translateConditionAppliedEvent(e *events.ConditionAppliedEvent, viewer core
 		out.SourceEntityId = &s
 	}
 	return &encounterv2pb.EncounterEvent{
-		Sequence:      int64(e.Sequence()),
+		Sequence:      int64(e.Sequence()), //nolint:gosec // sequence is monotonic; fits int64
 		Timestamp:     timestamppb.New(e.OccurredAt()),
 		CorrelationId: string(e.CorrelationID()),
 		Event: &encounterv2pb.EncounterEvent_StatusApplied{

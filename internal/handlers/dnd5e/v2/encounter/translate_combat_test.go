@@ -587,7 +587,7 @@ func (s *TranslateSuite) TestTranslateEvent_ConditionAppliedEvent_HappyPath_Full
 
 func (s *TranslateSuite) TestTranslateEvent_ConditionAppliedEvent_ProjectsToolkitMetadata() {
 	gameTime := time.Date(2026, 7, 24, 10, 11, 13, 456789000, time.UTC)
-	evt := events.NewConditionAppliedEvent("enc-1", uint64(72), "goblin-1", "char-A", "dnd5e:conditions:poisoned", 3,
+	evt := events.NewConditionAppliedEvent("enc-1", uint64(72), "char-A", "goblin-1", "dnd5e:conditions:poisoned", 3,
 		map[core.PlayerID]events.ConditionAppliedSlice{"player-A": {Visible: true}})
 	evt.Stamp(gameTime, "corr-701-effect")
 
@@ -595,6 +595,16 @@ func (s *TranslateSuite) TestTranslateEvent_ConditionAppliedEvent_ProjectsToolki
 	s.Require().NoError(err)
 	s.Require().Equal("corr-701-effect", out.GetCorrelationId())
 	s.Require().Equal(gameTime, out.GetTimestamp().AsTime())
+}
+
+func (s *TranslateSuite) TestTranslateEvent_ConditionAppliedEvent_PreservesEmptyCorrelationID() {
+	evt := events.NewConditionAppliedEvent("enc-1", uint64(74), "char-A", "goblin-1", "dnd5e:conditions:poisoned", 3,
+		map[core.PlayerID]events.ConditionAppliedSlice{"player-A": {Visible: true}})
+	evt.Stamp(time.Date(2026, 7, 24, 10, 11, 15, 0, time.UTC), "")
+
+	out, err := v2encounter.TranslateEvent(evt, "player-A", s.now)
+	s.Require().NoError(err)
+	s.Require().Equal("", out.GetCorrelationId())
 }
 
 func (s *TranslateSuite) TestTranslateEvent_DeclaredHitChain_SharesToolkitCorrelationID() {
