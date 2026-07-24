@@ -14,8 +14,7 @@
       "status": "completed",
       "commit": null,
       "notes": "Pure projection only; Interact/AttemptUnlock/SubmitCheck and terminal reasons remain toolkit-owned."
-    },
-    {}
+    }
   ],
   "next_steps": [
     "Run final checks, publish the #690 PR, inspect CI and resolve review comments without merging."

@@ -795,6 +795,22 @@ func (s *ProjectSuite) TestProjectFor_DoorWall_ProjectsLockedClosedKind() {
 	s.Require().Equal(int32(-1), w.GetTo().GetX())
 	s.Require().Equal(int32(0), w.GetTo().GetY())
 	s.Require().Equal(int32(1), w.GetTo().GetZ())
+
+	// Canonical data can temporarily retain Locked while Open becomes true.
+	// Open must win on the wire without changing the addressable door geometry.
+	data.Doors["door-locked"].Open = true
+	pbOpen, err := v2encounter.ProjectFor(context.Background(), data, "player-alice", s.broker, nil, s.now)
+	s.Require().NoError(err)
+	openWalls := pbOpen.GetSpace().GetWalls()
+	s.Require().Len(openWalls, 1)
+	s.Require().Equal(encounterv2pb.WallKind_WALL_KIND_DOOR_OPEN, openWalls[0].GetKind())
+	s.Require().Equal("door-locked", openWalls[0].GetId())
+	s.Require().Equal(int32(0), openWalls[0].GetFrom().GetX())
+	s.Require().Equal(int32(0), openWalls[0].GetFrom().GetY())
+	s.Require().Equal(int32(0), openWalls[0].GetFrom().GetZ())
+	s.Require().Equal(int32(-1), openWalls[0].GetTo().GetX())
+	s.Require().Equal(int32(0), openWalls[0].GetTo().GetY())
+	s.Require().Equal(int32(1), openWalls[0].GetTo().GetZ())
 }
 
 // TestProjectFor_DoorWall_NoRegionNeighbor_FallsBackToDegenerateSegment

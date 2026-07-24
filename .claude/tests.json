@@ -10,7 +10,7 @@
     {
       "id": "terminal-liveness-characterization",
       "feature": "rpg-api#690",
-      "prompt": "Toolkit-owned all-hostiles-defeated and TPK terminal states persist ModeEnded and GetMyActiveLobby refuses resume without API reason synthesis.",
+      "prompt": "The production API stream projects toolkit-owned all-hostiles-defeated and TPK EncounterEnded reasons; both terminal paths persist ModeEnded, and GetMyActiveLobby refuses resume without API reason synthesis.",
       "test_ref": "internal/integration/encounter_v2_test.go; internal/orchestrators/lobby/get_my_active_lobby_test.go",
       "passes": true
     },
