@@ -1099,6 +1099,101 @@ func (s *ProjectSuite) TestProjectFor_HexZoneId_SetViaRegionMembership_NotGeomet
 		"the door hex is adjacent to both regions but tagged into neither — zone_id must stay empty, not inherit a neighbor's zone")
 }
 
+// abs32 is a tiny int32 absolute-value helper for the cube-distance check
+// below -- Go has no builtin for it.
+func abs32(n int32) int32 {
+	if n < 0 {
+		return -n
+	}
+	return n
+}
+
+// TestProjectFor_CryptFixture_ProjectsPerimeterEdgesAsSolidAndDoorsUnchanged
+// covers rpg-api#704 (rpg-toolkit#834's api half): wallsToProto's From/To
+// passthrough was independently verified (toolkit#838's gate review, and a
+// direct read of this file) to already project a boundary-edge segment
+// (Start != End) as a distinct, non-degenerate Wall{From, To} pair -- no
+// code change was needed here. This is the regression guard the gate
+// review flagged was missing: every wall-projection test above hand-builds
+// SpaceData.Walls with degenerate (Start == End) fixtures only, so none of
+// them would catch a regression in this passthrough for the NEW shape.
+// Built from a REAL rpg-toolkit encounter.CryptDungeonParams/InitDungeon
+// fixture (fixed seed) rather than a hand-rolled SpaceData, so this
+// exercises the exact generator output rpg-api receives in production.
+func (s *ProjectSuite) TestProjectFor_CryptFixture_ProjectsPerimeterEdgesAsSolidAndDoorsUnchanged() {
+	const (
+		entranceDoorID = core.EntityID("crypt-door-entrance-corridor")
+		bossDoorID     = core.EntityID("crypt-door-corridor-boss")
+		cryptSeed      = int64(191919)
+	)
+	enc := tkenc.New(context.Background(), "enc-crypt-projection", s.broker)
+	s.Require().NoError(enc.InitDungeon(tkenc.CryptDungeonParams(cryptSeed, entranceDoorID, bossDoorID)))
+
+	data := enc.ToData()
+	data.Mode = core.ModeFreeRoam
+	alice := newPlayerData("player-alice", "char-alice", data.Space.Entrance, 2)
+	data.Players = map[core.PlayerID]*tkenc.PlayerData{"player-alice": alice}
+
+	pb, err := v2encounter.ProjectFor(context.Background(), data, "player-alice", s.broker, nil, s.now)
+	s.Require().NoError(err)
+
+	walls := pb.GetSpace().GetWalls()
+	s.Require().NotEmpty(walls)
+
+	var degenerateCount, perimeterEdgeCount int
+	var doorWallList []*encounterv2pb.Wall
+	for _, w := range walls {
+		if w.GetId() != "" {
+			doorWallList = append(doorWallList, w)
+			continue // door walls are covered separately below
+		}
+		from, to := w.GetFrom(), w.GetTo()
+		if from.GetX() == to.GetX() && from.GetY() == to.GetY() && from.GetZ() == to.GetZ() {
+			degenerateCount++
+			continue
+		}
+		// Non-degenerate: a boundary-edge perimeter segment (rpg-toolkit#834).
+		perimeterEdgeCount++
+		dist := (abs32(from.GetX()-to.GetX()) + abs32(from.GetY()-to.GetY()) + abs32(from.GetZ()-to.GetZ())) / 2
+		s.Require().Equal(int32(1), dist, "perimeter-edge wall %+v must be exactly one hex step apart", w)
+		s.Require().Equal(encounterv2pb.WallKind_WALL_KIND_SOLID, w.GetKind(),
+			"a perimeter-edge segment (BlocksMovement+BlocksLoS both true) must project as WALL_KIND_SOLID")
+	}
+	s.Require().Positive(degenerateCount,
+		"the crypt's interior/connector walls must still project degenerate (From==To)")
+	s.Require().Positive(perimeterEdgeCount,
+		"the crypt must project at least one non-degenerate perimeter-edge wall")
+
+	// doorWallsToProto output unchanged in shape: the crypt's two connector
+	// doors (entrance plain, boss locked) must still each project exactly
+	// one wall, carrying their entity id and passage edge, unaffected by
+	// the much larger Walls list the new perimeter segments add.
+	//
+	// Asserted by COUNT first (Copilot review, PR #705), not just by
+	// distinct-id map membership: a map keyed by id would silently
+	// collapse an accidental duplicate id emission (e.g. 3 door walls
+	// where 2 share an id) down to 2 entries, hiding exactly the
+	// regression this test exists to catch.
+	s.Require().Len(doorWallList, 2, "expected exactly one wall per connector door, by count not merely by distinct id")
+	doorWalls := make(map[string]*encounterv2pb.Wall, len(doorWallList))
+	for _, w := range doorWallList {
+		_, dup := doorWalls[w.GetId()]
+		s.Require().False(dup, "duplicate door wall id %q -- ProjectFor must emit exactly one wall per door", w.GetId())
+		doorWalls[w.GetId()] = w
+	}
+	entranceWall := doorWalls[string(entranceDoorID)]
+	bossWall := doorWalls[string(bossDoorID)]
+	s.Require().NotNil(entranceWall)
+	s.Require().NotNil(bossWall)
+	s.Require().Equal(encounterv2pb.WallKind_WALL_KIND_DOOR_CLOSED, entranceWall.GetKind(),
+		"the crypt's entrance connector is a plain closed door")
+	s.Require().Equal(encounterv2pb.WallKind_WALL_KIND_DOOR_LOCKED, bossWall.GetKind(),
+		"the crypt's boss connector is locked per CryptDungeonParams")
+	s.Require().NotEqual(entranceWall.GetFrom(), entranceWall.GetTo(),
+		"a door wall must project its passage edge, not a degenerate Start==End segment")
+	s.Require().NotEqual(bossWall.GetFrom(), bossWall.GetTo())
+}
+
 func TestProjectSuite(t *testing.T) {
 	suite.Run(t, new(ProjectSuite))
 }
