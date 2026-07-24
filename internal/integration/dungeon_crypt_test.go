@@ -424,11 +424,14 @@ func (s *DungeonCryptSuite) TestBossLock_FailedThenSuccessfulCheck_ProjectsPersi
 
 	failedProjection, err := s.srv.EncounterClientV2.GetEncounter(s.authCtx("alice"), &encounterv2pb.GetEncounterRequest{EncounterId: encounterID})
 	s.Require().NoError(err)
+	lockedBossDoorProjected := false
 	for _, wall := range failedProjection.GetEncounter().GetSpace().GetWalls() {
 		if wall.GetId() == cryptBossDoorID {
+			lockedBossDoorProjected = true
 			s.Require().Equal(encounterv2pb.WallKind_WALL_KIND_DOOR_LOCKED, wall.GetKind())
 		}
 	}
+	s.Require().True(lockedBossDoorProjected, "the locked boss door must project onto the wire")
 
 	_, err = s.srv.EncounterClientV2.Interact(s.authCtx("alice"), &encounterv2pb.InteractRequest{
 		EncounterId: encounterID, TargetEntityId: cryptBossDoorID,
