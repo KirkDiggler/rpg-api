@@ -617,16 +617,28 @@ func (s *LobbySuite) TestStartEncounter_CryptObstacles_ExactRefsCountsAndBlockin
 
 	entranceCounts, entranceBlocking := obstaclesByRef(s.T(), byRegion[tkenc.ArchetypeEntrance])
 	s.Require().Equal(map[string]int{
-		tkenc.CryptObstacleRefObelisk: 1,
-		tkenc.CryptObstacleRefPillar:  2,
-	}, entranceCounts, "entrance region: exactly 1 obelisk + 2 pillars")
+		tkenc.CryptObstacleRefObelisk:  1,
+		tkenc.CryptObstacleRefPillar:   2,
+		tkenc.CryptObstacleRefBrazier:  2,
+		tkenc.CryptObstacleRefBonePile: 2,
+	}, entranceCounts, "entrance region: exactly 1 obelisk + 2 pillars + 2 braziers + 2 bone-piles "+
+		"(rpg-toolkit#839 depth-pass dressing)")
 	s.Require().Equal(obstacleBlocking{blocksMovement: true, blocksLoS: true}, entranceBlocking[tkenc.CryptObstacleRefObelisk])
 	s.Require().Equal(obstacleBlocking{blocksMovement: true, blocksLoS: true}, entranceBlocking[tkenc.CryptObstacleRefPillar])
+	s.Require().Equal(obstacleBlocking{blocksMovement: true, blocksLoS: false}, entranceBlocking[tkenc.CryptObstacleRefBrazier],
+		"a brazier blocks movement but not line of sight -- you can see over the flame")
+	s.Require().Equal(obstacleBlocking{blocksMovement: false, blocksLoS: false}, entranceBlocking[tkenc.CryptObstacleRefBonePile],
+		"a bone-pile is walkable-past floor dressing -- blocks neither movement nor line of sight")
 
-	corridorCounts, _ := obstaclesByRef(s.T(), byRegion[tkenc.ArchetypeCorridor])
+	corridorCounts, corridorBlocking := obstaclesByRef(s.T(), byRegion[tkenc.ArchetypeCorridor])
 	s.Require().Equal(map[string]int{
-		tkenc.CryptObstacleRefPillar: 1,
-	}, corridorCounts, "corridor region: exactly 1 sparse pillar, no others")
+		tkenc.CryptObstacleRefPillar:      1,
+		tkenc.CryptObstacleRefTorchOrnate: 1,
+	}, corridorCounts, "corridor region: exactly 1 sparse pillar + 1 torch-ornate light anchor "+
+		"(rpg-toolkit#839), still no others")
+	s.Require().Equal(obstacleBlocking{blocksMovement: true, blocksLoS: false},
+		corridorBlocking[tkenc.CryptObstacleRefTorchOrnate],
+		"a torch-ornate blocks movement but not line of sight -- same shape as a brazier")
 
 	bossCounts, bossBlocking := obstaclesByRef(s.T(), byRegion[tkenc.ArchetypeBoss])
 	s.Require().Equal(map[string]int{
@@ -634,13 +646,27 @@ func (s *LobbySuite) TestStartEncounter_CryptObstacles_ExactRefsCountsAndBlockin
 		tkenc.CryptObstacleRefAltar:              1,
 		tkenc.CryptObstacleRefStatueReaper:       1,
 		tkenc.CryptObstacleRefStatueKnightHooded: 1,
-	}, bossCounts, "boss region: coffin + altar + one of each statue variant")
+		tkenc.CryptObstacleRefCandles:            2,
+		tkenc.CryptObstacleRefBrazier:            2,
+		tkenc.CryptObstacleRefChain:              1,
+		tkenc.CryptObstacleRefSkeletonRemains:    1,
+	}, bossCounts, "boss region: coffin + altar + one of each statue variant, plus rpg-toolkit#839's "+
+		"2 candles + 2 braziers + 1 chain + 1 skeleton-remains")
 	s.Require().Equal(obstacleBlocking{blocksMovement: true, blocksLoS: false}, bossBlocking[tkenc.CryptObstacleRefCoffin],
 		"the coffin/tomb blocks movement but not line of sight -- walk around, see over")
 	s.Require().Equal(obstacleBlocking{blocksMovement: true, blocksLoS: true}, bossBlocking[tkenc.CryptObstacleRefAltar])
 	s.Require().Equal(obstacleBlocking{blocksMovement: true, blocksLoS: true}, bossBlocking[tkenc.CryptObstacleRefStatueReaper])
 	s.Require().Equal(obstacleBlocking{blocksMovement: true, blocksLoS: true},
 		bossBlocking[tkenc.CryptObstacleRefStatueKnightHooded])
+	s.Require().Equal(obstacleBlocking{blocksMovement: true, blocksLoS: false}, bossBlocking[tkenc.CryptObstacleRefBrazier],
+		"a brazier blocks movement but not line of sight -- you can see over the flame")
+	s.Require().Equal(obstacleBlocking{blocksMovement: false, blocksLoS: false}, bossBlocking[tkenc.CryptObstacleRefCandles],
+		"candles are walkable-past floor dressing -- block neither movement nor line of sight")
+	s.Require().Equal(obstacleBlocking{blocksMovement: false, blocksLoS: false}, bossBlocking[tkenc.CryptObstacleRefChain],
+		"a chain is walkable-past floor dressing -- blocks neither movement nor line of sight")
+	s.Require().Equal(obstacleBlocking{blocksMovement: false, blocksLoS: false},
+		bossBlocking[tkenc.CryptObstacleRefSkeletonRemains],
+		"skeleton-remains is walkable-past floor dressing -- blocks neither movement nor line of sight")
 }
 
 // TestStartEncounter_CryptObstacles_ExplicitSeed_DeterministicPositions
