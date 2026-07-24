@@ -412,6 +412,28 @@ func (s *TranslateSuite) TestTranslateEvent_DamageDealtEvent_HappyPath() {
 	s.Require().Equal(int64(11), out.Sequence)
 }
 
+func (s *TranslateSuite) TestTranslateEvent_DamageDealtEvent_ProjectsToolkitMetadata() {
+	gameTime := time.Date(2026, 7, 24, 10, 11, 12, 345678900, time.UTC)
+	evt := events.NewDamageDealtEvent("enc-1", uint64(71), "goblin-1", "char-A", 5, "slashing", 2, 7,
+		map[core.PlayerID]events.DamageDealtSlice{"player-A": {Visible: true}})
+	evt.Stamp(gameTime, "corr-701-effect")
+
+	out, err := v2encounter.TranslateEvent(evt, "player-A", s.now)
+	s.Require().NoError(err)
+	s.Require().Equal("corr-701-effect", out.GetCorrelationId())
+	s.Require().Equal(gameTime, out.GetTimestamp().AsTime())
+}
+
+func (s *TranslateSuite) TestTranslateEvent_DamageDealtEvent_PreservesEmptyCorrelationID() {
+	evt := events.NewDamageDealtEvent("enc-1", uint64(73), "goblin-1", "char-A", 5, "slashing", 2, 7,
+		map[core.PlayerID]events.DamageDealtSlice{"player-A": {Visible: true}})
+	evt.Stamp(time.Date(2026, 7, 24, 10, 11, 14, 0, time.UTC), "")
+
+	out, err := v2encounter.TranslateEvent(evt, "player-A", s.now)
+	s.Require().NoError(err)
+	s.Require().Equal("", out.GetCorrelationId())
+}
+
 func (s *TranslateSuite) TestTranslateEvent_DamageDealtEvent_WithBreakdown_PopulatesProto() {
 	// Verify that DamageDealtEvent.Components are forwarded into the proto's
 	// damage_breakdown field. Two components: weapon + sneak attack.
@@ -561,6 +583,46 @@ func (s *TranslateSuite) TestTranslateEvent_ConditionAppliedEvent_HappyPath_Full
 	s.Require().Equal("conditions", app.GetStatus().GetSource().GetType())
 	s.Require().Equal("poisoned", app.GetStatus().GetSource().GetId())
 	s.Require().Equal(int32(3), app.GetStatus().GetDurationRounds())
+}
+
+func (s *TranslateSuite) TestTranslateEvent_ConditionAppliedEvent_ProjectsToolkitMetadata() {
+	gameTime := time.Date(2026, 7, 24, 10, 11, 13, 456789000, time.UTC)
+	evt := events.NewConditionAppliedEvent("enc-1", uint64(72), "char-A", "goblin-1", "dnd5e:conditions:poisoned", 3,
+		map[core.PlayerID]events.ConditionAppliedSlice{"player-A": {Visible: true}})
+	evt.Stamp(gameTime, "corr-701-effect")
+
+	out, err := v2encounter.TranslateEvent(evt, "player-A", s.now)
+	s.Require().NoError(err)
+	s.Require().Equal("corr-701-effect", out.GetCorrelationId())
+	s.Require().Equal(gameTime, out.GetTimestamp().AsTime())
+}
+
+func (s *TranslateSuite) TestTranslateEvent_ConditionAppliedEvent_PreservesEmptyCorrelationID() {
+	evt := events.NewConditionAppliedEvent("enc-1", uint64(74), "char-A", "goblin-1", "dnd5e:conditions:poisoned", 3,
+		map[core.PlayerID]events.ConditionAppliedSlice{"player-A": {Visible: true}})
+	evt.Stamp(time.Date(2026, 7, 24, 10, 11, 15, 0, time.UTC), "")
+
+	out, err := v2encounter.TranslateEvent(evt, "player-A", s.now)
+	s.Require().NoError(err)
+	s.Require().Equal("", out.GetCorrelationId())
+}
+
+func (s *TranslateSuite) TestTranslateEvent_DeclaredHitChain_SharesToolkitCorrelationID() {
+	gameTime := time.Date(2026, 7, 24, 10, 12, 0, 0, time.UTC)
+	const correlationID = "corr-701-declared-hit"
+	visibleAction := map[core.PlayerID]events.ActionResolvedSlice{"player-A": {Visible: true}}
+	visibleAttack := map[core.PlayerID]events.AttackResolvedSlice{"player-A": {Visible: true}}
+	visibleDamage := map[core.PlayerID]events.DamageDealtSlice{"player-A": {Visible: true}}
+	action := events.NewActionResolvedEvent("enc-1", uint64(80), "char-A", "dnd5e:combat_abilities:attack", "goblin-1", events.EconomyConsumed{Actions: 1}, visibleAction)
+	attack := events.NewAttackResolvedEvent("enc-1", uint64(81), "char-A", "goblin-1", true, false, 16, 5, 14, false, false, nil, nil, visibleAttack)
+	damage := events.NewDamageDealtEvent("enc-1", uint64(82), "goblin-1", "char-A", 7, "slashing", 0, 7, visibleDamage)
+	for _, evt := range []events.EncounterEvent{action, attack, damage} {
+		evt.Stamp(gameTime, correlationID)
+		out, err := v2encounter.TranslateEvent(evt, "player-A", s.now)
+		s.Require().NoError(err)
+		s.Require().Equal(correlationID, out.GetCorrelationId())
+		s.Require().Equal(gameTime, out.GetTimestamp().AsTime())
+	}
 }
 
 func (s *TranslateSuite) TestTranslateEvent_ConditionAppliedEvent_BareIDFallsBackToDefaults() {

@@ -81,9 +81,9 @@ func TranslateEvent(evt events.EncounterEvent, viewer core.PlayerID, now time.Ti
 	case *events.TurnStateChangedEvent:
 		return translateTurnStateChangedEvent(e, viewer)
 	case *events.DamageDealtEvent:
-		return translateDamageDealtEvent(e, viewer, now)
+		return translateDamageDealtEvent(e, viewer)
 	case *events.ConditionAppliedEvent:
-		return translateConditionAppliedEvent(e, viewer, now)
+		return translateConditionAppliedEvent(e, viewer)
 	case *events.ConditionRemovedEvent:
 		return translateConditionRemovedEvent(e, viewer, now)
 	case *events.ResourceChangedEvent:
@@ -677,7 +677,7 @@ func translateTurnStateChangedEvent(e *events.TurnStateChangedEvent, viewer core
 // silent skip. The toolkit's publish-side already gated audience by LoS to
 // attacker OR target so a Visible:true entry means the viewer should see
 // the wire-shape event.
-func translateDamageDealtEvent(e *events.DamageDealtEvent, viewer core.PlayerID, now time.Time) (*encounterv2pb.EncounterEvent, error) {
+func translateDamageDealtEvent(e *events.DamageDealtEvent, viewer core.PlayerID) (*encounterv2pb.EncounterEvent, error) {
 	slice, ok := e.PerPlayer[viewer]
 	if !ok || !slice.Visible {
 		return nil, ErrViewerSawNothing
@@ -712,8 +712,9 @@ func translateDamageDealtEvent(e *events.DamageDealtEvent, viewer core.PlayerID,
 		}
 	}
 	return &encounterv2pb.EncounterEvent{
-		Sequence:  int64(e.Sequence()),
-		Timestamp: timestamppb.New(now),
+		Sequence:      int64(e.Sequence()), //nolint:gosec // sequence is monotonic; fits int64
+		Timestamp:     timestamppb.New(e.OccurredAt()),
+		CorrelationId: string(e.CorrelationID()),
 		Event: &encounterv2pb.EncounterEvent_EntityDamaged{
 			EntityDamaged: out,
 		},
@@ -729,7 +730,7 @@ func translateDamageDealtEvent(e *events.DamageDealtEvent, viewer core.PlayerID,
 // emits the StatusEffect.Source as a Ref with the same id portion; the web
 // resolves display_name / icon_hint from its own lookup table. Future waves
 // can plumb richer status metadata when toolkit ships it.
-func translateConditionAppliedEvent(e *events.ConditionAppliedEvent, viewer core.PlayerID, now time.Time) (*encounterv2pb.EncounterEvent, error) {
+func translateConditionAppliedEvent(e *events.ConditionAppliedEvent, viewer core.PlayerID) (*encounterv2pb.EncounterEvent, error) {
 	slice, ok := e.PerPlayer[viewer]
 	if !ok || !slice.Visible {
 		return nil, ErrViewerSawNothing
@@ -750,8 +751,9 @@ func translateConditionAppliedEvent(e *events.ConditionAppliedEvent, viewer core
 		out.SourceEntityId = &s
 	}
 	return &encounterv2pb.EncounterEvent{
-		Sequence:  int64(e.Sequence()),
-		Timestamp: timestamppb.New(now),
+		Sequence:      int64(e.Sequence()), //nolint:gosec // sequence is monotonic; fits int64
+		Timestamp:     timestamppb.New(e.OccurredAt()),
+		CorrelationId: string(e.CorrelationID()),
 		Event: &encounterv2pb.EncounterEvent_StatusApplied{
 			StatusApplied: out,
 		},
