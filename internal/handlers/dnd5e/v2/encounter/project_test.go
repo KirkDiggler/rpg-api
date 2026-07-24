@@ -1131,7 +1131,15 @@ func (s *ProjectSuite) TestProjectFor_CryptFixture_ProjectsPerimeterEdgesAsSolid
 
 	data := enc.ToData()
 	data.Mode = core.ModeFreeRoam
-	alice := newPlayerData("player-alice", "char-alice", data.Space.Entrance, 2)
+	// SightRange 30 comfortably covers the whole entrance region (width
+	// 10, height 8) from the entrance spawn -- unlike walls/doors (whole-
+	// room, unconditional), obstacle visibility on the wire IS
+	// LOS/reveal-gated, and rpg-toolkit#839's dressing lands wherever its
+	// PreferBorder draw happens to place it within the region, not
+	// necessarily near the spawn cell. A short sight range here would
+	// make the bone-pile assertion below seed-dependent instead of a
+	// reliable proof.
+	alice := newPlayerData("player-alice", "char-alice", data.Space.Entrance, 30)
 	data.Players = map[core.PlayerID]*tkenc.PlayerData{"player-alice": alice}
 
 	pb, err := v2encounter.ProjectFor(context.Background(), data, "player-alice", s.broker, nil, s.now)
@@ -1139,6 +1147,26 @@ func (s *ProjectSuite) TestProjectFor_CryptFixture_ProjectsPerimeterEdgesAsSolid
 
 	walls := pb.GetSpace().GetWalls()
 	s.Require().NotEmpty(walls)
+
+	// rpg-api#707: rpg-toolkit#839's dressing (bone-pile, candles, chain,
+	// skeleton-remains) is the FIRST real crypt content with
+	// BlocksMovement=false -- every obstacle before it always blocked
+	// movement. Confirms the wire projection actually carries that flag
+	// through for a REAL CryptDungeonParams-placed instance, not just the
+	// hand-built fixture TestProjectFor_ProjectsOnlyRevealedObstaclesInStableIDOrder
+	// already covers generically.
+	var bonePile *encounterv2pb.Entity
+	for _, entity := range pb.GetSpace().GetEntities() {
+		if entity.GetType() == encounterv2pb.EntityType_ENTITY_TYPE_OBSTACLE &&
+			entity.GetObstacle().GetObstacleRef().GetId() == "bone-pile" {
+			bonePile = entity
+			break
+		}
+	}
+	s.Require().NotNil(bonePile, "the entrance region's bone-pile dressing must be revealed and projected")
+	s.Require().False(bonePile.GetObstacle().GetBlocksMovement(),
+		"a bone-pile is walkable-past floor dressing -- must project blocks_movement=false on the wire")
+	s.Require().False(bonePile.GetObstacle().GetBlocksLineOfSight())
 
 	var degenerateCount, perimeterEdgeCount int
 	var doorWallList []*encounterv2pb.Wall
