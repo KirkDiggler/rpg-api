@@ -1,6 +1,7 @@
 package lobby_test
 
 import (
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -38,6 +39,36 @@ func TestNew_NegativePartyCap_ReturnsError(t *testing.T) {
 		JoinRefGenerator:     idgen.NewSequential("ref"),
 		EncounterIDGenerator: idgen.NewSequential("enc"),
 		PartyCap:             -1,
+	})
+	require.Error(t, err)
+}
+
+// TestNew_ContentDirUnreadable_ReturnsConstructionError proves Task E2's
+// content-dir wiring end to end: an RPG_CONTENT_DIR pointing at a path
+// that can't be read must fail lobbyorch.New() loudly, not panic and not
+// silently degrade to embedded-only content — the same "operator/config
+// mistake must fail construction" posture Task E2b applies to
+// RPG_DUNGEON_KEY.
+func TestNew_ContentDirUnreadable_ReturnsConstructionError(t *testing.T) {
+	t.Setenv("RPG_CONTENT_DIR", filepath.Join(t.TempDir(), "does-not-exist"))
+
+	ctrl := gomock.NewController(t)
+	_, err := lobbyorch.New(&lobbyorch.Config{
+		LobbyRepo:         lobbyrepo.NewInMemory(),
+		LobbyBroker:       lobbyorch.NewBroker(),
+		CharacterRepo:     charactermock.NewMockRepository(ctrl),
+		EncounterRepo:     encountersv2.NewInMemory(),
+		EncounterBroker:   tkenc.NewBroker(tkenc.NewInMemoryTransport()),
+		CharacterResolver: encounterhandlerv2.StubCharacterResolver{},
+		BuildCombatResolver: func(_ *tkenc.Data) tkenc.CombatResolver {
+			return nil
+		},
+		BuildMovementResolver: func(_ *tkenc.Data) tkenc.MovementResolver {
+			return nil
+		},
+		LobbyIDGenerator:     idgen.NewSequential("lobby"),
+		JoinRefGenerator:     idgen.NewSequential("ref"),
+		EncounterIDGenerator: idgen.NewSequential("enc"),
 	})
 	require.Error(t, err)
 }

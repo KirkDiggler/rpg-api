@@ -106,17 +106,39 @@ func (o *Orchestrator) StartEncounter(ctx context.Context, in *StartEncounterInp
 		return nil, errors.New("lobby orchestrator: StartEncounterInput is required")
 	}
 
-	// Resolve the dungeon spec BEFORE touching the lobby lock or building
-	// anything — an unknown key must fail loudly with zero side effects
-	// (rpg-api#688's boundary note: rpg-api never invents geometry for a
-	// key it doesn't recognize). in.RandomSeed threads straight through to
-	// the resolved tkenc.DungeonParams.RandomSeed (rpg-api#694: the crypt
-	// key's builder calls tkenc.CryptDungeonParams(seed, ...), which sets
-	// it) — entropy-seeded when zero, same as every other InitRoom/
-	// InitDungeon caller.
-	dungeonKey, dungeonParams, specErr := resolveDungeonSpec(in.DungeonKey, in.RandomSeed)
-	if specErr != nil {
-		return nil, specErr
+	// effectiveKey is in.DungeonKey today, unchanged — Task E2b adds an
+	// RPG_DUNGEON_KEY-sourced fallback here (o.dungeonKeyOverride) for
+	// when the caller supplies no key at all; until that lands this is a
+	// plain passthrough, so every real caller's behavior is untouched by
+	// this task.
+	effectiveKey := in.DungeonKey
+
+	// Content-backed resolution (Task E2) runs FIRST, before touching the
+	// lobby lock or building anything — same "fail loudly, zero side
+	// effects" posture resolveDungeonSpec below already has. A content key
+	// that's FOUND but disabled (its file failed dungeonspec.Load at
+	// startup) must return immediately here; a key content doesn't
+	// recognize at all falls through to the legacy resolveDungeonSpec/
+	// dungeonSpecs path below, completely untouched by this branch.
+	contentCompiled, foundInContent, contentErr := o.resolveContentDungeonSpec(effectiveKey)
+	if foundInContent && contentErr != nil {
+		return nil, contentErr // *DisabledDungeonKeyError; lobbyStatusError maps it (Task E3)
+	}
+
+	// The legacy path only runs when effectiveKey isn't content-backed at
+	// all — resolveDungeonSpec ITSELF is untouched: it still applies its
+	// own hardcoded defaultDungeonKey fallback for an empty key, and
+	// effectiveKey is only empty here when the caller supplied none
+	// (today, every real caller), so today's exact fallback behavior
+	// (crypt) is unchanged for every key content doesn't claim.
+	var dungeonKey DungeonKey
+	var dungeonParams tkenc.DungeonParams
+	if !foundInContent {
+		var specErr error
+		dungeonKey, dungeonParams, specErr = resolveDungeonSpec(effectiveKey, in.RandomSeed)
+		if specErr != nil {
+			return nil, specErr
+		}
 	}
 
 	unlock := o.locks.Lock(in.LobbyID)
@@ -157,10 +179,19 @@ func (o *Orchestrator) StartEncounter(ctx context.Context, in *StartEncounterInp
 	// the dungeon (N regions + N-1 plain doors + entrance + per-region
 	// archetype tags + opaque theme + physical set-piece obstacles) is
 	// entirely the toolkit's call — rpg-api only supplies the resolved
-	// key's toolkit-constructed params verbatim (rpg-api#688, rpg-api#694).
-	// dungeonParams.RandomSeed is already in.RandomSeed, threaded in by
-	// resolveDungeonSpec above.
-	if err := enc.InitDungeon(dungeonParams); err != nil {
+	// key's toolkit-constructed params verbatim (rpg-api#688, rpg-api#694),
+	// or (Task E2) the content-compiled params verbatim.
+	if foundInContent {
+		// compiled.Params.RandomSeed is a FIELD dungeonspec.Load leaves at
+		// its zero value (Load has no opinion on reproducibility) — the
+		// caller must set it before InitDungeon, exactly like
+		// resolveDungeonSpec already threads in.RandomSeed into the
+		// legacy path's params below.
+		contentCompiled.Params.RandomSeed = in.RandomSeed
+		if err := enc.InitDungeon(contentCompiled.Params); err != nil {
+			return nil, fmt.Errorf("init dungeon (key=%q) for encounter %q: %w", effectiveKey, encID, err)
+		}
+	} else if err := enc.InitDungeon(dungeonParams); err != nil {
 		return nil, fmt.Errorf("init dungeon (key=%q) for encounter %q: %w", dungeonKey, encID, err)
 	}
 
@@ -199,18 +230,23 @@ func (o *Orchestrator) StartEncounter(ctx context.Context, in *StartEncounterInp
 		}
 	}
 
-	// Seed the crypt's first-swing monster composition (rpg-api#689): one
+	// Seed monsters — Task E2's content-backed branch uses the toolkit's
+	// generic Encounter.SeedMonsters against the compiled spawn plan
+	// (dungeonspec's own placed-instruction batching/atomic-combat-entry
+	// invariants); the legacy crypt branch is UNCHANGED: one
 	// deterministic-anchor minion in the entrance region, zero in the
 	// corridor, one deterministic-anchor boss in the boss region — via
 	// spawn.FixedPositions only (crypt_monster_seed.go's
 	// seedRegionMonsters/buildMonsterSeedGroups/regionMonsterAnchor), no
-	// PositionOracle search/retry. Concealment (when it happens) comes
-	// from real door/wall LoS geometry, not a placement predicate.
-	// dungeonParams is the same toolkit-constructed params InitDungeon was
-	// just given above (rpg-api#694: CryptDungeonParams' own Regions/
-	// Connectors, not an API-owned literal) — seedRegionMonsters is generic
-	// over that shape regardless of which key produced it.
-	if err := o.seedRegionMonsters(ctx, enc, encID, dungeonParams, dungeonKey); err != nil {
+	// PositionOracle search/retry. Both branches run AFTER every member has
+	// been added above (SeedMonsters' documented caller-ordering
+	// requirement; seedRegionMonsters already relies on the same thing via
+	// perception.CanSeeAt's combat-entry check).
+	if foundInContent {
+		if err := enc.SeedMonsters(contentCompiled.Spawns); err != nil {
+			return nil, fmt.Errorf("seed monsters for encounter %q: %w", encID, err)
+		}
+	} else if err := o.seedRegionMonsters(ctx, enc, encID, dungeonParams, dungeonKey); err != nil {
 		return nil, fmt.Errorf("seed monsters for encounter %q: %w", encID, err)
 	}
 

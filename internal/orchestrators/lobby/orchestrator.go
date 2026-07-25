@@ -117,6 +117,12 @@ type Orchestrator struct {
 	partyCap              int
 	now                   func() time.Time
 	locks                 *keyedMutex
+
+	// contentSpecs is the content-hosted dungeon spec registry (Task E2),
+	// built ONCE here at construction by loadContentSpecs — StartEncounter
+	// resolves against this stored map (resolveContentDungeonSpec), never
+	// by calling content.AllSpecs/SpecByKey again per request.
+	contentSpecs map[DungeonKey]contentSpecResult
 }
 
 // New constructs an Orchestrator from cfg. Returns an error (never a nil
@@ -169,6 +175,16 @@ func New(cfg *Config) (*Orchestrator, error) {
 	if now == nil {
 		now = time.Now
 	}
+
+	// Content-hosted dungeon specs (Task E2): built once here, never
+	// per-request. An unreadable RPG_CONTENT_DIR fails construction
+	// loudly rather than silently degrading to embedded-only content —
+	// see loadContentSpecs' doc.
+	contentSpecs, err := loadContentSpecs()
+	if err != nil {
+		return nil, err
+	}
+
 	return &Orchestrator{
 		lobbyRepo:             cfg.LobbyRepo,
 		lobbyBroker:           cfg.LobbyBroker,
@@ -184,6 +200,7 @@ func New(cfg *Config) (*Orchestrator, error) {
 		partyCap:              partyCap,
 		now:                   now,
 		locks:                 newKeyedMutex(),
+		contentSpecs:          contentSpecs,
 	}, nil
 }
 

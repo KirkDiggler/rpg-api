@@ -202,3 +202,49 @@ func (s *ContentTestSuite) TestContentDirOverride_UnreadablePathReturnsError() {
 	_, _, err = content.SpecByKey("reference-tomb")
 	s.Require().Error(err, "SpecByKey must propagate the same unreadable-path error")
 }
+
+// TestOverriddenKeys_UnsetIsEmpty covers the no-override baseline: with
+// RPG_CONTENT_DIR unset, nothing is shadowed.
+func (s *ContentTestSuite) TestOverriddenKeys_UnsetIsEmpty() {
+	shadowed, err := content.OverriddenKeys()
+	s.Require().NoError(err)
+	s.Assert().Empty(shadowed)
+}
+
+// TestOverriddenKeys_DistinguishesShadowedFromNewKeys is the E2 debug-log
+// enabler: a caller (the lobby orchestrator's startup registry) needs to
+// tell "an override REPLACED an embedded key" (worth a debug line — an
+// author's confirmation their edit took effect) apart from "an override
+// merely ADDED a new key" (nothing was shadowed, no such confirmation is
+// meaningful). reference-tomb collides with the embedded set; atlantis is
+// wholly new and must NOT appear here even though it resolves fine via
+// SpecByKey.
+func (s *ContentTestSuite) TestOverriddenKeys_DistinguishesShadowedFromNewKeys() {
+	dir := s.T().TempDir()
+	require.NoError(s.T(), os.WriteFile(
+		filepath.Join(dir, "reference-tomb.yaml"),
+		[]byte("version: 1\nkey: reference-tomb\nname: Overridden Reference Tomb\n"),
+		0o600,
+	))
+	require.NoError(s.T(), os.WriteFile(
+		filepath.Join(dir, "atlantis.yaml"),
+		[]byte("version: 1\nkey: atlantis\nname: Atlantis\n"),
+		0o600,
+	))
+	s.T().Setenv("RPG_CONTENT_DIR", dir)
+
+	shadowed, err := content.OverriddenKeys()
+	s.Require().NoError(err)
+	s.Assert().Equal([]string{"reference-tomb"}, shadowed)
+}
+
+// TestOverriddenKeys_UnreadablePathReturnsError mirrors AllSpecs'/
+// SpecByKey's posture: an unreadable RPG_CONTENT_DIR is a hard error here
+// too, never silently treated as "nothing shadowed."
+func (s *ContentTestSuite) TestOverriddenKeys_UnreadablePathReturnsError() {
+	missing := filepath.Join(s.T().TempDir(), "does-not-exist")
+	s.T().Setenv("RPG_CONTENT_DIR", missing)
+
+	_, err := content.OverriddenKeys()
+	s.Require().Error(err)
+}

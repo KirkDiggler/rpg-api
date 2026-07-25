@@ -79,6 +79,36 @@ func SpecByKey(key string) (raw []byte, ok bool, err error) {
 	return raw, ok, nil
 }
 
+// OverriddenKeys returns the RPG_CONTENT_DIR keys that also exist in the
+// embedded set -- i.e. the keys where the override actually SHADOWS an
+// embedded file, as distinct from a wholly new key the override merely
+// adds. Empty (never an error) when RPG_CONTENT_DIR is unset. Intended
+// for a one-line startup debug log confirming, to an author mid
+// edit-restart loop, that their local edit actually took effect -- not
+// for the resolution path itself (AllSpecs/SpecByKey already apply the
+// override correctly regardless of whether a caller ever calls this).
+func OverriddenKeys() ([]string, error) {
+	dir := os.Getenv(contentDirEnvVar)
+	if dir == "" {
+		return nil, nil
+	}
+
+	embedded, _ := buildRegistry(embeddedFiles(), true)
+	overrideFiles, err := readOverrideDir(dir)
+	if err != nil {
+		return nil, err
+	}
+	overrides, _ := buildRegistry(overrideFiles, false)
+
+	var shadowed []string
+	for k := range overrides {
+		if _, embeddedHasKey := embedded[k]; embeddedHasKey {
+			shadowed = append(shadowed, k)
+		}
+	}
+	return shadowed, nil
+}
+
 // embeddedFiles reads every file under the embedded dungeons/ directory.
 // A read failure here means the embed itself is broken -- panicking is
 // intentional, compiled-in content should never fail to read.

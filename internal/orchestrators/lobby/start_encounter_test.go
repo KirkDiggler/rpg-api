@@ -2,7 +2,10 @@ package lobby_test
 
 import (
 	"encoding/json"
+	"errors"
 	"math"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -918,4 +921,113 @@ func (s *LobbySuite) TestStartEncounter_DungeonGeometryIndependentOfPartySize() 
 		return out
 	}
 	s.Require().Equal(doorPositions(data1), doorPositions(data2), "connector door positions are geometry too")
+}
+
+// --- Task E2: content-backed dungeon keys ---
+
+// TestStartEncounter_ContentBackedKey_ReferenceTomb is the M1 acceptance
+// proof at the orchestrator level: StartEncounter("reference-tomb")
+// builds the content-hosted spec (internal/content/dungeons/
+// reference-tomb.yaml, shipped embedded — no RPG_CONTENT_DIR override
+// needed) via the SAME toolkit InitDungeon + SeedMonsters path a real
+// content-authored dungeon would use — two regions (entrance + tomb) with
+// their declared archetypes, the tomb's boss and every place: prop/monster
+// landing inside the tomb region, and the EXISTING crypt-path tests
+// (TestStartEncounter_CryptDungeon_..., TestStartEncounter_CryptMonsters_...,
+// TestStartEncounter_CryptObstacles_...) staying green completely
+// unperturbed by this branch's addition.
+func (s *LobbySuite) TestStartEncounter_ContentBackedKey_ReferenceTomb() {
+	s.seedReadyLobby("lobby-tomb1", "alice")
+	s.expectCharacter("char-alice", "alice", "Alice", 12, 12)
+
+	out, err := s.orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		PlayerID: "alice", LobbyID: "lobby-tomb1",
+		DungeonKey: lobbyorch.DungeonKey("reference-tomb"), RandomSeed: 42,
+	})
+	s.Require().NoError(err)
+
+	encData, err := s.encRepo.Get(s.ctx, out.EncounterID)
+	s.Require().NoError(err)
+	s.Require().NotNil(encData.Space)
+	s.Require().Equal("crypt", encData.Space.Theme)
+	s.Require().Len(encData.Space.Regions, 2, "reference-tomb is a two-room spec: entrance + tomb")
+
+	entrance, entranceOK := regionByArchetype(encData.Space, tkenc.ArchetypeEntrance)
+	s.Require().True(entranceOK, "exactly one entrance-archetype region")
+	tomb, tombOK := regionByArchetype(encData.Space, tkenc.ArchetypeBoss)
+	s.Require().True(tombOK, "exactly one boss-archetype region (the tomb)")
+	_ = entrance
+
+	// The boss (skeleton-captain, pinned boss.at) and the placed skeleton
+	// monster must both be present, landing inside the tomb region.
+	var bossFound, skeletonFound bool
+	for _, m := range encData.Monsters {
+		regionID, ok := encData.Space.RegionAt(m.Position)
+		s.Require().True(ok, "every seeded monster must land on a tagged region hex")
+		s.Assert().Equal(tomb.ID, regionID, "reference-tomb's monsters are both in the tomb room")
+		switch m.MonsterRef {
+		case "dnd5e:monsters:skeleton-captain":
+			bossFound = true
+		case "dnd5e:monsters:skeleton":
+			skeletonFound = true
+		}
+	}
+	s.Require().True(bossFound, "the pinned boss (skeleton-captain) must be seeded")
+	s.Require().True(skeletonFound, "the placed skeleton monster must be seeded")
+	s.Require().Len(encData.Monsters, 2, "exactly the boss + one placed skeleton — no rolled/count-based monsters in M1")
+
+	// All five placed props (coffin, altar, statue-reaper, brazier x2) must
+	// land inside the tomb region too.
+	wantObstacleRefs := map[string]int{
+		"dnd5e:props:coffin":        1,
+		"dnd5e:props:altar":         1,
+		"dnd5e:props:statue-reaper": 1,
+		"dnd5e:props:brazier":       2,
+	}
+	gotObstacleRefs := map[string]int{}
+	for _, obstacle := range encData.Space.Obstacles {
+		regionID, ok := encData.Space.RegionAt(obstacle.Position)
+		s.Require().True(ok, "every placed obstacle must land on a tagged region hex")
+		s.Assert().Equal(tomb.ID, regionID, "reference-tomb's placed props are all in the tomb room")
+		gotObstacleRefs[obstacle.Ref]++
+	}
+	s.Require().Equal(wantObstacleRefs, gotObstacleRefs, "exactly the reference-tomb spec's five placed props")
+}
+
+// TestStartEncounter_DisabledContentKey_ErrorsBeforeLobbyLock proves the
+// "found but disabled" branch (Task E2's three-state contract): a
+// content-backed key whose file fails dungeonspec.Load at startup must
+// return a *lobbyorch.DisabledDungeonKeyError, before touching the lobby
+// lock — same zero-side-effects posture as an unknown legacy key
+// (TestStartEncounter_UnknownDungeonKey_ErrorsAndLobbyStaysWaiting above).
+// Uses a dedicated Orchestrator (newOrchestratorWithContentDir) since
+// loadContentSpecs only reads RPG_CONTENT_DIR once, at construction.
+func (s *LobbySuite) TestStartEncounter_DisabledContentKey_ErrorsBeforeLobbyLock() {
+	dir := s.T().TempDir()
+	require.NoError(s.T(), os.WriteFile(
+		filepath.Join(dir, "broken-dungeon.yaml"),
+		[]byte("version: 1\nkey: broken-dungeon\nname: Broken\nheight: 8\nrooms:\n"+
+			"  - id: only-one\n    archetype: entrance\n    width: 6\n"),
+		0o600,
+	))
+	orch, err := s.newOrchestratorWithContentDir(dir)
+	s.Require().NoError(err, "a schema-invalid content FILE must not fail construction — only an unreadable path does")
+
+	s.seedReadyLobby("lobby-broken1", "alice")
+	// No expectCharacter armed: resolving the content spec fails before
+	// StartEncounter ever reaches character-snapshot seeding.
+
+	_, err = orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		PlayerID: "alice", LobbyID: "lobby-broken1",
+		DungeonKey: lobbyorch.DungeonKey("broken-dungeon"),
+	})
+	s.Require().Error(err)
+	var disabledErr *lobbyorch.DisabledDungeonKeyError
+	s.Require().True(errors.As(err, &disabledErr), "must be a *DisabledDungeonKeyError, not a generic error")
+	s.Assert().Equal(lobbyorch.DungeonKey("broken-dungeon"), disabledErr.Key)
+
+	lobbyData, err := s.lobbyRepo.Get(s.ctx, "lobby-broken1")
+	s.Require().NoError(err)
+	s.Require().Equal(lobbyrepo.StatusWaiting, lobbyData.Status, "a disabled content key must fail before any state transition")
+	s.Require().Empty(lobbyData.EncounterID)
 }

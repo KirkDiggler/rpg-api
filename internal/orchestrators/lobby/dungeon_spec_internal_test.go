@@ -12,11 +12,14 @@ package lobby
 // obstacles included.
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
 	tkenc "github.com/KirkDiggler/rpg-toolkit/encounter"
+	"github.com/KirkDiggler/rpg-toolkit/encounter/dungeonspec"
 )
 
 // TestResolveDungeonSpec_ExplicitCryptKey_MatchesToolkitConstructorVerbatim
@@ -94,4 +97,105 @@ func TestResolveDungeonSpec_UnknownKey_ReturnsErrUnknownDungeonKey(t *testing.T)
 	_, _, err := resolveDungeonSpec(DungeonKey("no-such-key"), 0)
 	require.Error(t, err)
 	require.True(t, errors.Is(err, ErrUnknownDungeonKey))
+}
+
+// --- Task E2: content-backed dungeon spec resolution ---
+
+// TestLoadContentSpecs_EmbeddedReferenceTombCompiles proves the M1
+// acceptance file (internal/content/dungeons/reference-tomb.yaml) is
+// present in loadContentSpecs' startup registry and compiled cleanly —
+// no RPG_CONTENT_DIR override needed, since reference-tomb ships embedded.
+func TestLoadContentSpecs_EmbeddedReferenceTombCompiles(t *testing.T) {
+	specs, err := loadContentSpecs()
+	require.NoError(t, err)
+
+	result, ok := specs[DungeonKey("reference-tomb")]
+	require.True(t, ok, "reference-tomb must be present in the startup registry")
+	require.NoError(t, result.err, "reference-tomb must compile cleanly — it's the M1 acceptance file")
+	require.Len(t, result.compiled.Params.Regions, 2, "entrance + tomb")
+}
+
+// TestLoadContentSpecs_ContentDirUnreadable_ReturnsError proves an
+// unreadable RPG_CONTENT_DIR path fails loudly here — the caller (New)
+// propagates this as a construction failure, never a panic.
+func TestLoadContentSpecs_ContentDirUnreadable_ReturnsError(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "does-not-exist")
+	t.Setenv("RPG_CONTENT_DIR", missing)
+
+	_, err := loadContentSpecs()
+	require.Error(t, err)
+}
+
+// TestLoadContentSpecs_BrokenOverrideFile_StoredAsDisabledNotConstructionFailure
+// proves the OTHER failure mode: a content file with a valid key: field
+// that nonetheless fails dungeonspec.Load (a schema/business-rule
+// violation — here, a single-room spec violating the >=2-rooms rule)
+// must NOT fail loadContentSpecs itself; it's stored as a disabled
+// (errored) contentSpecResult for that one key, every other key
+// unaffected — resolveContentDungeonSpec is what turns this into a
+// caller-visible DisabledDungeonKeyError, per-request, not at startup.
+func TestLoadContentSpecs_BrokenOverrideFile_StoredAsDisabledNotConstructionFailure(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(dir, "broken-dungeon.yaml"),
+		[]byte("version: 1\nkey: broken-dungeon\nname: Broken\nheight: 8\nrooms:\n  - id: only-one\n    archetype: entrance\n    width: 6\n"),
+		0o600,
+	))
+	t.Setenv("RPG_CONTENT_DIR", dir)
+
+	specs, err := loadContentSpecs()
+	require.NoError(t, err, "a schema-invalid content FILE must not fail construction")
+
+	result, ok := specs[DungeonKey("broken-dungeon")]
+	require.True(t, ok, "the key must still be present -- found, but disabled")
+	require.Error(t, result.err)
+
+	// The embedded reference-tomb must be unaffected by the other key's
+	// failure -- one broken file must never take down the whole registry.
+	tombResult, ok := specs[DungeonKey("reference-tomb")]
+	require.True(t, ok)
+	require.NoError(t, tombResult.err)
+}
+
+func TestResolveContentDungeonSpec_NotFound_ReturnsFoundFalse(t *testing.T) {
+	o := &Orchestrator{contentSpecs: map[DungeonKey]contentSpecResult{}}
+	compiled, found, err := o.resolveContentDungeonSpec(DungeonKey("no-such-key"))
+	require.False(t, found)
+	require.NoError(t, err)
+	require.Equal(t, dungeonspec.CompiledDungeon{}, compiled)
+}
+
+func TestResolveContentDungeonSpec_FoundAndValid_ReturnsCompiledNoError(t *testing.T) {
+	want := dungeonspec.CompiledDungeon{Params: tkenc.DungeonParams{Theme: "crypt"}}
+	o := &Orchestrator{contentSpecs: map[DungeonKey]contentSpecResult{
+		"reference-tomb": {compiled: want},
+	}}
+
+	compiled, found, err := o.resolveContentDungeonSpec(DungeonKey("reference-tomb"))
+	require.True(t, found)
+	require.NoError(t, err)
+	require.Equal(t, want, compiled)
+}
+
+func TestResolveContentDungeonSpec_FoundButDisabled_WrapsStoredError(t *testing.T) {
+	cause := errors.New("boom: at least 2 rooms required")
+	o := &Orchestrator{contentSpecs: map[DungeonKey]contentSpecResult{
+		"broken-dungeon": {err: cause},
+	}}
+
+	compiled, found, err := o.resolveContentDungeonSpec(DungeonKey("broken-dungeon"))
+	require.True(t, found, "a disabled key is still FOUND -- it must never fall through to the legacy map")
+	require.Error(t, err)
+	require.Equal(t, dungeonspec.CompiledDungeon{}, compiled)
+
+	var disabledErr *DisabledDungeonKeyError
+	require.True(t, errors.As(err, &disabledErr))
+	require.Equal(t, DungeonKey("broken-dungeon"), disabledErr.Key)
+	require.True(t, errors.Is(err, cause), "Unwrap must expose the stored cause")
+}
+
+func TestDisabledDungeonKeyError_ErrorMessageNamesKeyAndCause(t *testing.T) {
+	err := &DisabledDungeonKeyError{Key: "broken-dungeon", Cause: errors.New("bad spec")}
+	require.Contains(t, err.Error(), "broken-dungeon")
+	require.Contains(t, err.Error(), "bad spec")
 }
