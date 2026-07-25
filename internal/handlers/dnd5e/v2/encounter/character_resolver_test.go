@@ -306,6 +306,27 @@ func (s *Dnd5eCharacterResolverTestSuite) TestToolProficiencyBonus_NilToolProfic
 	s.Equal(0, bonus)
 }
 
+// TestToolProficiencyBonus_EmptyTool_ReturnsKnownZero: SubmitCheck only
+// calls ToolProficiencyBonus when prompt.Tool != "" (rpg-toolkit's
+// prompts.go), but the resolver itself must not depend on that caller
+// discipline — an empty tool string should degrade to "known character,
+// not proficient with ”" (ok=true, 0), not panic or falsely match some
+// proficiency.
+func (s *Dnd5eCharacterResolverTestSuite) TestToolProficiencyBonus_EmptyTool_ReturnsKnownZero() {
+	s.mockCharRepo.EXPECT().
+		Get(gomock.Any(), characterrepo.GetInput{ID: "char-alice"}).
+		Return(&characterrepo.GetOutput{Character: &entities.Character{Data: aliceData()}}, nil)
+
+	resolver := v2encounter.NewDnd5eCharacterResolverForData(
+		v2encounter.Dnd5eCharacterResolverConfig{CharacterRepo: s.mockCharRepo},
+		encDataWithAlice(),
+	)
+
+	bonus, ok := resolver.ToolProficiencyBonus("alice", "")
+	s.True(ok)
+	s.Equal(0, bonus)
+}
+
 // TestToolProficiencyBonus_UnknownPlayer_ReturnsFalse mirrors
 // TestAbilityModifier_UnknownPlayer_ReturnsFalse for the tool-bonus method.
 func (s *Dnd5eCharacterResolverTestSuite) TestToolProficiencyBonus_UnknownPlayer_ReturnsFalse() {
