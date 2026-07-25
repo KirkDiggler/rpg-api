@@ -6,10 +6,10 @@ require (
 	github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20260723025004-0e4e2d77d73a
 	github.com/KirkDiggler/rpg-toolkit/core v0.10.0
 	github.com/KirkDiggler/rpg-toolkit/dice v0.3.2
-	github.com/KirkDiggler/rpg-toolkit/encounter v0.43.0
+	github.com/KirkDiggler/rpg-toolkit/encounter v0.44.0
 	github.com/KirkDiggler/rpg-toolkit/events v0.6.2
 	github.com/KirkDiggler/rpg-toolkit/rpgerr v0.1.2
-	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.68.0
+	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.69.0
 	github.com/KirkDiggler/rpg-toolkit/tools/environments v0.4.4
 	github.com/KirkDiggler/rpg-toolkit/tools/spatial v0.5.1
 	github.com/KirkDiggler/rpg-toolkit/tools/spawn v0.3.0
@@ -25,6 +25,7 @@ require (
 	go.uber.org/mock v0.6.0
 	google.golang.org/grpc v1.82.1
 	google.golang.org/protobuf v1.36.11
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
@@ -88,5 +89,4 @@ require (
 	golang.org/x/sys v0.43.0 // indirect
 	golang.org/x/text v0.36.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260414002931-afd174a4e478 // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

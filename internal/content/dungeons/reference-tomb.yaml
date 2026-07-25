@@ -1,0 +1,22 @@
+version: 1
+key: reference-tomb
+name: The Reference Tomb
+theme: crypt
+height: 8
+rooms:
+  - id: entrance
+    archetype: entrance
+    width: 6
+  - id: tomb
+    archetype: boss
+    width: 12
+    boss: { ref: "dnd5e:monsters:skeleton-captain", at: [7, 5] }
+    place:
+      - { ref: "dnd5e:props:coffin",        at: [6, 3], blocks_los: false }
+      - { ref: "dnd5e:props:altar",         at: [9, 3] }
+      - { ref: "dnd5e:props:statue-reaper", at: [1, 1] }
+      - { ref: "dnd5e:props:brazier",       at: [3, 1] }
+      - { ref: "dnd5e:props:brazier",       at: [3, 6] }
+      - { ref: "dnd5e:monsters:skeleton",   at: [4, 2] }
+connectors:
+  - { from: entrance, to: tomb }
