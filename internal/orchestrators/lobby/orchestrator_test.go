@@ -50,7 +50,12 @@ func TestNew_NegativePartyCap_ReturnsError(t *testing.T) {
 // that can't be read must fail lobbyorch.New() loudly, not panic and not
 // silently degrade to embedded-only content — the same "operator/config
 // mistake must fail construction" posture Task E2b applies to
-// RPG_DUNGEON_KEY.
+// RPG_DUNGEON_KEY. Also pins the message content (Copilot PR #710 review):
+// names RPG_CONTENT_DIR (the env var an operator actually set), and drops
+// the "lobby orchestrator:" prefix that would double up once
+// cmd/server/server.go's own lobbyorch.New call site wraps this error with
+// fmt.Errorf("lobby orchestrator: %w", err) — the same class of doubled
+// prefix Task E3's rider fixed for validateDungeonKeyOverride's errors.
 func TestNew_ContentDirUnreadable_ReturnsConstructionError(t *testing.T) {
 	t.Setenv("RPG_CONTENT_DIR", filepath.Join(t.TempDir(), "does-not-exist"))
 
@@ -73,6 +78,8 @@ func TestNew_ContentDirUnreadable_ReturnsConstructionError(t *testing.T) {
 		EncounterIDGenerator: idgen.NewSequential("enc"),
 	})
 	require.Error(t, err)
+	assert.Contains(t, err.Error(), "RPG_CONTENT_DIR", "message must name the env var an operator set")
+	assert.NotContains(t, err.Error(), "lobby orchestrator", "must not carry a prefix that would double up when server.go wraps it")
 }
 
 // baseTestConfig returns the required-fields-only Config every New() test

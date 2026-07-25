@@ -170,7 +170,14 @@ func (e *DisabledDungeonKeyError) Unwrap() error {
 func loadContentSpecs() (map[DungeonKey]contentSpecResult, error) {
 	specs, problems, err := content.AllSpecs()
 	if err != nil {
-		return nil, fmt.Errorf("lobby orchestrator: load content specs: %w", err)
+		// No "lobby orchestrator:" prefix here (and content.AllSpecs' own
+		// wrapped error already names RPG_CONTENT_DIR) -- cmd/server/
+		// server.go's lobbyorch.New call site already wraps ANY error from
+		// New with fmt.Errorf("lobby orchestrator: %w", err), so adding it
+		// here would double it up for the one caller who actually sees
+		// this message, the same class of bug Task E3's rider fixed for
+		// validateDungeonKeyOverride.
+		return nil, fmt.Errorf("load content specs (RPG_CONTENT_DIR): %w", err)
 	}
 	for _, p := range problems {
 		slog.Warn("lobby orchestrator: content spec problem, key excluded from registry", "detail", p)
