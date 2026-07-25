@@ -25,12 +25,12 @@ import (
 func TestNew_NegativePartyCap_ReturnsError(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	_, err := lobbyorch.New(&lobbyorch.Config{
-		LobbyRepo:         lobbyrepo.NewInMemory(),
-		LobbyBroker:       lobbyorch.NewBroker(),
-		CharacterRepo:     charactermock.NewMockRepository(ctrl),
-		EncounterRepo:     encountersv2.NewInMemory(),
-		EncounterBroker:   tkenc.NewBroker(tkenc.NewInMemoryTransport()),
-		CharacterResolver: encounterhandlerv2.StubCharacterResolver{},
+		LobbyRepo:              lobbyrepo.NewInMemory(),
+		LobbyBroker:            lobbyorch.NewBroker(),
+		CharacterRepo:          charactermock.NewMockRepository(ctrl),
+		EncounterRepo:          encountersv2.NewInMemory(),
+		EncounterBroker:        tkenc.NewBroker(tkenc.NewInMemoryTransport()),
+		BuildCharacterResolver: func(_ *tkenc.Data) tkenc.CharacterResolver { return encounterhandlerv2.StubCharacterResolver{} },
 		BuildCombatResolver: func(_ *tkenc.Data) tkenc.CombatResolver {
 			return nil
 		},
@@ -61,12 +61,12 @@ func TestNew_ContentDirUnreadable_ReturnsConstructionError(t *testing.T) {
 
 	ctrl := gomock.NewController(t)
 	_, err := lobbyorch.New(&lobbyorch.Config{
-		LobbyRepo:         lobbyrepo.NewInMemory(),
-		LobbyBroker:       lobbyorch.NewBroker(),
-		CharacterRepo:     charactermock.NewMockRepository(ctrl),
-		EncounterRepo:     encountersv2.NewInMemory(),
-		EncounterBroker:   tkenc.NewBroker(tkenc.NewInMemoryTransport()),
-		CharacterResolver: encounterhandlerv2.StubCharacterResolver{},
+		LobbyRepo:              lobbyrepo.NewInMemory(),
+		LobbyBroker:            lobbyorch.NewBroker(),
+		CharacterRepo:          charactermock.NewMockRepository(ctrl),
+		EncounterRepo:          encountersv2.NewInMemory(),
+		EncounterBroker:        tkenc.NewBroker(tkenc.NewInMemoryTransport()),
+		BuildCharacterResolver: func(_ *tkenc.Data) tkenc.CharacterResolver { return encounterhandlerv2.StubCharacterResolver{} },
 		BuildCombatResolver: func(_ *tkenc.Data) tkenc.CombatResolver {
 			return nil
 		},
@@ -88,12 +88,12 @@ func baseTestConfig(t *testing.T) *lobbyorch.Config {
 	t.Helper()
 	ctrl := gomock.NewController(t)
 	return &lobbyorch.Config{
-		LobbyRepo:         lobbyrepo.NewInMemory(),
-		LobbyBroker:       lobbyorch.NewBroker(),
-		CharacterRepo:     charactermock.NewMockRepository(ctrl),
-		EncounterRepo:     encountersv2.NewInMemory(),
-		EncounterBroker:   tkenc.NewBroker(tkenc.NewInMemoryTransport()),
-		CharacterResolver: encounterhandlerv2.StubCharacterResolver{},
+		LobbyRepo:              lobbyrepo.NewInMemory(),
+		LobbyBroker:            lobbyorch.NewBroker(),
+		CharacterRepo:          charactermock.NewMockRepository(ctrl),
+		EncounterRepo:          encountersv2.NewInMemory(),
+		EncounterBroker:        tkenc.NewBroker(tkenc.NewInMemoryTransport()),
+		BuildCharacterResolver: func(_ *tkenc.Data) tkenc.CharacterResolver { return encounterhandlerv2.StubCharacterResolver{} },
 		BuildCombatResolver: func(_ *tkenc.Data) tkenc.CombatResolver {
 			return nil
 		},

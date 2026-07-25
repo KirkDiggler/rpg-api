@@ -28,9 +28,9 @@ func (s *SubmitCheckSuite) SetupTest() {
 	s.repo = encountersv2.NewInMemory()
 
 	orch, err := encounterorch.New(&encounterorch.Config{
-		Broker:        s.broker,
-		EncounterRepo: s.repo,
-		Resolver:      stubCharacterResolver{},
+		Broker:                 s.broker,
+		EncounterRepo:          s.repo,
+		BuildCharacterResolver: constCharacterResolver(stubCharacterResolver{}),
 		BuildCombatResolver: func(_ *tkenc.Data) encounterorch.CombatResolver {
 			return nil
 		},
@@ -227,9 +227,9 @@ func (s *SubmitCheckSuite) TestSubmitReactionCheck_MissingFuncs_Error() {
 	// An orchestrator without the ReactionResume funcs must refuse the reaction
 	// branch up front rather than nil-panic.
 	orch, err := encounterorch.New(&encounterorch.Config{
-		Broker:        s.broker,
-		EncounterRepo: s.repo,
-		Resolver:      stubCharacterResolver{},
+		Broker:                 s.broker,
+		EncounterRepo:          s.repo,
+		BuildCharacterResolver: constCharacterResolver(stubCharacterResolver{}),
 		BuildCombatResolver: func(_ *tkenc.Data) encounterorch.CombatResolver {
 			return nil
 		},

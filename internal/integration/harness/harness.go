@@ -327,12 +327,23 @@ func (ts *TestServer) wireServices(cfg *Config) error {
 	ts.LobbyBroker = lobbyorch.NewBroker()
 	ts.LobbyRepo = lobbyrepo.NewInMemory()
 	lobbyOrch, err := lobbyorch.New(&lobbyorch.Config{
-		LobbyRepo:             ts.LobbyRepo,
-		LobbyBroker:           ts.LobbyBroker,
-		CharacterRepo:         charRepo,
-		EncounterRepo:         ts.EncRepoV2,
-		EncounterBroker:       ts.BrokerV2,
-		CharacterResolver:     encounterhandlerv2.StubCharacterResolver{},
+		LobbyRepo:       ts.LobbyRepo,
+		LobbyBroker:     ts.LobbyBroker,
+		CharacterRepo:   charRepo,
+		EncounterRepo:   ts.EncRepoV2,
+		EncounterBroker: ts.BrokerV2,
+		// Deterministic zero-modifier stub (not the real Dnd5eCharacterResolver):
+		// harness integration tests seed encounters directly and assert
+		// wire-shape totals like "roll + 0" — see e.g.
+		// TestInteract_LockedDoor_FailedRoll_NoEvents's "DC 30 // unbeatable
+		// with d20 + zero modifiers". BuildCharacterResolver here ignores data
+		// and always returns the stub, mirroring how encounterhandlerv2's own
+		// New() defaults to it when no CharacterResolverConfig is supplied
+		// (see the v2 encounter handler wiring a few lines above, which sets
+		// none — rpg-api#516).
+		BuildCharacterResolver: func(*tkenc.Data) tkenc.CharacterResolver {
+			return encounterhandlerv2.StubCharacterResolver{}
+		},
 		BuildCombatResolver:   lobbyhandler.BuildCombatResolver(encounterhandlerv2.Dnd5eCombatResolverConfig{CharacterRepo: charRepo}),
 		BuildMovementResolver: lobbyhandler.BuildMovementResolver(encounterhandlerv2.Dnd5eMovementResolverConfig{CharacterRepo: charRepo}),
 		LobbyIDGenerator:      idgen.NewUUID("lobby"),

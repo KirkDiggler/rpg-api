@@ -53,9 +53,9 @@ func (s *DriveStalledNPCTurnSuite) SetupTest() {
 	s.repo = encountersv2.NewInMemory()
 
 	orch, err := encounterorch.New(&encounterorch.Config{
-		Broker:        s.broker,
-		EncounterRepo: s.repo,
-		Resolver:      stubCharacterResolver{},
+		Broker:                 s.broker,
+		EncounterRepo:          s.repo,
+		BuildCharacterResolver: constCharacterResolver(stubCharacterResolver{}),
 		// Stand-in combat resolver, same choice as EndTurnSuite: no DataJSON is
 		// seeded on the goblins, so NPCAct takes the scripted single-phase path —
 		// isolating the load -> drive -> persist contract from rulebook combat

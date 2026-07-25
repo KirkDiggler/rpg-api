@@ -51,12 +51,12 @@ func (s *HandlerSuite) SetupTest() {
 	s.broker = lobbyorch.NewBroker()
 
 	orch, err := lobbyorch.New(&lobbyorch.Config{
-		LobbyRepo:         s.lobbyRepo,
-		LobbyBroker:       s.broker,
-		CharacterRepo:     s.charRepo,
-		EncounterRepo:     encountersv2.NewInMemory(),
-		EncounterBroker:   tkenc.NewBroker(tkenc.NewInMemoryTransport()),
-		CharacterResolver: encounterhandlerv2.StubCharacterResolver{},
+		LobbyRepo:              s.lobbyRepo,
+		LobbyBroker:            s.broker,
+		CharacterRepo:          s.charRepo,
+		EncounterRepo:          encountersv2.NewInMemory(),
+		EncounterBroker:        tkenc.NewBroker(tkenc.NewInMemoryTransport()),
+		BuildCharacterResolver: func(_ *tkenc.Data) tkenc.CharacterResolver { return encounterhandlerv2.StubCharacterResolver{} },
 		BuildCombatResolver: func(_ *tkenc.Data) tkenc.CombatResolver {
 			return nil
 		},

@@ -22,13 +22,14 @@ import (
 
 // HandlerConfig configures a v2 encounter Handler.
 type HandlerConfig struct {
-	Broker                 *encounter.Broker
-	Repo                   encountersv2.Repository
-	Resolver               CharacterResolver            // optional; defaults to StubCharacterResolver
-	CombatResolver         CombatResolver               // optional; overrides CombatResolverConfig when set
-	CombatResolverConfig   *Dnd5eCombatResolverConfig   // optional; used to build Dnd5eCombatResolver per-request
-	MovementResolverConfig *Dnd5eMovementResolverConfig // optional; used to build Dnd5eMovementResolver per-request (Wave 2.11e #539)
-	Now                    func() time.Time             // optional; defaults to time.Now
+	Broker                  *encounter.Broker
+	Repo                    encountersv2.Repository
+	Resolver                CharacterResolver             // optional; fixed override (tests) — wins over CharacterResolverConfig
+	CharacterResolverConfig *Dnd5eCharacterResolverConfig // optional; builds Dnd5eCharacterResolver per-request (rpg-api#516)
+	CombatResolver          CombatResolver                // optional; overrides CombatResolverConfig when set
+	CombatResolverConfig    *Dnd5eCombatResolverConfig    // optional; used to build Dnd5eCombatResolver per-request
+	MovementResolverConfig  *Dnd5eMovementResolverConfig  // optional; used to build Dnd5eMovementResolver per-request (Wave 2.11e #539)
+	Now                     func() time.Time              // optional; defaults to time.Now
 
 	// Roller overrides the dice.Roller every orchestrator LoadFromData wires
 	// via tkenc.WithRoller (rpg-api#659's Config.Roller seam, threaded here).
@@ -50,9 +51,15 @@ type HandlerConfig struct {
 // returns codes.Unimplemented via the embedded server.
 type Handler struct {
 	encounterv2pb.UnimplementedEncounterServiceServer
-	broker   *encounter.Broker
-	encRepo  encountersv2.Repository
-	resolver CharacterResolver
+	broker  *encounter.Broker
+	encRepo encountersv2.Repository
+	// resolver is non-nil when a fixed CharacterResolver override is wired
+	// (tests). When nil, buildCharacterResolver builds a per-request
+	// Dnd5eCharacterResolver if characterResolverConfig has a CharacterRepo,
+	// else falls back to StubCharacterResolver — mirroring combatResolver's
+	// override-vs-builder precedence just below.
+	resolver                CharacterResolver
+	characterResolverConfig Dnd5eCharacterResolverConfig
 	// combatResolver is non-nil when a fixed resolver is wired (e.g. tests that
 	// use StandInCombatResolver for deterministic outcomes). When nil,
 	// buildCombatResolver creates a per-request Dnd5eCombatResolver.
@@ -83,13 +90,14 @@ func New(cfg *HandlerConfig) (*Handler, error) {
 	if now == nil {
 		now = time.Now
 	}
-	resolver := cfg.Resolver
-	if resolver == nil {
-		// Wave 2.9 default: zero-modifier stub. SubmitCheck can resolve rolls
-		// (total = roll + 0 + 0) without an explicit character lookup. Replace
-		// with a real bridge to the character store once player→character
-		// resolution lands on the encounter (follow-up to #514).
-		resolver = StubCharacterResolver{}
+	// CharacterResolverConfig present → buildCharacterResolver constructs a
+	// real Dnd5eCharacterResolver per request (rpg-api#516). Left unset
+	// (zero value, CharacterRepo nil) by tests and the integration harness,
+	// which get StubCharacterResolver's deterministic zero modifiers instead
+	// — see buildCharacterResolver's doc.
+	characterResolverConfig := Dnd5eCharacterResolverConfig{}
+	if cfg.CharacterResolverConfig != nil {
+		characterResolverConfig = *cfg.CharacterResolverConfig
 	}
 
 	// combatResolver selection:
@@ -115,13 +123,14 @@ func New(cfg *HandlerConfig) (*Handler, error) {
 	}
 
 	h := &Handler{
-		broker:                 cfg.Broker,
-		encRepo:                cfg.Repo,
-		resolver:               resolver,
-		combatResolver:         cfg.CombatResolver, // nil unless caller provides a fixed resolver
-		combatResolverConfig:   combatResolverConfig,
-		movementResolverConfig: movementResolverConfig,
-		now:                    now,
+		broker:                  cfg.Broker,
+		encRepo:                 cfg.Repo,
+		resolver:                cfg.Resolver, // nil unless caller provides a fixed resolver override
+		characterResolverConfig: characterResolverConfig,
+		combatResolver:          cfg.CombatResolver, // nil unless caller provides a fixed resolver
+		combatResolverConfig:    combatResolverConfig,
+		movementResolverConfig:  movementResolverConfig,
+		now:                     now,
 	}
 
 	// v2 encounter orchestrator (#582). The handler supplies its existing
@@ -135,10 +144,10 @@ func New(cfg *HandlerConfig) (*Handler, error) {
 	// (hydrate_players.go, reaction_resume.go).
 	charRepo := combatResolverConfig.CharacterRepo
 	orch, err := encounterorch.New(&encounterorch.Config{
-		Broker:              cfg.Broker,
-		EncounterRepo:       cfg.Repo,
-		Resolver:            resolver,
-		BuildCombatResolver: h.buildCombatResolver,
+		Broker:                 cfg.Broker,
+		EncounterRepo:          cfg.Repo,
+		BuildCharacterResolver: h.buildCharacterResolver,
+		BuildCombatResolver:    h.buildCombatResolver,
 		BuildMovementResolver: func(data *encounter.Data) encounter.MovementResolver {
 			return h.buildMovementResolver(data)
 		},
@@ -168,6 +177,29 @@ func New(cfg *HandlerConfig) (*Handler, error) {
 	h.orch = orch
 
 	return h, nil
+}
+
+// buildCharacterResolver returns the character resolver for a given request.
+// If a fixed resolver override was configured (tests), it is returned
+// directly, regardless of data. Otherwise, when a character repo is
+// configured (CharacterResolverConfig.CharacterRepo — the production path,
+// wired at cmd/server/server.go), a fresh Dnd5eCharacterResolver is
+// constructed bound to this request's encounter data: it needs
+// data.Players[playerID].EntityID to resolve a player to their character,
+// which the toolkit's CharacterResolver interface has no way to carry
+// itself (rpg-api#516). With no repo configured (tests, the integration
+// harness — internal/integration/harness/harness.go), falls back to
+// StubCharacterResolver, the zero-modifier default this handler has always
+// shipped, so wire-shape tests that assert deterministic totals keep doing
+// so unless they opt in.
+func (h *Handler) buildCharacterResolver(data *encounter.Data) CharacterResolver {
+	if h.resolver != nil {
+		return h.resolver
+	}
+	if h.characterResolverConfig.CharacterRepo == nil {
+		return StubCharacterResolver{}
+	}
+	return NewDnd5eCharacterResolverForData(h.characterResolverConfig, data)
 }
 
 // buildCombatResolver returns the combat resolver for a given request.

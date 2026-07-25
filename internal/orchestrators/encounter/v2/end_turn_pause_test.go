@@ -61,7 +61,9 @@ func (s *EndTurnPauseSuite) newOrch(rr ReactionResume) *Orchestrator {
 	o, err := New(&Config{
 		Broker:        s.broker,
 		EncounterRepo: encountersv2.NewInMemory(),
-		Resolver:      pauseStubCharResolver{},
+		BuildCharacterResolver: func(_ *tkenc.Data) CharacterResolver {
+			return pauseStubCharResolver{}
+		},
 		BuildCombatResolver: func(_ *tkenc.Data) CombatResolver {
 			return nil
 		},

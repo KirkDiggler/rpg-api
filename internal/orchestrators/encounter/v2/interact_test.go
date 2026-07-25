@@ -29,9 +29,9 @@ func (s *InteractSuite) SetupTest() {
 	s.repo = encountersv2.NewInMemory()
 
 	orch, err := encounterorch.New(&encounterorch.Config{
-		Broker:        s.broker,
-		EncounterRepo: s.repo,
-		Resolver:      stubCharacterResolver{},
+		Broker:                 s.broker,
+		EncounterRepo:          s.repo,
+		BuildCharacterResolver: constCharacterResolver(stubCharacterResolver{}),
 		// No combat / movement resolver behavior is exercised by the door verbs,
 		// but the orchestrator requires the builders to be present. Return the
 		// toolkit zero-value interfaces (nil) — Interact never invokes them.
@@ -48,12 +48,23 @@ func (s *InteractSuite) SetupTest() {
 }
 
 // stubCharacterResolver satisfies tkenc.CharacterResolver with zero modifiers;
-// the door verbs never call it, but Config.Resolver is required.
+// the door verbs never call it, but Config.BuildCharacterResolver is required.
 type stubCharacterResolver struct{}
 
 func (stubCharacterResolver) AbilityModifier(_ core.PlayerID, _ string) (int, bool) { return 0, true }
 func (stubCharacterResolver) ToolProficiencyBonus(_ core.PlayerID, _ string) (int, bool) {
 	return 0, true
+}
+
+// constCharacterResolver adapts a fixed tkenc.CharacterResolver into an
+// encounterorch.CharacterResolverBuilder that ignores data and always
+// returns the same resolver — the test-double equivalent of production's
+// per-request Dnd5eCharacterResolver builder (rpg-api#516). Shared by every
+// *_test.go file in this package that just needs
+// Config.BuildCharacterResolver satisfied without exercising real
+// character-store resolution.
+func constCharacterResolver(r tkenc.CharacterResolver) encounterorch.CharacterResolverBuilder {
+	return func(_ *tkenc.Data) tkenc.CharacterResolver { return r }
 }
 
 // seedUnlockedDoor persists an encounter with player-A adjacent to an unlocked

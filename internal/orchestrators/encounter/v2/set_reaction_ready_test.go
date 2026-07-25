@@ -32,9 +32,9 @@ func (s *SetReactionReadySuite) SetupTest() {
 	s.repo = encountersv2.NewInMemory()
 
 	orch, err := encounterorch.New(&encounterorch.Config{
-		Broker:        s.broker,
-		EncounterRepo: s.repo,
-		Resolver:      stubCharacterResolver{},
+		Broker:                 s.broker,
+		EncounterRepo:          s.repo,
+		BuildCharacterResolver: constCharacterResolver(stubCharacterResolver{}),
 		// The readiness toggle never invokes the combat / movement resolvers, but
 		// the orchestrator requires the builders to be present.
 		BuildCombatResolver: func(_ *tkenc.Data) encounterorch.CombatResolver {

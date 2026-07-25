@@ -70,9 +70,9 @@ func (s *TakeActionSuite) SetupTest() {
 	s.repo = encountersv2.NewInMemory()
 
 	orch, err := encounterorch.New(&encounterorch.Config{
-		Broker:        s.broker,
-		EncounterRepo: s.repo,
-		Resolver:      stubCharacterResolver{},
+		Broker:                 s.broker,
+		EncounterRepo:          s.repo,
+		BuildCharacterResolver: constCharacterResolver(stubCharacterResolver{}),
 		// Stand-in combat resolver: fixed 7-damage hit, non-phased so the inline
 		// resolution branch runs (no reaction prompts in these unit tests).
 		BuildCombatResolver: func(_ *tkenc.Data) encounterorch.CombatResolver {

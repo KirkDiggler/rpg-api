@@ -207,6 +207,11 @@ func runServer(_ *cobra.Command, _ []string) error {
 	encV2Handler, err := encounterhandlerv2.New(&encounterhandlerv2.HandlerConfig{
 		Broker: encV2Broker,
 		Repo:   encV2Repo,
+		// rpg-api#516: real ability-modifier / tool-proficiency-bonus
+		// resolution for SubmitCheck, replacing the zero-modifier stub.
+		CharacterResolverConfig: &encounterhandlerv2.Dnd5eCharacterResolverConfig{
+			CharacterRepo: charRepo,
+		},
 		CombatResolverConfig: &encounterhandlerv2.Dnd5eCombatResolverConfig{
 			CharacterRepo: charRepo,
 		},
@@ -226,17 +231,17 @@ func runServer(_ *cobra.Command, _ []string) error {
 	lobbyBroker := lobbyorch.NewBroker()
 	lobbyRepo := lobbyrepo.NewRedis(redisClient, lobbyTTL)
 	lobbyOrch, err := lobbyorch.New(&lobbyorch.Config{
-		LobbyRepo:             lobbyRepo,
-		LobbyBroker:           lobbyBroker,
-		CharacterRepo:         charRepo,
-		EncounterRepo:         encV2Repo,
-		EncounterBroker:       encV2Broker,
-		CharacterResolver:     encounterhandlerv2.StubCharacterResolver{},
-		BuildCombatResolver:   lobbyhandler.BuildCombatResolver(encounterhandlerv2.Dnd5eCombatResolverConfig{CharacterRepo: charRepo}),
-		BuildMovementResolver: lobbyhandler.BuildMovementResolver(encounterhandlerv2.Dnd5eMovementResolverConfig{CharacterRepo: charRepo}),
-		LobbyIDGenerator:      idgen.NewUUID("lobby"),
-		JoinRefGenerator:      idgen.NewUUID("join"),
-		EncounterIDGenerator:  idgen.NewUUID(""),
+		LobbyRepo:              lobbyRepo,
+		LobbyBroker:            lobbyBroker,
+		CharacterRepo:          charRepo,
+		EncounterRepo:          encV2Repo,
+		EncounterBroker:        encV2Broker,
+		BuildCharacterResolver: lobbyhandler.BuildCharacterResolver(encounterhandlerv2.Dnd5eCharacterResolverConfig{CharacterRepo: charRepo}),
+		BuildCombatResolver:    lobbyhandler.BuildCombatResolver(encounterhandlerv2.Dnd5eCombatResolverConfig{CharacterRepo: charRepo}),
+		BuildMovementResolver:  lobbyhandler.BuildMovementResolver(encounterhandlerv2.Dnd5eMovementResolverConfig{CharacterRepo: charRepo}),
+		LobbyIDGenerator:       idgen.NewUUID("lobby"),
+		JoinRefGenerator:       idgen.NewUUID("join"),
+		EncounterIDGenerator:   idgen.NewUUID(""),
 		// RPG_DUNGEON_KEY (Task E2b): the M1 manual-walkthrough mechanism --
 		// unset in every real deployment today (zero player-facing change),
 		// validated at construction below (a misconfigured value fails

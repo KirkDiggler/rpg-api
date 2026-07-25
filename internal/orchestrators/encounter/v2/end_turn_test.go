@@ -62,9 +62,9 @@ func (s *EndTurnSuite) SetupTest() {
 	s.repo = encountersv2.NewInMemory()
 
 	orch, err := encounterorch.New(&encounterorch.Config{
-		Broker:        s.broker,
-		EncounterRepo: s.repo,
-		Resolver:      stubCharacterResolver{},
+		Broker:                 s.broker,
+		EncounterRepo:          s.repo,
+		BuildCharacterResolver: constCharacterResolver(stubCharacterResolver{}),
 		// Stand-in combat resolver: the NPC dispatch loop's scripted goblin
 		// attack runs through this (single-phase ResolveAttack), advancing
 		// initiative deterministically without a rulebook. No DataJSON is seeded

@@ -71,12 +71,12 @@ func (s *CryptMonsterSeedRedisSuite) SetupTest() {
 	s.encRepo = encountersv2.NewRedis(s.srv.RedisClient(), cryptMonsterSeedTestTTL)
 
 	orch, err := lobbyorch.New(&lobbyorch.Config{
-		LobbyRepo:         s.lobbyRepo,
-		LobbyBroker:       lobbyorch.NewBroker(),
-		CharacterRepo:     s.srv.CharacterRepo, // real Redis-backed, from the harness
-		EncounterRepo:     s.encRepo,
-		EncounterBroker:   tkenc.NewBroker(tkenc.NewInMemoryTransport()),
-		CharacterResolver: encounterhandlerv2.StubCharacterResolver{},
+		LobbyRepo:              s.lobbyRepo,
+		LobbyBroker:            lobbyorch.NewBroker(),
+		CharacterRepo:          s.srv.CharacterRepo, // real Redis-backed, from the harness
+		EncounterRepo:          s.encRepo,
+		EncounterBroker:        tkenc.NewBroker(tkenc.NewInMemoryTransport()),
+		BuildCharacterResolver: func(_ *tkenc.Data) tkenc.CharacterResolver { return encounterhandlerv2.StubCharacterResolver{} },
 		BuildCombatResolver: func(_ *tkenc.Data) tkenc.CombatResolver {
 			return nil
 		},
