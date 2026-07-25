@@ -235,6 +235,35 @@ func (s *Dnd5eCharacterResolverTestSuite) TestToolProficiencyBonus_Proficient_Re
 	s.Equal(2, bonus)
 }
 
+// TestToolProficiencyBonus_Proficient_RefFormTool_ReturnsProficiencyBonus is
+// the production shape: SubmitCheck never hands the resolver a bare
+// proficiencies.Tool id — it passes door.LockTool verbatim
+// (rpg-toolkit/encounter/prompts.go's AttemptUnlock sets
+// PendingPrompt.Tool = door.LockTool, and SubmitCheck calls
+// resolver.ToolProficiencyBonus(playerID, prompt.Tool) unmodified), and
+// LockTool is documented as a full toolkit ref: "LockTool is a toolkit ref
+// (e.g. \"dnd5e:item:thieves-tools\")" (rpg-toolkit/encounter/data.go).
+// Comparing that ref directly against tkcharacter.Data.ToolProficiencies'
+// bare ids (proficiencies.ToolThieves == "thieves-tools") would never
+// match, silently reporting a proficient character as not proficient — a
+// confident-wrong ok=true,0, not the honest "unknown" the interface
+// documents. This is the test the tool-ref/bare-id mismatch bug slipped
+// past when only bare-id inputs were exercised.
+func (s *Dnd5eCharacterResolverTestSuite) TestToolProficiencyBonus_Proficient_RefFormTool_ReturnsProficiencyBonus() {
+	s.mockCharRepo.EXPECT().
+		Get(gomock.Any(), characterrepo.GetInput{ID: "char-alice"}).
+		Return(&characterrepo.GetOutput{Character: &entities.Character{Data: aliceData()}}, nil)
+
+	resolver := v2encounter.NewDnd5eCharacterResolverForData(
+		v2encounter.Dnd5eCharacterResolverConfig{CharacterRepo: s.mockCharRepo},
+		encDataWithAlice(),
+	)
+
+	bonus, ok := resolver.ToolProficiencyBonus("alice", "dnd5e:item:thieves-tools")
+	s.True(ok)
+	s.Equal(2, bonus)
+}
+
 // TestToolProficiencyBonus_NotProficient_ReturnsKnownZero: a known character
 // who simply isn't proficient with the requested tool is a real, known
 // answer (bonus is zero) — ok=true, distinct from an unknown player/

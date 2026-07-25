@@ -135,6 +135,16 @@ func (r *Dnd5eCharacterResolver) AbilityModifier(playerID core.PlayerID, ability
 // never derived from level here (that derivation, if ever needed, is a
 // toolkit rule, not rpg-api's).
 //
+// tool arrives here as door.LockTool verbatim (rpg-toolkit's AttemptUnlock
+// sets PendingPrompt.Tool = door.LockTool; SubmitCheck passes prompt.Tool
+// straight through to this method) — a full toolkit ref such as
+// "dnd5e:item:thieves-tools" (rpg-toolkit/encounter/data.go's LockTool doc),
+// not the bare id tkcharacter.Data.ToolProficiencies stores
+// (proficiencies.ToolThieves == "thieves-tools"). toolRefID normalizes tool
+// to its bare id before comparing; a tool that isn't ref-shaped (splitRef
+// returns nil) is compared as-is, since nothing in the interface guarantees
+// the ref form.
+//
 // Returns ok=false for an unseated player, a player with no bound character,
 // or a character-store miss — the same "unknown" cases AbilityModifier uses.
 func (r *Dnd5eCharacterResolver) ToolProficiencyBonus(playerID core.PlayerID, tool string) (int, bool) {
@@ -143,12 +153,28 @@ func (r *Dnd5eCharacterResolver) ToolProficiencyBonus(playerID core.PlayerID, to
 		return 0, false
 	}
 
+	toolID := toolRefID(tool)
 	for _, prof := range charData.ToolProficiencies {
-		if string(prof) == tool {
+		if string(prof) == toolID {
 			return charData.ProficiencyBonus, true
 		}
 	}
 	return 0, true
+}
+
+// toolRefID extracts the bare id segment from a toolkit ref
+// ("module:type:id" -> "id", e.g. "dnd5e:item:thieves-tools" ->
+// "thieves-tools"), reusing this package's existing splitRef helper
+// (translate.go) so ref-parsing semantics stay consistent with the rest of
+// the handler package (projection, event translation, prompt translation
+// all already use it). A ref that doesn't parse to exactly module:type:id
+// (splitRef's documented nil return) is returned unmodified, so a bare id
+// passed directly still compares correctly.
+func toolRefID(ref string) string {
+	if parts := splitRef(ref); parts != nil {
+		return parts[2]
+	}
+	return ref
 }
 
 // characterData resolves playerID to the character store's Data for the
