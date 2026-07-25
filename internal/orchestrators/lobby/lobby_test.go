@@ -172,6 +172,36 @@ func (s *LobbySuite) newOrchestratorWithContentDir(dir string) (*lobbyorch.Orche
 	})
 }
 
+// newOrchestratorWithDungeonKeyOverride returns a fresh Orchestrator
+// sharing every other suite dependency, constructed with
+// Config.DungeonKeyOverride set to key (Task E2b's RPG_DUNGEON_KEY
+// mechanism) — s.orch never has an override set, so a test exercising it
+// must build its own Orchestrator here, exactly like
+// newOrchestratorWithContentDir does for RPG_CONTENT_DIR.
+func (s *LobbySuite) newOrchestratorWithDungeonKeyOverride(key string) *lobbyorch.Orchestrator {
+	orch, err := lobbyorch.New(&lobbyorch.Config{
+		LobbyRepo:         s.lobbyRepo,
+		LobbyBroker:       s.broker,
+		CharacterRepo:     s.charRepo,
+		EncounterRepo:     s.encRepo,
+		EncounterBroker:   s.encBroker,
+		CharacterResolver: encounterhandlerv2.StubCharacterResolver{},
+		BuildCombatResolver: func(_ *tkenc.Data) tkenc.CombatResolver {
+			return nil
+		},
+		BuildMovementResolver: func(_ *tkenc.Data) tkenc.MovementResolver {
+			return nil
+		},
+		LobbyIDGenerator:     idgen.NewSequential("lobby"),
+		JoinRefGenerator:     idgen.NewSequential("ref"),
+		EncounterIDGenerator: idgen.NewSequential("enc"),
+		Now:                  func() time.Time { return time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC) },
+		DungeonKeyOverride:   key,
+	})
+	s.Require().NoError(err)
+	return orch
+}
+
 // seedLobby writes data directly to s.lobbyRepo, bypassing CreateLobby /
 // JoinLobby (and their character-repo lookups) so tests that exercise a
 // LATER RPC (SetReady, LeaveLobby, StartEncounter, SetConnected) can set up

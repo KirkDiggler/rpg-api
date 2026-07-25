@@ -1145,3 +1145,52 @@ func (s *LobbySuite) TestStartEncounter_ContentBackedKey_SeedWiring() {
 	s.Require().NoError(err)
 	s.Require().NotEqual(dataA.Space, dataC.Space, "a different seed must roll different content-backed dungeon geometry")
 }
+
+// --- Task E2b: RPG_DUNGEON_KEY override selects a dungeon end to end ---
+
+// TestStartEncounter_DungeonKeyOverride_SelectsReferenceTomb is the M1
+// manual-walkthrough mechanism proven at the orchestrator level: with
+// Config.DungeonKeyOverride set to "reference-tomb" and the caller
+// supplying NO DungeonKey at all (today's exact shape — no real proto
+// surface sets one), StartEncounter must build the content-backed
+// reference-tomb dungeon, not the legacy crypt default.
+func (s *LobbySuite) TestStartEncounter_DungeonKeyOverride_SelectsReferenceTomb() {
+	orch := s.newOrchestratorWithDungeonKeyOverride("reference-tomb")
+
+	s.seedReadyLobby("lobby-override1", "alice")
+	s.expectCharacter("char-alice", "alice", "Alice", 12, 12)
+
+	out, err := orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		PlayerID: "alice", LobbyID: "lobby-override1",
+		// DungeonKey deliberately left unset -- the override must fill it in.
+	})
+	s.Require().NoError(err)
+
+	encData, err := s.encRepo.Get(s.ctx, out.EncounterID)
+	s.Require().NoError(err)
+	s.Require().Len(encData.Space.Regions, 2, "reference-tomb (not the 3-region crypt default) must have been selected")
+	_, tombOK := regionByArchetype(encData.Space, tkenc.ArchetypeBoss)
+	s.Require().True(tombOK)
+}
+
+// TestStartEncounter_DungeonKeyOverride_ExplicitCallerKeyWins proves the
+// substitution's ONLY-when-empty guard: a caller-supplied DungeonKey
+// (crypt) must win over a configured override (reference-tomb) — the
+// override is a fallback for "no key supplied," never a hijack of an
+// explicit one.
+func (s *LobbySuite) TestStartEncounter_DungeonKeyOverride_ExplicitCallerKeyWins() {
+	orch := s.newOrchestratorWithDungeonKeyOverride("reference-tomb")
+
+	s.seedReadyLobby("lobby-override2", "alice")
+	s.expectCharacter("char-alice", "alice", "Alice", 12, 12)
+
+	out, err := orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		PlayerID: "alice", LobbyID: "lobby-override2",
+		DungeonKey: lobbyorch.DungeonKeyCrypt,
+	})
+	s.Require().NoError(err)
+
+	encData, err := s.encRepo.Get(s.ctx, out.EncounterID)
+	s.Require().NoError(err)
+	s.Require().Len(encData.Space.Regions, 3, "the explicit crypt key must win over the configured override")
+}

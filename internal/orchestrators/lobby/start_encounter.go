@@ -106,12 +106,19 @@ func (o *Orchestrator) StartEncounter(ctx context.Context, in *StartEncounterInp
 		return nil, errors.New("lobby orchestrator: StartEncounterInput is required")
 	}
 
-	// effectiveKey is in.DungeonKey today, unchanged — Task E2b adds an
-	// RPG_DUNGEON_KEY-sourced fallback here (o.dungeonKeyOverride) for
-	// when the caller supplies no key at all; until that lands this is a
-	// plain passthrough, so every real caller's behavior is untouched by
-	// this task.
+	// effectiveKey substitutes Task E2b's RPG_DUNGEON_KEY override ONLY
+	// when the caller supplied no key at all — an explicit in.DungeonKey
+	// (once a real proto surface exists to set one) always wins.
+	// o.dungeonKeyOverride is "" when RPG_DUNGEON_KEY was unset at
+	// startup, so this is a no-op today for every real caller (zero
+	// player-facing change, per design.md) — no real handler builds
+	// in.DungeonKey from the request yet, so every real call leaves it at
+	// the zero value and gets whatever the override resolves to (or the
+	// legacy default when there's no override either).
 	effectiveKey := in.DungeonKey
+	if effectiveKey == "" {
+		effectiveKey = o.dungeonKeyOverride
+	}
 
 	// Content-backed resolution (Task E2) runs FIRST, before touching the
 	// lobby lock or building anything — same "fail loudly, zero side

@@ -1,6 +1,7 @@
 package lobby_test
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -71,4 +72,91 @@ func TestNew_ContentDirUnreadable_ReturnsConstructionError(t *testing.T) {
 		EncounterIDGenerator: idgen.NewSequential("enc"),
 	})
 	require.Error(t, err)
+}
+
+// baseTestConfig returns the required-fields-only Config every New() test
+// in this file builds on, customizing just the one field under test.
+func baseTestConfig(t *testing.T) *lobbyorch.Config {
+	t.Helper()
+	ctrl := gomock.NewController(t)
+	return &lobbyorch.Config{
+		LobbyRepo:         lobbyrepo.NewInMemory(),
+		LobbyBroker:       lobbyorch.NewBroker(),
+		CharacterRepo:     charactermock.NewMockRepository(ctrl),
+		EncounterRepo:     encountersv2.NewInMemory(),
+		EncounterBroker:   tkenc.NewBroker(tkenc.NewInMemoryTransport()),
+		CharacterResolver: encounterhandlerv2.StubCharacterResolver{},
+		BuildCombatResolver: func(_ *tkenc.Data) tkenc.CombatResolver {
+			return nil
+		},
+		BuildMovementResolver: func(_ *tkenc.Data) tkenc.MovementResolver {
+			return nil
+		},
+		LobbyIDGenerator:     idgen.NewSequential("lobby"),
+		JoinRefGenerator:     idgen.NewSequential("ref"),
+		EncounterIDGenerator: idgen.NewSequential("enc"),
+	}
+}
+
+// --- Task E2b: RPG_DUNGEON_KEY dev-loop override, validated at construction ---
+
+// TestNew_DungeonKeyOverrideMustResolve proves an override key that
+// resolves NOWHERE — not content, not the legacy dungeonSpecs map — fails
+// construction loudly, per the plan's own test sketch.
+func TestNew_DungeonKeyOverrideMustResolve(t *testing.T) {
+	cfg := baseTestConfig(t)
+	cfg.DungeonKeyOverride = "atlantis"
+	_, err := lobbyorch.New(cfg)
+	require.Error(t, err, "an override key resolving nowhere (content or legacy) must fail construction loudly")
+}
+
+// TestNew_DungeonKeyOverrideRejectsDisabledContentKey proves an override
+// pointing at a content key that itself failed dungeonspec.Load at
+// startup (contentSpecs[key].err != nil) must ALSO fail construction —
+// not silently accepted just because the key string exists in the map.
+func TestNew_DungeonKeyOverrideRejectsDisabledContentKey(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(dir, "broken-dungeon.yaml"),
+		[]byte("version: 1\nkey: broken-dungeon\nname: Broken\nheight: 8\nrooms:\n"+
+			"  - id: only-one\n    archetype: entrance\n    width: 6\n"),
+		0o600,
+	))
+	t.Setenv("RPG_CONTENT_DIR", dir)
+
+	cfg := baseTestConfig(t)
+	cfg.DungeonKeyOverride = "broken-dungeon"
+	_, err := lobbyorch.New(cfg)
+	require.Error(t, err, "an override pointing at a DISABLED content key must fail construction, not defer to first request")
+}
+
+// TestNew_DungeonKeyOverrideEmptyIsANoOp proves DungeonKeyOverride: ""
+// (today's real deployments — RPG_DUNGEON_KEY unset) constructs exactly
+// as before this task. Zero player-facing change is the whole point.
+func TestNew_DungeonKeyOverrideEmptyIsANoOp(t *testing.T) {
+	cfg := baseTestConfig(t)
+	cfg.DungeonKeyOverride = ""
+	_, err := lobbyorch.New(cfg)
+	require.NoError(t, err)
+}
+
+// TestNew_DungeonKeyOverride_ResolvesViaContentRegistry proves the
+// content-registry resolution half explicitly: reference-tomb ships
+// embedded (Task E1), so an override naming it must construct cleanly
+// with no RPG_CONTENT_DIR needed.
+func TestNew_DungeonKeyOverride_ResolvesViaContentRegistry(t *testing.T) {
+	cfg := baseTestConfig(t)
+	cfg.DungeonKeyOverride = "reference-tomb"
+	_, err := lobbyorch.New(cfg)
+	require.NoError(t, err)
+}
+
+// TestNew_DungeonKeyOverride_ResolvesViaLegacyMap proves the OTHER
+// resolution half: an override naming a legacy dungeonSpecs key (crypt)
+// must also construct cleanly.
+func TestNew_DungeonKeyOverride_ResolvesViaLegacyMap(t *testing.T) {
+	cfg := baseTestConfig(t)
+	cfg.DungeonKeyOverride = string(lobbyorch.DungeonKeyCrypt)
+	_, err := lobbyorch.New(cfg)
+	require.NoError(t, err)
 }
