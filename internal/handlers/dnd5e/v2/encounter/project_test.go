@@ -1180,17 +1180,37 @@ func (s *ProjectSuite) TestProjectFor_CryptFixture_ProjectsPerimeterEdgesAsSolid
 			degenerateCount++
 			continue
 		}
-		// Non-degenerate: a boundary-edge perimeter segment (rpg-toolkit#834).
+		// Non-degenerate: a boundary-edge segment -- either an outer-perimeter
+		// segment (rpg-toolkit#834) or, since encounter v0.44.1
+		// (rpg-toolkit#849), a connector-column flanking segment. Both use
+		// the identical shape (Start != End, one hex step, SOLID), which is
+		// exactly why a single loop/assertion pair below covers both without
+		// needing to tell them apart.
 		perimeterEdgeCount++
 		dist := (abs32(from.GetX()-to.GetX()) + abs32(from.GetY()-to.GetY()) + abs32(from.GetZ()-to.GetZ())) / 2
-		s.Require().Equal(int32(1), dist, "perimeter-edge wall %+v must be exactly one hex step apart", w)
+		s.Require().Equal(int32(1), dist, "boundary-edge wall %+v must be exactly one hex step apart", w)
 		s.Require().Equal(encounterv2pb.WallKind_WALL_KIND_SOLID, w.GetKind(),
-			"a perimeter-edge segment (BlocksMovement+BlocksLoS both true) must project as WALL_KIND_SOLID")
+			"a boundary-edge segment (BlocksMovement+BlocksLoS both true) must project as WALL_KIND_SOLID")
 	}
-	s.Require().Positive(degenerateCount,
-		"the crypt's interior/connector walls must still project degenerate (From==To)")
-	s.Require().Positive(perimeterEdgeCount,
-		"the crypt must project at least one non-degenerate perimeter-edge wall")
+	// rpg-api#721 (encounter v0.44.0 -> v0.44.1, rpg-toolkit#849): the
+	// crypt's connector-column flanking cells (7 per connector x 2
+	// connectors = 14, per toolkit#849's own diagnosis) converted from
+	// degenerate (Start == End) "rubble box" entries to the same
+	// boundary-edge shape perimeterEdgeCount already tracked. Every crypt
+	// region uses environments.PatternEmpty (rpg-toolkit#835 -- verified
+	// directly against encounter/crypt_dungeon.go, not assumed), so the
+	// connector columns were the crypt's ONLY source of degenerate walls;
+	// with those fixed, degenerateCount is now genuinely, permanently zero
+	// for this fixture -- not a seed-dependent coincidence. Measured
+	// directly (not guessed) before pinning: degenerateCount=0,
+	// perimeterEdgeCount=182 (184 total walls - 2 door walls), for this
+	// fixture's fixed seed/dimensions.
+	s.Require().Zero(degenerateCount,
+		"toolkit#849: connector-column flanking cells no longer project degenerate; "+
+			"the crypt's PatternEmpty rooms have no other source of degenerate walls")
+	s.Require().Equal(182, perimeterEdgeCount,
+		"exact count locks in that the connector fix's 14 flanking cells (7 per connector x 2 connectors) "+
+			"joined the boundary-edge category, not just \"more than zero\"")
 
 	// doorWallsToProto output unchanged in shape: the crypt's two connector
 	// doors (entrance plain, boss locked) must still each project exactly
