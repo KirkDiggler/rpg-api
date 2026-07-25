@@ -47,6 +47,16 @@ func TestLobbyStatusError_Table(t *testing.T) {
 			name: "disabled content key carries the CAUSE, not Error()'s wrapped prefix",
 			err:  disabledErr, wantCode: codes.InvalidArgument, wantMessage: cause.Error(),
 		},
+		{
+			// nil-Cause guard: DisabledDungeonKeyError is an exported type --
+			// a future construction site could build one with Cause left
+			// nil. Calling Cause.Error() on a nil error interface panics; a
+			// handler panicking on a malformed error is worse than falling
+			// back to Error()'s own wrapped message, so that's the fallback.
+			name: "disabled content key with nil Cause falls back to Error(), never panics",
+			err:  &lobbyorch.DisabledDungeonKeyError{Key: "no-cause"}, wantCode: codes.InvalidArgument,
+			wantMessage: (&lobbyorch.DisabledDungeonKeyError{Key: "no-cause"}).Error(),
+		},
 
 		{name: "unclassified error falls through to Internal", err: errors.New("boom"), wantCode: codes.Internal, msgContains: "boom"},
 	}

@@ -12,7 +12,7 @@ import (
 // lobbyStatusError maps the lobby orchestrator's sentinel errors onto gRPC
 // status codes. Shared by every RPC handler in this package — each RPC only
 // ever returns a subset of these sentinels, so one exhaustive switch covers
-// all six rather than duplicating the mapping per verb.
+// all eight rather than duplicating the mapping per verb.
 //
 //   - ErrLobbyNotFound → NotFound
 //   - ErrPlayerNotInLobby → PermissionDenied
@@ -28,7 +28,11 @@ import (
 //     validation CAUSE (Task E3 — Unwrap()'s Cause, never Error()'s own
 //     "lobby orchestrator: dungeon key ... is disabled:" wrapping prefix,
 //     which is internal error-taxonomy language, not something a client
-//     authoring content should ever see)
+//     authoring content should ever see). Falls back to Error() if Cause
+//     is nil — DisabledDungeonKeyError is exported, so a future
+//     construction site could build one without a Cause; a handler
+//     panicking on that malformed error would be worse than a message
+//     that's merely less specific.
 //   - unclassified → Internal
 func lobbyStatusError(err error) error {
 	var disabledErr *lobbyorch.DisabledDungeonKeyError
@@ -56,6 +60,9 @@ func lobbyStatusError(err error) error {
 	case errors.Is(err, lobbyorch.ErrEncounterAlreadyEnded):
 		return status.Error(codes.FailedPrecondition, "encounter has already ended")
 	case errors.As(err, &disabledErr):
+		if disabledErr.Cause == nil {
+			return status.Error(codes.InvalidArgument, disabledErr.Error())
+		}
 		return status.Error(codes.InvalidArgument, disabledErr.Cause.Error())
 	}
 	return status.Errorf(codes.Internal, "lobby: %v", err)
