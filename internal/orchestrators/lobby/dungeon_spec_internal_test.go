@@ -112,7 +112,7 @@ func TestLoadContentSpecs_EmbeddedReferenceTombCompiles(t *testing.T) {
 	result, ok := specs[DungeonKey("reference-tomb")]
 	require.True(t, ok, "reference-tomb must be present in the startup registry")
 	require.NoError(t, result.err, "reference-tomb must compile cleanly — it's the M1 acceptance file")
-	require.Len(t, result.compiled.Params.Regions, 2, "entrance + tomb")
+	require.Len(t, result.compiled.Params.Regions, 3, "entrance + hall + tomb (Kirk's live-authored 3-room draft)")
 }
 
 // TestLoadContentSpecs_ContentDirUnreadable_ReturnsError proves an
