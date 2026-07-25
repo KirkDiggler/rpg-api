@@ -37,6 +37,14 @@ type CombatResolverBuilder func(data *tkenc.Data) tkenc.CombatResolver
 // rationale as CombatResolverBuilder.
 type MovementResolverBuilder func(data *tkenc.Data) tkenc.MovementResolver
 
+// CharacterResolverBuilder builds a per-request CharacterResolver bridging
+// the toolkit's CharacterResolver to the character store (rpg-api#516). Same
+// rationale as CombatResolverBuilder — the toolkit interface only carries a
+// PlayerID, so a real implementation needs the loaded *tkenc.Data to map
+// that PlayerID to a character; mirrors
+// internal/orchestrators/encounter/v2.CharacterResolverBuilder.
+type CharacterResolverBuilder func(data *tkenc.Data) tkenc.CharacterResolver
+
 // defaultPartyCap is the Dungeon Night shape (lobby-surface.md "Party cap").
 const defaultPartyCap = 4
 
@@ -64,11 +72,12 @@ type Config struct {
 	// streams. Required.
 	EncounterBroker *tkenc.Broker
 
-	// CharacterResolver bridges the toolkit's CharacterResolver to the
-	// character store, wired onto every StartEncounter-constructed encounter.
-	// Required (the handler supplies a stub default, mirroring the encounter
-	// handler's own default).
-	CharacterResolver tkenc.CharacterResolver
+	// BuildCharacterResolver builds the per-encounter CharacterResolver
+	// bridging the toolkit's CharacterResolver to the character store, wired
+	// onto every StartEncounter-constructed encounter. Required (the handler
+	// supplies a builder that defaults to StubCharacterResolver, mirroring
+	// the encounter handler's own default).
+	BuildCharacterResolver CharacterResolverBuilder
 
 	// BuildCombatResolver builds the per-encounter combat resolver at
 	// StartEncounter. Required.
@@ -120,20 +129,20 @@ type Config struct {
 // method per LobbyService RPC (plus the internal SetConnected used by
 // StreamLobby's subscribe/disconnect lifecycle).
 type Orchestrator struct {
-	lobbyRepo             lobbyrepo.Repository
-	lobbyBroker           *Broker
-	characterRepo         characterrepo.Repository
-	encounterRepo         encountersv2.Repository
-	encounterBroker       *tkenc.Broker
-	characterResolver     tkenc.CharacterResolver
-	buildCombatResolver   CombatResolverBuilder
-	buildMovementResolver MovementResolverBuilder
-	lobbyIDGen            idgen.Generator
-	joinRefGen            idgen.Generator
-	encounterIDGen        idgen.Generator
-	partyCap              int
-	now                   func() time.Time
-	locks                 *keyedMutex
+	lobbyRepo              lobbyrepo.Repository
+	lobbyBroker            *Broker
+	characterRepo          characterrepo.Repository
+	encounterRepo          encountersv2.Repository
+	encounterBroker        *tkenc.Broker
+	buildCharacterResolver CharacterResolverBuilder
+	buildCombatResolver    CombatResolverBuilder
+	buildMovementResolver  MovementResolverBuilder
+	lobbyIDGen             idgen.Generator
+	joinRefGen             idgen.Generator
+	encounterIDGen         idgen.Generator
+	partyCap               int
+	now                    func() time.Time
+	locks                  *keyedMutex
 
 	// contentSpecs is the content-hosted dungeon spec registry (Task E2),
 	// built ONCE here at construction by loadContentSpecs — StartEncounter
@@ -169,8 +178,8 @@ func New(cfg *Config) (*Orchestrator, error) {
 	if cfg.EncounterBroker == nil {
 		return nil, errors.New("lobby orchestrator: Config.EncounterBroker is required")
 	}
-	if cfg.CharacterResolver == nil {
-		return nil, errors.New("lobby orchestrator: Config.CharacterResolver is required")
+	if cfg.BuildCharacterResolver == nil {
+		return nil, errors.New("lobby orchestrator: Config.BuildCharacterResolver is required")
 	}
 	if cfg.BuildCombatResolver == nil {
 		return nil, errors.New("lobby orchestrator: Config.BuildCombatResolver is required")
@@ -217,22 +226,22 @@ func New(cfg *Config) (*Orchestrator, error) {
 	}
 
 	return &Orchestrator{
-		lobbyRepo:             cfg.LobbyRepo,
-		lobbyBroker:           cfg.LobbyBroker,
-		characterRepo:         cfg.CharacterRepo,
-		encounterRepo:         cfg.EncounterRepo,
-		encounterBroker:       cfg.EncounterBroker,
-		characterResolver:     cfg.CharacterResolver,
-		buildCombatResolver:   cfg.BuildCombatResolver,
-		buildMovementResolver: cfg.BuildMovementResolver,
-		lobbyIDGen:            cfg.LobbyIDGenerator,
-		joinRefGen:            cfg.JoinRefGenerator,
-		encounterIDGen:        cfg.EncounterIDGenerator,
-		partyCap:              partyCap,
-		now:                   now,
-		locks:                 newKeyedMutex(),
-		contentSpecs:          contentSpecs,
-		dungeonKeyOverride:    DungeonKey(cfg.DungeonKeyOverride),
+		lobbyRepo:              cfg.LobbyRepo,
+		lobbyBroker:            cfg.LobbyBroker,
+		characterRepo:          cfg.CharacterRepo,
+		encounterRepo:          cfg.EncounterRepo,
+		encounterBroker:        cfg.EncounterBroker,
+		buildCharacterResolver: cfg.BuildCharacterResolver,
+		buildCombatResolver:    cfg.BuildCombatResolver,
+		buildMovementResolver:  cfg.BuildMovementResolver,
+		lobbyIDGen:             cfg.LobbyIDGenerator,
+		joinRefGen:             cfg.JoinRefGenerator,
+		encounterIDGen:         cfg.EncounterIDGenerator,
+		partyCap:               partyCap,
+		now:                    now,
+		locks:                  newKeyedMutex(),
+		contentSpecs:           contentSpecs,
+		dungeonKeyOverride:     DungeonKey(cfg.DungeonKeyOverride),
 	}, nil
 }
 

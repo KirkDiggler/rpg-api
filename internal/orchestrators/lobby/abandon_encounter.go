@@ -85,7 +85,7 @@ func (o *Orchestrator) AbandonEncounter(ctx context.Context, in *AbandonEncounte
 	}
 
 	enc, err := tkenc.LoadFromData(ctx, encData, o.encounterBroker,
-		tkenc.WithCharacterResolver(o.characterResolver),
+		tkenc.WithCharacterResolver(o.buildCharacterResolver(encData)),
 		tkenc.WithCombatResolver(o.buildCombatResolver(encData)),
 		tkenc.WithMovementResolver(o.buildMovementResolver(encData)),
 	)

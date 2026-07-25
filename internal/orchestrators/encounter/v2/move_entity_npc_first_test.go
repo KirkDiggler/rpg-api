@@ -83,9 +83,9 @@ func (s *MoveEntityNPCFirstSuite) SetupTest() {
 	s.repo = encountersv2.NewInMemory()
 
 	orch, err := encounterorch.New(&encounterorch.Config{
-		Broker:        s.broker,
-		EncounterRepo: s.repo,
-		Resolver:      stubCharacterResolver{},
+		Broker:                 s.broker,
+		EncounterRepo:          s.repo,
+		BuildCharacterResolver: constCharacterResolver(stubCharacterResolver{}),
 		// Stand-in combat resolver, same choice as DriveStalledNPCTurnSuite: no
 		// DataJSON is seeded on the goblin, so NPCAct takes the scripted
 		// single-phase path — this test asserts WHETHER/WHEN the goblin's turn

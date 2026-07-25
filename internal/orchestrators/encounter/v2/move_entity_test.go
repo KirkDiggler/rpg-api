@@ -48,9 +48,9 @@ func (s *MoveEntitySuite) SetupTest() {
 	s.repo = encountersv2.NewInMemory()
 
 	orch, err := encounterorch.New(&encounterorch.Config{
-		Broker:        s.broker,
-		EncounterRepo: s.repo,
-		Resolver:      stubCharacterResolver{},
+		Broker:                 s.broker,
+		EncounterRepo:          s.repo,
+		BuildCharacterResolver: constCharacterResolver(stubCharacterResolver{}),
 		BuildCombatResolver: func(_ *tkenc.Data) encounterorch.CombatResolver {
 			return nil
 		},

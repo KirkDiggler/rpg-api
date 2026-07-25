@@ -76,3 +76,15 @@ func BuildMovementResolver(cfg encounterhandlerv2.Dnd5eMovementResolverConfig) l
 		return encounterhandlerv2.NewDnd5eMovementResolverForData(cfg, data)
 	}
 }
+
+// BuildCharacterResolver is BuildCombatResolver's character-resolver
+// counterpart (rpg-api#516): it adapts encounterhandlerv2's
+// Dnd5eCharacterResolver construction into the lobbyorch.CharacterResolverBuilder
+// shape, so StartEncounter's freshly constructed encounter resolves real
+// ability/tool-proficiency modifiers the same way the encounter service
+// itself does — never a duplicate implementation.
+func BuildCharacterResolver(cfg encounterhandlerv2.Dnd5eCharacterResolverConfig) lobbyorch.CharacterResolverBuilder {
+	return func(data *tkenc.Data) tkenc.CharacterResolver {
+		return encounterhandlerv2.NewDnd5eCharacterResolverForData(cfg, data)
+	}
+}

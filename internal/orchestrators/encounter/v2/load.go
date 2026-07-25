@@ -118,7 +118,7 @@ func (o *Orchestrator) load(ctx context.Context, in loadInput) (*tkenc.Encounter
 	// SetMode -> rollInitiative path sets Config.Roller, which conditionally
 	// appends WithRoller here to override just that call's roller.
 	opts := []tkenc.Option{
-		tkenc.WithCharacterResolver(o.resolver),
+		tkenc.WithCharacterResolver(o.buildCharacterResolver(data)),
 		tkenc.WithCombatResolver(o.buildCombatResolver(data)),
 		tkenc.WithMovementResolver(o.buildMovementResolver(data)),
 	}

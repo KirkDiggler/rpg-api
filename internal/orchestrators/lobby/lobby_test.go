@@ -48,12 +48,12 @@ func (s *LobbySuite) SetupTest() {
 	s.encRepo = encountersv2.NewInMemory()
 
 	orch, err := lobbyorch.New(&lobbyorch.Config{
-		LobbyRepo:         s.lobbyRepo,
-		LobbyBroker:       s.broker,
-		CharacterRepo:     s.charRepo,
-		EncounterRepo:     s.encRepo,
-		EncounterBroker:   s.encBroker,
-		CharacterResolver: encounterhandlerv2.StubCharacterResolver{},
+		LobbyRepo:              s.lobbyRepo,
+		LobbyBroker:            s.broker,
+		CharacterRepo:          s.charRepo,
+		EncounterRepo:          s.encRepo,
+		EncounterBroker:        s.encBroker,
+		BuildCharacterResolver: func(_ *tkenc.Data) tkenc.CharacterResolver { return encounterhandlerv2.StubCharacterResolver{} },
 		BuildCombatResolver: func(_ *tkenc.Data) tkenc.CombatResolver {
 			return nil
 		},
@@ -118,12 +118,12 @@ func (s *LobbySuite) expectCharacterNotFound(characterID string) {
 // (e.g. a wrapped repo that forces one method to fail).
 func (s *LobbySuite) newOrchestratorWithLobbyRepo(repo lobbyrepo.Repository) *lobbyorch.Orchestrator {
 	orch, err := lobbyorch.New(&lobbyorch.Config{
-		LobbyRepo:         repo,
-		LobbyBroker:       s.broker,
-		CharacterRepo:     s.charRepo,
-		EncounterRepo:     s.encRepo,
-		EncounterBroker:   s.encBroker,
-		CharacterResolver: encounterhandlerv2.StubCharacterResolver{},
+		LobbyRepo:              repo,
+		LobbyBroker:            s.broker,
+		CharacterRepo:          s.charRepo,
+		EncounterRepo:          s.encRepo,
+		EncounterBroker:        s.encBroker,
+		BuildCharacterResolver: func(_ *tkenc.Data) tkenc.CharacterResolver { return encounterhandlerv2.StubCharacterResolver{} },
 		BuildCombatResolver: func(_ *tkenc.Data) tkenc.CombatResolver {
 			return nil
 		},
@@ -153,12 +153,12 @@ func (s *LobbySuite) newOrchestratorWithLobbyRepo(repo lobbyrepo.Repository) *lo
 func (s *LobbySuite) newOrchestratorWithContentDir(dir string) (*lobbyorch.Orchestrator, error) {
 	s.T().Setenv("RPG_CONTENT_DIR", dir)
 	return lobbyorch.New(&lobbyorch.Config{
-		LobbyRepo:         s.lobbyRepo,
-		LobbyBroker:       s.broker,
-		CharacterRepo:     s.charRepo,
-		EncounterRepo:     s.encRepo,
-		EncounterBroker:   s.encBroker,
-		CharacterResolver: encounterhandlerv2.StubCharacterResolver{},
+		LobbyRepo:              s.lobbyRepo,
+		LobbyBroker:            s.broker,
+		CharacterRepo:          s.charRepo,
+		EncounterRepo:          s.encRepo,
+		EncounterBroker:        s.encBroker,
+		BuildCharacterResolver: func(_ *tkenc.Data) tkenc.CharacterResolver { return encounterhandlerv2.StubCharacterResolver{} },
 		BuildCombatResolver: func(_ *tkenc.Data) tkenc.CombatResolver {
 			return nil
 		},
@@ -180,12 +180,12 @@ func (s *LobbySuite) newOrchestratorWithContentDir(dir string) (*lobbyorch.Orche
 // newOrchestratorWithContentDir does for RPG_CONTENT_DIR.
 func (s *LobbySuite) newOrchestratorWithDungeonKeyOverride(key string) *lobbyorch.Orchestrator {
 	orch, err := lobbyorch.New(&lobbyorch.Config{
-		LobbyRepo:         s.lobbyRepo,
-		LobbyBroker:       s.broker,
-		CharacterRepo:     s.charRepo,
-		EncounterRepo:     s.encRepo,
-		EncounterBroker:   s.encBroker,
-		CharacterResolver: encounterhandlerv2.StubCharacterResolver{},
+		LobbyRepo:              s.lobbyRepo,
+		LobbyBroker:            s.broker,
+		CharacterRepo:          s.charRepo,
+		EncounterRepo:          s.encRepo,
+		EncounterBroker:        s.encBroker,
+		BuildCharacterResolver: func(_ *tkenc.Data) tkenc.CharacterResolver { return encounterhandlerv2.StubCharacterResolver{} },
 		BuildCombatResolver: func(_ *tkenc.Data) tkenc.CombatResolver {
 			return nil
 		},

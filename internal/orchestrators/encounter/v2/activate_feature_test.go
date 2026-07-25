@@ -56,9 +56,9 @@ func (s *ActivateFeatureSuite) SetupTest() {
 	s.repo = encountersv2.NewInMemory()
 
 	orch, err := encounterorch.New(&encounterorch.Config{
-		Broker:        s.broker,
-		EncounterRepo: s.repo,
-		Resolver:      stubCharacterResolver{},
+		Broker:                 s.broker,
+		EncounterRepo:          s.repo,
+		BuildCharacterResolver: constCharacterResolver(stubCharacterResolver{}),
 		// ActivateFeature does not invoke the combat / movement resolvers (the
 		// verb self-loads the actor), but the orchestrator requires the builders
 		// to be present.

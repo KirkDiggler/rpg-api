@@ -53,6 +53,18 @@ type CombatResolverBuilder func(data *tkenc.Data) CombatResolver
 // never imports the dnd5e rulebook movement adapter.
 type MovementResolverBuilder func(data *tkenc.Data) tkenc.MovementResolver
 
+// CharacterResolverBuilder builds a per-request CharacterResolver from the
+// encounter data (rpg-api#516). Same rationale as CombatResolverBuilder: the
+// toolkit's CharacterResolver interface hands AbilityModifier /
+// ToolProficiencyBonus only a PlayerID, with no way to see which encounter
+// (or which of a player's possibly-several characters) is in play — the
+// concrete Dnd5eCharacterResolver needs the loaded *tkenc.Data to read
+// data.Players[playerID].EntityID, so a fresh resolver is built per request
+// exactly like the combat/movement resolvers. When a fixed resolver override
+// is present (tests, the StubCharacterResolver default), the builder returns
+// it directly regardless of data.
+type CharacterResolverBuilder func(data *tkenc.Data) CharacterResolver
+
 // CharacterDataCascade attaches/persists the transient PlayerData.DataJSON for
 // the #689 hydration cascade on combat-capable verbs. The orchestrator calls
 // AttachCharacterData (before LoadFromData) and PersistCharacterData (after
@@ -133,9 +145,14 @@ type Config struct {
 	// EncounterRepo persists encounter snapshots. Required.
 	EncounterRepo encountersv2.Repository
 
-	// Resolver bridges the toolkit's CharacterResolver to the character store
-	// for skill-check totals. Required (the handler supplies a stub default).
-	Resolver CharacterResolver
+	// BuildCharacterResolver builds the per-request CharacterResolver bridging
+	// the toolkit's CharacterResolver to the character store for skill-check
+	// totals. Required (the handler supplies a builder that defaults to
+	// StubCharacterResolver). Built per-request, like BuildCombatResolver
+	// below, because the toolkit interface only carries a PlayerID — the
+	// concrete resolver needs this request's *tkenc.Data to map that PlayerID
+	// to a character (rpg-api#516).
+	BuildCharacterResolver CharacterResolverBuilder
 
 	// BuildCombatResolver builds the per-request combat resolver. Required.
 	BuildCombatResolver CombatResolverBuilder
@@ -180,9 +197,9 @@ type Orchestrator struct {
 	encRepo encountersv2.Repository
 	// now is wired now but unused by the door verbs (Interact); reserved for the
 	// projection / snapshot read path carved in later steps of #582.
-	resolver              CharacterResolver
-	buildCombatResolver   CombatResolverBuilder
-	buildMovementResolver MovementResolverBuilder
+	buildCharacterResolver CharacterResolverBuilder
+	buildCombatResolver    CombatResolverBuilder
+	buildMovementResolver  MovementResolverBuilder
 	// characterData carries the #689 hydration cascade (attach/persist of
 	// transient PlayerData.DataJSON) for combat-capable verbs. The injected funcs
 	// hold the character store handler-side, so the orchestrator needs no direct
@@ -211,8 +228,8 @@ func New(cfg *Config) (*Orchestrator, error) {
 	if cfg.EncounterRepo == nil {
 		return nil, errors.New("encounter orchestrator: Config.EncounterRepo is required")
 	}
-	if cfg.Resolver == nil {
-		return nil, errors.New("encounter orchestrator: Config.Resolver is required")
+	if cfg.BuildCharacterResolver == nil {
+		return nil, errors.New("encounter orchestrator: Config.BuildCharacterResolver is required")
 	}
 	if cfg.BuildCombatResolver == nil {
 		return nil, errors.New("encounter orchestrator: Config.BuildCombatResolver is required")
@@ -225,15 +242,15 @@ func New(cfg *Config) (*Orchestrator, error) {
 		now = time.Now
 	}
 	return &Orchestrator{
-		broker:                cfg.Broker,
-		encRepo:               cfg.EncounterRepo,
-		resolver:              cfg.Resolver,
-		buildCombatResolver:   cfg.BuildCombatResolver,
-		buildMovementResolver: cfg.BuildMovementResolver,
-		characterData:         cfg.CharacterData,
-		reactionResume:        cfg.ReactionResume,
-		now:                   now,
-		roller:                cfg.Roller,
-		npcDriveLocks:         newKeyedMutex(),
+		broker:                 cfg.Broker,
+		encRepo:                cfg.EncounterRepo,
+		buildCharacterResolver: cfg.BuildCharacterResolver,
+		buildCombatResolver:    cfg.BuildCombatResolver,
+		buildMovementResolver:  cfg.BuildMovementResolver,
+		characterData:          cfg.CharacterData,
+		reactionResume:         cfg.ReactionResume,
+		now:                    now,
+		roller:                 cfg.Roller,
+		npcDriveLocks:          newKeyedMutex(),
 	}, nil
 }

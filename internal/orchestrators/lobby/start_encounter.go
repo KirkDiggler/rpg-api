@@ -173,7 +173,7 @@ func (o *Orchestrator) StartEncounter(ctx context.Context, in *StartEncounterInp
 
 	encID := core.EncounterID(o.encounterIDGen.Generate())
 	enc := tkenc.New(ctx, encID, o.encounterBroker,
-		tkenc.WithCharacterResolver(o.characterResolver),
+		tkenc.WithCharacterResolver(o.buildCharacterResolver(nil)),
 		tkenc.WithCombatResolver(o.buildCombatResolver(nil)),
 		tkenc.WithMovementResolver(o.buildMovementResolver(nil)),
 	)

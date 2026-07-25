@@ -94,9 +94,9 @@ func (s *EndTurnNPCPauseSuite) SetupTest() {
 	s.marshalCalls = 0
 
 	orch, err := encounterorch.New(&encounterorch.Config{
-		Broker:        s.broker,
-		EncounterRepo: s.repo,
-		Resolver:      stubCharacterResolver{},
+		Broker:                 s.broker,
+		EncounterRepo:          s.repo,
+		BuildCharacterResolver: constCharacterResolver(stubCharacterResolver{}),
 		BuildCombatResolver: func(_ *tkenc.Data) encounterorch.CombatResolver {
 			return fakePhasedResolver{reactorEntityID: npEntityWiz}
 		},
