@@ -926,17 +926,48 @@ func (s *LobbySuite) TestStartEncounter_DungeonGeometryIndependentOfPartySize() 
 
 // --- Task E2: content-backed dungeon keys ---
 
+// placedThing is one placed monster or prop's ref, owning region, and
+// absolute cell — the comparison unit for pinning reference-tomb's exact
+// compiled layout (see TestStartEncounter_ContentBackedKey_ReferenceTomb).
+type placedThing struct {
+	ref       string
+	region    string
+	at        core.Hex
+	blocksLoS bool // only meaningful for obstacles; zero value for monsters
+}
+
+func sortPlacedThings(things []placedThing) {
+	sort.Slice(things, func(i, j int) bool {
+		if things[i].ref != things[j].ref {
+			return things[i].ref < things[j].ref
+		}
+		if things[i].at.Q != things[j].at.Q {
+			return things[i].at.Q < things[j].at.Q
+		}
+		if things[i].at.R != things[j].at.R {
+			return things[i].at.R < things[j].at.R
+		}
+		return things[i].at.S < things[j].at.S
+	})
+}
+
 // TestStartEncounter_ContentBackedKey_ReferenceTomb is the M1 acceptance
 // proof at the orchestrator level: StartEncounter("reference-tomb")
 // builds the content-hosted spec (internal/content/dungeons/
 // reference-tomb.yaml, shipped embedded — no RPG_CONTENT_DIR override
 // needed) via the SAME toolkit InitDungeon + SeedMonsters path a real
-// content-authored dungeon would use — two regions (entrance + tomb) with
-// their declared archetypes, the tomb's boss and every place: prop/monster
-// landing inside the tomb region, and the EXISTING crypt-path tests
+// content-authored dungeon would use, and the EXISTING crypt-path tests
 // (TestStartEncounter_CryptDungeon_..., TestStartEncounter_CryptMonsters_...,
-// TestStartEncounter_CryptObstacles_...) staying green completely
-// unperturbed by this branch's addition.
+// TestStartEncounter_CryptObstacles_...) stay green completely unperturbed
+// by this branch's addition.
+//
+// reference-tomb became a 3-room spec (entrance -> hall -> tomb, Kirk's
+// live-authored draft, approved in-game 2026-07-25) — every want* value
+// below was MEASURED directly off the real compiler + engine (a throwaway
+// program: dungeonspec.Load -> InitDungeon(seed 42) -> SeedMonsters,
+// reading back encData.Monsters/Space.Obstacles/Doors), never hand-derived.
+// Every position in the spec is placed (place:/boss.at), never rolled, so
+// these are seed-independent, stable absolute hexes.
 func (s *LobbySuite) TestStartEncounter_ContentBackedKey_ReferenceTomb() {
 	s.seedReadyLobby("lobby-tomb1", "alice")
 	s.expectCharacter("char-alice", "alice", "Alice", 12, 12)
@@ -951,80 +982,78 @@ func (s *LobbySuite) TestStartEncounter_ContentBackedKey_ReferenceTomb() {
 	s.Require().NoError(err)
 	s.Require().NotNil(encData.Space)
 	s.Require().Equal("crypt", encData.Space.Theme)
-	s.Require().Len(encData.Space.Regions, 2, "reference-tomb is a two-room spec: entrance + tomb")
+	s.Require().Len(encData.Space.Regions, 3, "reference-tomb is now a three-room spec: entrance -> hall -> tomb")
 
-	entrance, entranceOK := regionByArchetype(encData.Space, tkenc.ArchetypeEntrance)
+	_, entranceOK := regionByArchetype(encData.Space, tkenc.ArchetypeEntrance)
 	s.Require().True(entranceOK, "exactly one entrance-archetype region")
+	hall, hallOK := regionByArchetype(encData.Space, tkenc.ArchetypeChamber)
+	s.Require().True(hallOK, "exactly one chamber-archetype region (the hall)")
 	tomb, tombOK := regionByArchetype(encData.Space, tkenc.ArchetypeBoss)
 	s.Require().True(tombOK, "exactly one boss-archetype region (the tomb)")
-	_ = entrance
 
-	// The boss (skeleton-captain, pinned boss.at) and the placed skeleton
-	// monster must both land at their EXACT compiled cells — every
-	// position in reference-tomb.yaml is placed (place:/boss.at), never
-	// rolled, so these are seed-independent, stable absolute hexes, not
-	// just "somewhere in the tomb region."
-	wantMonsterPositions := map[string]core.Hex{
-		"dnd5e:monsters:skeleton-captain": {Q: 14, R: -12, S: -2},
-		"dnd5e:monsters:skeleton":         {Q: 11, R: -8, S: -3},
+	// The hall->tomb connector is locked (DC 12, dex) — the entrance->hall
+	// connector is not. Exactly one locked door, with the spec's exact
+	// lock parameters surviving compile -> InitDungeon -> persisted DoorData.
+	var lockedDoors int
+	for _, d := range encData.Doors {
+		if !d.Locked {
+			continue
+		}
+		lockedDoors++
+		s.Assert().Equal(12, d.LockDC)
+		s.Assert().Equal("dex", d.LockAbility)
 	}
-	gotMonsterPositions := map[string]core.Hex{}
+	s.Require().Equal(1, lockedDoors, "exactly the hall->tomb connector is locked")
+
+	// Three monster spawns: two placed skeletons in the hall, the pinned
+	// boss (skeleton-captain) in the tomb.
+	wantMonsters := []placedThing{
+		{ref: "dnd5e:monsters:skeleton", region: hall.ID, at: core.Hex{Q: 12, R: -9, S: -3}},
+		{ref: "dnd5e:monsters:skeleton", region: hall.ID, at: core.Hex{Q: 14, R: -12, S: -2}},
+		{ref: "dnd5e:monsters:skeleton-captain", region: tomb.ID, at: core.Hex{Q: 25, R: -18, S: -7}},
+	}
+	gotMonsters := make([]placedThing, 0, len(encData.Monsters))
 	for _, m := range encData.Monsters {
 		regionID, ok := encData.Space.RegionAt(m.Position)
 		s.Require().True(ok, "every seeded monster must land on a tagged region hex")
-		s.Assert().Equal(tomb.ID, regionID, "reference-tomb's monsters are both in the tomb room")
-		gotMonsterPositions[m.MonsterRef] = m.Position
+		gotMonsters = append(gotMonsters, placedThing{ref: m.MonsterRef, region: regionID, at: m.Position})
 	}
-	s.Require().Equal(wantMonsterPositions, gotMonsterPositions,
-		"the boss and the placed skeleton must land at their exact compiled cells")
+	sortPlacedThings(wantMonsters)
+	sortPlacedThings(gotMonsters)
+	s.Require().Equal(wantMonsters, gotMonsters, "every placed monster must land at its exact compiled cell, in its declared room")
 
-	// All five placed props (coffin, altar, statue-reaper, brazier x2) must
-	// land at their exact compiled cells too, with the spec's blocks_los
-	// override (coffin: false) and the toolkit's true default (the other
-	// four) both surviving compile -> InitDungeon -> persisted ObstacleData.
-	wantObstaclePositions := map[string][]core.Hex{
-		"dnd5e:props:coffin":        {{Q: 13, R: -10, S: -3}},
-		"dnd5e:props:altar":         {{Q: 16, R: -11, S: -5}},
-		"dnd5e:props:statue-reaper": {{Q: 8, R: -5, S: -3}},
-		"dnd5e:props:brazier":       {{Q: 10, R: -6, S: -4}, {Q: 10, R: -11, S: 1}},
+	// Fifteen placed props across all three rooms, with the spec's
+	// blocks_los override (coffin: false) and the toolkit's true default
+	// (every other prop) both surviving compile -> InitDungeon ->
+	// persisted ObstacleData.
+	wantObstacles := []placedThing{
+		{ref: "dnd5e:props:altar", region: tomb.ID, at: core.Hex{Q: 27, R: -17, S: -10}, blocksLoS: true},
+		{ref: "dnd5e:props:bone-pile", region: hall.ID, at: core.Hex{Q: 15, R: -14, S: -1}, blocksLoS: true},
+		{ref: "dnd5e:props:brazier", region: "entrance", at: core.Hex{Q: 1, R: -2, S: 1}, blocksLoS: true},
+		{ref: "dnd5e:props:brazier", region: "entrance", at: core.Hex{Q: 1, R: -7, S: 6}, blocksLoS: true},
+		{ref: "dnd5e:props:brazier", region: tomb.ID, at: core.Hex{Q: 21, R: -12, S: -9}, blocksLoS: true},
+		{ref: "dnd5e:props:brazier", region: tomb.ID, at: core.Hex{Q: 21, R: -17, S: -4}, blocksLoS: true},
+		{ref: "dnd5e:props:candles", region: tomb.ID, at: core.Hex{Q: 28, R: -19, S: -9}, blocksLoS: true},
+		{ref: "dnd5e:props:coffin", region: tomb.ID, at: core.Hex{Q: 24, R: -15, S: -9}, blocksLoS: false},
+		{ref: "dnd5e:props:pillar", region: hall.ID, at: core.Hex{Q: 9, R: -10, S: 1}, blocksLoS: true},
+		{ref: "dnd5e:props:pillar", region: hall.ID, at: core.Hex{Q: 9, R: -7, S: -2}, blocksLoS: true},
+		{ref: "dnd5e:props:pillar", region: hall.ID, at: core.Hex{Q: 13, R: -9, S: -4}, blocksLoS: true},
+		{ref: "dnd5e:props:pillar", region: hall.ID, at: core.Hex{Q: 13, R: -12, S: -1}, blocksLoS: true},
+		{ref: "dnd5e:props:statue-knight-hooded", region: tomb.ID, at: core.Hex{Q: 19, R: -16, S: -3}, blocksLoS: true},
+		{ref: "dnd5e:props:statue-reaper", region: tomb.ID, at: core.Hex{Q: 19, R: -11, S: -8}, blocksLoS: true},
+		{ref: "dnd5e:props:torch-ornate", region: hall.ID, at: core.Hex{Q: 11, R: -7, S: -4}, blocksLoS: true},
 	}
-	wantBlocksLoS := map[string]bool{
-		"dnd5e:props:coffin":        false,
-		"dnd5e:props:altar":         true,
-		"dnd5e:props:statue-reaper": true,
-		"dnd5e:props:brazier":       true,
-	}
-	gotObstaclePositions := map[string][]core.Hex{}
+	gotObstacles := make([]placedThing, 0, len(encData.Space.Obstacles))
 	for _, obstacle := range encData.Space.Obstacles {
 		regionID, ok := encData.Space.RegionAt(obstacle.Position)
 		s.Require().True(ok, "every placed obstacle must land on a tagged region hex")
-		s.Assert().Equal(tomb.ID, regionID, "reference-tomb's placed props are all in the tomb room")
-		s.Assert().Equal(wantBlocksLoS[obstacle.Ref], obstacle.BlocksLoS, "ref %q blocks_los", obstacle.Ref)
-		gotObstaclePositions[obstacle.Ref] = append(gotObstaclePositions[obstacle.Ref], obstacle.Position)
+		gotObstacles = append(gotObstacles, placedThing{
+			ref: obstacle.Ref, region: regionID, at: obstacle.Position, blocksLoS: obstacle.BlocksLoS,
+		})
 	}
-	for ref := range gotObstaclePositions {
-		sortHexes(gotObstaclePositions[ref])
-	}
-	for ref := range wantObstaclePositions {
-		sortHexes(wantObstaclePositions[ref])
-	}
-	s.Require().Equal(wantObstaclePositions, gotObstaclePositions,
-		"exactly the reference-tomb spec's five placed props, at their exact compiled cells")
-}
-
-// sortHexes orders hexes by (Q, R, S) for stable slice comparison — the
-// spawn/obstacle engines don't guarantee any particular iteration order
-// among same-ref instances (e.g. reference-tomb's two braziers).
-func sortHexes(hexes []core.Hex) {
-	sort.Slice(hexes, func(i, j int) bool {
-		if hexes[i].Q != hexes[j].Q {
-			return hexes[i].Q < hexes[j].Q
-		}
-		if hexes[i].R != hexes[j].R {
-			return hexes[i].R < hexes[j].R
-		}
-		return hexes[i].S < hexes[j].S
-	})
+	sortPlacedThings(wantObstacles)
+	sortPlacedThings(gotObstacles)
+	s.Require().Equal(wantObstacles, gotObstacles, "every placed prop must land at its exact compiled cell, in its declared room, with its exact blocks_los")
 }
 
 // TestStartEncounter_DisabledContentKey_ErrorsBeforeLobbyLock proves the
@@ -1154,6 +1183,14 @@ func (s *LobbySuite) TestStartEncounter_ContentBackedKey_SeedWiring() {
 // supplying NO DungeonKey at all (today's exact shape — no real proto
 // surface sets one), StartEncounter must build the content-backed
 // reference-tomb dungeon, not the legacy crypt default.
+//
+// Both specs now compile to 3 regions (reference-tomb's Kirk-authored
+// entrance/hall/tomb draft; the legacy crypt's entrance/corridor/boss), so
+// region COUNT alone can no longer distinguish them (it could when
+// reference-tomb was 2 rooms). The crypt template never emits an
+// ArchetypeChamber region (verified against tkenc's own crypt_dungeon.go:
+// entrance/corridor/boss only) — reference-tomb's "hall" is the one
+// structural signal that's actually distinguishing.
 func (s *LobbySuite) TestStartEncounter_DungeonKeyOverride_SelectsReferenceTomb() {
 	orch := s.newOrchestratorWithDungeonKeyOverride("reference-tomb")
 
@@ -1168,7 +1205,9 @@ func (s *LobbySuite) TestStartEncounter_DungeonKeyOverride_SelectsReferenceTomb(
 
 	encData, err := s.encRepo.Get(s.ctx, out.EncounterID)
 	s.Require().NoError(err)
-	s.Require().Len(encData.Space.Regions, 2, "reference-tomb (not the 3-region crypt default) must have been selected")
+	hall, hallOK := regionByArchetype(encData.Space, tkenc.ArchetypeChamber)
+	s.Require().True(hallOK, "reference-tomb (not the crypt default, which has no chamber-archetype region) must have been selected")
+	s.Assert().Equal("hall", hall.ID)
 	_, tombOK := regionByArchetype(encData.Space, tkenc.ArchetypeBoss)
 	s.Require().True(tombOK)
 }
