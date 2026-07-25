@@ -22,6 +22,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
@@ -106,6 +107,7 @@ func OverriddenKeys() ([]string, error) {
 			shadowed = append(shadowed, k)
 		}
 	}
+	sort.Strings(shadowed) // deterministic order -- stable logs, stable test assertions
 	return shadowed, nil
 }
 
