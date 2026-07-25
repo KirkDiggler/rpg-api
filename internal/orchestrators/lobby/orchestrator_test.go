@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"go.uber.org/mock/gomock"
@@ -102,12 +103,19 @@ func baseTestConfig(t *testing.T) *lobbyorch.Config {
 
 // TestNew_DungeonKeyOverrideMustResolve proves an override key that
 // resolves NOWHERE — not content, not the legacy dungeonSpecs map — fails
-// construction loudly, per the plan's own test sketch.
+// construction loudly, per the plan's own test sketch. Also pins the
+// message content: names RPG_DUNGEON_KEY (the env var an operator
+// actually set), not Config.DungeonKeyOverride (the Go field), and — once
+// wrapped by cmd/server/server.go's own "lobby orchestrator: %w" at the
+// real New() call site — must never double up to "lobby orchestrator:
+// lobby orchestrator: ...".
 func TestNew_DungeonKeyOverrideMustResolve(t *testing.T) {
 	cfg := baseTestConfig(t)
 	cfg.DungeonKeyOverride = "atlantis"
 	_, err := lobbyorch.New(cfg)
 	require.Error(t, err, "an override key resolving nowhere (content or legacy) must fail construction loudly")
+	assert.Contains(t, err.Error(), "RPG_DUNGEON_KEY", "message must name the env var an operator set")
+	assert.NotContains(t, err.Error(), "lobby orchestrator", "must not carry a prefix that would double up when server.go wraps it")
 }
 
 // TestNew_DungeonKeyOverrideRejectsDisabledContentKey proves an override
@@ -128,6 +136,8 @@ func TestNew_DungeonKeyOverrideRejectsDisabledContentKey(t *testing.T) {
 	cfg.DungeonKeyOverride = "broken-dungeon"
 	_, err := lobbyorch.New(cfg)
 	require.Error(t, err, "an override pointing at a DISABLED content key must fail construction, not defer to first request")
+	assert.Contains(t, err.Error(), "RPG_DUNGEON_KEY")
+	assert.NotContains(t, err.Error(), "lobby orchestrator")
 }
 
 // TestNew_DungeonKeyOverrideEmptyIsANoOp proves DungeonKeyOverride: ""

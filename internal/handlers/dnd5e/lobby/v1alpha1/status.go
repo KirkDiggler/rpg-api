@@ -21,13 +21,24 @@ import (
 //   - ErrCharacterNotFound → NotFound
 //   - ErrLobbyAlreadyStarted / ErrLobbyFull / ErrNotAllReady / ErrLobbyNotStarted /
 //     ErrEncounterAlreadyEnded → FailedPrecondition
+//   - ErrUnknownDungeonKey → NotFound (Task E3 — previously fell through to
+//     Internal; unreachable via any real proto surface until a caller can
+//     supply a DungeonKey, but honest regardless)
+//   - *DisabledDungeonKeyError → InvalidArgument, carrying the stored
+//     validation CAUSE (Task E3 — Unwrap()'s Cause, never Error()'s own
+//     "lobby orchestrator: dungeon key ... is disabled:" wrapping prefix,
+//     which is internal error-taxonomy language, not something a client
+//     authoring content should ever see)
 //   - unclassified → Internal
 func lobbyStatusError(err error) error {
+	var disabledErr *lobbyorch.DisabledDungeonKeyError
 	switch {
 	case errors.Is(err, lobbyorch.ErrLobbyNotFound):
 		return status.Error(codes.NotFound, "lobby not found")
 	case errors.Is(err, lobbyorch.ErrCharacterNotFound):
 		return status.Error(codes.NotFound, "character not found")
+	case errors.Is(err, lobbyorch.ErrUnknownDungeonKey):
+		return status.Error(codes.NotFound, "unknown dungeon key")
 	case errors.Is(err, lobbyorch.ErrPlayerNotInLobby):
 		return status.Error(codes.PermissionDenied, "player is not a member of this lobby")
 	case errors.Is(err, lobbyorch.ErrNotHost):
@@ -44,6 +55,8 @@ func lobbyStatusError(err error) error {
 		return status.Error(codes.FailedPrecondition, "lobby has not started an encounter")
 	case errors.Is(err, lobbyorch.ErrEncounterAlreadyEnded):
 		return status.Error(codes.FailedPrecondition, "encounter has already ended")
+	case errors.As(err, &disabledErr):
+		return status.Error(codes.InvalidArgument, disabledErr.Cause.Error())
 	}
 	return status.Errorf(codes.Internal, "lobby: %v", err)
 }

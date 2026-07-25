@@ -1074,11 +1074,11 @@ func (s *LobbySuite) TestStartEncounter_DisabledContentKey_ErrorsBeforeLobbyLock
 // room with placed/pinned content never gets rolled interior walls, so
 // only the entrance's own random walls can prove RandomSeed wiring here.
 // entrance's width (20) is deliberately generous: verified empirically
-// that a width this small as 6 rolls IDENTICAL walls for every seed
-// 1-50 (the margin heuristic leaves too few interior candidate cells to
-// vary) — width 20 was checked to produce 47 distinct wall layouts across
-// the same 50-seed sweep, and seeds 111/222 specifically (this test's
-// values) were confirmed to differ before being hardcoded here.
+// that a width as small as 6 rolls IDENTICAL walls for every seed 1-50
+// (the margin heuristic leaves too few interior candidate cells to vary)
+// — width 20 was checked to produce 47 distinct wall layouts across the
+// same 50-seed sweep, and seeds 111/222 specifically (this test's values)
+// were confirmed to differ before being hardcoded here.
 const scatteredSeedTestYAML = `
 version: 1
 key: scattered-seed-test

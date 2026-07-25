@@ -225,15 +225,24 @@ func (o *Orchestrator) resolveContentDungeonSpec(key DungeonKey) (compiled dunge
 }
 
 // validateDungeonKeyOverride checks that override (Config.DungeonKeyOverride,
-// Task E2b's RPG_DUNGEON_KEY mechanism) resolves to a real, ENABLED
-// dungeon spec before construction succeeds. "" (unset) is always valid —
-// a no-op. A non-empty override must resolve via EITHER contentSpecs (the
-// registry loadContentSpecs just built) OR the legacy dungeonSpecs map; a
-// content key that resolves but is DISABLED (its file failed
-// dungeonspec.Load) is rejected here too — an operator pointing
-// RPG_DUNGEON_KEY at a broken key must see a construction failure
-// immediately, not a deferred failure on the first real StartEncounter
-// call.
+// populated from the RPG_DUNGEON_KEY env var — Task E2b's dev-loop
+// mechanism) resolves to a real, ENABLED dungeon spec before construction
+// succeeds. "" (unset) is always valid — a no-op. A non-empty override
+// must resolve via EITHER contentSpecs (the registry loadContentSpecs
+// just built) OR the legacy dungeonSpecs map; a content key that resolves
+// but is DISABLED (its file failed dungeonspec.Load) is rejected here
+// too — an operator pointing RPG_DUNGEON_KEY at a broken key must see a
+// construction failure immediately, not a deferred failure on the first
+// real StartEncounter call.
+//
+// Error messages name RPG_DUNGEON_KEY (the env var an operator actually
+// set), not Config.DungeonKeyOverride (the Go field name) — this is the
+// error an operator hits during the M1 manual walkthrough. They also omit
+// the "lobby orchestrator:" prefix other Config validation errors in this
+// package carry: cmd/server/server.go's lobbyorch.New call site already
+// wraps ANY error from New with fmt.Errorf("lobby orchestrator: %w", err),
+// so including it here would double it up ("lobby orchestrator: lobby
+// orchestrator: ...") for the one caller that actually sees this message.
 func validateDungeonKeyOverride(override string, contentSpecs map[DungeonKey]contentSpecResult) error {
 	if override == "" {
 		return nil
@@ -242,7 +251,7 @@ func validateDungeonKeyOverride(override string, contentSpecs map[DungeonKey]con
 	if result, ok := contentSpecs[key]; ok {
 		if result.err != nil {
 			return fmt.Errorf(
-				"lobby orchestrator: Config.DungeonKeyOverride %q resolves to a disabled content key: %w",
+				"RPG_DUNGEON_KEY %q resolves to a disabled content key: %w",
 				override, result.err)
 		}
 		return nil
@@ -251,6 +260,6 @@ func validateDungeonKeyOverride(override string, contentSpecs map[DungeonKey]con
 		return nil
 	}
 	return fmt.Errorf(
-		"lobby orchestrator: Config.DungeonKeyOverride %q does not resolve via content or the legacy dungeonSpecs map",
+		"RPG_DUNGEON_KEY %q does not resolve via content or the legacy dungeonSpecs map",
 		override)
 }
