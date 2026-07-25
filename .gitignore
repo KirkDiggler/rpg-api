@@ -9,6 +9,16 @@
 *.dylib
 bin/
 
+# Locally built binaries committed by accident at the repo root (rpg-api#712:
+# `server`/`client` are `go build ./cmd/server`/`./cmd/client` run from the
+# repo root instead of the Makefile's `bin/rpg-api` target; `rpg-api`/
+# `rpg-client` are the same builds under alternate output names). Root-
+# anchored so this never shadows the real cmd/server, cmd/client packages.
+/server
+/client
+/rpg-api
+/rpg-client
+
 # Test binary, built with `go test -c`
 *.test
 
