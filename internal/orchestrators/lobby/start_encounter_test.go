@@ -2,7 +2,11 @@ package lobby_test
 
 import (
 	"encoding/json"
+	"errors"
 	"math"
+	"os"
+	"path/filepath"
+	"sort"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -918,4 +922,275 @@ func (s *LobbySuite) TestStartEncounter_DungeonGeometryIndependentOfPartySize() 
 		return out
 	}
 	s.Require().Equal(doorPositions(data1), doorPositions(data2), "connector door positions are geometry too")
+}
+
+// --- Task E2: content-backed dungeon keys ---
+
+// TestStartEncounter_ContentBackedKey_ReferenceTomb is the M1 acceptance
+// proof at the orchestrator level: StartEncounter("reference-tomb")
+// builds the content-hosted spec (internal/content/dungeons/
+// reference-tomb.yaml, shipped embedded — no RPG_CONTENT_DIR override
+// needed) via the SAME toolkit InitDungeon + SeedMonsters path a real
+// content-authored dungeon would use — two regions (entrance + tomb) with
+// their declared archetypes, the tomb's boss and every place: prop/monster
+// landing inside the tomb region, and the EXISTING crypt-path tests
+// (TestStartEncounter_CryptDungeon_..., TestStartEncounter_CryptMonsters_...,
+// TestStartEncounter_CryptObstacles_...) staying green completely
+// unperturbed by this branch's addition.
+func (s *LobbySuite) TestStartEncounter_ContentBackedKey_ReferenceTomb() {
+	s.seedReadyLobby("lobby-tomb1", "alice")
+	s.expectCharacter("char-alice", "alice", "Alice", 12, 12)
+
+	out, err := s.orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		PlayerID: "alice", LobbyID: "lobby-tomb1",
+		DungeonKey: lobbyorch.DungeonKey("reference-tomb"), RandomSeed: 42,
+	})
+	s.Require().NoError(err)
+
+	encData, err := s.encRepo.Get(s.ctx, out.EncounterID)
+	s.Require().NoError(err)
+	s.Require().NotNil(encData.Space)
+	s.Require().Equal("crypt", encData.Space.Theme)
+	s.Require().Len(encData.Space.Regions, 2, "reference-tomb is a two-room spec: entrance + tomb")
+
+	entrance, entranceOK := regionByArchetype(encData.Space, tkenc.ArchetypeEntrance)
+	s.Require().True(entranceOK, "exactly one entrance-archetype region")
+	tomb, tombOK := regionByArchetype(encData.Space, tkenc.ArchetypeBoss)
+	s.Require().True(tombOK, "exactly one boss-archetype region (the tomb)")
+	_ = entrance
+
+	// The boss (skeleton-captain, pinned boss.at) and the placed skeleton
+	// monster must both land at their EXACT compiled cells — every
+	// position in reference-tomb.yaml is placed (place:/boss.at), never
+	// rolled, so these are seed-independent, stable absolute hexes, not
+	// just "somewhere in the tomb region."
+	wantMonsterPositions := map[string]core.Hex{
+		"dnd5e:monsters:skeleton-captain": {Q: 14, R: -12, S: -2},
+		"dnd5e:monsters:skeleton":         {Q: 11, R: -8, S: -3},
+	}
+	gotMonsterPositions := map[string]core.Hex{}
+	for _, m := range encData.Monsters {
+		regionID, ok := encData.Space.RegionAt(m.Position)
+		s.Require().True(ok, "every seeded monster must land on a tagged region hex")
+		s.Assert().Equal(tomb.ID, regionID, "reference-tomb's monsters are both in the tomb room")
+		gotMonsterPositions[m.MonsterRef] = m.Position
+	}
+	s.Require().Equal(wantMonsterPositions, gotMonsterPositions,
+		"the boss and the placed skeleton must land at their exact compiled cells")
+
+	// All five placed props (coffin, altar, statue-reaper, brazier x2) must
+	// land at their exact compiled cells too, with the spec's blocks_los
+	// override (coffin: false) and the toolkit's true default (the other
+	// four) both surviving compile -> InitDungeon -> persisted ObstacleData.
+	wantObstaclePositions := map[string][]core.Hex{
+		"dnd5e:props:coffin":        {{Q: 13, R: -10, S: -3}},
+		"dnd5e:props:altar":         {{Q: 16, R: -11, S: -5}},
+		"dnd5e:props:statue-reaper": {{Q: 8, R: -5, S: -3}},
+		"dnd5e:props:brazier":       {{Q: 10, R: -6, S: -4}, {Q: 10, R: -11, S: 1}},
+	}
+	wantBlocksLoS := map[string]bool{
+		"dnd5e:props:coffin":        false,
+		"dnd5e:props:altar":         true,
+		"dnd5e:props:statue-reaper": true,
+		"dnd5e:props:brazier":       true,
+	}
+	gotObstaclePositions := map[string][]core.Hex{}
+	for _, obstacle := range encData.Space.Obstacles {
+		regionID, ok := encData.Space.RegionAt(obstacle.Position)
+		s.Require().True(ok, "every placed obstacle must land on a tagged region hex")
+		s.Assert().Equal(tomb.ID, regionID, "reference-tomb's placed props are all in the tomb room")
+		s.Assert().Equal(wantBlocksLoS[obstacle.Ref], obstacle.BlocksLoS, "ref %q blocks_los", obstacle.Ref)
+		gotObstaclePositions[obstacle.Ref] = append(gotObstaclePositions[obstacle.Ref], obstacle.Position)
+	}
+	for ref := range gotObstaclePositions {
+		sortHexes(gotObstaclePositions[ref])
+	}
+	for ref := range wantObstaclePositions {
+		sortHexes(wantObstaclePositions[ref])
+	}
+	s.Require().Equal(wantObstaclePositions, gotObstaclePositions,
+		"exactly the reference-tomb spec's five placed props, at their exact compiled cells")
+}
+
+// sortHexes orders hexes by (Q, R, S) for stable slice comparison — the
+// spawn/obstacle engines don't guarantee any particular iteration order
+// among same-ref instances (e.g. reference-tomb's two braziers).
+func sortHexes(hexes []core.Hex) {
+	sort.Slice(hexes, func(i, j int) bool {
+		if hexes[i].Q != hexes[j].Q {
+			return hexes[i].Q < hexes[j].Q
+		}
+		if hexes[i].R != hexes[j].R {
+			return hexes[i].R < hexes[j].R
+		}
+		return hexes[i].S < hexes[j].S
+	})
+}
+
+// TestStartEncounter_DisabledContentKey_ErrorsBeforeLobbyLock proves the
+// "found but disabled" branch (Task E2's three-state contract): a
+// content-backed key whose file fails dungeonspec.Load at startup must
+// return a *lobbyorch.DisabledDungeonKeyError, before touching the lobby
+// lock — same zero-side-effects posture as an unknown legacy key
+// (TestStartEncounter_UnknownDungeonKey_ErrorsAndLobbyStaysWaiting above).
+// Uses a dedicated Orchestrator (newOrchestratorWithContentDir) since
+// loadContentSpecs only reads RPG_CONTENT_DIR once, at construction.
+func (s *LobbySuite) TestStartEncounter_DisabledContentKey_ErrorsBeforeLobbyLock() {
+	dir := s.T().TempDir()
+	require.NoError(s.T(), os.WriteFile(
+		filepath.Join(dir, "broken-dungeon.yaml"),
+		[]byte("version: 1\nkey: broken-dungeon\nname: Broken\nheight: 8\nrooms:\n"+
+			"  - id: only-one\n    archetype: entrance\n    width: 6\n"),
+		0o600,
+	))
+	orch, err := s.newOrchestratorWithContentDir(dir)
+	s.Require().NoError(err, "a schema-invalid content FILE must not fail construction — only an unreadable path does")
+
+	s.seedReadyLobby("lobby-broken1", "alice")
+	// No expectCharacter armed: resolving the content spec fails before
+	// StartEncounter ever reaches character-snapshot seeding.
+
+	_, err = orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		PlayerID: "alice", LobbyID: "lobby-broken1",
+		DungeonKey: lobbyorch.DungeonKey("broken-dungeon"),
+	})
+	s.Require().Error(err)
+	var disabledErr *lobbyorch.DisabledDungeonKeyError
+	s.Require().True(errors.As(err, &disabledErr), "must be a *DisabledDungeonKeyError, not a generic error")
+	s.Assert().Equal(lobbyorch.DungeonKey("broken-dungeon"), disabledErr.Key)
+
+	lobbyData, err := s.lobbyRepo.Get(s.ctx, "lobby-broken1")
+	s.Require().NoError(err)
+	s.Require().Equal(lobbyrepo.StatusWaiting, lobbyData.Status, "a disabled content key must fail before any state transition")
+	s.Require().Empty(lobbyData.EncounterID)
+}
+
+// scatteredSeedTestYAML is a content-backed spec whose ONLY seed-varying
+// geometry lives in the entrance room (pattern: scattered, no place:
+// entries — design.md's delta forbids place:/boss.at together with a
+// scattered pattern). The tomb room's pinned boss.at (M1's own
+// restriction requires a boss room to pin its boss) compiles its pattern
+// to "empty" (verified directly against the compiler, not assumed) — a
+// room with placed/pinned content never gets rolled interior walls, so
+// only the entrance's own random walls can prove RandomSeed wiring here.
+// entrance's width (20) is deliberately generous: verified empirically
+// that a width as small as 6 rolls IDENTICAL walls for every seed 1-50
+// (the margin heuristic leaves too few interior candidate cells to vary)
+// — width 20 was checked to produce 47 distinct wall layouts across the
+// same 50-seed sweep, and seeds 111/222 specifically (this test's values)
+// were confirmed to differ before being hardcoded here.
+const scatteredSeedTestYAML = `
+version: 1
+key: scattered-seed-test
+name: Scattered Seed Test
+theme: crypt
+height: 8
+rooms:
+  - id: entrance
+    archetype: entrance
+    width: 20
+    pattern: scattered
+  - id: tomb
+    archetype: boss
+    width: 12
+    boss: { ref: "dnd5e:monsters:skeleton-captain", at: [7, 5] }
+connectors:
+  - { from: entrance, to: tomb }
+`
+
+// TestStartEncounter_ContentBackedKey_SeedWiring proves compiled.Params.
+// RandomSeed = in.RandomSeed (start_encounter.go) actually reaches
+// InitDungeon: the same seed must reproduce byte-identical scattered-
+// pattern geometry across two independent encounters, and a different
+// seed must roll different geometry — the content-backed-branch
+// equivalent of TestStartEncounter_ExplicitSeed_ReproducibleDungeonLayout
+// for the legacy crypt path.
+func (s *LobbySuite) TestStartEncounter_ContentBackedKey_SeedWiring() {
+	dir := s.T().TempDir()
+	require.NoError(s.T(), os.WriteFile(
+		filepath.Join(dir, "scattered-seed-test.yaml"), []byte(scatteredSeedTestYAML), 0o600,
+	))
+	orch, err := s.newOrchestratorWithContentDir(dir)
+	s.Require().NoError(err)
+
+	s.seedReadyLobby("lobby-seed-a", "alice")
+	s.expectCharacter("char-alice", "alice", "Alice", 12, 12)
+	outA, err := orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		PlayerID: "alice", LobbyID: "lobby-seed-a",
+		DungeonKey: lobbyorch.DungeonKey("scattered-seed-test"), RandomSeed: 111,
+	})
+	s.Require().NoError(err)
+	dataA, err := s.encRepo.Get(s.ctx, outA.EncounterID)
+	s.Require().NoError(err)
+
+	s.seedReadyLobby("lobby-seed-b", "bob")
+	s.expectCharacter("char-bob", "bob", "Bob", 12, 12)
+	outB, err := orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		PlayerID: "bob", LobbyID: "lobby-seed-b",
+		DungeonKey: lobbyorch.DungeonKey("scattered-seed-test"), RandomSeed: 111,
+	})
+	s.Require().NoError(err)
+	dataB, err := s.encRepo.Get(s.ctx, outB.EncounterID)
+	s.Require().NoError(err)
+	s.Require().Equal(dataA.Space, dataB.Space, "the same seed must reproduce identical content-backed dungeon geometry")
+
+	s.seedReadyLobby("lobby-seed-c", "carol")
+	s.expectCharacter("char-carol", "carol", "Carol", 12, 12)
+	outC, err := orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		PlayerID: "carol", LobbyID: "lobby-seed-c",
+		DungeonKey: lobbyorch.DungeonKey("scattered-seed-test"), RandomSeed: 222,
+	})
+	s.Require().NoError(err)
+	dataC, err := s.encRepo.Get(s.ctx, outC.EncounterID)
+	s.Require().NoError(err)
+	s.Require().NotEqual(dataA.Space, dataC.Space, "a different seed must roll different content-backed dungeon geometry")
+}
+
+// --- Task E2b: RPG_DUNGEON_KEY override selects a dungeon end to end ---
+
+// TestStartEncounter_DungeonKeyOverride_SelectsReferenceTomb is the M1
+// manual-walkthrough mechanism proven at the orchestrator level: with
+// Config.DungeonKeyOverride set to "reference-tomb" and the caller
+// supplying NO DungeonKey at all (today's exact shape — no real proto
+// surface sets one), StartEncounter must build the content-backed
+// reference-tomb dungeon, not the legacy crypt default.
+func (s *LobbySuite) TestStartEncounter_DungeonKeyOverride_SelectsReferenceTomb() {
+	orch := s.newOrchestratorWithDungeonKeyOverride("reference-tomb")
+
+	s.seedReadyLobby("lobby-override1", "alice")
+	s.expectCharacter("char-alice", "alice", "Alice", 12, 12)
+
+	out, err := orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		PlayerID: "alice", LobbyID: "lobby-override1",
+		// DungeonKey deliberately left unset -- the override must fill it in.
+	})
+	s.Require().NoError(err)
+
+	encData, err := s.encRepo.Get(s.ctx, out.EncounterID)
+	s.Require().NoError(err)
+	s.Require().Len(encData.Space.Regions, 2, "reference-tomb (not the 3-region crypt default) must have been selected")
+	_, tombOK := regionByArchetype(encData.Space, tkenc.ArchetypeBoss)
+	s.Require().True(tombOK)
+}
+
+// TestStartEncounter_DungeonKeyOverride_ExplicitCallerKeyWins proves the
+// substitution's ONLY-when-empty guard: a caller-supplied DungeonKey
+// (crypt) must win over a configured override (reference-tomb) — the
+// override is a fallback for "no key supplied," never a hijack of an
+// explicit one.
+func (s *LobbySuite) TestStartEncounter_DungeonKeyOverride_ExplicitCallerKeyWins() {
+	orch := s.newOrchestratorWithDungeonKeyOverride("reference-tomb")
+
+	s.seedReadyLobby("lobby-override2", "alice")
+	s.expectCharacter("char-alice", "alice", "Alice", 12, 12)
+
+	out, err := orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		PlayerID: "alice", LobbyID: "lobby-override2",
+		DungeonKey: lobbyorch.DungeonKeyCrypt,
+	})
+	s.Require().NoError(err)
+
+	encData, err := s.encRepo.Get(s.ctx, out.EncounterID)
+	s.Require().NoError(err)
+	s.Require().Len(encData.Space.Regions, 3, "the explicit crypt key must win over the configured override")
 }

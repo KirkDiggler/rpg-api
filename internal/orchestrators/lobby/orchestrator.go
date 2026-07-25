@@ -97,6 +97,23 @@ type Config struct {
 	// kept for parity with the v2 encounter orchestrator's Config and any
 	// future need (e.g. abandonment metrics).
 	Now func() time.Time
+
+	// DungeonKeyOverride is the RPG_DUNGEON_KEY dev-loop mechanism (Task
+	// E2b): when non-empty, StartEncounter substitutes this key ONLY when
+	// the caller supplied no DungeonKey at all — an explicit caller-
+	// supplied key always wins (no real proto surface sets one yet, so
+	// this is the only way to actually select a non-default key end to
+	// end today). Optional — "" (unset RPG_DUNGEON_KEY, every real
+	// deployment today) is a no-op, zero player-facing change.
+	//
+	// Validated here at construction, not deferred to first request: must
+	// resolve via either the content registry (and not be a DISABLED
+	// content key — a load-error key set as the override fails loudly at
+	// boot too, same posture as any other Config validation failure) or
+	// the legacy dungeonSpecs map. An override naming nothing real is a
+	// deploy-time misconfiguration, not something that should surface only
+	// on the first StartEncounter call.
+	DungeonKeyOverride string
 }
 
 // Orchestrator is the lobby load -> mutate -> persist -> publish core. One
@@ -117,6 +134,18 @@ type Orchestrator struct {
 	partyCap              int
 	now                   func() time.Time
 	locks                 *keyedMutex
+
+	// contentSpecs is the content-hosted dungeon spec registry (Task E2),
+	// built ONCE here at construction by loadContentSpecs — StartEncounter
+	// resolves against this stored map (resolveContentDungeonSpec), never
+	// by calling content.AllSpecs/SpecByKey again per request.
+	contentSpecs map[DungeonKey]contentSpecResult
+
+	// dungeonKeyOverride is Config.DungeonKeyOverride, already validated
+	// to resolve (Task E2b) — "" when RPG_DUNGEON_KEY was unset at
+	// startup, in which case StartEncounter's effectiveKey substitution is
+	// a no-op.
+	dungeonKeyOverride DungeonKey
 }
 
 // New constructs an Orchestrator from cfg. Returns an error (never a nil
@@ -169,6 +198,24 @@ func New(cfg *Config) (*Orchestrator, error) {
 	if now == nil {
 		now = time.Now
 	}
+
+	// Content-hosted dungeon specs (Task E2): built once here, never
+	// per-request. An unreadable RPG_CONTENT_DIR fails construction
+	// loudly rather than silently degrading to embedded-only content —
+	// see loadContentSpecs' doc.
+	contentSpecs, err := loadContentSpecs()
+	if err != nil {
+		return nil, err
+	}
+
+	// RPG_DUNGEON_KEY override (Task E2b): validated NOW, against the
+	// registry just built above, so a misconfigured override fails
+	// construction loudly rather than deferring to StartEncounter's first
+	// real call.
+	if err := validateDungeonKeyOverride(cfg.DungeonKeyOverride, contentSpecs); err != nil {
+		return nil, err
+	}
+
 	return &Orchestrator{
 		lobbyRepo:             cfg.LobbyRepo,
 		lobbyBroker:           cfg.LobbyBroker,
@@ -184,6 +231,8 @@ func New(cfg *Config) (*Orchestrator, error) {
 		partyCap:              partyCap,
 		now:                   now,
 		locks:                 newKeyedMutex(),
+		contentSpecs:          contentSpecs,
+		dungeonKeyOverride:    DungeonKey(cfg.DungeonKeyOverride),
 	}, nil
 }
 

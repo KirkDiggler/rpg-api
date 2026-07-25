@@ -237,6 +237,11 @@ func runServer(_ *cobra.Command, _ []string) error {
 		LobbyIDGenerator:      idgen.NewUUID("lobby"),
 		JoinRefGenerator:      idgen.NewUUID("join"),
 		EncounterIDGenerator:  idgen.NewUUID(""),
+		// RPG_DUNGEON_KEY (Task E2b): the M1 manual-walkthrough mechanism --
+		// unset in every real deployment today (zero player-facing change),
+		// validated at construction below (a misconfigured value fails
+		// server startup loudly, not the first StartEncounter call).
+		DungeonKeyOverride: os.Getenv("RPG_DUNGEON_KEY"),
 	})
 	if err != nil {
 		return fmt.Errorf("lobby orchestrator: %w", err)
