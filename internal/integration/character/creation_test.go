@@ -15,6 +15,9 @@ import (
 
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
 	"github.com/KirkDiggler/rpg-api/internal/integration/harness"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/armor"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/tools"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/weapons"
 )
 
 // CharacterCreationSuite tests character creation for all classes.
@@ -62,6 +65,20 @@ func (s *CharacterCreationSuite) TearDownTest() {
 
 func (s *CharacterCreationSuite) authCtx(playerID string) context.Context {
 	return metadata.AppendToOutgoingContext(s.ctx, "authorization", "Dev "+playerID)
+}
+
+func (s *CharacterCreationSuite) assertInventoryCounts(char *dnd5ev1alpha1.Character, expected map[string]int32) {
+	s.Require().NotNil(char)
+
+	counts := make(map[string]int32, len(char.GetInventory()))
+	for _, item := range char.GetInventory() {
+		counts[item.GetItemId()] += item.GetQuantity()
+	}
+
+	for itemID, quantity := range expected {
+		s.Require().Contains(counts, itemID, "expected %s in inventory", itemID)
+		s.Equal(quantity, counts[itemID], "expected %d of %s in inventory", quantity, itemID)
+	}
 }
 
 // =============================================================================
@@ -396,6 +413,21 @@ func (s *CharacterCreationSuite) TestCreateRogue() {
 	s.T().Logf("✅ Rogue created: %s", char.GetId())
 	s.Assert().Equal("Shadow", char.GetName())
 	s.Assert().Equal(dnd5ev1alpha1.Class_CLASS_ROGUE, char.GetClass())
+
+	// Rogue fixed starting equipment must reach both the finalize response and persisted API reads.
+	s.assertInventoryCounts(char, map[string]int32{
+		armor.Leather:      1,
+		weapons.Dagger:     2,
+		tools.ThievesTools: 1,
+	})
+
+	persisted, err := s.server.CharacterClient.GetCharacter(ctx, &dnd5ev1alpha1.GetCharacterRequest{CharacterId: char.GetId()})
+	s.Require().NoError(err)
+	s.assertInventoryCounts(persisted.GetCharacter(), map[string]int32{
+		armor.Leather:      1,
+		weapons.Dagger:     2,
+		tools.ThievesTools: 1,
+	})
 }
 
 // =============================================================================
@@ -451,8 +483,19 @@ func (s *CharacterCreationSuite) TestCreateBarbarian() {
 
 	finalizeResp, err := s.server.CharacterClient.FinalizeDraft(ctx, &dnd5ev1alpha1.FinalizeDraftRequest{DraftId: draftID})
 	s.Require().NoError(err)
+	s.Require().NotNil(finalizeResp.GetCharacter())
 
-	s.T().Logf("✅ Barbarian created: %s", finalizeResp.GetCharacter().GetId())
+	char := finalizeResp.GetCharacter()
+	s.T().Logf("✅ Barbarian created: %s", char.GetId())
+	s.assertInventoryCounts(char, map[string]int32{
+		weapons.Javelin: 4,
+	})
+
+	persisted, err := s.server.CharacterClient.GetCharacter(ctx, &dnd5ev1alpha1.GetCharacterRequest{CharacterId: char.GetId()})
+	s.Require().NoError(err)
+	s.assertInventoryCounts(persisted.GetCharacter(), map[string]int32{
+		weapons.Javelin: 4,
+	})
 }
 
 // =============================================================================
@@ -629,6 +672,16 @@ func (s *CharacterCreationSuite) TestCreateMonk() {
 	char := finalizeResp.GetCharacter()
 	s.Assert().Equal("Shadow", char.GetName())
 	s.Assert().Equal(dnd5ev1alpha1.Class_CLASS_MONK, char.GetClass())
+
+	s.assertInventoryCounts(char, map[string]int32{
+		weapons.Dart: 10,
+	})
+
+	persisted, err := s.server.CharacterClient.GetCharacter(ctx, &dnd5ev1alpha1.GetCharacterRequest{CharacterId: char.GetId()})
+	s.Require().NoError(err)
+	s.assertInventoryCounts(persisted.GetCharacter(), map[string]int32{
+		weapons.Dart: 10,
+	})
 
 	s.T().Logf("✅ Monk created: %s", char.GetId())
 }
