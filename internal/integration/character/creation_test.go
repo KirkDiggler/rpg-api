@@ -483,6 +483,7 @@ func (s *CharacterCreationSuite) TestCreateBarbarian() {
 
 	finalizeResp, err := s.server.CharacterClient.FinalizeDraft(ctx, &dnd5ev1alpha1.FinalizeDraftRequest{DraftId: draftID})
 	s.Require().NoError(err)
+	s.Require().NotNil(finalizeResp.GetCharacter())
 
 	char := finalizeResp.GetCharacter()
 	s.T().Logf("✅ Barbarian created: %s", char.GetId())
