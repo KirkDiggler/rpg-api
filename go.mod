@@ -9,7 +9,7 @@ require (
 	github.com/KirkDiggler/rpg-toolkit/encounter v0.44.1
 	github.com/KirkDiggler/rpg-toolkit/events v0.6.2
 	github.com/KirkDiggler/rpg-toolkit/rpgerr v0.1.2
-	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.69.0
+	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.69.1
 	github.com/KirkDiggler/rpg-toolkit/tools/environments v0.4.4
 	github.com/KirkDiggler/rpg-toolkit/tools/spatial v0.5.1
 	github.com/KirkDiggler/rpg-toolkit/tools/spawn v0.3.0
