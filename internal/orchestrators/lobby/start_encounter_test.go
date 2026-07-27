@@ -1212,6 +1212,50 @@ func (s *LobbySuite) TestStartEncounter_DungeonKeyOverride_SelectsReferenceTomb(
 	s.Require().True(tombOK)
 }
 
+// TestStartEncounter_DungeonKeyOverride_SelectsFogLab is the fog-of-war
+// playtest fixture (rpg-project#733 follow-up) proven end to end the same
+// way TestStartEncounter_DungeonKeyOverride_SelectsReferenceTomb proves
+// reference-tomb: with Config.DungeonKeyOverride set to "fog-lab" and no
+// caller-supplied DungeonKey, StartEncounter must build the content-backed
+// fog-lab dungeon, not the legacy crypt default (which is what motivated
+// this fixture in the first place — the procedural crypt is uncontrollable
+// for isolating geometry-fog from entity-fog).
+//
+// fog-lab is uniquely a two-room spec (every other registered key — crypt,
+// reference-tomb — compiles to three regions), so region count alone
+// already distinguishes it; this also pins the two room ids/archetypes and
+// that exactly one monster (the skeleton filling the mandatory boss slot)
+// got seeded, proving SeedMonsters actually ran against the content-compiled
+// spawn plan, not just that InitDungeon built the right geometry.
+func (s *LobbySuite) TestStartEncounter_DungeonKeyOverride_SelectsFogLab() {
+	orch := s.newOrchestratorWithDungeonKeyOverride("fog-lab")
+
+	s.seedReadyLobby("lobby-foglab", "alice")
+	s.expectCharacter("char-alice", "alice", "Alice", 12, 12)
+
+	out, err := orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		PlayerID: "alice", LobbyID: "lobby-foglab",
+		// DungeonKey deliberately left unset -- the override must fill it in.
+	})
+	s.Require().NoError(err)
+
+	encData, err := s.encRepo.Get(s.ctx, out.EncounterID)
+	s.Require().NoError(err)
+
+	s.Require().Len(encData.Space.Regions, 2, "fog-lab is a two-room spec; the crypt/reference-tomb defaults are both three")
+	pillars, pillarsOK := regionByArchetype(encData.Space, tkenc.ArchetypeEntrance)
+	s.Require().True(pillarsOK)
+	s.Assert().Equal("pillars", pillars.ID)
+	sentry, sentryOK := regionByArchetype(encData.Space, tkenc.ArchetypeBoss)
+	s.Require().True(sentryOK)
+	s.Assert().Equal("sentry", sentry.ID)
+
+	s.Require().Len(encData.Monsters, 1, "exactly one monster: the skeleton filling fog-lab's mandatory boss slot")
+	for _, m := range encData.Monsters {
+		s.Assert().Equal("dnd5e:monsters:skeleton", m.MonsterRef)
+	}
+}
+
 // TestStartEncounter_DungeonKeyOverride_ExplicitCallerKeyWins proves the
 // substitution's ONLY-when-empty guard: a caller-supplied DungeonKey
 // (crypt) must win over a configured override (reference-tomb) — the

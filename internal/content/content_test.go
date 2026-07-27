@@ -38,6 +38,61 @@ func (s *ContentTestSuite) TestEveryEmbeddedSpecLoads() {
 	}
 }
 
+// TestFogLabSpec_CompilesWithExpectedFixtureShape validates the fog-lab.yaml
+// fixture (rpg-project#733 follow-up: a purpose-built dungeon so fog-of-war
+// playtesting isn't fighting the procedural crypt generator) both generically
+// (TestEveryEmbeddedSpecLoads already covers "does it load at all") and
+// structurally: the specific room shape the fixture exists to guarantee. A
+// fixture that loads but silently drifts from "4 pillars, no monsters in
+// room 1; one skeleton in room 2, door unlocked" would be worse than an
+// obviously-broken one — this pins the shape, not just the load.
+func (s *ContentTestSuite) TestFogLabSpec_CompilesWithExpectedFixtureShape() {
+	raw, ok, err := content.SpecByKey("fog-lab")
+	s.Require().NoError(err)
+	s.Require().True(ok, "fog-lab must be embedded and resolve by its declared key")
+
+	compiled, err := dungeonspec.Load(raw)
+	s.Require().NoError(err, "fog-lab.yaml must compile through dungeonspec — a fixture that fails to load is worse than no fixture")
+
+	s.Require().Len(compiled.Params.Regions, 2, "exactly two rooms: the pillar room and the skeleton room")
+	room1, room2 := compiled.Params.Regions[0], compiled.Params.Regions[1]
+
+	// Room 1: four pillars, no monsters, four explicitly non-blocking props.
+	s.Assert().Empty(room1.Obstacles, "room 1 uses static place: entries, not rolled obstacles")
+	pillars, nonBlocking := 0, 0
+	for _, o := range room1.PlacedObstacles {
+		switch o.Ref {
+		case "dnd5e:props:pillar":
+			pillars++
+			s.Assert().True(o.BlocksLoS, "pillars must block line of sight (the geometry-fog test depends on this)")
+		case "dnd5e:props:candles", "dnd5e:props:bone-pile":
+			nonBlocking++
+			s.Assert().False(o.BlocksLoS, "props next to pillars must be EXPLICITLY non-blocking, not relying on any ref default")
+		}
+	}
+	s.Assert().Equal(4, pillars, "room 1 must have exactly 4 pillars")
+	s.Assert().Equal(4, nonBlocking, "room 1 must have exactly 4 non-blocking props, one per pillar")
+
+	// No monster spawns target room 1 at all — entity-fog is tested
+	// separately, in room 2, per the fixture's whole point.
+	for _, spawn := range compiled.Spawns {
+		s.Assert().NotEqual(room1.ID, spawn.RoomID, "room 1 must have zero monsters")
+	}
+
+	// Room 2: exactly one monster (the mandatory boss slot, filled by the
+	// fixture's single skeleton rather than a separate non-boss monster in a
+	// third room) and nothing else placed.
+	s.Require().Len(compiled.Spawns, 1, "fog-lab must spawn exactly one monster: the skeleton in room 2")
+	s.Assert().Equal(room2.ID, compiled.Spawns[0].RoomID)
+	s.Assert().Equal("dnd5e:monsters:skeleton", compiled.Spawns[0].MonsterRef)
+	s.Assert().Empty(room2.PlacedObstacles, "room 2 has nothing placed besides its pinned boss/skeleton")
+
+	// The connector between them must be unlocked — Kirk needs to open the
+	// door, look, and step back repeatedly without a DC check in the way.
+	s.Require().Len(compiled.Params.Connectors, 1)
+	s.Assert().False(compiled.Params.Connectors[0].Locked, "the pillars->sentry door must be unlocked")
+}
+
 func (s *ContentTestSuite) TestSpecByKey_UnknownKey() {
 	_, ok, err := content.SpecByKey("atlantis")
 	s.Require().NoError(err)
