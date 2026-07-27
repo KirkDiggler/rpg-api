@@ -1,14 +1,28 @@
 // Package encounter is the v2 encounter handler.
 //
-// knowledge.go is a SPECIFICATION, not an implementation. It states what
-// rpg-api needs from the toolkit in order to project viewer-scoped fog of war,
-// and nothing else in this file computes visibility, line of sight, or memory.
+// knowledge.go was originally a SPECIFICATION of what rpg-api needed from
+// the toolkit for viewer-scoped fog of war (rpg-toolkit#851's local
+// stand-in gap). rpg-toolkit#851 has since landed (encounter/v0.46.0):
+// perception.HexObservation, perception.Placement, perception.Edge,
+// perception.KnowledgeState, and perception.TerrainKind are now the
+// toolkit's OWN canonical types, and *encounter.Encounter implements
+// KnownHexes(viewer) map[core.Hex]perception.HexObservation directly. This
+// file no longer defines local copies of those types — per the "toolkit
+// types are canonical, one conversion point at the proto boundary" house
+// rule, project.go and translate.go consume perception.* directly, and the
+// proto boundary (observationToProto et al., project.go) is that one
+// conversion point.
 //
-// The order of work here mirrors how the proto contract was settled: the
-// playable concept (rpg-dnd5e-web#611) proved the event shape, and
-// rpg-api-protos#197 transcribed it. Now the handler names the interface it
-// needs, and the toolkit implements THAT — rather than the handler guessing at
-// whatever the toolkit happens to expose today.
+// What remains here is genuinely rpg-api's own: ViewerKnowledge (the
+// interface rpg-api code depends on, so it isn't hard-wired to
+// *tkenc.Encounter specifically — *tkenc.Encounter satisfies it structurally)
+// and DiffKnowledge (pure translation from "what does a viewer know" to
+// "what's news for the wire", which is not the toolkit's job — the toolkit
+// decides WHAT a viewer knows, not which of those facts have already been
+// sent). Both keep their own dedicated tests (knowledge_test.go) written
+// against the interface alone, with no toolkit dependency — that coverage
+// is exactly why they still earn their place instead of being deleted
+// alongside knowledge_adapter.go.
 //
 // Contract: rpg-project/ideas/fog-of-war/design.md §"The event layer".
 // The hex is the unit of truth, a VISIBLE observation is total, and nothing is
@@ -19,132 +33,15 @@ import (
 	"sort"
 
 	"github.com/KirkDiggler/rpg-toolkit/encounter/core"
+	"github.com/KirkDiggler/rpg-toolkit/encounter/perception"
 )
 
-// KnowledgeState is what a viewer knows about one hex right now.
-//
-// There is no Unseen value, deliberately. A hex the viewer has never observed
-// is ABSENT from the knowledge map — omission is the third state. A value would
-// be a second way to say the same thing, and the two could disagree.
-//
-// There is likewise no Gone/Removed value. See HexObservation.
-type KnowledgeState int
-
-const (
-	// KnowledgeStateUnspecified means the producer failed to set a state. It is
-	// a defect to surface, never a synonym for unseen.
-	KnowledgeStateUnspecified KnowledgeState = iota
-	// KnowledgeStateVisible is current authorized truth: the viewer observes
-	// this hex now.
-	KnowledgeStateVisible
-	// KnowledgeStateRemembered is a frozen last observation. What the viewer
-	// saw, not what is there now.
-	KnowledgeStateRemembered
-)
-
-// TerrainKind mirrors the wire's TerrainType. The toolkit owns which hex has
-// which terrain; rpg-api only maps this onto the proto enum.
-//
-// Nothing in the toolkit sources terrain today — the pre-fog projection never
-// set the wire's terrain field at all. It is named here because the contract
-// has the field and a remembered hex must carry the terrain AS OBSERVED rather
-// than as currently true. Until the toolkit supplies it, this is Unspecified
-// and the client falls back to floor.
-type TerrainKind int
-
-const (
-	TerrainKindUnspecified TerrainKind = iota
-	TerrainKindFloor
-	TerrainKindRough
-	TerrainKindDifficult
-	TerrainKindVoid
-	TerrainKindWater
-)
-
-// Placement is an occupant of a hex, as observed.
-//
-// Facing rides the placement rather than the entity because an observation
-// belongs to one viewer: someone who saw a skeleton facing north and lost sight
-// must keep facing north after the skeleton turns and another viewer sees it
-// face south. On the entity, one viewer's sighting would rewrite every other
-// viewer's memory.
-type Placement struct {
-	EntityID core.EntityID
-	// Facing is a hex-direction index 0-5.
-	Facing int
-}
-
-// Edge is a wall or door on one hex's boundary, AS OBSERVED by this viewer.
-//
-// Edges hang off the hex rather than living in one global wall list because a
-// remembered hex has to be drawable from its own record. Today rpg-api projects
-// walls from world truth unconditionally — project.go's wallsToProto and
-// doorWallsToProto both say so in their own comments ("every viewer's snapshot
-// carries every door regardless of RevealedHexes"). That is the leak this
-// interface exists to close.
-//
-// The fields are toolkit primitives rather than a wire enum: the toolkit owns
-// what a barrier IS, and rpg-api maps that onto WallKind at the proto boundary.
-type Edge struct {
-	From core.Hex
-	To   core.Hex
-
-	BlocksMovement bool
-	BlocksLoS      bool
-
-	// DoorID is the door's entity id, empty when this edge is not a door. Set
-	// means the client can address it (Wall.id -> InteractRequest).
-	DoorID string
-	// DoorOpen and DoorLocked are the door's state AS OBSERVED. A viewer who
-	// watched a door close and then walked away must keep "closed" even after
-	// someone else opens it, so these travel with the observation rather than
-	// being read from the live door.
-	DoorOpen   bool
-	DoorLocked bool
-}
-
-// HexObservation is one viewer's complete authorized truth for one hex, at the
-// moment it was observed.
-//
-// A Visible observation is TOTAL: an empty Contents is a positive claim that
-// the hex is empty, never "contents not computed". That totality is what lets a
-// remembered occupant vanish on re-sight with no forget message — the arriving
-// observation simply does not list it. A producer that leaves Contents empty
-// because it did not bother to look is stating something false, and the viewer
-// will believe it.
-//
-// A Remembered observation carries its frozen state IN FULL — terrain, edges
-// and contents as last seen — rather than expecting the consumer to freeze what
-// it already holds. That is what makes reconnect hydration and a live diff the
-// same operation instead of two paths that can drift apart.
-//
-// NOTHING IS EVER DELETED. There is no removal observation and no tombstone. A
-// witnessed removal is a Visible observation that no longer lists the thing; a
-// hidden removal is no observation at all, leaving memory stale on purpose.
-// Deletion is the one operation a later observation cannot correct.
-type HexObservation struct {
-	Position core.Hex
-	State    KnowledgeState
-	Terrain  TerrainKind
-	ZoneID   string
-	Edges    []Edge
-	Contents []Placement
-}
-
-// ViewerKnowledge is the seam the toolkit must fill.
-//
-// It is deliberately tiny. Everything fog of war needs — first sight, losing
-// sight, re-sight, hidden mutation, reconnect — is expressible as "what does
-// this viewer know", asked before and after a mutation. rpg-api diffs the two
-// and writes the wire event; it never computes line of sight and never reads
-// world truth to fill a gap.
-//
-// The single method is why the toolkit's current shape is not enough. Its
-// per-viewer memory is perception.View.RevealedHexes, a core.HexSet — which is
-// map[Hex]struct{}, a set of COORDINATES with no payload. It records that a hex
-// was seen but not what was there, so a Remembered observation cannot be
-// produced from it at all. The change the toolkit needs is that set becoming a
-// map from hex to observation.
+// ViewerKnowledge is the seam rpg-api code depends on for "what does this
+// viewer currently know". *tkenc.Encounter (rpg-toolkit#851) satisfies it
+// structurally — no adapter needed — but callers still take this interface
+// rather than the concrete toolkit type, so a test can substitute a fake
+// (see knowledge_test.go's fakeKnowledge) without standing up a real
+// encounter, room, and broker.
 type ViewerKnowledge interface {
 	// KnownHexes returns every hex this viewer has ever observed, keyed by
 	// position, each carrying the last AUTHORIZED observation and whether it is
@@ -152,7 +49,7 @@ type ViewerKnowledge interface {
 	//
 	// Hexes the viewer has never observed must be absent rather than present
 	// with a zero value. The returned map is the caller's to read only.
-	KnownHexes(viewer core.PlayerID) map[core.Hex]HexObservation
+	KnownHexes(viewer core.PlayerID) map[core.Hex]perception.HexObservation
 }
 
 // KnowledgeDiff is the change to one viewer's knowledge, and it is exactly what
@@ -166,7 +63,7 @@ type KnowledgeDiff struct {
 	// Hexes are observations to replace wholesale by position — never a
 	// field-level merge, which would resurrect contents the new observation
 	// deliberately omits.
-	Hexes []HexObservation
+	Hexes []perception.HexObservation
 	// Entities are the ids this diff's placements resolve against. The caller
 	// discloses each entity's details separately; an entity is never un-sent,
 	// because the vocabulary must outlive visibility for a remembered placement
@@ -186,7 +83,7 @@ type KnowledgeDiff struct {
 // which is how losing sight reaches the client. Unchanged hexes are omitted:
 // re-sending them would be correct but would make every mutation a full
 // snapshot.
-func DiffKnowledge(before, after map[core.Hex]HexObservation) KnowledgeDiff {
+func DiffKnowledge(before, after map[core.Hex]perception.HexObservation) KnowledgeDiff {
 	var diff KnowledgeDiff
 	seen := make(map[core.EntityID]struct{})
 
@@ -220,7 +117,7 @@ func DiffKnowledge(before, after map[core.Hex]HexObservation) KnowledgeDiff {
 // randomizes map iteration, so without these the same knowledge change would
 // serialize differently run to run — flaky golden tests, and a diff that looks
 // like a change when nothing moved.
-func sortObservations(obs []HexObservation) {
+func sortObservations(obs []perception.HexObservation) {
 	sort.Slice(obs, func(i, j int) bool {
 		a, b := obs[i].Position, obs[j].Position
 		if a.Q != b.Q {
@@ -237,7 +134,7 @@ func sortEntityIDs(ids []core.EntityID) {
 	sort.Slice(ids, func(i, j int) bool { return string(ids[i]) < string(ids[j]) })
 }
 
-func observationsEqual(a, b HexObservation) bool {
+func observationsEqual(a, b perception.HexObservation) bool {
 	if a.State != b.State || a.Terrain != b.Terrain || a.ZoneID != b.ZoneID {
 		return false
 	}

@@ -57,12 +57,44 @@ func newPlayerData(pid core.PlayerID, eid core.EntityID, pos core.Hex, sightRang
 	// nil room: these fixtures never call InitRoom, matching the pre-wave-1
 	// pure-radius LoS behavior (perception.VisibleHexesAt's documented nil-room
 	// fallback).
-	view.ApplyReveal(perception.VisibleHexesAt(pos, sightRange, nil))
+	for h := range perception.VisibleHexesAt(pos, sightRange, nil) {
+		view.Observe(perception.HexObservation{Position: h, State: perception.KnowledgeStateVisible})
+	}
 	return &tkenc.PlayerData{
 		ID:       pid,
 		EntityID: eid,
 		View:     view,
 	}
+}
+
+// seedPlayer adds pid to data via the toolkit's REAL AddPlayer
+// (rpg-toolkit#851), so pid's initial Memory is built by the same
+// refreshObservations write path production code exercises: walls, doors,
+// zones, and any already-seated monster/player/obstacle all come through
+// correctly, the same way start_encounter.go's real InitDungeon -> AddPlayer
+// -> SeedMonsters order produces them. This is the fixture of record for any
+// test that asserts on Edges/Contents/ZoneID — newPlayerData's bare radius
+// reveal (no room, no data awareness) only ever produced a membership set,
+// which was sufficient under the retired toolkitKnowledge stand-in (which
+// recomputed edges/contents/zone fresh from data at EVERY ProjectFor call,
+// regardless of what View had recorded) but is not enough now that ProjectFor
+// consumes the toolkit's own persisted Memory directly.
+//
+// data is mutated via a live *tkenc.Encounter wrapping the SAME data
+// pointer, so callers pass the already-built data (with Space/Doors/Monsters
+// set) directly to ProjectFor afterward — no separate ToData()/copy-back
+// needed. MUST be called after data.Space/Doors/Monsters are fully set up
+// (mirrors start_encounter.go's real ordering): a door/wall/obstacle added
+// to data AFTER this call will not retroactively appear in pid's Memory — no
+// toolkit write path refreshes an already-seated player's knowledge when
+// AddDoor/AddObstacle add content after the fact (unlike AddMonster, which
+// does refresh already-seated viewers who can see the new monster's hex).
+func (s *ProjectSuite) seedPlayer(data *tkenc.Data, pid core.PlayerID, eid core.EntityID, pos core.Hex, sightRange int) {
+	enc, err := tkenc.LoadFromData(context.Background(), data, s.broker)
+	s.Require().NoError(err)
+	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
+		PlayerID: pid, EntityID: eid, Position: pos, SightRange: sightRange,
+	}))
 }
 
 // hexRecordForEntity finds the HexRecord in hexes whose Contents names
@@ -103,15 +135,12 @@ func (s *ProjectSuite) TestProjectFor_TurnBased_EmitsModeTurnStateAndMonsters() 
 	data.ActiveIdx = 0
 	data.Initiative = []core.EntityID{"char-alice", "char-bob", "goblin-1"}
 
-	// Alice at origin with sight 3; Bob right next door so he's visible too.
-	alice := newPlayerData("player-alice", "char-alice", originHex, 3)
-	bob := newPlayerData("player-bob", "char-bob", core.Hex{Q: 1, R: -1, S: 0}, 3)
-	data.Players = map[core.PlayerID]*tkenc.PlayerData{
-		"player-alice": alice,
-		"player-bob":   bob,
-	}
-
-	// Goblin within alice's sight (distance 2 from origin).
+	// Goblin within alice's sight (distance 2 from origin). Seeded into data
+	// BEFORE any player joins — mirrors start_encounter.go's real ordering,
+	// and gives seedPlayer's AddPlayer call a monster placementsAt can
+	// already find at alice's own reveal time (rpg-toolkit#851: nothing
+	// retroactively refreshes an already-seated viewer's Memory for content
+	// added afterward).
 	data.Monsters = map[core.EntityID]*tkenc.MonsterData{
 		"goblin-1": {
 			ID:         "goblin-1",
@@ -123,6 +152,10 @@ func (s *ProjectSuite) TestProjectFor_TurnBased_EmitsModeTurnStateAndMonsters() 
 			MonsterRef: "dnd5e:monsters:goblin",
 		},
 	}
+
+	// Alice at origin with sight 3; Bob right next door so he's visible too.
+	s.seedPlayer(data, "player-alice", "char-alice", originHex, 3)
+	s.seedPlayer(data, "player-bob", "char-bob", core.Hex{Q: 1, R: -1, S: 0}, 3)
 
 	pb, err := v2encounter.ProjectFor(context.Background(), data, "player-alice", s.broker, nil, s.now)
 	s.Require().NoError(err)
@@ -191,12 +224,21 @@ func (s *ProjectSuite) TestProjectFor_TurnBased_EmitsModeTurnStateAndMonsters() 
 func (s *ProjectSuite) TestProjectFor_ProjectsOnlyRevealedObstaclesInStableIDOrder() {
 	enc := tkenc.New(context.Background(), "enc-obstacles", s.broker)
 	s.Require().NoError(enc.InitRoom(20, 20, environments.PatternEmpty))
-	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
-		PlayerID: "player-alice", EntityID: "char-alice", Position: originHex, SightRange: 2,
-	}))
+	// Obstacles are added BEFORE the player joins — mirrors start_encounter.go's
+	// real ordering (room/content setup, then AddPlayer). rpg-toolkit#851:
+	// AddObstacle does not retroactively refresh an already-seated viewer's
+	// Memory, so a player added first would never see obstacle-a on a hex
+	// record even though it is well within sight range (see
+	// TestProjectFor_ObstacleMalformedRefAndEmptyFallback for a case that
+	// doesn't hit this — it only asserts on the Entities list, which
+	// disclosedEntities still derives fresh from data.Space.Obstacles every
+	// call, not from Memory).
 	s.Require().NoError(enc.AddObstacle("obstacle-z", "dnd5e:props:altar", core.Hex{Q: 1, R: -1, S: 0}, true, false))
 	s.Require().NoError(enc.AddObstacle("obstacle-hidden", "dnd5e:props:coffin", core.Hex{Q: 5, R: -5, S: 0}, true, true))
 	s.Require().NoError(enc.AddObstacle("obstacle-a", "dnd5e:props:obelisk", core.Hex{Q: 2, R: -2, S: 0}, false, true))
+	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
+		PlayerID: "player-alice", EntityID: "char-alice", Position: originHex, SightRange: 2,
+	}))
 	data := enc.ToData()
 
 	pb, err := v2encounter.ProjectFor(context.Background(), data, "player-alice", s.broker, nil, s.now)
@@ -679,9 +721,6 @@ func (s *ProjectSuite) TestProjectFor_WallEdges_GatedByHexKnowledge_NotWholeRoom
 	data := tkenc.NewData("enc-walls")
 	data.Mode = core.ModeFreeRoam
 
-	alice := newPlayerData("player-alice", "char-alice", originHex, 2)
-	data.Players = map[core.PlayerID]*tkenc.PlayerData{"player-alice": alice}
-
 	// windowHex sits within alice's sight range (distance 1) so it becomes a
 	// VISIBLE record carrying the wall as an Edge. solidHex sits well outside
 	// (distance 8, never revealed or visible) and must not appear on the wire
@@ -696,6 +735,11 @@ func (s *ProjectSuite) TestProjectFor_WallEdges_GatedByHexKnowledge_NotWholeRoom
 			{Start: windowHex.ToCube(), End: windowHex.ToCube(), BlocksMovement: true, BlocksLoS: false},
 		},
 	}
+
+	// Space set up BEFORE the player joins (mirrors real ordering — see
+	// seedPlayer's doc): alice's own reveal is what populates her Memory's
+	// Edges from these walls.
+	s.seedPlayer(data, "player-alice", "char-alice", originHex, 2)
 
 	pb, err := v2encounter.ProjectFor(context.Background(), data, "player-alice", s.broker, nil, s.now)
 	s.Require().NoError(err)
@@ -744,8 +788,6 @@ func (s *ProjectSuite) TestProjectFor_NilSpace_NoEdgesNoPanic() {
 func (s *ProjectSuite) TestProjectFor_DoorWall_ProjectsIdKindAndPassageEdge() {
 	data := tkenc.NewData("enc-door")
 	data.Mode = core.ModeFreeRoam
-	alice := newPlayerData("player-alice", "char-alice", originHex, 2)
-	data.Players = map[core.PlayerID]*tkenc.PlayerData{"player-alice": alice}
 
 	doorHex := core.Hex{Q: 0, R: 0, S: 0}
 	// Exactly one of the door's six neighbors (perception.HexNeighbors) is
@@ -764,6 +806,7 @@ func (s *ProjectSuite) TestProjectFor_DoorWall_ProjectsIdKindAndPassageEdge() {
 	data.Doors = map[core.EntityID]*tkenc.DoorData{
 		"door-1": {ID: "door-1", Position: doorHex, Open: false},
 	}
+	s.seedPlayer(data, "player-alice", "char-alice", originHex, 2)
 
 	pb, err := v2encounter.ProjectFor(context.Background(), data, "player-alice", s.broker, nil, s.now)
 	s.Require().NoError(err)
@@ -783,9 +826,18 @@ func (s *ProjectSuite) TestProjectFor_DoorWall_ProjectsIdKindAndPassageEdge() {
 	s.Require().Equal(int32(0), w.GetTo().GetY())
 	s.Require().Equal(int32(1), w.GetTo().GetZ())
 
-	// Open the door and re-project: same id/edge, kind flips to DOOR_OPEN.
+	// Open the door and re-project through a FRESH viewer seated after the
+	// flip. rpg-toolkit#851: a connect-time snapshot reflects each viewer's
+	// own persisted Memory, not live data.Doors — that is the whole point
+	// of fog of war (a door someone else opens does not silently update a
+	// viewer's knowledge until they actually witness it). Mutating
+	// data.Doors and re-projecting the SAME already-seated alice would
+	// exercise stale-memory semantics, not the CLOSED->OPEN wire-kind
+	// mapping this test is actually about — a second, independently-seeded
+	// viewer isolates the mapping the same way this test always intended.
 	data.Doors["door-1"].Open = true
-	pbOpen, err := v2encounter.ProjectFor(context.Background(), data, "player-alice", s.broker, nil, s.now)
+	s.seedPlayer(data, "player-bob", "char-bob", originHex, 2)
+	pbOpen, err := v2encounter.ProjectFor(context.Background(), data, "player-bob", s.broker, nil, s.now)
 	s.Require().NoError(err)
 	openRecord := hexRecordAt(pbOpen.GetSpace().GetHexes(), 0, 0, 0)
 	s.Require().NotNil(openRecord)
@@ -801,8 +853,6 @@ func (s *ProjectSuite) TestProjectFor_DoorWall_ProjectsIdKindAndPassageEdge() {
 func (s *ProjectSuite) TestProjectFor_DoorWall_ProjectsLockedClosedKind() {
 	data := tkenc.NewData("enc-locked-door")
 	data.Mode = core.ModeFreeRoam
-	alice := newPlayerData("player-alice", "char-alice", originHex, 2)
-	data.Players = map[core.PlayerID]*tkenc.PlayerData{"player-alice": alice}
 
 	doorHex := core.Hex{Q: 0, R: 0, S: 0}
 	passageNeighbor := core.Hex{Q: -1, R: 0, S: 1}
@@ -816,6 +866,7 @@ func (s *ProjectSuite) TestProjectFor_DoorWall_ProjectsLockedClosedKind() {
 	data.Doors = map[core.EntityID]*tkenc.DoorData{
 		"door-locked": {ID: "door-locked", Position: doorHex, Locked: true},
 	}
+	s.seedPlayer(data, "player-alice", "char-alice", originHex, 2)
 
 	pb, err := v2encounter.ProjectFor(context.Background(), data, "player-alice", s.broker, nil, s.now)
 	s.Require().NoError(err)
@@ -834,9 +885,14 @@ func (s *ProjectSuite) TestProjectFor_DoorWall_ProjectsLockedClosedKind() {
 	s.Require().Equal(int32(1), w.GetTo().GetZ())
 
 	// Canonical data can temporarily retain Locked while Open becomes true.
-	// Open must win on the wire without changing the addressable door geometry.
+	// Open must win on the wire without changing the addressable door
+	// geometry. A fresh viewer is seeded after the flip for the same reason
+	// TestProjectFor_DoorWall_ProjectsIdKindAndPassageEdge's flip does — see
+	// its comment: a connect-time snapshot reflects the viewer's own
+	// persisted Memory, not live data.Doors.
 	data.Doors["door-locked"].Open = true
-	pbOpen, err := v2encounter.ProjectFor(context.Background(), data, "player-alice", s.broker, nil, s.now)
+	s.seedPlayer(data, "player-bob", "char-bob", originHex, 2)
+	pbOpen, err := v2encounter.ProjectFor(context.Background(), data, "player-bob", s.broker, nil, s.now)
 	s.Require().NoError(err)
 	openRecord := hexRecordAt(pbOpen.GetSpace().GetHexes(), 0, 0, 0)
 	s.Require().NotNil(openRecord)
@@ -861,13 +917,12 @@ func (s *ProjectSuite) TestProjectFor_DoorWall_ProjectsLockedClosedKind() {
 func (s *ProjectSuite) TestProjectFor_DoorWall_NoRegionNeighbor_FallsBackToDegenerateSegment() {
 	data := tkenc.NewData("enc-door-no-region")
 	data.Mode = core.ModeFreeRoam
-	alice := newPlayerData("player-alice", "char-alice", originHex, 2)
-	data.Players = map[core.PlayerID]*tkenc.PlayerData{"player-alice": alice}
 
 	data.Space = &tkenc.SpaceData{Width: 10, Height: 10} // no Regions at all
 	data.Doors = map[core.EntityID]*tkenc.DoorData{
 		"door-1": {ID: "door-1", Position: core.Hex{Q: 0, R: 0, S: 0}, Open: false},
 	}
+	s.seedPlayer(data, "player-alice", "char-alice", originHex, 2)
 
 	pb, err := v2encounter.ProjectFor(context.Background(), data, "player-alice", s.broker, nil, s.now)
 	s.Require().NoError(err)
@@ -892,6 +947,15 @@ func (s *ProjectSuite) TestProjectFor_DoorWall_NoRegionNeighbor_FallsBackToDegen
 // explicitly — this test proves the combination end to end through the
 // public ProjectFor entry point, not just the unexported helper.
 //
+// rpg-toolkit#851: the nil-space door-edge computation this pins now
+// happens at Memory-WRITE time (the toolkit's own refreshObservations,
+// called from AddPlayer inside seedPlayer below) rather than at
+// ProjectFor's snapshot-READ time — ProjectFor itself no longer computes
+// edges at all, it just reads what Memory already has. So both calls are
+// wrapped in NotPanics, not just ProjectFor, to keep this an honest
+// end-to-end pin on the whole nil-space path rather than only the half of
+// it ProjectFor still touches.
+//
 // The door sits on alice's own hex (distance 0) rather than the pre-fog
 // fixture's distance-3 position: under the new hex-knowledge gate, a hex
 // nobody has seen carries no edges (or record) at all, so the door must be
@@ -900,8 +964,6 @@ func (s *ProjectSuite) TestProjectFor_DoorWall_NoRegionNeighbor_FallsBackToDegen
 func (s *ProjectSuite) TestProjectFor_DoorWall_NilSpace_NoPanic_DegenerateSegment() {
 	data := tkenc.NewData("enc-door-nil-space")
 	data.Mode = core.ModeFreeRoam
-	alice := newPlayerData("player-alice", "char-alice", originHex, 2)
-	data.Players = map[core.PlayerID]*tkenc.PlayerData{"player-alice": alice}
 
 	// data.Space is left nil — no InitRoom/InitTwoChamberRoom call.
 	data.Doors = map[core.EntityID]*tkenc.DoorData{
@@ -911,8 +973,9 @@ func (s *ProjectSuite) TestProjectFor_DoorWall_NilSpace_NoPanic_DegenerateSegmen
 	var pb *encounterv2pb.Encounter
 	var err error
 	s.Require().NotPanics(func() {
+		s.seedPlayer(data, "player-alice", "char-alice", originHex, 2)
 		pb, err = v2encounter.ProjectFor(context.Background(), data, "player-alice", s.broker, nil, s.now)
-	}, "ProjectFor must not panic on a door-only encounter with nil Data.Space")
+	}, "AddPlayer's initial reveal and ProjectFor must not panic on a door-only encounter with nil Data.Space")
 	s.Require().NoError(err)
 
 	doorRecord := hexRecordAt(pb.GetSpace().GetHexes(), 0, 0, 0)
@@ -1116,8 +1179,6 @@ func (s *ProjectSuite) TestProjectFor_HexZoneId_SetViaRegionMembership_NotGeomet
 	doorHex := core.Hex{Q: 0, R: 0, S: 0} // adjacent to both, tagged into neither
 	chamber2Hex := core.Hex{Q: 1, R: 0, S: -1}
 
-	alice := newPlayerData("player-alice", "char-alice", doorHex, 2)
-	data.Players = map[core.PlayerID]*tkenc.PlayerData{"player-alice": alice}
 	data.Space = &tkenc.SpaceData{
 		Width: 10, Height: 10,
 		Regions: []tkenc.RegionData{
@@ -1125,6 +1186,7 @@ func (s *ProjectSuite) TestProjectFor_HexZoneId_SetViaRegionMembership_NotGeomet
 			{ID: "chamber-2", Archetype: tkenc.ArchetypeChamber, Hexes: core.NewHexSet(chamber2Hex)},
 		},
 	}
+	s.seedPlayer(data, "player-alice", "char-alice", doorHex, 2)
 
 	pb, err := v2encounter.ProjectFor(context.Background(), data, "player-alice", s.broker, nil, s.now)
 	s.Require().NoError(err)
@@ -1188,8 +1250,7 @@ func (s *ProjectSuite) TestProjectFor_CryptFixture_ProjectsPerimeterEdgesAsSolid
 	// necessarily near the spawn cell. A short sight range here would
 	// make the bone-pile assertion below seed-dependent instead of a
 	// reliable proof.
-	alice := newPlayerData("player-alice", "char-alice", data.Space.Entrance, 30)
-	data.Players = map[core.PlayerID]*tkenc.PlayerData{"player-alice": alice}
+	s.seedPlayer(data, "player-alice", "char-alice", data.Space.Entrance, 30)
 
 	pb, err := v2encounter.ProjectFor(context.Background(), data, "player-alice", s.broker, nil, s.now)
 	s.Require().NoError(err)

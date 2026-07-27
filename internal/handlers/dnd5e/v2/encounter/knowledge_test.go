@@ -6,6 +6,7 @@ import (
 	"github.com/stretchr/testify/suite"
 
 	"github.com/KirkDiggler/rpg-toolkit/encounter/core"
+	"github.com/KirkDiggler/rpg-toolkit/encounter/perception"
 
 	handler "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v2/encounter"
 )
@@ -16,10 +17,10 @@ import (
 // If a case here needed something this fake cannot express, the interface would
 // be wrong.
 type fakeKnowledge struct {
-	perViewer map[core.PlayerID]map[core.Hex]handler.HexObservation
+	perViewer map[core.PlayerID]map[core.Hex]perception.HexObservation
 }
 
-func (f *fakeKnowledge) KnownHexes(viewer core.PlayerID) map[core.Hex]handler.HexObservation {
+func (f *fakeKnowledge) KnownHexes(viewer core.PlayerID) map[core.Hex]perception.HexObservation {
 	return f.perViewer[viewer]
 }
 
@@ -39,35 +40,35 @@ func hex(q, r int) core.Hex {
 
 // visible builds a VISIBLE observation. Contents defaults to empty, which is a
 // positive claim that the hex is empty rather than an omission.
-func visible(q, r int, contents ...handler.Placement) handler.HexObservation {
-	return handler.HexObservation{
+func visible(q, r int, contents ...perception.Placement) perception.HexObservation {
+	return perception.HexObservation{
 		Position: hex(q, r),
-		State:    handler.KnowledgeStateVisible,
-		Terrain:  handler.TerrainKindFloor,
+		State:    perception.KnowledgeStateVisible,
+		Terrain:  perception.TerrainKindFloor,
 		Contents: contents,
 	}
 }
 
-func remembered(o handler.HexObservation) handler.HexObservation {
-	o.State = handler.KnowledgeStateRemembered
+func remembered(o perception.HexObservation) perception.HexObservation {
+	o.State = perception.KnowledgeStateRemembered
 	return o
 }
 
-func knowledge(obs ...handler.HexObservation) map[core.Hex]handler.HexObservation {
-	out := make(map[core.Hex]handler.HexObservation, len(obs))
+func knowledge(obs ...perception.HexObservation) map[core.Hex]perception.HexObservation {
+	out := make(map[core.Hex]perception.HexObservation, len(obs))
 	for _, o := range obs {
 		out[o.Position] = o
 	}
 	return out
 }
 
-var skeletonFacingNorth = handler.Placement{EntityID: "skeleton-1", Facing: 0}
+var skeletonFacingNorth = perception.Placement{EntityID: "skeleton-1", Facing: 0}
 
 func (s *KnowledgeSuite) TestFirstSightEmitsTheHex() {
 	diff := handler.DiffKnowledge(nil, knowledge(visible(0, 0)))
 
 	s.Require().Len(diff.Hexes, 1)
-	s.Equal(handler.KnowledgeStateVisible, diff.Hexes[0].State)
+	s.Equal(perception.KnowledgeStateVisible, diff.Hexes[0].State)
 }
 
 func (s *KnowledgeSuite) TestLosingSightEmitsTheStateFlip() {
@@ -80,8 +81,8 @@ func (s *KnowledgeSuite) TestLosingSightEmitsTheStateFlip() {
 	diff := handler.DiffKnowledge(before, after)
 
 	s.Require().Len(diff.Hexes, 1)
-	s.Equal(handler.KnowledgeStateRemembered, diff.Hexes[0].State)
-	s.Equal([]handler.Placement{skeletonFacingNorth}, diff.Hexes[0].Contents)
+	s.Equal(perception.KnowledgeStateRemembered, diff.Hexes[0].State)
+	s.Equal([]perception.Placement{skeletonFacingNorth}, diff.Hexes[0].Contents)
 }
 
 func (s *KnowledgeSuite) TestHiddenMutationChangesNothing() {
@@ -106,7 +107,7 @@ func (s *KnowledgeSuite) TestReSightDeletesARememberedOccupant() {
 	diff := handler.DiffKnowledge(before, after)
 
 	s.Require().Len(diff.Hexes, 1)
-	s.Equal(handler.KnowledgeStateVisible, diff.Hexes[0].State)
+	s.Equal(perception.KnowledgeStateVisible, diff.Hexes[0].State)
 	s.Empty(diff.Hexes[0].Contents)
 }
 
@@ -120,8 +121,8 @@ func (s *KnowledgeSuite) TestFacingChangeAloneIsAChange() {
 	// Facing rides the placement, so a creature turning in place is news to the
 	// viewer who can see it. If this collapsed to "no change", a viewer would
 	// keep rendering a stale facing while watching the creature.
-	before := knowledge(visible(0, 0, handler.Placement{EntityID: "skeleton-1", Facing: 0}))
-	after := knowledge(visible(0, 0, handler.Placement{EntityID: "skeleton-1", Facing: 3}))
+	before := knowledge(visible(0, 0, perception.Placement{EntityID: "skeleton-1", Facing: 0}))
+	after := knowledge(visible(0, 0, perception.Placement{EntityID: "skeleton-1", Facing: 3}))
 
 	diff := handler.DiffKnowledge(before, after)
 
@@ -133,9 +134,9 @@ func (s *KnowledgeSuite) TestEdgeChangeIsAChange() {
 	// A door opening is a change to the hex's edges, which is how the client
 	// learns about it — DoorOpened itself is now a pure notification.
 	closed := visible(0, 0)
-	closed.Edges = []handler.Edge{{From: hex(0, 0), To: hex(1, 0), DoorID: "door-1", BlocksLoS: true}}
+	closed.Edges = []perception.Edge{{From: hex(0, 0), To: hex(1, 0), DoorID: "door-1", BlocksLoS: true}}
 	opened := visible(0, 0)
-	opened.Edges = []handler.Edge{{From: hex(0, 0), To: hex(1, 0), DoorID: "door-1", DoorOpen: true}}
+	opened.Edges = []perception.Edge{{From: hex(0, 0), To: hex(1, 0), DoorID: "door-1", DoorOpen: true}}
 
 	diff := handler.DiffKnowledge(knowledge(closed), knowledge(opened))
 
@@ -146,8 +147,8 @@ func (s *KnowledgeSuite) TestEdgeChangeIsAChange() {
 func (s *KnowledgeSuite) TestEntitiesAreCollectedDedupedAndSorted() {
 	// Placements resolve against this list, so every referenced entity must
 	// appear exactly once regardless of how many hexes mention it.
-	a := visible(0, 0, handler.Placement{EntityID: "skeleton-1"}, handler.Placement{EntityID: "goblin-1"})
-	b := visible(1, 0, handler.Placement{EntityID: "skeleton-1"})
+	a := visible(0, 0, perception.Placement{EntityID: "skeleton-1"}, perception.Placement{EntityID: "goblin-1"})
+	b := visible(1, 0, perception.Placement{EntityID: "skeleton-1"})
 
 	diff := handler.DiffKnowledge(nil, knowledge(a, b))
 
@@ -181,13 +182,13 @@ func (s *KnowledgeSuite) TestKnowledgeIsPerViewer() {
 	// Two viewers of the same world hold different memories of the same hex.
 	// The interface is keyed by viewer for exactly this reason; a single shared
 	// map could not express it.
-	k := &fakeKnowledge{perViewer: map[core.PlayerID]map[core.Hex]handler.HexObservation{
+	k := &fakeKnowledge{perViewer: map[core.PlayerID]map[core.Hex]perception.HexObservation{
 		"alice": knowledge(visible(0, 0, skeletonFacingNorth)),
 		"bob":   knowledge(remembered(visible(0, 0))),
 	}}
 
-	s.Equal(handler.KnowledgeStateVisible, k.KnownHexes("alice")[hex(0, 0)].State)
-	s.Equal(handler.KnowledgeStateRemembered, k.KnownHexes("bob")[hex(0, 0)].State)
+	s.Equal(perception.KnowledgeStateVisible, k.KnownHexes("alice")[hex(0, 0)].State)
+	s.Equal(perception.KnowledgeStateRemembered, k.KnownHexes("bob")[hex(0, 0)].State)
 	s.Empty(k.KnownHexes("bob")[hex(0, 0)].Contents)
 
 	// A viewer who has observed nothing has no entries — omission is UNSEEN.

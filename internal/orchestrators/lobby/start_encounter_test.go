@@ -68,8 +68,8 @@ func (s *LobbySuite) TestStartEncounter_Success_ConstructsAndPersistsEncounter()
 	alice := encData.Players[core.PlayerID("alice")]
 	bob := encData.Players[core.PlayerID("bob")]
 	s.Require().NotZero(alice.View.SightRange, "SightRange must be seeded — a zero value reveals only the player's own hex")
-	s.Require().True(alice.View.RevealedHexes.Has(bob.View.Position), "alice must be able to see bob's spawn hex")
-	s.Require().True(bob.View.RevealedHexes.Has(alice.View.Position), "bob must be able to see alice's spawn hex")
+	s.Require().True(alice.View.KnownHexSet().Has(bob.View.Position), "alice must be able to see bob's spawn hex")
+	s.Require().True(bob.View.KnownHexSet().Has(alice.View.Position), "bob must be able to see alice's spawn hex")
 
 	lobbyData, err := s.lobbyRepo.Get(s.ctx, "lobby-s1")
 	s.Require().NoError(err)

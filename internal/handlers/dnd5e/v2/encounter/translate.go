@@ -242,9 +242,9 @@ func translateHexRevealedEvent(e *events.HexRevealedEvent, viewer core.PlayerID,
 	// does the sort-by-(Q,R,S) + conversion in one call, the same conversion
 	// point ProjectFor's connect-time snapshot uses, so a hex revealed live and
 	// the same hex hydrated on reconnect produce byte-identical records.
-	known := make(map[core.Hex]HexObservation, len(slice.Hexes))
+	known := make(map[core.Hex]perception.HexObservation, len(slice.Hexes))
 	for h := range slice.Hexes {
-		known[h] = HexObservation{Position: h, State: KnowledgeStateVisible}
+		known[h] = perception.HexObservation{Position: h, State: perception.KnowledgeStateVisible}
 	}
 	return &encounterv2pb.EncounterEvent{
 		Sequence:  int64(e.Sequence()),
@@ -262,13 +262,18 @@ func translateHexRevealedEvent(e *events.HexRevealedEvent, viewer core.PlayerID,
 // translateEntityAppearedEventWithData's split: translateHexRevealedEvent
 // above has only the bare toolkit event (a hex set, no region knowledge) —
 // TranslateEvent's generic dispatch keeps using it for callers with no
-// data in hand. This variant additionally sets each wire HexRecord's
-// zone_id via data.Space.RegionAt(h) and its edges via edgesByHex(data),
-// the SAME pure lookups ProjectFor's connect-time snapshot uses
-// (knowledge_adapter.go's KnownHexes) — so a hex a player reveals
-// mid-session (via Move) carries its zone identity AND wall/door geometry
-// immediately, not only after their next reconnect re-projects the whole
-// snapshot.
+// data in hand.
+//
+// rpg-toolkit#851: this now reads each hex's observation DIRECTLY from
+// data.Players[viewer].View.Memory rather than rebuilding zone/edges from
+// data.Space itself. The toolkit's own reveal path (Move/OpenDoor) already
+// wrote a full observation for every hex in slice.Hexes — via
+// e.refreshObservations, published synchronously BEFORE this event, in the
+// SAME call — into that exact Memory map, and Data (loaded fresh by the
+// caller, translateForStream) is this handler's read of the toolkit's own
+// persisted state. There is no local rebuilding left to do; this is
+// "toolkit types are canonical, one conversion point at the proto
+// boundary" applied to the live path, not just the snapshot path.
 //
 // This fills in more than the bare toolkit event reports (which only says a
 // hex became visible) because HexKnowledgeChanged's contract is
@@ -279,22 +284,38 @@ func translateHexRevealedEvent(e *events.HexRevealedEvent, viewer core.PlayerID,
 // TestSpaceZonesAndHexZoneId_ProjectRegionsOnTheWire (dungeon_crypt_test.go)
 // caught a monster's own hex losing its zone_id when the EntityAppearedEvent
 // translation for the same position (which does carry zone/edges) fired
-// after this one and won the last-write. Terrain stays Unspecified: it's a
-// toolkit gap this package has nowhere else either (knowledge_adapter.go's
-// KnownHexes doc) — rpg-toolkit#851 is the tracked fix for both terrain and
-// this file's need to duplicate the toolkit's own knowledge lookups.
+// after this one and won the last-write. Terrain stays Unspecified: the
+// toolkit does not source it (perception.TerrainKind's own doc).
 //
 // data is loaded fresh by the caller (translateForStream), mirroring the
 // EntityAppearedEvent data-aware branch's doc on why that read isn't
 // racy: HexRevealedEvent only ever publishes from inside an already-loaded
-// encounter's Move, so data.Space (set once at InitRoom/InitDungeon time,
-// mutated only by wall/door state, never by regions) is safe to read here.
+// encounter's Move, so data (including each player's View.Memory, mutated
+// only by the SAME already-completed Move/OpenDoor call) is safe to read
+// here.
 //
-// nil data (defensive — should not occur; translateForStream always loads
-// data before calling this) falls back to RegionAt's own nil-receiver-safe
-// ("", false) result via a nil *encounter.SpaceData, matching
-// zonesToProto's nil-space convention elsewhere in this package — never a
-// panic, never an invented zone. edgesByHex is itself nil-data-safe.
+// ZoneID is deliberately NOT trusted from Memory even when present — it is
+// read directly via data.Space.RegionAt(h), the same direct read
+// translateEntityAppearedEventWithData/translateEntityDisappearedEventWithData
+// use, rather than solely trusting whatever the toolkit's write path
+// happened to record. RegionAt is a pure, cheap, always-available lookup
+// against data actually held here, so there is no reason to depend on
+// Memory write-timing for it — and it keeps zone_id correct even for a
+// hex Memory doesn't yet have an entry for.
+//
+// Edges has no such direct alternative: unlike zone membership, wall/door
+// geometry indexing is now toolkit-internal (rpg-toolkit#851 made
+// edgesByHex an unexported *Encounter method), so Edges can only come from
+// the viewer's own persisted Memory — trusting the toolkit's write, not
+// re-deriving it locally (the house rule this whole rewrite follows).
+//
+// nil data, an absent viewer seat, or a hex genuinely missing from Memory
+// (defensive — should not occur; translateForStream always loads data
+// before calling this, and the toolkit's own reveal path always writes
+// Memory for exactly these hexes before publishing) fall back to a bare
+// Visible observation with no edges — never a panic, never invented
+// geometry. ZoneID still resolves correctly in this fallback since it does
+// not depend on Memory at all.
 func translateHexRevealedEventWithData(
 	e *events.HexRevealedEvent, viewer core.PlayerID, now time.Time, data *encounter.Data,
 ) (*encounterv2pb.EncounterEvent, error) {
@@ -306,11 +327,16 @@ func translateHexRevealedEventWithData(
 	if data != nil {
 		space = data.Space
 	}
-	edges := edgesByHex(data)
-	known := make(map[core.Hex]HexObservation, len(slice.Hexes))
+	memory := viewerMemory(data, viewer)
+	known := make(map[core.Hex]perception.HexObservation, len(slice.Hexes))
 	for h := range slice.Hexes {
-		zoneID, _ := space.RegionAt(h)
-		known[h] = HexObservation{Position: h, State: KnowledgeStateVisible, ZoneID: zoneID, Edges: edges[h]}
+		obs := perception.HexObservation{Position: h, State: perception.KnowledgeStateVisible}
+		if memObs, ok := memory[h]; ok {
+			obs = memObs
+			obs.State = perception.KnowledgeStateVisible
+		}
+		obs.ZoneID, _ = space.RegionAt(h)
+		known[h] = obs
 	}
 	return &encounterv2pb.EncounterEvent{
 		Sequence:  int64(e.Sequence()),
@@ -321,6 +347,21 @@ func translateHexRevealedEventWithData(
 			},
 		},
 	}, nil
+}
+
+// viewerMemory returns viewer's persisted perception.Memory from data, or
+// nil for any defensive case (nil data, absent seat, nil View) — a nil map
+// reads as "always miss" everywhere this package looks values up in it, so
+// callers don't need their own nil-guard chain.
+func viewerMemory(data *encounter.Data, viewer core.PlayerID) perception.Memory {
+	if data == nil {
+		return nil
+	}
+	p, ok := data.Players[viewer]
+	if !ok || p.View == nil {
+		return nil
+	}
+	return p.View.Memory
 }
 
 // translateEntityAppearedEvent maps the toolkit's EntityAppearedEvent to the
@@ -345,10 +386,10 @@ func translateEntityAppearedEvent(e *events.EntityAppearedEvent, viewer core.Pla
 	if _, ok := e.PerPlayer[viewer]; !ok {
 		return nil, ErrViewerSawNothing
 	}
-	obs := HexObservation{
+	obs := perception.HexObservation{
 		Position: e.Position,
-		State:    KnowledgeStateVisible,
-		Contents: []Placement{{EntityID: e.Entity}},
+		State:    perception.KnowledgeStateVisible,
+		Contents: []perception.Placement{{EntityID: e.Entity}},
 	}
 	return &encounterv2pb.EncounterEvent{
 		Sequence:  int64(e.Sequence()),
@@ -432,8 +473,9 @@ func translateEntityAppearedEventWithData(
 	// armor_class, character/monster data are not position-scoped the way
 	// this is; only the HexRecord's position needs the event's own value.
 	//
-	// zone_id/edges ARE looked up from data (data.Space.RegionAt / edgesByHex),
-	// same as translateHexRevealedEventWithData — required, not optional
+	// zone_id/edges are read from the viewer's own toolkit-persisted Memory
+	// (rpg-toolkit#851: data.Players[viewer].View.Memory), the same source
+	// translateHexRevealedEventWithData uses — required, not optional
 	// enrichment: HexKnowledgeChanged replaces a position's record wholesale
 	// (its doc), and a Move that both reveals a hex AND puts an entity on it
 	// (the common case: walking up to a monster standing in a doorway) fires
@@ -443,12 +485,14 @@ func translateEntityAppearedEventWithData(
 	// other one just said — caught for real by
 	// TestSpaceZonesAndHexZoneId_ProjectRegionsOnTheWire
 	// (dungeon_crypt_test.go): the boss monster's own hex lost its "boss"
-	// zone_id this way before this fix.
+	// zone_id this way before this fix. Safe to read raw (unlike Contents
+	// below): zone/edges are static geometry, untouched by the toolkit's
+	// confirmed pass-through Contents bug (see the Contents comment below).
 	var zoneID string
-	var edges []Edge
+	var edges []perception.Edge
 	if data != nil {
 		zoneID, _ = data.Space.RegionAt(e.Position)
-		edges = edgesByHex(data)[e.Position]
+		edges = viewerMemory(data, viewer)[e.Position].Edges
 	}
 
 	// Contents must be the FULL set of entities authorized-visible at
@@ -461,15 +505,27 @@ func translateEntityAppearedEventWithData(
 	// now; the appearing entity is unioned in explicitly afterward because
 	// disclosedEntities places movers at their CURRENT stored position, which
 	// — per the pass-through case above — can differ from e.Position.
-	contents := []Placement{{EntityID: e.Entity}}
+	//
+	// Deliberately NOT sourced from the toolkit's own persisted Contents
+	// (viewerMemory(data, viewer)[e.Position].Contents) the way zone/edges
+	// above are: a confirmed toolkit bug (rpg-toolkit's
+	// applyAndPublishMove, the "other viewers see mover" refreshObservations
+	// call) can union the mover into every hex of a multi-hex pass-through
+	// move, including hexes the mover has already moved past — so the
+	// toolkit's stored Contents for a hex can currently claim an entity is
+	// present when it is not. disclosedEntities rebuilds placements from
+	// CURRENT stored positions directly, which that bug does not touch, so
+	// keeping this rpg-api-side rebuild here is a deliberate choice, not
+	// leftover duplication.
+	contents := []perception.Placement{{EntityID: e.Entity}}
 	if snap, visibleNow, ok := viewerVisibility(ctx, data, viewer, broker); ok {
 		_, placements := disclosedEntities(ctx, charRepo, data, viewer, snap, visibleNow)
 		contents = unionPlacement(placements[e.Position], e.Entity)
 	}
 
-	obs := HexObservation{
+	obs := perception.HexObservation{
 		Position: e.Position,
-		State:    KnowledgeStateVisible,
+		State:    perception.KnowledgeStateVisible,
 		ZoneID:   zoneID,
 		Edges:    edges,
 		Contents: contents,
@@ -558,9 +614,9 @@ func translateEntityDisappearedEvent(e *events.EntityDisappearedEvent, viewer co
 	if !ok {
 		return nil, ErrViewerSawNothing
 	}
-	obs := HexObservation{
+	obs := perception.HexObservation{
 		Position: lastKnown,
-		State:    KnowledgeStateRemembered,
+		State:    perception.KnowledgeStateRemembered,
 	}
 	return &encounterv2pb.EncounterEvent{
 		Sequence:  int64(e.Sequence()),
@@ -623,17 +679,23 @@ func translateEntityDisappearedEventWithData(
 		return nil, ErrViewerSawNothing
 	}
 
-	obs := HexObservation{
+	obs := perception.HexObservation{
 		Position: lastKnown,
-		State:    KnowledgeStateRemembered,
+		State:    perception.KnowledgeStateRemembered,
 	}
 
+	// Edges/ZoneID: read from the viewer's own toolkit-persisted Memory —
+	// static geometry, unaffected by the toolkit's confirmed pass-through
+	// Contents bug (see translateEntityAppearedEventWithData's doc). Contents
+	// stays sourced from disclosedEntities for the same reason that function
+	// does: it rebuilds placements from CURRENT stored positions, which that
+	// bug does not touch.
 	if snap, visibleNow, ok := viewerVisibility(ctx, data, viewer, broker); ok && visibleNow.Has(lastKnown) {
 		zoneID, _ := data.Space.RegionAt(lastKnown)
 		_, placements := disclosedEntities(ctx, charRepo, data, viewer, snap, visibleNow)
-		obs.State = KnowledgeStateVisible
+		obs.State = perception.KnowledgeStateVisible
 		obs.ZoneID = zoneID
-		obs.Edges = edgesByHex(data)[lastKnown]
+		obs.Edges = viewerMemory(data, viewer)[lastKnown].Edges
 		obs.Contents = placements[lastKnown]
 	}
 
@@ -686,13 +748,13 @@ func viewerVisibility(
 // position) must also guarantee one specific entity is present at a
 // position that may differ from its stored one (translateEntityAppearedEventWithData's
 // pass-through case: the event's own reported position, not data's).
-func unionPlacement(placements []Placement, entityID core.EntityID) []Placement {
+func unionPlacement(placements []perception.Placement, entityID core.EntityID) []perception.Placement {
 	for _, p := range placements {
 		if p.EntityID == entityID {
 			return placements
 		}
 	}
-	return append(placements, Placement{EntityID: entityID})
+	return append(placements, perception.Placement{EntityID: entityID})
 }
 
 // translateDoorOpenedEvent maps the toolkit's DoorOpenedEvent to the
