@@ -125,16 +125,17 @@ func ProjectFor(
 	// below already carries each hex's Contents.
 	entities, _ := disclosedEntities(ctx, charRepo, data, viewer, snap, visibleNow)
 
-	// rpg-toolkit#851: the toolkit now IS the ViewerKnowledge implementation
-	// — enc.KnownHexes(viewer) replaces the toolkitKnowledge stand-in
+	// rpg-toolkit#851: the toolkit now IS the source of viewer knowledge —
+	// enc.KnownHexes(viewer) replaces the toolkitKnowledge stand-in
 	// (knowledge_adapter.go, deleted) that used to hand-assemble this from
 	// RevealedHexes + a locally-rebuilt edges/placements index. A remembered
 	// hex's Edges/Contents now come from the toolkit's own persisted
-	// observations, not this package's own approximation. enc satisfies
-	// ViewerKnowledge structurally; called concretely here since ProjectFor
-	// always has a real *tkenc.Encounter in hand — the interface exists for
-	// callers that need to substitute a fake (see knowledge_test.go), not
-	// this one.
+	// observations, not this package's own approximation. rpg-api#733
+	// deleted knowledge.go's ViewerKnowledge/DiffKnowledge seam (it had no
+	// production caller — the live-path fix that would have used it instead
+	// re-states enc.KnownHexes(viewer) wholesale; see
+	// translateMoveEventWithData in translate.go), so enc is called directly
+	// here rather than through an interface.
 	return &encounterv2pb.Encounter{
 		Id:        string(data.ID),
 		Mode:      encounterModeToProto(data.Mode),
@@ -263,6 +264,24 @@ func hexRecordsToProto(known map[core.Hex]perception.HexObservation) []*encounte
 		out = append(out, observationToProto(o))
 	}
 	return out
+}
+
+// sortObservations keeps wire output deterministic. Go randomizes map
+// iteration, so without this the same knowledge would serialize differently
+// run to run — flaky golden tests, and a diff that looks like a change when
+// nothing moved. (Formerly shared with the now-deleted DiffKnowledge in
+// knowledge.go; hexRecordsToProto is its only caller now.)
+func sortObservations(obs []perception.HexObservation) {
+	sort.Slice(obs, func(i, j int) bool {
+		a, b := obs[i].Position, obs[j].Position
+		if a.Q != b.Q {
+			return a.Q < b.Q
+		}
+		if a.R != b.R {
+			return a.R < b.R
+		}
+		return a.S < b.S
+	})
 }
 
 func observationToProto(o perception.HexObservation) *encounterv2pb.HexRecord {

@@ -398,7 +398,7 @@ func (h *Handler) StreamEncounter(req *encounterv2pb.StreamEncounterRequest, str
 			if !ok {
 				return nil
 			}
-			out, translateErr := h.translateForStream(ctx, encID, evt, core.PlayerID(playerID))
+			outs, translateErr := h.translateForStream(ctx, encID, evt, core.PlayerID(playerID))
 			switch {
 			case errors.Is(translateErr, ErrViewerSawNothing):
 				continue
@@ -415,7 +415,15 @@ func (h *Handler) StreamEncounter(req *encounterv2pb.StreamEncounterRequest, str
 			case translateErr != nil:
 				return status.Errorf(codes.Internal, "translate %q: %v", string(encID), translateErr)
 			}
-			if out != nil {
+			// A single broker event can now translate to more than one wire
+			// envelope for one viewer — see translateMoveEventWithData
+			// (rpg-api#733): the mover's own MoveEvent carries both the
+			// EntityMoved animation and a supplemental HexKnowledgeChanged
+			// restatement. Every other event type still yields exactly one.
+			for _, out := range outs {
+				if out == nil {
+					continue
+				}
 				if err := stream.Send(out); err != nil {
 					return err
 				}
@@ -425,10 +433,12 @@ func (h *Handler) StreamEncounter(req *encounterv2pb.StreamEncounterRequest, str
 }
 
 // translateForStream wraps TranslateEvent with the data-aware paths this
-// stream loop needs — every broker event maps to exactly one wire envelope
+// stream loop needs. Most event types still map to exactly one wire envelope
 // (previously a slice, back when the now-deleted InitiativeRolled synthesis
 // made one broker event produce two; simplified to a single return per the
-// gate review on rpg-api#650's PR now that nothing does that anymore).
+// gate review on rpg-api#650's PR — until MoveEvent needed a second envelope
+// again, see below). Every result is returned as a slice for that one case;
+// callers must range over it rather than assume length 1.
 //
 //   - InputRequiredDeliveredEvent (Wave 2.11d): reaction prompts store their
 //     content on Encounter.Data.PendingReactionPrompts (rather than on the
@@ -448,6 +458,12 @@ func (h *Handler) StreamEncounter(req *encounterv2pb.StreamEncounterRequest, str
 //     round-trip ever shows up as a real cost, the natural follow-up is
 //     caching the connect-time snapshot's Players/Monsters in this stream
 //     goroutine's own state instead (see docs/status.md's rough edges).
+//   - MoveEvent (rpg-api#733 remembered transitions): the mover's own viewer
+//     needs a supplemental HexKnowledgeChanged restating their full current
+//     knowledge, alongside the usual EntityMoved — see
+//     translateMoveEventWithData's doc for why this can't ride on
+//     HexRevealedEvent (which only fires on vision GAIN, never loss). This
+//     is the one case that returns more than one envelope.
 //   - EntityDisappearedEvent: the bare translator cannot distinguish "the
 //     viewer's own hex knowledge lost this position" from "the entity left
 //     a hex the viewer can still see fine" — needs a real LOS check against
@@ -461,13 +477,14 @@ func (h *Handler) StreamEncounter(req *encounterv2pb.StreamEncounterRequest, str
 // case in translate.go handles it like any other broadcast event — no
 // synthesis, no repo read-back, no retry.
 //
-// Every other event type continues to use TranslateEvent unchanged.
+// Every other event type continues to use TranslateEvent unchanged, wrapped
+// into a single-element slice.
 func (h *Handler) translateForStream(
 	ctx context.Context,
 	encID core.EncounterID,
 	evt tkevents.EncounterEvent,
 	viewer core.PlayerID,
-) (*encounterv2pb.EncounterEvent, error) {
+) ([]*encounterv2pb.EncounterEvent, error) {
 	if irEvt, ok := evt.(*tkevents.InputRequiredDeliveredEvent); ok {
 		// Load the encounter to read the pending prompt content. The prompt
 		// lives on Data.PendingReactionPrompts and is the canonical source
@@ -480,7 +497,7 @@ func (h *Handler) translateForStream(
 		if data != nil {
 			prompt = data.PendingReactionPrompts[irEvt.ReactorID]
 		}
-		return TranslateInputRequiredDelivered(irEvt, viewer, h.now(), prompt)
+		return singleOrErr(TranslateInputRequiredDelivered(irEvt, viewer, h.now(), prompt))
 	}
 
 	if appearEvt, ok := evt.(*tkevents.EntityAppearedEvent); ok {
@@ -488,7 +505,19 @@ func (h *Handler) translateForStream(
 		if err != nil {
 			return nil, fmt.Errorf("load encounter for entity-appeared enrichment: %w", err)
 		}
-		return translateEntityAppearedEventWithData(ctx, h.combatResolverConfig.CharacterRepo, h.broker, appearEvt, viewer, h.now(), data)
+		return singleOrErr(translateEntityAppearedEventWithData(ctx, h.combatResolverConfig.CharacterRepo, h.broker, appearEvt, viewer, h.now(), data))
+	}
+
+	if moveEvt, ok := evt.(*tkevents.MoveEvent); ok {
+		// rpg-api#733: load the encounter so the mover's own viewer can be
+		// identified (playerSeatForEntity) and, when it is, KnownHexes(viewer)
+		// can be read fresh for the supplemental restatement — see
+		// translateMoveEventWithData's doc.
+		data, err := h.encRepo.Get(ctx, string(encID))
+		if err != nil {
+			return nil, fmt.Errorf("load encounter for move knowledge restatement: %w", err)
+		}
+		return translateMoveEventWithData(ctx, moveEvt, viewer, h.now(), data, h.broker)
 	}
 
 	if revealedEvt, ok := evt.(*tkevents.HexRevealedEvent); ok {
@@ -501,7 +530,7 @@ func (h *Handler) translateForStream(
 		if err != nil {
 			return nil, fmt.Errorf("load encounter for hex-revealed zone enrichment: %w", err)
 		}
-		return translateHexRevealedEventWithData(revealedEvt, viewer, h.now(), data)
+		return singleOrErr(translateHexRevealedEventWithData(revealedEvt, viewer, h.now(), data))
 	}
 
 	if disappearEvt, ok := evt.(*tkevents.EntityDisappearedEvent); ok {
@@ -515,10 +544,21 @@ func (h *Handler) translateForStream(
 		if err != nil {
 			return nil, fmt.Errorf("load encounter for entity-disappeared visibility check: %w", err)
 		}
-		return translateEntityDisappearedEventWithData(
+		return singleOrErr(translateEntityDisappearedEventWithData(
 			ctx, h.combatResolverConfig.CharacterRepo, disappearEvt, viewer, h.now(), data, h.broker,
-		)
+		))
 	}
 
-	return TranslateEvent(evt, viewer, h.now())
+	return singleOrErr(TranslateEvent(evt, viewer, h.now()))
+}
+
+// singleOrErr wraps a single-envelope translator's result into the
+// one-or-more-envelope shape translateForStream returns, so most branches
+// don't have to know that shape exists — only translateMoveEventWithData
+// (the one case that genuinely returns more than one) builds its own slice.
+func singleOrErr(evt *encounterv2pb.EncounterEvent, err error) ([]*encounterv2pb.EncounterEvent, error) {
+	if err != nil {
+		return nil, err
+	}
+	return []*encounterv2pb.EncounterEvent{evt}, nil
 }

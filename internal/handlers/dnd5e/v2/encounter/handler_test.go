@@ -194,6 +194,67 @@ func (s *HandlerSuite) TestStreamEncounter_ForwardsBrokerEvents() {
 	s.Require().NotNil(got.GetEntityMoved())
 }
 
+// TestStreamEncounter_MoveOutOfSight_RestatesOriginHexAsRemembered proves the
+// rpg-api#733 fix: a viewer moving out of sight of a previously-visible hex
+// must have that hex reach them on the wire as HEX_STATE_REMEMBERED. Before
+// this fix, the live path only ever translated HexRevealedEvent — which
+// fires exclusively on vision GAIN (its own doc) — so a move that only lost
+// visibility (exactly what happens here: SightRange defaults to zero, so
+// stepping one hex away drops the origin hex out of range with nothing new
+// coming into view) published no hex-knowledge event at all. The client kept
+// rendering the origin hex as VISIBLE forever, which was the playtest
+// symptom ("stepping behind a pillar... does not" turn the area remembered).
+//
+// This test failing is the bug: run it against translateForStream before the
+// translateMoveEventWithData branch existed and the second WaitForSend below
+// times out because no second envelope is ever sent for this move.
+func (s *HandlerSuite) TestStreamEncounter_MoveOutOfSight_RestatesOriginHexAsRemembered() {
+	enc := tkenc.New(context.Background(), "enc-1", s.broker)
+	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
+		PlayerID: "player-A", EntityID: "char-A", Position: core.Hex{Q: 0, R: 0, S: 0},
+	}))
+	s.Require().NoError(s.repo.Save(s.ctx, enc.ToData()))
+
+	stream := newCapturingStream(s.ctx)
+	go func() {
+		_ = s.handler.StreamEncounter(&encounterv2pb.StreamEncounterRequest{
+			EncounterId: "enc-1",
+		}, stream)
+	}()
+
+	_ = stream.WaitForSend(s.T(), 2*time.Second) // SnapshotDelivered
+	_ = stream.WaitForSend(s.T(), 2*time.Second) // HexKnowledgeChanged replay (origin hex, VISIBLE)
+
+	// One-hex move. SightRange is unset (zero), so the destination's visible
+	// set is just itself — the origin hex (distance 1 away) falls out of
+	// range in this same move, with no new hex revealed to ride a
+	// HexRevealedEvent on.
+	_, err := s.handler.MoveEntity(s.ctx, &encounterv2pb.MoveEntityRequest{
+		EncounterId:  "enc-1",
+		EntityId:     "char-A",
+		ProposedPath: []*encounterv2pb.Position{{X: 0, Y: 0, Z: 0}, {X: 1, Y: -1, Z: 0}},
+	})
+	s.Require().NoError(err)
+
+	moved := stream.WaitForSend(s.T(), 2*time.Second)
+	s.Require().NotNil(moved.GetEntityMoved(), "the mover's own EntityMoved must still be sent, unchanged")
+
+	restated := stream.WaitForSend(s.T(), 2*time.Second)
+	changed := restated.GetHexKnowledgeChanged()
+	s.Require().NotNil(changed, "the mover's own move must carry a supplemental HexKnowledgeChanged restating their full current knowledge")
+
+	var origin *encounterv2pb.HexRecord
+	for _, h := range changed.GetHexes() {
+		if h.GetPosition().GetX() == 0 && h.GetPosition().GetY() == 0 && h.GetPosition().GetZ() == 0 {
+			origin = h
+			break
+		}
+	}
+	s.Require().NotNil(origin, "the origin hex must still be present — nothing is ever forgotten, only re-stated")
+	s.Require().Equal(encounterv2pb.HexState_HEX_STATE_REMEMBERED, origin.GetState(),
+		"the origin hex must flip to REMEMBERED once out of sight — this is the transition the bug dropped")
+}
+
 func (s *HandlerSuite) TestGetEncounter_NoAuth_Unauthenticated() {
 	ctx := context.Background() // no auth
 	_, err := s.handler.GetEncounter(ctx, &encounterv2pb.GetEncounterRequest{
