@@ -234,9 +234,9 @@ func translateMoveEvent(e *events.MoveEvent, viewer core.PlayerID, now time.Time
 // still produces the EntityMoved envelope every viewer who saw a segment
 // needs — that part is unchanged and reused verbatim. What this adds is
 // specific to the MOVER'S OWN viewer: a supplemental HexKnowledgeChanged
-// envelope carrying that viewer's FULL current KnownHexes(viewer), so hexes
-// that just flipped VISIBLE->REMEMBERED (stepped behind a pillar, backed out
-// of a room) reach the client on this same move.
+// envelope carrying that viewer's FULL current knowledge, so hexes that just
+// flipped VISIBLE->REMEMBERED (stepped behind a pillar, backed out of a
+// room) reach the client on this same move.
 //
 // Why this can't ride on HexRevealedEvent: HexRevealedEvent is only
 // published when vision GAINS hexes (its own doc, and
@@ -254,28 +254,36 @@ func translateMoveEvent(e *events.MoveEvent, viewer core.PlayerID, now time.Time
 // Full restatement, not a diff: the wire contract's HexKnowledgeChanged
 // merges by position and is idempotent (design.md's "The event layer"), so
 // re-sending everything this viewer currently knows is self-correcting and
-// needs no before/after snapshot plumbing at the orchestrator layer. This is
-// the evaluated alternative to DiffKnowledge (deleted — see knowledge.go's
-// removal in this same change): a before/after diff would need a hook at the
-// orchestrator layer to capture KnownHexes before the toolkit's Move
-// mutates it, since rpg-api only ever sees events the toolkit already
-// published; full restatement needs no such plumbing and is bounded by what
-// the viewer has actually explored (KnownHexes never grows unboundedly).
+// needs no before/after snapshot plumbing at the orchestrator layer.
+//
+// rpg-api#737: this used to re-derive the restatement with its own
+// encRepo.Get()+LoadFromData()+KnownHexes(viewer) read, done from the
+// stream-handler side, racing against the orchestrator's own persist of
+// this SAME move. The toolkit's Move() publishes this event SYNCHRONOUSLY,
+// from inside its own call stack, BEFORE returning to the orchestrator —
+// which only calls persistWithCharacterData() AFTER Move() returns. So that
+// re-read was not an occasional race: it was guaranteed to observe the
+// PRE-persist snapshot (the mover still at their old position, the old hex
+// still VISIBLE with them on it) every single time, caught live in a
+// playtest ("move doesn't register until second click" downstream in the
+// client). rpg-toolkit#862 closed the class at the source: MoveEvent now
+// carries MoverPlayerID and MoverKnownHexes, computed by the toolkit at the
+// exact moment of publish — immediately after the mover's own
+// position/view mutation, the ONE moment guaranteed to reflect this exact
+// move. This translator now trusts that payload outright and does no
+// repository read of its own; ctx/data/broker are gone from the signature
+// because nothing here needs them anymore.
 //
 // Only the mover's own viewer gets the supplemental envelope —
-// playerSeatForEntity(data, e.Mover) == viewer gates it. Every OTHER viewer
-// who merely saw a segment of this move has their OWN geometry knowledge
-// unchanged (their position didn't move); their entity-visibility updates
-// already ride the untouched EntityAppeared/EntityDisappeared path — see
-// this function's doc call site in translateForStream for why that path
+// e.MoverPlayerID == viewer gates it (empty for a non-player-controlled
+// mover, so it can never accidentally match an empty viewer). Every OTHER
+// viewer who merely saw a segment of this move has their OWN geometry
+// knowledge unchanged (their position didn't move); their entity-visibility
+// updates already ride the untouched EntityAppeared/EntityDisappeared path —
+// see this function's doc call site in translateForStream for why that path
 // must not be disturbed.
-//
-// nil data or a LoadFromData failure fall back to the bare EntityMoved-only
-// result — defensive, should not occur in the live stream
-// (translateForStream always loads data immediately before this call).
 func translateMoveEventWithData(
-	ctx context.Context, e *events.MoveEvent, viewer core.PlayerID, now time.Time,
-	data *encounter.Data, broker *encounter.Broker,
+	e *events.MoveEvent, viewer core.PlayerID, now time.Time,
 ) ([]*encounterv2pb.EncounterEvent, error) {
 	moved, moveErr := translateMoveEvent(e, viewer, now)
 	if moveErr != nil && !errors.Is(moveErr, ErrViewerSawNothing) {
@@ -287,31 +295,24 @@ func translateMoveEventWithData(
 		out = append(out, moved)
 	}
 
-	if data != nil && playerSeatForEntity(data, e.Mover) == viewer {
-		enc, err := encounter.LoadFromData(ctx, data, broker)
-		if err == nil {
-			// Sequence deliberately reuses the MoveEvent's own sequence number
-			// rather than minting a new one: this envelope is a derived
-			// restatement of the SAME move, not a separately-published toolkit
-			// event, and rpg-api has no seam to allocate the toolkit's next
-			// sequence number without risking collision with a real event that
-			// legitimately owns moveSeq+1 (e.g. a HexRevealedEvent published
-			// immediately after, when the same move both reveals and hides
-			// hexes).
-			out = append(out, &encounterv2pb.EncounterEvent{
-				Sequence:  int64(e.Sequence()),
-				Timestamp: timestamppb.New(now),
-				Event: &encounterv2pb.EncounterEvent_HexKnowledgeChanged{
-					HexKnowledgeChanged: &encounterv2pb.HexKnowledgeChanged{
-						Hexes: hexRecordsToProto(enc.KnownHexes(viewer)),
-					},
+	if e.MoverPlayerID != "" && e.MoverPlayerID == viewer {
+		// Sequence deliberately reuses the MoveEvent's own sequence number
+		// rather than minting a new one: this envelope is a derived
+		// restatement of the SAME move, not a separately-published toolkit
+		// event, and rpg-api has no seam to allocate the toolkit's next
+		// sequence number without risking collision with a real event that
+		// legitimately owns moveSeq+1 (e.g. a HexRevealedEvent published
+		// immediately after, when the same move both reveals and hides
+		// hexes).
+		out = append(out, &encounterv2pb.EncounterEvent{
+			Sequence:  int64(e.Sequence()),
+			Timestamp: timestamppb.New(now),
+			Event: &encounterv2pb.EncounterEvent_HexKnowledgeChanged{
+				HexKnowledgeChanged: &encounterv2pb.HexKnowledgeChanged{
+					Hexes: knownHexesToProto(e.MoverKnownHexes),
 				},
-			})
-		}
-		// A LoadFromData failure here is defensive-only (data was just loaded
-		// successfully by the caller a moment ago) — degrade to the
-		// EntityMoved-only result rather than failing the whole stream over a
-		// knowledge restatement.
+			},
+		})
 	}
 
 	if len(out) == 0 {

@@ -509,15 +509,13 @@ func (h *Handler) translateForStream(
 	}
 
 	if moveEvt, ok := evt.(*tkevents.MoveEvent); ok {
-		// rpg-api#733: load the encounter so the mover's own viewer can be
-		// identified (playerSeatForEntity) and, when it is, KnownHexes(viewer)
-		// can be read fresh for the supplemental restatement — see
-		// translateMoveEventWithData's doc.
-		data, err := h.encRepo.Get(ctx, string(encID))
-		if err != nil {
-			return nil, fmt.Errorf("load encounter for move knowledge restatement: %w", err)
-		}
-		return translateMoveEventWithData(ctx, moveEvt, viewer, h.now(), data, h.broker)
+		// rpg-api#737: no repo read here anymore. The event carries the
+		// mover's own post-move knowledge directly (MoverPlayerID /
+		// MoverKnownHexes, computed by the toolkit at publish time) — see
+		// translateMoveEventWithData's doc for why a repo read from this
+		// stream-handler side is guaranteed to race the orchestrator's own
+		// persist of this same move, not just occasionally.
+		return translateMoveEventWithData(moveEvt, viewer, h.now())
 	}
 
 	if revealedEvt, ok := evt.(*tkevents.HexRevealedEvent); ok {
