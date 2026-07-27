@@ -448,6 +448,11 @@ func (h *Handler) StreamEncounter(req *encounterv2pb.StreamEncounterRequest, str
 //     round-trip ever shows up as a real cost, the natural follow-up is
 //     caching the connect-time snapshot's Players/Monsters in this stream
 //     goroutine's own state instead (see docs/status.md's rough edges).
+//   - EntityDisappearedEvent: the bare translator cannot distinguish "the
+//     viewer's own hex knowledge lost this position" from "the entity left
+//     a hex the viewer can still see fine" — needs a real LOS check against
+//     the loaded room (data + broker), not just the toolkit event — see
+//     translateEntityDisappearedEventWithData's doc.
 //
 // InitiativeRolled no longer needs a data-aware branch here: rpg-toolkit#765
 // (encounter v0.28.0 introduced the seam; this repo pins whatever is current —
@@ -483,7 +488,7 @@ func (h *Handler) translateForStream(
 		if err != nil {
 			return nil, fmt.Errorf("load encounter for entity-appeared enrichment: %w", err)
 		}
-		return translateEntityAppearedEventWithData(ctx, h.combatResolverConfig.CharacterRepo, appearEvt, viewer, h.now(), data)
+		return translateEntityAppearedEventWithData(ctx, h.combatResolverConfig.CharacterRepo, h.broker, appearEvt, viewer, h.now(), data)
 	}
 
 	if revealedEvt, ok := evt.(*tkevents.HexRevealedEvent); ok {
@@ -497,6 +502,22 @@ func (h *Handler) translateForStream(
 			return nil, fmt.Errorf("load encounter for hex-revealed zone enrichment: %w", err)
 		}
 		return translateHexRevealedEventWithData(revealedEvt, viewer, h.now(), data)
+	}
+
+	if disappearEvt, ok := evt.(*tkevents.EntityDisappearedEvent); ok {
+		// The bare translator (TranslateEvent's fallback) cannot tell "the
+		// viewer can no longer see this hex at all" apart from "the entity
+		// left a hex the viewer is still looking straight at" — see
+		// translateEntityDisappearedEventWithData's doc. Needs a real LOS
+		// check against the room, so it loads data the same way the
+		// EntityAppeared/HexRevealed branches above do.
+		data, err := h.encRepo.Get(ctx, string(encID))
+		if err != nil {
+			return nil, fmt.Errorf("load encounter for entity-disappeared visibility check: %w", err)
+		}
+		return translateEntityDisappearedEventWithData(
+			ctx, h.combatResolverConfig.CharacterRepo, disappearEvt, viewer, h.now(), data, h.broker,
+		)
 	}
 
 	return TranslateEvent(evt, viewer, h.now())

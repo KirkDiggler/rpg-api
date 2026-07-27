@@ -246,7 +246,7 @@ func (s *HydratePlayersReconcileSuite) TestTranslateEntityAppearedEventWithData_
 		map[tkenccore.PlayerID]struct{}{"player-B": {}},
 	)
 
-	out, err := translateEntityAppearedEventWithData(s.ctx, s.mockCharRepo, evt, "player-B", time.Now(), data)
+	out, err := translateEntityAppearedEventWithData(s.ctx, s.mockCharRepo, nil, evt, "player-B", time.Now(), data)
 	s.Require().NoError(err)
 
 	changed := out.GetEvent().(*encounterv2pb.EncounterEvent_HexKnowledgeChanged).HexKnowledgeChanged
@@ -279,7 +279,7 @@ func (s *HydratePlayersReconcileSuite) TestTranslateEntityAppearedEventWithData_
 		map[tkenccore.PlayerID]struct{}{"player-B": {}},
 	)
 
-	out, err := translateEntityAppearedEventWithData(s.ctx, nil, evt, "player-B", time.Now(), data)
+	out, err := translateEntityAppearedEventWithData(s.ctx, nil, nil, evt, "player-B", time.Now(), data)
 	s.Require().NoError(err)
 
 	changed := out.GetEvent().(*encounterv2pb.EncounterEvent_HexKnowledgeChanged).HexKnowledgeChanged
@@ -299,7 +299,7 @@ func (s *HydratePlayersReconcileSuite) TestTranslateEntityAppearedEventWithData_
 		map[tkenccore.PlayerID]struct{}{"player-A": {}},
 	)
 
-	out, err := translateEntityAppearedEventWithData(s.ctx, nil, evt, "player-A", time.Now(), data)
+	out, err := translateEntityAppearedEventWithData(s.ctx, nil, nil, evt, "player-A", time.Now(), data)
 	s.Require().NoError(err)
 	changed := out.GetHexKnowledgeChanged()
 	s.Require().Len(changed.GetEntities(), 1)

@@ -118,10 +118,59 @@ func ProjectFor(
 		visibleNow = perception.VisibleHexesAt(snap.Position, vp.View.SightRange, enc.Room())
 	}
 
-	// Collect entities visible to the viewer. Start with the viewer's own
-	// entity (always visible), then add other players whose current position
-	// falls within the viewer's sight range. Iterate data.Players in player-ID
-	// order so wire output is deterministic across Go map iterations.
+	entities, placements := disclosedEntities(ctx, charRepo, data, viewer, snap, visibleNow)
+
+	// Now the knowledge pass. Everything the viewer knows comes from one
+	// interface, and rpg-api reads no world truth to fill a gap — see
+	// knowledge.go for why that seam exists and knowledge_adapter.go for the
+	// stand-in that fills it until rpg-toolkit#851 lands.
+	knowledge := &toolkitKnowledge{
+		data:       data,
+		revealed:   snap.RevealedHexes,
+		visible:    visibleNow,
+		placements: placements,
+		edges:      edgesByHex(data),
+	}
+
+	return &encounterv2pb.Encounter{
+		Id:        string(data.ID),
+		Mode:      encounterModeToProto(data.Mode),
+		TurnState: buildTurnState(data, actorTurnState),
+		Space: &encounterv2pb.Space{
+			Hexes:    hexRecordsToProto(knowledge.KnownHexes(viewer)),
+			Entities: entities,
+			Zones:    zonesToProto(data.Space),
+			Theme:    themeToProto(data.Space),
+		},
+	}, nil
+}
+
+// disclosedEntities is THE authorization filter for "which entities does
+// viewer get told about, and where": viewer's own entity (always, at
+// snap.Position); other players whose View.Position falls within
+// visibleNow; monsters within visibleNow; static obstacles within
+// snap.RevealedHexes (sticky — once revealed, obstacles stay disclosed even
+// outside current LOS, unlike combatants). Iteration order is sorted by id
+// within each category (players, then monsters, then obstacles) so both the
+// entities slice and each placements[hex] slice are deterministic across
+// Go's randomized map iteration.
+//
+// This is ProjectFor's own disclosure pass, factored out so a second caller
+// can ask the exact same question without a second, independently-drifting
+// filter (translate.go's translateEntityDisappearedEventWithData: when an
+// entity leaves a hex that remains visible to the viewer, the hex's
+// remaining Contents must be rebuilt from every OTHER entity actually
+// standing there, not just the departed one subtracted from stale data —
+// this is the one place that answer comes from). placements[hex] is exactly
+// the Contents a HexRecord at hex should carry.
+func disclosedEntities(
+	ctx context.Context,
+	charRepo characterrepo.Repository,
+	data *tkenc.Data,
+	viewer core.PlayerID,
+	snap tkenc.Snapshot,
+	visibleNow core.HexSet,
+) (entities []*encounterv2pb.Entity, placements map[core.Hex][]Placement) {
 	playerIDs := make([]core.PlayerID, 0, len(data.Players))
 	for pid := range data.Players {
 		playerIDs = append(playerIDs, pid)
@@ -130,11 +179,10 @@ func ProjectFor(
 		return string(playerIDs[i]) < string(playerIDs[j])
 	})
 
-	var entities []*encounterv2pb.Entity
+	placements = make(map[core.Hex][]Placement)
 	// placements records WHERE each disclosed entity is. Position left Entity
 	// with rpg-api-protos#197: the hex states occupancy, so a second copy on
 	// the entity could only agree redundantly or disagree dangerously.
-	placements := make(map[core.Hex][]Placement)
 	disclose := func(at core.Hex, id core.EntityID, e *encounterv2pb.Entity) {
 		entities = append(entities, e)
 		placements[at] = append(placements[at], Placement{EntityID: id})
@@ -194,29 +242,7 @@ func ProjectFor(
 		}
 	}
 
-	// Now the knowledge pass. Everything the viewer knows comes from one
-	// interface, and rpg-api reads no world truth to fill a gap — see
-	// knowledge.go for why that seam exists and knowledge_adapter.go for the
-	// stand-in that fills it until rpg-toolkit#851 lands.
-	knowledge := &toolkitKnowledge{
-		data:       data,
-		revealed:   snap.RevealedHexes,
-		visible:    visibleNow,
-		placements: placements,
-		edges:      edgesByHex(data),
-	}
-
-	return &encounterv2pb.Encounter{
-		Id:        string(data.ID),
-		Mode:      encounterModeToProto(data.Mode),
-		TurnState: buildTurnState(data, actorTurnState),
-		Space: &encounterv2pb.Space{
-			Hexes:    hexRecordsToProto(knowledge.KnownHexes(viewer)),
-			Entities: entities,
-			Zones:    zonesToProto(data.Space),
-			Theme:    themeToProto(data.Space),
-		},
-	}, nil
+	return entities, placements
 }
 
 // hexRecordsToProto is the one conversion point from viewer knowledge to the

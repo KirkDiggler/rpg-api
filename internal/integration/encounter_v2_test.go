@@ -433,13 +433,20 @@ func (s *EncounterV2IntegrationSuite) TestMovementSlicePerViewerProjection_Asymm
 	//
 	// rpg-api-protos#197 retired the dedicated EntityAppeared/EntityDisappeared
 	// messages: both become HexKnowledgeChanged now (translate.go's
-	// translateEntityAppearedEventWithData / translateEntityDisappearedEvent) —
-	// "appeared" is a VISIBLE record naming char-A in Contents; "disappeared" is
-	// a REMEMBERED record with EMPTY Contents (the translator does not invent a
-	// frozen placement it cannot back — see that function's doc). (1,-1,0) and
-	// (0,-1,1) are themselves permanently within B's own SightRange:1 (B never
-	// moves), so both hex records exist from the connect-time replay onward;
-	// what changes live is their State/Contents as char-A passes through.
+	// translateEntityAppearedEventWithData / translateEntityDisappearedEventWithData)
+	// — "appeared" is a VISIBLE record naming char-A in Contents.
+	//
+	// "Disappeared" is NOT automatically REMEMBERED: EntityDisappearedEvent means
+	// the ENTITY left B's sight, not that the HEX did. (1,-1,0) and (0,-1,1) are
+	// themselves PERMANENTLY within B's own SightRange:1 (B never moves, and this
+	// fixture has no room to block LOS), so B can still see (0,-1,1) just fine
+	// after A walks off it — translateEntityDisappearedEventWithData must keep
+	// that record VISIBLE (with Contents rebuilt from whoever else is actually
+	// there — nobody, in this fixture, so empty), not dim it to REMEMBERED. An
+	// earlier version of this translator got this wrong (always REMEMBERED
+	// regardless of real visibility) and this test caught it by asserting the
+	// bug as truth; see translateEntityDisappearedEventWithData's doc for the
+	// full VISIBLE-vs-REMEMBERED distinction.
 	//
 	// Order is broker-publish-order; we don't assert a specific order, just that
 	// all three signals arrive within the window. Collect enough events to cover
@@ -484,13 +491,118 @@ func (s *EncounterV2IntegrationSuite) TestMovementSlicePerViewerProjection_Asymm
 	s.Require().Len(bMoved.ActualPath, 2, "B's ActualPath should be the 2-hex visible slice, NOT the full 7-hex path")
 
 	// Per-viewer last-known position: B's last-visible hex on this pass-through
-	// is (0,-1,1); the disappearance flips ITS record to REMEMBERED. Contents
-	// stays empty (translateEntityDisappearedEvent's under-disclosure contract:
-	// we know A left this hex, but not what — if anything — is there now).
+	// is (0,-1,1). B can still see that hex (permanently within his own
+	// SightRange:1), so its record must stay VISIBLE — A leaving is reflected
+	// by A's absence from Contents, not by dimming the hex to REMEMBERED.
 	s.Require().NotNil(bDisappearedHex, "B must have a record for (0,-1,1), where A was last seen")
-	s.Require().Equal(encounterv2pb.HexState_HEX_STATE_REMEMBERED, bDisappearedHex.GetState())
+	s.Require().Equal(encounterv2pb.HexState_HEX_STATE_VISIBLE, bDisappearedHex.GetState(),
+		"B can still see (0,-1,1) himself; A leaving it must not dim it to REMEMBERED")
 	s.Require().Empty(bDisappearedHex.GetContents(),
-		"a remembered record must not claim char-A (or anything else) is still there")
+		"nothing else is standing on (0,-1,1) once A leaves")
+}
+
+// TestEntityDisappearedEvent_HexStaysVisibleWithRebuiltContents pins the fix
+// for a real translator bug in rpg-api's translateEntityDisappearedEventWithData:
+// EntityDisappearedEvent means the ENTITY left the viewer's sight, not that
+// the HEX did. A hex the viewer can still see must stay HEX_STATE_VISIBLE,
+// and — the sharper case TestMovementSlicePerViewerProjection_AsymmetricLoS's
+// "nothing else was there" scenario can't catch — its Contents must be
+// REBUILT from every entity still authorized-visible there, not just have
+// the departed entity subtracted from stale data (a Visible record's
+// Contents is a TOTAL claim — knowledge.go's HexObservation doc). Leaving it
+// empty by assumption would tell the viewer a monster that never moved just
+// vanished too.
+//
+// Reuses TestMovementSlicePerViewerProjection_AsymmetricLoS's exact
+// geometry (B at origin, SightRange:1, A passes through (1,-1,0) then
+// (0,-1,1) before leaving sight at (-1,-1,2)) but seeds a monster
+// permanently standing on (0,-1,1) — A's last-visible hex — so the emitted
+// record's Contents must show the monster and must NOT show char-A.
+func (s *EncounterV2IntegrationSuite) TestEntityDisappearedEvent_HexStaysVisibleWithRebuiltContents() {
+	enc := tkenc.New(context.Background(), "enc-disappear-rebuild", s.srv.BrokerV2)
+	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
+		PlayerID: "player-A", EntityID: "char-A",
+		Position:   core.Hex{Q: 5, R: -2, S: -3},
+		SightRange: 10,
+	}))
+	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
+		PlayerID: "player-B", EntityID: "char-B",
+		Position:   core.Hex{Q: 0, R: 0, S: 0},
+		SightRange: 1,
+	}))
+	// goblin-1 permanently occupies (0,-1,1) — A's last-visible hex on the
+	// pass-through below — and never moves, so it's still there after A
+	// leaves. It's within B's own permanent SightRange:1, so combat entry
+	// may fire on seed; harmless here — A is a bare toolkit fixture (no
+	// rulebook-attached character), so movement budget never gates its
+	// move below, same as the sibling asymmetric-LoS test this fixture is
+	// copied from.
+	s.Require().NoError(enc.AddMonster(tkenc.MonsterInput{
+		ID: "goblin-1", Position: core.Hex{Q: 0, R: -1, S: 1},
+		HP: 7, MaxHP: 7, AC: 15, Speed: 6,
+		MonsterRef: "dnd5e:monsters:goblin",
+	}))
+	s.Require().NoError(s.srv.EncRepoV2.Save(s.ctx, enc.ToData()))
+
+	ctxA := s.authCtx("player-A")
+	ctxB := s.authCtx("player-B")
+
+	streamA, err := s.srv.EncounterClientV2.StreamEncounter(ctxA, &encounterv2pb.StreamEncounterRequest{EncounterId: "enc-disappear-rebuild"})
+	s.Require().NoError(err)
+	streamB, err := s.srv.EncounterClientV2.StreamEncounter(ctxB, &encounterv2pb.StreamEncounterRequest{EncounterId: "enc-disappear-rebuild"})
+	s.Require().NoError(err)
+
+	snapA, err := streamA.Recv()
+	s.Require().NoError(err)
+	s.Require().NotNil(snapA.GetSnapshotDelivered())
+	snapB, err := streamB.Recv()
+	s.Require().NoError(err)
+	s.Require().NotNil(snapB.GetSnapshotDelivered())
+
+	// Same path as TestMovementSlicePerViewerProjection_AsymmetricLoS: A
+	// passes through B's vision, visible only at (1,-1,0) and (0,-1,1) —
+	// stepping directly onto goblin-1's hex before continuing past it.
+	_, err = s.srv.EncounterClientV2.MoveEntity(ctxA, &encounterv2pb.MoveEntityRequest{
+		EncounterId: "enc-disappear-rebuild", EntityId: "char-A",
+		ProposedPath: []*encounterv2pb.Position{
+			{X: 5, Y: -2, Z: -3},
+			{X: 4, Y: -2, Z: -2},
+			{X: 3, Y: -2, Z: -1},
+			{X: 2, Y: -2, Z: 0},
+			{X: 1, Y: -1, Z: 0},
+			{X: 0, Y: -1, Z: 1},
+			{X: -1, Y: -1, Z: 2},
+		},
+	})
+	s.Require().NoError(err)
+
+	// Collect every HexKnowledgeChanged touching (0,-1,1) B receives —
+	// including the transient one from A's own appearance there, and the
+	// final one from A's departure — and check the LAST one, the state
+	// after the whole move settles.
+	bEvents := s.collectStreamEvents(streamB, 8, 500*time.Millisecond)
+	var lastKnownHex *encounterv2pb.HexRecord
+	for _, ev := range bEvents {
+		hkc := ev.GetHexKnowledgeChanged()
+		if hkc == nil {
+			continue
+		}
+		if h := hexRecordAt(hkc.GetHexes(), core.Hex{Q: 0, R: -1, S: 1}); h != nil {
+			lastKnownHex = h
+		}
+	}
+
+	s.Require().NotNil(lastKnownHex, "B must have a record for (0,-1,1)")
+	s.Require().Equal(encounterv2pb.HexState_HEX_STATE_VISIBLE, lastKnownHex.GetState(),
+		"B can still see (0,-1,1) — A leaving it must not dim it to REMEMBERED")
+
+	contentIDs := make([]string, 0, len(lastKnownHex.GetContents()))
+	for _, p := range lastKnownHex.GetContents() {
+		contentIDs = append(contentIDs, p.GetEntityId())
+	}
+	s.Require().ElementsMatch([]string{"goblin-1"}, contentIDs,
+		"Contents must be rebuilt to show goblin-1 (still there, never moved) and must NOT contain char-A "+
+			"(which left) — not just left empty, and not stale-subtracted from data that predates the move")
 }
 
 // TestGetEncounter_ProjectsView verifies that GetEncounter returns the encounter
