@@ -46,6 +46,15 @@ func (s *ContentTestSuite) TestEveryEmbeddedSpecLoads() {
 // fixture that loads but silently drifts from "4 pillars, no monsters in
 // room 1; one skeleton in room 2, door unlocked" would be worse than an
 // obviously-broken one — this pins the shape, not just the load.
+//
+// Also pins the lighting follow-up (Kirk playtest finding: the fixture was
+// "essentially unlit" — 2 dim candles + 2 unlit bone-piles in room 1, ZERO
+// props in room 2 — which both looked wrong and defeated the fixture's own
+// purpose, since it's hard to judge a remembered-shadow transition when the
+// whole room is already dark): 2 braziers in room 1, 1 in room 2, every one
+// EXPLICITLY non-blocking (dungeonspec's own compile-time default for an
+// omitted blocks_los is true — see fog-lab.yaml's comments and this
+// package's earlier lesson on the same point for the flanking props).
 func (s *ContentTestSuite) TestFogLabSpec_CompilesWithExpectedFixtureShape() {
 	raw, ok, err := content.SpecByKey("fog-lab")
 	s.Require().NoError(err)
@@ -57,21 +66,27 @@ func (s *ContentTestSuite) TestFogLabSpec_CompilesWithExpectedFixtureShape() {
 	s.Require().Len(compiled.Params.Regions, 2, "exactly two rooms: the pillar room and the skeleton room")
 	room1, room2 := compiled.Params.Regions[0], compiled.Params.Regions[1]
 
-	// Room 1: four pillars, no monsters, four explicitly non-blocking props.
+	// Room 1: four pillars, no monsters, four explicitly non-blocking
+	// flanking props, and two explicitly non-blocking braziers for light.
 	s.Assert().Empty(room1.Obstacles, "room 1 uses static place: entries, not rolled obstacles")
-	pillars, nonBlocking := 0, 0
+	pillars, flankers, braziers := 0, 0, 0
 	for _, o := range room1.PlacedObstacles {
 		switch o.Ref {
 		case "dnd5e:props:pillar":
 			pillars++
 			s.Assert().True(o.BlocksLoS, "pillars must block line of sight (the geometry-fog test depends on this)")
 		case "dnd5e:props:candles", "dnd5e:props:bone-pile":
-			nonBlocking++
+			flankers++
 			s.Assert().False(o.BlocksLoS, "props next to pillars must be EXPLICITLY non-blocking, not relying on any ref default")
+		case "dnd5e:props:brazier":
+			braziers++
+			s.Assert().False(o.BlocksLoS, "light props must be EXPLICITLY non-blocking, not relying on any ref default")
 		}
 	}
 	s.Assert().Equal(4, pillars, "room 1 must have exactly 4 pillars")
-	s.Assert().Equal(4, nonBlocking, "room 1 must have exactly 4 non-blocking props, one per pillar")
+	s.Assert().Equal(4, flankers, "room 1 must have exactly 4 non-blocking flanking props, one per pillar")
+	s.Assert().Equal(2, braziers, "room 1 must have exactly 2 braziers lighting the pillar layout")
+	s.Assert().Len(room1.PlacedObstacles, pillars+flankers+braziers, "no unexpected extra props in room 1")
 
 	// No monster spawns target room 1 at all — entity-fog is tested
 	// separately, in room 2, per the fixture's whole point.
@@ -81,11 +96,14 @@ func (s *ContentTestSuite) TestFogLabSpec_CompilesWithExpectedFixtureShape() {
 
 	// Room 2: exactly one monster (the mandatory boss slot, filled by the
 	// fixture's single skeleton rather than a separate non-boss monster in a
-	// third room) and nothing else placed.
+	// third room) and exactly one non-blocking brazier so the skeleton isn't
+	// sitting in a pitch-dark room.
 	s.Require().Len(compiled.Spawns, 1, "fog-lab must spawn exactly one monster: the skeleton in room 2")
 	s.Assert().Equal(room2.ID, compiled.Spawns[0].RoomID)
 	s.Assert().Equal("dnd5e:monsters:skeleton", compiled.Spawns[0].MonsterRef)
-	s.Assert().Empty(room2.PlacedObstacles, "room 2 has nothing placed besides its pinned boss/skeleton")
+	s.Require().Len(room2.PlacedObstacles, 1, "room 2 has exactly one placed prop: its light source")
+	s.Assert().Equal("dnd5e:props:brazier", room2.PlacedObstacles[0].Ref)
+	s.Assert().False(room2.PlacedObstacles[0].BlocksLoS, "room 2's light prop must be EXPLICITLY non-blocking")
 
 	// The connector between them must be unlocked — Kirk needs to open the
 	// door, look, and step back repeatedly without a DC check in the way.
