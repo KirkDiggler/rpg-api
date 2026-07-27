@@ -87,9 +87,13 @@ func (s *TranslateSuite) TestTranslateEvent_HexRevealedEvent_HappyPath() {
 	s.Require().NoError(err)
 	s.Require().NotNil(out)
 
-	revealed := out.GetGeometryRevealed()
-	s.Require().NotNil(revealed)
-	s.Require().Len(revealed.Hexes, 2)
+	changed := out.GetHexKnowledgeChanged()
+	s.Require().NotNil(changed)
+	s.Require().Len(changed.Hexes, 2)
+	for _, h := range changed.Hexes {
+		s.Require().Equal(encounterv2pb.HexState_HEX_STATE_VISIBLE, h.GetState())
+		s.Require().Empty(h.GetContents(), "a bare HexRevealedEvent names no occupant")
+	}
 }
 
 func (s *TranslateSuite) TestTranslateEvent_HexRevealedEvent_EmptySliceReturnsErrViewerSawNothing() {
@@ -136,13 +140,20 @@ func (s *TranslateSuite) TestTranslateEvent_EntityAppearedEvent_HappyPath() {
 	)
 	out, err := v2encounter.TranslateEvent(evt, "player-B", s.now)
 	s.Require().NoError(err)
-	app := out.GetEntityAppeared()
-	s.Require().NotNil(app)
-	s.Require().Equal("char-A", app.Entity.Id)
-	s.Require().Equal(int32(3), app.Entity.Position.X)
-	s.Require().Equal(int32(-1), app.Entity.Position.Y)
-	s.Require().Equal(int32(-2), app.Entity.Position.Z)
-	s.Require().Equal("entered LOS", app.Reason)
+	changed := out.GetHexKnowledgeChanged()
+	s.Require().NotNil(changed)
+
+	s.Require().Len(changed.Entities, 1)
+	s.Require().Equal("char-A", changed.Entities[0].GetId())
+
+	s.Require().Len(changed.Hexes, 1)
+	hex := changed.Hexes[0]
+	s.Require().Equal(encounterv2pb.HexState_HEX_STATE_VISIBLE, hex.GetState())
+	s.Require().Equal(int32(3), hex.GetPosition().GetX())
+	s.Require().Equal(int32(-1), hex.GetPosition().GetY())
+	s.Require().Equal(int32(-2), hex.GetPosition().GetZ())
+	s.Require().Len(hex.GetContents(), 1)
+	s.Require().Equal("char-A", hex.GetContents()[0].GetEntityId())
 }
 
 func (s *TranslateSuite) TestTranslateEvent_EntityAppearedEvent_ViewerNotInPerPlayerReturnsErrViewerSawNothing() {
@@ -159,16 +170,19 @@ func (s *TranslateSuite) TestTranslateEvent_EntityDisappearedEvent_HappyPath() {
 	)
 	out, err := v2encounter.TranslateEvent(evt, "player-B", s.now)
 	s.Require().NoError(err)
-	dis := out.GetEntityDisappeared()
-	s.Require().NotNil(dis)
-	s.Require().Equal("char-A", dis.EntityId)
-	s.Require().Equal("left LOS", dis.Reason)
+	changed := out.GetHexKnowledgeChanged()
+	s.Require().NotNil(changed)
+	s.Require().Empty(changed.Entities, "no entity is disclosed on a disappearance — see the translator's doc")
+
+	s.Require().Len(changed.Hexes, 1)
+	hex := changed.Hexes[0]
+	s.Require().Equal(encounterv2pb.HexState_HEX_STATE_REMEMBERED, hex.GetState())
+	s.Require().Empty(hex.GetContents(), "we do not know the entity is still there — contents must stay empty")
 	// Per-viewer last-known position: B's PerPlayer entry was (5,-2,-3),
 	// proves the translator picks the viewer's own last-known hex.
-	s.Require().NotNil(dis.LastKnownPosition)
-	s.Require().Equal(int32(5), dis.LastKnownPosition.X)
-	s.Require().Equal(int32(-2), dis.LastKnownPosition.Y)
-	s.Require().Equal(int32(-3), dis.LastKnownPosition.Z)
+	s.Require().Equal(int32(5), hex.GetPosition().GetX())
+	s.Require().Equal(int32(-2), hex.GetPosition().GetY())
+	s.Require().Equal(int32(-3), hex.GetPosition().GetZ())
 }
 
 func (s *TranslateSuite) TestTranslateEvent_EntityDisappearedEvent_ViewerNotInPerPlayerReturnsErrViewerSawNothing() {
@@ -205,13 +219,11 @@ func (s *TranslateSuite) TestTranslateEvent_DoorOpenedEvent_HappyPath() {
 	door := out.GetDoorOpened()
 	s.Require().NotNil(door)
 	s.Require().Equal("door-east", door.GetDoorEntityId())
-	// Cause/effect split: DoorOpened envelope carries only door identity;
-	// HexRevealedEvent translation (GeometryRevealed) carries the geometry
-	// delta as a parallel event. revealed_hexes / revealed_walls /
-	// removed_walls must be empty here.
-	s.Require().Empty(door.GetRevealedHexes(), "revealed_hexes belongs on the parallel GeometryRevealed event")
-	s.Require().Empty(door.GetRevealedWalls(), "revealed_walls deferred — not modeled in v0.2.0")
-	s.Require().Empty(door.GetRemovedWalls(), "removed_walls deferred — not modeled in v0.2.0")
+	// Cause/effect split (rpg-api-protos#197): DoorOpened is now a pure
+	// notification carrying only door_entity_id — no other fields exist on
+	// the message to carry geometry. The parallel HexRevealedEvent
+	// (translated to HexKnowledgeChanged) carries the geometry/visibility
+	// delta as a separate event.
 	s.Require().Equal(int64(11), out.Sequence)
 }
 
@@ -260,7 +272,7 @@ func (s *TranslateSuite) TestTranslateSnapshot_PopulatedEncounter() {
 		Id:   "enc-unit-1",
 		Mode: encounterv2pb.EncounterMode_ENCOUNTER_MODE_FREE_ROAM,
 		Space: &encounterv2pb.Space{
-			Entities: []*encounterv2pb.Entity{{Id: "char-A", Position: &encounterv2pb.Position{X: 0, Y: 0, Z: 0}}},
+			Entities: []*encounterv2pb.Entity{{Id: "char-A"}},
 		},
 	}
 	out := v2encounter.TranslateSnapshot(pbEnc, s.now)
@@ -279,19 +291,21 @@ func (s *TranslateSuite) TestBuildReplayEvents_NilEncounter() {
 	s.Require().Empty(out, "nil encounter → no replay events")
 }
 
-// TestBuildReplayEvents_EntitiesAndHexes verifies that BuildReplayEvents emits one
-// EntityAppeared per entity in Space.Entities and one GeometryRevealed carrying
-// all of Space.Hexes. ProjectFor is responsible for sorting; BuildReplayEvents
-// is a pure pass-through.
+// TestBuildReplayEvents_EntitiesAndHexes verifies that BuildReplayEvents emits a
+// single HexKnowledgeChanged carrying all of Space.Entities and all of
+// Space.Hexes verbatim (rpg-api-protos#197 retired the per-entity
+// EntityAppeared / whole-set GeometryRevealed pair this used to synthesize).
+// ProjectFor is responsible for sorting; BuildReplayEvents is a pure
+// pass-through.
 func (s *TranslateSuite) TestBuildReplayEvents_EntitiesAndHexes() {
 	pbEnc := &encounterv2pb.Encounter{
 		Id: "enc-unit-2",
 		Space: &encounterv2pb.Space{
 			Entities: []*encounterv2pb.Entity{
-				{Id: "char-alice", Position: &encounterv2pb.Position{X: 0, Y: 0, Z: 0}},
-				{Id: "char-bob", Position: &encounterv2pb.Position{X: 1, Y: -1, Z: 0}},
+				{Id: "char-alice"},
+				{Id: "char-bob"},
 			},
-			Hexes: []*encounterv2pb.Hex{
+			Hexes: []*encounterv2pb.HexRecord{
 				{Position: &encounterv2pb.Position{X: -1, Y: 1, Z: 0}},
 				{Position: &encounterv2pb.Position{X: 0, Y: 0, Z: 0}},
 				{Position: &encounterv2pb.Position{X: 1, Y: -1, Z: 0}},
@@ -300,62 +314,71 @@ func (s *TranslateSuite) TestBuildReplayEvents_EntitiesAndHexes() {
 	}
 	out := v2encounter.BuildReplayEvents(pbEnc, s.now)
 
-	// Expect: 2 EntityAppeared + 1 GeometryRevealed = 3 events total.
-	s.Require().Len(out, 3, "2 entities + 1 geometry event")
+	s.Require().Len(out, 1, "full hydration is one HexKnowledgeChanged")
+	changed := out[0].GetHexKnowledgeChanged()
+	s.Require().NotNil(changed)
+	s.Require().Equal(int64(0), out[0].Sequence, "replay events use sequence 0")
 
-	var appearedIDs []string
-	var geoRevealed *encounterv2pb.GeometryRevealed
-	for _, ev := range out {
-		if a := ev.GetEntityAppeared(); a != nil {
-			appearedIDs = append(appearedIDs, a.GetEntity().GetId())
-			s.Require().Equal("initial state", a.GetReason())
-			s.Require().Equal(int64(0), ev.Sequence, "replay events use sequence 0")
-		}
-		if g := ev.GetGeometryRevealed(); g != nil {
-			geoRevealed = g
-		}
+	appearedIDs := make([]string, 0, len(changed.GetEntities()))
+	for _, e := range changed.GetEntities() {
+		appearedIDs = append(appearedIDs, e.GetId())
 	}
 	s.Require().ElementsMatch([]string{"char-alice", "char-bob"}, appearedIDs,
 		"both entities must appear in replay")
-	s.Require().NotNil(geoRevealed, "GeometryRevealed must be present")
-	s.Require().Len(geoRevealed.GetHexes(), 3, "all 3 hexes must be included")
+	s.Require().Len(changed.GetHexes(), 3, "all 3 hexes must be included")
 }
 
 // TestBuildReplayEvents_NoHexes verifies that an encounter with entities but no
-// hexes emits only EntityAppeared events (no GeometryRevealed).
+// hexes still emits one HexKnowledgeChanged carrying just the entities.
 func (s *TranslateSuite) TestBuildReplayEvents_NoHexes() {
 	pbEnc := &encounterv2pb.Encounter{
 		Space: &encounterv2pb.Space{
 			Entities: []*encounterv2pb.Entity{
-				{Id: "char-alice", Position: &encounterv2pb.Position{}},
+				{Id: "char-alice"},
 			},
 		},
 	}
 	out := v2encounter.BuildReplayEvents(pbEnc, s.now)
-	s.Require().Len(out, 1, "1 entity → 1 EntityAppeared, no GeometryRevealed")
-	s.Require().NotNil(out[0].GetEntityAppeared())
+	s.Require().Len(out, 1, "1 entity → 1 HexKnowledgeChanged")
+	changed := out[0].GetHexKnowledgeChanged()
+	s.Require().NotNil(changed)
+	s.Require().Len(changed.GetEntities(), 1)
+	s.Require().Empty(changed.GetHexes())
 }
 
 // TestBuildReplayEvents_NoEntitiesWithHexes verifies that an encounter with
-// hexes but no entities emits only GeometryRevealed (no EntityAppeared).
+// hexes but no entities still emits one HexKnowledgeChanged carrying just the
+// hexes.
 func (s *TranslateSuite) TestBuildReplayEvents_NoEntitiesWithHexes() {
 	pbEnc := &encounterv2pb.Encounter{
 		Space: &encounterv2pb.Space{
-			Hexes: []*encounterv2pb.Hex{
+			Hexes: []*encounterv2pb.HexRecord{
 				{Position: &encounterv2pb.Position{X: 0, Y: 0, Z: 0}},
 			},
 		},
 	}
 	out := v2encounter.BuildReplayEvents(pbEnc, s.now)
-	s.Require().Len(out, 1, "no entities → only GeometryRevealed")
-	s.Require().NotNil(out[0].GetGeometryRevealed())
+	s.Require().Len(out, 1, "no entities → still one HexKnowledgeChanged")
+	changed := out[0].GetHexKnowledgeChanged()
+	s.Require().NotNil(changed)
+	s.Require().Empty(changed.GetEntities())
+	s.Require().Len(changed.GetHexes(), 1)
 }
 
-// TestBuildReplayEvents_HexesPreserveInputOrder verifies that GeometryRevealed
-// carries pbEncounter.Space.Hexes verbatim. Sort responsibility lives in
-// ProjectFor; BuildReplayEvents must not reorder.
+// TestBuildReplayEvents_NoHexesNoEntities verifies that a Space with neither
+// hexes nor entities produces no replay event at all — no empty envelope for
+// the client to process.
+func (s *TranslateSuite) TestBuildReplayEvents_NoHexesNoEntities() {
+	pbEnc := &encounterv2pb.Encounter{Space: &encounterv2pb.Space{}}
+	out := v2encounter.BuildReplayEvents(pbEnc, s.now)
+	s.Require().Empty(out)
+}
+
+// TestBuildReplayEvents_HexesPreserveInputOrder verifies that the replayed
+// HexKnowledgeChanged carries pbEncounter.Space.Hexes verbatim. Sort
+// responsibility lives in ProjectFor; BuildReplayEvents must not reorder.
 func (s *TranslateSuite) TestBuildReplayEvents_HexesPreserveInputOrder() {
-	hexes := []*encounterv2pb.Hex{
+	hexes := []*encounterv2pb.HexRecord{
 		{Position: &encounterv2pb.Position{X: -1, Y: 0, Z: 1}},
 		{Position: &encounterv2pb.Position{X: 0, Y: 0, Z: 0}},
 		{Position: &encounterv2pb.Position{X: 1, Y: -1, Z: 0}},
@@ -364,7 +387,7 @@ func (s *TranslateSuite) TestBuildReplayEvents_HexesPreserveInputOrder() {
 	pbEnc := &encounterv2pb.Encounter{Space: &encounterv2pb.Space{Hexes: hexes}}
 	out := v2encounter.BuildReplayEvents(pbEnc, s.now)
 	s.Require().Len(out, 1)
-	got := out[0].GetGeometryRevealed().GetHexes()
+	got := out[0].GetHexKnowledgeChanged().GetHexes()
 	s.Require().Len(got, 4)
 	for i := range got {
 		s.Require().True(proto.Equal(got[i], hexes[i]), "hex %d must match input", i)

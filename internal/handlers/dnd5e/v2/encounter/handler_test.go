@@ -174,13 +174,12 @@ func (s *HandlerSuite) TestStreamEncounter_ForwardsBrokerEvents() {
 		}, stream)
 	}()
 
-	// Drain the snapshot and all replay events (EntityAppeared + GeometryRevealed)
-	// before firing the live move. Replay event count is implementation-defined;
-	// drain until we've seen everything that isn't EntityMoved, then fire the move.
-	// WaitForSend is used repeatedly; the goroutine runs until the context is canceled.
+	// Drain the snapshot and the replay event before firing the live move.
+	// rpg-api-protos#197 collapsed the old per-entity EntityAppeared + whole-set
+	// GeometryRevealed replay burst into a single HexKnowledgeChanged carrying
+	// both (BuildReplayEvents' doc) -- one replay envelope now, not two.
 	_ = stream.WaitForSend(s.T(), 2*time.Second) // SnapshotDelivered
-	_ = stream.WaitForSend(s.T(), 2*time.Second) // EntityAppeared (char-A, self)
-	_ = stream.WaitForSend(s.T(), 2*time.Second) // GeometryRevealed (origin hex)
+	_ = stream.WaitForSend(s.T(), 2*time.Second) // HexKnowledgeChanged (char-A self + origin hex)
 
 	// Move via the handler — broker emits MoveEvent.
 	_, err := s.handler.MoveEntity(s.ctx, &encounterv2pb.MoveEntityRequest{

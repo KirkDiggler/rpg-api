@@ -312,36 +312,41 @@ func (s *EncounterV2IntegrationSuite) TestEntityAppearedEvent_StreamCarriesEntit
 	})
 	s.Require().NoError(err)
 
+	// rpg-api-protos#197 retired the dedicated EntityAppeared message: an
+	// entity becoming visible is now a HexKnowledgeChanged carrying the
+	// entity in Entities (identity/type/hp/etc.) and a VISIBLE HexRecord
+	// naming it in Contents (position) — see translate.go's
+	// translateEntityAppearedEventWithData.
 	eventsA := s.collectStreamEvents(streamA, 30, 3*time.Second)
-	var monsterAppear, playerAppear *encounterv2pb.EntityAppeared
+	var monsterAppear, playerAppear *encounterv2pb.Entity
 	for _, ev := range eventsA {
-		a := ev.GetEntityAppeared()
-		if a == nil {
+		hkc := ev.GetHexKnowledgeChanged()
+		if hkc == nil {
 			continue
 		}
-		switch a.GetEntity().GetId() {
-		case "goblin-1":
-			monsterAppear = a
-		case "char-bob":
-			playerAppear = a
+		for _, e := range hkc.GetEntities() {
+			switch e.GetId() {
+			case "goblin-1":
+				monsterAppear = e
+			case "char-bob":
+				playerAppear = e
+			}
 		}
 	}
 
-	s.Require().NotNil(monsterAppear, "alice's stream must receive EntityAppeared for the goblin she walked up to")
-	gobEntity := monsterAppear.GetEntity()
-	s.Require().Equal(encounterv2pb.EntityType_ENTITY_TYPE_MONSTER, gobEntity.GetType())
-	s.Require().NotNil(gobEntity.GetHp())
-	s.Require().Equal(int32(7), gobEntity.GetHp().GetCurrent())
-	s.Require().Equal(int32(7), gobEntity.GetHp().GetMax())
-	s.Require().Equal(int32(15), gobEntity.GetArmorClass())
-	monsterData := gobEntity.GetMonster()
+	s.Require().NotNil(monsterAppear, "alice's stream must receive a disclosure for the goblin she walked up to")
+	s.Require().Equal(encounterv2pb.EntityType_ENTITY_TYPE_MONSTER, monsterAppear.GetType())
+	s.Require().NotNil(monsterAppear.GetHp())
+	s.Require().Equal(int32(7), monsterAppear.GetHp().GetCurrent())
+	s.Require().Equal(int32(7), monsterAppear.GetHp().GetMax())
+	s.Require().Equal(int32(15), monsterAppear.GetArmorClass())
+	monsterData := monsterAppear.GetMonster()
 	s.Require().NotNil(monsterData, "monster entity must carry the MonsterData oneof variant")
 	s.Require().Equal("goblin", monsterData.GetMonsterRef().GetId())
 
-	s.Require().NotNil(playerAppear, "alice's stream must receive EntityAppeared for bob when he moves into her sight")
-	bobEntity := playerAppear.GetEntity()
-	s.Require().Equal(encounterv2pb.EntityType_ENTITY_TYPE_CHARACTER, bobEntity.GetType())
-	characterData := bobEntity.GetCharacter()
+	s.Require().NotNil(playerAppear, "alice's stream must receive a disclosure for bob when he moves into her sight")
+	s.Require().Equal(encounterv2pb.EntityType_ENTITY_TYPE_CHARACTER, playerAppear.GetType())
+	characterData := playerAppear.GetCharacter()
 	s.Require().NotNil(characterData, "player entity must carry the CharacterData oneof variant")
 	s.Require().Equal("bob", characterData.GetPlayerId())
 }
@@ -426,47 +431,66 @@ func (s *EncounterV2IntegrationSuite) TestMovementSlicePerViewerProjection_Asymm
 	// (false,false) endpoints + non-empty seenSegments case emits BOTH Appeared and
 	// Disappeared. Plus an EntityMoved with B's 2-hex slice.
 	//
-	// Order is broker-publish-order; we don't assert a specific order, just that all
-	// three event kinds arrive within the window.
+	// rpg-api-protos#197 retired the dedicated EntityAppeared/EntityDisappeared
+	// messages: both become HexKnowledgeChanged now (translate.go's
+	// translateEntityAppearedEventWithData / translateEntityDisappearedEvent) —
+	// "appeared" is a VISIBLE record naming char-A in Contents; "disappeared" is
+	// a REMEMBERED record with EMPTY Contents (the translator does not invent a
+	// frozen placement it cannot back — see that function's doc). (1,-1,0) and
+	// (0,-1,1) are themselves permanently within B's own SightRange:1 (B never
+	// moves), so both hex records exist from the connect-time replay onward;
+	// what changes live is their State/Contents as char-A passes through.
 	//
-	// Collect enough events to cover both the replay burst (EntityAppeared for char-B
-	// itself + GeometryRevealed) and the 3 live broker events (EntityAppeared for
-	// char-A, EntityMoved with 2-hex slice, EntityDisappeared for char-A).
+	// Order is broker-publish-order; we don't assert a specific order, just that
+	// all three signals arrive within the window. Collect enough events to cover
+	// both the replay burst and the 3 live broker events.
 	bEvents := s.collectStreamEvents(streamB, 5, 500*time.Millisecond)
-	var bAppeared *encounterv2pb.EntityAppeared
+	var bAppearedHex, bDisappearedHex *encounterv2pb.HexRecord
 	var bMoved *encounterv2pb.EntityMoved
-	var bDisappeared *encounterv2pb.EntityDisappeared
+	var sawCharAEntity bool
 	for _, ev := range bEvents {
-		if a := ev.GetEntityAppeared(); a != nil {
-			bAppeared = a
+		if hkc := ev.GetHexKnowledgeChanged(); hkc != nil {
+			for _, e := range hkc.GetEntities() {
+				if e.GetId() == "char-A" {
+					sawCharAEntity = true
+				}
+			}
+			if h := hexRecordAt(hkc.GetHexes(), core.Hex{Q: 1, R: -1, S: 0}); h != nil {
+				bAppearedHex = h
+			}
+			if h := hexRecordAt(hkc.GetHexes(), core.Hex{Q: 0, R: -1, S: 1}); h != nil {
+				bDisappearedHex = h
+			}
 		}
 		if m := ev.GetEntityMoved(); m != nil {
 			bMoved = m
 		}
-		if d := ev.GetEntityDisappeared(); d != nil {
-			bDisappeared = d
-		}
 	}
 
-	s.Require().NotNil(bAppeared, "B should receive EntityAppeared on pass-through")
-	s.Require().Equal("char-A", bAppeared.Entity.Id)
-	s.Require().Equal(int32(1), bAppeared.Entity.Position.X, "B sees A appear at (1,-1,0)")
-	s.Require().Equal(int32(-1), bAppeared.Entity.Position.Y)
-	s.Require().Equal(int32(0), bAppeared.Entity.Position.Z)
+	s.Require().True(sawCharAEntity, "B should be disclosed char-A's identity on pass-through")
+
+	s.Require().NotNil(bAppearedHex, "B must have a record for (1,-1,0), where A appeared")
+	s.Require().Equal(encounterv2pb.HexState_HEX_STATE_VISIBLE, bAppearedHex.GetState())
+	var sawCharAPlaced bool
+	for _, p := range bAppearedHex.GetContents() {
+		if p.GetEntityId() == "char-A" {
+			sawCharAPlaced = true
+		}
+	}
+	s.Require().True(sawCharAPlaced, "the (1,-1,0) record's Contents must place char-A there")
 
 	s.Require().NotNil(bMoved, "B should receive EntityMoved with the visible slice")
 	s.Require().Equal("char-A", bMoved.EntityId)
 	s.Require().Len(bMoved.ActualPath, 2, "B's ActualPath should be the 2-hex visible slice, NOT the full 7-hex path")
 
-	s.Require().NotNil(bDisappeared, "B should receive EntityDisappeared on pass-through")
-	s.Require().Equal("char-A", bDisappeared.EntityId)
 	// Per-viewer last-known position: B's last-visible hex on this pass-through
-	// is (0,-1,1). The wire's last_known_position field carries it; web can
-	// render "freeze marker at this hex" without client-side game-state tracking.
-	s.Require().NotNil(bDisappeared.LastKnownPosition, "EntityDisappeared must carry per-viewer last-known position")
-	s.Require().Equal(int32(0), bDisappeared.LastKnownPosition.X)
-	s.Require().Equal(int32(-1), bDisappeared.LastKnownPosition.Y)
-	s.Require().Equal(int32(1), bDisappeared.LastKnownPosition.Z)
+	// is (0,-1,1); the disappearance flips ITS record to REMEMBERED. Contents
+	// stays empty (translateEntityDisappearedEvent's under-disclosure contract:
+	// we know A left this hex, but not what — if anything — is there now).
+	s.Require().NotNil(bDisappearedHex, "B must have a record for (0,-1,1), where A was last seen")
+	s.Require().Equal(encounterv2pb.HexState_HEX_STATE_REMEMBERED, bDisappearedHex.GetState())
+	s.Require().Empty(bDisappearedHex.GetContents(),
+		"a remembered record must not claim char-A (or anything else) is still there")
 }
 
 // TestGetEncounter_ProjectsView verifies that GetEncounter returns the encounter
@@ -613,12 +637,14 @@ func (s *EncounterV2IntegrationSuite) collectStreamEvents(stream encounterv2pb.E
 
 // TestStreamEncounter_ReplaysInitialState verifies that on connect, StreamEncounter
 // emits a populated SnapshotDelivered (with Encounter.Id set) followed by one
-// EntityAppeared per entity visible to the connecting player, and at least one
-// GeometryRevealed event for the player's revealed hex set — all BEFORE any live
-// broker event.
+// HexKnowledgeChanged carrying every entity visible to the connecting player and
+// the player's revealed hex set — all BEFORE any live broker event.
 //
 // Seeding: alice and bob in mutual LoS (SightRange:10). Alice's replay delivers:
-// EntityAppeared(char-alice), EntityAppeared(char-bob), GeometryRevealed — 3 events.
+// SnapshotDelivered, then ONE HexKnowledgeChanged carrying char-alice + char-bob
+// in Entities and her revealed hexes (rpg-api-protos#197 collapsed the old
+// per-entity EntityAppeared + whole-set GeometryRevealed pair into this single
+// event — BuildReplayEvents' doc).
 func (s *EncounterV2IntegrationSuite) TestStreamEncounter_ReplaysInitialState() {
 	enc := tkenc.New(context.Background(), "enc-replay-1", s.srv.BrokerV2)
 	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
@@ -645,26 +671,21 @@ func (s *EncounterV2IntegrationSuite) TestStreamEncounter_ReplaysInitialState() 
 	s.Require().NotNil(sd.GetEncounter(), "SnapshotDelivered.Encounter must be non-nil")
 	s.Require().Equal("enc-replay-1", sd.GetEncounter().GetId(), "SnapshotDelivered.Encounter.Id must be set")
 
-	// Replay events follow immediately: 2 EntityAppeared (alice + bob) + 1 GeometryRevealed.
-	// Drain all 3 explicitly — they are queued server-side before any live event fires.
+	// The replay event follows immediately: one HexKnowledgeChanged — queued
+	// server-side before any live event fires.
+	ev, recvErr := streamA.Recv()
+	s.Require().NoError(recvErr, "expected the replay event")
+	hkc := ev.GetHexKnowledgeChanged()
+	s.Require().NotNil(hkc, "replay must be a HexKnowledgeChanged")
+	s.Require().NotEmpty(hkc.GetHexes(), "replay must carry alice's non-empty revealed hex set")
+
 	var sawBobAppeared bool
-	var sawGeometryRevealed bool
-	for i := 0; i < 3; i++ {
-		ev, recvErr := streamA.Recv()
-		s.Require().NoError(recvErr, "expected replay event %d", i+1)
-		if a := ev.GetEntityAppeared(); a != nil {
-			if a.GetEntity().GetId() == "char-bob" {
-				sawBobAppeared = true
-			}
-		}
-		if g := ev.GetGeometryRevealed(); g != nil {
-			s.Require().NotEmpty(g.GetHexes(), "GeometryRevealed must carry non-empty hex set")
-			sawGeometryRevealed = true
+	for _, e := range hkc.GetEntities() {
+		if e.GetId() == "char-bob" {
+			sawBobAppeared = true
 		}
 	}
-
-	s.Require().True(sawBobAppeared, "replay must include EntityAppeared for bob (visible to alice at SightRange:10)")
-	s.Require().True(sawGeometryRevealed, "replay must include GeometryRevealed for alice's revealed hexes")
+	s.Require().True(sawBobAppeared, "replay must disclose bob (visible to alice at SightRange:10)")
 }
 
 // TestStreamEncounter_LiveEventsDoNotDuplicateReplay verifies that a live MoveEntity
@@ -697,17 +718,21 @@ func (s *EncounterV2IntegrationSuite) TestStreamEncounter_LiveEventsDoNotDuplica
 	s.Require().NoError(err)
 	s.Require().NotNil(snap.GetSnapshotDelivered())
 
-	// Drain exactly 3 replay events (EntityAppeared alice, EntityAppeared bob, GeometryRevealed).
-	// Count EntityAppeared for bob to verify the replay includes exactly one.
+	// Drain the one replay event (rpg-api-protos#197 collapsed the old
+	// per-entity EntityAppeared burst into a single HexKnowledgeChanged).
+	// Count how many times bob's identity is disclosed in it — it must be
+	// exactly one, since Entities is a plain slice, not a set.
+	ev, recvErr := streamA.Recv()
+	s.Require().NoError(recvErr, "expected the replay event")
+	hkc := ev.GetHexKnowledgeChanged()
+	s.Require().NotNil(hkc, "replay must be a HexKnowledgeChanged")
 	replayBobAppearedCount := 0
-	for i := 0; i < 3; i++ {
-		ev, recvErr := streamA.Recv()
-		s.Require().NoError(recvErr, "expected replay event %d", i+1)
-		if a := ev.GetEntityAppeared(); a != nil && a.GetEntity().GetId() == "char-bob" {
+	for _, e := range hkc.GetEntities() {
+		if e.GetId() == "char-bob" {
 			replayBobAppearedCount++
 		}
 	}
-	s.Require().Equal(1, replayBobAppearedCount, "replay should deliver exactly one EntityAppeared for bob")
+	s.Require().Equal(1, replayBobAppearedCount, "replay should disclose bob exactly once")
 
 	// Bob moves one hex. Both A and B are within mutual LoS (SightRange:10).
 	// Bob was already visible to alice from replay, so this move should NOT
@@ -730,8 +755,12 @@ func (s *EncounterV2IntegrationSuite) TestStreamEncounter_LiveEventsDoNotDuplica
 		if m := ev.GetEntityMoved(); m != nil && m.GetEntityId() == "char-bob" {
 			sawLiveMoved = true
 		}
-		if a := ev.GetEntityAppeared(); a != nil && a.GetEntity().GetId() == "char-bob" {
-			extraBobAppeared++
+		if hkc := ev.GetHexKnowledgeChanged(); hkc != nil {
+			for _, e := range hkc.GetEntities() {
+				if e.GetId() == "char-bob" {
+					extraBobAppeared++
+				}
+			}
 		}
 	}
 
@@ -740,9 +769,10 @@ func (s *EncounterV2IntegrationSuite) TestStreamEncounter_LiveEventsDoNotDuplica
 
 	// The no-duplication property: bob was already visible to alice from the replay,
 	// so the toolkit's ProjectVisibilityTransition (LoS-crossing semantics) must NOT
-	// fire another EntityAppeared for bob from a move that stays within LoS.
+	// publish another EntityAppearedEvent (and therefore no HexKnowledgeChanged
+	// re-disclosing bob) for a move that stays within LoS.
 	s.Require().Zero(extraBobAppeared,
-		"live stream must not re-emit EntityAppeared for bob who was already visible from replay")
+		"live stream must not re-disclose bob, who was already visible from replay")
 }
 
 // TestInteract_OpenDoor_TwoPlayers exercises the Wave 2.7 OpenDoor flow
@@ -777,11 +807,13 @@ func (s *EncounterV2IntegrationSuite) TestInteract_OpenDoor_TwoPlayers() {
 	streamB, err := s.srv.EncounterClientV2.StreamEncounter(ctxB, &encounterv2pb.StreamEncounterRequest{EncounterId: "enc-door-1"})
 	s.Require().NoError(err)
 
-	// Drain the snapshot + replay events on each stream before firing Interact.
+	// Drain the snapshot + replay event on each stream before firing Interact.
 	// Replay shape per pat-v2-snapshot-replay-builder-pair: SnapshotDelivered +
-	// EntityAppeared per visible entity + GeometryRevealed for revealed hexes.
-	// Two visible entities (alice + bob) = 4 events total per stream.
-	for i := 0; i < 4; i++ {
+	// one HexKnowledgeChanged carrying every visible entity + revealed hexes
+	// (rpg-api-protos#197 collapsed the old per-entity EntityAppeared +
+	// whole-set GeometryRevealed pair into this single event) = 2 events
+	// total per stream.
+	for i := 0; i < 2; i++ {
 		_, recvErr := streamA.Recv()
 		s.Require().NoError(recvErr, "alice replay event %d", i+1)
 		_, recvErr = streamB.Recv()
@@ -799,7 +831,7 @@ func (s *EncounterV2IntegrationSuite) TestInteract_OpenDoor_TwoPlayers() {
 
 	// Both alice and bob must see the DoorOpened event (toolkit emits a
 	// per-viewer slice for every player that can see the door's hex). The
-	// HexRevealedEvent rides as a parallel envelope (GeometryRevealed) — we
+	// HexRevealedEvent rides as a parallel HexKnowledgeChanged envelope — we
 	// don't require its arrival here because some viewers may already have
 	// seen the door's neighbors and have an empty reveal slice. Cause is
 	// load-bearing; effect is opportunistic per viewer.
@@ -815,9 +847,10 @@ func (s *EncounterV2IntegrationSuite) TestInteract_OpenDoor_TwoPlayers() {
 	}
 	s.Require().NotNil(aDoor, "alice should receive DoorOpened (she opened it)")
 	s.Require().Equal("door-east", aDoor.GetDoorEntityId())
-	// Cause/effect split: revealed_hexes/walls ride on the parallel
-	// GeometryRevealed event, NOT on this envelope.
-	s.Require().Empty(aDoor.GetRevealedHexes(), "revealed_hexes belongs on the parallel GeometryRevealed event, not DoorOpened")
+	// Cause/effect split (rpg-api-protos#197): DoorOpened is now a pure
+	// notification carrying ONLY door_entity_id — no other field exists on
+	// the message to carry geometry. Reveal deltas ride on the parallel
+	// HexKnowledgeChanged event, never on this envelope.
 
 	var bDoor *encounterv2pb.DoorOpened
 	for _, ev := range postB {
@@ -828,7 +861,6 @@ func (s *EncounterV2IntegrationSuite) TestInteract_OpenDoor_TwoPlayers() {
 	}
 	s.Require().NotNil(bDoor, "bob should receive DoorOpened (door is in his LoS)")
 	s.Require().Equal("door-east", bDoor.GetDoorEntityId())
-	s.Require().Empty(bDoor.GetRevealedHexes(), "revealed_hexes belongs on the parallel GeometryRevealed event, not DoorOpened")
 
 	// Confirm the door is persisted as open after Interact. Use the ok-check
 	// pattern so a missing entry is distinguishable from a closed door (and
@@ -910,9 +942,9 @@ func (s *EncounterV2IntegrationSuite) TestInteract_LockedDoor_PromptAndResolve_T
 		&encounterv2pb.StreamEncounterRequest{EncounterId: encID})
 	s.Require().NoError(err)
 
-	// Drain replay (Snapshot + 2 EntityAppeared + 1 GeometryRevealed = 4 events
-	// per stream, matching TestInteract_OpenDoor_TwoPlayers).
-	for i := 0; i < 4; i++ {
+	// Drain replay (Snapshot + one HexKnowledgeChanged = 2 events per stream,
+	// matching TestInteract_OpenDoor_TwoPlayers).
+	for i := 0; i < 2; i++ {
 		_, recvErr := streamA.Recv()
 		s.Require().NoError(recvErr, "alice replay event %d", i+1)
 		_, recvErr = streamB.Recv()
@@ -1026,7 +1058,7 @@ func (s *EncounterV2IntegrationSuite) TestInteract_LockedDoor_FailedRoll_NoEvent
 	streamB, err := s.srv.EncounterClientV2.StreamEncounter(ctxB,
 		&encounterv2pb.StreamEncounterRequest{EncounterId: encID})
 	s.Require().NoError(err)
-	for i := 0; i < 4; i++ {
+	for i := 0; i < 2; i++ {
 		_, recvErr := streamA.Recv()
 		s.Require().NoError(recvErr, "alice replay event %d", i+1)
 		_, recvErr = streamB.Recv()
@@ -1786,27 +1818,25 @@ func (s *eventSink) hasTurnEndedFor(entityID string) bool {
 }
 
 // hasReplayComplete reports whether the sink has observed all expected
-// replay events: SnapshotDelivered + at least one EntityAppeared + at least
-// one GeometryRevealed. Replay events are sent synchronously by the handler
-// before it enters the live forward loop; once all three kinds are present
-// the replay phase is guaranteed complete (per the BuildReplayEvents output
-// shape — see translate.go). Used by tests as the watermark signal.
+// replay events: SnapshotDelivered + the HexKnowledgeChanged replay envelope
+// (rpg-api-protos#197 collapsed the old per-entity EntityAppeared + whole-set
+// GeometryRevealed pair into this one event — BuildReplayEvents' doc).
+// Replay events are sent synchronously by the handler before it enters the
+// live forward loop; once both kinds are present the replay phase is
+// guaranteed complete. Used by tests as the watermark signal.
 func (s *eventSink) hasReplayComplete() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	var sawSnap, sawAppeared, sawGeo bool
+	var sawSnap, sawKnowledge bool
 	for _, ev := range s.events {
 		if ev.GetSnapshotDelivered() != nil {
 			sawSnap = true
 		}
-		if ev.GetEntityAppeared() != nil {
-			sawAppeared = true
-		}
-		if ev.GetGeometryRevealed() != nil {
-			sawGeo = true
+		if ev.GetHexKnowledgeChanged() != nil {
+			sawKnowledge = true
 		}
 	}
-	return sawSnap && sawAppeared && sawGeo
+	return sawSnap && sawKnowledge
 }
 
 // hasEntityDiedFor reports whether the sink has observed an EntityDied

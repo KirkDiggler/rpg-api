@@ -2,19 +2,21 @@ package encounter
 
 // translate_hex_revealed_internal_test.go — rpg-api#687: white-box tests
 // for translateHexRevealedEventWithData, the data-aware translator for the
-// LIVE incremental GeometryRevealed event. These live in package encounter
-// (not encounter_test) so they can call the unexported function directly —
-// mirroring hydrate_players_test.go's white-box precedent for
+// LIVE incremental HexKnowledgeChanged event (rpg-api-protos#197 retired the
+// GeometryRevealed message this used to build). These live in package
+// encounter (not encounter_test) so they can call the unexported function
+// directly — mirroring hydrate_players_test.go's white-box precedent for
 // translateEntityAppearedEventWithData.
 //
 // Why this exists alongside ProjectFor's snapshot-path zone_id fix: the
-// connect-time snapshot (ProjectFor) and the live per-move GeometryRevealed
-// event are two SEPARATE hex-projection paths (translateHexRevealedEvent
-// only has the toolkit event in hand, not the persisted encounter.Data) —
-// #687's Done bar ("every revealed hex carrying the right zone_id") covers
-// hexes revealed AFTER connect via movement, not just the ones present at
-// connect time. Without this, a hex a player reveals mid-session would
-// carry zone_id="" forever until their next reconnect.
+// connect-time snapshot (ProjectFor) and the live per-move
+// HexKnowledgeChanged event are two SEPARATE hex-projection paths
+// (translateHexRevealedEvent only has the toolkit event in hand, not the
+// persisted encounter.Data) — #687's Done bar ("every revealed hex carrying
+// the right zone_id") covers hexes revealed AFTER connect via movement, not
+// just the ones present at connect time. Without this, a hex a player
+// reveals mid-session would carry zone_id="" forever until their next
+// reconnect.
 
 import (
 	"testing"
@@ -59,12 +61,12 @@ func (s *TranslateHexRevealedInternalSuite) TestTranslateHexRevealedEventWithDat
 	out, err := translateHexRevealedEventWithData(evt, "player-alice", s.now, data)
 	s.Require().NoError(err)
 
-	revealed := out.GetGeometryRevealed()
-	s.Require().NotNil(revealed)
-	s.Require().Len(revealed.GetHexes(), 2)
+	changed := out.GetHexKnowledgeChanged()
+	s.Require().NotNil(changed)
+	s.Require().Len(changed.GetHexes(), 2)
 
 	byPos := make(map[[3]int32]string)
-	for _, h := range revealed.GetHexes() {
+	for _, h := range changed.GetHexes() {
 		byPos[[3]int32{h.GetPosition().GetX(), h.GetPosition().GetY(), h.GetPosition().GetZ()}] = h.GetZoneId()
 	}
 	s.Require().Equal("chamber-2", byPos[[3]int32{3, -3, 0}], "chamber-2's hex must carry its region id")
@@ -83,9 +85,9 @@ func (s *TranslateHexRevealedInternalSuite) TestTranslateHexRevealedEventWithDat
 
 	res, err := translateHexRevealedEventWithData(evt, "player-alice", s.now, nil)
 	s.Require().NoError(err)
-	revealed := res.GetGeometryRevealed()
-	s.Require().Len(revealed.GetHexes(), 1)
-	s.Require().Empty(revealed.GetHexes()[0].GetZoneId())
+	changed := res.GetHexKnowledgeChanged()
+	s.Require().Len(changed.GetHexes(), 1)
+	s.Require().Empty(changed.GetHexes()[0].GetZoneId())
 }
 
 // TestTranslateHexRevealedEventWithData_ViewerNotInPerPlayer_ErrViewerSawNothing

@@ -104,31 +104,11 @@ func ProjectFor(
 
 	snap := enc.SnapshotFor(viewer)
 
-	// Build the Space from the viewer's revealed hexes. Hexes are sorted by
-	// (Q,R,S) so the wire output is deterministic across Go map iterations.
-	keys := make([]core.Hex, 0, len(snap.RevealedHexes))
-	for h := range snap.RevealedHexes {
-		keys = append(keys, h)
-	}
-	sort.Slice(keys, func(i, j int) bool {
-		if keys[i].Q != keys[j].Q {
-			return keys[i].Q < keys[j].Q
-		}
-		if keys[i].R != keys[j].R {
-			return keys[i].R < keys[j].R
-		}
-		return keys[i].S < keys[j].S
-	})
-	hexes := make([]*encounterv2pb.Hex, 0, len(keys))
-	for _, h := range keys {
-		// zoneID is a pure SpaceData.RegionAt lookup (rpg-api#687) — exact
-		// Hexes-set membership, never derived from adjacency/geometry.
-		// RegionAt is nil-receiver safe, so this is correct whether
-		// data.Space is nil (no room) or has an empty Regions slice (no
-		// regions tagged): both fall back to "" with no invented default.
-		zoneID, _ := data.Space.RegionAt(h)
-		hexes = append(hexes, &encounterv2pb.Hex{Position: HexToPosition(h), ZoneId: zoneID})
-	}
+	// The Space's hex records are built AFTER the entity pass below, because a
+	// record carries its own occupants and those must come from the same pass
+	// that decides which entities are disclosed. Two independent filters could
+	// disagree and leave a placement pointing at an entity the viewer was never
+	// told about; one pass cannot.
 
 	// Build the set of hexes currently visible to the viewer so we can
 	// include other players who are visible right now (not just ever-revealed).
@@ -151,12 +131,21 @@ func ProjectFor(
 	})
 
 	var entities []*encounterv2pb.Entity
+	// placements records WHERE each disclosed entity is. Position left Entity
+	// with rpg-api-protos#197: the hex states occupancy, so a second copy on
+	// the entity could only agree redundantly or disagree dangerously.
+	placements := make(map[core.Hex][]Placement)
+	disclose := func(at core.Hex, id core.EntityID, e *encounterv2pb.Entity) {
+		entities = append(entities, e)
+		placements[at] = append(placements[at], Placement{EntityID: id})
+	}
+
 	for _, pid := range playerIDs {
 		pd := data.Players[pid]
 		if pid == viewer {
 			// Viewer always sees their own entity.
 			name, classRef, equip := characterDataFor(ctx, charRepo, string(pd.EntityID))
-			entities = append(entities, playerEntity(pd, snap.Position, name, classRef, equip))
+			disclose(snap.Position, pd.EntityID, playerEntity(pd, name, classRef, equip))
 			continue
 		}
 		if pd.View == nil {
@@ -164,7 +153,7 @@ func ProjectFor(
 		}
 		if visibleNow != nil && visibleNow.Has(pd.View.Position) {
 			name, classRef, equip := characterDataFor(ctx, charRepo, string(pd.EntityID))
-			entities = append(entities, playerEntity(pd, pd.View.Position, name, classRef, equip))
+			disclose(pd.View.Position, pd.EntityID, playerEntity(pd, name, classRef, equip))
 		}
 	}
 
@@ -183,7 +172,7 @@ func ProjectFor(
 		if visibleNow == nil || !visibleNow.Has(m.Position) {
 			continue
 		}
-		entities = append(entities, monsterEntity(m))
+		disclose(m.Position, m.ID, monsterEntity(m))
 	}
 
 	// Static obstacles are sticky exploration data, not currently-visible
@@ -201,8 +190,20 @@ func ProjectFor(
 			return string(obstacles[i].ID) < string(obstacles[j].ID)
 		})
 		for _, obstacle := range obstacles {
-			entities = append(entities, obstacleEntity(obstacle))
+			disclose(obstacle.Position, obstacle.ID, obstacleEntity(obstacle))
 		}
+	}
+
+	// Now the knowledge pass. Everything the viewer knows comes from one
+	// interface, and rpg-api reads no world truth to fill a gap — see
+	// knowledge.go for why that seam exists and knowledge_adapter.go for the
+	// stand-in that fills it until rpg-toolkit#851 lands.
+	knowledge := &toolkitKnowledge{
+		data:       data,
+		revealed:   snap.RevealedHexes,
+		visible:    visibleNow,
+		placements: placements,
+		edges:      edgesByHex(data),
 	}
 
 	return &encounterv2pb.Encounter{
@@ -210,13 +211,114 @@ func ProjectFor(
 		Mode:      encounterModeToProto(data.Mode),
 		TurnState: buildTurnState(data, actorTurnState),
 		Space: &encounterv2pb.Space{
-			Hexes:    hexes,
-			Walls:    append(wallsToProto(data.Space), doorWallsToProto(data)...),
+			Hexes:    hexRecordsToProto(knowledge.KnownHexes(viewer)),
 			Entities: entities,
 			Zones:    zonesToProto(data.Space),
 			Theme:    themeToProto(data.Space),
 		},
 	}, nil
+}
+
+// hexRecordsToProto is the one conversion point from viewer knowledge to the
+// wire. Records are sorted by (Q,R,S) so output is deterministic across Go's
+// randomized map iteration.
+func hexRecordsToProto(known map[core.Hex]HexObservation) []*encounterv2pb.HexRecord {
+	obs := make([]HexObservation, 0, len(known))
+	for _, o := range known {
+		obs = append(obs, o)
+	}
+	sortObservations(obs)
+
+	out := make([]*encounterv2pb.HexRecord, 0, len(obs))
+	for _, o := range obs {
+		out = append(out, observationToProto(o))
+	}
+	return out
+}
+
+func observationToProto(o HexObservation) *encounterv2pb.HexRecord {
+	rec := &encounterv2pb.HexRecord{
+		Position: HexToPosition(o.Position),
+		State:    knowledgeStateToProto(o.State),
+		Terrain:  terrainToProto(o.Terrain),
+		ZoneId:   o.ZoneID,
+	}
+	for _, e := range o.Edges {
+		if w := edgeToProto(e); w != nil {
+			rec.Edges = append(rec.Edges, w)
+		}
+	}
+	// Contents is TOTAL on a visible record: an empty list is a positive claim
+	// that the hex is empty, which is what deletes a remembered occupant on
+	// re-sight without a forget message.
+	for _, p := range o.Contents {
+		rec.Contents = append(rec.Contents, &encounterv2pb.Placement{
+			EntityId: string(p.EntityID),
+			Facing:   uint32(p.Facing), //nolint:gosec // hex direction index 0-5
+		})
+	}
+	return rec
+}
+
+func knowledgeStateToProto(s KnowledgeState) encounterv2pb.HexState {
+	switch s {
+	case KnowledgeStateVisible:
+		return encounterv2pb.HexState_HEX_STATE_VISIBLE
+	case KnowledgeStateRemembered:
+		return encounterv2pb.HexState_HEX_STATE_REMEMBERED
+	case KnowledgeStateUnspecified:
+		return encounterv2pb.HexState_HEX_STATE_UNSPECIFIED
+	default:
+		return encounterv2pb.HexState_HEX_STATE_UNSPECIFIED
+	}
+}
+
+func terrainToProto(t TerrainKind) encounterv2pb.TerrainType {
+	switch t {
+	case TerrainKindFloor:
+		return encounterv2pb.TerrainType_TERRAIN_TYPE_FLOOR
+	case TerrainKindRough:
+		return encounterv2pb.TerrainType_TERRAIN_TYPE_ROUGH
+	case TerrainKindDifficult:
+		return encounterv2pb.TerrainType_TERRAIN_TYPE_DIFFICULT
+	case TerrainKindVoid:
+		return encounterv2pb.TerrainType_TERRAIN_TYPE_VOID
+	case TerrainKindWater:
+		return encounterv2pb.TerrainType_TERRAIN_TYPE_WATER
+	case TerrainKindUnspecified:
+		return encounterv2pb.TerrainType_TERRAIN_TYPE_UNSPECIFIED
+	default:
+		return encounterv2pb.TerrainType_TERRAIN_TYPE_UNSPECIFIED
+	}
+}
+
+// edgeToProto maps an observed barrier onto the wire. Doors keep their id so a
+// click can become an InteractRequest; a segment that blocks nothing is not a
+// wall worth sending, matching wallKindFor's ok=false case.
+func edgeToProto(e Edge) *encounterv2pb.Wall {
+	w := &encounterv2pb.Wall{
+		From: HexToPosition(e.From),
+		To:   HexToPosition(e.To),
+	}
+	if e.DoorID != "" {
+		id := e.DoorID
+		w.Id = &id
+		switch {
+		case e.DoorOpen:
+			w.Kind = encounterv2pb.WallKind_WALL_KIND_DOOR_OPEN
+		case e.DoorLocked:
+			w.Kind = encounterv2pb.WallKind_WALL_KIND_DOOR_LOCKED
+		default:
+			w.Kind = encounterv2pb.WallKind_WALL_KIND_DOOR_CLOSED
+		}
+		return w
+	}
+	kind, ok := wallKindFor(e.BlocksMovement, e.BlocksLoS)
+	if !ok {
+		return nil
+	}
+	w.Kind = kind
+	return w
 }
 
 // zonesToProto projects SpaceData.Regions onto the wire Zone list (rpg-
@@ -230,7 +332,7 @@ func ProjectFor(
 // nil space or an empty Regions slice (single-room InitRoom spaces, or any
 // InitDungeon call that never tags regions) returns nil — the existing
 // undifferentiated fallback, not an empty-but-non-nil slice, matching
-// wallsToProto's nil-space convention just above.
+// themeToProto's nil-space convention just below.
 func zonesToProto(space *tkenc.SpaceData) []*encounterv2pb.Zone {
 	if space == nil || len(space.Regions) == 0 {
 		return nil
@@ -257,91 +359,13 @@ func themeToProto(space *tkenc.SpaceData) string {
 	return space.Theme
 }
 
-// wallsToProto converts an encounter's persisted room snapshot (rpg-toolkit
-// #757/#759's SpaceData) into the wire Wall list. Wave 1 wall visibility is
-// whole-room (design doc: "no per-viewer wall reveal yet"), so every viewer's
-// snapshot carries every wall unconditionally — unlike Hexes/Entities above,
-// this is NOT gated by RevealedHexes/visibleNow. space is nil for encounters
-// with no room (InitRoom never called — pre-wave-1 fixtures, non-spatial
-// encounters), which projects to an empty Walls list.
-func wallsToProto(space *tkenc.SpaceData) []*encounterv2pb.Wall {
-	if space == nil {
-		return nil
-	}
-	walls := make([]*encounterv2pb.Wall, 0, len(space.Walls))
-	for _, w := range space.Walls {
-		kind, ok := wallKindFor(w.BlocksMovement, w.BlocksLoS)
-		if !ok {
-			continue
-		}
-		// Two shapes coexist on the wire (SpaceData.Walls doc, rpg-toolkit#834):
-		// wave-1 interior/connector walls persist one degenerate (Start == End)
-		// segment per discretized wall hex, so From/To convert the same cube
-		// coordinate; InitDungeon's outer-perimeter segments (rpg-toolkit#834)
-		// persist Start != End (exactly one hex step apart, Start real floor,
-		// End just outside the room), which this passthrough projects as a
-		// distinct non-degenerate From/To pair with no extra handling needed —
-		// see TestProjectFor_CryptFixture_ProjectsPerimeterEdgesAsSolidAndDoorsUnchanged.
-		from := HexToPosition(core.HexFromCube(w.Start))
-		to := HexToPosition(core.HexFromCube(w.End))
-		walls = append(walls, &encounterv2pb.Wall{From: from, To: to, Kind: kind})
-	}
-	return walls
-}
-
-// doorWallsToProto projects every door in the encounter onto the wire as a
-// Wall carrying its entity id (rpg-api-protos#186's additive Wall.id — The
-// Dungeon wave 2 Slice 2, rpg-api#676): the design doc's crux resolution
-// (§Crux) makes DoorData the single source of door truth, with the wall
-// kind/edge as its PROJECTED geometry, never a second source of truth.
-// Like wallsToProto, this is unconditional (whole-room wall visibility,
-// wave 1's "no per-viewer wall reveal yet") — every viewer's snapshot
-// carries every door regardless of RevealedHexes/visibleNow.
-//
-// The passage edge (design doc §Q2, the web-confirmed 6-door-pair
-// multiplicity constraint on an isolated degenerate wall cell): From is
-// the door's own cell; To is doorPassageNeighbor's pick — the one
-// designated passage edge, so the renderer draws a single door frame on
-// that edge instead of an ambiguous isolated-hex wall.
-//
-// Doors are sorted by id for deterministic wire output across Go map
-// iterations (data.Doors is a map), matching this file's Players/Monsters
-// sort convention above.
-func doorWallsToProto(data *tkenc.Data) []*encounterv2pb.Wall {
-	if len(data.Doors) == 0 {
-		return nil
-	}
-	ids := make([]core.EntityID, 0, len(data.Doors))
-	for id := range data.Doors {
-		ids = append(ids, id)
-	}
-	sort.Slice(ids, func(i, j int) bool { return string(ids[i]) < string(ids[j]) })
-
-	walls := make([]*encounterv2pb.Wall, 0, len(ids))
-	for _, id := range ids {
-		door := data.Doors[id]
-
-		kind := encounterv2pb.WallKind_WALL_KIND_DOOR_CLOSED
-		switch {
-		case door.Open:
-			kind = encounterv2pb.WallKind_WALL_KIND_DOOR_OPEN
-		case door.Locked:
-			kind = encounterv2pb.WallKind_WALL_KIND_DOOR_LOCKED
-		}
-		doorID := string(id)
-		walls = append(walls, &encounterv2pb.Wall{
-			From: HexToPosition(door.Position),
-			To:   HexToPosition(doorPassageNeighbor(data.Space, door)),
-			Kind: kind,
-			Id:   &doorID,
-		})
-	}
-	return walls
-}
-
 // doorPassageNeighbor returns the door's designated passage-edge neighbor
-// (see doorWallsToProto's doc): the door's own cell belongs to NEITHER
-// region (KNOWN TRAP flagged by rpg-toolkit#806's gate note and mirrored
+// (design doc §Q2, the web-confirmed 6-door-pair multiplicity constraint on
+// an isolated degenerate wall cell — a door edge's From is the door's own
+// cell, To is this function's pick, so the renderer draws a single door
+// frame on that edge instead of an ambiguous isolated-hex wall):
+// the door's own cell belongs to NEITHER region (KNOWN TRAP flagged by
+// rpg-toolkit#806's gate note and mirrored
 // in start_encounter.go's chamberEntryAnchor — RegionAt(door.Position) is
 // always ("", false)), so this walks perception.HexNeighbors (the
 // toolkit's canonical six-neighbor set) and returns the first neighbor
@@ -473,7 +497,6 @@ func buildTurnState(data *tkenc.Data, actorTurnState *tkenc.ActorTurnState) *enc
 // caller needs it.
 func playerEntity(
 	pd *tkenc.PlayerData,
-	pos core.Hex,
 	displayName string,
 	classRef *encounterv2pb.Ref,
 	equip *encounterv2pb.CharacterData,
@@ -491,7 +514,6 @@ func playerEntity(
 	}
 	e := &encounterv2pb.Entity{
 		Id:          string(pd.EntityID),
-		Position:    HexToPosition(pos),
 		Type:        encounterv2pb.EntityType_ENTITY_TYPE_CHARACTER,
 		DisplayName: displayName,
 		Hp: &encounterv2pb.HitPoints{
@@ -638,9 +660,8 @@ func statusEffectsFrom(activeConditions []string) []*encounterv2pb.StatusEffect 
 // client needs to do that lookup itself.
 func monsterEntity(m *tkenc.MonsterData) *encounterv2pb.Entity {
 	me := &encounterv2pb.Entity{
-		Id:       string(m.ID),
-		Position: HexToPosition(m.Position),
-		Type:     encounterv2pb.EntityType_ENTITY_TYPE_MONSTER,
+		Id:   string(m.ID),
+		Type: encounterv2pb.EntityType_ENTITY_TYPE_MONSTER,
 		Hp: &encounterv2pb.HitPoints{
 			Current: int32(m.HP),
 			Max:     int32(m.MaxHP),
@@ -674,9 +695,8 @@ func monsterRefFor(toolkitMonsterRef string) *encounterv2pb.Ref {
 
 func obstacleEntity(obstacle tkenc.ObstacleData) *encounterv2pb.Entity {
 	return &encounterv2pb.Entity{
-		Id:       string(obstacle.ID),
-		Position: HexToPosition(obstacle.Position),
-		Type:     encounterv2pb.EntityType_ENTITY_TYPE_OBSTACLE,
+		Id:   string(obstacle.ID),
+		Type: encounterv2pb.EntityType_ENTITY_TYPE_OBSTACLE,
 		Data: &encounterv2pb.Entity_Obstacle{
 			Obstacle: &encounterv2pb.ObstacleData{
 				ObstacleRef:       obstacleRefFor(obstacle.Ref),
