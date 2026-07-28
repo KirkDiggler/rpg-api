@@ -845,10 +845,57 @@ func translateEntityDisappearedEvent(e *events.EntityDisappearedEvent, viewer co
 //     the single authorization filter for "who is here and does this viewer
 //     get told" — reused here rather than re-derived, so this can never
 //     quietly drift from what a fresh snapshot would show for the same hex.
-//   - Hex no longer visible: emit HEX_STATE_REMEMBERED with empty contents,
-//     exactly as the bare variant does — see its doc for why contents stays
-//     empty (a Remembered record cannot honestly claim who, if anyone, is
-//     there now).
+//   - Hex no longer visible: emit HEX_STATE_REMEMBERED carrying the viewer's
+//     own FROZEN observation for lastKnown (Contents/Edges/ZoneID/Terrain),
+//     not an empty shell (playtest follow-up: Kirk watched a monster VANISH
+//     the instant it left sight, then reappear as a proper shadow one step
+//     later — the empty shell replaced the client's memory with nothing,
+//     and the next full move restatement was what actually restored it).
+//     rpg-toolkit#851 is what makes this honest now: perception.View.Memory
+//     persists the FULL observation from the last time this exact hex was
+//     genuinely visible (written by the toolkit's own refreshObservations,
+//     the same authoritative source knownHexesToProto/hexRecordsToProto
+//     trust elsewhere in this file) — a Remembered record IS supposed to
+//     carry that frozen truth in full, not assert emptiness. Before #851
+//     there was nowhere honest to read it from, which is why the shape
+//     below did not exist yet.
+//
+// No entry in memory for lastKnown degrades to the same empty shell as
+// before #851 (State: Remembered, everything else zero) rather than falling
+// back to any CURRENT world read: this function's whole job on this branch
+// is to report what the viewer's own knowledge froze at, and live data is
+// not that — reaching for it here would be the exact re-introduction of a
+// stale/wrong-moment read this file's other fixes exist to close. Should
+// not be reachable in the live stream: lastKnown is the viewer's own
+// last-seen hex for this entity (e.PerPlayer[viewer]), and the toolkit
+// writes a Memory entry for every hex a viewer's refreshObservations pass
+// ever touches — so by the time this event fires, something was seen there,
+// which means it was written. Kept as a defensive fallback (a nil data, a
+// viewer with no persisted View, or a genuinely absent entry) rather than a
+// panic or a dropped event, exactly like the rest of this file's degrade
+// paths.
+//
+// Entities: this envelope carries no Entities at all before this fix — the
+// exact same fail-closed-drop bug the move restatement had, for the exact
+// same reason (a first-ever sighting arriving with a placement but no
+// matching identity). Both branches below build Entities from whichever ids
+// their OWN Contents references, through entityForID — the same
+// authorization primitive translateEntityAppearedEventWithData already uses
+// for its one entity, not disclosedEntities: disclosedEntities' visibleNow
+// gate answers "is this CURRENTLY visible," which is the wrong question for
+// either branch here — the visible-branch's Contents already comes from
+// disclosedEntities' own placements (so those ids are visibleNow-authorized
+// by construction), and the remembered-branch's Contents is a FROZEN past
+// observation, not a current one, so gating its disclosure on current
+// visibility would simply authorize nothing and reopen the bug. entityForID
+// performs the real check instead: it looks the id up against data's actual
+// current Players/Monsters/Space.Obstacles and returns nil for anything not
+// found there, so a stale/wrong id in a frozen Contents still cannot
+// manufacture an Entity out of nothing — referenced-only AND
+// authorization-gated, never placement-trusting. A found-but-since-changed
+// entity (rare: died or was removed the same tick) degrades to a bare
+// {Id: id} exactly as translateEntityAppearedEventWithData's own defensive
+// fallback does, so the placement still resolves rather than being dropped.
 //
 // data is loaded fresh by the caller (translateForStream), mirroring this
 // package's other WithData branches. broker is required to rehydrate a live
@@ -876,20 +923,28 @@ func translateEntityDisappearedEventWithData(
 		Position: lastKnown,
 		State:    perception.KnowledgeStateRemembered,
 	}
+	var entities []*encounterv2pb.Entity
 
-	// Edges/ZoneID: read from the viewer's own toolkit-persisted Memory —
-	// static geometry, unaffected by the toolkit's confirmed pass-through
-	// Contents bug (see translateEntityAppearedEventWithData's doc). Contents
-	// stays sourced from disclosedEntities for the same reason that function
-	// does: it rebuilds placements from CURRENT stored positions, which that
-	// bug does not touch.
 	if snap, visibleNow, ok := viewerVisibility(ctx, data, viewer, broker); ok && visibleNow.Has(lastKnown) {
+		// Edges/ZoneID: read from the viewer's own toolkit-persisted Memory —
+		// static geometry, unaffected by the toolkit's confirmed pass-through
+		// Contents bug (see translateEntityAppearedEventWithData's doc). Contents
+		// stays sourced from disclosedEntities for the same reason that function
+		// does: it rebuilds placements from CURRENT stored positions, which that
+		// bug does not touch.
 		zoneID, _ := data.Space.RegionAt(lastKnown)
 		_, placements := disclosedEntities(ctx, charRepo, data, viewer, snap, visibleNow)
 		obs.State = perception.KnowledgeStateVisible
 		obs.ZoneID = zoneID
 		obs.Edges = viewerMemory(data, viewer)[lastKnown].Edges
 		obs.Contents = placements[lastKnown]
+		entities = entitiesForPlacements(ctx, charRepo, data, obs.Contents)
+	} else if frozen, hasMemory := viewerMemory(data, viewer)[lastKnown]; hasMemory {
+		obs.Terrain = frozen.Terrain
+		obs.ZoneID = frozen.ZoneID
+		obs.Edges = frozen.Edges
+		obs.Contents = frozen.Contents
+		entities = entitiesForPlacements(ctx, charRepo, data, obs.Contents)
 	}
 
 	return &encounterv2pb.EncounterEvent{
@@ -897,10 +952,34 @@ func translateEntityDisappearedEventWithData(
 		Timestamp: timestamppb.New(now),
 		Event: &encounterv2pb.EncounterEvent_HexKnowledgeChanged{
 			HexKnowledgeChanged: &encounterv2pb.HexKnowledgeChanged{
-				Hexes: []*encounterv2pb.HexRecord{observationToProto(obs)},
+				Hexes:    []*encounterv2pb.HexRecord{observationToProto(obs)},
+				Entities: entities,
 			},
 		},
 	}, nil
+}
+
+// entitiesForPlacements builds a wire Entity for every id placements
+// references, via entityForID — see translateEntityDisappearedEventWithData's
+// doc for why that lookup (not disclosedEntities) is the right authorization
+// primitive for both of its call sites. A found-but-since-changed id (rare:
+// removed from data the same tick) degrades to a bare {Id: id}, mirroring
+// translateEntityAppearedEventWithData's own defensive fallback, so the
+// placement this id is already carrying still resolves rather than being
+// silently dropped — the id itself is never fabricated, only the enrichment
+// is allowed to be missing.
+func entitiesForPlacements(
+	ctx context.Context, charRepo characterrepo.Repository, data *encounter.Data, placements []perception.Placement,
+) []*encounterv2pb.Entity {
+	out := make([]*encounterv2pb.Entity, 0, len(placements))
+	for _, p := range placements {
+		entity := entityForID(ctx, charRepo, data, p.EntityID)
+		if entity == nil {
+			entity = &encounterv2pb.Entity{Id: string(p.EntityID)}
+		}
+		out = append(out, entity)
+	}
+	return out
 }
 
 // viewerVisibility loads data into a live *encounter.Encounter and computes
