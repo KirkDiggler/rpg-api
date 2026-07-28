@@ -34,12 +34,14 @@ package encounter
 // reproduce that same origin-hex expectation and are what caught it.
 
 import (
+	"context"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/suite"
 
 	encounterv2pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/encounter"
+	"github.com/KirkDiggler/rpg-toolkit/encounter"
 	"github.com/KirkDiggler/rpg-toolkit/encounter/core"
 	"github.com/KirkDiggler/rpg-toolkit/encounter/events"
 	"github.com/KirkDiggler/rpg-toolkit/encounter/perception"
@@ -85,7 +87,7 @@ func (s *TranslateMoveInternalSuite) TestTranslateMoveEventWithData_RestatesFrom
 		viewer, moverKnownHexes,
 	)
 
-	out, err := translateMoveEventWithData(evt, viewer, s.now)
+	out, err := translateMoveEventWithData(context.Background(), nil, nil, evt, viewer, s.now)
 	s.Require().NoError(err)
 
 	var moved *encounterv2pb.EntityMoved
@@ -143,7 +145,7 @@ func (s *TranslateMoveInternalSuite) TestTranslateMoveEventWithData_OtherViewer_
 		"player-A", []events.KnownHex{{Position: dest, State: int(perception.KnowledgeStateVisible)}},
 	)
 
-	out, err := translateMoveEventWithData(evt, "player-B", s.now)
+	out, err := translateMoveEventWithData(context.Background(), nil, nil, evt, "player-B", s.now)
 	s.Require().NoError(err)
 	s.Require().Len(out, 1, "a bystander viewer gets only the bare EntityMoved envelope")
 	s.Require().NotNil(out[0].GetEntityMoved())
@@ -157,8 +159,96 @@ func (s *TranslateMoveInternalSuite) TestTranslateMoveEventWithData_OtherViewer_
 // seat when MoverPlayerID is set).
 func (s *TranslateMoveInternalSuite) TestTranslateMoveEventWithData_ViewerNotInPerPlayer_ErrViewerSawNothing() {
 	evt := events.NewMoveEvent("enc-1", uint64(1), "char-A", core.Hex{}, nil, nil, "", nil)
-	_, err := translateMoveEventWithData(evt, "player-X", s.now)
+	_, err := translateMoveEventWithData(context.Background(), nil, nil, evt, "player-X", s.now)
 	s.Require().ErrorIs(err, ErrViewerSawNothing)
+}
+
+// TestTranslateMoveEventWithData_NewlyVisibleMonster_DisclosesEntity is the
+// playtest-follow-up regression test (same fix as #737): Kirk opened a door
+// onto a monster and never saw it — the restatement placed it (Contents
+// carried its id) but disclosed no identity for it, and the client
+// deliberately drops any placement whose entity_id it has never been told
+// about. A viewer who has NEVER previously seen this monster must receive
+// its identity in THIS SAME envelope's Entities, not just its placement in
+// Hexes' Contents, or the placement cannot resolve.
+func (s *TranslateMoveInternalSuite) TestTranslateMoveEventWithData_NewlyVisibleMonster_DisclosesEntity() {
+	origin := core.Hex{Q: 0, R: 0, S: 0}
+	doorHex := core.Hex{Q: 1, R: -1, S: 0}
+	const mover = core.EntityID("char-A")
+	const viewer = core.PlayerID("player-A")
+	const monster = core.EntityID("skeleton-1")
+
+	data := encounter.NewData("enc-1")
+	data.Players[viewer] = &encounter.PlayerData{ID: viewer, EntityID: mover, HP: 16, MaxHP: 16}
+	data.Monsters[monster] = &encounter.MonsterData{
+		ID: monster, Position: doorHex, HP: 11, MaxHP: 11, AC: 13,
+		MonsterRef: "dnd5e:monsters:skeleton",
+	}
+
+	// The mover opens the door and steps through: the door hex flips
+	// VISIBLE with the skeleton in Contents, all in this SAME restatement —
+	// exactly the "open door onto a monster" case from the playtest.
+	moverKnownHexes := []events.KnownHex{
+		{Position: origin, State: int(perception.KnowledgeStateRemembered)},
+		{
+			Position: doorHex,
+			State:    int(perception.KnowledgeStateVisible),
+			Contents: []events.KnownHexPlacement{
+				{EntityID: mover},
+				{EntityID: monster},
+			},
+		},
+	}
+
+	evt := events.NewMoveEvent(
+		"enc-1", uint64(1), mover, origin,
+		[]core.Hex{doorHex},
+		map[core.PlayerID]events.MovePlayerSlice{
+			viewer: {SeenSegments: []core.Hex{doorHex}},
+		},
+		viewer, moverKnownHexes,
+	)
+
+	out, err := translateMoveEventWithData(context.Background(), nil, data, evt, viewer, s.now)
+	s.Require().NoError(err)
+
+	var changed *encounterv2pb.HexKnowledgeChanged
+	for _, e := range out {
+		if hk := e.GetHexKnowledgeChanged(); hk != nil {
+			changed = hk
+		}
+	}
+	s.Require().NotNil(changed)
+
+	// The placement itself must still be there (unchanged by this fix)...
+	var doorRecord *encounterv2pb.HexRecord
+	for _, h := range changed.GetHexes() {
+		if h.GetPosition().GetX() == 1 && h.GetPosition().GetY() == -1 && h.GetPosition().GetZ() == 0 {
+			doorRecord = h
+		}
+	}
+	s.Require().NotNil(doorRecord)
+	var placesMonster bool
+	for _, p := range doorRecord.GetContents() {
+		if p.GetEntityId() == string(monster) {
+			placesMonster = true
+		}
+	}
+	s.Require().True(placesMonster, "the door hex must place the monster (this part already worked)")
+
+	// ...but the placement is worthless without a matching Entities record:
+	// this is the bug. A viewer who has never seen "skeleton-1" before needs
+	// its identity delivered in THIS envelope for the placement to resolve.
+	var disclosed *encounterv2pb.Entity
+	for _, e := range changed.GetEntities() {
+		if e.GetId() == string(monster) {
+			disclosed = e
+		}
+	}
+	s.Require().NotNil(disclosed,
+		"a monster placed for the first time via this restatement must be disclosed in Entities, "+
+			"or the client drops the placement and never renders it")
+	s.Require().Equal(encounterv2pb.EntityType_ENTITY_TYPE_MONSTER, disclosed.GetType())
 }
 
 func TestTranslateMoveInternalSuite(t *testing.T) {

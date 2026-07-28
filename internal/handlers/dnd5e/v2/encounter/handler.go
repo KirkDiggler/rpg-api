@@ -463,7 +463,14 @@ func (h *Handler) StreamEncounter(req *encounterv2pb.StreamEncounterRequest, str
 //     knowledge, alongside the usual EntityMoved — see
 //     translateMoveEventWithData's doc for why this can't ride on
 //     HexRevealedEvent (which only fires on vision GAIN, never loss). This
-//     is the one case that returns more than one envelope.
+//     is the one case that returns more than one envelope. The restatement
+//     also needs the freshly-loaded data to disclose identity (name/type/hp)
+//     for any entity it newly places (rpg-api#737 playtest follow-up, same
+//     fix: a monster seen for the first time via this restatement — opening
+//     a door onto it — had no prior client-side disclosure, so its
+//     placement was silently dropped and the monster never rendered) — see
+//     translateMoveEventWithData's doc for why that data read does not
+//     reopen the position race #737 already closed.
 //   - EntityDisappearedEvent: the bare translator cannot distinguish "the
 //     viewer's own hex knowledge lost this position" from "the entity left
 //     a hex the viewer can still see fine" — needs a real LOS check against
@@ -509,13 +516,23 @@ func (h *Handler) translateForStream(
 	}
 
 	if moveEvt, ok := evt.(*tkevents.MoveEvent); ok {
-		// rpg-api#737: no repo read here anymore. The event carries the
-		// mover's own post-move knowledge directly (MoverPlayerID /
-		// MoverKnownHexes, computed by the toolkit at publish time) — see
-		// translateMoveEventWithData's doc for why a repo read from this
-		// stream-handler side is guaranteed to race the orchestrator's own
-		// persist of this same move, not just occasionally.
-		return translateMoveEventWithData(moveEvt, viewer, h.now())
+		// rpg-api#737: geometry (hexes/state) never comes from this read —
+		// the event carries the mover's own post-move knowledge directly
+		// (MoverPlayerID/MoverKnownHexes, computed by the toolkit at publish
+		// time) — see translateMoveEventWithData's doc for why a repo read
+		// from this stream-handler side is guaranteed to race the
+		// orchestrator's own persist of THAT. This read exists only to
+		// enrich the restatement's Entities with identity (name/type/hp) for
+		// whichever entities the mover's own knowledge now places — the same
+		// "position from the event, identity from data" split
+		// translateEntityAppearedEventWithData already uses, and the same
+		// reasoning for why it isn't racy: identity was persisted by an
+		// earlier, separate, already-completed request, not by this move.
+		data, err := h.encRepo.Get(ctx, string(encID))
+		if err != nil {
+			return nil, fmt.Errorf("load encounter for move-restatement entity enrichment: %w", err)
+		}
+		return translateMoveEventWithData(ctx, h.combatResolverConfig.CharacterRepo, data, moveEvt, viewer, h.now())
 	}
 
 	if revealedEvt, ok := evt.(*tkevents.HexRevealedEvent); ok {
