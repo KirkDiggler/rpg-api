@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sort"
 	"time"
 
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -18,6 +17,7 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/encounter"
 	"github.com/KirkDiggler/rpg-toolkit/encounter/core"
 	"github.com/KirkDiggler/rpg-toolkit/encounter/events"
+	"github.com/KirkDiggler/rpg-toolkit/encounter/perception"
 )
 
 // ErrViewerSawNothing is returned when an event was delivered to a viewer
@@ -229,38 +229,222 @@ func translateMoveEvent(e *events.MoveEvent, viewer core.PlayerID, now time.Time
 	}, nil
 }
 
+// translateMoveEventWithData is the data-aware translator for MoveEvent
+// (rpg-api#733 remembered transitions). The bare translateMoveEvent above
+// still produces the EntityMoved envelope every viewer who saw a segment
+// needs — that part is unchanged and reused verbatim. What this adds is
+// specific to the MOVER'S OWN viewer: a supplemental HexKnowledgeChanged
+// envelope carrying that viewer's FULL current knowledge, so hexes that just
+// flipped VISIBLE->REMEMBERED (stepped behind a pillar, backed out of a
+// room) reach the client on this same move.
+//
+// Why this can't ride on HexRevealedEvent: HexRevealedEvent is only
+// published when vision GAINS hexes (its own doc, and
+// applyAndPublishMove's: revealPerPlayer only gets an entry when
+// moverNewHexes is non-empty). A move that purely LOSES visibility — backing
+// away, turning a corner with nothing new coming into view — publishes no
+// HexRevealedEvent for the mover at all, so translateHexRevealedEventWithData
+// never runs and the REMEMBERED transition is silently dropped. That is
+// exactly the playtest bug this fixes. MoveEvent, by contrast, is
+// unconditional for the mover's own viewer (movePerPlayer[playerID] is
+// always populated — applyAndPublishMove always sets it before publishing),
+// so it is the one hook guaranteed to fire on every move regardless of the
+// reveal/loss mix.
+//
+// Full restatement, not a diff: the wire contract's HexKnowledgeChanged
+// merges by position and is idempotent (design.md's "The event layer"), so
+// re-sending everything this viewer currently knows is self-correcting and
+// needs no before/after snapshot plumbing at the orchestrator layer.
+//
+// rpg-api#737: the GEOMETRY half of this restatement (Hexes) used to be
+// re-derived with its own encRepo.Get()+LoadFromData()+KnownHexes(viewer)
+// read, done from the stream-handler side, racing against the
+// orchestrator's own persist of this SAME move. The toolkit's Move()
+// publishes this event SYNCHRONOUSLY, from inside its own call stack,
+// BEFORE returning to the orchestrator — which only calls
+// persistWithCharacterData() AFTER Move() returns. So that re-read was not
+// an occasional race: it was guaranteed to observe the PRE-persist snapshot
+// (the mover still at their old position, the old hex still VISIBLE with
+// them on it) every single time, caught live in a playtest ("move doesn't
+// register until second click" downstream in the client). rpg-toolkit#862
+// closed the class at the source: MoveEvent now carries MoverPlayerID and
+// MoverKnownHexes, computed by the toolkit at the exact moment of publish —
+// immediately after the mover's own position/view mutation, the ONE moment
+// guaranteed to reflect this exact move. Hexes is built from that payload
+// alone and NEVER from data below — that is the one invariant this whole
+// fix exists to hold.
+//
+// data/charRepo/ctx came back into the signature for a SECOND, narrower
+// reason (playtest follow-up, same fix): Hexes' Contents can place an
+// entity the viewer has never been told about before (open a door onto a
+// monster — the door hex flips VISIBLE with the monster in Contents, all in
+// this SAME restatement), and a placement whose entity_id the client has no
+// prior Entities record for is dropped client-side rather than rendered —
+// exactly the bug the appeared/disappeared translators already guard
+// against by attaching Entities alongside Contents. moverDisclosedEntities
+// below supplies that, reusing disclosedEntities (project.go) — the
+// package's ONE authorization filter, also used by ProjectFor and the
+// appeared/disappeared translators — rather than inventing a second answer
+// to "who is this viewer allowed to know about." It does NOT reopen the
+// position race just closed above: unlike translateEntityDisappearedEventWithData's
+// viewerVisibility helper, it never re-derives snap.Position/visibleNow
+// from data.Players[viewer] (which could still be the mover's PRE-move
+// entry) — it builds them from e.MoverKnownHexes/e.Path instead, the same
+// race-free payload Hexes itself trusts. data is used only for the
+// non-racy half disclosedEntities also relies on elsewhere in this file:
+// entity IDENTITY (name/type/hp/equipment), persisted by an earlier,
+// separate, already-completed request (AddPlayer/AddMonster), never
+// touched by this move — see translateEntityAppearedEventWithData's doc for
+// the same "position from the event, identity from data" split and why
+// that identity read isn't racy either. A nil data (defensive; should not
+// occur in the live stream) degrades to no Entities rather than failing the
+// envelope — the client keeps whatever it already knows.
+//
+// Only the mover's own viewer gets the supplemental envelope —
+// e.MoverPlayerID == viewer gates it (empty for a non-player-controlled
+// mover, so it can never accidentally match an empty viewer). Every OTHER
+// viewer who merely saw a segment of this move has their OWN geometry
+// knowledge unchanged (their position didn't move); their entity-visibility
+// updates already ride the untouched EntityAppeared/EntityDisappeared path —
+// see this function's doc call site in translateForStream for why that path
+// must not be disturbed.
+func translateMoveEventWithData(
+	ctx context.Context, charRepo characterrepo.Repository, data *encounter.Data,
+	e *events.MoveEvent, viewer core.PlayerID, now time.Time,
+) ([]*encounterv2pb.EncounterEvent, error) {
+	moved, moveErr := translateMoveEvent(e, viewer, now)
+	if moveErr != nil && !errors.Is(moveErr, ErrViewerSawNothing) {
+		return nil, moveErr
+	}
+
+	var out []*encounterv2pb.EncounterEvent
+	if moved != nil {
+		out = append(out, moved)
+	}
+
+	if e.MoverPlayerID != "" && e.MoverPlayerID == viewer {
+		hk := &encounterv2pb.HexKnowledgeChanged{
+			Hexes: knownHexesToProto(e.MoverKnownHexes),
+		}
+		if data != nil {
+			hk.Entities = moverDisclosedEntities(ctx, charRepo, data, e)
+		}
+		// Sequence deliberately reuses the MoveEvent's own sequence number
+		// rather than minting a new one: this envelope is a derived
+		// restatement of the SAME move, not a separately-published toolkit
+		// event, and rpg-api has no seam to allocate the toolkit's next
+		// sequence number without risking collision with a real event that
+		// legitimately owns moveSeq+1 (e.g. a HexRevealedEvent published
+		// immediately after, when the same move both reveals and hides
+		// hexes).
+		out = append(out, &encounterv2pb.EncounterEvent{
+			Sequence:  int64(e.Sequence()),
+			Timestamp: timestamppb.New(now),
+			Event: &encounterv2pb.EncounterEvent_HexKnowledgeChanged{
+				HexKnowledgeChanged: hk,
+			},
+		})
+	}
+
+	if len(out) == 0 {
+		return nil, ErrViewerSawNothing
+	}
+	return out, nil
+}
+
+// moverDisclosedEntities answers "which entities does the mover's own
+// move-restatement need to carry identity for" by feeding disclosedEntities
+// (project.go) a viewer Snapshot/visibleNow built from e.MoverKnownHexes —
+// the toolkit's own race-free, post-move answer for what the mover can see
+// right now — rather than the repository read viewerVisibility performs for
+// the appeared/disappeared translators. See translateMoveEventWithData's
+// doc for why that repository read would reopen the #737 race specifically
+// here (the mover's own View.Position is exactly the field this move just
+// raced to update).
+//
+// Filters disclosedEntities' result down to the entities e.MoverKnownHexes'
+// own Contents actually reference, rather than sending its full result
+// wholesale. Tried full first: it broke
+// TestStaticObstacles_ProjectOnlyWhenRevealedAndRemainExplored (integration
+// suite), which counts exactly one HexKnowledgeChanged naming a given
+// entity per reveal — sending disclosedEntities' complete authorized set on
+// every move restatement re-disclosed every already-known sticky obstacle
+// on every subsequent step, not just the one this envelope actually places.
+// The established convention (appeared/disappeared translators, this same
+// file) is narrower: an envelope's Entities names identities for what THAT
+// envelope's Hexes/Contents places, not "everything this viewer is
+// authorized to know" — restated wholesale, but not re-disclosed wholesale.
+//
+// This is still authorization-gated, not placement-trusting: the filter is
+// an INTERSECTION with disclosedEntities' output, not the Contents id list
+// on its own — an entity referenced by Contents that disclosedEntities does
+// not (yet) authorize is silently excluded here too, exactly as a bare
+// placement-trust would be wrong to include.
+func moverDisclosedEntities(
+	ctx context.Context, charRepo characterrepo.Repository, data *encounter.Data, e *events.MoveEvent,
+) []*encounterv2pb.Entity {
+	revealed := make(core.HexSet, len(e.MoverKnownHexes))
+	visibleNow := make(core.HexSet, len(e.MoverKnownHexes))
+	referenced := make(map[core.EntityID]struct{})
+	for _, kh := range e.MoverKnownHexes {
+		revealed[kh.Position] = struct{}{}
+		if perception.KnowledgeState(kh.State) == perception.KnowledgeStateVisible {
+			visibleNow[kh.Position] = struct{}{}
+		}
+		for _, p := range kh.Contents {
+			referenced[p.EntityID] = struct{}{}
+		}
+	}
+
+	// The mover's true final hex, mirroring translateMoveEvent's own
+	// From/Path handling immediately above: Path is the traveled
+	// destinations and does not prepend the origin, so the last element is
+	// the resting position; From is the defensive fallback for the
+	// zero-length-path edge case (should not occur for a real move).
+	position := e.From
+	if n := len(e.Path); n > 0 {
+		position = e.Path[n-1]
+	}
+
+	snap := encounter.Snapshot{
+		PlayerID:      e.MoverPlayerID,
+		Position:      position,
+		RevealedHexes: revealed,
+	}
+	authorized, _ := disclosedEntities(ctx, charRepo, data, e.MoverPlayerID, snap, visibleNow)
+
+	entities := make([]*encounterv2pb.Entity, 0, len(referenced))
+	for _, ent := range authorized {
+		if _, ok := referenced[core.EntityID(ent.GetId())]; ok {
+			entities = append(entities, ent)
+		}
+	}
+	return entities
+}
+
 func translateHexRevealedEvent(e *events.HexRevealedEvent, viewer core.PlayerID, now time.Time) (*encounterv2pb.EncounterEvent, error) {
 	slice, ok := e.PerPlayer[viewer]
 	if !ok || len(slice.Hexes) == 0 {
 		return nil, ErrViewerSawNothing
 	}
-	// HexRevealedSlice.Hexes is core.HexSet which is map[Hex]struct{} —
-	// range over keys (the hex), not values (struct{}). Sort by (Q, R, S)
-	// so wire output is deterministic; map iteration order is randomized
-	// in Go and would otherwise create flaky tests / golden comparisons.
-	keys := make([]core.Hex, 0, len(slice.Hexes))
+	// HexRevealedSlice.Hexes is core.HexSet which is map[Hex]struct{} — each
+	// newly-visible hex becomes a HEX_STATE_VISIBLE HexRecord. Contents is left
+	// empty on every one of these: a bare hex-reveal only reports that a hex
+	// became visible, never what (if anything) occupies it — an occupant's own
+	// EntityAppearedEvent carries that separately. hexRecordsToProto (project.go)
+	// does the sort-by-(Q,R,S) + conversion in one call, the same conversion
+	// point ProjectFor's connect-time snapshot uses, so a hex revealed live and
+	// the same hex hydrated on reconnect produce byte-identical records.
+	known := make(map[core.Hex]perception.HexObservation, len(slice.Hexes))
 	for h := range slice.Hexes {
-		keys = append(keys, h)
-	}
-	sort.Slice(keys, func(i, j int) bool {
-		if keys[i].Q != keys[j].Q {
-			return keys[i].Q < keys[j].Q
-		}
-		if keys[i].R != keys[j].R {
-			return keys[i].R < keys[j].R
-		}
-		return keys[i].S < keys[j].S
-	})
-	hexes := make([]*encounterv2pb.Hex, 0, len(keys))
-	for _, h := range keys {
-		hexes = append(hexes, &encounterv2pb.Hex{Position: HexToPosition(h)})
+		known[h] = perception.HexObservation{Position: h, State: perception.KnowledgeStateVisible}
 	}
 	return &encounterv2pb.EncounterEvent{
 		Sequence:  int64(e.Sequence()),
 		Timestamp: timestamppb.New(now),
-		Event: &encounterv2pb.EncounterEvent_GeometryRevealed{
-			GeometryRevealed: &encounterv2pb.GeometryRevealed{
-				Hexes: hexes,
+		Event: &encounterv2pb.EncounterEvent_HexKnowledgeChanged{
+			HexKnowledgeChanged: &encounterv2pb.HexKnowledgeChanged{
+				Hexes: hexRecordsToProto(known),
 			},
 		},
 	}, nil
@@ -271,23 +455,60 @@ func translateHexRevealedEvent(e *events.HexRevealedEvent, viewer core.PlayerID,
 // translateEntityAppearedEventWithData's split: translateHexRevealedEvent
 // above has only the bare toolkit event (a hex set, no region knowledge) —
 // TranslateEvent's generic dispatch keeps using it for callers with no
-// data in hand. This variant additionally sets each wire Hex's zone_id via
-// data.Space.RegionAt(h), the SAME pure lookup ProjectFor's connect-time
-// snapshot uses (project.go's hex-building loop) — so a hex a player
-// reveals mid-session (via Move) carries its zone identity immediately,
-// not only after their next reconnect re-projects the whole snapshot.
+// data in hand.
+//
+// rpg-toolkit#851: this now reads each hex's observation DIRECTLY from
+// data.Players[viewer].View.Memory rather than rebuilding zone/edges from
+// data.Space itself. The toolkit's own reveal path (Move/OpenDoor) already
+// wrote a full observation for every hex in slice.Hexes — via
+// e.refreshObservations, published synchronously BEFORE this event, in the
+// SAME call — into that exact Memory map, and Data (loaded fresh by the
+// caller, translateForStream) is this handler's read of the toolkit's own
+// persisted state. There is no local rebuilding left to do; this is
+// "toolkit types are canonical, one conversion point at the proto
+// boundary" applied to the live path, not just the snapshot path.
+//
+// This fills in more than the bare toolkit event reports (which only says a
+// hex became visible) because HexKnowledgeChanged's contract is
+// replace-wholesale, not a field-level merge (HexKnowledgeChanged's doc):
+// whichever translation touches a position last must carry that hex's FULL
+// known truth, or it silently erases what an earlier message already told
+// the viewer. Skipping edges here was tried first and broke exactly that —
+// TestSpaceZonesAndHexZoneId_ProjectRegionsOnTheWire (dungeon_crypt_test.go)
+// caught a monster's own hex losing its zone_id when the EntityAppearedEvent
+// translation for the same position (which does carry zone/edges) fired
+// after this one and won the last-write. Terrain stays Unspecified: the
+// toolkit does not source it (perception.TerrainKind's own doc).
 //
 // data is loaded fresh by the caller (translateForStream), mirroring the
 // EntityAppearedEvent data-aware branch's doc on why that read isn't
 // racy: HexRevealedEvent only ever publishes from inside an already-loaded
-// encounter's Move, so data.Space (set once at InitRoom/InitDungeon time,
-// mutated only by wall/door state, never by regions) is safe to read here.
+// encounter's Move, so data (including each player's View.Memory, mutated
+// only by the SAME already-completed Move/OpenDoor call) is safe to read
+// here.
 //
-// nil data (defensive — should not occur; translateForStream always loads
-// data before calling this) falls back to RegionAt's own nil-receiver-safe
-// ("", false) result via a nil *encounter.SpaceData, matching
-// wallsToProto/zonesToProto's nil-space convention elsewhere in this
-// package — never a panic, never an invented zone.
+// ZoneID is deliberately NOT trusted from Memory even when present — it is
+// read directly via data.Space.RegionAt(h), the same direct read
+// translateEntityAppearedEventWithData/translateEntityDisappearedEventWithData
+// use, rather than solely trusting whatever the toolkit's write path
+// happened to record. RegionAt is a pure, cheap, always-available lookup
+// against data actually held here, so there is no reason to depend on
+// Memory write-timing for it — and it keeps zone_id correct even for a
+// hex Memory doesn't yet have an entry for.
+//
+// Edges has no such direct alternative: unlike zone membership, wall/door
+// geometry indexing is now toolkit-internal (rpg-toolkit#851 made
+// edgesByHex an unexported *Encounter method), so Edges can only come from
+// the viewer's own persisted Memory — trusting the toolkit's write, not
+// re-deriving it locally (the house rule this whole rewrite follows).
+//
+// nil data, an absent viewer seat, or a hex genuinely missing from Memory
+// (defensive — should not occur; translateForStream always loads data
+// before calling this, and the toolkit's own reveal path always writes
+// Memory for exactly these hexes before publishing) fall back to a bare
+// Visible observation with no edges — never a panic, never invented
+// geometry. ZoneID still resolves correctly in this fallback since it does
+// not depend on Memory at all.
 func translateHexRevealedEventWithData(
 	e *events.HexRevealedEvent, viewer core.PlayerID, now time.Time, data *encounter.Data,
 ) (*encounterv2pb.EncounterEvent, error) {
@@ -299,39 +520,51 @@ func translateHexRevealedEventWithData(
 	if data != nil {
 		space = data.Space
 	}
-	keys := make([]core.Hex, 0, len(slice.Hexes))
+	memory := viewerMemory(data, viewer)
+	known := make(map[core.Hex]perception.HexObservation, len(slice.Hexes))
 	for h := range slice.Hexes {
-		keys = append(keys, h)
-	}
-	sort.Slice(keys, func(i, j int) bool {
-		if keys[i].Q != keys[j].Q {
-			return keys[i].Q < keys[j].Q
+		obs := perception.HexObservation{Position: h, State: perception.KnowledgeStateVisible}
+		if memObs, ok := memory[h]; ok {
+			obs = memObs
+			obs.State = perception.KnowledgeStateVisible
 		}
-		if keys[i].R != keys[j].R {
-			return keys[i].R < keys[j].R
-		}
-		return keys[i].S < keys[j].S
-	})
-	hexes := make([]*encounterv2pb.Hex, 0, len(keys))
-	for _, h := range keys {
-		zoneID, _ := space.RegionAt(h)
-		hexes = append(hexes, &encounterv2pb.Hex{Position: HexToPosition(h), ZoneId: zoneID})
+		obs.ZoneID, _ = space.RegionAt(h)
+		known[h] = obs
 	}
 	return &encounterv2pb.EncounterEvent{
 		Sequence:  int64(e.Sequence()),
 		Timestamp: timestamppb.New(now),
-		Event: &encounterv2pb.EncounterEvent_GeometryRevealed{
-			GeometryRevealed: &encounterv2pb.GeometryRevealed{
-				Hexes: hexes,
+		Event: &encounterv2pb.EncounterEvent_HexKnowledgeChanged{
+			HexKnowledgeChanged: &encounterv2pb.HexKnowledgeChanged{
+				Hexes: hexRecordsToProto(known),
 			},
 		},
 	}, nil
 }
 
+// viewerMemory returns viewer's persisted perception.Memory from data, or
+// nil for any defensive case (nil data, absent seat, nil View) — a nil map
+// reads as "always miss" everywhere this package looks values up in it, so
+// callers don't need their own nil-guard chain.
+func viewerMemory(data *encounter.Data, viewer core.PlayerID) perception.Memory {
+	if data == nil {
+		return nil
+	}
+	p, ok := data.Players[viewer]
+	if !ok || p.View == nil {
+		return nil
+	}
+	return p.View.Memory
+}
+
 // translateEntityAppearedEvent maps the toolkit's EntityAppearedEvent to the
-// v1alpha2 EntityAppeared proto envelope, carrying only what the toolkit
-// event itself provides (EntityID + Position) — a bare Entity{id, position}
-// with Type/Hp/ArmorClass/the Character-or-Monster oneof all left unset.
+// v1alpha2 HexKnowledgeChanged envelope, carrying only what the toolkit event
+// itself provides (EntityID + Position) — a bare Entity{id} (Type/Hp/
+// ArmorClass/the Character-or-Monster oneof all left unset) plus a
+// HEX_STATE_VISIBLE HexRecord at the event's position whose Contents names
+// the entity. Position rides the HexRecord, never the Entity — rpg-api-
+// protos#197 removed Entity.position for exactly this reason (HexRecord.
+// contents is the only statement of placement in this contract).
 //
 // The live stream (handler.go's translateForStream) does NOT call this —
 // rpg-api#644's playtest follow-up replaced that call site with
@@ -346,16 +579,18 @@ func translateEntityAppearedEvent(e *events.EntityAppearedEvent, viewer core.Pla
 	if _, ok := e.PerPlayer[viewer]; !ok {
 		return nil, ErrViewerSawNothing
 	}
+	obs := perception.HexObservation{
+		Position: e.Position,
+		State:    perception.KnowledgeStateVisible,
+		Contents: []perception.Placement{{EntityID: e.Entity}},
+	}
 	return &encounterv2pb.EncounterEvent{
 		Sequence:  int64(e.Sequence()),
 		Timestamp: timestamppb.New(now),
-		Event: &encounterv2pb.EncounterEvent_EntityAppeared{
-			EntityAppeared: &encounterv2pb.EntityAppeared{
-				Entity: &encounterv2pb.Entity{
-					Id:       string(e.Entity),
-					Position: HexToPosition(e.Position),
-				},
-				Reason: "entered LOS",
+		Event: &encounterv2pb.EncounterEvent_HexKnowledgeChanged{
+			HexKnowledgeChanged: &encounterv2pb.HexKnowledgeChanged{
+				Hexes:    []*encounterv2pb.HexRecord{observationToProto(obs)},
+				Entities: []*encounterv2pb.Entity{{Id: string(e.Entity)}},
 			},
 		},
 	}, nil
@@ -401,7 +636,7 @@ func translateEntityAppearedEvent(e *events.EntityAppearedEvent, viewer core.Pla
 // nil (tests, or a caller with no char store wired) — characterDataFor
 // already degrades to empty/nil rather than erroring.
 func translateEntityAppearedEventWithData(
-	ctx context.Context, charRepo characterrepo.Repository,
+	ctx context.Context, charRepo characterrepo.Repository, broker *encounter.Broker,
 	e *events.EntityAppearedEvent, viewer core.PlayerID, now time.Time, data *encounter.Data,
 ) (*encounterv2pb.EncounterEvent, error) {
 	if _, ok := e.PerPlayer[viewer]; !ok {
@@ -411,34 +646,91 @@ func translateEntityAppearedEventWithData(
 	entity := entityForID(ctx, charRepo, data, e.Entity)
 	if entity == nil {
 		// Defensive: the entity is gone from data between publish and this
-		// read (e.g. killed the same tick) — fall back to the bare shape
+		// read (e.g. killed the same tick) — fall back to the bare identity
 		// rather than dropping the event outright; the client still learns
-		// something appeared, just without enrichment.
-		entity = &encounterv2pb.Entity{Id: string(e.Entity), Position: HexToPosition(e.Position)}
-	} else {
-		// Position must be the EVENT's own reported position, not the
-		// entity's current/final stored position from data — these can
-		// legitimately differ. The toolkit's ProjectVisibilityTransition can
-		// report "appeared" at an INTERMEDIATE hex of a multi-hex
-		// pass-through move, not the mover's final resting position (a real
-		// case this fix regressed against
-		// TestMovementSlicePerViewerProjection_AsymmetricLoS until caught:
-		// viewer B, SightRange 1, sees mover A only at the one hex A passes
-		// through B's vision, which is not where A ends up after their full
-		// move). entityForID's builders (playerEntity/monsterEntity) get
-		// every OTHER field right from the authoritative stored data — type,
-		// hp, armor_class, character/monster data are not position-scoped
-		// the way this is — only Position needs the event's own value.
-		entity.Position = HexToPosition(e.Position)
+		// something appeared (and the placement below still resolves against
+		// this entry), just without enrichment.
+		entity = &encounterv2pb.Entity{Id: string(e.Entity)}
+	}
+
+	// Position is always the EVENT's own reported position, never anything
+	// read from data — these can legitimately differ. The toolkit's
+	// ProjectVisibilityTransition can report "appeared" at an INTERMEDIATE
+	// hex of a multi-hex pass-through move, not the mover's final resting
+	// position (a real case this fix regressed against
+	// TestMovementSlicePerViewerProjection_AsymmetricLoS until caught: viewer
+	// B, SightRange 1, sees mover A only at the one hex A passes through B's
+	// vision, which is not where A ends up after their full move).
+	// entityForID's builders (playerEntity/monsterEntity) get every OTHER
+	// field right from the authoritative stored data — type, hp,
+	// armor_class, character/monster data are not position-scoped the way
+	// this is; only the HexRecord's position needs the event's own value.
+	//
+	// zone_id/edges are read from the viewer's own toolkit-persisted Memory
+	// (rpg-toolkit#851: data.Players[viewer].View.Memory), the same source
+	// translateHexRevealedEventWithData uses — required, not optional
+	// enrichment: HexKnowledgeChanged replaces a position's record wholesale
+	// (its doc), and a Move that both reveals a hex AND puts an entity on it
+	// (the common case: walking up to a monster standing in a doorway) fires
+	// BOTH a HexRevealedEvent and an EntityAppearedEvent for the SAME
+	// position. Whichever translation's HexKnowledgeChanged is applied last
+	// wins, so leaving zone/edges empty here would silently erase what the
+	// other one just said — caught for real by
+	// TestSpaceZonesAndHexZoneId_ProjectRegionsOnTheWire
+	// (dungeon_crypt_test.go): the boss monster's own hex lost its "boss"
+	// zone_id this way before this fix. Safe to read raw (unlike Contents
+	// below): zone/edges are static geometry, untouched by the toolkit's
+	// confirmed pass-through Contents bug (see the Contents comment below).
+	var zoneID string
+	var edges []perception.Edge
+	if data != nil {
+		zoneID, _ = data.Space.RegionAt(e.Position)
+		edges = viewerMemory(data, viewer)[e.Position].Edges
+	}
+
+	// Contents must be the FULL set of entities authorized-visible at
+	// e.Position, not just [e.Entity] — the same wholesale-replace hazard
+	// zone/edges above closes. If something else is already standing on this
+	// hex (e.g. the mover walks up to a monster that was already visible),
+	// listing only the newly-appeared entity would tell the viewer the other
+	// occupant just vanished. viewerVisibility + disclosedEntities give the
+	// same answer ProjectFor's connect-time snapshot would for this hex right
+	// now; the appearing entity is unioned in explicitly afterward because
+	// disclosedEntities places movers at their CURRENT stored position, which
+	// — per the pass-through case above — can differ from e.Position.
+	//
+	// Deliberately NOT sourced from the toolkit's own persisted Contents
+	// (viewerMemory(data, viewer)[e.Position].Contents) the way zone/edges
+	// above are: a confirmed toolkit bug (rpg-toolkit's
+	// applyAndPublishMove, the "other viewers see mover" refreshObservations
+	// call) can union the mover into every hex of a multi-hex pass-through
+	// move, including hexes the mover has already moved past — so the
+	// toolkit's stored Contents for a hex can currently claim an entity is
+	// present when it is not. disclosedEntities rebuilds placements from
+	// CURRENT stored positions directly, which that bug does not touch, so
+	// keeping this rpg-api-side rebuild here is a deliberate choice, not
+	// leftover duplication.
+	contents := []perception.Placement{{EntityID: e.Entity}}
+	if snap, visibleNow, ok := viewerVisibility(ctx, data, viewer, broker); ok {
+		_, placements := disclosedEntities(ctx, charRepo, data, viewer, snap, visibleNow)
+		contents = unionPlacement(placements[e.Position], e.Entity)
+	}
+
+	obs := perception.HexObservation{
+		Position: e.Position,
+		State:    perception.KnowledgeStateVisible,
+		ZoneID:   zoneID,
+		Edges:    edges,
+		Contents: contents,
 	}
 
 	return &encounterv2pb.EncounterEvent{
 		Sequence:  int64(e.Sequence()),
 		Timestamp: timestamppb.New(now),
-		Event: &encounterv2pb.EncounterEvent_EntityAppeared{
-			EntityAppeared: &encounterv2pb.EntityAppeared{
-				Entity: entity,
-				Reason: "entered LOS",
+		Event: &encounterv2pb.EncounterEvent_HexKnowledgeChanged{
+			HexKnowledgeChanged: &encounterv2pb.HexKnowledgeChanged{
+				Hexes:    []*encounterv2pb.HexRecord{observationToProto(obs)},
+				Entities: []*encounterv2pb.Entity{entity},
 			},
 		},
 	}, nil
@@ -451,11 +743,10 @@ func translateEntityAppearedEventWithData(
 // this encounter's Players/Monsters at publish time — see
 // translateEntityAppearedEventWithData's doc on why that read isn't racy).
 //
-// The position passed into playerEntity here is a placeholder — the caller
-// (translateEntityAppearedEventWithData) always overwrites .Position with
-// the event's own reported position afterward (see its doc for why), so
-// this does not need pd.View to be populated to enrich the rest of the
-// entity's fields.
+// Entity carries no position (rpg-api-protos#197 removed it — see
+// translateEntityAppearedEvent's doc); the caller places the entity by
+// building a HexRecord at the event's own reported position separately, so
+// this builder needs no position input at all.
 //
 // ctx/charRepo (rpg-api#664, rpg-api#680) are forwarded to characterDataFor
 // for the player branch only — monsterEntity never needed a character
@@ -477,49 +768,278 @@ func entityForID(ctx context.Context, charRepo characterrepo.Repository, data *e
 	if pid := playerSeatForEntity(data, id); pid != "" {
 		if pd := data.Players[pid]; pd != nil {
 			name, classRef, equip := characterDataFor(ctx, charRepo, string(pd.EntityID))
-			return playerEntity(pd, core.Hex{}, name, classRef, equip)
+			return playerEntity(pd, name, classRef, equip)
 		}
 	}
 	return nil
 }
 
 // translateEntityDisappearedEvent maps the toolkit's EntityDisappearedEvent to
-// the v1alpha2 EntityDisappeared proto envelope. The proto's last_known_position
-// field carries the viewer's per-stream last-seen hex (different viewers may
-// have last-seen the entity at different hexes during pass-through), allowing
-// the web to render "freeze marker at last-seen hex" without client-side
-// game-state tracking. Per-viewer correctness comes from picking
-// e.PerPlayer[viewer] inside the handler's per-stream translator call.
+// the v1alpha2 HexKnowledgeChanged envelope: rpg-api-protos#197 retired the
+// dedicated EntityDisappeared message — losing sight of an ENTITY can flip
+// its last-known hex to HEX_STATE_REMEMBERED (HexRecord's state carries the
+// signal; there is no separate message for it). Per-viewer correctness comes
+// from picking e.PerPlayer[viewer], the viewer's own last-seen hex (different
+// viewers may have last-seen the entity at different hexes during
+// pass-through).
+//
+// This is the bare, no-data fallback — TranslateEvent's generic dispatch
+// keeps using it for callers with no data in hand. It has a real, documented
+// limitation: it cannot tell "the entity left this hex, which the viewer can
+// no longer see at all" (genuinely REMEMBERED) apart from "the entity left
+// this hex, which the viewer is still standing next to and can see fine"
+// (should stay VISIBLE, contents rebuilt from whoever else is still there) —
+// so it always emits REMEMBERED with empty contents, an under-disclosure
+// that is momentarily wrong in the second case rather than ever leaking. The
+// live stream (handler.go's translateForStream) does NOT call this — see
+// translateEntityDisappearedEventWithData, which has the data needed to draw
+// that distinction correctly.
+//
+// Contents is left EMPTY here rather than carrying a frozen Placement for
+// the entity that just left. We do not actually know the entity is still
+// there — it could have kept moving, been removed, or died the instant after
+// this viewer lost sight — and a Visible-or-Remembered record's Contents is
+// a TOTAL claim (HexObservation's doc in knowledge.go). Inventing a
+// placement we cannot back would be exactly the kind of manufactured memory
+// the contract forbids.
 func translateEntityDisappearedEvent(e *events.EntityDisappearedEvent, viewer core.PlayerID, now time.Time) (*encounterv2pb.EncounterEvent, error) {
 	lastKnown, ok := e.PerPlayer[viewer]
 	if !ok {
 		return nil, ErrViewerSawNothing
 	}
+	obs := perception.HexObservation{
+		Position: lastKnown,
+		State:    perception.KnowledgeStateRemembered,
+	}
 	return &encounterv2pb.EncounterEvent{
 		Sequence:  int64(e.Sequence()),
 		Timestamp: timestamppb.New(now),
-		Event: &encounterv2pb.EncounterEvent_EntityDisappeared{
-			EntityDisappeared: &encounterv2pb.EntityDisappeared{
-				EntityId:          string(e.Entity),
-				Reason:            "left LOS",
-				LastKnownPosition: HexToPosition(lastKnown),
+		Event: &encounterv2pb.EncounterEvent_HexKnowledgeChanged{
+			HexKnowledgeChanged: &encounterv2pb.HexKnowledgeChanged{
+				Hexes: []*encounterv2pb.HexRecord{observationToProto(obs)},
 			},
 		},
 	}, nil
 }
 
-// translateDoorOpenedEvent maps the toolkit's DoorOpenedEvent to the
-// v1alpha2 DoorOpened proto envelope. Wave 2.7 deliberately splits the
-// cause/effect events: this envelope carries only the door identity (the
-// "what happened"); the parallel HexRevealedEvent published alongside
-// OpenDoor delivers the geometry deltas through GeometryRevealed (the
-// "what changed"). See rpg-toolkit/encounter/events/hex_revealed.go for
-// the rationale and Wave 2.7 plan for the API-side decision to mirror
-// that split — do NOT combine them here.
+// translateEntityDisappearedEventWithData is the data-aware translator for
+// EntityDisappearedEvent — the correction translateEntityDisappearedEvent's
+// doc describes. EntityDisappearedEvent means the ENTITY left this viewer's
+// sight; it does NOT mean the HEX did. The two are different facts: an
+// entity can walk off a hex the viewer is standing right next to, in which
+// case that hex is still just as VISIBLE a moment later, and a client that
+// dims it to REMEMBERED (crypt-tinted, inert — the client's rendering
+// contract for that state) would be visibly wrong about a hex the player is
+// looking straight at.
 //
-// revealed_walls / removed_walls are left empty: walls are not modeled in
-// the v0.2.0 toolkit. The proto carries them for forward compatibility
-// when the toolkit grows wall geometry.
+// So this checks the hex's REAL current visibility the same way ProjectFor's
+// connect-time snapshot does — perception.VisibleHexesAt(viewer's position,
+// sight range, the room) — rather than assuming disappearance always means
+// "gone from sight":
+//
+//   - Hex still visible to viewer: emit HEX_STATE_VISIBLE. Contents must be
+//     rebuilt from data, not merely have the departed entity subtracted —
+//     a Visible record's Contents is a TOTAL claim (HexObservation's doc),
+//     so leaving out an entity that is still genuinely standing there would
+//     tell the viewer it vanished too. disclosedEntities (project.go) is
+//     the single authorization filter for "who is here and does this viewer
+//     get told" — reused here rather than re-derived, so this can never
+//     quietly drift from what a fresh snapshot would show for the same hex.
+//   - Hex no longer visible: emit HEX_STATE_REMEMBERED carrying the viewer's
+//     own FROZEN observation for lastKnown (Contents/Edges/ZoneID/Terrain),
+//     not an empty shell (playtest follow-up: Kirk watched a monster VANISH
+//     the instant it left sight, then reappear as a proper shadow one step
+//     later — the empty shell replaced the client's memory with nothing,
+//     and the next full move restatement was what actually restored it).
+//     rpg-toolkit#851 is what makes this honest now: perception.View.Memory
+//     persists the FULL observation from the last time this exact hex was
+//     genuinely visible (written by the toolkit's own refreshObservations,
+//     the same authoritative source knownHexesToProto/hexRecordsToProto
+//     trust elsewhere in this file) — a Remembered record IS supposed to
+//     carry that frozen truth in full, not assert emptiness. Before #851
+//     there was nowhere honest to read it from, which is why the shape
+//     below did not exist yet.
+//
+// No entry in memory for lastKnown degrades to the same empty shell as
+// before #851 (State: Remembered, everything else zero) rather than falling
+// back to any CURRENT world read: this function's whole job on this branch
+// is to report what the viewer's own knowledge froze at, and live data is
+// not that — reaching for it here would be the exact re-introduction of a
+// stale/wrong-moment read this file's other fixes exist to close. Should
+// not be reachable in the live stream: lastKnown is the viewer's own
+// last-seen hex for this entity (e.PerPlayer[viewer]), and the toolkit
+// writes a Memory entry for every hex a viewer's refreshObservations pass
+// ever touches — so by the time this event fires, something was seen there,
+// which means it was written. Kept as a defensive fallback (a nil data, a
+// viewer with no persisted View, or a genuinely absent entry) rather than a
+// panic or a dropped event, exactly like the rest of this file's degrade
+// paths.
+//
+// Entities: this envelope carries no Entities at all before this fix — the
+// exact same fail-closed-drop bug the move restatement had, for the exact
+// same reason (a first-ever sighting arriving with a placement but no
+// matching identity). Both branches below build Entities from whichever ids
+// their OWN Contents references, through entityForID — the same
+// authorization primitive translateEntityAppearedEventWithData already uses
+// for its one entity, not disclosedEntities: disclosedEntities' visibleNow
+// gate answers "is this CURRENTLY visible," which is the wrong question for
+// either branch here — the visible-branch's Contents already comes from
+// disclosedEntities' own placements (so those ids are visibleNow-authorized
+// by construction), and the remembered-branch's Contents is a FROZEN past
+// observation, not a current one, so gating its disclosure on current
+// visibility would simply authorize nothing and reopen the bug. entityForID
+// performs the real check instead: it looks the id up against data's actual
+// current Players/Monsters/Space.Obstacles and returns nil for anything not
+// found there, so a stale/wrong id in a frozen Contents still cannot
+// manufacture an Entity out of nothing — referenced-only AND
+// authorization-gated, never placement-trusting. A found-but-since-changed
+// entity (rare: died or was removed the same tick) degrades to a bare
+// {Id: id} exactly as translateEntityAppearedEventWithData's own defensive
+// fallback does, so the placement still resolves rather than being dropped.
+//
+// data is loaded fresh by the caller (translateForStream), mirroring this
+// package's other WithData branches. broker is required to rehydrate a live
+// *encounter.Encounter via LoadFromData (needed for Room()/SnapshotFor, the
+// same rehydration ProjectFor performs) — a real cost, but this is a live,
+// per-event path already accepted to pay a repo round trip for correctness
+// (see translateEntityAppearedEventWithData's doc on the same trade-off).
+//
+// nil data, a viewer with no persisted View, or a LoadFromData failure all
+// fall back to the bare variant's conservative REMEMBERED/empty-contents
+// shape — defensive paths that should not occur in the live stream (data is
+// always loaded immediately before this call) but must degrade safely
+// rather than panic or drop the event.
+func translateEntityDisappearedEventWithData(
+	ctx context.Context, charRepo characterrepo.Repository,
+	e *events.EntityDisappearedEvent, viewer core.PlayerID, now time.Time,
+	data *encounter.Data, broker *encounter.Broker,
+) (*encounterv2pb.EncounterEvent, error) {
+	lastKnown, ok := e.PerPlayer[viewer]
+	if !ok {
+		return nil, ErrViewerSawNothing
+	}
+
+	obs := perception.HexObservation{
+		Position: lastKnown,
+		State:    perception.KnowledgeStateRemembered,
+	}
+	var entities []*encounterv2pb.Entity
+
+	if snap, visibleNow, ok := viewerVisibility(ctx, data, viewer, broker); ok && visibleNow.Has(lastKnown) {
+		// Edges/ZoneID: read from the viewer's own toolkit-persisted Memory —
+		// static geometry, unaffected by the toolkit's confirmed pass-through
+		// Contents bug (see translateEntityAppearedEventWithData's doc). Contents
+		// stays sourced from disclosedEntities for the same reason that function
+		// does: it rebuilds placements from CURRENT stored positions, which that
+		// bug does not touch.
+		zoneID, _ := data.Space.RegionAt(lastKnown)
+		_, placements := disclosedEntities(ctx, charRepo, data, viewer, snap, visibleNow)
+		obs.State = perception.KnowledgeStateVisible
+		obs.ZoneID = zoneID
+		obs.Edges = viewerMemory(data, viewer)[lastKnown].Edges
+		obs.Contents = placements[lastKnown]
+		entities = entitiesForPlacements(ctx, charRepo, data, obs.Contents)
+	} else if frozen, hasMemory := viewerMemory(data, viewer)[lastKnown]; hasMemory {
+		obs.Terrain = frozen.Terrain
+		obs.ZoneID = frozen.ZoneID
+		obs.Edges = frozen.Edges
+		obs.Contents = frozen.Contents
+		entities = entitiesForPlacements(ctx, charRepo, data, obs.Contents)
+	}
+
+	return &encounterv2pb.EncounterEvent{
+		Sequence:  int64(e.Sequence()),
+		Timestamp: timestamppb.New(now),
+		Event: &encounterv2pb.EncounterEvent_HexKnowledgeChanged{
+			HexKnowledgeChanged: &encounterv2pb.HexKnowledgeChanged{
+				Hexes:    []*encounterv2pb.HexRecord{observationToProto(obs)},
+				Entities: entities,
+			},
+		},
+	}, nil
+}
+
+// entitiesForPlacements builds a wire Entity for every id placements
+// references, via entityForID — see translateEntityDisappearedEventWithData's
+// doc for why that lookup (not disclosedEntities) is the right authorization
+// primitive for both of its call sites. A found-but-since-changed id (rare:
+// removed from data the same tick) degrades to a bare {Id: id}, mirroring
+// translateEntityAppearedEventWithData's own defensive fallback, so the
+// placement this id is already carrying still resolves rather than being
+// silently dropped — the id itself is never fabricated, only the enrichment
+// is allowed to be missing.
+func entitiesForPlacements(
+	ctx context.Context, charRepo characterrepo.Repository, data *encounter.Data, placements []perception.Placement,
+) []*encounterv2pb.Entity {
+	out := make([]*encounterv2pb.Entity, 0, len(placements))
+	for _, p := range placements {
+		entity := entityForID(ctx, charRepo, data, p.EntityID)
+		if entity == nil {
+			entity = &encounterv2pb.Entity{Id: string(p.EntityID)}
+		}
+		out = append(out, entity)
+	}
+	return out
+}
+
+// viewerVisibility loads data into a live *encounter.Encounter and computes
+// viewer's current Snapshot + visible-now hex set — the same two values
+// ProjectFor's connect-time snapshot computes (project.go's visibleNow via
+// perception.VisibleHexesAt(snap.Position, sight range, enc.Room())).
+// Factored out so both translateEntityAppearedEventWithData and
+// translateEntityDisappearedEventWithData ask "what can this viewer see
+// right now" the exact same way, rather than each re-deriving it and
+// risking drift from what a fresh ProjectFor snapshot would say.
+//
+// ok is false for any defensive case — nil data, no persisted View for
+// viewer, or a LoadFromData failure — and visibleNow may then be nil;
+// callers must degrade to their own conservative fallback (never treat a
+// false ok as "viewer sees nothing" and disclose nothing).
+func viewerVisibility(
+	ctx context.Context, data *encounter.Data, viewer core.PlayerID, broker *encounter.Broker,
+) (snap encounter.Snapshot, visibleNow core.HexSet, ok bool) {
+	if data == nil {
+		return encounter.Snapshot{}, nil, false
+	}
+	vp, present := data.Players[viewer]
+	if !present || vp.View == nil {
+		return encounter.Snapshot{}, nil, false
+	}
+	enc, err := encounter.LoadFromData(ctx, data, broker)
+	if err != nil {
+		return encounter.Snapshot{}, nil, false
+	}
+	snap = enc.SnapshotFor(viewer)
+	visibleNow = perception.VisibleHexesAt(snap.Position, vp.View.SightRange, enc.Room())
+	return snap, visibleNow, true
+}
+
+// unionPlacement returns placements with a Placement for entityID appended
+// unless one already names it — used where an authorization-filtered
+// placement list (disclosedEntities, keyed by an entity's CURRENT stored
+// position) must also guarantee one specific entity is present at a
+// position that may differ from its stored one (translateEntityAppearedEventWithData's
+// pass-through case: the event's own reported position, not data's).
+func unionPlacement(placements []perception.Placement, entityID core.EntityID) []perception.Placement {
+	for _, p := range placements {
+		if p.EntityID == entityID {
+			return placements
+		}
+	}
+	return append(placements, perception.Placement{EntityID: entityID})
+}
+
+// translateDoorOpenedEvent maps the toolkit's DoorOpenedEvent to the
+// v1alpha2 DoorOpened proto envelope. rpg-api-protos#197 reduced DoorOpened
+// to a pure cause notification — door_entity_id only, for sound/animation/
+// narration — because the parallel HexRevealedEvent (translated to
+// HexKnowledgeChanged) is now the SOLE carrier of geometry/visibility deltas;
+// a second copy of reveal data on DoorOpened could only ever agree
+// redundantly or disagree dangerously with the hex records. See
+// rpg-toolkit/encounter/events/door_opened.go for the toolkit-side
+// cause/effect split this mirrors. Do NOT add geometry fields back here even
+// for convenience — see HexRecord's doc (types.pb.go) for why hexes are the
+// one source of map truth.
 func translateDoorOpenedEvent(e *events.DoorOpenedEvent, viewer core.PlayerID, now time.Time) (*encounterv2pb.EncounterEvent, error) {
 	slice, ok := e.PerPlayer[viewer]
 	if !ok || !slice.Visible {
@@ -531,10 +1051,6 @@ func translateDoorOpenedEvent(e *events.DoorOpenedEvent, viewer core.PlayerID, n
 		Event: &encounterv2pb.EncounterEvent_DoorOpened{
 			DoorOpened: &encounterv2pb.DoorOpened{
 				DoorEntityId: string(e.DoorID),
-				// revealed_hexes / revealed_walls / removed_walls are
-				// intentionally empty: the parallel HexRevealedEvent
-				// (translated to GeometryRevealed) carries the geometry
-				// delta. Cause/effect events stay separate on the wire.
 			},
 		},
 	}, nil
@@ -1254,53 +1770,47 @@ func TranslateSnapshot(pbEncounter *encounterv2pb.Encounter, now time.Time) *enc
 	}
 }
 
-// BuildReplayEvents synthesizes the initial EntityAppeared and GeometryRevealed
-// events from the already-projected proto Encounter and the viewer's Snapshot.
-// These are sent immediately after SnapshotDelivered so a freshly-connected
-// client sees the full current state before any live broker event arrives.
+// BuildReplayEvents synthesizes the initial HexKnowledgeChanged event from the
+// already-projected proto Encounter and the viewer's Snapshot. It is sent
+// immediately after SnapshotDelivered so a freshly-connected client sees the
+// full current state through the SAME event shape a live fog-of-war mutation
+// arrives in — no separate "initial state" code path on the client.
 //
-// Entity replay: one EntityAppeared per entity in pbEncounter.Space.Entities.
-// Geometry replay: one GeometryRevealed carrying pbEncounter.Space.Hexes, or
-// nothing if Hexes is empty. ProjectFor already produced both in deterministic
-// order, so this function is a pure translation — no sorting or projection.
+// rpg-api-protos#197 retired the EntityAppeared/GeometryRevealed pair this
+// used to synthesize one-per-entity/one-for-all-hexes; HexKnowledgeChanged
+// already carries both Hexes and Entities in one message (see its doc:
+// "the client's entire behavior on receipt is: merge entities by id, then
+// replace each record by position"), so full hydration is just replaying
+// pbEncounter.Space.Hexes/Entities verbatim in a single envelope — no
+// per-entity loop needed anymore. ProjectFor already produced both in
+// deterministic order, so this remains a pure passthrough: no sorting, no
+// re-projection.
+//
+// nil Space, or a Space with neither hexes nor entities (e.g. a non-spatial
+// encounter), returns nil — no empty envelope for a client to process.
 func BuildReplayEvents(
 	pbEncounter *encounterv2pb.Encounter,
 	now time.Time,
 ) []*encounterv2pb.EncounterEvent {
-	var out []*encounterv2pb.EncounterEvent
-
 	space := pbEncounter.GetSpace()
 	if space == nil {
-		return out
+		return nil
 	}
-
-	// EntityAppeared for each entity visible to the viewer (including the viewer's
-	// own entity so the client can render its initial position).
-	for _, entity := range space.GetEntities() {
-		out = append(out, &encounterv2pb.EncounterEvent{
+	hexes := space.GetHexes()
+	entities := space.GetEntities()
+	if len(hexes) == 0 && len(entities) == 0 {
+		return nil
+	}
+	return []*encounterv2pb.EncounterEvent{
+		{
 			Sequence:  0,
 			Timestamp: timestamppb.New(now),
-			Event: &encounterv2pb.EncounterEvent_EntityAppeared{
-				EntityAppeared: &encounterv2pb.EntityAppeared{
-					Entity: entity,
-					Reason: "initial state",
+			Event: &encounterv2pb.EncounterEvent_HexKnowledgeChanged{
+				HexKnowledgeChanged: &encounterv2pb.HexKnowledgeChanged{
+					Hexes:    hexes,
+					Entities: entities,
 				},
 			},
-		})
+		},
 	}
-
-	// GeometryRevealed for the viewer's revealed hex set.
-	if hexes := space.GetHexes(); len(hexes) > 0 {
-		out = append(out, &encounterv2pb.EncounterEvent{
-			Sequence:  0,
-			Timestamp: timestamppb.New(now),
-			Event: &encounterv2pb.EncounterEvent_GeometryRevealed{
-				GeometryRevealed: &encounterv2pb.GeometryRevealed{
-					Hexes: hexes,
-				},
-			},
-		})
-	}
-
-	return out
 }

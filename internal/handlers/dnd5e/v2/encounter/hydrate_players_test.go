@@ -246,12 +246,14 @@ func (s *HydratePlayersReconcileSuite) TestTranslateEntityAppearedEventWithData_
 		map[tkenccore.PlayerID]struct{}{"player-B": {}},
 	)
 
-	out, err := translateEntityAppearedEventWithData(s.ctx, s.mockCharRepo, evt, "player-B", time.Now(), data)
+	out, err := translateEntityAppearedEventWithData(s.ctx, s.mockCharRepo, nil, evt, "player-B", time.Now(), data)
 	s.Require().NoError(err)
 
-	app := out.GetEvent().(*encounterv2pb.EncounterEvent_EntityAppeared).EntityAppeared
-	s.Require().Equal("Alice", app.GetEntity().GetDisplayName())
-	classRef := app.GetEntity().GetCharacter().GetClassRef()
+	changed := out.GetEvent().(*encounterv2pb.EncounterEvent_HexKnowledgeChanged).HexKnowledgeChanged
+	s.Require().Len(changed.GetEntities(), 1)
+	entity := changed.GetEntities()[0]
+	s.Require().Equal("Alice", entity.GetDisplayName())
+	classRef := entity.GetCharacter().GetClassRef()
 	s.Require().NotNil(classRef)
 	s.Require().Equal("dnd5e", classRef.GetModule())
 	s.Require().Equal("class", classRef.GetType())
@@ -277,12 +279,14 @@ func (s *HydratePlayersReconcileSuite) TestTranslateEntityAppearedEventWithData_
 		map[tkenccore.PlayerID]struct{}{"player-B": {}},
 	)
 
-	out, err := translateEntityAppearedEventWithData(s.ctx, nil, evt, "player-B", time.Now(), data)
+	out, err := translateEntityAppearedEventWithData(s.ctx, nil, nil, evt, "player-B", time.Now(), data)
 	s.Require().NoError(err)
 
-	app := out.GetEvent().(*encounterv2pb.EncounterEvent_EntityAppeared).EntityAppeared
-	s.Require().Empty(app.GetEntity().GetDisplayName())
-	s.Require().Nil(app.GetEntity().GetCharacter().GetClassRef())
+	changed := out.GetEvent().(*encounterv2pb.EncounterEvent_HexKnowledgeChanged).HexKnowledgeChanged
+	s.Require().Len(changed.GetEntities(), 1)
+	entity := changed.GetEntities()[0]
+	s.Require().Empty(entity.GetDisplayName())
+	s.Require().Nil(entity.GetCharacter().GetClassRef())
 }
 
 func (s *HydratePlayersReconcileSuite) TestTranslateEntityAppearedEventWithData_ProjectsObstacle() {
@@ -295,17 +299,25 @@ func (s *HydratePlayersReconcileSuite) TestTranslateEntityAppearedEventWithData_
 		map[tkenccore.PlayerID]struct{}{"player-A": {}},
 	)
 
-	out, err := translateEntityAppearedEventWithData(s.ctx, nil, evt, "player-A", time.Now(), data)
+	out, err := translateEntityAppearedEventWithData(s.ctx, nil, nil, evt, "player-A", time.Now(), data)
 	s.Require().NoError(err)
-	appeared := out.GetEntityAppeared().GetEntity()
+	changed := out.GetHexKnowledgeChanged()
+	s.Require().Len(changed.GetEntities(), 1)
+	appeared := changed.GetEntities()[0]
 	s.Require().Equal("obstacle-altar", appeared.GetId())
 	s.Require().Equal(encounterv2pb.EntityType_ENTITY_TYPE_OBSTACLE, appeared.GetType())
-	s.Require().Equal(int32(2), appeared.GetPosition().GetX())
-	s.Require().Equal(int32(-1), appeared.GetPosition().GetY())
-	s.Require().Equal(int32(-1), appeared.GetPosition().GetZ())
 	s.Require().Equal("dnd5e", appeared.GetObstacle().GetObstacleRef().GetModule())
 	s.Require().Equal("props", appeared.GetObstacle().GetObstacleRef().GetType())
 	s.Require().Equal("altar", appeared.GetObstacle().GetObstacleRef().GetId())
 	s.Require().True(appeared.GetObstacle().GetBlocksMovement())
 	s.Require().True(appeared.GetObstacle().GetBlocksLineOfSight())
+
+	// Position lives on the HexRecord, never the Entity (rpg-api-protos#197).
+	s.Require().Len(changed.GetHexes(), 1)
+	hex := changed.GetHexes()[0]
+	s.Require().Equal(int32(2), hex.GetPosition().GetX())
+	s.Require().Equal(int32(-1), hex.GetPosition().GetY())
+	s.Require().Equal(int32(-1), hex.GetPosition().GetZ())
+	s.Require().Len(hex.GetContents(), 1)
+	s.Require().Equal("obstacle-altar", hex.GetContents()[0].GetEntityId())
 }

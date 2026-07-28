@@ -157,7 +157,7 @@ func (s *LobbyV1alpha1IntegrationSuite) TestPartyAssembles_FourPlayers_CreateJoi
 	// rpg-api#632: an unseeded SightRange leaves every member able to see only
 	// their own spawn hex — the party never actually sees each other despite
 	// spawning adjacent. Assert every member has a seeded SightRange and a
-	// RevealedHexes set covering a real radius (not just their own hex), so
+	// known-hex set covering a real radius (not just their own hex), so
 	// this regression can't pass silently again.
 	//
 	// rpg-api#656 note (why this ISN'T "every viewer sees every other
@@ -177,8 +177,8 @@ func (s *LobbyV1alpha1IntegrationSuite) TestPartyAssembles_FourPlayers_CreateJoi
 		viewerPD := encData.Players[core.PlayerID(viewer.id)]
 		s.Require().NotZero(viewerPD.View.SightRange,
 			"player %q must have a seeded SightRange", viewer.id)
-		s.Require().Greater(len(viewerPD.View.RevealedHexes), 1,
-			"player %q's RevealedHexes must cover a real sight radius, not just their own hex "+
+		s.Require().Greater(len(viewerPD.View.KnownHexSet()), 1,
+			"player %q's known hexes must cover a real sight radius, not just their own hex "+
 				"(rpg-api#632: an unseeded SightRange reveals only the mover's own position)", viewer.id)
 	}
 

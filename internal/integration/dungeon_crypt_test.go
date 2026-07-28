@@ -162,6 +162,35 @@ func regionArchetypeAt(space *tkenc.SpaceData, hex core.Hex) (tkenc.RegionArchet
 	return "", false
 }
 
+// hexRecordAt finds the HexRecord at the given cube position in hexes, or
+// nil if the viewer has no knowledge of that hex at all — the new contract's
+// per-hex knowledge gate (rpg-api-protos#197) means a hex nobody has
+// explored or seen is simply absent, not present-with-empty-edges.
+func hexRecordAt(hexes []*encounterv2pb.HexRecord, h core.Hex) *encounterv2pb.HexRecord {
+	for _, rec := range hexes {
+		p := rec.GetPosition()
+		if p.GetX() == int32(h.Q) && p.GetY() == int32(h.R) && p.GetZ() == int32(h.S) {
+			return rec
+		}
+	}
+	return nil
+}
+
+// doorEdgeByID scans every hex record's Edges for one carrying doorID —
+// edges now live on the HexRecord they sit on rather than in a flat
+// Space.Walls list (rpg-api-protos#197), so a door's wire wall is wherever
+// its own hex record happens to be, not a fixed lookup.
+func doorEdgeByID(hexes []*encounterv2pb.HexRecord, doorID string) *encounterv2pb.Wall {
+	for _, rec := range hexes {
+		for _, w := range rec.GetEdges() {
+			if w.GetId() == doorID {
+				return w
+			}
+		}
+	}
+	return nil
+}
+
 // archetypeMonsters splits encData.Monsters by their SpaceData region
 // archetype.
 func archetypeMonsters(encData *tkenc.Data) (entrance, boss []core.EntityID) {
@@ -379,12 +408,6 @@ func (s *DungeonCryptSuite) TestStartEncounter_SpawnsAtEntrance_ProjectsCanonica
 	})
 	s.Require().NoError(err)
 
-	doorWalls := make(map[string]*encounterv2pb.Wall)
-	for _, w := range resp.GetEncounter().GetSpace().GetWalls() {
-		if w.GetId() != "" {
-			doorWalls[w.GetId()] = w
-		}
-	}
 	entrance := encData.Doors[core.EntityID(cryptEntranceDoorID)]
 	boss := encData.Doors[core.EntityID(cryptBossDoorID)]
 	s.Require().NotNil(entrance)
@@ -396,13 +419,42 @@ func (s *DungeonCryptSuite) TestStartEncounter_SpawnsAtEntrance_ProjectsCanonica
 	s.Require().Equal(12, boss.LockDC)
 	s.Require().Equal("dex", boss.LockAbility)
 	s.Require().Empty(boss.LockTool)
-	s.Require().Equal(encounterv2pb.WallKind_WALL_KIND_DOOR_CLOSED, doorWalls[cryptEntranceDoorID].GetKind())
-	s.Require().Equal(encounterv2pb.WallKind_WALL_KIND_DOOR_LOCKED, doorWalls[cryptBossDoorID].GetKind())
+
+	// Edges now ride the HexRecord they sit on, gated by hex knowledge
+	// (rpg-api-protos#197) — unlike the retired unconditional
+	// doorWallsToProto, a door only reaches the wire once its own hex is
+	// known to the viewer. Alice spawns at the entrance, immediately
+	// adjacent to the entrance connector, so it is known and visible; the
+	// boss connector sits two closed doors and a whole corridor away and
+	// must NOT appear at all — the same gate fact (4) this file's
+	// TestBossMonster_NoEntityAppeared_UntilBothDoorsOpenAndSightlinesForm
+	// proves for the boss monster, now true of the boss door too.
+	hexes := resp.GetEncounter().GetSpace().GetHexes()
+	entranceEdge := doorEdgeByID(hexes, cryptEntranceDoorID)
+	s.Require().NotNil(entranceEdge, "the entrance connector is adjacent to the spawn and must project")
+	s.Require().Equal(encounterv2pb.WallKind_WALL_KIND_DOOR_CLOSED, entranceEdge.GetKind())
+
+	s.Require().Nil(doorEdgeByID(hexes, cryptBossDoorID),
+		"the boss connector must not leak onto the wire before alice has ever seen it")
 }
 
 // TestBossLock_FailedThenSuccessfulCheck_ProjectsPersistedDoorState proves the
 // production crypt reuses the established unlock flow. The API supplies only
 // the d20 roll; all lock configuration and resolution remain toolkit-owned.
+//
+// The wire-projection half of this test changed under rpg-api-protos#197:
+// this test never moves alice — it Interacts with the boss door directly by
+// id from her entrance spawn, two closed connector doors away. Before this
+// contract, the door's locked state projected onto the wire unconditionally
+// (the same "every viewer's snapshot carries every door regardless of
+// RevealedHexes" leak TestStartEncounter_SpawnsAtEntrance_
+// ProjectsCanonicalCryptDoors's boss-door assertion closes). Now it must NOT
+// appear at all — Interact can resolve a check against a door alice has
+// never seen (that's a server-authoritative mechanic, unaffected by this
+// contract), but the WIRE must not let her observe its lock state remotely.
+// Persisted state (verified directly via EncRepoV2.Get below) is the
+// authoritative proof the failed/successful checks actually did the right
+// thing; the wire assertions only prove they didn't leak.
 func (s *DungeonCryptSuite) TestBossLock_FailedThenSuccessfulCheck_ProjectsPersistedDoorState() {
 	encounterID, characterID, _ := s.startCryptDungeon("boss-lock", "alice")
 
@@ -428,14 +480,8 @@ func (s *DungeonCryptSuite) TestBossLock_FailedThenSuccessfulCheck_ProjectsPersi
 
 	failedProjection, err := s.srv.EncounterClientV2.GetEncounter(s.authCtx("alice"), &encounterv2pb.GetEncounterRequest{EncounterId: encounterID})
 	s.Require().NoError(err)
-	lockedBossDoorProjected := false
-	for _, wall := range failedProjection.GetEncounter().GetSpace().GetWalls() {
-		if wall.GetId() == cryptBossDoorID {
-			lockedBossDoorProjected = true
-			s.Require().Equal(encounterv2pb.WallKind_WALL_KIND_DOOR_LOCKED, wall.GetKind())
-		}
-	}
-	s.Require().True(lockedBossDoorProjected, "the locked boss door must project onto the wire")
+	s.Require().Nil(doorEdgeByID(failedProjection.GetEncounter().GetSpace().GetHexes(), cryptBossDoorID),
+		"the still-unseen boss door's locked state must not leak onto the wire, even after a failed check attempt on it")
 
 	_, err = s.srv.EncounterClientV2.Interact(s.authCtx("alice"), &encounterv2pb.InteractRequest{
 		EncounterId: encounterID, TargetEntityId: cryptBossDoorID,
@@ -451,6 +497,16 @@ func (s *DungeonCryptSuite) TestBossLock_FailedThenSuccessfulCheck_ProjectsPersi
 	s.Require().NoError(err)
 	s.Require().False(afterSuccess.Doors[core.EntityID(cryptBossDoorID)].Locked)
 	s.Require().True(afterSuccess.Doors[core.EntityID(cryptBossDoorID)].Open)
+
+	// Still must not leak: opening the door alone doesn't reveal it, matching
+	// gate fact (4) proved for the boss monster in
+	// TestBossMonster_NoEntityAppeared_UntilBothDoorsOpenAndSightlinesForm —
+	// alice hasn't moved an inch this whole test, so she has no sightline to
+	// the boss door regardless of its now-open state.
+	succeededProjection, err := s.srv.EncounterClientV2.GetEncounter(s.authCtx("alice"), &encounterv2pb.GetEncounterRequest{EncounterId: encounterID})
+	s.Require().NoError(err)
+	s.Require().Nil(doorEdgeByID(succeededProjection.GetEncounter().GetSpace().GetHexes(), cryptBossDoorID),
+		"the now-open boss door still must not leak onto the wire — opening a door doesn't reveal it, sight does")
 }
 
 // TestEntranceSighting_StartsPocketScopedCombat is gate fact (3): a Move
@@ -544,17 +600,23 @@ func (s *DungeonCryptSuite) TestBossMonster_NoEntityAppeared_UntilBothDoorsOpenA
 
 	sawBossMonster := func(batch []*encounterv2pb.EncounterEvent) bool {
 		for _, ev := range batch {
-			if a := ev.GetEntityAppeared(); a != nil && a.GetEntity().GetId() == string(bossMonster) {
-				return true
+			if hkc := ev.GetHexKnowledgeChanged(); hkc != nil {
+				for _, e := range hkc.GetEntities() {
+					if e.GetId() == string(bossMonster) {
+						return true
+					}
+				}
 			}
 		}
 		return false
 	}
 
-	// Drain the connect-time replay: SnapshotDelivered + EntityAppeared(alice)
-	// + GeometryRevealed. The boss must not be among them — both
-	// connector doors are closed, and it is out of alice's entrance-region
-	// sight regardless.
+	// Drain the connect-time replay: SnapshotDelivered + one HexKnowledgeChanged
+	// carrying alice's own entity + her revealed hexes (rpg-api-protos#197
+	// collapsed the old per-entity EntityAppeared + whole-set GeometryRevealed
+	// burst into this single event — BuildReplayEvents' doc). The boss must
+	// not be among the disclosed entities — both connector doors are closed,
+	// and it is out of alice's entrance-region sight regardless.
 	replay := drainAvailable(events, 500*time.Millisecond)
 	s.Require().False(sawBossMonster(replay), "boss-region monster must not appear in the connect-time replay")
 
@@ -654,25 +716,53 @@ func (s *DungeonCryptSuite) TestStaticObstacles_ProjectOnlyWhenRevealedAndRemain
 	postReveal := drainAvailable(events, 1500*time.Millisecond)
 	appeared := 0
 	for _, event := range postReveal {
-		appearance := event.GetEntityAppeared()
-		if appearance == nil {
+		hkc := event.GetHexKnowledgeChanged()
+		if hkc == nil {
 			continue
 		}
-		entity := appearance.GetEntity()
-		if entity.GetId() != string(revealed.ID) {
+		var entity *encounterv2pb.Entity
+		for _, e := range hkc.GetEntities() {
+			if e.GetId() == string(revealed.ID) {
+				entity = e
+				break
+			}
+		}
+		if entity == nil {
 			continue
 		}
 		appeared++
 		s.Require().Equal(encounterv2pb.EntityType_ENTITY_TYPE_OBSTACLE, entity.GetType())
 		s.Require().Equal(string(revealed.ID), entity.GetId())
-		s.Require().Equal(int32(revealed.Position.Q), entity.GetPosition().GetX())
-		s.Require().Equal(int32(revealed.Position.R), entity.GetPosition().GetY())
-		s.Require().Equal(int32(revealed.Position.S), entity.GetPosition().GetZ())
+		// Position now lives on the HexRecord's Contents placement, never on
+		// the Entity (rpg-api-protos#197) — the same HexKnowledgeChanged must
+		// carry a hex record naming this entity.
+		hex := hexRecordAt(hkc.GetHexes(), revealed.Position)
+		s.Require().NotNil(hex, "the obstacle's own hex must be in the same HexKnowledgeChanged")
+		var placed bool
+		for _, p := range hex.GetContents() {
+			if p.GetEntityId() == string(revealed.ID) {
+				placed = true
+			}
+		}
+		s.Require().True(placed, "the obstacle's hex record must list it in Contents")
 		s.Require().Equal(revealed.Ref, entity.GetObstacle().GetObstacleRef().GetModule()+":"+entity.GetObstacle().GetObstacleRef().GetType()+":"+entity.GetObstacle().GetObstacleRef().GetId())
 		s.Require().Equal(revealed.BlocksMovement, entity.GetObstacle().GetBlocksMovement())
 		s.Require().Equal(revealed.BlocksLoS, entity.GetObstacle().GetBlocksLineOfSight())
 	}
-	s.Require().Equal(1, appeared, "one toolkit EntityAppeared must become one wire envelope")
+	// >=1, not ==1: rpg-api#737's playtest follow-up gave the mover's own
+	// per-move HexKnowledgeChanged restatement (translateMoveEventWithData)
+	// its own Entities disclosure, alongside the EntityAppeared-driven one
+	// this test originally measured — moveAlongPath chunks a long walk into
+	// several separate MoveEntity calls, and each step still within sight of
+	// this obstacle legitimately re-discloses it in that step's OWN full
+	// restatement (Hexes/Entities are both "restate everything now known",
+	// never a diff — knownHexesToProto's doc). What must hold is that it is
+	// disclosed at least once, in the SAME envelope that first places it —
+	// asserted per-envelope by the loop above (hex/placed checks); a second
+	// or third re-disclosure on a later step is harmless, matching how the
+	// obstacle's Hexes record is itself redundantly resent every subsequent
+	// move without complaint.
+	s.Require().GreaterOrEqual(appeared, 1, "the obstacle must be disclosed at least once, in the same envelope that places it")
 
 	reconnect, err := s.srv.EncounterClientV2.GetEncounter(s.authCtx("alice"), &encounterv2pb.GetEncounterRequest{EncounterId: encounterID})
 	s.Require().NoError(err)
@@ -738,23 +828,17 @@ func (s *DungeonCryptSuite) TestSpaceZonesAndHexZoneId_ProjectRegionsOnTheWire()
 	// Alice spawns at the entrance — her own revealed hex set must include
 	// that hex tagged with the entrance region's zone id.
 	entranceZoneID := byArchetype["entrance"]
-	var spawnHex *encounterv2pb.Hex
-	for _, h := range space.GetHexes() {
-		if h.GetPosition().GetX() == int32(encData.Space.Entrance.Q) &&
-			h.GetPosition().GetY() == int32(encData.Space.Entrance.R) &&
-			h.GetPosition().GetZ() == int32(encData.Space.Entrance.S) {
-			spawnHex = h
-			break
-		}
-	}
+	spawnHex := hexRecordAt(space.GetHexes(), encData.Space.Entrance)
 	s.Require().NotNil(spawnHex, "alice's entrance spawn hex must be in her revealed set")
 	s.Require().Equal(entranceZoneID, spawnHex.GetZoneId(),
 		"the entrance hex must carry the entrance region's zone id")
 
 	// Now form a sightline into the boss region via the live stream and
-	// prove the INCREMENTAL GeometryRevealed event (not just the connect-
+	// prove the INCREMENTAL HexKnowledgeChanged event (not just the connect-
 	// time snapshot above) also carries the right zone_id — #687's Done bar
 	// covers hexes revealed mid-session, not only ones present at connect.
+	// (rpg-api-protos#197 retired the dedicated GeometryRevealed message
+	// this used to check; HexKnowledgeChanged is its sole successor.)
 	stream, err := s.srv.EncounterClientV2.StreamEncounter(s.authCtx("alice"),
 		&encounterv2pb.StreamEncounterRequest{EncounterId: encounterID})
 	s.Require().NoError(err)
@@ -794,20 +878,16 @@ func (s *DungeonCryptSuite) TestSpaceZonesAndHexZoneId_ProjectRegionsOnTheWire()
 	var sawAny bool
 	var sawZoneID string
 	for _, ev := range postMove {
-		gr := ev.GetGeometryRevealed()
-		if gr == nil {
+		hkc := ev.GetHexKnowledgeChanged()
+		if hkc == nil {
 			continue
 		}
-		for _, h := range gr.GetHexes() {
-			if h.GetPosition().GetX() == int32(target.Q) &&
-				h.GetPosition().GetY() == int32(target.R) &&
-				h.GetPosition().GetZ() == int32(target.S) {
-				sawAny = true
-				sawZoneID = h.GetZoneId()
-			}
+		if h := hexRecordAt(hkc.GetHexes(), target); h != nil {
+			sawAny = true
+			sawZoneID = h.GetZoneId()
 		}
 	}
-	s.Require().True(sawAny, "the boss-region monster's hex must appear in a live GeometryRevealed event")
+	s.Require().True(sawAny, "the boss-region monster's hex must appear in a live HexKnowledgeChanged event")
 	s.Require().Equal(bossZoneID, sawZoneID,
 		"a hex revealed mid-session via the live stream must carry its zone_id too, not just connect-time hexes")
 }

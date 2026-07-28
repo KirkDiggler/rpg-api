@@ -57,12 +57,72 @@ func newPlayerData(pid core.PlayerID, eid core.EntityID, pos core.Hex, sightRang
 	// nil room: these fixtures never call InitRoom, matching the pre-wave-1
 	// pure-radius LoS behavior (perception.VisibleHexesAt's documented nil-room
 	// fallback).
-	view.ApplyReveal(perception.VisibleHexesAt(pos, sightRange, nil))
+	for h := range perception.VisibleHexesAt(pos, sightRange, nil) {
+		view.Observe(perception.HexObservation{Position: h, State: perception.KnowledgeStateVisible})
+	}
 	return &tkenc.PlayerData{
 		ID:       pid,
 		EntityID: eid,
 		View:     view,
 	}
+}
+
+// seedPlayer adds pid to data via the toolkit's REAL AddPlayer
+// (rpg-toolkit#851), so pid's initial Memory is built by the same
+// refreshObservations write path production code exercises: walls, doors,
+// zones, and any already-seated monster/player/obstacle all come through
+// correctly, the same way start_encounter.go's real InitDungeon -> AddPlayer
+// -> SeedMonsters order produces them. This is the fixture of record for any
+// test that asserts on Edges/Contents/ZoneID — newPlayerData's bare radius
+// reveal (no room, no data awareness) only ever produced a membership set,
+// which was sufficient under the retired toolkitKnowledge stand-in (which
+// recomputed edges/contents/zone fresh from data at EVERY ProjectFor call,
+// regardless of what View had recorded) but is not enough now that ProjectFor
+// consumes the toolkit's own persisted Memory directly.
+//
+// data is mutated via a live *tkenc.Encounter wrapping the SAME data
+// pointer, so callers pass the already-built data (with Space/Doors/Monsters
+// set) directly to ProjectFor afterward — no separate ToData()/copy-back
+// needed. MUST be called after data.Space/Doors/Monsters are fully set up
+// (mirrors start_encounter.go's real ordering): a door/wall/obstacle added
+// to data AFTER this call will not retroactively appear in pid's Memory — no
+// toolkit write path refreshes an already-seated player's knowledge when
+// AddDoor/AddObstacle add content after the fact (unlike AddMonster, which
+// does refresh already-seated viewers who can see the new monster's hex).
+func (s *ProjectSuite) seedPlayer(data *tkenc.Data, pid core.PlayerID, eid core.EntityID, pos core.Hex, sightRange int) {
+	enc, err := tkenc.LoadFromData(context.Background(), data, s.broker)
+	s.Require().NoError(err)
+	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
+		PlayerID: pid, EntityID: eid, Position: pos, SightRange: sightRange,
+	}))
+}
+
+// hexRecordForEntity finds the HexRecord in hexes whose Contents names
+// entityID — the new contract's only source of an entity's position
+// (rpg-api-protos#197 removed Entity.position entirely; HexRecord.contents
+// is the sole placement authority, see HexRecord's doc). Returns nil if no
+// record's Contents names the entity.
+func hexRecordForEntity(hexes []*encounterv2pb.HexRecord, entityID string) *encounterv2pb.HexRecord {
+	for _, h := range hexes {
+		for _, p := range h.GetContents() {
+			if p.GetEntityId() == entityID {
+				return h
+			}
+		}
+	}
+	return nil
+}
+
+// hexRecordAt finds the HexRecord at the given cube position, or nil if the
+// viewer has no knowledge of that hex at all.
+func hexRecordAt(hexes []*encounterv2pb.HexRecord, x, y, z int32) *encounterv2pb.HexRecord {
+	for _, h := range hexes {
+		p := h.GetPosition()
+		if p.GetX() == x && p.GetY() == y && p.GetZ() == z {
+			return h
+		}
+	}
+	return nil
 }
 
 func (s *ProjectSuite) TestProjectFor_TurnBased_EmitsModeTurnStateAndMonsters() {
@@ -75,15 +135,12 @@ func (s *ProjectSuite) TestProjectFor_TurnBased_EmitsModeTurnStateAndMonsters() 
 	data.ActiveIdx = 0
 	data.Initiative = []core.EntityID{"char-alice", "char-bob", "goblin-1"}
 
-	// Alice at origin with sight 3; Bob right next door so he's visible too.
-	alice := newPlayerData("player-alice", "char-alice", originHex, 3)
-	bob := newPlayerData("player-bob", "char-bob", core.Hex{Q: 1, R: -1, S: 0}, 3)
-	data.Players = map[core.PlayerID]*tkenc.PlayerData{
-		"player-alice": alice,
-		"player-bob":   bob,
-	}
-
-	// Goblin within alice's sight (distance 2 from origin).
+	// Goblin within alice's sight (distance 2 from origin). Seeded into data
+	// BEFORE any player joins — mirrors start_encounter.go's real ordering,
+	// and gives seedPlayer's AddPlayer call a monster placementsAt can
+	// already find at alice's own reveal time (rpg-toolkit#851: nothing
+	// retroactively refreshes an already-seated viewer's Memory for content
+	// added afterward).
 	data.Monsters = map[core.EntityID]*tkenc.MonsterData{
 		"goblin-1": {
 			ID:         "goblin-1",
@@ -95,6 +152,10 @@ func (s *ProjectSuite) TestProjectFor_TurnBased_EmitsModeTurnStateAndMonsters() 
 			MonsterRef: "dnd5e:monsters:goblin",
 		},
 	}
+
+	// Alice at origin with sight 3; Bob right next door so he's visible too.
+	s.seedPlayer(data, "player-alice", "char-alice", originHex, 3)
+	s.seedPlayer(data, "player-bob", "char-bob", core.Hex{Q: 1, R: -1, S: 0}, 3)
 
 	pb, err := v2encounter.ProjectFor(context.Background(), data, "player-alice", s.broker, nil, s.now)
 	s.Require().NoError(err)
@@ -140,10 +201,13 @@ func (s *ProjectSuite) TestProjectFor_TurnBased_EmitsModeTurnStateAndMonsters() 
 	s.Require().NotNil(gob.GetHp())
 	s.Require().Equal(int32(7), gob.GetHp().GetCurrent())
 	s.Require().Equal(int32(7), gob.GetHp().GetMax())
-	s.Require().NotNil(gob.GetPosition())
-	s.Require().Equal(int32(2), gob.GetPosition().GetX())
-	s.Require().Equal(int32(-2), gob.GetPosition().GetY())
-	s.Require().Equal(int32(0), gob.GetPosition().GetZ())
+	// Position lives on the HexRecord's Contents placement, never on the
+	// Entity (rpg-api-protos#197).
+	gobHex := hexRecordForEntity(pb.GetSpace().GetHexes(), "goblin-1")
+	s.Require().NotNil(gobHex, "goblin-1 must be placed on a hex record")
+	s.Require().Equal(int32(2), gobHex.GetPosition().GetX())
+	s.Require().Equal(int32(-2), gobHex.GetPosition().GetY())
+	s.Require().Equal(int32(0), gobHex.GetPosition().GetZ())
 	md := gob.GetMonster()
 	s.Require().NotNil(md, "MonsterData oneof must be set on monster entities")
 	ref := md.GetMonsterRef()
@@ -160,12 +224,21 @@ func (s *ProjectSuite) TestProjectFor_TurnBased_EmitsModeTurnStateAndMonsters() 
 func (s *ProjectSuite) TestProjectFor_ProjectsOnlyRevealedObstaclesInStableIDOrder() {
 	enc := tkenc.New(context.Background(), "enc-obstacles", s.broker)
 	s.Require().NoError(enc.InitRoom(20, 20, environments.PatternEmpty))
-	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
-		PlayerID: "player-alice", EntityID: "char-alice", Position: originHex, SightRange: 2,
-	}))
+	// Obstacles are added BEFORE the player joins — mirrors start_encounter.go's
+	// real ordering (room/content setup, then AddPlayer). rpg-toolkit#851:
+	// AddObstacle does not retroactively refresh an already-seated viewer's
+	// Memory, so a player added first would never see obstacle-a on a hex
+	// record even though it is well within sight range (see
+	// TestProjectFor_ObstacleMalformedRefAndEmptyFallback for a case that
+	// doesn't hit this — it only asserts on the Entities list, which
+	// disclosedEntities still derives fresh from data.Space.Obstacles every
+	// call, not from Memory).
 	s.Require().NoError(enc.AddObstacle("obstacle-z", "dnd5e:props:altar", core.Hex{Q: 1, R: -1, S: 0}, true, false))
 	s.Require().NoError(enc.AddObstacle("obstacle-hidden", "dnd5e:props:coffin", core.Hex{Q: 5, R: -5, S: 0}, true, true))
 	s.Require().NoError(enc.AddObstacle("obstacle-a", "dnd5e:props:obelisk", core.Hex{Q: 2, R: -2, S: 0}, false, true))
+	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
+		PlayerID: "player-alice", EntityID: "char-alice", Position: originHex, SightRange: 2,
+	}))
 	data := enc.ToData()
 
 	pb, err := v2encounter.ProjectFor(context.Background(), data, "player-alice", s.broker, nil, s.now)
@@ -179,9 +252,11 @@ func (s *ProjectSuite) TestProjectFor_ProjectsOnlyRevealedObstaclesInStableIDOrd
 	}
 	s.Require().Len(obstacles, 2, "unrevealed obstacles must not leak into a snapshot")
 	s.Require().Equal([]string{"obstacle-a", "obstacle-z"}, []string{obstacles[0].GetId(), obstacles[1].GetId()})
-	s.Require().Equal(int32(2), obstacles[0].GetPosition().GetX())
-	s.Require().Equal(int32(-2), obstacles[0].GetPosition().GetY())
-	s.Require().Equal(int32(0), obstacles[0].GetPosition().GetZ())
+	obstacleAHex := hexRecordForEntity(pb.GetSpace().GetHexes(), "obstacle-a")
+	s.Require().NotNil(obstacleAHex, "obstacle-a must be placed on a hex record")
+	s.Require().Equal(int32(2), obstacleAHex.GetPosition().GetX())
+	s.Require().Equal(int32(-2), obstacleAHex.GetPosition().GetY())
+	s.Require().Equal(int32(0), obstacleAHex.GetPosition().GetZ())
 	s.Require().Equal("dnd5e", obstacles[0].GetObstacle().GetObstacleRef().GetModule())
 	s.Require().Equal("props", obstacles[0].GetObstacle().GetObstacleRef().GetType())
 	s.Require().Equal("obelisk", obstacles[0].GetObstacle().GetObstacleRef().GetId())
@@ -632,23 +707,24 @@ func (s *ProjectSuite) TestProjectFor_MonsterRef_TooManyColonsTreatedAsMalformed
 	}
 }
 
-// TestProjectFor_PopulatesWalls_WholeRoomVisibility covers rpg-api#644 step
-// 7: Space.Walls must be populated from the encounter's persisted room
-// snapshot (rpg-toolkit#757's SpaceData), converting each WallSegmentData's
-// cube-coordinate Start/End into wire Positions and mapping
-// BlocksMovement/BlocksLoS onto WallKind. Wave 1 wall visibility is
-// whole-room (design doc) — unlike Hexes/Entities, walls are NOT gated by
-// the viewer's RevealedHexes/visibleNow, so even a wall alice has never
-// stood near must still appear.
-func (s *ProjectSuite) TestProjectFor_PopulatesWalls_WholeRoomVisibility() {
+// TestProjectFor_WallEdges_GatedByHexKnowledge_NotWholeRoom supersedes the
+// retired TestProjectFor_PopulatesWalls_WholeRoomVisibility (rpg-api#644 step
+// 7's Space.Walls, unconditional regardless of RevealedHexes/visibleNow).
+// rpg-api-protos#197 moved wall/door geometry onto each HexRecord's Edges, so
+// a wall now only reaches the wire when its hex is at least KNOWN to the
+// viewer — this is "the leak this whole contract removes" (knowledge.go's
+// Edge doc: the old wallsToProto sent every wall in the room to every viewer
+// regardless of what they had actually seen). A wall on a hex alice has never
+// explored — not even remembered — must not appear on the wire AT ALL, not
+// even as an edge on an absent record.
+func (s *ProjectSuite) TestProjectFor_WallEdges_GatedByHexKnowledge_NotWholeRoom() {
 	data := tkenc.NewData("enc-walls")
 	data.Mode = core.ModeFreeRoam
 
-	alice := newPlayerData("player-alice", "char-alice", originHex, 2)
-	data.Players = map[core.PlayerID]*tkenc.PlayerData{"player-alice": alice}
-
-	// solidHex sits well outside alice's sight range (2) so this test also
-	// proves wall projection is whole-room, not LOS-gated like Hexes/Entities.
+	// windowHex sits within alice's sight range (distance 1) so it becomes a
+	// VISIBLE record carrying the wall as an Edge. solidHex sits well outside
+	// (distance 8, never revealed or visible) and must not appear on the wire
+	// at all -- not the wall, not even a hex record for that position.
 	solidHex := core.Hex{Q: 8, R: -8, S: 0}
 	windowHex := core.Hex{Q: 1, R: -1, S: 0}
 	data.Space = &tkenc.SpaceData{
@@ -660,34 +736,32 @@ func (s *ProjectSuite) TestProjectFor_PopulatesWalls_WholeRoomVisibility() {
 		},
 	}
 
+	// Space set up BEFORE the player joins (mirrors real ordering — see
+	// seedPlayer's doc): alice's own reveal is what populates her Memory's
+	// Edges from these walls.
+	s.seedPlayer(data, "player-alice", "char-alice", originHex, 2)
+
 	pb, err := v2encounter.ProjectFor(context.Background(), data, "player-alice", s.broker, nil, s.now)
 	s.Require().NoError(err)
 
-	walls := pb.GetSpace().GetWalls()
-	s.Require().Len(walls, 2, "both walls must be emitted regardless of alice's sight range")
+	window := hexRecordAt(pb.GetSpace().GetHexes(), 1, -1, 0)
+	s.Require().NotNil(window, "windowHex is within alice's sight range and must be known")
+	s.Require().Equal(encounterv2pb.HexState_HEX_STATE_VISIBLE, window.GetState())
+	s.Require().Len(window.GetEdges(), 1)
+	s.Require().Equal(encounterv2pb.WallKind_WALL_KIND_WINDOW, window.GetEdges()[0].GetKind(),
+		"BlocksMovement without BlocksLoS must map to WALL_KIND_WINDOW")
+	s.Require().Equal(int32(1), window.GetEdges()[0].GetFrom().GetX())
+	s.Require().Equal(int32(-1), window.GetEdges()[0].GetFrom().GetY())
 
-	byKind := make(map[encounterv2pb.WallKind]*encounterv2pb.Wall, 2)
-	for _, w := range walls {
-		byKind[w.GetKind()] = w
-	}
-
-	solid := byKind[encounterv2pb.WallKind_WALL_KIND_SOLID]
-	s.Require().NotNil(solid, "BlocksMovement+BlocksLoS must map to WALL_KIND_SOLID")
-	s.Require().Equal(int32(8), solid.GetFrom().GetX())
-	s.Require().Equal(int32(-8), solid.GetFrom().GetY())
-	s.Require().Equal(int32(0), solid.GetFrom().GetZ())
-	s.Require().Equal(solid.GetFrom(), solid.GetTo(), "wave 1 walls are degenerate Start==End segments")
-
-	window := byKind[encounterv2pb.WallKind_WALL_KIND_WINDOW]
-	s.Require().NotNil(window, "BlocksMovement without BlocksLoS must map to WALL_KIND_WINDOW")
-	s.Require().Equal(int32(1), window.GetFrom().GetX())
-	s.Require().Equal(int32(-1), window.GetFrom().GetY())
+	s.Require().Nil(hexRecordAt(pb.GetSpace().GetHexes(), 8, -8, 0),
+		"a hex alice has never explored must not appear on the wire at all")
 }
 
-// TestProjectFor_NilSpace_EmptyWalls covers the pre-wave-1 fallback: an
+// TestProjectFor_NilSpace_NoEdgesNoPanic covers the pre-wave-1 fallback: an
 // encounter with no room (InitRoom never called, data.Space == nil) must
-// project an empty Walls list, not panic.
-func (s *ProjectSuite) TestProjectFor_NilSpace_EmptyWalls() {
+// project hex records with no edges, not panic. Supersedes the retired
+// TestProjectFor_NilSpace_EmptyWalls under the per-hex edge contract.
+func (s *ProjectSuite) TestProjectFor_NilSpace_NoEdgesNoPanic() {
 	data := tkenc.NewData("enc-no-room")
 	data.Mode = core.ModeFreeRoam
 	alice := newPlayerData("player-alice", "char-alice", originHex, 2)
@@ -695,23 +769,25 @@ func (s *ProjectSuite) TestProjectFor_NilSpace_EmptyWalls() {
 
 	pb, err := v2encounter.ProjectFor(context.Background(), data, "player-alice", s.broker, nil, s.now)
 	s.Require().NoError(err)
-	s.Require().Empty(pb.GetSpace().GetWalls())
+	s.Require().NotEmpty(pb.GetSpace().GetHexes(), "alice's own revealed hexes must still project")
+	for _, h := range pb.GetSpace().GetHexes() {
+		s.Require().Empty(h.GetEdges(), "nil space has no wall/door geometry to attach to any hex")
+	}
 }
 
 // TestProjectFor_DoorWall_ProjectsIdKindAndPassageEdge covers The Dungeon
-// wave 2 Slice 2 (rpg-api#676): a door in data.Doors must project onto the
-// wire as a Wall carrying its entity id (rpg-api-protos#186's additive
-// Wall.id) and a DOOR_CLOSED/DOOR_OPEN kind derived from DoorData.Open —
-// not the door's own degenerate Start==End segment, but From=the door's
-// cell and To=its passage-edge neighbor (design doc §Q2's 6-door-pair
-// multiplicity fix), found via SpaceData.RegionAt over the door's six
-// neighbors. Like solid walls, door walls are whole-room (unconditional),
-// not LOS-gated.
+// wave 2 Slice 2 (rpg-api#676): a door in data.Doors must project as an Edge
+// on its own hex's HexRecord, carrying its entity id (rpg-api-protos#186's
+// additive Wall.id) and a DOOR_CLOSED/DOOR_OPEN kind derived from
+// DoorData.Open — not the door's own degenerate Start==End segment, but
+// From=the door's cell and To=its passage-edge neighbor (design doc §Q2's
+// 6-door-pair multiplicity fix), found via SpaceData.RegionAt over the
+// door's six neighbors. Unlike wave 1's whole-room walls, a door edge is now
+// gated by hex knowledge like any other edge (rpg-api-protos#197) — alice
+// stands on the door's own hex here, so it is trivially known/visible.
 func (s *ProjectSuite) TestProjectFor_DoorWall_ProjectsIdKindAndPassageEdge() {
 	data := tkenc.NewData("enc-door")
 	data.Mode = core.ModeFreeRoam
-	alice := newPlayerData("player-alice", "char-alice", originHex, 2)
-	data.Players = map[core.PlayerID]*tkenc.PlayerData{"player-alice": alice}
 
 	doorHex := core.Hex{Q: 0, R: 0, S: 0}
 	// Exactly one of the door's six neighbors (perception.HexNeighbors) is
@@ -730,43 +806,53 @@ func (s *ProjectSuite) TestProjectFor_DoorWall_ProjectsIdKindAndPassageEdge() {
 	data.Doors = map[core.EntityID]*tkenc.DoorData{
 		"door-1": {ID: "door-1", Position: doorHex, Open: false},
 	}
+	s.seedPlayer(data, "player-alice", "char-alice", originHex, 2)
 
 	pb, err := v2encounter.ProjectFor(context.Background(), data, "player-alice", s.broker, nil, s.now)
 	s.Require().NoError(err)
 
-	walls := pb.GetSpace().GetWalls()
-	s.Require().Len(walls, 1)
-	w := walls[0]
-	s.Require().Equal("door-1", w.GetId(), "the wire wall must carry the door's entity id (the click->Interact bridge)")
+	doorRecord := hexRecordAt(pb.GetSpace().GetHexes(), 0, 0, 0)
+	s.Require().NotNil(doorRecord, "alice stands on the door's own hex, so it must be known")
+	s.Require().Len(doorRecord.GetEdges(), 1)
+	w := doorRecord.GetEdges()[0]
+	s.Require().Equal("door-1", w.GetId(), "the wire edge must carry the door's entity id (the click->Interact bridge)")
 	s.Require().Equal(encounterv2pb.WallKind_WALL_KIND_DOOR_CLOSED, w.GetKind())
 	s.Require().Equal(int32(0), w.GetFrom().GetX())
 	s.Require().Equal(int32(0), w.GetFrom().GetY())
 	s.Require().Equal(int32(0), w.GetFrom().GetZ())
 	s.Require().NotEqual(w.GetFrom(), w.GetTo(),
-		"a door wall must NOT be a degenerate Start==End segment — that's the 6-door-pair multiplicity bug")
+		"a door edge must NOT be a degenerate Start==End segment — that's the 6-door-pair multiplicity bug")
 	s.Require().Equal(int32(-1), w.GetTo().GetX())
 	s.Require().Equal(int32(0), w.GetTo().GetY())
 	s.Require().Equal(int32(1), w.GetTo().GetZ())
 
-	// Open the door and re-project: same id/edge, kind flips to DOOR_OPEN.
+	// Open the door and re-project through a FRESH viewer seated after the
+	// flip. rpg-toolkit#851: a connect-time snapshot reflects each viewer's
+	// own persisted Memory, not live data.Doors — that is the whole point
+	// of fog of war (a door someone else opens does not silently update a
+	// viewer's knowledge until they actually witness it). Mutating
+	// data.Doors and re-projecting the SAME already-seated alice would
+	// exercise stale-memory semantics, not the CLOSED->OPEN wire-kind
+	// mapping this test is actually about — a second, independently-seeded
+	// viewer isolates the mapping the same way this test always intended.
 	data.Doors["door-1"].Open = true
-	pbOpen, err := v2encounter.ProjectFor(context.Background(), data, "player-alice", s.broker, nil, s.now)
+	s.seedPlayer(data, "player-bob", "char-bob", originHex, 2)
+	pbOpen, err := v2encounter.ProjectFor(context.Background(), data, "player-bob", s.broker, nil, s.now)
 	s.Require().NoError(err)
-	openWalls := pbOpen.GetSpace().GetWalls()
-	s.Require().Len(openWalls, 1)
-	s.Require().Equal(encounterv2pb.WallKind_WALL_KIND_DOOR_OPEN, openWalls[0].GetKind())
-	s.Require().Equal("door-1", openWalls[0].GetId())
+	openRecord := hexRecordAt(pbOpen.GetSpace().GetHexes(), 0, 0, 0)
+	s.Require().NotNil(openRecord)
+	s.Require().Len(openRecord.GetEdges(), 1)
+	s.Require().Equal(encounterv2pb.WallKind_WALL_KIND_DOOR_OPEN, openRecord.GetEdges()[0].GetKind())
+	s.Require().Equal("door-1", openRecord.GetEdges()[0].GetId())
 }
 
 // TestProjectFor_DoorWall_ProjectsLockedClosedKind verifies the locked-door
 // projection truth table's locked+closed state. DoorData remains the sole
-// source of truth; this test also guards that the existing addressable edge is
-// preserved while only the wire kind changes.
+// source of truth; this test also guards that the existing addressable edge
+// is preserved while only the wire kind changes.
 func (s *ProjectSuite) TestProjectFor_DoorWall_ProjectsLockedClosedKind() {
 	data := tkenc.NewData("enc-locked-door")
 	data.Mode = core.ModeFreeRoam
-	alice := newPlayerData("player-alice", "char-alice", originHex, 2)
-	data.Players = map[core.PlayerID]*tkenc.PlayerData{"player-alice": alice}
 
 	doorHex := core.Hex{Q: 0, R: 0, S: 0}
 	passageNeighbor := core.Hex{Q: -1, R: 0, S: 1}
@@ -780,13 +866,15 @@ func (s *ProjectSuite) TestProjectFor_DoorWall_ProjectsLockedClosedKind() {
 	data.Doors = map[core.EntityID]*tkenc.DoorData{
 		"door-locked": {ID: "door-locked", Position: doorHex, Locked: true},
 	}
+	s.seedPlayer(data, "player-alice", "char-alice", originHex, 2)
 
 	pb, err := v2encounter.ProjectFor(context.Background(), data, "player-alice", s.broker, nil, s.now)
 	s.Require().NoError(err)
 
-	walls := pb.GetSpace().GetWalls()
-	s.Require().Len(walls, 1)
-	w := walls[0]
+	doorRecord := hexRecordAt(pb.GetSpace().GetHexes(), 0, 0, 0)
+	s.Require().NotNil(doorRecord)
+	s.Require().Len(doorRecord.GetEdges(), 1)
+	w := doorRecord.GetEdges()[0]
 	s.Require().Equal(encounterv2pb.WallKind_WALL_KIND_DOOR_LOCKED, w.GetKind())
 	s.Require().Equal("door-locked", w.GetId())
 	s.Require().Equal(int32(0), w.GetFrom().GetX())
@@ -797,20 +885,27 @@ func (s *ProjectSuite) TestProjectFor_DoorWall_ProjectsLockedClosedKind() {
 	s.Require().Equal(int32(1), w.GetTo().GetZ())
 
 	// Canonical data can temporarily retain Locked while Open becomes true.
-	// Open must win on the wire without changing the addressable door geometry.
+	// Open must win on the wire without changing the addressable door
+	// geometry. A fresh viewer is seeded after the flip for the same reason
+	// TestProjectFor_DoorWall_ProjectsIdKindAndPassageEdge's flip does — see
+	// its comment: a connect-time snapshot reflects the viewer's own
+	// persisted Memory, not live data.Doors.
 	data.Doors["door-locked"].Open = true
-	pbOpen, err := v2encounter.ProjectFor(context.Background(), data, "player-alice", s.broker, nil, s.now)
+	s.seedPlayer(data, "player-bob", "char-bob", originHex, 2)
+	pbOpen, err := v2encounter.ProjectFor(context.Background(), data, "player-bob", s.broker, nil, s.now)
 	s.Require().NoError(err)
-	openWalls := pbOpen.GetSpace().GetWalls()
-	s.Require().Len(openWalls, 1)
-	s.Require().Equal(encounterv2pb.WallKind_WALL_KIND_DOOR_OPEN, openWalls[0].GetKind())
-	s.Require().Equal("door-locked", openWalls[0].GetId())
-	s.Require().Equal(int32(0), openWalls[0].GetFrom().GetX())
-	s.Require().Equal(int32(0), openWalls[0].GetFrom().GetY())
-	s.Require().Equal(int32(0), openWalls[0].GetFrom().GetZ())
-	s.Require().Equal(int32(-1), openWalls[0].GetTo().GetX())
-	s.Require().Equal(int32(0), openWalls[0].GetTo().GetY())
-	s.Require().Equal(int32(1), openWalls[0].GetTo().GetZ())
+	openRecord := hexRecordAt(pbOpen.GetSpace().GetHexes(), 0, 0, 0)
+	s.Require().NotNil(openRecord)
+	s.Require().Len(openRecord.GetEdges(), 1)
+	ow := openRecord.GetEdges()[0]
+	s.Require().Equal(encounterv2pb.WallKind_WALL_KIND_DOOR_OPEN, ow.GetKind())
+	s.Require().Equal("door-locked", ow.GetId())
+	s.Require().Equal(int32(0), ow.GetFrom().GetX())
+	s.Require().Equal(int32(0), ow.GetFrom().GetY())
+	s.Require().Equal(int32(0), ow.GetFrom().GetZ())
+	s.Require().Equal(int32(-1), ow.GetTo().GetX())
+	s.Require().Equal(int32(0), ow.GetTo().GetY())
+	s.Require().Equal(int32(1), ow.GetTo().GetZ())
 }
 
 // TestProjectFor_DoorWall_NoRegionNeighbor_FallsBackToDegenerateSegment
@@ -822,20 +917,21 @@ func (s *ProjectSuite) TestProjectFor_DoorWall_ProjectsLockedClosedKind() {
 func (s *ProjectSuite) TestProjectFor_DoorWall_NoRegionNeighbor_FallsBackToDegenerateSegment() {
 	data := tkenc.NewData("enc-door-no-region")
 	data.Mode = core.ModeFreeRoam
-	alice := newPlayerData("player-alice", "char-alice", originHex, 2)
-	data.Players = map[core.PlayerID]*tkenc.PlayerData{"player-alice": alice}
 
 	data.Space = &tkenc.SpaceData{Width: 10, Height: 10} // no Regions at all
 	data.Doors = map[core.EntityID]*tkenc.DoorData{
 		"door-1": {ID: "door-1", Position: core.Hex{Q: 0, R: 0, S: 0}, Open: false},
 	}
+	s.seedPlayer(data, "player-alice", "char-alice", originHex, 2)
 
 	pb, err := v2encounter.ProjectFor(context.Background(), data, "player-alice", s.broker, nil, s.now)
 	s.Require().NoError(err)
 
-	walls := pb.GetSpace().GetWalls()
-	s.Require().Len(walls, 1)
-	s.Require().Equal(walls[0].GetFrom(), walls[0].GetTo(), "no tagged neighbor falls back to a degenerate Start==End segment")
+	doorRecord := hexRecordAt(pb.GetSpace().GetHexes(), 0, 0, 0)
+	s.Require().NotNil(doorRecord)
+	s.Require().Len(doorRecord.GetEdges(), 1)
+	w := doorRecord.GetEdges()[0]
+	s.Require().Equal(w.GetFrom(), w.GetTo(), "no tagged neighbor falls back to a degenerate Start==End segment")
 }
 
 // TestProjectFor_DoorWall_NilSpace_NoPanic_DegenerateSegment is the
@@ -850,28 +946,44 @@ func (s *ProjectSuite) TestProjectFor_DoorWall_NoRegionNeighbor_FallsBackToDegen
 // toolkit#806), and doorPassageNeighbor now also nil-checks space
 // explicitly — this test proves the combination end to end through the
 // public ProjectFor entry point, not just the unexported helper.
+//
+// rpg-toolkit#851: the nil-space door-edge computation this pins now
+// happens at Memory-WRITE time (the toolkit's own refreshObservations,
+// called from AddPlayer inside seedPlayer below) rather than at
+// ProjectFor's snapshot-READ time — ProjectFor itself no longer computes
+// edges at all, it just reads what Memory already has. So both calls are
+// wrapped in NotPanics, not just ProjectFor, to keep this an honest
+// end-to-end pin on the whole nil-space path rather than only the half of
+// it ProjectFor still touches.
+//
+// The door sits on alice's own hex (distance 0) rather than the pre-fog
+// fixture's distance-3 position: under the new hex-knowledge gate, a hex
+// nobody has seen carries no edges (or record) at all, so the door must be
+// somewhere alice actually knows about for this test to observe the
+// nil-space fallback through the public ProjectFor entry at all.
 func (s *ProjectSuite) TestProjectFor_DoorWall_NilSpace_NoPanic_DegenerateSegment() {
 	data := tkenc.NewData("enc-door-nil-space")
 	data.Mode = core.ModeFreeRoam
-	alice := newPlayerData("player-alice", "char-alice", originHex, 2)
-	data.Players = map[core.PlayerID]*tkenc.PlayerData{"player-alice": alice}
 
 	// data.Space is left nil — no InitRoom/InitTwoChamberRoom call.
 	data.Doors = map[core.EntityID]*tkenc.DoorData{
-		"door-1": {ID: "door-1", Position: core.Hex{Q: 3, R: -3, S: 0}, Open: false},
+		"door-1": {ID: "door-1", Position: core.Hex{Q: 0, R: 0, S: 0}, Open: false},
 	}
 
 	var pb *encounterv2pb.Encounter
 	var err error
 	s.Require().NotPanics(func() {
+		s.seedPlayer(data, "player-alice", "char-alice", originHex, 2)
 		pb, err = v2encounter.ProjectFor(context.Background(), data, "player-alice", s.broker, nil, s.now)
-	}, "ProjectFor must not panic on a door-only encounter with nil Data.Space")
+	}, "AddPlayer's initial reveal and ProjectFor must not panic on a door-only encounter with nil Data.Space")
 	s.Require().NoError(err)
 
-	walls := pb.GetSpace().GetWalls()
-	s.Require().Len(walls, 1)
-	s.Require().Equal("door-1", walls[0].GetId())
-	s.Require().Equal(walls[0].GetFrom(), walls[0].GetTo(),
+	doorRecord := hexRecordAt(pb.GetSpace().GetHexes(), 0, 0, 0)
+	s.Require().NotNil(doorRecord, "alice stands on the door's own hex, so it must be known even with nil Space")
+	s.Require().Len(doorRecord.GetEdges(), 1)
+	w := doorRecord.GetEdges()[0]
+	s.Require().Equal("door-1", w.GetId())
+	s.Require().Equal(w.GetFrom(), w.GetTo(),
 		"nil space falls back to a degenerate Start==End segment, same as the no-tagged-neighbor case")
 }
 
@@ -1060,15 +1172,26 @@ func (s *ProjectSuite) TestProjectFor_SpaceZones_ProjectsMultipleRegionsInDeclar
 // door's own cell belongs to NEITHER region" contract. If zone_id were
 // derived from proximity/geometry instead of exact set membership, this
 // hex would wrongly pick up a neighbor's zone.
+//
+// Fixture coordinates deliberately land at non-negative offset positions
+// within the declared Width/Height grid (col=0, rows 4/5/6 — verified via
+// core.Hex.ToPosition(), the same pointy-top conversion the toolkit's own
+// isSpaceHex uses): rpg-toolkit encounter/v0.46.1 confines viewer memory to
+// hexes actually within a space's grid bounds (rpg-toolkit#859), and the
+// original fixture's negative-Q hexes (Q=-1) converted to an out-of-bounds
+// offset column that v0.46.1 correctly rejects as "not part of the space" —
+// this fixture never intended to test grid-bounds membership at all, only
+// RegionAt's own "the door belongs to neither region" behavior, so it moves
+// into bounds rather than weakening what it actually asserts. The three
+// hexes are still a straight adjacent triple (chamber1 - door - chamber2,
+// each exactly one hex step apart) — only their absolute position moved.
 func (s *ProjectSuite) TestProjectFor_HexZoneId_SetViaRegionMembership_NotGeometry() {
 	data := tkenc.NewData("enc-zoneid")
 	data.Mode = core.ModeFreeRoam
-	chamber1Hex := core.Hex{Q: -1, R: 0, S: 1}
-	doorHex := core.Hex{Q: 0, R: 0, S: 0} // adjacent to both, tagged into neither
-	chamber2Hex := core.Hex{Q: 1, R: 0, S: -1}
+	chamber1Hex := core.Hex{Q: 0, R: -6, S: 6}
+	doorHex := core.Hex{Q: 0, R: -5, S: 5} // adjacent to both, tagged into neither
+	chamber2Hex := core.Hex{Q: 0, R: -4, S: 4}
 
-	alice := newPlayerData("player-alice", "char-alice", doorHex, 2)
-	data.Players = map[core.PlayerID]*tkenc.PlayerData{"player-alice": alice}
 	data.Space = &tkenc.SpaceData{
 		Width: 10, Height: 10,
 		Regions: []tkenc.RegionData{
@@ -1076,24 +1199,25 @@ func (s *ProjectSuite) TestProjectFor_HexZoneId_SetViaRegionMembership_NotGeomet
 			{ID: "chamber-2", Archetype: tkenc.ArchetypeChamber, Hexes: core.NewHexSet(chamber2Hex)},
 		},
 	}
+	s.seedPlayer(data, "player-alice", "char-alice", doorHex, 2)
 
 	pb, err := v2encounter.ProjectFor(context.Background(), data, "player-alice", s.broker, nil, s.now)
 	s.Require().NoError(err)
 
-	byPos := make(map[[3]int32]*encounterv2pb.Hex)
+	byPos := make(map[[3]int32]*encounterv2pb.HexRecord)
 	for _, h := range pb.GetSpace().GetHexes() {
 		byPos[[3]int32{h.GetPosition().GetX(), h.GetPosition().GetY(), h.GetPosition().GetZ()}] = h
 	}
 
-	c1 := byPos[[3]int32{-1, 0, 1}]
+	c1 := byPos[[3]int32{0, -6, 6}]
 	s.Require().NotNil(c1, "chamber-1's hex must be revealed (alice's sight range 2 from the door)")
 	s.Require().Equal("chamber-1", c1.GetZoneId())
 
-	c2 := byPos[[3]int32{1, 0, -1}]
+	c2 := byPos[[3]int32{0, -4, 4}]
 	s.Require().NotNil(c2, "chamber-2's hex must be revealed")
 	s.Require().Equal("chamber-2", c2.GetZoneId())
 
-	door := byPos[[3]int32{0, 0, 0}]
+	door := byPos[[3]int32{0, -5, 5}]
 	s.Require().NotNil(door, "the door hex itself must be revealed")
 	s.Require().Empty(door.GetZoneId(),
 		"the door hex is adjacent to both regions but tagged into neither — zone_id must stay empty, not inherit a neighbor's zone")
@@ -1139,14 +1263,23 @@ func (s *ProjectSuite) TestProjectFor_CryptFixture_ProjectsPerimeterEdgesAsSolid
 	// necessarily near the spawn cell. A short sight range here would
 	// make the bone-pile assertion below seed-dependent instead of a
 	// reliable proof.
-	alice := newPlayerData("player-alice", "char-alice", data.Space.Entrance, 30)
-	data.Players = map[core.PlayerID]*tkenc.PlayerData{"player-alice": alice}
+	s.seedPlayer(data, "player-alice", "char-alice", data.Space.Entrance, 30)
 
 	pb, err := v2encounter.ProjectFor(context.Background(), data, "player-alice", s.broker, nil, s.now)
 	s.Require().NoError(err)
 
-	walls := pb.GetSpace().GetWalls()
-	s.Require().NotEmpty(walls)
+	// Collect every edge across every VISIBLE hex record alice's snapshot
+	// carries -- edges are per-hex now (rpg-api-protos#197), gated by hex
+	// knowledge, so this is the new equivalent of the retired
+	// pb.GetSpace().GetWalls() whole-room list; it is a SUBSET of the
+	// pre-fog 184-wall total, restricted to what alice can actually see
+	// from the entrance spawn (walls behind the still-closed connector
+	// doors do not leak — see the boss-region assertion below).
+	var edges []*encounterv2pb.Wall
+	for _, h := range pb.GetSpace().GetHexes() {
+		edges = append(edges, h.GetEdges()...)
+	}
+	s.Require().NotEmpty(edges)
 
 	// rpg-api#707: rpg-toolkit#839's dressing (bone-pile, candles, chain,
 	// skeleton-remains) is the FIRST real crypt content with
@@ -1169,11 +1302,11 @@ func (s *ProjectSuite) TestProjectFor_CryptFixture_ProjectsPerimeterEdgesAsSolid
 	s.Require().False(bonePile.GetObstacle().GetBlocksLineOfSight())
 
 	var degenerateCount, perimeterEdgeCount int
-	var doorWallList []*encounterv2pb.Wall
-	for _, w := range walls {
+	var doorEdges []*encounterv2pb.Wall
+	for _, w := range edges {
 		if w.GetId() != "" {
-			doorWallList = append(doorWallList, w)
-			continue // door walls are covered separately below
+			doorEdges = append(doorEdges, w)
+			continue // door edges are covered separately below
 		}
 		from, to := w.GetFrom(), w.GetTo()
 		if from.GetX() == to.GetX() && from.GetY() == to.GetY() && from.GetZ() == to.GetZ() {
@@ -1193,54 +1326,60 @@ func (s *ProjectSuite) TestProjectFor_CryptFixture_ProjectsPerimeterEdgesAsSolid
 			"a boundary-edge segment (BlocksMovement+BlocksLoS both true) must project as WALL_KIND_SOLID")
 	}
 	// rpg-api#721 (encounter v0.44.0 -> v0.44.1, rpg-toolkit#849): the
-	// crypt's connector-column flanking cells (7 per connector x 2
-	// connectors = 14, per toolkit#849's own diagnosis) converted from
-	// degenerate (Start == End) "rubble box" entries to the same
-	// boundary-edge shape perimeterEdgeCount already tracked. Every crypt
-	// region uses environments.PatternEmpty (rpg-toolkit#835 -- verified
-	// directly against encounter/crypt_dungeon.go, not assumed), so the
-	// connector columns were the crypt's ONLY source of degenerate walls;
-	// with those fixed, degenerateCount is now genuinely, permanently zero
-	// for this fixture -- not a seed-dependent coincidence. Measured
-	// directly (not guessed) before pinning: degenerateCount=0,
-	// perimeterEdgeCount=182 (184 total walls - 2 door walls), for this
-	// fixture's fixed seed/dimensions.
+	// crypt's connector-column flanking cells converted from degenerate
+	// (Start == End) "rubble box" entries to the same boundary-edge shape
+	// perimeterEdgeCount already tracks. Every crypt region uses
+	// environments.PatternEmpty (rpg-toolkit#835 -- verified directly
+	// against encounter/crypt_dungeon.go, not assumed), so the connector
+	// columns were the crypt's ONLY source of degenerate walls; with those
+	// fixed, degenerateCount is genuinely, permanently zero for this
+	// fixture -- not a seed-dependent coincidence.
+	//
+	// perimeterEdgeCount is now a SUBSET of the pre-fog whole-room 182
+	// (rpg-api-protos#197 gates edges by hex knowledge): only the entrance
+	// region's own boundary is visible from the spawn, not the corridor or
+	// boss room's. Measured directly (not guessed) before pinning, exactly
+	// like the retired assertion this one replaces.
 	s.Require().Zero(degenerateCount,
 		"toolkit#849: connector-column flanking cells no longer project degenerate; "+
 			"the crypt's PatternEmpty rooms have no other source of degenerate walls")
-	s.Require().Equal(182, perimeterEdgeCount,
-		"exact count locks in that the connector fix's 14 flanking cells (7 per connector x 2 connectors) "+
-			"joined the boundary-edge category, not just \"more than zero\"")
+	s.Require().Equal(cryptEntranceRegionPerimeterEdgeCount, perimeterEdgeCount,
+		"exact count locks in the entrance region's own boundary-edge segments visible from the spawn; "+
+			"a regression here means either the connector fix broke or the hex-knowledge gate started "+
+			"leaking/hiding edges it shouldn't")
 
-	// doorWallsToProto output unchanged in shape: the crypt's two connector
-	// doors (entrance plain, boss locked) must still each project exactly
-	// one wall, carrying their entity id and passage edge, unaffected by
-	// the much larger Walls list the new perimeter segments add.
-	//
-	// Asserted by COUNT first (Copilot review, PR #705), not just by
-	// distinct-id map membership: a map keyed by id would silently
-	// collapse an accidental duplicate id emission (e.g. 3 door walls
-	// where 2 share an id) down to 2 entries, hiding exactly the
-	// regression this test exists to catch.
-	s.Require().Len(doorWallList, 2, "expected exactly one wall per connector door, by count not merely by distinct id")
-	doorWalls := make(map[string]*encounterv2pb.Wall, len(doorWallList))
-	for _, w := range doorWallList {
-		_, dup := doorWalls[w.GetId()]
-		s.Require().False(dup, "duplicate door wall id %q -- ProjectFor must emit exactly one wall per door", w.GetId())
-		doorWalls[w.GetId()] = w
-	}
-	entranceWall := doorWalls[string(entranceDoorID)]
-	bossWall := doorWalls[string(bossDoorID)]
-	s.Require().NotNil(entranceWall)
-	s.Require().NotNil(bossWall)
+	// Fog-of-war gate proof (rpg-api-protos#197): alice's sight range covers
+	// the whole entrance region including its own connector door, but a
+	// CLOSED door blocks LOS (DoorData.Open==false -> BlocksLoS==true), so
+	// the corridor beyond it -- and everything past that, including the
+	// boss connector -- stays unrevealed. Exactly one door edge (the
+	// entrance connector) may appear; the boss connector must NOT leak,
+	// unlike wave 1's unconditional doorWallsToProto (every viewer's
+	// snapshot used to carry every door regardless of RevealedHexes).
+	s.Require().Len(doorEdges, 1, "only the entrance connector door is visible from the spawn")
+	entranceWall := doorEdges[0]
+	s.Require().Equal(string(entranceDoorID), entranceWall.GetId())
 	s.Require().Equal(encounterv2pb.WallKind_WALL_KIND_DOOR_CLOSED, entranceWall.GetKind(),
 		"the crypt's entrance connector is a plain closed door")
-	s.Require().Equal(encounterv2pb.WallKind_WALL_KIND_DOOR_LOCKED, bossWall.GetKind(),
-		"the crypt's boss connector is locked per CryptDungeonParams")
 	s.Require().NotEqual(entranceWall.GetFrom(), entranceWall.GetTo(),
-		"a door wall must project its passage edge, not a degenerate Start==End segment")
-	s.Require().NotEqual(bossWall.GetFrom(), bossWall.GetTo())
+		"a door edge must project its passage edge, not a degenerate Start==End segment")
+
+	for _, h := range pb.GetSpace().GetHexes() {
+		for _, w := range h.GetEdges() {
+			s.Require().NotEqual(string(bossDoorID), w.GetId(),
+				"the boss connector must not leak while it sits behind a still-closed door, out of LOS")
+		}
+	}
 }
+
+// cryptEntranceRegionPerimeterEdgeCount is the number of non-degenerate
+// boundary-edge segments visible on the entrance region's own hexes from
+// its spawn point, for TestProjectFor_CryptFixture_ProjectsPerimeterEdgesAsSolidAndDoorsUnchanged's
+// fixed seed/dimensions -- measured directly against this fixture (not
+// guessed, see that test's doc): the pre-fog whole-room total was 182 (184
+// walls minus 2 door walls); gated to just what's visible from the
+// entrance spawn under the hex-knowledge contract, it is 63.
+const cryptEntranceRegionPerimeterEdgeCount = 63
 
 func TestProjectSuite(t *testing.T) {
 	suite.Run(t, new(ProjectSuite))
