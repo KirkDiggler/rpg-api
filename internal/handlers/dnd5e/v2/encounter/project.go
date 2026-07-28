@@ -10,6 +10,7 @@ import (
 
 	tkenc "github.com/KirkDiggler/rpg-toolkit/encounter"
 	"github.com/KirkDiggler/rpg-toolkit/encounter/core"
+	tkencevents "github.com/KirkDiggler/rpg-toolkit/encounter/events"
 	"github.com/KirkDiggler/rpg-toolkit/encounter/perception"
 	"github.com/KirkDiggler/rpg-toolkit/events"
 	tkcharacter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
@@ -264,6 +265,49 @@ func hexRecordsToProto(known map[core.Hex]perception.HexObservation) []*encounte
 		out = append(out, observationToProto(o))
 	}
 	return out
+}
+
+// knownHexesToProto converts a MoveEvent's own MoverKnownHexes
+// (rpg-api#737) into wire HexRecords. tkencevents.KnownHex is a flat mirror
+// of perception.HexObservation (the encounter/events package cannot import
+// perception — see KnownHex's doc for the cycle), so this converts back to
+// perception.HexObservation field-for-field and reuses observationToProto
+// rather than duplicating its proto-building logic. No sort here: the
+// toolkit's own knownHexesToEvents already sorts by (Q,R,S) before this
+// slice is published, so it arrives deterministic.
+func knownHexesToProto(known []tkencevents.KnownHex) []*encounterv2pb.HexRecord {
+	out := make([]*encounterv2pb.HexRecord, 0, len(known))
+	for _, kh := range known {
+		out = append(out, observationToProto(knownHexToObservation(kh)))
+	}
+	return out
+}
+
+func knownHexToObservation(kh tkencevents.KnownHex) perception.HexObservation {
+	edges := make([]perception.Edge, 0, len(kh.Edges))
+	for _, e := range kh.Edges {
+		edges = append(edges, perception.Edge{
+			From:           e.From,
+			To:             e.To,
+			BlocksMovement: e.BlocksMovement,
+			BlocksLoS:      e.BlocksLoS,
+			DoorID:         e.DoorID,
+			DoorOpen:       e.DoorOpen,
+			DoorLocked:     e.DoorLocked,
+		})
+	}
+	contents := make([]perception.Placement, 0, len(kh.Contents))
+	for _, c := range kh.Contents {
+		contents = append(contents, perception.Placement{EntityID: c.EntityID, Facing: c.Facing})
+	}
+	return perception.HexObservation{
+		Position: kh.Position,
+		State:    perception.KnowledgeState(kh.State),
+		Terrain:  perception.TerrainKind(kh.Terrain),
+		ZoneID:   kh.ZoneID,
+		Edges:    edges,
+		Contents: contents,
+	}
 }
 
 // sortObservations keeps wire output deterministic. Go randomizes map

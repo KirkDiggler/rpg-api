@@ -749,7 +749,20 @@ func (s *DungeonCryptSuite) TestStaticObstacles_ProjectOnlyWhenRevealedAndRemain
 		s.Require().Equal(revealed.BlocksMovement, entity.GetObstacle().GetBlocksMovement())
 		s.Require().Equal(revealed.BlocksLoS, entity.GetObstacle().GetBlocksLineOfSight())
 	}
-	s.Require().Equal(1, appeared, "one toolkit EntityAppeared must become one wire HexKnowledgeChanged disclosure")
+	// >=1, not ==1: rpg-api#737's playtest follow-up gave the mover's own
+	// per-move HexKnowledgeChanged restatement (translateMoveEventWithData)
+	// its own Entities disclosure, alongside the EntityAppeared-driven one
+	// this test originally measured — moveAlongPath chunks a long walk into
+	// several separate MoveEntity calls, and each step still within sight of
+	// this obstacle legitimately re-discloses it in that step's OWN full
+	// restatement (Hexes/Entities are both "restate everything now known",
+	// never a diff — knownHexesToProto's doc). What must hold is that it is
+	// disclosed at least once, in the SAME envelope that first places it —
+	// asserted per-envelope by the loop above (hex/placed checks); a second
+	// or third re-disclosure on a later step is harmless, matching how the
+	// obstacle's Hexes record is itself redundantly resent every subsequent
+	// move without complaint.
+	s.Require().GreaterOrEqual(appeared, 1, "the obstacle must be disclosed at least once, in the same envelope that places it")
 
 	reconnect, err := s.srv.EncounterClientV2.GetEncounter(s.authCtx("alice"), &encounterv2pb.GetEncounterRequest{EncounterId: encounterID})
 	s.Require().NoError(err)
