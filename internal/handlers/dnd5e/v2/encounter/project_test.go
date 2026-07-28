@@ -1172,12 +1172,25 @@ func (s *ProjectSuite) TestProjectFor_SpaceZones_ProjectsMultipleRegionsInDeclar
 // door's own cell belongs to NEITHER region" contract. If zone_id were
 // derived from proximity/geometry instead of exact set membership, this
 // hex would wrongly pick up a neighbor's zone.
+//
+// Fixture coordinates deliberately land at non-negative offset positions
+// within the declared Width/Height grid (col=0, rows 4/5/6 — verified via
+// core.Hex.ToPosition(), the same pointy-top conversion the toolkit's own
+// isSpaceHex uses): rpg-toolkit encounter/v0.46.1 confines viewer memory to
+// hexes actually within a space's grid bounds (rpg-toolkit#859), and the
+// original fixture's negative-Q hexes (Q=-1) converted to an out-of-bounds
+// offset column that v0.46.1 correctly rejects as "not part of the space" —
+// this fixture never intended to test grid-bounds membership at all, only
+// RegionAt's own "the door belongs to neither region" behavior, so it moves
+// into bounds rather than weakening what it actually asserts. The three
+// hexes are still a straight adjacent triple (chamber1 - door - chamber2,
+// each exactly one hex step apart) — only their absolute position moved.
 func (s *ProjectSuite) TestProjectFor_HexZoneId_SetViaRegionMembership_NotGeometry() {
 	data := tkenc.NewData("enc-zoneid")
 	data.Mode = core.ModeFreeRoam
-	chamber1Hex := core.Hex{Q: -1, R: 0, S: 1}
-	doorHex := core.Hex{Q: 0, R: 0, S: 0} // adjacent to both, tagged into neither
-	chamber2Hex := core.Hex{Q: 1, R: 0, S: -1}
+	chamber1Hex := core.Hex{Q: 0, R: -6, S: 6}
+	doorHex := core.Hex{Q: 0, R: -5, S: 5} // adjacent to both, tagged into neither
+	chamber2Hex := core.Hex{Q: 0, R: -4, S: 4}
 
 	data.Space = &tkenc.SpaceData{
 		Width: 10, Height: 10,
@@ -1196,15 +1209,15 @@ func (s *ProjectSuite) TestProjectFor_HexZoneId_SetViaRegionMembership_NotGeomet
 		byPos[[3]int32{h.GetPosition().GetX(), h.GetPosition().GetY(), h.GetPosition().GetZ()}] = h
 	}
 
-	c1 := byPos[[3]int32{-1, 0, 1}]
+	c1 := byPos[[3]int32{0, -6, 6}]
 	s.Require().NotNil(c1, "chamber-1's hex must be revealed (alice's sight range 2 from the door)")
 	s.Require().Equal("chamber-1", c1.GetZoneId())
 
-	c2 := byPos[[3]int32{1, 0, -1}]
+	c2 := byPos[[3]int32{0, -4, 4}]
 	s.Require().NotNil(c2, "chamber-2's hex must be revealed")
 	s.Require().Equal("chamber-2", c2.GetZoneId())
 
-	door := byPos[[3]int32{0, 0, 0}]
+	door := byPos[[3]int32{0, -5, 5}]
 	s.Require().NotNil(door, "the door hex itself must be revealed")
 	s.Require().Empty(door.GetZoneId(),
 		"the door hex is adjacent to both regions but tagged into neither — zone_id must stay empty, not inherit a neighbor's zone")
