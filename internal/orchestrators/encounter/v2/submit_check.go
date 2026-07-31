@@ -54,7 +54,8 @@ var (
 	// orchestrator joins them with this sentinel so the handler maps them to
 	// codes.Internal without string matching. The recognized toolkit sentinels
 	// (ErrNoPendingPrompt / ErrPromptKindMismatch / ErrInvalidRoll /
-	// ErrUnsupportedPromptAction / ErrNoCharacterResolver) pass through unwrapped.
+	// ErrUnsupportedPromptAction / ErrNoCharacterResolver / ErrOutOfRange) pass
+	// through unwrapped.
 	ErrSubmitCheckDispatch = errors.New("submit check dispatch failed")
 )
 
@@ -104,13 +105,23 @@ func (o *Orchestrator) SubmitCheck(ctx context.Context, in *SubmitCheckInput) (*
 // effect failed" cases — which the toolkit returns as plain fmt.Errorf — are
 // joined with ErrSubmitCheckDispatch so the handler maps them to Internal
 // without string matching.
+//
+// ErrOutOfRange (rpg-api#747, toolkit#864's gate-review blocker 2): dispatching
+// a successful skill check's TriggeredAction re-checks reach before opening the
+// door — a player who walked away between AttemptUnlock and SubmitCheck fails
+// here, wrapping ErrOutOfRange. Recognized like the other toolkit sentinels
+// (not folded into the generic ErrSubmitCheckDispatch bucket) so the handler
+// can map it to FailedPrecondition instead of Internal — this is a
+// state-dependent refusal (the actor moved), not a system-shaped dispatch
+// failure.
 func wrapSubmitCheckErr(err error) error {
 	switch {
 	case errors.Is(err, tkenc.ErrNoPendingPrompt),
 		errors.Is(err, tkenc.ErrPromptKindMismatch),
 		errors.Is(err, tkenc.ErrInvalidRoll),
 		errors.Is(err, tkenc.ErrUnsupportedPromptAction),
-		errors.Is(err, tkenc.ErrNoCharacterResolver):
+		errors.Is(err, tkenc.ErrNoCharacterResolver),
+		errors.Is(err, tkenc.ErrOutOfRange):
 		return err
 	}
 	return fmt.Errorf("%w: %w", ErrSubmitCheckDispatch, err)

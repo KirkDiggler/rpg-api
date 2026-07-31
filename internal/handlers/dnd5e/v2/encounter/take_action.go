@@ -134,6 +134,9 @@ func translateActionTarget(target *encounterv2pb.ActionTarget, actorEntityID str
 //     ErrUnknownTarget / ErrNoCombatants → FailedPrecondition (state-dependent;
 //     the toolkit overloads ErrUnknownTarget to also mean missing-monster, so it
 //     maps to FailedPrecondition rather than InvalidArgument)
+//   - ErrOutOfRange → FailedPrecondition (rpg-api#747: toolkit#864's range/reach
+//     gate — target out of the actor's reach/range is a state-dependent refusal,
+//     the same class as the other combat gates above, not a request defect)
 //   - load / save / unclassified failures → Internal
 func takeActionStatusError(err error) error {
 	switch {
@@ -159,7 +162,12 @@ func takeActionStatusError(err error) error {
 		errors.Is(err, tkenc.ErrActionUnaffordable),
 		// ErrActionDeferred: a ref the build surfaces in the menu but does not
 		// resolve yet (e.g. move in Beat 1). State/scope-dependent refusal.
-		errors.Is(err, tkenc.ErrActionDeferred):
+		errors.Is(err, tkenc.ErrActionDeferred),
+		// ErrOutOfRange (rpg-api#747): the target is farther than the attack's
+		// reach/range. Without this case it falls through to the generic
+		// Internal below, which surfaces as an opaque error instead of the
+		// actionable "target out of reach" message.
+		errors.Is(err, tkenc.ErrOutOfRange):
 		return status.Error(codes.FailedPrecondition, err.Error())
 	}
 	return status.Errorf(codes.Internal, "take action: %v", err)
