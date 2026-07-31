@@ -27,6 +27,15 @@ const (
 // in TURN_BASED mode and persists it through the suite's repo. Returns the
 // loaded data so callers can inspect Initiative ordering for tests that need
 // to know whose turn is active first.
+//
+// The goblin sits at a common hex neighbor of both alice{0,0,0} and
+// bob{1,0,-1} (hexDistance = 1 from each) rather than a hex only bob is
+// adjacent to: this fixture uses no explicit roller, so either player may
+// win initiative and attack the goblin via TestTakeAction_AttackHappyPath_
+// PersistsMonsterHP — rpg-toolkit#864's range/reach gate now requires the
+// attacker within weapon reach (1 hex, no hydrated character on these flat
+// stat-snapshot seats), so a goblin only bob could reach made that test
+// flaky (passed or failed depending on the real d20 roll).
 func (s *HandlerSuite) seedCombatEncounter() {
 	enc := tkenc.New(context.Background(), combatEncID, s.broker)
 	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
@@ -40,7 +49,7 @@ func (s *HandlerSuite) seedCombatEncounter() {
 		HP: 10, MaxHP: 10, AC: 13, AttackBonus: 3, DamageDice: "1d6+1", DamageType: "piercing",
 	}))
 	s.Require().NoError(enc.AddMonster(tkenc.MonsterInput{
-		ID: monsterGoblin1, Position: core.Hex{Q: 2, R: -1, S: -1},
+		ID: monsterGoblin1, Position: core.Hex{Q: 1, R: -1, S: 0},
 		HP: 7, MaxHP: 7, AC: 15, Speed: 6,
 		MonsterRef:  "dnd5e:monsters:goblin",
 		AttackBonus: 4, DamageDice: "1d6+2", DamageType: "slashing",

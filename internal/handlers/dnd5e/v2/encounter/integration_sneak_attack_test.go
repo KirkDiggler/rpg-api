@@ -541,12 +541,19 @@ func (s *SneakAttackIntegrationSuite) buildAliceRogueData() *character.Data {
 
 // seedSneakEncounter creates the integration test fixture encounter and saves it.
 //
-// Positions chosen so bob is adjacent to goblin (distance ≤ 1.5 in euclidean
-// terms using Q→X, R→Y hex mapping):
+// Positions (cube hex coordinates, hexDistance = (|dQ|+|dR|+|dS|)/2 — the
+// toolkit's real metric, not the euclidean approximation this comment used
+// to claim): goblin sits at a common neighbor of both alice and bob, so
+// BOTH are within 1 hex of it — alice needs that for her own attack
+// (rpg-toolkit#864's range/reach gate: TakeAction now requires the
+// attacker within weapon reach, 1 hex by default for her un-hydrated-reach
+// shortsword), and bob still needs it for Sneak Attack's ally-adjacent-to-
+// target rule:
 //
-//	alice  Q:0  R:0   (attacker)
-//	bob    Q:1  R:0   (ally — distance to goblin sqrt((2-1)²+(0-0)²) = 1.0 ≤ 1.5)
-//	goblin Q:2  R:0   (target — 100 HP so it survives multiple attacks)
+//	alice  Q:0  R:0  S:0   (attacker)
+//	bob    Q:1  R:0  S:-1  (ally — hexDistance to goblin = 1)
+//	goblin Q:1  R:-1 S:0   (target, 100 HP so it survives multiple attacks;
+//	                        hexDistance to alice = 1, to bob = 1)
 //
 // DamageDice is set for all combatants so they qualify as combatants for
 // TakeAction and have OA readiness seeded by the encounter SDK.
@@ -567,7 +574,8 @@ func (s *SneakAttackIntegrationSuite) seedSneakEncounter() {
 		DamageType:  "piercing",
 	}))
 
-	// bob: ally placed adjacent to goblin (Q=1, goblin at Q=2 → euclidean distance=1.0)
+	// bob: ally placed adjacent to goblin (hexDistance = 1) for Sneak
+	// Attack's ally-adjacent-to-target rule.
 	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
 		PlayerID:   encountercore.PlayerID(sneakPlayerBob),
 		EntityID:   encountercore.EntityID(sneakEntityBob),
@@ -580,10 +588,13 @@ func (s *SneakAttackIntegrationSuite) seedSneakEncounter() {
 		DamageType: "slashing",
 	}))
 
-	// goblin: 100 HP so it survives multiple attacks during the test.
+	// goblin: 100 HP so it survives multiple attacks during the test. A
+	// common neighbor of alice and bob (see seedSneakEncounter's doc
+	// comment) so alice's own attack is within reach too
+	// (rpg-toolkit#864).
 	s.Require().NoError(enc.AddMonster(tkenc.MonsterInput{
 		ID:          encountercore.EntityID(sneakGoblinID),
-		Position:    encountercore.Hex{Q: 2, R: 0, S: -2},
+		Position:    encountercore.Hex{Q: 1, R: -1, S: 0},
 		HP:          100,
 		MaxHP:       100,
 		AC:          13,
