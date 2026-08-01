@@ -47,6 +47,9 @@ func (s *LobbySuite) SetupTest() {
 	s.encBroker = tkenc.NewBroker(tkenc.NewInMemoryTransport())
 	s.encRepo = encountersv2.NewInMemory()
 
+	registry, err := lobbyorch.LoadContentRegistry()
+	s.Require().NoError(err)
+
 	orch, err := lobbyorch.New(&lobbyorch.Config{
 		LobbyRepo:              s.lobbyRepo,
 		LobbyBroker:            s.broker,
@@ -64,6 +67,7 @@ func (s *LobbySuite) SetupTest() {
 		JoinRefGenerator:     idgen.NewSequential("ref"),
 		EncounterIDGenerator: idgen.NewSequential("enc"),
 		Now:                  func() time.Time { return time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC) },
+		Registry:             registry,
 	})
 	s.Require().NoError(err)
 	s.orch = orch
@@ -117,6 +121,9 @@ func (s *LobbySuite) expectCharacterNotFound(characterID string) {
 // need to observe behavior when the lobby repository itself misbehaves
 // (e.g. a wrapped repo that forces one method to fail).
 func (s *LobbySuite) newOrchestratorWithLobbyRepo(repo lobbyrepo.Repository) *lobbyorch.Orchestrator {
+	registry, err := lobbyorch.LoadContentRegistry()
+	s.Require().NoError(err)
+
 	orch, err := lobbyorch.New(&lobbyorch.Config{
 		LobbyRepo:              repo,
 		LobbyBroker:            s.broker,
@@ -134,24 +141,31 @@ func (s *LobbySuite) newOrchestratorWithLobbyRepo(repo lobbyrepo.Repository) *lo
 		JoinRefGenerator:     idgen.NewSequential("ref"),
 		EncounterIDGenerator: idgen.NewSequential("enc"),
 		Now:                  func() time.Time { return time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC) },
+		Registry:             registry,
 	})
 	s.Require().NoError(err)
 	return orch
 }
 
 // newOrchestratorWithContentDir returns a fresh Orchestrator sharing every
-// other suite dependency, constructed with RPG_CONTENT_DIR set to dir —
-// for tests that need a deliberately broken (or deliberately augmented)
-// content override. loadContentSpecs only ever reads RPG_CONTENT_DIR
-// once, at New() time (Task E2's note #3: never per-request), so a test
-// needing a specific override must build its OWN Orchestrator here rather
-// than reuse s.orch, which was already constructed in SetupTest before
-// the test body ever runs. Returns the error too (rather than requiring
-// success) so this same helper covers both a successful construction
-// (the disabled-key test) and a construction FAILURE (an unreadable
-// RPG_CONTENT_DIR path).
+// other suite dependency, constructed from a registry built with
+// RPG_CONTENT_DIR set to dir — for tests that need a deliberately broken
+// (or deliberately augmented) content override. LoadContentRegistry only
+// ever reads RPG_CONTENT_DIR once, when called (Task E2's note #3: never
+// per-request), so a test needing a specific override must build its OWN
+// registry (and Orchestrator) here rather than reuse s.orch, which was
+// already constructed in SetupTest before the test body ever runs.
+// Returns the error too (rather than requiring success) so this same
+// helper covers both a successful construction (the disabled-key test)
+// and a construction FAILURE (an unreadable RPG_CONTENT_DIR path) — that
+// failure now surfaces from LoadContentRegistry itself, not from
+// lobbyorch.New (which no longer reads RPG_CONTENT_DIR at all).
 func (s *LobbySuite) newOrchestratorWithContentDir(dir string) (*lobbyorch.Orchestrator, error) {
 	s.T().Setenv("RPG_CONTENT_DIR", dir)
+	registry, err := lobbyorch.LoadContentRegistry()
+	if err != nil {
+		return nil, err
+	}
 	return lobbyorch.New(&lobbyorch.Config{
 		LobbyRepo:              s.lobbyRepo,
 		LobbyBroker:            s.broker,
@@ -169,6 +183,7 @@ func (s *LobbySuite) newOrchestratorWithContentDir(dir string) (*lobbyorch.Orche
 		JoinRefGenerator:     idgen.NewSequential("ref"),
 		EncounterIDGenerator: idgen.NewSequential("enc"),
 		Now:                  func() time.Time { return time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC) },
+		Registry:             registry,
 	})
 }
 
@@ -179,6 +194,9 @@ func (s *LobbySuite) newOrchestratorWithContentDir(dir string) (*lobbyorch.Orche
 // must build its own Orchestrator here, exactly like
 // newOrchestratorWithContentDir does for RPG_CONTENT_DIR.
 func (s *LobbySuite) newOrchestratorWithDungeonKeyOverride(key string) *lobbyorch.Orchestrator {
+	registry, err := lobbyorch.LoadContentRegistry()
+	s.Require().NoError(err)
+
 	orch, err := lobbyorch.New(&lobbyorch.Config{
 		LobbyRepo:              s.lobbyRepo,
 		LobbyBroker:            s.broker,
@@ -196,6 +214,7 @@ func (s *LobbySuite) newOrchestratorWithDungeonKeyOverride(key string) *lobbyorc
 		JoinRefGenerator:     idgen.NewSequential("ref"),
 		EncounterIDGenerator: idgen.NewSequential("enc"),
 		Now:                  func() time.Time { return time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC) },
+		Registry:             registry,
 		DungeonKeyOverride:   key,
 	})
 	s.Require().NoError(err)
