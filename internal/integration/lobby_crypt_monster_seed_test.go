@@ -70,6 +70,9 @@ func (s *CryptMonsterSeedRedisSuite) SetupTest() {
 	s.lobbyRepo = lobbyrepo.NewRedis(s.srv.RedisClient(), cryptMonsterSeedTestTTL)
 	s.encRepo = encountersv2.NewRedis(s.srv.RedisClient(), cryptMonsterSeedTestTTL)
 
+	registry, err := lobbyorch.LoadContentRegistry()
+	s.Require().NoError(err)
+
 	orch, err := lobbyorch.New(&lobbyorch.Config{
 		LobbyRepo:              s.lobbyRepo,
 		LobbyBroker:            lobbyorch.NewBroker(),
@@ -86,6 +89,7 @@ func (s *CryptMonsterSeedRedisSuite) SetupTest() {
 		LobbyIDGenerator:     idgen.NewUUID("lobby"),
 		JoinRefGenerator:     idgen.NewUUID("join"),
 		EncounterIDGenerator: idgen.NewUUID("enc"),
+		Registry:             registry,
 	})
 	s.Require().NoError(err)
 	s.orch = orch

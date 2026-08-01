@@ -326,12 +326,17 @@ func (ts *TestServer) wireServices(cfg *Config) error {
 	// encounter service reads from.
 	ts.LobbyBroker = lobbyorch.NewBroker()
 	ts.LobbyRepo = lobbyrepo.NewInMemory()
+	dungeonRegistry, err := lobbyorch.LoadContentRegistry()
+	if err != nil {
+		return fmt.Errorf("load dungeon registry: %w", err)
+	}
 	lobbyOrch, err := lobbyorch.New(&lobbyorch.Config{
 		LobbyRepo:       ts.LobbyRepo,
 		LobbyBroker:     ts.LobbyBroker,
 		CharacterRepo:   charRepo,
 		EncounterRepo:   ts.EncRepoV2,
 		EncounterBroker: ts.BrokerV2,
+		Registry:        dungeonRegistry,
 		// Deterministic zero-modifier stub (not the real Dnd5eCharacterResolver):
 		// harness integration tests seed encounters directly and assert
 		// wire-shape totals like "roll + 0" — see e.g.

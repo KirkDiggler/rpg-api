@@ -50,6 +50,9 @@ func (s *HandlerSuite) SetupTest() {
 	s.lobbyRepo = lobbyrepo.NewInMemory()
 	s.broker = lobbyorch.NewBroker()
 
+	registry, err := lobbyorch.LoadContentRegistry()
+	s.Require().NoError(err)
+
 	orch, err := lobbyorch.New(&lobbyorch.Config{
 		LobbyRepo:              s.lobbyRepo,
 		LobbyBroker:            s.broker,
@@ -67,6 +70,7 @@ func (s *HandlerSuite) SetupTest() {
 		JoinRefGenerator:     idgen.NewSequential("ref"),
 		EncounterIDGenerator: idgen.NewSequential("enc"),
 		Now:                  func() time.Time { return time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC) },
+		Registry:             registry,
 	})
 	s.Require().NoError(err)
 

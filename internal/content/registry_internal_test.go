@@ -4,6 +4,8 @@
 package content
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -100,4 +102,56 @@ func TestBuildRegistry_IndexedByDeclaredKeyNotFilename(t *testing.T) {
 	raw, foundByDeclaredKey := registry["my-dungeon"]
 	require.True(t, foundByDeclaredKey, "must be indexed by its declared key field")
 	assert.Contains(t, string(raw), "Scratch")
+}
+
+// --- FilenameForKey: write-through's "overwrite the originating file"
+// targeting (plan.md S1's Key rules) ---
+
+// TestFilenameForKey_KeyFound_ReturnsDeclaringFilename proves the base
+// case PutDungeon's write-through needs: given a key that some file in
+// dir declares, return that file's exact name (not a filename derived
+// from the key itself — TestBuildRegistry_IndexedByDeclaredKeyNotFilename
+// already pins that a file's name and its declared key can differ).
+func TestFilenameForKey_KeyFound_ReturnsDeclaringFilename(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(dir, "zzz-scratch.yaml"),
+		[]byte("version: 1\nkey: my-dungeon\nname: Scratch\n"),
+		0o600,
+	))
+
+	filename, ok, err := FilenameForKey(dir, "my-dungeon")
+	require.NoError(t, err)
+	require.True(t, ok)
+	assert.Equal(t, "zzz-scratch.yaml", filename)
+}
+
+// TestFilenameForKey_KeyNotFound_ReturnsOkFalseNoError proves an unknown
+// key is reported as ok=false with a nil error — a NEW key PutDungeon is
+// about to create for the first time, not a failure of any kind.
+func TestFilenameForKey_KeyNotFound_ReturnsOkFalseNoError(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(dir, "other.yaml"),
+		[]byte("version: 1\nkey: other-key\nname: Other\n"),
+		0o600,
+	))
+
+	filename, ok, err := FilenameForKey(dir, "no-such-key")
+	require.NoError(t, err)
+	require.False(t, ok)
+	assert.Empty(t, filename)
+}
+
+// TestFilenameForKey_UnreadableDir_PropagatesWrappedError proves dir
+// itself being unreadable propagates the same wrapped error
+// readOverrideDir already produces for AllSpecs/SpecByKey — an
+// operator/config mistake, not a "key not found" case.
+func TestFilenameForKey_UnreadableDir_PropagatesWrappedError(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "does-not-exist")
+
+	_, ok, err := FilenameForKey(missing, "any-key")
+	require.Error(t, err)
+	assert.False(t, ok)
+	assert.Contains(t, err.Error(), contentDirEnvVar)
 }
