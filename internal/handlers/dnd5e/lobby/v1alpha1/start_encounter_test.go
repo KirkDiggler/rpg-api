@@ -103,7 +103,12 @@ func (s *HandlerSuite) TestStartEncounter_DungeonKeyFromRequest_SelectsReference
 // StartEncounterInput.DungeonKey at the zero value, exactly like every
 // caller before this field existed — the legacy crypt default (entrance/
 // corridor/boss, no chamber-archetype region) must still be what gets
-// built, not a decode of "" into some other key.
+// built, not a decode of "" into some other key. Asserts the crypt
+// template's own "corridor" region is actually PRESENT (rpg-toolkit's
+// crypt_dungeon.go: cryptRegionIDCorridor = "corridor"), not just that
+// "hall" is absent — a positive assertion many wrong outcomes (an error,
+// an empty Space, some other unrelated content key) would also satisfy
+// the weaker absence-only check.
 func (s *HandlerSuite) TestStartEncounter_EmptyDungeonKey_UsesLegacyDefault() {
 	lobbyID, _ := s.createLobby("alice", "char-alice", "Alice")
 	_, err := s.handler.SetReady(s.ctx, &lobbyv1alpha1.SetReadyRequest{LobbyId: lobbyID, Ready: true})
@@ -115,7 +120,15 @@ func (s *HandlerSuite) TestStartEncounter_EmptyDungeonKey_UsesLegacyDefault() {
 
 	encData, err := s.encRepo.Get(s.ctx, resp.GetEncounterId())
 	s.Require().NoError(err)
+	var sawCorridor, sawHall bool
 	for _, r := range encData.Space.Regions {
-		s.Assert().NotEqual("hall", r.ID, "an empty dungeon_key must not accidentally select reference-tomb")
+		switch r.ID {
+		case "corridor":
+			sawCorridor = true
+		case "hall":
+			sawHall = true
+		}
 	}
+	s.Require().True(sawCorridor, "the legacy crypt default's own \"corridor\" region must be present")
+	s.Assert().False(sawHall, "an empty dungeon_key must not accidentally select reference-tomb")
 }
