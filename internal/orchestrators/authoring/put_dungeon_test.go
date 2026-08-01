@@ -269,7 +269,7 @@ func TestPutDungeon_SecondPutSameKey_OverwritesOriginatingFile_FileCountStable(t
 	// A DIFFERENT valid YAML for the SAME key -- same 2-room shape (still
 	// passes Validate) but a different declared name, so the overwrite is
 	// observable in the registry, not just file content.
-	secondYAML := fmt.Sprintf(`version: 1
+	secondYAML := `version: 1
 key: overwrite-key
 name: Renamed Dungeon
 height: 8
@@ -283,7 +283,7 @@ rooms:
     boss: { ref: "dnd5e:monsters:skeleton-captain", at: [4, 2] }
 connectors:
   - { from: entrance, to: boss }
-`)
+`
 	out, err := orch.PutDungeon(context.Background(), &authoring.PutDungeonInput{
 		Key:  "overwrite-key",
 		YAML: secondYAML,

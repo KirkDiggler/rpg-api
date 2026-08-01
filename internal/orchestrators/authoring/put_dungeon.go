@@ -189,7 +189,8 @@ func (o *Orchestrator) writeThrough(key, yamlText string) error {
 		filename = key + ".yaml"
 	}
 	path := filepath.Join(o.contentDir, filename)
-	if err := os.WriteFile(path, []byte(yamlText), 0o600); err != nil { //nolint:gosec // ContentDir is operator-controlled, same posture as content.readOverrideDir
+	// ContentDir is operator-controlled, same posture as content.readOverrideDir.
+	if err := os.WriteFile(path, []byte(yamlText), 0o600); err != nil { //nolint:gosec
 		return fmt.Errorf("write %q: %w", path, err)
 	}
 	return nil
