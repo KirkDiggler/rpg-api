@@ -101,6 +101,10 @@ func (h *Handler) SubmitCheck(ctx context.Context, req *encounterv2pb.SubmitChec
 //   - ErrNoPendingPrompt / ErrPromptKindMismatch → FailedPrecondition
 //   - ErrInvalidRoll → InvalidArgument (range disagreement vs the handler bound)
 //   - ErrUnsupportedPromptAction → Unimplemented
+//   - ErrOutOfRange → FailedPrecondition (rpg-api#747: toolkit#864's gate-review
+//     blocker 2 — the actor walked out of reach between AttemptUnlock and
+//     SubmitCheck, so the successful check's dispatch was refused; state-
+//     dependent, not the system-shaped ErrSubmitCheckDispatch bucket below)
 //   - ErrNoCharacterResolver / ErrSubmitCheckDispatch / load+save failures →
 //     Internal
 func submitCheckStatusError(err error) error {
@@ -126,6 +130,8 @@ func submitCheckStatusError(err error) error {
 	case errors.Is(err, encounter.ErrUnsupportedPromptAction):
 		return status.Errorf(codes.Unimplemented,
 			"prompt action not supported in this server version: %v", err)
+	case errors.Is(err, encounter.ErrOutOfRange):
+		return status.Errorf(codes.FailedPrecondition, "target out of reach: %v", err)
 	case errors.Is(err, encounter.ErrNoCharacterResolver):
 		// The handler always wires a resolver (StubCharacterResolver default).
 		// Reaching this means the orchestrator rebuilt the encounter without the
