@@ -549,6 +549,62 @@ func (s *CharacterCreationSuite) TestValidation_MissingClass() {
 	s.T().Logf("✅ Correctly rejected: %v", err)
 }
 
+func (s *CharacterCreationSuite) TestListClasses_PopulatesEquipmentDetail() {
+	ctx := s.authCtx("test-list-classes-equipment-detail")
+
+	listResp, err := s.server.CharacterClient.ListClasses(ctx, &dnd5ev1alpha1.ListClassesRequest{})
+	s.Require().NoError(err)
+
+	var fighterInfo *dnd5ev1alpha1.ClassInfo
+	for _, classInfo := range listResp.GetClasses() {
+		if classInfo.GetClassId() == dnd5ev1alpha1.Class_CLASS_FIGHTER {
+			fighterInfo = classInfo
+			break
+		}
+	}
+	s.Require().NotNil(fighterInfo, "ListClasses should include Fighter")
+
+	var armorChoice *dnd5ev1alpha1.Choice
+	for _, choice := range fighterInfo.GetChoices() {
+		if choice.GetId() == "fighter-armor" {
+			armorChoice = choice
+			break
+		}
+	}
+	s.Require().NotNil(armorChoice, "Fighter should advertise an armor equipment choice")
+
+	bundles := armorChoice.GetEquipmentOptions().GetBundles()
+	s.Require().Len(bundles, 2, "fighter-armor should have 2 bundle options")
+
+	// Bundle 0: chain mail (armor item) - assert equipment_detail is populated
+	// over the real gRPC path, not just the converter unit.
+	chainMailBundle := bundles[0]
+	s.Require().Len(chainMailBundle.GetItems(), 1)
+	chainMail := chainMailBundle.GetItems()[0]
+	s.Assert().Equal("chain-mail", chainMail.GetSelectionId())
+	s.Require().NotNil(chainMail.GetEquipmentDetail(),
+		"chain mail EquipmentItem should carry equipment_detail over the wire")
+	armorData := chainMail.GetEquipmentDetail().GetArmorData()
+	s.Require().NotNil(armorData, "chain mail equipment_detail should carry armor data")
+	s.Assert().Equal(int32(16), armorData.GetBaseAc())
+	s.Assert().True(armorData.GetStealthDisadvantage())
+
+	// Bundle 1: leather armor, longbow, arrows - assert the weapon item
+	// (longbow) carries equipment_detail too.
+	leatherBundle := bundles[1]
+	s.Require().Len(leatherBundle.GetItems(), 3)
+	longbow := leatherBundle.GetItems()[1]
+	s.Assert().Equal("longbow", longbow.GetSelectionId())
+	s.Require().NotNil(longbow.GetEquipmentDetail(),
+		"longbow EquipmentItem should carry equipment_detail over the wire")
+	weaponData := longbow.GetEquipmentDetail().GetWeaponData()
+	s.Require().NotNil(weaponData, "longbow equipment_detail should carry weapon data")
+	s.Assert().Equal("1d8", weaponData.GetDamageDice())
+	s.Assert().Equal(dnd5ev1alpha1.DamageType_DAMAGE_TYPE_PIERCING, weaponData.GetDamageType())
+	s.Assert().Equal(int32(150), weaponData.GetNormalRange())
+	s.Assert().Equal(int32(600), weaponData.GetLongRange())
+}
+
 func (s *CharacterCreationSuite) TestCreateMonk() {
 	s.T().Log("Creating Monk character...")
 	ctx := s.authCtx("test-player-monk")

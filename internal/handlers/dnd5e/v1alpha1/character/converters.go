@@ -2334,6 +2334,12 @@ func createEquipmentChoice(req *choices.EquipmentRequirement) *dnd5ev1alpha1.Cho
 			}
 			// Set type hint if we can determine the type
 			setEquipmentItemTypeHint(equipItem, item.ID)
+			// Set resolved equipment stats (damage, AC, properties, etc.) so
+			// the client can render EquipmentCard without a name-only fallback.
+			// item.Detail is already resolved by the toolkit's
+			// enrichEquipmentRequirements via equipment.ResolveEquipmentDetail —
+			// this is a pure translation, not a re-derivation of rules.
+			equipItem.EquipmentDetail = convertEquipmentDetailToProto(item.Detail)
 			equipmentItems = append(equipmentItems, equipItem)
 		}
 
@@ -2742,15 +2748,13 @@ func ConvertEquipmentToProto(equip equipment.Equipment) *dnd5ev1alpha1.Equipment
 	return result
 }
 
-// convertWeaponData converts weapon-specific data to proto
-func convertWeaponData(weapon *weapons.Weapon) *dnd5ev1alpha1.WeaponData {
-	if weapon == nil {
-		return nil
-	}
-
-	// Convert weapon properties
-	properties := make([]dnd5ev1alpha1.WeaponProperty, 0, len(weapon.Properties))
-	for _, prop := range weapon.Properties {
+// convertWeaponProperties converts toolkit weapon properties to proto weapon properties.
+// Shared by convertWeaponData (concrete weapons.Weapon) and
+// convertWeaponDetailToProto (resolved equipment.WeaponDetail) so the mapping
+// lives in exactly one place.
+func convertWeaponProperties(props []weapons.WeaponProperty) []dnd5ev1alpha1.WeaponProperty {
+	properties := make([]dnd5ev1alpha1.WeaponProperty, 0, len(props))
+	for _, prop := range props {
 		switch prop {
 		case weapons.PropertyLight:
 			properties = append(properties, dnd5ev1alpha1.WeaponProperty_WEAPON_PROPERTY_LIGHT)
@@ -2774,6 +2778,63 @@ func convertWeaponData(weapon *weapons.Weapon) *dnd5ev1alpha1.WeaponData {
 			properties = append(properties, dnd5ev1alpha1.WeaponProperty_WEAPON_PROPERTY_SPECIAL)
 		}
 	}
+	return properties
+}
+
+// convertWeaponCategoryToProto converts the toolkit's fine-grained weapon
+// category (simple-melee, simple-ranged, martial-melee, martial-ranged) to
+// the proto's broader SIMPLE/MARTIAL category.
+func convertWeaponCategoryToProto(cat weapons.WeaponCategory) dnd5ev1alpha1.WeaponCategory {
+	switch {
+	case strings.HasPrefix(string(cat), "simple"):
+		return dnd5ev1alpha1.WeaponCategory_WEAPON_CATEGORY_SIMPLE
+	case strings.HasPrefix(string(cat), "martial"):
+		return dnd5ev1alpha1.WeaponCategory_WEAPON_CATEGORY_MARTIAL
+	default:
+		return dnd5ev1alpha1.WeaponCategory_WEAPON_CATEGORY_UNSPECIFIED
+	}
+}
+
+// convertArmorCategoryToProto converts the toolkit's armor category
+// (light/medium/heavy/shield) to the proto ArmorCategory enum.
+func convertArmorCategoryToProto(cat armor.ArmorCategory) dnd5ev1alpha1.ArmorCategory {
+	switch cat {
+	case armor.CategoryLight:
+		return dnd5ev1alpha1.ArmorCategory_ARMOR_CATEGORY_LIGHT
+	case armor.CategoryMedium:
+		return dnd5ev1alpha1.ArmorCategory_ARMOR_CATEGORY_MEDIUM
+	case armor.CategoryHeavy:
+		return dnd5ev1alpha1.ArmorCategory_ARMOR_CATEGORY_HEAVY
+	case armor.CategoryShield:
+		return dnd5ev1alpha1.ArmorCategory_ARMOR_CATEGORY_SHIELD
+	default:
+		return dnd5ev1alpha1.ArmorCategory_ARMOR_CATEGORY_UNSPECIFIED
+	}
+}
+
+// convertArmorCategoryToEquipmentCategory converts the toolkit's armor
+// category to the proto's top-level EquipmentCategory enum used on
+// Equipment.category.
+func convertArmorCategoryToEquipmentCategory(cat armor.ArmorCategory) dnd5ev1alpha1.EquipmentCategory {
+	switch cat {
+	case armor.CategoryLight:
+		return dnd5ev1alpha1.EquipmentCategory_EQUIPMENT_CATEGORY_LIGHT_ARMOR
+	case armor.CategoryMedium:
+		return dnd5ev1alpha1.EquipmentCategory_EQUIPMENT_CATEGORY_MEDIUM_ARMOR
+	case armor.CategoryHeavy:
+		return dnd5ev1alpha1.EquipmentCategory_EQUIPMENT_CATEGORY_HEAVY_ARMOR
+	case armor.CategoryShield:
+		return dnd5ev1alpha1.EquipmentCategory_EQUIPMENT_CATEGORY_SHIELD
+	default:
+		return dnd5ev1alpha1.EquipmentCategory_EQUIPMENT_CATEGORY_UNSPECIFIED
+	}
+}
+
+// convertWeaponData converts weapon-specific data to proto
+func convertWeaponData(weapon *weapons.Weapon) *dnd5ev1alpha1.WeaponData {
+	if weapon == nil {
+		return nil
+	}
 
 	// Determine weapon category
 	var weaponCategory dnd5ev1alpha1.WeaponCategory
@@ -2787,16 +2848,87 @@ func convertWeaponData(weapon *weapons.Weapon) *dnd5ev1alpha1.WeaponData {
 		WeaponCategory: weaponCategory,
 		DamageDice:     weapon.Damage,
 		DamageType:     convertDamageTypeToProto(string(weapon.DamageType)),
-		Properties:     properties,
+		Properties:     convertWeaponProperties(weapon.Properties),
+	}
+	applyWeaponRange(result, weapon.Range)
+
+	return result
+}
+
+// weaponRangeMelee and weaponRangeRanged are the proto WeaponData.range
+// string values. Shared by convertWeaponData and convertEquipmentDetailToProto
+// so the literal exists in exactly one place.
+const (
+	weaponRangeMelee  = "melee"
+	weaponRangeRanged = "ranged"
+)
+
+// applyWeaponRange sets WeaponData.range/normal_range/long_range from a
+// toolkit weapons.Range (nil means melee). Shared by convertWeaponData
+// (concrete weapons.Weapon) and convertEquipmentDetailToProto (resolved
+// equipment.WeaponDetail).
+func applyWeaponRange(weaponData *dnd5ev1alpha1.WeaponData, rng *weapons.Range) {
+	if rng != nil {
+		weaponData.Range = weaponRangeRanged
+		weaponData.NormalRange = int32(rng.Normal)
+		weaponData.LongRange = int32(rng.Long)
+	} else {
+		weaponData.Range = weaponRangeMelee
+	}
+}
+
+// convertEquipmentDetailToProto converts the toolkit's resolved
+// equipment.EquipmentDetail (already produced by
+// equipment.ResolveEquipmentDetail, e.g. via choices.EquipmentItem.Detail)
+// into the proto Equipment message used by EquipmentItem.equipment_detail.
+// This is a pure translation — it does not recompute any D&D rule (damage,
+// AC, properties); those values are read straight off the toolkit's
+// already-resolved detail.
+func convertEquipmentDetailToProto(detail *equipment.EquipmentDetail) *dnd5ev1alpha1.Equipment {
+	if detail == nil {
+		return nil
 	}
 
-	// Add range if present
-	if weapon.Range != nil {
-		result.Range = "ranged"
-		result.NormalRange = int32(weapon.Range.Normal)
-		result.LongRange = int32(weapon.Range.Long)
-	} else {
-		result.Range = "melee"
+	result := &dnd5ev1alpha1.Equipment{
+		Name: detail.Name,
+		Weight: &dnd5ev1alpha1.Weight{
+			Quantity: int32(detail.Weight),
+			Unit:     "lbs",
+		},
+	}
+
+	switch {
+	case detail.Weapon != nil:
+		weaponCategory := convertWeaponCategoryToProto(detail.Weapon.Category)
+		if weaponCategory == dnd5ev1alpha1.WeaponCategory_WEAPON_CATEGORY_MARTIAL {
+			result.Category = dnd5ev1alpha1.EquipmentCategory_EQUIPMENT_CATEGORY_MARTIAL_WEAPON
+		} else {
+			result.Category = dnd5ev1alpha1.EquipmentCategory_EQUIPMENT_CATEGORY_SIMPLE_WEAPON
+		}
+		weaponData := &dnd5ev1alpha1.WeaponData{
+			WeaponCategory: weaponCategory,
+			DamageDice:     detail.Weapon.Damage,
+			DamageType:     convertDamageTypeToProto(string(detail.Weapon.DamageType)),
+			Properties:     convertWeaponProperties(detail.Weapon.Properties),
+		}
+		applyWeaponRange(weaponData, detail.Weapon.Range)
+		result.EquipmentData = &dnd5ev1alpha1.Equipment_WeaponData{WeaponData: weaponData}
+	case detail.Armor != nil:
+		result.Category = convertArmorCategoryToEquipmentCategory(detail.Armor.Category)
+		armorData := &dnd5ev1alpha1.ArmorData{
+			ArmorCategory:       convertArmorCategoryToProto(detail.Armor.Category),
+			BaseAc:              int32(detail.Armor.BaseAC),
+			DexBonus:            detail.Armor.DexBonus,
+			StrMinimum:          int32(detail.Armor.StrengthRequirement),
+			StealthDisadvantage: detail.Armor.StealthDisadvantage,
+		}
+		if detail.Armor.MaxDexBonus != nil {
+			armorData.HasDexLimit = true
+			armorData.MaxDexBonus = int32(*detail.Armor.MaxDexBonus)
+		}
+		result.EquipmentData = &dnd5ev1alpha1.Equipment_ArmorData{ArmorData: armorData}
+	default:
+		result.Category = dnd5ev1alpha1.EquipmentCategory_EQUIPMENT_CATEGORY_ADVENTURING_GEAR
 	}
 
 	return result
