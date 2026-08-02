@@ -605,6 +605,51 @@ func (s *CharacterCreationSuite) TestListClasses_PopulatesEquipmentDetail() {
 	s.Assert().Equal(int32(600), weaponData.GetLongRange())
 }
 
+func (s *CharacterCreationSuite) TestListRaces_PopulatesTraits() {
+	ctx := s.authCtx("test-list-races-traits")
+
+	listResp, err := s.server.CharacterClient.ListRaces(ctx, &dnd5ev1alpha1.ListRacesRequest{})
+	s.Require().NoError(err)
+
+	var humanInfo, elfInfo, dwarfInfo *dnd5ev1alpha1.RaceInfo
+	for _, raceInfo := range listResp.GetRaces() {
+		switch raceInfo.GetRaceId() {
+		case dnd5ev1alpha1.Race_RACE_HUMAN:
+			humanInfo = raceInfo
+		case dnd5ev1alpha1.Race_RACE_ELF:
+			elfInfo = raceInfo
+		case dnd5ev1alpha1.Race_RACE_DWARF:
+			dwarfInfo = raceInfo
+		}
+	}
+	s.Require().NotNil(humanInfo, "ListRaces should include Human")
+	s.Require().NotNil(elfInfo, "ListRaces should include Elf")
+	s.Require().NotNil(dwarfInfo, "ListRaces should include Dwarf")
+
+	// Human has no toolkit traits - assert the real correct-empty behavior,
+	// not just "doesn't crash".
+	s.Assert().Empty(humanInfo.GetTraits(), "Human should have no racial traits on the wire")
+
+	// Elf and Dwarf have real toolkit traits - assert they travel over the
+	// real ListRaces RPC (not a converter-only unit test), with both name
+	// and description populated.
+	s.Require().NotEmpty(elfInfo.GetTraits(), "Elf should carry racial traits over the wire")
+	elfNames := make([]string, 0, len(elfInfo.GetTraits()))
+	for _, trait := range elfInfo.GetTraits() {
+		elfNames = append(elfNames, trait.GetName())
+		s.Assert().NotEmpty(trait.GetDescription(), "trait %q should carry a description over the wire", trait.GetName())
+	}
+	s.Assert().Contains(elfNames, "Darkvision")
+	s.Assert().Contains(elfNames, "Fey Ancestry")
+
+	s.Require().NotEmpty(dwarfInfo.GetTraits(), "Dwarf should carry racial traits over the wire")
+	dwarfNames := make([]string, 0, len(dwarfInfo.GetTraits()))
+	for _, trait := range dwarfInfo.GetTraits() {
+		dwarfNames = append(dwarfNames, trait.GetName())
+	}
+	s.Assert().Contains(dwarfNames, "Stonecunning")
+}
+
 func (s *CharacterCreationSuite) TestCreateMonk() {
 	s.T().Log("Creating Monk character...")
 	ctx := s.authCtx("test-player-monk")

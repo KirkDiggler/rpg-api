@@ -12,6 +12,7 @@ import (
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character/choices"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/classes"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/races"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/refs"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
 )
@@ -738,4 +739,80 @@ func (s *ConvertersTestSuite) TestConvertProtoArmorToToolkit() {
 			assert.Equal(s.T(), tc.expected, result)
 		})
 	}
+}
+
+func (s *ConvertersTestSuite) TestConvertRaceDataToProto_Human_NoTraits() {
+	humanData := races.RaceData[races.Human]
+	require.NotNil(s.T(), humanData, "Human race data should exist")
+	require.Empty(s.T(), humanData.Traits, "fixture assumption: Human has no toolkit traits")
+
+	result := convertRaceDataToProto(humanData)
+	require.NotNil(s.T(), result)
+
+	assert.Empty(s.T(), result.GetTraits(), "Human should not fabricate traits it doesn't have")
+}
+
+func (s *ConvertersTestSuite) TestConvertRaceDataToProto_Elf_PopulatesTraits() {
+	elfData := races.RaceData[races.Elf]
+	require.NotNil(s.T(), elfData, "Elf race data should exist")
+	require.NotEmpty(s.T(), elfData.Traits, "fixture assumption: Elf has toolkit traits")
+
+	result := convertRaceDataToProto(elfData)
+	require.NotNil(s.T(), result)
+
+	require.Len(s.T(), result.GetTraits(), len(elfData.Traits))
+
+	names := make([]string, 0, len(result.GetTraits()))
+	for _, trait := range result.GetTraits() {
+		names = append(names, trait.GetName())
+		// Honest mapping: toolkit races.Trait carries no choice data today.
+		assert.False(s.T(), trait.GetIsChoice(), "races.Trait has no choice data - is_choice must not be invented")
+		assert.Empty(s.T(), trait.GetOptions(), "races.Trait has no choice data - options must not be invented")
+	}
+	assert.Contains(s.T(), names, "Darkvision")
+	assert.Contains(s.T(), names, "Fey Ancestry")
+	assert.Contains(s.T(), names, "Keen Senses")
+	assert.Contains(s.T(), names, "Trance")
+
+	// Description should travel too, not just the name.
+	for _, trait := range result.GetTraits() {
+		if trait.GetName() == "Fey Ancestry" {
+			assert.Contains(s.T(), trait.GetDescription(), "charmed")
+		}
+	}
+}
+
+func (s *ConvertersTestSuite) TestConvertRaceDataToProto_Dwarf_PopulatesTraits() {
+	dwarfData := races.RaceData[races.Dwarf]
+	require.NotNil(s.T(), dwarfData, "Dwarf race data should exist")
+	require.NotEmpty(s.T(), dwarfData.Traits, "fixture assumption: Dwarf has toolkit traits")
+
+	result := convertRaceDataToProto(dwarfData)
+	require.NotNil(s.T(), result)
+
+	require.Len(s.T(), result.GetTraits(), len(dwarfData.Traits))
+
+	names := make([]string, 0, len(result.GetTraits()))
+	for _, trait := range result.GetTraits() {
+		names = append(names, trait.GetName())
+	}
+	assert.Contains(s.T(), names, "Darkvision")
+	assert.Contains(s.T(), names, "Dwarven Resilience")
+	assert.Contains(s.T(), names, "Stonecunning")
+}
+
+func (s *ConvertersTestSuite) TestConvertRaceTraitsToProto_Discriminates() {
+	// Directly exercise the helper: nil/empty input must yield nil, not a
+	// spurious empty-but-non-nil slice masquerading as "populated".
+	assert.Nil(s.T(), convertRaceTraitsToProto(nil))
+	assert.Nil(s.T(), convertRaceTraitsToProto([]races.Trait{}))
+
+	result := convertRaceTraitsToProto([]races.Trait{
+		{ID: "test-trait", Name: "Test Trait", Description: "A test trait description"},
+	})
+	require.Len(s.T(), result, 1)
+	assert.Equal(s.T(), "Test Trait", result[0].GetName())
+	assert.Equal(s.T(), "A test trait description", result[0].GetDescription())
+	assert.False(s.T(), result[0].GetIsChoice())
+	assert.Empty(s.T(), result[0].GetOptions())
 }

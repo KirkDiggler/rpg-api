@@ -574,6 +574,27 @@ func convertChoiceSourceToProto(source shared.ChoiceSource) dnd5ev1alpha1.Choice
 	}
 }
 
+// convertRaceTraitsToProto converts toolkit races.Trait entries to proto RacialTrait.
+//
+// races.Trait today only carries {ID, Name, Description} — there is no choice
+// information on the toolkit side, so is_choice/options are deliberately left at
+// their zero values (false/empty) rather than invented. If the toolkit ever grows
+// choice-bearing traits, extend this mapping then.
+func convertRaceTraitsToProto(traits []races.Trait) []*dnd5ev1alpha1.RacialTrait {
+	if len(traits) == 0 {
+		return nil
+	}
+
+	result := make([]*dnd5ev1alpha1.RacialTrait, 0, len(traits))
+	for _, trait := range traits {
+		result = append(result, &dnd5ev1alpha1.RacialTrait{
+			Name:        trait.Name,
+			Description: trait.Description,
+		})
+	}
+	return result
+}
+
 // convertRaceDataToProto converts toolkit races.Data to proto RaceInfo
 func convertRaceDataToProto(data *races.Data) *dnd5ev1alpha1.RaceInfo {
 	if data == nil {
@@ -782,7 +803,6 @@ func convertRaceDataToProto(data *races.Data) *dnd5ev1alpha1.RaceInfo {
 	}
 
 	// TODO: Convert Size string to proto enum when available
-	// TODO: Convert Traits when proto supports them
 	// TODO: Convert subraces when proto supports them
 	// TODO: Convert AbilityChoice for Half-Elf
 
@@ -792,6 +812,7 @@ func convertRaceDataToProto(data *races.Data) *dnd5ev1alpha1.RaceInfo {
 		Description:       data.Description(),
 		Speed:             int32(data.Speed),
 		AbilityBonuses:    abilityBonuses,
+		Traits:            convertRaceTraitsToProto(data.Traits),
 		Languages:         langs,
 		ProficiencyGrants: profGrants,
 		Choices:           choices,
