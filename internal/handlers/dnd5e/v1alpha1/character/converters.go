@@ -2850,17 +2850,31 @@ func convertWeaponData(weapon *weapons.Weapon) *dnd5ev1alpha1.WeaponData {
 		DamageType:     convertDamageTypeToProto(string(weapon.DamageType)),
 		Properties:     convertWeaponProperties(weapon.Properties),
 	}
-
-	// Add range if present
-	if weapon.Range != nil {
-		result.Range = "ranged"
-		result.NormalRange = int32(weapon.Range.Normal)
-		result.LongRange = int32(weapon.Range.Long)
-	} else {
-		result.Range = "melee"
-	}
+	applyWeaponRange(result, weapon.Range)
 
 	return result
+}
+
+// weaponRangeMelee and weaponRangeRanged are the proto WeaponData.range
+// string values. Shared by convertWeaponData and convertEquipmentDetailToProto
+// so the literal exists in exactly one place.
+const (
+	weaponRangeMelee  = "melee"
+	weaponRangeRanged = "ranged"
+)
+
+// applyWeaponRange sets WeaponData.range/normal_range/long_range from a
+// toolkit weapons.Range (nil means melee). Shared by convertWeaponData
+// (concrete weapons.Weapon) and convertEquipmentDetailToProto (resolved
+// equipment.WeaponDetail).
+func applyWeaponRange(weaponData *dnd5ev1alpha1.WeaponData, rng *weapons.Range) {
+	if rng != nil {
+		weaponData.Range = weaponRangeRanged
+		weaponData.NormalRange = int32(rng.Normal)
+		weaponData.LongRange = int32(rng.Long)
+	} else {
+		weaponData.Range = weaponRangeMelee
+	}
 }
 
 // convertEquipmentDetailToProto converts the toolkit's resolved
@@ -2897,13 +2911,7 @@ func convertEquipmentDetailToProto(detail *equipment.EquipmentDetail) *dnd5ev1al
 			DamageType:     convertDamageTypeToProto(string(detail.Weapon.DamageType)),
 			Properties:     convertWeaponProperties(detail.Weapon.Properties),
 		}
-		if detail.Weapon.Range != nil {
-			weaponData.Range = "ranged"
-			weaponData.NormalRange = int32(detail.Weapon.Range.Normal)
-			weaponData.LongRange = int32(detail.Weapon.Range.Long)
-		} else {
-			weaponData.Range = "melee"
-		}
+		applyWeaponRange(weaponData, detail.Weapon.Range)
 		result.EquipmentData = &dnd5ev1alpha1.Equipment_WeaponData{WeaponData: weaponData}
 	case detail.Armor != nil:
 		result.Category = convertArmorCategoryToEquipmentCategory(detail.Armor.Category)
