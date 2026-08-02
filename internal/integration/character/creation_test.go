@@ -549,6 +549,26 @@ func (s *CharacterCreationSuite) TestValidation_MissingClass() {
 	s.T().Logf("✅ Correctly rejected: %v", err)
 }
 
+func (s *CharacterCreationSuite) TestListClasses_ProjectsMonkDescription() {
+	ctx := s.authCtx("test-list-classes-monk-description")
+
+	listResp, err := s.server.CharacterClient.ListClasses(ctx, &dnd5ev1alpha1.ListClassesRequest{})
+	s.Require().NoError(err)
+
+	for _, classInfo := range listResp.GetClasses() {
+		if classInfo.GetClassId() == dnd5ev1alpha1.Class_CLASS_MONK {
+			s.Assert().Equal(
+				"A master of martial arts, harnessing inner power through discipline. "+
+					"Monk weapons are shortswords and simple melee weapons without the Heavy or Two-Handed property",
+				classInfo.GetDescription(),
+			)
+			return
+		}
+	}
+
+	s.Fail("ListClasses should include Monk")
+}
+
 func (s *CharacterCreationSuite) TestListClasses_PopulatesEquipmentDetail() {
 	ctx := s.authCtx("test-list-classes-equipment-detail")
 
