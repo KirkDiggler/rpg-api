@@ -142,6 +142,80 @@ func (s *ConvertersTestSuite) TestConvertClassDataToProto_Fighter() {
 	assert.Len(s.T(), leatherBundle.Items, 3, "Leather bundle should have 3 items")
 }
 
+func (s *ConvertersTestSuite) TestCreateEquipmentChoice_PopulatesEquipmentDetail_Armor() {
+	fighterData := classes.ClassData[classes.Fighter]
+	require.NotNil(s.T(), fighterData, "Fighter class data should exist")
+
+	result := convertClassDataToProto(fighterData)
+	require.NotNil(s.T(), result)
+
+	var armorChoice *dnd5ev1alpha1.Choice
+	for _, choice := range result.Choices {
+		if choice.Id == "fighter-armor" {
+			armorChoice = choice
+			break
+		}
+	}
+	require.NotNil(s.T(), armorChoice, "Fighter should have armor choice")
+
+	chainMailBundle := armorChoice.GetEquipmentOptions().Bundles[0]
+	require.Len(s.T(), chainMailBundle.Items, 1)
+	chainMail := chainMailBundle.Items[0]
+	require.Equal(s.T(), "chain-mail", chainMail.SelectionId)
+
+	// This is the field the fix populates. Without the fix, EquipmentDetail
+	// is nil and the web's EquipmentCard falls back to a name-only render.
+	require.NotNil(s.T(), chainMail.EquipmentDetail, "chain mail should carry resolved equipment detail")
+	assert.Equal(s.T(), "Chain Mail", chainMail.EquipmentDetail.Name)
+
+	armorData := chainMail.EquipmentDetail.GetArmorData()
+	require.NotNil(s.T(), armorData, "chain mail detail should carry armor data")
+	assert.Equal(s.T(), dnd5ev1alpha1.ArmorCategory_ARMOR_CATEGORY_HEAVY, armorData.ArmorCategory)
+	assert.Equal(s.T(), int32(16), armorData.BaseAc)
+	assert.False(s.T(), armorData.DexBonus, "chain mail grants no dex bonus (max dex 0)")
+	assert.Equal(s.T(), int32(13), armorData.StrMinimum)
+	assert.True(s.T(), armorData.StealthDisadvantage)
+}
+
+func (s *ConvertersTestSuite) TestCreateEquipmentChoice_PopulatesEquipmentDetail_Weapon() {
+	fighterData := classes.ClassData[classes.Fighter]
+	require.NotNil(s.T(), fighterData, "Fighter class data should exist")
+
+	result := convertClassDataToProto(fighterData)
+	require.NotNil(s.T(), result)
+
+	var armorChoice *dnd5ev1alpha1.Choice
+	for _, choice := range result.Choices {
+		if choice.Id == "fighter-armor" {
+			armorChoice = choice
+			break
+		}
+	}
+	require.NotNil(s.T(), armorChoice, "Fighter should have armor choice")
+
+	leatherBundle := armorChoice.GetEquipmentOptions().Bundles[1]
+	require.Len(s.T(), leatherBundle.Items, 3)
+	longbow := leatherBundle.Items[1]
+	require.Equal(s.T(), "longbow", longbow.SelectionId)
+
+	// This is the field the fix populates. Without the fix, EquipmentDetail
+	// is nil and the web's EquipmentCard falls back to a name-only render.
+	require.NotNil(s.T(), longbow.EquipmentDetail, "longbow should carry resolved equipment detail")
+	assert.Equal(s.T(), "Longbow", longbow.EquipmentDetail.Name)
+
+	weaponData := longbow.EquipmentDetail.GetWeaponData()
+	require.NotNil(s.T(), weaponData, "longbow detail should carry weapon data")
+	assert.Equal(s.T(), dnd5ev1alpha1.WeaponCategory_WEAPON_CATEGORY_MARTIAL, weaponData.WeaponCategory)
+	assert.Equal(s.T(), "1d8", weaponData.DamageDice)
+	assert.Equal(s.T(), dnd5ev1alpha1.DamageType_DAMAGE_TYPE_PIERCING, weaponData.DamageType)
+	assert.Equal(s.T(), "ranged", weaponData.Range)
+	assert.Equal(s.T(), int32(150), weaponData.NormalRange)
+	assert.Equal(s.T(), int32(600), weaponData.LongRange)
+	assert.Contains(s.T(), weaponData.Properties, dnd5ev1alpha1.WeaponProperty_WEAPON_PROPERTY_AMMUNITION)
+	assert.Contains(s.T(), weaponData.Properties, dnd5ev1alpha1.WeaponProperty_WEAPON_PROPERTY_HEAVY)
+	assert.Contains(s.T(), weaponData.Properties, dnd5ev1alpha1.WeaponProperty_WEAPON_PROPERTY_TWO_HANDED)
+}
+
 func (s *ConvertersTestSuite) TestConvertClassDataToProto_Wizard() {
 	// Get Wizard class data from toolkit
 	wizardData := classes.ClassData[classes.Wizard]
