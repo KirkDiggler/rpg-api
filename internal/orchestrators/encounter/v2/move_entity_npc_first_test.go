@@ -147,7 +147,10 @@ func (s *MoveEntityNPCFirstSuite) SetupTest() {
 // this seed step, with no acting player to attribute — the goblin's
 // constant-rolled tie is broken by ascending id, and it wins.
 func (s *MoveEntityNPCFirstSuite) seedTurnBasedGoblinFirstStalled() {
-	enc := tkenc.New(s.ctx, core.EncounterID(mfEncID), s.broker)
+	// The combat-entry roll occurs during AddMonster below, before the
+	// orchestrator loads this encounter. Wire the fixture's deterministic roller
+	// into this seed aggregate as well as the orchestrator's subsequent load.
+	enc := tkenc.New(s.ctx, core.EncounterID(mfEncID), s.broker, tkenc.WithRoller(constantRoller{value: 10}))
 	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
 		PlayerID:   mfPlayerZoe,
 		EntityID:   mfEntityZoe,
