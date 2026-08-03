@@ -25,9 +25,9 @@ fmt: ## Format Go code with gofmt and goimports
 		go install golang.org/x/tools/cmd/goimports@latest; \
 	fi
 	@echo "→ Running gofmt with simplify..."
-	@find . -name "*.go" -not -path "./vendor/*" -not -path "./gen/*" -not -path "./mock/*" -exec gofmt -s -w {} \;
+	@find . -name "*.go" -not -path "./vendor/*" -not -path "./gen/*" -not -path "./mock/*" -not -path "*/mock/*" -exec gofmt -s -w {} \;
 	@echo "→ Running goimports..."
-	@find . -name "*.go" -not -path "./vendor/*" -not -path "./gen/*" -not -path "./mock/*" -exec goimports -w -local github.com/KirkDiggler {} \;
+	@find . -name "*.go" -not -path "./vendor/*" -not -path "./gen/*" -not -path "./mock/*" -not -path "*/mock/*" -exec goimports -w -local github.com/KirkDiggler {} \;
 	@echo "✅ Formatting complete"
 
 .PHONY: tidy

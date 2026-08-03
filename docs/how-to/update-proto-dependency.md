@@ -1,7 +1,7 @@
 ---
 name: update proto dependency
 description: How to pull updated proto definitions into rpg-api from rpg-api-protos
-updated: 2026-05-02
+updated: 2026-08-03
 ---
 
 # How to update the proto dependency
@@ -27,10 +27,11 @@ The `GOPROXY=direct` bypasses the module proxy cache to pull directly from the g
 ### Generated-Go versioning
 
 The consumed module is the nested `gen/go` module, not the proto repository root.
-After root release `v0.1.116`, its canonical proxy-resolvable generated-Go pin is
-`v0.0.0-20260802234930-7f4eda708a8f` (the `generated` commit). Keep that
-pseudo-version in `go.mod`; `v0.1.116` is a root-repository tag, **not** a valid
-version tag for `github.com/KirkDiggler/rpg-api-protos/gen/go`.
+Root release `v0.1.118` publishes generated commit `d9ef7d9fb49d`; its canonical
+proxy-resolvable generated-Go artifact is
+`v0.0.0-20260803143754-d9ef7d9fb49d`. Keep that pseudo-version in `go.mod`;
+`v0.1.118` is a root-repository tag, **not** a valid version tag for
+`github.com/KirkDiggler/rpg-api-protos/gen/go`.
 
 ## Verify the update
 
@@ -60,14 +61,14 @@ go mod tidy
 
 Check which toolkit module you need — rpg-toolkit is published as multiple modules (`core`, `dice`, `events`, `rulebooks/dnd5e`, `tools/spatial`, `tools/environments`). Each has an independent version. See `go.mod` for current versions.
 
-## Current dependency versions (as of 2026-05-02)
+## Current dependency versions (as of 2026-08-03)
 
 | Dependency | Version |
 |---|---|
-| `rpg-api-protos/gen/go` | `v0.0.0-20260802234930-7f4eda708a8f` (generated branch; root release `v0.1.116`) |
-| `rpg-toolkit/rulebooks/dnd5e` | `v0.55.5` |
+| `rpg-api-protos/gen/go` | `v0.0.0-20260803143754-d9ef7d9fb49d` (generated branch artifact `d9ef7d9fb49d`; root release `v0.1.118`) |
+| `rpg-toolkit/rulebooks/dnd5e` | `v0.70.1` |
 | `rpg-toolkit/core` | `v0.10.0` |
 | `rpg-toolkit/dice` | `v0.3.2` |
 | `rpg-toolkit/events` | `v0.6.2` |
-| `rpg-toolkit/tools/environments` | `v0.4.0` |
-| `rpg-toolkit/tools/spatial` | `v0.4.0` |
+| `rpg-toolkit/tools/environments` | `v0.4.4` |
+| `rpg-toolkit/tools/spatial` | `v0.5.1` |
