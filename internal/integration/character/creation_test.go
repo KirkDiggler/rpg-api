@@ -87,8 +87,36 @@ func (s *CharacterCreationSuite) assertInventoryCounts(char *dnd5ev1alpha1.Chara
 // =============================================================================
 
 func (s *CharacterCreationSuite) TestCreateFighter_BroadCategoryLongbow() {
-	s.T().Log("Creating Fighter character...")
-	ctx := s.authCtx("test-player-fighter")
+	s.createFighterWithMartialWeapon(
+		s.authCtx("test-player-fighter-longbow"),
+		"Sir Roland",
+		dnd5ev1alpha1.Weapon_WEAPON_LONGBOW,
+		map[string]int32{
+			weapons.Longbow: 1,
+			armor.Shield:    1,
+		},
+	)
+}
+
+func (s *CharacterCreationSuite) TestCreateFighter_BroadCategoryLongsword() {
+	s.createFighterWithMartialWeapon(
+		s.authCtx("test-player-fighter-longsword"),
+		"Dame Elara",
+		dnd5ev1alpha1.Weapon_WEAPON_LONGSWORD,
+		map[string]int32{
+			weapons.Longsword: 1,
+			armor.Shield:      1,
+		},
+	)
+}
+
+func (s *CharacterCreationSuite) createFighterWithMartialWeapon(
+	ctx context.Context,
+	name string,
+	weapon dnd5ev1alpha1.Weapon,
+	expectedInventory map[string]int32,
+) {
+	s.T().Logf("Creating Fighter with broad-category %s...", weapon)
 
 	// Create draft
 	createResp, err := s.server.CharacterClient.CreateDraft(ctx, &dnd5ev1alpha1.CreateDraftRequest{})
@@ -98,7 +126,7 @@ func (s *CharacterCreationSuite) TestCreateFighter_BroadCategoryLongbow() {
 	// Set name
 	_, err = s.server.CharacterClient.UpdateName(ctx, &dnd5ev1alpha1.UpdateNameRequest{
 		DraftId: draftID,
-		Name:    "Sir Roland",
+		Name:    name,
 	})
 	s.Require().NoError(err)
 
@@ -158,8 +186,8 @@ func (s *CharacterCreationSuite) TestCreateFighter_BroadCategoryLongbow() {
 					Equipment: &dnd5ev1alpha1.EquipmentSelection{},
 				},
 			},
-			// Primary weapons: the displayed broad martial category includes Longbow;
-			// exercise that real category selection rather than its common melee path.
+			// Primary weapons: choose a concrete option from the advertised broad
+			// martial category; toolkit owns selection eligibility.
 			{
 				Category: dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_EQUIPMENT,
 				Source:   dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_CLASS,
@@ -168,7 +196,7 @@ func (s *CharacterCreationSuite) TestCreateFighter_BroadCategoryLongbow() {
 				Selection: &dnd5ev1alpha1.ChoiceData_Equipment{
 					Equipment: &dnd5ev1alpha1.EquipmentSelection{
 						Items: []*dnd5ev1alpha1.EquipmentSelectionItem{
-							{Equipment: &dnd5ev1alpha1.EquipmentSelectionItem_Weapon{Weapon: dnd5ev1alpha1.Weapon_WEAPON_LONGBOW}},
+							{Equipment: &dnd5ev1alpha1.EquipmentSelectionItem_Weapon{Weapon: weapon}},
 						},
 					},
 				},
@@ -238,19 +266,13 @@ func (s *CharacterCreationSuite) TestCreateFighter_BroadCategoryLongbow() {
 
 	char := finalizeResp.GetCharacter()
 	s.T().Logf("✅ Fighter created: %s", char.GetId())
-	s.Assert().Equal("Sir Roland", char.GetName())
+	s.Assert().Equal(name, char.GetName())
 	s.Assert().Equal(dnd5ev1alpha1.Class_CLASS_FIGHTER, char.GetClass())
-	s.assertInventoryCounts(char, map[string]int32{
-		weapons.Longbow: 1,
-		armor.Shield:    1,
-	})
+	s.assertInventoryCounts(char, expectedInventory)
 
 	persisted, err := s.server.CharacterClient.GetCharacter(ctx, &dnd5ev1alpha1.GetCharacterRequest{CharacterId: char.GetId()})
 	s.Require().NoError(err)
-	s.assertInventoryCounts(persisted.GetCharacter(), map[string]int32{
-		weapons.Longbow: 1,
-		armor.Shield:    1,
-	})
+	s.assertInventoryCounts(persisted.GetCharacter(), expectedInventory)
 }
 
 // =============================================================================
