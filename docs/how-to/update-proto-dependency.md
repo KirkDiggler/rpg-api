@@ -54,21 +54,19 @@ Proto3 is backward compatible — new fields with zero values don't break reader
 ## Update toolkit dependency
 
 For rpg-toolkit updates:
+
 ```bash
 GOPROXY=direct go get github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e@latest
 go mod tidy
 ```
 
-Check which toolkit module you need — rpg-toolkit is published as multiple modules (`core`, `dice`, `events`, `rulebooks/dnd5e`, `tools/spatial`, `tools/environments`). Each has an independent version. See `go.mod` for current versions.
+rpg-toolkit is published as independently versioned Go modules. Inspect the direct `github.com/KirkDiggler/rpg-toolkit/...` requirements in `go.mod`, then update only the module that provides the API you need.
 
-## Current dependency versions (as of 2026-08-03)
+## Generated-Go version example (2026-08-03)
 
-| Dependency | Version |
-|---|---|
+This proto bump resolved the generated-Go module to the following version. Treat
+`go.mod` as the source of truth for the currently pinned dependency graph.
+
+| Dependency              | Version                                                                                                  |
+| ----------------------- | -------------------------------------------------------------------------------------------------------- |
 | `rpg-api-protos/gen/go` | `v0.0.0-20260803143754-d9ef7d9fb49d` (generated branch artifact `d9ef7d9fb49d`; root release `v0.1.118`) |
-| `rpg-toolkit/rulebooks/dnd5e` | `v0.70.1` |
-| `rpg-toolkit/core` | `v0.10.0` |
-| `rpg-toolkit/dice` | `v0.3.2` |
-| `rpg-toolkit/events` | `v0.6.2` |
-| `rpg-toolkit/tools/environments` | `v0.4.4` |
-| `rpg-toolkit/tools/spatial` | `v0.5.1` |
