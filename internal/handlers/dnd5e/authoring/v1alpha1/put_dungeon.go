@@ -87,9 +87,15 @@ func toProtoFloorPlan(fp *authoringorch.FloorPlan) *authoringv1alpha1.FloorPlan 
 		}
 	}
 
+	edges := make([]*authoringv1alpha1.FloorPlanEdge, len(fp.Edges))
+	for i, edge := range fp.Edges {
+		edges[i] = toProtoFloorPlanEdge(edge)
+	}
+
 	return &authoringv1alpha1.FloorPlan{
 		Rooms:      rooms,
 		Connectors: connectors,
+		Edges:      edges,
 		Height:     int32(fp.Height),
 		DoorRow:    int32(fp.DoorRow),
 		Entrance: &authoringv1alpha1.FloorPlanCell{
@@ -97,4 +103,21 @@ func toProtoFloorPlan(fp *authoringorch.FloorPlan) *authoringv1alpha1.FloorPlan 
 			Row:    int32(fp.Entrance.Row),
 		},
 	}
+}
+
+func toProtoFloorPlanEdge(edge authoringorch.FloorPlanEdge) *authoringv1alpha1.FloorPlanEdge {
+	protoEdge := &authoringv1alpha1.FloorPlanEdge{
+		From: &authoringv1alpha1.FloorPlanCell{Column: int32(edge.From.Column), Row: int32(edge.From.Row)},
+		To:   &authoringv1alpha1.FloorPlanCell{Column: int32(edge.To.Column), Row: int32(edge.To.Row)},
+	}
+	switch edge.Kind {
+	case authoringorch.FloorPlanEdgeKindSolid:
+		protoEdge.Kind = authoringv1alpha1.FloorPlanEdgeKind_FLOOR_PLAN_EDGE_KIND_SOLID
+	case authoringorch.FloorPlanEdgeKindDoor:
+		protoEdge.Kind = authoringv1alpha1.FloorPlanEdgeKind_FLOOR_PLAN_EDGE_KIND_DOOR
+	}
+	if edge.DoorID != "" {
+		protoEdge.DoorId = &edge.DoorID
+	}
+	return protoEdge
 }

@@ -15,6 +15,8 @@ impractical.
 
 This script lets you point rpg-api's build at a **local** rpg-toolkit
 checkout instead, for `github.com/KirkDiggler/rpg-toolkit/encounter` only.
+It rejects any unapproved replacement or second replacement; one local module
+is the entire override budget for an iteration.
 
 ## The constraint this solves
 
@@ -107,8 +109,10 @@ published toolkit version.
 scripts/toolkit-local-override.sh status
 ```
 
-Reports whether the override is currently active and whether
-`local-toolkit/encounter/` exists on disk.
+Reports the complete active `go.mod` replacement module list, then whether
+this exact approved override is active and whether `local-toolkit/encounter/`
+exists on disk. It exits non-zero if a second or unapproved replacement exists;
+that output is the verification record before running a local build.
 
 ## Deploy discipline — do not skip this
 

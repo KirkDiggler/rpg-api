@@ -50,6 +50,29 @@ rooms:
     width: 6
 `
 
+// showcaseDungeonYAML is the deterministic three-room Slice #176 fixture.
+// It deliberately follows dungeon-content/showcase.yaml's authored region
+// shape while staying self-contained as a repository test fixture.
+const showcaseDungeonYAML = `version: 1
+key: showcase
+name: The Shrine Hall
+height: 8
+rooms:
+  - id: antechamber
+    archetype: entrance
+    width: 6
+  - id: shrine
+    archetype: chamber
+    width: 14
+  - id: vault
+    archetype: boss
+    width: 8
+    boss: { ref: "dnd5e:monsters:skeleton-captain", at: [5, 5] }
+connectors:
+  - { from: antechamber, to: shrine }
+  - { from: shrine, to: vault }
+`
+
 func newTestOrchestrator(t *testing.T) (*authoring.Orchestrator, *dungeonregistry.Registry, string) {
 	t.Helper()
 	dir := t.TempDir()
@@ -231,6 +254,51 @@ func TestPutDungeon_ValidateOnly_PopulatesFloorPlanWithoutPersisting(t *testing.
 // existing key: the ORIGINATING file), registry updated, and a second Put
 // for the SAME key overwrites rather than shadowing (file count must not
 // grow) ---
+
+func TestPutDungeon_ShowcaseProjectsToolkitGeneratedEdgesVerbatim(t *testing.T) {
+	orch, _, _ := newTestOrchestrator(t)
+
+	out, err := orch.PutDungeon(context.Background(), &authoring.PutDungeonInput{
+		Key:          "showcase",
+		YAML:         showcaseDungeonYAML,
+		ValidateOnly: true,
+	})
+	require.NoError(t, err)
+	require.True(t, out.Success)
+	require.NotEmpty(t, out.FloorPlan.Edges)
+
+	var exteriorSolid, interiorSolid, connectorDoor bool
+	seen := make(map[[2]authoring.FloorPlanCell]authoring.FloorPlanEdge)
+	for _, edge := range out.FloorPlan.Edges {
+		require.NotEqual(t, edge.From, edge.To, "toolkit's physical-edge seam excludes cell blockers")
+
+		forward := [2]authoring.FloorPlanCell{edge.From, edge.To}
+		reverse := [2]authoring.FloorPlanCell{edge.To, edge.From}
+		_, hasForward := seen[forward]
+		_, hasReverse := seen[reverse]
+		require.False(t, hasForward || hasReverse, "API must receive one non-conflicting canonical record per physical edge")
+		seen[forward] = edge
+
+		switch edge.Kind {
+		case authoring.FloorPlanEdgeKindSolid:
+			require.Empty(t, edge.DoorID)
+			if edge.To.Column < 0 || edge.To.Column >= 30 || edge.To.Row < 0 || edge.To.Row >= 8 {
+				exteriorSolid = true
+			} else {
+				interiorSolid = true
+			}
+		case authoring.FloorPlanEdgeKindDoor:
+			require.NotEmpty(t, edge.DoorID)
+			if edge.DoorID == "showcase-door-antechamber-shrine" {
+				connectorDoor = true
+			}
+		}
+	}
+
+	require.True(t, exteriorSolid, "showcase must expose an exterior solid edge")
+	require.True(t, interiorSolid, "showcase must expose an interior-facing solid edge")
+	require.True(t, connectorDoor, "showcase must preserve the connector door identity")
+}
 
 func TestPutDungeon_Persists_NewKeyWritesKeyYAML(t *testing.T) {
 	orch, registry, dir := newTestOrchestrator(t)
