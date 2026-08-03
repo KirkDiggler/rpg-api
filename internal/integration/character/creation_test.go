@@ -711,6 +711,18 @@ func (s *CharacterCreationSuite) TestListClasses_MapsResolvedCategoryChoiceOptio
 	s.Equal("Longbow", longbow.GetEquipmentDetail().GetName())
 	s.Equal("1d8", longbow.GetEquipmentDetail().GetWeaponData().GetDamageDice())
 
+	monkFixed := equipmentBundleFromClass(s.T(), classesByID[dnd5ev1alpha1.Class_CLASS_MONK], "monk-weapons-primary", "monk-weapon-a")
+	s.Require().Empty(monkFixed.GetCategoryChoices(), "fixed Monk alternative must not become a category choice")
+	s.Require().Len(monkFixed.GetItems(), 1)
+	shortsword := monkFixed.GetItems()[0]
+	s.Equal("shortsword", shortsword.GetSelectionId())
+	s.Equal(int32(1), shortsword.GetQuantity())
+	s.Equal(dnd5ev1alpha1.Weapon_WEAPON_SHORTSWORD, shortsword.GetWeapon())
+	s.Require().NotNil(shortsword.GetEquipmentDetail())
+	s.Equal("Shortsword", shortsword.GetEquipmentDetail().GetName())
+	s.Equal(int32(10), shortsword.GetEquipmentDetail().GetCost().GetQuantity())
+	s.Equal("gp", shortsword.GetEquipmentDetail().GetCost().GetUnit())
+
 	monkSimple := categoryChoiceFromClass(s.T(), classesByID[dnd5ev1alpha1.Class_CLASS_MONK], "monk-weapons-primary", "monk-weapon-b")
 	assertCategoryWeaponOptions(
 		s.T(),
@@ -723,6 +735,23 @@ func (s *CharacterCreationSuite) TestListClasses_MapsResolvedCategoryChoiceOptio
 	monkIDs := equipmentSelectionIDs(monkSimple.GetOptions())
 	s.Assert().NotContains(monkIDs, "shortsword", "shortsword remains the separate fixed Monk alternative")
 	s.Assert().NotContains(monkIDs, "unarmed-strike", "toolkit special-weapon exclusion must survive the RPC")
+}
+
+func equipmentBundleFromClass(t *testing.T, classInfo *dnd5ev1alpha1.ClassInfo, choiceID, bundleID string) *dnd5ev1alpha1.EquipmentBundle {
+	t.Helper()
+	require.NotNil(t, classInfo)
+	for _, choice := range classInfo.GetChoices() {
+		if choice.GetId() != choiceID {
+			continue
+		}
+		for _, bundle := range choice.GetEquipmentOptions().GetBundles() {
+			if bundle.GetId() == bundleID {
+				return bundle
+			}
+		}
+	}
+	require.Failf(t, "missing equipment bundle", "choice %q bundle %q", choiceID, bundleID)
+	return nil
 }
 
 func categoryChoiceFromClass(t *testing.T, classInfo *dnd5ev1alpha1.ClassInfo, choiceID, bundleID string) *dnd5ev1alpha1.EquipmentCategoryChoice {

@@ -16,6 +16,7 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/races"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/refs"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/tools"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/weapons"
 )
 
@@ -145,9 +146,9 @@ func (s *ConvertersTestSuite) TestConvertClassDataToProto_Fighter() {
 	assert.Equal(s.T(), "fighter-armor-b", leatherBundle.Id)
 	assert.Equal(s.T(), "Leather armor, longbow, and 20 arrows", leatherBundle.Label)
 	requireEquipmentItemsEqual(s.T(), leatherBundle.Items, []equipmentItemExpectation{
-		{id: armor.Leather, quantity: 1, detailName: "Leather Armor", armor: dnd5ev1alpha1.Armor_ARMOR_LEATHER},
-		{id: weapons.Longbow, quantity: 1, detailName: "Longbow", weapon: dnd5ev1alpha1.Weapon_WEAPON_LONGBOW},
-		{id: "arrows-20", quantity: 1, detailName: "Arrows (20)"},
+		{id: armor.Leather, quantity: 1, detailName: "Leather Armor", costQuantity: 10, costUnit: "gp", armor: dnd5ev1alpha1.Armor_ARMOR_LEATHER},
+		{id: weapons.Longbow, quantity: 1, detailName: "Longbow", costQuantity: 50, costUnit: "gp", weapon: dnd5ev1alpha1.Weapon_WEAPON_LONGBOW},
+		{id: "arrows-20", quantity: 1, detailName: "Arrows (20)", costQuantity: 1, costUnit: "gp"},
 	})
 
 	leather := leatherBundle.Items[0]
@@ -275,6 +276,39 @@ func (s *ConvertersTestSuite) TestCreateEquipmentChoice_MapsCategoryChoiceOption
 		"API must not invent the toolkit-excluded special weapon")
 }
 
+func (s *ConvertersTestSuite) TestCreateEquipmentChoice_PreservesResolvedToolDetailsAndCost() {
+	bard := convertClassDataToProto(classes.ClassData[classes.Bard])
+	instruments := findEquipmentCategoryChoice(s.T(), bard, "bard-instrument", "bard-instrument-b")
+
+	expected := toolkitCategoryOptions(s.T(), classes.Bard, "bard-instrument", "bard-instrument-b")
+	s.Require().Len(instruments.GetOptions(), len(expected))
+	s.Require().Equal([]string{
+		"bagpipes", "drum", "dulcimer", "flute", "lute", "lyre", "horn", "pan-flute", "shawm", "viol",
+	}, equipmentItemSelectionIDs(instruments.GetOptions()))
+
+	for index, source := range expected {
+		item := instruments.GetOptions()[index]
+		s.Require().NotNil(item, "tool option %d", index)
+		s.Equal(source.ID, item.GetSelectionId(), "tool option %d selection ID", index)
+		s.Equal(int32(source.Quantity), item.GetQuantity(), "tool option %d quantity", index)
+		s.Equal(convertToolToProto(source.ID), item.GetTool(), "tool option %d type hint", index)
+		s.Require().IsType(&dnd5ev1alpha1.EquipmentItem_Tool{}, item.GetTypeHint(), "tool option %d type hint oneof", index)
+
+		detail := item.GetEquipmentDetail()
+		s.Require().NotNil(detail, "tool option %d detail", index)
+		s.Require().NotNil(source.Detail, "tool option %d toolkit detail", index)
+		s.Equal(source.Detail.Name, detail.GetName(), "tool option %d detail name", index)
+		s.Equal(int32(source.Detail.Weight), detail.GetWeight().GetQuantity(), "tool option %d detail weight", index)
+		s.Equal(dnd5ev1alpha1.EquipmentCategory_EQUIPMENT_CATEGORY_TOOLS, detail.GetCategory(), "tool option %d detail category", index)
+		s.Require().NotNil(detail.GetCost(), "tool option %d detail cost", index)
+	}
+
+	lute := instruments.GetOptions()[4]
+	s.Equal(tools.Lute, lute.GetSelectionId())
+	s.Equal(int32(35), lute.GetEquipmentDetail().GetCost().GetQuantity())
+	s.Equal("gp", lute.GetEquipmentDetail().GetCost().GetUnit())
+}
+
 func findEquipmentCategoryChoice(t *testing.T, classInfo *dnd5ev1alpha1.ClassInfo, choiceID, bundleID string) *dnd5ev1alpha1.EquipmentCategoryChoice {
 	t.Helper()
 	for _, choice := range classInfo.GetChoices() {
@@ -301,11 +335,13 @@ func equipmentItemSelectionIDs(items []*dnd5ev1alpha1.EquipmentItem) []string {
 }
 
 type equipmentItemExpectation struct {
-	id         string
-	quantity   int32
-	detailName string
-	weapon     dnd5ev1alpha1.Weapon
-	armor      dnd5ev1alpha1.Armor
+	id           string
+	quantity     int32
+	detailName   string
+	costQuantity int32
+	costUnit     string
+	weapon       dnd5ev1alpha1.Weapon
+	armor        dnd5ev1alpha1.Armor
 }
 
 func requireEquipmentItemsEqual(t *testing.T, actual []*dnd5ev1alpha1.EquipmentItem, expected []equipmentItemExpectation) {
@@ -318,6 +354,9 @@ func requireEquipmentItemsEqual(t *testing.T, actual []*dnd5ev1alpha1.EquipmentI
 		assert.Equal(t, expectation.quantity, item.GetQuantity(), "item %d quantity", index)
 		require.NotNil(t, item.GetEquipmentDetail(), "item %d detail", index)
 		assert.Equal(t, expectation.detailName, item.GetEquipmentDetail().GetName(), "item %d detail name", index)
+		require.NotNil(t, item.GetEquipmentDetail().GetCost(), "item %d detail cost", index)
+		assert.Equal(t, expectation.costQuantity, item.GetEquipmentDetail().GetCost().GetQuantity(), "item %d detail cost quantity", index)
+		assert.Equal(t, expectation.costUnit, item.GetEquipmentDetail().GetCost().GetUnit(), "item %d detail cost unit", index)
 		switch {
 		case expectation.weapon != dnd5ev1alpha1.Weapon_WEAPON_UNSPECIFIED:
 			assert.Equal(t, expectation.weapon, item.GetWeapon(), "item %d weapon type hint", index)

@@ -3,6 +3,7 @@ package character
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
@@ -2506,8 +2507,9 @@ func setEquipmentItemTypeHint(item *dnd5ev1alpha1.EquipmentItem, itemID string) 
 		return
 	}
 
-	// TODO: Add tools and packs when needed
-	// For now, leave TypeHint nil for unknown items
+	if tool := convertToolToProto(tools.ToolID(itemID)); tool != dnd5ev1alpha1.Tool_TOOL_UNSPECIFIED {
+		item.TypeHint = &dnd5ev1alpha1.EquipmentItem_Tool{Tool: tool}
+	}
 }
 
 // parseSkillString converts a skill string to proto Skill enum
@@ -2926,6 +2928,7 @@ func convertEquipmentDetailToProto(detail *equipment.EquipmentDetail) *dnd5ev1al
 			Quantity: int32(detail.Weight),
 			Unit:     "lbs",
 		},
+		Cost: convertEquipmentCostToProto(detail.Cost),
 	}
 
 	switch {
@@ -2958,11 +2961,28 @@ func convertEquipmentDetailToProto(detail *equipment.EquipmentDetail) *dnd5ev1al
 			armorData.MaxDexBonus = int32(*detail.Armor.MaxDexBonus)
 		}
 		result.EquipmentData = &dnd5ev1alpha1.Equipment_ArmorData{ArmorData: armorData}
+	case detail.Type == shared.EquipmentTypeTool:
+		result.Category = dnd5ev1alpha1.EquipmentCategory_EQUIPMENT_CATEGORY_TOOLS
 	default:
 		result.Category = dnd5ev1alpha1.EquipmentCategory_EQUIPMENT_CATEGORY_ADVENTURING_GEAR
 	}
 
 	return result
+}
+
+// convertEquipmentCostToProto maps a toolkit cost string when it is exactly
+// representable by the proto's single quantity/unit pair. Multi-denomination
+// costs have no lossless representation in the current proto and remain unset.
+func convertEquipmentCostToProto(cost string) *dnd5ev1alpha1.Cost {
+	parts := strings.Fields(cost)
+	if len(parts) != 2 {
+		return nil
+	}
+	quantity, err := strconv.ParseInt(parts[0], 10, 32)
+	if err != nil {
+		return nil
+	}
+	return &dnd5ev1alpha1.Cost{Quantity: int32(quantity), Unit: parts[1]}
 }
 
 // convertDamageTypeToProto converts toolkit damage type to proto
