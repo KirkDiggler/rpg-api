@@ -829,6 +829,21 @@ func (s *CharacterCreationSuite) TestListRaces_PopulatesTraits() {
 	s.Assert().Contains(dwarfNames, "Stonecunning")
 }
 
+func (s *CharacterCreationSuite) TestCreateMonk_FixedShortsword() {
+	ctx := s.authCtx("test-player-monk-shortsword")
+	char := s.createMonkWithPrimaryWeapon(ctx, "monk-weapon-a", dnd5ev1alpha1.Weapon_WEAPON_UNSPECIFIED)
+
+	expectedInventory := map[string]int32{
+		weapons.Dart:       10,
+		weapons.Shortsword: 1,
+	}
+	s.assertInventoryCounts(char, expectedInventory)
+
+	persisted, err := s.server.CharacterClient.GetCharacter(ctx, &dnd5ev1alpha1.GetCharacterRequest{CharacterId: char.GetId()})
+	s.Require().NoError(err)
+	s.assertInventoryCounts(persisted.GetCharacter(), expectedInventory)
+}
+
 func (s *CharacterCreationSuite) TestCreateMonk_SimpleRangedCategorySelections() {
 	testCases := []struct {
 		name     string
@@ -855,7 +870,7 @@ func (s *CharacterCreationSuite) TestCreateMonk_SimpleRangedCategorySelections()
 	for _, testCase := range testCases {
 		s.Run(testCase.name, func() {
 			ctx := s.authCtx("test-player-monk-" + testCase.name)
-			char := s.createMonkWithSimpleRangedWeapon(ctx, testCase.weapon)
+			char := s.createMonkWithPrimaryWeapon(ctx, "monk-weapon-b", testCase.weapon)
 			s.assertInventoryCounts(char, testCase.expected)
 
 			persisted, err := s.server.CharacterClient.GetCharacter(ctx, &dnd5ev1alpha1.GetCharacterRequest{CharacterId: char.GetId()})
@@ -865,11 +880,12 @@ func (s *CharacterCreationSuite) TestCreateMonk_SimpleRangedCategorySelections()
 	}
 }
 
-func (s *CharacterCreationSuite) createMonkWithSimpleRangedWeapon(
+func (s *CharacterCreationSuite) createMonkWithPrimaryWeapon(
 	ctx context.Context,
+	optionID string,
 	weapon dnd5ev1alpha1.Weapon,
 ) *dnd5ev1alpha1.Character {
-	s.T().Logf("Creating Monk with simple-ranged %s...", weapon)
+	s.T().Logf("Creating Monk with primary weapon option %s...", optionID)
 
 	// Create draft
 	createResp, err := s.server.CharacterClient.CreateDraft(ctx, &dnd5ev1alpha1.CreateDraftRequest{})
@@ -901,6 +917,13 @@ func (s *CharacterCreationSuite) createMonkWithSimpleRangedWeapon(
 	})
 	s.Require().NoError(err)
 
+	weaponSelection := &dnd5ev1alpha1.EquipmentSelection{}
+	if weapon != dnd5ev1alpha1.Weapon_WEAPON_UNSPECIFIED {
+		weaponSelection.Items = []*dnd5ev1alpha1.EquipmentSelectionItem{
+			{Equipment: &dnd5ev1alpha1.EquipmentSelectionItem_Weapon{Weapon: weapon}},
+		}
+	}
+
 	// Set Monk with required choices:
 	// - 2 skills (from Monk skill list)
 	// - Weapon choice (shortsword or simple weapon)
@@ -923,19 +946,15 @@ func (s *CharacterCreationSuite) createMonkWithSimpleRangedWeapon(
 					},
 				},
 			},
-			// Monk's broad simple-weapon option accepts the ranged choice advertised
-			// by ListClasses; the toolkit remains the selection validator.
+			// The fixed Shortsword alternative needs no explicit item; the broad
+			// simple-weapon alternative carries its selected toolkit-advertised weapon.
 			{
 				Category: dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_EQUIPMENT,
 				Source:   dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_CLASS,
 				ChoiceId: "monk-weapons-primary",
-				OptionId: "monk-weapon-b", // Any simple weapon
+				OptionId: optionID,
 				Selection: &dnd5ev1alpha1.ChoiceData_Equipment{
-					Equipment: &dnd5ev1alpha1.EquipmentSelection{
-						Items: []*dnd5ev1alpha1.EquipmentSelectionItem{
-							{Equipment: &dnd5ev1alpha1.EquipmentSelectionItem_Weapon{Weapon: weapon}},
-						},
-					},
+					Equipment: weaponSelection,
 				},
 			},
 			// Pack: Dungeoneer's pack
