@@ -217,6 +217,70 @@ func (s *ConvertersTestSuite) TestCreateEquipmentChoice_PopulatesEquipmentDetail
 	assert.Contains(s.T(), weaponData.Properties, dnd5ev1alpha1.WeaponProperty_WEAPON_PROPERTY_TWO_HANDED)
 }
 
+func (s *ConvertersTestSuite) TestCreateEquipmentChoice_MapsCategoryChoiceOptionsOneToOne() {
+	fighter := convertClassDataToProto(classes.ClassData[classes.Fighter])
+	fighterMartial := findEquipmentCategoryChoice(s.T(), fighter, "fighter-weapons-primary", "fighter-weapon-a")
+	require.NotEmpty(s.T(), fighterMartial.GetOptions())
+	assert.Contains(s.T(), equipmentItemSelectionIDs(fighterMartial.GetOptions()), "longsword",
+		"toolkit-resolved martial options must retain melee membership")
+	assert.Contains(s.T(), equipmentItemSelectionIDs(fighterMartial.GetOptions()), "longbow",
+		"toolkit-resolved martial options must retain ranged membership")
+
+	longbow := findEquipmentItem(s.T(), fighterMartial.GetOptions(), "longbow")
+	assert.Equal(s.T(), int32(1), longbow.GetQuantity())
+	require.NotNil(s.T(), longbow.GetEquipmentDetail())
+	assert.Equal(s.T(), "Longbow", longbow.GetEquipmentDetail().GetName())
+	assert.Equal(s.T(), "1d8", longbow.GetEquipmentDetail().GetWeaponData().GetDamageDice())
+
+	monk := convertClassDataToProto(classes.ClassData[classes.Monk])
+	monkSimple := findEquipmentCategoryChoice(s.T(), monk, "monk-weapons-primary", "monk-weapon-b")
+	monkOptionIDs := equipmentItemSelectionIDs(monkSimple.GetOptions())
+	assert.Contains(s.T(), monkOptionIDs, "dart",
+		"API must preserve the toolkit's simple-ranged membership")
+	assert.Contains(s.T(), monkOptionIDs, "light-crossbow",
+		"API must preserve the toolkit's simple-ranged membership")
+	assert.NotContains(s.T(), monkOptionIDs, "shortsword",
+		"shortsword is the toolkit's separate fixed Monk alternative")
+	assert.NotContains(s.T(), monkOptionIDs, "unarmed-strike",
+		"API must not invent the toolkit-excluded special weapon")
+}
+
+func findEquipmentCategoryChoice(t *testing.T, classInfo *dnd5ev1alpha1.ClassInfo, choiceID, bundleID string) *dnd5ev1alpha1.EquipmentCategoryChoice {
+	t.Helper()
+	for _, choice := range classInfo.GetChoices() {
+		if choice.GetId() != choiceID {
+			continue
+		}
+		for _, bundle := range choice.GetEquipmentOptions().GetBundles() {
+			if bundle.GetId() == bundleID {
+				require.Len(t, bundle.GetCategoryChoices(), 1)
+				return bundle.GetCategoryChoices()[0]
+			}
+		}
+	}
+	require.Failf(t, "missing category choice", "choice %q bundle %q", choiceID, bundleID)
+	return nil
+}
+
+func equipmentItemSelectionIDs(items []*dnd5ev1alpha1.EquipmentItem) []string {
+	ids := make([]string, 0, len(items))
+	for _, item := range items {
+		ids = append(ids, item.GetSelectionId())
+	}
+	return ids
+}
+
+func findEquipmentItem(t *testing.T, items []*dnd5ev1alpha1.EquipmentItem, selectionID string) *dnd5ev1alpha1.EquipmentItem {
+	t.Helper()
+	for _, item := range items {
+		if item.GetSelectionId() == selectionID {
+			return item
+		}
+	}
+	require.Failf(t, "missing equipment item", "selection ID %q", selectionID)
+	return nil
+}
+
 func (s *ConvertersTestSuite) TestConvertClassDataToProto_Wizard() {
 	// Get Wizard class data from toolkit
 	wizardData := classes.ClassData[classes.Wizard]

@@ -2348,28 +2348,16 @@ func createEquipmentChoice(req *choices.EquipmentRequirement) *dnd5ev1alpha1.Cho
 		// Create items for this bundle
 		equipmentItems := make([]*dnd5ev1alpha1.EquipmentItem, 0, len(opt.Items))
 		for _, item := range opt.Items {
-			// Create equipment item with selection ID and quantity
-			equipItem := &dnd5ev1alpha1.EquipmentItem{
-				SelectionId: item.ID,
-				Quantity:    int32(item.Quantity),
-			}
-			// Set type hint if we can determine the type
-			setEquipmentItemTypeHint(equipItem, item.ID)
-			// Set resolved equipment stats (damage, AC, properties, etc.) so
-			// the client can render EquipmentCard without a name-only fallback.
-			// item.Detail is already resolved by the toolkit's
-			// enrichEquipmentRequirements via equipment.ResolveEquipmentDetail —
-			// this is a pure translation, not a re-derivation of rules.
-			equipItem.EquipmentDetail = convertEquipmentDetailToProto(item.Detail)
-			equipmentItems = append(equipmentItems, equipItem)
+			equipmentItems = append(equipmentItems, convertEquipmentItemToProto(item))
 		}
 
 		// Convert category choices (e.g., "choose a martial weapon")
 		categoryChoices := make([]*dnd5ev1alpha1.EquipmentCategoryChoice, 0, len(opt.CategoryChoices))
 		for _, catChoice := range opt.CategoryChoices {
 			categoryChoice := &dnd5ev1alpha1.EquipmentCategoryChoice{
-				Choose: int32(catChoice.Choose),
-				Label:  catChoice.Label,
+				Choose:  int32(catChoice.Choose),
+				Label:   catChoice.Label,
+				Options: convertEquipmentItemsToProto(catChoice.Options),
 			}
 
 			// Determine the equipment type and set appropriate categories
@@ -2420,6 +2408,28 @@ func createEquipmentChoice(req *choices.EquipmentRequirement) *dnd5ev1alpha1.Cho
 			},
 		},
 	}
+}
+
+// convertEquipmentItemsToProto maps toolkit-resolved equipment in order. The
+// toolkit owns category eligibility; this converter only preserves its result.
+func convertEquipmentItemsToProto(items []choices.EquipmentItem) []*dnd5ev1alpha1.EquipmentItem {
+	result := make([]*dnd5ev1alpha1.EquipmentItem, 0, len(items))
+	for _, item := range items {
+		result = append(result, convertEquipmentItemToProto(item))
+	}
+	return result
+}
+
+// convertEquipmentItemToProto maps a concrete toolkit item to its wire shape.
+// Detail is resolved upstream by the toolkit; do not derive it here.
+func convertEquipmentItemToProto(item choices.EquipmentItem) *dnd5ev1alpha1.EquipmentItem {
+	result := &dnd5ev1alpha1.EquipmentItem{
+		SelectionId: item.ID,
+		Quantity:    int32(item.Quantity),
+	}
+	setEquipmentItemTypeHint(result, item.ID)
+	result.EquipmentDetail = convertEquipmentDetailToProto(item.Detail)
+	return result
 }
 
 // setEquipmentItemTypeHint sets the type hint on an EquipmentItem based on the item ID

@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 	"google.golang.org/grpc/metadata"
 
@@ -623,6 +624,72 @@ func (s *CharacterCreationSuite) TestListClasses_PopulatesEquipmentDetail() {
 	s.Assert().Equal(dnd5ev1alpha1.DamageType_DAMAGE_TYPE_PIERCING, weaponData.GetDamageType())
 	s.Assert().Equal(int32(150), weaponData.GetNormalRange())
 	s.Assert().Equal(int32(600), weaponData.GetLongRange())
+}
+
+func (s *CharacterCreationSuite) TestListClasses_MapsResolvedCategoryChoiceOptions() {
+	ctx := s.authCtx("test-list-classes-category-choice-options")
+
+	response, err := s.server.CharacterClient.ListClasses(ctx, &dnd5ev1alpha1.ListClassesRequest{})
+	s.Require().NoError(err)
+
+	classesByID := make(map[dnd5ev1alpha1.Class]*dnd5ev1alpha1.ClassInfo, len(response.GetClasses()))
+	for _, classInfo := range response.GetClasses() {
+		classesByID[classInfo.GetClassId()] = classInfo
+	}
+
+	fighterMartial := categoryChoiceFromClass(s.T(), classesByID[dnd5ev1alpha1.Class_CLASS_FIGHTER], "fighter-weapons-primary", "fighter-weapon-a")
+	fighterIDs := equipmentSelectionIDs(fighterMartial.GetOptions())
+	s.Assert().Contains(fighterIDs, "longsword", "real ListClasses RPC must preserve toolkit martial-melee membership")
+	s.Assert().Contains(fighterIDs, "longbow", "real ListClasses RPC must preserve toolkit martial-ranged membership")
+	longbow := equipmentItemByID(s.T(), fighterMartial.GetOptions(), "longbow")
+	s.Equal(int32(1), longbow.GetQuantity())
+	s.Require().NotNil(longbow.GetEquipmentDetail(), "resolved detail must survive the real RPC")
+	s.Equal("Longbow", longbow.GetEquipmentDetail().GetName())
+	s.Equal("1d8", longbow.GetEquipmentDetail().GetWeaponData().GetDamageDice())
+
+	monkSimple := categoryChoiceFromClass(s.T(), classesByID[dnd5ev1alpha1.Class_CLASS_MONK], "monk-weapons-primary", "monk-weapon-b")
+	monkIDs := equipmentSelectionIDs(monkSimple.GetOptions())
+	s.Assert().Contains(monkIDs, "dart", "real ListClasses RPC must retain Monk simple-ranged membership")
+	s.Assert().Contains(monkIDs, "light-crossbow", "real ListClasses RPC must retain Monk simple-ranged membership")
+	s.Assert().NotContains(monkIDs, "shortsword", "shortsword remains the separate fixed Monk alternative")
+	s.Assert().NotContains(monkIDs, "unarmed-strike", "toolkit special-weapon exclusion must survive the RPC")
+}
+
+func categoryChoiceFromClass(t *testing.T, classInfo *dnd5ev1alpha1.ClassInfo, choiceID, bundleID string) *dnd5ev1alpha1.EquipmentCategoryChoice {
+	t.Helper()
+	require.NotNil(t, classInfo)
+	for _, choice := range classInfo.GetChoices() {
+		if choice.GetId() != choiceID {
+			continue
+		}
+		for _, bundle := range choice.GetEquipmentOptions().GetBundles() {
+			if bundle.GetId() == bundleID {
+				require.Len(t, bundle.GetCategoryChoices(), 1)
+				return bundle.GetCategoryChoices()[0]
+			}
+		}
+	}
+	require.Failf(t, "missing category choice", "choice %q bundle %q", choiceID, bundleID)
+	return nil
+}
+
+func equipmentSelectionIDs(items []*dnd5ev1alpha1.EquipmentItem) []string {
+	ids := make([]string, 0, len(items))
+	for _, item := range items {
+		ids = append(ids, item.GetSelectionId())
+	}
+	return ids
+}
+
+func equipmentItemByID(t *testing.T, items []*dnd5ev1alpha1.EquipmentItem, selectionID string) *dnd5ev1alpha1.EquipmentItem {
+	t.Helper()
+	for _, item := range items {
+		if item.GetSelectionId() == selectionID {
+			return item
+		}
+	}
+	require.Failf(t, "missing equipment item", "selection ID %q", selectionID)
+	return nil
 }
 
 func (s *CharacterCreationSuite) TestListRaces_PopulatesTraits() {
