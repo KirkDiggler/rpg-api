@@ -10,12 +10,18 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 	"google.golang.org/grpc/metadata"
 
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
 	"github.com/KirkDiggler/rpg-api/internal/integration/harness"
+	"github.com/KirkDiggler/rpg-api/internal/pkg/clock"
+	"github.com/KirkDiggler/rpg-api/internal/pkg/idgen"
+	redisclient "github.com/KirkDiggler/rpg-api/internal/redis"
+	characterdraft "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/armor"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/tools"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/weapons"
 )
@@ -85,9 +91,37 @@ func (s *CharacterCreationSuite) assertInventoryCounts(char *dnd5ev1alpha1.Chara
 // FIGHTER - Equipment + Fighting Style
 // =============================================================================
 
-func (s *CharacterCreationSuite) TestCreateFighter() {
-	s.T().Log("Creating Fighter character...")
-	ctx := s.authCtx("test-player-fighter")
+func (s *CharacterCreationSuite) TestCreateFighter_BroadCategoryLongbow() {
+	s.createFighterWithMartialWeapon(
+		s.authCtx("test-player-fighter-longbow"),
+		"Sir Roland",
+		dnd5ev1alpha1.Weapon_WEAPON_LONGBOW,
+		map[string]int32{
+			weapons.Longbow: 1,
+			armor.Shield:    1,
+		},
+	)
+}
+
+func (s *CharacterCreationSuite) TestCreateFighter_BroadCategoryLongsword() {
+	s.createFighterWithMartialWeapon(
+		s.authCtx("test-player-fighter-longsword"),
+		"Dame Elara",
+		dnd5ev1alpha1.Weapon_WEAPON_LONGSWORD,
+		map[string]int32{
+			weapons.Longsword: 1,
+			armor.Shield:      1,
+		},
+	)
+}
+
+func (s *CharacterCreationSuite) createFighterWithMartialWeapon(
+	ctx context.Context,
+	name string,
+	weapon dnd5ev1alpha1.Weapon,
+	expectedInventory map[string]int32,
+) {
+	s.T().Logf("Creating Fighter with broad-category %s...", weapon)
 
 	// Create draft
 	createResp, err := s.server.CharacterClient.CreateDraft(ctx, &dnd5ev1alpha1.CreateDraftRequest{})
@@ -97,7 +131,7 @@ func (s *CharacterCreationSuite) TestCreateFighter() {
 	// Set name
 	_, err = s.server.CharacterClient.UpdateName(ctx, &dnd5ev1alpha1.UpdateNameRequest{
 		DraftId: draftID,
-		Name:    "Sir Roland",
+		Name:    name,
 	})
 	s.Require().NoError(err)
 
@@ -157,7 +191,8 @@ func (s *CharacterCreationSuite) TestCreateFighter() {
 					Equipment: &dnd5ev1alpha1.EquipmentSelection{},
 				},
 			},
-			// Primary weapons: Martial + Shield (need to specify which martial weapon)
+			// Primary weapons: choose a concrete option from the advertised broad
+			// martial category; toolkit owns selection eligibility.
 			{
 				Category: dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_EQUIPMENT,
 				Source:   dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_CLASS,
@@ -166,7 +201,7 @@ func (s *CharacterCreationSuite) TestCreateFighter() {
 				Selection: &dnd5ev1alpha1.ChoiceData_Equipment{
 					Equipment: &dnd5ev1alpha1.EquipmentSelection{
 						Items: []*dnd5ev1alpha1.EquipmentSelectionItem{
-							{Equipment: &dnd5ev1alpha1.EquipmentSelectionItem_Weapon{Weapon: dnd5ev1alpha1.Weapon_WEAPON_LONGSWORD}},
+							{Equipment: &dnd5ev1alpha1.EquipmentSelectionItem_Weapon{Weapon: weapon}},
 						},
 					},
 				},
@@ -236,8 +271,13 @@ func (s *CharacterCreationSuite) TestCreateFighter() {
 
 	char := finalizeResp.GetCharacter()
 	s.T().Logf("✅ Fighter created: %s", char.GetId())
-	s.Assert().Equal("Sir Roland", char.GetName())
+	s.Assert().Equal(name, char.GetName())
 	s.Assert().Equal(dnd5ev1alpha1.Class_CLASS_FIGHTER, char.GetClass())
+	s.assertInventoryCounts(char, expectedInventory)
+
+	persisted, err := s.server.CharacterClient.GetCharacter(ctx, &dnd5ev1alpha1.GetCharacterRequest{CharacterId: char.GetId()})
+	s.Require().NoError(err)
+	s.assertInventoryCounts(persisted.GetCharacter(), expectedInventory)
 }
 
 // =============================================================================
@@ -609,20 +649,173 @@ func (s *CharacterCreationSuite) TestListClasses_PopulatesEquipmentDetail() {
 	s.Assert().Equal(int32(16), armorData.GetBaseAc())
 	s.Assert().True(armorData.GetStealthDisadvantage())
 
-	// Bundle 1: leather armor, longbow, arrows - assert the weapon item
-	// (longbow) carries equipment_detail too.
+	// Bundle 1 is the legacy concrete path. Keep every published field in
+	// order: category-choice conversion must not regress existing bundles.
 	leatherBundle := bundles[1]
-	s.Require().Len(leatherBundle.GetItems(), 3)
-	longbow := leatherBundle.GetItems()[1]
-	s.Assert().Equal("longbow", longbow.GetSelectionId())
+	legacyItems := leatherBundle.GetItems()
+	s.Require().Len(legacyItems, 3)
+	s.Assert().Equal([]string{"leather", "longbow", "arrows-20"}, equipmentSelectionIDs(legacyItems))
+	s.Assert().Equal([]int32{1, 1, 1}, equipmentItemQuantities(legacyItems))
+
+	leather := legacyItems[0]
+	s.Assert().Equal(dnd5ev1alpha1.Armor_ARMOR_LEATHER, leather.GetArmor())
+	s.Require().NotNil(leather.GetEquipmentDetail(), "leather should carry resolved detail over the wire")
+	s.Assert().Equal("Leather Armor", leather.GetEquipmentDetail().GetName())
+	leatherData := leather.GetEquipmentDetail().GetArmorData()
+	s.Require().NotNil(leatherData)
+	s.Assert().Equal(dnd5ev1alpha1.ArmorCategory_ARMOR_CATEGORY_LIGHT, leatherData.GetArmorCategory())
+	s.Assert().Equal(int32(11), leatherData.GetBaseAc())
+	s.Assert().True(leatherData.GetDexBonus())
+
+	longbow := legacyItems[1]
+	s.Assert().Equal(dnd5ev1alpha1.Weapon_WEAPON_LONGBOW, longbow.GetWeapon())
 	s.Require().NotNil(longbow.GetEquipmentDetail(),
 		"longbow EquipmentItem should carry equipment_detail over the wire")
+	s.Assert().Equal("Longbow", longbow.GetEquipmentDetail().GetName())
 	weaponData := longbow.GetEquipmentDetail().GetWeaponData()
 	s.Require().NotNil(weaponData, "longbow equipment_detail should carry weapon data")
 	s.Assert().Equal("1d8", weaponData.GetDamageDice())
 	s.Assert().Equal(dnd5ev1alpha1.DamageType_DAMAGE_TYPE_PIERCING, weaponData.GetDamageType())
 	s.Assert().Equal(int32(150), weaponData.GetNormalRange())
 	s.Assert().Equal(int32(600), weaponData.GetLongRange())
+
+	arrows := legacyItems[2]
+	s.Assert().Nil(arrows.GetTypeHint(), "legacy ammunition type hint must remain absent")
+	s.Require().NotNil(arrows.GetEquipmentDetail(), "arrows should carry resolved detail over the wire")
+	s.Assert().Equal("Arrows (20)", arrows.GetEquipmentDetail().GetName())
+	s.Assert().Equal(dnd5ev1alpha1.EquipmentCategory_EQUIPMENT_CATEGORY_ADVENTURING_GEAR,
+		arrows.GetEquipmentDetail().GetCategory())
+	s.Assert().Nil(arrows.GetEquipmentDetail().GetEquipmentData())
+}
+
+func (s *CharacterCreationSuite) TestListClasses_MapsResolvedCategoryChoiceOptions() {
+	ctx := s.authCtx("test-list-classes-category-choice-options")
+
+	response, err := s.server.CharacterClient.ListClasses(ctx, &dnd5ev1alpha1.ListClassesRequest{})
+	s.Require().NoError(err)
+
+	classesByID := make(map[dnd5ev1alpha1.Class]*dnd5ev1alpha1.ClassInfo, len(response.GetClasses()))
+	for _, classInfo := range response.GetClasses() {
+		classesByID[classInfo.GetClassId()] = classInfo
+	}
+
+	fighterMartial := categoryChoiceFromClass(s.T(), classesByID[dnd5ev1alpha1.Class_CLASS_FIGHTER], "fighter-weapons-primary", "fighter-weapon-a")
+	assertCategoryWeaponOptions(
+		s.T(),
+		fighterMartial.GetOptions(),
+		[]string{
+			"greatsword", "longsword", "rapier", "shortsword", "battleaxe", "flail", "glaive", "greataxe",
+			"halberd", "lance", "maul", "morningstar", "pike", "scimitar", "trident", "war-pick",
+			"warhammer", "whip", "heavy-crossbow", "longbow", "blowgun", "hand-crossbow", "net",
+		},
+	)
+	longbow := equipmentItemByID(s.T(), fighterMartial.GetOptions(), "longbow")
+	s.Equal(dnd5ev1alpha1.Weapon_WEAPON_LONGBOW, longbow.GetWeapon())
+	s.Equal(int32(1), longbow.GetQuantity())
+	s.Require().NotNil(longbow.GetEquipmentDetail(), "resolved detail must survive the real RPC")
+	s.Equal("Longbow", longbow.GetEquipmentDetail().GetName())
+	s.Equal("1d8", longbow.GetEquipmentDetail().GetWeaponData().GetDamageDice())
+
+	monkFixed := equipmentBundleFromClass(s.T(), classesByID[dnd5ev1alpha1.Class_CLASS_MONK], "monk-weapons-primary", "monk-weapon-a")
+	s.Require().Empty(monkFixed.GetCategoryChoices(), "fixed Monk alternative must not become a category choice")
+	s.Require().Len(monkFixed.GetItems(), 1)
+	shortsword := monkFixed.GetItems()[0]
+	s.Equal("shortsword", shortsword.GetSelectionId())
+	s.Equal(int32(1), shortsword.GetQuantity())
+	s.Equal(dnd5ev1alpha1.Weapon_WEAPON_SHORTSWORD, shortsword.GetWeapon())
+	s.Require().NotNil(shortsword.GetEquipmentDetail())
+	s.Equal("Shortsword", shortsword.GetEquipmentDetail().GetName())
+	s.Equal(int32(10), shortsword.GetEquipmentDetail().GetCost().GetQuantity())
+	s.Equal("gp", shortsword.GetEquipmentDetail().GetCost().GetUnit())
+
+	monkSimple := categoryChoiceFromClass(s.T(), classesByID[dnd5ev1alpha1.Class_CLASS_MONK], "monk-weapons-primary", "monk-weapon-b")
+	assertCategoryWeaponOptions(
+		s.T(),
+		monkSimple.GetOptions(),
+		[]string{
+			"club", "dagger", "handaxe", "javelin", "greatclub", "light-hammer", "mace", "quarterstaff",
+			"sickle", "spear", "light-crossbow", "shortbow", "dart", "sling",
+		},
+	)
+	monkIDs := equipmentSelectionIDs(monkSimple.GetOptions())
+	s.Assert().NotContains(monkIDs, "shortsword", "shortsword remains the separate fixed Monk alternative")
+	s.Assert().NotContains(monkIDs, "unarmed-strike", "toolkit special-weapon exclusion must survive the RPC")
+}
+
+func equipmentBundleFromClass(t *testing.T, classInfo *dnd5ev1alpha1.ClassInfo, choiceID, bundleID string) *dnd5ev1alpha1.EquipmentBundle {
+	t.Helper()
+	require.NotNil(t, classInfo)
+	for _, choice := range classInfo.GetChoices() {
+		if choice.GetId() != choiceID {
+			continue
+		}
+		for _, bundle := range choice.GetEquipmentOptions().GetBundles() {
+			if bundle.GetId() == bundleID {
+				return bundle
+			}
+		}
+	}
+	require.Failf(t, "missing equipment bundle", "choice %q bundle %q", choiceID, bundleID)
+	return nil
+}
+
+func categoryChoiceFromClass(t *testing.T, classInfo *dnd5ev1alpha1.ClassInfo, choiceID, bundleID string) *dnd5ev1alpha1.EquipmentCategoryChoice {
+	t.Helper()
+	require.NotNil(t, classInfo)
+	for _, choice := range classInfo.GetChoices() {
+		if choice.GetId() != choiceID {
+			continue
+		}
+		for _, bundle := range choice.GetEquipmentOptions().GetBundles() {
+			if bundle.GetId() == bundleID {
+				require.Len(t, bundle.GetCategoryChoices(), 1)
+				return bundle.GetCategoryChoices()[0]
+			}
+		}
+	}
+	require.Failf(t, "missing category choice", "choice %q bundle %q", choiceID, bundleID)
+	return nil
+}
+
+func equipmentSelectionIDs(items []*dnd5ev1alpha1.EquipmentItem) []string {
+	ids := make([]string, 0, len(items))
+	for _, item := range items {
+		ids = append(ids, item.GetSelectionId())
+	}
+	return ids
+}
+
+func equipmentItemQuantities(items []*dnd5ev1alpha1.EquipmentItem) []int32 {
+	quantities := make([]int32, 0, len(items))
+	for _, item := range items {
+		quantities = append(quantities, item.GetQuantity())
+	}
+	return quantities
+}
+
+func assertCategoryWeaponOptions(t *testing.T, actual []*dnd5ev1alpha1.EquipmentItem, expectedIDs []string) {
+	t.Helper()
+	require.Equal(t, expectedIDs, equipmentSelectionIDs(actual), "category option IDs and registry order")
+	require.Len(t, actual, len(expectedIDs))
+	for index, item := range actual {
+		require.NotNil(t, item, "option %d", index)
+		require.Equal(t, int32(1), item.GetQuantity(), "option %d quantity", index)
+		require.NotEqual(t, dnd5ev1alpha1.Weapon_WEAPON_UNSPECIFIED, item.GetWeapon(), "option %d type hint", index)
+		require.NotNil(t, item.GetEquipmentDetail(), "option %d detail", index)
+		require.NotNil(t, item.GetEquipmentDetail().GetWeaponData(), "option %d weapon detail", index)
+		require.NotEmpty(t, item.GetEquipmentDetail().GetName(), "option %d detail name", index)
+	}
+}
+
+func equipmentItemByID(t *testing.T, items []*dnd5ev1alpha1.EquipmentItem, selectionID string) *dnd5ev1alpha1.EquipmentItem {
+	t.Helper()
+	for _, item := range items {
+		if item.GetSelectionId() == selectionID {
+			return item
+		}
+	}
+	require.Failf(t, "missing equipment item", "selection ID %q", selectionID)
+	return nil
 }
 
 func (s *CharacterCreationSuite) TestListRaces_PopulatesTraits() {
@@ -670,9 +863,147 @@ func (s *CharacterCreationSuite) TestListRaces_PopulatesTraits() {
 	s.Assert().Contains(dwarfNames, "Stonecunning")
 }
 
-func (s *CharacterCreationSuite) TestCreateMonk() {
-	s.T().Log("Creating Monk character...")
-	ctx := s.authCtx("test-player-monk")
+func (s *CharacterCreationSuite) TestCreateMonk_FixedShortsword() {
+	ctx := s.authCtx("test-player-monk-shortsword")
+	char := s.createMonkWithPrimaryWeapon(ctx, "monk-weapon-a", dnd5ev1alpha1.Weapon_WEAPON_UNSPECIFIED)
+
+	expectedInventory := map[string]int32{
+		weapons.Dart:       10,
+		weapons.Shortsword: 1,
+	}
+	s.assertInventoryCounts(char, expectedInventory)
+
+	persisted, err := s.server.CharacterClient.GetCharacter(ctx, &dnd5ev1alpha1.GetCharacterRequest{CharacterId: char.GetId()})
+	s.Require().NoError(err)
+	s.assertInventoryCounts(persisted.GetCharacter(), expectedInventory)
+}
+
+func (s *CharacterCreationSuite) TestCreateMonk_SimpleRangedCategorySelections() {
+	testCases := []struct {
+		name     string
+		weapon   dnd5ev1alpha1.Weapon
+		expected map[string]int32
+	}{
+		{
+			name:   "club",
+			weapon: dnd5ev1alpha1.Weapon_WEAPON_CLUB,
+			expected: map[string]int32{
+				weapons.Club: 1,
+				weapons.Dart: 10,
+			},
+		},
+		{
+			name:   "dart",
+			weapon: dnd5ev1alpha1.Weapon_WEAPON_DART,
+			expected: map[string]int32{
+				weapons.Dart: 11, // 10 class-granted darts + the selected category weapon
+			},
+		},
+		{
+			name:   "light-crossbow",
+			weapon: dnd5ev1alpha1.Weapon_WEAPON_LIGHT_CROSSBOW,
+			expected: map[string]int32{
+				weapons.Dart:          10,
+				weapons.LightCrossbow: 1,
+			},
+		},
+	}
+
+	for _, testCase := range testCases {
+		s.Run(testCase.name, func() {
+			ctx := s.authCtx("test-player-monk-" + testCase.name)
+			char := s.createMonkWithPrimaryWeapon(ctx, "monk-weapon-b", testCase.weapon)
+			s.assertInventoryCounts(char, testCase.expected)
+
+			persisted, err := s.server.CharacterClient.GetCharacter(ctx, &dnd5ev1alpha1.GetCharacterRequest{CharacterId: char.GetId()})
+			s.Require().NoError(err)
+			s.assertInventoryCounts(persisted.GetCharacter(), testCase.expected)
+		})
+	}
+}
+
+func (s *CharacterCreationSuite) TestCreateMonk_RejectsLiveAndPersistedUnarmedStrikeCategorySelection() {
+	ctx := s.authCtx("test-player-monk-unarmed-strike")
+
+	// A live request must fail before the invalid selection is saved.
+	createResp, err := s.server.CharacterClient.CreateDraft(ctx, &dnd5ev1alpha1.CreateDraftRequest{})
+	s.Require().NoError(err)
+	invalidChoices := monkClassChoices("monk-weapon-b", dnd5ev1alpha1.Weapon_WEAPON_UNSPECIFIED)
+	invalidChoices[1].GetEquipment().Items = []*dnd5ev1alpha1.EquipmentSelectionItem{{
+		Equipment: &dnd5ev1alpha1.EquipmentSelectionItem_OtherEquipmentId{OtherEquipmentId: weapons.UnarmedStrike},
+	}}
+	_, err = s.server.CharacterClient.UpdateClass(ctx, &dnd5ev1alpha1.UpdateClassRequest{
+		DraftId:      createResp.GetDraft().GetId(),
+		Class:        dnd5ev1alpha1.Class_CLASS_MONK,
+		ClassChoices: invalidChoices,
+	})
+	s.Require().Error(err)
+	s.ErrorContains(err, "Invalid equipment choice 'unarmed-strike'")
+
+	// Seed the serialized shape accepted by v0.70.0, then prove the real
+	// FinalizeDraft RPC revalidates persisted selections before creating a character.
+	draftID := s.createMonkDraftWithPrimaryWeapon(ctx, "monk-weapon-b", dnd5ev1alpha1.Weapon_WEAPON_CLUB)
+	draftRepo := s.newDraftRepository()
+	stored, err := draftRepo.Get(ctx, characterdraft.GetInput{ID: draftID})
+	s.Require().NoError(err)
+	mutated := false
+	for i := range stored.Draft.Data.Choices {
+		choice := &stored.Draft.Data.Choices[i]
+		if choice.ChoiceID == "monk-weapons-primary" && choice.OptionID == "monk-weapon-b" {
+			choice.EquipmentSelection = []shared.SelectionID{weapons.UnarmedStrike}
+			mutated = true
+			break
+		}
+	}
+	s.Require().True(mutated, "valid Monk category selection must be persisted before the regression mutation")
+	_, err = draftRepo.Update(ctx, characterdraft.UpdateInput{Draft: stored.Draft})
+	s.Require().NoError(err)
+
+	_, err = s.server.CharacterClient.FinalizeDraft(ctx, &dnd5ev1alpha1.FinalizeDraftRequest{DraftId: draftID})
+	s.Require().Error(err)
+	s.ErrorContains(err, "unarmed-strike")
+}
+
+func (s *CharacterCreationSuite) newDraftRepository() characterdraft.Repository {
+	client, err := redisclient.NewClient(sharedRedis.Addr, nil)
+	s.Require().NoError(err)
+	s.T().Cleanup(func() { _ = client.Close() })
+
+	repo, err := characterdraft.NewRedis(&characterdraft.Config{
+		Client:      client,
+		Clock:       clock.New(),
+		IDGenerator: idgen.NewPrefixed("test-draft-"),
+	})
+	s.Require().NoError(err)
+	return repo
+}
+
+func (s *CharacterCreationSuite) createMonkWithPrimaryWeapon(
+	ctx context.Context,
+	optionID string,
+	weapon dnd5ev1alpha1.Weapon,
+) *dnd5ev1alpha1.Character {
+	draftID := s.createMonkDraftWithPrimaryWeapon(ctx, optionID, weapon)
+
+	finalizeResp, err := s.server.CharacterClient.FinalizeDraft(ctx, &dnd5ev1alpha1.FinalizeDraftRequest{
+		DraftId: draftID,
+	})
+	s.Require().NoError(err, "finalize should succeed")
+	s.Require().NotNil(finalizeResp.GetCharacter())
+
+	char := finalizeResp.GetCharacter()
+	s.Assert().Equal("Shadow", char.GetName())
+	s.Assert().Equal(dnd5ev1alpha1.Class_CLASS_MONK, char.GetClass())
+	s.T().Logf("✅ Monk created: %s", char.GetId())
+	return char
+}
+
+func (s *CharacterCreationSuite) createMonkDraftWithPrimaryWeapon(
+	ctx context.Context,
+	optionID string,
+	weapon dnd5ev1alpha1.Weapon,
+) string {
+	s.T().Logf("Creating Monk with primary weapon option %s...", optionID)
 
 	// Create draft
 	createResp, err := s.server.CharacterClient.CreateDraft(ctx, &dnd5ev1alpha1.CreateDraftRequest{})
@@ -704,59 +1035,11 @@ func (s *CharacterCreationSuite) TestCreateMonk() {
 	})
 	s.Require().NoError(err)
 
-	// Set Monk with required choices:
-	// - 2 skills (from Monk skill list)
-	// - Weapon choice (shortsword or simple weapon)
-	// - Pack choice (dungeoneer's or explorer's)
-	// - Tool choice (artisan's tools or musical instrument)
+	// Set Monk with required choices.
 	_, err = s.server.CharacterClient.UpdateClass(ctx, &dnd5ev1alpha1.UpdateClassRequest{
-		DraftId: draftID,
-		Class:   dnd5ev1alpha1.Class_CLASS_MONK,
-		ClassChoices: []*dnd5ev1alpha1.ChoiceData{
-			// Skills: Acrobatics and Stealth
-			{
-				Category: dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_SKILLS,
-				Source:   dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_CLASS,
-				Selection: &dnd5ev1alpha1.ChoiceData_Skills{
-					Skills: &dnd5ev1alpha1.SkillSelection{
-						Skills: []dnd5ev1alpha1.Skill{
-							dnd5ev1alpha1.Skill_SKILL_ACROBATICS,
-							dnd5ev1alpha1.Skill_SKILL_STEALTH,
-						},
-					},
-				},
-			},
-			// Weapon: Shortsword
-			{
-				Category: dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_EQUIPMENT,
-				Source:   dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_CLASS,
-				ChoiceId: "monk-weapons-primary",
-				OptionId: "monk-weapon-a", // Shortsword
-				Selection: &dnd5ev1alpha1.ChoiceData_Equipment{
-					Equipment: &dnd5ev1alpha1.EquipmentSelection{},
-				},
-			},
-			// Pack: Dungeoneer's pack
-			{
-				Category: dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_EQUIPMENT,
-				Source:   dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_CLASS,
-				ChoiceId: "monk-pack",
-				OptionId: "monk-pack-a", // Dungeoneer's pack
-				Selection: &dnd5ev1alpha1.ChoiceData_Equipment{
-					Equipment: &dnd5ev1alpha1.EquipmentSelection{},
-				},
-			},
-			// Tools: Calligrapher's supplies (fits the Monk aesthetic)
-			{
-				Category: dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_TOOLS,
-				Source:   dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_CLASS,
-				Selection: &dnd5ev1alpha1.ChoiceData_Tools{
-					Tools: &dnd5ev1alpha1.ToolSelection{
-						Tools: []dnd5ev1alpha1.Tool{dnd5ev1alpha1.Tool_TOOL_CALLIGRAPHER_SUPPLIES},
-					},
-				},
-			},
-		},
+		DraftId:      draftID,
+		Class:        dnd5ev1alpha1.Class_CLASS_MONK,
+		ClassChoices: monkClassChoices(optionID, weapon),
 	})
 	s.Require().NoError(err)
 
@@ -783,26 +1066,45 @@ func (s *CharacterCreationSuite) TestCreateMonk() {
 	})
 	s.Require().NoError(err)
 
-	// Finalize
-	finalizeResp, err := s.server.CharacterClient.FinalizeDraft(ctx, &dnd5ev1alpha1.FinalizeDraftRequest{
-		DraftId: draftID,
-	})
-	s.Require().NoError(err, "finalize should succeed")
-	s.Require().NotNil(finalizeResp.GetCharacter())
+	return draftID
+}
 
-	char := finalizeResp.GetCharacter()
-	s.Assert().Equal("Shadow", char.GetName())
-	s.Assert().Equal(dnd5ev1alpha1.Class_CLASS_MONK, char.GetClass())
+func monkClassChoices(optionID string, weapon dnd5ev1alpha1.Weapon) []*dnd5ev1alpha1.ChoiceData {
+	weaponSelection := &dnd5ev1alpha1.EquipmentSelection{}
+	if weapon != dnd5ev1alpha1.Weapon_WEAPON_UNSPECIFIED {
+		weaponSelection.Items = []*dnd5ev1alpha1.EquipmentSelectionItem{
+			{Equipment: &dnd5ev1alpha1.EquipmentSelectionItem_Weapon{Weapon: weapon}},
+		}
+	}
 
-	s.assertInventoryCounts(char, map[string]int32{
-		weapons.Dart: 10,
-	})
-
-	persisted, err := s.server.CharacterClient.GetCharacter(ctx, &dnd5ev1alpha1.GetCharacterRequest{CharacterId: char.GetId()})
-	s.Require().NoError(err)
-	s.assertInventoryCounts(persisted.GetCharacter(), map[string]int32{
-		weapons.Dart: 10,
-	})
-
-	s.T().Logf("✅ Monk created: %s", char.GetId())
+	return []*dnd5ev1alpha1.ChoiceData{
+		{
+			Category: dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_SKILLS,
+			Source:   dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_CLASS,
+			Selection: &dnd5ev1alpha1.ChoiceData_Skills{Skills: &dnd5ev1alpha1.SkillSelection{
+				Skills: []dnd5ev1alpha1.Skill{dnd5ev1alpha1.Skill_SKILL_ACROBATICS, dnd5ev1alpha1.Skill_SKILL_STEALTH},
+			}},
+		},
+		{
+			Category:  dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_EQUIPMENT,
+			Source:    dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_CLASS,
+			ChoiceId:  "monk-weapons-primary",
+			OptionId:  optionID,
+			Selection: &dnd5ev1alpha1.ChoiceData_Equipment{Equipment: weaponSelection},
+		},
+		{
+			Category:  dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_EQUIPMENT,
+			Source:    dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_CLASS,
+			ChoiceId:  "monk-pack",
+			OptionId:  "monk-pack-a",
+			Selection: &dnd5ev1alpha1.ChoiceData_Equipment{Equipment: &dnd5ev1alpha1.EquipmentSelection{}},
+		},
+		{
+			Category: dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_TOOLS,
+			Source:   dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_CLASS,
+			Selection: &dnd5ev1alpha1.ChoiceData_Tools{Tools: &dnd5ev1alpha1.ToolSelection{
+				Tools: []dnd5ev1alpha1.Tool{dnd5ev1alpha1.Tool_TOOL_CALLIGRAPHER_SUPPLIES},
+			}},
+		},
+	}
 }
