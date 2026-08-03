@@ -68,7 +68,10 @@ fi
 # 5. Check imports
 echo -e "\n📦 Checking imports..."
 if command -v goimports &> /dev/null; then
-    IMPORT_ISSUES=$(find . -name "*.go" -not -path "./vendor/*" -not -path "./gen/*" -not -path "./mock/*" -exec goimports -l -local github.com/KirkDiggler {} \;)
+    # MockGen owns nested mock/ imports and emits a grouping that goimports
+    # intentionally rewrites for this repository's local prefix. Exclude every
+    # generated mock directory so the two generators do not contradict each other.
+    IMPORT_ISSUES=$(find . -name "*.go" -not -path "./vendor/*" -not -path "./gen/*" -not -path "./mock/*" -not -path "*/mock/*" -exec goimports -l -local github.com/KirkDiggler {} \;)
     if [ -n "$IMPORT_ISSUES" ]; then
         echo -e "${RED}Files have import issues:${NC}"
         echo "$IMPORT_ISSUES"
