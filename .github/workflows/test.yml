@@ -9,6 +9,8 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    env:
+      GOWORK: 'off'
     permissions:
       contents: read
       pull-requests: write
@@ -21,6 +23,9 @@ jobs:
       with:
         go-version-file: go.mod
     
+    - name: Verify published release pins
+      run: ./scripts/verify-release-pin.sh
+
     - name: Install dependencies
       run: |
         go mod download

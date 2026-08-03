@@ -24,6 +24,14 @@ go mod tidy
 
 The `GOPROXY=direct` bypasses the module proxy cache to pull directly from the git repository.
 
+### Generated-Go versioning
+
+The consumed module is the nested `gen/go` module, not the proto repository root.
+After root release `v0.1.116`, its canonical proxy-resolvable generated-Go pin is
+`v0.0.0-20260802234930-7f4eda708a8f` (the `generated` commit). Keep that
+pseudo-version in `go.mod`; `v0.1.116` is a root-repository tag, **not** a valid
+version tag for `github.com/KirkDiggler/rpg-api-protos/gen/go`.
+
 ## Verify the update
 
 ```bash
@@ -56,7 +64,7 @@ Check which toolkit module you need — rpg-toolkit is published as multiple mod
 
 | Dependency | Version |
 |---|---|
-| `rpg-api-protos/gen/go` | `v0.0.0-20260329063233-e78908772cad` (generated branch) |
+| `rpg-api-protos/gen/go` | `v0.0.0-20260802234930-7f4eda708a8f` (generated branch; root release `v0.1.116`) |
 | `rpg-toolkit/rulebooks/dnd5e` | `v0.55.5` |
 | `rpg-toolkit/core` | `v0.10.0` |
 | `rpg-toolkit/dice` | `v0.3.2` |

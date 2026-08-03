@@ -4,11 +4,15 @@ help: ## Display this help message
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-20s %s\n", $$1, $$2}'
 
 .PHONY: pre-commit
-pre-commit: fmt tidy fix-eof lint test ## Run all pre-commit checks
+pre-commit: release-pin-check fmt tidy fix-eof lint test ## Run all pre-commit checks
 
 .PHONY: ci-check
-ci-check: ## Run comprehensive CI checks (detects common failures)
+ci-check: release-pin-check ## Run comprehensive CI checks (detects common failures)
 	@./scripts/ci-checks.sh
+
+.PHONY: release-pin-check
+release-pin-check: ## Verify only published Go module pins are active
+	@./scripts/verify-release-pin.sh
 
 .PHONY: ci-fix
 ci-fix: install-tools generate fmt tidy fix-eof ## Fix common CI issues automatically

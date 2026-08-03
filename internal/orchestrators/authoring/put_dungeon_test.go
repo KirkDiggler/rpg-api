@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -265,39 +266,45 @@ func TestPutDungeon_ShowcaseProjectsToolkitGeneratedEdgesVerbatim(t *testing.T) 
 	})
 	require.NoError(t, err)
 	require.True(t, out.Success)
-	require.NotEmpty(t, out.FloorPlan.Edges)
 
-	var exteriorSolid, interiorSolid, connectorDoor bool
-	seen := make(map[[2]authoring.FloorPlanCell]authoring.FloorPlanEdge)
-	for _, edge := range out.FloorPlan.Edges {
-		require.NotEqual(t, edge.From, edge.To, "toolkit's physical-edge seam excludes cell blockers")
+	expected := expectedShowcaseGeneratedEdges(t)
+	require.Len(t, expected, 196, "fixture must list the full canonical sequence")
+	require.Len(t, out.FloorPlan.Edges, 196, "toolkit physical-edge count")
+	require.Equal(t, expected, out.FloorPlan.Edges,
+		"the API must project the complete toolkit-produced physical-edge sequence verbatim")
+}
 
-		forward := [2]authoring.FloorPlanCell{edge.From, edge.To}
-		reverse := [2]authoring.FloorPlanCell{edge.To, edge.From}
-		_, hasForward := seen[forward]
-		_, hasReverse := seen[reverse]
-		require.False(t, hasForward || hasReverse, "API must receive one non-conflicting canonical record per physical edge")
-		seen[forward] = edge
+// expectedShowcaseGeneratedEdges is a literal, ordered snapshot of every
+// physical edge produced by rpg-toolkit PR #876 at 7b58d3f for the deterministic
+// showcase spec. Each record includes both endpoints, kind, and door identity;
+// equality above deliberately catches missing, extra, reordered, or changed
+// edges rather than merely proving representative examples exist.
+func expectedShowcaseGeneratedEdges(t *testing.T) []authoring.FloorPlanEdge {
+	t.Helper()
 
-		switch edge.Kind {
-		case authoring.FloorPlanEdgeKindSolid:
-			require.Empty(t, edge.DoorID)
-			if edge.To.Column < 0 || edge.To.Column >= 30 || edge.To.Row < 0 || edge.To.Row >= 8 {
-				exteriorSolid = true
-			} else {
-				interiorSolid = true
-			}
-		case authoring.FloorPlanEdgeKindDoor:
-			require.NotEmpty(t, edge.DoorID)
-			if edge.DoorID == "showcase-door-antechamber-shrine" {
-				connectorDoor = true
-			}
-		}
+	raw, err := os.ReadFile(filepath.Join("testdata", "showcase_generated_edges.txt"))
+	require.NoError(t, err)
+
+	lines := strings.Split(strings.TrimSpace(string(raw)), "\n")
+	edges := make([]authoring.FloorPlanEdge, 0, len(lines))
+	for _, line := range lines {
+		fields := strings.Split(line, ":")
+		require.Len(t, fields, 4, "expected edge record %q", line)
+
+		var from, to authoring.FloorPlanCell
+		_, err = fmt.Sscanf(fields[0], "%d,%d", &from.Column, &from.Row)
+		require.NoError(t, err, "expected edge source %q", line)
+		_, err = fmt.Sscanf(fields[1], "%d,%d", &to.Column, &to.Row)
+		require.NoError(t, err, "expected edge destination %q", line)
+
+		edges = append(edges, authoring.FloorPlanEdge{
+			From:   from,
+			To:     to,
+			Kind:   authoring.FloorPlanEdgeKind(fields[2]),
+			DoorID: fields[3],
+		})
 	}
-
-	require.True(t, exteriorSolid, "showcase must expose an exterior solid edge")
-	require.True(t, interiorSolid, "showcase must expose an interior-facing solid edge")
-	require.True(t, connectorDoor, "showcase must preserve the connector door identity")
+	return edges
 }
 
 func TestPutDungeon_Persists_NewKeyWritesKeyYAML(t *testing.T) {

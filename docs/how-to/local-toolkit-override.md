@@ -131,6 +131,12 @@ but that's defense in depth, not the only line. Treat it as a hard rule:
 4. **Remove the local override**: `scripts/toolkit-local-override.sh off`.
 5. Commit the real `go.mod`/`go.sum` version bump — never a `replace` line.
 
+`make pre-commit`, `make ci-check`, and CI all run
+`scripts/verify-release-pin.sh` with `GOWORK=off`. That release gate rejects
+any `go.mod` replace, `go.work`/`go.work.sum`, or `local-toolkit/` residue. It
+is deliberately **not** part of this script's `on` path, so the temporary
+local development loop remains usable; run `off` before a pre-PR gate.
+
 Before opening a PR (or even committing), check `git diff go.mod` — if it
 shows a `replace ... => ./local-toolkit/encounter` line, the override is
 still on. Run `off` first.
