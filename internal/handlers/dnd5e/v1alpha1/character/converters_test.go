@@ -9,12 +9,14 @@ import (
 	"github.com/stretchr/testify/suite"
 
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/armor"
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character/choices"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/classes"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/races"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/refs"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/weapons"
 )
 
 type ConvertersTestSuite struct {
@@ -143,8 +145,8 @@ func (s *ConvertersTestSuite) TestConvertClassDataToProto_Fighter() {
 	assert.Equal(s.T(), "fighter-armor-b", leatherBundle.Id)
 	assert.Equal(s.T(), "Leather armor, longbow, and 20 arrows", leatherBundle.Label)
 	requireEquipmentItemsEqual(s.T(), leatherBundle.Items, []equipmentItemExpectation{
-		{id: "leather", quantity: 1, detailName: "Leather Armor", armor: dnd5ev1alpha1.Armor_ARMOR_LEATHER},
-		{id: "longbow", quantity: 1, detailName: "Longbow", weapon: dnd5ev1alpha1.Weapon_WEAPON_LONGBOW},
+		{id: armor.Leather, quantity: 1, detailName: "Leather Armor", armor: dnd5ev1alpha1.Armor_ARMOR_LEATHER},
+		{id: weapons.Longbow, quantity: 1, detailName: "Longbow", weapon: dnd5ev1alpha1.Weapon_WEAPON_LONGBOW},
 		{id: "arrows-20", quantity: 1, detailName: "Arrows (20)"},
 	})
 
@@ -246,9 +248,9 @@ func (s *ConvertersTestSuite) TestCreateEquipmentChoice_MapsCategoryChoiceOption
 		"fighter-weapons-primary",
 		"fighter-weapon-a",
 		[]string{
-			"greatsword", "longsword", "rapier", "shortsword", "battleaxe", "flail", "glaive", "greataxe",
-			"halberd", "lance", "maul", "morningstar", "pike", "scimitar", "trident", "war-pick",
-			"warhammer", "whip", "heavy-crossbow", "longbow", "blowgun", "hand-crossbow", "net",
+			weapons.Greatsword, weapons.Longsword, weapons.Rapier, weapons.Shortsword, weapons.Battleaxe, weapons.Flail, weapons.Glaive, weapons.Greataxe,
+			weapons.Halberd, weapons.Lance, weapons.Maul, weapons.Morningstar, weapons.Pike, weapons.Scimitar, weapons.Trident, weapons.WarPick,
+			weapons.Warhammer, weapons.Whip, weapons.HeavyCrossbow, weapons.Longbow, weapons.Blowgun, weapons.HandCrossbow, weapons.Net,
 		},
 	)
 
@@ -261,15 +263,15 @@ func (s *ConvertersTestSuite) TestCreateEquipmentChoice_MapsCategoryChoiceOption
 		"monk-weapons-primary",
 		"monk-weapon-b",
 		[]string{
-			"club", "dagger", "handaxe", "javelin", "greatclub", "light-hammer", "mace", "quarterstaff",
-			"sickle", "spear", "light-crossbow", "shortbow", "dart", "sling",
+			weapons.Club, weapons.Dagger, weapons.Handaxe, weapons.Javelin, weapons.Greatclub, weapons.LightHammer, weapons.Mace, weapons.Quarterstaff,
+			weapons.Sickle, weapons.Spear, weapons.LightCrossbow, weapons.Shortbow, weapons.Dart, weapons.Sling,
 		},
 	)
 
 	monkOptionIDs := equipmentItemSelectionIDs(monkSimple.GetOptions())
-	assert.NotContains(s.T(), monkOptionIDs, "shortsword",
+	assert.NotContains(s.T(), monkOptionIDs, weapons.Shortsword,
 		"shortsword is the toolkit's separate fixed Monk alternative")
-	assert.NotContains(s.T(), monkOptionIDs, "unarmed-strike",
+	assert.NotContains(s.T(), monkOptionIDs, weapons.UnarmedStrike,
 		"API must not invent the toolkit-excluded special weapon")
 }
 
@@ -341,7 +343,7 @@ func requireCategoryOptionsMatchToolkit(
 	for index, source := range expected {
 		item := actual[index]
 		require.NotNil(t, item)
-		assert.Equal(t, string(source.ID), item.GetSelectionId(), "option %d selection ID", index)
+		assert.Equal(t, source.ID, item.GetSelectionId(), "option %d selection ID", index)
 		assert.Equal(t, int32(source.Quantity), item.GetQuantity(), "option %d quantity", index)
 		require.NotNil(t, item.GetEquipmentDetail(), "option %d detail", index)
 		require.NotNil(t, source.Detail, "toolkit option %d detail", index)
