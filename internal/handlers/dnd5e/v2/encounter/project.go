@@ -346,7 +346,9 @@ func observationToProto(o perception.HexObservation) *encounterv2pb.HexRecord {
 	for _, p := range o.Contents {
 		rec.Contents = append(rec.Contents, &encounterv2pb.Placement{
 			EntityId: string(p.EntityID),
-			Facing:   uint32(p.Facing), //nolint:gosec // hex direction index 0-5
+			// Preserve optional presence verbatim: nil means no authored override,
+			// while a non-nil pointer to E remains an explicit zero on the wire.
+			Facing: p.Facing,
 		})
 	}
 	return rec
