@@ -136,11 +136,30 @@ func (s *ConvertersTestSuite) TestConvertClassDataToProto_Fighter() {
 	assert.Equal(s.T(), "chain-mail", chainMailBundle.Items[0].SelectionId)
 	assert.Equal(s.T(), int32(1), chainMailBundle.Items[0].Quantity)
 
-	// Check second bundle (leather + longbow + arrows)
+	// Check second bundle (leather + longbow + arrows). This legacy bundle
+	// predates category options, so keep its concrete IDs, quantities, details,
+	// type hints, and order pinned while the two paths share a converter.
 	leatherBundle := equipOptions.Bundles[1]
 	assert.Equal(s.T(), "fighter-armor-b", leatherBundle.Id)
 	assert.Equal(s.T(), "Leather armor, longbow, and 20 arrows", leatherBundle.Label)
-	assert.Len(s.T(), leatherBundle.Items, 3, "Leather bundle should have 3 items")
+	requireEquipmentItemsEqual(s.T(), leatherBundle.Items, []equipmentItemExpectation{
+		{id: "leather", quantity: 1, detailName: "Leather Armor", armor: dnd5ev1alpha1.Armor_ARMOR_LEATHER},
+		{id: "longbow", quantity: 1, detailName: "Longbow", weapon: dnd5ev1alpha1.Weapon_WEAPON_LONGBOW},
+		{id: "arrows-20", quantity: 1, detailName: "Arrows (20)"},
+	})
+
+	leather := leatherBundle.Items[0]
+	leatherData := leather.GetEquipmentDetail().GetArmorData()
+	require.NotNil(s.T(), leatherData)
+	assert.Equal(s.T(), dnd5ev1alpha1.ArmorCategory_ARMOR_CATEGORY_LIGHT, leatherData.GetArmorCategory())
+	assert.Equal(s.T(), int32(11), leatherData.GetBaseAc())
+	assert.True(s.T(), leatherData.GetDexBonus())
+
+	arrows := leatherBundle.Items[2]
+	assert.Nil(s.T(), arrows.GetTypeHint(), "legacy ammunition has no type hint; preserve that wire contract")
+	assert.Equal(s.T(), dnd5ev1alpha1.EquipmentCategory_EQUIPMENT_CATEGORY_ADVENTURING_GEAR,
+		arrows.GetEquipmentDetail().GetCategory())
+	assert.Nil(s.T(), arrows.GetEquipmentDetail().GetEquipmentData())
 }
 
 func (s *ConvertersTestSuite) TestCreateEquipmentChoice_PopulatesEquipmentDetail_Armor() {
@@ -220,25 +239,34 @@ func (s *ConvertersTestSuite) TestCreateEquipmentChoice_PopulatesEquipmentDetail
 func (s *ConvertersTestSuite) TestCreateEquipmentChoice_MapsCategoryChoiceOptionsOneToOne() {
 	fighter := convertClassDataToProto(classes.ClassData[classes.Fighter])
 	fighterMartial := findEquipmentCategoryChoice(s.T(), fighter, "fighter-weapons-primary", "fighter-weapon-a")
-	require.NotEmpty(s.T(), fighterMartial.GetOptions())
-	assert.Contains(s.T(), equipmentItemSelectionIDs(fighterMartial.GetOptions()), "longsword",
-		"toolkit-resolved martial options must retain melee membership")
-	assert.Contains(s.T(), equipmentItemSelectionIDs(fighterMartial.GetOptions()), "longbow",
-		"toolkit-resolved martial options must retain ranged membership")
-
-	longbow := findEquipmentItem(s.T(), fighterMartial.GetOptions(), "longbow")
-	assert.Equal(s.T(), int32(1), longbow.GetQuantity())
-	require.NotNil(s.T(), longbow.GetEquipmentDetail())
-	assert.Equal(s.T(), "Longbow", longbow.GetEquipmentDetail().GetName())
-	assert.Equal(s.T(), "1d8", longbow.GetEquipmentDetail().GetWeaponData().GetDamageDice())
+	requireCategoryOptionsMatchToolkit(
+		s.T(),
+		fighterMartial.GetOptions(),
+		classes.Fighter,
+		"fighter-weapons-primary",
+		"fighter-weapon-a",
+		[]string{
+			"greatsword", "longsword", "rapier", "shortsword", "battleaxe", "flail", "glaive", "greataxe",
+			"halberd", "lance", "maul", "morningstar", "pike", "scimitar", "trident", "war-pick",
+			"warhammer", "whip", "heavy-crossbow", "longbow", "blowgun", "hand-crossbow", "net",
+		},
+	)
 
 	monk := convertClassDataToProto(classes.ClassData[classes.Monk])
 	monkSimple := findEquipmentCategoryChoice(s.T(), monk, "monk-weapons-primary", "monk-weapon-b")
+	requireCategoryOptionsMatchToolkit(
+		s.T(),
+		monkSimple.GetOptions(),
+		classes.Monk,
+		"monk-weapons-primary",
+		"monk-weapon-b",
+		[]string{
+			"club", "dagger", "handaxe", "javelin", "greatclub", "light-hammer", "mace", "quarterstaff",
+			"sickle", "spear", "light-crossbow", "shortbow", "dart", "sling",
+		},
+	)
+
 	monkOptionIDs := equipmentItemSelectionIDs(monkSimple.GetOptions())
-	assert.Contains(s.T(), monkOptionIDs, "dart",
-		"API must preserve the toolkit's simple-ranged membership")
-	assert.Contains(s.T(), monkOptionIDs, "light-crossbow",
-		"API must preserve the toolkit's simple-ranged membership")
 	assert.NotContains(s.T(), monkOptionIDs, "shortsword",
 		"shortsword is the toolkit's separate fixed Monk alternative")
 	assert.NotContains(s.T(), monkOptionIDs, "unarmed-strike",
@@ -270,14 +298,76 @@ func equipmentItemSelectionIDs(items []*dnd5ev1alpha1.EquipmentItem) []string {
 	return ids
 }
 
-func findEquipmentItem(t *testing.T, items []*dnd5ev1alpha1.EquipmentItem, selectionID string) *dnd5ev1alpha1.EquipmentItem {
+type equipmentItemExpectation struct {
+	id         string
+	quantity   int32
+	detailName string
+	weapon     dnd5ev1alpha1.Weapon
+	armor      dnd5ev1alpha1.Armor
+}
+
+func requireEquipmentItemsEqual(t *testing.T, actual []*dnd5ev1alpha1.EquipmentItem, expected []equipmentItemExpectation) {
 	t.Helper()
-	for _, item := range items {
-		if item.GetSelectionId() == selectionID {
-			return item
+	require.Len(t, actual, len(expected))
+	for index, expectation := range expected {
+		item := actual[index]
+		require.NotNil(t, item)
+		assert.Equal(t, expectation.id, item.GetSelectionId(), "item %d selection ID", index)
+		assert.Equal(t, expectation.quantity, item.GetQuantity(), "item %d quantity", index)
+		require.NotNil(t, item.GetEquipmentDetail(), "item %d detail", index)
+		assert.Equal(t, expectation.detailName, item.GetEquipmentDetail().GetName(), "item %d detail name", index)
+		switch {
+		case expectation.weapon != dnd5ev1alpha1.Weapon_WEAPON_UNSPECIFIED:
+			assert.Equal(t, expectation.weapon, item.GetWeapon(), "item %d weapon type hint", index)
+		case expectation.armor != dnd5ev1alpha1.Armor_ARMOR_UNSPECIFIED:
+			assert.Equal(t, expectation.armor, item.GetArmor(), "item %d armor type hint", index)
 		}
 	}
-	require.Failf(t, "missing equipment item", "selection ID %q", selectionID)
+}
+
+func requireCategoryOptionsMatchToolkit(
+	t *testing.T,
+	actual []*dnd5ev1alpha1.EquipmentItem,
+	classID classes.Class,
+	choiceID string,
+	bundleID string,
+	expectedIDs []string,
+) {
+	t.Helper()
+	expected := toolkitCategoryOptions(t, classID, choiceID, bundleID)
+	require.Len(t, actual, len(expected), "wire options must have the same cardinality as toolkit options")
+	require.Equal(t, expectedIDs, equipmentItemSelectionIDs(actual), "wire options must retain the published registry order")
+
+	for index, source := range expected {
+		item := actual[index]
+		require.NotNil(t, item)
+		assert.Equal(t, string(source.ID), item.GetSelectionId(), "option %d selection ID", index)
+		assert.Equal(t, int32(source.Quantity), item.GetQuantity(), "option %d quantity", index)
+		require.NotNil(t, item.GetEquipmentDetail(), "option %d detail", index)
+		require.NotNil(t, source.Detail, "toolkit option %d detail", index)
+		assert.Equal(t, source.Detail.Name, item.GetEquipmentDetail().GetName(), "option %d detail name", index)
+		assert.Equal(t, int32(source.Detail.Weight), item.GetEquipmentDetail().GetWeight().GetQuantity(), "option %d detail weight", index)
+		require.NotNil(t, source.Detail.Weapon, "option %d must be a weapon", index)
+		weaponData := item.GetEquipmentDetail().GetWeaponData()
+		require.NotNil(t, weaponData, "option %d weapon detail", index)
+		assert.Equal(t, source.Detail.Weapon.Damage, weaponData.GetDamageDice(), "option %d damage dice", index)
+	}
+}
+
+func toolkitCategoryOptions(t *testing.T, classID classes.Class, choiceID, bundleID string) []choices.EquipmentItem {
+	t.Helper()
+	for _, requirement := range choices.GetClassRequirements(classID).Equipment {
+		if string(requirement.ID) != choiceID {
+			continue
+		}
+		for _, bundle := range requirement.Options {
+			if bundle.ID == bundleID {
+				require.Len(t, bundle.CategoryChoices, 1)
+				return bundle.CategoryChoices[0].Options
+			}
+		}
+	}
+	require.Failf(t, "missing toolkit category choice", "class %q choice %q bundle %q", classID, choiceID, bundleID)
 	return nil
 }
 
