@@ -24,6 +24,7 @@ import (
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/refs"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/saves"
+	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
 )
 
 func (s *LobbySuite) seedReadyLobby(id, host string, others ...string) {
@@ -75,6 +76,83 @@ func (s *LobbySuite) TestStartEncounter_Success_ConstructsAndPersistsEncounter()
 	s.Require().NoError(err)
 	s.Require().Equal(lobbyrepo.StatusStarted, lobbyData.Status)
 	s.Require().Equal(out.EncounterID, lobbyData.EncounterID)
+}
+
+// TestStartEncounter_AuthoredStartMapsToolkitSeatsToOrderedRoster proves the
+// StartEncounter seam without duplicating toolkit placement: an authored
+// absolute start on the boss room's legal door row becomes Space.Entrance, and
+// every ordered member receives the corresponding toolkit-resolved seat.
+func (s *LobbySuite) TestStartEncounter_AuthoredStartMapsToolkitSeatsToOrderedRoster() {
+	const key = "authored-start"
+	dir := s.T().TempDir()
+	const yaml = `version: 1
+key: authored-start
+name: Authored Start
+height: 8
+start: [12, 4]
+rooms:
+  - id: entrance
+    archetype: entrance
+    width: 6
+  - id: boss
+    archetype: boss
+    width: 8
+    boss: { ref: "dnd5e:monsters:skeleton-captain", at: [4, 2] }
+connectors:
+  - { from: entrance, to: boss }
+`
+	s.Require().NoError(os.WriteFile(filepath.Join(dir, key+".yaml"), []byte(yaml), 0o600))
+	orch, err := s.newOrchestratorWithContentDir(dir)
+	s.Require().NoError(err)
+
+	s.seedReadyLobby("lobby-authored-start", "alice", "bob", "carol", "dave")
+	s.expectCharacter("char-alice", "alice", "Alice", 12, 12)
+	s.expectCharacter("char-bob", "bob", "Bob", 11, 11)
+	s.expectCharacter("char-carol", "carol", "Carol", 10, 10)
+	s.expectCharacter("char-dave", "dave", "Dave", 9, 9)
+
+	out, err := orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		PlayerID: "alice", LobbyID: "lobby-authored-start", DungeonKey: key, RandomSeed: 42,
+	})
+	s.Require().NoError(err)
+
+	data, err := s.encRepo.Get(s.ctx, out.EncounterID)
+	s.Require().NoError(err)
+	wantAnchor := core.HexFromPosition(spatial.Position{X: 12, Y: 4})
+	s.Require().Equal(wantAnchor, data.Space.Entrance,
+		"the toolkit-resolved authored anchor must persist as Space.Entrance")
+	s.Require().Len(data.Space.PartyStartPositions, 4,
+		"normal product capacity must reserve four toolkit-owned seats")
+
+	seen := make(map[core.Hex]struct{}, len(data.Space.PartyStartPositions))
+	for i, playerID := range []core.PlayerID{"alice", "bob", "carol", "dave"} {
+		position := data.Players[playerID].View.Position
+		s.Require().Equal(data.Space.PartyStartPositions[i], position,
+			"member %q must receive toolkit seat %d verbatim", playerID, i)
+		seen[position] = struct{}{}
+	}
+	s.Require().Len(seen, 4, "the toolkit's four returned seats must be distinct")
+}
+
+// TestStartEncounter_PartySpawnCapacityErrorPropagates verifies the API does
+// not derive a fifth coordinate or partially seat a roster beyond the normal
+// four-seat toolkit reservation.
+func (s *LobbySuite) TestStartEncounter_PartySpawnCapacityErrorPropagates() {
+	s.seedReadyLobby("lobby-party-over-capacity", "alice", "bob", "carol", "dave", "erin")
+
+	_, err := s.orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		PlayerID: "alice", LobbyID: "lobby-party-over-capacity",
+	})
+	s.Require().Error(err)
+	var capacityErr *tkenc.PartySpawnCapacityError
+	s.Require().ErrorAs(err, &capacityErr)
+	s.Require().Equal(5, capacityErr.Requested)
+	s.Require().Equal(4, capacityErr.Available)
+
+	lobbyData, getErr := s.lobbyRepo.Get(s.ctx, "lobby-party-over-capacity")
+	s.Require().NoError(getErr)
+	s.Require().Equal(lobbyrepo.StatusWaiting, lobbyData.Status)
+	s.Require().Empty(lobbyData.EncounterID, "capacity failure must happen before any partial encounter persists")
 }
 
 // TestStartEncounter_SeedsHonestCombatSnapshot proves the rpg-api#634 fix:

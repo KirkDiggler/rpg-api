@@ -117,6 +117,8 @@ func TestLoadContentRegistry_EmbeddedReferenceTombCompiles(t *testing.T) {
 	require.True(t, ok, "reference-tomb must be present in the startup registry")
 	require.NoError(t, entry.Err, "reference-tomb must compile cleanly — it's the M1 acceptance file")
 	require.Len(t, entry.Compiled.Params.Regions, 3, "entrance + hall + tomb (Kirk's live-authored 3-room draft)")
+	require.Equal(t, DefaultPartyCap, entry.Compiled.Params.PartyStart.SeatCount,
+		"content startup must compile through the toolkit load/config seam at the normal product capacity")
 	require.Equal(t, "The Tomb of the Captain", entry.Name, "Name must be captured via dungeonspec.Decode, not left blank")
 }
 

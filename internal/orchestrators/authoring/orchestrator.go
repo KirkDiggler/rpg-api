@@ -39,12 +39,21 @@ type Config struct {
 	// write-through's on-disk durability guarantee has nowhere to write
 	// without it.
 	ContentDir string
+
+	// PartyStartSeatCount is the host's normal party capacity supplied to
+	// dungeonspec.LoadWithConfig. Preview must compile the same reservation
+	// StartEncounter will use; zero defaults to the normal four-seat product
+	// configuration for standalone/test construction.
+	PartyStartSeatCount int
 }
+
+const defaultPartyStartSeatCount = 4
 
 // Orchestrator is the AuthoringService orchestrator core.
 type Orchestrator struct {
-	registry   *dungeonregistry.Registry
-	contentDir string
+	registry            *dungeonregistry.Registry
+	contentDir          string
+	partyStartSeatCount int
 }
 
 // New constructs an Orchestrator from cfg. Returns an error (never a nil
@@ -62,5 +71,16 @@ func New(cfg *Config) (*Orchestrator, error) {
 	if cfg.ContentDir == "" {
 		return nil, errors.New("authoring orchestrator: Config.ContentDir is required")
 	}
-	return &Orchestrator{registry: cfg.Registry, contentDir: cfg.ContentDir}, nil
+	if cfg.PartyStartSeatCount < 0 {
+		return nil, errors.New("authoring orchestrator: Config.PartyStartSeatCount must not be negative")
+	}
+	partyStartSeatCount := cfg.PartyStartSeatCount
+	if partyStartSeatCount == 0 {
+		partyStartSeatCount = defaultPartyStartSeatCount
+	}
+	return &Orchestrator{
+		registry:            cfg.Registry,
+		contentDir:          cfg.ContentDir,
+		partyStartSeatCount: partyStartSeatCount,
+	}, nil
 }

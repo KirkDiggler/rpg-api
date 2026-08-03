@@ -42,18 +42,6 @@ type StartEncounterOutput struct {
 	EncounterID string
 }
 
-// spawnPositionSpacing is the per-member hex offset StartEncounter uses to
-// seed distinct starting positions along one axis (Q increases, S mirrors it
-// to keep the cube coordinate valid). This is a placeholder: no per-member
-// spawn-point system exists yet, so members are spread along a line rather
-// than stacked on a single hex. The line runs from the chamber-1 entrance
-// toward the chamber's interior (core.Hex{Q+1,R,S-1} per step — verified
-// against tools/spatial's pointy-top offset conversion to move away from the
-// entrance's edge column, not off the grid), so it stays safe regardless of
-// where in the chamber the entrance sits. Real spawn-point selection is
-// future work once room integration lands further.
-const spawnPositionSpacing = 1
-
 // memberSightRange is the initial perception radius seeded for every member
 // added to a freshly-started encounter (rpg-api#632). Without it,
 // tkenc.PlayerInput.SightRange defaults to 0 and AddPlayer's initial reveal
@@ -185,39 +173,47 @@ func (o *Orchestrator) StartEncounter(ctx context.Context, in *StartEncounterInp
 	// rebuildRoomFromData — rpg-toolkit encounter/space.go's doc). Building
 	// the dungeon (N regions + N-1 plain doors + entrance + per-region
 	// archetype tags + opaque theme + physical set-piece obstacles) is
-	// entirely the toolkit's call — rpg-api only supplies the resolved
-	// key's toolkit-constructed params verbatim (rpg-api#688, rpg-api#694),
-	// or (Task E2) the content-compiled params verbatim.
+	// entirely the toolkit's call. PartyStart.SeatCount is host configuration,
+	// not geometry: the normal product's actual lobby capacity is handed to
+	// the toolkit so it can reserve and validate every ordered seat before
+	// generated blockers exist.
 	if foundInContent {
 		// compiled.Params.RandomSeed is a FIELD dungeonspec.Load leaves at
 		// its zero value (Load has no opinion on reproducibility) — the
 		// caller must set it before InitDungeon, exactly like
-		// resolveDungeonSpec already threads in.RandomSeed into the
-		// legacy path's params below.
+		// resolveDungeonSpec already threads in.RandomSeed into the legacy
+		// path's params below.
 		contentCompiled.Params.RandomSeed = in.RandomSeed
-		if err := enc.InitDungeon(contentCompiled.Params); err != nil {
-			return nil, fmt.Errorf("init dungeon (key=%q) for encounter %q: %w", effectiveKey, encID, err)
+		contentCompiled.Params.PartyStart.SeatCount = o.partyCap
+		initErr := enc.InitDungeon(contentCompiled.Params)
+		if initErr != nil {
+			return nil, fmt.Errorf("init dungeon (key=%q) for encounter %q: %w", effectiveKey, encID, initErr)
 		}
-	} else if err := enc.InitDungeon(dungeonParams); err != nil {
-		return nil, fmt.Errorf("init dungeon (key=%q) for encounter %q: %w", dungeonKey, encID, err)
+	} else {
+		dungeonParams.PartyStart.SeatCount = o.partyCap
+		initErr := enc.InitDungeon(dungeonParams)
+		if initErr != nil {
+			return nil, fmt.Errorf("init dungeon (key=%q) for encounter %q: %w", dungeonKey, encID, initErr)
+		}
 	}
 
-	// Entrance-anchored spawn (rpg-api#648, rpg-api#676, preserved by
-	// rpg-api#688): the party drops just inside the entrance region's
-	// designated anchor, not the room's geometric center — SpaceData.
-	// Entrance is the toolkit's designated spawn-anchor cell for exactly
-	// this purpose (InitDungeon's doc).
-	partyBase := enc.ToData().Space.Entrance
+	// Toolkit owns the complete party-start policy: it resolved the anchor and
+	// ordered reservation before it generated blockers, and returns exactly the
+	// requested roster prefix here. API only applies positions in member order;
+	// it neither derives a hex nor invents a capacity fallback.
+	partyStarts, err := enc.ResolvePartySpawnPositions(tkenc.ResolvePartySpawnPositionsInput{Count: len(members)})
+	if err != nil {
+		return nil, fmt.Errorf("resolve party spawn positions for %d members: %w", len(members), err)
+	}
 	for i, m := range members {
 		snap, snapErr := o.seedMemberCombatSnapshot(ctx, m.CharacterID)
 		if snapErr != nil {
 			return nil, fmt.Errorf("seed combat snapshot for character %q: %w", m.CharacterID, snapErr)
 		}
-		q := i * spawnPositionSpacing
 		if addErr := enc.AddPlayer(tkenc.PlayerInput{
 			PlayerID:   core.PlayerID(m.PlayerID),
 			EntityID:   core.EntityID(m.CharacterID),
-			Position:   core.Hex{Q: partyBase.Q + q, R: partyBase.R, S: partyBase.S - q},
+			Position:   partyStarts.Positions[i],
 			SightRange: memberSightRange,
 			HP:         snap.hp,
 			MaxHP:      snap.maxHP,

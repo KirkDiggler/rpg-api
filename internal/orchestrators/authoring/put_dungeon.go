@@ -136,7 +136,9 @@ func (o *Orchestrator) PutDungeon(ctx context.Context, in *PutDungeonInput) (*Pu
 	}
 
 	raw := []byte(in.YAML)
-	compiled, loadErr := dungeonspec.Load(raw)
+	compiled, loadErr := dungeonspec.LoadWithConfig(raw, dungeonspec.LoadConfig{
+		PartyStartSeatCount: o.partyStartSeatCount,
+	})
 	if loadErr != nil {
 		return &PutDungeonOutput{Success: false, FieldError: loadErr.Error()}, nil
 	}

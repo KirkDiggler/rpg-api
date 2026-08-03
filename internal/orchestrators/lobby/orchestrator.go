@@ -46,8 +46,10 @@ type MovementResolverBuilder func(data *tkenc.Data) tkenc.MovementResolver
 // internal/orchestrators/encounter/v2.CharacterResolverBuilder.
 type CharacterResolverBuilder func(data *tkenc.Data) tkenc.CharacterResolver
 
-// defaultPartyCap is the Dungeon Night shape (lobby-surface.md "Party cap").
-const defaultPartyCap = 4
+// DefaultPartyCap is the normal product roster capacity. It is host policy,
+// not a universal toolkit maximum; content, authoring, and StartEncounter pass
+// this value into the toolkit's party-start configuration for the normal path.
+const DefaultPartyCap = 4
 
 // Config holds the dependencies for an Orchestrator.
 type Config struct {
@@ -112,7 +114,7 @@ type Config struct {
 	Registry *dungeonregistry.Registry
 
 	// PartyCap is the max member count JoinLobby allows. Optional — defaults
-	// to 4 (lobby-surface.md "Party cap").
+	// to DefaultPartyCap (lobby-surface.md "Party cap").
 	PartyCap int
 
 	// Now supplies the current time. Optional — defaults to time.Now.
@@ -217,7 +219,7 @@ func New(cfg *Config) (*Orchestrator, error) {
 	}
 	partyCap := cfg.PartyCap
 	if partyCap == 0 {
-		partyCap = defaultPartyCap
+		partyCap = DefaultPartyCap
 	}
 	now := cfg.Now
 	if now == nil {
