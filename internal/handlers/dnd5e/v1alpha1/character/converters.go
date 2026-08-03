@@ -2507,7 +2507,7 @@ func setEquipmentItemTypeHint(item *dnd5ev1alpha1.EquipmentItem, itemID string) 
 		return
 	}
 
-	if tool := convertToolToProto(tools.ToolID(itemID)); tool != dnd5ev1alpha1.Tool_TOOL_UNSPECIFIED {
+	if tool := convertToolToProto(itemID); tool != dnd5ev1alpha1.Tool_TOOL_UNSPECIFIED {
 		item.TypeHint = &dnd5ev1alpha1.EquipmentItem_Tool{Tool: tool}
 	}
 }

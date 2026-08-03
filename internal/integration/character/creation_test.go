@@ -16,7 +16,12 @@ import (
 
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
 	"github.com/KirkDiggler/rpg-api/internal/integration/harness"
+	"github.com/KirkDiggler/rpg-api/internal/pkg/clock"
+	"github.com/KirkDiggler/rpg-api/internal/pkg/idgen"
+	redisclient "github.com/KirkDiggler/rpg-api/internal/redis"
+	characterdraft "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/armor"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/tools"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/weapons"
 )
@@ -880,6 +885,14 @@ func (s *CharacterCreationSuite) TestCreateMonk_SimpleRangedCategorySelections()
 		expected map[string]int32
 	}{
 		{
+			name:   "club",
+			weapon: dnd5ev1alpha1.Weapon_WEAPON_CLUB,
+			expected: map[string]int32{
+				weapons.Club: 1,
+				weapons.Dart: 10,
+			},
+		},
+		{
 			name:   "dart",
 			weapon: dnd5ev1alpha1.Weapon_WEAPON_DART,
 			expected: map[string]int32{
@@ -909,11 +922,87 @@ func (s *CharacterCreationSuite) TestCreateMonk_SimpleRangedCategorySelections()
 	}
 }
 
+func (s *CharacterCreationSuite) TestCreateMonk_RejectsLiveAndPersistedUnarmedStrikeCategorySelection() {
+	ctx := s.authCtx("test-player-monk-unarmed-strike")
+
+	// A live request must fail before the invalid selection is saved.
+	createResp, err := s.server.CharacterClient.CreateDraft(ctx, &dnd5ev1alpha1.CreateDraftRequest{})
+	s.Require().NoError(err)
+	invalidChoices := monkClassChoices("monk-weapon-b", dnd5ev1alpha1.Weapon_WEAPON_UNSPECIFIED)
+	invalidChoices[1].GetEquipment().Items = []*dnd5ev1alpha1.EquipmentSelectionItem{{
+		Equipment: &dnd5ev1alpha1.EquipmentSelectionItem_OtherEquipmentId{OtherEquipmentId: weapons.UnarmedStrike},
+	}}
+	_, err = s.server.CharacterClient.UpdateClass(ctx, &dnd5ev1alpha1.UpdateClassRequest{
+		DraftId:      createResp.GetDraft().GetId(),
+		Class:        dnd5ev1alpha1.Class_CLASS_MONK,
+		ClassChoices: invalidChoices,
+	})
+	s.Require().Error(err)
+	s.ErrorContains(err, "Invalid equipment choice 'unarmed-strike'")
+
+	// Seed the serialized shape accepted by v0.70.0, then prove the real
+	// FinalizeDraft RPC revalidates persisted selections before creating a character.
+	draftID := s.createMonkDraftWithPrimaryWeapon(ctx, "monk-weapon-b", dnd5ev1alpha1.Weapon_WEAPON_CLUB)
+	draftRepo := s.newDraftRepository()
+	stored, err := draftRepo.Get(ctx, characterdraft.GetInput{ID: draftID})
+	s.Require().NoError(err)
+	mutated := false
+	for i := range stored.Draft.Data.Choices {
+		choice := &stored.Draft.Data.Choices[i]
+		if choice.ChoiceID == "monk-weapons-primary" && choice.OptionID == "monk-weapon-b" {
+			choice.EquipmentSelection = []shared.SelectionID{weapons.UnarmedStrike}
+			mutated = true
+			break
+		}
+	}
+	s.Require().True(mutated, "valid Monk category selection must be persisted before the regression mutation")
+	_, err = draftRepo.Update(ctx, characterdraft.UpdateInput{Draft: stored.Draft})
+	s.Require().NoError(err)
+
+	_, err = s.server.CharacterClient.FinalizeDraft(ctx, &dnd5ev1alpha1.FinalizeDraftRequest{DraftId: draftID})
+	s.Require().Error(err)
+	s.ErrorContains(err, "unarmed-strike")
+}
+
+func (s *CharacterCreationSuite) newDraftRepository() characterdraft.Repository {
+	client, err := redisclient.NewClient(sharedRedis.Addr, nil)
+	s.Require().NoError(err)
+	s.T().Cleanup(func() { _ = client.Close() })
+
+	repo, err := characterdraft.NewRedis(&characterdraft.Config{
+		Client:      client,
+		Clock:       clock.New(),
+		IDGenerator: idgen.NewPrefixed("test-draft-"),
+	})
+	s.Require().NoError(err)
+	return repo
+}
+
 func (s *CharacterCreationSuite) createMonkWithPrimaryWeapon(
 	ctx context.Context,
 	optionID string,
 	weapon dnd5ev1alpha1.Weapon,
 ) *dnd5ev1alpha1.Character {
+	draftID := s.createMonkDraftWithPrimaryWeapon(ctx, optionID, weapon)
+
+	finalizeResp, err := s.server.CharacterClient.FinalizeDraft(ctx, &dnd5ev1alpha1.FinalizeDraftRequest{
+		DraftId: draftID,
+	})
+	s.Require().NoError(err, "finalize should succeed")
+	s.Require().NotNil(finalizeResp.GetCharacter())
+
+	char := finalizeResp.GetCharacter()
+	s.Assert().Equal("Shadow", char.GetName())
+	s.Assert().Equal(dnd5ev1alpha1.Class_CLASS_MONK, char.GetClass())
+	s.T().Logf("✅ Monk created: %s", char.GetId())
+	return char
+}
+
+func (s *CharacterCreationSuite) createMonkDraftWithPrimaryWeapon(
+	ctx context.Context,
+	optionID string,
+	weapon dnd5ev1alpha1.Weapon,
+) string {
 	s.T().Logf("Creating Monk with primary weapon option %s...", optionID)
 
 	// Create draft
@@ -946,67 +1035,11 @@ func (s *CharacterCreationSuite) createMonkWithPrimaryWeapon(
 	})
 	s.Require().NoError(err)
 
-	weaponSelection := &dnd5ev1alpha1.EquipmentSelection{}
-	if weapon != dnd5ev1alpha1.Weapon_WEAPON_UNSPECIFIED {
-		weaponSelection.Items = []*dnd5ev1alpha1.EquipmentSelectionItem{
-			{Equipment: &dnd5ev1alpha1.EquipmentSelectionItem_Weapon{Weapon: weapon}},
-		}
-	}
-
-	// Set Monk with required choices:
-	// - 2 skills (from Monk skill list)
-	// - Weapon choice (shortsword or simple weapon)
-	// - Pack choice (dungeoneer's or explorer's)
-	// - Tool choice (artisan's tools or musical instrument)
+	// Set Monk with required choices.
 	_, err = s.server.CharacterClient.UpdateClass(ctx, &dnd5ev1alpha1.UpdateClassRequest{
-		DraftId: draftID,
-		Class:   dnd5ev1alpha1.Class_CLASS_MONK,
-		ClassChoices: []*dnd5ev1alpha1.ChoiceData{
-			// Skills: Acrobatics and Stealth
-			{
-				Category: dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_SKILLS,
-				Source:   dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_CLASS,
-				Selection: &dnd5ev1alpha1.ChoiceData_Skills{
-					Skills: &dnd5ev1alpha1.SkillSelection{
-						Skills: []dnd5ev1alpha1.Skill{
-							dnd5ev1alpha1.Skill_SKILL_ACROBATICS,
-							dnd5ev1alpha1.Skill_SKILL_STEALTH,
-						},
-					},
-				},
-			},
-			// The fixed Shortsword alternative needs no explicit item; the broad
-			// simple-weapon alternative carries its selected toolkit-advertised weapon.
-			{
-				Category: dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_EQUIPMENT,
-				Source:   dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_CLASS,
-				ChoiceId: "monk-weapons-primary",
-				OptionId: optionID,
-				Selection: &dnd5ev1alpha1.ChoiceData_Equipment{
-					Equipment: weaponSelection,
-				},
-			},
-			// Pack: Dungeoneer's pack
-			{
-				Category: dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_EQUIPMENT,
-				Source:   dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_CLASS,
-				ChoiceId: "monk-pack",
-				OptionId: "monk-pack-a", // Dungeoneer's pack
-				Selection: &dnd5ev1alpha1.ChoiceData_Equipment{
-					Equipment: &dnd5ev1alpha1.EquipmentSelection{},
-				},
-			},
-			// Tools: Calligrapher's supplies (fits the Monk aesthetic)
-			{
-				Category: dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_TOOLS,
-				Source:   dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_CLASS,
-				Selection: &dnd5ev1alpha1.ChoiceData_Tools{
-					Tools: &dnd5ev1alpha1.ToolSelection{
-						Tools: []dnd5ev1alpha1.Tool{dnd5ev1alpha1.Tool_TOOL_CALLIGRAPHER_SUPPLIES},
-					},
-				},
-			},
-		},
+		DraftId:      draftID,
+		Class:        dnd5ev1alpha1.Class_CLASS_MONK,
+		ClassChoices: monkClassChoices(optionID, weapon),
 	})
 	s.Require().NoError(err)
 
@@ -1033,16 +1066,45 @@ func (s *CharacterCreationSuite) createMonkWithPrimaryWeapon(
 	})
 	s.Require().NoError(err)
 
-	// Finalize
-	finalizeResp, err := s.server.CharacterClient.FinalizeDraft(ctx, &dnd5ev1alpha1.FinalizeDraftRequest{
-		DraftId: draftID,
-	})
-	s.Require().NoError(err, "finalize should succeed")
-	s.Require().NotNil(finalizeResp.GetCharacter())
+	return draftID
+}
 
-	char := finalizeResp.GetCharacter()
-	s.Assert().Equal("Shadow", char.GetName())
-	s.Assert().Equal(dnd5ev1alpha1.Class_CLASS_MONK, char.GetClass())
-	s.T().Logf("✅ Monk created: %s", char.GetId())
-	return char
+func monkClassChoices(optionID string, weapon dnd5ev1alpha1.Weapon) []*dnd5ev1alpha1.ChoiceData {
+	weaponSelection := &dnd5ev1alpha1.EquipmentSelection{}
+	if weapon != dnd5ev1alpha1.Weapon_WEAPON_UNSPECIFIED {
+		weaponSelection.Items = []*dnd5ev1alpha1.EquipmentSelectionItem{
+			{Equipment: &dnd5ev1alpha1.EquipmentSelectionItem_Weapon{Weapon: weapon}},
+		}
+	}
+
+	return []*dnd5ev1alpha1.ChoiceData{
+		{
+			Category: dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_SKILLS,
+			Source:   dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_CLASS,
+			Selection: &dnd5ev1alpha1.ChoiceData_Skills{Skills: &dnd5ev1alpha1.SkillSelection{
+				Skills: []dnd5ev1alpha1.Skill{dnd5ev1alpha1.Skill_SKILL_ACROBATICS, dnd5ev1alpha1.Skill_SKILL_STEALTH},
+			}},
+		},
+		{
+			Category:  dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_EQUIPMENT,
+			Source:    dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_CLASS,
+			ChoiceId:  "monk-weapons-primary",
+			OptionId:  optionID,
+			Selection: &dnd5ev1alpha1.ChoiceData_Equipment{Equipment: weaponSelection},
+		},
+		{
+			Category:  dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_EQUIPMENT,
+			Source:    dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_CLASS,
+			ChoiceId:  "monk-pack",
+			OptionId:  "monk-pack-a",
+			Selection: &dnd5ev1alpha1.ChoiceData_Equipment{Equipment: &dnd5ev1alpha1.EquipmentSelection{}},
+		},
+		{
+			Category: dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_TOOLS,
+			Source:   dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_CLASS,
+			Selection: &dnd5ev1alpha1.ChoiceData_Tools{Tools: &dnd5ev1alpha1.ToolSelection{
+				Tools: []dnd5ev1alpha1.Tool{dnd5ev1alpha1.Tool_TOOL_CALLIGRAPHER_SUPPLIES},
+			}},
+		},
+	}
 }
