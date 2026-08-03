@@ -18,6 +18,13 @@ package encounter_test
 //     the SneakAttack condition persisted on her character data.
 //   - bob is alice's ally, placed adjacent to goblin-1.
 //   - goblin-1 has 100 HP (never dies during the test).
+//   - initiative is fixed alice → bob → goblin. Bob's real EndTurn RPC drives
+//     the goblin's real NPC turn before alice's next turn; the fixture never
+//     advances an NPC directly through the SDK. That gives the fixture exactly
+//     one deterministic goblin attack before alice's turn-two assertion.
+//   - Alice and bob must both be adjacent to goblin-1 for this test's melee
+//     Sneak Attack preconditions, so the NPC's closest-target tie remains a
+//     production concern rather than something this fixture tries to change.
 //
 // # Deterministic roller strategy
 //
@@ -36,6 +43,12 @@ package encounter_test
 // which would allow test-package conditions to inject a fixed roller into the
 // sneak dice path. Until then, sneak component assertions use "> 9" rather
 // than "== exact_value".
+//
+// Both HandlerConfig.Roller and CombatResolverConfig.Roller receive this same
+// fixed roller. The combat resolver controls Alice's and the stat-snapshot
+// goblin's attack/damage rolls; the handler roller keeps encounter-internal
+// rolls (such as automatic death saves) deterministic too. The goblin's 10+4
+// attack hits Alice (AC 14) or Bob (AC 13) without a crit and deals 6+2=8.
 
 import (
 	"context"
@@ -77,6 +90,10 @@ const (
 	// when fixedRoller{val:10} is used: Roll(size=6)=6, damage = 6+DEX_mod(+3) = 9.
 	// Used as the baseline for sneak-fired assertions (HP delta must be > 9).
 	sneakWeaponDamage = 9
+
+	// sneakNPCDamage is the deterministic scripted goblin hit with the fixed roller:
+	// 1d6 rolls 6, plus the fixture's +2 damage bonus.
+	sneakNPCDamage = 8
 )
 
 // fixedRoller is a deterministic dice.Roller stub for integration tests.
@@ -184,6 +201,7 @@ func (s *SneakAttackIntegrationSuite) SetupTest() {
 			CharacterRepo: s.mockCharRepo,
 			Roller:        fixedRoller{val: 10},
 		},
+		Roller: fixedRoller{val: 10},
 	})
 	s.Require().NoError(err)
 	s.handler = h
@@ -284,8 +302,15 @@ func (s *SneakAttackIntegrationSuite) TestIntegration_SneakAttackResetsOnTurnEnd
 	})
 	s.Require().NoError(err, "EndTurn must succeed")
 
-	// Cycle through remaining combatants until alice is active again on turn 2.
+	// Cycle through Bob's turn and the production NPC dispatch until alice is
+	// active again on turn 2. Both valid equal-distance target choices must leave
+	// Alice conscious, and exactly one deterministic NPC attack must occur.
+	partyHPBeforeNPC := s.partyHP()
 	s.advanceToAlice()
+	s.Greater(s.aliceEncounterHP(), 0,
+		"fixture must keep alice conscious before her turn-2 Sneak Attack assertion")
+	s.Equal(sneakNPCDamage, partyHPBeforeNPC-s.partyHP(),
+		"fixture progression must dispatch exactly one deterministic goblin attack")
 
 	// Turn 2 attack: UsedThisTurn=false was persisted by EndTurn write-back, and
 	// the new turn re-seeds the economy → sneak fires again.
@@ -481,6 +506,27 @@ func (s *SneakAttackIntegrationSuite) goblinHP() int {
 	return md.HP
 }
 
+// aliceEncounterHP returns Alice's current HP from the persisted encounter snapshot.
+func (s *SneakAttackIntegrationSuite) aliceEncounterHP() int {
+	data, err := s.repo.Get(context.Background(), sneakIntegEncID)
+	s.Require().NoError(err, "repo.Get for alice HP check")
+	alice, ok := data.Players[encountercore.PlayerID(sneakPlayerAlice)]
+	s.Require().True(ok, "alice must be in encounter data")
+	return alice.HP
+}
+
+// partyHP returns Alice and Bob's total current HP from the persisted encounter
+// snapshot, rather than their separate character-store records.
+func (s *SneakAttackIntegrationSuite) partyHP() int {
+	data, err := s.repo.Get(context.Background(), sneakIntegEncID)
+	s.Require().NoError(err, "repo.Get for party HP check")
+	alice, aliceOK := data.Players[encountercore.PlayerID(sneakPlayerAlice)]
+	bob, bobOK := data.Players[encountercore.PlayerID(sneakPlayerBob)]
+	s.Require().True(aliceOK, "alice must be in encounter data")
+	s.Require().True(bobOK, "bob must be in encounter data")
+	return alice.HP + bob.HP
+}
+
 // aliceHP returns hardcoded HP for alice based on s.rogueLevel.
 // Values are test-fixture numbers, not strict 5e math.
 func (s *SneakAttackIntegrationSuite) aliceHP() int {
@@ -591,7 +637,9 @@ func (s *SneakAttackIntegrationSuite) seedSneakEncounter() {
 	// goblin: 100 HP so it survives multiple attacks during the test. A
 	// common neighbor of alice and bob (see seedSneakEncounter's doc
 	// comment) so alice's own attack is within reach too
-	// (rpg-toolkit#864).
+	// (rpg-toolkit#864). No DataJSON is supplied: the toolkit's scripted NPC
+	// path therefore uses the deterministic stat-snapshot resolver regardless
+	// of which equal-distance player map iteration selects.
 	s.Require().NoError(enc.AddMonster(tkenc.MonsterInput{
 		ID:          encountercore.EntityID(sneakGoblinID),
 		Position:    encountercore.Hex{Q: 1, R: -1, S: 0},
@@ -609,59 +657,51 @@ func (s *SneakAttackIntegrationSuite) seedSneakEncounter() {
 	// range 10, no room) already sees the goblin, so the encounter
 	// self-transitions to TURN_BASED here. An explicit SetMode would now be
 	// redundant and error ("mode is already TURN_BASED").
-	s.Require().NoError(s.repo.Save(context.Background(), enc.ToData()))
+	//
+	// The test fixture fixes initiative after that production transition. This
+	// makes the reset scenario alice → bob → goblin → alice:
+	// bob's handler EndTurn owns the goblin dispatch and its subsequent
+	// turn-start work, instead of the test bypassing it with a direct SDK call.
+	data := enc.ToData()
+	data.Initiative = []encountercore.EntityID{
+		sneakEntityAlice,
+		sneakEntityBob,
+		sneakGoblinID,
+	}
+	data.ActiveIdx = 0
+	data.Round = 1
+	s.Require().NoError(s.repo.Save(context.Background(), data))
 }
 
-// advanceToAlice cycles initiative until alice is the active actor. Because
-// initiative is randomly rolled, this loop ends turns for NPC and bob actors
-// until alice gets her turn.
-//
-// NPC turns (goblin) are ended via direct SDK calls to avoid triggering the
-// handler's NPC dispatch loop (which would try to run NPCAct and might pick
-// up alice or bob as targets, requiring additional mock setup). Bob's turns
-// are ended via the handler using bob's auth context.
+// advanceToAlice moves through only player-owned turns until Alice is active.
+// The fixture fixes initiative as alice → bob → goblin, so the only progression
+// this helper needs is Bob's real EndTurn RPC. That RPC drives the adjacent
+// goblin through the production NPC chain and starts Alice's next turn; the
+// test must never bypass that behavior with a direct SDK EndTurn call.
 func (s *SneakAttackIntegrationSuite) advanceToAlice() {
-	for range 20 {
-		data, err := s.repo.Get(context.Background(), sneakIntegEncID)
-		s.Require().NoError(err)
-		s.Require().NotEmpty(data.Initiative, "initiative must be rolled")
-
-		if data.ActiveIdx < 0 || data.ActiveIdx >= len(data.Initiative) {
-			s.Fail("invalid ActiveIdx", data.ActiveIdx)
-		}
-		activeID := string(data.Initiative[data.ActiveIdx])
-
-		if activeID == sneakEntityAlice {
-			return // alice is now the active actor
-		}
-
-		if activeID == sneakGoblinID {
-			// End the NPC's turn directly via the encounter SDK to avoid
-			// triggering NPCAct (which would require additional mock setup for
-			// the goblin's attack target character loading).
-			enc, loadErr := tkenc.LoadFromData(context.Background(), data, s.broker)
-			s.Require().NoError(loadErr)
-			_, _, err = enc.EndTurn(context.Background(), encountercore.EntityID(activeID))
-			s.Require().NoError(err)
-			s.Require().NoError(s.repo.Save(context.Background(), enc.ToData()))
-			continue
-		}
-
-		// It's a player's turn (bob or potentially alice if we somehow missed).
-		// End via handler with the appropriate auth context.
-		var turnCtx context.Context
-		if activeID == sneakEntityBob {
-			turnCtx = s.bobCtx
-		} else {
-			turnCtx = s.aliceCtx
-		}
-		_, err = s.handler.EndTurn(turnCtx, &encounterv2pb.EndTurnRequest{
-			EncounterId: sneakIntegEncID,
-			EntityId:    activeID,
-		})
-		s.Require().NoError(err, "EndTurn for actor %q must succeed", activeID)
+	data, err := s.repo.Get(context.Background(), sneakIntegEncID)
+	s.Require().NoError(err)
+	s.Require().NotEmpty(data.Initiative, "fixture initiative must be configured")
+	s.Require().GreaterOrEqual(data.ActiveIdx, 0, "fixture ActiveIdx must be non-negative")
+	s.Require().Less(data.ActiveIdx, len(data.Initiative), "fixture ActiveIdx must be in range")
+	if data.Initiative[data.ActiveIdx] == sneakEntityAlice {
+		return
 	}
-	s.Fail("advanceToAlice: alice did not become active within 20 initiative steps")
+	s.Require().Equal(encountercore.EntityID(sneakEntityBob), data.Initiative[data.ActiveIdx],
+		"fixture must route the goblin through bob's production EndTurn RPC")
+
+	_, err = s.handler.EndTurn(s.bobCtx, &encounterv2pb.EndTurnRequest{
+		EncounterId: sneakIntegEncID,
+		EntityId:    sneakEntityBob,
+	})
+	s.Require().NoError(err, "EndTurn for bob must drive the NPC chain")
+
+	data, err = s.repo.Get(context.Background(), sneakIntegEncID)
+	s.Require().NoError(err)
+	s.Require().GreaterOrEqual(data.ActiveIdx, 0, "fixture ActiveIdx must be non-negative")
+	s.Require().Less(data.ActiveIdx, len(data.Initiative), "fixture ActiveIdx must be in range")
+	s.Require().Equal(encountercore.EntityID(sneakEntityAlice), data.Initiative[data.ActiveIdx],
+		"Bob's EndTurn must advance through the goblin to alice")
 }
 
 // TestIntegration_TurnStartSnapshot_MenuIsPrivateToActiveActor proves the #601
