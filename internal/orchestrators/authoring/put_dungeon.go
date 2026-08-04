@@ -255,12 +255,12 @@ func buildFloorPlan(ctx context.Context, compiled dungeonspec.CompiledDungeon, s
 		}
 	}
 
-	generatedEdges, err := enc.DescribeGeneratedEdges(tkenc.DescribeGeneratedEdgesInput{})
+	describedEdges, err := enc.DescribeEdges(tkenc.DescribeEdgesInput{})
 	if err != nil {
-		return nil, fmt.Errorf("describe generated edges: %w", err)
+		return nil, fmt.Errorf("describe canonical edges: %w", err)
 	}
-	edges := make([]FloorPlanEdge, len(generatedEdges.Edges))
-	for i, edge := range generatedEdges.Edges {
+	edges := make([]FloorPlanEdge, len(describedEdges.Edges))
+	for i, edge := range describedEdges.Edges {
 		from := edge.From.ToPosition()
 		to := edge.To.ToPosition()
 		edges[i] = FloorPlanEdge{

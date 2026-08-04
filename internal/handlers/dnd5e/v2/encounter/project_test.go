@@ -10,6 +10,7 @@ import (
 
 	tkenc "github.com/KirkDiggler/rpg-toolkit/encounter"
 	"github.com/KirkDiggler/rpg-toolkit/encounter/core"
+	"github.com/KirkDiggler/rpg-toolkit/encounter/dungeonspec"
 	"github.com/KirkDiggler/rpg-toolkit/encounter/perception"
 	tkcharacter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/tools/environments"
@@ -844,6 +845,120 @@ func (s *ProjectSuite) TestProjectFor_DoorWall_ProjectsIdKindAndPassageEdge() {
 	s.Require().Len(openRecord.GetEdges(), 1)
 	s.Require().Equal(encounterv2pb.WallKind_WALL_KIND_DOOR_OPEN, openRecord.GetEdges()[0].GetKind())
 	s.Require().Equal("door-1", openRecord.GetEdges()[0].GetId())
+}
+
+// TestProjectFor_AuthoredEdgesProjectFromToolkitKnowledge proves #179 needs
+// no API runtime projector fork: the existing HexRecord path reads the
+// toolkit's persisted knowledge, which already contains authored edges at BOTH
+// incident endpoints and their live door state. A closed door blocks the far
+// endpoint from each viewer's LoS, so each door assertion reads the viewer's
+// own incident hex; the solid edge remains visible at both endpoints to its
+// test viewer. The API only maps that observation to the wire; it does not
+// reconstruct edge geometry or door state from Data.Space/Doors itself.
+func (s *ProjectSuite) TestProjectFor_AuthoredEdgesProjectFromToolkitKnowledge() {
+	const raw = `version: 1
+key: runtime-authored-edges
+name: Runtime Authored Edges
+height: 8
+rooms:
+  - id: entrance
+    archetype: entrance
+    width: 6
+  - id: boss
+    archetype: boss
+    width: 8
+    boss: { ref: "dnd5e:monsters:skeleton-captain", at: [4, 2] }
+walls:
+  - { from: [7, 1], to: [8, 1], kind: solid }
+  - { from: [7, 3], to: [8, 3], kind: door }
+connectors:
+  - { from: entrance, to: boss }
+`
+	compiled, err := dungeonspec.LoadWithConfig([]byte(raw), dungeonspec.LoadConfig{PartyStartSeatCount: 1})
+	s.Require().NoError(err)
+	compiled.Params.RandomSeed = 1
+
+	enc := tkenc.New(context.Background(), "runtime-authored-edges", s.broker)
+	s.Require().NoError(enc.InitDungeon(compiled.Params))
+	var solid, door tkenc.AuthoredEdge
+	for _, edge := range compiled.Params.AuthoredEdges {
+		switch edge.Kind {
+		case tkenc.GeneratedEdgeKindSolid:
+			solid = edge
+		case tkenc.GeneratedEdgeKindDoor:
+			door = edge
+		}
+	}
+	s.Require().NotEmpty(door.DoorID)
+	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
+		PlayerID: "alice", EntityID: "char-alice", Position: door.From, SightRange: 10,
+	}))
+	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
+		PlayerID: "bob", EntityID: "char-bob", Position: door.To, SightRange: 10,
+	}))
+
+	closedData := tkencDataOrFail(s.T(), enc)
+	closed := authoredEdgeProjection(closedData, "alice", s)
+	for _, endpoint := range []core.Hex{solid.From, solid.To} {
+		rec := hexRecordAt(closed.GetSpace().GetHexes(), int32(endpoint.Q), int32(endpoint.R), int32(endpoint.S))
+		s.Require().NotNil(rec, "both solid endpoints must be known")
+		wall := authoredWall(rec.GetEdges(), solid)
+		s.Require().NotNil(wall)
+		s.Require().Equal(encounterv2pb.WallKind_WALL_KIND_SOLID, wall.GetKind())
+		s.Require().Empty(wall.GetId())
+	}
+	closedDoorByViewer := map[core.PlayerID]core.Hex{"alice": door.From, "bob": door.To}
+	for viewer, endpoint := range closedDoorByViewer {
+		projected := authoredEdgeProjection(closedData, viewer, s)
+		rec := hexRecordAt(projected.GetSpace().GetHexes(), int32(endpoint.Q), int32(endpoint.R), int32(endpoint.S))
+		s.Require().NotNil(rec, "the viewer's incident door endpoint must be known")
+		wall := authoredWall(rec.GetEdges(), door)
+		s.Require().NotNil(wall)
+		s.Require().Equal(string(door.DoorID), wall.GetId())
+		s.Require().Equal(encounterv2pb.WallKind_WALL_KIND_DOOR_CLOSED, wall.GetKind())
+	}
+
+	s.Require().NoError(enc.OpenDoor("alice", door.DoorID))
+	openData := tkencDataOrFail(s.T(), enc)
+	for viewer, endpoint := range closedDoorByViewer {
+		projected := authoredEdgeProjection(openData, viewer, s)
+		rec := hexRecordAt(projected.GetSpace().GetHexes(), int32(endpoint.Q), int32(endpoint.R), int32(endpoint.S))
+		s.Require().NotNil(rec)
+		wall := authoredWall(rec.GetEdges(), door)
+		s.Require().NotNil(wall)
+		s.Require().Equal(string(door.DoorID), wall.GetId())
+		s.Require().Equal(encounterv2pb.WallKind_WALL_KIND_DOOR_OPEN, wall.GetKind())
+	}
+}
+
+func authoredEdgeProjection(data *tkenc.Data, viewer core.PlayerID, s *ProjectSuite) *encounterv2pb.Encounter {
+	s.T().Helper()
+	projected, err := v2encounter.ProjectFor(context.Background(), data, viewer, s.broker, nil, s.now)
+	s.Require().NoError(err)
+	return projected
+}
+
+func tkencDataOrFail(t *testing.T, enc *tkenc.Encounter) *tkenc.Data {
+	t.Helper()
+	data := enc.ToData()
+	if data == nil {
+		t.Fatal("toolkit encounter returned nil data")
+	}
+	return data
+}
+
+func authoredWall(walls []*encounterv2pb.Wall, authored tkenc.AuthoredEdge) *encounterv2pb.Wall {
+	for _, wall := range walls {
+		from := wall.GetFrom()
+		to := wall.GetTo()
+		if (from.GetX() == int32(authored.From.Q) && from.GetY() == int32(authored.From.R) && from.GetZ() == int32(authored.From.S) &&
+			to.GetX() == int32(authored.To.Q) && to.GetY() == int32(authored.To.R) && to.GetZ() == int32(authored.To.S)) ||
+			(from.GetX() == int32(authored.To.Q) && from.GetY() == int32(authored.To.R) && from.GetZ() == int32(authored.To.S) &&
+				to.GetX() == int32(authored.From.Q) && to.GetY() == int32(authored.From.R) && to.GetZ() == int32(authored.From.S)) {
+			return wall
+		}
+	}
+	return nil
 }
 
 // TestProjectFor_DoorWall_ProjectsLockedClosedKind verifies the locked-door
