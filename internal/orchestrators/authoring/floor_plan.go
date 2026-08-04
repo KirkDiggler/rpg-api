@@ -32,7 +32,7 @@ type FloorPlanCell struct {
 	Row    int
 }
 
-// FloorPlanEdgeKind is the authoring-local meaning of a toolkit-generated
+// FloorPlanEdgeKind is the authoring-local meaning of a toolkit canonical
 // physical edge. It deliberately is not the runtime encounter WallKind.
 type FloorPlanEdgeKind string
 
@@ -41,8 +41,9 @@ const (
 	FloorPlanEdgeKindDoor  FloorPlanEdgeKind = "door"
 )
 
-// FloorPlanEdge directly projects one toolkit canonical generated edge. The
-// API does not sort, deduplicate, infer, or otherwise canonicalize this list.
+// FloorPlanEdge directly projects one toolkit effective canonical edge — the
+// provider's generated-plus-authored overlay has already happened. The API does
+// not sort, deduplicate, infer, or otherwise canonicalize this list.
 type FloorPlanEdge struct {
 	From   FloorPlanCell
 	To     FloorPlanCell

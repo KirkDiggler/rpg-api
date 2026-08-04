@@ -70,6 +70,40 @@ func TestPutDungeon_ContentFailure_OKStatusSuccessFalse(t *testing.T) {
 	require.Nil(t, resp.GetFloorPlan())
 }
 
+// TestPutDungeon_AuthoredWallFieldErrorPassesThroughOKResponse keeps YAML
+// topology feedback on the authoring response channel: walls are toolkit
+// content, not an API InvalidArgument/geometry decision.
+func TestPutDungeon_AuthoredWallFieldErrorPassesThroughOKResponse(t *testing.T) {
+	h := newTestHandler(t)
+	badOddQWallYAML := `version: 1
+key: handler-authored-wall-error
+name: Handler Authored Wall Error
+height: 8
+rooms:
+  - id: entrance
+    archetype: entrance
+    width: 6
+  - id: boss
+    archetype: boss
+    width: 8
+    boss: { ref: "dnd5e:monsters:skeleton-captain", at: [4, 2] }
+walls:
+  - { from: [7, 1], to: [8, 0], kind: solid }
+connectors:
+  - { from: entrance, to: boss }
+`
+	resp, err := h.PutDungeon(context.Background(), &authoringv1alpha1.PutDungeonRequest{
+		Key:          "handler-authored-wall-error",
+		Yaml:         badOddQWallYAML,
+		ValidateOnly: true,
+	})
+	require.NoError(t, err)
+	require.False(t, resp.GetSuccess())
+	require.Nil(t, resp.GetFloorPlan())
+	require.Len(t, resp.GetFieldErrors(), 1)
+	require.Contains(t, resp.GetFieldErrors()[0].GetMessage(), "walls[0]: endpoints must be adjacent pointy-top odd-q floor hexes")
+}
+
 func TestPutDungeon_Success_FloorPlanConvertedCorrectly(t *testing.T) {
 	h := newTestHandler(t)
 	resp, err := h.PutDungeon(context.Background(), &authoringv1alpha1.PutDungeonRequest{

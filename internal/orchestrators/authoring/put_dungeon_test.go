@@ -11,6 +11,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	tkenc "github.com/KirkDiggler/rpg-toolkit/encounter"
+	"github.com/KirkDiggler/rpg-toolkit/encounter/dungeonspec"
+
 	"github.com/KirkDiggler/rpg-api/internal/dungeonregistry"
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/authoring"
 )
@@ -340,6 +343,206 @@ func TestPutDungeon_ShowcaseProjectsToolkitGeneratedEdgesVerbatim(t *testing.T) 
 	require.Len(t, out.FloorPlan.Edges, 196, "toolkit physical-edge count")
 	require.Equal(t, expected, out.FloorPlan.Edges,
 		"the API must project the complete toolkit-produced physical-edge sequence verbatim")
+}
+
+// authoredEdgesDungeonYAML uses rpg-project#179's corrected pointy-top odd-q
+// specimen pairs. The former [7,1]-[8,0] and [7,3]-[8,2] serializer pairs are
+// deliberately not used: they are non-adjacent under the one canonical
+// coordinate convention and must remain toolkit field errors.
+func authoredEdgesDungeonYAML(key string) string {
+	return strings.Replace(validDungeonYAML(key), "connectors:\n", `walls:
+  - { from: [7, 1], to: [8, 1], kind: solid }
+  - { from: [7, 3], to: [8, 3], kind: door }
+connectors:
+`, 1)
+}
+
+// TestPutDungeon_ProjectsToolkitCombinedGeneratedAndAuthoredEdgesVerbatim is
+// the consumer gate for rpg-toolkit#880/#881's combined DescribeEdges seam.
+// Its expected value comes from a separate real toolkit InitDungeon +
+// DescribeEdges call; the API may only convert those already-canonical records
+// to FloorPlan cells. In particular, no API-side endpoint normalization,
+// deduplication, overlay decision, or door-ID derivation can make this pass.
+func TestPutDungeon_ProjectsToolkitCombinedGeneratedAndAuthoredEdgesVerbatim(t *testing.T) {
+	const key = "combined-authored-edges"
+	yaml := authoredEdgesDungeonYAML(key)
+	compiled, err := dungeonspec.LoadWithConfig([]byte(yaml), dungeonspec.LoadConfig{PartyStartSeatCount: 4})
+	require.NoError(t, err)
+	expected := expectedCombinedToolkitEdges(t, compiled)
+
+	orch, _, _ := newTestOrchestrator(t)
+	out, err := orch.PutDungeon(context.Background(), &authoring.PutDungeonInput{
+		Key:          key,
+		YAML:         yaml,
+		ValidateOnly: true,
+	})
+	require.NoError(t, err)
+	require.True(t, out.Success)
+	require.Equal(t, expected, out.FloorPlan.Edges,
+		"FloorPlan.edges must be the toolkit's combined generated+authored sequence verbatim")
+
+	var authoredSolid, authoredDoor tkenc.AuthoredEdge
+	for _, edge := range compiled.Params.AuthoredEdges {
+		switch edge.Kind {
+		case tkenc.GeneratedEdgeKindSolid:
+			authoredSolid = edge
+		case tkenc.GeneratedEdgeKindDoor:
+			authoredDoor = edge
+		}
+	}
+	solid := floorPlanEdgeForAuthoredEdge(out.FloorPlan.Edges, authoredSolid)
+	require.NotNil(t, solid, "corrected authored solid must be present beside generated edges")
+	require.Equal(t, authoring.FloorPlanEdgeKindSolid, solid.Kind)
+	require.Empty(t, solid.DoorID)
+
+	door := floorPlanEdgeForAuthoredEdge(out.FloorPlan.Edges, authoredDoor)
+	require.NotNil(t, door, "corrected authored door must be present beside generated edges")
+	require.Equal(t, authoring.FloorPlanEdgeKindDoor, door.Kind)
+	require.Equal(t, string(authoredDoor.DoorID), door.DoorID)
+
+	var generatedSolid, generatedDoor bool
+	for _, edge := range out.FloorPlan.Edges {
+		if edge.DoorID == "" && (edge.From != solid.From || edge.To != solid.To) {
+			generatedSolid = true
+		}
+		if edge.DoorID != "" && edge.DoorID != door.DoorID {
+			generatedDoor = true
+		}
+	}
+	require.True(t, generatedSolid, "combined response must retain generated solid edges")
+	require.True(t, generatedDoor, "combined response must retain generated connector doors")
+}
+
+// TestPutDungeon_AuthoredDoorIDIsStableAcrossReversedYAML keeps identity at
+// the toolkit boundary: reversed author input names the same undirected edge,
+// and rpg-api forwards the one stable toolkit door ID rather than deriving or
+// rewriting it.
+func TestPutDungeon_AuthoredDoorIDIsStableAcrossReversedYAML(t *testing.T) {
+	const key = "stable-authored-door"
+	forward := authoredEdgesDungeonYAML(key)
+	reversed := strings.Replace(forward,
+		"- { from: [7, 3], to: [8, 3], kind: door }",
+		"- { from: [8, 3], to: [7, 3], kind: door }", 1)
+
+	orch, _, _ := newTestOrchestrator(t)
+	forwardOut, err := orch.PutDungeon(context.Background(), &authoring.PutDungeonInput{Key: key, YAML: forward, ValidateOnly: true})
+	require.NoError(t, err)
+	reversedOut, err := orch.PutDungeon(context.Background(), &authoring.PutDungeonInput{Key: key, YAML: reversed, ValidateOnly: true})
+	require.NoError(t, err)
+
+	forwardDoorID := authoredDoorID(t, forwardOut.FloorPlan.Edges)
+	reversedDoorID := authoredDoorID(t, reversedOut.FloorPlan.Edges)
+	require.Equal(t, forwardDoorID, reversedDoorID,
+		"reversing an authored edge must not change its stable toolkit ID")
+}
+
+// TestPutDungeon_AuthoredWallFieldErrorsPassThroughToolkitVerbatim protects
+// the author-feedback boundary: rpg-api returns the toolkit's field-specific
+// validation text without replacing it with API geometry judgment.
+func TestPutDungeon_AuthoredWallFieldErrorsPassThroughToolkitVerbatim(t *testing.T) {
+	const key = "bad-odd-q-authored-edge"
+	yaml := strings.Replace(validDungeonYAML(key), "connectors:\n", `walls:
+  - { from: [7, 1], to: [8, 0], kind: solid }
+connectors:
+`, 1)
+	_, toolkitErr := dungeonspec.LoadWithConfig([]byte(yaml), dungeonspec.LoadConfig{PartyStartSeatCount: 4})
+	require.Error(t, toolkitErr)
+	require.ErrorContains(t, toolkitErr, "walls[0]: endpoints must be adjacent pointy-top odd-q floor hexes")
+
+	orch, registry, dir := newTestOrchestrator(t)
+	out, err := orch.PutDungeon(context.Background(), &authoring.PutDungeonInput{Key: key, YAML: yaml, ValidateOnly: true})
+	require.NoError(t, err)
+	require.False(t, out.Success)
+	require.Nil(t, out.FloorPlan)
+	require.Equal(t, toolkitErr.Error(), out.FieldError)
+	require.Empty(t, registry.Keys())
+	entries, err := os.ReadDir(dir)
+	require.NoError(t, err)
+	require.Empty(t, entries)
+}
+
+// TestPutDungeon_OmittedAndNullWallsRemainGeneratedOnly pairs with the #176
+// literal generated-edge snapshot immediately above: that snapshot pins the
+// old sequence, while this test proves omitted and null walls keep the same
+// generated-only behavior. No authored edge or door identity may be invented
+// by the API.
+func TestPutDungeon_OmittedAndNullWallsRemainGeneratedOnly(t *testing.T) {
+	orch, _, _ := newTestOrchestrator(t)
+	const key = "walls-omitted"
+	omitted, err := orch.PutDungeon(context.Background(), &authoring.PutDungeonInput{
+		Key:          key,
+		YAML:         validDungeonYAML(key),
+		ValidateOnly: true,
+	})
+	require.NoError(t, err)
+	nullWallsYAML := strings.Replace(validDungeonYAML(key), "connectors:\n", "walls: null\nconnectors:\n", 1)
+	nullWalls, err := orch.PutDungeon(context.Background(), &authoring.PutDungeonInput{
+		Key:          key,
+		YAML:         nullWallsYAML,
+		ValidateOnly: true,
+	})
+	require.NoError(t, err)
+
+	require.True(t, omitted.Success)
+	require.True(t, nullWalls.Success)
+	require.Equal(t, omitted.FloorPlan.Edges, nullWalls.FloorPlan.Edges)
+	for _, edge := range omitted.FloorPlan.Edges {
+		require.NotContains(t, edge.DoorID, "authored-door")
+	}
+}
+
+func expectedCombinedToolkitEdges(t *testing.T, compiled dungeonspec.CompiledDungeon) []authoring.FloorPlanEdge {
+	t.Helper()
+	params := compiled.Params
+	params.RandomSeed = 1 // PutDungeon's fixed preview seed
+	transport := tkenc.NewInMemoryTransport()
+	broker := tkenc.NewBroker(transport)
+	t.Cleanup(func() {
+		_ = broker.Close()
+		_ = transport.Close()
+	})
+	enc := tkenc.New(context.Background(), "combined-authored-edges", broker)
+	require.NoError(t, enc.InitDungeon(params))
+
+	described, err := enc.DescribeEdges(tkenc.DescribeEdgesInput{})
+	require.NoError(t, err)
+	edges := make([]authoring.FloorPlanEdge, len(described.Edges))
+	for i, edge := range described.Edges {
+		from := edge.From.ToPosition()
+		to := edge.To.ToPosition()
+		edges[i] = authoring.FloorPlanEdge{
+			From:   authoring.FloorPlanCell{Column: int(from.X), Row: int(from.Y)},
+			To:     authoring.FloorPlanCell{Column: int(to.X), Row: int(to.Y)},
+			Kind:   authoring.FloorPlanEdgeKind(edge.Kind),
+			DoorID: string(edge.DoorID),
+		}
+	}
+	return edges
+}
+
+func floorPlanEdgeForAuthoredEdge(edges []authoring.FloorPlanEdge, authored tkenc.AuthoredEdge) *authoring.FloorPlanEdge {
+	from := authored.From.ToPosition()
+	to := authored.To.ToPosition()
+	first := authoring.FloorPlanCell{Column: int(from.X), Row: int(from.Y)}
+	second := authoring.FloorPlanCell{Column: int(to.X), Row: int(to.Y)}
+	for i := range edges {
+		edge := &edges[i]
+		if (edge.From == first && edge.To == second) || (edge.From == second && edge.To == first) {
+			return edge
+		}
+	}
+	return nil
+}
+
+func authoredDoorID(t *testing.T, edges []authoring.FloorPlanEdge) string {
+	t.Helper()
+	for _, edge := range edges {
+		if strings.Contains(edge.DoorID, "-authored-door-") {
+			return edge.DoorID
+		}
+	}
+	t.Fatal("combined FloorPlan edges had no authored door")
+	return ""
 }
 
 // expectedShowcaseGeneratedEdges is a literal, ordered snapshot of every
