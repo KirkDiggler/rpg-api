@@ -32,6 +32,24 @@ type FloorPlanCell struct {
 	Row    int
 }
 
+// FloorPlanEdgeKind is the authoring-local meaning of a toolkit-generated
+// physical edge. It deliberately is not the runtime encounter WallKind.
+type FloorPlanEdgeKind string
+
+const (
+	FloorPlanEdgeKindSolid FloorPlanEdgeKind = "solid"
+	FloorPlanEdgeKindDoor  FloorPlanEdgeKind = "door"
+)
+
+// FloorPlanEdge directly projects one toolkit canonical generated edge. The
+// API does not sort, deduplicate, infer, or otherwise canonicalize this list.
+type FloorPlanEdge struct {
+	From   FloorPlanCell
+	To     FloorPlanCell
+	Kind   FloorPlanEdgeKind
+	DoorID string
+}
+
 // FloorPlan is the compiled layout PutDungeon's success response carries.
 // Entrance is the one value here a client genuinely cannot compute at all
 // (a generator decision, SpaceData.Entrance) — distinct from
@@ -46,4 +64,5 @@ type FloorPlan struct {
 	Height     int
 	DoorRow    int
 	Entrance   FloorPlanCell
+	Edges      []FloorPlanEdge
 }

@@ -301,8 +301,9 @@ func runServer(_ *cobra.Command, _ []string) error {
 	if os.Getenv(authoringEnabledEnvVar) != "" {
 		contentDir := os.Getenv("RPG_CONTENT_DIR") // authoringorch.New fails fast if empty -- design.md's "gate requires RPG_CONTENT_DIR" decision
 		authoringOrch, err := authoringorch.New(&authoringorch.Config{
-			Registry:   dungeonRegistry,
-			ContentDir: contentDir,
+			Registry:            dungeonRegistry,
+			ContentDir:          contentDir,
+			PartyStartSeatCount: lobbyorch.DefaultPartyCap,
 		})
 		if err != nil {
 			return fmt.Errorf("authoring orchestrator: %w", err)

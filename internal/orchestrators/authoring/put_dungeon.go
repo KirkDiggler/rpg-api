@@ -136,7 +136,9 @@ func (o *Orchestrator) PutDungeon(ctx context.Context, in *PutDungeonInput) (*Pu
 	}
 
 	raw := []byte(in.YAML)
-	compiled, loadErr := dungeonspec.Load(raw)
+	compiled, loadErr := dungeonspec.LoadWithConfig(raw, dungeonspec.LoadConfig{
+		PartyStartSeatCount: o.partyStartSeatCount,
+	})
 	if loadErr != nil {
 		return &PutDungeonOutput{Success: false, FieldError: loadErr.Error()}, nil
 	}
@@ -253,6 +255,22 @@ func buildFloorPlan(ctx context.Context, compiled dungeonspec.CompiledDungeon, s
 		}
 	}
 
+	generatedEdges, err := enc.DescribeGeneratedEdges(tkenc.DescribeGeneratedEdgesInput{})
+	if err != nil {
+		return nil, fmt.Errorf("describe generated edges: %w", err)
+	}
+	edges := make([]FloorPlanEdge, len(generatedEdges.Edges))
+	for i, edge := range generatedEdges.Edges {
+		from := edge.From.ToPosition()
+		to := edge.To.ToPosition()
+		edges[i] = FloorPlanEdge{
+			From:   FloorPlanCell{Column: int(from.X), Row: int(from.Y)},
+			To:     FloorPlanCell{Column: int(to.X), Row: int(to.Y)},
+			Kind:   FloorPlanEdgeKind(edge.Kind),
+			DoorID: string(edge.DoorID),
+		}
+	}
+
 	entrancePos := enc.ToData().Space.Entrance.ToPosition()
 
 	return &FloorPlan{
@@ -261,5 +279,6 @@ func buildFloorPlan(ctx context.Context, compiled dungeonspec.CompiledDungeon, s
 		Height:     params.Height,
 		DoorRow:    params.Height / 2,
 		Entrance:   FloorPlanCell{Column: int(entrancePos.X), Row: int(entrancePos.Y)},
+		Edges:      edges,
 	}, nil
 }

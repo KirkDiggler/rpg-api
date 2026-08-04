@@ -94,4 +94,20 @@ func TestPutDungeon_Success_FloorPlanConvertedCorrectly(t *testing.T) {
 	require.NotNil(t, fp.GetEntrance())
 	require.Equal(t, int32(0), fp.GetEntrance().GetColumn())
 	require.Equal(t, int32(4), fp.GetEntrance().GetRow())
+	require.NotEmpty(t, fp.GetEdges())
+
+	var solid, door *authoringv1alpha1.FloorPlanEdge
+	for _, edge := range fp.GetEdges() {
+		switch edge.GetKind() {
+		case authoringv1alpha1.FloorPlanEdgeKind_FLOOR_PLAN_EDGE_KIND_SOLID:
+			solid = edge
+		case authoringv1alpha1.FloorPlanEdgeKind_FLOOR_PLAN_EDGE_KIND_DOOR:
+			door = edge
+		}
+	}
+	require.NotNil(t, solid)
+	require.Nil(t, solid.DoorId, "solid edges must preserve the optional door_id's absence")
+	require.NotNil(t, door)
+	require.NotNil(t, door.DoorId, "door edges must map door_id as present")
+	require.Equal(t, "handler-test-door-entrance-boss", door.GetDoorId())
 }

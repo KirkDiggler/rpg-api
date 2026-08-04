@@ -79,23 +79,25 @@ func newTestCryptEncounter(t *testing.T, seed int64) *tkenc.Encounter {
 	enc := tkenc.New(ctx, core.EncounterID("test-enc"), broker)
 	_, params, err := resolveDungeonSpec(DungeonKeyCrypt, seed)
 	require.NoError(t, err)
+	params.PartyStart.SeatCount = DefaultPartyCap
 	require.NoError(t, enc.InitDungeon(params))
 	return enc
 }
 
-// addPartyLine mirrors StartEncounter's own party-placement loop (line
-// spawnPositionSpacing per member, starting at SpaceData.Entrance) so
-// monster-seeding tests see the exact same room occupancy StartEncounter
-// itself produces before seeding monsters.
+// addPartyLine mirrors StartEncounter's toolkit-owned party-start resolution
+// before monster seeding. It deliberately maps the returned ordered positions
+// straight onto test members so this fixture cannot reintroduce API-owned
+// coordinate arithmetic while production is exercising the same occupancy.
 func addPartyLine(t *testing.T, enc *tkenc.Encounter, partySize int) {
 	t.Helper()
-	base := enc.ToData().Space.Entrance
-	for i := 0; i < partySize; i++ {
-		q := i * spawnPositionSpacing
+	resolved, err := enc.ResolvePartySpawnPositions(tkenc.ResolvePartySpawnPositionsInput{Count: partySize})
+	require.NoError(t, err)
+	require.Len(t, resolved.Positions, partySize)
+	for i, position := range resolved.Positions {
 		require.NoError(t, enc.AddPlayer(tkenc.PlayerInput{
 			PlayerID:   core.PlayerID(fmt.Sprintf("p%d", i)),
 			EntityID:   core.EntityID(fmt.Sprintf("char-p%d", i)),
-			Position:   core.Hex{Q: base.Q + q, R: base.R, S: base.S - q},
+			Position:   position,
 			SightRange: memberSightRange,
 			HP:         1, MaxHP: 1, AC: 1,
 		}))

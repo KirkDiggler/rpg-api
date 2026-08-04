@@ -134,7 +134,9 @@ func (e *DisabledDungeonKeyError) Unwrap() error {
 
 // LoadContentRegistry builds the startup *dungeonregistry.Registry of
 // every content-hosted dungeon spec by calling content.AllSpecs() exactly
-// ONCE. Exported so cmd/server/server.go can call it directly at startup
+// ONCE. It compiles every spec through LoadWithConfig with DefaultPartyCap,
+// the normal product roster capacity used by the startup authoring and runtime
+// paths. Exported so cmd/server/server.go can call it directly at startup
 // (the Architecture decision in plan.md: the registry is built ONCE,
 // outside either orchestrator, then passed by pointer into BOTH
 // lobbyorch.Config.Registry and the new authoringorch.Config.Registry) —
@@ -192,7 +194,9 @@ func LoadContentRegistry() (*dungeonregistry.Registry, error) {
 
 	entries := make(map[string]dungeonregistry.Entry, len(specs))
 	for key, raw := range specs {
-		compiled, loadErr := dungeonspec.Load(raw)
+		compiled, loadErr := dungeonspec.LoadWithConfig(raw, dungeonspec.LoadConfig{
+			PartyStartSeatCount: DefaultPartyCap,
+		})
 		if loadErr != nil {
 			slog.Warn("lobby orchestrator: content spec failed to load, key disabled", "key", key, "error", loadErr)
 			entries[key] = dungeonregistry.Entry{Err: loadErr}
