@@ -31,7 +31,7 @@ func TestToProtoFloorPlan_CanvasPreservesProviderProjection(t *testing.T) {
 			From:   authoringorch.FloorPlanCell{Column: 1, Row: 0},
 			To:     authoringorch.FloorPlanCell{Column: 1, Row: 1},
 			Kind:   authoringorch.FloorPlanEdgeKindDoor,
-			DoorID: "canvas-door",
+			DoorID: "canvas-provider-contract-authored-door-1--2-1--1--1-0",
 		}},
 	}
 
@@ -52,5 +52,5 @@ func TestToProtoFloorPlan_CanvasPreservesProviderProjection(t *testing.T) {
 	require.Equal(t, int32(1), got.GetEdges()[0].GetTo().GetColumn())
 	require.Equal(t, int32(1), got.GetEdges()[0].GetTo().GetRow())
 	require.Equal(t, authoringv1alpha1.FloorPlanEdgeKind_FLOOR_PLAN_EDGE_KIND_DOOR, got.GetEdges()[0].GetKind())
-	require.Equal(t, "canvas-door", got.GetEdges()[0].GetDoorId())
+	require.Equal(t, "canvas-provider-contract-authored-door-1--2-1--1--1-0", got.GetEdges()[0].GetDoorId())
 }

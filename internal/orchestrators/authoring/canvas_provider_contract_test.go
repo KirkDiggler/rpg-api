@@ -95,7 +95,7 @@ func TestCanvasProviderContract(t *testing.T) {
 	require.Equal(t, dungeonspec.FloorPlanCell{Column: 1, Row: 0}, plan.Edges[0].From)
 	require.Equal(t, dungeonspec.FloorPlanCell{Column: 1, Row: 1}, plan.Edges[0].To)
 	require.Equal(t, dungeonspec.FloorPlanEdgeKindDoor, plan.Edges[0].Kind)
-	require.Equal(t, "canvas-provider-contract-authored-door-1-0--1-1-1--2", plan.Edges[0].DoorID)
+	require.Equal(t, "canvas-provider-contract-authored-door-1--2-1--1--1-0", plan.Edges[0].DoorID)
 }
 
 func TestBuildFloorPlan_RoomChainProjectionRegression(t *testing.T) {
