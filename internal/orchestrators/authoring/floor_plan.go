@@ -66,4 +66,12 @@ type FloorPlan struct {
 	DoorRow    int
 	Entrance   FloorPlanCell
 	Edges      []FloorPlanEdge
+
+	// Width and FloorCells are provider-produced canvas facts. The API does
+	// not derive either from YAML dimensions: canvas geometry and canonical
+	// ordering remain dungeonspec's responsibility. Room-chain providers leave
+	// Width at zero and FloorCells nil until their existing projection gains
+	// those fields.
+	Width      int
+	FloorCells []FloorPlanCell
 }

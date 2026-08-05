@@ -92,10 +92,20 @@ func toProtoFloorPlan(fp *authoringorch.FloorPlan) *authoringv1alpha1.FloorPlan 
 		edges[i] = toProtoFloorPlanEdge(edge)
 	}
 
+	floorCells := make([]*authoringv1alpha1.FloorPlanCell, len(fp.FloorCells))
+	for i, cell := range fp.FloorCells {
+		floorCells[i] = &authoringv1alpha1.FloorPlanCell{
+			Column: int32(cell.Column),
+			Row:    int32(cell.Row),
+		}
+	}
+
 	return &authoringv1alpha1.FloorPlan{
 		Rooms:      rooms,
 		Connectors: connectors,
 		Edges:      edges,
+		Width:      int32(fp.Width),
+		FloorCells: floorCells,
 		Height:     int32(fp.Height),
 		DoorRow:    int32(fp.DoorRow),
 		Entrance: &authoringv1alpha1.FloorPlanCell{
