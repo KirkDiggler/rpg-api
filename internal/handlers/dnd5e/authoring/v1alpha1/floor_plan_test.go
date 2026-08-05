@@ -5,6 +5,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	authoringv1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/authoring/v1alpha1"
 	authoringorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/authoring"
 )
 
@@ -46,5 +47,10 @@ func TestToProtoFloorPlan_CanvasPreservesProviderProjection(t *testing.T) {
 		require.Equal(t, int32(want.Row), got.GetFloorCells()[i].GetRow())
 	}
 	require.Len(t, got.GetEdges(), 1)
+	require.Equal(t, int32(1), got.GetEdges()[0].GetFrom().GetColumn())
+	require.Equal(t, int32(0), got.GetEdges()[0].GetFrom().GetRow())
+	require.Equal(t, int32(1), got.GetEdges()[0].GetTo().GetColumn())
+	require.Equal(t, int32(1), got.GetEdges()[0].GetTo().GetRow())
+	require.Equal(t, authoringv1alpha1.FloorPlanEdgeKind_FLOOR_PLAN_EDGE_KIND_DOOR, got.GetEdges()[0].GetKind())
 	require.Equal(t, "canvas-door", got.GetEdges()[0].GetDoorId())
 }

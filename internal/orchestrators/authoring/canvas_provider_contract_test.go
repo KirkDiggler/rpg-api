@@ -2,6 +2,7 @@ package authoring_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -13,7 +14,7 @@ const canvasYAML = `version: 1
 key: canvas-provider-contract
 name: Canvas Provider Contract
 height: 1
-canvas: { width: 3, height: 2 }
+canvas: { width: 4, height: 2 }
 rooms: []
 start: [1, 1]
 place:
@@ -22,31 +23,85 @@ walls:
   - { from: [1, 0], to: [1, 1], kind: door }
 `
 
+const previousCanvasYAML = `version: 1
+key: canvas-provider-contract
+name: Previous Canvas Provider Contract
+height: 1
+canvas: { width: 4, height: 2 }
+rooms: []
+start: [0, 1]
+place:
+  - { ref: "dnd5e:props:pillar", at: [3, 0] }
+walls:
+  - { from: [2, 0], to: [2, 1], kind: solid }
+`
+
+const roomChainYAML = `version: 1
+key: room-chain-provider-contract
+name: Room Chain Provider Contract
+height: 8
+rooms:
+  - id: entrance
+    archetype: entrance
+    width: 6
+  - id: boss
+    archetype: boss
+    width: 8
+    boss: { ref: "dnd5e:monsters:skeleton-captain", at: [4, 2] }
+connectors:
+  - { from: entrance, to: boss }
+`
+
 // TestCanvasProviderContract is the deliberate, minimal expected-red consumer
-// test for rpg-toolkit#883. It names the whole API/provider seam rather than
-// reproducing any geometry, validation, seating, or prior-state semantics in
-// rpg-api:
+// test for rpg-toolkit#883. PutDungeon retrieves the previous
+// dungeonspec.CompiledDungeon from its registry and passes that value unchanged
+// to LoadWithPrevious before writeThrough or registry mutation. CompiledDungeon
+// is the sole opaque state carrier: toolkit owns all private placement, wall,
+// start, and future region-cell state within or extracted from it. API neither
+// exposes nor reconstructs any of those values.
 //
-//   - PriorState is toolkit-owned and opaque. PutDungeon obtains it from the
-//     current registry entry and passes it verbatim before writeThrough/Put.
-//     Its future region-cell occupancy is never inspected by this package.
-//   - LoadWithPriorState validates candidate against that state before any API
-//     disk or registry mutation; its named errors remain the response's field
-//     error unchanged.
-//   - BuildFloorPlan produces every wire-relevant canvas fact in provider
-//     order. The API maps it only; it does not enumerate cells or edges.
-//
-// Once #883 supplies these symbols, the companion PutDungeon integration tests
-// must prove validate_only nonmutation, failed-update atomicity, successful
-// write/registry refresh/real reload, and room-chain regression using this
-// same contract. They intentionally cannot be made honest until the provider
-// exists.
+// BuildFloorPlan returns toolkit-produced wire facts in canonical order. API
+// maps them only; it does not enumerate floor cells, normalize edges, or derive
+// a door identity. The separate room-chain assertion prevents canvas support
+// from weakening the pre-existing provider projection.
 func TestCanvasProviderContract(t *testing.T) {
-	prior := dungeonspec.PriorState{}
-	compiled, err := dungeonspec.LoadWithPriorState(
-		[]byte(canvasYAML),
+	config := dungeonspec.LoadConfig{PartyStartSeatCount: 4}
+	previous, err := dungeonspec.LoadWithConfig([]byte(previousCanvasYAML), config)
+	require.NoError(t, err)
+
+	shrunkYAML := strings.Replace(canvasYAML, "width: 4", "width: 3", 1)
+	_, err = dungeonspec.LoadWithPrevious([]byte(shrunkYAML), config, previous)
+	require.ErrorContains(t, err, "place[0]",
+		"a previous compiled placement at [3,0] must reject a shrinking candidate before API mutation")
+
+	compiled, err := dungeonspec.LoadWithPrevious([]byte(canvasYAML), config, previous)
+	require.NoError(t, err)
+	plan, err := dungeonspec.BuildFloorPlan(context.Background(), dungeonspec.BuildFloorPlanInput{
+		Compiled: compiled,
+		Seed:     1,
+	})
+	require.NoError(t, err)
+	require.Empty(t, plan.Rooms)
+	require.Equal(t, 4, plan.Width)
+	require.Equal(t, 2, plan.Height)
+	require.Equal(t, []dungeonspec.FloorPlanCell{
+		{Column: 0, Row: 0}, {Column: 0, Row: 1},
+		{Column: 1, Row: 0}, {Column: 1, Row: 1},
+		{Column: 2, Row: 0}, {Column: 2, Row: 1},
+		{Column: 3, Row: 0}, {Column: 3, Row: 1},
+	}, plan.FloorCells)
+	require.Equal(t, dungeonspec.FloorPlanCell{Column: 1, Row: 1}, plan.Entrance)
+	require.Len(t, plan.Edges, 1)
+	require.Equal(t, dungeonspec.FloorPlanCell{Column: 1, Row: 0}, plan.Edges[0].From)
+	require.Equal(t, dungeonspec.FloorPlanCell{Column: 1, Row: 1}, plan.Edges[0].To)
+	require.Equal(t, dungeonspec.FloorPlanEdgeKindDoor, plan.Edges[0].Kind)
+	require.Equal(t, "canvas-provider-contract-authored-door-1-0--1-1-1--2", plan.Edges[0].DoorID)
+}
+
+func TestBuildFloorPlan_RoomChainProjectionRegression(t *testing.T) {
+	compiled, err := dungeonspec.LoadWithConfig(
+		[]byte(roomChainYAML),
 		dungeonspec.LoadConfig{PartyStartSeatCount: 4},
-		prior,
 	)
 	require.NoError(t, err)
 
@@ -55,14 +110,13 @@ func TestCanvasProviderContract(t *testing.T) {
 		Seed:     1,
 	})
 	require.NoError(t, err)
-	require.Empty(t, plan.Rooms)
-	require.Equal(t, 3, plan.Width)
-	require.Equal(t, 2, plan.Height)
-	require.Equal(t, []dungeonspec.FloorPlanCell{
-		{Column: 0, Row: 0}, {Column: 0, Row: 1},
-		{Column: 1, Row: 0}, {Column: 1, Row: 1},
-		{Column: 2, Row: 0}, {Column: 2, Row: 1},
-	}, plan.FloorCells)
-	require.Equal(t, dungeonspec.FloorPlanCell{Column: 1, Row: 1}, plan.Entrance)
-	require.Len(t, plan.Edges, 1)
+	require.Len(t, plan.Rooms, 2)
+	require.Equal(t, "entrance", plan.Rooms[0].ID)
+	require.Equal(t, 0, plan.Rooms[0].StartColumn)
+	require.Equal(t, "boss", plan.Rooms[1].ID)
+	require.Equal(t, 7, plan.Rooms[1].StartColumn)
+	require.Len(t, plan.Connectors, 1)
+	require.Equal(t, "room-chain-provider-contract-door-entrance-boss", plan.Connectors[0].DoorID)
+	require.Equal(t, dungeonspec.FloorPlanCell{Column: 0, Row: 4}, plan.Entrance)
+	require.NotEmpty(t, plan.Edges)
 }
