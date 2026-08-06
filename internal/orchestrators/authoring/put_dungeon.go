@@ -10,7 +10,6 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	tkenc "github.com/KirkDiggler/rpg-toolkit/encounter"
 	"github.com/KirkDiggler/rpg-toolkit/encounter/dungeonspec"
 
 	"github.com/KirkDiggler/rpg-api/internal/content"
@@ -102,15 +101,12 @@ func peekYAMLKey(yamlText string) (key string, ok bool) {
 //
 //  1. Key charset, then key/YAML key: match — cheap, no compile needed.
 //     Either failure is a malformed REQUEST (*MalformedRequestError).
-//  2. dungeonspec.Load (decode + validate + compile). A failure here is a
-//     well-formed request whose CONTENT is the problem — PutDungeonOutput
-//     with Success=false, distinct in TYPE from step 1's failure, never
-//     collapsed into the same path.
-//  3. Build the FloorPlan (a throwaway InitDungeon call, mirroring
-//     dungeonspec.WorkbenchReport's own pattern) — a failure here is
-//     ALSO a content failure (rpg-toolkit#842's own gate finding: a spec
-//     can Load cleanly and still fail InitDungeon), same Success=false
-//     treatment as step 2.
+//  2. Retrieve a healthy prior registry entry, if present, then let
+//     dungeonspec validate the candidate against its opaque CompiledDungeon.
+//     A failure here is a well-formed request whose CONTENT is the problem —
+//     PutDungeonOutput with Success=false, distinct in TYPE from step 1.
+//  3. Build the toolkit FloorPlan. A failure here is also a content failure,
+//     with the same Success=false treatment as step 2.
 //  4. ValidateOnly stops here: FloorPlan returned, nothing persisted,
 //     nothing registered.
 //  5. Write-through to ContentDir FIRST. A write failure fails the RPC
@@ -136,9 +132,15 @@ func (o *Orchestrator) PutDungeon(ctx context.Context, in *PutDungeonInput) (*Pu
 	}
 
 	raw := []byte(in.YAML)
-	compiled, loadErr := dungeonspec.LoadWithConfig(raw, dungeonspec.LoadConfig{
-		PartyStartSeatCount: o.partyStartSeatCount,
-	})
+	config := dungeonspec.LoadConfig{PartyStartSeatCount: o.partyStartSeatCount}
+	previous, hasPrevious := o.registry.Get(in.Key)
+	var compiled dungeonspec.CompiledDungeon
+	var loadErr error
+	if hasPrevious && previous.Err == nil {
+		compiled, loadErr = dungeonspec.LoadWithPrevious(raw, config, previous.Compiled)
+	} else {
+		compiled, loadErr = dungeonspec.LoadWithConfig(raw, config)
+	}
 	if loadErr != nil {
 		return &PutDungeonOutput{Success: false, FieldError: loadErr.Error()}, nil
 	}
@@ -196,89 +198,4 @@ func (o *Orchestrator) writeThrough(key, yamlText string) error {
 		return fmt.Errorf("write %q: %w", path, err)
 	}
 	return nil
-}
-
-// buildFloorPlan runs a throwaway Encounter.InitDungeon(compiled.Params)
-// at seed — the same compile-and-describe pattern
-// dungeonspec.WorkbenchReport already uses outside a server (reused here,
-// not reinvented) — then projects the result into FloorPlan. Rooms'
-// StartColumn and connectors' Column replicate InitDungeon's own chain-
-// layout arithmetic exactly (rpg-toolkit's dungeon.go: starts[i] = x;
-// x += region.Width + 1 per region; a connector's column is its LEFT
-// region's start + that region's width) — this is the one place in the
-// whole arc allowed to do that arithmetic, because it's the producer of
-// the compiled layout, not a consumer re-deriving it. Entrance comes
-// directly off the throwaway encounter's committed Data.Space.Entrance
-// (a core.Hex cube coordinate) via Hex.ToPosition(), which itself calls
-// spatial.CubeCoordinate.ToOffsetCoordinate() under pointy-top orientation
-// — reused via the toolkit's own existing conversion helper (the same one
-// dungeonspec.WorkbenchReport's writeFloorPlan already calls for this
-// exact purpose) rather than hand-rolled here.
-func buildFloorPlan(ctx context.Context, compiled dungeonspec.CompiledDungeon, seed int64) (*FloorPlan, error) {
-	params := compiled.Params
-	params.RandomSeed = seed
-
-	transport := tkenc.NewInMemoryTransport()
-	broker := tkenc.NewBroker(transport)
-	enc := tkenc.New(ctx, "authoring-preview", broker)
-	if err := enc.InitDungeon(params); err != nil {
-		return nil, fmt.Errorf("init dungeon: %w", err)
-	}
-
-	regions := params.Regions
-	starts := make([]int, len(regions))
-	x := 0
-	for i, r := range regions {
-		starts[i] = x
-		x += r.Width + 1
-	}
-
-	rooms := make([]FloorPlanRoom, len(regions))
-	for i, r := range regions {
-		rooms[i] = FloorPlanRoom{
-			ID:          r.ID,
-			Archetype:   string(r.Archetype),
-			Width:       r.Width,
-			StartColumn: starts[i],
-		}
-	}
-
-	connectorParams := params.Connectors
-	connectors := make([]FloorPlanConnector, len(connectorParams))
-	for i, c := range connectorParams {
-		connectors[i] = FloorPlanConnector{
-			DoorID:     string(c.DoorID),
-			Locked:     c.Locked,
-			FromRoomID: regions[i].ID,
-			ToRoomID:   regions[i+1].ID,
-			Column:     starts[i] + regions[i].Width,
-		}
-	}
-
-	describedEdges, err := enc.DescribeEdges(tkenc.DescribeEdgesInput{})
-	if err != nil {
-		return nil, fmt.Errorf("describe canonical edges: %w", err)
-	}
-	edges := make([]FloorPlanEdge, len(describedEdges.Edges))
-	for i, edge := range describedEdges.Edges {
-		from := edge.From.ToPosition()
-		to := edge.To.ToPosition()
-		edges[i] = FloorPlanEdge{
-			From:   FloorPlanCell{Column: int(from.X), Row: int(from.Y)},
-			To:     FloorPlanCell{Column: int(to.X), Row: int(to.Y)},
-			Kind:   FloorPlanEdgeKind(edge.Kind),
-			DoorID: string(edge.DoorID),
-		}
-	}
-
-	entrancePos := enc.ToData().Space.Entrance.ToPosition()
-
-	return &FloorPlan{
-		Rooms:      rooms,
-		Connectors: connectors,
-		Height:     params.Height,
-		DoorRow:    params.Height / 2,
-		Entrance:   FloorPlanCell{Column: int(entrancePos.X), Row: int(entrancePos.Y)},
-		Edges:      edges,
-	}, nil
 }
