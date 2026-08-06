@@ -9,9 +9,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/KirkDiggler/rpg-api/internal/dungeonregistry"
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/authoring"
-	"github.com/KirkDiggler/rpg-toolkit/encounter/dungeonspec"
 )
 
 func canvasUpdateYAML(key, body string) string {
@@ -89,26 +87,8 @@ walls:
 	require.True(t, grown.Success)
 	require.Equal(t, buildProviderFloorPlan(t, preview), grown.FloorPlan)
 
-	// Simulate process restart: disk is the source; a new registry and a new
-	// orchestrator receive a freshly compiled opaque toolkit value.
-	raw, err := os.ReadFile(filepath.Join(dir, key+".yaml"))
-	require.NoError(t, err)
-	require.Equal(t, preview, string(raw))
-	compiled, err := dungeonspec.LoadWithConfig(raw, dungeonspec.LoadConfig{PartyStartSeatCount: 4})
-	require.NoError(t, err)
-	freshRegistry := dungeonregistry.New(map[string]dungeonregistry.Entry{key: {Compiled: compiled, Name: "Canvas update"}})
-	fresh, err := authoring.New(&authoring.Config{Registry: freshRegistry, ContentDir: dir, PartyStartSeatCount: 4})
-	require.NoError(t, err)
-	reloaded, err := fresh.PutDungeon(context.Background(), &authoring.PutDungeonInput{Key: key, YAML: preview, ValidateOnly: true})
-	require.NoError(t, err)
-	require.True(t, reloaded.Success)
-	require.Equal(t, grown.FloorPlan, reloaded.FloorPlan)
-	require.Contains(t, string(raw), "dnd5e:props:altar")
-	require.Contains(t, string(raw), "facing: W")
-	require.Contains(t, string(raw), "dnd5e:monsters:skeleton")
-	require.Contains(t, string(raw), "start: [1, 1]")
-	require.Contains(t, reloaded.FloorPlan.Edges, authoring.FloorPlanEdge{
-		From: authoring.FloorPlanCell{Column: 1, Row: 0}, To: authoring.FloorPlanCell{Column: 1, Row: 1},
-		Kind: authoring.FloorPlanEdgeKindDoor, DoorID: "canvas-reload-authored-door-1--2-1--1--1-0",
-	})
+	// Production restart/load/runtime evidence belongs in lobby's
+	// TestStartEncounter_CanvasPutDungeonSurvivesProductionReload: it starts
+	// from this write-through source via LoadContentRegistry, rather than
+	// reconstructing a registry or compiling the bytes in this package.
 }

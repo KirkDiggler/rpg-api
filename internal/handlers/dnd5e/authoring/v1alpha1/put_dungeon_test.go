@@ -2,6 +2,7 @@ package authoring_test
 
 import (
 	"context"
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -103,6 +104,56 @@ connectors:
 	require.Len(t, resp.GetFieldErrors(), 1)
 	require.Contains(t, resp.GetFieldErrors()[0].GetMessage(), "walls[0]: endpoints must be adjacent pointy-top odd-q floor hexes")
 }
+
+func TestPutDungeon_ValidateOnlyCanvas_ProjectsCompleteBuilderWireShapeWithoutMutation(t *testing.T) {
+	const key = "handler-canvas"
+	dir := t.TempDir()
+	registry := dungeonregistry.New(nil)
+	orch, err := authoringorch.New(&authoringorch.Config{Registry: registry, ContentDir: dir, PartyStartSeatCount: 4})
+	require.NoError(t, err)
+	h, err := authoringhandler.New(&authoringhandler.HandlerConfig{Orchestrator: orch})
+	require.NoError(t, err)
+
+	resp, err := h.PutDungeon(context.Background(), &authoringv1alpha1.PutDungeonRequest{
+		Key: key, ValidateOnly: true, Yaml: `version: 1
+key: handler-canvas
+name: Handler Canvas
+height: 1
+canvas: { width: 4, height: 2 }
+rooms: []
+start: [1, 1]
+walls:
+  - { from: [0, 0], to: [0, 1], kind: solid }
+  - { from: [1, 0], to: [1, 1], kind: door }
+`,
+	})
+	require.NoError(t, err)
+	require.True(t, resp.GetSuccess())
+	require.Empty(t, resp.GetFieldErrors())
+	fp := resp.GetFloorPlan()
+	require.NotNil(t, fp)
+	require.Empty(t, fp.GetRooms())
+	require.Empty(t, fp.GetConnectors())
+	require.Equal(t, int32(4), fp.GetWidth())
+	require.Equal(t, int32(2), fp.GetHeight())
+	require.Equal(t, []*authoringv1alpha1.FloorPlanCell{
+		{Column: 0, Row: 0}, {Column: 0, Row: 1}, {Column: 1, Row: 0}, {Column: 1, Row: 1},
+		{Column: 2, Row: 0}, {Column: 2, Row: 1}, {Column: 3, Row: 0}, {Column: 3, Row: 1},
+	}, fp.GetFloorCells(), "provider's canonical ascending floor cells must reach the wire unchanged")
+	require.Equal(t, &authoringv1alpha1.FloorPlanCell{Column: 1, Row: 1}, fp.GetEntrance())
+	require.Equal(t, []*authoringv1alpha1.FloorPlanEdge{
+		{From: &authoringv1alpha1.FloorPlanCell{Column: 0, Row: 0}, To: &authoringv1alpha1.FloorPlanCell{Column: 0, Row: 1}, Kind: authoringv1alpha1.FloorPlanEdgeKind_FLOOR_PLAN_EDGE_KIND_SOLID},
+		{From: &authoringv1alpha1.FloorPlanCell{Column: 1, Row: 0}, To: &authoringv1alpha1.FloorPlanCell{Column: 1, Row: 1}, Kind: authoringv1alpha1.FloorPlanEdgeKind_FLOOR_PLAN_EDGE_KIND_DOOR, DoorId: ptr("handler-canvas-authored-door-1--2-1--1--1-0")},
+	}, fp.GetEdges())
+	require.Nil(t, fp.GetEdges()[0].DoorId, "solid edge must keep optional door_id absent")
+	require.NotNil(t, fp.GetEdges()[1].DoorId, "door edge must keep optional door_id present")
+	require.Empty(t, registry.Keys(), "validate_only must not mutate the live registry")
+	entries, err := os.ReadDir(dir)
+	require.NoError(t, err)
+	require.Empty(t, entries, "validate_only must not write content")
+}
+
+func ptr(value string) *string { return &value }
 
 func TestPutDungeon_Success_FloorPlanConvertedCorrectly(t *testing.T) {
 	h := newTestHandler(t)
