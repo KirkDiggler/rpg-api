@@ -1,13 +1,13 @@
 package authoring
 
-// FloorPlanRoom is one compiled room's placement in the chain. Domain type
-// (not a proto type) — the handler is the one conversion point at the
-// handler/proto boundary (rpg-project's Boundary Rule), converting this
-// into authoringv1alpha1.FloorPlanRoom. StartColumn is the room's absolute
-// position in the compiled left-to-right chain — server-computed here (the
-// ONE place in this arc allowed to do this arithmetic, since it's the
-// producer of the compiled layout, not a consumer), never re-derived by a
-// client from Width alone.
+import (
+	"context"
+	"fmt"
+
+	"github.com/KirkDiggler/rpg-toolkit/encounter/dungeonspec"
+)
+
+// FloorPlanRoom is one provider-compiled room placement.
 type FloorPlanRoom struct {
 	ID          string
 	Archetype   string
@@ -15,9 +15,7 @@ type FloorPlanRoom struct {
 	StartColumn int
 }
 
-// FloorPlanConnector is one compiled connector's door + reserved gap
-// column BETWEEN its two rooms — also server-computed, never derived
-// client-side from room widths.
+// FloorPlanConnector is one provider-compiled room connector.
 type FloorPlanConnector struct {
 	DoorID     string
 	Locked     bool
@@ -26,14 +24,13 @@ type FloorPlanConnector struct {
 	Column     int
 }
 
-// FloorPlanCell is an absolute [column, row] on the compiled grid.
+// FloorPlanCell is an absolute provider-produced grid cell.
 type FloorPlanCell struct {
 	Column int
 	Row    int
 }
 
-// FloorPlanEdgeKind is the authoring-local meaning of a toolkit canonical
-// physical edge. It deliberately is not the runtime encounter WallKind.
+// FloorPlanEdgeKind is the provider-produced meaning of a physical edge.
 type FloorPlanEdgeKind string
 
 const (
@@ -41,9 +38,7 @@ const (
 	FloorPlanEdgeKindDoor  FloorPlanEdgeKind = "door"
 )
 
-// FloorPlanEdge directly projects one toolkit effective canonical edge — the
-// provider's generated-plus-authored overlay has already happened. The API does
-// not sort, deduplicate, infer, or otherwise canonicalize this list.
+// FloorPlanEdge directly projects one toolkit canonical edge.
 type FloorPlanEdge struct {
 	From   FloorPlanCell
 	To     FloorPlanCell
@@ -51,27 +46,60 @@ type FloorPlanEdge struct {
 	DoorID string
 }
 
-// FloorPlan is the compiled layout PutDungeon's success response carries.
-// Entrance is the one value here a client genuinely cannot compute at all
-// (a generator decision, SpaceData.Entrance) — distinct from
-// StartColumn/Column, which a client could in principle (mis)compute from
-// Width but shouldn't have to. See design.md's "Grid math is
-// server-authoritative" principle and the FloorPlan.entrance proto
-// comment (rpg-api-protos dnd5e/api/authoring/v1alpha1/service.proto) for
-// why both classes get an explicit field.
+// FloorPlan is PutDungeon's provider-produced layout response.
 type FloorPlan struct {
 	Rooms      []FloorPlanRoom
 	Connectors []FloorPlanConnector
+	Width      int
 	Height     int
 	DoorRow    int
+	FloorCells []FloorPlanCell
 	Entrance   FloorPlanCell
 	Edges      []FloorPlanEdge
+}
 
-	// Width and FloorCells are provider-produced canvas facts. The API does
-	// not derive either from YAML dimensions: canvas geometry and canonical
-	// ordering remain dungeonspec's responsibility. Room-chain providers leave
-	// Width at zero and FloorCells nil until their existing projection gains
-	// those fields.
-	Width      int
-	FloorCells []FloorPlanCell
+// buildFloorPlan maps the complete toolkit projection field-for-field. Geometry,
+// ordering, and canonicalization all remain in dungeonspec.BuildFloorPlan.
+func buildFloorPlan(ctx context.Context, compiled dungeonspec.CompiledDungeon, seed int64) (*FloorPlan, error) {
+	providerPlan, err := dungeonspec.BuildFloorPlan(ctx, dungeonspec.BuildFloorPlanInput{
+		Compiled: compiled,
+		Seed:     seed,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("build floor plan: %w", err)
+	}
+
+	plan := &FloorPlan{
+		Rooms:      make([]FloorPlanRoom, len(providerPlan.Rooms)),
+		Connectors: make([]FloorPlanConnector, len(providerPlan.Connectors)),
+		Width:      providerPlan.Width,
+		Height:     providerPlan.Height,
+		DoorRow:    providerPlan.DoorRow,
+		FloorCells: make([]FloorPlanCell, len(providerPlan.FloorCells)),
+		Entrance:   floorPlanCellFromProvider(providerPlan.Entrance),
+		Edges:      make([]FloorPlanEdge, len(providerPlan.Edges)),
+	}
+	for index, room := range providerPlan.Rooms {
+		plan.Rooms[index] = FloorPlanRoom{ID: room.ID, Archetype: room.Archetype, Width: room.Width, StartColumn: room.StartColumn}
+	}
+	for index, connector := range providerPlan.Connectors {
+		plan.Connectors[index] = FloorPlanConnector{
+			DoorID: connector.DoorID, Locked: connector.Locked,
+			FromRoomID: connector.FromRoomID, ToRoomID: connector.ToRoomID, Column: connector.Column,
+		}
+	}
+	for index, cell := range providerPlan.FloorCells {
+		plan.FloorCells[index] = floorPlanCellFromProvider(cell)
+	}
+	for index, edge := range providerPlan.Edges {
+		plan.Edges[index] = FloorPlanEdge{
+			From: floorPlanCellFromProvider(edge.From), To: floorPlanCellFromProvider(edge.To),
+			Kind: FloorPlanEdgeKind(edge.Kind), DoorID: edge.DoorID,
+		}
+	}
+	return plan, nil
+}
+
+func floorPlanCellFromProvider(cell dungeonspec.FloorPlanCell) FloorPlanCell {
+	return FloorPlanCell{Column: cell.Column, Row: cell.Row}
 }

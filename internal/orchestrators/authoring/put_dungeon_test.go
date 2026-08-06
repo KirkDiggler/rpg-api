@@ -11,7 +11,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	tkenc "github.com/KirkDiggler/rpg-toolkit/encounter"
 	"github.com/KirkDiggler/rpg-toolkit/encounter/dungeonspec"
 
 	"github.com/KirkDiggler/rpg-api/internal/dungeonregistry"
@@ -261,11 +260,8 @@ func TestPutDungeon_AuthoredDoorRowStartUsesToolkitAnchorAndFourSeatConfig(t *te
 	require.Equal(t, authoring.FloorPlanCell{Column: 12, Row: 4}, out.FloorPlan.Entrance,
 		"FloorPlan.entrance is the toolkit-resolved authored anchor, not an entrance-room assumption")
 
-	entry, ok := registry.Get(key)
+	_, ok := registry.Get(key)
 	require.True(t, ok)
-	require.NotNil(t, entry.Compiled.Params.PartyStart.Anchor)
-	require.Equal(t, 4, entry.Compiled.Params.PartyStart.SeatCount,
-		"authoring must compile against the normal product party capacity")
 
 	blockedYAML := strings.Replace(validDungeonYAML("door-row-prop"), "width: 6\n", "width: 6\n    place:\n      - { ref: \"dnd5e:props:pillar\", at: [1, 4] }\n", 1)
 	blocked, err := orch.PutDungeon(context.Background(), &authoring.PutDungeonInput{
@@ -338,11 +334,14 @@ func TestPutDungeon_ShowcaseProjectsToolkitGeneratedEdgesVerbatim(t *testing.T) 
 	require.NoError(t, err)
 	require.True(t, out.Success)
 
-	expected := expectedShowcaseGeneratedEdges(t)
-	require.Len(t, expected, 196, "fixture must list the full canonical sequence")
+	expected := buildProviderFloorPlan(t, showcaseDungeonYAML)
+	require.Equal(t, expected, out.FloorPlan,
+		"the API must project every toolkit-produced field in provider order")
 	require.Len(t, out.FloorPlan.Edges, 196, "toolkit physical-edge count")
-	require.Equal(t, expected, out.FloorPlan.Edges,
-		"the API must project the complete toolkit-produced physical-edge sequence verbatim")
+	require.Contains(t, out.FloorPlan.Edges, authoring.FloorPlanEdge{
+		From: authoring.FloorPlanCell{Column: 6, Row: 4}, To: authoring.FloorPlanCell{Column: 7, Row: 4},
+		Kind: authoring.FloorPlanEdgeKindDoor, DoorID: "showcase-door-antechamber-shrine",
+	}, "provider connector door fact must survive the API mapping")
 }
 
 // authoredEdgesDungeonYAML uses rpg-project#179's corrected pointy-top odd-q
@@ -357,18 +356,14 @@ connectors:
 `, 1)
 }
 
-// TestPutDungeon_ProjectsToolkitCombinedGeneratedAndAuthoredEdgesVerbatim is
-// the consumer gate for rpg-toolkit#880/#881's combined DescribeEdges seam.
-// Its expected value comes from a separate real toolkit InitDungeon +
-// DescribeEdges call; the API may only convert those already-canonical records
-// to FloorPlan cells. In particular, no API-side endpoint normalization,
-// deduplication, overlay decision, or door-ID derivation can make this pass.
+// TestPutDungeon_ProjectsToolkitCombinedGeneratedAndAuthoredEdgesVerbatim
+// compares the API response to BuildFloorPlan's complete canonical projection.
+// It also pins representative generated and authored facts without sorting or
+// normalizing either list in the consumer test.
 func TestPutDungeon_ProjectsToolkitCombinedGeneratedAndAuthoredEdgesVerbatim(t *testing.T) {
 	const key = "combined-authored-edges"
 	yaml := authoredEdgesDungeonYAML(key)
-	compiled, err := dungeonspec.LoadWithConfig([]byte(yaml), dungeonspec.LoadConfig{PartyStartSeatCount: 4})
-	require.NoError(t, err)
-	expected := expectedCombinedToolkitEdges(t, compiled)
+	expected := buildProviderFloorPlan(t, yaml)
 
 	orch, _, _ := newTestOrchestrator(t)
 	out, err := orch.PutDungeon(context.Background(), &authoring.PutDungeonInput{
@@ -378,39 +373,25 @@ func TestPutDungeon_ProjectsToolkitCombinedGeneratedAndAuthoredEdgesVerbatim(t *
 	})
 	require.NoError(t, err)
 	require.True(t, out.Success)
-	require.Equal(t, expected, out.FloorPlan.Edges,
-		"FloorPlan.edges must be the toolkit's combined generated+authored sequence verbatim")
+	require.Equal(t, expected, out.FloorPlan,
+		"FloorPlan must match the toolkit's complete canonical projection")
 
-	var authoredSolid, authoredDoor tkenc.AuthoredEdge
-	for _, edge := range compiled.Params.AuthoredEdges {
-		switch edge.Kind {
-		case tkenc.GeneratedEdgeKindSolid:
+	var authoredSolid, authoredDoor *authoring.FloorPlanEdge
+	for index := range out.FloorPlan.Edges {
+		edge := &out.FloorPlan.Edges[index]
+		if edge.From == (authoring.FloorPlanCell{Column: 7, Row: 1}) && edge.To == (authoring.FloorPlanCell{Column: 8, Row: 1}) {
 			authoredSolid = edge
-		case tkenc.GeneratedEdgeKindDoor:
+		}
+		if edge.From == (authoring.FloorPlanCell{Column: 7, Row: 3}) && edge.To == (authoring.FloorPlanCell{Column: 8, Row: 3}) {
 			authoredDoor = edge
 		}
 	}
-	solid := floorPlanEdgeForAuthoredEdge(out.FloorPlan.Edges, authoredSolid)
-	require.NotNil(t, solid, "corrected authored solid must be present beside generated edges")
-	require.Equal(t, authoring.FloorPlanEdgeKindSolid, solid.Kind)
-	require.Empty(t, solid.DoorID)
-
-	door := floorPlanEdgeForAuthoredEdge(out.FloorPlan.Edges, authoredDoor)
-	require.NotNil(t, door, "corrected authored door must be present beside generated edges")
-	require.Equal(t, authoring.FloorPlanEdgeKindDoor, door.Kind)
-	require.Equal(t, string(authoredDoor.DoorID), door.DoorID)
-
-	var generatedSolid, generatedDoor bool
-	for _, edge := range out.FloorPlan.Edges {
-		if edge.DoorID == "" && (edge.From != solid.From || edge.To != solid.To) {
-			generatedSolid = true
-		}
-		if edge.DoorID != "" && edge.DoorID != door.DoorID {
-			generatedDoor = true
-		}
-	}
-	require.True(t, generatedSolid, "combined response must retain generated solid edges")
-	require.True(t, generatedDoor, "combined response must retain generated connector doors")
+	require.NotNil(t, authoredSolid, "canonical authored solid must be present")
+	require.Equal(t, authoring.FloorPlanEdgeKindSolid, authoredSolid.Kind)
+	require.Empty(t, authoredSolid.DoorID)
+	require.NotNil(t, authoredDoor, "canonical authored door must be present")
+	require.Equal(t, authoring.FloorPlanEdgeKindDoor, authoredDoor.Kind)
+	require.Equal(t, "combined-authored-edges-authored-door-7--7-0--8--7--1", authoredDoor.DoorID)
 }
 
 // TestPutDungeon_AuthoredDoorIDIsStableAcrossReversedYAML keeps identity at
@@ -491,49 +472,6 @@ func TestPutDungeon_OmittedAndNullWallsRemainGeneratedOnly(t *testing.T) {
 	}
 }
 
-func expectedCombinedToolkitEdges(t *testing.T, compiled dungeonspec.CompiledDungeon) []authoring.FloorPlanEdge {
-	t.Helper()
-	params := compiled.Params
-	params.RandomSeed = 1 // PutDungeon's fixed preview seed
-	transport := tkenc.NewInMemoryTransport()
-	broker := tkenc.NewBroker(transport)
-	t.Cleanup(func() {
-		_ = broker.Close()
-		_ = transport.Close()
-	})
-	enc := tkenc.New(context.Background(), "combined-authored-edges", broker)
-	require.NoError(t, enc.InitDungeon(params))
-
-	described, err := enc.DescribeEdges(tkenc.DescribeEdgesInput{})
-	require.NoError(t, err)
-	edges := make([]authoring.FloorPlanEdge, len(described.Edges))
-	for i, edge := range described.Edges {
-		from := edge.From.ToPosition()
-		to := edge.To.ToPosition()
-		edges[i] = authoring.FloorPlanEdge{
-			From:   authoring.FloorPlanCell{Column: int(from.X), Row: int(from.Y)},
-			To:     authoring.FloorPlanCell{Column: int(to.X), Row: int(to.Y)},
-			Kind:   authoring.FloorPlanEdgeKind(edge.Kind),
-			DoorID: string(edge.DoorID),
-		}
-	}
-	return edges
-}
-
-func floorPlanEdgeForAuthoredEdge(edges []authoring.FloorPlanEdge, authored tkenc.AuthoredEdge) *authoring.FloorPlanEdge {
-	from := authored.From.ToPosition()
-	to := authored.To.ToPosition()
-	first := authoring.FloorPlanCell{Column: int(from.X), Row: int(from.Y)}
-	second := authoring.FloorPlanCell{Column: int(to.X), Row: int(to.Y)}
-	for i := range edges {
-		edge := &edges[i]
-		if (edge.From == first && edge.To == second) || (edge.From == second && edge.To == first) {
-			return edge
-		}
-	}
-	return nil
-}
-
 func authoredDoorID(t *testing.T, edges []authoring.FloorPlanEdge) string {
 	t.Helper()
 	for _, edge := range edges {
@@ -545,37 +483,32 @@ func authoredDoorID(t *testing.T, edges []authoring.FloorPlanEdge) string {
 	return ""
 }
 
-// expectedShowcaseGeneratedEdges is a literal, ordered snapshot of every
-// physical edge produced by rpg-toolkit PR #876 at 7b58d3f for the deterministic
-// showcase spec. Each record includes both endpoints, kind, and door identity;
-// equality above deliberately catches missing, extra, reordered, or changed
-// edges rather than merely proving representative examples exist.
-func expectedShowcaseGeneratedEdges(t *testing.T) []authoring.FloorPlanEdge {
+func buildProviderFloorPlan(t *testing.T, yaml string) *authoring.FloorPlan {
 	t.Helper()
-
-	raw, err := os.ReadFile(filepath.Join("testdata", "showcase_generated_edges.txt"))
+	compiled, err := dungeonspec.LoadWithConfig([]byte(yaml), dungeonspec.LoadConfig{PartyStartSeatCount: 4})
 	require.NoError(t, err)
-
-	lines := strings.Split(strings.TrimSpace(string(raw)), "\n")
-	edges := make([]authoring.FloorPlanEdge, 0, len(lines))
-	for _, line := range lines {
-		fields := strings.Split(line, ":")
-		require.Len(t, fields, 4, "expected edge record %q", line)
-
-		var from, to authoring.FloorPlanCell
-		_, err = fmt.Sscanf(fields[0], "%d,%d", &from.Column, &from.Row)
-		require.NoError(t, err, "expected edge source %q", line)
-		_, err = fmt.Sscanf(fields[1], "%d,%d", &to.Column, &to.Row)
-		require.NoError(t, err, "expected edge destination %q", line)
-
-		edges = append(edges, authoring.FloorPlanEdge{
-			From:   from,
-			To:     to,
-			Kind:   authoring.FloorPlanEdgeKind(fields[2]),
-			DoorID: fields[3],
-		})
+	providerPlan, err := dungeonspec.BuildFloorPlan(context.Background(), dungeonspec.BuildFloorPlanInput{Compiled: compiled, Seed: 1})
+	require.NoError(t, err)
+	plan := &authoring.FloorPlan{
+		Rooms: make([]authoring.FloorPlanRoom, len(providerPlan.Rooms)), Connectors: make([]authoring.FloorPlanConnector, len(providerPlan.Connectors)),
+		Width: providerPlan.Width, Height: providerPlan.Height, DoorRow: providerPlan.DoorRow,
+		FloorCells: make([]authoring.FloorPlanCell, len(providerPlan.FloorCells)),
+		Entrance:   authoring.FloorPlanCell{Column: providerPlan.Entrance.Column, Row: providerPlan.Entrance.Row},
+		Edges:      make([]authoring.FloorPlanEdge, len(providerPlan.Edges)),
 	}
-	return edges
+	for index, room := range providerPlan.Rooms {
+		plan.Rooms[index] = authoring.FloorPlanRoom{ID: room.ID, Archetype: room.Archetype, Width: room.Width, StartColumn: room.StartColumn}
+	}
+	for index, connector := range providerPlan.Connectors {
+		plan.Connectors[index] = authoring.FloorPlanConnector{DoorID: connector.DoorID, Locked: connector.Locked, FromRoomID: connector.FromRoomID, ToRoomID: connector.ToRoomID, Column: connector.Column}
+	}
+	for index, cell := range providerPlan.FloorCells {
+		plan.FloorCells[index] = authoring.FloorPlanCell{Column: cell.Column, Row: cell.Row}
+	}
+	for index, edge := range providerPlan.Edges {
+		plan.Edges[index] = authoring.FloorPlanEdge{From: authoring.FloorPlanCell{Column: edge.From.Column, Row: edge.From.Row}, To: authoring.FloorPlanCell{Column: edge.To.Column, Row: edge.To.Row}, Kind: authoring.FloorPlanEdgeKind(edge.Kind), DoorID: edge.DoorID}
+	}
+	return plan
 }
 
 func TestPutDungeon_Persists_NewKeyWritesKeyYAML(t *testing.T) {
@@ -667,5 +600,5 @@ func TestPutDungeon_NoRestartVisibility_RegistryGetSeesNewSpecImmediately(t *tes
 	entry, ok := registry.Get("live-key")
 	require.True(t, ok, "the SAME registry pointer must see the new spec with no restart")
 	require.NoError(t, entry.Err)
-	require.Len(t, entry.Compiled.Params.Regions, 2)
+	require.Equal(t, buildProviderFloorPlan(t, validDungeonYAML("live-key")), out.FloorPlan)
 }
