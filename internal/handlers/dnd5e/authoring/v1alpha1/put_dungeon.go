@@ -76,6 +76,15 @@ func toProtoFloorPlan(fp *authoringorch.FloorPlan) *authoringv1alpha1.FloorPlan 
 		}
 	}
 
+	regions := make([]*authoringv1alpha1.FloorPlanRegion, len(fp.Regions))
+	for i, region := range fp.Regions {
+		cells := make([]*authoringv1alpha1.FloorPlanCell, len(region.Cells))
+		for j, cell := range region.Cells {
+			cells[j] = &authoringv1alpha1.FloorPlanCell{Column: int32(cell.Column), Row: int32(cell.Row)}
+		}
+		regions[i] = &authoringv1alpha1.FloorPlanRegion{Id: region.ID, Cells: cells, ParentId: region.ParentID}
+	}
+
 	connectors := make([]*authoringv1alpha1.FloorPlanConnector, len(fp.Connectors))
 	for i, c := range fp.Connectors {
 		connectors[i] = &authoringv1alpha1.FloorPlanConnector{
@@ -102,6 +111,7 @@ func toProtoFloorPlan(fp *authoringorch.FloorPlan) *authoringv1alpha1.FloorPlan 
 
 	return &authoringv1alpha1.FloorPlan{
 		Rooms:      rooms,
+		Regions:    regions,
 		Connectors: connectors,
 		Edges:      edges,
 		Width:      int32(fp.Width),

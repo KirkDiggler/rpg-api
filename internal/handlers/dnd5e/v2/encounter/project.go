@@ -144,7 +144,7 @@ func ProjectFor(
 		Space: &encounterv2pb.Space{
 			Hexes:    hexRecordsToProto(enc.KnownHexes(viewer)),
 			Entities: entities,
-			Zones:    zonesToProto(data.Space),
+			Zones:    zonesToProto(enc.AuthorizedZones(viewer)),
 			Theme:    themeToProto(data.Space),
 		},
 	}, nil
@@ -415,30 +415,25 @@ func edgeToProto(e perception.Edge) *encounterv2pb.Wall {
 	return w
 }
 
-// zonesToProto projects SpaceData.Regions onto the wire Zone list (rpg-
-// api#687) — a pure passthrough, one Zone per RegionData entry, in the
-// SAME ORDER the toolkit declares them (never sorted/re-derived). Id and
-// Archetype are copied verbatim; RegionData carries no Name field, so
-// Zone.name is deliberately left unset rather than inventing one — the
-// issue's "no default invention" boundary applies to every field, not
-// just the ones that happen to have an obvious source.
-//
-// nil space or an empty Regions slice (single-room InitRoom spaces, or any
-// InitDungeon call that never tags regions) returns nil — the existing
-// undifferentiated fallback, not an empty-but-non-nil slice, matching
-// themeToProto's nil-space convention just below.
-func zonesToProto(space *tkenc.SpaceData) []*encounterv2pb.Zone {
-	if space == nil || len(space.Regions) == 0 {
+// zonesToProto translates only the toolkit-authorized Zone facts for this
+// viewer. The toolkit has already selected observed scopes and required
+// ancestors; rpg-api must not inspect SpaceData or reconstruct membership.
+func zonesToProto(zones []tkenc.Zone) []*encounterv2pb.Zone {
+	if len(zones) == 0 {
 		return nil
 	}
-	zones := make([]*encounterv2pb.Zone, 0, len(space.Regions))
-	for _, r := range space.Regions {
-		zones = append(zones, &encounterv2pb.Zone{
-			Id:        r.ID,
-			Archetype: string(r.Archetype),
-		})
+	out := make([]*encounterv2pb.Zone, 0, len(zones))
+	for _, zone := range zones {
+		pbZone := &encounterv2pb.Zone{Id: zone.ID, ParentId: zone.ParentID}
+		if zone.Name != nil {
+			pbZone.Name = *zone.Name
+		}
+		if zone.Archetype != nil {
+			pbZone.Archetype = string(*zone.Archetype)
+		}
+		out = append(out, pbZone)
 	}
-	return zones
+	return out
 }
 
 // themeToProto projects SpaceData.Theme onto the wire verbatim (rpg-

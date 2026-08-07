@@ -12,6 +12,7 @@ import (
 	v2encounter "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v2/encounter"
 	"github.com/KirkDiggler/rpg-toolkit/encounter/core"
 	"github.com/KirkDiggler/rpg-toolkit/encounter/events"
+	"github.com/KirkDiggler/rpg-toolkit/encounter/perception"
 )
 
 type TranslateSuite struct {
@@ -159,6 +160,56 @@ func (s *TranslateSuite) TestTranslateEvent_EntityAppearedEvent_HappyPath() {
 	s.Require().Equal(int32(-2), hex.GetPosition().GetZ())
 	s.Require().Len(hex.GetContents(), 1)
 	s.Require().Equal("char-A", hex.GetContents()[0].GetEntityId())
+}
+
+// TestTranslateEvent_ProviderObservationPassThrough proves live fog facts are
+// copied from the provider event, rather than reconstructed from SpaceData or
+// post-event Memory. It covers all KnownHex fields, including explicit facing.
+func (s *TranslateSuite) TestTranslateEvent_ProviderObservationPassThrough() {
+	const viewer = core.PlayerID("player-B")
+	position := core.Hex{Q: 3, R: -1, S: -2}
+	other := core.Hex{Q: 2, R: -1, S: -1}
+	facing := uint32(0)
+	observation := events.KnownHex{
+		Position: position,
+		State:    int(perception.KnowledgeStateRemembered),
+		Terrain:  int(perception.TerrainKindDifficult),
+		ZoneID:   "inner",
+		Edges: []events.KnownHexEdge{{
+			From: position, To: other, BlocksMovement: true, BlocksLoS: true,
+			DoorID: "door-1", DoorLocked: true,
+		}},
+		Contents: []events.KnownHexPlacement{{EntityID: "prop-1", Facing: &facing}},
+	}
+
+	revealed := events.NewHexRevealedEvent("enc-1", 9, map[core.PlayerID]events.HexRevealedSlice{
+		viewer: {Hexes: core.NewHexSet(position), Observations: []events.KnownHex{observation}},
+	})
+	out, err := v2encounter.TranslateEvent(revealed, viewer, s.now)
+	s.Require().NoError(err)
+	record := out.GetHexKnowledgeChanged().GetHexes()[0]
+	s.Require().Equal(encounterv2pb.HexState_HEX_STATE_REMEMBERED, record.GetState())
+	s.Require().Equal(encounterv2pb.TerrainType_TERRAIN_TYPE_DIFFICULT, record.GetTerrain())
+	s.Require().Equal("inner", record.GetZoneId())
+	s.Require().Len(record.GetEdges(), 1)
+	s.Require().Equal("door-1", record.GetEdges()[0].GetId())
+	s.Require().Equal(encounterv2pb.WallKind_WALL_KIND_DOOR_LOCKED, record.GetEdges()[0].GetKind())
+	s.Require().Len(record.GetContents(), 1)
+	s.Require().NotNil(record.GetContents()[0].Facing)
+	s.Require().Equal(uint32(0), record.GetContents()[0].GetFacing())
+
+	appeared := events.NewEntityAppearedEvent("enc-1", 10, "prop-1", position,
+		map[core.PlayerID]struct{}{viewer: {}}, map[core.PlayerID]events.KnownHex{viewer: observation})
+	out, err = v2encounter.TranslateEvent(appeared, viewer, s.now)
+	s.Require().NoError(err)
+	s.Require().Equal("inner", out.GetHexKnowledgeChanged().GetHexes()[0].GetZoneId())
+
+	disappeared := events.NewEntityDisappearedEvent("enc-1", 11, "prop-1",
+		map[core.PlayerID]core.Hex{viewer: position}, map[core.PlayerID]events.KnownHex{viewer: observation})
+	out, err = v2encounter.TranslateEvent(disappeared, viewer, s.now)
+	s.Require().NoError(err)
+	s.Require().Equal(encounterv2pb.HexState_HEX_STATE_REMEMBERED, out.GetHexKnowledgeChanged().GetHexes()[0].GetState())
+	s.Require().Equal("inner", out.GetHexKnowledgeChanged().GetHexes()[0].GetZoneId())
 }
 
 func (s *TranslateSuite) TestTranslateEvent_EntityAppearedEvent_ViewerNotInPerPlayerReturnsErrViewerSawNothing() {

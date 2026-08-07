@@ -1245,38 +1245,41 @@ func (s *ProjectSuite) TestProjectFor_SpaceWithNoRegions_ZonesNilThemeEmpty() {
 	}
 }
 
-// TestProjectFor_SpaceZones_ProjectsMultipleRegionsInDeclaredOrder proves
-// rpg-api#687's zones/archetypes projection: Space.zones must carry one
-// Zone per SpaceData.Regions entry, with id/archetype copied verbatim, IN
-// THE SAME ORDER SpaceData.Regions declares them — deliberately NOT
-// alphabetical ("region-c" < "region-a" would fail an accidental-sort
-// bug) so this discriminates a passthrough from a sort.
-func (s *ProjectSuite) TestProjectFor_SpaceZones_ProjectsMultipleRegionsInDeclaredOrder() {
-	data := tkenc.NewData("enc-multi-region")
+// TestProjectFor_SpaceZones_ProjectsOnlyAuthorizedSemanticFacts proves that
+// snapshot/reconnect metadata comes from Encounter.AuthorizedZones, not the
+// global SpaceData. A known inner scope exposes itself and its ancestor, with
+// provider metadata and optional root-parent presence preserved verbatim.
+func (s *ProjectSuite) TestProjectFor_SpaceZones_ProjectsOnlyAuthorizedSemanticFacts() {
+	data := tkenc.NewData("enc-semantic-zones")
 	data.Mode = core.ModeFreeRoam
-	alice := newPlayerData("player-alice", "char-alice", originHex, 2)
-	data.Players = map[core.PlayerID]*tkenc.PlayerData{"player-alice": alice}
+	entrance := tkenc.ArchetypeEntrance
+	chamber := tkenc.ArchetypeChamber
+	outerName := "Outer"
 	data.Space = &tkenc.SpaceData{
-		Width: 20, Height: 10,
+		FloorSource: tkenc.FloorSourceCanvas,
+		Width:       20, Height: 10,
 		Theme: "crypt",
-		Regions: []tkenc.RegionData{
-			{ID: "region-c", Archetype: tkenc.ArchetypeEntrance, Hexes: core.NewHexSet(originHex)},
-			{ID: "region-a", Archetype: tkenc.ArchetypeCorridor, Hexes: core.NewHexSet(core.Hex{Q: 1, R: -1, S: 0})},
-			{ID: "region-b", Archetype: tkenc.ArchetypeBoss, Hexes: core.NewHexSet(core.Hex{Q: 2, R: -2, S: 0})},
+		SemanticRegions: []tkenc.SemanticRegionData{
+			{ID: "outer", Name: &outerName, Archetype: &entrance, Cells: core.NewHexSet(originHex, core.Hex{Q: 1, R: -1, S: 0})},
+			{ID: "inner", Archetype: &chamber, Cells: core.NewHexSet(originHex)},
+			{ID: "hidden", Cells: core.NewHexSet(core.Hex{Q: 8, R: -8, S: 0})},
 		},
 	}
+	s.seedPlayer(data, "player-alice", "char-alice", originHex, 2)
 
 	pb, err := v2encounter.ProjectFor(context.Background(), data, "player-alice", s.broker, nil, s.now)
 	s.Require().NoError(err)
 
 	zones := pb.GetSpace().GetZones()
-	s.Require().Len(zones, 3)
-	s.Require().Equal("region-c", zones[0].GetId())
-	s.Require().Equal("entrance", zones[0].GetArchetype())
-	s.Require().Equal("region-a", zones[1].GetId())
-	s.Require().Equal("corridor", zones[1].GetArchetype())
-	s.Require().Equal("region-b", zones[2].GetId())
-	s.Require().Equal("boss", zones[2].GetArchetype())
+	s.Require().Len(zones, 2)
+	s.Require().Equal("inner", zones[0].GetId())
+	s.Require().Equal("chamber", zones[0].GetArchetype())
+	s.Require().Equal("outer", zones[0].GetParentId())
+	s.Require().NotNil(zones[0].ParentId)
+	s.Require().Equal("outer", zones[1].GetId())
+	s.Require().Equal("Outer", zones[1].GetName())
+	s.Require().Equal("entrance", zones[1].GetArchetype())
+	s.Require().Nil(zones[1].ParentId, "root parent must remain absent, never an empty sentinel")
 }
 
 // TestProjectFor_HexZoneId_SetViaRegionMembership_NotGeometry proves

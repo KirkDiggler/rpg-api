@@ -89,6 +89,47 @@ func newTestOrchestrator(t *testing.T) (*authoring.Orchestrator, *dungeonregistr
 	return orch, registry, dir
 }
 
+// TestPutDungeon_ProjectsSemanticRegionsFromProviderVerbatim covers the API
+// adapter boundary rather than dungeonspec's provider test: the production
+// PutDungeon path must preserve declaration order, canonical cells, and
+// optional parent presence without interpreting region semantics.
+func TestPutDungeon_ProjectsSemanticRegionsFromProviderVerbatim(t *testing.T) {
+	const yamlText = `version: 1
+key: semantic-regions
+name: Semantic Regions
+canvas: { width: 3, height: 2 }
+rooms: []
+regions:
+  - id: outer
+    cells: [[0,0], [0,1]]
+  - id: inner
+    cells: [[0,0]]
+  - id: empty
+    cells: []
+`
+	orch, _, _ := newTestOrchestrator(t)
+
+	out, err := orch.PutDungeon(context.Background(), &authoring.PutDungeonInput{
+		Key: "semantic-regions", YAML: yamlText, ValidateOnly: true,
+	})
+	require.NoError(t, err)
+	require.True(t, out.Success)
+	require.NotNil(t, out.FloorPlan)
+
+	regions := out.FloorPlan.Regions
+	require.Len(t, regions, 3)
+	require.Equal(t, "outer", regions[0].ID)
+	require.Equal(t, []authoring.FloorPlanCell{{Column: 0, Row: 0}, {Column: 0, Row: 1}}, regions[0].Cells)
+	require.Nil(t, regions[0].ParentID)
+	require.Equal(t, "inner", regions[1].ID)
+	require.Equal(t, []authoring.FloorPlanCell{{Column: 0, Row: 0}}, regions[1].Cells)
+	require.NotNil(t, regions[1].ParentID)
+	require.Equal(t, "outer", *regions[1].ParentID)
+	require.Equal(t, "empty", regions[2].ID)
+	require.Empty(t, regions[2].Cells)
+	require.Nil(t, regions[2].ParentID)
+}
+
 // --- case 1: ContentDir == "" at New -> construction error ---
 
 func TestNew_ContentDirEmpty_ReturnsConstructionError(t *testing.T) {

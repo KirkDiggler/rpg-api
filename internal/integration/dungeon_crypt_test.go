@@ -862,29 +862,24 @@ func (s *DungeonCryptSuite) TestSpaceZonesAndHexZoneId_ProjectRegionsOnTheWire()
 	s.Require().NoError(err)
 	space := resp.GetEncounter().GetSpace()
 
-	// Space.zones names all 3 crypt regions with their toolkit-assigned
-	// archetype.
-	zones := space.GetZones()
-	s.Require().Len(zones, 3, "all 3 crypt regions must be named as zones")
-	byArchetype := make(map[string]string, 3) // archetype -> zone id
-	for _, z := range zones {
-		byArchetype[z.GetArchetype()] = z.GetId()
-	}
-	s.Require().Contains(byArchetype, "entrance")
-	s.Require().Contains(byArchetype, "corridor")
-	s.Require().Contains(byArchetype, "boss")
+	// Legacy crypt Regions are structural seed metadata, not authored
+	// SemanticRegions. AuthorizedZones intentionally exposes neither those
+	// global regions nor an invented zone for root/unpainted cells. This is a
+	// deliberate fog-contract update: the former expectation that all three
+	// global crypt regions were disclosed at connect leaked hidden scope names.
+	s.Require().Empty(space.GetZones(), "unpainted legacy crypt cells disclose no zones")
 
 	// Verbatim theme passthrough: the crypt spec sets Theme="crypt".
 	s.Require().Equal("crypt", space.GetTheme(),
 		"InitDungeon's crypt spec sets Theme=\"crypt\"; the wire must carry it verbatim")
 
-	// Alice spawns at the entrance — her own revealed hex set must include
-	// that hex tagged with the entrance region's zone id.
-	entranceZoneID := byArchetype["entrance"]
+	// The provider's observation carries the legacy entrance ID verbatim, but
+	// its name is not authorized through Space.zones. This test asserts only
+	// that the API preserves that event/snapshot fact without deriving it.
 	spawnHex := hexRecordAt(space.GetHexes(), encData.Space.Entrance)
 	s.Require().NotNil(spawnHex, "alice's entrance spawn hex must be in her revealed set")
-	s.Require().Equal(entranceZoneID, spawnHex.GetZoneId(),
-		"the entrance hex must carry the entrance region's zone id")
+	s.Require().Equal("entrance", spawnHex.GetZoneId(),
+		"the fixed CryptDungeonParams provider observation must pass through verbatim")
 
 	// Now form a sightline into the boss region via the live stream and
 	// prove the INCREMENTAL HexKnowledgeChanged event (not just the connect-
@@ -924,7 +919,6 @@ func (s *DungeonCryptSuite) TestSpaceZonesAndHexZoneId_ProjectRegionsOnTheWire()
 	s.Require().NoError(err, "moving onto the boss-region monster's hex must not be blocked once both doors are open")
 
 	postMove := drainAvailable(events, 1500*time.Millisecond)
-	bossZoneID := byArchetype["boss"]
 	var sawAny bool
 	var sawZoneID string
 	for _, ev := range postMove {
@@ -938,8 +932,8 @@ func (s *DungeonCryptSuite) TestSpaceZonesAndHexZoneId_ProjectRegionsOnTheWire()
 		}
 	}
 	s.Require().True(sawAny, "the boss-region monster's hex must appear in a live HexKnowledgeChanged event")
-	s.Require().Equal(bossZoneID, sawZoneID,
-		"a hex revealed mid-session via the live stream must carry its zone_id too, not just connect-time hexes")
+	s.Require().Equal("boss", sawZoneID,
+		"the fixed CryptDungeonParams provider observation must pass through verbatim")
 }
 
 // streamEvents starts the ONE background reader for stream's entire

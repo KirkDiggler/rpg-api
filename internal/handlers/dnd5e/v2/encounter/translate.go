@@ -424,8 +424,11 @@ func moverDisclosedEntities(
 
 func translateHexRevealedEvent(e *events.HexRevealedEvent, viewer core.PlayerID, now time.Time) (*encounterv2pb.EncounterEvent, error) {
 	slice, ok := e.PerPlayer[viewer]
-	if !ok || len(slice.Hexes) == 0 {
+	if !ok || (len(slice.Hexes) == 0 && len(slice.Observations) == 0) {
 		return nil, ErrViewerSawNothing
+	}
+	if len(slice.Observations) > 0 {
+		return translateKnownHexes(e.Sequence(), now, slice.Observations, nil), nil
 	}
 	// HexRevealedSlice.Hexes is core.HexSet which is map[Hex]struct{} — each
 	// newly-visible hex becomes a HEX_STATE_VISIBLE HexRecord. Contents is left
@@ -579,6 +582,9 @@ func translateEntityAppearedEvent(e *events.EntityAppearedEvent, viewer core.Pla
 	if _, ok := e.PerPlayer[viewer]; !ok {
 		return nil, ErrViewerSawNothing
 	}
+	if observation, ok := e.Observations[viewer]; ok {
+		return translateKnownHexes(e.Sequence(), now, []events.KnownHex{observation}, []*encounterv2pb.Entity{{Id: string(e.Entity)}}), nil
+	}
 	obs := perception.HexObservation{
 		Position: e.Position,
 		State:    perception.KnowledgeStateVisible,
@@ -641,6 +647,10 @@ func translateEntityAppearedEventWithData(
 ) (*encounterv2pb.EncounterEvent, error) {
 	if _, ok := e.PerPlayer[viewer]; !ok {
 		return nil, ErrViewerSawNothing
+	}
+	if observation, ok := e.Observations[viewer]; ok {
+		known := []events.KnownHex{observation}
+		return translateKnownHexes(e.Sequence(), now, known, entitiesForKnownHexes(ctx, charRepo, data, known)), nil
 	}
 
 	entity := entityForID(ctx, charRepo, data, e.Entity)
@@ -807,6 +817,9 @@ func translateEntityDisappearedEvent(e *events.EntityDisappearedEvent, viewer co
 	if !ok {
 		return nil, ErrViewerSawNothing
 	}
+	if observation, ok := e.Observations[viewer]; ok {
+		return translateKnownHexes(e.Sequence(), now, []events.KnownHex{observation}, nil), nil
+	}
 	obs := perception.HexObservation{
 		Position: lastKnown,
 		State:    perception.KnowledgeStateRemembered,
@@ -909,6 +922,8 @@ func translateEntityDisappearedEvent(e *events.EntityDisappearedEvent, viewer co
 // shape — defensive paths that should not occur in the live stream (data is
 // always loaded immediately before this call) but must degrade safely
 // rather than panic or drop the event.
+//
+//nolint:unparam // Retains injectable enrichment seams for its direct translator tests; Wave 1 live events use provider observations above.
 func translateEntityDisappearedEventWithData(
 	ctx context.Context, charRepo characterrepo.Repository,
 	e *events.EntityDisappearedEvent, viewer core.PlayerID, now time.Time,
@@ -968,6 +983,53 @@ func translateEntityDisappearedEventWithData(
 // placement this id is already carrying still resolves rather than being
 // silently dropped — the id itself is never fabricated, only the enrichment
 // is allowed to be missing.
+// translateKnownHexes maps the provider's immutable event observations to the
+// wire field-for-field. It deliberately receives no SpaceData, RegionAt result,
+// Memory, or visibility calculation: those are provider-owned facts.
+func translateKnownHexes(
+	sequence uint64, now time.Time, known []events.KnownHex, entities []*encounterv2pb.Entity,
+) *encounterv2pb.EncounterEvent {
+	return &encounterv2pb.EncounterEvent{
+		Sequence:  int64(sequence), //nolint:gosec // sequence is monotonic; fits int64
+		Timestamp: timestamppb.New(now),
+		Event: &encounterv2pb.EncounterEvent_HexKnowledgeChanged{
+			HexKnowledgeChanged: &encounterv2pb.HexKnowledgeChanged{
+				Hexes:    knownHexesToProto(known),
+				Entities: entities,
+			},
+		},
+	}
+}
+
+// entitiesForKnownHexes enriches only entity identities referenced by an
+// already-authorized provider observation. It never derives placement or
+// visibility from encounter state.
+func entitiesForKnownHexes(
+	ctx context.Context, charRepo characterrepo.Repository, data *encounter.Data, known []events.KnownHex,
+) []*encounterv2pb.Entity {
+	ids := make(map[core.EntityID]struct{})
+	for _, observation := range known {
+		for _, placement := range observation.Contents {
+			ids[placement.EntityID] = struct{}{}
+		}
+	}
+	out := make([]*encounterv2pb.Entity, 0, len(ids))
+	for _, observation := range known {
+		for _, placement := range observation.Contents {
+			if _, ok := ids[placement.EntityID]; !ok {
+				continue
+			}
+			delete(ids, placement.EntityID)
+			entity := entityForID(ctx, charRepo, data, placement.EntityID)
+			if entity == nil {
+				entity = &encounterv2pb.Entity{Id: string(placement.EntityID)}
+			}
+			out = append(out, entity)
+		}
+	}
+	return out
+}
+
 func entitiesForPlacements(
 	ctx context.Context, charRepo characterrepo.Repository, data *encounter.Data, placements []perception.Placement,
 ) []*encounterv2pb.Entity {

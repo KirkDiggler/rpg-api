@@ -120,3 +120,30 @@ func TestBuildFloorPlan_RoomChainProjectionRegression(t *testing.T) {
 	require.Equal(t, dungeonspec.FloorPlanCell{Column: 0, Row: 4}, plan.Entrance)
 	require.NotEmpty(t, plan.Edges)
 }
+
+func TestBuildFloorPlan_SemanticRegionsMapProviderFactsVerbatim(t *testing.T) {
+	const source = `version: 1
+key: semantic-region-projection
+name: Semantic Region Projection
+canvas: { width: 3, height: 2 }
+rooms: []
+regions:
+  - id: outer
+    cells: [[0,0], [0,1]]
+  - id: inner
+    cells: [[0,0]]
+  - id: empty
+    cells: []
+`
+	compiled, err := dungeonspec.LoadWithConfig([]byte(source), dungeonspec.LoadConfig{PartyStartSeatCount: 1})
+	require.NoError(t, err)
+	plan, err := dungeonspec.BuildFloorPlan(context.Background(), dungeonspec.BuildFloorPlanInput{Compiled: compiled, Seed: 1})
+	require.NoError(t, err)
+	require.Len(t, plan.Regions, 3)
+	require.Equal(t, "outer", plan.Regions[0].ID)
+	require.Nil(t, plan.Regions[0].ParentID)
+	require.Equal(t, "inner", plan.Regions[1].ID)
+	require.Equal(t, "outer", *plan.Regions[1].ParentID)
+	require.Equal(t, []dungeonspec.FloorPlanCell{{Column: 0, Row: 0}}, plan.Regions[1].Cells)
+	require.Nil(t, plan.Regions[2].ParentID)
+}

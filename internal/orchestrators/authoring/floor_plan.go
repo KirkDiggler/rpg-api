@@ -24,6 +24,14 @@ type FloorPlanConnector struct {
 	Column     int
 }
 
+// FloorPlanRegion is one provider-authored semantic scope. ParentID is nil
+// when the provider resolves the scope directly under the implicit root.
+type FloorPlanRegion struct {
+	ID       string
+	Cells    []FloorPlanCell
+	ParentID *string
+}
+
 // FloorPlanCell is an absolute provider-produced grid cell.
 type FloorPlanCell struct {
 	Column int
@@ -49,6 +57,7 @@ type FloorPlanEdge struct {
 // FloorPlan is PutDungeon's provider-produced layout response.
 type FloorPlan struct {
 	Rooms      []FloorPlanRoom
+	Regions    []FloorPlanRegion
 	Connectors []FloorPlanConnector
 	Width      int
 	Height     int
@@ -82,6 +91,19 @@ func buildFloorPlan(ctx context.Context, compiled dungeonspec.CompiledDungeon, s
 	for index, room := range providerPlan.Rooms {
 		plan.Rooms[index] = FloorPlanRoom{ID: room.ID, Archetype: room.Archetype, Width: room.Width, StartColumn: room.StartColumn}
 	}
+	if providerPlan.Regions != nil {
+		plan.Regions = make([]FloorPlanRegion, len(providerPlan.Regions))
+		for index, region := range providerPlan.Regions {
+			plan.Regions[index] = FloorPlanRegion{
+				ID:       region.ID,
+				Cells:    make([]FloorPlanCell, len(region.Cells)),
+				ParentID: cloneOptionalString(region.ParentID),
+			}
+			for cellIndex, cell := range region.Cells {
+				plan.Regions[index].Cells[cellIndex] = floorPlanCellFromProvider(cell)
+			}
+		}
+	}
 	for index, connector := range providerPlan.Connectors {
 		plan.Connectors[index] = FloorPlanConnector{
 			DoorID: connector.DoorID, Locked: connector.Locked,
@@ -102,4 +124,12 @@ func buildFloorPlan(ctx context.Context, compiled dungeonspec.CompiledDungeon, s
 
 func floorPlanCellFromProvider(cell dungeonspec.FloorPlanCell) FloorPlanCell {
 	return FloorPlanCell{Column: cell.Column, Row: cell.Row}
+}
+
+func cloneOptionalString(value *string) *string {
+	if value == nil {
+		return nil
+	}
+	clone := *value
+	return &clone
 }
