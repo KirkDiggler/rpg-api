@@ -878,7 +878,8 @@ func (s *DungeonCryptSuite) TestSpaceZonesAndHexZoneId_ProjectRegionsOnTheWire()
 	// that the API preserves that event/snapshot fact without deriving it.
 	spawnHex := hexRecordAt(space.GetHexes(), encData.Space.Entrance)
 	s.Require().NotNil(spawnHex, "alice's entrance spawn hex must be in her revealed set")
-	s.Require().NotEmpty(spawnHex.GetZoneId(), "provider-observed entrance zone_id must pass through")
+	s.Require().Equal("entrance", spawnHex.GetZoneId(),
+		"the fixed CryptDungeonParams provider observation must pass through verbatim")
 
 	// Now form a sightline into the boss region via the live stream and
 	// prove the INCREMENTAL HexKnowledgeChanged event (not just the connect-
@@ -931,8 +932,8 @@ func (s *DungeonCryptSuite) TestSpaceZonesAndHexZoneId_ProjectRegionsOnTheWire()
 		}
 	}
 	s.Require().True(sawAny, "the boss-region monster's hex must appear in a live HexKnowledgeChanged event")
-	s.Require().NotEmpty(sawZoneID,
-		"a live provider-observed zone_id must pass through without an API RegionAt lookup")
+	s.Require().Equal("boss", sawZoneID,
+		"the fixed CryptDungeonParams provider observation must pass through verbatim")
 }
 
 // streamEvents starts the ONE background reader for stream's entire

@@ -12,6 +12,7 @@ import (
 	v2encounter "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v2/encounter"
 	"github.com/KirkDiggler/rpg-toolkit/encounter/core"
 	"github.com/KirkDiggler/rpg-toolkit/encounter/events"
+	"github.com/KirkDiggler/rpg-toolkit/encounter/perception"
 )
 
 type TranslateSuite struct {
@@ -171,8 +172,8 @@ func (s *TranslateSuite) TestTranslateEvent_ProviderObservationPassThrough() {
 	facing := uint32(0)
 	observation := events.KnownHex{
 		Position: position,
-		State:    2, // remembered
-		Terrain:  3, // difficult
+		State:    int(perception.KnowledgeStateRemembered),
+		Terrain:  int(perception.TerrainKindDifficult),
 		ZoneID:   "inner",
 		Edges: []events.KnownHexEdge{{
 			From: position, To: other, BlocksMovement: true, BlocksLoS: true,
