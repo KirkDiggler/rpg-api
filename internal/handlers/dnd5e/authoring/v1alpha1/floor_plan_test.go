@@ -54,3 +54,20 @@ func TestToProtoFloorPlan_CanvasPreservesProviderProjection(t *testing.T) {
 	require.Equal(t, authoringv1alpha1.FloorPlanEdgeKind_FLOOR_PLAN_EDGE_KIND_DOOR, got.GetEdges()[0].GetKind())
 	require.Equal(t, "canvas-provider-contract-authored-door-1--2-1--1--1-0", got.GetEdges()[0].GetDoorId())
 }
+
+func TestToProtoFloorPlan_RegionsPreservesCellsAndParentPresence(t *testing.T) {
+	parent := "outer"
+	plan := &authoringorch.FloorPlan{Regions: []authoringorch.FloorPlanRegion{
+		{ID: "outer", Cells: []authoringorch.FloorPlanCell{{Column: 0, Row: 0}}},
+		{ID: "inner", Cells: []authoringorch.FloorPlanCell{{Column: 0, Row: 0}}, ParentID: &parent},
+	}}
+
+	got := toProtoFloorPlan(plan)
+	require.Len(t, got.GetRegions(), 2)
+	require.Nil(t, got.GetRegions()[0].ParentId)
+	require.Equal(t, "inner", got.GetRegions()[1].GetId())
+	require.Equal(t, "outer", got.GetRegions()[1].GetParentId())
+	require.NotNil(t, got.GetRegions()[1].ParentId)
+	require.Equal(t, int32(0), got.GetRegions()[1].GetCells()[0].GetColumn())
+	require.Equal(t, int32(0), got.GetRegions()[1].GetCells()[0].GetRow())
+}
