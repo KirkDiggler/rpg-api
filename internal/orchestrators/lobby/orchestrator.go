@@ -23,6 +23,7 @@ import (
 	lobbyrepo "github.com/KirkDiggler/rpg-api/internal/repositories/lobby"
 	tkenc "github.com/KirkDiggler/rpg-toolkit/encounter"
 
+	"github.com/KirkDiggler/rpg-api/internal/dungeonregistry"
 	"github.com/KirkDiggler/rpg-api/internal/pkg/idgen"
 )
 
@@ -45,8 +46,10 @@ type MovementResolverBuilder func(data *tkenc.Data) tkenc.MovementResolver
 // internal/orchestrators/encounter/v2.CharacterResolverBuilder.
 type CharacterResolverBuilder func(data *tkenc.Data) tkenc.CharacterResolver
 
-// defaultPartyCap is the Dungeon Night shape (lobby-surface.md "Party cap").
-const defaultPartyCap = 4
+// DefaultPartyCap is the normal product roster capacity. It is host policy,
+// not a universal toolkit maximum; content, authoring, and StartEncounter pass
+// this value into the toolkit's party-start configuration for the normal path.
+const DefaultPartyCap = 4
 
 // Config holds the dependencies for an Orchestrator.
 type Config struct {
@@ -97,8 +100,21 @@ type Config struct {
 	// StartEncounter. Required.
 	EncounterIDGenerator idgen.Generator
 
+	// Registry is the shared, concurrency-safe live dungeon-spec registry
+	// (internal/dungeonregistry) — the SAME pointer cmd/server/server.go
+	// also passes into the authoring orchestrator's Config, so a
+	// PutDungeon's registry swap is visible to the very next
+	// StartEncounter with no restart (plan.md's "Architecture decision:
+	// the shared live registry"). Required. Built once at startup via
+	// LoadContentRegistry — New() itself never reads RPG_CONTENT_DIR;
+	// that construction-time "operator/config mistake must fail loudly"
+	// guarantee now lives at LoadContentRegistry's call site instead of
+	// here (a behavior migration from this field's predecessor,
+	// contentSpecs, which loadContentSpecs built inline).
+	Registry *dungeonregistry.Registry
+
 	// PartyCap is the max member count JoinLobby allows. Optional — defaults
-	// to 4 (lobby-surface.md "Party cap").
+	// to DefaultPartyCap (lobby-surface.md "Party cap").
 	PartyCap int
 
 	// Now supplies the current time. Optional — defaults to time.Now.
@@ -116,10 +132,10 @@ type Config struct {
 	// deployment today) is a no-op, zero player-facing change.
 	//
 	// Validated here at construction, not deferred to first request: must
-	// resolve via either the content registry (and not be a DISABLED
-	// content key — a load-error key set as the override fails loudly at
-	// boot too, same posture as any other Config validation failure) or
-	// the legacy dungeonSpecs map. An override naming nothing real is a
+	// resolve via either Registry (and not be a DISABLED content key — a
+	// load-error key set as the override fails loudly at boot too, same
+	// posture as any other Config validation failure) or the legacy
+	// dungeonSpecs map. An override naming nothing real is a
 	// deploy-time misconfiguration, not something that should surface only
 	// on the first StartEncounter call.
 	DungeonKeyOverride string
@@ -144,11 +160,10 @@ type Orchestrator struct {
 	now                    func() time.Time
 	locks                  *keyedMutex
 
-	// contentSpecs is the content-hosted dungeon spec registry (Task E2),
-	// built ONCE here at construction by loadContentSpecs — StartEncounter
-	// resolves against this stored map (resolveContentDungeonSpec), never
+	// registry is Config.Registry — the shared live dungeon-spec registry.
+	// StartEncounter resolves against it (resolveContentDungeonSpec), never
 	// by calling content.AllSpecs/SpecByKey again per request.
-	contentSpecs map[DungeonKey]contentSpecResult
+	registry *dungeonregistry.Registry
 
 	// dungeonKeyOverride is Config.DungeonKeyOverride, already validated
 	// to resolve (Task E2b) — "" when RPG_DUNGEON_KEY was unset at
@@ -196,32 +211,26 @@ func New(cfg *Config) (*Orchestrator, error) {
 	if cfg.EncounterIDGenerator == nil {
 		return nil, errors.New("lobby orchestrator: Config.EncounterIDGenerator is required")
 	}
+	if cfg.Registry == nil {
+		return nil, errors.New("lobby orchestrator: Config.Registry is required")
+	}
 	if cfg.PartyCap < 0 {
 		return nil, errors.New("lobby orchestrator: Config.PartyCap must not be negative")
 	}
 	partyCap := cfg.PartyCap
 	if partyCap == 0 {
-		partyCap = defaultPartyCap
+		partyCap = DefaultPartyCap
 	}
 	now := cfg.Now
 	if now == nil {
 		now = time.Now
 	}
 
-	// Content-hosted dungeon specs (Task E2): built once here, never
-	// per-request. An unreadable RPG_CONTENT_DIR fails construction
-	// loudly rather than silently degrading to embedded-only content —
-	// see loadContentSpecs' doc.
-	contentSpecs, err := loadContentSpecs()
-	if err != nil {
-		return nil, err
-	}
-
-	// RPG_DUNGEON_KEY override (Task E2b): validated NOW, against the
-	// registry just built above, so a misconfigured override fails
-	// construction loudly rather than deferring to StartEncounter's first
-	// real call.
-	if err := validateDungeonKeyOverride(cfg.DungeonKeyOverride, contentSpecs); err != nil {
+	// RPG_DUNGEON_KEY override (Task E2b): validated NOW, against
+	// cfg.Registry (built by the caller — see LoadContentRegistry — before
+	// New() ever runs), so a misconfigured override fails construction
+	// loudly rather than deferring to StartEncounter's first real call.
+	if err := validateDungeonKeyOverride(cfg.DungeonKeyOverride, cfg.Registry); err != nil {
 		return nil, err
 	}
 
@@ -240,7 +249,7 @@ func New(cfg *Config) (*Orchestrator, error) {
 		partyCap:               partyCap,
 		now:                    now,
 		locks:                  newKeyedMutex(),
-		contentSpecs:           contentSpecs,
+		registry:               cfg.Registry,
 		dungeonKeyOverride:     DungeonKey(cfg.DungeonKeyOverride),
 	}, nil
 }

@@ -28,7 +28,6 @@ package integration_test
 import (
 	"context"
 	"fmt"
-	"sort"
 	"testing"
 	"time"
 
@@ -308,6 +307,36 @@ func planWalk(space *tkenc.SpaceData, doors map[core.EntityID]*tkenc.DoorData, f
 	return nil, fmt.Errorf("no walkable route from %+v to %+v", from, target)
 }
 
+type moveAdjacentToInput struct {
+	EncounterID string
+	CharacterID string
+	Occupied    core.Hex
+	TurnCap     int
+}
+
+type moveAdjacentToOutput struct{}
+
+// moveAdjacentTo walks to a reachable neighbor of an occupied target. Occupied
+// endpoints are intentionally not valid Move destinations (rpg-toolkit#893),
+// so visibility tests must form their sightline without overlapping entities.
+func (s *DungeonCryptSuite) moveAdjacentTo(input *moveAdjacentToInput) (*moveAdjacentToOutput, error) {
+	data, err := s.srv.EncRepoV2.Get(s.ctx, input.EncounterID)
+	if err != nil {
+		return nil, err
+	}
+	from := data.Players[core.PlayerID("alice")].View.Position
+	for _, neighbor := range perception.HexNeighbors(input.Occupied) {
+		if _, planErr := planWalk(data.Space, data.Doors, from, neighbor); planErr != nil {
+			continue
+		}
+		if err := s.moveAlongPath(input.EncounterID, input.CharacterID, neighbor, input.TurnCap); err != nil {
+			return nil, err
+		}
+		return &moveAdjacentToOutput{}, nil
+	}
+	return nil, fmt.Errorf("no reachable approach hex adjacent to occupied target %+v", input.Occupied)
+}
+
 // moveAlongPath reloads persisted geometry and replans after every real RPC.
 // Each submitted destination is adjacent and chunks contain at most one turn's
 // six 5ft steps; closed doors and all persisted blockers are avoided locally.
@@ -373,10 +402,43 @@ func isHexNeighbor(from, to core.Hex) bool {
 	return false
 }
 
+// walkAdjacentToDoor moves alice to a hex adjacent to doorID before any
+// Interact call (rpg-toolkit#864: OpenDoor/AttemptUnlock now require
+// adjacency). Tries each of the door's 6 neighbors via moveAlongPath until
+// one is reachable — the "wrong side" neighbors (across the still-closed
+// door, potentially in an unexplored/unconnected region) are expected to
+// fail planWalk's BFS; the near-side neighbor succeeds. A no-op if alice is
+// already there (moveAlongPath returns immediately when from == target).
+func (s *DungeonCryptSuite) walkAdjacentToDoor(encounterID, characterID, doorID string) {
+	data, err := s.srv.EncRepoV2.Get(s.ctx, encounterID)
+	s.Require().NoError(err)
+	door, ok := data.Doors[core.EntityID(doorID)]
+	s.Require().True(ok, "door %q must exist in the encounter", doorID)
+
+	var walkErr error
+	for _, neighbor := range perception.HexNeighbors(door.Position) {
+		if walkErr = s.moveAlongPath(encounterID, characterID, neighbor, 10); walkErr == nil {
+			return
+		}
+	}
+	s.Require().NoError(walkErr, "no reachable approach hex adjacent to door %q", doorID)
+}
+
 // openCryptDoor uses the existing Interact -> SubmitCheck path when the
 // toolkit-owned crypt connector is locked. It supplies only the d20 roll; the
 // toolkit owns the configured DC, ability, tool, and success side effect.
+//
+// rpg-toolkit#864: Interact (OpenDoor/AttemptUnlock) now requires the actor
+// to be adjacent to the door, so this walks alice there first via
+// walkAdjacentToDoor — she was previously interacting from wherever she
+// happened to be (sometimes her spawn point, hexes away), which is exactly
+// the unvalidated-range shortcut #864 closes. This does not affect any of
+// this suite's sightline/reveal assertions: walking to be ADJACENT to a
+// still-closed door does not grant a sightline PAST it (that still requires
+// the door to open AND a further Move forming line of sight), which is what
+// every "must not reveal" assertion in this file actually depends on.
 func (s *DungeonCryptSuite) openCryptDoor(encounterID, characterID, doorID string) {
+	s.walkAdjacentToDoor(encounterID, characterID, doorID)
 	resp, err := s.srv.EncounterClientV2.Interact(s.authCtx("alice"), &encounterv2pb.InteractRequest{
 		EncounterId: encounterID, TargetEntityId: doorID,
 	})
@@ -442,21 +504,57 @@ func (s *DungeonCryptSuite) TestStartEncounter_SpawnsAtEntrance_ProjectsCanonica
 // production crypt reuses the established unlock flow. The API supplies only
 // the d20 roll; all lock configuration and resolution remain toolkit-owned.
 //
-// The wire-projection half of this test changed under rpg-api-protos#197:
-// this test never moves alice — it Interacts with the boss door directly by
-// id from her entrance spawn, two closed connector doors away. Before this
-// contract, the door's locked state projected onto the wire unconditionally
-// (the same "every viewer's snapshot carries every door regardless of
-// RevealedHexes" leak TestStartEncounter_SpawnsAtEntrance_
-// ProjectsCanonicalCryptDoors's boss-door assertion closes). Now it must NOT
-// appear at all — Interact can resolve a check against a door alice has
-// never seen (that's a server-authoritative mechanic, unaffected by this
-// contract), but the WIRE must not let her observe its lock state remotely.
-// Persisted state (verified directly via EncRepoV2.Get below) is the
-// authoritative proof the failed/successful checks actually did the right
-// thing; the wire assertions only prove they didn't leak.
+// The wire-projection half of this test changed under rpg-api-protos#197,
+// and again under rpg-toolkit#864 (see the KNOWN LIMITATION note on the test
+// itself): originally this test never moved alice at all — it Interacted
+// with the boss door directly by id from her entrance spawn, two closed
+// connector doors away, proving that a door's locked state doesn't leak onto
+// the wire "unconditionally" (the "every viewer's snapshot carries every
+// door regardless of RevealedHexes" leak TestStartEncounter_
+// SpawnsAtEntrance_ProjectsCanonicalCryptDoors's boss-door assertion closes).
+// #864 requires Interact/AttemptUnlock to be adjacency-gated, and adjacency
+// to a door reveals it — so "Interact with a door alice has never seen" is
+// no longer reachable; alice must walk to the door (through the now-open
+// entrance connector) before interacting. Persisted state (verified directly
+// via EncRepoV2.Get below) remains the authoritative proof the failed/
+// successful checks did the right thing; the remaining wire assertion (at
+// spawn, before any movement) is the part of the original wire-leak proof
+// that's still meaningful post-#864.
+// KNOWN LIMITATION (rpg-toolkit#864 rebase, flagged for coordinator review —
+// not resolved unilaterally by this fork): this test's wire-projection half
+// used to prove a door alice had NEVER SEEN could still be Interact-ed
+// (server-authoritative check, no leak onto the wire). rpg-toolkit#864 now
+// requires adjacency for Interact/AttemptUnlock, and adjacency to a door
+// necessarily reveals that door's own hex (confirmed empirically: standing
+// next to the still-locked boss door DOES put its Wall/edge on the wire) —
+// so "attempt a check against a door you've never seen" is no longer a
+// reachable scenario at all, and the original "must not leak even after a
+// failed/successful check attempt" assertions are now testing something
+// that can't happen. This rewrite keeps a genuine wire-leak proof (the boss
+// door is invisible from spawn, before any movement) and keeps the fully
+// unaffected persisted-state assertions (Locked/Open via EncRepoV2.Get), but
+// drops the two "still doesn't leak after interacting" assertions rather
+// than leave them silently vacuous. If the pre-#864 wire-leak-while-
+// unseen contract still matters, closing that gap needs a design call, not
+// a mechanical test fix — flagging rather than deciding.
 func (s *DungeonCryptSuite) TestBossLock_FailedThenSuccessfulCheck_ProjectsPersistedDoorState() {
 	encounterID, characterID, _ := s.startCryptDungeon("boss-lock", "alice")
+
+	// Baseline: from spawn, before any movement, the boss door must not be
+	// on the wire at all — this is the wire-leak proof that's still valid
+	// under #864 (genuinely unseen, not merely "un-interacted-with").
+	spawnProjection, err := s.srv.EncounterClientV2.GetEncounter(s.authCtx("alice"), &encounterv2pb.GetEncounterRequest{EncounterId: encounterID})
+	s.Require().NoError(err)
+	s.Require().Nil(doorEdgeByID(spawnProjection.GetEncounter().GetSpace().GetHexes(), cryptBossDoorID),
+		"the boss door must not project onto the wire from spawn, before alice has ever seen it")
+
+	// rpg-toolkit#864: AttemptUnlock now requires adjacency. The entrance
+	// connector (unlocked, per TestStartEncounter's own assertion) is a
+	// genuine physical blocker between alice's spawn and the boss door —
+	// walkAdjacentToDoor's BFS cannot route through a still-closed door —
+	// so it must be opened first.
+	s.openCryptDoor(encounterID, characterID, cryptEntranceDoorID)
+	s.walkAdjacentToDoor(encounterID, characterID, cryptBossDoorID)
 
 	prompt, err := s.srv.EncounterClientV2.Interact(s.authCtx("alice"), &encounterv2pb.InteractRequest{
 		EncounterId: encounterID, TargetEntityId: cryptBossDoorID,
@@ -478,11 +576,6 @@ func (s *DungeonCryptSuite) TestBossLock_FailedThenSuccessfulCheck_ProjectsPersi
 	s.Require().True(afterFailure.Doors[core.EntityID(cryptBossDoorID)].Locked)
 	s.Require().False(afterFailure.Doors[core.EntityID(cryptBossDoorID)].Open)
 
-	failedProjection, err := s.srv.EncounterClientV2.GetEncounter(s.authCtx("alice"), &encounterv2pb.GetEncounterRequest{EncounterId: encounterID})
-	s.Require().NoError(err)
-	s.Require().Nil(doorEdgeByID(failedProjection.GetEncounter().GetSpace().GetHexes(), cryptBossDoorID),
-		"the still-unseen boss door's locked state must not leak onto the wire, even after a failed check attempt on it")
-
 	_, err = s.srv.EncounterClientV2.Interact(s.authCtx("alice"), &encounterv2pb.InteractRequest{
 		EncounterId: encounterID, TargetEntityId: cryptBossDoorID,
 	})
@@ -497,16 +590,6 @@ func (s *DungeonCryptSuite) TestBossLock_FailedThenSuccessfulCheck_ProjectsPersi
 	s.Require().NoError(err)
 	s.Require().False(afterSuccess.Doors[core.EntityID(cryptBossDoorID)].Locked)
 	s.Require().True(afterSuccess.Doors[core.EntityID(cryptBossDoorID)].Open)
-
-	// Still must not leak: opening the door alone doesn't reveal it, matching
-	// gate fact (4) proved for the boss monster in
-	// TestBossMonster_NoEntityAppeared_UntilBothDoorsOpenAndSightlinesForm —
-	// alice hasn't moved an inch this whole test, so she has no sightline to
-	// the boss door regardless of its now-open state.
-	succeededProjection, err := s.srv.EncounterClientV2.GetEncounter(s.authCtx("alice"), &encounterv2pb.GetEncounterRequest{EncounterId: encounterID})
-	s.Require().NoError(err)
-	s.Require().Nil(doorEdgeByID(succeededProjection.GetEncounter().GetSpace().GetHexes(), cryptBossDoorID),
-		"the now-open boss door still must not leak onto the wire — opening a door doesn't reveal it, sight does")
 }
 
 // TestEntranceSighting_StartsPocketScopedCombat is gate fact (3): a Move
@@ -582,11 +665,6 @@ func (s *DungeonCryptSuite) TestBossMonster_NoEntityAppeared_UntilBothDoorsOpenA
 	bossMonster := bossIDs[0]
 
 	s.Require().Len(encData.Doors, 2, "the crypt spec's 3-region chain has exactly 2 connector doors")
-	doorIDs := make([]string, 0, 2)
-	for id := range encData.Doors {
-		doorIDs = append(doorIDs, string(id))
-	}
-	sort.Strings(doorIDs)
 
 	stream, err := s.srv.EncounterClientV2.StreamEncounter(s.authCtx("alice"),
 		&encounterv2pb.StreamEncounterRequest{EncounterId: encounterID})
@@ -620,17 +698,25 @@ func (s *DungeonCryptSuite) TestBossMonster_NoEntityAppeared_UntilBothDoorsOpenA
 	replay := drainAvailable(events, 500*time.Millisecond)
 	s.Require().False(sawBossMonster(replay), "boss-region monster must not appear in the connect-time replay")
 
-	// Open the first connector door. This alone must NOT reveal the boss
+	// Open the entrance connector first. This alone must NOT reveal the boss
 	// — it is still one closed door and a whole corridor away.
-	s.openCryptDoor(encounterID, characterID, doorIDs[0])
+	//
+	// rpg-toolkit#864: must be opened in PHYSICAL traversal order now
+	// (entrance, then boss) rather than the old alphabetically-sorted
+	// doorIDs[0]/doorIDs[1] — walkAdjacentToDoor's BFS (inside
+	// openCryptDoor) cannot route through a still-closed door, and the
+	// alphabetical sort happened to put the boss door first. Neither
+	// assertion below cares WHICH door is "first", only that opening one
+	// (then both) doesn't leak the boss — unaffected by the reordering.
+	s.openCryptDoor(encounterID, characterID, cryptEntranceDoorID)
 	afterFirstDoor := drainAvailable(events, 500*time.Millisecond)
 	s.Require().False(sawBossMonster(afterFirstDoor),
 		"opening one connector door alone must not reveal the boss-region monster")
 
-	// Open the second connector door too. Both doors open STILL must not
+	// Open the boss connector too. Both doors open STILL must not
 	// reveal the boss by itself — only the doorway's own progressive
 	// reveal (Slice 1), not a whole-region one; a sightline must still form.
-	s.openCryptDoor(encounterID, characterID, doorIDs[1])
+	s.openCryptDoor(encounterID, characterID, cryptBossDoorID)
 	afterSecondDoor := drainAvailable(events, 500*time.Millisecond)
 	s.Require().False(sawBossMonster(afterSecondDoor),
 		"opening both connector doors alone must not reveal the boss-region monster — a sightline must still form")
@@ -642,12 +728,17 @@ func (s *DungeonCryptSuite) TestBossMonster_NoEntityAppeared_UntilBothDoorsOpenA
 	s.Require().NoError(err)
 	target := after.Monsters[bossMonster].Position
 
-	err = s.moveAlongPath(encounterID, characterID, target, 10)
-	s.Require().NoError(err, "moving through both open connector doors onto the boss monster's hex must not be blocked")
+	_, err = s.moveAdjacentTo(&moveAdjacentToInput{
+		EncounterID: encounterID,
+		CharacterID: characterID,
+		Occupied:    target,
+		TurnCap:     10,
+	})
+	s.Require().NoError(err, "moving through both open connector doors adjacent to the boss monster must not be blocked")
 
 	postMove := drainAvailable(events, 1500*time.Millisecond)
 	s.Require().True(sawBossMonster(postMove),
-		"a sightline that actually forms (alice standing on the boss monster's hex) must emit EntityAppeared")
+		"a sightline that actually forms from beside the boss monster must emit EntityAppeared")
 }
 
 func (s *DungeonCryptSuite) TestStaticObstacles_ProjectOnlyWhenRevealedAndRemainExplored() {
@@ -680,15 +771,12 @@ func (s *DungeonCryptSuite) TestStaticObstacles_ProjectOnlyWhenRevealedAndRemain
 	events := s.streamEvents(stream)
 	_ = drainAvailable(events, 500*time.Millisecond)
 
-	doorIDs := make([]string, 0, len(encData.Doors))
-	for id := range encData.Doors {
-		doorIDs = append(doorIDs, string(id))
-	}
-	sort.Strings(doorIDs)
-	s.Require().Len(doorIDs, 2)
-	s.openCryptDoor(encounterID, characterID, doorIDs[0])
+	s.Require().Len(encData.Doors, 2)
+	// rpg-toolkit#864: physical traversal order (entrance, then boss), not
+	// an alphabetical sort — see TestBossMonster_...'s identical note.
+	s.openCryptDoor(encounterID, characterID, cryptEntranceDoorID)
 	_ = drainAvailable(events, 500*time.Millisecond)
-	s.openCryptDoor(encounterID, characterID, doorIDs[1])
+	s.openCryptDoor(encounterID, characterID, cryptBossDoorID)
 	_ = drainAvailable(events, 500*time.Millisecond)
 
 	current, err := s.srv.EncRepoV2.Get(s.ctx, encounterID)
@@ -809,29 +897,24 @@ func (s *DungeonCryptSuite) TestSpaceZonesAndHexZoneId_ProjectRegionsOnTheWire()
 	s.Require().NoError(err)
 	space := resp.GetEncounter().GetSpace()
 
-	// Space.zones names all 3 crypt regions with their toolkit-assigned
-	// archetype.
-	zones := space.GetZones()
-	s.Require().Len(zones, 3, "all 3 crypt regions must be named as zones")
-	byArchetype := make(map[string]string, 3) // archetype -> zone id
-	for _, z := range zones {
-		byArchetype[z.GetArchetype()] = z.GetId()
-	}
-	s.Require().Contains(byArchetype, "entrance")
-	s.Require().Contains(byArchetype, "corridor")
-	s.Require().Contains(byArchetype, "boss")
+	// Legacy crypt Regions are structural seed metadata, not authored
+	// SemanticRegions. AuthorizedZones intentionally exposes neither those
+	// global regions nor an invented zone for root/unpainted cells. This is a
+	// deliberate fog-contract update: the former expectation that all three
+	// global crypt regions were disclosed at connect leaked hidden scope names.
+	s.Require().Empty(space.GetZones(), "unpainted legacy crypt cells disclose no zones")
 
 	// Verbatim theme passthrough: the crypt spec sets Theme="crypt".
 	s.Require().Equal("crypt", space.GetTheme(),
 		"InitDungeon's crypt spec sets Theme=\"crypt\"; the wire must carry it verbatim")
 
-	// Alice spawns at the entrance — her own revealed hex set must include
-	// that hex tagged with the entrance region's zone id.
-	entranceZoneID := byArchetype["entrance"]
+	// The provider's observation carries the legacy entrance ID verbatim, but
+	// its name is not authorized through Space.zones. This test asserts only
+	// that the API preserves that event/snapshot fact without deriving it.
 	spawnHex := hexRecordAt(space.GetHexes(), encData.Space.Entrance)
 	s.Require().NotNil(spawnHex, "alice's entrance spawn hex must be in her revealed set")
-	s.Require().Equal(entranceZoneID, spawnHex.GetZoneId(),
-		"the entrance hex must carry the entrance region's zone id")
+	s.Require().Equal("entrance", spawnHex.GetZoneId(),
+		"the fixed CryptDungeonParams provider observation must pass through verbatim")
 
 	// Now form a sightline into the boss region via the live stream and
 	// prove the INCREMENTAL HexKnowledgeChanged event (not just the connect-
@@ -846,14 +929,11 @@ func (s *DungeonCryptSuite) TestSpaceZonesAndHexZoneId_ProjectRegionsOnTheWire()
 	_ = drainAvailable(events, 500*time.Millisecond) // drain connect-time replay
 
 	s.Require().Len(encData.Doors, 2, "the crypt spec's 3-region chain has exactly 2 connector doors")
-	doorIDs := make([]string, 0, 2)
-	for id := range encData.Doors {
-		doorIDs = append(doorIDs, string(id))
-	}
-	sort.Strings(doorIDs)
-	s.openCryptDoor(encounterID, characterID, doorIDs[0])
+	// rpg-toolkit#864: physical traversal order (entrance, then boss), not
+	// an alphabetical sort — see TestBossMonster_...'s identical note.
+	s.openCryptDoor(encounterID, characterID, cryptEntranceDoorID)
 	_ = drainAvailable(events, 500*time.Millisecond)
-	s.openCryptDoor(encounterID, characterID, doorIDs[1])
+	s.openCryptDoor(encounterID, characterID, cryptBossDoorID)
 	_ = drainAvailable(events, 500*time.Millisecond)
 
 	bossMonster := bossIDs[0]
@@ -869,12 +949,17 @@ func (s *DungeonCryptSuite) TestSpaceZonesAndHexZoneId_ProjectRegionsOnTheWire()
 	// take more than one turn to reach. moveAlongPath replans persisted-geometry
 	// BFS routes after each real MoveEntity chunk (at most six adjacent
 	// destinations) and uses the real EndTurn RPC when turn-based movement
-	// requires another turn, never adjusting the target itself.
-	err = s.moveAlongPath(encounterID, characterID, target, 10)
-	s.Require().NoError(err, "moving onto the boss-region monster's hex must not be blocked once both doors are open")
+	// requires another turn. moveAdjacentTo selects a reachable neighboring
+	// destination so the sightline forms without overlapping the monster.
+	_, err = s.moveAdjacentTo(&moveAdjacentToInput{
+		EncounterID: encounterID,
+		CharacterID: characterID,
+		Occupied:    target,
+		TurnCap:     10,
+	})
+	s.Require().NoError(err, "moving adjacent to the boss-region monster must not be blocked once both doors are open")
 
 	postMove := drainAvailable(events, 1500*time.Millisecond)
-	bossZoneID := byArchetype["boss"]
 	var sawAny bool
 	var sawZoneID string
 	for _, ev := range postMove {
@@ -888,8 +973,8 @@ func (s *DungeonCryptSuite) TestSpaceZonesAndHexZoneId_ProjectRegionsOnTheWire()
 		}
 	}
 	s.Require().True(sawAny, "the boss-region monster's hex must appear in a live HexKnowledgeChanged event")
-	s.Require().Equal(bossZoneID, sawZoneID,
-		"a hex revealed mid-session via the live stream must carry its zone_id too, not just connect-time hexes")
+	s.Require().Equal("boss", sawZoneID,
+		"the fixed CryptDungeonParams provider observation must pass through verbatim")
 }
 
 // streamEvents starts the ONE background reader for stream's entire

@@ -536,32 +536,15 @@ func (h *Handler) translateForStream(
 	}
 
 	if revealedEvt, ok := evt.(*tkevents.HexRevealedEvent); ok {
-		// rpg-api#687: load the encounter so newly-revealed hexes carry their
-		// zone_id immediately (data.Space.RegionAt), the same identity a
-		// reconnect's ProjectFor snapshot would give them — see
-		// translateHexRevealedEventWithData's doc for why this read isn't
-		// racy (mirrors the EntityAppearedEvent branch just above).
-		data, err := h.encRepo.Get(ctx, string(encID))
-		if err != nil {
-			return nil, fmt.Errorf("load encounter for hex-revealed zone enrichment: %w", err)
-		}
-		return singleOrErr(translateHexRevealedEventWithData(revealedEvt, viewer, h.now(), data))
+		// The provider snapshots complete per-viewer observations at publish.
+		// Consume them directly: no RegionAt, SpaceData, or Memory read-back.
+		return singleOrErr(translateHexRevealedEvent(revealedEvt, viewer, h.now()))
 	}
 
 	if disappearEvt, ok := evt.(*tkevents.EntityDisappearedEvent); ok {
-		// The bare translator (TranslateEvent's fallback) cannot tell "the
-		// viewer can no longer see this hex at all" apart from "the entity
-		// left a hex the viewer is still looking straight at" — see
-		// translateEntityDisappearedEventWithData's doc. Needs a real LOS
-		// check against the room, so it loads data the same way the
-		// EntityAppeared/HexRevealed branches above do.
-		data, err := h.encRepo.Get(ctx, string(encID))
-		if err != nil {
-			return nil, fmt.Errorf("load encounter for entity-disappeared visibility check: %w", err)
-		}
-		return singleOrErr(translateEntityDisappearedEventWithData(
-			ctx, h.combatResolverConfig.CharacterRepo, disappearEvt, viewer, h.now(), data, h.broker,
-		))
+		// The provider snapshots the post-disappearance observation at publish.
+		// Its state and contents are authoritative for this event.
+		return singleOrErr(translateEntityDisappearedEvent(disappearEvt, viewer, h.now()))
 	}
 
 	return singleOrErr(TranslateEvent(evt, viewer, h.now()))

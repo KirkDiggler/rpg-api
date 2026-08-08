@@ -10,6 +10,7 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/encounter/dungeonspec"
 
 	"github.com/KirkDiggler/rpg-api/internal/content"
+	"github.com/KirkDiggler/rpg-api/internal/dungeonregistry"
 )
 
 // DungeonKey selects a named dungeon specification passed to the
@@ -112,16 +113,6 @@ func resolveDungeonSpec(key DungeonKey, seed int64) (DungeonKey, tkenc.DungeonPa
 // crypt path (dungeonSpecs, resolveDungeonSpec, seedRegionMonsters) is
 // untouched by this addition.
 
-// contentSpecResult stores either a successfully compiled content-backed
-// dungeon spec, or the load failure that key's file produced at startup.
-// A failed spec is not dropped from the registry: resolveContentDungeonSpec
-// still reports its key as FOUND (so it never silently falls through to
-// the legacy map), just disabled.
-type contentSpecResult struct {
-	compiled dungeonspec.CompiledDungeon
-	err      error
-}
-
 // DisabledDungeonKeyError means a content-backed dungeon key resolved to a
 // FILE that exists but failed rpg-toolkit's dungeonspec.Load at startup —
 // a broken content commit that slipped past CI, or a broken RPG_CONTENT_DIR
@@ -141,22 +132,30 @@ func (e *DisabledDungeonKeyError) Unwrap() error {
 	return e.Cause
 }
 
-// loadContentSpecs builds the startup registry of every content-hosted
-// dungeon spec by calling content.AllSpecs() exactly ONCE (New calls this
-// once at construction and stores the result on *Orchestrator —
-// resolveContentDungeonSpec below is a plain map lookup against that
-// stored result, never a second content.AllSpecs/SpecByKey call: those
-// re-read RPG_CONTENT_DIR and re-parse every file on every call, which is
-// fine for a one-time startup pass and wrong for a per-request path).
+// LoadContentRegistry builds the startup *dungeonregistry.Registry of
+// every content-hosted dungeon spec by calling content.AllSpecs() exactly
+// ONCE. It compiles every spec through LoadWithConfig with DefaultPartyCap,
+// the normal product roster capacity used by the startup authoring and runtime
+// paths. Exported so cmd/server/server.go can call it directly at startup
+// (the Architecture decision in plan.md: the registry is built ONCE,
+// outside either orchestrator, then passed by pointer into BOTH
+// lobbyorch.Config.Registry and the new authoringorch.Config.Registry) —
+// lobbyorch.New() itself no longer builds a registry; it requires one
+// already built. Callers must invoke this BEFORE lobbyorch.New(): an
+// unreadable RPG_CONTENT_DIR fails HERE, loudly, rather than silently
+// degrading to embedded-only content — the same "operator/config mistake
+// must fail construction" posture Task E2b already applies to
+// RPG_DUNGEON_KEY, just moved to this new call site now that New() no
+// longer touches RPG_CONTENT_DIR at all.
 //
 // A spec whose header decodes but whose body fails dungeonspec.Load (a
-// schema/business-rule violation) is stored as a contentSpecResult
-// carrying that error, not dropped — see contentSpecResult's doc. Returns
-// an error only when content.AllSpecs() itself fails: RPG_CONTENT_DIR set
-// but unreadable as a directory, an operator/config mistake that must
-// fail lobbyorch.New() loudly (Task E2b's same validate-at-construction
-// posture for RPG_DUNGEON_KEY) rather than silently falling back to
-// embedded-only content.
+// schema/business-rule violation) is stored as a dungeonregistry.Entry
+// carrying that Err, not dropped — see Entry's doc. Also calls
+// dungeonspec.Decode (separately from Load, which discards the decoded
+// Spec after compiling — CompiledDungeon carries no Name field) purely to
+// capture each spec's declared display Name for Entry.Name, which
+// ListDungeons needs (plan.md S1's Name-capture note: zero toolkit
+// change, one extra already-public function call).
 //
 // Logs one line per problem found while building the registry, from BOTH
 // failure sources this registry can hit: content.AllSpecs' own
@@ -167,16 +166,14 @@ func (e *DisabledDungeonKeyError) Unwrap() error {
 // one DEBUG line per RPG_CONTENT_DIR key that shadows an embedded key of
 // the same name — confirmation, for an author mid edit-restart loop, that
 // their override actually took effect.
-func loadContentSpecs() (map[DungeonKey]contentSpecResult, error) {
+func LoadContentRegistry() (*dungeonregistry.Registry, error) {
 	specs, problems, err := content.AllSpecs()
 	if err != nil {
-		// No "lobby orchestrator:" prefix here (and content.AllSpecs' own
-		// wrapped error already names RPG_CONTENT_DIR) -- cmd/server/
-		// server.go's lobbyorch.New call site already wraps ANY error from
-		// New with fmt.Errorf("lobby orchestrator: %w", err), so adding it
-		// here would double it up for the one caller who actually sees
-		// this message, the same class of bug Task E3's rider fixed for
-		// validateDungeonKeyOverride.
+		// No "lobby orchestrator:" prefix here -- this function is no
+		// longer lobby-exclusive infrastructure, and its caller
+		// (cmd/server/server.go) wraps any error from it with its own
+		// context, the same class of double-prefix bug Task E3's rider
+		// fixed for validateDungeonKeyOverride.
 		return nil, fmt.Errorf("load content specs (RPG_CONTENT_DIR): %w", err)
 	}
 	for _, p := range problems {
@@ -195,52 +192,68 @@ func loadContentSpecs() (map[DungeonKey]contentSpecResult, error) {
 	// correctness path, so it's worth skipping quietly rather than
 	// failing construction over.
 
-	results := make(map[DungeonKey]contentSpecResult, len(specs))
+	entries := make(map[string]dungeonregistry.Entry, len(specs))
 	for key, raw := range specs {
-		compiled, loadErr := dungeonspec.Load(raw)
+		compiled, loadErr := dungeonspec.LoadWithConfig(raw, dungeonspec.LoadConfig{
+			PartyStartSeatCount: DefaultPartyCap,
+		})
 		if loadErr != nil {
 			slog.Warn("lobby orchestrator: content spec failed to load, key disabled", "key", key, "error", loadErr)
-			results[DungeonKey(key)] = contentSpecResult{err: loadErr}
+			entries[key] = dungeonregistry.Entry{Err: loadErr}
 			continue
 		}
-		results[DungeonKey(key)] = contentSpecResult{compiled: compiled}
+		// Load already Decoded raw successfully as part of compiling --
+		// a second Decode call here failing would mean Load's own
+		// internal Decode and this one disagree, which should be
+		// impossible. Defensive fallback to the key itself as the name
+		// rather than propagating a surprise error, matching this
+		// package's belt-and-suspenders style elsewhere (compile.go's
+		// nil-boss.At guard).
+		name := key
+		if spec, decodeErr := dungeonspec.Decode(raw); decodeErr == nil {
+			name = spec.Name
+		} else {
+			slog.Warn("lobby orchestrator: content spec name capture failed unexpectedly after a successful Load",
+				"key", key, "error", decodeErr)
+		}
+		entries[key] = dungeonregistry.Entry{Compiled: compiled, Name: name}
 	}
-	return results, nil
+	return dungeonregistry.New(entries), nil
 }
 
-// resolveContentDungeonSpec looks up key in the pre-built content registry
-// (o.contentSpecs, built ONCE by loadContentSpecs at construction). The
-// three-value return is deliberate, not a bool: found reports whether key
-// is a content-backed key AT ALL (callers fall through to the legacy
-// dungeonSpecs map when false); when found is true, err distinguishes a
-// spec that compiled cleanly at startup (nil, compiled is ready to use)
-// from one that failed to load (a *DisabledDungeonKeyError wrapping the
-// stored cause) — the caller must fail immediately in that case, never
-// silently fall through to the legacy path for a key that DOES exist in
-// content but is broken. err is the LAST return (not the plan's own
-// example order) to satisfy this repo's error-return lint convention —
-// still three distinct signals, just Go-idiomatic positionally.
+// resolveContentDungeonSpec looks up key in o.registry (Config.Registry,
+// the shared live dungeon-spec registry). The three-value return is
+// deliberate, not a bool: found reports whether key is a content-backed
+// key AT ALL (callers fall through to the legacy dungeonSpecs map when
+// false); when found is true, err distinguishes a spec that compiled
+// cleanly (nil, compiled is ready to use) from one that failed to load (a
+// *DisabledDungeonKeyError wrapping the stored cause) — the caller must
+// fail immediately in that case, never silently fall through to the
+// legacy path for a key that DOES exist in content but is broken. err is
+// the LAST return (not the plan's own example order) to satisfy this
+// repo's error-return lint convention — still three distinct signals,
+// just Go-idiomatic positionally.
 func (o *Orchestrator) resolveContentDungeonSpec(key DungeonKey) (compiled dungeonspec.CompiledDungeon, found bool, err error) {
-	result, ok := o.contentSpecs[key]
+	entry, ok := o.registry.Get(string(key))
 	if !ok {
 		return dungeonspec.CompiledDungeon{}, false, nil
 	}
-	if result.err != nil {
-		return dungeonspec.CompiledDungeon{}, true, &DisabledDungeonKeyError{Key: key, Cause: result.err}
+	if entry.Err != nil {
+		return dungeonspec.CompiledDungeon{}, true, &DisabledDungeonKeyError{Key: key, Cause: entry.Err}
 	}
-	return result.compiled, true, nil
+	return entry.Compiled, true, nil
 }
 
 // validateDungeonKeyOverride checks that override (Config.DungeonKeyOverride,
 // populated from the RPG_DUNGEON_KEY env var — Task E2b's dev-loop
 // mechanism) resolves to a real, ENABLED dungeon spec before construction
 // succeeds. "" (unset) is always valid — a no-op. A non-empty override
-// must resolve via EITHER contentSpecs (the registry loadContentSpecs
-// just built) OR the legacy dungeonSpecs map; a content key that resolves
-// but is DISABLED (its file failed dungeonspec.Load) is rejected here
-// too — an operator pointing RPG_DUNGEON_KEY at a broken key must see a
-// construction failure immediately, not a deferred failure on the first
-// real StartEncounter call.
+// must resolve via EITHER registry (the shared dungeonregistry.Registry
+// Config.Registry supplies) OR the legacy dungeonSpecs map; a content key
+// that resolves but is DISABLED (its file failed dungeonspec.Load) is
+// rejected here too — an operator pointing RPG_DUNGEON_KEY at a broken key
+// must see a construction failure immediately, not a deferred failure on
+// the first real StartEncounter call.
 //
 // Error messages name RPG_DUNGEON_KEY (the env var an operator actually
 // set), not Config.DungeonKeyOverride (the Go field name) — this is the
@@ -250,16 +263,16 @@ func (o *Orchestrator) resolveContentDungeonSpec(key DungeonKey) (compiled dunge
 // wraps ANY error from New with fmt.Errorf("lobby orchestrator: %w", err),
 // so including it here would double it up ("lobby orchestrator: lobby
 // orchestrator: ...") for the one caller that actually sees this message.
-func validateDungeonKeyOverride(override string, contentSpecs map[DungeonKey]contentSpecResult) error {
+func validateDungeonKeyOverride(override string, registry *dungeonregistry.Registry) error {
 	if override == "" {
 		return nil
 	}
 	key := DungeonKey(override)
-	if result, ok := contentSpecs[key]; ok {
-		if result.err != nil {
+	if entry, ok := registry.Get(string(key)); ok {
+		if entry.Err != nil {
 			return fmt.Errorf(
 				"RPG_DUNGEON_KEY %q resolves to a disabled content key: %w",
-				override, result.err)
+				override, entry.Err)
 		}
 		return nil
 	}

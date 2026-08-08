@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	authoringhandler "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/authoring/v1alpha1"
 	lobbyhandler "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/lobby/v1alpha1"
 	character2 "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v1alpha1/character"
 	characterhandlerv2 "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v2/character"
@@ -27,12 +28,14 @@ import (
 	grpc_recovery "github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/recovery"
 
 	apiv1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/api/v1alpha1"
+	authoringv1alpha1pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/authoring/v1alpha1"
 	lobbyv1alpha1pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/lobby/v1alpha1"
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
 	characterv2pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/character"
 	encounterv2pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/encounter"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
 	apiv1alpha1handler "github.com/KirkDiggler/rpg-api/internal/handlers/api/v1alpha1"
+	authoringorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/authoring"
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
 	diceorc "github.com/KirkDiggler/rpg-api/internal/orchestrators/dice"
 	lobbyorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/lobby"
@@ -51,6 +54,10 @@ import (
 // enough for any single playtest session, short enough that abandoned
 // WAITING lobbies don't accumulate forever (lobby-surface.md "Abandonment").
 const lobbyTTL = 24 * time.Hour
+
+// authoringEnabledEnvVar gates AuthoringService registration (plan.md
+// S1). Off by default -- design.md's dev-gated authoring surface.
+const authoringEnabledEnvVar = "RPG_AUTHORING_ENABLED"
 
 var (
 	grpcPort int
@@ -224,6 +231,19 @@ func runServer(_ *cobra.Command, _ []string) error {
 	}
 	encounterv2pb.RegisterEncounterServiceServer(srv, encV2Handler)
 
+	// Shared live dungeon-spec registry (plan.md's "Architecture decision:
+	// the shared live registry") -- built ONCE here, from content.AllSpecs()
+	// + RPG_CONTENT_DIR, and passed BY POINTER into both the lobby
+	// orchestrator's Config below and the authoring orchestrator's Config
+	// further down. This is what makes a PutDungeon visible to the very
+	// next StartEncounter with no restart: a private registry constructed
+	// separately inside either orchestrator would compile and pass its own
+	// tests while silently failing that requirement.
+	dungeonRegistry, err := lobbyorch.LoadContentRegistry()
+	if err != nil {
+		return fmt.Errorf("load dungeon registry: %w", err)
+	}
+
 	// LobbyService v1alpha1 (rpg-api#629): party assembly + the sole encounter
 	// construction path. StartEncounter builds onto the SAME encV2Broker/
 	// encV2Repo the v1alpha2 encounter service reads from, so a freshly
@@ -242,6 +262,7 @@ func runServer(_ *cobra.Command, _ []string) error {
 		LobbyIDGenerator:       idgen.NewUUID("lobby"),
 		JoinRefGenerator:       idgen.NewUUID("join"),
 		EncounterIDGenerator:   idgen.NewUUID(""),
+		Registry:               dungeonRegistry,
 		// RPG_DUNGEON_KEY (Task E2b): the M1 manual-walkthrough mechanism --
 		// unset in every real deployment today (zero player-facing change),
 		// validated at construction below (a misconfigured value fails
@@ -269,6 +290,32 @@ func runServer(_ *cobra.Command, _ []string) error {
 	healthServer.SetServingStatus("api.v1alpha1.DiceService", grpc_health_v1.HealthCheckResponse_SERVING)
 	healthServer.SetServingStatus("dnd5e.api.v1alpha2.encounter.EncounterService", grpc_health_v1.HealthCheckResponse_SERVING)
 	healthServer.SetServingStatus("dnd5e.api.lobby.v1alpha1.LobbyService", grpc_health_v1.HealthCheckResponse_SERVING)
+
+	// AuthoringService v1alpha1 (plan.md S1): PutDungeon, registered ONLY
+	// when RPG_AUTHORING_ENABLED is set. With the gate off, AuthoringService
+	// is simply never registered -- `grpcurl -plaintext ... list` won't show
+	// it, and any call against it gets gRPC's own Unimplemented, not a
+	// custom check (design.md's "absent/Unimplemented" error-handling
+	// line, satisfied by construction rather than a runtime flag check
+	// inside the handler).
+	if os.Getenv(authoringEnabledEnvVar) != "" {
+		contentDir := os.Getenv("RPG_CONTENT_DIR") // authoringorch.New fails fast if empty -- design.md's "gate requires RPG_CONTENT_DIR" decision
+		authoringOrch, err := authoringorch.New(&authoringorch.Config{
+			Registry:            dungeonRegistry,
+			ContentDir:          contentDir,
+			PartyStartSeatCount: lobbyorch.DefaultPartyCap,
+		})
+		if err != nil {
+			return fmt.Errorf("authoring orchestrator: %w", err)
+		}
+		authoringHandlerImpl, err := authoringhandler.New(&authoringhandler.HandlerConfig{Orchestrator: authoringOrch})
+		if err != nil {
+			return fmt.Errorf("authoring handler: %w", err)
+		}
+		authoringv1alpha1pb.RegisterAuthoringServiceServer(srv, authoringHandlerImpl)
+		healthServer.SetServingStatus("dnd5e.api.authoring.v1alpha1.AuthoringService", grpc_health_v1.HealthCheckResponse_SERVING)
+		log.Println("⚠️  RPG_AUTHORING_ENABLED set - AuthoringService registered")
+	}
 
 	reflection.Register(srv)
 

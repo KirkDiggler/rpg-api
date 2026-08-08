@@ -66,6 +66,17 @@ func (h *Handler) EndTurn(ctx context.Context, req *encounterv2pb.EndTurnRequest
 //   - ErrPlayerNotInEncounter / ErrEntityOwnershipMismatch → PermissionDenied
 //   - tkenc.Err{EncounterEnded,NotTurnBased,NotYourTurn,NoCombatants} → FailedPrecondition
 //   - ErrNPCChainExhausted → FailedPrecondition
+//   - ErrOutOfRange → FailedPrecondition (rpg-api#747: toolkit#864's range/reach
+//     gate, surfaced via the NPC dispatch loop's NPCAct call. Checked ahead of
+//     the generic ErrNPCAct-wrapped fallback below: driveNPCChain wraps any
+//     non-reaction-pause NPCAct error with ErrNPCAct via a double-%w
+//     fmt.Errorf, and Go's errors.Is traverses every wrapped error in the
+//     chain, so this still matches even though the error is also ErrNPCAct.
+//     In practice this path is defense-in-depth, not a live bug fix: the
+//     toolkit's NPCAct treats an out-of-reach target as a no-op (skip the
+//     turn / skip the attack) rather than an error as of #868's gate-review
+//     fix, so ErrOutOfRange should no longer actually propagate out of
+//     NPCAct — this case guards against a future regression reintroducing it.
 //   - ErrNPCAct / unclassified failures → Internal
 func endTurnStatusError(err error) error {
 	switch {
@@ -85,6 +96,8 @@ func endTurnStatusError(err error) error {
 	case errors.Is(err, tkenc.ErrNoCombatants):
 		return status.Error(codes.FailedPrecondition, err.Error())
 	case errors.Is(err, encounterorch.ErrNPCChainExhausted):
+		return status.Error(codes.FailedPrecondition, err.Error())
+	case errors.Is(err, tkenc.ErrOutOfRange):
 		return status.Error(codes.FailedPrecondition, err.Error())
 	}
 	return status.Errorf(codes.Internal, "end turn: %v", err)

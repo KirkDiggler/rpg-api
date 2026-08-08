@@ -13,7 +13,9 @@ import (
 	"go.uber.org/mock/gomock"
 
 	"github.com/KirkDiggler/rpg-api/internal/apierr"
+	"github.com/KirkDiggler/rpg-api/internal/dungeonregistry"
 	"github.com/KirkDiggler/rpg-api/internal/entities"
+	authoringorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/authoring"
 	lobbyorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/lobby"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	lobbyrepo "github.com/KirkDiggler/rpg-api/internal/repositories/lobby"
@@ -24,6 +26,7 @@ import (
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/refs"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/saves"
+	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
 )
 
 func (s *LobbySuite) seedReadyLobby(id, host string, others ...string) {
@@ -75,6 +78,169 @@ func (s *LobbySuite) TestStartEncounter_Success_ConstructsAndPersistsEncounter()
 	s.Require().NoError(err)
 	s.Require().Equal(lobbyrepo.StatusStarted, lobbyData.Status)
 	s.Require().Equal(out.EncounterID, lobbyData.EncounterID)
+}
+
+// TestStartEncounter_CanvasPutDungeonSurvivesProductionReload proves the
+// restart contract without rebuilding a registry in the test: PutDungeon writes
+// the source, then a fresh production LoadContentRegistry discovers and compiles
+// it, and a fresh runtime StartEncounter consumes that loaded entry.
+func (s *LobbySuite) TestStartEncounter_CanvasPutDungeonSurvivesProductionReload() {
+	const key = "canvas-production-reload"
+	dir := s.T().TempDir()
+	authoringRegistry := dungeonregistry.New(nil)
+	authoring, err := authoringorch.New(&authoringorch.Config{
+		Registry: authoringRegistry, ContentDir: dir, PartyStartSeatCount: lobbyorch.DefaultPartyCap,
+	})
+	s.Require().NoError(err)
+
+	yaml := `version: 1
+key: canvas-production-reload
+name: Canvas Production Reload
+height: 1
+canvas: { width: 4, height: 2 }
+rooms: []
+start: [1, 1]
+place:
+  - { ref: dnd5e:props:altar, at: [1, 0], facing: W }
+  - { ref: dnd5e:monsters:skeleton, at: [2, 0] }
+walls:
+  - { from: [0, 0], to: [0, 1], kind: solid }
+  - { from: [1, 0], to: [1, 1], kind: door }
+`
+	put, err := authoring.PutDungeon(s.ctx, &authoringorch.PutDungeonInput{Key: key, YAML: yaml})
+	s.Require().NoError(err)
+	s.Require().True(put.Success)
+	s.Require().FileExists(filepath.Join(dir, key+".yaml"))
+
+	// This is the production startup loader, not dungeonspec.Load* or a
+	// manually assembled registry. It has to discover the bytes PutDungeon wrote.
+	s.T().Setenv("RPG_CONTENT_DIR", dir)
+	reloadedRegistry, err := lobbyorch.LoadContentRegistry()
+	s.Require().NoError(err)
+	s.Require().NotSame(authoringRegistry, reloadedRegistry)
+	reloadedEntry, ok := reloadedRegistry.Get(key)
+	s.Require().True(ok, "fresh registry must discover PutDungeon's on-disk source")
+	s.Require().NoError(reloadedEntry.Err)
+	s.Require().Equal("Canvas Production Reload", reloadedEntry.Name)
+
+	runtime, err := s.newOrchestratorWithContentDir(dir)
+	s.Require().NoError(err)
+	s.seedReadyLobby("lobby-canvas-production-reload", "alice", "bob")
+	s.expectCharacter("char-alice", "alice", "Alice", 12, 12)
+	s.expectCharacter("char-bob", "bob", "Bob", 11, 11)
+	out, err := runtime.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		PlayerID: "alice", LobbyID: "lobby-canvas-production-reload", DungeonKey: key, RandomSeed: 42,
+	})
+	s.Require().NoError(err)
+
+	data, err := s.encRepo.Get(s.ctx, out.EncounterID)
+	s.Require().NoError(err)
+	anchor := core.HexFromPosition(spatial.Position{X: 1, Y: 1})
+	s.Require().Equal(tkenc.FloorSourceCanvas, data.Space.FloorSource)
+	s.Require().Equal(4, data.Space.Width)
+	s.Require().Equal(2, data.Space.Height)
+	s.Require().Equal(anchor, data.Space.Entrance)
+	s.Require().Len(data.Space.PartyStartPositions, lobbyorch.DefaultPartyCap)
+	s.Require().Equal(anchor, data.Space.PartyStartPositions[0])
+	s.Require().Equal(data.Space.PartyStartPositions[0], data.Players[core.PlayerID("alice")].View.Position)
+	s.Require().Equal(data.Space.PartyStartPositions[1], data.Players[core.PlayerID("bob")].View.Position)
+
+	s.Require().Len(data.Space.Obstacles, 1)
+	prop := data.Space.Obstacles[0]
+	s.Require().Equal("dnd5e:props:altar", prop.Ref)
+	s.Require().Equal(core.HexFromPosition(spatial.Position{X: 1, Y: 0}), prop.Position)
+	s.Require().NotNil(prop.Facing)
+	s.Require().Equal(uint32(3), *prop.Facing, "W is authored facing, not inferred")
+	s.Require().Len(data.Monsters, 1)
+	for _, monster := range data.Monsters {
+		s.Require().Equal("dnd5e:monsters:skeleton", monster.MonsterRef)
+		s.Require().Equal(core.HexFromPosition(spatial.Position{X: 2, Y: 0}), monster.Position)
+	}
+
+	s.Require().Equal([]tkenc.AuthoredEdge{
+		{From: core.HexFromPosition(spatial.Position{X: 0, Y: 1}), To: core.HexFromPosition(spatial.Position{X: 0, Y: 0}), Kind: tkenc.GeneratedEdgeKindSolid},
+		{From: core.HexFromPosition(spatial.Position{X: 1, Y: 1}), To: core.HexFromPosition(spatial.Position{X: 1, Y: 0}), Kind: tkenc.GeneratedEdgeKindDoor, DoorID: "canvas-production-reload-authored-door-1--2-1--1--1-0"},
+	}, data.Space.AuthoredEdges)
+	door, ok := data.Doors[core.EntityID("canvas-production-reload-authored-door-1--2-1--1--1-0")]
+	s.Require().True(ok)
+	s.Require().Equal(core.HexFromPosition(spatial.Position{X: 1, Y: 1}), door.Position)
+}
+
+// TestStartEncounter_AuthoredStartMapsToolkitSeatsToOrderedRoster proves the
+// StartEncounter seam without duplicating toolkit placement: an authored
+// absolute start on the boss room's legal door row becomes Space.Entrance, and
+// every ordered member receives the corresponding toolkit-resolved seat.
+func (s *LobbySuite) TestStartEncounter_AuthoredStartMapsToolkitSeatsToOrderedRoster() {
+	const key = "authored-start"
+	dir := s.T().TempDir()
+	const yaml = `version: 1
+key: authored-start
+name: Authored Start
+height: 8
+start: [12, 4]
+rooms:
+  - id: entrance
+    archetype: entrance
+    width: 6
+  - id: boss
+    archetype: boss
+    width: 8
+    boss: { ref: "dnd5e:monsters:skeleton-captain", at: [4, 2] }
+connectors:
+  - { from: entrance, to: boss }
+`
+	s.Require().NoError(os.WriteFile(filepath.Join(dir, key+".yaml"), []byte(yaml), 0o600))
+	orch, err := s.newOrchestratorWithContentDir(dir)
+	s.Require().NoError(err)
+
+	s.seedReadyLobby("lobby-authored-start", "alice", "bob", "carol", "dave")
+	s.expectCharacter("char-alice", "alice", "Alice", 12, 12)
+	s.expectCharacter("char-bob", "bob", "Bob", 11, 11)
+	s.expectCharacter("char-carol", "carol", "Carol", 10, 10)
+	s.expectCharacter("char-dave", "dave", "Dave", 9, 9)
+
+	out, err := orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		PlayerID: "alice", LobbyID: "lobby-authored-start", DungeonKey: key, RandomSeed: 42,
+	})
+	s.Require().NoError(err)
+
+	data, err := s.encRepo.Get(s.ctx, out.EncounterID)
+	s.Require().NoError(err)
+	wantAnchor := core.HexFromPosition(spatial.Position{X: 12, Y: 4})
+	s.Require().Equal(wantAnchor, data.Space.Entrance,
+		"the toolkit-resolved authored anchor must persist as Space.Entrance")
+	s.Require().Len(data.Space.PartyStartPositions, 4,
+		"normal product capacity must reserve four toolkit-owned seats")
+
+	seen := make(map[core.Hex]struct{}, len(data.Space.PartyStartPositions))
+	for i, playerID := range []core.PlayerID{"alice", "bob", "carol", "dave"} {
+		position := data.Players[playerID].View.Position
+		s.Require().Equal(data.Space.PartyStartPositions[i], position,
+			"member %q must receive toolkit seat %d verbatim", playerID, i)
+		seen[position] = struct{}{}
+	}
+	s.Require().Len(seen, 4, "the toolkit's four returned seats must be distinct")
+}
+
+// TestStartEncounter_PartySpawnCapacityErrorPropagates verifies the API does
+// not derive a fifth coordinate or partially seat a roster beyond the normal
+// four-seat toolkit reservation.
+func (s *LobbySuite) TestStartEncounter_PartySpawnCapacityErrorPropagates() {
+	s.seedReadyLobby("lobby-party-over-capacity", "alice", "bob", "carol", "dave", "erin")
+
+	_, err := s.orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		PlayerID: "alice", LobbyID: "lobby-party-over-capacity",
+	})
+	s.Require().Error(err)
+	var capacityErr *tkenc.PartySpawnCapacityError
+	s.Require().ErrorAs(err, &capacityErr)
+	s.Require().Equal(5, capacityErr.Requested)
+	s.Require().Equal(4, capacityErr.Available)
+
+	lobbyData, getErr := s.lobbyRepo.Get(s.ctx, "lobby-party-over-capacity")
+	s.Require().NoError(getErr)
+	s.Require().Equal(lobbyrepo.StatusWaiting, lobbyData.Status)
+	s.Require().Empty(lobbyData.EncounterID, "capacity failure must happen before any partial encounter persists")
 }
 
 // TestStartEncounter_SeedsHonestCombatSnapshot proves the rpg-api#634 fix:

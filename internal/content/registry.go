@@ -80,3 +80,35 @@ func headerKey(raw []byte) (string, error) {
 	}
 	return header.Key, nil
 }
+
+// FilenameForKey returns the exact filename, within dir, whose declared
+// key: field equals key -- the write-through targeting PutDungeon's
+// "overwrite the originating file" rule needs (design.md's Key rules):
+// AllSpecs/SpecByKey only ever return key -> bytes, discarding the
+// filename inside buildRegistry, so there was no existing way to answer
+// "which FILE currently declares this key" until now. ok=false with a nil
+// error means key isn't declared by anything in dir today -- a brand new
+// key PutDungeon is about to create for the first time, not a failure.
+// dir itself being unreadable propagates the same wrapped error
+// readOverrideDir already produces for AllSpecs/SpecByKey.
+//
+// Reuses readOverrideDir + headerKey verbatim -- the same header-only
+// decode buildRegistry already performs, just returning the filename
+// instead of discarding it, so this never introduces a second, competing
+// notion of "which key does this file declare."
+func FilenameForKey(dir, key string) (filename string, ok bool, err error) {
+	files, err := readOverrideDir(dir)
+	if err != nil {
+		return "", false, err
+	}
+	for _, f := range files {
+		fileKey, keyErr := headerKey(f.raw)
+		if keyErr != nil {
+			continue // malformed/missing key: header -- not a match, not this function's problem to report
+		}
+		if fileKey == key {
+			return f.name, true, nil
+		}
+	}
+	return "", false, nil
+}

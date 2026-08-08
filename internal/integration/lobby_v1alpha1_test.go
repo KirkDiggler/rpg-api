@@ -24,6 +24,7 @@ import (
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	tkenc "github.com/KirkDiggler/rpg-toolkit/encounter"
 	core "github.com/KirkDiggler/rpg-toolkit/encounter/core"
+	"github.com/KirkDiggler/rpg-toolkit/encounter/perception"
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 )
 
@@ -290,6 +291,16 @@ func (s *LobbyV1alpha1IntegrationSuite) TestPartyAssembles_FourPlayers_ThenComba
 	}
 	s.Require().NotEmpty(activePlayer, "an active player must be found before TakeAction")
 
+	// rpg-toolkit#864: TakeAction's melee attack now requires the attacker to
+	// be within weapon reach (1 hex, default) of the target — devcombat.Inject
+	// places the goblin at any unoccupied IN-SIGHT position (findVisiblePosition),
+	// not necessarily adjacent to whichever player initiative happens to make
+	// active. Walk the active player to a hex adjacent to the goblin first
+	// (direct toolkit manipulation, matching advanceUntilPlayerActive's own
+	// setup style — this is scaffolding for the #634 assertion below, not
+	// itself under test).
+	s.walkAdjacentToGoblin(data, core.PlayerID(activePlayer), injectOut.GoblinID)
+
 	// The headline #634 proof: TakeAction against the lobby-created,
 	// characterData.Attach-hydrated player must NOT return ErrNonCombatant.
 	// Pre-#634, isPlayerCombatant rejected EVERY lobby-created player because
@@ -339,6 +350,44 @@ func (s *LobbyV1alpha1IntegrationSuite) advanceUntilPlayerActive(data *tkenc.Dat
 		data = enc.ToData()
 	}
 	s.Require().NoError(s.srv.EncRepoV2.Save(s.ctx, data))
+}
+
+// walkAdjacentToGoblin moves playerID to a hex adjacent to goblinID's
+// CURRENT position via direct toolkit Move + persist (rpg-toolkit#864:
+// TakeAction's melee attack now requires the attacker within weapon reach
+// of the target). Reads the goblin's position fresh from data rather than
+// devcombat.InjectOutput.Position: advanceUntilPlayerActive may have cycled
+// one or more of the goblin's own NPCAct turns first, and its own AI can
+// move it via moveTowardEnemy — using the stale injection-time position
+// intermittently walked the player adjacent to where the goblin USED to be.
+// Reuses dungeon_crypt_test.go's planWalk (same package) to route around
+// the lobby-started room's walls; tries each of the goblin's 6 neighbors
+// until one is reachable. A no-op if the player is already adjacent.
+func (s *LobbyV1alpha1IntegrationSuite) walkAdjacentToGoblin(data *tkenc.Data, playerID core.PlayerID, goblinID core.EntityID) {
+	pd, ok := data.Players[playerID]
+	s.Require().True(ok, "player %q must exist in the encounter", playerID)
+	from := pd.View.Position
+
+	goblin, ok := data.Monsters[goblinID]
+	s.Require().True(ok, "goblin %q must exist in the encounter", goblinID)
+	goblinPos := goblin.Position
+
+	var path []core.Hex
+	var planErr error
+	for _, neighbor := range perception.HexNeighbors(goblinPos) {
+		if neighbor == from {
+			return // already adjacent
+		}
+		if path, planErr = planWalk(data.Space, data.Doors, from, neighbor); planErr == nil {
+			break
+		}
+	}
+	s.Require().NoError(planErr, "no reachable hex adjacent to the injected goblin at %+v", goblinPos)
+
+	enc, err := tkenc.LoadFromData(s.ctx, data, s.srv.BrokerV2, tkenc.WithCombatResolver(testStandInResolver{}))
+	s.Require().NoError(err)
+	s.Require().NoError(enc.Move(playerID, path))
+	s.Require().NoError(s.srv.EncRepoV2.Save(s.ctx, enc.ToData()))
 }
 
 // TestPartyAssembles_FourPlayers_ThenCombatEntry_NPCFirstInitiative_StreamDrivesNPCTurn

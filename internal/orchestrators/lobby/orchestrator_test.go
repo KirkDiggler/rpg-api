@@ -10,6 +10,7 @@ import (
 
 	"go.uber.org/mock/gomock"
 
+	"github.com/KirkDiggler/rpg-api/internal/dungeonregistry"
 	encounterhandlerv2 "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v2/encounter"
 	lobbyorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/lobby"
 	"github.com/KirkDiggler/rpg-api/internal/pkg/idgen"
@@ -40,53 +41,41 @@ func TestNew_NegativePartyCap_ReturnsError(t *testing.T) {
 		LobbyIDGenerator:     idgen.NewSequential("lobby"),
 		JoinRefGenerator:     idgen.NewSequential("ref"),
 		EncounterIDGenerator: idgen.NewSequential("enc"),
+		Registry:             dungeonregistry.New(nil),
 		PartyCap:             -1,
 	})
 	require.Error(t, err)
 }
 
-// TestNew_ContentDirUnreadable_ReturnsConstructionError proves Task E2's
-// content-dir wiring end to end: an RPG_CONTENT_DIR pointing at a path
-// that can't be read must fail lobbyorch.New() loudly, not panic and not
-// silently degrade to embedded-only content — the same "operator/config
-// mistake must fail construction" posture Task E2b applies to
-// RPG_DUNGEON_KEY. Also pins the message content (Copilot PR #710 review):
-// names RPG_CONTENT_DIR (the env var an operator actually set), and drops
-// the "lobby orchestrator:" prefix that would double up once
-// cmd/server/server.go's own lobbyorch.New call site wraps this error with
-// fmt.Errorf("lobby orchestrator: %w", err) — the same class of doubled
-// prefix Task E3's rider fixed for validateDungeonKeyOverride's errors.
-func TestNew_ContentDirUnreadable_ReturnsConstructionError(t *testing.T) {
-	t.Setenv("RPG_CONTENT_DIR", filepath.Join(t.TempDir(), "does-not-exist"))
-
-	ctrl := gomock.NewController(t)
-	_, err := lobbyorch.New(&lobbyorch.Config{
-		LobbyRepo:              lobbyrepo.NewInMemory(),
-		LobbyBroker:            lobbyorch.NewBroker(),
-		CharacterRepo:          charactermock.NewMockRepository(ctrl),
-		EncounterRepo:          encountersv2.NewInMemory(),
-		EncounterBroker:        tkenc.NewBroker(tkenc.NewInMemoryTransport()),
-		BuildCharacterResolver: func(_ *tkenc.Data) tkenc.CharacterResolver { return encounterhandlerv2.StubCharacterResolver{} },
-		BuildCombatResolver: func(_ *tkenc.Data) tkenc.CombatResolver {
-			return nil
-		},
-		BuildMovementResolver: func(_ *tkenc.Data) tkenc.MovementResolver {
-			return nil
-		},
-		LobbyIDGenerator:     idgen.NewSequential("lobby"),
-		JoinRefGenerator:     idgen.NewSequential("ref"),
-		EncounterIDGenerator: idgen.NewSequential("enc"),
-	})
+// TestNew_RegistryRequired proves Config.Registry is a required dependency
+// — a lobbyorch.New() call site (production or test) that forgets to wire
+// the shared registry must fail construction loudly, the same posture
+// every other required Config field in this constructor already has.
+// Content-dir loading itself has moved to LoadContentRegistry, called
+// BEFORE New() now (see TestLoadContentRegistry_ContentDirUnreadable_ReturnsError
+// in dungeon_spec_internal_test.go for that construction-time failure
+// mode's own coverage) — New() itself no longer reads RPG_CONTENT_DIR at
+// all, so this is the replacement for this file's former
+// TestNew_ContentDirUnreadable_ReturnsConstructionError.
+func TestNew_RegistryRequired(t *testing.T) {
+	cfg := baseTestConfig(t)
+	cfg.Registry = nil
+	_, err := lobbyorch.New(cfg)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "RPG_CONTENT_DIR", "message must name the env var an operator set")
-	assert.NotContains(t, err.Error(), "lobby orchestrator", "must not carry a prefix that would double up when server.go wraps it")
+	assert.Contains(t, err.Error(), "Registry")
 }
 
 // baseTestConfig returns the required-fields-only Config every New() test
 // in this file builds on, customizing just the one field under test.
+// Registry is built via LoadContentRegistry() against whatever
+// RPG_CONTENT_DIR is set in the calling test's env at the time this runs
+// (unset in most tests — just the embedded specs) — callers that need a
+// specific RPG_CONTENT_DIR override must t.Setenv it BEFORE calling this.
 func baseTestConfig(t *testing.T) *lobbyorch.Config {
 	t.Helper()
 	ctrl := gomock.NewController(t)
+	registry, err := lobbyorch.LoadContentRegistry()
+	require.NoError(t, err)
 	return &lobbyorch.Config{
 		LobbyRepo:              lobbyrepo.NewInMemory(),
 		LobbyBroker:            lobbyorch.NewBroker(),
@@ -103,6 +92,7 @@ func baseTestConfig(t *testing.T) *lobbyorch.Config {
 		LobbyIDGenerator:     idgen.NewSequential("lobby"),
 		JoinRefGenerator:     idgen.NewSequential("ref"),
 		EncounterIDGenerator: idgen.NewSequential("enc"),
+		Registry:             registry,
 	}
 }
 

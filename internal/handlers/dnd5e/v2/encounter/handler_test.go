@@ -18,6 +18,7 @@ import (
 	encountersv2 "github.com/KirkDiggler/rpg-api/internal/repositories/encounters/v2"
 	tkenc "github.com/KirkDiggler/rpg-toolkit/encounter"
 	core "github.com/KirkDiggler/rpg-toolkit/encounter/core"
+	"github.com/KirkDiggler/rpg-toolkit/tools/environments"
 )
 
 type HandlerSuite struct {
@@ -312,6 +313,73 @@ func (s *HandlerSuite) TestGetEncounter_Success_ReturnsEncounterWithID() {
 	s.Require().NoError(err)
 	s.Require().NotNil(resp.GetEncounter())
 	s.Require().Equal("enc-get-1", resp.GetEncounter().GetId())
+}
+
+// TestGetEncounter_ProjectsOptionalPlacementFacing exercises the real handler
+// and projection path. The toolkit owns authored-facing validation and values;
+// the API only carries pointer presence onto the v1alpha2 Placement wire field.
+func (s *HandlerSuite) TestGetEncounter_ProjectsOptionalPlacementFacing() {
+	facingEast := uint32(0)
+	facingNortheast := uint32(1)
+	facingNorthwest := uint32(2)
+	facingWest := uint32(3)
+	facingSouthwest := uint32(4)
+	facingSoutheast := uint32(5)
+
+	testCases := []struct {
+		id     string
+		facing *uint32
+	}{
+		{id: "prop-absent", facing: nil},
+		{id: "prop-east", facing: &facingEast},
+		{id: "prop-northeast", facing: &facingNortheast},
+		{id: "prop-northwest", facing: &facingNorthwest},
+		{id: "prop-west", facing: &facingWest},
+		{id: "prop-southwest", facing: &facingSouthwest},
+		{id: "prop-southeast", facing: &facingSoutheast},
+	}
+
+	base := tkenc.New(context.Background(), "enc-optional-facing", s.broker)
+	s.Require().NoError(base.InitRoom(20, 20, environments.PatternEmpty))
+	data := base.ToData()
+	data.Space.Obstacles = make([]tkenc.ObstacleData, 0, len(testCases))
+	for index, tc := range testCases {
+		data.Space.Obstacles = append(data.Space.Obstacles, tkenc.ObstacleData{
+			ID:       core.EntityID(tc.id),
+			Ref:      "dnd5e:props:statue-reaper",
+			Position: core.Hex{Q: index + 1, R: -index - 1, S: 0},
+			Facing:   tc.facing,
+		})
+	}
+
+	enc, err := tkenc.LoadFromData(context.Background(), data, s.broker)
+	s.Require().NoError(err)
+	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
+		PlayerID: "player-A", EntityID: "char-A", Position: core.Hex{}, SightRange: 10,
+	}))
+	s.Require().NoError(s.repo.Save(s.ctx, enc.ToData()))
+
+	resp, err := s.handler.GetEncounter(s.ctx, &encounterv2pb.GetEncounterRequest{
+		EncounterId: "enc-optional-facing",
+	})
+	s.Require().NoError(err)
+
+	placements := make(map[string]*encounterv2pb.Placement, len(testCases))
+	for _, record := range resp.GetEncounter().GetSpace().GetHexes() {
+		for _, placement := range record.GetContents() {
+			placements[placement.GetEntityId()] = placement
+		}
+	}
+	for _, tc := range testCases {
+		placement := placements[tc.id]
+		s.Require().NotNil(placement, "%s must be visible on its hex record", tc.id)
+		if tc.facing == nil {
+			s.Require().Nil(placement.Facing, "%s must remain absent, not inferred as E", tc.id)
+			continue
+		}
+		s.Require().NotNil(placement.Facing, "%s must retain explicit facing presence", tc.id)
+		s.Require().Equal(*tc.facing, *placement.Facing, "%s must retain its toolkit-owned direction index", tc.id)
+	}
 }
 
 // --- Interact (Wave 2.7) -----------------------------------------------------

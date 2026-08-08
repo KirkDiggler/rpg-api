@@ -12,11 +12,10 @@
 # (local-toolkit/encounter) and points the replace at that relative path, so
 # it stays inside the build context.
 #
-# Only github.com/KirkDiggler/rpg-toolkit/encounter is overridden — its own
-# sibling-module requires (core, events, tools/spatial, ...) stay at whatever
-# published versions its go.mod already names. Do not extend this script to
-# sync the whole toolkit; add a second `-replace` line the same way if a
-# second module genuinely needs it.
+# Exactly one module may be overridden: github.com/KirkDiggler/rpg-toolkit/encounter.
+# Its sibling-module requires (core, events, tools/spatial, ...) stay at their
+# published versions. Do not add another replace: this script rejects any
+# unapproved or second active replacement.
 #
 # Usage:
 #   scripts/toolkit-local-override.sh on [--src <path-to-rpg-toolkit-checkout>]
@@ -42,6 +41,27 @@ set -euo pipefail
 MODULE="github.com/KirkDiggler/rpg-toolkit/encounter"
 REPO_ROOT="$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)"
 LOCAL_DIR="$REPO_ROOT/local-toolkit/encounter"
+
+# replace_modules prints every module path with an active replace directive.
+# Keeping this list explicit makes status auditable and lets on/off reject a
+# second module rather than silently building a mixed unpublished dependency
+# graph.
+replace_modules() {
+	(cd "$REPO_ROOT" && go mod edit -json | jq -r '.Replace[]? | .Old.Path')
+}
+
+assert_only_approved_override() {
+	local modules=()
+	mapfile -t modules < <(replace_modules)
+	if [ "${#modules[@]}" -gt 1 ]; then
+		echo "error: exactly one local override is permitted; active modules: ${modules[*]}" >&2
+		return 1
+	fi
+	if [ "${#modules[@]}" -eq 1 ] && [ "${modules[0]}" != "$MODULE" ]; then
+		echo "error: unapproved local override for ${modules[0]}; only $MODULE is permitted" >&2
+		return 1
+	fi
+}
 
 usage() {
 	echo "Usage: $0 {on [--src <path>]|off|status}" >&2
@@ -92,6 +112,8 @@ cmd_on() {
 		esac
 	done
 
+	assert_only_approved_override
+
 	local src
 	src="$(resolve_src "$explicit")"
 
@@ -108,6 +130,7 @@ cmd_on() {
 
 	echo "Pointing go.mod at the local copy ..."
 	(cd "$REPO_ROOT" && go mod edit -replace "$MODULE=./local-toolkit/encounter")
+	assert_only_approved_override
 
 	echo "Sanity-building on the host ..."
 	if ! (cd "$REPO_ROOT" && go build ./...); then
@@ -133,6 +156,8 @@ EOF
 }
 
 cmd_off() {
+	assert_only_approved_override
+
 	echo "Dropping the replace directive ..."
 	(cd "$REPO_ROOT" && go mod edit -dropreplace "$MODULE")
 
@@ -149,12 +174,23 @@ cmd_off() {
 }
 
 cmd_status() {
-	local replace
-	replace="$(cd "$REPO_ROOT" && go list -m -f '{{if .Replace}}{{.Replace.Path}} => {{.Replace.Dir}}{{end}}' "$MODULE" 2>/dev/null || true)"
-	if [ -n "$replace" ]; then
-		echo "Override ON: $MODULE => $replace"
-	else
+	local modules=()
+	mapfile -t modules < <(replace_modules)
+	if [ "${#modules[@]}" -eq 0 ]; then
+		echo "Active replace modules (0): none"
 		echo "Override OFF: $MODULE resolves to its published version."
+	else
+		echo "Active replace modules (${#modules[@]}): ${modules[*]}"
+		if ! assert_only_approved_override; then
+			return 1
+		fi
+		local replace
+		replace="$(cd "$REPO_ROOT" && go list -m -f '{{if .Replace}}{{.Replace.Path}} => {{.Replace.Dir}}{{end}}' "$MODULE" 2>/dev/null || true)"
+		if [ -z "$replace" ]; then
+			echo "error: approved module is listed but has no resolvable replacement" >&2
+			return 1
+		fi
+		echo "Override ON: $MODULE => $replace"
 	fi
 	if [ -d "$LOCAL_DIR" ]; then
 		echo "local-toolkit/encounter/ exists on disk ($(find "$LOCAL_DIR" -name '*.go' | wc -l | tr -d ' ') .go files)."

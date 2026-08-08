@@ -898,11 +898,15 @@ func (s *EncounterV2IntegrationSuite) TestStreamEncounter_LiveEventsDoNotDuplica
 // same shape that the toolkit-level test proved.
 func (s *EncounterV2IntegrationSuite) TestInteract_OpenDoor_TwoPlayers() {
 	enc := tkenc.New(context.Background(), "enc-door-1", s.srv.BrokerV2)
-	// SightRange:10 ensures both alice and bob can perceive a door at
-	// distance 4 (per ProjectDoorOpen's visibility check).
+	// rpg-toolkit#864: OpenDoor now requires adjacency, so alice (who
+	// Interacts below) starts adjacent to the door. Bob stays at his
+	// original distance-4 position — SightRange:10 still ensures HE can
+	// perceive the door-open event as a distant viewer (per ProjectDoorOpen's
+	// visibility check), which is this fixture's actual point: a door-open
+	// projects to every in-range viewer, not just the one who opened it.
 	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
 		PlayerID: "alice", EntityID: "char-alice",
-		Position: core.Hex{Q: 0, R: 0, S: 0}, SightRange: 10,
+		Position: core.Hex{Q: 3, R: 0, S: -3}, SightRange: 10,
 	}))
 	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
 		PlayerID: "bob", EntityID: "char-bob",
@@ -1024,12 +1028,13 @@ func (s *EncounterV2IntegrationSuite) TestInteract_LockedDoor_PromptAndResolve_T
 	encID := "enc-locked-1"
 
 	// Seed: alice + bob in mutual LoS; one locked door at distance 4 from
-	// both (matches the unlocked-door test fixture so projection logic is
-	// the same).
+	// bob (matches the unlocked-door test fixture so projection logic is
+	// the same). rpg-toolkit#864: AttemptUnlock now requires adjacency, so
+	// alice (who Interacts below) starts adjacent to the door instead.
 	enc := tkenc.New(context.Background(), core.EncounterID(encID), s.srv.BrokerV2)
 	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
 		PlayerID: "alice", EntityID: "char-alice",
-		Position: core.Hex{Q: 0, R: 0, S: 0}, SightRange: 10,
+		Position: core.Hex{Q: 3, R: 0, S: -3}, SightRange: 10,
 	}))
 	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
 		PlayerID: "bob", EntityID: "char-bob",
@@ -1144,10 +1149,13 @@ func (s *EncounterV2IntegrationSuite) TestInteract_LockedDoor_PromptAndResolve_T
 func (s *EncounterV2IntegrationSuite) TestInteract_LockedDoor_FailedRoll_NoEvents() {
 	encID := "enc-locked-fail"
 
+	// rpg-toolkit#864: AttemptUnlock now requires adjacency, so alice (who
+	// Interacts below) starts adjacent to the door; bob stays distant
+	// (unused by this test's assertions beyond existing as a second member).
 	enc := tkenc.New(context.Background(), core.EncounterID(encID), s.srv.BrokerV2)
 	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
 		PlayerID: "alice", EntityID: "char-alice",
-		Position: core.Hex{Q: 0, R: 0, S: 0}, SightRange: 10,
+		Position: core.Hex{Q: 3, R: 0, S: -3}, SightRange: 10,
 	}))
 	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
 		PlayerID: "bob", EntityID: "char-bob",
@@ -1249,8 +1257,11 @@ func (s *EncounterV2IntegrationSuite) TestCombatSlice_TakeActionAndEndTurn_NPCDi
 	// lethality (Wave 2.10's death suite covers that with killGoblinFixture);
 	// bumping HP keeps the attack/endturn/npc-dispatch loop the actual
 	// subject under test. Closes #520.
+	// rpg-toolkit#864: repositioned to a hex within melee reach (1) of BOTH
+	// alice and bob (a shared neighbor of their two positions) — whichever
+	// one initiative makes active must be able to attack it.
 	s.Require().NoError(enc.AddMonster(tkenc.MonsterInput{
-		ID: "goblin-1", Position: core.Hex{Q: 2, R: -1, S: -1},
+		ID: "goblin-1", Position: core.Hex{Q: 1, R: 0, S: -1},
 		HP: 30, MaxHP: 30, AC: 15, Speed: 6,
 		MonsterRef:  "dnd5e:monsters:goblin",
 		AttackBonus: 4, DamageDice: "1d6+2", DamageType: "slashing",
@@ -1481,8 +1492,11 @@ func (s *EncounterV2IntegrationSuite) TestCombatSlice_KillLastHostile_FiresDeath
 		"alice", "char-alice", core.Hex{Q: 0, R: 0, S: 0})))
 	s.Require().NoError(enc.AddPlayer(killGoblinFixturePlayerInput(
 		"bob", "char-bob", core.Hex{Q: 1, R: -1, S: 0})))
+	// rpg-toolkit#864: repositioned to a hex within melee reach (1) of BOTH
+	// alice and bob (a shared neighbor of their two positions) — whichever
+	// one initiative makes active must be able to attack it.
 	s.Require().NoError(enc.AddMonster(killGoblinFixtureMonsterInput(
-		"goblin-1", core.Hex{Q: 2, R: -1, S: -1})))
+		"goblin-1", core.Hex{Q: 1, R: 0, S: -1})))
 	// AddMonster inline-checks combat entry (rpg-toolkit#759): alice/bob
 	// (sight range 10, no room) already see the goblin(s) just added, so the
 	// encounter self-transitions to TURN_BASED here. An explicit SetMode
@@ -1691,10 +1705,14 @@ func (s *EncounterV2IntegrationSuite) TestCombatSlice_KillOneOfTwoHostiles_NoEnc
 		"alice", "char-alice", core.Hex{Q: 0, R: 0, S: 0})))
 	s.Require().NoError(enc.AddPlayer(killGoblinFixturePlayerInput(
 		"bob", "char-bob", core.Hex{Q: 1, R: -1, S: 0})))
+	// rpg-toolkit#864: both goblins repositioned to the two hexes within
+	// melee reach (1) of BOTH alice and bob (the shared neighbors of their
+	// two positions) — whichever player initiative makes active must be
+	// able to attack whichever goblin is targeted.
 	s.Require().NoError(enc.AddMonster(killGoblinFixtureMonsterInput(
-		"goblin-1", core.Hex{Q: 2, R: -1, S: -1})))
+		"goblin-1", core.Hex{Q: 1, R: 0, S: -1})))
 	s.Require().NoError(enc.AddMonster(killGoblinFixtureMonsterInput(
-		"goblin-2", core.Hex{Q: 3, R: -2, S: -1})))
+		"goblin-2", core.Hex{Q: 0, R: -1, S: 1})))
 	// AddMonster inline-checks combat entry (rpg-toolkit#759): alice/bob
 	// (sight range 10, no room) already see the goblin(s) just added, so the
 	// encounter self-transitions to TURN_BASED here. An explicit SetMode

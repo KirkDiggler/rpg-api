@@ -36,6 +36,7 @@ type HandlerSuite struct {
 	ctrl      *gomock.Controller
 	charRepo  *charactermock.MockRepository
 	lobbyRepo lobbyrepo.Repository
+	encRepo   encountersv2.Repository
 	broker    *lobbyorch.Broker
 	handler   *lobbyhandler.Handler
 }
@@ -50,11 +51,15 @@ func (s *HandlerSuite) SetupTest() {
 	s.lobbyRepo = lobbyrepo.NewInMemory()
 	s.broker = lobbyorch.NewBroker()
 
+	registry, err := lobbyorch.LoadContentRegistry()
+	s.Require().NoError(err)
+
+	s.encRepo = encountersv2.NewInMemory()
 	orch, err := lobbyorch.New(&lobbyorch.Config{
 		LobbyRepo:              s.lobbyRepo,
 		LobbyBroker:            s.broker,
 		CharacterRepo:          s.charRepo,
-		EncounterRepo:          encountersv2.NewInMemory(),
+		EncounterRepo:          s.encRepo,
 		EncounterBroker:        tkenc.NewBroker(tkenc.NewInMemoryTransport()),
 		BuildCharacterResolver: func(_ *tkenc.Data) tkenc.CharacterResolver { return encounterhandlerv2.StubCharacterResolver{} },
 		BuildCombatResolver: func(_ *tkenc.Data) tkenc.CombatResolver {
@@ -67,6 +72,7 @@ func (s *HandlerSuite) SetupTest() {
 		JoinRefGenerator:     idgen.NewSequential("ref"),
 		EncounterIDGenerator: idgen.NewSequential("enc"),
 		Now:                  func() time.Time { return time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC) },
+		Registry:             registry,
 	})
 	s.Require().NoError(err)
 

@@ -18,7 +18,15 @@ record_failure() {
     FAILURE_MESSAGES="${FAILURE_MESSAGES}\n  ❌ $1"
 }
 
-# 1. Check for missing EOF newlines
+# 1. Check that CI/pre-PR resolves only committed, published module pins.
+echo -e "\n📌 Checking release pins..."
+if ! ./scripts/verify-release-pin.sh; then
+    record_failure "Release pins are not clean (remove go.mod replace, go.work/go.work.sum, and local-toolkit/)"
+else
+    echo -e "${GREEN}✅ Release pins are clean${NC}"
+fi
+
+# 2. Check for missing EOF newlines
 echo -e "\n📝 Checking EOF newlines..."
 FILES_MISSING_EOF=""
 for file in $(git ls-files '*.go' '*.md' '*.yml' '*.yaml' '*.json' 'Makefile' '.gitignore'); do
@@ -34,7 +42,7 @@ else
     echo -e "${GREEN}✅ All files have proper EOF newlines${NC}"
 fi
 
-# 2. Check if mocks need regeneration
+# 3. Check if mocks need regeneration
 echo -e "\n🔧 Checking mock generation..."
 go generate ./... 2>/dev/null
 if ! git diff --quiet; then
@@ -46,7 +54,7 @@ else
     echo -e "${GREEN}✅ Mocks are up to date${NC}"
 fi
 
-# 3. Check formatting
+# 4. Check formatting
 echo -e "\n📐 Checking code formatting..."
 UNFORMATTED_FILES=$(find . -name "*.go" -not -path "./vendor/*" -not -path "./gen/*" -not -path "./mock/*" -exec gofmt -l {} \;)
 if [ -n "$UNFORMATTED_FILES" ]; then
@@ -57,10 +65,13 @@ else
     echo -e "${GREEN}✅ All files are properly formatted${NC}"
 fi
 
-# 4. Check imports
+# 5. Check imports
 echo -e "\n📦 Checking imports..."
 if command -v goimports &> /dev/null; then
-    IMPORT_ISSUES=$(find . -name "*.go" -not -path "./vendor/*" -not -path "./gen/*" -not -path "./mock/*" -exec goimports -l -local github.com/KirkDiggler {} \;)
+    # MockGen owns nested mock/ imports and emits a grouping that goimports
+    # intentionally rewrites for this repository's local prefix. Exclude every
+    # generated mock directory so the two generators do not contradict each other.
+    IMPORT_ISSUES=$(find . -name "*.go" -not -path "./vendor/*" -not -path "./gen/*" -not -path "./mock/*" -not -path "*/mock/*" -exec goimports -l -local github.com/KirkDiggler {} \;)
     if [ -n "$IMPORT_ISSUES" ]; then
         echo -e "${RED}Files have import issues:${NC}"
         echo "$IMPORT_ISSUES"
@@ -72,7 +83,7 @@ else
     echo -e "${YELLOW}⚠️  goimports not found, skipping import check${NC}"
 fi
 
-# 5. Check go.mod tidy
+# 6. Check go.mod tidy
 echo -e "\n📋 Checking go.mod..."
 cp go.mod go.mod.backup
 cp go.sum go.sum.backup 2>/dev/null || touch go.sum.backup
@@ -87,7 +98,7 @@ else
     rm go.mod.backup go.sum.backup
 fi
 
-# 6. Run linter with CI configuration
+# 7. Run linter with CI configuration
 echo -e "\n🔍 Running linter..."
 if command -v golangci-lint &> /dev/null; then
     if ! golangci-lint run; then
@@ -100,7 +111,7 @@ else
     echo "  Install with: make install-tools"
 fi
 
-# 7. Run tests with CI configuration
+# 8. Run tests with CI configuration
 echo -e "\n🧪 Running tests (CI mode)..."
 if ! go test -v -race -coverprofile=coverage.out -covermode=atomic \
     $(go list ./... | grep -v /gen/ | grep -v /mock | grep -v cmd/server); then
@@ -109,7 +120,7 @@ else
     echo -e "${GREEN}✅ All tests passed${NC}"
 fi
 
-# 8. Additional checks can be added here as we discover new patterns
+# 9. Additional checks can be added here as we discover new patterns
 
 # Summary
 echo -e "\n📊 Summary:"
