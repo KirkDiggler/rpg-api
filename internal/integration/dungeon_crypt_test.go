@@ -307,6 +307,36 @@ func planWalk(space *tkenc.SpaceData, doors map[core.EntityID]*tkenc.DoorData, f
 	return nil, fmt.Errorf("no walkable route from %+v to %+v", from, target)
 }
 
+type moveAdjacentToInput struct {
+	EncounterID string
+	CharacterID string
+	Occupied    core.Hex
+	TurnCap     int
+}
+
+type moveAdjacentToOutput struct{}
+
+// moveAdjacentTo walks to a reachable neighbor of an occupied target. Occupied
+// endpoints are intentionally not valid Move destinations (rpg-toolkit#893),
+// so visibility tests must form their sightline without overlapping entities.
+func (s *DungeonCryptSuite) moveAdjacentTo(input *moveAdjacentToInput) (*moveAdjacentToOutput, error) {
+	data, err := s.srv.EncRepoV2.Get(s.ctx, input.EncounterID)
+	if err != nil {
+		return nil, err
+	}
+	from := data.Players[core.PlayerID("alice")].View.Position
+	for _, neighbor := range perception.HexNeighbors(input.Occupied) {
+		if _, planErr := planWalk(data.Space, data.Doors, from, neighbor); planErr != nil {
+			continue
+		}
+		if err := s.moveAlongPath(input.EncounterID, input.CharacterID, neighbor, input.TurnCap); err != nil {
+			return nil, err
+		}
+		return &moveAdjacentToOutput{}, nil
+	}
+	return nil, fmt.Errorf("no reachable approach hex adjacent to occupied target %+v", input.Occupied)
+}
+
 // moveAlongPath reloads persisted geometry and replans after every real RPC.
 // Each submitted destination is adjacent and chunks contain at most one turn's
 // six 5ft steps; closed doors and all persisted blockers are avoided locally.
@@ -698,12 +728,17 @@ func (s *DungeonCryptSuite) TestBossMonster_NoEntityAppeared_UntilBothDoorsOpenA
 	s.Require().NoError(err)
 	target := after.Monsters[bossMonster].Position
 
-	err = s.moveAlongPath(encounterID, characterID, target, 10)
-	s.Require().NoError(err, "moving through both open connector doors onto the boss monster's hex must not be blocked")
+	_, err = s.moveAdjacentTo(&moveAdjacentToInput{
+		EncounterID: encounterID,
+		CharacterID: characterID,
+		Occupied:    target,
+		TurnCap:     10,
+	})
+	s.Require().NoError(err, "moving through both open connector doors adjacent to the boss monster must not be blocked")
 
 	postMove := drainAvailable(events, 1500*time.Millisecond)
 	s.Require().True(sawBossMonster(postMove),
-		"a sightline that actually forms (alice standing on the boss monster's hex) must emit EntityAppeared")
+		"a sightline that actually forms from beside the boss monster must emit EntityAppeared")
 }
 
 func (s *DungeonCryptSuite) TestStaticObstacles_ProjectOnlyWhenRevealedAndRemainExplored() {
@@ -914,9 +949,15 @@ func (s *DungeonCryptSuite) TestSpaceZonesAndHexZoneId_ProjectRegionsOnTheWire()
 	// take more than one turn to reach. moveAlongPath replans persisted-geometry
 	// BFS routes after each real MoveEntity chunk (at most six adjacent
 	// destinations) and uses the real EndTurn RPC when turn-based movement
-	// requires another turn, never adjusting the target itself.
-	err = s.moveAlongPath(encounterID, characterID, target, 10)
-	s.Require().NoError(err, "moving onto the boss-region monster's hex must not be blocked once both doors are open")
+	// requires another turn. moveAdjacentTo selects a reachable neighboring
+	// destination so the sightline forms without overlapping the monster.
+	_, err = s.moveAdjacentTo(&moveAdjacentToInput{
+		EncounterID: encounterID,
+		CharacterID: characterID,
+		Occupied:    target,
+		TurnCap:     10,
+	})
+	s.Require().NoError(err, "moving adjacent to the boss-region monster must not be blocked once both doors are open")
 
 	postMove := drainAvailable(events, 1500*time.Millisecond)
 	var sawAny bool
