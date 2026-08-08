@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -112,6 +113,17 @@ walls:
 	s.Require().True(put.Success)
 	s.Require().FileExists(filepath.Join(dir, key+".yaml"))
 
+	// Replace the same authored key before the simulated restart. The fresh
+	// loader below must reconstruct from this committed source, not from the
+	// authoring process's in-memory registry or the first version's bytes.
+	yaml = strings.Replace(yaml, "name: Canvas Production Reload", "name: Canvas Production Reload Updated", 1)
+	put, err = authoring.PutDungeon(s.ctx, &authoringorch.PutDungeonInput{Key: key, YAML: yaml})
+	s.Require().NoError(err)
+	s.Require().True(put.Success)
+	committed, err := os.ReadFile(filepath.Join(dir, key+".yaml"))
+	s.Require().NoError(err)
+	s.Require().Equal(yaml, string(committed))
+
 	// This is the production startup loader, not dungeonspec.Load* or a
 	// manually assembled registry. It has to discover the bytes PutDungeon wrote.
 	s.T().Setenv("RPG_CONTENT_DIR", dir)
@@ -121,7 +133,7 @@ walls:
 	reloadedEntry, ok := reloadedRegistry.Get(key)
 	s.Require().True(ok, "fresh registry must discover PutDungeon's on-disk source")
 	s.Require().NoError(reloadedEntry.Err)
-	s.Require().Equal("Canvas Production Reload", reloadedEntry.Name)
+	s.Require().Equal("Canvas Production Reload Updated", reloadedEntry.Name)
 
 	runtime, err := s.newOrchestratorWithContentDir(dir)
 	s.Require().NoError(err)
