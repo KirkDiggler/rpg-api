@@ -177,6 +177,7 @@ func (s *TranslateSuite) TestTranslateEvent_ActionResolvedEvent_HappyPath() {
 		"char-A",
 		"dnd5e:combat_abilities:attack",
 		"goblin-1",
+		"",
 		events.EconomyConsumed{
 			Actions:         1,
 			GrantedConsumed: map[string]int{"attacks": 1},
@@ -208,6 +209,27 @@ func (s *TranslateSuite) TestTranslateEvent_ActionResolvedEvent_HappyPath() {
 	s.Require().Equal(int32(1), act.GetEconomyConsumed().GetGrantedConsumed()["attacks"])
 	s.Require().Equal(gameTime.Unix(), out.GetTimestamp().GetSeconds())
 	s.Require().Equal("corr-action-1", out.GetCorrelationId())
+	// Player-taken actions have no AI decision to explain — rationale stays empty.
+	s.Require().Empty(act.GetTargetRationale())
+}
+
+func (s *TranslateSuite) TestTranslateEvent_ActionResolvedEvent_TargetRationale_PopulatedPassesThrough() {
+	// The NPC/monster attack path stamps a targeting rationale ref
+	// (rpg-toolkit#895); rpg-api projects it verbatim, no reinterpretation.
+	evt := events.NewActionResolvedEvent(
+		"enc-1", uint64(23),
+		"skeleton-1",
+		"dnd5e:combat_abilities:attack",
+		"char-A",
+		"dnd5e:targeting:lowest-hp",
+		events.EconomyConsumed{Actions: 1},
+		map[core.PlayerID]events.ActionResolvedSlice{
+			"player-A": {Visible: true},
+		},
+	)
+	out, err := v2encounter.TranslateEvent(evt, "player-A", s.now)
+	s.Require().NoError(err)
+	s.Require().Equal("dnd5e:targeting:lowest-hp", out.GetActionResolved().GetTargetRationale())
 }
 
 func (s *TranslateSuite) TestTranslateEvent_ActionResolvedEvent_ActionsNamespace_NotFlattened() {
@@ -218,6 +240,7 @@ func (s *TranslateSuite) TestTranslateEvent_ActionResolvedEvent_ActionsNamespace
 		"char-A",
 		"dnd5e:actions:strike",
 		"goblin-1",
+		"",
 		events.EconomyConsumed{GrantedConsumed: map[string]int{"attacks": 1}},
 		map[core.PlayerID]events.ActionResolvedSlice{
 			"player-A": {Visible: true},
@@ -237,6 +260,7 @@ func (s *TranslateSuite) TestTranslateEvent_ActionResolvedEvent_DegenerateRef_No
 		"enc-1", uint64(22),
 		"char-A",
 		"::attack",
+		"",
 		"",
 		events.EconomyConsumed{Actions: 1},
 		map[core.PlayerID]events.ActionResolvedSlice{
@@ -258,6 +282,7 @@ func (s *TranslateSuite) TestTranslateEvent_ActionResolvedEvent_NotVisible_SawNo
 	evt := events.NewActionResolvedEvent(
 		"enc-1", uint64(20),
 		"char-A", "dnd5e:combat_abilities:attack", "goblin-1",
+		"",
 		events.EconomyConsumed{Actions: 1},
 		map[core.PlayerID]events.ActionResolvedSlice{
 			"player-A": {Visible: false},
@@ -613,7 +638,7 @@ func (s *TranslateSuite) TestTranslateEvent_DeclaredHitChain_SharesToolkitCorrel
 	visibleAction := map[core.PlayerID]events.ActionResolvedSlice{"player-A": {Visible: true}}
 	visibleAttack := map[core.PlayerID]events.AttackResolvedSlice{"player-A": {Visible: true}}
 	visibleDamage := map[core.PlayerID]events.DamageDealtSlice{"player-A": {Visible: true}}
-	action := events.NewActionResolvedEvent("enc-1", uint64(80), "char-A", "dnd5e:combat_abilities:attack", "goblin-1", events.EconomyConsumed{Actions: 1}, visibleAction)
+	action := events.NewActionResolvedEvent("enc-1", uint64(80), "char-A", "dnd5e:combat_abilities:attack", "goblin-1", "", events.EconomyConsumed{Actions: 1}, visibleAction)
 	attack := events.NewAttackResolvedEvent("enc-1", uint64(81), "char-A", "goblin-1", true, false, 16, 5, 14, false, false, nil, nil, visibleAttack)
 	damage := events.NewDamageDealtEvent("enc-1", uint64(82), "goblin-1", "char-A", 7, "slashing", 0, 7, visibleDamage)
 	for _, evt := range []events.EncounterEvent{action, attack, damage} {
