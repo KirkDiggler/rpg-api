@@ -5,7 +5,7 @@
 // in this repo has no ambient env-reading of its own).
 //
 // Boundary: NO rules logic lives here beyond the toolkit calls the
-// existing dungeonspec package already exposes (Load, Decode) — this
+// dungeonspec provider exposes (CompileDungeon, Decode) — this
 // package's own job is request-shape validation (key charset, key/YAML
 // key: match), write-through targeting, and registry orchestration, the
 // same "outside-in, orchestrators call the toolkit rather than
@@ -41,12 +41,12 @@ type Config struct {
 	ContentDir string
 
 	// Compiler is the protobuf-free provider seam. Nil selects the released
-	// v0.3 toolkit adapter; Wave A finalization replaces that adapter with the
-	// rpg-toolkit#897 provider without changing orchestration.
+	// Wave A dungeonspec.CompileDungeon provider. Tests may inject failures at
+	// this boundary without changing production orchestration.
 	Compiler Compiler
 
 	// PartyStartSeatCount is the host's normal party capacity supplied to
-	// dungeonspec.LoadWithConfig. Preview must compile the same reservation
+	// dungeonspec.CompileDungeon. Preview must compile the same reservation
 	// StartEncounter will use; zero defaults to the normal four-seat product
 	// configuration for standalone/test construction.
 	PartyStartSeatCount int

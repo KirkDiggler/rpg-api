@@ -1,6 +1,7 @@
 package lobby
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -134,8 +135,8 @@ func (e *DisabledDungeonKeyError) Unwrap() error {
 
 // LoadContentRegistry builds the startup *dungeonregistry.Registry of
 // every content-hosted dungeon spec by calling content.AllSpecs() exactly
-// ONCE. It compiles every spec through LoadWithConfig with DefaultPartyCap,
-// the normal product roster capacity used by the startup authoring and runtime
+// ONCE. It compiles every spec through CompileDungeon in strict mode with
+// DefaultPartyCap, the normal product roster capacity used by authoring and runtime
 // paths. Exported so cmd/server/server.go can call it directly at startup
 // (the Architecture decision in plan.md: the registry is built ONCE,
 // outside either orchestrator, then passed by pointer into BOTH
@@ -148,7 +149,7 @@ func (e *DisabledDungeonKeyError) Unwrap() error {
 // RPG_DUNGEON_KEY, just moved to this new call site now that New() no
 // longer touches RPG_CONTENT_DIR at all.
 //
-// A spec whose header decodes but whose body fails dungeonspec.Load (a
+// A spec whose header decodes but whose body fails strict CompileDungeon (a
 // schema/business-rule violation) is stored as a dungeonregistry.Entry
 // carrying that Err, not dropped — see Entry's doc. Also calls
 // dungeonspec.Decode (separately from Load, which discards the decoded
@@ -161,11 +162,24 @@ func (e *DisabledDungeonKeyError) Unwrap() error {
 // failure sources this registry can hit: content.AllSpecs' own
 // header-level problems (a malformed/missing key: field in an
 // RPG_CONTENT_DIR file — logged here since AllSpecs only returns these as
-// data, it never logs), and a dungeonspec.Load failure for a spec whose
+// data, it never logs), and a strict CompileDungeon failure for a spec whose
 // header decoded fine but whose body doesn't validate/compile. Also logs
 // one DEBUG line per RPG_CONTENT_DIR key that shadows an embedded key of
 // the same name — confirmation, for an author mid edit-restart loop, that
 // their override actually took effect.
+type contentFieldError struct {
+	Field   string
+	Message string
+	Code    string
+}
+
+func (e *contentFieldError) Error() string {
+	if e.Field == "" {
+		return e.Message
+	}
+	return fmt.Sprintf("%s: %s", e.Field, e.Message)
+}
+
 func LoadContentRegistry() (*dungeonregistry.Registry, error) {
 	specs, problems, err := content.AllSpecs()
 	if err != nil {
@@ -194,15 +208,26 @@ func LoadContentRegistry() (*dungeonregistry.Registry, error) {
 
 	entries := make(map[string]dungeonregistry.Entry, len(specs))
 	for key, raw := range specs {
-		compiled, loadErr := dungeonspec.LoadWithConfig(raw, dungeonspec.LoadConfig{
+		compileOutput, compileErr := dungeonspec.CompileDungeon(context.Background(), &dungeonspec.CompileDungeonInput{
+			Source:              raw,
+			Mode:                dungeonspec.CompileModeStrict,
 			PartyStartSeatCount: DefaultPartyCap,
+			PreviewSeed:         1,
 		})
-		if loadErr != nil {
-			slog.Warn("lobby orchestrator: content spec failed to load, key disabled", "key", key, "error", loadErr)
-			entries[key] = dungeonregistry.Entry{Err: loadErr}
+		if compileErr == nil && compileOutput != nil && len(compileOutput.FieldErrors) > 0 {
+			fieldError := compileOutput.FieldErrors[0]
+			compileErr = &contentFieldError{Field: fieldError.Field, Message: fieldError.Message, Code: fieldError.Code}
+		}
+		if compileErr == nil && compileOutput == nil {
+			compileErr = errors.New("dungeonspec provider returned no output")
+		}
+		if compileErr != nil {
+			slog.Warn("lobby orchestrator: content spec failed strict compilation, key disabled", "key", key, "error", compileErr)
+			entries[key] = dungeonregistry.Entry{Err: compileErr}
 			continue
 		}
-		// Load already Decoded raw successfully as part of compiling --
+		compiled := compileOutput.Compiled
+		// CompileDungeon already Decoded raw successfully as part of compiling --
 		// a second Decode call here failing would mean Load's own
 		// internal Decode and this one disagree, which should be
 		// impossible. Defensive fallback to the key itself as the name
@@ -213,7 +238,7 @@ func LoadContentRegistry() (*dungeonregistry.Registry, error) {
 		if spec, decodeErr := dungeonspec.Decode(raw); decodeErr == nil {
 			name = spec.Name
 		} else {
-			slog.Warn("lobby orchestrator: content spec name capture failed unexpectedly after a successful Load",
+			slog.Warn("lobby orchestrator: content spec name capture failed unexpectedly after a successful CompileDungeon",
 				"key", key, "error", decodeErr)
 		}
 		entries[key] = dungeonregistry.Entry{Compiled: compiled, Name: name}

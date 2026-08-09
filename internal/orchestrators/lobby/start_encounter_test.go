@@ -178,6 +178,101 @@ walls:
 	s.Require().Equal(core.HexFromPosition(spatial.Position{X: 1, Y: 1}), door.Position)
 }
 
+func (s *LobbySuite) TestStartEncounter_RegionPutDungeonSurvivesProductionAndEncounterReload() {
+	const key = "region-production-reload"
+	const source = `version: 1
+key: region-production-reload
+name: Region Production Reload
+canvas: { width: 5, height: 5, floor_source: regions }
+rooms: []
+regions:
+  - id: ring
+    cells: [[1,1], [1,2], [1,3], [2,1], [2,3], [3,1], [3,2], [3,3]]
+`
+	dir := s.T().TempDir()
+	authoringRegistry := dungeonregistry.New(nil)
+	authoring, err := authoringorch.New(&authoringorch.Config{
+		Registry: authoringRegistry, ContentDir: dir, PartyStartSeatCount: lobbyorch.DefaultPartyCap,
+	})
+	s.Require().NoError(err)
+
+	put, err := authoring.PutDungeon(s.ctx, &authoringorch.PutDungeonInput{Key: key, YAML: source})
+	s.Require().NoError(err)
+	s.Require().True(put.Success)
+	s.Require().Equal(authoringorch.FloorSourceRegions, put.FloorPlan.FloorSource)
+	s.Require().Len(put.FloorPlan.FloorCells, 8)
+	s.Require().Len(put.FloorPlan.Edges, 28)
+
+	// A process restart discovers and strictly recompiles only the durable source.
+	s.T().Setenv("RPG_CONTENT_DIR", dir)
+	reloadedRegistry, err := lobbyorch.LoadContentRegistry()
+	s.Require().NoError(err)
+	s.Require().NotSame(authoringRegistry, reloadedRegistry)
+	reloadedEntry, ok := reloadedRegistry.Get(key)
+	s.Require().True(ok)
+	s.Require().NoError(reloadedEntry.Err)
+	s.Require().Equal("Region Production Reload", reloadedEntry.Name)
+
+	runtime, err := s.newOrchestratorWithRegistry(reloadedRegistry)
+	s.Require().NoError(err)
+	s.seedReadyLobby("lobby-region-production-reload", "alice", "bob")
+	s.expectCharacter("char-alice", "alice", "Alice", 12, 12)
+	s.expectCharacter("char-bob", "bob", "Bob", 11, 11)
+	out, err := runtime.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		PlayerID: "alice", LobbyID: "lobby-region-production-reload", DungeonKey: key, RandomSeed: 42,
+	})
+	s.Require().NoError(err)
+
+	data, err := s.encRepo.Get(s.ctx, out.EncounterID)
+	s.Require().NoError(err)
+	s.Require().Equal(tkenc.FloorSourceCanvas, data.Space.FloorSource)
+	s.Require().Equal(5, data.Space.Width)
+	s.Require().Equal(5, data.Space.Height)
+	s.Require().True(data.Space.RequireConnectedFloor)
+
+	expectedCells := make([]core.Hex, len(put.FloorPlan.FloorCells))
+	for i, cell := range put.FloorPlan.FloorCells {
+		expectedCells[i] = core.HexFromPosition(spatial.Position{X: float64(cell.Column), Y: float64(cell.Row)})
+	}
+	s.Require().Equal(expectedCells, data.Space.FloorCells,
+		"strict save, startup compilation, and encounter start must share one exact mask")
+	s.Require().Equal(expectedCells[0], data.Space.Entrance)
+	s.Require().Len(data.Space.PartyStartPositions, lobbyorch.DefaultPartyCap)
+
+	expectedEnvelope := make([]tkenc.GeneratedEdge, len(put.FloorPlan.Edges))
+	for i, edge := range put.FloorPlan.Edges {
+		expectedEnvelope[i] = tkenc.GeneratedEdge{
+			From: core.HexFromPosition(spatial.Position{X: float64(edge.From.Column), Y: float64(edge.From.Row)}),
+			To:   core.HexFromPosition(spatial.Position{X: float64(edge.To.Column), Y: float64(edge.To.Row)}),
+			Kind: tkenc.GeneratedEdgeKind(edge.Kind), DoorID: core.EntityID(edge.DoorID),
+		}
+	}
+	s.Require().Len(data.Space.EnvelopeEdges, len(expectedEnvelope))
+	for _, expected := range expectedEnvelope {
+		found := false
+		for _, persisted := range data.Space.EnvelopeEdges {
+			sameDirection := persisted == expected
+			reverseDirection := persisted.From == expected.To && persisted.To == expected.From &&
+				persisted.Kind == expected.Kind && persisted.DoorID == expected.DoorID
+			if sameDirection || reverseDirection {
+				found = true
+				break
+			}
+		}
+		s.Require().True(found, "persisted encounter envelope is missing projected pair %+v", expected)
+	}
+
+	// Runtime restart reloads persisted encounter.Data only and round-trips the
+	// exact started mask/envelope/entrance without consulting authored content.
+	reloadedEncounter, err := tkenc.LoadFromData(s.ctx, data, s.encBroker)
+	s.Require().NoError(err)
+	restarted := reloadedEncounter.ToData()
+	s.Require().Equal(data.Space.FloorCells, restarted.Space.FloorCells)
+	s.Require().Equal(data.Space.EnvelopeEdges, restarted.Space.EnvelopeEdges)
+	s.Require().Equal(data.Space.Entrance, restarted.Space.Entrance)
+	s.Require().Equal(data.Space.PartyStartPositions, restarted.Space.PartyStartPositions)
+}
+
 func (s *LobbySuite) TestStartEncounter_AuthoredSourceEditDoesNotRecompileRunningSnapshot() {
 	const key = "snapshot-source-isolation"
 	dir := s.T().TempDir()
@@ -185,9 +280,12 @@ func (s *LobbySuite) TestStartEncounter_AuthoredSourceEditDoesNotRecompileRunnin
 key: snapshot-source-isolation
 name: Snapshot Source Isolation
 height: 1
-canvas: { width: 4, height: 2 }
+canvas: { width: 4, height: 2, floor_source: regions }
 rooms: []
 start: [1, 1]
+regions:
+  - id: floor
+    cells: [[0,0], [0,1], [1,0], [1,1], [2,0], [2,1], [3,0], [3,1]]
 `
 	s.Require().NoError(os.WriteFile(filepath.Join(dir, key+".yaml"), []byte(initial), 0o600))
 	s.T().Setenv("RPG_CONTENT_DIR", dir)
@@ -213,6 +311,7 @@ start: [1, 1]
 	s.Require().NoError(err)
 
 	updated := strings.Replace(initial, "width: 4", "width: 5", 1)
+	updated = strings.Replace(updated, "[3,0], [3,1]]", "[3,0], [3,1], [4,0], [4,1]]", 1)
 	put, err := authoring.PutDungeon(s.ctx, &authoringorch.PutDungeonInput{Key: key, YAML: updated})
 	s.Require().NoError(err)
 	s.Require().True(put.Success)

@@ -37,7 +37,11 @@ start: [0, 1]
 	require.NoError(t, err)
 	require.True(t, out.Success)
 	require.Equal(t, 3, out.FloorPlan.Width)
-	require.Empty(t, out.FloorPlan.Edges)
+	for _, edge := range out.FloorPlan.Edges {
+		require.Equal(t, authoring.FloorPlanEdgeKindSolid, edge.Kind,
+			"deleting the authored wall leaves only provider envelope edges")
+		require.Empty(t, edge.DoorID)
+	}
 
 	afterDisk, err := os.ReadFile(filepath.Join(dir, key+".yaml"))
 	require.NoError(t, err)

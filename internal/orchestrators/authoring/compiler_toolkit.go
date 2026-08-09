@@ -7,11 +7,9 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/encounter/dungeonspec"
 )
 
-// toolkitCompiler adapts the released v0.3 provider until rpg-toolkit#897
-// publishes the native CompileDungeon contract. Its supported authored canvas
-// source is bounds only: a regions candidate is rejected by toolkit decode,
-// never stripped or downgraded here. The Wave A provider must replace this
-// adapter's load/build pair and populate the resolved source itself.
+// toolkitCompiler is the production adapter to the protobuf-free toolkit
+// provider. It makes exactly one complete-candidate CompileDungeon call and
+// maps only provider-owned compiled state, floor projection, and field errors.
 type toolkitCompiler struct{}
 
 func (toolkitCompiler) CompileDungeon(
@@ -22,20 +20,40 @@ func (toolkitCompiler) CompileDungeon(
 		return nil, errors.New("authoring compiler: CompileDungeonInput is required")
 	}
 
-	config := dungeonspec.LoadConfig{PartyStartSeatCount: in.PartyStartSeatCount}
-	compiled, err := dungeonspec.LoadWithConfig(in.Source, config)
-	if err != nil {
-		return &CompileDungeonOutput{FieldErrors: []FieldError{{Message: err.Error()}}}, nil
+	var mode dungeonspec.CompileMode
+	switch in.Mode {
+	case CompileModeDraft:
+		mode = dungeonspec.CompileModeDraft
+	case CompileModeStrict:
+		mode = dungeonspec.CompileModeStrict
+	default:
+		return nil, errors.New("authoring compiler: compile mode must be draft or strict")
 	}
 
-	floorPlan, err := buildFloorPlan(ctx, compiled, in.PreviewSeed)
+	providerOutput, err := dungeonspec.CompileDungeon(ctx, &dungeonspec.CompileDungeonInput{
+		Source:              in.Source,
+		Mode:                mode,
+		PartyStartSeatCount: in.PartyStartSeatCount,
+		PreviewSeed:         in.PreviewSeed,
+	})
 	if err != nil {
-		return &CompileDungeonOutput{FieldErrors: []FieldError{{Message: err.Error()}}}, nil
+		return nil, err
 	}
-	// The released adapter only accepts the legacy topology contract. It does
-	// not inspect dimensions/cells and cannot turn an unsupported regions
-	// source into bounds; toolkit decode has already rejected such a source.
-	floorPlan.FloorSource = FloorSourceBounds
+	if providerOutput == nil {
+		return nil, errors.New("authoring compiler: provider returned no output")
+	}
 
-	return &CompileDungeonOutput{Compiled: compiled, FloorPlan: floorPlan}, nil
+	output := &CompileDungeonOutput{
+		Compiled:  providerOutput.Compiled,
+		FloorPlan: mapFloorPlan(providerOutput.FloorPlan),
+	}
+	if providerOutput.FieldErrors != nil {
+		output.FieldErrors = make([]FieldError, len(providerOutput.FieldErrors))
+		for index, fieldError := range providerOutput.FieldErrors {
+			output.FieldErrors[index] = FieldError{
+				Field: fieldError.Field, Message: fieldError.Message, Code: fieldError.Code,
+			}
+		}
+	}
+	return output, nil
 }

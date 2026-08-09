@@ -7,174 +7,196 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"go.uber.org/mock/gomock"
 
 	"github.com/KirkDiggler/rpg-api/internal/dungeonregistry"
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/authoring"
-	authoringmock "github.com/KirkDiggler/rpg-api/internal/orchestrators/authoring/mock"
-	"github.com/KirkDiggler/rpg-toolkit/encounter/dungeonspec"
 )
 
-// These mock-injected fixtures prove only API seam behavior: lifecycle input,
-// verbatim mapping, exact error transport, and nonmutation. They do not prove
-// that the unreleased toolkit provider computes ring topology or mechanics.
+const waveARingYAML = `version: 1
+key: ring-room
+name: Ring Room
+canvas: { width: 5, height: 5, floor_source: regions }
+rooms: []
+regions:
+  - id: ring
+    cells: [[1,1], [1,2], [1,3], [2,1], [2,3], [3,1], [3,2], [3,3]]
+`
 
-func waveAOrchestrator(t *testing.T, compiler authoring.Compiler) (*authoring.Orchestrator, *dungeonregistry.Registry, string) {
+func waveAOrchestrator(t *testing.T) (*authoring.Orchestrator, *dungeonregistry.Registry, string) {
 	t.Helper()
 	registry := dungeonregistry.New(nil)
 	dir := t.TempDir()
 	orch, err := authoring.New(&authoring.Config{
-		Registry: registry, ContentDir: dir, PartyStartSeatCount: 4, Compiler: compiler,
+		Registry: registry, ContentDir: dir, PartyStartSeatCount: 4,
 	})
 	require.NoError(t, err)
 	return orch, registry, dir
 }
 
-func TestPutDungeon_WaveASeamMapsInjectedRingProjectionVerbatim(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	compiler := authoringmock.NewMockCompiler(ctrl)
-	orch, registry, dir := waveAOrchestrator(t, compiler)
-	source := []byte("version: 1\nkey: ring-room\ncanvas: { floor_source: regions }\n")
-	entrance := &authoring.FloorPlanCell{Column: 1, Row: 1}
-	plan := &authoring.FloorPlan{
-		FloorSource: authoring.FloorSourceRegions,
-		FloorCells: []authoring.FloorPlanCell{
-			{Column: 1, Row: 1}, {Column: 1, Row: 2}, {Column: 1, Row: 3},
-			{Column: 2, Row: 1}, {Column: 2, Row: 3},
-			{Column: 3, Row: 1}, {Column: 3, Row: 2}, {Column: 3, Row: 3},
-		},
-		Regions: []authoring.FloorPlanRegion{{
-			ID: "ring", Cells: []authoring.FloorPlanCell{
-				{Column: 1, Row: 1}, {Column: 1, Row: 2}, {Column: 1, Row: 3},
-				{Column: 2, Row: 1}, {Column: 2, Row: 3},
-				{Column: 3, Row: 1}, {Column: 3, Row: 2}, {Column: 3, Row: 3},
-			},
-		}},
-		Entrance: entrance,
-		Edges: []authoring.FloorPlanEdge{
-			// Reversed interior-hole pair and off-canvas pair prove the API
-			// neither reorients nor clips provider truth.
-			{From: authoring.FloorPlanCell{Column: 2, Row: 2}, To: authoring.FloorPlanCell{Column: 2, Row: 1}, Kind: authoring.FloorPlanEdgeKindSolid},
-			{From: authoring.FloorPlanCell{Column: 1, Row: 1}, To: authoring.FloorPlanCell{Column: 0, Row: 1}, Kind: authoring.FloorPlanEdgeKindSolid},
-		},
-	}
-	compiler.EXPECT().CompileDungeon(gomock.Any(), gomock.Any()).DoAndReturn(
-		func(_ context.Context, in *authoring.CompileDungeonInput) (*authoring.CompileDungeonOutput, error) {
-			require.Equal(t, source, in.Source)
-			require.Equal(t, authoring.CompileModeDraft, in.Mode)
-			require.Equal(t, 4, in.PartyStartSeatCount)
-			return &authoring.CompileDungeonOutput{FloorPlan: plan}, nil
-		})
-
+func TestPutDungeon_WaveARealProviderProjectsRingAndCompleteEnvelope(t *testing.T) {
+	orch, registry, dir := waveAOrchestrator(t)
 	out, err := orch.PutDungeon(context.Background(), &authoring.PutDungeonInput{
-		Key: "ring-room", YAML: string(source), ValidateOnly: true,
+		Key: "ring-room", YAML: waveARingYAML, ValidateOnly: true,
 	})
 	require.NoError(t, err)
 	require.True(t, out.Success)
-	require.Same(t, plan, out.FloorPlan)
 	require.Equal(t, authoring.FloorSourceRegions, out.FloorPlan.FloorSource)
-	require.Equal(t, plan.FloorCells, out.FloorPlan.FloorCells)
-	require.Equal(t, plan.Regions, out.FloorPlan.Regions)
-	require.Same(t, entrance, out.FloorPlan.Entrance)
-	require.Equal(t, plan.Edges, out.FloorPlan.Edges)
+	require.Equal(t, 5, out.FloorPlan.Width)
+	require.Equal(t, 5, out.FloorPlan.Height)
+	require.Equal(t, []authoring.FloorPlanCell{
+		{Column: 1, Row: 1}, {Column: 1, Row: 2}, {Column: 1, Row: 3},
+		{Column: 2, Row: 1}, {Column: 2, Row: 3},
+		{Column: 3, Row: 1}, {Column: 3, Row: 2}, {Column: 3, Row: 3},
+	}, out.FloorPlan.FloorCells)
+	require.Equal(t, &authoring.FloorPlanCell{Column: 1, Row: 1}, out.FloorPlan.Entrance)
+	require.Equal(t, out.FloorPlan.FloorCells, out.FloorPlan.Regions[0].Cells)
+	require.Len(t, out.FloorPlan.Edges, 28)
+
+	center := authoring.FloorPlanCell{Column: 2, Row: 2}
+	centerEdges := 0
+	for _, edge := range out.FloorPlan.Edges {
+		if edge.From == center || edge.To == center {
+			centerEdges++
+		}
+		require.Equal(t, authoring.FloorPlanEdgeKindSolid, edge.Kind)
+	}
+	require.Equal(t, 6, centerEdges, "the provider's complete hole envelope must pass through unchanged")
 	require.Empty(t, registry.Keys())
 	entries, readErr := os.ReadDir(dir)
 	require.NoError(t, readErr)
 	require.Empty(t, entries)
 }
 
-func TestPutDungeon_WaveASeamCarriesTinyDraftAndStrictFailure(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	compiler := authoringmock.NewMockCompiler(ctrl)
-	orch, registry, dir := waveAOrchestrator(t, compiler)
-	source := "version: 1\nkey: tiny-draft\ncanvas: { floor_source: regions }\n"
-	tiny := &authoring.FloorPlan{
-		FloorSource: authoring.FloorSourceRegions,
-		FloorCells:  []authoring.FloorPlanCell{{Column: 1, Row: 1}, {Column: 1, Row: 2}},
-		Edges: []authoring.FloorPlanEdge{{
-			From: authoring.FloorPlanCell{Column: 1, Row: 1},
-			To:   authoring.FloorPlanCell{Column: 0, Row: 1},
-			Kind: authoring.FloorPlanEdgeKindSolid,
-		}},
+func TestPutDungeon_WaveARealProviderPreservesOffCanvasEndpoints(t *testing.T) {
+	orch, _, _ := waveAOrchestrator(t)
+	const source = `version: 1
+key: rim
+name: Rim
+canvas: { width: 2, height: 2, floor_source: regions }
+rooms: []
+regions: [{ id: rim, cells: [[0,0]] }]
+`
+	out, err := orch.PutDungeon(context.Background(), &authoring.PutDungeonInput{Key: "rim", YAML: source, ValidateOnly: true})
+	require.NoError(t, err)
+	require.True(t, out.Success)
+	require.Len(t, out.FloorPlan.Edges, 6)
+	offCanvas := 0
+	for _, edge := range out.FloorPlan.Edges {
+		for _, endpoint := range []authoring.FloorPlanCell{edge.From, edge.To} {
+			if endpoint.Column < 0 || endpoint.Row < 0 || endpoint.Column >= 2 || endpoint.Row >= 2 {
+				offCanvas++
+			}
+		}
 	}
-	gomock.InOrder(
-		compiler.EXPECT().CompileDungeon(gomock.Any(), gomock.Any()).DoAndReturn(
-			func(_ context.Context, in *authoring.CompileDungeonInput) (*authoring.CompileDungeonOutput, error) {
-				require.Equal(t, authoring.CompileModeDraft, in.Mode)
-				return &authoring.CompileDungeonOutput{FloorPlan: tiny}, nil
-			}),
-		compiler.EXPECT().CompileDungeon(gomock.Any(), gomock.Any()).DoAndReturn(
-			func(_ context.Context, in *authoring.CompileDungeonInput) (*authoring.CompileDungeonOutput, error) {
-				require.Equal(t, authoring.CompileModeStrict, in.Mode)
-				return &authoring.CompileDungeonOutput{FieldErrors: []authoring.FieldError{{
-					Field: "canvas.floor_source", Code: "party-cap", Message: "floor has no complete PartyCap seating envelope",
-				}}}, nil
-			}),
-	)
+	require.Positive(t, offCanvas)
+}
 
-	preview, err := orch.PutDungeon(context.Background(), &authoring.PutDungeonInput{Key: "tiny-draft", YAML: source, ValidateOnly: true})
+func TestPutDungeon_WaveARealProviderDraftAndStrictLifecycle(t *testing.T) {
+	orch, registry, dir := waveAOrchestrator(t)
+	const tiny = `version: 1
+key: tiny-draft
+name: Tiny Draft
+canvas: { width: 3, height: 2, floor_source: regions }
+rooms: []
+regions: [{ id: tiny, cells: [[0,0], [1,0]] }]
+`
+	preview, err := orch.PutDungeon(context.Background(), &authoring.PutDungeonInput{Key: "tiny-draft", YAML: tiny, ValidateOnly: true})
 	require.NoError(t, err)
 	require.True(t, preview.Success)
-	require.Nil(t, preview.FloorPlan.Entrance, "absent is not synthesized as [0,0]")
+	require.Nil(t, preview.FloorPlan.Entrance, "nil entrance must not become [0,0]")
 
-	strict, err := orch.PutDungeon(context.Background(), &authoring.PutDungeonInput{Key: "tiny-draft", YAML: source})
+	strict, err := orch.PutDungeon(context.Background(), &authoring.PutDungeonInput{Key: "tiny-draft", YAML: tiny})
 	require.NoError(t, err)
 	require.False(t, strict.Success)
 	require.Equal(t, []authoring.FieldError{{
-		Field: "canvas.floor_source", Code: "party-cap", Message: "floor has no complete PartyCap seating envelope",
+		Field: "canvas.floor_source", Message: "no floor anchor has a complete same-component party start envelope", Code: "entrance_unavailable",
 	}}, strict.FieldErrors)
 	require.Empty(t, registry.Keys())
 	_, statErr := os.Stat(filepath.Join(dir, "tiny-draft.yaml"))
 	require.ErrorIs(t, statErr, os.ErrNotExist)
 }
 
-func TestPutDungeon_WaveASeamCarriesDisconnectedDraftAndStrictFailure(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	compiler := authoringmock.NewMockCompiler(ctrl)
-	registry := dungeonregistry.New(map[string]dungeonregistry.Entry{
-		"two-islands": {Compiled: dungeonspec.CompiledDungeon{}, Name: "Prior"},
-	})
-	dir := t.TempDir()
-	priorSource := []byte("prior authoritative source")
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "two-islands.yaml"), priorSource, 0o600))
-	orch, err := authoring.New(&authoring.Config{Registry: registry, ContentDir: dir, PartyStartSeatCount: 4, Compiler: compiler})
-	require.NoError(t, err)
-	source := "version: 1\nkey: two-islands\ncanvas: { floor_source: regions }\n"
-	islands := &authoring.FloorPlan{
-		FloorSource: authoring.FloorSourceRegions,
-		FloorCells: []authoring.FloorPlanCell{
-			{Column: 0, Row: 0}, {Column: 0, Row: 1}, {Column: 1, Row: 0}, {Column: 1, Row: 1}, {Column: 4, Row: 4},
-		},
-		Entrance: &authoring.FloorPlanCell{Column: 0, Row: 0},
-	}
-	gomock.InOrder(
-		compiler.EXPECT().CompileDungeon(gomock.Any(), gomock.Any()).DoAndReturn(
-			func(_ context.Context, in *authoring.CompileDungeonInput) (*authoring.CompileDungeonOutput, error) {
-				require.Equal(t, authoring.CompileModeDraft, in.Mode)
-				return &authoring.CompileDungeonOutput{FloorPlan: islands}, nil
-			}),
-		compiler.EXPECT().CompileDungeon(gomock.Any(), gomock.Any()).DoAndReturn(
-			func(_ context.Context, in *authoring.CompileDungeonInput) (*authoring.CompileDungeonOutput, error) {
-				require.Equal(t, authoring.CompileModeStrict, in.Mode)
-				return &authoring.CompileDungeonOutput{FieldErrors: []authoring.FieldError{{
-					Field: "regions[1].cells", Code: "disconnected-floor", Message: "floor cell is outside the entrance component",
-				}}}, nil
-			}),
-	)
-
+func TestPutDungeon_WaveARealProviderDisconnectedDraftCannotPersistStrict(t *testing.T) {
+	orch, registry, dir := waveAOrchestrator(t)
+	const source = `version: 1
+key: two-islands
+name: Two Islands
+canvas: { width: 6, height: 3, floor_source: regions }
+rooms: []
+regions:
+  - { id: large, cells: [[0,0], [0,1], [1,0], [1,1]] }
+  - { id: island, cells: [[5,2]] }
+`
 	preview, err := orch.PutDungeon(context.Background(), &authoring.PutDungeonInput{Key: "two-islands", YAML: source, ValidateOnly: true})
 	require.NoError(t, err)
 	require.True(t, preview.Success)
-	require.Equal(t, islands.FloorCells, preview.FloorPlan.FloorCells)
+	require.Len(t, preview.FloorPlan.FloorCells, 5)
 
 	strict, err := orch.PutDungeon(context.Background(), &authoring.PutDungeonInput{Key: "two-islands", YAML: source})
 	require.NoError(t, err)
 	require.False(t, strict.Success)
-	require.Equal(t, "regions[1].cells", strict.FieldErrors[0].Field)
-	afterSource, readErr := os.ReadFile(filepath.Join(dir, "two-islands.yaml"))
-	require.NoError(t, readErr)
-	require.Equal(t, priorSource, afterSource)
+	require.Equal(t, []authoring.FieldError{{
+		Field: "canvas.floor_source", Message: "region-union floor must be connected in strict mode", Code: "floor_disconnected",
+	}}, strict.FieldErrors)
+	require.Empty(t, registry.Keys())
+	_, statErr := os.Stat(filepath.Join(dir, "two-islands.yaml"))
+	require.ErrorIs(t, statErr, os.ErrNotExist)
+
+	// Removing the disconnected island from the complete candidate succeeds.
+	// API never supplies the failed candidate or prior compiled state back to
+	// the provider, so this is an ordinary strict standalone replacement.
+	const connected = `version: 1
+key: two-islands
+name: One Connected Island
+canvas: { width: 6, height: 3, floor_source: regions }
+rooms: []
+regions:
+  - { id: large, cells: [[0,0], [0,1], [1,0], [1,1]] }
+`
+	repaired, err := orch.PutDungeon(context.Background(), &authoring.PutDungeonInput{Key: "two-islands", YAML: connected})
+	require.NoError(t, err)
+	require.True(t, repaired.Success)
+	require.Len(t, repaired.FloorPlan.FloorCells, 4)
+	require.Equal(t, &authoring.FloorPlanCell{Column: 0, Row: 0}, repaired.FloorPlan.Entrance)
+	require.FileExists(t, filepath.Join(dir, "two-islands.yaml"))
 	entry, ok := registry.Get("two-islands")
 	require.True(t, ok)
-	require.Equal(t, "Prior", entry.Name)
+	require.NoError(t, entry.Err)
+	require.Equal(t, "One Connected Island", entry.Name)
+}
+
+func TestPutDungeon_WaveARealProviderCarriesExactIndexedValidationPaths(t *testing.T) {
+	orch, _, _ := waveAOrchestrator(t)
+	const duplicateEmpty = `version: 1
+key: exact-path
+name: Exact Path
+canvas: { width: 2, height: 2, floor_source: regions }
+rooms: []
+regions:
+  - { id: first, cells: [] }
+  - { id: second, cells: [] }
+`
+	out, err := orch.PutDungeon(context.Background(), &authoring.PutDungeonInput{
+		Key: "exact-path", YAML: duplicateEmpty, ValidateOnly: true,
+	})
+	require.NoError(t, err)
+	require.False(t, out.Success)
+	require.Len(t, out.FieldErrors, 1)
+	require.Equal(t, "regions[1].cells", out.FieldErrors[0].Field)
+	require.Equal(t, "duplicate_region", out.FieldErrors[0].Code)
+}
+
+func TestPutDungeon_WaveARealProviderPersistsCompleteStrictCandidate(t *testing.T) {
+	orch, registry, dir := waveAOrchestrator(t)
+	out, err := orch.PutDungeon(context.Background(), &authoring.PutDungeonInput{Key: "ring-room", YAML: waveARingYAML})
+	require.NoError(t, err)
+	require.True(t, out.Success)
+	require.Equal(t, authoring.FloorSourceRegions, out.FloorPlan.FloorSource)
+	committed, readErr := os.ReadFile(filepath.Join(dir, "ring-room.yaml"))
+	require.NoError(t, readErr)
+	require.Equal(t, waveARingYAML, string(committed))
+	entry, ok := registry.Get("ring-room")
+	require.True(t, ok)
+	require.NoError(t, entry.Err)
+	require.Equal(t, "Ring Room", entry.Name)
 }

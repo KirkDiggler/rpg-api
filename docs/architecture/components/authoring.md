@@ -1,32 +1,29 @@
 ---
 name: authoring durability
 description: PutDungeon per-key transaction ordering and authored-source crash guarantees
-updated: 2026-08-07
+updated: 2026-08-09
 confidence: high — fault injection, race stress, and production-loader restart tests
 ---
 
 # Authoring durability
 
-`PutDungeon` is a thin consumer of `dungeonspec`: rpg-api passes the prior
-`CompiledDungeon` opaquely to the toolkit, builds the provider `FloorPlan`, and
-owns only persistence plus live-registry orchestration. It does not interpret
-geometry, shrink meaning, topology, or rules.
+`PutDungeon` is a thin consumer of `dungeonspec`: rpg-api passes each complete
+source standalone to `CompileDungeon`, maps the provider `FloorPlan` and exact
+field errors, and owns only persistence plus live-registry orchestration. It does
+not interpret geometry, shrink meaning, topology, or rules.
 
 ## Per-key transaction
 
-Every call, including `validate_only`, takes the dungeon key's lock before it
-reads the prior registry entry. A mutating call holds that lock through:
+Every call, including `validate_only`, takes the dungeon key's lock before
+standalone candidate compilation. A mutating call holds that lock through:
 
-1. prior opaque `CompiledDungeon` lookup;
-2. toolkit `LoadWithPrevious`/`LoadWithConfig` validation;
-3. toolkit `BuildFloorPlan`;
-4. durable source replacement; and
-5. live registry replacement.
+1. one toolkit `CompileDungeon` call over the complete source;
+2. durable source replacement; and
+3. live registry replacement.
 
-Thus two calls for one key have one linear order, and a waiter validates against
-the committed winner rather than stale state. Locks are per key and
-reference-counted; unrelated keys proceed concurrently and unused lock entries
-are removed.
+Thus two calls for one key have one linear order without passing prior compiled
+state into either candidate. Locks are per key and reference-counted; unrelated
+keys proceed concurrently and unused lock entries are removed.
 
 ## Filesystem and crash contract
 

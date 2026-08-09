@@ -399,7 +399,7 @@ connectors:
 }
 
 // TestPutDungeon_ProjectsToolkitCombinedGeneratedAndAuthoredEdgesVerbatim
-// compares the API response to BuildFloorPlan's complete canonical projection.
+// compares the API response to CompileDungeon's complete canonical projection.
 // It also pins representative generated and authored facts without sorting or
 // normalizing either list in the consumer test.
 func TestPutDungeon_ProjectsToolkitCombinedGeneratedAndAuthoredEdgesVerbatim(t *testing.T) {
@@ -468,16 +468,20 @@ func TestPutDungeon_AuthoredWallFieldErrorsPassThroughToolkitVerbatim(t *testing
   - { from: [7, 1], to: [8, 0], kind: solid }
 connectors:
 `, 1)
-	_, toolkitErr := dungeonspec.LoadWithConfig([]byte(yaml), dungeonspec.LoadConfig{PartyStartSeatCount: 4})
-	require.Error(t, toolkitErr)
-	require.ErrorContains(t, toolkitErr, "walls[0]: endpoints must be adjacent pointy-top odd-q floor hexes")
+	providerOut, providerErr := dungeonspec.CompileDungeon(context.Background(), &dungeonspec.CompileDungeonInput{
+		Source: []byte(yaml), Mode: dungeonspec.CompileModeDraft, PartyStartSeatCount: 4, PreviewSeed: 1,
+	})
+	require.NoError(t, providerErr)
+	require.Len(t, providerOut.FieldErrors, 1)
 
 	orch, registry, dir := newTestOrchestrator(t)
 	out, err := orch.PutDungeon(context.Background(), &authoring.PutDungeonInput{Key: key, YAML: yaml, ValidateOnly: true})
 	require.NoError(t, err)
 	require.False(t, out.Success)
 	require.Nil(t, out.FloorPlan)
-	require.Equal(t, []authoring.FieldError{{Message: toolkitErr.Error()}}, out.FieldErrors)
+	require.Equal(t, []authoring.FieldError{{
+		Field: providerOut.FieldErrors[0].Field, Message: providerOut.FieldErrors[0].Message, Code: providerOut.FieldErrors[0].Code,
+	}}, out.FieldErrors)
 	require.Empty(t, registry.Keys())
 	entries, err := os.ReadDir(dir)
 	require.NoError(t, err)
@@ -527,23 +531,45 @@ func authoredDoorID(t *testing.T, edges []authoring.FloorPlanEdge) string {
 
 func buildProviderFloorPlan(t *testing.T, yaml string) *authoring.FloorPlan {
 	t.Helper()
-	compiled, err := dungeonspec.LoadWithConfig([]byte(yaml), dungeonspec.LoadConfig{PartyStartSeatCount: 4})
+	compiled, err := dungeonspec.CompileDungeon(context.Background(), &dungeonspec.CompileDungeonInput{
+		Source: []byte(yaml), Mode: dungeonspec.CompileModeDraft, PartyStartSeatCount: 4, PreviewSeed: 1,
+	})
 	require.NoError(t, err)
-	providerPlan, err := dungeonspec.BuildFloorPlan(context.Background(), dungeonspec.BuildFloorPlanInput{Compiled: compiled, Seed: 1})
-	require.NoError(t, err)
+	require.Empty(t, compiled.FieldErrors)
+	providerPlan := compiled.FloorPlan
 	plan := &authoring.FloorPlan{
-		FloorSource: authoring.FloorSourceBounds,
-		Rooms:       make([]authoring.FloorPlanRoom, len(providerPlan.Rooms)), Connectors: make([]authoring.FloorPlanConnector, len(providerPlan.Connectors)),
-		Width: providerPlan.Width, Height: providerPlan.Height, DoorRow: providerPlan.DoorRow,
-		FloorCells: make([]authoring.FloorPlanCell, len(providerPlan.FloorCells)),
-		Entrance:   &authoring.FloorPlanCell{Column: providerPlan.Entrance.Column, Row: providerPlan.Entrance.Row},
-		Edges:      make([]authoring.FloorPlanEdge, len(providerPlan.Edges)),
+		FloorSource: authoring.FloorSource(providerPlan.FloorSource),
+		Width:       providerPlan.Width, Height: providerPlan.Height, DoorRow: providerPlan.DoorRow,
+	}
+	if providerPlan.Entrance != nil {
+		plan.Entrance = &authoring.FloorPlanCell{Column: providerPlan.Entrance.Column, Row: providerPlan.Entrance.Row}
+	}
+	if providerPlan.Rooms != nil {
+		plan.Rooms = make([]authoring.FloorPlanRoom, len(providerPlan.Rooms))
+	}
+	if providerPlan.Connectors != nil {
+		plan.Connectors = make([]authoring.FloorPlanConnector, len(providerPlan.Connectors))
+	}
+	if providerPlan.Regions != nil {
+		plan.Regions = make([]authoring.FloorPlanRegion, len(providerPlan.Regions))
+	}
+	if providerPlan.FloorCells != nil {
+		plan.FloorCells = make([]authoring.FloorPlanCell, len(providerPlan.FloorCells))
+	}
+	if providerPlan.Edges != nil {
+		plan.Edges = make([]authoring.FloorPlanEdge, len(providerPlan.Edges))
 	}
 	for index, room := range providerPlan.Rooms {
 		plan.Rooms[index] = authoring.FloorPlanRoom{ID: room.ID, Archetype: room.Archetype, Width: room.Width, StartColumn: room.StartColumn}
 	}
 	for index, connector := range providerPlan.Connectors {
 		plan.Connectors[index] = authoring.FloorPlanConnector{DoorID: connector.DoorID, Locked: connector.Locked, FromRoomID: connector.FromRoomID, ToRoomID: connector.ToRoomID, Column: connector.Column}
+	}
+	for index, region := range providerPlan.Regions {
+		plan.Regions[index] = authoring.FloorPlanRegion{ID: region.ID, ParentID: region.ParentID, Cells: make([]authoring.FloorPlanCell, len(region.Cells))}
+		for cellIndex, cell := range region.Cells {
+			plan.Regions[index].Cells[cellIndex] = authoring.FloorPlanCell{Column: cell.Column, Row: cell.Row}
+		}
 	}
 	for index, cell := range providerPlan.FloorCells {
 		plan.FloorCells[index] = authoring.FloorPlanCell{Column: cell.Column, Row: cell.Row}

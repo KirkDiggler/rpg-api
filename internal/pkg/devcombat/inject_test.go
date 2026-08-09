@@ -57,7 +57,7 @@ func (s *InjectSuite) seedLobbyLikeEncounter(encID string) {
 	}))
 	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
 		PlayerID: "bob", EntityID: "char-bob",
-		Position: core.Hex{Q: 1, R: 0, S: -1}, SightRange: 10,
+		Position: core.Hex{Q: 1, R: -1, S: 0}, SightRange: 10,
 		HP: 14, MaxHP: 14, AC: 13,
 	}))
 	s.Require().NoError(s.repo.Save(s.ctx, enc.ToData()))

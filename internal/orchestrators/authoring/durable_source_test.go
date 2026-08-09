@@ -30,7 +30,14 @@ func newDurabilityOrchestrator(t *testing.T) (*Orchestrator, *dungeonregistry.Re
 	return orch, registry, dir
 }
 
-func TestPutDungeon_SameKeyWaiterValidatesAgainstCommittedWinner(t *testing.T) {
+func firstFieldErrorMessage(out *PutDungeonOutput) string {
+	if out == nil || len(out.FieldErrors) == 0 {
+		return "provider validation failed without a field error"
+	}
+	return out.FieldErrors[0].Message
+}
+
+func TestPutDungeon_SameKeyWaiterRunsAfterCommittedWinner(t *testing.T) {
 	orch, registry, dir := newDurabilityOrchestrator(t)
 	const key = "linear-update"
 	initial := durabilityCanvasYAML(key, "Initial", 6, "")
@@ -39,9 +46,8 @@ func TestPutDungeon_SameKeyWaiterValidatesAgainstCommittedWinner(t *testing.T) {
 	require.True(t, out.Success)
 
 	winner := durabilityCanvasYAML(key, "Winner", 6, "place:\n  - { ref: dnd5e:props:pillar, at: [4, 0] }\n")
-	// This shrink is valid against Initial (which has no placement), but the
-	// toolkit rejects it against Winner because Winner's prior placement would
-	// fall outside the candidate canvas. It therefore detects a stale prior read.
+	// The complete loser candidate explicitly omits Winner's placement. It is
+	// valid standalone and must run only after Winner's durable commit.
 	loser := durabilityCanvasYAML(key, "Loser", 4, "")
 
 	productionReplace := orch.replaceSource
@@ -88,16 +94,14 @@ func TestPutDungeon_SameKeyWaiterValidatesAgainstCommittedWinner(t *testing.T) {
 
 	loserResult := <-loserDone
 	require.NoError(t, loserResult.err)
-	require.False(t, loserResult.out.Success)
-	require.Contains(t, loserResult.out.FieldError, "place[0]",
-		"the waiter must validate against Winner's opaque CompiledDungeon")
+	require.True(t, loserResult.out.Success)
 
 	disk, err := os.ReadFile(filepath.Join(dir, key+".yaml"))
 	require.NoError(t, err)
-	require.Equal(t, winner, string(disk))
+	require.Equal(t, loser, string(disk))
 	entry, ok := registry.Get(key)
 	require.True(t, ok)
-	require.Equal(t, "Winner", entry.Name)
+	require.Equal(t, "Loser", entry.Name)
 }
 
 func TestPutDungeon_DifferentKeysDoNotWaitForEachOther(t *testing.T) {
@@ -119,7 +123,7 @@ func TestPutDungeon_DifferentKeysDoNotWaitForEachOther(t *testing.T) {
 			Key: "blocked-key", YAML: durabilityCanvasYAML("blocked-key", "Blocked", 4, ""),
 		})
 		if err == nil && !out.Success {
-			err = errors.New(out.FieldError)
+			err = errors.New(firstFieldErrorMessage(out))
 		}
 		blockedDone <- err
 	}()
@@ -131,7 +135,7 @@ func TestPutDungeon_DifferentKeysDoNotWaitForEachOther(t *testing.T) {
 			Key: "other-key", YAML: durabilityCanvasYAML("other-key", "Other", 4, ""),
 		})
 		if err == nil && !out.Success {
-			err = errors.New(out.FieldError)
+			err = errors.New(firstFieldErrorMessage(out))
 		}
 		otherDone <- err
 	}()

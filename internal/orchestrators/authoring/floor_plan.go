@@ -1,11 +1,6 @@
 package authoring
 
-import (
-	"context"
-	"fmt"
-
-	"github.com/KirkDiggler/rpg-toolkit/encounter/dungeonspec"
-)
+import "github.com/KirkDiggler/rpg-toolkit/encounter/dungeonspec"
 
 // FloorPlanRoom is one provider-compiled room placement.
 type FloorPlanRoom struct {
@@ -76,26 +71,32 @@ type FloorPlan struct {
 	Edges       []FloorPlanEdge
 }
 
-// buildFloorPlan maps the complete toolkit projection field-for-field. Geometry,
-// ordering, and canonicalization all remain in dungeonspec.BuildFloorPlan.
-func buildFloorPlan(ctx context.Context, compiled dungeonspec.CompiledDungeon, seed int64) (*FloorPlan, error) {
-	providerPlan, err := dungeonspec.BuildFloorPlan(ctx, dungeonspec.BuildFloorPlanInput{
-		Compiled: compiled,
-		Seed:     seed,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("build floor plan: %w", err)
+// mapFloorPlan projects the provider result field-for-field into API-domain
+// entities. Geometry, ordering, canonicalization, and nil entrance semantics
+// remain provider-owned.
+func mapFloorPlan(providerPlan *dungeonspec.FloorPlan) *FloorPlan {
+	if providerPlan == nil {
+		return nil
 	}
 
 	plan := &FloorPlan{
-		Rooms:      make([]FloorPlanRoom, len(providerPlan.Rooms)),
-		Connectors: make([]FloorPlanConnector, len(providerPlan.Connectors)),
-		Width:      providerPlan.Width,
-		Height:     providerPlan.Height,
-		DoorRow:    providerPlan.DoorRow,
-		FloorCells: make([]FloorPlanCell, len(providerPlan.FloorCells)),
-		Entrance:   floorPlanCellPtrFromProvider(providerPlan.Entrance),
-		Edges:      make([]FloorPlanEdge, len(providerPlan.Edges)),
+		FloorSource: FloorSource(providerPlan.FloorSource),
+		Width:       providerPlan.Width,
+		Height:      providerPlan.Height,
+		DoorRow:     providerPlan.DoorRow,
+		Entrance:    floorPlanCellPtrFromProvider(providerPlan.Entrance),
+	}
+	if providerPlan.Rooms != nil {
+		plan.Rooms = make([]FloorPlanRoom, len(providerPlan.Rooms))
+	}
+	if providerPlan.Connectors != nil {
+		plan.Connectors = make([]FloorPlanConnector, len(providerPlan.Connectors))
+	}
+	if providerPlan.FloorCells != nil {
+		plan.FloorCells = make([]FloorPlanCell, len(providerPlan.FloorCells))
+	}
+	if providerPlan.Edges != nil {
+		plan.Edges = make([]FloorPlanEdge, len(providerPlan.Edges))
 	}
 	for index, room := range providerPlan.Rooms {
 		plan.Rooms[index] = FloorPlanRoom{ID: room.ID, Archetype: room.Archetype, Width: room.Width, StartColumn: room.StartColumn}
@@ -105,8 +106,10 @@ func buildFloorPlan(ctx context.Context, compiled dungeonspec.CompiledDungeon, s
 		for index, region := range providerPlan.Regions {
 			plan.Regions[index] = FloorPlanRegion{
 				ID:       region.ID,
-				Cells:    make([]FloorPlanCell, len(region.Cells)),
 				ParentID: cloneOptionalString(region.ParentID),
+			}
+			if region.Cells != nil {
+				plan.Regions[index].Cells = make([]FloorPlanCell, len(region.Cells))
 			}
 			for cellIndex, cell := range region.Cells {
 				plan.Regions[index].Cells[cellIndex] = floorPlanCellFromProvider(cell)
@@ -128,15 +131,18 @@ func buildFloorPlan(ctx context.Context, compiled dungeonspec.CompiledDungeon, s
 			Kind: FloorPlanEdgeKind(edge.Kind), DoorID: edge.DoorID,
 		}
 	}
-	return plan, nil
+	return plan
 }
 
 func floorPlanCellFromProvider(cell dungeonspec.FloorPlanCell) FloorPlanCell {
 	return FloorPlanCell{Column: cell.Column, Row: cell.Row}
 }
 
-func floorPlanCellPtrFromProvider(cell dungeonspec.FloorPlanCell) *FloorPlanCell {
-	mapped := floorPlanCellFromProvider(cell)
+func floorPlanCellPtrFromProvider(cell *dungeonspec.FloorPlanCell) *FloorPlanCell {
+	if cell == nil {
+		return nil
+	}
+	mapped := floorPlanCellFromProvider(*cell)
 	return &mapped
 }
 

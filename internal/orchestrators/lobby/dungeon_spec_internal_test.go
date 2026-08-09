@@ -166,6 +166,30 @@ func TestLoadContentRegistry_BrokenOverrideFile_StoredAsDisabledNotConstructionF
 	require.NoError(t, tombEntry.Err)
 }
 
+func TestLoadContentRegistry_UsesStrictCompilationForDraftOnlyRegionFloor(t *testing.T) {
+	dir := t.TempDir()
+	const source = `version: 1
+key: tiny-draft-only
+name: Tiny Draft Only
+canvas: { width: 3, height: 2, floor_source: regions }
+rooms: []
+regions: [{ id: tiny, cells: [[0,0], [1,0]] }]
+`
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "tiny-draft-only.yaml"), []byte(source), 0o600))
+	t.Setenv("RPG_CONTENT_DIR", dir)
+
+	registry, err := LoadContentRegistry()
+	require.NoError(t, err)
+	entry, ok := registry.Get("tiny-draft-only")
+	require.True(t, ok, "strict-invalid content remains discoverable as a disabled key")
+	require.Error(t, entry.Err)
+	var fieldErr *contentFieldError
+	require.ErrorAs(t, entry.Err, &fieldErr)
+	require.Equal(t, "canvas.floor_source", fieldErr.Field)
+	require.Equal(t, "no floor anchor has a complete same-component party start envelope", fieldErr.Message)
+	require.Equal(t, "entrance_unavailable", fieldErr.Code)
+}
+
 func TestResolveContentDungeonSpec_NotFound_ReturnsFoundFalse(t *testing.T) {
 	o := &Orchestrator{registry: dungeonregistry.New(nil)}
 	compiled, found, err := o.resolveContentDungeonSpec(DungeonKey("no-such-key"))
