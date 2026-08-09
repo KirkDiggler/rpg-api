@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 	"regexp"
 
@@ -131,6 +130,15 @@ func (o *Orchestrator) PutDungeon(ctx context.Context, in *PutDungeonInput) (*Pu
 		}
 	}
 
+	// The lock begins before prior-state retrieval and stays held through the
+	// durable source commit and registry replacement. That makes the complete
+	// update transaction linearizable for this key: a waiter can only validate
+	// against the winner's registry state, never the stale state it replaced.
+	// Validate-only calls take the same lock so their preview has a definite
+	// order relative to a committed update.
+	unlock := o.updateLocks.lock(in.Key)
+	defer unlock()
+
 	raw := []byte(in.YAML)
 	config := dungeonspec.LoadConfig{PartyStartSeatCount: o.partyStartSeatCount}
 	previous, hasPrevious := o.registry.Get(in.Key)
@@ -193,9 +201,8 @@ func (o *Orchestrator) writeThrough(key, yamlText string) error {
 		filename = key + ".yaml"
 	}
 	path := filepath.Join(o.contentDir, filename)
-	// ContentDir is operator-controlled, same posture as content.readOverrideDir.
-	if err := os.WriteFile(path, []byte(yamlText), 0o600); err != nil { //nolint:gosec
-		return fmt.Errorf("write %q: %w", path, err)
+	if err := o.replaceSource(&replaceSourceInput{Path: path, Data: []byte(yamlText), Mode: 0o600}); err != nil {
+		return fmt.Errorf("replace %q durably: %w", path, err)
 	}
 	return nil
 }
