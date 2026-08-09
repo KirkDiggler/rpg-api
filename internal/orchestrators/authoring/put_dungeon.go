@@ -57,8 +57,8 @@ type PutDungeonInput struct {
 }
 
 // PutDungeonOutput is the well-formed-request result: EITHER the YAML's
-// CONTENT failed dungeonspec's validate/compile (Success=false,
-// FieldError carries the one flat v1-limitation message, FloorPlan nil)
+// CONTENT failed provider validation (Success=false, FieldErrors carries
+// exact source paths/messages/codes, FloorPlan nil)
 // OR it succeeded (Success=true, FloorPlan set). A malformed REQUEST
 // never produces one of these — PutDungeon returns a
 // *MalformedRequestError instead, never a *PutDungeonOutput, for that
@@ -66,10 +66,7 @@ type PutDungeonInput struct {
 // distinguishable in type/shape, not collapsed into one "return an
 // error" path).
 type PutDungeonOutput struct {
-	Success bool
-	// FieldError is the legacy first-message view retained for existing API
-	// callers. FieldErrors is authoritative because it preserves exact paths.
-	FieldError  string
+	Success     bool
 	FieldErrors []FieldError
 	FloorPlan   *FloorPlan
 }
@@ -104,20 +101,18 @@ func peekYAMLKey(yamlText string) (key string, ok bool) {
 //
 //  1. Key charset, then key/YAML key: match — cheap, no compile needed.
 //     Either failure is a malformed REQUEST (*MalformedRequestError).
-//  2. Retrieve a healthy prior registry entry, if present, then let
-//     dungeonspec validate the candidate against its opaque CompiledDungeon.
-//     A failure here is a well-formed request whose CONTENT is the problem —
-//     PutDungeonOutput with Success=false, distinct in TYPE from step 1.
-//  3. Build the toolkit FloorPlan. A failure here is also a content failure,
-//     with the same Success=false treatment as step 2.
-//  4. ValidateOnly stops here: FloorPlan returned, nothing persisted,
+//  2. Compile the complete candidate standalone in Draft or Strict mode.
+//     Prior compiled state is deliberately not an input: explicit deletion is
+//     legal when the replacement candidate itself validates. Provider field
+//     failures return PutDungeonOutput with Success=false.
+//  3. ValidateOnly stops here: FloorPlan returned, nothing persisted,
 //     nothing registered.
-//  5. Write-through to ContentDir FIRST. A write failure fails the RPC
+//  4. Write-through to ContentDir FIRST. A write failure fails the RPC
 //     (a real Go error, not a PutDungeonOutput) and leaves the registry
 //     untouched — this ordering is what prevents a spec from playing now
 //     and vanishing after the next restart because it was never actually
 //     written to disk (design.md's "write-then-swap" decision).
-//  6. Only on a successful write does the registry swap happen.
+//  5. Only on a successful write does the registry swap happen.
 func (o *Orchestrator) PutDungeon(ctx context.Context, in *PutDungeonInput) (*PutDungeonOutput, error) {
 	if in == nil {
 		return nil, errors.New("authoring orchestrator: PutDungeonInput is required")
@@ -145,10 +140,6 @@ func (o *Orchestrator) PutDungeon(ctx context.Context, in *PutDungeonInput) (*Pu
 		PartyStartSeatCount: o.partyStartSeatCount,
 		PreviewSeed:         defaultPreviewSeed,
 	}
-	previous, hasPrevious := o.registry.Get(in.Key)
-	if hasPrevious && previous.Err == nil {
-		compileInput.Previous = &previous.Compiled
-	}
 	compiled, compileErr := o.compiler.CompileDungeon(ctx, compileInput)
 	if compileErr != nil {
 		return nil, fmt.Errorf("authoring orchestrator: compile dungeon %q: %w", in.Key, compileErr)
@@ -158,9 +149,7 @@ func (o *Orchestrator) PutDungeon(ctx context.Context, in *PutDungeonInput) (*Pu
 	}
 	if len(compiled.FieldErrors) > 0 {
 		fieldErrors := cloneFieldErrors(compiled.FieldErrors)
-		return &PutDungeonOutput{
-			Success: false, FieldError: fieldErrors[0].Message, FieldErrors: fieldErrors,
-		}, nil
+		return &PutDungeonOutput{Success: false, FieldErrors: fieldErrors}, nil
 	}
 	if compiled.FloorPlan == nil {
 		return nil, fmt.Errorf("authoring orchestrator: compile dungeon %q: provider returned no floor plan", in.Key)
@@ -177,11 +166,10 @@ func (o *Orchestrator) PutDungeon(ctx context.Context, in *PutDungeonInput) (*Pu
 		return nil, fmt.Errorf("authoring orchestrator: write dungeon %q: %w", in.Key, err)
 	}
 
-	name := compiled.Name
-	if name == "" {
-		name = captureName(raw, in.Key)
-	}
-	o.registry.Put(in.Key, dungeonregistry.Entry{Compiled: compiled.Compiled, Name: name})
+	o.registry.Put(in.Key, dungeonregistry.Entry{
+		Compiled: compiled.Compiled,
+		Name:     captureName(raw, in.Key),
+	})
 
 	return &PutDungeonOutput{Success: true, FloorPlan: compiled.FloorPlan}, nil
 }

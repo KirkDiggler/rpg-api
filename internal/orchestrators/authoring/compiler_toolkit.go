@@ -23,15 +23,7 @@ func (toolkitCompiler) CompileDungeon(
 	}
 
 	config := dungeonspec.LoadConfig{PartyStartSeatCount: in.PartyStartSeatCount}
-	var (
-		compiled dungeonspec.CompiledDungeon
-		err      error
-	)
-	if in.Previous != nil {
-		compiled, err = dungeonspec.LoadWithPrevious(in.Source, config, *in.Previous)
-	} else {
-		compiled, err = dungeonspec.LoadWithConfig(in.Source, config)
-	}
+	compiled, err := dungeonspec.LoadWithConfig(in.Source, config)
 	if err != nil {
 		return &CompileDungeonOutput{FieldErrors: []FieldError{{Message: err.Error()}}}, nil
 	}
@@ -45,9 +37,5 @@ func (toolkitCompiler) CompileDungeon(
 	// source into bounds; toolkit decode has already rejected such a source.
 	floorPlan.FloorSource = FloorSourceBounds
 
-	return &CompileDungeonOutput{
-		Compiled:  compiled,
-		FloorPlan: floorPlan,
-		Name:      captureName(in.Source, ""),
-	}, nil
+	return &CompileDungeonOutput{Compiled: compiled, FloorPlan: floorPlan}, nil
 }

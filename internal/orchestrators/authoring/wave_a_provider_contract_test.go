@@ -15,6 +15,10 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/encounter/dungeonspec"
 )
 
+// These mock-injected fixtures prove only API seam behavior: lifecycle input,
+// verbatim mapping, exact error transport, and nonmutation. They do not prove
+// that the unreleased toolkit provider computes ring topology or mechanics.
+
 func waveAOrchestrator(t *testing.T, compiler authoring.Compiler) (*authoring.Orchestrator, *dungeonregistry.Registry, string) {
 	t.Helper()
 	registry := dungeonregistry.New(nil)
@@ -26,7 +30,7 @@ func waveAOrchestrator(t *testing.T, compiler authoring.Compiler) (*authoring.Or
 	return orch, registry, dir
 }
 
-func TestPutDungeon_WaveARingMapsProviderProjectionVerbatim(t *testing.T) {
+func TestPutDungeon_WaveASeamMapsInjectedRingProjectionVerbatim(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	compiler := authoringmock.NewMockCompiler(ctrl)
 	orch, registry, dir := waveAOrchestrator(t, compiler)
@@ -59,7 +63,6 @@ func TestPutDungeon_WaveARingMapsProviderProjectionVerbatim(t *testing.T) {
 			require.Equal(t, source, in.Source)
 			require.Equal(t, authoring.CompileModeDraft, in.Mode)
 			require.Equal(t, 4, in.PartyStartSeatCount)
-			require.Nil(t, in.Previous)
 			return &authoring.CompileDungeonOutput{FloorPlan: plan}, nil
 		})
 
@@ -80,7 +83,7 @@ func TestPutDungeon_WaveARingMapsProviderProjectionVerbatim(t *testing.T) {
 	require.Empty(t, entries)
 }
 
-func TestPutDungeon_WaveATinyDraftAbsentEntranceThenStrictFailure(t *testing.T) {
+func TestPutDungeon_WaveASeamCarriesTinyDraftAndStrictFailure(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	compiler := authoringmock.NewMockCompiler(ctrl)
 	orch, registry, dir := waveAOrchestrator(t, compiler)
@@ -125,7 +128,7 @@ func TestPutDungeon_WaveATinyDraftAbsentEntranceThenStrictFailure(t *testing.T) 
 	require.ErrorIs(t, statErr, os.ErrNotExist)
 }
 
-func TestPutDungeon_WaveADisconnectedDraftStrictFailurePreservesExactPathAndPriorState(t *testing.T) {
+func TestPutDungeon_WaveASeamCarriesDisconnectedDraftAndStrictFailure(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	compiler := authoringmock.NewMockCompiler(ctrl)
 	registry := dungeonregistry.New(map[string]dungeonregistry.Entry{
@@ -148,13 +151,11 @@ func TestPutDungeon_WaveADisconnectedDraftStrictFailurePreservesExactPathAndPrio
 		compiler.EXPECT().CompileDungeon(gomock.Any(), gomock.Any()).DoAndReturn(
 			func(_ context.Context, in *authoring.CompileDungeonInput) (*authoring.CompileDungeonOutput, error) {
 				require.Equal(t, authoring.CompileModeDraft, in.Mode)
-				require.NotNil(t, in.Previous)
 				return &authoring.CompileDungeonOutput{FloorPlan: islands}, nil
 			}),
 		compiler.EXPECT().CompileDungeon(gomock.Any(), gomock.Any()).DoAndReturn(
 			func(_ context.Context, in *authoring.CompileDungeonInput) (*authoring.CompileDungeonOutput, error) {
 				require.Equal(t, authoring.CompileModeStrict, in.Mode)
-				require.NotNil(t, in.Previous)
 				return &authoring.CompileDungeonOutput{FieldErrors: []authoring.FieldError{{
 					Field: "regions[1].cells", Code: "disconnected-floor", Message: "floor cell is outside the entrance component",
 				}}}, nil

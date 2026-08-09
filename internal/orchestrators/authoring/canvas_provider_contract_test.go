@@ -2,7 +2,6 @@ package authoring_test
 
 import (
 	"context"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -23,19 +22,6 @@ walls:
   - { from: [1, 0], to: [1, 1], kind: door }
 `
 
-const previousCanvasYAML = `version: 1
-key: canvas-provider-contract
-name: Previous Canvas Provider Contract
-height: 1
-canvas: { width: 4, height: 2 }
-rooms: []
-start: [0, 1]
-place:
-  - { ref: "dnd5e:props:pillar", at: [3, 0] }
-walls:
-  - { from: [2, 0], to: [2, 1], kind: solid }
-`
-
 const roomChainYAML = `version: 1
 key: room-chain-provider-contract
 name: Room Chain Provider Contract
@@ -52,13 +38,9 @@ connectors:
   - { from: entrance, to: boss }
 `
 
-// TestCanvasProviderContract is the deliberate, minimal expected-red consumer
-// test for rpg-toolkit#883. PutDungeon retrieves the previous
-// dungeonspec.CompiledDungeon from its registry and passes that value unchanged
-// to LoadWithPrevious before writeThrough or registry mutation. CompiledDungeon
-// is the sole opaque state carrier: toolkit owns all private placement, wall,
-// start, and future region-cell state within or extracted from it. API neither
-// exposes nor reconstructs any of those values.
+// TestCanvasProviderContract pins the released bounds-only provider projection.
+// Each complete source compiles standalone: API does not forward prior compiled
+// occupancy or treat an explicit deletion/shrink as invalid on its own.
 //
 // BuildFloorPlan returns toolkit-produced wire facts in canonical order. API
 // maps them only; it does not enumerate floor cells, normalize edges, or derive
@@ -66,15 +48,7 @@ connectors:
 // from weakening the pre-existing provider projection.
 func TestCanvasProviderContract(t *testing.T) {
 	config := dungeonspec.LoadConfig{PartyStartSeatCount: 4}
-	previous, err := dungeonspec.LoadWithConfig([]byte(previousCanvasYAML), config)
-	require.NoError(t, err)
-
-	shrunkYAML := strings.Replace(canvasYAML, "width: 4", "width: 3", 1)
-	_, err = dungeonspec.LoadWithPrevious([]byte(shrunkYAML), config, previous)
-	require.ErrorContains(t, err, "place[0]",
-		"a previous compiled placement at [3,0] must reject a shrinking candidate before API mutation")
-
-	compiled, err := dungeonspec.LoadWithPrevious([]byte(canvasYAML), config, previous)
+	compiled, err := dungeonspec.LoadWithConfig([]byte(canvasYAML), config)
 	require.NoError(t, err)
 	plan, err := dungeonspec.BuildFloorPlan(context.Background(), dungeonspec.BuildFloorPlanInput{
 		Compiled: compiled,

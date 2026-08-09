@@ -16,41 +16,35 @@ func canvasUpdateYAML(key, body string) string {
 	return "version: 1\nkey: " + key + "\nname: Canvas update\nheight: 1\ncanvas: { width: 4, height: 2 }\nrooms: []\n" + body
 }
 
-func TestPutDungeon_CanvasShrinkFailuresAreAtomic(t *testing.T) {
-	cases := []struct {
-		name, previousBody, candidate string
-		wantError                     string
-	}{
-		{"placement", "place:\n  - { ref: dnd5e:props:pillar, at: [3, 0] }\n", "canvas: { width: 3, height: 2 }\nrooms: []\n", "place[0]"},
-		{"wall endpoint", "walls:\n  - { from: [2, 0], to: [2, 1], kind: solid }\n", "canvas: { width: 4, height: 1 }\nrooms: []\n", "walls[0]"},
-		{"start", "start: [0, 1]\n", "canvas: { width: 4, height: 1 }\nrooms: []\n", "start"},
-	}
-	for _, test := range cases {
-		t.Run(test.name, func(t *testing.T) {
-			orch, registry, dir := newTestOrchestrator(t)
-			key := "atomic-" + strings.ReplaceAll(test.name, " ", "-")
-			previous := canvasUpdateYAML(key, test.previousBody)
-			first, err := orch.PutDungeon(context.Background(), &authoring.PutDungeonInput{Key: key, YAML: previous})
-			require.NoError(t, err)
-			require.True(t, first.Success)
-			beforeDisk, err := os.ReadFile(filepath.Join(dir, key+".yaml"))
-			require.NoError(t, err)
-			beforeEntry, ok := registry.Get(key)
-			require.True(t, ok)
+func TestPutDungeon_CompleteCandidateMayDeletePriorContentAndShrink(t *testing.T) {
+	const key = "complete-candidate-shrink"
+	previous := canvasUpdateYAML(key, `place:
+  - { ref: dnd5e:props:pillar, at: [3, 0] }
+walls:
+  - { from: [2, 0], to: [2, 1], kind: solid }
+start: [0, 1]
+`)
+	orch, registry, dir := newTestOrchestrator(t)
+	first, err := orch.PutDungeon(context.Background(), &authoring.PutDungeonInput{Key: key, YAML: previous})
+	require.NoError(t, err)
+	require.True(t, first.Success)
 
-			candidate := "version: 1\nkey: " + key + "\nname: Canvas update\nheight: 1\n" + test.candidate
-			out, err := orch.PutDungeon(context.Background(), &authoring.PutDungeonInput{Key: key, YAML: candidate})
-			require.NoError(t, err)
-			require.False(t, out.Success)
-			require.Contains(t, out.FieldError, test.wantError)
-			afterDisk, err := os.ReadFile(filepath.Join(dir, key+".yaml"))
-			require.NoError(t, err)
-			require.Equal(t, beforeDisk, afterDisk)
-			afterEntry, ok := registry.Get(key)
-			require.True(t, ok)
-			require.Equal(t, beforeEntry, afterEntry)
-		})
-	}
+	// The complete replacement explicitly deletes the old placement, wall, and
+	// start while shrinking the canvas. No prior compiled occupancy is an input;
+	// the candidate succeeds because its own complete source is valid.
+	candidate := "version: 1\nkey: " + key + "\nname: Shrunk complete candidate\nheight: 1\ncanvas: { width: 3, height: 2 }\nrooms: []\n"
+	out, err := orch.PutDungeon(context.Background(), &authoring.PutDungeonInput{Key: key, YAML: candidate})
+	require.NoError(t, err)
+	require.True(t, out.Success)
+	require.Equal(t, 3, out.FloorPlan.Width)
+	require.Empty(t, out.FloorPlan.Edges)
+
+	afterDisk, err := os.ReadFile(filepath.Join(dir, key+".yaml"))
+	require.NoError(t, err)
+	require.Equal(t, candidate, string(afterDisk))
+	afterEntry, ok := registry.Get(key)
+	require.True(t, ok)
+	require.Equal(t, "Shrunk complete candidate", afterEntry.Name)
 }
 
 func TestPutDungeon_ValidateOnlyAndGrowthRefreshRegistryAndReload(t *testing.T) {

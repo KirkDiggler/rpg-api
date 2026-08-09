@@ -26,15 +26,14 @@ type FieldError struct {
 	Code    string
 }
 
-// CompileDungeonInput is the complete candidate passed to the provider.
-// Previous is opaque compiler state used only for candidate-update checks;
-// API orchestration never reads or modifies it.
+// CompileDungeonInput is the complete authored candidate passed to the
+// provider. Every call compiles Source standalone; no prior compiled state is
+// an input because explicit deletion from a complete candidate is legal.
 type CompileDungeonInput struct {
 	Source              []byte
 	Mode                CompileMode
 	PartyStartSeatCount int
 	PreviewSeed         int64
-	Previous            *dungeonspec.CompiledDungeon
 }
 
 // CompileDungeonOutput is either a complete provider result (Compiled and
@@ -44,7 +43,6 @@ type CompileDungeonInput struct {
 type CompileDungeonOutput struct {
 	Compiled    dungeonspec.CompiledDungeon
 	FloorPlan   *FloorPlan
-	Name        string
 	FieldErrors []FieldError
 }
 

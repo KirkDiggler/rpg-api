@@ -17,7 +17,7 @@ rpg-dnd5e-web#735 commit `2ab0293`; the released generated Go contract is
 ```
 PutDungeon request
   -> API envelope/key checks
-  -> Compiler.CompileDungeon(complete source, draft|strict, PartyCap, opaque previous)
+  -> Compiler.CompileDungeon(complete standalone source, draft|strict, PartyCap, seed)
   -> exact FieldErrors OR complete Compiled + FloorPlan
   -> validate-only: return projection, mutate nothing
   -> strict write: durable source replacement, then authored registry replacement
@@ -36,8 +36,11 @@ Encounter reload
 expresses the lifecycle explicitly: `CompileModeDraft` permits structurally valid
 empty/tiny/disconnected projections; `CompileModeStrict` is required for durable
 write/registration and is also the authored state StartEncounter consumes.
-`CompileDungeonOutput.FieldErrors` carries provider-authored `Field`, `Message`, and
-`Code` verbatim. API never parses a message to invent a field path.
+Every candidate compiles standalone from its complete source. Prior compiled occupancy
+is never forwarded: explicit deletion/shrink is legal whenever the new complete
+candidate itself validates. `CompileDungeonOutput.FieldErrors` carries provider-authored
+`Field`, `Message`, and `Code` verbatim. API never parses a message to invent a field
+path. Display name remains API source metadata and is not a provider output.
 
 The API-owned `FloorPlan` demand is:
 
@@ -53,7 +56,7 @@ No protobuf type crosses the compiler seam.
 ## Provider dependency
 
 The currently released toolkit (`encounter v0.50.1`) exposes separate
-`LoadWithConfig`/`LoadWithPrevious` and `BuildFloorPlan` calls. It has no Wave A
+`LoadWithConfig` and `BuildFloorPlan` calls. It has no Wave A
 `floor_source`, draft-validity mode, optional entrance result, region-union mask or
 envelope result, typed validation paths, or strict-start helper. The temporary
 `toolkitCompiler` adapter preserves the existing bounds-only behavior and rejects an

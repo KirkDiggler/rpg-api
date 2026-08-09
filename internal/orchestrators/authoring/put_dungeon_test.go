@@ -212,7 +212,8 @@ func TestPutDungeon_InvalidYAML_ContentFailureNotMalformedRequest(t *testing.T) 
 	// proof a naive implementation that collapsed both failure classes
 	// into one path would fail here.
 	require.False(t, out.Success)
-	require.NotEmpty(t, out.FieldError, "exactly one message -- FieldError is a single string, not a slice, by construction")
+	require.NotEmpty(t, out.FieldErrors)
+	require.NotEmpty(t, out.FieldErrors[0].Message)
 	require.Nil(t, out.FloorPlan)
 
 	_, ok := registry.Get("broken")
@@ -312,7 +313,7 @@ func TestPutDungeon_AuthoredDoorRowStartUsesToolkitAnchorAndFourSeatConfig(t *te
 	})
 	require.NoError(t, err)
 	require.False(t, blocked.Success)
-	require.Contains(t, blocked.FieldError, "reserved row",
+	require.Contains(t, blocked.FieldErrors[0].Message, "reserved row",
 		"ordinary placement legality must be surfaced from toolkit validation")
 }
 
@@ -327,7 +328,7 @@ func TestPutDungeon_ValidateOnly_PopulatesFloorPlanWithoutPersisting(t *testing.
 	require.NoError(t, err)
 	require.NotNil(t, out)
 	require.True(t, out.Success)
-	require.Empty(t, out.FieldError)
+	require.Empty(t, out.FieldErrors)
 	require.NotNil(t, out.FloorPlan)
 
 	fp := out.FloorPlan
@@ -476,7 +477,7 @@ connectors:
 	require.NoError(t, err)
 	require.False(t, out.Success)
 	require.Nil(t, out.FloorPlan)
-	require.Equal(t, toolkitErr.Error(), out.FieldError)
+	require.Equal(t, []authoring.FieldError{{Message: toolkitErr.Error()}}, out.FieldErrors)
 	require.Empty(t, registry.Keys())
 	entries, err := os.ReadDir(dir)
 	require.NoError(t, err)
