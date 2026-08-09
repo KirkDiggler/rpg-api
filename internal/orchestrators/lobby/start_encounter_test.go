@@ -7,14 +7,18 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
+	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
 	"github.com/KirkDiggler/rpg-api/internal/apierr"
 	"github.com/KirkDiggler/rpg-api/internal/dungeonregistry"
 	"github.com/KirkDiggler/rpg-api/internal/entities"
+	encounterhandlerv2 "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v2/encounter"
 	authoringorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/authoring"
 	lobbyorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/lobby"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
@@ -97,20 +101,32 @@ func (s *LobbySuite) TestStartEncounter_CanvasPutDungeonSurvivesProductionReload
 key: canvas-production-reload
 name: Canvas Production Reload
 height: 1
-canvas: { width: 4, height: 2 }
+canvas: { width: 6, height: 2 }
 rooms: []
 start: [1, 1]
 place:
-  - { ref: dnd5e:props:altar, at: [1, 0], facing: W }
+  - { ref: dnd5e:props:altar, at: [1, 0], facing: W, offset: [-0.25, 1.5, 2.75] }
   - { ref: dnd5e:monsters:skeleton, at: [2, 0] }
+  - { ref: dnd5e:monsters:skeleton, at: [3, 0], offset: [0, 0, 0] }
+  - { ref: dnd5e:monsters:skeleton, at: [4, 0], offset: [0.125, -2.5, 3.75] }
 walls:
   - { from: [0, 0], to: [0, 1], kind: solid }
   - { from: [1, 0], to: [1, 1], kind: door }
 `
 	put, err := authoring.PutDungeon(s.ctx, &authoringorch.PutDungeonInput{Key: key, YAML: yaml})
 	s.Require().NoError(err)
-	s.Require().True(put.Success)
+	s.Require().True(put.Success, "field error: %s", put.FieldError)
 	s.Require().FileExists(filepath.Join(dir, key+".yaml"))
+	s.Require().Len(put.FloorPlan.Placements, 4)
+	s.Require().Equal("place[0]", put.FloorPlan.Placements[0].SourcePath)
+	s.Require().Equal(&authoringorch.PlacementOffset{X: -0.25, Y: 1.5, Z: 2.75}, put.FloorPlan.Placements[0].Offset)
+	s.Require().Equal("place[1]", put.FloorPlan.Placements[1].SourcePath)
+	s.Require().Nil(put.FloorPlan.Placements[1].Offset, "omitted canvas-monster offset must remain absent")
+	s.Require().Equal("place[2]", put.FloorPlan.Placements[2].SourcePath)
+	s.Require().Equal(&authoringorch.PlacementOffset{}, put.FloorPlan.Placements[2].Offset,
+		"explicit canvas-monster zero must remain present in authoring projection")
+	s.Require().Equal("place[3]", put.FloorPlan.Placements[3].SourcePath)
+	s.Require().Equal(&authoringorch.PlacementOffset{X: 0.125, Y: -2.5, Z: 3.75}, put.FloorPlan.Placements[3].Offset)
 
 	// This is the production startup loader, not dungeonspec.Load* or a
 	// manually assembled registry. It has to discover the bytes PutDungeon wrote.
@@ -137,7 +153,7 @@ walls:
 	s.Require().NoError(err)
 	anchor := core.HexFromPosition(spatial.Position{X: 1, Y: 1})
 	s.Require().Equal(tkenc.FloorSourceCanvas, data.Space.FloorSource)
-	s.Require().Equal(4, data.Space.Width)
+	s.Require().Equal(6, data.Space.Width)
 	s.Require().Equal(2, data.Space.Height)
 	s.Require().Equal(anchor, data.Space.Entrance)
 	s.Require().Len(data.Space.PartyStartPositions, lobbyorch.DefaultPartyCap)
@@ -151,10 +167,57 @@ walls:
 	s.Require().Equal(core.HexFromPosition(spatial.Position{X: 1, Y: 0}), prop.Position)
 	s.Require().NotNil(prop.Facing)
 	s.Require().Equal(uint32(3), *prop.Facing, "W is authored facing, not inferred")
-	s.Require().Len(data.Monsters, 1)
+	s.Require().Equal(&core.PlacementOffset{-0.25, 1.5, 2.75}, prop.Offset)
+	s.Require().Len(data.Monsters, 3)
+	monstersByPosition := make(map[core.Hex]*tkenc.MonsterData, len(data.Monsters))
 	for _, monster := range data.Monsters {
 		s.Require().Equal("dnd5e:monsters:skeleton", monster.MonsterRef)
-		s.Require().Equal(core.HexFromPosition(spatial.Position{X: 2, Y: 0}), monster.Position)
+		monstersByPosition[monster.Position] = monster
+	}
+	omittedMonster := monstersByPosition[core.HexFromPosition(spatial.Position{X: 2, Y: 0})]
+	s.Require().NotNil(omittedMonster)
+	s.Require().Nil(omittedMonster.Offset, "omitted canvas-monster offset must survive as absent")
+	zeroMonster := monstersByPosition[core.HexFromPosition(spatial.Position{X: 3, Y: 0})]
+	s.Require().NotNil(zeroMonster)
+	s.Require().Equal(&core.PlacementOffset{}, zeroMonster.Offset,
+		"explicit canvas-monster zero must survive encounter creation and repository reload")
+	signedMonster := monstersByPosition[core.HexFromPosition(spatial.Position{X: 4, Y: 0})]
+	s.Require().NotNil(signedMonster)
+	s.Require().Equal(&core.PlacementOffset{0.125, -2.5, 3.75}, signedMonster.Offset,
+		"canvas-monster signed axes survive creation and repository reload")
+
+	// Reconnect projection must consume the same persisted canvas-monster truth.
+	snapshot, err := encounterhandlerv2.ProjectFor(s.ctx, data, core.PlayerID("alice"), s.encBroker, nil, time.Time{})
+	s.Require().NoError(err)
+	offsetsByEntity := make(map[string]*dnd5ev1alpha1.PlacementOffset)
+	for _, record := range snapshot.GetSpace().GetHexes() {
+		for _, placement := range record.GetContents() {
+			offsetsByEntity[placement.GetEntityId()] = placement.GetOffset()
+		}
+	}
+	s.Require().Contains(offsetsByEntity, string(omittedMonster.ID))
+	s.Require().Nil(offsetsByEntity[string(omittedMonster.ID)])
+	s.Require().Contains(offsetsByEntity, string(zeroMonster.ID))
+	s.Require().Equal(&dnd5ev1alpha1.PlacementOffset{}, offsetsByEntity[string(zeroMonster.ID)])
+	s.Require().Equal(&dnd5ev1alpha1.PlacementOffset{X: 0.125, Y: -2.5, Z: 3.75},
+		offsetsByEntity[string(signedMonster.ID)])
+
+	// A later complete-document source edit must not recompute the already
+	// persisted encounter snapshot.
+	editedYAML := strings.ReplaceAll(yaml, "offset: [-0.25, 1.5, 2.75]", "offset: [99, 98, 97]")
+	editedYAML = strings.ReplaceAll(editedYAML, "offset: [0.125, -2.5, 3.75]", "offset: [96, 95, 94]")
+	edited, err := authoring.PutDungeon(s.ctx, &authoringorch.PutDungeonInput{Key: key, YAML: editedYAML})
+	s.Require().NoError(err)
+	s.Require().True(edited.Success)
+	unchanged, err := s.encRepo.Get(s.ctx, out.EncounterID)
+	s.Require().NoError(err)
+	s.Require().Equal(&core.PlacementOffset{-0.25, 1.5, 2.75}, unchanged.Space.Obstacles[0].Offset,
+		"existing encounter must retain creation-time authored truth")
+	for _, monster := range unchanged.Monsters {
+		if monster.Position == core.HexFromPosition(spatial.Position{X: 4, Y: 0}) {
+			s.Require().Equal(&core.PlacementOffset{0.125, -2.5, 3.75}, monster.Offset,
+				"existing canvas monster must not recompute after a source edit")
+		}
 	}
 
 	s.Require().Equal([]tkenc.AuthoredEdge{

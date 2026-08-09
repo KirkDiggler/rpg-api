@@ -101,6 +101,22 @@ func toProtoFloorPlan(fp *authoringorch.FloorPlan) *authoringv1alpha1.FloorPlan 
 		edges[i] = toProtoFloorPlanEdge(edge)
 	}
 
+	placements := make([]*authoringv1alpha1.FloorPlanPlacement, len(fp.Placements))
+	for i, placement := range fp.Placements {
+		placements[i] = &authoringv1alpha1.FloorPlanPlacement{
+			Ref: placement.Ref,
+			At: &authoringv1alpha1.FloorPlanCell{
+				Column: int32(placement.At.Column),
+				Row:    int32(placement.At.Row),
+			},
+			Facing:         placement.Facing,
+			BlocksMovement: placement.BlocksMovement,
+			BlocksLos:      placement.BlocksLoS,
+			SourcePath:     placement.SourcePath,
+			Offset:         toProtoPlacementOffset(placement.Offset),
+		}
+	}
+
 	floorCells := make([]*authoringv1alpha1.FloorPlanCell, len(fp.FloorCells))
 	for i, cell := range fp.FloorCells {
 		floorCells[i] = &authoringv1alpha1.FloorPlanCell{
@@ -118,6 +134,7 @@ func toProtoFloorPlan(fp *authoringorch.FloorPlan) *authoringv1alpha1.FloorPlan 
 		FloorCells: floorCells,
 		Height:     int32(fp.Height),
 		DoorRow:    int32(fp.DoorRow),
+		Placements: placements,
 		Entrance: &authoringv1alpha1.FloorPlanCell{
 			Column: int32(fp.Entrance.Column),
 			Row:    int32(fp.Entrance.Row),
@@ -140,4 +157,11 @@ func toProtoFloorPlanEdge(edge authoringorch.FloorPlanEdge) *authoringv1alpha1.F
 		protoEdge.DoorId = &edge.DoorID
 	}
 	return protoEdge
+}
+
+func toProtoPlacementOffset(offset *authoringorch.PlacementOffset) *dnd5ev1alpha1.PlacementOffset {
+	if offset == nil {
+		return nil
+	}
+	return &dnd5ev1alpha1.PlacementOffset{X: offset.X, Y: offset.Y, Z: offset.Z}
 }

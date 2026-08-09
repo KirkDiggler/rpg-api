@@ -382,6 +382,57 @@ func (s *HandlerSuite) TestGetEncounter_ProjectsOptionalPlacementFacing() {
 	}
 }
 
+// TestGetEncounter_ProjectsPlacementOffsetsThroughAuthorizedSnapshot exercises
+// repository reload plus the real GetEncounter projection. Fog suppression and
+// omission/explicit-zero/signed axes are asserted on the same production path.
+func (s *HandlerSuite) TestGetEncounter_ProjectsPlacementOffsetsThroughAuthorizedSnapshot() {
+	zero := core.PlacementOffset{0, 0, 0}
+	signed := core.PlacementOffset{0.125, -2.5, 3.75}
+	hidden := core.PlacementOffset{9, 8, 7}
+
+	base := tkenc.New(context.Background(), "enc-placement-offset", s.broker)
+	s.Require().NoError(base.InitRoom(30, 30, environments.PatternEmpty))
+	data := base.ToData()
+	data.Space.Obstacles = []tkenc.ObstacleData{
+		{ID: "prop-absent", Ref: "dnd5e:props:bookcase", Position: core.Hex{Q: 1, R: -1}},
+		{ID: "prop-zero", Ref: "dnd5e:props:bookcase", Position: core.Hex{Q: 2, R: -2}, Offset: &zero},
+	}
+
+	enc, err := tkenc.LoadFromData(context.Background(), data, s.broker)
+	s.Require().NoError(err)
+	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
+		PlayerID: "player-A", EntityID: "char-A", Position: core.Hex{}, SightRange: 10,
+	}))
+	s.Require().NoError(enc.AddMonster(tkenc.MonsterInput{
+		ID: "monster-signed", MonsterRef: "dnd5e:monsters:skeleton-captain",
+		Position: core.Hex{Q: 3, R: -3}, HP: 10, MaxHP: 10, Offset: &signed,
+	}))
+	s.Require().NoError(enc.AddMonster(tkenc.MonsterInput{
+		ID: "monster-hidden", MonsterRef: "dnd5e:monsters:skeleton",
+		Position: core.Hex{Q: 20, R: -20}, HP: 10, MaxHP: 10, Offset: &hidden,
+	}))
+	s.Require().NoError(s.repo.Save(s.ctx, enc.ToData()))
+
+	resp, err := s.handler.GetEncounter(s.ctx, &encounterv2pb.GetEncounterRequest{EncounterId: "enc-placement-offset"})
+	s.Require().NoError(err)
+	placements := make(map[string]*encounterv2pb.Placement)
+	for _, record := range resp.GetEncounter().GetSpace().GetHexes() {
+		for _, placement := range record.GetContents() {
+			placements[placement.GetEntityId()] = placement
+		}
+	}
+
+	s.Require().Nil(placements["prop-absent"].GetOffset())
+	s.Require().NotNil(placements["prop-zero"].GetOffset())
+	s.Require().Zero(placements["prop-zero"].GetOffset().GetX())
+	s.Require().Zero(placements["prop-zero"].GetOffset().GetY())
+	s.Require().Zero(placements["prop-zero"].GetOffset().GetZ())
+	s.Require().Equal(0.125, placements["monster-signed"].GetOffset().GetX())
+	s.Require().Equal(-2.5, placements["monster-signed"].GetOffset().GetY())
+	s.Require().Equal(3.75, placements["monster-signed"].GetOffset().GetZ())
+	s.Require().NotContains(placements, "monster-hidden", "fog must suppress unauthorized placement and offset")
+}
+
 // --- Interact (Wave 2.7) -----------------------------------------------------
 
 func (s *HandlerSuite) TestInteract_NoPlayerID_Unauthenticated() {

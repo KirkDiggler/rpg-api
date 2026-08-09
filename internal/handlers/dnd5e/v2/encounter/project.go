@@ -15,6 +15,7 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/events"
 	tkcharacter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 
+	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
 	encounterv2pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/encounter"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 )
@@ -188,9 +189,9 @@ func disclosedEntities(
 	// placements records WHERE each disclosed entity is. Position left Entity
 	// with rpg-api-protos#197: the hex states occupancy, so a second copy on
 	// the entity could only agree redundantly or disagree dangerously.
-	disclose := func(at core.Hex, id core.EntityID, e *encounterv2pb.Entity) {
+	disclose := func(at core.Hex, placement perception.Placement, e *encounterv2pb.Entity) {
 		entities = append(entities, e)
-		placements[at] = append(placements[at], perception.Placement{EntityID: id})
+		placements[at] = append(placements[at], placement)
 	}
 
 	for _, pid := range playerIDs {
@@ -198,7 +199,7 @@ func disclosedEntities(
 		if pid == viewer {
 			// Viewer always sees their own entity.
 			name, classRef, equip := characterDataFor(ctx, charRepo, string(pd.EntityID))
-			disclose(snap.Position, pd.EntityID, playerEntity(pd, name, classRef, equip))
+			disclose(snap.Position, perception.Placement{EntityID: pd.EntityID}, playerEntity(pd, name, classRef, equip))
 			continue
 		}
 		if pd.View == nil {
@@ -206,7 +207,7 @@ func disclosedEntities(
 		}
 		if visibleNow != nil && visibleNow.Has(pd.View.Position) {
 			name, classRef, equip := characterDataFor(ctx, charRepo, string(pd.EntityID))
-			disclose(pd.View.Position, pd.EntityID, playerEntity(pd, name, classRef, equip))
+			disclose(pd.View.Position, perception.Placement{EntityID: pd.EntityID}, playerEntity(pd, name, classRef, equip))
 		}
 	}
 
@@ -225,7 +226,7 @@ func disclosedEntities(
 		if visibleNow == nil || !visibleNow.Has(m.Position) {
 			continue
 		}
-		disclose(m.Position, m.ID, monsterEntity(m))
+		disclose(m.Position, perception.Placement{EntityID: m.ID, Offset: m.Offset}, monsterEntity(m))
 	}
 
 	// Static obstacles are sticky exploration data, not currently-visible
@@ -243,7 +244,9 @@ func disclosedEntities(
 			return string(obstacles[i].ID) < string(obstacles[j].ID)
 		})
 		for _, obstacle := range obstacles {
-			disclose(obstacle.Position, obstacle.ID, obstacleEntity(obstacle))
+			disclose(obstacle.Position, perception.Placement{
+				EntityID: obstacle.ID, Facing: obstacle.Facing, Offset: obstacle.Offset,
+			}, obstacleEntity(obstacle))
 		}
 	}
 
@@ -298,7 +301,11 @@ func knownHexToObservation(kh tkencevents.KnownHex) perception.HexObservation {
 	}
 	contents := make([]perception.Placement, 0, len(kh.Contents))
 	for _, c := range kh.Contents {
-		contents = append(contents, perception.Placement{EntityID: c.EntityID, Facing: c.Facing})
+		contents = append(contents, perception.Placement{
+			EntityID: c.EntityID,
+			Facing:   c.Facing,
+			Offset:   c.Offset,
+		})
 	}
 	return perception.HexObservation{
 		Position: kh.Position,
@@ -349,9 +356,19 @@ func observationToProto(o perception.HexObservation) *encounterv2pb.HexRecord {
 			// Preserve optional presence verbatim: nil means no authored override,
 			// while a non-nil pointer to E remains an explicit zero on the wire.
 			Facing: p.Facing,
+			// Offset is mechanically inert provider truth. Copy all three world-axis
+			// components exactly; never rotate or reinterpret them from Facing.
+			Offset: toProtoRuntimePlacementOffset(p.Offset),
 		})
 	}
 	return rec
+}
+
+func toProtoRuntimePlacementOffset(offset *core.PlacementOffset) *dnd5ev1alpha1.PlacementOffset {
+	if offset == nil {
+		return nil
+	}
+	return &dnd5ev1alpha1.PlacementOffset{X: offset[0], Y: offset[1], Z: offset[2]}
 }
 
 func knowledgeStateToProto(s perception.KnowledgeState) encounterv2pb.HexState {

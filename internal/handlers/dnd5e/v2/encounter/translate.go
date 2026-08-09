@@ -720,10 +720,11 @@ func translateEntityAppearedEventWithData(
 	// CURRENT stored positions directly, which that bug does not touch, so
 	// keeping this rpg-api-side rebuild here is a deliberate choice, not
 	// leftover duplication.
-	contents := []perception.Placement{{EntityID: e.Entity}}
+	appeared := placementForEntity(data, e.Entity)
+	contents := []perception.Placement{appeared}
 	if snap, visibleNow, ok := viewerVisibility(ctx, data, viewer, broker); ok {
 		_, placements := disclosedEntities(ctx, charRepo, data, viewer, snap, visibleNow)
-		contents = unionPlacement(placements[e.Position], e.Entity)
+		contents = unionPlacement(placements[e.Position], appeared)
 	}
 
 	obs := perception.HexObservation{
@@ -1076,19 +1077,41 @@ func viewerVisibility(
 	return snap, visibleNow, true
 }
 
-// unionPlacement returns placements with a Placement for entityID appended
-// unless one already names it — used where an authorization-filtered
-// placement list (disclosedEntities, keyed by an entity's CURRENT stored
-// position) must also guarantee one specific entity is present at a
-// position that may differ from its stored one (translateEntityAppearedEventWithData's
-// pass-through case: the event's own reported position, not data's).
-func unionPlacement(placements []perception.Placement, entityID core.EntityID) []perception.Placement {
-	for _, p := range placements {
-		if p.EntityID == entityID {
+// placementForEntity returns the mechanically inert authored metadata already
+// persisted with a runtime identity. It never infers placement facts from a ref
+// or position; players and unknown identities carry only their id.
+func placementForEntity(data *encounter.Data, entityID core.EntityID) perception.Placement {
+	placement := perception.Placement{EntityID: entityID}
+	if data == nil {
+		return placement
+	}
+	if monster, ok := data.Monsters[entityID]; ok {
+		placement.Offset = monster.Offset
+		return placement
+	}
+	if data.Space != nil {
+		for _, obstacle := range data.Space.Obstacles {
+			if obstacle.ID == entityID {
+				placement.Facing = obstacle.Facing
+				placement.Offset = obstacle.Offset
+				return placement
+			}
+		}
+	}
+	return placement
+}
+
+// unionPlacement returns placements with placement appended unless one already
+// names its identity. Used where an authorization-filtered placement list keyed
+// by the entity's CURRENT stored position must also guarantee one event-specific
+// placement at a position that may differ from the stored one.
+func unionPlacement(placements []perception.Placement, placement perception.Placement) []perception.Placement {
+	for _, existing := range placements {
+		if existing.EntityID == placement.EntityID {
 			return placements
 		}
 	}
-	return append(placements, perception.Placement{EntityID: entityID})
+	return append(placements, placement)
 }
 
 // translateDoorOpenedEvent maps the toolkit's DoorOpenedEvent to the
