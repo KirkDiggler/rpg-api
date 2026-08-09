@@ -9,6 +9,7 @@ import (
 	"go.uber.org/mock/gomock"
 
 	"github.com/KirkDiggler/rpg-api/internal/apierr"
+	"github.com/KirkDiggler/rpg-api/internal/dungeonregistry"
 	"github.com/KirkDiggler/rpg-api/internal/entities"
 	encounterhandlerv2 "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v2/encounter"
 	lobbyorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/lobby"
@@ -166,6 +167,31 @@ func (s *LobbySuite) newOrchestratorWithContentDir(dir string) (*lobbyorch.Orche
 	if err != nil {
 		return nil, err
 	}
+	return lobbyorch.New(&lobbyorch.Config{
+		LobbyRepo:              s.lobbyRepo,
+		LobbyBroker:            s.broker,
+		CharacterRepo:          s.charRepo,
+		EncounterRepo:          s.encRepo,
+		EncounterBroker:        s.encBroker,
+		BuildCharacterResolver: func(_ *tkenc.Data) tkenc.CharacterResolver { return encounterhandlerv2.StubCharacterResolver{} },
+		BuildCombatResolver: func(_ *tkenc.Data) tkenc.CombatResolver {
+			return nil
+		},
+		BuildMovementResolver: func(_ *tkenc.Data) tkenc.MovementResolver {
+			return nil
+		},
+		LobbyIDGenerator:     idgen.NewSequential("lobby"),
+		JoinRefGenerator:     idgen.NewSequential("ref"),
+		EncounterIDGenerator: idgen.NewSequential("enc"),
+		Now:                  func() time.Time { return time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC) },
+		Registry:             registry,
+	})
+}
+
+// newOrchestratorWithRegistry constructs a runtime over an already-loaded
+// authored registry. Authoring and StartEncounter tests use this to prove the
+// live source lifecycle is distinct from persisted running snapshots.
+func (s *LobbySuite) newOrchestratorWithRegistry(registry *dungeonregistry.Registry) (*lobbyorch.Orchestrator, error) {
 	return lobbyorch.New(&lobbyorch.Config{
 		LobbyRepo:              s.lobbyRepo,
 		LobbyBroker:            s.broker,

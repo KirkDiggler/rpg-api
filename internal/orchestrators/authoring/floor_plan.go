@@ -54,17 +54,26 @@ type FloorPlanEdge struct {
 	DoorID string
 }
 
+// FloorSource is the resolved provider-owned authored floor source.
+type FloorSource string
+
+const (
+	FloorSourceBounds  FloorSource = "bounds"
+	FloorSourceRegions FloorSource = "regions"
+)
+
 // FloorPlan is PutDungeon's provider-produced layout response.
 type FloorPlan struct {
-	Rooms      []FloorPlanRoom
-	Regions    []FloorPlanRegion
-	Connectors []FloorPlanConnector
-	Width      int
-	Height     int
-	DoorRow    int
-	FloorCells []FloorPlanCell
-	Entrance   FloorPlanCell
-	Edges      []FloorPlanEdge
+	FloorSource FloorSource
+	Rooms       []FloorPlanRoom
+	Regions     []FloorPlanRegion
+	Connectors  []FloorPlanConnector
+	Width       int
+	Height      int
+	DoorRow     int
+	FloorCells  []FloorPlanCell
+	Entrance    *FloorPlanCell
+	Edges       []FloorPlanEdge
 }
 
 // buildFloorPlan maps the complete toolkit projection field-for-field. Geometry,
@@ -85,7 +94,7 @@ func buildFloorPlan(ctx context.Context, compiled dungeonspec.CompiledDungeon, s
 		Height:     providerPlan.Height,
 		DoorRow:    providerPlan.DoorRow,
 		FloorCells: make([]FloorPlanCell, len(providerPlan.FloorCells)),
-		Entrance:   floorPlanCellFromProvider(providerPlan.Entrance),
+		Entrance:   floorPlanCellPtrFromProvider(providerPlan.Entrance),
 		Edges:      make([]FloorPlanEdge, len(providerPlan.Edges)),
 	}
 	for index, room := range providerPlan.Rooms {
@@ -124,6 +133,11 @@ func buildFloorPlan(ctx context.Context, compiled dungeonspec.CompiledDungeon, s
 
 func floorPlanCellFromProvider(cell dungeonspec.FloorPlanCell) FloorPlanCell {
 	return FloorPlanCell{Column: cell.Column, Row: cell.Row}
+}
+
+func floorPlanCellPtrFromProvider(cell dungeonspec.FloorPlanCell) *FloorPlanCell {
+	mapped := floorPlanCellFromProvider(cell)
+	return &mapped
 }
 
 func cloneOptionalString(value *string) *string {

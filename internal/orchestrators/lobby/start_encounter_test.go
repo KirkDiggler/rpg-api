@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -164,6 +165,69 @@ walls:
 	door, ok := data.Doors[core.EntityID("canvas-production-reload-authored-door-1--2-1--1--1-0")]
 	s.Require().True(ok)
 	s.Require().Equal(core.HexFromPosition(spatial.Position{X: 1, Y: 1}), door.Position)
+}
+
+func (s *LobbySuite) TestStartEncounter_AuthoredSourceEditDoesNotRecompileRunningSnapshot() {
+	const key = "snapshot-source-isolation"
+	dir := s.T().TempDir()
+	initial := `version: 1
+key: snapshot-source-isolation
+name: Snapshot Source Isolation
+height: 1
+canvas: { width: 4, height: 2 }
+rooms: []
+start: [1, 1]
+`
+	s.Require().NoError(os.WriteFile(filepath.Join(dir, key+".yaml"), []byte(initial), 0o600))
+	s.T().Setenv("RPG_CONTENT_DIR", dir)
+	registry, err := lobbyorch.LoadContentRegistry()
+	s.Require().NoError(err)
+	runtime, err := s.newOrchestratorWithRegistry(registry)
+	s.Require().NoError(err)
+	authoring, err := authoringorch.New(&authoringorch.Config{
+		Registry: registry, ContentDir: dir, PartyStartSeatCount: lobbyorch.DefaultPartyCap,
+	})
+	s.Require().NoError(err)
+
+	s.seedReadyLobby("lobby-snapshot-old", "alice")
+	s.expectCharacter("char-alice", "alice", "Alice", 12, 12)
+	old, err := runtime.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		PlayerID: "alice", LobbyID: "lobby-snapshot-old", DungeonKey: key, RandomSeed: 42,
+	})
+	s.Require().NoError(err)
+	oldData, err := s.encRepo.Get(s.ctx, old.EncounterID)
+	s.Require().NoError(err)
+	s.Require().Equal(4, oldData.Space.Width)
+	oldSnapshot, err := json.Marshal(oldData)
+	s.Require().NoError(err)
+
+	updated := strings.Replace(initial, "width: 4", "width: 5", 1)
+	put, err := authoring.PutDungeon(s.ctx, &authoringorch.PutDungeonInput{Key: key, YAML: updated})
+	s.Require().NoError(err)
+	s.Require().True(put.Success)
+
+	// Encounter reload consumes only its persisted toolkit snapshot. It is not
+	// handed the registry or current YAML and therefore cannot recompile either.
+	reloadedData, err := s.encRepo.Get(s.ctx, old.EncounterID)
+	s.Require().NoError(err)
+	reloaded, err := tkenc.LoadFromData(s.ctx, reloadedData, s.encBroker)
+	s.Require().NoError(err)
+	reloadedSnapshot, err := json.Marshal(reloaded.ToData())
+	s.Require().NoError(err)
+	s.Require().JSONEq(string(oldSnapshot), string(reloadedSnapshot))
+	s.Require().Equal(4, reloaded.ToData().Space.Width)
+
+	// A later new encounter reads the replaced authored registry state.
+	s.seedReadyLobby("lobby-snapshot-new", "bob")
+	s.expectCharacter("char-bob", "bob", "Bob", 11, 11)
+	fresh, err := runtime.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		PlayerID: "bob", LobbyID: "lobby-snapshot-new", DungeonKey: key, RandomSeed: 42,
+	})
+	s.Require().NoError(err)
+	freshData, err := s.encRepo.Get(s.ctx, fresh.EncounterID)
+	s.Require().NoError(err)
+	s.Require().Equal(5, freshData.Space.Width)
+	s.Require().Equal(4, reloaded.ToData().Space.Width, "later authored state must not reshape the running snapshot")
 }
 
 // TestStartEncounter_AuthoredStartMapsToolkitSeatsToOrderedRoster proves the

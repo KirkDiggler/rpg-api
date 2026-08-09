@@ -15,9 +15,10 @@ import (
 // it must not manufacture canvas geometry or normalize edges.
 func TestToProtoFloorPlan_CanvasPreservesProviderProjection(t *testing.T) {
 	plan := &authoringorch.FloorPlan{
-		Rooms:  []authoringorch.FloorPlanRoom{},
-		Width:  3,
-		Height: 2,
+		FloorSource: authoringorch.FloorSourceBounds,
+		Rooms:       []authoringorch.FloorPlanRoom{},
+		Width:       3,
+		Height:      2,
 		FloorCells: []authoringorch.FloorPlanCell{
 			{Column: 0, Row: 0},
 			{Column: 0, Row: 1},
@@ -26,7 +27,7 @@ func TestToProtoFloorPlan_CanvasPreservesProviderProjection(t *testing.T) {
 			{Column: 2, Row: 0},
 			{Column: 2, Row: 1},
 		},
-		Entrance: authoringorch.FloorPlanCell{Column: 1, Row: 1},
+		Entrance: &authoringorch.FloorPlanCell{Column: 1, Row: 1},
 		Edges: []authoringorch.FloorPlanEdge{{
 			From:   authoringorch.FloorPlanCell{Column: 1, Row: 0},
 			To:     authoringorch.FloorPlanCell{Column: 1, Row: 1},
@@ -57,7 +58,7 @@ func TestToProtoFloorPlan_CanvasPreservesProviderProjection(t *testing.T) {
 
 func TestToProtoFloorPlan_RegionsPreservesCellsAndParentPresence(t *testing.T) {
 	parent := "outer"
-	plan := &authoringorch.FloorPlan{Regions: []authoringorch.FloorPlanRegion{
+	plan := &authoringorch.FloorPlan{FloorSource: authoringorch.FloorSourceBounds, Regions: []authoringorch.FloorPlanRegion{
 		{ID: "outer", Cells: []authoringorch.FloorPlanCell{{Column: 0, Row: 0}}},
 		{ID: "inner", Cells: []authoringorch.FloorPlanCell{{Column: 0, Row: 0}}, ParentID: &parent},
 	}}
@@ -70,4 +71,33 @@ func TestToProtoFloorPlan_RegionsPreservesCellsAndParentPresence(t *testing.T) {
 	require.NotNil(t, got.GetRegions()[1].ParentId)
 	require.Equal(t, int32(0), got.GetRegions()[1].GetCells()[0].GetColumn())
 	require.Equal(t, int32(0), got.GetRegions()[1].GetCells()[0].GetRow())
+}
+
+func TestToProtoFloorPlan_WaveAResolvedRegionsAndAbsentEntrance(t *testing.T) {
+	plan := &authoringorch.FloorPlan{
+		FloorSource: authoringorch.FloorSourceRegions,
+		FloorCells: []authoringorch.FloorPlanCell{
+			{Column: 1, Row: 1}, {Column: 2, Row: 1},
+		},
+		Regions: []authoringorch.FloorPlanRegion{{
+			ID: "draft", Cells: []authoringorch.FloorPlanCell{{Column: 1, Row: 1}, {Column: 2, Row: 1}},
+		}},
+		Edges: []authoringorch.FloorPlanEdge{{
+			From: authoringorch.FloorPlanCell{Column: 2, Row: 2},
+			To:   authoringorch.FloorPlanCell{Column: 2, Row: 1},
+			Kind: authoringorch.FloorPlanEdgeKindSolid,
+		}},
+		// Entrance intentionally nil: [0,0] would be real data, not absence.
+	}
+
+	got := toProtoFloorPlan(plan)
+	require.NotNil(t, got.FloorSource)
+	require.Equal(t,
+		authoringv1alpha1.FloorPlanFloorSource_FLOOR_PLAN_FLOOR_SOURCE_REGIONS,
+		got.GetFloorSource())
+	require.Nil(t, got.Entrance)
+	require.Equal(t, int32(1), got.GetFloorCells()[0].GetColumn())
+	require.Equal(t, int32(2), got.GetEdges()[0].GetFrom().GetColumn(), "pair orientation must be preserved")
+	require.Equal(t, int32(2), got.GetEdges()[0].GetTo().GetColumn())
+	require.Equal(t, "draft", got.GetRegions()[0].GetId())
 }

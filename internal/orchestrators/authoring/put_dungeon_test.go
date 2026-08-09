@@ -281,7 +281,7 @@ func TestPutDungeon_OmittedAndNullStartKeepToolkitGeneratedAnchor(t *testing.T) 
 	require.True(t, nullStart.Success)
 	require.Equal(t, omitted.FloorPlan.Entrance, nullStart.FloorPlan.Entrance,
 		"omitted and null start must preserve the same toolkit-resolved generated anchor")
-	require.Equal(t, authoring.FloorPlanCell{Column: 0, Row: 4}, omitted.FloorPlan.Entrance)
+	require.Equal(t, &authoring.FloorPlanCell{Column: 0, Row: 4}, omitted.FloorPlan.Entrance)
 }
 
 // TestPutDungeon_AuthoredDoorRowStartUsesToolkitAnchorAndFourSeatConfig proves
@@ -298,7 +298,7 @@ func TestPutDungeon_AuthoredDoorRowStartUsesToolkitAnchorAndFourSeatConfig(t *te
 	out, err := orch.PutDungeon(context.Background(), &authoring.PutDungeonInput{Key: key, YAML: yaml})
 	require.NoError(t, err)
 	require.True(t, out.Success)
-	require.Equal(t, authoring.FloorPlanCell{Column: 12, Row: 4}, out.FloorPlan.Entrance,
+	require.Equal(t, &authoring.FloorPlanCell{Column: 12, Row: 4}, out.FloorPlan.Entrance,
 		"FloorPlan.entrance is the toolkit-resolved authored anchor, not an entrance-room assumption")
 
 	_, ok := registry.Get(key)
@@ -350,7 +350,7 @@ func TestPutDungeon_ValidateOnly_PopulatesFloorPlanWithoutPersisting(t *testing.
 	// sits at that region's near edge, doorRow (verified against
 	// rpg-toolkit's dungeon.go generateDungeonLayout: entrance is always
 	// offset-coordinate {X: 0, Y: doorRow}).
-	require.Equal(t, authoring.FloorPlanCell{Column: 0, Row: 4}, fp.Entrance)
+	require.Equal(t, &authoring.FloorPlanCell{Column: 0, Row: 4}, fp.Entrance)
 
 	_, ok := registry.Get("preview-key")
 	require.False(t, ok, "validate_only must not mutate the registry")
@@ -531,10 +531,11 @@ func buildProviderFloorPlan(t *testing.T, yaml string) *authoring.FloorPlan {
 	providerPlan, err := dungeonspec.BuildFloorPlan(context.Background(), dungeonspec.BuildFloorPlanInput{Compiled: compiled, Seed: 1})
 	require.NoError(t, err)
 	plan := &authoring.FloorPlan{
-		Rooms: make([]authoring.FloorPlanRoom, len(providerPlan.Rooms)), Connectors: make([]authoring.FloorPlanConnector, len(providerPlan.Connectors)),
+		FloorSource: authoring.FloorSourceBounds,
+		Rooms:       make([]authoring.FloorPlanRoom, len(providerPlan.Rooms)), Connectors: make([]authoring.FloorPlanConnector, len(providerPlan.Connectors)),
 		Width: providerPlan.Width, Height: providerPlan.Height, DoorRow: providerPlan.DoorRow,
 		FloorCells: make([]authoring.FloorPlanCell, len(providerPlan.FloorCells)),
-		Entrance:   authoring.FloorPlanCell{Column: providerPlan.Entrance.Column, Row: providerPlan.Entrance.Row},
+		Entrance:   &authoring.FloorPlanCell{Column: providerPlan.Entrance.Column, Row: providerPlan.Entrance.Row},
 		Edges:      make([]authoring.FloorPlanEdge, len(providerPlan.Edges)),
 	}
 	for index, room := range providerPlan.Rooms {

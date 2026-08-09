@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -14,6 +15,7 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/dungeonregistry"
 	authoringhandler "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/authoring/v1alpha1"
 	authoringorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/authoring"
+	authoringmock "github.com/KirkDiggler/rpg-api/internal/orchestrators/authoring/mock"
 )
 
 const validYAML = `version: 1
@@ -136,6 +138,8 @@ walls:
 	require.Empty(t, fp.GetConnectors())
 	require.Equal(t, int32(4), fp.GetWidth())
 	require.Equal(t, int32(2), fp.GetHeight())
+	require.NotNil(t, fp.FloorSource)
+	require.Equal(t, authoringv1alpha1.FloorPlanFloorSource_FLOOR_PLAN_FLOOR_SOURCE_BOUNDS, fp.GetFloorSource())
 	require.Equal(t, []*authoringv1alpha1.FloorPlanCell{
 		{Column: 0, Row: 0}, {Column: 0, Row: 1}, {Column: 1, Row: 0}, {Column: 1, Row: 1},
 		{Column: 2, Row: 0}, {Column: 2, Row: 1}, {Column: 3, Row: 0}, {Column: 3, Row: 1},
@@ -195,4 +199,29 @@ func TestPutDungeon_Success_FloorPlanConvertedCorrectly(t *testing.T) {
 	require.NotNil(t, door)
 	require.NotNil(t, door.DoorId, "door edges must map door_id as present")
 	require.Equal(t, "handler-test-door-entrance-boss", door.GetDoorId())
+}
+
+func TestPutDungeon_WaveAValidationPathMapsExactly(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	compiler := authoringmock.NewMockCompiler(ctrl)
+	compiler.EXPECT().CompileDungeon(gomock.Any(), gomock.Any()).Return(
+		&authoringorch.CompileDungeonOutput{FieldErrors: []authoringorch.FieldError{{
+			Field: "regions[1].cells", Message: "floor cell is outside the entrance component", Code: "disconnected-floor",
+		}}}, nil)
+	orch, err := authoringorch.New(&authoringorch.Config{
+		Registry: dungeonregistry.New(nil), ContentDir: t.TempDir(), Compiler: compiler,
+	})
+	require.NoError(t, err)
+	h, err := authoringhandler.New(&authoringhandler.HandlerConfig{Orchestrator: orch})
+	require.NoError(t, err)
+
+	resp, err := h.PutDungeon(context.Background(), &authoringv1alpha1.PutDungeonRequest{
+		Key: "two-islands", Yaml: "version: 1\nkey: two-islands\n", ValidateOnly: false,
+	})
+	require.NoError(t, err)
+	require.False(t, resp.GetSuccess())
+	require.Len(t, resp.GetFieldErrors(), 1)
+	require.Equal(t, "regions[1].cells", resp.GetFieldErrors()[0].GetField())
+	require.Equal(t, "floor cell is outside the entrance component", resp.GetFieldErrors()[0].GetMessage())
+	require.Equal(t, "disconnected-floor", resp.GetFieldErrors()[0].GetCode())
 }

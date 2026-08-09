@@ -66,9 +66,12 @@ type PutDungeonInput struct {
 // distinguishable in type/shape, not collapsed into one "return an
 // error" path).
 type PutDungeonOutput struct {
-	Success    bool
-	FieldError string
-	FloorPlan  *FloorPlan
+	Success bool
+	// FieldError is the legacy first-message view retained for existing API
+	// callers. FieldErrors is authoritative because it preserves exact paths.
+	FieldError  string
+	FieldErrors []FieldError
+	FloorPlan   *FloorPlan
 }
 
 // yamlKeyHeader is the minimal shape needed to peek a YAML document's
@@ -132,35 +135,59 @@ func (o *Orchestrator) PutDungeon(ctx context.Context, in *PutDungeonInput) (*Pu
 	}
 
 	raw := []byte(in.YAML)
-	config := dungeonspec.LoadConfig{PartyStartSeatCount: o.partyStartSeatCount}
+	mode := CompileModeStrict
+	if in.ValidateOnly {
+		mode = CompileModeDraft
+	}
+	compileInput := &CompileDungeonInput{
+		Source:              raw,
+		Mode:                mode,
+		PartyStartSeatCount: o.partyStartSeatCount,
+		PreviewSeed:         defaultPreviewSeed,
+	}
 	previous, hasPrevious := o.registry.Get(in.Key)
-	var compiled dungeonspec.CompiledDungeon
-	var loadErr error
 	if hasPrevious && previous.Err == nil {
-		compiled, loadErr = dungeonspec.LoadWithPrevious(raw, config, previous.Compiled)
-	} else {
-		compiled, loadErr = dungeonspec.LoadWithConfig(raw, config)
+		compileInput.Previous = &previous.Compiled
 	}
-	if loadErr != nil {
-		return &PutDungeonOutput{Success: false, FieldError: loadErr.Error()}, nil
+	compiled, compileErr := o.compiler.CompileDungeon(ctx, compileInput)
+	if compileErr != nil {
+		return nil, fmt.Errorf("authoring orchestrator: compile dungeon %q: %w", in.Key, compileErr)
 	}
-
-	floorPlan, buildErr := buildFloorPlan(ctx, compiled, defaultPreviewSeed)
-	if buildErr != nil {
-		return &PutDungeonOutput{Success: false, FieldError: buildErr.Error()}, nil
+	if compiled == nil {
+		return nil, fmt.Errorf("authoring orchestrator: compile dungeon %q: provider returned no output", in.Key)
+	}
+	if len(compiled.FieldErrors) > 0 {
+		fieldErrors := cloneFieldErrors(compiled.FieldErrors)
+		return &PutDungeonOutput{
+			Success: false, FieldError: fieldErrors[0].Message, FieldErrors: fieldErrors,
+		}, nil
+	}
+	if compiled.FloorPlan == nil {
+		return nil, fmt.Errorf("authoring orchestrator: compile dungeon %q: provider returned no floor plan", in.Key)
+	}
+	if compiled.FloorPlan.FloorSource != FloorSourceBounds && compiled.FloorPlan.FloorSource != FloorSourceRegions {
+		return nil, fmt.Errorf("authoring orchestrator: compile dungeon %q: provider returned unresolved floor source", in.Key)
 	}
 
 	if in.ValidateOnly {
-		return &PutDungeonOutput{Success: true, FloorPlan: floorPlan}, nil
+		return &PutDungeonOutput{Success: true, FloorPlan: compiled.FloorPlan}, nil
 	}
 
 	if err := o.writeThrough(in.Key, in.YAML); err != nil {
 		return nil, fmt.Errorf("authoring orchestrator: write dungeon %q: %w", in.Key, err)
 	}
 
-	o.registry.Put(in.Key, dungeonregistry.Entry{Compiled: compiled, Name: captureName(raw, in.Key)})
+	name := compiled.Name
+	if name == "" {
+		name = captureName(raw, in.Key)
+	}
+	o.registry.Put(in.Key, dungeonregistry.Entry{Compiled: compiled.Compiled, Name: name})
 
-	return &PutDungeonOutput{Success: true, FloorPlan: floorPlan}, nil
+	return &PutDungeonOutput{Success: true, FloorPlan: compiled.FloorPlan}, nil
+}
+
+func cloneFieldErrors(errors []FieldError) []FieldError {
+	return append([]FieldError(nil), errors...)
 }
 
 // captureName reads raw's declared name: field the same way

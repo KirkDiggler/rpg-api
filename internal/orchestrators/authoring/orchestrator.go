@@ -40,6 +40,11 @@ type Config struct {
 	// without it.
 	ContentDir string
 
+	// Compiler is the protobuf-free provider seam. Nil selects the released
+	// v0.3 toolkit adapter; Wave A finalization replaces that adapter with the
+	// rpg-toolkit#897 provider without changing orchestration.
+	Compiler Compiler
+
 	// PartyStartSeatCount is the host's normal party capacity supplied to
 	// dungeonspec.LoadWithConfig. Preview must compile the same reservation
 	// StartEncounter will use; zero defaults to the normal four-seat product
@@ -54,6 +59,7 @@ type Orchestrator struct {
 	registry            *dungeonregistry.Registry
 	contentDir          string
 	partyStartSeatCount int
+	compiler            Compiler
 }
 
 // New constructs an Orchestrator from cfg. Returns an error (never a nil
@@ -78,9 +84,14 @@ func New(cfg *Config) (*Orchestrator, error) {
 	if partyStartSeatCount == 0 {
 		partyStartSeatCount = defaultPartyStartSeatCount
 	}
+	compiler := cfg.Compiler
+	if compiler == nil {
+		compiler = toolkitCompiler{}
+	}
 	return &Orchestrator{
 		registry:            cfg.Registry,
 		contentDir:          cfg.ContentDir,
 		partyStartSeatCount: partyStartSeatCount,
+		compiler:            compiler,
 	}, nil
 }

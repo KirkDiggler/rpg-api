@@ -45,12 +45,13 @@ func (h *Handler) PutDungeon(
 	}
 
 	if !out.Success {
-		return &authoringv1alpha1.PutDungeonResponse{
-			Success: false,
-			FieldErrors: []*dnd5ev1alpha1.ValidationError{
-				{Message: out.FieldError},
-			},
-		}, nil
+		fieldErrors := make([]*dnd5ev1alpha1.ValidationError, len(out.FieldErrors))
+		for i, fieldError := range out.FieldErrors {
+			fieldErrors[i] = &dnd5ev1alpha1.ValidationError{
+				Field: fieldError.Field, Message: fieldError.Message, Code: fieldError.Code,
+			}
+		}
+		return &authoringv1alpha1.PutDungeonResponse{Success: false, FieldErrors: fieldErrors}, nil
 	}
 
 	return &authoringv1alpha1.PutDungeonResponse{
@@ -109,19 +110,30 @@ func toProtoFloorPlan(fp *authoringorch.FloorPlan) *authoringv1alpha1.FloorPlan 
 		}
 	}
 
-	return &authoringv1alpha1.FloorPlan{
-		Rooms:      rooms,
-		Regions:    regions,
-		Connectors: connectors,
-		Edges:      edges,
-		Width:      int32(fp.Width),
-		FloorCells: floorCells,
-		Height:     int32(fp.Height),
-		DoorRow:    int32(fp.DoorRow),
-		Entrance: &authoringv1alpha1.FloorPlanCell{
+	var entrance *authoringv1alpha1.FloorPlanCell
+	if fp.Entrance != nil {
+		entrance = &authoringv1alpha1.FloorPlanCell{
 			Column: int32(fp.Entrance.Column),
 			Row:    int32(fp.Entrance.Row),
-		},
+		}
+	}
+
+	var floorSource authoringv1alpha1.FloorPlanFloorSource
+	switch fp.FloorSource {
+	case authoringorch.FloorSourceBounds:
+		floorSource = authoringv1alpha1.FloorPlanFloorSource_FLOOR_PLAN_FLOOR_SOURCE_BOUNDS
+	case authoringorch.FloorSourceRegions:
+		floorSource = authoringv1alpha1.FloorPlanFloorSource_FLOOR_PLAN_FLOOR_SOURCE_REGIONS
+	default:
+		// Unknown is kept present as UNSPECIFIED rather than guessed. The
+		// provider contract requires every successful result to resolve this.
+		floorSource = authoringv1alpha1.FloorPlanFloorSource_FLOOR_PLAN_FLOOR_SOURCE_UNSPECIFIED
+	}
+
+	return &authoringv1alpha1.FloorPlan{
+		Rooms: rooms, Regions: regions, Connectors: connectors, Edges: edges,
+		Width: int32(fp.Width), FloorCells: floorCells, Height: int32(fp.Height),
+		DoorRow: int32(fp.DoorRow), Entrance: entrance, FloorSource: &floorSource,
 	}
 }
 
