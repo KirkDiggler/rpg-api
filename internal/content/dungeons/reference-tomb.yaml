@@ -20,7 +20,7 @@ rooms:
       - { ref: "dnd5e:props:pillar", at: [6, 5] }
       - { ref: "dnd5e:props:torch-ornate", at: [4, 1] }
       - { ref: "dnd5e:props:bone-pile", at: [8, 6] }
-      - { ref: "dnd5e:monsters:skeleton", at: [5, 3] }
+      - { ref: "dnd5e:monsters:skeleton", at: [5, 3], targeting: lowest-health }
       - { ref: "dnd5e:monsters:skeleton", at: [7, 5] }
   - id: tomb
     archetype: boss
