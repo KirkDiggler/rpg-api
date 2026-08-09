@@ -54,6 +54,8 @@ type Orchestrator struct {
 	registry            *dungeonregistry.Registry
 	contentDir          string
 	partyStartSeatCount int
+	updateLocks         *keyedMutex
+	replaceSource       func(*replaceSourceInput) error
 }
 
 // New constructs an Orchestrator from cfg. Returns an error (never a nil
@@ -82,5 +84,7 @@ func New(cfg *Config) (*Orchestrator, error) {
 		registry:            cfg.Registry,
 		contentDir:          cfg.ContentDir,
 		partyStartSeatCount: partyStartSeatCount,
+		updateLocks:         newKeyedMutex(),
+		replaceSource:       replaceSourceDurably,
 	}, nil
 }
