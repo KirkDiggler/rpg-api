@@ -21,7 +21,7 @@ rooms:
       - { ref: "dnd5e:props:torch-ornate", at: [4, 1] }
       - { ref: "dnd5e:props:bone-pile", at: [8, 6] }
       - { ref: "dnd5e:monsters:skeleton", at: [5, 3], targeting: lowest-health }
-      - { ref: "dnd5e:monsters:skeleton", at: [7, 5] }
+      - { ref: "dnd5e:monsters:skeleton", at: [7, 5], targeting: lowest-health }
   - id: tomb
     archetype: boss
     width: 12
