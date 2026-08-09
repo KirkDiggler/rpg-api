@@ -215,7 +215,7 @@ walls:
 
 	// A later complete-document source edit must not recompute the already
 	// persisted encounter snapshot.
-	editedYAML := strings.ReplaceAll(yaml, "offset: [-0.25, 1.5, 2.75]", "offset: [99, 98, 97]")
+	editedYAML := strings.ReplaceAll(yaml, ", offset: [-0.25, 1.5, 2.75]", "")
 	editedYAML = strings.ReplaceAll(editedYAML, "offset: [0.125, -2.5, 3.75]", "offset: [96, 95, 94]")
 	edited, err := authoring.PutDungeon(s.ctx, &authoringorch.PutDungeonInput{Key: key, YAML: editedYAML})
 	s.Require().NoError(err)
@@ -256,10 +256,14 @@ rooms:
   - id: entrance
     archetype: entrance
     width: 6
+    place:
+      - { ref: "dnd5e:props:bookcase", at: [1, 1] }
   - id: boss
     archetype: boss
     width: 8
-    boss: { ref: "dnd5e:monsters:skeleton-captain", at: [4, 2] }
+    boss: { ref: "dnd5e:monsters:skeleton-captain", at: [4, 2], offset: [-0.25, 1.5, 2.75] }
+    place:
+      - { ref: "dnd5e:monsters:skeleton", at: [2, 2], offset: [0, 0, 0] }
 connectors:
   - { from: entrance, to: boss }
 `
@@ -280,6 +284,30 @@ connectors:
 
 	data, err := s.encRepo.Get(s.ctx, out.EncounterID)
 	s.Require().NoError(err)
+
+	// The room-local runtime carriers are independent from the authoring
+	// sidecar: StartEncounter consumes only provider Params/Spawns, and the
+	// repository JSON round trip preserves omission, explicit zero, and signed axes.
+	s.Require().Len(data.Space.Obstacles, 1)
+	s.Require().Equal("dnd5e:props:bookcase", data.Space.Obstacles[0].Ref)
+	s.Require().Equal(core.HexFromPosition(spatial.Position{X: 1, Y: 1}), data.Space.Obstacles[0].Position)
+	s.Require().Nil(data.Space.Obstacles[0].Offset, "omitted room-prop offset must remain absent")
+
+	monstersByRef := make(map[string]*tkenc.MonsterData, len(data.Monsters))
+	for _, monster := range data.Monsters {
+		monstersByRef[monster.MonsterRef] = monster
+	}
+	roomMonster := monstersByRef["dnd5e:monsters:skeleton"]
+	s.Require().NotNil(roomMonster)
+	s.Require().Equal(core.HexFromPosition(spatial.Position{X: 9, Y: 2}), roomMonster.Position)
+	s.Require().Equal(&core.PlacementOffset{}, roomMonster.Offset,
+		"explicit room-monster zero must remain present")
+	boss := monstersByRef["dnd5e:monsters:skeleton-captain"]
+	s.Require().NotNil(boss)
+	s.Require().Equal(core.HexFromPosition(spatial.Position{X: 11, Y: 2}), boss.Position)
+	s.Require().Equal(&core.PlacementOffset{-0.25, 1.5, 2.75}, boss.Offset,
+		"room-boss signed offset must survive StartEncounter and repository JSON")
+
 	wantAnchor := core.HexFromPosition(spatial.Position{X: 12, Y: 4})
 	s.Require().Equal(wantAnchor, data.Space.Entrance,
 		"the toolkit-resolved authored anchor must persist as Space.Entrance")

@@ -16,6 +16,7 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/auth"
 	v2encounter "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v2/encounter"
 	encountersv2 "github.com/KirkDiggler/rpg-api/internal/repositories/encounters/v2"
+	"github.com/KirkDiggler/rpg-api/internal/testsupport/monsterfixture"
 	tkenc "github.com/KirkDiggler/rpg-toolkit/encounter"
 	core "github.com/KirkDiggler/rpg-toolkit/encounter/core"
 	"github.com/KirkDiggler/rpg-toolkit/tools/environments"
@@ -406,10 +407,12 @@ func (s *HandlerSuite) TestGetEncounter_ProjectsPlacementOffsetsThroughAuthorize
 	s.Require().NoError(enc.AddMonster(tkenc.MonsterInput{
 		ID: "monster-signed", MonsterRef: "dnd5e:monsters:skeleton-captain",
 		Position: core.Hex{Q: 3, R: -3}, HP: 10, MaxHP: 10, Offset: &signed,
+		DataJSON: monsterfixture.GoblinDataJSON(s.T(), "monster-signed"),
 	}))
 	s.Require().NoError(enc.AddMonster(tkenc.MonsterInput{
 		ID: "monster-hidden", MonsterRef: "dnd5e:monsters:skeleton",
 		Position: core.Hex{Q: 20, R: -20}, HP: 10, MaxHP: 10, Offset: &hidden,
+		DataJSON: monsterfixture.GoblinDataJSON(s.T(), "monster-hidden"),
 	}))
 	s.Require().NoError(s.repo.Save(s.ctx, enc.ToData()))
 

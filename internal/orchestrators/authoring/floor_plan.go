@@ -98,6 +98,9 @@ func buildFloorPlan(ctx context.Context, compiled dungeonspec.CompiledDungeon, s
 	if err != nil {
 		return nil, fmt.Errorf("build floor plan: %w", err)
 	}
+	if providerPlan.Entrance == nil {
+		return nil, fmt.Errorf("build floor plan: provider returned nil entrance")
+	}
 
 	plan := &FloorPlan{
 		Rooms:      make([]FloorPlanRoom, len(providerPlan.Rooms)),
@@ -106,7 +109,7 @@ func buildFloorPlan(ctx context.Context, compiled dungeonspec.CompiledDungeon, s
 		Height:     providerPlan.Height,
 		DoorRow:    providerPlan.DoorRow,
 		FloorCells: make([]FloorPlanCell, len(providerPlan.FloorCells)),
-		Entrance:   floorPlanCellFromProvider(providerPlan.Entrance),
+		Entrance:   floorPlanCellFromProvider(*providerPlan.Entrance),
 		Edges:      make([]FloorPlanEdge, len(providerPlan.Edges)),
 		Placements: make([]FloorPlanPlacement, len(providerPlan.Placements)),
 	}
