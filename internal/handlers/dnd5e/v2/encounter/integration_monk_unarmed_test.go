@@ -47,6 +47,7 @@ import (
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	charactermock "github.com/KirkDiggler/rpg-api/internal/repositories/character/mock"
 	encountersv2 "github.com/KirkDiggler/rpg-api/internal/repositories/encounters/v2"
+	"github.com/KirkDiggler/rpg-api/internal/testsupport/monsterfixture"
 	tkenc "github.com/KirkDiggler/rpg-toolkit/encounter"
 	encountercore "github.com/KirkDiggler/rpg-toolkit/encounter/core"
 	tkencevents "github.com/KirkDiggler/rpg-toolkit/encounter/events"
@@ -401,6 +402,7 @@ func (s *MonkUnarmedIntegrationSuite) seedMonkEncounter() {
 		AttackBonus: 4,
 		DamageDice:  "1d6+2",
 		DamageType:  "slashing",
+		DataJSON:    monsterfixture.GoblinDataJSON(s.T(), monkGoblinID),
 	}))
 
 	// AddMonster inline-checks combat entry (rpg-toolkit#759): charli (sight

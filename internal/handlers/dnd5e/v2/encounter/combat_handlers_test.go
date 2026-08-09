@@ -9,6 +9,7 @@ import (
 	encounterv2pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/encounter"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
 	v2encounter "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v2/encounter"
+	"github.com/KirkDiggler/rpg-api/internal/testsupport/monsterfixture"
 	tkenc "github.com/KirkDiggler/rpg-toolkit/encounter"
 	core "github.com/KirkDiggler/rpg-toolkit/encounter/core"
 )
@@ -53,6 +54,7 @@ func (s *HandlerSuite) seedCombatEncounter() {
 		HP: 7, MaxHP: 7, AC: 15, Speed: 6,
 		MonsterRef:  "dnd5e:monsters:goblin",
 		AttackBonus: 4, DamageDice: "1d6+2", DamageType: "slashing",
+		DataJSON: monsterfixture.GoblinDataJSON(s.T(), monsterGoblin1),
 	}))
 	// AddMonster inline-checks combat entry (rpg-toolkit#759): alice/bob
 	// (sight range 10, no room) already see the goblin, so the encounter
@@ -339,6 +341,7 @@ func (s *HandlerSuite) TestTakeAction_NotTurnBased_FailedPrecondition() {
 		ID: monsterGoblin1, Position: core.Hex{Q: 20, R: 0, S: -20},
 		HP: 7, MaxHP: 7, AC: 15, Speed: 6, MonsterRef: "dnd5e:monsters:goblin",
 		AttackBonus: 4, DamageDice: "1d6+2",
+		DataJSON: monsterfixture.GoblinDataJSON(s.T(), monsterGoblin1),
 	}))
 	s.Require().NoError(s.repo.Save(s.ctx, enc.ToData()))
 
