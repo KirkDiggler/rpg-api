@@ -6,10 +6,10 @@ require (
 	github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20260809002602-f4d6396df528
 	github.com/KirkDiggler/rpg-toolkit/core v0.10.0
 	github.com/KirkDiggler/rpg-toolkit/dice v0.3.2
-	github.com/KirkDiggler/rpg-toolkit/encounter v0.50.1
+	github.com/KirkDiggler/rpg-toolkit/encounter v0.51.0
 	github.com/KirkDiggler/rpg-toolkit/events v0.6.2
 	github.com/KirkDiggler/rpg-toolkit/rpgerr v0.1.2
-	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.71.0
+	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.72.0
 	github.com/KirkDiggler/rpg-toolkit/tools/environments v0.4.4
 	github.com/KirkDiggler/rpg-toolkit/tools/spatial v0.6.0
 	github.com/KirkDiggler/rpg-toolkit/tools/spawn v0.3.0

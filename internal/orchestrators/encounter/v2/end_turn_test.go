@@ -10,6 +10,7 @@ import (
 	v2encounter "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v2/encounter"
 	encounterorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/encounter/v2"
 	encountersv2 "github.com/KirkDiggler/rpg-api/internal/repositories/encounters/v2"
+	"github.com/KirkDiggler/rpg-api/internal/testsupport/monsterfixture"
 	tkenc "github.com/KirkDiggler/rpg-toolkit/encounter"
 	"github.com/KirkDiggler/rpg-toolkit/encounter/core"
 )
@@ -65,12 +66,13 @@ func (s *EndTurnSuite) SetupTest() {
 		Broker:                 s.broker,
 		EncounterRepo:          s.repo,
 		BuildCharacterResolver: constCharacterResolver(stubCharacterResolver{}),
-		// Stand-in combat resolver: the NPC dispatch loop's scripted goblin
-		// attack runs through this (single-phase ResolveAttack), advancing
-		// initiative deterministically without a rulebook. No DataJSON is seeded
-		// on the goblin, so NPCAct takes the scripted single-phase path — no
-		// reaction triggers, isolating the load → EndTurn → dispatch → persist
-		// contract.
+		// Stand-in combat resolver: the NPC dispatch loop's goblin attack runs
+		// through this (single-phase ResolveAttack), advancing initiative
+		// deterministically without a rulebook. The resolver sources its stats
+		// from the AttackInput snapshot (MonsterInput's own AttackBonus/
+		// DamageDice fields), not from the rehydrated DataJSON, so it stays
+		// single-phase with no reaction triggers regardless — isolating the
+		// load → EndTurn → dispatch → persist contract.
 		BuildCombatResolver: func(_ *tkenc.Data) encounterorch.CombatResolver {
 			return v2encounter.NewStandInCombatResolver(nil)
 		},
@@ -124,6 +126,7 @@ func (s *EndTurnSuite) seedTurnBased(encID string, initiative []core.EntityID, a
 		AttackBonus: 4,
 		DamageDice:  "1d6+2",
 		DamageType:  "slashing",
+		DataJSON:    monsterfixture.GoblinDataJSON(s.T(), etGoblinID),
 	}))
 	// AddMonster inline-checks combat entry (rpg-toolkit#759): bob (sight
 	// range 10, no room) already sees the goblin at (1,0,-1), so the
@@ -249,10 +252,12 @@ func (s *EndTurnSuite) TestEndTurn_NPCDispatchLoop_CyclesPastConsecutiveNPCs() {
 	s.Require().NoError(enc.AddMonster(tkenc.MonsterInput{
 		ID: etGoblinID, Position: core.Hex{Q: 1, R: 0, S: -1}, HP: 7, MaxHP: 7, AC: 15, Speed: 6,
 		MonsterRef: "dnd5e:monsters:goblin", AttackBonus: 4, DamageDice: "1d6+2", DamageType: "slashing",
+		DataJSON: monsterfixture.GoblinDataJSON(s.T(), etGoblinID),
 	}))
 	s.Require().NoError(enc.AddMonster(tkenc.MonsterInput{
 		ID: goblin2, Position: core.Hex{Q: 2, R: 0, S: -2}, HP: 7, MaxHP: 7, AC: 15, Speed: 6,
 		MonsterRef: "dnd5e:monsters:goblin", AttackBonus: 4, DamageDice: "1d6+2", DamageType: "slashing",
+		DataJSON: monsterfixture.GoblinDataJSON(s.T(), goblin2),
 	}))
 	// AddMonster inline-checks combat entry (rpg-toolkit#759): the first
 	// goblin add already self-transitions to TURN_BASED, so an explicit

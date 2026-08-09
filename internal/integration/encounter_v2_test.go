@@ -16,6 +16,7 @@ import (
 
 	encounterv2pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/encounter"
 	"github.com/KirkDiggler/rpg-api/internal/integration/harness"
+	"github.com/KirkDiggler/rpg-api/internal/testsupport/monsterfixture"
 	tkenc "github.com/KirkDiggler/rpg-toolkit/encounter"
 	"github.com/KirkDiggler/rpg-toolkit/encounter/core"
 )
@@ -161,6 +162,7 @@ func (s *EncounterV2IntegrationSuite) TestModeChangedToTurnBased_StreamCarriesIn
 		HP: 7, MaxHP: 7, AC: 15, Speed: 6,
 		MonsterRef:  "dnd5e:monsters:goblin",
 		AttackBonus: 4, DamageDice: "1d6+2", DamageType: "slashing",
+		DataJSON: monsterfixture.GoblinDataJSON(s.T(), "goblin-1"),
 	}))
 	s.Require().Equal(core.ModeFreeRoam, enc.Mode(), "goblin starts outside every player's sight")
 	s.Require().NoError(s.srv.EncRepoV2.Save(s.ctx, enc.ToData()))
@@ -259,6 +261,7 @@ func (s *EncounterV2IntegrationSuite) TestEntityAppearedEvent_StreamCarriesEntit
 		HP: 7, MaxHP: 7, AC: 15, Speed: 6,
 		MonsterRef:  "dnd5e:monsters:goblin",
 		AttackBonus: 4, DamageDice: "1d6+2", DamageType: "slashing",
+		DataJSON: monsterfixture.GoblinDataJSON(s.T(), "goblin-1"),
 	}))
 	s.Require().Equal(core.ModeFreeRoam, enc.Mode(), "nobody sees anybody from these starting positions")
 	s.Require().NoError(s.srv.EncRepoV2.Save(s.ctx, enc.ToData()))
@@ -541,6 +544,7 @@ func (s *EncounterV2IntegrationSuite) TestEntityDisappearedEvent_HexStaysVisible
 		ID: "goblin-1", Position: core.Hex{Q: 0, R: -1, S: 1},
 		HP: 7, MaxHP: 7, AC: 15, Speed: 6,
 		MonsterRef: "dnd5e:monsters:goblin",
+		DataJSON:   monsterfixture.GoblinDataJSON(s.T(), "goblin-1"),
 	}))
 	s.Require().NoError(s.srv.EncRepoV2.Save(s.ctx, enc.ToData()))
 
@@ -1265,6 +1269,7 @@ func (s *EncounterV2IntegrationSuite) TestCombatSlice_TakeActionAndEndTurn_NPCDi
 		HP: 30, MaxHP: 30, AC: 15, Speed: 6,
 		MonsterRef:  "dnd5e:monsters:goblin",
 		AttackBonus: 4, DamageDice: "1d6+2", DamageType: "slashing",
+		DataJSON: monsterfixture.GoblinDataJSON(s.T(), "goblin-1"),
 	}))
 	// AddMonster inline-checks combat entry (rpg-toolkit#759): alice/bob
 	// (sight range 10, no room) already see the goblin(s) just added, so the
@@ -1430,12 +1435,13 @@ func killGoblinFixturePlayerInput(playerID core.PlayerID, entityID core.EntityID
 // killGoblinFixtureMonsterInput returns a MonsterInput tuned for the death
 // integration tests: HP=1 + AC=10 goes down to any d20-roll-except-nat-1
 // + 1+ damage attack from the killGoblinFixturePlayerInput player.
-func killGoblinFixtureMonsterInput(id core.EntityID, pos core.Hex) tkenc.MonsterInput {
+func killGoblinFixtureMonsterInput(tb testing.TB, id core.EntityID, pos core.Hex) tkenc.MonsterInput {
 	return tkenc.MonsterInput{
 		ID: id, Position: pos,
 		HP: 1, MaxHP: 1, AC: 10, Speed: 6,
 		MonsterRef:  "dnd5e:monsters:goblin",
 		AttackBonus: 4, DamageDice: "1d6+2", DamageType: "slashing",
+		DataJSON: monsterfixture.GoblinDataJSON(tb, string(id)),
 	}
 }
 
@@ -1496,7 +1502,7 @@ func (s *EncounterV2IntegrationSuite) TestCombatSlice_KillLastHostile_FiresDeath
 	// alice and bob (a shared neighbor of their two positions) — whichever
 	// one initiative makes active must be able to attack it.
 	s.Require().NoError(enc.AddMonster(killGoblinFixtureMonsterInput(
-		"goblin-1", core.Hex{Q: 1, R: 0, S: -1})))
+		s.T(), "goblin-1", core.Hex{Q: 1, R: 0, S: -1})))
 	// AddMonster inline-checks combat entry (rpg-toolkit#759): alice/bob
 	// (sight range 10, no room) already see the goblin(s) just added, so the
 	// encounter self-transitions to TURN_BASED here. An explicit SetMode
@@ -1645,6 +1651,7 @@ func (s *EncounterV2IntegrationSuite) TestCombatSlice_TPK_FiresCanonicalEndReaso
 		HP: 99, MaxHP: 99, AC: 10, Speed: 6,
 		MonsterRef:  "dnd5e:monsters:goblin",
 		AttackBonus: 20, DamageDice: "1d6+2", DamageType: "slashing",
+		DataJSON: monsterfixture.GoblinDataJSON(s.T(), monsterID),
 	}))
 
 	// Make the player active without running an NPC action in test setup; the
@@ -1710,9 +1717,9 @@ func (s *EncounterV2IntegrationSuite) TestCombatSlice_KillOneOfTwoHostiles_NoEnc
 	// two positions) — whichever player initiative makes active must be
 	// able to attack whichever goblin is targeted.
 	s.Require().NoError(enc.AddMonster(killGoblinFixtureMonsterInput(
-		"goblin-1", core.Hex{Q: 1, R: 0, S: -1})))
+		s.T(), "goblin-1", core.Hex{Q: 1, R: 0, S: -1})))
 	s.Require().NoError(enc.AddMonster(killGoblinFixtureMonsterInput(
-		"goblin-2", core.Hex{Q: 0, R: -1, S: 1})))
+		s.T(), "goblin-2", core.Hex{Q: 0, R: -1, S: 1})))
 	// AddMonster inline-checks combat entry (rpg-toolkit#759): alice/bob
 	// (sight range 10, no room) already see the goblin(s) just added, so the
 	// encounter self-transitions to TURN_BASED here. An explicit SetMode

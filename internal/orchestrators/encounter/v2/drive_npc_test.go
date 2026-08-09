@@ -11,6 +11,7 @@ import (
 	v2encounter "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v2/encounter"
 	encounterorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/encounter/v2"
 	encountersv2 "github.com/KirkDiggler/rpg-api/internal/repositories/encounters/v2"
+	"github.com/KirkDiggler/rpg-api/internal/testsupport/monsterfixture"
 	tkenc "github.com/KirkDiggler/rpg-toolkit/encounter"
 	"github.com/KirkDiggler/rpg-toolkit/encounter/core"
 )
@@ -119,6 +120,7 @@ func (s *DriveStalledNPCTurnSuite) seedTurnBased(encID string, monsterIDs []core
 			AttackBonus: 4,
 			DamageDice:  "1d6+2",
 			DamageType:  "slashing",
+			DataJSON:    monsterfixture.GoblinDataJSON(s.T(), string(mid)),
 		}))
 	}
 	// AddMonster inline-checks combat entry (rpg-toolkit#759): bob (sight

@@ -60,6 +60,8 @@ type Orchestrator struct {
 	contentDir          string
 	partyStartSeatCount int
 	compiler            Compiler
+	updateLocks         *keyedMutex
+	replaceSource       func(*replaceSourceInput) error
 }
 
 // New constructs an Orchestrator from cfg. Returns an error (never a nil
@@ -93,5 +95,7 @@ func New(cfg *Config) (*Orchestrator, error) {
 		contentDir:          cfg.ContentDir,
 		partyStartSeatCount: partyStartSeatCount,
 		compiler:            compiler,
+		updateLocks:         newKeyedMutex(),
+		replaceSource:       replaceSourceDurably,
 	}, nil
 }

@@ -69,6 +69,7 @@ import (
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	charactermock "github.com/KirkDiggler/rpg-api/internal/repositories/character/mock"
 	encountersv2 "github.com/KirkDiggler/rpg-api/internal/repositories/encounters/v2"
+	"github.com/KirkDiggler/rpg-api/internal/testsupport/monsterfixture"
 	tkenc "github.com/KirkDiggler/rpg-toolkit/encounter"
 	encountercore "github.com/KirkDiggler/rpg-toolkit/encounter/core"
 	tkencevents "github.com/KirkDiggler/rpg-toolkit/encounter/events"
@@ -637,9 +638,12 @@ func (s *SneakAttackIntegrationSuite) seedSneakEncounter() {
 	// goblin: 100 HP so it survives multiple attacks during the test. A
 	// common neighbor of alice and bob (see seedSneakEncounter's doc
 	// comment) so alice's own attack is within reach too
-	// (rpg-toolkit#864). No DataJSON is supplied: the toolkit's scripted NPC
-	// path therefore uses the deterministic stat-snapshot resolver regardless
-	// of which equal-distance player map iteration selects.
+	// (rpg-toolkit#864). DataJSON is required (rpg-toolkit#895 no-fallback
+	// rider); NPCAct rehydrates and delegates to the wired CombatResolver
+	// (StandInCombatResolver, sourcing stats from this MonsterInput's own
+	// AttackBonus/DamageDice, not from DataJSON), so the deterministic
+	// stat-snapshot resolver still applies regardless of which
+	// equal-distance player map iteration selects.
 	s.Require().NoError(enc.AddMonster(tkenc.MonsterInput{
 		ID:          encountercore.EntityID(sneakGoblinID),
 		Position:    encountercore.Hex{Q: 1, R: -1, S: 0},
@@ -651,6 +655,7 @@ func (s *SneakAttackIntegrationSuite) seedSneakEncounter() {
 		AttackBonus: 4,
 		DamageDice:  "1d6+2",
 		DamageType:  "slashing",
+		DataJSON:    monsterfixture.GoblinDataJSON(s.T(), sneakGoblinID),
 	}))
 
 	// AddMonster inline-checks combat entry (rpg-toolkit#759): alice (sight

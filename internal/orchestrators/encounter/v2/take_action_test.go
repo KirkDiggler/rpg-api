@@ -9,6 +9,7 @@ import (
 
 	encounterorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/encounter/v2"
 	encountersv2 "github.com/KirkDiggler/rpg-api/internal/repositories/encounters/v2"
+	"github.com/KirkDiggler/rpg-api/internal/testsupport/monsterfixture"
 	tkenc "github.com/KirkDiggler/rpg-toolkit/encounter"
 	"github.com/KirkDiggler/rpg-toolkit/encounter/core"
 )
@@ -123,6 +124,7 @@ func (s *TakeActionSuite) seedCombat(encID string, goblinHP int) {
 		AttackBonus: 4,
 		DamageDice:  "1d6+2",
 		DamageType:  "slashing",
+		DataJSON:    monsterfixture.GoblinDataJSON(s.T(), taGoblinID),
 	}))
 	// AddMonster inline-checks combat entry (rpg-toolkit#759): bob (sight
 	// range 10, no room) already sees the goblin at (1,0,-1), so the
@@ -219,6 +221,7 @@ func (s *TakeActionSuite) TestTakeAction_NotTurnBased_ErrNotTurnBased() {
 	s.Require().NoError(enc.AddMonster(tkenc.MonsterInput{
 		ID: taGoblinID, Position: core.Hex{Q: 10, R: 0, S: -10}, HP: 100, MaxHP: 100, AC: 15, Speed: 6,
 		MonsterRef: "dnd5e:monsters:goblin", AttackBonus: 4, DamageDice: "1d6+2", DamageType: "slashing",
+		DataJSON: monsterfixture.GoblinDataJSON(s.T(), taGoblinID),
 	}))
 	s.Require().NoError(s.repo.Save(s.ctx, enc.ToData()))
 

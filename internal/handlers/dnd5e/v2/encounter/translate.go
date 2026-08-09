@@ -1122,8 +1122,11 @@ func translateDoorOpenedEvent(e *events.DoorOpenedEvent, viewer core.PlayerID, n
 // first-class "an action was taken" umbrella beat (North-Star Invariant 9) — to
 // the proto ActionResolved envelope. Every player-facing action (attack, Dodge,
 // Dash, the Monk bonus strike) emits one. rpg-api projects it field-for-field:
-// actor, action_ref, target, economy_consumed; it authors nothing and computes
-// nothing (Invariant 2).
+// actor, action_ref, target, economy_consumed, target_rationale; it authors
+// nothing and computes nothing (Invariant 2). target_rationale is populated
+// only on the NPC/monster attack path, where a targeting strategy chose the
+// target (rpg-toolkit#895); empty for player-taken actions and non-attack
+// actions, which have no AI decision to explain.
 //
 // The envelope timestamp is the event's game-time OccurredAt (Invariant 5, NOT
 // rpg-api's wall clock) and the correlation_id is the event's CorrelationID
@@ -1148,6 +1151,7 @@ func translateActionResolvedEvent(e *events.ActionResolvedEvent, viewer core.Pla
 				ActionRef:       actionRefToProto(e.ActionRef),
 				TargetEntityId:  string(e.TargetID),
 				EconomyConsumed: economyConsumedToProto(e.EconomyConsumed),
+				TargetRationale: e.TargetRationale,
 			},
 		},
 	}, nil
