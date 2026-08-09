@@ -180,9 +180,10 @@ func (s *TranslateMoveInternalSuite) TestTranslateMoveEventWithData_NewlyVisible
 
 	data := encounter.NewData("enc-1")
 	data.Players[viewer] = &encounter.PlayerData{ID: viewer, EntityID: mover, HP: 16, MaxHP: 16}
+	offset := core.PlacementOffset{-0.25, 1.5, 2.75}
 	data.Monsters[monster] = &encounter.MonsterData{
 		ID: monster, Position: doorHex, HP: 11, MaxHP: 11, AC: 13,
-		MonsterRef: "dnd5e:monsters:skeleton",
+		MonsterRef: "dnd5e:monsters:skeleton", Offset: &offset,
 	}
 
 	// The mover opens the door and steps through: the door hex flips
@@ -195,7 +196,7 @@ func (s *TranslateMoveInternalSuite) TestTranslateMoveEventWithData_NewlyVisible
 			State:    int(perception.KnowledgeStateVisible),
 			Contents: []events.KnownHexPlacement{
 				{EntityID: mover},
-				{EntityID: monster},
+				{EntityID: monster, Offset: &offset},
 			},
 		},
 	}
@@ -228,13 +229,17 @@ func (s *TranslateMoveInternalSuite) TestTranslateMoveEventWithData_NewlyVisible
 		}
 	}
 	s.Require().NotNil(doorRecord)
-	var placesMonster bool
+	var monsterPlacement *encounterv2pb.Placement
 	for _, p := range doorRecord.GetContents() {
 		if p.GetEntityId() == string(monster) {
-			placesMonster = true
+			monsterPlacement = p
 		}
 	}
-	s.Require().True(placesMonster, "the door hex must place the monster (this part already worked)")
+	s.Require().NotNil(monsterPlacement, "the door hex must place the monster (this part already worked)")
+	s.Require().Equal(-0.25, monsterPlacement.GetOffset().GetX())
+	s.Require().Equal(1.5, monsterPlacement.GetOffset().GetY())
+	s.Require().Equal(2.75, monsterPlacement.GetOffset().GetZ(),
+		"live knowledge must carry the unchanged world-axis offset")
 
 	// ...but the placement is worthless without a matching Entities record:
 	// this is the bug. A viewer who has never seen "skeleton-1" before needs

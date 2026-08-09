@@ -90,12 +90,14 @@ func TestCanvasProviderContract(t *testing.T) {
 		{Column: 2, Row: 0}, {Column: 2, Row: 1},
 		{Column: 3, Row: 0}, {Column: 3, Row: 1},
 	}, plan.FloorCells)
-	require.Equal(t, dungeonspec.FloorPlanCell{Column: 1, Row: 1}, plan.Entrance)
-	require.Len(t, plan.Edges, 1)
-	require.Equal(t, dungeonspec.FloorPlanCell{Column: 1, Row: 0}, plan.Edges[0].From)
-	require.Equal(t, dungeonspec.FloorPlanCell{Column: 1, Row: 1}, plan.Edges[0].To)
-	require.Equal(t, dungeonspec.FloorPlanEdgeKindDoor, plan.Edges[0].Kind)
-	require.Equal(t, "canvas-provider-contract-authored-door-1--2-1--1--1-0", plan.Edges[0].DoorID)
+	require.Equal(t, &dungeonspec.FloorPlanCell{Column: 1, Row: 1}, plan.Entrance)
+	require.Len(t, plan.Edges, 23, "released provider includes the complete bounds envelope")
+	require.Contains(t, plan.Edges, dungeonspec.FloorPlanEdge{
+		From:   dungeonspec.FloorPlanCell{Column: 1, Row: 0},
+		To:     dungeonspec.FloorPlanCell{Column: 1, Row: 1},
+		Kind:   dungeonspec.FloorPlanEdgeKindDoor,
+		DoorID: "canvas-provider-contract-authored-door-1--2-1--1--1-0",
+	})
 }
 
 func TestBuildFloorPlan_RoomChainProjectionRegression(t *testing.T) {
@@ -117,7 +119,7 @@ func TestBuildFloorPlan_RoomChainProjectionRegression(t *testing.T) {
 	require.Equal(t, 7, plan.Rooms[1].StartColumn)
 	require.Len(t, plan.Connectors, 1)
 	require.Equal(t, "room-chain-provider-contract-door-entrance-boss", plan.Connectors[0].DoorID)
-	require.Equal(t, dungeonspec.FloorPlanCell{Column: 0, Row: 4}, plan.Entrance)
+	require.Equal(t, &dungeonspec.FloorPlanCell{Column: 0, Row: 4}, plan.Entrance)
 	require.NotEmpty(t, plan.Edges)
 }
 

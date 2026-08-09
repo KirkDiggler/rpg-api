@@ -66,16 +66,18 @@ func (s *TranslateEntityDisappearedInternalSuite) TestTranslateEntityDisappeared
 	// The frozen observation, as the toolkit's own refreshObservations would
 	// have written it the last time lastKnown was genuinely visible: the
 	// monster present, real edges/zone, all now stale but honest.
+	frozenOffset := core.PlacementOffset{-0.25, 1.5, 2.75}
 	view.Memory[lastKnown] = perception.HexObservation{
 		Position: lastKnown,
 		State:    perception.KnowledgeStateVisible, // stale write-time value; State is re-derived below
 		ZoneID:   "sentry",
-		Contents: []perception.Placement{{EntityID: monster}},
+		Contents: []perception.Placement{{EntityID: monster, Offset: &frozenOffset}},
 	}
 	data.Players[viewer] = &encounter.PlayerData{ID: viewer, EntityID: mover, View: view, HP: 16, MaxHP: 16}
+	currentOffset := core.PlacementOffset{99, 98, 97}
 	data.Monsters[monster] = &encounter.MonsterData{
 		ID: monster, Position: lastKnown, HP: 11, MaxHP: 11, AC: 13,
-		MonsterRef: "dnd5e:monsters:skeleton",
+		MonsterRef: "dnd5e:monsters:skeleton", Offset: &currentOffset,
 	}
 
 	evt := events.NewEntityDisappearedEvent("enc-1", uint64(1), monster, map[core.PlayerID]core.Hex{
@@ -93,15 +95,19 @@ func (s *TranslateEntityDisappearedInternalSuite) TestTranslateEntityDisappeared
 	s.Require().Equal(encounterv2pb.HexState_HEX_STATE_REMEMBERED, record.GetState())
 	s.Require().Equal("sentry", record.GetZoneId(), "the frozen record must carry the memory's own zone_id, not lose it")
 
-	var placesMonster bool
+	var monsterPlacement *encounterv2pb.Placement
 	for _, p := range record.GetContents() {
 		if p.GetEntityId() == string(monster) {
-			placesMonster = true
+			monsterPlacement = p
 		}
 	}
-	s.Require().True(placesMonster,
+	s.Require().NotNil(monsterPlacement,
 		"the REMEMBERED record must carry the frozen placement, not an empty shell — "+
 			"an empty Contents here is exactly the vanish-then-return bug")
+	s.Require().Equal(-0.25, monsterPlacement.GetOffset().GetX())
+	s.Require().Equal(1.5, monsterPlacement.GetOffset().GetY())
+	s.Require().Equal(2.75, monsterPlacement.GetOffset().GetZ(),
+		"REMEMBERED must project the frozen offset, never the different current data")
 
 	var disclosed *encounterv2pb.Entity
 	for _, e := range changed.GetEntities() {
@@ -128,12 +134,19 @@ func (s *TranslateEntityDisappearedInternalSuite) TestTranslateEntityDisappeared
 
 	data := encounter.NewData("enc-1")
 	view := perception.NewView(viewer, viewerPos, 5)
+	staleOffset := core.PlacementOffset{9, 8, 7}
+	view.Memory[sharedHex] = perception.HexObservation{
+		Position: sharedHex,
+		State:    perception.KnowledgeStateVisible,
+		Contents: []perception.Placement{{EntityID: bystander, Offset: &staleOffset}},
+	}
 	data.Players[viewer] = &encounter.PlayerData{ID: viewer, EntityID: mover, View: view, HP: 16, MaxHP: 16}
 	// bystander is STILL standing on sharedHex even after the departed
 	// entity (whichever one triggered this event) left it.
+	currentOffset := core.PlacementOffset{0.125, -2.5, 3.75}
 	data.Monsters[bystander] = &encounter.MonsterData{
 		ID: bystander, Position: sharedHex, HP: 5, MaxHP: 5, AC: 12,
-		MonsterRef: "dnd5e:monsters:skeleton",
+		MonsterRef: "dnd5e:monsters:skeleton", Offset: &currentOffset,
 	}
 
 	evt := events.NewEntityDisappearedEvent("enc-1", uint64(1), "skeleton-1", map[core.PlayerID]core.Hex{
@@ -149,13 +162,17 @@ func (s *TranslateEntityDisappearedInternalSuite) TestTranslateEntityDisappeared
 	s.Require().Equal(encounterv2pb.HexState_HEX_STATE_VISIBLE, record.GetState(),
 		"the hex itself is still visible; only the departed entity left")
 
-	var placesBystander bool
+	var bystanderPlacement *encounterv2pb.Placement
 	for _, p := range record.GetContents() {
 		if p.GetEntityId() == string(bystander) {
-			placesBystander = true
+			bystanderPlacement = p
 		}
 	}
-	s.Require().True(placesBystander, "another entity still genuinely standing there must not vanish too")
+	s.Require().NotNil(bystanderPlacement, "another entity still genuinely standing there must not vanish too")
+	s.Require().Equal(0.125, bystanderPlacement.GetOffset().GetX())
+	s.Require().Equal(-2.5, bystanderPlacement.GetOffset().GetY())
+	s.Require().Equal(3.75, bystanderPlacement.GetOffset().GetZ(),
+		"VISIBLE current truth must win over a different remembered offset")
 
 	var disclosed *encounterv2pb.Entity
 	for _, e := range changed.GetEntities() {
