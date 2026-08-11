@@ -2,6 +2,8 @@ package encounter_test
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -847,6 +849,52 @@ func (s *ProjectSuite) TestProjectFor_DoorWall_ProjectsIdKindAndPassageEdge() {
 	s.Require().Equal("door-1", openRecord.GetEdges()[0].GetId())
 }
 
+// TestProjectFor_SimpleRoomV04Regions_FirstSnapshotOnlyIncludesFogAuthorizedEnvelopeEdges
+// uses the same named canonical server fixture as the StartEncounter persistence
+// gate. ProjectFor is GetEncounter's snapshot projection seam: its first response
+// carries only generated envelope pairs present in this viewer's persisted hex
+// knowledge, not the complete dungeon-owned envelope snapshot.
+func (s *ProjectSuite) TestProjectFor_SimpleRoomV04Regions_FirstSnapshotOnlyIncludesFogAuthorizedEnvelopeEdges() {
+	source, err := os.ReadFile(filepath.Join(
+		"..", "..", "..", "..", "orchestrators", "authoring", "testdata", "simple-room-v04-regions.yaml",
+	))
+	s.Require().NoError(err)
+	compiled, err := dungeonspec.CompileDungeon(context.Background(), &dungeonspec.CompileDungeonInput{
+		Source: source, Mode: dungeonspec.CompileModeStrict, PartyStartSeatCount: 4, PreviewSeed: 1,
+	})
+	s.Require().NoError(err)
+	s.Require().Empty(compiled.FieldErrors)
+	s.Require().NotNil(compiled.FloorPlan)
+	s.Require().Empty(compiled.Compiled.Params.AuthoredEdges)
+	s.Require().NotEmpty(compiled.Compiled.Params.EnvelopeEdges)
+
+	params := compiled.Compiled.Params
+	params.RandomSeed = 1
+	enc := tkenc.New(context.Background(), "simple-room-v04-first-snapshot", s.broker)
+	s.Require().NoError(enc.InitDungeon(params))
+	entrance := enc.ToData().Space.Entrance
+	s.Require().NoError(enc.AddPlayer(tkenc.PlayerInput{
+		PlayerID: "alice", EntityID: "char-alice", Position: entrance, SightRange: 2,
+	}))
+	data := enc.ToData()
+
+	projected, err := v2encounter.ProjectFor(context.Background(), data, "alice", s.broker, nil, s.now)
+	s.Require().NoError(err)
+	authorizedEnvelopeEdges := 0
+	for _, generated := range data.Space.EnvelopeEdges {
+		for _, record := range projected.GetSpace().GetHexes() {
+			if generatedWall(record.GetEdges(), generated) != nil {
+				authorizedEnvelopeEdges++
+				break
+			}
+		}
+	}
+	s.Require().Positive(authorizedEnvelopeEdges,
+		"the first snapshot must include generated edges the viewer actually knows")
+	s.Require().Less(authorizedEnvelopeEdges, len(data.Space.EnvelopeEdges),
+		"fog-gated HexRecord.edges must not expose the complete persisted envelope")
+}
+
 // TestProjectFor_AuthoredEdgesProjectFromToolkitKnowledge proves #179 needs
 // no API runtime projector fork: the existing HexRecord path reads the
 // toolkit's persisted knowledge, which already contains authored edges at BOTH
@@ -945,6 +993,20 @@ func tkencDataOrFail(t *testing.T, enc *tkenc.Encounter) *tkenc.Data {
 		t.Fatal("toolkit encounter returned nil data")
 	}
 	return data
+}
+
+func generatedWall(walls []*encounterv2pb.Wall, generated tkenc.GeneratedEdge) *encounterv2pb.Wall {
+	for _, wall := range walls {
+		from := wall.GetFrom()
+		to := wall.GetTo()
+		if (from.GetX() == int32(generated.From.Q) && from.GetY() == int32(generated.From.R) && from.GetZ() == int32(generated.From.S) &&
+			to.GetX() == int32(generated.To.Q) && to.GetY() == int32(generated.To.R) && to.GetZ() == int32(generated.To.S)) ||
+			(from.GetX() == int32(generated.To.Q) && from.GetY() == int32(generated.To.R) && from.GetZ() == int32(generated.To.S) &&
+				to.GetX() == int32(generated.From.Q) && to.GetY() == int32(generated.From.R) && to.GetZ() == int32(generated.From.S)) {
+			return wall
+		}
+	}
+	return nil
 }
 
 func authoredWall(walls []*encounterv2pb.Wall, authored tkenc.AuthoredEdge) *encounterv2pb.Wall {

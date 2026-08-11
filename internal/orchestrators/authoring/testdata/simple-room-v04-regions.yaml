@@ -1,0 +1,19 @@
+version: 1
+key: simple-room
+name: "Simple Room"
+theme: crypt
+height: 1 # unused placeholder — no compiled room chain exists yet; canvas.height below is what the board actually reads
+canvas:
+  width: 20
+  height: 30
+  floor_source: regions
+rooms: []
+connectors: []
+walls: []
+start: null
+place: [ { ref: "dnd5e:props:bookcase", at: [ 6, 1 ], blocks_movement: false, blocks_los: false, facing: SE }, { ref: "dnd5e:props:bookcase", at: [ 6, 3 ], blocks_movement: false, blocks_los: false, facing: SE }, { ref: "dnd5e:props:bookcase", at: [ 6, 5 ], blocks_movement: false, blocks_los: false, facing: SE }, { ref: "dnd5e:props:torch", at: [ 6, 4 ], blocks_movement: false, blocks_los: false }, { ref: "dnd5e:props:torch", at: [ 6, 2 ], blocks_movement: false, blocks_los: false }, { ref: "dnd5e:props:bookcase", at: [ 5, 6 ], blocks_movement: false, blocks_los: false, facing: SW } ]
+regions:
+  - id: entrance
+    name: Entryway
+    archetype: entrance
+    cells: [ [ 0, 0 ], [ 0, 1 ], [ 0, 2 ], [ 0, 3 ], [ 0, 4 ], [ 0, 5 ], [ 0, 6 ], [ 1, 6 ], [ 2, 6 ], [ 3, 6 ], [ 4, 6 ], [ 5, 6 ], [ 5, 5 ], [ 5, 4 ], [ 5, 3 ], [ 5, 2 ], [ 5, 1 ], [ 5, 0 ], [ 4, 0 ], [ 3, 0 ], [ 2, 0 ], [ 1, 0 ], [ 1, 1 ], [ 1, 2 ], [ 1, 3 ], [ 1, 4 ], [ 1, 5 ], [ 2, 5 ], [ 3, 5 ], [ 4, 5 ], [ 4, 4 ], [ 4, 3 ], [ 4, 2 ], [ 4, 1 ], [ 3, 1 ], [ 3, 2 ], [ 3, 3 ], [ 3, 4 ], [ 2, 4 ], [ 2, 3 ], [ 2, 2 ], [ 2, 1 ], [ 6, 0 ], [ 6, 1 ], [ 6, 2 ], [ 6, 3 ], [ 6, 4 ], [ 6, 5 ], [ 6, 6 ], [ 0, 7 ], [ 2, 7 ], [ 4, 7 ], [ 6, 7 ] ]

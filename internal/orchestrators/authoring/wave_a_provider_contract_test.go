@@ -7,9 +7,11 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 
 	"github.com/KirkDiggler/rpg-api/internal/dungeonregistry"
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/authoring"
+	authoringmock "github.com/KirkDiggler/rpg-api/internal/orchestrators/authoring/mock"
 )
 
 const waveARingYAML = `version: 1
@@ -31,6 +33,83 @@ func waveAOrchestrator(t *testing.T) (*authoring.Orchestrator, *dungeonregistry.
 	})
 	require.NoError(t, err)
 	return orch, registry, dir
+}
+
+func TestPutDungeon_ValidateOnlyUsesDraftCompilerAndHasNoSideEffects(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	compiler := authoringmock.NewMockCompiler(ctrl)
+	registry := dungeonregistry.New(nil)
+	dir := t.TempDir()
+	orch, err := authoring.New(&authoring.Config{
+		Registry: registry, ContentDir: dir, PartyStartSeatCount: 4, Compiler: compiler,
+	})
+	require.NoError(t, err)
+
+	const source = "version: 1\nkey: draft-seam\n"
+	compiler.EXPECT().CompileDungeon(gomock.Any(), gomock.Any()).DoAndReturn(
+		func(_ context.Context, in *authoring.CompileDungeonInput) (*authoring.CompileDungeonOutput, error) {
+			require.Equal(t, []byte(source), in.Source)
+			require.Equal(t, authoring.CompileModeDraft, in.Mode)
+			require.Equal(t, 4, in.PartyStartSeatCount)
+			return &authoring.CompileDungeonOutput{FloorPlan: &authoring.FloorPlan{
+				FloorSource: authoring.FloorSourceRegions,
+				FloorCells:  []authoring.FloorPlanCell{{Column: 0, Row: 0}, {Column: 4, Row: 4}},
+				Entrance:    nil,
+			}}, nil
+		},
+	)
+
+	out, err := orch.PutDungeon(context.Background(), &authoring.PutDungeonInput{
+		Key: "draft-seam", YAML: source, ValidateOnly: true,
+	})
+	require.NoError(t, err)
+	require.True(t, out.Success)
+	require.Nil(t, out.FloorPlan.Entrance, "draft nil entrance must remain absent")
+	require.Len(t, out.FloorPlan.FloorCells, 2, "draft may return a structurally valid non-runnable mask")
+	require.Empty(t, registry.Keys(), "validate-only must not swap the registry")
+	entries, err := os.ReadDir(dir)
+	require.NoError(t, err)
+	require.Empty(t, entries, "validate-only must not write source")
+}
+
+func TestPutDungeon_WriteUsesStrictCompilerAndPreservesPreviousStateOnFieldErrors(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	compiler := authoringmock.NewMockCompiler(ctrl)
+	registry := dungeonregistry.New(nil)
+	dir := t.TempDir()
+	const (
+		key            = "strict-seam"
+		previousSource = "version: 1\nkey: strict-seam\nname: Previous\n"
+		candidate      = "version: 1\nkey: strict-seam\nname: Candidate\n"
+	)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, key+".yaml"), []byte(previousSource), 0o600))
+	registry.Put(key, dungeonregistry.Entry{Name: "Previous"})
+	orch, err := authoring.New(&authoring.Config{
+		Registry: registry, ContentDir: dir, PartyStartSeatCount: 4, Compiler: compiler,
+	})
+	require.NoError(t, err)
+
+	providerErrors := []authoring.FieldError{{
+		Field: "regions[1].cells", Message: "provider message stays opaque", Code: "duplicate_region",
+	}}
+	compiler.EXPECT().CompileDungeon(gomock.Any(), gomock.Any()).DoAndReturn(
+		func(_ context.Context, in *authoring.CompileDungeonInput) (*authoring.CompileDungeonOutput, error) {
+			require.Equal(t, []byte(candidate), in.Source)
+			require.Equal(t, authoring.CompileModeStrict, in.Mode)
+			return &authoring.CompileDungeonOutput{FieldErrors: providerErrors}, nil
+		},
+	)
+
+	out, err := orch.PutDungeon(context.Background(), &authoring.PutDungeonInput{Key: key, YAML: candidate})
+	require.NoError(t, err)
+	require.False(t, out.Success)
+	require.Equal(t, providerErrors, out.FieldErrors, "field/message/code must pass through without reinterpretation")
+	committed, err := os.ReadFile(filepath.Join(dir, key+".yaml"))
+	require.NoError(t, err)
+	require.Equal(t, previousSource, string(committed), "strict failure must preserve prior source")
+	entry, ok := registry.Get(key)
+	require.True(t, ok)
+	require.Equal(t, "Previous", entry.Name, "strict failure must preserve prior registry entry")
 }
 
 func TestPutDungeon_WaveARealProviderProjectsRingAndCompleteEnvelope(t *testing.T) {

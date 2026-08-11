@@ -336,6 +336,54 @@ regions:
 	s.Require().Equal(data.Space.PartyStartPositions, restarted.Space.PartyStartPositions)
 }
 
+func (s *LobbySuite) TestStartEncounter_SimpleRoomV04RegionsPersistsGeneratedEnvelopeWithoutAuthoredPairs() {
+	const (
+		key     = "simple-room"
+		fixture = "simple-room-v04-regions.yaml"
+	)
+	source, err := os.ReadFile(filepath.Join("..", "authoring", "testdata", fixture))
+	s.Require().NoError(err)
+
+	dir := s.T().TempDir()
+	registry := dungeonregistry.New(nil)
+	authoring, err := authoringorch.New(&authoringorch.Config{
+		Registry: registry, ContentDir: dir, PartyStartSeatCount: lobbyorch.DefaultPartyCap,
+	})
+	s.Require().NoError(err)
+	put, err := authoring.PutDungeon(s.ctx, &authoringorch.PutDungeonInput{Key: key, YAML: string(source)})
+	s.Require().NoError(err)
+	s.Require().True(put.Success, "field errors: %v", put.FieldErrors)
+
+	entry, ok := registry.Get(key)
+	s.Require().True(ok)
+	s.Require().NoError(entry.Err)
+	s.Require().Empty(entry.Compiled.Params.AuthoredEdges,
+		"the canonical server fixture delegates its perimeter entirely to the region envelope")
+	s.Require().NotEmpty(entry.Compiled.Params.EnvelopeEdges,
+		"the region union must carry its provider-generated floor envelope")
+
+	runtime, err := s.newOrchestratorWithRegistry(registry)
+	s.Require().NoError(err)
+	s.seedReadyLobby("lobby-simple-room-v04", "alice")
+	s.expectCharacter("char-alice", "alice", "Alice", 12, 12)
+	started, err := runtime.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		PlayerID: "alice", LobbyID: "lobby-simple-room-v04", DungeonKey: key, RandomSeed: 42,
+	})
+	s.Require().NoError(err)
+
+	persisted, err := s.encRepo.Get(s.ctx, started.EncounterID)
+	s.Require().NoError(err)
+	s.Require().Empty(persisted.Space.AuthoredEdges,
+		"no client-local perimeter pair may be synthesized into authored persistence")
+	s.Require().Equal(entry.Compiled.Params.EnvelopeEdges, persisted.Space.EnvelopeEdges,
+		"generated envelope pairs must survive in their dedicated persistence field")
+
+	reloaded, err := tkenc.LoadFromData(s.ctx, persisted, s.encBroker)
+	s.Require().NoError(err)
+	s.Require().Equal(persisted.Space.AuthoredEdges, reloaded.ToData().Space.AuthoredEdges)
+	s.Require().Equal(persisted.Space.EnvelopeEdges, reloaded.ToData().Space.EnvelopeEdges)
+}
+
 func (s *LobbySuite) TestStartEncounter_AuthoredSourceEditDoesNotRecompileRunningSnapshot() {
 	const key = "snapshot-source-isolation"
 	dir := s.T().TempDir()

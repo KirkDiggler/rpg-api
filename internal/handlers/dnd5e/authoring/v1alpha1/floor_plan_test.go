@@ -102,6 +102,54 @@ func TestToProtoFloorPlan_WaveAResolvedRegionsAndAbsentEntrance(t *testing.T) {
 	require.Equal(t, "draft", got.GetRegions()[0].GetId())
 }
 
+func TestToProtoFloorPlan_WaveAProjectionDoesNotDeriveBoundsOrRewritePairs(t *testing.T) {
+	parent := "outer"
+	floorCells := []authoringorch.FloorPlanCell{
+		{Column: 1, Row: 1}, {Column: 1, Row: 2}, {Column: 1, Row: 3},
+		{Column: 2, Row: 1}, {Column: 2, Row: 3},
+		{Column: 3, Row: 1}, {Column: 3, Row: 2}, {Column: 3, Row: 3},
+	}
+	edges := []authoringorch.FloorPlanEdge{
+		{From: authoringorch.FloorPlanCell{Column: 0, Row: 0}, To: authoringorch.FloorPlanCell{Column: -1, Row: 0}, Kind: authoringorch.FloorPlanEdgeKindSolid},
+		{From: authoringorch.FloorPlanCell{Column: 2, Row: 2}, To: authoringorch.FloorPlanCell{Column: 1, Row: 1}, Kind: authoringorch.FloorPlanEdgeKindSolid},
+		{From: authoringorch.FloorPlanCell{Column: 2, Row: 2}, To: authoringorch.FloorPlanCell{Column: 1, Row: 2}, Kind: authoringorch.FloorPlanEdgeKindSolid},
+		{From: authoringorch.FloorPlanCell{Column: 2, Row: 2}, To: authoringorch.FloorPlanCell{Column: 2, Row: 1}, Kind: authoringorch.FloorPlanEdgeKindSolid},
+		{From: authoringorch.FloorPlanCell{Column: 2, Row: 2}, To: authoringorch.FloorPlanCell{Column: 2, Row: 3}, Kind: authoringorch.FloorPlanEdgeKindSolid},
+		{From: authoringorch.FloorPlanCell{Column: 2, Row: 2}, To: authoringorch.FloorPlanCell{Column: 3, Row: 2}, Kind: authoringorch.FloorPlanEdgeKindSolid},
+		{From: authoringorch.FloorPlanCell{Column: 2, Row: 2}, To: authoringorch.FloorPlanCell{Column: 3, Row: 3}, Kind: authoringorch.FloorPlanEdgeKindSolid},
+	}
+	plan := &authoringorch.FloorPlan{
+		FloorSource: authoringorch.FloorSourceRegions,
+		Width:       20,
+		Height:      30,
+		FloorCells:  floorCells,
+		Regions: []authoringorch.FloorPlanRegion{
+			{ID: "outer", Cells: floorCells},
+			{ID: "inner", Cells: []authoringorch.FloorPlanCell{{Column: 1, Row: 1}}, ParentID: &parent},
+		},
+		Edges: edges,
+	}
+
+	got := toProtoFloorPlan(plan)
+	require.Equal(t, int32(20), got.GetWidth(), "handler must not derive width from the mask")
+	require.Equal(t, int32(30), got.GetHeight(), "handler must not derive height from the mask")
+	require.Len(t, got.GetFloorCells(), len(floorCells))
+	for index, cell := range floorCells {
+		require.Equal(t, int32(cell.Column), got.GetFloorCells()[index].GetColumn())
+		require.Equal(t, int32(cell.Row), got.GetFloorCells()[index].GetRow())
+	}
+	require.Equal(t, "outer", got.GetRegions()[1].GetParentId())
+	require.Nil(t, got.GetEntrance(), "absence must not synthesize [0,0]")
+	require.Len(t, got.GetEdges(), len(edges))
+	for index, edge := range edges {
+		require.Equal(t, int32(edge.From.Column), got.GetEdges()[index].GetFrom().GetColumn())
+		require.Equal(t, int32(edge.From.Row), got.GetEdges()[index].GetFrom().GetRow())
+		require.Equal(t, int32(edge.To.Column), got.GetEdges()[index].GetTo().GetColumn())
+		require.Equal(t, int32(edge.To.Row), got.GetEdges()[index].GetTo().GetRow())
+		require.Equal(t, authoringv1alpha1.FloorPlanEdgeKind_FLOOR_PLAN_EDGE_KIND_SOLID, got.GetEdges()[index].GetKind())
+	}
+}
+
 func TestToProtoFloorPlan_PlacementOffsetPreservesPresenceAndProviderFields(t *testing.T) {
 	east := uint32(0)
 	plan := &authoringorch.FloorPlan{Placements: []authoringorch.FloorPlanPlacement{
