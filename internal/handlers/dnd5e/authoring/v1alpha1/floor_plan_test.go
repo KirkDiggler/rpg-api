@@ -101,3 +101,42 @@ func TestToProtoFloorPlan_WaveAResolvedRegionsAndAbsentEntrance(t *testing.T) {
 	require.Equal(t, int32(2), got.GetEdges()[0].GetTo().GetColumn())
 	require.Equal(t, "draft", got.GetRegions()[0].GetId())
 }
+
+func TestToProtoFloorPlan_PlacementOffsetPreservesPresenceAndProviderFields(t *testing.T) {
+	east := uint32(0)
+	plan := &authoringorch.FloorPlan{Placements: []authoringorch.FloorPlanPlacement{
+		{
+			Ref: "dnd5e:props:bookcase", At: authoringorch.FloorPlanCell{Column: 3, Row: 2},
+			Facing: &east, BlocksMovement: true, BlocksLoS: false,
+			SourcePath: "rooms[0].place[0]",
+		},
+		{
+			Ref: "dnd5e:monsters:skeleton", At: authoringorch.FloorPlanCell{Column: -2, Row: 4},
+			SourcePath: "rooms[1].place[2]", Offset: &authoringorch.PlacementOffset{},
+		},
+		{
+			Ref: "dnd5e:monsters:skeleton-captain", At: authoringorch.FloorPlanCell{Column: 8, Row: 5},
+			SourcePath: "rooms[1].boss", Offset: &authoringorch.PlacementOffset{X: -0.25, Y: 1.5, Z: 2.75},
+		},
+	}}
+
+	got := toProtoFloorPlan(plan).GetPlacements()
+	require.Len(t, got, 3)
+	require.Equal(t, "dnd5e:props:bookcase", got[0].GetRef())
+	require.Equal(t, int32(3), got[0].GetAt().GetColumn())
+	require.NotNil(t, got[0].Facing, "explicit E=0 must remain present")
+	require.Zero(t, got[0].GetFacing())
+	require.True(t, got[0].GetBlocksMovement())
+	require.False(t, got[0].GetBlocksLos())
+	require.Equal(t, "rooms[0].place[0]", got[0].GetSourcePath())
+	require.Nil(t, got[0].GetOffset(), "omission must remain absent")
+
+	require.NotNil(t, got[1].GetOffset(), "explicit zero must remain present")
+	require.Zero(t, got[1].GetOffset().GetX())
+	require.Zero(t, got[1].GetOffset().GetY())
+	require.Zero(t, got[1].GetOffset().GetZ())
+
+	require.Equal(t, -0.25, got[2].GetOffset().GetX())
+	require.Equal(t, 1.5, got[2].GetOffset().GetY())
+	require.Equal(t, 2.75, got[2].GetOffset().GetZ())
+}

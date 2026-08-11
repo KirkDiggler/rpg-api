@@ -1,7 +1,7 @@
 ---
 name: encounter (v1alpha2)
 description: v1alpha2 encounter service — thin handlers over a clean load→verb→persist orchestrator
-updated: 2026-07-21
+updated: 2026-08-09
 confidence: high — verified by reading handler.go, end_turn.go, orchestrators/encounter/v2/{orchestrator,load,end_turn,take_action,move_entity,submit_check_reaction}.go, reaction_resume.go, .golangci.yml, combat_handlers_test.go; rpg-api#680 CharacterData equipment projection section verified against passing integration tests
 ---
 
@@ -162,6 +162,19 @@ knowledge). `translateHexRevealedEventWithData` mirrors the established
 for `*tkevents.HexRevealedEvent`, so a hex a player reveals mid-session via
 `Move` carries its `zone_id` immediately — not only after their next
 reconnect re-projects the whole snapshot via `ProjectFor`.
+
+### Optional authored placement offset (rpg-api#783)
+
+`HexRecord.contents[].offset` is a pure transport projection of toolkit viewer
+knowledge. `observationToProto` copies optional `core.PlacementOffset [3]float64`
+into the proto's named X/Y/Z doubles; nil remains absent and a pointer to the
+zero triple remains present. Facing is independent and never rotates the world
+vector. The same converter serves reconnect snapshots and live
+`HexKnowledgeChanged` records. Data-aware live fallback reads only the offset
+already persisted with `MonsterData` / `ObstacleData`; it does not match authoring
+source paths, refs, or cells to runtime identities. Visible total empty records
+carry no placement and therefore no stale offset. Fog authorization remains
+entirely toolkit-owned: an undisclosed placement never reaches this converter.
 
 ### Static obstacle projection (rpg-api#692)
 

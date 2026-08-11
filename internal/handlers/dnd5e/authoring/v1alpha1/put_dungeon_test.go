@@ -145,7 +145,7 @@ walls:
 		{Column: 2, Row: 0}, {Column: 2, Row: 1}, {Column: 3, Row: 0}, {Column: 3, Row: 1},
 	}, fp.GetFloorCells(), "provider's canonical ascending floor cells must reach the wire unchanged")
 	require.Equal(t, &authoringv1alpha1.FloorPlanCell{Column: 1, Row: 1}, fp.GetEntrance())
-	require.Len(t, fp.GetEdges(), 24, "provider's complete bounds envelope and authored edges must reach the wire")
+	require.Len(t, fp.GetEdges(), 24, "released provider's complete bounds envelope and authored edges must reach the wire")
 	var authoredSolid, authoredDoor *authoringv1alpha1.FloorPlanEdge
 	for _, edge := range fp.GetEdges() {
 		if edge.GetFrom().GetColumn() == 0 && edge.GetFrom().GetRow() == 0 &&

@@ -38,7 +38,7 @@ connectors:
   - { from: entrance, to: boss }
 `
 
-// These regressions exercise the production API adapter against v0.52.0. They
+// These regressions exercise the production API adapter against v0.53.0. They
 // ensure Wave A region support does not alter the existing bounds and room-chain
 // projections; API asserts provider facts without deriving any of them.
 func TestPutDungeon_RealProviderBoundsProjectionRegression(t *testing.T) {
@@ -60,7 +60,7 @@ func TestPutDungeon_RealProviderBoundsProjectionRegression(t *testing.T) {
 		{Column: 3, Row: 0}, {Column: 3, Row: 1},
 	}, plan.FloorCells)
 	require.Equal(t, &authoring.FloorPlanCell{Column: 1, Row: 1}, plan.Entrance)
-	require.Len(t, plan.Edges, 23, "provider projection includes the complete bounds envelope")
+	require.Len(t, plan.Edges, 23, "released provider includes the complete bounds envelope")
 	require.Contains(t, plan.Edges, authoring.FloorPlanEdge{
 		From:   authoring.FloorPlanCell{Column: 1, Row: 0},
 		To:     authoring.FloorPlanCell{Column: 1, Row: 1},

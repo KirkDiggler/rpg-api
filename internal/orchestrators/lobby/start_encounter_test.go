@@ -3,6 +3,7 @@ package lobby_test
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"math"
 	"os"
 	"path/filepath"
@@ -98,20 +99,36 @@ func (s *LobbySuite) TestStartEncounter_CanvasPutDungeonSurvivesProductionReload
 key: canvas-production-reload
 name: Canvas Production Reload
 height: 1
-canvas: { width: 4, height: 2 }
+canvas: { width: 9, height: 2 }
 rooms: []
 start: [1, 1]
 place:
   - { ref: dnd5e:props:altar, at: [1, 0], facing: W }
-  - { ref: dnd5e:monsters:skeleton, at: [2, 0] }
+  - { ref: dnd5e:props:bookcase, at: [2, 0], offset: [0, 0, 0] }
+  - { ref: dnd5e:props:pillar, at: [3, 0], offset: [-0.25, 1.5, 2.75] }
+  - { ref: dnd5e:monsters:skeleton, at: [4, 0] }
+  - { ref: dnd5e:monsters:skeleton, at: [5, 0], offset: [0, 0, 0] }
+  - { ref: dnd5e:monsters:skeleton, at: [6, 0], offset: [0.125, -2.5, 3.75] }
 walls:
   - { from: [0, 0], to: [0, 1], kind: solid }
   - { from: [1, 0], to: [1, 1], kind: door }
 `
 	put, err := authoring.PutDungeon(s.ctx, &authoringorch.PutDungeonInput{Key: key, YAML: yaml})
 	s.Require().NoError(err)
-	s.Require().True(put.Success)
+	s.Require().True(put.Success, "field errors: %v", put.FieldErrors)
 	s.Require().FileExists(filepath.Join(dir, key+".yaml"))
+	s.Require().Len(put.FloorPlan.Placements, 6)
+	for index, placement := range put.FloorPlan.Placements {
+		s.Require().Equal(fmt.Sprintf("place[%d]", index), placement.SourcePath)
+	}
+	s.Require().Nil(put.FloorPlan.Placements[0].Offset, "omitted canvas-prop offset must remain absent")
+	s.Require().Equal(&authoringorch.PlacementOffset{}, put.FloorPlan.Placements[1].Offset,
+		"explicit canvas-prop zero must remain present")
+	s.Require().Equal(&authoringorch.PlacementOffset{X: -0.25, Y: 1.5, Z: 2.75}, put.FloorPlan.Placements[2].Offset)
+	s.Require().Nil(put.FloorPlan.Placements[3].Offset, "omitted canvas-monster offset must remain absent")
+	s.Require().Equal(&authoringorch.PlacementOffset{}, put.FloorPlan.Placements[4].Offset,
+		"explicit canvas-monster zero must remain present")
+	s.Require().Equal(&authoringorch.PlacementOffset{X: 0.125, Y: -2.5, Z: 3.75}, put.FloorPlan.Placements[5].Offset)
 
 	// Replace the same authored key before the simulated restart. The fresh
 	// loader below must reconstruct from this committed source, not from the
@@ -149,7 +166,7 @@ walls:
 	s.Require().NoError(err)
 	anchor := core.HexFromPosition(spatial.Position{X: 1, Y: 1})
 	s.Require().Equal(tkenc.FloorSourceCanvas, data.Space.FloorSource)
-	s.Require().Equal(4, data.Space.Width)
+	s.Require().Equal(9, data.Space.Width)
 	s.Require().Equal(2, data.Space.Height)
 	s.Require().Equal(anchor, data.Space.Entrance)
 	s.Require().Len(data.Space.PartyStartPositions, lobbyorch.DefaultPartyCap)
@@ -157,16 +174,62 @@ walls:
 	s.Require().Equal(data.Space.PartyStartPositions[0], data.Players[core.PlayerID("alice")].View.Position)
 	s.Require().Equal(data.Space.PartyStartPositions[1], data.Players[core.PlayerID("bob")].View.Position)
 
-	s.Require().Len(data.Space.Obstacles, 1)
-	prop := data.Space.Obstacles[0]
-	s.Require().Equal("dnd5e:props:altar", prop.Ref)
-	s.Require().Equal(core.HexFromPosition(spatial.Position{X: 1, Y: 0}), prop.Position)
-	s.Require().NotNil(prop.Facing)
-	s.Require().Equal(uint32(3), *prop.Facing, "W is authored facing, not inferred")
-	s.Require().Len(data.Monsters, 1)
+	s.Require().Len(data.Space.Obstacles, 3)
+	propsByPosition := make(map[core.Hex]tkenc.ObstacleData, len(data.Space.Obstacles))
+	for _, prop := range data.Space.Obstacles {
+		propsByPosition[prop.Position] = prop
+	}
+	omittedProp := propsByPosition[core.HexFromPosition(spatial.Position{X: 1, Y: 0})]
+	s.Require().Equal("dnd5e:props:altar", omittedProp.Ref)
+	s.Require().NotNil(omittedProp.Facing)
+	s.Require().Equal(uint32(3), *omittedProp.Facing, "W is authored facing, not inferred")
+	s.Require().Nil(omittedProp.Offset, "omitted canvas-prop offset must remain absent")
+	zeroProp := propsByPosition[core.HexFromPosition(spatial.Position{X: 2, Y: 0})]
+	s.Require().Equal("dnd5e:props:bookcase", zeroProp.Ref)
+	s.Require().Equal(&core.PlacementOffset{}, zeroProp.Offset)
+	signedProp := propsByPosition[core.HexFromPosition(spatial.Position{X: 3, Y: 0})]
+	s.Require().Equal("dnd5e:props:pillar", signedProp.Ref)
+	s.Require().Equal(&core.PlacementOffset{-0.25, 1.5, 2.75}, signedProp.Offset)
+
+	s.Require().Len(data.Monsters, 3)
+	monstersByPosition := make(map[core.Hex]*tkenc.MonsterData, len(data.Monsters))
 	for _, monster := range data.Monsters {
 		s.Require().Equal("dnd5e:monsters:skeleton", monster.MonsterRef)
-		s.Require().Equal(core.HexFromPosition(spatial.Position{X: 2, Y: 0}), monster.Position)
+		monstersByPosition[monster.Position] = monster
+	}
+	omittedMonster := monstersByPosition[core.HexFromPosition(spatial.Position{X: 4, Y: 0})]
+	s.Require().NotNil(omittedMonster)
+	s.Require().Nil(omittedMonster.Offset, "omitted canvas-monster offset must survive as absent")
+	zeroMonster := monstersByPosition[core.HexFromPosition(spatial.Position{X: 5, Y: 0})]
+	s.Require().NotNil(zeroMonster)
+	s.Require().Equal(&core.PlacementOffset{}, zeroMonster.Offset,
+		"explicit canvas-monster zero must survive encounter creation and repository reload")
+	signedMonster := monstersByPosition[core.HexFromPosition(spatial.Position{X: 6, Y: 0})]
+	s.Require().NotNil(signedMonster)
+	s.Require().Equal(&core.PlacementOffset{0.125, -2.5, 3.75}, signedMonster.Offset,
+		"canvas-monster signed axes survive creation and repository reload")
+
+	// A later complete-document source edit must not recompute the already
+	// persisted encounter snapshot.
+	editedYAML := strings.ReplaceAll(yaml, ", offset: [-0.25, 1.5, 2.75]", "")
+	editedYAML = strings.ReplaceAll(editedYAML, "offset: [0.125, -2.5, 3.75]", "offset: [96, 95, 94]")
+	edited, err := authoring.PutDungeon(s.ctx, &authoringorch.PutDungeonInput{Key: key, YAML: editedYAML})
+	s.Require().NoError(err)
+	s.Require().True(edited.Success)
+	unchanged, err := s.encRepo.Get(s.ctx, out.EncounterID)
+	s.Require().NoError(err)
+	unchangedProps := make(map[core.Hex]tkenc.ObstacleData, len(unchanged.Space.Obstacles))
+	for _, prop := range unchanged.Space.Obstacles {
+		unchangedProps[prop.Position] = prop
+	}
+	s.Require().Equal(&core.PlacementOffset{-0.25, 1.5, 2.75},
+		unchangedProps[core.HexFromPosition(spatial.Position{X: 3, Y: 0})].Offset,
+		"existing encounter must retain creation-time authored truth after source removal")
+	for _, monster := range unchanged.Monsters {
+		if monster.Position == core.HexFromPosition(spatial.Position{X: 6, Y: 0}) {
+			s.Require().Equal(&core.PlacementOffset{0.125, -2.5, 3.75}, monster.Offset,
+				"existing canvas monster must not recompute after a source edit")
+		}
 	}
 
 	s.Require().Equal([]tkenc.AuthoredEdge{
@@ -340,6 +403,82 @@ regions:
 	s.Require().Equal(4, reloaded.ToData().Space.Width, "later authored state must not reshape the running snapshot")
 }
 
+// TestStartEncounter_RoomPlacementOffsetMatrixUsesRuntimeCarriers proves each
+// room-local runtime path preserves all three presence cases independently.
+// The files are loaded through the production content registry, StartEncounter
+// consumes only provider Params/Spawns, and the repository Get is a JSON reload.
+func (s *LobbySuite) TestStartEncounter_RoomPlacementOffsetMatrixUsesRuntimeCarriers() {
+	type offsetCase struct {
+		name   string
+		suffix string
+		want   *core.PlacementOffset
+	}
+	cases := []offsetCase{
+		{name: "omitted"},
+		{name: "explicit-zero", suffix: ", offset: [0, 0, 0]", want: &core.PlacementOffset{}},
+		{name: "signed", suffix: ", offset: [-0.25, 1.5, 2.75]", want: &core.PlacementOffset{-0.25, 1.5, 2.75}},
+	}
+
+	dir := s.T().TempDir()
+	for _, tc := range cases {
+		key := "room-offset-" + tc.name
+		source := fmt.Sprintf(`version: 1
+key: %s
+name: Room Offset %s
+height: 8
+rooms:
+  - id: entrance
+    archetype: entrance
+    width: 6
+    place:
+      - { ref: "dnd5e:props:bookcase", at: [1, 1]%s }
+  - id: boss
+    archetype: boss
+    width: 8
+    boss: { ref: "dnd5e:monsters:skeleton-captain", at: [4, 2]%s }
+    place:
+      - { ref: "dnd5e:monsters:skeleton", at: [2, 2]%s }
+connectors:
+  - { from: entrance, to: boss }
+`, key, tc.name, tc.suffix, tc.suffix, tc.suffix)
+		s.Require().NoError(os.WriteFile(filepath.Join(dir, key+".yaml"), []byte(source), 0o600))
+	}
+
+	runtime, err := s.newOrchestratorWithContentDir(dir)
+	s.Require().NoError(err)
+	for _, tc := range cases {
+		s.Run(tc.name, func() {
+			key := "room-offset-" + tc.name
+			lobbyID := "lobby-" + key
+			s.seedReadyLobby(lobbyID, "alice")
+			s.expectCharacter("char-alice", "alice", "Alice", 12, 12)
+			out, startErr := runtime.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+				PlayerID: "alice", LobbyID: lobbyID, DungeonKey: lobbyorch.DungeonKey(key), RandomSeed: 42,
+			})
+			s.Require().NoError(startErr)
+
+			data, getErr := s.encRepo.Get(s.ctx, out.EncounterID)
+			s.Require().NoError(getErr)
+			s.Require().Len(data.Space.Obstacles, 1)
+			s.Require().Equal(core.HexFromPosition(spatial.Position{X: 1, Y: 1}), data.Space.Obstacles[0].Position)
+			s.Require().Equal(tc.want, data.Space.Obstacles[0].Offset, "room prop")
+
+			monstersByRef := make(map[string]*tkenc.MonsterData, len(data.Monsters))
+			for _, monster := range data.Monsters {
+				monstersByRef[monster.MonsterRef] = monster
+			}
+			roomMonster := monstersByRef["dnd5e:monsters:skeleton"]
+			s.Require().NotNil(roomMonster)
+			s.Require().Equal(core.HexFromPosition(spatial.Position{X: 9, Y: 2}), roomMonster.Position)
+			s.Require().Equal(tc.want, roomMonster.Offset, "room monster")
+			boss := monstersByRef["dnd5e:monsters:skeleton-captain"]
+			s.Require().NotNil(boss)
+			s.Require().Equal(core.HexFromPosition(spatial.Position{X: 11, Y: 2}), boss.Position)
+			s.Require().Equal(tc.want, boss.Offset, "room boss")
+		})
+	}
+}
+
 // TestStartEncounter_AuthoredStartMapsToolkitSeatsToOrderedRoster proves the
 // StartEncounter seam without duplicating toolkit placement: an authored
 // absolute start on the boss room's legal door row becomes Space.Entrance, and
@@ -356,10 +495,14 @@ rooms:
   - id: entrance
     archetype: entrance
     width: 6
+    place:
+      - { ref: "dnd5e:props:bookcase", at: [1, 1] }
   - id: boss
     archetype: boss
     width: 8
-    boss: { ref: "dnd5e:monsters:skeleton-captain", at: [4, 2] }
+    boss: { ref: "dnd5e:monsters:skeleton-captain", at: [4, 2], offset: [-0.25, 1.5, 2.75] }
+    place:
+      - { ref: "dnd5e:monsters:skeleton", at: [2, 2], offset: [0, 0, 0] }
 connectors:
   - { from: entrance, to: boss }
 `
@@ -380,6 +523,30 @@ connectors:
 
 	data, err := s.encRepo.Get(s.ctx, out.EncounterID)
 	s.Require().NoError(err)
+
+	// The room-local runtime carriers are independent from the authoring
+	// sidecar: StartEncounter consumes only provider Params/Spawns, and the
+	// repository JSON round trip preserves omission, explicit zero, and signed axes.
+	s.Require().Len(data.Space.Obstacles, 1)
+	s.Require().Equal("dnd5e:props:bookcase", data.Space.Obstacles[0].Ref)
+	s.Require().Equal(core.HexFromPosition(spatial.Position{X: 1, Y: 1}), data.Space.Obstacles[0].Position)
+	s.Require().Nil(data.Space.Obstacles[0].Offset, "omitted room-prop offset must remain absent")
+
+	monstersByRef := make(map[string]*tkenc.MonsterData, len(data.Monsters))
+	for _, monster := range data.Monsters {
+		monstersByRef[monster.MonsterRef] = monster
+	}
+	roomMonster := monstersByRef["dnd5e:monsters:skeleton"]
+	s.Require().NotNil(roomMonster)
+	s.Require().Equal(core.HexFromPosition(spatial.Position{X: 9, Y: 2}), roomMonster.Position)
+	s.Require().Equal(&core.PlacementOffset{}, roomMonster.Offset,
+		"explicit room-monster zero must remain present")
+	boss := monstersByRef["dnd5e:monsters:skeleton-captain"]
+	s.Require().NotNil(boss)
+	s.Require().Equal(core.HexFromPosition(spatial.Position{X: 11, Y: 2}), boss.Position)
+	s.Require().Equal(&core.PlacementOffset{-0.25, 1.5, 2.75}, boss.Offset,
+		"room-boss signed offset must survive StartEncounter and repository JSON")
+
 	wantAnchor := core.HexFromPosition(spatial.Position{X: 12, Y: 4})
 	s.Require().Equal(wantAnchor, data.Space.Entrance,
 		"the toolkit-resolved authored anchor must persist as Space.Entrance")

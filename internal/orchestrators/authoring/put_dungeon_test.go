@@ -559,6 +559,9 @@ func buildProviderFloorPlan(t *testing.T, yaml string) *authoring.FloorPlan {
 	if providerPlan.Edges != nil {
 		plan.Edges = make([]authoring.FloorPlanEdge, len(providerPlan.Edges))
 	}
+	if providerPlan.Placements != nil {
+		plan.Placements = make([]authoring.FloorPlanPlacement, len(providerPlan.Placements))
+	}
 	for index, room := range providerPlan.Rooms {
 		plan.Rooms[index] = authoring.FloorPlanRoom{ID: room.ID, Archetype: room.Archetype, Width: room.Width, StartColumn: room.StartColumn}
 	}
@@ -577,7 +580,82 @@ func buildProviderFloorPlan(t *testing.T, yaml string) *authoring.FloorPlan {
 	for index, edge := range providerPlan.Edges {
 		plan.Edges[index] = authoring.FloorPlanEdge{From: authoring.FloorPlanCell{Column: edge.From.Column, Row: edge.From.Row}, To: authoring.FloorPlanCell{Column: edge.To.Column, Row: edge.To.Row}, Kind: authoring.FloorPlanEdgeKind(edge.Kind), DoorID: edge.DoorID}
 	}
+	for index, placement := range providerPlan.Placements {
+		var offset *authoring.PlacementOffset
+		if placement.Offset != nil {
+			offset = &authoring.PlacementOffset{X: placement.Offset[0], Y: placement.Offset[1], Z: placement.Offset[2]}
+		}
+		plan.Placements[index] = authoring.FloorPlanPlacement{
+			Ref: placement.Ref, At: authoring.FloorPlanCell{Column: placement.At.Column, Row: placement.At.Row},
+			Facing: placement.Facing, BlocksMovement: placement.BlocksMovement, BlocksLoS: placement.BlocksLoS,
+			SourcePath: placement.SourcePath, Offset: offset,
+		}
+	}
 	return plan
+}
+
+func TestPutDungeon_PlacementOffsetsPreservePresenceAcrossPreviewAndReload(t *testing.T) {
+	const (
+		key  = "placement-offsets"
+		yaml = `version: 1
+key: placement-offsets
+name: Placement Offsets
+height: 8
+rooms:
+  - id: entrance
+    archetype: entrance
+    width: 6
+    place:
+      - { ref: "dnd5e:props:bookcase", at: [1, 1], facing: E }
+  - id: boss
+    archetype: boss
+    width: 8
+    boss: { ref: "dnd5e:monsters:skeleton-captain", at: [4, 2], offset: [-1.25, 0, 2.5] }
+    place:
+      - { ref: "dnd5e:monsters:skeleton", at: [2, 2], offset: [0, 0, 0] }
+connectors:
+  - { from: entrance, to: boss }
+`
+	)
+	orch, registry, _ := newTestOrchestrator(t)
+
+	preview, err := orch.PutDungeon(context.Background(), &authoring.PutDungeonInput{Key: key, YAML: yaml, ValidateOnly: true})
+	require.NoError(t, err)
+	require.True(t, preview.Success)
+	require.Len(t, preview.FloorPlan.Placements, 3)
+	byPath := make(map[string]authoring.FloorPlanPlacement, len(preview.FloorPlan.Placements))
+	for _, placement := range preview.FloorPlan.Placements {
+		byPath[placement.SourcePath] = placement
+	}
+	prop := byPath["rooms[0].place[0]"]
+	require.Nil(t, prop.Offset, "omitted offset must remain absent")
+	require.NotNil(t, prop.Facing, "explicit E=0 must remain present")
+	require.Zero(t, *prop.Facing)
+	require.True(t, prop.BlocksMovement)
+	require.True(t, prop.BlocksLoS)
+
+	monster := byPath["rooms[1].place[0]"]
+	require.Equal(t, authoring.FloorPlanCell{Column: 9, Row: 2}, monster.At)
+	require.Equal(t, &authoring.PlacementOffset{}, monster.Offset,
+		"explicit [0,0,0] must remain present")
+	require.False(t, monster.BlocksMovement)
+	require.False(t, monster.BlocksLoS)
+
+	boss := byPath["rooms[1].boss"]
+	require.Equal(t, authoring.FloorPlanCell{Column: 11, Row: 2}, boss.At)
+	require.Equal(t, &authoring.PlacementOffset{X: -1.25, Y: 0, Z: 2.5}, boss.Offset)
+
+	written, err := orch.PutDungeon(context.Background(), &authoring.PutDungeonInput{Key: key, YAML: yaml})
+	require.NoError(t, err)
+	require.True(t, written.Success)
+	require.Equal(t, preview.FloorPlan.Placements, written.FloorPlan.Placements)
+	entry, ok := registry.Get(key)
+	require.True(t, ok)
+	require.NoError(t, entry.Err)
+	require.Len(t, entry.Compiled.Placements, 3)
+	require.Nil(t, entry.Compiled.Placements[0].Offset)
+	require.Equal(t, &dungeonspec.PlacementOffset{}, entry.Compiled.Placements[1].Offset)
+	require.Equal(t, &dungeonspec.PlacementOffset{-1.25, 0, 2.5}, entry.Compiled.Placements[2].Offset)
 }
 
 func TestPutDungeon_Persists_NewKeyWritesKeyYAML(t *testing.T) {
