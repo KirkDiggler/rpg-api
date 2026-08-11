@@ -2,17 +2,18 @@
 name: Dungeon YAML v0.4 Wave A API boundary
 description: Proto mapping, toolkit provider integration, and authored-source versus running-snapshot lifecycle
 updated: 2026-08-09
-confidence: high — real-provider draft/strict, save/start/restart, and snapshot-isolation acceptance
+confidence: high — released encounter v0.53.0 provider plus current generated-proto transport verified by real-provider draft/strict, save/start/restart, and snapshot-isolation acceptance
 ---
 
 # Dungeon YAML v0.4 Wave A API boundary
 
 RATIFIED authority is rpg-project PR #203. The consumer contract is
-rpg-dnd5e-web#735; the released generated Go contract is
+rpg-dnd5e-web#735; this branch consumes the immutable generated Go contract
 `github.com/KirkDiggler/rpg-api-protos/gen/go`
-`v0.0.0-20260809002602-f4d6396df528` (rpg-api-protos PR #218). The native
-provider is immutable `github.com/KirkDiggler/rpg-toolkit/encounter v0.52.0`
-(rpg-toolkit PR #900 / issue #897).
+`v0.0.0-20260809161404-a6648cecf193`. The native provider is immutable
+`github.com/KirkDiggler/rpg-toolkit/encounter v0.53.0`, which includes the
+Wave A compiler released from rpg-toolkit PR #900 / issue #897 plus the
+subsequent placement-offset carrier used by current `dev`.
 
 ## Thin flow
 
