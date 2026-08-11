@@ -169,6 +169,7 @@ assert_file_contains 'rulebooks/dnd5e' "$WORK/status.txt"
 run_override "$api" off
 test ! -e "$api/local-toolkit/rulebooks/dnd5e"
 test ! -e "$api/local-toolkit/.toolkit-local-override-state"
+test ! -e "$api/local-toolkit"
 
 # The no-target encounter path remains supported.
 api="$WORK/api-default-encounter"

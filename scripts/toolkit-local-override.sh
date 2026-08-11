@@ -426,6 +426,7 @@ cmd_off() {
 	rm -f "$STATE_FILE"
 	# Only empty structural parents are removed; an unrelated sibling survives.
 	rmdir "$(dirname "$target_dir")" 2>/dev/null || true
+	rmdir "$REPO_ROOT/local-toolkit" 2>/dev/null || true
 	host_build "after removing the override — check go.mod/go.sum."
 	echo "Override OFF. $ACTIVE_MODULE is back on its published pin."
 }
