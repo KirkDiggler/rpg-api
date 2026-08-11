@@ -654,6 +654,33 @@ func (s *ConvertersTestSuite) TestConvertCharacterDataToProto_WithConditions() {
 	assert.Equal(s.T(), int32(6), blessedCondition.Duration)
 }
 
+// TestConvertCharacterDataToProto_ProjectsStoredProtectionFightingStyle
+// fixes the v1alpha1 projection seam used by the sandbox seeder. Finalized
+// toolkit character data persists the selected style as a condition; the
+// existing wire field must project that persisted selection rather than leave
+// FightingStyles empty.
+func (s *ConvertersTestSuite) TestConvertCharacterDataToProto_ProjectsStoredProtectionFightingStyle() {
+	testData := &toolkitchar.Data{
+		ID:    "test-protection-fighter",
+		Name:  "Protection Fighter",
+		Level: 1,
+		Conditions: []json.RawMessage{
+			json.RawMessage(`{
+				"ref": "dnd5e:conditions:fighting_style_protection",
+				"character_id": "test-protection-fighter"
+			}`),
+		},
+	}
+
+	result := ConvertCharacterDataToProto(testData)
+
+	require.NotNil(s.T(), result)
+	require.Len(s.T(), result.GetActiveConditions(), 1)
+	assert.Equal(s.T(), dnd5ev1alpha1.ConditionId_CONDITION_ID_FIGHTING_STYLE_PROTECTION,
+		result.GetActiveConditions()[0].GetId())
+	assert.Contains(s.T(), result.GetFightingStyles(), dnd5ev1alpha1.FightingStyle_FIGHTING_STYLE_PROTECTION)
+}
+
 func (s *ConvertersTestSuite) TestConvertCharacterDataToProto_EmptyConditions() {
 	// Create test data with no conditions
 	testData := &toolkitchar.Data{

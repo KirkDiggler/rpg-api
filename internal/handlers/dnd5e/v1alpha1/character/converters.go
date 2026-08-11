@@ -1281,6 +1281,9 @@ func ConvertCharacterDataToProto(data *toolkitchar.Data) *dnd5ev1alpha1.Characte
 			// Map to enum and derive display name
 			conditionEnum := conditionIDToEnum(conditionID)
 			conditionName := conditionIDToDisplayName(conditionID)
+			if fightingStyle := conditionIDToFightingStyle(conditionID); fightingStyle != dnd5ev1alpha1.FightingStyle_FIGHTING_STYLE_UNSPECIFIED {
+				char.FightingStyles = append(char.FightingStyles, fightingStyle)
+			}
 
 			char.ActiveConditions = append(char.ActiveConditions, &dnd5ev1alpha1.Condition{
 				Id:            conditionEnum,
@@ -3218,6 +3221,27 @@ func conditionIDToEnum(id string) dnd5ev1alpha1.ConditionId {
 		return dnd5ev1alpha1.ConditionId_CONDITION_ID_UNARMORED_MOVEMENT
 	default:
 		return dnd5ev1alpha1.ConditionId_CONDITION_ID_UNSPECIFIED
+	}
+}
+
+// conditionIDToFightingStyle maps persisted fighting-style conditions to the
+// existing Character.fighting_styles wire field.
+func conditionIDToFightingStyle(id string) dnd5ev1alpha1.FightingStyle {
+	switch id {
+	case refs.Conditions.FightingStyleArchery().ID:
+		return dnd5ev1alpha1.FightingStyle_FIGHTING_STYLE_ARCHERY
+	case refs.Conditions.FightingStyleDefense().ID:
+		return dnd5ev1alpha1.FightingStyle_FIGHTING_STYLE_DEFENSE
+	case refs.Conditions.FightingStyleDueling().ID:
+		return dnd5ev1alpha1.FightingStyle_FIGHTING_STYLE_DUELING
+	case refs.Conditions.FightingStyleGreatWeaponFighting().ID:
+		return dnd5ev1alpha1.FightingStyle_FIGHTING_STYLE_GREAT_WEAPON_FIGHTING
+	case refs.Conditions.FightingStyleProtection().ID:
+		return dnd5ev1alpha1.FightingStyle_FIGHTING_STYLE_PROTECTION
+	case refs.Conditions.FightingStyleTwoWeaponFighting().ID:
+		return dnd5ev1alpha1.FightingStyle_FIGHTING_STYLE_TWO_WEAPON_FIGHTING
+	default:
+		return dnd5ev1alpha1.FightingStyle_FIGHTING_STYLE_UNSPECIFIED
 	}
 }
 
