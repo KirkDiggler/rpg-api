@@ -73,6 +73,14 @@ func (o *Orchestrator) SubmitReactionCheck(
 		return nil, errors.New("encounter orchestrator: ReactionResume funcs are required for SubmitReactionCheck")
 	}
 
+	// rpg-api#787: serialize the full load -> CompleteTakeAction -> persist
+	// span per encounter (see keyed_mutex.go). This is the resume half of the
+	// TakeAction/NPCAct pause — a separate, later RPC call, never a callback
+	// invoked while the pausing verb's own lock is still held, so acquiring
+	// fresh here does not nest.
+	unlock := o.encounterLocks.Lock(in.EncounterID)
+	defer unlock()
+
 	enc, err := o.load(ctx, loadInput{
 		EncounterID:       in.EncounterID,
 		PlayerID:          in.PlayerID,

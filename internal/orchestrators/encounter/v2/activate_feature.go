@@ -98,6 +98,11 @@ func (o *Orchestrator) ActivateFeature(
 		return nil, errors.New("encounter orchestrator: ActivateFeatureInput is required")
 	}
 
+	// rpg-api#787: serialize the full load -> ActivateFeature -> persist span
+	// per encounter (see keyed_mutex.go).
+	unlock := o.encounterLocks.Lock(in.EncounterID)
+	defer unlock()
+
 	enc, err := o.load(ctx, loadInput{
 		EncounterID: in.EncounterID,
 		PlayerID:    in.PlayerID,

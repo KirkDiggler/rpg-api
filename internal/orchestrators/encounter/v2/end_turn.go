@@ -110,6 +110,13 @@ func (o *Orchestrator) EndTurn(ctx context.Context, in *EndTurnInput) (*EndTurnO
 		return nil, errors.New("encounter orchestrator: EndTurnInput is required")
 	}
 
+	// rpg-api#787: serialize the full load -> EndTurn -> driveNPCChain ->
+	// persist span per encounter (see keyed_mutex.go). driveNPCChain is a
+	// plain helper called from inside this lock — it must never itself
+	// acquire encounterLocks (see its doc comment).
+	unlock := o.encounterLocks.Lock(in.EncounterID)
+	defer unlock()
+
 	enc, err := o.load(ctx, loadInput{
 		EncounterID: in.EncounterID,
 		PlayerID:    in.PlayerID,
@@ -147,7 +154,16 @@ func (o *Orchestrator) EndTurn(ctx context.Context, in *EndTurnInput) (*EndTurnO
 
 // driveNPCChain runs the toolkit's NPCAct + EndTurn cycle while the active
 // actor is an NPC, until a player is active, the encounter ends, or the
-// roster-derived chain cap is reached. active/isNPC are the CURRENT active
+// roster-derived chain cap is reached.
+//
+// Lock-ordering invariant (rpg-api#787, keyed_mutex.go): this is a plain
+// helper — it must NEVER acquire o.encounterLocks. It is called only from
+// MoveEntity, EndTurn, and DriveStalledNPCTurn, all three of which already
+// hold the per-encounter lock for their own full call before reaching here.
+// Acquiring it again here would deadlock a single-per-key sync.Mutex.
+//
+// active/isNPC are the CURRENT active actor and whether it is an NPC —
+// EndTurn passes its own EndTurn call's
 // actor and whether it is an NPC — EndTurn passes its own EndTurn call's
 // result; the combat-entry kick (drive_npc.go) passes enc.ActiveActor() /
 // enc.IsNPC(...) from a freshly loaded encounter that has not (yet) had any

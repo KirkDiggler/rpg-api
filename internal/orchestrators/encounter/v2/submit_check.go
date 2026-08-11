@@ -75,6 +75,11 @@ func (o *Orchestrator) SubmitCheck(ctx context.Context, in *SubmitCheckInput) (*
 		return nil, errors.New("encounter orchestrator: SubmitCheckInput is required")
 	}
 
+	// rpg-api#787: serialize the full load -> SubmitCheck -> persist span per
+	// encounter (see keyed_mutex.go).
+	unlock := o.encounterLocks.Lock(in.EncounterID)
+	defer unlock()
+
 	enc, err := o.load(ctx, loadInput{
 		EncounterID: in.EncounterID,
 		PlayerID:    in.PlayerID,

@@ -70,6 +70,11 @@ func (o *Orchestrator) SetReactionReady(
 		return nil, errors.New("encounter orchestrator: SetReactionReadyInput is required")
 	}
 
+	// rpg-api#787: serialize the full load -> SetReactionReady -> persist
+	// span per encounter (see keyed_mutex.go).
+	unlock := o.encounterLocks.Lock(in.EncounterID)
+	defer unlock()
+
 	enc, err := o.load(ctx, loadInput{
 		EncounterID: in.EncounterID,
 		PlayerID:    in.PlayerID,

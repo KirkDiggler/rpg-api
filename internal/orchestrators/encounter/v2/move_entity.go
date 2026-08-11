@@ -77,6 +77,14 @@ func (o *Orchestrator) MoveEntity(ctx context.Context, in *MoveEntityInput) (*Mo
 		return nil, errors.New("encounter orchestrator: MoveEntityInput is required")
 	}
 
+	// rpg-api#787: serialize the full load -> Move -> persist span per
+	// encounter so two players moving concurrently in free roam can never both
+	// load the same pre-move snapshot and race their Saves (the second Save
+	// silently erasing the first player's already-applied move). See
+	// keyed_mutex.go for the full rationale and the lock-ordering invariant.
+	unlock := o.encounterLocks.Lock(in.EncounterID)
+	defer unlock()
+
 	enc, err := o.load(ctx, loadInput{
 		EncounterID: in.EncounterID,
 		PlayerID:    in.PlayerID,

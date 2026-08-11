@@ -57,7 +57,7 @@ type DriveStalledNPCTurnOutput struct {
 // directly — right after its own SetMode, so the same fix covers both today's
 // out-of-process injection and tomorrow's real trigger.
 //
-// Single-flight per encounter (npcDriveLocks): StreamEncounter is a read path
+// Single-flight per encounter (encounterLocks): StreamEncounter is a read path
 // that up to N clients can hit concurrently (e.g. four players reconnecting at
 // once). Without serializing, each would independently load the same
 // NPC-active snapshot, and the toolkit's own "am I still the active actor"
@@ -93,7 +93,7 @@ func (o *Orchestrator) DriveStalledNPCTurn(
 		return nil, errors.New("encounter orchestrator: DriveStalledNPCTurnInput is required")
 	}
 
-	unlock := o.npcDriveLocks.Lock(in.EncounterID)
+	unlock := o.encounterLocks.Lock(in.EncounterID)
 	defer unlock()
 
 	data, err := o.encRepo.Get(ctx, in.EncounterID)

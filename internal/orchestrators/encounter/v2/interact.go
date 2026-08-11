@@ -68,6 +68,11 @@ func (o *Orchestrator) Interact(ctx context.Context, in *InteractInput) (*Intera
 		return nil, errors.New("encounter orchestrator: InteractInput is required")
 	}
 
+	// rpg-api#787: serialize the full load -> door verb -> persist span per
+	// encounter (see keyed_mutex.go).
+	unlock := o.encounterLocks.Lock(in.EncounterID)
+	defer unlock()
+
 	enc, err := o.load(ctx, loadInput{
 		EncounterID: in.EncounterID,
 		PlayerID:    in.PlayerID,

@@ -82,6 +82,15 @@ func (o *Orchestrator) TakeAction(ctx context.Context, in *TakeActionInput) (*Ta
 		return nil, errors.New("encounter orchestrator: TakeActionInput is required")
 	}
 
+	// rpg-api#787: serialize the full load -> verb -> persist span per
+	// encounter (see keyed_mutex.go). This is a single self-contained call —
+	// the phase-1 pause below persists the pending prompt and returns; it
+	// does not block waiting for the reaction, so this lock is held only for
+	// this call's own duration, never across the later SubmitReactionCheck
+	// resume RPC.
+	unlock := o.encounterLocks.Lock(in.EncounterID)
+	defer unlock()
+
 	enc, err := o.load(ctx, loadInput{
 		EncounterID: in.EncounterID,
 		PlayerID:    in.PlayerID,

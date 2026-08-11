@@ -210,10 +210,12 @@ type Orchestrator struct {
 	// roller overrides LoadFromData's dice.Roller when non-nil (rpg-api#659,
 	// test-only determinism seam — see Config.Roller).
 	roller dice.Roller
-	// npcDriveLocks single-flights DriveStalledNPCTurn per encounter ID
-	// (rpg-api#636) so concurrent connect-time kicks for the same encounter
-	// don't each load the same NPC-active snapshot and double-dispatch.
-	npcDriveLocks *keyedMutex
+	// encounterLocks serializes every mutating verb's full load -> verb ->
+	// persist span per encounter ID (rpg-api#787), generalized from its
+	// original single-flight use guarding DriveStalledNPCTurn (rpg-api#636).
+	// See keyed_mutex.go's doc comment for the full rationale and the
+	// lock-ordering invariant every locked verb must uphold.
+	encounterLocks *keyedMutex
 }
 
 // New constructs an Orchestrator from cfg. Returns an error (never a nil
@@ -251,6 +253,6 @@ func New(cfg *Config) (*Orchestrator, error) {
 		reactionResume:         cfg.ReactionResume,
 		now:                    now,
 		roller:                 cfg.Roller,
-		npcDriveLocks:          newKeyedMutex(),
+		encounterLocks:         newKeyedMutex(),
 	}, nil
 }
