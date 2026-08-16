@@ -7,11 +7,11 @@ require (
 	github.com/KirkDiggler/rpg-toolkit/core v0.11.0
 	github.com/KirkDiggler/rpg-toolkit/dice v0.3.2
 	github.com/KirkDiggler/rpg-toolkit/encounter v0.53.0
-	github.com/KirkDiggler/rpg-toolkit/events v0.6.2
+	github.com/KirkDiggler/rpg-toolkit/events v0.6.3
 	github.com/KirkDiggler/rpg-toolkit/rpgerr v0.1.2
-	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.72.0
+	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.94.1
 	github.com/KirkDiggler/rpg-toolkit/tools/environments v0.4.4
-	github.com/KirkDiggler/rpg-toolkit/tools/spatial v0.9.0
+	github.com/KirkDiggler/rpg-toolkit/tools/spatial v0.9.1
 	github.com/KirkDiggler/rpg-toolkit/tools/spawn v0.3.0
 	github.com/alicebob/miniredis/v2 v2.35.0
 	github.com/google/uuid v1.6.0
@@ -33,6 +33,12 @@ require (
 	github.com/Azure/go-ansiterm v0.0.0-20210617225240-d185dfc1b5a1 // indirect
 	github.com/KirkDiggler/rpg-toolkit/game v0.1.0 // indirect
 	github.com/KirkDiggler/rpg-toolkit/mechanics/resources v0.3.1 // indirect
+	github.com/KirkDiggler/rpg-toolkit/play/clock v0.1.0 // indirect
+	github.com/KirkDiggler/rpg-toolkit/play/intel v0.1.0 // indirect
+	github.com/KirkDiggler/rpg-toolkit/play/record v0.1.0 // indirect
+	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter v0.10.0 // indirect
+	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/resolution v0.7.2 // indirect
+	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session v0.11.0 // indirect
 	github.com/KirkDiggler/rpg-toolkit/tools/selectables v0.1.2 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
