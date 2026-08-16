@@ -27,7 +27,6 @@ type Manager interface {
 	Join(ctx context.Context, in *sdk.JoinInput) (*sdk.JoinOutput, error)
 	Exit(ctx context.Context, in *sdk.ExitInput) (*sdk.ExitOutput, error)
 	Move(ctx context.Context, in *sdk.MoveInput) (*sdk.MoveOutput, error)
-	Traverse(ctx context.Context, in *sdk.TraverseInput) (*sdk.TraverseOutput, error)
 	Attack(ctx context.Context, in *sdk.AttackInput) (*sdk.AttackOutput, error)
 	Turn(ctx context.Context, in *sdk.TurnInput) (*sdk.TurnOutput, error)
 	EndTurn(ctx context.Context, in *sdk.EndTurnInput) (*sdk.EndTurnOutput, error)
@@ -37,6 +36,7 @@ type Manager interface {
 	Story(ctx context.Context, in *sdk.StoryInput) ([]sdk.StoryEntry, error)
 	View(ctx context.Context, in *sdk.ViewInput) ([]sdk.Sighting, error)
 	Atlas(ctx context.Context, in *sdk.AtlasInput) (*sdk.Atlas, error)
+	Where(ctx context.Context, in *sdk.WhereInput) (*sdk.WhereOutput, error)
 }
 
 // Handler is the wire form of the toolkit's rulebooks/dnd5e/session SDK.

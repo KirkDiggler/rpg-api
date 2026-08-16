@@ -28,10 +28,9 @@ func TestJoin_HappyPath_TranslatesRequestAndResponse(t *testing.T) {
 	mgr.EXPECT().Join(gomock.Any(), &sdk.JoinInput{
 		Session:  "sess-1",
 		Member:   "char-1",
-		Room:     "entrance",
 		Position: positionFromProto(&sessionpb.Position{X: 1, Y: 2}),
 	}).Return(&sdk.JoinOutput{
-		Member:    sdk.Member{ID: "char-1", Kind: sdk.KindPlayer, Room: "entrance"},
+		Member:    sdk.Member{ID: "char-1", Kind: sdk.KindPlayer, Position: spatial.Position{X: 1, Y: 2}},
 		Character: &sdk.CharacterState{ID: "char-1", Name: "Alice"},
 		Seq:       5,
 		Saved:     sdk.SaveReport{Written: []string{"encounter"}},
@@ -40,7 +39,8 @@ func TestJoin_HappyPath_TranslatesRequestAndResponse(t *testing.T) {
 	h := &Handler{manager: mgr}
 	ctx := auth.WithPlayerID(context.Background(), "alice")
 	resp, err := h.Join(ctx, &sessionpb.JoinRequest{
-		Session: "sess-1", Member: "char-1", Room: "entrance",
+		Session:  "sess-1",
+		Member:   "char-1",
 		Position: &sessionpb.Position{X: 1, Y: 2},
 	})
 	require.NoError(t, err)

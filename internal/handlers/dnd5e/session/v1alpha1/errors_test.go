@@ -38,7 +38,7 @@ func TestStatusError_CoversEverySDKSentinel(t *testing.T) {
 		{"ErrNilInput", sdk.ErrNilInput, codes.InvalidArgument},
 		{"ErrEmptyPath", sdk.ErrEmptyPath, codes.InvalidArgument},
 		{"ErrBrokenPath", sdk.ErrBrokenPath, codes.InvalidArgument},
-		{"ErrNoConnection", sdk.ErrNoConnection, codes.InvalidArgument},
+		{"ErrNoCrossing", sdk.ErrNoCrossing, codes.InvalidArgument},
 		{"ErrBadPosition", sdk.ErrBadPosition, codes.InvalidArgument},
 		{"ErrNoRef", sdk.ErrNoRef, codes.InvalidArgument},
 		{"ErrBadRef", sdk.ErrBadRef, codes.InvalidArgument},
@@ -71,6 +71,7 @@ func TestStatusError_CoversEverySDKSentinel(t *testing.T) {
 		{"ErrInvalidSession", sdk.ErrInvalidSession, codes.Internal},
 		{"ErrNilConfig", sdk.ErrNilConfig, codes.Internal},
 		{"ErrIncompleteConfig", sdk.ErrIncompleteConfig, codes.Internal},
+		{"ErrNoConnection", sdk.ErrNoConnection, codes.Internal},
 
 		// sdk.ErrNotFound is the SDK's repository-facing contract sentinel: the
 		// Manager translates it into a caller-facing sentinel (ErrNoSession,
@@ -100,14 +101,16 @@ func TestStatusError_CoversEverySDKSentinel(t *testing.T) {
 }
 
 // sentinelCount is the exact count of exported Err* sentinels in
-// rulebooks/dnd5e/session/errors.go as of session v0.11.0 (verified directly
-// against the pinned module, not a local checkout -- see PR discussion: an
-// unmerged toolkit branch briefly made this look like 35 with an ErrNoCrossing
-// that v0.11.0 does not actually have). Kept as a named constant (not a magic
-// number in the assertion above) so a failing count change points straight at
-// "the SDK's sentinel vocabulary moved" rather than requiring the reader to
-// recount by hand.
-const sentinelCount = 34
+// rulebooks/dnd5e/session/errors.go as of session v0.13.0 (verified directly
+// against the pinned module, not a local checkout -- the earlier count of 34
+// was v0.9.0's; v0.12.0's re-transcription (rpg-toolkit#1048, Traverse
+// retired) added ErrNoCrossing back with a NEW meaning -- see this file's
+// ErrNoConnection case, reclassified InvalidArgument -> Internal for the
+// same release). Kept as a named constant (not a magic number in the
+// assertion above) so a failing count change points straight at "the SDK's
+// sentinel vocabulary moved" rather than requiring the reader to recount by
+// hand.
+const sentinelCount = 35
 
 func TestStatusError_UnmappedSentinelFallsBackToInternal(t *testing.T) {
 	unrecognized := fmt.Errorf("some future sentinel the table has not been updated for")

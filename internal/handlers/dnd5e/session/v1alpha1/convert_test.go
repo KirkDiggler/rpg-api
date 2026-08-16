@@ -58,11 +58,12 @@ func TestDissolveKindToProto(t *testing.T) {
 }
 
 func TestMemberToProto(t *testing.T) {
-	m := sdk.Member{ID: "alice", Kind: sdk.KindPlayer, Room: "entrance"}
+	m := sdk.Member{ID: "alice", Kind: sdk.KindPlayer, Position: spatial.Position{X: 3, Y: 4}}
 	got := memberToProto(m)
 	require.Equal(t, "alice", got.GetId())
 	require.Equal(t, sessionpb.MemberKind_MEMBER_KIND_PLAYER, got.GetKind())
-	require.Equal(t, "entrance", got.GetRoom())
+	require.Equal(t, 3.0, got.GetPosition().GetX())
+	require.Equal(t, 4.0, got.GetPosition().GetY())
 }
 
 func TestCharacterStateToProto_Nil(t *testing.T) {
@@ -113,7 +114,7 @@ func TestOutcomeToProto_Populated(t *testing.T) {
 		Ending: "victory",
 		At:     42,
 		Members: []sdk.MemberOutcome{
-			{ID: "alice", Room: "vault", Position: spatial.Position{X: 1, Y: 2}},
+			{ID: "alice", Position: spatial.Position{X: 1, Y: 2}},
 		},
 	}
 	got := outcomeToProto(o)
@@ -121,7 +122,8 @@ func TestOutcomeToProto_Populated(t *testing.T) {
 	require.Equal(t, uint64(42), got.GetAt())
 	require.Len(t, got.GetMembers(), 1)
 	require.Equal(t, "alice", got.GetMembers()[0].GetId())
-	require.Equal(t, "vault", got.GetMembers()[0].GetRoom())
+	require.Equal(t, 1.0, got.GetMembers()[0].GetPosition().GetX())
+	require.Equal(t, 2.0, got.GetMembers()[0].GetPosition().GetY())
 }
 
 func TestFormedToProto_Nil(t *testing.T) {
@@ -139,43 +141,45 @@ func TestFormedToProto_Populated(t *testing.T) {
 func TestAtlasToProto_Nil(t *testing.T) {
 	got := atlasToProto(nil)
 	require.NotNil(t, got)
-	require.Empty(t, got.GetRooms())
+	require.Empty(t, got.GetCells())
 	require.Empty(t, got.GetDoorways())
 }
 
 func TestAtlasToProto_Populated(t *testing.T) {
 	a := &sdk.Atlas{
-		Rooms: []sdk.AtlasRoom{
-			{
-				ID: "entrance", Grid: sdk.GridSquare,
-				Origin: spatial.Position{X: 0, Y: 0}, Width: 5, Height: 5,
-				Cells:     []spatial.Position{{X: 0, Y: 0}},
-				Occluders: []spatial.Position{{X: 1, Y: 1}},
-				Boundaries: []sdk.AtlasBoundary{
-					{From: spatial.Position{X: 0, Y: 0}, To: spatial.Position{X: 1, Y: 0}, BlocksMovement: true, BlocksLineOfSight: true},
-				},
-			},
+		Grid:      sdk.GridSquare,
+		Cells:     []spatial.Position{{X: 0, Y: 0}, {X: 1, Y: 0}},
+		Occluders: []spatial.Position{{X: 1, Y: 1}},
+		Boundaries: []sdk.AtlasBoundary{
+			{From: spatial.Position{X: 0, Y: 0}, To: spatial.Position{X: 1, Y: 0}, BlocksMovement: true, BlocksLineOfSight: true},
 		},
 		Doorways: []sdk.AtlasDoorway{
-			{Connection: "door-1", From: "entrance", FromCell: spatial.Position{X: 5, Y: 1}, To: "hall", ToCell: spatial.Position{X: 6, Y: 1}},
+			{Connection: "door-1", From: spatial.Position{X: 5, Y: 1}, To: spatial.Position{X: 6, Y: 1}},
 		},
 	}
 	got := atlasToProto(a)
-	require.Len(t, got.GetRooms(), 1)
-	room := got.GetRooms()[0]
-	require.Equal(t, "entrance", room.GetId())
-	require.Equal(t, sessionpb.GridKind_GRID_KIND_SQUARE, room.GetGrid())
-	require.Equal(t, int32(5), room.GetWidth())
-	require.Len(t, room.GetCells(), 1)
-	require.Len(t, room.GetOccluders(), 1)
-	require.Len(t, room.GetBoundaries(), 1)
-	require.True(t, room.GetBoundaries()[0].GetBlocksMovement())
+	require.Equal(t, sessionpb.GridKind_GRID_KIND_SQUARE, got.GetGrid())
+	require.Len(t, got.GetCells(), 2)
+	require.Len(t, got.GetOccluders(), 1)
+	require.Len(t, got.GetBoundaries(), 1)
+	require.True(t, got.GetBoundaries()[0].GetBlocksMovement())
 
 	require.Len(t, got.GetDoorways(), 1)
 	dw := got.GetDoorways()[0]
 	require.Equal(t, "door-1", dw.GetConnection())
-	require.Equal(t, "entrance", dw.GetFrom())
-	require.Equal(t, "hall", dw.GetTo())
+	require.Equal(t, 5.0, dw.GetFrom().GetX())
+	require.Equal(t, 6.0, dw.GetTo().GetX())
+}
+
+func TestWhereToProto_Nil(t *testing.T) {
+	got := whereToProto(nil)
+	require.NotNil(t, got)
+}
+
+func TestWhereToProto_Populated(t *testing.T) {
+	got := whereToProto(&sdk.WhereOutput{Position: spatial.Position{X: 7, Y: 8}})
+	require.Equal(t, 7.0, got.GetPosition().GetX())
+	require.Equal(t, 8.0, got.GetPosition().GetY())
 }
 
 func TestSaveReportToProto(t *testing.T) {

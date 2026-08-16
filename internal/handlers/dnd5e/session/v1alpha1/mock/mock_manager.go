@@ -191,21 +191,6 @@ func (mr *MockManagerMockRecorder) Story(ctx, in any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Story", reflect.TypeOf((*MockManager)(nil).Story), ctx, in)
 }
 
-// Traverse mocks base method.
-func (m *MockManager) Traverse(ctx context.Context, in *session.TraverseInput) (*session.TraverseOutput, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Traverse", ctx, in)
-	ret0, _ := ret[0].(*session.TraverseOutput)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// Traverse indicates an expected call of Traverse.
-func (mr *MockManagerMockRecorder) Traverse(ctx, in any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Traverse", reflect.TypeOf((*MockManager)(nil).Traverse), ctx, in)
-}
-
 // Turn mocks base method.
 func (m *MockManager) Turn(ctx context.Context, in *session.TurnInput) (*session.TurnOutput, error) {
 	m.ctrl.T.Helper()
@@ -234,4 +219,19 @@ func (m *MockManager) View(ctx context.Context, in *session.ViewInput) ([]sessio
 func (mr *MockManagerMockRecorder) View(ctx, in any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "View", reflect.TypeOf((*MockManager)(nil).View), ctx, in)
+}
+
+// Where mocks base method.
+func (m *MockManager) Where(ctx context.Context, in *session.WhereInput) (*session.WhereOutput, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Where", ctx, in)
+	ret0, _ := ret[0].(*session.WhereOutput)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// Where indicates an expected call of Where.
+func (mr *MockManagerMockRecorder) Where(ctx, in any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Where", reflect.TypeOf((*MockManager)(nil).Where), ctx, in)
 }

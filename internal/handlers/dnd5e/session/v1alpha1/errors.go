@@ -49,11 +49,14 @@ func statusError(err error) error {
 		return status.Error(codes.NotFound, err.Error())
 
 	// INVALID_ARGUMENT -- the request itself is malformed: bad shape, bad
-	// geometry, or a required field left empty.
+	// geometry, or a required field left empty. ErrNoCrossing (added at
+	// session v0.12.0, rpg-toolkit#1048): a Move path steps into another
+	// room with no doorway joining the two cells -- the caller's own path
+	// computation was wrong, same bucket as ErrBrokenPath/ErrBadPosition.
 	case errors.Is(err, sdk.ErrNilInput),
 		errors.Is(err, sdk.ErrEmptyPath),
 		errors.Is(err, sdk.ErrBrokenPath),
-		errors.Is(err, sdk.ErrNoConnection),
+		errors.Is(err, sdk.ErrNoCrossing),
 		errors.Is(err, sdk.ErrBadPosition),
 		errors.Is(err, sdk.ErrNoRef),
 		errors.Is(err, sdk.ErrBadRef),
@@ -93,12 +96,19 @@ func statusError(err error) error {
 	// INTERNAL -- storage-side integrity problems, not a caller mistake:
 	// stored bytes this module could not have produced, a repository that
 	// violated its own contract, or a construction-time failure that should
-	// never have reached a running verb in the first place.
+	// never have reached a running verb in the first place. ErrNoConnection
+	// belongs here as of session v0.12.0, not with the caller-facing
+	// sentinels above: no verb takes a connection ID any more
+	// (rpg-toolkit#1048 retired Traverse) -- a caller names cells, and the
+	// package finds the doorway joining them itself. Its own doc now says
+	// so plainly: if this appears, the package derived a crossing the
+	// composition then rejected, which is a defect HERE, not in the call.
 	case errors.Is(err, sdk.ErrBadRepository),
 		errors.Is(err, sdk.ErrBadCharacter),
 		errors.Is(err, sdk.ErrInvalidSession),
 		errors.Is(err, sdk.ErrNilConfig),
-		errors.Is(err, sdk.ErrIncompleteConfig):
+		errors.Is(err, sdk.ErrIncompleteConfig),
+		errors.Is(err, sdk.ErrNoConnection):
 		return status.Error(codes.Internal, err.Error())
 
 	default:

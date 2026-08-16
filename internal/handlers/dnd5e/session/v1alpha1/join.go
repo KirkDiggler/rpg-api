@@ -17,7 +17,6 @@ func (h *Handler) Join(ctx context.Context, req *sessionpb.JoinRequest) (*sessio
 	out, err := h.manager.Join(ctx, &sdk.JoinInput{
 		Session:  req.GetSession(),
 		Member:   req.GetMember(),
-		Room:     req.GetRoom(),
 		Position: positionFromProto(req.GetPosition()),
 	})
 	if err != nil {

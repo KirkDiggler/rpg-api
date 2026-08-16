@@ -87,16 +87,15 @@ func dissolveCauseFromProto(k sessionpb.DissolveKind) (sdk.DissolveCause, error)
 
 func memberToProto(m sdk.Member) *sessionpb.Member {
 	return &sessionpb.Member{
-		Id:   m.ID,
-		Kind: memberKindToProto(m.Kind),
-		Room: m.Room,
+		Id:       m.ID,
+		Kind:     memberKindToProto(m.Kind),
+		Position: positionToProto(m.Position),
 	}
 }
 
 func memberOutcomeToProto(m sdk.MemberOutcome) *sessionpb.MemberOutcome {
 	return &sessionpb.MemberOutcome{
 		Id:       m.ID,
-		Room:     m.Room,
 		Position: positionToProto(m.Position),
 	}
 }
@@ -253,35 +252,20 @@ func atlasBoundariesToProto(bs []sdk.AtlasBoundary) []*sessionpb.AtlasBoundary {
 	return out
 }
 
-func atlasRoomToProto(r sdk.AtlasRoom) *sessionpb.AtlasRoom {
-	cells := make([]*sessionpb.Position, len(r.Cells))
-	for i, c := range r.Cells {
-		cells[i] = positionToProto(c)
-	}
-	occluders := make([]*sessionpb.Position, len(r.Occluders))
-	for i, c := range r.Occluders {
-		occluders[i] = positionToProto(c)
-	}
-	return &sessionpb.AtlasRoom{
-		Id:         r.ID,
-		Grid:       gridKindToProto(r.Grid),
-		Origin:     positionToProto(r.Origin),
-		Width:      int32(r.Width),
-		Height:     int32(r.Height),
-		Cells:      cells,
-		Occluders:  occluders,
-		Boundaries: atlasBoundariesToProto(r.Boundaries),
-	}
-}
-
 func atlasDoorwayToProto(d sdk.AtlasDoorway) *sessionpb.AtlasDoorway {
 	return &sessionpb.AtlasDoorway{
 		Connection: d.Connection,
-		From:       d.From,
-		FromCell:   positionToProto(d.FromCell),
-		To:         d.To,
-		ToCell:     positionToProto(d.ToCell),
+		From:       positionToProto(d.From),
+		To:         positionToProto(d.To),
 	}
+}
+
+func atlasDoorwaysToProto(ds []sdk.AtlasDoorway) []*sessionpb.AtlasDoorway {
+	out := make([]*sessionpb.AtlasDoorway, len(ds))
+	for i, d := range ds {
+		out[i] = atlasDoorwayToProto(d)
+	}
+	return out
 }
 
 // eventKindToProto mirrors sdk.EventKind onto the wire enum. A kind this
@@ -340,17 +324,35 @@ func eventToProto(e sdk.Event) *sessionpb.Event {
 	}
 }
 
+// atlasToProto mirrors the ONE-MAP Atlas (design §0, live as of session
+// v0.12.0): a flat set of cells, the ones that block sight, the walls
+// between them, and every doorway -- not a list of rooms with anchors and
+// spans a client would have to reassemble.
 func atlasToProto(a *sdk.Atlas) *sessionpb.GetAtlasResponse {
 	if a == nil {
 		return &sessionpb.GetAtlasResponse{}
 	}
-	rooms := make([]*sessionpb.AtlasRoom, len(a.Rooms))
-	for i, r := range a.Rooms {
-		rooms[i] = atlasRoomToProto(r)
+	cells := make([]*sessionpb.Position, len(a.Cells))
+	for i, c := range a.Cells {
+		cells[i] = positionToProto(c)
 	}
-	doorways := make([]*sessionpb.AtlasDoorway, len(a.Doorways))
-	for i, d := range a.Doorways {
-		doorways[i] = atlasDoorwayToProto(d)
+	occluders := make([]*sessionpb.Position, len(a.Occluders))
+	for i, c := range a.Occluders {
+		occluders[i] = positionToProto(c)
 	}
-	return &sessionpb.GetAtlasResponse{Rooms: rooms, Doorways: doorways}
+	return &sessionpb.GetAtlasResponse{
+		Grid:       gridKindToProto(a.Grid),
+		Cells:      cells,
+		Occluders:  occluders,
+		Boundaries: atlasBoundariesToProto(a.Boundaries),
+		Doorways:   atlasDoorwaysToProto(a.Doorways),
+	}
+}
+
+// whereToProto mirrors session.WhereOutput onto the wire GetWhereResponse.
+func whereToProto(w *sdk.WhereOutput) *sessionpb.GetWhereResponse {
+	if w == nil {
+		return &sessionpb.GetWhereResponse{}
+	}
+	return &sessionpb.GetWhereResponse{Position: positionToProto(w.Position)}
 }
