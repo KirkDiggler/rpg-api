@@ -10,12 +10,13 @@ import (
 	tkcharacter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 
+	"github.com/stretchr/testify/suite"
+
 	"github.com/KirkDiggler/rpg-api/internal/apierr"
 	"github.com/KirkDiggler/rpg-api/internal/entities"
 	sessionorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/session"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	charactermock "github.com/KirkDiggler/rpg-api/internal/repositories/character/mock"
-	"github.com/stretchr/testify/suite"
 )
 
 type CharacterRepositoryTestSuite struct {
