@@ -94,6 +94,15 @@ func (o *Orchestrator) StartEncounter(ctx context.Context, in *StartEncounterInp
 		return nil, errors.New("lobby orchestrator: StartEncounterInput is required")
 	}
 
+	// Coexistence (design §3): server configuration -- o.sessionManager's
+	// presence, set once at construction from cmd/server/server.go -- picks
+	// EXACTLY ONE stack per call, never both. The new-stack branch is fully
+	// self-contained (start_encounter_session_stack.go) and never touches
+	// anything below this point.
+	if o.sessionManager != nil {
+		return o.startEncounterOnSessionStack(ctx, in)
+	}
+
 	// effectiveKey substitutes Task E2b's RPG_DUNGEON_KEY override ONLY
 	// when the caller supplied no key at all — an explicit in.DungeonKey
 	// (once a real proto surface exists to set one) always wins.

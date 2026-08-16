@@ -63,6 +63,12 @@ const lobbyTTL = 24 * time.Hour
 // S1). Off by default -- design.md's dev-gated authoring surface.
 const authoringEnabledEnvVar = "RPG_AUTHORING_ENABLED"
 
+// sessionStackEnabledEnvVar gates StartEncounter's new-session-stack branch
+// (rpg-api#796 / rpg-project#227 W2, design §3 "coexistence"). Off by
+// default -- the deployed default stays the old encounter stack until
+// cutover; local dev sets this to exercise the new stack live.
+const sessionStackEnabledEnvVar = "RPG_SESSION_STACK_ENABLED"
+
 var (
 	grpcPort int
 )
@@ -281,7 +287,7 @@ func runServer(_ *cobra.Command, _ []string) error {
 	// started encounter is immediately live for StreamEncounter callers.
 	lobbyBroker := lobbyorch.NewBroker()
 	lobbyRepo := lobbyrepo.NewRedis(redisClient, lobbyTTL)
-	lobbyOrch, err := lobbyorch.New(&lobbyorch.Config{
+	lobbyCfg := &lobbyorch.Config{
 		LobbyRepo:              lobbyRepo,
 		LobbyBroker:            lobbyBroker,
 		CharacterRepo:          charRepo,
@@ -299,7 +305,19 @@ func runServer(_ *cobra.Command, _ []string) error {
 		// validated at construction below (a misconfigured value fails
 		// server startup loudly, not the first StartEncounter call).
 		DungeonKeyOverride: os.Getenv("RPG_DUNGEON_KEY"),
-	})
+	}
+	// RPG_SESSION_STACK_ENABLED (rpg-api#796 / rpg-project#227 W2, design §3
+	// "coexistence"): unset in every real deployment today (StartEncounter
+	// keeps building on the old stack, zero player-facing change). Set it
+	// for local dev to route StartEncounter onto the new session stack
+	// instead -- see start_encounter_session_stack.go for what that path
+	// actually builds (a fixed placeholder world, not real authored content
+	// yet).
+	if os.Getenv(sessionStackEnabledEnvVar) != "" {
+		lobbyCfg.SessionManager = sessionOrch.Manager
+		log.Println("⚠️  RPG_SESSION_STACK_ENABLED set - StartEncounter builds on the new session stack")
+	}
+	lobbyOrch, err := lobbyorch.New(lobbyCfg)
 	if err != nil {
 		return fmt.Errorf("lobby orchestrator: %w", err)
 	}

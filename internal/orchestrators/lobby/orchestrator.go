@@ -22,6 +22,7 @@ import (
 	encountersv2 "github.com/KirkDiggler/rpg-api/internal/repositories/encounters/v2"
 	lobbyrepo "github.com/KirkDiggler/rpg-api/internal/repositories/lobby"
 	tkenc "github.com/KirkDiggler/rpg-toolkit/encounter"
+	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 
 	"github.com/KirkDiggler/rpg-api/internal/dungeonregistry"
 	"github.com/KirkDiggler/rpg-api/internal/pkg/idgen"
@@ -139,6 +140,15 @@ type Config struct {
 	// deploy-time misconfiguration, not something that should surface only
 	// on the first StartEncounter call.
 	DungeonKeyOverride string
+
+	// SessionManager selects the new session stack for StartEncounter when
+	// non-nil (design rpg-project/ideas/session-api/design.md §3
+	// "coexistence"): server configuration, not a per-request choice --
+	// EXACTLY ONE stack builds a given encounter, never both. Optional and
+	// nil in every deployment today (the default stays old until cutover);
+	// cmd/server/server.go wires it only when the new-stack dev flag is set.
+	// See start_encounter_session_stack.go.
+	SessionManager *sdk.Manager
 }
 
 // Orchestrator is the lobby load -> mutate -> persist -> publish core. One
@@ -170,6 +180,11 @@ type Orchestrator struct {
 	// startup, in which case StartEncounter's effectiveKey substitution is
 	// a no-op.
 	dungeonKeyOverride DungeonKey
+
+	// sessionManager is Config.SessionManager. nil selects the old stack for
+	// every StartEncounter call (start_encounter.go's existing body,
+	// untouched); non-nil routes to start_encounter_session_stack.go instead.
+	sessionManager *sdk.Manager
 }
 
 // New constructs an Orchestrator from cfg. Returns an error (never a nil
@@ -251,6 +266,7 @@ func New(cfg *Config) (*Orchestrator, error) {
 		locks:                  newKeyedMutex(),
 		registry:               cfg.Registry,
 		dungeonKeyOverride:     DungeonKey(cfg.DungeonKeyOverride),
+		sessionManager:         cfg.SessionManager,
 	}, nil
 }
 
