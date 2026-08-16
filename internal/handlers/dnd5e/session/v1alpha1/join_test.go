@@ -10,6 +10,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
+	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
 
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
 	"github.com/KirkDiggler/rpg-api/internal/auth"

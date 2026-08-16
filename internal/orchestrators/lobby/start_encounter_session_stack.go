@@ -155,8 +155,7 @@ func (o *Orchestrator) startEncounterOnSessionStack(ctx context.Context, in *Sta
 	positions := builtInPartyPositions(len(members))
 	for i, m := range members {
 		if _, err := o.sessionManager.Join(ctx, &sdk.JoinInput{
-			Session: encID, Member: m.CharacterID,
-			Room: builtInSessionRoomID, Position: positions[i],
+			Session: encID, Member: m.CharacterID, Position: positions[i],
 		}); err != nil {
 			return nil, fmt.Errorf("join %q to session %q on new stack: %w", m.CharacterID, encID, err)
 		}
@@ -164,7 +163,7 @@ func (o *Orchestrator) startEncounterOnSessionStack(ctx context.Context, in *Sta
 
 	if _, err := o.sessionManager.Spawn(ctx, &sdk.SpawnInput{
 		Session: encID, ID: builtInMonsterID, Ref: refs.Monsters.Skeleton().String(),
-		Room: builtInSessionRoomID, Position: builtInMonsterPosition,
+		Position: builtInMonsterPosition,
 	}); err != nil {
 		return nil, fmt.Errorf("spawn monster into session %q on new stack: %w", encID, err)
 	}

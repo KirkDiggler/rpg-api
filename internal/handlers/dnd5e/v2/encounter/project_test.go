@@ -1496,8 +1496,23 @@ func (s *ProjectSuite) TestProjectFor_CryptFixture_ProjectsPerimeterEdgesAsSolid
 // fixed seed/dimensions -- measured directly against this fixture (not
 // guessed, see that test's doc): the pre-fog whole-room total was 182 (184
 // walls minus 2 door walls); gated to just what's visible from the
-// entrance spawn under the hex-knowledge contract, it is 63.
-const cryptEntranceRegionPerimeterEdgeCount = 63
+// entrance spawn under the hex-knowledge contract, it was 63.
+//
+// UPDATED to 68 (rpg-api#796, W2 session-service integration): the SDK
+// dependency lift session integration required (tools/spatial v0.9.0 ->
+// v0.9.1) pulls in toolkit#1022 ("sight is a lane, not a line") and its
+// encounter-side landing, toolkit#1026 ("adopt lane-based sight -- rooms
+// stop over-blocking"). Before that fix, line-of-sight from the entrance
+// spawn was asymmetric and under-counted which boundary edges were
+// genuinely visible; the lane-based fix corrects that, and 5 more edges
+// become visible from the same spawn point under the same fixture. This is
+// a real upstream correctness fix landing on the old encounter path as a
+// side effect of the shared tools/spatial dependency, not a regression --
+// confirmed by reverting the dependency bump alone (stash-and-rerun against
+// unmodified origin/dev) and reproducing 63 there. Ruled: update the count
+// rather than quarantine the test, since the fix is correct and this
+// assertion should track truth, not calcify a since-corrected bug.
+const cryptEntranceRegionPerimeterEdgeCount = 68
 
 func TestProjectSuite(t *testing.T) {
 	suite.Run(t, new(ProjectSuite))

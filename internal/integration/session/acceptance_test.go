@@ -56,12 +56,17 @@ func (testDice) Roll(_ context.Context, size int) (int, error) { return size, ni
 
 // buildThreeRoomTomb is entrance -> hall -> tomb, matching design §6.1's
 // acceptance shape: a party walks two doorway crossings and meets a monster
-// on the far side. The tomb room's occluder wall (a solid column at local
+// on the far side. World AUTHORING still speaks rooms (RoomInput/
+// ConnectionInput are rulebooks/dnd5e/encounter's own vocabulary, unaffected
+// by the session SDK's one-map convergence -- "authoring is construction
+// data, and the one-map rule governs what a session SEES while it plays,"
+// per Atlas's own doc); only the SESSION-FACING verbs this test drives
+// against (Join, Move, Attack, ...) speak absolute positions with no room
+// concept at all. The tomb room's occluder wall (a solid column at local
 // x=3 with a gap at y=3) and the skeleton's position mirror the toolkit's
 // own proven "sight forms a fight" fixture (rulebooks/dnd5e/session's
 // fight_starts_test.go buildAmbush) -- the same geometry that is already
-// pinned to work, transplanted into a room reached by two Traverse hops
-// instead of started in.
+// pinned to work, transplanted into a room reached by crossing two doorways.
 func buildThreeRoomTomb(t *testing.T) *tkencounter.EncounterData {
 	t.Helper()
 
@@ -138,10 +143,10 @@ func armedFighter(id, playerID string) *tkcharacter.Data {
 	}
 }
 
-// AcceptanceSuite is the design §6.1 acceptance criterion made executable:
+// acceptanceHarness is the design §6.1 acceptance criterion made executable:
 // a party can, entirely through SessionService against the local stack,
-// walk a multi-room world, meet a monster by sight, fight it, disengage, and
-// resync the full story from zero.
+// walk a multi-room world, meet a monster by sight, fight it, disengage,
+// and recover its own position and the full story after the fact.
 type acceptanceHarness struct {
 	handler  *sessionhandler.Handler
 	charRepo characterrepo.Repository
@@ -198,64 +203,50 @@ func TestAcceptanceLoop_WalkFightDissolveResync(t *testing.T) {
 	require.NoError(t, err)
 	_, err = h.manager.Manager.Spawn(context.Background(), &sdk.SpawnInput{
 		Session: "acceptance-run", ID: "skel-1", Ref: refs.Monsters.Skeleton().String(),
-		Room: "tomb", Position: spatial.Position{X: 5, Y: 3},
+		// tomb's Origin is (14,0); local (5,3) (matching the toolkit's own
+		// proven ambush geometry) is absolute (19,3). Spawn speaks absolute
+		// positions only -- there is no Room field any more (session
+		// v0.12.0/rpg-toolkit#1048, one map complete).
+		Position: spatial.Position{X: 19, Y: 3},
 	})
 	require.NoError(t, err)
 
-	// -- join --
+	// -- join, at the entrance's absolute position (its Origin is (0,0), so
+	// local and absolute coincide here) --
 	joinResp, err := h.handler.Join(ctx, &sessionpb.JoinRequest{
-		Session: "acceptance-run", Member: "alice", Room: "entrance",
+		Session: "acceptance-run", Member: "alice",
 		Position: &sessionpb.Position{X: 1, Y: 1},
 	})
 	require.NoError(t, err)
 	require.Equal(t, "alice", joinResp.GetMember().GetId())
 
-	// -- walk to the first doorway, cross into the hall --
-	_, err = h.handler.Move(ctx, &sessionpb.MoveRequest{
+	// -- walk the whole route in ONE Move call: entrance -> hall -> tomb,
+	// crossing both doorways as ordinary steps (design §0's destination
+	// state, live since session v0.12.0/rpg-toolkit#1048 -- Traverse is
+	// retired, there is no separate crossing verb any more). Absolute
+	// coordinates: the entrance-hall door sits at (5,1)/(6,1); the
+	// hall-tomb door at (13,3)/(14,3) (hall's Origin is (6,0), tomb's is
+	// (14,0)). The walk stops on its own once sight forms the fight (Move's
+	// own contract: `len(Steps) < len(Path)` is not an error), so the tail
+	// of this path past the tomb doorway is a safety margin, not an
+	// assumption that every requested cell gets walked.
+	moveResp, err := h.handler.Move(ctx, &sessionpb.MoveRequest{
 		Session: "acceptance-run", Member: "alice",
-		Path: []*sessionpb.Position{{X: 2, Y: 1}, {X: 3, Y: 1}, {X: 4, Y: 1}, {X: 5, Y: 1}},
+		Path: []*sessionpb.Position{
+			{X: 2, Y: 1}, {X: 3, Y: 1}, {X: 4, Y: 1}, {X: 5, Y: 1}, {X: 6, Y: 1}, // cross into hall
+			{X: 7, Y: 1}, {X: 8, Y: 1}, {X: 9, Y: 1}, {X: 10, Y: 1}, {X: 11, Y: 1}, {X: 12, Y: 1}, {X: 13, Y: 1},
+			{X: 13, Y: 2}, {X: 13, Y: 3}, {X: 14, Y: 3}, // cross into tomb, onto the gap row
+			{X: 15, Y: 3}, {X: 16, Y: 3}, {X: 17, Y: 3}, {X: 18, Y: 3}, // safety margin toward the skeleton
+		},
 	})
 	require.NoError(t, err)
-	traverse1, err := h.handler.Traverse(ctx, &sessionpb.TraverseRequest{
-		Session: "acceptance-run", Member: "alice", Connection: "entrance-hall",
-	})
-	require.NoError(t, err)
-	require.Equal(t, "hall", traverse1.GetToRoom())
+	require.NotEmpty(t, moveResp.GetSteps(), "the walk must have taken at least one step")
+	lastStep := moveResp.GetSteps()[len(moveResp.GetSteps())-1]
+	t.Logf("walk stopped after %d/19 steps, last at (%v,%v)",
+		len(moveResp.GetSteps()), lastStep.GetPosition().GetX(), lastStep.GetPosition().GetY())
 
-	// -- walk to the second doorway, cross into the tomb --
-	_, err = h.handler.Move(ctx, &sessionpb.MoveRequest{
-		Session: "acceptance-run", Member: "alice",
-		Path: []*sessionpb.Position{{X: 1, Y: 1}, {X: 2, Y: 1}, {X: 3, Y: 1}, {X: 4, Y: 2}, {X: 5, Y: 3}, {X: 6, Y: 3}, {X: 7, Y: 3}},
-	})
-	require.NoError(t, err)
-	traverse2, err := h.handler.Traverse(ctx, &sessionpb.TraverseRequest{
-		Session: "acceptance-run", Member: "alice", Connection: "hall-tomb",
-	})
-	require.NoError(t, err)
-	require.Equal(t, "tomb", traverse2.GetToRoom())
-
-	// -- close the gap until sight forms the fight --
-	// In practice this geometry forms the fight the moment alice crosses the
-	// doorway (Traverse itself reports Formed), matching design §0's "a
-	// doorway crossing is an ordinary step" framing directly. The Move
-	// fallback stays as a robustness margin against the SDK's sight
-	// computation shifting slightly (e.g. the lane-based sight fix
-	// referenced elsewhere in this branch's history) rather than making this
-	// suite brittle to exactly where the toolkit decides the sightline opens.
-	var formed *sessionpb.Formed
-	if traverse2.GetFormed() != nil {
-		t.Log("sight formed the fight on arrival through the doorway (Traverse itself)")
-		formed = traverse2.GetFormed()
-	} else {
-		t.Log("no fight on arrival; closing the gap with a further Move")
-		moveResp, moveErr := h.handler.Move(ctx, &sessionpb.MoveRequest{
-			Session: "acceptance-run", Member: "alice",
-			Path: []*sessionpb.Position{{X: 1, Y: 3}, {X: 2, Y: 3}, {X: 3, Y: 3}, {X: 4, Y: 3}},
-		})
-		require.NoError(t, moveErr)
-		formed = moveResp.GetFormed()
-	}
-	require.NotNil(t, formed, "sight must have formed a fight by now")
+	formed := moveResp.GetFormed()
+	require.NotNil(t, formed, "sight must have formed a fight during the walk into the tomb")
 	require.Contains(t, formed.GetOrder(), "alice")
 	require.Contains(t, formed.GetOrder(), "skel-1")
 
@@ -273,6 +264,18 @@ func TestAcceptanceLoop_WalkFightDissolveResync(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Contains(t, dissolveResp.GetMembers(), "alice")
+
+	// -- disconnect and resume: a cold client learns its own position from
+	// GetWhere (design rule 11's destination, live since session v0.13.0 /
+	// rpg-toolkit#1051) rather than only from remembering its last Move. She
+	// did not move during the fight or the dissolve, so this must be
+	// exactly where the walk left her.
+	whereResp, err := h.handler.GetWhere(ctx, &sessionpb.GetWhereRequest{
+		Session: "acceptance-run", Member: "alice",
+	})
+	require.NoError(t, err)
+	require.Equal(t, lastStep.GetPosition().GetX(), whereResp.GetPosition().GetX(), "GetWhere must recover the walk's actual stopping cell")
+	require.Equal(t, lastStep.GetPosition().GetY(), whereResp.GetPosition().GetY())
 
 	// -- resync from zero and see the whole story --
 	storyResp, err := h.handler.GetStory(ctx, &sessionpb.GetStoryRequest{
