@@ -11,7 +11,7 @@ require (
 	github.com/KirkDiggler/rpg-toolkit/rpgerr v0.1.2
 	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.94.1
 	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter v0.10.0
-	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session v0.11.0
+	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session v0.9.0
 	github.com/KirkDiggler/rpg-toolkit/tools/environments v0.4.4
 	github.com/KirkDiggler/rpg-toolkit/tools/spatial v0.9.1
 	github.com/KirkDiggler/rpg-toolkit/tools/spawn v0.3.0
