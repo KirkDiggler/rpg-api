@@ -284,6 +284,62 @@ func atlasDoorwayToProto(d sdk.AtlasDoorway) *sessionpb.AtlasDoorway {
 	}
 }
 
+// eventKindToProto mirrors sdk.EventKind onto the wire enum. A kind this
+// build does not recognize -- either the SDK's own EventUnknown (a beat the
+// TOOLKIT did not recognize, delivered on purpose) or, in principle, some
+// future SDK value this handler package has not been updated for -- maps to
+// EVENT_KIND_UNKNOWN rather than EVENT_KIND_UNSPECIFIED. The two mean
+// different things: UNSPECIFIED is a producer defect (this code failed to
+// set a kind), UNKNOWN is "delivered, but not interpretable by this
+// version" -- exactly the SDK's own delivered-not-dropped rule, and exactly
+// what an unrecognized kind IS, never a defect.
+func eventKindToProto(k sdk.EventKind) sessionpb.EventKind {
+	switch k {
+	case sdk.EventMoved:
+		return sessionpb.EventKind_EVENT_KIND_MOVED
+	case sdk.EventTraversed:
+		return sessionpb.EventKind_EVENT_KIND_TRAVERSED
+	case sdk.EventJoined:
+		return sessionpb.EventKind_EVENT_KIND_JOINED
+	case sdk.EventExited:
+		return sessionpb.EventKind_EVENT_KIND_EXITED
+	case sdk.EventEnded:
+		return sessionpb.EventKind_EVENT_KIND_ENDED
+	case sdk.EventSceneOpened:
+		return sessionpb.EventKind_EVENT_KIND_SCENE_OPENED
+	case sdk.EventTick:
+		return sessionpb.EventKind_EVENT_KIND_TICK
+	case sdk.EventTurnEnded:
+		return sessionpb.EventKind_EVENT_KIND_TURN_ENDED
+	case sdk.EventFightStarted:
+		return sessionpb.EventKind_EVENT_KIND_FIGHT_STARTED
+	case sdk.EventFightEnded:
+		return sessionpb.EventKind_EVENT_KIND_FIGHT_ENDED
+	case sdk.EventStruck:
+		return sessionpb.EventKind_EVENT_KIND_STRUCK
+	case sdk.EventMissed:
+		return sessionpb.EventKind_EVENT_KIND_MISSED
+	default:
+		return sessionpb.EventKind_EVENT_KIND_UNKNOWN
+	}
+}
+
+// eventToProto mirrors session.Event field-for-field (design rule 3):
+// session, seq, at, correlation, recipient, kind, payload. The payload is
+// passthrough -- rpg-api round-trips these bytes and never builds or
+// inspects them (design rule 4's corollary).
+func eventToProto(e sdk.Event) *sessionpb.Event {
+	return &sessionpb.Event{
+		Session:     e.Session,
+		Seq:         e.Seq,
+		At:          e.At,
+		Correlation: e.Correlation,
+		Recipient:   e.Recipient,
+		Kind:        eventKindToProto(e.Kind),
+		Payload:     e.Payload,
+	}
+}
+
 func atlasToProto(a *sdk.Atlas) *sessionpb.GetAtlasResponse {
 	if a == nil {
 		return &sessionpb.GetAtlasResponse{}
