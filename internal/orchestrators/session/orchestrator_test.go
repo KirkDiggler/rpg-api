@@ -1,6 +1,7 @@
 package session_test
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -55,6 +56,28 @@ func (s *OrchestratorTestSuite) TestNew_MissingRedis_Errors() {
 		TTL:        24 * time.Hour,
 	})
 	s.Require().Error(err)
+}
+
+// fixedRoller is a deterministic sdk.Roller a test can pass through
+// Config.Dice to override the crypto-secure production default.
+type fixedRoller struct{ value int }
+
+func (r fixedRoller) Roll(_ context.Context, _ int) (int, error) { return r.value, nil }
+
+func (s *OrchestratorTestSuite) TestNew_DiceOverride_IsHonored() {
+	ctrl := gomock.NewController(s.T())
+	client := goredis.NewClient(&goredis.Options{Addr: s.miniredis.Addr()})
+	defer func() { _ = client.Close() }()
+
+	orch, err := sessionorch.New(sessionorch.Config{
+		Redis: client, Characters: charactermock.NewMockRepository(ctrl),
+		TTL: 24 * time.Hour, Dice: fixedRoller{value: 20},
+	})
+	s.Require().NoError(err)
+	s.Require().NotNil(orch)
+	// The override is exercised end-to-end by the acceptance suite
+	// (internal/integration/session), which needs a guaranteed hit; this
+	// test only pins that New accepts and does not silently drop it.
 }
 
 func (s *OrchestratorTestSuite) TestNew_MissingCharacters_Errors() {

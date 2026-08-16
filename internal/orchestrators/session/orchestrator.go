@@ -38,6 +38,16 @@ type Config struct {
 	// TTL is the per-key expiration applied to session and encounter Redis
 	// keys. Pass 0 to disable expiration.
 	TTL time.Duration
+
+	// Dice is the SDK's source of randomness. Optional: nil selects a
+	// crypto-secure dice.CryptoRoller, the production default. This is this
+	// PACKAGE's own ergonomics, not a relaxation of the toolkit's "supplied,
+	// never defaulted" law -- what New hands to sdk.Config.Dice is always
+	// explicit and never nil; the override exists so a deterministic roller
+	// can be substituted in tests (a fixed source makes a reproducible
+	// fight, exactly as session.Roller's own doc describes) without this
+	// package's callers reaching past it into the SDK's construction.
+	Dice sdk.Roller
 }
 
 // Orchestrator owns the toolkit session.Manager and the Broker StreamEvents
@@ -61,13 +71,18 @@ func New(cfg Config) (*Orchestrator, error) {
 		return nil, errors.New("session orchestrator: Config.Characters is required")
 	}
 
+	roller := cfg.Dice
+	if roller == nil {
+		roller = &dice.CryptoRoller{}
+	}
+
 	broker := NewBroker()
 	mgr, err := sdk.NewManager(&sdk.Config{
 		Sessions:   NewSessionRepository(cfg.Redis, cfg.TTL),
 		Encounters: NewEncounterRepository(cfg.Redis, cfg.TTL),
 		Characters: NewCharacterRepository(cfg.Characters),
 		Events:     broker,
-		Dice:       &dice.CryptoRoller{},
+		Dice:       roller,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("construct session manager: %w", err)
