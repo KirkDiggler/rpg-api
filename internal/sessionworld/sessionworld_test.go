@@ -184,6 +184,74 @@ func (s *ReferenceTombSuite) TestAPartyCanAllStandSomewhereDistinct() {
 	}
 }
 
+// TestNoSeatIsAlsoSomebodyElsesCell guards a guarantee this package DEPENDS ON
+// and does not own.
+//
+// projectPlacements puts every party seat and every monster into ONE throwaway
+// encounter to read their absolute cells back. That is only safe because the
+// compiler's seat list excludes cells that are already occupied -- if it ever
+// stopped, this package would start failing at construction with an error about
+// a member collision, and nothing about the message would point at the compiler.
+//
+// The tomb's own garrison is in other chambers, so the tomb alone would never
+// notice. This uses a dungeon authored specifically to put a monster in the
+// entrance the party starts in.
+func TestNoSeatIsAlsoSomebodyElsesCell(t *testing.T) {
+	const monsterInTheEntrance = `
+version: 1
+key: seat-collision
+void: opaque
+orientation: pointy
+height: 6
+start: [1, 3]
+rooms:
+  - id: entrance
+    width: 6
+    place:
+      - { ref: "dnd5e:monsters:skeleton", at: [0, 3] }
+  - id: hall
+    width: 6
+connectors:
+  - { from: entrance, to: hall }
+`
+
+	d, err := compile([]byte(monsterInTheEntrance))
+	require.NoError(t, err)
+	require.Len(t, d.Monsters, 1)
+
+	for i, seat := range d.PartySeats {
+		require.NotEqualf(t, d.Monsters[0].At, seat, "seat %d is the monster's cell", i)
+	}
+}
+
+// TestAPartyStartOnTopOfAMonsterIsRefusedByTheCompiler is the same concern one
+// cell over, and the compiler answers this one with a refusal rather than by
+// omitting a seat -- an author who put the party's entry cell under a monster
+// made a mistake, and it is named as one.
+func TestAPartyStartOnTopOfAMonsterIsRefusedByTheCompiler(t *testing.T) {
+	const monsterOnTheStart = `
+version: 1
+key: start-collision
+void: opaque
+orientation: pointy
+height: 6
+start: [1, 3]
+rooms:
+  - id: entrance
+    width: 6
+    place:
+      - { ref: "dnd5e:monsters:skeleton", at: [1, 3] }
+  - id: hall
+    width: 6
+connectors:
+  - { from: entrance, to: hall }
+`
+
+	d, err := compile([]byte(monsterOnTheStart))
+	require.Error(t, err)
+	require.Nil(t, d)
+}
+
 // TestABrokenSpecIsRefusedRatherThanPartlyBuilt checks the failure direction:
 // compile returns an error and no Dungeon, so a caller can never seed a session
 // from a dungeon that did not fully compile.
