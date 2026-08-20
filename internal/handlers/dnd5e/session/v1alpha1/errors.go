@@ -49,14 +49,19 @@ func statusError(err error) error {
 		return status.Error(codes.NotFound, err.Error())
 
 	// INVALID_ARGUMENT -- the request itself is malformed: bad shape, bad
-	// geometry, or a required field left empty. ErrNoCrossing (added at
-	// session v0.12.0, rpg-toolkit#1048): a Move path steps into another
-	// room with no doorway joining the two cells -- the caller's own path
-	// computation was wrong, same bucket as ErrBrokenPath/ErrBadPosition.
+	// geometry, or a required field left empty.
+	//
+	// ErrNoCrossing was here until session/v0.18.0 DELETED it. On one canvas
+	// the composition no longer distinguishes a walled crossing from a missing
+	// cell, so nothing could still produce it. A walk stopped by a wall now
+	// arrives as ErrBadPosition, which is in this same bucket -- so the code a
+	// client sees does not change, only the sentence. What that collapse costs
+	// is real and filed: a LOCKED DOOR currently arrives as ErrBadPosition too
+	// (rpg-toolkit#1135), so the tomb's most player-visible beat is
+	// indistinguishable on the wire from a client bug.
 	case errors.Is(err, sdk.ErrNilInput),
 		errors.Is(err, sdk.ErrEmptyPath),
 		errors.Is(err, sdk.ErrBrokenPath),
-		errors.Is(err, sdk.ErrNoCrossing),
 		errors.Is(err, sdk.ErrBadPosition),
 		errors.Is(err, sdk.ErrNoRef),
 		errors.Is(err, sdk.ErrBadRef),
@@ -69,11 +74,35 @@ func statusError(err error) error {
 
 	// FAILED_PRECONDITION -- the request is well-formed but the world's
 	// current state refuses it (wrong clock, wrong actor, wrong equipment).
+	//
+	// Three arrive with session v0.15.0-v0.17.0 and all three are this bucket
+	// by the SDK's own description of them:
+	//
+	//   ErrDowned -- "the world is fine, the member is there, and this
+	//   particular member cannot do this particular thing." Explicitly NOT
+	//   no-such-member: a downed member stays on the map, in the roster, and
+	//   readable. NotFound would be a lie about where they are.
+	//
+	//   ErrLocked -- a door refusing to open. World state, not a malformed
+	//   request. Reachable only from the door verb this seam does not expose
+	//   yet; a walk into a locked door still arrives as ErrBadPosition
+	//   (rpg-toolkit#1135), so this is mapped ahead of being reachable rather
+	//   than left to be discovered later.
+	//
+	//   ErrCannotAfford -- a second swing in a turn that bought one. The SDK
+	//   is emphatic that this is A FACT ABOUT THE GAME rather than about the
+	//   code, split from ErrBadCost precisely so a player who has run out of
+	//   actions hears a different sentence from the one a developer needs. Its
+	//   message names the currency that ran out; a host may show it or match
+	//   the sentinel and say it in its own words.
 	case errors.Is(err, sdk.ErrInBubble),
 		errors.Is(err, sdk.ErrNotInFight),
 		errors.Is(err, sdk.ErrClosed),
 		errors.Is(err, sdk.ErrNotACharacter),
-		errors.Is(err, sdk.ErrBadAttack):
+		errors.Is(err, sdk.ErrBadAttack),
+		errors.Is(err, sdk.ErrDowned),
+		errors.Is(err, sdk.ErrLocked),
+		errors.Is(err, sdk.ErrCannotAfford):
 		return status.Error(codes.FailedPrecondition, err.Error())
 
 	// ALREADY_EXISTS
@@ -103,7 +132,16 @@ func statusError(err error) error {
 	// package finds the doorway joining them itself. Its own doc now says
 	// so plainly: if this appears, the package derived a crossing the
 	// composition then rejected, which is a defect HERE, not in the call.
+	//
+	// ErrBadCost joins them at session/v0.17.0: the PROGRAMMER-FACING half of
+	// the split ErrCannotAfford describes. It means content or wiring is wrong
+	// -- a price keyed to a currency no ledger holds -- and the SDK is explicit
+	// that reporting it as "out of actions" would send whoever debugs it to
+	// exactly the wrong place. Not reachable from a well-formed call today; it
+	// is mapped so that the day something else compiles a price, the failure
+	// has a name that is not a lie.
 	case errors.Is(err, sdk.ErrBadRepository),
+		errors.Is(err, sdk.ErrBadCost),
 		errors.Is(err, sdk.ErrBadCharacter),
 		errors.Is(err, sdk.ErrInvalidSession),
 		errors.Is(err, sdk.ErrNilConfig),

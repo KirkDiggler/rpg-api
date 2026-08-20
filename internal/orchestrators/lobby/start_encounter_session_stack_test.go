@@ -159,18 +159,22 @@ func (s *SessionStackSuite) TestStartEncounter_SpawnsThePlaceholderMonster() {
 	// without depending on Attack's own equipment/combat preconditions.
 	// ErrNoMember here would mean nothing was ever spawned.
 	//
-	// The clock is ClockTurn, not ClockWorld: the placeholder room has no
-	// occluders (see builtInSessionWorld's doc), so the party and the
-	// monster see each other -- and the fight starts itself -- the moment
-	// both are placed. Real authored content would give a party room to
-	// explore before engaging; this fixed world does not, which is a
-	// consequence worth knowing about rather than a bug this test should
-	// paper over.
+	// The clock is ClockWorld, and it USED TO BE ClockTurn. Nothing about this
+	// world changed: session/v0.18.0 gave sight a range of four cells rather
+	// than letting an unobstructed room mean unlimited vision, and the party
+	// enters at x=1 while the skeleton stands at (9,5) -- eight cells away. So
+	// the fight no longer starts itself the instant both are placed.
+	//
+	// Asserted rather than relaxed to "either clock is fine". Whether a session
+	// opens in combat is the single most visible thing about this placeholder
+	// world, and a test that shrugged at it would not notice the day it flipped
+	// back -- which is exactly what happened here.
 	turn, err := s.sessOrch.Manager.Turn(s.ctx, &sdk.TurnInput{
 		Session: out.EncounterID, Member: "skeleton-1",
 	})
 	s.Require().NoError(err)
-	s.Equal(sdk.ClockTurn, turn.Clock, "no occluders in the placeholder room: sight forms the fight immediately")
+	s.Equal(sdk.ClockWorld, turn.Clock,
+		"sight has a range now (session/v0.18.0): eight cells apart, nobody is in contact yet")
 }
 
 func (s *SessionStackSuite) TestStartEncounter_NotHost_Errors() {

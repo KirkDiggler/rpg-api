@@ -38,7 +38,9 @@ func TestStatusError_CoversEverySDKSentinel(t *testing.T) {
 		{"ErrNilInput", sdk.ErrNilInput, codes.InvalidArgument},
 		{"ErrEmptyPath", sdk.ErrEmptyPath, codes.InvalidArgument},
 		{"ErrBrokenPath", sdk.ErrBrokenPath, codes.InvalidArgument},
-		{"ErrNoCrossing", sdk.ErrNoCrossing, codes.InvalidArgument},
+		// No ErrNoCrossing row: session/v0.18.0 deleted the sentinel. On one
+		// canvas nothing distinguishes a walled crossing from a missing cell,
+		// so a walk stopped by a wall is ErrBadPosition now.
 		{"ErrBadPosition", sdk.ErrBadPosition, codes.InvalidArgument},
 		{"ErrNoRef", sdk.ErrNoRef, codes.InvalidArgument},
 		{"ErrBadRef", sdk.ErrBadRef, codes.InvalidArgument},
@@ -54,6 +56,14 @@ func TestStatusError_CoversEverySDKSentinel(t *testing.T) {
 		{"ErrClosed", sdk.ErrClosed, codes.FailedPrecondition},
 		{"ErrNotACharacter", sdk.ErrNotACharacter, codes.FailedPrecondition},
 		{"ErrBadAttack", sdk.ErrBadAttack, codes.FailedPrecondition},
+		// Arrived v0.15.0-v0.17.0. ErrDowned is emphatically NOT no-such-member
+		// (a downed member stays on the map, in the roster, and readable), and
+		// ErrCannotAfford is a fact about the GAME rather than about the code --
+		// which is why its programmer-facing twin ErrBadCost is Internal below
+		// and not here.
+		{"ErrDowned", sdk.ErrDowned, codes.FailedPrecondition},
+		{"ErrLocked", sdk.ErrLocked, codes.FailedPrecondition},
+		{"ErrCannotAfford", sdk.ErrCannotAfford, codes.FailedPrecondition},
 
 		// ALREADY_EXISTS
 		{"ErrSessionExists", sdk.ErrSessionExists, codes.AlreadyExists},
@@ -67,6 +77,7 @@ func TestStatusError_CoversEverySDKSentinel(t *testing.T) {
 
 		// INTERNAL -- storage-side integrity problems, not a caller mistake.
 		{"ErrBadRepository", sdk.ErrBadRepository, codes.Internal},
+		{"ErrBadCost", sdk.ErrBadCost, codes.Internal},
 		{"ErrBadCharacter", sdk.ErrBadCharacter, codes.Internal},
 		{"ErrInvalidSession", sdk.ErrInvalidSession, codes.Internal},
 		{"ErrNilConfig", sdk.ErrNilConfig, codes.Internal},
@@ -101,16 +112,22 @@ func TestStatusError_CoversEverySDKSentinel(t *testing.T) {
 }
 
 // sentinelCount is the exact count of exported Err* sentinels in
-// rulebooks/dnd5e/session/errors.go as of session v0.13.0 (verified directly
-// against the pinned module, not a local checkout -- the earlier count of 34
-// was v0.9.0's; v0.12.0's re-transcription (rpg-toolkit#1048, Traverse
-// retired) added ErrNoCrossing back with a NEW meaning -- see this file's
-// ErrNoConnection case, reclassified InvalidArgument -> Internal for the
-// same release). Kept as a named constant (not a magic number in the
-// assertion above) so a failing count change points straight at "the SDK's
-// sentinel vocabulary moved" rather than requiring the reader to recount by
-// hand.
-const sentinelCount = 35
+// rulebooks/dnd5e/session/errors.go as of session v0.18.0, verified directly
+// against the PINNED MODULE rather than a local checkout -- the workspace
+// toolkit tree routinely sits on unmerged branches, and reading a surface from
+// it has produced wrong answers here before.
+//
+// The history is kept because each step explains a row above: 34 at v0.9.0;
+// v0.12.0's re-transcription (rpg-toolkit#1048, Traverse retired) added
+// ErrNoCrossing with a NEW meaning and took ErrNoConnection from
+// InvalidArgument to Internal; v0.18.0 then DELETED ErrNoCrossing again (one
+// canvas cannot tell a walled crossing from a missing cell) and added four --
+// ErrLocked, ErrDowned, ErrCannotAfford, ErrBadCost -- for a net 35 -> 38.
+//
+// Kept as a named constant rather than a magic number so a failing count points
+// straight at "the SDK's sentinel vocabulary moved" instead of asking the reader
+// to recount by hand.
+const sentinelCount = 38
 
 func TestStatusError_UnmappedSentinelFallsBackToInternal(t *testing.T) {
 	unrecognized := fmt.Errorf("some future sentinel the table has not been updated for")

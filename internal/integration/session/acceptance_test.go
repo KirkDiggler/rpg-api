@@ -15,6 +15,8 @@ import (
 	"github.com/alicebob/miniredis/v2"
 	goredis "github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/abilities"
 	tkcharacter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
@@ -36,6 +38,15 @@ import (
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 )
 
+// requireGRPCCode asserts the gRPC status code of a handler error.
+func requireGRPCCode(t *testing.T, err error, want codes.Code) {
+	t.Helper()
+	require.Error(t, err)
+	st, ok := status.FromError(err)
+	require.True(t, ok, "expected a gRPC status error, got %T", err)
+	require.Equal(t, want, st.Code(), "unexpected code for: %v", err)
+}
+
 // orderAsGiven is the trivial InitiativeRoller every fixture in this test
 // needs (encounter.SetupInput requires one): the members already arrive in
 // the order the composition detected them, so there is nothing to decide.
@@ -43,6 +54,66 @@ type orderAsGiven struct{}
 
 func (orderAsGiven) RollInitiative(members []tkencounter.MemberID) ([]tkencounter.MemberID, error) {
 	return members, nil
+}
+
+// allStanding and allSeeing are the Standing and Sight capabilities
+// encounter.SetupInput has required since rpg-toolkit#1033: supplied, never
+// defaulted, and refused at construction (ErrNoStanding / ErrNoSight) rather
+// than given a default, because "everybody can see" is a decision about a world
+// and not a fact the composition may assume.
+//
+// Trivial on purpose. These are used only to VALIDATE construction here; they
+// are not persisted in the EncounterData this function returns, and the session
+// package supplies its own when it loads the world (including the sight RANGE
+// that decides who is in contact). A fixture that made these clever would be
+// testing the fixture.
+type allStanding struct{}
+
+// Standing returns who is DOWN, not who is up -- the interface's own parameter
+// name is `down`, and reading it the other way round would report a healthy
+// party as a wiped one.
+func (allStanding) Standing(_ []tkencounter.MemberID) ([]tkencounter.MemberID, error) {
+	return nil, nil
+}
+
+type allSeeing struct{}
+
+func (allSeeing) Sight(members []tkencounter.MemberID) (map[tkencounter.MemberID]int, error) {
+	out := make(map[tkencounter.MemberID]int, len(members))
+	for _, id := range members {
+		out[id] = 1_000_000
+	}
+
+	return out, nil
+}
+
+// seamWall is the wall between two side-by-side chambers, with one row left
+// open for the doorway. Room-local to the WEST chamber, where column width-1 is
+// its last and column width is the east chamber's first.
+//
+// THIS IS THE MIGRATION HAZARD OF rpg-toolkit#1130, and it is the reason this
+// fixture grew rather than merely being renamed. When every chamber owned its
+// own grid, nothing could cross between them except through a declared
+// doorway -- the walls were implied by the room structure. On ONE CANVAS two
+// chambers side by side are simply ONE OPEN SPACE, and this list is the whole
+// answer to what a member cannot walk through or see past. Without it the tomb
+// is not three rooms joined by two doors; it is one 22-wide hall with some
+// furniture in it.
+func seamWall(width, rows, openRow int) []spatial.Boundary {
+	out := make([]spatial.Boundary, 0, rows)
+	for row := 0; row < rows; row++ {
+		if row == openRow {
+			continue // the doorway itself
+		}
+		out = append(out, spatial.Boundary{
+			From:              spatial.Position{X: float64(width - 1), Y: float64(row)},
+			To:                spatial.Position{X: float64(width), Y: float64(row)},
+			BlocksMovement:    true,
+			BlocksLineOfSight: true,
+		})
+	}
+
+	return out
 }
 
 // testDice rolls the crypto roller would: this suite is not testing whether
@@ -70,22 +141,61 @@ func (testDice) Roll(_ context.Context, size int) (int, error) { return size, ni
 func buildThreeRoomTomb(t *testing.T) *tkencounter.EncounterData {
 	t.Helper()
 
-	occluders := make([]spatial.Position, 0, 7)
+	// The tomb's column: a solid line of pillars at local x=3 with a gap at
+	// y=3, so a sightline reaches the skeleton only along that one row.
+	//
+	// This was `Occluders []spatial.Position` until rpg-toolkit#1130. Props
+	// answer both blocking questions independently, and these say what the old
+	// field could only imply: they stop SIGHT and not MOVEMENT. That was always
+	// what the word occluder meant here -- this scene is about who can see whom,
+	// never about who can walk where -- and a fixture that blocked movement too
+	// would change what the test asks while appearing only to rename a field.
+	blocksSight, passable := true, false
+	pillars := make([]tkencounter.PropInput, 0, 7)
 	for y := 0; y < 8; y++ {
 		if y == 3 {
 			continue // the gap
 		}
-		occluders = append(occluders, spatial.Position{X: 3, Y: float64(y)})
+		pillars = append(pillars, tkencounter.PropInput{
+			Ref:               "pillar",
+			At:                spatial.Position{X: 3, Y: float64(y)},
+			BlocksMovement:    &passable,
+			BlocksLineOfSight: &blocksSight,
+		})
 	}
 
 	enc, err := tkencounter.NewEncounter(&tkencounter.SetupInput{
 		Initiative: orderAsGiven{},
 		Retention:  tkencounter.RetentionUnbounded,
+		Standing:   allStanding{},
+		Sight:      allSeeing{},
 		Field: tkencounter.FieldInput{
+			Canvas: tkencounter.CanvasInput{
+				// A tomb is cut from stone: you cannot see across the space
+				// between the chambers, or walk it. Required rather than
+				// defaulted (rpg-toolkit#1116) -- there is no correct default,
+				// since an open-air ruin's or a ship's deck answer is the
+				// opposite, and a default would be the composition deciding
+				// what a dungeon is made of in a field the author never wrote.
+				//
+				// No Orientation: required for a hex field and REFUSED for a
+				// square one, which this is.
+				Void: tkencounter.VoidIsOpaque(),
+			},
 			Rooms: []tkencounter.RoomInput{
-				{ID: "entrance", Width: 6, Height: 6, Origin: spatial.Position{X: 0, Y: 0}},
-				{ID: "hall", Width: 8, Height: 6, Origin: spatial.Position{X: 6, Y: 0}},
-				{ID: "tomb", Width: 8, Height: 8, Origin: spatial.Position{X: 14, Y: 0}, Occluders: occluders},
+				// Each chamber draws its own east wall, leaving the doorway row
+				// open. See seamWall: on one canvas these three rectangles are
+				// contiguous, so without these the party could walk from the
+				// entrance into the tomb at any row, and see all the way down.
+				{
+					ID: "entrance", Width: 6, Height: 6, Origin: spatial.Position{X: 0, Y: 0},
+					Boundaries: seamWall(6, 6, 1), // the entrance-hall door is on row 1
+				},
+				{
+					ID: "hall", Width: 8, Height: 6, Origin: spatial.Position{X: 6, Y: 0},
+					Boundaries: seamWall(8, 6, 3), // the hall-tomb door is on row 3
+				},
+				{ID: "tomb", Width: 8, Height: 8, Origin: spatial.Position{X: 14, Y: 0}, Props: pillars},
 			},
 			Connections: []tkencounter.ConnectionInput{
 				{
@@ -258,12 +368,35 @@ func TestAcceptanceLoop_WalkFightDissolveResync(t *testing.T) {
 	t.Logf("attack: roll=%d total=%d against=%d hit=%v damage=%d",
 		attackResp.GetRoll(), attackResp.GetTotal(), attackResp.GetAgainst(), attackResp.GetHit(), attackResp.GetDamage())
 
-	// -- dissolve the fight by decision --
-	dissolveResp, err := h.handler.Dissolve(ctx, &sessionpb.DissolveRequest{
-		Session: "acceptance-run", Member: "alice", Cause: sessionpb.DissolveKind_DISSOLVE_KIND_BY_DECISION,
+	// -- the fight ends ITSELF, because the skeleton stopped standing --
+	//
+	// This leg used to dissolve the fight BY DECISION. It cannot any more, and
+	// the reason is a capability arriving rather than a regression: since
+	// session/v0.15.0 a bubble left with nobody upright on one side dissolves
+	// itself, with cause BY_DEFEAT, in the same sight refresh that notices it
+	// (rpg-toolkit#1078). This suite's dice are rigged to the maximum face, so
+	// the swing above is always a natural 20 -- a crit for 19 against a
+	// skeleton's 13 hit points. There is no fight left to walk away from.
+	//
+	// Nobody announced it and no verb reported it: the world noticed. So the
+	// observable proof is that alice is back on the WORLD clock without having
+	// asked to be.
+	require.True(t, attackResp.GetHit(), "the rigged dice must land this swing for the rest of this leg to mean anything")
+
+	turnResp, err := h.handler.Turn(ctx, &sessionpb.TurnRequest{
+		Session: "acceptance-run", Member: "alice",
 	})
 	require.NoError(t, err)
-	require.Contains(t, dissolveResp.GetMembers(), "alice")
+	require.Equal(t, sessionpb.ClockKind_CLOCK_KIND_WORLD, turnResp.GetClock(),
+		"the killing blow must have ended the fight on its own and returned alice to free roam")
+
+	// And Dissolve now refuses, which is the same fact stated from the other
+	// side. Asserted rather than skipped: a client that offers a "disengage"
+	// button needs to know this is the answer once the last enemy drops.
+	_, err = h.handler.Dissolve(ctx, &sessionpb.DissolveRequest{
+		Session: "acceptance-run", Member: "alice", Cause: sessionpb.DissolveKind_DISSOLVE_KIND_BY_DECISION,
+	})
+	requireGRPCCode(t, err, codes.FailedPrecondition)
 
 	// -- disconnect and resume: a cold client learns its own position from
 	// GetWhere (design rule 11's destination, live since session v0.13.0 /
@@ -292,4 +425,125 @@ func TestAcceptanceLoop_WalkFightDissolveResync(t *testing.T) {
 	for i := 1; i < len(seqs); i++ {
 		require.Greater(t, seqs[i], seqs[i-1], "story sequence must be strictly increasing (monotonic, gapless)")
 	}
+}
+
+// TestFightEndsByDecisionWhenThePartyWalksAway covers the OTHER half of ending
+// a fight, which the main acceptance loop can no longer reach.
+//
+// Since session/v0.15.0 the loop above ends by DEFEAT -- its rigged maximum-face
+// dice always crit, and a skeleton does not survive that. Dissolve-by-decision
+// is still a real verb and the only cause a caller can honestly declare, so it
+// gets its own scene: the party sees the skeleton, decides it wants no part of
+// this, and breaks off WITHOUT swinging.
+//
+// The two tests together are the whole vocabulary of DissolveKind: one cause
+// nobody declares and one nobody else can.
+func TestFightEndsByDecisionWhenThePartyWalksAway(t *testing.T) {
+	h := newAcceptanceHarness(t)
+	ctx := auth.WithPlayerID(context.Background(), "player-alice")
+
+	_, err := h.charRepo.Create(context.Background(), characterrepo.CreateInput{
+		Character: &entities.Character{Data: armedFighter("alice", "player-alice")},
+	})
+	require.NoError(t, err)
+
+	world := buildThreeRoomTomb(t)
+	_, err = h.manager.Manager.StartSession(context.Background(), &sdk.StartSessionInput{
+		Session: "decision-run", Encounter: "tomb-encounter", World: world,
+	})
+	require.NoError(t, err)
+	_, err = h.manager.Manager.Spawn(context.Background(), &sdk.SpawnInput{
+		Session: "decision-run", ID: "skel-1", Ref: refs.Monsters.Skeleton().String(),
+		Position: spatial.Position{X: 19, Y: 3},
+	})
+	require.NoError(t, err)
+
+	_, err = h.handler.Join(ctx, &sessionpb.JoinRequest{
+		Session: "decision-run", Member: "alice",
+		Position: &sessionpb.Position{X: 1, Y: 1},
+	})
+	require.NoError(t, err)
+
+	moveResp, err := h.handler.Move(ctx, &sessionpb.MoveRequest{
+		Session: "decision-run", Member: "alice",
+		Path: []*sessionpb.Position{
+			{X: 2, Y: 1}, {X: 3, Y: 1}, {X: 4, Y: 1}, {X: 5, Y: 1}, {X: 6, Y: 1},
+			{X: 7, Y: 1}, {X: 8, Y: 1}, {X: 9, Y: 1}, {X: 10, Y: 1}, {X: 11, Y: 1}, {X: 12, Y: 1}, {X: 13, Y: 1},
+			{X: 13, Y: 2}, {X: 13, Y: 3}, {X: 14, Y: 3},
+			{X: 15, Y: 3}, {X: 16, Y: 3}, {X: 17, Y: 3}, {X: 18, Y: 3},
+		},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, moveResp.GetFormed(), "sight must have formed a fight during the walk into the tomb")
+
+	// Break off without swinging. Nobody is defeated, so the only honest cause
+	// is the one this verb IS.
+	dissolveResp, err := h.handler.Dissolve(ctx, &sessionpb.DissolveRequest{
+		Session: "decision-run", Member: "alice", Cause: sessionpb.DissolveKind_DISSOLVE_KIND_BY_DECISION,
+	})
+	require.NoError(t, err)
+	require.Contains(t, dissolveResp.GetMembers(), "alice")
+	require.Equal(t, sessionpb.DissolveKind_DISSOLVE_KIND_BY_DECISION, dissolveResp.GetCause(),
+		"a fight the party chose to leave must be reported as such, not as a defeat")
+
+	// Back on the world clock, with the skeleton still standing behind her.
+	turnResp, err := h.handler.Turn(ctx, &sessionpb.TurnRequest{
+		Session: "decision-run", Member: "alice",
+	})
+	require.NoError(t, err)
+	require.Equal(t, sessionpb.ClockKind_CLOCK_KIND_WORLD, turnResp.GetClock())
+}
+
+// TestAWalkCannotCrossAWallWhereThereIsNoDoorway pins the seams that
+// buildThreeRoomTomb draws, and it exists because nothing else here would
+// notice if they vanished.
+//
+// This is the migration hazard of rpg-toolkit#1130 stated as a test. On one
+// canvas, "entrance" and "hall" are two rectangles that happen to touch: their
+// separation is NOT implied by being different rooms, it is only the boundary
+// list. Delete those boundaries and every other test in this file still passes,
+// because they all walk through the doorway anyway -- the party would simply
+// also be able to stroll through the stone on any other row, and nobody would
+// be told.
+//
+// Row 2 is the assertion. The entrance-hall door is on row 1, so (5,2)->(6,2)
+// is a pair of adjacent cells with a wall between them: adjacency is not
+// permission. The whole Move is refused rather than partially walked, which is
+// the right answer for a path whose author was wrong about the map.
+func TestAWalkCannotCrossAWallWhereThereIsNoDoorway(t *testing.T) {
+	h := newAcceptanceHarness(t)
+	ctx := auth.WithPlayerID(context.Background(), "player-alice")
+
+	_, err := h.charRepo.Create(context.Background(), characterrepo.CreateInput{
+		Character: &entities.Character{Data: armedFighter("alice", "player-alice")},
+	})
+	require.NoError(t, err)
+
+	world := buildThreeRoomTomb(t)
+	_, err = h.manager.Manager.StartSession(context.Background(), &sdk.StartSessionInput{
+		Session: "wall-run", Encounter: "tomb-encounter", World: world,
+	})
+	require.NoError(t, err)
+
+	_, err = h.handler.Join(ctx, &sessionpb.JoinRequest{
+		Session: "wall-run", Member: "alice", Position: &sessionpb.Position{X: 1, Y: 2},
+	})
+	require.NoError(t, err)
+
+	// Walk the entrance freely along row 2, then try to keep going into the
+	// hall where there is no door.
+	resp, err := h.handler.Move(ctx, &sessionpb.MoveRequest{
+		Session: "wall-run", Member: "alice",
+		Path: []*sessionpb.Position{{X: 2, Y: 2}, {X: 3, Y: 2}, {X: 4, Y: 2}, {X: 5, Y: 2}, {X: 6, Y: 2}},
+	})
+	requireGRPCCode(t, err, codes.InvalidArgument)
+	require.Empty(t, resp.GetSteps(), "a path whose author was wrong about the map is refused whole, not walked partway")
+
+	// And she has not moved: the refusal is not a half-applied walk.
+	whereResp, err := h.handler.GetWhere(ctx, &sessionpb.GetWhereRequest{
+		Session: "wall-run", Member: "alice",
+	})
+	require.NoError(t, err)
+	require.Equal(t, 1.0, whereResp.GetPosition().GetX())
+	require.Equal(t, 2.0, whereResp.GetPosition().GetY())
 }

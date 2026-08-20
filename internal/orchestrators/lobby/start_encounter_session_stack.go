@@ -56,24 +56,87 @@ func (sessionOrderAsGiven) RollInitiative(members []tkencounter.MemberID) ([]tke
 	return members, nil
 }
 
+// sessionAllStanding and sessionAllSeeing are the Standing and Sight
+// capabilities encounter.SetupInput has required since rpg-toolkit#1033:
+// supplied, never defaulted, refused at construction rather than assumed,
+// because "everybody can see" is a decision about a world and not something the
+// composition may take for granted.
+//
+// They are CONSTRUCTION-TIME ONLY and that is what makes trivial versions
+// honest here rather than a hidden ruling. Capabilities are not persisted into
+// the EncounterData this returns; the session package supplies its own when it
+// loads a world, including the sight RANGE that decides who is in contact. What
+// these two do is satisfy NewEncounter's validation for a world that is empty
+// at the moment it is built -- there is nobody to see or to be standing yet.
+type sessionAllStanding struct{}
+
+// Standing reports who is DOWN, not who is up: the interface's own parameter is
+// named down, and reading it backwards would report a healthy party as a wiped
+// one.
+func (sessionAllStanding) Standing(_ []tkencounter.MemberID) ([]tkencounter.MemberID, error) {
+	return nil, nil
+}
+
+type sessionAllSeeing struct{}
+
+func (sessionAllSeeing) Sight(members []tkencounter.MemberID) (map[tkencounter.MemberID]int, error) {
+	out := make(map[tkencounter.MemberID]int, len(members))
+	for _, id := range members {
+		out[id] = 1_000_000
+	}
+
+	return out, nil
+}
+
 // builtInSessionWorld is the fixed placeholder world every new-stack session
 // starts in: one 12x10 square room, empty until StartEncounterOnSessionStack
 // joins the party and spawns a monster into it.
 //
-// KNOWN CONSEQUENCE of having no occluders: the party and the monster see
-// each other, and the fight starts itself, the moment both are placed --
-// there is no room to explore before engaging. Real authored content would
-// give a party that room; this fixed placeholder does not, because adding
-// hand-tuned occluder geometry here would be exactly the kind of content
-// authoring this file's header explains rpg-api should not improvise.
+// THE PARTY NOW GETS ROOM TO EXPLORE, and not because this world earned it.
+// Until session/v0.18.0 this placeholder had a known consequence: with nothing
+// to hide behind, the party and the monster saw each other and the fight
+// started itself the moment both were placed. That stopped being true when
+// session gave sight a RANGE (four cells, a torch's twenty feet) instead of
+// letting geometry alone decide. The party enters at x=1 and the skeleton
+// stands at (9,5) -- eight cells apart -- so everyone starts on the world clock
+// and somebody has to walk toward the fight.
+//
+// Recorded rather than celebrated: the improvement is a side effect of a policy
+// that lives in the session package, not a property of this world, and it would
+// evaporate if that constant changed or if this placeholder ever placed things
+// closer together. Real authored content should give a party that room on
+// purpose. Adding hand-tuned sight-blocking geometry here would be exactly the
+// content authoring this file's header explains rpg-api should not improvise.
+//
+// ONE room, so there are no seams to draw. Worth stating explicitly, because a
+// multi-room version of this function would need them: since rpg-toolkit#1130
+// rooms sit on one canvas and do NOT imply walls, so two chambers side by side
+// are one open space until a Boundaries list says otherwise. A future authored
+// world that grows this into several rooms and forgets that would ship a
+// dungeon with no interior walls and no error to say so.
 // Verified directly (start_encounter_session_stack_test.go): Turn on the
 // spawned monster reports ClockTurn, not ClockWorld, immediately after
 // StartEncounter returns.
 func builtInSessionWorld() (*tkencounter.EncounterData, error) {
 	enc, err := tkencounter.NewEncounter(&tkencounter.SetupInput{
 		Initiative: sessionOrderAsGiven{},
+		Standing:   sessionAllStanding{},
+		Sight:      sessionAllSeeing{},
 		Retention:  tkencounter.RetentionUnbounded,
 		Field: tkencounter.FieldInput{
+			Canvas: tkencounter.CanvasInput{
+				// Required rather than defaulted (rpg-toolkit#1116): what the
+				// space between chambers does to a sightline is a fact about a
+				// world, and there is no correct default -- a tomb's answer is
+				// the opposite of an open-air ruin's. Opaque is the reference
+				// dungeon's answer and the conservative one for a placeholder;
+				// with a single room there is no interior void for it to govern
+				// anyway.
+				//
+				// No Orientation: it is required for a hex field and REFUSED
+				// for a square one, which this is.
+				Void: tkencounter.VoidIsOpaque(),
+			},
 			Rooms: []tkencounter.RoomInput{
 				{ID: builtInSessionRoomID, Width: 12, Height: 10},
 			},

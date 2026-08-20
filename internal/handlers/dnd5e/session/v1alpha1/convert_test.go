@@ -147,9 +147,17 @@ func TestAtlasToProto_Nil(t *testing.T) {
 
 func TestAtlasToProto_Populated(t *testing.T) {
 	a := &sdk.Atlas{
-		Grid:      sdk.GridSquare,
-		Cells:     []spatial.Position{{X: 0, Y: 0}, {X: 1, Y: 0}},
-		Occluders: []spatial.Position{{X: 1, Y: 1}},
+		Grid:  sdk.GridSquare,
+		Cells: []spatial.Position{{X: 0, Y: 0}, {X: 1, Y: 0}},
+		Props: []sdk.AtlasProp{
+			// A pillar: blocks both. And a pile of bones: blocks NEITHER --
+			// walked through and seen over. The second one is the case the
+			// old Occluders list could not express at all, and the reason
+			// this conversion carries two independent bools instead of
+			// membership in a single list.
+			{Ref: "pillar", At: spatial.Position{X: 1, Y: 1}, BlocksMovement: true, BlocksLineOfSight: true},
+			{Ref: "bones", At: spatial.Position{X: 2, Y: 2}, BlocksMovement: false, BlocksLineOfSight: false},
+		},
 		Boundaries: []sdk.AtlasBoundary{
 			{From: spatial.Position{X: 0, Y: 0}, To: spatial.Position{X: 1, Y: 0}, BlocksMovement: true, BlocksLineOfSight: true},
 		},
@@ -160,7 +168,25 @@ func TestAtlasToProto_Populated(t *testing.T) {
 	got := atlasToProto(a)
 	require.Equal(t, sessionpb.GridKind_GRID_KIND_SQUARE, got.GetGrid())
 	require.Len(t, got.GetCells(), 2)
-	require.Len(t, got.GetOccluders(), 1)
+	require.Len(t, got.GetProps(), 2)
+
+	pillar := got.GetProps()[0]
+	require.Equal(t, "pillar", pillar.GetRef())
+	require.Equal(t, 1.0, pillar.GetAt().GetX())
+	require.True(t, pillar.GetBlocksMovement())
+	require.True(t, pillar.GetBlocksLineOfSight())
+
+	// The discriminating half. Both answers must arrive as FALSE rather than
+	// as a prop that simply is not in a list: "blocks neither" and "nobody
+	// said" are different facts, and collapsing them is exactly what the old
+	// occluders field did. A conversion that dropped these bools, or that
+	// filtered non-blocking props out entirely, passes every assertion above
+	// and fails here.
+	bones := got.GetProps()[1]
+	require.Equal(t, "bones", bones.GetRef())
+	require.False(t, bones.GetBlocksMovement())
+	require.False(t, bones.GetBlocksLineOfSight())
+
 	require.Len(t, got.GetBoundaries(), 1)
 	require.True(t, got.GetBoundaries()[0].GetBlocksMovement())
 

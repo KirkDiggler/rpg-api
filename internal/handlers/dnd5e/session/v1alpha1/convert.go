@@ -66,20 +66,37 @@ func dissolveKindToProto(k sdk.DissolveKind) sessionpb.DissolveKind {
 	switch k {
 	case sdk.DissolveByDecision:
 		return sessionpb.DissolveKind_DISSOLVE_KIND_BY_DECISION
+	case sdk.DissolveByDefeat:
+		// Arrived at session/v0.15.0. Missing this case would not fail
+		// anything -- it would report UNSPECIFIED, so a fight that ended
+		// because the last skeleton dropped would reach a client as a fight
+		// that ended for no stated reason, which is a producer defect by this
+		// enum's own definition.
+		return sessionpb.DissolveKind_DISSOLVE_KIND_BY_DEFEAT
 	default:
 		return sessionpb.DissolveKind_DISSOLVE_KIND_UNSPECIFIED
 	}
 }
 
 // dissolveCauseFromProto builds the SDK's sealed DissolveCause from the wire
-// enum. The SDK's DissolveKind vocabulary has exactly one member today
-// (ByDecision); an unspecified or future-unknown value is refused at the
-// handler with the same ErrNoCause the SDK itself would return for a missing
-// cause, rather than guessed at.
+// enum. An unspecified or future-unknown value is refused with the same
+// ErrNoCause the SDK returns for a missing cause, rather than guessed at.
+//
+// BY_DEFEAT is ACCEPTED here rather than refused, and the choice is deliberate.
+// A caller cannot honestly declare it -- defeat is something the world notices
+// at a sight refresh, and this verb IS the decision -- so the temptation is to
+// reject it as a lie. But the SDK made it a NO-OP on purpose: handing in the
+// wrong cause does not fail the call and does not change the outcome, because
+// the answer reports what actually happened. Refusing here would give rpg-api a
+// stricter contract than the package it transcribes, over a distinction the SDK
+// deliberately declined to enforce -- design rule 1's "no vocabulary of our
+// own" running in the subtractive direction.
 func dissolveCauseFromProto(k sessionpb.DissolveKind) (sdk.DissolveCause, error) {
 	switch k {
 	case sessionpb.DissolveKind_DISSOLVE_KIND_BY_DECISION:
 		return sdk.ByDecision(), nil
+	case sessionpb.DissolveKind_DISSOLVE_KIND_BY_DEFEAT:
+		return sdk.ByDefeat(), nil
 	default:
 		return nil, fmt.Errorf("dissolve: unrecognized cause %v: %w", k, sdk.ErrNoCause)
 	}
@@ -281,8 +298,11 @@ func eventKindToProto(k sdk.EventKind) sessionpb.EventKind {
 	switch k {
 	case sdk.EventMoved:
 		return sessionpb.EventKind_EVENT_KIND_MOVED
-	case sdk.EventTraversed:
-		return sessionpb.EventKind_EVENT_KIND_TRAVERSED
+	// No EventTraversed case: session/v0.18.0 retired the kind because the
+	// composition stopped emitting the beat -- a doorway crossing is written
+	// like any other step (rpg-toolkit#1048, #1059). A client that draws a
+	// doorway differently derives it from GetAtlasResponse.doorways, which
+	// lists every crossable pair.
 	case sdk.EventJoined:
 		return sessionpb.EventKind_EVENT_KIND_JOINED
 	case sdk.EventExited:
@@ -297,6 +317,8 @@ func eventKindToProto(k sdk.EventKind) sessionpb.EventKind {
 		return sessionpb.EventKind_EVENT_KIND_TURN_ENDED
 	case sdk.EventFightStarted:
 		return sessionpb.EventKind_EVENT_KIND_FIGHT_STARTED
+	case sdk.EventDowned:
+		return sessionpb.EventKind_EVENT_KIND_DOWNED
 	case sdk.EventFightEnded:
 		return sessionpb.EventKind_EVENT_KIND_FIGHT_ENDED
 	case sdk.EventStruck:
@@ -325,9 +347,17 @@ func eventToProto(e sdk.Event) *sessionpb.Event {
 }
 
 // atlasToProto mirrors the ONE-MAP Atlas (design §0, live as of session
-// v0.12.0): a flat set of cells, the ones that block sight, the walls
+// v0.12.0): a flat set of cells, the things standing on them, the walls
 // between them, and every doorway -- not a list of rooms with anchors and
 // spans a client would have to reassemble.
+//
+// Props replaced a bare `occluders` coordinate list at session/v0.18.0
+// (rpg-toolkit#1130). Both blocking answers are carried verbatim rather than
+// collapsed back into "does it block sight": the old field could not say a
+// pillar from a statue, and it gave ONE answer to TWO independent questions --
+// a coffin is walked around but seen over, a pile of bones is neither. Copying
+// the bools straight across is the whole job here; deciding anything about them
+// would be this layer inventing world state.
 func atlasToProto(a *sdk.Atlas) *sessionpb.GetAtlasResponse {
 	if a == nil {
 		return &sessionpb.GetAtlasResponse{}
@@ -336,14 +366,19 @@ func atlasToProto(a *sdk.Atlas) *sessionpb.GetAtlasResponse {
 	for i, c := range a.Cells {
 		cells[i] = positionToProto(c)
 	}
-	occluders := make([]*sessionpb.Position, len(a.Occluders))
-	for i, c := range a.Occluders {
-		occluders[i] = positionToProto(c)
+	props := make([]*sessionpb.AtlasProp, len(a.Props))
+	for i, prop := range a.Props {
+		props[i] = &sessionpb.AtlasProp{
+			Ref:               prop.Ref,
+			At:                positionToProto(prop.At),
+			BlocksMovement:    prop.BlocksMovement,
+			BlocksLineOfSight: prop.BlocksLineOfSight,
+		}
 	}
 	return &sessionpb.GetAtlasResponse{
 		Grid:       gridKindToProto(a.Grid),
 		Cells:      cells,
-		Occluders:  occluders,
+		Props:      props,
 		Boundaries: atlasBoundariesToProto(a.Boundaries),
 		Doorways:   atlasDoorwaysToProto(a.Doorways),
 	}
