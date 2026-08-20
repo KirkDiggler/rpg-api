@@ -5,12 +5,10 @@ import (
 	"errors"
 	"fmt"
 
-	tkencounter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter"
-	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/refs"
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
-	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
 
 	lobbyrepo "github.com/KirkDiggler/rpg-api/internal/repositories/lobby"
+	"github.com/KirkDiggler/rpg-api/internal/sessionworld"
 )
 
 // StartEncounter's new-session-stack path (design rpg-project/ideas/session-
@@ -19,159 +17,50 @@ import (
 // half; start_encounter.go's existing body is the old stack's, completely
 // untouched by anything here.
 //
-// KNOWN GAP, reported rather than worked around (per the brief this shipped
-// under): there is no authored-dungeon-YAML -> new-stack EncounterData
-// compiler in the toolkit yet. The old path's resolveDungeonSpec /
-// dungeonspec.Load pipeline produces tkenc.DungeonParams for the OLD
-// encounter module (rpg-toolkit/encounter) -- a different module with a
-// different (hex-cube) coordinate system from the new one-map, absolute-
-// Position world rulebooks/dnd5e/session.StartSession consumes. Building
-// that compiler is real toolkit-side work, not something to improvise here
-// (design rule 1: rpg-api invents no vocabulary; a content compiler is
-// exactly the kind of thing that belongs upstream, not guessed at in the
-// host). Until it exists, this path seeds every session from the single
-// fixed builtInSessionWorld below -- good enough to prove the new stack is
-// live and walkable in local dev, not a second content pipeline.
+// # The party plays the reference tomb
 //
-// A second, smaller gap rides along: encounter.SetupInput requires an
-// InitiativeRoller, and the toolkit exposes only the INTERFACE publicly, no
-// injectable real (dice + ability-score) implementation -- only its own
-// test suites' trivial "order as given" fakes satisfy it today. sessionOrderAsGiven
-// below is that same shortcut, not a rules decision made here: a fight in
-// this minimal world resolves turn order as party-then-monster, which is
-// honest about being a placeholder, not a hidden ruling.
-
-// builtInSessionRoomID names the one room every new-stack session plays in
-// until real authored content exists.
-const builtInSessionRoomID = "hall"
-
-// sessionOrderAsGiven is the toolkit's own test pattern (rulebooks/dnd5e/
-// session's fight_starts_test.go encOrderAsGiven), duplicated here rather
-// than imported because it is a test type unexported from that package. See
-// this file's header comment for why "order as given" is the honest choice
-// for a placeholder world rather than an invented dice-and-DEX ranking.
-type sessionOrderAsGiven struct{}
-
-func (sessionOrderAsGiven) RollInitiative(members []tkencounter.MemberID) ([]tkencounter.MemberID, error) {
-	return members, nil
-}
-
-// sessionAllStanding and sessionAllSeeing are the Standing and Sight
-// capabilities encounter.SetupInput has required since rpg-toolkit#1033:
-// supplied, never defaulted, refused at construction rather than assumed,
-// because "everybody can see" is a decision about a world and not something the
-// composition may take for granted.
+// This path used to seed every session from a single hardcoded room, because
+// there was no authored-content compiler for the new stack and building one
+// here would have been rpg-api inventing dungeon geometry. That gap CLOSED:
+// rpg-toolkit#1133 shipped rulebooks/dnd5e/encounter/dungeonspec, whose own
+// forcing case is the sentence this path now implements -- reference-tomb.yaml
+// compiles into a runnable new-stack world and a player walks entrance → hall →
+// tomb. internal/sessionworld holds the compile and the one seam the compiler
+// leaves to a host; see its package comment for what that seam is and why it
+// borrows the projection instead of doing arithmetic.
 //
-// They are CONSTRUCTION-TIME ONLY and that is what makes trivial versions
-// honest here rather than a hidden ruling. Capabilities are not persisted into
-// the EncounterData this returns; the session package supplies its own when it
-// loads a world, including the sight RANGE that decides who is in contact. What
-// these two do is satisfy NewEncounter's validation for a world that is empty
-// at the moment it is built -- there is nobody to see or to be standing yet.
-type sessionAllStanding struct{}
-
-// Standing reports who is DOWN, not who is up: the interface's own parameter is
-// named down, and reading it backwards would report a healthy party as a wiped
+// So a new-stack session now opens in three chambers with walls between them, a
+// garrison of skeletons holding the hall, and a captain behind a door locked at
+// DC 12 -- the same dungeon the old stack has always served, compiled by the new
 // one.
-func (sessionAllStanding) Standing(_ []tkencounter.MemberID) ([]tkencounter.MemberID, error) {
-	return nil, nil
-}
-
-type sessionAllSeeing struct{}
-
-func (sessionAllSeeing) Sight(members []tkencounter.MemberID) (map[tkencounter.MemberID]int, error) {
-	out := make(map[tkencounter.MemberID]int, len(members))
-	for _, id := range members {
-		out[id] = 1_000_000
-	}
-
-	return out, nil
-}
-
-// builtInSessionWorld is the fixed placeholder world every new-stack session
-// starts in: one 12x10 square room, empty until StartEncounterOnSessionStack
-// joins the party and spawns a monster into it.
 //
-// THE PARTY NOW GETS ROOM TO EXPLORE, and not because this world earned it.
-// Until session/v0.18.0 this placeholder had a known consequence: with nothing
-// to hide behind, the party and the monster saw each other and the fight
-// started itself the moment both were placed. That stopped being true when
-// session gave sight a RANGE (four cells, a torch's twenty feet) instead of
-// letting geometry alone decide. The party enters at x=1 and the skeleton
-// stands at (9,5) -- eight cells apart -- so everyone starts on the world clock
-// and somebody has to walk toward the fight.
+// # What is still narrow here, stated rather than implied
 //
-// Recorded rather than celebrated: the improvement is a side effect of a policy
-// that lives in the session package, not a property of this world, and it would
-// evaporate if that constant changed or if this placeholder ever placed things
-// closer together. Real authored content should give a party that room on
-// purpose. Adding hand-tuned sight-blocking geometry here would be exactly the
-// content authoring this file's header explains rpg-api should not improvise.
+//   - ONE DUNGEON. StartEncounterInput.DungeonKey selects content on the old
+//     path; this one ignores it and always plays the tomb. That is a smaller
+//     narrowing than it looks -- no proto field carries a key, so every real
+//     call leaves it at the zero value and the old path serves exactly one
+//     dungeon too -- but it is a narrowing, and the authoring path
+//     (PutDungeon → dungeonregistry) still writes the OLD dialect, so the
+//     dungeon builder cannot yet author for this stack. That is the next
+//     content-side piece of work, not something to paper over here.
+//   - NO MONSTER BEHAVIOR. session.Spawn takes no decider, by its own design
+//     ("behavior arrives with the wave that brings it"), so the garrison is
+//     placed, perceived and remembered correctly and does not act.
+//   - NO AUTHORED ENDING BEYOND WITHDRAWAL. See sessionworld.EndingWithdrawn:
+//     the composition has no "the boss died" trigger to declare, so the boss
+//     flag is carried and unused.
 //
-// ONE room, so there are no seams to draw. Worth stating explicitly, because a
-// multi-room version of this function would need them: since rpg-toolkit#1130
-// rooms sit on one canvas and do NOT imply walls, so two chambers side by side
-// are one open space until a Boundaries list says otherwise. A future authored
-// world that grows this into several rooms and forgets that would ship a
-// dungeon with no interior walls and no error to say so.
-// Verified directly (start_encounter_session_stack_test.go): Turn on the
-// spawned monster reports ClockTurn, not ClockWorld, immediately after
-// StartEncounter returns.
-func builtInSessionWorld() (*tkencounter.EncounterData, error) {
-	enc, err := tkencounter.NewEncounter(&tkencounter.SetupInput{
-		Initiative: sessionOrderAsGiven{},
-		Standing:   sessionAllStanding{},
-		Sight:      sessionAllSeeing{},
-		Retention:  tkencounter.RetentionUnbounded,
-		Field: tkencounter.FieldInput{
-			Canvas: tkencounter.CanvasInput{
-				// Required rather than defaulted (rpg-toolkit#1116): what the
-				// space between chambers does to a sightline is a fact about a
-				// world, and there is no correct default -- a tomb's answer is
-				// the opposite of an open-air ruin's. Opaque is the reference
-				// dungeon's answer and the conservative one for a placeholder;
-				// with a single room there is no interior void for it to govern
-				// anyway.
-				//
-				// No Orientation: it is required for a hex field and REFUSED
-				// for a square one, which this is.
-				Void: tkencounter.VoidIsOpaque(),
-			},
-			Rooms: []tkencounter.RoomInput{
-				{ID: builtInSessionRoomID, Width: 12, Height: 10},
-			},
-		},
-		// SetupInput requires at least one declared ending; this placeholder
-		// world has nothing to end it with yet (no authored win/loss
-		// conditions -- another facet of the content-compile gap above), so
-		// a never-fired external declaration satisfies construction without
-		// inventing a real one.
-		Endings: []tkencounter.EndingInput{{Key: "external", Trigger: tkencounter.TriggerExternal{}}},
-	})
-	if err != nil {
-		return nil, fmt.Errorf("build built-in session world: %w", err)
-	}
-	data := enc.ToData()
-	return &data, nil
-}
-
-// builtInPartyPositions returns up to n fixed, non-overlapping join
-// positions along the room's west wall, one per ready member in roster
-// order.
-func builtInPartyPositions(n int) []spatial.Position {
-	positions := make([]spatial.Position, n)
-	for i := range positions {
-		positions[i] = spatial.Position{X: 1, Y: float64(1 + i)}
-	}
-	return positions
-}
-
-// builtInMonsterID and builtInMonsterPosition place the one placeholder
-// monster every new-stack session's world is seeded with, away from the
-// party's entry wall so joining does not itself start the fight.
-const builtInMonsterID = "skeleton-1"
-
-var builtInMonsterPosition = spatial.Position{X: 9, Y: 5}
+// # One thing that is NOT a shortcut any more
+//
+// The old placeholder needed an InitiativeRoller and could only supply the
+// toolkit's own test fake, which meant a fight in it resolved turn order
+// party-then-monster. Nothing in THIS file supplies one: the capabilities are
+// construction-time only and live in internal/sessionworld, and the session
+// package supplies its own -- including the sight range that decides who is in
+// contact -- when it loads the world. The honest remaining gap is upstream, and
+// unchanged: the toolkit still exposes no injectable real (dice + ability
+// score) InitiativeRoller, only the interface.
 
 // startEncounterOnSessionStack is StartEncounter's new-stack branch,
 // self-contained on purpose (its own lock/load/validate, not shared with
@@ -203,32 +92,41 @@ func (o *Orchestrator) startEncounterOnSessionStack(ctx context.Context, in *Sta
 		}
 	}
 
-	encID := o.encounterIDGen.Generate()
-
-	world, err := builtInSessionWorld()
+	dungeon, err := sessionworld.ReferenceTomb()
 	if err != nil {
 		return nil, err
 	}
+	// Checked BEFORE anything is written, so a party too big for the dungeon's
+	// entrance is refused rather than half-seated: the alternative is a session
+	// that exists with some members in it and an error returned, which is the
+	// one outcome a caller cannot recover from.
+	if len(members) > len(dungeon.PartySeats) {
+		return nil, fmt.Errorf("lobby %q has %d members and the dungeon seats %d",
+			in.LobbyID, len(members), len(dungeon.PartySeats))
+	}
+
+	encID := o.encounterIDGen.Generate()
+
 	if _, err := o.sessionManager.StartSession(ctx, &sdk.StartSessionInput{
-		Session: encID, Encounter: encID, World: world,
+		Session: encID, Encounter: encID, World: dungeon.World,
 	}); err != nil {
 		return nil, fmt.Errorf("start session %q on new stack: %w", encID, err)
 	}
 
-	positions := builtInPartyPositions(len(members))
 	for i, m := range members {
 		if _, err := o.sessionManager.Join(ctx, &sdk.JoinInput{
-			Session: encID, Member: m.CharacterID, Position: positions[i],
+			Session: encID, Member: m.CharacterID, Position: dungeon.PartySeats[i],
 		}); err != nil {
 			return nil, fmt.Errorf("join %q to session %q on new stack: %w", m.CharacterID, encID, err)
 		}
 	}
 
-	if _, err := o.sessionManager.Spawn(ctx, &sdk.SpawnInput{
-		Session: encID, ID: builtInMonsterID, Ref: refs.Monsters.Skeleton().String(),
-		Position: builtInMonsterPosition,
-	}); err != nil {
-		return nil, fmt.Errorf("spawn monster into session %q on new stack: %w", encID, err)
+	for _, monster := range dungeon.Monsters {
+		if _, err := o.sessionManager.Spawn(ctx, &sdk.SpawnInput{
+			Session: encID, ID: monster.MemberID, Ref: monster.Ref, Position: monster.At,
+		}); err != nil {
+			return nil, fmt.Errorf("spawn %q into session %q on new stack: %w", monster.MemberID, encID, err)
+		}
 	}
 
 	data.Status = lobbyrepo.StatusStarted

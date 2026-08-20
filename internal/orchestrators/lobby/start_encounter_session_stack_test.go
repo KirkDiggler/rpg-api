@@ -130,13 +130,10 @@ func (s *SessionStackSuite) TestStartEncounter_BuildsAGenuineNewStackSession() {
 	s.Require().NoError(err)
 	s.True(status.Open)
 
-	view, err := s.sessOrch.Manager.View(s.ctx, &sdk.ViewInput{Session: out.EncounterID, Member: "char-alice"})
+	// This call succeeding at all (no ErrNoMember) is the load-bearing
+	// assertion: alice is a real member of a real session.
+	_, err = s.sessOrch.Manager.View(s.ctx, &sdk.ViewInput{Session: out.EncounterID, Member: "char-alice"})
 	s.Require().NoError(err)
-	// The skeleton was placed away from the party's entry wall
-	// deliberately (builtInMonsterPosition) so joining alone should not
-	// yet reveal it -- this call succeeding at all (no ErrNoMember) is
-	// the load-bearing assertion: alice is a real member of a real session.
-	_ = view
 
 	lobbyData, err := s.lobbyRepo.Get(s.ctx, "lobby-1")
 	s.Require().NoError(err)
@@ -144,7 +141,23 @@ func (s *SessionStackSuite) TestStartEncounter_BuildsAGenuineNewStackSession() {
 	s.Equal(out.EncounterID, lobbyData.EncounterID)
 }
 
-func (s *SessionStackSuite) TestStartEncounter_SpawnsThePlaceholderMonster() {
+// TestStartEncounter_SeatsTheTombsWholeGarrison checks that starting on the new
+// stack seeds the AUTHORED dungeon, not a stand-in: both hall skeletons and the
+// captain behind the locked door are real members of a real session.
+//
+// Turn is the probe because it works for ANY member regardless of combat or
+// equipment state ("asked of a member, never of the session"), so it proves
+// membership without depending on Attack's own preconditions. ErrNoMember for
+// any of these three would mean the tomb's roster did not arrive.
+//
+// Every one of them is on the WORLD clock. That is the whole point of seeding a
+// real dungeon rather than a single room: the party comes in at the entrance,
+// the garrison holds the hall behind a wall, and sight has a range of four
+// cells since session/v0.18.0 -- so nobody is in contact and there is a dungeon
+// to walk before there is a fight. Asserted rather than relaxed to "either
+// clock is fine", because whether a session opens in combat is the single most
+// visible thing about the world it opens in.
+func (s *SessionStackSuite) TestStartEncounter_SeatsTheTombsWholeGarrison() {
 	s.seedCharacter("char-alice", "alice", "Alice")
 	s.seedReadyLobby("lobby-1", "alice")
 
@@ -153,28 +166,92 @@ func (s *SessionStackSuite) TestStartEncounter_SpawnsThePlaceholderMonster() {
 	})
 	s.Require().NoError(err)
 
-	// Turn works for ANY member regardless of combat/equipment state
-	// (design: "asked of a member, never of the session") -- the cleanest
-	// available proof the skeleton is a real member of a real session
-	// without depending on Attack's own equipment/combat preconditions.
-	// ErrNoMember here would mean nothing was ever spawned.
-	//
-	// The clock is ClockWorld, and it USED TO BE ClockTurn. Nothing about this
-	// world changed: session/v0.18.0 gave sight a range of four cells rather
-	// than letting an unobstructed room mean unlimited vision, and the party
-	// enters at x=1 while the skeleton stands at (9,5) -- eight cells away. So
-	// the fight no longer starts itself the instant both are placed.
-	//
-	// Asserted rather than relaxed to "either clock is fine". Whether a session
-	// opens in combat is the single most visible thing about this placeholder
-	// world, and a test that shrugged at it would not notice the day it flipped
-	// back -- which is exactly what happened here.
-	turn, err := s.sessOrch.Manager.Turn(s.ctx, &sdk.TurnInput{
-		Session: out.EncounterID, Member: "skeleton-1",
+	for _, member := range []string{"skeleton-1", "skeleton-2", "skeleton-captain-1"} {
+		turn, terr := s.sessOrch.Manager.Turn(s.ctx, &sdk.TurnInput{
+			Session: out.EncounterID, Member: member,
+		})
+		s.Require().NoErrorf(terr, "%s should be a member of the seeded tomb", member)
+		s.Equalf(sdk.ClockWorld, turn.Clock, "%s should not be in a fight yet", member)
+	}
+}
+
+// TestStartEncounter_ThePartyEntersOutOfSightOfTheGarrison is the same fact from
+// the party's side, and the one a player would notice: alice arrives and can
+// see none of the three monsters.
+//
+// It is a separate assertion from the clock above rather than a restatement.
+// The clock says no fight formed; this says the fog of war is genuinely drawn,
+// which is what the walls between the chambers are FOR. A tomb compiled without
+// its seams would leave the entrance and hall one open space, and this is the
+// test that would notice.
+func (s *SessionStackSuite) TestStartEncounter_ThePartyEntersOutOfSightOfTheGarrison() {
+	s.seedCharacter("char-alice", "alice", "Alice")
+	s.seedCharacter("char-bob", "bob", "Bob")
+	s.seedReadyLobby("lobby-1", "alice", "bob")
+
+	out, err := s.orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		PlayerID: "alice", LobbyID: "lobby-1",
 	})
 	s.Require().NoError(err)
-	s.Equal(sdk.ClockWorld, turn.Clock,
-		"sight has a range now (session/v0.18.0): eight cells apart, nobody is in contact yet")
+
+	view, err := s.sessOrch.Manager.View(s.ctx, &sdk.ViewInput{
+		Session: out.EncounterID, Member: "char-alice",
+	})
+	s.Require().NoError(err)
+
+	subjects := make([]string, 0, len(view))
+	for _, sighting := range view {
+		subjects = append(subjects, sighting.Subject)
+	}
+
+	// POSITIVE CONTROL FIRST, because the assertion that follows is a loop over
+	// this slice and an empty one would satisfy it without proving anything at
+	// all. Bob is seated beside alice at the way in, so if this read works she
+	// sees him -- and only then does not seeing the garrison mean the walls and
+	// the sight range are doing the work.
+	s.Require().Contains(subjects, "char-bob", "alice sees the party member standing next to her")
+
+	for _, subject := range subjects {
+		s.NotContainsf(subject, "skeleton",
+			"the garrison is behind a wall and out of range; alice should not see %s", subject)
+	}
+}
+
+// TestStartEncounter_TheTombReachesTheWire checks the seeded world through the
+// same read a client uses, because that is the only place the tomb becoming
+// real actually matters. Everything above could pass with a world nobody could
+// draw.
+//
+// The coffin is the interesting prop rather than a random one: it is the tomb's
+// single authored exception, walked around but SEEN OVER, and it is exactly the
+// distinction the atlas gained props to express (it used to be a bare occluder
+// coordinate, indistinguishable from a pillar).
+func (s *SessionStackSuite) TestStartEncounter_TheTombReachesTheWire() {
+	s.seedCharacter("char-alice", "alice", "Alice")
+	s.seedReadyLobby("lobby-1", "alice")
+
+	out, err := s.orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		PlayerID: "alice", LobbyID: "lobby-1",
+	})
+	s.Require().NoError(err)
+
+	atlas, err := s.sessOrch.Manager.Atlas(s.ctx, &sdk.AtlasInput{Session: out.EncounterID})
+	s.Require().NoError(err)
+
+	s.NotEmpty(atlas.Cells, "the map has floor")
+	s.NotEmpty(atlas.Boundaries, "and walls between its chambers -- rooms no longer imply them")
+	s.NotEmpty(atlas.Doorways, "and ways through those walls")
+
+	var coffin *sdk.AtlasProp
+	for i := range atlas.Props {
+		if atlas.Props[i].Ref == "dnd5e:props:coffin" {
+			coffin = &atlas.Props[i]
+			break
+		}
+	}
+	s.Require().NotNil(coffin, "the tomb's coffin reached the wire")
+	s.True(coffin.BlocksMovement, "a coffin is walked around")
+	s.False(coffin.BlocksLineOfSight, "and seen over")
 }
 
 func (s *SessionStackSuite) TestStartEncounter_NotHost_Errors() {
