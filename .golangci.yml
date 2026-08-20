@@ -112,6 +112,31 @@ linters:
             - pkg: "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/combat"
               desc: "game logic belongs in the toolkit — do not import dnd5e combat in action handler / orchestrator files; the opaque AttackContext marshal/decode lives in the injected ReactionResume adapter (reaction_resume.go, excluded)"
 
+        # session v1alpha1 (rpg-api#796): the whole handler package is pure
+        # proto <-> SDK translation (design rule 8, the Boundary Rule) — every
+        # file, not a curated subset, since there is no resolver-adapter
+        # carve-out here the way the v2 encounter package has. The session
+        # SDK itself (rulebooks/dnd5e/session) and its contract types
+        # (rulebooks/dnd5e/character, for the CharacterState mirror and the
+        # StreamEvents entitlement check) are the translation boundary and are
+        # NOT denied — only the rule-implementing internals are.
+        no-rulebook-internals-in-session-handlers:
+          files:
+            - "**/internal/handlers/dnd5e/session/v1alpha1/*.go"
+          deny:
+            - pkg: "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/conditions"
+              desc: "game logic belongs in the toolkit — do not import dnd5e conditions in the session handler package"
+            - pkg: "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/resources"
+              desc: "game logic belongs in the toolkit — do not import dnd5e resources in the session handler package"
+            - pkg: "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/classes"
+              desc: "game logic belongs in the toolkit — do not import dnd5e classes in the session handler package"
+            - pkg: "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/weapons"
+              desc: "game logic belongs in the toolkit — do not import dnd5e weapons in the session handler package"
+            - pkg: "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/armor"
+              desc: "game logic belongs in the toolkit — do not import dnd5e armor in the session handler package"
+            - pkg: "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/combat"
+              desc: "game logic belongs in the toolkit — do not import dnd5e combat in the session handler package"
+
     dupl:
       threshold: 300  # Allow duplication for bidirectional converters (tool enums are ~90 lines)
 
