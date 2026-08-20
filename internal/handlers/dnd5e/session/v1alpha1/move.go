@@ -11,7 +11,7 @@ import (
 
 // Move walks a member along a path of cells, one at a time.
 func (h *Handler) Move(ctx context.Context, req *sessionpb.MoveRequest) (*sessionpb.MoveResponse, error) {
-	if _, err := authenticatedPlayerID(ctx); err != nil {
+	if err := h.callerActingAs(ctx, req.GetMember()); err != nil {
 		return nil, err
 	}
 

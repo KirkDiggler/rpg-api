@@ -28,7 +28,7 @@ func TestAttack_HappyPath(t *testing.T) {
 		Session: "sess-1", Attacker: "char-1", Target: "goblin-1",
 	}).Return(&sdk.AttackOutput{Roll: 18, Total: 21, Against: 13, Hit: true, Damage: 7, Seq: 9}, nil)
 
-	h := &Handler{manager: mgr}
+	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
 	ctx := auth.WithPlayerID(context.Background(), "alice")
 	resp, err := h.Attack(ctx, &sessionpb.AttackRequest{Session: "sess-1", Attacker: "char-1", Target: "goblin-1"})
 	require.NoError(t, err)
@@ -41,7 +41,7 @@ func TestAttack_ManagerError_TranslatesViaErrorTable(t *testing.T) {
 	mgr := sessionv1alpha1mock.NewMockManager(ctrl)
 	mgr.EXPECT().Attack(gomock.Any(), gomock.Any()).Return(nil, sdk.ErrNotACharacter)
 
-	h := &Handler{manager: mgr}
+	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
 	ctx := auth.WithPlayerID(context.Background(), "alice")
 	_, err := h.Attack(ctx, &sessionpb.AttackRequest{Session: "sess-1", Attacker: "goblin-1", Target: "char-1"})
 	requireCode(t, err, codes.FailedPrecondition)

@@ -16,19 +16,22 @@ import (
 func (h *Handler) StreamEvents(req *sessionpb.StreamEventsRequest, stream sessionpb.SessionService_StreamEventsServer) error {
 	ctx := stream.Context()
 
-	playerID, err := authenticatedPlayerID(ctx)
-	if err != nil {
+	member := req.GetMember()
+	if err := h.callerActingAs(ctx, member); err != nil {
 		return err
 	}
-	member := req.GetMember()
-	if member == "" {
-		return status.Error(codes.InvalidArgument, "member is required")
-	}
-	if ownershipErr := h.verifyMemberOwnership(ctx, playerID, member); ownershipErr != nil {
-		return ownershipErr
+
+	// This is the ONE verb that never reaches the Manager, so an empty session
+	// is refused nowhere else. Unvalidated it does not fail -- it subscribes
+	// under the empty key and the call hangs forever, delivering nothing, which
+	// is the worst way for a stream to be wrong. Every other verb inherits this
+	// refusal from the SDK's ErrNoSessionID; this one has to say it itself.
+	session := req.GetSession()
+	if session == "" {
+		return status.Error(codes.InvalidArgument, "session is required")
 	}
 
-	sub, err := h.broker.Subscribe(req.GetSession(), member)
+	sub, err := h.broker.Subscribe(session, member)
 	if err != nil {
 		return status.Errorf(codes.Internal, "subscribe: %v", err)
 	}

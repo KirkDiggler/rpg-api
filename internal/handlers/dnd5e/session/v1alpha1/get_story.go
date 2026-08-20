@@ -12,7 +12,7 @@ import (
 // inclusive. The resync source of truth (design rule 6): a client that
 // notices a gap in a stream event's seq re-queries here.
 func (h *Handler) GetStory(ctx context.Context, req *sessionpb.GetStoryRequest) (*sessionpb.GetStoryResponse, error) {
-	if _, err := authenticatedPlayerID(ctx); err != nil {
+	if err := h.callerActingAs(ctx, req.GetMember()); err != nil {
 		return nil, err
 	}
 

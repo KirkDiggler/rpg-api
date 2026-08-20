@@ -12,7 +12,7 @@ import (
 // session (the SDK models several clocks running at once, so "whose turn is
 // it?" has no session-wide answer -- see sdk.Manager.Turn).
 func (h *Handler) Turn(ctx context.Context, req *sessionpb.TurnRequest) (*sessionpb.TurnResponse, error) {
-	if _, err := authenticatedPlayerID(ctx); err != nil {
+	if err := h.callerActingAs(ctx, req.GetMember()); err != nil {
 		return nil, err
 	}
 

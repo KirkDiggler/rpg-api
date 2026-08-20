@@ -37,7 +37,7 @@ func TestJoin_HappyPath_TranslatesRequestAndResponse(t *testing.T) {
 		Saved:     sdk.SaveReport{Written: []string{"encounter"}},
 	}, nil)
 
-	h := &Handler{manager: mgr}
+	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
 	ctx := auth.WithPlayerID(context.Background(), "alice")
 	resp, err := h.Join(ctx, &sessionpb.JoinRequest{
 		Session:  "sess-1",
@@ -55,7 +55,7 @@ func TestJoin_ManagerError_TranslatesViaErrorTable(t *testing.T) {
 	mgr := sessionv1alpha1mock.NewMockManager(ctrl)
 	mgr.EXPECT().Join(gomock.Any(), gomock.Any()).Return(nil, sdk.ErrNoSession)
 
-	h := &Handler{manager: mgr}
+	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
 	ctx := auth.WithPlayerID(context.Background(), "alice")
 	_, err := h.Join(ctx, &sessionpb.JoinRequest{Session: "sess-1", Member: "char-1"})
 	requireCode(t, err, codes.NotFound)

@@ -10,7 +10,7 @@ import (
 
 // Dissolve ends the fight a member is in and returns everyone to free roam.
 func (h *Handler) Dissolve(ctx context.Context, req *sessionpb.DissolveRequest) (*sessionpb.DissolveResponse, error) {
-	if _, err := authenticatedPlayerID(ctx); err != nil {
+	if err := h.callerActingAs(ctx, req.GetMember()); err != nil {
 		return nil, err
 	}
 

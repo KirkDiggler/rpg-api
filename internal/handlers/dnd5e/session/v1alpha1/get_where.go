@@ -13,7 +13,7 @@ import (
 // everyone response would hand a client cells it has never perceived
 // (design rule 4), which is the one thing perception exists to prevent.
 func (h *Handler) GetWhere(ctx context.Context, req *sessionpb.GetWhereRequest) (*sessionpb.GetWhereResponse, error) {
-	if _, err := authenticatedPlayerID(ctx); err != nil {
+	if err := h.callerActingAs(ctx, req.GetMember()); err != nil {
 		return nil, err
 	}
 

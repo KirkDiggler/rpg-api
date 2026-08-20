@@ -28,7 +28,7 @@ func TestTurn_HappyPath(t *testing.T) {
 		Clock: sdk.ClockTurn, Active: "char-1", Round: 2, Order: []string{"char-1", "goblin-1"},
 	}, nil)
 
-	h := &Handler{manager: mgr}
+	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
 	ctx := auth.WithPlayerID(context.Background(), "alice")
 	resp, err := h.Turn(ctx, &sessionpb.TurnRequest{Session: "sess-1", Member: "char-1"})
 	require.NoError(t, err)
@@ -42,7 +42,7 @@ func TestTurn_ManagerError_TranslatesViaErrorTable(t *testing.T) {
 	mgr := sessionv1alpha1mock.NewMockManager(ctrl)
 	mgr.EXPECT().Turn(gomock.Any(), gomock.Any()).Return(nil, sdk.ErrNoMember)
 
-	h := &Handler{manager: mgr}
+	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
 	ctx := auth.WithPlayerID(context.Background(), "alice")
 	_, err := h.Turn(ctx, &sessionpb.TurnRequest{Session: "sess-1", Member: "char-1"})
 	requireCode(t, err, codes.NotFound)

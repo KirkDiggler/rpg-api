@@ -12,7 +12,7 @@ import (
 // attackers only (design's own note); a monster attacker comes back as
 // FAILED_PRECONDITION via the SDK's ErrNotACharacter.
 func (h *Handler) Attack(ctx context.Context, req *sessionpb.AttackRequest) (*sessionpb.AttackResponse, error) {
-	if _, err := authenticatedPlayerID(ctx); err != nil {
+	if err := h.callerActingAs(ctx, req.GetAttacker()); err != nil {
 		return nil, err
 	}
 

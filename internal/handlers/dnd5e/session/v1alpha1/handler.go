@@ -53,9 +53,10 @@ type Handler struct {
 	// would buy no additional test isolation over using the real broker,
 	// which is cheap to construct in tests (see broker_test.go's own suite).
 	broker *sessionorch.Broker
-	// characters backs the StreamEvents entitlement check only (verifyMember
-	// below) -- ownership of a member beyond that read is Manager's own
-	// concern via the SDK's sentinels, not rechecked here.
+	// characters backs the entitlement check every member-taking verb runs
+	// (callerActingAs below). The SDK's sentinels answer whether a member is
+	// IN the session; they cannot answer whether this caller is allowed to be
+	// that member, which is the question this repository exists here to settle.
 	characters characterrepo.Repository
 }
 
@@ -94,18 +95,44 @@ func authenticatedPlayerID(ctx context.Context) (string, error) {
 	return playerID, nil
 }
 
-// verifyMemberOwnership confirms playerID controls the character named
-// member, for the one RPC that needs it: StreamEvents (design's own
-// instruction to entitlement-check the caller against the member, mirroring
-// the old encounter path's StreamEncounter auth pattern). The session SDK
-// itself has no notion of a caller's identity -- a member ID is just a
-// character ID it was handed -- so ownership is rpg-api's to enforce, the
-// same way the old path's ErrEntityOwnershipMismatch is: a security boundary
-// concern, not a game rule (design rule 8 governs rules, not authz).
+// callerActingAs is the single gate every verb that names a member passes
+// through: the caller is authenticated, the member is present, and the caller
+// controls it.
 //
-// Every other verb handler passes `member` straight through to the Manager,
-// unchecked: this wave scopes the entitlement check to the read/subscribe
-// path per the brief that authored it, not to every mutating verb.
+// One helper rather than three lines in each handler, because the failure mode
+// this closes is a handler that forgets one of them -- and eleven of the twelve
+// did. An empty member is refused here rather than deeper: the SDK would answer
+// ErrNoMember and translate to the same INVALID_ARGUMENT, but a member that is
+// not named cannot be one this caller owns, so the ownership question has no
+// meaning until it is.
+func (h *Handler) callerActingAs(ctx context.Context, member string) error {
+	playerID, err := authenticatedPlayerID(ctx)
+	if err != nil {
+		return err
+	}
+	if member == "" {
+		return status.Error(codes.InvalidArgument, "member is required")
+	}
+	return h.verifyMemberOwnership(ctx, playerID, member)
+}
+
+// verifyMemberOwnership confirms playerID controls the character named member.
+//
+// The session SDK has no notion of a caller's identity -- a member ID is just a
+// character ID it was handed, and Where/Move/Attack answer for whichever one
+// arrives -- so ownership is rpg-api's to enforce, the same way the old
+// encounter path's ErrEntityOwnershipMismatch is: a security boundary concern,
+// not a game rule (design rule 8 governs rules, not authz).
+//
+// THIS USED TO GUARD ONLY StreamEvents. Every other verb passed `member`
+// straight through, which meant any authenticated player could act as any
+// member ID they could guess -- move somebody else's fighter, swing their
+// sword, end their turn. On the read side it was worse than impersonation: a
+// client-supplied member on GetWhere or GetView re-opened exactly the
+// unperceived-roster leak the toolkit deliberately refused a batch positions
+// read to prevent (rpg-toolkit#1051), and monster IDs are learnable from story
+// beats. Both halves were flagged independently, by Copilot on the mutating
+// verbs and by this PR's own gate item on GetWhere; see callerActingAs.
 func (h *Handler) verifyMemberOwnership(ctx context.Context, playerID, member string) error {
 	out, err := h.characters.Get(ctx, characterrepo.GetInput{ID: member})
 	if err != nil {

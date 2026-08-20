@@ -10,7 +10,7 @@ import (
 
 // EndTurn ends a member's turn and hands the fight to whoever is next.
 func (h *Handler) EndTurn(ctx context.Context, req *sessionpb.EndTurnRequest) (*sessionpb.EndTurnResponse, error) {
-	if _, err := authenticatedPlayerID(ctx); err != nil {
+	if err := h.callerActingAs(ctx, req.GetMember()); err != nil {
 		return nil, err
 	}
 

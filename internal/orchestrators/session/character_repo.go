@@ -9,7 +9,6 @@ import (
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 
 	"github.com/KirkDiggler/rpg-api/internal/apierr"
-	"github.com/KirkDiggler/rpg-api/internal/entities"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 )
 
@@ -61,14 +60,31 @@ func (r *characterRepository) SaveCharacter(ctx context.Context, data *tkcharact
 		return errors.New("session: SaveCharacter data.ID is required")
 	}
 
+	// Load failures translate exactly as GetCharacter's do. They did not,
+	// which made a save the one place the repository contract stopped being
+	// spoken: a character that has gone missing came back as a wrapped store
+	// error, so the Manager read a normal not-found as an internal failure and
+	// could not tell "this record is gone" from "the store is broken". The two
+	// call for different responses from a host, which is the whole reason the
+	// SDK gives not-found its own sentinel.
 	out, err := r.repo.Get(ctx, characterrepo.GetInput{ID: data.ID})
 	if err != nil {
+		if apierr.IsNotFound(err) {
+			return fmt.Errorf("character %q: %w", data.ID, sdk.ErrNotFound)
+		}
 		return fmt.Errorf("load character %q for save: %w", data.ID, err)
 	}
-	existing := out.Character
-	if existing == nil {
-		existing = &entities.Character{}
+	// A successful Get that hands back nothing is a defect in the store, not a
+	// missing character -- the same judgement GetCharacter makes on the same
+	// shape. The previous code dereferenced out without checking it and would
+	// PANIC here; the nil-Character branch below it quietly invented a blank
+	// entity instead, which is worse than failing: it would write a record with
+	// every API-owned field (Appearance) silently emptied, and this method
+	// exists precisely to stop that from happening.
+	if out == nil || out.Character == nil {
+		return fmt.Errorf("character %q: %w", data.ID, sdk.ErrBadRepository)
 	}
+	existing := out.Character
 	existing.Data = data
 
 	if _, err := r.repo.Update(ctx, characterrepo.UpdateInput{Character: existing}); err != nil {

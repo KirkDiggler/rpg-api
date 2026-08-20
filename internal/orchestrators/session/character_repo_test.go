@@ -108,3 +108,61 @@ func (s *CharacterRepositoryTestSuite) TestSaveCharacter_EmptyID_Errors() {
 	err := s.repo.SaveCharacter(s.ctx, &tkcharacter.Data{})
 	s.Require().Error(err)
 }
+
+// The three below pin SaveCharacter's load failures. GetCharacter had a test
+// for each of these shapes and SaveCharacter had none, which is how a panic
+// and a mistranslated sentinel both survived in a file whose sibling method
+// handles the identical cases correctly.
+
+func (s *CharacterRepositoryTestSuite) TestSaveCharacter_NotFound_TranslatesToSDKSentinel() {
+	data := &tkcharacter.Data{ID: "missing", Name: "Ghost"}
+	s.mockRepo.EXPECT().Get(s.ctx, characterrepo.GetInput{ID: "missing"}).Return(
+		nil, apierr.NotFoundf("character with ID %s not found", "missing"),
+	)
+
+	err := s.repo.SaveCharacter(s.ctx, data)
+	s.Require().Error(err)
+	// The point of the assertion: a vanished character must reach the Manager
+	// as the repository contract's own sentinel, so a host can tell it from a
+	// broken store. Before this it arrived as a wrapped store error.
+	s.Require().ErrorIs(err, sdk.ErrNotFound)
+	s.Require().NotErrorIs(err, sdk.ErrBadRepository)
+}
+
+func (s *CharacterRepositoryTestSuite) TestSaveCharacter_NilOutput_IsBadRepository() {
+	data := &tkcharacter.Data{ID: "char-1", Name: "Alice"}
+	// A successful Get handing back no output at all. This used to be
+	// dereferenced unguarded -- the call PANICKED rather than returning
+	// anything, so Update was never reached and no error was ever produced.
+	s.mockRepo.EXPECT().Get(s.ctx, characterrepo.GetInput{ID: "char-1"}).Return(nil, nil)
+
+	err := s.repo.SaveCharacter(s.ctx, data)
+	s.Require().Error(err)
+	s.Require().ErrorIs(err, sdk.ErrBadRepository)
+}
+
+func (s *CharacterRepositoryTestSuite) TestSaveCharacter_NilStoredCharacter_IsBadRepository() {
+	data := &tkcharacter.Data{ID: "char-1", Name: "Alice"}
+	s.mockRepo.EXPECT().Get(s.ctx, characterrepo.GetInput{ID: "char-1"}).Return(
+		&characterrepo.GetOutput{Character: nil}, nil,
+	)
+
+	// No Update is expected: writing here would persist a record whose
+	// API-owned fields (Appearance) had been silently emptied, which is the
+	// exact loss this method's load-then-merge exists to prevent. gomock fails
+	// the test if Update is called at all.
+	err := s.repo.SaveCharacter(s.ctx, data)
+	s.Require().Error(err)
+	s.Require().ErrorIs(err, sdk.ErrBadRepository)
+}
+
+func (s *CharacterRepositoryTestSuite) TestSaveCharacter_OtherLoadFailure_PassesThrough() {
+	data := &tkcharacter.Data{ID: "char-1", Name: "Alice"}
+	boom := errors.New("redis is on fire")
+	s.mockRepo.EXPECT().Get(s.ctx, characterrepo.GetInput{ID: "char-1"}).Return(nil, boom)
+
+	err := s.repo.SaveCharacter(s.ctx, data)
+	s.Require().Error(err)
+	s.Require().ErrorIs(err, boom)
+	s.Require().NotErrorIs(err, sdk.ErrNotFound)
+}

@@ -65,6 +65,28 @@ func ownedCharacterRepo(ctrl *gomock.Controller, member, playerID string) charac
 	return repo
 }
 
+// anyMemberOwnedBy answers every member lookup as a character controlled by
+// playerID.
+//
+// Deliberately permissive, because the verb tests it serves are about
+// TRANSLATION -- does this handler hand the SDK the right input and map its
+// error to the right code -- not about entitlement. Giving each of them a
+// narrowly-scoped repo would make every one of them fail for the wrong reason
+// the day a member ID changed. The entitlement gate is pinned separately, by
+// the ownership tests below and in handler_test.go, where a WRONG owner and a
+// MISSING member are the point rather than a setup detail.
+func anyMemberOwnedBy(ctrl *gomock.Controller, playerID string) characterrepo.Repository {
+	repo := charactermock.NewMockRepository(ctrl)
+	repo.EXPECT().Get(gomock.Any(), gomock.Any()).DoAndReturn(
+		func(_ context.Context, in characterrepo.GetInput) (*characterrepo.GetOutput, error) {
+			return &characterrepo.GetOutput{
+				Character: &entities.Character{Data: &tkcharacter.Data{ID: in.ID, PlayerID: playerID}},
+			}, nil
+		},
+	).AnyTimes()
+	return repo
+}
+
 func TestStreamEvents_Unauthenticated_Errors(t *testing.T) {
 	h := &Handler{}
 	stream := newCapturingStream(context.Background())

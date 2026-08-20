@@ -10,7 +10,7 @@ import (
 
 // Exit removes a member from a session's encounter.
 func (h *Handler) Exit(ctx context.Context, req *sessionpb.ExitRequest) (*sessionpb.ExitResponse, error) {
-	if _, err := authenticatedPlayerID(ctx); err != nil {
+	if err := h.callerActingAs(ctx, req.GetMember()); err != nil {
 		return nil, err
 	}
 

@@ -33,7 +33,7 @@ func TestDissolve_HappyPath(t *testing.T) {
 		},
 	)
 
-	h := &Handler{manager: mgr}
+	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
 	ctx := auth.WithPlayerID(context.Background(), "alice")
 	resp, err := h.Dissolve(ctx, &sessionpb.DissolveRequest{
 		Session: "sess-1", Member: "char-1", Cause: sessionpb.DissolveKind_DISSOLVE_KIND_BY_DECISION,
@@ -47,7 +47,7 @@ func TestDissolve_NoCause_InvalidArgument_NeverCallsManager(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mgr := sessionv1alpha1mock.NewMockManager(ctrl) // no EXPECT() -- must not be called
 
-	h := &Handler{manager: mgr}
+	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
 	ctx := auth.WithPlayerID(context.Background(), "alice")
 	_, err := h.Dissolve(ctx, &sessionpb.DissolveRequest{
 		Session: "sess-1", Member: "char-1", Cause: sessionpb.DissolveKind_DISSOLVE_KIND_UNSPECIFIED,
@@ -60,7 +60,7 @@ func TestDissolve_ManagerError_TranslatesViaErrorTable(t *testing.T) {
 	mgr := sessionv1alpha1mock.NewMockManager(ctrl)
 	mgr.EXPECT().Dissolve(gomock.Any(), gomock.Any()).Return(nil, sdk.ErrNotInFight)
 
-	h := &Handler{manager: mgr}
+	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
 	ctx := auth.WithPlayerID(context.Background(), "alice")
 	_, err := h.Dissolve(ctx, &sessionpb.DissolveRequest{
 		Session: "sess-1", Member: "char-1", Cause: sessionpb.DissolveKind_DISSOLVE_KIND_BY_DECISION,

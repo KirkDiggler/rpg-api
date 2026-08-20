@@ -10,7 +10,7 @@ import (
 
 // Join brings a player's character into a session's encounter.
 func (h *Handler) Join(ctx context.Context, req *sessionpb.JoinRequest) (*sessionpb.JoinResponse, error) {
-	if _, err := authenticatedPlayerID(ctx); err != nil {
+	if err := h.callerActingAs(ctx, req.GetMember()); err != nil {
 		return nil, err
 	}
 

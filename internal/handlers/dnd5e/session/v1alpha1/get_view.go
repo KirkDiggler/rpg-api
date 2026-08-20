@@ -13,7 +13,7 @@ import (
 // toolkit#933, not a gate on this package); until that lands, reconnect
 // leans on GetStory replay.
 func (h *Handler) GetView(ctx context.Context, req *sessionpb.GetViewRequest) (*sessionpb.GetViewResponse, error) {
-	if _, err := authenticatedPlayerID(ctx); err != nil {
+	if err := h.callerActingAs(ctx, req.GetMember()); err != nil {
 		return nil, err
 	}
 
