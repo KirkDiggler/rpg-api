@@ -12,9 +12,7 @@ require (
 	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.96.0
 	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter v0.26.0
 	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session v0.18.0
-	github.com/KirkDiggler/rpg-toolkit/tools/environments v0.4.4
 	github.com/KirkDiggler/rpg-toolkit/tools/spatial v0.9.1
-	github.com/KirkDiggler/rpg-toolkit/tools/spawn v0.3.0
 	github.com/alicebob/miniredis/v2 v2.35.0
 	github.com/google/uuid v1.6.0
 	github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.3.2
@@ -26,7 +24,6 @@ require (
 	github.com/testcontainers/testcontainers-go/modules/redis v0.40.0
 	go.uber.org/mock v0.6.0
 	google.golang.org/grpc v1.83.1
-	google.golang.org/protobuf v1.36.12
 	gopkg.in/yaml.v3 v3.0.1
 )
 
@@ -39,6 +36,7 @@ require (
 	github.com/KirkDiggler/rpg-toolkit/play/intel v0.1.0 // indirect
 	github.com/KirkDiggler/rpg-toolkit/play/record v0.1.0 // indirect
 	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/resolution v0.10.0 // indirect
+	github.com/KirkDiggler/rpg-toolkit/tools/environments v0.4.4 // indirect
 	github.com/KirkDiggler/rpg-toolkit/tools/selectables v0.1.2 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
@@ -95,4 +93,5 @@ require (
 	golang.org/x/sys v0.45.0 // indirect
 	golang.org/x/text v0.37.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260526163538-3dc84a4a5aaa // indirect
+	google.golang.org/protobuf v1.36.12 // indirect
 )
