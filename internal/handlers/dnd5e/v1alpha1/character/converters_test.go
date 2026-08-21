@@ -13,6 +13,7 @@ import (
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character/choices"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/classes"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/damage"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/races"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/refs"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
@@ -239,6 +240,49 @@ func (s *ConvertersTestSuite) TestCreateEquipmentChoice_PopulatesEquipmentDetail
 	assert.Contains(s.T(), weaponData.Properties, dnd5ev1alpha1.WeaponProperty_WEAPON_PROPERTY_TWO_HANDED)
 }
 
+// TestBaseWeaponDamage_RiderPoolIsIgnored is the discriminator baseWeaponDamage
+// exists for: a weapon whose composable damage carries a base pool AND a
+// rider pool (rpg-toolkit ADR-0040) must project the BASE pool onto the
+// legacy wire's damage_dice/damage_type, not the rider and not some
+// combination of the two. A projection that returned the LAST pool, or
+// concatenated both, would pass every other test touching real registry
+// weapons (they all carry exactly one pool today) and fail only here.
+func (s *ConvertersTestSuite) TestBaseWeaponDamage_RiderPoolIsIgnored() {
+	pools := []damage.Damage{
+		{Dice: "1d8", Type: damage.Slashing},
+		{Dice: "1d4", Type: damage.Fire}, // a rider this legacy wire has no field for
+	}
+
+	dice, dtype := baseWeaponDamage(pools)
+	assert.Equal(s.T(), "1d8", dice)
+	assert.Equal(s.T(), string(damage.Slashing), dtype)
+}
+
+// TestBaseWeaponDamage_EmptyPool_ReturnsZeroValueNotPanic covers the other
+// half of baseWeaponDamage's contract: this is translation code reading
+// data it did not itself validate, so an empty pool must come back as an
+// empty string, not index pools[0] on nothing.
+func (s *ConvertersTestSuite) TestBaseWeaponDamage_EmptyPool_ReturnsZeroValueNotPanic() {
+	dice, dtype := baseWeaponDamage(nil)
+	assert.Empty(s.T(), dice)
+	assert.Empty(s.T(), dtype)
+}
+
+// TestSetEquipmentItemTypeHint_NetIsNoLongerAWeapon is the discriminator for
+// the OTHER Net remnant Copilot caught on PR #808's review of this same
+// file (setEquipmentItemTypeHint's weaponMap, distinct from the two switch
+// cases dropped above): itemID "net" must not produce WEAPON_NET any more.
+// convertProtoWeaponToToolkit already cannot resolve WEAPON_NET back to a
+// toolkit ID -- leaving this map entry would advertise a weapon type hint
+// that dead-ends on the return trip. Also confirms "net" is not secretly a
+// tool ID either, so the whole item ends up with no type hint set, the same
+// as any other unrecognized ID.
+func (s *ConvertersTestSuite) TestSetEquipmentItemTypeHint_NetIsNoLongerAWeapon() {
+	item := &dnd5ev1alpha1.EquipmentItem{}
+	setEquipmentItemTypeHint(item, "net")
+	assert.Nil(s.T(), item.TypeHint)
+}
+
 func (s *ConvertersTestSuite) TestCreateEquipmentChoice_MapsCategoryChoiceOptionsOneToOne() {
 	fighter := convertClassDataToProto(classes.ClassData[classes.Fighter])
 	fighterMartial := findEquipmentCategoryChoice(s.T(), fighter, "fighter-weapons-primary", "fighter-weapon-a")
@@ -249,9 +293,14 @@ func (s *ConvertersTestSuite) TestCreateEquipmentChoice_MapsCategoryChoiceOption
 		"fighter-weapons-primary",
 		"fighter-weapon-a",
 		[]string{
+			// weapons.Net dropped from this expected list: the toolkit's own
+			// weapon registry no longer offers it (rpg-toolkit#1146 removed
+			// the weapon entirely, not just its wire mapping), so the
+			// Fighter's martial-ranged registry choice this test compares
+			// against no longer includes it either.
 			weapons.Greatsword, weapons.Longsword, weapons.Rapier, weapons.Shortsword, weapons.Battleaxe, weapons.Flail, weapons.Glaive, weapons.Greataxe,
 			weapons.Halberd, weapons.Lance, weapons.Maul, weapons.Morningstar, weapons.Pike, weapons.Scimitar, weapons.Trident, weapons.WarPick,
-			weapons.Warhammer, weapons.Whip, weapons.HeavyCrossbow, weapons.Longbow, weapons.Blowgun, weapons.HandCrossbow, weapons.Net,
+			weapons.Warhammer, weapons.Whip, weapons.HeavyCrossbow, weapons.Longbow, weapons.Blowgun, weapons.HandCrossbow,
 		},
 	)
 
@@ -391,7 +440,12 @@ func requireCategoryOptionsMatchToolkit(
 		require.NotNil(t, source.Detail.Weapon, "option %d must be a weapon", index)
 		weaponData := item.GetEquipmentDetail().GetWeaponData()
 		require.NotNil(t, weaponData, "option %d weapon detail", index)
-		assert.Equal(t, source.Detail.Weapon.Damage, weaponData.GetDamageDice(), "option %d damage dice", index)
+		// Weapon.Damage is a composable pool ([]damage.Damage) as of dnd5e
+		// v0.97.0; the legacy wire's damage_dice carries only the base pool
+		// (index 0) -- see baseWeaponDamage's own doc. Every registry weapon
+		// this loop walks has exactly one pool today, so [0] is safe here.
+		require.NotEmpty(t, source.Detail.Weapon.Damage, "option %d has no damage pool", index)
+		assert.Equal(t, source.Detail.Weapon.Damage[0].Dice, weaponData.GetDamageDice(), "option %d damage dice", index)
 	}
 }
 

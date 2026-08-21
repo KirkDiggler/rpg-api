@@ -19,7 +19,12 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/monster"
+	// NewGoblin moved out of monster into monster/monsters at dnd5e v0.97.0
+	// (rpg-toolkit's composable-attack-damage-provider migration,
+	// rpg-toolkit#1146 / ADR-0040): the bare monster package holds only the
+	// runtime Monster type and Config now, and per-species factories live in
+	// this sibling package.
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/monster/monsters"
 )
 
 // GoblinDataJSON returns valid, rehydratable monster.Data JSON for a real
@@ -27,7 +32,7 @@ import (
 // tkenc.MonsterInput.DataJSON in hand-built test fixtures.
 func GoblinDataJSON(tb testing.TB, id string) []byte {
 	tb.Helper()
-	b, err := json.Marshal(monster.NewGoblin(id).ToData())
+	b, err := json.Marshal(monsters.NewGoblin(id).ToData())
 	require.NoError(tb, err)
 	return b
 }
