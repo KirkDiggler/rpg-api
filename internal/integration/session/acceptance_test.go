@@ -360,6 +360,29 @@ func TestAcceptanceLoop_WalkFightDissolveResync(t *testing.T) {
 	require.Contains(t, formed.GetOrder(), "alice")
 	require.Contains(t, formed.GetOrder(), "skel-1")
 
+	// -- GetView reports the skeleton with its typed Seen position (ADR-0041,
+	// rpg-toolkit#1157, session v0.21.2) -- through the real handler's
+	// sightingToProto, not a mock. Sight is what just formed the fight above,
+	// so this is the ordinary case Seen exists for: a live sighting produced
+	// by the sight channel whose payload decoded. The position asserted is
+	// skel-1's Spawn position (X:19, Y:3) -- it has not moved, since nothing
+	// in this fixture drives monster AI.
+	viewResp, err := h.handler.GetView(ctx, &sessionpb.GetViewRequest{
+		Session: "acceptance-run", Member: "alice",
+	})
+	require.NoError(t, err)
+	var skeletonSighting *sessionpb.Sighting
+	for _, sighting := range viewResp.GetSightings() {
+		if sighting.GetSubject() == "skel-1" {
+			skeletonSighting = sighting
+			break
+		}
+	}
+	require.NotNil(t, skeletonSighting, "alice's view must include the skeleton she just formed a fight with")
+	require.NotNil(t, skeletonSighting.GetSeen(), "a live sight-channel sighting must carry its typed Seen position")
+	require.Equal(t, 19.0, skeletonSighting.GetSeen().GetPosition().GetX())
+	require.Equal(t, 3.0, skeletonSighting.GetSeen().GetPosition().GetY())
+
 	// -- attack, and damage applies --
 	attackResp, err := h.handler.Attack(ctx, &sessionpb.AttackRequest{
 		Session: "acceptance-run", Attacker: "alice", Target: "skel-1",
