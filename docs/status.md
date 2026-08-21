@@ -1062,9 +1062,7 @@ and [`architecture/components/encounter.md`](architecture/components/encounter.m
 
 ## Per-subsystem confidence
 
-See [quality.md](quality.md) for grade and rationale — **not updated by
-rpg-project#227's rip-out**, so its per-component rows for the deleted
-components below are also stale.
+See [quality.md](quality.md) for grade and rationale.
 
 | Subsystem | Confidence |
 |---|---|

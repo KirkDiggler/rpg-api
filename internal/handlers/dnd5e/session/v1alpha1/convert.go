@@ -51,6 +51,22 @@ func gridKindToProto(k sdk.GridKind) sessionpb.GridKind {
 	}
 }
 
+// hexLayoutToProto mirrors session.HexLayout (session/v0.20.0,
+// rpg-toolkit#1140). The empty value is a square map, which carries no layout
+// by law; it reaches the wire as UNSPECIFIED rather than a guess, because a
+// square map that said pointy-top would be a client believing something that
+// cannot be true about its grid.
+func hexLayoutToProto(l sdk.HexLayout) sessionpb.HexLayout {
+	switch l {
+	case sdk.HexLayoutPointyTop:
+		return sessionpb.HexLayout_HEX_LAYOUT_POINTY_TOP
+	case sdk.HexLayoutFlatTop:
+		return sessionpb.HexLayout_HEX_LAYOUT_FLAT_TOP
+	default:
+		return sessionpb.HexLayout_HEX_LAYOUT_UNSPECIFIED
+	}
+}
+
 func clockKindToProto(k sdk.ClockKind) sessionpb.ClockKind {
 	switch k {
 	case sdk.ClockWorld:
@@ -377,6 +393,7 @@ func atlasToProto(a *sdk.Atlas) *sessionpb.GetAtlasResponse {
 	}
 	return &sessionpb.GetAtlasResponse{
 		Grid:       gridKindToProto(a.Grid),
+		Layout:     hexLayoutToProto(a.Layout),
 		Cells:      cells,
 		Props:      props,
 		Boundaries: atlasBoundariesToProto(a.Boundaries),
