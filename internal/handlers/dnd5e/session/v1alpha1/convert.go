@@ -157,8 +157,21 @@ func characterStateToProto(c *sdk.CharacterState) *sessionpb.CharacterState {
 	}
 }
 
+// seenToProto mirrors the sight channel's typed Seen sub-struct (ADR-0041,
+// rpg-toolkit#1157, session v0.21.2). A nil Seen -- channel provenance or
+// payload decoding didn't hold sight, or (on Report) the payload simply
+// didn't decode as one -- stays unset on the wire rather than a zero-valued
+// Seen, matching discoveriesToProto's own "absent means nothing to report"
+// convention on this seam.
+func seenToProto(s *sdk.Seen) *sessionpb.Seen {
+	if s == nil {
+		return nil
+	}
+	return &sessionpb.Seen{Position: positionToProto(s.Position)}
+}
+
 func reportToProto(r sdk.Report) *sessionpb.Report {
-	return &sessionpb.Report{Subject: r.Subject, Payload: r.Payload}
+	return &sessionpb.Report{Subject: r.Subject, Payload: r.Payload, Seen: seenToProto(r.Seen)}
 }
 
 func discoveryToProto(d sdk.Discovery) *sessionpb.Discovery {
@@ -197,6 +210,7 @@ func sightingToProto(s sdk.Sighting) *sessionpb.Sighting {
 		At:         s.At,
 		CurrentVia: s.CurrentVia,
 		Status:     s.Status,
+		Seen:       seenToProto(s.Seen),
 	}
 }
 

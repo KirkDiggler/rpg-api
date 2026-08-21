@@ -265,3 +265,49 @@ func TestSightingsToProto(t *testing.T) {
 	require.Equal(t, "goblin", got[0].GetSubject())
 	require.Equal(t, "live", got[0].GetStatus())
 }
+
+// TestSightingToProto_WithSeen and TestSightingToProto_WithoutSeen cover
+// ADR-0041's typed sight-channel position (rpg-toolkit#1157, session
+// v0.21.2): Seen is present iff channel provenance AND payload decoding both
+// held, so a converter that always sets or always omits it passes only one
+// of these two -- the discriminator the pair exists to catch. Payload stays
+// asserted alongside so a converter that stopped copying the passthrough
+// bytes while wiring in Seen would also fail here.
+func TestSightingToProto_WithSeen(t *testing.T) {
+	got := sightingToProto(sdk.Sighting{
+		Subject: "skeleton-1",
+		Payload: []byte("x"),
+		Channel: "sight",
+		Seen:    &sdk.Seen{Position: spatial.Position{X: 4, Y: 6}},
+	})
+	require.Equal(t, []byte("x"), got.GetPayload())
+	require.NotNil(t, got.GetSeen())
+	require.Equal(t, 4.0, got.GetSeen().GetPosition().GetX())
+	require.Equal(t, 6.0, got.GetSeen().GetPosition().GetY())
+}
+
+func TestSightingToProto_WithoutSeen(t *testing.T) {
+	got := sightingToProto(sdk.Sighting{Subject: "skeleton-1", Payload: []byte("x"), Channel: "memory"})
+	require.Nil(t, got.GetSeen())
+}
+
+// TestReportToProto_WithSeen and TestReportToProto_WithoutSeen cover the
+// same field on Report -- the shape Discovery.first_contact carries a
+// Report in (discoveryToProto delegates to reportToProto per entry, so this
+// exercises the Discovery path too without a fixture matrix).
+func TestReportToProto_WithSeen(t *testing.T) {
+	got := reportToProto(sdk.Report{
+		Subject: "skeleton-1",
+		Payload: []byte("x"),
+		Seen:    &sdk.Seen{Position: spatial.Position{X: 4, Y: 6}},
+	})
+	require.Equal(t, []byte("x"), got.GetPayload())
+	require.NotNil(t, got.GetSeen())
+	require.Equal(t, 4.0, got.GetSeen().GetPosition().GetX())
+	require.Equal(t, 6.0, got.GetSeen().GetPosition().GetY())
+}
+
+func TestReportToProto_WithoutSeen(t *testing.T) {
+	got := reportToProto(sdk.Report{Subject: "skeleton-1", Payload: []byte("x")})
+	require.Nil(t, got.GetSeen())
+}
