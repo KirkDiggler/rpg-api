@@ -19,10 +19,11 @@ The known gap this doc used to describe (publish errors silently discarded
 via `_, _ = p.publisher.Publish(...)`, no logging/retry/alert) is moot — the
 code is gone.
 
-**Current event delivery:** the v1alpha2 encounter path
-(`internal/orchestrators/encounter/v2/`) publishes through the rpg-toolkit
-encounter SDK's own `tkenc.Broker` — a different mechanism, not a replacement
-for this package, and not documented in this file. See
-[`encounter.md`](./encounter.md).
+**Then-current event delivery:** the v1alpha2 encounter path
+(`encounter.md`) this pointer used to name is ALSO deleted now
+(rpg-project#227, 2026-08-21) — see [`encounter.md`](./encounter.md) for that
+removal. Event delivery is now the `rulebooks/dnd5e/session` SDK's own event
+stream, fanned out by `internal/orchestrators/session.Broker` — a different
+mechanism again, not documented in this file.
 
 See `docs/status.md` "Active work" for the full deletion tally.

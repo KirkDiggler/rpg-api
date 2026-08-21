@@ -1,11 +1,27 @@
 ---
 name: integration test harness
 description: Full-stack test server wiring real Redis, in-process gRPC, and testcontainers
-updated: 2026-07-23
-confidence: high — verified by reading harness.go and remaining integration test files
+updated: 2026-08-21
+confidence: medium — the container-ownership/lifecycle sections below are still accurate as of rpg-project#227's rip-out; the per-service wiring details (EncounterClientV2, BrokerV2, EncRepoV2, the deleted encounter_v2_test.go/lobby_v1alpha1_test.go references) are NOT — see the rpg-project#227 note inline rather than a full rewrite
 ---
 
 # integration test harness
+
+**Partially stale (rpg-project#227, 2026-08-21):** `TestServer` no longer
+exposes `EncounterClientV2`, `BrokerV2`, or `EncRepoV2` — the old v1alpha2
+encounter service they wired (see [`encounter.md`](./encounter.md)) is
+deleted. `TestServer.SessionOrch` (a miniredis-backed session orchestrator,
+mirroring `cmd/server/server.go`'s production wiring) is wired into the lobby
+orchestrator's `Config.SessionManager` instead. The six top-level
+`internal/integration/*_test.go` suites this doc references below
+(`dungeon_crypt_test.go`, `encounter_v2_test.go`,
+`lobby_crypt_monster_seed_test.go`, `lobby_start_then_move_test.go`,
+`lobby_v1alpha1_test.go`, `shared_fixture_regression_test.go`, plus
+`main_test.go`) are deleted along with the fields they asserted through — new-
+stack integration coverage lives in `internal/integration/session` instead.
+The container-ownership/lifecycle mechanics below (`RedisContainer`,
+`harness.New`/`NewWithRedis`, the shared-fixture pattern) are unaffected and
+still accurate.
 
 The integration test harness (`internal/integration/harness/`) is the most valuable test asset in rpg-api. It wires the full stack — real Redis via testcontainers, real orchestrators and repositories, in-process gRPC via bufconn — and exercises complete game flows via proto-level client calls.
 

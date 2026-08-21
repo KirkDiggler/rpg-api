@@ -53,10 +53,12 @@ This handler is a thin wrapper — proto conversion only, no business logic:
    actually does). Orchestrator errors are wrapped with `apierr.ToGRPCError`.
 3. Re-fetch via `characterService.GetCharacter`, load the runtime character
    (`character.LoadFromData`), and compose the response via
-   `encounterhandler.BuildEquipmentCharacterData` — the SAME composition function the
-   v1alpha2 encounter snapshot path uses (`internal/handlers/dnd5e/v2/encounter/
-   character_data.go`). One composition, two callers: the character sheet and the
-   encounter HUD never independently drift.
+   `BuildEquipmentCharacterData` (`character_data.go`, in this same package).
+   This function used to be shared with the v1alpha2 encounter snapshot path;
+   that path is deleted now (rpg-project#227, 2026-08-21 — see
+   `encounter.md`), and the function moved here as its one remaining caller.
+   The "two callers never independently drift" guarantee it existed for is
+   moot until a new encounter-facing consumer exists.
 
 `armor_class_detail.total` is the ONLY AC total on this response — there is no
 surrounding `Entity.armor_class` to keep in sync with, unlike the encounter snapshot
@@ -77,9 +79,10 @@ contains the newly-equipped slot, `inventory` includes the equipped item per the
 contract), orchestrator error → gRPC status mapping (`apierr.NotFound` → `codes.NotFound`,
 a generic error → `codes.Internal`).
 
-The end-to-end equip→snapshot proof (real AC against a hand-computed expected total,
-two-handed occupancy visible across both surfaces, non-equipment-field preservation) is
-an integration suite in the encounter package —
-`internal/handlers/dnd5e/v2/encounter/integration_equipment_test.go` — since it needs
-both this service and the v1alpha2 encounter service wired against the same character
-store.
+The end-to-end equip→snapshot proof this used to describe
+(`internal/handlers/dnd5e/v2/encounter/integration_equipment_test.go`, asserting
+real AC and occupancy against both this service AND the v1alpha2 encounter
+service) is deleted along with that encounter service (rpg-project#227,
+2026-08-21 — see `encounter.md`). No replacement cross-service integration
+test exists today; this handler's own `handler_test.go` coverage (above) is
+what remains.
