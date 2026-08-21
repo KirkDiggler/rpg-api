@@ -17,13 +17,14 @@
 //
 // It would be a few lines to add a room's Origin to a local cell and convert to
 // axial. It would also be wrong, and quietly: the entrance's local (1,3) is the
-// absolute cell (0,-3), because an offset rectangle SHEARS when it becomes
+// absolute cell (0,3), because an offset rectangle SHEARS when it becomes
 // axial (rpg-toolkit#1131). A copy of that arithmetic in rpg-api is a second
 // implementation of the toolkit's geometry that compiles, looks right, and
 // drifts the day the projection changes -- exactly the Boundary Rule violation
-// the whole session seam exists to prevent. The day came: rpg-toolkit#1141
-// corrected the hex offset schemes and that cell moved from (1,-4). Nothing
-// here changed but the number in the test, which is the point.
+// the whole session seam exists to prevent. The day came twice: rpg-toolkit#1141
+// corrected the hex offset schemes (the cell moved from (1,-4)) and
+// rpg-toolkit#1150 corrected the axial basis (from (0,-3)). Nothing here
+// changed either time but the number in the test, which is the point.
 //
 // So this package does not do the conversion. It asks the composition to do it,
 // by building a THROWAWAY encounter with the authored placements as
