@@ -35,6 +35,26 @@ func TestGridKindToProto(t *testing.T) {
 	require.Equal(t, sessionpb.GridKind_GRID_KIND_UNSPECIFIED, gridKindToProto(sdk.GridKind("bogus")))
 }
 
+// TestHexLayoutToProto covers both enum values (SDK -> proto is the only
+// direction that exists: the wire never sends a layout back), for the reason
+// TestGridKindToProto does: a mapping hard-coded to pointy would pass the
+// tomb and mislabel every flat-top map in the game.
+func TestHexLayoutToProto(t *testing.T) {
+	require.Equal(t, sessionpb.HexLayout_HEX_LAYOUT_POINTY_TOP, hexLayoutToProto(sdk.HexLayoutPointyTop))
+	require.Equal(t, sessionpb.HexLayout_HEX_LAYOUT_FLAT_TOP, hexLayoutToProto(sdk.HexLayoutFlatTop))
+	require.Equal(t, sessionpb.HexLayout_HEX_LAYOUT_UNSPECIFIED, hexLayoutToProto(sdk.HexLayout("")),
+		"a square map carries no layout, and the wire says UNSPECIFIED rather than guessing")
+}
+
+// TestAtlasToProto_CarriesLayout pins the field the first client had to
+// measure a bounding box to recover (rpg-toolkit#1140). Copying it across is
+// the whole job; omitting it would compile and draw the tomb sideways.
+func TestAtlasToProto_CarriesLayout(t *testing.T) {
+	out := atlasToProto(&sdk.Atlas{Grid: sdk.GridHex, Layout: sdk.HexLayoutPointyTop})
+	require.Equal(t, sessionpb.GridKind_GRID_KIND_HEX, out.GetGrid())
+	require.Equal(t, sessionpb.HexLayout_HEX_LAYOUT_POINTY_TOP, out.GetLayout())
+}
+
 func TestClockKindToProto(t *testing.T) {
 	require.Equal(t, sessionpb.ClockKind_CLOCK_KIND_WORLD, clockKindToProto(sdk.ClockWorld))
 	require.Equal(t, sessionpb.ClockKind_CLOCK_KIND_TURN, clockKindToProto(sdk.ClockTurn))
