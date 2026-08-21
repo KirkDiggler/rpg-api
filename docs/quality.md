@@ -49,6 +49,16 @@ matrix (party cap, host migration on disconnect-vs-leave, idempotent rebind)
 is unit-tested at the orchestrator layer but not yet re-proven at the wire
 level.
 
+### Session service handler — B (new, 2026-08-21)
+
+`internal/handlers/dnd5e/session/v1alpha1/` — `SessionService`, rpg-api's one
+interface to the toolkit's session SDK and, after rpg-api#801, the only
+encounter surface it serves. Field-for-field translation (`convert.go` is the
+whole of it), one file per verb, no rules and no invented vocabulary; the
+converters are unit-tested per enum value and the projections are covered by
+`internal/integration/session`. Held at B: rpg-api#803 — the verbs authenticate
+but do not authorize the caller against session membership — is open.
+
 ### Character handler — C
 
 `internal/handlers/dnd5e/v1alpha1/character/handler.go` (1,070 lines),
@@ -129,29 +139,38 @@ created), not a hot-loop concern, called out as a follow-up rather than fixed
 here. Full RPC-level unit coverage (create/join/rebind/ready/leave incl. host
 migration/start incl. HP seeding and persist-then-emit ordering).
 
+### Session orchestrator — B (new, 2026-08-21)
+
+`internal/orchestrators/session/` — constructs the SDK `session.Manager` over
+rpg-api's Redis-backed key-value repositories and the host's character
+repository; owns no rules. Covered by its own suite and by
+`internal/integration/session`. Held at B while rpg-api#800 (partial-failure
+orphans) is unruled.
+
+### sessionworld — B+ (new, 2026-08-21)
+
+`internal/sessionworld/` — compiles the reference tomb through the toolkit's
+`dungeonspec` and hands the lobby a world plus authored party seats. Its
+defining test pins that placements are projected by the composition, not
+copied: the entrance literal moved from `(1,-4)` to `(0,-3)` when
+rpg-toolkit#1141 corrected the hex convention, with no code change here
+(rpg-api#802). Below A only because it compiles exactly one world and
+`ListDungeons` has no source of truth yet.
+
 ## Components
 
-### Dungeon component — B-
+### ~~Dungeon component — B-~~ DELETED
 
-`internal/components/dungeon/` (generator, room shapes, wall perimeter, door
-spawning, hex coords, monster placement, theme tables)
+`internal/components/dungeon/` no longer exists (already absent on `dev` before
+rpg-api#801 — this entry had outlived the code). Dungeon geometry lives where
+the old entry said it belonged: the toolkit's `rulebooks/dnd5e/encounter` and
+its `dungeonspec` compiler, consumed through `internal/sessionworld`.
 
-The component is well-tested — integration tests use real toolkit generators,
-unit tests cover shape selection, perimeter logic, placement validation, and
-door spawning. The design is clean with internal adapters and toolkit wrappers.
-The grade cannot be higher because **this component is in the wrong repository**.
-Procedural dungeon generation (room shapes, wall placement, monster CR
-budgets, hex-grid coordinates) is game logic — it belongs in rpg-toolkit under
-the Boundary Rule. As long as it lives here, rpg-api violates its own mandate
-of "data orchestration, never game logic." Moving it is a known planned task.
+### ~~Spawner component — B~~ DELETED
 
-### Spawner component — B
-
-`internal/components/spawner/`
-
-Thin adapter around toolkit placement logic. Well-contained, single
-responsibility. No known gaps. Lower-risk relative to dungeon component because
-it delegates rather than implementing rules.
+`internal/components/spawner/` no longer exists (already absent on `dev` before
+rpg-api#801). Monster placement is authored in the dungeon spec and compiled by
+the toolkit.
 
 ## Infrastructure
 

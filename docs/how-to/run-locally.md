@@ -43,8 +43,6 @@ Default port: `50051`. Override with `--port <n>`.
 |---|---|---|
 | `AUTH_DEV_MODE` | `false` | Enables `Dev <player_id>` auth scheme (never in production) |
 | `REDIS_ADDR` | `localhost:6379` | Redis address (check `cmd/server/server.go:mustRedisClient`) |
-| `RPG_AUTHORING_ENABLED` | unset | Registers `AuthoringService` (`PutDungeon`) when set to any non-empty value. Unset = the service isn't registered at all — `grpcurl list` won't show it, and any call gets gRPC's own `Unimplemented`. Requires `RPG_CONTENT_DIR` also be set (construction-time failure otherwise). |
-| `RPG_CONTENT_DIR` | unset | Directory of `*.yaml`/`*.yml` dungeon-spec overrides, layered over the embedded `internal/content/dungeons/*.yaml` set (already existed for content override). **New role**: when `RPG_AUTHORING_ENABLED` is set, this is also `PutDungeon`'s write-through target — required in that mode, not optional. |
 
 ## Auth in dev mode
 
