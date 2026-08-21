@@ -22,7 +22,6 @@ import (
 	characterpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/character"
 	encounterv2pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/encounter"
 	"github.com/KirkDiggler/rpg-api/internal/apierr"
-	encounterhandler "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v2/encounter"
 	orchcharacter "github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
 	"github.com/KirkDiggler/rpg-toolkit/events"
 	tkcharacter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
@@ -123,7 +122,7 @@ func (h *Handler) UnequipItem(
 
 // recomputedCharacterData re-fetches the character after an equip/unequip
 // and composes the post-change CharacterData via
-// encounterhandler.BuildEquipmentCharacterData — the SAME composition the
+// BuildEquipmentCharacterData — the SAME composition the
 // encounter snapshot path uses (v2/encounter/character_data.go), so the
 // sheet this RPC returns and the HUD an active encounter shows never drift
 // from two independent compositions (rpg-api#680).
@@ -148,5 +147,5 @@ func (h *Handler) recomputedCharacterData(
 		return nil, status.Errorf(codes.Internal, "load character: %v", err)
 	}
 
-	return encounterhandler.BuildEquipmentCharacterData(char.EquipmentView(ctx)), nil
+	return BuildEquipmentCharacterData(char.EquipmentView(ctx)), nil
 }
