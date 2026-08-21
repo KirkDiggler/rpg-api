@@ -23,13 +23,14 @@ import (
 	lobbyrepo "github.com/KirkDiggler/rpg-api/internal/repositories/lobby"
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 
-	"github.com/KirkDiggler/rpg-api/internal/dungeonregistry"
 	"github.com/KirkDiggler/rpg-api/internal/pkg/idgen"
 )
 
-// DefaultPartyCap is the normal product roster capacity. It is host policy,
-// not a universal toolkit maximum; content, authoring, and StartEncounter pass
-// this value into the toolkit's party-start configuration for the normal path.
+// DefaultPartyCap is the normal product roster capacity. It was host policy
+// shared with content/authoring's party-start configuration before both were
+// deleted alongside the old encounter stack's dungeon-spec dialect
+// (rpg-project#227); StartEncounter's session-stack path still passes it to
+// sessionworld for the embedded reference-tomb's party seating.
 const DefaultPartyCap = 4
 
 // Config holds the dependencies for an Orchestrator.
@@ -53,20 +54,6 @@ type Config struct {
 	// EncounterIDGenerator mints the constructed session/encounter ID at
 	// StartEncounter. Required.
 	EncounterIDGenerator idgen.Generator
-
-	// Registry is the shared, concurrency-safe live dungeon-spec registry
-	// (internal/dungeonregistry) — the SAME pointer cmd/server/server.go
-	// also passes into the authoring orchestrator's Config, so a
-	// PutDungeon's registry swap is visible to the very next
-	// StartEncounter with no restart (plan.md's "Architecture decision:
-	// the shared live registry"). Required. Built once at startup via
-	// LoadContentRegistry — New() itself never reads RPG_CONTENT_DIR.
-	//
-	// Read today only by ListDungeons; StartEncounter's session-stack path
-	// does not consult it (start_encounter_session_stack.go plays the one
-	// embedded reference-tomb dungeon regardless of key) — see that file's
-	// doc comment for the still-open content-authoring gap this leaves.
-	Registry *dungeonregistry.Registry
 
 	// PartyCap is the max member count JoinLobby allows. Optional — defaults
 	// to DefaultPartyCap (lobby-surface.md "Party cap").
@@ -98,10 +85,6 @@ type Orchestrator struct {
 	now            func() time.Time
 	locks          *keyedMutex
 
-	// registry is Config.Registry — the shared live dungeon-spec registry.
-	// Read today only by ListDungeons.
-	registry *dungeonregistry.Registry
-
 	// sessionManager is Config.SessionManager — StartEncounter builds onto
 	// it, and GetMyActiveLobby/AbandonEncounter query/close through it.
 	sessionManager *sdk.Manager
@@ -131,9 +114,6 @@ func New(cfg *Config) (*Orchestrator, error) {
 	if cfg.EncounterIDGenerator == nil {
 		return nil, errors.New("lobby orchestrator: Config.EncounterIDGenerator is required")
 	}
-	if cfg.Registry == nil {
-		return nil, errors.New("lobby orchestrator: Config.Registry is required")
-	}
 	if cfg.SessionManager == nil {
 		return nil, errors.New("lobby orchestrator: Config.SessionManager is required")
 	}
@@ -159,7 +139,6 @@ func New(cfg *Config) (*Orchestrator, error) {
 		partyCap:       partyCap,
 		now:            now,
 		locks:          newKeyedMutex(),
-		registry:       cfg.Registry,
 		sessionManager: cfg.SessionManager,
 	}, nil
 }

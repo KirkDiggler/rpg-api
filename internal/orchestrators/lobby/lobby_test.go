@@ -52,9 +52,6 @@ func (s *LobbySuite) SetupTest() {
 	s.broker = lobbyorch.NewBroker()
 	s.sessOrch = s.newSessionOrchestrator()
 
-	registry, err := lobbyorch.LoadContentRegistry()
-	s.Require().NoError(err)
-
 	orch, err := lobbyorch.New(&lobbyorch.Config{
 		LobbyRepo:            s.lobbyRepo,
 		LobbyBroker:          s.broker,
@@ -63,7 +60,6 @@ func (s *LobbySuite) SetupTest() {
 		JoinRefGenerator:     idgen.NewSequential("ref"),
 		EncounterIDGenerator: idgen.NewSequential("enc"),
 		Now:                  func() time.Time { return time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC) },
-		Registry:             registry,
 		SessionManager:       s.sessOrch.Manager,
 	})
 	s.Require().NoError(err)
@@ -134,9 +130,6 @@ func (s *LobbySuite) expectCharacterNotFound(characterID string) {
 // need to observe behavior when the lobby repository itself misbehaves
 // (e.g. a wrapped repo that forces one method to fail).
 func (s *LobbySuite) newOrchestratorWithLobbyRepo(repo lobbyrepo.Repository) *lobbyorch.Orchestrator {
-	registry, err := lobbyorch.LoadContentRegistry()
-	s.Require().NoError(err)
-
 	orch, err := lobbyorch.New(&lobbyorch.Config{
 		LobbyRepo:            repo,
 		LobbyBroker:          s.broker,
@@ -145,7 +138,6 @@ func (s *LobbySuite) newOrchestratorWithLobbyRepo(repo lobbyrepo.Repository) *lo
 		JoinRefGenerator:     idgen.NewSequential("ref"),
 		EncounterIDGenerator: idgen.NewSequential("enc"),
 		Now:                  func() time.Time { return time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC) },
-		Registry:             registry,
 		SessionManager:       s.sessOrch.Manager,
 	})
 	s.Require().NoError(err)

@@ -301,15 +301,10 @@ func (ts *TestServer) wireServices(cfg *Config) error {
 	// ts.SessionOrch.Manager.
 	ts.LobbyBroker = lobbyorch.NewBroker()
 	ts.LobbyRepo = lobbyrepo.NewInMemory()
-	dungeonRegistry, err := lobbyorch.LoadContentRegistry()
-	if err != nil {
-		return fmt.Errorf("load dungeon registry: %w", err)
-	}
 	lobbyOrch, err := lobbyorch.New(&lobbyorch.Config{
 		LobbyRepo:            ts.LobbyRepo,
 		LobbyBroker:          ts.LobbyBroker,
 		CharacterRepo:        charRepo,
-		Registry:             dungeonRegistry,
 		LobbyIDGenerator:     idgen.NewUUID("lobby"),
 		JoinRefGenerator:     idgen.NewUUID("join"),
 		EncounterIDGenerator: idgen.NewUUID(""),

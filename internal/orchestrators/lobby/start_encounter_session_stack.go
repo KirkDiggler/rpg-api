@@ -11,6 +11,12 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/sessionworld"
 )
 
+// DungeonKey selects a named dungeon specification. Carried on
+// StartEncounterInput for parity with the proto's dungeon_key field; this
+// package's sole StartEncounter implementation does not consult it (see
+// its own doc comment below).
+type DungeonKey string
+
 // StartEncounterInput carries the entity-typed StartEncounter request.
 type StartEncounterInput struct {
 	// PlayerID is the authenticated caller. Must be the lobby's host.
@@ -66,10 +72,17 @@ type StartEncounterOutput struct {
 //
 //   - ONE DUNGEON. StartEncounterInput.DungeonKey is carried on the
 //     struct (proto parity) but ignored — every call plays the tomb. The
-//     authoring path (PutDungeon -> dungeonregistry) still writes the OLD
-//     rpg-toolkit/encounter/dungeonspec dialect, so the dungeon builder
-//     cannot yet author for this stack. That is the next content-side
-//     piece of work, not something to paper over here.
+//     old-dialect authoring path (PutDungeon, internal/dungeonregistry,
+//     internal/orchestrators/authoring) and the old-dialect ListDungeons
+//     RPC were deleted alongside the rest of the old encounter stack
+//     (rpg-project#227) rather than kept alive for a compiler nothing
+//     else uses any more — a content-key-aware session-stack path (and
+//     whatever replaces ListDungeons/PutDungeon against the NEW
+//     rulebooks/dnd5e/encounter/dungeonspec compiler) is the next
+//     content-side piece of work, not something this rip-out papers
+//     over. LobbyService.ListDungeons is Unimplemented until then (its
+//     embedded UnimplementedLobbyServiceServer covers it — no orchestrator
+//     method exists for it any more).
 //   - NO MONSTER BEHAVIOR. session.Spawn takes no decider, by its own
 //     design ("behavior arrives with the wave that brings it"), so the
 //     garrison is placed, perceived and remembered correctly and does

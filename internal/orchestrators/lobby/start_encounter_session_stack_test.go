@@ -55,9 +55,6 @@ func (s *SessionStackSuite) SetupTest() {
 	s.lobbyRepo = lobbyrepo.NewInMemory()
 	s.broker = lobbyorch.NewBroker()
 
-	registry, err := lobbyorch.LoadContentRegistry()
-	s.Require().NoError(err)
-
 	orch, err := lobbyorch.New(&lobbyorch.Config{
 		LobbyRepo:            s.lobbyRepo,
 		LobbyBroker:          s.broker,
@@ -65,7 +62,6 @@ func (s *SessionStackSuite) SetupTest() {
 		LobbyIDGenerator:     idgen.NewSequential("lobby"),
 		JoinRefGenerator:     idgen.NewSequential("ref"),
 		EncounterIDGenerator: idgen.NewSequential("enc"),
-		Registry:             registry,
 		SessionManager:       sessOrch.Manager,
 	})
 	s.Require().NoError(err)
