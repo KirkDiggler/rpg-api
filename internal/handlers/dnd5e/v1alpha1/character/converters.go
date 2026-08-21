@@ -2507,7 +2507,15 @@ func setEquipmentItemTypeHint(item *dnd5ev1alpha1.EquipmentItem, itemID string) 
 		"hand-crossbow":  dnd5ev1alpha1.Weapon_WEAPON_HAND_CROSSBOW,
 		"heavy-crossbow": dnd5ev1alpha1.Weapon_WEAPON_HEAVY_CROSSBOW,
 		"longbow":        dnd5ev1alpha1.Weapon_WEAPON_LONGBOW,
-		"net":            dnd5ev1alpha1.Weapon_WEAPON_NET,
+		// No "net" entry: rpg-toolkit#1146 (dnd5e v0.97.0) deleted the Net
+		// weapon from the toolkit's registry, so itemID can no longer
+		// legitimately be "net" -- and convertProtoWeaponToToolkit can no
+		// longer resolve WEAPON_NET back to anything (its Net case was
+		// dropped for the same reason). Keeping this entry would let a
+		// stale or hand-built item still advertise a weapon type hint this
+		// build cannot round-trip; an unrecognized itemID falls through to
+		// the tool lookup below and, failing that, sets no hint at all --
+		// consistent with every other unrecognized ID.
 	}
 
 	if weapon, ok := weaponMap[itemID]; ok {

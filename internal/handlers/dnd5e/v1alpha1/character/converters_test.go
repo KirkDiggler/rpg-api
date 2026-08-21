@@ -268,6 +268,21 @@ func (s *ConvertersTestSuite) TestBaseWeaponDamage_EmptyPool_ReturnsZeroValueNot
 	assert.Empty(s.T(), dtype)
 }
 
+// TestSetEquipmentItemTypeHint_NetIsNoLongerAWeapon is the discriminator for
+// the OTHER Net remnant Copilot caught on PR #808's review of this same
+// file (setEquipmentItemTypeHint's weaponMap, distinct from the two switch
+// cases dropped above): itemID "net" must not produce WEAPON_NET any more.
+// convertProtoWeaponToToolkit already cannot resolve WEAPON_NET back to a
+// toolkit ID -- leaving this map entry would advertise a weapon type hint
+// that dead-ends on the return trip. Also confirms "net" is not secretly a
+// tool ID either, so the whole item ends up with no type hint set, the same
+// as any other unrecognized ID.
+func (s *ConvertersTestSuite) TestSetEquipmentItemTypeHint_NetIsNoLongerAWeapon() {
+	item := &dnd5ev1alpha1.EquipmentItem{}
+	setEquipmentItemTypeHint(item, "net")
+	assert.Nil(s.T(), item.TypeHint)
+}
+
 func (s *ConvertersTestSuite) TestCreateEquipmentChoice_MapsCategoryChoiceOptionsOneToOne() {
 	fighter := convertClassDataToProto(classes.ClassData[classes.Fighter])
 	fighterMartial := findEquipmentCategoryChoice(s.T(), fighter, "fighter-weapons-primary", "fighter-weapon-a")
