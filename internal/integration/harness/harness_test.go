@@ -30,7 +30,7 @@ func TestHarness_StartsAndConnects(t *testing.T) {
 	t.Log("✓ Test server started with real Redis")
 	t.Log("✓ gRPC clients connected via bufconn")
 	t.Logf("✓ CharacterClient: %T", ts.CharacterClient)
-	t.Logf("✓ EncounterClientV2: %T", ts.EncounterClientV2)
+	t.Logf("✓ LobbyClient: %T", ts.LobbyClient)
 	t.Logf("✓ DiceClient: %T", ts.DiceClient)
 
 	// Verify Redis is working by flushing
