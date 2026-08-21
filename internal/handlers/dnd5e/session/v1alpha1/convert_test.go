@@ -35,7 +35,8 @@ func TestGridKindToProto(t *testing.T) {
 	require.Equal(t, sessionpb.GridKind_GRID_KIND_UNSPECIFIED, gridKindToProto(sdk.GridKind("bogus")))
 }
 
-// TestHexLayoutToProto covers the enum in both directions, for the reason
+// TestHexLayoutToProto covers both enum values (SDK -> proto is the only
+// direction that exists: the wire never sends a layout back), for the reason
 // TestGridKindToProto does: a mapping hard-coded to pointy would pass the
 // tomb and mislabel every flat-top map in the game.
 func TestHexLayoutToProto(t *testing.T) {
