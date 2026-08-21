@@ -5,9 +5,10 @@ import (
 	"errors"
 	"fmt"
 
-	encountersv2 "github.com/KirkDiggler/rpg-api/internal/repositories/encounters/v2"
+	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
+
 	lobbyrepo "github.com/KirkDiggler/rpg-api/internal/repositories/lobby"
-	tkenc "github.com/KirkDiggler/rpg-toolkit/encounter"
+	"github.com/KirkDiggler/rpg-api/internal/sessionworld"
 )
 
 // AbandonEncounterInput carries the entity-typed AbandonEncounter request.
@@ -18,26 +19,31 @@ type AbandonEncounterInput struct {
 }
 
 // AbandonEncounterOutput is the lean result of an abandon. Clients learn the
-// terminal transition from the encounter's own EncounterEnded broadcast on
-// StreamEncounter, not from this response — mirrors every other
-// state-changing lobby RPC (SetReady, LeaveLobby).
+// terminal transition from the session's own ended broadcast, not from this
+// response — mirrors every other state-changing lobby RPC (SetReady,
+// LeaveLobby).
 type AbandonEncounterOutput struct{}
 
-// AbandonEncounter administratively ends the lobby's STARTED encounter —
-// host-only, rpg-api#663. The escape hatch for a stuck or unwanted encounter
-// (e.g. a FREE_ROAM deadlock, rpg-toolkit#483) with no other way to end.
+// AbandonEncounter administratively ends the lobby's STARTED session —
+// host-only, rpg-api#663. The escape hatch for a stuck or unwanted session
+// with no other way to end.
+//
+// Ends the session through the toolkit's declared "withdrawn" ending
+// (sessionworld.EndingWithdrawn — the same ending the reference tomb's own
+// world declares, session.Manager.End's "declared external ending"
+// contract): the party administratively left, rather than being defeated or
+// completing the dungeon. Manager.End is load-act-save-return in one call,
+// so this method (unlike the old encounter stack's own AbandonEncounter)
+// does its own load/mutate/persist internally.
 //
 // Unlike every other mutating RPC in this package (CreateLobby, LeaveLobby,
 // StartEncounter), AbandonEncounter never writes the lobby record — it only
-// needs to READ it (host check, resolve EncounterID) and WRITE the
-// encounter. This is deliberate, not an oversight:
+// needs to READ it (host check, resolve EncounterID) and end the session.
+// This is deliberate, not an oversight:
 //
 //   - GetMyActiveLobby's liveness check (get_my_active_lobby.go) already
-//     treats a STARTED lobby whose encounter carries Mode == ModeEnded
-//     identically to "no active lobby" — the WHOLE Output is zeroed, not
-//     just EncounterID. Once rpg-toolkit#797's End(reason) persists that
-//     Mode, GetMyActiveLobby reports correctly with no cooperating write
-//     from this method.
+//     treats a STARTED lobby whose session is no longer Open identically to
+//     "no active lobby" — the WHOLE Output is zeroed, not just EncounterID.
 //   - CreateLobby's Save() unconditionally refreshes the caller's
 //     player->lobby index for the member set of the NEW lobby it just
 //     built, regardless of what a stale index entry previously pointed at
@@ -49,12 +55,10 @@ type AbandonEncounterOutput struct{}
 //
 // Locking: unlike StartEncounter/LeaveLobby, this method does not take the
 // per-lobby lock (o.locks) — it never mutates the lobby record, only reads
-// it. It also does not take any per-encounter lock: none exists in this
-// codebase today (the v2 encounter orchestrator's own combat verbs share
-// the same unguarded load-mutate-save exposure against each other), so
-// AbandonEncounter racing a concurrent combat verb on the same encounter
-// carries the same pre-existing risk profile as any two combat verbs
-// racing each other — not a new gap introduced here.
+// it. It also does not take any per-session lock: none exists in this
+// codebase today, so AbandonEncounter racing a concurrent session verb on
+// the same session carries the same pre-existing risk profile as any two
+// session verbs racing each other — not a new gap introduced here.
 func (o *Orchestrator) AbandonEncounter(ctx context.Context, in *AbandonEncounterInput) (*AbandonEncounterOutput, error) {
 	if in == nil {
 		return nil, errors.New("lobby orchestrator: AbandonEncounterInput is required")
@@ -74,34 +78,15 @@ func (o *Orchestrator) AbandonEncounter(ctx context.Context, in *AbandonEncounte
 		return nil, ErrLobbyNotStarted
 	}
 
-	encData, err := o.encounterRepo.Get(ctx, data.EncounterID)
-	if err != nil {
-		if errors.Is(err, encountersv2.ErrNotFound) {
-			// Nothing left to abandon — same caller-visible outcome as an
-			// encounter that ended naturally.
+	if _, err := o.sessionManager.End(ctx, &sdk.EndInput{
+		Session: data.EncounterID, Ending: sessionworld.EndingWithdrawn,
+	}); err != nil {
+		if errors.Is(err, sdk.ErrNoSession) || errors.Is(err, sdk.ErrNoEncounter) || errors.Is(err, sdk.ErrClosed) {
+			// Nothing left to abandon — same caller-visible outcome whether
+			// the session is simply gone or already ended.
 			return nil, ErrEncounterAlreadyEnded
 		}
-		return nil, fmt.Errorf("load encounter %q: %w", data.EncounterID, err)
-	}
-
-	enc, err := tkenc.LoadFromData(ctx, encData, o.encounterBroker,
-		tkenc.WithCharacterResolver(o.buildCharacterResolver(encData)),
-		tkenc.WithCombatResolver(o.buildCombatResolver(encData)),
-		tkenc.WithMovementResolver(o.buildMovementResolver(encData)),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("load encounter from data %q: %w", data.EncounterID, err)
-	}
-
-	if endErr := enc.End(tkenc.EncounterEndedReasonAbandoned); endErr != nil {
-		if errors.Is(endErr, tkenc.ErrEncounterEnded) {
-			return nil, ErrEncounterAlreadyEnded
-		}
-		return nil, fmt.Errorf("end encounter %q: %w", data.EncounterID, endErr)
-	}
-
-	if err := o.encounterRepo.Save(ctx, enc.ToData()); err != nil {
-		return nil, fmt.Errorf("save encounter %q: %w", data.EncounterID, err)
+		return nil, fmt.Errorf("end session %q: %w", data.EncounterID, err)
 	}
 
 	return &AbandonEncounterOutput{}, nil

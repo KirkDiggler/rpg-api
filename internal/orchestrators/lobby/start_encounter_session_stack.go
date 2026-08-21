@@ -11,64 +11,96 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/sessionworld"
 )
 
-// StartEncounter's new-session-stack path (design rpg-project/ideas/session-
-// api/design.md §3 "coexistence"): server configuration selects EXACTLY ONE
-// stack per StartEncounter call, never both. This file is the new stack's
-// half; start_encounter.go's existing body is the old stack's, completely
-// untouched by anything here.
+// StartEncounterInput carries the entity-typed StartEncounter request.
+type StartEncounterInput struct {
+	// PlayerID is the authenticated caller. Must be the lobby's host.
+	PlayerID string
+	LobbyID  string
+
+	// DungeonKey mirrors the proto's dungeon_key field (rpg-api#688,
+	// rpg-api-protos v0.1.115). Unused today: this, the session stack's
+	// sole remaining StartEncounter implementation, always plays the one
+	// embedded reference-tomb dungeon regardless of what's supplied here
+	// — see this file's package-level doc for the content-authoring gap
+	// that leaves open. Kept on the struct rather than dropped so the
+	// handler's proto-to-input translation stays a straight field copy,
+	// and so a future content-key-aware session-stack path has somewhere
+	// to land without a handler change.
+	DungeonKey DungeonKey
+}
+
+// StartEncounterOutput carries the freshly constructed encounter's ID.
+// Clients drop the lobby stream and subscribe to the session stream on
+// receipt of the parallel EncounterStarted broadcast.
+type StartEncounterOutput struct {
+	EncounterID string
+}
+
+// StartEncounter is the lobby -> encounter seam (design rpg-project/ideas/
+// session-api/design.md §3), and now the session stack's ONLY
+// implementation — the old encounter stack (github.com/KirkDiggler/
+// rpg-toolkit/encounter) was removed in rpg-project#227, so there is no
+// second branch to coexist with any more. Host-only, all-ready gated,
+// atomic member-set snapshot (guarded by the per-lobby lock so a racing
+// LeaveLobby lands either before this snapshot — member excluded — or
+// after — FailedPrecondition, lobby-surface.md "Start/leave atomicity").
 //
 // # The party plays the reference tomb
 //
-// This path used to seed every session from a single hardcoded room, because
-// there was no authored-content compiler for the new stack and building one
-// here would have been rpg-api inventing dungeon geometry. That gap CLOSED:
-// rpg-toolkit#1133 shipped rulebooks/dnd5e/encounter/dungeonspec, whose own
-// forcing case is the sentence this path now implements -- reference-tomb.yaml
-// compiles into a runnable new-stack world and a player walks entrance → hall →
-// tomb. internal/sessionworld holds the compile and the one seam the compiler
-// leaves to a host; see its package comment for what that seam is and why it
-// borrows the projection instead of doing arithmetic.
+// This path used to seed every session from a single hardcoded room,
+// because there was no authored-content compiler for the new stack and
+// building one here would have been rpg-api inventing dungeon geometry.
+// That gap CLOSED: rpg-toolkit#1133 shipped rulebooks/dnd5e/encounter/
+// dungeonspec, whose own forcing case is the sentence this path
+// implements — reference-tomb.yaml compiles into a runnable world and a
+// player walks entrance -> hall -> tomb. internal/sessionworld holds the
+// compile and the one seam the compiler leaves to a host; see its package
+// comment for what that seam is and why it borrows the projection
+// instead of doing arithmetic.
 //
-// So a new-stack session now opens in three chambers with walls between them, a
-// garrison of skeletons holding the hall, and a captain behind a door locked at
-// DC 12 -- the same dungeon the old stack has always served, compiled by the new
-// one.
+// So a session now opens in three chambers with walls between them, a
+// garrison of skeletons holding the hall, and a captain behind a door
+// locked at DC 12 — a fixed, authored dungeon compiled fresh per call.
 //
 // # What is still narrow here, stated rather than implied
 //
-//   - ONE DUNGEON. StartEncounterInput.DungeonKey selects content on the old
-//     path; this one ignores it and always plays the tomb. That is a smaller
-//     narrowing than it looks -- no proto field carries a key, so every real
-//     call leaves it at the zero value and the old path serves exactly one
-//     dungeon too -- but it is a narrowing, and the authoring path
-//     (PutDungeon → dungeonregistry) still writes the OLD dialect, so the
-//     dungeon builder cannot yet author for this stack. That is the next
-//     content-side piece of work, not something to paper over here.
-//   - NO MONSTER BEHAVIOR. session.Spawn takes no decider, by its own design
-//     ("behavior arrives with the wave that brings it"), so the garrison is
-//     placed, perceived and remembered correctly and does not act.
+//   - ONE DUNGEON. StartEncounterInput.DungeonKey is carried on the
+//     struct (proto parity) but ignored — every call plays the tomb. The
+//     authoring path (PutDungeon -> dungeonregistry) still writes the OLD
+//     rpg-toolkit/encounter/dungeonspec dialect, so the dungeon builder
+//     cannot yet author for this stack. That is the next content-side
+//     piece of work, not something to paper over here.
+//   - NO MONSTER BEHAVIOR. session.Spawn takes no decider, by its own
+//     design ("behavior arrives with the wave that brings it"), so the
+//     garrison is placed, perceived and remembered correctly and does
+//     not act.
 //   - NO AUTHORED ENDING BEYOND WITHDRAWAL. See sessionworld.EndingWithdrawn:
-//     the composition has no "the boss died" trigger to declare, so the boss
-//     flag is carried and unused.
+//     the composition has no "the boss died" trigger to declare, so the
+//     boss flag is carried and unused.
+//   - NO ARCADE RECOVERY / STALE-ACTION-ECONOMY RESET. The old stack's
+//     StartEncounter called tkcharacter.RestoreForNewEncounter and cleared
+//     a stale in-combat action economy before seating each member
+//     (character.go's since-removed seedMemberCombatSnapshot); nothing in
+//     this path or in sdk.Manager.Join's own documented contract performs
+//     an equivalent today, so a character who died (or was mid-turn) in a
+//     PRIOR encounter joins a fresh one exactly as their stored record
+//     left them. Not ported here — deciding where this belongs (the
+//     toolkit's Join, or an explicit rpg-api call before it) is a design
+//     question, not a mechanical port; flagged, not silently dropped.
 //
 // # One thing that is NOT a shortcut any more
 //
 // The old placeholder needed an InitiativeRoller and could only supply the
 // toolkit's own test fake, which meant a fight in it resolved turn order
-// party-then-monster. Nothing in THIS file supplies one: the capabilities are
-// construction-time only and live in internal/sessionworld, and the session
-// package supplies its own -- including the sight range that decides who is in
-// contact -- when it loads the world. The honest remaining gap is upstream, and
-// unchanged: the toolkit still exposes no injectable real (dice + ability
-// score) InitiativeRoller, only the interface.
+// party-then-monster. Nothing in this file supplies one: the capabilities
+// are construction-time only and live in internal/sessionworld, and the
+// session package supplies its own — including the sight range that
+// decides who is in contact — when it loads the world.
+func (o *Orchestrator) StartEncounter(ctx context.Context, in *StartEncounterInput) (*StartEncounterOutput, error) {
+	if in == nil {
+		return nil, errors.New("lobby orchestrator: StartEncounterInput is required")
+	}
 
-// startEncounterOnSessionStack is StartEncounter's new-stack branch,
-// self-contained on purpose (its own lock/load/validate, not shared with
-// the old path's) so a change to one can never silently affect the other --
-// the same separation design rule 9 requires between SessionService and the
-// old encounter stack, applied here to the two STACKS rather than the two
-// SERVICES.
-func (o *Orchestrator) startEncounterOnSessionStack(ctx context.Context, in *StartEncounterInput) (*StartEncounterOutput, error) {
 	unlock := o.locks.Lock(in.LobbyID)
 	defer unlock()
 

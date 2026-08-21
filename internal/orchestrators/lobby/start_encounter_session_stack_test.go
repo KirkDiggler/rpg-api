@@ -13,14 +13,11 @@ import (
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 
 	"github.com/KirkDiggler/rpg-api/internal/entities"
-	encounterhandlerv2 "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v2/encounter"
 	lobbyorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/lobby"
 	sessionorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/session"
 	"github.com/KirkDiggler/rpg-api/internal/pkg/idgen"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
-	encountersv2 "github.com/KirkDiggler/rpg-api/internal/repositories/encounters/v2"
 	lobbyrepo "github.com/KirkDiggler/rpg-api/internal/repositories/lobby"
-	tkenc "github.com/KirkDiggler/rpg-toolkit/encounter"
 )
 
 // SessionStackSuite proves StartEncounter's new-stack branch in isolation:
@@ -57,27 +54,19 @@ func (s *SessionStackSuite) SetupTest() {
 
 	s.lobbyRepo = lobbyrepo.NewInMemory()
 	s.broker = lobbyorch.NewBroker()
-	encBroker := tkenc.NewBroker(tkenc.NewInMemoryTransport())
 
 	registry, err := lobbyorch.LoadContentRegistry()
 	s.Require().NoError(err)
 
 	orch, err := lobbyorch.New(&lobbyorch.Config{
-		LobbyRepo:              s.lobbyRepo,
-		LobbyBroker:            s.broker,
-		CharacterRepo:          s.charRepo,
-		EncounterRepo:          encountersv2.NewInMemory(),
-		EncounterBroker:        encBroker,
-		BuildCharacterResolver: func(_ *tkenc.Data) tkenc.CharacterResolver { return encounterhandlerv2.StubCharacterResolver{} },
-		BuildCombatResolver:    func(_ *tkenc.Data) tkenc.CombatResolver { return nil },
-		BuildMovementResolver:  func(_ *tkenc.Data) tkenc.MovementResolver { return nil },
-		LobbyIDGenerator:       idgen.NewSequential("lobby"),
-		JoinRefGenerator:       idgen.NewSequential("ref"),
-		EncounterIDGenerator:   idgen.NewSequential("enc"),
-		Registry:               registry,
-		// The one field under test: presence routes StartEncounter to the
-		// new stack for every call this suite makes.
-		SessionManager: sessOrch.Manager,
+		LobbyRepo:            s.lobbyRepo,
+		LobbyBroker:          s.broker,
+		CharacterRepo:        s.charRepo,
+		LobbyIDGenerator:     idgen.NewSequential("lobby"),
+		JoinRefGenerator:     idgen.NewSequential("ref"),
+		EncounterIDGenerator: idgen.NewSequential("enc"),
+		Registry:             registry,
+		SessionManager:       sessOrch.Manager,
 	})
 	s.Require().NoError(err)
 	s.orch = orch

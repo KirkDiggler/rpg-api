@@ -5,9 +5,9 @@ import (
 	"errors"
 	"fmt"
 
-	encountersv2 "github.com/KirkDiggler/rpg-api/internal/repositories/encounters/v2"
+	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
+
 	lobbyrepo "github.com/KirkDiggler/rpg-api/internal/repositories/lobby"
-	"github.com/KirkDiggler/rpg-toolkit/encounter/core"
 )
 
 // GetMyActiveLobbyInput carries the entity-typed GetMyActiveLobby request.
@@ -23,8 +23,8 @@ type GetMyActiveLobbyInput struct {
 // an error.
 //
 // EncounterID is set if and only if Status is StatusStarted AND the
-// encounter has been verified still live (exists, Mode != ModeEnded). A
-// STARTED lobby whose encounter is not live has nothing left for a client
+// session has been verified still open (Manager.Status reports Open). A
+// STARTED lobby whose session is not open has nothing left for a client
 // to resume into — the lobby record itself is a terminal, dead husk at that
 // point (WAITING -> STARTED never reverses; see lobbyrepo.Status) — so this
 // method reports that case identically to "no active lobby": the whole
@@ -79,25 +79,24 @@ func (o *Orchestrator) GetMyActiveLobby(ctx context.Context, in *GetMyActiveLobb
 		return &GetMyActiveLobbyOutput{LobbyID: data.ID, Status: data.Status}, nil
 	}
 
-	// STARTED: the lobby record never learns when its encounter later ends
-	// (see Repository's doc comment — StartEncounter's Save is the last
-	// write a STARTED lobby ever gets), so liveness has to be checked
-	// against the encounter's own current state before trusting
-	// encounter_id. A STARTED lobby with no encounter_id at all would be a
-	// StartEncounter bug (it always sets both together) — treated the same
-	// as "not live" rather than as a hard error, since the caller-visible
-	// outcome (nothing to resume) is identical either way.
+	// STARTED: the lobby record never learns when its session later ends
+	// (StartEncounter's Save is the last write a STARTED lobby ever gets),
+	// so liveness has to be checked against the session's own current state
+	// before trusting encounter_id. A STARTED lobby with no encounter_id at
+	// all would be a StartEncounter bug (it always sets both together) —
+	// treated the same as "not live" rather than as a hard error, since the
+	// caller-visible outcome (nothing to resume) is identical either way.
 	if data.EncounterID == "" {
 		return &GetMyActiveLobbyOutput{}, nil
 	}
-	encData, err := o.encounterRepo.Get(ctx, data.EncounterID)
+	status, err := o.sessionManager.Status(ctx, &sdk.StatusInput{Session: data.EncounterID})
 	if err != nil {
-		if errors.Is(err, encountersv2.ErrNotFound) {
+		if errors.Is(err, sdk.ErrNoSession) || errors.Is(err, sdk.ErrNoEncounter) {
 			return &GetMyActiveLobbyOutput{}, nil
 		}
-		return nil, fmt.Errorf("load encounter %q for liveness check: %w", data.EncounterID, err)
+		return nil, fmt.Errorf("check session %q liveness: %w", data.EncounterID, err)
 	}
-	if encData.Mode == core.ModeEnded {
+	if !status.Open {
 		return &GetMyActiveLobbyOutput{}, nil
 	}
 
