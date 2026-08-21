@@ -24,117 +24,17 @@ rpg-dnd5e-web#448's clean slate); the web made zero calls to it. See
 `docs/status.md` "Active work" for the full deletion tally. The grade below
 for the v2 encounter handler is now the only encounter handler grade.
 
-### Encounter v2 handler — B (Wave 2.11e update)
+### ~~Encounter v2 handler — B~~ DELETED (rpg-project#227, 2026-08-21)
 
-`internal/handlers/dnd5e/v2/encounter/` — the v1alpha2 encounter stack.
-Since the #582 carve-out the RPCs delegate load → verb → persist to the v2
-orchestrator (`internal/orchestrators/encounter/v2`), leaving the handler as
-proto↔input + sentinel→status mapping; the resolvers below stay handler-side
-(depguard-excluded) because they touch the rulebook. Wave 2.11e adds the
-MovementResolver wiring, bringing OA-class reactions end-to-end for both
-movement directions.
-
-What's here as of Wave 2.11e:
-
-- `Dnd5eCombatResolver` (`dnd5e_combat_resolver.go`, `dnd5e_combat_resolver_phased.go`)
-  — implements both `tkenc.CombatResolver` and `tkenc.PhasedCombatResolver`.
-  Cached attacker prep map (`pendingPhased`) lets phase 2 reuse the same
-  loaded character + resolveCtx without creating duplicate condition
-  subscribers.
-- `Dnd5eMovementResolver` (`dnd5e_movement_resolver.go`) — implements
-  `tkenc.MovementResolver`; delegates to `combat.MoveEntity` per hex step.
-  Builds spatial room + combatant registry + gamectx per step so OA chain
-  fires correctly (see `encounter.md` MovementResolver wiring section).
-- `TakeAction` (`take_action.go`) — RPC for player-initiated combat actions.
-  Any menu ref routes through the toolkit dispatch (encounter v0.20+); the
-  handler translates the target oneof per the advertised TargetKind contract —
-  entity_id, self (→ actor's own id), unset oneof (untargeted NONE) — and
-  rejects reserved position/area (#605). Carved onto the v2 orchestrator
-  (`internal/orchestrators/encounter/v2/take_action.go`, #582 step 5): the
-  handler is now proto↔input + sentinel→status mapping; the orchestrator owns
-  load (with the #689 hydration cascade so the resolver reads the held
-  attacker/defender — the #684 double-subscribe cure) → `enc.TakeActionPhased`
-  → persist, and persists `PendingReactionPrompts` + publishes
-  `InputRequiredDelivered` (save-before-publish, #538 A) when phase 1 surfaces a
-  player reactor. The single rulebook-touching piece — marshaling the resolver's
-  native `*combat.AttackContext` into the opaque `AttackContextJSON` — is the
-  injected `ReactionResume.MarshalAttackContext` (the phase-1 counterpart to the
-  SubmitCheck-side decode), kept in `reaction_resume.go` so the orchestrator
-  stays rulebook-free. Joins `Interact`/`SubmitCheck`/`SetReactionReady`/
-  `ActivateFeature` on the orchestrator's single-`load` core.
-- `MoveEntity` (`handler.go`) — RPC for moving a player's controlled entity
-  along a proposed path. Carved onto the v2 orchestrator
-  (`internal/orchestrators/encounter/v2/move_entity.go`, #582 step 6): the
-  handler is now proto↔input (proto positions → `core.Hex`) + sentinel→status
-  mapping; the orchestrator owns load (with the #689 hydration cascade so the
-  movement resolver reads the held mover — the #684 double-subscribe cure) →
-  `enc.Move` → `persistWithCharacterData`. Empty-path is classified as
-  `ErrEmptyPath` after load so the auth sentinels keep precedence; toolkit Move
-  refusals join `ErrMoveRefused` → `FailedPrecondition`. The opportunity-attack
-  resolution rides the injected `BuildMovementResolver` (the rulebook-importing
-  `Dnd5eMovementResolver` translation seam stays handler-side); its lookup-only
-  threatener load runs on a throwaway bus (not the encounter bus), so it is not a
-  #684 source and is carried as-is. Joins the rest of the verbs on the
-  orchestrator's single-`load` core.
-- `SubmitCheck` (`submit_check.go` + `submit_check_reaction.go`) — dispatches
-  to the reaction branch when the caller's pending prompt is a reaction;
-  unmarshals the persisted `AttackContextJSON` back into `combat.AttackContext`
-  and feeds it into `CompleteTakeAction` with the chosen modifiers.
-- `SetReactionReady` (`set_reaction_ready.go`) — RPC for per-character
-  per-condition readiness toggle. Carved onto the v2 orchestrator
-  (`internal/orchestrators/encounter/v2/set_reaction_ready.go`, #582 step 3):
-  the handler is now proto↔input + sentinel→status mapping; the orchestrator
-  owns load → `enc.SetReactionReady` → persist. Joins `Interact` (#582 step 1)
-  and `SubmitCheck` (#582 step 2) on the orchestrator's single-`load` core.
-- `ActivateFeature` (`activate_feature.go`) — RPC for in-encounter feature
-  activation (Rage et al.). Carved onto the v2 orchestrator
-  (`internal/orchestrators/encounter/v2/activate_feature.go`, #582 step 4): the
-  handler keeps building `CharDataJSON` (the rule-ish character serialization +
-  in-combat `ActionEconomy` injection stays handler-side) and persists the
-  verb's `UpdatedCharData`; the orchestrator owns load → `enc.ActivateFeature` →
-  persist. This step also **retired the handler-package `Runner`** — it was the
-  Runner's only caller, so `runner.go` (and its `buildCombatResolver` /
-  `buildMovementResolver`, duplicates of the orchestrator's `load` resolver
-  wiring) was deleted. The orchestrator's `load` is now the single load core for
-  every carved verb. #691 (toolkit, OPEN): ActivateFeature's load deliberately
-  does NOT use the #689 hydration cascade (`WithCharacterData` stays false) — the
-  toolkit verb self-loads the actor from `CharDataJSON`; attaching it via the
-  cascade would reintroduce the #684-class double-subscribe collision.
-- `EndTurn` (`end_turn.go`) — handles `IsNPCPausedForReaction(err)`;
-  `serializePendingPhasedAttacks` marshals the live `*PhasedAttackContext`
-  into `AttackContextJSON` before snapshot (honors the encounter SDK's
-  HOST CONTRACT documented in `persistNPCPendingReactions`). rpg-api#636: its
-  NPC dispatch loop is now the shared `driveNPCChain`, also used by
-  `DriveStalledNPCTurn` (`drive_npc.go`) — the "combat-entry kick" that
-  `StreamEncounter`/`GetEncounter` call (best-effort, error-swallowed) at every
-  connect so a TURN_BASED encounter that starts with an NPC active (no
-  preceding `EndTurn` to chain off of) doesn't stall forever. Single-flighted
-  per encounter ID (`keyed_mutex.go`) against concurrent connects.
-- `applyReactionConditions` + `applyMonsterReactionConditions`
-  (`reaction_conditions.go`) — wires OA on every character and monster +
-  Shield on spellcasters. Both applied at every rehydration; idempotent.
-- Translator (`translate.go`) — the `ReactionPrompt` oneof variant on
-  `InputRequired` + `InputRequiredDelivered` event publication.
-- `encounterHexRoom` (`hex_room.go`) — `spatial.Room` adapter over
-  encounter data; `MoveEntity` write path added for per-step position mutation.
-
-Test coverage:
-
-- 5 Wave 2.11c sneak-attack regression tests (cross-RPC bus, gamectx,
-  TurnEnd reset, once-per-turn enforcement).
-- 3 Wave 2.11e movement OA integration tests (`integration_movement_oa_test.go`):
-  player OA on NPC fleeing (via `MoveNPCSteps`); NPC OA on player fleeing
-  (via `MoveEntity` RPC); Disengage suppression (on same bus).
-- Full integration suites pass.
-- Dedicated player Shield + OA tests: `integration_player_shield_test.go`
-  (Wave 2.11d #536 partial — wired in same wave).
-
-Grade remains B: surface is well-shaped, resolver wiring is tested end-to-end.
-Gaps keeping it below A: Disengage cross-RPC persistence (condition evaporates
-between TakeAction and MoveEntity due to per-LoadFromData bus reconstruction),
-player-pause reactions (toolkit#665 future), and the HOST CONTRACT around
-`AttackContextJSON` serialization is documented but not yet structurally
-enforced from the SDK side (rpg-toolkit#657).
+`internal/handlers/dnd5e/v2/encounter/` — the v1alpha2 encounter stack this
+section graded — is deleted in full (~44 files), along with its orchestrator
+and repository (see below) and the `github.com/KirkDiggler/rpg-toolkit/
+encounter` module it was built on. Replaced by the `rulebooks/dnd5e/session`
+SDK, integrated directly into `LobbyService` — see `docs/architecture/
+components/lobby-service.md`. There is no proto-level encounter handler grade
+to give any more; gameplay verbs ride `SessionService`
+(`internal/handlers/dnd5e/session/v1alpha1/`), not yet scored in this doc.
+See `docs/status.md` "Active work" for the full deletion tally.
 
 ### Lobby handler — B+ (new, 2026-07-07)
 
@@ -259,8 +159,10 @@ it delegates rather than implementing rules.
 
 `internal/processors/event/processor.go` is deleted. It had zero consumers
 left once the v1 orchestrator and handler were gone — verified by grep before
-deletion. The v2 path publishes through the toolkit's own `tkenc.Broker`
-instead, a different mechanism with its own (untracked-here) grade.
+deletion. The v2 path this note used to point to as the replacement is ALSO
+deleted now (rpg-project#227, 2026-08-21 — see "Encounter v2 handler" above);
+event delivery today is the `rulebooks/dnd5e/session` SDK's own event stream,
+fanned out by `internal/orchestrators/session.Broker`, not graded in this doc.
 
 ### ~~Redis publisher — B~~ DELETED (rpg-api#642, 2026-07-13)
 
@@ -275,17 +177,15 @@ processor that was its only real consumer.
 `v2/` subdirectory) is deleted. See "Encounter repository v2" below for
 its replacement, which is already Redis-backed.
 
-### Encounter repository v2 — B
+### ~~Encounter repository v2 — B~~ DELETED (rpg-project#227, 2026-08-21)
 
-`internal/repositories/encounters/v2/` (`redis.go`, `in_memory.go`)
-
-Unlike the deleted v1 repo, this one has both a Redis implementation (wired
-into production in `cmd/server/server.go` with a 24h TTL) and an in-memory
-variant for tests, both covered by their own test files. This is the
-repository the v2 encounter path and the lobby orchestrator's `StartEncounter`
-actually use. Held at B rather than A pending a closer read of TTL/eviction
-behavior under real traffic — not graded from a fresh deep read in this pass,
-just confirmed to exist, compile, and pass its own tests.
+`internal/repositories/encounters/v2/` (`redis.go`, `in_memory.go`) is deleted
+along with the v2 encounter handler/orchestrator it backed (see "Encounter v2
+handler" above). The lobby orchestrator's `StartEncounter` no longer persists
+through a repository of its own — it builds directly onto the
+`rulebooks/dnd5e/session` SDK's `sdk.Manager`, which owns its own session/
+encounter persistence (`internal/orchestrators/session`'s Redis-backed
+repositories), not graded in this doc.
 
 ### ~~Dungeon repository — D~~ DELETED (rpg-api#642, 2026-07-13)
 
@@ -334,21 +234,25 @@ Redis-backed. Narrow scope. No observed gaps. Low risk.
 
 ## Testing
 
-### Integration test harness — B+
+### Integration test harness — B-
 
 `internal/integration/harness/harness.go`
 
-**Updated 2026-07-13 (#642):** the v1-only `internal/integration/encounter/`
-suite (barbarian/fighter/monk/rogue class tests, `open_door_test.go`,
-`stream_entity_state_test.go`, and siblings — 10 files) that exercised the now-deleted
-v1alpha1 EncounterService is deleted along with it. The harness itself is trimmed
-of matching v1 wiring (no more `EncounterClient`, v1 orchestrator/repo/publisher
-construction) but keeps registering CharacterService, DiceService, the v1alpha2
-EncounterService, and LobbyService. Coverage for the encounter flow now lives in
-`internal/integration/encounter_v2_test.go` and `internal/integration/
-lobby_v1alpha1_test.go`, both unaffected by this deletion and already passing.
-Grade held at B+: the harness remains the most valuable test asset in the repo,
-now scoped to the paths that are actually live.
+**Updated 2026-08-21 (rpg-project#227):** the harness no longer registers a
+v1alpha2 EncounterService — that service is deleted along with the old
+encounter stack (see "Encounter v2 handler" above). `TestServer` drops
+`EncounterClientV2`/`BrokerV2`/`EncRepoV2`; `TestServer.SessionOrch` (a
+miniredis-backed session orchestrator) is wired into the lobby orchestrator
+instead, mirroring production. The six top-level `internal/integration/
+*_test.go` suites that drove `LobbyService` through a real gRPC round-trip
+via `EncounterClientV2`-backed assertions are deleted with it — see
+`docs/architecture/components/integration-test-harness.md`. Grade dropped
+from B+ to B-: the harness itself (container lifecycle, bufconn wiring,
+CharacterService/DiceService/LobbyService registration) is intact and still
+the most valuable test-infra piece in the repo, but it currently proves NO
+full-stack, real-gRPC coverage of `LobbyService` or the session SDK — only
+`internal/integration/character` and `internal/integration/session` (a
+separate harness) exercise anything end-to-end today.
 
 ### Unit tests — B-
 
