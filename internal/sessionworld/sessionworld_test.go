@@ -73,24 +73,26 @@ func (s *ReferenceTombSuite) TestThePartyComesInWhereTheDungeonSaysItDoes() {
 // package exists for.
 //
 // The tomb's authored start is the entrance's local cell [1,3]. Its absolute
-// cell is (0,-3) -- not (1,3) -- because an offset rectangle SHEARS when it
+// cell is (0,3) -- not (1,3) -- because an offset rectangle SHEARS when it
 // becomes axial. Any change that passes the authored cell straight through,
 // or reimplements the projection as "local plus origin", produces (1,3) or
 // (7,3) and fails here.
 //
 // The literal is the point rather than an embarrassment: reading the expected
 // value back out of the same projection under test would assert nothing at all.
-// It MOVED once, and that is the literal earning its keep: it was (1,-4) until
-// rpg-toolkit#1141 corrected spatial's hex offset schemes (pointy-top is
-// odd-r, so the COLUMN shears with the row: q = 1 - (3-1)/2 = 0). The value
-// here was read off the corrected toolkit, not derived by hand -- this package
-// borrows the projection precisely so it never has its own opinion about it.
+// It has MOVED TWICE, and that is the literal earning its keep. It was (1,-4)
+// until rpg-toolkit#1141 corrected spatial's hex offset schemes (pointy-top
+// is odd-r, so the COLUMN shears with the row: q = 1 - (3-1)/2 = 0), then
+// (0,-3) until rpg-toolkit#1150 corrected the axial basis (R is cube Z, the
+// row itself, so r = 3 -- not -q-r). Each value was read off the corrected
+// toolkit, not derived by hand -- this package borrows the projection
+// precisely so it never has its own opinion about it.
 func (s *ReferenceTombSuite) TestPlacementsAreProjectedThroughTheCompositionNotCopied() {
 	authored := spatial.Position{X: 1, Y: 3}
 	s.Require().NotEqual(authored, s.tomb.PartySeats[0],
 		"an authored cell that survived unchanged means nothing projected it")
-	s.Equal(spatial.Position{X: 0, Y: -3}, s.tomb.PartySeats[0],
-		"the entrance's local [1,3] is the absolute cell (0,-3)")
+	s.Equal(spatial.Position{X: 0, Y: 3}, s.tomb.PartySeats[0],
+		"the entrance's local [1,3] is the absolute cell (0,3)")
 }
 
 // TestTheGarrisonHoldsTheHallAndTheCaptainWaitsBeyondIt checks the monsters
