@@ -704,9 +704,13 @@ func (s *CharacterCreationSuite) TestListClasses_MapsResolvedCategoryChoiceOptio
 		s.T(),
 		fighterMartial.GetOptions(),
 		[]string{
+			// "net" dropped: rpg-toolkit#1146 (composable attack damage
+			// provider, dnd5e v0.97.0) removed the Net weapon from the
+			// toolkit's registry entirely, so the real RPC this suite drives
+			// no longer offers it as a martial-ranged option.
 			"greatsword", "longsword", "rapier", "shortsword", "battleaxe", "flail", "glaive", "greataxe",
 			"halberd", "lance", "maul", "morningstar", "pike", "scimitar", "trident", "war-pick",
-			"warhammer", "whip", "heavy-crossbow", "longbow", "blowgun", "hand-crossbow", "net",
+			"warhammer", "whip", "heavy-crossbow", "longbow", "blowgun", "hand-crossbow",
 		},
 	)
 	longbow := equipmentItemByID(s.T(), fighterMartial.GetOptions(), "longbow")
