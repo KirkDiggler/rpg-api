@@ -20,25 +20,22 @@ import (
 	lobbyv1alpha1pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/lobby/v1alpha1"
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
 	characterv2pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/character"
-	encounterv2pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/encounter"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
 	apiv1alpha1handler "github.com/KirkDiggler/rpg-api/internal/handlers/api/v1alpha1"
 	lobbyhandler "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/lobby/v1alpha1"
 	character2 "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v1alpha1/character"
 	characterhandlerv2 "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v2/character"
-	encounterhandlerv2 "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v2/encounter"
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
 	diceorc "github.com/KirkDiggler/rpg-api/internal/orchestrators/dice"
 	lobbyorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/lobby"
+	sessionorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/session"
 	"github.com/KirkDiggler/rpg-api/internal/pkg/clock"
 	"github.com/KirkDiggler/rpg-api/internal/pkg/idgen"
 	"github.com/KirkDiggler/rpg-api/internal/redis"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	characterdraftrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft"
 	dicesessionrepo "github.com/KirkDiggler/rpg-api/internal/repositories/dice_session"
-	encountersv2 "github.com/KirkDiggler/rpg-api/internal/repositories/encounters/v2"
 	lobbyrepo "github.com/KirkDiggler/rpg-api/internal/repositories/lobby"
-	tkenc "github.com/KirkDiggler/rpg-toolkit/encounter"
 )
 
 const bufSize = 1024 * 1024
@@ -60,17 +57,15 @@ type TestServer struct {
 	closeOnce      sync.Once
 
 	// Proto-generated clients for tests to use
-	CharacterClient   dnd5ev1alpha1.CharacterServiceClient
-	DiceClient        apiv1alpha1.DiceServiceClient
-	EncounterClientV2 encounterv2pb.EncounterServiceClient
-	LobbyClient       lobbyv1alpha1pb.LobbyServiceClient
+	CharacterClient dnd5ev1alpha1.CharacterServiceClient
+	DiceClient      apiv1alpha1.DiceServiceClient
+	LobbyClient     lobbyv1alpha1pb.LobbyServiceClient
 
 	// Exposed for test setup (seeding data, etc.)
 	CharacterRepo characterrepo.Repository
-	BrokerV2      *tkenc.Broker
-	EncRepoV2     encountersv2.Repository
 	LobbyBroker   *lobbyorch.Broker
 	LobbyRepo     lobbyrepo.Repository
+	SessionOrch   *sessionorch.Orchestrator
 }
 
 // Config allows customization of the test server.
@@ -192,7 +187,6 @@ func newWithClientSource(ctx context.Context, cfg *Config, redisAddr string) (*T
 	// Create typed clients
 	ts.CharacterClient = dnd5ev1alpha1.NewCharacterServiceClient(conn)
 	ts.DiceClient = apiv1alpha1.NewDiceServiceClient(conn)
-	ts.EncounterClientV2 = encounterv2pb.NewEncounterServiceClient(conn)
 	ts.LobbyClient = lobbyv1alpha1pb.NewLobbyServiceClient(conn)
 
 	return ts, nil
@@ -289,71 +283,32 @@ func (ts *TestServer) wireServices(cfg *Config) error {
 	characterv2pb.RegisterCharacterServiceServer(ts.grpcServer, characterHandlerV2)
 	apiv1alpha1.RegisterDiceServiceServer(ts.grpcServer, diceHandler)
 
-	// v1alpha2 encounter wiring — broker and repo are stored on ts so tests can
-	// seed data via ts.EncRepoV2.Save(...) and the registered handler sees the
-	// same state (single shared instance).
-	//
-	// CombatResolverConfig/MovementResolverConfig carry charRepo (mirrors
-	// cmd/server/server.go's production wiring) so the #689 characterData
-	// cascade actually hydrates players from DataJSON on combat-capable RPCs.
-	// Without this, EVERY player attack in this harness fell back to the
-	// stat-snapshot stand-in path regardless of what a test seeds — harmless
-	// for tests that seed explicit AttackBonus/DamageDice (the pre-#634
-	// pattern), but it silently defeated any test of a HYDRATED player (a
-	// lobby-created character, which by design carries no flat combat
-	// snapshot — rpg-api#634 Part 1). Roller is left nil so the rulebook uses
-	// its crypto-random default, matching production.
-	ts.BrokerV2 = tkenc.NewBroker(tkenc.NewInMemoryTransport())
-	ts.EncRepoV2 = encountersv2.NewInMemory()
-	encV2Handler, err := encounterhandlerv2.New(&encounterhandlerv2.HandlerConfig{
-		Broker: ts.BrokerV2,
-		Repo:   ts.EncRepoV2,
-		CombatResolverConfig: &encounterhandlerv2.Dnd5eCombatResolverConfig{
-			CharacterRepo: charRepo,
-		},
-		MovementResolverConfig: &encounterhandlerv2.Dnd5eMovementResolverConfig{
-			CharacterRepo: charRepo,
-		},
+	// SessionService's toolkit integration -- the sole encounter-construction
+	// stack StartEncounter builds onto now that the old v1alpha2 encounter
+	// path has been removed (rpg-project#227). Shares charRepo with the rest
+	// of the harness's wiring, mirroring cmd/server/server.go's production
+	// wiring.
+	sessOrch, err := sessionorch.New(sessionorch.Config{
+		Redis: ts.redisClient, Characters: charRepo, TTL: 24 * time.Hour,
 	})
 	if err != nil {
-		return fmt.Errorf("v2 encounter handler: %w", err)
+		return fmt.Errorf("session orchestrator: %w", err)
 	}
-	encounterv2pb.RegisterEncounterServiceServer(ts.grpcServer, encV2Handler)
+	ts.SessionOrch = sessOrch
 
-	// LobbyService v1alpha1 — broker and repo are stored on ts so tests can
-	// seed/inspect lobby state directly, mirroring BrokerV2/EncRepoV2 above.
-	// StartEncounter builds onto the SAME BrokerV2/EncRepoV2 the v1alpha2
-	// encounter service reads from.
+	// LobbyService v1alpha1 -- broker and repo are stored on ts so tests can
+	// seed/inspect lobby state directly. StartEncounter builds onto
+	// ts.SessionOrch.Manager.
 	ts.LobbyBroker = lobbyorch.NewBroker()
 	ts.LobbyRepo = lobbyrepo.NewInMemory()
-	dungeonRegistry, err := lobbyorch.LoadContentRegistry()
-	if err != nil {
-		return fmt.Errorf("load dungeon registry: %w", err)
-	}
 	lobbyOrch, err := lobbyorch.New(&lobbyorch.Config{
-		LobbyRepo:       ts.LobbyRepo,
-		LobbyBroker:     ts.LobbyBroker,
-		CharacterRepo:   charRepo,
-		EncounterRepo:   ts.EncRepoV2,
-		EncounterBroker: ts.BrokerV2,
-		Registry:        dungeonRegistry,
-		// Deterministic zero-modifier stub (not the real Dnd5eCharacterResolver):
-		// harness integration tests seed encounters directly and assert
-		// wire-shape totals like "roll + 0" — see e.g.
-		// TestInteract_LockedDoor_FailedRoll_NoEvents's "DC 30 // unbeatable
-		// with d20 + zero modifiers". BuildCharacterResolver here ignores data
-		// and always returns the stub, mirroring how encounterhandlerv2's own
-		// New() defaults to it when no CharacterResolverConfig is supplied
-		// (see the v2 encounter handler wiring a few lines above, which sets
-		// none — rpg-api#516).
-		BuildCharacterResolver: func(*tkenc.Data) tkenc.CharacterResolver {
-			return encounterhandlerv2.StubCharacterResolver{}
-		},
-		BuildCombatResolver:   lobbyhandler.BuildCombatResolver(encounterhandlerv2.Dnd5eCombatResolverConfig{CharacterRepo: charRepo}),
-		BuildMovementResolver: lobbyhandler.BuildMovementResolver(encounterhandlerv2.Dnd5eMovementResolverConfig{CharacterRepo: charRepo}),
-		LobbyIDGenerator:      idgen.NewUUID("lobby"),
-		JoinRefGenerator:      idgen.NewUUID("join"),
-		EncounterIDGenerator:  idgen.NewUUID(""),
+		LobbyRepo:            ts.LobbyRepo,
+		LobbyBroker:          ts.LobbyBroker,
+		CharacterRepo:        charRepo,
+		LobbyIDGenerator:     idgen.NewUUID("lobby"),
+		JoinRefGenerator:     idgen.NewUUID("join"),
+		EncounterIDGenerator: idgen.NewUUID(""),
+		SessionManager:       sessOrch.Manager,
 	})
 	if err != nil {
 		return fmt.Errorf("lobby orchestrator: %w", err)
@@ -395,12 +350,6 @@ func (ts *TestServer) closeAll() {
 	}
 	if ts.grpcServer != nil {
 		ts.grpcServer.Stop()
-	}
-	if ts.BrokerV2 != nil {
-		// Releases the broker's per-encounter listen goroutines and the
-		// underlying transport. Without this, each integration test leaks
-		// one listener per Subscribe call.
-		_ = ts.BrokerV2.Close()
 	}
 	if ts.LobbyBroker != nil {
 		_ = ts.LobbyBroker.Close()

@@ -20,10 +20,10 @@ Every gRPC method this doc used to list (`CreateEncounter`, `JoinEncounter`,
 `EndTurn`, `OpenDoor`, `PlayerDisconnected`, `GetEncounterHistory`) is gone
 along with the service registration in `cmd/server/server.go`.
 
-**Current encounter handler:** see [`encounter.md`](./encounter.md) — the
-v1alpha2 encounter service, the only encounter handler remaining. It never had
-the boundary violations this doc used to describe (toolkit spatial types
-hardcoded, `*toolkitchar.Data` type assertions) — it was designed load→verb→
-persist from the start.
+**Then-current encounter handler:** the v1alpha2 encounter service
+(`encounter.md`) this pointer used to name is ALSO deleted now
+(rpg-project#227, 2026-08-21) — see [`encounter.md`](./encounter.md) for that
+removal. There is no proto-level encounter handler any more; gameplay verbs
+ride `SessionService` (`internal/handlers/dnd5e/session/v1alpha1/`).
 
 See `docs/status.md` "Active work" for the full deletion tally.

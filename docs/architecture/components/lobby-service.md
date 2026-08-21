@@ -1,17 +1,30 @@
 ---
 name: lobby service
 description: LobbyService v1alpha1 — party assembly (join refs, membership, ready flags, lifecycle) and the sole encounter-construction path
-updated: 2026-07-20
-confidence: high — verified by reading the implementation and running the full RPC-level + orchestrator-level + repository-level test suites plus a real-Redis 4-player integration test; AbandonEncounter (rpg-api#663) additionally verified via a live playtest against the real game route (Chrome DevTools MCP + grpcurl, evidence on rpg-api#675)
+updated: 2026-08-21
+confidence: medium — the party-assembly RPCs (CreateLobby/JoinLobby/SetReady/LeaveLobby/SetConnected/StreamLobby) below are still accurate as of rpg-project#227's rip-out; the StartEncounter/AbandonEncounter/GetMyActiveLobby internals and the "Known gaps"/"Verify" sections describing the OLD encounter stack are NOT — see the rpg-project#227 notes inline rather than a full rewrite
 ---
 
 # lobby service
 
-The lobby service is the party-assembly surface the v2 encounter stack never had: a
-lobby lets N players join refs/ready-up/host-migrate before a `v1alpha2` encounter
-exists at all. `StartEncounter` is where a lobby hands off to the encounter stack — it
-is now the **only** way an encounter comes into existence (it subsumes the deleted
-`EncounterService.CreateEncounter` RPC).
+**Partially stale (rpg-project#227, 2026-08-21):** the old encounter stack
+(`github.com/KirkDiggler/rpg-toolkit/encounter`, `internal/orchestrators/
+encounter/v2` — see [`encounter.md`](./encounter.md)) this doc was written
+against is deleted. `StartEncounter` now builds directly onto the
+`rulebooks/dnd5e/session` SDK (`internal/orchestrators/lobby/
+start_encounter_session_stack.go`, the sole implementation now — there is no
+second stack to coexist with). `AuthoringService`/`internal/dungeonregistry`
+and `LobbyService.ListDungeons` are also deleted (see
+[`authoring.md`](./authoring.md)); `ListDungeons` is `Unimplemented`. The
+sections below that describe old-stack internals (file names like
+`start_encounter.go`/`crypt_monster_seed.go`, the `BuildCombatResolver`/
+`BuildMovementResolver` exports, `tkenc.LoadFromData` in AbandonEncounter,
+`devcombat`/`devseed`) are historical record of the pre-#227 shape, not
+current code — not rewritten into new architecture prose here.
+
+The lobby service is the party-assembly surface: N players join refs/ready-up/
+host-migrate before a session exists at all. `StartEncounter` is the **only**
+way a session comes into existence.
 
 Design doc: `rpg-project/ideas/game-screen-rebuild/lobby-surface.md`. Umbrella:
 KirkDiggler/rpg-project#81. Implementation issue: rpg-api#629.

@@ -1,4 +1,4 @@
-package encounter
+package character
 
 // character_data.go composes the equipment-facing CharacterData fields
 // (equipped/inventory/slots/armor_class_detail/main_hand_damage) from the
@@ -10,26 +10,24 @@ package encounter
 // field composed here is a pass-through or Ref-translation of a
 // toolkit-owned value — no rules are computed in rpg-api.
 //
-// The charRepo.Get + LoadFromData that feeds BuildEquipmentCharacterData
-// for the encounter snapshot path lives in project.go's characterDataFor
-// (merged with the identity lookup, rpg-api#664, so this slice doesn't add
-// a second per-player query). This file holds only the pure composition,
-// exported so the out-of-encounter v1alpha2 character service
-// (handlers/dnd5e/v2/character) — which already holds the post-equip
-// runtime Character from the orchestrator call — shares it too.
+// Moved from the now-deleted internal/handlers/dnd5e/v2/encounter package
+// (the old EncounterService, rpg-project#227) into this, its one remaining
+// caller: recomputedCharacterData in handler.go.
 
 import (
 	encounterv2pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/encounter"
 	tkcharacter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 )
 
+// refModuleDnd5e is the canonical module string for the dnd5e rulebook,
+// mirroring the (now-deleted) v2 encounter handler's own constant of the
+// same name.
+const refModuleDnd5e = "dnd5e"
+
 // BuildEquipmentCharacterData composes the equipment-facing fields of
-// CharacterData from a toolkit EquipmentView. Exported so the out-of-encounter
-// v1alpha2 character service (handlers/dnd5e/v2/character) — which already
-// holds the post-equip runtime Character from the orchestrator call — shares
-// this exact composition instead of a second, potentially-drifting copy.
-// nil view returns a zero-value CharacterData (callers merge onto identity
-// fields already populated, e.g. by characterDataFor).
+// CharacterData from a toolkit EquipmentView. nil view returns a zero-value
+// CharacterData (callers merge onto identity fields already populated, e.g.
+// by recomputedCharacterData).
 func BuildEquipmentCharacterData(view *tkcharacter.EquipmentView) *encounterv2pb.CharacterData {
 	cd := &encounterv2pb.CharacterData{}
 	if view == nil {

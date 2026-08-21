@@ -3,8 +3,6 @@ package lobby_test
 import (
 	lobbyorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/lobby"
 	lobbyrepo "github.com/KirkDiggler/rpg-api/internal/repositories/lobby"
-	tkenc "github.com/KirkDiggler/rpg-toolkit/encounter"
-	"github.com/KirkDiggler/rpg-toolkit/encounter/core"
 )
 
 func (s *LobbySuite) TestGetMyActiveLobby_NoActiveLobby_ReturnsEmptyOutput() {
@@ -30,12 +28,12 @@ func (s *LobbySuite) TestGetMyActiveLobby_WaitingLobby_ReturnsLobbyOnly() {
 }
 
 func (s *LobbySuite) TestGetMyActiveLobby_StartedWithLiveEncounter_ReturnsBothIDs() {
+	s.seedLiveSession("enc-live")
 	s.seedLobby(&lobbyrepo.Data{
 		ID: "lobby-g2", HostPlayerID: "alice", Status: lobbyrepo.StatusStarted, EncounterID: "enc-live",
 		Members:     map[string]*lobbyrepo.Member{"alice": {PlayerID: "alice", IsHost: true}},
 		MemberOrder: []string{"alice"},
 	})
-	s.Require().NoError(s.encRepo.Save(s.ctx, &tkenc.Data{ID: core.EncounterID("enc-live"), Mode: core.ModeFreeRoam}))
 
 	out, err := s.orch.GetMyActiveLobby(s.ctx, &lobbyorch.GetMyActiveLobbyInput{PlayerID: "alice"})
 	s.Require().NoError(err)
@@ -45,25 +43,21 @@ func (s *LobbySuite) TestGetMyActiveLobby_StartedWithLiveEncounter_ReturnsBothID
 }
 
 func (s *LobbySuite) TestGetMyActiveLobby_StartedWithTerminalEncounter_ReturnsEmptyOutput() {
-	for _, terminal := range []string{"all-hostiles-defeated victory", "tpk defeat"} {
-		s.Run(terminal, func() {
-			s.seedLobby(&lobbyrepo.Data{
-				ID: "lobby-g3-" + terminal, HostPlayerID: "alice", Status: lobbyrepo.StatusStarted, EncounterID: "enc-ended-" + terminal,
-				Members:     map[string]*lobbyrepo.Member{"alice": {PlayerID: "alice", IsHost: true}},
-				MemberOrder: []string{"alice"},
-			})
-			s.Require().NoError(s.encRepo.Save(s.ctx, &tkenc.Data{ID: core.EncounterID("enc-ended-" + terminal), Mode: core.ModeEnded}))
+	s.seedEndedSession("enc-ended")
+	s.seedLobby(&lobbyrepo.Data{
+		ID: "lobby-g3", HostPlayerID: "alice", Status: lobbyrepo.StatusStarted, EncounterID: "enc-ended",
+		Members:     map[string]*lobbyrepo.Member{"alice": {PlayerID: "alice", IsHost: true}},
+		MemberOrder: []string{"alice"},
+	})
 
-			out, err := s.orch.GetMyActiveLobby(s.ctx, &lobbyorch.GetMyActiveLobbyInput{PlayerID: "alice"})
-			s.Require().NoError(err)
-			s.Require().Empty(out.LobbyID, "a STARTED lobby whose encounter has ended has nothing to resume")
-			s.Require().Empty(out.EncounterID)
-		})
-	}
+	out, err := s.orch.GetMyActiveLobby(s.ctx, &lobbyorch.GetMyActiveLobbyInput{PlayerID: "alice"})
+	s.Require().NoError(err)
+	s.Require().Empty(out.LobbyID, "a STARTED lobby whose session has ended has nothing to resume")
+	s.Require().Empty(out.EncounterID)
 }
 
 func (s *LobbySuite) TestGetMyActiveLobby_StartedWithMissingEncounter_ReturnsEmptyOutput() {
-	// Started lobby whose encounter record is simply gone (e.g. expired) —
+	// Started lobby whose session record is simply gone (e.g. expired) —
 	// same "nothing to resume" outcome as an explicitly ended one.
 	s.seedLobby(&lobbyrepo.Data{
 		ID: "lobby-g4", HostPlayerID: "alice", Status: lobbyrepo.StatusStarted, EncounterID: "enc-missing",

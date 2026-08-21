@@ -1045,62 +1045,70 @@ today.
 `internal/orchestrators/encounter/dungeon_mapper.go` is deleted with the rest
 of the v1 orchestrator.
 
-## v1alpha2 encounter service (Wave 2.5 slice 1 — superseded)
+## v1alpha2 encounter service — DELETED (rpg-project#227, 2026-08-21)
 
-Walking skeleton wired through the rpg-toolkit `encounter` SDK. `MoveEntity` and
-`StreamEncounter` implemented; all other RPCs return `codes.Unimplemented`. Per-viewer
-event projection works end-to-end (verified by `internal/integration/encounter_v2_test.go`).
-
-**Stale note (2026-07-07), now resolved (2026-07-13):** this section predated the many
-verbs that shipped since (TakeAction, EndTurn, Interact, SubmitCheck, SetReactionReady,
-ActivateFeature all exist now — see `internal/orchestrators/encounter/v2/`) and the
-removal of `CreateEncounter` (see the LobbyService entry above — `StartEncounter` on
-`LobbyService v1alpha1` is the sole construction path now). The "deletion deferred until
-web migrates" note below is also resolved: #642 deleted the v1alpha1 encounter path
-outright, confirmed via grep that the web made zero v1alpha1 encounter RPC calls. A full
-content refresh of this section (it still describes a walking-skeleton state years out of
-date) remains a separate cleanup, not done in this PR.
-
-Known gaps: rpg-toolkit#629 (LoS-loss events when entity moves out of viewer range — slice
-1 wave goal uses mutual LoS so this doesn't bite). `SnapshotDelivered.encounter` proto
-field is empty for slice 1; toolkit `Snapshot` shape will be mapped when slice 2 needs it.
+This section described the v1alpha2 encounter service (handler, orchestrator,
+and Redis/in-memory repository — `internal/handlers/dnd5e/v2/encounter`,
+`internal/orchestrators/encounter/v2`, `internal/repositories/encounters/v2`).
+All of it is deleted, replaced by the `rulebooks/dnd5e/session` SDK integrated
+directly into `LobbyService` — see
+[`architecture/components/lobby-service.md`](architecture/components/lobby-service.md)
+and [`architecture/components/encounter.md`](architecture/components/encounter.md).
+`internal/dungeonregistry` and `internal/orchestrators/authoring`
+(`AuthoringService`/PutDungeon) are deleted too — see
+[`architecture/components/authoring.md`](architecture/components/authoring.md).
+`cmd/devseed` and `internal/pkg/devcombat` are deleted — see
+[`architecture/components/devseed.md`](architecture/components/devseed.md).
 
 ## Per-subsystem confidence
 
-See [quality.md](quality.md) for grade and rationale.
+See [quality.md](quality.md) for grade and rationale — **not updated by
+rpg-project#227's rip-out**, so its per-component rows for the deleted
+components below are also stale.
 
 | Subsystem | Confidence |
 |---|---|
 | Character handler | Medium — large converter surface with many TODO stubs |
-| Encounter v2 handler/orchestrator | Medium-high — one file per RPC, load→verb→persist, no proto leakage; see quality.md |
 | Character orchestrator | Medium-high — smaller, well-tested |
-| Dungeon component | Medium — good tests, wrong repo; toolkit boundary violation |
+| Dungeon component | Medium — good tests, wrong repo; toolkit boundary violation (unaffected by #227 — a separate, pre-existing legacy component) |
 | Spawner component | Medium — thin, functional |
-| Encounter repository v2 (Redis + in-memory) | Medium-high — persistent backend, tested, production-wired |
 | Character repository (Redis) | Medium-high — only persistent game-state store predating the v2 vertical |
-| Integration test harness | Medium-high — good coverage of happy paths across character/lobby/v2 encounter |
+| Integration test harness | Medium — character/lobby coverage intact; new-stack session coverage lives in `internal/integration/session`, not yet folded into this confidence line |
 | Services layer (sandboxroom) | Low — sparse; most business logic lives in orchestrators |
 
-~~Encounter handler | Encounter orchestrator | Event processor | Redis publisher |
-Encounter repository (in-memory) | Dungeon repository (in-memory) | Encounter log
-repository (in-memory)~~ — all deleted with the v1alpha1 stack (#642).
+~~Encounter v2 handler/orchestrator | Encounter repository v2 (Redis +
+in-memory) | Authoring orchestrator/handler | dungeonregistry | devseed |
+devcombat~~ — all deleted with the old encounter stack (rpg-project#227,
+2026-08-21). ~~Encounter handler | Encounter orchestrator | Event processor |
+Redis publisher | Encounter repository (in-memory) | Dungeon repository
+(in-memory) | Encounter log repository (in-memory)~~ — all deleted with the
+v1alpha1 stack (#642, an earlier and separate removal).
 
-### Lint — 29 pre-existing violations (was 70, before #642)
+### Lint — 9 pre-existing violations (rpg-project#227, 2026-08-21)
 
-`make pre-commit` fails on lint with 29 pre-existing violations as of 2026-07-13,
-down from 70 before the v1alpha1 encounter stack deletion (#642) — 41 fewer, mostly
-`goconst` (44→19, duplicated proto/action-id string literals lived almost entirely
-in the deleted orchestrator) plus a handful of `unused`/`gocritic`/`revive` findings
-that died with their files. All tests pass. Every remaining issue was verified
-present (same description, shifted line number) in the pre-deletion baseline — this
-PR introduced zero new lint issues. Categories:
+`golangci-lint run ./...` reports 9 pre-existing violations as of the
+rpg-project#227 rip-out, verified byte-for-byte unrelated to that branch's
+diff (none in a file the rip-out touched). This count supersedes the
+2026-07-13 (#642) figures below, which described a `goconst`-heavy baseline
+in files (the old orchestrator, `internal/integration/encounter_v2_test.go`)
+that are themselves now deleted — a fresh count was taken rather than
+subtracting from a stale one. Categories:
 
-- **goconst (19)** — magic string literals repeated 3+ times in dungeon toolkit and character converters
-- **govet (3)** — error variable shadowing in harness and integration helpers
-- **unconvert (3)** — unnecessary string() conversions in character handler
-- **staticcheck (1)** — `grpc.DialContext` deprecated in test harness
-- **errcheck (2)** — unchecked errors in harness.Close()
-- **unused (1)** — dead helper in `internal/integration/encounter_v2_test.go`
+- **errcheck (2)** — unchecked `ts.conn.Close()`/`ts.redisClient.Close()` in `internal/integration/harness/harness.go`
+- **govet (3)** — `err` shadowing in `internal/integration/harness/harness.go`
+- **staticcheck (1)** — `grpc.DialContext` deprecated, same file
+- **unconvert (3)** — unnecessary `string()` conversions in `internal/handlers/dnd5e/v1alpha1/character/{handler,converters}.go`
+
+<details>
+<summary>2026-07-13 (#642) figures — superseded, kept for history</summary>
+
+`make pre-commit` failed on lint with 29 pre-existing violations as of
+2026-07-13, down from 70 before the v1alpha1 encounter stack deletion (#642)
+— 41 fewer, mostly `goconst` (44→19, duplicated proto/action-id string
+literals lived almost entirely in the deleted orchestrator) plus a handful of
+`unused`/`gocritic`/`revive` findings that died with their files.
+
+</details>
 
 ## Upcoming work
 

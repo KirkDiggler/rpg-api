@@ -11,12 +11,10 @@ import (
 	"syscall"
 	"time"
 
-	authoringhandler "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/authoring/v1alpha1"
 	lobbyhandler "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/lobby/v1alpha1"
 	sessionhandler "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/session/v1alpha1"
 	character2 "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v1alpha1/character"
 	characterhandlerv2 "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v2/character"
-	encounterhandlerv2 "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v2/encounter"
 
 	"github.com/spf13/cobra"
 	"google.golang.org/grpc"
@@ -28,18 +26,13 @@ import (
 	grpc_logging "github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/logging"
 	grpc_recovery "github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/recovery"
 
-	tkenc "github.com/KirkDiggler/rpg-toolkit/encounter"
-
 	apiv1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/api/v1alpha1"
-	authoringv1alpha1pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/authoring/v1alpha1"
 	lobbyv1alpha1pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/lobby/v1alpha1"
 	sessionv1alpha1pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
 	characterv2pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/character"
-	encounterv2pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/encounter"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
 	apiv1alpha1handler "github.com/KirkDiggler/rpg-api/internal/handlers/api/v1alpha1"
-	authoringorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/authoring"
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
 	diceorc "github.com/KirkDiggler/rpg-api/internal/orchestrators/dice"
 	lobbyorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/lobby"
@@ -50,24 +43,13 @@ import (
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	characterdraftrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft"
 	dicesessionrepo "github.com/KirkDiggler/rpg-api/internal/repositories/dice_session"
-	encountersv2 "github.com/KirkDiggler/rpg-api/internal/repositories/encounters/v2"
 	lobbyrepo "github.com/KirkDiggler/rpg-api/internal/repositories/lobby"
 )
 
-// lobbyTTL mirrors the v2 encounter repo's 24h TTL (encV2Repo below): long
-// enough for any single playtest session, short enough that abandoned
-// WAITING lobbies don't accumulate forever (lobby-surface.md "Abandonment").
+// lobbyTTL is long enough for any single playtest session, short enough
+// that abandoned WAITING lobbies don't accumulate forever (lobby-surface.md
+// "Abandonment").
 const lobbyTTL = 24 * time.Hour
-
-// authoringEnabledEnvVar gates AuthoringService registration (plan.md
-// S1). Off by default -- design.md's dev-gated authoring surface.
-const authoringEnabledEnvVar = "RPG_AUTHORING_ENABLED"
-
-// sessionStackEnabledEnvVar gates StartEncounter's new-session-stack branch
-// (rpg-api#796 / rpg-project#227 W2, design §3 "coexistence"). Off by
-// default -- the deployed default stays the old encounter stack until
-// cutover; local dev sets this to exercise the new stack live.
-const sessionStackEnabledEnvVar = "RPG_SESSION_STACK_ENABLED"
 
 var (
 	grpcPort int
@@ -208,48 +190,11 @@ func runServer(_ *cobra.Command, _ []string) error {
 	characterv2pb.RegisterCharacterServiceServer(srv, characterHandlerV2)
 	apiv1alpha1.RegisterDiceServiceServer(srv, diceHandler)
 
-	// v1alpha2 encounter wiring (additive, no v1alpha1 disturbance).
-	// Repo is Redis-backed so encounter state survives rpg-api restarts and is
-	// inspectable via redis-cli during playtest. Broker stays in-memory:
-	// rpg-api is single-process, pub/sub buys nothing here. 24h TTL is long
-	// enough for any single playtest session and short enough that abandoned
-	// encounters don't accumulate forever.
-	encV2Transport := tkenc.NewInMemoryTransport()
-	encV2Broker := tkenc.NewBroker(encV2Transport)
-	encV2Repo := encountersv2.NewRedis(redisClient, 24*time.Hour)
-	// Combat + Movement resolvers are wired here so OA-class reactions fire
-	// end-to-end on the production RPC path. Roller is left nil so the rulebook
-	// uses its crypto-random default; tests pass deterministic rollers via
-	// the same fields. CharacterRepo is shared with the rest of the stack.
-	encV2Handler, err := encounterhandlerv2.New(&encounterhandlerv2.HandlerConfig{
-		Broker: encV2Broker,
-		Repo:   encV2Repo,
-		// rpg-api#516: real ability-modifier / tool-proficiency-bonus
-		// resolution for SubmitCheck, replacing the zero-modifier stub.
-		CharacterResolverConfig: &encounterhandlerv2.Dnd5eCharacterResolverConfig{
-			CharacterRepo: charRepo,
-		},
-		CombatResolverConfig: &encounterhandlerv2.Dnd5eCombatResolverConfig{
-			CharacterRepo: charRepo,
-		},
-		MovementResolverConfig: &encounterhandlerv2.Dnd5eMovementResolverConfig{
-			CharacterRepo: charRepo,
-		},
-	})
-	if err != nil {
-		return fmt.Errorf("encounter v2 handler: %w", err)
-	}
-	encounterv2pb.RegisterEncounterServiceServer(srv, encV2Handler)
-
-	// SessionService v1alpha1 (rpg-api#796 / rpg-project#227 W2): the thin
-	// integration of the toolkit's rulebooks/dnd5e/session SDK, built BESIDE
-	// the v1alpha2 encounter path above -- design rule 9 forbids any path
-	// between the two, and there is none: separate Redis key prefixes
-	// (session:v1alpha1:/session-enc:v1alpha1: vs. enc:v2: above), a
-	// separate in-process broker, a separate Manager. charRepo is the one
-	// deliberately shared dependency -- the same character store both
-	// stacks read from, so a character created through either path is
-	// visible to the other.
+	// SessionService v1alpha1 (rpg-api#796 / rpg-project#227 W2 / #227's
+	// rip-out): the thin integration of the toolkit's rulebooks/dnd5e/session
+	// SDK -- the sole encounter-construction stack now that the old
+	// v1alpha2 encounter path (github.com/KirkDiggler/rpg-toolkit/encounter)
+	// has been removed. charRepo is shared with the rest of the stack.
 	sessionOrch, err := sessionorch.New(sessionorch.Config{
 		Redis:      redisClient,
 		Characters: charRepo,
@@ -268,54 +213,19 @@ func runServer(_ *cobra.Command, _ []string) error {
 	}
 	sessionv1alpha1pb.RegisterSessionServiceServer(srv, sessionHandlerImpl)
 
-	// Shared live dungeon-spec registry (plan.md's "Architecture decision:
-	// the shared live registry") -- built ONCE here, from content.AllSpecs()
-	// + RPG_CONTENT_DIR, and passed BY POINTER into both the lobby
-	// orchestrator's Config below and the authoring orchestrator's Config
-	// further down. This is what makes a PutDungeon visible to the very
-	// next StartEncounter with no restart: a private registry constructed
-	// separately inside either orchestrator would compile and pass its own
-	// tests while silently failing that requirement.
-	dungeonRegistry, err := lobbyorch.LoadContentRegistry()
-	if err != nil {
-		return fmt.Errorf("load dungeon registry: %w", err)
-	}
-
 	// LobbyService v1alpha1 (rpg-api#629): party assembly + the sole encounter
-	// construction path. StartEncounter builds onto the SAME encV2Broker/
-	// encV2Repo the v1alpha2 encounter service reads from, so a freshly
-	// started encounter is immediately live for StreamEncounter callers.
+	// construction path. StartEncounter builds directly onto sessionOrch's
+	// Manager -- the session stack is the only stack now (rpg-project#227).
 	lobbyBroker := lobbyorch.NewBroker()
 	lobbyRepo := lobbyrepo.NewRedis(redisClient, lobbyTTL)
 	lobbyCfg := &lobbyorch.Config{
-		LobbyRepo:              lobbyRepo,
-		LobbyBroker:            lobbyBroker,
-		CharacterRepo:          charRepo,
-		EncounterRepo:          encV2Repo,
-		EncounterBroker:        encV2Broker,
-		BuildCharacterResolver: lobbyhandler.BuildCharacterResolver(encounterhandlerv2.Dnd5eCharacterResolverConfig{CharacterRepo: charRepo}),
-		BuildCombatResolver:    lobbyhandler.BuildCombatResolver(encounterhandlerv2.Dnd5eCombatResolverConfig{CharacterRepo: charRepo}),
-		BuildMovementResolver:  lobbyhandler.BuildMovementResolver(encounterhandlerv2.Dnd5eMovementResolverConfig{CharacterRepo: charRepo}),
-		LobbyIDGenerator:       idgen.NewUUID("lobby"),
-		JoinRefGenerator:       idgen.NewUUID("join"),
-		EncounterIDGenerator:   idgen.NewUUID(""),
-		Registry:               dungeonRegistry,
-		// RPG_DUNGEON_KEY (Task E2b): the M1 manual-walkthrough mechanism --
-		// unset in every real deployment today (zero player-facing change),
-		// validated at construction below (a misconfigured value fails
-		// server startup loudly, not the first StartEncounter call).
-		DungeonKeyOverride: os.Getenv("RPG_DUNGEON_KEY"),
-	}
-	// RPG_SESSION_STACK_ENABLED (rpg-api#796 / rpg-project#227 W2, design §3
-	// "coexistence"): unset in every real deployment today (StartEncounter
-	// keeps building on the old stack, zero player-facing change). Set it
-	// for local dev to route StartEncounter onto the new session stack
-	// instead -- see start_encounter_session_stack.go for what that path
-	// actually builds (a fixed placeholder world, not real authored content
-	// yet).
-	if os.Getenv(sessionStackEnabledEnvVar) != "" {
-		lobbyCfg.SessionManager = sessionOrch.Manager
-		log.Println("⚠️  RPG_SESSION_STACK_ENABLED set - StartEncounter builds on the new session stack")
+		LobbyRepo:            lobbyRepo,
+		LobbyBroker:          lobbyBroker,
+		CharacterRepo:        charRepo,
+		LobbyIDGenerator:     idgen.NewUUID("lobby"),
+		JoinRefGenerator:     idgen.NewUUID("join"),
+		EncounterIDGenerator: idgen.NewUUID(""),
+		SessionManager:       sessionOrch.Manager,
 	}
 	lobbyOrch, err := lobbyorch.New(lobbyCfg)
 	if err != nil {
@@ -337,35 +247,18 @@ func runServer(_ *cobra.Command, _ []string) error {
 	healthServer.SetServingStatus("", grpc_health_v1.HealthCheckResponse_SERVING)
 	healthServer.SetServingStatus("dnd5e.api.v1alpha1.CharacterService", grpc_health_v1.HealthCheckResponse_SERVING)
 	healthServer.SetServingStatus("api.v1alpha1.DiceService", grpc_health_v1.HealthCheckResponse_SERVING)
-	healthServer.SetServingStatus("dnd5e.api.v1alpha2.encounter.EncounterService", grpc_health_v1.HealthCheckResponse_SERVING)
 	healthServer.SetServingStatus("dnd5e.api.session.v1alpha1.SessionService", grpc_health_v1.HealthCheckResponse_SERVING)
 	healthServer.SetServingStatus("dnd5e.api.lobby.v1alpha1.LobbyService", grpc_health_v1.HealthCheckResponse_SERVING)
 
-	// AuthoringService v1alpha1 (plan.md S1): PutDungeon, registered ONLY
-	// when RPG_AUTHORING_ENABLED is set. With the gate off, AuthoringService
-	// is simply never registered -- `grpcurl -plaintext ... list` won't show
-	// it, and any call against it gets gRPC's own Unimplemented, not a
-	// custom check (design.md's "absent/Unimplemented" error-handling
-	// line, satisfied by construction rather than a runtime flag check
-	// inside the handler).
-	if os.Getenv(authoringEnabledEnvVar) != "" {
-		contentDir := os.Getenv("RPG_CONTENT_DIR") // authoringorch.New fails fast if empty -- design.md's "gate requires RPG_CONTENT_DIR" decision
-		authoringOrch, err := authoringorch.New(&authoringorch.Config{
-			Registry:            dungeonRegistry,
-			ContentDir:          contentDir,
-			PartyStartSeatCount: lobbyorch.DefaultPartyCap,
-		})
-		if err != nil {
-			return fmt.Errorf("authoring orchestrator: %w", err)
-		}
-		authoringHandlerImpl, err := authoringhandler.New(&authoringhandler.HandlerConfig{Orchestrator: authoringOrch})
-		if err != nil {
-			return fmt.Errorf("authoring handler: %w", err)
-		}
-		authoringv1alpha1pb.RegisterAuthoringServiceServer(srv, authoringHandlerImpl)
-		healthServer.SetServingStatus("dnd5e.api.authoring.v1alpha1.AuthoringService", grpc_health_v1.HealthCheckResponse_SERVING)
-		log.Println("⚠️  RPG_AUTHORING_ENABLED set - AuthoringService registered")
-	}
+	// AuthoringService (PutDungeon) was old-dialect-only -- it wrote through
+	// internal/dungeonregistry against the OLD rpg-toolkit/encounter/
+	// dungeonspec compiler, with no path for the session stack (which plays
+	// a fixed embedded dungeon, see start_encounter_session_stack.go) to
+	// ever read what it wrote. Deleted alongside dungeonregistry and the
+	// rest of the old encounter stack (rpg-project#227) rather than kept
+	// registered behind RPG_AUTHORING_ENABLED for a compiler dialect
+	// nothing else uses any more -- it was never registered in any real
+	// deployment anyway (the gate defaulted off).
 
 	reflection.Register(srv)
 
@@ -398,11 +291,6 @@ func runServer(_ *cobra.Command, _ []string) error {
 			log.Println("Server stopped gracefully")
 		}
 
-		// Release the v1alpha2 encounter broker — terminates per-encounter
-		// listen goroutines and the underlying in-memory transport.
-		if err := encV2Broker.Close(); err != nil {
-			log.Printf("v1alpha2 encounter broker close: %v", err)
-		}
 		if err := lobbyBroker.Close(); err != nil {
 			log.Printf("lobby broker close: %v", err)
 		}
