@@ -230,11 +230,16 @@ func projectPlacements(spec tkdungeonspec.Compiled) ([]spatial.Position, []Monst
 		// about to be thrown away -- work done for nothing, and a fight formed
 		// by a coordinate lookup. Range zero is the honest capability for an
 		// encounter whose only purpose is to answer "where is this cell".
-		Sight:     nobodySees{},
-		Retention: tkencounter.RetentionUnbounded,
-		Field:     spec.Field,
-		Members:   members,
-		Endings:   []tkencounter.EndingInput{{Key: probeEnding, Trigger: tkencounter.TriggerExternal{}}},
+		Sight: nobodySees{},
+		// No fight ever forms here (blind, thrown away), so no clock ever
+		// lands on an unplayed member -- alwaysPasses is a trivial, honest
+		// stand-in for the same reason Initiative/Standing/Sight above are
+		// (toolkit#1162, ADR-0043).
+		TurnDriver: alwaysPasses{},
+		Retention:  tkencounter.RetentionUnbounded,
+		Field:      spec.Field,
+		Members:    members,
+		Endings:    []tkencounter.EndingInput{{Key: probeEnding, Trigger: tkencounter.TriggerExternal{}}},
 	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("project placements: %w", err)
@@ -306,6 +311,12 @@ func buildWorld(field tkencounter.FieldInput) (*tkencounter.EncounterData, error
 		Initiative: orderAsGiven{},
 		Standing:   nobodyDown{},
 		Sight:      nobodySees{},
+		// Same trivial stand-in as above: this world is empty at the moment
+		// it is built, so no clock ever lands on anyone here either
+		// (toolkit#1162, ADR-0043). The session package supplies its own
+		// TurnDriver -- session.Pass{} today -- when it loads this world to
+		// actually play it.
+		TurnDriver: alwaysPasses{},
 		Retention:  tkencounter.RetentionUnbounded,
 		Field:      field,
 		// SetupInput requires at least one declared ending and the compiler
@@ -334,10 +345,12 @@ const EndingWithdrawn = "withdrawn"
 // in a stack trace or a persisted blob.
 const probeEnding = "probe"
 
-// orderAsGiven, nobodyDown and nobodySees are the three capabilities
-// NewEncounter refuses to default (rpg-toolkit#1033: supplied, never assumed).
+// orderAsGiven, nobodyDown, nobodySees and alwaysPasses are four of the
+// capabilities NewEncounter refuses to default (rpg-toolkit#1033 for the
+// first three; alwaysPasses closes the fourth, TurnDriver, added by
+// toolkit#1162/ADR-0043: supplied, never assumed).
 //
-// All three are construction-time only here, which is what makes trivial
+// All four are construction-time only here, which is what makes trivial
 // implementations honest rather than a hidden ruling -- see [buildWorld].
 type orderAsGiven struct{}
 
@@ -370,4 +383,15 @@ func (nobodySees) Sight(members []tkencounter.MemberID) (map[tkencounter.MemberI
 	}
 
 	return out, nil
+}
+
+type alwaysPasses struct{}
+
+// Act is never reached for either encounter this package builds, for the
+// same reason RollInitiative/Standing/Sight above never are: the probe is
+// blind and thrown away, and the real world starts with nobody in it, so no
+// fight can ever land a clock on a member here. Returning encounter.Pass is
+// the only outcome a v1 TurnDriver may return regardless (turndriver.go).
+func (alwaysPasses) Act(_ tkencounter.MemberID) (tkencounter.TurnOutcome, error) {
+	return tkencounter.Pass{}, nil
 }
