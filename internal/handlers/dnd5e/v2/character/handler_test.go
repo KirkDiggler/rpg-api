@@ -413,3 +413,49 @@ func (s *HandlerTestSuite) TestGetCharacterData_OrchestratorGenericError_Propaga
 	s.Require().Error(err)
 	s.Assert().Equal(codes.Internal, status.Code(err))
 }
+
+// TestVerifyCallerOwnsCharacter_MissingAndForeign_IdenticalNotFoundText pins
+// the fix for rpg-api#815's Copilot finding: a missing character and a
+// foreign one must be BYTE-IDENTICAL on the wire, never distinguishable by
+// message text -- the repository's own not-found wording never reaches the
+// caller, only this handler's own canonical "character %q not found".
+// Exercised through GetCharacterData since verifyCallerOwnsCharacter is the
+// one gate all three RPCs share; EquipItem/UnequipItem go through the exact
+// same function.
+func (s *HandlerTestSuite) TestVerifyCallerOwnsCharacter_MissingAndForeign_IdenticalNotFoundText() {
+	ctx := auth.WithPlayerID(s.ctx, s.testPlayerID)
+
+	missingCtrl := gomock.NewController(s.T())
+	missingSvc := charactermock.NewMockService(missingCtrl)
+	missingSvc.EXPECT().
+		GetCharacter(ctx, &orchcharacter.GetCharacterInput{CharacterID: s.testCharacterID}).
+		Return(nil, apierr.NotFound("no character with that id in the repository")) // deliberately DIFFERENT wording
+	missingHandler, err := New(&HandlerConfig{CharacterService: missingSvc})
+	s.Require().NoError(err)
+	_, missingErr := missingHandler.GetCharacterData(ctx, &characterpb.GetCharacterDataRequest{CharacterId: s.testCharacterID})
+
+	foreignCtrl := gomock.NewController(s.T())
+	foreignSvc := charactermock.NewMockService(foreignCtrl)
+	foreignEntity := s.fighterCharacterEntity()
+	foreignEntity.Data.PlayerID = "someone-else"
+	foreignSvc.EXPECT().
+		GetCharacter(ctx, &orchcharacter.GetCharacterInput{CharacterID: s.testCharacterID}).
+		Return(&orchcharacter.GetCharacterOutput{Character: foreignEntity}, nil)
+	foreignHandler, err := New(&HandlerConfig{CharacterService: foreignSvc})
+	s.Require().NoError(err)
+	_, foreignErr := foreignHandler.GetCharacterData(ctx, &characterpb.GetCharacterDataRequest{CharacterId: s.testCharacterID})
+
+	s.Require().Error(missingErr)
+	s.Require().Error(foreignErr)
+	missingSt, ok := status.FromError(missingErr)
+	s.Require().True(ok)
+	foreignSt, ok := status.FromError(foreignErr)
+	s.Require().True(ok)
+
+	s.Assert().Equal(codes.NotFound, missingSt.Code())
+	s.Assert().Equal(codes.NotFound, foreignSt.Code())
+	s.Assert().Equal(missingSt.Message(), foreignSt.Message(),
+		"a missing character and a foreign one must be indistinguishable by message text")
+	s.Assert().NotContains(missingSt.Message(), "repository",
+		"the repository's own wording must never reach the caller")
+}

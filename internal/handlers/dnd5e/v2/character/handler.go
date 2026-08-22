@@ -190,13 +190,28 @@ func (h *Handler) verifyCallerOwnsCharacter(ctx context.Context, characterID str
 		CharacterID: characterID,
 	})
 	if err != nil {
+		if apierr.IsNotFound(err) {
+			return nil, apierr.ToGRPCError(notFoundCharacter(characterID))
+		}
 		return nil, apierr.ToGRPCError(err)
 	}
 	if out == nil || out.Character == nil || out.Character.Data == nil || out.Character.Data.PlayerID != playerID {
-		return nil, apierr.ToGRPCError(apierr.NotFoundf("character %q not found", characterID))
+		return nil, apierr.ToGRPCError(notFoundCharacter(characterID))
 	}
 
 	return out.Character.Data, nil
+}
+
+// notFoundCharacter is the ONE NOT_FOUND this gate ever returns, for BOTH
+// refusal reasons -- a missing character and a foreign one. Copilot caught
+// the leak this closes (rpg-api#815): the repository's own not-found error
+// carries its own wording, and a caller comparing that text against this
+// handler's own "character %q not found" for the foreign-owner case could
+// tell the two refusals apart -- which is exactly the distinction NOT_FOUND
+// exists here to erase (see verifyCallerOwnsCharacter's own doc). One
+// canonical message, never the repository's.
+func notFoundCharacter(characterID string) *apierr.Error {
+	return apierr.NotFoundf("character %q not found", characterID)
 }
 
 // recomputedCharacterData re-fetches the character after an equip/unequip and
