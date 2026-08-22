@@ -388,14 +388,15 @@ func (nobodySees) Sight(members []tkencounter.MemberID) (map[tkencounter.MemberI
 }
 
 // alwaysPasses is hand-written because the toolkit does not export one:
-// session.Pass{} (what Config.TurnDriver is set to for the real, played
-// session in orchestrator.go) does NOT satisfy encounter.TurnDriver --
-// different signature (Act(string) vs Act(encounter.MemberID)) and a
-// different TurnOutcome type -- the bridge between them (turnDriverSeam) is
-// unexported to rpg-toolkit's session package. encounter.Pass, confusingly
-// similarly named, is the TurnOutcome VALUE a driver returns, not a driver
-// itself. Filed rpg-toolkit#1167 to ask the toolkit to export one at the
-// encounter level; this type goes away when it does.
+// sdk.Pass{} (what sdk.Config.TurnDriver is set to for the real, played
+// session in orchestrator.go, where sdk aliases rpg-toolkit's session
+// package) does NOT satisfy tkencounter.TurnDriver -- different signature
+// (Act(string) vs Act(tkencounter.MemberID)) and a different TurnOutcome
+// type -- the bridge between them (turnDriverSeam) is unexported to
+// rpg-toolkit's session package. tkencounter.Pass, confusingly similarly
+// named, is the TurnOutcome VALUE a driver returns, not a driver itself.
+// Filed rpg-toolkit#1167 to ask the toolkit to export one at the encounter
+// level; this type goes away when it does.
 type alwaysPasses struct{}
 
 // Act is never reached for either encounter this package builds, for the

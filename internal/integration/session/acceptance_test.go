@@ -91,11 +91,12 @@ func (allSeeing) Sight(members []tkencounter.MemberID) (map[tkencounter.MemberID
 // since toolkit#1162/ADR-0043 -- construction-time only, same as
 // allStanding/allSeeing above: this fixture builds the seed EncounterData
 // via NewEncounter and the session package supplies its own TurnDriver
-// (session.Pass{}) when it actually loads and plays this world, so what a
-// monster's turn does here never matters. Hand-written because the toolkit
-// does not export a trivial encounter.TurnDriver -- session.Pass{} does not
-// satisfy the interface (different Act signature/return type, and the
-// adapter between them is unexported) -- see rpg-toolkit#1167 and
+// (sdk.Pass{}, where sdk aliases rpg-toolkit's session package) when it
+// actually loads and plays this world, so what a monster's turn does here
+// never matters. Hand-written because the toolkit does not export a
+// trivial tkencounter.TurnDriver -- sdk.Pass{} does not satisfy the
+// interface (different Act signature/return type, and the adapter between
+// them is unexported) -- see rpg-toolkit#1167 and
 // internal/sessionworld/sessionworld.go's own copy of this type.
 type alwaysPasses struct{}
 

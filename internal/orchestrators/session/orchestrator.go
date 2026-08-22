@@ -58,7 +58,7 @@ type Config struct {
 // supplies sdk.Pass{} -- every unplayed member's turn simply passes, driven
 // through synchronously at the moment the clock lands on them. The Monster
 // AI initiative (rpg-project#201) replaces this value through the exact
-// same Config.TurnDriver seam, with no change to session's own shape.
+// same sdk.Config.TurnDriver seam, with no change to session's own shape.
 var turnDriver = sdk.Pass{}
 
 // Orchestrator owns the toolkit session.Manager and the Broker StreamEvents
