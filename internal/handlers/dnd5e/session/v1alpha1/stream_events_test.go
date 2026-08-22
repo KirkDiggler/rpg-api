@@ -12,6 +12,7 @@ import (
 	"google.golang.org/grpc/codes"
 
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
+	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
 
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
@@ -202,5 +203,101 @@ func waitForPublishedEvent(t *testing.T, broker *sessionorch.Broker, stream *cap
 			t.Fatal("event never arrived on the stream")
 			return nil
 		}
+	}
+}
+
+// TestStreamEvents_ForwardsTypedBodyPerKind is the end-to-end half of the
+// oneof-body projection: convert_test.go proves eventToProto's mapping
+// directly, this proves the SAME mapping survives the full
+// Publish -> Subscribe -> StreamEvents -> stream.Send path, one case per
+// body kind (rpg-toolkit#941, rpg-project#249's design brief).
+func TestStreamEvents_ForwardsTypedBodyPerKind(t *testing.T) {
+	tests := []struct {
+		name    string
+		kind    sdk.EventKind
+		body    sdk.EventBody
+		checkPB func(t *testing.T, got *sessionpb.Event)
+	}{
+		{
+			name: "TurnEnded", kind: sdk.EventTurnEnded,
+			body: sdk.TurnEndedBody{Member: "char-1", Next: "goblin-1"},
+			checkPB: func(t *testing.T, got *sessionpb.Event) {
+				require.Equal(t, "char-1", got.GetTurnEnded().GetMember())
+				require.Equal(t, "goblin-1", got.GetTurnEnded().GetNext())
+			},
+		},
+		{
+			name: "Downed", kind: sdk.EventDowned,
+			body: sdk.DownedBody{Member: "goblin-1"},
+			checkPB: func(t *testing.T, got *sessionpb.Event) {
+				require.Equal(t, "goblin-1", got.GetDowned().GetMember())
+			},
+		},
+		{
+			name: "Struck", kind: sdk.EventStruck,
+			body: sdk.StruckBody{
+				Attacker: "char-1", Target: "goblin-1", Roll: 18, Total: 21, Against: 13, Damage: 6,
+				Attack: sdk.AttackRef{Ref: "longsword", Name: "Longsword", DamageType: sdk.DamageSlashing},
+			},
+			checkPB: func(t *testing.T, got *sessionpb.Event) {
+				require.Equal(t, int32(6), got.GetStruck().GetDamage())
+				require.Equal(t, sessionpb.DamageType_DAMAGE_TYPE_SLASHING, got.GetStruck().GetAttack().GetDamageType())
+			},
+		},
+		{
+			name: "Missed", kind: sdk.EventMissed,
+			body: sdk.MissedBody{Attacker: "char-1", Target: "goblin-1", Roll: 4, Total: 7, Against: 13},
+			checkPB: func(t *testing.T, got *sessionpb.Event) {
+				require.Equal(t, int32(4), got.GetMissed().GetRoll())
+			},
+		},
+		{
+			name: "FightStarted", kind: sdk.EventFightStarted,
+			body: sdk.FightStartedBody{Members: []string{"char-1", "goblin-1"}},
+			checkPB: func(t *testing.T, got *sessionpb.Event) {
+				require.Equal(t, []string{"char-1", "goblin-1"}, got.GetFightStarted().GetMembers())
+			},
+		},
+		{
+			name: "FightEnded", kind: sdk.EventFightEnded,
+			body: sdk.FightEndedBody{Cause: sdk.DissolveByDecision},
+			checkPB: func(t *testing.T, got *sessionpb.Event) {
+				require.Equal(t, sessionpb.DissolveKind_DISSOLVE_KIND_BY_DECISION, got.GetFightEnded().GetCause())
+			},
+		},
+		{
+			name: "Moved", kind: sdk.EventMoved,
+			body: sdk.MovedBody{Member: "char-1", To: spatial.Position{X: 3, Y: 4}},
+			checkPB: func(t *testing.T, got *sessionpb.Event) {
+				require.Equal(t, "char-1", got.GetMoved().GetMember())
+				require.Equal(t, 3.0, got.GetMoved().GetTo().GetX())
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			broker := sessionorch.NewBroker()
+			h := &Handler{characters: ownedCharacterRepo(ctrl, "char-1", "alice"), broker: broker}
+
+			ctx, cancel := context.WithCancel(auth.WithPlayerID(context.Background(), "alice"))
+			defer cancel()
+			stream := newCapturingStream(ctx)
+
+			done := make(chan error, 1)
+			go func() {
+				done <- h.StreamEvents(&sessionpb.StreamEventsRequest{Session: "sess-1", Member: "char-1"}, stream)
+			}()
+
+			got := waitForPublishedEvent(t, broker, stream, sdk.Event{
+				Session: "sess-1", Recipient: "char-1", Seq: 1, Kind: tc.kind, Body: tc.body,
+			})
+			require.Equal(t, eventKindToProto(tc.kind), got.GetKind())
+			tc.checkPB(t, got)
+
+			cancel()
+			<-done
+		})
 	}
 }

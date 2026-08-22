@@ -163,11 +163,31 @@ func characterStateToProto(c *sdk.CharacterState) *sessionpb.CharacterState {
 // didn't decode as one -- stays unset on the wire rather than a zero-valued
 // Seen, matching discoveriesToProto's own "absent means nothing to report"
 // convention on this seam.
+//
+// Standing rides along (rpg-toolkit#1137, rpg-project#249): sight-channel
+// knowledge, not roster truth, which is why it lives here and not on a
+// roster read this seam deliberately lacks -- see Participant.
 func seenToProto(s *sdk.Seen) *sessionpb.Seen {
 	if s == nil {
 		return nil
 	}
-	return &sessionpb.Seen{Position: positionToProto(s.Position)}
+	return &sessionpb.Seen{Position: positionToProto(s.Position), Standing: standingToProto(s.Standing)}
+}
+
+// standingToProto mirrors session.Standing onto the wire enum. Two values,
+// not a bool: DOWNED is at zero hit points and out of the fight, distinct
+// from PRONE (a posture condition this seam never gates on, Kirk's ruling
+// rpg-toolkit#1084) -- see session.Standing's own doc. An unrecognized
+// string reaches UNSPECIFIED, a producer defect.
+func standingToProto(s sdk.Standing) sessionpb.Standing {
+	switch s {
+	case sdk.StandingUp:
+		return sessionpb.Standing_STANDING_UP
+	case sdk.StandingDowned:
+		return sessionpb.Standing_STANDING_DOWNED
+	default:
+		return sessionpb.Standing_STANDING_UNSPECIFIED
+	}
 }
 
 func reportToProto(r sdk.Report) *sessionpb.Report {
@@ -202,9 +222,14 @@ func discoveriesToProto(d map[string]sdk.Discovery) map[string]*sessionpb.Discov
 	return out
 }
 
+// sightingToProto mirrors session.Sighting field-for-field, including Name
+// (rpg-toolkit#1137, rpg-project#249): anything an observer can sight, they
+// can name, so a client labels what it draws without a second lookup
+// (rpg-dnd5e-web#564).
 func sightingToProto(s sdk.Sighting) *sessionpb.Sighting {
 	return &sessionpb.Sighting{
 		Subject:    s.Subject,
+		Name:       s.Name,
 		Payload:    s.Payload,
 		Channel:    s.Channel,
 		At:         s.At,
@@ -363,9 +388,11 @@ func eventKindToProto(k sdk.EventKind) sessionpb.EventKind {
 // eventToProto mirrors session.Event field-for-field (design rule 3):
 // session, seq, at, correlation, recipient, kind, payload. The payload is
 // passthrough -- rpg-api round-trips these bytes and never builds or
-// inspects them (design rule 4's corollary).
+// inspects them (design rule 4's corollary). Body is projected separately
+// by setEventBody, once the spine is built, so the passthrough law above
+// stays true of payload even as body stops being the only carrier.
 func eventToProto(e sdk.Event) *sessionpb.Event {
-	return &sessionpb.Event{
+	evt := &sessionpb.Event{
 		Session:     e.Session,
 		Seq:         e.Seq,
 		At:          e.At,
@@ -373,6 +400,59 @@ func eventToProto(e sdk.Event) *sessionpb.Event {
 		Recipient:   e.Recipient,
 		Kind:        eventKindToProto(e.Kind),
 		Payload:     e.Payload,
+	}
+	setEventBody(evt, e.Body)
+	return evt
+}
+
+// setEventBody projects the SDK's typed session.EventBody onto the proto
+// oneof body -- ONE ARM PER BODY (rpg-toolkit#941, rpg-project#249),
+// never a body built from payload bytes: every arm reads only the SDK's own
+// typed fields, the same decode the SDK already did once, not a second
+// encoding of it.
+//
+// evt.Body stays nil for a kind with no typed body member (JOINED, EXITED,
+// ENDED, SCENE_OPENED, TICK, UNKNOWN) and for a beat this build's decoder
+// did not recognize -- session.Event.Body is nil in exactly those cases, so
+// the default arm below is correct by construction, not a fallback that
+// papers over an unhandled case. payload stays the passthrough carrier for
+// every one of those kinds.
+func setEventBody(evt *sessionpb.Event, body sdk.EventBody) {
+	switch b := body.(type) {
+	case sdk.TurnEndedBody:
+		evt.Body = &sessionpb.Event_TurnEnded{TurnEnded: &sessionpb.TurnEnded{Member: b.Member, Next: b.Next}}
+	case sdk.DownedBody:
+		evt.Body = &sessionpb.Event_Downed{Downed: &sessionpb.Downed{Member: b.Member}}
+	case sdk.StruckBody:
+		evt.Body = &sessionpb.Event_Struck{Struck: &sessionpb.Struck{
+			Attacker: b.Attacker,
+			Target:   b.Target,
+			Roll:     int32(b.Roll),
+			Total:    int32(b.Total),
+			Against:  int32(b.Against),
+			Damage:   int32(b.Damage),
+			Attack:   attackRefToProto(b.Attack),
+			Critical: b.Critical,
+		}}
+	case sdk.MissedBody:
+		evt.Body = &sessionpb.Event_Missed{Missed: &sessionpb.Missed{
+			Attacker: b.Attacker,
+			Target:   b.Target,
+			Roll:     int32(b.Roll),
+			Total:    int32(b.Total),
+			Against:  int32(b.Against),
+			Attack:   attackRefToProto(b.Attack),
+		}}
+	case sdk.FightStartedBody:
+		evt.Body = &sessionpb.Event_FightStarted{FightStarted: &sessionpb.FightStarted{Members: b.Members}}
+	case sdk.FightEndedBody:
+		evt.Body = &sessionpb.Event_FightEnded{FightEnded: &sessionpb.FightEnded{Cause: dissolveKindToProto(b.Cause)}}
+	case sdk.MovedBody:
+		evt.Body = &sessionpb.Event_Moved{Moved: &sessionpb.Moved{Member: b.Member, To: positionToProto(b.To)}}
+	default:
+		// nil (no typed body for this kind) or a body type this build does
+		// not recognize: leave evt.Body nil. payload stays the passthrough
+		// carrier.
 	}
 }
 
@@ -423,16 +503,21 @@ func whereToProto(w *sdk.WhereOutput) *sessionpb.GetWhereResponse {
 	return &sessionpb.GetWhereResponse{Position: positionToProto(w.Position)}
 }
 
-// verbToProto mirrors session.Verb onto the wire enum. v1 has exactly one
-// entry (VerbAttack); a verb this build does not recognize -- in principle
-// only a future SDK value this handler package has not been updated for,
-// since the SDK's own Verb is a closed enum with no unknown-but-delivered
-// case the way EventKind carries -- maps to VERB_UNSPECIFIED, a producer
-// defect rather than an answer.
+// verbToProto mirrors session.Verb onto the wire enum. VerbMove joined
+// VerbAttack at protos v0.1.131 (rpg-toolkit#1169) -- Afford already emits
+// VerbMove declarations on the turn clock unconditionally (session's own
+// affordMove), so leaving it unmapped here would silently mislabel every one
+// of them VERB_UNSPECIFIED rather than a producer defect this handler forgot
+// to update for; a verb this build genuinely does not recognize (in
+// principle only a future SDK value) still maps to VERB_UNSPECIFIED, since
+// the SDK's own Verb is a closed enum with no unknown-but-delivered case the
+// way EventKind carries.
 func verbToProto(v sdk.Verb) sessionpb.Verb {
 	switch v {
 	case sdk.VerbAttack:
 		return sessionpb.Verb_VERB_ATTACK
+	case sdk.VerbMove:
+		return sessionpb.Verb_VERB_MOVE
 	default:
 		return sessionpb.Verb_VERB_UNSPECIFIED
 	}
@@ -468,13 +553,155 @@ func slotToProto(s sdk.Slot) sessionpb.Slot {
 // 3): verb, slot, affordable, shortfall -- no omitempty on Affordable or
 // Shortfall on the wire side either, the same false-vs-absent law the SDK's
 // own doc keeps for both fields.
+//
+// Target and Why are both POINTER-TO-POINTER copies (rpg-toolkit#1010,
+// rpg-project#249): the SDK already keeps absent distinct from a present
+// zero value the same way the wire does, so there is nothing to normalise --
+// nil stays nil, a set value crosses as itself.
+//
+// Remaining is NOT wired here: it lands with the separate Move-on-clock wave
+// (rpg-toolkit#1169, branch feat/session-move-clock), still WIP as of this
+// PR -- out of scope here on purpose, to keep one wave on one branch.
 func declarationToProto(d sdk.Declaration) *sessionpb.Declaration {
 	return &sessionpb.Declaration{
 		Verb:       verbToProto(d.Verb),
 		Slot:       slotToProto(d.Slot),
 		Affordable: d.Affordable,
 		Shortfall:  d.Shortfall,
+		Target:     d.Target,
+		Why:        shortfallToProto(d.Why),
 	}
+}
+
+// shortfallReasonToProto mirrors session.ShortfallReason onto the wire enum.
+// An unrecognized string reaches UNSPECIFIED, a producer defect.
+func shortfallReasonToProto(r sdk.ShortfallReason) sessionpb.ShortfallReason {
+	switch r {
+	case sdk.ShortfallNoBudget:
+		return sessionpb.ShortfallReason_SHORTFALL_REASON_NO_BUDGET
+	case sdk.ShortfallNotYourTurn:
+		return sessionpb.ShortfallReason_SHORTFALL_REASON_NOT_YOUR_TURN
+	case sdk.ShortfallNoTargetInReach:
+		return sessionpb.ShortfallReason_SHORTFALL_REASON_NO_TARGET_IN_REACH
+	case sdk.ShortfallDowned:
+		return sessionpb.ShortfallReason_SHORTFALL_REASON_DOWNED
+	case sdk.ShortfallUnreadable:
+		return sessionpb.ShortfallReason_SHORTFALL_REASON_UNREADABLE
+	default:
+		return sessionpb.ShortfallReason_SHORTFALL_REASON_UNSPECIFIED
+	}
+}
+
+// currencyToProto mirrors session.Currency onto the wire enum. NOT Slot,
+// although three values coincide -- Slot says which shape a declaration
+// lights, Currency says which ledger a refusal drained, and movement is a
+// ledger with no shape (see types.proto's Currency doc). An unrecognized
+// string reaches UNSPECIFIED, a producer defect.
+func currencyToProto(c sdk.Currency) sessionpb.Currency {
+	switch c {
+	case sdk.CurrencyAction:
+		return sessionpb.Currency_CURRENCY_ACTION
+	case sdk.CurrencyBonus:
+		return sessionpb.Currency_CURRENCY_BONUS
+	case sdk.CurrencyReaction:
+		return sessionpb.Currency_CURRENCY_REACTION
+	case sdk.CurrencyMovement:
+		return sessionpb.Currency_CURRENCY_MOVEMENT
+	default:
+		return sessionpb.Currency_CURRENCY_UNSPECIFIED
+	}
+}
+
+// shortfallToProto mirrors session.Shortfall. Present exactly when the SDK
+// set it -- nil in, nil out -- matching Declaration.why's presence law: PRESENT
+// EXACTLY WHEN affordable == false (rpg-toolkit#1010).
+func shortfallToProto(s *sdk.Shortfall) *sessionpb.Shortfall {
+	if s == nil {
+		return nil
+	}
+	return &sessionpb.Shortfall{
+		Reason:   shortfallReasonToProto(s.Reason),
+		Currency: currencyToProto(s.Currency),
+		Needed:   int32(s.Needed),
+		Left:     int32(s.Left),
+		Text:     s.Text,
+	}
+}
+
+// damageTypeToProto mirrors session.DamageType onto the wire enum -- a
+// CLOSED Go type to a closed enum, never a string round-trip (rpg-project#249
+// §6, Kirk): an unrecognized value reaches UNSPECIFIED, the same producer-
+// defect treatment every other closed enum in this file gets, rather than
+// inventing a thirteen-plus-one vocabulary of our own.
+func damageTypeToProto(d sdk.DamageType) sessionpb.DamageType {
+	switch d {
+	case sdk.DamageAcid:
+		return sessionpb.DamageType_DAMAGE_TYPE_ACID
+	case sdk.DamageBludgeoning:
+		return sessionpb.DamageType_DAMAGE_TYPE_BLUDGEONING
+	case sdk.DamageCold:
+		return sessionpb.DamageType_DAMAGE_TYPE_COLD
+	case sdk.DamageFire:
+		return sessionpb.DamageType_DAMAGE_TYPE_FIRE
+	case sdk.DamageForce:
+		return sessionpb.DamageType_DAMAGE_TYPE_FORCE
+	case sdk.DamageLightning:
+		return sessionpb.DamageType_DAMAGE_TYPE_LIGHTNING
+	case sdk.DamageNecrotic:
+		return sessionpb.DamageType_DAMAGE_TYPE_NECROTIC
+	case sdk.DamagePiercing:
+		return sessionpb.DamageType_DAMAGE_TYPE_PIERCING
+	case sdk.DamagePoison:
+		return sessionpb.DamageType_DAMAGE_TYPE_POISON
+	case sdk.DamagePsychic:
+		return sessionpb.DamageType_DAMAGE_TYPE_PSYCHIC
+	case sdk.DamageRadiant:
+		return sessionpb.DamageType_DAMAGE_TYPE_RADIANT
+	case sdk.DamageSlashing:
+		return sessionpb.DamageType_DAMAGE_TYPE_SLASHING
+	case sdk.DamageThunder:
+		return sessionpb.DamageType_DAMAGE_TYPE_THUNDER
+	default:
+		return sessionpb.DamageType_DAMAGE_TYPE_UNSPECIFIED
+	}
+}
+
+// attackRefToProto mirrors session.AttackRef field-for-field (rpg-toolkit#866):
+// what was swung, always populated -- AttackOutput.Attack and the Struck/
+// Missed event bodies carry it as a value, never a pointer, so this always
+// returns a non-nil message.
+func attackRefToProto(a sdk.AttackRef) *sessionpb.AttackRef {
+	return &sessionpb.AttackRef{
+		Ref:        a.Ref,
+		Name:       a.Name,
+		DamageType: damageTypeToProto(a.DamageType),
+	}
+}
+
+// participantToProto mirrors session.Participant field-for-field
+// (rpg-toolkit#1137, rpg-project#249): everything a bare id in `order`
+// cannot carry -- name, kind, standing, and whether this is the active
+// member's turn.
+func participantToProto(p sdk.Participant) *sessionpb.Participant {
+	return &sessionpb.Participant{
+		Member:   p.Member,
+		Name:     p.Name,
+		Kind:     memberKindToProto(p.Kind),
+		Standing: standingToProto(p.Standing),
+		Active:   p.Active,
+	}
+}
+
+// participantsToProto mirrors a Participants list. A nil or empty input
+// becomes a non-nil, zero-length slice, the same make-then-loop convention
+// declarationsToProto keeps -- TurnResponse.participants is empty (not null)
+// on the world clock, same law as Declarations.
+func participantsToProto(ps []sdk.Participant) []*sessionpb.Participant {
+	out := make([]*sessionpb.Participant, len(ps))
+	for i, p := range ps {
+		out[i] = participantToProto(p)
+	}
+	return out
 }
 
 // declarationsToProto mirrors a Declarations list. A nil or empty input

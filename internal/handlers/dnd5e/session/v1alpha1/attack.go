@@ -35,5 +35,6 @@ func (h *Handler) Attack(ctx context.Context, req *sessionpb.AttackRequest) (*se
 		Seq:      out.Seq,
 		Saved:    saveReportToProto(out.Saved),
 		Delivery: deliveryReportToProto(out.Delivery),
+		Attack:   attackRefToProto(out.Attack),
 	}, nil
 }

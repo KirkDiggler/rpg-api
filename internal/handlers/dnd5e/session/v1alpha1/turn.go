@@ -25,9 +25,10 @@ func (h *Handler) Turn(ctx context.Context, req *sessionpb.TurnRequest) (*sessio
 	}
 
 	return &sessionpb.TurnResponse{
-		Clock:  clockKindToProto(out.Clock),
-		Active: out.Active,
-		Round:  int32(out.Round),
-		Order:  out.Order,
+		Clock:        clockKindToProto(out.Clock),
+		Active:       out.Active,
+		Round:        int32(out.Round),
+		Order:        out.Order,
+		Participants: participantsToProto(out.Participants),
 	}, nil
 }

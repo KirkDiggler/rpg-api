@@ -95,6 +95,22 @@ func statusError(err error) error {
 	//   actions hears a different sentence from the one a developer needs. Its
 	//   message names the currency that ran out; a host may show it or match
 	//   the sentinel and say it in its own words.
+	//
+	//   Two more join with the combat-turn contract (rpg-project#249), and both
+	//   are the same shape as the three above -- a well-formed swing the
+	//   current world state refuses, never a caller defect:
+	//
+	//   ErrNotYourTurn -- Attack, Move and EndTurn all refuse it the same way:
+	//   the fight is real, the member is real, it simply is not their turn yet.
+	//   Afford's per-target declarations announce this before a client ever
+	//   sends the swing that would hit it (Declaration.why.reason
+	//   NOT_YOUR_TURN).
+	//
+	//   ErrOutOfReach (rpg-toolkit#1010) -- the target stands further than the
+	//   weapon reaches: one cell for melee, two with the reach property; a
+	//   ranged weapon stays refused as today. Afford announces this too
+	//   (NO_TARGET_IN_REACH), as a single declaration with no target when
+	//   nothing qualifies -- see Declaration.why in convert.go.
 	case errors.Is(err, sdk.ErrInBubble),
 		errors.Is(err, sdk.ErrNotInFight),
 		errors.Is(err, sdk.ErrClosed),
@@ -102,7 +118,9 @@ func statusError(err error) error {
 		errors.Is(err, sdk.ErrBadAttack),
 		errors.Is(err, sdk.ErrDowned),
 		errors.Is(err, sdk.ErrLocked),
-		errors.Is(err, sdk.ErrCannotAfford):
+		errors.Is(err, sdk.ErrCannotAfford),
+		errors.Is(err, sdk.ErrNotYourTurn),
+		errors.Is(err, sdk.ErrOutOfReach):
 		return status.Error(codes.FailedPrecondition, err.Error())
 
 	// ALREADY_EXISTS
@@ -140,13 +158,21 @@ func statusError(err error) error {
 	// exactly the wrong place. Not reachable from a well-formed call today; it
 	// is mapped so that the day something else compiles a price, the failure
 	// has a name that is not a lie.
+	//
+	// ErrBadTurnOutcome is the same shape again: a TurnDriver answered with a
+	// TurnOutcome the composition's adapter does not recognize, which is this
+	// package's OWN vocabulary going stale against itself, not a caller
+	// mistake. Already present in the pinned SDK (v0.21.4) and unmapped here
+	// until this audit -- picked up in the same pass as the combat-turn rows
+	// above rather than left for the day it actually fires.
 	case errors.Is(err, sdk.ErrBadRepository),
 		errors.Is(err, sdk.ErrBadCost),
 		errors.Is(err, sdk.ErrBadCharacter),
 		errors.Is(err, sdk.ErrInvalidSession),
 		errors.Is(err, sdk.ErrNilConfig),
 		errors.Is(err, sdk.ErrIncompleteConfig),
-		errors.Is(err, sdk.ErrNoConnection):
+		errors.Is(err, sdk.ErrNoConnection),
+		errors.Is(err, sdk.ErrBadTurnOutcome):
 		return status.Error(codes.Internal, err.Error())
 
 	default:

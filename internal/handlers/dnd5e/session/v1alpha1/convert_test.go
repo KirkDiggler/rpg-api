@@ -63,6 +63,7 @@ func TestClockKindToProto(t *testing.T) {
 
 func TestVerbToProto(t *testing.T) {
 	require.Equal(t, sessionpb.Verb_VERB_ATTACK, verbToProto(sdk.VerbAttack))
+	require.Equal(t, sessionpb.Verb_VERB_MOVE, verbToProto(sdk.VerbMove))
 	require.Equal(t, sessionpb.Verb_VERB_UNSPECIFIED, verbToProto(sdk.Verb("bogus")))
 }
 
@@ -361,4 +362,283 @@ func TestReportToProto_WithSeen(t *testing.T) {
 func TestReportToProto_WithoutSeen(t *testing.T) {
 	got := reportToProto(sdk.Report{Subject: "skeleton-1", Payload: []byte("x")})
 	require.Nil(t, got.GetSeen())
+}
+
+// TestStandingToProto covers both values plus the unrecognized fallback --
+// two values, not a bool, and the fallback proves an unrecognized string
+// reaches UNSPECIFIED rather than being guessed at.
+func TestStandingToProto(t *testing.T) {
+	require.Equal(t, sessionpb.Standing_STANDING_UP, standingToProto(sdk.StandingUp))
+	require.Equal(t, sessionpb.Standing_STANDING_DOWNED, standingToProto(sdk.StandingDowned))
+	require.Equal(t, sessionpb.Standing_STANDING_UNSPECIFIED, standingToProto(sdk.Standing("bogus")))
+}
+
+// TestSeenToProto_CarriesStanding pins the field ADR-0041's sight channel
+// grew alongside Position (rpg-toolkit#1137): Seen is sight-channel
+// knowledge, not a roster read, so Standing belongs here.
+func TestSeenToProto_CarriesStanding(t *testing.T) {
+	got := seenToProto(&sdk.Seen{Position: spatial.Position{X: 1, Y: 2}, Standing: sdk.StandingDowned})
+	require.Equal(t, sessionpb.Standing_STANDING_DOWNED, got.GetStanding())
+}
+
+// TestSightingToProto_CarriesName pins rpg-dnd5e-web#564: names, not ids --
+// anything an observer can sight, they can name.
+func TestSightingToProto_CarriesName(t *testing.T) {
+	got := sightingToProto(sdk.Sighting{Subject: "skeleton-1", Name: "skeleton-1"})
+	require.Equal(t, "skeleton-1", got.GetName())
+}
+
+// TestDamageTypeToProto covers all thirteen values plus the unrecognized
+// fallback. A closed Go type to a closed enum, never a string round-trip
+// (rpg-project#249 §6, Kirk) -- the fallback proves an unrecognized value
+// reaches UNSPECIFIED rather than being coerced from its string form.
+func TestDamageTypeToProto(t *testing.T) {
+	tests := []struct {
+		in   sdk.DamageType
+		want sessionpb.DamageType
+	}{
+		{sdk.DamageAcid, sessionpb.DamageType_DAMAGE_TYPE_ACID},
+		{sdk.DamageBludgeoning, sessionpb.DamageType_DAMAGE_TYPE_BLUDGEONING},
+		{sdk.DamageCold, sessionpb.DamageType_DAMAGE_TYPE_COLD},
+		{sdk.DamageFire, sessionpb.DamageType_DAMAGE_TYPE_FIRE},
+		{sdk.DamageForce, sessionpb.DamageType_DAMAGE_TYPE_FORCE},
+		{sdk.DamageLightning, sessionpb.DamageType_DAMAGE_TYPE_LIGHTNING},
+		{sdk.DamageNecrotic, sessionpb.DamageType_DAMAGE_TYPE_NECROTIC},
+		{sdk.DamagePiercing, sessionpb.DamageType_DAMAGE_TYPE_PIERCING},
+		{sdk.DamagePoison, sessionpb.DamageType_DAMAGE_TYPE_POISON},
+		{sdk.DamagePsychic, sessionpb.DamageType_DAMAGE_TYPE_PSYCHIC},
+		{sdk.DamageRadiant, sessionpb.DamageType_DAMAGE_TYPE_RADIANT},
+		{sdk.DamageSlashing, sessionpb.DamageType_DAMAGE_TYPE_SLASHING},
+		{sdk.DamageThunder, sessionpb.DamageType_DAMAGE_TYPE_THUNDER},
+		{sdk.DamageType("bogus"), sessionpb.DamageType_DAMAGE_TYPE_UNSPECIFIED},
+	}
+	for _, tt := range tests {
+		t.Run(string(tt.in), func(t *testing.T) {
+			require.Equal(t, tt.want, damageTypeToProto(tt.in))
+		})
+	}
+}
+
+func TestAttackRefToProto(t *testing.T) {
+	got := attackRefToProto(sdk.AttackRef{Ref: "longsword", Name: "Longsword", DamageType: sdk.DamageSlashing})
+	require.Equal(t, "longsword", got.GetRef())
+	require.Equal(t, "Longsword", got.GetName())
+	require.Equal(t, sessionpb.DamageType_DAMAGE_TYPE_SLASHING, got.GetDamageType())
+}
+
+func TestShortfallReasonToProto(t *testing.T) {
+	tests := []struct {
+		in   sdk.ShortfallReason
+		want sessionpb.ShortfallReason
+	}{
+		{sdk.ShortfallNoBudget, sessionpb.ShortfallReason_SHORTFALL_REASON_NO_BUDGET},
+		{sdk.ShortfallNotYourTurn, sessionpb.ShortfallReason_SHORTFALL_REASON_NOT_YOUR_TURN},
+		{sdk.ShortfallNoTargetInReach, sessionpb.ShortfallReason_SHORTFALL_REASON_NO_TARGET_IN_REACH},
+		{sdk.ShortfallDowned, sessionpb.ShortfallReason_SHORTFALL_REASON_DOWNED},
+		{sdk.ShortfallUnreadable, sessionpb.ShortfallReason_SHORTFALL_REASON_UNREADABLE},
+		{sdk.ShortfallReason("bogus"), sessionpb.ShortfallReason_SHORTFALL_REASON_UNSPECIFIED},
+	}
+	for _, tt := range tests {
+		t.Run(string(tt.in), func(t *testing.T) {
+			require.Equal(t, tt.want, shortfallReasonToProto(tt.in))
+		})
+	}
+}
+
+// TestCurrencyToProto pins the four values -- and, by its own doc, this is
+// NOT Slot: Currency names which ledger a refusal drained, not which shape a
+// declaration lights.
+func TestCurrencyToProto(t *testing.T) {
+	tests := []struct {
+		in   sdk.Currency
+		want sessionpb.Currency
+	}{
+		{sdk.CurrencyAction, sessionpb.Currency_CURRENCY_ACTION},
+		{sdk.CurrencyBonus, sessionpb.Currency_CURRENCY_BONUS},
+		{sdk.CurrencyReaction, sessionpb.Currency_CURRENCY_REACTION},
+		{sdk.CurrencyMovement, sessionpb.Currency_CURRENCY_MOVEMENT},
+		{sdk.Currency("bogus"), sessionpb.Currency_CURRENCY_UNSPECIFIED},
+	}
+	for _, tt := range tests {
+		t.Run(string(tt.in), func(t *testing.T) {
+			require.Equal(t, tt.want, currencyToProto(tt.in))
+		})
+	}
+}
+
+func TestShortfallToProto_Nil(t *testing.T) {
+	require.Nil(t, shortfallToProto(nil))
+}
+
+func TestShortfallToProto_Populated(t *testing.T) {
+	got := shortfallToProto(&sdk.Shortfall{
+		Reason: sdk.ShortfallNoBudget, Currency: sdk.CurrencyAction, Needed: 1, Left: 0,
+		Text: "action: 1 needed, 0 left",
+	})
+	require.Equal(t, sessionpb.ShortfallReason_SHORTFALL_REASON_NO_BUDGET, got.GetReason())
+	require.Equal(t, sessionpb.Currency_CURRENCY_ACTION, got.GetCurrency())
+	require.Equal(t, int32(1), got.GetNeeded())
+	require.Equal(t, int32(0), got.GetLeft())
+	require.Equal(t, "action: 1 needed, 0 left", got.GetText())
+}
+
+func TestParticipantToProto(t *testing.T) {
+	got := participantToProto(sdk.Participant{
+		Member: "char-1", Name: "Aldric", Kind: sdk.KindPlayer, Standing: sdk.StandingUp, Active: true,
+	})
+	require.Equal(t, "char-1", got.GetMember())
+	require.Equal(t, "Aldric", got.GetName())
+	require.Equal(t, sessionpb.MemberKind_MEMBER_KIND_PLAYER, got.GetKind())
+	require.Equal(t, sessionpb.Standing_STANDING_UP, got.GetStanding())
+	require.True(t, got.GetActive())
+}
+
+// TestParticipantsToProto_NilOrEmpty_StaysNonNilEmpty mirrors
+// TestDeclarationsToProto_NilOrEmpty_StaysNonNilEmpty's law: empty IS the
+// answer on the world clock, never a null the wire cannot distinguish from
+// "the server didn't say".
+func TestParticipantsToProto_NilOrEmpty_StaysNonNilEmpty(t *testing.T) {
+	out := participantsToProto(nil)
+	require.NotNil(t, out)
+	require.Empty(t, out)
+
+	out = participantsToProto([]sdk.Participant{})
+	require.NotNil(t, out)
+	require.Empty(t, out)
+}
+
+func TestParticipantsToProto_Populated(t *testing.T) {
+	out := participantsToProto([]sdk.Participant{
+		{Member: "char-1", Name: "Aldric", Kind: sdk.KindPlayer, Standing: sdk.StandingUp, Active: true},
+		{Member: "skeleton-1", Name: "skeleton-1", Kind: sdk.KindMonster, Standing: sdk.StandingDowned},
+	})
+	require.Len(t, out, 2)
+	require.Equal(t, "Aldric", out[0].GetName())
+	require.True(t, out[0].GetActive())
+	require.Equal(t, sessionpb.Standing_STANDING_DOWNED, out[1].GetStanding())
+	require.False(t, out[1].GetActive())
+}
+
+// TestDeclarationToProto_TargetAndWhy pins the two combat-turn fields
+// declarationToProto grew alongside the original verb/slot/affordable/
+// shortfall set: Target is a plain pointer-to-pointer copy (both sides
+// already keep absent distinct from a present empty string), and Why is
+// present exactly when Affordable is false.
+func TestDeclarationToProto_TargetAndWhy(t *testing.T) {
+	target := "skeleton-1"
+	out := declarationToProto(sdk.Declaration{
+		Verb: sdk.VerbAttack, Slot: sdk.SlotAction, Affordable: true, Target: &target,
+	})
+	require.NotNil(t, out.Target)
+	require.Equal(t, "skeleton-1", out.GetTarget())
+	require.Nil(t, out.Why, "affordable true carries no why -- nothing ran out")
+}
+
+func TestDeclarationToProto_NoTargetInReach(t *testing.T) {
+	out := declarationToProto(sdk.Declaration{
+		Verb: sdk.VerbAttack, Affordable: false,
+		Why: &sdk.Shortfall{Reason: sdk.ShortfallNoTargetInReach, Text: "no target in reach"},
+	})
+	require.Nil(t, out.Target, "the no-candidate-in-reach declaration carries no target")
+	require.NotNil(t, out.Why)
+	require.Equal(t, sessionpb.ShortfallReason_SHORTFALL_REASON_NO_TARGET_IN_REACH, out.Why.GetReason())
+}
+
+// TestEventToProto_TypedBodies covers ONE ARM PER BODY (rpg-toolkit#941):
+// every kind that carries a typed session.EventBody projects onto the
+// matching proto oneof member, and Payload keeps riding alongside it --
+// Body is an ADDITIONAL carrier, not a replacement for the passthrough law.
+func TestEventToProto_TypedBodies(t *testing.T) {
+	t.Run("TurnEnded", func(t *testing.T) {
+		got := eventToProto(sdk.Event{
+			Kind: sdk.EventTurnEnded, Payload: []byte("x"),
+			Body: sdk.TurnEndedBody{Member: "char-1", Next: "goblin-1"},
+		})
+		require.Equal(t, []byte("x"), got.GetPayload())
+		require.Equal(t, "char-1", got.GetTurnEnded().GetMember())
+		require.Equal(t, "goblin-1", got.GetTurnEnded().GetNext())
+	})
+
+	t.Run("Downed", func(t *testing.T) {
+		got := eventToProto(sdk.Event{Kind: sdk.EventDowned, Body: sdk.DownedBody{Member: "goblin-1"}})
+		require.Equal(t, "goblin-1", got.GetDowned().GetMember())
+	})
+
+	t.Run("Struck", func(t *testing.T) {
+		got := eventToProto(sdk.Event{
+			Kind: sdk.EventStruck,
+			Body: sdk.StruckBody{
+				Attacker: "char-1", Target: "goblin-1", Roll: 18, Total: 21, Against: 13, Damage: 6,
+				Attack:   sdk.AttackRef{Ref: "longsword", Name: "Longsword", DamageType: sdk.DamageSlashing},
+				Critical: true,
+			},
+		})
+		s := got.GetStruck()
+		require.NotNil(t, s)
+		require.Equal(t, "char-1", s.GetAttacker())
+		require.Equal(t, "goblin-1", s.GetTarget())
+		require.Equal(t, int32(18), s.GetRoll())
+		require.Equal(t, int32(21), s.GetTotal())
+		require.Equal(t, int32(13), s.GetAgainst())
+		require.Equal(t, int32(6), s.GetDamage())
+		require.True(t, s.GetCritical())
+		require.Equal(t, "longsword", s.GetAttack().GetRef())
+		require.Equal(t, sessionpb.DamageType_DAMAGE_TYPE_SLASHING, s.GetAttack().GetDamageType())
+	})
+
+	t.Run("Missed", func(t *testing.T) {
+		got := eventToProto(sdk.Event{
+			Kind: sdk.EventMissed,
+			Body: sdk.MissedBody{
+				Attacker: "char-1", Target: "goblin-1", Roll: 4, Total: 7, Against: 13,
+				Attack: sdk.AttackRef{Ref: "longsword", Name: "Longsword", DamageType: sdk.DamageSlashing},
+			},
+		})
+		m := got.GetMissed()
+		require.NotNil(t, m)
+		require.Equal(t, int32(4), m.GetRoll())
+		require.Equal(t, "longsword", m.GetAttack().GetRef())
+	})
+
+	t.Run("FightStarted", func(t *testing.T) {
+		got := eventToProto(sdk.Event{
+			Kind: sdk.EventFightStarted,
+			Body: sdk.FightStartedBody{Members: []string{"char-1", "goblin-1"}},
+		})
+		require.Equal(t, []string{"char-1", "goblin-1"}, got.GetFightStarted().GetMembers())
+	})
+
+	t.Run("FightEnded", func(t *testing.T) {
+		got := eventToProto(sdk.Event{
+			Kind: sdk.EventFightEnded,
+			Body: sdk.FightEndedBody{Cause: sdk.DissolveByDefeat},
+		})
+		require.Equal(t, sessionpb.DissolveKind_DISSOLVE_KIND_BY_DEFEAT, got.GetFightEnded().GetCause())
+	})
+
+	t.Run("Moved", func(t *testing.T) {
+		got := eventToProto(sdk.Event{
+			Kind: sdk.EventMoved,
+			Body: sdk.MovedBody{Member: "char-1", To: spatial.Position{X: 3, Y: 4}},
+		})
+		require.Equal(t, "char-1", got.GetMoved().GetMember())
+		require.Equal(t, 3.0, got.GetMoved().GetTo().GetX())
+		require.Equal(t, 4.0, got.GetMoved().GetTo().GetY())
+	})
+}
+
+// TestEventToProto_UntypedKind_BodyStaysNilPayloadCarries pins the other
+// half of the law: a kind with no typed body member (or a nil Body from the
+// SDK) leaves the wire's oneof unset, and payload -- never a decoded body --
+// is what a client for one of these kinds reads.
+func TestEventToProto_UntypedKind_BodyStaysNilPayloadCarries(t *testing.T) {
+	got := eventToProto(sdk.Event{Kind: sdk.EventJoined, Payload: []byte("joined-payload"), Body: nil})
+	require.Equal(t, []byte("joined-payload"), got.GetPayload())
+	require.Nil(t, got.GetTurnEnded())
+	require.Nil(t, got.GetDowned())
+	require.Nil(t, got.GetStruck())
+	require.Nil(t, got.GetMissed())
+	require.Nil(t, got.GetFightStarted())
+	require.Nil(t, got.GetFightEnded())
+	require.Nil(t, got.GetMoved())
 }
