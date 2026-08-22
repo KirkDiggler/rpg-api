@@ -378,6 +378,26 @@ func TestAcceptanceLoop_WalkFightDissolveResync(t *testing.T) {
 	require.Contains(t, formed.GetOrder(), "alice")
 	require.Contains(t, formed.GetOrder(), "skel-1")
 
+	// -- close the reach gap, on her own turn --
+	//
+	// Sight forming the fight is not the same question as being within
+	// melee reach of what it revealed (rpg-toolkit#1010): the walk above
+	// stopped the moment the skeleton came into view, four cells short of
+	// it, and a swing from there is now correctly refused rather than
+	// silently allowed the way it was before this gate existed. This
+	// mirrors the toolkit's own Example_theFightThatStartsItself: a second
+	// Move call, now on the turn clock, still lets her walk (a fight does
+	// not freeze the mover, it prices the mover -- rpg-toolkit#1169) using
+	// the remainder of the very path already declared above as safety
+	// margin. Three cells (15 of a fighter's 30 ft) closes (15,3) to
+	// (18,3), one cell from the skeleton at (19,3).
+	closeResp, err := h.handler.Move(ctx, &sessionpb.MoveRequest{
+		Session: "acceptance-run", Member: "alice",
+		Path: []*sessionpb.Position{{X: 16, Y: 3}, {X: 17, Y: 3}, {X: 18, Y: 3}},
+	})
+	require.NoError(t, err)
+	require.Len(t, closeResp.GetSteps(), 3, "the whole approach must fit in one turn's movement")
+
 	// -- GetView reports the skeleton with its typed Seen position (ADR-0041,
 	// rpg-toolkit#1157, session v0.21.2) -- through the real handler's
 	// sightingToProto, not a mock. Sight is what just formed the fight above,
@@ -442,14 +462,16 @@ func TestAcceptanceLoop_WalkFightDissolveResync(t *testing.T) {
 	// -- disconnect and resume: a cold client learns its own position from
 	// GetWhere (design rule 11's destination, live since session v0.13.0 /
 	// rpg-toolkit#1051) rather than only from remembering its last Move. She
-	// did not move during the fight or the dissolve, so this must be
-	// exactly where the walk left her.
+	// did not move during the dissolve, but she DID move during the fight --
+	// closing the reach gap above -- so this must be exactly where THAT walk
+	// left her, not where the first one stopped.
+	closeLastStep := closeResp.GetSteps()[len(closeResp.GetSteps())-1]
 	whereResp, err := h.handler.GetWhere(ctx, &sessionpb.GetWhereRequest{
 		Session: "acceptance-run", Member: "alice",
 	})
 	require.NoError(t, err)
-	require.Equal(t, lastStep.GetPosition().GetX(), whereResp.GetPosition().GetX(), "GetWhere must recover the walk's actual stopping cell")
-	require.Equal(t, lastStep.GetPosition().GetY(), whereResp.GetPosition().GetY())
+	require.Equal(t, closeLastStep.GetPosition().GetX(), whereResp.GetPosition().GetX(), "GetWhere must recover the walk's actual stopping cell")
+	require.Equal(t, closeLastStep.GetPosition().GetY(), whereResp.GetPosition().GetY())
 
 	// -- resync from zero and see the whole story --
 	storyResp, err := h.handler.GetStory(ctx, &sessionpb.GetStoryRequest{

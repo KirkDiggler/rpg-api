@@ -64,6 +64,10 @@ func TestStatusError_CoversEverySDKSentinel(t *testing.T) {
 		{"ErrDowned", sdk.ErrDowned, codes.FailedPrecondition},
 		{"ErrLocked", sdk.ErrLocked, codes.FailedPrecondition},
 		{"ErrCannotAfford", sdk.ErrCannotAfford, codes.FailedPrecondition},
+		// Combat-turn contract (rpg-project#249): a well-formed swing the
+		// current world state refuses, the same bucket as the three above.
+		{"ErrNotYourTurn", sdk.ErrNotYourTurn, codes.FailedPrecondition},
+		{"ErrOutOfReach", sdk.ErrOutOfReach, codes.FailedPrecondition},
 
 		// ALREADY_EXISTS
 		{"ErrSessionExists", sdk.ErrSessionExists, codes.AlreadyExists},
@@ -83,6 +87,10 @@ func TestStatusError_CoversEverySDKSentinel(t *testing.T) {
 		{"ErrNilConfig", sdk.ErrNilConfig, codes.Internal},
 		{"ErrIncompleteConfig", sdk.ErrIncompleteConfig, codes.Internal},
 		{"ErrNoConnection", sdk.ErrNoConnection, codes.Internal},
+		// Already in the pinned SDK before this feature (v0.21.4) and unmapped
+		// until this audit: this package's OWN adapter vocabulary going stale
+		// against itself, not a caller mistake.
+		{"ErrBadTurnOutcome", sdk.ErrBadTurnOutcome, codes.Internal},
 
 		// sdk.ErrNotFound is the SDK's repository-facing contract sentinel: the
 		// Manager translates it into a caller-facing sentinel (ErrNoSession,
@@ -127,7 +135,10 @@ func TestStatusError_CoversEverySDKSentinel(t *testing.T) {
 // Kept as a named constant rather than a magic number so a failing count points
 // straight at "the SDK's sentinel vocabulary moved" instead of asking the reader
 // to recount by hand.
-const sentinelCount = 38
+// v0.21.4 -> combat-turn (rpg-project#249) adds ErrNotYourTurn and
+// ErrOutOfReach; ErrBadTurnOutcome was already present at v0.21.4 and simply
+// had no row until this audit -- 38 -> 41.
+const sentinelCount = 41
 
 func TestStatusError_UnmappedSentinelFallsBackToInternal(t *testing.T) {
 	unrecognized := fmt.Errorf("some future sentinel the table has not been updated for")

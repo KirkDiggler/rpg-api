@@ -91,3 +91,88 @@ func TestAfford_ManagerError_TranslatesViaErrorTable(t *testing.T) {
 		})
 	}
 }
+
+// TestAfford_PerTargetAttackDeclarations pins rpg-project#249 §6 (Kirk): one
+// ATTACK declaration per candidate target in reach, each carrying its own
+// Target -- the client's "enemies in reach" highlight is read straight off
+// this list, never computed client-side.
+func TestAfford_PerTargetAttackDeclarations(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mgr := sessionv1alpha1mock.NewMockManager(ctrl)
+	goblin, skeleton := "goblin-1", "skeleton-1"
+	mgr.EXPECT().Afford(gomock.Any(), &sdk.AffordInput{Session: "sess-1", Member: "char-1"}).Return(&sdk.AffordOutput{
+		Clock: sdk.ClockTurn,
+		Declarations: []sdk.Declaration{
+			{Verb: sdk.VerbAttack, Slot: sdk.SlotAction, Affordable: true, Target: &goblin},
+			{Verb: sdk.VerbAttack, Slot: sdk.SlotAction, Affordable: true, Target: &skeleton},
+		},
+	}, nil)
+
+	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
+	ctx := auth.WithPlayerID(context.Background(), "alice")
+	resp, err := h.Afford(ctx, &sessionpb.AffordRequest{Session: "sess-1", Member: "char-1"})
+	require.NoError(t, err)
+	require.Len(t, resp.GetDeclarations(), 2)
+	require.Equal(t, "goblin-1", resp.GetDeclarations()[0].GetTarget())
+	require.Equal(t, "skeleton-1", resp.GetDeclarations()[1].GetTarget())
+	for _, d := range resp.GetDeclarations() {
+		require.True(t, d.GetAffordable())
+		require.Nil(t, d.Why, "affordable true carries no why")
+	}
+}
+
+// TestAfford_NoTargetInReach_SingleDeclarationNoTarget pins the other half
+// of §6: when no candidate is in reach, Afford still answers once -- a
+// single ATTACK declaration, unaffordable, Why.Reason NO_TARGET_IN_REACH,
+// and no target at all (never a target whose id happens to be empty).
+func TestAfford_NoTargetInReach_SingleDeclarationNoTarget(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mgr := sessionv1alpha1mock.NewMockManager(ctrl)
+	mgr.EXPECT().Afford(gomock.Any(), &sdk.AffordInput{Session: "sess-1", Member: "char-1"}).Return(&sdk.AffordOutput{
+		Clock: sdk.ClockTurn,
+		Declarations: []sdk.Declaration{
+			{
+				Verb: sdk.VerbAttack, Affordable: false,
+				Why: &sdk.Shortfall{Reason: sdk.ShortfallNoTargetInReach, Text: "no target in reach"},
+			},
+		},
+	}, nil)
+
+	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
+	ctx := auth.WithPlayerID(context.Background(), "alice")
+	resp, err := h.Afford(ctx, &sessionpb.AffordRequest{Session: "sess-1", Member: "char-1"})
+	require.NoError(t, err)
+	require.Len(t, resp.GetDeclarations(), 1)
+	decl := resp.GetDeclarations()[0]
+	require.False(t, decl.GetAffordable())
+	require.Nil(t, decl.Target)
+	require.NotNil(t, decl.Why)
+	require.Equal(t, sessionpb.ShortfallReason_SHORTFALL_REASON_NO_TARGET_IN_REACH, decl.Why.GetReason())
+}
+
+// TestAfford_MoveDeclaration pins VerbMove's own shape beside the ATTACK
+// ones above: no Target (Move never carries one), correctly distinguished
+// from VerbAttack on the wire. Remaining is deliberately NOT asserted here
+// -- it lands with the separate, still-WIP Move-on-clock wave
+// (rpg-toolkit#1169, branch feat/session-move-clock), out of scope for this
+// PR so the two waves stay on their own branches.
+func TestAfford_MoveDeclaration(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mgr := sessionv1alpha1mock.NewMockManager(ctrl)
+	mgr.EXPECT().Afford(gomock.Any(), &sdk.AffordInput{Session: "sess-1", Member: "char-1"}).Return(&sdk.AffordOutput{
+		Clock: sdk.ClockTurn,
+		Declarations: []sdk.Declaration{
+			{Verb: sdk.VerbMove, Affordable: true},
+		},
+	}, nil)
+
+	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
+	ctx := auth.WithPlayerID(context.Background(), "alice")
+	resp, err := h.Afford(ctx, &sessionpb.AffordRequest{Session: "sess-1", Member: "char-1"})
+	require.NoError(t, err)
+	require.Len(t, resp.GetDeclarations(), 1)
+	decl := resp.GetDeclarations()[0]
+	require.Equal(t, sessionpb.Verb_VERB_MOVE, decl.GetVerb())
+	require.True(t, decl.GetAffordable())
+	require.Nil(t, decl.Target, "Move never carries a target")
+}

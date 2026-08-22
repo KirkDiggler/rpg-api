@@ -1,8 +1,11 @@
 // Package character implements dnd5e.api.v1alpha2.character.CharacterService — the
 // out-of-encounter character sheet surface (rpg-api#680): EquipItem/UnequipItem
-// for sheet editing between encounters. The in-encounter equivalent, when it
-// exists, rides the encounter stream instead (see CharacterData's doc comment
-// in dnd5e/api/v1alpha2/encounter/types.proto).
+// for sheet editing between encounters, and GetCharacterData to read the same
+// view without changing it (rpg-project#249 §2, equipment row — the
+// combat-turn session route mounts the equipment screen but the session stack
+// carries no encounter snapshot to seed it from). The in-encounter equivalent
+// of a write, when it exists, rides the encounter stream instead (see
+// CharacterData's doc comment in dnd5e/api/v1alpha2/encounter/types.proto).
 //
 // Equip/UnequipItem call the SAME orchestrator method the v1alpha1
 // character handler calls (internal/orchestrators/character's EquipItem/
@@ -22,6 +25,7 @@ import (
 	characterpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/character"
 	encounterv2pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/encounter"
 	"github.com/KirkDiggler/rpg-api/internal/apierr"
+	"github.com/KirkDiggler/rpg-api/internal/auth"
 	orchcharacter "github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
 	"github.com/KirkDiggler/rpg-toolkit/events"
 	tkcharacter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
@@ -63,6 +67,8 @@ func New(cfg *HandlerConfig) (*Handler, error) {
 // inventory by); validating module/type would require rpg-api to know what
 // makes a Ref "a valid item ref", which is exactly the kind of rules
 // knowledge this handler doesn't have.
+//
+// Authenticated owner only: see verifyCallerOwnsCharacter.
 func (h *Handler) EquipItem(
 	ctx context.Context,
 	req *characterpb.EquipItemRequest,
@@ -75,6 +81,10 @@ func (h *Handler) EquipItem(
 	}
 	if req.GetSlotKey() == "" {
 		return nil, apierr.ToGRPCError(apierr.InvalidArgument("slot_key is required"))
+	}
+
+	if _, err := h.verifyCallerOwnsCharacter(ctx, req.GetCharacterId()); err != nil {
+		return nil, err
 	}
 
 	_, err := h.characterService.EquipItem(ctx, &orchcharacter.EquipItemInput{
@@ -94,6 +104,8 @@ func (h *Handler) EquipItem(
 }
 
 // UnequipItem clears a slot, returning its occupant to inventory.
+//
+// Authenticated owner only: see verifyCallerOwnsCharacter.
 func (h *Handler) UnequipItem(
 	ctx context.Context,
 	req *characterpb.UnequipItemRequest,
@@ -103,6 +115,10 @@ func (h *Handler) UnequipItem(
 	}
 	if req.GetSlotKey() == "" {
 		return nil, apierr.ToGRPCError(apierr.InvalidArgument("slot_key is required"))
+	}
+
+	if _, err := h.verifyCallerOwnsCharacter(ctx, req.GetCharacterId()); err != nil {
+		return nil, err
 	}
 
 	_, err := h.characterService.UnequipItem(ctx, &orchcharacter.UnequipItemInput{
@@ -120,17 +136,88 @@ func (h *Handler) UnequipItem(
 	return &characterpb.UnequipItemResponse{Character: cd}, nil
 }
 
-// recomputedCharacterData re-fetches the character after an equip/unequip
-// and composes the post-change CharacterData via
-// BuildEquipmentCharacterData — the SAME composition the
-// encounter snapshot path uses (v2/encounter/character_data.go), so the
-// sheet this RPC returns and the HUD an active encounter shows never drift
-// from two independent compositions (rpg-api#680).
+// GetCharacterData reads one character's current view without changing it —
+// the read EquipItem/UnequipItem never needed, because they always compose a
+// response after their own write. The equipment screen mounts on the session
+// route to seed itself from this: the session stack carries no encounter
+// snapshot the way the old route did (rpg-project#249 §2, equipment row).
 //
-// armor_class_detail.total is the ONLY AC total on this response: unlike
-// the encounter snapshot, there is no surrounding Entity.armor_class to
-// keep in sync (see CharacterData.armor_class_detail's doc comment in
-// types.proto).
+// Ownership is gated by verifyCallerOwnsCharacter -- see its doc for why a
+// wrong owner and a missing character must read identically on the wire.
+func (h *Handler) GetCharacterData(
+	ctx context.Context,
+	req *characterpb.GetCharacterDataRequest,
+) (*characterpb.GetCharacterDataResponse, error) {
+	if req.GetCharacterId() == "" {
+		return nil, apierr.ToGRPCError(apierr.InvalidArgument("character_id is required"))
+	}
+
+	data, err := h.verifyCallerOwnsCharacter(ctx, req.GetCharacterId())
+	if err != nil {
+		return nil, err
+	}
+
+	cd, err := h.characterDataFromEntity(ctx, data)
+	if err != nil {
+		return nil, err
+	}
+	return &characterpb.GetCharacterDataResponse{Character: cd}, nil
+}
+
+// verifyCallerOwnsCharacter is the ONE ownership gate this service checks
+// through -- EquipItem, UnequipItem and GetCharacterData all call it before
+// touching a character, per Kirk's ruling on rpg-api#814: "any player facing
+// routes should extract the character id from the headers and verify the
+// auth'd player owns the character." Returns the character's toolkit Data on
+// success so a caller that also needs it (GetCharacterData) does not fetch
+// twice.
+//
+// NOT_FOUND, NEVER PERMISSION_DENIED. Every one of these three RPCs either
+// hands back the character's full sheet or mutates it; either way,
+// PERMISSION_DENIED would itself confirm that SOME character exists at that
+// id, which is exactly what "found but not yours" must not leak. A caller
+// naming a character it does not control gets the same NOT_FOUND a caller
+// naming one that was never created would -- the same shape the session
+// handler's callerActingAs keeps for the same reason
+// (internal/handlers/dnd5e/session/v1alpha1/handler.go).
+func (h *Handler) verifyCallerOwnsCharacter(ctx context.Context, characterID string) (*tkcharacter.Data, error) {
+	playerID := auth.GetPlayerID(ctx)
+	if playerID == "" {
+		return nil, apierr.ToGRPCError(apierr.Unauthenticated("player not authenticated"))
+	}
+
+	out, err := h.characterService.GetCharacter(ctx, &orchcharacter.GetCharacterInput{
+		CharacterID: characterID,
+	})
+	if err != nil {
+		if apierr.IsNotFound(err) {
+			return nil, apierr.ToGRPCError(notFoundCharacter(characterID))
+		}
+		return nil, apierr.ToGRPCError(err)
+	}
+	if out == nil || out.Character == nil || out.Character.Data == nil || out.Character.Data.PlayerID != playerID {
+		return nil, apierr.ToGRPCError(notFoundCharacter(characterID))
+	}
+
+	return out.Character.Data, nil
+}
+
+// notFoundCharacter is the ONE NOT_FOUND this gate ever returns, for BOTH
+// refusal reasons -- a missing character and a foreign one. Copilot caught
+// the leak this closes (rpg-api#815): the repository's own not-found error
+// carries its own wording, and a caller comparing that text against this
+// handler's own "character %q not found" for the foreign-owner case could
+// tell the two refusals apart -- which is exactly the distinction NOT_FOUND
+// exists here to erase (see verifyCallerOwnsCharacter's own doc). One
+// canonical message, never the repository's.
+func notFoundCharacter(characterID string) *apierr.Error {
+	return apierr.NotFoundf("character %q not found", characterID)
+}
+
+// recomputedCharacterData re-fetches the character after an equip/unequip and
+// composes the post-change CharacterData via characterDataFromEntity, so the
+// sheet EquipItem/UnequipItem return and the HUD an active encounter shows
+// never drift from two independent compositions (rpg-api#680).
 func (h *Handler) recomputedCharacterData(
 	ctx context.Context,
 	characterID string,
@@ -142,7 +229,24 @@ func (h *Handler) recomputedCharacterData(
 		return nil, apierr.ToGRPCError(err)
 	}
 
-	char, err := tkcharacter.LoadFromData(ctx, out.Character.Data, events.NewEventBus())
+	return h.characterDataFromEntity(ctx, out.Character.Data)
+}
+
+// characterDataFromEntity composes CharacterData via BuildEquipmentCharacterData
+// — the SAME composition the encounter snapshot path uses
+// (v2/encounter/character_data.go). Every RPC in this file that returns a
+// CharacterData (the equip writes, and the plain read GetCharacterData) goes
+// through here, so there is exactly one projection, never two that could
+// drift.
+//
+// armor_class_detail.total is the ONLY AC total on this response: unlike the
+// encounter snapshot, there is no surrounding Entity.armor_class to keep in
+// sync (see CharacterData.armor_class_detail's doc comment in types.proto).
+func (h *Handler) characterDataFromEntity(
+	ctx context.Context,
+	data *tkcharacter.Data,
+) (*encounterv2pb.CharacterData, error) {
+	char, err := tkcharacter.LoadFromData(ctx, data, events.NewEventBus())
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "load character: %v", err)
 	}
