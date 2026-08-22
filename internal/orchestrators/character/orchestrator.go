@@ -704,6 +704,14 @@ func (o *Orchestrator) FinalizeDraft(ctx context.Context, input *FinalizeDraftIn
 		return nil, fmt.Errorf("failed to convert draft to character: %w", err)
 	}
 
+	// Auto-equip the chosen primary weapon (and armor, where the class has
+	// a distinct choice for it) -- see rpg-api#746 and auto_equip.go's doc.
+	// Runs on this freshly built character, before it is ever persisted, so
+	// EquipmentSlots is correct in the FIRST save rather than needing a
+	// follow-up EquipItem call the real (non-devseed) creation flow never
+	// makes.
+	autoEquipChosenGear(draft.Choices(), char)
+
 	// Convert character to data for storage
 	// ToData is now a method on Character
 	charData := char.ToData()

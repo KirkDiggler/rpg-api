@@ -1342,12 +1342,18 @@ func convertEquipmentSlotToToolkit(slot dnd5ev1alpha1.EquipmentSlot) (toolkitcha
 	}
 }
 
-// convertEquipmentSlotsToProto converts toolkit EquipmentSlots to proto EquipmentSlots
+// convertEquipmentSlotsToProto converts toolkit EquipmentSlots to proto
+// EquipmentSlots.
+//
+// ALWAYS returns a non-nil message, even when nothing is equipped
+// (rpg-api#746): a nil *EquipmentSlots marshals on the wire as
+// "equipment_slots": null, which is a producer defect indistinguishable
+// from "this layer forgot to set it" -- the same false-vs-absent law the
+// per-slot fields already keep by leaving an empty slot's InventoryItem nil
+// rather than a zero-valued one. Every real (non-devseed) character
+// finalized with nothing equipped until rpg-api#746's FinalizeDraft fix, so
+// this was reachable on every one of them.
 func convertEquipmentSlotsToProto(slots toolkitchar.EquipmentSlots) *dnd5ev1alpha1.EquipmentSlots {
-	if len(slots) == 0 {
-		return nil
-	}
-
 	// Helper to create InventoryItem from item ID
 	makeItem := func(itemID string) *dnd5ev1alpha1.InventoryItem {
 		if itemID == "" {
