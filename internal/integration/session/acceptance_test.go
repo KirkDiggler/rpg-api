@@ -87,6 +87,23 @@ func (allSeeing) Sight(members []tkencounter.MemberID) (map[tkencounter.MemberID
 	return out, nil
 }
 
+// alwaysPasses is the trivial TurnDriver encounter.SetupInput has required
+// since toolkit#1162/ADR-0043 -- construction-time only, same as
+// allStanding/allSeeing above: this fixture builds the seed EncounterData
+// via NewEncounter and the session package supplies its own TurnDriver
+// (sdk.Pass{}, where sdk aliases rpg-toolkit's session package) when it
+// actually loads and plays this world, so what a monster's turn does here
+// never matters. Hand-written because the toolkit does not export a
+// trivial tkencounter.TurnDriver -- sdk.Pass{} does not satisfy the
+// interface (different Act signature/return type, and the adapter between
+// them is unexported) -- see rpg-toolkit#1167 and
+// internal/sessionworld/sessionworld.go's own copy of this type.
+type alwaysPasses struct{}
+
+func (alwaysPasses) Act(_ tkencounter.MemberID) (tkencounter.TurnOutcome, error) {
+	return tkencounter.Pass{}, nil
+}
+
 // seamWall is the wall between two side-by-side chambers, with one row left
 // open for the doorway. Room-local to the WEST chamber, where column width-1 is
 // its last and column width is the east chamber's first.
@@ -169,6 +186,7 @@ func buildThreeRoomTomb(t *testing.T) *tkencounter.EncounterData {
 		Retention:  tkencounter.RetentionUnbounded,
 		Standing:   allStanding{},
 		Sight:      allSeeing{},
+		TurnDriver: alwaysPasses{},
 		Field: tkencounter.FieldInput{
 			Canvas: tkencounter.CanvasInput{
 				// A tomb is cut from stone: you cannot see across the space

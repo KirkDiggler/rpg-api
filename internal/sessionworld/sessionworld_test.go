@@ -34,6 +34,7 @@ func (s *ReferenceTombSuite) load() *tkencounter.Encounter {
 	enc, err := tkencounter.LoadEncounter(&tkencounter.LoadEncounterInput{
 		Data:       *s.tomb.World,
 		Initiative: orderAsGiven{}, Standing: nobodyDown{}, Sight: nobodySees{},
+		TurnDriver: alwaysPasses{},
 	})
 	s.Require().NoError(err, "and the world it produced must be one the composition accepts back")
 

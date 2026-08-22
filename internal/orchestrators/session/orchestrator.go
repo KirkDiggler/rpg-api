@@ -50,6 +50,17 @@ type Config struct {
 	Dice sdk.Roller
 }
 
+// turnDriver answers "what happens when the clock lands on a member with no
+// player" -- toolkit#1162, ADR-0043 (rpg-toolkit encounter#1163). Without
+// one, EndTurn parks the clock on a monster forever: nothing can act for it,
+// since EndTurn requires Member to be the active member and the host binds
+// Member to the authenticated human, who does not own the monster. v1
+// supplies sdk.Pass{} -- every unplayed member's turn simply passes, driven
+// through synchronously at the moment the clock lands on them. The Monster
+// AI initiative (rpg-project#201) replaces this value through the exact
+// same sdk.Config.TurnDriver seam, with no change to session's own shape.
+var turnDriver = sdk.Pass{}
+
 // Orchestrator owns the toolkit session.Manager and the Broker StreamEvents
 // subscribes against. Both are exported for handlers to use directly:
 // Manager for every verb, Broker for StreamEvents' subscription.
@@ -83,6 +94,7 @@ func New(cfg Config) (*Orchestrator, error) {
 		Characters: NewCharacterRepository(cfg.Characters),
 		Events:     broker,
 		Dice:       roller,
+		TurnDriver: turnDriver,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("construct session manager: %w", err)
