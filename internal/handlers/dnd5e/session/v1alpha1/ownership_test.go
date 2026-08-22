@@ -56,6 +56,10 @@ func TestEveryMemberTakingVerbRefusesAForeignMember(t *testing.T) {
 			})
 			return err
 		},
+		"Afford": func(ctx context.Context, h *Handler) error {
+			_, err := h.Afford(ctx, &sessionpb.AffordRequest{Session: "sess-1", Member: foreign})
+			return err
+		},
 		"Turn": func(ctx context.Context, h *Handler) error {
 			_, err := h.Turn(ctx, &sessionpb.TurnRequest{Session: "sess-1", Member: foreign})
 			return err
@@ -120,6 +124,10 @@ func TestEveryMemberTakingVerbRefusesAnEmptyMember(t *testing.T) {
 		},
 		"Attack": func(ctx context.Context, h *Handler) error {
 			_, err := h.Attack(ctx, &sessionpb.AttackRequest{Session: "sess-1", Target: "char-1"})
+			return err
+		},
+		"Afford": func(ctx context.Context, h *Handler) error {
+			_, err := h.Afford(ctx, &sessionpb.AffordRequest{Session: "sess-1"})
 			return err
 		},
 		"GetWhere": func(ctx context.Context, h *Handler) error {

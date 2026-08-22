@@ -41,6 +41,21 @@ func (m *MockManager) EXPECT() *MockManagerMockRecorder {
 	return m.recorder
 }
 
+// Afford mocks base method.
+func (m *MockManager) Afford(ctx context.Context, in *session.AffordInput) (*session.AffordOutput, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Afford", ctx, in)
+	ret0, _ := ret[0].(*session.AffordOutput)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// Afford indicates an expected call of Afford.
+func (mr *MockManagerMockRecorder) Afford(ctx, in any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Afford", reflect.TypeOf((*MockManager)(nil).Afford), ctx, in)
+}
+
 // Atlas mocks base method.
 func (m *MockManager) Atlas(ctx context.Context, in *session.AtlasInput) (*session.Atlas, error) {
 	m.ctrl.T.Helper()
