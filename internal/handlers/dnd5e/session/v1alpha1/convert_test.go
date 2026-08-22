@@ -61,6 +61,57 @@ func TestClockKindToProto(t *testing.T) {
 	require.Equal(t, sessionpb.ClockKind_CLOCK_KIND_UNSPECIFIED, clockKindToProto(sdk.ClockKind("bogus")))
 }
 
+func TestVerbToProto(t *testing.T) {
+	require.Equal(t, sessionpb.Verb_VERB_ATTACK, verbToProto(sdk.VerbAttack))
+	require.Equal(t, sessionpb.Verb_VERB_UNSPECIFIED, verbToProto(sdk.Verb("bogus")))
+}
+
+// TestSlotToProto pins the one law this converter exists to keep: SlotNone
+// ("") is an EXPLICIT SLOT_NONE, never left to fall through to
+// SLOT_UNSPECIFIED. A declaration that lights no economy shape (a banked
+// Extra Attack swing) is a fact about the price, not a producer defect --
+// only an unrecognized slot string reaches UNSPECIFIED.
+func TestSlotToProto(t *testing.T) {
+	require.Equal(t, sessionpb.Slot_SLOT_NONE, slotToProto(sdk.SlotNone))
+	require.Equal(t, sessionpb.Slot_SLOT_ACTION, slotToProto(sdk.SlotAction))
+	require.Equal(t, sessionpb.Slot_SLOT_BONUS, slotToProto(sdk.SlotBonus))
+	require.Equal(t, sessionpb.Slot_SLOT_REACTION, slotToProto(sdk.SlotReaction))
+	require.Equal(t, sessionpb.Slot_SLOT_UNSPECIFIED, slotToProto(sdk.Slot("bogus")))
+}
+
+func TestDeclarationToProto(t *testing.T) {
+	out := declarationToProto(sdk.Declaration{
+		Verb: sdk.VerbAttack, Slot: sdk.SlotAction, Affordable: false, Shortfall: "action: 1 needed, 0 left",
+	})
+	require.Equal(t, sessionpb.Verb_VERB_ATTACK, out.GetVerb())
+	require.Equal(t, sessionpb.Slot_SLOT_ACTION, out.GetSlot())
+	require.False(t, out.GetAffordable())
+	require.Equal(t, "action: 1 needed, 0 left", out.GetShortfall())
+}
+
+// TestDeclarationsToProto_NilOrEmpty_StaysNonNilEmpty pins the "no null,
+// just an empty repeated" law: proto has no null-vs-empty distinction on a
+// repeated field, so a nil SDK slice must still marshal as "[]", never be
+// left nil at the Go level where a naive append-based converter would.
+func TestDeclarationsToProto_NilOrEmpty_StaysNonNilEmpty(t *testing.T) {
+	out := declarationsToProto(nil)
+	require.NotNil(t, out)
+	require.Empty(t, out)
+
+	out = declarationsToProto([]sdk.Declaration{})
+	require.NotNil(t, out)
+	require.Empty(t, out)
+}
+
+func TestDeclarationsToProto_Populated(t *testing.T) {
+	out := declarationsToProto([]sdk.Declaration{
+		{Verb: sdk.VerbAttack, Slot: sdk.SlotNone, Affordable: true},
+	})
+	require.Len(t, out, 1)
+	require.Equal(t, sessionpb.Slot_SLOT_NONE, out[0].GetSlot())
+	require.True(t, out[0].GetAffordable())
+}
+
 func TestDissolveCauseFromProto_ByDecision(t *testing.T) {
 	cause, err := dissolveCauseFromProto(sessionpb.DissolveKind_DISSOLVE_KIND_BY_DECISION)
 	require.NoError(t, err)

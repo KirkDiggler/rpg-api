@@ -422,3 +422,70 @@ func whereToProto(w *sdk.WhereOutput) *sessionpb.GetWhereResponse {
 	}
 	return &sessionpb.GetWhereResponse{Position: positionToProto(w.Position)}
 }
+
+// verbToProto mirrors session.Verb onto the wire enum. v1 has exactly one
+// entry (VerbAttack); a verb this build does not recognize -- in principle
+// only a future SDK value this handler package has not been updated for,
+// since the SDK's own Verb is a closed enum with no unknown-but-delivered
+// case the way EventKind carries -- maps to VERB_UNSPECIFIED, a producer
+// defect rather than an answer.
+func verbToProto(v sdk.Verb) sessionpb.Verb {
+	switch v {
+	case sdk.VerbAttack:
+		return sessionpb.Verb_VERB_ATTACK
+	default:
+		return sessionpb.Verb_VERB_UNSPECIFIED
+	}
+}
+
+// slotToProto mirrors session.Slot onto the wire enum.
+//
+// SlotNone ("") maps to the EXPLICIT SLOT_NONE, never left to fall through to
+// SLOT_UNSPECIFIED -- the one law this converter exists to keep. A
+// declaration that lights no economy shape (Extra Attack's second swing,
+// spending a banked attack rather than an action/bonus/reaction) is a FACT
+// about the price, the same way Declaration.Affordable=false is an answer and
+// not an absence (types.go). Collapsing it into UNSPECIFIED would tell a
+// client this layer forgot to set a slot, when the SDK answered on purpose.
+// Only a slot string this build does not recognize reaches UNSPECIFIED, a
+// producer defect.
+func slotToProto(s sdk.Slot) sessionpb.Slot {
+	switch s {
+	case sdk.SlotNone:
+		return sessionpb.Slot_SLOT_NONE
+	case sdk.SlotAction:
+		return sessionpb.Slot_SLOT_ACTION
+	case sdk.SlotBonus:
+		return sessionpb.Slot_SLOT_BONUS
+	case sdk.SlotReaction:
+		return sessionpb.Slot_SLOT_REACTION
+	default:
+		return sessionpb.Slot_SLOT_UNSPECIFIED
+	}
+}
+
+// declarationToProto mirrors session.Declaration field-for-field (design rule
+// 3): verb, slot, affordable, shortfall -- no omitempty on Affordable or
+// Shortfall on the wire side either, the same false-vs-absent law the SDK's
+// own doc keeps for both fields.
+func declarationToProto(d sdk.Declaration) *sessionpb.Declaration {
+	return &sessionpb.Declaration{
+		Verb:       verbToProto(d.Verb),
+		Slot:       slotToProto(d.Slot),
+		Affordable: d.Affordable,
+		Shortfall:  d.Shortfall,
+	}
+}
+
+// declarationsToProto mirrors a Declarations list. A nil or empty input
+// becomes a non-nil, zero-length slice, matching the SDK's own "empty IS the
+// answer" law for the world clock (AffordOutput.Declarations never marshals
+// as null) -- the same make-then-loop shape every other list converter in
+// this file keeps, so an empty result already comes out non-nil for free.
+func declarationsToProto(ds []sdk.Declaration) []*sessionpb.Declaration {
+	out := make([]*sessionpb.Declaration, len(ds))
+	for i, d := range ds {
+		out[i] = declarationToProto(d)
+	}
+	return out
+}
