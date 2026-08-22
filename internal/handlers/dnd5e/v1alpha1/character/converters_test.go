@@ -1092,3 +1092,43 @@ func (s *ConvertersTestSuite) TestConvertRaceTraitsToProto_Discriminates() {
 	assert.False(s.T(), result[0].GetIsChoice())
 	assert.Empty(s.T(), result[0].GetOptions())
 }
+
+// TestConvertEquipmentSlotsToProto_Nil_ReturnsNonNilEmptyStruct pins
+// rpg-api#746's other half: a character with nothing equipped must still
+// marshal "equipment_slots" as an empty object, never null. A nil pointer
+// here IS the producer defect the issue reported -- "equipment_slots: null
+// (not even an empty object)" -- on every real character before finalize
+// learned to auto-equip.
+func (s *ConvertersTestSuite) TestConvertEquipmentSlotsToProto_Nil_ReturnsNonNilEmptyStruct() {
+	result := convertEquipmentSlotsToProto(nil)
+	require.NotNil(s.T(), result, "must return a non-nil EquipmentSlots even when nothing is equipped")
+	assert.Nil(s.T(), result.GetMainHand())
+	assert.Nil(s.T(), result.GetOffHand())
+	assert.Nil(s.T(), result.GetArmor())
+}
+
+// TestConvertEquipmentSlotsToProto_Empty_ReturnsNonNilEmptyStruct is the
+// same pin against an explicitly empty (non-nil) map, the shape
+// EquipItem/UnequipItem produce once anything has ever been touched.
+func (s *ConvertersTestSuite) TestConvertEquipmentSlotsToProto_Empty_ReturnsNonNilEmptyStruct() {
+	result := convertEquipmentSlotsToProto(toolkitchar.EquipmentSlots{})
+	require.NotNil(s.T(), result)
+	assert.Nil(s.T(), result.GetMainHand())
+}
+
+// TestConvertEquipmentSlotsToProto_Populated_StillMapsFields is the existing
+// happy path, pinned alongside the two empty cases above so a future edit
+// cannot fix null-vs-empty by returning a populated struct unconditionally
+// and dropping real slot data.
+func (s *ConvertersTestSuite) TestConvertEquipmentSlotsToProto_Populated_StillMapsFields() {
+	result := convertEquipmentSlotsToProto(toolkitchar.EquipmentSlots{
+		toolkitchar.SlotMainHand: "longsword",
+		toolkitchar.SlotArmor:    "chain-mail",
+	})
+	require.NotNil(s.T(), result)
+	require.NotNil(s.T(), result.GetMainHand())
+	assert.Equal(s.T(), "longsword", result.GetMainHand().GetItemId())
+	require.NotNil(s.T(), result.GetArmor())
+	assert.Equal(s.T(), "chain-mail", result.GetArmor().GetItemId())
+	assert.Nil(s.T(), result.GetOffHand())
+}
