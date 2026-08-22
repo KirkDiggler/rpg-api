@@ -3,6 +3,8 @@ package character
 import (
 	"context"
 
+	"go.uber.org/mock/gomock"
+
 	"github.com/KirkDiggler/rpg-api/internal/entities"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	characterdraft "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft"
@@ -12,7 +14,6 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/classes"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/skills"
-	"go.uber.org/mock/gomock"
 )
 
 // finalizeAndCapture drives FinalizeDraft for the given (already-complete)
@@ -141,4 +142,3 @@ func (s *OrchestratorTestSuite) TestFinalizeDraft_ShieldStillEquipsAfterward() {
 	// The weapon auto-equipped at finalize is untouched by this later call.
 	s.Equal("longsword", updated.Data.EquipmentSlots.Get(character.SlotMainHand))
 }
-
