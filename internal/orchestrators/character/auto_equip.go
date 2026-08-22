@@ -16,7 +16,10 @@ import (
 // automatically -- there is no exported way to enumerate it from outside
 // the choices package (getXEquipmentRequirements is unexported) -- so a new
 // class's fighter-shaped bug (chosen weapon never equipped) would need a
-// line added here. Acceptable for an interim fix; see rpg-api#746.
+// line added here. Filed as rpg-toolkit#1164 (an exported Role/Kind on
+// EquipmentRequirement, or an exported per-class accessor, would let this
+// map be derived instead of hand-copied); acceptable for this interim fix
+// in the meantime. See rpg-api#746.
 var primaryWeaponChoiceIDs = map[choices.ChoiceID]bool{
 	choices.FighterWeaponsPrimary:   true,
 	choices.BarbarianWeaponsPrimary: true,
@@ -36,7 +39,7 @@ var primaryWeaponChoiceIDs = map[choices.ChoiceID]bool{
 // equipment choice today -- only Fighter, Cleric and Ranger
 // (character/choices/choice_ids.go); every other class either wears no
 // armor by class design (casters, Monk, Barbarian's Unarmored Defense) or
-// has no separate armor pick to auto-equip from.
+// has no separate armor pick to auto-equip from. See rpg-toolkit#1164.
 var armorChoiceIDs = map[choices.ChoiceID]bool{
 	choices.FighterArmor: true,
 	choices.ClericArmor:  true,
@@ -52,15 +55,12 @@ var armorChoiceIDs = map[choices.ChoiceID]bool{
 // unarmed regardless of what was chosen.
 //
 // Deliberately narrow, matching the issue's own interim-fix framing: only
-// the class's declared PRIMARY weapon choice and its distinct ARMOR choice
-// (if any) are auto-equipped. A shield bundled into the same weapon choice
-// (Fighter's "martial weapon + shield" option) is left alone on purpose --
-// EquipItem is still the one path that equips a shield (see
-// cmd/sandboxseed), and this function is idempotent with it: a shield left
-// unequipped here still equips cleanly into the off hand afterward. The
-// fuller design -- gearing up in the lobby, writing these same
-// equipment_slots from a player's own choice of what to carry -- is
-// separate, deferred work (see the issue).
+// the class's declared PRIMARY weapon choice (main hand, plus off hand for
+// a second one-handed weapon or a bundled shield -- see equipChosenWeapons)
+// and its distinct ARMOR choice (if any) are auto-equipped. The fuller
+// design -- gearing up in the lobby, writing these same equipment_slots
+// from a player's own choice of what to carry -- is separate, deferred
+// work (see the issue).
 //
 // No slot legality is decided here. Every placement goes through
 // char.EquipItem, the exact call EquipItem (the RPC) and the toolkit's own
@@ -86,30 +86,60 @@ func autoEquipChosenGear(draftChoices []choices.ChoiceData, char *character.Char
 	}
 }
 
-// equipChosenWeapons equips the weapon-typed items among a primary-weapon
-// choice's resolved selection: the first into the main hand (a two-handed
-// weapon claims it alone -- EquipItem's own rule), a second ONE-HANDED
-// weapon into the off hand if nothing has claimed it yet. Non-weapon items
-// resolved from the same choice (a bundled shield) are skipped -- see this
-// file's package doc comment for why.
+// equipChosenWeapons equips gear resolved from a primary-weapon choice: the
+// first weapon into the main hand, then -- ONLY if that weapon is one-
+// handed (character.CompatibleSlots says whether it also fits the off
+// hand) -- whatever else the SAME choice granted to fill the off hand with:
+// a second weapon (dual wield) if the choice resolved one, else a bundled
+// shield (Fighter's "a martial weapon and a shield" option, where the
+// shield rides in the same EquipmentSelection as the category-resolved
+// weapon). Each hand is attempted AT MOST ONCE -- unlike an unbounded loop
+// over every remaining candidate, which would let EquipItem's own
+// swap-on-occupied rule silently move a THIRD candidate into the off hand
+// and overwrite the second (caught in review on this PR).
+//
+// A two-handed main-hand pick claims the hand alone: CompatibleSlots
+// excludes the off hand for it, and the off hand is never attempted in that
+// case -- attempting it anyway would hit EquipItem's "main hand holding a
+// two-handed weapon blocks the off hand until something is equipped there,
+// which frees the main hand" rule and CLEAR the two-hander, exactly
+// backwards from what should happen here.
 func equipChosenWeapons(itemIDs []shared.SelectionID, char *character.Character) {
-	mainHandSet := false
+	var weaponIDs []shared.SelectionID
+	var shieldID shared.SelectionID
 	for _, id := range itemIDs {
 		item, err := equipment.GetByID(id)
-		if err != nil || !isWeaponCandidate(item) {
+		if err != nil {
 			continue
 		}
-		if !mainHandSet {
-			if err := char.EquipItem(character.SlotMainHand, id); err == nil {
-				mainHandSet = true
-			}
-			continue
+		slots := character.CompatibleSlots(item)
+		switch {
+		case slotsInclude(slots, character.SlotMainHand):
+			weaponIDs = append(weaponIDs, id)
+		case shieldID == "" && slotsInclude(slots, character.SlotOffHand):
+			shieldID = id
 		}
-		// A second weapon: try the off hand. EquipItem refuses this on its
-		// own if the main hand ended up holding a two-handed weapon, or if
-		// this item cannot go there (equipmentFitsSlot) -- nothing here
-		// re-decides that.
-		_ = char.EquipItem(character.SlotOffHand, id)
+	}
+	if len(weaponIDs) == 0 {
+		return
+	}
+
+	mainID := weaponIDs[0]
+	if err := char.EquipItem(character.SlotMainHand, mainID); err != nil {
+		return
+	}
+
+	mainItem, err := equipment.GetByID(mainID)
+	if err != nil || !slotsInclude(character.CompatibleSlots(mainItem), character.SlotOffHand) {
+		return // two-handed (or unresolvable): this choice has nothing more to place
+	}
+
+	if len(weaponIDs) > 1 {
+		_ = char.EquipItem(character.SlotOffHand, weaponIDs[1])
+		return
+	}
+	if shieldID != "" {
+		_ = char.EquipItem(character.SlotOffHand, shieldID)
 	}
 }
 
@@ -118,29 +148,13 @@ func equipChosenWeapons(itemIDs []shared.SelectionID, char *character.Character)
 func equipChosenArmor(itemIDs []shared.SelectionID, char *character.Character) {
 	for _, id := range itemIDs {
 		item, err := equipment.GetByID(id)
-		if err != nil || !isArmorCandidate(item) {
+		if err != nil || !slotsInclude(character.CompatibleSlots(item), character.SlotArmor) {
 			continue
 		}
 		if err := char.EquipItem(character.SlotArmor, id); err == nil {
 			return
 		}
 	}
-}
-
-// isWeaponCandidate reports whether item is a weapon (fits the main hand) --
-// true for both one- and two-handed weapons, false for a shield (off hand
-// only) or body armor (armor only). Reads the answer off
-// character.CompatibleSlots, the toolkit's single source of truth for slot
-// fit, rather than inspecting item properties directly.
-func isWeaponCandidate(item equipment.Equipment) bool {
-	return slotsInclude(character.CompatibleSlots(item), character.SlotMainHand)
-}
-
-// isArmorCandidate reports whether item is body armor (fits the armor
-// slot) -- false for a shield, which fits the off hand instead. See
-// isWeaponCandidate.
-func isArmorCandidate(item equipment.Equipment) bool {
-	return slotsInclude(character.CompatibleSlots(item), character.SlotArmor)
 }
 
 func slotsInclude(slots []character.InventorySlot, target character.InventorySlot) bool {

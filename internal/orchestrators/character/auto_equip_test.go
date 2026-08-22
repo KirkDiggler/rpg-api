@@ -45,16 +45,17 @@ func (s *OrchestratorTestSuite) finalizeAndCapture(draft *character.Draft) *char
 	return saved.Data
 }
 
-// TestFinalizeDraft_EquipsChosenPrimaryWeaponAndArmor pins rpg-api#746's
+// TestFinalizeDraft_EquipsChosenPrimaryWeaponArmorAndShield pins rpg-api#746's
 // central claim: a Fighter who chose "a martial weapon and a shield" (the
-// longsword) plus chain mail finalizes with the longsword already in the
-// main hand and the chain mail already in the armor slot -- no follow-up
-// EquipItem call required, which is exactly what the real (non-devseed)
-// creation flow never makes today. The shield bundled into the SAME weapon
-// choice is deliberately left unequipped (see auto_equip.go's doc) -- this
-// also pins that half: off hand stays empty here, and a subsequent EquipItem
-// call for it is proven separately (TestFinalizeDraft_ShieldStillEquipsAfterward).
-func (s *OrchestratorTestSuite) TestFinalizeDraft_EquipsChosenPrimaryWeaponAndArmor() {
+// longsword) plus chain mail finalizes with the longsword in the main hand,
+// the shield in the off hand, and the chain mail in the armor slot -- no
+// follow-up EquipItem call required, which is exactly what the real
+// (non-devseed) creation flow never makes today. The shield rides in the
+// SAME EquipmentSelection as the category-resolved weapon (buildEquipmentList
+// puts option.Items before the category pick), and equipChosenWeapons equips
+// it into the off hand precisely because the longsword is one-handed and
+// nothing else claimed that hand first.
+func (s *OrchestratorTestSuite) TestFinalizeDraft_EquipsChosenPrimaryWeaponArmorAndShield() {
 	draft := s.createTestDraft("draft-equip-fighter", s.testPlayerID)
 	s.Require().NoError(draft.SetName(&character.SetNameInput{Name: "Sir Roland"}))
 	s.Require().NoError(draft.SetRace(s.validHuman))
@@ -65,9 +66,8 @@ func (s *OrchestratorTestSuite) TestFinalizeDraft_EquipsChosenPrimaryWeaponAndAr
 	data := s.finalizeAndCapture(draft)
 
 	s.Equal("longsword", data.EquipmentSlots.Get(character.SlotMainHand))
+	s.Equal("shield", data.EquipmentSlots.Get(character.SlotOffHand))
 	s.Equal("chain-mail", data.EquipmentSlots.Get(character.SlotArmor))
-	s.Empty(data.EquipmentSlots.Get(character.SlotOffHand),
-		"the bundled shield is not auto-equipped by finalize -- EquipItem still does that")
 }
 
 // TestFinalizeDraft_TwoHandedWeapon_EquipsMainHandOnly pins the two-handed
@@ -105,14 +105,18 @@ func (s *OrchestratorTestSuite) TestFinalizeDraft_TwoHandedWeapon_EquipsMainHand
 	s.Empty(data.EquipmentSlots.Get(character.SlotOffHand))
 }
 
-// TestFinalizeDraft_ShieldStillEquipsAfterward proves the idempotency the
-// issue's fix candidate explicitly requires: a shield finalize deliberately
-// left unequipped (see auto_equip.go) still equips cleanly into the off
-// hand through a normal EquipItem call afterward -- the same call
-// cmd/sandboxseed makes today, and the same behavior GetCharacter's caller
-// relies on.
-func (s *OrchestratorTestSuite) TestFinalizeDraft_ShieldStillEquipsAfterward() {
-	draft := s.createTestDraft("draft-equip-shield-after", s.testPlayerID)
+// TestFinalizeDraft_ReEquippingTheAlreadyEquippedShieldIsHarmless proves the
+// idempotency Kirk's gate review asked for: cmd/sandboxseed calls EquipItem
+// for the shield unconditionally, on every seed run, regardless of whether
+// finalize already put it there. A second EquipItem for the SAME item
+// already in that slot must be a harmless no-op (not an error, not a swap
+// that clears the main hand) -- and it already is, by EquipItem's own
+// existing logic: with a single copy owned, it clears every slot currently
+// holding that item id before resetting it, which nets out to the same
+// state. No new toolkit rule needed; this test exists to pin that fact
+// rather than assume it.
+func (s *OrchestratorTestSuite) TestFinalizeDraft_ReEquippingTheAlreadyEquippedShieldIsHarmless() {
+	draft := s.createTestDraft("draft-equip-shield-reequip", s.testPlayerID)
 	s.Require().NoError(draft.SetName(&character.SetNameInput{Name: "Dame Elara"}))
 	s.Require().NoError(draft.SetRace(s.validHuman))
 	s.Require().NoError(draft.SetClass(s.validFighter))
@@ -120,7 +124,7 @@ func (s *OrchestratorTestSuite) TestFinalizeDraft_ShieldStillEquipsAfterward() {
 	s.Require().NoError(draft.SetAbilityScores(s.validFighterScores))
 
 	data := s.finalizeAndCapture(draft)
-	s.Empty(data.EquipmentSlots.Get(character.SlotOffHand))
+	s.Equal("shield", data.EquipmentSlots.Get(character.SlotOffHand), "finalize already equipped it")
 
 	s.mockCharacterRepo.EXPECT().Get(s.ctx, gomock.Any()).Return(
 		&characterrepo.GetOutput{Character: &entities.Character{Data: data}}, nil)
