@@ -348,7 +348,9 @@ const probeEnding = "probe"
 // orderAsGiven, nobodyDown, nobodySees and alwaysPasses are four of the
 // capabilities NewEncounter refuses to default (rpg-toolkit#1033 for the
 // first three; alwaysPasses closes the fourth, TurnDriver, added by
-// toolkit#1162/ADR-0043: supplied, never assumed).
+// toolkit#1162/ADR-0043: supplied, never assumed). alwaysPasses is
+// hand-written rather than reused from the toolkit -- see its own doc
+// comment and rpg-toolkit#1167.
 //
 // All four are construction-time only here, which is what makes trivial
 // implementations honest rather than a hidden ruling -- see [buildWorld].
@@ -385,6 +387,15 @@ func (nobodySees) Sight(members []tkencounter.MemberID) (map[tkencounter.MemberI
 	return out, nil
 }
 
+// alwaysPasses is hand-written because the toolkit does not export one:
+// session.Pass{} (what Config.TurnDriver is set to for the real, played
+// session in orchestrator.go) does NOT satisfy encounter.TurnDriver --
+// different signature (Act(string) vs Act(encounter.MemberID)) and a
+// different TurnOutcome type -- the bridge between them (turnDriverSeam) is
+// unexported to rpg-toolkit's session package. encounter.Pass, confusingly
+// similarly named, is the TurnOutcome VALUE a driver returns, not a driver
+// itself. Filed rpg-toolkit#1167 to ask the toolkit to export one at the
+// encounter level; this type goes away when it does.
 type alwaysPasses struct{}
 
 // Act is never reached for either encounter this package builds, for the
