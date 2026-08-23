@@ -56,6 +56,22 @@ design §5).
 (read-only over the repo's `content/`) and `Scratch(t)` (a temp copy with
 authoring on).
 
+### Seeding an empty mount
+
+A deployment mounts `RPG_CONTENT_DIR` as a volume that is **empty on a fresh
+box** (rpg-deployment's `./content` is gitignored), and the registry refuses
+a directory without `reference-tomb.yaml` — correctly, since "no key" must
+always mean the tomb. So when `RPG_CONTENT_DIR` is set, `cmd/server` first
+calls `dungeons.SeedDefault(dir, dungeons.ShippedContentDir)`: if the
+directory has no `reference-tomb.yaml`, the copy the image ships
+(`./content/reference-tomb.yaml`, the same file the unset-variable default
+loads) is written in through a same-directory temp file + rename, and the
+boot log says so. It **never overwrites**: an existing tomb — authored,
+edited, or simply different — is left alone, and one that does not compile
+is still refused by name. A missing shipped copy is a construction error
+naming both paths. Tracking a second tomb in the deployment repo would drift
+from the one the image ships; seeding from the image cannot.
+
 ## The gate
 
 `cmd/server` constructs the registry **unconditionally** — the tomb must load
@@ -69,7 +85,7 @@ is `GetDungeon("reference-tomb")`.
 
 | Variable | Effect |
 |---|---|
-| `RPG_CONTENT_DIR` | directory the registry loads and writes; default `content` (the Docker image ships the repo's `content/` at `/home/appuser/content`) |
+| `RPG_CONTENT_DIR` | directory the registry loads and writes; default `content` (the Docker image ships the repo's `content/` at `/home/appuser/content`). When set and lacking `reference-tomb.yaml`, the shipped copy is seeded into it at boot |
 | `RPG_AUTHORING_ENABLED=1` | registers `AuthoringService`; requires `RPG_CONTENT_DIR` |
 
 ## Transport rules (the proto's, enforced in the handler)
