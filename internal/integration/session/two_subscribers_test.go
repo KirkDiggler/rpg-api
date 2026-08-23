@@ -71,10 +71,11 @@ func waitForLive(t *testing.T, broker *sessionorch.Broker, session, recipient st
 		if len(stream.snapshot()) > 0 {
 			// The subscription is live. A tick that fired before this one
 			// was observed may still have a duplicate canary in flight --
-			// settle briefly so the caller's own baseline (captured right
-			// after this returns) is taken after every straggler has
-			// landed, not before.
-			time.Sleep(50 * time.Millisecond)
+			// wait for real quiescence (not a fixed sleep, Copilot PR #821)
+			// so the caller's own baseline (captured right after this
+			// returns) is taken after every straggler has landed, not
+			// merely after a guessed-at delay.
+			waitForQuiescence(t, stream, 2*time.Second)
 			return
 		}
 		select {
@@ -86,6 +87,43 @@ func waitForLive(t *testing.T, broker *sessionorch.Broker, session, recipient st
 			t.Fatalf("stream for %s never subscribed", recipient)
 		}
 	}
+}
+
+// waitForQuiescence polls stream's captured events until the count stops
+// growing for a short stable window, then returns the settled snapshot, or
+// fails the test after timeout. Publish itself is synchronous -- every
+// event is already sitting in a subscriber's own broker channel by the time
+// the driving verb call returns -- but delivery from there into a
+// recordingStream's captured slice happens on that subscriber's own
+// forwarding goroutine, which this test does not otherwise synchronize
+// with. A fixed sleep before reading a snapshot is exactly the "hope it was
+// long enough" flakiness Copilot flagged on PR #821 (a slow CI scheduler,
+// GC pause, or container contention can starve the forwarder past a fixed
+// delay without proving the batch actually finished arriving); this instead
+// waits for the real condition -- nothing new arriving -- with a bounded
+// timeout as the only failure mode.
+func waitForQuiescence(t *testing.T, stream *recordingStream, timeout time.Duration) []*sessionpb.Event {
+	t.Helper()
+	const stableRounds = 5
+	const pollInterval = 5 * time.Millisecond
+	deadline := time.Now().Add(timeout)
+	last := -1
+	stable := 0
+	for time.Now().Before(deadline) {
+		cur := len(stream.snapshot())
+		if cur == last {
+			stable++
+			if stable >= stableRounds {
+				return stream.snapshot()
+			}
+		} else {
+			stable = 0
+		}
+		last = cur
+		time.Sleep(pollInterval)
+	}
+	t.Fatalf("stream never reached quiescence within %s (stuck at %d events)", timeout, last)
+	return nil
 }
 
 // assertContiguousSeqs fails unless the events, in the order received, carry
@@ -101,16 +139,6 @@ func assertContiguousSeqs(t *testing.T, events []*sessionpb.Event, who string) {
 			"%s: seq %d must immediately follow %d -- no gap, no duplicate", who, events[i].GetSeq(), events[i-1].GetSeq())
 	}
 }
-
-// settleForwarders gives the async StreamEvents forwarding goroutines (one
-// per live subscriber, broker channel -> stream.Send) a moment to actually
-// drain and append before the test reads a snapshot. Publish itself is
-// synchronous -- by the time an EndTurn call returns, every event is
-// already sitting in each subscriber's own channel -- but delivery from
-// there into a recordingStream's captured slice happens on that
-// subscriber's own goroutine, which this test does not otherwise
-// synchronize with.
-func settleForwarders() { time.Sleep(100 * time.Millisecond) }
 
 func containsKind(events []*sessionpb.Event, kind sessionpb.EventKind) bool {
 	for _, e := range events {
@@ -213,7 +241,8 @@ func TestTwoStreamEventsSubscribers(t *testing.T) {
 	require.Equal(t, "alice", out2.GetNext())
 	require.True(t, out2.GetRoundWrapped())
 	require.False(t, out2.GetDelivery().GetFailed(), "nobody has lagged yet -- round 1 must deliver cleanly")
-	settleForwarders()
+	waitForQuiescence(t, aliceStream, 2*time.Second)
+	waitForQuiescence(t, bobStream, 2*time.Second)
 
 	// Both real subscribers must have received their OWN addressed copies of
 	// the whole round, with contiguous seqs -- rpg-toolkit#940 today
@@ -274,7 +303,7 @@ func TestTwoStreamEventsSubscribers(t *testing.T) {
 		"bob's own subscriber lagged during this driven turn -- DeliveryReport.Failed must surface it on the caller's own response")
 	require.Greater(t, h.manager.Broker.Dropped(session, "bob"), uint64(0),
 		"round 2's own beats must have dropped for bob now that her buffer is primed to headroom")
-	settleForwarders()
+	waitForQuiescence(t, aliceStream, 2*time.Second)
 
 	// The OTHER subscriber -- alice, still live and draining -- must still
 	// get everything from this same driven turn, with no gap at all

@@ -169,6 +169,37 @@ func (s *BrokerTestSuite) TestPublish_NeverBlocksOnASlowSubscriber() {
 	}
 }
 
+// TestDropped_ClearsWhenTheLastSubscriberForAKeyGoes pins Copilot's own
+// finding on PR #821: dropped was only ever incremented, so a long-lived
+// broker retained one entry per (session, recipient) that ever lagged for
+// the life of the process, even long after that session and connection
+// were gone -- an unbounded leak. The fix ties the count's lifetime to the
+// key's own live subscribers: once the last one for a key unsubscribes, its
+// accumulated count goes with it, the same as the channel map entry
+// already does.
+func (s *BrokerTestSuite) TestDropped_ClearsWhenTheLastSubscriberForAKeyGoes() {
+	sub, err := s.broker.Subscribe("sess-1", "alice")
+	s.Require().NoError(err)
+
+	fill := make([]sdk.Event, 0, 40)
+	for i := 0; i < 40; i++ {
+		fill = append(fill, sdk.Event{Session: "sess-1", Recipient: "alice", Seq: uint64(i)})
+	}
+	s.Require().Error(s.broker.Publish(s.ctx, fill), "40 into a 32-slot buffer must drop 8")
+	s.Equal(uint64(8), s.broker.Dropped("sess-1", "alice"))
+
+	s.Require().NoError(sub.Close())
+	s.Equal(uint64(0), s.broker.Dropped("sess-1", "alice"),
+		"the count must not outlive every subscriber that ever used this key")
+
+	// A fresh reconnect under the very same key starts clean too -- the
+	// leaked count would otherwise resurface here.
+	fresh, err := s.broker.Subscribe("sess-1", "alice")
+	s.Require().NoError(err)
+	defer func() { _ = fresh.Close() }()
+	s.Equal(uint64(0), s.broker.Dropped("sess-1", "alice"))
+}
+
 func (s *BrokerTestSuite) TestClose_ClosesLiveSubscriptions() {
 	sub, err := s.broker.Subscribe("sess-1", "alice")
 	s.Require().NoError(err)

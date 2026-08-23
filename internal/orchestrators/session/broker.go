@@ -142,6 +142,14 @@ func (b *Broker) unsubscribe(key subKey, id uint64) {
 	}
 	if len(subs) == 0 {
 		delete(b.subs, key)
+		// The (session, recipient) key has no live subscriber left at all --
+		// drop its accumulated count with it. Otherwise this map only ever
+		// grows: a long-lived broker would retain one entry per (session,
+		// recipient) that EVER lagged, for the life of the process, long
+		// after the session and the connection it belonged to are gone
+		// (Copilot, PR #821). A fresh reconnect under the same key already
+		// starts with an empty channel; its drop count starts at zero too.
+		delete(b.dropped, key)
 	}
 }
 
@@ -219,5 +227,6 @@ func (b *Broker) Close() error {
 		}
 	}
 	b.subs = make(map[subKey]map[uint64]chan sdk.Event)
+	b.dropped = make(map[subKey]uint64)
 	return nil
 }
