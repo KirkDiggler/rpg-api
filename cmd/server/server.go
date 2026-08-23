@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	authoringhandler "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/authoring/v1alpha1"
 	lobbyhandler "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/lobby/v1alpha1"
 	sessionhandler "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/session/v1alpha1"
 	character2 "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v1alpha1/character"
@@ -27,12 +28,18 @@ import (
 	grpc_recovery "github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/recovery"
 
 	apiv1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/api/v1alpha1"
+	authoringv1alpha1pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/authoring/v1alpha1"
 	lobbyv1alpha1pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/lobby/v1alpha1"
 	sessionv1alpha1pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
 	characterv2pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/character"
+	tkencounter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter"
+	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
+
 	"github.com/KirkDiggler/rpg-api/internal/auth"
+	"github.com/KirkDiggler/rpg-api/internal/dungeons"
 	apiv1alpha1handler "github.com/KirkDiggler/rpg-api/internal/handlers/api/v1alpha1"
+	authoringorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/authoring"
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
 	diceorc "github.com/KirkDiggler/rpg-api/internal/orchestrators/dice"
 	lobbyorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/lobby"
@@ -50,6 +57,22 @@ import (
 // that abandoned WAITING lobbies don't accumulate forever (lobby-surface.md
 // "Abandonment").
 const lobbyTTL = 24 * time.Hour
+
+// Content registry environment (rpg-api#806, rpg-project#256).
+const (
+	// envContentDir is the directory of authored dungeon files the registry
+	// loads at boot and the AuthoringService writes to. Defaults to
+	// defaultContentDir relative to the working directory, which is where
+	// the repo (and the image) keep the shipped reference tomb.
+	envContentDir = "RPG_CONTENT_DIR"
+	// defaultContentDir is envContentDir's fallback.
+	defaultContentDir = "content"
+	// envAuthoringEnabled set to "1" registers the AuthoringService
+	// (PutDungeon writes into envContentDir). Off by default: the registry
+	// still loads and serves content, and ListDungeons/GetDungeon remain
+	// ungated reads.
+	envAuthoringEnabled = "RPG_AUTHORING_ENABLED"
+)
 
 var (
 	grpcPort int
@@ -220,6 +243,27 @@ func runServer(_ *cobra.Command, _ []string) error {
 	}
 	sessionv1alpha1pb.RegisterSessionServiceServer(srv, sessionHandlerImpl)
 
+	// Content registry (rpg-api#806): constructed UNCONDITIONALLY -- the
+	// reference tomb must load whether or not authoring is on, because a
+	// StartEncounter with no dungeon_key plays it. A file that does not
+	// compile fails the boot here, naming itself.
+	authoringEnabled := os.Getenv(envAuthoringEnabled) == "1"
+	contentDir := os.Getenv(envContentDir)
+	if contentDir == "" {
+		if authoringEnabled {
+			return fmt.Errorf("%s=1 requires %s to be set", envAuthoringEnabled, envContentDir)
+		}
+		contentDir = defaultContentDir
+	}
+	// sessionOrch.Manager is the AtlasProjector: Manager.AtlasOf loads the
+	// world the way StartSession would and projects it the way GetAtlas
+	// does, so PutDungeon's atlas and the game's are one producer.
+	registry, err := dungeons.NewFileRegistry(contentDir, authoringEnabled, registryProjector{sessionOrch.Manager})
+	if err != nil {
+		return fmt.Errorf("content registry: %w", err)
+	}
+	log.Printf("content registry: %q (authoring enabled: %t)", contentDir, authoringEnabled) //nolint:gosec // operator-supplied env var, logged once at boot
+
 	// LobbyService v1alpha1 (rpg-api#629): party assembly + the sole encounter
 	// construction path. StartEncounter builds directly onto sessionOrch's
 	// Manager -- the session stack is the only stack now (rpg-project#227).
@@ -233,6 +277,7 @@ func runServer(_ *cobra.Command, _ []string) error {
 		JoinRefGenerator:     idgen.NewUUID("join"),
 		EncounterIDGenerator: idgen.NewUUID(""),
 		SessionManager:       sessionOrch.Manager,
+		Dungeons:             registry,
 	}
 	lobbyOrch, err := lobbyorch.New(lobbyCfg)
 	if err != nil {
@@ -257,15 +302,27 @@ func runServer(_ *cobra.Command, _ []string) error {
 	healthServer.SetServingStatus("dnd5e.api.session.v1alpha1.SessionService", grpc_health_v1.HealthCheckResponse_SERVING)
 	healthServer.SetServingStatus("dnd5e.api.lobby.v1alpha1.LobbyService", grpc_health_v1.HealthCheckResponse_SERVING)
 
-	// AuthoringService (PutDungeon) was old-dialect-only -- it wrote through
-	// internal/dungeonregistry against the OLD rpg-toolkit/encounter/
-	// dungeonspec compiler, with no path for the session stack (which plays
-	// a fixed embedded dungeon, see start_encounter_session_stack.go) to
-	// ever read what it wrote. Deleted alongside dungeonregistry and the
-	// rest of the old encounter stack (rpg-project#227) rather than kept
-	// registered behind RPG_AUTHORING_ENABLED for a compiler dialect
-	// nothing else uses any more -- it was never registered in any real
-	// deployment anyway (the gate defaulted off).
+	// AuthoringService v1alpha1 (rpg-api#806, rpg-project#256): the dungeon
+	// builder's seam. Registered only when RPG_AUTHORING_ENABLED=1, so a
+	// client with the gate off sees Unimplemented -- its way of telling
+	// "authoring is off" from "server unreachable" (the proto's own words).
+	// GetDungeon rides the same service, so with the gate off the builder's
+	// probe fails and the Home button stays hidden.
+	if authoringEnabled {
+		authoringOrch, err := authoringorch.New(&authoringorch.Config{Dungeons: registry})
+		if err != nil {
+			return fmt.Errorf("authoring orchestrator: %w", err)
+		}
+		authoringHandlerImpl, err := authoringhandler.New(&authoringhandler.HandlerConfig{
+			Orchestrator: authoringOrch,
+		})
+		if err != nil {
+			return fmt.Errorf("authoring handler: %w", err)
+		}
+		authoringv1alpha1pb.RegisterAuthoringServiceServer(srv, authoringHandlerImpl)
+		healthServer.SetServingStatus("dnd5e.api.authoring.v1alpha1.AuthoringService", grpc_health_v1.HealthCheckResponse_SERVING)
+		log.Println("AuthoringService registered (RPG_AUTHORING_ENABLED=1)")
+	}
 
 	reflection.Register(srv)
 
@@ -381,4 +438,12 @@ func mustRedisClient() redis.Client {
 
 	slog.Info("successfully connected to Redis", "address", redisAddr)
 	return client
+}
+
+// registryProjector adapts *session.Manager's AtlasOf (which takes the SDK's
+// own input struct) to dungeons.AtlasProjector.
+type registryProjector struct{ m *sdk.Manager }
+
+func (p registryProjector) AtlasOf(ctx context.Context, world *tkencounter.EncounterData) (*sdk.Atlas, error) {
+	return p.m.AtlasOf(ctx, &sdk.AtlasOfInput{World: world})
 }

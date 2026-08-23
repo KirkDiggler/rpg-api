@@ -1,12 +1,15 @@
 package sessionworld
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 
 	tkencounter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter"
+	tkdungeonspec "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter/dungeonspec"
 	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
 )
 
@@ -20,10 +23,26 @@ func TestReferenceTombSuite(t *testing.T) {
 	suite.Run(t, new(ReferenceTombSuite))
 }
 
+// referenceTombPath is the shipped tomb, read from the content tree rather
+// than embedded: this package holds no content any more (see the package
+// comment), and the test compiling the real shipped file is the point.
+var referenceTombPath = filepath.Join("..", "..", "content", "reference-tomb.yaml")
+
 func (s *ReferenceTombSuite) SetupTest() {
-	tomb, err := ReferenceTomb()
+	raw, err := os.ReadFile(referenceTombPath)
+	s.Require().NoError(err, "the shipped tomb must exist at content/reference-tomb.yaml")
+	tomb, err := Compile(raw)
 	s.Require().NoError(err, "the shipped tomb must compile")
 	s.tomb = tomb
+}
+
+// TestTheFileNamesItself pins that Compile reports the file's own key: the
+// registry stores a file under the key it was Put with and refuses a file
+// whose key line disagrees, which only works if the key comes out of the
+// compile rather than the filename.
+func (s *ReferenceTombSuite) TestTheFileNamesItself() {
+	s.Equal("reference-tomb", s.tomb.Key)
+	s.NotEmpty(s.tomb.Name)
 }
 
 // load rebuilds a live encounter from the world this package produced, which is
@@ -73,11 +92,11 @@ func (s *ReferenceTombSuite) TestThePartyComesInWhereTheDungeonSaysItDoes() {
 // TestPlacementsAreProjectedThroughTheCompositionNotCopied is the test this
 // package exists for.
 //
-// The tomb's authored start is the entrance's local cell [1,3]. Its absolute
-// cell is (0,3) -- not (1,3) -- because an offset rectangle SHEARS when it
-// becomes axial. Any change that passes the authored cell straight through,
-// or reimplements the projection as "local plus origin", produces (1,3) or
-// (7,3) and fails here.
+// The tomb's authored start is the absolute offset cell [1,3]. Its axial
+// cell is (0,3) -- not (1,3) -- because an offset grid SHEARS when it becomes
+// axial. Any change that passes the authored cell straight through, or
+// reimplements the conversion by hand instead of asking encounter.HexCellAt,
+// produces (1,3) or something else and fails here.
 //
 // The literal is the point rather than an embarrassment: reading the expected
 // value back out of the same projection under test would assert nothing at all.
@@ -86,14 +105,14 @@ func (s *ReferenceTombSuite) TestThePartyComesInWhereTheDungeonSaysItDoes() {
 // is odd-r, so the COLUMN shears with the row: q = 1 - (3-1)/2 = 0), then
 // (0,-3) until rpg-toolkit#1150 corrected the axial basis (R is cube Z, the
 // row itself, so r = 3 -- not -q-r). Each value was read off the corrected
-// toolkit, not derived by hand -- this package borrows the projection
-// precisely so it never has its own opinion about it.
+// toolkit, not derived by hand -- this package asks the toolkit for the
+// conversion precisely so it never has its own opinion about it.
 func (s *ReferenceTombSuite) TestPlacementsAreProjectedThroughTheCompositionNotCopied() {
 	authored := spatial.Position{X: 1, Y: 3}
 	s.Require().NotEqual(authored, s.tomb.PartySeats[0],
 		"an authored cell that survived unchanged means nothing projected it")
 	s.Equal(spatial.Position{X: 0, Y: 3}, s.tomb.PartySeats[0],
-		"the entrance's local [1,3] is the absolute cell (0,3)")
+		"the authored offset [1,3] is the axial cell (0,3)")
 }
 
 // TestTheGarrisonHoldsTheHallAndTheCaptainWaitsBeyondIt checks the monsters
@@ -168,10 +187,22 @@ func (s *ReferenceTombSuite) TestEveryMonsterIsNamedAfterWhatItIs() {
 func (s *ReferenceTombSuite) TestTheTombIsShutAtDCTwelve() {
 	enc := s.load()
 	doors := enc.Doors()
-	s.Require().Len(doors, 1, "the tomb authors exactly one door -- the entrance/hall connector is an open gap")
-	s.Equal(tkencounter.DoorStateKind("locked"), doors[0].State.Kind(), "and it starts shut")
+	s.Require().Len(doors, 2, "the tomb authors two doorways: an open one into the hall and the locked one into the tomb")
 
-	_, err := enc.OpenDoor(&tkencounter.OpenDoorInput{Door: doors[0].ID})
+	byID := map[tkencounter.DoorID]tkencounter.Door{}
+	for _, d := range doors {
+		byID[d.ID] = d
+	}
+	// Door IDs are minted under the dungeon's key (version 2), so two
+	// dungeons in one process cannot collide.
+	open, ok := byID["reference-tomb/entrance-hall"]
+	s.Require().True(ok, "doors are named <key>/<id>: %v", doors)
+	s.Equal(tkencounter.DoorStateKind("open"), open.State.Kind(), "the way into the hall is an open gap")
+	locked, ok := byID["reference-tomb/hall-tomb"]
+	s.Require().True(ok)
+	s.Equal(tkencounter.DoorStateKind("locked"), locked.State.Kind(), "and the tomb starts shut")
+
+	_, err := enc.OpenDoor(&tkencounter.OpenDoorInput{Door: locked.ID})
 	s.Require().ErrorIs(err, tkencounter.ErrLocked)
 	s.Contains(err.Error(), "DC 12", "and the refusal says what it would take")
 }
@@ -248,12 +279,18 @@ func TestAFightsUnplayedTurnPassesWithoutTouchingTheStriker(t *testing.T) {
 		Striker:    tkencounter.RefusingStriker{},
 		Retention:  tkencounter.RetentionUnbounded,
 		Field: tkencounter.FieldInput{
-			Canvas: tkencounter.CanvasInput{Void: tkencounter.VoidIsOpaque()},
-			Rooms:  []tkencounter.RoomInput{{ID: "room", Width: 4, Height: 4}},
+			// Transparent void: a sightline hugging the edge of a sheared
+			// rectangle crosses void, and this test is about the turn, not
+			// the void.
+			Canvas: tkencounter.CanvasInput{Void: tkencounter.VoidIsTransparent(), Orientation: tkencounter.HexesArePointyTop()},
+			Regions: []tkencounter.RegionInput{{
+				ID: "room", Name: "Room", Archetype: "test", Lighting: &tkencounter.Lighting{Intensity: 1},
+				Cells: rectangle(4, 4),
+			}},
 		},
 		Members: []tkencounter.MemberInput{
-			{ID: "fighter", Kind: tkencounter.KindPlayer, Room: "room", Position: spatial.Position{X: 0, Y: 0}},
-			{ID: "skel-1", Kind: tkencounter.KindMonster, Room: "room", Position: spatial.Position{X: 1, Y: 0}},
+			{ID: "fighter", Kind: tkencounter.KindPlayer, Position: spatial.Position{X: 0, Y: 0}},
+			{ID: "skel-1", Kind: tkencounter.KindMonster, Position: spatial.Position{X: 1, Y: 0}},
 		},
 		Endings: []tkencounter.EndingInput{{Key: "withdrawn", Trigger: tkencounter.TriggerExternal{}}},
 	})
@@ -267,38 +304,69 @@ func TestAFightsUnplayedTurnPassesWithoutTouchingTheStriker(t *testing.T) {
 		"the skeleton went first and PassDriver passed its turn immediately -- the turn already belongs to the player nobody has acted for yet")
 }
 
+// rectangle paints a width x height block of absolute offset cells starting
+// at [0,0] -- the smallest honest region for a test.
+func rectangle(width, height int) []spatial.Position {
+	out := make([]spatial.Position, 0, width*height)
+	for row := 0; row < height; row++ {
+		for col := 0; col < width; col++ {
+			out = append(out, spatial.Position{X: float64(col), Y: float64(row)})
+		}
+	}
+	return out
+}
+
+// twoRegions is a version-2 dungeon with a six-wide entrance and hall, the
+// party starting at [1,3], and one monster placed where the test says.
+func twoRegions(key string, monsterAt string) string {
+	return `
+version: 2
+key: ` + key + `
+name: Two Regions
+orientation: pointy
+void: opaque
+regions:
+  - id: entrance
+    name: Entrance
+    archetype: test
+    lighting: { intensity: 1 }
+    cells:
+      - [[0,0],[1,0],[2,0],[3,0],[4,0],[5,0]]
+      - [[0,1],[1,1],[2,1],[3,1],[4,1],[5,1]]
+      - [[0,2],[1,2],[2,2],[3,2],[4,2],[5,2]]
+      - [[0,3],[1,3],[2,3],[3,3],[4,3],[5,3]]
+      - [[0,4],[1,4],[2,4],[3,4],[4,4],[5,4]]
+      - [[0,5],[1,5],[2,5],[3,5],[4,5],[5,5]]
+  - id: hall
+    name: Hall
+    archetype: test
+    lighting: { intensity: 1 }
+    cells:
+      - [[6,0],[7,0],[8,0],[9,0],[10,0],[11,0]]
+      - [[6,1],[7,1],[8,1],[9,1],[10,1],[11,1]]
+      - [[6,2],[7,2],[8,2],[9,2],[10,2],[11,2]]
+      - [[6,3],[7,3],[8,3],[9,3],[10,3],[11,3]]
+      - [[6,4],[7,4],[8,4],[9,4],[10,4],[11,4]]
+      - [[6,5],[7,5],[8,5],[9,5],[10,5],[11,5]]
+start: [1, 3]
+place:
+  - { ref: "dnd5e:monsters:skeleton", at: ` + monsterAt + ` }
+`
+}
+
 // TestNoSeatIsAlsoSomebodyElsesCell guards a guarantee this package DEPENDS ON
-// and does not own.
-//
-// projectPlacements puts every party seat and every monster into ONE throwaway
-// encounter to read their absolute cells back. That is only safe because the
-// compiler's seat list excludes cells that are already occupied -- if it ever
-// stopped, this package would start failing at construction with an error about
-// a member collision, and nothing about the message would point at the compiler.
+// and does not own: the compiler's seat list excludes cells a monster already
+// stands on. If it ever stopped, StartEncounter would seat a player on top of
+// a skeleton and the session's Join would refuse with a message that points
+// nowhere near the compiler.
 //
 // The tomb's own garrison is in other chambers, so the tomb alone would never
 // notice. This uses a dungeon authored specifically to put a monster in the
 // entrance the party starts in.
 func TestNoSeatIsAlsoSomebodyElsesCell(t *testing.T) {
-	const monsterInTheEntrance = `
-version: 1
-key: seat-collision
-void: opaque
-orientation: pointy
-height: 6
-start: [1, 3]
-rooms:
-  - id: entrance
-    width: 6
-    place:
-      - { ref: "dnd5e:monsters:skeleton", at: [0, 3] }
-  - id: hall
-    width: 6
-connectors:
-  - { from: entrance, to: hall }
-`
+	monsterInTheEntrance := twoRegions("seat-collision", "[0, 3]")
 
-	d, err := compile([]byte(monsterInTheEntrance))
+	d, err := Compile([]byte(monsterInTheEntrance))
 	require.NoError(t, err)
 	require.Len(t, d.Monsters, 1)
 
@@ -312,25 +380,9 @@ connectors:
 // omitting a seat -- an author who put the party's entry cell under a monster
 // made a mistake, and it is named as one.
 func TestAPartyStartOnTopOfAMonsterIsRefusedByTheCompiler(t *testing.T) {
-	const monsterOnTheStart = `
-version: 1
-key: start-collision
-void: opaque
-orientation: pointy
-height: 6
-start: [1, 3]
-rooms:
-  - id: entrance
-    width: 6
-    place:
-      - { ref: "dnd5e:monsters:skeleton", at: [1, 3] }
-  - id: hall
-    width: 6
-connectors:
-  - { from: entrance, to: hall }
-`
+	monsterOnTheStart := twoRegions("start-collision", "[1, 3]")
 
-	d, err := compile([]byte(monsterOnTheStart))
+	d, err := Compile([]byte(monsterOnTheStart))
 	require.Error(t, err)
 	require.Nil(t, d)
 }
@@ -339,7 +391,21 @@ connectors:
 // compile returns an error and no Dungeon, so a caller can never seed a session
 // from a dungeon that did not fully compile.
 func TestABrokenSpecIsRefusedRatherThanPartlyBuilt(t *testing.T) {
-	d, err := compile([]byte("version: 1\nkey: nope\n"))
+	d, err := Compile([]byte("version: 2\nkey: nope\n"))
 	require.Error(t, err)
 	require.Nil(t, d)
+	require.ErrorIs(t, err, tkdungeonspec.ErrBadSpec)
+
+	var verr *tkdungeonspec.ValidationError
+	require.ErrorAs(t, err, &verr, "a validation failure carries every defect with its path")
+	require.NotEmpty(t, verr.Errors)
+}
+
+// TestVersionOneIsRefusedByName: the deleted dialect is refused, not parsed
+// hopefully (rpg-project#256 ruling 4).
+func TestVersionOneIsRefusedByName(t *testing.T) {
+	d, err := Compile([]byte("version: 1\nkey: old\nvoid: opaque\norientation: pointy\nheight: 8\nstart: [1, 3]\nrooms:\n  - id: a\n    width: 6\n"))
+	require.Error(t, err)
+	require.Nil(t, d)
+	require.ErrorIs(t, err, tkdungeonspec.ErrBadSpec)
 }

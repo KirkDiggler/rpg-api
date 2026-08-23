@@ -26,7 +26,7 @@ func TestGetAtlas_HappyPath(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mgr := sessionv1alpha1mock.NewMockManager(ctrl)
 	mgr.EXPECT().Atlas(gomock.Any(), &sdk.AtlasInput{Session: "sess-1"}).Return(&sdk.Atlas{
-		Grid:  sdk.GridSquare,
+		Grid:  sdk.GridHex,
 		Cells: []spatial.Position{{X: 0, Y: 0}},
 	}, nil)
 

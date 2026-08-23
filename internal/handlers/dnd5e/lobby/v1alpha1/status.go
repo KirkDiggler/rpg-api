@@ -19,6 +19,7 @@ import (
 //   - ErrNotHost → PermissionDenied
 //   - ErrCharacterOwnershipMismatch → PermissionDenied
 //   - ErrCharacterNotFound → NotFound
+//   - ErrDungeonNotFound → NotFound
 //   - ErrLobbyAlreadyStarted / ErrLobbyFull / ErrNotAllReady / ErrLobbyNotStarted /
 //     ErrEncounterAlreadyEnded → FailedPrecondition
 //   - unclassified → Internal
@@ -28,6 +29,8 @@ func lobbyStatusError(err error) error {
 		return status.Error(codes.NotFound, "lobby not found")
 	case errors.Is(err, lobbyorch.ErrCharacterNotFound):
 		return status.Error(codes.NotFound, "character not found")
+	case errors.Is(err, lobbyorch.ErrDungeonNotFound):
+		return status.Error(codes.NotFound, "dungeon not found")
 	case errors.Is(err, lobbyorch.ErrPlayerNotInLobby):
 		return status.Error(codes.PermissionDenied, "player is not a member of this lobby")
 	case errors.Is(err, lobbyorch.ErrNotHost):

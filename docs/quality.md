@@ -149,13 +149,28 @@ orphans) is unruled.
 
 ### sessionworld — B+ (new, 2026-08-21)
 
-`internal/sessionworld/` — compiles the reference tomb through the toolkit's
-`dungeonspec` and hands the lobby a world plus authored party seats. Its
-defining test pins that placements are projected by the composition, not
-copied: the entrance literal moved from `(1,-4)` to `(0,-3)` when
-rpg-toolkit#1141 corrected the hex convention, with no code change here
-(rpg-api#802). Below A only because it compiles exactly one world and
-`ListDungeons` has no source of truth yet.
+`internal/sessionworld/` — compiles one authored dungeon file (`Compile(raw)`)
+through the toolkit's `dungeonspec` into a world plus authored party seats and
+monster placements. It holds no content since rpg-api#806: the reference tomb
+is `content/reference-tomb.yaml`, loaded by `internal/dungeons`. Its defining
+test pins that placements are projected by the composition, not copied: the
+entrance literal moved from `(1,-4)` to `(0,-3)` when rpg-toolkit#1141
+corrected the hex convention, with no code change here (rpg-api#802). The borrowed-projection step (a throwaway encounter) is gone
+with dungeonspec v2 (rpg-project#256): the one conversion is
+`encounter.HexCellAt`, asked for, not reimplemented. Below A only until the
+toolkit pins are real tags rather than pseudo-versions.
+
+### Dungeon content registry + authoring — B+ (new, 2026-08-23)
+
+`internal/dungeons/`, `internal/orchestrators/authoring/`,
+`internal/handlers/dnd5e/authoring/v1alpha1/` (rpg-api#806). The registry's
+contract — boot refuses a non-compiling file naming it, atomic temp+rename
+writes, per-key serialization proven under `-race`, verbatim bytes back — and
+the handler's transport rules (status for a malformed request, body for a file
+that does not compile) are unit-tested; the lobby suite pins that a `Put`
+dungeon starts and its `GetAtlas` is cell-for-cell the atlas `Put` answered.
+Held below A until Kirk's walk and the toolkit tags. See
+`docs/architecture/components/authoring-service.md`.
 
 ## Components
 

@@ -4,6 +4,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/KirkDiggler/rpg-api/internal/dungeons/dungeonstest"
+
 	"github.com/alicebob/miniredis/v2"
 	goredis "github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/assert"
@@ -49,6 +51,7 @@ func TestNew_NegativePartyCap_ReturnsError(t *testing.T) {
 		JoinRefGenerator:     idgen.NewSequential("ref"),
 		EncounterIDGenerator: idgen.NewSequential("enc"),
 		SessionManager:       sessOrch.Manager,
+		Dungeons:             dungeonstest.Shipped(t),
 		PartyCap:             -1,
 	})
 	require.Error(t, err)
@@ -83,5 +86,6 @@ func baseTestConfig(t *testing.T) *lobbyorch.Config {
 		JoinRefGenerator:     idgen.NewSequential("ref"),
 		EncounterIDGenerator: idgen.NewSequential("enc"),
 		SessionManager:       sessOrch.Manager,
+		Dungeons:             dungeonstest.Shipped(t),
 	}
 }

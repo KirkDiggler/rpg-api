@@ -1,8 +1,8 @@
 ---
 name: lobby service
 description: LobbyService v1alpha1 — party assembly (join refs, membership, ready flags, lifecycle) and the sole session-construction path
-updated: 2026-08-21
-confidence: medium — rewritten 2026-08-21 for the post-rip-out shape (rpg-api#801): StartEncounter/AbandonEncounter/GetMyActiveLobby sit on the session SDK alone; verified against the passing unit + integration suites; the lobby has no browser-verified walkthrough on the new stack yet
+updated: 2026-08-23
+confidence: medium — rewritten 2026-08-21 for the post-rip-out shape (rpg-api#801); dungeon_key routing + ListDungeons added 2026-08-23 (rpg-api#806), verified against the passing unit + integration suites; the lobby has no browser-verified walkthrough on the new stack yet
 ---
 
 # lobby service
@@ -14,10 +14,11 @@ way a session comes into existence — it builds directly onto the toolkit's
 stack since rpg-project#227 removed the old `github.com/KirkDiggler/
 rpg-toolkit/encounter` module and everything built on it (see
 [`encounter.md`](./encounter.md), [`authoring.md`](./authoring.md)).
-`LobbyService.ListDungeons` is deleted along with the old dungeon-spec
-registry it read (`internal/dungeonregistry`) and is `Unimplemented` today —
-no replacement wired to the new `rulebooks/dnd5e/encounter/dungeonspec`
-compiler exists yet.
+The world it starts in comes from the content registry (`internal/dungeons`,
+rpg-api#806): `StartEncounterRequest.dungeon_key` picks a registered dungeon
+(empty → `reference-tomb`, unknown → `NotFound`), and
+`LobbyService.ListDungeons` answers from the same registry, ungated — see
+[`authoring-service.md`](./authoring-service.md).
 
 Design doc: `rpg-project/ideas/game-screen-rebuild/lobby-surface.md`. Umbrella:
 KirkDiggler/rpg-project#81. Implementation issue: rpg-api#629.
@@ -28,9 +29,9 @@ The toolkit has **zero** lobby concept, and this component keeps it that way
 (CLAUDE.md's Boundary Rule: "if it's data storage or API orchestration → rpg-api"). A
 lobby's `Data`/`Member` types are rpg-api-owned entities (`internal/repositories/lobby`),
 not a toolkit mirror. `StartEncounter`'s session construction (`sdk.Manager.StartSession`
-+ `Join` per member + `Spawn` per monster, all against a world
-`internal/sessionworld` compiles) is data movement — building the toolkit's own
-session by reference, authoring no game rules.
++ `Join` per member + `Spawn` per monster, all against a world the registry
+compiled through `internal/sessionworld`) is data movement — building the
+toolkit's own session by reference, authoring no game rules.
 
 ## Layers
 
@@ -45,13 +46,13 @@ Layered from day one — Chapter-1 discipline.
 
 One file per RPC (`create_lobby.go`, `join_lobby.go`, `set_ready.go`,
 `leave_lobby.go`, `start_encounter.go`, `stream_lobby.go`, `get_my_active_lobby.go`,
-`abandon_encounter.go`), plus `handler.go` (Config/New only), `translate.go` (entity
-<-> proto), and `status.go` (one shared `lobbyStatusError` switch covering every
-sentinel — each RPC only ever returns a subset, so one exhaustive mapper beats six
-near-duplicates). `ListDungeons` is **not** implemented: the embedded
-`UnimplementedLobbyServiceServer` answers it with `Unimplemented` since the
-old-dialect content registry it read from was deleted (rpg-api#801); a new-stack
-replacement is the lobby picker's (rpg-project#131) to design.
+`abandon_encounter.go`, `list_dungeons.go`), plus `handler.go` (Config/New only),
+`translate.go` (entity <-> proto), and `status.go` (one shared `lobbyStatusError`
+switch covering every sentinel — each RPC only ever returns a subset, so one
+exhaustive mapper beats six near-duplicates). `ListDungeons` answers from
+`Config.Dungeons` (`registry.List`) and is deliberately **not** behind the
+authoring gate: it reads content and mutates nothing, and the picker
+(rpg-project#131) needs it with authoring off.
 
 `get_my_active_lobby.go` (rpg-api#653) is the resume-after-refresh lookup
 (rpg-dnd5e-web#444): unlike every other RPC here, it takes no request fields —
@@ -96,16 +97,15 @@ combat/movement resolver builder, and no dungeon registry in this package any mo
   v0.3.0) and the composition derives combat state itself.
 - **`start_encounter_session_stack.go`** — the lobby -> session seam, and the only
   way a session comes into existence. Under the per-lobby lock: snapshot the ready
-  members; compile the reference tomb through `internal/sessionworld` (the toolkit's
-  `dungeonspec` compiler, never a local copy of its geometry — see that package's doc
-  on the borrowed projection); `StartSession`; `Join` one member per ready player at
-  the tomb's authored party seats; `Spawn` the authored monsters; flip the lobby to
-  STARTED and `Save`; only then `Publish` `EncounterStarted`. **Persist-then-emit
-  ordering is load-bearing**: a client reacting to the event must find the session
-  already started. Every verb is a separate load-act-save through `sdk.Manager`;
-  there is no rollback on partial failure — that contract is rpg-api#800's to rule
-  on. `DungeonKey` on the input is accepted and currently unused: the tomb is the
-  only authored world the new stack compiles today.
+  members; resolve `DungeonKey` against `Config.Dungeons` (empty →
+  `dungeons.DefaultKey`, unknown → `ErrDungeonNotFound` → `NotFound`, refused
+  before anything is written); `StartSession` on the entry's compiled world;
+  `Join` one member per ready player at the dungeon's authored party seats;
+  `Spawn` the authored monsters; flip the lobby to STARTED and `Save`; only then
+  `Publish` `EncounterStarted`. **Persist-then-emit ordering is load-bearing**: a
+  client reacting to the event must find the session already started. Every verb
+  is a separate load-act-save through `sdk.Manager`; there is no rollback on
+  partial failure — that contract is rpg-api#800's to rule on.
 - **`abandon_encounter.go`** (rpg-api#663) — load lobby, host check, `ErrLobbyNotStarted`
   guard, then `sdk.Manager.End(Session: EncounterID, Ending: sessionworld.EndingWithdrawn)`
   — the one external ending the tomb declares. It never writes the lobby record:
@@ -151,8 +151,6 @@ needs to.
 | Resumed session refuses further verbs after abandon | `GetMyActiveLobby`'s liveness check (`sdk.Manager.Status`) — no new code needed, see the RPC's own doc above |
 ## Known gaps
 
-- **`ListDungeons` is Unimplemented** (rpg-api#801). The picker needs a new-stack
-  source of truth; `sessionworld` compiles exactly one world today.
 - **No starting-in-combat path.** The old `--inject-combat` dev tooling (`devcombat`)
   is gone with the old stack. On the new stack a fight forms when a member sights a
   monster (session W4), so "start in TURN_BASED" is not a concept to port.

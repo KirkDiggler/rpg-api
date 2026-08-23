@@ -30,7 +30,6 @@ func TestMemberKindToProto(t *testing.T) {
 }
 
 func TestGridKindToProto(t *testing.T) {
-	require.Equal(t, sessionpb.GridKind_GRID_KIND_SQUARE, gridKindToProto(sdk.GridSquare))
 	require.Equal(t, sessionpb.GridKind_GRID_KIND_HEX, gridKindToProto(sdk.GridHex))
 	require.Equal(t, sessionpb.GridKind_GRID_KIND_UNSPECIFIED, gridKindToProto(sdk.GridKind("bogus")))
 }
@@ -50,7 +49,7 @@ func TestHexLayoutToProto(t *testing.T) {
 // measure a bounding box to recover (rpg-toolkit#1140). Copying it across is
 // the whole job; omitting it would compile and draw the tomb sideways.
 func TestAtlasToProto_CarriesLayout(t *testing.T) {
-	out := atlasToProto(&sdk.Atlas{Grid: sdk.GridHex, Layout: sdk.HexLayoutPointyTop})
+	out := AtlasToProto(&sdk.Atlas{Grid: sdk.GridHex, Layout: sdk.HexLayoutPointyTop})
 	require.Equal(t, sessionpb.GridKind_GRID_KIND_HEX, out.GetGrid())
 	require.Equal(t, sessionpb.HexLayout_HEX_LAYOUT_POINTY_TOP, out.GetLayout())
 }
@@ -211,7 +210,7 @@ func TestFormedToProto_Populated(t *testing.T) {
 }
 
 func TestAtlasToProto_Nil(t *testing.T) {
-	got := atlasToProto(nil)
+	got := AtlasToProto(nil)
 	require.NotNil(t, got)
 	require.Empty(t, got.GetCells())
 	require.Empty(t, got.GetDoorways())
@@ -219,7 +218,7 @@ func TestAtlasToProto_Nil(t *testing.T) {
 
 func TestAtlasToProto_Populated(t *testing.T) {
 	a := &sdk.Atlas{
-		Grid:  sdk.GridSquare,
+		Grid:  sdk.GridHex,
 		Cells: []spatial.Position{{X: 0, Y: 0}, {X: 1, Y: 0}},
 		Props: []sdk.AtlasProp{
 			// A pillar: blocks both. And a pile of bones: blocks NEITHER --
@@ -234,11 +233,17 @@ func TestAtlasToProto_Populated(t *testing.T) {
 			{From: spatial.Position{X: 0, Y: 0}, To: spatial.Position{X: 1, Y: 0}, BlocksMovement: true, BlocksLineOfSight: true},
 		},
 		Doorways: []sdk.AtlasDoorway{
-			{Connection: "door-1", From: spatial.Position{X: 5, Y: 1}, To: spatial.Position{X: 6, Y: 1}},
+			{Door: "door-1", From: spatial.Position{X: 5, Y: 1}, To: spatial.Position{X: 6, Y: 1}},
+		},
+		Regions: []sdk.AtlasRegion{
+			{ID: "hall", Name: "Hall", Cells: []spatial.Position{{X: 0, Y: 0}, {X: 1, Y: 0}}, Archetype: "crypt", Lighting: sdk.Lighting{Intensity: 0.4}},
+			// Zero intensity is dark, which is an answer, not an absence: it
+			// must reach the wire as a Lighting{0}, never a nil.
+			{ID: "pit", Cells: []spatial.Position{{X: 2, Y: 2}}, Archetype: "cave", Lighting: sdk.Lighting{Intensity: 0}},
 		},
 	}
-	got := atlasToProto(a)
-	require.Equal(t, sessionpb.GridKind_GRID_KIND_SQUARE, got.GetGrid())
+	got := AtlasToProto(a)
+	require.Equal(t, sessionpb.GridKind_GRID_KIND_HEX, got.GetGrid())
 	require.Len(t, got.GetCells(), 2)
 	require.Len(t, got.GetProps(), 2)
 
@@ -267,6 +272,20 @@ func TestAtlasToProto_Populated(t *testing.T) {
 	require.Equal(t, "door-1", dw.GetConnection())
 	require.Equal(t, 5.0, dw.GetFrom().GetX())
 	require.Equal(t, 6.0, dw.GetTo().GetX())
+
+	// Regions (rpg-project#256): copied cell for cell, archetype and
+	// intensity verbatim.
+	require.Len(t, got.GetRegions(), 2)
+	hall := got.GetRegions()[0]
+	require.Equal(t, "hall", hall.GetId())
+	require.Equal(t, "Hall", hall.GetName())
+	require.Equal(t, "crypt", hall.GetArchetype())
+	require.Len(t, hall.GetCells(), 2)
+	require.Equal(t, 1.0, hall.GetCells()[1].GetX())
+	require.InDelta(t, 0.4, hall.GetLighting().GetIntensity(), 1e-9)
+	pit := got.GetRegions()[1]
+	require.NotNil(t, pit.GetLighting(), "dark is Lighting{0}, not a missing block")
+	require.Equal(t, 0.0, pit.GetLighting().GetIntensity())
 }
 
 func TestWhereToProto_Nil(t *testing.T) {

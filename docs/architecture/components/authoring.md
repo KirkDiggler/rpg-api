@@ -7,6 +7,10 @@ confidence: high — verified by grep (zero remaining references) before deletio
 
 # Authoring durability — DELETED (rpg-project#227, 2026-08-21)
 
+> **Replaced 2026-08-23 (rpg-api#806):** the session-stack `AuthoringService`
+> and the `internal/dungeons` content registry are described in
+> [`authoring-service.md`](./authoring-service.md). This page is history.
+
 `internal/orchestrators/authoring/` (PutDungeon, floor-plan preview, the
 durable write-through source this doc described) and
 `internal/handlers/dnd5e/authoring/v1alpha1/` are deleted in full, along with

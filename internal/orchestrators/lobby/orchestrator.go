@@ -5,7 +5,8 @@
 // Boundary: NO rules logic lives here. The lobby is pure API orchestration —
 // the toolkit has zero lobby concept and this package must keep it that way
 // (rpg-project's lobby-surface.md design, "Toolkit owns nothing here").
-// StartEncounter builds the session stack's world via internal/sessionworld
+// StartEncounter looks its dungeon up in internal/dungeons (the content
+// registry; every world is compiled once there via internal/sessionworld)
 // and seats members through the rulebooks/dnd5e/session SDK (sdk.Manager) —
 // data movement, authoring no game rules.
 //
@@ -19,18 +20,17 @@ import (
 	"errors"
 	"time"
 
-	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
-	lobbyrepo "github.com/KirkDiggler/rpg-api/internal/repositories/lobby"
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 
+	"github.com/KirkDiggler/rpg-api/internal/dungeons"
 	"github.com/KirkDiggler/rpg-api/internal/pkg/idgen"
+	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
+	lobbyrepo "github.com/KirkDiggler/rpg-api/internal/repositories/lobby"
 )
 
-// DefaultPartyCap is the normal product roster capacity. It was host policy
-// shared with content/authoring's party-start configuration before both were
-// deleted alongside the old encounter stack's dungeon-spec dialect
-// (rpg-project#227); StartEncounter's session-stack path still passes it to
-// sessionworld for the embedded reference-tomb's party seating.
+// DefaultPartyCap is the normal product roster capacity (lobby-surface.md
+// "Party cap"). A dungeon's own entrance decides how many it can actually
+// seat; StartEncounter refuses a party larger than that before it writes.
 const DefaultPartyCap = 4
 
 // Config holds the dependencies for an Orchestrator.
@@ -69,6 +69,10 @@ type Config struct {
 	// point StartEncounter builds onto, and GetMyActiveLobby/AbandonEncounter
 	// query/close through (Manager.Status / Manager.End). Required.
 	SessionManager *sdk.Manager
+
+	// Dungeons is the content registry StartEncounter resolves dungeon_key
+	// against and ListDungeons reads. Required.
+	Dungeons dungeons.Registry
 }
 
 // Orchestrator is the lobby load -> mutate -> persist -> publish core. One
@@ -88,6 +92,9 @@ type Orchestrator struct {
 	// sessionManager is Config.SessionManager — StartEncounter builds onto
 	// it, and GetMyActiveLobby/AbandonEncounter query/close through it.
 	sessionManager *sdk.Manager
+
+	// dungeons is Config.Dungeons.
+	dungeons dungeons.Registry
 }
 
 // New constructs an Orchestrator from cfg. Returns an error (never a nil
@@ -117,6 +124,9 @@ func New(cfg *Config) (*Orchestrator, error) {
 	if cfg.SessionManager == nil {
 		return nil, errors.New("lobby orchestrator: Config.SessionManager is required")
 	}
+	if cfg.Dungeons == nil {
+		return nil, errors.New("lobby orchestrator: Config.Dungeons is required")
+	}
 	if cfg.PartyCap < 0 {
 		return nil, errors.New("lobby orchestrator: Config.PartyCap must not be negative")
 	}
@@ -140,6 +150,7 @@ func New(cfg *Config) (*Orchestrator, error) {
 		now:            now,
 		locks:          newKeyedMutex(),
 		sessionManager: cfg.SessionManager,
+		dungeons:       cfg.Dungeons,
 	}, nil
 }
 

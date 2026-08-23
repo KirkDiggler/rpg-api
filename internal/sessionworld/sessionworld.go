@@ -1,49 +1,31 @@
-// Package sessionworld turns authored dungeon content into the three things
-// the new session stack needs to start a game in it: a world, the cells the
+// Package sessionworld turns one authored dungeon file into the three things
+// the session stack needs to start a game in it: a world, the cells the
 // party walks in on, and the monsters standing in it.
 //
-// # Why this package exists at all, and why it is thin
+// It holds NO content. The reference tomb is content/reference-tomb.yaml at
+// the repo root, loaded by internal/dungeons' file registry alongside every
+// other dungeon under RPG_CONTENT_DIR (rpg-api#806, rpg-project#256). This
+// package is "compile bytes -> world" and nothing else.
 //
-// rpg-toolkit#1133 landed the compiler this is built on
-// (rulebooks/dnd5e/encounter/dungeonspec), so rpg-api computes NO dungeon
-// geometry -- the same arrangement the old stack has always had, one stack
-// over. What is left for a host is the seam the compiler deliberately does not
-// cross: it emits placements in the AUTHORED frame (a chamber's own columns and
-// rows), and the session package's Join and Spawn take DUNGEON-ABSOLUTE cells.
-// Somebody has to carry a placement across that line, and this package is that
-// somebody.
+// # Why this package is thin, and where the one conversion lives
 //
-// # The projection is BORROWED, never recomputed
+// rpg-toolkit's rulebooks/dnd5e/encounter/dungeonspec (version 2,
+// rpg-project#256) compiles the file, so rpg-api computes NO dungeon
+// geometry. What the compiler emits for a placement is the author's own
+// ABSOLUTE offset [col,row] pair; what the session's Join and Spawn take is
+// the dungeon-absolute AXIAL cell the atlas draws. The conversion between
+// the two is encounter.HexCellAt -- exported by the toolkit precisely so a
+// content caller asks for it rather than reimplementing it
+// (rpg-toolkit#1150: one basis, one place). That call is the only geometry
+// this package performs, and it is a lookup, not arithmetic of its own.
 //
-// It would be a few lines to add a room's Origin to a local cell and convert to
-// axial. It would also be wrong, and quietly: the entrance's local (1,3) is the
-// absolute cell (0,3), because an offset rectangle SHEARS when it becomes
-// axial (rpg-toolkit#1131). A copy of that arithmetic in rpg-api is a second
-// implementation of the toolkit's geometry that compiles, looks right, and
-// drifts the day the projection changes -- exactly the Boundary Rule violation
-// the whole session seam exists to prevent. The day came twice: rpg-toolkit#1141
-// corrected the hex offset schemes (the cell moved from (1,-4)) and
-// rpg-toolkit#1150 corrected the axial basis (from (0,-3)). Nothing here
-// changed either time but the number in the test, which is the point.
-//
-// So this package does not do the conversion. It asks the composition to do it,
-// by building a THROWAWAY encounter with the authored placements as
-// construction-time members ([encounter.MemberInput] is room-shaped on purpose)
-// and reading the absolute cells back out. The projection happens exactly once,
-// inside the toolkit, in the same code path the real world will use, because it
-// is the same [encounter.FieldInput]. See [compile] for the mechanics.
-//
-// # Known cost, recorded rather than hidden
-//
-// That costs one extra construction per encounter start, and it is a shape
-// worth removing rather than living with: dungeonspec.Compiled could carry
-// absolute placements itself, or the session package could accept a compiled
-// dungeon. Filed upstream; until one of those exists this is the honest way to
-// get a party into an authored dungeon without a host inventing geometry.
+// Before version 2 the compiler spoke room-local frames and this package
+// borrowed the projection by building a throwaway encounter. That seam
+// (rpg-toolkit#1139) no longer exists: there is no origin to add, so there
+// is nothing to borrow.
 package sessionworld
 
 import (
-	_ "embed"
 	"fmt"
 
 	"github.com/KirkDiggler/rpg-toolkit/core"
@@ -52,32 +34,18 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
 )
 
-// referenceTombYAML is the reference tomb, authored in the dialect
-// rulebooks/dnd5e/encounter/dungeonspec speaks.
-//
-// It lives here rather than in internal/content/dungeons/ for a reason that
-// would otherwise be discovered the hard way: that directory is embedded by
-// `//go:embed dungeons/*.yaml` and every file matching it is parsed with the
-// OLD stack's dialect at startup, in a mode that PANICS on a file it cannot
-// read. A new-dialect file dropped in beside its old-dialect sibling would take
-// the server down on boot.
-//
-// It is the same dungeon as internal/content/dungeons/reference-tomb.yaml --
-// verified placement-by-placement, every (ref, cell) pair identical, boss
-// included -- re-authored in the newer dialect per Kirk's ruling that the old
-// form "has never run in a game... it is legacy and will have no home after".
-// The two files are expected to coexist only until the old stack is ripped out
-// (rpg-project#227's cutover), and the duplication is the price of the
-// coexistence the whole integration is built on: each stack reads content in
-// the dialect it can actually compile.
-//
-//go:embed reference-tomb.yaml
-var referenceTombYAML []byte
-
 // Dungeon is authored content compiled into everything needed to seed a
 // session, with every cell already in the dungeon-absolute frame the session
 // verbs speak.
 type Dungeon struct {
+	// Key is the dungeon's identifier, exactly as the file's own `key:` line
+	// says it. The registry (internal/dungeons) checks it against the name a
+	// file was stored under; this package only reports it.
+	Key string
+
+	// Name is the display name, exactly as the file's `name:` line says it.
+	Name string
+
 	// World is the compiled world, and it is EMPTY OF MEMBERS on purpose.
 	//
 	// session.StartSessionInput.World is documented as "authored content...
@@ -148,22 +116,23 @@ type Monster struct {
 	Targeting string
 }
 
-// ReferenceTomb compiles the reference tomb: three chambers west to east, a
-// garrison of skeletons in the hall, and a captain behind a DC-12 locked door.
-func ReferenceTomb() (*Dungeon, error) {
-	d, err := compile(referenceTombYAML)
+// Compile turns one authored dungeon file into a [Dungeon].
+//
+// A file that does not decode, validate or compile fails with an error that
+// wraps [tkdungeonspec.ErrBadSpec] -- a validation failure is a
+// *tkdungeonspec.ValidationError carrying every defect and its YAML path;
+// anything else is an internal failure. Callers that need to tell the two
+// apart (the authoring RPC answers the first as a body and the second as a
+// status) use errors.Is / errors.As.
+func Compile(raw []byte) (*Dungeon, error) {
+	decoded, err := tkdungeonspec.Decode(raw)
 	if err != nil {
-		return nil, fmt.Errorf("reference tomb: %w", err)
+		return nil, fmt.Errorf("decode spec: %w", err)
 	}
-
-	return d, nil
-}
-
-// compile does the work described in the package comment: compile once, build a
-// throwaway encounter to borrow the composition's projection, then build the
-// real world with nobody in it.
-func compile(raw []byte) (*Dungeon, error) {
-	spec, err := tkdungeonspec.Load(raw)
+	if defects := tkdungeonspec.Validate(decoded); len(defects) > 0 {
+		return nil, fmt.Errorf("validate spec: %w", &tkdungeonspec.ValidationError{Errors: defects})
+	}
+	spec, err := tkdungeonspec.Compile(decoded)
 	if err != nil {
 		return nil, fmt.Errorf("compile spec: %w", err)
 	}
@@ -175,9 +144,20 @@ func compile(raw []byte) (*Dungeon, error) {
 		return nil, fmt.Errorf("compile spec: dungeon declares no party start")
 	}
 
-	seats, monsters, err := projectPlacements(spec)
-	if err != nil {
-		return nil, err
+	orientation := spec.Field.Canvas.Orientation
+	seats := make([]spatial.Position, len(spec.PartyStart))
+	for i, seat := range spec.PartyStart {
+		seats[i] = cellOf(orientation, seat.At)
+	}
+
+	monsters := make([]Monster, len(spec.Monsters))
+	ordinals := map[string]int{}
+	for i, m := range spec.Monsters {
+		id, idErr := memberIDFor(m.Ref, ordinals)
+		if idErr != nil {
+			return nil, fmt.Errorf("monster %d: %w", i, idErr)
+		}
+		monsters[i] = Monster{Ref: m.Ref, MemberID: id, At: cellOf(orientation, m.At), Boss: m.Boss, Targeting: m.Targeting}
 	}
 
 	world, err := buildWorld(spec.Field)
@@ -185,103 +165,16 @@ func compile(raw []byte) (*Dungeon, error) {
 		return nil, err
 	}
 
-	return &Dungeon{World: world, PartySeats: seats, Monsters: monsters}, nil
+	return &Dungeon{
+		Key: decoded.Key, Name: decoded.Name,
+		World: world, PartySeats: seats, Monsters: monsters,
+	}, nil
 }
 
-// seatMemberID and monsterMemberID name the throwaway encounter's members.
-//
-// They exist only long enough to be placed and read back, so what matters about
-// them is that they are unique and that the two families cannot collide -- an
-// absolute cell is looked up BY these IDs, and two placements sharing one would
-// silently report the same cell twice.
-func seatMemberID(i int) tkencounter.MemberID {
-	return tkencounter.MemberID(fmt.Sprintf("probe-seat-%d", i))
-}
-
-func monsterMemberID(i int) tkencounter.MemberID {
-	return tkencounter.MemberID(fmt.Sprintf("probe-monster-%d", i))
-}
-
-// projectPlacements turns the compiler's room-local placements into
-// dungeon-absolute ones by asking the composition, never by doing the
-// arithmetic here. See the package comment for why that distinction is the
-// whole point of this file.
-func projectPlacements(spec tkdungeonspec.Compiled) ([]spatial.Position, []Monster, error) {
-	members := make([]tkencounter.MemberInput, 0, len(spec.PartyStart)+len(spec.Monsters))
-	for i, seat := range spec.PartyStart {
-		members = append(members, tkencounter.MemberInput{
-			ID: seatMemberID(i), Kind: tkencounter.KindPlayer,
-			Room: seat.Region, Position: seat.At,
-		})
-	}
-	for i, m := range spec.Monsters {
-		members = append(members, tkencounter.MemberInput{
-			ID: monsterMemberID(i), Kind: tkencounter.KindMonster,
-			Room: m.Region, Position: m.At,
-		})
-	}
-
-	probe, err := tkencounter.NewEncounter(&tkencounter.SetupInput{
-		Initiative: orderAsGiven{},
-		Standing:   nobodyDown{},
-		// A BLIND probe, and deliberately so: sight is what forms a fight, and
-		// this construction places the whole party and the whole garrison at
-		// once. Giving them eyes here would roll initiative on a world that is
-		// about to be thrown away -- work done for nothing, and a fight formed
-		// by a coordinate lookup. Range zero is the honest capability for an
-		// encounter whose only purpose is to answer "where is this cell".
-		Sight: nobodySees{},
-		// No fight ever forms here (blind, thrown away), so no clock ever
-		// lands on an unplayed member -- tkencounter.PassDriver{} is a
-		// trivial, honest stand-in for the same reason Initiative/Standing/
-		// Sight above are (toolkit#1162, ADR-0043). Striker is the same
-		// story one seam over (rpg-project#254): a driven turn that never
-		// happens never needs to resolve a swing, so the construction-only
-		// refusal is the honest answer here too.
-		TurnDriver: tkencounter.PassDriver{},
-		Striker:    tkencounter.RefusingStriker{},
-		Retention:  tkencounter.RetentionUnbounded,
-		Field:      spec.Field,
-		Members:    members,
-		Endings:    []tkencounter.EndingInput{{Key: probeEnding, Trigger: tkencounter.TriggerExternal{}}},
-	})
-	if err != nil {
-		return nil, nil, fmt.Errorf("project placements: %w", err)
-	}
-
-	placed, err := probe.Members()
-	if err != nil {
-		return nil, nil, fmt.Errorf("project placements: read back: %w", err)
-	}
-	absolute := make(map[tkencounter.MemberID]spatial.Position, len(placed))
-	for _, m := range placed {
-		absolute[m.ID] = m.Position
-	}
-
-	seats := make([]spatial.Position, len(spec.PartyStart))
-	for i := range spec.PartyStart {
-		at, ok := absolute[seatMemberID(i)]
-		if !ok {
-			return nil, nil, fmt.Errorf("project placements: seat %d was placed but not reported", i)
-		}
-		seats[i] = at
-	}
-
-	monsters := make([]Monster, len(spec.Monsters))
-	ordinals := map[string]int{}
-	for i, m := range spec.Monsters {
-		at, ok := absolute[monsterMemberID(i)]
-		if !ok {
-			return nil, nil, fmt.Errorf("project placements: monster %d (%s) was placed but not reported", i, m.Ref)
-		}
-		id, err := memberIDFor(m.Ref, ordinals)
-		if err != nil {
-			return nil, nil, fmt.Errorf("project placements: monster %d: %w", i, err)
-		}
-		monsters[i] = Monster{Ref: m.Ref, MemberID: id, At: at, Boss: m.Boss, Targeting: m.Targeting}
-	}
-
-	return seats, monsters, nil
+// cellOf is the one conversion: an authored absolute offset [col,row] to the
+// dungeon-absolute axial cell the session speaks, by asking the toolkit.
+func cellOf(o tkencounter.Orientation, at spatial.Position) spatial.Position {
+	return tkencounter.HexCellAt(o, int(at.X), int(at.Y))
 }
 
 // memberIDFor derives a monster's in-encounter ID from its ref and how many of
@@ -346,11 +239,6 @@ func buildWorld(field tkencounter.FieldInput) (*tkencounter.EncounterData, error
 // encounter has to name it.
 const EndingWithdrawn = "withdrawn"
 
-// probeEnding names the throwaway encounter's ending. Distinct from
-// [EndingWithdrawn] so that a probe can never be mistaken for a playable world
-// in a stack trace or a persisted blob.
-const probeEnding = "probe"
-
 // orderAsGiven, nobodyDown and nobodySees are three of the capabilities
 // NewEncounter refuses to default (rpg-toolkit#1033). TurnDriver and
 // Striker close two more, added by toolkit#1162/ADR-0043 and
@@ -361,12 +249,13 @@ const probeEnding = "probe"
 //
 // All three remaining hand-written types are construction-time only here,
 // which is what makes trivial implementations honest rather than a hidden
-// ruling -- see [buildWorld].
+// ruling -- see [buildWorld]: the world is empty at the moment it is built,
+// and the session package supplies its own capabilities when it loads it.
 type orderAsGiven struct{}
 
-// RollInitiative returns the members in the order given. Never reached for
-// either encounter this package builds: the probe is blind and the real world
-// is empty, so no fight can form in the moment either one exists.
+// RollInitiative returns the members in the order given. Never reached: the
+// world this package builds is empty, so no fight can form in the moment it
+// exists.
 func (orderAsGiven) RollInitiative(members []tkencounter.MemberID) ([]tkencounter.MemberID, error) {
 	return members, nil
 }
@@ -382,10 +271,8 @@ func (nobodyDown) Standing(_ []tkencounter.MemberID) ([]tkencounter.MemberID, er
 
 type nobodySees struct{}
 
-// Sight gives every member a range of zero. See the call site in
-// [projectPlacements] for why blindness is the correct capability for a
-// coordinate lookup, and [buildWorld] for why it does not matter in a world
-// with no members at all.
+// Sight gives every member a range of zero -- there are no members in a world
+// this new, so it answers nothing; see [buildWorld].
 func (nobodySees) Sight(members []tkencounter.MemberID) (map[tkencounter.MemberID]int, error) {
 	out := make(map[tkencounter.MemberID]int, len(members))
 	for _, id := range members {

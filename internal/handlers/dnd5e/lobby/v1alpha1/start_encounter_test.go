@@ -60,3 +60,19 @@ func (s *HandlerSuite) TestStartEncounter_Success_ReturnsEncounterID() {
 	s.Require().NoError(err)
 	s.Require().NotEmpty(resp.GetEncounterId())
 }
+
+// TestStartEncounter_UnknownDungeonKey_NotFound pins the wire mapping of
+// design §3c: a dungeon_key the registry does not have is NotFound, never
+// silently the tomb.
+func (s *HandlerSuite) TestStartEncounter_UnknownDungeonKey_NotFound() {
+	lobbyID, _ := s.createLobby("alice", "char-alice", "Alice")
+	_, err := s.handler.SetReady(s.ctx, &lobbyv1alpha1.SetReadyRequest{LobbyId: lobbyID, Ready: true})
+	s.Require().NoError(err)
+
+	_, err = s.handler.StartEncounter(s.ctx, &lobbyv1alpha1.StartEncounterRequest{
+		LobbyId: lobbyID, DungeonKey: "nope",
+	})
+	s.Require().Error(err)
+	st, _ := status.FromError(err)
+	s.Require().Equal(codes.NotFound, st.Code())
+}
