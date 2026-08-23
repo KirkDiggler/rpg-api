@@ -117,6 +117,13 @@ func runServer(_ *cobra.Command, _ []string) error {
 		DevMode: os.Getenv("AUTH_DEV_MODE") == "true",
 	}
 	if authConfig.DevMode {
+		// The StreamEvents send trace (rpg-api#819, session/v1alpha1/stream_events.go)
+		// and other per-call debug logging are cheap but silent under
+		// slog's default Info level -- raise it here, gated on the same
+		// signal that already means "this is a local-dev box, never
+		// production" (AUTH_DEV_MODE), so a missing beat is a one-look
+		// diagnosis by default without a second flag to remember.
+		slog.SetLogLoggerLevel(slog.LevelDebug)
 		log.Println("⚠️  AUTH_DEV_MODE enabled - Dev authentication scheme allowed")
 	}
 
