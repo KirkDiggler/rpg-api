@@ -1,0 +1,272 @@
+package dungeons_test
+
+import (
+	"bytes"
+	"context"
+	"fmt"
+	"os"
+	"path/filepath"
+	"sync"
+	"testing"
+
+	"github.com/stretchr/testify/suite"
+
+	"github.com/KirkDiggler/rpg-api/internal/dungeons"
+)
+
+// shippedTomb is the real content file, so these tests run on what the server
+// boots with rather than a fixture that could drift from it.
+var shippedTomb = filepath.Join("..", "..", "content", "reference-tomb.yaml")
+
+type RegistrySuite struct {
+	suite.Suite
+
+	ctx  context.Context
+	dir  string
+	tomb []byte
+}
+
+func TestRegistrySuite(t *testing.T) {
+	suite.Run(t, new(RegistrySuite))
+}
+
+func (s *RegistrySuite) SetupTest() {
+	s.ctx = context.Background()
+	s.dir = s.T().TempDir()
+
+	raw, err := os.ReadFile(shippedTomb)
+	s.Require().NoError(err)
+	s.tomb = raw
+	s.write("reference-tomb.yaml", raw)
+}
+
+func (s *RegistrySuite) write(name string, raw []byte) {
+	s.Require().NoError(os.WriteFile(filepath.Join(s.dir, name), raw, 0o600))
+}
+
+// rekeyed is the tomb under another key: the same dungeon, a different file.
+func (s *RegistrySuite) rekeyed(key string) []byte {
+	out := bytes.Replace(s.tomb, []byte("key: reference-tomb"), []byte("key: "+key), 1)
+	s.Require().NotEqual(s.tomb, out, "the fixture's key line must be where this helper expects it")
+	return out
+}
+
+func (s *RegistrySuite) open(authoring bool) *dungeons.FileRegistry {
+	r, err := dungeons.NewFileRegistry(s.dir, authoring)
+	s.Require().NoError(err)
+	return r
+}
+
+func (s *RegistrySuite) TestBoot_LoadsTheShippedTomb() {
+	r := s.open(false)
+
+	list, err := r.List(s.ctx)
+	s.Require().NoError(err)
+	s.Equal([]dungeons.Summary{{Key: "reference-tomb", Name: "reference-tomb"}}, list)
+
+	e, err := r.Get(s.ctx, dungeons.DefaultKey)
+	s.Require().NoError(err)
+	s.Equal(s.tomb, e.YAML, "Get returns the bytes on disk, verbatim")
+	s.Require().NotNil(e.Dungeon)
+	s.NotEmpty(e.Dungeon.PartySeats, "and the compiled world behind them")
+}
+
+// TestBoot_RefusesAFileThatDoesNotCompile is the construction-time law: a
+// broken file fails the boot naming itself, rather than vanishing from the
+// picker.
+func (s *RegistrySuite) TestBoot_RefusesAFileThatDoesNotCompile() {
+	s.write("broken.yaml", []byte("version: 1\nkey: broken\nvoid: nonsense\n"))
+
+	_, err := dungeons.NewFileRegistry(s.dir, false)
+	s.Require().Error(err)
+	s.Contains(err.Error(), filepath.Join(s.dir, "broken.yaml"), "the error names the file")
+	s.Contains(err.Error(), "does not compile")
+}
+
+func (s *RegistrySuite) TestBoot_RefusesAFileWhoseNameIsNotItsKey() {
+	s.write("not-the-key.yaml", s.rekeyed("something-else"))
+
+	_, err := dungeons.NewFileRegistry(s.dir, false)
+	s.Require().ErrorIs(err, dungeons.ErrKeyMismatch)
+	s.Contains(err.Error(), "not-the-key.yaml")
+}
+
+func (s *RegistrySuite) TestBoot_RefusesADirectoryWithoutTheDefaultDungeon() {
+	s.Require().NoError(os.Remove(filepath.Join(s.dir, "reference-tomb.yaml")))
+	s.write("other.yaml", s.rekeyed("other"))
+
+	_, err := dungeons.NewFileRegistry(s.dir, false)
+	s.Require().Error(err)
+	s.Contains(err.Error(), dungeons.DefaultKey)
+}
+
+func (s *RegistrySuite) TestBoot_IgnoresFilesThatAreNotYAML() {
+	s.write("README.md", []byte("not a dungeon"))
+	s.write(".reference-tomb.123.tmp", []byte("a leftover temp file"))
+
+	s.open(false)
+}
+
+func (s *RegistrySuite) TestGet_UnknownKeyIsNotFound() {
+	r := s.open(false)
+
+	_, err := r.Get(s.ctx, "nope")
+	s.Require().ErrorIs(err, dungeons.ErrNotFound)
+}
+
+func (s *RegistrySuite) TestPut_ValidateOnlyNeverWrites() {
+	r := s.open(true)
+
+	res, err := r.Put(s.ctx, &dungeons.PutInput{Key: "crypt", YAML: s.rekeyed("crypt"), ValidateOnly: true})
+	s.Require().NoError(err)
+	s.Empty(res.Errors)
+	s.Require().NotNil(res.Entry, "the compiled entry is answered")
+
+	_, statErr := os.Stat(filepath.Join(s.dir, "crypt.yaml"))
+	s.True(os.IsNotExist(statErr), "nothing reached the disk")
+	_, getErr := r.Get(s.ctx, "crypt")
+	s.ErrorIs(getErr, dungeons.ErrNotFound, "and nothing reached the registry")
+}
+
+func (s *RegistrySuite) TestPut_WritesThenGetReturnsTheBytesUnchanged() {
+	r := s.open(true)
+	raw := append(s.rekeyed("crypt"), []byte("# a trailing comment the author wrote\n")...)
+
+	res, err := r.Put(s.ctx, &dungeons.PutInput{Key: "crypt", YAML: raw})
+	s.Require().NoError(err)
+	s.Empty(res.Errors)
+
+	e, err := r.Get(s.ctx, "crypt")
+	s.Require().NoError(err)
+	s.Equal(raw, e.YAML, "verbatim, comment included — never a re-marshal")
+
+	onDisk, err := os.ReadFile(filepath.Join(s.dir, "crypt.yaml"))
+	s.Require().NoError(err)
+	s.Equal(raw, onDisk, "and the file on disk is the same bytes")
+
+	list, err := r.List(s.ctx)
+	s.Require().NoError(err)
+	s.Equal([]dungeons.Summary{{Key: "crypt", Name: "crypt"}, {Key: "reference-tomb", Name: "reference-tomb"}}, list)
+
+	// A fresh registry over the same directory sees the write: the file is
+	// the truth, the map is a cache of it.
+	again := s.open(false)
+	e2, err := again.Get(s.ctx, "crypt")
+	s.Require().NoError(err)
+	s.Equal(raw, e2.YAML)
+}
+
+func (s *RegistrySuite) TestPut_AFileThatDoesNotCompileIsAnAnswerNotAnError() {
+	r := s.open(true)
+
+	res, err := r.Put(s.ctx, &dungeons.PutInput{Key: "crypt", YAML: []byte("version: 1\nkey: crypt\nvoid: nonsense\n")})
+	s.Require().NoError(err, "a bad file is the author's problem, reported as a body")
+	s.Require().Len(res.Errors, 1)
+	s.NotEmpty(res.Errors[0].Message)
+	s.Nil(res.Entry)
+
+	_, statErr := os.Stat(filepath.Join(s.dir, "crypt.yaml"))
+	s.True(os.IsNotExist(statErr), "nothing was written")
+}
+
+func (s *RegistrySuite) TestPut_KeyMustEqualTheFilesKey() {
+	r := s.open(true)
+
+	_, err := r.Put(s.ctx, &dungeons.PutInput{Key: "crypt", YAML: s.tomb})
+	s.Require().ErrorIs(err, dungeons.ErrKeyMismatch)
+
+	_, statErr := os.Stat(filepath.Join(s.dir, "crypt.yaml"))
+	s.True(os.IsNotExist(statErr))
+}
+
+func (s *RegistrySuite) TestPut_RefusesAKeyOutsideTheCharset() {
+	r := s.open(true)
+
+	for _, key := range []string{"", "Crypt", "my crypt", "../escape", "crypt.yaml"} {
+		_, err := r.Put(s.ctx, &dungeons.PutInput{Key: key, YAML: s.tomb})
+		s.ErrorIsf(err, dungeons.ErrInvalidKey, "key %q", key)
+	}
+}
+
+func (s *RegistrySuite) TestPut_RefusedWhenAuthoringIsOff() {
+	r := s.open(false)
+
+	_, err := r.Put(s.ctx, &dungeons.PutInput{Key: "crypt", YAML: s.rekeyed("crypt")})
+	s.Require().ErrorIs(err, dungeons.ErrAuthoringDisabled)
+
+	_, statErr := os.Stat(filepath.Join(s.dir, "crypt.yaml"))
+	s.True(os.IsNotExist(statErr), "a read-only registry never touches the directory")
+}
+
+func (s *RegistrySuite) TestPut_OverwritesInPlaceAndLeavesNoTempFiles() {
+	r := s.open(true)
+	first := s.rekeyed("crypt")
+	second := append(s.rekeyed("crypt"), []byte("# second\n")...)
+
+	_, err := r.Put(s.ctx, &dungeons.PutInput{Key: "crypt", YAML: first})
+	s.Require().NoError(err)
+	_, err = r.Put(s.ctx, &dungeons.PutInput{Key: "crypt", YAML: second})
+	s.Require().NoError(err)
+
+	e, err := r.Get(s.ctx, "crypt")
+	s.Require().NoError(err)
+	s.Equal(second, e.YAML)
+
+	entries, err := os.ReadDir(s.dir)
+	s.Require().NoError(err)
+	names := make([]string, 0, len(entries))
+	for _, d := range entries {
+		names = append(names, d.Name())
+	}
+	s.ElementsMatch([]string{"reference-tomb.yaml", "crypt.yaml"}, names, "temp files are renamed away, never left behind")
+}
+
+// TestPut_ConcurrentPutsOnOneKeySerialise runs under -race: N writers on one
+// key must land whole, one after another, and the final state must be one of
+// the files written — never a splice of two.
+func (s *RegistrySuite) TestPut_ConcurrentPutsOnOneKeySerialise() {
+	r := s.open(true)
+	const writers = 16
+
+	variants := make([][]byte, writers)
+	for i := range variants {
+		variants[i] = append(s.rekeyed("crypt"), []byte(fmt.Sprintf("# writer %d\n", i))...)
+	}
+
+	var wg sync.WaitGroup
+	errs := make(chan error, writers)
+	for i := 0; i < writers; i++ {
+		wg.Add(1)
+		go func(raw []byte) {
+			defer wg.Done()
+			res, err := r.Put(s.ctx, &dungeons.PutInput{Key: "crypt", YAML: raw})
+			if err != nil {
+				errs <- err
+				return
+			}
+			if len(res.Errors) > 0 {
+				errs <- fmt.Errorf("unexpected compile errors: %v", res.Errors)
+			}
+		}(variants[i])
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		s.Require().NoError(err)
+	}
+
+	e, err := r.Get(s.ctx, "crypt")
+	s.Require().NoError(err)
+	onDisk, err := os.ReadFile(filepath.Join(s.dir, "crypt.yaml"))
+	s.Require().NoError(err)
+	s.Equal(e.YAML, onDisk, "the served entry is the file on disk")
+
+	whole := false
+	for _, v := range variants {
+		if bytes.Equal(v, onDisk) {
+			whole = true
+			break
+		}
+	}
+	s.True(whole, "the final file is exactly one writer's file, not a splice")
+}

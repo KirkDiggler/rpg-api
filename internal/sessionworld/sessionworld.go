@@ -2,6 +2,12 @@
 // the new session stack needs to start a game in it: a world, the cells the
 // party walks in on, and the monsters standing in it.
 //
+// It holds NO content. The reference tomb used to be a go:embed here; it is
+// now content/reference-tomb.yaml at the repo root, loaded by
+// internal/dungeons' file registry alongside every other dungeon under
+// RPG_CONTENT_DIR (rpg-api#806, rpg-project#256). This package is "compile
+// bytes -> world" and nothing else.
+//
 // # Why this package exists at all, and why it is thin
 //
 // rpg-toolkit#1133 landed the compiler this is built on
@@ -31,19 +37,18 @@
 // construction-time members ([encounter.MemberInput] is room-shaped on purpose)
 // and reading the absolute cells back out. The projection happens exactly once,
 // inside the toolkit, in the same code path the real world will use, because it
-// is the same [encounter.FieldInput]. See [compile] for the mechanics.
+// is the same [encounter.FieldInput]. See [Compile] for the mechanics.
 //
-// # Known cost, recorded rather than hidden
+// # Known cost, and its expiry date
 //
-// That costs one extra construction per encounter start, and it is a shape
-// worth removing rather than living with: dungeonspec.Compiled could carry
-// absolute placements itself, or the session package could accept a compiled
-// dungeon. Filed upstream; until one of those exists this is the honest way to
-// get a party into an authored dungeon without a host inventing geometry.
+// That costs one extra construction per compile. It now runs once per dungeon
+// at registry boot or PutDungeon, not per encounter start, so the number
+// stopped mattering; and TODO(256): dungeonspec v2 (rpg-project#256, T1/T2)
+// emits absolute placements with no room-local frame at all, at which point
+// [projectPlacements] and the throwaway encounter are deleted outright.
 package sessionworld
 
 import (
-	_ "embed"
 	"fmt"
 
 	"github.com/KirkDiggler/rpg-toolkit/core"
@@ -52,32 +57,20 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
 )
 
-// referenceTombYAML is the reference tomb, authored in the dialect
-// rulebooks/dnd5e/encounter/dungeonspec speaks.
-//
-// It lives here rather than in internal/content/dungeons/ for a reason that
-// would otherwise be discovered the hard way: that directory is embedded by
-// `//go:embed dungeons/*.yaml` and every file matching it is parsed with the
-// OLD stack's dialect at startup, in a mode that PANICS on a file it cannot
-// read. A new-dialect file dropped in beside its old-dialect sibling would take
-// the server down on boot.
-//
-// It is the same dungeon as internal/content/dungeons/reference-tomb.yaml --
-// verified placement-by-placement, every (ref, cell) pair identical, boss
-// included -- re-authored in the newer dialect per Kirk's ruling that the old
-// form "has never run in a game... it is legacy and will have no home after".
-// The two files are expected to coexist only until the old stack is ripped out
-// (rpg-project#227's cutover), and the duplication is the price of the
-// coexistence the whole integration is built on: each stack reads content in
-// the dialect it can actually compile.
-//
-//go:embed reference-tomb.yaml
-var referenceTombYAML []byte
-
 // Dungeon is authored content compiled into everything needed to seed a
 // session, with every cell already in the dungeon-absolute frame the session
 // verbs speak.
 type Dungeon struct {
+	// Key is the dungeon's identifier, exactly as the file's own `key:` line
+	// says it. The registry (internal/dungeons) checks it against the name a
+	// file was stored under; this package only reports it.
+	Key string
+
+	// Name is the display name. TODO(256): dungeonspec v1 has no `name:`
+	// field, so this is the key until the v2 dialect (rpg-project#256, T2)
+	// lands and carries one.
+	Name string
+
 	// World is the compiled world, and it is EMPTY OF MEMBERS on purpose.
 	//
 	// session.StartSessionInput.World is documented as "authored content...
@@ -148,22 +141,27 @@ type Monster struct {
 	Targeting string
 }
 
-// ReferenceTomb compiles the reference tomb: three chambers west to east, a
-// garrison of skeletons in the hall, and a captain behind a DC-12 locked door.
-func ReferenceTomb() (*Dungeon, error) {
-	d, err := compile(referenceTombYAML)
+// Compile turns one authored dungeon file into a [Dungeon]: compile once,
+// build a throwaway encounter to borrow the composition's projection, then
+// build the real world with nobody in it.
+//
+// A file that does not decode, validate or compile fails with an error that
+// wraps [tkdungeonspec.ErrBadSpec]; anything else is an internal failure.
+// Callers that need to tell the two apart (the authoring RPC answers the first
+// as a body and the second as a status) use errors.Is.
+//
+// TODO(256): once rpg-toolkit's dungeonspec v2 (feat/256-dungeonspec-v2)
+// emits absolute placements, the projection step below is deleted and this
+// becomes "decode, compile, build world" with no throwaway encounter.
+func Compile(raw []byte) (*Dungeon, error) {
+	decoded, err := tkdungeonspec.Decode(raw)
 	if err != nil {
-		return nil, fmt.Errorf("reference tomb: %w", err)
+		return nil, fmt.Errorf("decode spec: %w", err)
 	}
-
-	return d, nil
-}
-
-// compile does the work described in the package comment: compile once, build a
-// throwaway encounter to borrow the composition's projection, then build the
-// real world with nobody in it.
-func compile(raw []byte) (*Dungeon, error) {
-	spec, err := tkdungeonspec.Load(raw)
+	if err := tkdungeonspec.Validate(decoded); err != nil {
+		return nil, fmt.Errorf("validate spec: %w", err)
+	}
+	spec, err := tkdungeonspec.Compile(decoded)
 	if err != nil {
 		return nil, fmt.Errorf("compile spec: %w", err)
 	}
@@ -185,7 +183,10 @@ func compile(raw []byte) (*Dungeon, error) {
 		return nil, err
 	}
 
-	return &Dungeon{World: world, PartySeats: seats, Monsters: monsters}, nil
+	return &Dungeon{
+		Key: decoded.Key, Name: decoded.Key,
+		World: world, PartySeats: seats, Monsters: monsters,
+	}, nil
 }
 
 // seatMemberID and monsterMemberID name the throwaway encounter's members.

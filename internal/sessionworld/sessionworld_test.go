@@ -1,6 +1,8 @@
 package sessionworld
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -20,10 +22,26 @@ func TestReferenceTombSuite(t *testing.T) {
 	suite.Run(t, new(ReferenceTombSuite))
 }
 
+// referenceTombPath is the shipped tomb, read from the content tree rather
+// than embedded: this package holds no content any more (see the package
+// comment), and the test compiling the real shipped file is the point.
+var referenceTombPath = filepath.Join("..", "..", "content", "reference-tomb.yaml")
+
 func (s *ReferenceTombSuite) SetupTest() {
-	tomb, err := ReferenceTomb()
+	raw, err := os.ReadFile(referenceTombPath)
+	s.Require().NoError(err, "the shipped tomb must exist at content/reference-tomb.yaml")
+	tomb, err := Compile(raw)
 	s.Require().NoError(err, "the shipped tomb must compile")
 	s.tomb = tomb
+}
+
+// TestTheFileNamesItself pins that Compile reports the file's own key: the
+// registry stores a file under the key it was Put with and refuses a file
+// whose key line disagrees, which only works if the key comes out of the
+// compile rather than the filename.
+func (s *ReferenceTombSuite) TestTheFileNamesItself() {
+	s.Equal("reference-tomb", s.tomb.Key)
+	s.NotEmpty(s.tomb.Name)
 }
 
 // load rebuilds a live encounter from the world this package produced, which is
@@ -298,7 +316,7 @@ connectors:
   - { from: entrance, to: hall }
 `
 
-	d, err := compile([]byte(monsterInTheEntrance))
+	d, err := Compile([]byte(monsterInTheEntrance))
 	require.NoError(t, err)
 	require.Len(t, d.Monsters, 1)
 
@@ -330,7 +348,7 @@ connectors:
   - { from: entrance, to: hall }
 `
 
-	d, err := compile([]byte(monsterOnTheStart))
+	d, err := Compile([]byte(monsterOnTheStart))
 	require.Error(t, err)
 	require.Nil(t, d)
 }
@@ -339,7 +357,7 @@ connectors:
 // compile returns an error and no Dungeon, so a caller can never seed a session
 // from a dungeon that did not fully compile.
 func TestABrokenSpecIsRefusedRatherThanPartlyBuilt(t *testing.T) {
-	d, err := compile([]byte("version: 1\nkey: nope\n"))
+	d, err := Compile([]byte("version: 1\nkey: nope\n"))
 	require.Error(t, err)
 	require.Nil(t, d)
 }

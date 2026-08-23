@@ -6,6 +6,8 @@ github.com/Azure/go-ansiterm v0.0.0-20210617225240-d185dfc1b5a1 h1:UQHMgLO+TxOEl
 github.com/Azure/go-ansiterm v0.0.0-20210617225240-d185dfc1b5a1/go.mod h1:xomTg63KZ2rFqZQzSB4Vz2SUXa1BpHTVz9L5PTmPC4E=
 github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20260822091323-079f95f86394 h1:r3lvUP3UrjAEGl9YXL6E0PqCGNghPd9hzWFCfQZu/80=
 github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20260822091323-079f95f86394/go.mod h1:cwJ+M7K4SQTCMJHXvD8bQkIF4+lWB8w+OPWhDn+RCf8=
+github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20260823042608-5c06426d5872 h1:BXg4rupThDln1SoCrLa9wTUpv8l1WsbExkXsB13YpRU=
+github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20260823042608-5c06426d5872/go.mod h1:cwJ+M7K4SQTCMJHXvD8bQkIF4+lWB8w+OPWhDn+RCf8=
 github.com/KirkDiggler/rpg-toolkit/core v0.11.0 h1:VnGI17Bnm6cLqI7Rn3RukUZHVfTAPUKTdoKTYqbGRtk=
 github.com/KirkDiggler/rpg-toolkit/core v0.11.0/go.mod h1:XFQXYViPZUTYu/a8jdRadI3rGnKk4r7tRtPm++vSUV0=
 github.com/KirkDiggler/rpg-toolkit/dice v0.3.2 h1:cLLP4Z+4VYSxeRkNbmI5gym6dC/xBOw6kDIylWDK/z0=
