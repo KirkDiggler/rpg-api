@@ -88,33 +88,70 @@ func (allSeeing) Sight(members []tkencounter.MemberID) (map[tkencounter.MemberID
 	return out, nil
 }
 
-// seamWall is the wall between two side-by-side chambers, with one row left
-// open for the doorway. Room-local to the WEST chamber, where column width-1 is
-// its last and column width is the east chamber's first.
+// pointy is the one orientation this fixture is authored in. Every [col,row]
+// below is an absolute offset pair under it; at(col,row) turns one into the
+// dungeon-absolute axial cell the session verbs speak, by asking the toolkit
+// (encounter.HexCellAt -- the one conversion, never reimplemented here).
+var pointy = tkencounter.HexesArePointyTop()
+
+func at(col, row int) spatial.Position { return tkencounter.HexCellAt(pointy, col, row) }
+
+func pbAt(col, row int) *sessionpb.Position {
+	p := at(col, row)
+	return &sessionpb.Position{X: p.X, Y: p.Y}
+}
+
+// rect paints a width x height block of absolute offset cells whose top-left
+// is [x0,y0].
+func rect(x0, y0, width, height int) []spatial.Position {
+	out := make([]spatial.Position, 0, width*height)
+	for row := y0; row < y0+height; row++ {
+		for col := x0; col < x0+width; col++ {
+			out = append(out, spatial.Position{X: float64(col), Y: float64(row)})
+		}
+	}
+	return out
+}
+
+// seamWall is the wall between two side-by-side regions: every edge between
+// column west and column west+1, except the row the doorway is on. Absolute
+// offset, like everything authored (rpg-project#256: walls are declared
+// edges between adjacent floor cells; nothing is generated).
 //
 // THIS IS THE MIGRATION HAZARD OF rpg-toolkit#1130, and it is the reason this
 // fixture grew rather than merely being renamed. When every chamber owned its
 // own grid, nothing could cross between them except through a declared
 // doorway -- the walls were implied by the room structure. On ONE CANVAS two
-// chambers side by side are simply ONE OPEN SPACE, and this list is the whole
+// regions side by side are simply ONE OPEN SPACE, and this list is the whole
 // answer to what a member cannot walk through or see past. Without it the tomb
 // is not three rooms joined by two doors; it is one 22-wide hall with some
 // furniture in it.
-func seamWall(width, rows, openRow int) []spatial.Boundary {
+func seamWall(west, rows, openRow int) []spatial.Boundary {
 	out := make([]spatial.Boundary, 0, rows)
 	for row := 0; row < rows; row++ {
 		if row == openRow {
 			continue // the doorway itself
 		}
 		out = append(out, spatial.Boundary{
-			From:              spatial.Position{X: float64(width - 1), Y: float64(row)},
-			To:                spatial.Position{X: float64(width), Y: float64(row)},
+			From:              spatial.Position{X: float64(west), Y: float64(row)},
+			To:                spatial.Position{X: float64(west + 1), Y: float64(row)},
 			BlocksMovement:    true,
 			BlocksLineOfSight: true,
 		})
 	}
 
 	return out
+}
+
+// seamDoor is the doorway seamWall left open: one open door on the one edge.
+// A DoorEdge is ABSOLUTE AXIAL, unlike a wall (the toolkit's own asymmetry,
+// documented on DoorEdge), so the same [col,row] pair goes through at().
+func seamDoor(id tkencounter.DoorID, west, row int) tkencounter.DoorInput {
+	return tkencounter.DoorInput{
+		ID:    id,
+		Edges: []tkencounter.DoorEdge{{From: at(west, row), To: at(west+1, row)}},
+		State: tkencounter.DoorIsOpen(),
+	}
 }
 
 // testDice rolls the crypto roller would: this suite is not testing whether
@@ -126,31 +163,43 @@ type testDice struct{}
 
 func (testDice) Roll(_ context.Context, size int) (int, error) { return size, nil } // always the max face
 
+// tombRoute is the whole walk from the entrance to the skeleton, in ONE
+// Move call: along row 1 through the entrance-hall doorway, down to row 3
+// early in the hall (so the first sightline down the hall-tomb doorway's row
+// forms the fight with most of the hall still to cross), then along row 3
+// through the second doorway and the pillar gap. The walk stops on its own
+// once sight forms the fight (Move's own contract: `len(Steps) < len(Path)`
+// is not an error), so the tail of this path is a safety margin, not an
+// assumption that every requested cell gets walked; the fight's first turn
+// continues along the SAME route from wherever it stopped.
+func tombRoute() []*sessionpb.Position {
+	return []*sessionpb.Position{
+		pbAt(2, 1), pbAt(3, 1), pbAt(4, 1), pbAt(5, 1), pbAt(6, 1), // cross into the hall
+		pbAt(7, 1), pbAt(7, 2), pbAt(7, 3), // down to the doorway's row
+		pbAt(8, 3), pbAt(9, 3), pbAt(10, 3), pbAt(11, 3), pbAt(12, 3), pbAt(13, 3), pbAt(14, 3), // cross into the tomb
+		pbAt(15, 3), pbAt(16, 3), pbAt(17, 3), pbAt(18, 3), // through the gap, toward the skeleton
+	}
+}
+
 // buildThreeRoomTomb is entrance -> hall -> tomb, matching design §6.1's
 // acceptance shape: a party walks two doorway crossings and meets a monster
-// on the far side. World AUTHORING still speaks rooms (RoomInput/
-// ConnectionInput are rulebooks/dnd5e/encounter's own vocabulary, unaffected
-// by the session SDK's one-map convergence -- "authoring is construction
-// data, and the one-map rule governs what a session SEES while it plays,"
-// per Atlas's own doc); only the SESSION-FACING verbs this test drives
-// against (Join, Move, Attack, ...) speak absolute positions with no room
-// concept at all. The tomb room's occluder wall (a solid column at local
-// x=3 with a gap at y=3) and the skeleton's position mirror the toolkit's
-// own proven "sight forms a fight" fixture (rulebooks/dnd5e/session's
-// fight_starts_test.go buildAmbush) -- the same geometry that is already
-// pinned to work, transplanted into a room reached by crossing two doorways.
+// on the far side. Authored the way dungeonspec version 2 authors
+// (rpg-project#256): three regions painted as absolute offset cells on one
+// pointy-top canvas, the two seam walls as declared edges, the two doorways
+// as open doors on the edges the walls leave out, and a column of pillars
+// in the tomb (absolute col 17, a gap at row 3) so a sightline reaches the
+// skeleton only along that one row -- the toolkit's own proven "sight forms
+// a fight" geometry, transplanted into a region reached by crossing two
+// doorways. Only the SESSION-FACING verbs this test drives against (Join,
+// Move, Attack, ...) speak axial cells, and every one of those is at(col,row).
 func buildThreeRoomTomb(t *testing.T) *tkencounter.EncounterData {
 	t.Helper()
 
-	// The tomb's column: a solid line of pillars at local x=3 with a gap at
-	// y=3, so a sightline reaches the skeleton only along that one row.
-	//
-	// This was `Occluders []spatial.Position` until rpg-toolkit#1130. Props
-	// answer both blocking questions independently, and these say what the old
-	// field could only imply: they stop SIGHT and not MOVEMENT. That was always
-	// what the word occluder meant here -- this scene is about who can see whom,
-	// never about who can walk where -- and a fixture that blocked movement too
-	// would change what the test asks while appearing only to rename a field.
+	// The tomb's column: a solid line of pillars at absolute col 17 with a
+	// gap at row 3. Props answer both blocking questions independently
+	// (rpg-toolkit#1130), and these say what the old field could only imply:
+	// they stop SIGHT and not MOVEMENT. This scene is about who can see whom,
+	// never about who can walk where.
 	blocksSight, passable := true, false
 	pillars := make([]tkencounter.PropInput, 0, 7)
 	for y := 0; y < 8; y++ {
@@ -159,11 +208,12 @@ func buildThreeRoomTomb(t *testing.T) *tkencounter.EncounterData {
 		}
 		pillars = append(pillars, tkencounter.PropInput{
 			Ref:               "pillar",
-			At:                spatial.Position{X: 3, Y: float64(y)},
+			At:                spatial.Position{X: 17, Y: float64(y)},
 			BlocksMovement:    &passable,
 			BlocksLineOfSight: &blocksSight,
 		})
 	}
+	lit := &tkencounter.Lighting{Intensity: 1}
 
 	enc, err := tkencounter.NewEncounter(&tkencounter.SetupInput{
 		Initiative: orderAsGiven{},
@@ -171,52 +221,38 @@ func buildThreeRoomTomb(t *testing.T) *tkencounter.EncounterData {
 		Standing:   allStanding{},
 		Sight:      allSeeing{},
 		// tkencounter.PassDriver{}/RefusingStriker{} are the toolkit's own
-		// trivial, exported stand-ins (encounter v0.30.6, rpg-toolkit#1167
-		// closed) -- construction-time only, same as allStanding/allSeeing
-		// above: this fixture builds the seed EncounterData via NewEncounter
-		// and the real, played session supplies its own TurnDriver
-		// (sdk.Behavior() today) and Striker when it loads and plays this
-		// world, so what a monster's turn does here never matters.
+		// trivial, exported stand-ins (rpg-toolkit#1167 closed) --
+		// construction-time only, same as allStanding/allSeeing above: this
+		// fixture builds the seed EncounterData via NewEncounter and the real,
+		// played session supplies its own TurnDriver (sdk.Behavior() today)
+		// and Striker when it loads and plays this world, so what a monster's
+		// turn does here never matters.
 		TurnDriver: tkencounter.PassDriver{},
 		Striker:    tkencounter.RefusingStriker{},
 		Field: tkencounter.FieldInput{
 			Canvas: tkencounter.CanvasInput{
 				// A tomb is cut from stone: you cannot see across the space
 				// between the chambers, or walk it. Required rather than
-				// defaulted (rpg-toolkit#1116) -- there is no correct default,
-				// since an open-air ruin's or a ship's deck answer is the
-				// opposite, and a default would be the composition deciding
-				// what a dungeon is made of in a field the author never wrote.
-				//
-				// No Orientation: required for a hex field and REFUSED for a
-				// square one, which this is.
-				Void: tkencounter.VoidIsOpaque(),
+				// defaulted (rpg-toolkit#1116) -- there is no correct default.
+				Void:        tkencounter.VoidIsOpaque(),
+				Orientation: pointy,
 			},
-			Rooms: []tkencounter.RoomInput{
-				// Each chamber draws its own east wall, leaving the doorway row
-				// open. See seamWall: on one canvas these three rectangles are
-				// contiguous, so without these the party could walk from the
-				// entrance into the tomb at any row, and see all the way down.
-				{
-					ID: "entrance", Width: 6, Height: 6, Origin: spatial.Position{X: 0, Y: 0},
-					Boundaries: seamWall(6, 6, 1), // the entrance-hall door is on row 1
-				},
-				{
-					ID: "hall", Width: 8, Height: 6, Origin: spatial.Position{X: 6, Y: 0},
-					Boundaries: seamWall(8, 6, 3), // the hall-tomb door is on row 3
-				},
-				{ID: "tomb", Width: 8, Height: 8, Origin: spatial.Position{X: 14, Y: 0}, Props: pillars},
+			Regions: []tkencounter.RegionInput{
+				{ID: "entrance", Name: "Entrance", Archetype: "crypt", Lighting: lit, Cells: rect(0, 0, 6, 6)},
+				{ID: "hall", Name: "Hall", Archetype: "crypt", Lighting: lit, Cells: rect(6, 0, 8, 6)},
+				{ID: "tomb", Name: "Tomb", Archetype: "crypt", Lighting: lit, Cells: rect(14, 0, 8, 8)},
 			},
-			Connections: []tkencounter.ConnectionInput{
-				{
-					ID: "entrance-hall", From: "entrance", To: "hall",
-					FromPosition: spatial.Position{X: 5, Y: 1}, ToPosition: spatial.Position{X: 0, Y: 1},
-				},
-				{
-					ID: "hall-tomb", From: "hall", To: "tomb",
-					FromPosition: spatial.Position{X: 7, Y: 3}, ToPosition: spatial.Position{X: 0, Y: 3},
-				},
+			// Each seam is drawn, leaving the doorway row open. Without these
+			// the party could walk from the entrance into the tomb at any
+			// row, and see all the way down.
+			Walls: append(
+				seamWall(5, 6, 1),      // the entrance-hall door is on row 1
+				seamWall(13, 6, 3)...), // the hall-tomb door is on row 3
+			Doors: []tkencounter.DoorInput{
+				seamDoor("entrance-hall", 5, 1),
+				seamDoor("hall-tomb", 13, 3),
 			},
+			Props: pillars,
 		},
 		// Members is deliberately empty: alice enters through Join (the
 		// verb this suite is proving), not pre-authored into the world --
@@ -327,7 +363,7 @@ func TestAcceptanceLoop_WalkFightDissolveResync(t *testing.T) {
 		// proven ambush geometry) is absolute (19,3). Spawn speaks absolute
 		// positions only -- there is no Room field any more (session
 		// v0.12.0/rpg-toolkit#1048, one map complete).
-		Position: spatial.Position{X: 19, Y: 3},
+		Position: at(19, 3),
 	})
 	require.NoError(t, err)
 
@@ -335,7 +371,7 @@ func TestAcceptanceLoop_WalkFightDissolveResync(t *testing.T) {
 	// local and absolute coincide here) --
 	joinResp, err := h.handler.Join(ctx, &sessionpb.JoinRequest{
 		Session: "acceptance-run", Member: "alice",
-		Position: &sessionpb.Position{X: 1, Y: 1},
+		Position: pbAt(1, 1),
 	})
 	require.NoError(t, err)
 	require.Equal(t, "alice", joinResp.GetMember().GetId())
@@ -350,20 +386,18 @@ func TestAcceptanceLoop_WalkFightDissolveResync(t *testing.T) {
 	// own contract: `len(Steps) < len(Path)` is not an error), so the tail
 	// of this path past the tomb doorway is a safety margin, not an
 	// assumption that every requested cell gets walked.
+	route := tombRoute()
 	moveResp, err := h.handler.Move(ctx, &sessionpb.MoveRequest{
-		Session: "acceptance-run", Member: "alice",
-		Path: []*sessionpb.Position{
-			{X: 2, Y: 1}, {X: 3, Y: 1}, {X: 4, Y: 1}, {X: 5, Y: 1}, {X: 6, Y: 1}, // cross into hall
-			{X: 7, Y: 1}, {X: 8, Y: 1}, {X: 9, Y: 1}, {X: 10, Y: 1}, {X: 11, Y: 1}, {X: 12, Y: 1}, {X: 13, Y: 1},
-			{X: 13, Y: 2}, {X: 13, Y: 3}, {X: 14, Y: 3}, // cross into tomb, onto the gap row
-			{X: 15, Y: 3}, {X: 16, Y: 3}, {X: 17, Y: 3}, {X: 18, Y: 3}, // safety margin toward the skeleton
-		},
+		Session: "acceptance-run", Member: "alice", Path: route,
 	})
 	require.NoError(t, err)
 	require.NotEmpty(t, moveResp.GetSteps(), "the walk must have taken at least one step")
-	lastStep := moveResp.GetSteps()[len(moveResp.GetSteps())-1]
-	t.Logf("walk stopped after %d/19 steps, last at (%v,%v)",
-		len(moveResp.GetSteps()), lastStep.GetPosition().GetX(), lastStep.GetPosition().GetY())
+	walked := len(moveResp.GetSteps())
+	lastStep := moveResp.GetSteps()[walked-1]
+	t.Logf("walk stopped after %d/%d steps, last at (%v,%v)",
+		walked, len(route), lastStep.GetPosition().GetX(), lastStep.GetPosition().GetY())
+	require.Less(t, walked+6, len(route)-1,
+		"sight must form the fight with more than one turn of walking still between alice and the skeleton")
 
 	formed := moveResp.GetFormed()
 	require.NotNil(t, formed, "sight must have formed a fight during the walk into the tomb")
@@ -389,10 +423,7 @@ func TestAcceptanceLoop_WalkFightDissolveResync(t *testing.T) {
 	// pinned to.
 	closeResp, err := h.handler.Move(ctx, &sessionpb.MoveRequest{
 		Session: "acceptance-run", Member: "alice",
-		Path: []*sessionpb.Position{
-			{X: 13, Y: 1}, {X: 13, Y: 2}, {X: 13, Y: 3}, {X: 14, Y: 3},
-			{X: 15, Y: 3}, {X: 16, Y: 3},
-		},
+		Path: route[walked : walked+6],
 	})
 	require.NoError(t, err)
 	require.Len(t, closeResp.GetSteps(), 6, "the whole of one turn's movement, and no more -- a fighter's 30 ft")
@@ -418,8 +449,8 @@ func TestAcceptanceLoop_WalkFightDissolveResync(t *testing.T) {
 	}
 	require.NotNil(t, skeletonSighting, "alice's view must include the skeleton she just formed a fight with")
 	require.NotNil(t, skeletonSighting.GetSeen(), "a live sight-channel sighting must carry its typed Seen position")
-	require.Equal(t, 19.0, skeletonSighting.GetSeen().GetPosition().GetX())
-	require.Equal(t, 3.0, skeletonSighting.GetSeen().GetPosition().GetY())
+	require.Equal(t, at(19, 3).X, skeletonSighting.GetSeen().GetPosition().GetX())
+	require.Equal(t, at(19, 3).Y, skeletonSighting.GetSeen().GetPosition().GetY())
 
 	// -- end her own turn: she has no more movement and is not yet in reach,
 	// so passing it is the honest move -- and the skeleton's WHOLE driven
@@ -532,24 +563,18 @@ func TestFightEndsByDecisionWhenThePartyWalksAway(t *testing.T) {
 	require.NoError(t, err)
 	_, err = h.manager.Manager.Spawn(context.Background(), &sdk.SpawnInput{
 		Session: "decision-run", ID: "skel-1", Ref: refs.Monsters.Skeleton().String(),
-		Position: spatial.Position{X: 19, Y: 3},
+		Position: at(19, 3),
 	})
 	require.NoError(t, err)
 
 	_, err = h.handler.Join(ctx, &sessionpb.JoinRequest{
 		Session: "decision-run", Member: "alice",
-		Position: &sessionpb.Position{X: 1, Y: 1},
+		Position: pbAt(1, 1),
 	})
 	require.NoError(t, err)
 
 	moveResp, err := h.handler.Move(ctx, &sessionpb.MoveRequest{
-		Session: "decision-run", Member: "alice",
-		Path: []*sessionpb.Position{
-			{X: 2, Y: 1}, {X: 3, Y: 1}, {X: 4, Y: 1}, {X: 5, Y: 1}, {X: 6, Y: 1},
-			{X: 7, Y: 1}, {X: 8, Y: 1}, {X: 9, Y: 1}, {X: 10, Y: 1}, {X: 11, Y: 1}, {X: 12, Y: 1}, {X: 13, Y: 1},
-			{X: 13, Y: 2}, {X: 13, Y: 3}, {X: 14, Y: 3},
-			{X: 15, Y: 3}, {X: 16, Y: 3}, {X: 17, Y: 3}, {X: 18, Y: 3},
-		},
+		Session: "decision-run", Member: "alice", Path: tombRoute(),
 	})
 	require.NoError(t, err)
 	require.NotNil(t, moveResp.GetFormed(), "sight must have formed a fight during the walk into the tomb")
@@ -604,7 +629,7 @@ func TestAWalkCannotCrossAWallWhereThereIsNoDoorway(t *testing.T) {
 	require.NoError(t, err)
 
 	_, err = h.handler.Join(ctx, &sessionpb.JoinRequest{
-		Session: "wall-run", Member: "alice", Position: &sessionpb.Position{X: 1, Y: 2},
+		Session: "wall-run", Member: "alice", Position: pbAt(1, 2),
 	})
 	require.NoError(t, err)
 
@@ -612,7 +637,7 @@ func TestAWalkCannotCrossAWallWhereThereIsNoDoorway(t *testing.T) {
 	// hall where there is no door.
 	resp, err := h.handler.Move(ctx, &sessionpb.MoveRequest{
 		Session: "wall-run", Member: "alice",
-		Path: []*sessionpb.Position{{X: 2, Y: 2}, {X: 3, Y: 2}, {X: 4, Y: 2}, {X: 5, Y: 2}, {X: 6, Y: 2}},
+		Path: []*sessionpb.Position{pbAt(2, 2), pbAt(3, 2), pbAt(4, 2), pbAt(5, 2), pbAt(6, 2)},
 	})
 	requireGRPCCode(t, err, codes.InvalidArgument)
 	require.Empty(t, resp.GetSteps(), "a path whose author was wrong about the map is refused whole, not walked partway")
@@ -622,8 +647,8 @@ func TestAWalkCannotCrossAWallWhereThereIsNoDoorway(t *testing.T) {
 		Session: "wall-run", Member: "alice",
 	})
 	require.NoError(t, err)
-	require.Equal(t, 1.0, whereResp.GetPosition().GetX())
-	require.Equal(t, 2.0, whereResp.GetPosition().GetY())
+	require.Equal(t, at(1, 2).X, whereResp.GetPosition().GetX())
+	require.Equal(t, at(1, 2).Y, whereResp.GetPosition().GetY())
 }
 
 // storyBeats reads a session's whole story for member and returns just the
@@ -682,13 +707,13 @@ func TestSkeletonsDrivenTurnMovesAndStrikes(t *testing.T) {
 	require.NoError(t, err)
 	_, err = h.manager.Manager.Spawn(context.Background(), &sdk.SpawnInput{
 		Session: "monster-turn-run", ID: "skel-1", Ref: refs.Monsters.Skeleton().String(),
-		Position: spatial.Position{X: 19, Y: 3},
+		Position: at(19, 3),
 	})
 	require.NoError(t, err)
 
 	joinResp, err := h.handler.Join(ctx, &sessionpb.JoinRequest{
 		Session: "monster-turn-run", Member: "alice",
-		Position: &sessionpb.Position{X: 16, Y: 3}, // inside the tomb, on the pillar gap row, three cells out
+		Position: pbAt(16, 3), // inside the tomb, on the pillar gap row, three cells out
 	})
 	require.NoError(t, err)
 	require.NotNil(t, joinResp.GetFormed(), "in sight and in range at first light: the fight forms on Join")

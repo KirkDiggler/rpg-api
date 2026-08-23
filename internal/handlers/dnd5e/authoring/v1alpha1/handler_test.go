@@ -10,6 +10,9 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
+	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
+
 	authoringpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/authoring/v1alpha1"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
 	"github.com/KirkDiggler/rpg-api/internal/dungeons"
@@ -108,13 +111,20 @@ func (s *HandlerSuite) TestPutDungeon_TheRequestReachesTheRegistryVerbatim() {
 	yaml := "version: 2\nkey: crypt\n# a comment\n"
 	s.registry.EXPECT().
 		Put(gomock.Any(), &dungeons.PutInput{Key: "crypt", YAML: []byte(yaml), ValidateOnly: false}).
-		Return(&dungeons.PutResult{Entry: &dungeons.Entry{Key: "crypt", YAML: []byte(yaml)}}, nil)
+		Return(&dungeons.PutResult{Entry: &dungeons.Entry{
+			Key: "crypt", YAML: []byte(yaml),
+			Atlas: &sdk.Atlas{Grid: sdk.GridHex, Cells: []spatial.Position{{X: 0, Y: 0}},
+				Regions: []sdk.AtlasRegion{{ID: "r", Cells: []spatial.Position{{X: 0, Y: 0}}, Archetype: "crypt", Lighting: sdk.Lighting{Intensity: 0.5}}}},
+		}}, nil)
 
 	resp, err := s.handler.PutDungeon(s.ctx, &authoringpb.PutDungeonRequest{Key: "crypt", Yaml: yaml})
 	s.Require().NoError(err)
 	s.Empty(resp.GetErrors(), "an empty error list IS success")
-	// TODO(256): assert resp.Atlas once dungeons.Entry.Atlas is populated
-	// (session.AtlasOf, plan T3).
+	s.Require().NotNil(resp.GetAtlas(), "and the atlas is the body -- THE SAME MESSAGE THE GAME PLAYS FROM")
+	s.Len(resp.GetAtlas().GetCells(), 1)
+	s.Require().Len(resp.GetAtlas().GetRegions(), 1)
+	s.Equal("crypt", resp.GetAtlas().GetRegions()[0].GetArchetype())
+	s.InDelta(0.5, resp.GetAtlas().GetRegions()[0].GetLighting().GetIntensity(), 1e-9)
 }
 
 func (s *HandlerSuite) TestPutDungeon_RegistryFailureIsInternal() {

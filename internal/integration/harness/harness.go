@@ -23,6 +23,7 @@ import (
 	characterv2pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/character"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
 	"github.com/KirkDiggler/rpg-api/internal/dungeons"
+	"github.com/KirkDiggler/rpg-api/internal/dungeons/dungeonstest"
 	apiv1alpha1handler "github.com/KirkDiggler/rpg-api/internal/handlers/api/v1alpha1"
 	lobbyhandler "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/lobby/v1alpha1"
 	character2 "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v1alpha1/character"
@@ -318,7 +319,7 @@ func (ts *TestServer) wireServices(cfg *Config) error {
 		}
 		contentDir = found
 	}
-	registry, err := dungeons.NewFileRegistry(contentDir, false, nil)
+	registry, err := dungeons.NewFileRegistry(contentDir, false, dungeonstest.ProjectorFor(sessOrch.Manager))
 	if err != nil {
 		return fmt.Errorf("content registry: %w", err)
 	}

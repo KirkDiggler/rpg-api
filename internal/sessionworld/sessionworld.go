@@ -153,9 +153,9 @@ func Compile(raw []byte) (*Dungeon, error) {
 	monsters := make([]Monster, len(spec.Monsters))
 	ordinals := map[string]int{}
 	for i, m := range spec.Monsters {
-		id, err := memberIDFor(m.Ref, ordinals)
-		if err != nil {
-			return nil, fmt.Errorf("monster %d: %w", i, err)
+		id, idErr := memberIDFor(m.Ref, ordinals)
+		if idErr != nil {
+			return nil, fmt.Errorf("monster %d: %w", i, idErr)
 		}
 		monsters[i] = Monster{Ref: m.Ref, MemberID: id, At: cellOf(orientation, m.At), Boss: m.Boss, Targeting: m.Targeting}
 	}

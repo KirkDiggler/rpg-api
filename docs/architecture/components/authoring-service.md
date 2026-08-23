@@ -2,7 +2,7 @@
 name: authoring service + dungeon content registry
 description: internal/dungeons (the file registry every authored dungeon lives in) and AuthoringService v1alpha1 (PutDungeon / GetDungeon) on the session stack
 updated: 2026-08-23
-confidence: medium — rpg-api#806 branch; registry and handler contracts verified by passing unit tests under -race; atlas / field-error paths / regions await toolkit plan items T1–T3 (TODO(256) markers in code)
+confidence: medium-high — rpg-api#806 branch on toolkit T1/T2/T3 pseudo-versions (encounter b955743, session 8e98646); registry, handler and lobby contracts verified by passing unit + integration suites under -race; no browser walk yet
 ---
 
 # authoring service + dungeon content registry
@@ -20,7 +20,7 @@ content/reference-tomb.yaml                  the shipped dungeon
 
 ## The registry (`internal/dungeons`)
 
-`NewFileRegistry(dir, authoring)` reads every `*.yaml` under `dir`
+`NewFileRegistry(dir, authoring, projector)` reads every `*.yaml` under `dir`
 (`RPG_CONTENT_DIR`, default `./content`) and compiles each once through
 `internal/sessionworld.Compile` — the toolkit's
 `rulebooks/dnd5e/encounter/dungeonspec`, never a local copy of its geometry.
@@ -28,7 +28,12 @@ Construction **fails** (naming the file) when a file does not compile, when a
 file's `key:` line disagrees with its filename, when two files claim one key,
 or when `reference-tomb` is absent. A dungeon that silently vanished from the
 picker would be a worse failure than a server that refuses to boot and says
-why.
+why. Each entry's `Atlas` comes from the `AtlasProjector` — production wires
+`session.Manager.AtlasOf` (the same validation-load path as `StartSession`
+and the same projection `Manager.Atlas` uses), so `PutDungeon`'s atlas and
+the started game's `GetAtlas` have one producer. A world that compiled but
+will not load is a boot refusal / `Internal`, never a `FieldError`: the
+stack disagreed with itself, the author did nothing.
 
 `Registry` is the interface the lobby and authoring orchestrators see:
 
@@ -85,28 +90,20 @@ session handler's `GetAtlas` uses (exported for exactly this reason): one
 producer of the wire atlas, so the builder has no second geometry to keep in
 step with the game.
 
-## What is waiting on the toolkit (TODO(256) markers)
+## Toolkit pins
 
-Plan items T1/T2/T3 (`rpg-toolkit` branches `feat/256-regions-dungeonspec-v2`,
-`feat/256-atlas-regions`) are built in parallel with this. Until they are
-pinned here:
-
-- `Entry.Atlas` / `PutDungeonResponse.atlas` is **nil/unset** — the registry
-  takes an `AtlasProjector` (`AtlasOf(ctx, world) (*session.Atlas, error)`,
-  which T3's `session.Manager.AtlasOf` satisfies structurally — a Manager
-  method rather than a free function because loading a world needs the
-  capabilities only the Manager supplies) and projects every entry once at
-  boot and at `Put`. `cmd/server` passes `nil` until T3 is pinned, then
-  `sessionOrch.Manager`. rpg-api does not reimplement the projection.
-- `FieldError.path` is always empty — dungeonspec v1 stops at the first
-  defect with one un-pathed error. v2's path-addressed `Validate` maps
-  one-to-one in `compileErrors`.
-- `GetAtlasResponse.regions` is not copied — `session.Atlas.Regions` does not
-  exist in the tagged SDK.
-- `content/reference-tomb.yaml` is still the v1 dialect; it becomes T2's
-  v2 file, and `sessionworld`'s borrowed-projection step (the throwaway
-  encounter) is deleted when v2 emits absolute placements.
-- `Entry.Name` is the key — v1 has no `name:` field.
+Built on plan items T1/T2 (`rpg-toolkit` `feat/256-regions-dungeonspec-v2`,
+encounter `v0.30.9-0.20260823055203-b955743ff1a3`) and T3
+(`feat/256-atlas-regions`, session `v0.21.12-0.20260823060107-8e9864638f27`)
+as pseudo-versions; the merge re-pins to their tags. What they gave this
+component: dungeonspec **version 2** (regions, walls, doors, absolute
+`place`; `Validate` returns every defect with its YAML path, `Decode`
+defects carry `line N`), `Seat.At`/`MonsterPlacement.At` as absolute offset
+cells (so `sessionworld` asks `encounter.HexCellAt` for the axial cell and
+the throwaway-encounter projection is gone), `session.Atlas.Regions`, and
+`Manager.AtlasOf`. `content/reference-tomb.yaml` is T2's golden v2 file —
+the same 224 cells, boundaries, doorways and props version 1 produced, with
+three regions added.
 
 ## Tests that gate
 
@@ -121,9 +118,14 @@ pinned here:
   rules above over a mocked registry.
 - `internal/orchestrators/lobby/start_encounter_session_stack_test.go` —
   unknown `dungeon_key` refused before any write; explicit default key is the
-  tomb; a dungeon that arrived through `Put` starts and its atlas reaches the
-  wire with doors minted under the authored key; `ListDungeons` reads the
-  registry.
+  tomb; a dungeon that arrived through `Put` starts, its `GetAtlas` carries
+  its regions and is **cell-for-cell the atlas `Put` answered** (one
+  producer), with doors minted under the authored key; `ListDungeons` reads
+  the registry.
+- `internal/integration/session/acceptance_test.go` — the session acceptance
+  loop re-authored on regions (absolute offset cells, declared seam walls,
+  open doors on the edges they leave out, `encounter.HexCellAt` for every
+  cell the verbs speak).
 
 ## Related
 

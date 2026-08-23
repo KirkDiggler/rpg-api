@@ -5,12 +5,54 @@
 package dungeonstest
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
+
+	"github.com/alicebob/miniredis/v2"
+	goredis "github.com/redis/go-redis/v9"
+
+	tkencounter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter"
+	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 
 	"github.com/KirkDiggler/rpg-api/internal/dungeons"
+	sessionorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/session"
+	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 )
+
+// Projector is a dungeons.AtlasProjector over a real, miniredis-backed
+// session Manager — the same Manager.AtlasOf production wires, so a test
+// registry's atlases are the ones a session would serve. Prefer
+// ProjectorFor when the test already has a Manager, so the registry and the
+// sessions it starts share one.
+func Projector(t testing.TB) dungeons.AtlasProjector {
+	t.Helper()
+
+	mr := miniredis.RunT(t)
+	client := goredis.NewClient(&goredis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() { _ = client.Close() })
+	chars, err := characterrepo.NewRedis(&characterrepo.RedisConfig{Client: client})
+	if err != nil {
+		t.Fatalf("dungeonstest: character repo: %v", err)
+	}
+	orch, err := sessionorch.New(sessionorch.Config{Redis: client, Characters: chars, TTL: time.Hour})
+	if err != nil {
+		t.Fatalf("dungeonstest: session orchestrator: %v", err)
+	}
+
+	return ProjectorFor(orch.Manager)
+}
+
+// ProjectorFor adapts a session Manager to dungeons.AtlasProjector.
+func ProjectorFor(m *sdk.Manager) dungeons.AtlasProjector { return managerProjector{m} }
+
+type managerProjector struct{ m *sdk.Manager }
+
+func (p managerProjector) AtlasOf(ctx context.Context, world *tkencounter.EncounterData) (*sdk.Atlas, error) {
+	return p.m.AtlasOf(ctx, &sdk.AtlasOfInput{World: world})
+}
 
 // ContentDir locates the repo's content/ directory by walking up from the
 // working directory (go test runs each package in its own directory).
@@ -34,7 +76,7 @@ func ContentDir(t testing.TB) string {
 func Shipped(t testing.TB) *dungeons.FileRegistry {
 	t.Helper()
 
-	r, err := dungeons.NewFileRegistry(ContentDir(t), false, nil)
+	r, err := dungeons.NewFileRegistry(ContentDir(t), false, Projector(t))
 	if err != nil {
 		t.Fatalf("dungeonstest: %v", err)
 	}
@@ -60,7 +102,7 @@ func Scratch(t testing.TB) (*dungeons.FileRegistry, string) {
 		copyFile(t, filepath.Join(src, e.Name()), filepath.Join(dst, e.Name()))
 	}
 
-	r, err := dungeons.NewFileRegistry(dst, true, nil)
+	r, err := dungeons.NewFileRegistry(dst, true, Projector(t))
 	if err != nil {
 		t.Fatalf("dungeonstest: %v", err)
 	}

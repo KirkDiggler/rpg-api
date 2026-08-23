@@ -110,18 +110,14 @@ type Entry struct {
 	// registry's AtlasProjector (the session Manager), never computed here:
 	// the projection from the composition's map to the wire's is the
 	// toolkit's and lives in exactly one place there
-	// (symmetric-bugs-hide-from-roundtrips).
-	//
-	// TODO(256): nil while the registry is built without a projector — until
-	// rulebooks/dnd5e/session's Manager.AtlasOf lands (plan T3,
-	// feat/256-atlas-regions) and is pinned here.
+	// (symmetric-bugs-hide-from-roundtrips). Never nil on an Entry.
 	Atlas *sdk.Atlas
 }
 
 // AtlasProjector turns a compiled world into the atlas a session on it would
-// serve. *session.Manager satisfies it structurally once plan T3 lands
-// (Manager.AtlasOf, same validation-load path as StartSession and the same
-// projection Manager.Atlas uses).
+// serve: session.Manager.AtlasOf (the same validation-load path as
+// StartSession and the same projection Manager.Atlas uses), behind a
+// one-method adapter because the SDK's method takes its own input struct.
 type AtlasProjector interface {
 	AtlasOf(ctx context.Context, world *tkencounter.EncounterData) (*sdk.Atlas, error)
 }
@@ -192,12 +188,13 @@ var _ Registry = (*FileRegistry)(nil)
 // authoring decides whether Put writes; with it false Put returns
 // ErrAuthoringDisabled and the directory is never written to.
 //
-// projector produces each Entry's Atlas. TODO(256): nil is accepted (Atlas
-// stays nil) only until the session Manager's AtlasOf is pinned; it then
-// becomes required.
+// projector produces each Entry's Atlas. Required.
 func NewFileRegistry(dir string, authoring bool, projector AtlasProjector) (*FileRegistry, error) {
 	if dir == "" {
 		return nil, errors.New("dungeons: content directory is required")
+	}
+	if projector == nil {
+		return nil, errors.New("dungeons: atlas projector is required")
 	}
 	names, err := os.ReadDir(dir)
 	if err != nil {
@@ -384,18 +381,14 @@ func (r *FileRegistry) compileEntry(ctx context.Context, raw []byte) (*Entry, []
 		return nil, nil, err
 	}
 
-	entry := &Entry{Key: d.Key, Name: d.Name, YAML: raw, Dungeon: d}
-	if r.projector != nil {
-		atlas, err := r.projector.AtlasOf(ctx, d.World)
-		if err != nil {
-			// A world that compiled but will not load is not the author's
-			// file being wrong; it is the stack disagreeing with itself.
-			return nil, nil, fmt.Errorf("project atlas: %w", err)
-		}
-		entry.Atlas = atlas
+	atlas, err := r.projector.AtlasOf(ctx, d.World)
+	if err != nil {
+		// A world that compiled but will not load is not the author's file
+		// being wrong; it is the stack disagreeing with itself.
+		return nil, nil, fmt.Errorf("project atlas: %w", err)
 	}
 
-	return entry, nil, nil
+	return &Entry{Key: d.Key, Name: d.Name, YAML: raw, Dungeon: d, Atlas: atlas}, nil, nil
 }
 
 // compileErrors turns a compile refusal into the wire's list: a validation

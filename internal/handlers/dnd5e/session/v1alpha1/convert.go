@@ -40,10 +40,11 @@ func memberKindToProto(k sdk.MemberKind) sessionpb.MemberKind {
 	}
 }
 
+// gridKindToProto mirrors session.GridKind. Hex is the only kind a map can
+// report since rpg-project#256 (square fields were deleted with rooms); the
+// wire enum keeps SQUARE for its own history, and nothing here can produce it.
 func gridKindToProto(k sdk.GridKind) sessionpb.GridKind {
 	switch k {
-	case sdk.GridSquare:
-		return sessionpb.GridKind_GRID_KIND_SQUARE
 	case sdk.GridHex:
 		return sessionpb.GridKind_GRID_KIND_HEX
 	default:
@@ -326,7 +327,7 @@ func atlasBoundariesToProto(bs []sdk.AtlasBoundary) []*sessionpb.AtlasBoundary {
 
 func atlasDoorwayToProto(d sdk.AtlasDoorway) *sessionpb.AtlasDoorway {
 	return &sessionpb.AtlasDoorway{
-		Connection: d.Connection,
+		Connection: d.Door,
 		From:       positionToProto(d.From),
 		To:         positionToProto(d.To),
 	}
@@ -474,10 +475,9 @@ func setEventBody(evt *sessionpb.Event, body sdk.EventBody) {
 // builder has no second geometry to keep in step with the game
 // (rpg-project#256, design §3a).
 //
-// TODO(256): copy Regions (GetAtlasResponse.regions = 9, AtlasRegion{id,
-// name, cells, archetype, lighting{intensity}}) once rulebooks/dnd5e/session
-// carries Atlas.Regions (plan T3, feat/256-atlas-regions). The proto field
-// is already on the wire at protos 5c06426; the SDK field is not yet tagged.
+// Regions (GetAtlasResponse.regions) are copied cell for cell: they are
+// already absolute axial in the same frame as Cells, so nothing here converts
+// anything — the one place cells become axial is the toolkit's.
 func AtlasToProto(a *sdk.Atlas) *sessionpb.GetAtlasResponse {
 	if a == nil {
 		return &sessionpb.GetAtlasResponse{}
@@ -502,7 +502,34 @@ func AtlasToProto(a *sdk.Atlas) *sessionpb.GetAtlasResponse {
 		Props:      props,
 		Boundaries: atlasBoundariesToProto(a.Boundaries),
 		Doorways:   atlasDoorwaysToProto(a.Doorways),
+		Regions:    atlasRegionsToProto(a.Regions),
 	}
+}
+
+// atlasRegionToProto mirrors session.AtlasRegion: a named set of absolute
+// cells plus the per-area facts it carries. Archetype and lighting are copied
+// verbatim — an archetype never decides mechanics, and intensity is a world
+// fact, not a render hint (design §3b).
+func atlasRegionToProto(r sdk.AtlasRegion) *sessionpb.AtlasRegion {
+	cells := make([]*sessionpb.Position, len(r.Cells))
+	for i, c := range r.Cells {
+		cells[i] = positionToProto(c)
+	}
+	return &sessionpb.AtlasRegion{
+		Id:        r.ID,
+		Name:      r.Name,
+		Cells:     cells,
+		Archetype: r.Archetype,
+		Lighting:  &sessionpb.Lighting{Intensity: r.Lighting.Intensity},
+	}
+}
+
+func atlasRegionsToProto(rs []sdk.AtlasRegion) []*sessionpb.AtlasRegion {
+	out := make([]*sessionpb.AtlasRegion, len(rs))
+	for i, r := range rs {
+		out[i] = atlasRegionToProto(r)
+	}
+	return out
 }
 
 // whereToProto mirrors session.WhereOutput onto the wire GetWhereResponse.

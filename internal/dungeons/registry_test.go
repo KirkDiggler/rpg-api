@@ -17,6 +17,7 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
 
 	"github.com/KirkDiggler/rpg-api/internal/dungeons"
+	"github.com/KirkDiggler/rpg-api/internal/dungeons/dungeonstest"
 )
 
 // shippedTomb is the real content file, so these tests run on what the server
@@ -57,7 +58,7 @@ func (s *RegistrySuite) rekeyed(key string) []byte {
 }
 
 func (s *RegistrySuite) open(authoring bool) *dungeons.FileRegistry {
-	r, err := dungeons.NewFileRegistry(s.dir, authoring, nil)
+	r, err := dungeons.NewFileRegistry(s.dir, authoring, dungeonstest.Projector(s.T()))
 	s.Require().NoError(err)
 	return r
 }
@@ -74,6 +75,10 @@ func (s *RegistrySuite) TestBoot_LoadsTheShippedTomb() {
 	s.Equal(s.tomb, e.YAML, "Get returns the bytes on disk, verbatim")
 	s.Require().NotNil(e.Dungeon)
 	s.NotEmpty(e.Dungeon.PartySeats, "and the compiled world behind them")
+	s.Require().NotNil(e.Atlas, "and the atlas a session on it would serve")
+	s.Len(e.Atlas.Cells, 224, "the tomb's 224 cells (design §5)")
+	s.Len(e.Atlas.Regions, 3, "entrance, hall, tomb")
+	s.Equal("crypt", e.Atlas.Regions[0].Archetype)
 }
 
 // TestBoot_RefusesAFileThatDoesNotCompile is the construction-time law: a
@@ -82,7 +87,7 @@ func (s *RegistrySuite) TestBoot_LoadsTheShippedTomb() {
 func (s *RegistrySuite) TestBoot_RefusesAFileThatDoesNotCompile() {
 	s.write("broken.yaml", []byte("version: 2\nkey: broken\nvoid: nonsense\n"))
 
-	_, err := dungeons.NewFileRegistry(s.dir, false, nil)
+	_, err := dungeons.NewFileRegistry(s.dir, false, dungeonstest.Projector(s.T()))
 	s.Require().Error(err)
 	s.Contains(err.Error(), filepath.Join(s.dir, "broken.yaml"), "the error names the file")
 	s.Contains(err.Error(), "does not compile")
@@ -91,7 +96,7 @@ func (s *RegistrySuite) TestBoot_RefusesAFileThatDoesNotCompile() {
 func (s *RegistrySuite) TestBoot_RefusesAFileWhoseNameIsNotItsKey() {
 	s.write("not-the-key.yaml", s.rekeyed("something-else"))
 
-	_, err := dungeons.NewFileRegistry(s.dir, false, nil)
+	_, err := dungeons.NewFileRegistry(s.dir, false, dungeonstest.Projector(s.T()))
 	s.Require().ErrorIs(err, dungeons.ErrKeyMismatch)
 	s.Contains(err.Error(), "not-the-key.yaml")
 }
@@ -100,7 +105,7 @@ func (s *RegistrySuite) TestBoot_RefusesADirectoryWithoutTheDefaultDungeon() {
 	s.Require().NoError(os.Remove(filepath.Join(s.dir, "reference-tomb.yaml")))
 	s.write("other.yaml", s.rekeyed("other"))
 
-	_, err := dungeons.NewFileRegistry(s.dir, false, nil)
+	_, err := dungeons.NewFileRegistry(s.dir, false, dungeonstest.Projector(s.T()))
 	s.Require().Error(err)
 	s.Contains(err.Error(), dungeons.DefaultKey)
 }
@@ -159,9 +164,8 @@ func (s *RegistrySuite) TestProjector_AWorldThatWillNotLoadIsNotTheAuthorsProble
 	s.Contains(err.Error(), "project atlas")
 	s.Contains(err.Error(), "reference-tomb.yaml")
 
-	r, err := dungeons.NewFileRegistry(s.dir, true, nil)
-	s.Require().NoError(err)
-	_ = r
+	_, err = dungeons.NewFileRegistry(s.dir, true, nil)
+	s.Require().Error(err, "a registry without a projector cannot answer PutDungeon and is refused")
 }
 
 func (s *RegistrySuite) TestGet_UnknownKeyIsNotFound() {
@@ -272,7 +276,8 @@ func (s *RegistrySuite) TestPut_ErrorsNameTheThingTheyAreAbout() {
 	s.GreaterOrEqual(len(paths), 2, "every defect, not the first: %v", res.Errors)
 
 	// An unknown key is a decode defect and names its line.
-	res, err = r.Put(s.ctx, &dungeons.PutInput{Key: "crypt", YAML: append(s.rekeyed("crypt"), []byte("hieght: 8\n")...), ValidateOnly: true})
+	const unknownKeyLine = "hieght: 8\n" //nolint:misspell // the typo IS the test
+	res, err = r.Put(s.ctx, &dungeons.PutInput{Key: "crypt", YAML: append(s.rekeyed("crypt"), []byte(unknownKeyLine)...), ValidateOnly: true})
 	s.Require().NoError(err)
 	s.Require().NotEmpty(res.Errors)
 	s.Contains(res.Errors[0].Path, "line ")

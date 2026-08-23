@@ -348,8 +348,13 @@ func (s *SessionStackSuite) TestStartEncounter_PlaysADungeonTheAuthorPut() {
 	atlas, err := s.sessOrch.Manager.Atlas(s.ctx, &sdk.AtlasInput{Session: out.EncounterID})
 	s.Require().NoError(err)
 	s.NotEmpty(atlas.Cells, "the authored dungeon's floor reached the wire")
+	s.Require().Len(atlas.Regions, 3, "and its regions, with what they carry")
+	s.Equal("crypt", atlas.Regions[0].Archetype)
+	s.Equal(res.Entry.Atlas.Cells, atlas.Cells,
+		"PutDungeon's atlas and the started session's GetAtlas are the same cells -- one producer (design §3a)")
+	s.Equal(res.Entry.Atlas.Regions, atlas.Regions, "and the same regions")
 	s.Require().NotEmpty(atlas.Doorways)
-	s.True(strings.HasPrefix(atlas.Doorways[0].Connection, "crypt"), "doorway %q is minted under the authored key, not the tomb's", atlas.Doorways[0].Connection)
+	s.True(strings.HasPrefix(atlas.Doorways[0].Door, "crypt"), "doorway %q is minted under the authored key, not the tomb's", atlas.Doorways[0].Door)
 }
 
 func (s *SessionStackSuite) TestListDungeons_ReadsTheRegistry() {

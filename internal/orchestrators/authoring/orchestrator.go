@@ -57,9 +57,6 @@ type PutDungeonOutput struct {
 	Errors []dungeons.FieldError
 
 	// Atlas is the compiled map, the same shape GetAtlas serves.
-	//
-	// TODO(256): nil until session.AtlasOf lands (plan T3); see
-	// dungeons.Entry.Atlas.
 	Atlas *sdk.Atlas
 }
 

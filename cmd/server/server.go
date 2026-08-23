@@ -33,6 +33,9 @@ import (
 	sessionv1alpha1pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
 	characterv2pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/character"
+	tkencounter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter"
+	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
+
 	"github.com/KirkDiggler/rpg-api/internal/auth"
 	"github.com/KirkDiggler/rpg-api/internal/dungeons"
 	apiv1alpha1handler "github.com/KirkDiggler/rpg-api/internal/handlers/api/v1alpha1"
@@ -245,10 +248,10 @@ func runServer(_ *cobra.Command, _ []string) error {
 		}
 		contentDir = defaultContentDir
 	}
-	// TODO(256): pass sessionOrch.Manager as the AtlasProjector once the
-	// session SDK's Manager.AtlasOf is pinned (plan T3); until then entries
-	// carry no Atlas and PutDungeonResponse.atlas is unset.
-	registry, err := dungeons.NewFileRegistry(contentDir, authoringEnabled, nil)
+	// sessionOrch.Manager is the AtlasProjector: Manager.AtlasOf loads the
+	// world the way StartSession would and projects it the way GetAtlas
+	// does, so PutDungeon's atlas and the game's are one producer.
+	registry, err := dungeons.NewFileRegistry(contentDir, authoringEnabled, registryProjector{sessionOrch.Manager})
 	if err != nil {
 		return fmt.Errorf("content registry: %w", err)
 	}
@@ -428,4 +431,12 @@ func mustRedisClient() redis.Client {
 
 	slog.Info("successfully connected to Redis", "address", redisAddr)
 	return client
+}
+
+// registryProjector adapts *session.Manager's AtlasOf (which takes the SDK's
+// own input struct) to dungeons.AtlasProjector.
+type registryProjector struct{ m *sdk.Manager }
+
+func (p registryProjector) AtlasOf(ctx context.Context, world *tkencounter.EncounterData) (*sdk.Atlas, error) {
+	return p.m.AtlasOf(ctx, &sdk.AtlasOfInput{World: world})
 }
