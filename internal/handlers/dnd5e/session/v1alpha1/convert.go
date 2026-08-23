@@ -290,24 +290,6 @@ func deliveryReportToProto(r sdk.DeliveryReport) *sessionpb.DeliveryReport {
 	return &sessionpb.DeliveryReport{Events: int32(r.Events), Failed: r.Failed}
 }
 
-func storyEntryToProto(e sdk.StoryEntry) *sessionpb.StoryEntry {
-	return &sessionpb.StoryEntry{
-		Seq:         e.Seq,
-		At:          e.At,
-		Correlation: e.Correlation,
-		Tags:        e.Tags,
-		Payload:     e.Payload,
-	}
-}
-
-func storyEntriesToProto(es []sdk.StoryEntry) []*sessionpb.StoryEntry {
-	out := make([]*sessionpb.StoryEntry, len(es))
-	for i, e := range es {
-		out[i] = storyEntryToProto(e)
-	}
-	return out
-}
-
 func atlasBoundaryToProto(b sdk.AtlasBoundary) *sessionpb.AtlasBoundary {
 	return &sessionpb.AtlasBoundary{
 		From:              positionToProto(b.From),
@@ -392,6 +374,14 @@ func eventKindToProto(k sdk.EventKind) sessionpb.EventKind {
 // inspects them (design rule 4's corollary). Body is projected separately
 // by setEventBody, once the spine is built, so the passthrough law above
 // stays true of payload even as body stops being the only carrier.
+//
+// e.Tags (session/v0.23.0, rpg-toolkit#1213) has NO wire counterpart yet --
+// dnd5e.api.session.v1alpha1.Event carries no tags field -- so it is
+// deliberately dropped here rather than smuggled onto payload or forced into
+// a field that does not exist. This is the same converter GetStory now runs
+// its catch-up through (get_story.go, rpg-api-protos#239), so both paths
+// drop it identically; adding a wire `tags` field is a proto change, not
+// something this function can paper over on its own.
 func eventToProto(e sdk.Event) *sessionpb.Event {
 	evt := &sessionpb.Event{
 		Session:     e.Session,
@@ -404,6 +394,17 @@ func eventToProto(e sdk.Event) *sessionpb.Event {
 	}
 	setEventBody(evt, e.Body)
 	return evt
+}
+
+// eventsToProto mirrors a []sdk.Event slice -- GetStory's own use of the
+// same eventToProto StreamEvents sends through one at a time, so catch-up
+// and live delivery share one projection all the way to the wire.
+func eventsToProto(es []sdk.Event) []*sessionpb.Event {
+	out := make([]*sessionpb.Event, len(es))
+	for i, e := range es {
+		out[i] = eventToProto(e)
+	}
+	return out
 }
 
 // setEventBody projects the SDK's typed session.EventBody onto the proto

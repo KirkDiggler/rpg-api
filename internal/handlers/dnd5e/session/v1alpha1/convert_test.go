@@ -311,14 +311,33 @@ func TestDeliveryReportToProto(t *testing.T) {
 	require.True(t, got.GetFailed())
 }
 
-func TestStoryEntriesToProto(t *testing.T) {
-	got := storyEntriesToProto([]sdk.StoryEntry{
-		{Seq: 1, At: 10, Correlation: "corr-1", Tags: map[string]string{"k": "v"}, Payload: []byte("p")},
+// TestEventsToProto pins GetStory's own slice conversion (get_story.go) to
+// the SAME per-event converter StreamEvents uses -- Manager.Story returns
+// []sdk.Event since session/v0.23.0 (rpg-toolkit#1213), so there is exactly
+// one mapping from sdk.Event to the wire, not a thinner one for catch-up
+// (rpg-api-protos#239's own ruling: live and catch-up must be byte-equal for
+// the same seq).
+func TestEventsToProto(t *testing.T) {
+	got := eventsToProto([]sdk.Event{
+		{
+			Session: "sess-1", Seq: 1, At: 10, Correlation: "corr-1", Recipient: "char-1",
+			Kind: sdk.EventTurnEnded, Payload: []byte("p"),
+			Body: sdk.TurnEndedBody{Member: "char-1", Next: "char-2"},
+			Tags: map[string]string{"k": "v"}, // no wire field yet -- dropped, see eventToProto's own doc
+		},
 	})
 	require.Len(t, got, 1)
+	require.Equal(t, "sess-1", got[0].GetSession())
 	require.Equal(t, uint64(1), got[0].GetSeq())
 	require.Equal(t, "corr-1", got[0].GetCorrelation())
-	require.Equal(t, map[string]string{"k": "v"}, got[0].GetTags())
+	require.Equal(t, "char-1", got[0].GetRecipient())
+	require.Equal(t, sessionpb.EventKind_EVENT_KIND_TURN_ENDED, got[0].GetKind())
+	require.Equal(t, "char-2", got[0].GetTurnEnded().GetNext())
+}
+
+func TestEventsToProto_Empty(t *testing.T) {
+	got := eventsToProto(nil)
+	require.Empty(t, got)
 }
 
 func TestStepsToProto(t *testing.T) {

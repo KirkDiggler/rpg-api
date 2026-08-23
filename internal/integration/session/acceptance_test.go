@@ -654,9 +654,17 @@ func TestAWalkCannotCrossAWallWhereThereIsNoDoorway(t *testing.T) {
 // storyBeats reads a session's whole story for member and returns just the
 // "beat" name from each entry's JSON payload, in order -- the same
 // projection the toolkit's own MonsterTurnTestSuite uses (session's own
-// monster_turn_test.go), because StoryEntry carries no typed Kind (only
-// Event, on the stream, does -- design rule 4's payload-is-passthrough
-// corollary means a beat NAME still lives only in the payload here).
+// monster_turn_test.go).
+//
+// GetStory carries a typed EventKind now too (session/v0.23.0,
+// rpg-toolkit#1213, rpg-api-protos#239 -- see story_events_test.go for the
+// acceptance proof that it is byte-equal to what the live stream sends), but
+// this helper still reads the composition's own literal beat STRING
+// ("moved", "turn-ended", ...) off Payload rather than the wire enum -- the
+// two vocabularies are not one-to-one everywhere (kindFor's "down" ->
+// EventDowned pairs with THIS package's own "downed" reserved word,
+// design rule 4's payload-is-passthrough corollary), and this file's own
+// assertions below are written against the composition's words.
 func storyBeats(ctx context.Context, t *testing.T, h *sessionhandler.Handler, session, member string) []string {
 	t.Helper()
 	resp, err := h.GetStory(ctx, &sessionpb.GetStoryRequest{Session: session, Member: member, FromSeq: 0})
