@@ -88,11 +88,11 @@ func (s *HandlerSuite) TestPutDungeon_MalformedRequestIsAStatus() {
 // and no atlas, so the builder's inline-error path has the list.
 func (s *HandlerSuite) TestPutDungeon_AFileThatDoesNotCompileIsABody() {
 	s.registry.EXPECT().
-		Put(gomock.Any(), &dungeons.PutInput{Key: "crypt", YAML: []byte("version: 1\n"), ValidateOnly: true}).
+		Put(gomock.Any(), &dungeons.PutInput{Key: "crypt", YAML: []byte("version: 2\n"), ValidateOnly: true}).
 		Return(&dungeons.PutResult{Errors: []dungeons.FieldError{{Path: "start", Message: "start is required"}}}, nil)
 
 	resp, err := s.handler.PutDungeon(s.ctx, &authoringpb.PutDungeonRequest{
-		Key: "crypt", Yaml: "version: 1\n", ValidateOnly: true,
+		Key: "crypt", Yaml: "version: 2\n", ValidateOnly: true,
 	})
 	s.Require().NoError(err)
 	s.Require().Len(resp.GetErrors(), 1)
@@ -105,7 +105,7 @@ func (s *HandlerSuite) TestPutDungeon_AFileThatDoesNotCompileIsABody() {
 // validate_only flag cross the handler untouched -- the registry stores
 // exactly the text the author sent.
 func (s *HandlerSuite) TestPutDungeon_TheRequestReachesTheRegistryVerbatim() {
-	yaml := "version: 1\nkey: crypt\n# a comment\n"
+	yaml := "version: 2\nkey: crypt\n# a comment\n"
 	s.registry.EXPECT().
 		Put(gomock.Any(), &dungeons.PutInput{Key: "crypt", YAML: []byte(yaml), ValidateOnly: false}).
 		Return(&dungeons.PutResult{Entry: &dungeons.Entry{Key: "crypt", YAML: []byte(yaml)}}, nil)
@@ -142,7 +142,7 @@ func (s *HandlerSuite) TestGetDungeon_Unknown_NotFound() {
 // TestGetDungeon_ReturnsTheStoredBytesVerbatim: comments and spacing come
 // back exactly, because the handler hands the registry's bytes through.
 func (s *HandlerSuite) TestGetDungeon_ReturnsTheStoredBytesVerbatim() {
-	yaml := "version: 1\nkey: crypt   # trailing spaces and a comment\n"
+	yaml := "version: 2\nkey: crypt   # trailing spaces and a comment\n"
 	s.registry.EXPECT().Get(gomock.Any(), "crypt").Return(&dungeons.Entry{Key: "crypt", YAML: []byte(yaml)}, nil)
 
 	resp, err := s.handler.GetDungeon(s.ctx, &authoringpb.GetDungeonRequest{Key: "crypt"})

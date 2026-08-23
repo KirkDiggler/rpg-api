@@ -79,13 +79,9 @@ type Summary struct {
 }
 
 // FieldError is one compile problem and the YAML path it is about
-// (authoring.v1alpha1.FieldError on the wire).
-//
-// TODO(256): rpg-toolkit's dungeonspec v1 stops at the first defect and
-// reports it as one error with no path, so today every Put that fails to
-// compile answers exactly one FieldError with an empty Path. dungeonspec v2
-// (rpg-project#256 T2) returns a path-addressed list; when it is pinned
-// here, the conversion in compileErrors grows to carry every entry's path.
+// (authoring.v1alpha1.FieldError on the wire): "regions[1].cells[0][3]",
+// "walls[3]", "place[7].blocks_los", "start"; a decode failure (unknown key,
+// second document) carries "line N"; empty means the file as a whole.
 type FieldError struct {
 	Path    string
 	Message string
@@ -402,11 +398,27 @@ func (r *FileRegistry) compileEntry(ctx context.Context, raw []byte) (*Entry, []
 	return entry, nil, nil
 }
 
-// compileErrors turns a compile refusal into the wire's list.
-//
-// TODO(256): one entry with no path today (dungeonspec v1 stops at the first
-// defect). v2's []FieldError maps one-to-one here.
+// compileErrors turns a compile refusal into the wire's list: a validation
+// failure carries every defect with its path (dungeonspec v2's
+// ValidationError), one-to-one; a decode failure, or a refusal the
+// composition made at construction, is one entry whose path is whatever the
+// toolkit put in front of the message (a `line N` for decode; empty
+// otherwise).
 func compileErrors(err error) []FieldError {
+	var verr *tkdungeonspec.ValidationError
+	if errors.As(err, &verr) {
+		out := make([]FieldError, len(verr.Errors))
+		for i, fe := range verr.Errors {
+			out[i] = FieldError{Path: fe.Path, Message: fe.Message}
+		}
+		return out
+	}
+
+	var fe tkdungeonspec.FieldError
+	if errors.As(err, &fe) {
+		return []FieldError{{Path: fe.Path, Message: fe.Message}}
+	}
+
 	return []FieldError{{Path: "", Message: err.Error()}}
 }
 

@@ -67,7 +67,7 @@ func (s *RegistrySuite) TestBoot_LoadsTheShippedTomb() {
 
 	list, err := r.List(s.ctx)
 	s.Require().NoError(err)
-	s.Equal([]dungeons.Summary{{Key: "reference-tomb", Name: "reference-tomb"}}, list)
+	s.Equal([]dungeons.Summary{{Key: "reference-tomb", Name: "The Reference Tomb"}}, list)
 
 	e, err := r.Get(s.ctx, dungeons.DefaultKey)
 	s.Require().NoError(err)
@@ -80,7 +80,7 @@ func (s *RegistrySuite) TestBoot_LoadsTheShippedTomb() {
 // broken file fails the boot naming itself, rather than vanishing from the
 // picker.
 func (s *RegistrySuite) TestBoot_RefusesAFileThatDoesNotCompile() {
-	s.write("broken.yaml", []byte("version: 1\nkey: broken\nvoid: nonsense\n"))
+	s.write("broken.yaml", []byte("version: 2\nkey: broken\nvoid: nonsense\n"))
 
 	_, err := dungeons.NewFileRegistry(s.dir, false, nil)
 	s.Require().Error(err)
@@ -203,7 +203,7 @@ func (s *RegistrySuite) TestPut_WritesThenGetReturnsTheBytesUnchanged() {
 
 	list, err := r.List(s.ctx)
 	s.Require().NoError(err)
-	s.Equal([]dungeons.Summary{{Key: "crypt", Name: "crypt"}, {Key: "reference-tomb", Name: "reference-tomb"}}, list)
+	s.Equal([]dungeons.Summary{{Key: "crypt", Name: "The Reference Tomb"}, {Key: "reference-tomb", Name: "The Reference Tomb"}}, list)
 
 	// A fresh registry over the same directory sees the write: the file is
 	// the truth, the map is a cache of it.
@@ -239,14 +239,43 @@ func (s *RegistrySuite) TestGet_ReturnsACopyNotTheRegistrysOwnState() {
 func (s *RegistrySuite) TestPut_AFileThatDoesNotCompileIsAnAnswerNotAnError() {
 	r := s.open(true)
 
-	res, err := r.Put(s.ctx, &dungeons.PutInput{Key: "crypt", YAML: []byte("version: 1\nkey: crypt\nvoid: nonsense\n")})
+	res, err := r.Put(s.ctx, &dungeons.PutInput{Key: "crypt", YAML: []byte("version: 2\nkey: crypt\nvoid: nonsense\n")})
 	s.Require().NoError(err, "a bad file is the author's problem, reported as a body")
-	s.Require().Len(res.Errors, 1)
+	s.Require().NotEmpty(res.Errors)
 	s.NotEmpty(res.Errors[0].Message)
 	s.Nil(res.Entry)
 
 	_, statErr := os.Stat(filepath.Join(s.dir, "crypt.yaml"))
 	s.True(os.IsNotExist(statErr), "nothing was written")
+}
+
+// TestPut_ErrorsNameTheThingTheyAreAbout pins the path contract the builder
+// draws from: each defect arrives with the YAML path it is about, and a file
+// with several defects answers all of them at once.
+func (s *RegistrySuite) TestPut_ErrorsNameTheThingTheyAreAbout() {
+	r := s.open(true)
+
+	// start on void, intensity out of range: two defects, two paths.
+	raw := bytes.Replace(s.rekeyed("crypt"), []byte("start: [1, 3]"), []byte("start: [99, 99]"), 1)
+	raw = bytes.Replace(raw, []byte("intensity: 0.6"), []byte("intensity: 1.2"), 1)
+	s.Require().NotEqual(s.rekeyed("crypt"), raw)
+
+	res, err := r.Put(s.ctx, &dungeons.PutInput{Key: "crypt", YAML: raw, ValidateOnly: true})
+	s.Require().NoError(err)
+	paths := make([]string, 0, len(res.Errors))
+	for _, fe := range res.Errors {
+		s.NotEmpty(fe.Message)
+		paths = append(paths, fe.Path)
+	}
+	s.Contains(paths, "start")
+	s.Contains(paths, "regions[0].lighting.intensity")
+	s.GreaterOrEqual(len(paths), 2, "every defect, not the first: %v", res.Errors)
+
+	// An unknown key is a decode defect and names its line.
+	res, err = r.Put(s.ctx, &dungeons.PutInput{Key: "crypt", YAML: append(s.rekeyed("crypt"), []byte("hieght: 8\n")...), ValidateOnly: true})
+	s.Require().NoError(err)
+	s.Require().NotEmpty(res.Errors)
+	s.Contains(res.Errors[0].Path, "line ")
 }
 
 func (s *RegistrySuite) TestPut_KeyMustEqualTheFilesKey() {
