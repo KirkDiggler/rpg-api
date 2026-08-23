@@ -192,10 +192,10 @@ func (mr *MockManagerMockRecorder) Status(ctx, in any) *gomock.Call {
 }
 
 // Story mocks base method.
-func (m *MockManager) Story(ctx context.Context, in *session.StoryInput) ([]session.StoryEntry, error) {
+func (m *MockManager) Story(ctx context.Context, in *session.StoryInput) ([]session.Event, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Story", ctx, in)
-	ret0, _ := ret[0].([]session.StoryEntry)
+	ret0, _ := ret[0].([]session.Event)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }

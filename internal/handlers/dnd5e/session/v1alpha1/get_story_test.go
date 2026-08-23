@@ -25,7 +25,7 @@ func TestGetStory_HappyPath(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mgr := sessionv1alpha1mock.NewMockManager(ctrl)
 	mgr.EXPECT().Story(gomock.Any(), &sdk.StoryInput{Session: "sess-1", Member: "char-1", FromSeq: 5}).Return(
-		[]sdk.StoryEntry{{Seq: 5}, {Seq: 6}}, nil,
+		[]sdk.Event{{Seq: 5, Kind: sdk.EventTurnEnded}, {Seq: 6, Kind: sdk.EventMoved}}, nil,
 	)
 
 	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
