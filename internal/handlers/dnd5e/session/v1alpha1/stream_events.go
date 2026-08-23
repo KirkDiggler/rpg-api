@@ -1,6 +1,8 @@
 package sessionv1alpha1
 
 import (
+	"log/slog"
+
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -46,8 +48,29 @@ func (h *Handler) StreamEvents(req *sessionpb.StreamEventsRequest, stream sessio
 				return nil
 			}
 			if err := stream.Send(eventToProto(evt)); err != nil {
+				// The trace logged below only ever covers a SUCCESSFUL
+				// Send -- logging beforehand would claim delivery for an
+				// event this handler never actually got out (a
+				// disconnected or full stream), which is worse than no
+				// trace at all: a one-look diagnosis that lies (Copilot,
+				// PR #821). This is that failure's own line instead.
+				slog.DebugContext(ctx, "session stream: send failed, event not forwarded",
+					"session", session, "recipient", member, "seq", evt.Seq, "kind", evt.Kind, "error", err)
 				return err
 			}
+			// The per-recipient send trace: session, recipient, seq, body
+			// kind, one line per event actually sent (after Send returns
+			// successfully -- see above). rpg-api#819 "Defect 2" --
+			// without this there is no way to tell "the forwarder never
+			// sent it" from "the client dropped it": the next missing beat
+			// is a one-look diagnosis against the client's own raw feed
+			// (rpg-dnd5e-web#740) once both traces exist side by side.
+			// Debug-level and unconditional (cheap: one log call per
+			// already-sent event) -- on by default in local dev
+			// (cmd/server/server.go raises the default slog level when
+			// AUTH_DEV_MODE is set), silent elsewhere unless raised.
+			slog.DebugContext(ctx, "session stream: forwarded event",
+				"session", session, "recipient", member, "seq", evt.Seq, "kind", evt.Kind)
 		}
 	}
 }

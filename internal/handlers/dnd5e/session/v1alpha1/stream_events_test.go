@@ -3,6 +3,8 @@ package sessionv1alpha1
 import (
 	"context"
 	"fmt"
+	"log/slog"
+	"sync"
 	"testing"
 	"time"
 
@@ -168,7 +170,7 @@ func TestStreamEvents_DoesNotReceiveEventsAddressedToOthers(t *testing.T) {
 		Session: "sess-1", Recipient: "char-1", Seq: 1, Kind: sdk.EventMoved,
 	})
 
-	broker.Publish(context.Background(), []sdk.Event{ //nolint:errcheck // Publish never errors (best-effort by contract)
+	broker.Publish(context.Background(), []sdk.Event{ //nolint:errcheck // "someone-else" has no live subscriber yet, so nothing can drop here (rpg-api#819: Publish can error now)
 		{Session: "sess-1", Recipient: "someone-else", Seq: 2, Kind: sdk.EventMoved},
 	})
 
@@ -198,7 +200,7 @@ func waitForPublishedEvent(t *testing.T, broker *sessionorch.Broker, stream *cap
 		case got := <-stream.sent:
 			return got
 		case <-ticker.C:
-			broker.Publish(context.Background(), []sdk.Event{evt}) //nolint:errcheck // best-effort by contract
+			broker.Publish(context.Background(), []sdk.Event{evt}) //nolint:errcheck // republished on a fast tick until it lands; a stray drop here just means another tick, not a broken test
 		case <-deadline:
 			t.Fatal("event never arrived on the stream")
 			return nil
@@ -300,4 +302,122 @@ func TestStreamEvents_ForwardsTypedBodyPerKind(t *testing.T) {
 			<-done
 		})
 	}
+}
+
+// capturingLogHandler records every slog.Record handed to it so a test can
+// assert on which trace line StreamEvents actually emitted. Copilot's own
+// finding on PR #821: the send trace used to log before stream.Send ran, so
+// it could claim an event was forwarded when Send actually failed (a
+// disconnected or full client stream) -- the two tests below pin the fix
+// that moved the trace to after a successful Send, with a distinct line for
+// a failed one.
+type capturingLogHandler struct {
+	mu      sync.Mutex
+	records []slog.Record
+}
+
+func (h *capturingLogHandler) Enabled(context.Context, slog.Level) bool { return true }
+
+func (h *capturingLogHandler) Handle(_ context.Context, r slog.Record) error {
+	h.mu.Lock()
+	h.records = append(h.records, r)
+	h.mu.Unlock()
+	return nil
+}
+
+func (h *capturingLogHandler) WithAttrs([]slog.Attr) slog.Handler { return h }
+func (h *capturingLogHandler) WithGroup(string) slog.Handler      { return h }
+
+func (h *capturingLogHandler) messages() []string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	out := make([]string, len(h.records))
+	for i, r := range h.records {
+		out[i] = r.Message
+	}
+	return out
+}
+
+// withCapturedLogs swaps slog's default logger for the duration of the test,
+// restoring the previous one on cleanup, so a test can assert on what
+// StreamEvents actually logged rather than merely that it compiled a line.
+func withCapturedLogs(t *testing.T) *capturingLogHandler {
+	t.Helper()
+	h := &capturingLogHandler{}
+	prev := slog.Default()
+	slog.SetDefault(slog.New(h))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+	return h
+}
+
+func TestStreamEvents_SendTrace_OnlyLogsAfterASuccessfulSend(t *testing.T) {
+	logs := withCapturedLogs(t)
+
+	ctrl := gomock.NewController(t)
+	broker := sessionorch.NewBroker()
+	h := &Handler{characters: ownedCharacterRepo(ctrl, "char-1", "alice"), broker: broker}
+
+	ctx, cancel := context.WithCancel(auth.WithPlayerID(context.Background(), "alice"))
+	defer cancel()
+	stream := newCapturingStream(ctx)
+
+	done := make(chan error, 1)
+	go func() {
+		done <- h.StreamEvents(&sessionpb.StreamEventsRequest{Session: "sess-1", Member: "char-1"}, stream)
+	}()
+
+	waitForPublishedEvent(t, broker, stream, sdk.Event{
+		Session: "sess-1", Recipient: "char-1", Seq: 1, Kind: sdk.EventMoved,
+	})
+
+	cancel()
+	<-done
+
+	require.Contains(t, logs.messages(), "session stream: forwarded event",
+		"a successfully sent event must be traced as forwarded")
+	require.NotContains(t, logs.messages(), "session stream: send failed, event not forwarded")
+}
+
+func TestStreamEvents_SendTrace_LogsFailureNotForwardedWhenSendErrors(t *testing.T) {
+	logs := withCapturedLogs(t)
+
+	ctrl := gomock.NewController(t)
+	broker := sessionorch.NewBroker()
+	h := &Handler{characters: ownedCharacterRepo(ctrl, "char-1", "alice"), broker: broker}
+
+	ctx := auth.WithPlayerID(context.Background(), "alice")
+	// A stream whose Send always fails: a zero-capacity channel nobody
+	// reads from means the non-blocking select inside Send can never take
+	// its success branch.
+	stream := &capturingStream{ctx: ctx, sent: make(chan *sessionpb.Event)}
+
+	done := make(chan error, 1)
+	go func() {
+		done <- h.StreamEvents(&sessionpb.StreamEventsRequest{Session: "sess-1", Member: "char-1"}, stream)
+	}()
+
+	// Republish on a tick (the same reason waitForPublishedEvent does --
+	// Subscribe happens inside the goroutine above with no other signal for
+	// when it has registered) until StreamEvents' own Send failure ends the
+	// call.
+	deadline := time.After(2 * time.Second)
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	evt := sdk.Event{Session: "sess-1", Recipient: "char-1", Seq: 1, Kind: sdk.EventMoved}
+waitForFailure:
+	for {
+		select {
+		case err := <-done:
+			require.Error(t, err, "a Send that always fails must end the stream with that error")
+			break waitForFailure
+		case <-ticker.C:
+			_ = broker.Publish(context.Background(), []sdk.Event{evt}) //nolint:errcheck // best-effort republish until StreamEvents observes it
+		case <-deadline:
+			t.Fatal("StreamEvents never returned")
+		}
+	}
+
+	require.Contains(t, logs.messages(), "session stream: send failed, event not forwarded",
+		"a Send that fails must be traced as such, never claimed as forwarded")
+	require.NotContains(t, logs.messages(), "session stream: forwarded event")
 }
