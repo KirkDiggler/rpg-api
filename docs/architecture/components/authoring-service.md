@@ -2,7 +2,7 @@
 name: authoring service + dungeon content registry
 description: internal/dungeons (the file registry every authored dungeon lives in) and AuthoringService v1alpha1 (PutDungeon / GetDungeon) on the session stack
 updated: 2026-08-23
-confidence: medium-high — rpg-api#806 branch on toolkit T1/T2/T3 pseudo-versions (encounter b955743, session bec5ff2); registry, handler and lobby contracts verified by passing unit + integration suites under -race; no browser walk yet
+confidence: medium-high — rpg-api#806 branch on toolkit T1/T2/T3 pseudo-versions (encounter v0.31.0, session bec5ff2); registry, handler and lobby contracts verified by passing unit + integration suites under -race; no browser walk yet
 ---
 
 # authoring service + dungeon content registry
@@ -93,7 +93,7 @@ step with the game.
 ## Toolkit pins
 
 Built on plan items T1/T2 (`rpg-toolkit` `feat/256-regions-dungeonspec-v2`,
-encounter `v0.30.9-0.20260823055203-b955743ff1a3`) and T3
+encounter `v0.31.0`) and T3
 (`feat/256-atlas-regions`, session `v0.21.12-0.20260823060107-bec5ff238f27`)
 as pseudo-versions; the merge re-pins to their tags. What they gave this
 component: dungeonspec **version 2** (regions, walls, doors, absolute
