@@ -114,6 +114,22 @@ func TestGetStoryMatchesLiveEvents(t *testing.T) {
 			"seq %d: live and catch-up must be byte-equal (rpg-api-protos#239)\n  live:  %v\n  story: %v",
 			liveEvt.GetSeq(), liveEvt, storyEvt)
 	}
+
+	// FromSeq:1 catches up from before alice's own Join beat -- the join
+	// beat's audience is "all current members including the joiner", so
+	// alice's own arrival (unlike skel-1's earlier spawn, which predates her
+	// membership and so never reaches her story) is hers to see. This is
+	// the shared-converter path proving the typed Joined body
+	// (session/v0.24.0, rpg-toolkit#1217) reaches GetStory, not only
+	// StreamEvents (which -- design rule 6 -- never carries the join beat
+	// live, so `live` above cannot exercise this on its own).
+	var sawAliceJoined bool
+	for _, e := range storyResp.GetEntries() {
+		if e.GetKind() == sessionpb.EventKind_EVENT_KIND_JOINED && e.GetJoined().GetMember() == "alice" {
+			sawAliceJoined = true
+		}
+	}
+	require.True(t, sawAliceJoined, "alice's own join beat must carry a typed Joined body")
 }
 
 // TestGetStoryAgedOutReturnsOutOfRange proves the OTHER half of GetStory's

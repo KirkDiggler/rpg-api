@@ -413,12 +413,17 @@ func eventsToProto(es []sdk.Event) []*sessionpb.Event {
 // typed fields, the same decode the SDK already did once, not a second
 // encoding of it.
 //
-// evt.Body stays nil for a kind with no typed body member (JOINED, EXITED,
-// ENDED, SCENE_OPENED, TICK, UNKNOWN) and for a beat this build's decoder
-// did not recognize -- session.Event.Body is nil in exactly those cases, so
-// the default arm below is correct by construction, not a fallback that
-// papers over an unhandled case. payload stays the passthrough carrier for
-// every one of those kinds.
+// evt.Body stays nil for a kind with no typed body member (ENDED,
+// SCENE_OPENED, TICK, UNKNOWN) and for a beat this build's decoder did not
+// recognize -- session.Event.Body is nil in exactly those cases, so the
+// default arm below is correct by construction, not a fallback that papers
+// over an unhandled case. payload stays the passthrough carrier for every
+// one of those kinds.
+//
+// JoinedBody/ExitedBody (session/v0.24.0, rpg-toolkit#1217, rpg-project#260
+// slice 4) carry the arriving/departing member -- the same field the wire
+// Joined/Exited messages added at protos v0.1.136 (oneof tags 17/18), so
+// GetStory gets both free through this same converter.
 func setEventBody(evt *sessionpb.Event, body sdk.EventBody) {
 	switch b := body.(type) {
 	case sdk.TurnEndedBody:
@@ -451,6 +456,10 @@ func setEventBody(evt *sessionpb.Event, body sdk.EventBody) {
 		evt.Body = &sessionpb.Event_FightEnded{FightEnded: &sessionpb.FightEnded{Cause: dissolveKindToProto(b.Cause)}}
 	case sdk.MovedBody:
 		evt.Body = &sessionpb.Event_Moved{Moved: &sessionpb.Moved{Member: b.Member, To: positionToProto(b.To)}}
+	case sdk.JoinedBody:
+		evt.Body = &sessionpb.Event_Joined{Joined: &sessionpb.Joined{Member: b.Member}}
+	case sdk.ExitedBody:
+		evt.Body = &sessionpb.Event_Exited{Exited: &sessionpb.Exited{Member: b.Member}}
 	default:
 		// nil (no typed body for this kind) or a body type this build does
 		// not recognize: leave evt.Body nil. payload stays the passthrough
