@@ -3,6 +3,8 @@ package session
 import (
 	"context"
 	"errors"
+	"fmt"
+	"log/slog"
 	"sync"
 
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
@@ -17,6 +19,49 @@ var ErrBrokerClosed = errors.New("session broker is closed")
 // (Manager.Story) is the source of truth, and a client that notices a gap in
 // Seq re-queries rather than relying on the stream never dropping.
 const subscriberBuffer = 32
+
+// ErrLagged is the sentinel a caller checks with errors.Is(err, ErrLagged)
+// for a cheap "did anything drop" boolean. The concrete *ErrSubscriberLagged
+// Publish actually returns wraps this and carries which (session, recipient,
+// seq, kind) lagged for anyone using errors.As instead.
+var ErrLagged = errors.New("session broker: subscriber lagged, event dropped")
+
+// ErrSubscriberLagged reports that Publish dropped one event because its
+// recipient's buffered channel was already full.
+//
+// RULED (Kirk, rpg-api#819, design rpg-project/ideas/stream-whole/design.md
+// §5): drop, never silently. The stream is a fan-out and must never block
+// the acting player's verb on a slow viewer -- the non-blocking send stays
+// -- but a drop that nobody can see is unrecoverable, since StreamEvents
+// deliberately carries no replay (rule 6: a client resyncs via GetStory on a
+// seq gap). Returning this from Publish is what lets the SDK's own
+// DeliveryReport.Failed become true instead of always being false.
+type ErrSubscriberLagged struct {
+	// Session and Recipient identify which (session, recipient) subscriber
+	// lagged -- the same key Subscribe was called with.
+	Session, Recipient string
+	// Seq and Kind identify the dropped event itself.
+	Seq  uint64
+	Kind sdk.EventKind
+	// Total is this subscriber's cumulative drop count, including this one --
+	// Broker.Dropped's own value at the moment of this drop, not just a
+	// count of drops within this one Publish call.
+	Total uint64
+}
+
+// Error renders the drop as a single line carrying everything a human needs
+// to correlate it against the per-recipient send trace on StreamEvents
+// (stream_events.go) -- same four fields, same order.
+func (e *ErrSubscriberLagged) Error() string {
+	return fmt.Sprintf(
+		"session broker: subscriber lagged, event dropped: session=%s recipient=%s seq=%d kind=%s (subscriber total dropped=%d)",
+		e.Session, e.Recipient, e.Seq, e.Kind, e.Total,
+	)
+}
+
+// Unwrap lets errors.Is(err, ErrLagged) match every drop against one
+// sentinel while errors.As still recovers the concrete fields above.
+func (e *ErrSubscriberLagged) Unwrap() error { return ErrLagged }
 
 // subKey addresses one (session, recipient) pair -- the exact audience the
 // SDK already projected each Event for (design rule 4: rpg-api must not
@@ -36,15 +81,16 @@ type subKey struct {
 // (session.Event doc: "An Event is per-recipient, not per-occurrence"). This
 // broker only routes.
 type Broker struct {
-	mu     sync.Mutex
-	nextID uint64
-	subs   map[subKey]map[uint64]chan sdk.Event
-	closed bool
+	mu      sync.Mutex
+	nextID  uint64
+	subs    map[subKey]map[uint64]chan sdk.Event
+	dropped map[subKey]uint64
+	closed  bool
 }
 
 // NewBroker returns an empty, ready-to-use Broker.
 func NewBroker() *Broker {
-	return &Broker{subs: make(map[subKey]map[uint64]chan sdk.Event)}
+	return &Broker{subs: make(map[subKey]map[uint64]chan sdk.Event), dropped: make(map[subKey]uint64)}
 }
 
 // Subscription is one live StreamEvents connection's event feed.
@@ -99,25 +145,66 @@ func (b *Broker) unsubscribe(key subKey, id uint64) {
 	}
 }
 
-// Publish implements sdk.EventStream. It fans each event out to the live
-// subscribers of its (Session, Recipient) pair. Non-blocking: a subscriber
-// whose buffered channel is full drops the event rather than stalling the
-// publisher -- required by the SDK's EventStream contract ("implementations
-// should therefore not block indefinitely") since a stalled Publish would
-// stall the verb that produced the events.
-func (b *Broker) Publish(_ context.Context, events []sdk.Event) error {
+// Dropped returns how many events Publish has ever dropped for one
+// (session, recipient) subscriber, cumulative since the broker was
+// constructed. Zero for a recipient that has never lagged.
+func (b *Broker) Dropped(session, recipient string) uint64 {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	return b.dropped[subKey{session: session, recipient: recipient}]
+}
+
+// Publish implements sdk.EventStream. It fans each event out to the live
+// subscribers of its (Session, Recipient) pair.
+//
+// Non-blocking: a subscriber whose buffered channel is full is skipped
+// rather than stalling the publisher -- required by the SDK's EventStream
+// contract ("implementations should therefore not block indefinitely")
+// since a stalled Publish would stall the verb that produced the events,
+// and RULED (Kirk, rpg-api#819): the stream is a fan-out and must never
+// block the acting player's verb on a lagging viewer. Every OTHER
+// subscriber in the batch -- same recipient's other connections, and every
+// other recipient entirely -- still gets its events; one lagging viewer
+// never starves the rest.
+//
+// The drop itself is never silent, though. Each one is counted per
+// (session, recipient), logged at warn with enough to correlate against the
+// StreamEvents send trace (session, recipient, seq, kind), and reported
+// back through the returned error so the SDK's own DeliveryReport.Failed
+// reflects reality (events.go: "a failure here is reported ... because the
+// story log remains the source of truth"). Multiple drops in one batch join
+// into a single error via errors.Join; errors.Is(err, ErrLagged) matches
+// the whole thing, and errors.As recovers each *ErrSubscriberLagged in turn.
+func (b *Broker) Publish(ctx context.Context, events []sdk.Event) error {
+	b.mu.Lock()
+	var drops []*ErrSubscriberLagged
 	for _, evt := range events {
 		key := subKey{session: evt.Session, recipient: evt.Recipient}
 		for _, ch := range b.subs[key] {
 			select {
 			case ch <- evt:
 			default:
+				b.dropped[key]++
+				drops = append(drops, &ErrSubscriberLagged{
+					Session: evt.Session, Recipient: evt.Recipient,
+					Seq: evt.Seq, Kind: evt.Kind, Total: b.dropped[key],
+				})
 			}
 		}
 	}
-	return nil
+	b.mu.Unlock()
+
+	if len(drops) == 0 {
+		return nil
+	}
+
+	errs := make([]error, len(drops))
+	for i, d := range drops {
+		slog.WarnContext(ctx, "session broker: subscriber lagged, event dropped",
+			"session", d.Session, "recipient", d.Recipient, "seq", d.Seq, "kind", d.Kind, "dropped_total", d.Total)
+		errs[i] = d
+	}
+	return errors.Join(errs...)
 }
 
 // Close shuts the broker down: every live subscription's channel is closed

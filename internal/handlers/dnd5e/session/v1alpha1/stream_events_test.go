@@ -168,7 +168,7 @@ func TestStreamEvents_DoesNotReceiveEventsAddressedToOthers(t *testing.T) {
 		Session: "sess-1", Recipient: "char-1", Seq: 1, Kind: sdk.EventMoved,
 	})
 
-	broker.Publish(context.Background(), []sdk.Event{ //nolint:errcheck // Publish never errors (best-effort by contract)
+	broker.Publish(context.Background(), []sdk.Event{ //nolint:errcheck // "someone-else" has no live subscriber yet, so nothing can drop here (rpg-api#819: Publish can error now)
 		{Session: "sess-1", Recipient: "someone-else", Seq: 2, Kind: sdk.EventMoved},
 	})
 
@@ -198,7 +198,7 @@ func waitForPublishedEvent(t *testing.T, broker *sessionorch.Broker, stream *cap
 		case got := <-stream.sent:
 			return got
 		case <-ticker.C:
-			broker.Publish(context.Background(), []sdk.Event{evt}) //nolint:errcheck // best-effort by contract
+			broker.Publish(context.Background(), []sdk.Event{evt}) //nolint:errcheck // republished on a fast tick until it lands; a stray drop here just means another tick, not a broken test
 		case <-deadline:
 			t.Fatal("event never arrived on the stream")
 			return nil
