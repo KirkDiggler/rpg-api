@@ -32,6 +32,13 @@ WORKDIR /home/appuser
 COPY --from=builder /app/server .
 RUN chown appuser:appuser /home/appuser/server
 
+# Shipped dungeon content (rpg-api#806). The registry loads every *.yaml
+# under RPG_CONTENT_DIR at boot and refuses to start on one that does not
+# compile; with the variable unset it reads ./content, which is this copy.
+# Mount a volume over /home/appuser/content (or point RPG_CONTENT_DIR
+# elsewhere) to author against a persistent directory.
+COPY --from=builder --chown=appuser:appuser /app/content ./content
+
 # Switch to the non-root user
 USER appuser
 

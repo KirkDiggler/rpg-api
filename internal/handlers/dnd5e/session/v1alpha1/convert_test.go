@@ -50,7 +50,7 @@ func TestHexLayoutToProto(t *testing.T) {
 // measure a bounding box to recover (rpg-toolkit#1140). Copying it across is
 // the whole job; omitting it would compile and draw the tomb sideways.
 func TestAtlasToProto_CarriesLayout(t *testing.T) {
-	out := atlasToProto(&sdk.Atlas{Grid: sdk.GridHex, Layout: sdk.HexLayoutPointyTop})
+	out := AtlasToProto(&sdk.Atlas{Grid: sdk.GridHex, Layout: sdk.HexLayoutPointyTop})
 	require.Equal(t, sessionpb.GridKind_GRID_KIND_HEX, out.GetGrid())
 	require.Equal(t, sessionpb.HexLayout_HEX_LAYOUT_POINTY_TOP, out.GetLayout())
 }
@@ -211,7 +211,7 @@ func TestFormedToProto_Populated(t *testing.T) {
 }
 
 func TestAtlasToProto_Nil(t *testing.T) {
-	got := atlasToProto(nil)
+	got := AtlasToProto(nil)
 	require.NotNil(t, got)
 	require.Empty(t, got.GetCells())
 	require.Empty(t, got.GetDoorways())
@@ -237,7 +237,7 @@ func TestAtlasToProto_Populated(t *testing.T) {
 			{Connection: "door-1", From: spatial.Position{X: 5, Y: 1}, To: spatial.Position{X: 6, Y: 1}},
 		},
 	}
-	got := atlasToProto(a)
+	got := AtlasToProto(a)
 	require.Equal(t, sessionpb.GridKind_GRID_KIND_SQUARE, got.GetGrid())
 	require.Len(t, got.GetCells(), 2)
 	require.Len(t, got.GetProps(), 2)

@@ -163,7 +163,7 @@ type FileRegistry struct {
 	mu      sync.RWMutex
 	entries map[string]*Entry
 
-	// putMu serialises Puts per key: two authors saving the same key land
+	// putMu serializes Puts per key: two authors saving the same key land
 	// one after the other, never interleaving the compile/write/swap of one
 	// with the other's. Different keys do not contend.
 	putMu    sync.Mutex
@@ -385,4 +385,22 @@ func joinErrors(ferrs []FieldError) string {
 		parts[i] = fe.Path + ": " + fe.Message
 	}
 	return strings.Join(parts, "; ")
+}
+
+// FindContentDir walks up from start looking for a content directory that
+// holds the default dungeon, and returns it. For tests and harnesses that run
+// from a package directory; the server reads RPG_CONTENT_DIR instead.
+func FindContentDir(start string) (string, error) {
+	dir := start
+	for {
+		candidate := filepath.Join(dir, "content")
+		if _, err := os.Stat(filepath.Join(candidate, DefaultKey+yamlExt)); err == nil {
+			return candidate, nil
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return "", fmt.Errorf("dungeons: no content/%s%s above %s", DefaultKey, yamlExt, start)
+		}
+		dir = parent
+	}
 }

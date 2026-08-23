@@ -21,5 +21,5 @@ func (h *Handler) GetAtlas(ctx context.Context, req *sessionpb.GetAtlasRequest) 
 		return nil, statusError(err)
 	}
 
-	return atlasToProto(atlas), nil
+	return AtlasToProto(atlas), nil
 }

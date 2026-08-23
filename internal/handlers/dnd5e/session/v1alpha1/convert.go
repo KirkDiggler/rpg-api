@@ -456,7 +456,7 @@ func setEventBody(evt *sessionpb.Event, body sdk.EventBody) {
 	}
 }
 
-// atlasToProto mirrors the ONE-MAP Atlas (design §0, live as of session
+// AtlasToProto mirrors the ONE-MAP Atlas (design §0, live as of session
 // v0.12.0): a flat set of cells, the things standing on them, the walls
 // between them, and every doorway -- not a list of rooms with anchors and
 // spans a client would have to reassemble.
@@ -468,7 +468,17 @@ func setEventBody(evt *sessionpb.Event, body sdk.EventBody) {
 // a coffin is walked around but seen over, a pile of bones is neither. Copying
 // the bools straight across is the whole job here; deciding anything about them
 // would be this layer inventing world state.
-func atlasToProto(a *sdk.Atlas) *sessionpb.GetAtlasResponse {
+//
+// Exported because it has two callers that MUST agree: GetAtlas, and the
+// AuthoringService's PutDungeon, whose answer is the same message so the
+// builder has no second geometry to keep in step with the game
+// (rpg-project#256, design §3a).
+//
+// TODO(256): copy Regions (GetAtlasResponse.regions = 9, AtlasRegion{id,
+// name, cells, archetype, lighting{intensity}}) once rulebooks/dnd5e/session
+// carries Atlas.Regions (plan T3, feat/256-atlas-regions). The proto field
+// is already on the wire at protos 5c06426; the SDK field is not yet tagged.
+func AtlasToProto(a *sdk.Atlas) *sessionpb.GetAtlasResponse {
 	if a == nil {
 		return &sessionpb.GetAtlasResponse{}
 	}

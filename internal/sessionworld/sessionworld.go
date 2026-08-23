@@ -158,8 +158,8 @@ func Compile(raw []byte) (*Dungeon, error) {
 	if err != nil {
 		return nil, fmt.Errorf("decode spec: %w", err)
 	}
-	if err := tkdungeonspec.Validate(decoded); err != nil {
-		return nil, fmt.Errorf("validate spec: %w", err)
+	if verr := tkdungeonspec.Validate(decoded); verr != nil {
+		return nil, fmt.Errorf("validate spec: %w", verr)
 	}
 	spec, err := tkdungeonspec.Compile(decoded)
 	if err != nil {

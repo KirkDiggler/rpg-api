@@ -1,9 +1,13 @@
 package lobby_test
 
 import (
+	"bytes"
 	"context"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/KirkDiggler/rpg-api/internal/dungeons/dungeonstest"
 
 	"github.com/alicebob/miniredis/v2"
 	goredis "github.com/redis/go-redis/v9"
@@ -12,6 +16,7 @@ import (
 	tkcharacter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 
+	"github.com/KirkDiggler/rpg-api/internal/dungeons"
 	"github.com/KirkDiggler/rpg-api/internal/entities"
 	lobbyorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/lobby"
 	sessionorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/session"
@@ -63,6 +68,7 @@ func (s *SessionStackSuite) SetupTest() {
 		JoinRefGenerator:     idgen.NewSequential("ref"),
 		EncounterIDGenerator: idgen.NewSequential("enc"),
 		SessionManager:       sessOrch.Manager,
+		Dungeons:             dungeonstest.Shipped(s.T()),
 	})
 	s.Require().NoError(err)
 	s.orch = orch
@@ -271,4 +277,84 @@ func (s *SessionStackSuite) TestStartEncounter_LobbyNotFound_Errors() {
 		PlayerID: "alice", LobbyID: "does-not-exist",
 	})
 	s.Require().ErrorIs(err, lobbyorch.ErrLobbyNotFound)
+}
+
+// TestStartEncounter_UnknownDungeonKeyIsRefused pins design §3c: a key the
+// registry does not have is ErrDungeonNotFound, never silently the tomb. The
+// lobby is untouched -- still WAITING, no encounter -- because the refusal
+// happens before anything is written.
+func (s *SessionStackSuite) TestStartEncounter_UnknownDungeonKeyIsRefused() {
+	s.seedCharacter("char-alice", "alice", "Alice")
+	s.seedReadyLobby("lobby-1", "alice")
+
+	_, err := s.orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		PlayerID: "alice", LobbyID: "lobby-1", DungeonKey: "nope",
+	})
+	s.Require().ErrorIs(err, lobbyorch.ErrDungeonNotFound)
+
+	data, err := s.lobbyRepo.Get(s.ctx, "lobby-1")
+	s.Require().NoError(err)
+	s.Equal(lobbyrepo.StatusWaiting, data.Status, "nothing was written")
+	s.Empty(data.EncounterID)
+}
+
+// TestStartEncounter_ExplicitDefaultKeyIsTheTomb: naming the tomb and naming
+// nothing are the same dungeon.
+func (s *SessionStackSuite) TestStartEncounter_ExplicitDefaultKeyIsTheTomb() {
+	s.seedCharacter("char-alice", "alice", "Alice")
+	s.seedReadyLobby("lobby-1", "alice")
+
+	out, err := s.orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		PlayerID: "alice", LobbyID: "lobby-1", DungeonKey: lobbyorch.DungeonKey(dungeons.DefaultKey),
+	})
+	s.Require().NoError(err)
+
+	_, err = s.sessOrch.Manager.Turn(s.ctx, &sdk.TurnInput{Session: out.EncounterID, Member: "skeleton-captain-1"})
+	s.Require().NoError(err, "the captain is in it, so it is the tomb")
+}
+
+// TestStartEncounter_PlaysADungeonTheAuthorPut is the builder's loop from the
+// lobby's side: a dungeon that arrived through Put (not the shipped tree) is
+// the one a session starts on, and its atlas reaches the wire.
+func (s *SessionStackSuite) TestStartEncounter_PlaysADungeonTheAuthorPut() {
+	registry, _ := dungeonstest.Scratch(s.T())
+	tomb, err := registry.Get(s.ctx, dungeons.DefaultKey)
+	s.Require().NoError(err)
+	crypt := bytes.Replace(tomb.YAML, []byte("key: reference-tomb"), []byte("key: crypt"), 1)
+	res, err := registry.Put(s.ctx, &dungeons.PutInput{Key: "crypt", YAML: crypt})
+	s.Require().NoError(err)
+	s.Require().Empty(res.Errors)
+
+	orch, err := lobbyorch.New(&lobbyorch.Config{
+		LobbyRepo:            s.lobbyRepo,
+		LobbyBroker:          s.broker,
+		CharacterRepo:        s.charRepo,
+		LobbyIDGenerator:     idgen.NewSequential("lobby"),
+		JoinRefGenerator:     idgen.NewSequential("ref"),
+		EncounterIDGenerator: idgen.NewSequential("enc"),
+		SessionManager:       s.sessOrch.Manager,
+		Dungeons:             registry,
+	})
+	s.Require().NoError(err)
+
+	s.seedCharacter("char-alice", "alice", "Alice")
+	s.seedReadyLobby("lobby-1", "alice")
+
+	out, err := orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		PlayerID: "alice", LobbyID: "lobby-1", DungeonKey: "crypt",
+	})
+	s.Require().NoError(err)
+
+	atlas, err := s.sessOrch.Manager.Atlas(s.ctx, &sdk.AtlasInput{Session: out.EncounterID})
+	s.Require().NoError(err)
+	s.NotEmpty(atlas.Cells, "the authored dungeon's floor reached the wire")
+	s.Require().NotEmpty(atlas.Doorways)
+	s.True(strings.HasPrefix(atlas.Doorways[0].Connection, "crypt"), "doorway %q is minted under the authored key, not the tomb's", atlas.Doorways[0].Connection)
+}
+
+func (s *SessionStackSuite) TestListDungeons_ReadsTheRegistry() {
+	out, err := s.orch.ListDungeons(s.ctx, &lobbyorch.ListDungeonsInput{})
+	s.Require().NoError(err)
+	s.Require().Len(out.Dungeons, 1)
+	s.Equal(dungeons.DefaultKey, out.Dungeons[0].Key)
 }

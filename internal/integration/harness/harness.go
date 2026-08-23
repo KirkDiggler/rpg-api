@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"os"
 	"sync"
 	"time"
 
@@ -21,6 +22,7 @@ import (
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
 	characterv2pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/character"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
+	"github.com/KirkDiggler/rpg-api/internal/dungeons"
 	apiv1alpha1handler "github.com/KirkDiggler/rpg-api/internal/handlers/api/v1alpha1"
 	lobbyhandler "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/lobby/v1alpha1"
 	character2 "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v1alpha1/character"
@@ -72,6 +74,11 @@ type TestServer struct {
 type Config struct {
 	// DevMode enables "Dev <player_id>" auth scheme for easier testing
 	DevMode bool
+
+	// ContentDir is the dungeon content directory the registry loads.
+	// Optional — defaults to the repo's content/ found by walking up from
+	// the working directory (read-only; tests never write the shipped tree).
+	ContentDir string
 }
 
 // DefaultConfig returns a config suitable for most integration tests.
@@ -299,6 +306,23 @@ func (ts *TestServer) wireServices(cfg *Config) error {
 	// LobbyService v1alpha1 -- broker and repo are stored on ts so tests can
 	// seed/inspect lobby state directly. StartEncounter builds onto
 	// ts.SessionOrch.Manager.
+	contentDir := cfg.ContentDir
+	if contentDir == "" {
+		wd, wdErr := os.Getwd()
+		if wdErr != nil {
+			return fmt.Errorf("content dir: getwd: %w", wdErr)
+		}
+		found, findErr := dungeons.FindContentDir(wd)
+		if findErr != nil {
+			return findErr
+		}
+		contentDir = found
+	}
+	registry, err := dungeons.NewFileRegistry(contentDir, false)
+	if err != nil {
+		return fmt.Errorf("content registry: %w", err)
+	}
+
 	ts.LobbyBroker = lobbyorch.NewBroker()
 	ts.LobbyRepo = lobbyrepo.NewInMemory()
 	lobbyOrch, err := lobbyorch.New(&lobbyorch.Config{
@@ -309,6 +333,7 @@ func (ts *TestServer) wireServices(cfg *Config) error {
 		JoinRefGenerator:     idgen.NewUUID("join"),
 		EncounterIDGenerator: idgen.NewUUID(""),
 		SessionManager:       sessOrch.Manager,
+		Dungeons:             registry,
 	})
 	if err != nil {
 		return fmt.Errorf("lobby orchestrator: %w", err)

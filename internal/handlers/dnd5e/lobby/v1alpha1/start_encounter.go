@@ -30,11 +30,9 @@ func (h *Handler) StartEncounter(
 	out, err := h.orch.StartEncounter(ctx, &lobbyorch.StartEncounterInput{
 		PlayerID: playerID,
 		LobbyID:  req.GetLobbyId(),
-		// DungeonKey selects which authored dungeon to build from (S0,
-		// rpg-api-protos v0.1.115). Empty leaves the orchestrator's
-		// existing caller -> env -> default precedence (effectiveKey,
-		// start_encounter.go) exactly as it was before this field
-		// existed — additive, every pre-S2 caller unaffected.
+		// DungeonKey selects which registered dungeon to build from
+		// (rpg-api#806). Empty means the reference tomb; a key the registry
+		// does not have is NotFound, never a silent fallback.
 		DungeonKey: lobbyorch.DungeonKey(req.GetDungeonKey()),
 	})
 	if err != nil {

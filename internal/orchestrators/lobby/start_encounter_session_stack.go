@@ -7,14 +7,13 @@ import (
 
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 
+	"github.com/KirkDiggler/rpg-api/internal/dungeons"
 	lobbyrepo "github.com/KirkDiggler/rpg-api/internal/repositories/lobby"
-	"github.com/KirkDiggler/rpg-api/internal/sessionworld"
 )
 
-// DungeonKey selects a named dungeon specification. Carried on
-// StartEncounterInput for parity with the proto's dungeon_key field; this
-// package's sole StartEncounter implementation does not consult it (see
-// its own doc comment below).
+// DungeonKey selects a registered dungeon by the key its file names itself
+// with (the `key:` line; internal/dungeons). Empty means
+// dungeons.DefaultKey.
 type DungeonKey string
 
 // StartEncounterInput carries the entity-typed StartEncounter request.
@@ -23,15 +22,10 @@ type StartEncounterInput struct {
 	PlayerID string
 	LobbyID  string
 
-	// DungeonKey mirrors the proto's dungeon_key field (rpg-api#688,
-	// rpg-api-protos v0.1.115). Unused today: this, the session stack's
-	// sole remaining StartEncounter implementation, always plays the one
-	// embedded reference-tomb dungeon regardless of what's supplied here
-	// — see this file's package-level doc for the content-authoring gap
-	// that leaves open. Kept on the struct rather than dropped so the
-	// handler's proto-to-input translation stays a straight field copy,
-	// and so a future content-key-aware session-stack path has somewhere
-	// to land without a handler change.
+	// DungeonKey is the proto's dungeon_key field (rpg-api#688). Empty
+	// plays dungeons.DefaultKey (the reference tomb); a key the registry
+	// does not have is ErrDungeonNotFound, never a silent fallback
+	// (design.md §3c, rpg-project#256).
 	DungeonKey DungeonKey
 }
 
@@ -51,38 +45,18 @@ type StartEncounterOutput struct {
 // LeaveLobby lands either before this snapshot — member excluded — or
 // after — FailedPrecondition, lobby-surface.md "Start/leave atomicity").
 //
-// # The party plays the reference tomb
+// # The party plays the dungeon the host picked
 //
-// This path used to seed every session from a single hardcoded room,
-// because there was no authored-content compiler for the new stack and
-// building one here would have been rpg-api inventing dungeon geometry.
-// That gap CLOSED: rpg-toolkit#1133 shipped rulebooks/dnd5e/encounter/
-// dungeonspec, whose own forcing case is the sentence this path
-// implements — reference-tomb.yaml compiles into a runnable world and a
-// player walks entrance -> hall -> tomb. internal/sessionworld holds the
-// compile and the one seam the compiler leaves to a host; see its package
-// comment for what that seam is and why it borrows the projection
-// instead of doing arithmetic.
-//
-// So a session now opens in three chambers with walls between them, a
-// garrison of skeletons holding the hall, and a captain behind a door
-// locked at DC 12 — a fixed, authored dungeon compiled fresh per call.
+// The world comes from the content registry (internal/dungeons): every file
+// under RPG_CONTENT_DIR, compiled once at boot through internal/sessionworld
+// on rpg-toolkit's rulebooks/dnd5e/encounter/dungeonspec, plus whatever the
+// AuthoringService has Put since. dungeon_key picks one; empty picks the
+// reference tomb; unknown is refused. ListDungeons reads the same registry,
+// which is how the picker and this call can never disagree about what
+// exists (rpg-api#806, rpg-project#256).
 //
 // # What is still narrow here, stated rather than implied
 //
-//   - ONE DUNGEON. StartEncounterInput.DungeonKey is carried on the
-//     struct (proto parity) but ignored — every call plays the tomb. The
-//     old-dialect authoring path (PutDungeon, internal/dungeonregistry,
-//     internal/orchestrators/authoring) and the old-dialect ListDungeons
-//     RPC were deleted alongside the rest of the old encounter stack
-//     (rpg-project#227) rather than kept alive for a compiler nothing
-//     else uses any more — a content-key-aware session-stack path (and
-//     whatever replaces ListDungeons/PutDungeon against the NEW
-//     rulebooks/dnd5e/encounter/dungeonspec compiler) is the next
-//     content-side piece of work, not something this rip-out papers
-//     over. LobbyService.ListDungeons is Unimplemented until then (its
-//     embedded UnimplementedLobbyServiceServer covers it — no orchestrator
-//     method exists for it any more).
 //   - NO MONSTER BEHAVIOR. session.Spawn takes no decider, by its own
 //     design ("behavior arrives with the wave that brings it"), so the
 //     garrison is placed, perceived and remembered correctly and does
@@ -103,12 +77,10 @@ type StartEncounterOutput struct {
 //
 // # One thing that is NOT a shortcut any more
 //
-// The old placeholder needed an InitiativeRoller and could only supply the
-// toolkit's own test fake, which meant a fight in it resolved turn order
-// party-then-monster. Nothing in this file supplies one: the capabilities
-// are construction-time only and live in internal/sessionworld, and the
-// session package supplies its own — including the sight range that
-// decides who is in contact — when it loads the world.
+// Nothing in this file supplies a capability: the construction-time ones
+// live in internal/sessionworld, and the session package supplies its own —
+// including the sight range that decides who is in contact — when it loads
+// the world.
 func (o *Orchestrator) StartEncounter(ctx context.Context, in *StartEncounterInput) (*StartEncounterOutput, error) {
 	if in == nil {
 		return nil, errors.New("lobby orchestrator: StartEncounterInput is required")
@@ -137,10 +109,18 @@ func (o *Orchestrator) StartEncounter(ctx context.Context, in *StartEncounterInp
 		}
 	}
 
-	dungeon, err := sessionworld.ReferenceTomb()
-	if err != nil {
-		return nil, err
+	key := string(in.DungeonKey)
+	if key == "" {
+		key = dungeons.DefaultKey
 	}
+	entry, err := o.dungeons.Get(ctx, key)
+	if err != nil {
+		if errors.Is(err, dungeons.ErrNotFound) {
+			return nil, fmt.Errorf("dungeon %q: %w", key, ErrDungeonNotFound)
+		}
+		return nil, fmt.Errorf("load dungeon %q: %w", key, err)
+	}
+	dungeon := entry.Dungeon
 	// Checked BEFORE anything is written, so a party too big for the dungeon's
 	// entrance is refused rather than half-seated: the alternative is a session
 	// that exists with some members in it and an error returned, which is the

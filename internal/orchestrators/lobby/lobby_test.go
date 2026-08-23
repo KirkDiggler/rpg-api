@@ -13,6 +13,8 @@ import (
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 
 	"github.com/KirkDiggler/rpg-api/internal/apierr"
+	"github.com/KirkDiggler/rpg-api/internal/dungeons"
+	"github.com/KirkDiggler/rpg-api/internal/dungeons/dungeonstest"
 	"github.com/KirkDiggler/rpg-api/internal/entities"
 	lobbyorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/lobby"
 	sessionorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/session"
@@ -61,6 +63,7 @@ func (s *LobbySuite) SetupTest() {
 		EncounterIDGenerator: idgen.NewSequential("enc"),
 		Now:                  func() time.Time { return time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC) },
 		SessionManager:       s.sessOrch.Manager,
+		Dungeons:             dungeonstest.Shipped(s.T()),
 	})
 	s.Require().NoError(err)
 	s.orch = orch
@@ -87,10 +90,10 @@ func (s *LobbySuite) newSessionOrchestrator() *sessionorch.Orchestrator {
 // for tests that need GetMyActiveLobby/AbandonEncounter to see a genuinely
 // live session without going through the full StartEncounter flow.
 func (s *LobbySuite) seedLiveSession(id string) {
-	dungeon, err := sessionworld.ReferenceTomb()
+	entry, err := dungeonstest.Shipped(s.T()).Get(s.ctx, dungeons.DefaultKey)
 	s.Require().NoError(err)
 	_, err = s.sessOrch.Manager.StartSession(s.ctx, &sdk.StartSessionInput{
-		Session: id, Encounter: id, World: dungeon.World,
+		Session: id, Encounter: id, World: entry.Dungeon.World,
 	})
 	s.Require().NoError(err)
 }
@@ -139,6 +142,7 @@ func (s *LobbySuite) newOrchestratorWithLobbyRepo(repo lobbyrepo.Repository) *lo
 		EncounterIDGenerator: idgen.NewSequential("enc"),
 		Now:                  func() time.Time { return time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC) },
 		SessionManager:       s.sessOrch.Manager,
+		Dungeons:             dungeonstest.Shipped(s.T()),
 	})
 	s.Require().NoError(err)
 	return orch

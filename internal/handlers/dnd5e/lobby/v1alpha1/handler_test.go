@@ -5,6 +5,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/KirkDiggler/rpg-api/internal/dungeons/dungeonstest"
+
 	"github.com/alicebob/miniredis/v2"
 	goredis "github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/suite"
@@ -70,6 +72,7 @@ func (s *HandlerSuite) SetupTest() {
 		EncounterIDGenerator: idgen.NewSequential("enc"),
 		Now:                  func() time.Time { return time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC) },
 		SessionManager:       sessOrch.Manager,
+		Dungeons:             dungeonstest.Shipped(s.T()),
 	})
 	s.Require().NoError(err)
 
