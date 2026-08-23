@@ -663,15 +663,34 @@ func TestEventToProto_TypedBodies(t *testing.T) {
 		require.Equal(t, 3.0, got.GetMoved().GetTo().GetX())
 		require.Equal(t, 4.0, got.GetMoved().GetTo().GetY())
 	})
+
+	t.Run("Joined", func(t *testing.T) {
+		got := eventToProto(sdk.Event{
+			Kind: sdk.EventJoined,
+			Body: sdk.JoinedBody{Member: "char-1"},
+		})
+		require.Equal(t, "char-1", got.GetJoined().GetMember())
+	})
+
+	t.Run("Exited", func(t *testing.T) {
+		got := eventToProto(sdk.Event{
+			Kind: sdk.EventExited,
+			Body: sdk.ExitedBody{Member: "char-1"},
+		})
+		require.Equal(t, "char-1", got.GetExited().GetMember())
+	})
 }
 
 // TestEventToProto_UntypedKind_BodyStaysNilPayloadCarries pins the other
 // half of the law: a kind with no typed body member (or a nil Body from the
 // SDK) leaves the wire's oneof unset, and payload -- never a decoded body --
-// is what a client for one of these kinds reads.
+// is what a client for one of these kinds reads. EventEnded stands in for
+// the kind here -- unlike EventJoined/EventExited (session/v0.24.0), it has
+// no typed session.EventBody at all, so this stays a clean "no arm claims
+// this kind" case rather than "the SDK happened to hand back a nil body".
 func TestEventToProto_UntypedKind_BodyStaysNilPayloadCarries(t *testing.T) {
-	got := eventToProto(sdk.Event{Kind: sdk.EventJoined, Payload: []byte("joined-payload"), Body: nil})
-	require.Equal(t, []byte("joined-payload"), got.GetPayload())
+	got := eventToProto(sdk.Event{Kind: sdk.EventEnded, Payload: []byte("ended-payload"), Body: nil})
+	require.Equal(t, []byte("ended-payload"), got.GetPayload())
 	require.Nil(t, got.GetTurnEnded())
 	require.Nil(t, got.GetDowned())
 	require.Nil(t, got.GetStruck())
@@ -679,4 +698,6 @@ func TestEventToProto_UntypedKind_BodyStaysNilPayloadCarries(t *testing.T) {
 	require.Nil(t, got.GetFightStarted())
 	require.Nil(t, got.GetFightEnded())
 	require.Nil(t, got.GetMoved())
+	require.Nil(t, got.GetJoined())
+	require.Nil(t, got.GetExited())
 }
