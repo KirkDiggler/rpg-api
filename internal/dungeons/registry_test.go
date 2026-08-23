@@ -156,6 +156,29 @@ func (s *RegistrySuite) TestPut_WritesThenGetReturnsTheBytesUnchanged() {
 	s.Equal(raw, e2.YAML)
 }
 
+// TestGet_ReturnsACopyNotTheRegistrysOwnState: mutating what Get (or Put)
+// handed back changes nothing the registry serves — Copilot's review point
+// on PR #820, kept as a test rather than a comment.
+func (s *RegistrySuite) TestGet_ReturnsACopyNotTheRegistrysOwnState() {
+	r := s.open(true)
+	buf := s.rekeyed("crypt")
+	res, err := r.Put(s.ctx, &dungeons.PutInput{Key: "crypt", YAML: buf})
+	s.Require().NoError(err)
+	buf[0] = '#'
+	res.Entry.Key = "tampered"
+	res.Entry.YAML[1] = '#'
+
+	got, err := r.Get(s.ctx, "crypt")
+	s.Require().NoError(err)
+	s.Equal("crypt", got.Key)
+	s.Equal(s.rekeyed("crypt"), got.YAML, "neither the caller's buffer nor the returned entry reaches the registry")
+
+	got.YAML[2] = '#'
+	again, err := r.Get(s.ctx, "crypt")
+	s.Require().NoError(err)
+	s.Equal(s.rekeyed("crypt"), again.YAML)
+}
+
 func (s *RegistrySuite) TestPut_AFileThatDoesNotCompileIsAnAnswerNotAnError() {
 	r := s.open(true)
 

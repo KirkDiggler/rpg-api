@@ -22,6 +22,7 @@
 package dungeons
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -92,9 +93,10 @@ type FieldError struct {
 // Entry is one registered dungeon: the bytes as stored, and what they
 // compile to.
 //
-// Treat an Entry as immutable once returned. YAML is the registry's own
-// slice, shared rather than copied because the only readers hand it to the
-// wire; a caller that wants to edit it copies first.
+// Get hands out a COPY (struct and YAML slice), and Put copies the caller's
+// YAML before keeping it, so no caller holds a reference into the registry's
+// own state. Dungeon is shared: it is the compiled world, read by
+// StartSession and never written by anyone after compile.
 type Entry struct {
 	Key  string
 	Name string
@@ -256,7 +258,15 @@ func (r *FileRegistry) Get(_ context.Context, key string) (*Entry, error) {
 		return nil, fmt.Errorf("dungeon %q: %w", key, ErrNotFound)
 	}
 
-	return e, nil
+	return e.clone(), nil
+}
+
+// clone is the copy Get returns: a fresh struct and a fresh YAML slice, so
+// a caller editing what it got back edits nothing the registry serves.
+func (e *Entry) clone() *Entry {
+	out := *e
+	out.YAML = bytes.Clone(e.YAML)
+	return &out
 }
 
 // Put implements Registry. See the package comment for the write discipline.
@@ -274,7 +284,11 @@ func (r *FileRegistry) Put(_ context.Context, in *PutInput) (*PutResult, error) 
 	unlock := r.lockKey(in.Key)
 	defer unlock()
 
-	entry, ferrs, err := compileEntry(in.YAML)
+	// The caller's slice is copied ONCE here and never touched again: what
+	// is compiled, written and served are the same bytes, and a caller
+	// reusing its buffer after Put returns cannot reach any of them.
+	raw := bytes.Clone(in.YAML)
+	entry, ferrs, err := compileEntry(raw)
 	if err != nil {
 		return nil, fmt.Errorf("dungeon %q: %w", in.Key, err)
 	}
@@ -288,7 +302,7 @@ func (r *FileRegistry) Put(_ context.Context, in *PutInput) (*PutResult, error) 
 		return &PutResult{Entry: entry}, nil
 	}
 
-	if err := r.writeAtomic(in.Key, in.YAML); err != nil {
+	if err := r.writeAtomic(in.Key, raw); err != nil {
 		return nil, fmt.Errorf("dungeon %q: %w", in.Key, err)
 	}
 
@@ -296,7 +310,7 @@ func (r *FileRegistry) Put(_ context.Context, in *PutInput) (*PutResult, error) 
 	r.entries[in.Key] = entry
 	r.mu.Unlock()
 
-	return &PutResult{Entry: entry}, nil
+	return &PutResult{Entry: entry.clone()}, nil
 }
 
 // lockKey acquires the per-key Put lock and returns its unlock.
