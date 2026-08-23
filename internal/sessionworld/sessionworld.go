@@ -232,10 +232,14 @@ func projectPlacements(spec tkdungeonspec.Compiled) ([]spatial.Position, []Monst
 		// encounter whose only purpose is to answer "where is this cell".
 		Sight: nobodySees{},
 		// No fight ever forms here (blind, thrown away), so no clock ever
-		// lands on an unplayed member -- alwaysPasses is a trivial, honest
-		// stand-in for the same reason Initiative/Standing/Sight above are
-		// (toolkit#1162, ADR-0043).
-		TurnDriver: alwaysPasses{},
+		// lands on an unplayed member -- tkencounter.PassDriver{} is a
+		// trivial, honest stand-in for the same reason Initiative/Standing/
+		// Sight above are (toolkit#1162, ADR-0043). Striker is the same
+		// story one seam over (rpg-project#254): a driven turn that never
+		// happens never needs to resolve a swing, so the construction-only
+		// refusal is the honest answer here too.
+		TurnDriver: tkencounter.PassDriver{},
+		Striker:    tkencounter.RefusingStriker{},
 		Retention:  tkencounter.RetentionUnbounded,
 		Field:      spec.Field,
 		Members:    members,
@@ -313,10 +317,12 @@ func buildWorld(field tkencounter.FieldInput) (*tkencounter.EncounterData, error
 		Sight:      nobodySees{},
 		// Same trivial stand-in as above: this world is empty at the moment
 		// it is built, so no clock ever lands on anyone here either
-		// (toolkit#1162, ADR-0043). The session package supplies its own
-		// TurnDriver -- session.Pass{} today -- when it loads this world to
-		// actually play it.
-		TurnDriver: alwaysPasses{},
+		// (toolkit#1162, ADR-0043). Striker is the same story one seam over
+		// (rpg-project#254). The session package supplies its own
+		// TurnDriver -- session.Behavior() today -- and its own Striker
+		// when it loads this world to actually play it.
+		TurnDriver: tkencounter.PassDriver{},
+		Striker:    tkencounter.RefusingStriker{},
 		Retention:  tkencounter.RetentionUnbounded,
 		Field:      field,
 		// SetupInput requires at least one declared ending and the compiler
@@ -345,15 +351,17 @@ const EndingWithdrawn = "withdrawn"
 // in a stack trace or a persisted blob.
 const probeEnding = "probe"
 
-// orderAsGiven, nobodyDown, nobodySees and alwaysPasses are four of the
-// capabilities NewEncounter refuses to default (rpg-toolkit#1033 for the
-// first three; alwaysPasses closes the fourth, TurnDriver, added by
-// toolkit#1162/ADR-0043: supplied, never assumed). alwaysPasses is
-// hand-written rather than reused from the toolkit -- see its own doc
-// comment and rpg-toolkit#1167.
+// orderAsGiven, nobodyDown and nobodySees are three of the capabilities
+// NewEncounter refuses to default (rpg-toolkit#1033). TurnDriver and
+// Striker close two more, added by toolkit#1162/ADR-0043 and
+// rpg-project#254 respectively (supplied, never assumed) -- both are
+// tkencounter.PassDriver{} and tkencounter.RefusingStriker{} directly,
+// exported by the toolkit (rpg-toolkit#1167 closed), so there is no
+// hand-written stand-in for either any more.
 //
-// All four are construction-time only here, which is what makes trivial
-// implementations honest rather than a hidden ruling -- see [buildWorld].
+// All three remaining hand-written types are construction-time only here,
+// which is what makes trivial implementations honest rather than a hidden
+// ruling -- see [buildWorld].
 type orderAsGiven struct{}
 
 // RollInitiative returns the members in the order given. Never reached for
@@ -385,25 +393,4 @@ func (nobodySees) Sight(members []tkencounter.MemberID) (map[tkencounter.MemberI
 	}
 
 	return out, nil
-}
-
-// alwaysPasses is hand-written because the toolkit does not export one:
-// sdk.Pass{} (what sdk.Config.TurnDriver is set to for the real, played
-// session in orchestrator.go, where sdk aliases rpg-toolkit's session
-// package) does NOT satisfy tkencounter.TurnDriver -- different signature
-// (Act(string) vs Act(tkencounter.MemberID)) and a different TurnOutcome
-// type -- the bridge between them (turnDriverSeam) is unexported to
-// rpg-toolkit's session package. tkencounter.Pass, confusingly similarly
-// named, is the TurnOutcome VALUE a driver returns, not a driver itself.
-// Filed rpg-toolkit#1167 to ask the toolkit to export one at the encounter
-// level; this type goes away when it does.
-type alwaysPasses struct{}
-
-// Act is never reached for either encounter this package builds, for the
-// same reason RollInitiative/Standing/Sight above never are: the probe is
-// blind and thrown away, and the real world starts with nobody in it, so no
-// fight can ever land a clock on a member here. Returning encounter.Pass is
-// the only outcome a v1 TurnDriver may return regardless (turndriver.go).
-func (alwaysPasses) Act(_ tkencounter.MemberID) (tkencounter.TurnOutcome, error) {
-	return tkencounter.Pass{}, nil
 }

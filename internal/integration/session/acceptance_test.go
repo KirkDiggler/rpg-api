@@ -9,6 +9,7 @@ package session_test
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -85,23 +86,6 @@ func (allSeeing) Sight(members []tkencounter.MemberID) (map[tkencounter.MemberID
 	}
 
 	return out, nil
-}
-
-// alwaysPasses is the trivial TurnDriver encounter.SetupInput has required
-// since toolkit#1162/ADR-0043 -- construction-time only, same as
-// allStanding/allSeeing above: this fixture builds the seed EncounterData
-// via NewEncounter and the session package supplies its own TurnDriver
-// (sdk.Pass{}, where sdk aliases rpg-toolkit's session package) when it
-// actually loads and plays this world, so what a monster's turn does here
-// never matters. Hand-written because the toolkit does not export a
-// trivial tkencounter.TurnDriver -- sdk.Pass{} does not satisfy the
-// interface (different Act signature/return type, and the adapter between
-// them is unexported) -- see rpg-toolkit#1167 and
-// internal/sessionworld/sessionworld.go's own copy of this type.
-type alwaysPasses struct{}
-
-func (alwaysPasses) Act(_ tkencounter.MemberID) (tkencounter.TurnOutcome, error) {
-	return tkencounter.Pass{}, nil
 }
 
 // seamWall is the wall between two side-by-side chambers, with one row left
@@ -186,7 +170,15 @@ func buildThreeRoomTomb(t *testing.T) *tkencounter.EncounterData {
 		Retention:  tkencounter.RetentionUnbounded,
 		Standing:   allStanding{},
 		Sight:      allSeeing{},
-		TurnDriver: alwaysPasses{},
+		// tkencounter.PassDriver{}/RefusingStriker{} are the toolkit's own
+		// trivial, exported stand-ins (encounter v0.30.6, rpg-toolkit#1167
+		// closed) -- construction-time only, same as allStanding/allSeeing
+		// above: this fixture builds the seed EncounterData via NewEncounter
+		// and the real, played session supplies its own TurnDriver
+		// (sdk.Behavior() today) and Striker when it loads and plays this
+		// world, so what a monster's turn does here never matters.
+		TurnDriver: tkencounter.PassDriver{},
+		Striker:    tkencounter.RefusingStriker{},
 		Field: tkencounter.FieldInput{
 			Canvas: tkencounter.CanvasInput{
 				// A tomb is cut from stone: you cannot see across the space
@@ -378,33 +370,41 @@ func TestAcceptanceLoop_WalkFightDissolveResync(t *testing.T) {
 	require.Contains(t, formed.GetOrder(), "alice")
 	require.Contains(t, formed.GetOrder(), "skel-1")
 
-	// -- close the reach gap, on her own turn --
+	// -- close as much of the reach gap as her own turn's movement allows --
 	//
 	// Sight forming the fight is not the same question as being within
 	// melee reach of what it revealed (rpg-toolkit#1010): the walk above
-	// stopped the moment the skeleton came into view, four cells short of
-	// it, and a swing from there is now correctly refused rather than
-	// silently allowed the way it was before this gate existed. This
-	// mirrors the toolkit's own Example_theFightThatStartsItself: a second
-	// Move call, now on the turn clock, still lets her walk (a fight does
-	// not freeze the mover, it prices the mover -- rpg-toolkit#1169) using
-	// the remainder of the very path already declared above as safety
-	// margin. Three cells (15 of a fighter's 30 ft) closes (15,3) to
-	// (18,3), one cell from the skeleton at (19,3).
+	// stopped the moment the skeleton came into view, and a swing from
+	// there is correctly refused rather than silently allowed the way it
+	// was before this gate existed. This mirrors the toolkit's own
+	// Example_theFightThatStartsItself: a second Move call, now on the
+	// turn clock, still lets her walk (a fight does not freeze the mover,
+	// it prices the mover -- rpg-toolkit#1169) using the remainder of the
+	// very path already declared above as safety margin -- but a turn's
+	// movement is BUDGETED (rpg-project#254's monster turn ships the same
+	// economy a player's own turn already had): six cells is the whole 30
+	// ft a fighter has this turn, and it is not enough by itself to close
+	// what sight revealed early. Correct: she does not finish this leg
+	// alone any more, and that is the point of the wave this suite is
+	// pinned to.
 	closeResp, err := h.handler.Move(ctx, &sessionpb.MoveRequest{
 		Session: "acceptance-run", Member: "alice",
-		Path: []*sessionpb.Position{{X: 16, Y: 3}, {X: 17, Y: 3}, {X: 18, Y: 3}},
+		Path: []*sessionpb.Position{
+			{X: 13, Y: 1}, {X: 13, Y: 2}, {X: 13, Y: 3}, {X: 14, Y: 3},
+			{X: 15, Y: 3}, {X: 16, Y: 3},
+		},
 	})
 	require.NoError(t, err)
-	require.Len(t, closeResp.GetSteps(), 3, "the whole approach must fit in one turn's movement")
+	require.Len(t, closeResp.GetSteps(), 6, "the whole of one turn's movement, and no more -- a fighter's 30 ft")
 
 	// -- GetView reports the skeleton with its typed Seen position (ADR-0041,
 	// rpg-toolkit#1157, session v0.21.2) -- through the real handler's
 	// sightingToProto, not a mock. Sight is what just formed the fight above,
 	// so this is the ordinary case Seen exists for: a live sighting produced
 	// by the sight channel whose payload decoded. The position asserted is
-	// skel-1's Spawn position (X:19, Y:3) -- it has not moved, since nothing
-	// in this fixture drives monster AI.
+	// skel-1's Spawn position (X:19, Y:3) -- it has not moved YET: nothing has
+	// ended a turn to give its own driver the chance (below is where that
+	// happens now that one is wired -- rpg-project#254 -- rather than never).
 	viewResp, err := h.handler.GetView(ctx, &sessionpb.GetViewRequest{
 		Session: "acceptance-run", Member: "alice",
 	})
@@ -421,7 +421,22 @@ func TestAcceptanceLoop_WalkFightDissolveResync(t *testing.T) {
 	require.Equal(t, 19.0, skeletonSighting.GetSeen().GetPosition().GetX())
 	require.Equal(t, 3.0, skeletonSighting.GetSeen().GetPosition().GetY())
 
-	// -- attack, and damage applies --
+	// -- end her own turn: she has no more movement and is not yet in reach,
+	// so passing it is the honest move -- and the skeleton's WHOLE driven
+	// turn (moved, moved, struck, turn-ended) runs synchronously inside this
+	// one EndTurn call (session.Behavior(), rpg-project#254). See
+	// TestSkeletonsDrivenTurnMovesAndStrikes for the dedicated proof of that
+	// sequence; this leg only needs the fact that it hands cleanly back.
+	endResp, err := h.handler.EndTurn(ctx, &sessionpb.EndTurnRequest{
+		Session: "acceptance-run", Member: "alice",
+	})
+	require.NoError(t, err)
+	require.Equal(t, "alice", endResp.GetNext(),
+		"a two-member fight wraps straight back to whoever led it once the skeleton's own turn ends")
+	require.True(t, endResp.GetRoundWrapped())
+
+	// -- attack, now in reach after the skeleton closed the rest of the gap
+	// to swing at her -- and damage applies --
 	attackResp, err := h.handler.Attack(ctx, &sessionpb.AttackRequest{
 		Session: "acceptance-run", Attacker: "alice", Target: "skel-1",
 	})
@@ -609,4 +624,106 @@ func TestAWalkCannotCrossAWallWhereThereIsNoDoorway(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 1.0, whereResp.GetPosition().GetX())
 	require.Equal(t, 2.0, whereResp.GetPosition().GetY())
+}
+
+// storyBeats reads a session's whole story for member and returns just the
+// "beat" name from each entry's JSON payload, in order -- the same
+// projection the toolkit's own MonsterTurnTestSuite uses (session's own
+// monster_turn_test.go), because StoryEntry carries no typed Kind (only
+// Event, on the stream, does -- design rule 4's payload-is-passthrough
+// corollary means a beat NAME still lives only in the payload here).
+func storyBeats(ctx context.Context, t *testing.T, h *sessionhandler.Handler, session, member string) []string {
+	t.Helper()
+	resp, err := h.GetStory(ctx, &sessionpb.GetStoryRequest{Session: session, Member: member, FromSeq: 0})
+	require.NoError(t, err)
+
+	beats := make([]string, len(resp.GetEntries()))
+	for i, e := range resp.GetEntries() {
+		var body struct {
+			Beat string `json:"beat"`
+		}
+		require.NoError(t, json.Unmarshal(e.GetPayload(), &body))
+		beats[i] = body.Beat
+	}
+	return beats
+}
+
+// TestSkeletonsDrivenTurnMovesAndStrikes is rpg-project#254's own acceptance
+// criterion made executable at the handler level: with session.Behavior()
+// wired as the SessionService's TurnDriver (internal/orchestrators/session),
+// a player's EndTurn on a fight with an unplayed monster drives that
+// monster's WHOLE turn synchronously -- closing the distance sight already
+// revealed, then swinging -- entirely inside the one EndTurn call, and hands
+// the fight cleanly back to whoever is left playing.
+//
+// Alice joins already inside the tomb room, three cells from the skeleton
+// and in its line of sight along the pillar gap row (buildThreeRoomTomb's
+// own geometry -- see its doc comment) -- Join's own first-light contact
+// check forms the fight on the spot, the same rule NewEncounter's does
+// (encounter.SetupInput's TurnDriver doc). The fixed maximum-face dice break
+// the tied initiative roll to alice (lexicographically first, the same
+// tie-break the toolkit's own tombManager tests pin), so it is HER turn
+// first: with no movement spent and no reach without it, ending immediately
+// is the honest move, and it is what puts the skeleton's own turn under
+// test.
+func TestSkeletonsDrivenTurnMovesAndStrikes(t *testing.T) {
+	h := newAcceptanceHarness(t)
+	ctx := auth.WithPlayerID(context.Background(), "player-alice")
+
+	_, err := h.charRepo.Create(context.Background(), characterrepo.CreateInput{
+		Character: &entities.Character{Data: armedFighter("alice", "player-alice")},
+	})
+	require.NoError(t, err)
+
+	world := buildThreeRoomTomb(t)
+	_, err = h.manager.Manager.StartSession(context.Background(), &sdk.StartSessionInput{
+		Session: "monster-turn-run", Encounter: "tomb-encounter", World: world,
+	})
+	require.NoError(t, err)
+	_, err = h.manager.Manager.Spawn(context.Background(), &sdk.SpawnInput{
+		Session: "monster-turn-run", ID: "skel-1", Ref: refs.Monsters.Skeleton().String(),
+		Position: spatial.Position{X: 19, Y: 3},
+	})
+	require.NoError(t, err)
+
+	joinResp, err := h.handler.Join(ctx, &sessionpb.JoinRequest{
+		Session: "monster-turn-run", Member: "alice",
+		Position: &sessionpb.Position{X: 16, Y: 3}, // inside the tomb, on the pillar gap row, three cells out
+	})
+	require.NoError(t, err)
+	require.NotNil(t, joinResp.GetFormed(), "in sight and in range at first light: the fight forms on Join")
+	require.Equal(t, []string{"alice", "skel-1"}, joinResp.GetFormed().GetOrder(),
+		"the tied roll breaks to alice -- it must be her turn first, not the skeleton's")
+
+	before := len(storyBeats(ctx, t, h.handler, "monster-turn-run", "alice"))
+
+	// She has nothing to do this turn -- three cells out with no movement
+	// spent, and no reach without it -- so passing is the honest move, and
+	// what happens next belongs entirely to the skeleton's own driven turn.
+	endResp, err := h.handler.EndTurn(ctx, &sessionpb.EndTurnRequest{
+		Session: "monster-turn-run", Member: "alice",
+	})
+	require.NoError(t, err, "the skeleton's whole turn -- move, strike, end -- drives inside this one call")
+
+	// Isolated to what THIS EndTurn call itself produced: alice's own
+	// end-turn beat, then the skeleton's approach and swing.
+	beats := storyBeats(ctx, t, h.handler, "monster-turn-run", "alice")[before:]
+	require.NotEmpty(t, beats)
+	require.Equal(t, "turn-ended", beats[0], "alice's own end-turn beat comes first")
+
+	// At least one moved beat (closing the three-cell gap), exactly one
+	// struck-or-missed beat (the swing), and the skeleton's own turn ending
+	// last, handing back to alice -- "moved beats to adjacent, then
+	// struck/missed, then turn_ended{next: player}", the brief's own words.
+	middle := beats[1 : len(beats)-1]
+	require.NotEmpty(t, middle, "the skeleton had three cells to close before it could swing")
+	for _, b := range middle[:len(middle)-1] {
+		require.Equal(t, "moved", b, "everything before the swing is the approach")
+	}
+	swing := middle[len(middle)-1]
+	require.Contains(t, []string{"struck", "missed"}, swing)
+	require.Equal(t, "turn-ended", beats[len(beats)-1], "the skeleton's own turn closes back to alice")
+
+	require.Equal(t, "alice", endResp.GetNext(), "turn_ended{next: player} -- the fight hands cleanly back")
+	require.True(t, endResp.GetRoundWrapped(), "a two-member fight wraps straight back to whoever led it")
 }

@@ -34,7 +34,7 @@ func (s *ReferenceTombSuite) load() *tkencounter.Encounter {
 	enc, err := tkencounter.LoadEncounter(&tkencounter.LoadEncounterInput{
 		Data:       *s.tomb.World,
 		Initiative: orderAsGiven{}, Standing: nobodyDown{}, Sight: nobodySees{},
-		TurnDriver: alwaysPasses{},
+		TurnDriver: tkencounter.PassDriver{}, Striker: tkencounter.RefusingStriker{},
 	})
 	s.Require().NoError(err, "and the world it produced must be one the composition accepts back")
 
@@ -190,6 +190,81 @@ func (s *ReferenceTombSuite) TestAPartyCanAllStandSomewhereDistinct() {
 		seen[seat] = true
 		s.Equal("entrance", s.regionOf(seat), "a party stands together at the way in")
 	}
+}
+
+// monsterFirst is an InitiativeRoller rigged for exactly one purpose: hand
+// the skeleton the very first turn regardless of contact-detection order, so
+// TestAFightsUnplayedTurnPassesWithoutTouchingTheStriker can force the one
+// moment this package's own construction-time TurnDriver/Striker pair can
+// ever run -- "first light" (encounter.SetupInput's TurnDriver doc: "a
+// fight can form at first light with an unplayed member first in
+// initiative"). Not general purpose, and does not need to be: the test that
+// uses it only ever has these two members.
+type monsterFirst struct{}
+
+func (monsterFirst) RollInitiative(_ []tkencounter.MemberID) ([]tkencounter.MemberID, error) {
+	return []tkencounter.MemberID{"skel-1", "fighter"}, nil
+}
+
+// allSeeing gives every member a sight range large enough that two adjacent
+// members always see each other. nobodySees's range of zero -- this
+// package's own construction-time stand-in everywhere else, correct for a
+// throwaway placement probe and an empty real world -- would never let a
+// fight form at all here, which is exactly wrong for what this test needs
+// to prove.
+type allSeeing struct{}
+
+func (allSeeing) Sight(members []tkencounter.MemberID) (map[tkencounter.MemberID]int, error) {
+	out := make(map[tkencounter.MemberID]int, len(members))
+	for _, id := range members {
+		out[id] = 1_000_000
+	}
+	return out, nil
+}
+
+// TestAFightsUnplayedTurnPassesWithoutTouchingTheStriker is the acceptance
+// proof rpg-project#254 asks this package for: tkencounter.PassDriver{} and
+// tkencounter.RefusingStriker{} are not merely types that satisfy
+// SetupInput's now-required TurnDriver/Striker fields, they are the RIGHT
+// pair together at the one moment this package's own construction-only
+// encounters can ever reach a driven monster turn.
+//
+// A monster and a player start adjacent and in sight of each other, with
+// initiative rigged to hand the monster the first turn. That forms the
+// fight AND drives the monster's unplayed turn synchronously inside
+// NewEncounter -- see [Encounter.form]'s call to driveMonsterTurns --
+// before this test's own code runs a single line past construction. If
+// PassDriver ever tried to swing, RefusingStriker would refuse with
+// ErrRefusingStriker and NewEncounter would return that error instead of an
+// encounter, so a bare successful construction already is most of the
+// proof; the clock assertion below is the rest of it, confirming the
+// skeleton's turn did not just fail to error but actually passed.
+func TestAFightsUnplayedTurnPassesWithoutTouchingTheStriker(t *testing.T) {
+	enc, err := tkencounter.NewEncounter(&tkencounter.SetupInput{
+		Initiative: monsterFirst{},
+		Standing:   nobodyDown{},
+		Sight:      allSeeing{},
+		TurnDriver: tkencounter.PassDriver{},
+		Striker:    tkencounter.RefusingStriker{},
+		Retention:  tkencounter.RetentionUnbounded,
+		Field: tkencounter.FieldInput{
+			Canvas: tkencounter.CanvasInput{Void: tkencounter.VoidIsOpaque()},
+			Rooms:  []tkencounter.RoomInput{{ID: "room", Width: 4, Height: 4}},
+		},
+		Members: []tkencounter.MemberInput{
+			{ID: "fighter", Kind: tkencounter.KindPlayer, Room: "room", Position: spatial.Position{X: 0, Y: 0}},
+			{ID: "skel-1", Kind: tkencounter.KindMonster, Room: "room", Position: spatial.Position{X: 1, Y: 0}},
+		},
+		Endings: []tkencounter.EndingInput{{Key: "withdrawn", Trigger: tkencounter.TriggerExternal{}}},
+	})
+	require.NoError(t, err,
+		"constructing the world must still succeed -- if RefusingStriker had been reached this is exactly where it would have failed")
+
+	clock, err := enc.ClockOf(&tkencounter.ClockOfInput{Member: "fighter"})
+	require.NoError(t, err)
+	require.Equal(t, tkencounter.ClockTurn, clock.Kind, "adjacent and in sight, a fight must have formed at first light")
+	require.Equal(t, tkencounter.MemberID("fighter"), clock.Active,
+		"the skeleton went first and PassDriver passed its turn immediately -- the turn already belongs to the player nobody has acted for yet")
 }
 
 // TestNoSeatIsAlsoSomebodyElsesCell guards a guarantee this package DEPENDS ON
