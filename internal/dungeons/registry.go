@@ -312,7 +312,7 @@ func (r *FileRegistry) Put(ctx context.Context, in *PutInput) (*PutResult, error
 		return &PutResult{Entry: entry}, nil
 	}
 
-	if err := r.writeAtomic(in.Key, raw); err != nil {
+	if err := writeAtomic(r.dir, in.Key, raw); err != nil {
 		return nil, fmt.Errorf("dungeon %q: %w", in.Key, err)
 	}
 
@@ -340,8 +340,8 @@ func (r *FileRegistry) lockKey(key string) func() {
 // writeAtomic writes dir/<key>.yaml through a temp file in the same
 // directory and a rename, so a reader (or a crash) never sees a half-written
 // dungeon: the old file is intact until the new one is whole.
-func (r *FileRegistry) writeAtomic(key string, raw []byte) error {
-	tmp, err := os.CreateTemp(r.dir, "."+key+".*.tmp")
+func writeAtomic(dir, key string, raw []byte) error {
+	tmp, err := os.CreateTemp(dir, "."+key+".*.tmp")
 	if err != nil {
 		return fmt.Errorf("create temp file: %w", err)
 	}
@@ -362,7 +362,7 @@ func (r *FileRegistry) writeAtomic(key string, raw []byte) error {
 		cleanup()
 		return fmt.Errorf("close temp file: %w", err)
 	}
-	if err := os.Rename(tmpName, filepath.Join(r.dir, key+yamlExt)); err != nil {
+	if err := os.Rename(tmpName, filepath.Join(dir, key+yamlExt)); err != nil {
 		cleanup()
 		return fmt.Errorf("rename into place: %w", err)
 	}

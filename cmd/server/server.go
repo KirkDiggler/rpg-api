@@ -62,16 +62,21 @@ const lobbyTTL = 24 * time.Hour
 const (
 	// envContentDir is the directory of authored dungeon files the registry
 	// loads at boot and the AuthoringService writes to. Defaults to
-	// defaultContentDir relative to the working directory, which is where
-	// the repo (and the image) keep the shipped reference tomb.
+	// dungeons.ShippedContentDir relative to the working directory, which is
+	// where the repo (and the image) keep the shipped reference tomb; when
+	// set, the shipped tomb is seeded into it if absent.
 	envContentDir = "RPG_CONTENT_DIR"
-	// defaultContentDir is envContentDir's fallback.
-	defaultContentDir = "content"
 	// envAuthoringEnabled set to "1" registers the AuthoringService
 	// (PutDungeon writes into envContentDir). Off by default: the registry
 	// still loads and serves content, and ListDungeons/GetDungeon remain
 	// ungated reads.
 	envAuthoringEnabled = "RPG_AUTHORING_ENABLED"
+	// envShippedContentDir overrides where the shipped tomb is seeded FROM
+	// when envContentDir is set and empty. Defaults to
+	// dungeons.ShippedContentDir; the image sets it to an immutable copy
+	// outside the working directory so a volume mounted over ./content
+	// cannot hide it.
+	envShippedContentDir = "RPG_SHIPPED_CONTENT_DIR"
 )
 
 var (
@@ -253,7 +258,23 @@ func runServer(_ *cobra.Command, _ []string) error {
 		if authoringEnabled {
 			return fmt.Errorf("%s=1 requires %s to be set", envAuthoringEnabled, envContentDir)
 		}
-		contentDir = defaultContentDir
+		contentDir = dungeons.ShippedContentDir
+	} else {
+		// A mounted content directory starts EMPTY on a fresh box; the
+		// registry refuses a directory without the tomb, so seed it from the
+		// copy the image ships. Never overwrites an existing file.
+		shippedDir := os.Getenv(envShippedContentDir)
+		if shippedDir == "" {
+			shippedDir = dungeons.ShippedContentDir
+		}
+		seeded, seedErr := dungeons.SeedDefault(contentDir, shippedDir)
+		if seedErr != nil {
+			return fmt.Errorf("content registry: %w", seedErr)
+		}
+		if seeded {
+			//nolint:gosec // operator-supplied env var, logged once at boot
+			log.Printf("content registry: seeded %s/%s.yaml from the shipped copy", contentDir, dungeons.DefaultKey)
+		}
 	}
 	// sessionOrch.Manager is the AtlasProjector: Manager.AtlasOf loads the
 	// world the way StartSession would and projects it the way GetAtlas
