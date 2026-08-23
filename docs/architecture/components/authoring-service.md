@@ -91,10 +91,13 @@ Plan items T1/T2/T3 (`rpg-toolkit` branches `feat/256-regions-dungeonspec-v2`,
 `feat/256-atlas-regions`) are built in parallel with this. Until they are
 pinned here:
 
-- `Entry.Atlas` / `PutDungeonResponse.atlas` is **nil/unset** — producing a
-  `session.Atlas` for a dungeon with no session behind it needs an exported
-  projection from the session package (`session.AtlasOf(world)`, requested of
-  T3). rpg-api does not reimplement the projection.
+- `Entry.Atlas` / `PutDungeonResponse.atlas` is **nil/unset** — the registry
+  takes an `AtlasProjector` (`AtlasOf(ctx, world) (*session.Atlas, error)`,
+  which T3's `session.Manager.AtlasOf` satisfies structurally — a Manager
+  method rather than a free function because loading a world needs the
+  capabilities only the Manager supplies) and projects every entry once at
+  boot and at `Put`. `cmd/server` passes `nil` until T3 is pinned, then
+  `sessionOrch.Manager`. rpg-api does not reimplement the projection.
 - `FieldError.path` is always empty — dungeonspec v1 stops at the first
   defect with one un-pathed error. v2's path-addressed `Validate` maps
   one-to-one in `compileErrors`.

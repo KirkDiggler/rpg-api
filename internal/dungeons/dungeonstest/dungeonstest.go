@@ -34,7 +34,7 @@ func ContentDir(t testing.TB) string {
 func Shipped(t testing.TB) *dungeons.FileRegistry {
 	t.Helper()
 
-	r, err := dungeons.NewFileRegistry(ContentDir(t), false)
+	r, err := dungeons.NewFileRegistry(ContentDir(t), false, nil)
 	if err != nil {
 		t.Fatalf("dungeonstest: %v", err)
 	}
@@ -60,7 +60,7 @@ func Scratch(t testing.TB) (*dungeons.FileRegistry, string) {
 		copyFile(t, filepath.Join(src, e.Name()), filepath.Join(dst, e.Name()))
 	}
 
-	r, err := dungeons.NewFileRegistry(dst, true)
+	r, err := dungeons.NewFileRegistry(dst, true, nil)
 	if err != nil {
 		t.Fatalf("dungeonstest: %v", err)
 	}

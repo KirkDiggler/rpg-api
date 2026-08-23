@@ -33,6 +33,7 @@ import (
 	"strings"
 	"sync"
 
+	tkencounter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter"
 	tkdungeonspec "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter/dungeonspec"
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 
@@ -109,14 +110,24 @@ type Entry struct {
 	Dungeon *sessionworld.Dungeon
 
 	// Atlas is the map the game plays from, as GetAtlas would report it for a
-	// session started on this dungeon — PutDungeon's answer.
+	// session started on this dungeon — PutDungeon's answer. Produced by the
+	// registry's AtlasProjector (the session Manager), never computed here:
+	// the projection from the composition's map to the wire's is the
+	// toolkit's and lives in exactly one place there
+	// (symmetric-bugs-hide-from-roundtrips).
 	//
-	// TODO(256): nil until rulebooks/dnd5e/session exports a projection from
-	// a world with no session behind it (requested of plan T3 as
-	// session.AtlasOf). rpg-api does not compute it itself: the projection
-	// from the composition's map to the wire's is the toolkit's and lives in
-	// exactly one place there (symmetric-bugs-hide-from-roundtrips).
+	// TODO(256): nil while the registry is built without a projector — until
+	// rulebooks/dnd5e/session's Manager.AtlasOf lands (plan T3,
+	// feat/256-atlas-regions) and is pinned here.
 	Atlas *sdk.Atlas
+}
+
+// AtlasProjector turns a compiled world into the atlas a session on it would
+// serve. *session.Manager satisfies it structurally once plan T3 lands
+// (Manager.AtlasOf, same validation-load path as StartSession and the same
+// projection Manager.Atlas uses).
+type AtlasProjector interface {
+	AtlasOf(ctx context.Context, world *tkencounter.EncounterData) (*sdk.Atlas, error)
 }
 
 // PutInput is one PutDungeon call.
@@ -160,6 +171,7 @@ type Registry interface {
 type FileRegistry struct {
 	dir       string
 	authoring bool
+	projector AtlasProjector
 
 	// mu guards entries. Reads take it shared; Put swaps under it exclusively.
 	mu      sync.RWMutex
@@ -183,7 +195,11 @@ var _ Registry = (*FileRegistry)(nil)
 //
 // authoring decides whether Put writes; with it false Put returns
 // ErrAuthoringDisabled and the directory is never written to.
-func NewFileRegistry(dir string, authoring bool) (*FileRegistry, error) {
+//
+// projector produces each Entry's Atlas. TODO(256): nil is accepted (Atlas
+// stays nil) only until the session Manager's AtlasOf is pinned; it then
+// becomes required.
+func NewFileRegistry(dir string, authoring bool, projector AtlasProjector) (*FileRegistry, error) {
 	if dir == "" {
 		return nil, errors.New("dungeons: content directory is required")
 	}
@@ -195,6 +211,7 @@ func NewFileRegistry(dir string, authoring bool) (*FileRegistry, error) {
 	r := &FileRegistry{
 		dir:       dir,
 		authoring: authoring,
+		projector: projector,
 		entries:   make(map[string]*Entry),
 		putLocks:  make(map[string]*sync.Mutex),
 	}
@@ -208,7 +225,7 @@ func NewFileRegistry(dir string, authoring bool) (*FileRegistry, error) {
 		if err != nil {
 			return nil, fmt.Errorf("dungeons: read %s: %w", path, err)
 		}
-		entry, ferrs, err := compileEntry(raw)
+		entry, ferrs, err := r.compileEntry(context.Background(), raw)
 		if err != nil {
 			return nil, fmt.Errorf("dungeons: %s: %w", path, err)
 		}
@@ -270,7 +287,7 @@ func (e *Entry) clone() *Entry {
 }
 
 // Put implements Registry. See the package comment for the write discipline.
-func (r *FileRegistry) Put(_ context.Context, in *PutInput) (*PutResult, error) {
+func (r *FileRegistry) Put(ctx context.Context, in *PutInput) (*PutResult, error) {
 	if in == nil {
 		return nil, errors.New("dungeons: PutInput is required")
 	}
@@ -288,7 +305,7 @@ func (r *FileRegistry) Put(_ context.Context, in *PutInput) (*PutResult, error) 
 	// is compiled, written and served are the same bytes, and a caller
 	// reusing its buffer after Put returns cannot reach any of them.
 	raw := bytes.Clone(in.YAML)
-	entry, ferrs, err := compileEntry(raw)
+	entry, ferrs, err := r.compileEntry(ctx, raw)
 	if err != nil {
 		return nil, fmt.Errorf("dungeon %q: %w", in.Key, err)
 	}
@@ -362,7 +379,7 @@ func (r *FileRegistry) writeAtomic(key string, raw []byte) error {
 
 // compileEntry compiles raw into an Entry. A file that is not a dungeon comes
 // back as FieldErrors (nil entry, nil error); anything else is an error.
-func compileEntry(raw []byte) (*Entry, []FieldError, error) {
+func (r *FileRegistry) compileEntry(ctx context.Context, raw []byte) (*Entry, []FieldError, error) {
 	d, err := sessionworld.Compile(raw)
 	if err != nil {
 		if errors.Is(err, tkdungeonspec.ErrBadSpec) {
@@ -371,14 +388,18 @@ func compileEntry(raw []byte) (*Entry, []FieldError, error) {
 		return nil, nil, err
 	}
 
-	return &Entry{
-		Key:     d.Key,
-		Name:    d.Name,
-		YAML:    raw,
-		Dungeon: d,
-		// TODO(256): Atlas stays nil until session.AtlasOf lands (plan T3).
-		Atlas: nil,
-	}, nil, nil
+	entry := &Entry{Key: d.Key, Name: d.Name, YAML: raw, Dungeon: d}
+	if r.projector != nil {
+		atlas, err := r.projector.AtlasOf(ctx, d.World)
+		if err != nil {
+			// A world that compiled but will not load is not the author's
+			// file being wrong; it is the stack disagreeing with itself.
+			return nil, nil, fmt.Errorf("project atlas: %w", err)
+		}
+		entry.Atlas = atlas
+	}
+
+	return entry, nil, nil
 }
 
 // compileErrors turns a compile refusal into the wire's list.

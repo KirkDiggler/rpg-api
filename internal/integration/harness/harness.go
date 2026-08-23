@@ -318,7 +318,7 @@ func (ts *TestServer) wireServices(cfg *Config) error {
 		}
 		contentDir = found
 	}
-	registry, err := dungeons.NewFileRegistry(contentDir, false)
+	registry, err := dungeons.NewFileRegistry(contentDir, false, nil)
 	if err != nil {
 		return fmt.Errorf("content registry: %w", err)
 	}

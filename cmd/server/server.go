@@ -245,7 +245,10 @@ func runServer(_ *cobra.Command, _ []string) error {
 		}
 		contentDir = defaultContentDir
 	}
-	registry, err := dungeons.NewFileRegistry(contentDir, authoringEnabled)
+	// TODO(256): pass sessionOrch.Manager as the AtlasProjector once the
+	// session SDK's Manager.AtlasOf is pinned (plan T3); until then entries
+	// carry no Atlas and PutDungeonResponse.atlas is unset.
+	registry, err := dungeons.NewFileRegistry(contentDir, authoringEnabled, nil)
 	if err != nil {
 		return fmt.Errorf("content registry: %w", err)
 	}

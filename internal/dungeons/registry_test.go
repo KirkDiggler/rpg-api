@@ -3,6 +3,7 @@ package dungeons_test
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,6 +11,10 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/suite"
+
+	tkencounter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter"
+	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
+	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
 
 	"github.com/KirkDiggler/rpg-api/internal/dungeons"
 )
@@ -52,7 +57,7 @@ func (s *RegistrySuite) rekeyed(key string) []byte {
 }
 
 func (s *RegistrySuite) open(authoring bool) *dungeons.FileRegistry {
-	r, err := dungeons.NewFileRegistry(s.dir, authoring)
+	r, err := dungeons.NewFileRegistry(s.dir, authoring, nil)
 	s.Require().NoError(err)
 	return r
 }
@@ -77,7 +82,7 @@ func (s *RegistrySuite) TestBoot_LoadsTheShippedTomb() {
 func (s *RegistrySuite) TestBoot_RefusesAFileThatDoesNotCompile() {
 	s.write("broken.yaml", []byte("version: 1\nkey: broken\nvoid: nonsense\n"))
 
-	_, err := dungeons.NewFileRegistry(s.dir, false)
+	_, err := dungeons.NewFileRegistry(s.dir, false, nil)
 	s.Require().Error(err)
 	s.Contains(err.Error(), filepath.Join(s.dir, "broken.yaml"), "the error names the file")
 	s.Contains(err.Error(), "does not compile")
@@ -86,7 +91,7 @@ func (s *RegistrySuite) TestBoot_RefusesAFileThatDoesNotCompile() {
 func (s *RegistrySuite) TestBoot_RefusesAFileWhoseNameIsNotItsKey() {
 	s.write("not-the-key.yaml", s.rekeyed("something-else"))
 
-	_, err := dungeons.NewFileRegistry(s.dir, false)
+	_, err := dungeons.NewFileRegistry(s.dir, false, nil)
 	s.Require().ErrorIs(err, dungeons.ErrKeyMismatch)
 	s.Contains(err.Error(), "not-the-key.yaml")
 }
@@ -95,7 +100,7 @@ func (s *RegistrySuite) TestBoot_RefusesADirectoryWithoutTheDefaultDungeon() {
 	s.Require().NoError(os.Remove(filepath.Join(s.dir, "reference-tomb.yaml")))
 	s.write("other.yaml", s.rekeyed("other"))
 
-	_, err := dungeons.NewFileRegistry(s.dir, false)
+	_, err := dungeons.NewFileRegistry(s.dir, false, nil)
 	s.Require().Error(err)
 	s.Contains(err.Error(), dungeons.DefaultKey)
 }
@@ -105,6 +110,58 @@ func (s *RegistrySuite) TestBoot_IgnoresFilesThatAreNotYAML() {
 	s.write(".reference-tomb.123.tmp", []byte("a leftover temp file"))
 
 	s.open(false)
+}
+
+// countingProjector stands in for the session Manager's AtlasOf: it records
+// how many worlds it was asked to project and answers a recognizable atlas,
+// or fails on demand.
+type countingProjector struct {
+	calls int
+	fail  error
+}
+
+func (p *countingProjector) AtlasOf(_ context.Context, world *tkencounter.EncounterData) (*sdk.Atlas, error) {
+	p.calls++
+	if p.fail != nil {
+		return nil, p.fail
+	}
+	if world == nil {
+		return nil, errors.New("nil world")
+	}
+	return &sdk.Atlas{Grid: sdk.GridHex, Cells: []spatial.Position{{X: 1, Y: 2}}}, nil
+}
+
+// TestProjector_EveryEntryCarriesTheAtlasTheSessionWouldServe: the atlas on
+// an entry comes from the projector, once per compile, at boot and at Put.
+func (s *RegistrySuite) TestProjector_EveryEntryCarriesTheAtlasTheSessionWouldServe() {
+	p := &countingProjector{}
+	r, err := dungeons.NewFileRegistry(s.dir, true, p)
+	s.Require().NoError(err)
+	s.Equal(1, p.calls, "the shipped tomb was projected once at boot")
+
+	e, err := r.Get(s.ctx, dungeons.DefaultKey)
+	s.Require().NoError(err)
+	s.Require().NotNil(e.Atlas)
+	s.Equal([]spatial.Position{{X: 1, Y: 2}}, e.Atlas.Cells)
+
+	res, err := r.Put(s.ctx, &dungeons.PutInput{Key: "crypt", YAML: s.rekeyed("crypt"), ValidateOnly: true})
+	s.Require().NoError(err)
+	s.Require().NotNil(res.Entry.Atlas, "validate_only still answers the atlas — it is the builder's preview")
+	s.Equal(2, p.calls)
+}
+
+// TestProjector_AWorldThatWillNotLoadIsNotTheAuthorsProblem: a compiled file
+// whose world the session refuses is an error (boot refusal / Internal), not
+// a FieldError — the stack disagreed with itself, the author did nothing.
+func (s *RegistrySuite) TestProjector_AWorldThatWillNotLoadIsNotTheAuthorsProblem() {
+	_, err := dungeons.NewFileRegistry(s.dir, true, &countingProjector{fail: errors.New("invalid world")})
+	s.Require().Error(err)
+	s.Contains(err.Error(), "project atlas")
+	s.Contains(err.Error(), "reference-tomb.yaml")
+
+	r, err := dungeons.NewFileRegistry(s.dir, true, nil)
+	s.Require().NoError(err)
+	_ = r
 }
 
 func (s *RegistrySuite) TestGet_UnknownKeyIsNotFound() {
