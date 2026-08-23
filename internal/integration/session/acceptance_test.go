@@ -708,7 +708,14 @@ func TestSkeletonsDrivenTurnMovesAndStrikes(t *testing.T) {
 	// Isolated to what THIS EndTurn call itself produced: alice's own
 	// end-turn beat, then the skeleton's approach and swing.
 	beats := storyBeats(ctx, t, h.handler, "monster-turn-run", "alice")[before:]
-	require.NotEmpty(t, beats)
+	// At least four beats or the slicing below is meaningless (and, for
+	// fewer than two, out of bounds): alice's own turn-ended, one moved
+	// closing the three-cell gap, the swing, and the skeleton's own
+	// turn-ended. Asserted up front, with the actual trace on failure,
+	// rather than letting a short trace panic on the slice or pass a
+	// vacuous loop silently (Copilot, PR #817).
+	require.GreaterOrEqual(t, len(beats), 4,
+		"expected alice's turn-ended, >=1 moved, the swing, and the skeleton's turn-ended; got %v", beats)
 	require.Equal(t, "turn-ended", beats[0], "alice's own end-turn beat comes first")
 
 	// At least one moved beat (closing the three-cell gap), exactly one
