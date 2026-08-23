@@ -35,9 +35,15 @@ RUN chown appuser:appuser /home/appuser/server
 # Shipped dungeon content (rpg-api#806). The registry loads every *.yaml
 # under RPG_CONTENT_DIR at boot and refuses to start on one that does not
 # compile; with the variable unset it reads ./content, which is this copy.
-# Mount a volume over /home/appuser/content (or point RPG_CONTENT_DIR
-# elsewhere) to author against a persistent directory.
+#
+# To author against a persistent directory, point RPG_CONTENT_DIR at a
+# mounted volume (e.g. /content). If it lacks reference-tomb.yaml the server
+# seeds it from the IMMUTABLE copy at /usr/share/rpg-api/content -- kept
+# outside the working directory on purpose, so a volume mounted over
+# /home/appuser/content can never hide the seed (rpg-project#256).
 COPY --from=builder --chown=appuser:appuser /app/content ./content
+COPY --from=builder /app/content /usr/share/rpg-api/content
+ENV RPG_SHIPPED_CONTENT_DIR=/usr/share/rpg-api/content
 
 # Switch to the non-root user
 USER appuser

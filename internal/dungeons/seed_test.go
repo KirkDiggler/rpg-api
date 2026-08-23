@@ -78,3 +78,19 @@ func (s *RegistrySuite) TestSeed_MissingShippedFileNamesBothPaths() {
 	s.Require().NoError(err)
 	s.Empty(entries, "nothing was written")
 }
+
+// TestSeed_SameDirectoryIsANoOp: RPG_CONTENT_DIR pointing at the shipped
+// tree itself (or a mount over it) has nothing to seed from; the registry's
+// own check decides whether the tomb is there.
+func (s *RegistrySuite) TestSeed_SameDirectoryIsANoOp() {
+	seeded, err := dungeons.SeedDefault(s.dir, s.dir)
+	s.Require().NoError(err)
+	s.False(seeded)
+
+	empty := s.T().TempDir()
+	seeded, err = dungeons.SeedDefault(empty, empty)
+	s.Require().NoError(err)
+	s.False(seeded, "an empty dir that is its own source is not an error here")
+	_, err = dungeons.NewFileRegistry(empty, false, dungeonstest.Projector(s.T()))
+	s.Require().Error(err, "the registry still refuses it by name")
+}

@@ -71,6 +71,12 @@ const (
 	// still loads and serves content, and ListDungeons/GetDungeon remain
 	// ungated reads.
 	envAuthoringEnabled = "RPG_AUTHORING_ENABLED"
+	// envShippedContentDir overrides where the shipped tomb is seeded FROM
+	// when envContentDir is set and empty. Defaults to
+	// dungeons.ShippedContentDir; the image sets it to an immutable copy
+	// outside the working directory so a volume mounted over ./content
+	// cannot hide it.
+	envShippedContentDir = "RPG_SHIPPED_CONTENT_DIR"
 )
 
 var (
@@ -257,7 +263,11 @@ func runServer(_ *cobra.Command, _ []string) error {
 		// A mounted content directory starts EMPTY on a fresh box; the
 		// registry refuses a directory without the tomb, so seed it from the
 		// copy the image ships. Never overwrites an existing file.
-		seeded, seedErr := dungeons.SeedDefault(contentDir, dungeons.ShippedContentDir)
+		shippedDir := os.Getenv(envShippedContentDir)
+		if shippedDir == "" {
+			shippedDir = dungeons.ShippedContentDir
+		}
+		seeded, seedErr := dungeons.SeedDefault(contentDir, shippedDir)
 		if seedErr != nil {
 			return fmt.Errorf("content registry: %w", seedErr)
 		}
