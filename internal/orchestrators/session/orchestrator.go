@@ -54,12 +54,18 @@ type Config struct {
 // player" -- toolkit#1162, ADR-0043 (rpg-toolkit encounter#1163). Without
 // one, EndTurn parks the clock on a monster forever: nothing can act for it,
 // since EndTurn requires Member to be the active member and the host binds
-// Member to the authenticated human, who does not own the monster. v1
-// supplies sdk.Pass{} -- every unplayed member's turn simply passes, driven
-// through synchronously at the moment the clock lands on them. The Monster
-// AI initiative (rpg-project#201) replaces this value through the exact
-// same sdk.Config.TurnDriver seam, with no change to session's own shape.
-var turnDriver = sdk.Pass{}
+// Member to the authenticated human, who does not own the monster.
+//
+// sdk.Behavior() is the reference driver (rpg-project#254, design
+// rpg-project/ideas/monster-turn/design.md): a monster attacks the closest
+// standing player if one is in reach, otherwise closes the distance,
+// otherwise passes -- driven through synchronously at the moment the
+// clock lands on them, the same as v1's sdk.Pass{} was. It wraps
+// rulebooks/dnd5e/behavior.Basic entirely inside the toolkit; this package
+// never imports encounter or behavior to get it. The Monster AI initiative
+// (rpg-project#201) replaces this value through the exact same
+// sdk.Config.TurnDriver seam, with no change to session's own shape.
+var turnDriver = sdk.Behavior()
 
 // Orchestrator owns the toolkit session.Manager and the Broker StreamEvents
 // subscribes against. Both are exported for handlers to use directly:
