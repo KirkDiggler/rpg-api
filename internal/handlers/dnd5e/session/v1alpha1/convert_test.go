@@ -256,6 +256,9 @@ func TestAtlasToProto_Populated(t *testing.T) {
 	require.Equal(t, 1.0, pillar.GetAt().GetX())
 	require.True(t, pillar.GetBlocksMovement())
 	require.True(t, pillar.GetBlocksLineOfSight())
+	require.Empty(t, pillar.GetFacing())
+	require.Zero(t, pillar.GetOffsetX())
+	require.Zero(t, pillar.GetOffsetY())
 
 	// The discriminating half. Both answers must arrive as FALSE rather than
 	// as a prop that simply is not in a list: "blocks neither" and "nobody
