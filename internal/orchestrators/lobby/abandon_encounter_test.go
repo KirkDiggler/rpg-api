@@ -92,13 +92,11 @@ func (s *LobbySuite) TestAbandonEncounter_AlreadyEnded_ErrEncounterAlreadyEnded(
 // package's own get_my_active_lobby.go queries, now end-to-end against a
 // real abandoned session.
 //
-// This does NOT re-prove the old encounter stack's arcade-recovery chain
-// (a fresh StartEncounter reviving a dead character at full HP/rage
-// charges): nothing on the session stack performs that restoration today
-// (see start_encounter_session_stack.go's doc comment) — that gap is
-// real, not silently dropped from this suite, and is called out in the
-// PR description rather than papered over with a test that would now be
-// asserting behavior that doesn't exist.
+// This does NOT re-prove the arcade-recovery chain (a fresh
+// StartEncounter reviving a dead character at full HP/rage charges): that
+// lives on the session stack since rpg-api#828 (RestoreForLaunch at
+// launch seating) and is proven by the SessionStackSuite's own
+// TestStartEncounter_LaunchRestoresEveryMemberFully, not here.
 func (s *LobbySuite) TestAbandonEncounter_ThenGetMyActiveLobby_ReturnsEmpty() {
 	s.seedStartedLobbyWithLiveSession("lobby-a6", "alice", "char-alice", "enc-a6")
 

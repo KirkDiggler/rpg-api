@@ -3,6 +3,7 @@ package lobby_test
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -13,7 +14,11 @@ import (
 	goredis "github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/suite"
 
+	coreResources "github.com/KirkDiggler/rpg-toolkit/core/resources"
 	tkcharacter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/conditions"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/refs"
+	dnd5eResources "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/resources"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/saves"
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 
@@ -380,11 +385,22 @@ func (s *SessionStackSuite) TestStartEncounter_LaunchRestoresEveryMemberFully() 
 		}},
 	})
 	s.Require().NoError(err)
+	unconscious, err := json.Marshal(conditions.UnconsciousData{
+		Ref:         refs.Conditions.Unconscious(),
+		CharacterID: "char-p2",
+		Failures:    3,
+		Dead:        true,
+	})
+	s.Require().NoError(err)
 	_, err = s.charRepo.Create(s.ctx, characterrepo.CreateInput{
 		Character: &entities.Character{Data: &tkcharacter.Data{
 			ID: "char-p2", PlayerID: "p2", Name: "Dead", Level: 1,
 			HitPoints: 0, MaxHitPoints: 12, ArmorClass: 10,
 			DeathSaveState: &saves.DeathSaveState{Failures: 3, Dead: true},
+			Conditions:     []json.RawMessage{unconscious},
+			Resources: map[coreResources.ResourceKey]tkcharacter.RecoverableResourceData{
+				dnd5eResources.RageCharges: {Current: 0, Maximum: 2},
+			},
 		}},
 	})
 	s.Require().NoError(err)
@@ -403,4 +419,7 @@ func (s *SessionStackSuite) TestStartEncounter_LaunchRestoresEveryMemberFully() 
 	s.Require().NoError(err)
 	s.Equal(12, got.Character.Data.HitPoints, "a dead member launches at full HP")
 	s.Nil(got.Character.Data.DeathSaveState, "death-save state does not survive a launch")
+	s.Empty(got.Character.Data.Conditions, "the Unconscious blob is stripped, not left to re-hydrate")
+	s.Equal(2, got.Character.Data.Resources[dnd5eResources.RageCharges].Current,
+		"spent resource pools refill at launch")
 }

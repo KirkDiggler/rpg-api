@@ -9,6 +9,7 @@ import (
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 
 	"github.com/KirkDiggler/rpg-api/internal/dungeons"
+	"github.com/KirkDiggler/rpg-api/internal/entities"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	lobbyrepo "github.com/KirkDiggler/rpg-api/internal/repositories/lobby"
 )
@@ -139,18 +140,29 @@ func (o *Orchestrator) StartEncounter(ctx context.Context, in *StartEncounterInp
 	// exists so a storage failure refuses the launch cleanly, and before
 	// Join so the SDK seats the restored record. Mid-run reloads must
 	// never do this; see RestoreForLaunch's contract.
+	// Two phases: load-and-restore every record in memory FIRST (so a
+	// missing or malformed character refuses the launch before anything is
+	// written), then persist. A failure mid-persist still leaves earlier
+	// members durably restored with no session started — defined behavior,
+	// not a bug: RestoreForLaunch is idempotent and only ever moves a
+	// record toward the exact state the next successful launch wants, so a
+	// retry (or a launch of a different lobby) re-runs it as a no-op.
+	restored := make([]*entities.Character, 0, len(members))
 	for _, m := range members {
 		got, err := o.characterRepo.Get(ctx, characterrepo.GetInput{ID: m.CharacterID})
 		if err != nil {
 			return nil, fmt.Errorf("load character %q for launch restore: %w", m.CharacterID, err)
 		}
-		if got.Character == nil || got.Character.Data == nil {
+		if got == nil || got.Character == nil || got.Character.Data == nil {
 			return nil, fmt.Errorf("character %q has no data to restore at launch", m.CharacterID)
 		}
 		if tkchar.RestoreForLaunch(got.Character.Data) {
-			if _, err := o.characterRepo.Update(ctx, characterrepo.UpdateInput{Character: got.Character}); err != nil {
-				return nil, fmt.Errorf("persist launch restore for character %q: %w", m.CharacterID, err)
-			}
+			restored = append(restored, got.Character)
+		}
+	}
+	for _, ch := range restored {
+		if _, err := o.characterRepo.Update(ctx, characterrepo.UpdateInput{Character: ch}); err != nil {
+			return nil, fmt.Errorf("persist launch restore for character %q: %w", ch.Data.ID, err)
 		}
 	}
 

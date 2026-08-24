@@ -187,6 +187,10 @@ ahead of any rpg-api consumer:
   also refreshes tracked resource pools (rage charges, ki, hit dice) to maximum on
   every fresh seating, ungated by HP — closes rpg-api#671's remaining gap (HP/death-
   save recovery landed with rpg-toolkit#786; rage charges stayed spent until now).
+  *[Updated by rpg-api#828: on the session stack the function is
+  `RestoreForLaunch` (renamed by rpg-toolkit#1225, HP heal ungated — the wounded
+  restore too, not just the downed) and it runs ONLY at `StartEncounter` launch
+  seating, never per-fight — fights form by sighting and never reseat.]*
 
 Both landed on the API side unplanned — discovered mid-implementation while bumping
 the toolkit dependency #663 needed anyway, folded into the same PR per house rule
@@ -203,7 +207,10 @@ client interaction on `AbandonEncounter`, `GetMyActiveLobby` returns fully empty
 afterward, and a fresh `CreateLobby`->`StartEncounter` immediately reseats the
 player — and, via the orchestrator test suite's capstone, a dead-and-drained
 character (0 HP, 3 failed death saves, 0/2 rage charges) seated fresh comes back
-alive at full HP with full rage.
+alive at full HP with full rage. *[That capstone described the OLD stack's
+chain, deleted with the rip-out; the session stack re-proves it since
+rpg-api#828 via `SessionStackSuite.TestStartEncounter_LaunchRestoresEveryMemberFully`,
+now through `RestoreForLaunch` at launch only.]*
 
 Known cosmetic, not a regression: rpg-dnd5e-web#516 (open) — `EconomyBar` shows
 stale turn-economy digits during the `FREE_ROAM` interval between pockets.
