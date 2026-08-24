@@ -154,13 +154,13 @@ needs to.
 - **No starting-in-combat path.** The old `--inject-combat` dev tooling (`devcombat`)
   is gone with the old stack. On the new stack a fight forms when a member sights a
   monster (session W4), so "start in TURN_BASED" is not a concept to port.
-- **Arcade recovery is not ported.** The old `StartEncounter` restored a character
-  for a new encounter before seating; the SDK's `Join` contract does not do this,
-  and whether it belongs in the toolkit's `Join` or in an explicit rpg-api call is
-  open (recorded on rpg-api#801). The stale action-economy half of that old reset
-  is narrower now: since session v0.24.1 the SDK clears a member's economy when
-  their fight dissolves (rpg-toolkit#1222); the remaining leak is a session ended
-  mid-fight via `End`/`Exit` (rpg-toolkit#1223).
+- **~~Arcade recovery is not ported~~ — closed by rpg-api#828.** `StartEncounter`
+  now calls the toolkit's `RestoreForLaunch` on every member before seating
+  (full HP, death saves cleared, Unconscious stripped, pools refilled — ungated
+  since rpg-toolkit#1225); the SDK's `Join` stays restoration-free by contract.
+  The stale action-economy sibling is narrower too: since session v0.24.1 the SDK
+  clears a member's economy when their fight dissolves (rpg-toolkit#1222); the
+  remaining leak is a session ended mid-fight via `End`/`Exit` (rpg-toolkit#1223).
 - **Partial-failure orphans** — rpg-api#800.
 - **Authorization on the session verbs themselves** — rpg-api#803; the lobby's
   host check on `AbandonEncounter` is not mirrored by `SessionService.End`.

@@ -5,9 +5,11 @@ import (
 	"errors"
 	"fmt"
 
+	tkchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 
 	"github.com/KirkDiggler/rpg-api/internal/dungeons"
+	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	lobbyrepo "github.com/KirkDiggler/rpg-api/internal/repositories/lobby"
 )
 
@@ -64,20 +66,16 @@ type StartEncounterOutput struct {
 //   - NO AUTHORED ENDING BEYOND WITHDRAWAL. See sessionworld.EndingWithdrawn:
 //     the composition has no "the boss died" trigger to declare, so the
 //     boss flag is carried and unused.
-//   - NO ARCADE RECOVERY. The old stack's StartEncounter called
-//     tkcharacter.RestoreForNewEncounter before seating each member
-//     (character.go's since-removed seedMemberCombatSnapshot); nothing in
-//     this path or in sdk.Manager.Join's own documented contract performs
-//     an equivalent today, so a character who died in a PRIOR encounter
-//     joins a fresh one exactly as their stored record left them. Not
-//     ported here — deciding where this belongs (the toolkit's Join, or an
-//     explicit rpg-api call before it) is a design question, not a
-//     mechanical port; flagged, not silently dropped. The stale
-//     ACTION-ECONOMY half of the old reset is narrower than it was: since
-//     session v0.24.1 the SDK itself clears a member's economy when their
-//     fight dissolves (rpg-toolkit#1222), so only sessions that end while
-//     a fight is still running — Manager.End / Manager.Exit — can still
-//     leak one into a later encounter (rpg-toolkit#1223).
+//   - ARCADE RECOVERY IS BACK, and it lives HERE (rpg-api#828 closed the
+//     design question the rip-out left open): StartEncounter calls
+//     tkcharacter.RestoreForLaunch on every member before seating —
+//     the toolkit owns the mechanism, this host path owns the policy, and
+//     sdk.Manager.Join stays restoration-free by contract. Stale
+//     ACTION-ECONOMY is likewise mostly the SDK's own problem now: since
+//     session v0.24.1 it clears a member's economy when their fight
+//     dissolves (rpg-toolkit#1222); only sessions that end while a fight
+//     is still running — Manager.End / Manager.Exit — can still leak one
+//     into a later encounter (rpg-toolkit#1223).
 //
 // # One thing that is NOT a shortcut any more
 //
@@ -132,6 +130,28 @@ func (o *Orchestrator) StartEncounter(ctx context.Context, in *StartEncounterInp
 	if len(members) > len(dungeon.PartySeats) {
 		return nil, fmt.Errorf("lobby %q has %d members and the dungeon seats %d",
 			in.LobbyID, len(members), len(dungeon.PartySeats))
+	}
+
+	// Launch is an arcade run start (Kirk's ruling, rpg-project#253 /
+	// rpg-api#828): every member is seated fully restored — max HP, no
+	// death-save state, no lingering Unconscious, full resource pools —
+	// via the toolkit's own launch-only mechanism. Done BEFORE the session
+	// exists so a storage failure refuses the launch cleanly, and before
+	// Join so the SDK seats the restored record. Mid-run reloads must
+	// never do this; see RestoreForLaunch's contract.
+	for _, m := range members {
+		got, err := o.characterRepo.Get(ctx, characterrepo.GetInput{ID: m.CharacterID})
+		if err != nil {
+			return nil, fmt.Errorf("load character %q for launch restore: %w", m.CharacterID, err)
+		}
+		if got.Character == nil || got.Character.Data == nil {
+			return nil, fmt.Errorf("character %q has no data to restore at launch", m.CharacterID)
+		}
+		if tkchar.RestoreForLaunch(got.Character.Data) {
+			if _, err := o.characterRepo.Update(ctx, characterrepo.UpdateInput{Character: got.Character}); err != nil {
+				return nil, fmt.Errorf("persist launch restore for character %q: %w", m.CharacterID, err)
+			}
+		}
 	}
 
 	encID := o.encounterIDGen.Generate()
