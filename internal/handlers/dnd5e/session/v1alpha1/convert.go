@@ -503,6 +503,9 @@ func AtlasToProto(a *sdk.Atlas) *sessionpb.GetAtlasResponse {
 			At:                positionToProto(prop.At),
 			BlocksMovement:    prop.BlocksMovement,
 			BlocksLineOfSight: prop.BlocksLineOfSight,
+			Facing:            prop.Facing,
+			OffsetX:           float32(prop.Offset[0]),
+			OffsetY:           float32(prop.Offset[1]),
 		}
 	}
 	return &sessionpb.GetAtlasResponse{
