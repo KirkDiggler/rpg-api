@@ -3,6 +3,7 @@ package lobby_test
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -13,7 +14,12 @@ import (
 	goredis "github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/suite"
 
+	coreResources "github.com/KirkDiggler/rpg-toolkit/core/resources"
 	tkcharacter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/conditions"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/refs"
+	dnd5eResources "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/resources"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/saves"
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 
 	"github.com/KirkDiggler/rpg-api/internal/dungeons"
@@ -362,4 +368,58 @@ func (s *SessionStackSuite) TestListDungeons_ReadsTheRegistry() {
 	s.Require().NoError(err)
 	s.Require().Len(out.Dungeons, 1)
 	s.Equal(dungeons.DefaultKey, out.Dungeons[0].Key)
+}
+
+// TestStartEncounter_LaunchRestoresEveryMemberFully pins Kirk's ruling from
+// the 2026-08-24 walk (rpg-project#253, rpg-api#828): launch is an arcade
+// run start, so a member limping in at 2 HP and a member who died in a
+// prior run are both seated at full HP with death-save state cleared —
+// and the restore is PERSISTED, not just seated (the repo record is what
+// every later reload reads).
+func (s *SessionStackSuite) TestStartEncounter_LaunchRestoresEveryMemberFully() {
+	// host arrives wounded (2 HP of 10), guest arrives dead (0 HP, 3 fails).
+	_, err := s.charRepo.Create(s.ctx, characterrepo.CreateInput{
+		Character: &entities.Character{Data: &tkcharacter.Data{
+			ID: "char-p1", PlayerID: "p1", Name: "Wounded", Level: 1,
+			HitPoints: 2, MaxHitPoints: 10, ArmorClass: 10,
+		}},
+	})
+	s.Require().NoError(err)
+	unconscious, err := json.Marshal(conditions.UnconsciousData{
+		Ref:         refs.Conditions.Unconscious(),
+		CharacterID: "char-p2",
+		Failures:    3,
+		Dead:        true,
+	})
+	s.Require().NoError(err)
+	_, err = s.charRepo.Create(s.ctx, characterrepo.CreateInput{
+		Character: &entities.Character{Data: &tkcharacter.Data{
+			ID: "char-p2", PlayerID: "p2", Name: "Dead", Level: 1,
+			HitPoints: 0, MaxHitPoints: 12, ArmorClass: 10,
+			DeathSaveState: &saves.DeathSaveState{Failures: 3, Dead: true},
+			Conditions:     []json.RawMessage{unconscious},
+			Resources: map[coreResources.ResourceKey]tkcharacter.RecoverableResourceData{
+				dnd5eResources.RageCharges: {Current: 0, Maximum: 2},
+			},
+		}},
+	})
+	s.Require().NoError(err)
+	s.seedReadyLobby("lobby-restore", "p1", "p2")
+
+	_, err = s.orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		PlayerID: "p1", LobbyID: "lobby-restore",
+	})
+	s.Require().NoError(err)
+
+	got, err := s.charRepo.Get(s.ctx, characterrepo.GetInput{ID: "char-p1"})
+	s.Require().NoError(err)
+	s.Equal(10, got.Character.Data.HitPoints, "a wounded member launches at full HP")
+
+	got, err = s.charRepo.Get(s.ctx, characterrepo.GetInput{ID: "char-p2"})
+	s.Require().NoError(err)
+	s.Equal(12, got.Character.Data.HitPoints, "a dead member launches at full HP")
+	s.Nil(got.Character.Data.DeathSaveState, "death-save state does not survive a launch")
+	s.Empty(got.Character.Data.Conditions, "the Unconscious blob is stripped, not left to re-hydrate")
+	s.Equal(2, got.Character.Data.Resources[dnd5eResources.RageCharges].Current,
+		"spent resource pools refill at launch")
 }
