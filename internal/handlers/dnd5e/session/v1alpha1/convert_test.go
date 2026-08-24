@@ -228,6 +228,10 @@ func TestAtlasToProto_Populated(t *testing.T) {
 			// membership in a single list.
 			{Ref: "pillar", At: spatial.Position{X: 1, Y: 1}, BlocksMovement: true, BlocksLineOfSight: true},
 			{Ref: "bones", At: spatial.Position{X: 2, Y: 2}, BlocksMovement: false, BlocksLineOfSight: false},
+			// Faced and offset (rpg-project#261): the authored word and the
+			// authored nudge must reach the wire verbatim -- no angle math,
+			// no snapping, no interpretation at this layer.
+			{Ref: "brazier", At: spatial.Position{X: 3, Y: 3}, Facing: "ne", Offset: [2]float64{0.2, -0.1}},
 		},
 		Boundaries: []sdk.AtlasBoundary{
 			{From: spatial.Position{X: 0, Y: 0}, To: spatial.Position{X: 1, Y: 0}, BlocksMovement: true, BlocksLineOfSight: true},
@@ -245,7 +249,7 @@ func TestAtlasToProto_Populated(t *testing.T) {
 	got := AtlasToProto(a)
 	require.Equal(t, sessionpb.GridKind_GRID_KIND_HEX, got.GetGrid())
 	require.Len(t, got.GetCells(), 2)
-	require.Len(t, got.GetProps(), 2)
+	require.Len(t, got.GetProps(), 3)
 
 	pillar := got.GetProps()[0]
 	require.Equal(t, "pillar", pillar.GetRef())
@@ -263,6 +267,17 @@ func TestAtlasToProto_Populated(t *testing.T) {
 	require.Equal(t, "bones", bones.GetRef())
 	require.False(t, bones.GetBlocksMovement())
 	require.False(t, bones.GetBlocksLineOfSight())
+	// Neither pillar nor bones authored a facing/offset -- "said nothing"
+	// must arrive as the zero value, not as some other default.
+	require.Empty(t, bones.GetFacing())
+	require.Zero(t, bones.GetOffsetX())
+	require.Zero(t, bones.GetOffsetY())
+
+	brazier := got.GetProps()[2]
+	require.Equal(t, "brazier", brazier.GetRef())
+	require.Equal(t, "ne", brazier.GetFacing())
+	require.InDelta(t, 0.2, brazier.GetOffsetX(), 1e-6)
+	require.InDelta(t, -0.1, brazier.GetOffsetY(), 1e-6)
 
 	require.Len(t, got.GetBoundaries(), 1)
 	require.True(t, got.GetBoundaries()[0].GetBlocksMovement())
