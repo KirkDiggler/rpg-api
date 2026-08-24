@@ -64,16 +64,20 @@ type StartEncounterOutput struct {
 //   - NO AUTHORED ENDING BEYOND WITHDRAWAL. See sessionworld.EndingWithdrawn:
 //     the composition has no "the boss died" trigger to declare, so the
 //     boss flag is carried and unused.
-//   - NO ARCADE RECOVERY / STALE-ACTION-ECONOMY RESET. The old stack's
-//     StartEncounter called tkcharacter.RestoreForNewEncounter and cleared
-//     a stale in-combat action economy before seating each member
+//   - NO ARCADE RECOVERY. The old stack's StartEncounter called
+//     tkcharacter.RestoreForNewEncounter before seating each member
 //     (character.go's since-removed seedMemberCombatSnapshot); nothing in
 //     this path or in sdk.Manager.Join's own documented contract performs
-//     an equivalent today, so a character who died (or was mid-turn) in a
-//     PRIOR encounter joins a fresh one exactly as their stored record
-//     left them. Not ported here — deciding where this belongs (the
-//     toolkit's Join, or an explicit rpg-api call before it) is a design
-//     question, not a mechanical port; flagged, not silently dropped.
+//     an equivalent today, so a character who died in a PRIOR encounter
+//     joins a fresh one exactly as their stored record left them. Not
+//     ported here — deciding where this belongs (the toolkit's Join, or an
+//     explicit rpg-api call before it) is a design question, not a
+//     mechanical port; flagged, not silently dropped. The stale
+//     ACTION-ECONOMY half of the old reset is narrower than it was: since
+//     session v0.24.1 the SDK itself clears a member's economy when their
+//     fight dissolves (rpg-toolkit#1222), so only sessions that end while
+//     a fight is still running — Manager.End / Manager.Exit — can still
+//     leak one into a later encounter (rpg-toolkit#1223).
 //
 // # One thing that is NOT a shortcut any more
 //
