@@ -474,9 +474,12 @@ func TestAcceptanceLoop_WalkFightDissolveResync(t *testing.T) {
 	// is all hers now. The declared route's remaining tail is exactly one
 	// more turn's budget and ends adjacent to the skeleton's spawn cell --
 	// the safety margin above becoming load-bearing.
+	rest := route[walked+6:]
+	require.Len(t, rest, 6,
+		"geometry gate: the walk must have stopped where it always does, leaving the declared route's tail exactly one turn's movement -- if the fight formed later than that, the closing arithmetic below is meaningless")
 	close2Resp, err := h.handler.Move(ctx, &sessionpb.MoveRequest{
 		Session: "acceptance-run", Member: "alice",
-		Path: route[walked+6:],
+		Path: rest,
 	})
 	require.NoError(t, err)
 	require.Len(t, close2Resp.GetSteps(), 6,
