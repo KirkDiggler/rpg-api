@@ -454,10 +454,13 @@ func TestAcceptanceLoop_WalkFightDissolveResync(t *testing.T) {
 
 	// -- end her own turn: she has no more movement and is not yet in reach,
 	// so passing it is the honest move -- and the skeleton's WHOLE driven
-	// turn (moved, moved, struck, turn-ended) runs synchronously inside this
-	// one EndTurn call (session.Behavior(), rpg-project#254). See
-	// TestSkeletonsDrivenTurnMovesAndStrikes for the dedicated proof of that
-	// sequence; this leg only needs the fact that it hands cleanly back.
+	// turn (struck, turn-ended) runs synchronously inside this one EndTurn
+	// call (session.Behavior(), rpg-project#254). Since dnd5e v0.99.0's
+	// inert action definitions (rpg-toolkit#1198) the skeleton carries an
+	// authored shortbow, so its driven turn strikes from where it stands
+	// instead of walking into melee. See TestSkeletonsDrivenTurnStrikesFromRange
+	// for the dedicated proof of that sequence; this leg only needs the fact
+	// that it hands cleanly back.
 	endResp, err := h.handler.EndTurn(ctx, &sessionpb.EndTurnRequest{
 		Session: "acceptance-run", Member: "alice",
 	})
@@ -466,8 +469,21 @@ func TestAcceptanceLoop_WalkFightDissolveResync(t *testing.T) {
 		"a two-member fight wraps straight back to whoever led it once the skeleton's own turn ends")
 	require.True(t, endResp.GetRoundWrapped())
 
-	// -- attack, now in reach after the skeleton closed the rest of the gap
-	// to swing at her -- and damage applies --
+	// -- close the REST of the gap on her own fresh turn: the skeleton no
+	// longer approaches (its shortbow needed no move), so the walk to melee
+	// is all hers now. The declared route's remaining tail is exactly one
+	// more turn's budget and ends adjacent to the skeleton's spawn cell --
+	// the safety margin above becoming load-bearing.
+	close2Resp, err := h.handler.Move(ctx, &sessionpb.MoveRequest{
+		Session: "acceptance-run", Member: "alice",
+		Path: route[walked+6:],
+	})
+	require.NoError(t, err)
+	require.Len(t, close2Resp.GetSteps(), 6,
+		"the route's remaining tail is one more turn's whole 30 ft, ending in melee reach")
+
+	// -- attack, now in reach after closing the rest of the gap herself --
+	// and damage applies --
 	attackResp, err := h.handler.Attack(ctx, &sessionpb.AttackRequest{
 		Session: "acceptance-run", Attacker: "alice", Target: "skel-1",
 	})
@@ -511,7 +527,7 @@ func TestAcceptanceLoop_WalkFightDissolveResync(t *testing.T) {
 	// did not move during the dissolve, but she DID move during the fight --
 	// closing the reach gap above -- so this must be exactly where THAT walk
 	// left her, not where the first one stopped.
-	closeLastStep := closeResp.GetSteps()[len(closeResp.GetSteps())-1]
+	closeLastStep := close2Resp.GetSteps()[len(close2Resp.GetSteps())-1]
 	whereResp, err := h.handler.GetWhere(ctx, &sessionpb.GetWhereRequest{
 		Session: "acceptance-run", Member: "alice",
 	})
@@ -681,13 +697,17 @@ func storyBeats(ctx context.Context, t *testing.T, h *sessionhandler.Handler, se
 	return beats
 }
 
-// TestSkeletonsDrivenTurnMovesAndStrikes is rpg-project#254's own acceptance
+// TestSkeletonsDrivenTurnStrikesFromRange is rpg-project#254's own acceptance
 // criterion made executable at the handler level: with session.Behavior()
 // wired as the SessionService's TurnDriver (internal/orchestrators/session),
 // a player's EndTurn on a fight with an unplayed monster drives that
-// monster's WHOLE turn synchronously -- closing the distance sight already
-// revealed, then swinging -- entirely inside the one EndTurn call, and hands
-// the fight cleanly back to whoever is left playing.
+// monster's WHOLE turn synchronously -- entirely inside the one EndTurn call
+// -- and hands the fight cleanly back to whoever is left playing. Since
+// dnd5e v0.99.0's inert action definitions (rpg-toolkit#1198) the skeleton
+// carries an authored shortbow (range 80/320), so three cells out is already
+// in range: its driven turn strikes from where it stands without inventing
+// an approach, the same shape the toolkit's own
+// TestSkeletonAttacksFromRange pins.
 //
 // Alice joins already inside the tomb room, three cells from the skeleton
 // and in its line of sight along the pillar gap row (buildThreeRoomTomb's
@@ -699,7 +719,7 @@ func storyBeats(ctx context.Context, t *testing.T, h *sessionhandler.Handler, se
 // first: with no movement spent and no reach without it, ending immediately
 // is the honest move, and it is what puts the skeleton's own turn under
 // test.
-func TestSkeletonsDrivenTurnMovesAndStrikes(t *testing.T) {
+func TestSkeletonsDrivenTurnStrikesFromRange(t *testing.T) {
 	h := newAcceptanceHarness(t)
 	ctx := auth.WithPlayerID(context.Background(), "player-alice")
 
@@ -736,33 +756,17 @@ func TestSkeletonsDrivenTurnMovesAndStrikes(t *testing.T) {
 	endResp, err := h.handler.EndTurn(ctx, &sessionpb.EndTurnRequest{
 		Session: "monster-turn-run", Member: "alice",
 	})
-	require.NoError(t, err, "the skeleton's whole turn -- move, strike, end -- drives inside this one call")
+	require.NoError(t, err, "the skeleton's whole turn -- strike, end -- drives inside this one call")
 
 	// Isolated to what THIS EndTurn call itself produced: alice's own
-	// end-turn beat, then the skeleton's approach and swing.
+	// end-turn beat, then the skeleton's swing. Exactly three beats: the
+	// shortbow attack needs no approach, so no moved beat is authored.
 	beats := storyBeats(ctx, t, h.handler, "monster-turn-run", "alice")[before:]
-	// At least four beats or the slicing below is meaningless (and, for
-	// fewer than two, out of bounds): alice's own turn-ended, one moved
-	// closing the three-cell gap, the swing, and the skeleton's own
-	// turn-ended. Asserted up front, with the actual trace on failure,
-	// rather than letting a short trace panic on the slice or pass a
-	// vacuous loop silently (Copilot, PR #817).
-	require.GreaterOrEqual(t, len(beats), 4,
-		"expected alice's turn-ended, >=1 moved, the swing, and the skeleton's turn-ended; got %v", beats)
+	require.Len(t, beats, 3,
+		"expected alice's turn-ended, the shortbow swing, and the skeleton's turn-ended; got %v", beats)
 	require.Equal(t, "turn-ended", beats[0], "alice's own end-turn beat comes first")
-
-	// At least one moved beat (closing the three-cell gap), exactly one
-	// struck-or-missed beat (the swing), and the skeleton's own turn ending
-	// last, handing back to alice -- "moved beats to adjacent, then
-	// struck/missed, then turn_ended{next: player}", the brief's own words.
-	middle := beats[1 : len(beats)-1]
-	require.NotEmpty(t, middle, "the skeleton had three cells to close before it could swing")
-	for _, b := range middle[:len(middle)-1] {
-		require.Equal(t, "moved", b, "everything before the swing is the approach")
-	}
-	swing := middle[len(middle)-1]
-	require.Contains(t, []string{"struck", "missed"}, swing)
-	require.Equal(t, "turn-ended", beats[len(beats)-1], "the skeleton's own turn closes back to alice")
+	require.Contains(t, []string{"struck", "missed"}, beats[1], "the swing, with no approach before it")
+	require.Equal(t, "turn-ended", beats[2], "the skeleton's own turn closes back to alice")
 
 	require.Equal(t, "alice", endResp.GetNext(), "turn_ended{next: player} -- the fight hands cleanly back")
 	require.True(t, endResp.GetRoundWrapped(), "a two-member fight wraps straight back to whoever led it")
