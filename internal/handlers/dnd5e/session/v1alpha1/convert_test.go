@@ -444,6 +444,17 @@ func TestSightingToProto_CarriesName(t *testing.T) {
 	require.Equal(t, "skeleton-1", got.GetName())
 }
 
+// TestSightingToProto_CarriesKind pins rpg-dnd5e-web#792: kind, like name,
+// is not a perception question -- a sighted player projects as PLAYER so a
+// client draws a player model, never a guessed monster ref.
+func TestSightingToProto_CarriesKind(t *testing.T) {
+	got := sightingToProto(sdk.Sighting{Subject: "char-123", Kind: sdk.KindPlayer})
+	require.Equal(t, sessionpb.MemberKind_MEMBER_KIND_PLAYER, got.GetKind())
+
+	got = sightingToProto(sdk.Sighting{Subject: "skeleton-1", Kind: sdk.KindMonster})
+	require.Equal(t, sessionpb.MemberKind_MEMBER_KIND_MONSTER, got.GetKind())
+}
+
 // TestDamageTypeToProto covers all thirteen values plus the unrecognized
 // fallback. A closed Go type to a closed enum, never a string round-trip
 // (rpg-project#249 §6, Kirk) -- the fallback proves an unrecognized value

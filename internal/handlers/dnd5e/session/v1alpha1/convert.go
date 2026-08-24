@@ -226,11 +226,14 @@ func discoveriesToProto(d map[string]sdk.Discovery) map[string]*sessionpb.Discov
 // sightingToProto mirrors session.Sighting field-for-field, including Name
 // (rpg-toolkit#1137, rpg-project#249): anything an observer can sight, they
 // can name, so a client labels what it draws without a second lookup
-// (rpg-dnd5e-web#564).
+// (rpg-dnd5e-web#564) — and Kind (rpg-toolkit#1230), for the same reason:
+// a client routes a player subject to a player model instead of guessing a
+// monster ref from the subject id (rpg-dnd5e-web#792).
 func sightingToProto(s sdk.Sighting) *sessionpb.Sighting {
 	return &sessionpb.Sighting{
 		Subject:    s.Subject,
 		Name:       s.Name,
+		Kind:       memberKindToProto(s.Kind),
 		Payload:    s.Payload,
 		Channel:    s.Channel,
 		At:         s.At,
