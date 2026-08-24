@@ -239,10 +239,14 @@ func runServer(_ *cobra.Command, _ []string) error {
 	if err != nil {
 		return fmt.Errorf("session orchestrator: %w", err)
 	}
+	// Roster rows live as long as the session state they describe (the
+	// session orchestrator's own 24h TTL), not the lobby's shorter one.
+	rosterRepo := rosterrepo.NewRedis(redisClient, 24*time.Hour)
 	sessionHandlerImpl, err := sessionhandler.New(&sessionhandler.HandlerConfig{
 		Manager:    sessionOrch.Manager,
 		Broker:     sessionOrch.Broker,
 		Characters: charRepo,
+		Roster:     rosterRepo,
 	})
 	if err != nil {
 		return fmt.Errorf("session handler: %w", err)
@@ -291,9 +295,6 @@ func runServer(_ *cobra.Command, _ []string) error {
 	// Manager -- the session stack is the only stack now (rpg-project#227).
 	lobbyBroker := lobbyorch.NewBroker()
 	lobbyRepo := lobbyrepo.NewRedis(redisClient, lobbyTTL)
-	// Roster rows live as long as the session state they describe (the
-	// session orchestrator's own 24h TTL), not the lobby's shorter one.
-	rosterRepo := rosterrepo.NewRedis(redisClient, 24*time.Hour)
 	lobbyCfg := &lobbyorch.Config{
 		LobbyRepo:            lobbyRepo,
 		LobbyBroker:          lobbyBroker,

@@ -37,6 +37,7 @@ import (
 	sessionhandler "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/session/v1alpha1"
 	sessionorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/session"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
+	rosterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/roster"
 )
 
 // requireGRPCCode asserts the gRPC status code of a handler error.
@@ -304,9 +305,10 @@ func armedFighter(id, playerID string) *tkcharacter.Data {
 // walk a multi-room world, meet a monster by sight, fight it, disengage,
 // and recover its own position and the full story after the fact.
 type acceptanceHarness struct {
-	handler  *sessionhandler.Handler
-	charRepo characterrepo.Repository
-	manager  *sessionorch.Orchestrator
+	handler    *sessionhandler.Handler
+	charRepo   characterrepo.Repository
+	manager    *sessionorch.Orchestrator
+	rosterRepo rosterrepo.Repository
 }
 
 func newAcceptanceHarness(t *testing.T) *acceptanceHarness {
@@ -329,12 +331,13 @@ func newAcceptanceHarness(t *testing.T) *acceptanceHarness {
 	})
 	require.NoError(t, err)
 
+	rosterRepo := rosterrepo.NewInMemory()
 	h, err := sessionhandler.New(&sessionhandler.HandlerConfig{
-		Manager: orch.Manager, Broker: orch.Broker, Characters: charRepo,
+		Manager: orch.Manager, Broker: orch.Broker, Characters: charRepo, Roster: rosterRepo,
 	})
 	require.NoError(t, err)
 
-	return &acceptanceHarness{handler: h, charRepo: charRepo, manager: orch}
+	return &acceptanceHarness{handler: h, charRepo: charRepo, manager: orch, rosterRepo: rosterRepo}
 }
 
 func TestAcceptanceLoop_WalkFightDissolveResync(t *testing.T) {
@@ -553,6 +556,53 @@ func TestAcceptanceLoop_WalkFightDissolveResync(t *testing.T) {
 	for i := 1; i < len(seqs); i++ {
 		require.Greater(t, seqs[i], seqs[i-1], "story sequence must be strictly increasing (monotonic, gapless)")
 	}
+}
+
+// TestGetRoster_ServesTheLaunchWrittenRow drives the read side of
+// rpg-project#264 against the real handler and the real character store: a
+// roster row shaped exactly as launch writes it (see the lobby stack suite's
+// TestStartEncounter_WritesTheRosterRow for the write side) serves alice her
+// party's public identity — her own class/race refs read FRESH from the
+// character record, the skeleton's authored ref and name from the row — and
+// nothing else.
+func TestGetRoster_ServesTheLaunchWrittenRow(t *testing.T) {
+	h := newAcceptanceHarness(t)
+	ctx := auth.WithPlayerID(context.Background(), "player-alice")
+
+	_, err := h.charRepo.Create(context.Background(), characterrepo.CreateInput{
+		Character: &entities.Character{Data: armedFighter("alice", "player-alice")},
+	})
+	require.NoError(t, err)
+
+	require.NoError(t, h.rosterRepo.Save(context.Background(), &rosterrepo.Data{
+		EncounterID: "roster-run",
+		Members: []rosterrepo.Member{
+			{ID: "alice", Kind: rosterrepo.KindPlayer},
+			{ID: "skeleton-1", Kind: rosterrepo.KindMonster, Ref: "dnd5e:monsters:skeleton", Name: "Skeleton"},
+		},
+	}))
+
+	resp, err := h.handler.GetRoster(ctx, &sessionpb.GetRosterRequest{Session: "roster-run"})
+	require.NoError(t, err)
+	require.Len(t, resp.GetMembers(), 2)
+
+	alice := resp.GetMembers()[0]
+	require.Equal(t, sessionpb.MemberKind_MEMBER_KIND_PLAYER, alice.GetKind())
+	require.Equal(t, string(classes.Fighter), alice.GetClassRef(),
+		"class ref must be the character record's own word — the one the local-player render path already maps")
+	require.Equal(t, string(races.Human), alice.GetRaceRef())
+	require.NotNil(t, alice.GetCustomization(), "the shelf is always set")
+
+	skel := resp.GetMembers()[1]
+	require.Equal(t, sessionpb.MemberKind_MEMBER_KIND_MONSTER, skel.GetKind())
+	require.Equal(t, "dnd5e:monsters:skeleton", skel.GetMonsterRef())
+	require.Equal(t, "Skeleton", skel.GetName())
+
+	// The seated gate, through the real stack: a player with no seat in this
+	// roster is refused the read.
+	strangerCtx := auth.WithPlayerID(context.Background(), "player-nobody")
+	_, err = h.handler.GetRoster(strangerCtx, &sessionpb.GetRosterRequest{Session: "roster-run"})
+	requireGRPCCode(t, err, codes.PermissionDenied)
 }
 
 // TestFightEndsByDecisionWhenThePartyWalksAway covers the OTHER half of ending
