@@ -12,6 +12,7 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/entities"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	lobbyrepo "github.com/KirkDiggler/rpg-api/internal/repositories/lobby"
+	rosterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/roster"
 )
 
 // DungeonKey selects a registered dungeon by the key its file names itself
@@ -174,20 +175,47 @@ func (o *Orchestrator) StartEncounter(ctx context.Context, in *StartEncounterInp
 		return nil, fmt.Errorf("start session %q on new stack: %w", encID, err)
 	}
 
+	// The roster row is built as launch does its work — this is the only
+	// moment that knows every member and every authored spawn at once
+	// (rpg-project#264, ideas/characters/presentation). Identity facts only:
+	// a player row is just the id (their name and refs are read fresh from
+	// the character record at GetRoster time); a monster row carries the
+	// authored ref and name exactly as the spawn reports them.
+	rosterRows := make([]rosterrepo.Member, 0, len(members)+len(dungeon.Monsters))
+
 	for i, m := range members {
 		if _, err := o.sessionManager.Join(ctx, &sdk.JoinInput{
 			Session: encID, Member: m.CharacterID, Position: dungeon.PartySeats[i],
 		}); err != nil {
 			return nil, fmt.Errorf("join %q to session %q on new stack: %w", m.CharacterID, encID, err)
 		}
+		rosterRows = append(rosterRows, rosterrepo.Member{
+			ID: m.CharacterID, Kind: rosterrepo.KindPlayer,
+		})
 	}
 
 	for _, monster := range dungeon.Monsters {
-		if _, err := o.sessionManager.Spawn(ctx, &sdk.SpawnInput{
+		spawned, err := o.sessionManager.Spawn(ctx, &sdk.SpawnInput{
 			Session: encID, ID: monster.MemberID, Ref: monster.Ref, Position: monster.At,
-		}); err != nil {
+		})
+		if err != nil {
 			return nil, fmt.Errorf("spawn %q into session %q on new stack: %w", monster.MemberID, encID, err)
 		}
+		row := rosterrepo.Member{
+			ID: monster.MemberID, Kind: rosterrepo.KindMonster, Ref: monster.Ref,
+		}
+		// The authored display name, from the spawn's own report rather than
+		// re-derived here — no drift with what sightings will call it.
+		if spawned != nil && spawned.NPC != nil {
+			row.Name = spawned.NPC.Name
+		}
+		rosterRows = append(rosterRows, row)
+	}
+
+	if err := o.rosterRepo.Save(ctx, &rosterrepo.Data{
+		EncounterID: encID, Members: rosterRows,
+	}); err != nil {
+		return nil, fmt.Errorf("save roster for session %q: %w", encID, err)
 	}
 
 	data.Status = lobbyrepo.StatusStarted

@@ -39,6 +39,7 @@ import (
 	characterdraftrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft"
 	dicesessionrepo "github.com/KirkDiggler/rpg-api/internal/repositories/dice_session"
 	lobbyrepo "github.com/KirkDiggler/rpg-api/internal/repositories/lobby"
+	rosterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/roster"
 )
 
 const bufSize = 1024 * 1024
@@ -335,6 +336,7 @@ func (ts *TestServer) wireServices(cfg *Config) error {
 		EncounterIDGenerator: idgen.NewUUID(""),
 		SessionManager:       sessOrch.Manager,
 		Dungeons:             registry,
+		RosterRepo:           rosterrepo.NewInMemory(),
 	})
 	if err != nil {
 		return fmt.Errorf("lobby orchestrator: %w", err)

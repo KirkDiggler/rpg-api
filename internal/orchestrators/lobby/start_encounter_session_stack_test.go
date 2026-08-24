@@ -29,6 +29,7 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/pkg/idgen"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	lobbyrepo "github.com/KirkDiggler/rpg-api/internal/repositories/lobby"
+	rosterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/roster"
 )
 
 // SessionStackSuite proves StartEncounter's new-stack branch in isolation:
@@ -40,12 +41,13 @@ import (
 type SessionStackSuite struct {
 	suite.Suite
 
-	ctx       context.Context
-	charRepo  characterrepo.Repository
-	lobbyRepo lobbyrepo.Repository
-	broker    *lobbyorch.Broker
-	sessOrch  *sessionorch.Orchestrator
-	orch      *lobbyorch.Orchestrator
+	ctx        context.Context
+	charRepo   characterrepo.Repository
+	lobbyRepo  lobbyrepo.Repository
+	broker     *lobbyorch.Broker
+	sessOrch   *sessionorch.Orchestrator
+	orch       *lobbyorch.Orchestrator
+	rosterRepo rosterrepo.Repository
 }
 
 func (s *SessionStackSuite) SetupTest() {
@@ -65,6 +67,7 @@ func (s *SessionStackSuite) SetupTest() {
 
 	s.lobbyRepo = lobbyrepo.NewInMemory()
 	s.broker = lobbyorch.NewBroker()
+	s.rosterRepo = rosterrepo.NewInMemory()
 
 	orch, err := lobbyorch.New(&lobbyorch.Config{
 		LobbyRepo:            s.lobbyRepo,
@@ -75,6 +78,7 @@ func (s *SessionStackSuite) SetupTest() {
 		EncounterIDGenerator: idgen.NewSequential("enc"),
 		SessionManager:       sessOrch.Manager,
 		Dungeons:             dungeonstest.Shipped(s.T()),
+		RosterRepo:           s.rosterRepo,
 	})
 	s.Require().NoError(err)
 	s.orch = orch
@@ -136,6 +140,52 @@ func (s *SessionStackSuite) TestStartEncounter_BuildsAGenuineNewStackSession() {
 	s.Require().NoError(err)
 	s.Equal(lobbyrepo.StatusStarted, lobbyData.Status)
 	s.Equal(out.EncounterID, lobbyData.EncounterID)
+}
+
+// TestStartEncounter_WritesTheRosterRow pins the launch-written roster
+// (rpg-project#264, ideas/characters/presentation): the one moment that knows
+// every member and every authored spawn persists identity facts for GetRoster
+// to read back. Player rows are id-only (name and refs are read fresh from the
+// character record at serve time — pinned by the ABSENCE of a stored name
+// here); monster rows carry the authored ref and the name the spawn itself
+// reported, so the roster can never drift from what sightings call them.
+func (s *SessionStackSuite) TestStartEncounter_WritesTheRosterRow() {
+	s.seedCharacter("char-alice", "alice", "Alice")
+	s.seedCharacter("char-bob", "bob", "Bob")
+	s.seedReadyLobby("lobby-1", "alice", "bob")
+
+	out, err := s.orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		PlayerID: "alice", LobbyID: "lobby-1",
+	})
+	s.Require().NoError(err)
+
+	row, err := s.rosterRepo.Get(s.ctx, out.EncounterID)
+	s.Require().NoError(err)
+	s.Equal(out.EncounterID, row.EncounterID)
+
+	players := make([]rosterrepo.Member, 0)
+	monsters := make([]rosterrepo.Member, 0)
+	for _, m := range row.Members {
+		switch m.Kind {
+		case rosterrepo.KindPlayer:
+			players = append(players, m)
+		case rosterrepo.KindMonster:
+			monsters = append(monsters, m)
+		default:
+			s.Failf("kind", "member %q has unspecified kind", m.ID)
+		}
+	}
+
+	s.Equal([]rosterrepo.Member{
+		{ID: "char-alice", Kind: rosterrepo.KindPlayer},
+		{ID: "char-bob", Kind: rosterrepo.KindPlayer},
+	}, players, "player rows are identity-only, in join order, with nothing stored that the character record owns")
+
+	s.Require().NotEmpty(monsters, "the authored tomb has a garrison; its spawns must be on the roster")
+	for _, m := range monsters {
+		s.NotEmpty(m.Ref, "monster %q must carry its authored ref", m.ID)
+		s.NotEmpty(m.Name, "monster %q must carry the spawn-reported name", m.ID)
+	}
 }
 
 // TestStartEncounter_SeatsTheTombsWholeGarrison checks that starting on the new
@@ -340,6 +390,7 @@ func (s *SessionStackSuite) TestStartEncounter_PlaysADungeonTheAuthorPut() {
 		EncounterIDGenerator: idgen.NewSequential("enc"),
 		SessionManager:       s.sessOrch.Manager,
 		Dungeons:             registry,
+		RosterRepo:           rosterrepo.NewInMemory(),
 	})
 	s.Require().NoError(err)
 
