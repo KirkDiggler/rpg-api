@@ -201,15 +201,18 @@ func (o *Orchestrator) StartEncounter(ctx context.Context, in *StartEncounterInp
 		if err != nil {
 			return nil, fmt.Errorf("spawn %q into session %q on new stack: %w", monster.MemberID, encID, err)
 		}
-		row := rosterrepo.Member{
-			ID: monster.MemberID, Kind: rosterrepo.KindMonster, Ref: monster.Ref,
-		}
 		// The authored display name, from the spawn's own report rather than
-		// re-derived here — no drift with what sightings will call it.
-		if spawned != nil && spawned.NPC != nil {
-			row.Name = spawned.NPC.Name
+		// re-derived here — no drift with what sightings will call it. A
+		// successful Spawn that reports no NPC state would break that
+		// contract, so it fails the launch loudly instead of seating an
+		// unnamed monster (Copilot, PR #838).
+		if spawned == nil || spawned.NPC == nil {
+			return nil, fmt.Errorf("spawn %q into session %q reported no NPC state", monster.MemberID, encID)
 		}
-		rosterRows = append(rosterRows, row)
+		rosterRows = append(rosterRows, rosterrepo.Member{
+			ID: monster.MemberID, Kind: rosterrepo.KindMonster, Ref: monster.Ref,
+			Name: spawned.NPC.Name,
+		})
 	}
 
 	if err := o.rosterRepo.Save(ctx, &rosterrepo.Data{

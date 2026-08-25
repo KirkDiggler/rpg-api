@@ -41,7 +41,7 @@ func (h *Handler) GetRoster(ctx context.Context, req *sessionpb.GetRosterRequest
 		if errors.Is(err, rosterrepo.ErrNotFound) {
 			return nil, status.Errorf(codes.NotFound, "session %q has no roster", req.GetSession())
 		}
-		return nil, status.Errorf(codes.Internal, "load roster for session %q", req.GetSession())
+		return nil, status.Errorf(codes.Internal, "load roster for session %q: %v", req.GetSession(), err)
 	}
 
 	members := make([]*sessionpb.PublicMemberInfo, 0, len(row.Members))
