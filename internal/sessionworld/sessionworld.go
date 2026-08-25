@@ -162,12 +162,21 @@ func Compile(raw []byte) (*Dungeon, error) {
 		monsters[i] = Monster{Ref: m.Ref, MemberID: id, At: cellOf(orientation, m.At), Boss: m.Boss, Targeting: m.Targeting}
 	}
 
+	// dungeonspec validates at most one boss PER REGION; across regions a
+	// file could still author several, and "whose death ends things" cannot
+	// be plural while the doom names one member — refused here, loudly, so
+	// an authoring mistake fails at compile rather than leaving a run that
+	// never ends when the "real" boss falls. Softens when the builder
+	// (#169) brings authored multi-ending variety.
 	var bossID string
 	for _, m := range monsters {
-		if m.Boss {
-			bossID = m.MemberID
-			break
+		if !m.Boss {
+			continue
 		}
+		if bossID != "" {
+			return nil, fmt.Errorf("dungeon %q authors more than one boss (%q and %q): one death ends things, and it cannot be two", decoded.Key, bossID, m.MemberID)
+		}
+		bossID = m.MemberID
 	}
 
 	world, err := buildWorld(spec.Field, bossID)

@@ -7,11 +7,10 @@ package sessionv1alpha1
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
-	"fmt"
 	"github.com/stretchr/testify/require"
-
 	"go.uber.org/mock/gomock"
 	"google.golang.org/grpc/codes"
 

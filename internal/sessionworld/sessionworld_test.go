@@ -200,6 +200,45 @@ func (s *ReferenceTombSuite) TestTheBossFlagBecomesTheDeclaredDoom() {
 		"the doom names the captain by the member ID the launch spawns him under")
 }
 
+// TestTwoAuthoredBossesAreRefusedAtCompile: dungeonspec bounds bosses per
+// REGION, so a two-region file can still author two — and "whose death ends
+// things" cannot be plural while the doom names one member. Refused loudly
+// at compile, never a run that silently cannot end when the real boss falls
+// (Copilot round, rpg-api#839).
+func (s *ReferenceTombSuite) TestTwoAuthoredBossesAreRefusedAtCompile() {
+	yaml := `
+version: 2
+key: two-boss
+name: Two Bosses
+orientation: pointy
+void: opaque
+start: [1, 1]
+regions:
+  - id: west
+    name: West
+    archetype: crypt
+    lighting: { intensity: 1 }
+    cells:
+      - [[0,0],[1,0],[2,0],[3,0]]
+      - [[0,1],[1,1],[2,1],[3,1]]
+  - id: east
+    name: East
+    archetype: crypt
+    lighting: { intensity: 1 }
+    cells:
+      - [[4,0],[5,0],[6,0],[7,0]]
+      - [[4,1],[5,1],[6,1],[7,1]]
+place:
+  - { ref: "dnd5e:monsters:skeleton", at: [2, 0], boss: true }
+  - { ref: "dnd5e:monsters:skeleton", at: [5, 1], boss: true }
+`
+	_, err := Compile([]byte(yaml))
+	s.Require().Error(err)
+	s.Contains(err.Error(), "more than one boss")
+	s.Contains(err.Error(), "skeleton-1")
+	s.Contains(err.Error(), "skeleton-2")
+}
+
 // TestTheTombIsShutAtDCTwelve pins the authored lock. Twelve is a literal on
 // purpose for the reason the projection's literal is: it is the authored fact
 // under test, so reading it back out of the compiler would be circular.
