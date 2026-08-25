@@ -86,7 +86,14 @@ func TestStatusError_CoversEverySDKSentinel(t *testing.T) {
 		{"ErrInvalidSession", sdk.ErrInvalidSession, codes.Internal},
 		{"ErrNilConfig", sdk.ErrNilConfig, codes.Internal},
 		{"ErrIncompleteConfig", sdk.ErrIncompleteConfig, codes.Internal},
-		{"ErrNoConnection", sdk.ErrNoConnection, codes.Internal},
+		// Back to caller-facing with the door verbs (rpg-project#268):
+		// GetDoors/OpenDoor/Unlock name a door, so one the dungeon does not
+		// have is the caller's NotFound again.
+		{"ErrNoConnection", sdk.ErrNoConnection, codes.NotFound},
+		// The rpg-toolkit#1135 split, both halves: a walk into a locked door
+		// says locked (with the DC), a merely-shut one says shut. World
+		// state refusing, never a malformed request.
+		{"ErrDoorShut", sdk.ErrDoorShut, codes.FailedPrecondition},
 		// Already in the pinned SDK before this feature (v0.21.4) and unmapped
 		// until this audit: this package's OWN adapter vocabulary going stale
 		// against itself, not a caller mistake.
@@ -138,7 +145,9 @@ func TestStatusError_CoversEverySDKSentinel(t *testing.T) {
 // v0.21.4 -> combat-turn (rpg-project#249) adds ErrNotYourTurn and
 // ErrOutOfReach; ErrBadTurnOutcome was already present at v0.21.4 and simply
 // had no row until this audit -- 38 -> 41.
-const sentinelCount = 41
+// The door verbs (rpg-project#268, rpg-toolkit#1135) add ErrDoorShut and move
+// ErrNoConnection back to caller-facing -- 41 -> 42.
+const sentinelCount = 42
 
 func TestStatusError_UnmappedSentinelFallsBackToInternal(t *testing.T) {
 	unrecognized := fmt.Errorf("some future sentinel the table has not been updated for")
