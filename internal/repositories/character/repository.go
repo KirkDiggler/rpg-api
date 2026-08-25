@@ -7,6 +7,7 @@ import (
 	"context"
 
 	"github.com/KirkDiggler/rpg-api/internal/entities"
+	tkcharacter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 )
 
 // Repository defines the interface for character persistence
@@ -28,6 +29,12 @@ type Repository interface {
 	// Returns apierr.NotFound if character doesn't exist
 	// Returns apierr.Internal for storage failures
 	Update(ctx context.Context, input UpdateInput) (*UpdateOutput, error)
+
+	// PatchEquipment atomically changes only equipment slots and cached armor
+	// class on the latest record. A stale equipment expectation is aborted;
+	// an unrelated revision is returned without a write so the caller can
+	// strictly reproject it before retrying.
+	PatchEquipment(ctx context.Context, input PatchEquipmentInput) (*PatchEquipmentOutput, error)
 
 	// Delete deletes a character by ID
 	// Returns apierr.InvalidArgument for empty/invalid IDs
@@ -64,6 +71,7 @@ type GetInput struct {
 // GetOutput defines the output for getting a character
 type GetOutput struct {
 	Character *entities.Character
+	Version   string
 }
 
 // UpdateInput defines the input for updating a character
@@ -74,6 +82,24 @@ type UpdateInput struct {
 // UpdateOutput defines the output for updating a character
 type UpdateOutput struct {
 	Character *entities.Character
+}
+
+// PatchEquipmentInput contains the optimistic revision/equipment expectation
+// and the only two fields the repository is permitted to change.
+type PatchEquipmentInput struct {
+	CharacterID            string
+	ExpectedVersion        string
+	ExpectedEquipmentSlots tkcharacter.EquipmentSlots
+	EquipmentSlots         tkcharacter.EquipmentSlots
+	ArmorClass             int
+}
+
+// PatchEquipmentOutput contains the actual latest persisted entity. Applied is
+// false only when a non-equipment revision requires caller reprojection.
+type PatchEquipmentOutput struct {
+	Character *entities.Character
+	Version   string
+	Applied   bool
 }
 
 // DeleteInput defines the input for deleting a character

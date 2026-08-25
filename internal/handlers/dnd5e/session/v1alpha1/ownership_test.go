@@ -45,14 +45,14 @@ func TestEveryMemberTakingVerbRefusesAForeignMember(t *testing.T) {
 		},
 		"Move": func(ctx context.Context, h *Handler) error {
 			_, err := h.Move(ctx, &sessionpb.MoveRequest{
-				Session: "sess-1", Member: foreign,
+				Session: "sess-1", Member: foreign, DeclarationId: "decl-move-1",
 				Path: []*sessionpb.Position{{X: 1, Y: 1}},
 			})
 			return err
 		},
 		"Attack": func(ctx context.Context, h *Handler) error {
 			_, err := h.Attack(ctx, &sessionpb.AttackRequest{
-				Session: "sess-1", Attacker: foreign, Target: "char-1",
+				Session: "sess-1", Attacker: foreign, Target: "char-1", DeclarationId: "decl-attack-1",
 			})
 			return err
 		},
@@ -65,7 +65,9 @@ func TestEveryMemberTakingVerbRefusesAForeignMember(t *testing.T) {
 			return err
 		},
 		"EndTurn": func(ctx context.Context, h *Handler) error {
-			_, err := h.EndTurn(ctx, &sessionpb.EndTurnRequest{Session: "sess-1", Member: foreign})
+			_, err := h.EndTurn(ctx, &sessionpb.EndTurnRequest{
+				Session: "sess-1", Member: foreign, DeclarationId: "decl-end-1",
+			})
 			return err
 		},
 		"Dissolve": func(ctx context.Context, h *Handler) error {

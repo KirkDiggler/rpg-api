@@ -24,13 +24,17 @@ func TestEndTurn_Unauthenticated_Errors(t *testing.T) {
 func TestEndTurn_HappyPath(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mgr := sessionv1alpha1mock.NewMockManager(ctrl)
-	mgr.EXPECT().EndTurn(gomock.Any(), &sdk.EndTurnInput{Session: "sess-1", Member: "char-1"}).Return(&sdk.EndTurnOutput{
+	mgr.EXPECT().EndTurn(gomock.Any(), &sdk.EndTurnInput{
+		Session: "sess-1", Member: "char-1", DeclarationID: "decl-end-1",
+	}).Return(&sdk.EndTurnOutput{
 		Next: "goblin-1", RoundWrapped: true, Seq: 6,
 	}, nil)
 
 	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
 	ctx := auth.WithPlayerID(context.Background(), "alice")
-	resp, err := h.EndTurn(ctx, &sessionpb.EndTurnRequest{Session: "sess-1", Member: "char-1"})
+	resp, err := h.EndTurn(ctx, &sessionpb.EndTurnRequest{
+		Session: "sess-1", Member: "char-1", DeclarationId: "decl-end-1",
+	})
 	require.NoError(t, err)
 	require.Equal(t, "goblin-1", resp.GetNext())
 	require.True(t, resp.GetRoundWrapped())

@@ -21,9 +21,10 @@ func (h *Handler) Move(ctx context.Context, req *sessionpb.MoveRequest) (*sessio
 	}
 
 	out, err := h.manager.Move(ctx, &sdk.MoveInput{
-		Session: req.GetSession(),
-		Member:  req.GetMember(),
-		Path:    path,
+		Session:       req.GetSession(),
+		Member:        req.GetMember(),
+		DeclarationID: req.GetDeclarationId(),
+		Path:          path,
 	})
 	if err != nil {
 		return nil, statusError(err)

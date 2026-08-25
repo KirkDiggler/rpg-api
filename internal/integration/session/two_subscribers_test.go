@@ -232,11 +232,17 @@ func TestTwoStreamEventsSubscribers(t *testing.T) {
 	// a real player, no drive). bob's own EndTurn drives skel-1's WHOLE turn:
 	// it is closer to bob (distance 2) than to alice (distance 4), so it
 	// closes and strikes her, then wraps the round back to alice.
-	out1, err := h.handler.EndTurn(ctxAlice, &sessionpb.EndTurnRequest{Session: session, Member: "alice"})
+	out1, err := h.handler.EndTurn(ctxAlice, &sessionpb.EndTurnRequest{
+		Session: session, Member: "alice",
+		DeclarationId: currentDeclarationID(ctxAlice, t, h.handler, session, "alice", sessionpb.Verb_VERB_END_TURN),
+	})
 	require.NoError(t, err)
 	require.Equal(t, "bob", out1.GetNext())
 
-	out2, err := h.handler.EndTurn(ctxBob, &sessionpb.EndTurnRequest{Session: session, Member: "bob"})
+	out2, err := h.handler.EndTurn(ctxBob, &sessionpb.EndTurnRequest{
+		Session: session, Member: "bob",
+		DeclarationId: currentDeclarationID(ctxBob, t, h.handler, session, "bob", sessionpb.Verb_VERB_END_TURN),
+	})
 	require.NoError(t, err)
 	require.Equal(t, "alice", out2.GetNext())
 	require.True(t, out2.GetRoundWrapped())
@@ -291,11 +297,17 @@ func TestTwoStreamEventsSubscribers(t *testing.T) {
 	// second time. Every beat this produces is still addressed to bob too
 	// (the same whole-roster broadcast round 1 relied on) -- and her
 	// primed-to-headroom subscriber now drops every one of them.
-	_, err = h.handler.EndTurn(ctxAlice, &sessionpb.EndTurnRequest{Session: session, Member: "alice"})
+	_, err = h.handler.EndTurn(ctxAlice, &sessionpb.EndTurnRequest{
+		Session: session, Member: "alice",
+		DeclarationId: currentDeclarationID(ctxAlice, t, h.handler, session, "alice", sessionpb.Verb_VERB_END_TURN),
+	})
 	require.NoError(t, err, "a lagging subscriber must never fail the acting player's own verb")
 
 	beforeRound2 := len(aliceStream.snapshot()[aliceBaseline:])
-	out3, err := h.handler.EndTurn(ctxBob, &sessionpb.EndTurnRequest{Session: session, Member: "bob"})
+	out3, err := h.handler.EndTurn(ctxBob, &sessionpb.EndTurnRequest{
+		Session: session, Member: "bob",
+		DeclarationId: currentDeclarationID(ctxBob, t, h.handler, session, "bob", sessionpb.Verb_VERB_END_TURN),
+	})
 	require.NoError(t, err, "a lagging subscriber must never fail the acting player's own verb")
 	require.Equal(t, "alice", out3.GetNext())
 

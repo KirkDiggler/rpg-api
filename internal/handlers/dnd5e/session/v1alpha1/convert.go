@@ -592,6 +592,8 @@ func verbToProto(v sdk.Verb) sessionpb.Verb {
 		return sessionpb.Verb_VERB_ATTACK
 	case sdk.VerbMove:
 		return sessionpb.Verb_VERB_MOVE
+	case sdk.VerbEndTurn:
+		return sessionpb.Verb_VERB_END_TURN
 	default:
 		return sessionpb.Verb_VERB_UNSPECIFIED
 	}
@@ -603,7 +605,7 @@ func verbToProto(v sdk.Verb) sessionpb.Verb {
 // SLOT_UNSPECIFIED -- the one law this converter exists to keep. A
 // declaration that lights no economy shape (Extra Attack's second swing,
 // spending a banked attack rather than an action/bonus/reaction) is a FACT
-// about the price, the same way Declaration.Affordable=false is an answer and
+// about the price, the same way Declaration.Available=false is an answer and
 // not an absence (types.go). Collapsing it into UNSPECIFIED would tell a
 // client this layer forgot to set a slot, when the SDK answered on purpose.
 // Only a slot string this build does not recognize reaches UNSPECIFIED, a
@@ -623,40 +625,63 @@ func slotToProto(s sdk.Slot) sessionpb.Slot {
 	}
 }
 
-// declarationToProto bridges the SDK's PRE-#253 Declaration shape onto the
-// v0.1.143 wire (rpg-api-protos#253, the production combat experience
-// contract): `Affordable` crosses as `available`, and the SDK's
-// one-declaration-per-target attack rows each cross as one declaration
-// carrying its target as a SINGLE candidate — which a #253 reader
-// (including rpg-dnd5e-web's own expansion shim) unrolls back to exactly
-// the per-target rows the old wire carried. The legacy `shortfall`/`target`
-// string fields left the wire; `Why` (rpg-toolkit#1010) carries the
-// structured refusal, whose Text is the same human sentence.
-//
-// A BRIDGE, DELIBERATELY NOT AN ADOPTION: the real #253 producer —
-// grouped candidates, declaration ids, AttackRef, target kinds — arrives
-// with the toolkit session module's own #253 wave (the combat lane), and
-// this function shrinks to a field-for-field mirror again when the SDK pin
-// catches up. It exists because pinning protos for
-// AtlasProp.offset_z/AtlasBoundary.height (rpg-project#272/#273) carries
-// #253 with it — tags are linear.
-//
-// Remaining is NOT wired here: it lands with the separate Move-on-clock wave
-// (rpg-toolkit#1169, branch feat/session-move-clock), still WIP as of this
-// PR -- out of scope here on purpose, to keep one wave on one branch.
+// targetKindToProto mirrors the SDK's closed selector-shape enum. Unknown
+// values are producer defects and therefore reach UNSPECIFIED rather than
+// being guessed from the declaration's other fields.
+func targetKindToProto(k sdk.TargetKind) sessionpb.TargetKind {
+	switch k {
+	case sdk.TargetNone:
+		return sessionpb.TargetKind_TARGET_KIND_NONE
+	case sdk.TargetMember:
+		return sessionpb.TargetKind_TARGET_KIND_MEMBER
+	case sdk.TargetPath:
+		return sessionpb.TargetKind_TARGET_KIND_PATH
+	default:
+		return sessionpb.TargetKind_TARGET_KIND_UNSPECIFIED
+	}
+}
+
+// targetCandidateToProto mirrors one ruled candidate. Candidate availability
+// and refusal are independent from the declaration-level gate and are copied
+// only from this candidate.
+func targetCandidateToProto(c sdk.TargetCandidate) *sessionpb.TargetCandidate {
+	return &sessionpb.TargetCandidate{
+		Member:    c.Member,
+		Available: c.Available,
+		Why:       shortfallToProto(c.Why),
+	}
+}
+
+func targetCandidatesToProto(cs []sdk.TargetCandidate) []*sessionpb.TargetCandidate {
+	out := make([]*sessionpb.TargetCandidate, len(cs))
+	for i, candidate := range cs {
+		out[i] = targetCandidateToProto(candidate)
+	}
+	return out
+}
+
+// declarationToProto mirrors the SDK's compiled declaration field-for-field.
+// It neither derives availability nor transforms selectors: opaque IDs, full
+// attack refs, target shape, and every independently ruled candidate cross
+// unchanged. Optional fields preserve presence, including a present zero
+// Remaining value, and repeated candidates use make-then-map so a non-nil
+// empty SDK answer remains non-nil empty in Go.
 func declarationToProto(d sdk.Declaration) *sessionpb.Declaration {
 	out := &sessionpb.Declaration{
-		Verb:      verbToProto(d.Verb),
-		Slot:      slotToProto(d.Slot),
-		Available: d.Affordable,
-		Why:       shortfallToProto(d.Why),
+		Verb:       verbToProto(d.Verb),
+		Slot:       slotToProto(d.Slot),
+		Available:  d.Available,
+		Why:        shortfallToProto(d.Why),
+		Id:         d.ID,
+		TargetKind: targetKindToProto(d.TargetKind),
+		Candidates: targetCandidatesToProto(d.Candidates),
 	}
-	if d.Target != nil {
-		out.Candidates = []*sessionpb.TargetCandidate{{
-			Member:    *d.Target,
-			Available: d.Affordable,
-			Why:       shortfallToProto(d.Why),
-		}}
+	if d.Remaining != nil {
+		remaining := int32(*d.Remaining)
+		out.Remaining = &remaining
+	}
+	if d.Attack != nil {
+		out.Attack = attackRefToProto(*d.Attack)
 	}
 	return out
 }
@@ -675,6 +700,8 @@ func shortfallReasonToProto(r sdk.ShortfallReason) sessionpb.ShortfallReason {
 		return sessionpb.ShortfallReason_SHORTFALL_REASON_DOWNED
 	case sdk.ShortfallUnreadable:
 		return sessionpb.ShortfallReason_SHORTFALL_REASON_UNREADABLE
+	case sdk.ShortfallTargetOutOfReach:
+		return sessionpb.ShortfallReason_SHORTFALL_REASON_TARGET_OUT_OF_REACH
 	default:
 		return sessionpb.ShortfallReason_SHORTFALL_REASON_UNSPECIFIED
 	}
@@ -702,7 +729,7 @@ func currencyToProto(c sdk.Currency) sessionpb.Currency {
 
 // shortfallToProto mirrors session.Shortfall. Present exactly when the SDK
 // set it -- nil in, nil out -- matching Declaration.why's presence law: PRESENT
-// EXACTLY WHEN affordable == false (rpg-toolkit#1010).
+// EXACTLY WHEN Available is false (rpg-toolkit#1010).
 func shortfallToProto(s *sdk.Shortfall) *sessionpb.Shortfall {
 	if s == nil {
 		return nil

@@ -15,8 +15,9 @@ func (h *Handler) EndTurn(ctx context.Context, req *sessionpb.EndTurnRequest) (*
 	}
 
 	out, err := h.manager.EndTurn(ctx, &sdk.EndTurnInput{
-		Session: req.GetSession(),
-		Member:  req.GetMember(),
+		Session:       req.GetSession(),
+		Member:        req.GetMember(),
+		DeclarationID: req.GetDeclarationId(),
 	})
 	if err != nil {
 		return nil, statusError(err)

@@ -21,24 +21,24 @@ func TestAfford_Unauthenticated_Errors(t *testing.T) {
 	requireCode(t, err, codes.Unauthenticated)
 }
 
-// TestAfford_HappyPath_ProjectsDeclarations pins the turn-clock shape,
-// Affordable=false crossing as available=false and the SDK's own
-// currency-naming sentence carried verbatim through Why.Text (ADR-0042 via
-// rpg-toolkit#1010's structured Shortfall — the v0.1.143 wire dropped the
-// legacy string field, and the SDK fills Why whenever a declaration is
-// unaffordable) — this layer must not paraphrase it away.
-func TestAfford_HappyPath_ProjectsDeclarations(t *testing.T) {
+// TestAfford_HappyPath_ProjectsNestedDeclaration pins the manager response as
+// the sole source of declaration identity, attack identity, target shape, and
+// independent target availability. The API does not flatten or re-rule it.
+func TestAfford_HappyPath_ProjectsNestedDeclaration(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mgr := sessionv1alpha1mock.NewMockManager(ctrl)
 	mgr.EXPECT().Afford(gomock.Any(), &sdk.AffordInput{Session: "sess-1", Member: "char-1"}).Return(&sdk.AffordOutput{
 		Clock: sdk.ClockTurn,
 		Declarations: []sdk.Declaration{
 			{
-				Verb: sdk.VerbAttack, Slot: sdk.SlotAction, Affordable: false,
-				Shortfall: "action: 1 needed, 0 left",
-				Why: &sdk.Shortfall{
-					Reason: sdk.ShortfallNoBudget,
-					Text:   "action: 1 needed, 0 left",
+				Verb: sdk.VerbAttack, Slot: sdk.SlotAction, Available: false,
+				Why:        &sdk.Shortfall{Reason: sdk.ShortfallNoBudget, Currency: sdk.CurrencyAction, Needed: 1, Text: "action: 1 needed, 0 left"},
+				ID:         "decl-attack-1",
+				Attack:     &sdk.AttackRef{Ref: "dnd5e:weapons:longsword", Name: "Longsword", DamageType: sdk.DamageSlashing},
+				TargetKind: sdk.TargetMember,
+				Candidates: []sdk.TargetCandidate{
+					{Member: "goblin-1", Available: true},
+					{Member: "skeleton-1", Available: false, Why: &sdk.Shortfall{Reason: sdk.ShortfallTargetOutOfReach, Text: "target out of reach"}},
 				},
 			},
 		},
@@ -55,6 +55,14 @@ func TestAfford_HappyPath_ProjectsDeclarations(t *testing.T) {
 	require.Equal(t, sessionpb.Slot_SLOT_ACTION, decl.GetSlot())
 	require.False(t, decl.GetAvailable())
 	require.Equal(t, "action: 1 needed, 0 left", decl.GetWhy().GetText())
+	require.Equal(t, "decl-attack-1", decl.GetId())
+	require.Equal(t, "dnd5e:weapons:longsword", decl.GetAttack().GetRef())
+	require.Equal(t, sessionpb.TargetKind_TARGET_KIND_MEMBER, decl.GetTargetKind())
+	require.Len(t, decl.GetCandidates(), 2)
+	require.True(t, decl.GetCandidates()[0].GetAvailable())
+	require.Nil(t, decl.GetCandidates()[0].GetWhy())
+	require.False(t, decl.GetCandidates()[1].GetAvailable())
+	require.Equal(t, sessionpb.ShortfallReason_SHORTFALL_REASON_TARGET_OUT_OF_REACH, decl.GetCandidates()[1].GetWhy().GetReason())
 }
 
 // TestAfford_WorldClock_DeclarationsEmpty pins the other half of ADR-0042:
@@ -101,54 +109,22 @@ func TestAfford_ManagerError_TranslatesViaErrorTable(t *testing.T) {
 	}
 }
 
-// TestAfford_PerTargetAttackDeclarations pins rpg-project#249 §6 (Kirk): one
-// ATTACK declaration per candidate target in reach, each carrying its own
-// Target -- the client's "enemies in reach" highlight is read straight off
-// this list, never computed client-side.
-func TestAfford_PerTargetAttackDeclarations(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	mgr := sessionv1alpha1mock.NewMockManager(ctrl)
-	goblin, skeleton := "goblin-1", "skeleton-1"
-	mgr.EXPECT().Afford(gomock.Any(), &sdk.AffordInput{Session: "sess-1", Member: "char-1"}).Return(&sdk.AffordOutput{
-		Clock: sdk.ClockTurn,
-		Declarations: []sdk.Declaration{
-			{Verb: sdk.VerbAttack, Slot: sdk.SlotAction, Affordable: true, Target: &goblin},
-			{Verb: sdk.VerbAttack, Slot: sdk.SlotAction, Affordable: true, Target: &skeleton},
-		},
-	}, nil)
-
-	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
-	ctx := auth.WithPlayerID(context.Background(), "alice")
-	resp, err := h.Afford(ctx, &sessionpb.AffordRequest{Session: "sess-1", Member: "char-1"})
-	require.NoError(t, err)
-	// The pre-#253 SDK answers one declaration per target; the bridge
-	// carries each across with its target as a single candidate — a
-	// #253 reader unrolls them to the same per-target rows.
-	require.Len(t, resp.GetDeclarations(), 2)
-	require.Len(t, resp.GetDeclarations()[0].GetCandidates(), 1)
-	require.Equal(t, "goblin-1", resp.GetDeclarations()[0].GetCandidates()[0].GetMember())
-	require.Len(t, resp.GetDeclarations()[1].GetCandidates(), 1)
-	require.Equal(t, "skeleton-1", resp.GetDeclarations()[1].GetCandidates()[0].GetMember())
-	for _, d := range resp.GetDeclarations() {
-		require.True(t, d.GetAvailable())
-		require.True(t, d.GetCandidates()[0].GetAvailable())
-		require.Nil(t, d.Why, "available true carries no why")
-	}
-}
-
-// TestAfford_NoTargetInReach_SingleDeclarationNoTarget pins the other half
-// of §6: when no candidate is in reach, Afford still answers once -- a
-// single ATTACK declaration, unaffordable, Why.Reason NO_TARGET_IN_REACH,
-// and no target at all (never a target whose id happens to be empty).
-func TestAfford_NoTargetInReach_SingleDeclarationNoTarget(t *testing.T) {
+// TestAfford_NoTargetInReach_KeepsCandidateRows pins the nested contract:
+// the declaration-level NO_TARGET_IN_REACH answer does not discard ruled
+// candidates, and each unavailable target keeps its own TARGET_OUT_OF_REACH.
+func TestAfford_NoTargetInReach_KeepsCandidateRows(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mgr := sessionv1alpha1mock.NewMockManager(ctrl)
 	mgr.EXPECT().Afford(gomock.Any(), &sdk.AffordInput{Session: "sess-1", Member: "char-1"}).Return(&sdk.AffordOutput{
 		Clock: sdk.ClockTurn,
 		Declarations: []sdk.Declaration{
 			{
-				Verb: sdk.VerbAttack, Affordable: false,
-				Why: &sdk.Shortfall{Reason: sdk.ShortfallNoTargetInReach, Text: "no target in reach"},
+				Verb: sdk.VerbAttack, Available: false, ID: "decl-attack-1", TargetKind: sdk.TargetMember,
+				Attack: &sdk.AttackRef{Ref: "dnd5e:weapons:longsword", Name: "Longsword", DamageType: sdk.DamageSlashing},
+				Why:    &sdk.Shortfall{Reason: sdk.ShortfallNoTargetInReach, Text: "no target in reach"},
+				Candidates: []sdk.TargetCandidate{
+					{Member: "skeleton-1", Available: false, Why: &sdk.Shortfall{Reason: sdk.ShortfallTargetOutOfReach, Text: "target out of reach"}},
+				},
 			},
 		},
 	}, nil)
@@ -160,24 +136,22 @@ func TestAfford_NoTargetInReach_SingleDeclarationNoTarget(t *testing.T) {
 	require.Len(t, resp.GetDeclarations(), 1)
 	decl := resp.GetDeclarations()[0]
 	require.False(t, decl.GetAvailable())
-	require.Empty(t, decl.GetCandidates())
+	require.Len(t, decl.GetCandidates(), 1, "NO_TARGET_IN_REACH does not remove ruled candidates")
+	require.Equal(t, "skeleton-1", decl.GetCandidates()[0].GetMember())
+	require.Equal(t, sessionpb.ShortfallReason_SHORTFALL_REASON_TARGET_OUT_OF_REACH, decl.GetCandidates()[0].GetWhy().GetReason())
 	require.NotNil(t, decl.Why)
 	require.Equal(t, sessionpb.ShortfallReason_SHORTFALL_REASON_NO_TARGET_IN_REACH, decl.Why.GetReason())
 }
 
-// TestAfford_MoveDeclaration pins VerbMove's own shape beside the ATTACK
-// ones above: no Target (Move never carries one), correctly distinguished
-// from VerbAttack on the wire. Remaining is deliberately NOT asserted here
-// -- it lands with the separate, still-WIP Move-on-clock wave
-// (rpg-toolkit#1169, branch feat/session-move-clock), out of scope for this
-// PR so the two waves stay on their own branches.
-func TestAfford_MoveDeclaration(t *testing.T) {
+func TestAfford_MoveAndEndTurnDeclarations(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mgr := sessionv1alpha1mock.NewMockManager(ctrl)
+	remaining := 15
 	mgr.EXPECT().Afford(gomock.Any(), &sdk.AffordInput{Session: "sess-1", Member: "char-1"}).Return(&sdk.AffordOutput{
 		Clock: sdk.ClockTurn,
 		Declarations: []sdk.Declaration{
-			{Verb: sdk.VerbMove, Affordable: true},
+			{Verb: sdk.VerbMove, Slot: sdk.SlotNone, Available: true, Remaining: &remaining, ID: "decl-move-1", TargetKind: sdk.TargetPath, Candidates: []sdk.TargetCandidate{}},
+			{Verb: sdk.VerbEndTurn, Slot: sdk.SlotNone, Available: true, ID: "decl-end-1", TargetKind: sdk.TargetNone, Candidates: []sdk.TargetCandidate{}},
 		},
 	}, nil)
 
@@ -185,9 +159,16 @@ func TestAfford_MoveDeclaration(t *testing.T) {
 	ctx := auth.WithPlayerID(context.Background(), "alice")
 	resp, err := h.Afford(ctx, &sessionpb.AffordRequest{Session: "sess-1", Member: "char-1"})
 	require.NoError(t, err)
-	require.Len(t, resp.GetDeclarations(), 1)
-	decl := resp.GetDeclarations()[0]
-	require.Equal(t, sessionpb.Verb_VERB_MOVE, decl.GetVerb())
-	require.True(t, decl.GetAvailable())
-	require.Empty(t, decl.GetCandidates(), "Move never carries a target")
+	require.Len(t, resp.GetDeclarations(), 2)
+	move := resp.GetDeclarations()[0]
+	require.Equal(t, sessionpb.Verb_VERB_MOVE, move.GetVerb())
+	require.NotNil(t, move.Remaining)
+	require.Equal(t, int32(15), move.GetRemaining())
+	require.Equal(t, sessionpb.TargetKind_TARGET_KIND_PATH, move.GetTargetKind())
+	require.NotNil(t, move.Candidates)
+	require.Empty(t, move.Candidates)
+	end := resp.GetDeclarations()[1]
+	require.Equal(t, sessionpb.Verb_VERB_END_TURN, end.GetVerb())
+	require.Nil(t, end.Remaining)
+	require.Equal(t, sessionpb.TargetKind_TARGET_KIND_NONE, end.GetTargetKind())
 }

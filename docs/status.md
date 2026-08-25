@@ -1,8 +1,8 @@
 ---
 name: rpg-api status
 description: Where we are with rpg-api — active work, paused, known rough edges, per-subsystem confidence
-updated: 2026-08-23
-confidence: high — Wave 2 Monk entries verified against passing integration tests; #636 entry verified against passing unit + integration tests; #642 v1alpha1 encounter stack deletion verified against passing build/vet/test/lint; #644 The Dungeon wave 1 (api) verified against passing unit + stress-run (50x) integration tests; #650 toolkit seam adoption (InitiativeRolled event + room-aware spawn) verified against passing unit/integration/-race full suite; #651 ActiveConditions projection verified against passing unit + integration (10x -race) + full suite; #656 movement-truncation fix verified against an isolated toolkit-level repro, a new RPC-level regression test (10x -race), and the full suite; #663 AbandonEncounter + combat pockets + rage-at-seating verified against passing unit/integration/-race full suite plus a live playtest against the real game route; #676 The Dungeon wave 2 Slice 2 (api leg) verified against passing unit tests + a new 3-test integration gate suite (8x stress-run, entropy-seeded layouts); #680 equipment on the wire verified against passing unit + integration suite (real AC, occupancy, non-equipment-field preservation) + adversarial-gate fixes + full CI green against published deps; #687 region/theme wire projection verified against passing unit (-race) + a real-RPC integration gate proving connect-time AND incremental-reveal zone_id/zones/theme projection against the real Redis harness, full `go test`/`golangci-lint` green against the published `rpg-api-protos` generated branch + `rpg-toolkit/encounter v0.35.0`; #688 N-region dungeon by key verified against passing unit (-race, 15x stress-run) + a rewritten 3-test integration gate suite against the real Redis harness, full `go test`/`golangci-lint` green against published `rpg-toolkit/encounter v0.35.0`; #694 crypt dungeon-key consumes the toolkit's own `CryptDungeonParams` (obstacles included) verified against passing unit (-race) against published `rpg-toolkit/encounter v0.38.0`; #689 deterministic crypt monster composition verified against passing unit (-race, 1000-seed x 4-party-size zero-error matrix against the real production registry) + real-Redis integration (composition + seed-determinism + party-size-invariance) + the updated dungeon_crypt_test.go gate, full `go test`/`golangci-lint` green against published `rpg-toolkit/encounter v0.38.0` + `rulebooks/dnd5e v0.68.0`, zero new lint issues versus main — **#694 and #689 merged together (this doc's own "Deterministic crypt monster composition, integrated with toolkit CryptDungeonParams" entry, 2026-07-23) close out rpg-api#696** (the out-of-sight goblin-placement collision #694 alone surfaced): #689's deterministic `FixedPositions` composition retires the search path that could fail, so the merged 1..1000-seed x party-1..4 matrix is 0/4000 errors, not a tuned-down failure rate
+updated: 2026-08-25
+confidence: high — #844 field-complete owner projection and atomic equipment patch verified against focused handler/orchestrator/repository tests and lint; Wave 2 Monk entries verified against passing integration tests; #636 entry verified against passing unit + integration tests; #642 v1alpha1 encounter stack deletion verified against passing build/vet/test/lint; #644 The Dungeon wave 1 (api) verified against passing unit + stress-run (50x) integration tests; #650 toolkit seam adoption (InitiativeRolled event + room-aware spawn) verified against passing unit/integration/-race full suite; #651 ActiveConditions projection verified against passing unit + integration (10x -race) + full suite; #656 movement-truncation fix verified against an isolated toolkit-level repro, a new RPC-level regression test (10x -race), and the full suite; #663 AbandonEncounter + combat pockets + rage-at-seating verified against passing unit/integration/-race full suite plus a live playtest against the real game route; #676 The Dungeon wave 2 Slice 2 (api leg) verified against passing unit tests + a new 3-test integration gate suite (8x stress-run, entropy-seeded layouts); #680 equipment on the wire verified against passing unit + integration suite (real AC, occupancy, non-equipment-field preservation) + adversarial-gate fixes + full CI green against published deps; #687 region/theme wire projection verified against passing unit (-race) + a real-RPC integration gate proving connect-time AND incremental-reveal zone_id/zones/theme projection against the real Redis harness, full `go test`/`golangci-lint` green against the published `rpg-api-protos` generated branch + `rpg-toolkit/encounter v0.35.0`; #688 N-region dungeon by key verified against passing unit (-race, 15x stress-run) + a rewritten 3-test integration gate suite against the real Redis harness, full `go test`/`golangci-lint` green against published `rpg-toolkit/encounter v0.35.0`; #694 crypt dungeon-key consumes the toolkit's own `CryptDungeonParams` (obstacles included) verified against passing unit (-race) against published `rpg-toolkit/encounter v0.38.0`; #689 deterministic crypt monster composition verified against passing unit (-race, 1000-seed x 4-party-size zero-error matrix against the real production registry) + real-Redis integration (composition + seed-determinism + party-size-invariance) + the updated dungeon_crypt_test.go gate, full `go test`/`golangci-lint` green against published `rpg-toolkit/encounter v0.38.0` + `rulebooks/dnd5e v0.68.0`, zero new lint issues versus main — **#694 and #689 merged together (this doc's own "Deterministic crypt monster composition, integrated with toolkit CryptDungeonParams" entry, 2026-07-23) close out rpg-api#696** (the out-of-sight goblin-placement collision #694 alone surfaced): #689's deterministic `FixedPositions` composition retires the search path that could fail, so the merged 1..1000-seed x party-1..4 matrix is 0/4000 errors, not a tuned-down failure rate
 ---
 
 # rpg-api: Where We Are
@@ -11,7 +11,7 @@ This is a living doc. Edit it in the same PR that invalidates a line. Don't let 
 
 ## Active work
 
-**Dungeon content registry + AuthoringService on the session stack (rpg-api#806, rpg-project#256, branch `feat/806-dungeon-registry`, 2026-08-23)** — `internal/dungeons` is the content registry: every `*.yaml` under `RPG_CONTENT_DIR` (default `./content`) is compiled once at boot through `internal/sessionworld` (the toolkit's `rulebooks/dnd5e/encounter/dungeonspec`), a file that does not compile fails construction naming itself, and the reference tomb now ships as `content/reference-tomb.yaml` rather than a `go:embed`. `StartEncounter` honours `dungeon_key` (empty → `reference-tomb`, unknown → `NotFound`, never a silent fallback); `LobbyService.ListDungeons` answers from the registry, ungated. `AuthoringService` v1alpha1 (`PutDungeon` validate/save → atomic temp+rename write → entry swap, serialized per key; `GetDungeon` verbatim bytes) is registered only with `RPG_AUTHORING_ENABLED=1` (which then requires `RPG_CONTENT_DIR`). `PutDungeon` answers the atlas the game plays from (`session.Manager.AtlasOf` behind the registry's `AtlasProjector`), `FieldError`s carry YAML paths (dungeonspec v2 `ValidationError`), `GetAtlasResponse.regions` is copied, and the tomb ships in the v2 dialect — `sessionworld`'s throwaway-encounter projection is deleted (`encounter.HexCellAt` is the one conversion). Pinned to `rpg-api-protos/gen/go` 9170f48 (v0.1.135), `rulebooks/dnd5e/encounter` v0.31.0 and `rulebooks/dnd5e/session` v0.23.0 (toolkit plan items T1/T2/T3, tagged; session bumped again by rpg-api#824 for GetStory's typed-Event catch-up, rpg-api-protos#239). See [`architecture/components/authoring-service.md`](architecture/components/authoring-service.md) and [`architecture/components/lobby-service.md`](architecture/components/lobby-service.md).
+**Dungeon content registry + AuthoringService on the session stack (rpg-api#806, rpg-project#256, branch `feat/806-dungeon-registry`, 2026-08-23)** — `internal/dungeons` is the content registry: every `*.yaml` under `RPG_CONTENT_DIR` (default `./content`) is compiled once at boot through `internal/sessionworld` (the toolkit's `rulebooks/dnd5e/encounter/dungeonspec`), a file that does not compile fails construction naming itself, and the reference tomb now ships as `content/reference-tomb.yaml` rather than a `go:embed`. `StartEncounter` honours `dungeon_key` (empty → `reference-tomb`, unknown → `NotFound`, never a silent fallback); `LobbyService.ListDungeons` answers from the registry, ungated. `AuthoringService` v1alpha1 (`PutDungeon` validate/save → atomic temp+rename write → entry swap, serialized per key; `GetDungeon` verbatim bytes) is registered only with `RPG_AUTHORING_ENABLED=1` (which then requires `RPG_CONTENT_DIR`). `PutDungeon` answers the atlas the game plays from (`session.Manager.AtlasOf` behind the registry's `AtlasProjector`), `FieldError`s carry YAML paths (dungeonspec v2 `ValidationError`), `GetAtlasResponse.regions` is copied, and the tomb ships in the v2 dialect — `sessionworld`'s throwaway-encounter projection is deleted (`encounter.HexCellAt` is the one conversion). The current branch consumes this stack at proto generated v0.1.143 (`a7db07a`), `rulebooks/dnd5e/encounter` v0.35.0, and `rulebooks/dnd5e/session` v0.30.0. See [`architecture/components/authoring-service.md`](architecture/components/authoring-service.md) and [`architecture/components/lobby-service.md`](architecture/components/lobby-service.md).
 
 <details>
 <summary>Pre-rip-out entries (rpg-api#773/#772/#763/#783/#692/#699/#694/#689/#688/#687) — DELETED 2026-08-23</summary>
@@ -23,84 +23,61 @@ record; the living entries start above.
 
 </details>
 
-**Equipment on the wire — real AC, one rules-correct equip path (rpg-api#680, 2026-07-21)** —
-board #11's two named equipment sins are both fixed. AC on the wire used to be
-`converters.go`'s `int32(data.ArmorClass)` — a straight copy of a stored int, never
-computed. Equip used to be `internal/orchestrators/character/orchestrator.go`'s bare
-`EquipmentSlots.Set/Clear` — no rules, no occupancy, no recompute. Both are gone.
+**Production session-combat API and strict owner-private character sheet
+(rpg-api#844, rpg-project#270 / PR #271, 2026-08-25)** — `SessionService.Afford`
+maps the toolkit's one declaration per executable verb field-for-field: Attack, Move,
+and End Turn; slot and availability; optional remaining/why/full `AttackRef`; opaque
+declaration ID; target kind; and every candidate's independent availability/why.
+Unknown closed enums become UNSPECIFIED producer defects. A NO_TARGET_IN_REACH
+declaration keeps its candidate rows and TARGET_OUT_OF_REACH reasons; rpg-api derives
+no reach, cost, target, availability, resource, or prose rule.
 
-**The single equip path.** `Orchestrator.EquipItem`/`UnequipItem` now load the runtime
-`*character.Character` via `character.LoadFromData`, call the toolkit's rules-aware
-`Character.EquipItem`/`UnequipItem` (rpg-toolkit#812, v0.67.0 — two-handed weapons
-claim/clear `off_hand`, equipping an occupied slot swaps the previous occupant back to
-inventory, an incompatible slot is a real error now instead of a silent no-op), and
-persist the result. Both the existing v1alpha1 `CharacterService.EquipItem`/`UnequipItem`
-and the new v1alpha2 `CharacterService` (below) call this ONE orchestrator method — no
-dual logic, occupancy enforced exactly once, in the toolkit.
+Attack, turn-clock Move, and End Turn pass the caller's opaque `declaration_id` into the
+SDK after the unchanged owner gate and before the one Manager call. Missing selectors
+map to INVALID_ARGUMENT; stale regenerated offers map to FAILED_PRECONDITION. Full
+catalog Attack refs cross Afford, AttackResponse, Struck, and Missed unchanged.
+`StreamEvents` remains live, audience-filtered, best-effort delivery with no replay
+claim; `GetStory` is the persisted catch-up read. Both use the same typed-event wire
+converter, so live and recovered events have one projection.
 
-**New v1alpha2 `dnd5e.api.v1alpha2.character.CharacterService`**
-(`internal/handlers/dnd5e/v2/character/`, rpg-api-protos#188) — `EquipItem`/`UnequipItem`,
-the out-of-encounter character-sheet surface (equip/unequip between encounters; the
-in-encounter equivalent, when it exists, rides the encounter stream instead —
-rpg-api#681 below). Both RPCs return the recomputed `CharacterData`: real AC, composed
-`stat_line`/`main_hand_damage`, current `equipped`/`inventory`/`slots` — that response IS
-this slice's delivery mechanism, not a follow-up read.
+`v1alpha2.character.CharacterService.GetCharacterData` is the owner-private pull read.
+Ownership is checked before strict projection. Its detached View now includes PlayerID
+plus typed class/race identity as well as toolkit EquipmentView and StatusView, and the
+wire mapper fills the existing structured refs as `{module:dnd5e, type:class, id}` and
+`{module:dnd5e, type:race, id}`. Get/Equip/Unequip return identity, equipment, level,
+HP, base speed, features, active conditions, and non-magical resources from that one
+mapping. Missing owner/class/race identity or malformed private state fails rather than
+producing a partial sheet. INTERNAL transport text is the generic `character data
+unavailable`; the detailed strict-load/projection cause remains wrapped internally.
 
-**Real AC.** `CharacterData.armor_class_detail`/`Entity.armor_class` (the v1alpha2
-encounter snapshot, `internal/handlers/dnd5e/v2/encounter/project.go`'s `playerEntity`)
-now come from the toolkit's `EquipmentView` (`EffectiveAC(ctx).Total`), not a stored int.
-See `docs/architecture/components/encounter.md`'s "CharacterData equipment projection"
-section for the AC-sync invariant this introduces.
+Equip/Unequip strictly load and attach an isolated working sheet, require complete pre-
+and post-views, and only then call the Redis repository's atomic `PatchEquipment`. The
+patch uses WATCH/MULTI semantics, compares the expected equipment state and record
+version, and writes only EquipmentSlots plus cached ArmorClass onto the latest record.
+A stale equipment expectation is ABORTED. An unrelated revision is returned without a
+write so the orchestrator can strictly reproject and retry; concurrent HP, resources,
+conditions, economy, appearance, and every other field survive. The repository returns
+the actual patched entity. The orchestrator returns that entity and the precomposed
+matching View, so both v1alpha1 and v1alpha2 equipment handlers answer from the same
+post-state with no post-write Get or fallible projection.
 
-**Why persistence merges instead of overwriting — a real footgun, worth remembering.**
-`Orchestrator`'s `mergedEquipmentData` copies the ORIGINALLY loaded `character.Data` and
-refreshes only `EquipmentSlots` + `ArmorClass` from the post-mutation runtime character —
-it does NOT persist a full `char.ToData()` round-trip. The toolkit's `ToData()`/
-`LoadFromData()` pair is lossy: `BackgroundID` and `CreatedAt` are never populated by
-`ToData()` at all, and any inventory item whose ID isn't in the toolkit's built-in
-weapon/armor/tool/pack/ammo registry (a loot/quest item) is silently dropped by
-`LoadFromData`'s `equipment.GetByID` resolution loop. An adversarial gate caught this
-before merge — the naive full-overwrite version destroyed a test character's background,
-creation timestamp, and a non-registry inventory item on a single equip call. If this
-ever gets "simplified" back to `Data: char.ToData()`, that data loss returns silently.
-See `docs/architecture/components/character-orchestrator.md`'s Equipment section.
+The toolkit still owns equip legality, occupancy, AC calculation, status descriptors,
+and resources. rpg-api clones the retained EquipmentSlots map, translates typed values,
+and performs no raw JSON inspection, rule calculation, magic projection, or full-record
+snapshot SET from the equipment path. Spell slots and legacy ClassResources remain
+excluded.
 
-**Boundary discipline.** rpg-api composes no display strings, computes no AC, enforces
-no occupancy anywhere in this slice — `BuildEquipmentCharacterData`
-(`internal/handlers/dnd5e/v2/encounter/character_data.go`) is a pure field-for-field map
-from the toolkit's `EquipmentView` (`Items[].Name/Kind/SlotKeys/StatLine`, `Slots`,
-`ACTotal`/`ACNote`, `MainHandDamage`) onto the wire `CharacterData`, Ref-translation only.
-One composition, shared by the character-sheet RPC response and the encounter snapshot
-path, so the two surfaces never independently drift.
+Final published dependencies are proto generated v0.1.143 (`a7db07a`),
+`rulebooks/dnd5e` v0.100.0, `rulebooks/dnd5e/session` v0.30.0, and
+`rulebooks/dnd5e/resolution` v0.13.0, with no local replace or generated-source edit.
 
-**Known deferrals, all filed:**
-- **rpg-api#681** — live-push of a recomputed snapshot to an already-open
-  `StreamEncounter` connection when an out-of-combat equip happens. No existing toolkit
-  broker event supports "entity data changed," and the character orchestrator has no
-  dependency on the encounter broker today; building one is new cross-orchestrator
-  wiring, out of scope for this slice. A NEW snapshot build (`GetEncounter`, or a fresh
-  `StreamEncounter` connect) already reflects a persisted equip change for free.
-- **rpg-api#683** — `make ci-check` (`scripts/ci-checks.sh`)'s mock-regeneration check
-  runs `go generate ./...` then unconditionally `git checkout -- .` on ANY diff,
-  including tool-version-drift cosmetic diffs unrelated to real interface changes. It
-  fired a false positive mid-implementation and wiped every uncommitted tracked-file
-  edit in the working tree back to `HEAD` (new untracked files survived). Commit before
-  running `make ci-check` until this is fixed.
-- **rpg-api#684** — replace the stored `ArmorClass` int with a direct `EffectiveAC` read
-  everywhere (eliminating the cache/desync risk `mergedEquipmentData` currently manages
-  by keeping the int refreshed on every equip) — a larger, separately-scoped change.
-
-Verified: orchestrator unit suite (occupancy, slot-swap, non-registry-field preservation,
-stored-AC sync, error mapping) + a table-driven integration suite wiring both the
-v1alpha2 character service and the v1alpha2 encounter service against the same character
-store (`internal/handlers/dnd5e/v2/encounter/integration_equipment_test.go`) — fighter
-equips chain mail for a hand-computed AC of 16 (heavy armor, no DEX bonus), rogue equips
-leather for a hand-computed AC of 14 (11 base + DEX 16's +3 mod), barbarian's two-handed
-greataxe equip clears `off_hand` on both the RPC response and the encounter snapshot, and
-unequip returns an item to inventory without dropping it. Full `go test ./...` and
-`golangci-lint` (0 new issues) green against the published `rpg-toolkit/rulebooks/dnd5e
-v0.67.0` + `rpg-api-protos/gen/go` (post rpg-api-protos#188) — no replace directives in
-the merged commit. CI green on rpg-api#682.
+**Equipment on the wire (rpg-api#680, updated by #844)** — the original real-AC and
+single-toolkit-equip-path ruling remains; #844 replaces its full-record merge write with
+the atomic two-field patch above and makes the complete owner response available through
+`GetCharacterData` and both equipment responses. Current implementation and invariants
+are documented in
+[`architecture/components/character-orchestrator.md`](architecture/components/character-orchestrator.md)
+and [`architecture/components/character-v2-handler.md`](architecture/components/character-v2-handler.md).
 
 **The Dungeon wave 2 Slice 2 (api leg) — two-chamber dungeon, door projection,
 per-chamber goblin seeding (rpg-api#676, 2026-07-20)** — **superseded by rpg-api#688
@@ -866,10 +843,10 @@ See [quality.md](quality.md) for grade and rationale.
 | Character orchestrator | Medium-high — smaller, well-tested |
 | Dungeon component | Medium — good tests, wrong repo; toolkit boundary violation (unaffected by #227 — a separate, pre-existing legacy component) |
 | Spawner component | Medium — thin, functional |
-| Character repository (Redis) | Medium-high — only persistent game-state store predating the v2 vertical |
-| Integration test harness | Medium — character/lobby coverage intact; new-stack session coverage lives in `internal/integration/session`, not yet folded into this confidence line |
+| Character repository (Redis) | High — equipment has WATCH/MULTI optimistic concurrency regressions; CRUD and indexes retain the existing Redis implementation |
+| Integration test harness | Medium-high — character/lobby coverage remains in `internal/integration/harness`; the session stack has its own real Manager/Redis integration suites in `internal/integration/session` |
 | Services layer (sandboxroom) | Low — sparse; most business logic lives in orchestrators |
-| Dungeon content registry (`internal/dungeons`) + authoring handler/orchestrator | Medium-high — registry contract (boot refusal, atomic write, per-key serialization under `-race`, verbatim bytes) and handler transport rules unit-tested; atlas/regions/field-error paths pending toolkit T1–T3 (rpg-api#806) |
+| Dungeon content registry (`internal/dungeons`) + authoring handler/orchestrator | Medium-high — boot refusal, atomic write, per-key serialization under `-race`, verbatim bytes, atlas/regions, and field-error paths are implemented against published dependencies |
 
 ~~Encounter v2 handler/orchestrator | Encounter repository v2 (Redis +
 in-memory) | Authoring orchestrator/handler | dungeonregistry | devseed |
@@ -879,20 +856,20 @@ Redis publisher | Encounter repository (in-memory) | Dungeon repository
 (in-memory) | Encounter log repository (in-memory)~~ — all deleted with the
 v1alpha1 stack (#642, an earlier and separate removal).
 
-### Lint — 9 pre-existing violations (rpg-project#227, 2026-08-21)
+### Lint — 13 pre-existing violations (verified 2026-08-25)
 
-`golangci-lint run ./...` reports 9 pre-existing violations as of the
-rpg-project#227 rip-out, verified byte-for-byte unrelated to that branch's
-diff (none in a file the rip-out touched). This count supersedes the
-2026-07-13 (#642) figures below, which described a `goconst`-heavy baseline
-in files (the old orchestrator, `internal/integration/encounter_v2_test.go`)
-that are themselves now deleted — a fresh count was taken rather than
-subtracting from a stale one. Categories:
+An untouched `origin/dev` worktree and this branch before the final-review fix both
+report the same 13 broad `golangci-lint run ./...` findings. Changed-line/focused lint
+is the gate for #844; these baseline files are not edited to hide the result.
+Categories:
 
-- **errcheck (2)** — unchecked `ts.conn.Close()`/`ts.redisClient.Close()` in `internal/integration/harness/harness.go`
-- **govet (3)** — `err` shadowing in `internal/integration/harness/harness.go`
-- **staticcheck (1)** — `grpc.DialContext` deprecated, same file
-- **unconvert (3)** — unnecessary `string()` conversions in `internal/handlers/dnd5e/v1alpha1/character/{handler,converters}.go`
+- **depguard (1)** — session `get_roster_test.go` imports the rulebook classes package
+- **errcheck (2)** — unchecked harness connection closes
+- **govet (4)** — one session door-handler shadow and three harness shadows
+- **lll (1)** — one `sessionworld` line
+- **misspell (1)** — one roster-test spelling
+- **staticcheck (1)** — deprecated `grpc.DialContext` in the harness
+- **unconvert (3)** — legacy v1alpha1 character conversions
 
 <details>
 <summary>2026-07-13 (#642) figures — superseded, kept for history</summary>

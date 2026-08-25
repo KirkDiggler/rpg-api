@@ -64,6 +64,7 @@ func TestClockKindToProto(t *testing.T) {
 func TestVerbToProto(t *testing.T) {
 	require.Equal(t, sessionpb.Verb_VERB_ATTACK, verbToProto(sdk.VerbAttack))
 	require.Equal(t, sessionpb.Verb_VERB_MOVE, verbToProto(sdk.VerbMove))
+	require.Equal(t, sessionpb.Verb_VERB_END_TURN, verbToProto(sdk.VerbEndTurn))
 	require.Equal(t, sessionpb.Verb_VERB_UNSPECIFIED, verbToProto(sdk.Verb("bogus")))
 }
 
@@ -80,32 +81,65 @@ func TestSlotToProto(t *testing.T) {
 	require.Equal(t, sessionpb.Slot_SLOT_UNSPECIFIED, slotToProto(sdk.Slot("bogus")))
 }
 
-func TestDeclarationToProto(t *testing.T) {
+func TestTargetKindToProto(t *testing.T) {
+	require.Equal(t, sessionpb.TargetKind_TARGET_KIND_NONE, targetKindToProto(sdk.TargetNone))
+	require.Equal(t, sessionpb.TargetKind_TARGET_KIND_MEMBER, targetKindToProto(sdk.TargetMember))
+	require.Equal(t, sessionpb.TargetKind_TARGET_KIND_PATH, targetKindToProto(sdk.TargetPath))
+	require.Equal(t, sessionpb.TargetKind_TARGET_KIND_UNSPECIFIED, targetKindToProto(sdk.TargetKind("bogus")))
+}
+
+func TestTargetCandidateToProto_FieldForField(t *testing.T) {
+	got := targetCandidateToProto(sdk.TargetCandidate{
+		Member: "skeleton-1", Available: false,
+		Why: &sdk.Shortfall{Reason: sdk.ShortfallTargetOutOfReach, Text: "target out of reach"},
+	})
+	require.Equal(t, "skeleton-1", got.GetMember())
+	require.False(t, got.GetAvailable())
+	require.Equal(t, sessionpb.ShortfallReason_SHORTFALL_REASON_TARGET_OUT_OF_REACH, got.GetWhy().GetReason())
+	require.Equal(t, "target out of reach", got.GetWhy().GetText())
+}
+
+func TestDeclarationToProto_FieldForField(t *testing.T) {
+	remaining := 0
 	out := declarationToProto(sdk.Declaration{
-		Verb: sdk.VerbAttack, Slot: sdk.SlotAction, Affordable: false,
-		Why: &sdk.Shortfall{Reason: sdk.ShortfallNoBudget, Text: "action: 1 needed, 0 left"},
+		Verb: sdk.VerbAttack, Slot: sdk.SlotAction, Available: false, Remaining: &remaining,
+		Why:        &sdk.Shortfall{Reason: sdk.ShortfallNoBudget, Currency: sdk.CurrencyAction, Needed: 1, Text: "action: 1 needed, 0 left"},
+		ID:         "decl-attack-1",
+		Attack:     &sdk.AttackRef{Ref: "dnd5e:weapons:longsword", Name: "Longsword", DamageType: sdk.DamageSlashing},
+		TargetKind: sdk.TargetMember,
+		Candidates: []sdk.TargetCandidate{
+			{Member: "goblin-1", Available: true},
+			{Member: "skeleton-1", Available: false, Why: &sdk.Shortfall{Reason: sdk.ShortfallTargetOutOfReach, Text: "target out of reach"}},
+		},
 	})
 	require.Equal(t, sessionpb.Verb_VERB_ATTACK, out.GetVerb())
 	require.Equal(t, sessionpb.Slot_SLOT_ACTION, out.GetSlot())
 	require.False(t, out.GetAvailable())
+	require.NotNil(t, out.Remaining)
+	require.Zero(t, out.GetRemaining(), "present zero must not collapse into absence")
 	require.Equal(t, "action: 1 needed, 0 left", out.GetWhy().GetText())
-	require.Empty(t, out.GetCandidates())
+	require.Equal(t, "decl-attack-1", out.GetId())
+	require.Equal(t, "dnd5e:weapons:longsword", out.GetAttack().GetRef())
+	require.Equal(t, "Longsword", out.GetAttack().GetName())
+	require.Equal(t, sessionpb.DamageType_DAMAGE_TYPE_SLASHING, out.GetAttack().GetDamageType())
+	require.Equal(t, sessionpb.TargetKind_TARGET_KIND_MEMBER, out.GetTargetKind())
+	require.Len(t, out.GetCandidates(), 2)
+	require.True(t, out.GetCandidates()[0].GetAvailable(), "candidate availability is independent of the declaration")
+	require.Nil(t, out.GetCandidates()[0].GetWhy())
+	require.False(t, out.GetCandidates()[1].GetAvailable())
+	require.Equal(t, sessionpb.ShortfallReason_SHORTFALL_REASON_TARGET_OUT_OF_REACH, out.GetCandidates()[1].GetWhy().GetReason())
 }
 
-// TestDeclarationToProto_TargetBecomesCandidate pins the #253 bridge's own
-// move: the pre-#253 SDK's per-target declaration crosses as one wire
-// declaration carrying its target as a single candidate, the candidate
-// echoing the declaration's own available/why.
-func TestDeclarationToProto_TargetBecomesCandidate(t *testing.T) {
-	target := "goblin-1"
+func TestDeclarationToProto_PreservesOptionalAbsenceAndEmptyCandidates(t *testing.T) {
 	out := declarationToProto(sdk.Declaration{
-		Verb: sdk.VerbAttack, Slot: sdk.SlotAction, Affordable: true, Target: &target,
+		Verb: sdk.VerbEndTurn, Slot: sdk.SlotNone, Available: true, ID: "decl-end-1",
+		TargetKind: sdk.TargetNone, Candidates: []sdk.TargetCandidate{},
 	})
-	require.True(t, out.GetAvailable())
-	require.Len(t, out.GetCandidates(), 1)
-	require.Equal(t, "goblin-1", out.GetCandidates()[0].GetMember())
-	require.True(t, out.GetCandidates()[0].GetAvailable())
-	require.Nil(t, out.GetCandidates()[0].GetWhy())
+	require.Nil(t, out.Remaining)
+	require.Nil(t, out.Why)
+	require.Nil(t, out.Attack)
+	require.NotNil(t, out.Candidates)
+	require.Empty(t, out.Candidates)
 }
 
 // TestDeclarationsToProto_NilOrEmpty_StaysNonNilEmpty pins the "no null,
@@ -124,7 +158,7 @@ func TestDeclarationsToProto_NilOrEmpty_StaysNonNilEmpty(t *testing.T) {
 
 func TestDeclarationsToProto_Populated(t *testing.T) {
 	out := declarationsToProto([]sdk.Declaration{
-		{Verb: sdk.VerbAttack, Slot: sdk.SlotNone, Affordable: true},
+		{Verb: sdk.VerbAttack, Slot: sdk.SlotNone, Available: true},
 	})
 	require.Len(t, out, 1)
 	require.Equal(t, sessionpb.Slot_SLOT_NONE, out[0].GetSlot())
@@ -375,7 +409,7 @@ func richStruckEvent() sdk.Event {
 		Kind: sdk.EventStruck,
 		Body: sdk.StruckBody{
 			Attacker: "char-1", Target: "goblin-1", Roll: 18, Total: 21, Against: 13, Damage: 6,
-			Attack:   sdk.AttackRef{Ref: "longsword", Name: "Longsword", DamageType: sdk.DamageSlashing},
+			Attack:   sdk.AttackRef{Ref: "dnd5e:weapons:longsword", Name: "Longsword", DamageType: sdk.DamageSlashing},
 			Critical: true,
 			DamageComponents: []sdk.DamageComponent{
 				{
@@ -563,8 +597,8 @@ func TestDamageTypeToProto(t *testing.T) {
 }
 
 func TestAttackRefToProto(t *testing.T) {
-	got := attackRefToProto(sdk.AttackRef{Ref: "longsword", Name: "Longsword", DamageType: sdk.DamageSlashing})
-	require.Equal(t, "longsword", got.GetRef())
+	got := attackRefToProto(sdk.AttackRef{Ref: "dnd5e:weapons:longsword", Name: "Longsword", DamageType: sdk.DamageSlashing})
+	require.Equal(t, "dnd5e:weapons:longsword", got.GetRef())
 	require.Equal(t, "Longsword", got.GetName())
 	require.Equal(t, sessionpb.DamageType_DAMAGE_TYPE_SLASHING, got.GetDamageType())
 }
@@ -579,6 +613,7 @@ func TestShortfallReasonToProto(t *testing.T) {
 		{sdk.ShortfallNoTargetInReach, sessionpb.ShortfallReason_SHORTFALL_REASON_NO_TARGET_IN_REACH},
 		{sdk.ShortfallDowned, sessionpb.ShortfallReason_SHORTFALL_REASON_DOWNED},
 		{sdk.ShortfallUnreadable, sessionpb.ShortfallReason_SHORTFALL_REASON_UNREADABLE},
+		{sdk.ShortfallTargetOutOfReach, sessionpb.ShortfallReason_SHORTFALL_REASON_TARGET_OUT_OF_REACH},
 		{sdk.ShortfallReason("bogus"), sessionpb.ShortfallReason_SHORTFALL_REASON_UNSPECIFIED},
 	}
 	for _, tt := range tests {
@@ -662,31 +697,6 @@ func TestParticipantsToProto_Populated(t *testing.T) {
 	require.False(t, out[1].GetActive())
 }
 
-// TestDeclarationToProto_TargetAndWhy pins the #253 bridge's target move
-// beside TestDeclarationToProto_TargetBecomesCandidate: an affordable
-// per-target declaration crosses with its candidate and NO why — nothing
-// ran out — while the candidate echoes the declaration's own answer.
-func TestDeclarationToProto_TargetAndWhy(t *testing.T) {
-	target := "skeleton-1"
-	out := declarationToProto(sdk.Declaration{
-		Verb: sdk.VerbAttack, Slot: sdk.SlotAction, Affordable: true, Target: &target,
-	})
-	require.Len(t, out.GetCandidates(), 1)
-	require.Equal(t, "skeleton-1", out.GetCandidates()[0].GetMember())
-	require.Nil(t, out.Why, "available true carries no why -- nothing ran out")
-	require.Nil(t, out.GetCandidates()[0].GetWhy())
-}
-
-func TestDeclarationToProto_NoTargetInReach(t *testing.T) {
-	out := declarationToProto(sdk.Declaration{
-		Verb: sdk.VerbAttack, Affordable: false,
-		Why: &sdk.Shortfall{Reason: sdk.ShortfallNoTargetInReach, Text: "no target in reach"},
-	})
-	require.Empty(t, out.GetCandidates(), "the no-candidate-in-reach declaration carries no target")
-	require.NotNil(t, out.Why)
-	require.Equal(t, sessionpb.ShortfallReason_SHORTFALL_REASON_NO_TARGET_IN_REACH, out.Why.GetReason())
-}
-
 // TestEventToProto_TypedBodies covers ONE ARM PER BODY (rpg-toolkit#941):
 // every kind that carries a typed session.EventBody projects onto the
 // matching proto oneof member, and Payload keeps riding alongside it --
@@ -717,7 +727,7 @@ func TestEventToProto_TypedBodies(t *testing.T) {
 		require.Equal(t, int32(13), s.GetAgainst())
 		require.Equal(t, int32(6), s.GetDamage())
 		require.True(t, s.GetCritical())
-		require.Equal(t, "longsword", s.GetAttack().GetRef())
+		require.Equal(t, "dnd5e:weapons:longsword", s.GetAttack().GetRef())
 		require.Equal(t, sessionpb.DamageType_DAMAGE_TYPE_SLASHING, s.GetAttack().GetDamageType())
 
 		require.Len(t, s.GetDamageComponents(), 2)
@@ -747,13 +757,13 @@ func TestEventToProto_TypedBodies(t *testing.T) {
 			Kind: sdk.EventMissed,
 			Body: sdk.MissedBody{
 				Attacker: "char-1", Target: "goblin-1", Roll: 4, Total: 7, Against: 13,
-				Attack: sdk.AttackRef{Ref: "longsword", Name: "Longsword", DamageType: sdk.DamageSlashing},
+				Attack: sdk.AttackRef{Ref: "dnd5e:weapons:longsword", Name: "Longsword", DamageType: sdk.DamageSlashing},
 			},
 		})
 		m := got.GetMissed()
 		require.NotNil(t, m)
 		require.Equal(t, int32(4), m.GetRoll())
-		require.Equal(t, "longsword", m.GetAttack().GetRef())
+		require.Equal(t, "dnd5e:weapons:longsword", m.GetAttack().GetRef())
 	})
 
 	t.Run("FightStarted", func(t *testing.T) {

@@ -29,20 +29,21 @@ served. See "Encounter repository (v2)" below for the replacement.
 
 **Path:** `repositories/character/`
 
-Interface methods:
-- `Get(ctx, *GetInput) (*GetOutput, error)` — by character ID
-- `GetByPlayerID(ctx, *GetByPlayerIDInput) (*GetByPlayerIDOutput, error)`
-- `List(ctx, *ListInput) (*ListOutput, error)` — by player ID
-- `Save(ctx, *SaveInput) (*SaveOutput, error)`
-- `Delete(ctx, *DeleteInput) (*DeleteOutput, error)`
+Interface methods use value Input and pointer Output types: `Create`, `Get`, `Update`,
+`PatchEquipment`, `Delete`, `ListByPlayerID`, and `ListBySessionID`. `GetOutput` includes
+an opaque version derived from the stored bytes. `PatchEquipmentInput` carries the
+expected version/equipment plus only the proposed EquipmentSlots and cached ArmorClass.
 
-**Storage:** `character:{id}` — JSON-serialized `character.Data` + `Appearance` (stored together).
+**Storage:** `character:{id}` — JSON-serialized `character.Data` + `Appearance` (stored
+together), with player/session index keys.
 
-Used by: character orchestrator, the v1alpha2 encounter path (character-data
-hydration cascade), the lobby orchestrator.
+`PatchEquipment` uses Redis WATCH/MULTI. A stale equipment map returns ABORTED. A changed
+version with unchanged equipment returns the latest entity without writing so the
+orchestrator can strictly reproject; a successful transaction changes only the two
+allowed fields and returns the actual patched entity. Miniredis tests cover concurrent
+combat-state preservation and stale equipment refusal.
 
-The only repository exercised by integration tests with real Redis alongside
-the v2 encounter and lobby repos.
+Used by: character, lobby, and session orchestration plus owner/public projections.
 
 ## Character draft repository
 

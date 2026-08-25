@@ -1,8 +1,8 @@
 ---
 name: rpg-api quality scorecard
 description: Per-component grade with rationale — a graded scorecard to update as the codebase evolves
-updated: 2026-07-21
-confidence: medium — Wave 2.11e encounter v2 graded from shipped-code + integration test verification; older entries reflect 2026-05-02 snapshot pending refresh; rpg-api#636 note verified against passing tests; rpg-api#642 deletions verified against passing build/vet/test/lint; rpg-api#680 entries verified against passing unit + integration suite
+updated: 2026-08-25
+confidence: medium-high — #844 owner identity, sanitized strict projection, and atomic equipment patch verified against focused handler/orchestrator/repository/lint gates; older entries retain their stated evidence
 ---
 
 # Quality Scorecard
@@ -49,15 +49,16 @@ matrix (party cap, host migration on disconnect-vs-leave, idempotent rebind)
 is unit-tested at the orchestrator layer but not yet re-proven at the wire
 level.
 
-### Session service handler — B (new, 2026-08-21)
+### Session service handler — B+ (updated 2026-08-25)
 
-`internal/handlers/dnd5e/session/v1alpha1/` — `SessionService`, rpg-api's one
-interface to the toolkit's session SDK and, after rpg-api#801, the only
-encounter surface it serves. Field-for-field translation (`convert.go` is the
-whole of it), one file per verb, no rules and no invented vocabulary; the
-converters are unit-tested per enum value and the projections are covered by
-`internal/integration/session`. Held at B: rpg-api#803 — the verbs authenticate
-but do not authorize the caller against session membership — is open.
+`internal/handlers/dnd5e/session/v1alpha1/` is rpg-api's one gameplay interface
+to the toolkit session SDK. Every member-naming verb applies the shared caller/member
+gate before Manager dispatch. Conversion remains field-for-field with no rules or
+invented vocabulary, including nested declarations/candidates and selectors.
+`StreamEvents` is audience-filtered best-effort live delivery; `GetStory` is persisted
+catch-up, and both use the same typed-event converter. Unit and
+`internal/integration/session` suites cover ownership, selectors, live fan-out, replay,
+and production declaration shapes. Held below A pending production traffic.
 
 ### Character handler — C
 
@@ -76,20 +77,21 @@ its size. Its `EquipItem`/`UnequipItem` RPCs now delegate to the rules-correct
 orchestrator method (rpg-api#680, see "Character orchestrator" below) — that
 specific gap is closed even though the surrounding stub/TODO debt isn't.
 
-### Character v2 handler — B (new, 2026-07-21)
+### Character v2 handler — B+ (updated 2026-08-25)
 
-`internal/handlers/dnd5e/v2/character/` (rpg-api#680) — the v1alpha2
-`CharacterService`, out-of-encounter `EquipItem`/`UnequipItem` only. Deliberately
-narrow: no `converters.go`, proto↔domain translation is small enough to stay
-inline in `handler.go`. Delegates to the SAME orchestrator method the v1alpha1
-handler uses and shares `BuildEquipmentCharacterData`
-(`internal/handlers/dnd5e/v2/encounter/character_data.go`) with the encounter
-snapshot path for its response composition — no independent logic to drift.
-Gomock unit suite covers validation, delegation, and error→status mapping; the
-end-to-end proof (real AC, occupancy visible across both surfaces) is the
-integration suite in the encounter package (`encounter.md`). Held at B rather
-than A pending production traffic and a genuine in-encounter equip path
-(rpg-project#94) to prove the boundary holds under a second consumer.
+`internal/handlers/dnd5e/v2/character/` (rpg-api#680/#844) serves authenticated-owner
+`GetCharacterData` plus out-of-encounter `EquipItem`/`UnequipItem`. Ownership precedes
+private projection, missing/foreign NOT_FOUND responses are byte-identical, and all
+three methods map the same detached orchestrator View through `BuildCharacterData`.
+Writes return the actual repository-patched entity plus its precomposed matching View;
+both handler versions answer from that same post-state with no fallible post-write reload.
+The mapper includes PlayerID and structured class/race refs as well as equipment/status,
+and strict failures use generic INTERNAL transport wording while retaining internal causes.
+Focused gates cover malformed-data no-write behavior, projection-before-write, map
+isolation, atomic-patch failure, post-state equality, all three RPC identity mappings,
+complete level-3 Fighter status, optional presence, and representative four-build mapping.
+Held below A pending production traffic and a second live consumer of the owner-private
+composition.
 
 ## Orchestrators
 
@@ -107,22 +109,19 @@ was already graded on a materially different (and better) shape.
 
 `internal/orchestrators/character/orchestrator.go`
 
-Smaller, more focused, and better tested than its encounter sibling. Delegates
-to toolkit correctly for the most part. Spell list fetching at line 2828 has a
-TODO about alive-check logic not being implemented. No proto leakage observed.
-The `service.go` / `orchestrator.go` split within the package follows the
-defined pattern. Grade would be higher with better alive-state handling and
-completing the TODO at line 3352 (monster turns for entities acting before
-current entity).
+The orchestrator delegates character rules to the toolkit and has no proto leakage.
+Its `service.go` / `orchestrator.go` split follows the defined Input/Output pattern.
+Verified remaining TODOs concern draft mutation access, background validation, error
+logging, and pagination/class-filter placeholders; they are outside the owner-private
+equipment path.
 
-**Update (rpg-api#680, 2026-07-21):** `EquipItem`/`UnequipItem` are rules-correct
-now — load the runtime character, call the toolkit's `EquipItem`/`UnequipItem`
-(occupancy, slot-compatibility), persist via a merge that deliberately avoids a
-full `char.ToData()` overwrite (which is lossy for `BackgroundID`/`CreatedAt`/
-non-registry inventory — see `character-orchestrator.md`'s Equipment section).
-Grade held at B- rather than raised: the fix is real and well-tested, but the
-alive-check and monster-turns TODOs that capped this grade are unrelated and
-still open.
+**Update (rpg-api#680/#844, 2026-08-25):** `EquipItem`/`UnequipItem` strictly
+load/attach, call the toolkit's rules-aware verbs, precompose complete post-views, and
+persist only EquipmentSlots plus cached ArmorClass through the repository's atomic
+optimistic patch. Unrelated concurrent character changes are reprojected and preserved;
+stale equipment is aborted. The orchestrator returns the actual patched entity and the
+matching detached View. Grade held at B- because older draft/catalog TODO debt elsewhere
+in this large orchestrator is unchanged.
 
 ### Lobby orchestrator — B+ (new, 2026-07-07)
 
@@ -243,14 +242,16 @@ every Save/Get like the v2 encounter repo. Grade held at B rather than higher
 because it's brand new with no production traffic yet — the pattern is proven
 but unexercised at scale.
 
-### Character repository — B
+### Character repository — B+
 
-`internal/repositories/character/redis.go`
-
-The only repository with a persistent (Redis) implementation. Used by the
-integration test harness. Tested with real Redis via the harness. Solid
-foundation. No major gaps observed, though no evidence of TTL management or
-stale-character cleanup.
+`internal/repositories/character/redis.go` remains the durable character store. In
+addition to CRUD/index operations it now exposes an Input/Output-typed atomic equipment
+patch. Redis WATCH/MULTI guards the record, expected equipment rejects stale equip
+writers with ABORTED, unrelated record revisions are returned without writing, and the
+successful transaction changes only EquipmentSlots plus cached ArmorClass on the latest
+entity. Miniredis regressions cover concurrent combat-state preservation and stale
+expected-equipment refusal. Held below A because general full-record Update callers have
+not been redesigned and TTL/stale-character lifecycle remains unchanged.
 
 ### Character draft repository — B-
 
