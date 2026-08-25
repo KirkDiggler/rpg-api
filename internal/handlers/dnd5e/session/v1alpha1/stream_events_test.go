@@ -239,18 +239,24 @@ func TestStreamEvents_ForwardsTypedBodyPerKind(t *testing.T) {
 			name: "Struck", kind: sdk.EventStruck,
 			body: sdk.StruckBody{
 				Attacker: "char-1", Target: "goblin-1", Roll: 18, Total: 21, Against: 13, Damage: 6,
-				Attack: sdk.AttackRef{Ref: "longsword", Name: "Longsword", DamageType: sdk.DamageSlashing},
+				Attack: sdk.AttackRef{Ref: "dnd5e:weapons:longsword", Name: "Longsword", DamageType: sdk.DamageSlashing},
 			},
 			checkPB: func(t *testing.T, got *sessionpb.Event) {
 				require.Equal(t, int32(6), got.GetStruck().GetDamage())
+				require.Equal(t, "dnd5e:weapons:longsword", got.GetStruck().GetAttack().GetRef())
+				require.Equal(t, "Longsword", got.GetStruck().GetAttack().GetName())
 				require.Equal(t, sessionpb.DamageType_DAMAGE_TYPE_SLASHING, got.GetStruck().GetAttack().GetDamageType())
 			},
 		},
 		{
 			name: "Missed", kind: sdk.EventMissed,
-			body: sdk.MissedBody{Attacker: "char-1", Target: "goblin-1", Roll: 4, Total: 7, Against: 13},
+			body: sdk.MissedBody{
+				Attacker: "char-1", Target: "goblin-1", Roll: 4, Total: 7, Against: 13,
+				Attack: sdk.AttackRef{Ref: "dnd5e:weapons:longsword", Name: "Longsword", DamageType: sdk.DamageSlashing},
+			},
 			checkPB: func(t *testing.T, got *sessionpb.Event) {
 				require.Equal(t, int32(4), got.GetMissed().GetRoll())
+				require.Equal(t, "dnd5e:weapons:longsword", got.GetMissed().GetAttack().GetRef())
 			},
 		},
 		{

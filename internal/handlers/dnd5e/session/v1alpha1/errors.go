@@ -54,7 +54,7 @@ func statusError(err error) error {
 		return status.Error(codes.NotFound, err.Error())
 
 	// INVALID_ARGUMENT -- the request itself is malformed: bad shape, bad
-	// geometry, or a required field left empty.
+	// geometry, an omitted opaque selector, or a required field left empty.
 	//
 	// ErrNoCrossing was here until session/v0.18.0 DELETED it. On one canvas
 	// the composition no longer distinguishes a walled crossing from a missing
@@ -75,7 +75,8 @@ func statusError(err error) error {
 		errors.Is(err, sdk.ErrNoSessionID),
 		errors.Is(err, sdk.ErrNoEncounterID),
 		errors.Is(err, sdk.ErrInvalidWorld),
-		errors.Is(err, sdk.ErrNoCause):
+		errors.Is(err, sdk.ErrNoCause),
+		errors.Is(err, sdk.ErrNoDeclarationID):
 		return status.Error(codes.InvalidArgument, err.Error())
 
 	// FAILED_PRECONDITION -- the request is well-formed but the world's
@@ -115,11 +116,14 @@ func statusError(err error) error {
 	//   sends the swing that would hit it (Declaration.why.reason
 	//   NOT_YOUR_TURN).
 	//
-	//   ErrOutOfReach (rpg-toolkit#1010) -- the target stands further than the
-	//   weapon reaches: one cell for melee, two with the reach property; a
-	//   ranged weapon stays refused as today. Afford announces this too
-	//   (NO_TARGET_IN_REACH), as a single declaration with no target when
-	//   nothing qualifies -- see Declaration.why in convert.go.
+	//   ErrOutOfReach (rpg-toolkit#1010) -- the final defensive resolution
+	//   check found the selected target beyond the compiled attack's reach.
+	//   Afford reports each ruled candidate's own availability and why before
+	//   execution; the API copies those rows without recomputing reach.
+	//
+	//   ErrStaleDeclaration -- an echoed opaque selector no longer names the
+	//   regenerated available offer. The request is shaped correctly, but the
+	//   world changed since Afford, so retry starts from a fresh declaration.
 	case errors.Is(err, sdk.ErrInBubble),
 		errors.Is(err, sdk.ErrNotInFight),
 		errors.Is(err, sdk.ErrClosed),
@@ -130,7 +134,8 @@ func statusError(err error) error {
 		errors.Is(err, sdk.ErrDoorShut),
 		errors.Is(err, sdk.ErrCannotAfford),
 		errors.Is(err, sdk.ErrNotYourTurn),
-		errors.Is(err, sdk.ErrOutOfReach):
+		errors.Is(err, sdk.ErrOutOfReach),
+		errors.Is(err, sdk.ErrStaleDeclaration):
 		return status.Error(codes.FailedPrecondition, err.Error())
 
 	// ALREADY_EXISTS

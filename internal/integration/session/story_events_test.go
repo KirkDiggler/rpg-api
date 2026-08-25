@@ -84,7 +84,10 @@ func TestGetStoryMatchesLiveEvents(t *testing.T) {
 	// spent -- so ending immediately is the honest move, and the skeleton's
 	// whole turn (approach, swing, its own turn-ended) drives inside this
 	// one call.
-	endResp, err := h.handler.EndTurn(ctx, &sessionpb.EndTurnRequest{Session: session, Member: "alice"})
+	endResp, err := h.handler.EndTurn(ctx, &sessionpb.EndTurnRequest{
+		Session: session, Member: "alice",
+		DeclarationId: currentDeclarationID(ctx, t, h.handler, session, "alice", sessionpb.Verb_VERB_END_TURN),
+	})
 	require.NoError(t, err, "the skeleton's whole turn drives inside this one call")
 	require.Equal(t, "alice", endResp.GetNext(), "a two-member fight wraps straight back to whoever led it")
 

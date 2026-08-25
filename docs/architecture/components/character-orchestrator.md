@@ -148,6 +148,15 @@ post-projection and Update-failure isolation tests, and
 silently** — there's no compiler error, just a character quietly missing fields the
 next time someone equips something.
 
+## Production provider pins (#844)
+
+The strict character loader/status projection used here is published in
+`rulebooks/dnd5e` v0.100.0. The same API branch consumes the final session combat
+providers at `rulebooks/dnd5e/session` v0.30.0 and
+`rulebooks/dnd5e/resolution` v0.13.0, with proto generated v0.1.143 (`a7db07a`).
+There are no local replaces or API-side rule substitutes: declaration availability,
+reach, costs, selectors, character status, and resources all remain provider answers.
+
 ## Known issues
 
 ### TODO at line 2765: alive-check not implemented

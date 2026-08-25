@@ -17,9 +17,10 @@ func (h *Handler) Attack(ctx context.Context, req *sessionpb.AttackRequest) (*se
 	}
 
 	out, err := h.manager.Attack(ctx, &sdk.AttackInput{
-		Session:  req.GetSession(),
-		Attacker: req.GetAttacker(),
-		Target:   req.GetTarget(),
+		Session:       req.GetSession(),
+		Attacker:      req.GetAttacker(),
+		Target:        req.GetTarget(),
+		DeclarationID: req.GetDeclarationId(),
 	})
 	if err != nil {
 		return nil, statusError(err)

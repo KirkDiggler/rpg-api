@@ -437,7 +437,8 @@ func TestAcceptanceLoop_WalkFightDissolveResync(t *testing.T) {
 	// pinned to.
 	closeResp, err := h.handler.Move(ctx, &sessionpb.MoveRequest{
 		Session: "acceptance-run", Member: "alice",
-		Path: route[walked : walked+6],
+		DeclarationId: currentDeclarationID(ctx, t, h.handler, "acceptance-run", "alice", sessionpb.Verb_VERB_MOVE),
+		Path:          route[walked : walked+6],
 	})
 	require.NoError(t, err)
 	require.Len(t, closeResp.GetSteps(), 6, "the whole of one turn's movement, and no more -- a fighter's 30 ft")
@@ -477,6 +478,7 @@ func TestAcceptanceLoop_WalkFightDissolveResync(t *testing.T) {
 	// that it hands cleanly back.
 	endResp, err := h.handler.EndTurn(ctx, &sessionpb.EndTurnRequest{
 		Session: "acceptance-run", Member: "alice",
+		DeclarationId: currentDeclarationID(ctx, t, h.handler, "acceptance-run", "alice", sessionpb.Verb_VERB_END_TURN),
 	})
 	require.NoError(t, err)
 	require.Equal(t, "alice", endResp.GetNext(),
@@ -493,7 +495,8 @@ func TestAcceptanceLoop_WalkFightDissolveResync(t *testing.T) {
 		"geometry gate: the walk must have stopped where it always does, leaving the declared route's tail exactly one turn's movement -- if the fight formed later than that, the closing arithmetic below is meaningless")
 	close2Resp, err := h.handler.Move(ctx, &sessionpb.MoveRequest{
 		Session: "acceptance-run", Member: "alice",
-		Path: rest,
+		DeclarationId: currentDeclarationID(ctx, t, h.handler, "acceptance-run", "alice", sessionpb.Verb_VERB_MOVE),
+		Path:          rest,
 	})
 	require.NoError(t, err)
 	require.Len(t, close2Resp.GetSteps(), 6,
@@ -503,6 +506,7 @@ func TestAcceptanceLoop_WalkFightDissolveResync(t *testing.T) {
 	// and damage applies --
 	attackResp, err := h.handler.Attack(ctx, &sessionpb.AttackRequest{
 		Session: "acceptance-run", Attacker: "alice", Target: "skel-1",
+		DeclarationId: currentDeclarationID(ctx, t, h.handler, "acceptance-run", "alice", sessionpb.Verb_VERB_ATTACK),
 	})
 	require.NoError(t, err)
 	t.Logf("attack: roll=%d total=%d against=%d hit=%v damage=%d",
@@ -819,6 +823,7 @@ func TestSkeletonsDrivenTurnStrikesFromRange(t *testing.T) {
 	// what happens next belongs entirely to the skeleton's own driven turn.
 	endResp, err := h.handler.EndTurn(ctx, &sessionpb.EndTurnRequest{
 		Session: "monster-turn-run", Member: "alice",
+		DeclarationId: currentDeclarationID(ctx, t, h.handler, "monster-turn-run", "alice", sessionpb.Verb_VERB_END_TURN),
 	})
 	require.NoError(t, err, "the skeleton's whole turn -- strike, end -- drives inside this one call")
 
@@ -953,12 +958,14 @@ func TestTheRunEndsWhenTheBossFalls(t *testing.T) {
 	// strength is past a skeleton's whole pool in one swing.
 	_, err = h.handler.Move(ctx, &sessionpb.MoveRequest{
 		Session: "doom-run", Member: "alice",
-		Path: []*sessionpb.Position{pbAt(14, 3), pbAt(15, 3), pbAt(16, 3), pbAt(17, 3), pbAt(18, 3)},
+		DeclarationId: currentDeclarationID(ctx, t, h.handler, "doom-run", "alice", sessionpb.Verb_VERB_MOVE),
+		Path:          []*sessionpb.Position{pbAt(14, 3), pbAt(15, 3), pbAt(16, 3), pbAt(17, 3), pbAt(18, 3)},
 	})
 	require.NoError(t, err)
 
 	attackResp, err := h.handler.Attack(ctx, &sessionpb.AttackRequest{
 		Session: "doom-run", Attacker: "alice", Target: "skel-1",
+		DeclarationId: currentDeclarationID(ctx, t, h.handler, "doom-run", "alice", sessionpb.Verb_VERB_ATTACK),
 	})
 	require.NoError(t, err)
 	require.NotNil(t, attackResp.GetAttack(), "the swing resolved")

@@ -49,6 +49,7 @@ func TestStatusError_CoversEverySDKSentinel(t *testing.T) {
 		{"ErrNoEncounterID", sdk.ErrNoEncounterID, codes.InvalidArgument},
 		{"ErrInvalidWorld", sdk.ErrInvalidWorld, codes.InvalidArgument},
 		{"ErrNoCause", sdk.ErrNoCause, codes.InvalidArgument},
+		{"ErrNoDeclarationID", sdk.ErrNoDeclarationID, codes.InvalidArgument},
 
 		// FAILED_PRECONDITION -- well-formed request, world state refuses it.
 		{"ErrInBubble", sdk.ErrInBubble, codes.FailedPrecondition},
@@ -68,6 +69,7 @@ func TestStatusError_CoversEverySDKSentinel(t *testing.T) {
 		// current world state refuses, the same bucket as the three above.
 		{"ErrNotYourTurn", sdk.ErrNotYourTurn, codes.FailedPrecondition},
 		{"ErrOutOfReach", sdk.ErrOutOfReach, codes.FailedPrecondition},
+		{"ErrStaleDeclaration", sdk.ErrStaleDeclaration, codes.FailedPrecondition},
 
 		// ALREADY_EXISTS
 		{"ErrSessionExists", sdk.ErrSessionExists, codes.AlreadyExists},
@@ -146,8 +148,9 @@ func TestStatusError_CoversEverySDKSentinel(t *testing.T) {
 // ErrOutOfReach; ErrBadTurnOutcome was already present at v0.21.4 and simply
 // had no row until this audit -- 38 -> 41.
 // The door verbs (rpg-project#268, rpg-toolkit#1135) add ErrDoorShut and move
-// ErrNoConnection back to caller-facing -- 41 -> 42.
-const sentinelCount = 42
+// ErrNoConnection back to caller-facing -- 41 -> 42. Session v0.30.0 adds
+// selector errors ErrNoDeclarationID and ErrStaleDeclaration -- 42 -> 44.
+const sentinelCount = 44
 
 func TestStatusError_UnmappedSentinelFallsBackToInternal(t *testing.T) {
 	unrecognized := fmt.Errorf("some future sentinel the table has not been updated for")

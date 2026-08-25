@@ -1,13 +1,34 @@
 ---
 name: character handler
 description: gRPC handler for CharacterService — character creation, management, and data loading
-updated: 2026-05-02
-confidence: medium-high — verified by reading handler.go and converters.go
+updated: 2026-08-25
+confidence: medium-high — legacy surface verified by read; #844 shared strict equipment path and v1alpha2 flattened owner-private mapping verified by focused tests
 ---
 
 # character handler
 
 The character handler is the gRPC adapter for `CharacterService`. It covers the full character creation lifecycle (draft → finalize), character management (equip/unequip), and data loading for the character creation UI (list races, classes, backgrounds, equipment, spells).
+
+## Shared strict character application (#844)
+
+The v1alpha1 `EquipItem`/`UnequipItem` methods do not retain a legacy mutation path. They
+delegate to the same character orchestrator methods as the v1alpha2 owner-private
+surface. That shared path strictly loads and attaches an isolated working character,
+composes the complete post-mutation equipment/status View **before** repository Update,
+and writes nothing if either strict application or post-state projection fails. This
+handler does not inspect feature/condition JSON, derive status, or duplicate toolkit
+rules.
+
+The flattened owner-private `CharacterData` contract is translated only by
+`internal/handlers/dnd5e/v2/character/character_data.go`: equipment, level, HP, speed,
+structured feature/condition refs, optional resource/source presence, and non-magical
+resources are copied from the detached toolkit Views. The v1alpha1 handler does not grow
+a parallel converter for those fields.
+
+This production slice pins proto generated v0.1.143 (`a7db07a`) and final toolkit
+`rulebooks/dnd5e` v0.100.0, `rulebooks/dnd5e/session` v0.30.0, and
+`rulebooks/dnd5e/resolution` v0.13.0. The session module is consumed directly by the
+separate `SessionService` handler.
 
 ## Files
 

@@ -52,10 +52,27 @@ Refs, optional feature `resource_key`, optional condition `source_member`, and p
 non-magical resources. Spell slots, legacy class resources, and magic status are absent
 by construction because the toolkit StatusView does not expose them.
 
+## Adjacent SessionService translation (#844)
+
+The same production branch uses direct nested SDK translation in
+`internal/handlers/dnd5e/session/v1alpha1`: each Declaration copies verb (including End
+Turn), slot, availability, optional remaining/why/attack presence, opaque ID, target
+kind, and every independently available candidate. Full catalog Attack refs cross
+Afford, AttackResponse, Struck, and Missed unchanged. Attack, turn-clock Move, and End
+Turn echo `declaration_id` into the SDK only after the existing caller-owns-member gate;
+omission is INVALID_ARGUMENT and a stale selector is FAILED_PRECONDITION. The API
+contains no reach, cost, target, availability, or resource rules and invents no prose.
+
+The branch preserves proto generated v0.1.143 (`a7db07a`) and pins the published final
+providers: `rulebooks/dnd5e` v0.100.0, `rulebooks/dnd5e/session` v0.30.0, and
+`rulebooks/dnd5e/resolution` v0.13.0.
+
 ## Wiring and coverage
 
 The handler is registered in the production server and integration harness with the same
 character orchestrator used by v1alpha1. Focused tests cover validation, auth ordering,
 byte-identical missing/foreign NOT_FOUND, strict owner failure as INTERNAL, one-read
 Equip/Unequip responses, level-3 Fighter equipment/status, optional presence, and
-representative Fighter/Barbarian/Monk/Rogue mapping.
+representative Fighter/Barbarian/Monk/Rogue mapping. Session-focused tests cover every
+nested converter enum/presence field, selector request, error row, full Attack ref, and
+auth-before-manager ordering.

@@ -23,6 +23,31 @@ record; the living entries start above.
 
 </details>
 
+**Production session-combat API and strict owner-private character sheet
+(rpg-api#844, rpg-project#270 / PR #271, 2026-08-25)** — `SessionService.Afford`
+now maps the toolkit's one nested declaration per executable verb field-for-field:
+Attack, Move, and End Turn; slot and availability; optional remaining/why/full
+`AttackRef`; opaque declaration ID; target kind; and every candidate's independent
+availability/why. Unknown closed enums become UNSPECIFIED producer defects. A
+NO_TARGET_IN_REACH declaration keeps its ruled candidate rows, including each target's
+TARGET_OUT_OF_REACH reason; rpg-api derives no reach, costs, target eligibility,
+availability, resources, or client prose.
+
+Attack, turn-clock Move, and End Turn pass the caller's opaque `declaration_id` into the
+SDK after the unchanged owner gate and before the one Manager call. Missing selectors map
+to INVALID_ARGUMENT; stale regenerated offers map to FAILED_PRECONDITION in the service's
+single sentinel table. AttackResponse plus Struck/Missed typed events preserve the full
+catalog ref unchanged. Integration callers now obtain selectors through Afford rather
+than constructing or parsing them.
+
+The character half remains the strict Task 8 path below: ownership precedes private
+projection; Get/Equip/Unequip use one detached EquipmentView + StatusView translation;
+and Equip/Unequip compose the complete post-state before Update, so malformed status
+writes nothing. Final published pins are proto generated v0.1.143 (`a7db07a`),
+`rulebooks/dnd5e` v0.100.0, `rulebooks/dnd5e/session` v0.30.0, and
+`rulebooks/dnd5e/resolution` v0.13.0. Translation runs directly against those published
+providers with no local override.
+
 **Equipment on the wire — real AC, one rules-correct equip path (rpg-api#680, 2026-07-21)** —
 board #11's two named equipment sins are both fixed. AC on the wire used to be
 `converters.go`'s `int32(data.ArmorClass)` — a straight copy of a stored int, never
