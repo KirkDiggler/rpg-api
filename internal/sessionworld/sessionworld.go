@@ -98,12 +98,14 @@ type Monster struct {
 
 	// Boss is whether this is the monster whose death ends things.
 	//
-	// CARRIED AND NOT YET ACTED ON. Nothing here turns it into an ending: the
-	// compiler emits no endings, and a "the boss died" trigger does not exist
-	// in the composition's Trigger set (there is TriggerReachedPosition and
-	// TriggerExternal, and that is all). Recorded on the placement so the wave
-	// that adds the trigger has the fact already flowing, rather than
-	// discovering the compiler knew all along.
+	// ACTED ON since rpg-project#268 — this was "carried and not yet acted
+	// on" through the wave that recorded it so the trigger's wave would have
+	// the fact already flowing, and that wave is here: Compile turns the
+	// flag into a declared [tkencounter.TriggerMemberDown] ending keyed
+	// [EndingBossDown], naming this monster's MemberID. When the member the
+	// launch spawns under that ID goes down, the encounter closes with that
+	// outcome — the fight dissolves first, the run ends on the world clock
+	// (rpg-project#269 §6.6).
 	Boss bool
 
 	// Targeting is the author's word for how it picks a target, or empty.
@@ -160,7 +162,15 @@ func Compile(raw []byte) (*Dungeon, error) {
 		monsters[i] = Monster{Ref: m.Ref, MemberID: id, At: cellOf(orientation, m.At), Boss: m.Boss, Targeting: m.Targeting}
 	}
 
-	world, err := buildWorld(spec.Field)
+	var bossID string
+	for _, m := range monsters {
+		if m.Boss {
+			bossID = m.MemberID
+			break
+		}
+	}
+
+	world, err := buildWorld(spec.Field, bossID)
 	if err != nil {
 		return nil, err
 	}
@@ -196,7 +206,12 @@ func memberIDFor(ref string, ordinals map[string]int) (string, error) {
 
 // buildWorld constructs the world the session actually plays in: the compiled
 // field, and nobody standing in it. See [Dungeon.World] for why it is empty.
-func buildWorld(field tkencounter.FieldInput) (*tkencounter.EncounterData, error) {
+//
+// bossID, when non-empty, is the member whose death ends the dungeon — an
+// ending may name a member that has not joined yet (the same contract
+// TriggerReachedPosition's filter has), which is what lets an empty world
+// declare a doom for a monster the launch spawns minutes later.
+func buildWorld(field tkencounter.FieldInput, bossID string) (*tkencounter.EncounterData, error) {
 	enc, err := tkencounter.NewEncounter(&tkencounter.SetupInput{
 		// Construction-time capabilities only. The session package supplies its
 		// own when it loads this world -- including the sight RANGE that decides
@@ -218,12 +233,11 @@ func buildWorld(field tkencounter.FieldInput) (*tkencounter.EncounterData, error
 		Striker:    tkencounter.RefusingStriker{},
 		Retention:  tkencounter.RetentionUnbounded,
 		Field:      field,
-		// SetupInput requires at least one declared ending and the compiler
-		// emits none: what ends a dungeon is not geometry. An externally
-		// declared ending is the honest stand-in -- the party withdrawing is a
-		// real way this tomb ends, and it is the only one the composition can
-		// express today. See [Monster.Boss] for the one that is missing.
-		Endings: []tkencounter.EndingInput{{Key: EndingWithdrawn, Trigger: tkencounter.TriggerExternal{}}},
+		// What ends a dungeon is not geometry, and the file says it: the
+		// party withdrawing (external, always declared) and — when a
+		// placement carries the boss flag — the boss going down
+		// (rpg-project#268; see [Monster.Boss]).
+		Endings: endingsFor(bossID),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("build world: %w", err)
@@ -234,10 +248,31 @@ func buildWorld(field tkencounter.FieldInput) (*tkencounter.EncounterData, error
 	return &data, nil
 }
 
-// EndingWithdrawn is the key of the one ending an authored dungeon declares
-// today: the party left. Exported because a caller that wants to close an
+// endingsFor is every ending an authored dungeon declares: withdrawal
+// always, and the boss's fall when a placement names one.
+func endingsFor(bossID string) []tkencounter.EndingInput {
+	endings := []tkencounter.EndingInput{
+		{Key: EndingWithdrawn, Trigger: tkencounter.TriggerExternal{}},
+	}
+	if bossID != "" {
+		endings = append(endings, tkencounter.EndingInput{
+			Key:     EndingBossDown,
+			Trigger: tkencounter.TriggerMemberDown{Member: tkencounter.MemberID(bossID)},
+		})
+	}
+	return endings
+}
+
+// EndingWithdrawn is the key of one of the two endings an authored dungeon
+// declares: the party left. Exported because a caller that wants to close an
 // encounter has to name it.
 const EndingWithdrawn = "withdrawn"
+
+// EndingBossDown is the other: the authored boss went down and the dungeon
+// is cleared. Keys are content vocabulary — the client maps key to sentence
+// (rpg-project#269 §6.3) — and this one fires from inside the composition
+// (TriggerMemberDown), never from a caller naming it.
+const EndingBossDown = "boss-down"
 
 // orderAsGiven, nobodyDown and nobodySees are three of the capabilities
 // NewEncounter refuses to default (rpg-toolkit#1033). TurnDriver and

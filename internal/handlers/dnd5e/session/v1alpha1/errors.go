@@ -45,7 +45,12 @@ func statusError(err error) error {
 		errors.Is(err, sdk.ErrNoEnding),
 		errors.Is(err, sdk.ErrUnknownContent),
 		errors.Is(err, sdk.ErrNoLoader),
-		errors.Is(err, sdk.ErrNoSheet):
+		errors.Is(err, sdk.ErrNoSheet),
+		// ErrNoConnection rejoined the caller-facing set with the door verbs
+		// (rpg-project#268): GetDoors/OpenDoor/Unlock name a door, so a door
+		// the dungeon does not have is a caller's NotFound again -- see the
+		// INTERNAL bucket's note for the years it spent there.
+		errors.Is(err, sdk.ErrNoConnection):
 		return status.Error(codes.NotFound, err.Error())
 
 	// INVALID_ARGUMENT -- the request itself is malformed: bad shape, bad
@@ -55,10 +60,11 @@ func statusError(err error) error {
 	// the composition no longer distinguishes a walled crossing from a missing
 	// cell, so nothing could still produce it. A walk stopped by a wall now
 	// arrives as ErrBadPosition, which is in this same bucket -- so the code a
-	// client sees does not change, only the sentence. What that collapse costs
-	// is real and filed: a LOCKED DOOR currently arrives as ErrBadPosition too
-	// (rpg-toolkit#1135), so the tomb's most player-visible beat is
-	// indistinguishable on the wire from a client bug.
+	// client sees does not change, only the sentence. The locked-door half of
+	// that collapse is repaired: a walk into a locked or shut door arrives on
+	// its own sentinel now (rpg-toolkit#1135) and lands in
+	// FAILED_PRECONDITION below, so the tomb's most player-visible beat no
+	// longer reads as a client bug.
 	case errors.Is(err, sdk.ErrNilInput),
 		errors.Is(err, sdk.ErrEmptyPath),
 		errors.Is(err, sdk.ErrBrokenPath),
@@ -83,11 +89,14 @@ func statusError(err error) error {
 	//   no-such-member: a downed member stays on the map, in the roster, and
 	//   readable. NotFound would be a lie about where they are.
 	//
-	//   ErrLocked -- a door refusing to open. World state, not a malformed
-	//   request. Reachable only from the door verb this seam does not expose
-	//   yet; a walk into a locked door still arrives as ErrBadPosition
-	//   (rpg-toolkit#1135), so this is mapped ahead of being reachable rather
-	//   than left to be discovered later.
+	//   ErrLocked -- a locked door refusing. World state, not a malformed
+	//   request, and reachable two ways now: OpenDoor's own refusal, and a
+	//   walk into one (rpg-toolkit#1135 landed with the door verbs,
+	//   rpg-project#268). The message names the DC -- the refusal is the
+	//   fiction beat.
+	//
+	//   ErrDoorShut -- the other half of the #1135 split: a walk into a door
+	//   that is merely closed. The remedy is OpenDoor, not new coordinates.
 	//
 	//   ErrCannotAfford -- a second swing in a turn that bought one. The SDK
 	//   is emphatic that this is A FACT ABOUT THE GAME rather than about the
@@ -118,6 +127,7 @@ func statusError(err error) error {
 		errors.Is(err, sdk.ErrBadAttack),
 		errors.Is(err, sdk.ErrDowned),
 		errors.Is(err, sdk.ErrLocked),
+		errors.Is(err, sdk.ErrDoorShut),
 		errors.Is(err, sdk.ErrCannotAfford),
 		errors.Is(err, sdk.ErrNotYourTurn),
 		errors.Is(err, sdk.ErrOutOfReach):
@@ -143,13 +153,12 @@ func statusError(err error) error {
 	// INTERNAL -- storage-side integrity problems, not a caller mistake:
 	// stored bytes this module could not have produced, a repository that
 	// violated its own contract, or a construction-time failure that should
-	// never have reached a running verb in the first place. ErrNoConnection
-	// belongs here as of session v0.12.0, not with the caller-facing
-	// sentinels above: no verb takes a connection ID any more
-	// (rpg-toolkit#1048 retired Traverse) -- a caller names cells, and the
-	// package finds the doorway joining them itself. Its own doc now says
-	// so plainly: if this appears, the package derived a crossing the
-	// composition then rejected, which is a defect HERE, not in the call.
+	// never have reached a running verb in the first place.
+	//
+	// ErrNoConnection LEFT this bucket with the door verbs (rpg-project#268):
+	// it sat here while no verb took a connection ID (rpg-toolkit#1048), and
+	// GetDoors/OpenDoor/Unlock name a door again -- a caller naming one the
+	// dungeon does not have is a caller mistake, NOT_FOUND above.
 	//
 	// ErrBadCost joins them at session/v0.17.0: the PROGRAMMER-FACING half of
 	// the split ErrCannotAfford describes. It means content or wiring is wrong
@@ -171,7 +180,6 @@ func statusError(err error) error {
 		errors.Is(err, sdk.ErrInvalidSession),
 		errors.Is(err, sdk.ErrNilConfig),
 		errors.Is(err, sdk.ErrIncompleteConfig),
-		errors.Is(err, sdk.ErrNoConnection),
 		errors.Is(err, sdk.ErrBadTurnOutcome):
 		return status.Error(codes.Internal, err.Error())
 

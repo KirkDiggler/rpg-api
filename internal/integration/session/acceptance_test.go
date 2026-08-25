@@ -194,6 +194,13 @@ func tombRoute() []*sessionpb.Position {
 // doorways. Only the SESSION-FACING verbs this test drives against (Join,
 // Move, Attack, ...) speak axial cells, and every one of those is at(col,row).
 func buildThreeRoomTomb(t *testing.T) *tkencounter.EncounterData {
+	return buildTomb(t, nil)
+}
+
+// buildTomb is buildThreeRoomTomb with a mutation hook: the run-ending suite
+// locks the second door and declares the doom, everything else identical, so
+// the two scenarios cannot drift apart in geometry.
+func buildTomb(t *testing.T, mutate func(*tkencounter.SetupInput)) *tkencounter.EncounterData {
 	t.Helper()
 
 	// The tomb's column: a solid line of pillars at absolute col 17 with a
@@ -216,7 +223,7 @@ func buildThreeRoomTomb(t *testing.T) *tkencounter.EncounterData {
 	}
 	lit := &tkencounter.Lighting{Intensity: 1}
 
-	enc, err := tkencounter.NewEncounter(&tkencounter.SetupInput{
+	in := &tkencounter.SetupInput{
 		Initiative: orderAsGiven{},
 		Retention:  tkencounter.RetentionUnbounded,
 		Standing:   allStanding{},
@@ -264,7 +271,11 @@ func buildThreeRoomTomb(t *testing.T) *tkencounter.EncounterData {
 		// via an ending), so a never-triggered external declaration satisfies
 		// the requirement without shaping the scenario.
 		Endings: []tkencounter.EndingInput{{Key: "unused", Trigger: tkencounter.TriggerExternal{}}},
-	})
+	}
+	if mutate != nil {
+		mutate(in)
+	}
+	enc, err := tkencounter.NewEncounter(in)
 	require.NoError(t, err, "building the three-room tomb")
 	data := enc.ToData()
 	return &data
@@ -823,4 +834,160 @@ func TestSkeletonsDrivenTurnStrikesFromRange(t *testing.T) {
 
 	require.Equal(t, "alice", endResp.GetNext(), "turn_ended{next: player} -- the fight hands cleanly back")
 	require.True(t, endResp.GetRoundWrapped(), "a two-member fight wraps straight back to whoever led it")
+}
+
+// TestTheRunEndsWhenTheBossFalls is the journey's Done-when as one test
+// (rpg-project#253, slice rpg-project#268): the locked door refuses the walk
+// BY NAME, the lock is beaten server-side and the attempt narrated with its
+// numbers, what the door revealed starts the fight, and the boss going down
+// closes the encounter with a recorded outcome — on the world clock, with
+// the beat order Kirk ruled (rpg-project#269 §6.6): down, fight over, ended.
+func TestTheRunEndsWhenTheBossFalls(t *testing.T) {
+	h := newAcceptanceHarness(t)
+	ctx := auth.WithPlayerID(context.Background(), "player-alice")
+
+	_, err := h.charRepo.Create(context.Background(), characterrepo.CreateInput{
+		Character: &entities.Character{Data: armedFighter("alice", "player-alice")},
+	})
+	require.NoError(t, err)
+
+	// The same tomb, with the second door locked at the reference tomb's DC
+	// and the doom declared over the monster the launch is about to spawn —
+	// an ending may name a member that joins later.
+	world := buildTomb(t, func(in *tkencounter.SetupInput) {
+		in.Field.Doors[1].State = tkencounter.DoorIsLocked(tkencounter.Lock{DC: 12, Ability: "dex"})
+		in.Endings = []tkencounter.EndingInput{
+			{Key: "withdrawn", Trigger: tkencounter.TriggerExternal{}},
+			{Key: "boss-down", Trigger: tkencounter.TriggerMemberDown{Member: "skel-1"}},
+		}
+	})
+	_, err = h.manager.Manager.StartSession(context.Background(), &sdk.StartSessionInput{
+		Session: "doom-run", Encounter: "tomb-encounter", World: world,
+	})
+	require.NoError(t, err)
+	_, err = h.manager.Manager.Spawn(context.Background(), &sdk.SpawnInput{
+		Session: "doom-run", ID: "skel-1", Ref: refs.Monsters.Skeleton().String(),
+		Position: at(19, 3),
+	})
+	require.NoError(t, err)
+
+	// The launch also writes the roster row GetDoors's seated gate reads.
+	require.NoError(t, h.rosterRepo.Save(context.Background(), &rosterrepo.Data{
+		EncounterID: "doom-run",
+		Members:     []rosterrepo.Member{{ID: "alice", Kind: rosterrepo.KindPlayer}},
+	}))
+
+	// Join in the hall, on the locked door's row, with the door shut between
+	// alice and the skeleton: no fight forms — the lock blocks sight.
+	joinResp, err := h.handler.Join(ctx, &sessionpb.JoinRequest{
+		Session: "doom-run", Member: "alice", Position: pbAt(12, 3),
+	})
+	require.NoError(t, err)
+	require.Nil(t, joinResp.GetFormed(), "the locked door is dark: nothing on the far side is in sight")
+
+	// -- GetDoors: the live half of the atlas's doorways --
+	doorsResp, err := h.handler.GetDoors(ctx, &sessionpb.GetDoorsRequest{Session: "doom-run"})
+	require.NoError(t, err)
+	require.Len(t, doorsResp.GetDoors(), 2)
+	byID := map[string]*sessionpb.DoorInfo{}
+	for _, d := range doorsResp.GetDoors() {
+		byID[d.GetDoor()] = d
+	}
+	require.Equal(t, sessionpb.DoorState_DOOR_STATE_OPEN, byID["entrance-hall"].GetState())
+	require.Nil(t, byID["entrance-hall"].GetLock(), "an open door carries no lock")
+	require.Equal(t, sessionpb.DoorState_DOOR_STATE_LOCKED, byID["hall-tomb"].GetState())
+	require.Equal(t, int32(12), byID["hall-tomb"].GetLock().GetDc(), "the DC is public — full data until v1.0")
+
+	// -- the walk is refused as FICTION, not as a bad cell (rpg-toolkit#1135) --
+	_, err = h.handler.Move(ctx, &sessionpb.MoveRequest{
+		Session: "doom-run", Member: "alice", Path: []*sessionpb.Position{pbAt(13, 3), pbAt(14, 3)},
+	})
+	requireGRPCCode(t, err, codes.FailedPrecondition)
+	require.Contains(t, err.Error(), "hall-tomb", "the refusal names the door that stopped her")
+	require.Contains(t, err.Error(), "DC 12", "and what it would take")
+
+	// She walked one step before the door refused the second — nothing is
+	// saved on a mid-walk rejection, so she still stands at (12,3). Step to
+	// the door's own cell first, then try the lock.
+	_, err = h.handler.Move(ctx, &sessionpb.MoveRequest{
+		Session: "doom-run", Member: "alice", Path: []*sessionpb.Position{pbAt(13, 3)},
+	})
+	require.NoError(t, err)
+
+	// -- the check rolls server-side: d20 max face 20 + dex 2 beats DC 12,
+	// and a beaten lock OPENS the door --
+	unlockResp, err := h.handler.Unlock(ctx, &sessionpb.UnlockRequest{
+		Session: "doom-run", Member: "alice", Door: "hall-tomb",
+	})
+	require.NoError(t, err)
+	require.True(t, unlockResp.GetBeaten())
+	require.Equal(t, int32(22), unlockResp.GetTotal(), "the roll is public down to the number")
+	require.Equal(t, int32(12), unlockResp.GetDc())
+	require.Equal(t, sessionpb.DoorState_DOOR_STATE_OPEN, unlockResp.GetDoor().GetState())
+
+	// The attempt is narrated with its author and its numbers, typed.
+	events, err := h.handler.GetStory(ctx, &sessionpb.GetStoryRequest{Session: "doom-run", Member: "alice"})
+	require.NoError(t, err)
+	var door *sessionpb.DoorChanged
+	for _, e := range events.GetEntries() {
+		if e.GetKind() == sessionpb.EventKind_EVENT_KIND_DOOR {
+			door = e.GetDoor()
+		}
+	}
+	require.NotNil(t, door, "the door beat reaches the wire typed")
+	require.Equal(t, "hall-tomb", door.GetDoor())
+	require.Equal(t, sessionpb.DoorState_DOOR_STATE_OPEN, door.GetState())
+	require.Equal(t, "alice", door.GetActor(), "the story says whose hands")
+	require.Equal(t, int32(12), door.GetDc())
+	require.Equal(t, int32(22), door.GetTotal())
+	require.True(t, door.GetBeaten())
+
+	// -- what the door revealed started the fight: the sightline down row 3
+	// reaches the skeleton through the pillar gap --
+	turnResp, err := h.handler.Turn(ctx, &sessionpb.TurnRequest{Session: "doom-run", Member: "alice"})
+	require.NoError(t, err)
+	require.Equal(t, sessionpb.ClockKind_CLOCK_KIND_TURN, turnResp.GetClock(), "opening the door started the fight")
+
+	// -- her turn: close to reach (five cells, within a fighter's 30 ft)
+	// and put the boss down. The max-face roller crits: 2d8 maxed plus
+	// strength is past a skeleton's whole pool in one swing.
+	_, err = h.handler.Move(ctx, &sessionpb.MoveRequest{
+		Session: "doom-run", Member: "alice",
+		Path: []*sessionpb.Position{pbAt(14, 3), pbAt(15, 3), pbAt(16, 3), pbAt(17, 3), pbAt(18, 3)},
+	})
+	require.NoError(t, err)
+
+	attackResp, err := h.handler.Attack(ctx, &sessionpb.AttackRequest{
+		Session: "doom-run", Attacker: "alice", Target: "skel-1",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, attackResp.GetAttack(), "the swing resolved")
+
+	// -- the run is over: the boss fell, the fight dissolved FIRST, and the
+	// encounter closed on the world clock (ruling §6.6), with the outcome
+	// recorded and readable forever --
+	statusResp, err := h.handler.GetStatus(ctx, &sessionpb.GetStatusRequest{Session: "doom-run"})
+	require.NoError(t, err)
+	require.False(t, statusResp.GetOpen(), "the run is over and nobody had to say so")
+	require.Equal(t, "boss-down", statusResp.GetOutcome().GetEnding())
+
+	beats := storyBeats(ctx, t, h.handler, "doom-run", "alice")
+	require.GreaterOrEqual(t, len(beats), 4)
+	tail := beats[len(beats)-3:]
+	require.Equal(t, []string{"down", "bubble-dissolved", "ended"}, tail,
+		"the ruled order: the body is news, the fight ends, and only then the run")
+
+	// The typed ended body carries the key a client maps to its sentence.
+	events, err = h.handler.GetStory(ctx, &sessionpb.GetStoryRequest{Session: "doom-run", Member: "alice"})
+	require.NoError(t, err)
+	last := events.GetEntries()[len(events.GetEntries())-1]
+	require.Equal(t, sessionpb.EventKind_EVENT_KIND_ENDED, last.GetKind())
+	require.Equal(t, "boss-down", last.GetEnded().GetEnding(),
+		"a client following the stream finally hears HOW the run ended")
+
+	// A closed run refuses verbs in FAILED_PRECONDITION's vocabulary.
+	_, err = h.handler.Move(ctx, &sessionpb.MoveRequest{
+		Session: "doom-run", Member: "alice", Path: []*sessionpb.Position{pbAt(17, 3)},
+	})
+	requireGRPCCode(t, err, codes.FailedPrecondition)
 }

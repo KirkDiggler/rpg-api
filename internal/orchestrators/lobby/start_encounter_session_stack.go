@@ -65,9 +65,10 @@ type StartEncounterOutput struct {
 //     design ("behavior arrives with the wave that brings it"), so the
 //     garrison is placed, perceived and remembered correctly and does
 //     not act.
-//   - NO AUTHORED ENDING BEYOND WITHDRAWAL. See sessionworld.EndingWithdrawn:
-//     the composition has no "the boss died" trigger to declare, so the
-//     boss flag is carried and unused.
+//   - The authored endings are BOTH declared now (rpg-project#268): the
+//     party withdrawing (sessionworld.EndingWithdrawn, external) and the
+//     boss going down (sessionworld.EndingBossDown, TriggerMemberDown over
+//     the member ID this launch spawns the flagged placement under).
 //   - ARCADE RECOVERY IS BACK, and it lives HERE (rpg-api#828 closed the
 //     design question the rip-out left open): StartEncounter calls
 //     tkcharacter.RestoreForLaunch on every member before seating —

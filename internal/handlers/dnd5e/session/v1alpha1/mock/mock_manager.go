@@ -101,6 +101,21 @@ func (mr *MockManagerMockRecorder) Dissolve(ctx, in any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Dissolve", reflect.TypeOf((*MockManager)(nil).Dissolve), ctx, in)
 }
 
+// Doors mocks base method.
+func (m *MockManager) Doors(ctx context.Context, in *session.DoorsInput) (*session.DoorsOutput, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Doors", ctx, in)
+	ret0, _ := ret[0].(*session.DoorsOutput)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// Doors indicates an expected call of Doors.
+func (mr *MockManagerMockRecorder) Doors(ctx, in any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Doors", reflect.TypeOf((*MockManager)(nil).Doors), ctx, in)
+}
+
 // End mocks base method.
 func (m *MockManager) End(ctx context.Context, in *session.EndInput) (*session.EndOutput, error) {
 	m.ctrl.T.Helper()
@@ -176,6 +191,21 @@ func (mr *MockManagerMockRecorder) Move(ctx, in any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Move", reflect.TypeOf((*MockManager)(nil).Move), ctx, in)
 }
 
+// OpenDoor mocks base method.
+func (m *MockManager) OpenDoor(ctx context.Context, in *session.OpenDoorInput) (*session.OpenDoorOutput, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "OpenDoor", ctx, in)
+	ret0, _ := ret[0].(*session.OpenDoorOutput)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// OpenDoor indicates an expected call of OpenDoor.
+func (mr *MockManagerMockRecorder) OpenDoor(ctx, in any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "OpenDoor", reflect.TypeOf((*MockManager)(nil).OpenDoor), ctx, in)
+}
+
 // Status mocks base method.
 func (m *MockManager) Status(ctx context.Context, in *session.StatusInput) (*session.Status, error) {
 	m.ctrl.T.Helper()
@@ -219,6 +249,21 @@ func (m *MockManager) Turn(ctx context.Context, in *session.TurnInput) (*session
 func (mr *MockManagerMockRecorder) Turn(ctx, in any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Turn", reflect.TypeOf((*MockManager)(nil).Turn), ctx, in)
+}
+
+// Unlock mocks base method.
+func (m *MockManager) Unlock(ctx context.Context, in *session.UnlockInput) (*session.UnlockOutput, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Unlock", ctx, in)
+	ret0, _ := ret[0].(*session.UnlockOutput)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// Unlock indicates an expected call of Unlock.
+func (mr *MockManagerMockRecorder) Unlock(ctx, in any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Unlock", reflect.TypeOf((*MockManager)(nil).Unlock), ctx, in)
 }
 
 // View mocks base method.

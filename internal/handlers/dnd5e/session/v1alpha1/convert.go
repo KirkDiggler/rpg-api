@@ -364,6 +364,8 @@ func eventKindToProto(k sdk.EventKind) sessionpb.EventKind {
 		return sessionpb.EventKind_EVENT_KIND_FIGHT_ENDED
 	case sdk.EventStruck:
 		return sessionpb.EventKind_EVENT_KIND_STRUCK
+	case sdk.EventDoor:
+		return sessionpb.EventKind_EVENT_KIND_DOOR
 	case sdk.EventMissed:
 		return sessionpb.EventKind_EVENT_KIND_MISSED
 	default:
@@ -416,8 +418,8 @@ func eventsToProto(es []sdk.Event) []*sessionpb.Event {
 // typed fields, the same decode the SDK already did once, not a second
 // encoding of it.
 //
-// evt.Body stays nil for a kind with no typed body member (ENDED,
-// SCENE_OPENED, TICK, UNKNOWN) and for a beat this build's decoder did not
+// evt.Body stays nil for a kind with no typed body member (SCENE_OPENED,
+// TICK, UNKNOWN) and for a beat this build's decoder did not
 // recognize -- session.Event.Body is nil in exactly those cases, so the
 // default arm below is correct by construction, not a fallback that papers
 // over an unhandled case. payload stays the passthrough carrier for every
@@ -463,6 +465,17 @@ func setEventBody(evt *sessionpb.Event, body sdk.EventBody) {
 		evt.Body = &sessionpb.Event_Joined{Joined: &sessionpb.Joined{Member: b.Member}}
 	case sdk.ExitedBody:
 		evt.Body = &sessionpb.Event_Exited{Exited: &sessionpb.Exited{Member: b.Member}}
+	case sdk.EndedBody:
+		evt.Body = &sessionpb.Event_Ended{Ended: &sessionpb.Ended{Ending: b.Ending}}
+	case sdk.DoorBody:
+		evt.Body = &sessionpb.Event_Door{Door: &sessionpb.DoorChanged{
+			Door:   b.Door,
+			State:  doorStateToProto(b.State),
+			Actor:  b.Actor,
+			Dc:     int32(b.DC),
+			Total:  int32(b.Total),
+			Beaten: b.Beaten,
+		}}
 	default:
 		// nil (no typed body for this kind) or a body type this build does
 		// not recognize: leave evt.Body nil. payload stays the passthrough
@@ -766,6 +779,32 @@ func declarationsToProto(ds []sdk.Declaration) []*sessionpb.Declaration {
 	out := make([]*sessionpb.Declaration, len(ds))
 	for i, d := range ds {
 		out[i] = declarationToProto(d)
+	}
+	return out
+}
+
+// doorStateToProto mirrors the SDK's string door state onto the wire enum.
+// A state this build does not recognize maps to UNSPECIFIED, the same
+// delivered-not-guessed posture eventKindToProto takes.
+func doorStateToProto(s string) sessionpb.DoorState {
+	switch s {
+	case "open":
+		return sessionpb.DoorState_DOOR_STATE_OPEN
+	case "closed":
+		return sessionpb.DoorState_DOOR_STATE_CLOSED
+	case "locked":
+		return sessionpb.DoorState_DOOR_STATE_LOCKED
+	default:
+		return sessionpb.DoorState_DOOR_STATE_UNSPECIFIED
+	}
+}
+
+// doorToProto mirrors one live door. The lock rides only while it is real —
+// DoorInfo.lock unset is "not locked", never "lock with DC zero".
+func doorToProto(d sdk.Door) *sessionpb.DoorInfo {
+	out := &sessionpb.DoorInfo{Door: d.ID, State: doorStateToProto(d.State)}
+	if d.Lock != nil {
+		out.Lock = &sessionpb.DoorLock{Dc: int32(d.Lock.DC), Ability: d.Lock.Ability, Tool: d.Lock.Tool}
 	}
 	return out
 }

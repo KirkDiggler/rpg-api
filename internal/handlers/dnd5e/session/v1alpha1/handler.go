@@ -39,6 +39,9 @@ type Manager interface {
 	View(ctx context.Context, in *sdk.ViewInput) ([]sdk.Sighting, error)
 	Atlas(ctx context.Context, in *sdk.AtlasInput) (*sdk.Atlas, error)
 	Where(ctx context.Context, in *sdk.WhereInput) (*sdk.WhereOutput, error)
+	Doors(ctx context.Context, in *sdk.DoorsInput) (*sdk.DoorsOutput, error)
+	OpenDoor(ctx context.Context, in *sdk.OpenDoorInput) (*sdk.OpenDoorOutput, error)
+	Unlock(ctx context.Context, in *sdk.UnlockInput) (*sdk.UnlockOutput, error)
 }
 
 // Handler is the wire form of the toolkit's rulebooks/dnd5e/session SDK.

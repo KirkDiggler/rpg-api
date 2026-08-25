@@ -93,3 +93,9 @@ require (
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260526163538-3dc84a4a5aaa // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
+
+replace github.com/KirkDiggler/rpg-api-protos/gen/go => /home/kirk/game-dev/rpg-api-protos/.worktrees/run-ending/gen/go
+
+replace github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session => /home/kirk/game-dev/rpg-toolkit/.worktrees/session-doors/rulebooks/dnd5e/session
+
+replace github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter => /home/kirk/game-dev/rpg-toolkit/.worktrees/run-ending/rulebooks/dnd5e/encounter

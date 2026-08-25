@@ -137,11 +137,11 @@ func (s *ReferenceTombSuite) TestTheGarrisonHoldsTheHallAndTheCaptainWaitsBeyond
 	}
 }
 
-// TestTheAuthorsWordsAboutMonstersSurviveTheCompile pins the two facts this
-// package carries but cannot yet act on (see Monster.Boss and
-// Monster.Targeting). They are asserted so that dropping them is a test
-// failure rather than a silent narrowing nobody notices until the wave that
-// needs them.
+// TestTheAuthorsWordsAboutMonstersSurviveTheCompile pins two authored facts.
+// Targeting is still carried-and-not-acted-on (session.SpawnInput has no
+// field for it); Boss graduated — the wave its comment waited for is
+// rpg-project#268, and TestTheBossFlagBecomesTheDeclaredDoom below pins what
+// it became.
 func (s *ReferenceTombSuite) TestTheAuthorsWordsAboutMonstersSurviveTheCompile() {
 	targeting := map[string]int{}
 	bosses := 0
@@ -179,6 +179,25 @@ func (s *ReferenceTombSuite) TestEveryMonsterIsNamedAfterWhatItIs() {
 	s.Contains(byID, "skeleton-2")
 	s.Contains(byID, "skeleton-captain-1", "the captain is numbered within its OWN ref, not across the dungeon")
 	s.True(byID["skeleton-captain-1"].Boss)
+}
+
+// TestTheBossFlagBecomesTheDeclaredDoom pins what Compile does with the
+// authored flag (rpg-project#268): the world is born declaring BOTH its
+// endings — withdrawal (external) and the captain's fall (member_down over
+// the member ID the launch will spawn him under). The member does not exist
+// yet in this empty world, and that is the contract: an ending may name a
+// member that joins later, exactly as TriggerReachedPosition's filter may.
+func (s *ReferenceTombSuite) TestTheBossFlagBecomesTheDeclaredDoom() {
+	endings := s.tomb.World.Endings
+	s.Require().Len(endings, 2, "withdrawal and the doom, nothing silent")
+
+	s.Equal("withdrawn", endings[0].Key)
+	s.Equal("external", endings[0].Kind)
+
+	s.Equal(EndingBossDown, endings[1].Key)
+	s.Equal("member_down", endings[1].Kind)
+	s.Equal("skeleton-captain-1", string(endings[1].Member),
+		"the doom names the captain by the member ID the launch spawns him under")
 }
 
 // TestTheTombIsShutAtDCTwelve pins the authored lock. Twelve is a literal on
