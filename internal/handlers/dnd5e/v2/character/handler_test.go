@@ -2,6 +2,7 @@ package character
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 
@@ -17,8 +18,15 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/entities"
 	orchcharacter "github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
 	charactermock "github.com/KirkDiggler/rpg-api/internal/orchestrators/character/mock"
+	coreResources "github.com/KirkDiggler/rpg-toolkit/core/resources"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/abilities"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/classes"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/conditions"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/features"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/races"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/refs"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/resources"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
 )
 
@@ -65,19 +73,21 @@ func (s *HandlerTestSuite) TestNew_MissingConfig() {
 	s.Require().Error(err)
 }
 
-// fighterCharacterEntity mirrors the orchestrator suite's fixture: a
-// longsword+shield fighter, enough to compute a real EquipmentView.
+// fighterCharacterEntity is a persisted level-3 Fighter carrying equipment,
+// feature-private resources, a condition, and legacy/magic rows that the
+// no-magic StatusView must exclude.
 func (s *HandlerTestSuite) fighterCharacterEntity() *entities.Character {
 	return &entities.Character{
 		Data: &character.Data{
 			ID:               s.testCharacterID,
 			PlayerID:         s.testPlayerID,
 			Name:             "Test Fighter",
-			Level:            1,
-			ClassID:          "fighter",
+			Level:            3,
+			RaceID:           races.Human,
+			ClassID:          classes.Fighter,
 			ProficiencyBonus: 2,
-			HitPoints:        12,
-			MaxHitPoints:     12,
+			HitPoints:        20,
+			MaxHitPoints:     30,
 			ArmorClass:       10,
 			AbilityScores: shared.AbilityScores{
 				abilities.STR: 16,
@@ -95,8 +105,43 @@ func (s *HandlerTestSuite) fighterCharacterEntity() *entities.Character {
 				character.SlotMainHand: "longsword",
 				character.SlotOffHand:  "shield",
 			},
+			Features: []json.RawMessage{
+				s.mustJSON(features.SecondWindData{
+					Ref: refs.Features.SecondWind(), ID: "second-wind", Name: "Second Wind",
+					Level: 3, CharacterID: s.testCharacterID, Uses: 1, MaxUses: 1,
+				}),
+				s.mustJSON(features.ActionSurgeData{
+					Ref: refs.Features.ActionSurge(), ID: "action-surge", Name: "Action Surge",
+					CharacterID: s.testCharacterID, Uses: 1, MaxUses: 1,
+				}),
+			},
+			Conditions: []json.RawMessage{
+				s.mustJSON(conditions.FightingStyleDefenseData{
+					Ref: refs.Conditions.FightingStyleDefense(), CharacterID: s.testCharacterID,
+				}),
+			},
+			Resources: map[coreResources.ResourceKey]character.RecoverableResourceData{
+				resources.HitDice: {Current: 2, Maximum: 3, ResetType: coreResources.ResetLongRest},
+			},
+			SpellSlots: map[int]character.SpellSlotData{1: {Max: 2}},
+			ClassResources: map[shared.ClassResourceType]character.ResourceData{
+				shared.ClassResourceType(99): {Name: "legacy-resource", Current: 1, Max: 1},
+			},
 		},
 	}
+}
+
+func (s *HandlerTestSuite) mustJSON(value any) json.RawMessage {
+	raw, err := json.Marshal(value)
+	s.Require().NoError(err)
+	return raw
+}
+
+func (s *HandlerTestSuite) project(data *character.Data) *orchcharacter.View {
+	out, err := orchcharacter.ProjectView(s.ctx, &orchcharacter.ProjectViewInput{Data: data})
+	s.Require().NoError(err)
+	s.Require().NotNil(out)
+	return out.View
 }
 
 func (s *HandlerTestSuite) TestEquipItem_ValidationErrors() {
@@ -140,21 +185,20 @@ func (s *HandlerTestSuite) TestEquipItem_Success() {
 	ctx := auth.WithPlayerID(s.ctx, s.testPlayerID)
 	charEntity := s.fighterCharacterEntity()
 
-	// Fetched twice: once by verifyCallerOwnsCharacter's pre-write ownership
-	// gate, once by recomputedCharacterData after the write. Same entity both
-	// times in this fixture -- the mutation lives in the toolkit, not here.
+	// Ownership is fetched once before the write. The orchestrator returns the
+	// already-composed post-view, so no post-write reload can fail.
 	s.mockService.EXPECT().
 		GetCharacter(ctx, &orchcharacter.GetCharacterInput{CharacterID: s.testCharacterID}).
-		Return(&orchcharacter.GetCharacterOutput{Character: charEntity}, nil).
-		Times(2)
+		Return(&orchcharacter.GetCharacterOutput{Character: charEntity}, nil)
 
+	postView := s.project(charEntity.Data)
 	s.mockService.EXPECT().
 		EquipItem(ctx, &orchcharacter.EquipItemInput{
 			CharacterID: s.testCharacterID,
 			ItemID:      "longsword",
 			Slot:        character.SlotMainHand,
 		}).
-		Return(&orchcharacter.EquipItemOutput{}, nil)
+		Return(&orchcharacter.EquipItemOutput{View: postView}, nil)
 
 	resp, err := s.handler.EquipItem(ctx, &characterpb.EquipItemRequest{
 		CharacterId: s.testCharacterID,
@@ -269,28 +313,23 @@ func (s *HandlerTestSuite) TestUnequipItem_ValidationErrors() {
 
 func (s *HandlerTestSuite) TestUnequipItem_Success() {
 	ctx := auth.WithPlayerID(s.ctx, s.testPlayerID)
-	preEntity := s.fighterCharacterEntity() // still equipped, read by the ownership pre-check
+	preEntity := s.fighterCharacterEntity()
 	postEntity := s.fighterCharacterEntity()
-	postEntity.Data.EquipmentSlots = character.EquipmentSlots{} // both slots now empty post-unequip
+	postEntity.Data.EquipmentSlots = character.EquipmentSlots{}
 
-	// InOrder rather than Times(2): unlike EquipItem's success test, the two
-	// reads here must return DIFFERENT states (before and after the write),
-	// so which call gets which return value is load-bearing.
-	gomock.InOrder(
-		s.mockService.EXPECT().
-			GetCharacter(ctx, &orchcharacter.GetCharacterInput{CharacterID: s.testCharacterID}).
-			Return(&orchcharacter.GetCharacterOutput{Character: preEntity}, nil),
-		s.mockService.EXPECT().
-			GetCharacter(ctx, &orchcharacter.GetCharacterInput{CharacterID: s.testCharacterID}).
-			Return(&orchcharacter.GetCharacterOutput{Character: postEntity}, nil),
-	)
+	s.mockService.EXPECT().
+		GetCharacter(ctx, &orchcharacter.GetCharacterInput{CharacterID: s.testCharacterID}).
+		Return(&orchcharacter.GetCharacterOutput{Character: preEntity}, nil)
 
 	s.mockService.EXPECT().
 		UnequipItem(ctx, &orchcharacter.UnequipItemInput{
 			CharacterID: s.testCharacterID,
 			Slot:        character.SlotMainHand,
 		}).
-		Return(&orchcharacter.UnequipItemOutput{UnequippedItemID: "longsword"}, nil)
+		Return(&orchcharacter.UnequipItemOutput{
+			UnequippedItemID: "longsword",
+			View:             s.project(postEntity.Data),
+		}, nil)
 
 	resp, err := s.handler.UnequipItem(ctx, &characterpb.UnequipItemRequest{
 		CharacterId: s.testCharacterID,
@@ -365,6 +404,133 @@ func (s *HandlerTestSuite) TestGetCharacterData_Success() {
 	s.Assert().Contains(cd.GetEquipped(), "main_hand")
 	s.Assert().Equal("longsword", cd.GetEquipped()["main_hand"].GetId())
 	s.Assert().Len(cd.GetInventory(), 2, "inventory includes equipped items, per the wire contract")
+	s.Assert().Equal(int32(3), cd.GetLevel())
+	s.Require().NotNil(cd.GetHitPoints())
+	s.Assert().Equal(int32(20), cd.GetHitPoints().GetCurrent())
+	s.Assert().Equal(int32(30), cd.GetHitPoints().GetMax())
+	s.Assert().Zero(cd.GetHitPoints().GetTemp())
+	s.Assert().Equal(int32(30), cd.GetBaseSpeedFeet())
+
+	s.Require().Len(cd.GetFeatures(), 2)
+	s.Assert().Equal("dnd5e", cd.GetFeatures()[0].GetRef().GetModule())
+	s.Assert().Equal("features", cd.GetFeatures()[0].GetRef().GetType())
+	s.Assert().Equal("action_surge", cd.GetFeatures()[0].GetRef().GetId())
+	s.Require().NotNil(cd.GetFeatures()[0].ResourceKey)
+	s.Assert().Equal(string(resources.ActionSurge), cd.GetFeatures()[0].GetResourceKey())
+
+	s.Require().Len(cd.GetConditions(), 1)
+	s.Assert().Equal("dnd5e", cd.GetConditions()[0].GetRef().GetModule())
+	s.Assert().Equal("conditions", cd.GetConditions()[0].GetRef().GetType())
+	s.Assert().Equal("fighting_style_defense", cd.GetConditions()[0].GetRef().GetId())
+	s.Assert().Nil(cd.GetConditions()[0].SourceMember)
+
+	s.Require().Len(cd.GetResources(), 3)
+	for _, resource := range cd.GetResources() {
+		s.Assert().NotEqual("spell_slots", resource.GetKey())
+		s.Assert().NotEqual("legacy-resource", resource.GetKey())
+	}
+}
+
+func (s *HandlerTestSuite) TestBuildCharacterData_FourBuildStatusMapping() {
+	source := "party-member-2"
+	tests := []struct {
+		name       string
+		status     *character.StatusView
+		featureRef string
+		resource   string
+	}{
+		{
+			name: "fighter",
+			status: &character.StatusView{
+				Features: []character.FeatureView{{
+					Ref: *refs.Features.SecondWind(), Name: "Second Wind",
+					ResourceKey: resourceKey(resources.SecondWind),
+				}},
+				Conditions: []character.ConditionView{{
+					Ref: *refs.Conditions.FightingStyleDefense(), Name: "Defense",
+				}},
+				Resources: []character.ResourceView{{Key: resources.SecondWind, Name: "Second Wind", Current: 1, Maximum: 1}},
+			},
+			featureRef: refs.Features.SecondWind().String(),
+			resource:   string(resources.SecondWind),
+		},
+		{
+			name: "barbarian",
+			status: &character.StatusView{
+				Features:   []character.FeatureView{{Ref: *refs.Features.Rage(), Name: "Rage", ResourceKey: resourceKey(resources.RageCharges)}},
+				Conditions: []character.ConditionView{{Ref: *refs.Conditions.Raging(), Name: "Raging", SourceMember: &source}},
+				Resources:  []character.ResourceView{{Key: resources.RageCharges, Name: "Rage", Current: 2, Maximum: 3}},
+			},
+			featureRef: refs.Features.Rage().String(),
+			resource:   string(resources.RageCharges),
+		},
+		{
+			name: "monk",
+			status: &character.StatusView{
+				Features:   []character.FeatureView{{Ref: *refs.Features.FlurryOfBlows(), Name: "Flurry of Blows", ResourceKey: resourceKey(resources.Ki)}},
+				Conditions: []character.ConditionView{{Ref: *refs.Conditions.MartialArts(), Name: "Martial Arts"}},
+				Resources:  []character.ResourceView{{Key: resources.Ki, Name: "Ki", Current: 2, Maximum: 3}},
+			},
+			featureRef: refs.Features.FlurryOfBlows().String(),
+			resource:   string(resources.Ki),
+		},
+		{
+			name: "rogue",
+			status: &character.StatusView{
+				Features:   []character.FeatureView{{Ref: *refs.Features.SneakAttack(), Name: "Sneak Attack"}},
+				Conditions: []character.ConditionView{{Ref: *refs.Features.SneakAttack(), Name: "Sneak Attack"}},
+				Resources:  []character.ResourceView{{Key: resources.HitDice, Name: "Hit Dice", Current: 2, Maximum: 3}},
+			},
+			featureRef: refs.Features.SneakAttack().String(),
+			resource:   string(resources.HitDice),
+		},
+	}
+
+	for _, tc := range tests {
+		s.Run(tc.name, func() {
+			cd := BuildCharacterData(&orchcharacter.View{Status: tc.status})
+			s.Require().Len(cd.GetFeatures(), 1)
+			s.Equal(tc.featureRef, protoRefString(cd.GetFeatures()[0].GetRef()))
+			s.Require().Len(cd.GetConditions(), 1)
+			s.Require().Len(cd.GetResources(), 1)
+			s.Equal(tc.resource, cd.GetResources()[0].GetKey())
+			if tc.name == "barbarian" {
+				s.Require().NotNil(cd.GetConditions()[0].SourceMember)
+				s.Equal(source, cd.GetConditions()[0].GetSourceMember())
+			}
+		})
+	}
+}
+
+func (s *HandlerTestSuite) TestGetCharacterData_OwnerMalformedCharacterIsInternal() {
+	ctx := auth.WithPlayerID(s.ctx, s.testPlayerID)
+	charEntity := s.fighterCharacterEntity()
+	charEntity.Data.Inventory = append(charEntity.Data.Inventory,
+		character.InventoryItemData{Type: "item", ID: "vorpal-spork", Quantity: 1})
+
+	s.mockService.EXPECT().
+		GetCharacter(ctx, &orchcharacter.GetCharacterInput{CharacterID: s.testCharacterID}).
+		Return(&orchcharacter.GetCharacterOutput{Character: charEntity}, nil)
+
+	_, err := s.handler.GetCharacterData(ctx, &characterpb.GetCharacterDataRequest{CharacterId: s.testCharacterID})
+	s.Require().Error(err)
+	s.Equal(codes.Internal, status.Code(err))
+}
+
+func (s *HandlerTestSuite) TestGetCharacterData_ForeignMalformedCharacterStillNotFound() {
+	ctx := auth.WithPlayerID(s.ctx, s.testPlayerID)
+	charEntity := s.fighterCharacterEntity()
+	charEntity.Data.PlayerID = "someone-else"
+	charEntity.Data.Inventory = append(charEntity.Data.Inventory,
+		character.InventoryItemData{Type: "item", ID: "vorpal-spork", Quantity: 1})
+
+	s.mockService.EXPECT().
+		GetCharacter(ctx, &orchcharacter.GetCharacterInput{CharacterID: s.testCharacterID}).
+		Return(&orchcharacter.GetCharacterOutput{Character: charEntity}, nil)
+
+	_, err := s.handler.GetCharacterData(ctx, &characterpb.GetCharacterDataRequest{CharacterId: s.testCharacterID})
+	s.Require().Error(err)
+	s.Equal(codes.NotFound, status.Code(err), "ownership must be gated before private projection")
 }
 
 // TestGetCharacterData_ForeignCharacter_NotFound pins the deliberate choice
@@ -458,4 +624,15 @@ func (s *HandlerTestSuite) TestVerifyCallerOwnsCharacter_MissingAndForeign_Ident
 		"a missing character and a foreign one must be indistinguishable by message text")
 	s.Assert().NotContains(missingSt.Message(), "repository",
 		"the repository's own wording must never reach the caller")
+}
+
+func resourceKey(key coreResources.ResourceKey) *coreResources.ResourceKey {
+	return &key
+}
+
+func protoRefString(ref *encounterv2pb.Ref) string {
+	if ref == nil {
+		return ""
+	}
+	return ref.GetModule() + ":" + ref.GetType() + ":" + ref.GetId()
 }

@@ -59,6 +59,7 @@ type Orchestrator struct {
 	diceService   dice.Service
 	idGen         idgen.Generator
 	draftIDGen    idgen.Generator
+	projectLoaded projectLoadedCharacterFunc
 }
 
 // New creates a new character orchestrator
@@ -76,6 +77,7 @@ func New(cfg *Config) (*Orchestrator, error) {
 		diceService:   cfg.DiceService,
 		idGen:         cfg.IDGenerator,
 		draftIDGen:    cfg.DraftIDGenerator,
+		projectLoaded: projectLoadedCharacter,
 	}, nil
 }
 
@@ -906,13 +908,19 @@ func (o *Orchestrator) EquipItem(ctx context.Context, input *EquipItemInput) (*E
 		return nil, fmt.Errorf("failed to get character: %w", err)
 	}
 
-	// Load the runtime character so EquipItem runs through the toolkit's
-	// rules (occupancy, slot-compatibility) instead of touching the data
-	// map directly. A fresh bus is fine here: equip/unequip does not
-	// depend on any feature having previously subscribed to it.
-	char, err := character.LoadFromData(ctx, result.Character.Data, events.NewEventBus())
+	if result == nil || result.Character == nil {
+		return nil, fmt.Errorf("failed to get character: repository returned no character")
+	}
+
+	// Strictly load and attach, then require the complete pre-view before any
+	// mutation. Corrupt private state is never silently dropped on a write.
+	loaded, err := loadAttachedCharacter(ctx, &loadAttachedCharacterInput{Data: result.Character.Data})
 	if err != nil {
 		return nil, fmt.Errorf("failed to load character: %w", err)
+	}
+	char := loaded.Character
+	if _, err = o.projectLoaded(ctx, &ProjectLoadedCharacterInput{Character: char}); err != nil {
+		return nil, fmt.Errorf("failed to project character before equip: %w", err)
 	}
 
 	previousItemID := ""
@@ -924,11 +932,16 @@ func (o *Orchestrator) EquipItem(ctx context.Context, input *EquipItemInput) (*E
 		return nil, mapEquipError(err)
 	}
 
-	// Update character (preserve appearance) — merge, don't overwrite with
-	// a full char.ToData(); see mergedEquipmentData's doc for why.
+	// Compose the persisted merge and the complete detached response before
+	// Update. No fallible reload or projection is permitted after the write.
+	persistedData := mergedEquipmentData(ctx, result.Character.Data, char)
+	post, err := o.projectLoaded(ctx, &ProjectLoadedCharacterInput{Character: char})
+	if err != nil {
+		return nil, fmt.Errorf("failed to project character after equip: %w", err)
+	}
 	_, err = o.characterRepo.Update(ctx, characterrepo.UpdateInput{
 		Character: &entities.Character{
-			Data:       mergedEquipmentData(ctx, result.Character.Data, char),
+			Data:       persistedData,
 			Appearance: result.Character.Appearance,
 		},
 	})
@@ -938,6 +951,7 @@ func (o *Orchestrator) EquipItem(ctx context.Context, input *EquipItemInput) (*E
 
 	return &EquipItemOutput{
 		PreviousItemID: previousItemID,
+		View:           post.View,
 	}, nil
 }
 
@@ -963,9 +977,17 @@ func (o *Orchestrator) UnequipItem(ctx context.Context, input *UnequipItemInput)
 		return nil, fmt.Errorf("failed to get character: %w", err)
 	}
 
-	char, err := character.LoadFromData(ctx, result.Character.Data, events.NewEventBus())
+	if result == nil || result.Character == nil {
+		return nil, fmt.Errorf("failed to get character: repository returned no character")
+	}
+
+	loaded, err := loadAttachedCharacter(ctx, &loadAttachedCharacterInput{Data: result.Character.Data})
 	if err != nil {
 		return nil, fmt.Errorf("failed to load character: %w", err)
+	}
+	char := loaded.Character
+	if _, err = o.projectLoaded(ctx, &ProjectLoadedCharacterInput{Character: char}); err != nil {
+		return nil, fmt.Errorf("failed to project character before unequip: %w", err)
 	}
 
 	unequippedItemID := ""
@@ -975,11 +997,14 @@ func (o *Orchestrator) UnequipItem(ctx context.Context, input *UnequipItemInput)
 
 	char.UnequipItem(input.Slot)
 
-	// Update character (preserve appearance) — merge, don't overwrite with
-	// a full char.ToData(); see mergedEquipmentData's doc for why.
+	persistedData := mergedEquipmentData(ctx, result.Character.Data, char)
+	post, err := o.projectLoaded(ctx, &ProjectLoadedCharacterInput{Character: char})
+	if err != nil {
+		return nil, fmt.Errorf("failed to project character after unequip: %w", err)
+	}
 	_, err = o.characterRepo.Update(ctx, characterrepo.UpdateInput{
 		Character: &entities.Character{
-			Data:       mergedEquipmentData(ctx, result.Character.Data, char),
+			Data:       persistedData,
 			Appearance: result.Character.Appearance,
 		},
 	})
@@ -989,6 +1014,7 @@ func (o *Orchestrator) UnequipItem(ctx context.Context, input *UnequipItemInput)
 
 	return &UnequipItemOutput{
 		UnequippedItemID: unequippedItemID,
+		View:             post.View,
 	}, nil
 }
 
@@ -1016,18 +1042,15 @@ func (o *Orchestrator) UnequipItem(ctx context.Context, input *UnequipItemInput)
 //     rpg-api#684 (deferred). This keeps the two consistent for the
 //     primary flow in the meantime.
 //
-// Every OTHER field is left exactly as loaded — deliberately NOT persisted via a full
-// `char.ToData()` overwrite, which would silently drop data the toolkit runtime doesn't model on a load/save cycle:
-// toolkit runtime doesn't model on a load/save cycle: BackgroundID and
-// CreatedAt are never populated by ToData() (confirmed by reading
-// character.go's ToData — no assignment exists for either), and any
-// inventory item whose ID isn't in the toolkit's built-in equipment
-// registry (a loot/quest item like "potion-of-healing") is silently
-// skipped by LoadFromData's `equipment.GetByID` resolution loop, so it
-// would vanish from Data.Inventory on the next ToData() call. Equip/
-// Unequip never touch Inventory or these identity/metadata fields at the
-// toolkit level, so merging just the two fields above is complete — not
-// a partial workaround (rpg-api#680 gate finding 2).
+// Every OTHER field is left exactly as loaded — deliberately NOT persisted
+// via a full `char.ToData()` overwrite. BackgroundID and CreatedAt are never
+// populated by ToData(), and API-owned appearance is not part of the toolkit
+// sheet at all. Strict loading now refuses inventory entries outside the
+// toolkit catalog rather than silently dropping or preserving unprojectable
+// private state. For valid persisted data, Equip/Unequip touch neither
+// inventory nor identity/metadata, so merging only these two fields is the
+// complete, lossless write (rpg-api#680 gate finding 2; rpg-api#844 strict
+// application).
 func mergedEquipmentData(ctx context.Context, original *character.Data, char *character.Character) *character.Data {
 	merged := *original
 	merged.EquipmentSlots = char.ToData().EquipmentSlots

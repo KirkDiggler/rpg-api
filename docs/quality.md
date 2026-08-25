@@ -1,8 +1,8 @@
 ---
 name: rpg-api quality scorecard
 description: Per-component grade with rationale — a graded scorecard to update as the codebase evolves
-updated: 2026-07-21
-confidence: medium — Wave 2.11e encounter v2 graded from shipped-code + integration test verification; older entries reflect 2026-05-02 snapshot pending refresh; rpg-api#636 note verified against passing tests; rpg-api#642 deletions verified against passing build/vet/test/lint; rpg-api#680 entries verified against passing unit + integration suite
+updated: 2026-08-25
+confidence: medium-high — #844 character v2 strict owner-private path verified against focused no-write/mapping/lint gates; older entries retain their stated evidence
 ---
 
 # Quality Scorecard
@@ -76,20 +76,17 @@ its size. Its `EquipItem`/`UnequipItem` RPCs now delegate to the rules-correct
 orchestrator method (rpg-api#680, see "Character orchestrator" below) — that
 specific gap is closed even though the surrounding stub/TODO debt isn't.
 
-### Character v2 handler — B (new, 2026-07-21)
+### Character v2 handler — B+ (updated 2026-08-25)
 
-`internal/handlers/dnd5e/v2/character/` (rpg-api#680) — the v1alpha2
-`CharacterService`, out-of-encounter `EquipItem`/`UnequipItem` only. Deliberately
-narrow: no `converters.go`, proto↔domain translation is small enough to stay
-inline in `handler.go`. Delegates to the SAME orchestrator method the v1alpha1
-handler uses and shares `BuildEquipmentCharacterData`
-(`internal/handlers/dnd5e/v2/encounter/character_data.go`) with the encounter
-snapshot path for its response composition — no independent logic to drift.
-Gomock unit suite covers validation, delegation, and error→status mapping; the
-end-to-end proof (real AC, occupancy visible across both surfaces) is the
-integration suite in the encounter package (`encounter.md`). Held at B rather
-than A pending production traffic and a genuine in-encounter equip path
-(rpg-project#94) to prove the boundary holds under a second consumer.
+`internal/handlers/dnd5e/v2/character/` (rpg-api#680/#844) serves authenticated-owner
+`GetCharacterData` plus out-of-encounter `EquipItem`/`UnequipItem`. Ownership precedes
+private projection, missing/foreign NOT_FOUND responses are byte-identical, and all
+three methods map the same detached orchestrator View through `BuildCharacterData`.
+Writes return their precomposed post-view with no fallible post-write reload. Focused
+gates cover strict malformed-data INTERNAL/no-write behavior, projection-before-write,
+persisted-post-state equality, complete level-3 Fighter status, optional presence, and
+representative four-build mapping. Held below A pending production traffic and a second
+live consumer of the owner-private composition.
 
 ## Orchestrators
 

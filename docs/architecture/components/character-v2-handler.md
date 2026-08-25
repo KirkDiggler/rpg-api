@@ -1,88 +1,61 @@
 ---
 name: character v2 handler
-description: gRPC handler for the v1alpha2 CharacterService — out-of-encounter equip/unequip
-updated: 2026-07-21
-confidence: high — verified by reading handler.go, handler_test.go, and the shared orchestrator/projection code it calls
+description: gRPC handler for owner-private v1alpha2 CharacterService reads and out-of-encounter equipment writes
+updated: 2026-08-25
+confidence: high — #844 strict projection, ownership, no-reload response, four-build mapping, and no-write gates pass
 ---
 
-# character v2 handler (rpg-api#680)
+# character v2 handler (rpg-api#680, #844)
 
-The v1alpha2 `dnd5e.api.v1alpha2.character.CharacterService` is the out-of-encounter
-character-sheet surface: `EquipItem`/`UnequipItem` for sheet editing between
-encounters. It is deliberately narrow — two RPCs, no draft lifecycle, no data-loading
-endpoints. The full character creation/management surface stays on the v1alpha1
-`CharacterService` (`docs/architecture/components/character-handler.md`); this handler
-exists only because equip/unequip needed a v1alpha2 wire shape (`Ref` + `slot_key`,
-keys-not-enums) and a response carrying the new `CharacterData` equipment fields
-(`docs/architecture/components/encounter.md`'s CharacterData projection section).
-
-The in-encounter equivalent — equipping mid-combat, with an action-economy cost — does
-not exist yet. When it lands, it rides the encounter stream, not this service
-(rpg-project#94).
+The v1alpha2 `dnd5e.api.v1alpha2.character.CharacterService` is the authenticated
+owner-private character-sheet surface. It serves `GetCharacterData` and edits equipment
+between encounters with `EquipItem`/`UnequipItem`. Draft lifecycle and catalog endpoints
+remain on the v1alpha1 CharacterService.
 
 ## Files
 
 | File | Purpose |
 |---|---|
-| `internal/handlers/dnd5e/v2/character/handler.go` | `Handler` struct + constructor + `EquipItem`/`UnequipItem` |
-| `internal/handlers/dnd5e/v2/character/handler_test.go` | Unit suite (gomock) — validation, delegation, error→gRPC-status mapping, response shape |
+| `internal/handlers/dnd5e/v2/character/handler.go` | auth/ownership gate, request validation, orchestrator delegation |
+| `internal/handlers/dnd5e/v2/character/character_data.go` | detached View → CharacterData field mapping |
+| `internal/handlers/dnd5e/v2/character/handler_test.go` | ownership, status mapping, errors, and no-reload response gates |
 
-No `converters.go` — proto↔domain translation here is small enough to live inline in
-`handler.go` (item Ref → toolkit item ID, slot key string → `character.InventorySlot`),
-unlike the v1alpha1 handler's 3,132-line converter file.
+## Methods
 
-## gRPC methods handled
+- `GetCharacterData` returns the current complete owner-private `CharacterData`.
+- `EquipItem` equips one inventory item by Ref ID and opaque slot key.
+- `UnequipItem` clears one opaque slot key.
 
-- `EquipItem(EquipItemRequest{character_id, item: Ref, slot_key}) → EquipItemResponse{character: CharacterData}`
-- `UnequipItem(UnequipItemRequest{character_id, slot_key}) → UnequipItemResponse{character: CharacterData}`
+The item Ref's module/type are not interpreted in the API. The toolkit catalog and equip
+verb own item and slot rules.
 
-`item` is a `Ref` (module/type/id), not a bare item id string — the handler resolves
-`ref.Id` as the toolkit item ID. Module/type on the Ref are NOT validated here;
-validating "what makes a Ref a valid item ref" would require rules knowledge this
-handler deliberately doesn't have.
+## Strict owner-private flow
 
-## Layering
+All methods authenticate and call `verifyCallerOwnsCharacter` first. Missing and foreign
+characters return the same canonical NOT_FOUND code and text; a malformed foreign sheet
+still returns NOT_FOUND because private projection is never attempted before ownership.
 
-This handler is a thin wrapper — proto conversion only, no business logic:
+`GetCharacterData` then calls the orchestrator package's `ProjectView`: strict toolkit
+`character.Load` + `character.Attach`, followed by detached `EquipmentView` and
+`StatusView`. Malformed condition/feature/item/resource state or an unknown status
+descriptor becomes INTERNAL, never a forgiving partial response.
 
-1. Validate the envelope (`character_id`, `item`/`item.id`, `slot_key` non-empty) →
-   `apierr.InvalidArgument`.
-2. Delegate to `character.Service.EquipItem`/`UnequipItem`
-   (`internal/orchestrators/character` — the SAME orchestrator the v1alpha1 handler
-   uses; see `character-orchestrator.md`'s Equipment section for what that method
-   actually does). Orchestrator errors are wrapped with `apierr.ToGRPCError`.
-3. Re-fetch via `characterService.GetCharacter`, load the runtime character
-   (`character.LoadFromData`), and compose the response via
-   `BuildEquipmentCharacterData` (`character_data.go`, in this same package).
-   This function used to be shared with the v1alpha2 encounter snapshot path;
-   that path is deleted now (rpg-project#227, 2026-08-21 — see
-   `encounter.md`), and the function moved here as its one remaining caller.
-   The "two callers never independently drift" guarantee it existed for is
-   moot until a new encounter-facing consumer exists.
+Equip/Unequip receive an already-composed detached post-view from the orchestrator. The
+handler performs no repository re-fetch or fallible projection after a successful write.
+All three RPCs pass their View through the same non-fallible `BuildCharacterData` mapper.
 
-`armor_class_detail.total` is the ONLY AC total on this response — there is no
-surrounding `Entity.armor_class` to keep in sync with, unlike the encounter snapshot
-(see `CharacterData.armor_class_detail`'s doc comment in the proto for the full
-rationale on why the field is duplicated there but not here).
+## CharacterData mapping
 
-## Wiring
+`BuildCharacterData` maps equipment and flattened owner-private status field-for-field:
+level, current/max HP (temporary remains zero), base speed, structured feature/condition
+Refs, optional feature `resource_key`, optional condition `source_member`, and projected
+non-magical resources. Spell slots, legacy class resources, and magic status are absent
+by construction because the toolkit StatusView does not expose them.
 
-Registered in both `cmd/server/server.go` and `internal/integration/harness/harness.go`,
-sharing the SAME `character.Service` instance the v1alpha1 `CharacterService` uses — no
-separate orchestrator construction.
+## Wiring and coverage
 
-## Test coverage
-
-`handler_test.go` — gomock suite: validation errors (missing `character_id`/`item`/
-`slot_key`), success path (asserts `armor_class_detail` is real and non-zero, `equipped`
-contains the newly-equipped slot, `inventory` includes the equipped item per the wire
-contract), orchestrator error → gRPC status mapping (`apierr.NotFound` → `codes.NotFound`,
-a generic error → `codes.Internal`).
-
-The end-to-end equip→snapshot proof this used to describe
-(`internal/handlers/dnd5e/v2/encounter/integration_equipment_test.go`, asserting
-real AC and occupancy against both this service AND the v1alpha2 encounter
-service) is deleted along with that encounter service (rpg-project#227,
-2026-08-21 — see `encounter.md`). No replacement cross-service integration
-test exists today; this handler's own `handler_test.go` coverage (above) is
-what remains.
+The handler is registered in the production server and integration harness with the same
+character orchestrator used by v1alpha1. Focused tests cover validation, auth ordering,
+byte-identical missing/foreign NOT_FOUND, strict owner failure as INTERNAL, one-read
+Equip/Unequip responses, level-3 Fighter equipment/status, optional presence, and
+representative Fighter/Barbarian/Monk/Rogue mapping.

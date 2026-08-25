@@ -1,54 +1,50 @@
 package character
 
-// character_data.go composes the equipment-facing CharacterData fields
-// (equipped/inventory/slots/armor_class_detail/main_hand_damage) from the
-// toolkit's EquipmentView display projection (rpg-toolkit#812) — the
-// rpg-api#680 fix for both of board #11's named equipment sins: the equip
-// path bypassing the rules engine (fixed in the orchestrator, see
-// internal/orchestrators/character/orchestrator.go) and AC on the wire
-// being a straight copy of a stored int instead of EffectiveAC. Every
-// field composed here is a pass-through or Ref-translation of a
-// toolkit-owned value — no rules are computed in rpg-api.
-//
-// Moved from the now-deleted internal/handlers/dnd5e/v2/encounter package
-// (the old EncounterService, rpg-project#227) into this, its one remaining
-// caller: recomputedCharacterData in handler.go.
+// character_data.go is a pure field-for-field wire mapper for the detached
+// owner-private character View. Rules and display composition remain in the
+// toolkit's EquipmentView and StatusView.
 
 import (
 	encounterv2pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/encounter"
-	tkcharacter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
+	orchcharacter "github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
+	"github.com/KirkDiggler/rpg-toolkit/core"
+	coreResources "github.com/KirkDiggler/rpg-toolkit/core/resources"
 )
 
-// refModuleDnd5e is the canonical module string for the dnd5e rulebook,
-// mirroring the (now-deleted) v2 encounter handler's own constant of the
-// same name.
-const refModuleDnd5e = "dnd5e"
+const (
+	refModuleDnd5e = "dnd5e"
+	refTypeItem    = "item"
+)
 
-// BuildEquipmentCharacterData composes the equipment-facing fields of
-// CharacterData from a toolkit EquipmentView. nil view returns a zero-value
-// CharacterData (callers merge onto identity fields already populated, e.g.
-// by recomputedCharacterData).
-func BuildEquipmentCharacterData(view *tkcharacter.EquipmentView) *encounterv2pb.CharacterData {
+// BuildCharacterData maps the complete detached owner-private View onto the
+// shared CharacterData wire message. Spell slots, legacy class resources, and
+// magic status have no source in View and therefore cannot be emitted here.
+func BuildCharacterData(view *orchcharacter.View) *encounterv2pb.CharacterData {
 	cd := &encounterv2pb.CharacterData{}
 	if view == nil {
 		return cd
 	}
 
-	equipped := make(map[string]*encounterv2pb.Ref, len(view.Items))
-	inventory := make([]*encounterv2pb.Item, 0, len(view.Items))
-	for _, item := range view.Items {
-		ref := &encounterv2pb.Ref{Module: refModuleDnd5e, Type: "item", Id: item.ItemID}
+	mapEquipment(cd, view)
+	mapStatus(cd, view)
+	return cd
+}
+
+func mapEquipment(cd *encounterv2pb.CharacterData, view *orchcharacter.View) {
+	if view.Equipment == nil {
+		return
+	}
+
+	equipped := make(map[string]*encounterv2pb.Ref, len(view.Equipment.Items))
+	inventory := make([]*encounterv2pb.Item, 0, len(view.Equipment.Items))
+	for _, item := range view.Equipment.Items {
+		ref := &encounterv2pb.Ref{Module: refModuleDnd5e, Type: refTypeItem, Id: item.ItemID}
 		inventory = append(inventory, &encounterv2pb.Item{
 			Ref:      ref,
 			Name:     item.Name,
 			StatLine: item.StatLine,
 			Kind:     item.Kind,
 			SlotKeys: item.SlotKeys,
-			// IconKey intentionally left empty (rpg-api#680 Scope-decision):
-			// no toolkit/asset-manifest source exists yet for a bare sprite
-			// key — the fixture data rpg-dnd5e-web#557 ships is a full sprite
-			// path, not a key. Composing one in rpg-api would be exactly the
-			// kind of display-field invention this slice exists to stop.
 		})
 		if item.Slot != "" {
 			equipped[string(item.Slot)] = ref
@@ -57,21 +53,81 @@ func BuildEquipmentCharacterData(view *tkcharacter.EquipmentView) *encounterv2pb
 	cd.Equipped = equipped
 	cd.Inventory = inventory
 
-	slots := make([]*encounterv2pb.SlotDef, 0, len(view.Slots))
-	for _, s := range view.Slots {
+	slots := make([]*encounterv2pb.SlotDef, 0, len(view.Equipment.Slots))
+	for _, slot := range view.Equipment.Slots {
 		slots = append(slots, &encounterv2pb.SlotDef{
-			Key:          s.Key,
-			DisplayLabel: s.DisplayLabel,
-			Accepts:      s.Accepts,
+			Key:          slot.Key,
+			DisplayLabel: slot.DisplayLabel,
+			Accepts:      slot.Accepts,
 		})
 	}
 	cd.Slots = slots
-
 	cd.ArmorClassDetail = &encounterv2pb.ArmorClassDisplay{
-		Total: int32(view.ACTotal),
-		Note:  view.ACNote,
+		Total: int32(view.Equipment.ACTotal),
+		Note:  view.Equipment.ACNote,
 	}
-	cd.MainHandDamage = view.MainHandDamage
+	cd.MainHandDamage = view.Equipment.MainHandDamage
+}
 
-	return cd
+func mapStatus(cd *encounterv2pb.CharacterData, view *orchcharacter.View) {
+	if view.Status == nil {
+		return
+	}
+
+	cd.Level = int32(view.Status.Level)
+	cd.HitPoints = &encounterv2pb.HitPoints{
+		Current: int32(view.Status.HitPoints.Current),
+		Max:     int32(view.Status.HitPoints.Maximum),
+	}
+	cd.BaseSpeedFeet = int32(view.Status.BaseSpeedFeet)
+
+	cd.Features = make([]*encounterv2pb.FeatureView, 0, len(view.Status.Features))
+	for _, feature := range view.Status.Features {
+		cd.Features = append(cd.Features, &encounterv2pb.FeatureView{
+			Ref:         refToProto(feature.Ref),
+			Name:        feature.Name,
+			Detail:      feature.Detail,
+			ResourceKey: optionalResourceKey(feature.ResourceKey),
+		})
+	}
+
+	cd.Conditions = make([]*encounterv2pb.ConditionView, 0, len(view.Status.Conditions))
+	for _, condition := range view.Status.Conditions {
+		cd.Conditions = append(cd.Conditions, &encounterv2pb.ConditionView{
+			Ref:          refToProto(condition.Ref),
+			Name:         condition.Name,
+			Detail:       condition.Detail,
+			SourceMember: cloneString(condition.SourceMember),
+		})
+	}
+
+	cd.Resources = make([]*encounterv2pb.ResourceView, 0, len(view.Status.Resources))
+	for _, resource := range view.Status.Resources {
+		cd.Resources = append(cd.Resources, &encounterv2pb.ResourceView{
+			Key:     string(resource.Key),
+			Name:    resource.Name,
+			Current: int32(resource.Current),
+			Maximum: int32(resource.Maximum),
+		})
+	}
+}
+
+func refToProto(ref core.Ref) *encounterv2pb.Ref {
+	return &encounterv2pb.Ref{Module: ref.Module, Type: ref.Type, Id: ref.ID}
+}
+
+func optionalResourceKey(value *coreResources.ResourceKey) *string {
+	if value == nil {
+		return nil
+	}
+	result := string(*value)
+	return &result
+}
+
+func cloneString(value *string) *string {
+	if value == nil {
+		return nil
+	}
+	result := *value
+	return &result
 }

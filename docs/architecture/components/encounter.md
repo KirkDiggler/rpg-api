@@ -19,8 +19,8 @@ sole path a session comes into existence, and gameplay verbs ride the
 `SessionService` (`internal/handlers/dnd5e/session/v1alpha1/`, not yet
 documented here).
 
-`BuildEquipmentCharacterData` (this package's one export the character
-handler depended on) moved to `internal/handlers/dnd5e/v2/character/
-character_data.go` — see [`character-v2-handler.md`](./character-v2-handler.md).
+The surviving owner-private character composition now lives as
+`BuildCharacterData` in `internal/handlers/dnd5e/v2/character/character_data.go`
+— see [`character-v2-handler.md`](./character-v2-handler.md).
 
 See `docs/status.md` "Active work" for the full deletion tally.

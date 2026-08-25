@@ -1,8 +1,8 @@
 ---
 name: character orchestrator
 description: Character creation, management, equipment, and data-loading orchestrator
-updated: 2026-07-21
-confidence: medium-high — verified by reading service.go and orchestrator.go; rpg-api#680 equipment section verified against passing unit tests + an adversarial-gate-driven fix
+updated: 2026-08-25
+confidence: high — #844 strict project-before-write path verified by focused no-write, post-projection, persistence-equality, handler, and lint gates
 ---
 
 # character orchestrator
@@ -82,15 +82,20 @@ validation, no recompute. That's gone.
 The method shape:
 
 1. `characterRepo.Get` — load the persisted `*character.Data`.
-2. `character.LoadFromData(ctx, data, events.NewEventBus())` — build the runtime
-   `*character.Character` so the toolkit's rules run for real.
+2. Strict `character.Load(ctx, data)` + `character.Attach(ctx, char, bus)`, then
+   complete detached `EquipmentView` + `StatusView` projection before mutation.
+   Malformed conditions, features, catalog items, resources, or unknown status
+   descriptors fail the operation before any write; forgiving `LoadFromData` is
+   not used on this owner-private path.
 3. `char.EquipItem(slot, itemID)` / `char.UnequipItem(slot)` — the toolkit enforces
    occupancy here (rpg-toolkit#812, v0.67.0): a two-handed weapon claims `main_hand` and
    clears `off_hand`; equipping an occupied slot swaps the previous occupant back to
    inventory (never dropped); an incompatible slot now returns an `rpgerr` (mapped to
    `apierr.InvalidArgument` by `mapEquipError`) instead of silently succeeding.
-4. `mergedEquipmentData(ctx, original, char)` — persist. See below for why this is a
-   merge, not `Data: char.ToData()`.
+4. Compose `mergedEquipmentData(ctx, original, char)` and the complete detached
+   post-mutation View before repository Update, then return that already-composed
+   View. There is no fallible reload/projection after a successful write. See below
+   for why persistence is a merge, not `Data: char.ToData()`.
 
 ### Why persistence merges instead of overwriting (a real footgun)
 
@@ -121,19 +126,15 @@ runtime doesn't model on a round trip:
 - `BackgroundID` and `CreatedAt` are never populated by `ToData()` — confirmed by
   reading `character.go`'s `ToData()`: no assignment exists for either. A full
   overwrite silently zeros them.
-- Any inventory item whose ID isn't in the toolkit's built-in weapon/armor/tool/pack/
-  ammunition registry — a loot/quest item like `"potion-of-healing"` — is silently
-  skipped by `LoadFromData`'s `equipment.GetByID` resolution loop
-  (`if err != nil { continue }`). A full overwrite permanently deletes it from
-  `Data.Inventory`.
+- API-owned appearance is not represented by `character.Data` or `Character.ToData()`.
 
-An adversarial gate on rpg-api#680 caught this before merge: the original
-implementation persisted `char.ToData()` directly, and a regression test proved it
-destroyed a character's background, creation timestamp, and a non-registry inventory
-item on a single `EquipItem` call. `Character.EquipItem`/`UnequipItem` never touch
-`Inventory` at the toolkit level (only `EquipmentSlots`), so merging just those two
-fields onto the originally-loaded `Data` is a complete fix, not a partial workaround.
-Regression coverage: `TestEquipItem_PreservesNonEquipmentFields` and
+The owner-private path now uses the toolkit's strict loader, so an inventory item outside
+its catalog is rejected as INTERNAL with no Update rather than silently dropped or
+preserved as an unprojectable row. For valid data, `Character.EquipItem`/`UnequipItem`
+never touch `Inventory` (only `EquipmentSlots`), so merging those fields onto the
+originally loaded `Data` preserves every non-equipment field and appearance exactly.
+Regression coverage: `TestEquipItem_PreservesNonEquipmentFields`,
+`TestEquipItem_RejectsUnprojectableDataWithoutWriting`, and
 `TestEquipItem_SyncsStoredArmorClass` (`internal/orchestrators/character/equip_item_test.go`).
 
 **If this ever gets "simplified" back to `Data: char.ToData()`, the data loss returns

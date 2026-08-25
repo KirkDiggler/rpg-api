@@ -19,15 +19,11 @@ import (
 	"context"
 	"errors"
 
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
-
 	characterpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/character"
 	encounterv2pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/encounter"
 	"github.com/KirkDiggler/rpg-api/internal/apierr"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
 	orchcharacter "github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
-	"github.com/KirkDiggler/rpg-toolkit/events"
 	tkcharacter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 )
 
@@ -87,7 +83,7 @@ func (h *Handler) EquipItem(
 		return nil, err
 	}
 
-	_, err := h.characterService.EquipItem(ctx, &orchcharacter.EquipItemInput{
+	out, err := h.characterService.EquipItem(ctx, &orchcharacter.EquipItemInput{
 		CharacterID: req.GetCharacterId(),
 		ItemID:      req.GetItem().GetId(),
 		Slot:        tkcharacter.InventorySlot(req.GetSlotKey()),
@@ -95,12 +91,11 @@ func (h *Handler) EquipItem(
 	if err != nil {
 		return nil, apierr.ToGRPCError(err)
 	}
-
-	cd, err := h.recomputedCharacterData(ctx, req.GetCharacterId())
-	if err != nil {
-		return nil, err
+	if out == nil || out.View == nil {
+		return nil, apierr.ToGRPCError(errors.New("equip item returned no character view"))
 	}
-	return &characterpb.EquipItemResponse{Character: cd}, nil
+
+	return &characterpb.EquipItemResponse{Character: BuildCharacterData(out.View)}, nil
 }
 
 // UnequipItem clears a slot, returning its occupant to inventory.
@@ -121,19 +116,18 @@ func (h *Handler) UnequipItem(
 		return nil, err
 	}
 
-	_, err := h.characterService.UnequipItem(ctx, &orchcharacter.UnequipItemInput{
+	out, err := h.characterService.UnequipItem(ctx, &orchcharacter.UnequipItemInput{
 		CharacterID: req.GetCharacterId(),
 		Slot:        tkcharacter.InventorySlot(req.GetSlotKey()),
 	})
 	if err != nil {
 		return nil, apierr.ToGRPCError(err)
 	}
-
-	cd, err := h.recomputedCharacterData(ctx, req.GetCharacterId())
-	if err != nil {
-		return nil, err
+	if out == nil || out.View == nil {
+		return nil, apierr.ToGRPCError(errors.New("unequip item returned no character view"))
 	}
-	return &characterpb.UnequipItemResponse{Character: cd}, nil
+
+	return &characterpb.UnequipItemResponse{Character: BuildCharacterData(out.View)}, nil
 }
 
 // GetCharacterData reads one character's current view without changing it —
@@ -214,42 +208,20 @@ func notFoundCharacter(characterID string) *apierr.Error {
 	return apierr.NotFoundf("character %q not found", characterID)
 }
 
-// recomputedCharacterData re-fetches the character after an equip/unequip and
-// composes the post-change CharacterData via characterDataFromEntity, so the
-// sheet EquipItem/UnequipItem return and the HUD an active encounter shows
-// never drift from two independent compositions (rpg-api#680).
-func (h *Handler) recomputedCharacterData(
-	ctx context.Context,
-	characterID string,
-) (*encounterv2pb.CharacterData, error) {
-	out, err := h.characterService.GetCharacter(ctx, &orchcharacter.GetCharacterInput{
-		CharacterID: characterID,
-	})
-	if err != nil {
-		return nil, apierr.ToGRPCError(err)
-	}
-
-	return h.characterDataFromEntity(ctx, out.Character.Data)
-}
-
-// characterDataFromEntity composes CharacterData via BuildEquipmentCharacterData
-// — the SAME composition the encounter snapshot path uses
-// (v2/encounter/character_data.go). Every RPC in this file that returns a
-// CharacterData (the equip writes, and the plain read GetCharacterData) goes
-// through here, so there is exactly one projection, never two that could
-// drift.
-//
-// armor_class_detail.total is the ONLY AC total on this response: unlike the
-// encounter snapshot, there is no surrounding Entity.armor_class to keep in
-// sync (see CharacterData.armor_class_detail's doc comment in types.proto).
+// characterDataFromEntity runs only after verifyCallerOwnsCharacter has
+// authenticated the owner. ProjectView is strict: malformed private state is
+// an INTERNAL response rather than a forgiving partial sheet.
 func (h *Handler) characterDataFromEntity(
 	ctx context.Context,
 	data *tkcharacter.Data,
 ) (*encounterv2pb.CharacterData, error) {
-	char, err := tkcharacter.LoadFromData(ctx, data, events.NewEventBus())
+	projected, err := orchcharacter.ProjectView(ctx, &orchcharacter.ProjectViewInput{Data: data})
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "load character: %v", err)
+		return nil, apierr.ToGRPCError(err)
+	}
+	if projected == nil || projected.View == nil {
+		return nil, apierr.ToGRPCError(errors.New("project character returned no view"))
 	}
 
-	return BuildEquipmentCharacterData(char.EquipmentView(ctx)), nil
+	return BuildCharacterData(projected.View), nil
 }
