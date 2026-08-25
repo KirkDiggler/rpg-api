@@ -35,6 +35,11 @@ import (
 // directly. Kept as its own suite (not folded into OrchestratorTestSuite) so
 // the fixtures stay equipment-focused and don't drag in draft/class/race
 // setup this slice doesn't need.
+const (
+	testCharacterRepositoryVersion = "version-1"
+	expectedMissingVersionMessage  = "character repository contract violation: missing character version"
+)
+
 type EquipItemTestSuite struct {
 	suite.Suite
 	ctrl              *gomock.Controller
@@ -119,12 +124,77 @@ func (s *EquipItemTestSuite) appliedPatch(
 	}
 }
 
+func (s *EquipItemTestSuite) TestEquipItem_MissingRepositoryVersionFailsBeforeMutation() {
+	entity := s.fighterWithLongswordAndShield()
+	entity.Data.EquipmentSlots = character.EquipmentSlots{character.SlotOffHand: "shield"}
+	originalData := *entity.Data
+	originalData.EquipmentSlots = maps.Clone(entity.Data.EquipmentSlots)
+	originalSlotsIdentity := reflect.ValueOf(entity.Data.EquipmentSlots).Pointer()
+	s.mockCharacterRepo.EXPECT().
+		Get(s.ctx, characterrepo.GetInput{ID: s.testCharacterID}).
+		Return(&characterrepo.GetOutput{Character: entity}, nil)
+	// Deliberately no PatchEquipment expectation.
+
+	projectCalls := 0
+	s.orchestrator.projectLoaded = func(ctx context.Context, input *ProjectLoadedCharacterInput) (*ProjectLoadedCharacterOutput, error) {
+		projectCalls++
+		return projectLoadedCharacter(ctx, input)
+	}
+
+	out, err := s.orchestrator.EquipItem(s.ctx, &EquipItemInput{
+		CharacterID: s.testCharacterID,
+		ItemID:      "longsword",
+		Slot:        character.SlotMainHand,
+	})
+	s.Require().Error(err)
+	s.Nil(out)
+	s.True(apierr.IsInternal(err), "expected Internal, got %v", err)
+	var coded *apierr.Error
+	s.Require().True(errors.As(err, &coded))
+	s.Equal(expectedMissingVersionMessage, coded.Message)
+	s.Zero(projectCalls, "missing version must fail before strict projection")
+	s.Equal(originalData, *entity.Data)
+	s.Equal(originalSlotsIdentity, reflect.ValueOf(entity.Data.EquipmentSlots).Pointer())
+}
+
+func (s *EquipItemTestSuite) TestUnequipItem_MissingRepositoryVersionFailsBeforeMutation() {
+	entity := s.fighterWithLongswordAndShield()
+	entity.Data.EquipmentSlots = character.EquipmentSlots{character.SlotMainHand: "longsword"}
+	originalData := *entity.Data
+	originalData.EquipmentSlots = maps.Clone(entity.Data.EquipmentSlots)
+	originalSlotsIdentity := reflect.ValueOf(entity.Data.EquipmentSlots).Pointer()
+	s.mockCharacterRepo.EXPECT().
+		Get(s.ctx, characterrepo.GetInput{ID: s.testCharacterID}).
+		Return(&characterrepo.GetOutput{Character: entity}, nil)
+	// Deliberately no PatchEquipment expectation.
+
+	projectCalls := 0
+	s.orchestrator.projectLoaded = func(ctx context.Context, input *ProjectLoadedCharacterInput) (*ProjectLoadedCharacterOutput, error) {
+		projectCalls++
+		return projectLoadedCharacter(ctx, input)
+	}
+
+	out, err := s.orchestrator.UnequipItem(s.ctx, &UnequipItemInput{
+		CharacterID: s.testCharacterID,
+		Slot:        character.SlotMainHand,
+	})
+	s.Require().Error(err)
+	s.Nil(out)
+	s.True(apierr.IsInternal(err), "expected Internal, got %v", err)
+	var coded *apierr.Error
+	s.Require().True(errors.As(err, &coded))
+	s.Equal(expectedMissingVersionMessage, coded.Message)
+	s.Zero(projectCalls, "missing version must fail before strict projection")
+	s.Equal(originalData, *entity.Data)
+	s.Equal(originalSlotsIdentity, reflect.ValueOf(entity.Data.EquipmentSlots).Pointer())
+}
+
 func (s *EquipItemTestSuite) TestEquipItem_Success_NoPreviousOccupant() {
 	charEntity := s.fighterWithLongswordAndShield()
 
 	s.mockCharacterRepo.EXPECT().
 		Get(s.ctx, characterrepo.GetInput{ID: s.testCharacterID}).
-		Return(&characterrepo.GetOutput{Character: charEntity}, nil)
+		Return(&characterrepo.GetOutput{Character: charEntity, Version: testCharacterRepositoryVersion}, nil)
 
 	s.mockCharacterRepo.EXPECT().
 		PatchEquipment(s.ctx, gomock.Any()).
@@ -154,7 +224,7 @@ func (s *EquipItemTestSuite) TestEquipItem_TwoHanded_ClearsOffHand() {
 
 	s.mockCharacterRepo.EXPECT().
 		Get(s.ctx, characterrepo.GetInput{ID: s.testCharacterID}).
-		Return(&characterrepo.GetOutput{Character: charEntity}, nil)
+		Return(&characterrepo.GetOutput{Character: charEntity, Version: testCharacterRepositoryVersion}, nil)
 
 	s.mockCharacterRepo.EXPECT().
 		PatchEquipment(s.ctx, gomock.Any()).
@@ -184,7 +254,7 @@ func (s *EquipItemTestSuite) TestEquipItem_Swap_ReturnsPreviousOccupant() {
 
 	s.mockCharacterRepo.EXPECT().
 		Get(s.ctx, characterrepo.GetInput{ID: s.testCharacterID}).
-		Return(&characterrepo.GetOutput{Character: charEntity}, nil)
+		Return(&characterrepo.GetOutput{Character: charEntity, Version: testCharacterRepositoryVersion}, nil)
 
 	s.mockCharacterRepo.EXPECT().
 		PatchEquipment(s.ctx, gomock.Any()).
@@ -206,7 +276,7 @@ func (s *EquipItemTestSuite) TestEquipItem_ItemNotInInventory_ReturnsNotFound() 
 
 	s.mockCharacterRepo.EXPECT().
 		Get(s.ctx, characterrepo.GetInput{ID: s.testCharacterID}).
-		Return(&characterrepo.GetOutput{Character: charEntity}, nil)
+		Return(&characterrepo.GetOutput{Character: charEntity, Version: testCharacterRepositoryVersion}, nil)
 
 	_, err := s.orchestrator.EquipItem(s.ctx, &EquipItemInput{
 		CharacterID: s.testCharacterID,
@@ -226,7 +296,7 @@ func (s *EquipItemTestSuite) TestEquipItem_IncompatibleSlot_ReturnsInvalidArgume
 
 	s.mockCharacterRepo.EXPECT().
 		Get(s.ctx, characterrepo.GetInput{ID: s.testCharacterID}).
-		Return(&characterrepo.GetOutput{Character: charEntity}, nil)
+		Return(&characterrepo.GetOutput{Character: charEntity, Version: testCharacterRepositoryVersion}, nil)
 
 	_, err := s.orchestrator.EquipItem(s.ctx, &EquipItemInput{
 		CharacterID: s.testCharacterID,
@@ -245,7 +315,7 @@ func (s *EquipItemTestSuite) TestUnequipItem_Success() {
 
 	s.mockCharacterRepo.EXPECT().
 		Get(s.ctx, characterrepo.GetInput{ID: s.testCharacterID}).
-		Return(&characterrepo.GetOutput{Character: charEntity}, nil)
+		Return(&characterrepo.GetOutput{Character: charEntity, Version: testCharacterRepositoryVersion}, nil)
 
 	s.mockCharacterRepo.EXPECT().
 		PatchEquipment(s.ctx, gomock.Any()).
@@ -287,7 +357,7 @@ func (s *EquipItemTestSuite) TestEquipItem_PreservesNonEquipmentFields() {
 
 	s.mockCharacterRepo.EXPECT().
 		Get(s.ctx, characterrepo.GetInput{ID: s.testCharacterID}).
-		Return(&characterrepo.GetOutput{Character: charEntity}, nil)
+		Return(&characterrepo.GetOutput{Character: charEntity, Version: testCharacterRepositoryVersion}, nil)
 
 	var persisted *entities.Character
 	s.mockCharacterRepo.EXPECT().
@@ -385,7 +455,7 @@ func (s *EquipItemTestSuite) TestEquipItem_RejectsUnprojectableDataWithoutWritin
 			tc.mutate(entity)
 			s.mockCharacterRepo.EXPECT().
 				Get(s.ctx, characterrepo.GetInput{ID: s.testCharacterID}).
-				Return(&characterrepo.GetOutput{Character: entity}, nil)
+				Return(&characterrepo.GetOutput{Character: entity, Version: testCharacterRepositoryVersion}, nil)
 			// Deliberately no PatchEquipment expectation: gomock fails if malformed
 			// private state reaches persistence.
 
@@ -406,7 +476,7 @@ func (s *EquipItemTestSuite) TestUnequipItem_MissingOwnerIdentityWritesNothing()
 	entity.Data.EquipmentSlots = character.EquipmentSlots{character.SlotMainHand: "longsword"}
 	s.mockCharacterRepo.EXPECT().
 		Get(s.ctx, characterrepo.GetInput{ID: s.testCharacterID}).
-		Return(&characterrepo.GetOutput{Character: entity}, nil)
+		Return(&characterrepo.GetOutput{Character: entity, Version: testCharacterRepositoryVersion}, nil)
 	// Deliberately no PatchEquipment expectation.
 
 	out, err := s.orchestrator.UnequipItem(s.ctx, &UnequipItemInput{
@@ -423,7 +493,7 @@ func (s *EquipItemTestSuite) TestUnequipItem_MalformedConditionWritesNothing() {
 	entity.Data.Conditions = []json.RawMessage{json.RawMessage(`{"ref":{"module":"dnd5e","type":"conditions","id":"unknown"}}`)}
 	s.mockCharacterRepo.EXPECT().
 		Get(s.ctx, characterrepo.GetInput{ID: s.testCharacterID}).
-		Return(&characterrepo.GetOutput{Character: entity}, nil)
+		Return(&characterrepo.GetOutput{Character: entity, Version: testCharacterRepositoryVersion}, nil)
 	// Deliberately no PatchEquipment expectation.
 
 	out, err := s.orchestrator.UnequipItem(s.ctx, &UnequipItemInput{
@@ -441,7 +511,7 @@ func (s *EquipItemTestSuite) TestEquipItem_PostProjectionFailureLeavesRepository
 	originalSlotsIdentity := reflect.ValueOf(originalSlots).Pointer()
 	s.mockCharacterRepo.EXPECT().
 		Get(s.ctx, characterrepo.GetInput{ID: s.testCharacterID}).
-		Return(&characterrepo.GetOutput{Character: entity}, nil)
+		Return(&characterrepo.GetOutput{Character: entity, Version: testCharacterRepositoryVersion}, nil)
 
 	calls := 0
 	var workingSlots character.EquipmentSlots
@@ -481,7 +551,7 @@ func (s *EquipItemTestSuite) TestUnequipItem_PostProjectionFailureLeavesReposito
 	originalSlotsIdentity := reflect.ValueOf(originalSlots).Pointer()
 	s.mockCharacterRepo.EXPECT().
 		Get(s.ctx, characterrepo.GetInput{ID: s.testCharacterID}).
-		Return(&characterrepo.GetOutput{Character: entity}, nil)
+		Return(&characterrepo.GetOutput{Character: entity, Version: testCharacterRepositoryVersion}, nil)
 
 	calls := 0
 	var workingSlots character.EquipmentSlots
@@ -519,7 +589,7 @@ func (s *EquipItemTestSuite) TestEquipItem_PatchFailureLeavesRepositoryEntityUnc
 	originalSlotsIdentity := reflect.ValueOf(originalSlots).Pointer()
 	s.mockCharacterRepo.EXPECT().
 		Get(s.ctx, characterrepo.GetInput{ID: s.testCharacterID}).
-		Return(&characterrepo.GetOutput{Character: entity}, nil)
+		Return(&characterrepo.GetOutput{Character: entity, Version: testCharacterRepositoryVersion}, nil)
 	s.mockCharacterRepo.EXPECT().
 		PatchEquipment(s.ctx, gomock.Any()).
 		DoAndReturn(func(_ context.Context, input characterrepo.PatchEquipmentInput) (*characterrepo.PatchEquipmentOutput, error) {
@@ -555,7 +625,7 @@ func (s *EquipItemTestSuite) TestUnequipItem_PatchFailureLeavesRepositoryEntityU
 	originalSlotsIdentity := reflect.ValueOf(originalSlots).Pointer()
 	s.mockCharacterRepo.EXPECT().
 		Get(s.ctx, characterrepo.GetInput{ID: s.testCharacterID}).
-		Return(&characterrepo.GetOutput{Character: entity}, nil)
+		Return(&characterrepo.GetOutput{Character: entity, Version: testCharacterRepositoryVersion}, nil)
 	s.mockCharacterRepo.EXPECT().
 		PatchEquipment(s.ctx, gomock.Any()).
 		DoAndReturn(func(_ context.Context, input characterrepo.PatchEquipmentInput) (*characterrepo.PatchEquipmentOutput, error) {
@@ -647,7 +717,7 @@ func (s *EquipItemTestSuite) TestEquipItem_OutputViewEqualsCapturedPersistedPost
 	entity := s.fighterWithLongswordAndShield()
 	s.mockCharacterRepo.EXPECT().
 		Get(s.ctx, characterrepo.GetInput{ID: s.testCharacterID}).
-		Return(&characterrepo.GetOutput{Character: entity}, nil)
+		Return(&characterrepo.GetOutput{Character: entity, Version: testCharacterRepositoryVersion}, nil)
 
 	var persisted *character.Data
 	s.mockCharacterRepo.EXPECT().
@@ -683,7 +753,7 @@ func (s *EquipItemTestSuite) TestEquipItem_SyncsStoredArmorClass() {
 
 	s.mockCharacterRepo.EXPECT().
 		Get(s.ctx, characterrepo.GetInput{ID: s.testCharacterID}).
-		Return(&characterrepo.GetOutput{Character: charEntity}, nil)
+		Return(&characterrepo.GetOutput{Character: charEntity, Version: testCharacterRepositoryVersion}, nil)
 
 	var persisted *character.Data
 	s.mockCharacterRepo.EXPECT().

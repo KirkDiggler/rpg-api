@@ -881,8 +881,9 @@ func (o *Orchestrator) GetCharacter(ctx context.Context, input *GetCharacterInpu
 }
 
 const (
-	maxEquipmentPatchAttempts       = 8
-	errEquipmentPatchRetryExhausted = "character changed concurrently during equipment update"
+	maxEquipmentPatchAttempts            = 8
+	errEquipmentPatchRetryExhausted      = "character changed concurrently during equipment update"
+	errCharacterRepositoryMissingVersion = "character repository contract violation: missing character version"
 )
 
 // EquipItem equips an item to a specific slot through the toolkit's rules
@@ -912,6 +913,9 @@ func (o *Orchestrator) EquipItem(ctx context.Context, input *EquipItemInput) (*E
 	for range maxEquipmentPatchAttempts {
 		if current == nil || current.Character == nil || current.Character.Data == nil {
 			return nil, fmt.Errorf("failed to get character: repository returned no character data")
+		}
+		if current.Version == "" {
+			return nil, apierr.Internal(errCharacterRepositoryMissingVersion)
 		}
 
 		loaded, loadErr := loadAttachedCharacter(ctx, &loadAttachedCharacterInput{Data: current.Character.Data})
@@ -985,6 +989,9 @@ func (o *Orchestrator) UnequipItem(ctx context.Context, input *UnequipItemInput)
 	for range maxEquipmentPatchAttempts {
 		if current == nil || current.Character == nil || current.Character.Data == nil {
 			return nil, fmt.Errorf("failed to get character: repository returned no character data")
+		}
+		if current.Version == "" {
+			return nil, apierr.Internal(errCharacterRepositoryMissingVersion)
 		}
 
 		loaded, loadErr := loadAttachedCharacter(ctx, &loadAttachedCharacterInput{Data: current.Character.Data})
