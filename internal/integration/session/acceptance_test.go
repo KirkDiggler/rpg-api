@@ -127,18 +127,18 @@ func rect(x0, y0, width, height int) []spatial.Position {
 // answer to what a member cannot walk through or see past. Without it the tomb
 // is not three rooms joined by two doors; it is one 22-wide hall with some
 // furniture in it.
-func seamWall(west, rows, openRow int) []spatial.Boundary {
-	out := make([]spatial.Boundary, 0, rows)
+func seamWall(west, rows, openRow int) []tkencounter.WallInput {
+	out := make([]tkencounter.WallInput, 0, rows)
 	for row := 0; row < rows; row++ {
 		if row == openRow {
 			continue // the doorway itself
 		}
-		out = append(out, spatial.Boundary{
+		out = append(out, tkencounter.WallInput{Boundary: spatial.Boundary{
 			From:              spatial.Position{X: float64(west), Y: float64(row)},
 			To:                spatial.Position{X: float64(west + 1), Y: float64(row)},
 			BlocksMovement:    true,
 			BlocksLineOfSight: true,
-		})
+		}})
 	}
 
 	return out

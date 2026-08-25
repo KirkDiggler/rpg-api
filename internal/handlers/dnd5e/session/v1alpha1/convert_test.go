@@ -82,12 +82,30 @@ func TestSlotToProto(t *testing.T) {
 
 func TestDeclarationToProto(t *testing.T) {
 	out := declarationToProto(sdk.Declaration{
-		Verb: sdk.VerbAttack, Slot: sdk.SlotAction, Affordable: false, Shortfall: "action: 1 needed, 0 left",
+		Verb: sdk.VerbAttack, Slot: sdk.SlotAction, Affordable: false,
+		Why: &sdk.Shortfall{Reason: sdk.ShortfallNoBudget, Text: "action: 1 needed, 0 left"},
 	})
 	require.Equal(t, sessionpb.Verb_VERB_ATTACK, out.GetVerb())
 	require.Equal(t, sessionpb.Slot_SLOT_ACTION, out.GetSlot())
-	require.False(t, out.GetAffordable())
-	require.Equal(t, "action: 1 needed, 0 left", out.GetShortfall())
+	require.False(t, out.GetAvailable())
+	require.Equal(t, "action: 1 needed, 0 left", out.GetWhy().GetText())
+	require.Empty(t, out.GetCandidates())
+}
+
+// TestDeclarationToProto_TargetBecomesCandidate pins the #253 bridge's own
+// move: the pre-#253 SDK's per-target declaration crosses as one wire
+// declaration carrying its target as a single candidate, the candidate
+// echoing the declaration's own available/why.
+func TestDeclarationToProto_TargetBecomesCandidate(t *testing.T) {
+	target := "goblin-1"
+	out := declarationToProto(sdk.Declaration{
+		Verb: sdk.VerbAttack, Slot: sdk.SlotAction, Affordable: true, Target: &target,
+	})
+	require.True(t, out.GetAvailable())
+	require.Len(t, out.GetCandidates(), 1)
+	require.Equal(t, "goblin-1", out.GetCandidates()[0].GetMember())
+	require.True(t, out.GetCandidates()[0].GetAvailable())
+	require.Nil(t, out.GetCandidates()[0].GetWhy())
 }
 
 // TestDeclarationsToProto_NilOrEmpty_StaysNonNilEmpty pins the "no null,
@@ -110,7 +128,7 @@ func TestDeclarationsToProto_Populated(t *testing.T) {
 	})
 	require.Len(t, out, 1)
 	require.Equal(t, sessionpb.Slot_SLOT_NONE, out[0].GetSlot())
-	require.True(t, out[0].GetAffordable())
+	require.True(t, out[0].GetAvailable())
 }
 
 func TestDissolveCauseFromProto_ByDecision(t *testing.T) {
@@ -232,7 +250,7 @@ func TestAtlasToProto_Populated(t *testing.T) {
 			// Faced and offset (rpg-project#261): the authored word and the
 			// authored nudge must reach the wire verbatim -- no angle math,
 			// no snapping, no interpretation at this layer.
-			{Ref: "brazier", At: spatial.Position{X: 3, Y: 3}, Facing: "ne", Offset: [2]float64{0.2, -0.1}},
+			{Ref: "brazier", At: spatial.Position{X: 3, Y: 3}, Facing: "ne", Offset: [3]float64{0.2, -0.1, 0.6}},
 		},
 		Boundaries: []sdk.AtlasBoundary{
 			{From: spatial.Position{X: 0, Y: 0}, To: spatial.Position{X: 1, Y: 0}, BlocksMovement: true, BlocksLineOfSight: true},
@@ -630,19 +648,19 @@ func TestParticipantsToProto_Populated(t *testing.T) {
 	require.False(t, out[1].GetActive())
 }
 
-// TestDeclarationToProto_TargetAndWhy pins the two combat-turn fields
-// declarationToProto grew alongside the original verb/slot/affordable/
-// shortfall set: Target is a plain pointer-to-pointer copy (both sides
-// already keep absent distinct from a present empty string), and Why is
-// present exactly when Affordable is false.
+// TestDeclarationToProto_TargetAndWhy pins the #253 bridge's target move
+// beside TestDeclarationToProto_TargetBecomesCandidate: an affordable
+// per-target declaration crosses with its candidate and NO why — nothing
+// ran out — while the candidate echoes the declaration's own answer.
 func TestDeclarationToProto_TargetAndWhy(t *testing.T) {
 	target := "skeleton-1"
 	out := declarationToProto(sdk.Declaration{
 		Verb: sdk.VerbAttack, Slot: sdk.SlotAction, Affordable: true, Target: &target,
 	})
-	require.NotNil(t, out.Target)
-	require.Equal(t, "skeleton-1", out.GetTarget())
-	require.Nil(t, out.Why, "affordable true carries no why -- nothing ran out")
+	require.Len(t, out.GetCandidates(), 1)
+	require.Equal(t, "skeleton-1", out.GetCandidates()[0].GetMember())
+	require.Nil(t, out.Why, "available true carries no why -- nothing ran out")
+	require.Nil(t, out.GetCandidates()[0].GetWhy())
 }
 
 func TestDeclarationToProto_NoTargetInReach(t *testing.T) {
@@ -650,7 +668,7 @@ func TestDeclarationToProto_NoTargetInReach(t *testing.T) {
 		Verb: sdk.VerbAttack, Affordable: false,
 		Why: &sdk.Shortfall{Reason: sdk.ShortfallNoTargetInReach, Text: "no target in reach"},
 	})
-	require.Nil(t, out.Target, "the no-candidate-in-reach declaration carries no target")
+	require.Empty(t, out.GetCandidates(), "the no-candidate-in-reach declaration carries no target")
 	require.NotNil(t, out.Why)
 	require.Equal(t, sessionpb.ShortfallReason_SHORTFALL_REASON_NO_TARGET_IN_REACH, out.Why.GetReason())
 }
