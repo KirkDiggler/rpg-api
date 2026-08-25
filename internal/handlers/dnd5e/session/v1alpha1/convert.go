@@ -435,14 +435,17 @@ func setEventBody(evt *sessionpb.Event, body sdk.EventBody) {
 		evt.Body = &sessionpb.Event_Downed{Downed: &sessionpb.Downed{Member: b.Member}}
 	case sdk.StruckBody:
 		evt.Body = &sessionpb.Event_Struck{Struck: &sessionpb.Struck{
-			Attacker: b.Attacker,
-			Target:   b.Target,
-			Roll:     int32(b.Roll),
-			Total:    int32(b.Total),
-			Against:  int32(b.Against),
-			Damage:   int32(b.Damage),
-			Attack:   attackRefToProto(b.Attack),
-			Critical: b.Critical,
+			Attacker:            b.Attacker,
+			Target:              b.Target,
+			Roll:                int32(b.Roll),
+			Total:               int32(b.Total),
+			Against:             int32(b.Against),
+			Damage:              int32(b.Damage),
+			Attack:              attackRefToProto(b.Attack),
+			Critical:            b.Critical,
+			DamageComponents:    damageComponentsToProto(b.DamageComponents),
+			AdvantageSources:    attackModifierSourcesToProto(b.AdvantageSources),
+			DisadvantageSources: attackModifierSourcesToProto(b.DisadvantageSources),
 		}}
 	case sdk.MissedBody:
 		evt.Body = &sessionpb.Event_Missed{Missed: &sessionpb.Missed{
@@ -717,6 +720,44 @@ func damageTypeToProto(d sdk.DamageType) sessionpb.DamageType {
 	default:
 		return sessionpb.DamageType_DAMAGE_TYPE_UNSPECIFIED
 	}
+}
+
+func damageComponentsToProto(in []sdk.DamageComponent) []*sessionpb.DamageComponent {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]*sessionpb.DamageComponent, len(in))
+	for i, component := range in {
+		rolls := make([]int32, len(component.FinalRolls))
+		for j, roll := range component.FinalRolls {
+			rolls[j] = int32(roll)
+		}
+		var multiplier *float64
+		if component.Multiplier != nil {
+			value := *component.Multiplier
+			multiplier = &value
+		}
+		out[i] = &sessionpb.DamageComponent{
+			Source: component.Source, SourceRef: component.SourceRef, Dice: component.Dice,
+			FinalRolls: rolls, FlatBonus: int32(component.FlatBonus),
+			DamageType: damageTypeToProto(component.DamageType), Multiplier: multiplier,
+		}
+	}
+	return out
+}
+
+func attackModifierSourcesToProto(in []sdk.AttackModifierSource) []*sessionpb.AttackModifierSource {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]*sessionpb.AttackModifierSource, len(in))
+	for i, source := range in {
+		out[i] = &sessionpb.AttackModifierSource{
+			SourceRef: source.SourceRef,
+			SourceId:  source.SourceID,
+		}
+	}
+	return out
 }
 
 // attackRefToProto mirrors session.AttackRef field-for-field (rpg-toolkit#866):

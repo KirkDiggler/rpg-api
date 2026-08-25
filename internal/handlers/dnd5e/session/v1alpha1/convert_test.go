@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/proto"
 
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
@@ -329,6 +330,34 @@ func TestDeliveryReportToProto(t *testing.T) {
 	require.True(t, got.GetFailed())
 }
 
+func richStruckEvent() sdk.Event {
+	immunity := 0.0
+	return sdk.Event{
+		Kind: sdk.EventStruck,
+		Body: sdk.StruckBody{
+			Attacker: "char-1", Target: "goblin-1", Roll: 18, Total: 21, Against: 13, Damage: 6,
+			Attack:   sdk.AttackRef{Ref: "longsword", Name: "Longsword", DamageType: sdk.DamageSlashing},
+			Critical: true,
+			DamageComponents: []sdk.DamageComponent{
+				{
+					Source: "weapon", SourceRef: "dnd5e:weapons:longsword", Dice: "1d8",
+					FinalRolls: []int{4}, DamageType: sdk.DamageSlashing,
+				},
+				{
+					Source: "monster_trait", SourceRef: "dnd5e:monster_traits:immunity",
+					DamageType: sdk.DamageSlashing, Multiplier: &immunity,
+				},
+			},
+			AdvantageSources: []sdk.AttackModifierSource{
+				{SourceRef: "dnd5e:conditions:hidden", SourceID: "char-1"},
+			},
+			DisadvantageSources: []sdk.AttackModifierSource{
+				{SourceRef: "dnd5e:conditions:dodging", SourceID: "goblin-1"},
+			},
+		},
+	}
+}
+
 // TestEventsToProto pins GetStory's own slice conversion (get_story.go) to
 // the SAME per-event converter StreamEvents uses -- Manager.Story returns
 // []sdk.Event since session/v0.23.0 (rpg-toolkit#1213), so there is exactly
@@ -356,6 +385,14 @@ func TestEventsToProto(t *testing.T) {
 func TestEventsToProto_Empty(t *testing.T) {
 	got := eventsToProto(nil)
 	require.Empty(t, got)
+}
+
+func TestEventsToProto_RichStruckMatchesDirectConversion(t *testing.T) {
+	in := richStruckEvent()
+	caughtUp := eventsToProto([]sdk.Event{in})
+	require.Len(t, caughtUp, 1)
+	require.True(t, proto.Equal(eventToProto(in), caughtUp[0]),
+		"GetStory's slice conversion and StreamEvents' direct conversion share one mapping")
 }
 
 func TestStepsToProto(t *testing.T) {
@@ -632,15 +669,7 @@ func TestEventToProto_TypedBodies(t *testing.T) {
 	})
 
 	t.Run("Struck", func(t *testing.T) {
-		got := eventToProto(sdk.Event{
-			Kind: sdk.EventStruck,
-			Body: sdk.StruckBody{
-				Attacker: "char-1", Target: "goblin-1", Roll: 18, Total: 21, Against: 13, Damage: 6,
-				Attack:   sdk.AttackRef{Ref: "longsword", Name: "Longsword", DamageType: sdk.DamageSlashing},
-				Critical: true,
-			},
-		})
-		s := got.GetStruck()
+		s := eventToProto(richStruckEvent()).GetStruck()
 		require.NotNil(t, s)
 		require.Equal(t, "char-1", s.GetAttacker())
 		require.Equal(t, "goblin-1", s.GetTarget())
@@ -651,6 +680,27 @@ func TestEventToProto_TypedBodies(t *testing.T) {
 		require.True(t, s.GetCritical())
 		require.Equal(t, "longsword", s.GetAttack().GetRef())
 		require.Equal(t, sessionpb.DamageType_DAMAGE_TYPE_SLASHING, s.GetAttack().GetDamageType())
+
+		require.Len(t, s.GetDamageComponents(), 2)
+		weapon := s.GetDamageComponents()[0]
+		require.Equal(t, "weapon", weapon.GetSource())
+		require.Equal(t, "dnd5e:weapons:longsword", weapon.GetSourceRef())
+		require.Equal(t, "1d8", weapon.GetDice())
+		require.Equal(t, []int32{4}, weapon.GetFinalRolls())
+		require.Equal(t, sessionpb.DamageType_DAMAGE_TYPE_SLASHING, weapon.GetDamageType())
+		require.Nil(t, weapon.Multiplier)
+
+		immunity := s.GetDamageComponents()[1]
+		require.Equal(t, "monster_trait", immunity.GetSource())
+		require.NotNil(t, immunity.Multiplier)
+		require.Zero(t, immunity.GetMultiplier())
+
+		require.Len(t, s.GetAdvantageSources(), 1)
+		require.Equal(t, "dnd5e:conditions:hidden", s.GetAdvantageSources()[0].GetSourceRef())
+		require.Equal(t, "char-1", s.GetAdvantageSources()[0].GetSourceId())
+		require.Len(t, s.GetDisadvantageSources(), 1)
+		require.Equal(t, "dnd5e:conditions:dodging", s.GetDisadvantageSources()[0].GetSourceRef())
+		require.Equal(t, "goblin-1", s.GetDisadvantageSources()[0].GetSourceId())
 	})
 
 	t.Run("Missed", func(t *testing.T) {
