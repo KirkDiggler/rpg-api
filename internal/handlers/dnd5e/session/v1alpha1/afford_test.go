@@ -22,16 +22,25 @@ func TestAfford_Unauthenticated_Errors(t *testing.T) {
 }
 
 // TestAfford_HappyPath_ProjectsDeclarations pins the turn-clock shape,
-// Affordable=false and its Shortfall carried verbatim -- the currency-naming
-// text is the SDK's own wording (ADR-0042), and this layer must not paraphrase
-// it away.
+// Affordable=false crossing as available=false and the SDK's own
+// currency-naming sentence carried verbatim through Why.Text (ADR-0042 via
+// rpg-toolkit#1010's structured Shortfall — the v0.1.143 wire dropped the
+// legacy string field, and the SDK fills Why whenever a declaration is
+// unaffordable) — this layer must not paraphrase it away.
 func TestAfford_HappyPath_ProjectsDeclarations(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mgr := sessionv1alpha1mock.NewMockManager(ctrl)
 	mgr.EXPECT().Afford(gomock.Any(), &sdk.AffordInput{Session: "sess-1", Member: "char-1"}).Return(&sdk.AffordOutput{
 		Clock: sdk.ClockTurn,
 		Declarations: []sdk.Declaration{
-			{Verb: sdk.VerbAttack, Slot: sdk.SlotAction, Affordable: false, Shortfall: "action: 1 needed, 0 left"},
+			{
+				Verb: sdk.VerbAttack, Slot: sdk.SlotAction, Affordable: false,
+				Shortfall: "action: 1 needed, 0 left",
+				Why: &sdk.Shortfall{
+					Reason: sdk.ShortfallNoBudget,
+					Text:   "action: 1 needed, 0 left",
+				},
+			},
 		},
 	}, nil)
 
@@ -44,8 +53,8 @@ func TestAfford_HappyPath_ProjectsDeclarations(t *testing.T) {
 	decl := resp.GetDeclarations()[0]
 	require.Equal(t, sessionpb.Verb_VERB_ATTACK, decl.GetVerb())
 	require.Equal(t, sessionpb.Slot_SLOT_ACTION, decl.GetSlot())
-	require.False(t, decl.GetAffordable())
-	require.Equal(t, "action: 1 needed, 0 left", decl.GetShortfall())
+	require.False(t, decl.GetAvailable())
+	require.Equal(t, "action: 1 needed, 0 left", decl.GetWhy().GetText())
 }
 
 // TestAfford_WorldClock_DeclarationsEmpty pins the other half of ADR-0042:
@@ -112,12 +121,18 @@ func TestAfford_PerTargetAttackDeclarations(t *testing.T) {
 	ctx := auth.WithPlayerID(context.Background(), "alice")
 	resp, err := h.Afford(ctx, &sessionpb.AffordRequest{Session: "sess-1", Member: "char-1"})
 	require.NoError(t, err)
+	// The pre-#253 SDK answers one declaration per target; the bridge
+	// carries each across with its target as a single candidate — a
+	// #253 reader unrolls them to the same per-target rows.
 	require.Len(t, resp.GetDeclarations(), 2)
-	require.Equal(t, "goblin-1", resp.GetDeclarations()[0].GetTarget())
-	require.Equal(t, "skeleton-1", resp.GetDeclarations()[1].GetTarget())
+	require.Len(t, resp.GetDeclarations()[0].GetCandidates(), 1)
+	require.Equal(t, "goblin-1", resp.GetDeclarations()[0].GetCandidates()[0].GetMember())
+	require.Len(t, resp.GetDeclarations()[1].GetCandidates(), 1)
+	require.Equal(t, "skeleton-1", resp.GetDeclarations()[1].GetCandidates()[0].GetMember())
 	for _, d := range resp.GetDeclarations() {
-		require.True(t, d.GetAffordable())
-		require.Nil(t, d.Why, "affordable true carries no why")
+		require.True(t, d.GetAvailable())
+		require.True(t, d.GetCandidates()[0].GetAvailable())
+		require.Nil(t, d.Why, "available true carries no why")
 	}
 }
 
@@ -144,8 +159,8 @@ func TestAfford_NoTargetInReach_SingleDeclarationNoTarget(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, resp.GetDeclarations(), 1)
 	decl := resp.GetDeclarations()[0]
-	require.False(t, decl.GetAffordable())
-	require.Nil(t, decl.Target)
+	require.False(t, decl.GetAvailable())
+	require.Empty(t, decl.GetCandidates())
 	require.NotNil(t, decl.Why)
 	require.Equal(t, sessionpb.ShortfallReason_SHORTFALL_REASON_NO_TARGET_IN_REACH, decl.Why.GetReason())
 }
@@ -173,6 +188,6 @@ func TestAfford_MoveDeclaration(t *testing.T) {
 	require.Len(t, resp.GetDeclarations(), 1)
 	decl := resp.GetDeclarations()[0]
 	require.Equal(t, sessionpb.Verb_VERB_MOVE, decl.GetVerb())
-	require.True(t, decl.GetAffordable())
-	require.Nil(t, decl.Target, "Move never carries a target")
+	require.True(t, decl.GetAvailable())
+	require.Empty(t, decl.GetCandidates(), "Move never carries a target")
 }

@@ -299,6 +299,10 @@ func atlasBoundaryToProto(b sdk.AtlasBoundary) *sessionpb.AtlasBoundary {
 		To:                positionToProto(b.To),
 		BlocksMovement:    b.BlocksMovement,
 		BlocksLineOfSight: b.BlocksLineOfSight,
+		// The authored wall-height multiplier, verbatim (rpg-project#273);
+		// 0 = not authored — a reader renders the STANDARD height and
+		// never multiplies by the raw value.
+		Height: float32(b.Height),
 	}
 }
 
@@ -525,6 +529,7 @@ func AtlasToProto(a *sdk.Atlas) *sessionpb.GetAtlasResponse {
 			Facing:            prop.Facing,
 			OffsetX:           float32(prop.Offset[0]),
 			OffsetY:           float32(prop.Offset[1]),
+			OffsetZ:           float32(prop.Offset[2]),
 		}
 	}
 	return &sessionpb.GetAtlasResponse{
@@ -618,28 +623,42 @@ func slotToProto(s sdk.Slot) sessionpb.Slot {
 	}
 }
 
-// declarationToProto mirrors session.Declaration field-for-field (design rule
-// 3): verb, slot, affordable, shortfall -- no omitempty on Affordable or
-// Shortfall on the wire side either, the same false-vs-absent law the SDK's
-// own doc keeps for both fields.
+// declarationToProto bridges the SDK's PRE-#253 Declaration shape onto the
+// v0.1.143 wire (rpg-api-protos#253, the production combat experience
+// contract): `Affordable` crosses as `available`, and the SDK's
+// one-declaration-per-target attack rows each cross as one declaration
+// carrying its target as a SINGLE candidate — which a #253 reader
+// (including rpg-dnd5e-web's own expansion shim) unrolls back to exactly
+// the per-target rows the old wire carried. The legacy `shortfall`/`target`
+// string fields left the wire; `Why` (rpg-toolkit#1010) carries the
+// structured refusal, whose Text is the same human sentence.
 //
-// Target and Why are both POINTER-TO-POINTER copies (rpg-toolkit#1010,
-// rpg-project#249): the SDK already keeps absent distinct from a present
-// zero value the same way the wire does, so there is nothing to normalise --
-// nil stays nil, a set value crosses as itself.
+// A BRIDGE, DELIBERATELY NOT AN ADOPTION: the real #253 producer —
+// grouped candidates, declaration ids, AttackRef, target kinds — arrives
+// with the toolkit session module's own #253 wave (the combat lane), and
+// this function shrinks to a field-for-field mirror again when the SDK pin
+// catches up. It exists because pinning protos for
+// AtlasProp.offset_z/AtlasBoundary.height (rpg-project#272/#273) carries
+// #253 with it — tags are linear.
 //
 // Remaining is NOT wired here: it lands with the separate Move-on-clock wave
 // (rpg-toolkit#1169, branch feat/session-move-clock), still WIP as of this
 // PR -- out of scope here on purpose, to keep one wave on one branch.
 func declarationToProto(d sdk.Declaration) *sessionpb.Declaration {
-	return &sessionpb.Declaration{
-		Verb:       verbToProto(d.Verb),
-		Slot:       slotToProto(d.Slot),
-		Affordable: d.Affordable,
-		Shortfall:  d.Shortfall,
-		Target:     d.Target,
-		Why:        shortfallToProto(d.Why),
+	out := &sessionpb.Declaration{
+		Verb:      verbToProto(d.Verb),
+		Slot:      slotToProto(d.Slot),
+		Available: d.Affordable,
+		Why:       shortfallToProto(d.Why),
 	}
+	if d.Target != nil {
+		out.Candidates = []*sessionpb.TargetCandidate{{
+			Member:    *d.Target,
+			Available: d.Affordable,
+			Why:       shortfallToProto(d.Why),
+		}}
+	}
+	return out
 }
 
 // shortfallReasonToProto mirrors session.ShortfallReason onto the wire enum.
