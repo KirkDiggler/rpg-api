@@ -3,13 +3,13 @@ module github.com/KirkDiggler/rpg-api
 go 1.25.13
 
 require (
-	github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20260824235104-430477a0529a
+	github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20260825032351-e9f9e8824c2e
 	github.com/KirkDiggler/rpg-toolkit/core v0.11.0
 	github.com/KirkDiggler/rpg-toolkit/dice v0.3.2
 	github.com/KirkDiggler/rpg-toolkit/events v0.6.3
 	github.com/KirkDiggler/rpg-toolkit/rpgerr v0.1.2
 	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.99.0
-	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter v0.33.0
+	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter v0.33.1
 	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session v0.27.0
 	github.com/KirkDiggler/rpg-toolkit/tools/spatial v0.11.0
 	github.com/alicebob/miniredis/v2 v2.35.0
@@ -94,8 +94,4 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-replace github.com/KirkDiggler/rpg-api-protos/gen/go => /home/kirk/game-dev/rpg-api-protos/.worktrees/run-ending/gen/go
-
 replace github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session => /home/kirk/game-dev/rpg-toolkit/.worktrees/session-doors/rulebooks/dnd5e/session
-
-replace github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter => /home/kirk/game-dev/rpg-toolkit/.worktrees/run-ending/rulebooks/dnd5e/encounter

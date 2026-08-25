@@ -4,6 +4,8 @@ github.com/AdaLogics/go-fuzz-headers v0.0.0-20240806141605-e8a1dd7889d6 h1:He8af
 github.com/AdaLogics/go-fuzz-headers v0.0.0-20240806141605-e8a1dd7889d6/go.mod h1:8o94RPi1/7XTJvwPpRSzSUedZrtlirdB3r9Z20bi2f8=
 github.com/Azure/go-ansiterm v0.0.0-20210617225240-d185dfc1b5a1 h1:UQHMgLO+TxOElx5B5HZ4hJQsoJ/PvUvKRhJHDQXO8P8=
 github.com/Azure/go-ansiterm v0.0.0-20210617225240-d185dfc1b5a1/go.mod h1:xomTg63KZ2rFqZQzSB4Vz2SUXa1BpHTVz9L5PTmPC4E=
+github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20260825032351-e9f9e8824c2e h1:lSatlOCzvvrvZpjTFhiy1uf/UWx1DQw//yxEy5yYG88=
+github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20260825032351-e9f9e8824c2e/go.mod h1:cwJ+M7K4SQTCMJHXvD8bQkIF4+lWB8w+OPWhDn+RCf8=
 github.com/KirkDiggler/rpg-toolkit/core v0.11.0 h1:VnGI17Bnm6cLqI7Rn3RukUZHVfTAPUKTdoKTYqbGRtk=
 github.com/KirkDiggler/rpg-toolkit/core v0.11.0/go.mod h1:XFQXYViPZUTYu/a8jdRadI3rGnKk4r7tRtPm++vSUV0=
 github.com/KirkDiggler/rpg-toolkit/dice v0.3.2 h1:cLLP4Z+4VYSxeRkNbmI5gym6dC/xBOw6kDIylWDK/z0=
@@ -26,6 +28,8 @@ github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.99.0 h1:8c/xoqxgXqRO3LxoEX
 github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.99.0/go.mod h1:DimIKXyoLKh2S3LO0FZBHaB5QBq4biIgVoQ0FekbXnY=
 github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/behavior v0.1.0 h1:LxEJMtm4M3PMDnpRC61ooGvWKS/eRZImu/GTeTDCYuM=
 github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/behavior v0.1.0/go.mod h1:Y5eXfAAyQ0N4Sp07T5C7MxD2CwAwdAUi2zo5SyN60Ds=
+github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter v0.33.1 h1:4xF4l/oe8qOL9LUcaQ953BP6xLWVUsYlLt9vqwIhL3k=
+github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter v0.33.1/go.mod h1:X2jxN8n3qhWAeicXEKXx6KUH3IjiwJTSYDkAY+aF7qw=
 github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/resolution v0.12.0 h1:Ftc+y0UnhW0wTlovA6RFoYDL/6un1ZKJdc1p3SXGB0w=
 github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/resolution v0.12.0/go.mod h1:HzM2KKrpUlpOLfesRkxy8V8enQdmRzvsisZrEuB9BM8=
 github.com/KirkDiggler/rpg-toolkit/tools/spatial v0.11.0 h1:FzCB2NbNS/BMRuKwEr8GRnadWJvdYermOs3smTd8Ss0=
