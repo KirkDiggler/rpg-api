@@ -254,6 +254,9 @@ func TestAtlasToProto_Populated(t *testing.T) {
 		},
 		Boundaries: []sdk.AtlasBoundary{
 			{From: spatial.Position{X: 0, Y: 0}, To: spatial.Position{X: 1, Y: 0}, BlocksMovement: true, BlocksLineOfSight: true},
+			// Raised (rpg-project#273): the authored multiplier crosses
+			// verbatim.
+			{From: spatial.Position{X: 0, Y: 1}, To: spatial.Position{X: 1, Y: 1}, BlocksMovement: true, BlocksLineOfSight: true, Height: 2.5},
 		},
 		Doorways: []sdk.AtlasDoorway{
 			{Door: "door-1", From: spatial.Position{X: 5, Y: 1}, To: spatial.Position{X: 6, Y: 1}},
@@ -278,6 +281,7 @@ func TestAtlasToProto_Populated(t *testing.T) {
 	require.Empty(t, pillar.GetFacing())
 	require.Zero(t, pillar.GetOffsetX())
 	require.Zero(t, pillar.GetOffsetY())
+	require.Zero(t, pillar.GetOffsetZ())
 
 	// The discriminating half. Both answers must arrive as FALSE rather than
 	// as a prop that simply is not in a list: "blocks neither" and "nobody
@@ -294,15 +298,25 @@ func TestAtlasToProto_Populated(t *testing.T) {
 	require.Empty(t, bones.GetFacing())
 	require.Zero(t, bones.GetOffsetX())
 	require.Zero(t, bones.GetOffsetY())
+	require.Zero(t, bones.GetOffsetZ())
 
 	brazier := got.GetProps()[2]
 	require.Equal(t, "brazier", brazier.GetRef())
 	require.Equal(t, "ne", brazier.GetFacing())
 	require.InDelta(t, 0.2, brazier.GetOffsetX(), 1e-6)
 	require.InDelta(t, -0.1, brazier.GetOffsetY(), 1e-6)
+	// The raised third component (rpg-project#272): the authored height
+	// above the floor crosses verbatim, and "authored nothing" arrives
+	// as 0 (the pillar/bones assertions above).
+	require.InDelta(t, 0.6, brazier.GetOffsetZ(), 1e-6)
 
-	require.Len(t, got.GetBoundaries(), 1)
+	require.Len(t, got.GetBoundaries(), 2)
 	require.True(t, got.GetBoundaries()[0].GetBlocksMovement())
+	// No authored wall height = 0 on the wire: the reader renders the
+	// STANDARD height and never multiplies by the raw value; the authored
+	// multiplier crosses verbatim (rpg-project#273).
+	require.Zero(t, got.GetBoundaries()[0].GetHeight())
+	require.InDelta(t, 2.5, got.GetBoundaries()[1].GetHeight(), 1e-6)
 
 	require.Len(t, got.GetDoorways(), 1)
 	dw := got.GetDoorways()[0]
