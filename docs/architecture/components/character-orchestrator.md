@@ -2,7 +2,7 @@
 name: character orchestrator
 description: Character creation, management, equipment, and data-loading orchestrator
 updated: 2026-08-25
-confidence: high — #844 strict project-before-write path verified by focused no-write, post-projection, persistence-equality, handler, and lint gates
+confidence: high — #844 strict project-before-write plus atomic two-field patch verified by focused no-write, concurrency, persistence-equality, handler, and lint gates
 ---
 
 # character orchestrator
@@ -50,7 +50,7 @@ type Service interface {
 
 ```
 Orchestrator
-    ├── characterrepo.Repository         — get/save character.Data (Redis)
+    ├── characterrepo.Repository         — CRUD plus atomic equipment patch (Redis)
     ├── characterdraftrepo.Repository     — get/save CharacterDraft (Redis)
     ├── dicesessionrepo.Repository        — read dice roll results
     ├── dice.Roller                        — ability score rolling
@@ -71,82 +71,52 @@ The orchestrator works with:
 - `*entities.CharacterDraft` — in-progress creation state in Redis
 - `*entities.Appearance` — cosmetic character data, stored alongside `character.Data`
 
-## Equipment (rpg-api#680)
+## Equipment (rpg-api#680/#844)
 
-`EquipItem`/`UnequipItem` are the ONE rules-correct equip path — the v1alpha1
-`CharacterService` and the new v1alpha2 `CharacterService`
-(`internal/handlers/dnd5e/v2/character/`) both call these same two methods. Previously
-they were a bare `charData.EquipmentSlots.Set/Clear(...)` — no rules, no occupancy, no
-validation, no recompute. That's gone.
+`EquipItem`/`UnequipItem` are the one rules-correct path shared by the v1alpha1 and
+v1alpha2 CharacterService handlers. The toolkit owns item/slot validation, occupancy,
+and effective AC. rpg-api coordinates strict application and persistence.
 
-The method shape:
+The method shape is:
 
-1. `characterRepo.Get` — load the persisted `*character.Data`.
-2. Shallow-copy the loaded `character.Data`, clone its `EquipmentSlots` map, then
-   strictly `character.Load(ctx, workingData)` + `character.Attach(ctx, char, bus)` and
-   complete detached `EquipmentView` + `StatusView` projection before mutation.
-   The toolkit retains and mutates the slots map, so this working copy keeps a
-   cached/pointer-returning repository entity unchanged if projection or Update fails.
-   Every unrelated map, slice, and opaque JSON value is preserved directly without a
-   JSON round trip because Equip/Unequip do not write those containers. Malformed
-   conditions, features, catalog items, resources, or unknown status descriptors fail
-   the operation before any write; forgiving `LoadFromData` is not used here.
-3. `char.EquipItem(slot, itemID)` / `char.UnequipItem(slot)` — the toolkit enforces
-   occupancy here (rpg-toolkit#812, v0.67.0): a two-handed weapon claims `main_hand` and
-   clears `off_hand`; equipping an occupied slot swaps the previous occupant back to
-   inventory (never dropped); an incompatible slot now returns an `rpgerr` (mapped to
-   `apierr.InvalidArgument` by `mapEquipError`) instead of silently succeeding.
-4. Compose `mergedEquipmentData(ctx, workingData, char)` and the complete detached
-   post-mutation View before repository Update, then return that already-composed
-   View. The Update payload derives from the isolated working sheet; the repository's
-   returned entity is untouched. There is no fallible reload/projection after a
-   successful write. See below for why persistence is a merge, not `Data: char.ToData()`.
+1. `characterRepo.Get` returns the entity plus an opaque record version.
+2. The orchestrator copies `character.Data`, clones the retained EquipmentSlots map,
+   strictly calls `character.Load` + `character.Attach`, and requires complete detached
+   identity, EquipmentView, and StatusView projections before mutation. PlayerID,
+   ClassID, and RaceID are required. Malformed conditions, features, catalog items,
+   resources, or status descriptors fail before any write.
+3. The toolkit `EquipItem`/`UnequipItem` verb mutates the isolated sheet. The complete
+   post-view is composed before persistence; there is no fallible projection afterward.
+4. `characterRepo.PatchEquipment` receives only CharacterID, expected version, expected
+   pre-mutation slots, post-mutation slots, and toolkit-computed cached ArmorClass. It
+   never receives a full replacement entity from this path.
+5. If an unrelated writer changed the record while equipment remained the same, the
+   repository returns the newer entity without writing. The orchestrator strictly
+   reapplies the operation to that entity and retries. If equipment itself changed, the
+   repository returns ABORTED. On success it returns the actual patched entity.
+6. The orchestrator returns that entity plus the matching precomposed View. Legacy
+   conversion (including Appearance) and v1alpha2 CharacterData conversion therefore
+   consume the same persisted post-state; neither handler performs a post-write Get.
 
-### Why persistence merges instead of overwriting (a real footgun)
+### Atomic two-field persistence
 
-`mergedEquipmentData` copies the isolated working `*character.Data` created in step 2
-and refreshes only two fields from the post-mutation runtime character:
+The Redis implementation uses WATCH plus a transactional SET. It compares both the
+expected equipment map and opaque version against the latest JSON record. The committed
+record is decoded from the latest value and changes only:
 
-- **`EquipmentSlots`** — read via `char.ToData().EquipmentSlots`. Safe: it's a plain
-  `map[InventorySlot]string`, no registry resolution involved, round-trips correctly.
-- **`ArmorClass`** — set to `char.EffectiveAC(ctx).Total`, so the STORED int stays
-  truthful. This matters because the encounter seat's combat AC (`lobby`'s
-  `AddPlayer` seeding, `internal/orchestrators/lobby/character.go`) is seeded from this
-  same stored int — leaving it stale after an equip would desync combat AC from the
-  real display AC the wire now serves (see `docs/architecture/components/encounter.md`'s
-  CharacterData projection). Baking `EffectiveAC` into the stored int here is safe
-  specifically because this orchestrator method only ever runs on the out-of-encounter
-  character sheet, where `Conditions`/`ActionEconomy` carry no live combat buffs
-  (Shield, Mage Armor) to accidentally bake in — only permanent sources (armor, DEX,
-  features like Unarmored Defense) are ever on the breakdown at that point. Deferred:
-  rpg-api#684 (replace the cache with a direct `EffectiveAC` read everywhere, removing
-  the desync risk this manages rather than eliminates) and rpg-api#681 (push a live
-  update to an already-connected `StreamEncounter` client on an out-of-combat equip —
-  no toolkit broker event supports this today).
+- `EquipmentSlots`, cloned from the toolkit's post-mutation occupancy; and
+- cached `ArmorClass`, copied from `EffectiveAC(ctx).Total`.
 
-Every OTHER field is deliberately left exactly as loaded, NOT persisted via a full
-`char.ToData()` overwrite. `ToData()`/`LoadFromData()` is lossy for data the toolkit
-runtime doesn't model on a round trip:
+HP, resources, conditions, action economy, inventory, identity, metadata, and Appearance
+come from the latest stored entity and are not replaced by the orchestrator's earlier
+snapshot. This also avoids the known lossiness of a full `Character.ToData()` overwrite
+for API-owned or non-round-tripped fields.
 
-- `BackgroundID` and `CreatedAt` are never populated by `ToData()` — confirmed by
-  reading `character.go`'s `ToData()`: no assignment exists for either. A full
-  overwrite silently zeros them.
-- API-owned appearance is not represented by `character.Data` or `Character.ToData()`.
-
-The owner-private path now uses the toolkit's strict loader, so an inventory item outside
-its catalog is rejected as INTERNAL with no Update rather than silently dropped or
-preserved as an unprojectable row. For valid data, `Character.EquipItem`/`UnequipItem`
-never touch `Inventory` (only `EquipmentSlots`), so merging those fields onto the
-working `Data` preserves every non-equipment field and appearance exactly while the
-repository-returned `Data` remains untouched.
-Regression coverage: `TestEquipItem_PreservesNonEquipmentFields`,
-`TestEquipItem_RejectsUnprojectableDataWithoutWriting`, the Equip/Unequip
-post-projection and Update-failure isolation tests, and
-`TestEquipItem_SyncsStoredArmorClass` (`internal/orchestrators/character/equip_item_test.go`).
-
-**If this ever gets "simplified" back to `Data: char.ToData()`, the data loss returns
-silently** — there's no compiler error, just a character quietly missing fields the
-next time someone equips something.
+Regression coverage in `equip_item_test.go` proves pre/post strict projection, map
+isolation, patch-only inputs, retry over an unrelated combat-state revision, stale patch
+errors, and persisted entity/View agreement for Equip and Unequip. Repository miniredis
+tests prove a concurrent combat update survives and stale expected equipment cannot
+replace newer slots or other data.
 
 ## Production provider pins (#844)
 
@@ -159,17 +129,10 @@ reach, costs, selectors, character status, and resources all remain provider ans
 
 ## Known issues
 
-### TODO at line 2765: alive-check not implemented
-
-`orchestrator.go:2765` has a comment noting that "alive check logic" for spell list fetching is not implemented. Characters who are dead or unconscious may still have their spell list fetched without error.
-
-### TODO at line 3282 (monster turns)
-
-Actually in encounter orchestrator, not character. The character orchestrator is cleaner. However, the character orchestrator has a TODO at line ~3352 (based on quality.md notes) about "monster turns for entities acting before the current entity" — this may be a cross-reference in comments rather than a character-specific issue.
-
-### Equipment choice logic in wrong layer
-
-`REFACTOR_PLAN.md` (archived, originally at repo root) documents that equipment-choice business logic lives in the handler's external client interface rather than the orchestrator. This smell is present but deferred. The handler at `handler.go:765` has: `//TODO: handler should not interact with toolkit, this belongs in the orchestrator`. Toolkit type assertions in the character handler are the most visible symptom.
+Verified remaining orchestrator TODOs are limited to draft state mutation access,
+background validation, error logging, and pagination/class-filter placeholders. The
+legacy handler still contains the explicit toolkit-boundary TODO at `handler.go:766`;
+that is outside the strict owner-private equipment path documented here.
 
 ### No proto leakage (positive)
 

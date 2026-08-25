@@ -3,6 +3,7 @@ package character
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -30,6 +31,9 @@ func TestProjectView_StrictLevel3Fighter(t *testing.T) {
 	require.NotNil(t, out.View.Status)
 
 	view := out.View
+	require.Equal(t, "player-1", view.Identity.PlayerID)
+	require.Equal(t, classes.Fighter, view.Identity.ClassID)
+	require.Equal(t, races.Human, view.Identity.RaceID)
 	require.Equal(t, 3, view.Status.Level)
 	require.Equal(t, 24, view.Status.HitPoints.Current)
 	require.Equal(t, 30, view.Status.HitPoints.Maximum)
@@ -52,6 +56,37 @@ func TestProjectView_StrictLevel3Fighter(t *testing.T) {
 	data.Inventory[0].ID = "greatsword"
 	require.Equal(t, 3, view.Status.Level)
 	require.Equal(t, "longsword", view.Equipment.Items[0].ItemID)
+}
+
+func TestCharacterDataUnavailableRetainsDetailedCause(t *testing.T) {
+	const secret = "PRIVATE_CHARACTER_JSON_MARKER"
+	wrapped := characterDataUnavailable(errors.New("malformed feature: " + secret))
+
+	require.Equal(t, CharacterDataUnavailableMessage, wrapped.Message)
+	require.Error(t, wrapped.Cause)
+	require.Contains(t, wrapped.Cause.Error(), secret)
+}
+
+func TestProjectView_RejectsMissingOwnerIdentity(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(*tkcharacter.Data)
+	}{
+		{name: "player id", mutate: func(data *tkcharacter.Data) { data.PlayerID = "" }},
+		{name: "class id", mutate: func(data *tkcharacter.Data) { data.ClassID = "" }},
+		{name: "race id", mutate: func(data *tkcharacter.Data) { data.RaceID = "" }},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			data := level3FighterData(t, "fighter-missing-identity")
+			tc.mutate(data)
+
+			out, err := ProjectView(context.Background(), &ProjectViewInput{Data: data})
+			require.Error(t, err)
+			require.Nil(t, out)
+		})
+	}
 }
 
 func TestProjectView_RejectsEveryUnprojectablePersistedShape(t *testing.T) {

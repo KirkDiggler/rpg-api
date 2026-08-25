@@ -729,7 +729,7 @@ func currencyToProto(c sdk.Currency) sessionpb.Currency {
 
 // shortfallToProto mirrors session.Shortfall. Present exactly when the SDK
 // set it -- nil in, nil out -- matching Declaration.why's presence law: PRESENT
-// EXACTLY WHEN affordable == false (rpg-toolkit#1010).
+// EXACTLY WHEN Available is false (rpg-toolkit#1010).
 func shortfallToProto(s *sdk.Shortfall) *sessionpb.Shortfall {
 	if s == nil {
 		return nil

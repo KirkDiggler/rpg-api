@@ -116,6 +116,21 @@ func (mr *MockRepositoryMockRecorder) ListBySessionID(ctx, input any) *gomock.Ca
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListBySessionID", reflect.TypeOf((*MockRepository)(nil).ListBySessionID), ctx, input)
 }
 
+// PatchEquipment mocks base method.
+func (m *MockRepository) PatchEquipment(ctx context.Context, input character.PatchEquipmentInput) (*character.PatchEquipmentOutput, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "PatchEquipment", ctx, input)
+	ret0, _ := ret[0].(*character.PatchEquipmentOutput)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// PatchEquipment indicates an expected call of PatchEquipment.
+func (mr *MockRepositoryMockRecorder) PatchEquipment(ctx, input any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PatchEquipment", reflect.TypeOf((*MockRepository)(nil).PatchEquipment), ctx, input)
+}
+
 // Update mocks base method.
 func (m *MockRepository) Update(ctx context.Context, input character.UpdateInput) (*character.UpdateOutput, error) {
 	m.ctrl.T.Helper()

@@ -289,8 +289,9 @@ type EquipItemInput struct {
 
 // EquipItemOutput returns the result of equipping
 type EquipItemOutput struct {
-	PreviousItemID string // Item that was previously in the slot, if any
-	View           *View  // Complete detached post-equip projection
+	PreviousItemID string              // Item that was previously in the slot, if any
+	Character      *entities.Character // Actual persisted post-equip entity for legacy conversion
+	View           *View               // Complete detached post-equip projection
 }
 
 // UnequipItemInput unequips an item from a slot
@@ -301,8 +302,9 @@ type UnequipItemInput struct {
 
 // UnequipItemOutput returns the unequipped item
 type UnequipItemOutput struct {
-	UnequippedItemID string // Item that was removed from the slot
-	View             *View  // Complete detached post-unequip projection
+	UnequippedItemID string              // Item that was removed from the slot
+	Character        *entities.Character // Actual persisted post-unequip entity for legacy conversion
+	View             *View               // Complete detached post-unequip projection
 }
 
 // ListCharactersInput lists characters with optional filters

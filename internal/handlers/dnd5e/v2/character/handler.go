@@ -89,10 +89,10 @@ func (h *Handler) EquipItem(
 		Slot:        tkcharacter.InventorySlot(req.GetSlotKey()),
 	})
 	if err != nil {
-		return nil, apierr.ToGRPCError(err)
+		return nil, characterRPCError(err)
 	}
-	if out == nil || out.View == nil {
-		return nil, apierr.ToGRPCError(errors.New("equip item returned no character view"))
+	if out == nil || out.Character == nil || out.Character.Data == nil || out.View == nil {
+		return nil, characterRPCError(errors.New("equip item returned incomplete character post-state"))
 	}
 
 	return &characterpb.EquipItemResponse{Character: BuildCharacterData(out.View)}, nil
@@ -121,10 +121,10 @@ func (h *Handler) UnequipItem(
 		Slot:        tkcharacter.InventorySlot(req.GetSlotKey()),
 	})
 	if err != nil {
-		return nil, apierr.ToGRPCError(err)
+		return nil, characterRPCError(err)
 	}
-	if out == nil || out.View == nil {
-		return nil, apierr.ToGRPCError(errors.New("unequip item returned no character view"))
+	if out == nil || out.Character == nil || out.Character.Data == nil || out.View == nil {
+		return nil, characterRPCError(errors.New("unequip item returned incomplete character post-state"))
 	}
 
 	return &characterpb.UnequipItemResponse{Character: BuildCharacterData(out.View)}, nil
@@ -208,6 +208,14 @@ func notFoundCharacter(characterID string) *apierr.Error {
 	return apierr.NotFoundf("character %q not found", characterID)
 }
 
+func characterRPCError(err error) error {
+	var coded *apierr.Error
+	if errors.As(err, &coded) && coded.Code != apierr.CodeInternal {
+		return apierr.ToGRPCError(err)
+	}
+	return apierr.ToGRPCError(apierr.WrapWithCode(err, apierr.CodeInternal, orchcharacter.CharacterDataUnavailableMessage))
+}
+
 // characterDataFromEntity runs only after verifyCallerOwnsCharacter has
 // authenticated the owner. ProjectView is strict: malformed private state is
 // an INTERNAL response rather than a forgiving partial sheet.
@@ -217,10 +225,10 @@ func (h *Handler) characterDataFromEntity(
 ) (*encounterv2pb.CharacterData, error) {
 	projected, err := orchcharacter.ProjectView(ctx, &orchcharacter.ProjectViewInput{Data: data})
 	if err != nil {
-		return nil, apierr.ToGRPCError(err)
+		return nil, characterRPCError(err)
 	}
 	if projected == nil || projected.View == nil {
-		return nil, apierr.ToGRPCError(errors.New("project character returned no view"))
+		return nil, characterRPCError(errors.New("project character returned no view"))
 	}
 
 	return BuildCharacterData(projected.View), nil

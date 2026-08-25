@@ -2,7 +2,7 @@
 name: character v2 handler
 description: gRPC handler for owner-private v1alpha2 CharacterService reads and out-of-encounter equipment writes
 updated: 2026-08-25
-confidence: high — #844 strict projection, ownership, no-reload response, four-build mapping, and no-write gates pass
+confidence: high — #844 complete identity/status projection, sanitized failures, no-reload response, four-build mapping, and no-write gates pass
 ---
 
 # character v2 handler (rpg-api#680, #844)
@@ -40,17 +40,26 @@ still returns NOT_FOUND because private projection is never attempted before own
 `StatusView`. Malformed condition/feature/item/resource state or an unknown status
 descriptor becomes INTERNAL, never a forgiving partial response.
 
-Equip/Unequip receive an already-composed detached post-view from the orchestrator. The
-handler performs no repository re-fetch or fallible projection after a successful write.
-All three RPCs pass their View through the same non-fallible `BuildCharacterData` mapper.
+Equip/Unequip receive the actual persisted post-state entity and an already-composed
+matching detached View from the orchestrator. The handler performs no repository re-fetch
+or fallible projection after a successful write. The legacy and v1alpha2 handlers consume
+that same output; v1alpha2 passes the View through the non-fallible `BuildCharacterData`
+mapper.
 
 ## CharacterData mapping
 
-`BuildCharacterData` maps equipment and flattened owner-private status field-for-field:
-level, current/max HP (temporary remains zero), base speed, structured feature/condition
-Refs, optional feature `resource_key`, optional condition `source_member`, and projected
-non-magical resources. Spell slots, legacy class resources, and magic status are absent
-by construction because the toolkit StatusView does not expose them.
+`BuildCharacterData` maps the complete existing message field-for-field: PlayerID;
+structured class `{module:dnd5e,type:class,id}` and race
+`{module:dnd5e,type:race,id}` refs; equipment; level; current/max HP (temporary remains
+zero); base speed; structured feature/condition refs; optional feature `resource_key`;
+optional condition `source_member`; and projected non-magical resources. The strict View
+refuses missing owner/class/race identity. Spell slots, legacy class resources, and magic
+status are absent because the toolkit StatusView does not expose them.
+
+Strict load/projection errors are wrapped with a detailed internal cause but cross the
+gRPC boundary as INTERNAL `character data unavailable`; malformed JSON or private refs
+never become response text. Missing/foreign ownership remains the unchanged canonical
+NOT_FOUND.
 
 ## Adjacent SessionService translation (#844)
 
@@ -71,8 +80,9 @@ providers: `rulebooks/dnd5e` v0.100.0, `rulebooks/dnd5e/session` v0.30.0, and
 
 The handler is registered in the production server and integration harness with the same
 character orchestrator used by v1alpha1. Focused tests cover validation, auth ordering,
-byte-identical missing/foreign NOT_FOUND, strict owner failure as INTERNAL, one-read
-Equip/Unequip responses, level-3 Fighter equipment/status, optional presence, and
-representative Fighter/Barbarian/Monk/Rogue mapping. Session-focused tests cover every
+byte-identical missing/foreign NOT_FOUND, sanitized strict owner failures, no post-write
+Get in either handler version, identity on Get/Equip/Unequip, level-3 Fighter
+equipment/status, optional presence, and representative Fighter/Barbarian/Monk/Rogue
+identity/status mapping. Session-focused tests cover every
 nested converter enum/presence field, selector request, error row, full Attack ref, and
 auth-before-manager ordering.

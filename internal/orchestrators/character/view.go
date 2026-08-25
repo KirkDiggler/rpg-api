@@ -2,18 +2,41 @@ package character
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"maps"
 
 	"github.com/KirkDiggler/rpg-api/internal/apierr"
 	"github.com/KirkDiggler/rpg-toolkit/events"
 	tkcharacter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/classes"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/races"
 )
+
+const (
+	// CharacterDataUnavailableMessage is the API-safe wording for a strict
+	// private character projection failure. The detailed cause stays wrapped
+	// internally and is never used as transport text.
+	CharacterDataUnavailableMessage = "character data unavailable"
+
+	errViewPlayerIDMissing = "project character identity: player ID is required"
+	errViewClassIDMissing  = "project character identity: class ID is required"
+	errViewRaceIDMissing   = "project character identity: race ID is required"
+)
+
+// IdentityView is the detached owner and typed class/race identity needed by
+// the existing CharacterData contract.
+type IdentityView struct {
+	PlayerID string
+	ClassID  classes.Class
+	RaceID   races.Race
+}
 
 // View is the detached, owner-private character projection returned across the
 // orchestrator boundary. It deliberately exposes no live Character and no
 // persistence JSON.
 type View struct {
+	Identity  IdentityView
 	Equipment *tkcharacter.EquipmentView
 	Status    *tkcharacter.StatusView
 }
@@ -65,14 +88,18 @@ func ProjectView(ctx context.Context, input *ProjectViewInput) (*ProjectViewOutp
 
 	loaded, err := loadAttachedCharacter(ctx, &loadAttachedCharacterInput{Data: input.Data})
 	if err != nil {
-		return nil, err
+		return nil, characterDataUnavailable(err)
 	}
 	projected, err := projectLoadedCharacter(ctx, &ProjectLoadedCharacterInput{Character: loaded.Character})
 	if err != nil {
-		return nil, err
+		return nil, characterDataUnavailable(err)
 	}
 
 	return &ProjectViewOutput{View: projected.View}, nil
+}
+
+func characterDataUnavailable(cause error) *apierr.Error {
+	return apierr.WrapWithCode(cause, apierr.CodeInternal, CharacterDataUnavailableMessage)
 }
 
 func loadAttachedCharacter(
@@ -86,7 +113,7 @@ func loadAttachedCharacter(
 	// The toolkit retains Data.EquipmentSlots on the loaded sheet and its
 	// Equip/Unequip verbs mutate that map in place. Load from a working struct
 	// copy with an isolated slots map so a failed projection or repository
-	// Update cannot mutate a cached/pointer-returning repository entity. Every
+	// patch cannot mutate a cached/pointer-returning repository entity. Every
 	// other field stays a direct struct copy: opaque JSON, slices, and unrelated
 	// maps are preserved without a serialization round trip or reinterpretation
 	// because this mutation path does not write them.
@@ -122,6 +149,17 @@ func projectLoadedCharacter(
 		return nil, apierr.InvalidArgument("character is required")
 	}
 
+	data := input.Character.ToData()
+	if data.PlayerID == "" {
+		return nil, errors.New(errViewPlayerIDMissing)
+	}
+	if data.ClassID == "" {
+		return nil, errors.New(errViewClassIDMissing)
+	}
+	if data.RaceID == "" {
+		return nil, errors.New(errViewRaceIDMissing)
+	}
+
 	equipment := input.Character.EquipmentView(ctx)
 	status, err := input.Character.StatusView(&tkcharacter.StatusViewInput{})
 	if err != nil {
@@ -132,6 +170,11 @@ func projectLoadedCharacter(
 	}
 
 	return &ProjectLoadedCharacterOutput{View: &View{
+		Identity: IdentityView{
+			PlayerID: data.PlayerID,
+			ClassID:  data.ClassID,
+			RaceID:   data.RaceID,
+		},
 		Equipment: equipment,
 		Status:    status.View,
 	}}, nil

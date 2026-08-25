@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"strings"
 
 	"github.com/KirkDiggler/rpg-api/internal/apierr"
@@ -879,13 +880,16 @@ func (o *Orchestrator) GetCharacter(ctx context.Context, input *GetCharacterInpu
 	}, nil
 }
 
+const (
+	maxEquipmentPatchAttempts       = 8
+	errEquipmentPatchRetryExhausted = "character changed concurrently during equipment update"
+)
+
 // EquipItem equips an item to a specific slot through the toolkit's rules
 // engine, not a bare data write. It is the SINGLE equip path: the v1alpha1
 // handler and the v1alpha2 character service both call this method, so
 // occupancy (two-handed weapons claiming/clearing off_hand, swap-on-occupied)
-// is enforced exactly once, in the toolkit, for every caller (rpg-api#680 —
-// board #11: this used to be a bare EquipmentSlots.Set with no rules,
-// validation, or recompute).
+// is enforced exactly once, in the toolkit, for every caller.
 func (o *Orchestrator) EquipItem(ctx context.Context, input *EquipItemInput) (*EquipItemOutput, error) {
 	if input == nil {
 		return nil, apierr.InvalidArgument("input is required")
@@ -900,60 +904,63 @@ func (o *Orchestrator) EquipItem(ctx context.Context, input *EquipItemInput) (*E
 		return nil, apierr.InvalidArgument("slot is required")
 	}
 
-	// Get character entity (includes appearance)
-	result, err := o.characterRepo.Get(ctx, characterrepo.GetInput{
-		ID: input.CharacterID,
-	})
+	current, err := o.characterRepo.Get(ctx, characterrepo.GetInput{ID: input.CharacterID})
 	if err != nil {
 		return nil, fmt.Errorf("failed to get character: %w", err)
 	}
 
-	if result == nil || result.Character == nil {
-		return nil, fmt.Errorf("failed to get character: repository returned no character")
+	for range maxEquipmentPatchAttempts {
+		if current == nil || current.Character == nil || current.Character.Data == nil {
+			return nil, fmt.Errorf("failed to get character: repository returned no character data")
+		}
+
+		loaded, loadErr := loadAttachedCharacter(ctx, &loadAttachedCharacterInput{Data: current.Character.Data})
+		if loadErr != nil {
+			return nil, characterDataUnavailable(fmt.Errorf("failed to load character: %w", loadErr))
+		}
+		char := loaded.Character
+		if _, projectErr := o.projectLoaded(ctx, &ProjectLoadedCharacterInput{Character: char}); projectErr != nil {
+			return nil, characterDataUnavailable(fmt.Errorf("failed to project character before equip: %w", projectErr))
+		}
+
+		previousItemID := ""
+		if previous := char.GetEquippedSlot(input.Slot); previous != nil {
+			previousItemID = previous.Item.EquipmentID()
+		}
+		if equipErr := char.EquipItem(input.Slot, input.ItemID); equipErr != nil {
+			return nil, mapEquipError(equipErr)
+		}
+
+		post, projectErr := o.projectLoaded(ctx, &ProjectLoadedCharacterInput{Character: char})
+		if projectErr != nil {
+			return nil, characterDataUnavailable(fmt.Errorf("failed to project character after equip: %w", projectErr))
+		}
+		patch, patchErr := o.characterRepo.PatchEquipment(ctx, characterrepo.PatchEquipmentInput{
+			CharacterID:            input.CharacterID,
+			ExpectedVersion:        current.Version,
+			ExpectedEquipmentSlots: maps.Clone(current.Character.Data.EquipmentSlots),
+			EquipmentSlots:         maps.Clone(char.ToData().EquipmentSlots),
+			ArmorClass:             char.EffectiveAC(ctx).Total,
+		})
+		if patchErr != nil {
+			return nil, fmt.Errorf("failed to patch character equipment: %w", patchErr)
+		}
+		if patch == nil || patch.Character == nil || patch.Character.Data == nil {
+			return nil, fmt.Errorf("failed to patch character equipment: repository returned no character data")
+		}
+		if !patch.Applied {
+			current = &characterrepo.GetOutput{Character: patch.Character, Version: patch.Version}
+			continue
+		}
+
+		return &EquipItemOutput{
+			PreviousItemID: previousItemID,
+			Character:      patch.Character,
+			View:           post.View,
+		}, nil
 	}
 
-	// Strictly load and attach, then require the complete pre-view before any
-	// mutation. Corrupt private state is never silently dropped on a write.
-	loaded, err := loadAttachedCharacter(ctx, &loadAttachedCharacterInput{Data: result.Character.Data})
-	if err != nil {
-		return nil, fmt.Errorf("failed to load character: %w", err)
-	}
-	char := loaded.Character
-	if _, err = o.projectLoaded(ctx, &ProjectLoadedCharacterInput{Character: char}); err != nil {
-		return nil, fmt.Errorf("failed to project character before equip: %w", err)
-	}
-
-	previousItemID := ""
-	if previous := char.GetEquippedSlot(input.Slot); previous != nil {
-		previousItemID = previous.Item.EquipmentID()
-	}
-
-	if err = char.EquipItem(input.Slot, input.ItemID); err != nil {
-		return nil, mapEquipError(err)
-	}
-
-	// Compose the persisted merge from the isolated working sheet and the
-	// complete detached response before Update. No fallible reload or
-	// projection is permitted after the write.
-	persistedData := mergedEquipmentData(ctx, loaded.Data, char)
-	post, err := o.projectLoaded(ctx, &ProjectLoadedCharacterInput{Character: char})
-	if err != nil {
-		return nil, fmt.Errorf("failed to project character after equip: %w", err)
-	}
-	_, err = o.characterRepo.Update(ctx, characterrepo.UpdateInput{
-		Character: &entities.Character{
-			Data:       persistedData,
-			Appearance: result.Character.Appearance,
-		},
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to update character: %w", err)
-	}
-
-	return &EquipItemOutput{
-		PreviousItemID: previousItemID,
-		View:           post.View,
-	}, nil
+	return nil, apierr.Aborted(errEquipmentPatchRetryExhausted)
 }
 
 // UnequipItem removes an item from a slot through the toolkit's rules
@@ -970,93 +977,61 @@ func (o *Orchestrator) UnequipItem(ctx context.Context, input *UnequipItemInput)
 		return nil, apierr.InvalidArgument("slot is required")
 	}
 
-	// Get character entity (includes appearance)
-	result, err := o.characterRepo.Get(ctx, characterrepo.GetInput{
-		ID: input.CharacterID,
-	})
+	current, err := o.characterRepo.Get(ctx, characterrepo.GetInput{ID: input.CharacterID})
 	if err != nil {
 		return nil, fmt.Errorf("failed to get character: %w", err)
 	}
 
-	if result == nil || result.Character == nil {
-		return nil, fmt.Errorf("failed to get character: repository returned no character")
+	for range maxEquipmentPatchAttempts {
+		if current == nil || current.Character == nil || current.Character.Data == nil {
+			return nil, fmt.Errorf("failed to get character: repository returned no character data")
+		}
+
+		loaded, loadErr := loadAttachedCharacter(ctx, &loadAttachedCharacterInput{Data: current.Character.Data})
+		if loadErr != nil {
+			return nil, characterDataUnavailable(fmt.Errorf("failed to load character: %w", loadErr))
+		}
+		char := loaded.Character
+		if _, projectErr := o.projectLoaded(ctx, &ProjectLoadedCharacterInput{Character: char}); projectErr != nil {
+			return nil, characterDataUnavailable(fmt.Errorf("failed to project character before unequip: %w", projectErr))
+		}
+
+		unequippedItemID := ""
+		if equipped := char.GetEquippedSlot(input.Slot); equipped != nil {
+			unequippedItemID = equipped.Item.EquipmentID()
+		}
+		char.UnequipItem(input.Slot)
+
+		post, projectErr := o.projectLoaded(ctx, &ProjectLoadedCharacterInput{Character: char})
+		if projectErr != nil {
+			return nil, characterDataUnavailable(fmt.Errorf("failed to project character after unequip: %w", projectErr))
+		}
+		patch, patchErr := o.characterRepo.PatchEquipment(ctx, characterrepo.PatchEquipmentInput{
+			CharacterID:            input.CharacterID,
+			ExpectedVersion:        current.Version,
+			ExpectedEquipmentSlots: maps.Clone(current.Character.Data.EquipmentSlots),
+			EquipmentSlots:         maps.Clone(char.ToData().EquipmentSlots),
+			ArmorClass:             char.EffectiveAC(ctx).Total,
+		})
+		if patchErr != nil {
+			return nil, fmt.Errorf("failed to patch character equipment: %w", patchErr)
+		}
+		if patch == nil || patch.Character == nil || patch.Character.Data == nil {
+			return nil, fmt.Errorf("failed to patch character equipment: repository returned no character data")
+		}
+		if !patch.Applied {
+			current = &characterrepo.GetOutput{Character: patch.Character, Version: patch.Version}
+			continue
+		}
+
+		return &UnequipItemOutput{
+			UnequippedItemID: unequippedItemID,
+			Character:        patch.Character,
+			View:             post.View,
+		}, nil
 	}
 
-	loaded, err := loadAttachedCharacter(ctx, &loadAttachedCharacterInput{Data: result.Character.Data})
-	if err != nil {
-		return nil, fmt.Errorf("failed to load character: %w", err)
-	}
-	char := loaded.Character
-	if _, err = o.projectLoaded(ctx, &ProjectLoadedCharacterInput{Character: char}); err != nil {
-		return nil, fmt.Errorf("failed to project character before unequip: %w", err)
-	}
-
-	unequippedItemID := ""
-	if equipped := char.GetEquippedSlot(input.Slot); equipped != nil {
-		unequippedItemID = equipped.Item.EquipmentID()
-	}
-
-	char.UnequipItem(input.Slot)
-
-	persistedData := mergedEquipmentData(ctx, loaded.Data, char)
-	post, err := o.projectLoaded(ctx, &ProjectLoadedCharacterInput{Character: char})
-	if err != nil {
-		return nil, fmt.Errorf("failed to project character after unequip: %w", err)
-	}
-	_, err = o.characterRepo.Update(ctx, characterrepo.UpdateInput{
-		Character: &entities.Character{
-			Data:       persistedData,
-			Appearance: result.Character.Appearance,
-		},
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to update character: %w", err)
-	}
-
-	return &UnequipItemOutput{
-		UnequippedItemID: unequippedItemID,
-		View:             post.View,
-	}, nil
-}
-
-// mergedEquipmentData returns a copy of the isolated working data with ONLY the two fields
-// an equip/unequip call can legitimately change refreshed from the
-// post-mutation runtime character:
-//
-//   - EquipmentSlots — the toolkit's rules-computed occupancy (two-handed
-//     claims/clears, swap-on-occupied). Round-trips correctly through
-//     ToData()/LoadFromData (it's a plain slot->itemID map, no registry
-//     resolution involved).
-//   - ArmorClass — set to EffectiveAC(ctx).Total so the STORED int stays
-//     truthful for any reader that hasn't been updated to call
-//     EffectiveAC itself (rpg-api#680 gate finding 1): the encounter
-//     seat's AC (lobby's AddPlayer seeding) is seeded from this stored
-//     int, so leaving it stale would desync combat AC from the display AC
-//     this slice just made real. Safe to bake in out-of-combat: this
-//     orchestrator method only runs on the out-of-encounter character
-//     sheet, where Conditions/ActionEconomy carry no live combat buffs
-//     (Shield/Mage Armor) — only permanent sources (armor, DEX, features
-//     like Unarmored Defense) are ever on EffectiveAC's breakdown here.
-//     Full mid-combat live-recompute on an out-of-combat equip is
-//     rpg-api#681 (deferred); replacing the stored int with a direct
-//     EffectiveAC read everywhere (removing the cache entirely) is
-//     rpg-api#684 (deferred). This keeps the two consistent for the
-//     primary flow in the meantime.
-//
-// Every OTHER field is left exactly as loaded — deliberately NOT persisted
-// via a full `char.ToData()` overwrite. BackgroundID and CreatedAt are never
-// populated by ToData(), and API-owned appearance is not part of the toolkit
-// sheet at all. Strict loading now refuses inventory entries outside the
-// toolkit catalog rather than silently dropping or preserving unprojectable
-// private state. For valid persisted data, Equip/Unequip touch neither
-// inventory nor identity/metadata, so merging only these two fields is the
-// complete, lossless write (rpg-api#680 gate finding 2; rpg-api#844 strict
-// application).
-func mergedEquipmentData(ctx context.Context, working *character.Data, char *character.Character) *character.Data {
-	merged := *working
-	merged.EquipmentSlots = char.ToData().EquipmentSlots
-	merged.ArmorClass = char.EffectiveAC(ctx).Total
-	return &merged
+	return nil, apierr.Aborted(errEquipmentPatchRetryExhausted)
 }
 
 // mapEquipError translates the toolkit's rpgerr equip-rule errors (item not

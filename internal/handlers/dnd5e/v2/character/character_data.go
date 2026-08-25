@@ -13,6 +13,8 @@ import (
 
 const (
 	refModuleDnd5e = "dnd5e"
+	refTypeClass   = "class"
+	refTypeRace    = "race"
 	refTypeItem    = "item"
 )
 
@@ -25,9 +27,24 @@ func BuildCharacterData(view *orchcharacter.View) *encounterv2pb.CharacterData {
 		return cd
 	}
 
+	mapIdentity(cd, view)
 	mapEquipment(cd, view)
 	mapStatus(cd, view)
 	return cd
+}
+
+func mapIdentity(cd *encounterv2pb.CharacterData, view *orchcharacter.View) {
+	cd.PlayerId = view.Identity.PlayerID
+	cd.ClassRef = &encounterv2pb.Ref{
+		Module: refModuleDnd5e,
+		Type:   refTypeClass,
+		Id:     view.Identity.ClassID,
+	}
+	cd.RaceRef = &encounterv2pb.Ref{
+		Module: refModuleDnd5e,
+		Type:   refTypeRace,
+		Id:     string(view.Identity.RaceID),
+	}
 }
 
 func mapEquipment(cd *encounterv2pb.CharacterData, view *orchcharacter.View) {

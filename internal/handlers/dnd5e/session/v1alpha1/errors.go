@@ -112,9 +112,9 @@ func statusError(err error) error {
 	//
 	//   ErrNotYourTurn -- Attack, Move and EndTurn all refuse it the same way:
 	//   the fight is real, the member is real, it simply is not their turn yet.
-	//   Afford's per-target declarations announce this before a client ever
-	//   sends the swing that would hit it (Declaration.why.reason
-	//   NOT_YOUR_TURN).
+	//   Afford's one declaration with candidate rows announces this before a
+	//   client ever sends the swing that would hit it
+	//   (Declaration.why.reason NOT_YOUR_TURN).
 	//
 	//   ErrOutOfReach (rpg-toolkit#1010) -- the final defensive resolution
 	//   check found the selected target beyond the compiled attack's reach.
