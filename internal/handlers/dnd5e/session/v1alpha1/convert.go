@@ -723,9 +723,6 @@ func damageTypeToProto(d sdk.DamageType) sessionpb.DamageType {
 }
 
 func damageComponentsToProto(in []sdk.DamageComponent) []*sessionpb.DamageComponent {
-	if len(in) == 0 {
-		return nil
-	}
 	out := make([]*sessionpb.DamageComponent, len(in))
 	for i, component := range in {
 		rolls := make([]int32, len(component.FinalRolls))
@@ -747,9 +744,6 @@ func damageComponentsToProto(in []sdk.DamageComponent) []*sessionpb.DamageCompon
 }
 
 func attackModifierSourcesToProto(in []sdk.AttackModifierSource) []*sessionpb.AttackModifierSource {
-	if len(in) == 0 {
-		return nil
-	}
 	out := make([]*sessionpb.AttackModifierSource, len(in))
 	for i, source := range in {
 		out[i] = &sessionpb.AttackModifierSource{

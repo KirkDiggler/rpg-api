@@ -330,6 +330,13 @@ func TestDeliveryReportToProto(t *testing.T) {
 	require.True(t, got.GetFailed())
 }
 
+func TestStrikeDetailToProto_EmptyStaysNonNil(t *testing.T) {
+	require.NotNil(t, damageComponentsToProto(nil))
+	require.Empty(t, damageComponentsToProto(nil))
+	require.NotNil(t, attackModifierSourcesToProto(nil))
+	require.Empty(t, attackModifierSourcesToProto(nil))
+}
+
 func richStruckEvent() sdk.Event {
 	immunity := 0.0
 	return sdk.Event{
