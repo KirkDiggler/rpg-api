@@ -10,7 +10,7 @@ require (
 	github.com/KirkDiggler/rpg-toolkit/rpgerr v0.1.2
 	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.99.0
 	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter v0.33.1
-	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session v0.27.0
+	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session v0.27.1
 	github.com/KirkDiggler/rpg-toolkit/tools/spatial v0.11.0
 	github.com/alicebob/miniredis/v2 v2.35.0
 	github.com/google/uuid v1.6.0
@@ -93,5 +93,3 @@ require (
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260526163538-3dc84a4a5aaa // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
-
-replace github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session => /home/kirk/game-dev/rpg-toolkit/.worktrees/session-doors/rulebooks/dnd5e/session
