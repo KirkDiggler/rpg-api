@@ -307,8 +307,10 @@ func (s *HandlerTestSuite) TestEquipItem_ReturnsPersistedPostStateWithoutRefetch
 			PreviousItemID: "handaxe",
 			Character:      postState,
 		}, nil)
-	// Deliberately no GetCharacter expectation. A post-write re-fetch would
-	// be an unexpected gomock call and fail this test.
+	s.mockService.EXPECT().
+		GetCharacter(s.ctx, &character.GetCharacterInput{CharacterID: "char-equip"}).
+		Return(nil, errors.New("post-write Get would fail")).
+		MaxTimes(0)
 
 	resp, err := s.handler.EquipItem(s.ctx, &dnd5ev1alpha1.EquipItemRequest{
 		CharacterId: "char-equip",
@@ -343,8 +345,10 @@ func (s *HandlerTestSuite) TestUnequipItem_ReturnsPersistedPostStateWithoutRefet
 			UnequippedItemID: "longsword",
 			Character:        postState,
 		}, nil)
-	// Deliberately no GetCharacter expectation. A post-write re-fetch would
-	// be an unexpected gomock call and fail this test.
+	s.mockService.EXPECT().
+		GetCharacter(s.ctx, &character.GetCharacterInput{CharacterID: "char-unequip"}).
+		Return(nil, errors.New("post-write Get would fail")).
+		MaxTimes(0)
 
 	resp, err := s.handler.UnequipItem(s.ctx, &dnd5ev1alpha1.UnequipItemRequest{
 		CharacterId: "char-unequip",
