@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"reflect"
 	"testing"
 	"time"
 
@@ -374,16 +375,21 @@ func (s *EquipItemTestSuite) TestUnequipItem_MalformedConditionWritesNothing() {
 	s.Nil(out)
 }
 
-func (s *EquipItemTestSuite) TestEquipItem_PostProjectionFailureWritesNothing() {
+func (s *EquipItemTestSuite) TestEquipItem_PostProjectionFailureLeavesRepositoryEntityUnchanged() {
 	entity := s.fighterWithLongswordAndShield()
+	entity.Data.EquipmentSlots = character.EquipmentSlots{character.SlotOffHand: "shield"}
+	originalSlots := entity.Data.EquipmentSlots
+	originalSlotsIdentity := reflect.ValueOf(originalSlots).Pointer()
 	s.mockCharacterRepo.EXPECT().
 		Get(s.ctx, characterrepo.GetInput{ID: s.testCharacterID}).
 		Return(&characterrepo.GetOutput{Character: entity}, nil)
 
 	calls := 0
+	var workingSlots character.EquipmentSlots
 	s.orchestrator.projectLoaded = func(ctx context.Context, input *ProjectLoadedCharacterInput) (*ProjectLoadedCharacterOutput, error) {
 		calls++
 		if calls == 2 {
+			workingSlots = input.Character.ToData().EquipmentSlots
 			return nil, errors.New("post-state descriptor failed")
 		}
 		return projectLoadedCharacter(ctx, input)
@@ -399,6 +405,121 @@ func (s *EquipItemTestSuite) TestEquipItem_PostProjectionFailureWritesNothing() 
 	s.Require().Error(err)
 	s.Nil(out)
 	s.Equal(2, calls)
+	s.Equal(character.EquipmentSlots{character.SlotOffHand: "shield"}, entity.Data.EquipmentSlots)
+	s.Equal(originalSlotsIdentity, reflect.ValueOf(entity.Data.EquipmentSlots).Pointer(),
+		"repository-returned entity must retain its original map")
+	s.NotEqual(originalSlotsIdentity, reflect.ValueOf(workingSlots).Pointer(),
+		"the mutated working map must be isolated from repository-returned data")
+}
+
+func (s *EquipItemTestSuite) TestUnequipItem_PostProjectionFailureLeavesRepositoryEntityUnchanged() {
+	entity := s.fighterWithLongswordAndShield()
+	entity.Data.EquipmentSlots = character.EquipmentSlots{
+		character.SlotMainHand: "longsword",
+		character.SlotOffHand:  "shield",
+	}
+	originalSlots := entity.Data.EquipmentSlots
+	originalSlotsIdentity := reflect.ValueOf(originalSlots).Pointer()
+	s.mockCharacterRepo.EXPECT().
+		Get(s.ctx, characterrepo.GetInput{ID: s.testCharacterID}).
+		Return(&characterrepo.GetOutput{Character: entity}, nil)
+
+	calls := 0
+	var workingSlots character.EquipmentSlots
+	s.orchestrator.projectLoaded = func(ctx context.Context, input *ProjectLoadedCharacterInput) (*ProjectLoadedCharacterOutput, error) {
+		calls++
+		if calls == 2 {
+			workingSlots = input.Character.ToData().EquipmentSlots
+			return nil, errors.New("post-state descriptor failed")
+		}
+		return projectLoadedCharacter(ctx, input)
+	}
+	// Deliberately no Update expectation.
+
+	out, err := s.orchestrator.UnequipItem(s.ctx, &UnequipItemInput{
+		CharacterID: s.testCharacterID,
+		Slot:        character.SlotMainHand,
+	})
+	s.Require().Error(err)
+	s.Nil(out)
+	s.Equal(2, calls)
+	s.Equal(character.EquipmentSlots{
+		character.SlotMainHand: "longsword",
+		character.SlotOffHand:  "shield",
+	}, entity.Data.EquipmentSlots)
+	s.Equal(originalSlotsIdentity, reflect.ValueOf(entity.Data.EquipmentSlots).Pointer(),
+		"repository-returned entity must retain its original map")
+	s.NotEqual(originalSlotsIdentity, reflect.ValueOf(workingSlots).Pointer(),
+		"the mutated working map must be isolated from repository-returned data")
+}
+
+func (s *EquipItemTestSuite) TestEquipItem_UpdateFailureLeavesRepositoryEntityUnchanged() {
+	entity := s.fighterWithLongswordAndShield()
+	entity.Data.EquipmentSlots = character.EquipmentSlots{character.SlotOffHand: "shield"}
+	originalSlots := entity.Data.EquipmentSlots
+	originalSlotsIdentity := reflect.ValueOf(originalSlots).Pointer()
+	s.mockCharacterRepo.EXPECT().
+		Get(s.ctx, characterrepo.GetInput{ID: s.testCharacterID}).
+		Return(&characterrepo.GetOutput{Character: entity}, nil)
+	s.mockCharacterRepo.EXPECT().
+		Update(s.ctx, gomock.Any()).
+		DoAndReturn(func(_ context.Context, input characterrepo.UpdateInput) (*characterrepo.UpdateOutput, error) {
+			s.Equal(character.EquipmentSlots{
+				character.SlotMainHand: "longsword",
+				character.SlotOffHand:  "shield",
+			}, input.Character.Data.EquipmentSlots)
+			s.Equal(character.EquipmentSlots{character.SlotOffHand: "shield"}, entity.Data.EquipmentSlots)
+			s.NotEqual(originalSlotsIdentity, reflect.ValueOf(input.Character.Data.EquipmentSlots).Pointer(),
+				"Update must receive the isolated working map")
+			return nil, errors.New("update failed")
+		})
+
+	out, err := s.orchestrator.EquipItem(s.ctx, &EquipItemInput{
+		CharacterID: s.testCharacterID,
+		ItemID:      "longsword",
+		Slot:        character.SlotMainHand,
+	})
+	s.Require().Error(err)
+	s.Nil(out)
+	s.Equal(character.EquipmentSlots{character.SlotOffHand: "shield"}, entity.Data.EquipmentSlots)
+	s.Equal(originalSlotsIdentity, reflect.ValueOf(entity.Data.EquipmentSlots).Pointer())
+}
+
+func (s *EquipItemTestSuite) TestUnequipItem_UpdateFailureLeavesRepositoryEntityUnchanged() {
+	entity := s.fighterWithLongswordAndShield()
+	entity.Data.EquipmentSlots = character.EquipmentSlots{
+		character.SlotMainHand: "longsword",
+		character.SlotOffHand:  "shield",
+	}
+	originalSlots := entity.Data.EquipmentSlots
+	originalSlotsIdentity := reflect.ValueOf(originalSlots).Pointer()
+	s.mockCharacterRepo.EXPECT().
+		Get(s.ctx, characterrepo.GetInput{ID: s.testCharacterID}).
+		Return(&characterrepo.GetOutput{Character: entity}, nil)
+	s.mockCharacterRepo.EXPECT().
+		Update(s.ctx, gomock.Any()).
+		DoAndReturn(func(_ context.Context, input characterrepo.UpdateInput) (*characterrepo.UpdateOutput, error) {
+			s.Equal(character.EquipmentSlots{character.SlotOffHand: "shield"}, input.Character.Data.EquipmentSlots)
+			s.Equal(character.EquipmentSlots{
+				character.SlotMainHand: "longsword",
+				character.SlotOffHand:  "shield",
+			}, entity.Data.EquipmentSlots)
+			s.NotEqual(originalSlotsIdentity, reflect.ValueOf(input.Character.Data.EquipmentSlots).Pointer(),
+				"Update must receive the isolated working map")
+			return nil, errors.New("update failed")
+		})
+
+	out, err := s.orchestrator.UnequipItem(s.ctx, &UnequipItemInput{
+		CharacterID: s.testCharacterID,
+		Slot:        character.SlotMainHand,
+	})
+	s.Require().Error(err)
+	s.Nil(out)
+	s.Equal(character.EquipmentSlots{
+		character.SlotMainHand: "longsword",
+		character.SlotOffHand:  "shield",
+	}, entity.Data.EquipmentSlots)
+	s.Equal(originalSlotsIdentity, reflect.ValueOf(entity.Data.EquipmentSlots).Pointer())
 }
 
 func (s *EquipItemTestSuite) TestEquipItem_OutputViewEqualsCapturedPersistedPostState() {

@@ -30,10 +30,12 @@ computed. Equip used to be `internal/orchestrators/character/orchestrator.go`'s 
 `EquipmentSlots.Set/Clear` — no rules, no occupancy, no recompute. Both are gone.
 
 **The single equip path.** `Orchestrator.EquipItem`/`UnequipItem` strictly load and
-attach the runtime `*character.Character`, require complete detached equipment/status
+attach the runtime `*character.Character` from an isolated working `Data` copy (the
+retained `EquipmentSlots` map is cloned), require complete detached equipment/status
 views before mutation, call the toolkit's rules-aware `Character.EquipItem`/`UnequipItem`,
 compose persisted post-data plus the complete post-view before Update, and return that
-already-composed view with no post-write reload. Malformed private state or an unknown
+already-composed view with no post-write reload. A cached/pointer repository entity stays
+unchanged when post-projection or Update fails. Malformed private state or an unknown
 status descriptor is INTERNAL/no-write; forgiving `LoadFromData` is not used here.
 The toolkit still owns the equipment rules (rpg-toolkit#812, v0.67.0 — two-handed weapons
 claim/clear `off_hand`, equipping an occupied slot swaps the previous occupant back to
@@ -57,7 +59,7 @@ See `docs/architecture/components/encounter.md`'s "CharacterData equipment proje
 section for the AC-sync invariant this introduces.
 
 **Why persistence merges instead of overwriting — a real footgun, worth remembering.**
-`Orchestrator`'s `mergedEquipmentData` copies the ORIGINALLY loaded `character.Data` and
+`Orchestrator`'s `mergedEquipmentData` copies the isolated working `character.Data` and
 refreshes only `EquipmentSlots` + `ArmorClass` from the post-mutation runtime character —
 it does NOT persist a full `char.ToData()` round-trip. The toolkit's `ToData()`/
 `LoadFromData()` pair is lossy: `BackgroundID` and `CreatedAt` are never populated by

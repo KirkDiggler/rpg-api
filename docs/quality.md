@@ -84,9 +84,10 @@ private projection, missing/foreign NOT_FOUND responses are byte-identical, and 
 three methods map the same detached orchestrator View through `BuildCharacterData`.
 Writes return their precomposed post-view with no fallible post-write reload. Focused
 gates cover strict malformed-data INTERNAL/no-write behavior, projection-before-write,
-persisted-post-state equality, complete level-3 Fighter status, optional presence, and
-representative four-build mapping. Held below A pending production traffic and a second
-live consumer of the owner-private composition.
+repository-entity map isolation across post-projection and Update failures for both Equip
+and Unequip, persisted-post-state equality, complete level-3 Fighter status, optional
+presence, and representative four-build mapping. Held below A pending production traffic
+and a second live consumer of the owner-private composition.
 
 ## Orchestrators
 

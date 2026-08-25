@@ -932,9 +932,10 @@ func (o *Orchestrator) EquipItem(ctx context.Context, input *EquipItemInput) (*E
 		return nil, mapEquipError(err)
 	}
 
-	// Compose the persisted merge and the complete detached response before
-	// Update. No fallible reload or projection is permitted after the write.
-	persistedData := mergedEquipmentData(ctx, result.Character.Data, char)
+	// Compose the persisted merge from the isolated working sheet and the
+	// complete detached response before Update. No fallible reload or
+	// projection is permitted after the write.
+	persistedData := mergedEquipmentData(ctx, loaded.Data, char)
 	post, err := o.projectLoaded(ctx, &ProjectLoadedCharacterInput{Character: char})
 	if err != nil {
 		return nil, fmt.Errorf("failed to project character after equip: %w", err)
@@ -997,7 +998,7 @@ func (o *Orchestrator) UnequipItem(ctx context.Context, input *UnequipItemInput)
 
 	char.UnequipItem(input.Slot)
 
-	persistedData := mergedEquipmentData(ctx, result.Character.Data, char)
+	persistedData := mergedEquipmentData(ctx, loaded.Data, char)
 	post, err := o.projectLoaded(ctx, &ProjectLoadedCharacterInput{Character: char})
 	if err != nil {
 		return nil, fmt.Errorf("failed to project character after unequip: %w", err)
@@ -1018,7 +1019,7 @@ func (o *Orchestrator) UnequipItem(ctx context.Context, input *UnequipItemInput)
 	}, nil
 }
 
-// mergedEquipmentData returns a copy of original with ONLY the two fields
+// mergedEquipmentData returns a copy of the isolated working data with ONLY the two fields
 // an equip/unequip call can legitimately change refreshed from the
 // post-mutation runtime character:
 //
@@ -1051,8 +1052,8 @@ func (o *Orchestrator) UnequipItem(ctx context.Context, input *UnequipItemInput)
 // inventory nor identity/metadata, so merging only these two fields is the
 // complete, lossless write (rpg-api#680 gate finding 2; rpg-api#844 strict
 // application).
-func mergedEquipmentData(ctx context.Context, original *character.Data, char *character.Character) *character.Data {
-	merged := *original
+func mergedEquipmentData(ctx context.Context, working *character.Data, char *character.Character) *character.Data {
+	merged := *working
 	merged.EquipmentSlots = char.ToData().EquipmentSlots
 	merged.ArmorClass = char.EffectiveAC(ctx).Total
 	return &merged

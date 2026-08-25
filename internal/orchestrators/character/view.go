@@ -3,6 +3,7 @@ package character
 import (
 	"context"
 	"fmt"
+	"maps"
 
 	"github.com/KirkDiggler/rpg-api/internal/apierr"
 	"github.com/KirkDiggler/rpg-toolkit/events"
@@ -45,6 +46,7 @@ type loadAttachedCharacterInput struct {
 
 type loadAttachedCharacterOutput struct {
 	Character *tkcharacter.Character
+	Data      *tkcharacter.Data
 }
 
 type projectLoadedCharacterFunc func(
@@ -81,7 +83,21 @@ func loadAttachedCharacter(
 		return nil, apierr.InvalidArgument("input is required")
 	}
 
-	char, err := tkcharacter.Load(ctx, input.Data)
+	// The toolkit retains Data.EquipmentSlots on the loaded sheet and its
+	// Equip/Unequip verbs mutate that map in place. Load from a working struct
+	// copy with an isolated slots map so a failed projection or repository
+	// Update cannot mutate a cached/pointer-returning repository entity. Every
+	// other field stays a direct struct copy: opaque JSON, slices, and unrelated
+	// maps are preserved without a serialization round trip or reinterpretation
+	// because this mutation path does not write them.
+	workingData := input.Data
+	if input.Data != nil {
+		workingCopy := *input.Data
+		workingCopy.EquipmentSlots = maps.Clone(input.Data.EquipmentSlots)
+		workingData = &workingCopy
+	}
+
+	char, err := tkcharacter.Load(ctx, workingData)
 	if err != nil {
 		return nil, fmt.Errorf("strictly load character: %w", err)
 	}
@@ -89,7 +105,7 @@ func loadAttachedCharacter(
 		return nil, fmt.Errorf("attach character: %w", err)
 	}
 
-	return &loadAttachedCharacterOutput{Character: char}, nil
+	return &loadAttachedCharacterOutput{Character: char, Data: workingData}, nil
 }
 
 // projectLoadedCharacter composes both detached views from one attached live

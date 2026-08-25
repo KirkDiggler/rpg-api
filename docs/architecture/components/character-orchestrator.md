@@ -82,25 +82,30 @@ validation, no recompute. That's gone.
 The method shape:
 
 1. `characterRepo.Get` — load the persisted `*character.Data`.
-2. Strict `character.Load(ctx, data)` + `character.Attach(ctx, char, bus)`, then
+2. Shallow-copy the loaded `character.Data`, clone its `EquipmentSlots` map, then
+   strictly `character.Load(ctx, workingData)` + `character.Attach(ctx, char, bus)` and
    complete detached `EquipmentView` + `StatusView` projection before mutation.
-   Malformed conditions, features, catalog items, resources, or unknown status
-   descriptors fail the operation before any write; forgiving `LoadFromData` is
-   not used on this owner-private path.
+   The toolkit retains and mutates the slots map, so this working copy keeps a
+   cached/pointer-returning repository entity unchanged if projection or Update fails.
+   Every unrelated map, slice, and opaque JSON value is preserved directly without a
+   JSON round trip because Equip/Unequip do not write those containers. Malformed
+   conditions, features, catalog items, resources, or unknown status descriptors fail
+   the operation before any write; forgiving `LoadFromData` is not used here.
 3. `char.EquipItem(slot, itemID)` / `char.UnequipItem(slot)` — the toolkit enforces
    occupancy here (rpg-toolkit#812, v0.67.0): a two-handed weapon claims `main_hand` and
    clears `off_hand`; equipping an occupied slot swaps the previous occupant back to
    inventory (never dropped); an incompatible slot now returns an `rpgerr` (mapped to
    `apierr.InvalidArgument` by `mapEquipError`) instead of silently succeeding.
-4. Compose `mergedEquipmentData(ctx, original, char)` and the complete detached
+4. Compose `mergedEquipmentData(ctx, workingData, char)` and the complete detached
    post-mutation View before repository Update, then return that already-composed
-   View. There is no fallible reload/projection after a successful write. See below
-   for why persistence is a merge, not `Data: char.ToData()`.
+   View. The Update payload derives from the isolated working sheet; the repository's
+   returned entity is untouched. There is no fallible reload/projection after a
+   successful write. See below for why persistence is a merge, not `Data: char.ToData()`.
 
 ### Why persistence merges instead of overwriting (a real footgun)
 
-`mergedEquipmentData` copies the `*character.Data` loaded in step 1 and refreshes only
-two fields from the post-mutation runtime character:
+`mergedEquipmentData` copies the isolated working `*character.Data` created in step 2
+and refreshes only two fields from the post-mutation runtime character:
 
 - **`EquipmentSlots`** — read via `char.ToData().EquipmentSlots`. Safe: it's a plain
   `map[InventorySlot]string`, no registry resolution involved, round-trips correctly.
@@ -132,9 +137,11 @@ The owner-private path now uses the toolkit's strict loader, so an inventory ite
 its catalog is rejected as INTERNAL with no Update rather than silently dropped or
 preserved as an unprojectable row. For valid data, `Character.EquipItem`/`UnequipItem`
 never touch `Inventory` (only `EquipmentSlots`), so merging those fields onto the
-originally loaded `Data` preserves every non-equipment field and appearance exactly.
+working `Data` preserves every non-equipment field and appearance exactly while the
+repository-returned `Data` remains untouched.
 Regression coverage: `TestEquipItem_PreservesNonEquipmentFields`,
-`TestEquipItem_RejectsUnprojectableDataWithoutWriting`, and
+`TestEquipItem_RejectsUnprojectableDataWithoutWriting`, the Equip/Unequip
+post-projection and Update-failure isolation tests, and
 `TestEquipItem_SyncsStoredArmorClass` (`internal/orchestrators/character/equip_item_test.go`).
 
 **If this ever gets "simplified" back to `Data: char.ToData()`, the data loss returns
