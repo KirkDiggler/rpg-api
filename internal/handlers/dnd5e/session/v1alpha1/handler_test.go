@@ -15,6 +15,7 @@ import (
 	sessionorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/session"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	charactermock "github.com/KirkDiggler/rpg-api/internal/repositories/character/mock"
+	rosterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/roster"
 	tkcharacter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 )
 
@@ -23,6 +24,7 @@ func TestNew_MissingManager_Errors(t *testing.T) {
 	_, err := New(&HandlerConfig{
 		Broker:     sessionorch.NewBroker(),
 		Characters: charactermock.NewMockRepository(ctrl),
+		Roster:     rosterrepo.NewInMemory(),
 	})
 	require.Error(t, err)
 }
@@ -32,6 +34,7 @@ func TestNew_MissingBroker_Errors(t *testing.T) {
 	_, err := New(&HandlerConfig{
 		Manager:    sessionv1alpha1mock.NewMockManager(ctrl),
 		Characters: charactermock.NewMockRepository(ctrl),
+		Roster:     rosterrepo.NewInMemory(),
 	})
 	require.Error(t, err)
 }
@@ -41,6 +44,17 @@ func TestNew_MissingCharacters_Errors(t *testing.T) {
 	_, err := New(&HandlerConfig{
 		Manager: sessionv1alpha1mock.NewMockManager(ctrl),
 		Broker:  sessionorch.NewBroker(),
+		Roster:  rosterrepo.NewInMemory(),
+	})
+	require.Error(t, err)
+}
+
+func TestNew_MissingRoster_Errors(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	_, err := New(&HandlerConfig{
+		Manager:    sessionv1alpha1mock.NewMockManager(ctrl),
+		Broker:     sessionorch.NewBroker(),
+		Characters: charactermock.NewMockRepository(ctrl),
 	})
 	require.Error(t, err)
 }
@@ -56,6 +70,7 @@ func TestNew_EverythingSupplied_Succeeds(t *testing.T) {
 		Manager:    sessionv1alpha1mock.NewMockManager(ctrl),
 		Broker:     sessionorch.NewBroker(),
 		Characters: charactermock.NewMockRepository(ctrl),
+		Roster:     rosterrepo.NewInMemory(),
 	})
 	require.NoError(t, err)
 	require.NotNil(t, h)

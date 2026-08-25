@@ -22,6 +22,7 @@ import (
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	charactermock "github.com/KirkDiggler/rpg-api/internal/repositories/character/mock"
 	lobbyrepo "github.com/KirkDiggler/rpg-api/internal/repositories/lobby"
+	rosterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/roster"
 	"github.com/KirkDiggler/rpg-api/internal/sessionworld"
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 )
@@ -64,6 +65,7 @@ func (s *LobbySuite) SetupTest() {
 		Now:                  func() time.Time { return time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC) },
 		SessionManager:       s.sessOrch.Manager,
 		Dungeons:             dungeonstest.Shipped(s.T()),
+		RosterRepo:           rosterrepo.NewInMemory(),
 	})
 	s.Require().NoError(err)
 	s.orch = orch
@@ -143,6 +145,7 @@ func (s *LobbySuite) newOrchestratorWithLobbyRepo(repo lobbyrepo.Repository) *lo
 		Now:                  func() time.Time { return time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC) },
 		SessionManager:       s.sessOrch.Manager,
 		Dungeons:             dungeonstest.Shipped(s.T()),
+		RosterRepo:           rosterrepo.NewInMemory(),
 	})
 	s.Require().NoError(err)
 	return orch

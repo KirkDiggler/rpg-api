@@ -51,6 +51,7 @@ import (
 	characterdraftrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft"
 	dicesessionrepo "github.com/KirkDiggler/rpg-api/internal/repositories/dice_session"
 	lobbyrepo "github.com/KirkDiggler/rpg-api/internal/repositories/lobby"
+	rosterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/roster"
 )
 
 // lobbyTTL is long enough for any single playtest session, short enough
@@ -238,10 +239,14 @@ func runServer(_ *cobra.Command, _ []string) error {
 	if err != nil {
 		return fmt.Errorf("session orchestrator: %w", err)
 	}
+	// Roster rows live as long as the session state they describe (the
+	// session orchestrator's own 24h TTL), not the lobby's shorter one.
+	rosterRepo := rosterrepo.NewRedis(redisClient, 24*time.Hour)
 	sessionHandlerImpl, err := sessionhandler.New(&sessionhandler.HandlerConfig{
 		Manager:    sessionOrch.Manager,
 		Broker:     sessionOrch.Broker,
 		Characters: charRepo,
+		Roster:     rosterRepo,
 	})
 	if err != nil {
 		return fmt.Errorf("session handler: %w", err)
@@ -299,6 +304,7 @@ func runServer(_ *cobra.Command, _ []string) error {
 		EncounterIDGenerator: idgen.NewUUID(""),
 		SessionManager:       sessionOrch.Manager,
 		Dungeons:             registry,
+		RosterRepo:           rosterRepo,
 	}
 	lobbyOrch, err := lobbyorch.New(lobbyCfg)
 	if err != nil {

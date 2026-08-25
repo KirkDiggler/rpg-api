@@ -22,6 +22,7 @@ import (
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	charactermock "github.com/KirkDiggler/rpg-api/internal/repositories/character/mock"
 	lobbyrepo "github.com/KirkDiggler/rpg-api/internal/repositories/lobby"
+	rosterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/roster"
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 
 	lobbyv1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/lobby/v1alpha1"
@@ -73,6 +74,7 @@ func (s *HandlerSuite) SetupTest() {
 		Now:                  func() time.Time { return time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC) },
 		SessionManager:       sessOrch.Manager,
 		Dungeons:             dungeonstest.Shipped(s.T()),
+		RosterRepo:           rosterrepo.NewInMemory(),
 	})
 	s.Require().NoError(err)
 

@@ -13,6 +13,7 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/auth"
 	sessionorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/session"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
+	rosterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/roster"
 )
 
 //go:generate mockgen -destination=mock/mock_manager.go -package=sessionv1alpha1mock github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/session/v1alpha1 Manager
@@ -59,6 +60,9 @@ type Handler struct {
 	// IN the session; they cannot answer whether this caller is allowed to be
 	// that member, which is the question this repository exists here to settle.
 	characters characterrepo.Repository
+	// roster is the launch-written roster store GetRoster serves from
+	// (rpg-project#264, ideas/characters/presentation).
+	roster rosterrepo.Repository
 }
 
 // HandlerConfig carries what New needs to build a Handler. Every field is
@@ -67,6 +71,9 @@ type HandlerConfig struct {
 	Manager    Manager
 	Broker     *sessionorch.Broker
 	Characters characterrepo.Repository
+	// Roster is the launch-written roster store GetRoster serves from
+	// (rpg-project#264). Required.
+	Roster rosterrepo.Repository
 }
 
 // New constructs a Handler. Returns an error on any missing dependency.
@@ -83,7 +90,10 @@ func New(cfg *HandlerConfig) (*Handler, error) {
 	if cfg.Characters == nil {
 		return nil, errors.New("session handler: HandlerConfig.Characters is required")
 	}
-	return &Handler{manager: cfg.Manager, broker: cfg.Broker, characters: cfg.Characters}, nil
+	if cfg.Roster == nil {
+		return nil, errors.New("session handler: HandlerConfig.Roster is required")
+	}
+	return &Handler{manager: cfg.Manager, broker: cfg.Broker, characters: cfg.Characters, roster: cfg.Roster}, nil
 }
 
 // authenticatedPlayerID extracts the caller's player ID from ctx, or a
