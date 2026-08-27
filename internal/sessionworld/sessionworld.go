@@ -240,8 +240,15 @@ func buildWorld(field tkencounter.FieldInput, bossID string) (*tkencounter.Encou
 		// when it loads this world to actually play it.
 		TurnDriver: tkencounter.PassDriver{},
 		Striker:    tkencounter.RefusingStriker{},
-		Retention:  tkencounter.RetentionUnbounded,
-		Field:      field,
+		// And REFUSING one seam further on. A world with nobody in it has no
+		// clock to advance, so a temporal boundary announced while building
+		// one is a bug rather than an event -- and this says so at the point
+		// of failure instead of succeeding quietly, which is the whole reason
+		// the capability was introduced (rpg-project#294). The session package
+		// supplies the real announcer when it loads this world to play it.
+		Announcer: tkencounter.RefusingAnnouncer{},
+		Retention: tkencounter.RetentionUnbounded,
+		Field:     field,
 		// What ends a dungeon is not geometry, and the file says it: the
 		// party withdrawing (external, always declared) and — when a
 		// placement carries the boss flag — the boss going down

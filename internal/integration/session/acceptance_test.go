@@ -237,6 +237,9 @@ func buildTomb(t *testing.T, mutate func(*tkencounter.SetupInput)) *tkencounter.
 		// turn does here never matters.
 		TurnDriver: tkencounter.PassDriver{},
 		Striker:    tkencounter.RefusingStriker{},
+		// This builds the scene; the session Manager loads it and supplies the
+		// real announcer when the fight actually runs.
+		Announcer: tkencounter.RefusingAnnouncer{},
 		Field: tkencounter.FieldInput{
 			Canvas: tkencounter.CanvasInput{
 				// A tomb is cut from stone: you cannot see across the space
