@@ -14,7 +14,6 @@ import (
 
 	"github.com/testcontainers/testcontainers-go"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/test/bufconn"
 
@@ -185,20 +184,12 @@ func newWithClientSource(ctx context.Context, cfg *Config, redisAddr string) (*T
 
 	// Create client connection via bufconn. NewClient is the supported
 	// replacement for DialContext; use the passthrough target plus the same
-	// context dialer, then wait for Ready explicitly to preserve the harness's
-	// blocking semantics.
-	conn, err := grpc.NewClient("passthrough:///bufnet",
-		grpc.WithContextDialer(ts.bufDialer),
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-	)
+	// context dialer, then call Connect() to preserve DialContext's old
+	// asynchronous connection kick without adding ready-wait behavior.
+	conn, err := newBufconnClientConn(ts.bufDialer)
 	if err != nil {
 		ts.Close()
 		return nil, fmt.Errorf("failed to create bufconn client: %w", err)
-	}
-	if err := waitForReady(ctx, conn); err != nil {
-		_ = conn.Close()
-		ts.Close()
-		return nil, fmt.Errorf("failed to ready bufconn client: %w", err)
 	}
 	ts.conn = conn
 
@@ -369,19 +360,17 @@ func (ts *TestServer) bufDialer(ctx context.Context, _ string) (net.Conn, error)
 	return ts.listener.DialContext(ctx)
 }
 
-func waitForReady(ctx context.Context, conn *grpc.ClientConn) error {
-	for {
-		state := conn.GetState()
-		if state == connectivity.Idle {
-			conn.Connect()
-		}
-		if state == connectivity.Ready {
-			return nil
-		}
-		if !conn.WaitForStateChange(ctx, state) {
-			return ctx.Err()
-		}
+func newBufconnClientConn(dialer func(context.Context, string) (net.Conn, error)) (*grpc.ClientConn, error) {
+	conn, err := grpc.NewClient("passthrough:///bufnet",
+		grpc.WithContextDialer(dialer),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
+	if err != nil {
+		return nil, err
 	}
+	conn.Connect()
+
+	return conn, nil
 }
 
 // Close cleans up everything this TestServer owns: the gRPC server,
