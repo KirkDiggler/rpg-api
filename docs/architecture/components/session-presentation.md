@@ -79,8 +79,11 @@ The accepted plan shape is intentionally narrow:
 - Body count is `1..20`; this schema accepts D20 bodies only.
 - Terminal count must match body count; terminal steps are `1..480`; terminal
   kind is `SETTLED` or `OFF_TABLE`.
-- Contacts are ordered by strictly increasing step, step `1..480`, at most 128
-  contacts, and at most 256 total checkpoint body states.
+- Contacts are ordered by non-decreasing step, step `1..480`, at most 128
+  contacts, and at most 256 total checkpoint body states. Equal-step contacts
+  must be in strict canonical order by `PrimaryDieID`, target kind string
+  (`dice`, `door`, `wall`), then target ID (`OtherDieID` or
+  `StaticCollider.ColliderID`).
 - Static contacts must name printable ASCII collider IDs of length `1..256`
   with `wall:` or `door:` prefixes matching their kind.
 - Position components are finite and within `±4096`; linear velocity magnitude

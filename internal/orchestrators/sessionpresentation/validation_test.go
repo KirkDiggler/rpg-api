@@ -42,6 +42,40 @@ func TestValidateDraft_AcceptsValidDraftAndDeepCopies(t *testing.T) {
 	require.NotEqual(t, draft.Terminal[0].State.AngularVelocity.Z, normalized.Terminal[0].State.AngularVelocity.Z)
 }
 
+func TestValidateDraft_AcceptsSameStepContactsInCanonicalOrder(t *testing.T) {
+	draft := validTwoBodyDraft()
+	draft.Contacts = []ContactCheckpoint{
+		validDieContact(draft.Bodies[0].DieID, draft.Bodies[1].DieID, 1),
+		validStaticContact(draft.Bodies[0].DieID, 1, "door:hall-1"),
+		validStaticContact(draft.Bodies[0].DieID, 1, "wall:segment-1"),
+		validStaticContact(draft.Bodies[1].DieID, 1, "wall:backstop"),
+	}
+
+	normalized, err := ValidateDraft(&draft)
+	require.NoError(t, err)
+	require.Equal(t, draft.Contacts, normalized.Contacts)
+}
+
+func TestValidateDraft_RejectsSameStepContactsOutOfCanonicalOrder(t *testing.T) {
+	draft := validTwoBodyDraft()
+	draft.Contacts = []ContactCheckpoint{
+		validStaticContact(draft.Bodies[0].DieID, 1, "wall:segment-2"),
+		validStaticContact(draft.Bodies[0].DieID, 1, "wall:segment-1"),
+	}
+
+	_, err := ValidateDraft(&draft)
+	require.ErrorIs(t, err, ErrInvalidPlan)
+}
+
+func TestValidateDraft_RejectsDuplicateSameStepContact(t *testing.T) {
+	draft := validTwoBodyDraft()
+	duplicate := validDieContact(draft.Bodies[0].DieID, draft.Bodies[1].DieID, 1)
+	draft.Contacts = []ContactCheckpoint{duplicate, duplicate}
+
+	_, err := ValidateDraft(&draft)
+	require.ErrorIs(t, err, ErrInvalidPlan)
+}
+
 func TestValidateDraft_RejectsInvalidDrafts(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -236,12 +270,12 @@ func TestValidateDraft_RejectsInvalidDrafts(t *testing.T) {
 			},
 		},
 		{
-			name: "contact steps must increase",
+			name: "contact steps must be non-decreasing",
 			build: func() *Draft {
 				draft := validDraft()
 				draft.Contacts = []ContactCheckpoint{
-					validStaticContact(draft.Bodies[0].DieID, 2, "wall:one"),
 					validStaticContact(draft.Bodies[0].DieID, 2, "wall:two"),
+					validStaticContact(draft.Bodies[0].DieID, 1, "wall:one"),
 				}
 				return &draft
 			},

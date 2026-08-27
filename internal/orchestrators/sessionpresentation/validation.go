@@ -11,6 +11,12 @@ import (
 
 var presentationIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9:_-]{0,127}$`)
 
+const (
+	contactTargetKindDice = "dice"
+	contactTargetKindDoor = "door"
+	contactTargetKindWall = "wall"
+)
+
 func ValidateDraft(draft *Draft) (Draft, error) {
 	if draft == nil {
 		return Draft{}, fmt.Errorf("draft is required: %w", ErrInvalidPlan)
@@ -62,16 +68,21 @@ func ValidateDraft(draft *Draft) (Draft, error) {
 	normalized.Terminal = normalizedTerminal
 
 	totalCheckpointStates := 0
-	var previousStep uint32
+	var previousContact ContactCheckpoint
 	for i, contact := range draft.Contacts {
 		normalizedContact, contactErr := validateContact(contact, bodyIDs, terminalSteps)
 		if contactErr != nil {
 			return Draft{}, contactErr
 		}
-		if i > 0 && normalizedContact.Step <= previousStep {
-			return Draft{}, fmt.Errorf("non-increasing contact step: %w", ErrInvalidPlan)
+		if i > 0 {
+			if normalizedContact.Step < previousContact.Step {
+				return Draft{}, fmt.Errorf("decreasing contact step: %w", ErrInvalidPlan)
+			}
+			if normalizedContact.Step == previousContact.Step && compareEqualStepContacts(previousContact, normalizedContact) >= 0 {
+				return Draft{}, fmt.Errorf("non-canonical same-step contact order: %w", ErrInvalidPlan)
+			}
 		}
-		previousStep = normalizedContact.Step
+		previousContact = normalizedContact
 		totalCheckpointStates += len(normalizedContact.After)
 		if stateCountErr := validateCheckpointStateCount(totalCheckpointStates); stateCountErr != nil {
 			return Draft{}, stateCountErr
@@ -215,6 +226,30 @@ func validateContact(contact ContactCheckpoint, bodyIDs map[string]struct{}, ter
 	}
 
 	return normalized, nil
+}
+
+func compareEqualStepContacts(left, right ContactCheckpoint) int {
+	if cmp := strings.Compare(left.PrimaryDieID, right.PrimaryDieID); cmp != 0 {
+		return cmp
+	}
+
+	leftKind, leftTargetID := contactTargetOrder(left)
+	rightKind, rightTargetID := contactTargetOrder(right)
+	if cmp := strings.Compare(leftKind, rightKind); cmp != 0 {
+		return cmp
+	}
+
+	return strings.Compare(leftTargetID, rightTargetID)
+}
+
+func contactTargetOrder(contact ContactCheckpoint) (string, string) {
+	if contact.OtherDieID != "" {
+		return contactTargetKindDice, contact.OtherDieID
+	}
+	if contact.StaticCollider.Kind == StaticContactKindDoor {
+		return contactTargetKindDoor, contact.StaticCollider.ColliderID
+	}
+	return contactTargetKindWall, contact.StaticCollider.ColliderID
 }
 
 func validateCheckpointStateCount(total int) error {
