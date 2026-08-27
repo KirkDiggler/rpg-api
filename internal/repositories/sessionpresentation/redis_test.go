@@ -165,6 +165,25 @@ func (s *RedisSuite) TestSubscribe_ContextCancellationClosesPlans() {
 	waitForClosedChannel(s.T(), sub.Payloads())
 }
 
+func (s *RedisSuite) TestRedisSubscription_CloseOnContextExitsWhenStopInitiated() {
+	ctx, cancel := context.WithCancel(s.ctx)
+	s.T().Cleanup(cancel)
+
+	sub := &redisSubscription{stop: make(chan struct{})}
+	watcherExited := make(chan struct{})
+	go func() {
+		sub.closeOnContext(ctx)
+		close(watcherExited)
+	}()
+
+	s.Require().True(sub.initiateClose())
+	select {
+	case <-watcherExited:
+	case <-time.After(receiveTimeout):
+		s.T().Fatal("timed out waiting for closeOnContext to exit after stop")
+	}
+}
+
 func (s *RedisSuite) TestSubscribe_CloseClosesPlansAndReturnsErrClosedWhenRepeated() {
 	sub, err := s.repo1.Subscribe(s.ctx, &SubscribeInput{Session: "session-close"})
 	s.Require().NoError(err)

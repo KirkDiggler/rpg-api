@@ -77,6 +77,9 @@ func (o *orchestrator) Subscribe(ctx context.Context, input *SubscribeInput) (Su
 
 	inner, err := o.repo.Subscribe(ctx, &repository.SubscribeInput{Session: input.Session})
 	if err != nil {
+		if errors.Is(err, repository.ErrClosed) {
+			return nil, ErrClosed
+		}
 		return nil, err
 	}
 

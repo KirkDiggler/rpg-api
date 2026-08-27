@@ -111,6 +111,15 @@ func (s *OrchestratorSuite) TestSubscribe_DropsMalformedAndInvalidPayloadsAndDel
 	}
 }
 
+func (s *OrchestratorSuite) TestSubscribe_MapsRepositoryErrClosed() {
+	s.repo.subscribeFn = func(_ context.Context, _ *repository.SubscribeInput) (repository.Subscription, error) {
+		return nil, repository.ErrClosed
+	}
+
+	_, err := s.svc.Subscribe(s.ctx, &SubscribeInput{Session: "session-1", Member: "member-1"})
+	s.Require().ErrorIs(err, ErrClosed)
+}
+
 func (s *OrchestratorSuite) TestSubscribe_CloseClosesPlanChannelAndPropagatesErrClosed() {
 	payloads := make(chan []byte)
 	fakeSub := &fakeSubscription{payloads: payloads, closeErrAfterFirst: repository.ErrClosed}

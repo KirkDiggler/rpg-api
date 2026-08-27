@@ -123,7 +123,11 @@ func (s *redisSubscription) Close() error {
 }
 
 func (s *redisSubscription) closeOnContext(ctx context.Context) {
-	<-ctx.Done()
+	select {
+	case <-ctx.Done():
+	case <-s.stop:
+		return
+	}
 	if !s.initiateClose() {
 		return
 	}
