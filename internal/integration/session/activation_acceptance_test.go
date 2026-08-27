@@ -353,3 +353,76 @@ func TestAcceptance_HideLandsButItsCheckHasNothingToBeat(t *testing.T) {
 	// And it worked while a skeleton was looking straight at her, which is the
 	// part that is not finished.
 }
+
+// --- Help's candidate universe, over the wire (rpg-toolkit#1274) ---
+
+// HELP OFFERS THE ALLY STANDING NEXT TO YOU, and the panel gets everything it
+// needs to draw the prompt: a row per ally, each with its own availability.
+//
+// This is the case rpg-dnd5e-web#835 declines to render today, because before
+// #1274 the declaration said TARGET_KIND_MEMBER and carried no candidates at
+// all — a control nothing could drive.
+func TestAcceptance_HelpOffersTheAdjacentAlly(t *testing.T) {
+	alice := ragingBarbarian("alice", "player-alice")
+	h, ctx := inAFightWith(t, alice)
+
+	// Bob joins next to her, through the real service and as his own player.
+	bob := ragingBarbarian("bob", "player-bob")
+	_, err := h.charRepo.Create(context.Background(), characterrepo.CreateInput{
+		Character: &entities.Character{Data: bob},
+	})
+	require.NoError(t, err)
+
+	alicePos, err := h.handler.GetWhere(ctx, &sessionpb.GetWhereRequest{
+		Session: "acceptance-run", Member: "alice",
+	})
+	require.NoError(t, err)
+
+	bobCtx := auth.WithPlayerID(context.Background(), "player-bob")
+	_, err = h.handler.Join(bobCtx, &sessionpb.JoinRequest{
+		Session: "acceptance-run", Member: "bob",
+		Position: &sessionpb.Position{
+			X: alicePos.GetPosition().GetX() + 1,
+			Y: alicePos.GetPosition().GetY(),
+		},
+	})
+	require.NoError(t, err)
+
+	help := activationsFor(t, h, ctx, "alice")["dnd5e:combat_abilities:help"]
+	require.NotNil(t, help)
+	require.Equal(t, sessionpb.TargetKind_TARGET_KIND_MEMBER, help.GetTargetKind())
+
+	require.NotEmpty(t, help.GetCandidates(), "a declaration that asks for a target must say who")
+	var bobRow *sessionpb.TargetCandidate
+	for _, c := range help.GetCandidates() {
+		if c.GetMember() == "bob" {
+			bobRow = c
+		}
+	}
+	require.NotNil(t, bobRow, "the ally standing next to her")
+	require.True(t, bobRow.GetAvailable())
+	require.True(t, help.GetAvailable())
+}
+
+// A MONSTER IS NEVER A HELP CANDIDATE, asserted over the wire because the
+// filter is a rules decision the client must never be asked to make. The
+// skeleton is adjacent, in sight, and absent from the list.
+func TestAcceptance_HelpNeverOffersAMonster(t *testing.T) {
+	h, ctx := inAFightWith(t, ragingBarbarian("alice", "player-alice"))
+
+	help := activationsFor(t, h, ctx, "alice")["dnd5e:combat_abilities:help"]
+	require.NotNil(t, help)
+
+	for _, c := range help.GetCandidates() {
+		require.NotEqual(t, "skel-1", c.GetMember(), "a monster is not an ally")
+	}
+
+	// With nobody to help, the declaration goes dark with the reason a panel
+	// can render — and keeps its selector, so the button is drawn disabled
+	// rather than dropped.
+	require.False(t, help.GetAvailable())
+	require.Equal(t, sessionpb.ShortfallReason_SHORTFALL_REASON_NO_TARGET_IN_REACH,
+		help.GetWhy().GetReason())
+	require.NotEmpty(t, help.GetId())
+	require.Equal(t, "Help", help.GetAbility().GetName())
+}
