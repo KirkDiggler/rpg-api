@@ -22,13 +22,15 @@ import (
 )
 
 func TestGetDoors_Unauthenticated_Errors(t *testing.T) {
-	h := &Handler{}
+	ctrl := gomock.NewController(t)
+	h := &Handler{characters: anyMemberOwnedBy(ctrl, "alice"), roster: testRoster()}
 	_, err := h.GetDoors(context.Background(), &sessionpb.GetDoorsRequest{Session: "sess-1"})
 	requireCode(t, err, codes.Unauthenticated)
 }
 
 func TestGetDoors_MissingSession_Errors(t *testing.T) {
-	h := &Handler{}
+	ctrl := gomock.NewController(t)
+	h := &Handler{characters: anyMemberOwnedBy(ctrl, "alice"), roster: testRoster()}
 	ctx := auth.WithPlayerID(context.Background(), "alice")
 	_, err := h.GetDoors(ctx, &sessionpb.GetDoorsRequest{})
 	requireCode(t, err, codes.InvalidArgument)
@@ -90,7 +92,8 @@ func TestGetDoors_ProjectsTheLiveState(t *testing.T) {
 }
 
 func TestOpenDoor_Unauthenticated_Errors(t *testing.T) {
-	h := &Handler{}
+	ctrl := gomock.NewController(t)
+	h := &Handler{characters: anyMemberOwnedBy(ctrl, "alice"), roster: testRoster()}
 	_, err := h.OpenDoor(context.Background(), &sessionpb.OpenDoorRequest{Session: "sess-1", Member: "char-1", Door: "gate"})
 	requireCode(t, err, codes.Unauthenticated)
 }
@@ -98,7 +101,7 @@ func TestOpenDoor_Unauthenticated_Errors(t *testing.T) {
 func TestOpenDoor_MissingMember_Errors_NeverCallsManager(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mgr := sessionv1alpha1mock.NewMockManager(ctrl) // no EXPECT()
-	h := &Handler{manager: mgr}
+	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice"), roster: testRoster()}
 	ctx := auth.WithPlayerID(context.Background(), "alice")
 	_, err := h.OpenDoor(ctx, &sessionpb.OpenDoorRequest{Session: "sess-1", Door: "gate"})
 	requireCode(t, err, codes.InvalidArgument)
@@ -116,7 +119,7 @@ func TestOpenDoor_HappyPath(t *testing.T) {
 		},
 	)
 
-	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
+	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice"), roster: testRoster()}
 	ctx := auth.WithPlayerID(context.Background(), "alice")
 	resp, err := h.OpenDoor(ctx, &sessionpb.OpenDoorRequest{Session: "sess-1", Member: "char-1", Door: "gate"})
 	require.NoError(t, err)
@@ -131,7 +134,7 @@ func TestOpenDoor_Locked_FailedPrecondition(t *testing.T) {
 	mgr := sessionv1alpha1mock.NewMockManager(ctrl)
 	mgr.EXPECT().OpenDoor(gomock.Any(), gomock.Any()).Return(nil, sdkLockedErr())
 
-	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
+	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice"), roster: testRoster()}
 	ctx := auth.WithPlayerID(context.Background(), "alice")
 	_, err := h.OpenDoor(ctx, &sessionpb.OpenDoorRequest{Session: "sess-1", Member: "char-1", Door: "hall-tomb"})
 	requireCode(t, err, codes.FailedPrecondition)
@@ -153,7 +156,7 @@ func TestUnlock_HappyPath_CarriesTheAttempt(t *testing.T) {
 		},
 	)
 
-	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
+	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice"), roster: testRoster()}
 	ctx := auth.WithPlayerID(context.Background(), "alice")
 	resp, err := h.Unlock(ctx, &sessionpb.UnlockRequest{Session: "sess-1", Member: "char-1", Door: "hall-tomb"})
 	require.NoError(t, err, "a failed attempt is an outcome, not an error")
@@ -164,7 +167,8 @@ func TestUnlock_HappyPath_CarriesTheAttempt(t *testing.T) {
 }
 
 func TestUnlock_MissingMember_Errors(t *testing.T) {
-	h := &Handler{}
+	ctrl := gomock.NewController(t)
+	h := &Handler{characters: anyMemberOwnedBy(ctrl, "alice"), roster: testRoster()}
 	ctx := auth.WithPlayerID(context.Background(), "alice")
 	_, err := h.Unlock(ctx, &sessionpb.UnlockRequest{Session: "sess-1", Door: "hall-tomb"})
 	requireCode(t, err, codes.InvalidArgument)

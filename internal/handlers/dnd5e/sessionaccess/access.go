@@ -14,15 +14,17 @@ import (
 )
 
 const (
-	errNoPlayerID              = "no player id in context"
-	errSessionRequired         = "session is required"
-	errMemberRequired          = "member is required"
-	errCallerDoesNotControl    = "caller does not control this member"
-	errCallerNotSeated         = "caller is not seated in this session"
-	rosterMemberNoCharacterFmt = "roster member %q has no character record"
-	sessionHasNoRosterFmt      = "session %q has no roster"
-	loadRosterForSessionFmt    = "load roster for session %q: %v"
-	memberNotFoundFmt          = "member %q not found"
+	errNoPlayerID                   = "no player id in context"
+	errSessionRequired              = "session is required"
+	errMemberRequired               = "member is required"
+	errCallerDoesNotControl         = "caller does not control this member"
+	errCallerNotSeated              = "caller is not seated in this session"
+	errCharactersRepositoryRequired = "session access: characters repository is required"
+	errRosterRepositoryRequired     = "session access: roster repository is required"
+	rosterMemberNoCharacterFmt      = "roster member %q has no character record"
+	sessionHasNoRosterFmt           = "session %q has no roster"
+	loadRosterForSessionFmt         = "load roster for session %q: %v"
+	memberNotFoundFmt               = "member %q not found"
 )
 
 // Access centralizes the session handler's caller/member/session authorization
@@ -34,6 +36,12 @@ type Access struct {
 
 // New constructs an Access gate over the character and roster repositories.
 func New(characters characterrepo.Repository, roster rosterrepo.Repository) (*Access, error) {
+	if characters == nil {
+		return nil, errors.New(errCharactersRepositoryRequired)
+	}
+	if roster == nil {
+		return nil, errors.New(errRosterRepositoryRequired)
+	}
 	return &Access{characters: characters, roster: roster}, nil
 }
 
@@ -101,9 +109,6 @@ func authenticatedPlayerID(ctx context.Context) (string, error) {
 }
 
 func (a *Access) verifyMemberOwnership(ctx context.Context, playerID, member string) error {
-	if a.characters == nil {
-		return status.Errorf(codes.NotFound, memberNotFoundFmt, member)
-	}
 	out, err := a.characters.Get(ctx, characterrepo.GetInput{ID: member})
 	if err != nil {
 		return status.Errorf(codes.NotFound, memberNotFoundFmt, member)
@@ -122,9 +127,6 @@ func (a *Access) callerSeated(ctx context.Context, session, playerID string) err
 	if err != nil {
 		return err
 	}
-	if a.characters == nil {
-		return status.Error(codes.PermissionDenied, errCallerNotSeated)
-	}
 
 	for _, m := range row.Members {
 		if m.Kind != rosterrepo.KindPlayer {
@@ -142,9 +144,6 @@ func (a *Access) callerSeated(ctx context.Context, session, playerID string) err
 }
 
 func (a *Access) loadRoster(ctx context.Context, session string) (*rosterrepo.Data, error) {
-	if a.roster == nil {
-		return nil, status.Errorf(codes.NotFound, sessionHasNoRosterFmt, session)
-	}
 	row, err := a.roster.Get(ctx, session)
 	if err != nil {
 		if errors.Is(err, rosterrepo.ErrNotFound) {

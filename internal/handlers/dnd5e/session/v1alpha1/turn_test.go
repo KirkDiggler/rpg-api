@@ -16,7 +16,8 @@ import (
 )
 
 func TestTurn_Unauthenticated_Errors(t *testing.T) {
-	h := &Handler{}
+	ctrl := gomock.NewController(t)
+	h := &Handler{characters: anyMemberOwnedBy(ctrl, "alice"), roster: testRoster()}
 	_, err := h.Turn(context.Background(), &sessionpb.TurnRequest{})
 	requireCode(t, err, codes.Unauthenticated)
 }
@@ -32,7 +33,7 @@ func TestTurn_HappyPath(t *testing.T) {
 		},
 	}, nil)
 
-	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
+	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice"), roster: testRoster()}
 	ctx := auth.WithPlayerID(context.Background(), "alice")
 	resp, err := h.Turn(ctx, &sessionpb.TurnRequest{Session: "sess-1", Member: "char-1"})
 	require.NoError(t, err)
@@ -53,7 +54,7 @@ func TestTurn_ManagerError_TranslatesViaErrorTable(t *testing.T) {
 	mgr := sessionv1alpha1mock.NewMockManager(ctrl)
 	mgr.EXPECT().Turn(gomock.Any(), gomock.Any()).Return(nil, sdk.ErrNoMember)
 
-	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
+	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice"), roster: testRoster()}
 	ctx := auth.WithPlayerID(context.Background(), "alice")
 	_, err := h.Turn(ctx, &sessionpb.TurnRequest{Session: "sess-1", Member: "char-1"})
 	requireCode(t, err, codes.NotFound)

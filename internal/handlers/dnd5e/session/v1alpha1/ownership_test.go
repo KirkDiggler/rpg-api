@@ -46,6 +46,7 @@ func TestEveryMemberTakingVerbRefusesAForeignMember(t *testing.T) {
 			h := &Handler{
 				manager:    sessionv1alpha1mock.NewMockManager(ctrl),
 				characters: ownedCharacterRepo(ctrl, foreign, owner),
+				roster:     testRoster(),
 			}
 			err := call(auth.WithPlayerID(context.Background(), caller), h)
 			requireCode(t, err, codes.PermissionDenied)
@@ -197,6 +198,7 @@ func TestEveryMemberTakingVerbRefusesAnEmptyMember(t *testing.T) {
 			h := &Handler{
 				manager:    sessionv1alpha1mock.NewMockManager(ctrl),
 				characters: anyMemberOwnedBy(ctrl, "alice"),
+				roster:     testRoster(),
 			}
 			err := call(auth.WithPlayerID(context.Background(), "alice"), h)
 			requireCode(t, err, codes.InvalidArgument)
@@ -213,6 +215,7 @@ func TestStreamEventsRefusesAnEmptySession(t *testing.T) {
 	h := &Handler{
 		manager:    sessionv1alpha1mock.NewMockManager(ctrl),
 		characters: anyMemberOwnedBy(ctrl, "alice"),
+		roster:     testRoster(),
 	}
 	ctx := auth.WithPlayerID(context.Background(), "alice")
 	err := h.StreamEvents(

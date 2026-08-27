@@ -17,7 +17,8 @@ import (
 )
 
 func TestGetWhere_Unauthenticated_Errors(t *testing.T) {
-	h := &Handler{}
+	ctrl := gomock.NewController(t)
+	h := &Handler{characters: anyMemberOwnedBy(ctrl, "alice"), roster: testRoster()}
 	_, err := h.GetWhere(context.Background(), &sessionpb.GetWhereRequest{})
 	requireCode(t, err, codes.Unauthenticated)
 }
@@ -29,7 +30,7 @@ func TestGetWhere_HappyPath_ReturnsAbsoluteCell(t *testing.T) {
 		&sdk.WhereOutput{Position: spatial.Position{X: 7, Y: 3}}, nil,
 	)
 
-	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
+	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice"), roster: testRoster()}
 	ctx := auth.WithPlayerID(context.Background(), "alice")
 	resp, err := h.GetWhere(ctx, &sessionpb.GetWhereRequest{Session: "sess-1", Member: "char-1"})
 	require.NoError(t, err)
@@ -46,7 +47,7 @@ func TestGetWhere_ManagerError_TranslatesViaErrorTable(t *testing.T) {
 	mgr := sessionv1alpha1mock.NewMockManager(ctrl)
 	mgr.EXPECT().Where(gomock.Any(), gomock.Any()).Return(nil, sdk.ErrNoMember)
 
-	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
+	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice"), roster: testRoster()}
 	ctx := auth.WithPlayerID(context.Background(), "alice")
 	_, err := h.GetWhere(ctx, &sessionpb.GetWhereRequest{Session: "sess-1", Member: "char-1"})
 	// NotFound, not InvalidArgument: the caller named a member the session does
@@ -72,7 +73,7 @@ func TestGetWhere_ForeignMember_IsRefusedBeforeTheSDK(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mgr := sessionv1alpha1mock.NewMockManager(ctrl)
 
-	h := &Handler{manager: mgr, characters: ownedCharacterRepo(ctrl, "goblin-1", "someone-else")}
+	h := &Handler{manager: mgr, characters: ownedCharacterRepo(ctrl, "goblin-1", "someone-else"), roster: testRoster()}
 	ctx := auth.WithPlayerID(context.Background(), "alice")
 	_, err := h.GetWhere(ctx, &sessionpb.GetWhereRequest{Session: "sess-1", Member: "goblin-1"})
 	requireCode(t, err, codes.PermissionDenied)
@@ -82,7 +83,7 @@ func TestGetWhere_EmptyMember_IsRefused(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mgr := sessionv1alpha1mock.NewMockManager(ctrl)
 
-	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
+	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice"), roster: testRoster()}
 	ctx := auth.WithPlayerID(context.Background(), "alice")
 	_, err := h.GetWhere(ctx, &sessionpb.GetWhereRequest{Session: "sess-1"})
 	requireCode(t, err, codes.InvalidArgument)

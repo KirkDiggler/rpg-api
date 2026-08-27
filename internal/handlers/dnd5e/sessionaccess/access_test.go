@@ -190,6 +190,18 @@ func TestCallerSeated_OwnedPlayerInRosterPasses(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestNew_NilCharacters_Errors(t *testing.T) {
+	access, err := New(nil, &rosterFixture{})
+	require.Nil(t, access)
+	require.EqualError(t, err, "session access: characters repository is required")
+}
+
+func TestNew_NilRoster_Errors(t *testing.T) {
+	access, err := New(newCharacterFixture(nil), nil)
+	require.Nil(t, access)
+	require.EqualError(t, err, "session access: roster repository is required")
+}
+
 func requireStatus(t *testing.T, err error, wantCode codes.Code, wantMessage string) {
 	t.Helper()
 	require.Error(t, err)
