@@ -41,6 +41,21 @@ func (m *MockManager) EXPECT() *MockManagerMockRecorder {
 	return m.recorder
 }
 
+// Activate mocks base method.
+func (m *MockManager) Activate(ctx context.Context, in *session.ActivateInput) (*session.ActivateOutput, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Activate", ctx, in)
+	ret0, _ := ret[0].(*session.ActivateOutput)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// Activate indicates an expected call of Activate.
+func (mr *MockManagerMockRecorder) Activate(ctx, in any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Activate", reflect.TypeOf((*MockManager)(nil).Activate), ctx, in)
+}
+
 // Afford mocks base method.
 func (m *MockManager) Afford(ctx context.Context, in *session.AffordInput) (*session.AffordOutput, error) {
 	m.ctrl.T.Helper()
