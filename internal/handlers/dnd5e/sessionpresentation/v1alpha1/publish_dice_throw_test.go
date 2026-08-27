@@ -2,6 +2,7 @@ package sessionpresentationv1alpha1
 
 import (
 	"errors"
+	"fmt"
 
 	"go.uber.org/mock/gomock"
 	"google.golang.org/grpc/codes"
@@ -50,13 +51,29 @@ func (s *HandlerSuite) TestPublishDiceThrow_AccessRunsBeforeServiceAndConvertsEx
 
 func (s *HandlerSuite) TestPublishDiceThrow_ServiceErrorsMapToStatuses() {
 	tests := []struct {
-		name string
-		err  error
-		want codes.Code
+		name        string
+		err         error
+		wantCode    codes.Code
+		wantMessage string
 	}{
-		{name: "invalid", err: orchsessionpresentation.ErrInvalidPlan, want: codes.InvalidArgument},
-		{name: "conflict", err: orchsessionpresentation.ErrConflict, want: codes.AlreadyExists},
-		{name: "internal", err: errors.New("storage blew up"), want: codes.Internal},
+		{
+			name:        "invalid",
+			err:         fmt.Errorf("validator detail leaked: %w", orchsessionpresentation.ErrInvalidPlan),
+			wantCode:    codes.InvalidArgument,
+			wantMessage: "invalid dice throw plan",
+		},
+		{
+			name:        "conflict",
+			err:         fmt.Errorf("repo detail leaked: %w", orchsessionpresentation.ErrConflict),
+			wantCode:    codes.AlreadyExists,
+			wantMessage: "dice throw attempt already exists",
+		},
+		{
+			name:        "internal",
+			err:         errors.New("storage blew up"),
+			wantCode:    codes.Internal,
+			wantMessage: "session presentation unavailable",
+		},
 	}
 
 	for _, tc := range tests {
@@ -72,9 +89,26 @@ func (s *HandlerSuite) TestPublishDiceThrow_ServiceErrorsMapToStatuses() {
 				Draft:   s.testProtoDraft(),
 			})
 			s.Require().Error(err)
-			s.Equal(tc.want, status.Code(err))
+			st := status.Convert(err)
+			s.Equal(tc.wantCode, st.Code())
+			s.Equal(tc.wantMessage, st.Message())
 		})
 	}
+}
+
+func (s *HandlerSuite) TestPublishDiceThrow_AccessRefusalSkipsServiceCall() {
+	access := s.foreignAccess()
+	service := sessionpresentationmock.NewMockService(s.ctrl)
+	service.EXPECT().Publish(gomock.Any(), gomock.Any()).Times(0)
+
+	h := s.newHandler(service, access)
+	_, err := h.PublishDiceThrow(s.ctx, &presentationpb.PublishDiceThrowRequest{
+		Session: s.sessionID,
+		Member:  s.memberID,
+		Draft:   s.testProtoDraft(),
+	})
+	s.Require().Error(err)
+	s.Equal(codes.PermissionDenied, status.Code(err))
 }
 
 func (s *HandlerSuite) TestPublishDiceThrow_NilOutputIsInternal() {

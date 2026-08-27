@@ -40,7 +40,12 @@ func planToProto(in orchsessionpresentation.Plan) *presentationpb.DiceThrowPlan 
 }
 
 func physicsSchemaFromProto(in presentationpb.DicePhysicsSchema) orchsessionpresentation.PhysicsSchema {
-	return orchsessionpresentation.PhysicsSchema(in)
+	switch in {
+	case presentationpb.DicePhysicsSchema_DICE_PHYSICS_SCHEMA_RAPIER_DUNGEON_D20_V1:
+		return orchsessionpresentation.PhysicsSchemaRapierDungeonD20V1
+	default:
+		return orchsessionpresentation.PhysicsSchemaUnspecified
+	}
 }
 
 func physicsSchemaToProto(in orchsessionpresentation.PhysicsSchema) presentationpb.DicePhysicsSchema {
@@ -48,7 +53,22 @@ func physicsSchemaToProto(in orchsessionpresentation.PhysicsSchema) presentation
 }
 
 func shapeFromProto(in presentationpb.DiceShape) orchsessionpresentation.Shape {
-	return orchsessionpresentation.Shape(in)
+	switch in {
+	case presentationpb.DiceShape_DICE_SHAPE_D4:
+		return orchsessionpresentation.ShapeD4
+	case presentationpb.DiceShape_DICE_SHAPE_D6:
+		return orchsessionpresentation.ShapeD6
+	case presentationpb.DiceShape_DICE_SHAPE_D8:
+		return orchsessionpresentation.ShapeD8
+	case presentationpb.DiceShape_DICE_SHAPE_D10:
+		return orchsessionpresentation.ShapeD10
+	case presentationpb.DiceShape_DICE_SHAPE_D12:
+		return orchsessionpresentation.ShapeD12
+	case presentationpb.DiceShape_DICE_SHAPE_D20:
+		return orchsessionpresentation.ShapeD20
+	default:
+		return orchsessionpresentation.ShapeUnspecified
+	}
 }
 
 func shapeToProto(in orchsessionpresentation.Shape) presentationpb.DiceShape {
@@ -56,7 +76,14 @@ func shapeToProto(in orchsessionpresentation.Shape) presentationpb.DiceShape {
 }
 
 func staticContactKindFromProto(in presentationpb.DiceStaticContactKind) orchsessionpresentation.StaticContactKind {
-	return orchsessionpresentation.StaticContactKind(in)
+	switch in {
+	case presentationpb.DiceStaticContactKind_DICE_STATIC_CONTACT_KIND_WALL:
+		return orchsessionpresentation.StaticContactKindWall
+	case presentationpb.DiceStaticContactKind_DICE_STATIC_CONTACT_KIND_DOOR:
+		return orchsessionpresentation.StaticContactKindDoor
+	default:
+		return orchsessionpresentation.StaticContactKindUnspecified
+	}
 }
 
 func staticContactKindToProto(in orchsessionpresentation.StaticContactKind) presentationpb.DiceStaticContactKind {
@@ -64,7 +91,14 @@ func staticContactKindToProto(in orchsessionpresentation.StaticContactKind) pres
 }
 
 func terminalKindFromProto(in presentationpb.DiceTerminalKind) orchsessionpresentation.TerminalKind {
-	return orchsessionpresentation.TerminalKind(in)
+	switch in {
+	case presentationpb.DiceTerminalKind_DICE_TERMINAL_KIND_SETTLED:
+		return orchsessionpresentation.TerminalKindSettled
+	case presentationpb.DiceTerminalKind_DICE_TERMINAL_KIND_OFF_TABLE:
+		return orchsessionpresentation.TerminalKindOffTable
+	default:
+		return orchsessionpresentation.TerminalKindUnspecified
+	}
 }
 
 func terminalKindToProto(in orchsessionpresentation.TerminalKind) presentationpb.DiceTerminalKind {

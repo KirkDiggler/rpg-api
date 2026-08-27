@@ -49,6 +49,16 @@ func (s *HandlerSuite) TearDownTest() {
 
 func (s *HandlerSuite) ownedAccess(order *callOrderRecorder) *sessionaccess.Access {
 	s.T().Helper()
+	return s.accessForMemberOwner(s.playerID, order)
+}
+
+func (s *HandlerSuite) foreignAccess() *sessionaccess.Access {
+	s.T().Helper()
+	return s.accessForMemberOwner("other-player", nil)
+}
+
+func (s *HandlerSuite) accessForMemberOwner(ownerPlayerID string, order *callOrderRecorder) *sessionaccess.Access {
+	s.T().Helper()
 
 	characters := charactermock.NewMockRepository(s.ctrl)
 	characters.EXPECT().Get(gomock.Any(), characterrepo.GetInput{ID: s.memberID}).DoAndReturn(
@@ -56,7 +66,7 @@ func (s *HandlerSuite) ownedAccess(order *callOrderRecorder) *sessionaccess.Acce
 			if order != nil {
 				order.Add("characters.Get")
 			}
-			return &characterrepo.GetOutput{Character: &entities.Character{Data: &tkcharacter.Data{ID: s.memberID, PlayerID: s.playerID}}}, nil
+			return &characterrepo.GetOutput{Character: &entities.Character{Data: &tkcharacter.Data{ID: s.memberID, PlayerID: ownerPlayerID}}}, nil
 		},
 	).Times(1)
 

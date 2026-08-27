@@ -12,12 +12,14 @@ import (
 )
 
 const (
-	errHandlerConfigRequired     = "session presentation handler: HandlerConfig is required"
-	errHandlerServiceRequired    = "session presentation handler: HandlerConfig.Service is required"
-	errHandlerAccessRequired     = "session presentation handler: HandlerConfig.Access is required"
-	errPublishOutputRequired     = "session presentation: publish returned no output"
-	errSubscriptionRequired      = "session presentation: subscribe returned no subscription"
-	errSessionPresentationPrefix = "session presentation"
+	errHandlerConfigRequired          = "session presentation handler: HandlerConfig is required"
+	errHandlerServiceRequired         = "session presentation handler: HandlerConfig.Service is required"
+	errHandlerAccessRequired          = "session presentation handler: HandlerConfig.Access is required"
+	errPublishOutputRequired          = "session presentation: publish returned no output"
+	errSubscriptionRequired           = "session presentation: subscribe returned no subscription"
+	errInvalidDiceThrowPlan           = "invalid dice throw plan"
+	errDiceThrowAttemptAlreadyExists  = "dice throw attempt already exists"
+	errSessionPresentationUnavailable = "session presentation unavailable"
 )
 
 type HandlerConfig struct {
@@ -48,12 +50,12 @@ func New(cfg *HandlerConfig) (*Handler, error) {
 func sessionPresentationRPCError(err error) error {
 	switch {
 	case errors.Is(err, orchsessionpresentation.ErrInvalidPlan):
-		return status.Error(codes.InvalidArgument, err.Error())
+		return status.Error(codes.InvalidArgument, errInvalidDiceThrowPlan)
 	case errors.Is(err, orchsessionpresentation.ErrConflict):
-		return status.Error(codes.AlreadyExists, err.Error())
+		return status.Error(codes.AlreadyExists, errDiceThrowAttemptAlreadyExists)
 	case errors.Is(err, orchsessionpresentation.ErrClosed):
-		return status.Error(codes.Internal, err.Error())
+		return status.Error(codes.Internal, errSessionPresentationUnavailable)
 	default:
-		return status.Errorf(codes.Internal, "%s: %v", errSessionPresentationPrefix, err)
+		return status.Error(codes.Internal, errSessionPresentationUnavailable)
 	}
 }

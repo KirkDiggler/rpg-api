@@ -3,6 +3,7 @@ package sessionpresentationv1alpha1
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"go.uber.org/mock/gomock"
@@ -49,15 +50,17 @@ func (s *HandlerSuite) TestStreamDiceThrows_AccessRunsBeforeSubscribeAndForwards
 	s.True(proto.Equal(s.testProtoPlan(), got), "expected exact streamed plan conversion")
 	s.Require().NoError(<-done)
 	s.Equal([]string{"characters.Get", "roster.Get", "service.Subscribe"}, order.Steps())
+	s.Equal(int32(1), sub.closeCalls.Load())
 }
 
 func (s *HandlerSuite) TestStreamDiceThrows_SubscribeErrorsMapToInternal() {
 	tests := []struct {
-		name string
-		err  error
+		name        string
+		err         error
+		wantMessage string
 	}{
-		{name: "closed", err: orchsessionpresentation.ErrClosed},
-		{name: "internal", err: errors.New("subscribe failed")},
+		{name: "closed", err: fmt.Errorf("broker detail leaked: %w", orchsessionpresentation.ErrClosed), wantMessage: "session presentation unavailable"},
+		{name: "internal", err: errors.New("subscribe failed"), wantMessage: "session presentation unavailable"},
 	}
 
 	for _, tc := range tests {
@@ -69,9 +72,22 @@ func (s *HandlerSuite) TestStreamDiceThrows_SubscribeErrorsMapToInternal() {
 			h := s.newHandler(service, access)
 			err := h.StreamDiceThrows(&presentationpb.StreamDiceThrowsRequest{Session: s.sessionID, Member: s.memberID}, newFakePlanStream(s.ctx))
 			s.Require().Error(err)
-			s.Equal(codes.Internal, status.Code(err))
+			st := status.Convert(err)
+			s.Equal(codes.Internal, st.Code())
+			s.Equal(tc.wantMessage, st.Message())
 		})
 	}
+}
+
+func (s *HandlerSuite) TestStreamDiceThrows_AccessRefusalSkipsSubscribe() {
+	access := s.foreignAccess()
+	service := sessionpresentationmock.NewMockService(s.ctrl)
+	service.EXPECT().Subscribe(gomock.Any(), gomock.Any()).Times(0)
+
+	h := s.newHandler(service, access)
+	err := h.StreamDiceThrows(&presentationpb.StreamDiceThrowsRequest{Session: s.sessionID, Member: s.memberID}, newFakePlanStream(s.ctx))
+	s.Require().Error(err)
+	s.Equal(codes.PermissionDenied, status.Code(err))
 }
 
 func (s *HandlerSuite) TestStreamDiceThrows_CancellationReturnsNilAndClosesSubscription() {
