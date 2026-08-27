@@ -836,19 +836,19 @@ func attackModifierSourcesToProto(in []sdk.AttackModifierSource) []*sessionpb.At
 	return out
 }
 
-// attackRefToProto mirrors session.AttackRef field-for-field (rpg-toolkit#866):
-// what was swung, always populated -- AttackOutput.Attack and the Struck/
-// Missed event bodies carry it as a value, never a pointer, so this always
-// returns a non-nil message.
 // abilityRefToProto mirrors the sole public identity of a compiled Activate
 // declaration. Present exactly when the SDK carries one, absent otherwise --
-// the same presence law attackRefToProto's caller keeps, and for the same
+// the same presence law declarationToProto keeps for Attack, and for the same
 // reason: a client renders this verbatim, so an ability with no name is a
 // button with no label rather than a defaulted one.
 func abilityRefToProto(a sdk.AbilityRef) *sessionpb.AbilityRef {
 	return &sessionpb.AbilityRef{Ref: a.Ref, Name: a.Name}
 }
 
+// attackRefToProto mirrors session.AttackRef field-for-field (rpg-toolkit#866):
+// what was swung, always populated -- AttackOutput.Attack and the Struck/
+// Missed event bodies carry it as a value, never a pointer, so this always
+// returns a non-nil message.
 func attackRefToProto(a sdk.AttackRef) *sessionpb.AttackRef {
 	return &sessionpb.AttackRef{
 		Ref:        a.Ref,

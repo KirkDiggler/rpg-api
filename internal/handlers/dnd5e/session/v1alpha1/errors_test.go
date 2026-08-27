@@ -36,6 +36,12 @@ func TestStatusError_CoversEverySDKSentinel(t *testing.T) {
 
 		// INVALID_ARGUMENT -- the request itself is malformed.
 		{"ErrNilInput", sdk.ErrNilInput, codes.InvalidArgument},
+		// ErrBadActivation is INVALID_ARGUMENT rather than Internal (where its
+		// sibling ErrBadCost sits) because a CALLER can produce it: an
+		// activation naming a target for an ability that takes none. The SDK
+		// refuses that rather than ignoring it, so a client that believed it
+		// aimed Dodge at somebody is told.
+		{"ErrBadActivation", sdk.ErrBadActivation, codes.InvalidArgument},
 		{"ErrEmptyPath", sdk.ErrEmptyPath, codes.InvalidArgument},
 		{"ErrBrokenPath", sdk.ErrBrokenPath, codes.InvalidArgument},
 		// No ErrNoCrossing row: session/v0.18.0 deleted the sentinel. On one
@@ -70,6 +76,13 @@ func TestStatusError_CoversEverySDKSentinel(t *testing.T) {
 		{"ErrNotYourTurn", sdk.ErrNotYourTurn, codes.FailedPrecondition},
 		{"ErrOutOfReach", sdk.ErrOutOfReach, codes.FailedPrecondition},
 		{"ErrStaleDeclaration", sdk.ErrStaleDeclaration, codes.FailedPrecondition},
+		// ErrCannotActivate is ErrCannotAfford's shape one verb further out:
+		// an ability that could have run and said no. The SDK documents it as
+		// not currently reachable through Activate — Afford consults the same
+		// gates the sheet does — and it is mapped anyway, for ErrBadCost's
+		// reason: the day the two gates disagree, the failure needs a name
+		// that is not a lie.
+		{"ErrCannotActivate", sdk.ErrCannotActivate, codes.FailedPrecondition},
 
 		// ALREADY_EXISTS
 		{"ErrSessionExists", sdk.ErrSessionExists, codes.AlreadyExists},
@@ -150,7 +163,11 @@ func TestStatusError_CoversEverySDKSentinel(t *testing.T) {
 // The door verbs (rpg-project#268, rpg-toolkit#1135) add ErrDoorShut and move
 // ErrNoConnection back to caller-facing -- 41 -> 42. Session v0.30.0 adds
 // selector errors ErrNoDeclarationID and ErrStaleDeclaration -- 42 -> 44.
-const sentinelCount = 44
+// Session v0.34.0 adds the activation pair ErrCannotActivate and
+// ErrBadActivation (rpg-project#300) -- 44 -> 46. Counted against the pinned
+// module, as this doc requires: 46 exported Err* in
+// rulebooks/dnd5e/session@v0.34.0/errors.go.
+const sentinelCount = 46
 
 func TestStatusError_UnmappedSentinelFallsBackToInternal(t *testing.T) {
 	unrecognized := fmt.Errorf("some future sentinel the table has not been updated for")
