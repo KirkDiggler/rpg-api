@@ -32,8 +32,8 @@ func (h *Handler) GetDoors(ctx context.Context, req *sessionpb.GetDoorsRequest) 
 		return nil, status.Error(codes.InvalidArgument, "session is required")
 	}
 
-	if err := h.callerSeated(ctx, req.GetSession(), playerID); err != nil {
-		return nil, err
+	if seatedErr := h.callerSeated(ctx, req.GetSession(), playerID); seatedErr != nil {
+		return nil, seatedErr
 	}
 
 	out, err := h.manager.Doors(ctx, &sdk.DoorsInput{Session: req.GetSession()})

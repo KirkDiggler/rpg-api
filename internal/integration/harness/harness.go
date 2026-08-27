@@ -14,6 +14,7 @@ import (
 
 	"github.com/testcontainers/testcontainers-go"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/test/bufconn"
 
@@ -164,32 +165,40 @@ func newWithClientSource(ctx context.Context, cfg *Config, redisAddr string) (*T
 	// Verify Redis connection
 	pingCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	if err := redisClient.Ping(pingCtx).Err(); err != nil {
+	if pingErr := redisClient.Ping(pingCtx).Err(); pingErr != nil {
 		ts.Close()
-		return nil, fmt.Errorf("failed to ping redis: %w", err)
+		return nil, fmt.Errorf("failed to ping redis: %w", pingErr)
 	}
 
 	// Wire up all the dependencies (mirrors cmd/server/server.go)
-	if err := ts.wireServices(cfg); err != nil {
+	if wireErr := ts.wireServices(cfg); wireErr != nil {
 		ts.Close()
-		return nil, fmt.Errorf("failed to wire services: %w", err)
+		return nil, fmt.Errorf("failed to wire services: %w", wireErr)
 	}
 
 	// Start serving
 	go func() {
-		if err := ts.grpcServer.Serve(ts.listener); err != nil {
-			log.Printf("gRPC server error: %v", err)
+		if serveErr := ts.grpcServer.Serve(ts.listener); serveErr != nil {
+			log.Printf("gRPC server error: %v", serveErr)
 		}
 	}()
 
-	// Create client connection via bufconn
-	conn, err := grpc.DialContext(ctx, "bufnet",
+	// Create client connection via bufconn. NewClient is the supported
+	// replacement for DialContext; use the passthrough target plus the same
+	// context dialer, then wait for Ready explicitly to preserve the harness's
+	// blocking semantics.
+	conn, err := grpc.NewClient("passthrough:///bufnet",
 		grpc.WithContextDialer(ts.bufDialer),
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 	)
 	if err != nil {
 		ts.Close()
-		return nil, fmt.Errorf("failed to dial bufconn: %w", err)
+		return nil, fmt.Errorf("failed to create bufconn client: %w", err)
+	}
+	if err := waitForReady(ctx, conn); err != nil {
+		_ = conn.Close()
+		ts.Close()
+		return nil, fmt.Errorf("failed to ready bufconn client: %w", err)
 	}
 	ts.conn = conn
 
@@ -360,6 +369,21 @@ func (ts *TestServer) bufDialer(ctx context.Context, _ string) (net.Conn, error)
 	return ts.listener.DialContext(ctx)
 }
 
+func waitForReady(ctx context.Context, conn *grpc.ClientConn) error {
+	for {
+		state := conn.GetState()
+		if state == connectivity.Idle {
+			conn.Connect()
+		}
+		if state == connectivity.Ready {
+			return nil
+		}
+		if !conn.WaitForStateChange(ctx, state) {
+			return ctx.Err()
+		}
+	}
+}
+
 // Close cleans up everything this TestServer owns: the gRPC server,
 // bufconn listener, brokers, and its own Redis client connection. It only
 // terminates a Redis container when ts.redisContainer is set — that is
@@ -374,7 +398,7 @@ func (ts *TestServer) Close() {
 
 func (ts *TestServer) closeAll() {
 	if ts.conn != nil {
-		ts.conn.Close()
+		_ = ts.conn.Close()
 	}
 	if ts.grpcServer != nil {
 		ts.grpcServer.Stop()
@@ -383,7 +407,7 @@ func (ts *TestServer) closeAll() {
 		_ = ts.LobbyBroker.Close()
 	}
 	if ts.redisClient != nil {
-		ts.redisClient.Close()
+		_ = ts.redisClient.Close()
 	}
 	if ts.redisContainer != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

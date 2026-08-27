@@ -12,7 +12,7 @@ import (
 	rosterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/roster"
 )
 
-// Both backings honour the same contract, so one test drives both: a saved
+// Both backings honor the same contract, so one test drives both: a saved
 // roster round-trips whole (players and monsters, order preserved), a
 // missing encounter is ErrNotFound, and the returned row is a copy the
 // caller cannot mutate into the store.

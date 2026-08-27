@@ -66,7 +66,7 @@ func (h *Handler) GetRoster(ctx context.Context, req *sessionpb.GetRosterRequest
 				Name: data.Name,
 				// The same words the client's own render path already maps
 				// to models for the local player.
-				ClassRef:      string(data.ClassID),
+				ClassRef:      data.ClassID,
 				RaceRef:       string(data.RaceID),
 				Customization: &sessionpb.Customization{},
 			})

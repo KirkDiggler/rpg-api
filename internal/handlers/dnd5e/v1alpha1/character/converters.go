@@ -1944,9 +1944,9 @@ func convertProtoWeaponToToolkit(weapon dnd5ev1alpha1.Weapon) shared.SelectionID
 	// to this switch's default ("").
 	// Ammunition
 	case dnd5ev1alpha1.Weapon_WEAPON_ARROWS_20:
-		return shared.SelectionID(ammunition.Arrows20)
+		return ammunition.Arrows20
 	case dnd5ev1alpha1.Weapon_WEAPON_BOLTS_20:
-		return shared.SelectionID(ammunition.Bolts20)
+		return ammunition.Bolts20
 	// Category placeholders
 	case dnd5ev1alpha1.Weapon_WEAPON_ANY_SIMPLE:
 		return refs.Weapons.AnySimpleWeapon().ID
