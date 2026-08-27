@@ -1,6 +1,7 @@
 package sessionworld
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -54,6 +55,9 @@ func (s *ReferenceTombSuite) load() *tkencounter.Encounter {
 		Data:       *s.tomb.World,
 		Initiative: orderAsGiven{}, Standing: nobodyDown{}, Sight: nobodySees{},
 		TurnDriver: tkencounter.PassDriver{}, Striker: tkencounter.RefusingStriker{},
+		// Nobody is in this world, so no clock can advance in it — the same
+		// argument RefusingStriker beside it is making.
+		Announcer: tkencounter.RefusingAnnouncer{},
 	})
 	s.Require().NoError(err, "and the world it produced must be one the composition accepts back")
 
@@ -335,7 +339,12 @@ func TestAFightsUnplayedTurnPassesWithoutTouchingTheStriker(t *testing.T) {
 		Sight:      allSeeing{},
 		TurnDriver: tkencounter.PassDriver{},
 		Striker:    tkencounter.RefusingStriker{},
-		Retention:  tkencounter.RetentionUnbounded,
+		// NOT refusing, unlike every other fixture here: this test exists to
+		// pass a turn, and passing a turn crosses a boundary. What the
+		// boundary MEANS is the rulebook's business and not this package's,
+		// so it is heard and dropped.
+		Announcer: quietAnnouncer{},
+		Retention: tkencounter.RetentionUnbounded,
 		Field: tkencounter.FieldInput{
 			// Transparent void: a sightline hugging the edge of a sheared
 			// rectangle crosses void, and this test is about the turn, not
@@ -466,4 +475,13 @@ func TestVersionOneIsRefusedByName(t *testing.T) {
 	require.Error(t, err)
 	require.Nil(t, d)
 	require.ErrorIs(t, err, tkdungeonspec.ErrBadSpec)
+}
+
+// quietAnnouncer hears a boundary and does nothing with it. This package builds
+// worlds; what a turn boundary means to a condition belongs to whoever plays
+// one.
+type quietAnnouncer struct{}
+
+func (quietAnnouncer) Announce(context.Context, *tkencounter.Encounter, []tkencounter.Boundary) error {
+	return nil
 }

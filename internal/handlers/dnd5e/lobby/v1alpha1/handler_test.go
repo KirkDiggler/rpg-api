@@ -105,6 +105,14 @@ func (s *HandlerSuite) expectCharacter(characterID, playerID, name string, hp, m
 		Return(&characterrepo.GetOutput{
 			Character: &entities.Character{
 				Data: &toolkitchar.Data{
+					// ID as well as the rest, because a repository that
+					// answers Get(id) with a sheet carrying a different id —
+					// or none — has violated its contract, and the session
+					// SDK now says so rather than attaching whatever came
+					// back (rpg-toolkit#1261). This fake had always returned
+					// an ID-less sheet; nothing depended on it, which is
+					// exactly why nothing noticed.
+					ID:       characterID,
 					PlayerID: playerID, Name: name, HitPoints: hp, MaxHitPoints: maxHP,
 				},
 			},
