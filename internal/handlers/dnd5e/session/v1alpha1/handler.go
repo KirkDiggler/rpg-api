@@ -11,6 +11,7 @@ import (
 
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
+	sessionaccess "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/sessionaccess"
 	sessionorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/session"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	rosterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/roster"
@@ -67,6 +68,9 @@ type Handler struct {
 	// roster is the launch-written roster store GetRoster serves from
 	// (rpg-project#264, ideas/characters/presentation).
 	roster rosterrepo.Repository
+	// access centralizes the member/seat entitlement checks shared across the
+	// session presentation handlers.
+	access *sessionaccess.Access
 }
 
 // HandlerConfig carries what New needs to build a Handler. Every field is
@@ -97,7 +101,11 @@ func New(cfg *HandlerConfig) (*Handler, error) {
 	if cfg.Roster == nil {
 		return nil, errors.New("session handler: HandlerConfig.Roster is required")
 	}
-	return &Handler{manager: cfg.Manager, broker: cfg.Broker, characters: cfg.Characters, roster: cfg.Roster}, nil
+	access, err := sessionaccess.New(cfg.Characters, cfg.Roster)
+	if err != nil {
+		return nil, err
+	}
+	return &Handler{manager: cfg.Manager, broker: cfg.Broker, characters: cfg.Characters, roster: cfg.Roster, access: access}, nil
 }
 
 // authenticatedPlayerID extracts the caller's player ID from ctx, or a
@@ -121,6 +129,9 @@ func authenticatedPlayerID(ctx context.Context) (string, error) {
 // not named cannot be one this caller owns, so the ownership question has no
 // meaning until it is.
 func (h *Handler) callerActingAs(ctx context.Context, member string) error {
+	if h.access != nil {
+		return h.access.CallerActingAs(ctx, member)
+	}
 	playerID, err := authenticatedPlayerID(ctx)
 	if err != nil {
 		return err

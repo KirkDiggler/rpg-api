@@ -53,6 +53,9 @@ func (h *Handler) GetDoors(ctx context.Context, req *sessionpb.GetDoorsRequest) 
 // The same entitlement GetRoster computes inline; factored here because
 // GetDoors needs the verdict without the projection.
 func (h *Handler) callerSeated(ctx context.Context, session, playerID string) error {
+	if h.access != nil {
+		return h.access.CallerSeated(ctx, session)
+	}
 	row, err := h.roster.Get(ctx, session)
 	if err != nil {
 		if errors.Is(err, rosterrepo.ErrNotFound) {
