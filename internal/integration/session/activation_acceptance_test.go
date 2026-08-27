@@ -101,9 +101,18 @@ func activationsFor(
 	require.NoError(t, err)
 	found := map[string]*sessionpb.Declaration{}
 	for _, d := range out.GetDeclarations() {
-		if d.GetVerb() == sessionpb.Verb_VERB_ACTIVATE {
-			found[d.GetAbility().GetRef()] = d
+		if d.GetVerb() != sessionpb.Verb_VERB_ACTIVATE {
+			continue
 		}
+		ref := d.GetAbility().GetRef()
+		// FAIL RATHER THAN OVERWRITE. Keying by ref is only sound because one
+		// ability compiles one offer; a second row for the same ref is a
+		// producer defect, and quietly keeping the last one would make every
+		// assertion in this file test whichever copy happened to arrive
+		// second.
+		_, dup := found[ref]
+		require.False(t, dup, "Afford offered %q twice", ref)
+		found[ref] = d
 	}
 	return found
 }
@@ -157,6 +166,17 @@ func TestAcceptance_TheWholeActivatableSurfaceCrossesTheWire(t *testing.T) {
 		require.True(t, ok, "no offer for %s", ref)
 		require.Equal(t, slot, offer.GetSlot(), "slot for %s", ref)
 		require.NotEmpty(t, offer.GetAbility().GetName(), "%s must carry a label", ref)
+		// Availability is an ANSWER, so it is asserted rather than assumed:
+		// every one of these is reachable on a fresh turn except Help, which
+		// has nobody adjacent to help in a solo fight and says so.
+		if ref == "dnd5e:combat_abilities:help" {
+			require.False(t, offer.GetAvailable(), "%s: no ally to help", ref)
+			require.Equal(t, sessionpb.ShortfallReason_SHORTFALL_REASON_NO_TARGET_IN_REACH,
+				offer.GetWhy().GetReason())
+		} else {
+			require.True(t, offer.GetAvailable(), "%s must be available on a fresh turn", ref)
+			require.Nil(t, offer.GetWhy(), "%s is available, so nothing ran out", ref)
+		}
 		require.NotEmpty(t, offer.GetId(), "%s must carry a selector", ref)
 		prior, clash := seen[offer.GetId()]
 		require.False(t, clash, "%s and %s share a selector", prior, ref)
@@ -198,6 +218,12 @@ func TestAcceptance_RageAndDodgeAreLiveTogetherOnDifferentShapes(t *testing.T) {
 
 // Rage end to end: the condition reaches Redis, the charge comes off, and a
 // second rage in the same fight is refused in a currency of its own.
+//
+// The last clause used to be a claim this test did not make (Copilot's finding
+// on rpg-api#851). It makes it now, and the refusal is the interesting half:
+// the bonus action is what runs out first, so the second attempt is refused on
+// the SHAPE rather than the charges — which is the correct answer and not the
+// one the sentence implied.
 func TestAcceptance_RageSpendsACharge(t *testing.T) {
 	h, ctx := inAFightWith(t, ragingBarbarian("alice", "player-alice"))
 
@@ -212,6 +238,19 @@ func TestAcceptance_RageSpendsACharge(t *testing.T) {
 	require.Equal(t, 1, stored.Resources[resources.RageCharges].Current)
 	require.Equal(t, 0, stored.ActionEconomy.BonusActionsRemaining)
 	require.Equal(t, 1, stored.ActionEconomy.ActionsRemaining)
+
+	// And the second rage this turn is refused, with the panel told which
+	// ledger ran out. One charge is left, so this is the bonus action talking.
+	again := activationsFor(t, h, ctx, "alice")["dnd5e:features:rage"]
+	require.False(t, again.GetAvailable())
+	require.Equal(t, sessionpb.ShortfallReason_SHORTFALL_REASON_NO_BUDGET,
+		again.GetWhy().GetReason())
+	require.Equal(t, sessionpb.Currency_CURRENCY_BONUS, again.GetWhy().GetCurrency())
+
+	_, err = h.handler.Activate(ctx, &sessionpb.ActivateRequest{
+		Session: "acceptance-run", Member: "alice", DeclarationId: again.GetId(),
+	})
+	require.Error(t, err, "a spent bonus action refuses the second rage")
 }
 
 // Each of the self-affecting abilities lands its own condition, read back out
