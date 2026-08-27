@@ -76,7 +76,14 @@ func statusError(err error) error {
 		errors.Is(err, sdk.ErrNoEncounterID),
 		errors.Is(err, sdk.ErrInvalidWorld),
 		errors.Is(err, sdk.ErrNoCause),
-		errors.Is(err, sdk.ErrNoDeclarationID):
+		errors.Is(err, sdk.ErrNoDeclarationID),
+		// ErrBadActivation joins at session/v0.34.0 (rpg-project#300), and it
+		// is here rather than in Internal because a CALLER can produce it: an
+		// activation naming a target for an ability that takes none. The SDK
+		// refuses that rather than ignoring it, precisely so a client that
+		// believes it aimed Dodge at somebody is told, and a value quietly
+		// dropped never becomes a disagreement nobody finds.
+		errors.Is(err, sdk.ErrBadActivation):
 		return status.Error(codes.InvalidArgument, err.Error())
 
 	// FAILED_PRECONDITION -- the request is well-formed but the world's
@@ -135,7 +142,14 @@ func statusError(err error) error {
 		errors.Is(err, sdk.ErrCannotAfford),
 		errors.Is(err, sdk.ErrNotYourTurn),
 		errors.Is(err, sdk.ErrOutOfReach),
-		errors.Is(err, sdk.ErrStaleDeclaration):
+		errors.Is(err, sdk.ErrStaleDeclaration),
+		// ErrCannotActivate is ErrCannotAfford's shape one verb further out:
+		// an ability that could have run and said no. The SDK documents it as
+		// not currently reachable through Activate -- Afford consults the same
+		// gates the sheet does, so an unavailable ability is a stale selector
+		// first -- and it is mapped anyway, for ErrBadCost's reason: the day
+		// the two gates disagree, the failure needs a name that is not a lie.
+		errors.Is(err, sdk.ErrCannotActivate):
 		return status.Error(codes.FailedPrecondition, err.Error())
 
 	// ALREADY_EXISTS

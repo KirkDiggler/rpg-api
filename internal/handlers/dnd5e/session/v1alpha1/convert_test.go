@@ -65,6 +65,10 @@ func TestVerbToProto(t *testing.T) {
 	require.Equal(t, sessionpb.Verb_VERB_ATTACK, verbToProto(sdk.VerbAttack))
 	require.Equal(t, sessionpb.Verb_VERB_MOVE, verbToProto(sdk.VerbMove))
 	require.Equal(t, sessionpb.Verb_VERB_END_TURN, verbToProto(sdk.VerbEndTurn))
+	// Unmapped, this would label every activation a barbarian can reach
+	// VERB_UNSPECIFIED — not one mislabelled row but six, on the panel
+	// rpg-project#300 exists to fill.
+	require.Equal(t, sessionpb.Verb_VERB_ACTIVATE, verbToProto(sdk.VerbActivate))
 	require.Equal(t, sessionpb.Verb_VERB_UNSPECIFIED, verbToProto(sdk.Verb("bogus")))
 }
 
@@ -614,6 +618,10 @@ func TestShortfallReasonToProto(t *testing.T) {
 		{sdk.ShortfallDowned, sessionpb.ShortfallReason_SHORTFALL_REASON_DOWNED},
 		{sdk.ShortfallUnreadable, sessionpb.ShortfallReason_SHORTFALL_REASON_UNREADABLE},
 		{sdk.ShortfallTargetOutOfReach, sessionpb.ShortfallReason_SHORTFALL_REASON_TARGET_OUT_OF_REACH},
+		// The ability's own precondition refusing (rpg-project#300). Distinct
+		// from NO_BUDGET on purpose: nothing ran out, and telling a raging
+		// barbarian to come back next turn is the wrong sentence.
+		{sdk.ShortfallUnavailable, sessionpb.ShortfallReason_SHORTFALL_REASON_UNAVAILABLE},
 		{sdk.ShortfallReason("bogus"), sessionpb.ShortfallReason_SHORTFALL_REASON_UNSPECIFIED},
 	}
 	for _, tt := range tests {
@@ -635,6 +643,10 @@ func TestCurrencyToProto(t *testing.T) {
 		{sdk.CurrencyBonus, sessionpb.Currency_CURRENCY_BONUS},
 		{sdk.CurrencyReaction, sessionpb.Currency_CURRENCY_REACTION},
 		{sdk.CurrencyMovement, sessionpb.Currency_CURRENCY_MOVEMENT},
+		// The fifth (rpg-project#300): a ledger that ran out which is not one
+		// of the turn's three. WHICH resource is named only in the shortfall's
+		// text — this seam does not enumerate the rulebook's resource keys.
+		{sdk.CurrencyCharges, sessionpb.Currency_CURRENCY_CHARGES},
 		{sdk.Currency("bogus"), sessionpb.Currency_CURRENCY_UNSPECIFIED},
 	}
 	for _, tt := range tests {
@@ -828,4 +840,61 @@ func TestEventToProto_UntypedKind_BodyStaysNilPayloadCarries(t *testing.T) {
 	require.Nil(t, got.GetMoved())
 	require.Nil(t, got.GetJoined())
 	require.Nil(t, got.GetExited())
+}
+
+// TestDeclarationToProto_CarriesTheAbility pins the identity half of an
+// Activate declaration.
+//
+// A client renders this VERBATIM — the panel reads ability.name for the
+// button's label — so an ability that crossed without one is a button with no
+// text. The same presence law Attack keeps: present exactly when the SDK
+// carries one, absent otherwise, never defaulted.
+func TestDeclarationToProto_CarriesTheAbility(t *testing.T) {
+	out := declarationToProto(sdk.Declaration{
+		Verb:      sdk.VerbActivate,
+		Slot:      sdk.SlotBonus,
+		Available: true,
+		ID:        "v1.rage-selector",
+		Ability:   &sdk.AbilityRef{Ref: "dnd5e:features:rage", Name: "Rage"},
+	})
+
+	require.Equal(t, sessionpb.Verb_VERB_ACTIVATE, out.GetVerb())
+	require.Equal(t, sessionpb.Slot_SLOT_BONUS, out.GetSlot())
+	require.NotNil(t, out.GetAbility())
+	require.Equal(t, "dnd5e:features:rage", out.GetAbility().GetRef())
+	require.Equal(t, "Rage", out.GetAbility().GetName())
+	require.Nil(t, out.GetAttack(), "an activation carries no attack identity")
+}
+
+// And absent stays absent. Attack, Move and EndTurn carry no ability, and a
+// defaulted empty AbilityRef would tell a client the producer forgot rather
+// than that this verb has no such identity.
+func TestDeclarationToProto_AttackCarriesNoAbility(t *testing.T) {
+	out := declarationToProto(sdk.Declaration{
+		Verb:   sdk.VerbAttack,
+		Slot:   sdk.SlotAction,
+		Attack: &sdk.AttackRef{Ref: "dnd5e:weapons:greataxe", Name: "Greataxe"},
+	})
+
+	require.Nil(t, out.GetAbility())
+	require.NotNil(t, out.GetAttack())
+}
+
+// A charge shortfall crosses whole: the reason, the currency that is not one
+// of the turn's three, the figures, and the ability's own words — which carry
+// the one fact the structure deliberately does not, namely WHICH resource.
+func TestShortfallToProto_ChargesCrossWhole(t *testing.T) {
+	out := shortfallToProto(&sdk.Shortfall{
+		Reason:   sdk.ShortfallNoBudget,
+		Currency: sdk.CurrencyCharges,
+		Needed:   1,
+		Left:     0,
+		Text:     "no rage uses remaining",
+	})
+
+	require.Equal(t, sessionpb.ShortfallReason_SHORTFALL_REASON_NO_BUDGET, out.GetReason())
+	require.Equal(t, sessionpb.Currency_CURRENCY_CHARGES, out.GetCurrency())
+	require.Equal(t, int32(1), out.GetNeeded())
+	require.Equal(t, int32(0), out.GetLeft())
+	require.Equal(t, "no rage uses remaining", out.GetText())
 }

@@ -577,6 +577,12 @@ func whereToProto(w *sdk.WhereOutput) *sessionpb.GetWhereResponse {
 	return &sessionpb.GetWhereResponse{Position: positionToProto(w.Position)}
 }
 
+// VerbActivate joins them at protos v0.1.144 (rpg-project#300), and it is the
+// first verb whose declarations arrive MANY PER MEMBER rather than one. Leaving
+// it unmapped would label every activation a barbarian can reach as
+// VERB_UNSPECIFIED -- not one mislabelled row but six, on the panel this slice
+// exists to fill.
+//
 // verbToProto mirrors session.Verb onto the wire enum. VerbMove joined
 // VerbAttack at protos v0.1.131 (rpg-toolkit#1169) -- Afford already emits
 // VerbMove declarations on the turn clock unconditionally (session's own
@@ -594,6 +600,8 @@ func verbToProto(v sdk.Verb) sessionpb.Verb {
 		return sessionpb.Verb_VERB_MOVE
 	case sdk.VerbEndTurn:
 		return sessionpb.Verb_VERB_END_TURN
+	case sdk.VerbActivate:
+		return sessionpb.Verb_VERB_ACTIVATE
 	default:
 		return sessionpb.Verb_VERB_UNSPECIFIED
 	}
@@ -683,6 +691,9 @@ func declarationToProto(d sdk.Declaration) *sessionpb.Declaration {
 	if d.Attack != nil {
 		out.Attack = attackRefToProto(*d.Attack)
 	}
+	if d.Ability != nil {
+		out.Ability = abilityRefToProto(*d.Ability)
+	}
 	return out
 }
 
@@ -702,6 +713,12 @@ func shortfallReasonToProto(r sdk.ShortfallReason) sessionpb.ShortfallReason {
 		return sessionpb.ShortfallReason_SHORTFALL_REASON_UNREADABLE
 	case sdk.ShortfallTargetOutOfReach:
 		return sessionpb.ShortfallReason_SHORTFALL_REASON_TARGET_OUT_OF_REACH
+	case sdk.ShortfallUnavailable:
+		// The ability's own precondition refusing -- already raging, already
+		// at full hit points. NOT a budget, so no currency is populated, and
+		// collapsing it into NO_BUDGET would tell a raging barbarian to come
+		// back next turn.
+		return sessionpb.ShortfallReason_SHORTFALL_REASON_UNAVAILABLE
 	default:
 		return sessionpb.ShortfallReason_SHORTFALL_REASON_UNSPECIFIED
 	}
@@ -722,6 +739,12 @@ func currencyToProto(c sdk.Currency) sessionpb.Currency {
 		return sessionpb.Currency_CURRENCY_REACTION
 	case sdk.CurrencyMovement:
 		return sessionpb.Currency_CURRENCY_MOVEMENT
+	case sdk.CurrencyCharges:
+		// Charges of a named feature resource -- rage uses, Second Wind uses.
+		// A ledger that ran out, just not one of the turn's three; WHICH one
+		// is named only in the shortfall's text, because this seam does not
+		// enumerate the rulebook's resource keys.
+		return sessionpb.Currency_CURRENCY_CHARGES
 	default:
 		return sessionpb.Currency_CURRENCY_UNSPECIFIED
 	}
@@ -817,6 +840,15 @@ func attackModifierSourcesToProto(in []sdk.AttackModifierSource) []*sessionpb.At
 // what was swung, always populated -- AttackOutput.Attack and the Struck/
 // Missed event bodies carry it as a value, never a pointer, so this always
 // returns a non-nil message.
+// abilityRefToProto mirrors the sole public identity of a compiled Activate
+// declaration. Present exactly when the SDK carries one, absent otherwise --
+// the same presence law attackRefToProto's caller keeps, and for the same
+// reason: a client renders this verbatim, so an ability with no name is a
+// button with no label rather than a defaulted one.
+func abilityRefToProto(a sdk.AbilityRef) *sessionpb.AbilityRef {
+	return &sessionpb.AbilityRef{Ref: a.Ref, Name: a.Name}
+}
+
 func attackRefToProto(a sdk.AttackRef) *sessionpb.AttackRef {
 	return &sessionpb.AttackRef{
 		Ref:        a.Ref,
