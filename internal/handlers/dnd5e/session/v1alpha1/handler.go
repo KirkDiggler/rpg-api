@@ -82,6 +82,11 @@ type HandlerConfig struct {
 	// Roster is the launch-written roster store GetRoster serves from
 	// (rpg-project#264). Required.
 	Roster rosterrepo.Repository
+	// Access is the shared caller/member/session gate. Optional for legacy
+	// tests that construct HandlerConfig directly; production and the
+	// integration harness pass one shared instance to SessionService and
+	// SessionPresentationService.
+	Access *sessionaccess.Access
 }
 
 // New constructs a Handler. Returns an error on any missing dependency.
@@ -101,9 +106,13 @@ func New(cfg *HandlerConfig) (*Handler, error) {
 	if cfg.Roster == nil {
 		return nil, errors.New("session handler: HandlerConfig.Roster is required")
 	}
-	access, err := sessionaccess.New(cfg.Characters, cfg.Roster)
-	if err != nil {
-		return nil, err
+	access := cfg.Access
+	if access == nil {
+		var err error
+		access, err = sessionaccess.New(cfg.Characters, cfg.Roster)
+		if err != nil {
+			return nil, err
+		}
 	}
 	return &Handler{manager: cfg.Manager, broker: cfg.Broker, characters: cfg.Characters, roster: cfg.Roster, access: access}, nil
 }

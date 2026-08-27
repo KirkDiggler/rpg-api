@@ -9,8 +9,9 @@ import (
 	"testing"
 	"time"
 
-	repository "github.com/KirkDiggler/rpg-api/internal/repositories/sessionpresentation"
 	"github.com/stretchr/testify/suite"
+
+	repository "github.com/KirkDiggler/rpg-api/internal/repositories/sessionpresentation"
 )
 
 type OrchestratorSuite struct {

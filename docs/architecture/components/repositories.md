@@ -1,8 +1,8 @@
 ---
 name: repositories
 description: All data access components — interface definitions, implementations, and storage schemas
-updated: 2026-07-13
-confidence: high — verified by reading all remaining repository interface and implementation files
+updated: 2026-08-28
+confidence: high — #852 verified Redis roster/presentation repository roles against code and cross-instance integration; older repository notes retain stated caveats
 ---
 
 # repositories
@@ -10,7 +10,7 @@ confidence: high — verified by reading all remaining repository interface and 
 **Updated 2026-07-13 (rpg-api#642):** the three in-memory-only, D-graded
 repositories this doc used to describe (`encounters` v1 root, `dungeons`,
 `encounterlog`) are deleted along with the v1alpha1 encounter stack they
-served. See "Encounter repository (v2)" below for the replacement.
+served. The later v2 encounter repository is also deleted with rpg-project#227.
 
 ## Overview
 
@@ -19,8 +19,10 @@ served. See "Encounter repository (v2)" below for the replacement.
 | `character` | `repository.go` | `redis.go` | Redis | B |
 | `character_draft` | `repository.go` | `redis.go` | Redis | B- |
 | `dice_session` | `repository.go` | `redis.go` | Redis | B- |
-| `encounters/v2` | `repository.go` | `redis.go` + `in_memory.go` | Redis + in-memory | B |
+| ~~`encounters/v2`~~ | DELETED | DELETED | DELETED | n/a |
 | `lobby` | `repository.go` | `redis.go` + `in_memory.go` | Redis + in-memory | B |
+| `roster` | `repository.go` | `redis.go` + `in_memory.go` | Redis + in-memory | B+ |
+| `sessionpresentation` | `repository.go` | `redis.go` | Redis | B+ |
 
 ~~`encounters` (v1 root)~~ / ~~`dungeons`~~ / ~~`encounterlog`~~ — all DELETED
 (rpg-api#642).
@@ -59,18 +61,30 @@ Interface methods: `Create`, `Get`, `List`, `Update`, `Delete`.
 
 Narrow scope: tracks ability score dice rolls during character creation before they are assigned to a draft. Redis-backed, simple interface.
 
-## Encounter repository (v2)
+## ~~Encounter repository (v2)~~ DELETED
 
-**Path:** `repositories/encounters/v2/`
+`repositories/encounters/v2/` is deleted with the old v1alpha2 encounter stack.
+Toolkit session state is now owned by `rulebooks/dnd5e/session.Manager`, wired by
+`internal/orchestrators/session` over Redis-backed toolkit repositories.
 
-Interface: `Get(ctx, *GetInput) (*GetOutput, error)`, `Save(ctx, *SaveInput) (*SaveOutput, error)` — operating on the rpg-toolkit encounter SDK's own `*encounter.Data` type directly (the repository does not define its own storage struct the way the deleted v1 repo did).
+## Roster repository
 
-Two implementations: `in_memory.go` (JSON round-trip, used by tests and the
-integration harness) and `redis.go` (24h TTL, wired into `cmd/server/server.go`
-production wiring and the lobby orchestrator's `StartEncounter`). Unlike the
-deleted v1 encounter repo, this one has a persistent backend from day one.
+**Path:** `repositories/roster/`
 
-See [`encounter.md`](./encounter.md) for the v1alpha2 vertical this repo serves.
+Stores the launch-written public membership row for a started session. Production and
+`internal/integration/harness` use `NewRedis(client, 24*time.Hour)` so `SessionService`
+and `SessionPresentationService` share the exact same seated-member gate across server
+instances. The in-memory implementation remains for unit tests.
+
+## Session presentation repository
+
+**Path:** `repositories/sessionpresentation/`
+
+Stores accepted presentation payloads under hashed session keys and fans them out over
+Redis Pub/Sub. A Redis script makes `(session, presentation_id, attempt)` acceptance
+atomic: first write publishes, identical duplicate returns the accepted payload, and a
+different duplicate returns `ErrConflict`. Accepted keys have a two-minute TTL;
+subscriptions are live-only and close on context/subscription shutdown.
 
 ## Common patterns
 

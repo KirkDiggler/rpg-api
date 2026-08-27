@@ -1,8 +1,8 @@
 ---
 name: rpg-api architecture overview
 description: Request flow, layer rules, component map, and cross-repo boundaries for rpg-api
-updated: 2026-07-13
-confidence: medium — request-flow diagram and component map updated for rpg-api#642's v1alpha1 encounter stack deletion; remaining sections (character handler, cross-repo boundaries) predate #642 and were not re-verified in this pass
+updated: 2026-08-28
+confidence: medium-high — #852 refreshed the session-stack service map for SessionPresentationService wiring; older character/component debt still retains its stated caveats
 ---
 
 # rpg-api architecture overview
@@ -11,13 +11,11 @@ rpg-api is a Go gRPC server that orchestrates game state for a multiplayer D&D 5
 
 ## Request flow
 
-**Updated 2026-07-13 (rpg-api#642):** this diagram describes the character/dice
-path, which is unaffected by the v1alpha1 encounter stack deletion. The
-v1alpha2 encounter path has a different, already-documented shape — see
-[`components/encounter.md`](./components/encounter.md)'s "load → verb →
-persist" orchestrator anatomy, which never routes through an event processor
-(that package is deleted; the v2 path publishes via the toolkit's own
-`tkenc.Broker`).
+**Updated 2026-08-28 (rpg-api#852):** the active game stack is `LobbyService`
+launching into `SessionService`. `SessionPresentationService` follows the same
+handler → orchestrator → repository layering for live-only dice choreography,
+but deliberately stops at Redis Pub/Sub: it never calls the toolkit session
+manager and never appends to Story.
 
 ```
 gRPC client (rpg-dnd5e-web or Discord Activity)
@@ -99,17 +97,19 @@ Components are local prototypes pending graduation to rpg-toolkit. They implemen
 
 | Component | Path | Purpose | Notes |
 |---|---|---|---|
-| Encounter v2 handler | `internal/handlers/dnd5e/v2/encounter/` | gRPC ↔ v2 encounter orchestrator | Proto↔entity only; see `components/encounter.md` |
+| ~~Encounter v2 handler~~ | `internal/handlers/dnd5e/v2/encounter/` | DELETED | See `components/encounter.md` |
 | Character handler | `internal/handlers/dnd5e/v1alpha1/character/` | gRPC ↔ character orchestrator | 20 TODO stubs in converters |
 | Dice handler | `internal/handlers/api/v1alpha1/dice_handler.go` | gRPC ↔ dice orchestrator | Simple; no known issues |
-| Encounter v2 orchestrator | `internal/orchestrators/encounter/v2/` | Combat, movement, doors — load→verb→persist | One file per RPC; never imports proto |
+| Session handler | `internal/handlers/dnd5e/session/v1alpha1/` | gRPC ↔ toolkit session manager | Gameplay verbs, Story, view, roster |
+| Session presentation handler | `internal/handlers/dnd5e/sessionpresentation/v1alpha1/` | gRPC ↔ presentation orchestrator | Live-only shared dice plans; see `components/session-presentation.md` |
+| ~~Encounter v2 orchestrator~~ | `internal/orchestrators/encounter/v2/` | DELETED | See `components/encounter.md` |
 | Character orchestrator | `internal/orchestrators/character/` | Character creation, equipment | Smaller, well-tested |
 | Dice orchestrator | `internal/orchestrators/dice/` | Dice rolling sessions | Thin; low risk |
 | Dungeon component | `internal/components/dungeon/` | Procedural dungeon generation | Wrong repo (audit debt #5, untouched by #642); zero production callers as of #642 |
 | Spawner component | `internal/components/spawner/` | Entity placement adapter | Thin; delegates to toolkit; zero production callers as of #642 |
 | Auth | `internal/auth/` | Discord token validation + caching | Dev mode for local/tests |
 | Entities | `internal/entities/` | Domain structs (Character, CharacterDraft, Appearance) | Proto-free as of #642 |
-| Encounter repo v2 | `internal/repositories/encounters/v2/` | Encounter persistence | Redis (24h TTL) + in-memory |
+| ~~Encounter repo v2~~ | `internal/repositories/encounters/v2/` | DELETED | See `components/encounter.md` |
 | Character repo | `internal/repositories/character/` | Character persistence | Redis — only durable store predating the v2 vertical |
 | Character draft repo | `internal/repositories/character_draft/` | Draft character state | Redis |
 | Dice session repo | `internal/repositories/dice_session/` | Dice roll sessions | Redis |
@@ -117,7 +117,10 @@ Components are local prototypes pending graduation to rpg-toolkit. They implemen
 | Integration test harness | `internal/integration/harness/` | Full-stack test server with real Redis | Most valuable test asset |
 | Lobby handler | `internal/handlers/dnd5e/lobby/v1alpha1/` | gRPC ↔ lobby orchestrator | New 2026-07-07 (rpg-api#629); layered from day one |
 | Lobby orchestrator | `internal/orchestrators/lobby/` | Party assembly + sole encounter construction (`StartEncounter`) | New; see `docs/architecture/components/lobby-service.md` |
+| Session presentation orchestrator | `internal/orchestrators/sessionpresentation/` | Validate/bind presentation plans | Proto-free; no toolkit calls |
 | Lobby repo | `internal/repositories/lobby/` | Lobby persistence | Redis + in-memory |
+| Roster repo | `internal/repositories/roster/` | Launch-written public membership rows | Redis-backed in production and harness for session/presentation access |
+| Session presentation repo | `internal/repositories/sessionpresentation/` | Accepted plan payloads + Redis Pub/Sub | Live-only, 2-minute duplicate/conflict keys |
 
 ~~Encounter handler (v1alpha1)~~ / ~~Encounter orchestrator (v1alpha1)~~ /
 ~~Event processor~~ / ~~Redis publisher~~ / ~~Encounter repo (v1)~~ / ~~Dungeon
@@ -126,24 +129,28 @@ repo~~ / ~~Encounter log repo~~ — all DELETED (rpg-api#642, 2026-07-13).
 ## Cross-repo boundaries
 
 **What rpg-api accepts from clients (rpg-dnd5e-web):**
-- References (IDs): character IDs, encounter IDs, join codes, dungeon IDs, connection IDs.
-- Intent: action requests with resource references (`weaponID`, `featureID`), never calculations.
+- References (IDs): character IDs, encounter/session IDs, join codes, dungeon IDs, connection IDs, presentation IDs.
+- Intent: action requests with resource references (`weaponID`, `featureID`) and bounded presentation dice plans, never calculations or combat outcomes.
 - Auth: Discord JWT tokens validated via Discord API.
 
 **What rpg-api asks rpg-toolkit:**
-- Combat resolution, initiative, monster turns, movement/opportunity attacks — via the `encounter` SDK's toolkit verbs, reached only through the v2 orchestrator's `load → toolkit-verb → persist` methods.
+- Combat resolution, initiative, monster turns, movement/opportunity attacks, Story, view, atlas, doors, and roster-adjacent session reads — via `rulebooks/dnd5e/session.Manager` from the session handler/lobby launch path.
 - Character rules: ability score calculation, proficiency bonuses, spell slots — these come from toolkit types.
-- Spatial: entity placement, movement validation, line-of-sight via `tools/spatial` and `tools/environments`.
+- Spatial: entity placement, movement validation, line-of-sight via the toolkit session/encounter packages.
+- Nothing for SessionPresentationService: it validates presentation payload shape locally, stores/fans out through Redis, and never asks the toolkit to mutate or narrate game truth.
 - ~~Dungeon room generation: room shapes, perimeter walls, feature layouts via `components/dungeon`~~ — component still exists (untouched by #642) but has zero production callers as of this PR; see `components/dungeon-component.md`.
 
 **What rpg-api persists:**
 - `character.Data` (toolkit type) serialized to Redis — character state is owned by the toolkit type.
-- The v2 encounter path's `*encounter.Data` (toolkit type) — Redis-backed via `internal/repositories/encounters/v2`, 24h TTL.
+- Toolkit session/encounter state owned by `rulebooks/dnd5e/session.Manager` — Redis-backed through `internal/orchestrators/session`, 24h TTL.
 - Lobby state — Redis-backed via `internal/repositories/lobby`.
+- Roster rows — Redis-backed via `internal/repositories/roster`, shared by SessionService and SessionPresentationService access checks.
+- Session presentation plans — Redis-backed ephemeral duplicate/conflict keys (2-minute TTL) plus live Pub/Sub; not replayable Story.
 - ~~`EncounterData` (local type)~~ / ~~`Dungeon` (local entity)~~ / ~~`EncounterEvent` (local entity)~~ — all DELETED (rpg-api#642); these were the v1alpha1 encounter stack's storage types.
 
 **What rpg-api publishes:**
-- The v2 encounter path fans out live events via the rpg-toolkit `encounter` SDK's own `tkenc.Broker` (in-process, per-viewer projection) — not documented in detail here yet.
+- `SessionService.StreamEvents` fans out the toolkit session SDK's live per-recipient events; `GetStory` is the persisted catch-up read.
+- `SessionPresentationService.StreamDiceThrows` fans out bounded decorative dice plans through Redis Pub/Sub only. It is live-only and does not write Story.
 - ~~Redis pub/sub channel `encounter:{id}:events`~~ — DELETED (rpg-api#642); this was the v1alpha1 `EncounterEvent` publisher.
 
 ## gRPC service versions
@@ -152,9 +159,9 @@ repo~~ / ~~Encounter log repo~~ — all DELETED (rpg-api#642, 2026-07-13).
   the v1alpha1 EncounterService is unregistered and deleted — see
   `docs/status.md` "Active work".
 - `api.v1alpha1` — DiceService
-- `dnd5e.api.v1alpha2.encounter` — EncounterService (v2, `MoveEntity`/`StreamEncounter`/
-  combat verbs). `CreateEncounter` is deleted from this service — construction now
-  happens exclusively through `LobbyService.StartEncounter` (below).
+- `dnd5e.api.session.v1alpha1` — SessionService, the gameplay/session SDK wire surface.
+- `dnd5e.api.session.presentation.v1alpha1` — SessionPresentationService, live-only shared dice presentation; health service name matches this string exactly.
+- ~~`dnd5e.api.v1alpha2.encounter`~~ — deleted with the old encounter stack.
 - `dnd5e.api.lobby.v1alpha1` — LobbyService (new 2026-07-07, rpg-api#629). Own version
   clock, deliberately not tied to the encounter service's — see
   `docs/architecture/components/lobby-service.md`.
