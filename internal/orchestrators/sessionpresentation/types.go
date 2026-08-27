@@ -4,19 +4,19 @@ package sessionpresentation
 import "errors"
 
 const (
-	maxBodies               = 20
-	maxContacts             = 128
-	maxCheckpointStates     = 256
-	maxAttempt              = 32
-	maxStep                 = 480
-	fingerprintLength       = 32
-	maxEncodedPayloadBytes  = 64 * 1024
-	maxPositionComponent    = 4096
-	maxLinearSpeed          = 64
-	maxAngularSpeed         = 128
-	maxQuaternionNormError  = 0.0001
-	maxPresentationIDLength = 128
-	maxColliderIDLength     = 256
+	schemaVersionV1        = 1
+	maxBodies              = 20
+	maxContacts            = 128
+	maxCheckpointStates    = 256
+	maxAttempt             = 32
+	maxStep                = 480
+	fingerprintLength      = 32
+	maxEncodedPayloadBytes = 64 * 1024
+	maxPositionComponent   = 4096
+	maxLinearSpeed         = 64
+	maxAngularSpeed        = 128
+	maxQuaternionNormError = 0.0001
+	maxColliderIDLength    = 256
 )
 
 var (
@@ -28,7 +28,7 @@ var (
 type PhysicsSchema uint32
 
 const (
-	PhysicsSchemaUnspecified         PhysicsSchema = 0
+	PhysicsSchemaUnspecified        PhysicsSchema = 0
 	PhysicsSchemaRapierDungeonD20V1 PhysicsSchema = 1
 )
 

@@ -15,6 +15,9 @@ func ValidateDraft(draft *Draft) (Draft, error) {
 	if draft == nil {
 		return Draft{}, fmt.Errorf("draft is required: %w", ErrInvalidPlan)
 	}
+	if draft.SchemaVersion != schemaVersionV1 {
+		return Draft{}, fmt.Errorf("invalid schema version: %w", ErrInvalidPlan)
+	}
 	if !presentationIDPattern.MatchString(draft.PresentationID) {
 		return Draft{}, fmt.Errorf("invalid presentation id: %w", ErrInvalidPlan)
 	}
@@ -70,8 +73,8 @@ func ValidateDraft(draft *Draft) (Draft, error) {
 		}
 		previousStep = normalizedContact.Step
 		totalCheckpointStates += len(normalizedContact.After)
-		if len(draft.Contacts) > maxContacts || totalCheckpointStates > maxCheckpointStates {
-			return Draft{}, fmt.Errorf("checkpoint bounds exceeded: %w", ErrInvalidPlan)
+		if stateCountErr := validateCheckpointStateCount(totalCheckpointStates); stateCountErr != nil {
+			return Draft{}, stateCountErr
 		}
 		normalized.Contacts = append(normalized.Contacts, normalizedContact)
 	}
@@ -212,6 +215,13 @@ func validateContact(contact ContactCheckpoint, bodyIDs map[string]struct{}, ter
 	}
 
 	return normalized, nil
+}
+
+func validateCheckpointStateCount(total int) error {
+	if total > maxCheckpointStates {
+		return fmt.Errorf("checkpoint bounds exceeded: %w", ErrInvalidPlan)
+	}
+	return nil
 }
 
 func matchesExactDiePair(after []BodyCheckpoint, primaryID, otherID string) bool {

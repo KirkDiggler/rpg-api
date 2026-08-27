@@ -70,6 +70,22 @@ func TestValidateDraft_RejectsInvalidDrafts(t *testing.T) {
 			},
 		},
 		{
+			name: "schema version zero",
+			build: func() *Draft {
+				draft := validDraft()
+				draft.SchemaVersion = 0
+				return &draft
+			},
+		},
+		{
+			name: "schema version unknown",
+			build: func() *Draft {
+				draft := validDraft()
+				draft.SchemaVersion = 2
+				return &draft
+			},
+		},
+		{
 			name: "attempt below minimum",
 			build: func() *Draft {
 				draft := validDraft()
@@ -220,20 +236,6 @@ func TestValidateDraft_RejectsInvalidDrafts(t *testing.T) {
 			},
 		},
 		{
-			name: "too many checkpoint body states",
-			build: func() *Draft {
-				draft := validTwoBodyDraft()
-				draft.Contacts = make([]ContactCheckpoint, 128)
-				for i := range draft.Contacts {
-					draft.Contacts[i] = validDieContact(draft.Bodies[0].DieID, draft.Bodies[1].DieID, uint32(i+1))
-				}
-				extra := validDieContact(draft.Bodies[0].DieID, draft.Bodies[1].DieID, 129)
-				extra.After = append(extra.After, validCheckpoint(draft.Bodies[0].DieID))
-				draft.Contacts = append(draft.Contacts, extra)
-				return &draft
-			},
-		},
-		{
 			name: "contact steps must increase",
 			build: func() *Draft {
 				draft := validDraft()
@@ -341,6 +343,15 @@ func TestValidateDraft_RejectsDieCheckpointWithoutBothBodies(t *testing.T) {
 	draft.Contacts[0].After = draft.Contacts[0].After[:1]
 
 	_, err := ValidateDraft(&draft)
+	require.ErrorIs(t, err, ErrInvalidPlan)
+}
+
+func TestValidateCheckpointStateCount_AcceptsMaximum(t *testing.T) {
+	require.NoError(t, validateCheckpointStateCount(maxCheckpointStates))
+}
+
+func TestValidateCheckpointStateCount_RejectsAboveMaximum(t *testing.T) {
+	err := validateCheckpointStateCount(maxCheckpointStates + 1)
 	require.ErrorIs(t, err, ErrInvalidPlan)
 }
 
