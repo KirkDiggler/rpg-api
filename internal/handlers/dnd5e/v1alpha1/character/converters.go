@@ -17,6 +17,7 @@ import (
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character/choices"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/classes"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/damage"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/equipment"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/features"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/fightingstyles"
@@ -1281,6 +1282,9 @@ func ConvertCharacterDataToProto(data *toolkitchar.Data) *dnd5ev1alpha1.Characte
 			// Map to enum and derive display name
 			conditionEnum := conditionIDToEnum(conditionID)
 			conditionName := conditionIDToDisplayName(conditionID)
+			if fightingStyle := conditionIDToFightingStyle(conditionID); fightingStyle != dnd5ev1alpha1.FightingStyle_FIGHTING_STYLE_UNSPECIFIED {
+				char.FightingStyles = append(char.FightingStyles, fightingStyle)
+			}
 
 			char.ActiveConditions = append(char.ActiveConditions, &dnd5ev1alpha1.Condition{
 				Id:            conditionEnum,
@@ -1338,12 +1342,18 @@ func convertEquipmentSlotToToolkit(slot dnd5ev1alpha1.EquipmentSlot) (toolkitcha
 	}
 }
 
-// convertEquipmentSlotsToProto converts toolkit EquipmentSlots to proto EquipmentSlots
+// convertEquipmentSlotsToProto converts toolkit EquipmentSlots to proto
+// EquipmentSlots.
+//
+// ALWAYS returns a non-nil message, even when nothing is equipped
+// (rpg-api#746): a nil *EquipmentSlots marshals on the wire as
+// "equipment_slots": null, which is a producer defect indistinguishable
+// from "this layer forgot to set it" -- the same false-vs-absent law the
+// per-slot fields already keep by leaving an empty slot's InventoryItem nil
+// rather than a zero-valued one. Every real (non-devseed) character
+// finalized with nothing equipped until rpg-api#746's FinalizeDraft fix, so
+// this was reachable on every one of them.
 func convertEquipmentSlotsToProto(slots toolkitchar.EquipmentSlots) *dnd5ev1alpha1.EquipmentSlots {
-	if len(slots) == 0 {
-		return nil
-	}
-
 	// Helper to create InventoryItem from item ID
 	makeItem := func(itemID string) *dnd5ev1alpha1.InventoryItem {
 		if itemID == "" {
@@ -1468,8 +1478,12 @@ func convertWeaponToProto(id weapons.WeaponID) dnd5ev1alpha1.Weapon {
 		return dnd5ev1alpha1.Weapon_WEAPON_HEAVY_CROSSBOW
 	case weapons.Longbow:
 		return dnd5ev1alpha1.Weapon_WEAPON_LONGBOW
-	case weapons.Net:
-		return dnd5ev1alpha1.Weapon_WEAPON_NET
+	// weapons.Net was removed from rpg-toolkit at dnd5e v0.97.0 (composable
+	// attack damage provider, rpg-toolkit#1146). WEAPON_NET stays defined on
+	// the wire -- deleting a proto enum value is its own, separate
+	// decision -- but nothing in the toolkit resolves to it any more, so no
+	// case here produces it; the switch's default (UNSPECIFIED) is correct
+	// for an ID this build no longer recognizes.
 	// Ammunition
 	case ammunition.Arrows20:
 		return dnd5ev1alpha1.Weapon_WEAPON_ARROWS_20
@@ -1924,8 +1938,10 @@ func convertProtoWeaponToToolkit(weapon dnd5ev1alpha1.Weapon) shared.SelectionID
 		return refs.Weapons.HeavyCrossbow().ID
 	case dnd5ev1alpha1.Weapon_WEAPON_LONGBOW:
 		return refs.Weapons.Longbow().ID
-	case dnd5ev1alpha1.Weapon_WEAPON_NET:
-		return refs.Weapons.Net().ID
+	// WEAPON_NET has no case here for the same reason convertWeaponToProto
+	// no longer produces it: refs.Weapons.Net() was removed at dnd5e v0.97.0
+	// (rpg-toolkit#1146). A caller that still sends WEAPON_NET falls through
+	// to this switch's default ("").
 	// Ammunition
 	case dnd5ev1alpha1.Weapon_WEAPON_ARROWS_20:
 		return shared.SelectionID(ammunition.Arrows20)
@@ -2497,7 +2513,15 @@ func setEquipmentItemTypeHint(item *dnd5ev1alpha1.EquipmentItem, itemID string) 
 		"hand-crossbow":  dnd5ev1alpha1.Weapon_WEAPON_HAND_CROSSBOW,
 		"heavy-crossbow": dnd5ev1alpha1.Weapon_WEAPON_HEAVY_CROSSBOW,
 		"longbow":        dnd5ev1alpha1.Weapon_WEAPON_LONGBOW,
-		"net":            dnd5ev1alpha1.Weapon_WEAPON_NET,
+		// No "net" entry: rpg-toolkit#1146 (dnd5e v0.97.0) deleted the Net
+		// weapon from the toolkit's registry, so itemID can no longer
+		// legitimately be "net" -- and convertProtoWeaponToToolkit can no
+		// longer resolve WEAPON_NET back to anything (its Net case was
+		// dropped for the same reason). Keeping this entry would let a
+		// stale or hand-built item still advertise a weapon type hint this
+		// build cannot round-trip; an unrecognized itemID falls through to
+		// the tool lookup below and, failing that, sets no hint at all --
+		// consistent with every other unrecognized ID.
 	}
 
 	if weapon, ok := weaponMap[itemID]; ok {
@@ -2863,6 +2887,29 @@ func convertArmorCategoryToEquipmentCategory(cat armor.ArmorCategory) dnd5ev1alp
 	}
 }
 
+// baseWeaponDamage projects a weapon's composable damage pool (rpg-toolkit
+// ADR-0040, the "composable attack damage provider" landed at dnd5e
+// v0.97.0 / rpg-toolkit#1146) onto the legacy v1alpha1 wire's single
+// damage_dice/damage_type pair.
+//
+// The FIRST pool is the base weapon damage -- exactly what the old bare
+// string+DamageType field always meant -- and is the only one this legacy
+// wire carries. Any rider pool (an additional damage component a property
+// or feature confers) is invisible here BY DESIGN: this is a translation
+// to a wire shape that predates composable damage and has no field to put
+// a second pool in, not an omission to fix later on this same message.
+//
+// An empty pool returns the zero value rather than indexing pools[0] --
+// this is translation code reading data it did not validate, and a
+// registry weapon with no damage at all should surface as "no damage
+// reported" on the wire, not a panic.
+func baseWeaponDamage(pools []damage.Damage) (dice string, damageType string) {
+	if len(pools) == 0 {
+		return "", ""
+	}
+	return pools[0].Dice, string(pools[0].Type)
+}
+
 // convertWeaponData converts weapon-specific data to proto
 func convertWeaponData(weapon *weapons.Weapon) *dnd5ev1alpha1.WeaponData {
 	if weapon == nil {
@@ -2877,10 +2924,11 @@ func convertWeaponData(weapon *weapons.Weapon) *dnd5ev1alpha1.WeaponData {
 		weaponCategory = dnd5ev1alpha1.WeaponCategory_WEAPON_CATEGORY_MARTIAL
 	}
 
+	dice, dtype := baseWeaponDamage(weapon.Damage)
 	result := &dnd5ev1alpha1.WeaponData{
 		WeaponCategory: weaponCategory,
-		DamageDice:     weapon.Damage,
-		DamageType:     convertDamageTypeToProto(string(weapon.DamageType)),
+		DamageDice:     dice,
+		DamageType:     convertDamageTypeToProto(dtype),
 		Properties:     convertWeaponProperties(weapon.Properties),
 	}
 	applyWeaponRange(result, weapon.Range)
@@ -2939,10 +2987,11 @@ func convertEquipmentDetailToProto(detail *equipment.EquipmentDetail) *dnd5ev1al
 		} else {
 			result.Category = dnd5ev1alpha1.EquipmentCategory_EQUIPMENT_CATEGORY_SIMPLE_WEAPON
 		}
+		dice, dtype := baseWeaponDamage(detail.Weapon.Damage)
 		weaponData := &dnd5ev1alpha1.WeaponData{
 			WeaponCategory: weaponCategory,
-			DamageDice:     detail.Weapon.Damage,
-			DamageType:     convertDamageTypeToProto(string(detail.Weapon.DamageType)),
+			DamageDice:     dice,
+			DamageType:     convertDamageTypeToProto(dtype),
 			Properties:     convertWeaponProperties(detail.Weapon.Properties),
 		}
 		applyWeaponRange(weaponData, detail.Weapon.Range)
@@ -3218,6 +3267,27 @@ func conditionIDToEnum(id string) dnd5ev1alpha1.ConditionId {
 		return dnd5ev1alpha1.ConditionId_CONDITION_ID_UNARMORED_MOVEMENT
 	default:
 		return dnd5ev1alpha1.ConditionId_CONDITION_ID_UNSPECIFIED
+	}
+}
+
+// conditionIDToFightingStyle maps persisted fighting-style conditions to the
+// existing Character.fighting_styles wire field.
+func conditionIDToFightingStyle(id string) dnd5ev1alpha1.FightingStyle {
+	switch id {
+	case refs.Conditions.FightingStyleArchery().ID:
+		return dnd5ev1alpha1.FightingStyle_FIGHTING_STYLE_ARCHERY
+	case refs.Conditions.FightingStyleDefense().ID:
+		return dnd5ev1alpha1.FightingStyle_FIGHTING_STYLE_DEFENSE
+	case refs.Conditions.FightingStyleDueling().ID:
+		return dnd5ev1alpha1.FightingStyle_FIGHTING_STYLE_DUELING
+	case refs.Conditions.FightingStyleGreatWeaponFighting().ID:
+		return dnd5ev1alpha1.FightingStyle_FIGHTING_STYLE_GREAT_WEAPON_FIGHTING
+	case refs.Conditions.FightingStyleProtection().ID:
+		return dnd5ev1alpha1.FightingStyle_FIGHTING_STYLE_PROTECTION
+	case refs.Conditions.FightingStyleTwoWeaponFighting().ID:
+		return dnd5ev1alpha1.FightingStyle_FIGHTING_STYLE_TWO_WEAPON_FIGHTING
+	default:
+		return dnd5ev1alpha1.FightingStyle_FIGHTING_STYLE_UNSPECIFIED
 	}
 }
 

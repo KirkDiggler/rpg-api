@@ -1,32 +1,37 @@
-// Package authoring is the AuthoringService v1alpha1 handler: thin proto
-// <-> input translation over internal/orchestrators/authoring, mirroring
-// the lobby v1alpha1 handler's shape (internal/handlers/dnd5e/lobby/v1alpha1)
-// — Chapter-1 layering, not handler-package orchestration.
-package authoring
+// Package authoringv1alpha1 is the AuthoringService v1alpha1 handler: thin
+// proto <-> input translation over internal/orchestrators/authoring
+// (rpg-api#806, rpg-project#256).
+//
+// Registered by cmd/server only when RPG_AUTHORING_ENABLED=1. With the gate
+// off the whole service is absent and a caller sees Unimplemented — the
+// proto's documented way for a client to tell "authoring is off" from
+// "server unreachable".
+package authoringv1alpha1
 
 import (
+	"context"
 	"errors"
 
-	authoringv1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/authoring/v1alpha1"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
+	authoringpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/authoring/v1alpha1"
+	"github.com/KirkDiggler/rpg-api/internal/auth"
+	"github.com/KirkDiggler/rpg-api/internal/dungeons"
 	authoringorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/authoring"
 )
 
-// HandlerConfig configures a Handler.
+// HandlerConfig configures an authoring Handler.
 type HandlerConfig struct {
-	// Orchestrator is the authoring orchestrator this handler delegates
-	// to. Required.
+	// Orchestrator is the authoring orchestrator this handler delegates to.
+	// Required.
 	Orchestrator *authoringorch.Orchestrator
 }
 
 // Handler implements dnd5e.api.authoring.v1alpha1.AuthoringServiceServer.
-// cmd/server/server.go only ever registers this with the gRPC server when
-// RPG_AUTHORING_ENABLED is set — see plan.md S1's gate decision. This
-// package itself has no gate logic of its own; it's simply never wired in
-// when the gate is off, which is what makes PutDungeon Unimplemented in
-// that case (grpc's own behavior for an unregistered service, not a
-// custom check here).
 type Handler struct {
-	authoringv1alpha1.UnimplementedAuthoringServiceServer
+	authoringpb.UnimplementedAuthoringServiceServer
+
 	orch *authoringorch.Orchestrator
 }
 
@@ -39,5 +44,43 @@ func New(cfg *HandlerConfig) (*Handler, error) {
 	if cfg.Orchestrator == nil {
 		return nil, errors.New("authoring handler: HandlerConfig.Orchestrator is required")
 	}
+
 	return &Handler{orch: cfg.Orchestrator}, nil
+}
+
+// requireAuthenticated is the one gate every RPC here runs: authoring is a
+// signed-in verb even though no per-player ownership exists on a dungeon yet
+// (rpg-api#803 tracks verb authorization generally), so the caller's identity
+// is checked and not yet used.
+func requireAuthenticated(ctx context.Context) error {
+	if auth.GetPlayerID(ctx) == "" {
+		return status.Error(codes.Unauthenticated, "no player id in context")
+	}
+
+	return nil
+}
+
+// statusError maps the registry's sentinels (passed through the
+// orchestrator) onto gRPC codes:
+//
+//   - dungeons.ErrInvalidKey / ErrKeyMismatch → InvalidArgument (the
+//     request could not name its target; the proto's own rule)
+//   - dungeons.ErrNotFound → NotFound
+//   - dungeons.ErrAuthoringDisabled → FailedPrecondition (unreachable when
+//     the service is only registered with the gate on; kept so a wiring
+//     mistake is a clear refusal rather than a 500)
+//   - unclassified → Internal
+func statusError(err error) error {
+	switch {
+	case errors.Is(err, dungeons.ErrInvalidKey):
+		return status.Error(codes.InvalidArgument, "key must match [a-z0-9-]+")
+	case errors.Is(err, dungeons.ErrKeyMismatch):
+		return status.Error(codes.InvalidArgument, "key does not match the file's own key line")
+	case errors.Is(err, dungeons.ErrNotFound):
+		return status.Error(codes.NotFound, "dungeon not found")
+	case errors.Is(err, dungeons.ErrAuthoringDisabled):
+		return status.Error(codes.FailedPrecondition, "authoring is disabled")
+	}
+
+	return status.Errorf(codes.Internal, "authoring: %v", err)
 }

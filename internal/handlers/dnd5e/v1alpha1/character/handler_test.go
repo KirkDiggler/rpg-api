@@ -2,6 +2,7 @@ package character
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/suite"
@@ -279,6 +280,113 @@ func (s *HandlerTestSuite) TestGetCharacter_ServiceError() {
 	s.True(ok)
 	s.Equal(codes.NotFound, st.Code())
 	s.Equal("character not found", st.Message())
+}
+
+func (s *HandlerTestSuite) TestEquipItem_ReturnsPersistedPostStateWithoutRefetch() {
+	postState := &entities.Character{
+		Data: &toolkitchar.Data{
+			ID:       "char-equip",
+			PlayerID: "player-1",
+			Name:     "Fighter",
+			ClassID:  "fighter",
+			RaceID:   "human",
+			EquipmentSlots: toolkitchar.EquipmentSlots{
+				toolkitchar.SlotMainHand: "longsword",
+			},
+		},
+		Appearance: &entities.Appearance{SkinTone: "#123456"},
+	}
+
+	s.mockService.EXPECT().
+		EquipItem(s.ctx, &character.EquipItemInput{
+			CharacterID: "char-equip",
+			ItemID:      "longsword",
+			Slot:        toolkitchar.SlotMainHand,
+		}).
+		Return(&character.EquipItemOutput{
+			PreviousItemID: "handaxe",
+			Character:      postState,
+		}, nil)
+	s.mockService.EXPECT().
+		GetCharacter(s.ctx, &character.GetCharacterInput{CharacterID: "char-equip"}).
+		Return(nil, errors.New("post-write Get would fail")).
+		MaxTimes(0)
+
+	resp, err := s.handler.EquipItem(s.ctx, &dnd5ev1alpha1.EquipItemRequest{
+		CharacterId: "char-equip",
+		ItemId:      "longsword",
+		Slot:        dnd5ev1alpha1.EquipmentSlot_EQUIPMENT_SLOT_MAIN_HAND,
+	})
+	s.Require().NoError(err)
+	s.Equal("char-equip", resp.GetCharacter().GetId())
+	s.Equal("longsword", resp.GetCharacter().GetEquipmentSlots().GetMainHand().GetItemId())
+	s.Equal("#123456", resp.GetCharacter().GetAppearance().GetSkinTone())
+	s.Equal("handaxe", resp.GetPreviouslyEquippedItem().GetItemId())
+}
+
+func (s *HandlerTestSuite) TestUnequipItem_ReturnsPersistedPostStateWithoutRefetch() {
+	postState := &entities.Character{
+		Data: &toolkitchar.Data{
+			ID:             "char-unequip",
+			PlayerID:       "player-1",
+			Name:           "Fighter",
+			ClassID:        "fighter",
+			RaceID:         "human",
+			EquipmentSlots: toolkitchar.EquipmentSlots{},
+		},
+	}
+
+	s.mockService.EXPECT().
+		UnequipItem(s.ctx, &character.UnequipItemInput{
+			CharacterID: "char-unequip",
+			Slot:        toolkitchar.SlotMainHand,
+		}).
+		Return(&character.UnequipItemOutput{
+			UnequippedItemID: "longsword",
+			Character:        postState,
+		}, nil)
+	s.mockService.EXPECT().
+		GetCharacter(s.ctx, &character.GetCharacterInput{CharacterID: "char-unequip"}).
+		Return(nil, errors.New("post-write Get would fail")).
+		MaxTimes(0)
+
+	resp, err := s.handler.UnequipItem(s.ctx, &dnd5ev1alpha1.UnequipItemRequest{
+		CharacterId: "char-unequip",
+		Slot:        dnd5ev1alpha1.EquipmentSlot_EQUIPMENT_SLOT_MAIN_HAND,
+	})
+	s.Require().NoError(err)
+	s.Equal("char-unequip", resp.GetCharacter().GetId())
+	s.NotNil(resp.GetCharacter().GetEquipmentSlots())
+	s.Nil(resp.GetCharacter().GetEquipmentSlots().GetMainHand())
+}
+
+func (s *HandlerTestSuite) TestEquipmentProjectionErrorsAreSanitized() {
+	const secret = "PRIVATE_CHARACTER_JSON_MARKER"
+
+	s.mockService.EXPECT().
+		EquipItem(s.ctx, gomock.Any()).
+		Return(nil, errors.New("strict character projection failed: "+secret))
+	_, equipErr := s.handler.EquipItem(s.ctx, &dnd5ev1alpha1.EquipItemRequest{
+		CharacterId: "char-secret",
+		ItemId:      "longsword",
+		Slot:        dnd5ev1alpha1.EquipmentSlot_EQUIPMENT_SLOT_MAIN_HAND,
+	})
+	s.Require().Error(equipErr)
+	s.Equal(codes.Internal, status.Code(equipErr))
+	s.Equal("character data unavailable", status.Convert(equipErr).Message())
+	s.NotContains(status.Convert(equipErr).Message(), secret)
+
+	s.mockService.EXPECT().
+		UnequipItem(s.ctx, gomock.Any()).
+		Return(nil, errors.New("strict character projection failed: "+secret))
+	_, unequipErr := s.handler.UnequipItem(s.ctx, &dnd5ev1alpha1.UnequipItemRequest{
+		CharacterId: "char-secret",
+		Slot:        dnd5ev1alpha1.EquipmentSlot_EQUIPMENT_SLOT_MAIN_HAND,
+	})
+	s.Require().Error(unequipErr)
+	s.Equal(codes.Internal, status.Code(unequipErr))
+	s.Equal("character data unavailable", status.Convert(unequipErr).Message())
+	s.NotContains(status.Convert(unequipErr).Message(), secret)
 }
 
 func TestHandlerSuite(t *testing.T) {

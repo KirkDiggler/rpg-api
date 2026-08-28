@@ -10,7 +10,7 @@ Active docs — read these to orient before touching code:
 - `docs/quality.md` — A-D scorecard with rationale per component
 - `docs/architecture/overview.md` — layer rules (handler → orchestrator → repo), request flow, cross-repo boundaries
 - `docs/architecture/data-model.md` — entities, relationships, storage schemas, known gaps
-- `docs/architecture/components/` — one doc per major component (auth, character-handler, character-orchestrator, dungeon-component, encounter-handler, encounter-orchestrator, entities, event-processor, integration-test-harness, lobby-service, repositories)
+- `docs/architecture/components/` — one doc per major component (auth, authoring-service, character-handler, character-orchestrator, dungeon-component, encounter-handler, encounter-orchestrator, entities, event-processor, integration-test-harness, lobby-service, repositories)
 - `docs/how-to/` — task guides: `add-handler-method`, `run-integration-tests`, `run-locally`, `update-proto-dependency`, `local-toolkit-override` (iterate on rpg-toolkit changes in the local Docker loop without publish → tag → `go get`)
 - `docs/archive/` — pre-PR #470 historical docs (old ADRs, journey narratives, plans, design notes, session handoffs); read for context, not current state
 

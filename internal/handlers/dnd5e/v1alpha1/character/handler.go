@@ -3,6 +3,7 @@ package character
 
 import (
 	"context"
+	"errors"
 	"sort"
 
 	"google.golang.org/grpc/codes"
@@ -923,21 +924,17 @@ func (h *Handler) EquipItem(
 		Slot:        slot,
 	})
 	if err != nil {
-		return nil, err
+		return nil, equipmentRPCError(err)
+	}
+	if equipResult == nil || equipResult.Character == nil || equipResult.Character.Data == nil {
+		return nil, equipmentRPCError(errors.New("equip item returned no persisted character"))
 	}
 
-	// Get updated character to return (includes equipment slots)
-	charResult, err := h.characterService.GetCharacter(ctx, &character.GetCharacterInput{
-		CharacterID: req.CharacterId,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	// Convert character - equipment slots are included by ConvertCharacterDataToProto
-	protoChar := ConvertCharacterDataToProto(charResult.Character.Data)
-	if charResult.Character.Appearance != nil {
-		protoChar.Appearance = convertEntityAppearanceToProto(charResult.Character.Appearance)
+	// Convert the orchestrator's actual persisted post-state. There is no
+	// fallible repository read after the successful write.
+	protoChar := ConvertCharacterDataToProto(equipResult.Character.Data)
+	if equipResult.Character.Appearance != nil {
+		protoChar.Appearance = convertEntityAppearanceToProto(equipResult.Character.Appearance)
 	}
 
 	// Build response
@@ -976,30 +973,33 @@ func (h *Handler) UnequipItem(
 	}
 
 	// Unequip item via orchestrator
-	_, err = h.characterService.UnequipItem(ctx, &character.UnequipItemInput{
+	unequipResult, err := h.characterService.UnequipItem(ctx, &character.UnequipItemInput{
 		CharacterID: req.CharacterId,
 		Slot:        slot,
 	})
 	if err != nil {
-		return nil, err
+		return nil, equipmentRPCError(err)
+	}
+	if unequipResult == nil || unequipResult.Character == nil || unequipResult.Character.Data == nil {
+		return nil, equipmentRPCError(errors.New("unequip item returned no persisted character"))
 	}
 
-	// Get updated character to return
-	charResult, err := h.characterService.GetCharacter(ctx, &character.GetCharacterInput{
-		CharacterID: req.CharacterId,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	protoChar := ConvertCharacterDataToProto(charResult.Character.Data)
-	if charResult.Character.Appearance != nil {
-		protoChar.Appearance = convertEntityAppearanceToProto(charResult.Character.Appearance)
+	protoChar := ConvertCharacterDataToProto(unequipResult.Character.Data)
+	if unequipResult.Character.Appearance != nil {
+		protoChar.Appearance = convertEntityAppearanceToProto(unequipResult.Character.Appearance)
 	}
 
 	return &dnd5ev1alpha1.UnequipItemResponse{
 		Character: protoChar,
 	}, nil
+}
+
+func equipmentRPCError(err error) error {
+	var coded *apierr.Error
+	if errors.As(err, &coded) && coded.Code != apierr.CodeInternal {
+		return apierr.ToGRPCError(err)
+	}
+	return apierr.ToGRPCError(apierr.WrapWithCode(err, apierr.CodeInternal, character.CharacterDataUnavailableMessage))
 }
 
 // AddToInventory adds items to inventory

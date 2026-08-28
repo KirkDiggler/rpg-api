@@ -5,26 +5,36 @@ import (
 	"testing"
 	"time"
 
+	"github.com/alicebob/miniredis/v2"
+	goredis "github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/suite"
 	"go.uber.org/mock/gomock"
 
+	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
+
 	"github.com/KirkDiggler/rpg-api/internal/apierr"
+	"github.com/KirkDiggler/rpg-api/internal/dungeons"
+	"github.com/KirkDiggler/rpg-api/internal/dungeons/dungeonstest"
 	"github.com/KirkDiggler/rpg-api/internal/entities"
-	encounterhandlerv2 "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v2/encounter"
 	lobbyorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/lobby"
+	sessionorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/session"
 	"github.com/KirkDiggler/rpg-api/internal/pkg/idgen"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	charactermock "github.com/KirkDiggler/rpg-api/internal/repositories/character/mock"
-	encountersv2 "github.com/KirkDiggler/rpg-api/internal/repositories/encounters/v2"
 	lobbyrepo "github.com/KirkDiggler/rpg-api/internal/repositories/lobby"
-	tkenc "github.com/KirkDiggler/rpg-toolkit/encounter"
+	rosterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/roster"
+	"github.com/KirkDiggler/rpg-api/internal/sessionworld"
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 )
 
 // LobbySuite is the shared fixture for every lobby-orchestrator RPC test
 // file in this package (create_lobby_test.go, join_lobby_test.go, etc.) —
 // one Go type whose methods live across files, avoiding six copies of the
-// same Config wiring.
+// same Config wiring. sessOrch is a real, miniredis-backed session.Manager
+// (mirroring internal/integration/session's harness) — StartEncounter's
+// sole remaining stack — rather than a mock, because Join genuinely loads
+// and reconstitutes a character; a mock EXPECT() would only prove the call
+// happened, not that a real sheet round-trips.
 type LobbySuite struct {
 	suite.Suite
 
@@ -33,8 +43,7 @@ type LobbySuite struct {
 	charRepo  *charactermock.MockRepository
 	lobbyRepo lobbyrepo.Repository
 	broker    *lobbyorch.Broker
-	encBroker *tkenc.Broker
-	encRepo   encountersv2.Repository
+	sessOrch  *sessionorch.Orchestrator
 	orch      *lobbyorch.Orchestrator
 }
 
@@ -44,30 +53,19 @@ func (s *LobbySuite) SetupTest() {
 	s.charRepo = charactermock.NewMockRepository(s.ctrl)
 	s.lobbyRepo = lobbyrepo.NewInMemory()
 	s.broker = lobbyorch.NewBroker()
-	s.encBroker = tkenc.NewBroker(tkenc.NewInMemoryTransport())
-	s.encRepo = encountersv2.NewInMemory()
-
-	registry, err := lobbyorch.LoadContentRegistry()
-	s.Require().NoError(err)
+	s.sessOrch = s.newSessionOrchestrator()
 
 	orch, err := lobbyorch.New(&lobbyorch.Config{
-		LobbyRepo:              s.lobbyRepo,
-		LobbyBroker:            s.broker,
-		CharacterRepo:          s.charRepo,
-		EncounterRepo:          s.encRepo,
-		EncounterBroker:        s.encBroker,
-		BuildCharacterResolver: func(_ *tkenc.Data) tkenc.CharacterResolver { return encounterhandlerv2.StubCharacterResolver{} },
-		BuildCombatResolver: func(_ *tkenc.Data) tkenc.CombatResolver {
-			return nil
-		},
-		BuildMovementResolver: func(_ *tkenc.Data) tkenc.MovementResolver {
-			return nil
-		},
+		LobbyRepo:            s.lobbyRepo,
+		LobbyBroker:          s.broker,
+		CharacterRepo:        s.charRepo,
 		LobbyIDGenerator:     idgen.NewSequential("lobby"),
 		JoinRefGenerator:     idgen.NewSequential("ref"),
 		EncounterIDGenerator: idgen.NewSequential("enc"),
 		Now:                  func() time.Time { return time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC) },
-		Registry:             registry,
+		SessionManager:       s.sessOrch.Manager,
+		Dungeons:             dungeonstest.Shipped(s.T()),
+		RosterRepo:           rosterrepo.NewInMemory(),
 	})
 	s.Require().NoError(err)
 	s.orch = orch
@@ -75,6 +73,39 @@ func (s *LobbySuite) SetupTest() {
 
 func (s *LobbySuite) TearDownTest() {
 	s.ctrl.Finish()
+}
+
+// newSessionOrchestrator builds a fresh miniredis-backed session
+// orchestrator sharing s.charRepo as its character store.
+func (s *LobbySuite) newSessionOrchestrator() *sessionorch.Orchestrator {
+	mr := miniredis.RunT(s.T())
+	client := goredis.NewClient(&goredis.Options{Addr: mr.Addr()})
+	s.T().Cleanup(func() { _ = client.Close() })
+	sessOrch, err := sessionorch.New(sessionorch.Config{
+		Redis: client, Characters: s.charRepo, TTL: 24 * time.Hour,
+	})
+	s.Require().NoError(err)
+	return sessOrch
+}
+
+// seedLiveSession starts a real, open session under id on s.sessOrch —
+// for tests that need GetMyActiveLobby/AbandonEncounter to see a genuinely
+// live session without going through the full StartEncounter flow.
+func (s *LobbySuite) seedLiveSession(id string) {
+	entry, err := dungeonstest.Shipped(s.T()).Get(s.ctx, dungeons.DefaultKey)
+	s.Require().NoError(err)
+	_, err = s.sessOrch.Manager.StartSession(s.ctx, &sdk.StartSessionInput{
+		Session: id, Encounter: id, World: entry.Dungeon.World,
+	})
+	s.Require().NoError(err)
+}
+
+// seedEndedSession starts then immediately ends a real session under id —
+// for tests of the "session exists but is no longer open" case.
+func (s *LobbySuite) seedEndedSession(id string) {
+	s.seedLiveSession(id)
+	_, err := s.sessOrch.Manager.End(s.ctx, &sdk.EndInput{Session: id, Ending: sessionworld.EndingWithdrawn})
+	s.Require().NoError(err)
 }
 
 // expectCharacter arms s.charRepo to return, on the next Get(characterID), a
@@ -91,23 +122,6 @@ func (s *LobbySuite) expectCharacter(characterID, playerID, name string, hp, max
 		}, nil)
 }
 
-// expectCharacterWithAC is expectCharacter plus a stored ArmorClass, for
-// tests that assert StartEncounter's honest combat-snapshot seeding
-// (rpg-api#634): AC is a real stored field, copied verbatim onto
-// tkenc.PlayerInput.AC.
-func (s *LobbySuite) expectCharacterWithAC(characterID, playerID, name string, hp, maxHP, ac int) {
-	s.charRepo.EXPECT().
-		Get(gomock.Any(), characterrepo.GetInput{ID: characterID}).
-		Return(&characterrepo.GetOutput{
-			Character: &entities.Character{
-				Data: &toolkitchar.Data{
-					PlayerID: playerID, Name: name,
-					HitPoints: hp, MaxHitPoints: maxHP, ArmorClass: ac,
-				},
-			},
-		}, nil)
-}
-
 // expectCharacterNotFound arms s.charRepo to return NotFound for characterID.
 func (s *LobbySuite) expectCharacterNotFound(characterID string) {
 	s.charRepo.EXPECT().
@@ -116,106 +130,22 @@ func (s *LobbySuite) expectCharacterNotFound(characterID string) {
 }
 
 // newOrchestratorWithLobbyRepo builds a second Orchestrator sharing every
-// other suite dependency (broker, character repo, encounter repo/broker,
+// other suite dependency (broker, character repo, session manager,
 // generators) but backed by repo instead of s.lobbyRepo — for tests that
 // need to observe behavior when the lobby repository itself misbehaves
 // (e.g. a wrapped repo that forces one method to fail).
 func (s *LobbySuite) newOrchestratorWithLobbyRepo(repo lobbyrepo.Repository) *lobbyorch.Orchestrator {
-	registry, err := lobbyorch.LoadContentRegistry()
-	s.Require().NoError(err)
-
 	orch, err := lobbyorch.New(&lobbyorch.Config{
-		LobbyRepo:              repo,
-		LobbyBroker:            s.broker,
-		CharacterRepo:          s.charRepo,
-		EncounterRepo:          s.encRepo,
-		EncounterBroker:        s.encBroker,
-		BuildCharacterResolver: func(_ *tkenc.Data) tkenc.CharacterResolver { return encounterhandlerv2.StubCharacterResolver{} },
-		BuildCombatResolver: func(_ *tkenc.Data) tkenc.CombatResolver {
-			return nil
-		},
-		BuildMovementResolver: func(_ *tkenc.Data) tkenc.MovementResolver {
-			return nil
-		},
+		LobbyRepo:            repo,
+		LobbyBroker:          s.broker,
+		CharacterRepo:        s.charRepo,
 		LobbyIDGenerator:     idgen.NewSequential("lobby"),
 		JoinRefGenerator:     idgen.NewSequential("ref"),
 		EncounterIDGenerator: idgen.NewSequential("enc"),
 		Now:                  func() time.Time { return time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC) },
-		Registry:             registry,
-	})
-	s.Require().NoError(err)
-	return orch
-}
-
-// newOrchestratorWithContentDir returns a fresh Orchestrator sharing every
-// other suite dependency, constructed from a registry built with
-// RPG_CONTENT_DIR set to dir — for tests that need a deliberately broken
-// (or deliberately augmented) content override. LoadContentRegistry only
-// ever reads RPG_CONTENT_DIR once, when called (Task E2's note #3: never
-// per-request), so a test needing a specific override must build its OWN
-// registry (and Orchestrator) here rather than reuse s.orch, which was
-// already constructed in SetupTest before the test body ever runs.
-// Returns the error too (rather than requiring success) so this same
-// helper covers both a successful construction (the disabled-key test)
-// and a construction FAILURE (an unreadable RPG_CONTENT_DIR path) — that
-// failure now surfaces from LoadContentRegistry itself, not from
-// lobbyorch.New (which no longer reads RPG_CONTENT_DIR at all).
-func (s *LobbySuite) newOrchestratorWithContentDir(dir string) (*lobbyorch.Orchestrator, error) {
-	s.T().Setenv("RPG_CONTENT_DIR", dir)
-	registry, err := lobbyorch.LoadContentRegistry()
-	if err != nil {
-		return nil, err
-	}
-	return lobbyorch.New(&lobbyorch.Config{
-		LobbyRepo:              s.lobbyRepo,
-		LobbyBroker:            s.broker,
-		CharacterRepo:          s.charRepo,
-		EncounterRepo:          s.encRepo,
-		EncounterBroker:        s.encBroker,
-		BuildCharacterResolver: func(_ *tkenc.Data) tkenc.CharacterResolver { return encounterhandlerv2.StubCharacterResolver{} },
-		BuildCombatResolver: func(_ *tkenc.Data) tkenc.CombatResolver {
-			return nil
-		},
-		BuildMovementResolver: func(_ *tkenc.Data) tkenc.MovementResolver {
-			return nil
-		},
-		LobbyIDGenerator:     idgen.NewSequential("lobby"),
-		JoinRefGenerator:     idgen.NewSequential("ref"),
-		EncounterIDGenerator: idgen.NewSequential("enc"),
-		Now:                  func() time.Time { return time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC) },
-		Registry:             registry,
-	})
-}
-
-// newOrchestratorWithDungeonKeyOverride returns a fresh Orchestrator
-// sharing every other suite dependency, constructed with
-// Config.DungeonKeyOverride set to key (Task E2b's RPG_DUNGEON_KEY
-// mechanism) — s.orch never has an override set, so a test exercising it
-// must build its own Orchestrator here, exactly like
-// newOrchestratorWithContentDir does for RPG_CONTENT_DIR.
-func (s *LobbySuite) newOrchestratorWithDungeonKeyOverride(key string) *lobbyorch.Orchestrator {
-	registry, err := lobbyorch.LoadContentRegistry()
-	s.Require().NoError(err)
-
-	orch, err := lobbyorch.New(&lobbyorch.Config{
-		LobbyRepo:              s.lobbyRepo,
-		LobbyBroker:            s.broker,
-		CharacterRepo:          s.charRepo,
-		EncounterRepo:          s.encRepo,
-		EncounterBroker:        s.encBroker,
-		BuildCharacterResolver: func(_ *tkenc.Data) tkenc.CharacterResolver { return encounterhandlerv2.StubCharacterResolver{} },
-		BuildCombatResolver: func(_ *tkenc.Data) tkenc.CombatResolver {
-			return nil
-		},
-		BuildMovementResolver: func(_ *tkenc.Data) tkenc.MovementResolver {
-			return nil
-		},
-		LobbyIDGenerator:     idgen.NewSequential("lobby"),
-		JoinRefGenerator:     idgen.NewSequential("ref"),
-		EncounterIDGenerator: idgen.NewSequential("enc"),
-		Now:                  func() time.Time { return time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC) },
-		Registry:             registry,
-		DungeonKeyOverride:   key,
+		SessionManager:       s.sessOrch.Manager,
+		Dungeons:             dungeonstest.Shipped(s.T()),
+		RosterRepo:           rosterrepo.NewInMemory(),
 	})
 	s.Require().NoError(err)
 	return orch

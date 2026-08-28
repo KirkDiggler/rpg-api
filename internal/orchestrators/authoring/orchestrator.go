@@ -1,86 +1,107 @@
-// Package authoring is the AuthoringService orchestrator: PutDungeon,
-// gated behind RPG_AUTHORING_ENABLED at cmd/server/server.go (this package
-// itself has no opinion on the gate — it's the caller's job to decide
-// whether to construct one at all, mirroring how every other orchestrator
-// in this repo has no ambient env-reading of its own).
+// Package authoring is the AuthoringService orchestrator: the dungeon
+// builder's seam onto the content registry (rpg-api#806, rpg-project#256).
 //
-// Boundary: NO rules logic lives here beyond the toolkit calls the
-// existing dungeonspec package already exposes (Load, Decode) — this
-// package's own job is request-shape validation (key charset, key/YAML
-// key: match), write-through targeting, and registry orchestration, the
-// same "outside-in, orchestrators call the toolkit rather than
-// reimplementing it" discipline internal/orchestrators/lobby already
-// follows for StartEncounter.
+// It is thin on purpose. Compilation, validation and the write discipline
+// live in internal/dungeons (and through it the toolkit); this package only
+// shapes the registry's answers into the verbs the wire speaks. No rule
+// lives here and no geometry is computed here.
 package authoring
 
 import (
+	"context"
 	"errors"
+	"fmt"
 
-	"github.com/KirkDiggler/rpg-api/internal/dungeonregistry"
+	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
+
+	"github.com/KirkDiggler/rpg-api/internal/dungeons"
 )
 
 // Config holds the dependencies for an Orchestrator.
 type Config struct {
-	// Registry is the SAME shared *dungeonregistry.Registry pointer
-	// cmd/server/server.go also passes into the lobby orchestrator's
-	// Config — PutDungeon's registry swap must be visible to the very
-	// next StartEncounter with no restart (plan.md's "Architecture
-	// decision: the shared live registry"). A private registry
-	// constructed here instead would compile, pass this package's own
-	// tests, and still fail that requirement. Required.
-	Registry *dungeonregistry.Registry
-
-	// ContentDir is RPG_CONTENT_DIR's value, passed in explicitly rather
-	// than read from os.Getenv inside this package (matching
-	// lobbyorch.Config's existing style of explicit fields over ambient
-	// env reads). Required — enabling the authoring gate without
-	// RPG_CONTENT_DIR set is a construction-time failure (design.md's
-	// "the gate requires RPG_CONTENT_DIR" decision), not a degraded mode:
-	// write-through's on-disk durability guarantee has nowhere to write
-	// without it.
-	ContentDir string
-
-	// PartyStartSeatCount is the host's normal party capacity supplied to
-	// dungeonspec.LoadWithConfig. Preview must compile the same reservation
-	// StartEncounter will use; zero defaults to the normal four-seat product
-	// configuration for standalone/test construction.
-	PartyStartSeatCount int
+	// Dungeons is the content registry PutDungeon writes to and GetDungeon
+	// reads from. Required.
+	Dungeons dungeons.Registry
 }
 
-const defaultPartyStartSeatCount = 4
-
-// Orchestrator is the AuthoringService orchestrator core.
+// Orchestrator is the AuthoringService's business logic.
 type Orchestrator struct {
-	registry            *dungeonregistry.Registry
-	contentDir          string
-	partyStartSeatCount int
+	dungeons dungeons.Registry
 }
 
-// New constructs an Orchestrator from cfg. Returns an error (never a nil
-// Orchestrator) when a required dependency is missing — including a
-// missing ContentDir, which is the "gate requires RPG_CONTENT_DIR, fails
-// fast at construction" decision from design.md, enforced here exactly
-// like lobbyorch.New's existing required-field checks.
+// New constructs an Orchestrator. Returns an error (never a nil
+// Orchestrator) when a required dependency is missing.
 func New(cfg *Config) (*Orchestrator, error) {
 	if cfg == nil {
 		return nil, errors.New("authoring orchestrator: Config is required")
 	}
-	if cfg.Registry == nil {
-		return nil, errors.New("authoring orchestrator: Config.Registry is required")
+	if cfg.Dungeons == nil {
+		return nil, errors.New("authoring orchestrator: Config.Dungeons is required")
 	}
-	if cfg.ContentDir == "" {
-		return nil, errors.New("authoring orchestrator: Config.ContentDir is required")
+
+	return &Orchestrator{dungeons: cfg.Dungeons}, nil
+}
+
+// PutDungeonInput is one PutDungeon call.
+type PutDungeonInput struct {
+	Key          string
+	YAML         []byte
+	ValidateOnly bool
+}
+
+// PutDungeonOutput is PutDungeon's answer on a well-formed request: Errors
+// (did not compile, nothing written) or Atlas (compiled; stored unless
+// ValidateOnly). Exactly one of the two is meaningful; an empty Errors IS
+// success.
+type PutDungeonOutput struct {
+	Errors []dungeons.FieldError
+
+	// Atlas is the compiled map, the same shape GetAtlas serves.
+	Atlas *sdk.Atlas
+}
+
+// PutDungeon compiles and, unless ValidateOnly, stores a dungeon. Registry
+// sentinels (dungeons.ErrInvalidKey, ErrKeyMismatch, ErrAuthoringDisabled)
+// pass through for the handler to map.
+func (o *Orchestrator) PutDungeon(ctx context.Context, in *PutDungeonInput) (*PutDungeonOutput, error) {
+	if in == nil {
+		return nil, errors.New("authoring orchestrator: PutDungeonInput is required")
 	}
-	if cfg.PartyStartSeatCount < 0 {
-		return nil, errors.New("authoring orchestrator: Config.PartyStartSeatCount must not be negative")
+
+	res, err := o.dungeons.Put(ctx, &dungeons.PutInput{
+		Key: in.Key, YAML: in.YAML, ValidateOnly: in.ValidateOnly,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("put dungeon: %w", err)
 	}
-	partyStartSeatCount := cfg.PartyStartSeatCount
-	if partyStartSeatCount == 0 {
-		partyStartSeatCount = defaultPartyStartSeatCount
+	if len(res.Errors) > 0 {
+		return &PutDungeonOutput{Errors: res.Errors}, nil
 	}
-	return &Orchestrator{
-		registry:            cfg.Registry,
-		contentDir:          cfg.ContentDir,
-		partyStartSeatCount: partyStartSeatCount,
-	}, nil
+
+	return &PutDungeonOutput{Atlas: res.Entry.Atlas}, nil
+}
+
+// GetDungeonInput names a stored dungeon.
+type GetDungeonInput struct {
+	Key string
+}
+
+// GetDungeonOutput is the stored file, verbatim.
+type GetDungeonOutput struct {
+	YAML []byte
+}
+
+// GetDungeon returns the stored file for a key. dungeons.ErrNotFound passes
+// through for the handler to map.
+func (o *Orchestrator) GetDungeon(ctx context.Context, in *GetDungeonInput) (*GetDungeonOutput, error) {
+	if in == nil {
+		return nil, errors.New("authoring orchestrator: GetDungeonInput is required")
+	}
+
+	entry, err := o.dungeons.Get(ctx, in.Key)
+	if err != nil {
+		return nil, fmt.Errorf("get dungeon: %w", err)
+	}
+
+	return &GetDungeonOutput{YAML: entry.YAML}, nil
 }

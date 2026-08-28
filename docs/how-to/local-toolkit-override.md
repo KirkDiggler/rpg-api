@@ -1,7 +1,7 @@
 ---
 name: local rpg-toolkit override loop
-description: Iterate on rpg-toolkit/encounter changes in the local Docker loop without publish -> tag -> go get
-updated: 2026-07-27
+description: Iterate on one allowlisted rpg-toolkit module in the local Docker loop without publish -> tag -> go get
+updated: 2026-08-11
 ---
 
 # How to iterate on rpg-toolkit changes without publishing
@@ -13,10 +13,12 @@ change you're confident in — but a bug that needs several edit-and-look
 cycles (e.g. rpg-toolkit#858, #859) makes a publish-per-attempt loop
 impractical.
 
-This script lets you point rpg-api's build at a **local** rpg-toolkit
-checkout instead, for `github.com/KirkDiggler/rpg-toolkit/encounter` only.
-It rejects any unapproved replacement or second replacement; one local module
-is the entire override budget for an iteration.
+This script lets you point rpg-api's build at one **local** rpg-toolkit
+module instead. The allowlisted targets are `encounter` and
+`rulebooks/dnd5e`; it rejects any unapproved replacement or second
+replacement. One local module is the entire override budget for an iteration.
+The selected target and source are recorded in the ignored
+`local-toolkit/.toolkit-local-override-state` ownership record.
 
 ## The constraint this solves
 
@@ -31,27 +33,45 @@ pointing outside it (e.g. `../../rpg-toolkit/encounter`) compiles fine with
 a plain `go build` on the host, then **fails inside Docker**, because the
 toolkit source was never sent to the build context.
 
-The fix: sync the toolkit module's source into a gitignored directory
-**inside** this repo (`local-toolkit/encounter/`) and point the `replace`
-at that relative path, so it's part of the context Docker actually sees.
+The fix: sync the selected toolkit module's source into a gitignored
+directory inside this repo (`local-toolkit/<target>/`) and point the
+`replace` at that relative path, so it's part of the context Docker actually
+sees.
 
-Only `rpg-toolkit/encounter` is overridden. Its own dependencies on sibling
-toolkit modules (`core`, `events`, `tools/spatial`, ...) stay at whatever
-published versions its `go.mod` already names — this script does not sync
-the whole toolkit.
+Only the selected allowlisted module is overridden. Its own dependencies on
+sibling toolkit modules (`core`, `events`, `tools/spatial`, ...) stay at
+whatever published versions its `go.mod` already names — this script does not
+sync the whole toolkit.
 
 ## Turning it on
 
 ```bash
-scripts/toolkit-local-override.sh on [--src <path-to-rpg-toolkit-checkout>]
+# Explicit D&D 5e rulebook override:
+scripts/toolkit-local-override.sh on \
+  --target rulebooks/dnd5e \
+  --src /home/kirk/game-dev/rpg-toolkit
+
+# Existing encounter override (the default when --target is omitted):
+scripts/toolkit-local-override.sh on \
+  --target encounter \
+  --src /home/kirk/game-dev/rpg-toolkit
+# Equivalent legacy form:
+scripts/toolkit-local-override.sh on --src /home/kirk/game-dev/rpg-toolkit
 ```
 
 Defaults to `$TOOLKIT_SRC_DIR`, then `~/game-dev/rpg-toolkit`, then a couple
-of relative guesses if you didn't pass `--src`. This:
+of relative guesses if you don't pass `--src`. The source must contain the
+selected module's `go.mod` with the matching module declaration. The command:
 
-1. rsyncs `<src>/encounter/` into `local-toolkit/encounter/` (gitignored).
-2. Runs `go mod edit -replace github.com/KirkDiggler/rpg-toolkit/encounter=./local-toolkit/encounter`.
-3. Sanity-builds on the host (`go build ./...`).
+1. rsyncs `<src>/<target>/` into `local-toolkit/<target>/` (gitignored).
+2. Runs `go mod edit -replace <module>=./local-toolkit/<target>`.
+3. Writes the literal ownership record only after the exact replacement is
+   present.
+4. Sanity-builds on the host (`go build ./...`).
+
+Only one replacement may be active. Switching from `encounter` to
+`rulebooks/dnd5e` (or vice versa) requires `off` first; the script refuses to
+transiently create a second replacement.
 
 Then rebuild the image with the **dev-only Dockerfile** (`Dockerfile.local-toolkit`,
 not the normal `Dockerfile` — see why below) and redeploy the primary
@@ -73,7 +93,7 @@ instances; redeploy only the primary `rpg-api` service.
 
 The normal `Dockerfile` copies `go.mod`/`go.sum` first, runs `go mod
 download`, and only copies the rest of the source afterward (a layer-caching
-optimization). With an active `replace` pointing at `local-toolkit/encounter/`,
+optimization). With an active `replace` pointing at `local-toolkit/<target>/`,
 that directory doesn't exist yet at the `go mod download` step, and the
 build fails. `Dockerfile.local-toolkit` is identical except it copies the
 full source (including `local-toolkit/`) *before* `go mod download` — it
@@ -83,10 +103,17 @@ override, it produces the exact same image as `Dockerfile`.
 
 ### Edit-and-look cycle
 
-Each time you change something in `<rpg-toolkit-checkout>/encounter/`:
+Each time you change something in the selected toolkit module:
 
 ```bash
-scripts/toolkit-local-override.sh on   # re-syncs + re-points the replace
+# D&D 5e:
+scripts/toolkit-local-override.sh refresh \
+  --src /home/kirk/game-dev/rpg-toolkit
+
+# Encounter (the same command works with --target encounter on `on`):
+scripts/toolkit-local-override.sh refresh \
+  --src /home/kirk/game-dev/rpg-toolkit
+
 docker build -f Dockerfile.local-toolkit -t rpg-api:local .
 # redeploy rpg-api as above
 ```
@@ -97,9 +124,11 @@ docker build -f Dockerfile.local-toolkit -t rpg-api:local .
 scripts/toolkit-local-override.sh off
 ```
 
-This drops the `replace` directive and deletes `local-toolkit/` entirely,
-restoring `go.mod`/`go.sum` to the published pin with no residue, then
-sanity-builds to confirm. Follow with a normal `docker build -t rpg-api:local .`
+This validates ownership, drops only the selected `replace` directive,
+deletes only `local-toolkit/<target>/` and the ownership record, and restores
+`go.mod`/`go.sum` to the published pin. An unrelated `local-toolkit/` sibling
+is preserved. It then sanity-builds to confirm. Follow with a normal
+`docker build -t rpg-api:local .`
 (the regular `Dockerfile` again) and redeploy `rpg-api` to go back to the
 published toolkit version.
 
@@ -109,10 +138,11 @@ published toolkit version.
 scripts/toolkit-local-override.sh status
 ```
 
-Reports the complete active `go.mod` replacement module list, then whether
-this exact approved override is active and whether `local-toolkit/encounter/`
-exists on disk. It exits non-zero if a second or unapproved replacement exists;
-that output is the verification record before running a local build.
+Reports the complete active `go.mod` replacement module list, the selected
+target/source ownership record, and whether `local-toolkit/<target>/` exists
+on disk. It exits non-zero if a second, unapproved, unowned, or path-mismatched
+replacement exists; that output is the verification record before running a
+local build.
 
 ## Deploy discipline — do not skip this
 
@@ -123,10 +153,11 @@ but that's defense in depth, not the only line. Treat it as a hard rule:
 
 1. Iterate locally with the override ON until the toolkit fix is right.
 2. **Publish the toolkit change**: commit + push in rpg-toolkit, tag the new
-   `encounter/vX.Y.Z` version.
-3. Pull the real published version into rpg-api the normal way:
+   version for the selected module (`encounter/vX.Y.Z` or
+   `rulebooks/dnd5e/vX.Y.Z`).
+3. Pull the real published version into rpg-api the normal way, for example:
    ```bash
-   GOPROXY=direct go get github.com/KirkDiggler/rpg-toolkit/encounter@vX.Y.Z
+   GOPROXY=direct go get github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e@vX.Y.Z
    ```
 4. **Remove the local override**: `scripts/toolkit-local-override.sh off`.
 5. Commit the real `go.mod`/`go.sum` version bump — never a `replace` line.
@@ -138,5 +169,5 @@ is deliberately **not** part of this script's `on` path, so the temporary
 local development loop remains usable; run `off` before a pre-PR gate.
 
 Before opening a PR (or even committing), check `git diff go.mod` — if it
-shows a `replace ... => ./local-toolkit/encounter` line, the override is
-still on. Run `off` first.
+shows a `replace ... => ./local-toolkit/<target>` line, the override is still
+on. Run `off` first.

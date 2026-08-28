@@ -21,9 +21,11 @@ Six open PRs (#459, #461, #463, #466, #467, #468) targeted this file's
 coordinate-space bugs. They are now moot — see `docs/status.md` "Paused / on
 hold" for the record.
 
-**Current encounter orchestrator:** see [`encounter.md`](./encounter.md) — the
-v1alpha2 orchestrator (`internal/orchestrators/encounter/v2/`), a materially
-different and better shape: one file per RPC, each doing exactly one
-`load → toolkit-verb → persist`, never importing proto.
+**Then-current encounter orchestrator:** the v1alpha2 orchestrator
+(`encounter.md`) this pointer used to name is ALSO deleted now
+(rpg-project#227, 2026-08-21) — see [`encounter.md`](./encounter.md) for that
+removal. Encounter construction is now `LobbyService.StartEncounter`,
+building directly onto the `rulebooks/dnd5e/session` SDK (see
+[`lobby-service.md`](./lobby-service.md)).
 
 See `docs/status.md` "Active work" for the full deletion tally.

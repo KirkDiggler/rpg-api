@@ -13,6 +13,7 @@ import (
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character/choices"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/classes"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/damage"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/races"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/refs"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
@@ -239,6 +240,49 @@ func (s *ConvertersTestSuite) TestCreateEquipmentChoice_PopulatesEquipmentDetail
 	assert.Contains(s.T(), weaponData.Properties, dnd5ev1alpha1.WeaponProperty_WEAPON_PROPERTY_TWO_HANDED)
 }
 
+// TestBaseWeaponDamage_RiderPoolIsIgnored is the discriminator baseWeaponDamage
+// exists for: a weapon whose composable damage carries a base pool AND a
+// rider pool (rpg-toolkit ADR-0040) must project the BASE pool onto the
+// legacy wire's damage_dice/damage_type, not the rider and not some
+// combination of the two. A projection that returned the LAST pool, or
+// concatenated both, would pass every other test touching real registry
+// weapons (they all carry exactly one pool today) and fail only here.
+func (s *ConvertersTestSuite) TestBaseWeaponDamage_RiderPoolIsIgnored() {
+	pools := []damage.Damage{
+		{Dice: "1d8", Type: damage.Slashing},
+		{Dice: "1d4", Type: damage.Fire}, // a rider this legacy wire has no field for
+	}
+
+	dice, dtype := baseWeaponDamage(pools)
+	assert.Equal(s.T(), "1d8", dice)
+	assert.Equal(s.T(), string(damage.Slashing), dtype)
+}
+
+// TestBaseWeaponDamage_EmptyPool_ReturnsZeroValueNotPanic covers the other
+// half of baseWeaponDamage's contract: this is translation code reading
+// data it did not itself validate, so an empty pool must come back as an
+// empty string, not index pools[0] on nothing.
+func (s *ConvertersTestSuite) TestBaseWeaponDamage_EmptyPool_ReturnsZeroValueNotPanic() {
+	dice, dtype := baseWeaponDamage(nil)
+	assert.Empty(s.T(), dice)
+	assert.Empty(s.T(), dtype)
+}
+
+// TestSetEquipmentItemTypeHint_NetIsNoLongerAWeapon is the discriminator for
+// the OTHER Net remnant Copilot caught on PR #808's review of this same
+// file (setEquipmentItemTypeHint's weaponMap, distinct from the two switch
+// cases dropped above): itemID "net" must not produce WEAPON_NET any more.
+// convertProtoWeaponToToolkit already cannot resolve WEAPON_NET back to a
+// toolkit ID -- leaving this map entry would advertise a weapon type hint
+// that dead-ends on the return trip. Also confirms "net" is not secretly a
+// tool ID either, so the whole item ends up with no type hint set, the same
+// as any other unrecognized ID.
+func (s *ConvertersTestSuite) TestSetEquipmentItemTypeHint_NetIsNoLongerAWeapon() {
+	item := &dnd5ev1alpha1.EquipmentItem{}
+	setEquipmentItemTypeHint(item, "net")
+	assert.Nil(s.T(), item.TypeHint)
+}
+
 func (s *ConvertersTestSuite) TestCreateEquipmentChoice_MapsCategoryChoiceOptionsOneToOne() {
 	fighter := convertClassDataToProto(classes.ClassData[classes.Fighter])
 	fighterMartial := findEquipmentCategoryChoice(s.T(), fighter, "fighter-weapons-primary", "fighter-weapon-a")
@@ -249,9 +293,14 @@ func (s *ConvertersTestSuite) TestCreateEquipmentChoice_MapsCategoryChoiceOption
 		"fighter-weapons-primary",
 		"fighter-weapon-a",
 		[]string{
+			// weapons.Net dropped from this expected list: the toolkit's own
+			// weapon registry no longer offers it (rpg-toolkit#1146 removed
+			// the weapon entirely, not just its wire mapping), so the
+			// Fighter's martial-ranged registry choice this test compares
+			// against no longer includes it either.
 			weapons.Greatsword, weapons.Longsword, weapons.Rapier, weapons.Shortsword, weapons.Battleaxe, weapons.Flail, weapons.Glaive, weapons.Greataxe,
 			weapons.Halberd, weapons.Lance, weapons.Maul, weapons.Morningstar, weapons.Pike, weapons.Scimitar, weapons.Trident, weapons.WarPick,
-			weapons.Warhammer, weapons.Whip, weapons.HeavyCrossbow, weapons.Longbow, weapons.Blowgun, weapons.HandCrossbow, weapons.Net,
+			weapons.Warhammer, weapons.Whip, weapons.HeavyCrossbow, weapons.Longbow, weapons.Blowgun, weapons.HandCrossbow,
 		},
 	)
 
@@ -391,7 +440,12 @@ func requireCategoryOptionsMatchToolkit(
 		require.NotNil(t, source.Detail.Weapon, "option %d must be a weapon", index)
 		weaponData := item.GetEquipmentDetail().GetWeaponData()
 		require.NotNil(t, weaponData, "option %d weapon detail", index)
-		assert.Equal(t, source.Detail.Weapon.Damage, weaponData.GetDamageDice(), "option %d damage dice", index)
+		// Weapon.Damage is a composable pool ([]damage.Damage) as of dnd5e
+		// v0.97.0; the legacy wire's damage_dice carries only the base pool
+		// (index 0) -- see baseWeaponDamage's own doc. Every registry weapon
+		// this loop walks has exactly one pool today, so [0] is safe here.
+		require.NotEmpty(t, source.Detail.Weapon.Damage, "option %d has no damage pool", index)
+		assert.Equal(t, source.Detail.Weapon.Damage[0].Dice, weaponData.GetDamageDice(), "option %d damage dice", index)
 	}
 }
 
@@ -652,6 +706,33 @@ func (s *ConvertersTestSuite) TestConvertCharacterDataToProto_WithConditions() {
 	assert.Equal(s.T(), "Blessed", blessedCondition.Name)
 	assert.Equal(s.T(), "bless_spell", blessedCondition.Source)
 	assert.Equal(s.T(), int32(6), blessedCondition.Duration)
+}
+
+// TestConvertCharacterDataToProto_ProjectsStoredProtectionFightingStyle
+// fixes the v1alpha1 projection seam used by the sandbox seeder. Finalized
+// toolkit character data persists the selected style as a condition; the
+// existing wire field must project that persisted selection rather than leave
+// FightingStyles empty.
+func (s *ConvertersTestSuite) TestConvertCharacterDataToProto_ProjectsStoredProtectionFightingStyle() {
+	testData := &toolkitchar.Data{
+		ID:    "test-protection-fighter",
+		Name:  "Protection Fighter",
+		Level: 1,
+		Conditions: []json.RawMessage{
+			json.RawMessage(`{
+				"ref": "dnd5e:conditions:fighting_style_protection",
+				"character_id": "test-protection-fighter"
+			}`),
+		},
+	}
+
+	result := ConvertCharacterDataToProto(testData)
+
+	require.NotNil(s.T(), result)
+	require.Len(s.T(), result.GetActiveConditions(), 1)
+	assert.Equal(s.T(), dnd5ev1alpha1.ConditionId_CONDITION_ID_FIGHTING_STYLE_PROTECTION,
+		result.GetActiveConditions()[0].GetId())
+	assert.Contains(s.T(), result.GetFightingStyles(), dnd5ev1alpha1.FightingStyle_FIGHTING_STYLE_PROTECTION)
 }
 
 func (s *ConvertersTestSuite) TestConvertCharacterDataToProto_EmptyConditions() {
@@ -1010,4 +1091,44 @@ func (s *ConvertersTestSuite) TestConvertRaceTraitsToProto_Discriminates() {
 	assert.Equal(s.T(), "A test trait description", result[0].GetDescription())
 	assert.False(s.T(), result[0].GetIsChoice())
 	assert.Empty(s.T(), result[0].GetOptions())
+}
+
+// TestConvertEquipmentSlotsToProto_Nil_ReturnsNonNilEmptyStruct pins
+// rpg-api#746's other half: a character with nothing equipped must still
+// marshal "equipment_slots" as an empty object, never null. A nil pointer
+// here IS the producer defect the issue reported -- "equipment_slots: null
+// (not even an empty object)" -- on every real character before finalize
+// learned to auto-equip.
+func (s *ConvertersTestSuite) TestConvertEquipmentSlotsToProto_Nil_ReturnsNonNilEmptyStruct() {
+	result := convertEquipmentSlotsToProto(nil)
+	require.NotNil(s.T(), result, "must return a non-nil EquipmentSlots even when nothing is equipped")
+	assert.Nil(s.T(), result.GetMainHand())
+	assert.Nil(s.T(), result.GetOffHand())
+	assert.Nil(s.T(), result.GetArmor())
+}
+
+// TestConvertEquipmentSlotsToProto_Empty_ReturnsNonNilEmptyStruct is the
+// same pin against an explicitly empty (non-nil) map, the shape
+// EquipItem/UnequipItem produce once anything has ever been touched.
+func (s *ConvertersTestSuite) TestConvertEquipmentSlotsToProto_Empty_ReturnsNonNilEmptyStruct() {
+	result := convertEquipmentSlotsToProto(toolkitchar.EquipmentSlots{})
+	require.NotNil(s.T(), result)
+	assert.Nil(s.T(), result.GetMainHand())
+}
+
+// TestConvertEquipmentSlotsToProto_Populated_StillMapsFields is the existing
+// happy path, pinned alongside the two empty cases above so a future edit
+// cannot fix null-vs-empty by returning a populated struct unconditionally
+// and dropping real slot data.
+func (s *ConvertersTestSuite) TestConvertEquipmentSlotsToProto_Populated_StillMapsFields() {
+	result := convertEquipmentSlotsToProto(toolkitchar.EquipmentSlots{
+		toolkitchar.SlotMainHand: "longsword",
+		toolkitchar.SlotArmor:    "chain-mail",
+	})
+	require.NotNil(s.T(), result)
+	require.NotNil(s.T(), result.GetMainHand())
+	assert.Equal(s.T(), "longsword", result.GetMainHand().GetItemId())
+	require.NotNil(s.T(), result.GetArmor())
+	assert.Equal(s.T(), "chain-mail", result.GetArmor().GetItemId())
+	assert.Nil(s.T(), result.GetOffHand())
 }

@@ -62,4 +62,10 @@ var (
 	// honest story about which case actually happened. Handler maps to
 	// codes.FailedPrecondition.
 	ErrEncounterAlreadyEnded = errors.New("encounter has already ended")
+
+	// ErrDungeonNotFound means StartEncounter named a dungeon_key the content
+	// registry does not have. Never silently the default dungeon: a host who
+	// picked a map and got a different one would have no way to notice.
+	// Handler maps to codes.NotFound.
+	ErrDungeonNotFound = errors.New("dungeon not found")
 )

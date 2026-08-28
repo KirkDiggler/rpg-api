@@ -2,26 +2,27 @@ package lobby
 
 import (
 	"context"
+	"fmt"
 
-	"github.com/KirkDiggler/rpg-api/internal/dungeonregistry"
+	"github.com/KirkDiggler/rpg-api/internal/dungeons"
 )
 
-// ListDungeonsInput carries the (today empty) ListDungeons request.
+// ListDungeonsInput is ListDungeons' (empty) request.
 type ListDungeonsInput struct{}
 
-// ListDungeonsOutput carries every dungeon key + display name the server
-// can StartEncounter from.
+// ListDungeonsOutput is every dungeon StartEncounter can build, sorted by
+// key.
 type ListDungeonsOutput struct {
-	Dungeons []dungeonregistry.DungeonSummary
+	Dungeons []dungeons.Summary
 }
 
-// ListDungeons returns every dungeon key + display name the server can
-// StartEncounter from — NOT gated behind authoring (design.md's
-// post-approval correction, plan.md S0): it reads content and mutates
-// nothing, and the lobby dropdown needs this to work with the authoring
-// gate off. Sources directly from o.registry.Keys(), which already
-// excludes any load-failed (disabled) key — offering an unplayable
-// dungeon in the dropdown would be worse than a temporarily-shorter list.
-func (o *Orchestrator) ListDungeons(_ context.Context, _ *ListDungeonsInput) (*ListDungeonsOutput, error) {
-	return &ListDungeonsOutput{Dungeons: o.registry.Keys()}, nil
+// ListDungeons reads the content registry. UNGATED — it mutates nothing and
+// the lobby's picker needs it with authoring off (design.md §3c).
+func (o *Orchestrator) ListDungeons(ctx context.Context, _ *ListDungeonsInput) (*ListDungeonsOutput, error) {
+	list, err := o.dungeons.List(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list dungeons: %w", err)
+	}
+
+	return &ListDungeonsOutput{Dungeons: list}, nil
 }

@@ -10,9 +10,7 @@ import (
 	"time"
 
 	lobbyv1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/lobby/v1alpha1"
-	encounterhandlerv2 "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v2/encounter"
 	lobbyorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/lobby"
-	tkenc "github.com/KirkDiggler/rpg-toolkit/encounter"
 )
 
 // HandlerConfig configures a lobby Handler.
@@ -55,36 +53,4 @@ func New(cfg *HandlerConfig) (*Handler, error) {
 		now = time.Now
 	}
 	return &Handler{orch: cfg.Orchestrator, broker: cfg.Broker, now: now}, nil
-}
-
-// BuildCombatResolver adapts encounterhandlerv2's Dnd5eCombatResolver
-// construction into the lobbyorch.CombatResolverBuilder shape, so
-// StartEncounter's freshly constructed encounter gets the SAME production
-// combat resolver the encounter service itself uses — never a duplicate
-// implementation. Exported so cmd/server/server.go and the integration
-// harness can wire it without reaching into this package's internals.
-func BuildCombatResolver(cfg encounterhandlerv2.Dnd5eCombatResolverConfig) lobbyorch.CombatResolverBuilder {
-	return func(data *tkenc.Data) tkenc.CombatResolver {
-		return encounterhandlerv2.NewDnd5eCombatResolverForData(cfg, data)
-	}
-}
-
-// BuildMovementResolver is BuildCombatResolver's movement-resolver
-// counterpart.
-func BuildMovementResolver(cfg encounterhandlerv2.Dnd5eMovementResolverConfig) lobbyorch.MovementResolverBuilder {
-	return func(data *tkenc.Data) tkenc.MovementResolver {
-		return encounterhandlerv2.NewDnd5eMovementResolverForData(cfg, data)
-	}
-}
-
-// BuildCharacterResolver is BuildCombatResolver's character-resolver
-// counterpart (rpg-api#516): it adapts encounterhandlerv2's
-// Dnd5eCharacterResolver construction into the lobbyorch.CharacterResolverBuilder
-// shape, so StartEncounter's freshly constructed encounter resolves real
-// ability/tool-proficiency modifiers the same way the encounter service
-// itself does — never a duplicate implementation.
-func BuildCharacterResolver(cfg encounterhandlerv2.Dnd5eCharacterResolverConfig) lobbyorch.CharacterResolverBuilder {
-	return func(data *tkenc.Data) tkenc.CharacterResolver {
-		return encounterhandlerv2.NewDnd5eCharacterResolverForData(cfg, data)
-	}
 }

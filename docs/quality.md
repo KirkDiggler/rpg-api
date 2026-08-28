@@ -1,8 +1,8 @@
 ---
 name: rpg-api quality scorecard
 description: Per-component grade with rationale — a graded scorecard to update as the codebase evolves
-updated: 2026-07-21
-confidence: medium — Wave 2.11e encounter v2 graded from shipped-code + integration test verification; older entries reflect 2026-05-02 snapshot pending refresh; rpg-api#636 note verified against passing tests; rpg-api#642 deletions verified against passing build/vet/test/lint; rpg-api#680 entries verified against passing unit + integration suite
+updated: 2026-08-25
+confidence: medium-high — #844 owner identity, sanitized strict projection, and atomic equipment patch verified against focused handler/orchestrator/repository/lint gates; older entries retain their stated evidence
 ---
 
 # Quality Scorecard
@@ -24,117 +24,17 @@ rpg-dnd5e-web#448's clean slate); the web made zero calls to it. See
 `docs/status.md` "Active work" for the full deletion tally. The grade below
 for the v2 encounter handler is now the only encounter handler grade.
 
-### Encounter v2 handler — B (Wave 2.11e update)
+### ~~Encounter v2 handler — B~~ DELETED (rpg-project#227, 2026-08-21)
 
-`internal/handlers/dnd5e/v2/encounter/` — the v1alpha2 encounter stack.
-Since the #582 carve-out the RPCs delegate load → verb → persist to the v2
-orchestrator (`internal/orchestrators/encounter/v2`), leaving the handler as
-proto↔input + sentinel→status mapping; the resolvers below stay handler-side
-(depguard-excluded) because they touch the rulebook. Wave 2.11e adds the
-MovementResolver wiring, bringing OA-class reactions end-to-end for both
-movement directions.
-
-What's here as of Wave 2.11e:
-
-- `Dnd5eCombatResolver` (`dnd5e_combat_resolver.go`, `dnd5e_combat_resolver_phased.go`)
-  — implements both `tkenc.CombatResolver` and `tkenc.PhasedCombatResolver`.
-  Cached attacker prep map (`pendingPhased`) lets phase 2 reuse the same
-  loaded character + resolveCtx without creating duplicate condition
-  subscribers.
-- `Dnd5eMovementResolver` (`dnd5e_movement_resolver.go`) — implements
-  `tkenc.MovementResolver`; delegates to `combat.MoveEntity` per hex step.
-  Builds spatial room + combatant registry + gamectx per step so OA chain
-  fires correctly (see `encounter.md` MovementResolver wiring section).
-- `TakeAction` (`take_action.go`) — RPC for player-initiated combat actions.
-  Any menu ref routes through the toolkit dispatch (encounter v0.20+); the
-  handler translates the target oneof per the advertised TargetKind contract —
-  entity_id, self (→ actor's own id), unset oneof (untargeted NONE) — and
-  rejects reserved position/area (#605). Carved onto the v2 orchestrator
-  (`internal/orchestrators/encounter/v2/take_action.go`, #582 step 5): the
-  handler is now proto↔input + sentinel→status mapping; the orchestrator owns
-  load (with the #689 hydration cascade so the resolver reads the held
-  attacker/defender — the #684 double-subscribe cure) → `enc.TakeActionPhased`
-  → persist, and persists `PendingReactionPrompts` + publishes
-  `InputRequiredDelivered` (save-before-publish, #538 A) when phase 1 surfaces a
-  player reactor. The single rulebook-touching piece — marshaling the resolver's
-  native `*combat.AttackContext` into the opaque `AttackContextJSON` — is the
-  injected `ReactionResume.MarshalAttackContext` (the phase-1 counterpart to the
-  SubmitCheck-side decode), kept in `reaction_resume.go` so the orchestrator
-  stays rulebook-free. Joins `Interact`/`SubmitCheck`/`SetReactionReady`/
-  `ActivateFeature` on the orchestrator's single-`load` core.
-- `MoveEntity` (`handler.go`) — RPC for moving a player's controlled entity
-  along a proposed path. Carved onto the v2 orchestrator
-  (`internal/orchestrators/encounter/v2/move_entity.go`, #582 step 6): the
-  handler is now proto↔input (proto positions → `core.Hex`) + sentinel→status
-  mapping; the orchestrator owns load (with the #689 hydration cascade so the
-  movement resolver reads the held mover — the #684 double-subscribe cure) →
-  `enc.Move` → `persistWithCharacterData`. Empty-path is classified as
-  `ErrEmptyPath` after load so the auth sentinels keep precedence; toolkit Move
-  refusals join `ErrMoveRefused` → `FailedPrecondition`. The opportunity-attack
-  resolution rides the injected `BuildMovementResolver` (the rulebook-importing
-  `Dnd5eMovementResolver` translation seam stays handler-side); its lookup-only
-  threatener load runs on a throwaway bus (not the encounter bus), so it is not a
-  #684 source and is carried as-is. Joins the rest of the verbs on the
-  orchestrator's single-`load` core.
-- `SubmitCheck` (`submit_check.go` + `submit_check_reaction.go`) — dispatches
-  to the reaction branch when the caller's pending prompt is a reaction;
-  unmarshals the persisted `AttackContextJSON` back into `combat.AttackContext`
-  and feeds it into `CompleteTakeAction` with the chosen modifiers.
-- `SetReactionReady` (`set_reaction_ready.go`) — RPC for per-character
-  per-condition readiness toggle. Carved onto the v2 orchestrator
-  (`internal/orchestrators/encounter/v2/set_reaction_ready.go`, #582 step 3):
-  the handler is now proto↔input + sentinel→status mapping; the orchestrator
-  owns load → `enc.SetReactionReady` → persist. Joins `Interact` (#582 step 1)
-  and `SubmitCheck` (#582 step 2) on the orchestrator's single-`load` core.
-- `ActivateFeature` (`activate_feature.go`) — RPC for in-encounter feature
-  activation (Rage et al.). Carved onto the v2 orchestrator
-  (`internal/orchestrators/encounter/v2/activate_feature.go`, #582 step 4): the
-  handler keeps building `CharDataJSON` (the rule-ish character serialization +
-  in-combat `ActionEconomy` injection stays handler-side) and persists the
-  verb's `UpdatedCharData`; the orchestrator owns load → `enc.ActivateFeature` →
-  persist. This step also **retired the handler-package `Runner`** — it was the
-  Runner's only caller, so `runner.go` (and its `buildCombatResolver` /
-  `buildMovementResolver`, duplicates of the orchestrator's `load` resolver
-  wiring) was deleted. The orchestrator's `load` is now the single load core for
-  every carved verb. #691 (toolkit, OPEN): ActivateFeature's load deliberately
-  does NOT use the #689 hydration cascade (`WithCharacterData` stays false) — the
-  toolkit verb self-loads the actor from `CharDataJSON`; attaching it via the
-  cascade would reintroduce the #684-class double-subscribe collision.
-- `EndTurn` (`end_turn.go`) — handles `IsNPCPausedForReaction(err)`;
-  `serializePendingPhasedAttacks` marshals the live `*PhasedAttackContext`
-  into `AttackContextJSON` before snapshot (honors the encounter SDK's
-  HOST CONTRACT documented in `persistNPCPendingReactions`). rpg-api#636: its
-  NPC dispatch loop is now the shared `driveNPCChain`, also used by
-  `DriveStalledNPCTurn` (`drive_npc.go`) — the "combat-entry kick" that
-  `StreamEncounter`/`GetEncounter` call (best-effort, error-swallowed) at every
-  connect so a TURN_BASED encounter that starts with an NPC active (no
-  preceding `EndTurn` to chain off of) doesn't stall forever. Single-flighted
-  per encounter ID (`keyed_mutex.go`) against concurrent connects.
-- `applyReactionConditions` + `applyMonsterReactionConditions`
-  (`reaction_conditions.go`) — wires OA on every character and monster +
-  Shield on spellcasters. Both applied at every rehydration; idempotent.
-- Translator (`translate.go`) — the `ReactionPrompt` oneof variant on
-  `InputRequired` + `InputRequiredDelivered` event publication.
-- `encounterHexRoom` (`hex_room.go`) — `spatial.Room` adapter over
-  encounter data; `MoveEntity` write path added for per-step position mutation.
-
-Test coverage:
-
-- 5 Wave 2.11c sneak-attack regression tests (cross-RPC bus, gamectx,
-  TurnEnd reset, once-per-turn enforcement).
-- 3 Wave 2.11e movement OA integration tests (`integration_movement_oa_test.go`):
-  player OA on NPC fleeing (via `MoveNPCSteps`); NPC OA on player fleeing
-  (via `MoveEntity` RPC); Disengage suppression (on same bus).
-- Full integration suites pass.
-- Dedicated player Shield + OA tests: `integration_player_shield_test.go`
-  (Wave 2.11d #536 partial — wired in same wave).
-
-Grade remains B: surface is well-shaped, resolver wiring is tested end-to-end.
-Gaps keeping it below A: Disengage cross-RPC persistence (condition evaporates
-between TakeAction and MoveEntity due to per-LoadFromData bus reconstruction),
-player-pause reactions (toolkit#665 future), and the HOST CONTRACT around
-`AttackContextJSON` serialization is documented but not yet structurally
-enforced from the SDK side (rpg-toolkit#657).
+`internal/handlers/dnd5e/v2/encounter/` — the v1alpha2 encounter stack this
+section graded — is deleted in full (~44 files), along with its orchestrator
+and repository (see below) and the `github.com/KirkDiggler/rpg-toolkit/
+encounter` module it was built on. Replaced by the `rulebooks/dnd5e/session`
+SDK, integrated directly into `LobbyService` — see `docs/architecture/
+components/lobby-service.md`. There is no proto-level encounter handler grade
+to give any more; gameplay verbs ride `SessionService`
+(`internal/handlers/dnd5e/session/v1alpha1/`), not yet scored in this doc.
+See `docs/status.md` "Active work" for the full deletion tally.
 
 ### Lobby handler — B+ (new, 2026-07-07)
 
@@ -148,6 +48,17 @@ create/join/ready/start) plus one edge case (late join) — the full edge-case
 matrix (party cap, host migration on disconnect-vs-leave, idempotent rebind)
 is unit-tested at the orchestrator layer but not yet re-proven at the wire
 level.
+
+### Session service handler — B+ (updated 2026-08-25)
+
+`internal/handlers/dnd5e/session/v1alpha1/` is rpg-api's one gameplay interface
+to the toolkit session SDK. Every member-naming verb applies the shared caller/member
+gate before Manager dispatch. Conversion remains field-for-field with no rules or
+invented vocabulary, including nested declarations/candidates and selectors.
+`StreamEvents` is audience-filtered best-effort live delivery; `GetStory` is persisted
+catch-up, and both use the same typed-event converter. Unit and
+`internal/integration/session` suites cover ownership, selectors, live fan-out, replay,
+and production declaration shapes. Held below A pending production traffic.
 
 ### Character handler — C
 
@@ -166,20 +77,21 @@ its size. Its `EquipItem`/`UnequipItem` RPCs now delegate to the rules-correct
 orchestrator method (rpg-api#680, see "Character orchestrator" below) — that
 specific gap is closed even though the surrounding stub/TODO debt isn't.
 
-### Character v2 handler — B (new, 2026-07-21)
+### Character v2 handler — B+ (updated 2026-08-25)
 
-`internal/handlers/dnd5e/v2/character/` (rpg-api#680) — the v1alpha2
-`CharacterService`, out-of-encounter `EquipItem`/`UnequipItem` only. Deliberately
-narrow: no `converters.go`, proto↔domain translation is small enough to stay
-inline in `handler.go`. Delegates to the SAME orchestrator method the v1alpha1
-handler uses and shares `BuildEquipmentCharacterData`
-(`internal/handlers/dnd5e/v2/encounter/character_data.go`) with the encounter
-snapshot path for its response composition — no independent logic to drift.
-Gomock unit suite covers validation, delegation, and error→status mapping; the
-end-to-end proof (real AC, occupancy visible across both surfaces) is the
-integration suite in the encounter package (`encounter.md`). Held at B rather
-than A pending production traffic and a genuine in-encounter equip path
-(rpg-project#94) to prove the boundary holds under a second consumer.
+`internal/handlers/dnd5e/v2/character/` (rpg-api#680/#844) serves authenticated-owner
+`GetCharacterData` plus out-of-encounter `EquipItem`/`UnequipItem`. Ownership precedes
+private projection, missing/foreign NOT_FOUND responses are byte-identical, and all
+three methods map the same detached orchestrator View through `BuildCharacterData`.
+Writes return the actual repository-patched entity plus its precomposed matching View;
+both handler versions answer from that same post-state with no fallible post-write reload.
+The mapper includes PlayerID and structured class/race refs as well as equipment/status,
+and strict failures use generic INTERNAL transport wording while retaining internal causes.
+Focused gates cover malformed-data no-write behavior, projection-before-write, map
+isolation, atomic-patch failure, post-state equality, all three RPC identity mappings,
+complete level-3 Fighter status, optional presence, and representative four-build mapping.
+Held below A pending production traffic and a second live consumer of the owner-private
+composition.
 
 ## Orchestrators
 
@@ -197,22 +109,19 @@ was already graded on a materially different (and better) shape.
 
 `internal/orchestrators/character/orchestrator.go`
 
-Smaller, more focused, and better tested than its encounter sibling. Delegates
-to toolkit correctly for the most part. Spell list fetching at line 2828 has a
-TODO about alive-check logic not being implemented. No proto leakage observed.
-The `service.go` / `orchestrator.go` split within the package follows the
-defined pattern. Grade would be higher with better alive-state handling and
-completing the TODO at line 3352 (monster turns for entities acting before
-current entity).
+The orchestrator delegates character rules to the toolkit and has no proto leakage.
+Its `service.go` / `orchestrator.go` split follows the defined Input/Output pattern.
+Verified remaining TODOs concern draft mutation access, background validation, error
+logging, and pagination/class-filter placeholders; they are outside the owner-private
+equipment path.
 
-**Update (rpg-api#680, 2026-07-21):** `EquipItem`/`UnequipItem` are rules-correct
-now — load the runtime character, call the toolkit's `EquipItem`/`UnequipItem`
-(occupancy, slot-compatibility), persist via a merge that deliberately avoids a
-full `char.ToData()` overwrite (which is lossy for `BackgroundID`/`CreatedAt`/
-non-registry inventory — see `character-orchestrator.md`'s Equipment section).
-Grade held at B- rather than raised: the fix is real and well-tested, but the
-alive-check and monster-turns TODOs that capped this grade are unrelated and
-still open.
+**Update (rpg-api#680/#844, 2026-08-25):** `EquipItem`/`UnequipItem` strictly
+load/attach, call the toolkit's rules-aware verbs, precompose complete post-views, and
+persist only EquipmentSlots plus cached ArmorClass through the repository's atomic
+optimistic patch. Unrelated concurrent character changes are reprojected and preserved;
+stale equipment is aborted. The orchestrator returns the actual patched entity and the
+matching detached View. Grade held at B- because older draft/catalog TODO debt elsewhere
+in this large orchestrator is unchanged.
 
 ### Lobby orchestrator — B+ (new, 2026-07-07)
 
@@ -229,29 +138,53 @@ created), not a hot-loop concern, called out as a follow-up rather than fixed
 here. Full RPC-level unit coverage (create/join/rebind/ready/leave incl. host
 migration/start incl. HP seeding and persist-then-emit ordering).
 
+### Session orchestrator — B (new, 2026-08-21)
+
+`internal/orchestrators/session/` — constructs the SDK `session.Manager` over
+rpg-api's Redis-backed key-value repositories and the host's character
+repository; owns no rules. Covered by its own suite and by
+`internal/integration/session`. Held at B while rpg-api#800 (partial-failure
+orphans) is unruled.
+
+### sessionworld — B+ (new, 2026-08-21)
+
+`internal/sessionworld/` — compiles one authored dungeon file (`Compile(raw)`)
+through the toolkit's `dungeonspec` into a world plus authored party seats and
+monster placements. It holds no content since rpg-api#806: the reference tomb
+is `content/reference-tomb.yaml`, loaded by `internal/dungeons`. Its defining
+test pins that placements are projected by the composition, not copied: the
+entrance literal moved from `(1,-4)` to `(0,-3)` when rpg-toolkit#1141
+corrected the hex convention, with no code change here (rpg-api#802). The borrowed-projection step (a throwaway encounter) is gone
+with dungeonspec v2 (rpg-project#256): the one conversion is
+`encounter.HexCellAt`, asked for, not reimplemented. Below A only until the
+toolkit pins are real tags rather than pseudo-versions.
+
+### Dungeon content registry + authoring — B+ (new, 2026-08-23)
+
+`internal/dungeons/`, `internal/orchestrators/authoring/`,
+`internal/handlers/dnd5e/authoring/v1alpha1/` (rpg-api#806). The registry's
+contract — boot refuses a non-compiling file naming it, atomic temp+rename
+writes, per-key serialization proven under `-race`, verbatim bytes back — and
+the handler's transport rules (status for a malformed request, body for a file
+that does not compile) are unit-tested; the lobby suite pins that a `Put`
+dungeon starts and its `GetAtlas` is cell-for-cell the atlas `Put` answered.
+Held below A until Kirk's walk and the toolkit tags. See
+`docs/architecture/components/authoring-service.md`.
+
 ## Components
 
-### Dungeon component — B-
+### ~~Dungeon component — B-~~ DELETED
 
-`internal/components/dungeon/` (generator, room shapes, wall perimeter, door
-spawning, hex coords, monster placement, theme tables)
+`internal/components/dungeon/` no longer exists (already absent on `dev` before
+rpg-api#801 — this entry had outlived the code). Dungeon geometry lives where
+the old entry said it belonged: the toolkit's `rulebooks/dnd5e/encounter` and
+its `dungeonspec` compiler, consumed through `internal/sessionworld`.
 
-The component is well-tested — integration tests use real toolkit generators,
-unit tests cover shape selection, perimeter logic, placement validation, and
-door spawning. The design is clean with internal adapters and toolkit wrappers.
-The grade cannot be higher because **this component is in the wrong repository**.
-Procedural dungeon generation (room shapes, wall placement, monster CR
-budgets, hex-grid coordinates) is game logic — it belongs in rpg-toolkit under
-the Boundary Rule. As long as it lives here, rpg-api violates its own mandate
-of "data orchestration, never game logic." Moving it is a known planned task.
+### ~~Spawner component — B~~ DELETED
 
-### Spawner component — B
-
-`internal/components/spawner/`
-
-Thin adapter around toolkit placement logic. Well-contained, single
-responsibility. No known gaps. Lower-risk relative to dungeon component because
-it delegates rather than implementing rules.
+`internal/components/spawner/` no longer exists (already absent on `dev` before
+rpg-api#801). Monster placement is authored in the dungeon spec and compiled by
+the toolkit.
 
 ## Infrastructure
 
@@ -259,8 +192,10 @@ it delegates rather than implementing rules.
 
 `internal/processors/event/processor.go` is deleted. It had zero consumers
 left once the v1 orchestrator and handler were gone — verified by grep before
-deletion. The v2 path publishes through the toolkit's own `tkenc.Broker`
-instead, a different mechanism with its own (untracked-here) grade.
+deletion. The v2 path this note used to point to as the replacement is ALSO
+deleted now (rpg-project#227, 2026-08-21 — see "Encounter v2 handler" above);
+event delivery today is the `rulebooks/dnd5e/session` SDK's own event stream,
+fanned out by `internal/orchestrators/session.Broker`, not graded in this doc.
 
 ### ~~Redis publisher — B~~ DELETED (rpg-api#642, 2026-07-13)
 
@@ -275,17 +210,15 @@ processor that was its only real consumer.
 `v2/` subdirectory) is deleted. See "Encounter repository v2" below for
 its replacement, which is already Redis-backed.
 
-### Encounter repository v2 — B
+### ~~Encounter repository v2 — B~~ DELETED (rpg-project#227, 2026-08-21)
 
-`internal/repositories/encounters/v2/` (`redis.go`, `in_memory.go`)
-
-Unlike the deleted v1 repo, this one has both a Redis implementation (wired
-into production in `cmd/server/server.go` with a 24h TTL) and an in-memory
-variant for tests, both covered by their own test files. This is the
-repository the v2 encounter path and the lobby orchestrator's `StartEncounter`
-actually use. Held at B rather than A pending a closer read of TTL/eviction
-behavior under real traffic — not graded from a fresh deep read in this pass,
-just confirmed to exist, compile, and pass its own tests.
+`internal/repositories/encounters/v2/` (`redis.go`, `in_memory.go`) is deleted
+along with the v2 encounter handler/orchestrator it backed (see "Encounter v2
+handler" above). The lobby orchestrator's `StartEncounter` no longer persists
+through a repository of its own — it builds directly onto the
+`rulebooks/dnd5e/session` SDK's `sdk.Manager`, which owns its own session/
+encounter persistence (`internal/orchestrators/session`'s Redis-backed
+repositories), not graded in this doc.
 
 ### ~~Dungeon repository — D~~ DELETED (rpg-api#642, 2026-07-13)
 
@@ -309,14 +242,16 @@ every Save/Get like the v2 encounter repo. Grade held at B rather than higher
 because it's brand new with no production traffic yet — the pattern is proven
 but unexercised at scale.
 
-### Character repository — B
+### Character repository — B+
 
-`internal/repositories/character/redis.go`
-
-The only repository with a persistent (Redis) implementation. Used by the
-integration test harness. Tested with real Redis via the harness. Solid
-foundation. No major gaps observed, though no evidence of TTL management or
-stale-character cleanup.
+`internal/repositories/character/redis.go` remains the durable character store. In
+addition to CRUD/index operations it now exposes an Input/Output-typed atomic equipment
+patch. Redis WATCH/MULTI guards the record, expected equipment rejects stale equip
+writers with ABORTED, unrelated record revisions are returned without writing, and the
+successful transaction changes only EquipmentSlots plus cached ArmorClass on the latest
+entity. Miniredis regressions cover concurrent combat-state preservation and stale
+expected-equipment refusal. Held below A because general full-record Update callers have
+not been redesigned and TTL/stale-character lifecycle remains unchanged.
 
 ### Character draft repository — B-
 
@@ -334,21 +269,25 @@ Redis-backed. Narrow scope. No observed gaps. Low risk.
 
 ## Testing
 
-### Integration test harness — B+
+### Integration test harness — B-
 
 `internal/integration/harness/harness.go`
 
-**Updated 2026-07-13 (#642):** the v1-only `internal/integration/encounter/`
-suite (barbarian/fighter/monk/rogue class tests, `open_door_test.go`,
-`stream_entity_state_test.go`, and siblings — 10 files) that exercised the now-deleted
-v1alpha1 EncounterService is deleted along with it. The harness itself is trimmed
-of matching v1 wiring (no more `EncounterClient`, v1 orchestrator/repo/publisher
-construction) but keeps registering CharacterService, DiceService, the v1alpha2
-EncounterService, and LobbyService. Coverage for the encounter flow now lives in
-`internal/integration/encounter_v2_test.go` and `internal/integration/
-lobby_v1alpha1_test.go`, both unaffected by this deletion and already passing.
-Grade held at B+: the harness remains the most valuable test asset in the repo,
-now scoped to the paths that are actually live.
+**Updated 2026-08-21 (rpg-project#227):** the harness no longer registers a
+v1alpha2 EncounterService — that service is deleted along with the old
+encounter stack (see "Encounter v2 handler" above). `TestServer` drops
+`EncounterClientV2`/`BrokerV2`/`EncRepoV2`; `TestServer.SessionOrch` (a
+miniredis-backed session orchestrator) is wired into the lobby orchestrator
+instead, mirroring production. The six top-level `internal/integration/
+*_test.go` suites that drove `LobbyService` through a real gRPC round-trip
+via `EncounterClientV2`-backed assertions are deleted with it — see
+`docs/architecture/components/integration-test-harness.md`. Grade dropped
+from B+ to B-: the harness itself (container lifecycle, bufconn wiring,
+CharacterService/DiceService/LobbyService registration) is intact and still
+the most valuable test-infra piece in the repo, but it currently proves NO
+full-stack, real-gRPC coverage of `LobbyService` or the session SDK — only
+`internal/integration/character` and `internal/integration/session` (a
+separate harness) exercise anything end-to-end today.
 
 ### Unit tests — B-
 
