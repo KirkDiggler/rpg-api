@@ -939,12 +939,21 @@ func (o *Orchestrator) EquipItem(ctx context.Context, input *EquipItemInput) (*E
 		if projectErr != nil {
 			return nil, characterDataUnavailable(fmt.Errorf("failed to project character after equip: %w", projectErr))
 		}
+		// Derived, and a refusal is not written. Persisting a fallback here is
+		// exactly how a monk's stored AC lost its WIS contribution: the number
+		// that reaches the sheet has to be one the chain actually produced
+		// (rpg-toolkit#1276).
+		breakdown, acErr := char.EffectiveAC(ctx)
+		if acErr != nil {
+			return nil, characterDataUnavailable(fmt.Errorf("compute effective AC: %w", acErr))
+		}
+
 		patch, patchErr := o.characterRepo.PatchEquipment(ctx, characterrepo.PatchEquipmentInput{
 			CharacterID:            input.CharacterID,
 			ExpectedVersion:        current.Version,
 			ExpectedEquipmentSlots: maps.Clone(current.Character.Data.EquipmentSlots),
 			EquipmentSlots:         maps.Clone(char.ToData().EquipmentSlots),
-			ArmorClass:             char.EffectiveAC(ctx).Total,
+			ArmorClass:             breakdown.Total,
 		})
 		if patchErr != nil {
 			return nil, fmt.Errorf("failed to patch character equipment: %w", patchErr)
@@ -1013,12 +1022,21 @@ func (o *Orchestrator) UnequipItem(ctx context.Context, input *UnequipItemInput)
 		if projectErr != nil {
 			return nil, characterDataUnavailable(fmt.Errorf("failed to project character after unequip: %w", projectErr))
 		}
+		// Derived, and a refusal is not written. Persisting a fallback here is
+		// exactly how a monk's stored AC lost its WIS contribution: the number
+		// that reaches the sheet has to be one the chain actually produced
+		// (rpg-toolkit#1276).
+		breakdown, acErr := char.EffectiveAC(ctx)
+		if acErr != nil {
+			return nil, characterDataUnavailable(fmt.Errorf("compute effective AC: %w", acErr))
+		}
+
 		patch, patchErr := o.characterRepo.PatchEquipment(ctx, characterrepo.PatchEquipmentInput{
 			CharacterID:            input.CharacterID,
 			ExpectedVersion:        current.Version,
 			ExpectedEquipmentSlots: maps.Clone(current.Character.Data.EquipmentSlots),
 			EquipmentSlots:         maps.Clone(char.ToData().EquipmentSlots),
-			ArmorClass:             char.EffectiveAC(ctx).Total,
+			ArmorClass:             breakdown.Total,
 		})
 		if patchErr != nil {
 			return nil, fmt.Errorf("failed to patch character equipment: %w", patchErr)

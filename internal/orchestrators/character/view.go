@@ -160,7 +160,15 @@ func projectLoadedCharacter(
 		return nil, errors.New(errViewRaceIDMissing)
 	}
 
-	equipment := input.Character.EquipmentView(ctx)
+	// EquipmentView carries a FOLDED armour class rather than the scalar on the
+	// sheet, so it can refuse (rpg-toolkit#1276). A refusal must surface: the
+	// alternative is a projection reporting base armour as though it were the
+	// whole answer, which is the bug this chain exists to close.
+	equipment, err := input.Character.EquipmentView(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("project character equipment: %w", err)
+	}
+
 	status, err := input.Character.StatusView(&tkcharacter.StatusViewInput{})
 	if err != nil {
 		return nil, fmt.Errorf("project character status: %w", err)
