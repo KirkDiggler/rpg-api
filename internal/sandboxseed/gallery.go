@@ -16,7 +16,6 @@ import (
 const (
 	galleryIdentity      = "weapon-gallery"
 	galleryCharacterName = "Weapon Gallery"
-	galleryWeaponCount   = 22
 )
 
 var galleryWeaponIDs = []string{
@@ -104,12 +103,12 @@ func SeedWeaponGallery(ctx context.Context, input *SeedWeaponGalleryInput) (*See
 	updated := cloneGalleryCharacter(getOutput.Character)
 	updated.Data.Inventory = normalizeGalleryInventory(updated.Data.Inventory)
 	if reflect.DeepEqual(getOutput.Character.Data.Inventory, updated.Data.Inventory) {
-		return &SeedWeaponGalleryOutput{CharacterID: characterID, WeaponCount: galleryWeaponCount}, nil
+		return &SeedWeaponGalleryOutput{CharacterID: characterID, WeaponCount: len(galleryWeaponIDs)}, nil
 	}
 	if _, err := input.Store.Update(ctx, characterrepo.UpdateInput{Character: updated}); err != nil {
 		return nil, fmt.Errorf("%s Update: %w", galleryIdentity, err)
 	}
-	return &SeedWeaponGalleryOutput{CharacterID: characterID, WeaponCount: galleryWeaponCount}, nil
+	return &SeedWeaponGalleryOutput{CharacterID: characterID, WeaponCount: len(galleryWeaponIDs)}, nil
 }
 
 func galleryListedCharacterID(ctx context.Context, client CharacterRPC) (string, error) {

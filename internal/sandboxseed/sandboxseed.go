@@ -1,8 +1,9 @@
 // Copyright (C) 2024 Kirk Diggler
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-// Package sandboxseed creates the two fixed toolkit-contributor sandbox
-// characters through the production CharacterService RPC surface.
+// Package sandboxseed creates dev-only sandbox fixtures through the
+// production CharacterService RPC surface, including the fixed toolkit
+// contributors and the repeatable weapon gallery character.
 package sandboxseed
 
 import (
