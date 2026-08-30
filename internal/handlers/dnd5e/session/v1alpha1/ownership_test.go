@@ -2,7 +2,6 @@ package sessionv1alpha1
 
 import (
 	"context"
-	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -10,6 +9,7 @@ import (
 	"google.golang.org/grpc/codes"
 
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
+	"github.com/KirkDiggler/rpg-api/internal/apierr"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
 	sessionv1alpha1mock "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/session/v1alpha1/mock"
 	sessionorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/session"
@@ -65,7 +65,7 @@ func TestEveryMemberTakingVerbRefusesAMissingMember(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			manager := sessionv1alpha1mock.NewMockManager(ctrl)
 			characters := charactermock.NewMockRepository(ctrl)
-			characters.EXPECT().Get(gomock.Any(), characterrepo.GetInput{ID: member}).Return(nil, errors.New("missing")).AnyTimes()
+			characters.EXPECT().Get(gomock.Any(), characterrepo.GetInput{ID: member}).Return(nil, apierr.NotFound("missing")).AnyTimes()
 
 			h, err := New(&HandlerConfig{
 				Manager:    manager,

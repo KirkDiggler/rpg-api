@@ -9,6 +9,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"github.com/KirkDiggler/rpg-api/internal/apierr"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
 	"github.com/KirkDiggler/rpg-api/internal/entities"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
@@ -81,10 +82,22 @@ func TestCallerMemberSeated(t *testing.T) {
 			ctx:             auth.WithPlayerID(context.Background(), caller),
 			session:         sessionID,
 			member:          member,
-			characters:      newCharacterFixture(nil).withGetError(member, errors.New("missing")),
+			characters:      newCharacterFixture(nil).withGetError(member, apierr.NotFound("missing")),
 			roster:          &rosterFixture{row: rosterWith(rosterrepo.Member{ID: member, Kind: rosterrepo.KindPlayer})},
 			wantCode:        codes.NotFound,
 			wantMessage:     "member \"fighter\" not found",
+			wantCharCalls:   1,
+			wantRosterCalls: 0,
+		},
+		{
+			name:            "character repository failure",
+			ctx:             auth.WithPlayerID(context.Background(), caller),
+			session:         sessionID,
+			member:          member,
+			characters:      newCharacterFixture(nil).withGetError(member, errors.New("redis unavailable")),
+			roster:          &rosterFixture{row: rosterWith(rosterrepo.Member{ID: member, Kind: rosterrepo.KindPlayer})},
+			wantCode:        codes.Internal,
+			wantMessage:     "load member \"fighter\": redis unavailable",
 			wantCharCalls:   1,
 			wantRosterCalls: 0,
 		},

@@ -8,6 +8,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"github.com/KirkDiggler/rpg-api/internal/apierr"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	rosterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/roster"
@@ -25,6 +26,7 @@ const (
 	sessionHasNoRosterFmt           = "session %q has no roster"
 	loadRosterForSessionFmt         = "load roster for session %q: %v"
 	memberNotFoundFmt               = "member %q not found"
+	loadMemberFmt                   = "load member %q: %v"
 )
 
 // Access centralizes the session handler's caller/member/session authorization
@@ -111,7 +113,10 @@ func authenticatedPlayerID(ctx context.Context) (string, error) {
 func (a *Access) verifyMemberOwnership(ctx context.Context, playerID, member string) error {
 	out, err := a.characters.Get(ctx, characterrepo.GetInput{ID: member})
 	if err != nil {
-		return status.Errorf(codes.NotFound, memberNotFoundFmt, member)
+		if apierr.IsNotFound(err) {
+			return status.Errorf(codes.NotFound, memberNotFoundFmt, member)
+		}
+		return status.Errorf(codes.Internal, loadMemberFmt, member, err)
 	}
 	if out == nil || out.Character == nil || out.Character.Data == nil {
 		return status.Errorf(codes.NotFound, memberNotFoundFmt, member)
