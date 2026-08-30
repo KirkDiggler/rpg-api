@@ -94,3 +94,5 @@ require (
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260526163538-3dc84a4a5aaa // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
+
+replace github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/resolution => /home/kirk/.claude/jobs/51da0680/tmp/resolution-scaffold

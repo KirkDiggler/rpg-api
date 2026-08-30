@@ -443,7 +443,7 @@ func (s *EquipItemTestSuite) TestEquipItem_RejectsUnprojectableDataWithoutWritin
 			name: "unknown status descriptor",
 			mutate: func(entity *entities.Character) {
 				entity.Data.Conditions = []json.RawMessage{mustJSON(s.T(), conditions.ShieldSpellConditionData{
-					Ref: refs.Spells.Shield(), CharacterID: entity.Data.ID,
+					Ref: refs.Spells.Shield(), MemberID: entity.Data.ID,
 				})}
 			},
 		},
