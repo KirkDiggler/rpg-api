@@ -16,7 +16,7 @@ resolve_redis_address() {
 	fi
 
 	local ip
-	if ! ip="$(docker inspect --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$REDIS_CONTAINER" 2>/dev/null)" || [ -z "$ip" ]; then
+	if ! ip="$(docker inspect --format '{{range .NetworkSettings.Networks}}{{println .IPAddress}}{{end}}' "$REDIS_CONTAINER" 2>/dev/null | awk 'NF { print; exit }')" || [ -z "$ip" ]; then
 		echo "seed-weapon-gallery: could not resolve Redis from Docker container $REDIS_CONTAINER" >&2
 		echo 'seed-weapon-gallery: Set RPG_REDIS_ADDRESS explicitly or ensure Docker and the container are available.' >&2
 		exit 1

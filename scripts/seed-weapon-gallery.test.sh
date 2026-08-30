@@ -54,6 +54,9 @@ missing)
 empty)
 	printf '\n'
 	;;
+multi)
+	printf '%s\n%s\n' "${MOCK_DOCKER_IP:-172.22.0.9}" "${MOCK_DOCKER_IP_2:-172.23.0.4}"
+	;;
 *)
 	echo "unsupported MOCK_DOCKER_MODE=$MOCK_DOCKER_MODE" >&2
 	exit 1
@@ -118,6 +121,13 @@ assert_go_args 'run|./cmd/sandboxseed|--fixture=weapon-gallery|--address=localho
 assert_file_contains "$repo" "$MOCK_GO_PWD"
 assert_file_contains 'API=localhost:8080' "$WORK/default.out"
 assert_file_contains 'Redis=172.22.0.9:6379' "$WORK/default.out"
+
+: >"$MOCK_DOCKER_LOG"
+repo="$WORK/repo-multi-network"
+make_repo "$repo"
+MOCK_DOCKER_MODE=multi MOCK_DOCKER_IP=172.22.0.9 MOCK_DOCKER_IP_2=172.23.0.4 run_wrapper "$repo" >"$WORK/multi.out"
+assert_go_args 'run|./cmd/sandboxseed|--fixture=weapon-gallery|--address=localhost:8080|--redis-address=172.22.0.9:6379'
+assert_file_contains 'Redis=172.22.0.9:6379' "$WORK/multi.out"
 
 : >"$MOCK_DOCKER_LOG"
 repo="$WORK/repo-override"
