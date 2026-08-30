@@ -122,7 +122,7 @@ func TestProjectView_RejectsEveryUnprojectablePersistedShape(t *testing.T) {
 			name: "unknown status descriptor",
 			mutate: func(t *testing.T, data *tkcharacter.Data) {
 				data.Conditions = []json.RawMessage{mustJSON(t, conditions.ShieldSpellConditionData{
-					Ref: refs.Spells.Shield(), CharacterID: data.ID,
+					Ref: refs.Spells.Shield(), MemberID: data.ID,
 				})}
 			},
 		},
@@ -183,7 +183,7 @@ func level3FighterData(t *testing.T, id string) *tkcharacter.Data {
 		},
 		Conditions: []json.RawMessage{
 			mustJSON(t, conditions.FightingStyleDefenseData{
-				Ref: refs.Conditions.FightingStyleDefense(), CharacterID: id,
+				Ref: refs.Conditions.FightingStyleDefense(), MemberID: id,
 			}),
 		},
 		Resources: map[coreResources.ResourceKey]tkcharacter.RecoverableResourceData{
