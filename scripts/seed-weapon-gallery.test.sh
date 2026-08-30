@@ -123,11 +123,18 @@ assert_file_contains 'API=localhost:8080' "$WORK/default.out"
 assert_file_contains 'Redis=172.22.0.9:6379' "$WORK/default.out"
 
 : >"$MOCK_DOCKER_LOG"
+: >"$MOCK_GO_ARGS"
 repo="$WORK/repo-multi-network"
 make_repo "$repo"
-MOCK_DOCKER_MODE=multi MOCK_DOCKER_IP=172.22.0.9 MOCK_DOCKER_IP_2=172.23.0.4 run_wrapper "$repo" >"$WORK/multi.out"
-assert_go_args 'run|./cmd/sandboxseed|--fixture=weapon-gallery|--address=localhost:8080|--redis-address=172.22.0.9:6379'
-assert_file_contains 'Redis=172.22.0.9:6379' "$WORK/multi.out"
+if output=$(MOCK_DOCKER_MODE=multi MOCK_DOCKER_IP=172.22.0.9 MOCK_DOCKER_IP_2=172.23.0.4 run_wrapper "$repo" 2>&1); then
+	fail 'multi-network Redis resolution unexpectedly succeeded'
+fi
+printf '%s' "$output" >"$WORK/multi.err"
+assert_file_contains 'could not resolve Redis from Docker container rpg-dev-redis-1' "$WORK/multi.err"
+assert_file_contains 'Set RPG_REDIS_ADDRESS explicitly or ensure Docker and the container are available.' "$WORK/multi.err"
+if [ -f "$MOCK_GO_ARGS" ] && [ -s "$MOCK_GO_ARGS" ]; then
+	fail 'go should not be invoked when Redis IP resolution is ambiguous'
+fi
 
 : >"$MOCK_DOCKER_LOG"
 repo="$WORK/repo-override"
