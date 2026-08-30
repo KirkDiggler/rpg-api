@@ -437,10 +437,10 @@ func (s *SessionStackSuite) TestStartEncounter_LaunchRestoresEveryMemberFully() 
 	})
 	s.Require().NoError(err)
 	unconscious, err := json.Marshal(conditions.UnconsciousData{
-		Ref:         refs.Conditions.Unconscious(),
-		CharacterID: "char-p2",
-		Failures:    3,
-		Dead:        true,
+		Ref:      refs.Conditions.Unconscious(),
+		MemberID: "char-p2",
+		Failures: 3,
+		Dead:     true,
 	})
 	s.Require().NoError(err)
 	_, err = s.charRepo.Create(s.ctx, characterrepo.CreateInput{

@@ -117,7 +117,7 @@ func (s *HandlerTestSuite) fighterCharacterEntity() *entities.Character {
 			},
 			Conditions: []json.RawMessage{
 				s.mustJSON(conditions.FightingStyleDefenseData{
-					Ref: refs.Conditions.FightingStyleDefense(), CharacterID: s.testCharacterID,
+					Ref: refs.Conditions.FightingStyleDefense(), MemberID: s.testCharacterID,
 				}),
 			},
 			Resources: map[coreResources.ResourceKey]character.RecoverableResourceData{
