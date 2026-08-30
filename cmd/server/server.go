@@ -14,6 +14,8 @@ import (
 	authoringhandler "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/authoring/v1alpha1"
 	lobbyhandler "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/lobby/v1alpha1"
 	sessionhandler "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/session/v1alpha1"
+	sessionaccess "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/sessionaccess"
+	sessionpresentationhandler "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/sessionpresentation/v1alpha1"
 	character2 "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v1alpha1/character"
 	characterhandlerv2 "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v2/character"
 
@@ -30,6 +32,7 @@ import (
 	apiv1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/api/v1alpha1"
 	authoringv1alpha1pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/authoring/v1alpha1"
 	lobbyv1alpha1pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/lobby/v1alpha1"
+	sessionpresentationv1alpha1pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/presentation/v1alpha1"
 	sessionv1alpha1pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
 	characterv2pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/character"
@@ -44,6 +47,7 @@ import (
 	diceorc "github.com/KirkDiggler/rpg-api/internal/orchestrators/dice"
 	lobbyorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/lobby"
 	sessionorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/session"
+	sessionpresentationorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/sessionpresentation"
 	"github.com/KirkDiggler/rpg-api/internal/pkg/clock"
 	"github.com/KirkDiggler/rpg-api/internal/pkg/idgen"
 	"github.com/KirkDiggler/rpg-api/internal/redis"
@@ -52,6 +56,7 @@ import (
 	dicesessionrepo "github.com/KirkDiggler/rpg-api/internal/repositories/dice_session"
 	lobbyrepo "github.com/KirkDiggler/rpg-api/internal/repositories/lobby"
 	rosterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/roster"
+	sessionpresentationrepo "github.com/KirkDiggler/rpg-api/internal/repositories/sessionpresentation"
 )
 
 // lobbyTTL is long enough for any single playtest session, short enough
@@ -242,16 +247,31 @@ func runServer(_ *cobra.Command, _ []string) error {
 	// Roster rows live as long as the session state they describe (the
 	// session orchestrator's own 24h TTL), not the lobby's shorter one.
 	rosterRepo := rosterrepo.NewRedis(redisClient, 24*time.Hour)
+	access, err := sessionaccess.New(charRepo, rosterRepo)
+	if err != nil {
+		return fmt.Errorf("session access: %w", err)
+	}
 	sessionHandlerImpl, err := sessionhandler.New(&sessionhandler.HandlerConfig{
 		Manager:    sessionOrch.Manager,
 		Broker:     sessionOrch.Broker,
 		Characters: charRepo,
 		Roster:     rosterRepo,
+		Access:     access,
 	})
 	if err != nil {
 		return fmt.Errorf("session handler: %w", err)
 	}
 	sessionv1alpha1pb.RegisterSessionServiceServer(srv, sessionHandlerImpl)
+
+	presentationService := sessionpresentationorch.New(sessionpresentationrepo.NewRedis(redisClient))
+	presentationHandlerImpl, err := sessionpresentationhandler.New(&sessionpresentationhandler.HandlerConfig{
+		Service: presentationService,
+		Access:  access,
+	})
+	if err != nil {
+		return fmt.Errorf("session presentation handler: %w", err)
+	}
+	sessionpresentationv1alpha1pb.RegisterSessionPresentationServiceServer(srv, presentationHandlerImpl)
 
 	// Content registry (rpg-api#806): constructed UNCONDITIONALLY -- the
 	// reference tomb must load whether or not authoring is on, because a
@@ -327,6 +347,7 @@ func runServer(_ *cobra.Command, _ []string) error {
 	healthServer.SetServingStatus("dnd5e.api.v1alpha1.CharacterService", grpc_health_v1.HealthCheckResponse_SERVING)
 	healthServer.SetServingStatus("api.v1alpha1.DiceService", grpc_health_v1.HealthCheckResponse_SERVING)
 	healthServer.SetServingStatus("dnd5e.api.session.v1alpha1.SessionService", grpc_health_v1.HealthCheckResponse_SERVING)
+	healthServer.SetServingStatus(sessionpresentationv1alpha1pb.SessionPresentationService_ServiceDesc.ServiceName, grpc_health_v1.HealthCheckResponse_SERVING)
 	healthServer.SetServingStatus("dnd5e.api.lobby.v1alpha1.LobbyService", grpc_health_v1.HealthCheckResponse_SERVING)
 
 	// AuthoringService v1alpha1 (rpg-api#806, rpg-project#256): the dungeon

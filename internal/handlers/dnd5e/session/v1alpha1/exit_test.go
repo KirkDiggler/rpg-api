@@ -17,7 +17,8 @@ import (
 )
 
 func TestExit_Unauthenticated_Errors(t *testing.T) {
-	h := &Handler{}
+	ctrl := gomock.NewController(t)
+	h := &Handler{characters: anyMemberOwnedBy(ctrl, "alice"), roster: testRoster()}
 	_, err := h.Exit(context.Background(), &sessionpb.ExitRequest{})
 	requireCode(t, err, codes.Unauthenticated)
 }
@@ -30,7 +31,7 @@ func TestExit_HappyPath(t *testing.T) {
 		Seq:     3,
 	}, nil)
 
-	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
+	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice"), roster: testRoster()}
 	ctx := auth.WithPlayerID(context.Background(), "alice")
 	resp, err := h.Exit(ctx, &sessionpb.ExitRequest{Session: "sess-1", Member: "char-1"})
 	require.NoError(t, err)
@@ -43,7 +44,7 @@ func TestExit_ManagerError_TranslatesViaErrorTable(t *testing.T) {
 	mgr := sessionv1alpha1mock.NewMockManager(ctrl)
 	mgr.EXPECT().Exit(gomock.Any(), gomock.Any()).Return(nil, sdk.ErrNoMember)
 
-	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
+	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice"), roster: testRoster()}
 	ctx := auth.WithPlayerID(context.Background(), "alice")
 	_, err := h.Exit(ctx, &sessionpb.ExitRequest{Session: "sess-1", Member: "char-1"})
 	requireCode(t, err, codes.NotFound)

@@ -11,6 +11,7 @@ import (
 
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
+	sessionaccess "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/sessionaccess"
 	sessionorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/session"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	rosterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/roster"
@@ -67,6 +68,9 @@ type Handler struct {
 	// roster is the launch-written roster store GetRoster serves from
 	// (rpg-project#264, ideas/characters/presentation).
 	roster rosterrepo.Repository
+	// access centralizes the member/seat entitlement checks shared across the
+	// session presentation handlers.
+	access *sessionaccess.Access
 }
 
 // HandlerConfig carries what New needs to build a Handler. Every field is
@@ -78,6 +82,11 @@ type HandlerConfig struct {
 	// Roster is the launch-written roster store GetRoster serves from
 	// (rpg-project#264). Required.
 	Roster rosterrepo.Repository
+	// Access is the shared caller/member/session gate. Optional for legacy
+	// tests that construct HandlerConfig directly; production and the
+	// integration harness pass one shared instance to SessionService and
+	// SessionPresentationService.
+	Access *sessionaccess.Access
 }
 
 // New constructs a Handler. Returns an error on any missing dependency.
@@ -97,7 +106,15 @@ func New(cfg *HandlerConfig) (*Handler, error) {
 	if cfg.Roster == nil {
 		return nil, errors.New("session handler: HandlerConfig.Roster is required")
 	}
-	return &Handler{manager: cfg.Manager, broker: cfg.Broker, characters: cfg.Characters, roster: cfg.Roster}, nil
+	access := cfg.Access
+	if access == nil {
+		var err error
+		access, err = sessionaccess.New(cfg.Characters, cfg.Roster)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return &Handler{manager: cfg.Manager, broker: cfg.Broker, characters: cfg.Characters, roster: cfg.Roster, access: access}, nil
 }
 
 // authenticatedPlayerID extracts the caller's player ID from ctx, or a
@@ -113,51 +130,22 @@ func authenticatedPlayerID(ctx context.Context) (string, error) {
 // callerActingAs is the single gate every verb that names a member passes
 // through: the caller is authenticated, the member is present, and the caller
 // controls it.
-//
-// One helper rather than three lines in each handler, because the failure mode
-// this closes is a handler that forgets one of them -- and eleven of the twelve
-// did. An empty member is refused here rather than deeper: the SDK would answer
-// ErrNoMember and translate to the same INVALID_ARGUMENT, but a member that is
-// not named cannot be one this caller owns, so the ownership question has no
-// meaning until it is.
 func (h *Handler) callerActingAs(ctx context.Context, member string) error {
-	playerID, err := authenticatedPlayerID(ctx)
+	gate, err := h.accessGate()
 	if err != nil {
 		return err
 	}
-	if member == "" {
-		return status.Error(codes.InvalidArgument, "member is required")
-	}
-	return h.verifyMemberOwnership(ctx, playerID, member)
+	return gate.CallerActingAs(ctx, member)
 }
 
-// verifyMemberOwnership confirms playerID controls the character named member.
-//
-// The session SDK has no notion of a caller's identity -- a member ID is just a
-// character ID it was handed, and Where/Move/Attack answer for whichever one
-// arrives -- so ownership is rpg-api's to enforce, the same way the old
-// encounter path's ErrEntityOwnershipMismatch is: a security boundary concern,
-// not a game rule (design rule 8 governs rules, not authz).
-//
-// THIS USED TO GUARD ONLY StreamEvents. Every other verb passed `member`
-// straight through, which meant any authenticated player could act as any
-// member ID they could guess -- move somebody else's fighter, swing their
-// sword, end their turn. On the read side it was worse than impersonation: a
-// client-supplied member on GetWhere or GetView re-opened exactly the
-// unperceived-roster leak the toolkit deliberately refused a batch positions
-// read to prevent (rpg-toolkit#1051), and monster IDs are learnable from story
-// beats. Both halves were flagged independently, by Copilot on the mutating
-// verbs and by this PR's own gate item on GetWhere; see callerActingAs.
-func (h *Handler) verifyMemberOwnership(ctx context.Context, playerID, member string) error {
-	out, err := h.characters.Get(ctx, characterrepo.GetInput{ID: member})
+func (h *Handler) accessGate() (*sessionaccess.Access, error) {
+	if h.access != nil {
+		return h.access, nil
+	}
+	gate, err := sessionaccess.New(h.characters, h.roster)
 	if err != nil {
-		return status.Errorf(codes.NotFound, "member %q not found", member)
+		return nil, err
 	}
-	if out == nil || out.Character == nil || out.Character.Data == nil {
-		return status.Errorf(codes.NotFound, "member %q not found", member)
-	}
-	if out.Character.Data.PlayerID != playerID {
-		return status.Error(codes.PermissionDenied, "caller does not control this member")
-	}
-	return nil
+	h.access = gate
+	return gate, nil
 }

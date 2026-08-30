@@ -92,7 +92,7 @@ func inAFightWith(
 }
 
 func activationsFor(
-	t *testing.T, h *acceptanceHarness, ctx context.Context, member string,
+	ctx context.Context, t *testing.T, h *acceptanceHarness, member string,
 ) map[string]*sessionpb.Declaration {
 	t.Helper()
 	out, err := h.handler.Afford(ctx, &sessionpb.AffordRequest{
@@ -128,8 +128,9 @@ func storedSheetOf(
 
 func conditionRefsOf(t *testing.T, repo characterrepo.Repository, id string) []string {
 	t.Helper()
-	out := make([]string, 0)
-	for _, raw := range storedSheetOf(t, repo, id).Conditions {
+	sheet := storedSheetOf(t, repo, id)
+	out := make([]string, 0, len(sheet.Conditions))
+	for _, raw := range sheet.Conditions {
 		var envelope struct {
 			Ref string `json:"ref"`
 		}
@@ -148,7 +149,7 @@ func conditionRefsOf(t *testing.T, repo characterrepo.Repository, id string) []s
 func TestAcceptance_TheWholeActivatableSurfaceCrossesTheWire(t *testing.T) {
 	h, ctx := inAFightWith(t, ragingBarbarian("alice", "player-alice"))
 
-	offers := activationsFor(t, h, ctx, "alice")
+	offers := activationsFor(ctx, t, h, "alice")
 
 	want := map[string]sessionpb.Slot{
 		"dnd5e:combat_abilities:dash":      sessionpb.Slot_SLOT_ACTION,
@@ -195,7 +196,7 @@ func TestAcceptance_TheWholeActivatableSurfaceCrossesTheWire(t *testing.T) {
 func TestAcceptance_RageAndDodgeAreLiveTogetherOnDifferentShapes(t *testing.T) {
 	h, ctx := inAFightWith(t, ragingBarbarian("alice", "player-alice"))
 
-	offers := activationsFor(t, h, ctx, "alice")
+	offers := activationsFor(ctx, t, h, "alice")
 	rage := offers["dnd5e:features:rage"]
 	dodge := offers["dnd5e:combat_abilities:dodge"]
 
@@ -211,7 +212,7 @@ func TestAcceptance_RageAndDodgeAreLiveTogetherOnDifferentShapes(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	after := activationsFor(t, h, ctx, "alice")
+	after := activationsFor(ctx, t, h, "alice")
 	require.False(t, after["dnd5e:features:rage"].GetAvailable(), "the bonus action is spent")
 	require.True(t, after["dnd5e:combat_abilities:dodge"].GetAvailable(), "the action is not")
 }
@@ -227,7 +228,7 @@ func TestAcceptance_RageAndDodgeAreLiveTogetherOnDifferentShapes(t *testing.T) {
 func TestAcceptance_RageSpendsACharge(t *testing.T) {
 	h, ctx := inAFightWith(t, ragingBarbarian("alice", "player-alice"))
 
-	rage := activationsFor(t, h, ctx, "alice")["dnd5e:features:rage"]
+	rage := activationsFor(ctx, t, h, "alice")["dnd5e:features:rage"]
 	_, err := h.handler.Activate(ctx, &sessionpb.ActivateRequest{
 		Session: "acceptance-run", Member: "alice", DeclarationId: rage.GetId(),
 	})
@@ -241,7 +242,7 @@ func TestAcceptance_RageSpendsACharge(t *testing.T) {
 
 	// And the second rage this turn is refused, with the panel told which
 	// ledger ran out. One charge is left, so this is the bonus action talking.
-	again := activationsFor(t, h, ctx, "alice")["dnd5e:features:rage"]
+	again := activationsFor(ctx, t, h, "alice")["dnd5e:features:rage"]
 	require.False(t, again.GetAvailable())
 	require.Equal(t, sessionpb.ShortfallReason_SHORTFALL_REASON_NO_BUDGET,
 		again.GetWhy().GetReason())
@@ -267,7 +268,7 @@ func TestAcceptance_EachSelfAffectingAbilityLandsItsCondition(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.ref, func(t *testing.T) {
 			h, ctx := inAFightWith(t, ragingBarbarian("alice", "player-alice"))
-			offer := activationsFor(t, h, ctx, "alice")[tc.ref]
+			offer := activationsFor(ctx, t, h, "alice")[tc.ref]
 			require.NotNil(t, offer)
 
 			_, err := h.handler.Activate(ctx, &sessionpb.ActivateRequest{
@@ -290,7 +291,7 @@ func TestAcceptance_DashBanksMovementRatherThanACondition(t *testing.T) {
 		beforeFeet = before.ActionEconomy.MovementRemaining
 	}
 
-	dash := activationsFor(t, h, ctx, "alice")["dnd5e:combat_abilities:dash"]
+	dash := activationsFor(ctx, t, h, "alice")["dnd5e:combat_abilities:dash"]
 	_, err := h.handler.Activate(ctx, &sessionpb.ActivateRequest{
 		Session: "acceptance-run", Member: "alice", DeclarationId: dash.GetId(),
 	})
@@ -307,7 +308,7 @@ func TestAcceptance_DashBanksMovementRatherThanACondition(t *testing.T) {
 func TestAcceptance_ASpentSelectorIsRefusedWithFailedPrecondition(t *testing.T) {
 	h, ctx := inAFightWith(t, ragingBarbarian("alice", "player-alice"))
 
-	dodge := activationsFor(t, h, ctx, "alice")["dnd5e:combat_abilities:dodge"]
+	dodge := activationsFor(ctx, t, h, "alice")["dnd5e:combat_abilities:dodge"]
 	_, err := h.handler.Activate(ctx, &sessionpb.ActivateRequest{
 		Session: "acceptance-run", Member: "alice", DeclarationId: dodge.GetId(),
 	})
@@ -322,7 +323,7 @@ func TestAcceptance_ASpentSelectorIsRefusedWithFailedPrecondition(t *testing.T) 
 	require.Equal(t, codes.FailedPrecondition, st.Code())
 
 	// And the panel is told why, in a currency it can name.
-	after := activationsFor(t, h, ctx, "alice")["dnd5e:combat_abilities:dodge"]
+	after := activationsFor(ctx, t, h, "alice")["dnd5e:combat_abilities:dodge"]
 	require.False(t, after.GetAvailable())
 	require.Equal(t, sessionpb.ShortfallReason_SHORTFALL_REASON_NO_BUDGET,
 		after.GetWhy().GetReason())
@@ -343,7 +344,7 @@ func TestAcceptance_SecondWindHealsTheFighter(t *testing.T) {
 
 	h, ctx := inAFightWith(t, fighter)
 
-	offers := activationsFor(t, h, ctx, "alice")
+	offers := activationsFor(ctx, t, h, "alice")
 	secondWind, ok := offers["dnd5e:features:second_wind"]
 	require.True(t, ok, "a fighter carrying Second Wind must be offered it")
 	require.Equal(t, sessionpb.Slot_SLOT_BONUS, secondWind.GetSlot())
@@ -376,7 +377,7 @@ func TestAcceptance_SecondWindHealsTheFighter(t *testing.T) {
 func TestAcceptance_HideLandsButItsCheckHasNothingToBeat(t *testing.T) {
 	h, ctx := inAFightWith(t, ragingBarbarian("alice", "player-alice"))
 
-	hide := activationsFor(t, h, ctx, "alice")["dnd5e:combat_abilities:hide"]
+	hide := activationsFor(ctx, t, h, "alice")["dnd5e:combat_abilities:hide"]
 	require.NotNil(t, hide)
 	require.True(t, hide.GetAvailable())
 
@@ -427,7 +428,7 @@ func TestAcceptance_HelpOffersTheAdjacentAlly(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	help := activationsFor(t, h, ctx, "alice")["dnd5e:combat_abilities:help"]
+	help := activationsFor(ctx, t, h, "alice")["dnd5e:combat_abilities:help"]
 	require.NotNil(t, help)
 	require.Equal(t, sessionpb.TargetKind_TARGET_KIND_MEMBER, help.GetTargetKind())
 
@@ -449,7 +450,7 @@ func TestAcceptance_HelpOffersTheAdjacentAlly(t *testing.T) {
 func TestAcceptance_HelpNeverOffersAMonster(t *testing.T) {
 	h, ctx := inAFightWith(t, ragingBarbarian("alice", "player-alice"))
 
-	help := activationsFor(t, h, ctx, "alice")["dnd5e:combat_abilities:help"]
+	help := activationsFor(ctx, t, h, "alice")["dnd5e:combat_abilities:help"]
 	require.NotNil(t, help)
 
 	for _, c := range help.GetCandidates() {

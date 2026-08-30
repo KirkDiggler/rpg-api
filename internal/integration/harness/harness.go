@@ -15,10 +15,14 @@ import (
 	"github.com/testcontainers/testcontainers-go"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/health"
+	"google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/test/bufconn"
 
 	apiv1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/api/v1alpha1"
 	lobbyv1alpha1pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/lobby/v1alpha1"
+	sessionpresentationpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/presentation/v1alpha1"
+	sessionv1alpha1pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
 	characterv2pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/character"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
@@ -26,12 +30,16 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/dungeons/dungeonstest"
 	apiv1alpha1handler "github.com/KirkDiggler/rpg-api/internal/handlers/api/v1alpha1"
 	lobbyhandler "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/lobby/v1alpha1"
+	sessionhandler "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/session/v1alpha1"
+	sessionaccess "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/sessionaccess"
+	sessionpresentationhandler "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/sessionpresentation/v1alpha1"
 	character2 "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v1alpha1/character"
 	characterhandlerv2 "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v2/character"
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
 	diceorc "github.com/KirkDiggler/rpg-api/internal/orchestrators/dice"
 	lobbyorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/lobby"
 	sessionorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/session"
+	sessionpresentationorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/sessionpresentation"
 	"github.com/KirkDiggler/rpg-api/internal/pkg/clock"
 	"github.com/KirkDiggler/rpg-api/internal/pkg/idgen"
 	"github.com/KirkDiggler/rpg-api/internal/redis"
@@ -40,6 +48,7 @@ import (
 	dicesessionrepo "github.com/KirkDiggler/rpg-api/internal/repositories/dice_session"
 	lobbyrepo "github.com/KirkDiggler/rpg-api/internal/repositories/lobby"
 	rosterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/roster"
+	sessionpresentationrepo "github.com/KirkDiggler/rpg-api/internal/repositories/sessionpresentation"
 )
 
 const bufSize = 1024 * 1024
@@ -61,14 +70,18 @@ type TestServer struct {
 	closeOnce      sync.Once
 
 	// Proto-generated clients for tests to use
-	CharacterClient dnd5ev1alpha1.CharacterServiceClient
-	DiceClient      apiv1alpha1.DiceServiceClient
-	LobbyClient     lobbyv1alpha1pb.LobbyServiceClient
+	CharacterClient           dnd5ev1alpha1.CharacterServiceClient
+	DiceClient                apiv1alpha1.DiceServiceClient
+	LobbyClient               lobbyv1alpha1pb.LobbyServiceClient
+	SessionClient             sessionv1alpha1pb.SessionServiceClient
+	SessionPresentationClient sessionpresentationpb.SessionPresentationServiceClient
+	HealthClient              grpc_health_v1.HealthClient
 
 	// Exposed for test setup (seeding data, etc.)
 	CharacterRepo characterrepo.Repository
 	LobbyBroker   *lobbyorch.Broker
 	LobbyRepo     lobbyrepo.Repository
+	RosterRepo    rosterrepo.Repository
 	SessionOrch   *sessionorch.Orchestrator
 }
 
@@ -164,32 +177,32 @@ func newWithClientSource(ctx context.Context, cfg *Config, redisAddr string) (*T
 	// Verify Redis connection
 	pingCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	if err := redisClient.Ping(pingCtx).Err(); err != nil {
+	if pingErr := redisClient.Ping(pingCtx).Err(); pingErr != nil {
 		ts.Close()
-		return nil, fmt.Errorf("failed to ping redis: %w", err)
+		return nil, fmt.Errorf("failed to ping redis: %w", pingErr)
 	}
 
 	// Wire up all the dependencies (mirrors cmd/server/server.go)
-	if err := ts.wireServices(cfg); err != nil {
+	if wireErr := ts.wireServices(cfg); wireErr != nil {
 		ts.Close()
-		return nil, fmt.Errorf("failed to wire services: %w", err)
+		return nil, fmt.Errorf("failed to wire services: %w", wireErr)
 	}
 
 	// Start serving
 	go func() {
-		if err := ts.grpcServer.Serve(ts.listener); err != nil {
-			log.Printf("gRPC server error: %v", err)
+		if serveErr := ts.grpcServer.Serve(ts.listener); serveErr != nil {
+			log.Printf("gRPC server error: %v", serveErr)
 		}
 	}()
 
-	// Create client connection via bufconn
-	conn, err := grpc.DialContext(ctx, "bufnet",
-		grpc.WithContextDialer(ts.bufDialer),
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-	)
+	// Create client connection via bufconn. NewClient is the supported
+	// replacement for DialContext; use the passthrough target plus the same
+	// context dialer, then call Connect() to preserve DialContext's old
+	// asynchronous connection kick without adding ready-wait behavior.
+	conn, err := newBufconnClientConn(ts.bufDialer)
 	if err != nil {
 		ts.Close()
-		return nil, fmt.Errorf("failed to dial bufconn: %w", err)
+		return nil, fmt.Errorf("failed to create bufconn client: %w", err)
 	}
 	ts.conn = conn
 
@@ -197,6 +210,9 @@ func newWithClientSource(ctx context.Context, cfg *Config, redisAddr string) (*T
 	ts.CharacterClient = dnd5ev1alpha1.NewCharacterServiceClient(conn)
 	ts.DiceClient = apiv1alpha1.NewDiceServiceClient(conn)
 	ts.LobbyClient = lobbyv1alpha1pb.NewLobbyServiceClient(conn)
+	ts.SessionClient = sessionv1alpha1pb.NewSessionServiceClient(conn)
+	ts.SessionPresentationClient = sessionpresentationpb.NewSessionPresentationServiceClient(conn)
+	ts.HealthClient = grpc_health_v1.NewHealthClient(conn)
 
 	return ts, nil
 }
@@ -292,6 +308,13 @@ func (ts *TestServer) wireServices(cfg *Config) error {
 	characterv2pb.RegisterCharacterServiceServer(ts.grpcServer, characterHandlerV2)
 	apiv1alpha1.RegisterDiceServiceServer(ts.grpcServer, diceHandler)
 
+	healthServer := health.NewServer()
+	grpc_health_v1.RegisterHealthServer(ts.grpcServer, healthServer)
+	healthServer.SetServingStatus("", grpc_health_v1.HealthCheckResponse_SERVING)
+	healthServer.SetServingStatus(dnd5ev1alpha1.CharacterService_ServiceDesc.ServiceName, grpc_health_v1.HealthCheckResponse_SERVING)
+	healthServer.SetServingStatus(characterv2pb.CharacterService_ServiceDesc.ServiceName, grpc_health_v1.HealthCheckResponse_SERVING)
+	healthServer.SetServingStatus(apiv1alpha1.DiceService_ServiceDesc.ServiceName, grpc_health_v1.HealthCheckResponse_SERVING)
+
 	// SessionService's toolkit integration -- the sole encounter-construction
 	// stack StartEncounter builds onto now that the old v1alpha2 encounter
 	// path has been removed (rpg-project#227). Shares charRepo with the rest
@@ -304,6 +327,36 @@ func (ts *TestServer) wireServices(cfg *Config) error {
 		return fmt.Errorf("session orchestrator: %w", err)
 	}
 	ts.SessionOrch = sessOrch
+
+	rosterRepo := rosterrepo.NewRedis(ts.redisClient, 24*time.Hour)
+	ts.RosterRepo = rosterRepo
+	access, err := sessionaccess.New(charRepo, rosterRepo)
+	if err != nil {
+		return fmt.Errorf("session access: %w", err)
+	}
+	sessionHandlerImpl, err := sessionhandler.New(&sessionhandler.HandlerConfig{
+		Manager:    sessOrch.Manager,
+		Broker:     sessOrch.Broker,
+		Characters: charRepo,
+		Roster:     rosterRepo,
+		Access:     access,
+	})
+	if err != nil {
+		return fmt.Errorf("session handler: %w", err)
+	}
+	sessionv1alpha1pb.RegisterSessionServiceServer(ts.grpcServer, sessionHandlerImpl)
+	healthServer.SetServingStatus(sessionv1alpha1pb.SessionService_ServiceDesc.ServiceName, grpc_health_v1.HealthCheckResponse_SERVING)
+
+	presentationService := sessionpresentationorch.New(sessionpresentationrepo.NewRedis(ts.redisClient))
+	presentationHandlerImpl, err := sessionpresentationhandler.New(&sessionpresentationhandler.HandlerConfig{
+		Service: presentationService,
+		Access:  access,
+	})
+	if err != nil {
+		return fmt.Errorf("session presentation handler: %w", err)
+	}
+	sessionpresentationpb.RegisterSessionPresentationServiceServer(ts.grpcServer, presentationHandlerImpl)
+	healthServer.SetServingStatus(sessionpresentationpb.SessionPresentationService_ServiceDesc.ServiceName, grpc_health_v1.HealthCheckResponse_SERVING)
 
 	// LobbyService v1alpha1 -- broker and repo are stored on ts so tests can
 	// seed/inspect lobby state directly. StartEncounter builds onto
@@ -336,7 +389,7 @@ func (ts *TestServer) wireServices(cfg *Config) error {
 		EncounterIDGenerator: idgen.NewUUID(""),
 		SessionManager:       sessOrch.Manager,
 		Dungeons:             registry,
-		RosterRepo:           rosterrepo.NewInMemory(),
+		RosterRepo:           rosterRepo,
 	})
 	if err != nil {
 		return fmt.Errorf("lobby orchestrator: %w", err)
@@ -349,6 +402,7 @@ func (ts *TestServer) wireServices(cfg *Config) error {
 		return fmt.Errorf("lobby handler: %w", err)
 	}
 	lobbyv1alpha1pb.RegisterLobbyServiceServer(ts.grpcServer, lobbyHandlerImpl)
+	healthServer.SetServingStatus(lobbyv1alpha1pb.LobbyService_ServiceDesc.ServiceName, grpc_health_v1.HealthCheckResponse_SERVING)
 
 	// Create bufconn listener
 	ts.listener = bufconn.Listen(bufSize)
@@ -358,6 +412,19 @@ func (ts *TestServer) wireServices(cfg *Config) error {
 
 func (ts *TestServer) bufDialer(ctx context.Context, _ string) (net.Conn, error) {
 	return ts.listener.DialContext(ctx)
+}
+
+func newBufconnClientConn(dialer func(context.Context, string) (net.Conn, error)) (*grpc.ClientConn, error) {
+	conn, err := grpc.NewClient("passthrough:///bufnet",
+		grpc.WithContextDialer(dialer),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
+	if err != nil {
+		return nil, err
+	}
+	conn.Connect()
+
+	return conn, nil
 }
 
 // Close cleans up everything this TestServer owns: the gRPC server,
@@ -374,7 +441,7 @@ func (ts *TestServer) Close() {
 
 func (ts *TestServer) closeAll() {
 	if ts.conn != nil {
-		ts.conn.Close()
+		_ = ts.conn.Close()
 	}
 	if ts.grpcServer != nil {
 		ts.grpcServer.Stop()
@@ -383,7 +450,7 @@ func (ts *TestServer) closeAll() {
 		_ = ts.LobbyBroker.Close()
 	}
 	if ts.redisClient != nil {
-		ts.redisClient.Close()
+		_ = ts.redisClient.Close()
 	}
 	if ts.redisContainer != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

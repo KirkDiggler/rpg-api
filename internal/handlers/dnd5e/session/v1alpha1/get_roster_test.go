@@ -9,7 +9,6 @@ import (
 	"google.golang.org/grpc/codes"
 
 	tkcharacter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
-	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/classes"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/races"
 
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
@@ -48,7 +47,7 @@ func charactersOf(ctrl *gomock.Controller, rows map[string][4]string) characterr
 			}
 			return &characterrepo.GetOutput{Character: &entities.Character{Data: &tkcharacter.Data{
 				ID: in.ID, PlayerID: row[0], Name: row[1],
-				ClassID: classes.Class(row[2]), RaceID: races.Race(row[3]),
+				ClassID: row[2], RaceID: races.Race(row[3]),
 			}}}, nil
 		},
 	).AnyTimes()

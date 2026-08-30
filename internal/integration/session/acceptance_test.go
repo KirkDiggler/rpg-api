@@ -606,7 +606,7 @@ func TestGetRoster_ServesTheLaunchWrittenRow(t *testing.T) {
 
 	alice := resp.GetMembers()[0]
 	require.Equal(t, sessionpb.MemberKind_MEMBER_KIND_PLAYER, alice.GetKind())
-	require.Equal(t, string(classes.Fighter), alice.GetClassRef(),
+	require.Equal(t, classes.Fighter, alice.GetClassRef(),
 		"class ref must be the character record's own word — the one the local-player render path already maps")
 	require.Equal(t, string(races.Human), alice.GetRaceRef())
 	require.NotNil(t, alice.GetCustomization(), "the shelf is always set")

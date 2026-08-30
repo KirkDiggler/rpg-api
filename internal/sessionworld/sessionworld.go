@@ -174,7 +174,12 @@ func Compile(raw []byte) (*Dungeon, error) {
 			continue
 		}
 		if bossID != "" {
-			return nil, fmt.Errorf("dungeon %q authors more than one boss (%q and %q): one death ends things, and it cannot be two", decoded.Key, bossID, m.MemberID)
+			return nil, fmt.Errorf(
+				"dungeon %q authors more than one boss (%q and %q): one death ends things, and it cannot be two",
+				decoded.Key,
+				bossID,
+				m.MemberID,
+			)
 		}
 		bossID = m.MemberID
 	}
