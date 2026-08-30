@@ -238,6 +238,14 @@ func (h *Handler) UpdateRace(
 						_ = spell
 					}
 				}
+			case dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_TOOLS:
+				if tools := choice.GetTools(); tools != nil {
+					for _, tool := range tools.Tools {
+						if toolID := convertProtoToolToToolkit(tool); toolID != "" {
+							raceChoices.Tools = append(raceChoices.Tools, toolID)
+						}
+					}
+				}
 			}
 		}
 	}

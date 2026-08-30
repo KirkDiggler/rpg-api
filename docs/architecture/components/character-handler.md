@@ -1,13 +1,17 @@
 ---
 name: character handler
 description: gRPC handler for CharacterService — character creation, management, and data loading
-updated: 2026-08-25
-confidence: medium-high — legacy surface verified by read; #844 shared strict equipment path and v1alpha2 flattened owner-private mapping verified by focused tests
+updated: 2026-08-30
+confidence: medium-high — legacy surface verified by read; #844 shared strict equipment path, v1alpha2 flattened owner-private mapping, and #728 Dwarf tool-choice translation verified by focused and integration tests
 ---
 
 # character handler
 
 The character handler is the gRPC adapter for `CharacterService`. It covers the full character creation lifecycle (draft → finalize), character management (equip/unequip), and data loading for the character creation UI (list races, classes, backgrounds, equipment, spells).
+
+## Dwarf race tool choices (#728)
+
+`UpdateRace` translates `CHOICE_CATEGORY_TOOLS` through the same canonical proto-to-toolkit tool converter used by class choices and passes the resulting selection IDs into `RaceChoices.Tools`. The toolkit remains responsible for validating Dwarf choice eligibility and completeness. Handler coverage pins Smith's Tools translation, while the character integration suite drives Dwarf race selection through `FinalizeDraft` to prevent a successful-but-discarded choice regression.
 
 ## Shared strict character application (#844)
 
@@ -71,7 +75,6 @@ separate `SessionService` handler.
 - `TRAIT_UNSPECIFIED` returned for all trait conversions (line 378)
 - No language enum conversions — language fields return empty (line 1169)
 - No subrace conversions — subrace data not mapped (line 782)
-- Tool proficiency proto enums not mapped (line 899)
 - Spell slot conversion not implemented (line 1182)
 - Class resource conversion not implemented (line 1186)
 - Equipment data incomplete for armor and tools (line 798)

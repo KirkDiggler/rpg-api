@@ -474,6 +474,67 @@ func (s *CharacterCreationSuite) TestCreateRogue() {
 // BARBARIAN - Already tested, include for completeness
 // =============================================================================
 
+func (s *CharacterCreationSuite) TestCreateDwarfBarbarianWithToolChoice() {
+	ctx := s.authCtx("test-player-dwarf-barbarian")
+
+	createResp, err := s.server.CharacterClient.CreateDraft(ctx, &dnd5ev1alpha1.CreateDraftRequest{})
+	s.Require().NoError(err)
+	draftID := createResp.GetDraft().GetId()
+
+	_, err = s.server.CharacterClient.UpdateName(ctx, &dnd5ev1alpha1.UpdateNameRequest{
+		DraftId: draftID, Name: "Dagna",
+	})
+	s.Require().NoError(err)
+
+	_, err = s.server.CharacterClient.UpdateRace(ctx, &dnd5ev1alpha1.UpdateRaceRequest{
+		DraftId: draftID,
+		Race:    dnd5ev1alpha1.Race_RACE_DWARF,
+		RaceChoices: []*dnd5ev1alpha1.ChoiceData{
+			{
+				Category: dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_TOOLS,
+				Source:   dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_RACE,
+				ChoiceId: "dwarf-tools",
+				Selection: &dnd5ev1alpha1.ChoiceData_Tools{
+					Tools: &dnd5ev1alpha1.ToolSelection{
+						Tools: []dnd5ev1alpha1.Tool{dnd5ev1alpha1.Tool_TOOL_SMITH_TOOLS},
+					},
+				},
+			},
+		},
+	})
+	s.Require().NoError(err)
+
+	_, err = s.server.CharacterClient.UpdateClass(ctx, &dnd5ev1alpha1.UpdateClassRequest{
+		DraftId: draftID,
+		Class:   dnd5ev1alpha1.Class_CLASS_BARBARIAN,
+		ClassChoices: []*dnd5ev1alpha1.ChoiceData{
+			{Category: dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_SKILLS, Source: dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_CLASS, Selection: &dnd5ev1alpha1.ChoiceData_Skills{Skills: &dnd5ev1alpha1.SkillSelection{Skills: []dnd5ev1alpha1.Skill{dnd5ev1alpha1.Skill_SKILL_ATHLETICS, dnd5ev1alpha1.Skill_SKILL_INTIMIDATION}}}},
+			{Category: dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_EQUIPMENT, Source: dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_CLASS, ChoiceId: "barbarian-weapons-primary", OptionId: "barbarian-weapon-a", Selection: &dnd5ev1alpha1.ChoiceData_Equipment{Equipment: &dnd5ev1alpha1.EquipmentSelection{}}},
+			{Category: dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_EQUIPMENT, Source: dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_CLASS, ChoiceId: "barbarian-weapons-secondary", OptionId: "barbarian-secondary-a", Selection: &dnd5ev1alpha1.ChoiceData_Equipment{Equipment: &dnd5ev1alpha1.EquipmentSelection{}}},
+			{Category: dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_EQUIPMENT, Source: dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_CLASS, ChoiceId: "barbarian-pack", OptionId: "barbarian-pack-a", Selection: &dnd5ev1alpha1.ChoiceData_Equipment{Equipment: &dnd5ev1alpha1.EquipmentSelection{}}},
+		},
+	})
+	s.Require().NoError(err)
+
+	_, err = s.server.CharacterClient.UpdateBackground(ctx, &dnd5ev1alpha1.UpdateBackgroundRequest{
+		DraftId: draftID, Background: dnd5ev1alpha1.Background_BACKGROUND_OUTLANDER,
+	})
+	s.Require().NoError(err)
+
+	_, err = s.server.CharacterClient.UpdateAbilityScores(ctx, &dnd5ev1alpha1.UpdateAbilityScoresRequest{
+		DraftId: draftID,
+		ScoresInput: &dnd5ev1alpha1.UpdateAbilityScoresRequest_AbilityScores{
+			AbilityScores: &dnd5ev1alpha1.AbilityScores{Strength: 15, Dexterity: 13, Constitution: 14, Intelligence: 8, Wisdom: 12, Charisma: 10},
+		},
+	})
+	s.Require().NoError(err)
+
+	finalizeResp, err := s.server.CharacterClient.FinalizeDraft(ctx, &dnd5ev1alpha1.FinalizeDraftRequest{DraftId: draftID})
+	s.Require().NoError(err)
+	s.Require().NotNil(finalizeResp.GetCharacter())
+	s.Equal(dnd5ev1alpha1.Race_RACE_DWARF, finalizeResp.GetCharacter().GetRace())
+}
+
 func (s *CharacterCreationSuite) TestCreateBarbarian() {
 	s.T().Log("Creating Barbarian character...")
 	ctx := s.authCtx("test-player-barbarian")
