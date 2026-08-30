@@ -68,7 +68,13 @@ make run
 
 ### Development fixtures
 
-`sandboxseed` is dev-only. The default fixture preserves the existing toolkit sandbox characters; the repeatable weapon gallery fixture creates/reuses a dedicated Human Fighter and normalizes its weapon inventory through the character repository:
+`sandboxseed` is dev-only. The default fixture preserves the existing toolkit sandbox characters. For the rpg-dev Docker stack, use the wrapper so the repeatable weapon gallery fixture targets the Redis container instead of guessing `localhost`:
+
+```bash
+./scripts/seed-weapon-gallery.sh
+```
+
+If you are running Redis natively on the host instead of via the Docker dev stack, keep using the direct command:
 
 ```bash
 go run ./cmd/sandboxseed --fixture=weapon-gallery --address=localhost:8080 --redis-address=localhost:6379
