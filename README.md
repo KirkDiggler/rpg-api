@@ -66,6 +66,14 @@ make test
 make run
 ```
 
+### Development fixtures
+
+`sandboxseed` is dev-only. The default fixture preserves the existing toolkit sandbox characters; the repeatable weapon gallery fixture creates/reuses a dedicated Human Fighter and normalizes its weapon inventory through the character repository:
+
+```bash
+go run ./cmd/sandboxseed --fixture=weapon-gallery --address=localhost:8080 --redis-address=localhost:6379
+```
+
 ### Pre-commit Workflow
 
 **Always** run before committing:
