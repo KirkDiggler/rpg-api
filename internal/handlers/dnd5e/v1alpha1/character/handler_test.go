@@ -16,6 +16,9 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
 	charactermock "github.com/KirkDiggler/rpg-api/internal/orchestrators/character/mock"
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/races"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/refs"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
 )
 
 type HandlerTestSuite struct {
@@ -42,6 +45,47 @@ func (s *HandlerTestSuite) SetupTest() {
 
 func (s *HandlerTestSuite) TearDownTest() {
 	s.ctrl.Finish()
+}
+
+func (s *HandlerTestSuite) TestUpdateRace_MapsDwarfToolChoice() {
+	const draftID = "draft-dwarf"
+	req := &dnd5ev1alpha1.UpdateRaceRequest{
+		DraftId: draftID,
+		Race:    dnd5ev1alpha1.Race_RACE_DWARF,
+		RaceChoices: []*dnd5ev1alpha1.ChoiceData{
+			{
+				Category: dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_TOOLS,
+				Source:   dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_RACE,
+				ChoiceId: "dwarf-tools",
+				Selection: &dnd5ev1alpha1.ChoiceData_Tools{
+					Tools: &dnd5ev1alpha1.ToolSelection{
+						Tools: []dnd5ev1alpha1.Tool{dnd5ev1alpha1.Tool_TOOL_SMITH_TOOLS},
+					},
+				},
+			},
+		},
+	}
+
+	s.mockService.EXPECT().
+		SetRace(s.ctx, &character.SetRaceInput{
+			DraftID: draftID,
+			Input: &toolkitchar.SetRaceInput{
+				RaceID: races.Dwarf,
+				Choices: toolkitchar.RaceChoices{
+					Tools: []shared.SelectionID{refs.Tools.SmithTools().ID},
+				},
+			},
+		}).
+		Return(&character.SetRaceOutput{
+			Draft: &toolkitchar.DraftData{ID: draftID, Race: races.Dwarf},
+		}, nil)
+
+	resp, err := s.handler.UpdateRace(s.ctx, req)
+
+	s.Require().NoError(err)
+	s.Require().NotNil(resp.GetDraft())
+	s.Equal(draftID, resp.GetDraft().GetId())
+	s.Equal(dnd5ev1alpha1.Race_RACE_DWARF, resp.GetDraft().GetRace())
 }
 
 func (s *HandlerTestSuite) TestDeleteCharacter_Success() {

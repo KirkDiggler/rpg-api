@@ -257,9 +257,10 @@ not been redesigned and TTL/stale-character lifecycle remains unchanged.
 
 `internal/repositories/character_draft/redis.go`
 
-Redis-backed. Handles in-progress character creation state. Less tested than
-the character repo (no integration tests that specifically exercise draft
-lifecycle). No known correctness gaps.
+Redis-backed. Handles in-progress character creation state. The character
+integration suite now proves a Dwarf race tool choice persists through draft
+finalization (#728), but broad repository lifecycle coverage remains thinner
+than the character repository. No known correctness gaps.
 
 ### Dice session repository — B-
 
