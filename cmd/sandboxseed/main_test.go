@@ -65,7 +65,7 @@ func TestRunWithDeps_GalleryWiresRedisBackedStoreWithoutNetworkInUnitTest(t *tes
 		seedGallery: func(_ context.Context, input *sandboxseed.SeedWeaponGalleryInput) (*sandboxseed.SeedWeaponGalleryOutput, error) {
 			require.Same(t, fakeClient, input.Client)
 			require.Same(t, fakeStore, input.Store)
-			return &sandboxseed.SeedWeaponGalleryOutput{CharacterID: "stable-id", WeaponCount: 22}, nil
+			return &sandboxseed.SeedWeaponGalleryOutput{CharacterID: "stable-id", WeaponCount: 27}, nil
 		},
 		stdout: &stdout,
 	}
@@ -77,7 +77,7 @@ func TestRunWithDeps_GalleryWiresRedisBackedStoreWithoutNetworkInUnitTest(t *tes
 	require.Equal(t, "redis:6380", openedRedisAddress)
 	require.True(t, fakeStore.closed)
 	require.Contains(t, stdout.String(), "character_id=stable-id")
-	require.Contains(t, stdout.String(), "weapon_count=22")
+	require.Contains(t, stdout.String(), "weapon_count=27")
 }
 
 func TestRunWithDeps_HealthIgnoresGalleryFixtureSeeding(t *testing.T) {

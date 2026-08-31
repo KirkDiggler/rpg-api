@@ -68,7 +68,7 @@ make run
 
 ### Development fixtures
 
-`sandboxseed` is dev-only. The default fixture preserves the existing toolkit sandbox characters. For the rpg-dev Docker stack, use the wrapper so the repeatable weapon gallery fixture targets the Redis container instead of guessing `localhost`:
+`sandboxseed` is dev-only. The default fixture preserves the existing toolkit sandbox characters. The repeatable Weapon Gallery owns exactly one of all 27 currently promoted weapons while preserving its stable character ID and non-weapon state. For the rpg-dev Docker stack, use the wrapper so the gallery fixture targets the Redis container instead of guessing `localhost`:
 
 ```bash
 ./scripts/seed-weapon-gallery.sh
