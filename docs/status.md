@@ -30,13 +30,15 @@ record; the living entries start above.
 </details>
 
 **Production session-combat API and strict owner-private character sheet
-(rpg-api#844, rpg-project#270 / PR #271, 2026-08-25)** — `SessionService.Afford`
-maps the toolkit's one declaration per executable verb field-for-field: Attack, Move,
-and End Turn; slot and availability; optional remaining/why/full `AttackRef`; opaque
-declaration ID; target kind; and every candidate's independent availability/why.
-Unknown closed enums become UNSPECIFIED producer defects. A NO_TARGET_IN_REACH
-declaration keeps its candidate rows and TARGET_OUT_OF_REACH reasons; rpg-api derives
-no reach, cost, target, availability, resource, or prose rule.
+(rpg-api#844, rpg-project#270 / PR #271, updated by rpg-api#611)** — `SessionService.Afford`
+maps one toolkit declaration per compiled offer field-for-field, including multiple
+rows with the same verb: the normal Attack and, after a qualifying swing, the off-hand
+`ATTACK` / `BONUS` offer; Move; End Turn; slot and availability; optional
+remaining/why/full `AttackRef`; opaque declaration ID; target kind; and every
+candidate's independent availability/why. Unknown closed enums become UNSPECIFIED
+producer defects. A NO_TARGET_IN_REACH declaration keeps its candidate rows and
+TARGET_OUT_OF_REACH reasons; rpg-api derives no reach, cost, target, availability,
+resource, weapon-property, prior-action, or prose rule.
 
 Attack, turn-clock Move, and End Turn pass the caller's opaque `declaration_id` into the
 SDK after the unchanged owner gate and before the one Manager call. Missing selectors
@@ -73,9 +75,12 @@ and performs no raw JSON inspection, rule calculation, magic projection, or full
 snapshot SET from the equipment path. Spell slots and legacy ClassResources remain
 excluded.
 
-Final published dependencies are proto generated v0.1.143 (`a7db07a`),
-`rulebooks/dnd5e` v0.100.0, `rulebooks/dnd5e/session` v0.30.0, and
-`rulebooks/dnd5e/resolution` v0.13.0, with no local replace or generated-source edit.
+The off-hand consumer proof (rpg-api#611) uses published `rulebooks/dnd5e`
+v0.123.0, `rulebooks/dnd5e/resolution` v0.25.0, and
+`rulebooks/dnd5e/session` v0.41.0. Handler/orchestrator behavior is unchanged: the
+client echoes the selected declaration ID through the existing Attack RPC. Acceptance
+proves both the universal no-modifier bonus strike and Fighting Style restoration with
+feature attribution, with no local replace or generated-source edit.
 
 **Equipment on the wire (rpg-api#680, updated by #844)** — the original real-AC and
 single-toolkit-equip-path ruling remains; #844 replaces its full-record merge write with

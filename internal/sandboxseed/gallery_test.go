@@ -477,8 +477,8 @@ func galleryCharacter(id string, inventory []tkcharacter.InventoryItemData) *ent
 				ReactionsRemaining:    1,
 				MovementRemaining:     15,
 				Granted: map[tkcharacter.GrantedActionKey]int{
-					tkcharacter.GrantedAttacks:       1,
-					tkcharacter.GrantedOffHandAttack: 1,
+					tkcharacter.GrantedAttacks:        1,
+					tkcharacter.GrantedOffHandStrikes: 1,
 				},
 			},
 			CreatedAt: time.Unix(1, 0),
