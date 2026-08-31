@@ -41,6 +41,11 @@ var galleryWeaponIDs = []string{
 	"spear",
 	"sling",
 	"dart",
+	"halberd",
+	"maul",
+	"morningstar",
+	"pike",
+	"war-pick",
 }
 
 // CharacterStore is the narrow character repository surface used by the gallery fixture.

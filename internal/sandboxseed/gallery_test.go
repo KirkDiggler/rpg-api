@@ -45,7 +45,7 @@ func TestSeedWeaponGallery_CreatesMissingGalleryCharacterThenNormalizesRepositor
 	out, err := SeedWeaponGallery(context.Background(), &SeedWeaponGalleryInput{Client: client, Store: store})
 
 	require.NoError(t, err)
-	require.Equal(t, &SeedWeaponGalleryOutput{CharacterID: "gallery-id", WeaponCount: 22}, out)
+	require.Equal(t, &SeedWeaponGalleryOutput{CharacterID: "gallery-id", WeaponCount: 27}, out)
 	require.Equal(t, []string{"ListCharacters", "CreateDraft", "UpdateName", "UpdateRace", "UpdateClass", "UpdateBackground", "UpdateAbilityScores", "GetDraft", "FinalizeDraft", "ListCharacters"}, client.calls)
 	require.Empty(t, client.deletedIDs)
 	require.Len(t, store.updates, 1)
@@ -85,7 +85,7 @@ func TestSeedWeaponGallery_RepeatedRunPreservesStableCharacterAndSkipsExactInven
 	out, err := SeedWeaponGallery(context.Background(), &SeedWeaponGalleryInput{Client: client, Store: store})
 
 	require.NoError(t, err)
-	require.Equal(t, &SeedWeaponGalleryOutput{CharacterID: "stable-id", WeaponCount: 22}, out)
+	require.Equal(t, &SeedWeaponGalleryOutput{CharacterID: "stable-id", WeaponCount: 27}, out)
 	require.Equal(t, []string{"ListCharacters"}, client.calls)
 	require.Empty(t, client.deletedIDs)
 	require.Empty(t, store.updates)
@@ -130,6 +130,11 @@ func TestSeedWeaponGallery_NormalizesMissingDuplicateAndExtraWeaponsWhilePreserv
 		{Type: shared.EquipmentTypeWeapon, ID: "spear", Quantity: 1},
 		{Type: shared.EquipmentTypeWeapon, ID: "sling", Quantity: 1},
 		{Type: shared.EquipmentTypeWeapon, ID: "dart", Quantity: 1},
+		{Type: shared.EquipmentTypeWeapon, ID: "halberd", Quantity: 1},
+		{Type: shared.EquipmentTypeWeapon, ID: "maul", Quantity: 1},
+		{Type: shared.EquipmentTypeWeapon, ID: "morningstar", Quantity: 1},
+		{Type: shared.EquipmentTypeWeapon, ID: "pike", Quantity: 1},
+		{Type: shared.EquipmentTypeWeapon, ID: "war-pick", Quantity: 1},
 		{Type: shared.EquipmentTypeAmmunition, ID: "arrows", Quantity: 20},
 	}
 
