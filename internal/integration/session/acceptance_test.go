@@ -327,6 +327,11 @@ type acceptanceHarness struct {
 
 func newAcceptanceHarness(t *testing.T) *acceptanceHarness {
 	t.Helper()
+	return newAcceptanceHarnessWithDice(t, testDice{})
+}
+
+func newAcceptanceHarnessWithDice(t *testing.T, roller sdk.Roller) *acceptanceHarness {
+	t.Helper()
 
 	mr := miniredis.RunT(t)
 	client := goredis.NewClient(&goredis.Options{Addr: mr.Addr()})
@@ -341,7 +346,7 @@ func newAcceptanceHarness(t *testing.T) *acceptanceHarness {
 	// flaky "miss" run with real randomness (session.Roller's own doc:
 	// "a test wires a fixed one and gets a reproducible fight").
 	orch, err := sessionorch.New(sessionorch.Config{
-		Redis: client, Characters: charRepo, TTL: 24 * time.Hour, Dice: testDice{},
+		Redis: client, Characters: charRepo, TTL: 24 * time.Hour, Dice: roller,
 	})
 	require.NoError(t, err)
 
