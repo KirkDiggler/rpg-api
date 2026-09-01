@@ -9,6 +9,7 @@ import (
 
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
 
+	customizationconverter "github.com/KirkDiggler/rpg-api/internal/converters/customization"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	rosterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/roster"
 )
@@ -20,8 +21,8 @@ import (
 // ref/name); everything a character record owns is read fresh HERE, at serve
 // time, so a rename or reclass between encounters is never served stale.
 // PublicMemberInfo is the projection's whole contract: name, class/race refs
-// for players, the authored ref for monsters, and an always-set empty
-// Customization (the shelf).
+// and public hair for players, the authored ref for monsters, and an always-set
+// Customization shelf. Monsters and players without customization keep it empty.
 //
 // Authorization: the caller must be SEATED — no member parameter to gate on
 // (callerActingAs guards verbs that name one), so the gate is membership
@@ -60,6 +61,10 @@ func (h *Handler) GetRoster(ctx context.Context, req *sessionpb.GetRosterRequest
 			if data.PlayerID == playerID {
 				seated = true
 			}
+			customization := &sessionpb.Customization{}
+			if got.Character.Appearance != nil && got.Character.Appearance.Hair != nil {
+				customization.Hair = customizationconverter.EntityToProto(got.Character.Appearance.Hair)
+			}
 			members = append(members, &sessionpb.PublicMemberInfo{
 				Id:   m.ID,
 				Kind: sessionpb.MemberKind_MEMBER_KIND_PLAYER,
@@ -68,7 +73,7 @@ func (h *Handler) GetRoster(ctx context.Context, req *sessionpb.GetRosterRequest
 				// to models for the local player.
 				ClassRef:      data.ClassID,
 				RaceRef:       string(data.RaceID),
-				Customization: &sessionpb.Customization{},
+				Customization: customization,
 			})
 		case rosterrepo.KindMonster:
 			members = append(members, &sessionpb.PublicMemberInfo{

@@ -40,9 +40,9 @@ func TestGetDoors_NotSeated_PermissionDenied(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	h := &Handler{
 		roster: tombRoster(t),
-		characters: charactersOf(ctrl, map[string][4]string{
-			"char-alice": {"alice", "Alice", "fighter", "human"},
-			"char-bob":   {"bob", "Bob", "rogue", "elf"},
+		characters: charactersOf(ctrl, map[string]rosterCharacter{
+			"char-alice": {owner: "alice", name: "Alice", class: "fighter", race: "human"},
+			"char-bob":   {owner: "bob", name: "Bob", class: "rogue", race: "elf"},
 		}),
 	}
 	ctx := auth.WithPlayerID(context.Background(), "mallory")
@@ -69,9 +69,9 @@ func TestGetDoors_ProjectsTheLiveState(t *testing.T) {
 	h := &Handler{
 		manager: mgr,
 		roster:  tombRoster(t),
-		characters: charactersOf(ctrl, map[string][4]string{
-			"char-alice": {"alice", "Alice", "fighter", "human"},
-			"char-bob":   {"bob", "Bob", "rogue", "elf"},
+		characters: charactersOf(ctrl, map[string]rosterCharacter{
+			"char-alice": {owner: "alice", name: "Alice", class: "fighter", race: "human"},
+			"char-bob":   {owner: "bob", name: "Bob", class: "rogue", race: "elf"},
 		}),
 	}
 	ctx := auth.WithPlayerID(context.Background(), "alice")

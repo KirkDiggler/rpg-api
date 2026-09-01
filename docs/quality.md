@@ -1,8 +1,8 @@
 ---
 name: rpg-api quality scorecard
 description: Per-component grade with rationale — a graded scorecard to update as the codebase evolves
-updated: 2026-08-28
-confidence: medium-high — #852 session presentation wiring verified against RED/GREEN cross-instance Redis integration, focused lint, and race-stressed package gate; #844 owner identity, sanitized strict projection, and atomic equipment patch retain their stated evidence
+updated: 2026-09-01
+confidence: medium-high — #869 hair persistence/finalization/roster projection verified through focused and Docker-backed integration tests; #852 and #844 retain their stated evidence
 ---
 
 # Quality Scorecard
@@ -56,7 +56,9 @@ to the toolkit session SDK. Every member-naming verb applies the shared caller/m
 gate before Manager dispatch; production and the harness now pass the same
 `sessionaccess.Access` instance to SessionService and SessionPresentationService.
 Conversion remains field-for-field with no rules or invented vocabulary, including
-nested declarations/candidates and selectors. `StreamEvents` is audience-filtered
+nested declarations/candidates and selectors. `GetRoster` now maps API-owned player hair
+through the shared customization converter while keeping the shelf present-and-empty for
+nil/default players and monsters; it projects no private sheet fields. `StreamEvents` is audience-filtered
 best-effort live delivery; `GetStory` is persisted catch-up, and both use the same
 typed-event converter. Unit and `internal/integration/session` suites cover ownership,
 selectors, live fan-out, replay, and production declaration shapes. Held below A pending
@@ -90,6 +92,13 @@ but not yet addressed. Test coverage exists via `list_equipment_test.go` and
 its size. Its `EquipItem`/`UnequipItem` RPCs now delegate to the rules-correct
 orchestrator method (rpg-api#680, see "Character orchestrator" below) — that
 specific gap is closed even though the surrounding stub/TODO debt isn't.
+
+**Update (rpg-api#869, 2026-09-01):** `UpdateAppearance` validates typed hair before
+mutation and is draft-only. Draft update/reload, finalization, Get, and List preserve
+exact selection and optional scalar presence. Finalization now carries the API-owned
+Appearance beside the toolkit character so its response no longer drops customization.
+Focused handler tests and a Docker-backed Dwarf Fighter flow cover the boundary. Grade
+remains C because the older converter/TODO debt above is unchanged.
 
 ### Character v2 handler — B+ (updated 2026-08-25)
 
@@ -128,6 +137,12 @@ Its `service.go` / `orchestrator.go` split follows the defined Input/Output patt
 Verified remaining TODOs concern draft mutation access, background validation, error
 logging, and pagination/class-filter placeholders; they are outside the owner-private
 equipment path.
+
+**Update (rpg-api#869, 2026-09-01):** every draft mutation preserves the API-owned
+Appearance envelope, finalization persists and returns it separately from toolkit Data,
+and Get/List pass the envelope through. Redis reload and session SDK adapter tests cover
+nested pointer detachment and preservation. The grade remains B- because the older
+draft/catalog TODO debt below is unchanged.
 
 **Update (rpg-api#680/#844, 2026-08-25):** `EquipItem`/`UnequipItem` strictly
 load/attach, call the toolkit's rules-aware verbs, precompose complete post-views, and
@@ -299,10 +314,11 @@ not been redesigned and TTL/stale-character lifecycle remains unchanged.
 
 `internal/repositories/character_draft/redis.go`
 
-Redis-backed. Handles in-progress character creation state. The character
-integration suite now proves a Dwarf race tool choice persists through draft
-finalization (#728), but broad repository lifecycle coverage remains thinner
-than the character repository. No known correctness gaps.
+Redis-backed. Handles in-progress character creation state. #869 adds exact typed-hair
+JSON round trips, detached nested pointer assertions, and present-zero optional scalar
+coverage; the Docker-backed character integration flow proves the same draft reaches
+finalization. Broad repository lifecycle coverage remains thinner than the character
+repository, so the grade does not change. No known correctness gaps.
 
 ### Dice session repository — B-
 
@@ -317,7 +333,8 @@ Redis-backed. Narrow scope. No observed gaps. Low risk.
 `internal/integration/harness/harness.go`
 
 The harness still omits the deleted v1alpha2 EncounterService, but #852 restores the
-new-stack full-gRPC value: `TestServer` exposes `SessionClient`,
+new-stack full-gRPC value and #869 uses its real `redis:7-alpine` character path to prove
+hair update/reload/refusal/finalization/Get: `TestServer` exposes `SessionClient`,
 `SessionPresentationClient`, `HealthClient`, and `RosterRepo`; registers SessionService
 and SessionPresentationService; and wires the Redis roster repository shared by lobby
 launch, SessionService access, and SessionPresentationService access. The new

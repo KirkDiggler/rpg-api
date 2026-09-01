@@ -40,7 +40,17 @@ func TestPatchEquipment_ConcurrentCombatStateSurvives(t *testing.T) {
 	concurrent.Data.ActionEconomy = &tkcharacter.ActionEconomyData{
 		TurnNumber: 2, ActionsRemaining: 0, ReactionsRemaining: 1, MovementRemaining: 15,
 	}
-	concurrent.Appearance = &entities.Appearance{SkinTone: "#123456"}
+	color := uint32(0x123456)
+	roughness := float32(0.33)
+	concurrent.Appearance = &entities.Appearance{Hair: &entities.HairCustomization{
+		Scalp: &entities.StyleSelection{
+			Kind:     entities.StyleSelectionKindStyle,
+			StyleRef: "modular-fantasy-hero:hair:38",
+		},
+		FacialHair: &entities.StyleSelection{Kind: entities.StyleSelectionKindNone},
+		ColorSRGB:  &color,
+		Roughness:  &roughness,
+	}}
 	_, err = repo.Update(ctx, characterrepo.UpdateInput{Character: concurrent})
 	require.NoError(t, err)
 

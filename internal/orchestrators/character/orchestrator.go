@@ -746,7 +746,8 @@ func (o *Orchestrator) FinalizeDraft(ctx context.Context, input *FinalizeDraftIn
 	}
 
 	return &FinalizeDraftOutput{
-		Character: finalChar,
+		Character:  finalChar,
+		Appearance: createOutput.Character.Appearance,
 	}, nil
 }
 

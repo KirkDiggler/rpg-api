@@ -1,8 +1,8 @@
 ---
 name: session presentation
 description: SessionPresentationService v1alpha1 — live-only shared dice throw choreography for a started session
-updated: 2026-08-28
-confidence: medium-high — handler/orchestrator/repository unit suites plus cross-instance Redis integration prove wiring, auth, byte-equal fan-out, and no Story mutation; no browser walkthrough yet
+updated: 2026-09-01
+confidence: medium-high — #869 adds exact public roster hair projection and Redis-backed session character-write preservation evidence; dice side-channel evidence is unchanged and still lacks a browser walkthrough
 ---
 
 # session presentation
@@ -103,6 +103,24 @@ Subscriptions use Redis Pub/Sub on the hashed session channel. They are
 live-only by design: a subscriber that connects after a publish does not receive
 old choreography. Stream context cancellation closes the Redis subscription and
 the handler returns without appending anything to session history.
+
+## Public roster customization (#869)
+
+`SessionService.GetRoster` projects public player hair into the always-present
+`PublicMemberInfo.Customization` shelf. It reads the character record fresh and calls
+the same `internal/converters/customization.EntityToProto` converter used at the
+character boundary; it does not duplicate selection or optional-presence logic.
+Players with nil Appearance/Hair keep an empty shelf. Monster rows always keep an empty
+shelf.
+
+Only public visual identity is projected: name, class/race refs, and hair for players;
+authored ref/name for monsters. Toolkit sheet fields such as hit points, ability scores,
+inventory, resources, and conditions have no roster projection. The seated caller gate,
+class/race freshness, and monster identity behavior are unchanged.
+
+A Redis-backed integration test also writes toolkit character Data through the session
+SDK repository adapter before reading the roster. The write preserves the API-owned
+Appearance envelope and the roster returns its exact style/none/color/roughness values.
 
 ## Story/toolkit boundary
 
