@@ -75,12 +75,15 @@ and performs no raw JSON inspection, rule calculation, magic projection, or full
 snapshot SET from the equipment path. Spell slots and legacy ClassResources remain
 excluded.
 
-The off-hand consumer proof (rpg-api#611) uses published `rulebooks/dnd5e`
-v0.123.0, `rulebooks/dnd5e/resolution` v0.25.0, and
-`rulebooks/dnd5e/session` v0.41.0. Handler/orchestrator behavior is unchanged: the
-client echoes the selected declaration ID through the existing Attack RPC. Acceptance
-proves both the universal no-modifier bonus strike and Fighting Style restoration with
-feature attribution, with no local replace or generated-source edit.
+The off-hand consumer proof (rpg-api#611) was introduced against published
+`rulebooks/dnd5e` v0.123.0; the current root pin is v0.124.0, while
+`rulebooks/dnd5e/resolution` v0.25.0 and `rulebooks/dnd5e/session` v0.41.0 remain.
+Handler/orchestrator behavior is unchanged: the client echoes the selected declaration
+ID through the existing Attack RPC. Acceptance proves both the universal no-modifier
+bonus strike and Fighting Style restoration with feature attribution, with no local
+replace or generated-source edit. rpg-api#867 additionally passes item quantity and the
+toolkit's authoritative equipped-slot map through the existing character-sheet
+projection, with no API-side equipment rules or occupancy reconstruction.
 
 **Equipment on the wire (rpg-api#680, updated by #844)** — the original real-AC and
 single-toolkit-equip-path ruling remains; #844 replaces its full-record merge write with
