@@ -162,6 +162,36 @@ func TestHairCustomization_PersistsDraftFinalizationAndGetCharacter(t *testing.T
 	})
 	s.Require().NoError(err)
 	requireHairTestAppearance(s.T(), persisted.GetCharacter().GetAppearance())
+
+	zeroCtx := s.authCtx("test-player-dwarf-fighter-default-zero-hair")
+	zeroDraftID := s.completeDwarfFighterDraft(zeroCtx)
+	zeroAppearance := &dnd5ev1alpha1.Appearance{Hair: &customizationpb.HairCustomization{
+		ColorSrgb: proto.Uint32(0),
+		Roughness: proto.Float32(0),
+	}}
+
+	zeroUpdated, err := s.server.CharacterClient.UpdateAppearance(zeroCtx, &dnd5ev1alpha1.UpdateAppearanceRequest{
+		DraftId:    zeroDraftID,
+		Appearance: zeroAppearance,
+	})
+	s.Require().NoError(err)
+	requireDefaultZeroHairAppearance(s.T(), zeroUpdated.GetDraft().GetAppearance())
+
+	zeroDraft, err := s.server.CharacterClient.GetDraft(zeroCtx, &dnd5ev1alpha1.GetDraftRequest{DraftId: zeroDraftID})
+	s.Require().NoError(err)
+	requireDefaultZeroHairAppearance(s.T(), zeroDraft.GetDraft().GetAppearance())
+
+	zeroFinalized, err := s.server.CharacterClient.FinalizeDraft(zeroCtx, &dnd5ev1alpha1.FinalizeDraftRequest{
+		DraftId: zeroDraftID,
+	})
+	s.Require().NoError(err)
+	requireDefaultZeroHairAppearance(s.T(), zeroFinalized.GetCharacter().GetAppearance())
+
+	zeroPersisted, err := s.server.CharacterClient.GetCharacter(zeroCtx, &dnd5ev1alpha1.GetCharacterRequest{
+		CharacterId: zeroFinalized.GetCharacter().GetId(),
+	})
+	s.Require().NoError(err)
+	requireDefaultZeroHairAppearance(s.T(), zeroPersisted.GetCharacter().GetAppearance())
 }
 
 func (s *CharacterCreationSuite) completeDwarfFighterDraft(ctx context.Context) string {
@@ -283,6 +313,19 @@ func requireHairTestAppearance(t *testing.T, appearance *dnd5ev1alpha1.Appearanc
 	require.Equal(t, uint32(0x123456), hair.GetColorSrgb())
 	require.NotNil(t, hair.Roughness)
 	require.InDelta(t, 0.33, hair.GetRoughness(), 0.000001)
+}
+
+func requireDefaultZeroHairAppearance(t *testing.T, appearance *dnd5ev1alpha1.Appearance) {
+	t.Helper()
+	require.NotNil(t, appearance)
+	hair := appearance.GetHair()
+	require.NotNil(t, hair)
+	require.Nil(t, hair.GetScalp())
+	require.Nil(t, hair.GetFacialHair())
+	require.NotNil(t, hair.ColorSrgb)
+	require.Zero(t, hair.GetColorSrgb())
+	require.NotNil(t, hair.Roughness)
+	require.Zero(t, hair.GetRoughness())
 }
 
 // =============================================================================

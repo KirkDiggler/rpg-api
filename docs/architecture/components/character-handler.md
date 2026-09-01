@@ -59,12 +59,10 @@ separate `SessionService` handler.
 
 ## Files
 
-| File | Lines | Purpose |
-|---|---|---|
-| `handlers/dnd5e/v1alpha1/character/handler.go` | 1,081 | gRPC handler |
-| `handlers/dnd5e/v1alpha1/character/converters.go` | 3,427 | Proto ↔ domain entity conversion |
-
-`converters.go` is the largest file in the codebase by line count.
+| File | Purpose |
+|---|---|
+| `handlers/dnd5e/v1alpha1/character/handler.go` | gRPC handler |
+| `handlers/dnd5e/v1alpha1/character/converters.go` | Proto ↔ domain entity conversion |
 
 ## gRPC methods handled
 
@@ -84,17 +82,17 @@ separate `SessionService` handler.
 
 ## Converter surface
 
-`converters.go` at 3,427 lines is the conversion layer for the character domain. This size is expected given the breadth of the D&D 5e character model (races, classes, backgrounds, spells, equipment, traits, features, skills, proficiencies). However, the file has **25 TODO comments** indicating incomplete conversions.
+`converters.go` is the conversion layer for the broad D&D 5e character domain (races, classes, backgrounds, spells, equipment, traits, features, skills, and proficiencies). Several conversions remain explicitly incomplete.
 
 ### Known stub returns
 
-- `SPELL_UNSPECIFIED` returned for all spell mappings (lines 344, 378) — spell enum not yet mapped
-- `TRAIT_UNSPECIFIED` returned for all trait conversions (line 378)
-- No language enum conversions — language fields return empty (line 1169)
-- No subrace conversions — subrace data not mapped (line 782)
-- Spell slot conversion not implemented (line 1182)
-- Class resource conversion not implemented (line 1186)
-- Equipment data incomplete for armor and tools (line 798)
+- `SPELL_UNSPECIFIED` returned for spell mappings — spell enum not yet mapped
+- `TRAIT_UNSPECIFIED` returned for trait conversions
+- No language enum conversions — language fields return empty
+- No subrace conversions — subrace data not mapped
+- Spell slot conversion not implemented
+- Class resource conversion not implemented
+- Equipment data incomplete for armor and tools
 
 These stubs silently return zero/unspecified values without errors, meaning the character API returns structurally valid but semantically incomplete data for these fields.
 
@@ -102,7 +100,7 @@ These stubs silently return zero/unspecified values without errors, meaning the 
 
 ### Toolkit type assertion in handler
 
-`handler.go:765` has a TODO acknowledging the smell:
+`handler.go` has a TODO acknowledging the smell:
 ```go
 //TODO: handler should not interact with toolkit, this belongs in the orchestrator
 if charData, ok := member.CharacterData.(*toolkitchar.Data); ok {
@@ -112,8 +110,8 @@ The character orchestrator returns `interface{}` for `CharacterData` in some out
 
 ### Test coverage gap
 
-`converters.go` (3,132 lines) has limited dedicated unit tests relative to its size. `list_equipment_test.go` and `list_spells_test.go` cover some paths. The 27 TODO stubs are a signal that the converter surface grew faster than its test coverage. A comprehensive converter test suite would catch stub regressions.
+`converters.go` has limited dedicated unit tests relative to its breadth. `list_equipment_test.go` and `list_spells_test.go` cover some paths, but the explicitly incomplete conversions show that coverage has not kept pace with the surface. A comprehensive converter test suite would catch stub regressions.
 
 ### Handler test files
 
-`handler.go` has 7 TODO comments covering spell enum conversion, tool expertise, and pagination. These are handler-level gaps beyond the converter stubs.
+Remaining handler TODOs cover spell enum conversion, tool expertise, and pagination. These are handler-level gaps beyond the converter stubs.
