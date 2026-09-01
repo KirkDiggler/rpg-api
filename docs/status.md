@@ -2,7 +2,7 @@
 name: rpg-api status
 description: Where we are with rpg-api — active work, paused, known rough edges, per-subsystem confidence
 updated: 2026-09-01
-confidence: high — #869 production hair persistence/finalization/public roster behavior verified against focused RED/GREEN plus Docker-backed character integration; #852 shared dice presentation wiring verified against RED/GREEN cross-instance Redis integration, focused lint, and race-stressed package gate; #844 field-complete owner projection and atomic equipment patch verified against focused handler/orchestrator/repository tests and lint; Wave 2 Monk entries verified against passing integration tests; #636 entry verified against passing unit + integration tests; #642 v1alpha1 encounter stack deletion verified against passing build/vet/test/lint; #644 The Dungeon wave 1 (api) verified against passing unit + stress-run (50x) integration tests; #650 toolkit seam adoption (InitiativeRolled event + room-aware spawn) verified against passing unit/integration/-race full suite; #651 ActiveConditions projection verified against passing unit + integration (10x -race) + full suite; #656 movement-truncation fix verified against an isolated toolkit-level repro, a new RPC-level regression test (10x -race), and the full suite; #663 AbandonEncounter + combat pockets + rage-at-seating verified against passing unit/integration/-race full suite plus a live playtest against the real game route; #676 The Dungeon wave 2 Slice 2 (api leg) verified against passing unit tests + a new 3-test integration gate suite (8x stress-run, entropy-seeded layouts); #680 equipment on the wire verified against passing unit + integration suite (real AC, occupancy, non-equipment-field preservation) + adversarial-gate fixes + full CI green against published deps; #687 region/theme wire projection verified against passing unit (-race) + a real-RPC integration gate proving connect-time AND incremental-reveal zone_id/zones/theme projection against the real Redis harness, full `go test`/`golangci-lint` green against the published `rpg-api-protos` generated branch + `rpg-toolkit/encounter v0.35.0`; #688 N-region dungeon by key verified against passing unit (-race, 15x stress-run) + a rewritten 3-test integration gate suite against the real Redis harness, full `go test`/`golangci-lint` green against published `rpg-toolkit/encounter v0.35.0`; #694 crypt dungeon-key consumes the toolkit's own `CryptDungeonParams` (obstacles included) verified against passing unit (-race) against published `rpg-toolkit/encounter v0.38.0`; #689 deterministic crypt monster composition verified against passing unit (-race, 1000-seed x 4-party-size zero-error matrix against the real production registry) + real-Redis integration (composition + seed-determinism + party-size-invariance) + the updated dungeon_crypt_test.go gate, full `go test`/`golangci-lint` green against published `rpg-toolkit/encounter v0.38.0` + `rulebooks/dnd5e v0.68.0`, zero new lint issues versus main — **#694 and #689 merged together (this doc's own "Deterministic crypt monster composition, integrated with toolkit CryptDungeonParams" entry, 2026-07-23) close out rpg-api#696** (the out-of-sight goblin-placement collision #694 alone surfaced): #689's deterministic `FixedPositions` composition retires the search path that could fail, so the merged 1..1000-seed x party-1..4 matrix is 0/4000 errors, not a tuned-down failure rate
+confidence: high — #870 Martial Arts Quarterstaff→bonus Unarmed Strike handler journey verified against released providers and focused RED/GREEN acceptance; #869 production hair persistence/finalization/public roster behavior verified against focused RED/GREEN plus Docker-backed character integration; #852 shared dice presentation wiring verified against RED/GREEN cross-instance Redis integration, focused lint, and race-stressed package gate; #844 field-complete owner projection and atomic equipment patch verified against focused handler/orchestrator/repository tests and lint; Wave 2 Monk entries verified against passing integration tests; #636 entry verified against passing unit + integration tests; #642 v1alpha1 encounter stack deletion verified against passing build/vet/test/lint; #644 The Dungeon wave 1 (api) verified against passing unit + stress-run (50x) integration tests; #650 toolkit seam adoption (InitiativeRolled event + room-aware spawn) verified against passing unit/integration/-race full suite; #651 ActiveConditions projection verified against passing unit + integration (10x -race) + full suite; #656 movement-truncation fix verified against an isolated toolkit-level repro, a new RPC-level regression test (10x -race), and the full suite; #663 AbandonEncounter + combat pockets + rage-at-seating verified against passing unit/integration/-race full suite plus a live playtest against the real game route; #676 The Dungeon wave 2 Slice 2 (api leg) verified against passing unit tests + a new 3-test integration gate suite (8x stress-run, entropy-seeded layouts); #680 equipment on the wire verified against passing unit + integration suite (real AC, occupancy, non-equipment-field preservation) + adversarial-gate fixes + full CI green against published deps; #687 region/theme wire projection verified against passing unit (-race) + a real-RPC integration gate proving connect-time AND incremental-reveal zone_id/zones/theme projection against the real Redis harness, full `go test`/`golangci-lint` green against the published `rpg-api-protos` generated branch + `rpg-toolkit/encounter v0.35.0`; #688 N-region dungeon by key verified against passing unit (-race, 15x stress-run) + a rewritten 3-test integration gate suite against the real Redis harness, full `go test`/`golangci-lint` green against published `rpg-toolkit/encounter v0.35.0`; #694 crypt dungeon-key consumes the toolkit's own `CryptDungeonParams` (obstacles included) verified against passing unit (-race) against published `rpg-toolkit/encounter v0.38.0`; #689 deterministic crypt monster composition verified against passing unit (-race, 1000-seed x 4-party-size zero-error matrix against the real production registry) + real-Redis integration (composition + seed-determinism + party-size-invariance) + the updated dungeon_crypt_test.go gate, full `go test`/`golangci-lint` green against published `rpg-toolkit/encounter v0.38.0` + `rulebooks/dnd5e v0.68.0`, zero new lint issues versus main — **#694 and #689 merged together (this doc's own "Deterministic crypt monster composition, integrated with toolkit CryptDungeonParams" entry, 2026-07-23) close out rpg-api#696** (the out-of-sight goblin-placement collision #694 alone surfaced): #689's deterministic `FixedPositions` composition retires the search path that could fail, so the merged 1..1000-seed x party-1..4 matrix is 0/4000 errors, not a tuned-down failure rate
 ---
 
 # rpg-api: Where We Are
@@ -10,6 +10,18 @@ confidence: high — #869 production hair persistence/finalization/public roster
 This is a living doc. Edit it in the same PR that invalidates a line. Don't let it rot.
 
 ## Active work
+
+**Martial Arts bonus Unarmed Strike restored on the current SessionService path
+(rpg-api#870, rpg-project#349, 2026-09-01)** — the API pins released root D&D
+`v0.125.1` and session `v0.42.1` and continues to map declarations and Attack
+results field-for-field. A miniredis-backed handler acceptance test creates an
+unarmored level-1 Monk holding a Quarterstaff, proves no bonus row before the
+qualifying Attack, executes a successful Quarterstaff Action attack, then reads
+and executes the distinct `ATTACK` / `BONUS` Unarmed Strike selector. Persisted
+economy proves Action then Bonus Action/capacity consumption; recovered Story
+proves catalog Unarmed Strike identity, `1d4` Martial Arts weapon dice, and DEX
+attribution while the Quarterstaff remains equipped. No class, weapon, armor,
+condition, capacity, targeting, or damage rule is implemented in rpg-api.
 
 **Production hair customization persistence and public roster projection (rpg-api#869, 2026-09-01)** — Appearance remains an API-owned envelope outside toolkit `character.Data`. `UpdateAppearance` is creation-only and validates before mutation; typed scalp/facial-hair selection, optional sRGB color, and optional roughness survive draft JSON reload, finalization, `GetCharacter`, `ListCharacters`, equipment patches, and session SDK Data writes. Finalization now returns the persisted Appearance instead of dropping it at the response boundary. Sandbox character clones detach both selections and optional scalar pointers.
 
@@ -36,8 +48,9 @@ record; the living entries start above.
 **Production session-combat API and strict owner-private character sheet
 (rpg-api#844, rpg-project#270 / PR #271, updated by rpg-api#611)** — `SessionService.Afford`
 maps one toolkit declaration per compiled offer field-for-field, including multiple
-rows with the same verb: the normal Attack and, after a qualifying swing, the off-hand
-`ATTACK` / `BONUS` offer; Move; End Turn; slot and availability; optional
+rows with the same verb: the normal Attack and, after a qualifying swing, its
+provider-authored `ATTACK` / `BONUS` offer (Martial Arts Unarmed Strike or two-weapon
+off-hand attack); Move; End Turn; slot and availability; optional
 remaining/why/full `AttackRef`; opaque declaration ID; target kind; and every
 candidate's independent availability/why. Unknown closed enums become UNSPECIFIED
 producer defects. A NO_TARGET_IN_REACH declaration keeps its candidate rows and
@@ -79,13 +92,14 @@ and performs no raw JSON inspection, rule calculation, magic projection, or full
 snapshot SET from the equipment path. Spell slots and legacy ClassResources remain
 excluded.
 
-The off-hand consumer proof (rpg-api#611) was introduced against published
-`rulebooks/dnd5e` v0.123.0; the current root pin is v0.124.0, while
-`rulebooks/dnd5e/resolution` v0.25.0 and `rulebooks/dnd5e/session` v0.41.0 remain.
-Handler/orchestrator behavior is unchanged: the client echoes the selected declaration
-ID through the existing Attack RPC. Acceptance proves both the universal no-modifier
-bonus strike and Fighting Style restoration with feature attribution, with no local
-replace or generated-source edit. rpg-api#867 additionally passes item quantity and the
+The off-hand consumer proof (rpg-api#611) and Martial Arts consumer proof
+(rpg-api#870) run against published root D&D `v0.125.1`, resolution `v0.25.0`,
+and session `v0.42.1`. Handler/orchestrator behavior is unchanged: the client
+echoes the selected declaration ID through the existing Attack RPC. Acceptance
+proves the universal two-weapon no-modifier strike, Fighting Style restoration
+with feature attribution, and Quarterstaff Action → Martial Arts bonus Unarmed
+Strike with `1d4`/DEX attribution, with no local replace or generated-source
+edit. rpg-api#867 additionally passes item quantity and the
 toolkit's authoritative equipped-slot map through the existing character-sheet
 projection, with no API-side equipment rules or occupancy reconstruction.
 
