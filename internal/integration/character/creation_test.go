@@ -15,12 +15,15 @@ import (
 	"google.golang.org/grpc/metadata"
 
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
+	characterv2pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/character"
+	encounterv2pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/encounter"
 	"github.com/KirkDiggler/rpg-api/internal/integration/harness"
 	"github.com/KirkDiggler/rpg-api/internal/pkg/clock"
 	"github.com/KirkDiggler/rpg-api/internal/pkg/idgen"
 	redisclient "github.com/KirkDiggler/rpg-api/internal/redis"
 	characterdraft "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/armor"
+	tkcharacter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/tools"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/weapons"
@@ -87,6 +90,21 @@ func (s *CharacterCreationSuite) assertInventoryCounts(char *dnd5ev1alpha1.Chara
 	}
 }
 
+func (s *CharacterCreationSuite) assertOwnerItemQuantity(
+	data *encounterv2pb.CharacterData,
+	itemID string,
+	expected int32,
+) {
+	s.Require().NotNil(data)
+	for _, item := range data.GetInventory() {
+		if item.GetRef().GetId() == itemID {
+			s.Equal(expected, item.GetQuantity(), "owner quantity for %s", itemID)
+			return
+		}
+	}
+	s.Failf("missing owner inventory item", "expected %s in CharacterData inventory", itemID)
+}
+
 // =============================================================================
 // FIGHTER - Equipment + Fighting Style
 // =============================================================================
@@ -115,13 +133,84 @@ func (s *CharacterCreationSuite) TestCreateFighter_BroadCategoryLongsword() {
 	)
 }
 
+func (s *CharacterCreationSuite) TestCreateFighter_DuplicateMartialWeaponQuantityAndEquippedSlots() {
+	ctx := s.authCtx("test-player-fighter-two-longswords")
+	char := s.createFighterWithPrimaryWeapons(
+		ctx,
+		"Twin Blade",
+		"fighter-weapon-b",
+		[]dnd5ev1alpha1.Weapon{
+			dnd5ev1alpha1.Weapon_WEAPON_LONGSWORD,
+			dnd5ev1alpha1.Weapon_WEAPON_LONGSWORD,
+		},
+		map[string]int32{weapons.Longsword: 2},
+	)
+
+	getResp, err := s.server.CharacterClientV2.GetCharacterData(ctx, &characterv2pb.GetCharacterDataRequest{
+		CharacterId: char.GetId(),
+	})
+	s.Require().NoError(err)
+	s.assertOwnerItemQuantity(getResp.GetCharacter(), weapons.Longsword, 2)
+
+	mainHandResp, err := s.server.CharacterClientV2.EquipItem(ctx, &characterv2pb.EquipItemRequest{
+		CharacterId: char.GetId(),
+		Item: &encounterv2pb.Ref{
+			Module: "dnd5e",
+			Type:   "item",
+			Id:     weapons.Longsword,
+		},
+		SlotKey: string(tkcharacter.SlotMainHand),
+	})
+	s.Require().NoError(err)
+	s.assertOwnerItemQuantity(mainHandResp.GetCharacter(), weapons.Longsword, 2)
+
+	offHandResp, err := s.server.CharacterClientV2.EquipItem(ctx, &characterv2pb.EquipItemRequest{
+		CharacterId: char.GetId(),
+		Item: &encounterv2pb.Ref{
+			Module: "dnd5e",
+			Type:   "item",
+			Id:     weapons.Longsword,
+		},
+		SlotKey: string(tkcharacter.SlotOffHand),
+	})
+	s.Require().NoError(err)
+
+	data := offHandResp.GetCharacter()
+	s.assertOwnerItemQuantity(data, weapons.Longsword, 2)
+	s.Equal(weapons.Longsword, data.GetEquipped()[string(tkcharacter.SlotMainHand)].GetId())
+	s.Equal(weapons.Longsword, data.GetEquipped()[string(tkcharacter.SlotOffHand)].GetId())
+}
+
 func (s *CharacterCreationSuite) createFighterWithMartialWeapon(
 	ctx context.Context,
 	name string,
 	weapon dnd5ev1alpha1.Weapon,
 	expectedInventory map[string]int32,
-) {
-	s.T().Logf("Creating Fighter with broad-category %s...", weapon)
+) *dnd5ev1alpha1.Character {
+	return s.createFighterWithPrimaryWeapons(
+		ctx,
+		name,
+		"fighter-weapon-a",
+		[]dnd5ev1alpha1.Weapon{weapon},
+		expectedInventory,
+	)
+}
+
+func (s *CharacterCreationSuite) createFighterWithPrimaryWeapons(
+	ctx context.Context,
+	name string,
+	optionID string,
+	selectedWeapons []dnd5ev1alpha1.Weapon,
+	expectedInventory map[string]int32,
+) *dnd5ev1alpha1.Character {
+	s.T().Logf("Creating Fighter with primary weapon option %s...", optionID)
+
+	selectionItems := make([]*dnd5ev1alpha1.EquipmentSelectionItem, 0, len(selectedWeapons))
+	for _, weapon := range selectedWeapons {
+		selectionItems = append(selectionItems, &dnd5ev1alpha1.EquipmentSelectionItem{
+			Equipment: &dnd5ev1alpha1.EquipmentSelectionItem_Weapon{Weapon: weapon},
+		})
+	}
 
 	// Create draft
 	createResp, err := s.server.CharacterClient.CreateDraft(ctx, &dnd5ev1alpha1.CreateDraftRequest{})
@@ -197,13 +286,9 @@ func (s *CharacterCreationSuite) createFighterWithMartialWeapon(
 				Category: dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_EQUIPMENT,
 				Source:   dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_CLASS,
 				ChoiceId: "fighter-weapons-primary",
-				OptionId: "fighter-weapon-a",
+				OptionId: optionID,
 				Selection: &dnd5ev1alpha1.ChoiceData_Equipment{
-					Equipment: &dnd5ev1alpha1.EquipmentSelection{
-						Items: []*dnd5ev1alpha1.EquipmentSelectionItem{
-							{Equipment: &dnd5ev1alpha1.EquipmentSelectionItem_Weapon{Weapon: weapon}},
-						},
-					},
+					Equipment: &dnd5ev1alpha1.EquipmentSelection{Items: selectionItems},
 				},
 			},
 			// Secondary: Light crossbow
@@ -259,7 +344,7 @@ func (s *CharacterCreationSuite) createFighterWithMartialWeapon(
 			s.T().Logf("  • %s: %s", issue.GetField(), issue.GetMessage())
 		}
 		s.Fail("Fighter has validation issues")
-		return
+		return nil
 	}
 
 	// Finalize
@@ -278,6 +363,7 @@ func (s *CharacterCreationSuite) createFighterWithMartialWeapon(
 	persisted, err := s.server.CharacterClient.GetCharacter(ctx, &dnd5ev1alpha1.GetCharacterRequest{CharacterId: char.GetId()})
 	s.Require().NoError(err)
 	s.assertInventoryCounts(persisted.GetCharacter(), expectedInventory)
+	return char
 }
 
 // =============================================================================

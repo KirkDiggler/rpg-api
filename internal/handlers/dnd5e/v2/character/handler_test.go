@@ -28,6 +28,7 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/refs"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/resources"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/weapons"
 )
 
 // HandlerTestSuite proves the v1alpha2 character handler is a thin proto<->
@@ -433,6 +434,30 @@ func (s *HandlerTestSuite) TestGetCharacterData_Success() {
 		s.Assert().NotEqual("spell_slots", resource.GetKey())
 		s.Assert().NotEqual("legacy-resource", resource.GetKey())
 	}
+}
+
+func (s *HandlerTestSuite) TestBuildCharacterData_MapsQuantityAndAuthoritativeEquipmentSlots() {
+	cd := BuildCharacterData(&orchcharacter.View{
+		Equipment: &character.EquipmentView{
+			Items: []character.EquippedItemView{{
+				ItemID:   weapons.Handaxe,
+				Name:     "Handaxe",
+				Kind:     "weapon",
+				SlotKeys: []string{string(character.SlotMainHand), string(character.SlotOffHand)},
+				StatLine: "1d6 slashing",
+				Quantity: 2,
+			}},
+			Equipped: character.EquipmentSlots{
+				character.SlotMainHand: weapons.Handaxe,
+				character.SlotOffHand:  weapons.Handaxe,
+			},
+		},
+	})
+
+	s.Require().Len(cd.GetInventory(), 1)
+	s.Equal(int32(2), cd.GetInventory()[0].GetQuantity())
+	s.Equal(weapons.Handaxe, cd.GetEquipped()[string(character.SlotMainHand)].GetId())
+	s.Equal(weapons.Handaxe, cd.GetEquipped()[string(character.SlotOffHand)].GetId())
 }
 
 func (s *HandlerTestSuite) TestBuildCharacterData_FourBuildStatusMapping() {

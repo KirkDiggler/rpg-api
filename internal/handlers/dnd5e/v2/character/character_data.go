@@ -52,20 +52,25 @@ func mapEquipment(cd *encounterv2pb.CharacterData, view *orchcharacter.View) {
 		return
 	}
 
-	equipped := make(map[string]*encounterv2pb.Ref, len(view.Equipment.Items))
+	equipped := make(map[string]*encounterv2pb.Ref, len(view.Equipment.Equipped))
+	for slot, itemID := range view.Equipment.Equipped {
+		equipped[string(slot)] = &encounterv2pb.Ref{
+			Module: refModuleDnd5e,
+			Type:   refTypeItem,
+			Id:     itemID,
+		}
+	}
+
 	inventory := make([]*encounterv2pb.Item, 0, len(view.Equipment.Items))
 	for _, item := range view.Equipment.Items {
-		ref := &encounterv2pb.Ref{Module: refModuleDnd5e, Type: refTypeItem, Id: item.ItemID}
 		inventory = append(inventory, &encounterv2pb.Item{
-			Ref:      ref,
+			Ref:      &encounterv2pb.Ref{Module: refModuleDnd5e, Type: refTypeItem, Id: item.ItemID},
 			Name:     item.Name,
 			StatLine: item.StatLine,
 			Kind:     item.Kind,
 			SlotKeys: item.SlotKeys,
+			Quantity: int32(item.Quantity),
 		})
-		if item.Slot != "" {
-			equipped[string(item.Slot)] = ref
-		}
 	}
 	cd.Equipped = equipped
 	cd.Inventory = inventory
