@@ -282,7 +282,7 @@ func (s *SessionStackSuite) TestStartEncounter_TheTombReachesTheWire() {
 	})
 	s.Require().NoError(err)
 
-	atlas, err := s.sessOrch.Manager.Atlas(s.ctx, &sdk.AtlasInput{Session: out.EncounterID})
+	atlas, err := s.sessOrch.Manager.Atlas(s.ctx, &sdk.AtlasInput{Session: out.EncounterID, Member: "char-alice"})
 	s.Require().NoError(err)
 
 	s.NotEmpty(atlas.Cells, "the map has floor")
@@ -402,7 +402,7 @@ func (s *SessionStackSuite) TestStartEncounter_PlaysADungeonTheAuthorPut() {
 	})
 	s.Require().NoError(err)
 
-	atlas, err := s.sessOrch.Manager.Atlas(s.ctx, &sdk.AtlasInput{Session: out.EncounterID})
+	atlas, err := s.sessOrch.Manager.Atlas(s.ctx, &sdk.AtlasInput{Session: out.EncounterID, Member: "char-alice"})
 	s.Require().NoError(err)
 	s.NotEmpty(atlas.Cells, "the authored dungeon's floor reached the wire")
 	s.Require().Len(atlas.Regions, 3, "and its regions, with what they carry")
@@ -450,7 +450,13 @@ func (s *SessionStackSuite) TestStartEncounter_LaunchRestoresEveryMemberFully() 
 			DeathSaveState: &saves.DeathSaveState{Failures: 3, Dead: true},
 			Conditions:     []json.RawMessage{unconscious},
 			Resources: map[coreResources.ResourceKey]tkcharacter.RecoverableResourceData{
-				dnd5eResources.RageCharges: {Current: 0, Maximum: 2},
+				// ResetType matters now: LongRest restores only resources that
+				// reset on a long or short rest (character/character.go), where
+				// the retired RestoreForLaunch refilled every entry regardless.
+				// Real rage charges are always created ResetLongRest
+				// (draft.go's initializeClassResources) -- this fixture matches
+				// what a real barbarian's persisted data actually carries.
+				dnd5eResources.RageCharges: {Current: 0, Maximum: 2, ResetType: coreResources.ResetLongRest},
 			},
 		}},
 	})
@@ -469,7 +475,13 @@ func (s *SessionStackSuite) TestStartEncounter_LaunchRestoresEveryMemberFully() 
 	got, err = s.charRepo.Get(s.ctx, characterrepo.GetInput{ID: "char-p2"})
 	s.Require().NoError(err)
 	s.Equal(12, got.Character.Data.HitPoints, "a dead member launches at full HP")
-	s.Nil(got.Character.Data.DeathSaveState, "death-save state does not survive a launch")
+	// Character.LongRest -- the toolkit's own now-authoritative launch
+	// mechanism (rpg-toolkit#1376 retired the Data-only RestoreForLaunch this
+	// once read nil from) -- clears death-save state to a fresh zero-value
+	// struct rather than nil; both mean "no death save in progress", but the
+	// wire/storage representation changed with the mechanism.
+	s.Equal(&saves.DeathSaveState{}, got.Character.Data.DeathSaveState,
+		"death-save state is reset, not nil, after a launch long rest")
 	s.Empty(got.Character.Data.Conditions, "the Unconscious blob is stripped, not left to re-hydrate")
 	s.Equal(2, got.Character.Data.Resources[dnd5eResources.RageCharges].Current,
 		"spent resource pools refill at launch")

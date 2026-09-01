@@ -117,6 +117,16 @@ func (s *HandlerSuite) expectCharacter(characterID, playerID, name string, hp, m
 				},
 			},
 		}, nil).AnyTimes()
+	// StartEncounter's launch rest (rpg-toolkit#1376's Character.LongRest,
+	// replacing the retired Data-only RestoreForLaunch) now persists every
+	// launched member unconditionally rather than only the ones it actually
+	// changed -- LongRest carries no "did anything change" signal the old
+	// helper gave, so this fixture arms Update the same AnyTimes way it
+	// arms Get, whether or not a given test's scenario exercises launch.
+	s.charRepo.EXPECT().
+		Update(gomock.Any(), gomock.Any()).
+		Return(&characterrepo.UpdateOutput{Character: &entities.Character{Data: &toolkitchar.Data{ID: characterID}}}, nil).
+		AnyTimes()
 }
 
 func (s *HandlerSuite) expectCharacterNotFound(characterID string) {
