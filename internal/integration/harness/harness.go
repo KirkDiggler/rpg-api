@@ -71,6 +71,7 @@ type TestServer struct {
 
 	// Proto-generated clients for tests to use
 	CharacterClient           dnd5ev1alpha1.CharacterServiceClient
+	CharacterClientV2         characterv2pb.CharacterServiceClient
 	DiceClient                apiv1alpha1.DiceServiceClient
 	LobbyClient               lobbyv1alpha1pb.LobbyServiceClient
 	SessionClient             sessionv1alpha1pb.SessionServiceClient
@@ -208,6 +209,7 @@ func newWithClientSource(ctx context.Context, cfg *Config, redisAddr string) (*T
 
 	// Create typed clients
 	ts.CharacterClient = dnd5ev1alpha1.NewCharacterServiceClient(conn)
+	ts.CharacterClientV2 = characterv2pb.NewCharacterServiceClient(conn)
 	ts.DiceClient = apiv1alpha1.NewDiceServiceClient(conn)
 	ts.LobbyClient = lobbyv1alpha1pb.NewLobbyServiceClient(conn)
 	ts.SessionClient = sessionv1alpha1pb.NewSessionServiceClient(conn)
