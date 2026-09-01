@@ -45,7 +45,7 @@ func TestSeedWeaponGallery_CreatesMissingGalleryCharacterThenNormalizesRepositor
 	out, err := SeedWeaponGallery(context.Background(), &SeedWeaponGalleryInput{Client: client, Store: store})
 
 	require.NoError(t, err)
-	require.Equal(t, &SeedWeaponGalleryOutput{CharacterID: "gallery-id", WeaponCount: 27}, out)
+	require.Equal(t, &SeedWeaponGalleryOutput{CharacterID: "gallery-id", WeaponCount: 30}, out)
 	require.Equal(t, []string{"ListCharacters", "CreateDraft", "UpdateName", "UpdateRace", "UpdateClass", "UpdateBackground", "UpdateAbilityScores", "GetDraft", "FinalizeDraft", "ListCharacters"}, client.calls)
 	require.Empty(t, client.deletedIDs)
 	require.Len(t, store.updates, 1)
@@ -56,11 +56,11 @@ func TestSeedWeaponGallery_CreatesMissingGalleryCharacterThenNormalizesRepositor
 	assertGalleryRPCIdentity(t, client)
 }
 
-func TestSeedWeaponGallery_ReportsWeaponCountFromGalleryWeaponIDsLength(t *testing.T) {
-	originalWeaponIDs := galleryWeaponIDs
-	galleryWeaponIDs = []string{"club", "dagger"}
-	t.Cleanup(func() { galleryWeaponIDs = originalWeaponIDs })
+func TestGalleryWeaponInventory_MatchesCanonicalOrderAndQuantities(t *testing.T) {
+	require.Equal(t, expectedGalleryWeaponInventory(), galleryWeaponInventory())
+}
 
+func TestSeedWeaponGallery_ReportsCanonicalThirtyWeaponCount(t *testing.T) {
 	client := newGalleryFakeClient()
 	client.listResponses = []*dnd5ev1alpha1.ListCharactersResponse{{
 		Characters: []*dnd5ev1alpha1.Character{{Id: "gallery-id", Name: galleryCharacterName}},
@@ -70,9 +70,31 @@ func TestSeedWeaponGallery_ReportsWeaponCountFromGalleryWeaponIDsLength(t *testi
 	out, err := SeedWeaponGallery(context.Background(), &SeedWeaponGalleryInput{Client: client, Store: store})
 
 	require.NoError(t, err)
-	require.Equal(t, len(galleryWeaponIDs), out.WeaponCount)
+	require.Equal(t, 30, out.WeaponCount)
 	require.Len(t, store.updates, 1)
 	assertGalleryInventory(t, store.updates[0].Character.Data.Inventory)
+}
+
+func TestSeedWeaponGallery_MigratesExistingTwentySevenWeaponInventoryToThirty(t *testing.T) {
+	client := newGalleryFakeClient()
+	client.listResponses = []*dnd5ev1alpha1.ListCharactersResponse{{
+		Characters: []*dnd5ev1alpha1.Character{{Id: "stable-id", Name: galleryCharacterName}},
+	}}
+	original := galleryCharacter("stable-id", legacyTwentySevenWeaponInventoryWithNonWeapons())
+	store := &galleryFakeStore{character: cloneEntity(original)}
+	expected := cloneEntity(original)
+	expected.Data.Inventory = exactGalleryInventoryWithNonWeapons()
+
+	out, err := SeedWeaponGallery(context.Background(), &SeedWeaponGalleryInput{Client: client, Store: store})
+
+	require.NoError(t, err)
+	require.Equal(t, &SeedWeaponGalleryOutput{CharacterID: "stable-id", WeaponCount: 30}, out)
+	require.Equal(t, []string{"ListCharacters"}, client.calls)
+	require.Empty(t, client.deletedIDs)
+	require.Len(t, store.updates, 1)
+	require.Equal(t, "stable-id", store.getInputs[0].ID)
+	require.Equal(t, expected, store.updates[0].Character)
+	assertGalleryRPCIdentity(t, client)
 }
 
 func TestSeedWeaponGallery_RepeatedRunPreservesStableCharacterAndSkipsExactInventoryUpdate(t *testing.T) {
@@ -85,7 +107,7 @@ func TestSeedWeaponGallery_RepeatedRunPreservesStableCharacterAndSkipsExactInven
 	out, err := SeedWeaponGallery(context.Background(), &SeedWeaponGalleryInput{Client: client, Store: store})
 
 	require.NoError(t, err)
-	require.Equal(t, &SeedWeaponGalleryOutput{CharacterID: "stable-id", WeaponCount: 27}, out)
+	require.Equal(t, &SeedWeaponGalleryOutput{CharacterID: "stable-id", WeaponCount: 30}, out)
 	require.Equal(t, []string{"ListCharacters"}, client.calls)
 	require.Empty(t, client.deletedIDs)
 	require.Empty(t, store.updates)
@@ -101,6 +123,10 @@ func TestSeedWeaponGallery_NormalizesMissingDuplicateAndExtraWeaponsWhilePreserv
 		{Type: shared.EquipmentTypeItem, ID: "torch", Quantity: 5},
 		{Type: shared.EquipmentTypeWeapon, ID: "dagger", Quantity: 7},
 		{Type: shared.EquipmentTypeWeapon, ID: "dagger", Quantity: 3},
+		{Type: shared.EquipmentTypeWeapon, ID: "glaive", Quantity: 9},
+		{Type: shared.EquipmentTypeWeapon, ID: "scimitar", Quantity: 7},
+		{Type: shared.EquipmentTypeWeapon, ID: "scimitar", Quantity: 3},
+		{Type: shared.EquipmentTypeWeapon, ID: "trident", Quantity: 4},
 		{Type: shared.EquipmentTypeAmmunition, ID: "arrows", Quantity: 20},
 		{Type: shared.EquipmentTypeWeapon, ID: "homebrew-sword", Quantity: 1},
 	})
@@ -135,6 +161,9 @@ func TestSeedWeaponGallery_NormalizesMissingDuplicateAndExtraWeaponsWhilePreserv
 		{Type: shared.EquipmentTypeWeapon, ID: "morningstar", Quantity: 1},
 		{Type: shared.EquipmentTypeWeapon, ID: "pike", Quantity: 1},
 		{Type: shared.EquipmentTypeWeapon, ID: "war-pick", Quantity: 1},
+		{Type: shared.EquipmentTypeWeapon, ID: "glaive", Quantity: 1},
+		{Type: shared.EquipmentTypeWeapon, ID: "scimitar", Quantity: 2},
+		{Type: shared.EquipmentTypeWeapon, ID: "trident", Quantity: 1},
 		{Type: shared.EquipmentTypeAmmunition, ID: "arrows", Quantity: 20},
 	}
 
@@ -305,17 +334,48 @@ func TestCloneEntityTestHelperDeepCopiesRepresentativeState(t *testing.T) {
 
 func assertGalleryInventory(t *testing.T, inventory []tkcharacter.InventoryItemData) {
 	t.Helper()
-	weapons := weaponIDs(inventory)
-	seen := map[string]bool{}
+	weapons := make([]tkcharacter.InventoryItemData, 0, 30)
 	for _, item := range inventory {
-		if item.Type != shared.EquipmentTypeWeapon {
-			continue
+		if item.Type == shared.EquipmentTypeWeapon {
+			weapons = append(weapons, item)
 		}
-		require.Equal(t, 1, item.Quantity, item.ID)
-		require.False(t, seen[item.ID], "duplicate weapon %s", item.ID)
-		seen[item.ID] = true
 	}
-	require.Equal(t, galleryWeaponIDs, weapons)
+	require.Equal(t, expectedGalleryWeaponInventory(), weapons)
+}
+
+func expectedGalleryWeaponInventory() []tkcharacter.InventoryItemData {
+	return []tkcharacter.InventoryItemData{
+		{Type: shared.EquipmentTypeWeapon, ID: "shortbow", Quantity: 1},
+		{Type: shared.EquipmentTypeWeapon, ID: "longsword", Quantity: 1},
+		{Type: shared.EquipmentTypeWeapon, ID: "shortsword", Quantity: 1},
+		{Type: shared.EquipmentTypeWeapon, ID: "dagger", Quantity: 1},
+		{Type: shared.EquipmentTypeWeapon, ID: "greataxe", Quantity: 1},
+		{Type: shared.EquipmentTypeWeapon, ID: "quarterstaff", Quantity: 1},
+		{Type: shared.EquipmentTypeWeapon, ID: "greatsword", Quantity: 1},
+		{Type: shared.EquipmentTypeWeapon, ID: "battleaxe", Quantity: 1},
+		{Type: shared.EquipmentTypeWeapon, ID: "handaxe", Quantity: 1},
+		{Type: shared.EquipmentTypeWeapon, ID: "club", Quantity: 1},
+		{Type: shared.EquipmentTypeWeapon, ID: "greatclub", Quantity: 1},
+		{Type: shared.EquipmentTypeWeapon, ID: "warhammer", Quantity: 1},
+		{Type: shared.EquipmentTypeWeapon, ID: "light-crossbow", Quantity: 1},
+		{Type: shared.EquipmentTypeWeapon, ID: "longbow", Quantity: 1},
+		{Type: shared.EquipmentTypeWeapon, ID: "javelin", Quantity: 1},
+		{Type: shared.EquipmentTypeWeapon, ID: "rapier", Quantity: 1},
+		{Type: shared.EquipmentTypeWeapon, ID: "light-hammer", Quantity: 1},
+		{Type: shared.EquipmentTypeWeapon, ID: "mace", Quantity: 1},
+		{Type: shared.EquipmentTypeWeapon, ID: "sickle", Quantity: 1},
+		{Type: shared.EquipmentTypeWeapon, ID: "spear", Quantity: 1},
+		{Type: shared.EquipmentTypeWeapon, ID: "sling", Quantity: 1},
+		{Type: shared.EquipmentTypeWeapon, ID: "dart", Quantity: 1},
+		{Type: shared.EquipmentTypeWeapon, ID: "halberd", Quantity: 1},
+		{Type: shared.EquipmentTypeWeapon, ID: "maul", Quantity: 1},
+		{Type: shared.EquipmentTypeWeapon, ID: "morningstar", Quantity: 1},
+		{Type: shared.EquipmentTypeWeapon, ID: "pike", Quantity: 1},
+		{Type: shared.EquipmentTypeWeapon, ID: "war-pick", Quantity: 1},
+		{Type: shared.EquipmentTypeWeapon, ID: "glaive", Quantity: 1},
+		{Type: shared.EquipmentTypeWeapon, ID: "scimitar", Quantity: 2},
+		{Type: shared.EquipmentTypeWeapon, ID: "trident", Quantity: 1},
+	}
 }
 
 func assertNormalHumanFighterCreationRequests(t *testing.T, client *galleryFakeClient, name string) {
@@ -422,29 +482,53 @@ func requireProtoEqual(t *testing.T, want proto.Message, got proto.Message) {
 }
 
 func exactGalleryInventoryWithNonWeapons() []tkcharacter.InventoryItemData {
-	inventory := make([]tkcharacter.InventoryItemData, 0, len(galleryWeaponIDs)+2)
+	inventory := make([]tkcharacter.InventoryItemData, 0, 32)
 	inventory = append(inventory, tkcharacter.InventoryItemData{Type: shared.EquipmentTypeItem, ID: "rope", Quantity: 1})
-	for _, id := range galleryWeaponIDs {
-		inventory = append(inventory, tkcharacter.InventoryItemData{Type: shared.EquipmentTypeWeapon, ID: id, Quantity: 1})
-	}
+	inventory = append(inventory, expectedGalleryWeaponInventory()...)
 	inventory = append(inventory, tkcharacter.InventoryItemData{Type: shared.EquipmentTypePack, ID: "explorer-pack", Quantity: 1})
 	return inventory
+}
+
+func legacyTwentySevenWeaponInventoryWithNonWeapons() []tkcharacter.InventoryItemData {
+	inventory := []tkcharacter.InventoryItemData{{Type: shared.EquipmentTypeItem, ID: "rope", Quantity: 1}}
+	for _, id := range []string{
+		"shortbow",
+		"longsword",
+		"shortsword",
+		"dagger",
+		"greataxe",
+		"quarterstaff",
+		"greatsword",
+		"battleaxe",
+		"handaxe",
+		"club",
+		"greatclub",
+		"warhammer",
+		"light-crossbow",
+		"longbow",
+		"javelin",
+		"rapier",
+		"light-hammer",
+		"mace",
+		"sickle",
+		"spear",
+		"sling",
+		"dart",
+		"halberd",
+		"maul",
+		"morningstar",
+		"pike",
+		"war-pick",
+	} {
+		inventory = append(inventory, tkcharacter.InventoryItemData{Type: shared.EquipmentTypeWeapon, ID: id, Quantity: 1})
+	}
+	return append(inventory, tkcharacter.InventoryItemData{Type: shared.EquipmentTypePack, ID: "explorer-pack", Quantity: 1})
 }
 
 func nonWeaponIDs(inventory []tkcharacter.InventoryItemData) []string {
 	ids := make([]string, 0)
 	for _, item := range inventory {
 		if item.Type != shared.EquipmentTypeWeapon {
-			ids = append(ids, item.ID)
-		}
-	}
-	return ids
-}
-
-func weaponIDs(inventory []tkcharacter.InventoryItemData) []string {
-	ids := make([]string, 0, len(galleryWeaponIDs))
-	for _, item := range inventory {
-		if item.Type == shared.EquipmentTypeWeapon {
 			ids = append(ids, item.ID)
 		}
 	}

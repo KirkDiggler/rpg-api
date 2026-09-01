@@ -18,34 +18,42 @@ const (
 	galleryCharacterName = "Weapon Gallery"
 )
 
-var galleryWeaponIDs = []string{
-	"shortbow",
-	"longsword",
-	"shortsword",
-	"dagger",
-	"greataxe",
-	"quarterstaff",
-	"greatsword",
-	"battleaxe",
-	"handaxe",
-	"club",
-	"greatclub",
-	"warhammer",
-	"light-crossbow",
-	"longbow",
-	"javelin",
-	"rapier",
-	"light-hammer",
-	"mace",
-	"sickle",
-	"spear",
-	"sling",
-	"dart",
-	"halberd",
-	"maul",
-	"morningstar",
-	"pike",
-	"war-pick",
+type galleryWeaponSpecification struct {
+	ID       string
+	Quantity int
+}
+
+var galleryWeaponSpecifications = [...]galleryWeaponSpecification{
+	{ID: "shortbow", Quantity: 1},
+	{ID: "longsword", Quantity: 1},
+	{ID: "shortsword", Quantity: 1},
+	{ID: "dagger", Quantity: 1},
+	{ID: "greataxe", Quantity: 1},
+	{ID: "quarterstaff", Quantity: 1},
+	{ID: "greatsword", Quantity: 1},
+	{ID: "battleaxe", Quantity: 1},
+	{ID: "handaxe", Quantity: 1},
+	{ID: "club", Quantity: 1},
+	{ID: "greatclub", Quantity: 1},
+	{ID: "warhammer", Quantity: 1},
+	{ID: "light-crossbow", Quantity: 1},
+	{ID: "longbow", Quantity: 1},
+	{ID: "javelin", Quantity: 1},
+	{ID: "rapier", Quantity: 1},
+	{ID: "light-hammer", Quantity: 1},
+	{ID: "mace", Quantity: 1},
+	{ID: "sickle", Quantity: 1},
+	{ID: "spear", Quantity: 1},
+	{ID: "sling", Quantity: 1},
+	{ID: "dart", Quantity: 1},
+	{ID: "halberd", Quantity: 1},
+	{ID: "maul", Quantity: 1},
+	{ID: "morningstar", Quantity: 1},
+	{ID: "pike", Quantity: 1},
+	{ID: "war-pick", Quantity: 1},
+	{ID: "glaive", Quantity: 1},
+	{ID: "scimitar", Quantity: 2},
+	{ID: "trident", Quantity: 1},
 }
 
 // CharacterStore is the narrow character repository surface used by the gallery fixture.
@@ -108,12 +116,12 @@ func SeedWeaponGallery(ctx context.Context, input *SeedWeaponGalleryInput) (*See
 	updated := cloneGalleryCharacter(getOutput.Character)
 	updated.Data.Inventory = normalizeGalleryInventory(updated.Data.Inventory)
 	if reflect.DeepEqual(getOutput.Character.Data.Inventory, updated.Data.Inventory) {
-		return &SeedWeaponGalleryOutput{CharacterID: characterID, WeaponCount: len(galleryWeaponIDs)}, nil
+		return &SeedWeaponGalleryOutput{CharacterID: characterID, WeaponCount: len(galleryWeaponSpecifications)}, nil
 	}
 	if _, err := input.Store.Update(ctx, characterrepo.UpdateInput{Character: updated}); err != nil {
 		return nil, fmt.Errorf("%s Update: %w", galleryIdentity, err)
 	}
-	return &SeedWeaponGalleryOutput{CharacterID: characterID, WeaponCount: len(galleryWeaponIDs)}, nil
+	return &SeedWeaponGalleryOutput{CharacterID: characterID, WeaponCount: len(galleryWeaponSpecifications)}, nil
 }
 
 func galleryListedCharacterID(ctx context.Context, client CharacterRPC) (string, error) {
@@ -141,7 +149,7 @@ func galleryListedCharacterID(ctx context.Context, client CharacterRPC) (string,
 }
 
 func normalizeGalleryInventory(inventory []tkcharacter.InventoryItemData) []tkcharacter.InventoryItemData {
-	out := make([]tkcharacter.InventoryItemData, 0, len(inventory)+len(galleryWeaponIDs))
+	out := make([]tkcharacter.InventoryItemData, 0, len(inventory)+len(galleryWeaponSpecifications))
 	insertedWeapons := false
 	for _, item := range inventory {
 		if item.Type == shared.EquipmentTypeWeapon {
@@ -160,9 +168,13 @@ func normalizeGalleryInventory(inventory []tkcharacter.InventoryItemData) []tkch
 }
 
 func galleryWeaponInventory() []tkcharacter.InventoryItemData {
-	items := make([]tkcharacter.InventoryItemData, 0, len(galleryWeaponIDs))
-	for _, id := range galleryWeaponIDs {
-		items = append(items, tkcharacter.InventoryItemData{Type: shared.EquipmentTypeWeapon, ID: id, Quantity: 1})
+	items := make([]tkcharacter.InventoryItemData, 0, len(galleryWeaponSpecifications))
+	for _, specification := range &galleryWeaponSpecifications {
+		items = append(items, tkcharacter.InventoryItemData{
+			Type:     shared.EquipmentTypeWeapon,
+			ID:       specification.ID,
+			Quantity: specification.Quantity,
+		})
 	}
 	return items
 }
