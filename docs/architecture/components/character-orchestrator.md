@@ -11,10 +11,10 @@ The character orchestrator handles character creation (draft lifecycle), charact
 
 ## Files
 
-| File | Lines | Purpose |
-|---|---|---|
-| `orchestrators/character/service.go` | 376 | Service interface + all Input/Output types |
-| `orchestrators/character/orchestrator.go` | 1,187 | Implementation |
+| File | Purpose |
+|---|---|
+| `orchestrators/character/service.go` | Service interface + all Input/Output types |
+| `orchestrators/character/orchestrator.go` | Implementation |
 
 ## Purpose
 
@@ -145,7 +145,7 @@ reach, costs, selectors, character status, and resources all remain provider ans
 
 Verified remaining orchestrator TODOs are limited to draft state mutation access,
 background validation, error logging, and pagination/class-filter placeholders. The
-legacy handler still contains the explicit toolkit-boundary TODO at `handler.go:766`;
+legacy handler still contains an explicit toolkit-boundary TODO in `handler.go`;
 that is outside the strict owner-private equipment path documented here.
 
 ### No proto leakage (positive)

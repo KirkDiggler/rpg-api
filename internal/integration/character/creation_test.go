@@ -153,6 +153,17 @@ func TestHairCustomization_PersistsDraftFinalizationAndGetCharacter(t *testing.T
 	s.Require().NoError(err)
 	requireHairTestAppearance(s.T(), afterRefusal.GetDraft().GetAppearance())
 
+	_, err = s.server.CharacterClient.UpdateName(ctx, &dnd5ev1alpha1.UpdateNameRequest{
+		DraftId: draftID,
+		Name:    "Dagna Hairkeeper",
+	})
+	s.Require().NoError(err)
+
+	afterName, err := s.server.CharacterClient.GetDraft(ctx, &dnd5ev1alpha1.GetDraftRequest{DraftId: draftID})
+	s.Require().NoError(err)
+	s.Equal("Dagna Hairkeeper", afterName.GetDraft().GetName())
+	requireHairTestAppearance(s.T(), afterName.GetDraft().GetAppearance())
+
 	finalized, err := s.server.CharacterClient.FinalizeDraft(ctx, &dnd5ev1alpha1.FinalizeDraftRequest{DraftId: draftID})
 	s.Require().NoError(err)
 	requireHairTestAppearance(s.T(), finalized.GetCharacter().GetAppearance())
