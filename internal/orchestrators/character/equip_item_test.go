@@ -351,9 +351,17 @@ func (s *EquipItemTestSuite) TestEquipItem_PreservesNonEquipmentFields() {
 	charEntity.Data.ClassResources = map[shared.ClassResourceType]character.ResourceData{
 		shared.ClassResourceType(99): {Name: "legacy", Current: 1, Max: 2},
 	}
-	charEntity.Appearance = &entities.Appearance{
-		SkinTone: "#D5A88C", PrimaryColor: "#8B0000", SecondaryColor: "#FFD700", EyeColor: "#4A2511",
-	}
+	color := uint32(0x123456)
+	roughness := float32(0.33)
+	charEntity.Appearance = &entities.Appearance{Hair: &entities.HairCustomization{
+		Scalp: &entities.StyleSelection{
+			Kind:     entities.StyleSelectionKindStyle,
+			StyleRef: "modular-fantasy-hero:hair:38",
+		},
+		FacialHair: &entities.StyleSelection{Kind: entities.StyleSelectionKindNone},
+		ColorSRGB:  &color,
+		Roughness:  &roughness,
+	}}
 
 	s.mockCharacterRepo.EXPECT().
 		Get(s.ctx, characterrepo.GetInput{ID: s.testCharacterID}).

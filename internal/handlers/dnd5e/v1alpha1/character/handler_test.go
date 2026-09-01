@@ -12,6 +12,7 @@ import (
 
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
 	"github.com/KirkDiggler/rpg-api/internal/apierr"
+	"github.com/KirkDiggler/rpg-api/internal/auth"
 	"github.com/KirkDiggler/rpg-api/internal/entities"
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
 	charactermock "github.com/KirkDiggler/rpg-api/internal/orchestrators/character/mock"
@@ -223,13 +224,10 @@ func (s *HandlerTestSuite) TestDeleteCharacter_InternalError() {
 	s.Equal("failed to delete character", st.Message())
 }
 
-func (s *HandlerTestSuite) TestGetCharacter_IncludesEquipmentSlots() {
+func (s *HandlerTestSuite) TestGetCharacter_IncludesEquipmentSlotsAndHairAppearance() {
 	characterID := "char-123"
-	req := &dnd5ev1alpha1.GetCharacterRequest{
-		CharacterId: characterID,
-	}
-
-	// Build character data with equipment slots populated
+	req := &dnd5ev1alpha1.GetCharacterRequest{CharacterId: characterID}
+	appearance := handlerHairAppearance()
 	charData := &toolkitchar.Data{
 		ID:    characterID,
 		Name:  "Test Fighter",
@@ -242,14 +240,10 @@ func (s *HandlerTestSuite) TestGetCharacter_IncludesEquipmentSlots() {
 	}
 
 	s.mockService.EXPECT().
-		GetCharacter(s.ctx, &character.GetCharacterInput{
-			CharacterID: characterID,
-		}).
-		Return(&character.GetCharacterOutput{
-			Character: &entities.Character{
-				Data: charData,
-			},
-		}, nil)
+		GetCharacter(s.ctx, &character.GetCharacterInput{CharacterID: characterID}).
+		Return(&character.GetCharacterOutput{Character: &entities.Character{
+			Data: charData, Appearance: appearance,
+		}}, nil)
 
 	resp, err := s.handler.GetCharacter(s.ctx, req)
 
@@ -257,14 +251,58 @@ func (s *HandlerTestSuite) TestGetCharacter_IncludesEquipmentSlots() {
 	s.Require().NotNil(resp)
 	s.Require().NotNil(resp.Character)
 	s.Require().NotNil(resp.Character.EquipmentSlots, "EquipmentSlots must be present in GetCharacter response")
-
-	// Verify individual slots
 	s.Require().NotNil(resp.Character.EquipmentSlots.MainHand)
 	s.Equal("item-longsword", resp.Character.EquipmentSlots.MainHand.ItemId)
 	s.Require().NotNil(resp.Character.EquipmentSlots.Armor)
 	s.Equal("item-chainmail", resp.Character.EquipmentSlots.Armor.ItemId)
 	s.Require().NotNil(resp.Character.EquipmentSlots.OffHand)
 	s.Equal("item-shield", resp.Character.EquipmentSlots.OffHand.ItemId)
+	s.assertHairAppearance(resp.Character.GetAppearance())
+}
+
+func (s *HandlerTestSuite) TestListCharacters_IncludesHairAppearance() {
+	ctx := auth.WithPlayerID(s.ctx, "player-1")
+	appearance := handlerHairAppearance()
+	s.mockService.EXPECT().ListCharacters(ctx, &character.ListCharactersInput{
+		PlayerID: "player-1",
+	}).Return(&character.ListCharactersOutput{
+		Characters: []*entities.Character{{
+			Data:       &toolkitchar.Data{ID: "char-123", Name: "Test Fighter"},
+			Appearance: appearance,
+		}},
+		TotalSize: 1,
+	}, nil)
+
+	resp, err := s.handler.ListCharacters(ctx, &dnd5ev1alpha1.ListCharactersRequest{})
+	s.Require().NoError(err)
+	s.Require().Len(resp.GetCharacters(), 1)
+	s.assertHairAppearance(resp.GetCharacters()[0].GetAppearance())
+}
+
+func handlerHairAppearance() *entities.Appearance {
+	color := uint32(0x123456)
+	roughness := float32(0.33)
+	return &entities.Appearance{Hair: &entities.HairCustomization{
+		Scalp: &entities.StyleSelection{
+			Kind:     entities.StyleSelectionKindStyle,
+			StyleRef: "modular-fantasy-hero:hair:38",
+		},
+		FacialHair: &entities.StyleSelection{Kind: entities.StyleSelectionKindNone},
+		ColorSRGB:  &color,
+		Roughness:  &roughness,
+	}}
+}
+
+func (s *HandlerTestSuite) assertHairAppearance(appearance *dnd5ev1alpha1.Appearance) {
+	s.Require().NotNil(appearance)
+	hair := appearance.GetHair()
+	s.Require().NotNil(hair)
+	s.Equal("modular-fantasy-hero:hair:38", hair.GetScalp().GetStyleRef())
+	s.NotNil(hair.GetFacialHair().GetNone())
+	s.Require().NotNil(hair.ColorSrgb)
+	s.Equal(uint32(0x123456), hair.GetColorSrgb())
+	s.Require().NotNil(hair.Roughness)
+	s.InDelta(0.33, hair.GetRoughness(), 0.000001)
 }
 
 func (s *HandlerTestSuite) TestGetCharacter_InvalidRequest() {

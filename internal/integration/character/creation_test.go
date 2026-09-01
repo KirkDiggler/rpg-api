@@ -12,8 +12,13 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/emptypb"
 
+	customizationpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/customization/v1alpha1"
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
 	characterv2pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/character"
 	encounterv2pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/encounter"
@@ -103,6 +108,181 @@ func (s *CharacterCreationSuite) assertOwnerItemQuantity(
 		}
 	}
 	s.Failf("missing owner inventory item", "expected %s in CharacterData inventory", itemID)
+}
+
+func TestHairCustomization_PersistsDraftFinalizationAndGetCharacter(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+	release := sharedRedis.Lease()
+	defer release()
+
+	server, err := harness.NewWithRedis(ctx, nil, sharedRedis.Addr)
+	require.NoError(t, err)
+	defer server.Close()
+	require.NoError(t, server.FlushRedis(ctx))
+
+	s := &CharacterCreationSuite{ctx: ctx, server: server}
+	s.SetT(t)
+	ctx = s.authCtx("test-player-dwarf-fighter-hair")
+	draftID := s.completeDwarfFighterDraft(ctx)
+	appearance := hairTestAppearance(0.33)
+
+	updated, err := s.server.CharacterClient.UpdateAppearance(ctx, &dnd5ev1alpha1.UpdateAppearanceRequest{
+		DraftId:    draftID,
+		Appearance: appearance,
+	})
+	s.Require().NoError(err)
+	requireHairTestAppearance(s.T(), updated.GetDraft().GetAppearance())
+
+	draft, err := s.server.CharacterClient.GetDraft(ctx, &dnd5ev1alpha1.GetDraftRequest{DraftId: draftID})
+	s.Require().NoError(err)
+	requireHairTestAppearance(s.T(), draft.GetDraft().GetAppearance())
+
+	_, err = s.server.CharacterClient.UpdateAppearance(ctx, &dnd5ev1alpha1.UpdateAppearanceRequest{
+		DraftId:    draftID,
+		Appearance: hairTestAppearance(1.01),
+	})
+	s.Require().Error(err)
+	s.Equal(codes.InvalidArgument, status.Code(err))
+
+	afterRefusal, err := s.server.CharacterClient.GetDraft(ctx, &dnd5ev1alpha1.GetDraftRequest{DraftId: draftID})
+	s.Require().NoError(err)
+	requireHairTestAppearance(s.T(), afterRefusal.GetDraft().GetAppearance())
+
+	finalized, err := s.server.CharacterClient.FinalizeDraft(ctx, &dnd5ev1alpha1.FinalizeDraftRequest{DraftId: draftID})
+	s.Require().NoError(err)
+	requireHairTestAppearance(s.T(), finalized.GetCharacter().GetAppearance())
+
+	persisted, err := s.server.CharacterClient.GetCharacter(ctx, &dnd5ev1alpha1.GetCharacterRequest{
+		CharacterId: finalized.GetCharacter().GetId(),
+	})
+	s.Require().NoError(err)
+	requireHairTestAppearance(s.T(), persisted.GetCharacter().GetAppearance())
+}
+
+func (s *CharacterCreationSuite) completeDwarfFighterDraft(ctx context.Context) string {
+	created, err := s.server.CharacterClient.CreateDraft(ctx, &dnd5ev1alpha1.CreateDraftRequest{})
+	s.Require().NoError(err)
+	draftID := created.GetDraft().GetId()
+
+	_, err = s.server.CharacterClient.UpdateName(ctx, &dnd5ev1alpha1.UpdateNameRequest{
+		DraftId: draftID,
+		Name:    "Dagna Ironbraid",
+	})
+	s.Require().NoError(err)
+
+	_, err = s.server.CharacterClient.UpdateRace(ctx, &dnd5ev1alpha1.UpdateRaceRequest{
+		DraftId: draftID,
+		Race:    dnd5ev1alpha1.Race_RACE_DWARF,
+		RaceChoices: []*dnd5ev1alpha1.ChoiceData{{
+			Category: dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_TOOLS,
+			Source:   dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_RACE,
+			ChoiceId: "dwarf-tools",
+			Selection: &dnd5ev1alpha1.ChoiceData_Tools{Tools: &dnd5ev1alpha1.ToolSelection{
+				Tools: []dnd5ev1alpha1.Tool{dnd5ev1alpha1.Tool_TOOL_SMITH_TOOLS},
+			}},
+		}},
+	})
+	s.Require().NoError(err)
+
+	_, err = s.server.CharacterClient.UpdateClass(ctx, &dnd5ev1alpha1.UpdateClassRequest{
+		DraftId: draftID,
+		Class:   dnd5ev1alpha1.Class_CLASS_FIGHTER,
+		ClassChoices: []*dnd5ev1alpha1.ChoiceData{
+			{
+				Category: dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_SKILLS,
+				Source:   dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_CLASS,
+				Selection: &dnd5ev1alpha1.ChoiceData_Skills{Skills: &dnd5ev1alpha1.SkillSelection{
+					Skills: []dnd5ev1alpha1.Skill{dnd5ev1alpha1.Skill_SKILL_ATHLETICS, dnd5ev1alpha1.Skill_SKILL_PERCEPTION},
+				}},
+			},
+			{
+				Category: dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_FIGHTING_STYLE,
+				Source:   dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_CLASS,
+				Selection: &dnd5ev1alpha1.ChoiceData_FightingStyle{FightingStyle: &dnd5ev1alpha1.FightingStyleSelection{
+					Style: dnd5ev1alpha1.FightingStyle_FIGHTING_STYLE_DEFENSE,
+				}},
+			},
+			{
+				Category:  dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_EQUIPMENT,
+				Source:    dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_CLASS,
+				ChoiceId:  "fighter-armor",
+				OptionId:  "fighter-armor-a",
+				Selection: &dnd5ev1alpha1.ChoiceData_Equipment{Equipment: &dnd5ev1alpha1.EquipmentSelection{}},
+			},
+			{
+				Category: dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_EQUIPMENT,
+				Source:   dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_CLASS,
+				ChoiceId: "fighter-weapons-primary",
+				OptionId: "fighter-weapon-a",
+				Selection: &dnd5ev1alpha1.ChoiceData_Equipment{Equipment: &dnd5ev1alpha1.EquipmentSelection{
+					Items: []*dnd5ev1alpha1.EquipmentSelectionItem{{
+						Equipment: &dnd5ev1alpha1.EquipmentSelectionItem_Weapon{Weapon: dnd5ev1alpha1.Weapon_WEAPON_LONGSWORD},
+					}},
+				}},
+			},
+			{
+				Category:  dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_EQUIPMENT,
+				Source:    dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_CLASS,
+				ChoiceId:  "fighter-weapons-secondary",
+				OptionId:  "fighter-ranged-a",
+				Selection: &dnd5ev1alpha1.ChoiceData_Equipment{Equipment: &dnd5ev1alpha1.EquipmentSelection{}},
+			},
+			{
+				Category:  dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_EQUIPMENT,
+				Source:    dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_CLASS,
+				ChoiceId:  "fighter-pack",
+				OptionId:  "fighter-pack-a",
+				Selection: &dnd5ev1alpha1.ChoiceData_Equipment{Equipment: &dnd5ev1alpha1.EquipmentSelection{}},
+			},
+		},
+	})
+	s.Require().NoError(err)
+
+	_, err = s.server.CharacterClient.UpdateBackground(ctx, &dnd5ev1alpha1.UpdateBackgroundRequest{
+		DraftId:    draftID,
+		Background: dnd5ev1alpha1.Background_BACKGROUND_SOLDIER,
+	})
+	s.Require().NoError(err)
+
+	_, err = s.server.CharacterClient.UpdateAbilityScores(ctx, &dnd5ev1alpha1.UpdateAbilityScoresRequest{
+		DraftId: draftID,
+		ScoresInput: &dnd5ev1alpha1.UpdateAbilityScoresRequest_AbilityScores{AbilityScores: &dnd5ev1alpha1.AbilityScores{
+			Strength: 15, Dexterity: 13, Constitution: 14, Intelligence: 10, Wisdom: 12, Charisma: 8,
+		}},
+	})
+	s.Require().NoError(err)
+	return draftID
+}
+
+func hairTestAppearance(roughness float32) *dnd5ev1alpha1.Appearance {
+	return &dnd5ev1alpha1.Appearance{Hair: &customizationpb.HairCustomization{
+		Scalp: &customizationpb.StyleSelection{Selection: &customizationpb.StyleSelection_StyleRef{
+			StyleRef: "modular-fantasy-hero:hair:38",
+		}},
+		FacialHair: &customizationpb.StyleSelection{Selection: &customizationpb.StyleSelection_None{
+			None: &emptypb.Empty{},
+		}},
+		ColorSrgb: proto.Uint32(0x123456),
+		Roughness: proto.Float32(roughness),
+	}}
+}
+
+func requireHairTestAppearance(t *testing.T, appearance *dnd5ev1alpha1.Appearance) {
+	t.Helper()
+	require.NotNil(t, appearance)
+	hair := appearance.GetHair()
+	require.NotNil(t, hair)
+	require.Equal(t, "modular-fantasy-hero:hair:38", hair.GetScalp().GetStyleRef())
+	require.NotNil(t, hair.GetFacialHair().GetNone())
+	require.NotNil(t, hair.ColorSrgb)
+	require.Equal(t, uint32(0x123456), hair.GetColorSrgb())
+	require.NotNil(t, hair.Roughness)
+	require.InDelta(t, 0.33, hair.GetRoughness(), 0.000001)
 }
 
 // =============================================================================

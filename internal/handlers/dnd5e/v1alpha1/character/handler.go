@@ -535,6 +535,9 @@ func (h *Handler) FinalizeDraft(
 	if protoChar == nil {
 		return nil, apierr.Internal("failed to convert character to proto")
 	}
+	if output.Appearance != nil {
+		protoChar.Appearance = convertEntityAppearanceToProto(output.Appearance)
+	}
 
 	return &dnd5ev1alpha1.FinalizeDraftResponse{
 		Character: protoChar,

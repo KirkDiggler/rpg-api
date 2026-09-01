@@ -1,8 +1,8 @@
 ---
 name: character handler
 description: gRPC handler for CharacterService — character creation, management, and data loading
-updated: 2026-08-30
-confidence: medium-high — legacy surface verified by read; #844 shared strict equipment path, v1alpha2 flattened owner-private mapping, and #728 Dwarf tool-choice translation verified by focused and integration tests
+updated: 2026-09-01
+confidence: medium-high — #869 hair draft/finalization/Get/List mapping verified through focused handler tests and the Docker-backed character integration flow; older converter debt retains its stated caveats
 ---
 
 # character handler
@@ -12,6 +12,23 @@ The character handler is the gRPC adapter for `CharacterService`. It covers the 
 ## Dwarf race tool choices (#728)
 
 `UpdateRace` translates `CHOICE_CATEGORY_TOOLS` through the same canonical proto-to-toolkit tool converter used by class choices and passes the resulting selection IDs into `RaceChoices.Tools`. The toolkit remains responsible for validating Dwarf choice eligibility and completeness. Handler coverage pins Smith's Tools translation, while the character integration suite drives Dwarf race selection through `FinalizeDraft` to prevent a successful-but-discarded choice regression.
+
+## Production hair customization (#869)
+
+`UpdateAppearance` is creation-only: its request names a draft, never a finalized
+character. The handler validates the complete wire payload before invoking the
+orchestrator, then maps the shared customization proto through
+`internal/converters/customization`; it does not interpret provider refs.
+
+Appearance is an API-owned envelope outside toolkit `character.Data`. Draft reads,
+`UpdateAppearance`, `FinalizeDraft`, `GetCharacter`, and `ListCharacters` return the
+same typed hair semantics: nil slot pointer means provider default, `none` is explicit,
+`style_ref` is exact, and optional `color_srgb`/`roughness` preserve scalar presence
+(including present zero). Finalization returns both the reconstructed toolkit character
+and the persisted API-owned Appearance so the finalization response does not drop it.
+A Docker `redis:7-alpine` integration test completes a Dwarf Fighter and proves the
+exact payload across update, reload, finalization, and final character read; it also
+proves invalid roughness is refused before repository mutation.
 
 ## Shared strict character application (#844)
 
@@ -35,17 +52,17 @@ class/race refs, equipment, level, HP, speed, structured feature/condition refs,
 optional resource/source presence, and non-magical resources are copied from detached
 values. The v1alpha1 handler does not grow a parallel converter for those fields.
 
-This production slice pins proto generated v0.1.143 (`a7db07a`) and final toolkit
-`rulebooks/dnd5e` v0.100.0, `rulebooks/dnd5e/session` v0.30.0, and
-`rulebooks/dnd5e/resolution` v0.13.0. The session module is consumed directly by the
+The current branch pins proto generated commit `4a54bd51df0e6459b2908d8f054978cb451416bc`,
+`rulebooks/dnd5e` v0.124.0, `rulebooks/dnd5e/session` v0.41.0, and
+`rulebooks/dnd5e/resolution` v0.25.0. The session module is consumed directly by the
 separate `SessionService` handler.
 
 ## Files
 
 | File | Lines | Purpose |
 |---|---|---|
-| `handlers/dnd5e/v1alpha1/character/handler.go` | 1,070 | gRPC handler |
-| `handlers/dnd5e/v1alpha1/character/converters.go` | 3,132 | Proto ↔ domain entity conversion |
+| `handlers/dnd5e/v1alpha1/character/handler.go` | 1,081 | gRPC handler |
+| `handlers/dnd5e/v1alpha1/character/converters.go` | 3,427 | Proto ↔ domain entity conversion |
 
 `converters.go` is the largest file in the codebase by line count.
 
@@ -56,7 +73,7 @@ separate `SessionService` handler.
 - `GetRequirements` — returns pending choices for a draft
 - `SetName` / `SetRace` / `SetClass` / `SetBackground` / `SetAbilityScores` — draft updates
 - `SetAbilityScoresFromRolls` — assigns pre-rolled ability scores to draft
-- `SetAppearance` — sets cosmetic character appearance
+- `UpdateAppearance` — validates and sets creation-draft hair appearance
 - `ValidateDraft` / `FinalizeDraft` — validation and finalization
 - `GetCharacter` / `ListCharacters` / `DeleteCharacter` — character CRUD
 - `EquipItem` / `UnequipItem` — equipment slot management
@@ -67,7 +84,7 @@ separate `SessionService` handler.
 
 ## Converter surface
 
-`converters.go` at 3,132 lines is the conversion layer for the character domain. This size is expected given the breadth of the D&D 5e character model (races, classes, backgrounds, spells, equipment, traits, features, skills, proficiencies). However, the file has **27 TODO comments** indicating incomplete conversions.
+`converters.go` at 3,427 lines is the conversion layer for the character domain. This size is expected given the breadth of the D&D 5e character model (races, classes, backgrounds, spells, equipment, traits, features, skills, proficiencies). However, the file has **25 TODO comments** indicating incomplete conversions.
 
 ### Known stub returns
 
@@ -99,4 +116,4 @@ The character orchestrator returns `interface{}` for `CharacterData` in some out
 
 ### Handler test files
 
-`handler.go` has 8 TODO comments (lines 236, 294, 350, 765, 798, 836, 858) covering spell enum conversion, tool expertise, and pagination. These are handler-level gaps beyond the converter stubs.
+`handler.go` has 7 TODO comments covering spell enum conversion, tool expertise, and pagination. These are handler-level gaps beyond the converter stubs.

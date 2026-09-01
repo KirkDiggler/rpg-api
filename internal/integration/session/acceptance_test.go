@@ -314,6 +314,20 @@ func armedFighter(id, playerID string) *tkcharacter.Data {
 	}
 }
 
+func acceptanceHairAppearance() *entities.Appearance {
+	color := uint32(0x123456)
+	roughness := float32(0.33)
+	return &entities.Appearance{Hair: &entities.HairCustomization{
+		Scalp: &entities.StyleSelection{
+			Kind:     entities.StyleSelectionKindStyle,
+			StyleRef: "modular-fantasy-hero:hair:38",
+		},
+		FacialHair: &entities.StyleSelection{Kind: entities.StyleSelectionKindNone},
+		ColorSRGB:  &color,
+		Roughness:  &roughness,
+	}}
+}
+
 // acceptanceHarness is the design §6.1 acceptance criterion made executable:
 // a party can, entirely through SessionService against the local stack,
 // walk a multi-room world, meet a monster by sight, fight it, disengage,
@@ -591,11 +605,35 @@ func TestAcceptanceLoop_WalkFightDissolveResync(t *testing.T) {
 func TestGetRoster_ServesTheLaunchWrittenRow(t *testing.T) {
 	h := newAcceptanceHarness(t)
 	ctx := auth.WithPlayerID(context.Background(), "player-alice")
+	appearance := acceptanceHairAppearance()
 
 	_, err := h.charRepo.Create(context.Background(), characterrepo.CreateInput{
-		Character: &entities.Character{Data: armedFighter("alice", "player-alice")},
+		Character: &entities.Character{
+			Data:       armedFighter("alice", "player-alice"),
+			Appearance: appearance,
+		},
 	})
 	require.NoError(t, err)
+
+	// Exercise the adapter the toolkit session Manager writes through, backed
+	// by the real character Redis repository rather than a mock. The SDK owns
+	// only Data; the API-owned Appearance envelope must survive its save.
+	sessionCharacters := sessionorch.NewCharacterRepository(h.charRepo)
+	loaded, err := sessionCharacters.GetCharacter(context.Background(), "alice")
+	require.NoError(t, err)
+	updated := *loaded
+	updated.HitPoints = 23
+	require.NoError(t, sessionCharacters.SaveCharacter(context.Background(), &updated))
+
+	stored, err := h.charRepo.Get(context.Background(), characterrepo.GetInput{ID: "alice"})
+	require.NoError(t, err)
+	require.Equal(t, appearance, stored.Character.Appearance)
+	require.NotSame(t, appearance, stored.Character.Appearance)
+	require.NotSame(t, appearance.Hair, stored.Character.Appearance.Hair)
+	require.NotSame(t, appearance.Hair.Scalp, stored.Character.Appearance.Hair.Scalp)
+	require.NotSame(t, appearance.Hair.FacialHair, stored.Character.Appearance.Hair.FacialHair)
+	require.NotSame(t, appearance.Hair.ColorSRGB, stored.Character.Appearance.Hair.ColorSRGB)
+	require.NotSame(t, appearance.Hair.Roughness, stored.Character.Appearance.Hair.Roughness)
 
 	require.NoError(t, h.rosterRepo.Save(context.Background(), &rosterrepo.Data{
 		EncounterID: "roster-run",
@@ -614,12 +652,21 @@ func TestGetRoster_ServesTheLaunchWrittenRow(t *testing.T) {
 	require.Equal(t, classes.Fighter, alice.GetClassRef(),
 		"class ref must be the character record's own word — the one the local-player render path already maps")
 	require.Equal(t, string(races.Human), alice.GetRaceRef())
-	require.NotNil(t, alice.GetCustomization(), "the shelf is always set")
+	hair := alice.GetCustomization().GetHair()
+	require.NotNil(t, hair)
+	require.Equal(t, "modular-fantasy-hero:hair:38", hair.GetScalp().GetStyleRef())
+	require.NotNil(t, hair.GetFacialHair().GetNone())
+	require.NotNil(t, hair.ColorSrgb)
+	require.Equal(t, uint32(0x123456), hair.GetColorSrgb())
+	require.NotNil(t, hair.Roughness)
+	require.InDelta(t, 0.33, hair.GetRoughness(), 0.000001)
 
 	skel := resp.GetMembers()[1]
 	require.Equal(t, sessionpb.MemberKind_MEMBER_KIND_MONSTER, skel.GetKind())
 	require.Equal(t, "dnd5e:monsters:skeleton", skel.GetMonsterRef())
 	require.Equal(t, "Skeleton", skel.GetName())
+	require.NotNil(t, skel.GetCustomization())
+	require.Nil(t, skel.GetCustomization().GetHair())
 
 	// The seated gate, through the real stack: a player with no seat in this
 	// roster is refused the read.

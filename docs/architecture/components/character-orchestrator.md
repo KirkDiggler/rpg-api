@@ -1,8 +1,8 @@
 ---
 name: character orchestrator
 description: Character creation, management, equipment, and data-loading orchestrator
-updated: 2026-08-25
-confidence: high — #844 strict project-before-write plus atomic two-field patch verified by focused no-write, concurrency, persistence-equality, handler, and lint gates
+updated: 2026-09-01
+confidence: high — #869 adds Redis draft reload, finalization, Get/List, refusal non-mutation, and envelope-preservation proofs while retaining #844's strict equipment evidence
 ---
 
 # character orchestrator
@@ -13,12 +13,12 @@ The character orchestrator handles character creation (draft lifecycle), charact
 
 | File | Lines | Purpose |
 |---|---|---|
-| `orchestrators/character/service.go` | ~200 | Service interface + all Input/Output types |
-| `orchestrators/character/orchestrator.go` | 1,083 | Implementation |
+| `orchestrators/character/service.go` | 376 | Service interface + all Input/Output types |
+| `orchestrators/character/orchestrator.go` | 1,187 | Implementation |
 
 ## Purpose
 
-- **Draft lifecycle:** create → update (name, race, class, background, ability scores, appearance) → validate → finalize → `character.Data` in Redis.
+- **Draft lifecycle:** create → update (name, race, class, background, ability scores, appearance) → validate → finalize → API-owned character envelope (`character.Data` + Appearance) in Redis.
 - **Character management:** equip/unequip through the toolkit's rules engine (rpg-api#680 — see "Equipment" below, this used to be a bare data write); get/list/delete characters.
 - **Data loading:** list races, classes, backgrounds, equipment by type, spells, ability scores — delegates to rpg-toolkit for actual data.
 
@@ -69,7 +69,22 @@ Orchestrator
 The orchestrator works with:
 - `*character.Data` (toolkit type) — stored and loaded from Redis directly
 - `*entities.CharacterDraft` — in-progress creation state in Redis
-- `*entities.Appearance` — cosmetic character data, stored alongside `character.Data`
+- `*entities.Appearance` — API-owned typed hair data, stored alongside and outside `character.Data`
+
+## Appearance lifecycle (#869)
+
+The orchestrator's `SetAppearance` method is reachable only from the creation RPC
+`UpdateAppearance` and accepts a draft ID. Every other draft mutation explicitly carries
+the existing Appearance into the repository update, preventing unrelated creation steps
+from clearing it. Finalization stores `entities.Character{Data, Appearance}` without
+adding cosmetic fields to toolkit `character.Data`; `FinalizeDraftOutput` carries the
+persisted Appearance separately so the handler can return it exactly.
+
+The Redis repositories serialize the API envelope as JSON. Reload tests prove exact hair
+values, present-zero optional scalars, and detached nested pointers. `GetCharacter` and
+`ListCharacters` return the stored envelope unchanged. Session SDK writes use the
+load-then-merge adapter in `internal/orchestrators/session/character_repo.go`, replacing
+only Data so Appearance survives toolkit-owned state writes.
 
 ## Equipment (rpg-api#680/#844)
 
@@ -120,10 +135,9 @@ replace newer slots or other data.
 
 ## Production provider pins (#844)
 
-The strict character loader/status projection used here is published in
-`rulebooks/dnd5e` v0.100.0. The same API branch consumes the final session combat
-providers at `rulebooks/dnd5e/session` v0.30.0 and
-`rulebooks/dnd5e/resolution` v0.13.0, with proto generated v0.1.143 (`a7db07a`).
+The current branch consumes `rulebooks/dnd5e` v0.124.0,
+`rulebooks/dnd5e/session` v0.41.0, `rulebooks/dnd5e/resolution` v0.25.0, and
+proto generated commit `4a54bd51df0e6459b2908d8f054978cb451416bc`.
 There are no local replaces or API-side rule substitutes: declaration availability,
 reach, costs, selectors, character status, and resources all remain provider answers.
 

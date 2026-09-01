@@ -80,9 +80,20 @@ func (s *CharacterRepositoryTestSuite) TestGetCharacter_OtherFailure_PassesThrou
 
 func (s *CharacterRepositoryTestSuite) TestSaveCharacter_MergesDataOntoExistingEntity() {
 	newData := &tkcharacter.Data{ID: "char-1", Name: "Alice", HitPoints: 5}
+	color := uint32(0x123456)
+	roughness := float32(0.33)
+	appearance := &entities.Appearance{Hair: &entities.HairCustomization{
+		Scalp: &entities.StyleSelection{
+			Kind:     entities.StyleSelectionKindStyle,
+			StyleRef: "modular-fantasy-hero:hair:38",
+		},
+		FacialHair: &entities.StyleSelection{Kind: entities.StyleSelectionKindNone},
+		ColorSRGB:  &color,
+		Roughness:  &roughness,
+	}}
 	existing := &entities.Character{
 		Data:       &tkcharacter.Data{ID: "char-1", Name: "Alice", HitPoints: 12},
-		Appearance: &entities.Appearance{},
+		Appearance: appearance,
 	}
 	s.mockRepo.EXPECT().Get(s.ctx, characterrepo.GetInput{ID: "char-1"}).Return(
 		&characterrepo.GetOutput{Character: existing}, nil,
@@ -91,6 +102,10 @@ func (s *CharacterRepositoryTestSuite) TestSaveCharacter_MergesDataOntoExistingE
 		func(_ context.Context, in characterrepo.UpdateInput) (*characterrepo.UpdateOutput, error) {
 			s.Same(newData, in.Character.Data)
 			s.Same(existing.Appearance, in.Character.Appearance, "must preserve API-owned fields, not overwrite the whole entity")
+			s.Equal("modular-fantasy-hero:hair:38", in.Character.Appearance.Hair.Scalp.StyleRef)
+			s.Equal(entities.StyleSelectionKindNone, in.Character.Appearance.Hair.FacialHair.Kind)
+			s.Equal(uint32(0x123456), *in.Character.Appearance.Hair.ColorSRGB)
+			s.InDelta(0.33, *in.Character.Appearance.Hair.Roughness, 0.000001)
 			return &characterrepo.UpdateOutput{Character: in.Character}, nil
 		},
 	)

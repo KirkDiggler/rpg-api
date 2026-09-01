@@ -36,8 +36,17 @@ func tombRoster(t *testing.T) rosterrepo.Repository {
 	return repo
 }
 
-// charactersOf serves named character records: id -> (owner, name, class, race).
-func charactersOf(ctrl *gomock.Controller, rows map[string][4]string) characterrepo.Repository {
+type rosterCharacter struct {
+	owner      string
+	name       string
+	class      string
+	race       string
+	appearance *entities.Appearance
+}
+
+// charactersOf serves complete character records while roster assertions stay
+// limited to their public projection.
+func charactersOf(ctrl *gomock.Controller, rows map[string]rosterCharacter) characterrepo.Repository {
 	repo := charactermock.NewMockRepository(ctrl)
 	repo.EXPECT().Get(gomock.Any(), gomock.Any()).DoAndReturn(
 		func(_ context.Context, in characterrepo.GetInput) (*characterrepo.GetOutput, error) {
@@ -45,13 +54,30 @@ func charactersOf(ctrl *gomock.Controller, rows map[string][4]string) characterr
 			if !ok {
 				return nil, apierr.NotFound("character not found")
 			}
-			return &characterrepo.GetOutput{Character: &entities.Character{Data: &tkcharacter.Data{
-				ID: in.ID, PlayerID: row[0], Name: row[1],
-				ClassID: row[2], RaceID: races.Race(row[3]),
-			}}}, nil
+			return &characterrepo.GetOutput{Character: &entities.Character{
+				Data: &tkcharacter.Data{
+					ID: in.ID, PlayerID: row.owner, Name: row.name,
+					ClassID: row.class, RaceID: races.Race(row.race), HitPoints: 99,
+				},
+				Appearance: row.appearance,
+			}}, nil
 		},
 	).AnyTimes()
 	return repo
+}
+
+func rosterHairAppearance() *entities.Appearance {
+	color := uint32(0x123456)
+	roughness := float32(0.33)
+	return &entities.Appearance{Hair: &entities.HairCustomization{
+		Scalp: &entities.StyleSelection{
+			Kind:     entities.StyleSelectionKindStyle,
+			StyleRef: "modular-fantasy-hero:hair:38",
+		},
+		FacialHair: &entities.StyleSelection{Kind: entities.StyleSelectionKindNone},
+		ColorSRGB:  &color,
+		Roughness:  &roughness,
+	}}
 }
 
 func TestGetRoster_Unauthenticated_Errors(t *testing.T) {
@@ -76,16 +102,16 @@ func TestGetRoster_UnknownSession_NotFound(t *testing.T) {
 
 // The whole projection, pinned: player rows read the character record FRESH
 // (name, class ref, race ref — the same words the client's local-player path
-// already maps to models), monster rows carry the launch-stored authored ref
-// and name, every row's Customization shelf is set-and-empty, and NOTHING
-// else — no positions, no hit points — has a field to leak through.
+// already maps to models), project public hair, and carry no private sheet
+// fields. Default players and monsters still receive an always-present empty
+// Customization shelf.
 func TestGetRoster_ProjectsThePublicHalf(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	h := &Handler{
 		roster: tombRoster(t),
-		characters: charactersOf(ctrl, map[string][4]string{
-			"char-alice": {"alice", "Alice", "fighter", "human"},
-			"char-bob":   {"bob", "Bob", "rogue", "elf"},
+		characters: charactersOf(ctrl, map[string]rosterCharacter{
+			"char-alice": {owner: "alice", name: "Alice", class: "fighter", race: "human", appearance: rosterHairAppearance()},
+			"char-bob":   {owner: "bob", name: "Bob", class: "rogue", race: "elf"},
 		}),
 	}
 
@@ -103,8 +129,18 @@ func TestGetRoster_ProjectsThePublicHalf(t *testing.T) {
 	require.Equal(t, "human", alice.GetRaceRef())
 	require.Empty(t, alice.GetMonsterRef(), "a player has no monster ref")
 	require.NotNil(t, alice.GetCustomization(), "the shelf is always set")
+	hair := alice.GetCustomization().GetHair()
+	require.NotNil(t, hair)
+	require.Equal(t, "modular-fantasy-hero:hair:38", hair.GetScalp().GetStyleRef())
+	require.NotNil(t, hair.GetFacialHair().GetNone())
+	require.NotNil(t, hair.ColorSrgb)
+	require.Equal(t, uint32(0x123456), hair.GetColorSrgb())
+	require.NotNil(t, hair.Roughness)
+	require.InDelta(t, 0.33, hair.GetRoughness(), 0.000001)
 
 	require.Equal(t, "rogue", bob.GetClassRef())
+	require.NotNil(t, bob.GetCustomization())
+	require.Nil(t, bob.GetCustomization().GetHair(), "nil appearance keeps an empty public shelf")
 
 	require.Equal(t, "skeleton-1", skel.GetId())
 	require.Equal(t, sessionpb.MemberKind_MEMBER_KIND_MONSTER, skel.GetKind())
@@ -112,6 +148,7 @@ func TestGetRoster_ProjectsThePublicHalf(t *testing.T) {
 	require.Equal(t, "dnd5e:monsters:skeleton", skel.GetMonsterRef())
 	require.Empty(t, skel.GetClassRef(), "a monster has no class ref")
 	require.NotNil(t, skel.GetCustomization())
+	require.Nil(t, skel.GetCustomization().GetHair(), "monster customization remains empty")
 }
 
 // The seated gate: a roster is readable by exactly the players sitting in it.
@@ -122,9 +159,9 @@ func TestGetRoster_NotSeated_PermissionDenied(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	h := &Handler{
 		roster: tombRoster(t),
-		characters: charactersOf(ctrl, map[string][4]string{
-			"char-alice": {"alice", "Alice", "fighter", "human"},
-			"char-bob":   {"bob", "Bob", "rogue", "elf"},
+		characters: charactersOf(ctrl, map[string]rosterCharacter{
+			"char-alice": {owner: "alice", name: "Alice", class: "fighter", race: "human"},
+			"char-bob":   {owner: "bob", name: "Bob", class: "rogue", race: "elf"},
 		}),
 	}
 
@@ -139,7 +176,7 @@ func TestGetRoster_DanglingCharacter_Internal(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	h := &Handler{
 		roster:     tombRoster(t),
-		characters: charactersOf(ctrl, map[string][4]string{}),
+		characters: charactersOf(ctrl, map[string]rosterCharacter{}),
 	}
 
 	ctx := auth.WithPlayerID(context.Background(), "alice")

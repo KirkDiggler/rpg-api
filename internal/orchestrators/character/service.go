@@ -200,9 +200,10 @@ type FinalizeDraftInput struct {
 	DraftID string
 }
 
-// FinalizeDraftOutput returns the created character
+// FinalizeDraftOutput returns the created character and its API-owned appearance.
 type FinalizeDraftOutput struct {
-	Character *character.Character
+	Character  *character.Character
+	Appearance *entities.Appearance
 }
 
 // ListRacesInput lists available races

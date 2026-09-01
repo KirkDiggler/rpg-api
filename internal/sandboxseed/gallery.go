@@ -172,6 +172,37 @@ func cloneGalleryCharacter(in *entities.Character) *entities.Character {
 	data := *in.Data
 	data.Inventory = append([]tkcharacter.InventoryItemData(nil), in.Data.Inventory...)
 	out.Data = &data
+	out.Appearance = cloneAppearance(in.Appearance)
+	return &out
+}
+
+func cloneAppearance(in *entities.Appearance) *entities.Appearance {
+	if in == nil {
+		return nil
+	}
+	out := *in
+	if in.Hair == nil {
+		return &out
+	}
+
+	hair := *in.Hair
+	if in.Hair.Scalp != nil {
+		scalp := *in.Hair.Scalp
+		hair.Scalp = &scalp
+	}
+	if in.Hair.FacialHair != nil {
+		facialHair := *in.Hair.FacialHair
+		hair.FacialHair = &facialHair
+	}
+	if in.Hair.ColorSRGB != nil {
+		color := *in.Hair.ColorSRGB
+		hair.ColorSRGB = &color
+	}
+	if in.Hair.Roughness != nil {
+		roughness := *in.Hair.Roughness
+		hair.Roughness = &roughness
+	}
+	out.Hair = &hair
 	return &out
 }
 
