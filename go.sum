@@ -4,8 +4,8 @@ github.com/AdaLogics/go-fuzz-headers v0.0.0-20240806141605-e8a1dd7889d6 h1:He8af
 github.com/AdaLogics/go-fuzz-headers v0.0.0-20240806141605-e8a1dd7889d6/go.mod h1:8o94RPi1/7XTJvwPpRSzSUedZrtlirdB3r9Z20bi2f8=
 github.com/Azure/go-ansiterm v0.0.0-20210617225240-d185dfc1b5a1 h1:UQHMgLO+TxOElx5B5HZ4hJQsoJ/PvUvKRhJHDQXO8P8=
 github.com/Azure/go-ansiterm v0.0.0-20210617225240-d185dfc1b5a1/go.mod h1:xomTg63KZ2rFqZQzSB4Vz2SUXa1BpHTVz9L5PTmPC4E=
-github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20260901101114-91bd3ab7f2a2 h1:3Bn9rFrfpLJkNsLkE2shGnV1BdQ2H9qOa+kpZjoZEj8=
-github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20260901101114-91bd3ab7f2a2/go.mod h1:fkjzijr35/4YFGyFgTrBMjt4YDfUaZTGMprprBySpGE=
+github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20260901233313-5d1137a97ccb h1:ojS5wEGY9Mvigo1HTmY1MtJ/7lJEo+lQG3uJWH9Y7Iw=
+github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20260901233313-5d1137a97ccb/go.mod h1:fkjzijr35/4YFGyFgTrBMjt4YDfUaZTGMprprBySpGE=
 github.com/KirkDiggler/rpg-toolkit/core v0.11.0 h1:VnGI17Bnm6cLqI7Rn3RukUZHVfTAPUKTdoKTYqbGRtk=
 github.com/KirkDiggler/rpg-toolkit/core v0.11.0/go.mod h1:XFQXYViPZUTYu/a8jdRadI3rGnKk4r7tRtPm++vSUV0=
 github.com/KirkDiggler/rpg-toolkit/dice v0.3.2 h1:cLLP4Z+4VYSxeRkNbmI5gym6dC/xBOw6kDIylWDK/z0=
