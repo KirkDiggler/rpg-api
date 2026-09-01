@@ -8,6 +8,7 @@ import (
 
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
 	"github.com/KirkDiggler/rpg-api/internal/apierr"
+	customizationconverter "github.com/KirkDiggler/rpg-api/internal/converters/customization"
 	"github.com/KirkDiggler/rpg-api/internal/entities"
 	"github.com/KirkDiggler/rpg-toolkit/core/combat"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/abilities"
@@ -3411,10 +3412,7 @@ func convertProtoAppearanceToEntity(proto *dnd5ev1alpha1.Appearance) *entities.A
 		return nil
 	}
 	return &entities.Appearance{
-		SkinTone:       proto.SkinTone,
-		PrimaryColor:   proto.PrimaryColor,
-		SecondaryColor: proto.SecondaryColor,
-		EyeColor:       proto.EyeColor,
+		Hair: customizationconverter.ProtoToEntity(proto.Hair),
 	}
 }
 
@@ -3424,9 +3422,6 @@ func convertEntityAppearanceToProto(entity *entities.Appearance) *dnd5ev1alpha1.
 		return nil
 	}
 	return &dnd5ev1alpha1.Appearance{
-		SkinTone:       entity.SkinTone,
-		PrimaryColor:   entity.PrimaryColor,
-		SecondaryColor: entity.SecondaryColor,
-		EyeColor:       entity.EyeColor,
+		Hair: customizationconverter.EntityToProto(entity.Hair),
 	}
 }

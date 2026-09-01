@@ -338,7 +338,14 @@ func (s *HandlerTestSuite) TestEquipItem_ReturnsPersistedPostStateWithoutRefetch
 				toolkitchar.SlotMainHand: "longsword",
 			},
 		},
-		Appearance: &entities.Appearance{SkinTone: "#123456"},
+		Appearance: &entities.Appearance{
+			Hair: &entities.HairCustomization{
+				Scalp: &entities.StyleSelection{
+					Kind:     entities.StyleSelectionKindStyle,
+					StyleRef: "modular-fantasy-hero:hair:38",
+				},
+			},
+		},
 	}
 
 	s.mockService.EXPECT().
@@ -364,7 +371,7 @@ func (s *HandlerTestSuite) TestEquipItem_ReturnsPersistedPostStateWithoutRefetch
 	s.Require().NoError(err)
 	s.Equal("char-equip", resp.GetCharacter().GetId())
 	s.Equal("longsword", resp.GetCharacter().GetEquipmentSlots().GetMainHand().GetItemId())
-	s.Equal("#123456", resp.GetCharacter().GetAppearance().GetSkinTone())
+	s.Equal("modular-fantasy-hero:hair:38", resp.GetCharacter().GetAppearance().GetHair().GetScalp().GetStyleRef())
 	s.Equal("handaxe", resp.GetPreviouslyEquippedItem().GetItemId())
 }
 

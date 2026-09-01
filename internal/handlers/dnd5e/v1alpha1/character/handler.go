@@ -1032,13 +1032,13 @@ func (h *Handler) UpdateAppearance(
 	req *dnd5ev1alpha1.UpdateAppearanceRequest,
 ) (*dnd5ev1alpha1.UpdateAppearanceResponse, error) {
 	if req == nil {
-		return nil, apierr.InvalidArgument("request is required")
+		return nil, status.Error(codes.InvalidArgument, "request is required")
 	}
 	if req.DraftId == "" {
-		return nil, apierr.InvalidArgument("draft_id is required")
+		return nil, status.Error(codes.InvalidArgument, "draft_id is required")
 	}
-	if req.Appearance == nil {
-		return nil, apierr.InvalidArgument("appearance is required")
+	if err := validateAppearance(req.Appearance); err != nil {
+		return nil, err
 	}
 
 	// Convert proto appearance to entity

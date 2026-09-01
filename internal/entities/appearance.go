@@ -1,11 +1,29 @@
 // Package entities defines the core data structures for the RPG API
 package entities
 
-// Appearance represents the cosmetic customization of a character
-// This is stored separately from character game data as it has no rules implications
+// StyleSelectionKind identifies how a customization slot should be resolved.
+type StyleSelectionKind string
+
+const (
+	StyleSelectionKindStyle StyleSelectionKind = "style"
+	StyleSelectionKindNone  StyleSelectionKind = "none"
+)
+
+// StyleSelection distinguishes an exact provider-owned style from explicit none.
+type StyleSelection struct {
+	Kind     StyleSelectionKind `json:"kind"`
+	StyleRef string             `json:"style_ref,omitempty"`
+}
+
+// HairCustomization stores provider-neutral hair rendering intent.
+type HairCustomization struct {
+	Scalp      *StyleSelection `json:"scalp,omitempty"`
+	FacialHair *StyleSelection `json:"facial_hair,omitempty"`
+	ColorSRGB  *uint32         `json:"color_srgb,omitempty"`
+	Roughness  *float32        `json:"roughness,omitempty"`
+}
+
+// Appearance represents cosmetic character customization stored outside game data.
 type Appearance struct {
-	SkinTone       string `json:"skin_tone"`       // Hex color e.g. "#D5A88C"
-	PrimaryColor   string `json:"primary_color"`   // Armor/clothing color e.g. "#8B0000"
-	SecondaryColor string `json:"secondary_color"` // Accent/trim color e.g. "#FFD700"
-	EyeColor       string `json:"eye_color"`       // Eye iris color e.g. "#4A2511"
+	Hair *HairCustomization `json:"hair,omitempty"`
 }
