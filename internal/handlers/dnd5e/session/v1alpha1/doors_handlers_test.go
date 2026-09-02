@@ -1,9 +1,11 @@
 package sessionv1alpha1
 
 // doors_handlers_test.go covers the three door RPCs (rpg-project#268):
-// GetDoors behind the seated gate GetRoster set, OpenDoor and Unlock behind
-// callerActingAs, and the projection of the SDK's door shapes onto the wire
-// — the lock rides only while it is real.
+// GetDoors, OpenDoor and Unlock all behind callerActingAs -- GetDoors joined
+// the other two once concealment made its answer member-scoped
+// (rpg-api-protos#266) -- and the projection of the SDK's door shapes onto
+// the wire: the lock rides only while it is real, and its approaches list
+// (rpg-project#350) is copied verbatim.
 
 import (
 	"context"
@@ -46,7 +48,7 @@ func TestGetDoors_NotSeated_PermissionDenied(t *testing.T) {
 		}),
 	}
 	ctx := auth.WithPlayerID(context.Background(), "mallory")
-	_, err := h.GetDoors(ctx, &sessionpb.GetDoorsRequest{Session: "sess-1"})
+	_, err := h.GetDoors(ctx, &sessionpb.GetDoorsRequest{Session: "sess-1", Member: "char-alice"})
 	requireCode(t, err, codes.PermissionDenied)
 }
 
@@ -59,9 +61,10 @@ func TestGetDoors_ProjectsTheLiveState(t *testing.T) {
 	mgr.EXPECT().Doors(gomock.Any(), gomock.Any()).DoAndReturn(
 		func(_ context.Context, in *sdk.DoorsInput) (*sdk.DoorsOutput, error) {
 			require.Equal(t, "sess-1", in.Session)
+			require.Equal(t, "char-alice", in.Member, "the caller's own member, bound by the host, not trusted from the request")
 			return &sdk.DoorsOutput{Doors: []sdk.Door{
 				{ID: "entrance-hall", State: "open"},
-				{ID: "hall-tomb", State: "locked", Lock: &sdk.DoorLock{DC: 12, Ability: "dex"}},
+				{ID: "hall-tomb", State: "locked", Lock: &sdk.DoorLock{Approaches: []sdk.DoorApproach{{Ability: "dex", DC: 12}}}},
 			}}, nil
 		},
 	)
@@ -75,7 +78,7 @@ func TestGetDoors_ProjectsTheLiveState(t *testing.T) {
 		}),
 	}
 	ctx := auth.WithPlayerID(context.Background(), "alice")
-	resp, err := h.GetDoors(ctx, &sessionpb.GetDoorsRequest{Session: "sess-1"})
+	resp, err := h.GetDoors(ctx, &sessionpb.GetDoorsRequest{Session: "sess-1", Member: "char-alice"})
 	require.NoError(t, err)
 	require.Len(t, resp.GetDoors(), 2)
 
@@ -87,8 +90,9 @@ func TestGetDoors_ProjectsTheLiveState(t *testing.T) {
 	locked := resp.GetDoors()[1]
 	require.Equal(t, "hall-tomb", locked.GetDoor())
 	require.Equal(t, sessionpb.DoorState_DOOR_STATE_LOCKED, locked.GetState())
-	require.Equal(t, int32(12), locked.GetLock().GetDc())
-	require.Equal(t, "dex", locked.GetLock().GetAbility())
+	require.Len(t, locked.GetLock().GetApproaches(), 1)
+	require.Equal(t, int32(12), locked.GetLock().GetApproaches()[0].GetDc())
+	require.Equal(t, "dex", locked.GetLock().GetApproaches()[0].GetAbility())
 }
 
 func TestOpenDoor_Unauthenticated_Errors(t *testing.T) {
@@ -151,7 +155,7 @@ func TestUnlock_HappyPath_CarriesTheAttempt(t *testing.T) {
 			require.Equal(t, "hall-tomb", in.Door)
 			return &sdk.UnlockOutput{
 				Beaten: false, Total: 9, DC: 12,
-				Door: sdk.Door{ID: "hall-tomb", State: "locked", Lock: &sdk.DoorLock{DC: 12, Ability: "dex"}},
+				Door: sdk.Door{ID: "hall-tomb", State: "locked", Lock: &sdk.DoorLock{Approaches: []sdk.DoorApproach{{Ability: "dex", DC: 12}}}},
 			}, nil
 		},
 	)

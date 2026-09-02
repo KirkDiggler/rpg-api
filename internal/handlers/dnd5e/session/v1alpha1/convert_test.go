@@ -819,6 +819,78 @@ func TestEventToProto_TypedBodies(t *testing.T) {
 		})
 		require.Equal(t, "char-1", got.GetExited().GetMember())
 	})
+
+	// DoorRevealed (rpg-project#350/#351): the flat door/state/approaches
+	// DoorRevealedBody carries grouped into the same nested DoorInfo shape
+	// GetDoors returns, plus the doorways that patch the recipient's cached
+	// atlas. A locked door's approaches list rides through; an unlocked one
+	// (see the RegionRevealed case below) carries no lock at all.
+	t.Run("DoorRevealed", func(t *testing.T) {
+		got := eventToProto(sdk.Event{
+			Kind: sdk.EventDoorRevealed,
+			Body: sdk.DoorRevealedBody{
+				Door:  "hall-tomb",
+				State: "locked",
+				Doorways: []sdk.AtlasDoorway{
+					{Door: "hall-tomb", From: spatial.Position{X: 15, Y: 4}, To: spatial.Position{X: 16, Y: 4}},
+				},
+				Approaches: []sdk.DoorApproach{{Ability: "dex", DC: 12}},
+			},
+		})
+		d := got.GetDoorRevealed()
+		require.NotNil(t, d)
+		require.Equal(t, "hall-tomb", d.GetDoor().GetDoor())
+		require.Equal(t, sessionpb.DoorState_DOOR_STATE_LOCKED, d.GetDoor().GetState())
+		require.Len(t, d.GetDoor().GetLock().GetApproaches(), 1)
+		require.Equal(t, "dex", d.GetDoor().GetLock().GetApproaches()[0].GetAbility())
+		require.Equal(t, int32(12), d.GetDoor().GetLock().GetApproaches()[0].GetDc())
+		require.Len(t, d.GetDoorways(), 1)
+		require.Equal(t, "hall-tomb", d.GetDoorways()[0].GetConnection())
+	})
+
+	// An unlocked reveal carries no lock -- doorRevealedInfoToProto's
+	// presence law (Approaches empty means Lock unset), matching
+	// doorToProto's own convention field-for-field.
+	t.Run("DoorRevealed_Unlocked_CarriesNoLock", func(t *testing.T) {
+		got := eventToProto(sdk.Event{
+			Kind: sdk.EventDoorRevealed,
+			Body: sdk.DoorRevealedBody{Door: "entrance-hall", State: "open"},
+		})
+		require.Nil(t, got.GetDoorRevealed().GetDoor().GetLock())
+	})
+
+	// RegionRevealed (rpg-project#350/#351): the region's whole atlas slice
+	// -- region entry, props, and every boundary touching its cells -- reuses
+	// atlasRegionToProto and the shared atlasPropsToProto AtlasToProto itself
+	// uses, verbatim.
+	t.Run("RegionRevealed", func(t *testing.T) {
+		got := eventToProto(sdk.Event{
+			Kind: sdk.EventRegionRevealed,
+			Body: sdk.RegionRevealedBody{
+				Region: sdk.AtlasRegion{
+					ID: "tomb", Name: "Tomb", Archetype: "crypt",
+					Cells:    []spatial.Position{{X: 16, Y: 0}},
+					Lighting: sdk.Lighting{Intensity: 0.15},
+				},
+				Props: []sdk.AtlasProp{
+					{Ref: "dnd5e:props:coffin", At: spatial.Position{X: 22, Y: 3}, BlocksMovement: true},
+				},
+				Boundaries: []sdk.AtlasBoundary{
+					{From: spatial.Position{X: 15, Y: 0}, To: spatial.Position{X: 16, Y: 0}, BlocksMovement: true, BlocksLineOfSight: true},
+				},
+			},
+		})
+		r := got.GetRegionRevealed()
+		require.NotNil(t, r)
+		require.Equal(t, "tomb", r.GetRegion().GetId())
+		require.Equal(t, "crypt", r.GetRegion().GetArchetype())
+		require.Equal(t, 0.15, r.GetRegion().GetLighting().GetIntensity())
+		require.Len(t, r.GetProps(), 1)
+		require.Equal(t, "dnd5e:props:coffin", r.GetProps()[0].GetRef())
+		require.True(t, r.GetProps()[0].GetBlocksMovement())
+		require.Len(t, r.GetBoundaries(), 1)
+		require.True(t, r.GetBoundaries()[0].GetBlocksLineOfSight())
+	})
 }
 
 // TestEventToProto_UntypedKind_BodyStaysNilPayloadCarries pins the other

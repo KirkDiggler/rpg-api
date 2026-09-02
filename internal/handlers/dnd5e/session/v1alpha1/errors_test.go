@@ -2,6 +2,12 @@ package sessionv1alpha1
 
 import (
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"os/exec"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -62,6 +68,11 @@ func TestStatusError_CoversEverySDKSentinel(t *testing.T) {
 		{"ErrNotInFight", sdk.ErrNotInFight, codes.FailedPrecondition},
 		{"ErrClosed", sdk.ErrClosed, codes.FailedPrecondition},
 		{"ErrNotACharacter", sdk.ErrNotACharacter, codes.FailedPrecondition},
+		// Search's own refusal (rpg-project#350): the named region is not
+		// the one the searcher stands in, or does not exist -- the SDK
+		// returns the SAME sentinel for both on purpose (the probe law),
+		// so this is one row for one sentinel, not two.
+		{"ErrElsewhere", sdk.ErrElsewhere, codes.FailedPrecondition},
 		{"ErrBadAttack", sdk.ErrBadAttack, codes.FailedPrecondition},
 		// Arrived v0.15.0-v0.17.0. ErrDowned is emphatically NOT no-such-member
 		// (a downed member stays on the map, in the roster, and readable), and
@@ -135,39 +146,117 @@ func TestStatusError_CoversEverySDKSentinel(t *testing.T) {
 			require.Equal(t, tt.want, st.Code(), "sentinel %s", tt.name)
 		})
 	}
-
-	require.Len(t, tests, sentinelCount,
-		"every exported sentinel in rulebooks/dnd5e/session/errors.go must have a table row here; "+
-			"update sentinelCount and add a row when the SDK adds or removes one")
 }
 
-// sentinelCount is the exact count of exported Err* sentinels in
-// rulebooks/dnd5e/session/errors.go as of session v0.18.0, verified directly
-// against the PINNED MODULE rather than a local checkout -- the workspace
-// toolkit tree routinely sits on unmerged branches, and reading a surface from
-// it has produced wrong answers here before.
-//
-// The history is kept because each step explains a row above: 34 at v0.9.0;
-// v0.12.0's re-transcription (rpg-toolkit#1048, Traverse retired) added
-// ErrNoCrossing with a NEW meaning and took ErrNoConnection from
-// InvalidArgument to Internal; v0.18.0 then DELETED ErrNoCrossing again (one
-// canvas cannot tell a walled crossing from a missing cell) and added four --
-// ErrLocked, ErrDowned, ErrCannotAfford, ErrBadCost -- for a net 35 -> 38.
-//
-// Kept as a named constant rather than a magic number so a failing count points
-// straight at "the SDK's sentinel vocabulary moved" instead of asking the reader
-// to recount by hand.
-// v0.21.4 -> combat-turn (rpg-project#249) adds ErrNotYourTurn and
-// ErrOutOfReach; ErrBadTurnOutcome was already present at v0.21.4 and simply
-// had no row until this audit -- 38 -> 41.
-// The door verbs (rpg-project#268, rpg-toolkit#1135) add ErrDoorShut and move
-// ErrNoConnection back to caller-facing -- 41 -> 42. Session v0.30.0 adds
-// selector errors ErrNoDeclarationID and ErrStaleDeclaration -- 42 -> 44.
-// Session v0.34.0 adds the activation pair ErrCannotActivate and
-// ErrBadActivation (rpg-project#300) -- 44 -> 46. Counted against the pinned
-// module, as this doc requires: 46 exported Err* in
-// rulebooks/dnd5e/session@v0.34.0/errors.go.
-const sentinelCount = 46
+// errorsGoDefaultCaseSentinels names every SDK sentinel statusError leaves to
+// the default case ON PURPOSE, so TestStatusError_MapsEverySDKSentinel below
+// does not fail on them -- each entry's reason is carried in errors.go's own
+// doc, not here; this map is only the allowlist that check reads.
+var errorsGoDefaultCaseSentinels = map[string]bool{
+	// The SDK's repository-facing contract sentinel: the Manager translates
+	// it into a caller-facing one (ErrNoSession, ErrNoEncounter, ...) before
+	// any verb returns, so it should never reach a handler. See errors.go's
+	// own doc on statusError for the full reasoning.
+	"ErrNotFound": true,
+}
+
+// sdkSentinelNames reads every exported Err* sentinel declared in the PINNED
+// rulebooks/dnd5e/session module's errors.go, straight from the module
+// cache -- not a local checkout (which routinely sits on unmerged branches)
+// and not a hand-maintained count (which can go stale silently: a table and
+// a constant that both stay put pass a length check even when the SDK
+// gained a sentinel neither of them learned about -- exactly how ErrElsewhere
+// slipped past this file once). go list resolves the pinned module's
+// on-disk directory directly from go.mod, so this always reads the version
+// actually built.
+func sdkSentinelNames(t *testing.T) []string {
+	t.Helper()
+
+	out, err := exec.CommandContext(t.Context(), "go", "list", "-m", "-f", "{{.Dir}}",
+		"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session").Output()
+	require.NoError(t, err, "resolve the pinned session module's directory via go list")
+	dir := strings.TrimSpace(string(out))
+
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, filepath.Join(dir, "errors.go"), nil, 0)
+	require.NoError(t, err, "parse the pinned session module's errors.go")
+
+	var names []string
+	for _, decl := range file.Decls {
+		gen, ok := decl.(*ast.GenDecl)
+		if !ok || gen.Tok != token.VAR {
+			continue
+		}
+		for _, spec := range gen.Specs {
+			vs, ok := spec.(*ast.ValueSpec)
+			if !ok {
+				continue
+			}
+			for _, name := range vs.Names {
+				if name.IsExported() && strings.HasPrefix(name.Name, "Err") {
+					names = append(names, name.Name)
+				}
+			}
+		}
+	}
+	require.NotEmpty(t, names, "parsed zero sentinels out of the pinned session module's errors.go -- the parse itself is broken, not the SDK")
+	return names
+}
+
+// statusErrorMappedSentinels parses THIS package's own errors.go -- the
+// production file, not this test -- and returns every sdk.Err* name
+// referenced anywhere in it. That is a direct, static answer to "does
+// statusError have a case for this sentinel", independent of whatever rows
+// TestStatusError_CoversEverySDKSentinel's table happens to carry.
+func statusErrorMappedSentinels(t *testing.T) map[string]bool {
+	t.Helper()
+
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "errors.go", nil, 0)
+	require.NoError(t, err, "parse this package's own errors.go")
+
+	mapped := map[string]bool{}
+	ast.Inspect(file, func(n ast.Node) bool {
+		sel, ok := n.(*ast.SelectorExpr)
+		if !ok {
+			return true
+		}
+		ident, ok := sel.X.(*ast.Ident)
+		if !ok || ident.Name != "sdk" {
+			return true
+		}
+		if strings.HasPrefix(sel.Sel.Name, "Err") {
+			mapped[sel.Sel.Name] = true
+		}
+		return true
+	})
+	return mapped
+}
+
+// TestStatusError_MapsEverySDKSentinel is design rule 7's actual enforcement:
+// every exported sentinel the PINNED session module carries today has a case
+// in statusError's switch, checked by reading both sides from source rather
+// than trusting a count a human was supposed to keep in sync. This replaces
+// the old sentinelCount constant, which could not catch its own staleness --
+// a table and a count that both stay put both look correct. A sentinel this
+// test flags should get a deliberate case in errors.go (with reasoning,
+// matching every other bucket's doc), not just a row added here to satisfy
+// the check.
+func TestStatusError_MapsEverySDKSentinel(t *testing.T) {
+	mapped := statusErrorMappedSentinels(t)
+
+	for _, name := range sdkSentinelNames(t) {
+		if errorsGoDefaultCaseSentinels[name] {
+			continue
+		}
+		t.Run(name, func(t *testing.T) {
+			require.True(t, mapped[name],
+				"sdk.%s has no case in statusError's switch (errors.go) -- add one deliberately, "+
+					"or add it to errorsGoDefaultCaseSentinels here with the same reasoning errors.go's "+
+					"ErrNotFound note carries if it is meant to fall through to Internal", name)
+		})
+	}
+}
 
 func TestStatusError_UnmappedSentinelFallsBackToInternal(t *testing.T) {
 	unrecognized := fmt.Errorf("some future sentinel the table has not been updated for")
