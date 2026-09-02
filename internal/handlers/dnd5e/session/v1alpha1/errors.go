@@ -131,10 +131,21 @@ func statusError(err error) error {
 	//   ErrStaleDeclaration -- an echoed opaque selector no longer names the
 	//   regenerated available offer. The request is shaped correctly, but the
 	//   world changed since Afford, so retry starts from a fresh declaration.
+	//
+	//   ErrElsewhere (rpg-project#350, Search) -- the named region is not the
+	//   one the searcher currently stands in. The request itself is
+	//   well-formed (a real region id, a real member); it is the world's
+	//   present state -- where this member happens to be standing -- that
+	//   refuses it, the same shape as ErrNotACharacter next to it. Not
+	//   NotFound: the SDK deliberately returns this SAME sentinel whether the
+	//   named region is real-but-elsewhere or does not exist at all, so a
+	//   distinct NotFound here would hand a client a way to probe for regions
+	//   it has never seen by the code alone (the probe law, rpg-project#350).
 	case errors.Is(err, sdk.ErrInBubble),
 		errors.Is(err, sdk.ErrNotInFight),
 		errors.Is(err, sdk.ErrClosed),
 		errors.Is(err, sdk.ErrNotACharacter),
+		errors.Is(err, sdk.ErrElsewhere),
 		errors.Is(err, sdk.ErrBadAttack),
 		errors.Is(err, sdk.ErrDowned),
 		errors.Is(err, sdk.ErrLocked),
