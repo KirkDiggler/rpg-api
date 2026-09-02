@@ -915,7 +915,7 @@ func TestTheRunEndsWhenTheBossFalls(t *testing.T) {
 	// and the doom declared over the monster the launch is about to spawn —
 	// an ending may name a member that joins later.
 	world := buildTomb(t, func(in *tkencounter.SetupInput) {
-		in.Field.Doors[1].State = tkencounter.DoorIsLocked(tkencounter.Lock{DC: 12, Ability: "dex"})
+		in.Field.Doors[1].State = tkencounter.DoorIsLocked(tkencounter.Lock{Approaches: []tkencounter.CheckApproach{{Ability: "dex", DC: 12}}})
 		in.Endings = []tkencounter.EndingInput{
 			{Key: "withdrawn", Trigger: tkencounter.TriggerExternal{}},
 			{Key: "boss-down", Trigger: tkencounter.TriggerMemberDown{Member: "skel-1"}},
@@ -946,7 +946,7 @@ func TestTheRunEndsWhenTheBossFalls(t *testing.T) {
 	require.Nil(t, joinResp.GetFormed(), "the locked door is dark: nothing on the far side is in sight")
 
 	// -- GetDoors: the live half of the atlas's doorways --
-	doorsResp, err := h.handler.GetDoors(ctx, &sessionpb.GetDoorsRequest{Session: "doom-run"})
+	doorsResp, err := h.handler.GetDoors(ctx, &sessionpb.GetDoorsRequest{Session: "doom-run", Member: "alice"})
 	require.NoError(t, err)
 	require.Len(t, doorsResp.GetDoors(), 2)
 	byID := map[string]*sessionpb.DoorInfo{}
@@ -956,7 +956,8 @@ func TestTheRunEndsWhenTheBossFalls(t *testing.T) {
 	require.Equal(t, sessionpb.DoorState_DOOR_STATE_OPEN, byID["entrance-hall"].GetState())
 	require.Nil(t, byID["entrance-hall"].GetLock(), "an open door carries no lock")
 	require.Equal(t, sessionpb.DoorState_DOOR_STATE_LOCKED, byID["hall-tomb"].GetState())
-	require.Equal(t, int32(12), byID["hall-tomb"].GetLock().GetDc(), "the DC is public — full data until v1.0")
+	require.Len(t, byID["hall-tomb"].GetLock().GetApproaches(), 1)
+	require.Equal(t, int32(12), byID["hall-tomb"].GetLock().GetApproaches()[0].GetDc(), "the DC is public — full data until v1.0")
 
 	// -- the walk is refused as FICTION, not as a bad cell (rpg-toolkit#1135) --
 	_, err = h.handler.Move(ctx, &sessionpb.MoveRequest{

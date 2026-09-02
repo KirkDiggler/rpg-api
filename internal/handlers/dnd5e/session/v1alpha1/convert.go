@@ -372,6 +372,10 @@ func eventKindToProto(k sdk.EventKind) sessionpb.EventKind {
 		return sessionpb.EventKind_EVENT_KIND_DOOR
 	case sdk.EventMissed:
 		return sessionpb.EventKind_EVENT_KIND_MISSED
+	case sdk.EventDoorRevealed:
+		return sessionpb.EventKind_EVENT_KIND_DOOR_REVEALED
+	case sdk.EventRegionRevealed:
+		return sessionpb.EventKind_EVENT_KIND_REGION_REVEALED
 	default:
 		return sessionpb.EventKind_EVENT_KIND_UNKNOWN
 	}
@@ -483,6 +487,22 @@ func setEventBody(evt *sessionpb.Event, body sdk.EventBody) {
 			Total:  int32(b.Total),
 			Beaten: b.Beaten,
 		}}
+	case sdk.DoorRevealedBody:
+		// No Boundaries here: DoorRevealedBody carries none (the masquerade-
+		// wall replacement the wire's own field is for is not yet a field
+		// this SDK version produces), so the wire field is left unset rather
+		// than populated from something this body does not have -- verbatim
+		// translation of what the SDK actually sends, not an invented value.
+		evt.Body = &sessionpb.Event_DoorRevealed{DoorRevealed: &sessionpb.DoorRevealed{
+			Door:     doorRevealedInfoToProto(b),
+			Doorways: atlasDoorwaysToProto(b.Doorways),
+		}}
+	case sdk.RegionRevealedBody:
+		evt.Body = &sessionpb.Event_RegionRevealed{RegionRevealed: &sessionpb.RegionRevealed{
+			Region:     atlasRegionToProto(b.Region),
+			Props:      atlasPropsToProto(b.Props),
+			Boundaries: atlasBoundariesToProto(b.Boundaries),
+		}}
 	default:
 		// nil (no typed body for this kind) or a body type this build does
 		// not recognize: leave evt.Body nil. payload stays the passthrough
@@ -519,19 +539,7 @@ func AtlasToProto(a *sdk.Atlas) *sessionpb.GetAtlasResponse {
 	for i, c := range a.Cells {
 		cells[i] = positionToProto(c)
 	}
-	props := make([]*sessionpb.AtlasProp, len(a.Props))
-	for i, prop := range a.Props {
-		props[i] = &sessionpb.AtlasProp{
-			Ref:               prop.Ref,
-			At:                positionToProto(prop.At),
-			BlocksMovement:    prop.BlocksMovement,
-			BlocksLineOfSight: prop.BlocksLineOfSight,
-			Facing:            prop.Facing,
-			OffsetX:           float32(prop.Offset[0]),
-			OffsetY:           float32(prop.Offset[1]),
-			OffsetZ:           float32(prop.Offset[2]),
-		}
-	}
+	props := atlasPropsToProto(a.Props)
 	return &sessionpb.GetAtlasResponse{
 		Grid:       gridKindToProto(a.Grid),
 		Layout:     hexLayoutToProto(a.Layout),
@@ -541,6 +549,30 @@ func AtlasToProto(a *sdk.Atlas) *sessionpb.GetAtlasResponse {
 		Doorways:   atlasDoorwaysToProto(a.Doorways),
 		Regions:    atlasRegionsToProto(a.Regions),
 	}
+}
+
+// atlasPropToProto mirrors one session.AtlasProp -- shared by AtlasToProto and
+// RegionRevealed's props, which the SDK's own doc promises carries them
+// "exactly as GetAtlasResponse.props would" (rpg-project#350/#351).
+func atlasPropToProto(prop sdk.AtlasProp) *sessionpb.AtlasProp {
+	return &sessionpb.AtlasProp{
+		Ref:               prop.Ref,
+		At:                positionToProto(prop.At),
+		BlocksMovement:    prop.BlocksMovement,
+		BlocksLineOfSight: prop.BlocksLineOfSight,
+		Facing:            prop.Facing,
+		OffsetX:           float32(prop.Offset[0]),
+		OffsetY:           float32(prop.Offset[1]),
+		OffsetZ:           float32(prop.Offset[2]),
+	}
+}
+
+func atlasPropsToProto(ps []sdk.AtlasProp) []*sessionpb.AtlasProp {
+	out := make([]*sessionpb.AtlasProp, len(ps))
+	for i, p := range ps {
+		out[i] = atlasPropToProto(p)
+	}
+	return out
 }
 
 // atlasRegionToProto mirrors session.AtlasRegion: a named set of absolute
@@ -912,12 +944,46 @@ func doorStateToProto(s string) sessionpb.DoorState {
 	}
 }
 
+// doorApproachToProto mirrors one accepted route through a lock (the
+// multi-approach ruling, rpg-project#350): an ability/skill ref, an optional
+// tool, and this route's own DC -- forcing a door and picking its lock need
+// not cost the same, so the DC lives per approach, not per lock.
+func doorApproachToProto(a sdk.DoorApproach) *sessionpb.CheckApproach {
+	return &sessionpb.CheckApproach{Ability: a.Ability, Tool: a.Tool, Dc: int32(a.DC)}
+}
+
+func doorApproachesToProto(as []sdk.DoorApproach) []*sessionpb.CheckApproach {
+	out := make([]*sessionpb.CheckApproach, len(as))
+	for i, a := range as {
+		out[i] = doorApproachToProto(a)
+	}
+	return out
+}
+
+// doorRevealedInfoToProto groups DoorRevealedBody's flat door/state/
+// approaches into the wire's nested DoorInfo -- the same shape GetDoors
+// already returns for this door, per DoorRevealed.door's own doc ("exactly
+// as this recipient's GetDoors would now list it"). Approaches is present
+// only while the door is locked (DoorRevealedBody's own field law), so a
+// non-empty list is the presence signal for Lock, matching doorToProto's
+// "Lock unset is not locked" convention field-for-field rather than
+// re-deriving it from State.
+func doorRevealedInfoToProto(b sdk.DoorRevealedBody) *sessionpb.DoorInfo {
+	out := &sessionpb.DoorInfo{Door: b.Door, State: doorStateToProto(b.State)}
+	if len(b.Approaches) > 0 {
+		out.Lock = &sessionpb.DoorLock{Approaches: doorApproachesToProto(b.Approaches)}
+	}
+	return out
+}
+
 // doorToProto mirrors one live door. The lock rides only while it is real —
-// DoorInfo.lock unset is "not locked", never "lock with DC zero".
+// DoorInfo.lock unset is "not locked", never a lock with zero approaches --
+// and its approaches list is copied verbatim (rpg-project#350's dialect: a
+// lock is a set of accepted routes, not one ability and one DC).
 func doorToProto(d sdk.Door) *sessionpb.DoorInfo {
 	out := &sessionpb.DoorInfo{Door: d.ID, State: doorStateToProto(d.State)}
 	if d.Lock != nil {
-		out.Lock = &sessionpb.DoorLock{Dc: int32(d.Lock.DC), Ability: d.Lock.Ability, Tool: d.Lock.Tool}
+		out.Lock = &sessionpb.DoorLock{Approaches: doorApproachesToProto(d.Lock.Approaches)}
 	}
 	return out
 }
