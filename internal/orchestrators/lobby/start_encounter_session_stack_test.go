@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -14,13 +15,22 @@ import (
 	goredis "github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/suite"
 
+	"github.com/KirkDiggler/rpg-toolkit/core"
 	coreResources "github.com/KirkDiggler/rpg-toolkit/core/resources"
+	"github.com/KirkDiggler/rpg-toolkit/dice"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/abilities"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/backgrounds"
 	tkcharacter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/classes"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/conditions"
+	tkencounter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/features"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/races"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/refs"
 	dnd5eResources "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/resources"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/saves"
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
 
 	"github.com/KirkDiggler/rpg-api/internal/dungeons"
 	"github.com/KirkDiggler/rpg-api/internal/entities"
@@ -41,13 +51,14 @@ import (
 type SessionStackSuite struct {
 	suite.Suite
 
-	ctx        context.Context
-	charRepo   characterrepo.Repository
-	lobbyRepo  lobbyrepo.Repository
-	broker     *lobbyorch.Broker
-	sessOrch   *sessionorch.Orchestrator
-	orch       *lobbyorch.Orchestrator
-	rosterRepo rosterrepo.Repository
+	ctx         context.Context
+	redisClient *goredis.Client
+	charRepo    characterrepo.Repository
+	lobbyRepo   lobbyrepo.Repository
+	broker      *lobbyorch.Broker
+	sessOrch    *sessionorch.Orchestrator
+	orch        *lobbyorch.Orchestrator
+	rosterRepo  rosterrepo.Repository
 }
 
 func (s *SessionStackSuite) SetupTest() {
@@ -56,6 +67,7 @@ func (s *SessionStackSuite) SetupTest() {
 	mr := miniredis.RunT(s.T())
 	client := goredis.NewClient(&goredis.Options{Addr: mr.Addr()})
 	s.T().Cleanup(func() { _ = client.Close() })
+	s.redisClient = client
 
 	charRepo, err := characterrepo.NewRedis(&characterrepo.RedisConfig{Client: client})
 	s.Require().NoError(err)
@@ -421,68 +433,259 @@ func (s *SessionStackSuite) TestListDungeons_ReadsTheRegistry() {
 	s.Equal(dungeons.DefaultKey, out.Dungeons[0].Key)
 }
 
-// TestStartEncounter_LaunchRestoresEveryMemberFully pins Kirk's ruling from
-// the 2026-08-24 walk (rpg-project#253, rpg-api#828): launch is an arcade
-// run start, so a member limping in at 2 HP and a member who died in a
-// prior run are both seated at full HP with death-save state cleared —
-// and the restore is PERSISTED, not just seated (the repo record is what
-// every later reload reads).
-func (s *SessionStackSuite) TestStartEncounter_LaunchRestoresEveryMemberFully() {
-	// host arrives wounded (2 HP of 10), guest arrives dead (0 HP, 3 fails).
-	_, err := s.charRepo.Create(s.ctx, characterrepo.CreateInput{
-		Character: &entities.Character{Data: &tkcharacter.Data{
-			ID: "char-p1", PlayerID: "p1", Name: "Wounded", Level: 1,
-			HitPoints: 2, MaxHitPoints: 10, ArmorClass: 10,
-		}},
-	})
-	s.Require().NoError(err)
-	unconscious, err := json.Marshal(conditions.UnconsciousData{
-		Ref:      refs.Conditions.Unconscious(),
-		MemberID: "char-p2",
-		Failures: 3,
-		Dead:     true,
-	})
-	s.Require().NoError(err)
-	_, err = s.charRepo.Create(s.ctx, characterrepo.CreateInput{
-		Character: &entities.Character{Data: &tkcharacter.Data{
-			ID: "char-p2", PlayerID: "p2", Name: "Dead", Level: 1,
-			HitPoints: 0, MaxHitPoints: 12, ArmorClass: 10,
-			DeathSaveState: &saves.DeathSaveState{Failures: 3, Dead: true},
-			Conditions:     []json.RawMessage{unconscious},
-			Resources: map[coreResources.ResourceKey]tkcharacter.RecoverableResourceData{
-				// ResetType matters now: LongRest restores only resources that
-				// reset on a long or short rest (character/character.go), where
-				// the retired RestoreForLaunch refilled every entry regardless.
-				// Real rage charges are always created ResetLongRest
-				// (draft.go's initializeClassResources) -- this fixture matches
-				// what a real barbarian's persisted data actually carries.
-				dnd5eResources.RageCharges: {Current: 0, Maximum: 2, ResetType: coreResources.ResetLongRest},
-			},
-		}},
-	})
-	s.Require().NoError(err)
-	s.seedReadyLobby("lobby-restore", "p1", "p2")
+// TestStartEncounter_FirstAdmissionPersistsCompleteLongRestOutcomes is the
+// API consumer proof for Session Join's first-admission policy. Both records
+// cross the real miniredis-backed character repository adapter and the real
+// Session Manager; the assertions read the repository after Lobby
+// StartEncounter rather than calling a rest helper or inspecting API rules.
+func (s *SessionStackSuite) TestStartEncounter_FirstAdmissionPersistsCompleteLongRestOutcomes() {
+	fighter, fighterAppearance := s.spentFighter("char-p1", "p1")
+	barbarian, barbarianAppearance := s.spentBarbarian("char-p2", "p2")
+	for _, character := range []*entities.Character{fighter, barbarian} {
+		_, err := s.charRepo.Create(s.ctx, characterrepo.CreateInput{Character: character})
+		s.Require().NoError(err)
+	}
+	s.seedReadyLobby("lobby-rest", "p1", "p2")
 
-	_, err = s.orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
-		PlayerID: "p1", LobbyID: "lobby-restore",
+	_, err := s.orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		PlayerID: "p1", LobbyID: "lobby-rest",
 	})
 	s.Require().NoError(err)
 
-	got, err := s.charRepo.Get(s.ctx, characterrepo.GetInput{ID: "char-p1"})
+	fighterRecord, err := s.charRepo.Get(s.ctx, characterrepo.GetInput{ID: "char-p1"})
 	s.Require().NoError(err)
-	s.Equal(10, got.Character.Data.HitPoints, "a wounded member launches at full HP")
+	gotFighter := fighterRecord.Character.Data
+	s.Equal(36, gotFighter.HitPoints)
+	s.Equal(36, gotFighter.MaxHitPoints)
+	s.Equal(&saves.DeathSaveState{}, gotFighter.DeathSaveState)
+	s.Equal(tkcharacter.RecoverableResourceData{
+		Current: 2, Maximum: 4, ResetType: coreResources.ResetLongRest,
+	}, gotFighter.Resources[dnd5eResources.HitDice], "exactly half of four spent hit dice recover")
+	s.Equal(tkcharacter.SpellSlotData{Max: 3, Used: 0}, gotFighter.SpellSlots[1])
 
-	got, err = s.charRepo.Get(s.ctx, characterrepo.GetInput{ID: "char-p2"})
+	var secondWind features.SecondWindData
+	s.Require().NoError(json.Unmarshal(effectWithRef(s.T(), gotFighter.Features, refs.Features.SecondWind()), &secondWind))
+	s.Equal(1, secondWind.Uses, "feature-owned Second Wind hears the normal rest event")
+	s.Equal(1, secondWind.MaxUses)
+
+	var defense conditions.FightingStyleDefenseData
+	s.Require().NoError(json.Unmarshal(
+		effectWithRef(s.T(), gotFighter.Conditions, refs.Conditions.FightingStyleDefense()), &defense))
+	s.Equal("char-p1", defense.MemberID, "the retained passive survives")
+	var opportunity conditions.OpportunityAttackConditionData
+	s.Require().NoError(json.Unmarshal(
+		effectWithRef(s.T(), gotFighter.Conditions, refs.Conditions.OpportunityAttack()), &opportunity))
+	s.False(opportunity.UsedThisTurn, "the retained reaction meter resets")
+	s.Nil(effectWithRefOrNil(gotFighter.Conditions, refs.Conditions.Prone()),
+		"the temporary condition removes itself")
+	s.Equal(backgrounds.Soldier, gotFighter.BackgroundID)
+	s.Equal(fighter.Data.CreatedAt, gotFighter.CreatedAt)
+	s.Equal(fighterAppearance, fighterRecord.Character.Appearance,
+		"the SDK adapter replaces Data without dropping the API-owned appearance envelope")
+
+	barbarianRecord, err := s.charRepo.Get(s.ctx, characterrepo.GetInput{ID: "char-p2"})
 	s.Require().NoError(err)
-	s.Equal(12, got.Character.Data.HitPoints, "a dead member launches at full HP")
-	// Character.LongRest -- the toolkit's own now-authoritative launch
-	// mechanism (rpg-toolkit#1376 retired the Data-only RestoreForLaunch this
-	// once read nil from) -- clears death-save state to a fresh zero-value
-	// struct rather than nil; both mean "no death save in progress", but the
-	// wire/storage representation changed with the mechanism.
-	s.Equal(&saves.DeathSaveState{}, got.Character.Data.DeathSaveState,
-		"death-save state is reset, not nil, after a launch long rest")
-	s.Empty(got.Character.Data.Conditions, "the Unconscious blob is stripped, not left to re-hydrate")
-	s.Equal(2, got.Character.Data.Resources[dnd5eResources.RageCharges].Current,
-		"spent resource pools refill at launch")
+	gotBarbarian := barbarianRecord.Character.Data
+	s.Equal(45, gotBarbarian.HitPoints)
+	s.Equal(45, gotBarbarian.MaxHitPoints)
+	s.Equal(&saves.DeathSaveState{}, gotBarbarian.DeathSaveState)
+	s.Equal(tkcharacter.RecoverableResourceData{
+		Current: 3, Maximum: 4, ResetType: coreResources.ResetLongRest,
+	}, gotBarbarian.Resources[dnd5eResources.HitDice], "exactly half of four hit dice are restored")
+	s.Equal(tkcharacter.RecoverableResourceData{
+		Current: 2, Maximum: 2, ResetType: coreResources.ResetLongRest,
+	}, gotBarbarian.Resources[dnd5eResources.RageCharges], "spent Rage charges refill")
+
+	var unarmoredDefense conditions.UnarmoredDefenseData
+	s.Require().NoError(json.Unmarshal(
+		effectWithRef(s.T(), gotBarbarian.Conditions, refs.Conditions.UnarmoredDefense()), &unarmoredDefense))
+	s.Equal("char-p2", unarmoredDefense.MemberID, "the Barbarian passive survives")
+	s.Nil(effectWithRefOrNil(gotBarbarian.Conditions, refs.Conditions.Raging()),
+		"Raging ends on the normal long rest")
+	s.Equal(backgrounds.Outlander, gotBarbarian.BackgroundID)
+	s.Equal(barbarian.Data.CreatedAt, gotBarbarian.CreatedAt)
+	s.Equal(barbarianAppearance, barbarianRecord.Character.Appearance)
+}
+
+// TestStartEncounter_StartSessionFailureLeavesCharacterUntouched proves the
+// launch ordering itself. StartSession is forced to fail through a real
+// Manager's repository seam. The character bytes, optimistic version, and
+// adapter save count must remain unchanged because Join has not begun. This is
+// discriminating against the retired API loop, which wrote the rested record
+// before it attempted StartSession.
+func (s *SessionStackSuite) TestStartEncounter_StartSessionFailureLeavesCharacterUntouched() {
+	fighter, _ := s.spentFighter("char-p1", "p1")
+	_, err := s.charRepo.Create(s.ctx, characterrepo.CreateInput{Character: fighter})
+	s.Require().NoError(err)
+	s.seedReadyLobby("lobby-order", "p1")
+
+	beforeRecord, err := s.charRepo.Get(s.ctx, characterrepo.GetInput{ID: "char-p1"})
+	s.Require().NoError(err)
+	beforeBytes, err := s.redisClient.Get(s.ctx, "character:char-p1").Bytes()
+	s.Require().NoError(err)
+
+	countedCharacters := &countingCharacterRepository{Repository: s.charRepo}
+	failedStores := &failingStartRepositories{
+		SessionRepository:   sessionorch.NewSessionRepository(s.redisClient, 24*time.Hour),
+		EncounterRepository: sessionorch.NewEncounterRepository(s.redisClient, 24*time.Hour),
+	}
+	manager, err := sdk.NewManager(&sdk.Config{
+		Sessions: failedStores, Encounters: failedStores,
+		Characters: sessionorch.NewCharacterRepository(countedCharacters),
+		Events:     sdk.DiscardEvents{}, Dice: &dice.CryptoRoller{}, TurnDriver: sdk.Behavior(),
+	})
+	s.Require().NoError(err)
+	orch, err := lobbyorch.New(&lobbyorch.Config{
+		LobbyRepo: s.lobbyRepo, LobbyBroker: s.broker, CharacterRepo: countedCharacters,
+		LobbyIDGenerator: idgen.NewSequential("lobby"), JoinRefGenerator: idgen.NewSequential("ref"),
+		EncounterIDGenerator: idgen.NewSequential("enc"), SessionManager: manager,
+		Dungeons: dungeonstest.Shipped(s.T()), RosterRepo: rosterrepo.NewInMemory(),
+	})
+	s.Require().NoError(err)
+
+	_, err = orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		PlayerID: "p1", LobbyID: "lobby-order",
+	})
+	s.Require().ErrorIs(err, errStartRepository)
+
+	afterRecord, err := s.charRepo.Get(s.ctx, characterrepo.GetInput{ID: "char-p1"})
+	s.Require().NoError(err)
+	afterBytes, err := s.redisClient.Get(s.ctx, "character:char-p1").Bytes()
+	s.Require().NoError(err)
+	s.Equal(beforeBytes, afterBytes, "StartSession failed before Join, so stored bytes cannot change")
+	s.Equal(beforeRecord.Version, afterRecord.Version, "the repository version cannot advance")
+	s.Zero(countedCharacters.updates, "the character adapter cannot save before Join")
+}
+
+func (s *SessionStackSuite) spentFighter(id, playerID string) (*entities.Character, *entities.Appearance) {
+	secondWind, err := json.Marshal(features.SecondWindData{
+		Ref: refs.Features.SecondWind(), ID: id + "-second-wind", Name: "Second Wind",
+		Level: 4, CharacterID: id, Uses: 0, MaxUses: 1,
+	})
+	s.Require().NoError(err)
+	defense, err := json.Marshal(conditions.FightingStyleDefenseData{
+		Ref: refs.Conditions.FightingStyleDefense(), MemberID: id,
+	})
+	s.Require().NoError(err)
+	opportunity, err := (&conditions.OpportunityAttackCondition{
+		MemberID: id, UsedThisTurn: true,
+	}).ToJSON()
+	s.Require().NoError(err)
+	prone, err := conditions.NewProneCondition(id).ToJSON()
+	s.Require().NoError(err)
+
+	createdAt := time.Date(2026, time.August, 14, 9, 30, 0, 0, time.UTC)
+	color := uint32(0x8A4B2A)
+	roughness := float32(0.35)
+	appearance := &entities.Appearance{Hair: &entities.HairCustomization{
+		Scalp:     &entities.StyleSelection{Kind: entities.StyleSelectionKindStyle, StyleRef: "dnd5e:hair:short"},
+		ColorSRGB: &color, Roughness: &roughness,
+	}}
+	return &entities.Character{Data: &tkcharacter.Data{
+		ID: id, PlayerID: playerID, Name: "Spent Fighter",
+		Level: 4, ProficiencyBonus: 2, RaceID: races.Human, ClassID: classes.Fighter,
+		BackgroundID: backgrounds.Soldier,
+		AbilityScores: shared.AbilityScores{
+			abilities.STR: 16, abilities.DEX: 14, abilities.CON: 14,
+			abilities.INT: 10, abilities.WIS: 12, abilities.CHA: 8,
+		},
+		HitPoints: 7, MaxHitPoints: 36, ArmorClass: 16,
+		DeathSaveState: &saves.DeathSaveState{Successes: 1, Failures: 2, Stabilized: true, Dead: true},
+		SpellSlots:     map[int]tkcharacter.SpellSlotData{1: {Max: 3, Used: 3}},
+		Resources: map[coreResources.ResourceKey]tkcharacter.RecoverableResourceData{
+			dnd5eResources.HitDice: {Current: 0, Maximum: 4, ResetType: coreResources.ResetLongRest},
+		},
+		Features:   []json.RawMessage{secondWind},
+		Conditions: []json.RawMessage{defense, opportunity, prone},
+		CreatedAt:  createdAt,
+	}, Appearance: appearance}, appearance
+}
+
+func (s *SessionStackSuite) spentBarbarian(id, playerID string) (*entities.Character, *entities.Appearance) {
+	unarmoredDefense, err := json.Marshal(conditions.UnarmoredDefenseData{
+		Ref: refs.Conditions.UnarmoredDefense(), Type: string(conditions.UnarmoredDefenseBarbarian),
+		MemberID: id, Source: refs.Classes.Barbarian().String(),
+	})
+	s.Require().NoError(err)
+	raging, err := json.Marshal(conditions.RagingData{
+		Ref: refs.Conditions.Raging(), CharacterID: id, DamageBonus: 2, Level: 4,
+		Source: refs.Features.Rage().String(), SawTurnEnd: true, TurnsActive: 2,
+	})
+	s.Require().NoError(err)
+
+	createdAt := time.Date(2026, time.August, 15, 10, 45, 0, 0, time.UTC)
+	color := uint32(0x24150D)
+	roughness := float32(0.8)
+	appearance := &entities.Appearance{Hair: &entities.HairCustomization{
+		Scalp: &entities.StyleSelection{Kind: entities.StyleSelectionKindNone},
+		FacialHair: &entities.StyleSelection{
+			Kind: entities.StyleSelectionKindStyle, StyleRef: "dnd5e:facial-hair:braided-beard",
+		},
+		ColorSRGB: &color, Roughness: &roughness,
+	}}
+	return &entities.Character{Data: &tkcharacter.Data{
+		ID: id, PlayerID: playerID, Name: "Spent Barbarian",
+		Level: 4, ProficiencyBonus: 2, RaceID: races.Dwarf, ClassID: classes.Barbarian,
+		BackgroundID: backgrounds.Outlander,
+		AbilityScores: shared.AbilityScores{
+			abilities.STR: 16, abilities.DEX: 14, abilities.CON: 16,
+			abilities.INT: 8, abilities.WIS: 12, abilities.CHA: 10,
+		},
+		HitPoints: 0, MaxHitPoints: 45, ArmorClass: 15,
+		DeathSaveState: &saves.DeathSaveState{Failures: 3, Dead: true},
+		Resources: map[coreResources.ResourceKey]tkcharacter.RecoverableResourceData{
+			dnd5eResources.HitDice:     {Current: 1, Maximum: 4, ResetType: coreResources.ResetLongRest},
+			dnd5eResources.RageCharges: {Current: 0, Maximum: 2, ResetType: coreResources.ResetLongRest},
+		},
+		Conditions: []json.RawMessage{unarmoredDefense, raging},
+		CreatedAt:  createdAt,
+	}, Appearance: appearance}, appearance
+}
+
+func effectWithRef(t *testing.T, blobs []json.RawMessage, want *core.Ref) json.RawMessage {
+	t.Helper()
+	if got := effectWithRefOrNil(blobs, want); got != nil {
+		return got
+	}
+	t.Fatalf("effect %s not found", want.String())
+	return nil
+}
+
+func effectWithRefOrNil(blobs []json.RawMessage, want *core.Ref) json.RawMessage {
+	for _, raw := range blobs {
+		var envelope struct {
+			Ref core.Ref `json:"ref"`
+		}
+		if json.Unmarshal(raw, &envelope) == nil && envelope.Ref.Equals(want) {
+			return raw
+		}
+	}
+	return nil
+}
+
+var errStartRepository = errors.New("start repository unavailable")
+
+type failingStartRepositories struct {
+	sdk.SessionRepository
+	sdk.EncounterRepository
+}
+
+func (*failingStartRepositories) SaveSession(context.Context, *sdk.SessionData) error {
+	return errStartRepository
+}
+
+func (*failingStartRepositories) SaveEncounter(context.Context, string, *tkencounter.EncounterData) error {
+	return errStartRepository
+}
+
+type countingCharacterRepository struct {
+	characterrepo.Repository
+	updates int
+}
+
+func (r *countingCharacterRepository) Update(
+	ctx context.Context, input characterrepo.UpdateInput,
+) (*characterrepo.UpdateOutput, error) {
+	r.updates++
+	return r.Repository.Update(ctx, input)
 }
