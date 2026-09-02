@@ -43,15 +43,59 @@ else
 fi
 
 # 3. Check if mocks need regeneration
+#
+# This step writes into the working tree, so it refuses rather than repairs
+# (rpg-api#880). On a dirty tree a post-generation diff is not attributable to
+# the generator, and undoing it would mean restoring paths the generator never
+# wrote -- which is how this check silently discarded a branch's uncommitted
+# work. It now runs only on a clean tree, and only ever restores the generated
+# mock paths listed below, after printing them.
 echo -e "\n🔧 Checking mock generation..."
-go generate ./... 2>/dev/null
-if ! git diff --quiet; then
-    echo -e "${RED}Mocks need to be regenerated!${NC}"
-    git diff --name-only | grep -E '(mock|Mock)' || true
-    record_failure "Mocks need regeneration (run: go generate ./...)"
-    git checkout -- .
+# Every mockgen destination in this repository lives in a mock/ or mocks/
+# directory next to the interface it mocks (see CLAUDE.md, "Mock
+# Organization"). This is the entire set of paths this step can write, and so
+# the entire set it is allowed to restore.
+MOCK_PATHS=(':(glob)**/mock/*.go' ':(glob)**/mocks/*.go')
+NON_MOCK_PATHS=(':/' ':(glob,exclude)**/mock/*.go' ':(glob,exclude)**/mocks/*.go')
+if [ -n "$(git status --porcelain)" ]; then
+    echo -e "${YELLOW}⚠️  Skipped: working tree is dirty${NC}"
+    echo "  The mock freshness check only means something on a clean tree."
+    echo "  Commit or stash your changes and re-run to check mocks."
+elif ! GENERATE_OUTPUT=$(go generate ./... 2>&1); then
+    # Reported rather than swallowed: under `set -e` a failing generator used
+    # to abort the whole run with its stderr sent to /dev/null.
+    echo -e "${RED}go generate failed:${NC}"
+    echo "$GENERATE_OUTPUT"
+    record_failure "go generate failed (install generators with: make install-tools)"
 else
-    echo -e "${GREEN}✅ Mocks are up to date${NC}"
+    STALE_MOCKS=$(git diff --name-only -- "${MOCK_PATHS[@]}")
+    NEW_MOCKS=$(git ls-files --others --exclude-standard -- "${MOCK_PATHS[@]}")
+    STRAY_CHANGES=$(git status --porcelain -- "${NON_MOCK_PATHS[@]}")
+
+    if [ -n "$STALE_MOCKS" ] || [ -n "$NEW_MOCKS" ]; then
+        echo -e "${RED}Mocks need to be regenerated!${NC}"
+        echo -e "${YELLOW}Restoring these generated files to leave the tree as it was found:${NC}"
+        if [ -n "$STALE_MOCKS" ]; then
+            mapfile -t STALE_LIST <<< "$STALE_MOCKS"
+            for f in "${STALE_LIST[@]}"; do echo "  restore $f"; done
+            git checkout -- "${STALE_LIST[@]}"
+        fi
+        if [ -n "$NEW_MOCKS" ]; then
+            mapfile -t NEW_LIST <<< "$NEW_MOCKS"
+            for f in "${NEW_LIST[@]}"; do echo "  remove  $f (generated just now; did not exist before)"; done
+            rm -f -- "${NEW_LIST[@]}"
+        fi
+        record_failure "Mocks need regeneration (run: go generate ./...)"
+    elif [ -z "$STRAY_CHANGES" ]; then
+        echo -e "${GREEN}✅ Mocks are up to date${NC}"
+    fi
+
+    if [ -n "$STRAY_CHANGES" ]; then
+        echo -e "${YELLOW}⚠️  go generate also wrote outside the mock directories:${NC}"
+        echo "$STRAY_CHANGES"
+        echo "  Left untouched -- this step restores generated mocks only."
+        record_failure "go generate wrote outside the mock directories (review the files above)"
+    fi
 fi
 
 # 4. Check formatting
