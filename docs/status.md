@@ -1,8 +1,8 @@
 ---
 name: rpg-api status
 description: Where we are with rpg-api — active work, paused, known rough edges, per-subsystem confidence
-updated: 2026-09-01
-confidence: high — #870 Martial Arts Quarterstaff→bonus Unarmed Strike handler journey verified against released providers and focused RED/GREEN acceptance; #869 production hair persistence/finalization/public roster behavior verified against focused RED/GREEN plus Docker-backed character integration; #852 shared dice presentation wiring verified against RED/GREEN cross-instance Redis integration, focused lint, and race-stressed package gate; #844 field-complete owner projection and atomic equipment patch verified against focused handler/orchestrator/repository tests and lint; Wave 2 Monk entries verified against passing integration tests; #636 entry verified against passing unit + integration tests; #642 v1alpha1 encounter stack deletion verified against passing build/vet/test/lint; #644 The Dungeon wave 1 (api) verified against passing unit + stress-run (50x) integration tests; #650 toolkit seam adoption (InitiativeRolled event + room-aware spawn) verified against passing unit/integration/-race full suite; #651 ActiveConditions projection verified against passing unit + integration (10x -race) + full suite; #656 movement-truncation fix verified against an isolated toolkit-level repro, a new RPC-level regression test (10x -race), and the full suite; #663 AbandonEncounter + combat pockets + rage-at-seating verified against passing unit/integration/-race full suite plus a live playtest against the real game route; #676 The Dungeon wave 2 Slice 2 (api leg) verified against passing unit tests + a new 3-test integration gate suite (8x stress-run, entropy-seeded layouts); #680 equipment on the wire verified against passing unit + integration suite (real AC, occupancy, non-equipment-field preservation) + adversarial-gate fixes + full CI green against published deps; #687 region/theme wire projection verified against passing unit (-race) + a real-RPC integration gate proving connect-time AND incremental-reveal zone_id/zones/theme projection against the real Redis harness, full `go test`/`golangci-lint` green against the published `rpg-api-protos` generated branch + `rpg-toolkit/encounter v0.35.0`; #688 N-region dungeon by key verified against passing unit (-race, 15x stress-run) + a rewritten 3-test integration gate suite against the real Redis harness, full `go test`/`golangci-lint` green against published `rpg-toolkit/encounter v0.35.0`; #694 crypt dungeon-key consumes the toolkit's own `CryptDungeonParams` (obstacles included) verified against passing unit (-race) against published `rpg-toolkit/encounter v0.38.0`; #689 deterministic crypt monster composition verified against passing unit (-race, 1000-seed x 4-party-size zero-error matrix against the real production registry) + real-Redis integration (composition + seed-determinism + party-size-invariance) + the updated dungeon_crypt_test.go gate, full `go test`/`golangci-lint` green against published `rpg-toolkit/encounter v0.38.0` + `rulebooks/dnd5e v0.68.0`, zero new lint issues versus main — **#694 and #689 merged together (this doc's own "Deterministic crypt monster composition, integrated with toolkit CryptDungeonParams" entry, 2026-07-23) close out rpg-api#696** (the out-of-sight goblin-placement collision #694 alone surfaced): #689's deterministic `FixedPositions` composition retires the search path that could fail, so the merged 1..1000-seed x party-1..4 matrix is 0/4000 errors, not a tuned-down failure rate
+updated: 2026-09-02
+confidence: high — #882 first-admission normal-rest ownership verified through Lobby StartEncounter against released providers; #870 Martial Arts Quarterstaff→bonus Unarmed Strike handler journey verified against released providers and focused RED/GREEN acceptance; #869 production hair persistence/finalization/public roster behavior verified against focused RED/GREEN plus Docker-backed character integration; #852 shared dice presentation wiring verified against RED/GREEN cross-instance Redis integration, focused lint, and race-stressed package gate; #844 field-complete owner projection and atomic equipment patch verified against focused handler/orchestrator/repository tests and lint; Wave 2 Monk entries verified against passing integration tests; #636 entry verified against passing unit + integration tests; #642 v1alpha1 encounter stack deletion verified against passing build/vet/test/lint; #644 The Dungeon wave 1 (api) verified against passing unit + stress-run (50x) integration tests; #650 toolkit seam adoption (InitiativeRolled event + room-aware spawn) verified against passing unit/integration/-race full suite; #651 ActiveConditions projection verified against passing unit + integration (10x -race) + full suite; #656 movement-truncation fix verified against an isolated toolkit-level repro, a new RPC-level regression test (10x -race), and the full suite; #663 AbandonEncounter + combat pockets + rage-at-seating verified against passing unit/integration/-race full suite plus a live playtest against the real game route; #676 The Dungeon wave 2 Slice 2 (api leg) verified against passing unit tests + a new 3-test integration gate suite (8x stress-run, entropy-seeded layouts); #680 equipment on the wire verified against passing unit + integration suite (real AC, occupancy, non-equipment-field preservation) + adversarial-gate fixes + full CI green against published deps; #687 region/theme wire projection verified against passing unit (-race) + a real-RPC integration gate proving connect-time AND incremental-reveal zone_id/zones/theme projection against the real Redis harness, full `go test`/`golangci-lint` green against the published `rpg-api-protos` generated branch + `rpg-toolkit/encounter v0.35.0`; #688 N-region dungeon by key verified against passing unit (-race, 15x stress-run) + a rewritten 3-test integration gate suite against the real Redis harness, full `go test`/`golangci-lint` green against published `rpg-toolkit/encounter v0.35.0`; #694 crypt dungeon-key consumes the toolkit's own `CryptDungeonParams` (obstacles included) verified against passing unit (-race) against published `rpg-toolkit/encounter v0.38.0`; #689 deterministic crypt monster composition verified against passing unit (-race, 1000-seed x 4-party-size zero-error matrix against the real production registry) + real-Redis integration (composition + seed-determinism + party-size-invariance) + the updated dungeon_crypt_test.go gate, full `go test`/`golangci-lint` green against published `rpg-toolkit/encounter v0.38.0` + `rulebooks/dnd5e v0.68.0`, zero new lint issues versus main — **#694 and #689 merged together (this doc's own "Deterministic crypt monster composition, integrated with toolkit CryptDungeonParams" entry, 2026-07-23) close out rpg-api#696** (the out-of-sight goblin-placement collision #694 alone surfaced): #689's deterministic `FixedPositions` composition retires the search path that could fail, so the merged 1..1000-seed x party-1..4 matrix is 0/4000 errors, not a tuned-down failure rate
 ---
 
 # rpg-api: Where We Are
@@ -10,6 +10,29 @@ confidence: high — #870 Martial Arts Quarterstaff→bonus Unarmed Strike handl
 This is a living doc. Edit it in the same PR that invalidates a line. Don't let it rot.
 
 ## Active work
+
+**First-admission normal rest owned by toolkit Session Join (rpg-api#882,
+rpg-project#341/#343, 2026-09-02)** — the API pins root D&D `v0.126.2`,
+resolution `v0.29.0`, and session `v0.45.0`. Lobby `StartEncounter` is again a
+thin `StartSession → Join → Spawn` consumer: its complete runtime-character /
+event-bus / rest / reserialization / character-update loop is deleted. The
+Session SDK uses persisted `EverMembers` to identify first admission and
+persists the normal-rest result through the existing character repository
+adapter before projection and placement; rpg-api adds no rest flag, lifecycle
+helper, all-member preflight, feature/condition/resource inspection, or rules
+branch.
+
+The miniredis-backed lobby acceptance seats spent level-four Fighter and
+Barbarian records through the real Session Manager and adapter, then proves
+full HP, cleared death saves, exact half-hit-die recovery, unused spell slots,
+restored Second Wind and Rage charges, retained passives, reset reaction meter,
+removed temporary conditions, and preservation of `BackgroundID`, `CreatedAt`,
+and API-owned Appearance. A separate real-Manager failure-order test injects a
+failing Session/Encounter repository and proves StartSession fails before Join:
+character bytes, optimistic version, and adapter save count remain unchanged.
+The SDK's documented later-Join failure posture remains explicit durable
+progress through `SaveError`/`SaveReport`; the lobby does not recreate a
+preflight or rollback layer.
 
 **Martial Arts bonus Unarmed Strike restored on the current SessionService path
 (rpg-api#870, rpg-project#349, 2026-09-01)** — the API pins released root D&D
@@ -196,10 +219,10 @@ ahead of any rpg-api consumer:
   also refreshes tracked resource pools (rage charges, ki, hit dice) to maximum on
   every fresh seating, ungated by HP — closes rpg-api#671's remaining gap (HP/death-
   save recovery landed with rpg-toolkit#786; rage charges stayed spent until now).
-  *[Updated by rpg-api#828: on the session stack the function is
-  `RestoreForLaunch` (renamed by rpg-toolkit#1225, HP heal ungated — the wounded
-  restore too, not just the downed) and it runs ONLY at `StartEncounter` launch
-  seating, never per-fight — fights form by sighting and never reseat.]*
+  *[Updated by rpg-api#828, then superseded by rpg-api#882: the API-side
+  launch reset is deleted. Session v0.45.0 now owns the normal rest on a
+  character's first admission recorded by persisted `EverMembers`; it does not
+  rerun for reconnect or exit/rejoin.]*
 
 Both landed on the API side unplanned — discovered mid-implementation while bumping
 the toolkit dependency #663 needed anyway, folded into the same PR per house rule
@@ -217,9 +240,9 @@ afterward, and a fresh `CreateLobby`->`StartEncounter` immediately reseats the
 player — and, via the orchestrator test suite's capstone, a dead-and-drained
 character (0 HP, 3 failed death saves, 0/2 rage charges) seated fresh comes back
 alive at full HP with full rage. *[That capstone described the OLD stack's
-chain, deleted with the rip-out; the session stack re-proves it since
-rpg-api#828 via `SessionStackSuite.TestStartEncounter_LaunchRestoresEveryMemberFully`,
-now through `RestoreForLaunch` at launch only.]*
+chain, deleted with the rip-out; rpg-api#882 now re-proves the broader normal-
+rest outcome through `SessionStackSuite.TestStartEncounter_FirstAdmissionPersistsCompleteLongRestOutcomes`,
+with Session Join as the policy and persistence owner.]*
 
 Known cosmetic, not a regression: rpg-dnd5e-web#516 (open) — `EconomyBar` shows
 stale turn-economy digits during the `FREE_ROAM` interval between pockets.

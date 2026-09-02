@@ -5,13 +5,9 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/KirkDiggler/rpg-toolkit/events"
-	tkchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 
 	"github.com/KirkDiggler/rpg-api/internal/dungeons"
-	"github.com/KirkDiggler/rpg-api/internal/entities"
-	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	lobbyrepo "github.com/KirkDiggler/rpg-api/internal/repositories/lobby"
 	rosterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/roster"
 )
@@ -70,20 +66,16 @@ type StartEncounterOutput struct {
 //     party withdrawing (sessionworld.EndingWithdrawn, external) and the
 //     boss going down (sessionworld.EndingBossDown, TriggerMemberDown over
 //     the member ID this launch spawns the flagged placement under).
-//   - ARCADE RECOVERY IS BACK, and it lives HERE (rpg-api#828 closed the
-//     design question the rip-out left open): StartEncounter loads every
-//     member and calls Character.LongRest on it before seating — the
-//     toolkit owns the mechanism, this host path owns the policy, and
-//     sdk.Manager.Join stays restoration-free by contract. (Was
-//     tkcharacter.RestoreForLaunch, a Data-only mutator; rpg-toolkit#1376
-//     retired it the same day this wave's pins moved, folding launch
-//     recovery into the now-authoritative LongRest -- a live Character on
-//     a real bus, same as every other one-shot toolkit call in this repo.)
-//     Stale ACTION-ECONOMY is likewise mostly the SDK's own problem now: since
-//     session v0.24.1 it clears a member's economy when their fight
-//     dissolves (rpg-toolkit#1222); only sessions that end while a fight
-//     is still running — Manager.End / Manager.Exit — can still leak one
-//     into a later encounter (rpg-toolkit#1223).
+//   - FIRST ADMISSION RECOVERY is provider-owned. StartEncounter supplies
+//     member IDs and authored seats to sdk.Manager.Join; the Session SDK uses
+//     its persisted EverMembers admission record and saves the normal-rested
+//     character before projection and placement. This host neither loads a
+//     runtime D&D character nor authors lifecycle policy. Stale ACTION-ECONOMY
+//     is likewise mostly the SDK's own problem now: since session v0.24.1 it
+//     clears a member's economy when their fight dissolves (rpg-toolkit#1222);
+//     only sessions that end while a fight is still running — Manager.End /
+//     Manager.Exit — can still leak one into a later encounter
+//     (rpg-toolkit#1223).
 //
 // # One thing that is NOT a shortcut any more
 //
@@ -138,56 +130,6 @@ func (o *Orchestrator) StartEncounter(ctx context.Context, in *StartEncounterInp
 	if len(members) > len(dungeon.PartySeats) {
 		return nil, fmt.Errorf("lobby %q has %d members and the dungeon seats %d",
 			in.LobbyID, len(members), len(dungeon.PartySeats))
-	}
-
-	// Launch is an arcade run start (Kirk's ruling, rpg-project#253 /
-	// rpg-api#828): every member is seated fully restored — max HP, no
-	// death-save state, no lingering Unconscious, full resource pools, full
-	// spell slots — via the toolkit's own authoritative long rest. Done
-	// BEFORE the session exists so a storage failure refuses the launch
-	// cleanly, and before Join so the SDK seats the restored record.
-	// Mid-run reloads must never do this; see Character.LongRest's contract.
-	//
-	// LongRest lives on a live Character, not raw Data (rpg-toolkit#1376
-	// retired the Data-only RestoreForLaunch this call site used before),
-	// so each member is loaded onto a fresh, throwaway EventBus -- the same
-	// load/discard idiom character/orchestrator.go already uses for a
-	// one-shot toolkit call -- rested, and re-flattened with ToData. LongRest
-	// carries no "did anything change" signal the way the old helper did, so
-	// this phase always re-persists every member rather than skipping the
-	// already-full ones; LongRest is itself idempotent (its own doc: a
-	// no-op on an already-rested character), so writing an unchanged record
-	// back costs a redundant Redis write, never a wrong one.
-	//
-	// Two phases: load-and-rest every record in memory FIRST (so a missing
-	// or malformed character refuses the launch before anything is
-	// written), then persist. A failure mid-persist still leaves earlier
-	// members durably rested with no session started — defined behavior,
-	// not a bug: re-running LongRest on a retry (or a launch of a different
-	// lobby) is a no-op for whatever already landed.
-	restored := make([]*entities.Character, 0, len(members))
-	for _, m := range members {
-		got, err := o.characterRepo.Get(ctx, characterrepo.GetInput{ID: m.CharacterID})
-		if err != nil {
-			return nil, fmt.Errorf("load character %q for launch restore: %w", m.CharacterID, err)
-		}
-		if got == nil || got.Character == nil || got.Character.Data == nil {
-			return nil, fmt.Errorf("character %q has no data to restore at launch", m.CharacterID)
-		}
-		char, err := tkchar.LoadFromData(ctx, got.Character.Data, events.NewEventBus())
-		if err != nil {
-			return nil, fmt.Errorf("load character %q onto bus for launch rest: %w", m.CharacterID, err)
-		}
-		if err := char.LongRest(ctx); err != nil {
-			return nil, fmt.Errorf("long rest character %q for launch: %w", m.CharacterID, err)
-		}
-		got.Character.Data = char.ToData()
-		restored = append(restored, got.Character)
-	}
-	for _, ch := range restored {
-		if _, err := o.characterRepo.Update(ctx, characterrepo.UpdateInput{Character: ch}); err != nil {
-			return nil, fmt.Errorf("persist launch restore for character %q: %w", ch.Data.ID, err)
-		}
 	}
 
 	encID := o.encounterIDGen.Generate()
