@@ -252,8 +252,17 @@ func buildWorld(field tkencounter.FieldInput, bossID string) (*tkencounter.Encou
 		// the capability was introduced (rpg-project#294). The session package
 		// supplies the real announcer when it loads this world to play it.
 		Announcer: tkencounter.RefusingAnnouncer{},
-		Retention: tkencounter.RetentionUnbounded,
-		Field:     field,
+		// Concealment (rpg-toolkit#1371) closes two more capabilities the
+		// moment a field carries any concealed door or region, and refuses
+		// to build AT ALL without them -- so before this pair existed, any
+		// dungeon declaring concealment failed to compile, full stop
+		// (rpg-api#887). They are not a matched refusing pair the way
+		// PassDriver/RefusingStriker are -- see the comment above
+		// orderAsGiven for why CheckResolver refuses and Witness does not.
+		CheckResolver: refusingCheckResolver{},
+		Witness:       nobodyPerceives{},
+		Retention:     tkencounter.RetentionUnbounded,
+		Field:         field,
 		// What ends a dungeon is not geometry, and the file says it: the
 		// party withdrawing (external, always declared) and — when a
 		// placement carries the boss flag — the boss going down
@@ -303,10 +312,31 @@ const EndingBossDown = "boss-down"
 // exported by the toolkit (rpg-toolkit#1167 closed), so there is no
 // hand-written stand-in for either any more.
 //
-// All three remaining hand-written types are construction-time only here,
-// which is what makes trivial implementations honest rather than a hidden
-// ruling -- see [buildWorld]: the world is empty at the moment it is built,
-// and the session package supplies its own capabilities when it loads it.
+// Concealment (rpg-toolkit#1371) closes two further -- CheckResolver and
+// Witness -- and the toolkit exports no refusing implementation of either,
+// so refusingCheckResolver and nobodyPerceives below are hand-written to
+// match (rpg-api#887). They are deliberately NOT a matched refusing pair
+// the way PassDriver/RefusingStriker are:
+//
+//   - CheckResolver is reached only through an explicit Search
+//     (rulebooks/dnd5e/encounter's own conceal.go), and nothing in this
+//     package ever searches, so refusing it costs nothing and catches a
+//     real mistake if one is ever made.
+//   - Witness is reached UNCONDITIONALLY, at every construction's first
+//     light, for any door authored both concealed and open -- a "hidden
+//     passage nobody shut", which is legal authored content, not a bug
+//     (confirmed against the toolkit directly: NewEncounter calls
+//     Witness.Perceivers for such a door even with zero members, because
+//     first light perceives present state before anyone has joined). A
+//     refusing Witness would fail that dungeon's compile exactly the way
+//     the missing capability failed every dungeon's compile before this
+//     fix, so nobodyPerceives answers honestly instead.
+//
+// All five hand-written types in this file are construction-time only,
+// which is what makes a trivial or refusing implementation honest rather
+// than a hidden ruling -- see [buildWorld]: the world is empty at the
+// moment it is built, and the session package supplies its own
+// capabilities when it loads it.
 type orderAsGiven struct{}
 
 // RollInitiative returns the members in the order given. Never reached: the
@@ -336,4 +366,34 @@ func (nobodySees) Sight(members []tkencounter.MemberID) (map[tkencounter.MemberI
 	}
 
 	return out, nil
+}
+
+type refusingCheckResolver struct{}
+
+// ResolveCheck always fails. Nothing during construction ever calls this --
+// [tkencounter.CheckResolver] is reached only through an explicit Search,
+// and this package never searches -- so reaching it at all means a caller
+// ran Search against the throwaway world this package builds instead of the
+// live one the session package loads from it, which is a bug and should say
+// so at the point of failure, the same argument [tkencounter.RefusingStriker]
+// makes for a driven attack, one capability over. See the comment above
+// [orderAsGiven] for why [nobodyPerceives] beside it does not follow suit.
+func (refusingCheckResolver) ResolveCheck(*tkencounter.ResolveCheckInput) (*tkencounter.ResolveCheckOutput, error) {
+	return nil, fmt.Errorf("sessionworld: an authored check was rolled against a world still being compiled, not played")
+}
+
+type nobodyPerceives struct{}
+
+// Perceivers answers that nobody perceives the door -- there is nobody in a
+// world this new to perceive anything, which happens to be the literal
+// answer a live Witness would give an encounter with no roster. NOT a
+// refusal, unlike [refusingCheckResolver] beside it: NewEncounter's first
+// light calls this UNCONDITIONALLY for any door authored both concealed and
+// open (a hidden passage nobody shut, legal authored content), so a
+// refusing stand-in here would fail that dungeon's compile the same way the
+// missing capability failed every concealed dungeon's compile before this
+// fix (rpg-api#887). See the comment above [orderAsGiven] for the full
+// reasoning.
+func (nobodyPerceives) Perceivers(*tkencounter.PerceiversInput) ([]tkencounter.MemberID, error) {
+	return nil, nil
 }

@@ -485,3 +485,71 @@ type quietAnnouncer struct{}
 func (quietAnnouncer) Announce(context.Context, *tkencounter.Encounter, []tkencounter.Boundary) error {
 	return nil
 }
+
+// concealedDungeon is a two-cell dungeon: a visible entrance and a concealed
+// vault one edge away, the vault reachable only through the one door on
+// that edge -- the minimal coherent secret dungeonspec's own validate.go
+// will accept (a concealed region needs every way in to be a concealed
+// door, or it is not a secret). doorState is spliced in verbatim so the
+// same fixture can author the door shut (the ordinary "hidden room" shape)
+// or left open (the "hidden passage nobody shut" shape [nobodyPerceives]
+// exists for) without duplicating the rest of the file.
+func concealedDungeon(key, doorState string) string {
+	return `
+version: 2
+key: ` + key + `
+name: Concealed Seam
+orientation: pointy
+void: opaque
+start: [0, 0]
+regions:
+  - id: entrance
+    name: Entrance
+    archetype: test
+    lighting: { intensity: 1 }
+    cells:
+      - [[0,0]]
+  - id: vault
+    name: Vault
+    archetype: test
+    lighting: { intensity: 1 }
+    concealed: true
+    cells:
+      - [[1,0]]
+doors:
+  - id: hidden-door
+    edges: [[[0,0],[1,0]]]
+    ` + doorState + `
+    concealed: [{ ability: perception, dc: 15 }]
+`
+}
+
+// TestAConcealedDungeonCompiles is the regression test for rpg-api#887.
+//
+// ReferenceTombSuite compiles the shipped tomb on every run of this
+// package's tests, but the tomb declares no concealment anywhere in it --
+// so its compile test exercises none of [tkencounter.SetupInput]'s
+// CheckResolver/Witness validation and could never have caught a missing
+// stand-in for either. This dungeon declares both a concealed region and
+// the concealed door in front of it, closed the way a hidden room is
+// ordinarily authored, and used to fail here with "no check resolver
+// capability" before [refusingCheckResolver] and [nobodyPerceives] existed.
+func TestAConcealedDungeonCompiles(t *testing.T) {
+	d, err := Compile([]byte(concealedDungeon("concealed-seam", "closed: true")))
+	require.NoError(t, err, "a dungeon that declares concealment must still compile")
+	require.NotNil(t, d)
+}
+
+// TestAnOpenConcealedDoorCompilesToo pins the one deliberate asymmetry
+// between this package's two concealment stand-ins -- see the comment above
+// [orderAsGiven]. A door authored both concealed and open is legal content
+// (a hidden passage nobody shut), and NewEncounter's first light asks
+// Witness about it UNCONDITIONALLY, even in this package's zero-member
+// world. If [nobodyPerceives] were ever "simplified" to refuse, matching
+// [refusingCheckResolver] beside it, this is the test that would catch a
+// dungeon authoring this shape failing to compile again.
+func TestAnOpenConcealedDoorCompilesToo(t *testing.T) {
+	d, err := Compile([]byte(concealedDungeon("concealed-seam-open", "")))
+	require.NoError(t, err, "an authored hidden passage left open must still compile")
+	require.NotNil(t, d)
+}
