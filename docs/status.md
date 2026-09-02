@@ -11,8 +11,8 @@ This is a living doc. Edit it in the same PR that invalidates a line. Don't let 
 
 ## Active work
 
-**First-admission normal rest owned by toolkit Session Join (rpg-api#882,
-rpg-project#341/#343, 2026-09-02)** — the API pins root D&D `v0.126.2`,
+**First-admission normal rest owned by toolkit Session Join (rpg-api#882/#889,
+rpg-project#341/#343, 2026-09-02)** — the API pins root D&D `v0.126.3`,
 resolution `v0.29.0`, and session `v0.45.0`. Lobby `StartEncounter` is again a
 thin `StartSession → Join → Spawn` consumer: its complete runtime-character /
 event-bus / rest / reserialization / character-update loop is deleted. The
@@ -24,11 +24,12 @@ branch.
 
 The miniredis-backed lobby acceptance seats spent level-four Fighter and
 Barbarian records through the real Session Manager and adapter, then proves
-full HP, cleared death saves, exact half-hit-die recovery, unused spell slots,
-restored Second Wind and Rage charges, retained passives, reset reaction meter,
-removed temporary conditions, and preservation of `BackgroundID`, `CreatedAt`,
-and API-owned Appearance. A separate real-Manager failure-order test injects a
-failing Session/Encounter repository and proves StartSession fails before Join:
+full HP, cleared death saves and stale persisted `ActionEconomy`, exact
+half-hit-die recovery, unused spell slots, restored Second Wind and Rage charges,
+retained passives, reset reaction meter, removed temporary conditions, and
+preservation of `BackgroundID`, `CreatedAt`, and API-owned Appearance. A
+separate real-Manager failure-order test injects a failing Session/Encounter
+repository and proves StartSession fails before Join:
 character bytes, optimistic version, and adapter save count remain unchanged.
 The SDK's documented later-Join failure posture remains explicit durable
 progress through `SaveError`/`SaveReport`; the lobby does not recreate a
