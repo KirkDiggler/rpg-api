@@ -455,6 +455,7 @@ func (s *SessionStackSuite) TestStartEncounter_FirstAdmissionPersistsCompleteLon
 	fighterRecord, err := s.charRepo.Get(s.ctx, characterrepo.GetInput{ID: "char-p1"})
 	s.Require().NoError(err)
 	gotFighter := fighterRecord.Character.Data
+	s.Nil(gotFighter.ActionEconomy, "first-admission long rest clears stale action economy")
 	s.Equal(36, gotFighter.HitPoints)
 	s.Equal(36, gotFighter.MaxHitPoints)
 	s.Equal(&saves.DeathSaveState{}, gotFighter.DeathSaveState)
@@ -590,6 +591,11 @@ func (s *SessionStackSuite) spentFighter(id, playerID string) (*entities.Charact
 			abilities.INT: 10, abilities.WIS: 12, abilities.CHA: 8,
 		},
 		HitPoints: 7, MaxHitPoints: 36, ArmorClass: 16,
+		ActionEconomy: &tkcharacter.ActionEconomyData{
+			TurnNumber: 1, ActionsRemaining: 0, BonusActionsRemaining: 0,
+			ReactionsRemaining: 1, MovementRemaining: 10,
+			Granted: map[tkcharacter.GrantedActionKey]int{tkcharacter.GrantedAttacks: 1},
+		},
 		DeathSaveState: &saves.DeathSaveState{Successes: 1, Failures: 2, Stabilized: true, Dead: true},
 		SpellSlots:     map[int]tkcharacter.SpellSlotData{1: {Max: 3, Used: 3}},
 		Resources: map[coreResources.ResourceKey]tkcharacter.RecoverableResourceData{
