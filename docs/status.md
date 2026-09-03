@@ -36,11 +36,13 @@ attack 15, original greatsword faces `[1,5]`, and reroll 4; live and catch-up ar
 Strength +3 and authoritative damage 12, and contain no duplicate sequence or
 deprecated scalar mirror.
 
-Published-provider receipts: root D&D `v0.137.0`, encounter `v0.52.0`,
-resolution `v0.32.1`, Session `v0.53.1`, and generated contract release
-`v0.1.156` at `d62c00309beb847b8fb9f69d9f6c5976174cfb72` (the generated Go
-submodule is pinned by its commit pseudo-version
-`v0.0.0-20260903120430-d62c00309beb`).
+Published-provider receipts: root D&D `v0.137.0`, resolution `v0.32.1`, and
+Session `v0.53.1`. The direct encounter pin stays at upstream's newer
+`v0.53.0` for the line-wall/point-door contract. The roll-trace contract's
+minimum generated release is `v0.1.156` at `d62c00309beb`; this branch keeps
+upstream's newer generated commit `883dd221a6cd` through pseudo-version
+`v0.0.0-20260903131136-883dd221a6cd` because it also carries the
+`RegionRevealed` wall/closed-cell fields required by the current API.
 
 **First-admission normal rest owned by toolkit Session Join (rpg-api#882/#889,
 rpg-project#341/#343, 2026-09-02)** — the API now pins root D&D `v0.128.0`,
