@@ -1013,6 +1013,10 @@ func (h *Handler) UpdateAppearance(
 	ctx context.Context,
 	req *dnd5ev1alpha1.UpdateAppearanceRequest,
 ) (*dnd5ev1alpha1.UpdateAppearanceResponse, error) {
+	playerID := auth.GetPlayerID(ctx)
+	if playerID == "" {
+		return nil, status.Error(codes.Unauthenticated, "player not authenticated")
+	}
 	if req == nil {
 		return nil, status.Error(codes.InvalidArgument, "request is required")
 	}
@@ -1024,6 +1028,7 @@ func (h *Handler) UpdateAppearance(
 	}
 	output, err := h.characterService.SetAppearance(ctx, &character.SetAppearanceInput{
 		DraftID:    req.DraftId,
+		PlayerID:   playerID,
 		Appearance: customizationconverter.ProtoToToolkit(req.Appearance),
 	})
 	if err != nil {

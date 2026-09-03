@@ -134,8 +134,8 @@ replace newer slots or other data.
 
 ## Production provider pins (#844)
 
-The current branch consumes `rulebooks/dnd5e` v0.136.0,
-`rulebooks/dnd5e/session` v0.53.0, `rulebooks/dnd5e/resolution` v0.31.0, and
+The current branch consumes `rulebooks/dnd5e` v0.137.0,
+`rulebooks/dnd5e/session` v0.53.1, `rulebooks/dnd5e/resolution` v0.32.1, and
 proto generated commit `883dd221a6cdf724df8d5d993d897e0c8a3358ab`.
 There are no local replaces or API-side rule substitutes: declaration availability,
 reach, costs, selectors, character status, and resources all remain provider answers.

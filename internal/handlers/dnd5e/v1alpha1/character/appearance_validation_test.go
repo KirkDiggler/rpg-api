@@ -15,6 +15,7 @@ import (
 	customizationpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/customization/v1alpha1"
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
 	"github.com/KirkDiggler/rpg-api/internal/apierr"
+	"github.com/KirkDiggler/rpg-api/internal/auth"
 	customizationconverter "github.com/KirkDiggler/rpg-api/internal/converters/customization"
 	characterorchestrator "github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
 	charactermock "github.com/KirkDiggler/rpg-api/internal/orchestrators/character/mock"
@@ -22,6 +23,22 @@ import (
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/customization"
 )
+
+func TestUpdateAppearance_UnauthenticatedRefusesBeforeService(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	service := charactermock.NewMockService(ctrl)
+	handler, err := NewHandler(&HandlerConfig{CharacterService: service})
+	require.NoError(t, err)
+
+	response, err := handler.UpdateAppearance(context.Background(), &dnd5ev1alpha1.UpdateAppearanceRequest{
+		DraftId:    "draft-appearance",
+		Appearance: &dnd5ev1alpha1.Appearance{},
+	})
+
+	require.Nil(t, response)
+	require.Equal(t, codes.Unauthenticated, status.Code(err))
+	require.Equal(t, "player not authenticated", status.Convert(err).Message())
+}
 
 func TestUpdateAppearance_DelegatesCompleteAppearanceAndReturnsServiceDraft(t *testing.T) {
 	ctrl := gomock.NewController(t)
@@ -51,10 +68,11 @@ func TestUpdateAppearance_DelegatesCompleteAppearanceAndReturnsServiceDraft(t *t
 
 	service.EXPECT().SetAppearance(gomock.Any(), &characterorchestrator.SetAppearanceInput{
 		DraftID:    draftID,
+		PlayerID:   "player-1",
 		Appearance: expectedAppearance,
 	}).Return(&characterorchestrator.SetAppearanceOutput{Draft: storedDraft}, nil)
 
-	response, err := handler.UpdateAppearance(context.Background(), &dnd5ev1alpha1.UpdateAppearanceRequest{
+	response, err := handler.UpdateAppearance(auth.WithPlayerID(context.Background(), "player-1"), &dnd5ev1alpha1.UpdateAppearanceRequest{
 		DraftId:    draftID,
 		Appearance: requestAppearance,
 	})
@@ -84,6 +102,7 @@ func TestUpdateAppearance_DelegatesMalformedSemanticsToToolkit(t *testing.T) {
 	service.EXPECT().SetAppearance(gomock.Any(), gomock.Any()).DoAndReturn(
 		func(_ context.Context, input *characterorchestrator.SetAppearanceInput) (*characterorchestrator.SetAppearanceOutput, error) {
 			require.Equal(t, draftID, input.DraftID)
+			require.Equal(t, "player-1", input.PlayerID)
 			require.Equal(t, customization.StyleSelectionKind(""), input.Appearance.Hair.Scalp.Kind)
 			require.Equal(t, uint32(0x1000000), *input.Appearance.Hair.ColorSRGB)
 			require.True(t, math.IsNaN(float64(*input.Appearance.Hair.Roughness)))
@@ -95,7 +114,7 @@ func TestUpdateAppearance_DelegatesMalformedSemanticsToToolkit(t *testing.T) {
 		},
 	)
 
-	response, err := handler.UpdateAppearance(context.Background(), &dnd5ev1alpha1.UpdateAppearanceRequest{
+	response, err := handler.UpdateAppearance(auth.WithPlayerID(context.Background(), "player-1"), &dnd5ev1alpha1.UpdateAppearanceRequest{
 		DraftId:    draftID,
 		Appearance: requestAppearance,
 	})
@@ -123,7 +142,7 @@ func TestUpdateAppearance_UsesReturnedDraftWithoutRefetch(t *testing.T) {
 		Draft: &toolkitchar.DraftData{ID: draftID, Name: "stored-name", Appearance: &customization.Appearance{}},
 	}, nil)
 
-	response, err := handler.UpdateAppearance(context.Background(), request)
+	response, err := handler.UpdateAppearance(auth.WithPlayerID(context.Background(), "player-1"), request)
 	require.NoError(t, err)
 	require.Equal(t, "stored-name", response.GetDraft().GetName())
 }
@@ -146,7 +165,7 @@ func TestUpdateAppearance_RejectsOnlyTransportEnvelopeFailures(t *testing.T) {
 			handler, err := NewHandler(&HandlerConfig{CharacterService: service})
 			require.NoError(t, err)
 
-			response, err := handler.UpdateAppearance(context.Background(), tt.req)
+			response, err := handler.UpdateAppearance(auth.WithPlayerID(context.Background(), "player-1"), tt.req)
 			require.Nil(t, response)
 			require.Equal(t, codes.InvalidArgument, status.Code(err))
 			require.Equal(t, tt.msg, status.Convert(err).Message())
@@ -163,7 +182,7 @@ func TestUpdateAppearance_NotFoundUsesLegacyMessage(t *testing.T) {
 	service.EXPECT().SetAppearance(gomock.Any(), gomock.Any()).Return(nil,
 		apierr.NotFound("draft storage record missing"))
 
-	response, err := handler.UpdateAppearance(context.Background(), &dnd5ev1alpha1.UpdateAppearanceRequest{
+	response, err := handler.UpdateAppearance(auth.WithPlayerID(context.Background(), "player-1"), &dnd5ev1alpha1.UpdateAppearanceRequest{
 		DraftId:    "draft-missing",
 		Appearance: &dnd5ev1alpha1.Appearance{},
 	})
@@ -181,7 +200,7 @@ func TestUpdateAppearance_TranslatesToolkitErrors(t *testing.T) {
 	service.EXPECT().SetAppearance(gomock.Any(), gomock.Any()).Return(nil,
 		rpgerr.New(rpgerr.CodeInvalidArgument, "appearance.hair.scalp.selection is required"))
 
-	response, err := handler.UpdateAppearance(context.Background(), &dnd5ev1alpha1.UpdateAppearanceRequest{
+	response, err := handler.UpdateAppearance(auth.WithPlayerID(context.Background(), "player-1"), &dnd5ev1alpha1.UpdateAppearanceRequest{
 		DraftId:    "draft-error",
 		Appearance: &dnd5ev1alpha1.Appearance{},
 	})

@@ -110,6 +110,46 @@ func (s *CharacterCreationSuite) assertOwnerItemQuantity(
 	s.Failf("missing owner inventory item", "expected %s in CharacterData inventory", itemID)
 }
 
+// TestUpdateAppearance_HidesForeignDraftExistence proves the RPC cannot be
+// used to distinguish a nonexistent draft from another player's draft.
+func TestUpdateAppearance_HidesForeignDraftExistence(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+	release := sharedRedis.Lease()
+	defer release()
+
+	server, err := harness.NewWithRedis(ctx, nil, sharedRedis.Addr)
+	require.NoError(t, err)
+	defer server.Close()
+	require.NoError(t, server.FlushRedis(ctx))
+
+	ownerCtx := metadata.AppendToOutgoingContext(ctx, "authorization", "Dev appearance-owner")
+	foreignCtx := metadata.AppendToOutgoingContext(ctx, "authorization", "Dev appearance-foreign")
+	created, err := server.CharacterClient.CreateDraft(ownerCtx, &dnd5ev1alpha1.CreateDraftRequest{})
+	require.NoError(t, err)
+
+	appearance := &dnd5ev1alpha1.Appearance{}
+	_, missingErr := server.CharacterClient.UpdateAppearance(foreignCtx, &dnd5ev1alpha1.UpdateAppearanceRequest{
+		DraftId:    "draft-missing",
+		Appearance: appearance,
+	})
+	_, foreignErr := server.CharacterClient.UpdateAppearance(foreignCtx, &dnd5ev1alpha1.UpdateAppearanceRequest{
+		DraftId:    created.GetDraft().GetId(),
+		Appearance: appearance,
+	})
+
+	require.Error(t, missingErr)
+	require.Error(t, foreignErr)
+	require.Equal(t, codes.NotFound, status.Code(missingErr))
+	require.Equal(t, status.Code(missingErr), status.Code(foreignErr))
+	require.Equal(t, status.Convert(missingErr).Message(), status.Convert(foreignErr).Message())
+	require.Equal(t, "draft not found", status.Convert(foreignErr).Message())
+}
+
 func TestHairCustomization_PersistsDraftFinalizationAndGetCharacter(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")

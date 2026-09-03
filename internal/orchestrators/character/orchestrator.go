@@ -523,6 +523,9 @@ func (o *Orchestrator) SetAppearance(ctx context.Context, input *SetAppearanceIn
 	if input.DraftID == "" {
 		return nil, apierr.InvalidArgument("draft ID is required")
 	}
+	if input.PlayerID == "" {
+		return nil, apierr.InvalidArgument("player ID is required")
+	}
 	if input.Appearance == nil {
 		return nil, apierr.InvalidArgument("appearance is required")
 	}
@@ -532,7 +535,13 @@ func (o *Orchestrator) SetAppearance(ctx context.Context, input *SetAppearanceIn
 		ID: input.DraftID,
 	})
 	if err != nil {
+		if apierr.IsNotFound(err) {
+			return nil, apierr.NotFound("draft not found")
+		}
 		return nil, fmt.Errorf("failed to get draft: %w", err)
+	}
+	if getOutput == nil || getOutput.Draft == nil || getOutput.Draft.Data == nil || getOutput.Draft.Data.PlayerID != input.PlayerID {
+		return nil, apierr.NotFound("draft not found")
 	}
 
 	draft := character.LoadDraftFromData(getOutput.Draft.Data)

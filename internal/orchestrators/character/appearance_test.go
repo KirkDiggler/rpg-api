@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
+	"github.com/KirkDiggler/rpg-api/internal/apierr"
 	"github.com/KirkDiggler/rpg-api/internal/entities"
 	characterdraft "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft"
 	draftmock "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft/mock"
@@ -46,6 +47,7 @@ func TestSetAppearance_MutatesToolkitDraftOnceAndReturnsStoredDraft(t *testing.T
 
 	out, err := orch.SetAppearance(context.Background(), &SetAppearanceInput{
 		DraftID:    "draft-1",
+		PlayerID:   "player-1",
 		Appearance: appearance,
 	})
 	require.NoError(t, err)
@@ -63,13 +65,54 @@ func TestSetAppearance_RefusesToolkitErrorBeforeRepositoryUpdate(t *testing.T) {
 	}, nil)
 
 	_, err := orch.SetAppearance(context.Background(), &SetAppearanceInput{
-		DraftID: "draft-1",
+		DraftID:  "draft-1",
+		PlayerID: "player-1",
 		Appearance: &customization.Appearance{Hair: &customization.HairCustomization{
 			Scalp: &customization.StyleSelection{},
 		}},
 	})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "selection is required")
+}
+
+func TestSetAppearance_RequiresPlayerID(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	repo := draftmock.NewMockRepository(ctrl)
+	orch := newAppearanceTestOrchestrator(t, repo)
+
+	_, err := orch.SetAppearance(context.Background(), &SetAppearanceInput{
+		DraftID:    "draft-1",
+		Appearance: &customization.Appearance{},
+	})
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "player ID is required")
+}
+
+func TestSetAppearance_MissingAndForeignDraftAreIndistinguishableWithoutUpdate(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	repo := draftmock.NewMockRepository(ctrl)
+	orch := newAppearanceTestOrchestrator(t, repo)
+
+	repo.EXPECT().Get(context.Background(), characterdraft.GetInput{ID: "draft-missing"}).Return(nil,
+		apierr.NotFound("draft storage record missing"))
+	repo.EXPECT().Get(context.Background(), characterdraft.GetInput{ID: "draft-foreign"}).Return(&characterdraft.GetOutput{
+		Draft: &entities.CharacterDraft{Data: &character.DraftData{ID: "draft-foreign", PlayerID: "owner"}},
+	}, nil)
+
+	missing, missingErr := orch.SetAppearance(context.Background(), &SetAppearanceInput{
+		DraftID: "draft-missing", PlayerID: "caller", Appearance: &customization.Appearance{},
+	})
+	foreign, foreignErr := orch.SetAppearance(context.Background(), &SetAppearanceInput{
+		DraftID: "draft-foreign", PlayerID: "caller", Appearance: &customization.Appearance{},
+	})
+
+	require.Nil(t, missing)
+	require.Nil(t, foreign)
+	require.True(t, apierr.IsNotFound(missingErr))
+	require.True(t, apierr.IsNotFound(foreignErr))
+	require.Equal(t, "draft not found", apierr.GetMessage(missingErr))
+	require.Equal(t, "draft not found", apierr.GetMessage(foreignErr))
 }
 
 func newAppearanceTestOrchestrator(t *testing.T, repo characterdraft.Repository) *Orchestrator {

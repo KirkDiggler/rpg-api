@@ -367,6 +367,7 @@ type SpellInfo struct {
 // SetAppearanceInput sets the appearance for a draft.
 type SetAppearanceInput struct {
 	DraftID    string
+	PlayerID   string
 	Appearance *customization.Appearance
 }
 

@@ -51,8 +51,8 @@ optional resource/source presence, and non-magical resources are copied from det
 values. The v1alpha1 handler does not grow a parallel converter for those fields.
 
 The current branch pins proto generated commit `883dd221a6cdf724df8d5d993d897e0c8a3358ab`,
-`rulebooks/dnd5e` v0.136.0, `rulebooks/dnd5e/session` v0.53.0, and
-`rulebooks/dnd5e/resolution` v0.31.0. The session module is consumed directly by the
+`rulebooks/dnd5e` v0.137.0, `rulebooks/dnd5e/session` v0.53.1, and
+`rulebooks/dnd5e/resolution` v0.32.1. The session module is consumed directly by the
 separate `SessionService` handler.
 
 ## Files
