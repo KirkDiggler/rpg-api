@@ -150,8 +150,8 @@ func TestStatusError_CoversEverySDKSentinel(t *testing.T) {
 
 // errorsGoDefaultCaseSentinels names every SDK sentinel statusError leaves to
 // the default case ON PURPOSE, so TestStatusError_MapsEverySDKSentinel below
-// does not fail on them -- each entry's reason is carried in errors.go's own
-// doc, not here; this map is only the allowlist that check reads.
+// does not fail on them -- each entry's reason is documented either in
+// errors.go or beside the relevant allowlist entry here.
 var errorsGoDefaultCaseSentinels = map[string]bool{
 	// The SDK's repository-facing contract sentinel: the Manager translates
 	// it into a caller-facing one (ErrNoSession, ErrNoEncounter, ...) before

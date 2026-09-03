@@ -520,6 +520,9 @@ func setEventBody(evt *sessionpb.Event, body sdk.EventBody) {
 	}
 }
 
+// activatedBodyToProto trusts Session's bodyFor validation of the required
+// actor and ability identity because the API only converts SDK-authored bodies;
+// ActivationResult retains extra defensive oneof counting for its result arms.
 func activatedBodyToProto(body sdk.ActivatedBody) *sessionpb.Activated {
 	return &sessionpb.Activated{
 		Actor: body.Actor, Ability: abilityRefToProto(body.Ability), Target: body.Target,
