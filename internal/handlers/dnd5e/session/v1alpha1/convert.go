@@ -372,6 +372,10 @@ func eventKindToProto(k sdk.EventKind) sessionpb.EventKind {
 		return sessionpb.EventKind_EVENT_KIND_DOOR
 	case sdk.EventMissed:
 		return sessionpb.EventKind_EVENT_KIND_MISSED
+	case sdk.EventActivated:
+		return sessionpb.EventKind_EVENT_KIND_ACTIVATED
+	case sdk.EventActivationResult:
+		return sessionpb.EventKind_EVENT_KIND_ACTIVATION_RESULT
 	case sdk.EventDoorRevealed:
 		return sessionpb.EventKind_EVENT_KIND_DOOR_REVEALED
 	case sdk.EventRegionRevealed:
@@ -466,6 +470,12 @@ func setEventBody(evt *sessionpb.Event, body sdk.EventBody) {
 			Against:  int32(b.Against),
 			Attack:   attackRefToProto(b.Attack),
 		}}
+	case sdk.ActivatedBody:
+		evt.Body = &sessionpb.Event_Activated{Activated: activatedBodyToProto(b)}
+	case sdk.ActivationResultBody:
+		if result := activationResultBodyToProto(b); result != nil {
+			evt.Body = &sessionpb.Event_ActivationResult{ActivationResult: result}
+		}
 	case sdk.FightStartedBody:
 		evt.Body = &sessionpb.Event_FightStarted{FightStarted: &sessionpb.FightStarted{Members: b.Members}}
 	case sdk.FightEndedBody:
@@ -508,6 +518,83 @@ func setEventBody(evt *sessionpb.Event, body sdk.EventBody) {
 		// not recognize: leave evt.Body nil. payload stays the passthrough
 		// carrier.
 	}
+}
+
+func activatedBodyToProto(body sdk.ActivatedBody) *sessionpb.Activated {
+	return &sessionpb.Activated{
+		Actor: body.Actor, Ability: abilityRefToProto(body.Ability), Target: body.Target,
+	}
+}
+
+// activationResultBodyToProto preserves the SDK's one-result invariant. A
+// nil or malformed decoded SDK body has no wire body rather than an arbitrary
+// first arm; payload remains untouched on the enclosing Event.
+func activationResultBodyToProto(body sdk.ActivationResultBody) *sessionpb.ActivationResult {
+	result := &sessionpb.ActivationResult{Actor: body.Actor}
+	populated := 0
+	if body.HealingApplied != nil {
+		populated++
+		result.Result = &sessionpb.ActivationResult_HealingApplied{
+			HealingApplied: healingAppliedBodyToProto(body.HealingApplied),
+		}
+	}
+	if body.ConditionApplied != nil {
+		populated++
+		result.Result = &sessionpb.ActivationResult_ConditionApplied{
+			ConditionApplied: conditionAppliedBodyToProto(body.ConditionApplied),
+		}
+	}
+	if body.ConditionRemoved != nil {
+		populated++
+		result.Result = &sessionpb.ActivationResult_ConditionRemoved{
+			ConditionRemoved: conditionRemovedBodyToProto(body.ConditionRemoved),
+		}
+	}
+	if body.CapacityGranted != nil {
+		populated++
+		result.Result = &sessionpb.ActivationResult_CapacityGranted{
+			CapacityGranted: capacityGrantedBodyToProto(body.CapacityGranted),
+		}
+	}
+	if populated != 1 {
+		return nil
+	}
+	return result
+}
+
+func healingAppliedBodyToProto(body *sdk.HealingAppliedBody) *sessionpb.HealingApplied {
+	if body == nil {
+		return nil
+	}
+	return &sessionpb.HealingApplied{
+		Target: body.Target, Amount: int32(body.Amount), Requested: int32(body.Requested),
+		Roll: int32(body.Roll), Modifier: int32(body.Modifier),
+		SourceRef: body.SourceRef, SourceName: body.SourceName,
+		HpBefore: int32(body.HPBefore), HpAfter: int32(body.HPAfter),
+	}
+}
+
+func conditionAppliedBodyToProto(body *sdk.ConditionAppliedBody) *sessionpb.ConditionApplied {
+	if body == nil {
+		return nil
+	}
+	return &sessionpb.ConditionApplied{Target: body.Target, Ref: body.Ref, Name: body.Name}
+}
+
+func conditionRemovedBodyToProto(body *sdk.ConditionRemovedBody) *sessionpb.ConditionRemoved {
+	if body == nil {
+		return nil
+	}
+	return &sessionpb.ConditionRemoved{
+		Target: body.Target, Ref: body.Ref, Name: body.Name, Reason: body.Reason,
+	}
+}
+
+func capacityGrantedBodyToProto(body *sdk.CapacityGrantedBody) *sessionpb.CapacityGranted {
+	if body == nil {
+		return nil
+	}
+	return &sessionpb.CapacityGranted{Member: body.Member, Description: body.Description}
 }
 
 // AtlasToProto mirrors the ONE-MAP Atlas (design §0, live as of session

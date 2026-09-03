@@ -158,6 +158,12 @@ var errorsGoDefaultCaseSentinels = map[string]bool{
 	// any verb returns, so it should never reach a handler. See errors.go's
 	// own doc on statusError for the full reasoning.
 	"ErrNotFound": true,
+	// Session v0.48.0 adds these for its Interact verb, which this proto
+	// service does not expose. Keeping the defensive Internal fallback avoids
+	// widening this activation-event change into a new transport contract;
+	// the API leg that adds Interact must choose and test its public codes.
+	"ErrOutOfRange": true,
+	"ErrNotVisible": true,
 }
 
 // sdkSentinelNames reads every exported Err* sentinel declared in the PINNED

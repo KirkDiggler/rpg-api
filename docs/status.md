@@ -1,8 +1,8 @@
 ---
 name: rpg-api status
 description: Where we are with rpg-api — active work, paused, known rough edges, per-subsystem confidence
-updated: 2026-09-02
-confidence: high — #882 first-admission normal-rest ownership verified through Lobby StartEncounter against released providers; #870 Martial Arts Quarterstaff→bonus Unarmed Strike handler journey verified against released providers and focused RED/GREEN acceptance; #869 production hair persistence/finalization/public roster behavior verified against focused RED/GREEN plus Docker-backed character integration; #852 shared dice presentation wiring verified against RED/GREEN cross-instance Redis integration, focused lint, and race-stressed package gate; #844 field-complete owner projection and atomic equipment patch verified against focused handler/orchestrator/repository tests and lint; Wave 2 Monk entries verified against passing integration tests; #636 entry verified against passing unit + integration tests; #642 v1alpha1 encounter stack deletion verified against passing build/vet/test/lint; #644 The Dungeon wave 1 (api) verified against passing unit + stress-run (50x) integration tests; #650 toolkit seam adoption (InitiativeRolled event + room-aware spawn) verified against passing unit/integration/-race full suite; #651 ActiveConditions projection verified against passing unit + integration (10x -race) + full suite; #656 movement-truncation fix verified against an isolated toolkit-level repro, a new RPC-level regression test (10x -race), and the full suite; #663 AbandonEncounter + combat pockets + rage-at-seating verified against passing unit/integration/-race full suite plus a live playtest against the real game route; #676 The Dungeon wave 2 Slice 2 (api leg) verified against passing unit tests + a new 3-test integration gate suite (8x stress-run, entropy-seeded layouts); #680 equipment on the wire verified against passing unit + integration suite (real AC, occupancy, non-equipment-field preservation) + adversarial-gate fixes + full CI green against published deps; #687 region/theme wire projection verified against passing unit (-race) + a real-RPC integration gate proving connect-time AND incremental-reveal zone_id/zones/theme projection against the real Redis harness, full `go test`/`golangci-lint` green against the published `rpg-api-protos` generated branch + `rpg-toolkit/encounter v0.35.0`; #688 N-region dungeon by key verified against passing unit (-race, 15x stress-run) + a rewritten 3-test integration gate suite against the real Redis harness, full `go test`/`golangci-lint` green against published `rpg-toolkit/encounter v0.35.0`; #694 crypt dungeon-key consumes the toolkit's own `CryptDungeonParams` (obstacles included) verified against passing unit (-race) against published `rpg-toolkit/encounter v0.38.0`; #689 deterministic crypt monster composition verified against passing unit (-race, 1000-seed x 4-party-size zero-error matrix against the real production registry) + real-Redis integration (composition + seed-determinism + party-size-invariance) + the updated dungeon_crypt_test.go gate, full `go test`/`golangci-lint` green against published `rpg-toolkit/encounter v0.38.0` + `rulebooks/dnd5e v0.68.0`, zero new lint issues versus main — **#694 and #689 merged together (this doc's own "Deterministic crypt monster composition, integrated with toolkit CryptDungeonParams" entry, 2026-07-23) close out rpg-api#696** (the out-of-sight goblin-placement collision #694 alone surfaced): #689's deterministic `FixedPositions` composition retires the search path that could fail, so the merged 1..1000-seed x party-1..4 matrix is 0/4000 errors, not a tuned-down failure rate
+updated: 2026-09-03
+confidence: high — #891 activation/result event passthrough verified through converter RED/GREEN and real SessionService live/catch-up acceptance; #882 first-admission normal-rest ownership verified through Lobby StartEncounter against released providers; #870 Martial Arts Quarterstaff→bonus Unarmed Strike handler journey verified against released providers and focused RED/GREEN acceptance; #869 production hair persistence/finalization/public roster behavior verified against focused RED/GREEN plus Docker-backed character integration; #852 shared dice presentation wiring verified against RED/GREEN cross-instance Redis integration, focused lint, and race-stressed package gate; #844 field-complete owner projection and atomic equipment patch verified against focused handler/orchestrator/repository tests and lint; Wave 2 Monk entries verified against passing integration tests; #636 entry verified against passing unit + integration tests; #642 v1alpha1 encounter stack deletion verified against passing build/vet/test/lint; #644 The Dungeon wave 1 (api) verified against passing unit + stress-run (50x) integration tests; #650 toolkit seam adoption (InitiativeRolled event + room-aware spawn) verified against passing unit/integration/-race full suite; #651 ActiveConditions projection verified against passing unit + integration (10x -race) + full suite; #656 movement-truncation fix verified against an isolated toolkit-level repro, a new RPC-level regression test (10x -race), and the full suite; #663 AbandonEncounter + combat pockets + rage-at-seating verified against passing unit/integration/-race full suite plus a live playtest against the real game route; #676 The Dungeon wave 2 Slice 2 (api leg) verified against passing unit tests + a new 3-test integration gate suite (8x stress-run, entropy-seeded layouts); #680 equipment on the wire verified against passing unit + integration suite (real AC, occupancy, non-equipment-field preservation) + adversarial-gate fixes + full CI green against published deps; #687 region/theme wire projection verified against passing unit (-race) + a real-RPC integration gate proving connect-time AND incremental-reveal zone_id/zones/theme projection against the real Redis harness, full `go test`/`golangci-lint` green against the published `rpg-api-protos` generated branch + `rpg-toolkit/encounter v0.35.0`; #688 N-region dungeon by key verified against passing unit (-race, 15x stress-run) + a rewritten 3-test integration gate suite against the real Redis harness, full `go test`/`golangci-lint` green against published `rpg-toolkit/encounter v0.35.0`; #694 crypt dungeon-key consumes the toolkit's own `CryptDungeonParams` (obstacles included) verified against passing unit (-race) against published `rpg-toolkit/encounter v0.38.0`; #689 deterministic crypt monster composition verified against passing unit (-race, 1000-seed x 4-party-size zero-error matrix against the real production registry) + real-Redis integration (composition + seed-determinism + party-size-invariance) + the updated dungeon_crypt_test.go gate, full `go test`/`golangci-lint` green against published `rpg-toolkit/encounter v0.38.0` + `rulebooks/dnd5e v0.68.0`, zero new lint issues versus main — **#694 and #689 merged together (this doc's own "Deterministic crypt monster composition, integrated with toolkit CryptDungeonParams" entry, 2026-07-23) close out rpg-api#696** (the out-of-sight goblin-placement collision #694 alone surfaced): #689's deterministic `FixedPositions` composition retires the search path that could fail, so the merged 1..1000-seed x party-1..4 matrix is 0/4000 errors, not a tuned-down failure rate
 ---
 
 # rpg-api: Where We Are
@@ -11,9 +11,38 @@ This is a living doc. Edit it in the same PR that invalidates a line. Don't let 
 
 ## Active work
 
+**Activation/result events pass through SessionService Story and live streams
+(rpg-api#891, 2026-09-03)** — the shared event converter now
+recognizes `ACTIVATED` and `ACTIVATION_RESULT` and maps the SDK's typed bodies
+directly onto the wire oneofs. Actor, authored ability ref/name, selected target,
+applied/requested healing, roll/modifier, source ref/name, HP before/after,
+condition ref/name/reason, and capacity member/description are copied verbatim.
+A nil body or an invalid activation result with zero or multiple result pointers
+keeps the known kind and passthrough payload while leaving the wire body unset;
+the existing unknown-kind fallback is unchanged. No ability/condition ref
+switch, visibility policy, arithmetic, prose, optimistic event, or Activate
+response behavior was added.
+
+The miniredis-backed real Session Manager/Broker/Handler acceptance subscribes
+before a deterministic Second Wind activation, then proves ordered Activated →
+HealingApplied bodies with exact fields in both the live stream and GetStory,
+including byte-equality for matching sequence entries. The narrow
+`crypto/rand.Reader` replacement required by open provider issue
+rpg-toolkit#1427 is serialized and restored by the test.
+
+Published-provider receipts: root D&D `v0.128.0`
+(`e1cca81189eea8a9b004f990eea11da809e232d4`), resolution `v0.30.0`
+(`2d7bbefcdbbf82fab7d7cb58f976e2ee39e1e9da`), Session `v0.48.0`
+(`08347a7b24b683cf495bd28451bfa540be016b90`), and generated Go proto
+`v0.0.0-20260903010453-f87c098979ce`
+(`f87c098979ce64f6c162a769e988c934a1fd80cc`). The API's newer direct
+encounter `v0.47.0` pin (`785cb87c3fc9b39c82cbbf35cb243185a89c3f05`)
+is preserved rather than downgraded to Session's transitive `v0.46.0`.
+
 **First-admission normal rest owned by toolkit Session Join (rpg-api#882/#889,
-rpg-project#341/#343, 2026-09-02)** — the API pins root D&D `v0.126.3`,
-resolution `v0.29.0`, and session `v0.45.0`. Lobby `StartEncounter` is again a
+rpg-project#341/#343, 2026-09-02)** — the API now pins root D&D `v0.128.0`,
+resolution `v0.30.0`, and session `v0.48.0` (current receipts above). Lobby
+`StartEncounter` remains a
 thin `StartSession → Join → Spawn` consumer: its complete runtime-character /
 event-bus / rest / reserialization / character-update loop is deleted. The
 Session SDK uses persisted `EverMembers` to identify first admission and
@@ -36,9 +65,10 @@ progress through `SaveError`/`SaveReport`; the lobby does not recreate a
 preflight or rollback layer.
 
 **Martial Arts bonus Unarmed Strike restored on the current SessionService path
-(rpg-api#870, rpg-project#349, 2026-09-01)** — the API pins released root D&D
-`v0.125.1` and session `v0.42.1` and continues to map declarations and Attack
-results field-for-field. A miniredis-backed handler acceptance test creates an
+(rpg-api#870, rpg-project#349, 2026-09-01)** — that slice landed against released
+root D&D `v0.125.1` and session `v0.42.1`; current provider pins are recorded in
+#891 above. The API continues to map declarations and Attack results
+field-for-field. A miniredis-backed handler acceptance test creates an
 unarmored level-1 Monk holding a Quarterstaff, proves no bonus row before the
 qualifying Attack, executes a successful Quarterstaff Action attack, then reads
 and executes the distinct `ATTACK` / `BONUS` Unarmed Strike selector. Persisted
