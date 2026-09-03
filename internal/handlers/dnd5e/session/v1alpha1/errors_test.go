@@ -90,6 +90,10 @@ func TestStatusError_CoversEverySDKSentinel(t *testing.T) {
 		{"ErrNotYourTurn", sdk.ErrNotYourTurn, codes.FailedPrecondition},
 		{"ErrOutOfReach", sdk.ErrOutOfReach, codes.FailedPrecondition},
 		{"ErrStaleDeclaration", sdk.ErrStaleDeclaration, codes.FailedPrecondition},
+		// World NPCs (rpg-toolkit#1404): Interact's own reach/sight refusals,
+		// the same shape as ErrOutOfReach above.
+		{"ErrOutOfRange", sdk.ErrOutOfRange, codes.FailedPrecondition},
+		{"ErrNotVisible", sdk.ErrNotVisible, codes.FailedPrecondition},
 		// ErrCannotActivate is ErrCannotAfford's shape one verb further out:
 		// an ability that could have run and said no. The SDK documents it as
 		// not currently reachable through Activate — Afford consults the same
@@ -162,12 +166,6 @@ var errorsGoDefaultCaseSentinels = map[string]bool{
 	// any verb returns, so it should never reach a handler. See errors.go's
 	// own doc on statusError for the full reasoning.
 	"ErrNotFound": true,
-	// Session adds these for its Interact verb, which this proto
-	// service does not expose. Keeping the defensive Internal fallback avoids
-	// widening this activation-event change into a new transport contract;
-	// the API leg that adds Interact must choose and test its public codes.
-	"ErrOutOfRange": true,
-	"ErrNotVisible": true,
 }
 
 // sdkSentinelNames reads every exported Err* sentinel declared in the PINNED

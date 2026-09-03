@@ -5,7 +5,9 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/npcs"
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
+	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
 
 	"github.com/KirkDiggler/rpg-api/internal/dungeons"
 	lobbyrepo "github.com/KirkDiggler/rpg-api/internal/repositories/lobby"
@@ -178,6 +180,37 @@ func (o *Orchestrator) StartEncounter(ctx context.Context, in *StartEncounterInp
 			ID: monster.MemberID, Kind: rosterrepo.KindMonster, Ref: monster.Ref,
 			Name: spawned.NPC.Name,
 		})
+	}
+
+	// TEMPORARY (rpg-api#903 Phase 1): one hardcoded demo vendor, placed one
+	// hex step from the party's own entry seat so a player can Interact with
+	// it at Range 0 (adjacent, the default) right after joining. This is a
+	// placement GATE, not the real thing — proving PlaceNPC/Interact work
+	// end to end before any authoring format exists. It is headed for the
+	// dungeon's own `place:` list (a routed `npcs` ref type, rpg-api#903
+	// Phase 2) and should be removed, not built on top of, once that lands.
+	//
+	// The cell is a genuine axial hex-neighbor of dungeon.PartySeats[0]
+	// (verified directly against the compiled tomb, not derived from its
+	// authored offset coordinates -- offset-to-axial is a sheared
+	// conversion, and two offset cells that look adjacent on the page are
+	// not reliably adjacent on the hex grid). Gated to the reference tomb
+	// specifically, by key -- not "every dungeon": this cell is only
+	// known-floor there. Other dungeons (including the small synthetic
+	// fixtures dungeonstest builds for unrelated tests) have no reason to
+	// share that geometry.
+	if key == dungeons.DefaultKey {
+		demoVendor, err := npcs.NewMerchant(nil)
+		if err != nil {
+			return nil, fmt.Errorf("build demo vendor for session %q: %w", encID, err)
+		}
+		demoVendorPosition := spatial.Position{X: dungeon.PartySeats[0].X + 1, Y: dungeon.PartySeats[0].Y}
+		if _, err := o.sessionManager.PlaceNPC(ctx, &sdk.PlaceNPCInput{
+			Session: encID, Member: "demo-merchant-1", Position: demoVendorPosition,
+			NPC: demoVendor.NPC().ToData(),
+		}); err != nil {
+			return nil, fmt.Errorf("place demo vendor into session %q on new stack: %w", encID, err)
+		}
 	}
 
 	if err := o.rosterRepo.Save(ctx, &rosterrepo.Data{
