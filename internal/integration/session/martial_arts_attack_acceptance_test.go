@@ -131,14 +131,19 @@ func TestAcceptance_QuarterstaffAttackGrantsBonusUnarmedStrike(t *testing.T) {
 		}
 	}
 	require.NotNil(t, weaponComponent)
-	require.Equal(t, "dnd5e:weapons:unarmed-strike", weaponComponent.GetSourceRef())
-	require.Equal(t, "d4", weaponComponent.GetDice(),
-		"the level-1 Martial Arts condition replaces the ordinary unarmed die -- "+
-			"written the dice package's normalized way, which is what the roll trace "+
-			"records and this wire now carries verbatim (session/v0.50.0)")
+	require.NotNil(t, weaponComponent.GetRoll())
+	require.Equal(t, "dnd5e:weapons:unarmed-strike", weaponComponent.GetRoll().GetSource().GetRef())
+	require.Equal(t, "d4", weaponComponent.GetRoll().GetDice().GetNotation(),
+		"the normalized trace records the physical level-1 Martial Arts die")
+	require.Empty(t, weaponComponent.GetSourceRef())
+	require.Empty(t, weaponComponent.GetDice())
 	require.NotNil(t, abilityComponent)
-	require.Equal(t, refs.Abilities.Dexterity().String(), abilityComponent.GetSourceRef())
-	require.Equal(t, int32(4), abilityComponent.GetFlatBonus())
+	require.NotNil(t, abilityComponent.GetRoll())
+	require.Equal(t, refs.Abilities.Dexterity().String(), abilityComponent.GetRoll().GetSource().GetRef())
+	require.NotNil(t, abilityComponent.GetRoll().Modifier)
+	require.Equal(t, int32(4), abilityComponent.GetRoll().GetModifier())
+	require.Empty(t, abilityComponent.GetSourceRef())
+	require.Zero(t, abilityComponent.GetFlatBonus())
 
 	storedAfterBonus := storedSheetOf(t, h.charRepo, "alice")
 	require.NotNil(t, storedAfterBonus.ActionEconomy)

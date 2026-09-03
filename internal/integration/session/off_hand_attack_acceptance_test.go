@@ -190,8 +190,12 @@ func TestAcceptance_OffHandAttackIsASecondServerDeclaration(t *testing.T) {
 			if tc.fightingStyle {
 				feature := struck.GetDamageComponents()[1]
 				require.Equal(t, "feature", feature.GetSource())
-				require.Equal(t, refs.Conditions.FightingStyleTwoWeaponFighting().String(), feature.GetSourceRef())
-				require.Equal(t, int32(3), feature.GetFlatBonus())
+				require.NotNil(t, feature.GetRoll())
+				require.Equal(t, refs.Conditions.FightingStyleTwoWeaponFighting().String(), feature.GetRoll().GetSource().GetRef())
+				require.NotNil(t, feature.GetRoll().Modifier)
+				require.Equal(t, int32(3), feature.GetRoll().GetModifier())
+				require.Empty(t, feature.GetSourceRef())
+				require.Zero(t, feature.GetFlatBonus())
 			}
 
 			stored := storedSheetOf(t, h.charRepo, "alice")

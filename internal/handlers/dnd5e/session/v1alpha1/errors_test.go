@@ -40,6 +40,9 @@ func TestStatusError_CoversEverySDKSentinel(t *testing.T) {
 		{"ErrNoLoader", sdk.ErrNoLoader, codes.NotFound},
 		{"ErrNoSheet", sdk.ErrNoSheet, codes.NotFound},
 
+		// PERMISSION_DENIED -- authenticated, but owns no current seat.
+		{"ErrNotSeated", sdk.ErrNotSeated, codes.PermissionDenied},
+
 		// INVALID_ARGUMENT -- the request itself is malformed.
 		{"ErrNilInput", sdk.ErrNilInput, codes.InvalidArgument},
 		// ErrBadActivation is INVALID_ARGUMENT rather than Internal (where its
@@ -109,6 +112,7 @@ func TestStatusError_CoversEverySDKSentinel(t *testing.T) {
 		{"ErrBadRepository", sdk.ErrBadRepository, codes.Internal},
 		{"ErrBadCost", sdk.ErrBadCost, codes.Internal},
 		{"ErrBadCharacter", sdk.ErrBadCharacter, codes.Internal},
+		{"ErrBadNPC", sdk.ErrBadNPC, codes.Internal},
 		{"ErrInvalidSession", sdk.ErrInvalidSession, codes.Internal},
 		{"ErrNilConfig", sdk.ErrNilConfig, codes.Internal},
 		{"ErrIncompleteConfig", sdk.ErrIncompleteConfig, codes.Internal},
@@ -158,7 +162,7 @@ var errorsGoDefaultCaseSentinels = map[string]bool{
 	// any verb returns, so it should never reach a handler. See errors.go's
 	// own doc on statusError for the full reasoning.
 	"ErrNotFound": true,
-	// Session v0.48.0 adds these for its Interact verb, which this proto
+	// Session adds these for its Interact verb, which this proto
 	// service does not expose. Keeping the defensive Internal fallback avoids
 	// widening this activation-event change into a new transport contract;
 	// the API leg that adds Interact must choose and test its public codes.

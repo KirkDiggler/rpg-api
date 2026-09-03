@@ -163,6 +163,12 @@ func statusError(err error) error {
 		errors.Is(err, sdk.ErrCannotActivate):
 		return status.Error(codes.FailedPrecondition, err.Error())
 
+	// PERMISSION_DENIED -- the authenticated principal is real but owns no
+	// current player seat in this session. NotFound would expose roster state;
+	// Unauthenticated would deny that authentication already succeeded.
+	case errors.Is(err, sdk.ErrNotSeated):
+		return status.Error(codes.PermissionDenied, err.Error())
+
 	// ALREADY_EXISTS
 	case errors.Is(err, sdk.ErrSessionExists):
 		return status.Error(codes.AlreadyExists, err.Error())

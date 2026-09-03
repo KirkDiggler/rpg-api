@@ -25,19 +25,22 @@ response behavior was added.
 
 The miniredis-backed real Session Manager/Broker/Handler acceptance subscribes
 before a deterministic Second Wind activation, then proves ordered Activated →
-HealingApplied bodies with exact fields in both the live stream and GetStory,
-including byte-equality for matching sequence entries. The narrow
-`crypto/rand.Reader` replacement required by open provider issue
-rpg-toolkit#1427 is serialized and restored by the test.
+HealingApplied bodies with exact sourced `1d10 [6]` and `+1 Fighter level`
+components, authoritative requested total 7, applied clamp 2, and persisted HP
+8→10 in both the live stream and GetStory. The process-global
+`crypto/rand.Reader` replacement is deleted: one Session-scoped scripted roller
+now supplies formation and healing. A second real handler/broker acceptance
+loads persisted Great Weapon Fighting and uses one Session roller for formation,
+attack 15, original greatsword faces `[1,5]`, and reroll 4; live and catch-up are
+`proto.Equal`, carry original → sourced reroll → final `[4,5]` order with
+Strength +3 and authoritative damage 12, and contain no duplicate sequence or
+deprecated scalar mirror.
 
-Published-provider receipts: root D&D `v0.128.0`
-(`e1cca81189eea8a9b004f990eea11da809e232d4`), resolution `v0.30.0`
-(`2d7bbefcdbbf82fab7d7cb58f976e2ee39e1e9da`), Session `v0.48.0`
-(`08347a7b24b683cf495bd28451bfa540be016b90`), and generated Go proto
-`v0.0.0-20260903010453-f87c098979ce`
-(`f87c098979ce64f6c162a769e988c934a1fd80cc`). The API's newer direct
-encounter `v0.47.0` pin (`785cb87c3fc9b39c82cbbf35cb243185a89c3f05`)
-is preserved rather than downgraded to Session's transitive `v0.46.0`.
+Published-provider receipts: root D&D `v0.137.0`, encounter `v0.52.0`,
+resolution `v0.32.1`, Session `v0.53.1`, and generated contract release
+`v0.1.156` at `d62c00309beb847b8fb9f69d9f6c5976174cfb72` (the generated Go
+submodule is pinned by its commit pseudo-version
+`v0.0.0-20260903120430-d62c00309beb`).
 
 **First-admission normal rest owned by toolkit Session Join (rpg-api#882/#889,
 rpg-project#341/#343, 2026-09-02)** — the API now pins root D&D `v0.128.0`,
