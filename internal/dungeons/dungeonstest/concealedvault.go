@@ -14,6 +14,11 @@ const ConcealedVaultKey = "concealed-vault"
 // rest of its geometry arrive as a beat, because an open door is a room seen
 // into.
 //
+// A second line stands INSIDE the vault. Its footprint is vault floor only, so
+// no footing ever presents it to a non-knower, and it is exactly what the
+// reveal's segment list must hand over (design §5.2a): the seam they already
+// had is not news, the wall inside the room is.
+//
 // The seam is a quarter line, so nothing here is sealed by authoring. What a
 // non-knower's sealed list holds is the FOOTING the projection gives that wall
 // (design §4.6): floor the wall stands on that belongs to a room they cannot
@@ -55,6 +60,11 @@ walls:
   - start: { cell: [4,2], offset: [-0.25, 0.375] }
     end:   { cell: [4,0], offset: [-0.25, -0.375] }
     name: the vault seam
+  # A quarter line inside the vault, two columns in: no hall cell is in its
+  # footprint, so a non-knower is never shown it and the reveal must carry it.
+  - start: { cell: [6,2], offset: [-0.25, 0.375] }
+    end:   { cell: [6,0], offset: [-0.25, -0.375] }
+    name: the vault's inner wall
 
 # Shut and hidden. Finding it is a perception check; crossing it is what makes
 # the vault yours.

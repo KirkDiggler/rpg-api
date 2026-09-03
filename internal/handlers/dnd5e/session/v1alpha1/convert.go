@@ -538,10 +538,44 @@ func setEventBody(evt *sessionpb.Event, body sdk.EventBody) {
 			Doorways: atlasDoorwaysToProto(b.Doorways),
 		}}
 	case sdk.RegionRevealedBody:
+		// Segments and Sealed do NOT mean the same shape of thing here, and a
+		// client that treats them alike will draw the wrong room. Both are
+		// carried verbatim; neither is recomputed here.
+		//
+		// SEGMENTS IS A DIFFERENCE, and adds: the walls this recipient did not
+		// have and now does. A wall already presented to them for any reason --
+		// the seam their own concealed door hides in, or one footing on floor
+		// they can already see -- is deliberately absent, because it is not news
+		// and they are already drawing it. So this is append-to-cache, never
+		// replace-for-region. It HAS to be a difference: a segment carries no
+		// footprint on purpose, so there is no way to ask which cells a wall
+		// stands on without leaking what the doorway list withholds. No wall
+		// ever leaves, so the atlas after a reveal is the atlas before it union
+		// this.
+		//
+		// SEALED IS SCOPED, AND REPLACES, and the scoping is load-bearing rather
+		// than a style choice: a client swaps out the revealed region's cells
+		// and keeps every other sealed cell it had. Cells LEAVE this list. A
+		// non-knower's sealed list already holds some of the hidden room's own
+		// cells -- the footing of the walls presented to them (design C18),
+		// which reaches them as ownerless floor, and ownerless floor is floor
+		// nobody stands on -- and the moment the room is theirs those same cells
+		// are ordinary standable floor. A client that appended would leave a
+		// room it can see permanently unwalkable at its edges. So the atlas
+		// after a reveal is (the atlas before it, less the revealed region's
+		// cells) union this, which is why the beat carries the region's cells
+		// beside it. A difference could only ever add, and this field has to be
+		// able to take away.
+		sealed := make([]*sessionpb.Position, len(b.Sealed))
+		for i, c := range b.Sealed {
+			sealed[i] = positionToProto(c)
+		}
 		evt.Body = &sessionpb.Event_RegionRevealed{RegionRevealed: &sessionpb.RegionRevealed{
 			Region:     atlasRegionToProto(b.Region),
 			Props:      atlasPropsToProto(b.Props),
 			Boundaries: atlasBoundariesToProto(b.Boundaries),
+			Segments:   atlasSegmentsToProto(b.Segments),
+			Sealed:     sealed,
 		}}
 	default:
 		// nil (no typed body for this kind) or a body type this build does
@@ -607,7 +641,7 @@ func healingAppliedBodyToProto(body *sdk.HealingAppliedBody) *sessionpb.HealingA
 	roll, modifier := rollAndModifierOf(body.Calculation)
 	return &sessionpb.HealingApplied{
 		Target: body.Target, Amount: int32(body.Amount), Requested: int32(body.Requested),
-		Roll: roll, Modifier: modifier,
+		Roll: roll, Modifier: modifier, //nolint:staticcheck // deprecated on the wire; the current client still reads them
 		SourceRef: body.SourceRef, SourceName: body.SourceName,
 		HpBefore: int32(body.HPBefore), HpAfter: int32(body.HPAfter),
 	}
@@ -1037,8 +1071,11 @@ func damageComponentsToProto(in []sdk.DamageComponent) []*sessionpb.DamageCompon
 			multiplier = &value
 		}
 		out[i] = &sessionpb.DamageComponent{
+			// SourceRef, FinalRolls and FlatBonus are deprecated on the wire (the
+			// roll-traces lane replaces them with the trace); the client still reads them.
+			//nolint:staticcheck // deprecated wire fields, filled on purpose
 			Source: component.Source, SourceRef: component.Roll.Source.Ref, Dice: notation,
-			FinalRolls: rolls, FlatBonus: flatBonus,
+			FinalRolls: rolls, FlatBonus: flatBonus, //nolint:staticcheck // see above
 			DamageType: damageTypeToProto(component.DamageType), Multiplier: multiplier,
 		}
 	}

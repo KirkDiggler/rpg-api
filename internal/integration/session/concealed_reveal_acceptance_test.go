@@ -21,6 +21,62 @@ import (
 // repeated Position field.
 type cellSet map[spatial.Position]bool
 
+// wireSegment is one atlas segment as the proto carries it, comparable so a
+// test can ask set questions of a repeated field.
+type wireSegment struct {
+	fromQ, fromR, toQ, toR float64
+	height                 float32
+}
+
+func segmentSet(ss []*sessionpb.AtlasSegment) map[wireSegment]bool {
+	out := make(map[wireSegment]bool, len(ss))
+	for _, s := range ss {
+		out[wireSegment{
+			fromQ: s.GetFrom().GetQ(), fromR: s.GetFrom().GetR(),
+			toQ: s.GetTo().GetQ(), toR: s.GetTo().GetR(),
+			height: s.GetHeight(),
+		}] = true
+	}
+
+	return out
+}
+
+func unionOfSegments(a, b map[wireSegment]bool) map[wireSegment]bool {
+	out := make(map[wireSegment]bool, len(a)+len(b))
+	for k := range a {
+		out[k] = true
+	}
+	for k := range b {
+		out[k] = true
+	}
+
+	return out
+}
+
+// without returns the cells of a that are not in b.
+func (c cellSet) without(b cellSet) cellSet {
+	out := make(cellSet, len(c))
+	for k := range c {
+		if !b[k] {
+			out[k] = true
+		}
+	}
+
+	return out
+}
+
+func (c cellSet) union(b cellSet) cellSet {
+	out := make(cellSet, len(c)+len(b))
+	for k := range c {
+		out[k] = true
+	}
+	for k := range b {
+		out[k] = true
+	}
+
+	return out
+}
+
 func setOfPositions(ps []*sessionpb.Position) cellSet {
 	out := make(cellSet, len(ps))
 	for _, p := range ps {
@@ -149,4 +205,32 @@ func TestAcceptance_OpeningAConcealedDoorRevealsTheRoomOnTheWire(t *testing.T) {
 	require.Equal(t, offsetCells(dungeonstest.ConcealedVaultVaultCells),
 		setOfPositions(revealed.GetRegion().GetCells()),
 		"and the beat said the same twelve, which is what lets a client patch instead of refetch")
+
+	// SEGMENTS ADD. The beat hands over the walls she did not have, nothing
+	// ever leaves, and a client that appends them to its cache lands exactly
+	// where a refetch would have put it. The beat must carry at least one, or
+	// a revealed room draws with no walls at all -- which is precisely what
+	// happens to a client that has deleted its boundary fitter.
+	beforeSegments := segmentSet(before.GetSegments())
+	eventSegments := segmentSet(revealed.GetSegments())
+	require.NotEmpty(t, eventSegments, "the beat has to hand over the room's walls")
+	require.Equal(t, unionOfSegments(beforeSegments, eventSegments),
+		segmentSet(after.GetSegments()),
+		"segments after a reveal are segments before it plus the beat's, exactly")
+
+	// SEALED REPLACES, WITHIN THE ROOM, and cells LEAVE. Before the reveal her
+	// sealed list holds the footing the projection gave that wall: floor it
+	// stands on that belongs to a room she cannot see reaches her as ownerless,
+	// and ownerless floor is floor nobody stands on. The moment the vault is
+	// hers those same cells are ordinary vault floor. A client that appended
+	// the beat's sealed list instead of swapping the room's would leave a room
+	// it can see permanently unwalkable at its edges.
+	vault := offsetCells(dungeonstest.ConcealedVaultVaultCells)
+	beforeSealed := setOfPositions(before.GetSealed())
+	afterSealed := setOfPositions(after.GetSealed())
+	require.Equal(t, beforeSealed.without(vault).union(setOfPositions(revealed.GetSealed())),
+		afterSealed,
+		"sealed after a reveal is sealed before it, less the revealed room's cells, plus the beat's")
+	require.NotEmpty(t, beforeSealed.without(afterSealed),
+		"cells have to LEAVE the sealed list, or this assertion would pass on an append too")
 }
