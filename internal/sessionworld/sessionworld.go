@@ -350,9 +350,12 @@ type nobodyDown struct{}
 
 // Standing reports who is DOWN, not who is up -- the interface's own parameter
 // is named down, and reading it backwards would report a healthy party as a
-// wiped one. Nobody has been hit yet in a world this new, so: nobody.
+// wiped one. Nobody has been hit yet in a world this new, so: nobody, said as
+// an empty list rather than a nil one. A nil slice with a nil error is the
+// shape this repo never returns: a caller cannot tell "nobody is down" from
+// "nothing was answered".
 func (nobodyDown) Standing(_ []tkencounter.MemberID) ([]tkencounter.MemberID, error) {
-	return nil, nil
+	return []tkencounter.MemberID{}, nil
 }
 
 // Assess is the richer half of the same answer, required of a Standing
@@ -424,5 +427,5 @@ type nobodyPerceives struct{}
 // fix (rpg-api#887). See the comment above [orderAsGiven] for the full
 // reasoning.
 func (nobodyPerceives) Perceivers(*tkencounter.PerceiversInput) ([]tkencounter.MemberID, error) {
-	return nil, nil
+	return []tkencounter.MemberID{}, nil // nobody, as an empty list: never nil with a nil error
 }

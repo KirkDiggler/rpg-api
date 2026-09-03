@@ -75,7 +75,7 @@ type allStanding struct{}
 // name is `down`, and reading it the other way round would report a healthy
 // party as a wiped one.
 func (allStanding) Standing(_ []tkencounter.MemberID) ([]tkencounter.MemberID, error) {
-	return nil, nil
+	return []tkencounter.MemberID{}, nil // nobody is down, said as an empty list, never nil with a nil error
 }
 
 // Assess says the same thing in the fuller vocabulary encounter/v0.51.0 asks
