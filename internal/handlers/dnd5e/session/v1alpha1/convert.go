@@ -629,48 +629,29 @@ func activationResultBodyToProto(body sdk.ActivationResultBody) *sessionpb.Activ
 	return result
 }
 
-// healingAppliedBodyToProto mirrors a heal onto the wire. Roll and Modifier
-// come out of Calculation for the same reason damageComponentsToProto's do:
-// the scalars beside it are the LEGACY READ path and a newly produced body
-// leaves them zero (session/v0.50.0, toolkit#1470). Requested is not a roll
-// fact and was never moved.
+// healingAppliedBodyToProto mirrors a heal onto the wire without deriving one
+// representation from the other. New bodies carry Calculation only; legacy
+// Story records retain their deprecated Roll and Modifier scalars.
 func healingAppliedBodyToProto(body *sdk.HealingAppliedBody) *sessionpb.HealingApplied {
 	if body == nil {
 		return nil
 	}
-	roll, modifier := rollAndModifierOf(body.Calculation)
-	return &sessionpb.HealingApplied{
+	out := &sessionpb.HealingApplied{
 		Target: body.Target, Amount: int32(body.Amount), Requested: int32(body.Requested),
-		Roll: roll, Modifier: modifier, //nolint:staticcheck // deprecated on the wire; the current client still reads them
 		SourceRef: body.SourceRef, SourceName: body.SourceName,
 		HpBefore: int32(body.HPBefore), HpAfter: int32(body.HPAfter),
 	}
-}
-
-// rollAndModifierOf flattens a sourced roll calculation into the two scalars
-// this wire has carried since before traces existed: what the dice came to,
-// and what was added to them.
-//
-// SUMMED ACROSS COMPONENTS, because the wire's two fields are one number each
-// and a calculation may hold several sourced parts -- a heal's die and the
-// class level that adds to it are two components of one roll. Summing is what
-// the scalars always meant; picking one component and calling it "the roll"
-// would silently drop the others. A nil calculation is a body with no roll
-// behind it and answers zero for both, which is what a reader already renders
-// for "nothing was rolled".
-func rollAndModifierOf(calculation *sdk.RollCalculation) (roll, modifier int32) {
-	if calculation == nil {
-		return 0, 0
+	if body.Calculation != nil {
+		// New bodies populate only Calculation. Its total is authoritative;
+		// neither Requested nor the deprecated scalars are derived from it.
+		out.Calculation = rollCalculationToProto(body.Calculation)
+	} else {
+		// Legacy bodies retain exactly the two deprecated scalar fields and do
+		// not gain a fabricated calculation.
+		out.Roll = int32(body.Roll)         //nolint:staticcheck // Required read compatibility for pre-trace Story records.
+		out.Modifier = int32(body.Modifier) //nolint:staticcheck // Required read compatibility for pre-trace Story records.
 	}
-	for _, component := range calculation.Components {
-		if component.Dice != nil {
-			roll += int32(component.Dice.Subtotal)
-		}
-		if component.Modifier != nil {
-			modifier += int32(*component.Modifier)
-		}
-	}
-	return roll, modifier
+	return out
 }
 
 func conditionAppliedBodyToProto(body *sdk.ConditionAppliedBody) *sessionpb.ConditionApplied {
@@ -1032,52 +1013,125 @@ func damageTypeToProto(d sdk.DamageType) sessionpb.DamageType {
 	}
 }
 
-// damageComponentsToProto mirrors the SDK's damage components onto the wire.
-//
-// EVERY ROLL FACT NOW COMES OUT OF Roll, not out of the scalars beside it
-// (session/v0.50.0, toolkit#1470). DamageComponent kept SourceRef, Dice,
-// FinalRolls and FlatBonus as a LEGACY READ path -- the strict decoder fills
-// them only when it reads a payload persisted before roll traces existed, and
-// a newly produced body carries none of them. Reading them here is what made
-// three acceptance tests report an empty source ref against a component that
-// plainly had one.
-//
-// The wire is unchanged, and deliberately: these four fields are exactly the
-// four facts the trace holds, one level down. What the trace holds and the
-// wire does not -- original faces before a reroll, the rerolls and their
-// sources, which faces were kept -- is a WIDER message than this one and is
-// not smuggled into these fields; carrying it is its own piece of work.
+// rollSourceToProto copies the provider-authored identity without parsing its
+// ref or deriving a display label.
+func rollSourceToProto(source *sdk.RollSource) *sessionpb.RollSource {
+	if source == nil {
+		return nil
+	}
+	return &sessionpb.RollSource{Ref: source.Ref, Name: source.Name, Label: source.Label}
+}
+
+// diceRerollToProto copies one sourced replacement. Ordering is owned by the
+// caller's DiceTrace and is preserved by diceTraceToProto.
+func diceRerollToProto(reroll *sdk.DiceReroll) *sessionpb.DiceReroll {
+	if reroll == nil {
+		return nil
+	}
+	return &sessionpb.DiceReroll{
+		DieIndex: int32(reroll.DieIndex),
+		Before:   int32(reroll.Before),
+		After:    int32(reroll.After),
+		Source:   rollSourceToProto(&reroll.Source),
+	}
+}
+
+func intsToInt32s(values []int) []int32 {
+	out := make([]int32, len(values))
+	for i, value := range values {
+		out[i] = int32(value)
+	}
+	return out
+}
+
+// diceTraceToProto copies the complete physical dice history field-for-field.
+// Subtotal is authoritative and is never recomputed from the face lists.
+func diceTraceToProto(trace *sdk.DiceTrace) *sessionpb.DiceTrace {
+	if trace == nil {
+		return nil
+	}
+	rerolls := make([]*sessionpb.DiceReroll, len(trace.Rerolls))
+	for i := range trace.Rerolls {
+		rerolls[i] = diceRerollToProto(&trace.Rerolls[i])
+	}
+	return &sessionpb.DiceTrace{
+		Notation:      trace.Notation,
+		DieSize:       int32(trace.DieSize),
+		OriginalRolls: intsToInt32s(trace.OriginalRolls),
+		Rerolls:       rerolls,
+		FinalRolls:    intsToInt32s(trace.FinalRolls),
+		KeptIndices:   intsToInt32s(trace.KeptIndices),
+		Subtotal:      int32(trace.Subtotal),
+	}
+}
+
+// rollComponentToProto preserves optional modifier presence, including a
+// present zero. Dice and source are independently copied and never aliased.
+func rollComponentToProto(component *sdk.RollComponent) *sessionpb.RollComponent {
+	if component == nil {
+		return nil
+	}
+	out := &sessionpb.RollComponent{
+		Source: rollSourceToProto(&component.Source),
+		Dice:   diceTraceToProto(component.Dice),
+	}
+	if component.Modifier != nil {
+		modifier := int32(*component.Modifier)
+		out.Modifier = &modifier
+	}
+	return out
+}
+
+// rollCalculationToProto preserves component production order and copies the
+// producer's authoritative total without validation or arithmetic.
+func rollCalculationToProto(calculation *sdk.RollCalculation) *sessionpb.RollCalculation {
+	if calculation == nil {
+		return nil
+	}
+	components := make([]*sessionpb.RollComponent, len(calculation.Components))
+	for i := range calculation.Components {
+		components[i] = rollComponentToProto(&calculation.Components[i])
+	}
+	return &sessionpb.RollCalculation{Components: components, Total: int32(calculation.Total)}
+}
+
+// hasRollComponent reports which of DamageComponent's two SDK read shapes is
+// populated. Session's strict decoder guarantees exactly one representation;
+// this converter only selects its carrier and neither validates nor merges it.
+func hasRollComponent(component *sdk.RollComponent) bool {
+	if component == nil {
+		return false
+	}
+	return component.Source.Ref != "" || component.Source.Name != "" || component.Source.Label != "" ||
+		component.Dice != nil || component.Modifier != nil
+}
+
 func damageComponentsToProto(in []sdk.DamageComponent) []*sessionpb.DamageComponent {
 	out := make([]*sessionpb.DamageComponent, len(in))
-	for i, component := range in {
-		var (
-			notation string
-			rolls    []int32
-		)
-		if dice := component.Roll.Dice; dice != nil {
-			notation = dice.Notation
-			rolls = make([]int32, len(dice.FinalRolls))
-			for j, roll := range dice.FinalRolls {
-				rolls[j] = int32(roll)
-			}
-		}
-		var flatBonus int32
-		if component.Roll.Modifier != nil {
-			flatBonus = int32(*component.Roll.Modifier)
-		}
+	for i := range in {
+		component := &in[i]
 		var multiplier *float64
 		if component.Multiplier != nil {
 			value := *component.Multiplier
 			multiplier = &value
 		}
-		out[i] = &sessionpb.DamageComponent{
-			// SourceRef, FinalRolls and FlatBonus are deprecated on the wire (the
-			// roll-traces lane replaces them with the trace); the client still reads them.
-			//nolint:staticcheck // deprecated wire fields, filled on purpose
-			Source: component.Source, SourceRef: component.Roll.Source.Ref, Dice: notation,
-			FinalRolls: rolls, FlatBonus: flatBonus, //nolint:staticcheck // see above
-			DamageType: damageTypeToProto(component.DamageType), Multiplier: multiplier,
+		converted := &sessionpb.DamageComponent{
+			Source: component.Source, DamageType: damageTypeToProto(component.DamageType),
+			Multiplier: multiplier,
 		}
+		if hasRollComponent(&component.Roll) {
+			// New bodies populate only Roll. Deprecated scalar fields stay empty,
+			// even if a malformed in-memory value also happens to carry them.
+			converted.Roll = rollComponentToProto(&component.Roll)
+		} else {
+			// Legacy bodies populate only their deprecated scalars. In
+			// particular, no roll trace is fabricated from final faces.
+			converted.SourceRef = component.SourceRef                 //nolint:staticcheck // Required pre-trace Story read compatibility.
+			converted.Dice = component.Dice                           //nolint:staticcheck // Required pre-trace Story read compatibility.
+			converted.FinalRolls = intsToInt32s(component.FinalRolls) //nolint:staticcheck // Required pre-trace Story read compatibility.
+			converted.FlatBonus = int32(component.FlatBonus)          //nolint:staticcheck // Required pre-trace Story read compatibility.
+		}
+		out[i] = converted
 	}
 	return out
 }

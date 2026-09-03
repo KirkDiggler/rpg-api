@@ -407,6 +407,192 @@ func TestStrikeDetailToProto_EmptyStaysNonNil(t *testing.T) {
 	require.Empty(t, attackModifierSourcesToProto(nil))
 }
 
+func TestRollTraceConverters_NilSafe(t *testing.T) {
+	require.Nil(t, rollSourceToProto(nil))
+	require.Nil(t, diceRerollToProto(nil))
+	require.Nil(t, diceTraceToProto(nil))
+	require.Nil(t, rollComponentToProto(nil))
+	require.Nil(t, rollCalculationToProto(nil))
+}
+
+func TestRollCalculationToProto_FieldForFieldOrderPresenceAndIsolation(t *testing.T) {
+	zero := 0
+	negative := -3
+	in := &sdk.RollCalculation{
+		Components: []sdk.RollComponent{
+			{
+				Source: sdk.RollSource{
+					Ref: "dnd5e:weapons:greatsword", Name: "Greatsword", Label: "primary",
+				},
+				Dice: &sdk.DiceTrace{
+					Notation: "2d6", DieSize: 6,
+					OriginalRolls: []int{1, 5},
+					Rerolls: []sdk.DiceReroll{
+						{
+							DieIndex: 0, Before: 1, After: 4,
+							Source: sdk.RollSource{
+								Ref:  "dnd5e:conditions:fighting_style_great_weapon_fighting",
+								Name: "Great Weapon Fighting", Label: "first reroll",
+							},
+						},
+						{
+							DieIndex: 1, Before: 5, After: 6,
+							Source: sdk.RollSource{Ref: "test:conditions:second", Name: "Second", Label: "second reroll"},
+						},
+					},
+					FinalRolls: []int{4, 6}, KeptIndices: []int{1, 0},
+					Subtotal: 91,
+				},
+				Modifier: &zero,
+			},
+			{
+				Source:   sdk.RollSource{Ref: "dnd5e:abilities:str", Name: "Strength", Label: "ability modifier"},
+				Modifier: &negative,
+			},
+		},
+		Total: 777,
+	}
+
+	wantZero := int32(0)
+	wantNegative := int32(-3)
+	want := &sessionpb.RollCalculation{
+		Components: []*sessionpb.RollComponent{
+			{
+				Source: &sessionpb.RollSource{Ref: "dnd5e:weapons:greatsword", Name: "Greatsword", Label: "primary"},
+				Dice: &sessionpb.DiceTrace{
+					Notation: "2d6", DieSize: 6,
+					OriginalRolls: []int32{1, 5},
+					Rerolls: []*sessionpb.DiceReroll{
+						{
+							DieIndex: 0, Before: 1, After: 4,
+							Source: &sessionpb.RollSource{
+								Ref:  "dnd5e:conditions:fighting_style_great_weapon_fighting",
+								Name: "Great Weapon Fighting", Label: "first reroll",
+							},
+						},
+						{
+							DieIndex: 1, Before: 5, After: 6,
+							Source: &sessionpb.RollSource{Ref: "test:conditions:second", Name: "Second", Label: "second reroll"},
+						},
+					},
+					FinalRolls: []int32{4, 6}, KeptIndices: []int32{1, 0},
+					Subtotal: 91,
+				},
+				Modifier: &wantZero,
+			},
+			{
+				Source:   &sessionpb.RollSource{Ref: "dnd5e:abilities:str", Name: "Strength", Label: "ability modifier"},
+				Modifier: &wantNegative,
+			},
+		},
+		Total: 777,
+	}
+
+	got := rollCalculationToProto(in)
+	require.True(t, proto.Equal(want, got), "the converter copies every authored field without recomputing totals")
+	require.NotNil(t, got.GetComponents()[0].Modifier, "a present zero modifier stays present")
+	require.Equal(t, []int32{1, 0}, got.GetComponents()[0].GetDice().GetKeptIndices(), "producer order is preserved")
+	require.Equal(t, int32(91), got.GetComponents()[0].GetDice().GetSubtotal(), "the authoritative subtotal is not resummed")
+	require.Equal(t, int32(777), got.GetTotal(), "the authoritative total is not recalculated")
+
+	got.Components[0].Source.Name = "mutated"
+	got.Components[0].Dice.OriginalRolls[0] = 99
+	got.Components[0].Dice.Rerolls[0].Source.Label = "mutated"
+	*got.Components[0].Modifier = 9
+	require.Equal(t, "Greatsword", in.Components[0].Source.Name)
+	require.Equal(t, []int{1, 5}, in.Components[0].Dice.OriginalRolls)
+	require.Equal(t, "first reroll", in.Components[0].Dice.Rerolls[0].Source.Label)
+	require.Zero(t, *in.Components[0].Modifier, "the proto owns its optional scalar")
+}
+
+func TestRollDamageComponentToProto_NewAndLegacyRepresentationsNeverMix(t *testing.T) {
+	zeroModifier := 0
+	zeroMultiplier := 0.0
+
+	newComponent := damageComponentsToProto([]sdk.DamageComponent{{
+		Source: "weapon",
+		Roll: sdk.RollComponent{
+			Source: sdk.RollSource{Ref: "dnd5e:weapons:greatsword", Name: "Greatsword"},
+			Dice: &sdk.DiceTrace{
+				Notation: "2d6", DieSize: 6, OriginalRolls: []int{1, 5},
+				Rerolls: []sdk.DiceReroll{{
+					DieIndex: 0, Before: 1, After: 4,
+					Source: sdk.RollSource{
+						Ref: "dnd5e:conditions:fighting_style_great_weapon_fighting", Name: "Great Weapon Fighting",
+					},
+				}},
+				FinalRolls: []int{4, 5}, Subtotal: 9,
+			},
+			Modifier: &zeroModifier,
+		},
+		DamageType: sdk.DamageSlashing, Multiplier: &zeroMultiplier,
+		// A malformed in-memory body can carry both representations even though
+		// Session's decoder never creates one. The API still emits only the new
+		// representation when Roll is present; it does not merge or validate.
+		SourceRef: "legacy-ref", Dice: "legacy-dice", FinalRolls: []int{6}, FlatBonus: 6,
+	}})[0]
+
+	require.NotNil(t, newComponent.GetRoll())
+	require.Equal(t, []int32{1, 5}, newComponent.GetRoll().GetDice().GetOriginalRolls())
+	require.Equal(t, []int32{4, 5}, newComponent.GetRoll().GetDice().GetFinalRolls())
+	require.NotNil(t, newComponent.GetRoll().Modifier)
+	require.Zero(t, newComponent.GetRoll().GetModifier())
+	require.NotNil(t, newComponent.Multiplier)
+	require.Zero(t, newComponent.GetMultiplier())
+	require.Empty(t, newComponent.GetSourceRef())
+	require.Empty(t, newComponent.GetDice())
+	require.Nil(t, newComponent.GetFinalRolls())
+	require.Zero(t, newComponent.GetFlatBonus())
+
+	legacyComponent := damageComponentsToProto([]sdk.DamageComponent{{
+		Source: "weapon", SourceRef: "dnd5e:weapons:longsword", Dice: "1d8",
+		FinalRolls: []int{7, 2}, FlatBonus: 3, DamageType: sdk.DamageSlashing,
+	}})[0]
+	require.Nil(t, legacyComponent.GetRoll())
+	require.Equal(t, "dnd5e:weapons:longsword", legacyComponent.GetSourceRef())
+	require.Equal(t, "1d8", legacyComponent.GetDice())
+	require.Equal(t, []int32{7, 2}, legacyComponent.GetFinalRolls())
+	require.Equal(t, int32(3), legacyComponent.GetFlatBonus())
+}
+
+func TestRollHealingAppliedToProto_NewAndLegacyRepresentationsNeverMix(t *testing.T) {
+	level := 1
+	newBody := healingAppliedBodyToProto(&sdk.HealingAppliedBody{
+		Target: "alice", Amount: 2, Requested: 7, Roll: 99, Modifier: 98,
+		SourceRef: "dnd5e:features:second_wind", SourceName: "Second Wind",
+		HPBefore: 8, HPAfter: 10,
+		Calculation: &sdk.RollCalculation{
+			Components: []sdk.RollComponent{
+				{
+					Source: sdk.RollSource{Ref: "dnd5e:features:second_wind", Name: "Second Wind"},
+					Dice: &sdk.DiceTrace{
+						Notation: "1d10", DieSize: 10, OriginalRolls: []int{6}, FinalRolls: []int{6}, Subtotal: 6,
+					},
+				},
+				{
+					Source:   sdk.RollSource{Ref: "dnd5e:classes:fighter", Name: "Fighter", Label: "Fighter level"},
+					Modifier: &level,
+				},
+			},
+			Total: 7,
+		},
+	})
+	require.NotNil(t, newBody.GetCalculation())
+	require.Equal(t, int32(7), newBody.GetCalculation().GetTotal())
+	require.Equal(t, "Fighter level", newBody.GetCalculation().GetComponents()[1].GetSource().GetLabel())
+	require.Zero(t, newBody.GetRoll(), "new events do not also populate deprecated roll")
+	require.Zero(t, newBody.GetModifier(), "new events do not also populate deprecated modifier")
+
+	legacyBody := healingAppliedBodyToProto(&sdk.HealingAppliedBody{
+		Target: "alice", Amount: 2, Requested: 7, Roll: 6, Modifier: 1,
+		SourceRef: "dnd5e:features:second_wind", SourceName: "Second Wind",
+		HPBefore: 8, HPAfter: 10,
+	})
+	require.Nil(t, legacyBody.GetCalculation())
+	require.Equal(t, int32(6), legacyBody.GetRoll())
+	require.Equal(t, int32(1), legacyBody.GetModifier())
+}
+
 func richStruckEvent() sdk.Event {
 	immunity := 0.0
 	return sdk.Event{
@@ -562,8 +748,13 @@ func TestActivationEventBodiesToProto(t *testing.T) {
 		require.Equal(t, "alice", healing.GetTarget())
 		require.Equal(t, int32(2), healing.GetAmount())
 		require.Equal(t, int32(7), healing.GetRequested())
-		require.Equal(t, int32(6), healing.GetRoll())
-		require.Equal(t, int32(1), healing.GetModifier())
+		require.Zero(t, healing.GetRoll())
+		require.Zero(t, healing.GetModifier())
+		require.NotNil(t, healing.GetCalculation())
+		require.Equal(t, int32(7), healing.GetCalculation().GetTotal())
+		require.Len(t, healing.GetCalculation().GetComponents(), 2)
+		require.Equal(t, "d10", healing.GetCalculation().GetComponents()[0].GetDice().GetNotation())
+		require.Equal(t, int32(1), healing.GetCalculation().GetComponents()[1].GetModifier())
 		require.Equal(t, "dnd5e:features:second_wind", healing.GetSourceRef())
 		require.Equal(t, "Second Wind", healing.GetSourceName())
 		require.Equal(t, int32(8), healing.GetHpBefore())
@@ -955,14 +1146,24 @@ func TestEventToProto_TypedBodies(t *testing.T) {
 		require.Len(t, s.GetDamageComponents(), 2)
 		weapon := s.GetDamageComponents()[0]
 		require.Equal(t, "weapon", weapon.GetSource())
-		require.Equal(t, "dnd5e:weapons:longsword", weapon.GetSourceRef())
-		require.Equal(t, "1d8", weapon.GetDice())
-		require.Equal(t, []int32{4}, weapon.GetFinalRolls())
+		require.NotNil(t, weapon.GetRoll())
+		require.Equal(t, "dnd5e:weapons:longsword", weapon.GetRoll().GetSource().GetRef())
+		require.Equal(t, "Longsword", weapon.GetRoll().GetSource().GetName())
+		require.Equal(t, "1d8", weapon.GetRoll().GetDice().GetNotation())
+		require.Equal(t, []int32{4}, weapon.GetRoll().GetDice().GetFinalRolls())
+		require.Empty(t, weapon.GetSourceRef())
+		require.Empty(t, weapon.GetDice())
+		require.Nil(t, weapon.GetFinalRolls())
 		require.Equal(t, sessionpb.DamageType_DAMAGE_TYPE_SLASHING, weapon.GetDamageType())
 		require.Nil(t, weapon.Multiplier)
 
 		immunity := s.GetDamageComponents()[1]
 		require.Equal(t, "monster_trait", immunity.GetSource())
+		require.NotNil(t, immunity.GetRoll())
+		require.Equal(t, "dnd5e:monster_traits:immunity", immunity.GetRoll().GetSource().GetRef())
+		require.Nil(t, immunity.GetRoll().GetDice())
+		require.Nil(t, immunity.GetRoll().Modifier)
+		require.Empty(t, immunity.GetSourceRef())
 		require.NotNil(t, immunity.Multiplier)
 		require.Zero(t, immunity.GetMultiplier())
 
