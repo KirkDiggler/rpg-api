@@ -349,13 +349,21 @@ Older guidance (per-repo `journey/` and `adr/` as primary doc types) has been re
 
 **Every feature follows this workflow to ensure quality and catch CI issues early:**
 
-1. **Always start from latest main**
+1. **Always start from latest `dev`, not `main`**
+
+   `dev` is the actual current working state for this repo. `main` is only
+   periodically promoted from `dev` (see commits like "promote: the session
+   stack to production") and can sit tens of commits behind in between —
+   including real toolkit dependency bumps and fixes. Branching from `main`
+   makes already-resolved `dev` work look like fresh, unexplained breakage.
+   Confirm before assuming otherwise: `git log origin/main..origin/dev --oneline`.
+
    ```bash
-   gcm                          # git checkout main
-   gl                           # git pull
+   git checkout dev
+   git pull
    ```
 
-2. **Create feature branch**
+2. **Create feature branch (from `dev`)**
    ```bash
    git checkout -b feat/spell-selection
    ```
