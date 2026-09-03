@@ -45,6 +45,7 @@ type Manager interface {
 	OpenDoor(ctx context.Context, in *sdk.OpenDoorInput) (*sdk.OpenDoorOutput, error)
 	Unlock(ctx context.Context, in *sdk.UnlockInput) (*sdk.UnlockOutput, error)
 	Search(ctx context.Context, in *sdk.SearchInput) (*sdk.SearchOutput, error)
+	Interact(ctx context.Context, in *sdk.InteractInput) (*sdk.InteractOutput, error)
 }
 
 // Handler is the wire form of the toolkit's rulebooks/dnd5e/session SDK.

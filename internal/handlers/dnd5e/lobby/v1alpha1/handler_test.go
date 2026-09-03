@@ -84,6 +84,14 @@ func (s *HandlerSuite) SetupTest() {
 	})
 	s.Require().NoError(err)
 	s.handler = h
+
+	// StartEncounter's Phase 1 demo-vendor placement (rpg-api#903) seats a
+	// KindWorld member the SDK's own announcer treats like any other
+	// non-monster participant when building narrative-beat casts: it looks
+	// the ID up as a character, tolerates ErrNoCharacter, and moves on. Armed
+	// suite-wide, the same defensive way expectCharacter's own Update call
+	// is, so no test that reaches StartEncounter has to know this detail.
+	s.expectCharacterNotFound("demo-merchant-1")
 }
 
 func (s *HandlerSuite) TearDownTest() {

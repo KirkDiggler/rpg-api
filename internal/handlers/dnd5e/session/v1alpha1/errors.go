@@ -141,6 +141,13 @@ func statusError(err error) error {
 	//   named region is real-but-elsewhere or does not exist at all, so a
 	//   distinct NotFound here would hand a client a way to probe for regions
 	//   it has never seen by the code alone (the probe law, rpg-project#350).
+	//
+	//   ErrOutOfRange / ErrNotVisible (rpg-toolkit#1404, Interact) -- the
+	//   host-seam twins of encounter's ErrOutOfRange/ErrNotVisible: the named
+	//   world NPC exists and the actor is real, the reach or the sightline
+	//   just doesn't hold right now. Same shape as ErrOutOfReach above -- a
+	//   well-formed call the current world state refuses, not a caller
+	//   naming something that doesn't exist.
 	case errors.Is(err, sdk.ErrInBubble),
 		errors.Is(err, sdk.ErrNotInFight),
 		errors.Is(err, sdk.ErrClosed),
@@ -154,6 +161,8 @@ func statusError(err error) error {
 		errors.Is(err, sdk.ErrNotYourTurn),
 		errors.Is(err, sdk.ErrOutOfReach),
 		errors.Is(err, sdk.ErrStaleDeclaration),
+		errors.Is(err, sdk.ErrOutOfRange),
+		errors.Is(err, sdk.ErrNotVisible),
 		// ErrCannotActivate is ErrCannotAfford's shape one verb further out:
 		// an ability that could have run and said no. The SDK documents it as
 		// not currently reachable through Activate -- Afford consults the same

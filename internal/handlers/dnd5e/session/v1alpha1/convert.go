@@ -3,6 +3,7 @@ package sessionv1alpha1
 import (
 	"fmt"
 
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/npcs"
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
 
@@ -35,8 +36,68 @@ func memberKindToProto(k sdk.MemberKind) sessionpb.MemberKind {
 		return sessionpb.MemberKind_MEMBER_KIND_PLAYER
 	case sdk.KindMonster:
 		return sessionpb.MemberKind_MEMBER_KIND_MONSTER
+	case sdk.KindWorld:
+		return sessionpb.MemberKind_MEMBER_KIND_WORLD
 	default:
 		return sessionpb.MemberKind_MEMBER_KIND_UNSPECIFIED
+	}
+}
+
+// vendorStockModeToProto mirrors npcs.StockMode onto the wire enum. An
+// unrecognized value reaches UNSPECIFIED, a producer defect.
+func vendorStockModeToProto(m npcs.StockMode) sessionpb.VendorStockMode {
+	switch m {
+	case npcs.StockModeLimited:
+		return sessionpb.VendorStockMode_VENDOR_STOCK_MODE_LIMITED
+	case npcs.StockModeUnlimited:
+		return sessionpb.VendorStockMode_VENDOR_STOCK_MODE_UNLIMITED
+	default:
+		return sessionpb.VendorStockMode_VENDOR_STOCK_MODE_UNSPECIFIED
+	}
+}
+
+// vendorStockEntryToProto mirrors one resolved vendor stock row. Quantity is
+// meaningful only when Mode is LIMITED (the wire message's own doc); an
+// unlimited entry's Quantity is the toolkit's own zero value and stays
+// unset here rather than carried as a meaningless zero.
+func vendorStockEntryToProto(e npcs.StockEntryView) *sessionpb.VendorStockEntry {
+	out := &sessionpb.VendorStockEntry{
+		EquipmentType: string(e.Type),
+		EquipmentId:   e.ID,
+		DisplayName:   e.Name,
+		StockMode:     vendorStockModeToProto(e.Mode),
+	}
+	if e.Mode == npcs.StockModeLimited {
+		quantity := int32(e.Quantity)
+		out.Quantity = &quantity
+	}
+	return out
+}
+
+func vendorStockEntriesToProto(es []npcs.StockEntryView) []*sessionpb.VendorStockEntry {
+	out := make([]*sessionpb.VendorStockEntry, len(es))
+	for i, e := range es {
+		out[i] = vendorStockEntryToProto(e)
+	}
+	return out
+}
+
+// worldNPCDescriptorToProto mirrors session.WorldNPCDescriptor field-for-
+// field: capabilities and combat_policy cross as plain strings, the same
+// open-vocabulary convention the toolkit's own npc.Capability/CombatPolicy
+// types already use, so this seam invents no vocabulary of its own.
+func worldNPCDescriptorToProto(d sdk.WorldNPCDescriptor) *sessionpb.WorldNPCDescriptor {
+	capabilities := make([]string, len(d.Capabilities))
+	for i, c := range d.Capabilities {
+		capabilities[i] = string(c)
+	}
+	return &sessionpb.WorldNPCDescriptor{
+		TargetId:     d.TargetID,
+		Ref:          d.Ref,
+		DisplayName:  d.DisplayName,
+		Capabilities: capabilities,
+		CombatPolicy: string(d.CombatPolicy),
+		Inventory:    vendorStockEntriesToProto(d.Inventory),
 	}
 }
 

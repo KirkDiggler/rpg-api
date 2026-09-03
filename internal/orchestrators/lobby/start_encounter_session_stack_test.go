@@ -18,19 +18,23 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/core"
 	coreResources "github.com/KirkDiggler/rpg-toolkit/core/resources"
 	"github.com/KirkDiggler/rpg-toolkit/dice"
+	"github.com/KirkDiggler/rpg-toolkit/npc"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/abilities"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/ammunition"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/backgrounds"
 	tkcharacter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/classes"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/conditions"
 	tkencounter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/features"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/npcs"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/races"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/refs"
 	dnd5eResources "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/resources"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/saves"
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/weapons"
 	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
 
 	"github.com/KirkDiggler/rpg-api/internal/dungeons"
@@ -441,6 +445,41 @@ func (s *SessionStackSuite) TestStartEncounter_ExplicitDefaultKeyIsTheTomb() {
 
 	_, err = s.sessOrch.Manager.Turn(s.ctx, &sdk.TurnInput{Session: out.EncounterID, Member: "skeleton-captain-1"})
 	s.Require().NoError(err, "the captain is in it, so it is the tomb")
+}
+
+// TestStartEncounter_DemoVendorIsPlacedAndInteractable is #903 Phase 1's own
+// definition of done, proven directly against the real Manager (no mocks,
+// no proto layer): the reference tomb's launch places the temporary demo
+// vendor, and a seated player can Interact with it and get back its known
+// stock.
+func (s *SessionStackSuite) TestStartEncounter_DemoVendorIsPlacedAndInteractable() {
+	s.seedCharacter("char-alice", "alice", "Alice")
+	s.seedReadyLobby("lobby-1", "alice")
+
+	out, err := s.orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		PlayerID: "alice", LobbyID: "lobby-1",
+	})
+	s.Require().NoError(err)
+
+	interacted, err := s.sessOrch.Manager.Interact(s.ctx, &sdk.InteractInput{
+		Session: out.EncounterID, Actor: "char-alice", Target: "demo-merchant-1",
+	})
+	s.Require().NoError(err)
+
+	d := interacted.Descriptor
+	s.Equal("demo-merchant-1", d.TargetID)
+	s.Equal("Demo Merchant", d.DisplayName)
+	s.Contains(d.Capabilities, npc.CapabilityVendor)
+	s.Equal(npc.CombatPolicyNonCombatant, d.CombatPolicy)
+
+	s.Require().Len(d.Inventory, 3, "longsword, longbow, a bundle of arrows")
+	byID := make(map[string]npcs.StockEntryView, len(d.Inventory))
+	for _, entry := range d.Inventory {
+		byID[entry.ID] = entry
+	}
+	s.Equal(npcs.StockModeLimited, byID[weapons.Longsword].Mode)
+	s.Equal(npcs.StockModeLimited, byID[weapons.Longbow].Mode)
+	s.Equal(npcs.StockModeUnlimited, byID[ammunition.Arrows20].Mode)
 }
 
 // lobbyOver is SetupTest's orchestrator over a different content registry,
